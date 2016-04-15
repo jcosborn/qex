@@ -5,6 +5,7 @@ import qcdTypes
 import gaugeUtils
 import stagD
 import profile
+import os
 
 proc mesons(v:any) =
   let l = v.l
@@ -41,10 +42,14 @@ proc mesons(v:any) =
 
 when isMainModule:
   qexInit()
-  let defaultGaugeFile = "l88.scidac"
-  #let defaultLat = [8,8,8,16]
-  #let defaultLat = [8,8,8,8]
-  #let defaultLat = [4,4,4,4]
+  var defaultGaugeFile = "l88.scidac"
+  #var defaultLat = [4,4,4,4]
+  #var defaultLat = [8,8,8,8]
+  var defaultLat = @[8,8,8,16]
+  if fileExists(defaultGaugeFile):
+    defaultLat = nil
+  else:
+    defaultGaugeFile = nil
   defaultSetup()
   var v1 = lo.ColorVector()
   var v2 = lo.ColorVector()
