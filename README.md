@@ -1,8 +1,9 @@
-# QEX: Quantum EXpressions lattice field theory framework
+# QEX: Quantum EXpressions
+  lattice field theory framework
 
 This is an early version of the code.  The internals will likely go through
 several revisions, though the high level code written on top of it will
-likely not need much (if any) revisions.
+likely not need much revision.
 
 ### Installation:
 
@@ -22,10 +23,10 @@ The variables you'll likely need to change are:
 QEXDIR: root directory containing QEX code (where this README.md is)
 QMPDIR, QIODIR: installation directories for respective codes
 CC: C compiler to use
-CC_TYPE: What compiler dialect the Nim code generator should use
-         common options are: gcc, clang, llvm_gcc, icl (Intel),
-         ucc (generic unix cc)
-         The full list of known compilers is at the bottom of this page
+CC_TYPE: What compiler dialect the Nim code generator should use.
+         Common options are: gcc, clang, llvm_gcc, icl (Intel),
+         ucc (generic unix cc).
+         The full list of known compilers is at the bottom of this page:
          https://github.com/nim-lang/Nim/wiki/Consts-defined-by-the-compiler
 CFLAGS_ALWAYS: CFLAGS that are always used
 CFLAGS_DEBUG: extra CFLAGS used for a debug build (make debug=1 ...)
