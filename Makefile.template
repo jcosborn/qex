@@ -18,7 +18,7 @@ ifeq ($(BGQ),bgq)
   VERBOSITY = 3
   SIMD = QPX
 else
-  QEXDIR = $(HOME)/lqcd/src/qex
+  QEXDIR = $(HOME)/lqcd/src/qex-git
   #QEXDIR = $(HOME)/lqcd/src/qex-201602290051
   QMPDIR = $(HOME)/lqcd/install/qmp
   QIODIR = $(HOME)/lqcd/install/qio
@@ -99,7 +99,7 @@ endif
 clean:
 	\rm -rf nimcache
 ifeq ($(TARGETS),all)
-  T1 = $(wildcard $(QEXDIR)/*.nim)
+  T1 = $(wildcard $(QEXDIR)/src/*.nim)
   T2 = $(notdir $(T1))
   T3 = $(basename $(T2))
   T4 = $(filter-out simdQpx,$(T3))
@@ -108,6 +108,6 @@ endif
 all: $(TARGETS)
 
 $(TARGETS): _force
-	$(ENVS) nim c $(DBG) --nimcache:`pwd`/nimcache -o:`pwd`/$(@F) $(QEXDIR)/$@
+	$(ENVS) nim c $(DBG) --nimcache:`pwd`/nimcache -o:`pwd`/$(@F) $(QEXDIR)/src/$@
 
 .PHONY: _force
