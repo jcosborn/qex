@@ -1,9 +1,13 @@
-# QEX: Quantum EXpressions
-  lattice field theory framework
+# QEX
+## Quantum EXpressions lattice field theory framework
 
-This is an early version of the code.  The internals will likely go through
-several revisions, though the high level code written on top of it will
-likely not need much revision.
+### Notice:
+
+This is an early version of the code.  The internals will likely go
+through several revisions, though the high level code written on top
+of it will likely not need much revision.  The high-level framework is
+still incomplete, so some operations still require using lower-level
+constructs which may change.
 
 ### Installation:
 
