@@ -80,6 +80,8 @@ template setupTransporters(n,fld,nff:untyped):untyped =
   for i in 0..<nf: tf[i] = newOneOf(fld)
   #var tc{.inject.} = 0
 
+# a * pathProduct( u[nu] ^* v[mu] ^* u[nu].dag ) + b*
+
 # s[mu] = a_mu s[mu] + f_mu_nu Unu Vmu Unu^+ + b_mu_nu Unu^+ Vmu Unu
 proc staples*[T,F,B](ss,uu,vv:openArray[T]; ff:openArray[F]; bb:openArray[B]) =
   let nd = ss.len

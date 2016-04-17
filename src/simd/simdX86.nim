@@ -6,6 +6,7 @@ export simdX86Types
 import simdX86Ops
 export simdX86Ops
 
+# move to simdArray
 type SimdD8* = distinct array[2,SimdD4]
 template `[]`*(x:SimdD8):expr = (array[2,SimdD4])(x)
 template `[]`*(x:SimdD8; i:SomeInteger):expr = x[][i div 4][i mod 4]

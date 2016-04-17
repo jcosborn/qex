@@ -1,12 +1,12 @@
-# QEX
-## Quantum EXpressions lattice field theory framework
+## QEX: Quantum EXpressions lattice field theory framework
 
 ### Notice:
 
-This is an early version of the code.  The internals will likely go
-through several revisions, though the high level code written on top
-of it will likely not need much revision.  The high-level framework is
-still incomplete, so some operations still require using lower-level
+This is an early version of the code, and is not fully functional.  It
+is not intended for general use yet.  The internals will likely go
+through several revisions, though high level code written on top
+of it will likely not need much revision.  The high level framework is
+incomplete, so some operations still require using lower level
 constructs which may change.
 
 ### Installation:
@@ -17,7 +17,7 @@ http://nim-lang.org/download.html
 
 (optional) Copy "Makefile.template" to a separate build directory.
 
-Copy "Makefile.template" to "Makefile" and edit the top section
+Copy "Makefile.template" to "Makefile" and edit it
 to point to the QEX source, set compiler, etc.
 (the first section is for BG/Q, the second for x86)
 
