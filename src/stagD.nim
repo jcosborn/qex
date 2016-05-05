@@ -1,3 +1,5 @@
+import os
+import strUtils
 import qex
 import qcdTypes
 import stdUtils
@@ -214,10 +216,17 @@ template foldl*(f,n,op:untyped):expr =
 when isMainModule:
   qexInit()
   echo "rank ", myRank, "/", nRanks
+  let cp = commandLineParams()
   #var lat = [4,4,4,4]
   var lat = [8,8,8,8]
   #var lat = [8,8,8,16]
   #var lat = [8,8,16,16]
+  #var lat = [16,16,16,8]
+  #var lat = [16,16,16,16]
+  #var lat = [16,16,16,32]
+  if cp.len>0:
+    for i in 0..<lat.len:
+      lat[i] = (if i<cp.len: parseInt(cp[i]) else: lat[i-1])
   var lo = newLayout(lat)
   var g:array[4,type(lo.ColorMatrix())]
   for i in 0..<4:
@@ -256,7 +265,8 @@ when isMainModule:
     echo v1[0][0]
     echo v2[0][0]
 
-  let nrep = int(2e8/lo.physVol.float)
+  #let nrep = int(2e8/lo.physVol.float)
+  let nrep = int(1e9/lo.physVol.float)
   #let nrep = 1
   proc bench(sd:var any, ss="all") =
     resetTimers()
