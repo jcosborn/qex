@@ -128,7 +128,7 @@ macro makeCall*(op:static[string],a:typed,idx:typed):expr =
       quit("makeCall: unhandled number of arguments " & $nargs)
 
 proc evalBackticR(body:NimNode):NimNode =
-  echo body.treeRepr
+  #echo body.treeRepr
   if body.kind == nnkAccQuoted:
     var id = ""
     for c in body:
@@ -138,7 +138,7 @@ proc evalBackticR(body:NimNode):NimNode =
     result = copyNimNode(body)
     for c in body.children:
       result.add(evalBackticR(c))
-  echo result.repr
+  #echo result.repr
 
 macro evalBacktic*(body:untyped):untyped =
   result = evalBackticR(body)

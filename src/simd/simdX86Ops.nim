@@ -36,8 +36,14 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   template simdLength*(x:typedesc[T]):untyped = N
   proc assign*(r:ptr F; x:T) {.inline.} =
     `P "_storeu_" S`(r, x)
-  proc assign*(r:var T; x:ptr F) =
-    r = `P "_loadu_" S`(x)
+  proc assign*(r:var T; x:ptr SomeNumber) {.inline.} =
+    when x[] is F:
+      r = `P "_loadu_" S`(x)
+    else:
+      let y = cast[ptr array[N,type(x[])]](x)
+      var t{.noInit.}:array[N,F]
+      for i in 0..<N: t[i] = F(y[][i])
+      assign(r, t)
   template toSimd*(x:array[N,F]):expr =
     `P "_loadu_" S`(cast[ptr F](unsafeAddr(x)))
   proc toArray*(x:T):array[N,F] {.inline,noInit.} =
@@ -202,6 +208,19 @@ template simdSum*(r:var SomeNumber; x:m256d) = simdReduce(r, x)
 include simdX86Ops1
 
 
+proc mm_cvtph_ps(x:m128i):m128
+  {.importC:"_mm_cvtph_ps",header:"f16cintrin.h".}
+proc mm_cvtps_ph(x:m128,y:cint):m128i
+  {.importC:"_mm_cvtps_ph",header:"f16cintrin.h".}
+proc mm256_cvtph_ps(x:m128i):m256
+  {.importC:"_mm256_cvtph_ps",header:"f16cintrin.h".}
+proc mm256_cvtps_ph(x:m256,y:cint):m128i
+  {.importC:"_mm256_cvtps_ph",header:"f16cintrin.h".}
+#template toHalf(x:SimdS4):SimdH4 = cast[ptr SimdH4](mm_cvtph_ps(x))
+#template toSingle(x:SimdH4):SimdS4 = cast(mm_cvtph_ps(x)
+#template toHalf(x:SimdS8):SimdH8 = (SimdH8)(mm256_cvtps_ph(x,0))
+#template toSingle(x:SimdH8):SimdS8 = mm256_cvtph_ps((m128i)x)
+
 # toSingle, toDouble, to(x,float32), to(x,float64)
 discard """
 template `lid`(x:untyped):untyped = to(x,`id`)
@@ -247,3 +266,7 @@ when isMainModule:
   var s:m256
   assign(s, a[0], a[1], a[2], a[3])
   echo s
+
+  #var h:SimdH8
+  #s = toSingle(h)
+  #h = toHalf(s)

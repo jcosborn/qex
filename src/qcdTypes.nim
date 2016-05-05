@@ -289,10 +289,10 @@ proc blend*[T](r:var T; x:T; b:ptr char; blnd:int) =
 #template temp*(r:untyped; x:SColorVectorV):untyped =
 #  var r{.noInit.}:SColorVectorV
 
-#proc ColorVector*(l:Layout):SLatticeColorVectorV = result.new(l)
-#proc ColorMatrix*(l:Layout):SLatticeColorMatrixV = result.new(l)
-proc ColorVector*(l:Layout):DLatticeColorVectorV = result.new(l)
-proc ColorMatrix*(l:Layout):DLatticeColorMatrixV = result.new(l)
+proc ColorVector*(l:Layout):SLatticeColorVectorV = result.new(l)
+proc ColorMatrix*(l:Layout):SLatticeColorMatrixV = result.new(l)
+#proc ColorVector*(l:Layout):DLatticeColorVectorV = result.new(l)
+#proc ColorMatrix*(l:Layout):DLatticeColorMatrixV = result.new(l)
 
 when isMainModule:
   import times

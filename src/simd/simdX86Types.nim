@@ -20,13 +20,16 @@ when defined(SSE):
     SimdS4* = m128
     SimdD2* = m128d
     SimdI4* = m128i
+    SimdH4* = distinct int64
 when defined(AVX):
   type
     SimdS8* = m256
     SimdD4* = m256d
     SimdI8* = m256i
+    SimdH8* = distinct SimdI4
 when defined(AVX512):
   type
     SimdS16* = m512
     SimdD8*  = m512d
     SimdI16* = m512i
+    SimdH16* = distinct SimdI8

@@ -26,6 +26,14 @@ var FLT_EPSILON*{.importC,header:"<float.h>".}:float32
 var DBL_EPSILON*{.importC,header:"<float.h>".}:float64
 template epsilon*(x:float32):untyped = FLT_EPSILON
 template epsilon*(x:float64):untyped = DBL_EPSILON
+template basicNumberDefines(T,N,F) {.dirty.} =
+  template numberType*(x:T):expr = F
+  template numberType*(x:typedesc[T]):expr = F
+  template numNumbers*(x:T):expr = N
+  template numNumbers*(x:typedesc[T]):expr = N
+basicNumberDefines(float32, 1, float32)
+basicNumberDefines(float64, 1, float64)
+template `[]`*(x:SomeNumber; i:SomeInteger):expr = x
 
 template cnvrt(r,x):expr = ((type(r))(x))
 template to*(x:any; t:typedesc[SomeNumber]):expr =
@@ -41,6 +49,8 @@ template to*(t:typedesc[SomeNumber]; x:any):expr =
     x
   else:
     t(x)
+
+template assign*(x:var SomeNumber; y:ptr SomeNumber2) = x = cnvrt(x,y[])
 
 #template assign*(r:var SomeNumber, x:SomeNumber2):untyped =
 proc assign*(r:var SomeNumber, x:SomeNumber2) {.inline.} =
@@ -89,6 +99,7 @@ template dot*(x:SomeNumber; y:SomeNumber2):expr = x*y
 template idot*(r:var SomeNumber; x:SomeNumber2;y:SomeNumber3):expr =
   imadd(r,x,y)
 template simdSum*(x:SomeNumber):expr = x
+template simdReduce*(x:SomeNumber):expr = x
 proc sqrt*(x:float32):float32 {.importC:"sqrtf",header:"math.h".}
 #proc sqrt*(x:float64):float64 {.importC:"sqrt",header:"math.h".}
 proc acos*(x:float64):float64 {.importC:"acos",header:"math.h".}
