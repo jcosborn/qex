@@ -2,6 +2,7 @@ import qex
 import qcdTypes
 import times
 import os
+import strUtils
 import stdUtils
 import metaUtils
 
@@ -198,26 +199,34 @@ proc newGauge*(l:Layout):auto =
     result[i] = l.ColorMatrix()
 
 template defaultSetup*:untyped {.dirty.} =
-  bind paramCount, paramStr
+  bind paramCount, paramStr, isDigit, parseInt
   echo "rank ", myRank, "/", nRanks
   threads:
     echo "thread ", threadNum, "/", numThreads
   var fn:string
   var lat:seq[int]
-  when declaredInScope(defaultGaugeFile):
-    fn = defaultGaugeFile
+  when declared(defaultGaugeFile):
+    if fileExists(defaultGaugeFile):
+      fn = defaultGaugeFile
   if paramCount()>0:
-    fn = paramStr(1)
+    if not isDigit(paramStr(1)):
+      fn = paramStr(1)
   if fn != nil:
     lat = getFileLattice(fn)
   else:
-    when declared(defaultLat):
-      when defaultLat is array:
-        lat = @defaultLat
-      else:
-        lat = defaultLat
+    if paramCount()>0 and isDigit(paramStr(1)):
+      var pc = paramCount()
+      lat.newSeq(pc)
+      for i in 0..<pc:
+        lat[i] = parseInt(paramStr(i+1))
     else:
-      lat = @[8,8,8,8]
+      when declared(defaultLat):
+        when defaultLat is array:
+          lat = @defaultLat
+        else:
+          lat = defaultLat
+      else:
+        lat = @[8,8,8,8]
   var lo = newLayout(lat)
   var g = newSeq[type(lo.ColorMatrix())](lat.len)
   for i in 0..<lat.len:

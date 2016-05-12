@@ -193,16 +193,21 @@ proc simdReduce*(r:var SomeNumber; x:m256d) {.inline.} =
   let y = mm256_hadd_pd(x, mm256_permute2f128_pd(x, x, 1))
   let z = mm256_hadd_pd(y, y)
   r = (type(r))(z[0])
+proc simdReduce*(r:var SomeNumber; x:m512) {.inline.} =
+  r = (type(r))(mm512_reduce_add_ps(x))
 proc simdReduce*(x:m128):float32 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m256):float32 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m256d):float64 {.inline,noInit.} = simdReduce(result, x)
+proc simdReduce*(x:m512):float32 {.inline,noInit.} = simdReduce(result, x)
 
 template simdSum*(x:m128):expr = simdReduce(x)
 template simdSum*(x:m256):expr = simdReduce(x)
 template simdSum*(x:m256d):expr = simdReduce(x)
+template simdSum*(x:m512):expr = simdReduce(x)
 template simdSum*(r:var SomeNumber; x:m128) = simdReduce(r, x)
 template simdSum*(r:var SomeNumber; x:m256) = simdReduce(r, x)
 template simdSum*(r:var SomeNumber; x:m256d) = simdReduce(r, x)
+template simdSum*(r:var SomeNumber; x:m512) = simdReduce(r, x)
 
 # include perm, pack and blend
 include simdX86Ops1

@@ -27,8 +27,8 @@ template makePermX(F,P,T,L,N0) {.dirty.} =
     map110(T, L, F, F)
   else:
     proc F*(r:var T; x:T) {.inline.} =
-      let b = P div N0
-      forStatic i, 0, L:
+      const b = P div N0
+      forStatic i, 0, L-1:
         assign(r[][i], x[][i xor b])
 template makePerm(P,T,L,N0) {.dirty.} =
   bind makePermX
@@ -180,13 +180,12 @@ template makeSimdArray*(T,L,B:untyped):untyped {.dirty.} =
   proc to*(x:SomeNumber; y:typedesc[T]):T {.inline,noInit.} =
     forStatic i, 0, L-1:
       assign(result[][i], x)
-      assign(result[][i], x)
   proc simdReduce*(r:var SomeNumber; x:T) {.inline.} =
-    r = 0
-    forStatic i, 0, L-1:
-      r += (type(r))(simdReduce(x[][i]))
-  proc simdReduce*(x:T):F {.noInit,inline.} =
-    simdReduce(result, x)
+    var y = add(x[][0], x[][1])
+    forStatic i, 2, L-1:
+      iadd(y, x[][i])
+    r = (type(r))(simdReduce(y))
+  proc simdReduce*(x:T):F {.noInit,inline.} = simdReduce(result, x)
   template simdSum*(r:var SomeNumber; x:T) = simdReduce(r, x)
   template simdSum*(x:T):expr = simdReduce(x)
   proc `-`*(x:T):T {.inline,noInit.} =

@@ -63,6 +63,7 @@ template makeArrayOverloads(n:int):untyped =
       r[i] = T1(x[i])
 makeArrayOverloads(4)
 makeArrayOverloads(8)
+makeArrayOverloads(16)
 
 macro echoImm*(s:varargs[expr]):auto =
   result = newEmptyNode()

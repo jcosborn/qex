@@ -323,3 +323,155 @@ proc blendp4*(x:var m256d; r:openArray[SomeNumber];
 proc blendm4*(x:var m256d; r:openArray[SomeNumber];
               l:openArray[SomeNumber]) {.inline.} =
   assert(false, "blendm4 not valid for m256d")
+
+
+# m512 operations
+
+proc perm1*(r:var m512; x:m512) {.inline.} =
+  r = mm512_permute_ps(x, BASE4(2,3,0,1))
+proc perm2*(r:var m512; x:m512) {.inline.} =
+  r = mm512_permute_ps(x, BASE4(1,0,3,2))
+proc perm4*(r:var m512; x:m512) {.inline.} =
+  r = mm512_shuffle_f32x4(x, x, BASE4(2,3,0,1))
+proc perm8*(r:var m512; x:m512) {.inline.} =
+  r = mm512_shuffle_f32x4(x, x, BASE4(1,0,3,2))
+
+proc packp1*(r:var openArray[SomeNumber]; x:m512;
+             l:var openArray[SomeNumber]) {.inline.} =
+  let t = x.toArray
+  l[0] = t[0]
+  r[0] = t[1]
+  l[1] = t[2]
+  r[1] = t[3]
+  l[2] = t[4]
+  r[2] = t[5]
+  l[3] = t[6]
+  r[3] = t[7]
+proc packm1*(r:var openArray[SomeNumber]; x:m512;
+             l:var openArray[SomeNumber]) {.inline.} =
+  let t = x.toArray
+  r[0] = t[0]
+  l[0] = t[1]
+  r[1] = t[2]
+  l[1] = t[3]
+  r[2] = t[4]
+  l[2] = t[5]
+  r[3] = t[6]
+  l[3] = t[7]
+proc packp2*(r:var openArray[SomeNumber]; x:m512;
+             l:var openArray[SomeNumber]) {.inline.} =
+  let t = x.toArray
+  l[0] = t[0]
+  l[1] = t[1]
+  r[0] = t[2]
+  r[1] = t[3]
+  l[2] = t[4]
+  l[3] = t[5]
+  r[2] = t[6]
+  r[3] = t[7]
+proc packm2*(r:var openArray[SomeNumber]; x:m512;
+             l:var openArray[SomeNumber]) {.inline.} =
+  let t = x.toArray
+  r[0] = t[0]
+  r[1] = t[1]
+  l[0] = t[2]
+  l[1] = t[3]
+  r[2] = t[4]
+  r[3] = t[5]
+  l[2] = t[6]
+  l[3] = t[7]
+proc packp4*(r:var openArray[SomeNumber]; x:m512;
+             l:var openArray[SomeNumber]) {.inline.} =
+  let t = x.toArray
+  l[0] = t[0]
+  l[1] = t[1]
+  l[2] = t[2]
+  l[3] = t[3]
+  r[0] = t[4]
+  r[1] = t[5]
+  r[2] = t[6]
+  r[3] = t[7]
+proc packm4*(r:var openArray[SomeNumber]; x:m512;
+             l:var openArray[SomeNumber]) {.inline.} =
+  let t = x.toArray
+  r[0] = t[0]
+  r[1] = t[1]
+  r[2] = t[2]
+  r[3] = t[3]
+  l[0] = t[4]
+  l[1] = t[5]
+  l[2] = t[6]
+  l[3] = t[7]
+
+proc blendp1*(x:var m512; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  var t{.noInit.}:type(toArray(x))
+  t[0] = l[0]
+  t[1] = r[0]
+  t[2] = l[1]
+  t[3] = r[1]
+  t[4] = l[2]
+  t[5] = r[2]
+  t[6] = l[3]
+  t[7] = r[3]
+  assign(x, t)
+proc blendm1*(x:var m512; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  var t{.noInit.}:type(toArray(x))
+  t[0] = r[0]
+  t[1] = l[0]
+  t[2] = r[1]
+  t[3] = l[1]
+  t[4] = r[2]
+  t[5] = l[2]
+  t[6] = r[3]
+  t[7] = l[3]
+  assign(x, t)
+proc blendp2*(x:var m512; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  var t{.noInit.}:type(toArray(x))
+  t[0] = l[0]
+  t[1] = l[1]
+  t[2] = r[0]
+  t[3] = r[1]
+  t[4] = l[2]
+  t[5] = l[3]
+  t[6] = r[2]
+  t[7] = r[3]
+  assign(x, t)
+proc blendm2*(x:var m512; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  var t{.noInit.}:type(toArray(x))
+  t[0] = r[0]
+  t[1] = r[1]
+  t[2] = l[0]
+  t[3] = l[1]
+  t[4] = r[2]
+  t[5] = r[3]
+  t[6] = l[2]
+  t[7] = l[3]
+  assign(x, t)
+proc blendp4*(x:var m512; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  var t{.noInit.}:type(toArray(x))
+  t[0] = l[0]
+  t[1] = l[1]
+  t[2] = l[2]
+  t[3] = l[3]
+  t[4] = r[0]
+  t[5] = r[1]
+  t[6] = r[2]
+  t[7] = r[3]
+  assign(x, t)
+proc blendm4*(x:var m512; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  var t{.noInit.}:type(toArray(x))
+  t[0] = r[0]
+  t[1] = r[1]
+  t[2] = r[2]
+  t[3] = r[3]
+  t[4] = l[0]
+  t[5] = l[1]
+  t[6] = l[2]
+  t[7] = l[3]
+  assign(x, t)
