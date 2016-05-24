@@ -7,38 +7,41 @@ import stagD
 import profile
 import os
 
+template corner(l, i):expr =
+  (l.coords[0][i].int and 1) + ((l.coords[1][i].int and 1) shl 1) +
+   ((l.coords[2][i].int and 1) shl 2)
+
 proc mesons(v:any) =
   let l = v.l
   let nt = l.physGeom[3]
   var c = newSeq[array[8,float]](nt)
   when true:
   #when false:
-    var x:VectorArray[3,SComplex]
-    for i in 0..<l.nSites:
+    #var x:VectorArray[3,DComplex]
+    for i in l.sites:
       let t = l.coords[3][i]
-      let s = (l.coords[0][i].int and 1) + ((l.coords[1][i].int and 1) shl 1) +
-              ((l.coords[2][i].int and 1) shl 2)
-      #c[t][s] += v{i}.norm2()
-      assign(x, v{i})
-      c[t][s] += x.norm2
+      let s = l.corner(i)
+      c[t][s] += v{i}.norm2()
+      #assign(x, v{i})
+      #c[t][s] += x.norm2
   else:
     threads:
-      var x:VectorArray[3,SComplex]
+      #var x:VectorArray[3,DComplex]
       for i in 0..<l.nSites:
         let t = l.coords[3][i]
-        let s = (l.coords[0][i].int and 1)+((l.coords[1][i].int and 1) shl 1) +
-              ((l.coords[2][i].int and 1) shl 2)
+        let s = l.corner(i)
         let tpar = (8*t+s) mod numThreads
         if tpar==threadNum:
-          #c[t][s] += v{i}.norm2()
-          assign(x, v{i})
-          c[t][s] += x.norm2
+          c[t][s] += v{i}.norm2()
+          #assign(x, v{i})
+          #c[t][s] += x.norm2
   rankSum(c)
   for s in 0..<8:
     echo "corner: ", s
     for t in 0..<nt:
-      let r = c[t][s]
-      echo t, " ", r
+      #let r = c[t][s]
+      #echo t, " ", r
+      echo t, " ", c[t][s]
 
 when isMainModule:
   qexInit()

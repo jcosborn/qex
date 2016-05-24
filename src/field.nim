@@ -184,6 +184,20 @@ template itemsI*(n0,n1:int):untyped =
   while i < ti1:
     yield i
     inc(i)
+iterator items*(l:Layout):int {.inline.} =
+  let n = l.nSitesOuter
+  itemsI(0, n)
+iterator sites*(l:Layout):int {.inline.} =
+  let n = l.nSites
+  itemsI(0, n)
+iterator items*(s:Subset):int {.inline.} =
+  let n0 = s.lowOuter
+  let n1 = s.highOuter
+  itemsI(n0, n1)
+iterator sites*(s:Subset):int {.inline.} =
+  let n0 = s.low
+  let n1 = s.high
+  itemsI(n0, n1)
 #iterator all*(x:Field):int {.inline.} =
 #  let n = x.l.nSitesOuter
 #  itemsI(0, n)

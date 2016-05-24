@@ -154,7 +154,23 @@ proc imul*(m:Masked[SDvec]; x:int) =
 #  let pri = r.pobj[].im.addr
 #  var mri = Masked[type(pri[])](pobj:pri,mask:r.mask)
 #  mul(mri, x.im, y)
-
+proc norm2*(m:Masked[SDvec]):auto =
+  var r:type(m.pobj[][0])
+  var i = 0
+  var b = m.mask
+  while b != 0:
+    if (b and 1) != 0:
+      let t = m.pobj[][i]
+      r += t*t
+    b = b shr 1
+    inc i
+  r
+proc norm2*(r:var SomeNumber; m:Masked[SDvec]) =
+  let t = norm2(m)
+  r = (type(r))(t)
+proc inorm2*(r:var SomeNumber; m:Masked[SDvec]) =
+  let t = norm2(m)
+  r += (type(r))(t)
 
 #template isScalar*(x:float32):expr = true
 #template isScalar*(x:Scalar):expr = true
