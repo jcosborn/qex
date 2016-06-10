@@ -10,7 +10,9 @@ import macros
 
 type
   #Adjointed*{.borrow: `.`.}[T] = distinct T
-  Adjointed*[T] = distinct T
+  #Adjointed*[T] = distinct T
+  Adjointed*[T] = object
+    v*:T
 template adj*(x:typed):expr =
   #dumpTree: x
   #echoImm isMatrix(x)
@@ -30,7 +32,8 @@ template adj*(x:typed):expr =
       cast[ptr Adjointed[type(x)]](addr(x))[]
     else:
       #ctrace()
-      (Adjointed[type(x)])(x)
+      #(Adjointed[type(x)])(x)
+      cast[Adjointed[type(x)]](x)
 #template `[]`*[T](x:Adjointed[T]):expr = cast[T](x)
 makeDeref(Adjointed, x.T)
 template `[]`*(x:Adjointed; i:SomeInteger):expr = x[][i].adj

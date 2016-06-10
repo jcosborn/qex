@@ -82,7 +82,10 @@ template ctrace* =
 
 template declareVla(v,t,n:untyped):untyped =
   type Vla{.gensym.} = distinct t
-  var v{.noInit,codeGenDecl:"$# $#[" & n.astToStr & "]".}:Vla
+  #var v{.noInit,codeGenDecl:"$# $#[" & n.astToStr & "]".}:Vla
+  #var v{.noInit,codeGenDecl:"$# $#[`n`]".}:Vla
+  var v{.noInit,noDecl.}:Vla
+  {.emit:"`Vla` `v`[`n`];".}
   template len(x:Vla):untyped = n
   template `[]`(x:Vla; i:untyped):untyped =
     (cast[ptr cArray[t]](unsafeAddr(x)))[][i]
@@ -112,6 +115,7 @@ template warn*(s:varargs[string,`$`]) =
   echo "warning (", ii.filename, ":", ii.line, "):"
   echo "  ", s.join
   
+#[
 when isMainModule:
   proc test(n:int) =
     declareVla(x, float, n)
@@ -125,4 +129,4 @@ when isMainModule:
       echo y.len
   test(10)
   test(20)
-
+]#

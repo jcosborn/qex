@@ -17,6 +17,24 @@ template forStatic(index: expr, slice: Slice[int], predicate: stmt):stmt =
     iterateStartingFrom a
 """
 
+proc symToIdent*(x: NimNode): NimNode =
+  case x.kind:
+    of nnkCharLit..nnkUInt64Lit:
+      result = newNimNode(x.kind)
+      result.intVal = x.intVal
+    of nnkFloatLit..nnkFloat64Lit:
+      result = newNimNode(x.kind)
+      result.floatVal = x.floatVal
+    of nnkStrLit..nnkTripleStrLit:
+      result = newNimNode(x.kind)
+      result.strVal = x.strVal
+    of nnkIdent, nnkSym:
+      result = newIdentNode($x)
+    else:
+      result = newNimNode(x.kind)
+      for c in x:
+        result.add symToIdent(c)
+
 macro delayExpansion*(x:untyped):auto = result = x
 
 macro `$`*(t:typedesc):auto =
@@ -159,6 +177,9 @@ proc replace(id,val,body:NimNode):NimNode =
 macro echoTyped*(x:typed):auto =
   result = newEmptyNode()
   echo x.repr
+macro echoTypedTree*(x:typed):auto =
+  result = newEmptyNode()
+  echo x.treeRepr
 
 macro teeTyped*(x:typed):auto =
   result = x
@@ -239,7 +260,7 @@ template forOpt*(i,r0,r1,b:untyped):untyped =
     for i in r0..r1:
       b
 
-template depthFirst(body:untyped; action:untyped):untyped {.dirty.}=
+template depthFirst*(body:untyped; action:untyped):untyped {.dirty.} =
   proc recurse(body:NimNode):NimNode =
     #echo body.treeRepr
     result = copyNimNode(body)
@@ -251,6 +272,21 @@ template depthFirst(body:untyped; action:untyped):untyped {.dirty.}=
   result = recurse(body)
   #echo result.treeRepr
   #echo result.repr
+template depthFirst2*(body:untyped; action:untyped):untyped {.dirty.} =
+  proc recurse(it:var NimNode):NimNode =
+    action
+    result = copyNimNode(it)
+    for c in it:
+      var cc = c
+      result.add recurse(cc)
+  var b{.genSym.} = body
+  result = recurse(b)
+template depthFirst3*(body:untyped; action:untyped):untyped {.dirty.} =
+  proc recurse(it:NimNode) =
+    action
+    for c in it:
+      recurse(c)
+  recurse(body)
 
 macro addImportC(prefix=""; body:untyped):auto =
   #echo body.treeRepr

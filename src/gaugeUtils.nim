@@ -199,7 +199,7 @@ proc newGauge*(l:Layout):auto =
     result[i] = l.ColorMatrix()
 
 template defaultSetup*:untyped {.dirty.} =
-  bind paramCount, paramStr, isDigit, parseInt
+  bind paramCount, paramStr, isDigit, parseInt, fileExists
   echo "rank ", myRank, "/", nRanks
   threads:
     echo "thread ", threadNum, "/", numThreads

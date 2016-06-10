@@ -126,8 +126,8 @@ type
   #IC1* = Iconcept1 | Cconcept1
   ComplexType*[T] = AsComplex[tuple[re,im:T]]
 
-proc `$`*(x:C1):string =
-  result = "(" & $x.re & "," & $x.im & ")"
+#proc `$`*(x:C1):string =
+#  result = "(" & $x.re & "," & $x.im & ")"
 
 template haveR(x:typed, body:untyped):untyped =
   when not x.isImag:
@@ -154,7 +154,11 @@ template map*(result:RIC1; f:untyped):untyped =
 #template map*(result:RIC1; f:untyped; x:RIC2):untyped =
 #  haveR: `f`(result.re, x.re)
 #  haveI: `f`(result.im, x.im)
-template map*(result:var RIC1; f:untyped; x:RIC2):untyped =
+#template map*(result:var RIC1; f:untyped; x:RIC2):untyped =
+#template map*[T:RIC1](result:var T; f:untyped; x:RIC2):untyped =
+template map*(result:var untyped; f:untyped; x:untyped):untyped {.immediate.} =
+  #bind haveR, haveI
+  mixin re, im
   haveR: f(result.re, x.re)
   haveI: f(result.im, x.im)
 

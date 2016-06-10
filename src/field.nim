@@ -29,7 +29,7 @@ type
     field*:T
     dir*:int
     ln*:int
-  Field2* = Field
+  Field2* = distinct Field
   Field3* = Field
   SomeField* = Field | Subsetted | FieldBinop | FieldAddSub | FieldMul|Shifted
   #SomeField2* = Field | Subsetted | FieldBinop | FieldAddSub|FieldMul|Shifted

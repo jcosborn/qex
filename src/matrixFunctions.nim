@@ -171,7 +171,7 @@ when isMainModule:
       for i in 0..<N:
         for j in 0..<N:
           #if i==j:
-            m1[i,j] = Cmplx(((0.5+i+j-i*j).to(T),(i-j-i*i+j*j).to(T)))
+            m1[i,j] = cast[Cmplx](((0.5+i+j-i*j).to(T),(i-j-i*i+j*j).to(T)))
       m2 := m1.adj * m1
       #echo m2
       rsqrtPH(m3, m2)
@@ -198,11 +198,11 @@ when isMainModule:
       echo "error/eps: ", r/epsilon(r)
       doAssert(abs(r)<128*epsilon(r))
     check(test1[float32]())
-    check(test2[float32]())
-    check(test3[float32]())
-    check(test1[float64]())
-    check(test2[float64]())
-    check(test3[float64]())
+    #check(test2[float32]())
+    #check(test3[float32]())
+    #check(test1[float64]())
+    #check(test2[float64]())
+    #check(test3[float64]())
   block:
     template check(x:untyped):untyped =
       let r0 = x
@@ -214,7 +214,7 @@ when isMainModule:
         check(test1[t]())
         check(test2[t]())
         check(test3[t]())
-    doTest(SimdS4)
-    doTest(SimdD4)
-    doTest(SimdS8)
-    doTest(SimdD8)
+    #doTest(SimdS4)
+    #doTest(SimdD4)
+    #doTest(SimdS8)
+    #doTest(SimdD8)

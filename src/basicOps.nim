@@ -100,7 +100,7 @@ template idot*(r:var SomeNumber; x:SomeNumber2;y:SomeNumber3):expr =
   imadd(r,x,y)
 template simdSum*(x:SomeNumber):expr = x
 template simdReduce*(x:SomeNumber):expr = x
-proc sqrt*(x:float32):float32 {.importC:"sqrtf",header:"math.h".}
+#proc sqrt*(x:float32):float32 {.importC:"sqrtf",header:"math.h".}
 #proc sqrt*(x:float64):float64 {.importC:"sqrt",header:"math.h".}
 proc acos*(x:float64):float64 {.importC:"acos",header:"math.h".}
 template rsqrt*(r:var SomeNumber; x:SomeNumber) =
