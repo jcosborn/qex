@@ -143,12 +143,12 @@ template cfor*(i,r0,r1,b:untyped):untyped =
 #  for ii{.gensym.} in r0..r1:
 #    i = ii
 #    b
-macro forO*(i,r0,r1,b:untyped):auto =
-  #echo b.repr
-  result = quote do:
-    for `i` in `r0`..`r1`:
-      `b`
-#template forO*(i,r0,r1,b:untyped):untyped = forStatic(i,r0,r1,b)
+#macro forO*(i,r0,r1,b:untyped):auto =
+#  #echo b.repr
+#  result = quote do:
+#    for `i` in `r0`..`r1`:
+#      `b`
+template forO*(i,r0,r1,b:untyped):untyped = forStatic(i,r0,r1,b)
 
 proc `$`*(x:Vec1):string =
   mixin `$`
