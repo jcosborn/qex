@@ -39,9 +39,9 @@ proc mesons(v:any) =
   for s in 0..<8:
     echo "corner: ", s
     for t in 0..<nt:
-      #let r = c[t][s]
-      #echo t, " ", r
-      echo t, " ", c[t][s]
+      let r = c[t][s]
+      echo t, " ", r
+      #echo t, " ", c[t][s]
 
 when isMainModule:
   qexInit()

@@ -27,6 +27,7 @@ setType(Svec0, "SimdS" & $VLEN)
 setType(Dvec0, "SimdD" & $VLEN)
 type
   SDvec = Svec0 | Dvec0
+  SDvec2 = Svec0 | Dvec0
   SComplex* = AsComplex[tuple[re,im:float32]]
   SComplexV* = AsComplex[tuple[re,im:Svec0]]
   SColorVector* = VectorArray[nc,SComplex]
@@ -69,15 +70,27 @@ template simdLength*(x:typedesc[DColorMatrixV]):expr = simdLength(Dvec0)
 template simdLength*(x:typedesc[DColorVectorV]):expr = simdLength(Dvec0)
 template simdLength*(x:DColorVectorV):expr = simdLength(Dvec0)
 template simdLength*(x:DColorMatrixV):expr = simdLength(Dvec0)
+template nVectors(x:SComplexV):expr = 2
+template nVectors(x:DComplexV):expr = 2
 template nVectors(x:SColorVectorV):expr = 2*nc
 template nVectors(x:SColorMatrixV):expr = 2*nc*nc
 template nVectors(x:DColorVectorV):expr = 2*nc
 template nVectors(x:DColorMatrixV):expr = 2*nc*nc
-template simdType*(x:tuple):expr = simdType(x[0])
-template simdType*(x:array):expr = simdType(x[x.low])
-template simdType*(x:AsComplex):expr = simdType(x[])
-template simdType*(x:AsVector):expr = simdType(x[])
-template simdType*(x:AsMatrix):expr = simdType(x[])
+template simdType*(x:AsComplex):expr =
+  mixin simdType
+  simdType(x[])
+template simdType*(x:AsVector):expr =
+  mixin simdType
+  simdType(x[])
+template simdType*(x:AsMatrix):expr =
+  mixin simdType
+  simdType(x[])
+template simdType*(x:tuple):expr =
+  mixin simdType
+  simdType(x[0])
+template simdType*(x:array):expr =
+  mixin simdType
+  simdType(x[x.low])
 
 
 #import complexConcept
@@ -122,7 +135,7 @@ proc assign*(m:Masked[SDvec], x:int) =
       m.pobj[][i] = x
     b = b shr 1
     i.inc
-proc assign*(m:Masked[SDvec], x:SDvec) =
+proc assign*(m:Masked[SDvec], x:SDvec2) =
   var i = 0
   var b = m.mask
   while b != 0:
@@ -141,7 +154,7 @@ proc mul*(m:Masked[SDvec]; x:SDvec; y:int) =
     b = b shr 1
     i.inc
 proc imul*(m:Masked[SDvec]; x:int) =
-  var t = m[]
+  var t = load(m[])
   imul(t, x)
   assign(m, t)
 #proc assign*(m:Masked[SComplexV], y:int) =
@@ -190,6 +203,18 @@ proc inorm2*(r:var SomeNumber; m:Masked[SDvec]) =
 #export matrixConcept
 
 #template assign*(r:var SColorMatrixV, x:SomeNumber):untyped = assign(r, x.toScalar)
+proc assign*[T1,T2](r:var openArray[T1]; x:openArray[T2]) {.inline.} =
+  for i in 0..(r.len-1):
+    assign(r[i], x[i])
+#proc assign*[T,S](r:var array[6,T]; x:array[6,S]) {.inline.} =
+#  for i in 0..(r.len-1):
+#    assign(r[i], x[i])
+#template assign*[T,S](r:var array[2,T]; x:array[2,S]) =
+#  forStatic i, 0, 1:
+#    assign(r[i], x[i])
+#template assign*[T,S](r:var array[6,T]; x:array[6,S]) =
+#  forStatic i, 0, 5:
+#    assign(r[i], x[i])
 
 proc dot*(x,y:SColorVectorV):SComplexV {.inline.} =
   mulSVV(result, x.adj, y)
@@ -206,18 +231,26 @@ proc redot*(x,y:DColorVector):float64 {.inline.} =
   mulSVV(result, x.adj, y)
 
 type PackTypes = SColorVectorV | SColorMatrixV | DColorVectorV | DColorMatrixV
-proc perm*[T](r:var T; prm:int; x:T) {.inline.} =
+proc perm*(r:var any; prm:int; x:any) {.inline.} =
   const n = x.nVectors
   let rr = cast[ptr array[n,simdType(r)]](r.addr)
   let xx = cast[ptr array[n,simdType(x)]](unsafeAddr(x))
   template loop(f:untyped):untyped =
     forStatic i, 0..<n: f(rr[i], xx[i])
   case prm
-  of 0: rr[] = xx[]
+  of 0: assign(rr[], xx[])
   of 1: loop(perm1)
   of 2: loop(perm2)
   of 4: loop(perm4)
   else: discard
+template perm*(x:AsComplex; prm:int):expr =
+  var r{.noInit.}:ComplexType[type(perm(x.re,prm))]
+  perm(r, prm, x)
+  r
+template perm*(x:AsVector; prm:int):expr =
+  var r{.noInit.}:VectorArray[x.len, type(perm(x[0],prm))]
+  perm(r, prm, x)
+  r
 proc pack*(r:ptr char; l:ptr char; pck:int; x:PackTypes) {.inline.} =
   if pck==0:
     const n = x.nVectors

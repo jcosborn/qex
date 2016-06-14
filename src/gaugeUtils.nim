@@ -149,49 +149,17 @@ proc plaq*[T](gg:openArray[T]):auto =
   var t1 = lo.ColorMatrix()
   var tr:type(trace(m))
   threads:
-    #echoAll threadNum, " ss: ", ptrInt(threadLocals.share)
     m := 0
-    #t1 := g[0] * S0( g[1] )
-    #t2 := g[1] * S1( g[0] )
-    #m += t1 * t2.adj
-    #s0 := g[0]
-    #shift(s0, 0,-1, g[0])
-    #t0.mul(g[0], s0)
-    #discard """
     for mu in 1..<nd:
       for nu in 0..<mu:
-        #s0 := 0
-        #t0 := 0
-        #s1 := 0
-        #t1 := 0
-        #threadBarrier()
         shift(s0, mu,1, g[nu])
-        #threadBarrier()
-        #echo mu, ";", nu, ";", s0
-        #t0.mul(g[mu], s0)
-        #threadBarrier()
-        #echo mu, ";", nu, ";", t0
         shift(s1, nu,1, g[mu])
-        #threadBarrier()
-        #t1.mul(g[nu], s1)
-        #t1 = mul(g[nu], s1)
-        #threadBarrier()
-        #for x in m:
-        #  for ic in 0..<nc:
-        #    for jc in 0..<nc:
-        #      for kc in 0..<nc:
-        #        m[x][ic,jc].imadd(t0[x][ic,kc], conj(t1[x][jc,kc]))
-        #m += t0 * (g[nu]*s1).adj
-        echo "s0: ", trace(s0)
-        echo "s1: ", trace(s1)
+        #echo "s0: ", trace(s0)
+        #echo "s1: ", trace(s1)
         m += (g[mu]*s0) * (g[nu]*s1).adj
         echo mu, " ", nu, " ", trace(m)/nc
     tr = trace(m)
-  #result = tr
-  #result = tr/(0.5*float(nd*(nd-1)*nc))
   result = tr/(lo.physVol.float*0.5*float(nd*(nd-1)*nc))
-  #"""
-  #result = t0[0][0,0]
 
 proc newGauge*(l:Layout):auto =
   result = newSeq[type(l.ColorMatrix())](l.nDim)

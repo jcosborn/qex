@@ -68,13 +68,15 @@ proc stagD*(sd:StaggeredD; r:Field; g:openArray[Field2];
   for ir in r[sd.subset]:
     #echoAll threadNum, ": ", ir
     #r[ir] := m * x[ir]
-    mul(r[ir], m, x[ir])
+    var rir{.noInit.}:type(load1(r[ir]))
+    mul(rir, m, x[ir])
     for mu in 0..<4:
       #localSB(sf[mu], ir, r[ir] += g[mu][ir]*it, x[ix])
       #localSB(sf[mu], ir, imadd(r[ir], g[mu][ir], it), x[ix])
       #localSB(sb[mu], ir, isub(r[ir], it), g[mu][ix].adj*x[ix])
-      localSB(sf0[mu], ir, imadd(r[ir], g[mu][ir], it), sch*x[ix])
-      localSB(sb0[mu], ir, imsub(r[ir], sch, it), g[mu][ix].adj*x[ix])
+      localSB(sf0[mu], ir, imadd(rir, g[mu][ir], it), sch*x[ix])
+      localSB(sb0[mu], ir, imsub(rir, sch, it), g[mu][ix].adj*x[ix])
+    assign(r[ir], rir)
   toc("local", flops=4*(6+72+66+12)*sd.subset.len)
   #threadBarrier()
   #toc("threadBarrier")

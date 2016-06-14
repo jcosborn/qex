@@ -4,26 +4,8 @@ import times
 import macros
 import stdUtils
 import parseUtils
-
-proc symToIdent(x: NimNode): NimNode =
-  case x.kind:
-    of nnkCharLit..nnkUInt64Lit:
-      result = newNimNode(x.kind)
-      result.intVal = x.intVal
-    of nnkFloatLit..nnkFloat64Lit:
-      result = newNimNode(x.kind)
-      result.floatVal = x.floatVal
-    of nnkStrLit..nnkTripleStrLit:
-      result = newNimNode(x.kind)
-      result.strVal = x.strVal
-    of nnkIdent, nnkSym:
-      result = newIdentNode($x)
-    of nnkOpenSymChoice:
-      result = newIdentNode($x[0])
-    else:
-      result = newNimNode(x.kind)
-      for c in x:
-        result.add symToIdent(c)
+import optimize
+import metaUtils
 
 macro toString(x:untyped):auto =
   var s = repr symToIdent x
@@ -39,7 +21,8 @@ template bench(fps:SomeNumber; eqn:untyped) =
   threads:
     if threadNum==0: t0 = epochTime()
     for rep in 1..nrep:
-      eqn
+      #optimize:
+        eqn
     if threadNum==0: t1 = epochTime()
   let dt = t1 - t0
   let mf = (nrep.float*flops)/(1e6*dt)
@@ -71,6 +54,8 @@ proc test(lat:any) =
     for i in v2:
       var vt{.noInit.}:type(perm(v1[i],0))
       assign(vt, v1[i])
+      #v2[i] := vt
+      #mul(v2[i], m1[i], vt)
       v2[i] := m1[i] * vt
 
   bench((8*nc-2)*nc):
@@ -106,13 +91,13 @@ proc test(lat:any) =
 
   bench((8*nc)*nc):
     for i in v2:
-      var vt{.noInit.}:type(load(v1[i]))
+      var vt{.noInit.}:type(load1(v1[i]))
       assign(vt, v1[i])
       imadd(v2[i], m1[i], vt)
 
   bench((8*nc)*nc):
     for i in v2:
-      let vt = load(v1[i])
+      let vt = load1(v1[i])
       imadd(v2[i], m1[i], vt)
 
   bench((8*nc)*nc):
@@ -169,7 +154,7 @@ proc test(lat:any) =
   bench(4*(8*nc)*nc):
     let sch = 0.5
     for i in v2:
-      var vr = load(v2[i])
+      var vr = load1(v2[i])
       for mu in 0..3:
         let et = sch*v1[i]
         let vt = perm(et, 1)

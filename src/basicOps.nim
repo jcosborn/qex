@@ -118,13 +118,19 @@ template tmpvar*(r:untyped; x:untyped):untyped =
   #  tmpfunc(x)(r)
   #else:
     var r{.noInit.}:type(x)
-template load*(r:untyped, x:untyped):untyped =
+template load1*(x:SomeNumber):expr = x
+template load2*(r:untyped, x:untyped):untyped =
   mixin assign
   var r{.noInit.}:type(x)
   assign(r, x)
 template store*(r:var untyped, x:untyped):untyped =
   mixin assign
   assign(r, x)
+
+template load*(x:untyped):expr =
+  mixin load1
+  load1(x)
+template load*(r:untyped, x:untyped):untyped = load2(r, x)
 
 template `:=`*(x:var SomeNumber; y:SomeNumber2):untyped = assign(x,y)
 template `+`*(x:SomeReal; y:SomeInteger):auto = x + cnvrt(x,y)

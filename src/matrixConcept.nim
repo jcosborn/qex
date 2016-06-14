@@ -131,6 +131,14 @@ template numNumbers*(x:AsMatrix):expr = x.nrows*x.ncols*numNumbers(x[0])
 #template load(r:untyped; x:MV2):untyped =
 #  var r{.noInit.}:type(x)
 #  assign(r, x)
+template load1*(x:Vec1):expr =
+  var r{.noInit.}:VectorArray[x.len,type(load1(x[0]))]
+  assign(r, x)
+  r
+template load1*(x:Mat1):expr =
+  var r{.noInit.}:MatrixArray[x.nrows,x.ncols,type(load1(x[0,0]))]
+  assign(r, x)
+  r
 
 template cfor*(i,r0,r1,b:untyped):untyped =
   block:
@@ -237,7 +245,8 @@ template makeMap1(op:untyped):untyped =
   #proc `op VS`*(r:Vany; x:any) =
   template `op VS`*(rr:typed; xx:typed):untyped =
     subst(r,rr,x,xx,tx,_,i,_):
-      load(tx, deref(x))
+      load2(tx, deref(x))
+      #let tx = load1(deref(x))
       forO i, 0, <r.len:
         op(r[i], tx)
   #proc `op VV`*(r:Vany; x:any) {.inline.} =
@@ -250,7 +259,7 @@ template makeMap1(op:untyped):untyped =
   template `op MS`*(rr:typed; xx:typed):untyped =
     subst(r,rr,x,xx,tx,_,i,_,j,_):
       assert(r.nrows == r.ncols)
-      load(tx, x)
+      load2(tx, x)
       forO i, 0, <r.nrows:
         forO j, 0, <r.ncols:
           if i == j:
@@ -305,7 +314,7 @@ template `:=`*(x:AsVarMatrix; y:Mat2) = assign(x, y)
 template `+=`*(x:VarVec1; y:Vec2) = iadd(x, y)
 
 template imulMS*(r:typed; x:typed):untyped =
-  load(tx, x)
+  load2(tx, x)
   forO i, 0, <r.nrows:
     forO j, 0, <r.ncols:
       imul(r[i,j], tx)
@@ -318,13 +327,13 @@ template makeMap2(op:untyped):untyped =
   template `op VVS`*(rr:typed; xx,yy:typed):untyped =
     subst(r,rr,x,xx,y,yy,ty,_,i,_):
       assert(r.len == x.len)
-      load(ty, y)
+      load2(ty, y)
       forO i, 0, <r.len:
         op(r[i], x[i], ty)
   template `op VSV`*(rr:typed; xx,yy:typed):untyped =
     subst(r,rr,x,xx,y,yy,tx,_,i,_):
       assert(r.len == y.len)
-      load(tx, x)
+      load2(tx, x)
       forO i, 0, <r.len:
         op(r[i], tx, y[i])
   template `op VVV`*(rr:typed; xx,yy:typed):untyped =
@@ -336,8 +345,8 @@ template makeMap2(op:untyped):untyped =
   template `op MSS`*(rr:typed; xx,yy:typed):untyped =
     subst(r,rr,x,xx,y,yy,tx,_,ty,_,i,_,j,_):
       assert(r.nrows == r.ncols)
-      load(tx, x)
-      load(ty, y)
+      load2(tx, x)
+      load2(ty, y)
       forO i, 0, <r.nrows:
         forO j, 0, <r.ncols:
           if i == j:
@@ -349,7 +358,7 @@ template makeMap2(op:untyped):untyped =
     subst(r,rr,x,xx,y,yy,ty,_,i,_,j,_):
       assert(r.nrows == x.len)
       assert(r.ncols == x.len)
-      load(ty, y)
+      load2(ty, y)
       forO i, 0, <r.nrows:
         forO j, 0, <r.ncols:
           if i == j:
@@ -360,7 +369,7 @@ template makeMap2(op:untyped):untyped =
     subst(r,rr,x,xx,y,yy,tx,_,i,_,j,_):
       assert(r.nrows == y.len)
       assert(r.ncols == y.len)
-      load(tx, x)
+      load2(tx, x)
       forO i, 0, <r.nrows:
         forO j, 0, <r.ncols:
           if i == j:
@@ -383,7 +392,7 @@ template makeMap2(op:untyped):untyped =
       assert(r.nrows == r.ncols)
       assert(r.nrows == x.nrows)
       assert(r.ncols == x.ncols)
-      load(ty, y)
+      load2(ty, y)
       forO i, 0, <r.nrows:
         forO j, 0, <r.ncols:
           if i == j:
@@ -395,7 +404,7 @@ template makeMap2(op:untyped):untyped =
       assert(r.nrows == r.ncols)
       assert(r.nrows == y.nrows)
       assert(r.ncols == y.ncols)
-      load(tx, x)
+      load2(tx, x)
       forO i, 0, <r.nrows:
         forO j, 0, <r.ncols:
           if i == j:
@@ -496,14 +505,14 @@ template mulSVV*(r:typed; x,y:typed):untyped =
 template mulVVS*(r:typed; x,y:typed):untyped =
   mixin mul
   assert(r.len == x.len)
-  load(ty, y)
+  load2(ty, y)
   forO i, 0, <r.len:
     mul(r[i], x[i], ty)
 template mulVSV*(rr:typed; xx,yy:typed):untyped =
   subst(r,rr,x,xx,y,yy,tx,_,i,_):
     mixin mul
     assert(r.len == y.len)
-    load(tx, x)
+    load2(tx, x)
     forO i, 0, <r.len:
       mul(r[i], tx, y[i])
 proc mul*(r:var Vec1; x:Sca2; y:Vec3) {.inline.} = mulVSV(r, x, y)
@@ -511,7 +520,7 @@ proc mulMMS*(r:any; x,y:any) {.inline.} =
   #mixin mul
   assert(r.nrows == x.nrows)
   assert(r.ncols == x.ncols)
-  #load(ty, y)
+  #load2(ty, y)
   forO i, 0, <r.nrows:
     forO j, 0, <r.ncols:
       #echo isComplex(r[i,j])
@@ -519,7 +528,7 @@ proc mulMMS*(r:any; x,y:any) {.inline.} =
 template mulMSM*(r:typed; x,y:typed):untyped =
   assert(r.nrows == y.nrows)
   assert(r.ncols == y.ncols)
-  load(tx, x)
+  load2(tx, x)
   forO i, 0, <r.nrows:
     forO j, 0, <r.ncols:
       mul(r[i,j], tx, y[i,j])
@@ -543,12 +552,12 @@ template mulVMV*(rr:typed; xx,yy:typed):untyped =
     else:
       tmpvar(tr, r)
       block:
-        load(ty, y[0])
+        load2(ty, y[0])
         forO i, 0, <x.nrows:
           mul(tr[i], x[i,0], ty)
       forO j, 1, <x.ncols:
         block:
-          load(ty, y[j])
+          load2(ty, y[j])
           forO i, 0, <x.nrows:
             imadd(tr[i], x[i,j], ty)
       assign(r, tr)
@@ -627,7 +636,7 @@ template imaddSVV*(rr:typed; xx,yy:typed):untyped =
   subst(r,rr,x,xx,y,yy,tr,_,i,_):
     mixin imadd, assign
     assert(x.len == y.len)
-    load(tr, r)
+    load2(tr, r)
     forO i, 0, <x.len:
       imadd(tr, x[i], y[i])
     assign(r, tr)
@@ -637,19 +646,20 @@ template imaddVMV*(rr:typed; xx,yy:typed):untyped =
     assert(x.nrows == r.len)
     assert(x.ncols == y.len)
     when true:
-      load(tr, r)
+      load2(tr, r)
       forO j, 0, <x.ncols:
-        load(ty, y[j])
-        forO i, 0, <x.nrows:
-          imadd(tr[i], x[i,j], ty)
+        block:
+          load2(ty, y[j])
+          forO i, 0, <x.nrows:
+            imadd(tr[i], x[i,j], ty)
       assign(r, tr)
     else:
-      load(tr, r)
+      load2(tr, r)
       forO j, 0, <x.ncols:
-        load(tyr, asReal(y[j].re))
+        load2(tyr, asReal(y[j].re))
         forO i, 0, <x.nrows:
           imadd(tr[i], x[i,j], tyr)
-        load(tyi, asImag(y[j].im))
+        load2(tyi, asImag(y[j].im))
         forO i, 0, <x.nrows:
           imadd(tr[i], x[i,j], tyi)
       assign(r, tr)
@@ -660,7 +670,7 @@ template imsubVSV*(rr:typed; xx,yy:typed):untyped =
   subst(r,rr,x,xx,y,yy,tx,_,i,_):
     mixin imsub
     assert(r.len == y.len)
-    load(tx, x)
+    load2(tx, x)
     forO i, 0, <r.len:
       imsub(r[i], x, y[i])
 proc imsub*(r:var Vec1; x:Sca2; y:Vec3) {.inline.} = imsubVSV(r, x, y)

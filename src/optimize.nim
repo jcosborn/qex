@@ -55,7 +55,10 @@ proc isVar(x:NimNode):bool =
     of nnkVarTy:
       result = true
     of nnkSym:
-      result = isVar(x.getTypeImpl)
+      case $x:
+        of "int": discard
+        else:
+          result = isVar(x.getTypeImpl)
     of nnkIdentDefs:
       result = isVar(x[1])
     of nnkBracketExpr:
@@ -134,7 +137,10 @@ proc replaceSimpleLet(b:NimNode):NimNode =
   return bb
 
 proc inlineLets(b:NimNode):NimNode =
+  #echo b.treeRepr
   proc walkTree(x:var NimNode) =
+    #echo "new tree"
+    #echo x.treeRepr
     for ic in 0..<x.len:
       let c = x[ic]
       if c.kind==nnkLetSection:
@@ -155,6 +161,7 @@ proc inlineLets(b:NimNode):NimNode =
           var t = x[ic]
           walkTree(t)
           if t==x[ic]: break
+          #echo "tree changed"
           x[ic] = t
   var bb = b
   while true:
@@ -343,11 +350,15 @@ proc inlineProcs(body:NimNode):NimNode =
             p = p.replaceSym(fp[ia][0], t)
         #echo p.treeRepr
         sl.add p[6]
+        #if sl.kind==nnkStmtList:
+        #  sl = newBlockStmt(sl)
         return sl
   #xecho result.repr
   #echo result.treerepr
 
-macro optimize(body:typed):auto =
+macro checkOpt(body:typed):auto = body
+
+macro optimize*(body:typed):auto =
   result = body
   echo result.repr
   result = moveStmtExprCall(result)
@@ -366,6 +377,8 @@ macro optimize(body:typed):auto =
   result = inlineLets(result)
   echo result.treerepr
   result = unrollVars(result)
+  #result = symToIdent(result)
+  #result = newCall("checkOpt", result)
   #echo result.repr
   echo result.repr
 

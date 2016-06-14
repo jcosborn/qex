@@ -69,21 +69,19 @@ template ld(x:SomeNumber):expr =
   assign(r, x)
   r
 
-template lod*(x:SimdS4):SimdD4 =
+template load1*(x:SimdS4):SimdD4 =
   var r{.noInit.}:SimdD4
   assign(r, x)
   r
-template lod*(x:SimdD4):SimdD4 = x
-template load*(x:SimdSD4):SimdD4 = lod(x)
 
 template tmpvar*(r:untyped; x:SimdS4):untyped =
   var r{.noInit.}:SimdD4
 template tmpvar*(r:untyped; x:SimdD4):untyped =
   var r{.noInit.}:SimdD4
-template load*(r:untyped; x:SimdS4):untyped =
+template load2*(r:untyped; x:SimdS4):untyped =
   var r{.noInit.}:SimdD4
   assign(r, x)
-template load*(r:untyped; x:SimdD4):untyped =
+template load2*(r:untyped; x:SimdD4):untyped =
   var r{.noInit.}:SimdD4
   assign(r, x)
 template store*(r:var SimdS4; x:untyped):untyped =
@@ -223,6 +221,7 @@ makeIUnary(imul, `*=`)
 makeIUnary(idivd, `/=`)
 
 template makeBinary(name,op:untyped):untyped =
+  #proc name*(r:var SimdD4; x:SimdAny; y:SimdAny2) =
   template name*(r:var SimdD4; x:SimdAny; y:SimdAny2):untyped =
     `name Impl`(r, ld(x), ld(y))
   template name*(r:var SimdD4; x:SimdAny; y:SomeNumber):untyped =
@@ -493,8 +492,8 @@ when isMainModule:
   proc foo1(r:var any; x,y:any) {.inline.} =
     dup:
       tmpvar(rr, r)
-      load(xx, x)
-      load(yy, y)
+      load2(xx, x)
+      load2(yy, y)
       rr = xx + yy
       store(r, rr)
 
