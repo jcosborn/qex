@@ -234,6 +234,7 @@ when isMainModule:
   for i in 0..<4:
     g[i] = lo.ColorMatrix()
     threads: g[i] := 1
+    echo g[i].norm2
   var v1 = lo.ColorVector()
   var v2 = lo.ColorVector()
   #g.loadGauge("l88.scidac")
@@ -244,7 +245,14 @@ when isMainModule:
   var m = 0.1
   threads:
     g.setBC
+    threadBarrier()
+    for i in 0..<4:
+      echo g[i].norm2
+    threadBarrier()
     g.stagPhase
+    threadBarrier()
+    for i in 0..<4:
+      echo g[i].norm2
     v1 := 0
     #v2 := 1
     if myRank==0 and threadNum==0:
@@ -253,9 +261,11 @@ when isMainModule:
     echo v1.norm2
 
     stagD(sdAll, v2, g, v1, m)
+    threadBarrier()
     echo v2.norm2
     #echo v2
     s.D(v2, v1, m)
+    threadBarrier()
     echo v2.norm2
 
     for e in v1:
@@ -264,11 +274,12 @@ when isMainModule:
       #echo v1[e][0]
     threadBarrier()
     stagD(sdAll, v2, g, v1, 0.5)
+    threadBarrier()
     echo v1[0][0]
     echo v2[0][0]
 
-  #let nrep = int(2e8/lo.physVol.float)
-  let nrep = int(1e9/lo.physVol.float)
+  let nrep = int(2e7/lo.physVol.float)
+  #let nrep = int(1e9/lo.physVol.float)
   #let nrep = 1
   proc bench(sd:var any, ss="all") =
     resetTimers()
@@ -284,9 +295,27 @@ when isMainModule:
     let flops = (6.0+8.0*72.0) * vol
     echo ss & "secs: ", dt, "  mf: ", (nrep.float*flops)/(1e6*dt)
     echoTimers()
+  proc benchB(sd:var any, ss="all") =
+    resetTimers()
+    var t0 = epochTime()
+    threads(sd):
+      for rep in 1..nrep:
+        stagD(sd, v2, g, v1, 0.5)
+        threadBarrier()
+    var t1 = epochTime()
+    let dt = t1-t0
+    #var vol = lo.physVol.float
+    var vol = lo.nSites.float
+    if sd.sub != "all": vol *= 0.5
+    let flops = (6.0+8.0*72.0) * vol
+    echo ss & "secs: ", dt, "  mf: ", (nrep.float*flops)/(1e6*dt)
+    echoTimers()
   bench(sdAll, "all  ")
+  benchB(sdAll, "all  ")
   bench(sdEven, "even ")
+  benchB(sdEven, "even ")
   bench(sdOdd, "odd  ")
+  benchB(sdOdd, "odd  ")
   proc benchEO() =
     var t0 = epochTime()
     threads:

@@ -90,7 +90,11 @@ template store*(r:var SimdD4; x:untyped):untyped =
   assign(r, x)
 template `[]`*(x:SimdS4; y:SomeInteger):float32 = x[][y]
 template `[]`*(x:SimdD4; y:SomeInteger):float64 =
-  vecExtract(x, y.cint)
+  #vecExtract(x, y.cint)
+  var t{.noInit.}:array[4,float64]
+  #assign(t, x)
+  vecSt(x, 0, t[0].addr)
+  t[y]
 template `[]=`*(x:SimdS4; y:SomeInteger; z:any) =
   x[][y] = z.float32
 template `[]=`*(x:SimdD4; y:SomeInteger; z:any) =
