@@ -93,7 +93,7 @@ template localSB*(s:ShiftB; i:int; e1,e2:untyped):untyped =
     e1
   elif k1 + 2 <= 0:
     let ix{.inject.} = -(k1 + 2)
-    var it{.inject,noInit.}:s.T
+    var it{.inject,noInit.}:type(e2)
     perm(it, s.si.perm, e2)
     e1
 

@@ -1,4 +1,6 @@
 import strUtils
+import osPaths
+
 # "key ~ val" sets "key" to "val"
 template `~`(key,val:untyped):untyped =
   var v = astToStr(val)
@@ -24,6 +26,9 @@ template setVar(v,d:untyped):untyped =
     v = getEnv(v.astToStr)
   echo "using " & v.astToStr & ": ", v
 
+setVar(QEXDIR, ".")
+switch("path", QEXDIR / "src")
+
 #let home = getEnv("HOME")
 #setVar(QMPDIR, home & "/lqcd/install/qmp")
 #setVar(QIODIR, home & "/lqcd/install/qio")
@@ -36,6 +41,7 @@ setVar(CFLAGS_DEBUG, "-g3 -O0")
 setVar(CFLAGS_SPEED, "-O3 -march=native")
 setVar(VERBOSITY, "1")
 setVar(SIMD, "")
+setVar(LDFLAGS, CFLAGS_ALWAYS)
 
 var vlenS = 1
 var vlenD = 1
@@ -65,6 +71,7 @@ linkerexe ! LD
 options.always ! CFLAGS_ALWAYS
 options.debug ! CFLAGS_DEBUG
 options.speed ! CFLAGS_SPEED
+options.linker ! LDFLAGS
 
 threads ~ on
 tlsEmulation ~ off

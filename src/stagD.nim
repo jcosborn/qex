@@ -52,39 +52,28 @@ proc stagD*(sd:StaggeredD; r:Field; g:openArray[Field2];
   tic()
   let sch = 0.5*sc
   for mu in 0..<4:
-    #startSB(sf[mu], x[ix])
-    #if mu==3:
+    #startSB(sf0[mu], x[ix])
     startSB(sf0[mu], sch*x[ix])
-    #echoRank "start fwd ", mu
-    #flushFile(stdout)
-    #threadBarrier()
   toc("startShiftF")
   for mu in 0..<4:
     startSB(sb0[mu], g[mu][ix].adj*x[ix])
-    #echoRank "start bck ", mu
-    #flushFile(stdout)
-    #threadBarrier()
   toc("startShiftB")
   for ir in r[sd.subset]:
-    #echoAll threadNum, ": ", ir
+    var rir{.noInit.}:type(r[ir])
     #r[ir] := m * x[ir]
-    mul(r[ir], m, x[ir])
+    mul(rir, m, x[ir])
     for mu in 0..<4:
       #localSB(sf[mu], ir, r[ir] += g[mu][ir]*it, x[ix])
       #localSB(sf[mu], ir, imadd(r[ir], g[mu][ir], it), x[ix])
       #localSB(sb[mu], ir, isub(r[ir], it), g[mu][ix].adj*x[ix])
-      localSB(sf0[mu], ir, imadd(r[ir], g[mu][ir], it), sch*x[ix])
-      localSB(sb0[mu], ir, imsub(r[ir], sch, it), g[mu][ix].adj*x[ix])
-  toc("local", flops=4*(6+72+66+12)*sd.subset.len)
-  #threadBarrier()
-  #toc("threadBarrier")
+      localSB(sf0[mu], ir, imadd(rir, g[mu][ir], it), sch*x[ix])
+      localSB(sb0[mu], ir, imsub(rir, sch, it), g[mu][ix].adj*x[ix])
+    assign(r[ir], rir)
+  toc("local", flops=(6+(4*(6+72+66+12)))*sd.subset.len)
   for mu in 0..<4:
-    #if mu==3:
     boundarySB(sf0[mu], imadd(r[ir], g[mu][ir], it))
-    #boundarySB(sb[mu], isubVV(r[ir], it))
-    #threadBarrier()
+  for mu in 0..<4:
     boundarySB(sb0[mu], imsub(r[ir], sch, it))
-    #threadBarrier()
   #threadBarrier()
   toc("boundary")
   #{.emit:"#undef memset".}
@@ -242,7 +231,14 @@ when isMainModule:
   var m = 0.1
   threads:
     g.setBC
+    threadBarrier()
+    for i in 0..<4:
+      echo g[i].norm2
+    threadBarrier()
     g.stagPhase
+    threadBarrier()
+    for i in 0..<4:
+      echo g[i].norm2
     v1 := 0
     #v2 := 1
     if myRank==0 and threadNum==0:
@@ -251,9 +247,11 @@ when isMainModule:
     echo v1.norm2
 
     stagD(sdAll, v2, g, v1, m)
+    threadBarrier()
     echo v2.norm2
     #echo v2
     s.D(v2, v1, m)
+    threadBarrier()
     echo v2.norm2
 
     for e in v1:
@@ -265,26 +263,33 @@ when isMainModule:
     echo v1[0][0]
     echo v2[0][0]
 
-  #let nrep = int(2e8/lo.physVol.float)
-  let nrep = int(1e9/lo.physVol.float)
+  let nrep = int(1e7/lo.physVol.float)
+  #let nrep = int(1e9/lo.physVol.float)
   #let nrep = 1
-  proc bench(sd:var any, ss="all") =
-    resetTimers()
-    var t0 = epochTime()
-    threads(sd):
-      for rep in 1..nrep:
-        stagD(sd, v2, g, v1, 0.5)
-    var t1 = epochTime()
-    let dt = t1-t0
-    #var vol = lo.physVol.float
-    var vol = lo.nSites.float
-    if sd.sub != "all": vol *= 0.5
-    let flops = (6.0+8.0*72.0) * vol
-    echo ss & "secs: ", dt, "  mf: ", (nrep.float*flops)/(1e6*dt)
-    echoTimers()
+  template makeBench(name:untyped; bar:bool):untyped =
+    proc name(sd:var any, ss="all") =
+      resetTimers()
+      var t0 = epochTime()
+      threads(sd):
+        for rep in 1..nrep:
+          stagD(sd, v2, g, v1, 0.5)
+          when bar: threadBarrier()
+      var t1 = epochTime()
+      let dt = t1-t0
+      #var vol = lo.physVol.float
+      var vol = lo.nSites.float
+      if sd.sub != "all": vol *= 0.5
+      let flops = (6.0+8.0*72.0) * vol
+      echo ss & "secs: ", dt, "  mf: ", (nrep.float*flops)/(1e6*dt)
+      echoTimers()
+  makeBench(bench, false)
+  makeBench(benchB, true)
   bench(sdAll, "all  ")
+  benchB(sdAll, "all  ")
   bench(sdEven, "even ")
+  benchB(sdEven, "even ")
   bench(sdOdd, "odd  ")
+  benchB(sdOdd, "odd  ")
   proc benchEO() =
     var t0 = epochTime()
     threads:
