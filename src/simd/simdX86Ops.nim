@@ -198,19 +198,24 @@ proc simdReduce*(r:var SomeNumber; x:m256d) {.inline.} =
   r = (type(r))(z[0])
 proc simdReduce*(r:var SomeNumber; x:m512) {.inline.} =
   r = (type(r))(mm512_reduce_add_ps(x))
+proc simdReduce*(r:var SomeNumber; x:m512d) {.inline.} =
+  r = (type(r))(mm512_reduce_add_pd(x))
 proc simdReduce*(x:m128):float32 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m256):float32 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m256d):float64 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m512):float32 {.inline,noInit.} = simdReduce(result, x)
+proc simdReduce*(x:m512d):float64 {.inline,noInit.} = simdReduce(result, x)
 
 template simdSum*(x:m128):expr = simdReduce(x)
 template simdSum*(x:m256):expr = simdReduce(x)
 template simdSum*(x:m256d):expr = simdReduce(x)
 template simdSum*(x:m512):expr = simdReduce(x)
+template simdSum*(x:m512d):expr = simdReduce(x)
 template simdSum*(r:var SomeNumber; x:m128) = simdReduce(r, x)
 template simdSum*(r:var SomeNumber; x:m256) = simdReduce(r, x)
 template simdSum*(r:var SomeNumber; x:m256d) = simdReduce(r, x)
 template simdSum*(r:var SomeNumber; x:m512) = simdReduce(r, x)
+template simdSum*(r:var SomeNumber; x:m512d) = simdReduce(r, x)
 
 # include perm, pack and blend
 include simdX86Ops1

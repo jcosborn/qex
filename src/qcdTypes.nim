@@ -216,12 +216,14 @@ proc perm*[T](r:var T; prm:int; x:T) {.inline.} =
   let rr = cast[ptr array[n,simdType(r)]](r.addr)
   let xx = cast[ptr array[n,simdType(x)]](unsafeAddr(x))
   template loop(f:untyped):untyped =
-    forStatic i, 0..<n: f(rr[i], xx[i])
+    when compiles(f(rr[0], xx[0])):
+      forStatic i, 0, n-1: f(rr[i], xx[i])
   case prm
   of 0: rr[] = xx[]
   of 1: loop(perm1)
   of 2: loop(perm2)
   of 4: loop(perm4)
+  of 8: loop(perm8)
   else: discard
 proc pack*(r:ptr any; l:ptr any; pck:int; x:PackTypes) {.inline.} =
   if pck==0:
