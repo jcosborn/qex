@@ -43,6 +43,7 @@ proc initStagD*(x:Field; sub:string):auto =
   #initSB(sd.sf[3], x, 3, 1, sub)
   #sd
 
+# r = a*r + b*x + D*x
 proc stagD*(sd:StaggeredD; r:Field; g:openArray[Field2];
             x:Field; m:SomeNumber; sc:SomeNumber=1.0) =
   #{.emit:"#define memset(a,b,c)".}
@@ -64,16 +65,18 @@ proc stagD*(sd:StaggeredD; r:Field; g:openArray[Field2];
     mul(rir, m, x[ir])
     for mu in 0..<4:
       #localSB(sf[mu], ir, r[ir] += g[mu][ir]*it, x[ix])
-      #localSB(sf[mu], ir, imadd(r[ir], g[mu][ir], it), x[ix])
-      #localSB(sb[mu], ir, isub(r[ir], it), g[mu][ix].adj*x[ix])
+      #localSB(sf0[mu], ir, imadd(rir, g[mu][ir], it), x[ix])
+      #localSB(sb0[mu], ir, isub(rir, it), g[mu][ix].adj*x[ix])
       localSB(sf0[mu], ir, imadd(rir, g[mu][ir], it), sch*x[ix])
       localSB(sb0[mu], ir, imsub(rir, sch, it), g[mu][ix].adj*x[ix])
     assign(r[ir], rir)
-  toc("local", flops=(6+(4*(6+72+66+12)))*sd.subset.len)
+  toc("local", flops=(6+4*(72+66+6))*sd.subset.len)
+  #toc("local", flops=(6+(4*(6+72+66+12)))*sd.subset.len)
   for mu in 0..<4:
     boundarySB(sf0[mu], imadd(r[ir], g[mu][ir], it))
   toc("boundaryF")
   for mu in 0..<4:
+    #boundarySB(sb0[mu], isub(r[ir], it))
     boundarySB(sb0[mu], imsub(r[ir], sch, it))
   #threadBarrier()
   toc("boundaryB")
@@ -264,7 +267,8 @@ when isMainModule:
     echo v1[0][0]
     echo v2[0][0]
 
-  let nrep = int(1e7/lo.physVol.float)
+  #let nrep = int(1e7/lo.physVol.float)
+  let nrep = int(2e8/lo.physVol.float)
   #let nrep = int(1e9/lo.physVol.float)
   #let nrep = 1
   template makeBench(name:untyped; bar:bool):untyped =

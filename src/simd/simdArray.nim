@@ -177,6 +177,7 @@ template makeSimdArray*(T,L,B:untyped):untyped {.dirty.} =
   template `[]`*(x:T):expr = (array[L,B])(x)
   template `[]`*(x:T; i:SomeInteger):expr = x[][i div N0][i mod N0]
   template `[]=`*(x:T; i:SomeInteger; y:any) = x[][i div N0][i mod N0] = y
+  template load1*(x:T):untyped = x
   proc to*(x:SomeNumber; y:typedesc[T]):T {.inline,noInit.} =
     forStatic i, 0, L-1:
       assign(result[][i], x)

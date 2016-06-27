@@ -74,10 +74,10 @@ template startSB*(s:ShiftB; e:expr) =
         assign(b[i], e)
         #echoAll myrank, " ", i, " ", ix, " ", b[][i]
     else:
-      type T = numberType(s.T)
-      let stride = sizeOf(s.T) div (2*sizeof(T))
-      let b = cast[ptr cArray[T]](s.sb.sq.sbuf)
-      let l = cast[ptr cArray[T]](s.sb.lbuf)
+      type F = numberType(s.T)
+      let stride = sizeOf(s.T) div (2*sizeof(F))
+      let b = cast[ptr cArray[F]](s.sb.sq.sbuf)
+      let l = cast[ptr cArray[F]](s.sb.lbuf)
       tFor i, 0..<s.si.nSendSites:
         let ix{.inject.} = s.si.sendSites[i]
         let j = stride * i
@@ -205,7 +205,7 @@ proc init*[V:static[int],T](s:var Shift[V,T]; dest:Field[V,T];
 #template assign = discard
 #template assign(x:any) = discard
 proc start*[V:static[int],T](s:var Shift[V,T]; src:Field[V,T]) =
-  mixin assign
+  mixin assign, numberType
   template si:expr = s.si
   template sb:expr = s.sb
   s.src = src
@@ -221,15 +221,15 @@ proc start*[V:static[int],T](s:var Shift[V,T]; src:Field[V,T]) =
         let k = si.sendSites[i]
         assign(b[i], src[k])
     else:
-      var stride = sizeOf(T) div 2
-      #echo "test3.5"
+      type F = numberType(T)
+      let stride = sizeOf(T) div (2*sizeof(F))
+      let b = cast[ptr cArray[F]](s.sb.sq.sbuf)
+      let l = cast[ptr cArray[F]](s.sb.lbuf)
       tFor i, 0..<si.nSendSites:
         let k = si.sendSites[i]
         let j = stride * i
-        #echo "test4"
         #pack(sb.sq.sbuf[stride*i].addr, si.pack, src[k])
-        pack(sb.sq.sbuf[j].addr, sb.lbuf[j].addr, si.pack, src[k])
-        #echo "test5"
+        pack(b[j].addr, l[j].addr, si.pack, src[k])
     t0wait()
     if threadNum == 0: 
       #echo "startSendBuf"

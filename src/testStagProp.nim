@@ -42,6 +42,12 @@ proc mesons(v:any) =
       #let r = c[t][s]
       #echo t, " ", r
       echo t, " ", c[t][s]
+  echo "sum:"
+  for t in 0..<nt:
+    var r = c[t][0]
+    for s in 1..<8:
+      r += c[t][s]
+    echo t, " ", r
 
 when isMainModule:
   qexInit()

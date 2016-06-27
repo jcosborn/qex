@@ -34,6 +34,7 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   template simdType*(x:T):typedesc = T
   template simdLength*(x:T):untyped = N
   template simdLength*(x:typedesc[T]):untyped = N
+  template load1*(x:T):untyped = x
   proc assign*(r:ptr F; x:T) {.inline.} =
     `P "_storeu_" S`(r, x)
   proc assign*(r:var T; x:ptr SomeNumber) {.inline.} =
@@ -78,8 +79,10 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
       assign(r, t)
   proc assign*(r:var T; x:T) {.inline.} =
     r = x
+  #proc assign*(r:var array[N,F]; x:T) {.inline.} =
+  #  assign(cast[ptr F](r.addr), x)
   proc assign*(r:var array[N,F]; x:T) {.inline.} =
-    assign(cast[ptr F](r.addr), x)
+    assign(r[0].addr, x)
   proc `[]`*(x:T; i:SomeInteger):F {.inline,noInit.} =
     toArray(x)[i]
   proc `[]=`*(r:var T; i:SomeInteger; x:SomeNumber) {.inline,noInit.} =
