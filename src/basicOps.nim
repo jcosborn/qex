@@ -50,7 +50,8 @@ template to*(t:typedesc[SomeNumber]; x:any):expr =
   else:
     t(x)
 
-template assign*(x:var SomeNumber; y:ptr SomeNumber2) = x = cnvrt(x,y[])
+template assign*(x:var SomeNumber; y:ptr SomeNumber2):untyped =
+  x = cnvrt(x,y[])
 
 #template assign*(r:var SomeNumber, x:SomeNumber2):untyped =
 proc assign*(r:var SomeNumber, x:SomeNumber2) {.inline.} =
@@ -99,32 +100,41 @@ template dot*(x:SomeNumber; y:SomeNumber2):expr = x*y
 template idot*(r:var SomeNumber; x:SomeNumber2;y:SomeNumber3):expr =
   imadd(r,x,y)
 template simdSum*(x:SomeNumber):expr = x
+template simdSum*(r:var SomeNumber; x:SomeNumber2):untyped =
+ r = (type(r))(x)
 template simdReduce*(x:SomeNumber):expr = x
+template perm1*(r:var SomeNumber; x:SomeNumber2):untyped =
+ r = (type(r))(x)
+template perm2*(r:var SomeNumber; x:SomeNumber2):untyped =
+ r = (type(r))(x)
+template perm4*(r:var SomeNumber; x:SomeNumber2):untyped =
+ r = (type(r))(x)
 #proc sqrt*(x:float32):float32 {.importC:"sqrtf",header:"math.h".}
 #proc sqrt*(x:float64):float64 {.importC:"sqrt",header:"math.h".}
 proc acos*(x:float64):float64 {.importC:"acos",header:"math.h".}
 template rsqrt*(r:var SomeNumber; x:SomeNumber) =
   r = cnvrt(r,1)/sqrt(cnvrt(r,x))
 
-#template tmpvar*(r:untyped, x:SomeNumber):untyped =
-#  var r{.noInit.}:type(x)
-#template load*(r:untyped, x:SomeNumber):untyped =
-#  var r{.noInit.}:type(x)
-#  assign(r, x)
-#template store*(r:var SomeNumber, x:untyped):untyped =
-#  assign(r, x)
+template load1*(x:SomeNumber):expr = x
+
 template tmpvar*(r:untyped; x:untyped):untyped =
-  #when compiles(tmpfunc(x)):
-  #  tmpfunc(x)(r)
-  #else:
-    var r{.noInit.}:type(x)
-template load*(r:untyped, x:untyped):untyped =
-  mixin assign
-  var r{.noInit.}:type(x)
+  mixin load1
+  var r{.noInit.}:type(load1(x))
+template load2*(r:untyped, x:untyped):untyped =
+  mixin load1,assign
+  #tmpvar(r, x)
+  var r{.noInit.}:type(load1(x))
   assign(r, x)
 template store*(r:var untyped, x:untyped):untyped =
   mixin assign
   assign(r, x)
+
+template load*(x:untyped):expr =
+  mixin load1
+  load1(x)
+template load*(r:untyped, x:untyped):untyped =
+  mixin load2
+  load2(r, x)
 
 template `:=`*(x:var SomeNumber; y:SomeNumber2):untyped = assign(x,y)
 template `+`*(x:SomeReal; y:SomeInteger):auto = x + cnvrt(x,y)

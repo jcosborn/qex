@@ -56,11 +56,14 @@ type
   DLatticeColorMatrix* = Field[1,DColorMatrix]
   DLatticeColorMatrixV* = Field[VLEN,DColorMatrixV]
 
-template numberType*(x:tuple):expr = numberType(x[0])
-template numberType*(x:array):expr = numberType(x[x.low])
-template numberType*(x:AsComplex):expr = numberType(x[])
-template numberType*(x:AsVector):expr = numberType(x[])
-template numberType*(x:AsMatrix):expr = numberType(x[])
+template numberType*[T1,T2](x:tuple[re:T1,im:T2]):untyped = numberType(T1)
+template numberType*[I,T](x:array[I,T]):untyped = numberType(T)
+template numberType*[T](x:AsComplex[T]):untyped = numberType(T)
+template numberType*[T](x:AsVector[T]):untyped = numberType(T)
+template numberType*[T](x:AsMatrix[T]):untyped = numberType(T)
+#template numberType*[N,T](x:typedesc[array[N,T]]):untyped = numberType(T)
+template numberType*[T](x:typedesc[AsVector[T]]):untyped = numberType(T)
+
 template simdLength*(x:typedesc[SColorMatrixV]):expr = simdLength(Svec0)
 template simdLength*(x:typedesc[SColorVectorV]):expr = simdLength(Svec0)
 template simdLength*(x:SColorVectorV):expr = simdLength(Svec0)
@@ -69,10 +72,12 @@ template simdLength*(x:typedesc[DColorMatrixV]):expr = simdLength(Dvec0)
 template simdLength*(x:typedesc[DColorVectorV]):expr = simdLength(Dvec0)
 template simdLength*(x:DColorVectorV):expr = simdLength(Dvec0)
 template simdLength*(x:DColorMatrixV):expr = simdLength(Dvec0)
+
 template nVectors(x:SColorVectorV):expr = 2*nc
 template nVectors(x:SColorMatrixV):expr = 2*nc*nc
 template nVectors(x:DColorVectorV):expr = 2*nc
 template nVectors(x:DColorMatrixV):expr = 2*nc*nc
+
 template simdType*(x:tuple):expr = simdType(x[0])
 template simdType*(x:array):expr = simdType(x[x.low])
 template simdType*(x:AsComplex):expr = simdType(x[])
@@ -218,17 +223,18 @@ proc perm*[T](r:var T; prm:int; x:T) {.inline.} =
   of 2: loop(perm2)
   of 4: loop(perm4)
   else: discard
-proc pack*(r:ptr char; l:ptr char; pck:int; x:PackTypes) {.inline.} =
+proc pack*(r:ptr any; l:ptr any; pck:int; x:PackTypes) {.inline.} =
   if pck==0:
     const n = x.nVectors
-    let rr = cast[ptr array[n,simdType(x)]](r)
+    let rr = cast[ptr array[n,array[simdLength(x),type(r[])]]](r)
     let xx = cast[ptr array[n,simdType(x)]](unsafeAddr(x))
-    rr[] = xx[]
+    for i in 0..<n:
+      assign(rr[i], xx[i])
   else:
     const n = x.nVectors
     const vl2 = x.simdLength div 2
-    let rr = cast[ptr array[n,array[vl2,numberType(x)]]](r)
-    let ll = cast[ptr array[n,array[vl2,numberType(x)]]](l)
+    let rr = cast[ptr array[n,array[vl2,type(r[])]]](r)
+    let ll = cast[ptr array[n,array[vl2,type(l[])]]](l)
     let xx = cast[ptr array[n,simdType(x)]](unsafeAddr(x))
     template loop(f:untyped):untyped =
       forStatic i, 0..<n: f(rr[i], xx[i], ll[i])

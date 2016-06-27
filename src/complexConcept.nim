@@ -140,13 +140,18 @@ template haveI(x:untyped, body:untyped):untyped =
 template haveR(body:untyped):untyped = haveR(result, body)
 template haveI(body:untyped):untyped = haveI(result, body)
 
-#template tmpvar*(r:untyped; x:RIC1):untyped =
-#  var r{.noInit.}:type(x)
-#template load*(r:untyped; x:RIC1):untyped =
-#  var r{.noInit.}:type(x)
-#  assign(r, x)
-#template store*(r:var RIC1; x:untyped):untyped =
-#  assign(r, x)
+template load1*(x:R1):expr =
+  var r{.noInit.}:AsReal[type(load1(x.re))]
+  assign(r, x)
+  r
+template load1*(x:I1):expr =
+  var r{.noInit.}:AsImag[type(load1(x.im))]
+  assign(r, x)
+  r
+template load1*(x:C1):expr =
+  var r{.noInit.}:ComplexType[type(load1(x.re))]
+  assign(r, x)
+  r
 
 template map*(result:RIC1; f:untyped):untyped =
   haveR: f(result.re)

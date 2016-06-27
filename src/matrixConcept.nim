@@ -126,11 +126,14 @@ template numNumbers*(x:AsMatrix):expr = x.nrows*x.ncols*numNumbers(x[0])
 #template isVector(x:Col):expr = true
 #template mvLevel(x:Sca1):expr = -1
 
-#template temp(r:untyped; x:Vec1):untyped =
-#  var r{.noInit.}:type(x)
-#template load(r:untyped; x:MV2):untyped =
-#  var r{.noInit.}:type(x)
-#  assign(r, x)
+template load1*(x:Vec1):expr =
+  var r{.noInit.}:VectorArray[x.len,type(load1(x[0]))]
+  assign(r, x)
+  r
+template load1*(x:Mat1):expr =
+  var r{.noInit.}:MatrixArray[x.nrows,x.ncols,type(load1(x[0,0]))]
+  assign(r, x)
+  r
 
 template cfor*(i,r0,r1,b:untyped):untyped =
   block:

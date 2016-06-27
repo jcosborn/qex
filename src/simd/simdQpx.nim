@@ -1,5 +1,6 @@
 import metaUtils
 import wrapperTypes
+import basicOps
 
 type
   #SimdS4* = distinct array[4,float32]
@@ -26,14 +27,16 @@ type SimdAny* = SimdSAny | SimdDAny
 type SimdAny2* = SimdSAny2 | SimdDAny2
 type SimdAny3* = SimdSAny3 | SimdDAny3
 
-template numberType*(x:SimdS4):expr = float32
-template numberType*(x:SimdD4):expr = float64
-template simdType*(x:SimdS4):expr = SimdS4
-template simdType*(x:SimdD4):expr = SimdD4
-template simdLength*(x:SimdS4):expr = 4
-template simdLength*(x:SimdD4):expr = 4
-template simdLength*(x:typedesc[SimdS4]):expr = 4
-template simdLength*(x:typedesc[SimdD4]):expr = 4
+template numberType*(x:SimdS4):untyped = float32
+template numberType*(x:SimdD4):untyped = float64
+template numberType*(x:typedesc[SimdS4]):untyped = float32
+template numberType*(x:typedesc[SimdD4]):untyped = float64
+template simdType*(x:SimdS4):untyped = SimdS4
+template simdType*(x:SimdD4):untyped = SimdD4
+template simdLength*(x:SimdS4):untyped = 4
+template simdLength*(x:SimdD4):untyped = 4
+template simdLength*(x:typedesc[SimdS4]):untyped = 4
+template simdLength*(x:typedesc[SimdD4]):untyped = 4
 
 proc vecLd*(x:cint; y:ptr float32):SimdD4 {.importC:"vec_ld",noDecl.}
 proc vecLd*(x:cint; y:ptr float64):SimdD4 {.importC:"vec_ld",noDecl.}
@@ -64,41 +67,32 @@ template ld(x:SimdS4):expr = vecLd(0i32, x[])
 template ld(x:SimdD4):expr = x #vecLd(0i32, x)
 template ld(x:ToSingle):expr = ld(x[])
 template ld(x:ToDouble):expr = ld(x[])
-template ld(x:SomeNumber):expr =
-  var r{.noInit.}:SimdD4
-  assign(r, x)
-  r
+template ld(x:SomeNumber):expr = vecSplats(x.float64)
 
-template load1*(x:SimdS4):SimdD4 =
-  var r{.noInit.}:SimdD4
-  assign(r, x)
-  r
+template load1*(x:SimdS4):expr =
+  bind ld
+  ld(x)
+template load1*(x:SimdD4):expr =
+  bind ld
+  ld(x)
 
-template tmpvar*(r:untyped; x:SimdS4):untyped =
-  var r{.noInit.}:SimdD4
-template tmpvar*(r:untyped; x:SimdD4):untyped =
-  var r{.noInit.}:SimdD4
-template load2*(r:untyped; x:SimdS4):untyped =
-  var r{.noInit.}:SimdD4
-  assign(r, x)
-template load2*(r:untyped; x:SimdD4):untyped =
-  var r{.noInit.}:SimdD4
-  assign(r, x)
-template store*(r:var SimdS4; x:untyped):untyped =
-  assign(r, x)
-template store*(r:var SimdD4; x:untyped):untyped =
-  assign(r, x)
 template `[]`*(x:SimdS4; y:SomeInteger):float32 = x[][y]
-template `[]`*(x:SimdD4; y:SomeInteger):float64 =
-  #vecExtract(x, y.cint)
+#template `[]`*(x:SimdD4; y:SomeInteger):float64 =
+#  vecExtract(x, y.cint)
+proc `[]`*(x:SimdD4; y:SomeInteger):float64 {.inline,noInit.} =
   var t{.noInit.}:array[4,float64]
   #assign(t, x)
   vecSt(x, 0, t[0].addr)
   t[y]
 template `[]=`*(x:SimdS4; y:SomeInteger; z:any) =
   x[][y] = z.float32
-template `[]=`*(x:SimdD4; y:SomeInteger; z:any) =
-  vecInsert(z.float64, x, y.cint)
+#template `[]=`*(x:SimdD4; y:SomeInteger; z:any) =
+#  vecInsert(z.float64, x, y.cint)
+proc `[]=`*(x:var SimdD4; y:SomeInteger; z:any) {.inline.} =
+  var t{.noInit.}:array[4,float64]
+  vecSt(x, 0, t[0].addr)
+  t[y] = float64(z)
+  x = vecLd(0, t[0].addr)
 
 proc `$`*(x:SimdS4):string =
   result = "SimdS4[" & $x[][0]
@@ -117,6 +111,8 @@ template assign*(r:var SimdS4; x:SimdS4) =
 #proc assign*(r:var SimdS4; x:SimdD4) {.inline.} =
 template assign*(r:var SimdS4; x:SimdD4) =
   vecSt(vecRsp(x), 0i32, r[][0].addr)
+template assign*(r:ptr float32; x:SimdD4) =
+  vecSt(vecRsp(x), 0i32, r)
 proc assign*(r:var SimdS4; x:SomeNumber) {.inline.} =
   let t = x.float32
   r[] = [t,t,t,t]
@@ -131,6 +127,7 @@ template assign*(r:var SimdD4; x:SomeNumber) =
   r = vecSplats(x.float64)
 proc assign*(r:var array[4,float64]; x:SimdD4) {.inline.} =
   vecSt(x, 0, r[0].addr)
+template assign*(r:var array[4,float32]; x:SimdD4):untyped = assign(r[0].addr, x)
 proc assign*(r:var SimdS4; x:array[4,SomeNumber]) {.inline.} =
   for i in 0..3: r[i] = (float32)(x[i])
 proc assign*(r:var SimdD4; x:array[4,SomeNumber]) {.inline.} =
@@ -196,9 +193,11 @@ template msubImpl*(r:var SimdD4; x:SimdD4; y:SimdD4; z:SimdD4) =
 #  r = vecNmadd(x, y, z)
 
 template makeUnary(name,op:untyped):untyped =
-  template name*(r:var SimdD4; x:any):untyped =
+  proc name*(r:var SimdD4; x:any) {.inline.} =
+  #template name*(r:var SimdD4; x:any):untyped =
     `name Impl`(r, ld(x))
-  template name*(r:var SimdS4; x:any):untyped =
+  proc name*(r:var SimdS4; x:any) {.inline.} =
+  #template name*(r:var SimdS4; x:any):untyped =
     tmpvar(rr, r)
     `name Impl`(rr, ld(x))
     store(r, rr)
@@ -208,14 +207,12 @@ template makeUnary(name,op:untyped):untyped =
 makeUnary(neg, `-`)
 
 template makeIUnary(name,op:untyped):untyped =
-  template name*(r:var SimdD4; x:any):untyped =
+  proc name*(r:var SimdD4; x:any) {.inline.} =
+  #template name*(r:var SimdD4; x:any):untyped =
     `name Impl`(r, ld(x))
-  #template name*(r:var SimdS4; x:any):untyped =
   proc name*(r:var SimdS4; x:any) {.inline.} =
-    #load(rr, r)
-    #var rr = lod(r)
-    var rr{.noInit.}:SimdD4
-    assign(rr, r)
+  #template name*(r:var SimdS4; x:any):untyped =
+    load2(rr, r)
     `name Impl`(rr, ld(x))
     store(r, rr)
   template op*(r:var SimdSD4; x:any):untyped = name(r, x)
@@ -225,18 +222,21 @@ makeIUnary(imul, `*=`)
 makeIUnary(idivd, `/=`)
 
 template makeBinary(name,op:untyped):untyped =
-  #proc name*(r:var SimdD4; x:SimdAny; y:SimdAny2) =
-  template name*(r:var SimdD4; x:SimdAny; y:SimdAny2):untyped =
+  proc name*(r:var SimdD4; x:SimdAny; y:SimdAny2) {.inline.} =
+  #template name*(r:var SimdD4; x:SimdAny; y:SimdAny2):untyped =
     `name Impl`(r, ld(x), ld(y))
-  template name*(r:var SimdD4; x:SimdAny; y:SomeNumber):untyped =
+  proc name*(r:var SimdD4; x:SimdAny; y:SomeNumber) {.inline.} =
+  #template name*(r:var SimdD4; x:SimdAny; y:SomeNumber):untyped =
     `name Impl`(r, ld(x), ld(y))
-  template name*(r:var SimdD4; x:SomeNumber; y:SimdAny):untyped =
+  proc name*(r:var SimdD4; x:SomeNumber; y:SimdAny) {.inline.} =
+  #template name*(r:var SimdD4; x:SomeNumber; y:SimdAny):untyped =
     `name Impl`(r, ld(x), ld(y))
-  template name*(r0:var SimdS4; x0:any; y0:any):untyped =
-    subst(r,r0,x,x0,y,y0,rr,_):
-      tmpvar(rr, r0)
-      `name Impl`(rr, ld(x0), ld(y0))
-      store(r0, rr)
+  proc name*(r:var SimdS4; x:any; y:any) {.inline.} =
+  #template name*(r0:var SimdS4; x0:any; y0:any):untyped =
+    #subst(r,r0,x,x0,y,y0,rr,_):
+      tmpvar(rr, r)
+      `name Impl`(rr, ld(x), ld(y))
+      store(r, rr)
   proc name*(x:SimdAny; y:SimdAny2):SimdD4 {.inline,noInit.} =
     `name Impl`(result, ld(x), ld(y))
   proc name*(x:SimdAny; y:SomeNumber):SimdD4 {.inline,noInit.} =
@@ -252,24 +252,30 @@ makeBinary(mul, `*`)
 makeBinary(divd, `/`)
 
 template makeIBinary(name):untyped =
-  template name*(r:var SimdD4; x:SimdAny; y:SimdAny2):untyped =
+  proc name*(r:var SimdD4; x:SimdAny; y:SimdAny2) {.inline.} =
+  #template name*(r:var SimdD4; x:SimdAny; y:SimdAny2):untyped =
     `name Impl`(r, ld(x), ld(y))
-  template name*(r:var SimdD4; x:SimdAny; y:SomeNumber):untyped =
+  proc name*(r:var SimdD4; x:SimdAny; y:SomeNumber) {.inline.} =
+  #template name*(r:var SimdD4; x:SimdAny; y:SomeNumber):untyped =
     `name Impl`(r, ld(x), ld(y))
-  template name*(r:var SimdD4; x:SomeNumber; y:SimdAny):untyped =
+  proc name*(r:var SimdD4; x:SomeNumber; y:SimdAny) {.inline.} =
+  #template name*(r:var SimdD4; x:SomeNumber; y:SimdAny):untyped =
     `name Impl`(r, ld(x), ld(y))
-  template name*(r0:var SimdS4; x0:SimdAny; y0:SimdAny2):untyped =
-    subst(r,r0,x,x0,y,y0,rr,_):
+  proc name*(r:var SimdS4; x:SimdAny; y:SimdAny2) {.inline.} =
+  #template name*(r0:var SimdS4; x0:SimdAny; y0:SimdAny2):untyped =
+    #subst(r,r0,x,x0,y,y0,rr,_):
       load2(rr, r)
       `name Impl`(rr, ld(x), ld(y))
       store(r, rr)
-  template name*(r0:var SimdS4; x0:SimdAny; y0:SomeNumber):untyped =
-    subst(r,r0,x,x0,y,y0,rr,_):
+  proc name*(r:var SimdS4; x:SimdAny; y:SomeNumber) {.inline.} =
+  #template name*(r0:var SimdS4; x0:SimdAny; y0:SomeNumber):untyped =
+    #subst(r,r0,x,x0,y,y0,rr,_):
       load2(rr, r)
       `name Impl`(rr, ld(x), ld(y))
       store(r, rr)
-  template name*(r0:var SimdS4; x0:SomeNumber; y0:SimdAny):untyped =
-    subst(r,r0,x,x0,y,y0,rr,_):
+  proc name*(r:var SimdS4; x:SomeNumber; y:SimdAny) {.inline.} =
+  #template name*(r0:var SimdS4; x0:SomeNumber; y0:SimdAny):untyped =
+    #subst(r,r0,x,x0,y,y0,rr,_):
       load2(rr, r)
       `name Impl`(rr, ld(x), ld(y))
       store(r, rr)
@@ -290,12 +296,6 @@ template makeTrinary(name):untyped =
       tmpvar(rt, r)
       `name Impl`(rt, ld(xx), ld(yy), ld(zz))
       store(r, rt)
-  #proc name*(x:SimdAny; y:SimdAny2):SimdD4 {.inline,noInit.} =
-  #  `name Impl`(result, ld(x), ld(y))
-  #proc name*(x:SimdAny; y:SomeNumber):SimdD4 {.inline,noInit.} =
-  #  `name Impl`(result, ld(x), ld(y))
-  #proc name*(x:SomeNumber; y:SimdAny2):SimdD4 {.inline,noInit.} =
-  #  `name Impl`(result, ld(x), ld(y))
 makeTrinary(madd)
 makeTrinary(msub)
 
@@ -303,12 +303,16 @@ proc norm2*(x:SimdSD4):SimdD4 {.inline,noInit.} = mul(x,x)
 proc norm2*(r:var SimdD4; x:SimdSD4) {.inline.} = mul(r,x,x)
 proc inorm2*(r:var SimdD4; x:SimdSD4) {.inline.} = imadd(r,x,x)
 
-proc simdSum*(r:var SomeNumber; x:SimdAny) =
+proc simdSum*(r:var SomeNumber; x:SimdAny) {.inline.} =
   r = x[0]
   forStatic i, 1, 3:
     r += x[i]
-template simdSum*(x:SimdAny):expr =
-  var r{.noInit.}:numberType(x)
+#template simdSum*(x:SimdAny):expr =
+  #var r{.noInit.}:numberType(x)
+  #simdSum(r, x)
+  #r
+proc simdSum*(x:SimdAny):auto {.inline,noInit.} =
+  var r:numberType(x)
   simdSum(r, x)
   r
 
@@ -316,6 +320,7 @@ proc perm1*(r:var SimdD4; x:SimdD4) {.inline.} =
   r = vecPerm(x,x,vecGpci(0o1032.cint))
 proc perm2*(r:var SimdD4; x:SimdD4) {.inline.} =
   r = vecPerm(x,x,vecGpci(0o2301.cint))
+  #r = vecPerm(x,x,vecGpci(0o1023.cint))
 proc perm4*(r:var SimdD4; x:SimdD4) {.inline.} =
   assert(false, "perm4 not valid for SimdD4")
 
@@ -347,43 +352,42 @@ proc perm*(x:SimdD4; p:int):SimdD4 {.noInit.} =
   else: discard
 template perm*(x:SimdS4; p:int):SimdD4 = perm(ld(x), p)
 
-
 proc packp1*(r:var openArray[SomeNumber]; x:SimdD4;
              l:var openArray[SomeNumber]) {.inline.} =
-  #let t = x.toArray
-  #l[0] = t[0]
-  #r[0] = t[1]
-  #l[1] = t[2]
-  #r[1] = t[3]
-  vecSt2(vecPerm(x,x,vecGpci(0o1302.cint)),0.cint,r[0].addr)
-  vecSt2(vecPerm(x,x,vecGpci(0o0213.cint)),0.cint,l[0].addr)
+  let t = x.toArray
+  l[0] = t[0]
+  r[0] = t[1]
+  l[1] = t[2]
+  r[1] = t[3]
+  #vecSt2(vecPerm(x,x,vecGpci(0o1302.cint)),0.cint,r[0].addr)
+  #vecSt2(vecPerm(x,x,vecGpci(0o0213.cint)),0.cint,l[0].addr)
 proc packm1*(r:var openArray[SomeNumber]; x:SimdD4;
              l:var openArray[SomeNumber]) {.inline.} =
-  #let t = x.toArray
-  #r[0] = t[0]
-  #l[0] = t[1]
-  #r[1] = t[2]
-  #l[1] = t[3]
-  vecSt2(vecPerm(x,x,vecGpci(0o0213.cint)),0.cint,r[0].addr)
-  vecSt2(vecPerm(x,x,vecGpci(0o1302.cint)),0.cint,l[0].addr)
+  let t = x.toArray
+  r[0] = t[0]
+  l[0] = t[1]
+  r[1] = t[2]
+  l[1] = t[3]
+  #vecSt2(vecPerm(x,x,vecGpci(0o0213.cint)),0.cint,r[0].addr)
+  #vecSt2(vecPerm(x,x,vecGpci(0o1302.cint)),0.cint,l[0].addr)
 proc packp2*(r:var openArray[SomeNumber]; x:SimdD4;
              l:var openArray[SomeNumber]) {.inline.} =
-  #let t = x.toArray
-  #l[0] = t[0]
-  #l[1] = t[1]
-  #r[0] = t[2]
-  #r[1] = t[3]
-  vecSt2(vecPerm(x,x,vecGpci(0o2301.cint)),0.cint,r[0].addr)
-  vecSt2(x,0.cint,l[0].addr)
+  let t = x.toArray
+  l[0] = t[0]
+  l[1] = t[1]
+  r[0] = t[2]
+  r[1] = t[3]
+  #vecSt2(vecPerm(x,x,vecGpci(0o2301.cint)),0.cint,r[0].addr)
+  #vecSt2(x,0.cint,l[0].addr)
 proc packm2*(r:var openArray[SomeNumber]; x:SimdD4;
              l:var openArray[SomeNumber]) {.inline.} =
-  #let t = x.toArray
-  #r[0] = t[0]
-  #r[1] = t[1]
-  #l[0] = t[2]
-  #l[1] = t[3]
-  vecSt2(x,0.cint,r[0].addr)
-  vecSt2(vecPerm(x,x,vecGpci(0o2301.cint)),0.cint,l[0].addr)
+  let t = x.toArray
+  r[0] = t[0]
+  r[1] = t[1]
+  l[0] = t[2]
+  l[1] = t[3]
+  #vecSt2(x,0.cint,r[0].addr)
+  #vecSt2(vecPerm(x,x,vecGpci(0o2301.cint)),0.cint,l[0].addr)
 proc packp4*(r:var openArray[SomeNumber]; x:SimdD4;
              l:var openArray[SomeNumber]) {.inline.} =
   assert(false, "packp4 not valid for SimdD4")

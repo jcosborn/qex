@@ -60,7 +60,7 @@ proc createShiftBufs*(n:int; x:any; ln=1; sub="all"):auto =
 #           dir,len:int; sub="all") =
 
 template startSB*(s:ShiftB; e:expr) =
-  mixin assign, `[]`
+  mixin assign, `[]`, numberType
   if threadNum == 0:
     if s.si.nRecvRanks > 0:
       #echoRank "startRecvBuf"
@@ -74,11 +74,14 @@ template startSB*(s:ShiftB; e:expr) =
         assign(b[i], e)
         #echoAll myrank, " ", i, " ", ix, " ", b[][i]
     else:
-      var stride = sizeOf(s.T) div 2
+      type T = numberType(s.T)
+      let stride = sizeOf(s.T) div (2*sizeof(T))
+      let b = cast[ptr cArray[T]](s.sb.sq.sbuf)
+      let l = cast[ptr cArray[T]](s.sb.lbuf)
       tFor i, 0..<s.si.nSendSites:
         let ix{.inject.} = s.si.sendSites[i]
         let j = stride * i
-        pack(s.sb.sq.sbuf[j].addr, s.sb.lbuf[j].addr, s.si.pack, e)
+        pack(b[j].addr, l[j].addr, s.si.pack, e)
         #echoAll myrank, " ", i, " ", ix, " "
     t0wait()
     if threadNum == 0:
@@ -337,8 +340,8 @@ when isMainModule:
   qexInit()
   echo "rank ", myRank, "/", nRanks
   echo threadNum, "/", numThreads, "/", numThreads
-  var lat = [4,4,4,4]
-  #var lat = [8,8,8,8]
+  #var lat = [4,4,4,4]
+  var lat = [8,8,8,8]
   var lo = newLayout(lat)
   #lo.makeShift(0,1)
   #lo.makeShift(1,1)

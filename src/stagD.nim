@@ -72,10 +72,11 @@ proc stagD*(sd:StaggeredD; r:Field; g:openArray[Field2];
   toc("local", flops=(6+(4*(6+72+66+12)))*sd.subset.len)
   for mu in 0..<4:
     boundarySB(sf0[mu], imadd(r[ir], g[mu][ir], it))
+  toc("boundaryF")
   for mu in 0..<4:
     boundarySB(sb0[mu], imsub(r[ir], sch, it))
   #threadBarrier()
-  toc("boundary")
+  toc("boundaryB")
   #{.emit:"#undef memset".}
 
 proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
