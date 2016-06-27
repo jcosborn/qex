@@ -63,6 +63,7 @@ template numberType*[T](x:AsVector[T]):untyped = numberType(T)
 template numberType*[T](x:AsMatrix[T]):untyped = numberType(T)
 #template numberType*[N,T](x:typedesc[array[N,T]]):untyped = numberType(T)
 template numberType*[T](x:typedesc[AsVector[T]]):untyped = numberType(T)
+template numberType*[T](x:typedesc[AsMatrix[T]]):untyped = numberType(T)
 
 template simdLength*(x:typedesc[SColorMatrixV]):expr = simdLength(Svec0)
 template simdLength*(x:typedesc[SColorVectorV]):expr = simdLength(Svec0)

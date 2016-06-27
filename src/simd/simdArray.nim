@@ -159,12 +159,11 @@ discard """
 
 # T = Simd{S,D}{L} = array[L,B]
 # B ~ array[N0,F]
-template makeSimdArray*(T,L,B:untyped):untyped {.dirty.} =
+template makeSimdArray*(T:untyped;L,B:typed):untyped {.dirty.} =
+  makeSimdArray2(T, L, B, numberType(B), numNumbers(B), L*numNumbers(B))
+template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   bind map011, map021, map110, map120, map130
   bind makePerm, makePackP, makePackM, makeBlendP, makeBlendM
-  type F = numberType(B)
-  const N0 = numNumbers(B)
-  const N = L*N0
   type T* = distinct array[L,B]
   template numberType*(x:typedesc[T]):typedesc = F
   template numberType*(x:T):typedesc = F
