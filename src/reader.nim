@@ -257,7 +257,11 @@ when isMainModule:
   var lo = newLayout(lat)
   var g:array[4,type(lo.ColorMatrix())]
   for i in 0..<4: g[i] = lo.ColorMatrix()
-  var rd = lo.newReader("l88.scidac")
+  var fn = "l88.scidac"
+  if not fileExists(fn):
+    echo "gauge file not found: ", fn
+    qexExit()
+  var rd = lo.newReader(fn)
   echo rd.fileMetadata
   echo rd.recordMetadata
   echo rd.recordDate

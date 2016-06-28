@@ -1,13 +1,16 @@
 import os
 import stdUtils
 
+when existsEnv("QMPDIR"):
+  const qmpDir = getEnv("QMPDIR")
+else:
+  const qmpDir = getHomeDir() & "lqcd/install/qmp"
 when existsEnv("QIODIR"):
   const qioDir = getEnv("QIODIR")
 else:
-  const homeDir = getHomeDir()
-  const qioDir = homeDir & "lqcd/install/qio"
+  const qioDir = getHomeDir() & "lqcd/install/qio"
 {. passC: "-I" & qioDir & "/include" .}
-{. passL: "-L" & qioDir & "/lib -lqio -llime" .}
+{. passL: "-L" & qioDir & "/lib -lqio -llime -L" & qmpDir & "/lib -lqmp" .}
 {. pragma:qio, header:"qio.h".}
 
 const 

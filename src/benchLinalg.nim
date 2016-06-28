@@ -30,10 +30,11 @@ macro toString(x:untyped):auto =
   let n = skipWhitespace(s)
   newlit s[n..^1]
 
-template bench(fps:SomeNumber; eqn:untyped) =
+template bench(fps,bps:SomeNumber; eqn:untyped) =
   let vol = lo.nSites.float
   let flops = vol * fps.float
-  let nrep = int(1e11/flops)
+  let bytes = vol * bps.float
+  let nrep = int(2e11/flops)
   var t0 = epochTime()
   threads:
     for rep in 1..nrep:
@@ -41,7 +42,9 @@ template bench(fps:SomeNumber; eqn:untyped) =
   var t1 = epochTime()
   let dt = t1 - t0
   let mf = (nrep.float*flops)/(1e6*dt)
-  echo "(", toString(eqn), ") secs: ", dt|(5,3), "  mf: ", mf.int
+  let mb = (nrep.float*bytes)/(1e6*dt)
+  echo "(", toString(eqn), ") secs: ", dt|(5,3), "  mf: ", mf.int,
+       "  mb: ", mb.int
 
 proc test(lat:any) =
   var lo = newLayout(lat)
@@ -50,12 +53,21 @@ proc test(lat:any) =
   var v2 = lo.ColorVector()
   var m1 = lo.ColorMatrix()
   var v3 = lo.ColorVector()
+  let sf = sizeof(numberType(v3[0]))
   threads:
     m1 := 2
     v1 := 1
+    v2 := 0
+    v3 := 0
 
-  bench((8*nc-2)*nc):
+  bench(2*2*nc, sf*2*3*nc):
+    v2 := 0.5*v2 + v1
+
+  bench((8*nc-2)*nc, sf*2*(nc+2)*nc):
     v2 := m1 * v1
+
+  bench((8*nc)*nc, sf*2*(nc+3)*nc):
+    v2 += m1 * v1
 
 
 proc checkMem =
@@ -72,5 +84,7 @@ qexInit()
 test([4,4,4,4])
 test([8,8,8,8])
 test([12,12,12,12])
+test([16,16,16,16])
+test([24,24,24,24])
 #checkMem()
 qexFinalize()

@@ -25,6 +25,7 @@ proc QMP_init_msg_passing*(argc:ptr cint; argv:ptr ptr cstring;
                            required:QMP_thread_level_t;
                            provided:ptr QMP_thread_level_t):QMP_status_t{.qmp.}
 proc QMP_finalize_msg_passing*() {.qmp.}
+proc QMP_abort*(error_code:cint) {.qmp.}
 proc QMP_get_number_of_nodes*():cint {.qmp.}
 proc QMP_get_node_number*():cint {.qmp.}
 proc QMP_barrier*() {.qmp.}

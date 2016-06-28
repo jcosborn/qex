@@ -13,3 +13,10 @@ proc qexFinalize*() =
   commsFinalize()
   #when profileEqns:
   echoTimers()
+
+proc qexExit*(status = 0) =
+  commsFinalize()
+  quit(status)
+
+proc qexAbort*(status = -1) =
+  commsAbort(status)

@@ -93,7 +93,6 @@ when not def "debug":
 else:
   echo "debug build"
 
-#discard """
 let ss = SIMD.split(',')
 if ss.len>0:
   for s in items(ss):
@@ -107,8 +106,8 @@ if ss.len>0:
     of "AVX512":
       d ~ AVX512
     else: discard
-#"""
 
+discard """
 d ~ simdS1
 d ~ simdS2
 d ~ simdS4
@@ -119,3 +118,4 @@ d ~ simdD2
 d ~ simdD4
 d ~ simdD8
 d ~ simdD16
+"""

@@ -18,6 +18,8 @@ proc commsInit* =
   nRanks = int(QMP_get_number_of_nodes())
 proc commsFinalize* =
   QMP_finalize_msg_passing()
+proc commsAbort*(status = -1) =
+  QMP_abort(status.cint)
 
 proc evalArgs*(call:var NimNode; args:NimNode):NimNode =
   result = newStmtList()
