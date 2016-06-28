@@ -128,6 +128,8 @@ template assign*(r:var SimdD4; x:SomeNumber) =
 proc assign*(r:var array[4,float64]; x:SimdD4) {.inline.} =
   vecSt(x, 0, r[0].addr)
 template assign*(r:var array[4,float32]; x:SimdD4):untyped = assign(r[0].addr, x)
+template assign*(r:var array[4,float32]; x:SimdS4):untyped =
+  r = x[]
 proc assign*(r:var SimdS4; x:array[4,SomeNumber]) {.inline.} =
   for i in 0..3: r[i] = (float32)(x[i])
 proc assign*(r:var SimdD4; x:array[4,SomeNumber]) {.inline.} =
@@ -186,7 +188,7 @@ template maddImpl*(r:var SimdD4; x:SimdD4; y:SimdD4; z:SimdD4) =
   r = vecMadd(x, y, z)
 #proc msubImpl*(r:var SimdD4; x:SimdD4; y:SimdD4; z:SimdD4) {.inline.} =
 template msubImpl*(r:var SimdD4; x:SimdD4; y:SimdD4; z:SimdD4) =
-  r = vecNMsub(x, y, z)
+  r = vecMsub(x, y, z)
 #proc nmaddImpl*(r:var SimdD4; x:SimdD4; y:SimdD4; z:SimdD4) {.inline.} =
 #  r = vecNmsub(x, y, z)
 #proc nmsubImpl*(r:var SimdD4; x:SimdD4; y:SimdD4; z:SimdD4) {.inline.} =
