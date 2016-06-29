@@ -668,6 +668,31 @@ template imsubVSV*(rr:typed; xx,yy:typed):untyped =
       imsub(r[i], x, y[i])
 proc imsub*(r:var Vec1; x:Sca2; y:Vec3) {.inline.} = imsubVSV(r, x, y)
 
+template imsubVMV*(rr:typed; xx,yy:typed):untyped =
+  subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_):
+    mixin imsub
+    assert(x.nrows == r.len)
+    assert(x.ncols == y.len)
+    when true:
+      load(tr, r)
+      forO j, 0, <x.ncols:
+        load(ty, y[j])
+        forO i, 0, <x.nrows:
+          imsub(tr[i], x[i,j], ty)
+      assign(r, tr)
+    else:
+      load(tr, r)
+      forO j, 0, <x.ncols:
+        load(tyr, asReal(y[j].re))
+        forO i, 0, <x.nrows:
+          imsub(tr[i], x[i,j], tyr)
+        load(tyi, asImag(y[j].im))
+        forO i, 0, <x.nrows:
+          imsub(tr[i], x[i,j], tyi)
+      assign(r, tr)
+proc imsub*(r:VarVec1; x:Mat2; y:Vec3) {.inline.} = imsubVMV(r, x, y)
+proc imsub*(r:AsVarVector; x:Mat2; y:Vec3) {.inline.} = imsubVMV(r, x, y)
+
 template msubVSVV*(rr:typed; xx,yy,zz:typed):untyped =
   subst(r,rr,x,xx,y,yy,z,zz,i,_):
     mixin msub

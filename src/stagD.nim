@@ -1,4 +1,5 @@
 import os
+import basicOps
 import strUtils
 import qex
 import qcdTypes
@@ -43,45 +44,97 @@ proc initStagD*(x:Field; sub:string):auto =
   #initSB(sd.sf[3], x, 3, 1, sub)
   #sd
 
-# r = a*r + b*x + D*x
-proc stagD*(sd:StaggeredD; r:Field; g:openArray[Field2];
-            x:Field; m:SomeNumber; sc:SomeNumber=1.0) =
+template stagDP*(sd:StaggeredD; r:Field; g:openArray[Field2];
+                 x:Field3; expFlops:int; exp:untyped) =
   #{.emit:"#define memset(a,b,c)".}
-  template sf0:expr = sd.sf
-  template sb0:expr = sd.sb
-  #mixin imsub
   tic()
-  let sch = 0.5*sc
-  for mu in 0..<4:
-    #startSB(sf0[mu], x[ix])
-    startSB(sf0[mu], sch*x[ix])
+  for mu in 0..<g.len:
+    startSB(sd.sf[mu], x[ix])
   toc("startShiftF")
-  for mu in 0..<4:
-    startSB(sb0[mu], g[mu][ix].adj*x[ix])
+  for mu in 0..<g.len:
+    startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
   toc("startShiftB")
-  for ir in r[sd.subset]:
-    var rir{.noInit.}:type(r[ir])
-    #r[ir] := m * x[ir]
-    mul(rir, m, x[ir])
-    for mu in 0..<4:
-      #localSB(sf[mu], ir, r[ir] += g[mu][ir]*it, x[ix])
-      #localSB(sf0[mu], ir, imadd(rir, g[mu][ir], it), x[ix])
-      #localSB(sb0[mu], ir, isub(rir, it), g[mu][ix].adj*x[ix])
-      localSB(sf0[mu], ir, imadd(rir, g[mu][ir], it), sch*x[ix])
-      localSB(sb0[mu], ir, imsub(rir, sch, it), g[mu][ix].adj*x[ix])
+  for ir{.inject.} in r[sd.subset]:
+    var rir{.inject,noInit.}:type(r[ir])
+    exp
+    for mu in 0..<g.len:
+      localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), x[ix])
+      localSB(sd.sb[mu], ir, isub(rir, it), g[mu][ix].adj*x[ix])
     assign(r[ir], rir)
-  toc("local", flops=(6+4*(72+66+6))*sd.subset.len)
-  #toc("local", flops=(6+(4*(6+72+66+12)))*sd.subset.len)
-  for mu in 0..<4:
-    boundarySB(sf0[mu], imadd(r[ir], g[mu][ir], it))
+  toc("local", flops=(expFlops+g.len*(72+66+6))*sd.subset.len)
+  for mu in 0..<g.len:
+    boundarySB(sd.sf[mu], imadd(r[ir], g[mu][ir], it))
   toc("boundaryF")
-  for mu in 0..<4:
-    #boundarySB(sb0[mu], isub(r[ir], it))
-    boundarySB(sb0[mu], imsub(r[ir], sch, it))
+  for mu in 0..<g.len:
+    boundarySB(sd.sb[mu], isub(r[ir], it))
+  #threadBarrier()
+  toc("boundaryB")
+  #{.emit:"#undef memset".}
+template stagDM*(sd:StaggeredD; r:Field; g:openArray[Field2];
+                 x:Field3; expFlops:int; exp:untyped) =
+  #{.emit:"#define memset(a,b,c)".}
+  tic()
+  for mu in 0..<g.len:
+    startSB(sd.sf[mu], x[ix])
+  toc("startShiftF")
+  for mu in 0..<g.len:
+    startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
+  toc("startShiftB")
+  for ir{.inject.} in r[sd.subset]:
+    var rir{.inject,noInit.}:type(r[ir])
+    exp
+    for mu in 0..<g.len:
+      localSB(sd.sf[mu], ir, imsub(rir, g[mu][ir], it), x[ix])
+      localSB(sd.sb[mu], ir, iadd(rir, it), g[mu][ix].adj*x[ix])
+    assign(r[ir], rir)
+  toc("local", flops=(expFlops+g.len*(72+66+6))*sd.subset.len)
+  for mu in 0..<g.len:
+    boundarySB(sd.sf[mu], imsub(r[ir], g[mu][ir], it))
+  toc("boundaryF")
+  for mu in 0..<g.len:
+    boundarySB(sd.sb[mu], iadd(r[ir], it))
   #threadBarrier()
   toc("boundaryB")
   #{.emit:"#undef memset".}
 
+# r = a*r + b*x + (2D)*x
+proc stagD2*(sd:StaggeredD; r:Field; g:openArray[Field2];
+             x:Field; a:SomeNumber; b:SomeNumber2) =
+  #{.emit:"#define memset(a,b,c)".}
+  template sf0:expr = sd.sf
+  template sb0:expr = sd.sb
+  let nd = g.len
+  tic()
+  for mu in 0..<nd:
+    startSB(sf0[mu], x[ix])
+  toc("startShiftF")
+  for mu in 0..<nd:
+    startSB(sb0[mu], g[mu][ix].adj*x[ix])
+  toc("startShiftB")
+  for ir in r[sd.subset]:
+    var rir{.noInit.}:type(r[ir])
+    rir := a*r[ir] + b*x[ir]
+    for mu in 0..<nd:
+      localSB(sf0[mu], ir, imadd(rir, g[mu][ir], it), x[ix])
+      localSB(sb0[mu], ir, isub(rir, it), g[mu][ix].adj*x[ix])
+    assign(r[ir], rir)
+  toc("local", flops=(18+nd*(72+66+6))*sd.subset.len)
+  for mu in 0..<nd:
+    boundarySB(sf0[mu], imadd(r[ir], g[mu][ir], it))
+  toc("boundaryF")
+  for mu in 0..<nd:
+    boundarySB(sb0[mu], isub(r[ir], it))
+  #threadBarrier()
+  toc("boundaryB")
+  #{.emit:"#undef memset".}
+
+# r = m*x + sc*D*x
+proc stagD*(sd:StaggeredD; r:Field; g:openArray[Field2];
+            x:Field; m:SomeNumber; sc:SomeNumber=1.0) =
+  stagD2(sd, r, g, x, 0, m/(0.5*sc))
+  r[sd.subset] := (0.5*sc)*r
+
+# r = m2 - Deo * Doe
 proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
                x:Field; m2:SomeNumber) =
   var t{.global.}:type(x)
@@ -91,13 +144,20 @@ proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
       t = newOneOf(x)
     threadBarrier()
   #threadBarrier()
-  stagD(sdo, t, g, x, 0.0)
+  #stagD(sdo, t, g, x, 0.0)
+  block:
+    stagDP(sdo, t, g, x, 0):
+      rir := 0
   threadBarrier()
-  stagD(sde, r, g, t, 0.0)
+  #stagD(sde, r, g, t, 0.0)
+  block:
+    stagDM(sde, r, g, t, 6):
+      rir := (4.0*m2)*x[ir]
   #threadBarrier()
   #r[sde.sub] := m2*x - r
-  for ir in r[sde.subset]:
-    msubVSVV(r[ir], m2, x[ir], r[ir])
+  #for ir in r[sde.subset]:
+  #  msubVSVV(r[ir], m2, x[ir], r[ir])
+  r[sde.sub] := 0.25*r
 
 proc setBC*(g:openArray[Field]) =
   let gt = g[3]
@@ -296,6 +356,7 @@ when isMainModule:
   bench(sdOdd, "odd  ")
   benchB(sdOdd, "odd  ")
   proc benchEO() =
+    resetTimers()
     var t0 = epochTime()
     threads:
       for rep in 1..nrep:

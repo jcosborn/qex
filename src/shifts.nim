@@ -359,6 +359,7 @@ when isMainModule:
     v1 := 1
     v2 := 0
     v3 := 0
+    threadBarrier()  
     for e in v1.all:
       let x = lo.vcoords(e)
       #v1.s[e] := e + 1
@@ -369,12 +370,17 @@ when isMainModule:
       #aa = x[3]*10
       #let aa = ((x[3]*10+x[2])*10+x[1])*10+x[0]
       #assign(v1.s[e][0].re, aa)
-      v1.s[e][0].re := aa
+      v1[e][0].re := aa
+      if e==0:
+        echo aa
+        echo v1[e][0].re
+        echo v1[e][0].im
+        echo v1[e][0]
     #v1 := 1
     #v3 := v1
     threadBarrier()  
     if threadNum==0:
-      echo myRank, ": ", v1.s[0][0]
+      echo myRank, ": ", v1[0][0]
     for dir in 0..<lat.len:
       shift(v2, dir,1, sub1, v1)
       #for e in v2.all:
@@ -409,6 +415,8 @@ when isMainModule:
       boundarySB(sf[mu], v2[ir] := it)
       shift(v3, mu,1, ss, v1)
       onSubset ss:
+        echo norm2(v2)
+        echo norm2(v3)
         let d2 = norm2(v2-v3)
         echo d2
 

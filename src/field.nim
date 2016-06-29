@@ -30,7 +30,7 @@ type
     dir*:int
     ln*:int
   Field2* = distinct Field
-  Field3* = Field
+  Field3* = distinct Field
   SomeField* = Field | Subsetted | FieldBinop | FieldAddSub | FieldMul|Shifted
   #SomeField2* = Field | Subsetted | FieldBinop | FieldAddSub|FieldMul|Shifted
   SomeField2* = concept x

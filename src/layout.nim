@@ -242,10 +242,14 @@ proc coord*(l:Layout, coord:openArray[cint], ri:tuple[rank,index:int]) =
   layoutCoordQ(l.lq.addr, coord, li)
 
 proc vcoords*[V:static[int]](l:Layout[V]; i:int):seq[array[V,int16]] =
+  #for d in 0..<l.nDim:
+  #  for j in 0..<V:
+  #    l.vcoordTemp[d][j] = l.coords[d][i*V+j]
+  #l.vcoordTemp
+  result.newSeq(l.nDim)
   for d in 0..<l.nDim:
     for j in 0..<V:
-      l.vcoordTemp[d][j] = l.coords[d][i*V+j]
-  l.vcoordTemp
+      result[d][j] = l.coords[d][i*V+j]
 
 proc vcoords*[V:static[int]](l:Layout[V]; d,i:int):array[V,int16] =
   for j in 0..<V:

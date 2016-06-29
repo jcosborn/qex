@@ -369,9 +369,25 @@ proc imadd*(r:var C1; x:C2; y:C3) {.inline.} =
   imadd(r, x, y.re.asReal)
   imadd(r, x, y.im.asImag)
 
+proc imsub*(r:var C1; x:C2; y:R3) {.inline.} =
+  mixin imsub
+  imsub(r.re, x.re, y.re)
+  imsub(r.im, x.im, y.re)
+proc imsub*(r:var C1; x:C2; y:I3) {.inline.} =
+  # r.re += x.im * y.im
+  # r.im -= x.re * y.im
+  mixin imsub, imsub
+  imadd(r.re, x.im, y.im)
+  imsub(r.im, x.re, y.im)
 proc imsub*(r:var C1; x:U2; y:C3) {.inline.} =
   imsub(r.re, x, y.re)
   imsub(r.im, x, y.im)
+proc imsub*(r:var C1; x:C2; y:C3) {.inline.} =
+  # r.re -= x.re*y.re - x.im*y.im
+  # r.im -= x.re*y.im + x.im*y.re
+  mixin imsub
+  imsub(r, x, y.re.asReal)
+  imsub(r, x, y.im.asImag)
 
 proc msub*(r:var C1; x:U2; y:C3; z:C4) {.inline.} =
   mixin msub

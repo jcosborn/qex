@@ -80,19 +80,22 @@ template `[]`*(x:SimdS4; y:SomeInteger):float32 = x[][y]
 #template `[]`*(x:SimdD4; y:SomeInteger):float64 =
 #  vecExtract(x, y.cint)
 proc `[]`*(x:SimdD4; y:SomeInteger):float64 {.inline,noInit.} =
-  var t{.noInit.}:array[4,float64]
+  #var t{.noInit.}:array[4,float64]
   #assign(t, x)
-  vecSt(x, 0, t[0].addr)
+  #vecSt(x, 0, t[0].addr)
+  let t = cast[ptr array[4,float64]](unsafeAddr(x))
   t[y]
 template `[]=`*(x:SimdS4; y:SomeInteger; z:any) =
   x[][y] = z.float32
 #template `[]=`*(x:SimdD4; y:SomeInteger; z:any) =
 #  vecInsert(z.float64, x, y.cint)
 proc `[]=`*(x:var SimdD4; y:SomeInteger; z:any) {.inline.} =
-  var t{.noInit.}:array[4,float64]
-  vecSt(x, 0, t[0].addr)
+  #var t{.noInit.}:array[4,float64]
+  #vecSt(x, 0, t[0].addr)
+  #t[y] = float64(z)
+  #x = vecLd(0, t[0].addr)
+  let t = cast[ptr array[4,float64]](unsafeAddr(x))
   t[y] = float64(z)
-  x = vecLd(0, t[0].addr)
 
 proc `$`*(x:SimdS4):string =
   result = "SimdS4[" & $x[][0]
@@ -322,7 +325,7 @@ proc perm1*(r:var SimdD4; x:SimdD4) {.inline.} =
   r = vecPerm(x,x,vecGpci(0o1032.cint))
 proc perm2*(r:var SimdD4; x:SimdD4) {.inline.} =
   r = vecPerm(x,x,vecGpci(0o2301.cint))
-  #r = vecPerm(x,x,vecGpci(0o1023.cint))
+  #r = vecPerm(x,x,vecGpci(0o0123.cint))
 proc perm4*(r:var SimdD4; x:SimdD4) {.inline.} =
   assert(false, "perm4 not valid for SimdD4")
 
