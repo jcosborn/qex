@@ -15,10 +15,13 @@ proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
   let vrb = sp.verbosity
   template verb(n:int; body:expr):untyped =
     if vrb>=n: body
-  let subset = sp.subset
+  let sub = sp.subset
+  template subset(body:untyped):untyped =
+    onNoSync(sub):
+      body
   template mythreads(body:untyped):untyped =
     threads:
-      onNoSync(subset):
+      onNoSync(sub):
         body
 
   var b2:float
@@ -34,66 +37,67 @@ proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
   var r = newOneOf(x)
   var p = newOneOf(x)
   var Ap = newOneOf(x)
-  var r2,r2o,r2stop,fr2:float
-  var itn = 0
+  let r2stop = sp.r2req * b2;
+  let maxits = sp.maxits
+  var finalIterations = 0
 
-  mythreads:
-    p := 0
-    r := b
-  r2 = b2
-  r2o = r2
-  r2stop = sp.r2req * b2;
-  verb(1):
-    #echo(-1, " ", r2)
-    echo(itn, " ", r2/b2)
+  threads:
+    subset:
+      p := 0
+      r := b
 
-  toc("cg setup")
-  while itn<sp.maxits and r2>=r2stop:
-    tic()
-    inc itn
-    let beta = r2/r2o;
-    r2o = r2
-    threads:
-      #toc("begin threads")
-      p[subset] := r + beta*p
-      #toc("p update", flops=2*numNumbers(r[0])*subset.lenOuter)
+    var itn = 0
+    var r2 = b2
+    var r2o = r2
+    verb(1):
+      #echo(-1, " ", r2)
+      echo(itn, " ", r2/b2)
+    toc("cg setup")
+
+    while itn<maxits and r2>=r2stop:
+      tic()
+      inc itn
+      let beta = r2/r2o;
+      r2o = r2
+      subset:
+        p := r + beta*p
+      toc("p update", flops=2*numNumbers(r[0])*sub.lenOuter)
       #echo("p2: ", p.norm2)
       A(Ap, p)
       toc("Ap")
       #echo("Ap2: ", Ap.norm2)
-      onNoSync(subset):
-        #toc("onNoSync")
-        #threadBarrier()
+      subset:
         let pAp = p.redot(Ap)
-        #threadBarrier()
-        #toc("pAp")
+        toc("pAp")
         let alpha = r2/pAp
         x += alpha*p
-        #toc("x")
+        toc("x")
         r -= alpha*Ap
-        #toc("r")
-        #threadBarrier()
+        toc("r")
         r2 = r.norm2
-        #threadBarrier()
         toc("r2")
       verb(2):
         #echo(itn, " ", r2)
         echo(itn, " ", r2/b2)
       verb(3):
         A(Ap, x)
-        onNoSync(subset):
+        var fr2: float
+        subset:
           fr2 = (b - Ap).norm2
         echo "   ", fr2/b2
-  toc("cg iterations")
+    toc("cg iterations")
+    if threadNum==0: finalIterations = itn
 
-  threads:
+    var fr2: float
     A(Ap, x)
-    onNoSync(subset):
+    subset:
       r := b - Ap
       fr2 = r.norm2
-  verb(1):
-    echo itn, " ", fr2/b2
-  sp.finalIterations = itn
+    verb(1):
+      echo finalIterations, " acc r2:", r2/b2
+      echo finalIterations, " tru r2:", fr2/b2
+
+  sp.finalIterations = finalIterations
   toc("cg final")
 
 when isMainModule:

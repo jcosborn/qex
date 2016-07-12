@@ -141,6 +141,7 @@ template haveR(body:untyped):untyped = haveR(result, body)
 template haveI(body:untyped):untyped = haveI(result, body)
 
 template load1*(x:R1):expr =
+  mixin load1
   var r{.noInit.}:AsReal[type(load1(x.re))]
   assign(r, x)
   r
@@ -296,6 +297,14 @@ proc `-`*(x:C1; y:C2):auto {.inline.} =
   sub(r, x, y)
   r
 
+template mulCCR*(rr:typed; xx,yy:typed):untyped =
+  # r.re = x.re * y
+  # r.im = x.im * y
+  mixin mul
+  subst(r,rr,x,xx,y,yy):
+    mul(r.re, x.re, y)
+    mul(r.im, x.im, y)
+
 proc mul*(r:var RIC1; x:U2; y:RIC3) {.inline.} =
   mul(r.re, x, y.re)
   mul(r.im, x, y.im)
@@ -346,6 +355,22 @@ proc divd*(r:var C1; x:C2; y:U3) {.inline.} =
   #mixin divd
   divd(r.re, x.re, y)
   divd(r.im, x.im, y)
+
+
+template imaddCCR*(rr:typed; xx,yy:typed):untyped =
+  # r.re += x.re * y
+  # r.im += x.im * y
+  mixin imadd
+  subst(r,rr,x,xx,y,yy):
+    imadd(r.re, x.re, y)
+    imadd(r.im, x.im, y)
+template imaddCCI*(rr:typed; xx,yy:typed):untyped =
+  # r.re -= x.im * y
+  # r.im += x.re * y
+  mixin imadd, imsub
+  subst(r,rr,x,xx,y,yy):
+    imsub(r.re, x.im, y)
+    imadd(r.im, x.re, y)
 
 proc imadd*(r:var U1; x:C2; y:C3) {.inline.} =
   # r += x.re*y.re - x.im*y.im

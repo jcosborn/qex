@@ -13,27 +13,25 @@ type
   #Adjointed*[T] = distinct T
   Adjointed*[T] = object
     v*:T
-template adj*(x:typed):expr =
-  #dumpTree: x
-  #echoImm isMatrix(x)
-  when isComplex(x):
-    #ctrace()
-    asComplex(adj(x[]))
-  elif isVector(x):
-    #ctrace()
-    asVector(adj(x[]))
-  elif isMatrix(x):
-    #ctrace()
-    #echoImm "test"
-    asMatrix(adj(x[]))
-  else:
-    when compiles(addr(x)):
-      #ctrace()
-      cast[ptr Adjointed[type(x)]](addr(x))[]
+  #Adjointed*[T] = object
+  #  v*:ptr T
+template adj*(xx:typed):expr =
+  subst(x,xx):
+    when isComplex(x):
+      asComplex(adj(x[]))
+    elif isVector(x):
+      asVector(adj(x[]))
+    elif isMatrix(x):
+      asMatrix(adj(x[]))
     else:
-      #ctrace()
-      #(Adjointed[type(x)])(x)
-      cast[Adjointed[type(x)]](x)
+      #when compiles(addr(x)):
+      when compiles(unsafeAddr(x)):
+        cast[ptr Adjointed[type(x)]](unsafeAddr(x))[]
+        #cast[Adjointed[type(x)]](unsafeAddr(x))
+      else:
+        #(Adjointed[type(x)])(x)
+        cast[Adjointed[type(x)]](x)
+        #cast[Adjointed[type(x)]]((var t=x; t.addr))
 #template `[]`*[T](x:Adjointed[T]):expr = cast[T](x)
 makeDeref(Adjointed, x.T)
 template `[]`*(x:Adjointed; i:SomeInteger):expr = x[][i].adj

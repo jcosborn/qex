@@ -54,7 +54,8 @@ when isMainModule:
   var defaultGaugeFile = "l88.scidac"
   #var defaultLat = [4,4,4,4]
   #var defaultLat = [8,8,8,8]
-  var defaultLat = @[8,8,8,16]
+  #var defaultLat = @[8,8,8,16]
+  var defaultLat = @[12,12,12,12]
   defaultSetup()
   var v1 = lo.ColorVector()
   var v2 = lo.ColorVector()

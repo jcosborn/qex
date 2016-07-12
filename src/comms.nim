@@ -1,3 +1,4 @@
+import times
 import os
 import macros
 import strUtils
@@ -146,20 +147,26 @@ template threadRankSum1*(a:untyped):untyped =
   #echoAll count, " ", myrank, " ", threadNum, " v: ", cast[ByteAddress](a.addr)
   #echoAll count, " ", myrank, " ", threadNum, " s: ", ptrInt(threadLocals.share)
   if threadNum==0:
-    threadBarrier()
+    #threadBarrier()
+    t0wait()
     for i in 1..<numThreads:
       #echo "test1"
       #echo count, " ", i, " ", cast[ByteAddress](threadLocals.share[i].p)
       a += cast[ptr type(a)](threadLocals.share[i].p)[]
       #echo "test2"
     rankSum(a)
-    threadBarrier()
-    threadBarrier()
+    #threadBarrier()
+    twait0()
+    #threadBarrier()
+    t0wait()
   else:
-    threadBarrier()
-    threadBarrier()
+    #threadBarrier()
+    t0wait()
+    #threadBarrier()
+    twait0()
     a = cast[ptr type(a)](threadLocals.share[0].p)[]
-    threadBarrier()
+    #threadBarrier()
+    t0wait()
 proc threadRankSumN*(a:NimNode):auto =
   echo a.treeRepr
   result = newNimNode(nnkStmtList)
@@ -196,4 +203,49 @@ when isMainModule:
   commsInit()
   echo "rank ", myRank, "/", nRanks
   printf("rank %i/%i\n", myRank, nRanks)
+  threads:
+    echo threadNum, "/", numThreads
+    let n = nRanks * numThreads
+    let s = (n*(n-1)) div 2
+    var x = myRank*numThreads + threadNum
+    threadRankSum(x)
+    echo threadNum, ": ", x, "  ", s
+    threadRankSum(x)
+    echo threadNum, ": ", x, "  ", n*s
+
+    let nrep = 1000
+
+    threadBarrier()
+    var t0 = epochTime()
+    for i in 1..nrep:
+      threadBarrier()
+    var t1 = epochTime()
+    echo "threadBarrier time: ", int(1e9*(t1-t0)/nrep.float), " ns"
+
+    var f = 0.1
+    threadBarrier()
+    t0 = epochTime()
+    for i in 1..nrep:
+      threadSum(f)
+    t1 = epochTime()
+    echo "threadSum(float) time: ", int(1e9*(t1-t0)/nrep.float), " ns"
+
+    f = 0.1
+    threadBarrier()
+    t0 = epochTime()
+    for i in 1..nrep:
+      threadRankSum(f)
+    t1 = epochTime()
+    echo "threadRankSum(float) time: ", int(1e9*(t1-t0)/nrep.float), " ns"
+
+    f = 0.1
+    threadBarrier()
+    if threadNum==0:
+      t0 = epochTime()
+      for i in 1..nrep:
+        rankSum(f)
+      t1 = epochTime()
+      echo "rankSum(float) time: ", int(1e9*(t1-t0)/nrep.float), " ns"
+    threadBarrier()
+
   commsFinalize()

@@ -55,10 +55,10 @@ template stagDP*(sd:StaggeredD; r:Field; g:openArray[Field2];
     startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
   toc("startShiftB")
   for ir{.inject.} in r[sd.subset]:
-    var rir{.inject,noInit.}:type(r[ir])
+    var rir{.inject,noInit.}:type(load1(r[ir]))
     exp
     for mu in 0..<g.len:
-      localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), x[ix])
+      localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), load1(x[ix]))
       localSB(sd.sb[mu], ir, isub(rir, it), g[mu][ix].adj*x[ix])
     assign(r[ir], rir)
   toc("local", flops=(expFlops+g.len*(72+66+6))*sd.subset.len)
@@ -81,10 +81,10 @@ template stagDM*(sd:StaggeredD; r:Field; g:openArray[Field2];
     startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
   toc("startShiftB")
   for ir{.inject.} in r[sd.subset]:
-    var rir{.inject,noInit.}:type(r[ir])
+    var rir{.inject,noInit.}:type(load1(r[ir]))
     exp
     for mu in 0..<g.len:
-      localSB(sd.sf[mu], ir, imsub(rir, g[mu][ir], it), x[ix])
+      localSB(sd.sf[mu], ir, imsub(rir, g[mu][ir], it), load1(x[ix]))
       localSB(sd.sb[mu], ir, iadd(rir, it), g[mu][ix].adj*x[ix])
     assign(r[ir], rir)
   toc("local", flops=(expFlops+g.len*(72+66+6))*sd.subset.len)
@@ -157,7 +157,7 @@ proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
   #r[sde.sub] := m2*x - r
   #for ir in r[sde.subset]:
   #  msubVSVV(r[ir], m2, x[ir], r[ir])
-  r[sde.sub] := 0.25*r
+  #r[sde.sub] := 0.25*r
 
 proc setBC*(g:openArray[Field]) =
   let gt = g[3]
@@ -229,6 +229,8 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =
   cgSolve(r, t, op, sp)
   let t1 = epochTime()
   threads:
+    r[s.se.sub] := 4*r
+    threadBarrier()
     s.eoReconstruct(r, x, m)
   let secs = t1-t0
   let flops = (1152+60)*r.l.nEven*sp.finalIterations

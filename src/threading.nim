@@ -1,3 +1,4 @@
+import times
 import strUtils
 import stdUtils
 import macros
@@ -47,17 +48,20 @@ template threads*(body:untyped):untyped =
   let tidOld = threadNum
   let nidOld = numThreads
   let tlOld = threadLocals
+  #proc tproc2{.genSym,inline.} =
+  #  body
   proc tproc{.genSym.} =
     var ts:seq[ThreadShare]
     ompParallel:
       threadNum = ompGetThreadNum()
       numThreads = ompGetNumThreads()
       if threadNum==0: ts.newSeq(numThreads)
-      threadBarrier()
+      threadBarrierO()
       initThreadLocals(ts)
       #echoAll threadNum, " s: ", ptrInt(threadLocals.share)
       body
-      threadBarrier()
+      #tproc2()
+      threadBarrierO()
   tproc()
   threadNum = tidOld
   numThreads = nidOld
@@ -73,7 +77,7 @@ template threads*(x0:untyped;body:untyped):untyped =
       threadNum = ompGetThreadNum()
       numThreads = ompGetNumThreads()
       if threadNum==0: ts.newSeq(numThreads)
-      threadBarrier()
+      threadBarrierO()
       initThreadLocals(ts)
       #echoAll threadNum, " s: ", ptrInt(threadLocals.share)
       subst(x0,xx):
@@ -83,7 +87,7 @@ template threads*(x0:untyped;body:untyped):untyped =
   numThreads = nidOld
   threadLocals = tlOld
 
-template threadBarrier* = ompBarrier
+template threadBarrierO* = ompBarrier
 template threadMaster*(x:untyped) = ompMaster(x)
 template threadSingle*(x:untyped) = ompSingle(x)
 
@@ -124,8 +128,35 @@ iterator `.|`*[S, T](a: S, b: T): T {.inline.} =
     inc(res)
 """
 
-template t0wait* = threadBarrier()
-template twait0* = threadBarrier()
+#template t0wait* = threadBarrier()
+template t0wait* =
+  if threadNum==0:
+    inc threadLocals.share[0].counter
+    let tbar0 = threadLocals.share[0].counter
+    for b in 1..<numThreads:
+      let p{.volatile.} = threadLocals.share[b].counter.addr
+      while true:
+        if p[] >= tbar0: break
+  else:
+    inc threadLocals.share[threadNum].counter
+    #fence()
+
+#template twait0* = threadBarrier()
+template twait0* =
+  if threadNum==0:
+    inc threadLocals.share[0].counter
+    #fence()
+  else:
+    inc threadLocals.share[threadNum].counter
+    let tbar0 = threadLocals.share[threadNum].counter
+    let p{.volatile.} = threadLocals.share[0].counter.addr
+    while true:
+      if p[] >= tbar0: break
+
+template threadBarrier* =
+  t0wait
+  twait0
+  #ompBarrier
 
 macro threadSum*(a:varargs[expr]):auto =
   #echo a.treeRepr
@@ -150,6 +181,7 @@ macro threadSum*(a:varargs[expr]):auto =
     `sum`
     threadBarrier()
   result.add(m)
+  result = newBlockStmt(result)
   #echo result.treeRepr
 macro threadSum2*(a:varargs[expr]):auto =
   #echo a.treeRepr
@@ -196,3 +228,27 @@ when isMainModule:
   echo threadNum, "/", numThreads
   threads:
     echo threadNum, "/", numThreads
+    let n = numThreads
+    let s = (n*(n-1)) div 2
+    var x = threadNum
+    threadSum(x)
+    echo threadNum, ": ", x, "  ", s
+    threadSum(x)
+    echo threadNum, ": ", x, "  ", n*s
+
+    let nrep = 1000
+
+    threadBarrier()
+    var t0 = epochTime()
+    for i in 1..nrep:
+      threadBarrier()
+    var t1 = epochTime()
+    echo "threadBarrier time: ", int(1e9*(t1-t0)/nrep.float), " ns"
+
+    var f = 0.1
+    threadBarrier()
+    t0 = epochTime()
+    for i in 1..nrep:
+      threadSum(f)
+    t1 = epochTime()
+    echo "threadSum(float) time: ", int(1e9*(t1-t0)/nrep.float), " ns"

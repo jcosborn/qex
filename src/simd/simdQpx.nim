@@ -5,7 +5,9 @@ import basicOps
 type
   #SimdS4* = distinct array[4,float32]
   SimdS4* = object
-   v: array[4,float32]
+    v: array[4,float32]
+  #SimdS4* = object
+  #  v: ptr array[4,float32]
   SimdD4* {.importc:"__vector4double".} = object
   SimdSD4 * = SimdS4 | SimdD4
 makeDeref(SimdS4, array[4,float32])
@@ -37,6 +39,8 @@ template simdLength*(x:SimdS4):untyped = 4
 template simdLength*(x:SimdD4):untyped = 4
 template simdLength*(x:typedesc[SimdS4]):untyped = 4
 template simdLength*(x:typedesc[SimdD4]):untyped = 4
+template numNumbers*(x:SimdS4|SimdD4):untyped = simdLength(x)
+template numNumbers*(x:typedesc[SimdS4]|typedesc[SimdD4]):untyped = simdLength(x)
 
 proc vecLd*(x:cint; y:ptr float32):SimdD4 {.importC:"vec_ld",noDecl.}
 proc vecLd*(x:cint; y:ptr float64):SimdD4 {.importC:"vec_ld",noDecl.}

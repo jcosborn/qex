@@ -528,21 +528,29 @@ template mulMSM*(r:typed; x,y:typed):untyped =
       mul(r[i,j], tx, y[i,j])
 #proc mulVMV*(r:Vany; x,y:any) {.inline.} =
 template mulVMV*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_):
-    mixin nrows, ncols, mul, imadd, assign
+  subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_,ty0r,_,ty0i,_,tyjr,_,tyji,_):
+    mixin nrows, ncols, mul, imadd, assign, load1
     assert(x.nrows == r.len)
     assert(x.ncols == y.len)
     when true:
     #when false:
+      tmpvar(tr, r)
+      #var tr{.noInit.}:array[r.len,type(load1(r[0]))]
+      load(ty0r, y[0].re)
       forO i, 0, <x.nrows:
-        mul(r[i], x[i,0], y[0].re.asReal)
+        mulCCR(tr[i], x[i,0], ty0r)
+      load(ty0i, y[0].im)
       forO i, 0, <x.nrows:
-        imadd(r[i], x[i,0], y[0].im.asImag)
+        imaddCCI(tr[i], x[i,0], ty0i)
       forO j, 1, <x.ncols:
+        load(tyjr, y[j].re)
         forO i, 0, <x.nrows:
-          imadd(r[i], x[i,j], y[j].re.asReal)
+          imaddCCR(tr[i], x[i,j], tyjr)
+        load(tyji, y[j].im)
         forO i, 0, <x.nrows:
-          imadd(r[i], x[i,j], y[j].im.asImag)
+          imaddCCI(tr[i], x[i,j], tyji)
+      assign(r, tr)
+      #forO i, 0, <r.len: assign(r[i], tr[i])
     else:
       tmpvar(tr, r)
       block:
@@ -635,17 +643,24 @@ template imaddSVV*(rr:typed; xx,yy:typed):untyped =
       imadd(tr, x[i], y[i])
     assign(r, tr)
 template imaddVMV*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_):
-    mixin imadd
+  subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_,tyjr,_,tyji,_):
+    mixin nrows, ncols, mul, imadd, assign, load1
     assert(x.nrows == r.len)
     assert(x.ncols == y.len)
     when true:
+    #when false:
       load(tr, r)
+      #var tr{.noInit.}:array[r.len,type(load1(r[0]))]
+      #forO i, 0, <r.len: assign(tr[i], r[i])
       forO j, 0, <x.ncols:
-        load(ty, y[j])
+        load(tyjr, y[j].re)
         forO i, 0, <x.nrows:
-          imadd(tr[i], x[i,j], ty)
+          imaddCCR(tr[i], x[i,j], tyjr)
+        load(tyji, y[j].im)
+        forO i, 0, <x.nrows:
+          imaddCCI(tr[i], x[i,j], tyji)
       assign(r, tr)
+      #forO i, 0, <r.len: assign(r[i], tr[i])
     else:
       load(tr, r)
       forO j, 0, <x.ncols:
