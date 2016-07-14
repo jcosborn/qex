@@ -488,14 +488,15 @@ proc `-`*(x:Sca1; y:Mat2):auto {.inline.} =
   sub(r, x, y)
   r
 
-template mulSVV*(r:typed; x,y:typed):untyped =
-  mixin mul, imadd
-  assert(x.len == y.len)
-  tmpvar(tr, r)
-  mul(tr, x[0], y[0])
-  forO i, 1, <x.len:
-    imadd(tr, x[i], y[i])
-  assign(r, tr)
+template mulSVV*(rr:typed; xx,yy:typed):untyped =
+  subst(r,rr,x,xx,y,yy,tr,_,i,_):
+    mixin mul, imadd
+    assert(x.len == y.len)
+    tmpvar(tr, r)
+    mul(tr, x[0], y[0])
+    forO i, 1, <x.len:
+      imadd(tr, x[i], y[i])
+    assign(r, tr)
 template mulVVS*(r:typed; x,y:typed):untyped =
   mixin mul
   assert(r.len == x.len)

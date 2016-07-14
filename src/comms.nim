@@ -141,6 +141,7 @@ macro rankSum*(a:varargs[expr]):auto =
 
 #var count = 0
 template threadRankSum1*(a:untyped):untyped =
+  mixin rankSum
   #if threadNum==0: inc count
   #threadBarrier()
   threadLocals.share[threadNum].p = a.addr

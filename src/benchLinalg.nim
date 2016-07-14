@@ -4,7 +4,7 @@ import times
 import macros
 import stdUtils
 import parseUtils
-import optimize
+#import optimize
 
 proc symToIdent(x: NimNode): NimNode =
   case x.kind:
@@ -78,6 +78,9 @@ proc test(lat:any) =
     for e in v2:
       imaddVMV(v2[e], m1[e], v1[e])
 
+  bench((8*nc-2)*nc, sf*2*(nc+2)*nc):
+    v2 := m1.adj * v1
+
 proc checkMem =
   echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
        getTotalMem())
@@ -93,6 +96,6 @@ test([4,4,4,4])
 test([8,8,8,8])
 test([12,12,12,12])
 test([16,16,16,16])
-test([24,24,24,24])
+#test([24,24,24,24])
 #checkMem()
 qexFinalize()

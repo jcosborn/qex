@@ -13,8 +13,6 @@ type
   #Adjointed*[T] = distinct T
   Adjointed*[T] = object
     v*:T
-  #Adjointed*[T] = object
-  #  v*:ptr T
 template adj*(xx:typed):expr =
   subst(x,xx):
     when isComplex(x):
@@ -24,10 +22,10 @@ template adj*(xx:typed):expr =
     elif isMatrix(x):
       asMatrix(adj(x[]))
     else:
-      #when compiles(addr(x)):
-      when compiles(unsafeAddr(x)):
-        cast[ptr Adjointed[type(x)]](unsafeAddr(x))[]
-        #cast[Adjointed[type(x)]](unsafeAddr(x))
+      when compiles(addr(x)):
+      #when compiles(unsafeAddr(x)):
+        cast[ptr Adjointed[type(x)]](addr(x))[]
+        #cast[Adjointed[type(x)]](x)
       else:
         #(Adjointed[type(x)])(x)
         cast[Adjointed[type(x)]](x)

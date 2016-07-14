@@ -96,8 +96,9 @@ proc `$`*[T](x:openArray[T]):string =
   var t = newSeq[string]()
   var len = 0
   for e in x:
-    t.add($e)
-    len += t[^1].len
+    let s = $e
+    t.add(s)
+    len += s.len
   #echo len
   #echo t[0]
   if len < 60:

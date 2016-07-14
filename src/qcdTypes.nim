@@ -98,6 +98,9 @@ template simdType*(x:AsMatrix):expr = simdType(x[])
 template trace*(x:SComplexV):expr = x
 proc simdSum*(x:SComplexV):SComplex = complexConcept.map(result, simdSum, x)
 proc simdSum*(x:DComplexV):DComplex = complexConcept.map(result, simdSum, x)
+#template rankSum*(x:AsComplex) =
+#  #mixin qmpSum
+#  rankSum(x[])
 #template `/`*(x:SComplex|DComplex; y:SomeNumber):expr =
 #  mixin divd
 #  var r{.noInit.}:type(x)
@@ -220,7 +223,7 @@ proc perm*[T](r:var T; prm:int; x:T) {.inline.} =
     when compiles(f(rr[0], xx[0])):
       forStatic i, 0, n-1: f(rr[i], xx[i])
   case prm
-  of 0: rr[] = xx[]
+  of 0: loop(assign)
   of 1: loop(perm1)
   of 2: loop(perm2)
   of 4: loop(perm4)
