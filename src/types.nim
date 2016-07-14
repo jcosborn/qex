@@ -111,6 +111,12 @@ template re*(m:Masked):expr =
 template im*(m:Masked):expr =
   mixin im
   masked(m.pobj[].im, m.mask)
+template `re=`*(m:Masked; x:any):untyped =
+  mixin re
+  assign(masked(m.pobj[].re, m.mask), x)
+template `im=`*(m:Masked; x:any):untyped =
+  mixin im
+  assign(masked(m.pobj[].im, m.mask), x)
 #template `[]`*(x:Masked; i:int):expr = Masked(x:x.pobj[i],mask:x.mask)
 #template `[]`*(m:Masked; i,j:int):untyped =
 #  Masked(x:unsafeAddr(m.pobj[][i,j]), mask:m.mask)

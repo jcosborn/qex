@@ -207,12 +207,15 @@ proc eoReconstruct*(s:Staggered; r,b:Field; m:SomeNumber) =
   stagD(s.so, r, s.g, r, 0.0, -1.0/m)
   r.odd += b/m
 
-proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =
-  var sp:SolverParams
-  sp.r2req = res
-  sp.maxits = 1000
-  sp.verbosity = 1
-  sp.subset.layoutSubset(r.l, "even")
+proc initSolverParams*():SolverParams =
+  result.r2req = 1e-6
+  result.maxits = 2000
+  result.verbosity = 1
+  result.subsetName = "even"
+
+proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams) =
+  var sp = sp0
+  sp.subset.layoutSubset(r.l, sp.subsetName)
   var t = newOneOf(r)
   var top = 0.0
   proc op(a,b:Field) =
@@ -236,6 +239,13 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =
   let flops = (1152+60)*r.l.nEven*sp.finalIterations
   echo top
   echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
+proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =
+  var sp = initSolverParams()
+  sp.r2req = res
+  #sp.maxits = 1000
+  #sp.verbosity = 1
+  solve(s, r, x, m, sp)
+
 proc solve2*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =
   var sp:SolverParams
   sp.r2req = res

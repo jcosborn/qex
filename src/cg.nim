@@ -9,6 +9,7 @@ type
     verbosity*:int
     finalIterations*:int
     subset*:Subset
+    subsetName*:string
 
 proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
   tic()

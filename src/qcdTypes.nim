@@ -123,7 +123,7 @@ proc assign*(r:var SomeNumber; m:Masked[SDvec]) =
       break
     b = b shr 1
     i.inc
-proc assign*(m:Masked[SDvec], x:int) =
+proc assign*(m:Masked[SDvec], x:SomeNumber) =
   var i = 0
   var b = m.mask
   while b != 0:

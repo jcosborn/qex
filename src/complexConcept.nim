@@ -62,6 +62,8 @@ template `re=`*(x:AsComplex; y:any):untyped = x[].re = y
 template `im=`*(x:AsComplex; y:any):untyped = x[].im = y
 template re*(x:AsVarComplex):expr = x[].re
 template im*(x:AsVarComplex):expr = x[].im
+template `re=`*(x:AsVarComplex; y:any):untyped = x[].re = y
+template `im=`*(x:AsVarComplex; y:any):untyped = x[].im = y
 template len*(x:AsRI):expr = x[].len
 template nrows*(x:AsRI):expr = x[].ncols
 template ncols*(x:AsRI):expr = x[].nrows
