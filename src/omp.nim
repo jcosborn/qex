@@ -29,7 +29,7 @@ template ompBlock(p:string; body:untyped):untyped =
 
 template ompParallel*(body:untyped):untyped =
   ompBlock("parallel"):
-    setupForeignThreadGc()
+    if(omp_get_thread_num()!=0): setupForeignThreadGc()
     body
 template ompMaster*(body:untyped):untyped = ompBlock("master", body)
 template ompSingle*(body:untyped):untyped = ompBlock("single", body)

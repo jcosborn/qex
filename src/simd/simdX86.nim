@@ -27,3 +27,48 @@ macro makeArray(P,N:untyped):auto =
 makeArray(D, 16)
 makeArray(D,  8)
 makeArray(D,  4)
+
+#when defined(SSE):
+#proc toDoubleA*(x:SimdS4):array[2,SimdD2] {.inline,noInit.} =
+#  result[0] = mm_cvtps_pd(x)
+#  var y{.noInit.}:SimdS4
+#  perm2(y, x)
+#  result[1] = mm_cvtps_pd(y)
+
+when defined(AVX):
+  when defined(AVX512):
+    proc toDoubleA*(x:SimdS8):array[2,SimdD4] {.inline,noInit.} =
+      result[0] = mm256_cvtps_pd(mm256_extractf128_ps(x,0))
+      result[1] = mm256_cvtps_pd(mm256_extractf128_ps(x,1))
+  else:
+    proc toDouble*(x:SimdS8):SimdD8 {.inline,noInit.} =
+      result = SimdD8(toDoubleA(x))
+
+#when declared(SimdS4):
+#  proc toDouble*(x:SimdS4):SimdD4 {.inline,noInit.} =
+#    result = SimdD4(toDoubleA(x))
+#  proc inorm2*(r:var SimdD4; x:SimdS4) {.inline.} =
+#    let y = toDouble(x)
+#    inorm2(r, y)
+when declared(SimdS8):
+  #proc toDouble*(x:SimdS8):SimdD8 {.inline,noInit.} =
+  #  result = SimdD8(toDoubleA(x))
+  proc inorm2*(r:var SimdD8; x:SimdS8) {.inline.} =
+    var xx{.noInit.} = toDouble(x)
+    inorm2(r, xx)
+  proc imadd*(r:var SimdD8; x,y:SimdS8) {.inline.} =
+    var xx{.noInit.} = toDouble(x)
+    var yy{.noInit.} = toDouble(y)
+    imadd(r, xx, yy)
+when declared(SimdS16):
+  proc toDouble*(x:SimdS16):SimdD16 {.inline,noInit.} =
+    for i in 0..15: result[i] = float64(x[i])
+  proc inorm2*(r:var SimdD16; x:SimdS16) {.inline.} = inorm2(r, toDouble(x))
+
+when isMainModule:
+  var s8:SimdS8
+  assign(s8, [0,1,2,3,4,5,6,7])
+  var d8 = toDouble(s8)
+  echo d8
+  inorm2(d8, s8)
+  echo d8

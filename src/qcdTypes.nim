@@ -20,7 +20,7 @@ export complexConcept
 import matrixConcept
 export matrixConcept
 
-var destructors:seq[proc()]
+#var destructors:seq[proc()]
 
 const nc* = 3
 setType(Svec0, "SimdS" & $VLEN)
@@ -327,7 +327,7 @@ when isMainModule:
   import qex
   qexInit()
   echo "rank ", myRank, "/", nRanks
-  destructors.newSeq(0)
+  #destructors.newSeq(0)
   #var lat = [4,4,2,2]
   #var lat = [4,4,4,4]
   #var lat = [8,8,4,4]
@@ -383,15 +383,14 @@ when isMainModule:
   echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
        getTotalMem())
 
-  discard """
   echo GC_getStatistics()
   GC_fullCollect()
   echo GC_getStatistics()
-  echo "destructors: ", destructors.len
-  for f in destructors: f()
-  echo GC_getStatistics()
-  GC_fullCollect()
-  echo GC_getStatistics()
+  #echo "destructors: ", destructors.len
+  #for f in destructors: f()
+  #echo GC_getStatistics()
+  #GC_fullCollect()
+  #echo GC_getStatistics()
   v1 = nil
   v2 = nil
   m1 = nil
@@ -400,6 +399,5 @@ when isMainModule:
   echo GC_getStatistics()
   echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
        getTotalMem())
-"""
 
   qexFinalize()

@@ -220,6 +220,18 @@ template simdSum*(r:var SomeNumber; x:m512d) = simdReduce(r, x)
 # include perm, pack and blend
 include simdX86Ops1
 
+when defined(AVX):
+  when defined(AVX512):
+    discard
+    #proc toDoubleA*(x:SimdS8):array[2,SimdD4] {.inline,noInit.} =
+    #  result[0] = mm256_cvtps_pd(mm256_extractf128_ps(x,0))
+    #  result[1] = mm256_cvtps_pd(mm256_extractf128_ps(x,1))
+  else:
+    proc toDoubleA*(x:SimdS8):array[2,SimdD4] {.inline,noInit.} =
+      result[0] = mm256_cvtps_pd(mm256_extractf128_ps(x,0))
+      result[1] = mm256_cvtps_pd(mm256_extractf128_ps(x,1))
+      #for i in 0..3: result[0][i] = x[i]
+      #for i in 0..3: result[1][i] = x[4+i]
 
 proc mm_cvtph_ps(x:m128i):m128
   {.importC:"_mm_cvtph_ps",header:"f16cintrin.h".}
@@ -280,6 +292,12 @@ when isMainModule:
   assign(s, a[0], a[1], a[2], a[3])
   echo s
 
+  var s8:SimdS8
+  assign(s8, [0,1,2,3,4,5,6,7])
+  var d8 = toDoubleA(s8)
+  echo d8[0]
+  echo d8[1]
+  
   #var h:SimdH8
   #s = toSingle(h)
   #h = toHalf(s)

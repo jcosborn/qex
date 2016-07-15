@@ -49,6 +49,11 @@ template to*(t:typedesc[SomeNumber]; x:any):expr =
     x
   else:
     t(x)
+template toDouble*(x:SomeNumber):expr =
+  when type(x) is float64:
+    x
+  else:
+    float64(x)
 
 template assign*(x:var SomeNumber; y:ptr SomeNumber2):untyped =
   x = cnvrt(x,y[])

@@ -31,11 +31,20 @@ macro toString(x:untyped):auto =
   let n = skipWhitespace(s)
   newlit s[n..^1]
 
+proc checkMem =
+  echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
+       getTotalMem())
+  echo GC_getStatistics()
+  GC_fullCollect()
+  echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
+       getTotalMem())
+  echo GC_getStatistics()
+
 template bench(fps,bps:SomeNumber; eqn:untyped) =
   let vol = lo.nSites.float
   let flops = vol * fps.float
   let bytes = vol * bps.float
-  let nrep = int(2e11/flops)
+  let nrep = int(1e11/flops)
   var t0 = epochTime()
   threads:
     for rep in 1..nrep:
@@ -80,15 +89,6 @@ proc test(lat:any) =
 
   bench((8*nc-2)*nc, sf*2*(nc+2)*nc):
     v2 := m1.adj * v1
-
-proc checkMem =
-  echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
-       getTotalMem())
-  echo GC_getStatistics()
-  GC_fullCollect()
-  echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
-       getTotalMem())
-  echo GC_getStatistics()
 
 qexInit()
 #checkMem()
