@@ -248,20 +248,23 @@ when defined(AVX512):
     perm8(y, x)
     result[1] = mm512_cvtps_pd(mm512_castps512_ps256(y))
 
-proc mm_cvtph_ps(x:m128i):m128
-  {.importC:"_mm_cvtph_ps",header:"f16cintrin.h".}
-proc mm_cvtps_ph(x:m128,y:cint):m128i
-  {.importC:"_mm_cvtps_ph",header:"f16cintrin.h".}
-proc mm256_cvtph_ps(x:m128i):m256
-  {.importC:"_mm256_cvtph_ps",header:"f16cintrin.h".}
-proc mm256_cvtps_ph(x:m256,y:cint):m128i
-  {.importC:"_mm256_cvtps_ph",header:"f16cintrin.h".}
-template toHalf(x:SimdS4):SimdH4 = SimdH4(mm_cvtps_ph(x))
-template toSingle(x:SimdH4):SimdS4 = mm_cvtph_ps(x)
-template toHalf(x:SimdS8):SimdH8 = SimdH8(mm256_cvtps_ph(x,0))
-template toSingle(x:SimdH8):SimdS8 = mm256_cvtph_ps(m128i(x))
-template toHalf(x:SimdS16):SimdH16 = SimdH16(mm512_cvtps_ph(x,0))
-template toSingle(x:SimdH16):SimdS16 = mm512_cvtph_ps(m256i(x))
+when defined(SimdS4):
+  proc mm_cvtph_ps(x:m128i):m128
+    {.importC:"_mm_cvtph_ps",header:"f16cintrin.h".}
+  proc mm_cvtps_ph(x:m128,y:cint):m128i
+    {.importC:"_mm_cvtps_ph",header:"f16cintrin.h".}
+  template toHalf(x:SimdS4):SimdH4 = SimdH4(mm_cvtps_ph(x))
+  template toSingle(x:SimdH4):SimdS4 = mm_cvtph_ps(x)
+when defined(SimdS8):
+  proc mm256_cvtph_ps(x:m128i):m256
+    {.importC:"_mm256_cvtph_ps",header:"f16cintrin.h".}
+  proc mm256_cvtps_ph(x:m256,y:cint):m128i
+    {.importC:"_mm256_cvtps_ph",header:"f16cintrin.h".}
+  template toHalf(x:SimdS8):SimdH8 = SimdH8(mm256_cvtps_ph(x,0))
+  template toSingle(x:SimdH8):SimdS8 = mm256_cvtph_ps(m128i(x))
+when defined(SimdS16):
+  template toHalf(x:SimdS16):SimdH16 = SimdH16(mm512_cvtps_ph(x,0))
+  template toSingle(x:SimdH16):SimdS16 = mm512_cvtph_ps(m256i(x))
 
 # toSingle, toDouble, to(x,float32), to(x,float64)
 discard """
