@@ -188,8 +188,8 @@ template IOtypeP(x:typedesc[SColorMatrixV]):typedesc = DColorMatrix
 template IOtypeP(x:typedesc[DColorMatrixV]):typedesc = SColorMatrix
 
 template vcopyImpl(dest:typed; l:int; src:typed):untyped =
-  for i in 0..<nc:
-    for j in 0..<nc:
+  for i in 0..<dest.nrows:
+    for j in 0..<dest.ncols:
       dest[i][j].re[l] = src[i][j].re
       dest[i][j].im[l] = src[i][j].im
 proc vcopy(dest:var SColorMatrixV; l:int; src:SColorMatrix) =

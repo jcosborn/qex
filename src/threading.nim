@@ -90,13 +90,23 @@ template threads*(x0:untyped;body:untyped):untyped =
 template threadBarrierO* = ompBarrier
 template threadMaster*(x:untyped) = ompMaster(x)
 template threadSingle*(x:untyped) = ompSingle(x)
+template threadCritical*(x:untyped) = ompCritical(x)
 
 template threadDivideLow*(x,y:untyped):expr =
   x + (threadNum*(y-x)) div numThreads
 template threadDivideHigh*(x,y:untyped):expr =
   x + ((threadNum+1)*(y-x)) div numThreads
 
-#macro tForX(slice:Slice; index,body:untyped):stmt =
+
+proc tForX*(index,i0,i1,body:NimNode):NimNode =
+  return quote do:
+    let d = 1+`i1` - `i0`
+    let ti0 = `i0` + (threadNum*d) div numThreads
+    let ti1 = `i0` + ((threadNum+1)*d) div numThreads
+    for `index` in ti0 ..< ti1:
+      `body`
+macro tFor*(index,i0,i1:expr; body:untyped):stmt =
+  result = tForX(index, i0, i1, body)
 macro tFor*(index:expr; slice:Slice; body:untyped):stmt =
   #echo index.treeRepr
   #echo treeRepr(slice)
@@ -108,14 +118,7 @@ macro tFor*(index:expr; slice:Slice; body:untyped):stmt =
   else:
     i0 = slice[1]
     i1 = slice[2]
-  return quote do:
-    let d = 1+`i1` - `i0`
-    let ti0 = `i0` + (threadNum*d) div numThreads
-    let ti1 = `i0` + ((threadNum+1)*d) div numThreads
-    for `index` in ti0 ..< ti1:
-      `body`
-#template tFor*(index,slice,body:untyped):untyped =
-#  tForX(slice, index, body)
+  result = tForX(index, i0, i1, body)
     
 discard """
 iterator `.|`*[S, T](a: S, b: T): T {.inline.} =

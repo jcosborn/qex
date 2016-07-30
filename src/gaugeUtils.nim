@@ -242,16 +242,18 @@ template defaultSetup*:untyped {.dirty.} =
     for i in 0..<lat.len:
       g[i] := 1
 
-proc random*[T](g:openArray[T]):auto =
-  let l = g[0].l
-  let nrm1 = g[0][0].nrows - 1
-  let ncm1 = g[0][0].ncols - 1
+proc random*(g:Field) =
+  let l = g.l
+  let nrm1 = g[0].nrows - 1
+  let ncm1 = g[0].ncols - 1
+  tfor s, 0..<l.nSites:
+    for ic in countup(0,nrm1):
+      for jc in countup(0,ncm1):
+        g{s}[ic,jc].re = random(2.0) - 1.0
+        g{s}[ic,jc].im = random(2.0) - 1.0
+proc random*[T](g:openArray[T]) =
   for mu in 0..<g.len:
-    tfor s, 0..<l.nSites:
-      for ic in countup(0,nrm1):
-        for jc in countup(0,ncm1):
-          g[mu]{s}[ic,jc].re = random(2.0) - 1.0
-          g[mu]{s}[ic,jc].im = random(2.0) - 1.0
+    g[mu].random
 
 when isMainModule:
   qexInit()

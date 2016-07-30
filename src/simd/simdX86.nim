@@ -36,11 +36,7 @@ makeArray(D,  4)
 #  result[1] = mm_cvtps_pd(y)
 
 when defined(AVX):
-  when defined(AVX512):
-    proc toDoubleA*(x:SimdS8):array[2,SimdD4] {.inline,noInit.} =
-      result[0] = mm256_cvtps_pd(mm256_extractf128_ps(x,0))
-      result[1] = mm256_cvtps_pd(mm256_extractf128_ps(x,1))
-  else:
+  when not defined(AVX512):
     proc toDouble*(x:SimdS8):SimdD8 {.inline,noInit.} =
       result = SimdD8(toDoubleA(x))
 
@@ -62,8 +58,18 @@ when declared(SimdS8):
     imadd(r, xx, yy)
 when declared(SimdS16):
   proc toDouble*(x:SimdS16):SimdD16 {.inline,noInit.} =
-    for i in 0..15: result[i] = float64(x[i])
+    #for i in 0..15: result[i] = float64(x[i])
+    result = SimdD16(toDoubleA(x))
   proc inorm2*(r:var SimdD16; x:SimdS16) {.inline.} = inorm2(r, toDouble(x))
+  proc imadd*(r:var SimdD16; x,y:SimdS16) {.inline.} =
+    var xx{.noInit.} = toDouble(x)
+    var yy{.noInit.} = toDouble(y)
+    imadd(r, xx, yy)
+
+when declared(SimdD8):
+  template toDouble*(x:SimdD8):expr = x
+when declared(SimdD16):
+  template toDouble*(x:SimdD16):expr = x
 
 when isMainModule:
   var s8:SimdS8

@@ -94,6 +94,8 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
     for i in 1..<N:
       result &= "," & $x[i]
     result &= "]"
+  proc prefetch*(x:ptr T) {.inline.} =
+    mm_prefetch(cast[cstring](x), 3)
 
   template add*(x,y:T):T = `P "_add_" S`(x,y)
   template sub*(x,y:T):T = `P "_sub_" S`(x,y)
@@ -197,9 +199,17 @@ proc simdReduce*(r:var SomeNumber; x:m256d) {.inline.} =
   let z = mm256_hadd_pd(y, y)
   r = (type(r))(z[0])
 proc simdReduce*(r:var SomeNumber; x:m512) {.inline.} =
-  r = (type(r))(mm512_reduce_add_ps(x))
+  #r = (type(r))(mm512_reduce_add_ps(x))
+  #let t = mm512_shuffle_f32x4(x, x, BASE4(1,0,3,2))
+  #let t2 = add(x, t)
+  r = x[0]
+  for i in 1..<16:
+    r += x[i]
 proc simdReduce*(r:var SomeNumber; x:m512d) {.inline.} =
-  r = (type(r))(mm512_reduce_add_pd(x))
+  #r = (type(r))(mm512_reduce_add_pd(x))
+  r = x[0]
+  for i in 1..<8:
+    r += x[i]
 proc simdReduce*(x:m128):float32 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m256):float32 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m256d):float64 {.inline,noInit.} = simdReduce(result, x)
@@ -222,16 +232,21 @@ include simdX86Ops1
 
 when defined(AVX):
   when defined(AVX512):
-    discard
-    #proc toDoubleA*(x:SimdS8):array[2,SimdD4] {.inline,noInit.} =
-    #  result[0] = mm256_cvtps_pd(mm256_extractf128_ps(x,0))
-    #  result[1] = mm256_cvtps_pd(mm256_extractf128_ps(x,1))
+    proc toDoubleA*(x:SimdS8):SimdD8 {.inline,noInit.} =
+      result = mm512_cvtps_pd(x)
   else:
     proc toDoubleA*(x:SimdS8):array[2,SimdD4] {.inline,noInit.} =
       result[0] = mm256_cvtps_pd(mm256_extractf128_ps(x,0))
       result[1] = mm256_cvtps_pd(mm256_extractf128_ps(x,1))
       #for i in 0..3: result[0][i] = x[i]
       #for i in 0..3: result[1][i] = x[4+i]
+
+when defined(AVX512):
+  proc toDoubleA*(x:SimdS16):array[2,SimdD8] {.inline,noInit.} =
+    result[0] = mm512_cvtps_pd(mm512_castps512_ps256(x))
+    var y{.noInit.}:SimdS16
+    perm8(y, x)
+    result[1] = mm512_cvtps_pd(mm512_castps512_ps256(y))
 
 proc mm_cvtph_ps(x:m128i):m128
   {.importC:"_mm_cvtph_ps",header:"f16cintrin.h".}
@@ -241,10 +256,12 @@ proc mm256_cvtph_ps(x:m128i):m256
   {.importC:"_mm256_cvtph_ps",header:"f16cintrin.h".}
 proc mm256_cvtps_ph(x:m256,y:cint):m128i
   {.importC:"_mm256_cvtps_ph",header:"f16cintrin.h".}
-#template toHalf(x:SimdS4):SimdH4 = cast[ptr SimdH4](mm_cvtph_ps(x))
-#template toSingle(x:SimdH4):SimdS4 = cast(mm_cvtph_ps(x)
-#template toHalf(x:SimdS8):SimdH8 = (SimdH8)(mm256_cvtps_ph(x,0))
-#template toSingle(x:SimdH8):SimdS8 = mm256_cvtph_ps((m128i)x)
+template toHalf(x:SimdS4):SimdH4 = SimdH4(mm_cvtps_ph(x))
+template toSingle(x:SimdH4):SimdS4 = mm_cvtph_ps(x)
+template toHalf(x:SimdS8):SimdH8 = SimdH8(mm256_cvtps_ph(x,0))
+template toSingle(x:SimdH8):SimdS8 = mm256_cvtph_ps(m128i(x))
+template toHalf(x:SimdS16):SimdH16 = SimdH16(mm512_cvtps_ph(x,0))
+template toSingle(x:SimdH16):SimdS16 = mm512_cvtph_ps(m256i(x))
 
 # toSingle, toDouble, to(x,float32), to(x,float64)
 discard """
@@ -298,6 +315,17 @@ when isMainModule:
   echo d8[0]
   echo d8[1]
   
-  #var h:SimdH8
-  #s = toSingle(h)
-  #h = toHalf(s)
+  var h:SimdH8
+  s = toSingle(h)
+  h = toHalf(s)
+  assign(s,[1,2,3,4,5,6,7,8])
+  h = toHalf(s)
+  s8 = toSingle(h)
+  echo s8
+
+  when declared(SimdS16):
+    var s16:SimdS16
+    assign(s16, [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16])
+    var h16 = toHalf(s16)
+    var t16 = toSingle(h16)
+    echo t16

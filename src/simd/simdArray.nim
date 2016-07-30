@@ -27,7 +27,7 @@ template makePermX(F,P,T,L,N0) {.dirty.} =
     map110(T, L, F, F)
   else:
     proc F*(r:var T; x:T) {.inline.} =
-      const b = P div N0
+      const b = (P div N0) and (L-1)
       forStatic i, 0, L-1:
         assign(r[][i], x[][i xor b])
 template makePerm(P,T,L,N0) {.dirty.} =
@@ -242,6 +242,9 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
       var y = x
       forStatic i, 0, L-1:
         assign(r[][i], unsafeAddr(y[i*N0]))
+  proc assign*(r:var array[N,SomeNumber], x:T) {.inline.} =
+    forStatic i, 0, L-1:
+      assign(addr(r[i*N0]), x[][i])
   template add*(r:var T; x:SomeNumber; y:T) = add(r, x.to(T), y)
   template sub*(r:var T; x:SomeNumber; y:T) = sub(r, x.to(T), y)
   template mul*(r:var T; x:SomeNumber; y:T) = mul(r, x.to(T), y)

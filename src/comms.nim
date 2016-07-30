@@ -5,6 +5,7 @@ import strUtils
 import stdUtils
 import threading
 import qmp
+import basicOps
 
 var myRank* = 0
 var nRanks* = 1
@@ -142,6 +143,7 @@ macro rankSum*(a:varargs[expr]):auto =
 #var count = 0
 template threadRankSum1*(a:untyped):untyped =
   mixin rankSum
+  #[
   #if threadNum==0: inc count
   #threadBarrier()
   threadLocals.share[threadNum].p = a.addr
@@ -168,6 +170,24 @@ template threadRankSum1*(a:untyped):untyped =
     a = cast[ptr type(a)](threadLocals.share[0].p)[]
     #threadBarrier()
     t0wait()
+  ]#
+  var ta{.global.}:type(a)
+  #var ta2{.global.}:array[512,type(a)]
+  if threadNum==0:
+    t0wait()
+    for i in 1..<numThreads:
+      a += cast[ptr type(a)](threadLocals.share[i].p)[]
+      #a += ta2[threadNum]
+    rankSum(a)
+    ta = a
+    twait0()
+  else:
+    threadLocals.share[threadNum].p = a.addr
+    #ta2[threadNum] = a
+    t0wait()
+    twait0()
+    a = ta
+
 proc threadRankSumN*(a:NimNode):auto =
   echo a.treeRepr
   result = newNimNode(nnkStmtList)

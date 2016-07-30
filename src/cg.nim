@@ -69,14 +69,14 @@ proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
       #echo("Ap2: ", Ap.norm2)
       subset:
         let pAp = p.redot(Ap)
-        toc("pAp")
+        toc("pAp", flops=2*numNumbers(p[0])*sub.lenOuter)
         let alpha = r2/pAp
         x += alpha*p
-        toc("x")
+        toc("x", flops=2*numNumbers(p[0])*sub.lenOuter)
         r -= alpha*Ap
-        toc("r")
+        toc("r", flops=2*numNumbers(r[0])*sub.lenOuter)
         r2 = r.norm2
-        toc("r2")
+        toc("r2", flops=2*numNumbers(r[0])*sub.lenOuter)
       verb(2):
         #echo(itn, " ", r2)
         echo(itn, " ", r2/b2)
