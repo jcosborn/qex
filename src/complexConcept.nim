@@ -333,11 +333,11 @@ proc mul*(r:var C1; x:C2; y:C3) {.inline.} =
   mul(r, x, y.re.asReal)
   imadd(r, x, y.im.asImag)
 
-proc `*`*(x:U1; y:C2):auto {.inline.} =
+proc `*`*(x:SomeNumber; y:C2):auto {.inline.} =
   var r{.noInit.}:ComplexType[type(x*y.re)]
   mul(r, x, y)
   r
-proc `*`*(x:C1; y:U2):auto {.inline.} =
+proc `*`*(x:C1; y:SomeNumber):auto {.inline.} =
   var r{.noInit.}:ComplexType[type(x.re*y)]
   mul(r, x, y)
   r
