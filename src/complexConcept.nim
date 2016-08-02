@@ -358,7 +358,6 @@ proc divd*(r:var C1; x:C2; y:U3) {.inline.} =
   divd(r.re, x.re, y)
   divd(r.im, x.im, y)
 
-
 template imaddCCR*(rr:typed; xx,yy:typed):untyped =
   # r.re += x.re * y
   # r.im += x.im * y
