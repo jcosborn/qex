@@ -11,6 +11,11 @@ template corner(l, i):expr =
   (l.coords[0][i].int and 1) + ((l.coords[1][i].int and 1) shl 1) +
    ((l.coords[2][i].int and 1) shl 2)
 
+template addCorner(l, s, i):expr =
+  ((s + l.coords[0][i].int) and 1) +
+   ((((s shr 1) + l.coords[1][i].int) and 1) shl 1) +
+   ((((s shr 2) + l.coords[2][i].int) and 1) shl 2)
+
 proc mesons(v:any) =
   let l = v.l
   let nt = l.physGeom[3]
@@ -35,6 +40,39 @@ proc mesons(v:any) =
           c[t][s] += v{i}.norm2()
           #assign(x, v{i})
           #c[t][s] += x.norm2
+  rankSum(c)
+  for s in 0..<8:
+    echo "corner: ", s
+    for t in 0..<nt:
+      let r = c[t][s]
+      echo t, " ", r
+      #echo t, " ", c[t][s]
+  echo "sum:"
+  for t in 0..<nt:
+    var r = c[t][0]
+    for s in 1..<8:
+      r += c[t][s]
+    echo t, " ", r
+
+proc mesonsV(v:any) =
+  let l = v.l
+  let nt = l.physGeom[3]
+  var cv = newSeq[array[8,type(v[0].norm2())]](nt)
+  var c = newSeq[array[8,float64]](nt)
+  threads:
+    for e in 0..<l.nSitesOuter:
+      let i = l.nSitesInner * e
+      let t = l.coords[3][i]
+      let s = l.corner(i)
+      let tpar = (8*t+s) mod numThreads
+      if tpar==threadNum:
+        cv[t][s] += v[e].norm2()
+  for tt in 0..<nt:
+    for ss in 0..<8:
+      for i in 0..<l.nSitesInner:
+        let t = (tt + l.coords[3][i]) mod nt
+        let s = l.addCorner(ss, i)
+        c[t][s] += cv[tt][ss][i]
   rankSum(c)
   for s in 0..<8:
     echo "corner: ", s
@@ -97,5 +135,5 @@ when isMainModule:
     threadBarrier()
     echo r.norm2
   #echo v2
-  mesons(v2)
+  mesonsV(v2)
   qexFinalize()

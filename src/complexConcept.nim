@@ -358,6 +358,15 @@ proc divd*(r:var C1; x:C2; y:U3) {.inline.} =
   divd(r.re, x.re, y)
   divd(r.im, x.im, y)
 
+proc divd*(r:var C1; x:C2; y:C3) {.inline.} =
+  var d = 1/(y.re*y.re+y.im*y.im)
+  r.re = d * (x.re*y.re + x.im*y.im)
+  r.im = d * (x.im*y.re - x.re*y.im)
+
+proc `/`*(x:C1; y:C2):auto {.inline.} =
+  var r{.noInit.}:ComplexType[type(x.re*y.re)]
+  divd(r, x, y)
+  r
 
 template imaddCCR*(rr:typed; xx,yy:typed):untyped =
   # r.re += x.re * y
@@ -448,31 +457,14 @@ when isMainModule:
   declareImag(Imag)
   declareComplex(Complex)
 
+  proc `==`*(x:Complex,y:Complex):bool =
+    (x.re == y.re) and (x.im == y.im)
+
   template set2(op,f,t1,r:untyped):untyped =
     proc op*[T](x:t1[T]):r[T] {.noInit,inline.} = f(result,x)
   template set22(op,f,t1,r:untyped):untyped =
     proc op*[T1,T2](x:t1[T1,T2]):r[T1,T2] {.noInit,inline.} = f(result,x)
 
-  discard """
-    template `-`*(x:Real):expr =
-    #mixin neg
-    #var r:type(x)
-    #neg(r, x)
-    #r
-    (type(x))((re:(-x.re)))
-  template `-`*(x:Imag):expr =
-    #mixin neg
-    #var r:type(x)
-    #neg(r, x)
-    #r
-    (type(x))((im:(-x.im)))
-  template `-`*[T](x:Complex[T]):expr =
-    #mixin neg
-    #var r:type(x)
-    #neg(r, x)
-    #r
-    Complex[x.T]((re:(-x.re),im:(-x.im)))
-  """
   set2(`-`, neg, Real, Real)
   set2(`-`, neg, Imag, Imag)
   set2(`-`, neg, Complex, Complex)
@@ -510,6 +502,8 @@ when isMainModule:
   var c0 = Complex((0.0,0.0))
   var c1 = Complex((1.0,1.0))
   var c2 = Complex((2.0,2.0))
+  var z1 = c0
+  var z2 = c0
 
   echo(r0 is R1)
   #echo(r0 is RIC1)
@@ -548,6 +542,10 @@ when isMainModule:
   c0 := i1 + c2
   c0 := c1 + i2
   c0 := c1 + c2
+
+  z1 := c1/c2
+  z2 := c2*z1
+  doAssert( z2 == c1 )
 
   discard """
   r0 := r1 * r2
@@ -918,6 +916,10 @@ when isMainModule:
       a *= oIm
       assert( a == Cmplx(T,-2,1) )
       a = -b
+
+      a = o/z
+      b = 2*a*z
+      assert( b == o )
 
       when type(xRe) is type(xRe/oRe):
         tIm /= oRe
