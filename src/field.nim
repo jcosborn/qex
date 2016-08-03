@@ -350,7 +350,7 @@ template norm2*(f:SomeAllField):expr =
 template norm2*(f:Subsetted):expr = norm2P(f)
 
 proc dotP*(f1:SomeField; f2:SomeField2):auto =
-  mixin dot, idot, simdSum, items
+  mixin dot, idot, simdSum, items, toDouble
   #var d:type(dot(f1[0],f2[0]))
   var d:type(toDouble(dot(f1[0],f2[0])))
   let t1 = f1
