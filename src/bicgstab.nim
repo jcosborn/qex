@@ -57,8 +57,17 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
       r := b
       r0 := r
 
-    var rho: SComplex
-    rho := 0
+    # Remark: Could use ComplexType[NumberType[x]]. NumberType[x] would return
+    #            the precision (ex, system.float32) used inside x, then ComplexType 
+    #            would create a complex with that underlying precision.
+    #            Instead we just use double precision for the scalars.
+
+    var rho: DComplex
+    rho := 1
+    var alpha: DComplex
+    alpha := 1
+    var omega: DComplex
+    omega := 1
     
     
     var itn = 0
@@ -90,7 +99,7 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
       toc("v")
       
       # alpha = rho/<rhat0, v>
-      let alpha = rho/r0.dot(v)
+      alpha := rho/r0.dot(v)
       
       # Update s.
       subset:
