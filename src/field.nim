@@ -63,7 +63,7 @@ macro fieldMul*(x:Field,y:Field2):auto =
   result = quote do:
     FieldMul[tuple[a:type(`x`),b:type(`y`)]](field:(a:`x`,b:`y`))
   #echo result.repr
-macro fieldMul*(x:notSomeField,y:Field):auto =
+macro fieldMul*(x:notSomeField,y:SomeField):auto =
   result = quote do:
     FieldMul[tuple[a:type(`x`),b:type(`y`)]](field:(a:`x`,b:`y`))
   #echo result.repr
@@ -351,8 +351,8 @@ template norm2*(f:Subsetted):expr = norm2P(f)
 
 proc dotP*(f1:SomeField; f2:SomeField2):auto =
   mixin dot, idot, simdSum, items
-  var d:type(dot(f1[0],f2[0]))
-  #var d:type(toDouble(dot(f1[0],f2[0])))
+  #var d:type(dot(f1[0],f2[0]))
+  var d:type(toDouble(dot(f1[0],f2[0])))
   let t1 = f1
   let t2 = f2
   for x in items(t1):

@@ -228,6 +228,7 @@ makeUnary(neg)
 makeUnary(iadd)
 makeUnary(isub)
 template `:=`*(x:VC1; y:SomeNumber) = assign(x, y)
+template `:=`*(x:VC1; y:C2) = assign(x, y)
 template makeConj(op:untyped):untyped =
   proc op*(r:var R1; x:R2) {.inline.} = op(r.re, x.re)
   proc op*(r:var R1; x:C2) {.inline.} = op(r.re, x.re)
