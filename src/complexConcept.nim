@@ -170,6 +170,12 @@ template map*(result:var untyped; f:untyped; x:untyped):untyped {.immediate.} =
   haveR: f(result.re, x.re)
   haveI: f(result.im, x.im)
 
+proc toDouble*(x:C1):auto {.inline,noInit.} =
+  var r{.noInit.}:ComplexType[type(toDouble(x.re))]
+  r.re = toDouble(x.re)
+  r.im = toDouble(x.im)
+  r
+
 template trace*(r:var RIC1; x:RIC2):untyped = map(r, trace, x)
 proc trace*(x:C1):auto {.inline.} =
   var r{.noInit.}:ComplexType[type(trace(x.re)+trace(x.im))]
@@ -547,6 +553,8 @@ when isMainModule:
   z1 := c1/c2
   z2 := c2*z1
   doAssert( z2 == c1 )
+
+  z1 := toDouble(c1)
 
   discard """
   r0 := r1 * r2
