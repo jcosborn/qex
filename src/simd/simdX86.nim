@@ -71,6 +71,11 @@ when declared(SimdD8):
 when declared(SimdD16):
   template toDouble*(x:SimdD16):expr = x
 
+proc imsub*(r:var SimdD8; x,y:SimdS8) {.inline.} =
+  let xd = toDouble(x)
+  let yd = toDouble(y)
+  imsub(r, xd, yd)
+
 when isMainModule:
   var s8:SimdS8
   assign(s8, [0,1,2,3,4,5,6,7])

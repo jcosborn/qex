@@ -2,6 +2,7 @@ import qex
 import qcdTypes
 import profile
 import complexConcept
+import basicOps
 
 type
   SolverParams* = object
@@ -132,7 +133,7 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
         subset:
           x += alpha*p + omega*s
           toc("x", flops=4*numNumbers(s[0])*sub.lenOuter)
-          r = s - omega*t
+          r := s - omega*t
           toc("r", flops=3*numNumbers(s[0])*sub.lenOuter)
       
     toc("bicgstab iterations")
@@ -141,7 +142,7 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
     var fr2: float
     A(t, x)
     subset:
-      r := b - tp
+      r := b - t
       fr2 = r.norm2
     verb(1):
       echo finalIterations, " acc r2:", r2/b2
