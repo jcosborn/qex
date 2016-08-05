@@ -232,7 +232,7 @@ include simdX86Ops1
 
 when defined(AVX):
   when defined(AVX512):
-    proc toDoubleA*(x:SimdS8):SimdD8 {.inline,noInit.} =
+    proc toDouble*(x:SimdS8):SimdD8 {.inline,noInit.} =
       result = mm512_cvtps_pd(x)
   else:
     proc toDoubleA*(x:SimdS8):array[2,SimdD4] {.inline,noInit.} =

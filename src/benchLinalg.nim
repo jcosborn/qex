@@ -5,6 +5,7 @@ import macros
 import stdUtils
 import parseUtils
 #import optimize
+import metaUtils
 
 proc symToIdent(x: NimNode): NimNode =
   case x.kind:
@@ -61,8 +62,11 @@ proc test(lat:any) =
 
   var v1 = lo.ColorVector()
   var v2 = lo.ColorVector()
-  var m1 = lo.ColorMatrix()
   var v3 = lo.ColorVector()
+  var m1 = lo.ColorMatrix()
+  var m2 = lo.ColorMatrix()
+  var m3 = lo.ColorMatrix()
+  const nc = v1[0].len
   let sf = sizeof(numberType(v3[0]))
   threads:
     m1 := 2
@@ -85,10 +89,40 @@ proc test(lat:any) =
 
   bench((8*nc)*nc, sf*2*(nc+3)*nc):
     for e in v2:
+      v2[e] += m1[e] * row(m2[e],0)
+
+  bench((8*nc)*nc, sf*2*(nc+3)*nc):
+    for e in v2:
       imaddVMV(v2[e], m1[e], v1[e])
 
   bench((8*nc-2)*nc, sf*2*(nc+2)*nc):
     v2 := m1.adj * v1
+
+  bench(8*nc*nc*nc, sf*2*4*nc*nc):
+    m3 += m1 * m2
+
+  bench(8*nc*nc*nc, sf*2*4*nc*nc):
+    for e in v2:
+      imaddMMM(m3[e], m1[e], m2[e])
+
+  bench((8*nc-2)*nc*nc, sf*2*3*nc*nc):
+    m3 := m1.adj * m2
+
+  bench((8*nc-2)*nc*nc, sf*2*3*nc*nc):
+    for e in v2:
+      mulMMM(m3[e], m1[e].adj, m2[e])
+
+  bench((8*nc-2)*nc*nc, sf*2*3*nc*nc):
+    for e in m3:
+      var vt{.noInit.}:type(v2[e])
+      forStatic i, 0, <nc:
+        mul(vt, m1[e], row(m2[e],i))
+        setRow(m3[e], vt, i)
+
+  bench(8*nc*nc*nc, sf*2*3*nc*nc):
+    for e in v2:
+      imaddMMM(m3[e], m1[0], m2[e])
+
 
 qexInit()
 #checkMem()
@@ -96,6 +130,7 @@ test([4,4,4,4])
 test([8,8,8,8])
 test([12,12,12,12])
 test([16,16,16,16])
-#test([24,24,24,24])
+test([24,24,24,24])
+test([32,32,32,32])
 #checkMem()
 qexFinalize()

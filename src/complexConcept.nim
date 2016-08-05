@@ -314,6 +314,21 @@ template mulCCR*(rr:typed; xx,yy:typed):untyped =
     mul(r.re, x.re, y)
     mul(r.im, x.im, y)
 
+template mulCRC*(rr:typed; xx,yy:typed):untyped =
+  # r.re = x * y.re
+  # r.im = x * y.im
+  mixin mul
+  subst(r,rr,x,xx,y,yy):
+    mul(r.re, x, y.re)
+    mul(r.im, x, y.im)
+#template mulCIC*(rr:typed; xx,yy:typed):untyped =
+#  # r.re = - x * y.im
+#  # r.im =   x * y.re
+#  mixin mul, nmul
+#  subst(r,rr,x,xx,y,yy):
+#    nmul(r.re, x, y.im)
+#    mul(r.im, x, y.re)
+
 proc mul*(r:var RIC1; x:U2; y:RIC3) {.inline.} =
   mul(r.re, x, y.re)
   mul(r.im, x, y.im)
@@ -389,6 +404,20 @@ template imaddCCI*(rr:typed; xx,yy:typed):untyped =
   subst(r,rr,x,xx,y,yy):
     imsub(r.re, x.im, y)
     imadd(r.im, x.re, y)
+template imaddCRC*(rr:typed; xx,yy:typed):untyped =
+  # r.re += x * y.re
+  # r.im += x * y.im
+  mixin imadd
+  subst(r,rr,x,xx,y,yy):
+    imadd(r.re, x, y.re)
+    imadd(r.im, x, y.im)
+template imaddCIC*(rr:typed; xx,yy:typed):untyped =
+  # r.re -= x * y.im
+  # r.im += x * y.re
+  mixin imadd, imsub
+  subst(r,rr,x,xx,y,yy):
+    imsub(r.re, x, y.im)
+    imadd(r.im, x, y.re)
 
 proc imadd*(r:var U1; x:C2; y:C3) {.inline.} =
   # r += x.re*y.re - x.im*y.im
@@ -411,6 +440,21 @@ proc imadd*(r:var C1; x:C2; y:C3) {.inline.} =
   mixin imadd
   imadd(r, x, y.re.asReal)
   imadd(r, x, y.im.asImag)
+
+template imsubCRC*(rr:typed; xx,yy:typed):untyped =
+  # r.re -= x * y.re
+  # r.im -= x * y.im
+  mixin imsub
+  subst(r,rr,x,xx,y,yy):
+    imsub(r.re, x, y.re)
+    imsub(r.im, x, y.im)
+template imsubCIC*(rr:typed; xx,yy:typed):untyped =
+  # r.re += x * y.im
+  # r.im -= x * y.re
+  mixin imadd, imsub
+  subst(r,rr,x,xx,y,yy):
+    imadd(r.re, x, y.im)
+    imsub(r.im, x, y.re)
 
 proc imsub*(r:var C1; x:C2; y:R3) {.inline.} =
   mixin imsub

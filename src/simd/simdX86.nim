@@ -75,6 +75,10 @@ proc imsub*(r:var SimdD8; x,y:SimdS8) {.inline.} =
   let xd = toDouble(x)
   let yd = toDouble(y)
   imsub(r, xd, yd)
+proc imsub*(r:var SimdD16; x,y:SimdS16) {.inline.} =
+  let xd = toDouble(x)
+  let yd = toDouble(y)
+  imsub(r, xd, yd)
 
 when isMainModule:
   var s8:SimdS8

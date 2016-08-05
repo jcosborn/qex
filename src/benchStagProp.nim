@@ -42,7 +42,7 @@ threads:
   echo v2.norm2
 #echo v2
 var sp = initSolverParams()
-sp.maxits = 10000
+sp.maxits = int(1e9/lo.physVol.float)
 s.solve(v2, v1, m, sp)
 resetTimers()
 s.solve(v2, v1, m, sp)
@@ -56,4 +56,17 @@ threads:
   threadBarrier()
   echo r.norm2
 #echo v2
+echoTimers()
+
+var g3:array[8,type(g[0])]
+for i in 0..3:
+  g3[2*i] = g[i]
+  g3[2*i+1] = lo.ColorMatrix()
+  g3[2*i+1].random
+var s3 = newStag3(g3)
+#s3.D(v2, v1, m)
+s3.solve(v2, v1, m, sp)
+resetTimers()
+s3.solve(v2, v1, m, sp)
+
 qexFinalize()
