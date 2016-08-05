@@ -69,11 +69,18 @@ template simdLength*(x:typedesc[DColorMatrixV]):expr = simdLength(Dvec0)
 template simdLength*(x:typedesc[DColorVectorV]):expr = simdLength(Dvec0)
 template simdLength*(x:DColorVectorV):expr = simdLength(Dvec0)
 template simdLength*(x:DColorMatrixV):expr = simdLength(Dvec0)
+template simdLength*(x:AsComplex):expr = simdLength(x.re)
+template simdLength*(x:AsMatrix):expr = simdLength(x[0,0])
 
-template nVectors(x:SColorVectorV):expr = 2*nc
-template nVectors(x:SColorMatrixV):expr = 2*nc*nc
-template nVectors(x:DColorVectorV):expr = 2*nc
-template nVectors(x:DColorMatrixV):expr = 2*nc*nc
+#template nVectors(x:SColorVectorV):expr = 2*nc
+#template nVectors(x:SColorMatrixV):expr = 2*nc*nc
+#template nVectors(x:DColorVectorV):expr = 2*nc
+#template nVectors(x:DColorMatrixV):expr = 2*nc*nc
+template nVectors(x:Svec0):expr = 1
+template nVectors(x:Dvec0):expr = 1
+template nVectors(x:AsComplex):expr = 2*nVectors(x.re)
+template nVectors(x:AsVector):expr = x.len*nVectors(x[0])
+template nVectors(x:AsMatrix):expr = x.nrows*x.ncols*nVectors(x[0,0])
 
 template simdType*(x:tuple):expr = simdType(x[0])
 template simdType*(x:array):expr = simdType(x[x.low])
@@ -210,7 +217,15 @@ proc redot*(x,y:DColorVectorV):Dvec0 {.inline.} =
 proc redot*(x,y:DColorVector):float64 {.inline.} =
   mulSVV(result, x.adj, y)
 
-type PackTypes = SColorVectorV | SColorMatrixV | DColorVectorV | DColorMatrixV
+proc prefetch*(x:ptr AsComplex) {.inline.} =
+  prefetch(addr(x[].re))
+  prefetch(addr(x[].im))
+proc prefetch*(x:ptr AsVector) {.inline.} =
+  for i in 0..<x[].len:
+    prefetch(addr(x[][i]))
+
+#type PackTypes = SColorVectorV | SColorMatrixV | DColorVectorV | DColorMatrixV
+type PackTypes = any
 proc perm*[T](r:var T; prm:int; x:T) {.inline.} =
   const n = x.nVectors
   let rr = cast[ptr array[n,simdType(r)]](r.addr)

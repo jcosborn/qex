@@ -379,9 +379,9 @@ proc redotP*(f1:SomeField; f2:SomeField2):auto =
   let t2 = f2
   for x in items(t1):
     iredot(d, t1[x], t2[x])
-  toc("local")
+  toc("redot local")
   result = simdSum(d)
-  toc("simd sum")
+  toc("redot simd sum")
   #threadBarrier()
   #toc("thread barrier")
   #threadSum(result)
@@ -389,7 +389,7 @@ proc redotP*(f1:SomeField; f2:SomeField2):auto =
   #rankSum(result)
   #toc("rank sum")
   threadRankSum(result)
-  toc("thread rank sum")
+  toc("redot thread rank sum")
 template redot*(f1:SomeAllField; f2:SomeAllField2):expr =
   when declared(subsetObject):
     #echo "subsetObj redot"

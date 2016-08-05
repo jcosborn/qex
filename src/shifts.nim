@@ -97,17 +97,31 @@ template startSB*(s:ShiftB; e:expr) =
 template isLocal*(s: ShiftB; i: int): bool =
   s.si.sq.pidx[i] != -1
 
-template localSB*(s:ShiftB; i:int; e1,e2:untyped):untyped =
-  let k1 = s.si.sq.pidx[i]
-  if k1 >= 0:
-    let ix{.inject.} = k1
-    template it:expr = e2
-    e1
-  elif k1 + 2 <= 0:
-    let ix{.inject.} = -(k1 + 2)
-    var it{.inject,noInit.}:type(e2)
-    perm(it, s.si.perm, e2)
-    e1
+template prefetchSB*(ss:ShiftB; ii:int; e1x:untyped):untyped =
+  subst(s,ss,i,ii,e1,e1x):
+    block:
+      let imax = s.subset.highOuter
+      if i<imax:
+        let k1 = s.si.sq.pidx[i]
+        if k1 >= 0:
+          let ix{.inject.} = k1
+          prefetch(addr(e1))
+        elif k1 + 2 <= 0:
+          let ix{.inject.} = -(k1 + 2)
+          prefetch(addr(e1))
+
+template localSB*(ss:ShiftB; ii:int; e1x,e2x:untyped):untyped =
+  subst(s,ss,i,ii,e1,e1x,e2,e2x):
+    let k1 = s.si.sq.pidx[i]
+    if k1 >= 0:
+      let ix{.inject.} = k1
+      template it:expr = e2
+      e1
+    elif k1 + 2 <= 0:
+      let ix{.inject.} = -(k1 + 2)
+      var it{.inject,noInit.}:type(e2)
+      perm(it, s.si.perm, e2)
+      e1
 
 template boundarySB*(s:ShiftB; e:untyped):untyped =
   #mixin blend
