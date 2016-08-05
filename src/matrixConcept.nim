@@ -35,9 +35,9 @@ template createAsType2(t,c:untyped):untyped =
     #t2
   template `[]=`*(x:t; i,j:SomeInteger; y:untyped):expr =
     x[][i,j] = y
-  template len*(x:t):expr = x[].len
-  template nrows*(x:t):expr = x[].nrows
-  template ncols*(x:t):expr = x[].ncols
+  template len*(x:t):expr = getConst(x[].len)
+  template nrows*(x:t):expr = getConst(x[].nrows)
+  template ncols*(x:t):expr = getConst(x[].ncols)
   #template mvLevel*(x:t):expr =
   #  mixin mvLevel
   #  mvLevel(x[])
@@ -136,17 +136,12 @@ template `[]=`*(x:MatrixRowObj; i:int; y:untyped):expr = x.mat[][x.row,i] = y
 #template isVector(x:Col):expr = true
 #template mvLevel(x:Sca1):expr = -1
 
-macro getConst(x:typed):auto =
-  #echo x.treerepr
-  #result = newLit(3)
-  result = newLit(x.intVal)
-
 template load1*(x:Vec1):expr =
   var r{.noInit.}:VectorArray[x.len,type(load1(x[0]))]
   assign(r, x)
   r
 template load1*(x:Mat1):expr =
-  var r{.noInit.}:MatrixArray[getConst(x.nrows),getConst(x.ncols),type(load1(x[0,0]))]
+  var r{.noInit.}:MatrixArray[x.nrows,x.ncols,type(load1(x[0,0]))]
   assign(r, x)
   r
 
@@ -179,7 +174,7 @@ proc row*(x:AsMatrix; i:int):auto {.inline,noInit.} =
 template setRow*(r:AsVector; x:AsVector; i:int):untyped =
   assign(r, x)
 proc setRow*(r:var AsMatrix; x:AsVector; i:int) {.inline.} =
-  const nc = getConst(r.ncols)
+  const nc = r.ncols
   for j in 0..<nc:
     assign(r[i,j], x[j])
 template column*(x:AsVector; i:int):expr = x
@@ -610,13 +605,13 @@ template mulVMV*(rr:typed; xx,yy:typed):untyped =
             imadd(tr[i], x[i,j], ty)
       assign(r, tr)
 template mulMMM*(rr:typed; xx,yy:typed):untyped =
+  #[
   subst(r,rr,x,xx,y,yy,tr,_,i,_,j,_,k,_,txi0r,_,txi0i,_,txikr,_,txiki,_):
     mixin nrows, ncols, mul, imadd, assign, load1
     assert(r.nrows == x.nrows)
     assert(r.ncols == y.ncols)
     assert(x.ncols == y.nrows)
-    #tmpvar(tr, r)
-    var tr{.noInit.}:VectorArray[getConst(r.ncols),type(x[0,0]*y[0,0])]
+    var tr{.noInit.}:VectorArray[r.ncols,type(x[0,0]*y[0,0])]
     forO i, 0, <r.nrows:
       load(txi0r, x[i,0].re)
       forO j, 0, <r.ncols:
@@ -631,26 +626,26 @@ template mulMMM*(rr:typed; xx,yy:typed):untyped =
         load(txiki, x[i,k].im)
         forO j, 0, <r.ncols:
           imaddCIC(tr[j], txiki, y[k,j])
-    #assign(r, tr)
       forO j, 0, <r.ncols:
         assign(r[i,j], tr[j])
-#[
-  assert(x.nrows == r.nrows)
-  assert(x.ncols == y.nrows)
-  assert(r.ncols == y.ncols)
-  mixin mul, imadd
-  forO i, 0, <r.nrows:
-    var tr{.noInit.}:VectorArray[getConst(r.ncols),type(x[0,0]*y[0,0])]
-    load(txi0, x[i,0])
-    forO j, 0, <r.ncols:
-      mul(tr[j], txi0, y[0,j])
-    for k in 1..<x.ncols:
-      load(txik, x[i,k])
+  ]#
+  subst(r,rr,x,xx,y,yy,tr,_,i,_,j,_,k,_,txi0r,_,txi0i,_,txikr,_,txiki,_):
+    assert(x.nrows == r.nrows)
+    assert(x.ncols == y.nrows)
+    assert(r.ncols == y.ncols)
+    mixin mul, imadd
+    forO i, 0, <r.nrows:
+      var tr{.noInit.}:VectorArray[r.ncols,type(x[0,0]*y[0,0])]
+      load(txi0, x[i,0])
       forO j, 0, <r.ncols:
-        imadd(tr[j], txik, y[k,j])
-    forO j, 0, <r.ncols:
-      assign(r[i,j], tr[j])
-]#
+        mul(tr[j], txi0, y[0,j])
+      forO k, 1, <x.ncols:
+        load(txik, x[i,k])
+        forO j, 0, <r.ncols:
+          imadd(tr[j], txik, y[k,j])
+      forO j, 0, <r.ncols:
+        assign(r[i,j], tr[j])
+
 makeLevel2(mul, V, VarVec1, V, Vec2, S, Sca3)
 #makeLevel2(mul, V, VarVec1, S, Sca2, V, Vec3)
 #makeLevel2(op, S, Sca1, V, Vec2, V, Vec3)
@@ -694,7 +689,7 @@ proc `*`*(x:Mat1; y:Sca2):auto {.inline.} =
   r
 template `*`*(x:Mat1; y:Vec2):expr =
   assert(x.ncols == y.len)
-  const n = getConst(x.nrows)
+  const n = x.nrows
   var r{.noInit.}:VectorArray[n,type(x[0,0]*y[0])]
   mul(r, x, y)
   r
@@ -706,8 +701,8 @@ template `*`*(x:Mat1; y:Vec2):expr =
 #  r
 proc `*`*(x:Mat1; y:Mat2):auto {.inline.} =
   assert(x.ncols == y.nrows)
-  const nr = getConst(x.nrows)
-  const nc = getConst(y.ncols)
+  const nr = x.nrows
+  const nc = y.ncols
   var r{.noInit.}:MatrixArray[nr,nc,type(x[0,0]*y[0,0])]
   mul(r, x, y)
   r
@@ -772,7 +767,7 @@ template imaddMMM*(rr:typed; xx,yy:typed):untyped =
       assign(r, tr)
     else:
       forO i, 0, <r.nrows:
-        var tr{.noInit.}:VectorArray[getConst(r.ncols),type(x[0,0]*y[0,0])]
+        var tr{.noInit.}:VectorArray[r.ncols,type(x[0,0]*y[0,0])]
         forO j, 0, <r.ncols:
           assign(tr[j], r[i,j])
         forO k, 0, <x.ncols:

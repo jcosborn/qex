@@ -37,6 +37,10 @@ proc symToIdent*(x: NimNode): NimNode =
 
 macro getConst*(x: static[int]): auto =
   return newLit(x)
+#macro getConst*(x: typed): auto =
+  #echo x.treerepr
+  #result = newLit(3)
+  #result = newLit(x.intVal)
 
 macro delayExpansion*(x:untyped):auto = result = x
 
