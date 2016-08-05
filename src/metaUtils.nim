@@ -35,6 +35,9 @@ proc symToIdent*(x: NimNode): NimNode =
       for c in x:
         result.add symToIdent(c)
 
+macro getConst*(x: static[int]): auto =
+  return newLit(x)
+
 macro delayExpansion*(x:untyped):auto = result = x
 
 macro `$`*(t:typedesc):auto =

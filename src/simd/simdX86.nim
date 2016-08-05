@@ -56,6 +56,11 @@ when declared(SimdS8):
     var xx{.noInit.} = toDouble(x)
     var yy{.noInit.} = toDouble(y)
     imadd(r, xx, yy)
+  proc imsub*(r:var SimdD8; x,y:SimdS8) {.inline.} =
+    let xd = toDouble(x)
+    let yd = toDouble(y)
+    imsub(r, xd, yd)
+
 when declared(SimdS16):
   proc toDouble*(x:SimdS16):SimdD16 {.inline,noInit.} =
     #for i in 0..15: result[i] = float64(x[i])
@@ -65,20 +70,15 @@ when declared(SimdS16):
     var xx{.noInit.} = toDouble(x)
     var yy{.noInit.} = toDouble(y)
     imadd(r, xx, yy)
+  proc imsub*(r:var SimdD16; x,y:SimdS16) {.inline.} =
+    let xd = toDouble(x)
+    let yd = toDouble(y)
+    imsub(r, xd, yd)
 
 when declared(SimdD8):
   template toDouble*(x:SimdD8):expr = x
 when declared(SimdD16):
   template toDouble*(x:SimdD16):expr = x
-
-proc imsub*(r:var SimdD8; x,y:SimdS8) {.inline.} =
-  let xd = toDouble(x)
-  let yd = toDouble(y)
-  imsub(r, xd, yd)
-proc imsub*(r:var SimdD16; x,y:SimdS16) {.inline.} =
-  let xd = toDouble(x)
-  let yd = toDouble(y)
-  imsub(r, xd, yd)
 
 when isMainModule:
   var s8:SimdS8

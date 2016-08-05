@@ -57,7 +57,7 @@ proc mesons(v:any) =
 proc mesonsV(v:any) =
   let l = v.l
   let nt = l.physGeom[3]
-  var cv = newSeq[array[8,type(v[0].norm2())]](nt)
+  var cv = newAlignedMem[array[8,type(v[0].norm2())]](nt)
   var c = newSeq[array[8,float64]](nt)
   threads:
     for e in 0..<l.nSitesOuter:
@@ -66,7 +66,7 @@ proc mesonsV(v:any) =
       let s = l.corner(i)
       let tpar = (8*t+s) mod numThreads
       if tpar==threadNum:
-        cv[t][s] += v[e].norm2()
+        cv[t][s] += v[e].norm2
   for tt in 0..<nt:
     for ss in 0..<8:
       for i in 0..<l.nSitesInner:
@@ -135,5 +135,6 @@ when isMainModule:
     threadBarrier()
     echo r.norm2
   #echo v2
+  mesons(v2)
   mesonsV(v2)
   qexFinalize()

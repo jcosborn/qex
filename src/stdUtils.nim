@@ -51,6 +51,10 @@ proc `+`*[T](x,y:openArray[T]):auto {.inline.} =
   for i in 0..<n:
     r[i] = x[i] + y[i]
   r
+proc `+=`*[T](x:var openArray[T], y: openArray[T]) {.inline.} =
+  let n = x.len
+  for i in 0..<n:
+    x[i] += y[i]
 template makeArrayOverloads(n:int):untyped =
   proc `+`*[T](x,y:array[n,T]):array[n,T] {.inline.} =
     for i in 0..<x.len:
@@ -64,6 +68,10 @@ template makeArrayOverloads(n:int):untyped =
 makeArrayOverloads(4)
 makeArrayOverloads(8)
 makeArrayOverloads(16)
+
+proc sum*[T](x:openArray[T]): auto =
+  result = x[0]
+  for i in 1..<x.len: result += x[i]
 
 macro echoImm*(s:varargs[expr]):auto =
   result = newEmptyNode()

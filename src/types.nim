@@ -21,6 +21,8 @@ template adj*(xx:typed):expr =
       asVector(adj(x[]))
     elif isMatrix(x):
       asMatrix(adj(x[]))
+    elif x is SomeNumber:
+      x
     else:
       when compiles(addr(x)):
       #when compiles(unsafeAddr(x)):

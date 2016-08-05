@@ -5,8 +5,11 @@ import basicOps
 import types
 import wrapperTypes
 import complexConcept
+# opinc, opdec
+# minc, mdec, redotinc, redotdec
 # unary ops: assign(=),neg(-),iadd(+=),isub(-=),imul(*=),idiv(/=)
 # binary ops: add(+),sub(-),mul(*),divd(/),imadd(+=*),imsub(-=*)
+# iaddmul, isubmul
 # ternary ops: madd(*+),msub(*-),nmadd(-*+),nmsub(-*-)
 # assign: trace,dot,outer
 # wrap: conj,adj,transpose
@@ -176,7 +179,7 @@ proc row*(x:AsMatrix; i:int):auto {.inline,noInit.} =
 template setRow*(r:AsVector; x:AsVector; i:int):untyped =
   assign(r, x)
 proc setRow*(r:var AsMatrix; x:AsVector; i:int) {.inline.} =
-  const nc = r.ncols
+  const nc = getConst(r.ncols)
   for j in 0..<nc:
     assign(r[i,j], x[j])
 template column*(x:AsVector; i:int):expr = x
@@ -198,7 +201,8 @@ proc `$`*(x:Vec1):string =
   result = $(x[0])
   forO i, 1, x.len-1:
     result.add "," & $(x[i])
-proc `$`*(x:Mat1):string =
+#proc `$`*(x:Mat1):string =
+proc `toString`*(x:Mat1):string =
   mixin `$`
   result = ""
   forO i, 0, x.nrows-1:
@@ -702,8 +706,8 @@ template `*`*(x:Mat1; y:Vec2):expr =
 #  r
 proc `*`*(x:Mat1; y:Mat2):auto {.inline.} =
   assert(x.ncols == y.nrows)
-  const nr = x.nrows
-  const nc = y.ncols
+  const nr = getConst(x.nrows)
+  const nc = getConst(y.ncols)
   var r{.noInit.}:MatrixArray[nr,nc,type(x[0,0]*y[0,0])]
   mul(r, x, y)
   r
@@ -904,7 +908,23 @@ proc idot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
 proc iredot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
   imaddSVV(r, x.adj, y)
 
-  
+proc redot*(x:Mat1; y:Mat2):auto {.inline,noInit.} =
+  var r{.noInit.}: type(redot(x[0,0],y[0,0]))
+  redot(r, x, y)
+  r
+proc redot*(rr:var Sca1; xx:Mat2; yy:Mat3) {.inline.} =
+  subst(r,rr,x,xx,y,yy,tr,_,i,_,j,_,k,_):
+    mixin mul, imadd, assign
+    assert(x.nrows == y.nrows)
+    assert(x.ncols == y.ncols)
+    var tr = redot(x[0,0], y[0,0])
+    forO j, 1, <x.ncols:
+      redotinc(tr, x[0,j], y[0,j])
+    forO i, 1, <x.nrows:
+      forO k, 0, <x.ncols:
+        redotinc(tr, x[i,k], y[i,k])
+    assign(r, tr)
+
 when isMainModule:
   const nc = 3
   const ns = 4
@@ -941,6 +961,11 @@ when isMainModule:
     echo "scv1: ", scv1[3][0]
     assign(scv1, asScalar(cv1))
     echo "scv1: ", scv1[3][0]
+
+    var rd = redot(cm1,cm2)
+    var rd2 = trace(cm1.adj*cm2)
+    echo rd
+    echo rd2
 
     #neg(scm1, cv1)
     #add(scm1, scv1, cm1)

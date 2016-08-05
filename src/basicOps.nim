@@ -104,6 +104,9 @@ template inorm2*(r:var SomeNumber; x:SomeNumber2):untyped = imadd(r, x, x)
 template dot*(x:SomeNumber; y:SomeNumber2):expr = x*y
 template idot*(r:var SomeNumber; x:SomeNumber2;y:SomeNumber3):expr =
   imadd(r,x,y)
+template redot*(x:SomeNumber; y:SomeNumber2):expr = x*y
+template redotinc*(r:var SomeNumber; x:SomeNumber2; y:SomeNumber3):untyped =
+  r += x*y
 template simdSum*(x:SomeNumber):expr = x
 template simdSum*(r:var SomeNumber; x:SomeNumber2):untyped =
  r = (type(r))(x)

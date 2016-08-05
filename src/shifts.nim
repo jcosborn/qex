@@ -55,6 +55,12 @@ proc createShiftBufs*(n:int; x:any; ln=1; sub="all"):auto =
   for i in 0..<n:
     s[i].initShiftB(x, i, ln, sub)
   result = s  
+proc createShiftBufs*(x:any; ln=1; sub="all"):auto =
+  let n = x.l.nDim
+  var s = newSeq[ShiftB[x[0].type]](n)
+  for i in 0..<n:
+    s[i].initShiftB(x, i, ln, sub)
+  result = s
   
 #proc init*(s:var ShiftB; ;
 #           dir,len:int; sub="all") =
@@ -87,6 +93,9 @@ template startSB*(s:ShiftB; e:expr) =
     if threadNum == 0:
       #echoRank "send: ", cast[ptr float32](s.sb.sq.sbuf)[]
       startSendBuf(s.sb)
+
+template isLocal*(s: ShiftB; i: int): bool =
+  s.si.sq.pidx[i] != -1
 
 template localSB*(s:ShiftB; i:int; e1,e2:untyped):untyped =
   let k1 = s.si.sq.pidx[i]

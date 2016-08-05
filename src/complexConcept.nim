@@ -355,6 +355,19 @@ proc mul*(r:var C1; x:C2; y:C3) {.inline.} =
   mul(r, x, y.re.asReal)
   imadd(r, x, y.im.asImag)
 
+proc redot*(x:C2; y:C3):auto {.inline,noInit.} =
+  # x.re*y.re + x.im*y.im
+  mixin mul, imadd
+  var r{.noInit.}:type(x.re*y.re)
+  mul(r, x.re, y.re)
+  imadd(r, x.im, y.im)
+  r
+proc redotinc*(r:var any; x:C2; y:C3) {.inline.} =
+  # r += x.re*y.re + x.im*y.im
+  mixin imadd
+  imadd(r, x.re, y.re)
+  imadd(r, x.im, y.im)
+
 proc `*`*(x:SomeNumber; y:C2):auto {.inline.} =
   var r{.noInit.}:ComplexType[type(x*y.re)]
   mul(r, x, y)

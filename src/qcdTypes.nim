@@ -2,10 +2,6 @@ import alignedMem
 export alignedMem
 import layout
 import basicOps
-#import vec
-#export vec
-#import vec_gcc
-#export vec_gcc
 import simd
 export simd
 import macros

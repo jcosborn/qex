@@ -27,7 +27,7 @@ proc symToIdent(x: NimNode): NimNode =
       for c in x:
         result.add symToIdent(c)
 
-macro toString(x:untyped):auto =
+macro exp2string(x:untyped):auto =
   var s = repr symToIdent x
   let n = skipWhitespace(s)
   newlit s[n..^1]
@@ -54,7 +54,7 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
   let dt = t1 - t0
   let mf = (nrep.float*flops)/(1e6*dt)
   let mb = (nrep.float*bytes)/(1e6*dt)
-  echo "(", toString(eqn), ") secs: ", dt|(5,3), "  mf: ", mf.int,
+  echo "(", exp2string(eqn), ") secs: ", dt|(5,3), "  mf: ", mf.int,
        "  mb: ", mb.int
 
 proc test(lat:any) =

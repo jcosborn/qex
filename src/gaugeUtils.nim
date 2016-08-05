@@ -83,9 +83,8 @@ template setupTransporters(n,fld,nff:untyped):untyped =
   #var tc{.inject.} = 0
 
 # a * pathProduct( u[nu] ^* v[mu] ^* u[nu].dag ) + b*
-
 # s[mu] = a_mu s[mu] + f_mu_nu Unu Vmu Unu^+ + b_mu_nu Unu^+ Vmu Unu
-proc staples*[T,F,B](ss,uu,vv:openArray[T]; ff:openArray[F]; bb:openArray[B]) =
+proc staples*[T,F,B](ss,uu,vv:openArray[T];ff:openArray[F];bb:openArray[B]) =
   let nd = ss.len
   let s = cast[ptr cArray[T]](unsafeAddr(ss[0]))
   let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
@@ -106,6 +105,45 @@ proc staples*[T,F,B](ss,uu,vv:openArray[T]; ff:openArray[F]; bb:openArray[B]) =
                  b[mu][nu] * Ud(nu, V(mu, u[nu]))
         #s[mu] += f[mu][nu] * ( U(nu, v[mu]) * Sd(mu, u[nu])) +
         #         b[mu][nu] * Ud(nu, V(mu, u[nu]))
+
+
+proc plaq*[T](uu: openArray[T]): auto =
+  template getIp(mu,nu: int): int = ((mu*(mu-1)) div 2) + nu
+  let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
+  let lo = u[0].l
+  let nd = lo.nDim
+  var sf = newSeq[type(createShiftBufs(u[0],1,"all"))](nd)
+  for i in 0..<nd-1:
+    sf[i] = createShiftBufs(u[0], 1, "all")
+  sf[nd-1].newSeq(nd)
+  for i in 0..<nd-1: sf[nd-1][i] = sf[i][i]
+  let np = (nd*(nd-1)) div 2
+  var pl = newSeq[float64](np)
+  threads:
+    var plt = newSeq[float64](np)
+    var umunu,unumu: type(load1(u[0][0]))
+    for mu in 0..<nd:
+      for nu in 0..<nd:
+        if mu != nu:
+          startSB(sf[mu][nu], u[mu][ix])
+    for ir in u[0]:
+      for mu in 1..<nd:
+        for nu in 0..<mu:
+          if isLocal(sf[mu][nu],ir) and isLocal(sf[nu][mu],ir):
+            localSB(sf[nu][mu], ir, mul(umunu,u[mu][ir],it), u[nu][ix])
+            localSB(sf[mu][nu], ir, mul(unumu,u[nu][ir],it), u[mu][ix])
+            let ip = getIp(mu,nu)
+            let dt = redot(umunu,unumu)
+            plt[ip] += simdSum(dt)
+    #for mu in 0..<nd:
+    #  for nu in 0..<nd:
+    #    if mu != nu:
+    #      startSB(sf[mu][nu], u[mu][ix])
+    threadSum(plt)
+    threadSingle:
+      for i,v in pairs(plt):
+        pl[i] = v/(lo.physVol.float*0.5*float(nd*(nd-1)*nc))
+  result = pl
 
 
 discard """
@@ -139,7 +177,7 @@ proc staples*[T,A,F,B](staples,uu,vv:openArray[T]; aa:openArray[A];
   #  for mu in 0..<n:
 """
 
-proc plaq*[T](gg:openArray[T]):auto =
+proc plaq2*[T](gg:openArray[T]):auto =
   let g = cast[ptr cArray[T]](unsafeAddr(gg[0]))
   let lo = g[0].l
   let nd = lo.nDim
@@ -150,49 +188,17 @@ proc plaq*[T](gg:openArray[T]):auto =
   var t1 = lo.ColorMatrix()
   var tr:type(trace(m))
   threads:
-    #echoAll threadNum, " ss: ", ptrInt(threadLocals.share)
     m := 0
-    #t1 := g[0] * S0( g[1] )
-    #t2 := g[1] * S1( g[0] )
-    #m += t1 * t2.adj
-    #s0 := g[0]
-    #shift(s0, 0,-1, g[0])
-    #t0.mul(g[0], s0)
-    #discard """
     for mu in 1..<nd:
       for nu in 0..<mu:
-        #s0 := 0
-        #t0 := 0
-        #s1 := 0
-        #t1 := 0
-        #threadBarrier()
         shift(s0, mu,1, g[nu])
-        #threadBarrier()
-        #echo mu, ";", nu, ";", s0
-        #t0.mul(g[mu], s0)
-        #threadBarrier()
-        #echo mu, ";", nu, ";", t0
         shift(s1, nu,1, g[mu])
-        #threadBarrier()
-        #t1.mul(g[nu], s1)
-        #t1 = mul(g[nu], s1)
-        #threadBarrier()
-        #for x in m:
-        #  for ic in 0..<nc:
-        #    for jc in 0..<nc:
-        #      for kc in 0..<nc:
-        #        m[x][ic,jc].imadd(t0[x][ic,kc], conj(t1[x][jc,kc]))
-        #m += t0 * (g[nu]*s1).adj
-        echo "s0: ", trace(s0)
-        echo "s1: ", trace(s1)
+        #echo "s0: ", trace(s0)
+        #echo "s1: ", trace(s1)
         m += (g[mu]*s0) * (g[nu]*s1).adj
-        echo mu, " ", nu, " ", trace(m)/nc
+        #echo mu, " ", nu, " ", trace(m)/nc
     tr = trace(m)
-  #result = tr
-  #result = tr/(0.5*float(nd*(nd-1)*nc))
   result = tr/(lo.physVol.float*0.5*float(nd*(nd-1)*nc))
-  #"""
-  #result = t0[0][0,0]
 
 proc newGauge*(l:Layout):auto =
   result = newSeq[type(l.ColorMatrix())](l.nDim)
@@ -257,12 +263,19 @@ proc random*[T](g:openArray[T]) =
 
 when isMainModule:
   qexInit()
+  #let defaultLat = @[2,2,2,2]
   let defaultLat = @[8,8,8,8]
   defaultSetup()
+  g.random
+
+  var pl2 = plaq2(g)
+  echo pl2
 
   var pl = plaq(g)
   echo pl
+  echo pl.sum
 
+  #[
   var st = lo.newGauge()
   for gg in g: gg := 0.5
   for s in st: s := 0
@@ -272,4 +285,6 @@ when isMainModule:
   staples(st, g, g, c, c)
   for i in 0..<lo.nDim:
     echo st[i].norm2
+  ]#
+
   qexFinalize()
