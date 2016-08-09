@@ -580,7 +580,7 @@ makeShiftMultiSub(ShiftIndices *si[], Layout *l, int *disp[],
   makeGDFromShiftSubs(gd, l, disp, subs, ndisp);
   makeGatherFromGD(gi, gd);
 #if 0
-  if(myrank==0) {  
+  if(myrank==0) {
     printf("sidx: %p\n", gi->srcIndices);
     for(int i=0; i<9; i++) {
       printf("%i:\tsidx: %i\n", i, gi->srcIndices[i]);
@@ -630,7 +630,7 @@ makeShiftMultiSub(ShiftIndices *si[], Layout *l, int *disp[],
   //return;
 
 #if 0
-  if(myrank==1) {  
+  if(myrank==1) {
     printf("sidx: %p\n", gi->sidx);fflush(stdout);
     printf("sidx[0]: %i\n", gi->sidx[0]);
   }
@@ -654,7 +654,7 @@ makeShiftMultiSub(ShiftIndices *si[], Layout *l, int *disp[],
   //TRACE_ALL;
 
 #if 0
-  if(myrank==1) {  
+  if(myrank==1) {
     printf("disp:");
     for(int i=0; i<nd; i++) printf(" %i", disp[i]);
     printf("\n");

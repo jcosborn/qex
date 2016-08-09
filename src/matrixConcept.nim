@@ -900,8 +900,15 @@ proc dot*(r:Sca1; x:Vec2; y:Vec3) {.inline.} =
   mulSVV(r, x.adj, y)
 proc idot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
   imaddSVV(r, x.adj, y)
+#proc iredot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
+#  imaddSVV(r, x.adj, y)
 proc iredot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
-  imaddSVV(r, x.adj, y)
+  subst(tr,_):
+    assert(x.len == y.len)
+    load2(tr, r)
+    forO i, 0, <x.len:
+      redotinc(tr, x[i], y[i])
+    assign(r, tr)
 
 proc redot*(x:Mat1; y:Mat2):auto {.inline,noInit.} =
   var r{.noInit.}: type(redot(x[0,0],y[0,0]))

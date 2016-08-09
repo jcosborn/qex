@@ -254,7 +254,7 @@ proc pack*(r:ptr any; l:ptr any; pck:int; x:PackTypes) {.inline.} =
     let ll = cast[ptr array[n,array[vl2,type(l[])]]](l)
     let xx = cast[ptr array[n,simdType(x)]](unsafeAddr(x))
     template loop(f:untyped):untyped =
-      forStatic i, 0..<n: f(rr[i], xx[i], ll[i])
+      forStatic i, 0, <n: f(rr[i], xx[i], ll[i])
     case pck
     of  1: loop(packp1)
     of -1: loop(packm1)
@@ -275,7 +275,7 @@ proc pack*(r:ptr char; pck:int; x:PackTypes) =
     let rr = cast[ptr array[n,array[vl2,numberType(x)]]](r)
     let xx = cast[ptr array[n,simdType(x)]](unsafeAddr(x))
     template loop(f:untyped):untyped =
-      forStatic i, 0..<n: f(rr[i], xx[i])
+      forStatic i, 0, <n: f(rr[i], xx[i])
     case pck
     of  1: loop(packp1)
     of -1: loop(packm1)
@@ -292,7 +292,7 @@ proc blend*(r:var any; x:ptr char; b:ptr char; blnd:int) {.inline.} =
   let xx = cast[ptr array[n,array[stride,numberType(r)]]](x)
   let bb = cast[ptr array[n,array[stride,numberType(r)]]](b)
   template loop(f:untyped):untyped =
-    forStatic i, 0..<n: f(rr[i], xx[i], bb[i])
+    forStatic i, 0, <n: f(rr[i], xx[i], bb[i])
   case blnd
   of  1: loop(blendp1)
   of -1: loop(blendm1)

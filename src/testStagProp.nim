@@ -68,9 +68,10 @@ proc mesonsV(v:any) =
       if tpar==threadNum:
         cv[t][s] += v[e].norm2
   for tt in 0..<nt:
+    let tt0 = tt - l.coords[3][0] + nt
     for ss in 0..<8:
       for i in 0..<l.nSitesInner:
-        let t = (tt + l.coords[3][i]) mod nt
+        let t = (tt0 + l.coords[3][i]) mod nt
         let s = l.addCorner(ss, i)
         c[t][s] += cv[tt][ss][i]
   rankSum(c)
@@ -91,9 +92,9 @@ when isMainModule:
   qexInit()
   var defaultGaugeFile = "l88.scidac"
   #var defaultLat = [4,4,4,4]
-  #var defaultLat = [8,8,8,8]
+  var defaultLat = [8,8,8,8]
   #var defaultLat = @[8,8,8,16]
-  var defaultLat = @[12,12,12,12]
+  #var defaultLat = @[12,12,12,12]
   defaultSetup()
   var v1 = lo.ColorVector()
   var v2 = lo.ColorVector()

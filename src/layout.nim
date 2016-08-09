@@ -316,10 +316,11 @@ type
     first*: cint
     offr*: ptr cArray[cint]
     lenr*: ptr cArray[cint]
-  ShiftBuf* = object
+  ShiftBufObj* = object
     sq*:ShiftBufQ
     lbufSize*: int
     lbuf*: ptr cArray[char]
+  ShiftBuf* = ref ShiftBufObj
 
 proc prepareShiftBufQ*(sb:ptr ShiftBufQ, si:ptr ShiftIndicesQ, esize:cint)
   {.importc:"prepareShiftBuf",ql.}
@@ -336,14 +337,22 @@ proc startSendBufQ*(sb:ptr ShiftBufQ)
 proc waitSendBufQ*(sb:ptr ShiftBufQ)
   {.importc:"waitSendBuf", ql.}
 
+proc freeShiftBuf*(sb:ShiftBuf) =
+  if sb.lbuf != nil:
+    let a = unsafeaddr(sb.sq)
+    #echo "freeShiftBuf: ", cast[int](a)
+    freeShiftBufQ(sb.sq.addr)
+    dealloc(sb.lbuf)
+    sb.lbuf = nil
 proc prepareShiftBuf*(sb:var ShiftBuf, si:ShiftIndices, esize:int) =
+  #sb.new()
+  sb.new(freeShiftBuf)
+  let a = unsafeaddr(sb.sq)
+  #echo "prepareShiftBuf: ", cast[int](a)
   prepareShiftBufQ(sb.sq.addr, si.sq.addr, esize.cint)
   #sb.lbufSize = (si.sq.nSendSites*si.nSitesInner-si.sq.nSendSites1)*esize
   sb.lbufSize = si.sq.nSendSites*si.nSitesInner*esize
   sb.lbuf = cast[type(sb.lbuf)](alloc(sb.lbufSize))
-proc freeShiftBuf*(sb:var ShiftBuf) =
-  freeShiftBufQ(sb.sq.addr)
-  dealloc(sb.lbuf)
 proc startRecvBuf*(sb:ShiftBuf) = startRecvBufQ(unsafeAddr(sb.sq))
 proc waitRecvBuf*(sb:ShiftBuf) = waitRecvBufQ(unsafeAddr(sb.sq))
 proc doneRecvBuf*(sb:ShiftBuf) = doneRecvBufQ(unsafeAddr(sb.sq))

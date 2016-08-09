@@ -6,6 +6,7 @@ import strUtils
 import stdUtils
 import metaUtils
 import random
+import profile
 
 proc loadGauge*[T](g:openArray[T]; fn:string):int =
   var rd = g[0].l.newReader(fn)
@@ -108,6 +109,7 @@ proc staples*[T,F,B](ss,uu,vv:openArray[T];ff:openArray[F];bb:openArray[B]) =
 
 
 proc plaq*[T](uu: openArray[T]): auto =
+  tic()
   template getIp(mu,nu: int): int = ((mu*(mu-1)) div 2) + nu
   let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
   let lo = u[0].l
@@ -119,32 +121,60 @@ proc plaq*[T](uu: openArray[T]): auto =
   for i in 0..<nd-1: sf[nd-1][i] = sf[i][i]
   let np = (nd*(nd-1)) div 2
   var pl = newSeq[float64](np)
+  toc("plaq setup")
   threads:
+    tic()
     var plt = newSeq[float64](np)
     var umunu,unumu: type(load1(u[0][0]))
     for mu in 0..<nd:
       for nu in 0..<nd:
         if mu != nu:
           startSB(sf[mu][nu], u[mu][ix])
+    toc("plaq start shifts")
     for ir in u[0]:
       for mu in 1..<nd:
         for nu in 0..<mu:
           if isLocal(sf[mu][nu],ir) and isLocal(sf[nu][mu],ir):
-            localSB(sf[nu][mu], ir, mul(umunu,u[mu][ir],it), u[nu][ix])
             localSB(sf[mu][nu], ir, mul(unumu,u[nu][ir],it), u[mu][ix])
+            localSB(sf[nu][mu], ir, mul(umunu,u[mu][ir],it), u[nu][ix])
             let ip = getIp(mu,nu)
             let dt = redot(umunu,unumu)
             plt[ip] += simdSum(dt)
-    #for mu in 0..<nd:
-    #  for nu in 0..<nd:
-    #    if mu != nu:
-    #      startSB(sf[mu][nu], u[mu][ix])
+    toc("plaq local")
+    var needSync = false
+    for mu in 0..<nd:
+      for nu in 0..<nd:
+        if mu != nu:
+          boundaryWaitSB(sf[mu][nu]): needSync = true
+    #if needSync: boundarySyncSB()
+    threadBarrier()
+    toc("plaq wait")
+    for ir in u[0]:
+      for mu in 1..<nd:
+        for nu in 0..<mu:
+          if not isLocal(sf[mu][nu],ir) or not isLocal(sf[nu][mu],ir):
+            if isLocal(sf[mu][nu], ir):
+              localSB(sf[mu][nu], ir, mul(unumu,u[nu][ir],it), u[mu][ix])
+            else:
+              boundaryGetSB(sf[mu][nu], ir):
+                mul(unumu, u[nu][ir], it)
+            if isLocal(sf[nu][mu], ir):
+              localSB(sf[nu][mu], ir, mul(umunu,u[mu][ir],it), u[nu][ix])
+            else:
+              boundaryGetSB(sf[nu][mu], ir):
+                mul(umunu, u[mu][ir], it)
+            let ip = getIp(mu,nu)
+            let dt = redot(umunu,unumu)
+            plt[ip] += simdSum(dt)
+    toc("plaq boundary")
     threadSum(plt)
-    threadSingle:
+    threadBarrier()
+    threadMaster:
       for i,v in pairs(plt):
         pl[i] = v/(lo.physVol.float*0.5*float(nd*(nd-1)*nc))
+      rankSum(pl)
   result = pl
-
+  toc("plaq end", flops=lo.nSites.float*6*(2*66+36))
 
 discard """
 # s[mu] = a_mu s[mu] + f_mu_nu Unu Vmu Unu^+ + b_mu_nu Unu^+ Vmu Unu

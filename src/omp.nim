@@ -9,7 +9,7 @@ else:
   when existsEnv("OMPFLAG"):
     const ompFlag = getEnv("OMPFLAG")
   else:
-    const ompFlag = "-fopenmp"  
+    const ompFlag = "-fopenmp"
   {. passC: ompFlag .}
   {. passL: ompFlag .}
   {. pragma: omp, header:"omp.h" .}

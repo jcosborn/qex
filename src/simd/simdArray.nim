@@ -178,12 +178,14 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   template `[]=`*(x:T; i:SomeInteger; y:any) = x[][i div N0][i mod N0] = y
   template load1*(x:T):untyped = x
   proc to*(x:SomeNumber; y:typedesc[T]):T {.inline,noInit.} =
-    forStatic i, 0, L-1:
-      assign(result[][i], x)
+    subst(i,_):
+      forStatic i, 0, L-1:
+        assign(result[][i], x)
   proc simdReduce*(r:var SomeNumber; x:T) {.inline.} =
     var y = add(x[][0], x[][1])
-    forStatic i, 2, L-1:
-      iadd(y, x[][i])
+    subst(i,_):
+      forStatic i, 2, L-1:
+        iadd(y, x[][i])
     r = (type(r))(simdReduce(y))
   proc simdReduce*(x:T):F {.noInit,inline.} = simdReduce(result, x)
   template simdSum*(r:var SomeNumber; x:T) = simdReduce(r, x)
@@ -243,8 +245,9 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
       forStatic i, 0, L-1:
         assign(r[][i], unsafeAddr(y[i*N0]))
   proc assign*(r:var array[N,SomeNumber], x:T) {.inline.} =
-    forStatic i, 0, L-1:
-      assign(addr(r[i*N0]), x[][i])
+    subst(i,_):
+      forStatic i, 0, L-1:
+        assign(addr(r[i*N0]), x[][i])
   template add*(r:var T; x:SomeNumber; y:T) = add(r, x.to(T), y)
   template sub*(r:var T; x:SomeNumber; y:T) = sub(r, x.to(T), y)
   template mul*(r:var T; x:SomeNumber; y:T) = mul(r, x.to(T), y)

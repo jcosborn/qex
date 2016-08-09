@@ -1,9 +1,6 @@
 import threading
 import comms
 import layout
-#import vec
-#import vec_gcc
-#import simdGcc
 import matrixConcept
 #import complexConcept
 #import times
@@ -17,10 +14,10 @@ import strUtils
 import metaUtils
 
 type ShiftB*[T] = object
-  subset*:Subset
-  si*:ShiftIndices
-  sb*:ShiftBuf
-  size*:int
+  subset*: Subset
+  si*: ShiftIndices
+  sb*: ShiftBuf
+  size*: int
 
 template shiftBType*(x:SomeField):expr = ShiftB[x[0].type]
 
@@ -54,14 +51,14 @@ proc createShiftBufs*(n:int; x:any; ln=1; sub="all"):auto =
   var s = newSeq[ShiftB[x[0].type]](n)
   for i in 0..<n:
     s[i].initShiftB(x, i, ln, sub)
-  result = s  
+  result = s
 proc createShiftBufs*(x:any; ln=1; sub="all"):auto =
   let n = x.l.nDim
   var s = newSeq[ShiftB[x[0].type]](n)
   for i in 0..<n:
     s[i].initShiftB(x, i, ln, sub)
   result = s
-  
+
 #proc init*(s:var ShiftB; ;
 #           dir,len:int; sub="all") =
 
@@ -71,7 +68,7 @@ template startSB*(s:ShiftB; e:expr) =
     if s.si.nRecvRanks > 0:
       #echoRank "startRecvBuf"
       startRecvBuf(s.sb)
-  if s.si.nSendRanks > 0: 
+  if s.si.nSendRanks > 0:
     if s.si.pack == 0:
       let b = cast[ptr cArray[s.T]](s.sb.sq.sbuf)
       #echo "sendSites: ", s.si.nSendSites
@@ -123,66 +120,85 @@ template localSB*(ss:ShiftB; ii:int; e1x,e2x:untyped):untyped =
       perm(it, s.si.perm, e2)
       e1
 
-template boundarySB*(s:ShiftB; e:untyped):untyped =
-  #mixin blend
-  #threadBarrier()
+proc boundaryOffsetSB*(s:ShiftB) =
+  var ti0 = threadDivideLow(s.subset.lowOuter, s.subset.highOuter)
+  var ti1 = threadDivideHigh(s.subset.lowOuter, s.subset.highOuter)
+  var i0 = 0
+  var step = (s.si.nRecvDests+1) div 2
+  template search(i0,ti0:untyped):untyped =
+    while true:
+      while i0<s.si.nRecvDests and s.si.sq.recvDests[i0]<ti0:
+        i0 += step
+        step = (step+1) div 2
+      if i0>s.si.nRecvDests: i0 = s.si.nRecvDests
+      if i0==0 or s.si.sq.recvDests[i0-1]<ti0: break
+      while i0>0 and s.si.sq.recvDests[i0-1]>=ti0:
+        i0 -= step
+        step = (step+1) div 2
+      if i0<0: i0 = 0
+  search(i0, ti0)
+  var i1 = i0
+  step = (i1+s.si.nRecvDests+1) div 2
+  search(i1, ti1)
+  s.sb.sq.offr[threadNum] = cint(i0)
+  s.sb.sq.lenr[threadNum] = cint(i1)
+
+template boundaryWaitSB*(s:ShiftB, e:untyped):untyped =
   if s.si.nRecvDests > 0:
     if s.si.nRecvRanks > 0:
+      e
       if threadNum == 0:
         waitRecvBuf(s.sb)
-        #echoRank "recv: ", cast[ptr float32](s.sb.sq.rbuf)[]
-      twait0()
-    #threadBarrier()
-    if s.sb.sq.offr[threadNum] < 0: 
-      var ti0 = threadDivideLow(s.subset.lowOuter, s.subset.highOuter)
-      var ti1 = threadDivideHigh(s.subset.lowOuter, s.subset.highOuter)
-      var i0 = 0
-      var step = (s.si.nRecvDests+1) div 2
-      template search(i0,ti0:untyped):untyped =
-        while true:
-          while i0<s.si.nRecvDests and s.si.sq.recvDests[i0]<ti0:
-            i0 += step
-            step = (step+1) div 2
-          if i0>s.si.nRecvDests: i0 = s.si.nRecvDests
-          if i0==0 or s.si.sq.recvDests[i0-1]<ti0: break
-          while i0>0 and s.si.sq.recvDests[i0-1]>=ti0:
-            i0 -= step
-            step = (step+1) div 2
-          if i0<0: i0 = 0
-      search(i0, ti0)
-      var i1 = i0
-      step = (i1+s.si.nRecvDests+1) div 2
-      search(i1, ti1)
-      s.sb.sq.offr[threadNum] = cint(i0)
-      s.sb.sq.lenr[threadNum] = cint(i1)
+
+template boundarySyncSB*():untyped =
+  twait0()
+
+template boundaryGetSB*(ss:ShiftB; irr:untyped; e:untyped):untyped =
+  subst(s,ss,ir,irr,rr,_,i,_,k2,_,stride,_,itt,_):
+    if s.si.nRecvDests > 0:
+      let rr = cast[ptr cArray[s.T]](s.sb.sq.rbuf)
+      if s.si.blend == 0:
+        let i = -2 - s.si.sq.sidx[ir]
+        let k2 = s.si.sq.recvRemoteSrcs[i]
+        #echo "blend0: ", i, " ir: ", ir, " k2: ", k2
+        subst(it,rr[k2]):
+          e
+      else:
+        let stride = sizeof(s.T) div 2
+        let i = -2 - s.si.sq.sidx[ir]
+        let k2 = s.si.sq.recvRemoteSrcs[i]
+        #echo "blendb: ", irr, " sidx: ", s.si.sq.sidx[irr].int
+        var itt{.noInit.}: s.T  # should be load1(s.T)?
+        blend(itt, s.sb.lbuf[stride*i].addr,
+              s.sb.sq.rbuf[stride*k2].addr, s.si.blend)
+        subst(it,itt):
+          e
+
+template boundarySB*(s:ShiftB; e:untyped):untyped =
+  var needSync = false
+  boundaryWaitSB(s): needSync = true
+  if needSync: boundarySyncSB()
+  if s.si.nRecvDests > 0:
+    if s.sb.sq.offr[threadNum] < 0: boundaryOffsetSB(s)
     let ti0 = s.sb.sq.offr[threadNum]
     let ti1 = s.sb.sq.lenr[threadNum]
-    #echo myrank, ": here1"
-    #threadBarrier()
-    #echo "recvDests: ", s.si.nRecvDests
     if s.si.blend == 0:
       let rr = cast[ptr cArray[s.T]](s.sb.sq.rbuf)
       for i in ti0..<ti1:
         let irr = s.si.sq.recvDests[i]
         let k2 = s.si.sq.recvRemoteSrcs[i]
-        #s.dest.s[k0] = rr[k2]
-        #template it:expr = rr[k2]
-        #echoAll myrank, " ", i, " ", k2, " ", it
+        #echo "blend0: ", i, " ir: ", irr, " k2: ", k2
         subst(ir,irr,it,rr[k2]):
           e
     else:
       let stride = sizeof(s.T) div 2
       for i in ti0..<ti1:
         let irr = s.si.sq.recvDests[i]
-        #let k1 = si.sq.recvLocalSrcs[i]
         let k2 = s.si.sq.recvRemoteSrcs[i]
-        #echo myrank, " ", i, " ", k0, " ", k1, " ", k2, " ", si.blend
-        #blend(s.dest.s[k0], s.src.s[k1], sb.sq.rbuf[stride*k2].addr, si.blend)
-        #blend(s.dest.s[k0], sb.lbuf[stride*i].addr, sb.sq.rbuf[stride*k2].addr, si.blend)
-        var itt{.noInit.}:s.T
+        #echo "blendb: ", irr, " sidx: ", s.si.sq.sidx[irr].int
+        var itt{.noInit.}: s.T  # should be load1(s.T)?
         blend(itt, s.sb.lbuf[stride*i].addr,
               s.sb.sq.rbuf[stride*k2].addr, s.si.blend)
-        #echo i, " ", it
         subst(ir,irr,it,itt):
           e
     if s.si.nRecvRanks > 0:
@@ -191,21 +207,16 @@ template boundarySB*(s:ShiftB; e:untyped):untyped =
   if s.si.nSendRanks > 0:
     if threadNum == 0:
       waitSendBuf(s.sb)
-  #QMP_barrier()
-  #threadBarrier()
-  #if threadNum == 0:
-  #  freeShiftBuf(s.sb)
 
-
-type Shift*[V:static[int];T] = object
-  src*:Field[V,T]
-  dest*:Field[V,T]
-  dir*,len*:int
-  sub*:string
-  subset*:Subset
-  si*:ShiftIndices
-  sb*:ShiftBuf
-  size*:int
+type Shift*[V: static[int]; T] = object
+  src*: Field[V,T]
+  dest*: Field[V,T]
+  dir*,len*: int
+  sub*: string
+  subset*: Subset
+  si*: ShiftIndices
+  sb*: ShiftBuf
+  size*: int
 
 template createShift*(x:Field):expr =
   Shift[x.V,x.T](src:x)
@@ -237,7 +248,7 @@ proc start*[V:static[int],T](s:var Shift[V,T]; src:Field[V,T]) =
       #echo myrank, ": startRecvBuf"
       startRecvBuf(sb)
   #echo "test3"
-  if si.nSendRanks > 0: 
+  if si.nSendRanks > 0:
     if si.pack == 0:
       let b = cast[ptr cArray[T]](sb.sq.sbuf)
       tFor i, 0..<si.nSendSites:
@@ -254,7 +265,7 @@ proc start*[V:static[int],T](s:var Shift[V,T]; src:Field[V,T]) =
         #pack(sb.sq.sbuf[stride*i].addr, si.pack, src[k])
         pack(b[j].addr, l[j].addr, si.pack, src[k])
     t0wait()
-    if threadNum == 0: 
+    if threadNum == 0:
       #echo "startSendBuf"
       startSendBuf(sb)
 
@@ -284,7 +295,7 @@ proc boundary*(s:var Shift) =
         #echo "waitRecvBuf"
         waitRecvBuf(sb)
       twait0()
-    if sb.sq.offr[threadNum] < 0: 
+    if sb.sq.offr[threadNum] < 0:
       var ti0 = threadDivideLow(s.subset.lowOuter, s.subset.highOuter)
       var ti1 = threadDivideHigh(s.subset.lowOuter, s.subset.highOuter)
       var i0 = 0
@@ -315,6 +326,7 @@ proc boundary*(s:var Shift) =
       for i in ti0..<ti1:
         let k0 = si.sq.recvDests[i]
         let k2 = si.sq.recvRemoteSrcs[i]
+        #echo "blend0: ", i, " ir: ", k0, " k2: ", k2
         #echo myrank, ": ", i, " ", k0, " ", k2
         #echo myrank, ": rr: ", cast[int](rr)
         #echo myrank, ": rbuf[0]: ", sb.sq.rbuf[0].ord
@@ -325,7 +337,7 @@ proc boundary*(s:var Shift) =
       for i in ti0..<ti1:
         let k0 = si.sq.recvDests[i]
         #let k1 = si.sq.recvLocalSrcs[i]
-        let k2 = si.sq.recvRemoteSrcs[i] 
+        let k2 = si.sq.recvRemoteSrcs[i]
         #echo myrank, " ", i, " ", k0, " ", k1, " ", k2, " ", si.blend
         #blend(s.dest.s[k0], s.src.s[k1], sb.sq.rbuf[stride*k2].addr, si.blend)
         blend(s.dest.s[k0], sb.lbuf[stride*i].addr, sb.sq.rbuf[stride*k2].addr, si.blend)
@@ -340,7 +352,7 @@ proc boundary*(s:var Shift) =
   threadBarrier()
   if threadNum == 0:
     freeShiftBuf(sb)
-  
+
 #template varShift*[V:static[int],T](
 proc shift*[V:static[int],T](dest:var Field[V,T]; dir,len:int;
                              sub:string; src:Field[V,T]) =
@@ -382,7 +394,7 @@ when isMainModule:
     v1 := 1
     v2 := 0
     v3 := 0
-    threadBarrier()  
+    threadBarrier()
     for e in v1.all:
       let x = lo.vcoords(e)
       #v1.s[e] := e + 1
@@ -401,7 +413,7 @@ when isMainModule:
         echo v1[e][0]
     #v1 := 1
     #v3 := v1
-    threadBarrier()  
+    threadBarrier()
     if threadNum==0:
       echo myRank, ": ", v1[0][0]
     for dir in 0..<lat.len:

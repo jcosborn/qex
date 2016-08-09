@@ -30,6 +30,8 @@ proc symToIdent*(x: NimNode): NimNode =
       result.strVal = x.strVal
     of nnkIdent, nnkSym:
       result = newIdentNode($x)
+    of nnkOpenSymChoice:
+      result = newIdentNode($x[0])
     else:
       result = newNimNode(x.kind)
       for c in x:
@@ -229,7 +231,7 @@ macro subst*(x:varargs[untyped]):auto =
   #echo result.repr
   #result.dumpTyped(result)
 
-macro forStaticX(a,b:static[int]; index,body:untyped):stmt =
+macro forStaticX2(a,b:static[int]; index,body:untyped):stmt =
   #echo(index.repr)
   #echo(index.treeRepr)
   #echo(body.repr)
@@ -257,7 +259,7 @@ template forStatic*(index,slice,body:untyped):untyped =
   forStaticX(slice, index, body)
 
 template forStatic*(index,i0,i1,body:untyped):untyped =
-  forStaticX(i0, i1, index, body)
+  forStaticX2(i0, i1, index, body)
 
 template forOpt*(i,r0,r1,b:untyped):untyped =
   when compiles((const x=r0;const y=r1;x)):

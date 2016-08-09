@@ -7,26 +7,6 @@ import parseUtils
 #import optimize
 import metaUtils
 
-proc symToIdent(x: NimNode): NimNode =
-  case x.kind:
-    of nnkCharLit..nnkUInt64Lit:
-      result = newNimNode(x.kind)
-      result.intVal = x.intVal
-    of nnkFloatLit..nnkFloat64Lit:
-      result = newNimNode(x.kind)
-      result.floatVal = x.floatVal
-    of nnkStrLit..nnkTripleStrLit:
-      result = newNimNode(x.kind)
-      result.strVal = x.strVal
-    of nnkIdent, nnkSym:
-      result = newIdentNode($x)
-    of nnkOpenSymChoice:
-      result = newIdentNode($x[0])
-    else:
-      result = newNimNode(x.kind)
-      for c in x:
-        result.add symToIdent(c)
-
 macro exp2string(x:untyped):auto =
   var s = repr symToIdent x
   let n = skipWhitespace(s)
