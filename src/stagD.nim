@@ -311,6 +311,7 @@ proc stagDb*(sd:StaggeredD; r:Field; g:openArray[Field2];
 # r = m2 - Deo * Doe
 proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
                x:Field; m2:SomeNumber) =
+  tic()
   var t{.global.}:type(x)
   if t==nil:
     threadBarrier()
@@ -319,14 +320,18 @@ proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
     threadBarrier()
   #threadBarrier()
   #stagD(sdo, t, g, x, 0.0)
+  toc("stagD2ee init")
   block:
     stagDP(sdo, t, g, x, 0):
       rir := 0
+  toc("stagD2ee DP")
   threadBarrier()
+  toc("stagD2ee barrier")
   #stagD(sde, r, g, t, 0.0)
   block:
     stagDM(sde, r, g, t, 6):
       rir := (4.0*m2)*x[ir]
+  toc("stagD2ee DM")
   #threadBarrier()
   #r[sde.sub] := m2*x - r
   #for ir in r[sde.subset]:
@@ -450,7 +455,7 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =
   var sp = initSolverParams()
   sp.r2req = res
   #sp.maxits = 1000
-  #sp.verbosity = 1
+  sp.verbosity = 1
   solve(s, r, x, m, sp)
 
 proc solve2*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =

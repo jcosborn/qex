@@ -136,47 +136,44 @@ template `[]=`*(x:MatrixRowObj; i:int; y:untyped):expr = x.mat[][x.row,i] = y
 #template isVector(x:Col):expr = true
 #template mvLevel(x:Sca1):expr = -1
 
-template load1*(x:Vec1):expr =
-  var r{.noInit.}:VectorArray[x.len,type(load1(x[0]))]
-  assign(r, x)
-  r
-template load1*(x:Mat1):expr =
-  var r{.noInit.}:MatrixArray[x.nrows,x.ncols,type(load1(x[0,0]))]
-  assign(r, x)
-  r
+#template simpleAssign(
+#template tmplexpr*(x:typed):expr = x
+#template tmptype*(x:Vec1):expr = VectorArray[x.len,type(load1(x[0]))]
 
-template cfor*(i,r0,r1,b:untyped):untyped =
-  block:
-    var i = r0
-    while i <= r1:
-      b
-      inc(i)
-#template forO*(i,r0,r1,b:untyped):untyped = #cfor(i,r0,r1,b)
-#  var i:int
-#  for ii{.gensym.} in r0..r1:
-#    i = ii
-#    b
-macro forO*(i,r0,r1,b:untyped):auto =
-  #echo b.repr
-  result = quote do:
-    for `i` in `r0`..`r1`:
-      `b`
-#template forO*(i,r0,r1,b:untyped):untyped = forStatic(i,r0,r1,b)
+template load1*(xx:Vec1):expr =
+  lets(x,xx):
+    var r{.noInit.}:VectorArray[x.len,type(load1(x[0]))]
+    assign(r, x)
+    r
+template load1*(xx:Mat1):expr =
+  lets(x,xx):
+    var r{.noInit.}: MatrixArray[x.nrows,x.ncols,type(load1(x[0,0]))]
+    assign(r, x)
+    r
+#template tmpvar1*(x:Vec1):expr =
+#  lets(x,xx):
+#    var r{.noInit.}:VectorArray[x.len,type(load1(x[0]))]
+#    #assign(r, x)
+#    r
 
-template row*(x:AsVector; i:int):expr = x
-proc row*(x:AsMatrix; i:int):auto {.inline,noInit.} =
-  const nc = x.ncols
-  var r{.noInit.}:VectorArray[nc,type(load1(x[0,0]))]
-  for j in 0..<nc:
-    assign(r[j], x[i,j])
-  r
-  #return asVector(MatrixRowObj[type(x)](row:i,mat:unsafeAddr(x)))
+template row*(x:AsVector; i:int):untyped = x
+#proc row*(x:AsMatrix; i:int):auto {.inline,noInit.} =
+template row*(x:AsMatrix; i:int):untyped =
+  #const nc = x.ncols
+  #var r{.noInit.}:VectorArray[nc,type(load1(x[0,0]))]
+  #for j in 0..<nc:
+  #  assign(r[j], x[i,j])
+  #r
+  asVector(MatrixRowObj[type(x)](row:i,mat:unsafeAddr(x)))
 template setRow*(r:AsVector; x:AsVector; i:int):untyped =
   assign(r, x)
-proc setRow*(r:var AsMatrix; x:AsVector; i:int) {.inline.} =
-  const nc = r.ncols
-  for j in 0..<nc:
-    assign(r[i,j], x[j])
+#proc setRow*(r:var AsMatrix; x:AsVector; i:int) {.inline.} =
+template setRow*(rr:var AsMatrix; xx:AsVector; ii:int) =
+  subst(r,rr,x,xx,i,ii,nc,_,j,_):
+    lets(xt,x,it,i):
+      const nc = r.ncols
+      for j in 0..<nc:
+        assign(r[it,j], xt[j])
 template column*(x:AsVector; i:int):expr = x
 proc column*(x:AsMatrix; i:int):auto {.inline,noInit.} =
   const nr = x.nrows
@@ -190,6 +187,9 @@ proc setColumn*(r:var AsMatrix; x:AsVector; i:int) {.inline.} =
   const nr = r.nrows
   for j in 0..<nr:
     assign(r[j,i], x[j])
+
+import matrixOps
+export matrixOps
 
 proc `$`*(x:Vec1):string =
   mixin `$`
@@ -209,54 +209,28 @@ proc `toString`*(x:Mat1):string =
 template makeLevel1(f,s1,t1,s2,t2:untyped):untyped =
   proc f*(r:t1, x:t2) {.inline.} =
     `f s1 s2`(r, x)
-#macro makeLevel1(f,s1,t1,s2,t2:untyped):auto =
-  #mixin mvLevel
-#  let f12 = ident($f & $s1 & $s2)
+template makeLevel1t(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
+  template f*(rr:t1, xx:t2) =
+    subst(r,rr,x,xx,xt,_):
+      #treerep: x
+      lets(xt,x):
+        `f s1 s2`(r, xt)
+
+#macro makeLevel2(f,s1,t1,s2,t2,s3,t3:untyped):auto =
+#  let f123 = ident($f & $s1 & $s2 & $s3)
 #  result = quote do:
-    #template `f`*(r:`t1`, x:`t2`):untyped =
-#    proc `f`*(r:`t1`, x:`t2`) {.inline.} =
-    #when mvLevel(r) > mvLevel(x):
-    #  `f s1 S`(r, x)
-    #elif mvLevel(r) < mvLevel(x):
-    #  `f S s2`(r, x)
-    #else:
-      #`f s1 s2`(r, x)
-#      `f12`(r, x)
-macro makeLevel2(f,s1,t1,s2,t2,s3,t3:untyped):auto =
-  #let f1SS = ident($f & $s1 & "SS")
-  #let fSS3 = ident($f & "SS" & $s3)
-  #let f1S3 = ident($f & $s1 & "S" & $s3)
-  #let fS2S = ident($f & "S" & $s2 & "S")
-  #let fS23 = ident($f & "S" & $s2 & $s3)
-  #let f12S = ident($f & $s1 & $s2 & "S")
-  let f123 = ident($f & $s1 & $s2 & $s3)
-  result = quote do:
-    #mixin mvLevel
-    #template `f`*(r:`t1`; x:`t2`; y:`t3`):untyped =
-    proc `f`*(r:`t1`; x:`t2`; y:`t3`) {.inline.} =
-      #echoTyped(x.mvLevel)
-      #when r.mvLevel > x.mvLevel:
-      #  when r.mvLevel > y.mvLevel:
-      #    `f1SS`(r, x, y)
-      #  elif mvLevel(r) < mvLevel(y):
-      #    `fSS3`(r, x, y)
-      #  else:
-      #    `f1S3`(r, x, y)
-      #elif mvLevel(r) < mvLevel(x):
-      #  when mvLevel(x) > mvLevel(y):
-      #    `fS2S`(r, x, y)
-      #  elif mvLevel(x) < mvLevel(y):
-      #    `fSS3`(r, x, y)
-      #  else:
-      #    `fS23`(r, x, y)
-      #else:
-      #  when mvLevel(r) > mvLevel(y):
-      #    `f12S`(r, x, y)
-      #  elif mvLevel(r) < mvLevel(y):
-      #    `fSS3`(r, x, y)
-      #  else:
-          `f123`(r, x, y)
-  #echo result.repr
+#    proc `f`*(r:`t1`; x:`t2`; y:`t3`) {.inline.} =
+#      `f123`(r, x, y)
+template func3(f,a,b,c: untyped): untyped = f(a,b,c)
+template makeLevel2(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
+  proc f*(r:t1, x:t2, y:t3) {.inline.} =
+    #`f s1 s2 s3`(r, x, y)
+    func3(`f s1 s2 s3`, r, x, y)
+template makeLevel2t(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
+  template f*(rr:t1, xx:t2, yy:t3): untyped =
+    subst(r,rr,x,xx,y,yy):
+      lets(xt,x,yt,y):
+        `f s1 s2 s3`(r, xt, yt)
 
 template assignIadd(x,y:untyped):untyped = iadd(x,y)
 template negIadd(x,y:untyped):untyped = isub(x,y)
@@ -319,15 +293,16 @@ template makeMap1(op:untyped):untyped =
   makeLevel1(op, S, VarSca1, V, Vec2)
   makeLevel1(op, S, VarSca1, M, Mat2)
   makeLevel1(op, V, VarVec1, S, Sca2)
-  makeLevel1(op, V, VarVec1, V, Vec2)
+  makeLevel1t(op, V, Vec1, V, Vec2)
+  #makeLevel1t(op, V, VarVec1, V, Vec2)
   makeLevel1(op, V, AsVarVector, S, Sca2)
-  makeLevel1(op, V, AsVarVector, V, Vec2)
+  makeLevel1t(op, V, AsVarVector, V, Vec2)
   makeLevel1(op, M, VarMat1, S, Sca2)
   makeLevel1(op, M, VarMat1, V, Vec2)
-  makeLevel1(op, M, VarMat1, M, Mat2)
+  makeLevel1t(op, M, VarMat1, M, Mat2)
   makeLevel1(op, M, AsVarMatrix, S, Sca2)
   makeLevel1(op, M, AsVarMatrix, V, Vec2)
-  makeLevel1(op, M, AsVarMatrix, M, Mat2)
+  makeLevel1t(op, M, AsVarMatrix, M, Mat2)
 
 makeMap1(assign)
 makeMap1(neg)
@@ -494,31 +469,21 @@ template makeMap2(op:untyped):untyped =
 makeMap2(add)
 makeMap2(sub)
 
-proc `+`*(x:Vec1; y:Vec2):auto {.inline.} =
-  assert(x.len==y.len)
-  const n = x.len
-  var r{.noInit.}:VectorArray[n,type(x[0]+y[0])]
-  add(r, x, y)
-  r
-proc `+`*(x:Sca1; y:Mat2):auto {.inline.} =
-  const nr = y.nrows
-  const nc = y.ncols
-  var r{.noInit.}:MatrixArray[nr,nc,type(x+y[0,0])]
-  add(r, x, y)
-  r
-proc `+`*(x:Mat1; y:Mat2):auto {.inline.} =
+setBinop(`+`, add, Vec1, Vec2, VectorArray[x.len,type(x[0]+y[0])])
+setBinop(`-`, sub, Vec1, Vec2, VectorArray[x.len,type(x[0]-y[0])])
+
+proc `+`*(xt:Sca1; yt:Mat2): auto {.inline.} =
+  #lets(xt,x,yt,y):
+    var r{.noInit.}:MatrixArray[yt.nrows,yt.ncols,type(xt+yt[0,0])]
+    add(r, xt, yt)
+    r
+proc `+`*(x:Mat1; y:Mat2): auto {.inline.} =
   assert(x.nrows==y.nrows)
   assert(x.ncols==y.ncols)
   const nr = x.nrows
   const nc = x.ncols
   var r{.noInit.}:MatrixArray[nr,nc,type(x[0,0]+y[0,0])]
   add(r, x, y)
-  r
-proc `-`*(x:Vec1; y:Vec2):auto {.inline.} =
-  assert(x.len==y.len)
-  const n = x.len
-  var r{.noInit.}:VectorArray[n,type(x[0]-y[0])]
-  sub(r, x, y)
   r
 proc `-`*(x:Sca1; y:Mat2):auto {.inline.} =
   const nr = y.nrows
@@ -527,258 +492,31 @@ proc `-`*(x:Sca1; y:Mat2):auto {.inline.} =
   sub(r, x, y)
   r
 
-template mulSVV*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tr,_,i,_):
-    mixin mul, imadd
-    assert(x.len == y.len)
-    tmpvar(tr, r)
-    mul(tr, x[0], y[0])
-    forO i, 1, <x.len:
-      imadd(tr, x[i], y[i])
-    assign(r, tr)
-template mulVVS*(r:typed; x,y:typed):untyped =
-  mixin mul
-  assert(r.len == x.len)
-  load(ty, y)
-  forO i, 0, <r.len:
-    mul(r[i], x[i], ty)
-template mulVSV*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tx,_,i,_):
-    mixin mul
-    assert(r.len == y.len)
-    load(tx, x)
-    forO i, 0, <r.len:
-      mul(r[i], tx, y[i])
-proc mul*(r:var Vec1; x:Sca2; y:Vec3) {.inline.} = mulVSV(r, x, y)
-proc mulMMS*(r:any; x,y:any) {.inline.} =
-  #mixin mul
-  assert(r.nrows == x.nrows)
-  assert(r.ncols == x.ncols)
-  #load(ty, y)
-  forO i, 0, <r.nrows:
-    forO j, 0, <r.ncols:
-      #echo isComplex(r[i,j])
-      mul(r[i,j], x[i,j], y)
-template mulMSM*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tx,_,i,_,j,_):
-    assert(r.nrows == y.nrows)
-    assert(r.ncols == y.ncols)
-    load(tx, x)
-    forO i, 0, <r.nrows:
-      forO j, 0, <r.ncols:
-        mul(r[i,j], tx, y[i,j])
-#proc mulVMV*(r:Vany; x,y:any) {.inline.} =
-template mulVMV*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_,ty0r,_,ty0i,_,tyjr,_,tyji,_):
-    mixin nrows, ncols, mul, imadd, assign, load1
-    assert(x.nrows == r.len)
-    assert(x.ncols == y.len)
-    when true:
-    #when false:
-      tmpvar(tr, r)
-      #var tr{.noInit.}:array[r.len,type(load1(r[0]))]
-      load(ty0r, y[0].re)
-      forO i, 0, <x.nrows:
-        mulCCR(tr[i], x[i,0], ty0r)
-      load(ty0i, y[0].im)
-      forO i, 0, <x.nrows:
-        imaddCCI(tr[i], x[i,0], ty0i)
-      forO j, 1, <x.ncols:
-        load(tyjr, y[j].re)
-        forO i, 0, <x.nrows:
-          imaddCCR(tr[i], x[i,j], tyjr)
-        load(tyji, y[j].im)
-        forO i, 0, <x.nrows:
-          imaddCCI(tr[i], x[i,j], tyji)
-      assign(r, tr)
-      #forO i, 0, <r.len: assign(r[i], tr[i])
-    else:
-      tmpvar(tr, r)
-      block:
-        load(ty, y[0])
-        forO i, 0, <x.nrows:
-          mul(tr[i], x[i,0], ty)
-      forO j, 1, <x.ncols:
-        block:
-          load(ty, y[j])
-          forO i, 0, <x.nrows:
-            imadd(tr[i], x[i,j], ty)
-      assign(r, tr)
-template mulMMM*(rr:typed; xx,yy:typed):untyped =
-  #[
-  subst(r,rr,x,xx,y,yy,tr,_,i,_,j,_,k,_,txi0r,_,txi0i,_,txikr,_,txiki,_):
-    mixin nrows, ncols, mul, imadd, assign, load1
-    assert(r.nrows == x.nrows)
-    assert(r.ncols == y.ncols)
-    assert(x.ncols == y.nrows)
-    var tr{.noInit.}:VectorArray[r.ncols,type(x[0,0]*y[0,0])]
-    forO i, 0, <r.nrows:
-      load(txi0r, x[i,0].re)
-      forO j, 0, <r.ncols:
-        mulCRC(tr[j], txi0r, y[0,j])
-      load(txi0i, x[i,0].im)
-      forO j, 0, <r.ncols:
-        imaddCIC(tr[j], txi0i, y[0,j])
-      forO k, 1, <x.ncols:
-        load(txikr, x[i,k].re)
-        forO j, 0, <r.ncols:
-          imaddCRC(tr[j], txikr, y[k,j])
-        load(txiki, x[i,k].im)
-        forO j, 0, <r.ncols:
-          imaddCIC(tr[j], txiki, y[k,j])
-      forO j, 0, <r.ncols:
-        assign(r[i,j], tr[j])
-  ]#
-  subst(r,rr,x,xx,y,yy,tr,_,i,_,j,_,k,_,txi0r,_,txi0i,_,txikr,_,txiki,_):
-    assert(x.nrows == r.nrows)
-    assert(x.ncols == y.nrows)
-    assert(r.ncols == y.ncols)
-    mixin mul, imadd
-    forO i, 0, <r.nrows:
-      var tr{.noInit.}:VectorArray[r.ncols,type(x[0,0]*y[0,0])]
-      load(txi0, x[i,0])
-      forO j, 0, <r.ncols:
-        mul(tr[j], txi0, y[0,j])
-      forO k, 1, <x.ncols:
-        load(txik, x[i,k])
-        forO j, 0, <r.ncols:
-          imadd(tr[j], txik, y[k,j])
-      forO j, 0, <r.ncols:
-        assign(r[i,j], tr[j])
-
 makeLevel2(mul, V, VarVec1, V, Vec2, S, Sca3)
-#makeLevel2(mul, V, VarVec1, S, Sca2, V, Vec3)
+makeLevel2t(mul, V, VarVec1, S, Sca2, V, Vec3)
 #makeLevel2(op, S, Sca1, V, Vec2, V, Vec3)
 makeLevel2(mul, M, VarMat1, M, Mat2, S, Sca3)
 makeLevel2(mul, M, VarMat1, S, Sca2, M, Mat3)
-makeLevel2(mul, V, VarVec1, M, Mat2, V, Vec3)
+makeLevel2t(mul, V, VarVec1, M, Mat2, V, Vec3)
 #makeLevel2(op, V, Vec1, V, Vec2, M, Mat3)
-makeLevel2(mul, M, VarMat1, M, Mat2, M, Mat3)
+makeLevel2t(mul, M, VarMat1, M, Mat2, M, Mat3)
 #makeLevel2(op, M, Mat1, S, Sca2, S, Sca3)
 #makeLevel2(op, M, Mat1, V, Vec2, S, Sca3)
 #makeLevel2(op, M, Mat1, S, Sca2, V, Vec3)
 #makeLevel2(op, M, Mat1, V, Vec2, V, Vec3)
 #makeLevel2(op, M, Mat1, V, Vec2, M, Mat3)
 
-template `*`*(x:Sca1; y:Vec2):expr =
-  const n = y.len
-  var r{.noInit.}:VectorArray[n,type(x*y[0])]
-  mulVSV(r, x, y)
-  r
-#proc `*`*(x:Sca1; y:Vec2):auto {.inline.} =
-#  const n = y.len
-#  var r{.noInit.}:VectorArray[n,type(x*y[0])]
-#  mulVSV(r, x, y)
-#  r
-proc `*`*(x:Vec1; y:Sca2):auto {.inline.} =
-  const n = x.len
-  var r{.noInit.}:VectorArray[n,type(x[0]*y)]
-  mul(r, x, y)
-  r
-proc `*`*(x:Sca1; y:Mat2):auto {.inline.} =
-  const nr = y.nrows
-  const nc = y.ncols
-  var r{.noInit.}:MatrixArray[nr,nc,type(x*y[0,0])]
-  mul(r, x, y)
-  r
-proc `*`*(x:Mat1; y:Sca2):auto {.inline.} =
-  const nr = x.nrows
-  const nc = x.ncols
-  var r{.noInit.}:MatrixArray[nr,nc,type(x[0,0]*y)]
-  mul(r, x, y)
-  r
-template `*`*(x:Mat1; y:Vec2):expr =
-  assert(x.ncols == y.len)
-  const n = x.nrows
-  var r{.noInit.}:VectorArray[n,type(x[0,0]*y[0])]
-  mul(r, x, y)
-  r
-#proc `*`*(x:Mat1; y:Vec2):auto {.inline.} =
-#  assert(x.ncols == y.len)
-#  const n = x.nrows
-#  var r{.noInit.}:VectorArray[n,type(x[0,0]*y[0])]
-#  mul(r, x, y)
-#  r
-proc `*`*(x:Mat1; y:Mat2):auto {.inline.} =
-  assert(x.ncols == y.nrows)
-  const nr = x.nrows
-  const nc = y.ncols
-  var r{.noInit.}:MatrixArray[nr,nc,type(x[0,0]*y[0,0])]
-  mul(r, x, y)
-  r
+setBinop(`*`, mul, Sca1, Vec2, VectorArray[y.len,type(x*y[0])])
+setBinop(`*`, mul, Vec1, Sca2, VectorArray[x.len,type(x[0]*y)])
+setBinop(`*`, mul, Mat1, Vec2, VectorArray[x.nrows,type(x[0,0]*y[0])])
 
-template imaddSVV*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tr,_,i,_):
-    mixin imadd, assign
-    assert(x.len == y.len)
-    load(tr, r)
-    forO i, 0, <x.len:
-      imadd(tr, x[i], y[i])
-    assign(r, tr)
-template imaddVMV*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_,tyjr,_,tyji,_):
-    mixin nrows, ncols, mul, imadd, assign, load1
-    assert(x.nrows == r.len)
-    assert(x.ncols == y.len)
-    when true:
-    #when false:
-      load(tr, r)
-      #var tr{.noInit.}:array[r.len,type(load1(r[0]))]
-      #forO i, 0, <r.len: assign(tr[i], r[i])
-      forO j, 0, <x.ncols:
-        load(tyjr, y[j].re)
-        forO i, 0, <x.nrows:
-          imaddCCR(tr[i], x[i,j], tyjr)
-        load(tyji, y[j].im)
-        forO i, 0, <x.nrows:
-          imaddCCI(tr[i], x[i,j], tyji)
-      assign(r, tr)
-      #forO i, 0, <r.len: assign(r[i], tr[i])
-    else:
-      load(tr, r)
-      forO j, 0, <x.ncols:
-        load(tyr, asReal(y[j].re))
-        forO i, 0, <x.nrows:
-          imadd(tr[i], x[i,j], tyr)
-        load(tyi, asImag(y[j].im))
-        forO i, 0, <x.nrows:
-          imadd(tr[i], x[i,j], tyi)
-      assign(r, tr)
+setBinop(`*`, mul, Sca1, Mat2, MatrixArray[y.nrows,y.ncols,type(x*y[0,0])])
+setBinop(`*`, mul, Mat1, Sca2, MatrixArray[x.nrows,x.ncols,type(x[0,0]*y)])
+setBinop(`*`, mul, Mat1, Mat2,MatrixArray[x.nrows,y.ncols,type(x[0,0]*y[0,0])])
+
+
 proc imadd*(r:VarVec1; x:Mat2; y:Vec3) {.inline.} = imaddVMV(r, x, y)
 proc imadd*(r:AsVarVector; x:Mat2; y:Vec3) {.inline.} = imaddVMV(r, x, y)
-
-template imaddMMM*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_,k,_,tyjr,_,tyji,_):
-    mixin nrows, ncols, mul, imadd, assign, load1
-    assert(r.nrows == x.nrows)
-    assert(r.ncols == y.ncols)
-    assert(x.ncols == y.nrows)
-    #when true:
-    when false:
-      load(tr, r)
-      forO i, 0, <r.nrows:
-        forO k, 0, <x.ncols:
-          load(txikr, x[i,k].re)
-          forO j, 0, <r.ncols:
-            imaddCRC(tr[i,j], txikr, y[k,j])
-          load(txiki, x[i,k].im)
-          forO j, 0, <r.ncols:
-            imaddCIC(tr[i,j], txiki, y[k,j])
-      assign(r, tr)
-    else:
-      forO i, 0, <r.nrows:
-        var tr{.noInit.}:VectorArray[r.ncols,type(x[0,0]*y[0,0])]
-        forO j, 0, <r.ncols:
-          assign(tr[j], r[i,j])
-        forO k, 0, <x.ncols:
-          load(txikr, x[i,k].re)
-          forO j, 0, <r.ncols:
-            imaddCRC(tr[j], txikr, y[k,j])
-          load(txiki, x[i,k].im)
-          forO j, 0, <r.ncols:
-            imaddCIC(tr[j], txiki, y[k,j])
-        forO j, 0, <r.ncols:
-          assign(r[i,j], tr[j])
 proc imadd*(r:VarMat1; x:Mat2; y:Mat3) {.inline.} = imaddMMM(r, x, y)
 
 template imsubVSV*(rr:typed; xx,yy:typed):untyped =

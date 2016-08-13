@@ -53,6 +53,7 @@ proc test(lat:any) =
     v1 := 1
     v2 := 0
     v3 := 0
+  echo "done setup"
 
   bench(2*2*nc, sf*2*3*nc):
     v2 := 0.5*v2 + v1

@@ -32,7 +32,7 @@ template makeWrapper*(t,s:untyped):untyped =
   #  v*:ptr T
   template s*(xx:typed):expr =
   #proc s*(xx:any):auto {.inline.} =
-    subst(x,xx):
+    lets(x,xx):
       when compiles(addr(x)):
       #when compiles(unsafeAddr(x)):
         #ctrace()

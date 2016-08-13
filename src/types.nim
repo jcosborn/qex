@@ -14,7 +14,7 @@ type
   Adjointed*[T] = object
     v*:T
 template adj*(xx:typed):expr =
-  subst(x,xx):
+  lets(x,xx):
     when isComplex(x):
       asComplex(adj(x[]))
     elif isVector(x):

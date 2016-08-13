@@ -145,8 +145,8 @@ proc boundaryOffsetSB*(s:ShiftB) =
 
 template boundaryWaitSB*(s:ShiftB, e:untyped):untyped =
   if s.si.nRecvDests > 0:
+    e
     if s.si.nRecvRanks > 0:
-      e
       if threadNum == 0:
         waitRecvBuf(s.sb)
 
@@ -175,38 +175,39 @@ template boundaryGetSB*(ss:ShiftB; irr:untyped; e:untyped):untyped =
           e
 
 template boundarySB*(s:ShiftB; e:untyped):untyped =
-  var needSync = false
-  boundaryWaitSB(s): needSync = true
-  if needSync: boundarySyncSB()
-  if s.si.nRecvDests > 0:
-    if s.sb.sq.offr[threadNum] < 0: boundaryOffsetSB(s)
-    let ti0 = s.sb.sq.offr[threadNum]
-    let ti1 = s.sb.sq.lenr[threadNum]
-    if s.si.blend == 0:
-      let rr = cast[ptr cArray[s.T]](s.sb.sq.rbuf)
-      for i in ti0..<ti1:
-        let irr = s.si.sq.recvDests[i]
-        let k2 = s.si.sq.recvRemoteSrcs[i]
-        #echo "blend0: ", i, " ir: ", irr, " k2: ", k2
-        subst(ir,irr,it,rr[k2]):
-          e
-    else:
-      let stride = sizeof(s.T) div 2
-      for i in ti0..<ti1:
-        let irr = s.si.sq.recvDests[i]
-        let k2 = s.si.sq.recvRemoteSrcs[i]
-        #echo "blendb: ", irr, " sidx: ", s.si.sq.sidx[irr].int
-        var itt{.noInit.}: s.T  # should be load1(s.T)?
-        blend(itt, s.sb.lbuf[stride*i].addr,
-              s.sb.sq.rbuf[stride*k2].addr, s.si.blend)
-        subst(ir,irr,it,itt):
-          e
-    if s.si.nRecvRanks > 0:
+  var needBoundary = false
+  boundaryWaitSB(s): needBoundary = true
+  if needBoundary:
+    boundarySyncSB()
+    if s.si.nRecvDests > 0:
+      if s.sb.sq.offr[threadNum] < 0: boundaryOffsetSB(s)
+      let ti0 = s.sb.sq.offr[threadNum]
+      let ti1 = s.sb.sq.lenr[threadNum]
+      if s.si.blend == 0:
+        let rr = cast[ptr cArray[s.T]](s.sb.sq.rbuf)
+        for i in ti0..<ti1:
+          let irr = s.si.sq.recvDests[i]
+          let k2 = s.si.sq.recvRemoteSrcs[i]
+          #echo "blend0: ", i, " ir: ", irr, " k2: ", k2
+          subst(ir,irr,it,rr[k2]):
+            e
+      else:
+        let stride = sizeof(s.T) div 2
+        for i in ti0..<ti1:
+          let irr = s.si.sq.recvDests[i]
+          let k2 = s.si.sq.recvRemoteSrcs[i]
+          #echo "blendb: ", irr, " sidx: ", s.si.sq.sidx[irr].int
+          var itt{.noInit.}: s.T  # should be load1(s.T)?
+          blend(itt, s.sb.lbuf[stride*i].addr,
+                s.sb.sq.rbuf[stride*k2].addr, s.si.blend)
+          subst(ir,irr,it,itt):
+            e
+      if s.si.nRecvRanks > 0:
+        if threadNum == 0:
+          doneRecvBuf(s.sb)
+    if s.si.nSendRanks > 0:
       if threadNum == 0:
-        doneRecvBuf(s.sb)
-  if s.si.nSendRanks > 0:
-    if threadNum == 0:
-      waitSendBuf(s.sb)
+        waitSendBuf(s.sb)
 
 type Shift*[V: static[int]; T] = object
   src*: Field[V,T]

@@ -25,7 +25,7 @@ proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
       onNoSync(sub):
         body
 
-  var b2:float
+  var b2: float
   mythreads:
     x := 0
     b2 = b.norm2
@@ -46,6 +46,9 @@ proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
     subset:
       p := 0
       r := b
+      verb(3):
+        echo("p2: ", p.norm2)
+        echo("r2: ", r.norm2)
 
     var itn = 0
     var r2 = b2
@@ -63,10 +66,8 @@ proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
       subset:
         p := r + beta*p
       toc("p update", flops=2*numNumbers(r[0])*sub.lenOuter)
-      #echo("p2: ", p.norm2)
       A(Ap, p)
       toc("Ap")
-      #echo("Ap2: ", Ap.norm2)
       subset:
         let pAp = p.redot(Ap)
         toc("pAp", flops=2*numNumbers(p[0])*sub.lenOuter)
@@ -81,6 +82,15 @@ proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
         #echo(itn, " ", r2)
         echo(itn, " ", r2/b2)
       verb(3):
+        subset:
+          let pAp = p.redot(Ap)
+          echo "beta: ", beta
+          echo "p2: ", p.norm2
+          echo "Ap2: ", Ap.norm2
+          echo "pAp: ", pAp
+          echo "alpha: ", r2o/pAp
+          echo "x2: ", x.norm2
+          echo "r2: ", r2
         A(Ap, x)
         var fr2: float
         subset:

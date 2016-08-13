@@ -31,7 +31,8 @@ proc `|`*(s: string, d: tuple[w:int,c:char]): string =
     result = s & pad
 proc `|`*(f: float, d: tuple[w,p: int]): string =
   result = formatFloat(f, ffDecimal, d.p)
-  let pad = repeat(' ', d.w.abs-len(result))
+  let p = d.w.abs-len(result)
+  let pad = if p>0: repeat(' ', p) else: ""
   if d.w >= 0:
     result = pad & result
   else:

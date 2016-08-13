@@ -262,6 +262,8 @@ proc pack*(r:ptr any; l:ptr any; pck:int; x:PackTypes) {.inline.} =
     of -2: loop(packm2)
     of  4: loop(packp4)
     of -4: loop(packm4)
+    of  8: loop(packp8)
+    of -8: loop(packm8)
     else: discard
 proc pack*(r:ptr char; pck:int; x:PackTypes) =
   if pck==0:
@@ -283,6 +285,8 @@ proc pack*(r:ptr char; pck:int; x:PackTypes) =
     of -2: loop(packm2)
     of  4: loop(packp4)
     of -4: loop(packm4)
+    of  8: loop(packp8)
+    of -8: loop(packm8)
     else: discard
 proc blend*(r:var any; x:ptr char; b:ptr char; blnd:int) {.inline.} =
   const n = r.nVectors
@@ -300,33 +304,10 @@ proc blend*(r:var any; x:ptr char; b:ptr char; blnd:int) {.inline.} =
   of -2: loop(blendm2)
   of  4: loop(blendp4)
   of -4: loop(blendm4)
+  of  8: loop(blendp8)
+  of -8: loop(blendm8)
   else: discard
-discard """
-proc blend*[T](r:var T; x:T; b:ptr char; blnd:int) =
-  const n = r.nVectors
-  const n2 = n div 2
-  const stride = r.simdLength div 2
-  var rr = cast[ptr array[n,Svec0]](r.addr)
-  let xx = cast[ptr array[n,Svec0]](unsafeAddr(x))
-  let bb = cast[ptr array[n,array[stride,float32]]](b)
-  template loop(f:untyped):untyped =
-    forStatic i, 0..<n: f(rr[i], xx[i], bb[i])
-  case blnd
-  of  1: loop(blendp1)
-  of -1: loop(blendm1)
-  of  2: loop(blendp2)
-  of -2: loop(blendm2)
-  of  4: loop(blendp4)
-  of -4: loop(blendm4)
-  else: discard
-"""
 
-#template load*(r:untyped; x:SComplexV):untyped =
-#  mixin assign
-#  var r{.noInit.}:SComplexV
-#  assign(r, x)
-#template temp*(r:untyped; x:SColorVectorV):untyped =
-#  var r{.noInit.}:SColorVectorV
 
 proc ColorVector*(l:Layout):SLatticeColorVectorV = result.new(l)
 proc ColorMatrix*(l:Layout):SLatticeColorMatrixV = result.new(l)

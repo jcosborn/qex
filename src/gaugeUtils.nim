@@ -141,38 +141,38 @@ proc plaq*[T](uu: openArray[T]): auto =
             let dt = redot(umunu,unumu)
             plt[ip] += simdSum(dt)
     toc("plaq local")
-    var needSync = false
+    var needBoundary = false
     for mu in 0..<nd:
       for nu in 0..<nd:
         if mu != nu:
-          boundaryWaitSB(sf[mu][nu]): needSync = true
-    #if needSync: boundarySyncSB()
-    threadBarrier()
+          boundaryWaitSB(sf[mu][nu]): needBoundary = true
     toc("plaq wait")
-    for ir in u[0]:
-      for mu in 1..<nd:
-        for nu in 0..<mu:
-          if not isLocal(sf[mu][nu],ir) or not isLocal(sf[nu][mu],ir):
-            if isLocal(sf[mu][nu], ir):
-              localSB(sf[mu][nu], ir, mul(unumu,u[nu][ir],it), u[mu][ix])
-            else:
-              boundaryGetSB(sf[mu][nu], ir):
-                mul(unumu, u[nu][ir], it)
-            if isLocal(sf[nu][mu], ir):
-              localSB(sf[nu][mu], ir, mul(umunu,u[mu][ir],it), u[nu][ix])
-            else:
-              boundaryGetSB(sf[nu][mu], ir):
-                mul(umunu, u[mu][ir], it)
-            let ip = getIp(mu,nu)
-            let dt = redot(umunu,unumu)
-            plt[ip] += simdSum(dt)
+    if needBoundary:
+      boundarySyncSB()
+      for ir in u[0]:
+        for mu in 1..<nd:
+          for nu in 0..<mu:
+            if not isLocal(sf[mu][nu],ir) or not isLocal(sf[nu][mu],ir):
+              if isLocal(sf[mu][nu], ir):
+                localSB(sf[mu][nu], ir, mul(unumu,u[nu][ir],it), u[mu][ix])
+              else:
+                boundaryGetSB(sf[mu][nu], ir):
+                  mul(unumu, u[nu][ir], it)
+              if isLocal(sf[nu][mu], ir):
+                localSB(sf[nu][mu], ir, mul(umunu,u[mu][ir],it), u[nu][ix])
+              else:
+                boundaryGetSB(sf[nu][mu], ir):
+                  mul(umunu, u[mu][ir], it)
+              let ip = getIp(mu,nu)
+              let dt = redot(umunu,unumu)
+              plt[ip] += simdSum(dt)
     toc("plaq boundary")
     threadSum(plt)
-    threadBarrier()
-    threadMaster:
+    if threadNum == 0:
       for i,v in pairs(plt):
         pl[i] = v/(lo.physVol.float*0.5*float(nd*(nd-1)*nc))
       rankSum(pl)
+    toc("plaq sum")
   result = pl
   toc("plaq end", flops=lo.nSites.float*6*(2*66+36))
 
@@ -208,6 +208,7 @@ proc staples*[T,A,F,B](staples,uu,vv:openArray[T]; aa:openArray[A];
 """
 
 proc plaq2*[T](gg:openArray[T]):auto =
+  tic()
   let g = cast[ptr cArray[T]](unsafeAddr(gg[0]))
   let lo = g[0].l
   let nd = lo.nDim
@@ -217,17 +218,28 @@ proc plaq2*[T](gg:openArray[T]):auto =
   var s1 = lo.ColorMatrix()
   var t1 = lo.ColorMatrix()
   var tr:type(trace(m))
+  toc("plaq2 setup")
   threads:
+    tic()
     m := 0
+    toc("plaq2 zero")
     for mu in 1..<nd:
       for nu in 0..<mu:
+        tic()
         shift(s0, mu,1, g[nu])
+        toc("plaq2 shift1")
         shift(s1, nu,1, g[mu])
+        toc("plaq2 shift2")
         #echo "s0: ", trace(s0)
         #echo "s1: ", trace(s1)
         m += (g[mu]*s0) * (g[nu]*s1).adj
+        #m += (g[mu]*s0) * (g[nu]*s1)
         #echo mu, " ", nu, " ", trace(m)/nc
+        toc("plaq2 mul")
+    toc("plaq2 work")
     tr = trace(m)
+    toc("plaq2 trace")
+  toc("plaq2 threads")
   result = tr/(lo.physVol.float*0.5*float(nd*(nd-1)*nc))
 
 proc newGauge*(l:Layout):auto =

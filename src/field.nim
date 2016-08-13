@@ -59,7 +59,7 @@ macro fieldAddSub*(sx:static[int],x:Field|FieldMul,
     FieldAddSub[(a:`sx`,b:`sy`),tuple[a:type(`x`),b:type(`y`)]](
       field:(a:`x`,b:`y`) )
   #echo result.repr
-macro fieldMul*(x:Field,y:Field2):auto =
+macro fieldMul*(x:SomeField,y:SomeField2):auto =
   result = quote do:
     FieldMul[tuple[a:type(`x`),b:type(`y`)]](field:(a:`x`,b:`y`))
   #echo result.repr
@@ -370,6 +370,7 @@ template dot*(f1:SomeAllField; f2:SomeAllField2):expr =
   else:
     dotP(f1, f2)
 template dot*(f1:Subsetted; f2:SomeAllField2):expr = dotP(f1, f2)
+
 proc redotP*(f1:SomeField; f2:SomeField2):auto =
   tic()
   mixin redot, iredot, simdSum, items, toDouble

@@ -153,6 +153,21 @@ template `-`*(x:SomeReal; y:SomeInteger):auto = x - cnvrt(x,y)
 template `-`*(x:SomeInteger; y:SomeReal):auto = cnvrt(y,x) - y
 template `*`*(x:SomeInteger; y:SomeReal):auto = cnvrt(y,x) * y
 
+template setUnop*(op,fun,t1,t2: untyped): untyped {.dirty.} =
+  template op*(xx: t1): untyped =
+    subst(x,xx,r,_):
+      var r{.noInit.}: t2
+      fun(r, x)
+      r
+
+template setBinop*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
+  template op*(xx: t1; yy: t2): untyped =
+    subst(xt,xx,yt,yy,r,_):
+      lets(x,xt,y,yt):
+        var r{.noInit.}: t3
+        fun(r, x, y)
+        r
+
 when isMainModule:
   var d1,d2:float
   var s1,s2:float32

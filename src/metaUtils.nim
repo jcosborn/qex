@@ -61,8 +61,8 @@ macro echoType*(x:typedesc):auto =
   echo t1[1].getType.treeRepr
 
 macro treerep*(x:typed):auto =
-  return quote do:
-    echo `x`.treeRepr
+  echo x.treeRepr
+  newEmptyNode()
 
 macro echoAst*(x:untyped):untyped =
   echo x.treeRepr
@@ -183,6 +183,9 @@ proc replace(id,val,body:NimNode):NimNode =
     for c in body.children:
       result.add(replace(id, val, c))
 
+macro makeTyped*(x:typed):auto = x
+macro makeUntyped*(x:untyped):auto = x
+
 macro echoTyped*(x:typed):auto =
   result = newEmptyNode()
   echo x.repr
@@ -229,6 +232,42 @@ macro subst*(x:varargs[untyped]):auto =
       idNum.inc
     result = replace(x[i], t, result)
   #echo result.repr
+  #echo "subst: "
+  #result.dumpTyped(result)
+
+proc separateStmtListExpr(st: var NimNode, stex: NimNode): NimNode =
+  if stex.kind == nnkStmtListExpr:
+    for s in 0..(stex.len-2):
+      st.add stex[s]
+    result = separateStmtListExpr(st, stex[^1])
+  else:
+    result = copyNimNode(stex)
+    for s in 0..<stex.len:
+      result.add separateStmtListExpr(st, stex[s])
+
+template newLet(a,b: untyped): untyped =
+  let a = b
+  #mixin simpleAssign
+  #var a{.noInit.}:type(b)
+  #simpleAssign(a, b)
+
+macro lets*(x:varargs[untyped]):auto =
+  var prestmts = newStmtList()
+  result = x[^1]
+  #echo "begin lets: ", result.repr
+  for i in countup(0, x.len-3, 2):
+    #echo x[i].repr, " ", x[i+1].repr
+    var t = separateStmtListExpr(prestmts, x[i+1])
+    #echo t.repr
+    if t.kind == nnkInfix:
+      echo "let: ", t.repr
+      let v = genSym(nskLet, $x[i])
+      prestmts.add getAst(newLet(v,t))
+      t = v
+    result = replace(x[i], t, result)
+  result = newStmtList(prestmts, result)
+  #echo result.repr
+  #echo "lets: "
   #result.dumpTyped(result)
 
 macro forStaticX2(a,b:static[int]; index,body:untyped):stmt =

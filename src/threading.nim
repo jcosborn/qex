@@ -131,8 +131,8 @@ iterator `.|`*[S, T](a: S, b: T): T {.inline.} =
     inc(res)
 """
 
-template t0wait* = threadBarrier()
-template t0waitX* =
+template t0waitX* = threadBarrier()
+template t0wait* =
   if threadNum==0:
     inc threadLocals.share[0].counter
     let tbar0 = threadLocals.share[0].counter
@@ -144,8 +144,8 @@ template t0waitX* =
     inc threadLocals.share[threadNum].counter
     #fence()
 
-template twait0* = threadBarrier()
-template twait0X* =
+template twait0X* = threadBarrier()
+template twait0* =
   if threadNum==0:
     inc threadLocals.share[0].counter
     #fence()
@@ -157,9 +157,9 @@ template twait0X* =
       if p[] >= tbar0: break
 
 template threadBarrier* =
-  #t0waitX
-  #twait0X
-  ompBarrier
+  t0wait
+  twait0
+  #ompBarrier
 
 macro threadSum*(a:varargs[expr]):auto =
   #echo a.treeRepr
