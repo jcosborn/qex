@@ -25,15 +25,20 @@ else
   CC = mpicc
   LD = $(CC)
   CC_TYPE = gcc
-  CFLAGS_ALWAYS = "-Wall -std=gnu99"
+  CFLAGS_ALWAYS = "-Wall -std=gnu99 -march=native -ldl"
   CFLAGS_DEBUG = "-g3 -O0"
-  CFLAGS_SPEED = "-O3 -march=native"
+  CFLAGS_SPEED = "-g -O3"
   VERBOSITY = 1
   #SIMD = SSE
-  #SIMD = AVX
+  #VLEN = 4
   SIMD = SSE,AVX
   VLEN = 8
+  #SIMD = SSE,AVX,AVX512
+  #VLEN = 16
 endif
+
+NIM = nim
+#NIM = nim-devel
 
 #### edit above
 
@@ -90,6 +95,11 @@ DBG += "--hint[XDeclaredButNotUsed]:off"
 #DBG += "--listCmd"
 DBG += "--implicitStatic:on"
 #DBG += "--parallelBuild:4"
+#DBG += "--embedsrc"
+#DBG += "--genMapping"
+#DBG += "--gc:refc"
+DBG += "--gc:markAndSweep"
+#refc|v2|markAndSweep|boehm|go|none
 
 TARGETS = $(MAKECMDGOALS)
 
@@ -108,6 +118,6 @@ endif
 all: $(TARGETS)
 
 $(TARGETS): _force
-	$(ENVS) nim c $(DBG) --nimcache:`pwd`/nimcache -o:`pwd`/$(@F) $(QEXDIR)/src/$@
+	$(ENVS) $(NIM) c $(DBG) --nimcache:`pwd`/nimcache -o:`pwd`/$(@F) $(QEXDIR)/src/$@
 
 .PHONY: _force

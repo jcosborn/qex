@@ -119,7 +119,7 @@ macro tFor*(index:expr; slice:Slice; body:untyped):stmt =
     i0 = slice[1]
     i1 = slice[2]
   result = tForX(index, i0, i1, body)
-    
+
 discard """
 iterator `.|`*[S, T](a: S, b: T): T {.inline.} =
   mixin threadNum

@@ -9,6 +9,7 @@ proc baseImpl(b:NimNode; x:NimNode):NimNode =
 macro BASE(b:expr; x:varargs[expr]):auto = baseImpl(b, x)
 macro BASE4(x:varargs[expr]):auto = baseImpl(newLit(4), x)
 
+
 # m128 operations
 
 proc perm1*(r:var m128; x:m128) {.inline.} =
@@ -17,6 +18,8 @@ proc perm2*(r:var m128; x:m128) {.inline.} =
   r = mm_shuffle_ps(x, x, BASE4(1,0,3,2).cuint)
 proc perm4*(r:var m128; x:m128) {.inline.} =
   assert(false, "perm4 not valid for m128")
+proc perm8*(r:var m128; x:m128) {.inline.} =
+  assert(false, "perm8 not valid for m128")
 
 proc packp1*(r:var openArray[SomeNumber]; x:m128;
              l:var openArray[SomeNumber]) {.inline.} =
@@ -52,6 +55,12 @@ proc packp4*(r:var openArray[SomeNumber]; x:m128;
 proc packm4*(r:var openArray[SomeNumber]; x:m128;
              l:var openArray[SomeNumber]) {.inline.} =
   assert(false, "packm4 not valid for m128")
+proc packp8*(r:var openArray[SomeNumber]; x:m128;
+             l:var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packp8 not valid for m128")
+proc packm8*(r:var openArray[SomeNumber]; x:m128;
+             l:var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packm8 not valid for m128")
 
 proc blendp1*(x:var m128; r:openArray[SomeNumber];
               l:openArray[SomeNumber]) {.inline.} =
@@ -91,6 +100,13 @@ proc blendp4*(x:var m128; r:openArray[SomeNumber];
 proc blendm4*(x:var m128; r:openArray[SomeNumber];
               l:openArray[SomeNumber]) {.inline.} =
   assert(false, "blendm4 not valid for m128")
+proc blendp8*(x:var m128; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendp8 not valid for m128")
+proc blendm8*(x:var m128; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendm8 not valid for m128")
+
 
 # m256 operations
 
@@ -100,6 +116,8 @@ proc perm2*(r:var m256; x:m256) {.inline.} =
   r = mm256_permute_ps(x, BASE4(1,0,3,2))
 proc perm4*(r:var m256; x:m256) {.inline.} =
   r = mm256_permute2f128_ps(x, x, 1)
+proc perm8*(r:var m256; x:m256) {.inline.} =
+  assert(false, "perm8 not valid for m256")
 
 proc packp1*(r:var openArray[SomeNumber]; x:m256;
              l:var openArray[SomeNumber]) {.inline.} =
@@ -167,6 +185,12 @@ proc packm4*(r:var openArray[SomeNumber]; x:m256;
   l[1] = t[5]
   l[2] = t[6]
   l[3] = t[7]
+proc packp8*(r:var openArray[SomeNumber]; x:m256;
+             l:var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packp8 not valid for m256")
+proc packm8*(r:var openArray[SomeNumber]; x:m256;
+             l:var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packm8 not valid for m256")
 
 proc blendp1*(x:var m256; r:openArray[SomeNumber];
               l:openArray[SomeNumber]) {.inline.} =
@@ -240,6 +264,13 @@ proc blendm4*(x:var m256; r:openArray[SomeNumber];
   t[6] = l[2]
   t[7] = l[3]
   assign(x, t)
+proc blendp8*(x:var m256; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendp8 not valid for m256")
+proc blendm8*(x:var m256; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendm8 not valid for m256")
+
 
 # m256d operations
 
@@ -249,6 +280,8 @@ proc perm2*(r:var m256d; x:m256d) {.inline.} =
   r = mm256_permute2f128_pd(x, x, 1)
 proc perm4*(r:var m256d; x:m256d) {.inline.} =
   assert(false, "perm4 not valid for m256d")
+proc perm8*(r:var m256d; x:m256d) {.inline.} =
+  assert(false, "perm8 not valid for m256d")
 
 proc packp1*(r:var openArray[SomeNumber]; x:m256d;
              l:var openArray[SomeNumber]) {.inline.} =
@@ -284,6 +317,12 @@ proc packp4*(r:var openArray[SomeNumber]; x:m256d;
 proc packm4*(r:var openArray[SomeNumber]; x:m256d;
              l:var openArray[SomeNumber]) {.inline.} =
   assert(false, "packm4 not valid for m256d")
+proc packp8*(r:var openArray[SomeNumber]; x:m256d;
+             l:var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packp8 not valid for m256d")
+proc packm8*(r:var openArray[SomeNumber]; x:m256d;
+             l:var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packm8 not valid for m256d")
 
 proc blendp1*(x:var m256d; r:openArray[SomeNumber];
               l:openArray[SomeNumber]) {.inline.} =
@@ -323,6 +362,12 @@ proc blendp4*(x:var m256d; r:openArray[SomeNumber];
 proc blendm4*(x:var m256d; r:openArray[SomeNumber];
               l:openArray[SomeNumber]) {.inline.} =
   assert(false, "blendm4 not valid for m256d")
+proc blendp8*(x:var m256d; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendp8 not valid for m256d")
+proc blendm8*(x:var m256d; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendm8 not valid for m256d")
 
 
 # m512 operations
@@ -728,6 +773,12 @@ proc packm4*(r:var openArray[SomeNumber]; x:m512d;
   l[1] = t[5]
   l[2] = t[6]
   l[3] = t[7]
+proc packp8*(r:var openArray[SomeNumber]; x:m512d;
+             l:var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packp8 not valid for m512d")
+proc packm8*(r:var openArray[SomeNumber]; x:m512d;
+             l:var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packm8 not valid for m512d")
 
 proc blendp1*(x:var m512d; r:openArray[SomeNumber];
               l:openArray[SomeNumber]) {.inline.} =
@@ -801,3 +852,9 @@ proc blendm4*(x:var m512d; r:openArray[SomeNumber];
   t[6] = l[2]
   t[7] = l[3]
   assign(x, t)
+proc blendp8*(x:var m512d; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendp8 not valid for m512d")
+proc blendm8*(x:var m512d; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendm8 not valid for m512d")

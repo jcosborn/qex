@@ -31,7 +31,7 @@ proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
     b2 = b.norm2
   verb(1):
     echo("input norm2: ", b2)
-  if b2 == 0.0: 
+  if b2 == 0.0:
     sp.finalIterations = 0
     return
 

@@ -1,3 +1,5 @@
+{. deadCodeElim: on .}
+
 import simdX86Types
 import simdSse
 import simdAvx
@@ -317,7 +319,7 @@ when isMainModule:
   var d8 = toDoubleA(s8)
   echo d8[0]
   echo d8[1]
-  
+
   var h:SimdH8
   s = toSingle(h)
   h = toHalf(s)
