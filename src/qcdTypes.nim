@@ -18,7 +18,7 @@ export matrixConcept
 
 #var destructors:seq[proc()]
 
-const nc* = 3
+const nc = 3
 setType(Svec0, "SimdS" & $VLEN)
 setType(Dvec0, "SimdD" & $VLEN)
 type
@@ -202,20 +202,6 @@ proc inorm2*(r:var SomeNumber; m:Masked[SDvec]) =
 #export matrixConcept
 
 #template assign*(r:var SColorMatrixV, x:SomeNumber):untyped = assign(r, x.toScalar)
-
-proc dot*(x,y:SColorVectorV):SComplexV {.inline.} =
-  mulSVV(result, x.adj, y)
-proc redot*(x,y:SColorVectorV):Svec0 {.inline.} =
-  var r:SComplexV
-  mulSVV(r, x.adj, y)
-  result = r.re
-proc redot*(x,y:DColorVectorV):Dvec0 {.inline.} =
-  #var r:DComplexV
-  #mulSVV(r, x.adj, y)
-  #result = r.re
-  mulSVV(result, x.adj, y)
-proc redot*(x,y:DColorVector):float64 {.inline.} =
-  mulSVV(result, x.adj, y)
 
 proc prefetch*(x:ptr AsComplex) {.inline.} =
   prefetch(addr(x[].re))

@@ -114,6 +114,7 @@ proc plaq*[T](uu: openArray[T]): auto =
   let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
   let lo = u[0].l
   let nd = lo.nDim
+  let nc = u[0][0].ncols
   var sf = newSeq[type(createShiftBufs(u[0],1,"all"))](nd)
   for i in 0..<nd-1:
     sf[i] = createShiftBufs(u[0], 1, "all")
@@ -170,11 +171,11 @@ proc plaq*[T](uu: openArray[T]): auto =
     threadSum(plt)
     if threadNum == 0:
       for i,v in pairs(plt):
-        pl[i] = v/(lo.physVol.float*0.5*float(nd*(nd-1)*nc))
+        pl[i] = v/(lo.physVol.float*float(np*nc))
       rankSum(pl)
     toc("plaq sum")
   result = pl
-  toc("plaq end", flops=lo.nSites.float*6*(2*66+36))
+  toc("plaq end", flops=lo.nSites.float*float(np*(2*8*nc*nc*nc-1)))
 
 discard """
 # s[mu] = a_mu s[mu] + f_mu_nu Unu Vmu Unu^+ + b_mu_nu Unu^+ Vmu Unu
@@ -212,6 +213,7 @@ proc plaq2*[T](gg:openArray[T]):auto =
   let g = cast[ptr cArray[T]](unsafeAddr(gg[0]))
   let lo = g[0].l
   let nd = lo.nDim
+  let nc = g[0][0].ncols
   var m = lo.ColorMatrix()
   var s0 = lo.ColorMatrix()
   var t0 = lo.ColorMatrix()

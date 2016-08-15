@@ -279,7 +279,7 @@ when isMainModule:
   var tr:type(g[0][0][0,0])
   for i in 0..<4:
     for x in g[i].all:
-      for c in 0..<nc:
+      for c in 0..<g[i][0].ncols:
         #echo g[i][x][c,c]
         tr += g[i][x][c,c]
   echo tr

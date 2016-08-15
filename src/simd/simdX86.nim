@@ -75,6 +75,8 @@ when declared(SimdS16):
     let yd = toDouble(y)
     imsub(r, xd, yd)
 
+when declared(SimdD4):
+  template toDouble*(x:SimdD4):expr = x
 when declared(SimdD8):
   template toDouble*(x:SimdD8):expr = x
 when declared(SimdD16):

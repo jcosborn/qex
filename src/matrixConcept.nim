@@ -634,12 +634,13 @@ proc norm2X*(x:Mat1):auto {.inline,noInit.} =
   norm2(t, x)
   t
 
-proc dot*(r:Sca1; x:Vec2; y:Vec3) {.inline.} =
-  mulSVV(r, x.adj, y)
 proc idot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
   imaddSVV(r, x.adj, y)
-#proc iredot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
-#  imaddSVV(r, x.adj, y)
+
+proc dot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
+  mulSVV(r, x.adj, y)
+setBinop(dot, dot, Vec1, Vec2, type(x[0]*y[0]))
+
 proc iredot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
   subst(tr,_):
     assert(x.len == y.len)
@@ -648,10 +649,8 @@ proc iredot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
       redotinc(tr, x[i], y[i])
     assign(r, tr)
 
-proc redot*(x:Mat1; y:Mat2):auto {.inline,noInit.} =
-  var r{.noInit.}: type(redot(x[0,0],y[0,0]))
-  redot(r, x, y)
-  r
+proc redot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
+  mulSVV(r, x.adj, y)
 proc redot*(rr:var Sca1; xx:Mat2; yy:Mat3) {.inline.} =
   subst(r,rr,x,xx,y,yy,tr,_,i,_,j,_,k,_):
     mixin mul, imadd, assign
@@ -664,6 +663,9 @@ proc redot*(rr:var Sca1; xx:Mat2; yy:Mat3) {.inline.} =
       forO k, 0, <x.ncols:
         redotinc(tr, x[i,k], y[i,k])
     assign(r, tr)
+
+setBinop(redot, redot, Vec1, Vec2, type(redot(x[0],y[0])))
+setBinop(redot, redot, Mat1, Mat2, type(redot(x[0,0],y[0,0])))
 
 when isMainModule:
   const nc = 3

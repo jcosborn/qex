@@ -23,7 +23,7 @@ macro forO*(i,r0,r1,b:untyped):auto =
 
 template mulSVV*(rr:typed; xx,yy:typed):untyped =
   subst(r,rr,x,xx,y,yy,tr,_,i,_):
-    mixin mul, imadd
+    mixin mul, imadd, assign
     assert(x.len == y.len)
     tmpvar(tr, r)
     mul(tr, x[0], y[0])

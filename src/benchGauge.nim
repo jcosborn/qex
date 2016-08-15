@@ -40,8 +40,11 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
 
 proc test(lat:any) =
   var lo = newLayout(lat)
-  var g = newSeq[type(lo.ColorMatrix())](lat.len)
-  for i in 0..<lat.len:
+  let nd = lo.nDim
+  let np = (nd*(nd-1)) div 2
+  var g = newSeq[type(lo.ColorMatrix())](nd)
+  let nc = g[0][0].ncols
+  for i in 0..<nd:
     g[i] = lo.ColorMatrix()
   g.random
 
@@ -52,15 +55,16 @@ proc test(lat:any) =
   echo pl
   echo pl.sum
 
-  echoTimers()
   resetTimers()
 
-  bench(6*(2*66+36), 4*72):
+  bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
     var pl2 = plaq2(g)
 
-  bench(6*(2*66+36), 4*72):
+  bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
     var pl = plaq(g)
 
+  echoTimers()
+  resetTimers()
 
 qexInit()
 checkMem()
