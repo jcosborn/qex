@@ -1,12 +1,10 @@
 import qex
-import qcdTypes
+import stdUtils
 import times
+import profile
 import os
 import strUtils
-import stdUtils
-import metaUtils
 import random
-import profile
 
 proc loadGauge*[T](g:openArray[T]; fn:string):int =
   var rd = g[0].l.newReader(fn)
@@ -109,6 +107,7 @@ proc staples*[T,F,B](ss,uu,vv:openArray[T];ff:openArray[F];bb:openArray[B]) =
 
 
 proc plaq*[T](uu: openArray[T]): auto =
+  mixin mul
   tic()
   template getIp(mu,nu: int): int = ((mu*(mu-1)) div 2) + nu
   let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
@@ -306,6 +305,7 @@ proc random*[T](g:openArray[T]) =
     g[mu].random
 
 when isMainModule:
+  import qcdTypes
   qexInit()
   #let defaultLat = @[2,2,2,2]
   let defaultLat = @[8,8,8,8]

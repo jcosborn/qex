@@ -3,6 +3,7 @@ import os
 when defined(noOpenmp):
   template omp_set_num_threads*(x: cint) = discard
   template omp_get_num_threads*(): cint = 1
+  template omp_get_max_threads*(): cint = 1
   template omp_get_thread_num*(): cint = 0
   template ompPragma(p:string):untyped = discard
 else:
@@ -15,6 +16,7 @@ else:
   {. pragma: omp, header:"omp.h" .}
   proc omp_set_num_threads*(x: cint) {.omp.}
   proc omp_get_num_threads*(): cint {.omp.}
+  proc omp_get_max_threads*(): cint {.omp.}
   proc omp_get_thread_num*(): cint {.omp.}
   #proc forceOmpOn() {.omp.}
   template ompPragma(p:string):untyped =

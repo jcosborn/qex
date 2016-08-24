@@ -10,6 +10,13 @@ proc qexInit*() =
   #echo "rank " & $rank & "/" & $size
 
 proc qexFinalize*() =
+  echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
+       getTotalMem())
+  echo GC_getStatistics()
+  GC_fullCollect()
+  echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
+       getTotalMem())
+  echo GC_getStatistics()
   commsFinalize()
   #when profileEqns:
   echoTimers()

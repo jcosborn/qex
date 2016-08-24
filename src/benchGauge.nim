@@ -1,6 +1,7 @@
 import qex
 import qcdTypes
 import gaugeUtils
+import gaugeAction
 import stdUtils
 import parseUtils
 import times
@@ -55,6 +56,9 @@ proc test(lat:any) =
   echo pl
   echo pl.sum
 
+  var ga = gaugeAction(g)
+  echo ga
+
   resetTimers()
 
   bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
@@ -62,6 +66,9 @@ proc test(lat:any) =
 
   bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
     var pl = plaq(g)
+
+  bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
+    var ga = gaugeAction(g)
 
   echoTimers()
   resetTimers()
@@ -75,5 +82,7 @@ checkMem()
 test([12,12,12,12])
 checkMem()
 test([16,16,16,16])
+checkMem()
+test([24,24,24,24])
 checkMem()
 qexFinalize()

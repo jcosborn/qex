@@ -174,6 +174,12 @@ template boundaryGetSB*(ss:ShiftB; irr:untyped; e:untyped):untyped =
         subst(it,itt):
           e
 
+template getSB*(ss:ShiftB; ii:int; e1x,e2x:untyped):untyped =
+  if isLocal(ss, ii):
+    localSB(ss, ii, e1x, e2x)
+  else:
+    boundaryGetSB(ss, ii, e1x)
+
 template boundarySB*(s:ShiftB; e:untyped):untyped =
   var needBoundary = false
   boundaryWaitSB(s): needBoundary = true

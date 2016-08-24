@@ -87,6 +87,7 @@ template threads*(x0:untyped;body:untyped):untyped =
   numThreads = nidOld
   threadLocals = tlOld
 
+template getMaxThreads*() = ompGetMaxThreads()
 template threadBarrierO* = ompBarrier
 template threadMaster*(x:untyped) = ompMaster(x)
 template threadSingle*(x:untyped) = ompSingle(x)
