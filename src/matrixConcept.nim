@@ -20,8 +20,8 @@ import complexConcept
 template createAsType2(t,c:untyped):untyped =
   mixin `[]`
   makeWrapper(t, c)
-  template `[]`*(x:t; i:SomeInteger):expr = x[][i]
-  template `[]`*(x:t; i,j:SomeInteger):expr = 
+  template `[]`*(x:t; i:SomeInteger):untyped = x[][i]
+  template `[]`*(x:t; i,j:SomeInteger):untyped =
     #echoType: x
     #ctrace()
     x[][i,j]
@@ -33,12 +33,12 @@ template createAsType2(t,c:untyped):untyped =
     #let t2 = t1[i][j]
     #ctrace()
     #t2
-  template `[]=`*(x:t; i,j:SomeInteger; y:untyped):expr =
+  template `[]=`*(x:t; i,j:SomeInteger; y:untyped):untyped =
     x[][i,j] = y
-  template len*(x:t):expr = getConst(x[].len)
-  template nrows*(x:t):expr = getConst(x[].nrows)
-  template ncols*(x:t):expr = getConst(x[].ncols)
-  #template mvLevel*(x:t):expr =
+  template len*(x:t):untyped = getConst(x[].len)
+  template nrows*(x:t):untyped = getConst(x[].nrows)
+  template ncols*(x:t):untyped = getConst(x[].ncols)
+  #template mvLevel*(x:t):untyped =
   #  mixin mvLevel
   #  mvLevel(x[])
 template createAsType(t:untyped):untyped = createAsType2(`As t`, `as t`)
@@ -52,8 +52,8 @@ createAsType(VarMatrix)
 
 template makeDeclare(s:untyped):untyped {.dirty.} =
   template `declare s`*(t:typedesc):untyped {.dirty.} =
-    template `declared s`*(y:t):expr {.dirty.} = true
-  template `is s`*(x:typed):expr {.dirty.} =
+    template `declared s`*(y:t):untyped {.dirty.} = true
+  template `is s`*(x:typed):untyped {.dirty.} =
     when compiles(`declared s`(x)):
       `declared s`(x)
     else:
@@ -67,7 +67,7 @@ declareVector(AsVector)
 declareVector(AsVarVector)
 declareMatrix(AsMatrix)
 declareMatrix(AsVarMatrix)
-template deref(x:typed):expr =
+template deref(x:typed):untyped =
   when type(x) is AsScalar|AsVarScalar:
     x[]
   else:
@@ -119,38 +119,38 @@ type
   #MatrixCol*[T] = tuple[col:int,mat:ptr T]
   #MatrixDiag*[T] = tuple[diag:int,mat:ptr T]
 
-template nrows*(x:MatrixArrayObj):expr = x.I
-template ncols*(x:MatrixArrayObj):expr = x.J
-template `[]`*(x:MatrixArrayObj; i,j:int):expr = x[i][j]
+template nrows*(x:MatrixArrayObj):untyped = x.I
+template ncols*(x:MatrixArrayObj):untyped = x.J
+template `[]`*(x:MatrixArrayObj; i,j:int):untyped = x[i][j]
 template `[]=`*(x:MatrixArrayObj; i,j:int, y:untyped):untyped = x[i][j] = y
-template numNumbers*(x:AsVector):expr = x.len*numNumbers(x[0])
-template numNumbers*(x:AsMatrix):expr = x.nrows*x.ncols*numNumbers(x[0])
-#template `[]`*(x:array; i,j:int):expr = x[i][j]
+template numNumbers*(x:AsVector):untyped = x.len*numNumbers(x[0])
+template numNumbers*(x:AsMatrix):untyped = x.nrows*x.ncols*numNumbers(x[0])
+#template `[]`*(x:array; i,j:int):untyped = x[i][j]
 #template `[]=`*(x:array; i,j:int, y:untyped):untyped = x[i][j] = y
 
-template len*(x:MatrixRowObj):expr = x.mat[].ncols
-template `[]`*(x:MatrixRowObj; i:int):expr = x.mat[][x.row,i]
-template `[]=`*(x:MatrixRowObj; i:int; y:untyped):expr = x.mat[][x.row,i] = y
+template len*(x:MatrixRowObj):untyped = x.mat[].ncols
+template `[]`*(x:MatrixRowObj; i:int):untyped = x.mat[][x.row,i]
+template `[]=`*(x:MatrixRowObj; i:int; y:untyped):untyped = x.mat[][x.row,i] = y
 
-#template isVector(x:Row):expr = true
-#template isVector(x:Col):expr = true
-#template mvLevel(x:Sca1):expr = -1
+#template isVector(x:Row):untyped = true
+#template isVector(x:Col):untyped = true
+#template mvLevel(x:Sca1):untyped = -1
 
 #template simpleAssign(
-#template tmplexpr*(x:typed):expr = x
-#template tmptype*(x:Vec1):expr = VectorArray[x.len,type(load1(x[0]))]
+#template tmpluntyped*(x:typed):untyped = x
+#template tmptype*(x:Vec1):untyped = VectorArray[x.len,type(load1(x[0]))]
 
-template load1*(xx:Vec1):expr =
+template load1*(xx:Vec1):untyped =
   lets(x,xx):
     var r{.noInit.}:VectorArray[x.len,type(load1(x[0]))]
     assign(r, x)
     r
-template load1*(xx:Mat1):expr =
+template load1*(xx:Mat1):untyped =
   lets(x,xx):
     var r{.noInit.}: MatrixArray[x.nrows,x.ncols,type(load1(x[0,0]))]
     assign(r, x)
     r
-#template tmpvar1*(x:Vec1):expr =
+#template tmpvar1*(x:Vec1):untyped =
 #  lets(x,xx):
 #    var r{.noInit.}:VectorArray[x.len,type(load1(x[0]))]
 #    #assign(r, x)
@@ -174,7 +174,7 @@ template setRow*(rr:var AsMatrix; xx:AsVector; ii:int) =
       const nc = r.ncols
       for j in 0..<nc:
         assign(r[it,j], xt[j])
-template column*(x:AsVector; i:int):expr = x
+template column*(x:AsVector; i:int):untyped = x
 proc column*(x:AsMatrix; i:int):auto {.inline,noInit.} =
   const nr = x.nrows
   var r{.noInit.}:VectorArray[nr,type(x[0,0])]
@@ -471,6 +471,13 @@ makeMap2(sub)
 
 setBinop(`+`, add, Vec1, Vec2, VectorArray[x.len,type(x[0]+y[0])])
 setBinop(`-`, sub, Vec1, Vec2, VectorArray[x.len,type(x[0]-y[0])])
+
+#template `+`*(xx: Vec1; yy: Vec2): untyped =
+#  subst(xt,xx,yt,yy,r,_):
+#    lets(x,xt,y,yt):
+#      var r{.noInit.}: VectorArray[x.len,type(x[0]+y[0])]
+#      add(r, x, y)
+#      r
 
 proc `+`*(xt:Sca1; yt:Mat2): auto {.inline.} =
   #lets(xt,x,yt,y):

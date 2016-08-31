@@ -61,32 +61,32 @@ template numberType*[T](x:AsMatrix[T]):untyped = numberType(T)
 template numberType*[T](x:typedesc[AsVector[T]]):untyped = numberType(T)
 template numberType*[T](x:typedesc[AsMatrix[T]]):untyped = numberType(T)
 
-template simdLength*(x:typedesc[SColorMatrixV]):expr = simdLength(Svec0)
-template simdLength*(x:typedesc[SColorVectorV]):expr = simdLength(Svec0)
-template simdLength*(x:SColorVectorV):expr = simdLength(Svec0)
-template simdLength*(x:SColorMatrixV):expr = simdLength(Svec0)
-template simdLength*(x:typedesc[DColorMatrixV]):expr = simdLength(Dvec0)
-template simdLength*(x:typedesc[DColorVectorV]):expr = simdLength(Dvec0)
-template simdLength*(x:DColorVectorV):expr = simdLength(Dvec0)
-template simdLength*(x:DColorMatrixV):expr = simdLength(Dvec0)
-template simdLength*(x:AsComplex):expr = simdLength(x.re)
-template simdLength*(x:AsMatrix):expr = simdLength(x[0,0])
+template simdLength*(x:typedesc[SColorMatrixV]):untyped = simdLength(Svec0)
+template simdLength*(x:typedesc[SColorVectorV]):untyped = simdLength(Svec0)
+template simdLength*(x:SColorVectorV):untyped = simdLength(Svec0)
+template simdLength*(x:SColorMatrixV):untyped = simdLength(Svec0)
+template simdLength*(x:typedesc[DColorMatrixV]):untyped = simdLength(Dvec0)
+template simdLength*(x:typedesc[DColorVectorV]):untyped = simdLength(Dvec0)
+template simdLength*(x:DColorVectorV):untyped = simdLength(Dvec0)
+template simdLength*(x:DColorMatrixV):untyped = simdLength(Dvec0)
+template simdLength*(x:AsComplex):untyped = simdLength(x.re)
+template simdLength*(x:AsMatrix):untyped = simdLength(x[0,0])
 
-#template nVectors(x:SColorVectorV):expr = 2*nc
-#template nVectors(x:SColorMatrixV):expr = 2*nc*nc
-#template nVectors(x:DColorVectorV):expr = 2*nc
-#template nVectors(x:DColorMatrixV):expr = 2*nc*nc
-template nVectors(x:Svec0):expr = 1
-template nVectors(x:Dvec0):expr = 1
-template nVectors(x:AsComplex):expr = 2*nVectors(x.re)
-template nVectors(x:AsVector):expr = x.len*nVectors(x[0])
-template nVectors(x:AsMatrix):expr = x.nrows*x.ncols*nVectors(x[0,0])
+#template nVectors(x:SColorVectorV):untyped = 2*nc
+#template nVectors(x:SColorMatrixV):untyped = 2*nc*nc
+#template nVectors(x:DColorVectorV):untyped = 2*nc
+#template nVectors(x:DColorMatrixV):untyped = 2*nc*nc
+template nVectors(x:Svec0):untyped = 1
+template nVectors(x:Dvec0):untyped = 1
+template nVectors(x:AsComplex):untyped = 2*nVectors(x.re)
+template nVectors(x:AsVector):untyped = x.len*nVectors(x[0])
+template nVectors(x:AsMatrix):untyped = x.nrows*x.ncols*nVectors(x[0,0])
 
-template simdType*(x:tuple):expr = simdType(x[0])
-template simdType*(x:array):expr = simdType(x[x.low])
-template simdType*(x:AsComplex):expr = simdType(x[])
-template simdType*(x:AsVector):expr = simdType(x[])
-template simdType*(x:AsMatrix):expr = simdType(x[])
+template simdType*(x:tuple):untyped = simdType(x[0])
+template simdType*(x:array):untyped = simdType(x[x.low])
+template simdType*(x:AsComplex):untyped = simdType(x[])
+template simdType*(x:AsVector):untyped = simdType(x[])
+template simdType*(x:AsMatrix):untyped = simdType(x[])
 
 
 #import complexConcept
@@ -98,13 +98,13 @@ template simdType*(x:AsMatrix):expr = simdType(x[])
 #proc `$`*(x:Masked[SComplexV]):string =
 #  result = "(" & $x.re & "," & $x.im & ")"
 
-template trace*(x:SComplexV):expr = x
+template trace*(x:SComplexV):untyped = x
 proc simdSum*(x:SComplexV):SComplex = complexConcept.map(result, simdSum, x)
 proc simdSum*(x:DComplexV):DComplex = complexConcept.map(result, simdSum, x)
 #template rankSum*(x:AsComplex) =
 #  #mixin qmpSum
 #  rankSum(x[])
-#template `/`*(x:SComplex|DComplex; y:SomeNumber):expr =
+#template `/`*(x:SComplex|DComplex; y:SomeNumber):untyped =
 #  mixin divd
 #  var r{.noInit.}:type(x)
 #  echoType: x
@@ -184,15 +184,15 @@ proc inorm2*(r:var SomeNumber; m:Masked[SDvec]) =
   let t = norm2(m)
   r += (type(r))(t)
 
-#template isScalar*(x:float32):expr = true
-#template isScalar*(x:Scalar):expr = true
-#template isScalar*(x:SComplexV):expr = true
-#template isVector*(x:SColorVectorV):expr = true
-#template mvLevel*(x:SColorVectorV):expr = 1
-#template isMatrix*(x:SColorMatrixV):expr = true
-#template mvLevel*(x:SColorMatrixV):expr = 1
-#template nrows*(x:SColorMatrixV):expr = nc
-#template ncols*(x:SColorMatrixV):expr = nc
+#template isScalar*(x:float32):untyped = true
+#template isScalar*(x:Scalar):untyped = true
+#template isScalar*(x:SComplexV):untyped = true
+#template isVector*(x:SColorVectorV):untyped = true
+#template mvLevel*(x:SColorVectorV):untyped = 1
+#template isMatrix*(x:SColorMatrixV):untyped = true
+#template mvLevel*(x:SColorMatrixV):untyped = 1
+#template nrows*(x:SColorMatrixV):untyped = nc
+#template ncols*(x:SColorMatrixV):untyped = nc
 #template `[]`*(x:SColorMatrixV; i,j:int):untyped = x[i][j]
 #template `[]=`*(x:SColorMatrixV; i,j:int, y:untyped):untyped = x[i][j] = y
 #template `[]`*(x:SColorMatrix; i,j:int):untyped = x[i][j]
@@ -324,6 +324,7 @@ when isMainModule:
   v1 := 1
   v2 := 0
   m1 := 0
+  echo "done init"
 
   threads:
     m1["odd"] := 1

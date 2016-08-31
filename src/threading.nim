@@ -174,7 +174,8 @@ macro threadSum*(a:varargs[expr]):auto =
     let ai = a[i]
     result.add quote do:
       var `gi`{.global.}:array[`p`*512,type(`ai`)]
-      `gi`[`p`*`tid`] = `ai`
+      #`gi`[`p`*`tid`] = `ai`
+      deepCopy(`gi`[`p`*`tid`], `ai`)
     let s = quote do:
       `ai` = `gi`[0]
       for i in 1..<`nid`:

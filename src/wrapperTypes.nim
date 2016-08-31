@@ -4,7 +4,7 @@ import stdUtils
 template makeDeref*(t,u:untyped):untyped {.dirty.} =
   #[
   bind ctrace
-  template `[]`*(x:t):expr =
+  template `[]`*(x:t):untyped =
     when compiles(unsafeAddr(x)):
        #ctrace()
       cast[ptr u](unsafeAddr(x))[]
@@ -17,10 +17,10 @@ template makeDeref*(t,u:untyped):untyped {.dirty.} =
     else:
       (u)x = y
   ]#
-  template `[]`*(x:t):expr = x.v
+  template `[]`*(x:t):untyped = x.v
   template `[]=`*(x:t; y:any):untyped =
     x.v = y
-  #template `[]`*(x:t):expr = x.v[]
+  #template `[]`*(x:t):untyped = x.v[]
   #template `[]=`*(x:t; y:any):untyped =
   #  x.v[] = y
 
@@ -30,7 +30,7 @@ template makeWrapper*(t,s:untyped):untyped =
     v*:T
   #type t*[T] = object
   #  v*:ptr T
-  template s*(xx:typed):expr =
+  template s*(xx:typed):untyped =
   #proc s*(xx:any):auto {.inline.} =
     lets(x,xx):
       when compiles(addr(x)):

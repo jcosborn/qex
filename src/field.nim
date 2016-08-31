@@ -184,6 +184,21 @@ template itemsI*(n0,n1:int):untyped =
   while i < ti1:
     yield i
     inc(i)
+template itemsI2*(n0,n1:int):untyped =
+  #let n = n1 - n0
+  #var ti0 = n0 + ((threadNum*n) div numThreads)
+  #var ti1 = n0 + (((threadNum+1)*n) div numThreads)
+  #echo "ti0: ", ti0, "  ti1: ", ti1
+  let s = 64
+  var i = n0 + s*threadNum
+  var j = s
+  while i < n1:
+    yield i
+    inc i
+    dec j
+    if j==0:
+      i += s*(numThreads-1)
+      j = s
 iterator items*(l:Layout):int {.inline.} =
   let n = l.nSitesOuter
   itemsI(0, n)
@@ -242,7 +257,7 @@ proc `{}`*(f:Field; i:int):auto =
   #r
   #echoImm: "{}"
   result = masked(f[e], mask)
-  
+
 #proc `$`*(x:Field):string =
 #  $(x[0])
 proc `$`*(x:Field):string =

@@ -10,6 +10,12 @@ type
     mem*: ref cArray[char]
     data*: ptr cArray[T]
 
+proc unsafeNewU*[T](a: var ref T, size: Natural) =
+  {.emit: "N_NIMCALL(void*, newObjNoInit)(TNimType* typ0, NI size0);".}
+  {.emit: "#define newObj newObjNoInit".}
+  unsafeNew(a, size)
+  {.emit: "#undef newObj".}
+
 proc ptrAlign[T](p:ptr T; a:int):ptr T =
   let x = cast[ByteAddress](p)
   let a1 = a - 1
@@ -22,7 +28,7 @@ proc new*[T](t:var alignedMem[T], n:int, align:int=64) =
   t.align = align
   t.stride = sizeof(T)
   t.bytes = t.len * t.stride + t.align
-  unsafeNew(t.mem, t.bytes)
+  unsafeNewU(t.mem, t.bytes)
   t.data = ptrAlign(cast[ptr cArray[T]](t.mem[0].addr), align)
 proc newAlignedMem*[T](t:var alignedMem[T], n:int, align:int=64) =
   new(t, n, align)

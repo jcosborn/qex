@@ -7,7 +7,6 @@ import stdUtils
 import times
 import cg
 import types
-import matrixConcept
 import profile
 import metaUtils
 import gaugeUtils
@@ -23,7 +22,7 @@ type Staggered*[G,T] = object
   se*,so*:StaggeredD[T]
   g*:seq[G]
 
-template initStagDT*(l:var Layout; T:typedesc; ss:string):expr =
+template initStagDT*(l:var Layout; T:typedesc; ss:string):untyped =
   var sd:StaggeredD[T]
   sd.sf.newSeq(4)
   sd.sb.newSeq(4)
@@ -37,7 +36,7 @@ template initStagDT*(l:var Layout; T:typedesc; ss:string):expr =
 proc initStagD*(x:Field; sub:string):auto =
   result = initStagDT(x.l, type(x[0]), sub)
 
-template initStagD3T*(l:var Layout; T:typedesc; ss:string):expr =
+template initStagD3T*(l:var Layout; T:typedesc; ss:string):untyped =
   var sd:StaggeredD[T]
   sd.sf.newSeq(8)
   sd.sb.newSeq(8)
@@ -181,10 +180,10 @@ template stagDP*(sd:StaggeredD; r:Field; g:openArray[Field2];
   #threadBarrier()
   toc("boundaryB")
 
-template nVecs(x:untyped):expr =
+template nVecs(x:untyped):untyped =
   when compiles(nrows(x)): nrows(x)
   else: 1
-template getVec(x,i:untyped):expr = row(x,i)
+template getVec(x,i:untyped):untyped = row(x,i)
 template setVec(r,x,i:untyped):untyped = setRow(r,x,i)
 template stagDP2*(sd:StaggeredD; r:Field; g:openArray[Field2];
                   x:Field3; expFlops:int; exp:untyped) =
@@ -248,8 +247,8 @@ template stagDM*(sd:StaggeredD; r:Field; g:openArray[Field2];
 # r = a*r + b*x + (2D)*x
 proc stagD2*(sd:StaggeredD; r:Field; g:openArray[Field2];
              x:Field; a:SomeNumber; b:SomeNumber2) =
-  template sf0:expr = sd.sf
-  template sb0:expr = sd.sb
+  template sf0:untyped = sd.sf
+  template sb0:untyped = sd.sb
   let nd = g.len
   tic()
   for mu in 0..<nd:
@@ -373,7 +372,7 @@ proc stagPhase*(g:openArray[Field]) =
 
 proc newStag*[G,T](g:openArray[G];v:T):auto =
   var l = g[0].l
-  template t:expr =
+  template t:untyped =
     type(v[0])
   var r:Staggered[G,t]
   r.se = initStagDT(l, t, "even")
@@ -383,7 +382,7 @@ proc newStag*[G,T](g:openArray[G];v:T):auto =
 
 proc newStag*[G](g:openArray[G]):auto =
   var l = g[0].l
-  template t:expr =
+  template t:untyped =
     type(l.ColorVector()[0])
   var r:Staggered[G,t]
   r.se = initStagDT(l, t, "even")
@@ -393,7 +392,7 @@ proc newStag*[G](g:openArray[G]):auto =
 
 proc newStag3*[G](g:openArray[G]):auto =
   var l = g[0].l
-  template t:expr =
+  template t:untyped =
     type(l.ColorVector()[0])
   var r:Staggered[G,t]
   r.se = initStagD3T(l, t, "even")
@@ -480,7 +479,7 @@ proc solve2*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =
     s.Ddag(t, r, m)
     r := t
 
-template foldl*(f,n,op:untyped):expr =
+template foldl*(f,n,op:untyped):untyped =
   var r:type(f(0))
   r = f(0)
   for i in 1..<n:
@@ -515,7 +514,7 @@ when isMainModule:
       echo v2.norm2
 
       for e in v1:
-        template x(d:int):expr = lo.vcoords(d,e)
+        template x(d:int):untyped = lo.vcoords(d,e)
         when type(v1{0}) is AsVarVector:
           v1[e][0].re := foldl(x, 4, a*10+b)
         else:

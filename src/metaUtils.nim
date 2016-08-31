@@ -221,9 +221,10 @@ macro makeUnique*(x:varargs[untyped]):auto =
   result.dumpTyped(result)
 
 macro subst*(x:varargs[untyped]):auto =
-  result = x[^1]
+  let n = x.len
+  result = x[n-1]
   #echo result.repr
-  for i in countup(0, x.len-3, 2):
+  for i in countup(0, n-3, 2):
     #echo x[i].repr, " ", x[i+1].repr
     var t = x[i+1]
     #echo t.repr

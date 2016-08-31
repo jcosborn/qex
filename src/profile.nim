@@ -6,16 +6,24 @@ import os
 import threading
 import comms
 import algorithm
+include system/timers
 
-type TimerInfo* = object
-  seconds*:float
-  flops*:float
-  count*:int
-  name*:string
-  timerP*:ptr float
-  start*:ptr TimerInfo
-  prev*:ptr TimerInfo
-  location*:type(instantiationInfo())
+type
+  #TicType* = float
+  TicType* = Ticks
+  TimerInfo* = object
+    seconds*: float
+    flops*: float
+    count*: int
+    name*: string
+    timerP*: ptr TicType
+    start*: ptr TimerInfo
+    prev*: ptr TimerInfo
+    location*: type(instantiationInfo())
+#template getTics(): untyped = epochTime()
+#template ticDiffSecs(x,y: untyped): untyped = x - y
+template getTics(): untyped = getTicks()
+template ticDiffSecs(x,y: untyped): untyped = 1e-9 * (x - y).float
 
 var ticSeq* = newSeq[ptr TimerInfo](0)
 var tocSeq* = newSeq[ptr TimerInfo](0)
@@ -35,7 +43,7 @@ macro getFunctionName:auto =
 
 template tic*(n= -1):untyped =
   var ti{.global.}:TimerInfo
-  var timer{.global,inject.}:float
+  var timer{.global,inject.}: TicType
   if threadNum==0:
     if ti.timerP==nil:
       ti.name = getFunctionName()
@@ -44,7 +52,7 @@ template tic*(n= -1):untyped =
       #echo "tic", ti.location, cast[ByteAddress](ti.timerP)
       ticSeq.add ti.addr
     inc ti.count
-    timer = epochTime()
+    timer = getTics()
 template tocI(f:untyped; s=""; n= -1):untyped =
   var ti{.global.}:TimerInfo
   if threadNum==0:
@@ -56,7 +64,7 @@ template tocI(f:untyped; s=""; n= -1):untyped =
       tocSeq.add ti.addr
     ti.flops += f.float
     inc ti.count
-    ti.seconds += epochTime() - timer
+    ti.seconds += ticDiffSecs(getTics(), timer)
 template toc*(s=""; n= -1; flops:untyped):untyped = tocI(flops, s, n-1)
 template toc*(s:string; n= -1):untyped = tocI(-1, s, n-1)
 template toc*(n= -1; flops:untyped):untyped = tocI(flops, "", n-1)

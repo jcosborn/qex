@@ -1,7 +1,7 @@
 import threading
 import comms
 import layout
-import matrixConcept
+#import matrixConcept
 #import complexConcept
 #import times
 import macros
@@ -19,7 +19,7 @@ type ShiftB*[T] = object
   sb*: ShiftBuf
   size*: int
 
-template shiftBType*(x:SomeField):expr = ShiftB[x[0].type]
+template shiftBType*(x:SomeField):untyped = ShiftB[x[0].type]
 
 template initShiftB*(s:ShiftB; l:Layout; t:typedesc;
                      dir,len:int; sub="all"):untyped =
@@ -30,13 +30,13 @@ template initShiftB*(s:ShiftB; l:Layout; t:typedesc;
     prepareShiftBuf(s.sb, s.si, s.size)
 template initShiftB*(s:ShiftB; x:SomeField; dir,len:int; sub="all"):untyped =
   if threadNum==0:
-    #template l:expr = x.l
+    #template l:untyped = x.l
     s.subset.layoutSubset(x.l, sub)
     s.si = x.l.getShift(dir, len, sub)
     s.size = sizeOf(x[0]) div x.l.nSitesInner
     prepareShiftBuf(s.sb, s.si, s.size)
 
-template createShiftB*(x:SomeField; dir,len:int; sub="all"):expr =
+template createShiftB*(x:SomeField; dir,len:int; sub="all"):untyped =
   var s:ShiftB[x[0].type]
   s.initShiftB(x, dir,len, sub)
   s
@@ -62,7 +62,7 @@ proc createShiftBufs*(x:any; ln=1; sub="all"):auto =
 #proc init*(s:var ShiftB; ;
 #           dir,len:int; sub="all") =
 
-template startSB*(s:ShiftB; e:expr) =
+template startSB*(s:ShiftB; e:untyped) =
   mixin assign, `[]`, numberType
   if threadNum == 0:
     if s.si.nRecvRanks > 0:
@@ -112,7 +112,7 @@ template localSB*(ss:ShiftB; ii:int; e1x,e2x:untyped):untyped =
     let k1 = s.si.sq.pidx[i]
     if k1 >= 0:
       let ix{.inject.} = k1
-      template it:expr = e2
+      template it:untyped = e2
       e1
     elif k1 + 2 <= 0:
       let ix{.inject.} = -(k1 + 2)
@@ -225,7 +225,7 @@ type Shift*[V: static[int]; T] = object
   sb*: ShiftBuf
   size*: int
 
-template createShift*(x:Field):expr =
+template createShift*(x:Field):untyped =
   Shift[x.V,x.T](src:x)
 
 proc init*[V:static[int],T](s:var Shift[V,T]; dest:Field[V,T];
@@ -247,10 +247,10 @@ proc init*[V:static[int],T](s:var Shift[V,T]; dest:Field[V,T];
 #template assign(x:any) = discard
 proc start*[V:static[int],T](s:var Shift[V,T]; src:Field[V,T]) =
   mixin assign, numberType
-  template si:expr = s.si
-  template sb:expr = s.sb
-  s.src = src
+  template si:untyped = s.si
+  template sb:untyped = s.sb
   if threadNum == 0:
+    s.src = src
     if si.nRecvRanks > 0:
       #echo myrank, ": startRecvBuf"
       startRecvBuf(sb)
@@ -277,9 +277,9 @@ proc start*[V:static[int],T](s:var Shift[V,T]; src:Field[V,T]) =
       startSendBuf(sb)
 
 proc local*(s:Shift) =
-  template l:expr = s.dest.l
-  template si:expr = s.si
-  template sb:expr = s.sb
+  template l:untyped = s.dest.l
+  template si:untyped = s.si
+  template sb:untyped = s.sb
   tFor i, s.subset.lowOuter..<s.subset.highOuter:
     let k1 = si.sq.pidx[i]
     #echo i, " ", k1
@@ -293,9 +293,9 @@ proc local*(s:Shift) =
 
 proc boundary*(s:var Shift) =
   mixin blend
-  template l:expr = s.dest.l
-  template si:expr = s.si
-  template sb:expr = s.sb
+  template l:untyped = s.dest.l
+  template si:untyped = s.si
+  template sb:untyped = s.sb
   if si.nRecvDests > 0:
     if si.nRecvRanks > 0:
       if threadNum == 0:

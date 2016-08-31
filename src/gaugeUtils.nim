@@ -27,6 +27,7 @@ proc loadGauge*[T](g:openArray[T]; fn:string):int =
   rd.close()
   return 0
 
+#[
 template makeShifts(f:untyped):untyped {.dirty.} =
   template f(mu:int; b:expr):expr =
     tc = (tc+1) mod nf
@@ -104,7 +105,7 @@ proc staples*[T,F,B](ss,uu,vv:openArray[T];ff:openArray[F];bb:openArray[B]) =
                  b[mu][nu] * Ud(nu, V(mu, u[nu]))
         #s[mu] += f[mu][nu] * ( U(nu, v[mu]) * Sd(mu, u[nu])) +
         #         b[mu][nu] * Ud(nu, V(mu, u[nu]))
-
+]#
 
 proc plaq*[T](uu: openArray[T]): auto =
   mixin mul
@@ -124,7 +125,8 @@ proc plaq*[T](uu: openArray[T]): auto =
   toc("plaq setup")
   threads:
     tic()
-    var plt = newSeq[float64](np)
+    #var plt = newSeq[float64](np)
+    var plt: array[6,float64]
     var umunu,unumu: type(load1(u[0][0]))
     for mu in 0..<nd:
       for nu in 0..<nd:

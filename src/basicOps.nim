@@ -27,16 +27,16 @@ var DBL_EPSILON*{.importC,header:"<float.h>".}:float64
 template epsilon*(x:float32):untyped = FLT_EPSILON
 template epsilon*(x:float64):untyped = DBL_EPSILON
 template basicNumberDefines(T,N,F) {.dirty.} =
-  template numberType*(x:T):expr = F
-  template numberType*(x:typedesc[T]):expr = F
-  template numNumbers*(x:T):expr = N
-  template numNumbers*(x:typedesc[T]):expr = N
+  template numberType*(x:T):untyped = F
+  template numberType*(x:typedesc[T]):untyped = F
+  template numNumbers*(x:T):untyped = N
+  template numNumbers*(x:typedesc[T]):untyped = N
 basicNumberDefines(float32, 1, float32)
 basicNumberDefines(float64, 1, float64)
-template `[]`*(x:SomeNumber; i:SomeInteger):expr = x
+template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x
 
-template cnvrt(r,x):expr = ((type(r))(x))
-template to*(x:any; t:typedesc[SomeNumber]):expr =
+template cnvrt(r,x):untyped = ((type(r))(x))
+template to*(x:any; t:typedesc[SomeNumber]):untyped =
   when x.type is t:
     x
   else:
@@ -44,12 +44,12 @@ template to*(x:any; t:typedesc[SomeNumber]):expr =
     #assign(r, x)
     #r
     t(x)
-template to*(t:typedesc[SomeNumber]; x:any):expr =
+template to*(t:typedesc[SomeNumber]; x:any):untyped =
   when x.type is t:
     x
   else:
     t(x)
-template toDouble*(x:SomeNumber):expr =
+template toDouble*(x:SomeNumber):untyped =
   when type(x) is float64:
     x
   else:
@@ -99,18 +99,18 @@ template conj*(r:var SomeNumber, x:SomeNumber2):untyped = assign(r, x)
 template adj*(r:var SomeNumber, x:SomeNumber2):untyped = assign(r, x)
 template trace*(x:SomeNumber):untyped = x
 template norm2*(r:var SomeNumber, x:SomeNumber2):untyped = mul(r, x, x)
-template norm2*(x:SomeNumber):expr = x*x
+template norm2*(x:SomeNumber):untyped = x*x
 template inorm2*(r:var SomeNumber; x:SomeNumber2):untyped = imadd(r, x, x)
-template dot*(x:SomeNumber; y:SomeNumber2):expr = x*y
-template idot*(r:var SomeNumber; x:SomeNumber2;y:SomeNumber3):expr =
+template dot*(x:SomeNumber; y:SomeNumber2):untyped = x*y
+template idot*(r:var SomeNumber; x:SomeNumber2;y:SomeNumber3):untyped =
   imadd(r,x,y)
-template redot*(x:SomeNumber; y:SomeNumber2):expr = x*y
+template redot*(x:SomeNumber; y:SomeNumber2):untyped = x*y
 template redotinc*(r:var SomeNumber; x:SomeNumber2; y:SomeNumber3):untyped =
   r += x*y
-template simdSum*(x:SomeNumber):expr = x
+template simdSum*(x:SomeNumber):untyped = x
 template simdSum*(r:var SomeNumber; x:SomeNumber2):untyped =
  r = (type(r))(x)
-template simdReduce*(x:SomeNumber):expr = x
+template simdReduce*(x:SomeNumber):untyped = x
 template perm1*(r:var SomeNumber; x:SomeNumber2):untyped =
  r = (type(r))(x)
 template perm2*(r:var SomeNumber; x:SomeNumber2):untyped =
@@ -125,7 +125,7 @@ proc acos*(x:float64):float64 {.importC:"acos",header:"math.h".}
 template rsqrt*(r:var SomeNumber; x:SomeNumber) =
   r = cnvrt(r,1)/sqrt(cnvrt(r,x))
 
-template load1*(x:SomeNumber):expr = x
+template load1*(x:SomeNumber):untyped = x
 
 template tmpvar*(r:untyped; x:untyped):untyped =
   mixin load1
@@ -139,7 +139,7 @@ template store*(r:var untyped, x:untyped):untyped =
   mixin assign
   assign(r, x)
 
-template load*(x:untyped):expr =
+template load*(x:untyped):untyped =
   mixin load1
   load1(x)
 template load*(r:untyped, x:untyped):untyped =

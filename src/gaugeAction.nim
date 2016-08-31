@@ -255,16 +255,22 @@ proc gaugeAction*[T](uu: openArray[T]): auto =
 when isMainModule:
   import qcdTypes
   qexInit()
+  var defaultGaugeFile = "l88.scidac"
   #let defaultLat = @[2,2,2,2]
   let defaultLat = @[8,8,8,8]
   defaultSetup()
-  g.random
+  #g.random
 
-  var pl = plaq(g)
-  echo pl
-  echo pl.sum
+  proc test(g:any) =
+    var pl = plaq(g)
+    echo pl
+    echo pl.sum
+    var ga = gaugeAction(g)
+    echo ga
 
-  var ga = gaugeAction(g)
-  echo ga
+  test(g)
+  echoTimers()
+  resetTimers()
+  test(g)
 
   qexFinalize()
