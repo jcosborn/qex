@@ -14,7 +14,7 @@ type
 proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
   tic()
   let vrb = sp.verbosity
-  template verb(n:int; body:expr):untyped =
+  template verb(n:int; body:untyped):untyped =
     if vrb>=n: body
   let sub = sp.subset
   template subset(body:untyped):untyped =
@@ -132,7 +132,7 @@ when isMainModule:
     m.even := 1
     m.odd := 10
     threadBarrier()
-    for i in m:
+    tfor i, 0..<lo.nSites:
       m{i} := i+1
     threadBarrier()
     v1.even := 1

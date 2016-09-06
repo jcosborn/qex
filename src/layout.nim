@@ -12,8 +12,8 @@ import stdUtils
 import comms
 import qmp
 
-type 
-  llist* {.importc,ql.} = object 
+type
+  llist* {.importc,ql.} = object
     value*: pointer
     next*: ptr llist
 
@@ -21,7 +21,7 @@ type
 # x[i] = sum_j ((k/f[i][j])%m[i][j])*d[i][j]
 # parity?
 type
-  LayoutQ* {.importC:"Layout",ql.} = object 
+  LayoutQ* {.importC:"Layout",ql.} = object
     nDim*: cint
     physGeom*: ptr cArray[cint]
     rankGeom*: ptr cArray[cint]
@@ -42,7 +42,7 @@ type
     nranks*: cint
     myrank*: cint
   LayoutIndexQ* = tuple[rank,index:cint]
-  SubsetQ* {.importc:"Subset",ql.} = object 
+  SubsetQ* {.importc:"Subset",ql.} = object
     begin*: cint
     `end`*: cint
     beginOuter*: cint
@@ -131,7 +131,7 @@ type
     shifts*: Table[ShiftKey,ShiftIndices]
     coords*: seq[seq[int16]]
     vcoordTemp*: seq[array[V,int16]]
-  Subset* = object 
+  Subset* = object
     low*: int
     high*: int
     lowOuter*: int
@@ -270,11 +270,14 @@ template getSubset*(l:Layout; sub:string):Subset =
   var s{.noInit.}:Subset
   layoutSubset(s, l, sub)
   s
-template `len`*(s:Subset):expr = s.high-s.low
-template `lenOuter`*(s:Subset):expr = s.highOuter-s.lowOuter
+template `len`*(s:Subset):untyped = s.high-s.low
+template `lenOuter`*(s:Subset):untyped = s.highOuter-s.lowOuter
 
 proc makeShiftSubQ(si:ptr ShiftIndicesQ; l:ptr LayoutQ; d:ptr cint; s:cstring)
   {.importC:"makeShiftSub",ql.}
+proc makeShiftMultiSubQ(si:ptr ptr ShiftIndicesQ; l:ptr LayoutQ;
+                        d:ptr ptr cint; s:ptr cstring; ndisp:cint)
+  {.importC:"makeShiftMultiSub",ql.}
 
 # x>0 -> 2*x-1; x<= -> -2*x
 #proc makeShift(l:Layout; disp:openArray[int]; sub:string="all") =
@@ -303,7 +306,7 @@ proc getShift*(l:var Layout; dir,len:int; sub:string="all"):ShiftIndices =
   result = l.shifts[key]
 
 type
-  ShiftBufQ* {.importc:"ShiftBuf",ql.} = object 
+  ShiftBufQ* {.importc:"ShiftBuf",ql.} = object
     sqmpmem*: QMP_msgmem_t
     smsg*: QMP_msghandle_t
     rqmpmem*: QMP_msgmem_t

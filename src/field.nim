@@ -277,14 +277,15 @@ template indexField(x:Shifted, y:int):untyped = 0
 proc applyOp1(x,y:NimNode; op:string):auto =
   let o = ident(op)
   result = quote do:
-    let t = `y`
+    let tx = `x`
+    let ty = `y`
     #echoImm `x`[0] is VMconcept1
     #echoImm t isnot VMconcept2
-    for e in `x`:
+    for e in tx:
       mixin `o`
       #mixin isMatrix
       #echoAll isMatrix(`x`[e])
-      `o`(`x`[e], t)
+      `o`(tx[e], ty)
 proc applyOp2(x,y:NimNode; ty:typedesc; op:string):auto =
   #echo ty.getType.treeRepr
   #echo ty.getType.getImpl.treeRepr
