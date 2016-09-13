@@ -13,12 +13,12 @@ type
 makeDeref(SimdS4, array[4,float32])
 makeWrapper(ToSingle, toSingleImpl)
 makeWrapper(ToDouble, toDoubleImpl)
-template toSingle*(x:SimdS4|ToSingle):expr = x
-template toSingle*(x:SimdD4):expr = toSingleImpl(x)
-template toSingle*(x:ToDouble):expr = x[]
-template toDouble*(x:SimdD4|ToDouble):expr = x
-template toDouble*(x:SimdS4):expr = toDoubleImpl(x)
-template toDouble*(x:ToSingle):expr = x[]
+template toSingle*(x:SimdS4|ToSingle):untyped = x
+template toSingle*(x:SimdD4):untyped = toSingleImpl(x)
+template toSingle*(x:ToDouble):untyped = x[]
+template toDouble*(x:SimdD4|ToDouble):untyped = x
+template toDouble*(x:SimdS4):untyped = toDoubleImpl(x)
+template toDouble*(x:ToSingle):untyped = x[]
 type SimdSAny* = SimdS4 | ToSingle
 type SimdSAny2* = SimdS4 | ToSingle
 type SimdSAny3* = SimdS4 | ToSingle
@@ -67,16 +67,16 @@ proc vecMadd*(x,y,z:SimdD4):SimdD4 {.importC:"vec_madd",noDecl.}
 proc vecMsub*(x,y,z:SimdD4):SimdD4 {.importC:"vec_msub",noDecl.}
 proc vecNmadd*(x,y,z:SimdD4):SimdD4 {.importC:"vec_nmadd",noDecl.}
 proc vecNmsub*(x,y,z:SimdD4):SimdD4 {.importC:"vec_nmsub",noDecl.}
-template ld(x:SimdS4):expr = vecLd(0i32, x[])
-template ld(x:SimdD4):expr = x #vecLd(0i32, x)
-template ld(x:ToSingle):expr = ld(x[])
-template ld(x:ToDouble):expr = ld(x[])
-template ld(x:SomeNumber):expr = vecSplats(x.float64)
+template ld(x:SimdS4):untyped = vecLd(0i32, x[])
+template ld(x:SimdD4):untyped = x #vecLd(0i32, x)
+template ld(x:ToSingle):untyped = ld(x[])
+template ld(x:ToDouble):untyped = ld(x[])
+template ld(x:SomeNumber):untyped = vecSplats(x.float64)
 
-template load1*(x:SimdS4):expr =
+template load1*(x:SimdS4):untyped =
   bind ld
   ld(x)
-template load1*(x:SimdD4):expr =
+template load1*(x:SimdD4):untyped =
   bind ld
   ld(x)
 
@@ -145,7 +145,7 @@ template assign*(r:var SimdSD4, x:ToSingle):untyped = assign(r, x[])
 template assign*(r:var SimdSD4, x:ToDouble):untyped = assign(r, x[])
 template `:=`*(r:var SimdSD4; x:SimdAny|SomeNumber):untyped = assign(r, x)
 template `:=`*(r:var SimdSD4; x:array[4,SomeNumber]):untyped = assign(r, x)
-template toArray*(x:SimdS4):expr = x[]
+template toArray*(x:SimdS4):untyped = x[]
 proc toArray*(x:SimdD4):array[4,float64] {.inline,noInit.} =
   assign(result, x)
 
@@ -252,7 +252,7 @@ template makeBinary(name,op:untyped):untyped =
     `name Impl`(result, ld(x), ld(y))
   proc name*(x:SomeNumber; y:SimdAny2):SimdD4 {.inline,noInit.} =
     `name Impl`(result, ld(x), ld(y))
-  template op*(x:SimdAny; y:SimdAny2):expr = name(x,y)
+  template op*(x:SimdAny; y:SimdAny2):untyped = name(x,y)
   template op*(x:SimdAny; y:SomeNumber):untyped = name(x,y)
   template op*(x:SomeNumber; y:SimdAny2):untyped = name(x,y)
 makeBinary(add, `+`)
@@ -316,7 +316,7 @@ proc simdSum*(r:var SomeNumber; x:SimdAny) {.inline.} =
   r = x[0]
   forStatic i, 1, 3:
     r += x[i]
-#template simdSum*(x:SimdAny):expr =
+#template simdSum*(x:SimdAny):untyped =
   #var r{.noInit.}:numberType(x)
   #simdSum(r, x)
   #r

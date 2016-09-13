@@ -18,7 +18,7 @@ type
 proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
   tic()
   let vrb = sp.verbosity
-  template verb(n:int; body:expr):untyped =
+  template verb(n:int; body:untyped):untyped =
     if vrb>=n: body
   let sub = sp.subset
   template subset(body:untyped):untyped =

@@ -9,10 +9,10 @@ proc test() =
   var v2 = lo.ColorVector()
   var m1 = lo.ColorMatrix()
   var v3 = lo.ColorVector()
-  template T0(x:v3.type):expr =
+  template T0(x:v3.type):untyped =
     shift(v3, 3,1, x)
     v3
-  
+
   threads:
     m1 := 2
     v1 := 1

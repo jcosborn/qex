@@ -93,9 +93,9 @@ template threadMaster*(x:untyped) = ompMaster(x)
 template threadSingle*(x:untyped) = ompSingle(x)
 template threadCritical*(x:untyped) = ompCritical(x)
 
-template threadDivideLow*(x,y:untyped):expr =
+template threadDivideLow*(x,y: untyped): untyped =
   x + (threadNum*(y-x)) div numThreads
-template threadDivideHigh*(x,y:untyped):expr =
+template threadDivideHigh*(x,y: untyped): untyped =
   x + ((threadNum+1)*(y-x)) div numThreads
 
 
@@ -106,12 +106,12 @@ proc tForX*(index,i0,i1,body:NimNode):NimNode =
     let ti1 = `i0` + ((threadNum+1)*d) div numThreads
     for `index` in ti0 ..< ti1:
       `body`
-macro tFor*(index,i0,i1:expr; body:untyped):stmt =
+macro tFor*(index,i0,i1: untyped; body: untyped): untyped =
   result = tForX(index, i0, i1, body)
-macro tFor*(index:expr; slice:Slice; body:untyped):stmt =
+macro tFor*(index: untyped; slice: Slice; body: untyped): untyped =
   #echo index.treeRepr
   #echo treeRepr(slice)
-  var i0,i1:NimNode
+  var i0,i1: NimNode
   #echo slice.kind
   if slice.kind == nnkStmtListExpr:
     i0 = slice[1][1]
@@ -162,7 +162,7 @@ template threadBarrier* =
   twait0
   #ompBarrier
 
-macro threadSum*(a:varargs[expr]):auto =
+macro threadSum*(a:varargs[untyped]):auto =
   #echo a.treeRepr
   result = newNimNode(nnkStmtList)
   var sum = newNimNode(nnkStmtList)
@@ -188,7 +188,7 @@ macro threadSum*(a:varargs[expr]):auto =
   result.add(m)
   result = newBlockStmt(result)
   #echo result.treeRepr
-macro threadSum2*(a:varargs[expr]):auto =
+macro threadSum2*(a:varargs[untyped]):auto =
   #echo a.treeRepr
   result = newNimNode(nnkStmtList)
   var g0 = newNimNode(nnkStmtList)

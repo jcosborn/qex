@@ -101,8 +101,8 @@ proc newOneOf*(x:Field):auto =
   r.new(x.l)
   r
 
-template `[]`*(x:Field; i:int):expr = x.s[i]
-template `[]`*(x:Subsetted; i:int):expr = x.field[i]
+template `[]`*(x:Field; i:int):untyped = x.s[i]
+template `[]`*(x:Subsetted; i:int):untyped = x.field[i]
 template `[]`*(x:SomeField; st:string):untyped =
   Subsetted[type(x),type(st)](field:x,subset:st)
 template `[]`*(x:SomeField; st:Subset):untyped =
@@ -152,8 +152,8 @@ macro indexFieldM*(x:FieldAddSub, sx:tuple, y:int):auto =
       result = quote do:
         `result` - indexField(`x`.field[`i`],`y`)
   #echo result.repr
-template indexField*(x:FieldAddSub, y:int):expr = indexFieldM(x, x.S, y)
-template `[]`*(x:FieldAddSub, y:int):expr = indexField(x, y)
+template indexField*(x:FieldAddSub, y:int):untyped = indexFieldM(x, x.S, y)
+template `[]`*(x:FieldAddSub, y:int):untyped = indexField(x, y)
 macro indexFieldM*(x:FieldMul; tx:typedesc; y:int):auto =
   #echo x.treeRepr
   #echo tx.getType.treeRepr
@@ -170,8 +170,8 @@ macro indexFieldM*(x:FieldMul; tx:typedesc; y:int):auto =
     result = quote do:
       `result` * indexField(`x`.field[`i`],`y`)
   #echo result.repr
-template indexField*(x:FieldMul, y:int):expr = indexFieldM(x, x.T, y)
-template `[]`*(x:FieldMul, y:int):expr = indexField(x, y)
+template indexField*(x:FieldMul, y:int):untyped = indexFieldM(x, x.T, y)
+template `[]`*(x:FieldMul, y:int):untyped = indexField(x, y)
 
 template l*(x:FieldAddSub):untyped = x.field[0].l
 
@@ -235,8 +235,8 @@ iterator items*(x:FieldAddSub):int {.inline.} =
 iterator items*(x:FieldMul):int {.inline.} =
   let n = x.field[0].l.nSitesOuter
   itemsI(0, n)
-#macro filter*(x:SomeField; s:string; pred:expr):Mask {.inline.} =
-#iterator filter*(x:SomeField; s:string; pred:expr):Mask {.inline.} =
+#macro filter*(x:SomeField; s:string; pred:untyped):Mask {.inline.} =
+#iterator filter*(x:SomeField; s:string; pred:untyped):Mask {.inline.} =
   ###
 
 import types
@@ -354,7 +354,7 @@ proc norm2P*(f:SomeField):auto =
   #toc("norm2 rank sum")
   threadRankSum(result)
   toc("norm2 thread rank sum")
-template norm2*(f:SomeAllField):expr =
+template norm2*(f:SomeAllField):untyped =
   when declared(subsetObject):
     #echo "subsetObj" & s
     norm2P(f[subsetObject])
@@ -363,7 +363,7 @@ template norm2*(f:SomeAllField):expr =
     norm2P(f[subsetString])
   else:
     norm2P(f)
-template norm2*(f:Subsetted):expr = norm2P(f)
+template norm2*(f:Subsetted):untyped = norm2P(f)
 
 proc dotP*(f1:SomeField; f2:SomeField2):auto =
   mixin dot, idot, simdSum, items, toDouble
@@ -377,7 +377,7 @@ proc dotP*(f1:SomeField; f2:SomeField2):auto =
   #threadSum(result)
   #rankSum(result)
   threadRankSum(result)
-template dot*(f1:SomeAllField; f2:SomeAllField2):expr =
+template dot*(f1:SomeAllField; f2:SomeAllField2):untyped =
   when declared(subsetObject):
     #echo "subsetObj" & s
     dotP(f1[subsetObject], f2)
@@ -385,7 +385,7 @@ template dot*(f1:SomeAllField; f2:SomeAllField2):expr =
     dotP(f1[subsetString], f2)
   else:
     dotP(f1, f2)
-template dot*(f1:Subsetted; f2:SomeAllField2):expr = dotP(f1, f2)
+template dot*(f1:Subsetted; f2:SomeAllField2):untyped = dotP(f1, f2)
 
 proc redotP*(f1:SomeField; f2:SomeField2):auto =
   tic()
@@ -407,7 +407,7 @@ proc redotP*(f1:SomeField; f2:SomeField2):auto =
   #toc("rank sum")
   threadRankSum(result)
   toc("redot thread rank sum")
-template redot*(f1:SomeAllField; f2:SomeAllField2):expr =
+template redot*(f1:SomeAllField; f2:SomeAllField2):untyped =
   when declared(subsetObject):
     #echo "subsetObj redot"
     redotP(f1[subsetObject], f2)
@@ -416,7 +416,7 @@ template redot*(f1:SomeAllField; f2:SomeAllField2):expr =
     #echo "subset redot"
   else:
     redotP(f1, f2)
-template redot*(f1:Subsetted; f2:SomeAllField2):expr = redotP(f1, f2)
+template redot*(f1:Subsetted; f2:SomeAllField2):untyped = redotP(f1, f2)
 
 proc trace*(m:Field):auto =
   mixin trace, simdSum
@@ -438,28 +438,28 @@ proc sumP*(f:SomeField):auto =
   result = simdSum(s)
   threadSum(result)
   rankSum(result)
-template sum*(f:SomeAllField):expr =
+template sum*(f:SomeAllField):untyped =
   when declared(subsetString):
     sumP(f[subsetString])
   else:
     sumP(f)
-template sum*(f:Subsetted):expr = sumP(f)
+template sum*(f:Subsetted):untyped = sumP(f)
 
-template `-`*(x:SomeField):expr = fieldAddSub(-1,x)
-template `+`*(x:SomeField,y:SomeField2):expr = fieldAddSub(1,x,1,y)
-template `+`*(x:SomeField,y:notSomeField2):expr = fieldAddSub(1,x,1,y)
-template `+`*(x:notSomeField,y:SomeField2):expr = fieldAddSub(1,x,1,y)
-template `-`*(x:SomeField,y:SomeField2):expr = fieldAddSub(1,x,-1,y)
-template `-`*(x:SomeField,y:notSomeField2):expr = fieldAddSub(1,x,-1,y)
-template `-`*(x:notSomeField,y:SomeField2):expr = fieldAddSub(1,x,-1,y)
-template `*`*(x:SomeField,y:SomeField2):expr = fieldMul(x,y)
-template `*`*(x:SomeField,y:notSomeField2):expr = fieldMul(x,y)
-template `*`*(x:notSomeField,y:SomeField2):expr = fieldMul(x,y)
-template `/`*(x:SomeField,y:SomeNumber):expr =
+template `-`*(x:SomeField):untyped = fieldAddSub(-1,x)
+template `+`*(x:SomeField,y:SomeField2):untyped = fieldAddSub(1,x,1,y)
+template `+`*(x:SomeField,y:notSomeField2):untyped = fieldAddSub(1,x,1,y)
+template `+`*(x:notSomeField,y:SomeField2):untyped = fieldAddSub(1,x,1,y)
+template `-`*(x:SomeField,y:SomeField2):untyped = fieldAddSub(1,x,-1,y)
+template `-`*(x:SomeField,y:notSomeField2):untyped = fieldAddSub(1,x,-1,y)
+template `-`*(x:notSomeField,y:SomeField2):untyped = fieldAddSub(1,x,-1,y)
+template `*`*(x:SomeField,y:SomeField2):untyped = fieldMul(x,y)
+template `*`*(x:SomeField,y:notSomeField2):untyped = fieldMul(x,y)
+template `*`*(x:notSomeField,y:SomeField2):untyped = fieldMul(x,y)
+template `/`*(x:SomeField,y:SomeNumber):untyped =
   let t = 1.0/y
   fieldMul(x,t)
 #template makeBinop(f:untyped,s:string):untyped =
-#  template `f`*(x:SomeField; y:SomeField2):expr =
+#  template `f`*(x:SomeField; y:SomeField2):untyped =
 #    echoImm x
 #    echoImm y
 #    fieldBinop(`s`, x, y)

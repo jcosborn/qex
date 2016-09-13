@@ -7,11 +7,11 @@ import stagD
 import profile
 import os
 
-template corner(l, i):expr =
+template corner(l, i):untyped =
   (l.coords[0][i].int and 1) + ((l.coords[1][i].int and 1) shl 1) +
    ((l.coords[2][i].int and 1) shl 2)
 
-template addCorner(l, s, i):expr =
+template addCorner(l, s, i):untyped =
   ((s + l.coords[0][i].int) and 1) +
    ((((s shr 1) + l.coords[1][i].int) and 1) shl 1) +
    ((((s shr 2) + l.coords[2][i].int) and 1) shl 2)
@@ -104,7 +104,7 @@ when isMainModule:
     g.stagPhase
     v1 := 0
     #for e in v1:
-    #  template x(d:int):expr = lo.vcoords(d,e)
+    #  template x(d:int):untyped = lo.vcoords(d,e)
     #  v1[e][0].re := foldl(x, 4, a*10+b)
     #  #echo v1[e][0]
   #echo v1.norm2

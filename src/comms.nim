@@ -33,19 +33,19 @@ proc evalArgs*(call:var NimNode; args:NimNode):NimNode =
     call.add(t)
 proc cprintf*(fmt:cstring){.importc:"printf",varargs,header:"<stdio.h>".}
 #proc printfOrdered(
-macro printf*(fmt:string; args:varargs[expr]):auto =
+macro printf*(fmt:string; args:varargs[untyped]):auto =
   var call = newCall(ident("cprintf"), fmt)
   result = evalArgs(call, args)
   result.add quote do:
     if myRank==0 and threadNum==0:
       `call`
 proc echoRaw*(x: varargs[typed, `$`]) {.magic: "Echo".}
-macro echoAll*(args:varargs[expr]):auto =
+macro echoAll*(args:varargs[untyped]):auto =
   var call = newCall(ident("echoRaw"))
   result = evalArgs(call, args)
   result.add quote do:
     `call`
-macro echoRank*(args:varargs[expr]):auto =
+macro echoRank*(args:varargs[untyped]):auto =
   var call = newCall(ident("echoRaw"))
   call.add ident"myRank"
   call.add newLit"/"
@@ -55,7 +55,7 @@ macro echoRank*(args:varargs[expr]):auto =
   template f(x:untyped):untyped =
     if threadNum==0: x
   result.add getAst(f(call))
-macro echo0*(args:varargs[expr]):auto =
+macro echo0*(args:varargs[untyped]):auto =
   var call = newCall(ident("echoRaw"))
   result = evalArgs(call, args)
   result.add quote do:
@@ -93,7 +93,7 @@ proc unwrap(x:NimNode):seq[NimNode] =
       `x`[]
   #echo result.repr
 
-macro rankSum*(a:varargs[expr]):auto =
+macro rankSumN*(a:varargs[typed]):auto =
   #echo "rankSum: ", a.repr
   #echo a.treeRepr
   var i0 = 0
@@ -139,6 +139,15 @@ macro rankSum*(a:varargs[expr]):auto =
       else:
         result.add(a[i])
   #echo result.repr
+macro rankSum*(a:varargs[untyped]):auto =
+  if a.len==1:
+    let a0 = a[0]
+    result = quote do:
+      if threadNum==0:
+        qmpSum(`a0`)
+  else:
+    result = newCall(ident("rankSumN"))
+    for v in a: result.add v
 
 #var count = 0
 template threadRankSum1*(a:untyped):untyped =
@@ -212,7 +221,7 @@ proc threadRankSumN*(a:NimNode):auto =
     threadBarrier()
   result.add(m)
   #echo result.treeRepr
-macro threadRankSum*(a:varargs[expr]):auto =
+macro threadRankSum*(a:varargs[untyped]):auto =
   if a.len==1:
     template trs1(x:untyped):untyped = threadRankSum1(x)
     result = getAst(trs1(a[0]))

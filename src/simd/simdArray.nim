@@ -173,8 +173,8 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   template simdType*(x:T):typedesc = T
   template simdLength*(x:T):untyped = N
   template simdLength*(x:typedesc[T]):untyped = N
-  template `[]`*(x:T):expr = (array[L,B])(x)
-  template `[]`*(x:T; i:SomeInteger):expr = x[][i div N0][i mod N0]
+  template `[]`*(x:T):untyped = (array[L,B])(x)
+  template `[]`*(x:T; i:SomeInteger):untyped = x[][i div N0][i mod N0]
   template `[]=`*(x:T; i:SomeInteger; y:any) = x[][i div N0][i mod N0] = y
   template load1*(x:T):untyped = x
   proc to*(x:SomeNumber; y:typedesc[T]):T {.inline,noInit.} =
@@ -189,7 +189,7 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
     r = (type(r))(simdReduce(y))
   proc simdReduce*(x:T):F {.noInit,inline.} = simdReduce(result, x)
   template simdSum*(r:var SomeNumber; x:T) = simdReduce(r, x)
-  template simdSum*(x:T):expr = simdReduce(x)
+  template simdSum*(x:T):untyped = simdReduce(x)
   proc `-`*(x:T):T {.inline,noInit.} =
     forStatic i, 0, L-1:
       neg(result[][i], x[][i])

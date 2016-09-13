@@ -29,20 +29,20 @@ proc loadGauge*[T](g:openArray[T]; fn:string):int =
 
 #[
 template makeShifts(f:untyped):untyped {.dirty.} =
-  template f(mu:int; b:expr):expr =
+  template f(mu:int; b:untyped):untyped =
     tc = (tc+1) mod nf
     shiftFwd(tf[tc], mu, b)
     tf[tc]
-  template `f "d"`(mu:int; b:expr):expr {.dirty.} =
+  template `f "d"`(mu:int; b:untyped):untyped {.dirty.} =
     tc = (tc+1) mod nf
     shiftBck(tf[tc], mu, b)
     tf[tc]
 template makeTransporters(f,g:untyped):untyped {.dirty.} =
-  template f(mu:int; b:expr):expr =
+  template f(mu:int; b:untyped):untyped =
     tc = (tc+1) mod nf
     transportFwd(tf[tc], g[mu], mu, b)
     tf[tc]
-  template `f "d"`(mu:int; b:expr):expr {.dirty.} =
+  template `f "d"`(mu:int; b:untyped):untyped {.dirty.} =
     tc = (tc+1) mod nf
     transportBck(tf[tc], g[mu], mu, b)
     tf[tc]

@@ -295,10 +295,10 @@ proc blend*(r:var any; x:ptr char; b:ptr char; blnd:int) {.inline.} =
   else: discard
 
 
-proc ColorVector*(l:Layout):SLatticeColorVectorV = result.new(l)
-proc ColorMatrix*(l:Layout):SLatticeColorMatrixV = result.new(l)
-#proc ColorVector*(l:Layout):DLatticeColorVectorV = result.new(l)
-#proc ColorMatrix*(l:Layout):DLatticeColorMatrixV = result.new(l)
+#proc ColorVector*(l:Layout):SLatticeColorVectorV = result.new(l)
+#proc ColorMatrix*(l:Layout):SLatticeColorMatrixV = result.new(l)
+proc ColorVector*(l:Layout):DLatticeColorVectorV = result.new(l)
+proc ColorMatrix*(l:Layout):DLatticeColorMatrixV = result.new(l)
 
 when isMainModule:
   import times

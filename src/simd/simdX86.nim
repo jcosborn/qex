@@ -76,11 +76,11 @@ when declared(SimdS16):
     imsub(r, xd, yd)
 
 when declared(SimdD4):
-  template toDouble*(x:SimdD4):expr = x
+  template toDouble*(x:SimdD4):untyped = x
 when declared(SimdD8):
-  template toDouble*(x:SimdD8):expr = x
+  template toDouble*(x:SimdD8):untyped = x
 when declared(SimdD16):
-  template toDouble*(x:SimdD16):expr = x
+  template toDouble*(x:SimdD16):untyped = x
 
 when isMainModule:
   var s8:SimdS8

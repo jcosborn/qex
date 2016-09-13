@@ -24,7 +24,7 @@ template makeDeref*(t,u:untyped):untyped {.dirty.} =
   #template `[]=`*(x:t; y:any):untyped =
   #  x.v[] = y
 
-template makeWrapper*(t,s:untyped):untyped =
+template makeWrapper*(t,s:untyped):untyped {.dirty.} =
   #type t*[T] = distinct T
   type t*[T] = object
     v*:T

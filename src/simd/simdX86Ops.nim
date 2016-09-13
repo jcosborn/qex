@@ -47,13 +47,13 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
       var t{.noInit.}:array[N,F]
       for i in 0..<N: t[i] = F(y[][i])
       assign(r, t)
-  template toSimd*(x:array[N,F]):expr =
+  template toSimd*(x:array[N,F]):untyped =
     `P "_loadu_" S`(cast[ptr F](unsafeAddr(x)))
   proc toArray*(x:T):array[N,F] {.inline,noInit.} =
     `P "_storeu_" S`(cast[ptr F](result.addr), x)
-  template to*(x:SomeNumber; t:typedesc[T]):expr =
+  template to*(x:SomeNumber; t:typedesc[T]):untyped =
     `P "_set1_" S`(F(x))
-  template to*(x:array[N,F]; t:typedesc[T]):expr =
+  template to*(x:array[N,F]; t:typedesc[T]):untyped =
     toSimd(x)
   proc to*(x:T; t:typedesc[array[N,F]]):array[N,F] {.inline,noInit.} =
     `P "_storeu_" S`(cast[ptr F](result.addr), x)
@@ -218,11 +218,11 @@ proc simdReduce*(x:m256d):float64 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m512):float32 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m512d):float64 {.inline,noInit.} = simdReduce(result, x)
 
-template simdSum*(x:m128):expr = simdReduce(x)
-template simdSum*(x:m256):expr = simdReduce(x)
-template simdSum*(x:m256d):expr = simdReduce(x)
-template simdSum*(x:m512):expr = simdReduce(x)
-template simdSum*(x:m512d):expr = simdReduce(x)
+template simdSum*(x:m128):untyped = simdReduce(x)
+template simdSum*(x:m256):untyped = simdReduce(x)
+template simdSum*(x:m256d):untyped = simdReduce(x)
+template simdSum*(x:m512):untyped = simdReduce(x)
+template simdSum*(x:m512d):untyped = simdReduce(x)
 template simdSum*(r:var SomeNumber; x:m128) = simdReduce(r, x)
 template simdSum*(r:var SomeNumber; x:m256) = simdReduce(r, x)
 template simdSum*(r:var SomeNumber; x:m256d) = simdReduce(r, x)

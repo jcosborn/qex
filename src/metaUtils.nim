@@ -1,22 +1,6 @@
 import macros
 import strUtils
 
-discard """
-template forStatic(index: expr, slice: Slice[int], predicate: stmt):stmt =
-  const a = slice.a
-  const b = slice.b
-  when a <= b:
-    template iteration(i: int) =
-      block:
-        const index = i
-        predicate
-    template iterateStartingFrom(i: int): stmt =
-      when i <= b:
-        iteration i
-        iterateStartingFrom i + 1
-    iterateStartingFrom a
-"""
-
 proc symToIdent*(x: NimNode): NimNode =
   case x.kind:
     of nnkCharLit..nnkUInt64Lit:
@@ -72,7 +56,7 @@ macro echoAst*(x:untyped):untyped =
 #  echo $(x)
 #  echo astToStr(x)
 #  echo repr(x)
-macro dump*(x:untyped):untyped =
+macro dump*(x: untyped): untyped =
   let s = x[0].strVal
   #echo s
   let v = parseExpr(s)
@@ -81,15 +65,15 @@ macro dump*(x:untyped):untyped =
   result = quote do:
     echo `x`, ": ", `v`
 
-macro toId*(s:static[string]):expr =
+macro toId*(s: static[string]): untyped =
   echo s
   newIdentNode(!s)
 
-macro toId*(s:typed):expr =
+macro toId*(s: typed): untyped =
   echo s.treeRepr
   #newIdentNode(!s)
 
-macro toString*(id:expr):expr =
+macro toString*(id: untyped): untyped =
   #echo id.repr
   echo id.treeRepr
   if id.kind==nnkSym:
@@ -97,7 +81,7 @@ macro toString*(id:expr):expr =
   else:
     result = newLit($id[0])
 
-macro catId*(x:varargs[expr]):auto =
+macro catId*(x: varargs[untyped]): auto =
   #echo x.repr
   var s = ""
   for i in 0..<x.len:
@@ -123,7 +107,7 @@ macro map*(a:tuple; f:untyped; p:varargs[untyped]):untyped =
     result.add(newColonExpr(ident("field" & $i),c))
   echo result.repr
 
-macro makeCall*(op:static[string],a:tuple):expr =
+macro makeCall*(op:static[string],a:tuple): untyped =
   echo op
   echo a.repr
   #echo a[0].repr
@@ -135,8 +119,8 @@ macro makeCall*(op:static[string],a:tuple):expr =
   echo result.repr
   #echo result.treeRepr
 
-#macro makeCall*(op:static[string]; a:typed):expr =
-macro makeCall*(op:static[string],a:typed,idx:typed):expr =
+#macro makeCall*(op:static[string]; a:typed): untyped =
+macro makeCall*(op:static[string],a:typed,idx:typed): untyped =
   #echo op
   #echo a.repr
   #echo a.treeRepr
@@ -271,7 +255,7 @@ macro lets*(x:varargs[untyped]):auto =
   #echo "lets: "
   #result.dumpTyped(result)
 
-macro forStaticX2(a,b:static[int]; index,body:untyped):stmt =
+macro forStaticX2(a,b: static[int]; index,body: untyped): untyped =
   #echo(index.repr)
   #echo(index.treeRepr)
   #echo(body.repr)
@@ -281,7 +265,7 @@ macro forStaticX2(a,b:static[int]; index,body:untyped):stmt =
     result.add(replace(index, newIntLitNode(i), body))
   #echo(result.repr)
 
-macro forStaticX(slice:Slice[int]; index,body:untyped):stmt =
+macro forStaticX(slice: Slice[int]; index,body: untyped): untyped =
   #echo(index.repr)
   #echo(index.treeRepr)
   #echo(slice.repr)
@@ -361,7 +345,7 @@ macro addReturnType(t:untyped; body:untyped):auto =
   depthFirst(body):
     if it.kind==nnkProcDef:
       it[3][0] = tt
-macro addArgTypes(t:varargs[expr]; body:untyped):auto =
+macro addArgTypes(t:varargs[untyped]; body:untyped):auto =
   #echo t.repr
   #echo t.treerepr
   let tt = t

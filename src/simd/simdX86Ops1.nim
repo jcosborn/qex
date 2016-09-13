@@ -6,8 +6,8 @@ proc baseImpl(b:NimNode; x:NimNode):NimNode =
   for i in 1..<n:
     result = getAst(fold(b, result, x[i]))
   #echo result.repr
-macro BASE(b:expr; x:varargs[expr]):auto = baseImpl(b, x)
-macro BASE4(x:varargs[expr]):auto = baseImpl(newLit(4), x)
+macro BASE(b:untyped; x:varargs[untyped]):auto = baseImpl(b, x)
+macro BASE4(x:varargs[untyped]):auto = baseImpl(newLit(4), x)
 
 
 # m128 operations

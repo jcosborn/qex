@@ -22,8 +22,8 @@ import wrapperTypes
 
 template makeDeclare(s:untyped):untyped {.dirty.} =
   template `declare s`*(t:typedesc):untyped {.dirty.} =
-    template `declared s`*(y:t):expr {.dirty.} = true
-  template `is s`*(x:typed):expr {.dirty.} =
+    template `declared s`*(y:t):untyped {.dirty.} = true
+  template `is s`*(x:typed):untyped {.dirty.} =
     when compiles(`declared s`(x)):
       `declared s`(x)
     else:
@@ -46,41 +46,41 @@ makeWrapper(AsComplex, asComplex)
 makeWrapper(AsVarComplex, asVarComplex)
 type
   AsRI* = AsReal | AsImag
-#template `[]`*(x:AsRI; i:SomeInteger):expr = x[][i]
-#template `[]`*(x:AsRI; i,j:SomeInteger):expr = x[][j,i]
-template re*(x:AsReal):expr = x[]
-template im*(x:AsReal):expr = 0
-template re*(x:AsVarReal):expr = x[]
-template im*(x:AsVarReal):expr = 0
-template re*(x:AsImag):expr = 0
-template im*(x:AsImag):expr = x[]
-template re*(x:AsVarImag):expr = 0
-template im*(x:AsVarImag):expr = x[]
-template re*(x:AsComplex):expr = x[].re
-template im*(x:AsComplex):expr = x[].im
+#template `[]`*(x:AsRI; i:SomeInteger):untyped = x[][i]
+#template `[]`*(x:AsRI; i,j:SomeInteger):untyped = x[][j,i]
+template re*(x:AsReal):untyped = x[]
+template im*(x:AsReal):untyped = 0
+template re*(x:AsVarReal):untyped = x[]
+template im*(x:AsVarReal):untyped = 0
+template re*(x:AsImag):untyped = 0
+template im*(x:AsImag):untyped = x[]
+template re*(x:AsVarImag):untyped = 0
+template im*(x:AsVarImag):untyped = x[]
+template re*(x:AsComplex):untyped = x[].re
+template im*(x:AsComplex):untyped = x[].im
 template `re=`*(x:AsComplex; y:any):untyped = x[].re = y
 template `im=`*(x:AsComplex; y:any):untyped = x[].im = y
-template re*(x:AsVarComplex):expr = x[].re
-template im*(x:AsVarComplex):expr = x[].im
+template re*(x:AsVarComplex):untyped = x[].re
+template im*(x:AsVarComplex):untyped = x[].im
 template `re=`*(x:AsVarComplex; y:any):untyped = x[].re = y
 template `im=`*(x:AsVarComplex; y:any):untyped = x[].im = y
-template len*(x:AsRI):expr = x[].len
-template nrows*(x:AsRI):expr = x[].ncols
-template ncols*(x:AsRI):expr = x[].nrows
-template numNumbers*(x:AsRI):expr =
+template len*(x:AsRI):untyped = x[].len
+template nrows*(x:AsRI):untyped = x[].ncols
+template ncols*(x:AsRI):untyped = x[].nrows
+template numNumbers*(x:AsRI):untyped =
   mixin numNumbers
   numNumbers(x[])
-template numNumbers*(x:AsComplex):expr =
+template numNumbers*(x:AsComplex):untyped =
   mixin numNumbers
   2*numNumbers(x.re)
 declareReal(AsReal)
 declareImag(AsImag)
 declareComplex(AsComplex)
 declareComplex(AsVarComplex)
-template mvLevel*(x:AsRI):expr =
+template mvLevel*(x:AsRI):untyped =
   mixin mvLevel
   mvLevel(x[])
-template deref(x:typed):expr =
+template deref(x:typed):untyped =
   when isReal(x):
     x.re
   else:
@@ -142,16 +142,16 @@ template haveI(x:untyped, body:untyped):untyped =
 template haveR(body:untyped):untyped = haveR(result, body)
 template haveI(body:untyped):untyped = haveI(result, body)
 
-template load1*(x:R1):expr =
+template load1*(x:R1):untyped =
   mixin load1
   var r{.noInit.}:AsReal[type(load1(x.re))]
   assign(r, x)
   r
-template load1*(x:I1):expr =
+template load1*(x:I1):untyped =
   var r{.noInit.}:AsImag[type(load1(x.im))]
   assign(r, x)
   r
-template load1*(x:C1):expr =
+template load1*(x:C1):untyped =
   var r{.noInit.}:ComplexType[type(load1(x.re))]
   assign(r, x)
   r
@@ -164,7 +164,7 @@ template map*(result:RIC1; f:untyped):untyped =
 #  haveI: `f`(result.im, x.im)
 #template map*(result:var RIC1; f:untyped; x:RIC2):untyped =
 #template map*[T:RIC1](result:var T; f:untyped; x:RIC2):untyped =
-template map*(result:var untyped; f:untyped; x:untyped):untyped {.immediate.} =
+template map*(result:untyped; f:untyped; x:untyped):untyped =
   #bind haveR, haveI
   mixin re, im
   haveR: f(result.re, x.re)
@@ -189,7 +189,7 @@ template norm2*(r:var any; x:C1) =
   mixin norm2, inorm2
   norm2(r, x.re)
   inorm2(r, x.im)
-template norm2*(x:C1):expr =
+template norm2*(x:C1):untyped =
   mixin norm2, inorm2
   var r:type(norm2(x.re))
   norm2(r, x.re)
@@ -200,7 +200,7 @@ template inorm2*(r:var any; x:C1) =
   inorm2(r, x.re)
   inorm2(r, x.im)
 
-template dR(x:untyped):expr =
+template dR(x:untyped):untyped =
   mixin declaredReal
   when compiles(declaredReal(x)):
     when declaredReal(x):

@@ -22,7 +22,7 @@ threads:
   g.stagPhase
   v1 := 0
   #for e in v1:
-  #  template x(d:int):expr = lo.vcoords(d,e)
+  #  template x(d:int):untyped = lo.vcoords(d,e)
   #  v1[e][0].re := foldl(x, 4, a*10+b)
   #  #echo v1[e][0]
 #echo v1.norm2

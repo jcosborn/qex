@@ -87,11 +87,11 @@ proc open(r:var Reader; ql:var QIO_Layout) =
   #echo ql.sites_on_node
   #echo ql.this_node
   #echo ql.number_of_nodes
-  
+
   var fs:QIO_Filesystem
   fs.my_io_node = ioReadRank
   fs.master_io_node = ioMasterRank
-  
+
   var iflag:QIO_Iflag
   iflag.serpar = QIO_SERIAL;
   #iflag.serpar = QIO_PARALLEL
@@ -105,7 +105,7 @@ proc open(r:var Reader; ql:var QIO_Layout) =
   r.recordInfoValid = false
   if r.qr==nil: r.status = -1
 
-template newReader*[V:static[int]](l:Layout[V]; fn:string):expr =
+template newReader*[V:static[int]](l:Layout[V]; fn:string):untyped =
   var iol{.global.}:type(l) = nil
   var rd:Reader[V]
   if not existsFile(fn):
@@ -284,159 +284,3 @@ when isMainModule:
         tr += g[i][x][c,c]
   echo tr
   qexFinalize()
-
-
-discard """
-int
-QDP_read_check(QDP_Reader *qdpr, QDP_String *md, int globaldata,
-               void (* put)(char *buf, size_t index, int count, void *qfin),
-	       struct QDP_IO_field *qf, int count, QIO_RecordInfo *cmp_info)
-{
-  QIO_RecordInfo *rec_info;
-  QIO_String *qio_md = QIO_string_create();
-  int status;
-  
-  iolat = qdpr->lat;
-  rec_info = QIO_create_record_info(0, 0, 0, 0, "", "", 0, 0, 0, 0);
-
-  status = QIO_read(qdpr->qior, rec_info, qio_md, put, qf->size*count,
-                    qf->word_size, (void *)qf);
-  QDP_string_set(md, QIO_string_ptr(qio_md));
-  QIO_string_destroy(qio_md);
-  
-  /* Check for consistency */
-  if(QIO_compare_record_info(rec_info, cmp_info)) {
-      status = 1;
-  }
-
-  QIO_destroy_record_info(rec_info);
-
-  return status;
-}
-
-static void
-QDP$PC_vput_$ABBR(char *buf, size_t index, int count, void *qfin)
-{
-  struct QDP_IO_field *qf = qfin;
-  $QDPPCTYPE **field = ($QDPPCTYPE **)(qf->data);
-  #define nc qf->nc
-  $QLAPCTYPE($NCVAR(*dest));
-  $QLAPCTYPE($NCVAR(*src)) = (void *)buf;
-  #undef nc
-  int i;
-
-  /* For the site specified by "index", move an array of "count" data
-  from the read buffer to an array of fields */
-
-  for(i=0; i<count; i++) {
-      //dest = QDP$PC_expose_$ABBR(NC field[i] ) + index;
-      dest = QDP_offset_data(field[i],index);
-      QDPIO_put_$ABBR(NC, $P, $PC, dest, src+i, qf->nc, qf->ns);
-      //QDP$PC_reset_$ABBR(NC field[i] );
-  }
-}
-
-/* Internal factory function for global data */
-static void
-QDP$PC_vput_$QLAABBR(char *buf, size_t index, int count, void *qfin)
-{
-  struct QDP_IO_field *qf = qfin;
-  #define nc qf->nc
-  $QLAPCTYPE($NCVAR(*dest)) = (void *)(qf->data);
-  $QLAPCTYPE($NCVAR(*src)) = (void *)buf;
-  #undef nc
-  int i;
-
-  for(i=0; i<count; i++) {
-      QDPIO_put_$ABBR(NC, $P, $PC, (dest+i), (src+i), qf->nc, qf->ns);
-  }
-}
-
-int
-QDP$PC_vread_$ABBR(QDP_Reader *qdpr, QDP_String *md, $QDPPCTYPE *field[],
-                   int nv)
-{
-  int status;
-  TGET;
-  ONE {
-    struct QDP_IO_field qf;
-    QIO_RecordInfo *cmp_info;
-
-    qf.data = (char *) field;
-    qf.size = QDPIO_size_$ABBR($P, QDP_get_nc(field[0]), QLA_Ns);
-    qf.nc = QDPIO_nc_$ABBR(QDP_get_nc(field[0]));
-    qf.ns = QDPIO_ns_$ABBR(QLA_Ns);
-    qf.word_size = WS;
-
-    QDP_set_iolat(qdpr->lat);
-    cmp_info = QIO_create_record_info(QIO_FIELD, 0, 0, 0,
-	                              "$QDPPCTYPE", "$P", qf.nc,
-				      qf.ns, qf.size, nv);
-    
-    for(int i=0; i<nv; i++) QDP_prepare_dest( &field[i]->dc );
-    
-    status = QDP_read_check(qdpr, md, QIO_FIELD, QDP$PC_vput_$ABBR, &qf,
-                            nv, cmp_info);
-    
-    QIO_destroy_record_info(cmp_info);
-
-    SHARE_SET(&status);
-    TBARRIER;
-  } else {
-    int *p;
-    TBARRIER;
-    SHARE_GET(p);
-    status = *p;
-  }
-  TBARRIER;
-
-  return status;
-}
-
-int
-QDP$PC_read_$ABBR(QDP_Reader *qdpr, QDP_String *md, $QDPPCTYPE *field)
-{
-  $QDPPCTYPE *temp[1];
-  temp[0] = field;
-  return QDP$PC_vread_$ABBR(qdpr, md, temp, 1);
-}
-
-int
-QDP$PC_vread_$QLAABBR($NC QDP_Reader *qdpr, QDP_String *md,
-                      $QLAPCTYPE($NCVAR(*array)), int n)
-{
-  int status;
-  TGET;
-  ONE {
-    struct QDP_IO_field qf;
-    QIO_RecordInfo *cmp_info;
-
-    qf.data = (char *) array;
-    qf.size = QDPIO_size_$ABBR($P, $QDP_NC, QLA_Ns);
-    qf.nc = QDPIO_nc_$ABBR($QDP_NC);
-    qf.ns = QDPIO_ns_$ABBR(QLA_Ns);
-    qf.word_size = WS;
-
-    QDP_set_iolat(qdpr->lat);
-    cmp_info = QIO_create_record_info(QIO_GLOBAL, 0, 0, 0,
-	                              "$QDPPCTYPE", "$P", qf.nc,
-				      qf.ns, qf.size, n);
-    
-    status = QDP_read_check(qdpr, md, QIO_GLOBAL, QDP$PC_vput_$QLAABBR, &qf,
-                            n, cmp_info);
-
-    QIO_destroy_record_info(cmp_info);
-    
-    SHARE_SET(&status);
-    TBARRIER;
-  } else {
-    int *p;
-    TBARRIER;
-    SHARE_GET(p);
-    status = *p;
-  }
-  TBARRIER;
-
-  return status;
-}
-"""
