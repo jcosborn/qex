@@ -360,19 +360,18 @@ proc boundary*(s:var Shift) =
   if threadNum == 0:
     freeShiftBuf(sb)
 
-#template varShift*[V:static[int],T](
-proc shift*[V:static[int],T](dest:var Field[V,T]; dir,len:int;
-                             sub:string; src:Field[V,T]) =
-#proc shift*(dest:var Field; dir,len:int; sub:string; src:Field) =
-  const v = V
-  var s{.global.}:Shift[v,T]
+proc shift*(dest:var Field; dir,len:int; sub:string; src:Field) =
+  const v = dest.V
+  var s{.global.}:Shift[v,dest.T]
+  #threadBarrier()
   s.init(dest, dir, len, sub)
-  threadBarrier()
+  threadBarrier()  # wait for init
   s.start(src)
+  threadBarrier()  # wait for src to be set
   s.local()
+  #threadBarrier()
   s.boundary()
-#proc shift*[V:static[int],T](dest:var Field[V,T];
-#                             dir,len:int; src:Field[V,T]) =
+  threadBarrier()  # wait for everyone
 proc shift*(dest:var Field; dir,len:int; src:Field) =
   shift(dest, dir, len, "all", src)
 

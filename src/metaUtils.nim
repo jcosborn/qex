@@ -56,7 +56,7 @@ macro echoAst*(x:untyped):untyped =
 #  echo $(x)
 #  echo astToStr(x)
 #  echo repr(x)
-macro dump*(x: untyped): untyped =
+macro dump*(x:untyped):untyped =
   let s = x[0].strVal
   #echo s
   let v = parseExpr(s)
@@ -65,15 +65,15 @@ macro dump*(x: untyped): untyped =
   result = quote do:
     echo `x`, ": ", `v`
 
-macro toId*(s: static[string]): untyped =
+macro toId*(s:static[string]):untyped =
   echo s
   newIdentNode(!s)
 
-macro toId*(s: typed): untyped =
+macro toId*(s:typed):untyped =
   echo s.treeRepr
   #newIdentNode(!s)
 
-macro toString*(id: untyped): untyped =
+macro toString*(id:untyped):untyped =
   #echo id.repr
   echo id.treeRepr
   if id.kind==nnkSym:
@@ -81,7 +81,7 @@ macro toString*(id: untyped): untyped =
   else:
     result = newLit($id[0])
 
-macro catId*(x: varargs[untyped]): auto =
+macro catId*(x:varargs[untyped]):auto =
   #echo x.repr
   var s = ""
   for i in 0..<x.len:
@@ -107,7 +107,7 @@ macro map*(a:tuple; f:untyped; p:varargs[untyped]):untyped =
     result.add(newColonExpr(ident("field" & $i),c))
   echo result.repr
 
-macro makeCall*(op:static[string],a:tuple): untyped =
+macro makeCall*(op:static[string],a:tuple):untyped =
   echo op
   echo a.repr
   #echo a[0].repr
@@ -119,8 +119,8 @@ macro makeCall*(op:static[string],a:tuple): untyped =
   echo result.repr
   #echo result.treeRepr
 
-#macro makeCall*(op:static[string]; a:typed): untyped =
-macro makeCall*(op:static[string],a:typed,idx:typed): untyped =
+#macro makeCall*(op:static[string]; a:typed):untyped =
+macro makeCall*(op:static[string],a:typed,idx:typed):untyped =
   #echo op
   #echo a.repr
   #echo a.treeRepr
@@ -255,14 +255,15 @@ macro lets*(x:varargs[untyped]):auto =
   #echo "lets: "
   #result.dumpTyped(result)
 
-macro forStaticX2(a,b: static[int]; index,body: untyped): untyped =
+macro forStaticX2(a,b:static[int]; index,body:untyped):untyped =
   #echo(index.repr)
   #echo(index.treeRepr)
   #echo(body.repr)
   #echo(body.treeRepr)
   result = newStmtList()
   for i in a..b:
-    result.add(replace(index, newIntLitNode(i), body))
+    #result.add(replace(index, newIntLitNode(i), body))
+    result.add(newBlockStmt(replace(index, newIntLitNode(i), body)))
   #echo(result.repr)
 
 macro forStaticX(slice: Slice[int]; index,body: untyped): untyped =
@@ -276,7 +277,8 @@ macro forStaticX(slice: Slice[int]; index,body: untyped): untyped =
   let a = slice[1][1].intVal
   let b = slice[1][2].intVal
   for i in a..b:
-    result.add(replace(index, newIntLitNode(i), body))
+    #result.add(replace(index, newIntLitNode(i), body))
+    result.add(newBlockStmt(replace(index, newIntLitNode(i), body)))
   #echo(result.repr)
 
 template forStatic*(index,slice,body:untyped):untyped =

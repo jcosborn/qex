@@ -212,20 +212,23 @@ proc prefetch*(x:ptr AsVector) {.inline.} =
 
 #type PackTypes = SColorVectorV | SColorMatrixV | DColorVectorV | DColorMatrixV
 type PackTypes = any
-proc perm*[T](r:var T; prm:int; x:T) {.inline.} =
-  const n = x.nVectors
-  let rr = cast[ptr array[n,simdType(r)]](r.addr)
-  let xx = cast[ptr array[n,simdType(x)]](unsafeAddr(x))
-  template loop(f:untyped):untyped =
-    when compiles(f(rr[0], xx[0])):
-      forStatic i, 0, n-1: f(rr[i], xx[i])
-  case prm
-  of 0: loop(assign)
-  of 1: loop(perm1)
-  of 2: loop(perm2)
-  of 4: loop(perm4)
-  of 8: loop(perm8)
-  else: discard
+#proc perm*[T](r:var T; prm:int; x:T) {.inline.} =
+template perm*[T](r0:var T; prm0:int; x0:T) =
+  subst(n,_,rr,_,xx,_):
+    lets(r,r0,prm,prm0,x,x0):
+      const n = x.nVectors
+      let rr = cast[ptr array[n,simdType(r)]](r.addr)
+      let xx = cast[ptr array[n,simdType(x)]](unsafeAddr(x))
+      template loop(f:untyped):untyped =
+	when compiles(f(rr[0], xx[0])):
+	  forStatic i, 0, n-1: f(rr[i], xx[i])
+      case prm
+      of 0: loop(assign)
+      of 1: loop(perm1)
+      of 2: loop(perm2)
+      of 4: loop(perm4)
+      of 8: loop(perm8)
+      else: discard
 proc pack*(r:ptr any; l:ptr any; pck:int; x:PackTypes) {.inline.} =
   if pck==0:
     const n = x.nVectors
@@ -295,10 +298,10 @@ proc blend*(r:var any; x:ptr char; b:ptr char; blnd:int) {.inline.} =
   else: discard
 
 
-#proc ColorVector*(l:Layout):SLatticeColorVectorV = result.new(l)
-#proc ColorMatrix*(l:Layout):SLatticeColorMatrixV = result.new(l)
-proc ColorVector*(l:Layout):DLatticeColorVectorV = result.new(l)
-proc ColorMatrix*(l:Layout):DLatticeColorMatrixV = result.new(l)
+proc ColorVector*(l:Layout):SLatticeColorVectorV = result.new(l)
+proc ColorMatrix*(l:Layout):SLatticeColorMatrixV = result.new(l)
+#proc ColorVector*(l:Layout):DLatticeColorVectorV = result.new(l)
+#proc ColorMatrix*(l:Layout):DLatticeColorMatrixV = result.new(l)
 
 when isMainModule:
   import times

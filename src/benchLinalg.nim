@@ -6,6 +6,7 @@ import stdUtils
 import parseUtils
 #import optimize
 import metaUtils
+import profile
 
 macro exp2string(x:untyped):auto =
   var s = repr symToIdent x
@@ -25,13 +26,16 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
   let vol = lo.nSites.float
   let flops = vol * fps.float
   let bytes = vol * bps.float
-  let nrep = int(2e10/flops)
-  var t0 = epochTime()
+  let nrep = int(2e12/flops)
+  #var t0 = epochTime()
+  var t0 = getTics()
   threads:
     for rep in 1..nrep:
       eqn
-  var t1 = epochTime()
-  let dt = t1 - t0
+  #var t1 = epochTime()
+  var t1 = getTics()
+  #let dt = t1 - t0
+  let dt = ticDiffSecs(t1,t0)
   let mf = (nrep.float*flops)/(1e6*dt)
   let mb = (nrep.float*bytes)/(1e6*dt)
   echo "(", exp2string(eqn), ") secs: ", dt|(5,3), "  mf: ", mf.int,
@@ -79,15 +83,18 @@ proc test(lat:any) =
   bench((8*nc-2)*nc, sf*2*(nc+2)*nc):
     v2 := m1.adj * v1
 
+  bench((8*nc-2)*nc*nc, sf*2*3*nc*nc):
+    m3 := m1 * m2
+
+  bench((8*nc-2)*nc*nc, sf*2*3*nc*nc):
+    m3 := m1.adj * m2
+
   bench(8*nc*nc*nc, sf*2*4*nc*nc):
     m3 += m1 * m2
 
   bench(8*nc*nc*nc, sf*2*4*nc*nc):
     for e in v2:
       imaddMMM(m3[e], m1[e], m2[e])
-
-  bench((8*nc-2)*nc*nc, sf*2*3*nc*nc):
-    m3 := m1.adj * m2
 
   bench((8*nc-2)*nc*nc, sf*2*3*nc*nc):
     for e in v2:

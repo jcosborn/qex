@@ -210,42 +210,44 @@ template dR(x:untyped):untyped =
   else:
     x
 
-template makeUnary(op:untyped):untyped =
-  proc op*(r:var R1; x:R2) {.inline.} = op(r.re, x.re)
-  proc op*(r:var R1; x:C2) {.inline.} = op(r.re, x.re)
-  proc op*(r:var I1; x:I2) {.inline.} = op(r.im, x.im)
-  proc op*(r:var I1; x:C2) {.inline.} = op(r.im, x.im)
-  template `op CU`*(r:typed; x:typed):untyped =
+template makeUnary(op:untyped):untyped {.dirty.} =
+  template op*(r:var R1; x:R2) = op(r.re, x.re)
+  template op*(r:var R1; x:C2) = op(r.re, x.re)
+  template op*(r:var I1; x:I2) = op(r.im, x.im)
+  template op*(r:var I1; x:C2) = op(r.im, x.im)
+  template `op CU`*(r:untyped; x:untyped):untyped =
     op(r.re, x)
     op(r.im, 0)
-  proc op*(r:var C1; x:U2) {.inline.} = `op CU`(r, x)
-  proc op*(r:AsVarComplex; x:U2) {.inline.} = `op CU`(r, x)
-  proc op*(r:var C1; x:R2) {.inline.} =
+  template op*(r:var C1; x:U2) = `op CU`(r, x)
+  template op*(r:AsVarComplex; x:U2) = `op CU`(r, x)
+  template op*(r:var C1; x:R2) =
     op(r.re, x.re)
     op(r.im, 0)
-  proc op*(r:var C1; x:I2) {.inline.} =
+  template op*(r:var C1; x:I2) =
     op(r.re, 0)
     op(r.im, x.im)
-  proc op*(r:var C1; x:C2) {.inline.} =
+  template op*(r:var C1; x:C2) =
     op(r.re, x.re)
     op(r.im, x.im)
 makeUnary(assign)
 makeUnary(neg)
 makeUnary(iadd)
 makeUnary(isub)
+
 template `:=`*(x:VC1; y:SomeNumber) = assign(x, y)
 template `:=`*(x:VC1; y:C2) = assign(x, y)
-template makeConj(op:untyped):untyped =
-  proc op*(r:var R1; x:R2) {.inline.} = op(r.re, x.re)
-  proc op*(r:var R1; x:C2) {.inline.} = op(r.re, x.re)
-  proc op*(r:var I1; x:I2) {.inline.} = op(r.im, -x.im)
-  proc op*(r:var I1; x:C2) {.inline.} = op(r.im, -x.im)
-  proc op*(r:var C1; x:R2) {.inline.} = op(r.re, x.re)
-  proc op*(r:var C1; x:I2) {.inline.} = op(r.im, -x.im)
-  proc op*(r:var C1; x:C2) {.inline.} =
+
+template makeConj(op:untyped):untyped {.dirty.} =
+  template op*(r:var R1; x:R2) = op(r.re, x.re)
+  template op*(r:var R1; x:C2) = op(r.re, x.re)
+  template op*(r:var I1; x:I2) = op(r.im, -x.im)
+  template op*(r:var I1; x:C2) = op(r.im, -x.im)
+  template op*(r:var C1; x:R2) = op(r.re, x.re)
+  template op*(r:var C1; x:I2) = op(r.im, -x.im)
+  template op*(r:var C1; x:C2) =
     op(r.re, x.re)
     op(r.im, -x.im)
-  proc op*(x:RIC1):auto {.inline, noInit.} =
+  template op*(x:RIC1):untyped =
     mixin op
     var r{.noInit.}:type(x)
     op(r, x)
@@ -263,27 +265,27 @@ template imulCU*(r:typed; x:typed):untyped =
 proc imul*(r:VC1; x:U2) = imulCU(r, x)
 
 template makeBinary(op:untyped):untyped =
-  proc op*(r:var R1; x:R2; y:R3) {.inline.} = op(r.re, x.re, y.re)
-  proc op*(r:var I1; x:I2; y:I3) {.inline.} = op(r.im, x.im, y.im)
-  proc op*(r:var C1; x:R2; y:I3) {.inline.} =
+  template op*(r:var R1; x:R2; y:R3) = op(r.re, x.re, y.re)
+  template op*(r:var I1; x:I2; y:I3) = op(r.im, x.im, y.im)
+  template op*(r:var C1; x:R2; y:I3) =
     op(r.re, x.re, 0)
     op(r.im, 0, y.im)
-  proc op*(r:var C1; x:I2; y:R3) {.inline.} =
+  template op*(r:var C1; x:I2; y:R3) =
     op(r.re, 0, y.re)
     op(r.im, x.im, 0)
-  proc op*(r:var C1; x:R2|U2; y:C3) {.inline.} =
+  template op*(r:var C1; x:R2|U2; y:C3) =
     op(r.re, deref(x), y.re)
     op(r.im, 0, y.im)
-  proc op*(r:var C1; x:C2; y:R3) {.inline.} =
+  template op*(r:var C1; x:C2; y:R3) =
     op(r.re, x.re, y.re)
     op(r.im, x.im, 0)
-  proc op*(r:var C1; x:I2; y:C3) {.inline.} =
+  template op*(r:var C1; x:I2; y:C3) =
     op(r.re, 0, y.re)
     op(r.im, x.im, y.im)
-  proc op*(r:var C1; x:C2; y:I3) {.inline.} =
+  template op*(r:var C1; x:C2; y:I3) =
     op(r.re, x.re, 0)
     op(r.im, x.im, y.im)
-  proc op*(r:var C1; x:C2; y:C3) {.inline.} =
+  template op*(r:var C1; x:C2; y:C3) =
     op(r.re, x.re, y.re)
     op(r.im, x.im, y.im)
 makeBinary(add)
@@ -329,7 +331,9 @@ template mulCRC*(rr:typed; xx,yy:typed):untyped =
 #    nmul(r.re, x, y.im)
 #    mul(r.im, x, y.re)
 
-proc mul*(r:var RIC1; x:U2; y:RIC3) {.inline.} =
+#proc mul*(r:var RIC1; x:U2; y:RIC3) {.inline.} =
+template mul*(r:var RIC1; x:U2; y:RIC3) =
+  mixin mul
   mul(r.re, x, y.re)
   mul(r.im, x, y.im)
 
@@ -343,12 +347,14 @@ proc mul*(r:var C1; x:C2; y:U3) {.inline.} =
   # r.im = x.im * y.re
   mul(r.re, x.re, y)
   mul(r.im, x.im, y)
-proc mul*(r:var C1; x:C2; y:R3) {.inline.} =
+#proc mul*(r:var C1; x:C2; y:R3) {.inline.} =
+template mul*(r:var C1; x:C2; y:R3) =
   # r.re = x.re * y.re
   # r.im = x.im * y.re
   mul(r.re, x.re, y.re)
   mul(r.im, x.im, y.re)
-proc mul*(r:var C1; x:C2; y:C3) {.inline.} =
+#proc mul*(r:var C1; x:C2; y:C3) {.inline.} =
+template mul*(r:var C1; x:C2; y:C3) =
   # r.re = x.re*y.re - x.im*y.im
   # r.im = x.im*y.re + x.re*y.im
   mixin mul, imadd
@@ -437,17 +443,20 @@ proc imadd*(r:var U1; x:C2; y:C3) {.inline.} =
   mixin imadd
   imadd(r, x.re, y.re)
   imadd(r, -x.im, y.im)
-proc imadd*(r:var C1; x:C2; y:R3) {.inline.} =
+#proc imadd*(r:var C1; x:C2; y:R3) {.inline.} =
+template imadd*(r:var C1; x:C2; y:R3) =
   mixin imadd
   imadd(r.re, x.re, y.re)
   imadd(r.im, x.im, y.re)
-proc imadd*(r:var C1; x:C2; y:I3) {.inline.} =
+#proc imadd*(r:var C1; x:C2; y:I3) {.inline.} =
+template imadd*(r:var C1; x:C2; y:I3) =
   # r.re -= x.im * y.im
   # r.im += x.re * y.im
   mixin imadd, imsub
   imsub(r.re, x.im, y.im)
   imadd(r.im, x.re, y.im)
-proc imadd*(r:var C1; x:C2; y:C3) {.inline.} =
+#proc imadd*(r:var C1; x:C2; y:C3) {.inline.} =
+template imadd*(r:var C1; x:C2; y:C3) =
   # r.re += x.re*y.re - x.im*y.im
   # r.im += x.re*y.im + x.im*y.re
   mixin imadd

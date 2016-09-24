@@ -246,9 +246,9 @@ proc gaugeAction*[T](uu: openArray[T]): auto =
   for i in 0..<3:
     a[i] = a[i]/(lo.physVol.float*float(np*nc))
   rankSum(a)
-  echo "plaq: ", a[0]
-  echo "rect: ", a[1]
-  echo "pgm: ", a[2]
+  #echo "plaq: ", a[0]
+  #echo "rect: ", a[1]
+  #echo "pgm: ", a[2]
   result = a[0]
   toc("gaugeAction end")
 

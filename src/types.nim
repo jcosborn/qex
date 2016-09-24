@@ -26,7 +26,8 @@ template adj*(xx:typed):untyped =
     else:
       when compiles(addr(x)):
       #when compiles(unsafeAddr(x)):
-        cast[ptr Adjointed[type(x)]](addr(x))[]
+        #cast[ptr Adjointed[type(x)]](addr(x))[]
+        cast[ptr Adjointed[type(x)]](unsafeAddr(x))[]
         #cast[Adjointed[type(x)]](x)
       else:
         #(Adjointed[type(x)])(x)

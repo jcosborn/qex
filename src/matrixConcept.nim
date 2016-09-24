@@ -206,15 +206,16 @@ proc `toString`*(x:Mat1):string =
       result.add "," & $(x[i,j])
     if i<x.nrows-1: result.add "\n"
 
-template makeLevel1(f,s1,t1,s2,t2:untyped):untyped =
+template makeLevel1P(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
   proc f*(r:t1, x:t2) {.inline.} =
-    `f s1 s2`(r, x)
-template makeLevel1t(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
+    `f s1 s2`(r, deref(x))
+template makeLevel1T(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
   template f*(rr:t1, xx:t2) =
-    subst(r,rr,x,xx,xt,_):
-      #treerep: x
-      lets(xt,x):
-        `f s1 s2`(r, xt)
+    subst(r,rr):
+      lets(x,xx):
+        `f s1 s2`(r, deref(x))
+template makeLevel1(f,s1,t1,s2,t2:untyped):untyped =
+  makeLevel1T(f,s1,t1,s2,t2)
 
 #macro makeLevel2(f,s1,t1,s2,t2,s3,t3:untyped):auto =
 #  let f123 = ident($f & $s1 & $s2 & $s3)
@@ -222,92 +223,38 @@ template makeLevel1t(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
 #    proc `f`*(r:`t1`; x:`t2`; y:`t3`) {.inline.} =
 #      `f123`(r, x, y)
 template func3(f,a,b,c: untyped): untyped = f(a,b,c)
-template makeLevel2(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
+template makeLevel2P(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
   proc f*(r:t1, x:t2, y:t3) {.inline.} =
     #`f s1 s2 s3`(r, x, y)
     func3(`f s1 s2 s3`, r, x, y)
-template makeLevel2t(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
+template makeLevel2T(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
   template f*(rr:t1, xx:t2, yy:t3): untyped =
     subst(r,rr,x,xx,y,yy):
       lets(xt,x,yt,y):
         `f s1 s2 s3`(r, xt, yt)
+template makeLevel2(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
+  makeLevel2T(f,s1,t1,s2,t2,s3,t3)
 
-template assignIadd(x,y:untyped):untyped = iadd(x,y)
-template negIadd(x,y:untyped):untyped = isub(x,y)
-template iaddIadd(x,y:untyped):untyped = iadd(x,y)
-template isubIadd(x,y:untyped):untyped = isub(x,y)
 template makeMap1(op:untyped):untyped =
-  #mixin op, `op Iadd`
-  template `op SV`*(rr:typed; xx:typed):untyped =
-    subst(r,rr,x,xx,i,_):
-      #tmpvar(tr, r)
-      op(r, x[0])
-      forO i, 1, <x.len:
-        `op Iadd`(r, x[i])
-  template `op SM`*(rr:typed; xx:typed):untyped =
-    subst(r,rr,x,xx,i,_):
-      assert(x.nrows == x.ncols)
-      op(r, x[0,0])
-      forO i, 1, <x.nrows:
-        `op Iadd`(r, x[i,i])
-  #proc `op VS`*(r:Vany; x:any) =
-  template `op VS`*(rr:typed; xx:typed):untyped =
-    subst(r,rr,x,xx,tx,_,i,_):
-      load(tx, deref(x))
-      forO i, 0, <r.len:
-        op(r[i], tx)
-  #proc `op VV`*(r:Vany; x:any) {.inline.} =
-  template `op VV`*(rr:typed; xx:typed):untyped =
-    subst(r,rr,x,xx,i,_):
-      assert(r.len == x.len)
-      forO i, 0, <r.len:
-        op(r[i], x[i])
-  #proc `op MS`*(r:Vany; x:any) {.inline.} =
-  template `op MS`*(rr:typed; xx:typed):untyped =
-    subst(r,rr,x,xx,tx,_,i,_,j,_):
-      #assert(r.nrows == r.ncols)
-      load(tx, x)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
-          if i == j:
-            op(r[i,j], tx)
-          else:
-            op(r[i,j], 0)
-  template `op MV`*(rr:typed; xx:typed):untyped =
-    subst(r,rr,x,xx,i,_,j,_):
-      assert(r.nrows == x.len)
-      assert(r.ncols == x.len)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
-          if i == j:
-            op(r[i,j], x[i])
-          else:
-            op(r[i,j], 0)
-  template `op MM`*(rr:typed; xx:typed):untyped =
-    subst(r,rr,x,xx,i,_,j,_):
-      assert(r.nrows == x.nrows)
-      assert(r.ncols == x.ncols)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
-          op(r[i,j], x[i,j])
   makeLevel1(op, S, VarSca1, V, Vec2)
   makeLevel1(op, S, VarSca1, M, Mat2)
   makeLevel1(op, V, VarVec1, S, Sca2)
-  makeLevel1t(op, V, Vec1, V, Vec2)
-  #makeLevel1t(op, V, VarVec1, V, Vec2)
+  #makeLevel1(op, V, Vec1, V, Vec2)
+  makeLevel1(op, V, VarVec1, V, Vec2)
   makeLevel1(op, V, AsVarVector, S, Sca2)
-  makeLevel1t(op, V, AsVarVector, V, Vec2)
+  makeLevel1(op, V, AsVarVector, V, Vec2)
   makeLevel1(op, M, VarMat1, S, Sca2)
   makeLevel1(op, M, VarMat1, V, Vec2)
-  makeLevel1t(op, M, VarMat1, M, Mat2)
+  makeLevel1(op, M, VarMat1, M, Mat2)
   makeLevel1(op, M, AsVarMatrix, S, Sca2)
   makeLevel1(op, M, AsVarMatrix, V, Vec2)
-  makeLevel1t(op, M, AsVarMatrix, M, Mat2)
+  makeLevel1(op, M, AsVarMatrix, M, Mat2)
 
 makeMap1(assign)
 makeMap1(neg)
 makeMap1(iadd)
 makeMap1(isub)
+
 template `:=`*(x:VarVec1; y:SomeNumber) = assign(x, y)
 template `:=`*(x:AsVarVector; y:SomeNumber) = assign(x, y)
 template `:=`*(x:VarVec1; y:Vec2) = assign(x, y)
@@ -321,138 +268,13 @@ template `:=`*(x:AsVarMatrix; y:Mat2) = assign(x, y)
 
 template `+=`*(x:VarVec1; y:Vec2) = iadd(x, y)
 
-template imulMS*(r:typed; x:typed):untyped =
-  load(tx, x)
-  forO i, 0, <r.nrows:
-    forO j, 0, <r.ncols:
-      imul(r[i,j], tx)
-proc imul*(r:VarMat1; x:Sca2) {.inline.} = imulMS(r, x)
-proc imul*(r:AsVarMatrix; x:Sca2) {.inline.} = imulMS(r, x)
-proc `*=`*(r:var MV1; x:Sca2) {.inline.} = imul(r, x)
-proc `*=`*(r:VarMV1; x:Sca2) {.inline.} = imul(r, x)
+makeLevel1(imul, M, VarMat1, S, Sca2)
+makeLevel1(imul, M, AsVarMatrix, S, Sca2)
+
+template `*=`*(r:var MV1; x:Sca2) = imul(r, x)
+template `*=`*(r:VarMV1; x:Sca2) = imul(r, x)
 
 template makeMap2(op:untyped):untyped =
-  template `op VVS`*(rr:typed; xx,yy:typed):untyped =
-    subst(r,rr,x,xx,y,yy,ty,_,i,_):
-      assert(r.len == x.len)
-      load(ty, y)
-      forO i, 0, <r.len:
-        op(r[i], x[i], ty)
-  template `op VSV`*(rr:typed; xx,yy:typed):untyped =
-    subst(r,rr,x,xx,y,yy,tx,_,i,_):
-      assert(r.len == y.len)
-      load(tx, x)
-      forO i, 0, <r.len:
-        op(r[i], tx, y[i])
-  template `op VVV`*(rr:typed; xx,yy:typed):untyped =
-    subst(r,rr,x,xx,y,yy,i,_):
-      assert(r.len == y.len)
-      assert(r.len == x.len)
-      forO i, 0, <r.len:
-        op(r[i], x[i], y[i])
-  template `op MSS`*(rr:typed; xx,yy:typed):untyped =
-    subst(r,rr,x,xx,y,yy,tx,_,ty,_,i,_,j,_):
-      assert(r.nrows == r.ncols)
-      load(tx, x)
-      load(ty, y)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
-          if i == j:
-            op(r[i,j], tx, ty)
-          else:
-            op(r[i,j], 0, 0)
-  #proc `op MVS`*(r:Vany; x,y:any) {.inline.} =
-  template `op MVS`*(rr:typed; xx,yy:typed):untyped =
-    subst(r,rr,x,xx,y,yy,ty,_,i,_,j,_):
-      assert(r.nrows == x.len)
-      assert(r.ncols == x.len)
-      load(ty, y)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
-          if i == j:
-            op(r[i,j], x[i], ty)
-          else:
-            op(r[i,j], 0, 0)
-  template `op MSV`*(rr:typed; xx,yy:typed):untyped =
-    subst(r,rr,x,xx,y,yy,tx,_,i,_,j,_):
-      assert(r.nrows == y.len)
-      assert(r.ncols == y.len)
-      load(tx, x)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
-          if i == j:
-            op(r[i,j], tx, y[i])
-          else:
-            op(r[i,j], 0, 0)
-  template `op MVV`*(rr:typed; xx,yy:typed):untyped =
-    subst(r,rr,x,xx,y,yy,i,_,j,_):
-      assert(r.nrows == x.len)
-      assert(r.ncols == x.len)
-      assert(x.len == y.len)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
-          if i == j:
-            op(r[i,j], x[i], y[i])
-          else:
-            op(r[i,j], 0, 0)
-  template `op MMS`*(rr:typed; xx,yy:typed):untyped =
-    subst(r,rr,x,xx,y,yy,ty,_,i,_,j,_):
-      assert(r.nrows == r.ncols)
-      assert(r.nrows == x.nrows)
-      assert(r.ncols == x.ncols)
-      load(ty, y)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
-          if i == j:
-            op(r[i,j], x[i,j], ty)
-          else:
-            op(r[i,j], x[i,j], 0)
-  template `op MSM`*(rr:typed; xx,yy:typed):untyped =
-    subst(r,rr,x,xx,y,yy,tx,_,i,_,j,_):
-      assert(r.nrows == r.ncols)
-      assert(r.nrows == y.nrows)
-      assert(r.ncols == y.ncols)
-      load(tx, x)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
-          if i == j:
-            op(r[i,j], tx, y[i,j])
-          else:
-            op(r[i,j], 0, y[i,j])
-  template `op MMV`*(rr:typed; xx,yy:typed):untyped =
-    subst(r,rr,x,xx,y,yy,i,_,j,_):
-      assert(r.nrows == r.ncols)
-      assert(r.nrows == x.nrows)
-      assert(r.ncols == x.ncols)
-      assert(r.nrows == y.len)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
-          if i == j:
-            op(r[i,j], x[i,j], y[i])
-          else:
-            op(r[i,j], x[i,j], 0)
-  template `op MVM`*(rr:typed; xx,yy:typed):untyped =
-    subst(r,rr,x,xx,y,yy,i,_,j,_):
-      assert(r.nrows == r.ncols)
-      assert(r.nrows == x.len)
-      assert(r.nrows == y.nrows)
-      assert(r.ncols == y.ncols)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
-          if i == j:
-            op(r[i,j], x[i], y[i,j])
-          else:
-            op(r[i,j], 0, y[i,j])
-  template `op MMM`*(rr:typed; xx,yy:typed):untyped =
-    subst(r,rr,x,xx,y,yy,i,_,j,_):
-      assert(r.nrows == x.nrows)
-      assert(r.ncols == x.ncols)
-      assert(r.nrows == y.nrows)
-      assert(r.ncols == y.ncols)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
-          op(r[i,j], x[i,j], y[i,j])
-
   makeLevel2(op, V, VarVec1, V, Vec2, S, Sca3)
   makeLevel2(op, V, VarVec1, S, Sca2, V, Vec3)
   makeLevel2(op, V, VarVec1, V, Vec2, V, Vec3)
@@ -469,122 +291,54 @@ template makeMap2(op:untyped):untyped =
 makeMap2(add)
 makeMap2(sub)
 
-setBinop(`+`, add, Vec1, Vec2, VectorArray[x.len,type(x[0]+y[0])])
-setBinop(`-`, sub, Vec1, Vec2, VectorArray[x.len,type(x[0]-y[0])])
+setBinop(`+`,add,Vec1,Vec2,VectorArray[x.len,type(x[0]+y[0])])
+setBinop(`-`,sub,Vec1,Vec2,VectorArray[x.len,type(x[0]-y[0])])
 
-#template `+`*(xx: Vec1; yy: Vec2): untyped =
-#  subst(xt,xx,yt,yy,r,_):
-#    lets(x,xt,y,yt):
-#      var r{.noInit.}: VectorArray[x.len,type(x[0]+y[0])]
-#      add(r, x, y)
-#      r
+setBinop(`+`,add,Sca1,Mat2,MatrixArray[y.nrows,y.ncols,type(x+y[0,0])])
+setBinop(`-`,sub,Sca1,Mat2,MatrixArray[y.nrows,y.ncols,type(x-y[0,0])])
 
-proc `+`*(xt:Sca1; yt:Mat2): auto {.inline.} =
-  #lets(xt,x,yt,y):
-    var r{.noInit.}:MatrixArray[yt.nrows,yt.ncols,type(xt+yt[0,0])]
-    add(r, xt, yt)
-    r
-proc `+`*(x:Mat1; y:Mat2): auto {.inline.} =
-  assert(x.nrows==y.nrows)
-  assert(x.ncols==y.ncols)
-  const nr = x.nrows
-  const nc = x.ncols
-  var r{.noInit.}:MatrixArray[nr,nc,type(x[0,0]+y[0,0])]
-  add(r, x, y)
-  r
-proc `-`*(x:Sca1; y:Mat2):auto {.inline.} =
-  const nr = y.nrows
-  const nc = y.ncols
-  var r{.noInit.}:MatrixArray[nr,nc,type(x-y[0,0])]
-  sub(r, x, y)
-  r
+setBinop(`+`,add,Mat1,Mat2,MatrixArray[x.nrows,x.ncols,type(x[0,0]+y[0,0])])
 
 makeLevel2(mul, V, VarVec1, V, Vec2, S, Sca3)
-makeLevel2t(mul, V, VarVec1, S, Sca2, V, Vec3)
+makeLevel2(mul, V, VarVec1, S, Sca2, V, Vec3)
 #makeLevel2(op, S, Sca1, V, Vec2, V, Vec3)
 makeLevel2(mul, M, VarMat1, M, Mat2, S, Sca3)
 makeLevel2(mul, M, VarMat1, S, Sca2, M, Mat3)
-makeLevel2t(mul, V, VarVec1, M, Mat2, V, Vec3)
+makeLevel2(mul, V, VarVec1, M, Mat2, V, Vec3)
 #makeLevel2(op, V, Vec1, V, Vec2, M, Mat3)
-makeLevel2t(mul, M, VarMat1, M, Mat2, M, Mat3)
+makeLevel2(mul, M, VarMat1, M, Mat2, M, Mat3)
 #makeLevel2(op, M, Mat1, S, Sca2, S, Sca3)
 #makeLevel2(op, M, Mat1, V, Vec2, S, Sca3)
 #makeLevel2(op, M, Mat1, S, Sca2, V, Vec3)
 #makeLevel2(op, M, Mat1, V, Vec2, V, Vec3)
 #makeLevel2(op, M, Mat1, V, Vec2, M, Mat3)
 
-setBinop(`*`, mul, Sca1, Vec2, VectorArray[y.len,type(x*y[0])])
-setBinop(`*`, mul, Vec1, Sca2, VectorArray[x.len,type(x[0]*y)])
-setBinop(`*`, mul, Mat1, Vec2, VectorArray[x.nrows,type(x[0,0]*y[0])])
+setBinop(`*`,mul, Sca1,Vec2,VectorArray[y.len,type(x*y[0])])
+setBinop(`*`,mul, Vec1,Sca2,VectorArray[x.len,type(x[0]*y)])
+setBinop(`*`,mul, Mat1,Vec2,VectorArray[x.nrows,type(x[0,0]*y[0])])
 
-setBinop(`*`, mul, Sca1, Mat2, MatrixArray[y.nrows,y.ncols,type(x*y[0,0])])
-setBinop(`*`, mul, Mat1, Sca2, MatrixArray[x.nrows,x.ncols,type(x[0,0]*y)])
-setBinop(`*`, mul, Mat1, Mat2,MatrixArray[x.nrows,y.ncols,type(x[0,0]*y[0,0])])
+setBinop(`*`,mul, Sca1,Mat2,MatrixArray[y.nrows,y.ncols,type(x*y[0,0])])
+setBinop(`*`,mul, Mat1,Sca2,MatrixArray[x.nrows,x.ncols,type(x[0,0]*y)])
+setBinop(`*`,mul, Mat1,Mat2,MatrixArray[x.nrows,y.ncols,type(x[0,0]*y[0,0])])
 
+makeLevel2(imadd, V, VarVec1, M, Mat2, V, Vec3)
+makeLevel2(imadd, V, AsVarVector, M, Mat2, V, Vec3)
+makeLevel2(imadd, M, VarMat1, M, Mat2, M, Mat3)
 
-proc imadd*(r:VarVec1; x:Mat2; y:Vec3) {.inline.} = imaddVMV(r, x, y)
-proc imadd*(r:AsVarVector; x:Mat2; y:Vec3) {.inline.} = imaddVMV(r, x, y)
-proc imadd*(r:VarMat1; x:Mat2; y:Mat3) {.inline.} = imaddMMM(r, x, y)
+makeLevel2(imsub, V, VarVec1, S, Sca2, V, Vec3)
+makeLevel2(imsub, V, VarVec1, M, Mat2, V, Vec3)
+makeLevel2(imsub, V, AsVarVector, M, Mat2, V, Vec3)
+makeLevel2(imsub, M, VarMat1, M, Mat2, M, Mat3)
 
-template imsubVSV*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tx,_,i,_):
-    mixin imsub
-    assert(r.len == y.len)
-    load(tx, x)
-    forO i, 0, <r.len:
-      imsub(r[i], x, y[i])
-proc imsub*(r:var Vec1; x:Sca2; y:Vec3) {.inline.} = imsubVSV(r, x, y)
+#proc imadd*(r:VarVec1; x:Mat2; y:Vec3) {.inline.} = imaddVMV(r, x, y)
+#proc imadd*(r:AsVarVector; x:Mat2; y:Vec3) {.inline.} = imaddVMV(r, x, y)
+#proc imadd*(r:VarMat1; x:Mat2; y:Mat3) {.inline.} = imaddMMM(r, x, y)
 
-template imsubVMV*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_):
-    mixin imsub
-    assert(x.nrows == r.len)
-    assert(x.ncols == y.len)
-    when true:
-      load(tr, r)
-      forO j, 0, <x.ncols:
-        load(ty, y[j])
-        forO i, 0, <x.nrows:
-          imsub(tr[i], x[i,j], ty)
-      assign(r, tr)
-    else:
-      load(tr, r)
-      forO j, 0, <x.ncols:
-        load(tyr, asReal(y[j].re))
-        forO i, 0, <x.nrows:
-          imsub(tr[i], x[i,j], tyr)
-        load(tyi, asImag(y[j].im))
-        forO i, 0, <x.nrows:
-          imsub(tr[i], x[i,j], tyi)
-      assign(r, tr)
-proc imsub*(r:VarVec1; x:Mat2; y:Vec3) {.inline.} = imsubVMV(r, x, y)
-proc imsub*(r:AsVarVector; x:Mat2; y:Vec3) {.inline.} = imsubVMV(r, x, y)
+#proc imsub*(r:var Vec1; x:Sca2; y:Vec3) {.inline.} = imsubVSV(r, x, y)
+#proc imsub*(r:VarVec1; x:Mat2; y:Vec3) {.inline.} = imsubVMV(r, x, y)
+#proc imsub*(r:AsVarVector; x:Mat2; y:Vec3) {.inline.} = imsubVMV(r, x, y)
+#proc imsub*(r:VarMat1; x:Mat2; y:Mat3) {.inline.} = imsubMMM(r, x, y)
 
-template imsubMMM*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_,k,_,txikr,_,txiki,_):
-    mixin nrows, ncols, imsubCRC, imsubCIC, assign, load1
-    assert(r.nrows == x.nrows)
-    assert(r.ncols == y.ncols)
-    assert(x.ncols == y.nrows)
-    load(tr, r)
-    forO i, 0, <r.nrows:
-      forO k, 0, <x.ncols:
-        load(txikr, x[i,k].re)
-        forO j, 0, <r.ncols:
-          imsubCRC(tr[i,j], txikr, y[k,j])
-        load(txiki, x[i,k].im)
-        forO j, 0, <r.ncols:
-          imsubCIC(tr[i,j], txiki, y[k,j])
-    assign(r, tr)
-proc imsub*(r:VarMat1; x:Mat2; y:Mat3) {.inline.} = imsubMMM(r, x, y)
-
-template msubVSVV*(rr:typed; xx,yy,zz:typed):untyped =
-  subst(r,rr,x,xx,y,yy,z,zz,i,_):
-    mixin msub
-    assert(r.len == y.len)
-    assert(r.len == z.len)
-    forO i, 0, <r.len:
-      msub(r[i], x, y[i], z[i])
 proc msub*(r:VarVec1; x:any; y:Vec2; z:Vec3) {.inline.} = msubVSVV(r,x,y,z)
 
 proc trace*(r:VarSca1; x:Mat2) {.inline.} =

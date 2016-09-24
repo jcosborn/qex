@@ -294,7 +294,13 @@ proc applyOp2(x,y:NimNode; ty:typedesc; op:string):auto =
     let xx = `x`
     let yy = `y`
     for e in xx:
-      `o`(xx[e], indexField(yy, e))
+      when noAlias:
+        type Fpx = object
+          v: type(xx[e])
+        var xp = cast[ptr carray[Fpx]](xx[0].addr)
+        `o`(xp[][e].v, indexField(yy, e))
+      else:
+        `o`(xx[e], indexField(yy, e))
 template makeOps(op,f,fM,s:untyped):untyped =
   macro f*(x:Subsetted; y:notSomeField2):auto = applyOp1(x,y,s)
   macro f*(x:Subsetted; y:SomeField2):auto = applyOp2(x,y,int,s)

@@ -36,7 +36,8 @@ template makeWrapper*(t,s:untyped):untyped {.dirty.} =
       when compiles(addr(x)):
       #when compiles(unsafeAddr(x)):
         #ctrace()
-        cast[ptr t[type(x)]](addr(x))[]
+        #cast[ptr t[type(x)]](addr(x))[]
+        cast[ptr t[type(x)]](unsafeAddr(x))[]
         #cast[t[type(x)]](x)
       else:
         #dumptree(x)

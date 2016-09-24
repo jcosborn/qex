@@ -22,8 +22,8 @@ type
     location*: type(instantiationInfo())
 #template getTics(): untyped = epochTime()
 #template ticDiffSecs(x,y: untyped): untyped = x - y
-template getTics(): untyped = getTicks()
-template ticDiffSecs(x,y: untyped): untyped = 1e-9 * (x - y).float
+template getTics*(): untyped = getTicks()
+template ticDiffSecs*(x,y: untyped): untyped = 1e-9 * (x - y).float
 
 var ticSeq* = newSeq[ptr TimerInfo](0)
 var tocSeq* = newSeq[ptr TimerInfo](0)
@@ -66,8 +66,9 @@ template tocI(f:untyped; s=""; n= -1):untyped =
     inc ti.count
     ti.seconds += ticDiffSecs(getTics(), timer)
 template toc*(s=""; n= -1; flops:untyped):untyped = tocI(flops, s, n-1)
-template toc*(s:string; n= -1):untyped = tocI(-1, s, n-1)
 template toc*(n= -1; flops:untyped):untyped = tocI(flops, "", n-1)
+template toc*(s:string; n:int):untyped = tocI(-1, s, n-1)
+template toc*(s:string):untyped = tocI(-1, s, -2)
 template toc*(n:int):untyped = tocI(-1, "", n-1)
 template toc*():untyped = tocI(-1, "", -2)
 proc resetTimers* =

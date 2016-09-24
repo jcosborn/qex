@@ -6,6 +6,7 @@
 
 # imadd(r=x*y+r),imsub(r=x*y-r),inmadd(r=-x*y+r),imsub(r=-x*y-r)
 
+import globals
 import math
 export math
 
@@ -58,8 +59,8 @@ template toDouble*(x:SomeNumber):untyped =
 template assign*(x:var SomeNumber; y:ptr SomeNumber2):untyped =
   x = cnvrt(x,y[])
 
-#template assign*(r:var SomeNumber, x:SomeNumber2):untyped =
-proc assign*(r:var SomeNumber, x:SomeNumber2) {.inline.} =
+template assign*(r:var SomeNumber, x:SomeNumber2):untyped =
+#proc assign*(r:var SomeNumber, x:SomeNumber2) {.inline.} =
   r = cnvrt(r,x)
 template neg*(r:var SomeNumber, x:SomeNumber2):untyped =
   r = cnvrt(r,-x)
@@ -153,20 +154,44 @@ template `-`*(x:SomeReal; y:SomeInteger):auto = x - cnvrt(x,y)
 template `-`*(x:SomeInteger; y:SomeReal):auto = cnvrt(y,x) - y
 template `*`*(x:SomeInteger; y:SomeReal):auto = cnvrt(y,x) * y
 
-template setUnop*(op,fun,t1,t2: untyped): untyped {.dirty.} =
+template setUnopP*(op,fun,t1,t2: untyped): untyped {.dirty.} =
+  proc op*(x: t1): auto {.inline,noInit.} =
+    var r{.noInit.}: t2
+    fun(r, x)
+    r
+template setUnopT*(op,fun,t1,t2: untyped): untyped {.dirty.} =
   template op*(xx: t1): untyped =
-    subst(x,xx,r,_):
-      var r{.noInit.}: t2
-      fun(r, x)
-      r
+    #subst(xt,xx,r,_):
+    #  lets(x,xt):
+    subst(r,_):
+      lets(x,xx):
+        var r{.noInit.}: t2
+        fun(r, x)
+        r
 
-template setBinop*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
+template setBinopP*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
+  proc op*(x: t1; y: t2): auto {.inline,noInit.} =
+    var r{.noInit.}: t3
+    fun(r, x, y)
+    r
+template setBinopT*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
   template op*(xx: t1; yy: t2): untyped =
-    subst(xt,xx,yt,yy,r,_):
-      lets(x,xt,y,yt):
+    subst(r,_):
+      lets(x,xx,y,yy):
         var r{.noInit.}: t3
         fun(r, x, y)
         r
+
+when forceInline:
+  template setUnop*(op,fun,t1,t2: untyped): untyped {.dirty.} =
+    setUnopT(op, fun, t1, t2)
+  template setBinop*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
+    setBinopT(op, fun, t1, t2, t3)
+else:
+  template setUnop*(op,fun,t1,t2: untyped): untyped {.dirty.} =
+    setUnopP(op, fun, t1, t2)
+  template setBinop*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
+    setBinopP(op, fun, t1, t2, t3)
 
 when isMainModule:
   var d1,d2:float

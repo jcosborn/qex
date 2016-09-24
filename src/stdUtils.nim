@@ -7,6 +7,10 @@ type
 
 template ptrInt*(x:untyped):untyped = cast[ByteAddress](x)
 template addrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
+template unsafeAddrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
+
+template `$&`*(x: untyped): string =
+  toHex(unsafeAddrInt(x))
 
 proc `|`*(x: int, d: int): string =
   result = $x

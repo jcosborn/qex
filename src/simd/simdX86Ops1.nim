@@ -372,13 +372,17 @@ proc blendm8*(x:var m256d; r:openArray[SomeNumber];
 
 # m512 operations
 
-proc perm1*(r:var m512; x:m512) {.inline.} =
+#proc perm1*(r:var m512; x:m512) {.inline.} =
+template perm1*(r:var m512; x:m512) =
   r = mm512_permute_ps(x, BASE4(2,3,0,1))
-proc perm2*(r:var m512; x:m512) {.inline.} =
+#proc perm2*(r:var m512; x:m512) {.inline.} =
+template perm2*(r:var m512; x:m512) =
   r = mm512_permute_ps(x, BASE4(1,0,3,2))
-proc perm4*(r:var m512; x:m512) {.inline.} =
+#proc perm4*(r:var m512; x:m512) {.inline.} =
+template perm4*(r:var m512; x:m512) =
   r = mm512_shuffle_f32x4(x, x, BASE4(2,3,0,1))
-proc perm8*(r:var m512; x:m512) {.inline.} =
+#proc perm8*(r:var m512; x:m512) {.inline.} =
+template perm8*(r:var m512; x:m512) =
   r = mm512_shuffle_f32x4(x, x, BASE4(1,0,3,2))
 
 proc packp1*(r:var openArray[SomeNumber]; x:m512;

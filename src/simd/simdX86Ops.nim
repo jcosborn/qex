@@ -79,7 +79,9 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
       var t{.noInit.}:array[N,F]
       for i in 0..<N: t[i] = F(x[i])
       assign(r, t)
-  proc assign*(r:var T; x:T) {.inline.} =
+  #proc assign*(r:var T; x:T) {.inline.} =
+  #  r = x
+  template assign*(r:var T; x:T) =
     r = x
   #proc assign*(r:var array[N,F]; x:T) {.inline.} =
   #  assign(cast[ptr F](r.addr), x)
