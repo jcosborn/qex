@@ -220,8 +220,8 @@ template perm*[T](r0:var T; prm0:int; x0:T) =
       let rr = cast[ptr array[n,simdType(r)]](r.addr)
       let xx = cast[ptr array[n,simdType(x)]](unsafeAddr(x))
       template loop(f:untyped):untyped =
-	when compiles(f(rr[0], xx[0])):
-	  forStatic i, 0, n-1: f(rr[i], xx[i])
+        when compiles(f(rr[0], xx[0])):
+          forStatic i, 0, n-1: f(rr[i], xx[i])
       case prm
       of 0: loop(assign)
       of 1: loop(perm1)

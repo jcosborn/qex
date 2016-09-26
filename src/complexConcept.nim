@@ -521,10 +521,16 @@ proc mdec*(result:var RIC1; x:RIC2; y:RIC3) {.inline.} =
 """
 
 when isMainModule:
-  type Real*{.borrow:`.`.}[T] = distinct tuple[re:T]
-  type Imag*{.borrow:`.`.}[T] = distinct tuple[im:T]
-  type Complex*{.borrow:`.`.}[T] = distinct tuple[re:T,im:T]
-  type Complex2*{.borrow:`.`.}[TR,TI] = distinct tuple[re:TR,im:TI]
+  type Real*[T] = object
+    re: T
+  type Imag*[T] = object
+    im: T
+  type Complex*[T] = object
+    re: T
+    im: T
+  type Complex2*[TR,TI] = object
+    re: TR
+    im: TI
 
   declareReal(Real)
   declareImag(Imag)
@@ -533,9 +539,9 @@ when isMainModule:
   proc `==`*(x:Complex,y:Complex):bool =
     (x.re == y.re) and (x.im == y.im)
 
-  template set2(op,f,t1,r:untyped):untyped =
+  template set2(op,f,t1,r:untyped):untyped {.dirty.} =
     proc op*[T](x:t1[T]):r[T] {.noInit,inline.} = f(result,x)
-  template set22(op,f,t1,r:untyped):untyped =
+  template set22(op,f,t1,r:untyped):untyped {.dirty.} =
     proc op*[T1,T2](x:t1[T1,T2]):r[T1,T2] {.noInit,inline.} = f(result,x)
 
   set2(`-`, neg, Real, Real)
@@ -566,15 +572,15 @@ when isMainModule:
   set3(`*`, mul, Complex, Complex, Complex)
 
   var f0 = 0.0
-  var r0 = Real[float]((re:0.0))
-  var r1 = Real[float]((re:1.0))
-  var r2 = Real[float]((re:2.0))
-  var i0 = Imag[float]((im:0.0))
-  var i1 = Imag[float]((im:1.0))
-  var i2 = Imag[float]((im:2.0))
-  var c0 = Complex((0.0,0.0))
-  var c1 = Complex((1.0,1.0))
-  var c2 = Complex((2.0,2.0))
+  var r0 = Real[float](re:0.0)
+  var r1 = Real[float](re:1.0)
+  var r2 = Real[float](re:2.0)
+  var i0 = Imag[float](im:0.0)
+  var i1 = Imag[float](im:1.0)
+  var i2 = Imag[float](im:2.0)
+  var c0 = Complex[float](re:0.0,im:0.0)
+  var c1 = Complex[float](re:1.0,im:1.0)
+  var c2 = Complex[float](re:2.0,im:2.0)
   var z1 = c0
   var z2 = c0
 

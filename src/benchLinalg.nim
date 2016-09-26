@@ -8,8 +8,19 @@ import parseUtils
 import metaUtils
 import profile
 
+proc fixBracket*(x: NimNode): NimNode =
+  if x.kind == nnkCall and eqIdent(x.name,"[]"):
+    #echo x.name.treerepr
+    result = newNimNode(nnkBracketExpr)
+    for i in 1..<x.len:
+      result.add fixBracket(x[i])
+  else:
+    result = x
+    for i in 0..<x.len:
+      result[i] = fixBracket(x[i])
+
 macro exp2string(x:untyped):auto =
-  var s = repr symToIdent x
+  var s = repr fixBracket symToIdent x
   let n = skipWhitespace(s)
   newlit s[n..^1]
 
@@ -26,20 +37,24 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
   let vol = lo.nSites.float
   let flops = vol * fps.float
   let bytes = vol * bps.float
-  let nrep = int(2e12/flops)
-  #var t0 = epochTime()
-  var t0 = getTics()
-  threads:
-    for rep in 1..nrep:
-      eqn
-  #var t1 = epochTime()
-  var t1 = getTics()
-  #let dt = t1 - t0
-  let dt = ticDiffSecs(t1,t0)
-  let mf = (nrep.float*flops)/(1e6*dt)
-  let mb = (nrep.float*bytes)/(1e6*dt)
-  echo "(", exp2string(eqn), ") secs: ", dt|(5,3), "  mf: ", mf.int,
-       "  mb: ", mb.int
+  let mm = 0
+  var nrep = 1
+  var dt = 0.0
+  while true:
+    let t0 = getTics()
+    threads:
+      for rep in 1..nrep:
+        eqn
+    let t1 = getTics()
+    dt = ticDiffSecs(t1,t0)
+    if dt>1: break
+    nrep = 1 + int(1.1*nrep.float/dt)
+  let mf = int((nrep.float*flops)/(1e6*dt))
+  let mb = int((nrep.float*bytes)/(1e6*dt))
+  let mem = vol * (mm.float/(1024.0))
+  inc nbench
+  echo "bench: ",nbench| -6, "secs: ", dt|(6,3), "  mf: ", mf|7, "  mb: ", mb|7, "  mem: ", mem, "  nrep: ", nrep
+  echo exp2string(eqn), "\n"
 
 proc test(lat:any) =
   var lo = newLayout(lat)
@@ -58,6 +73,7 @@ proc test(lat:any) =
     v2 := 0
     v3 := 0
   echo "done setup"
+  var nbench = 0
 
   bench(2*2*nc, sf*2*3*nc):
     v2 := 0.5*v2 + v1

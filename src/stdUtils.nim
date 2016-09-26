@@ -78,7 +78,7 @@ proc sum*[T](x:openArray[T]): auto =
   result = x[0]
   for i in 1..<x.len: result += x[i]
 
-macro echoImm*(s:varargs[untyped]):auto =
+macro echoImm*(s:varargs[typed]):auto =
   result = newEmptyNode()
   #echo s.treeRepr
   var t = ""
