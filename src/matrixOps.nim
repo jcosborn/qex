@@ -22,9 +22,9 @@ macro forN*(i,r0,r1,b:untyped):auto =
     for `i` in countup(`r0`,`r1`):
       `b`
 when staticUnroll:
-  template forO*(i,r0,r1,b:untyped):untyped = forStatic(i,r0,r1,b)
+  template forO*(i,r0,r1,b:untyped):untyped {.dirty.} = forStatic(i,r0,r1,b)
 else:
-  template forO*(i,r0,r1,b:untyped):untyped = forN(i,r0,r1,b)
+  template forO*(i,r0,r1,b:untyped):untyped {.dirty.} = forN(i,r0,r1,b)
   #template forO*(i,r0,r1,b:untyped):untyped = cfor(i,r0,r1,b)
 
 template assignIadd(x,y:untyped):untyped = iadd(x,y)
