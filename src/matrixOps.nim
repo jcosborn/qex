@@ -155,6 +155,7 @@ template makeMap2(op:untyped):untyped {.dirty.} =
             op(r[i,j], 0, 0)
   template `op MMS`*(rr:typed; xx,yy:typed):untyped =
     subst(r,rr,x,xx,y,yy,ty,_,i,_,j,_):
+      mixin op
       assert(r.nrows == r.ncols)
       assert(r.nrows == x.nrows)
       assert(r.ncols == x.ncols)
@@ -203,6 +204,7 @@ template makeMap2(op:untyped):untyped {.dirty.} =
           else:
             op(r[i,j], 0, y[i,j])
   template `op MMM`*(rr:typed; xx,yy:typed):untyped =
+    mixin op
     subst(r,rr,x,xx,y,yy,i,_,j,_):
       assert(r.nrows == x.nrows)
       assert(r.ncols == x.ncols)

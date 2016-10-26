@@ -267,6 +267,9 @@ template `:=`*(x:VarMat1; y:Mat2) = assign(x, y)
 template `:=`*(x:AsVarMatrix; y:Mat2) = assign(x, y)
 
 template `+=`*(x:VarVec1; y:Vec2) = iadd(x, y)
+template `+=`*(x:VarMat1; y:Mat2) = iadd(x, y)
+template `-=`*(x:VarVec1; y:Vec2) = isub(x, y)
+template `-=`*(x:VarMat1; y:Mat2) = isub(x, y)
 
 makeLevel1(imul, M, VarMat1, S, Sca2)
 makeLevel1(imul, M, AsVarMatrix, S, Sca2)
@@ -291,13 +294,18 @@ template makeMap2(op:untyped):untyped =
 makeMap2(add)
 makeMap2(sub)
 
+setBinop(`-`,sub,Vec1,Sca2,VectorArray[x.len,type(x[0]-y)])
+
 setBinop(`+`,add,Vec1,Vec2,VectorArray[x.len,type(x[0]+y[0])])
 setBinop(`-`,sub,Vec1,Vec2,VectorArray[x.len,type(x[0]-y[0])])
 
 setBinop(`+`,add,Sca1,Mat2,MatrixArray[y.nrows,y.ncols,type(x+y[0,0])])
 setBinop(`-`,sub,Sca1,Mat2,MatrixArray[y.nrows,y.ncols,type(x-y[0,0])])
 
+setBinop(`-`,sub,Mat1,Sca2,MatrixArray[x.nrows,x.ncols,type(x[0,0]-y)])
+
 setBinop(`+`,add,Mat1,Mat2,MatrixArray[x.nrows,x.ncols,type(x[0,0]+y[0,0])])
+setBinop(`-`,sub,Mat1,Mat2,MatrixArray[x.nrows,x.ncols,type(x[0,0]-y[0,0])])
 
 makeLevel2(mul, V, VarVec1, V, Vec2, S, Sca3)
 makeLevel2(mul, V, VarVec1, S, Sca2, V, Vec3)
@@ -349,7 +357,7 @@ proc trace*(r:VarSca1; x:Mat2) {.inline.} =
     let t = trace(x[i,i])
     iadd(r, t)
 proc trace*(x:Mat1):auto {.inline,noInit.} =
-  var t:type(trace(x[0,0]))
+  var t{.noInit.}:type(trace(x[0,0]))
   trace(t, x)
   t
 

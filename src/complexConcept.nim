@@ -276,6 +276,9 @@ template makeBinary(op:untyped):untyped =
   template op*(r:var C1; x:R2|U2; y:C3) =
     op(r.re, deref(x), y.re)
     op(r.im, 0, y.im)
+  template op*(r:var C1; x:C2; y:SomeNumber) =
+    op(r.re, x.re, y)
+    op(r.im, x.im, 0)
   template op*(r:var C1; x:C2; y:R3) =
     op(r.re, x.re, y.re)
     op(r.im, x.im, 0)
@@ -299,8 +302,13 @@ proc `+`*(x:C1; y:C2):auto {.inline.} =
   var r{.noInit.}:ComplexType[type(x.re+y.re)]
   add(r, x, y)
   r
-proc `-`*(x:U1; y:C2):auto {.inline.} =
+#proc `-`*(x:U1; y:C2):auto {.inline.} =
+proc `-`*(x:SomeNumber; y:C2):auto {.inline.} =
   var r{.noInit.}:ComplexType[type(x-y.re)]
+  sub(r, x, y)
+  r
+proc `-`*(x:C1; y:SomeNumber):auto {.inline.} =
+  var r{.noInit.}:ComplexType[type(x.re-y)]
   sub(r, x, y)
   r
 proc `-`*(x:C1; y:C2):auto {.inline.} =
