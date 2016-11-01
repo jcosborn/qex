@@ -191,12 +191,11 @@ proc setColumn*(r:var AsMatrix; x:AsVector; i:int) {.inline.} =
 import matrixOps
 export matrixOps
 
-proc `$`*(x:Vec1):string =
+proc toString*(x:Vec1):string =
   mixin `$`
   result = $(x[0])
   forO i, 1, x.len-1:
     result.add "," & $(x[i])
-#proc `$`*(x:Mat1):string =
 proc `toString`*(x:Mat1):string =
   mixin `$`
   result = ""
@@ -435,6 +434,18 @@ proc redot*(rr:var Sca1; xx:Mat2; yy:Mat3) {.inline.} =
 
 setBinop(redot, redot, Vec1, Vec2, type(redot(x[0],y[0])))
 setBinop(redot, redot, Mat1, Mat2, type(redot(x[0,0],y[0,0])))
+
+proc simdSum*(x:Vec1):auto =
+  var r{.noInit.}: VectorArray[x.len,type(simdSum(x[0]))]
+  forO i, 0, <x.len:
+    r[i] := simdSum(x[i])
+  r
+proc simdSum*(x:Mat1):auto =
+  var r{.noInit.}: MatrixArray[x.ncols,x.nrows,type(simdSum(x[0,0]))]
+  forO i, 0, <x.ncols:
+    forO j, 0, <x.nrows:
+      r[i,j] := simdSum(x[i,j])
+  r
 
 when isMainModule:
   const nc = 3

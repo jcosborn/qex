@@ -375,6 +375,39 @@ proc shift*(dest:var Field; dir,len:int; sub:string; src:Field) =
 proc shift*(dest:var Field; dir,len:int; src:Field) =
   shift(dest, dir, len, "all", src)
 
+type
+  Transporter*[U,F,T] = object
+    link: U
+    field: F
+    sb: ShiftB[T]
+    len: int
+
+proc newTransporters*[U,F](u: seq[U], f: F, len: int, sub="all"): auto =
+  var r: seq[Transporter[type(u[0]),F,type(f[0])]]
+  let nd = u.len
+  r.newSeq(nd)
+  for mu in 0..<nd:
+    r[mu].link = u[mu]
+    r[mu].field = f.newOneOf
+    r[mu].sb.initShiftB(f, mu, len, sub)
+    r[mu].len = len
+  r
+
+proc `^*`*(x: Transporter, y: any): auto =
+  mixin mul
+  var r = x.field
+  if x.len >= 0:
+    startSB(x.sb, y[ix])
+    for ir in x.sb.subset:
+      localSB(x.sb, ir, mul(r[ir], x.link[ir], it), load1(y[ix]))
+    boundarySB(x.sb, mul(r[ir], x.link[ir], it))
+  else:
+    startSB(x.sb, x.link[ix].adj*y[ix])
+    for ir in x.sb.subset:
+      localSB(x.sb, ir, assign(r[ir], it), x.link[ix].adj*y[ix])
+    boundarySB(x.sb, assign(r[ir], it))
+  r
+
 when isMainModule:
   import qex
   import qcdTypes
@@ -466,4 +499,15 @@ when isMainModule:
   #  echo x
   #  echo myrank, "\t", e, "\t", v1.s[e][0]
   #  echo myrank, "\t", e, "\t", v3.s[e][0]
+
+  import gaugeUtils
+  var g = lo.newGauge
+  let t = newTransporters(g, v1, 1)
+  let td = newTransporters(g, v1, -1)
+  threads:
+    v2 := 0
+    v2 += t[0] ^* v1
+    v2 := t[0] ^* t[1] ^* t[2] ^* v1
+    v2 := t[1] ^* t[0] ^* td[1] ^* v1
+
   qexFinalize()

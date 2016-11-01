@@ -6,6 +6,13 @@ import os
 import strUtils
 import random
 
+proc newGauge*(l: Layout): auto =
+  let nd = l.nDim
+  result = newSeq[type(l.ColorMatrix())](nd)
+  for i in 0..<nd:
+    result[i] = l.ColorMatrix()
+    result[i] := 1
+
 proc loadGauge*[T](g:openArray[T]; fn:string):int =
   var rd = g[0].l.newReader(fn)
   if rd.status!=0: return rd.status
@@ -245,10 +252,30 @@ proc plaq2*[T](gg:openArray[T]):auto =
   toc("plaq2 threads")
   result = tr/(lo.physVol.float*0.5*float(nd*(nd-1)*nc))
 
-proc newGauge*(l:Layout):auto =
-  result = newSeq[type(l.ColorMatrix())](l.nDim)
-  for i in 0..<l.nDim:
-    result[i] = l.ColorMatrix()
+proc plaq3*[T](g: seq[T]): auto =
+  tic()
+  let lo = g[0].l
+  let nd = lo.nDim
+  let nc = g[0][0].ncols
+  let t = newTransporters(g, g[0], 1)
+  var m = lo.ColorMatrix()
+  var tr: type(trace(m))
+  toc("plaq3 setup")
+  threads:
+    tic()
+    m := 0
+    toc("plaq3 zero")
+    for mu in 1..<nd:
+      for nu in 0..<mu:
+        tic()
+        m += (t[mu]^*g[nu]) * (t[nu]^*g[mu]).adj
+        #echo mu, " ", nu, " ", trace(m)/nc
+        toc("plaq3 mul")
+    toc("plaq3 work")
+    tr = trace(m)
+    toc("plaq3 trace")
+  toc("plaq3 threads")
+  result = tr/(lo.physVol.float*0.5*float(nd*(nd-1)*nc))
 
 template defaultSetup*:untyped {.dirty.} =
   bind paramCount, paramStr, isDigit, parseInt, fileExists
@@ -316,6 +343,9 @@ when isMainModule:
 
   var pl2 = plaq2(g)
   echo pl2
+
+  var pl3 = plaq3(g)
+  echo pl3
 
   var pl = plaq(g)
   echo pl
