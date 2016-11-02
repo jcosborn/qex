@@ -47,8 +47,10 @@ template qmpSum*(v:ptr array, n:int):untyped =
   qmpSum(v[][0].addr, n*v[].len)
 template qmpSum*(v:ptr tuple, n:int):untyped =
   qmpSum(v[][0].addr, n*(sizeOf(v) div sizeOf(v[0])))
-template qmpSum*(v:ptr typed, n:int):untyped =
+template qmpSum*(v:ptr object, n:int):untyped =
   qmpSum(v[][].addr, n)
+#template qmpSum*(v:ptr typed, n:int):untyped =
+#  qmpSum(v[][].addr, n)
 #template QmpSum(v:array[int,int]):untyped =
 #  var tQmpSumDoubleArray(v)
 template qmpSum*[I,T](v:array[I,T]):untyped =
