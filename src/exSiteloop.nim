@@ -14,7 +14,7 @@ proc test =
   # single-site ColorVector for sum of v1 over sites
   var s: type(simdSum(v1[0]))
 
-  # start thread block ("omp parallel for")
+  # start thread block ("omp parallel")
   threads:
     # initialize some fields
     v1 := 1
