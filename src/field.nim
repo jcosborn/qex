@@ -424,7 +424,7 @@ template redot*(f1:SomeAllField; f2:SomeAllField2):untyped =
     redotP(f1, f2)
 template redot*(f1:Subsetted; f2:SomeAllField2):untyped = redotP(f1, f2)
 
-proc trace*(m:Field):auto =
+proc trace*(m:SomeField):auto =
   mixin trace, simdSum
   var tr:type(trace(m[0]))
   for x in m:

@@ -250,6 +250,7 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
         assign(addr(r[i*N0]), x[][i])
   template add*(r:var T; x:SomeNumber; y:T) = add(r, x.to(T), y)
   template sub*(r:var T; x:SomeNumber; y:T) = sub(r, x.to(T), y)
+  template sub*(r:var T; x:T; y:SomeNumber) = sub(r, x, y.to(T))
   template mul*(r:var T; x:SomeNumber; y:T) = mul(r, x.to(T), y)
   template mul*(r:var T; x:T; y:SomeNumber) = mul(r, x, y.to(T))
   template iadd*(r:var T; x:SomeNumber) = iadd(r, x.to(T))

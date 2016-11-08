@@ -226,9 +226,10 @@ template makeUnary(op:untyped):untyped {.dirty.} =
   template op*(r:var C1; x:I2) =
     op(r.re, 0)
     op(r.im, x.im)
-  template op*(r:var C1; x:C2) =
-    op(r.re, x.re)
-    op(r.im, x.im)
+  template op*(r:var C1; xx:C2) =
+    lets(x,xx):
+      op(r.re, x.re)
+      op(r.im, x.im)
 makeUnary(assign)
 makeUnary(neg)
 makeUnary(iadd)
@@ -236,6 +237,9 @@ makeUnary(isub)
 
 template `:=`*(x:VC1; y:SomeNumber) = assign(x, y)
 template `:=`*(x:VC1; y:C2) = assign(x, y)
+template `+=`*(r:var RIC1; x:typed):untyped = iadd(r, x)
+template `-=`*(r:var RIC1; x:typed):untyped = isub(r, x)
+
 
 template makeConj(op:untyped):untyped {.dirty.} =
   template op*(r:var R1; x:R2) = op(r.re, x.re)
@@ -254,9 +258,6 @@ template makeConj(op:untyped):untyped {.dirty.} =
     r
 makeConj(conj)
 #makeConj(adj)
-
-template `+=`*(r:var RIC1; x:typed):untyped = iadd(r, x)
-template `-=`*(r:var RIC1; x:typed):untyped = isub(r, x)
 
 template imulCU*(r:typed; x:typed):untyped =
   mixin imul

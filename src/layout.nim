@@ -201,6 +201,7 @@ proc newLayoutX*(lat:openArray[int],V:static[int]):Layout[V] =
   layoutSetupQ(result.lq.addr)
   result.nDim = nd
   result.physGeom = @lat
+  result.localGeom = lg
   result.physVol = result.lq.physVol.int
   result.nEven = result.lq.nEven.int
   result.nOdd = result.lq.nOdd.int

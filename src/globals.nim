@@ -5,8 +5,8 @@ import macros
 #const profileEqns* = true
 const profileEqns* = false
 
-var forceInline* {.compiletime.} = false
-#var forceInline* {.compiletime.} = true
+#var forceInline* {.compiletime.} = false
+var forceInline* {.compiletime.} = true
 macro setForceInline*(x:static[bool]):auto =
   forceInline = x
   result = newEmptyNode()

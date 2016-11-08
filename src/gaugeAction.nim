@@ -218,7 +218,7 @@ proc gaugeAction*[T](uu: openArray[T]): auto =
             rect += simdSum(r1)
             let r2 = redot(bnu, stf[nu][mu][ir])
             rect += simdSum(r2)
-    toc("gaugeAction local", flops=lo.nSites.float*float(np*(4*nc*nc)))
+    toc("gaugeAction local")
     for mu in 1..<nd:
       for nu in 0..<mu:
         var needBoundary = false
@@ -239,7 +239,7 @@ proc gaugeAction*[T](uu: openArray[T]): auto =
     act[threadNum*3+1] = rect
     act[threadNum*3+2] = pgm
     if threadNum==0: nth = numThreads
-    toc("gaugeAction boundary", flops=lo.nSites.float*float(np*(4*nc*nc)))
+    toc("gaugeAction boundary")
   toc("gaugeAction threads")
   var a = [0.0, 0.0, 0.0]
   for i in 0..<nth:
@@ -287,7 +287,7 @@ proc gaugeForce*[T](uu: openArray[T]): auto =
             var bnu: type(load1(u[0][0]))
             localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu][mu][ix])
             f[nu][ir] += bnu
-    toc("gaugeAction local", flops=lo.nSites.float*float(np*(4*nc*nc)))
+    toc("gaugeForce local")
     for mu in 1..<nd:
       for nu in 0..<mu:
         var needBoundary = false
@@ -303,17 +303,69 @@ proc gaugeForce*[T](uu: openArray[T]): auto =
               var bnu: type(load1(u[0][0]))
               localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu][mu][ix])
               f[nu][ir] += bnu
-    toc("gaugeAction boundary", flops=lo.nSites.float*float(np*(4*nc*nc)))
-  toc("gaugeAction threads")
+    toc("gaugeForce boundary")
+  toc("gaugeForce threads")
   #toc("gaugeAction end")
-  # FIXME: TAH
   for mu in 0..<f.len:
     for e in f[mu]:
       mixin trace
       let s = u[mu][e]*f[mu][e].adj
       let t = -0.5*(s-s.adj)
       f[mu][e] := t - (trace(t)*(1.0/t.nrows.float))
+  toc("gaugeForce end")
   return f
+
+proc gaugeAction2*(g: array|seq): auto =
+  tic()
+  let lo = g[0].l
+  let nd = lo.nDim
+  let np = nd*(nd-1) div 2
+  let t = newTransporters(g, g[0], 1)
+  var p = newSeq[type(trace(g[0]).re)](np)
+  toc("gaugeAction2 setup")
+  threads:
+    tic()
+    toc("gaugeAction2 zero")
+    var ip = 0
+    for mu in 1..<nd:
+      for nu in 0..<mu:
+        tic()
+        #m := (t[mu]^*g[nu]) * (t[nu]^*g[mu]).adj
+        #var tt = trace(m).re
+        var tt = trace((t[mu]^*g[nu]) * (t[nu]^*g[mu]).adj).re
+        if threadNum==0:
+          p[ip] = tt
+          inc ip
+        #echo mu, " ", nu, " ", trace(m)/nc
+        toc("gaugeAction2 mul")
+    toc("gaugeAction2 work")
+  toc("gaugeAction2 threads")
+  echo p
+  result = p.sum
+
+proc gaugeForce2*(f,g: array|seq) =
+  tic()
+  let lo = g[0].l
+  let nd = lo.nDim
+  let nc = g[0][0].nrows
+  let t = newTransporters(g, g[0], 1)
+  let td = newTransporters(g, g[0], -1)
+  toc("gaugeForce2 setup")
+  threads:
+    for mu in 0..<nd:
+      #let mu = (mux + 1) mod nd
+      f[mu] := 0
+      for nu in 0..<nd:
+        if nu==mu: continue
+        discard t[nu] ^* g[mu]
+        shiftExpr(t[mu].sb, f[mu][ir] += t[nu].field[ir] * it, g[nu][ix].adj)
+        f[mu] += td[nu] ^* t[mu] ^* g[nu]
+    for mu in 0..<nd:
+      for e in f[mu]:
+        mixin trace
+        let s = g[mu][e] * f[mu][e].adj
+        let t = 0.5*(s-s.adj)
+        f[mu][e] := t - (trace(t)*(1.0/nc.float))
 
 when isMainModule:
   import qcdTypes
@@ -330,10 +382,13 @@ when isMainModule:
     echo pl
     echo pl.sum
     var ga = gaugeAction(g)
-    echo ga
+    var ga2 = gaugeAction2(g)
+    echo "ga: ", ga, "\t", ga2
     var f = gaugeForce(g)
+    var f2 = g[0].l.newGauge
+    gaugeForce2(f2,g)
     for i in 0..<f.len:
-      echo f[i].norm2
+      echo "f[", i, "]: ", f[i].norm2, "\t", f2[i].norm2
 
   test(g)
   echoTimers()
@@ -351,33 +406,49 @@ when isMainModule:
       for e in g[mu]:
         let t = exp(eps*p[mu][e])*g[mu][e]
         g[mu][e] := t
+      echo "g[", mu, "]: ", g[mu].norm2
 
   proc updateP(g,p,eps:any) =
-    let f = gaugeForce(g)
+    #let f = gaugeForce(g)
+    var f = g[0].l.newGauge
+    gaugeForce2(f, g)
+    #gaugeForce2(f, g)
+    #gaugeForce2(f, g)
     for mu in 0..<f.len:
-      echo f[mu].norm2
+      echo "f[", mu, "]: ", f[mu].norm2
       p[mu] += eps*f[mu]
 
   proc test2(g,eps:any) =
     var p = newSeq[type(g[0])](g.len)
     for mu in 0..<p.len:
+      g[mu] := 1
       p[mu].new(g[0].l)
       for e in p[mu]:
         p[mu][e] := 0
         let t = (2*(e mod 2)-1).float
+        #let t = 1.0
         p[mu][e][0,1] := t
         p[mu][e][1,0] := -t
-    let ga = gaugeAction(g)
+    let ga = gaugeAction2(g)
     var p2 = 0.0
     for mu in 0..<p.len: p2 += p[mu].norm2
     let s0 = ga + 0.5*p2
-    echo ga, "\t", 0.5*p2, "\t", s0
+    echo "ACT: ", ga, "\t", 0.5*p2, "\t", s0
 
+    echo "pdiff: ", (p[0]-p[1]).norm2
+    echo "gdiff: ", (g[0]-g[1]).norm2
+    echo "ga: ", gaugeAction2(g)
     updateX(g,p,0.5*eps)
+    echo "pdiff: ", (p[0]-p[1]).norm2
+    echo "gdiff: ", (g[0]-g[1]).norm2
+    echo "ga: ", gaugeAction2(g)
     updateP(g,p,eps)
+    echo "pdiff: ", (p[0]-p[1]).norm2
+    echo "gdiff: ", (g[0]-g[1]).norm2
+    echo "ga: ", gaugeAction2(g)
     updateX(g,p,0.5*eps)
 
-    let ga2 = gaugeAction(g)
+    let ga2 = gaugeAction2(g)
     p2 = 0.0
     for mu in 0..<p.len: p2 += p[mu].norm2
     let s2 = ga2 + 0.5*p2

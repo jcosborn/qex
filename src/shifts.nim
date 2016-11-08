@@ -215,6 +215,14 @@ template boundarySB*(s:ShiftB; e:untyped):untyped =
       if threadNum == 0:
         waitSendBuf(s.sb)
 
+template shiftExpr*(sb: ShiftB, er, es) {.dirty.} =
+  startSB(sb, es)
+  for ir in sb.subset:
+    localSB(sb, ir, er, es)
+  boundarySB(sb, er)
+
+
+
 type Shift*[V: static[int]; T] = object
   src*: Field[V,T]
   dest*: Field[V,T]
@@ -377,10 +385,13 @@ proc shift*(dest:var Field; dir,len:int; src:Field) =
 
 type
   Transporter*[U,F,T] = object
-    link: U
-    field: F
-    sb: ShiftB[T]
+    link*: U
+    field*: F
+    sb*: ShiftB[T]
     len: int
+
+#proc field*(t: Transporter): auto = t.field
+#proc `link=`*(r,x: Transporter) = t.field
 
 proc newTransporters*[U,F](u: seq[U], f: F, len: int, sub="all"): auto =
   var r: seq[Transporter[type(u[0]),F,type(f[0])]]
@@ -389,6 +400,7 @@ proc newTransporters*[U,F](u: seq[U], f: F, len: int, sub="all"): auto =
   for mu in 0..<nd:
     r[mu].link = u[mu]
     r[mu].field = f.newOneOf
+    r[mu].field := 0
     r[mu].sb.initShiftB(f, mu, len, sub)
     r[mu].len = len
   r
@@ -406,6 +418,7 @@ proc `^*`*(x: Transporter, y: any): auto =
     for ir in x.sb.subset:
       localSB(x.sb, ir, assign(r[ir], it), x.link[ix].adj*y[ix])
     boundarySB(x.sb, assign(r[ir], it))
+  threadBarrier()
   r
 
 when isMainModule:
@@ -428,38 +441,51 @@ when isMainModule:
   let (sub1,sub2) = ("all","all")
   #let sub2 = "even"
   #let sub1 = "odd"
-  threads:
-    #echo v1[0].isVector
-    v1 := 1
-    v2 := 0
-    v3 := 0
-    threadBarrier()
-    for e in v1.all:
+  proc lex(v,off: any) =
+    for e in v.all:
+      let lo = v.l
       let x = lo.vcoords(e)
       #v1.s[e] := e + 1
       var aa:array[lo.V,float32]
       for i in 0..<lo.V:
-        aa[i] = (((x[0][i]*10+x[1][i])*10+x[2][i])*10+x[3][i]).float32
+        template ff(n,r: untyped): untyped =
+          r*10 + `mod`(x[n][i]+off[n]+lo.localGeom[n],lo.localGeom[n])
+        #aa[i] = (((x[0][i]*10+x[1][i])*10+x[2][i])*10+x[3][i]).float32
+        aa[i] = ff(3,ff(2,ff(1,ff(0,0)))).float32
       #var aa:array[lo.V,int]
       #aa = x[3]*10
       #let aa = ((x[3]*10+x[2])*10+x[1])*10+x[0]
       #assign(v1.s[e][0].re, aa)
-      v1[e][0].re := aa
+      v[e] := 0
+      v[e][0].re := aa
       if e==0:
-        echo aa
-        echo v1[e][0].re
-        echo v1[e][0].im
-        echo v1[e][0]
+        #echo aa
+        echo v[e][0].re
+        #echo v1[e][0].im
+        #echo v1[e][0]
+  threads:
+    #echo v1[0].isVector
+    v1 := -1
+    threadBarrier()
+    lex(v1, [0,0,0,0])
     #v1 := 1
     #v3 := v1
     threadBarrier()
     if threadNum==0:
       echo myRank, ": ", v1[0][0]
     for dir in 0..<lat.len:
+      var disp = [0,0,0,0]
+      v2 := -2
       shift(v2, dir,1, sub1, v1)
-      #for e in v2.all:
-      #  echo myrank, "\t", e, "\t", v1.s[e][0]
-      #  echo myrank, "\t", e, "\t", v2.s[e][0]
+      echo v2[0][0].re
+      disp[dir] = 1
+      v3 := -3
+      lex(v3, disp)
+      echo "d2: ", (v2-v3).norm2
+      for e in v1[sub1]:
+        if (v2[e]-v3[e]).norm2.simdSum > 0:
+          echo myrank, "\t", e, "\t", v2[e]
+          echo myrank, "\t", e, "\t", v3[e]
       v3[sub2] := -1
       shift(v3, dir,-1, sub2, v2)
       threadMaster:
@@ -495,10 +521,14 @@ when isMainModule:
         echo d2
 
   #for e in v1.all:
-  #  let x = lo.vcoords(e)
-  #  echo x
-  #  echo myrank, "\t", e, "\t", v1.s[e][0]
-  #  echo myrank, "\t", e, "\t", v3.s[e][0]
+  #  if (v1[e]-v3[e]).norm2.simdSum > 0:
+  #    let x = lo.vcoords(e)
+  #    echo x
+  #    echo myrank, "\t", e, "\t", v1.s[e][0]
+  #    echo myrank, "\t", e, "\t", v3.s[e][0]
+
+  threads:
+    shiftExpr(sf[0], v2[ir]:=it, v1[ix])
 
   import gaugeUtils
   var g = lo.newGauge

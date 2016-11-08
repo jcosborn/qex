@@ -44,6 +44,7 @@ template isVector*(x:Adjointed):untyped = isVector(x[])
 template isMatrix*(x:Adjointed):untyped = isMatrix(x[])
 template re*(x:Adjointed):untyped = x[].re
 template im*(x:Adjointed):untyped = -(x[].im)
+template simdType*(x: Adjointed): untyped = simdType(x[])
 #template mvLevel*(x:Adjointed):untyped =
 #  mixin mvLevel
 #  mvLevel(x[])
