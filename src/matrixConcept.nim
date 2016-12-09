@@ -123,6 +123,12 @@ template nrows*(x:MatrixArrayObj):untyped = x.I
 template ncols*(x:MatrixArrayObj):untyped = x.J
 template `[]`*(x:MatrixArrayObj; i,j:int):untyped = x[i][j]
 template `[]=`*(x:MatrixArrayObj; i,j:int, y:untyped):untyped = x[i][j] = y
+template numberType*[T](x:AsVector[T]):untyped = numberType(type(T))
+template numberType*[T](x:AsMatrix[T]):untyped = numberType(type(T))
+template numberType*[T](x:typedesc[AsVector[T]]):untyped = numberType(type(T))
+template numberType*[T](x:typedesc[AsMatrix[T]]):untyped = numberType(type(T))
+template numberType*[I,J,T](x:MatrixArrayObj[I,J,T]):untyped =
+  numberType(type(T))
 template numNumbers*(x:AsVector):untyped = x.len*numNumbers(x[0])
 template numNumbers*(x:AsMatrix):untyped = x.nrows*x.ncols*numNumbers(x[0])
 #template `[]`*(x:array; i,j:int):untyped = x[i][j]

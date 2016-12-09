@@ -384,6 +384,7 @@ proc newStag*[G](g:openArray[G]):auto =
   var l = g[0].l
   template t:untyped =
     type(l.ColorVector()[0])
+    #SColorVectorV
   var r:Staggered[G,t]
   r.se = initStagDT(l, t, "even")
   r.so = initStagDT(l, t, "odd")

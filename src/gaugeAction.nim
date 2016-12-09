@@ -369,6 +369,7 @@ proc gaugeForce2*(f,g: array|seq) =
 
 when isMainModule:
   import qcdTypes
+  import matrixFunctions
   qexInit()
   var defaultGaugeFile = "l88.scidac"
   #let defaultLat = @[2,2,2,2]
@@ -394,12 +395,6 @@ when isMainModule:
   echoTimers()
   resetTimers()
   test(g)
-
-  proc exp(m:Mat1):auto =
-    var r: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
-    r = 1+m*(1+0.5*m*(1+(1.0/3.0)*m*(1+(1.0/4.0)*m)*(1+(1.0/5.0)*m)))
-    #result = (result+m)
-    r
 
   proc updateX(g,p,eps:any) =
     for mu in 0..<g.len:

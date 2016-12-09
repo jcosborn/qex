@@ -23,6 +23,8 @@ template adj*(xx:typed):untyped =
       asMatrix(adj(x[]))
     elif x is SomeNumber:
       x
+    elif x is SomeField:
+      fieldUnop(foAdj, x)
     else:
       when compiles(addr(x)):
       #when compiles(unsafeAddr(x)):
@@ -40,14 +42,99 @@ template `[]`*(x:Adjointed; i,j:SomeInteger):untyped = x[][j,i].adj
 template len*(x:Adjointed):untyped = x[].len
 template nrows*(x:Adjointed):untyped = x[].ncols
 template ncols*(x:Adjointed):untyped = x[].nrows
-template isVector*(x:Adjointed):untyped = isVector(x[])
-template isMatrix*(x:Adjointed):untyped = isMatrix(x[])
+template declaredVector*(x:Adjointed):untyped = isVector(x[])
+template declaredMatrix*(x:Adjointed):untyped = isMatrix(x[])
 template re*(x:Adjointed):untyped = x[].re
 template im*(x:Adjointed):untyped = -(x[].im)
 template simdType*(x: Adjointed): untyped = simdType(x[])
 #template mvLevel*(x:Adjointed):untyped =
 #  mixin mvLevel
 #  mvLevel(x[])
+
+
+type
+  #ToSingle*{.borrow: `.`.}[T] = distinct T
+  #ToSingle*[T] = distinct T
+  ToSingle*[T] = object
+    v*:T
+template toSingle*(xx:typed):untyped =
+  mixin isVector, isMatrix
+  lets(x,xx):
+    when isComplex(x):
+      asComplex(toSingle(x[]))
+    elif isVector(x):
+      asVector(toSingle(x[]))
+    elif isMatrix(x):
+      asMatrix(toSingle(x[]))
+    elif x is SomeNumber:
+      x
+    elif x is SomeField:
+      fieldUnop(foToSingle, x)
+    else:
+      when compiles(addr(x)):
+      #when compiles(unsafeAddr(x)):
+        #cast[ptr ToSingle[type(x)]](addr(x))[]
+        cast[ptr ToSingle[type(x)]](unsafeAddr(x))[]
+        #cast[ToSingle[type(x)]](x)
+      else:
+        #(ToSingle[type(x)])(x)
+        cast[ToSingle[type(x)]](x)
+        #cast[ToSingle[type(x)]]((var t=x; t.addr))
+#template `[]`*[T](x:ToSingle[T]):untyped = cast[T](x)
+makeDeref(ToSingle, x.T)
+template `[]`*(x:ToSingle; i:SomeInteger):untyped = x[][i].toSingle
+template `[]`*(x:ToSingle; i,j:SomeInteger):untyped = x[][j,i].toSingle
+template len*(x:ToSingle):untyped = x[].len
+template nrows*(x:ToSingle):untyped = x[].ncols
+template ncols*(x:ToSingle):untyped = x[].nrows
+template declaredVector*(x:ToSingle):untyped = isVector(x[])
+template declaredMatrix*(x:ToSingle):untyped = isMatrix(x[])
+template re*(x:ToSingle):untyped = x[].re
+template im*(x:ToSingle):untyped = -(x[].im)
+template simdType*(x: ToSingle): untyped = simdType(x[])
+
+
+type
+  #ToDouble*{.borrow: `.`.}[T] = distinct T
+  #ToDouble*[T] = distinct T
+  ToDouble*[T] = object
+    v*:T
+template toDouble*(xx:typed):untyped =
+  mixin isVector, isMatrix
+  lets(x,xx):
+    when isComplex(x):
+      asComplex(toDouble(x[]))
+    elif isVector(x):
+      asVector(toDouble(x[]))
+    elif isMatrix(x):
+      asMatrix(toDouble(x[]))
+    elif x is SomeNumber:
+      x
+    elif x is SomeField:
+      fieldUnop(foToDouble, x)
+    else:
+      when compiles(addr(x)):
+      #when compiles(unsafeAddr(x)):
+        #cast[ptr ToDouble[type(x)]](addr(x))[]
+        cast[ptr ToDouble[type(x)]](unsafeAddr(x))[]
+        #cast[ToDouble[type(x)]](x)
+      else:
+        #(ToDouble[type(x)])(x)
+        cast[ToDouble[type(x)]](x)
+        #cast[ToDouble[type(x)]]((var t=x; t.addr))
+#template `[]`*[T](x:ToDouble[T]):untyped = cast[T](x)
+makeDeref(ToDouble, x.T)
+template `[]`*(x:ToDouble; i:SomeInteger):untyped = x[][i].toDouble
+template `[]`*(x:ToDouble; i,j:SomeInteger):untyped = x[][j,i].toDouble
+template len*(x:ToDouble):untyped = x[].len
+template nrows*(x:ToDouble):untyped = x[].ncols
+template ncols*(x:ToDouble):untyped = x[].nrows
+template declaredVector*(x:ToDouble):untyped = isVector(x[])
+template declaredMatrix*(x:ToDouble):untyped = isMatrix(x[])
+template re*(x:ToDouble):untyped = x[].re
+template im*(x:ToDouble):untyped = -(x[].im)
+template simdType*(x: ToDouble): untyped = simdType(x[])
+
 
 
 type

@@ -46,6 +46,7 @@ when defined(AVX):
 #  proc inorm2*(r:var SimdD4; x:SimdS4) {.inline.} =
 #    let y = toDouble(x)
 #    inorm2(r, y)
+
 when declared(SimdS8):
   #proc toDouble*(x:SimdS8):SimdD8 {.inline,noInit.} =
   #  result = SimdD8(toDoubleA(x))

@@ -52,15 +52,6 @@ type
   DLatticeColorMatrix* = Field[1,DColorMatrix]
   DLatticeColorMatrixV* = Field[VLEN,DColorMatrixV]
 
-template numberType*[T1,T2](x:tuple[re:T1,im:T2]):untyped = numberType(T1)
-template numberType*[I,T](x:array[I,T]):untyped = numberType(T)
-template numberType*[T](x:AsComplex[T]):untyped = numberType(T)
-template numberType*[T](x:AsVector[T]):untyped = numberType(T)
-template numberType*[T](x:AsMatrix[T]):untyped = numberType(T)
-#template numberType*[N,T](x:typedesc[array[N,T]]):untyped = numberType(T)
-template numberType*[T](x:typedesc[AsVector[T]]):untyped = numberType(T)
-template numberType*[T](x:typedesc[AsMatrix[T]]):untyped = numberType(T)
-
 template simdLength*(x:typedesc[SColorMatrixV]):untyped = simdLength(Svec0)
 template simdLength*(x:typedesc[SColorVectorV]):untyped = simdLength(Svec0)
 template simdLength*(x:SColorVectorV):untyped = simdLength(Svec0)
@@ -298,10 +289,13 @@ proc blend*(r:var any; x:ptr char; b:ptr char; blnd:int) {.inline.} =
   else: discard
 
 
-proc ColorVector*(l:Layout):SLatticeColorVectorV = result.new(l)
-proc ColorMatrix*(l:Layout):SLatticeColorMatrixV = result.new(l)
-#proc ColorVector*(l:Layout):DLatticeColorVectorV = result.new(l)
-#proc ColorMatrix*(l:Layout):DLatticeColorMatrixV = result.new(l)
+proc ColorVectorS*(l: Layout): SLatticeColorVectorV = result.new(l)
+proc ColorMatrixS*(l: Layout): SLatticeColorMatrixV = result.new(l)
+proc ColorVectorD*(l: Layout): DLatticeColorVectorV = result.new(l)
+proc ColorMatrixD*(l: Layout): DLatticeColorMatrixV = result.new(l)
+
+proc ColorVector*(l: Layout): auto = ColorVectorS(l)
+proc ColorMatrix*(l: Layout): auto = ColorMatrixS(l)
 
 when isMainModule:
   import times

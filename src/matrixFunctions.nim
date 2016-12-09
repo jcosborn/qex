@@ -126,7 +126,7 @@ template rsqrtM2(r:typed; x:typed):untyped =
   load(x01, x[0,1])
   #load(x10, x[1,0])
   load(x11, x[1,1].re)
-  let det := a00*a11 - 
+  let det := a00*a11 -
   QLA_r_eq_Re_c_times_c (det, a00, a11);
   QLA_r_meq_Re_c_times_c(det, a01, a10);
   tr = QLA_real(a00) + QLA_real(a11);
@@ -158,6 +158,23 @@ template rsqrtM(r:typed; x:typed):untyped =
 proc rsqrt(r:var Mat1; x:Mat2) = rsqrt(r, x)
 """
 
+proc exp*(m: Mat1): auto =
+  var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
+  type ft = numberType(m)
+  template term(n,x: typed): untyped =
+    when x.type is nil.type: 1 + ft(n)*m
+    else: 1 + ft(n)*m*x
+  #template r3:untyped = nil
+  let r8 = term(1.0/8.0, nil)
+  let r7 = term(1.0/7.0, r8)
+  let r6 = term(1.0/6.0, r7)
+  let r5 = term(1.0/5.0, r6)
+  let r4 = term(1.0/4.0, r5)
+  let r3 = term(1.0/3.0, r4)
+  let r2 = term(1.0/2.0, r3)
+  r := 1 + m*r2
+  r
+
 when isMainModule:
   import macros,metaUtils
   import simd
@@ -186,6 +203,7 @@ when isMainModule:
       m3 := m2.adj*m2
       let err2 = sqrt((1-m3).norm2/(N*N))
       echo "err2: ", err2
+      m3 := exp(m2)
   macro makeTest(n:untyped):auto =
     let f = ident("test" & n.repr)
     result = quote do: makeTest2(`n`,`f`)

@@ -9,6 +9,7 @@
 import globals
 import math
 export math
+import macros
 
 {.passL:"-lm".}
 
@@ -34,6 +35,12 @@ template basicNumberDefines(T,N,F) {.dirty.} =
   template numNumbers*(x:typedesc[T]):untyped = N
 basicNumberDefines(float32, 1, float32)
 basicNumberDefines(float64, 1, float64)
+
+template numberType*[T](x:tuple[re,im:T]):untyped = numberType(T)
+template numberType*[T](x:typedesc[tuple[re,im:T]]):untyped = numberType(T)
+template numberType*[I,T](x:array[I,T]):untyped = numberType(type(T))
+template numberType*[I,T](x:typedesc[array[I,T]]):untyped = numberType(T)
+#template numberType*(x:not typedesc):untyped = numberType(type(x))
 template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x
 
 template cnvrt(r,x):untyped = ((type(r))(x))
@@ -175,8 +182,8 @@ template setBinopP*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
     fun(r, x, y)
     r
 template setBinopT*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
-  template op*(xx: t1; yy: t2): untyped =
-    subst(r,_):
+  subst(r,_):
+    template op*(xx: t1; yy: t2): untyped =
       lets(x,xx,y,yy):
         var r{.noInit.}: t3
         fun(r, x, y)

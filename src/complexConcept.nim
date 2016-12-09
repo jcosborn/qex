@@ -131,6 +131,9 @@ type
 #proc `$`*(x:C1):string =
 #  result = "(" & $x.re & "," & $x.im & ")"
 
+template numberType*[T](x:AsComplex[T]):untyped = numberType(type(T))
+template numberType*[T](x:typedesc[AsComplex[T]]):untyped = numberType(T)
+
 template haveR(x:typed, body:untyped):untyped =
   when not x.isImag:
     block:
@@ -151,10 +154,12 @@ template load1*(x:I1):untyped =
   var r{.noInit.}:AsImag[type(load1(x.im))]
   assign(r, x)
   r
-template load1*(x:C1):untyped =
-  var r{.noInit.}:ComplexType[type(load1(x.re))]
-  assign(r, x)
-  r
+subst(r,_):
+  template load1*(x:C1):untyped =
+  #subst(x,xx,r,_):
+    var r{.noInit.}:ComplexType[type(load1(x.re))]
+    assign(r, x)
+    r
 
 template map*(result:RIC1; f:untyped):untyped =
   haveR: f(result.re)
@@ -170,11 +175,11 @@ template map*(result:untyped; f:untyped; x:untyped):untyped =
   haveR: f(result.re, x.re)
   haveI: f(result.im, x.im)
 
-proc toDouble*(x:C1):auto {.inline,noInit.} =
-  var r{.noInit.}:ComplexType[type(toDouble(x.re))]
-  r.re = toDouble(x.re)
-  r.im = toDouble(x.im)
-  r
+#proc toDouble*(x:C1):auto {.inline,noInit.} =
+#  var r{.noInit.}:ComplexType[type(toDouble(x.re))]
+#  r.re = toDouble(x.re)
+#  r.im = toDouble(x.im)
+#  r
 
 template trace*(r:var RIC1; x:RIC2):untyped = map(r, trace, x)
 proc trace*(x:C1):auto {.inline.} =

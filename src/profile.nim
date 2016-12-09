@@ -10,7 +10,7 @@ include system/timers
 
 type
   #TicType* = float
-  TicType* = Ticks
+  TicType* = distinct Ticks
   TimerInfo* = object
     seconds*: float
     flops*: float
@@ -22,7 +22,9 @@ type
     location*: type(instantiationInfo())
 #template getTics(): untyped = epochTime()
 #template ticDiffSecs(x,y: untyped): untyped = x - y
-template getTics*(): untyped = getTicks()
+template getTics*(): untyped = TicType(getTicks())
+template toSeconds*(x: TicType): untyped = 1e-9 * x.float
+template `-`*(x,y: TicType): untyped = TicType(Ticks(x) - Ticks(y))
 template ticDiffSecs*(x,y: untyped): untyped = 1e-9 * (x - y).float
 
 var ticSeq* = newSeq[ptr TimerInfo](0)

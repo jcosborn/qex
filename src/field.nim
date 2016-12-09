@@ -9,6 +9,9 @@ import basicOps
 import profile
 import types
 
+type FieldOps* = enum
+  foNeg, foAdd, foSub, foMul, foDiv, foAdj, foToSingle, foToDouble
+
 type
   FieldObj*[V:static[int],T] = object
     s*:alignedMem[T]
@@ -18,6 +21,9 @@ type
   Subsetted*[F,S] = object
     field*:F
     subset*:S
+  FieldUnop*[O:static[FieldOps],T1] = object
+  #FieldUnop*[T1] = object
+    f1*: T1
   FieldBinop*[O:static[string],T1,T2] = object
     f1:T1
     f2:T2
@@ -31,7 +37,7 @@ type
     ln*:int
   Field2* = distinct Field
   Field3* = distinct Field
-  SomeField* = Field | Subsetted | FieldBinop | FieldAddSub | FieldMul|Shifted
+  SomeField* = Field | Subsetted | FieldBinop | FieldAddSub | FieldMul|Shifted | FieldUnop
   #SomeField2* = Field | Subsetted | FieldBinop | FieldAddSub|FieldMul|Shifted
   SomeField2* = concept x
     x is SomeField
@@ -44,17 +50,29 @@ type
     x isnot FieldAddSub
     x isnot FieldMul
     x isnot Shifted
+    x isnot FieldUnop
   notSomeField2* = concept x
     x isnot SomeField2
 
 template numberType*(x:Field):untyped = numberType(x[0])
 
-macro fieldAddSub*(sx:static[int],x:Field|FieldMul):auto =
+#template fieldUnop*(o: static[FieldOps], x: SomeField): auto =
+#  FieldUnop[o,type(x)](f1: x)
+#template fieldUnop*(o: static[FieldOps], x: SomeField): untyped =
+proc fieldUnop*(o: static[FieldOps], x: SomeField): auto =
+  #type t = type(x)
+  #FieldUnop[o,t](f1: x)
+  #result.f1 = x
+  var t: FieldUnop[o,type(x)]
+  #var t: FieldUnop[type(x)]
+  t.f1 = x
+  t
+macro fieldAddSub*(sx:static[int],x:any):auto =
   result = quote do:
     FieldAddSub[(a:`sx`),tuple[a:type(`x`)]](field:(a:`x`))
   #echo result.repr
-macro fieldAddSub*(sx:static[int],x:Field|FieldMul,
-                   sy:static[int],y:Field|FieldMul):auto =
+macro fieldAddSub*(sx:static[int],x:any,
+                   sy:static[int],y:SomeField):auto =
   result = quote do:
     FieldAddSub[(a:`sx`,b:`sy`),tuple[a:type(`x`),b:type(`y`)]](
       field:(a:`x`,b:`y`) )
@@ -107,6 +125,11 @@ template `[]`*(x:SomeField; st:string):untyped =
   Subsetted[type(x),type(st)](field:x,subset:st)
 template `[]`*(x:SomeField; st:Subset):untyped =
   Subsetted[type(x),type(st)](field:x,subset:st)
+template `[]`*(x:FieldUnop; i:int):untyped =
+  when x.O == foToSingle:
+    toSingle(x.f1[i])
+  else:
+    toDouble(x.f1[i])
 template even*(x:Field):untyped = x["even"]
 template odd*(x:Field):untyped = x["odd"]
 template all*(x:Field):untyped = x["all"]
@@ -118,6 +141,11 @@ template `all=`*(x:Field; y:any):untyped = assign(x["all"], y)
 template indexField*(x:notSomeField; y:int):untyped = x
 template indexField*(x:Field; y:int):untyped = x[y]
 template indexField*(x:Adjointed[SomeField]; y:int):untyped = x[][y].adj
+template indexField*(x:FieldUnop; y:int):untyped =
+  when x.O == foToSingle:
+    toSingle(x[y])
+  else:
+    toDouble(x[y])
 #macro indexField*(x:FieldBinop; y:int):auto =
 #  echo x.treeRepr
 #  var xx = x
@@ -475,6 +503,9 @@ template `/`*(x:SomeField,y:SomeNumber):untyped =
 #makeBinop(`/`,"/")
 #template `*`*(x:notSomeField; y:SomeField2):untyped =
 #  fieldBinop("*", x, y)
+
+#template toSingle*(x: SomeField): untyped =
+#  fieldUnop(foToSingle, x)
 
 template onSubset*(s:string; body:untyped):untyped =
   block:
