@@ -66,8 +66,15 @@ template qmpSum*[T](v:seq[T]):untyped =
 template qmpSum*(v:tuple):untyped =
   qmpSum(v[0].addr, sizeOf(v) div sizeOf(v[0]))
 #template qmpSum*[T](v:T):untyped =
-template qmpSum*(v:typed):untyped =
-  qmpSum(v[])
+#template qmpSum*(v:typed):untyped =
+#  qmpSum(v[])
+#template qmpSum*[T](v:T):untyped =
+#  qmpSum(v[])
+template qmpSum*(v: typed): untyped =
+  when numberType(v) is float64:
+    qmpSum(cast[ptr float64](addr v), sizeof(v) div sizeof(float64))
+  else:
+    qmpSum(v[])
 
 when isMainModule:
   var argc {.importc:"cmdCount", global.}:cint

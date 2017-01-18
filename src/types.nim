@@ -6,6 +6,21 @@ import metaUtils
 import wrapperTypes
 import macros
 
+template makeDeclare(s:untyped):untyped {.dirty.} =
+  template `declare s`*(t:typedesc):untyped {.dirty.} =
+    template `declared s`*(y:t):untyped {.dirty.} = true
+  template `is s`*(x:typed):untyped {.dirty.} =
+    when compiles(`declared s`(x)):
+      `declared s`(x)
+    else:
+      false
+makeDeclare(Scalar)
+makeDeclare(Matrix)
+makeDeclare(Vector)
+makeDeclare(Real)
+makeDeclare(Imag)
+makeDeclare(Complex)
+
 # converter adjMat*[T](x:Adjointed[AsMatrix[T]]):AsMatrix[Adjointed[T]]
 
 type
@@ -13,6 +28,7 @@ type
   #Adjointed*[T] = distinct T
   Adjointed*[T] = object
     v*:T
+
 template adj*(xx:typed):untyped =
   lets(x,xx):
     when isComplex(x):
@@ -23,8 +39,8 @@ template adj*(xx:typed):untyped =
       asMatrix(adj(x[]))
     elif x is SomeNumber:
       x
-    elif x is SomeField:
-      fieldUnop(foAdj, x)
+    elif compiles(adjImpl(x)):
+      adjImpl(x)
     else:
       when compiles(addr(x)):
       #when compiles(unsafeAddr(x)):
@@ -57,29 +73,32 @@ type
   #ToSingle*[T] = distinct T
   ToSingle*[T] = object
     v*:T
+template toSingleDefault*(xx: typed): untyped =
+  lets(x,xx):
+    when compiles(addr(x)):
+    #when compiles(unsafeAddr(x)):
+      #cast[ptr ToSingle[type(x)]](addr(x))[]
+      cast[ptr ToSingle[type(x)]](unsafeAddr(x))[]
+      #cast[ToSingle[type(x)]](x)
+    else:
+      #(ToSingle[type(x)])(x)
+      cast[ToSingle[type(x)]](x)
+      #cast[ToSingle[type(x)]]((var t=x; t.addr))
 template toSingle*(xx:typed):untyped =
   mixin isVector, isMatrix
   lets(x,xx):
-    when isComplex(x):
+    when compiles(toSingleImpl(x)):
+      toSingleImpl(x)
+    elif isComplex(x):
       asComplex(toSingle(x[]))
     elif isVector(x):
       asVector(toSingle(x[]))
     elif isMatrix(x):
       asMatrix(toSingle(x[]))
     elif x is SomeNumber:
-      x
-    elif x is SomeField:
-      fieldUnop(foToSingle, x)
+      float32(x)
     else:
-      when compiles(addr(x)):
-      #when compiles(unsafeAddr(x)):
-        #cast[ptr ToSingle[type(x)]](addr(x))[]
-        cast[ptr ToSingle[type(x)]](unsafeAddr(x))[]
-        #cast[ToSingle[type(x)]](x)
-      else:
-        #(ToSingle[type(x)])(x)
-        cast[ToSingle[type(x)]](x)
-        #cast[ToSingle[type(x)]]((var t=x; t.addr))
+      toSingleDefault(x)
 #template `[]`*[T](x:ToSingle[T]):untyped = cast[T](x)
 makeDeref(ToSingle, x.T)
 template `[]`*(x:ToSingle; i:SomeInteger):untyped = x[][i].toSingle
@@ -89,39 +108,41 @@ template nrows*(x:ToSingle):untyped = x[].ncols
 template ncols*(x:ToSingle):untyped = x[].nrows
 template declaredVector*(x:ToSingle):untyped = isVector(x[])
 template declaredMatrix*(x:ToSingle):untyped = isMatrix(x[])
-template re*(x:ToSingle):untyped = x[].re
-template im*(x:ToSingle):untyped = -(x[].im)
+template re*(x: ToSingle): untyped = toSingle(x[].re)
+template im*(x: ToSingle): untyped = toSingle(x[].im)
 template simdType*(x: ToSingle): untyped = simdType(x[])
-
 
 type
   #ToDouble*{.borrow: `.`.}[T] = distinct T
   #ToDouble*[T] = distinct T
   ToDouble*[T] = object
     v*:T
-template toDouble*(xx:typed):untyped =
-  mixin isVector, isMatrix
+template toDoubleDefault*(xx: typed): untyped =
   lets(x,xx):
-    when isComplex(x):
-      asComplex(toDouble(x[]))
+    when compiles(addr(x)):
+    #when compiles(unsafeAddr(x)):
+      #cast[ptr ToDouble[type(x)]](addr(x))[]
+      cast[ptr ToDouble[type(x)]](unsafeAddr(x))[]
+      #cast[ToDouble[type(x)]](x)
+    else:
+      #(ToDouble[type(x)])(x)
+      cast[ToDouble[type(x)]](x)
+      #cast[ToDouble[type(x)]]((var t=x; t.addr))
+template toDouble*(xx: typed): untyped =
+  mixin isVector, isMatrix, isComplex
+  lets(x,xx):
+    when compiles(toDoubleImpl(x)):
+      toDoubleImpl(x)
+    elif isComplex(x):
+      asComplex(toDoubleDefault(x))
     elif isVector(x):
       asVector(toDouble(x[]))
     elif isMatrix(x):
       asMatrix(toDouble(x[]))
     elif x is SomeNumber:
-      x
-    elif x is SomeField:
-      fieldUnop(foToDouble, x)
+      float64(x)
     else:
-      when compiles(addr(x)):
-      #when compiles(unsafeAddr(x)):
-        #cast[ptr ToDouble[type(x)]](addr(x))[]
-        cast[ptr ToDouble[type(x)]](unsafeAddr(x))[]
-        #cast[ToDouble[type(x)]](x)
-      else:
-        #(ToDouble[type(x)])(x)
-        cast[ToDouble[type(x)]](x)
-        #cast[ToDouble[type(x)]]((var t=x; t.addr))
+      toDoubleDefault(x)
 #template `[]`*[T](x:ToDouble[T]):untyped = cast[T](x)
 makeDeref(ToDouble, x.T)
 template `[]`*(x:ToDouble; i:SomeInteger):untyped = x[][i].toDouble
@@ -131,8 +152,8 @@ template nrows*(x:ToDouble):untyped = x[].ncols
 template ncols*(x:ToDouble):untyped = x[].nrows
 template declaredVector*(x:ToDouble):untyped = isVector(x[])
 template declaredMatrix*(x:ToDouble):untyped = isMatrix(x[])
-template re*(x:ToDouble):untyped = x[].re
-template im*(x:ToDouble):untyped = -(x[].im)
+template re*(x:ToDouble):untyped = toDouble(x[].re)
+template im*(x:ToDouble):untyped = toDouble(x[].im)
 template simdType*(x: ToDouble): untyped = simdType(x[])
 
 
@@ -250,3 +271,17 @@ template `[]`*(m:Masked; i,j:int):untyped = masked(m[][i,j],m.mask)
   #echo "*="
 #proc `$`*(x:Masked):string =
 #  result = $(x[])
+
+#template eval*(x: AsComplex): untyped = asComplex(eval(x[]))
+template eval*(x: ToDouble): untyped =
+  mixin map
+  map(map(x[],toDouble),eval)
+template eval*(x: SomeNumber): untyped = x
+#template eval*(x: typed): untyped =
+#  mixin isComplex
+#  when isComplex(x):
+#    asComplex(eval(x[]))
+#  elif x is SomeNumber:
+#    x
+#  else:
+#    map(map(x[],toDouble),eval)

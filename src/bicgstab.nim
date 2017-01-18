@@ -13,7 +13,7 @@ type
     subset*:Subset
     subsetName*:string
 
-# BICGSTAB solutions to Mphi = b 
+# BICGSTAB solutions to Mphi = b
 #  see https://en.wikipedia.org/wiki/Biconjugate_gradient_stabilized_method
 proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
   tic()
@@ -35,7 +35,7 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
     b2 = b.norm2
   verb(1):
     echo("input norm2: ", b2)
-  if b2 == 0.0: 
+  if b2 == 0.0:
     sp.finalIterations = 0
     return
 
@@ -59,9 +59,9 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
       r0 := r
 
     # Remark: Could use ComplexType[NumberType[x]]. NumberType[x] would return
-    #            the precision (ex, system.float32) used inside x, then ComplexType 
-    #            would create a complex with that underlying precision.
-    #            Instead we just use double precision for the scalars.
+    #        the precision (ex, system.float32) used inside x, then ComplexType
+    #        would create a complex with that underlying precision.
+    #        Instead we just use double precision for the scalars.
 
     var rho: DComplex
     rho := 1
@@ -69,8 +69,7 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
     alpha := 1
     var omega: DComplex
     omega := 1
-    
-    
+
     var itn = 0
     var r2 = b2
     verb(1):
@@ -83,32 +82,31 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
       inc itn
       # rhoNew = <rhat0, r>
       let rhoNew  = r0.dot(r)
-      
+
       # beta = (rhoNew/rho)*(alpha/omega)
       let beta = (rhoNew/rho)*(alpha/omega)
       let rho = rhoNew
-      
+
       # p = r + beta(p - omega v)
       subset:
         p := r + beta*(p - omega*v)
       toc("p update", flops=5*numNumbers(r[0])*sub.lenOuter) # No idea of the factor of 5 is right, probably is.
-      
       #echo("p2: ", p.norm2)
-      
+
       # Apply the matrix.
       A(v, p)
       toc("v")
-      
+
       # alpha = rho/<rhat0, v>
       alpha := rho/r0.dot(v)
-      
+
       # Update s.
       subset:
         s := r - alpha*v
         toc("s", flops=3*numNumbers(s[0])*sub.lenOuter)
         r2 := s.norm2 # Sane names for variables are overrated.
         toc("r2", flops=2*numNumbers(s[0])*sub.lenOuter)
-      
+
       verb(2):
         echo(itn, " ", r2)
       verb(3):
@@ -117,7 +115,7 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
         subset:
           fr2 = (b - t).norm2
         echo "   ", fr2/b2
-      
+
       if r2>=r2stop:
         # Update the solution one last time.
         x += alpha*p
@@ -125,17 +123,17 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
       else:
         # t = As
         A(t,s)
-        
+
         # omega = <t,s>/<t,t>
-        omega = t.dot(s)/t.norm2
-        
+        omega := t.dot(s)/t.norm2
+
         # Update x, r.
         subset:
           x += alpha*p + omega*s
           toc("x", flops=4*numNumbers(s[0])*sub.lenOuter)
           r := s - omega*t
           toc("r", flops=3*numNumbers(s[0])*sub.lenOuter)
-      
+
     toc("bicgstab iterations")
     if threadNum==0: finalIterations = itn
 

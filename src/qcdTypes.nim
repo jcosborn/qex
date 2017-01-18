@@ -11,6 +11,7 @@ import strutils
 import globals
 import comms
 import field
+export field
 import complexConcept
 export complexConcept
 import matrixConcept
@@ -80,18 +81,14 @@ template simdType*(x:AsVector):untyped = simdType(x[])
 template simdType*(x:AsMatrix):untyped = simdType(x[])
 
 
-#import complexConcept
-#export complexConcept
-#declareComplex(SComplex)
-#declareComplex(SComplexV)
-
-
-#proc `$`*(x:Masked[SComplexV]):string =
-#  result = "(" & $x.re & "," & $x.im & ")"
-
 template trace*(x:SComplexV):untyped = x
-proc simdSum*(x:SComplexV):SComplex = complexConcept.map(result, simdSum, x)
-proc simdSum*(x:DComplexV):DComplex = complexConcept.map(result, simdSum, x)
+#proc simdSum*(x:SComplexV):SComplex = complexConcept.map(result, simdSum, x)
+#proc simdSum*(x:DComplexV):DComplex = complexConcept.map(result, simdSum, x)
+template simdSum*(x:ToDouble):untyped = toDouble(simdSum(x[]))
+template simdSum*(x:AsComplex):untyped = asComplex(simdSum(x[]))
+template simdSum*(xx:tuple):untyped =
+  lets(x,xx):
+    map(x, simdSum)
 #template rankSum*(x:AsComplex) =
 #  #mixin qmpSum
 #  rankSum(x[])
@@ -101,12 +98,12 @@ proc simdSum*(x:DComplexV):DComplex = complexConcept.map(result, simdSum, x)
 #  echoType: x
 #  divd(r, x, y)
 #  r
-proc `/`*(x:SComplex|DComplex; y:SomeNumber):auto =
-  mixin divd
-  var r{.noInit.}:type(x)
-  #echoType: x
-  divd(r, x, y)
-  r
+#proc `/`*(x:SComplex|DComplex; y:SomeNumber):auto =
+#  mixin divd
+#  var r{.noInit.}:type(x)
+#  #echoType: x
+#  divd(r, x, y)
+#  r
 
 proc assign*(r:var SomeNumber; m:Masked[SDvec]) =
   var i = 0
@@ -175,25 +172,6 @@ proc inorm2*(r:var SomeNumber; m:Masked[SDvec]) =
   let t = norm2(m)
   r += (type(r))(t)
 
-#template isScalar*(x:float32):untyped = true
-#template isScalar*(x:Scalar):untyped = true
-#template isScalar*(x:SComplexV):untyped = true
-#template isVector*(x:SColorVectorV):untyped = true
-#template mvLevel*(x:SColorVectorV):untyped = 1
-#template isMatrix*(x:SColorMatrixV):untyped = true
-#template mvLevel*(x:SColorMatrixV):untyped = 1
-#template nrows*(x:SColorMatrixV):untyped = nc
-#template ncols*(x:SColorMatrixV):untyped = nc
-#template `[]`*(x:SColorMatrixV; i,j:int):untyped = x[i][j]
-#template `[]=`*(x:SColorMatrixV; i,j:int, y:untyped):untyped = x[i][j] = y
-#template `[]`*(x:SColorMatrix; i,j:int):untyped = x[i][j]
-#template `[]=`*(x:SColorMatrix; i,j:int, y:untyped):untyped = x[i][j] = y
-
-#import matrixConcept
-#export matrixConcept
-
-#template assign*(r:var SColorMatrixV, x:SomeNumber):untyped = assign(r, x.toScalar)
-
 proc prefetch*(x:ptr AsComplex) {.inline.} =
   prefetch(addr(x[].re))
   prefetch(addr(x[].im))
@@ -220,7 +198,8 @@ template perm*[T](r0:var T; prm0:int; x0:T) =
       of 4: loop(perm4)
       of 8: loop(perm8)
       else: discard
-proc pack*(r:ptr any; l:ptr any; pck:int; x:PackTypes) {.inline.} =
+#proc pack*(r:ptr any; l:ptr any; pck:int; x:PackTypes) {.inline.} =
+proc pack*(r:ptr any; l:ptr any; pck:int; x:any) {.inline.} =
   if pck==0:
     const n = x.nVectors
     let rr = cast[ptr array[n,array[simdLength(x),type(r[])]]](r)
@@ -245,7 +224,8 @@ proc pack*(r:ptr any; l:ptr any; pck:int; x:PackTypes) {.inline.} =
     of  8: loop(packp8)
     of -8: loop(packm8)
     else: discard
-proc pack*(r:ptr char; pck:int; x:PackTypes) =
+#proc pack*(r:ptr char; pck:int; x:PackTypes) =
+proc pack*(r:ptr char; pck:int; x: any) =
   if pck==0:
     const n = x.nVectors
     let rr = cast[ptr array[n,simdType(r)]](r)
@@ -288,14 +268,13 @@ proc blend*(r:var any; x:ptr char; b:ptr char; blnd:int) {.inline.} =
   of -8: loop(blendm8)
   else: discard
 
-
 proc ColorVectorS*(l: Layout): SLatticeColorVectorV = result.new(l)
 proc ColorMatrixS*(l: Layout): SLatticeColorMatrixV = result.new(l)
 proc ColorVectorD*(l: Layout): DLatticeColorVectorV = result.new(l)
 proc ColorMatrixD*(l: Layout): DLatticeColorMatrixV = result.new(l)
 
-proc ColorVector*(l: Layout): auto = ColorVectorS(l)
-proc ColorMatrix*(l: Layout): auto = ColorMatrixS(l)
+proc ColorVector*(l: Layout): auto = ColorVectorD(l)
+proc ColorMatrix*(l: Layout): auto = ColorMatrixD(l)
 
 when isMainModule:
   import times

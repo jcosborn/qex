@@ -50,17 +50,6 @@ createAsType(VarVector)
 createAsType(Matrix)
 createAsType(VarMatrix)
 
-template makeDeclare(s:untyped):untyped {.dirty.} =
-  template `declare s`*(t:typedesc):untyped {.dirty.} =
-    template `declared s`*(y:t):untyped {.dirty.} = true
-  template `is s`*(x:typed):untyped {.dirty.} =
-    when compiles(`declared s`(x)):
-      `declared s`(x)
-    else:
-      false
-makeDeclare(Scalar)
-makeDeclare(Matrix)
-makeDeclare(Vector)
 declareScalar(AsScalar)
 declareScalar(AsVarScalar)
 declareVector(AsVector)
@@ -299,6 +288,7 @@ template makeMap2(op:untyped):untyped =
 makeMap2(add)
 makeMap2(sub)
 
+setBinop(`+`,add,Vec1,Sca2,VectorArray[x.len,type(x[0]+y)])
 setBinop(`-`,sub,Vec1,Sca2,VectorArray[x.len,type(x[0]-y)])
 
 setBinop(`+`,add,Vec1,Vec2,VectorArray[x.len,type(x[0]+y[0])])

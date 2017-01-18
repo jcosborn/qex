@@ -57,7 +57,7 @@ template to*(t:typedesc[SomeNumber]; x:any):untyped =
     x
   else:
     t(x)
-template toDouble*(x:SomeNumber):untyped =
+template toDoubleImpl*(x:SomeNumber):untyped =
   when type(x) is float64:
     x
   else:

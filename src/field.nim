@@ -21,8 +21,7 @@ type
   Subsetted*[F,S] = object
     field*:F
     subset*:S
-  FieldUnop*[O:static[FieldOps],T1] = object
-  #FieldUnop*[T1] = object
+  FieldUnop*[Op: static[FieldOps], T1] = object
     f1*: T1
   FieldBinop*[O:static[string],T1,T2] = object
     f1:T1
@@ -58,21 +57,17 @@ template numberType*(x:Field):untyped = numberType(x[0])
 
 #template fieldUnop*(o: static[FieldOps], x: SomeField): auto =
 #  FieldUnop[o,type(x)](f1: x)
-#template fieldUnop*(o: static[FieldOps], x: SomeField): untyped =
-proc fieldUnop*(o: static[FieldOps], x: SomeField): auto =
-  #type t = type(x)
-  #FieldUnop[o,t](f1: x)
-  #result.f1 = x
-  var t: FieldUnop[o,type(x)]
-  #var t: FieldUnop[type(x)]
-  t.f1 = x
-  t
+#macro fieldUnop*(o: static[FieldOps], x: SomeField): auto =
+#  result = quote do:
+#    FieldUnop[FieldOps(`o`),type(`x`)](f1: `x`)
+template fieldUnop*(o: FieldOps, x: SomeField): untyped =
+  FieldUnop[FieldOps(o),type(x)](f1: x)
 macro fieldAddSub*(sx:static[int],x:any):auto =
   result = quote do:
     FieldAddSub[(a:`sx`),tuple[a:type(`x`)]](field:(a:`x`))
   #echo result.repr
 macro fieldAddSub*(sx:static[int],x:any,
-                   sy:static[int],y:SomeField):auto =
+                   sy:static[int],y:any):auto =
   result = quote do:
     FieldAddSub[(a:`sx`,b:`sy`),tuple[a:type(`x`),b:type(`y`)]](
       field:(a:`x`,b:`y`) )
@@ -101,6 +96,12 @@ macro fieldShift*(x:SomeField, d,l:int):auto =
   result = quote do:
     Shifted[type(`x`)](field:`x`,dir:`d`,ln:`l`)
   #echo result.repr
+template adjImpl*(x: SomeField): untyped =
+  fieldUnop(foAdj, x)
+template toSingleImpl*(x: SomeField): untyped =
+  fieldUnop(foToSingle, x)
+template toDoubleImpl*(x: SomeField): untyped =
+  fieldUnop(foToDouble, x)
 
 proc new*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) =
   x.l = l
@@ -125,11 +126,13 @@ template `[]`*(x:SomeField; st:string):untyped =
   Subsetted[type(x),type(st)](field:x,subset:st)
 template `[]`*(x:SomeField; st:Subset):untyped =
   Subsetted[type(x),type(st)](field:x,subset:st)
+
 template `[]`*(x:FieldUnop; i:int):untyped =
-  when x.O == foToSingle:
+  when x.Op == foToSingle:
     toSingle(x.f1[i])
   else:
     toDouble(x.f1[i])
+
 template even*(x:Field):untyped = x["even"]
 template odd*(x:Field):untyped = x["odd"]
 template all*(x:Field):untyped = x["all"]
@@ -141,11 +144,7 @@ template `all=`*(x:Field; y:any):untyped = assign(x["all"], y)
 template indexField*(x:notSomeField; y:int):untyped = x
 template indexField*(x:Field; y:int):untyped = x[y]
 template indexField*(x:Adjointed[SomeField]; y:int):untyped = x[][y].adj
-template indexField*(x:FieldUnop; y:int):untyped =
-  when x.O == foToSingle:
-    toSingle(x[y])
-  else:
-    toDouble(x[y])
+template indexField*(x:FieldUnop; y:int):untyped = x[y]
 #macro indexField*(x:FieldBinop; y:int):auto =
 #  echo x.treeRepr
 #  var xx = x
@@ -400,9 +399,9 @@ template norm2*(f:SomeAllField):untyped =
 template norm2*(f:Subsetted):untyped = norm2P(f)
 
 proc dotP*(f1:SomeField; f2:SomeField2):auto =
-  mixin dot, idot, simdSum, items, toDouble
+  mixin dot, idot, simdSum, items, toDouble, eval
   #var d:type(dot(f1[0],f2[0]))
-  var d:type(toDouble(dot(f1[0],f2[0])))
+  var d:type(eval(toDouble(dot(f1[0],f2[0]))))
   let t1 = f1
   let t2 = f2
   for x in items(t1):

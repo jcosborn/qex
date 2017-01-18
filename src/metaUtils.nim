@@ -94,18 +94,21 @@ macro setType*(x:untyped; s:static[string]):auto =
     type `x`* = `t`
 
 macro map*(a:tuple; f:untyped; p:varargs[untyped]):untyped =
-  echo a.treeRepr
-  #echo a.getType.treeRepr
+  #echo a.treeRepr
   #echo f.treeRepr
   #echo p.treeRepr
-  let nargs = a.getType.len - 1
+  let ti = a.getTypeImpl
+  #echo ti.treeRepr
+  let nargs = ti.len
   #echo nargs
   result = newPar()
   for i in 0..<nargs:
-    let c = newCall(f,newTree(nnkBracketExpr,a,newLit(i)))
+    #let c = newCall(f,newTree(nnkBracketExpr,a,newLit(i)))
+    let c = newCall(f,newDotExpr(a,ti[i][0]))
     for pp in p: c.add(pp)
-    result.add(newColonExpr(ident("field" & $i),c))
-  echo result.repr
+    #result.add(newColonExpr(ident("field" & $i),c))
+    result.add(newColonExpr(ti[i][0],c))
+  #echo result.repr
 
 macro makeCall*(op:static[string],a:tuple):untyped =
   echo op

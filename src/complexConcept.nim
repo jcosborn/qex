@@ -2,6 +2,7 @@ import macros
 import metaUtils
 import basicOps
 import wrapperTypes
+import types
 
 # unary ops: unm(-),inc(+=),dec(-=),muleq(*=),diveq(/=)
 # binary ops: add(+),sub(-),mul(*),divd(/),minc(+=*),mdec(-=*)
@@ -20,17 +21,6 @@ import wrapperTypes
 #  AsRealObj, AsImagObj, AsComplexObj
 #  AsReal, AsImag
 
-template makeDeclare(s:untyped):untyped {.dirty.} =
-  template `declare s`*(t:typedesc):untyped {.dirty.} =
-    template `declared s`*(y:t):untyped {.dirty.} = true
-  template `is s`*(x:typed):untyped {.dirty.} =
-    when compiles(`declared s`(x)):
-      `declared s`(x)
-    else:
-      false
-makeDeclare(Real)
-makeDeclare(Imag)
-makeDeclare(Complex)
 proc isKnown*(x:any):bool =
   mixin isReal, isImag, isComplex
   isReal(x) or isImag(x) or isComplex(x)
@@ -161,25 +151,32 @@ subst(r,_):
     assign(r, x)
     r
 
-template map*(result:RIC1; f:untyped):untyped =
+template map*(x: AsComplex; f: untyped): untyped = asComplex(f(x[]))
+#template map*(x: ; f: untyped): untyped =
+#  ComplexType(re:f(x.re),im:f(x.im))
+
+template apply*(result:RIC1; f:untyped) =
   haveR: f(result.re)
   haveI: f(result.im)
+
 #template map*(result:RIC1; f:untyped; x:RIC2):untyped =
 #  haveR: `f`(result.re, x.re)
 #  haveI: `f`(result.im, x.im)
 #template map*(result:var RIC1; f:untyped; x:RIC2):untyped =
 #template map*[T:RIC1](result:var T; f:untyped; x:RIC2):untyped =
-template map*(result:untyped; f:untyped; x:untyped):untyped =
-  #bind haveR, haveI
-  mixin re, im
-  haveR: f(result.re, x.re)
-  haveI: f(result.im, x.im)
+#template map*(result:untyped; f:untyped; x:untyped):untyped =
+#  #bind haveR, haveI
+#  mixin re, im
+#  haveR: f(result.re, x.re)
+#  haveI: f(result.im, x.im)
 
 #proc toDouble*(x:C1):auto {.inline,noInit.} =
 #  var r{.noInit.}:ComplexType[type(toDouble(x.re))]
 #  r.re = toDouble(x.re)
 #  r.im = toDouble(x.im)
 #  r
+
+template eval*(x: AsComplex): untyped = asComplex(eval(x[]))
 
 template trace*(r:var RIC1; x:RIC2):untyped = map(r, trace, x)
 proc trace*(x:C1):auto {.inline.} =
@@ -299,6 +296,8 @@ template makeBinary(op:untyped):untyped =
     op(r.im, x.im, y.im)
 makeBinary(add)
 makeBinary(sub)
+
+setBinop(`+`,add,C1,U2,ComplexType[type(x.re+y)])
 
 proc `+`*(x:U1; y:C2):auto {.inline.} =
   var r{.noInit.}:ComplexType[type(x+y.re)]
@@ -420,6 +419,13 @@ proc divd*(r:var C1; x:C2; y:C3) {.inline.} =
 
 proc `/`*(x:C1; y:C2):auto {.inline.} =
   var r{.noInit.}:ComplexType[type(x.re*y.re)]
+  divd(r, x, y)
+  r
+
+proc `/`*(x:C1; y:SomeNumber):auto =
+  mixin divd
+  var r{.noInit.}:type(x)
+  #echoType: x
   divd(r, x, y)
   r
 
