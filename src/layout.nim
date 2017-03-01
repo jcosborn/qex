@@ -172,6 +172,33 @@ proc partitionGeom(lx,nx:var openArray[int]; x:openArray[int]; n,dist:int) =
     lx[k] = lx[k] div 2
     ww = ww div 2
 
+# partition x into n blocks with geometry nx
+# dist=0: prefer to split already split direction
+# dist=1: split unsplit directions first
+proc partitionGeomF(lx,nx:var openArray[int]; x:openArray[int]; n,dist:int) =
+  for i,xi in x:
+    nx[i] = 1
+    lx[i] = xi
+  let fs = factor(n)
+  for fi in countdown(fs.len-1,0):
+    let f = fs[fi]
+    var k = lx.len-1
+    while (lx[k] mod f) != 0:
+      dec k
+      if k < 0:
+        echo "not enough factors of ", f, " in partitioned geom:"
+        for i in 0..<x.len: echo " ", x[i]
+        echo " /", n
+        quit(-1)
+    for i in countdown(k-1,0):
+      if (lx[i] mod f) == 0:
+        if dist == 0:
+          if lx[i]>lx[k] or (lx[i]==lx[k] and nx[i]>nx[k]): k = i
+        else:
+          if nx[i]<nx[k] or (nx[i]==nx[k] and lx[i]>lx[k]): k = i
+    nx[k] *= f
+    lx[k] = lx[k] div f
+
 proc newLayoutX*(lat:openArray[int],V:static[int]):Layout[V] =
   result.new()
   let nd = lat.len
@@ -180,7 +207,7 @@ proc newLayoutX*(lat:openArray[int],V:static[int]):Layout[V] =
   ig.newSeq(nd)
   og.newSeq(nd)
   lg.newSeq(nd)
-  partitionGeom(lg, rg, lat, nRanks, 1)
+  partitionGeomF(lg, rg, lat, nRanks, 1)
   echo "#physGeom:" & $(@lat)
   echo "#rankGeom:" & $rg
   echo "#localGeom:" & $lg

@@ -128,9 +128,25 @@ template warn*(s:varargs[string,`$`]) =
   let ii = instantiationInfo()
   echo "warning (", ii.filename, ":", ii.line, "):"
   echo "  ", s.join
-  
-#[
+
+proc factor*(n: int): seq[int] =
+  result.newSeq(0)
+  var x = n
+  if x<0:
+    result.add(-1)
+    x = -x
+  if x<2: result.add x
+  while x>1:
+    var k = 2
+    if (x and 1) != 0:
+      k = 3
+      while (x mod k) != 0: k += 2
+    result.add k
+    x = x div k
+
+
 when isMainModule:
+  #[
   proc test(n:int) =
     declareVla(x, float, n)
     let n2 = n div 2
@@ -143,4 +159,9 @@ when isMainModule:
       echo y.len
   test(10)
   test(20)
-]#
+  ]#
+
+  template testFactor(n: int) =
+    echo "factor(", n, ") = ", factor(n)
+  for i in -2..20:
+    testFactor(i)
