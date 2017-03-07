@@ -1,0 +1,16 @@
+#!/bin/sh
+
+dir=`dirname $0`
+nim=`$dir/findNim`
+if [ "X`$nim`" = "X" ]; then
+  #echo "Error: can't find Nim compiler 'nim'"
+  #exit 1
+  #echo "Installing Nim compiler 'nim'" 1>&2
+  #dir=`dirname $0`
+  $dir/installNim
+  nim=`$dir/findNim`
+fi
+
+echo "Using Nim compiler: $nim"
+
+$nim $dir/configure.nims

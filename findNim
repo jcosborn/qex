@@ -1,0 +1,37 @@
+#!/bin/sh
+
+whichNim() {
+ nim=`which nim`
+ if [ "X`$nim`" = "X" ]; then
+   nim=`ls -1 $HOME/bin/nim 2>/dev/null |tail -n1`
+ fi
+ if [ "X`$nim`" = "X" ]; then
+   nim=`ls -1 $HOME/bin/nim-[0-9]* 2>/dev/null |tail -n1`
+ fi
+ if [ "X`$nim`" = "X" ]; then
+   nim=`ls -1 $HOME/bin/nim-* 2>/dev/null |tail -n1`
+ fi
+ if [ "X`$nim`" = "X" ]; then
+   nim=`ls -1 $HOME/nim/Nim/bin/nim 2>/dev/null |tail -n1`
+ fi
+ if [ "X`$nim`" = "X" ]; then
+   nim=`ls -1 $HOME/nim/Nim-[0-9]*/bin/nim 2>/dev/null |tail -n1`
+ fi
+ if [ "X`$nim`" = "X" ]; then
+   nim=`ls -1 $HOME/nim/Nim-*/bin/nim 2>/dev/null |tail -n1`
+ fi
+ echo $nim
+}
+
+nim=`whichNim`
+
+#if [ "X`$nim`" = "X" ]; then
+  #echo "Error: can't find Nim compiler 'nim'"
+  #exit 1
+  #echo "Installing Nim compiler 'nim'" 1>&2
+  #dir=`dirname $0`
+  #$dir/installNim
+  #nim=`whichNim`
+#fi
+
+echo $nim

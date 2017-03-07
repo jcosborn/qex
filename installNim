@@ -1,0 +1,142 @@
+#!/bin/sh
+
+usage() {
+  s="------------------------------------------------------------------------"
+  echo $s
+  echo "$0: installs Nim compiler and tools (https://nim-lang.org)"
+  echo $s
+  echo "$0 -h          (this help message)"
+  echo "$0 stable      (install latest stable version)"
+  echo "$0 <version>   (install named version, e.g. 0.16.0)"
+  echo "$0 master      (install master branch tracking version)"
+  echo "$0 devel       (install devel branch tracking version)"
+  echo "$0 default stable|<version>|master|devel"
+  echo "                            (set default version)"
+  echo $s
+  echo "The default installation location is in '\$HOME/nim'."
+  echo "This directory will be created if it does not already exist."
+  echo "It will also create symlinks in '\$HOME/bin' if that directory exists."
+  echo $s
+  exit
+}
+
+switch="0"
+if [ "X$1" = "Xdefault" ]; then
+  switch="1"
+  shift
+fi
+
+ver="stable"
+branch="master"
+if [ "X$1" != "X" ]; then
+  case "$1" in
+    stable) ver="stable";;
+    master) ver="master";;
+    devel)  ver="devel";  branch="devel";;
+    -h) usage;;
+    *) ver="$1"; branch="v$1";;
+  esac
+fi
+
+rootdir="$HOME/nim"
+bindir="$HOME/bin"
+nimdir="Nim-$ver"
+
+getVer() {
+  exe="$1"
+  bin/$exe -v 2>&1 |head -n1 |sed 's/[^0-9]*\([0-9.]*\).*/\1/'
+}
+
+install() {
+  exe="$1"
+  if [ ! -e bin/$exe ]; then return; fi
+  v="$ver"
+  if [ $v != "master" -a $v != "devel" ]; then
+    v=`getVer $exe`
+  fi
+  exev="$exe-$v"
+  if [ -d $bindir ]; then
+    echo "installing $exev in $bindir"
+    cd $bindir
+    rm -f $exev
+    #cp -a $rootdir/$nimdir/bin/$exe $exev
+    ln -s $rootdir/$nimdir/bin/$exe $exev
+    rm -f $exe
+    ln -s $exev $exe
+  fi
+  cd $rootdir/$nimdir
+}
+
+installAll() {
+  install nim
+  install nimble
+  install nimgrep
+  install nimsuggest
+}
+
+if [ $switch = 1 ]; then
+  cd $rootdir
+  if [ $ver = "stable" ]; then
+    nimdir=`ls -1d Nim-[0-9]* |tail -n1`
+  fi
+  echo "Setting default Nim to $nimdir"
+  cd $nimdir
+  installAll
+  exit
+fi
+
+echo "Installing Nim version '$ver' in directory $rootdir/$nimdir"
+
+if [ ! -e $rootdir ]; then
+  mkdir $rootdir
+fi
+cd $rootdir
+
+if [ ! -e $nimdir ]; then
+  git clone -b $branch https://github.com/nim-lang/Nim.git $nimdir
+fi
+cd $nimdir
+
+git checkout $branch
+if [ $branch = "master" -o $branch = "devel" ]; then
+  git pull
+fi
+
+if [ -e csources ]; then
+  cd csources
+  git pull
+  cd ..
+else
+  if [ $branch = "master" -o $branch = "devel" ]; then
+    git clone --depth 1 https://github.com/nim-lang/csources
+  else
+    cb="v0.16.0"
+    case $ver in
+      0.9.*|0.10.*|0.11.*|0.12.*) cb="v0.9.4";;
+      0.13.*|0.14.*|0.15.0) cb="v0.13.0";;
+      0.15.*) cb="v0.15.2";;
+      0.16.*) cb="v0.16.0";;
+    esac
+    git clone -b $cb --depth 1 https://github.com/nim-lang/csources
+  fi
+fi
+cd csources && sh build.sh && cd ..
+
+bin/nim c koch
+./koch boot -d:release
+
+./koch tools
+./koch nimble
+
+if [ $ver = "stable" ]; then
+  ver=`getVer nim`
+  nimdir="Nim-$ver"
+  cd ..
+  if [ -e $nimdir ]; then
+    rm -rf $nimdir
+  fi
+  mv Nim-stable $nimdir
+  cd $nimdir
+fi
+
+installAll

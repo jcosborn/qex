@@ -11,17 +11,19 @@ constructs which may change.
 
 ### Installation:
 
-First you need Nim.  I recommend installing it from the instructions
-given in "Installation from github" at the bottom of this page:
+First you need `Nim<https://nim-lang.org>`_.
+
+You can install it either by using the script "installNim"
+in this repo, or from the instructions given here:
 http://nim-lang.org/download.html
 
-(optional) Copy "Makefile.template" to a separate build directory.
+Create a separate build directory (optional but recommended).
 
-Copy "Makefile.template" to "Makefile" and edit it
-to point to the QEX source, set compiler, etc.
-(the first section is for BG/Q, the second for x86)
+From the build directory run the "configure" script found with the source.
+This will create a "Makefile" in the build directory.
+Check the resulting Makefile and edit if necessary.
 
-The variables you'll likely need to change are:
+The variables you may need to change are:
 
 ```
 QEXDIR: root directory containing QEX code (where this README.md is)
