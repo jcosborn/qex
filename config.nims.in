@@ -1,47 +1,72 @@
 import strUtils
 import osPaths
 
+echo "Starting config file: ", thisDir(), "/config.nims"
+
 # "key ~ val" sets "key" to "val"
-template `~`(key,val:untyped):untyped =
+template `~`(key,val: untyped) =
   var v = astToStr(val)
   when compiles(val.type):
     when val.type is string:
       v = val
   switch(astToStr(key), v)
 # "key ! val" sets "CC_TYPE.key" to "val"
-template `!`(key,val:untyped):untyped =
+template `!`(key,val: untyped) =
   var v = astToStr(val)
   when compiles(val.type):
     when val.type is string:
       v = val
   switch(CC_TYPE & "." & astToStr(key), v)
-proc def(s:string):bool =
+proc def(s: string): bool =
   let t = "-d:" & s
-  for i in 0..<paramCount():
+  for i in 0..paramCount():
     if paramStr(i) == t:
       result = true
-template setVar(v,d:untyped):untyped =
+template setVar(v,d: untyped) =
   var v = d
   if existsEnv(v.astToStr):
     v = getEnv(v.astToStr)
   echo "using " & v.astToStr & ": ", v
 
-setVar(QEXDIR, ".")
+setVar(QEXDIR, "@@QEXDIR")
 switch("path", QEXDIR / "src")
 
-#let home = getEnv("HOME")
-#setVar(QMPDIR, home & "/lqcd/install/qmp")
-#setVar(QIODIR, home & "/lqcd/install/qio")
+setVar(QMPDIR, "@@QMPDIR")
+setVar(QIODIR, "@@QIODIR")
 
-setVar(CC_TYPE, "gcc")
-setVar(CC, "mpicc")
-setVar(LD, CC)
-setVar(CFLAGS_ALWAYS, "-Wall -std=gnu99 -D_C99 -D_HAS_C9X")
-setVar(CFLAGS_DEBUG, "-g3 -O0")
-setVar(CFLAGS_SPEED, "-O3 -march=native")
-setVar(VERBOSITY, "1")
-setVar(SIMD, "")
-setVar(LDFLAGS, CFLAGS_ALWAYS)
+setVar(CC_TYPE, "@@CC_TYPE")
+setVar(CC, "@@CC")
+setVar(LD, "@@LD")
+setVar(CFLAGS_ALWAYS, "@@CFLAGS_ALWAYS")
+setVar(CFLAGS_DEBUG, "@@CFLAGS_DEBUG")
+setVar(CFLAGS_SPEED, "@@CFLAGS_SPEED")
+setVar(VERBOSITY, "@@VERBOSITY")
+setVar(SIMD, "@@SIMD")
+setVar(LDFLAGS, "@@LDFLAGS")
+
+#[
+DBG = "-d:release"
+ifeq ($(debug),1)
+  DBG = "-d:debug"
+endif
+ifeq ($(run),1)
+  DBG += "-r"
+endif
+ifeq ($(c),1)
+  DBG += "-c"
+endif
+DBG += "--warning[SmallLshouldNotBeUsed]:off"
+DBG += "--hint[XDeclaredButNotUsed]:off"
+DBG += "--implicitStatic:on"
+#DBG += "--verbosity:2"
+#DBG += "--listCmd"
+#DBG += "--parallelBuild:4"
+#DBG += "--embedsrc"
+#DBG += "--genMapping"
+#DBG += "--gc:refc"
+#DBG += "--gc:markAndSweep"
+#refc|v2|markAndSweep|boehm|go|none
+]#
 
 var vlenS = 1
 var vlenD = 1
@@ -107,15 +132,4 @@ if ss.len>0:
       d ~ AVX512
     else: discard
 
-discard """
-d ~ simdS1
-d ~ simdS2
-d ~ simdS4
-d ~ simdS8
-d ~ simdS16
-d ~ simdD1
-d ~ simdD2
-d ~ simdD4
-d ~ simdD8
-d ~ simdD16
-"""
+echo "Finished config file: ", thisDir(), "/config.nims"

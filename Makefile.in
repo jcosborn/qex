@@ -1,95 +1,16 @@
+# Hand off build commands to Nim
+# This will run the config.nims script in the build directory unless it has been overridden
+# Extra arguments to 'nim' can be provided in NIMFLAGS, e.g.
+#   make NIMFLAGS="--rangeChecks:on --assertions:on" <myprog>
+
 NIM = @@NIM
-QEXDIR = @@QEXDIR
-QMPDIR = @@QMPDIR
-QIODIR = @@QIODIR
-CC = @@CC
-LD = @@LD
-CC_TYPE = @@CC_TYPE
-CFLAGS_ALWAYS = @@CFLAGS_ALWAYS
-CFLAGS_DEBUG = @@CFLAGS_DEBUG
-CFLAGS_SPEED = @@CFLAGS_SPEED
-VERBOSITY = @@VERBOSITY
-SIMD = @@SIMD
-VLEN = @@VLEN
+NIMFLAGS = 
 
-#### edit above
+runNim:
+	@echo "Passing build commands to Nim"
+	$(NIM) $(NIMFLAGS) Makefile.nims $(MAKECMDGOALS)
 
-ifneq ($(origin QEXDIR), undefined)
-  ENVS += QEXDIR=$(QEXDIR)
-endif
-ifneq ($(origin QMPDIR), undefined)
-  ENVS += QMPDIR=$(QMPDIR)
-endif
-ifneq ($(origin QIODIR), undefined)
-  ENVS += QIODIR=$(QIODIR)
-endif
-ifneq ($(origin CC_TYPE), undefined)
-  ENVS += CC_TYPE=$(CC_TYPE)
-endif
-ifneq ($(origin CC), undefined)
-  ENVS += CC=$(CC)
-endif
-ifneq ($(origin LD), undefined)
-  ENVS += LD=$(LD)
-endif
-ifneq ($(origin CFLAGS_ALWAYS), undefined)
-  ENVS += CFLAGS_ALWAYS="$(CFLAGS_ALWAYS)"
-endif
-ifneq ($(origin CFLAGS_DEBUG), undefined)
-  ENVS += CFLAGS_DEBUG="$(CFLAGS_DEBUG)"
-endif
-ifneq ($(origin CFLAGS_SPEED), undefined)
-  ENVS += CFLAGS_SPEED="$(CFLAGS_SPEED)"
-endif
-ifneq ($(origin VERBOSITY), undefined)
-  ENVS += VERBOSITY=$(VERBOSITY)
-endif
-ifneq ($(origin SIMD), undefined)
-  ENVS += SIMD=$(SIMD)
-endif
-ifneq ($(origin VLEN), undefined)
-  ENVS += VLEN=$(VLEN)
-endif
+$(MAKECMDGOALS): runNim
+	@ # do nothing silently
 
-DBG = "-d:release"
-ifeq ($(debug),1)
-  DBG = "-d:debug"
-endif
-ifeq ($(run),1)
-  DBG += "-r"
-endif
-ifeq ($(c),1)
-  DBG += "-c"
-endif
-DBG += "--warning[SmallLshouldNotBeUsed]:off"
-DBG += "--hint[XDeclaredButNotUsed]:off"
-DBG += "--implicitStatic:on"
-#DBG += "--verbosity:2"
-#DBG += "--listCmd"
-#DBG += "--parallelBuild:4"
-#DBG += "--embedsrc"
-#DBG += "--genMapping"
-#DBG += "--gc:refc"
-#DBG += "--gc:markAndSweep"
-#refc|v2|markAndSweep|boehm|go|none
-
-TARGETS = $(MAKECMDGOALS)
-
-ifeq ($(TARGETS),clean)
-  TARGETS = dummy
-endif
-clean:
-	\rm -rf nimcache
-ifeq ($(TARGETS),all)
-  T1 = $(wildcard $(QEXDIR)/src/*.nim)
-  T2 = $(notdir $(T1))
-  T3 = $(basename $(T2))
-  T4 = $(filter-out simdQpx,$(T3))
-  TARGETS = $(T4)
-endif
-all: $(TARGETS)
-
-$(TARGETS): _force
-	$(ENVS) $(NIM) c $(DBG) --nimcache:`pwd`/nimcache -o:`pwd`/$(@F) $(QEXDIR)/src/$@
-
-.PHONY: _force
+.PHONY: runNim $(MAKECMDGOALS)

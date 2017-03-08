@@ -1,0 +1,38 @@
+import strUtils
+import osPaths
+
+var script = ""
+var args = newSeq[string](0)
+var nim = paramStr(0)
+var nimargs = newSeq[string](0)
+
+for i in 1..paramCount():
+  let p = paramStr(i)
+  if p[0]=='-':
+    nimargs.add p
+  else:
+    if script=="": script = p
+    else: args.add p
+
+echo "Using Nim: ", nim
+echo "Nim args: ", nimargs
+echo "Makefile script: ", script
+echo "Script args: ", args
+
+setCommand(args[0])
+
+task tests, "run unit tests":
+  #selfExec "c tests/base/ttester"
+  setCommand "nop"
+
+var cmd = getCommand()
+echo "command: ", cmd
+if cmd!="nop":
+  if not existsFile(cmd) and not existsFile(cmd&".nim"):
+    echo "not found"
+  let s = nim & " " & join(nimargs," ") & " c " & cmd
+  echo "running: ", s
+  exec s
+  setCommand "nop"
+
+echo "cmd: ", getCommand()

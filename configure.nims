@@ -29,11 +29,12 @@ set "QIODIR", qiodir
 
 var machine = ""
 CC ~ "mpicc"
-LD ~ "$(CC)"
 CC_TYPE ~ "gcc"
 CFLAGS_ALWAYS ~ "-Wall -std=gnu99 -march=native -ldl"
 CFLAGS_DEBUG ~ "-g3 -O0"
 CFLAGS_SPEED ~ "-g -O3"
+LD ~ ( "$CC" % params )
+LDFLAGS ~ ( "$CFLAGS_ALWAYS" % params )
 VERBOSITY ~ "1"
 SIMD ~ ""
 VLEN ~ "1"
@@ -66,13 +67,18 @@ if machine=="" and fileExists "/proc/cpuinfo":
 # check on linux/mac/vesta/cooley/theta
 # gcc/icc opt level
 
-var f = readFile(qexdir / "Makefile.in")
-f = replace(f, "$", "!DOLLAR!")
-f = replace(f, "#", "!HASH!")
-f = replace(f, "@@", "$")
-f = f % params
-f = replace(f, "!HASH!", "#")
-f = replace(f, "!DOLLAR!", "$")
+proc confFile(fn: string) =
+  FILE ~ thisDir() / fn
+  var f = readFile(qexdir / fn & ".in")
+  f = replace(f, "$", "!DOLLAR!")
+  f = replace(f, "#", "!HASH!")
+  f = replace(f, "@@", "$")
+  f = f % params
+  f = replace(f, "!HASH!", "#")
+  f = replace(f, "!DOLLAR!", "$")
+  #echo f
+  writeFile(fn, f)
 
-#echo f
-writeFile("Makefile", f)
+confFile("Makefile")
+confFile("Makefile.nims")
+confFile("config.nims")
