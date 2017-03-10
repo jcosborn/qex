@@ -2,12 +2,8 @@
 
 ### Notice:
 
-This is an early version of the code, and is not fully functional.  It
-is not intended for general use yet.  The internals will likely go
-through several revisions, though high level code written on top
-of it will likely not need much revision.  The high level framework is
-incomplete, so some operations still require using lower level
-constructs which may change.
+This code is still undergoing major development, but should be ready for
+production use soon.
 
 ### Installation:
 
@@ -16,6 +12,9 @@ First you need `Nim<https://nim-lang.org>`_.
 You can install it either by using the script "installNim"
 in this repo, or from the instructions given here:
 http://nim-lang.org/download.html
+
+You can also skip this now, and the configure script will install Nim
+using the "installNim" script if it can't find the "nim" executable.
 
 Create a separate build directory (optional but recommended).
 

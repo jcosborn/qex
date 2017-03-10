@@ -1,16 +1,17 @@
-# Hand off build commands to Nim
-# This will run the config.nims script in the build directory unless it has been overridden
-# Extra arguments to 'nim' can be provided in NIMFLAGS, e.g.
+# Simple Makefile for QEX builds
+# Hands off build commands to the nimscript Makefile.nims
+# This will then load config options from config.nims
+# Extra arguments to Nim can be provided in NIMFLAGS, e.g.
 #   make NIMFLAGS="--rangeChecks:on --assertions:on" <myprog>
 
 NIM = @@NIM
-NIMFLAGS = 
+#NIMFLAGS =
 
 runNim:
-	@echo "Passing build commands to Nim"
+	@echo "Passing build commands to Makefile.nims"
 	$(NIM) $(NIMFLAGS) Makefile.nims $(MAKECMDGOALS)
 
-$(MAKECMDGOALS): runNim
+%: runNim
 	@ # do nothing silently
 
-.PHONY: runNim $(MAKECMDGOALS)
+.PHONY: runNim

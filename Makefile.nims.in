@@ -1,3 +1,4 @@
+# -*- mode: nim -*-
 import strUtils
 import osPaths
 
@@ -5,6 +6,8 @@ var script = ""
 var args = newSeq[string](0)
 var nim = paramStr(0)
 var nimargs = newSeq[string](0)
+var qexdir = "@@QEXDIR"
+var paths = [ "", qexdir/"src", qexdir ]
 
 for i in 1..paramCount():
   let p = paramStr(i)
@@ -19,20 +22,132 @@ echo "Nim args: ", nimargs
 echo "Makefile script: ", script
 echo "Script args: ", args
 
-setCommand(args[0])
+var iarg = 0
+var configTasks = newSeq[tuple[cmd:string,desc:string,f:proc(){.nimcall.}]](0)
+template configTask(name: untyped; description: string; body: untyped) =
+  proc `name Task`*() = body
+  configTasks.add((cmd: astToStr(name), desc: description, f: `name Task`))
+var buildTasks = newSeq[tuple[cmd:string,desc:string,f:proc(){.nimcall.}]](0)
+template buildTask(name: untyped; description: string; body: untyped) =
+  proc `name Task`*() = body
+  buildTasks.add((cmd: astToStr(name), desc: description, f: `name Task`))
+proc getInt(): int =
+  let t = split(args[iarg],":")
+  if t.len>=2: result = parseInt(t[1])
+proc nimRun(f: string, outfile="")
 
-task tests, "run unit tests":
-  #selfExec "c tests/base/ttester"
-  setCommand "nop"
+var debug = false
+var run = false
+var verbosity = 0
 
-var cmd = getCommand()
-echo "command: ", cmd
-if cmd!="nop":
-  if not existsFile(cmd) and not existsFile(cmd&".nim"):
-    echo "not found"
-  let s = nim & " " & join(nimargs," ") & " c " & cmd
+configTask debug, "set debug build":
+  debug = true
+
+configTask run, "run executable after building":
+  run = true
+
+configTask verb, "set build verbosity":
+  verbosity = getInt()
+
+buildTask clean, "remove nimcache dir":
+  exec "rm -rf nimcache"
+
+buildTask tests, "build unit tests":
+  var runscript = @["#!/bin/sh","$SETUPJOBS"]
+  var dorun = run
+  run = false
+  if not existsDir("tests"):
+    mkDir("tests")
+  for d in listDirs(qexdir/"tests"):
+    let outdir = "tests"/splitPath(d)[1]
+    if not existsDir(outdir):
+      mkDir(outdir)
+    for f in listFiles(d):
+      #echo f
+      let (dir, name, ext) = splitFile(f)
+      #echo dir, " ", name, " ", ext
+      if name[0]=='t' and ext==".nim":
+        nimRun f, outdir/name
+        runscript.add("$RUNJOB "&(outdir/name))
+  #echo runscript.join("\n")
+  writeFile("testscript.sh", runscript.join("\n"))
+  exec("chmod 755 testscript.sh")
+  if dorun:
+    exec "./testscript.sh"
+
+if args[0] == "help":
+  let s = repeatChar(70, '-')
+  echo s
+  echo "QEX build script usage:"
+  echo "  make [config commands] [build commands]"
+  echo s
+  echo "config commands:"
+  for t in configTasks:
+    echo "  ", t.cmd, ": ", t.desc
+  echo s
+  echo "build commands:"
+  for t in buildTasks:
+    echo "  ", t.cmd, ": ", t.desc
+  echo s
+  quit 0
+
+
+while iarg<args.len:
+  var found = false
+  for t in configTasks:
+    if args[iarg][0..(t.cmd.len-1)] == t.cmd:
+      found = true
+      t.f()
+  if not found: break
+  inc iarg
+
+when existsFile("config.nims"):
+  include "config.nims"
+
+proc nimRun(f: string, outfile="") =
+  var nimcmd = nim & " " & join(nimargs," ") & " " & join(defargs," ")
+  if run: nimcmd &= " -r "
+  var (dir, name, ext) = splitFile(f)
+  if outfile!="": name = outfile
+  let s = nimcmd & " c -o:" & name & " " & f
   echo "running: ", s
   exec s
-  setCommand "nop"
 
-echo "cmd: ", getCommand()
+for t in buildTasks:
+  if args[iarg][0..(t.cmd.len-1)] == t.cmd:
+    t.f()
+    quit 0
+
+proc findFile(f: string): string =
+  for p in paths:
+    let t = (if p == "": f else: p / f)
+    echo "searching for file: ", t
+    if fileExists(t): return t
+proc findDir(f: string): string =
+  for p in paths:
+    let t = (if p == "": f else: p / f)
+    echo "searching for directory: ", t
+    if dirExists(t): return t
+
+# default, treat as file or directory and compile
+var cmd = args[iarg]
+echo "command: ", cmd
+
+var f: string
+block:
+  var t = cmd
+  if t[^4..^1] != ".nim": t &= ".nim"
+  f = findFile(t)
+if not f.isNil:
+  nimRun(f)
+else:
+  f = findDir(cmd)
+  if not f.isNil and dirExists(f):
+    echo "Building files in directory: ", f
+    for t in listFiles(f):
+      echo "file: ", t
+      if t[^4..^1] == ".nim":
+        nimRun(t)
+
+if f.isNil:
+  echo "unknown build target: ", cmd
