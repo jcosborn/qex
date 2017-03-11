@@ -3,6 +3,7 @@ import strUtils
 import osPaths
 
 echo "Starting config file: ", thisDir(), "/config.nims"
+var envs = newSeq[string](0)
 
 when not declared(qexdir):
   var qexdir = "@@QEXDIR"
@@ -14,13 +15,16 @@ var cc = "@@CC"
 var cflagsAlways = "@@CFLAGS_ALWAYS"
 var cflagsDebug = "@@CFLAGS_DEBUG"
 var cflagsSpeed = "@@CFLAGS_SPEED"
+var ompflags = "@@OMPFLAGS"
 var ld = "@@LD"
 var ldflags = "@@LDFLAGS"
 var nimcache = thisDir() / "nimcache"
 when not declared(verbosity):
-  var verbosity = @@VERBOSITY
+  var verbosity = -1
+if verbosity<0: verbosity = @@VERBOSITY
 var simd = "@@SIMD"
 var vlen = "@@VLEN"
+@@ENVS
 
 #[
 DBG += "--hint[XDeclaredButNotUsed]:off"
@@ -46,7 +50,10 @@ template set(key: string, val: untyped) =
       v = $val
   echo "setting: ", key, " <- \"", v, "\""
   when getCommand()=="e":
-    defargs.add "--" & key & ":\"" & v & "\""
+    if v=="":
+      defargs.add "--" & key
+    else:
+      defargs.add "--" & key & ":\"" & v & "\""
   else:
     switch(key, v)
 # "key ~ val" sets "key" to "val"
@@ -65,6 +72,7 @@ options.always ! cflagsAlways
 options.debug ! cflagsDebug
 options.speed ! cflagsSpeed
 options.linker ! ldflags
+putenv ~ ("OMPFLAG=" & ompflags)
 
 threads ~ on
 tlsEmulation ~ off
@@ -107,5 +115,7 @@ if ss.len>0:
     else: discard
 
 putenv ~ ("VLEN=" & vlen)
+for e in envs:
+  putenv ~ e
 
 echo "Finished config file: ", thisDir(), "/config.nims"

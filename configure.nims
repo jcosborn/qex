@@ -7,6 +7,7 @@ template set(key,val: string) =
   params.insert key
 template `~`(key,val: untyped) =
   set(astToStr(key), val)
+var envs = newSeq[string](0)
 
 let nim = paramStr(0)
 NIM ~ nim
@@ -33,6 +34,7 @@ CC_TYPE ~ "gcc"
 CFLAGS_ALWAYS ~ "-Wall -std=gnu99 -march=native -ldl"
 CFLAGS_DEBUG ~ "-g3 -O0"
 CFLAGS_SPEED ~ "-g -O3"
+OMPFLAGS ~ ""
 LD ~ ( "$CC" % params )
 LDFLAGS ~ ( "$CFLAGS_ALWAYS" % params )
 VERBOSITY ~ "1"
@@ -41,12 +43,18 @@ VLEN ~ "1"
 
 if dirExists "/bgsys":
   machine = "Blue Gene/Q"
-  CC ~ qexdir / "mpixlc2"
-  CFLAGS_ALWAYS ~ ""
+  CC ~ qexdir / "build/mpixlc2"
+  #CC ~ "mpixlc2"
+  CFLAGS_ALWAYS ~ "-qinfo=pro"
   CFLAGS_DEBUG ~ "-g3 -O0"
-  CFLAGS_SPEED ~ "-O3"
-  VERBOSITY ~ "3"
+  CFLAGS_SPEED ~ "-g -O3"
+  OMPFLAGS ~ "-qsmp=omp"
+  LD ~ ( "$CC" % params )
+  LDFLAGS ~ ( "$CFLAGS_ALWAYS" % params )
+  #VERBOSITY ~ "3"
   SIMD ~ "QPX"
+  VLEN ~ "4"
+  envs.add "STATIC_UNROLL=1"
 
 let uname = staticExec "uname"
 
@@ -66,6 +74,11 @@ if machine=="" and fileExists "/proc/cpuinfo":
 # linux (/proc/cpuinfo)
 # check on linux/mac/vesta/cooley/theta
 # gcc/icc opt level
+
+var es = ""
+for e in envs:
+  es.add("envs.add \"" & e & "\"\n")
+ENVS ~ es
 
 proc confFile(fn: string) =
   FILE ~ thisDir() / fn

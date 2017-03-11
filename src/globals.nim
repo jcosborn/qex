@@ -16,6 +16,9 @@ var staticUnroll* {.compiletime.} = false
 macro setStaticUnroll*(x:static[bool]):auto =
   staticUnroll = x
   result = newEmptyNode()
+when existsEnv("STATIC_UNROLL"):
+  when getEnv("STATIC_UNROLL")=="1":
+    setStaticUnroll(true)
 
 var noAlias* {.compiletime.} = false
 #var noAlias* {.compiletime.} = true

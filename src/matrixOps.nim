@@ -22,9 +22,12 @@ macro forN*(i,r0,r1,b:untyped):auto =
     for `i` in countup(`r0`,`r1`):
       `b`
 when staticUnroll:
-  template forO*(i,r0,r1,b:untyped):untyped {.dirty.} = forStatic(i,r0,r1,b)
+  template forO*(i,r0,r1,b: untyped): untyped {.dirty.} =
+    bind forStatic
+    forStatic(i,r0,r1,b)
 else:
-  template forO*(i,r0,r1,b:untyped):untyped {.dirty.} = forN(i,r0,r1,b)
+  template forO*(i,r0,r1,b:untyped):untyped {.dirty.} =
+    forN(i,r0,r1,b)
   #template forO*(i,r0,r1,b:untyped):untyped = cfor(i,r0,r1,b)
 
 template assignIadd(x,y:untyped):untyped = iadd(x,y)
@@ -58,8 +61,8 @@ template makeMap1(op:untyped):untyped {.dirty.} =
     subst(r,rr,x,xx,tx,_,i,_,j,_):
       #assert(r.nrows == r.ncols)
       load(tx, x)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
+      cfor i, 0, <r.nrows:
+        cfor j, 0, <r.ncols:
           if i == j:
             op(r[i,j], tx)
           else:

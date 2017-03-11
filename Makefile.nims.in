@@ -38,7 +38,7 @@ proc nimRun(f: string, outfile="")
 
 var debug = false
 var run = false
-var verbosity = 0
+var verbosity = -1
 
 configTask debug, "set debug build":
   debug = true
@@ -70,12 +70,13 @@ buildTask tests, "build unit tests":
         nimRun f, outdir/name
         runscript.add("$RUNJOB "&(outdir/name))
   #echo runscript.join("\n")
+  runscript.add("$CLEANUPJOBS")
   writeFile("testscript.sh", runscript.join("\n"))
   exec("chmod 755 testscript.sh")
   if dorun:
     exec "./testscript.sh"
 
-if args[0] == "help":
+proc help =
   let s = repeatChar(70, '-')
   echo s
   echo "QEX build script usage:"
@@ -91,6 +92,7 @@ if args[0] == "help":
   echo s
   quit 0
 
+if args.len>0 and args[0] == "help": help()
 
 while iarg<args.len:
   var found = false
@@ -101,6 +103,10 @@ while iarg<args.len:
   if not found: break
   inc iarg
 
+if iarg>=args.len:
+  echo "error: no build command given"
+  help()
+
 when existsFile("config.nims"):
   include "config.nims"
 
@@ -109,6 +115,10 @@ proc nimRun(f: string, outfile="") =
   if run: nimcmd &= " -r "
   var (dir, name, ext) = splitFile(f)
   if outfile!="": name = outfile
+  else:
+    if not dirExists("bin"):
+      mkDir("bin")
+    name = "bin" / name
   let s = nimcmd & " c -o:" & name & " " & f
   echo "running: ", s
   exec s

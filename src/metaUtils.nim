@@ -284,10 +284,12 @@ macro forStaticX(slice: Slice[int]; index,body: untyped): untyped =
     result.add(newBlockStmt(replace(index, newIntLitNode(i), body)))
   #echo(result.repr)
 
-template forStatic*(index,slice,body:untyped):untyped =
-  forStaticX(slice, index, body)
+#template forStatic*(index,slice,body:untyped):untyped =
+#  bind forStaticX
+#  forStaticX(slice, index, body)
 
 template forStatic*(index,i0,i1,body:untyped):untyped =
+  bind forStaticX2
   forStaticX2(i0, i1, index, body)
 
 template forOpt*(i,r0,r1,b:untyped):untyped =

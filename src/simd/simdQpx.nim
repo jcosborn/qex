@@ -10,15 +10,17 @@ type
   #  v: ptr array[4,float32]
   SimdD4* {.importc:"__vector4double".} = object
   SimdSD4 * = SimdS4 | SimdD4
+  ToSingle = object
+  ToDouble = object
 makeDeref(SimdS4, array[4,float32])
-makeWrapper(ToSingle, toSingleImpl)
-makeWrapper(ToDouble, toDoubleImpl)
-template toSingle*(x:SimdS4|ToSingle):untyped = x
-template toSingle*(x:SimdD4):untyped = toSingleImpl(x)
-template toSingle*(x:ToDouble):untyped = x[]
-template toDouble*(x:SimdD4|ToDouble):untyped = x
-template toDouble*(x:SimdS4):untyped = toDoubleImpl(x)
-template toDouble*(x:ToSingle):untyped = x[]
+#makeWrapper(ToSingle, toSingleImpl)
+#makeWrapper(ToDouble, toDoubleImpl)
+#template toSingle*(x:SimdS4|ToSingle):untyped = x
+#template toSingle*(x:SimdD4):untyped = toSingleImpl(x)
+#template toSingle*(x:ToDouble):untyped = x[]
+#template toDouble*(x:SimdD4|ToDouble):untyped = x
+#template toDouble*(x:SimdS4):untyped = toDoubleImpl(x)
+#template toDouble*(x:ToSingle):untyped = x[]
 type SimdSAny* = SimdS4 | ToSingle
 type SimdSAny2* = SimdS4 | ToSingle
 type SimdSAny3* = SimdS4 | ToSingle
@@ -308,6 +310,7 @@ template makeTrinary(name):untyped =
 makeTrinary(madd)
 makeTrinary(msub)
 
+proc trace*(x:SimdSD4):SimdSD4 {.inline,noInit.}= x
 proc norm2*(x:SimdSD4):SimdD4 {.inline,noInit.} = mul(x,x)
 proc norm2*(r:var SimdD4; x:SimdSD4) {.inline.} = mul(r,x,x)
 proc inorm2*(r:var SimdD4; x:SimdSD4) {.inline.} = imadd(r,x,x)
@@ -403,6 +406,12 @@ proc packp4*(r:var openArray[SomeNumber]; x:SimdD4;
 proc packm4*(r:var openArray[SomeNumber]; x:SimdD4;
              l:var openArray[SomeNumber]) {.inline.} =
   assert(false, "packm4 not valid for SimdD4")
+proc packp8*(r:var openArray[SomeNumber]; x:SimdD4;
+             l:var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packp8 not valid for SimdD4")
+proc packm8*(r:var openArray[SomeNumber]; x:SimdD4;
+             l:var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packm8 not valid for SimdD4")
 
 proc packp1*(r:var openArray[SomeNumber]; x:SimdS4;
              l:var openArray[SomeNumber]) {.inline.} =
@@ -489,6 +498,12 @@ proc blendp4*(x:var SimdSD4; r:openArray[SomeNumber];
 proc blendm4*(x:var SimdSD4; r:openArray[SomeNumber];
               l:openArray[SomeNumber]) {.inline.} =
   assert(false, "blendm4 not valid for SimdD4")
+proc blendp8*(x:var SimdSD4; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendp8 not valid for SimdD4")
+proc blendm8*(x:var SimdSD4; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendm8 not valid for SimdD4")
 
 when isMainModule:
   var s1,s2,s3:SimdS4

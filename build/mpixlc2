@@ -1,0 +1,21 @@
+#!/bin/bash
+
+#echo "pwd: `pwd`"
+
+#newargs[0]="-D__inline=inline"
+newargs[0]="-D__GNUC__"
+#newargs[0]="-D__TINYC__"
+for a in "$@"; do
+  if [ "X$a" = "X-pthread" ]; then
+    a=""
+  fi
+  #echo ":$a:"
+  i=$((i+1))
+  newargs[$i]="$a"
+done
+
+tw=`which tmpwrap 2>/dev/null`
+#echo $tw
+
+echo $tw mpixlc_r "${newargs[@]}"
+$tw mpixlc_r "${newargs[@]}"

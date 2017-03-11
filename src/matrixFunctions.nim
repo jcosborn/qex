@@ -158,7 +158,7 @@ template rsqrtM(r:typed; x:typed):untyped =
 proc rsqrt(r:var Mat1; x:Mat2) = rsqrt(r, x)
 """
 
-proc exp*(m: Mat1): auto =
+proc exp*(m: Mat1): auto {.noInit.} =
   var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
   type ft = numberType(m)
   template term(n,x: typed): untyped =
