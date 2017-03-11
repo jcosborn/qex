@@ -34,7 +34,7 @@ CC_TYPE ~ "gcc"
 CFLAGS_ALWAYS ~ "-Wall -std=gnu99 -march=native -ldl"
 CFLAGS_DEBUG ~ "-g3 -O0"
 CFLAGS_SPEED ~ "-g -O3"
-OMPFLAGS ~ ""
+OMPFLAGS ~ "-fopenmp"
 LD ~ ( "$CC" % params )
 LDFLAGS ~ ( "$CFLAGS_ALWAYS" % params )
 VERBOSITY ~ "1"
