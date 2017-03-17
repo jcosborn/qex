@@ -60,8 +60,18 @@ let uname = staticExec "uname"
 
 if machine=="" and uname=="Darwin":
   machine = "macOS"
-  SIMD ~ "SSE,AVX"
-  VLEN ~ "8"
+  let features = staticExec "sysctl -n machdep.cpu.features"
+  var simd = newSeq[string](0)
+  var vlen = 1
+  if features.contains("SSE4"):
+    simd.add "SSE"
+    vlen = 4
+  if features.contains("AVX"):
+    simd.add "AVX"
+    vlen = 8
+  if vlen>1:
+    SIMD ~ join(simd,",")
+    VLEN ~ $vlen
 
 if machine=="" and fileExists "/proc/cpuinfo":
   # assume compute nodes are same as build nodes

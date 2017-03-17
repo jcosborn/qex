@@ -7,7 +7,7 @@ production use soon.
 
 ### Installation:
 
-First you need `Nim<https://nim-lang.org>`_.
+First you need [Nim](https://nim-lang.org).
 
 You can install it either by using the script "installNim"
 in this repo, or from the instructions given here:
