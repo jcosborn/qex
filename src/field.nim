@@ -143,6 +143,7 @@ template `odd=`*(x:Field; y:any):untyped =
 template `all=`*(x:Field; y:any):untyped = assign(x["all"], y)
 template indexField*(x:notSomeField; y:int):untyped = x
 template indexField*(x:Field; y:int):untyped = x[y]
+template indexField*(x:Subsetted; y:int):untyped = x.field[y]
 template indexField*(x:Adjointed[SomeField]; y:int):untyped = x[][y].adj
 template indexField*(x:FieldUnop; y:int):untyped = x[y]
 #macro indexField*(x:FieldBinop; y:int):auto =
@@ -256,6 +257,15 @@ iterator items*(x:Subsetted):int {.inline.} =
   let n1 = s.highOuter
   #echo "n0: ", n0, " n1: ", n1
   itemsI(n0, n1)
+iterator sites*(x: Subsetted): int {.inline.} =
+  when x.subset is string:
+    let s = getSubset(x.field.l, x.subset)
+  else:
+    let s = x.subset
+  let n0 = s.low
+  let n1 = s.high
+  #echo "n0: ", n0, " n1: ", n1
+  itemsI(n0, n1)
 iterator items*(x:FieldAddSub):int {.inline.} =
   let n = x.field[0].l.nSitesOuter
   itemsI(0, n)
@@ -284,6 +294,20 @@ proc `{}`*(f:Field; i:int):auto =
   #r
   #echoImm: "{}"
   result = masked(f[e], mask)
+proc `{}`*(f: Subsetted; i: int): auto =
+  let e = i div f.field.l.V
+  let l = i mod f.field.l.V
+  let mask = 1 shl l
+  #echo i, " ", e, " ", r, " ", mask
+  #result.pobj = f[e].addr
+  #result.mask = mask
+  #result = Masked[f.T](pobj:f[e], mask:mask)
+  #var r:Masked[f.T]
+  #r.pobj = f[e].addr
+  #r.mask = mask
+  #r
+  #echoImm: "{}"
+  result = masked(f.field[e], mask)
 
 #proc `$`*(x:Field):string =
 #  $(x[0])
@@ -361,6 +385,7 @@ template makeOps(op,f,fM,s:untyped):untyped =
 makeOps(`:=`, assign, assignM, "assign")
 makeOps(`+=`, iadd, iaddM, "iadd")
 makeOps(`-=`, isub, isubM, "isub")
+makeOps(`*=`, imul, imulM, "imul")
 
 proc mul*(r:Field; x:Field2; y:Field3) =
   mixin mul

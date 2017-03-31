@@ -220,6 +220,13 @@ template makeMap2(op:untyped):untyped {.dirty.} =
 makeMap2(add)
 makeMap2(sub)
 
+template imulVS*(rr:untyped; xx:untyped):untyped =
+  mixin imul
+  subst(r,rr,x,xx,i,_,tx,_):
+    load(tx, x)
+    forO i, 0, <r.len:
+      imul(r[i], tx)
+
 template imulMS*(rr:untyped; xx:untyped):untyped =
   mixin imul
   subst(r,rr,x,xx,i,_,j,_,tx,_):

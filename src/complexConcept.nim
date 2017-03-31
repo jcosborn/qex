@@ -265,7 +265,9 @@ template imulCU*(r:typed; x:typed):untyped =
   mixin imul
   imul(r.re, x)
   imul(r.im, x)
-proc imul*(r:VC1; x:U2) = imulCU(r, x)
+#proc imul*(r:VC1; x:U2) = imulCU(r, x)
+proc imul*(r: var C1; x:U2) = imulCU(r, x)
+proc imul*(r: AsVarComplex; x:U2) = imulCU(r, x)
 
 template makeBinary(op:untyped):untyped =
   template op*(r:var R1; x:R2; y:R3) = op(r.re, x.re, y.re)

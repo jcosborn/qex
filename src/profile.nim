@@ -73,6 +73,9 @@ template toc*(s:string; n:int):untyped = tocI(-1, s, n-1)
 template toc*(s:string):untyped = tocI(-1, s, -2)
 template toc*(n:int):untyped = tocI(-1, "", n-1)
 template toc*():untyped = tocI(-1, "", -2)
+template getElapsedTime*(): untyped {.dirty.} =
+  mixin timer
+  ticDiffSecs(getTics(), timer)
 proc resetTimers* =
   for ti in tocSeq:
     ti.seconds = 0.0

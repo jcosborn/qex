@@ -245,8 +245,8 @@ template stagDM*(sd:StaggeredD; r:Field; g:openArray[Field2];
   toc("boundaryB")
 
 # r = a*r + b*x + (2D)*x
-proc stagD2*(sd:StaggeredD; r:Field; g:openArray[Field2];
-             x:Field; a:SomeNumber; b:SomeNumber2) =
+proc stagD2*(sd:StaggeredD; r:SomeField; g:openArray[Field2];
+             x:SomeField2; a:SomeNumber; b:SomeNumber2) =
   template sf0:untyped = sd.sf
   template sb0:untyped = sd.sb
   let nd = g.len

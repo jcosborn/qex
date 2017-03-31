@@ -5,6 +5,7 @@ import basicOps
 import types
 import wrapperTypes
 import complexConcept
+#import complexType
 # opinc, opdec
 # minc, mdec, redotinc, redotdec
 # unary ops: assign(=),neg(-),iadd(+=),isub(-=),imul(*=),idiv(/=)
@@ -136,6 +137,7 @@ template `[]=`*(x:MatrixRowObj; i:int; y:untyped):untyped = x.mat[][x.row,i] = y
 #template tmptype*(x:Vec1):untyped = VectorArray[x.len,type(load1(x[0]))]
 
 template load1*(xx:Vec1):untyped =
+  mixin load1
   lets(x,xx):
     var r{.noInit.}:VectorArray[x.len,type(load1(x[0]))]
     assign(r, x)
@@ -265,6 +267,7 @@ template `+=`*(x:VarMat1; y:Mat2) = iadd(x, y)
 template `-=`*(x:VarVec1; y:Vec2) = isub(x, y)
 template `-=`*(x:VarMat1; y:Mat2) = isub(x, y)
 
+makeLevel1(imul, V, VarVec1, S, Sca2)
 makeLevel1(imul, M, VarMat1, S, Sca2)
 makeLevel1(imul, M, AsVarMatrix, S, Sca2)
 
@@ -447,10 +450,34 @@ when isMainModule:
   const nc = 3
   const ns = 4
   type
-    CVec = VectorArray[nc,float]
-    CMat = MatrixArray[nc,nc,float]
-    SCVec = VectorArray[ns,CVec]
-    SCMat = MatrixArray[ns,ns,CMat]
+    Color[T] = object
+      v: T
+    Color2[T] = Color[T]
+    Spin[T] = object
+      v: T
+    Spin2[T] = Spin[T]
+    CVec = Color[VectorArray[nc,float]]
+    CMat = Color[MatrixArray[nc,nc,float]]
+    SCVec = Spin[VectorArray[ns,CVec]]
+    SCMat = Spin[MatrixArray[ns,ns,CMat]]
+  template `[]`(x: Color): untyped = x.v
+  template `[]`(x: Color, i: int): untyped = x.v[i]
+  template `[]`(x: Color, i,j: int): untyped = x.v[i,j]
+  template load1(x: Color): untyped = x
+  template assign(x: Color, y: Color2): untyped = assign(x[], y[])
+  template assign(x: Color, y: SomeNumber): untyped = assign(x[], y)
+  template assign(x: SomeNumber, y: Color2): untyped = assign(x, y[])
+  template redot(x: Color, y: Color2): untyped = redot(x[], y[])
+  template `*`(x: Color, y: Color2): untyped = `*`(x[], y[])
+  template `[]`(x: Spin): untyped = x.v
+  template `[]`(x: Spin, i: int): untyped = x.v[i]
+  template `[]`(x: Spin, i,j: int): untyped = x.v[i,j]
+  template assign(x: Spin, y: Spin2): untyped = assign(x[], y[])
+  template assign(x: Spin, y: Color2): untyped = assign(x[], y)
+  template assign(x: Spin, y: SomeNumber): untyped = assign(x[], y)
+  template assign(x: SomeNumber, y: Spin2): untyped = assign(x, y[])
+  template adj(x: Color): untyped =
+    Color2[type(adj(x[]))](v: adj(x[]))
 
   var cv1,cv2:CVec
   var cm1,cm2:CMat
@@ -477,11 +504,13 @@ when isMainModule:
     echo "scv1: ", scv1[3][0]
     assign(scv1, 2)
     echo "scv1: ", scv1[3][0]
-    assign(scv1, asScalar(cv1))
+    assign(scv1, cv1)
     echo "scv1: ", scv1[3][0]
 
     var rd = redot(cm1,cm2)
-    var rd2 = trace(cm1.adj*cm2)
+    var rd2 = cm1*cm2
+    var rd3 = cm1.adj*cm2
+    var rd4 = trace(cm1.adj*cm2)
     echo rd
     echo rd2
 
