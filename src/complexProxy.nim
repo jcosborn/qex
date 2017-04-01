@@ -92,8 +92,8 @@ template assign*(x: RealProxy, y: RealProxy2): untyped =
 template assign*(x: ImagProxy, y: ImagProxy2): untyped =
   x[] = y[]
 template assignU*(x: ComplexProxy, y: RealProxy2): untyped =
-  x[].re = y[].re
-  x[].im = type(x[].im)(0)
+  x[].re := y[]
+  x[].im := 0
 template assign*(x: ComplexProxy, y: RealProxy2): untyped =
   safecall(assignU, x, y)
 template assignU*(x: ComplexProxy, y: ImagProxy2): untyped =
@@ -342,13 +342,13 @@ template redot*(x: ComplexProxy, y: ComplexProxy2): untyped = x.adj*y
 # iadd, isub, imul, idivd
 
 template iBinaryOverloads(op,fn,impl: untyped) {.dirty.} =
-  template fn*(x: var ComplexProxy, y: RealProxy2) =
+  template fn*(x: ComplexProxy, y: RealProxy2) =
     assign(x, impl(x,y))
   template fn*(x: var ComplexProxy, y: ImagProxy2) =
     assign(x, impl(x,y))
   template fn*(x: var ComplexProxy, y: ComplexProxy2) =
     assign(x, impl(x,y))
-  template op*(x: var ComplexProxy, y: RealProxy2) = fn(x,y)
+  template op*(x: ComplexProxy, y: RealProxy2) = fn(x,y)
   template op*(x: var ComplexProxy, y: ImagProxy2) = fn(x,y)
   template op*(x: var ComplexProxy, y: ComplexProxy2) = fn(x,y)
 
@@ -356,6 +356,25 @@ iBinaryOverloads(`+=`, iadd, add)
 iBinaryOverloads(`-=`, isub, sub)
 iBinaryOverloads(`*=`, imul, mul)
 iBinaryOverloads(`/=`, idivd, divd)
+
+template load1*(x: ComplexProxy): untyped = x
+
+template add*(r: var ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
+         untyped =  assign(r,x+y)
+
+template mulCCR*(r: var ComplexProxy, y: ComplexProxy2, x: untyped):
+         untyped =  assign(r,x*y)
+template mul*(r: var ComplexProxy, x: SomeNumber, y: ComplexProxy3):
+         untyped =  assign(r,x*y)
+template mul*(r: var ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
+         untyped =  assign(r,x*y)
+template imsub*(r: var ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
+         untyped =  r -= x*y
+
+template norm2*(r: any, x: ComplexProxy2): untyped =
+  r = x.norm2
+template inorm2*(r: any, x: ComplexProxy2): untyped =
+  r += x.norm2
 
 template redotinc*(r: var ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
          untyped =  r += x.adj*y

@@ -25,7 +25,7 @@ proc checkarg(arg: NimNode): tuple[sl:NimNode,a:NimNode] =
       a[i][1] = r.a
       r.sl.copyChildrenTo(result.sl)
     result.a = a
-  of {nnkBracketExpr,nnkDotExpr}:
+  of {nnkBracketExpr,nnkDotExpr,nnkHiddenDeref}:
     let a = arg.copy
     for i in 0..<arg.len:
       let r = checkarg(arg[i])

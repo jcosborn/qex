@@ -8,6 +8,9 @@ type
     reX*: TR
     imX*: TI
   Complex*[TR,TI] = ComplexProxy[ComplexObj[TR,TI]]
+  Complex2*[TR,TI] = Complex[TR,TI]
+  Complex3*[TR,TI] = Complex[TR,TI]
+  AsComplex*[T] = ComplexProxy[T]
 
 template newRealImpl*(x: typed): untyped = x
 template newImagImpl*(x: typed): untyped = newImagProxy(x)
@@ -35,6 +38,37 @@ template `im=`*(x: ComplexObj, y: untyped): untyped =
 overloadAsReal(SomeNumber)
 template I*(x: SomeNumber): untyped = newImag(x)
 
+template numberType*[T](x: ComplexProxy[T]): untyped = numberType(T)
+template numberType*[T](x: typedesc[ComplexProxy[T]]): untyped =
+  mixin numberType
+  numberType(T)
+template numberType*[T](x: ComplexObj[T,T]): untyped = numberType(T)
+#template nVectors*[T](x: Complex[T,T]): untyped =
+#  mixin nVectors
+#  nVectors(T)
+template numNumbers*(x: ComplexProxy): untyped =
+  mixin numNumbers
+  2*numNumbers(x.re)
+template simdSum*(x: ComplexObj): untyped =
+  newComplex(simdSum(x.re),simdSum(x.im))
+
+template isComplex*(x: ComplexProxy): untyped = true
+template asComplex*(x: untyped): untyped = newComplexProxy(x)
+template asVarComplex*(x: untyped): untyped = newComplexProxy(x)
+template imaddCRC*(r: untyped, x: untyped, y: untyped) =
+  r.re += x * y.re
+  r.im += x * y.im
+template imaddCIC*(r: untyped, x: untyped, y: untyped) =
+  r.re -= x * y.im
+  r.im += x * y.re
+template imaddCCR*(r: untyped, x: untyped, y: untyped) =
+  r.re += x.re * y
+  r.im += x.im * y
+template imaddCCI*(r: untyped, x: untyped, y: untyped) =
+  r.re -= x.im * y
+  r.im += x.re * y
+template imadd*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3) =
+  r += x*y
 
 when isMainModule:
   template pos(x: SomeNumber): untyped = x

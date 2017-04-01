@@ -155,6 +155,7 @@ template declaredMatrix*(x:ToDouble):untyped = isMatrix(x[])
 template re*(x:ToDouble):untyped = toDouble(x[].re)
 template im*(x:ToDouble):untyped = toDouble(x[].im)
 template simdType*(x: ToDouble): untyped = simdType(x[])
+template numberType*(x: ToDouble): untyped = numberType(x[])
 
 
 
@@ -170,7 +171,7 @@ template `mask=`*(x:Masked;y:untyped):untyped = ((MaskedObj[x.T])(x)).mask = y
 template maskedObj*(x:typed; msk:int):untyped =
   (MaskedObj[type(x)])(pobj:x.addr,mask:msk)
 template masked*(x:typed; msk:int):untyped =
-  mixin isVector,isMatrix
+  mixin isComplex,isVector,isMatrix
   when isComplex(x):
     #ctrace()
     #asComplex((Masked[type(x)])(maskedObj(x,msk)))

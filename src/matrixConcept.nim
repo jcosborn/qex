@@ -119,7 +119,9 @@ template numberType*[T](x:typedesc[AsVector[T]]):untyped = numberType(type(T))
 template numberType*[T](x:typedesc[AsMatrix[T]]):untyped = numberType(type(T))
 template numberType*[I,J,T](x:MatrixArrayObj[I,J,T]):untyped =
   numberType(type(T))
-template numNumbers*(x:AsVector):untyped = x.len*numNumbers(x[0])
+template numNumbers*(x:AsVector):untyped =
+  mixin numNumbers
+  x.len*numNumbers(x[0])
 template numNumbers*(x:AsMatrix):untyped = x.nrows*x.ncols*numNumbers(x[0])
 #template `[]`*(x:array; i,j:int):untyped = x[i][j]
 #template `[]=`*(x:array; i,j:int, y:untyped):untyped = x[i][j] = y

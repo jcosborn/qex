@@ -14,6 +14,8 @@ import field
 export field
 import complexConcept
 export complexConcept
+#import complexType
+#export complexType
 import matrixConcept
 export matrixConcept
 
@@ -26,6 +28,8 @@ type
   SDvec = Svec0 | Dvec0
   SComplex* = AsComplex[tuple[re,im:float32]]
   SComplexV* = AsComplex[tuple[re,im:Svec0]]
+  #SComplex* = Complex[float32,float32]
+  #SComplexV* = Complex[Svec0,Svec0]
   SColorVector* = VectorArray[nc,SComplex]
   SColorVectorV* = VectorArray[nc,SComplexV]
   SColorMatrix* = MatrixArray[nc,nc,SComplex]
@@ -40,6 +44,8 @@ type
   SLatticeColorMatrixV* = Field[VLEN,SColorMatrixV]
   DComplex* = AsComplex[tuple[re,im:float64]]
   DComplexV* = AsComplex[tuple[re,im:Dvec0]]
+  #DComplex* = Complex[float64,float64]
+  #DComplexV* = Complex[Dvec0,Dvec0]
   DColorVector* = VectorArray[nc,DComplex]
   DColorVectorV* = VectorArray[nc,DComplexV]
   DColorMatrix* = MatrixArray[nc,nc,DComplex]
@@ -53,6 +59,8 @@ type
   DLatticeColorMatrix* = Field[1,DColorMatrix]
   DLatticeColorMatrixV* = Field[VLEN,DColorMatrixV]
 
+#overloadAsReal(Dvec0)
+
 template simdLength*(x:typedesc[SColorMatrixV]):untyped = simdLength(Svec0)
 template simdLength*(x:typedesc[SColorVectorV]):untyped = simdLength(Svec0)
 template simdLength*(x:SColorVectorV):untyped = simdLength(Svec0)
@@ -62,6 +70,7 @@ template simdLength*(x:typedesc[DColorVectorV]):untyped = simdLength(Dvec0)
 template simdLength*(x:DColorVectorV):untyped = simdLength(Dvec0)
 template simdLength*(x:DColorMatrixV):untyped = simdLength(Dvec0)
 template simdLength*(x:AsComplex):untyped = simdLength(x.re)
+#template simdLength*(x:Complex):untyped = simdLength(x.re)
 template simdLength*(x:AsMatrix):untyped = simdLength(x[0,0])
 
 #template nVectors(x:SColorVectorV):untyped = 2*nc
@@ -71,12 +80,14 @@ template simdLength*(x:AsMatrix):untyped = simdLength(x[0,0])
 template nVectors(x:Svec0):untyped = 1
 template nVectors(x:Dvec0):untyped = 1
 template nVectors(x:AsComplex):untyped = 2*nVectors(x.re)
+#template nVectors(x:DComplexV):untyped = 2*nVectors(x.re)
 template nVectors(x:AsVector):untyped = x.len*nVectors(x[0])
 template nVectors(x:AsMatrix):untyped = x.nrows*x.ncols*nVectors(x[0,0])
 
 template simdType*(x:tuple):untyped = simdType(x[0])
 template simdType*(x:array):untyped = simdType(x[x.low])
 template simdType*(x:AsComplex):untyped = simdType(x[])
+#template simdType*(x:DComplexV):untyped = simdType(x.re)
 template simdType*(x:AsVector):untyped = simdType(x[])
 template simdType*(x:AsMatrix):untyped = simdType(x[])
 
@@ -86,6 +97,7 @@ template trace*(x:SComplexV):untyped = x
 #proc simdSum*(x:DComplexV):DComplex = complexConcept.map(result, simdSum, x)
 template simdSum*(x:ToDouble):untyped = toDouble(simdSum(x[]))
 template simdSum*(x:AsComplex):untyped = asComplex(simdSum(x[]))
+#template simdSum*(x:Complex):untyped = simdSum(x[])
 template simdSum*(xx:tuple):untyped =
   lets(x,xx):
     map(x, simdSum)
@@ -105,6 +117,14 @@ template simdSum*(xx:tuple):untyped =
 #  divd(r, x, y)
 #  r
 
+#template `re=`*(x: ToDouble[ComplexProxy], y: untyped): untyped =
+#  x[].re = y
+#template `im=`*(x: ToDouble[ComplexProxy], y: untyped): untyped =
+#  x[].im = y
+#template `-`*(x: Adjointed[Dvec0]): untyped = -x[]
+#template `*`*(x: Adjointed[Dvec0], y: Dvec0): untyped = x[]*y
+#template `*`*(x: Dvec0, y: Adjointed[Dvec0]): untyped = x*y[]
+
 proc assign*(r:var SomeNumber; m:Masked[SDvec]) =
   var i = 0
   var b = m.mask
@@ -122,6 +142,7 @@ proc assign*(m:Masked[SDvec], x:SomeNumber) =
       m.pobj[][i] = x
     b = b shr 1
     i.inc
+proc `:=`*(m:Masked[SDvec], x:SomeNumber) = assign(m, x)
 proc assign*(m:Masked[SDvec], x:SDvec) =
   var i = 0
   var b = m.mask
@@ -130,6 +151,8 @@ proc assign*(m:Masked[SDvec], x:SDvec) =
       m.pobj[][i] = x[i]
     b = b shr 1
     i.inc
+proc assign*(m:Masked[SDvec], x:Masked[SDvec]) =
+  assign(m, x.pobj[])
 proc mul*(m:Masked[SDvec]; x:SDvec; y:int) =
   var i = 0
   var b = m.mask
@@ -140,6 +163,12 @@ proc mul*(m:Masked[SDvec]; x:SDvec; y:int) =
       m.pobj[][i] = x[i] * (type(m.pobj[][i]))(y)
     b = b shr 1
     i.inc
+proc mul*(m:Masked[SDvec]; x:int): auto =
+  mul(m, m.pobj[], x)
+  m
+proc `*`*(m:Masked[SDvec]; x:int): auto =
+  mul(m, m.pobj[], x)
+  m
 proc imul*(m:Masked[SDvec]; x:int) =
   var t = m[]
   imul(t, x)
@@ -172,12 +201,15 @@ proc inorm2*(r:var SomeNumber; m:Masked[SDvec]) =
   let t = norm2(m)
   r += (type(r))(t)
 
-proc prefetch*(x:ptr AsComplex) {.inline.} =
-  prefetch(addr(x[].re))
-  prefetch(addr(x[].im))
-proc prefetch*(x:ptr AsVector) {.inline.} =
-  for i in 0..<x[].len:
-    prefetch(addr(x[][i]))
+#proc prefetch*(x:ptr AsComplex) {.inline.} =
+#  prefetch(addr(x[].re))
+#  prefetch(addr(x[].im))
+#proc prefetch*(x:ptr Complex) {.inline.} =
+#  prefetch(addr(x.re))
+#  prefetch(addr(x.im))
+#proc prefetch*(x:ptr AsVector) {.inline.} =
+#  for i in 0..<x[].len:
+#    prefetch(addr(x[][i]))
 
 #type PackTypes = SColorVectorV | SColorMatrixV | DColorVectorV | DColorMatrixV
 type PackTypes = any
