@@ -450,7 +450,7 @@ when isMainModule:
 
   echo "starting loop"
   threads:
-    while true:
+    #while true:
       stagDb(sdEven, v2, g, v1, 0.5)
       stagDb(sdOdd, v2, g, v1, 0.5)
       stagDb(sdAll, v2, g, v1, 0.5)

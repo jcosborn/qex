@@ -41,12 +41,12 @@ macro printf*(fmt:string; args:varargs[untyped]):auto =
       `call`
 proc echoRaw*(x: varargs[typed, `$`]) {.magic: "Echo".}
 macro echoAll*(args:varargs[untyped]):auto =
-  var call = newCall(ident("echoRaw"))
+  var call = newCall(bindSym"echoRaw")
   result = evalArgs(call, args)
   result.add quote do:
     `call`
 macro echoRank*(args:varargs[untyped]):auto =
-  var call = newCall(ident("echoRaw"))
+  var call = newCall(bindSym"echoRaw")
   call.add ident"myRank"
   call.add newLit"/"
   call.add ident"nRanks"
@@ -55,24 +55,33 @@ macro echoRank*(args:varargs[untyped]):auto =
   template f(x:untyped):untyped =
     if threadNum==0: x
   result.add getAst(f(call))
-macro echo0*(args:varargs[untyped]):auto =
-  var call = newCall(ident("echoRaw"))
+macro echo0*(args: varargs[untyped]): auto =
+  var call = newCall(bindSym"echoRaw")
   result = evalArgs(call, args)
   result.add quote do:
     if myRank==0 and threadNum==0:
       `call`
 macro makeEchos(n:static[int]):auto =
+  template ech(x,y: untyped): untyped =
+    template echo*(): untyped =
+      when nimvm:
+        x
+      else:
+        y
   result = newStmtList()
-  var a = newSeq[string](0)
+  var er = newCall(bindSym"echoRaw")
+  var e0 = newCall(bindSym"echo0")
+  var ea = newSeq[NimNode](0)
   for i in 1..n:
-    a.add "a" & $i
-    let t = a.join(",")
-    let s = "template echo*(" & t & ":untyped):untyped =\n" &
-      "  when nimvm:\n" &
-      "    echoRaw(" & t & ")\n" &
-      "  else:\n" &
-      "    echo0(" & t & ")"
-    result.add parseStmt(s)
+    let ai = ident("a" & $i)
+    er.add ai
+    e0.add ai
+    ea.add newNimNode(nnkIdentDefs).add(ai).add(ident"untyped").add(newEmptyNode())
+    var t = getAst(ech(er,e0))
+    #echo t.treerepr
+    for j in 0..<i:
+      t[0][3].add ea[j]
+    result.add t
   #echoAll result.repr
 makeEchos(10)
 

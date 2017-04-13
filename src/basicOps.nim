@@ -65,10 +65,13 @@ template toDoubleImpl*(x:SomeNumber):untyped =
 
 template assign*(x:var SomeNumber; y:ptr SomeNumber2):untyped =
   x = cnvrt(x,y[])
-
 template assign*(r:var SomeNumber, x:SomeNumber2):untyped =
 #proc assign*(r:var SomeNumber, x:SomeNumber2) {.inline.} =
   r = cnvrt(r,x)
+
+#template adj*(x: SomeNumber): untyped = x
+template inv*(x: SomeNumber): untyped = (type(x)(1))/x
+
 template neg*(r:var SomeNumber, x:SomeNumber2):untyped =
   r = cnvrt(r,-x)
 template iadd*(r:var SomeNumber, x:SomeNumber2):untyped =

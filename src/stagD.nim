@@ -360,6 +360,8 @@ proc setBC*(g:openArray[Field]) =
       #echoAll i, " ", gt[e][0,0]
 proc stagPhase*(g:openArray[Field]) =
   const phases = [8,9,11,0]
+  #const phases = [0,1,3,7]
+  #const phases = [0,0,0,0]
   let l = g[0].l
   for mu in 0..<4:
     tfor i, 0..<l.nSites:

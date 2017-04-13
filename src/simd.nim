@@ -46,6 +46,8 @@ when declared(SimdD8) and declared(SimdS8):
   template imsub*(r: SimdD8, x: SimdD8, y: SimdS8): untyped =
     imsub(r, x, toDouble(y))
   template eval*(x: SimdD8): auto = x
+  template `-=`*(r: SimdD8, x: SimdD8): untyped = isub(r, x)
+
 
 template eval*(x: SimdD4): auto = x
 

@@ -553,6 +553,7 @@ when isMainModule:
   type Complex2*[TR,TI] = object
     re: TR
     im: TI
+  template `[]`(x: Complex): untyped = x
 
   declareReal(Real)
   declareImag(Imag)

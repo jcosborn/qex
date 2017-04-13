@@ -38,7 +38,8 @@ makeArray(D,  4)
 when defined(AVX):
   when not defined(AVX512):
     proc toDouble*(x:SimdS8):SimdD8 {.inline,noInit.} =
-      result = SimdD8(toDoubleA(x))
+      #result = SimdD8(toDoubleA(x))
+      result := toDoubleA(x)
 
 #when declared(SimdS4):
 #  proc toDouble*(x:SimdS4):SimdD4 {.inline,noInit.} =

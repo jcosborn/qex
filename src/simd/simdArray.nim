@@ -1,3 +1,4 @@
+import macros
 import ../metaUtils
 import ../basicOps
 
@@ -164,7 +165,9 @@ template makeSimdArray*(T:untyped;L,B:typed):untyped {.dirty.} =
 template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   bind map011, map021, map110, map120, map130
   bind makePerm, makePackP, makePackM, makeBlendP, makeBlendM
-  type T* = distinct array[L,B]
+  #type T* = distinct array[L,B]
+  type T* = object
+    v*: array[L,B]
   template numberType*(x:typedesc[T]):typedesc = F
   template numberType*(x:T):typedesc = F
   template numNumbers*(x:typedesc[T]):untyped = N
@@ -173,7 +176,8 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   template simdType*(x:T):typedesc = T
   template simdLength*(x:T):untyped = N
   template simdLength*(x:typedesc[T]):untyped = N
-  template `[]`*(x:T):untyped = (array[L,B])(x)
+  #template `[]`*(x:T):untyped = (array[L,B])(x)
+  template `[]`*(x:T):untyped = x.v
   template `[]`*(x:T; i:SomeInteger):untyped = x[][i div N0][i mod N0]
   template `[]=`*(x:T; i:SomeInteger; y:any) = x[][i div N0][i mod N0] = y
   template load1*(x:T):untyped = x
@@ -230,6 +234,27 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
 
   map130(T, L, msub, msub)
 
+  #template `assign`*(rr: T; x: T): untyped =
+  #  #echotype: rr
+  #  #echotype: x
+  #  #echo rr
+  #  #echo rr[][0]
+  #  let xx = x
+  #  subst(r,rr):
+  #    forStatic i, 0, L-1:
+  #      assign(r[][i], xx[][i])
+  #proc `:=`*(r: var T; x: T) {.inline.} =
+  #  forStatic i, 0, L-1:
+  #    r[][i] = x[][i]
+  template `:=`*(r: var T; x: T): untyped = assign(r, x)
+  #template `:=`*(r: T; x: T) =
+  #  let xx = x
+  #  forStatic i, 0, L-1:
+  #    r[][i] = xx[][i]
+  template `:=`*(r: T; x: array[L,B]) =
+    let xx = x
+    forStatic i, 0, L-1:
+      r[][i] = xx[i]
   #proc assign*(r:var T; x:SomeNumber) {.inline,neverInit.} =
   proc assign*(r:var T; x:SomeNumber) {.inline.} =
     #{.emit:"#define memset(a,b,c)".}

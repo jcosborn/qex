@@ -1,5 +1,5 @@
 import macros
-import safecall
+#import safecall
 
 type
   RealProxy*[T] = object
@@ -36,6 +36,23 @@ macro `[]`*(x: ComplexProxy{nkObjConstr}): auto =
   result = x[1][1]
   #echo result.treerepr
 
+template `[]=`*(x: RealProxy, y: typed): untyped =
+  #when x.T is type(y):
+  #  x.v = y
+  #else:
+  mixin `:=`
+  x.v := y
+template `[]=`*(x: ImagProxy, y: typed): untyped =
+  #when x.T is type(y):
+  #  x.v = y
+  #else:
+    x.v := y
+template `[]=`*(x: ComplexProxy, y: typed): untyped =
+  #when x.T is type(y):
+  #  x.v = y
+  #else:
+    x.v := y
+
 proc `$`*(x: RealProxy): string =
   result = $x[]
 proc `$`*(x: ImagProxy): string =
@@ -43,30 +60,33 @@ proc `$`*(x: ImagProxy): string =
 proc `$`*(x: ComplexProxy): string =
   #result = "(" & $x.reX & "," & $x.imX & ")"
   result = $x[].re
-  if x[].im>=0: result.add "+"
-  result.add $x[].im & "I"
+  var t = $x[].im & "I"
+  if t[0]!='-': result.add "+"
+  result.add t
 
-template newRealProxyU*(x: typed): untyped =
-  RealProxy[type(x)](v: x)
 template newRealProxy*(x: typed): untyped =
-  safecall(newRealProxyU, x)
-template newImagProxyU*(x: typed): untyped =
-  ImagProxy[type(x)](v: x)
+  RealProxy[type(x)](v: x)
+template newRealProxy*(x: typed{call}): untyped =
+  let t = x
+  RealProxy[type(t)](v: t)
+
 template newImagProxy*(x: typed): untyped =
-  safecall(newImagProxyU, x)
-template newComplexProxyU*(x: typed): untyped =
-  ComplexProxy[type(x)](v: x)
+  ImagProxy[type(x)](v: x)
+template newImagProxy*(x: typed{call}): untyped =
+  let t = x
+  ImagProxy[type(t)](v: t)
+
 template newComplexProxy*(x: typed): untyped =
-  safecall(newComplexProxyU, x)
+  ComplexProxy[type(x)](v: x)
+template newComplexProxy*(x: typed{call}): untyped =
+  let t = x
+  ComplexProxy[type(t)](v: t)
 
 template newRealP*(x: typed): untyped =
-  #newRealProxy(x)
   newRealImpl(x)
 template newImagP*(x: typed): untyped =
-  #newImagProxy(x)
   newImagImpl(x)
 template newComplexP*(x,y: typed): untyped =
-  #newComplexProxy(safecall(newComplexImpl, x, y))
   newComplexImpl(x, y)
 
 template re*(x: RealProxy): untyped = x[]
@@ -76,73 +96,71 @@ template im*(x: ImagProxy): untyped = x[]
 template re*(x: ComplexProxy): untyped = x[].re
 template im*(x: ComplexProxy): untyped = x[].im
 
-template `re=`*(x: RealProxy, y: untyped): untyped =
-  x[] = y
+template `re=`*(x: RealProxy, y: untyped): untyped = x[] = y
 template `im=`*(x: RealProxy, y: untyped): untyped = discard
 template `re=`*(x: ImagProxy, y: untyped): untyped = discard
-template `im=`*(x: ImagProxy, y: untyped): untyped =
-  x[] = y
-template `re=`*(x: ComplexProxy, y: untyped): untyped =
-  x[].re = y
-template `im=`*(x: ComplexProxy, y: untyped): untyped =
-  x[].im = y
+template `im=`*(x: ImagProxy, y: untyped): untyped = x[] = y
+template `re=`*(x: ComplexProxy, y: untyped): untyped = x[].re = y
+template `im=`*(x: ComplexProxy, y: untyped): untyped = x[].im = y
 
 template assign*(x: RealProxy, y: RealProxy2): untyped =
   x[] = y[]
 template assign*(x: ImagProxy, y: ImagProxy2): untyped =
   x[] = y[]
-template assignU*(x: ComplexProxy, y: RealProxy2): untyped =
-  x[].re := y[]
-  x[].im := 0
 template assign*(x: ComplexProxy, y: RealProxy2): untyped =
-  safecall(assignU, x, y)
-template assignU*(x: ComplexProxy, y: ImagProxy2): untyped =
-  x[].re = type(x[].re)(0)
-  x[].im = y[].im
+  x[].re = y[]
+  x[].im = 0
 template assign*(x: ComplexProxy, y: ImagProxy2): untyped =
-  safecall(assignU, x, y)
-template assignU*(x: ComplexProxy, y: ComplexProxy2): untyped =
+  x[].re = 0
+  x[].im = y[]
+template assign*(x: ComplexProxy, y: ComplexProxy2): untyped =
+  let t = y
+  x[].re = t[].re
+  x[].im = t[].im
+template assign*(x: ComplexProxy, y: ComplexProxy2{atom}): untyped =
   x[].re = y[].re
   x[].im = y[].im
-template assign*(x: ComplexProxy, y: ComplexProxy2): untyped =
-  safecall(assignU, x, y)
 
 template `:=`*(x: RealProxy, y: RealProxy2): untyped = assign(x,y)
 template `:=`*(x: ImagProxy, y: ImagProxy2): untyped = assign(x,y)
 template `:=`*(x: ComplexProxy, y: RealProxy2): untyped = assign(x,y)
 template `:=`*(x: ComplexProxy, y: ImagProxy2): untyped = assign(x,y)
-template `:=`*(x: ComplexProxy, y: ComplexProxy2): untyped = assign(x,y)
+template `:=`*(x: var ComplexProxy, y: ComplexProxy2): untyped = assign(x,y)
 
 # pos, neg, conj, adj, transpose, trace, norm2, inv
-# inorm2, redot, iredot, dot, idot
 
 template unaryOverloads(op,fn,implR,implI: untyped) {.dirty.} =
-  template fn*(x: RealProxy): untyped =
-    newRealP(implR(x,0))
+  #template fn*(x: RealProxy): untyped = newRealP(implR(x,0))
+  proc fn*(x: RealProxy): auto {.inline,noInit.} = newRealP(implR(x[],0))
   template op*(x: RealProxy): untyped = fn(x)
 
-  template fn*(x: ImagProxy): untyped =
-    newImagP(implI(0,x))
+  #template fn*(x: ImagProxy): untyped = newImagP(implI(0,x))
+  proc fn*(x: ImagProxy): auto {.inline,noInit.} = newImagP(implI(0,x[]))
   template op*(x: ImagProxy): untyped = fn(x)
 
-  template `fn U`*(x: ComplexProxy): untyped =
+  #template `fn U`*(x: ComplexProxy): untyped =
+  #  newComplexP(implR(x.re,x.im), implI(x.re,x.im))
+  #template fn*(x: ComplexProxy): untyped =
+  #  safecall(`fn U`, x)
+  proc fn*(x: ComplexProxy): auto {.inline,noInit.} =
     newComplexP(implR(x.re,x.im), implI(x.re,x.im))
-  template fn*(x: ComplexProxy): untyped =
-    safecall(`fn U`, x)
   template op*(x: ComplexProxy): untyped = fn(x)
+
 template unaryOverloadsR(op,fn,implR,implI: untyped) {.dirty.} =
-  template fn*(x: RealProxy): untyped =
-    newRealP(implR(x,0))
+  #template fn*(x: RealProxy): untyped = newRealP(implR(x,0))
+  proc fn*(x: RealProxy): auto {.inline,noInit.} = newRealP(implR(x[],0))
   template op*(x: RealProxy): untyped = fn(x)
 
-  template fn*(x: ImagProxy): untyped =
-    newRealP(implI(0,x))
+  #template fn*(x: ImagProxy): untyped = newRealP(implI(0,x))
+  proc fn*(x: ImagProxy): auto {.inline,noInit.} = newRealP(implI(0,x[]))
   template op*(x: ImagProxy): untyped = fn(x)
 
-  template `fn U`*(x: ComplexProxy): untyped =
+  #template `fn U`*(x: ComplexProxy): untyped =
+  #  newRealP(implR(x.re,x.im)+implI(x.re,x.im))
+  #template fn*(x: ComplexProxy): untyped =
+  #  safecall(`fn U`, x)
+  proc fn*(x: ComplexProxy): auto {.inline,noInit.} =
     newRealP(implR(x.re,x.im)+implI(x.re,x.im))
-  template fn*(x: ComplexProxy): untyped =
-    safecall(`fn U`, x)
   template op*(x: ComplexProxy): untyped = fn(x)
 
 template posRealU(xr,xi: untyped): untyped = xr
@@ -193,194 +211,181 @@ template norm2ImagU(xr,xi: untyped): untyped =
   norm2(xi)
 unaryOverloadsR(`|`, norm2, norm2RealU, norm2ImagU)
 
-template inv*(x: RealProxy): untyped =
+#template inv*(x: RealProxy): untyped = newRealP(x[].inv)
+proc inv*(x: RealProxy): auto {.inline,noInit.} =
+  mixin inv
   newRealP(x[].inv)
 template `/`*(x: RealProxy): untyped = inv(x)
-template inv*(x: ImagProxy): untyped =
+#template inv*(x: ImagProxy): untyped = newImagP(-x[].inv)
+proc inv*(x: ImagProxy): auto {.inline,noInit.} =
+  mixin inv
   newImagP(-x[].inv)
 template `/`*(x: ImagProxy): untyped = inv(x)
-template invComplexU(x: untyped): untyped =
+#template invComplexU(x: untyped): untyped = x.adj * x.norm2.inv
+#template inv*(x: ComplexProxy): untyped = safecall(invComplexU, x)
+proc inv*(x: ComplexProxy): auto {.inline,noInit.} =
+  mixin inv
   x.adj * x.norm2.inv
-template inv*(x: ComplexProxy): untyped =
-  safecall(invComplexU, x)
 template `/`*(x: ComplexProxy): untyped = inv(x)
 
 # add, sub, mul, divd
 
 template binaryOverloadsAddSub(op,fn: untyped) {.dirty.} =
-  template fn*(x: RealProxy, y: RealProxy2): untyped =
-    newRealP(op(x[],y[]))
+  template fn*(x: RealProxy, y: RealProxy2): untyped = newRealP(op(x[],y[]))
   template op*(x: RealProxy, y: RealProxy2): untyped = fn(x,y)
 
-  template fn*(x: ImagProxy, y: ImagProxy2): untyped =
-    newImagP(op(x[],y[]))
+  template fn*(x: ImagProxy, y: ImagProxy2): untyped = newImagP(op(x[],y[]))
   template op*(x: ImagProxy, y: ImagProxy2): untyped = fn(x,y)
 
-  template fn*(x: RealProxy, y: ImagProxy2): untyped =
-    newComplexP(x[], op(y[]))
+  template fn*(x: RealProxy, y: ImagProxy2): untyped = newComplexP(x[],op(y[]))
   template op*(x: RealProxy, y: ImagProxy2): untyped = fn(x,y)
-  template fn*(x: ImagProxy, y: RealProxy2): untyped =
-    newComplexP(op(y[]), x[])
+  template fn*(x: ImagProxy, y: RealProxy2): untyped = newComplexP(op(y[]),x[])
   template op*(x: ImagProxy, y: RealProxy2): untyped = fn(x,y)
 
-  template `fn RCU`*(x: RealProxy, y: ComplexProxy2): untyped =
+  #template `fn RCU`*(x: RealProxy, y: ComplexProxy2): untyped =
+  #  newComplexP(op(x[],y.re), op(y.im))
+  #template fn*(x: RealProxy, y: ComplexProxy2): untyped =
+  #  safecall(`fn RCU`, x, y)
+  proc fn*(x: RealProxy, y: ComplexProxy2): auto {.inline,noInit.} =
     newComplexP(op(x[],y.re), op(y.im))
-  template fn*(x: RealProxy, y: ComplexProxy2): untyped =
-    safecall(`fn RCU`, x, y)
   template op*(x: RealProxy, y: ComplexProxy2): untyped = fn(x,y)
-  template `fn CRU`*(x: ComplexProxy, y: RealProxy2): untyped =
+  #template `fn CRU`*(x: ComplexProxy, y: RealProxy2): untyped =
+  #  newComplexP(op(x.re,y[]), x.im)
+  #template fn*(x: ComplexProxy, y: RealProxy2): untyped =
+  #  safecall(`fn CRU`, x, y)
+  proc fn*(x: ComplexProxy, y: RealProxy2): auto {.inline,noInit.} =
     newComplexP(op(x.re,y[]), x.im)
-  template fn*(x: ComplexProxy, y: RealProxy2): untyped =
-    safecall(`fn CRU`, x, y)
   template op*(x: ComplexProxy, y: RealProxy2): untyped = fn(x,y)
 
-  template `fn ICU`*(x: ImagProxy, y: ComplexProxy2): untyped =
+  #template `fn ICU`*(x: ImagProxy, y: ComplexProxy2): untyped =
+  #  newComplexP(op(y.re), op(x.im,y.im))
+  #template fn*(x: ImagProxy, y: ComplexProxy2): untyped =
+  #  safecall(`fn ICU`, x, y)
+  proc fn*(x: ImagProxy, y: ComplexProxy2): auto {.inline,noInit.} =
     newComplexP(op(y.re), op(x.im,y.im))
-  template fn*(x: ImagProxy, y: ComplexProxy2): untyped =
-    safecall(`fn ICU`, x, y)
   template op*(x: ImagProxy, y: ComplexProxy2): untyped = fn(x,y)
-  template `fn CIU`*(x: ComplexProxy, y: ImagProxy2): untyped =
+  #template `fn CIU`*(x: ComplexProxy, y: ImagProxy2): untyped =
+  #  newComplexP(x.re, op(x.im,y[]))
+  #template fn*(x: ComplexProxy, y: ImagProxy2): untyped =
+  #  safecall(`fn CIU`, x, y)
+  proc fn*(x: ComplexProxy, y: ImagProxy2): auto {.inline,noInit.} =
     newComplexP(x.re, op(x.im,y[]))
-  template fn*(x: ComplexProxy, y: ImagProxy2): untyped =
-    safecall(`fn CIU`, x, y)
   template op*(x: ComplexProxy, y: ImagProxy2): untyped = fn(x,y)
 
-  template `fn CCU`*(x: ComplexProxy, y: ComplexProxy2): untyped =
+  #template `fn CCU`*(x: ComplexProxy, y: ComplexProxy2): untyped =
+  #  newComplexP(op(x.re,y.re), op(x.im,y.im))
+  #template fn*(x: ComplexProxy, y: ComplexProxy2): untyped =
+  #  safecall(`fn CCU`, x, y)
+  proc fn*(x: ComplexProxy, y: ComplexProxy2): auto {.inline,noInit.} =
     newComplexP(op(x.re,y.re), op(x.im,y.im))
-  template fn*(x: ComplexProxy, y: ComplexProxy2): untyped =
-    safecall(`fn CCU`, x, y)
   template op*(x: ComplexProxy, y: ComplexProxy2): untyped = fn(x,y)
 
 binaryOverloadsAddSub(`+`, add)
 binaryOverloadsAddSub(`-`, sub)
 
 template binaryOverloadsMul(op,fn: untyped) {.dirty.} =
-  template fn*(x: RealProxy, y: RealProxy2): untyped =
-    newRealP(op(x[],y[]))
+  template fn*(x: RealProxy, y: RealProxy2): untyped = newRealP(op(x[],y[]))
   template op*(x: RealProxy, y: RealProxy2): untyped = fn(x,y)
 
-  template fn*(x: ImagProxy, y: ImagProxy2): untyped =
-    newRealP(-op(x[],y[]))
+  template fn*(x: ImagProxy, y: ImagProxy2): untyped = newRealP(-op(x[],y[]))
   template op*(x: ImagProxy, y: ImagProxy2): untyped = fn(x,y)
 
-  template fn*(x: RealProxy, y: ImagProxy2): untyped =
-    newImagP(op(x[],y[]))
+  template fn*(x: RealProxy, y: ImagProxy2): untyped = newImagP(op(x[],y[]))
   template op*(x: RealProxy, y: ImagProxy2): untyped = fn(x,y)
-  template fn*(x: ImagProxy, y: RealProxy2): untyped =
-    newImagP(op(x[],y[]))
+  template fn*(x: ImagProxy, y: RealProxy2): untyped = newImagP(op(x[],y[]))
   template op*(x: ImagProxy, y: RealProxy2): untyped = fn(x,y)
 
-  template `fn RCU`*(x: RealProxy, y: ComplexProxy2): untyped =
+  #template `fn RCU`*(x: RealProxy, y: ComplexProxy2): untyped =
+  #  newComplexP(op(x[],y.re), op(x[],y.im))
+  #template fn*(x: RealProxy, y: ComplexProxy2): untyped =
+  #  safecall(`fn RCU`, x, y)
+  proc fn*(x: RealProxy, y: ComplexProxy2): auto {.inline,noInit.} =
     newComplexP(op(x[],y.re), op(x[],y.im))
-  template fn*(x: RealProxy, y: ComplexProxy2): untyped =
-    safecall(`fn RCU`, x, y)
   template op*(x: RealProxy, y: ComplexProxy2): untyped = fn(x,y)
-  template `fn CRU`*(x: ComplexProxy, y: RealProxy2): untyped =
+  #template `fn CRU`*(x: ComplexProxy, y: RealProxy2): untyped =
+  #  newComplexP(op(x.re,y[]), op(x.im,y[]))
+  #template fn*(x: ComplexProxy, y: RealProxy2): untyped =
+  #  safecall(`fn CRU`, x, y)
+  proc fn*(x: ComplexProxy, y: RealProxy2): auto {.inline,noInit.} =
     newComplexP(op(x.re,y[]), op(x.im,y[]))
-  template fn*(x: ComplexProxy, y: RealProxy2): untyped =
-    safecall(`fn CRU`, x, y)
   template op*(x: ComplexProxy, y: RealProxy2): untyped = fn(x,y)
 
-  template `fn ICU`*(x: ImagProxy, y: ComplexProxy2): untyped =
+  #template `fn ICU`*(x: ImagProxy, y: ComplexProxy2): untyped =
+  #  newComplexP(-op(x[],y.im), op(x[],y.re))
+  #template fn*(x: ImagProxy, y: ComplexProxy2): untyped =
+  #  safecall(`fn ICU`, x, y)
+  proc fn*(x: ImagProxy, y: ComplexProxy2): auto {.inline,noInit.} =
     newComplexP(-op(x[],y.im), op(x[],y.re))
-  template fn*(x: ImagProxy, y: ComplexProxy2): untyped =
-    safecall(`fn ICU`, x, y)
   template op*(x: ImagProxy, y: ComplexProxy2): untyped = fn(x,y)
-  template `fn CIU`*(x: ComplexProxy, y: ImagProxy2): untyped =
+  #template `fn CIU`*(x: ComplexProxy, y: ImagProxy2): untyped =
+  #  newComplexP(-op(x.im,y[]), op(x.re,y[]))
+  #template fn*(x: ComplexProxy, y: ImagProxy2): untyped =
+  #  safecall(`fn CIU`, x, y)
+  proc fn*(x: ComplexProxy, y: ImagProxy2): auto {.inline,noInit.} =
     newComplexP(-op(x.im,y[]), op(x.re,y[]))
-  template fn*(x: ComplexProxy, y: ImagProxy2): untyped =
-    safecall(`fn CIU`, x, y)
   template op*(x: ComplexProxy, y: ImagProxy2): untyped = fn(x,y)
 
-  template `fn CCU`*(x: ComplexProxy, y: ComplexProxy2): untyped =
+  #template `fn CCU`*(x: ComplexProxy, y: ComplexProxy2): untyped =
+  #  newComplexP(op(x.re,y.re)-op(x.im,y.im),op(x.re,y.im)+op(x.im,y.re))
+  #template fn*(x: ComplexProxy, y: ComplexProxy2): untyped =
+  #  safecall(`fn CCU`, x, y)
+  proc fn*(x: ComplexProxy, y: ComplexProxy2): auto {.inline,noInit.} =
     newComplexP(op(x.re,y.re)-op(x.im,y.im),op(x.re,y.im)+op(x.im,y.re))
-  template fn*(x: ComplexProxy, y: ComplexProxy2): untyped =
-    safecall(`fn CCU`, x, y)
   template op*(x: ComplexProxy, y: ComplexProxy2): untyped = fn(x,y)
 
 binaryOverloadsMul(`*`, mul)
 
 template binaryOverloadsF(op,fn,impl: untyped) {.dirty.} =
-  template fn*(x: RealProxy, y: RealProxy2): untyped =
-    impl(x,y)
+  template fn*(x: RealProxy, y: RealProxy2): untyped = impl(x,y)
   template op*(x: RealProxy, y: RealProxy2): untyped = fn(x,y)
 
-  template fn*(x: ImagProxy, y: ImagProxy2): untyped =
-    impl(x,y)
+  template fn*(x: ImagProxy, y: ImagProxy2): untyped = impl(x,y)
   template op*(x: ImagProxy, y: ImagProxy2): untyped = fn(x,y)
 
-  template fn*(x: RealProxy, y: ImagProxy2): untyped =
-    impl(x,y)
+  template fn*(x: RealProxy, y: ImagProxy2): untyped = impl(x,y)
   template op*(x: RealProxy, y: ImagProxy2): untyped = fn(x,y)
-  template fn*(x: ImagProxy, y: RealProxy2): untyped =
-    impl(x,y)
+  template fn*(x: ImagProxy, y: RealProxy2): untyped = impl(x,y)
   template op*(x: ImagProxy, y: RealProxy2): untyped = fn(x,y)
 
-  template fn*(x: RealProxy, y: ComplexProxy2): untyped =
-    impl(x,y)
+  template fn*(x: RealProxy, y: ComplexProxy2): untyped = impl(x,y)
   template op*(x: RealProxy, y: ComplexProxy2): untyped = fn(x,y)
-  template fn*(x: ComplexProxy, y: RealProxy2): untyped =
-    impl(x,y)
+  template fn*(x: ComplexProxy, y: RealProxy2): untyped = impl(x,y)
   template op*(x: ComplexProxy, y: RealProxy2): untyped = fn(x,y)
 
-  template fn*(x: ImagProxy, y: ComplexProxy2): untyped =
-    impl(x,y)
+  template fn*(x: ImagProxy, y: ComplexProxy2): untyped = impl(x,y)
   template op*(x: ImagProxy, y: ComplexProxy2): untyped = fn(x,y)
-  template fn*(x: ComplexProxy, y: ImagProxy2): untyped =
-    impl(x,y)
+  template fn*(x: ComplexProxy, y: ImagProxy2): untyped = impl(x,y)
   template op*(x: ComplexProxy, y: ImagProxy2): untyped = fn(x,y)
 
-  template fn*(x: ComplexProxy, y: ComplexProxy2): untyped =
-    impl(x,y)
+  template fn*(x: ComplexProxy, y: ComplexProxy2): untyped = impl(x,y)
   template op*(x: ComplexProxy, y: ComplexProxy2): untyped = fn(x,y)
 
 template divdComplexU*(x,y: untyped): untyped = x*inv(y)
 binaryOverloadsF(`/`, divd, divdComplexU)
 
-template redot*(x: ComplexProxy, y: ComplexProxy2): untyped = x.adj*y
-
 # iadd, isub, imul, idivd
 
 template iBinaryOverloads(op,fn,impl: untyped) {.dirty.} =
-  template fn*(x: ComplexProxy, y: RealProxy2) =
-    assign(x, impl(x,y))
-  template fn*(x: var ComplexProxy, y: ImagProxy2) =
-    assign(x, impl(x,y))
-  template fn*(x: var ComplexProxy, y: ComplexProxy2) =
-    assign(x, impl(x,y))
-  template op*(x: ComplexProxy, y: RealProxy2) = fn(x,y)
-  template op*(x: var ComplexProxy, y: ImagProxy2) = fn(x,y)
-  template op*(x: var ComplexProxy, y: ComplexProxy2) = fn(x,y)
+  template fn*(x: ComplexProxy, y: RealProxy2) =    assign(x, impl(x,y))
+  template fn*(x: ComplexProxy, y: ImagProxy2) =    assign(x, impl(x,y))
+  template fn*(x: ComplexProxy, y: ComplexProxy2) = assign(x, impl(x,y))
+  template op*(x: ComplexProxy, y: RealProxy2) =    fn(x,y)
+  template op*(x: ComplexProxy, y: ImagProxy2) =    fn(x,y)
+  template op*(x: ComplexProxy, y: ComplexProxy2) = fn(x,y)
 
 iBinaryOverloads(`+=`, iadd, add)
 iBinaryOverloads(`-=`, isub, sub)
 iBinaryOverloads(`*=`, imul, mul)
 iBinaryOverloads(`/=`, idivd, divd)
 
-template load1*(x: ComplexProxy): untyped = x
-
-template add*(r: var ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
-         untyped =  assign(r,x+y)
-
-template mulCCR*(r: var ComplexProxy, y: ComplexProxy2, x: untyped):
-         untyped =  assign(r,x*y)
-template mul*(r: var ComplexProxy, x: SomeNumber, y: ComplexProxy3):
-         untyped =  assign(r,x*y)
-template mul*(r: var ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
-         untyped =  assign(r,x*y)
-template imsub*(r: var ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
-         untyped =  r -= x*y
-
-template norm2*(r: any, x: ComplexProxy2): untyped =
-  r = x.norm2
-template inorm2*(r: any, x: ComplexProxy2): untyped =
-  r += x.norm2
-
-template redotinc*(r: var ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
-         untyped =  r += x.adj*y
-
+# inorm2, redot, iredot, dot, idot
 # sqrt, rsqrt, exp, ...
 # import complexFuncs
+template redot*(x: ComplexProxy, y: ComplexProxy2): untyped =
+  (x.adj * y).re
+template redotinc*(r: RealProxy, x: ComplexProxy2, y: ComplexProxy3):
+  untyped =  r += redot(x,y)
+
 
 template overloadAsReal2(T: typedesc, op,fn: untyped) {.dirty.} =
   template fn*(x: T, y: RealProxy): untyped = fn(newRealProxy(x),y)
@@ -409,13 +414,15 @@ template overloadAsReal*(T: typedesc) {.dirty.} =
 
 when isMainModule:
   # complexType, complexProxy, complexFuncs
-  template neg(x: SomeNumber): untyped = -x
+  #template neg(x: SomeNumber): untyped = -x
   template conj(x: SomeNumber): untyped = x
   template adj(x: SomeNumber): untyped = x
   template transpose(x: SomeNumber): untyped = x
   template trace(x: SomeNumber): untyped = x
   template norm2(x: SomeNumber): untyped = x*x
   template inv(x: SomeNumber): untyped = (type(x))(1)/x
+  template `:=`(r: SomeNumber, x: int): untyped = r = (type(r))(x)
+  template `:=`(r: SomeNumber, x: float): untyped = r = (type(r))(x)
 
   type
     Imag*[T] = ImagProxy[T]
@@ -443,9 +450,9 @@ when isMainModule:
     result = x[2][1]
     #echo result.treerepr
   template `re=`*(x: ComplexObj, y: untyped): untyped =
-    x.reX = y
+    x.reX := y
   template `im=`*(x: ComplexObj, y: untyped): untyped =
-    x.imX = y
+    x.imX := y
 
   overloadAsReal(SomeNumber)
   template I(x: SomeNumber): untyped = newImag(x)
@@ -520,3 +527,5 @@ when isMainModule:
 
   echo divd(1.0,a)
   echo 1.0/a
+
+  a := 1

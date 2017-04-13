@@ -134,7 +134,7 @@ template toDouble*(xx: typed): untyped =
     when compiles(toDoubleImpl(x)):
       toDoubleImpl(x)
     elif isComplex(x):
-      asComplex(toDoubleDefault(x))
+      asComplex(toDoubleDefault(x[]))
     elif isVector(x):
       asVector(toDouble(x[]))
     elif isMatrix(x):
@@ -148,14 +148,19 @@ makeDeref(ToDouble, x.T)
 template `[]`*(x:ToDouble; i:SomeInteger):untyped = x[][i].toDouble
 template `[]`*(x:ToDouble; i,j:SomeInteger):untyped = x[][j,i].toDouble
 template len*(x:ToDouble):untyped = x[].len
-template nrows*(x:ToDouble):untyped = x[].ncols
-template ncols*(x:ToDouble):untyped = x[].nrows
+template nrows*(x:ToDouble):untyped = x[].nrows
+template ncols*(x:ToDouble):untyped = x[].ncols
 template declaredVector*(x:ToDouble):untyped = isVector(x[])
 template declaredMatrix*(x:ToDouble):untyped = isMatrix(x[])
 template re*(x:ToDouble):untyped = toDouble(x[].re)
 template im*(x:ToDouble):untyped = toDouble(x[].im)
 template simdType*(x: ToDouble): untyped = simdType(x[])
-template numberType*(x: ToDouble): untyped = numberType(x[])
+macro dump2(x: typed): auto =
+  result = newEmptyNode()
+  echo x.treerepr
+template numberType*(x: ToDouble): untyped =
+  dump2: x
+  numberType(x[])
 
 
 

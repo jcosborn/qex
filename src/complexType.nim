@@ -1,4 +1,5 @@
 import macros
+import basicOps
 import complexProxy
 export complexProxy
 
@@ -7,10 +8,12 @@ type
   ComplexObj*[TR,TI] = object
     reX*: TR
     imX*: TI
+  ComplexObj2*[TR,TI] = ComplexObj[TR,TI]
   Complex*[TR,TI] = ComplexProxy[ComplexObj[TR,TI]]
   Complex2*[TR,TI] = Complex[TR,TI]
   Complex3*[TR,TI] = Complex[TR,TI]
   AsComplex*[T] = ComplexProxy[T]
+  ComplexType*[T] = Complex[T,T]
 
 template newRealImpl*(x: typed): untyped = x
 template newImagImpl*(x: typed): untyped = newImagProxy(x)
@@ -21,19 +24,30 @@ template newImag*(x: typed): untyped = newImagImpl(x)
 template newComplex*(x,y: typed): untyped = newComplexImpl(x,y)
 
 template re*(x: ComplexObj): untyped = x.reX
-macro re*(x: ComplexObj{nkObjConstr}): auto =
-  #echo x.treerepr
-  result = x[1][1]
-  #echo result.treerepr
+#macro re*(x: ComplexObj{nkObjConstr}): auto =
+#  #echo x.treerepr
+#  result = x[1][1]
+#  #echo result.treerepr
 template im*(x: ComplexObj): untyped = x.imX
-macro im*(x: ComplexObj{nkObjConstr}): auto =
-  #echo x.treerepr
-  result = x[2][1]
-  #echo result.treerepr
+#macro im*(x: ComplexObj{nkObjConstr}): auto =
+#  #echo x.treerepr
+#  result = x[2][1]
+#  #echo result.treerepr
+
 template `re=`*(x: ComplexObj, y: untyped): untyped =
-  x.reX = y
+  #dumpTree: x
+  mixin `:=`
+  x.reX := y
+  #assign(x.reX, y)
+#template `re=`*[TR,TI](x: ComplexObj[TR,TI], y: TR): untyped =
+#  #x.reX = y
+#  assign(x.reX, y)
 template `im=`*(x: ComplexObj, y: untyped): untyped =
-  x.imX = y
+  x.imX := y
+  #assign(x.imX, y)
+#template `im=`*[TR,TI](x: ComplexObj[TR,TI], y: TI): untyped =
+#  #x.imX = y
+#  assign(x.imX, y)
 
 overloadAsReal(SomeNumber)
 template I*(x: SomeNumber): untyped = newImag(x)
@@ -49,6 +63,10 @@ template numberType*[T](x: ComplexObj[T,T]): untyped = numberType(T)
 template numNumbers*(x: ComplexProxy): untyped =
   mixin numNumbers
   2*numNumbers(x.re)
+template simdType*[T](x: ComplexProxy[T]): untyped = simdType(T)
+template simdType*[TR,TI](x: ComplexObj[TR,TI]): untyped =
+  mixin simdType
+  simdType(TR)
 template simdSum*(x: ComplexObj): untyped =
   newComplex(simdSum(x.re),simdSum(x.im))
 
@@ -69,6 +87,46 @@ template imaddCCI*(r: untyped, x: untyped, y: untyped) =
   r.im += x.re * y
 template imadd*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3) =
   r += x*y
+
+template load1*(x: ComplexProxy): untyped = x
+template eval*(x: ComplexProxy): untyped = newComplexProxy(eval(x[]))
+template eval*(x: ComplexObj): untyped =
+  let er = eval(x.re)
+  let ei = eval(x.im)
+  ComplexObj2[type(er),type(ei)](reX: er, imX: ei)
+#template eval*(x: Complex): untyped =
+#  newComplex(eval(x.re),eval(x.im))
+
+template map*(x: ComplexObj; f: untyped): untyped =
+  let fr = f(x.re)
+  let fi = f(x.im)
+  ComplexObj2[type(fr),type(fi)](reX: fr, imX: fi)
+
+template add*(r: var ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
+         untyped =  assign(r,x+y)
+template add*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
+  r := x + y
+
+template sub*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
+  r := x - y
+template sub*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3): untyped =
+  r := x - y
+
+template mulCCR*(r: var ComplexProxy, y: ComplexProxy2, x: untyped):
+         untyped =  assign(r,x*y)
+template mul*(r: ComplexProxy, x: ComplexProxy2, y: SomeNumber): untyped =
+  r := x * y
+template mul*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
+  r := x * y
+template mul*(r: var ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
+         untyped =  assign(r,x*y)
+template imsub*(r: var ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
+         untyped =  r -= x*y
+
+template norm2*(r: any, x: ComplexProxy2): untyped =
+  r = x.norm2
+template inorm2*(r: any, x: ComplexProxy2): untyped =
+  r += x.norm2
 
 when isMainModule:
   template pos(x: SomeNumber): untyped = x

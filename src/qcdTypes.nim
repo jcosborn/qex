@@ -2,6 +2,7 @@ import alignedMem
 export alignedMem
 import layout
 import basicOps
+export basicOps
 import simd
 export simd
 import macros
@@ -60,6 +61,16 @@ type
   DLatticeColorMatrixV* = Field[VLEN,DColorMatrixV]
 
 #overloadAsReal(Dvec0)
+#template `re=`*(x: ToDouble, y: untyped): untyped =
+#  x[].re = y
+#template `im=`*(x: ToDouble, y: untyped): untyped =
+#  x[].im = y
+#template `+`*(x: Dvec0): untyped = x
+#template `-`*(x: Adjointed[Dvec0]): untyped = -x[]
+#template `*`*(x: Adjointed[Dvec0], y: Dvec0): untyped = x[]*y
+#template `*`*(x: Dvec0, y: Adjointed[Dvec0]): untyped = x*y[]
+#template `:=`*(r: Adjointed, x: Adjointed) = r[] := x[]
+#template assign*(r: Adjointed, x: Adjointed) = r[] := x[]
 
 template simdLength*(x:typedesc[SColorMatrixV]):untyped = simdLength(Svec0)
 template simdLength*(x:typedesc[SColorVectorV]):untyped = simdLength(Svec0)
@@ -117,14 +128,7 @@ template simdSum*(xx:tuple):untyped =
 #  divd(r, x, y)
 #  r
 
-#template `re=`*(x: ToDouble[ComplexProxy], y: untyped): untyped =
-#  x[].re = y
-#template `im=`*(x: ToDouble[ComplexProxy], y: untyped): untyped =
-#  x[].im = y
-#template `-`*(x: Adjointed[Dvec0]): untyped = -x[]
-#template `*`*(x: Adjointed[Dvec0], y: Dvec0): untyped = x[]*y
-#template `*`*(x: Dvec0, y: Adjointed[Dvec0]): untyped = x*y[]
-
+template `:=`*(m:SDvec, x:SomeNumber) = assign(m, x)
 proc assign*(r:var SomeNumber; m:Masked[SDvec]) =
   var i = 0
   var b = m.mask
@@ -134,6 +138,7 @@ proc assign*(r:var SomeNumber; m:Masked[SDvec]) =
       break
     b = b shr 1
     i.inc
+template `:=`*(r: SomeNumber; m: Masked[SDvec]) = assign(r, m)
 proc assign*(m:Masked[SDvec], x:SomeNumber) =
   var i = 0
   var b = m.mask

@@ -167,7 +167,7 @@ template row*(x:AsMatrix; i:int):untyped =
 template setRow*(r:AsVector; x:AsVector; i:int):untyped =
   assign(r, x)
 #proc setRow*(r:var AsMatrix; x:AsVector; i:int) {.inline.} =
-template setRow*(rr:var AsMatrix; xx:AsVector; ii:int) =
+template setRow*(rr:var AsMatrix; xx:AsVector; ii:int): untyped =
   subst(r,rr,x,xx,i,ii,nc,_,j,_):
     lets(xt,x,it,i):
       const nc = r.ncols
@@ -208,7 +208,7 @@ template makeLevel1P(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
   proc f*(r:t1, x:t2) {.inline.} =
     `f s1 s2`(r, deref(x))
 template makeLevel1T(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
-  template f*(rr:t1, xx:t2) =
+  template f*(rr:t1, xx:t2): untyped =
     subst(r,rr):
       lets(x,xx):
         `f s1 s2`(r, deref(x))
@@ -255,8 +255,8 @@ makeMap1(isub)
 
 template `:=`*(x:VarVec1; y:SomeNumber) = assign(x, y)
 template `:=`*(x:AsVarVector; y:SomeNumber) = assign(x, y)
-template `:=`*(x:VarVec1; y:Vec2) = assign(x, y)
-template `:=`*(x:AsVarVector; y:Vec2) = assign(x, y)
+template `:=`*(x:VarVec1; y:Vec2): untyped = assign(x, y)
+template `:=`*(x:AsVarVector; y:Vec2): untyped = assign(x, y)
 template `:=`*(x:VarMat1; y:SomeNumber) = assign(x, y)
 template `:=`*(x:AsVarMatrix; y:SomeNumber) = assign(x, y)
 template `:=`*(x:VarMat1; y:Vec2) = assign(x, y)
@@ -410,31 +410,46 @@ proc dot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
   mulSVV(r, x.adj, y)
 setBinop(dot, dot, Vec1, Vec2, type(x[0]*y[0]))
 
-proc iredot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
-  subst(tr,_):
-    assert(x.len == y.len)
-    load2(tr, r)
-    forO i, 0, <x.len:
-      redotinc(tr, x[i], y[i])
-    assign(r, tr)
+#proc iredot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
+#  subst(tr,_):
+#    assert(x.len == y.len)
+#    load2(tr, r)
+#    forO i, 0, <x.len:
+#      redotinc(tr, x[i], y[i])
+#    assign(r, tr)
 
-proc redot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
-  mulSVV(r, x.adj, y)
-proc redot*(rr:var Sca1; xx:Mat2; yy:Mat3) {.inline.} =
-  subst(r,rr,x,xx,y,yy,tr,_,i,_,j,_,k,_):
-    mixin mul, imadd, assign
-    assert(x.nrows == y.nrows)
-    assert(x.ncols == y.ncols)
-    var tr = redot(x[0,0], y[0,0])
-    forO j, 1, <x.ncols:
-      redotinc(tr, x[0,j], y[0,j])
-    forO i, 1, <x.nrows:
-      forO k, 0, <x.ncols:
-        redotinc(tr, x[i,k], y[i,k])
-    assign(r, tr)
+#proc redot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
+#  #mulSVV(r, x.adj, y)
+#  r := 0
+#  iredot(r, x, y)
+#proc redot*(rr:var Sca1; xx:Mat2; yy:Mat3) {.inline.} =
+#  subst(r,rr,x,xx,y,yy,tr,_,i,_,j,_,k,_):
+#    mixin mul, imadd, assign
+#    assert(x.nrows == y.nrows)
+#    assert(x.ncols == y.ncols)
+#    var tr = redot(x[0,0], y[0,0])
+#    forO j, 1, <x.ncols:
+#      redotinc(tr, x[0,j], y[0,j])
+#    forO i, 1, <x.nrows:
+#      forO k, 0, <x.ncols:
+#        redotinc(tr, x[i,k], y[i,k])
+#    assign(r, tr)
 
-setBinop(redot, redot, Vec1, Vec2, type(redot(x[0],y[0])))
-setBinop(redot, redot, Mat1, Mat2, type(redot(x[0,0],y[0,0])))
+#setBinop(redot, redot, Vec1, Vec2, type(redot(x[0],y[0])))
+#setBinop(redot, redot, Mat1, Mat2, type(redot(x[0,0],y[0,0])))
+
+proc redot*(x:Vec2; y:Vec3): auto {.inline,noInit.} =
+  result = redot(x[0],y[0])
+  forO i, 1, <x.len:
+    result += redot(x[i],y[i])
+
+proc redot*(x: Mat2; y: Mat3): auto {.inline,noInit.} =
+  result = redot(x[0,0],y[0,0])
+  forO j, 1, <x.len:
+    result += redot(x[0,j],y[0,j])
+  forO i, 1, <x.len:
+    forO j, 0, <x.len:
+      result += redot(x[i,j],y[i,j])
 
 proc simdSum*(x: Vec1): auto {.noInit.} =
   var r{.noInit.}: VectorArray[x.len,type(simdSum(x[0]))]

@@ -4,6 +4,8 @@ import metaUtils
 
 type
   cArray*{.unchecked.}[T] = array[0,T]
+template `[]`*(x: cArray): untyped = addr x[0]
+template `&`*(x: ptr cArray): untyped = addr x[0]
 
 template ptrInt*(x:untyped):untyped = cast[ByteAddress](x)
 template addrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
@@ -74,9 +76,9 @@ makeArrayOverloads(4)
 makeArrayOverloads(8)
 makeArrayOverloads(16)
 
-proc sum*[T](x:openArray[T]): auto =
-  result = x[0]
-  for i in 1..<x.len: result += x[i]
+#proc sum*[T](x:openArray[T]): auto =
+#  result = x[0]
+#  for i in 1..<x.len: result += x[i]
 
 macro echoImm*(s:varargs[typed]):auto =
   result = newEmptyNode()
@@ -105,6 +107,7 @@ template declareVla(v,t,n:untyped):untyped =
   template `[]=`(x:var Vla; i,y:untyped):untyped =
     (cast[ptr cArray[t]](addr(x)))[][i] = y
 
+#[
 proc `$`*[T](x:openArray[T]):string =
   var t = newSeq[string]()
   var len = 0
@@ -120,6 +123,7 @@ proc `$`*[T](x:openArray[T]):string =
     result = ""
     for i,v in t:
       result &= ($i & ":" & v & "\n")
+]#
 
 macro toLit*(s:static[string]):auto =
   result = newLit(s)

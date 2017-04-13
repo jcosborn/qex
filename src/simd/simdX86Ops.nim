@@ -81,6 +81,7 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
       assign(r, t)
   #proc assign*(r:var T; x:T) {.inline.} =
   #  r = x
+  #template `=`*(r: var T; x: T) = {.emit: [r, " = ", x].}
   template assign*(r:var T; x:T) =
     r = x
   #proc assign*(r:var array[N,F]; x:T) {.inline.} =

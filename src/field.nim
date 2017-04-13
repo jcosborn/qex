@@ -447,13 +447,14 @@ template dot*(f1:Subsetted; f2:SomeAllField2):untyped = dotP(f1, f2)
 
 proc redotP*(f1:SomeField; f2:SomeField2):auto =
   tic()
-  mixin redot, iredot, simdSum, items, toDouble
+  mixin redot, iredot, simdSum, items, toDouble, eval
   #var d:type(redot(f1[0],f2[0]))
-  var d:type(toDouble(redot(f1[0],f2[0])))
+  var d: type(eval(toDouble(redot(f1[0],f2[0]))))
   let t1 = f1
   let t2 = f2
   for x in items(t1):
-    iredot(d, t1[x], t2[x])
+    #iredot(d, t1[x], t2[x])
+    d += redot(t1[x], t2[x])
   toc("redot local")
   result = simdSum(d)
   toc("redot simd sum")
