@@ -25,7 +25,7 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
   let vol = lo.nSites.float
   let flops = vol * fps.float
   let bytes = vol * bps.float
-  let nrep = int(1e10/flops)
+  let nrep = 1 + int(1e8/flops)
   #echo nrep
   var t0 = epochTime()
   #threads:
@@ -39,7 +39,9 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
   echo "(", exp2string(eqn), ") secs: ", dt|(5,3), "  mf: ", mf.int,
        "  mb: ", mb.int
 
-proc test(lat:any) =
+proc test(lat0:any) =
+  var scale = 1
+  var lat = lat0*scale
   var lo = newLayout(lat)
   let nd = lo.nDim
   let np = (nd*(nd-1)) div 2

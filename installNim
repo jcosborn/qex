@@ -72,6 +72,13 @@ installAll() {
   install nimble
   install nimgrep
   install nimsuggest
+  me0=`basename $0`
+  me=`realpath -s $0`
+  if [ -d $bindir -a ! -e $bindir/$me0 ]; then
+    cd $bindir
+    ln -s $me
+    cd -
+  fi
 }
 
 if [ $switch = 1 ]; then

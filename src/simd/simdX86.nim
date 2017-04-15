@@ -66,7 +66,7 @@ when declared(SimdS8):
 when declared(SimdS16):
   proc toDouble*(x:SimdS16):SimdD16 {.inline,noInit.} =
     #for i in 0..15: result[i] = float64(x[i])
-    result = SimdD16(toDoubleA(x))
+    result = SimdD16(v: toDoubleA(x))
   proc inorm2*(r:var SimdD16; x:SimdS16) {.inline.} = inorm2(r, toDouble(x))
   proc imadd*(r:var SimdD16; x,y:SimdS16) {.inline.} =
     var xx{.noInit.} = toDouble(x)

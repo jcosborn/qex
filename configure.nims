@@ -73,15 +73,27 @@ if machine=="" and uname=="Darwin":
     SIMD ~ join(simd,",")
     VLEN ~ $vlen
 
+# cray/modules
+if machine=="":
+  let mods = split(staticExec "module list -t", "\n")
+  echo mods
+  if mods.contains "craype-mic-knl":
+    # assume cross-compiling for KNL
+    machine = "knl"
+    CC ~ "cc"
+    CFLAGS_ALWAYS ~ "-Wall -std=gnu99 -march=knl -ldl"
+    LD ~ ( "$CC" % params )
+    LDFLAGS ~ ( "$CFLAGS_ALWAYS" % params )
+    SIMD ~ "SSE,AVX,AVX512"
+    VLEN ~ "16"
+
 if machine=="" and fileExists "/proc/cpuinfo":
   # assume compute nodes are same as build nodes
   machine = "linux"
   SIMD ~ "SSE,AVX"
   VLEN ~ "8"
 
-# cray/modules
 # KNL
-# linux (/proc/cpuinfo)
 # check on linux/mac/vesta/cooley/theta
 # gcc/icc opt level
 
