@@ -34,6 +34,8 @@ template createAsType2(t,c:untyped):untyped =
     #let t2 = t1[i][j]
     #ctrace()
     #t2
+  template `[]`*(x:var t; i,j:SomeInteger):untyped =
+    x[][i,j]
   template `[]=`*(x:t; i,j:SomeInteger; y:untyped):untyped =
     x[][i,j] = y
   template len*(x:t):untyped = getConst(x[].len)
@@ -100,7 +102,8 @@ type
   VarMV1* = AsVarMatrix | AsVarVector
   VarAny* = var any #| AsVarMatrix
   VectorArray*[I:static[int],T] = AsVector[array[I,T]]
-  MatrixArrayObj*[I,J:static[int],T] = array[I,array[J,T]]
+  MatrixArrayObj*[I,J:static[int],T] = object
+    mat*: array[I,array[J,T]]
   MatrixArray*[I,J:static[int],T] = AsMatrix[MatrixArrayObj[I,J,T]]
   MatrixRowObj*[T] = object
     row:int
@@ -109,20 +112,25 @@ type
   #MatrixCol*[T] = tuple[col:int,mat:ptr T]
   #MatrixDiag*[T] = tuple[diag:int,mat:ptr T]
 
+template `len`*(x:MatrixArrayObj):untyped = x.I
 template nrows*(x:MatrixArrayObj):untyped = x.I
 template ncols*(x:MatrixArrayObj):untyped = x.J
-template `[]`*(x:MatrixArrayObj; i,j:int):untyped = x[i][j]
-template `[]=`*(x:MatrixArrayObj; i,j:int, y:untyped):untyped = x[i][j] = y
+template `[]`*(x:MatrixArrayObj; i,j:int):untyped = x.mat[i][j]
+template `[]`*(x:var MatrixArrayObj; i,j:int):untyped = x.mat[i][j]
+template `[]=`*(x:MatrixArrayObj; i,j:int, y:untyped):untyped = x.mat[i][j] = y
 template numberType*[T](x:AsVector[T]):untyped = numberType(type(T))
 template numberType*[T](x:AsMatrix[T]):untyped = numberType(type(T))
 template numberType*[T](x:typedesc[AsVector[T]]):untyped = numberType(type(T))
 template numberType*[T](x:typedesc[AsMatrix[T]]):untyped = numberType(type(T))
 template numberType*[I,J,T](x:MatrixArrayObj[I,J,T]):untyped =
   numberType(type(T))
+template numberType*[I,J,T](x:typedesc[MatrixArrayObj[I,J,T]]):untyped =
+  numberType(type(T))
 template numNumbers*(x:AsVector):untyped =
   mixin numNumbers
   x.len*numNumbers(x[0])
-template numNumbers*(x:AsMatrix):untyped = x.nrows*x.ncols*numNumbers(x[0])
+template numNumbers*(x:AsMatrix):untyped =
+  x.nrows*x.ncols*numNumbers(x[0,0])
 #template `[]`*(x:array; i,j:int):untyped = x[i][j]
 #template `[]=`*(x:array; i,j:int, y:untyped):untyped = x[i][j] = y
 

@@ -107,18 +107,21 @@ template prefetchSB*(ss:ShiftB; ii:int; e1x:untyped):untyped =
           let ix{.inject.} = -(k1 + 2)
           prefetch(addr(e1))
 
-template localSB*(ss:ShiftB; ii:int; e1x,e2x:untyped):untyped =
-  subst(s,ss,i,ii,e1,e1x,e2,e2x):
-    let k1 = s.si.sq.pidx[i]
-    if k1 >= 0:
-      let ix{.inject.} = k1
-      template it:untyped = e2
-      e1
-    elif k1 + 2 <= 0:
-      let ix{.inject.} = -(k1 + 2)
-      var it{.inject,noInit.}:type(e2)
-      perm(it, s.si.perm, e2)
-      e1
+template localSB*(ss:ShiftB; ii:int; e1x,e2x:untyped):untyped {.dirty.} =
+  bind subst
+  subst(s,ss,i,ii,e1,e1x,e2,e2x,k1,_):
+    block:
+      let k1 = s.si.sq.pidx[i]
+      var ix{.noInit.}: int
+      if k1 >= 0:
+        ix = k1
+        template it: untyped = e2
+        e1
+      elif k1 + 2 <= 0:
+        ix = -(k1 + 2)
+        var it{.noInit.}: type(e2)
+        perm(it, s.si.perm, e2)
+        e1
 
 proc boundaryOffsetSB*(s:ShiftB) =
   var ti0 = threadDivideLow(s.subset.lowOuter, s.subset.highOuter)

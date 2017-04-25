@@ -269,6 +269,7 @@ proc stagD2*(sd:StaggeredD; r:SomeField; g:openArray[Field2];
       localSB(sf0[mu], ir, imadd(rir, g[mu][ir], it), x[ix])
     for mu in 0..<nd:
       localSB(sb0[mu], ir, isub(rir, it), g[mu][ix].adj*x[ix])
+      #localSB(sb0[mu], ir, rir:=it, g[mu][ix].adj*x[ix])
       #var t{.noInit.}:type(load1(x[0]))
       #localSB(sb0[mu], ir, isub(rir, it), (mul(t,g[mu][ix].adj,x[ix]);t))
     assign(r[ir], rir)
@@ -616,7 +617,7 @@ when isMainModule:
   var m = 0.1
   echo "done newStag"
 
-  runtest(v1, v2, sdAll, sdEven, sdOdd, s, m)
+  #runtest(v1, v2, sdAll, sdEven, sdOdd, s, m)
   echoTimers()
 
   var sdAll3 = initStagD3(v1, "all")
@@ -630,14 +631,14 @@ when isMainModule:
     g3[2*i+1].random
   var s3 = newStag3(@g3)
 
-  runtest(v1, v2, sdAll3, sdEven3, sdOdd3, s3, m)
+  #runtest(v1, v2, sdAll3, sdEven3, sdOdd3, s3, m)
 
   #[
   const nc = v1[0].len
   const nr = 8
   type MX* = Field[VLEN,MatrixArray[nr,nc,SComplexV]]
   #type MX* = Field[VLEN,MatrixArray[nr,nc,DComplexV]]
-  var m1,m2:MX
+  var m1,m2: MX
   m1.new(lo)
   m2.new(lo)
   var sdAllM = initStagD(m1, "all")
@@ -653,8 +654,11 @@ when isMainModule:
   #[
   #const n = 4
   var n = 4
-  if cp[0][0]=='n':
-    n = parseInt(cp[0][1..^0])
+  if cp.len>0:
+    for i in 0..<cp.len:
+      if cp[i][0]=='n':
+        n = parseInt(cp[i][1..^1])
+        break
   echo "n: ", n
   var v1a = newSeq[type(v1)](n)
   var v2a = newSeq[type(v2)](n)
@@ -675,7 +679,7 @@ when isMainModule:
     sda3[i] = initStagD3(v1, "all")
     #sa[i] = newStag(@g)
 
-  let nrep = int(2e8/lo.physVol.float)
+  let nrep = int(2e7/lo.physVol.float)
   template makeBenchN(name:untyped; bar:bool):untyped =
     proc name(sd,g:any, ss="all") =
       resetTimers()
