@@ -7,7 +7,7 @@ if [ "X`$nim`" = "X" ]; then
   #exit 1
   #echo "Installing Nim compiler 'nim'" 1>&2
   #dir=`dirname $0`
-  $dir/installNim
+  $dir/installNim stable
   nim=`$dir/findNim`
 fi
 

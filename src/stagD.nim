@@ -617,7 +617,7 @@ when isMainModule:
   var m = 0.1
   echo "done newStag"
 
-  #runtest(v1, v2, sdAll, sdEven, sdOdd, s, m)
+  runtest(v1, v2, sdAll, sdEven, sdOdd, s, m)
   echoTimers()
 
   var sdAll3 = initStagD3(v1, "all")
@@ -631,7 +631,7 @@ when isMainModule:
     g3[2*i+1].random
   var s3 = newStag3(@g3)
 
-  #runtest(v1, v2, sdAll3, sdEven3, sdOdd3, s3, m)
+  runtest(v1, v2, sdAll3, sdEven3, sdOdd3, s3, m)
 
   #[
   const nc = v1[0].len
