@@ -230,7 +230,6 @@ template makeUnary(op:untyped):untyped {.dirty.} =
     op(r.im, x.im)
   template op*(r:var C1; xx:C2) =
     lets(x,xx):
-      assign(r.re, 0)
       op(r.re, x.re)
       op(r.im, x.im)
 makeUnary(assign)
