@@ -1,175 +1,14 @@
 import qex
-import gaugeUtils
 import stdUtils
 import profile
+import gaugeUtils
+import staples
 
-proc startCornerShifts*[T](u: openArray[T]): auto =
-  var s:seq[seq[ShiftB[type(u[0][0])]]]
-  let nd = u.len
-  s.newSeq(nd)
-  for mu in 0..<nd:
-    s[mu].newSeq(nd)
-    for nu in 0..<nd:
-      if mu!=nu:
-        s[mu][nu].initShiftB(u[mu], nu, 1, "all")
-        s[mu][nu].startSB(u[mu][ix])
-  return s
-
-proc startStapleShifts*[T](u: openArray[T]): auto =
-  var s:seq[seq[seq[ShiftB[type(u[0][0][0])]]]]
-  let nd = u.len
-  s.newSeq(nd)
-  for mu in 0..<nd:
-    s[mu].newSeq(nd)
-    for nu in 0..<nd:
-      if nu!=mu:
-        s[mu][nu].newSeq(nd)
-        for sig in 0..<nd:
-          if sig!=mu:
-            s[mu][nu][sig].initShiftB(u[mu][nu], sig, 1, "all")
-            s[mu][nu][sig].startSB(u[mu][nu][ix])
-  return s
-
-proc makeFwdStaples*[T](uu: openArray[T], s: any): auto =
-  mixin mul
-  tic()
-  let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
-  let lo = u[0].l
-  let nd = lo.nDim
-  let nc = u[0][0].ncols
-  let flops = lo.nSites.float*float(nd*(nd-1)*3*(4*nc-1)*nc*nc)
-  var st: seq[seq[type(uu[0])]]
-  st.newSeq(nd)
-  for mu in 0..<nd:
-    st[mu].newSeq(nd)
-    for nu in 0..<nd:
-      if mu!=nu:
-        st[mu][nu].new(lo)
-  toc("makeStaples setup")
-  threads:
-    tic()
-    var umu,unu,umunu: type(load1(u[0][0]))
-    for ir in lo:
-      for mu in 1..<nd:
-        for nu in 0..<mu:
-          if isLocal(s[mu][nu],ir) and isLocal(s[nu][mu],ir):
-            localSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
-            localSB(s[nu][mu], ir, assign(unu,it), u[nu][ix])
-            mul(umunu, umu, unu.adj)
-            mul(st[mu][nu][ir], u[nu][ir], umunu)
-            mul(st[nu][mu][ir], u[mu][ir], umunu.adj)
-    toc("makeStaples local")
-    #[
-    var needBoundary = false
-    for mu in 0..<nd:
-      for nu in 0..<nd:
-        if mu != nu:
-          boundaryWaitSB(s[mu][nu]): needBoundary = true
-    toc("makeStaples wait")
-    if needBoundary:
-      boundarySyncSB()
-      for ir in lo:
-        for mu in 1..<nd:
-          for nu in 0..<mu:
-            if not isLocal(s[mu][nu],ir) or not isLocal(s[nu][mu],ir):
-              getSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
-              getSB(s[nu][mu], ir, assign(unu,it), u[nu][ix])
-              mul(umunu, umu, unu.adj)
-              mul(st[mu][nu][ir], u[nu][ir], umunu)
-              mul(st[nu][mu][ir], u[mu][ir], umunu.adj)
-    ]#
-    for mu in 1..<nd:
-      for nu in 0..<mu:
-        var needBoundary = false
-        boundaryWaitSB(s[mu][nu]): needBoundary = true
-        boundaryWaitSB(s[nu][mu]): needBoundary = true
-        if needBoundary:
-          for ir in lo:
-            if not isLocal(s[mu][nu],ir) or not isLocal(s[nu][mu],ir):
-              getSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
-              getSB(s[nu][mu], ir, assign(unu,it), u[nu][ix])
-              mul(umunu, umu, unu.adj)
-              mul(st[mu][nu][ir], u[nu][ir], umunu)
-              mul(st[nu][mu][ir], u[mu][ir], umunu.adj)
-    toc("makeStaples boundary")
-  toc("makeStaples threads", flops=flops)
-  return st
-
-proc makeStaples*[T](uu: openArray[T], s: any): auto =
-  ## sft: fwd staples
-  ## stu: bck staples, offset up
-  ## ss: shifts for stu
-  mixin mul
-  tic()
-  let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
-  let lo = u[0].l
-  let nd = lo.nDim
-  let nc = u[0][0].ncols
-  let flops = lo.nSites.float*float(nd*(nd-1)*6*(4*nc-1)*nc*nc)
-  var stf: seq[seq[type(uu[0])]]
-  var stu: seq[seq[type(uu[0])]]
-  var ss: seq[seq[ShiftB[type(uu[0][0])]]]
-  stf.newSeq(nd)
-  stu.newSeq(nd)
-  ss.newSeq(nd)
-  for mu in 0..<nd:
-    stf[mu].newSeq(nd)
-    stu[mu].newSeq(nd)
-    ss[mu].newSeq(nd)
-    for nu in 0..<nd:
-      if mu!=nu:
-        stf[mu][nu].new(lo)
-        stu[mu][nu].new(lo)
-        ss[mu][nu].initShiftB(stu[mu][nu], nu, -1, "all")
-  toc("makeStaples setup")
-  threads:
-    tic()
-    var umu,unu,umunu,unumu: type(load1(u[0][0]))
-    for ir in lo:
-      for mu in 1..<nd:
-        for nu in 0..<mu:
-          if isLocal(s[mu][nu],ir) and isLocal(s[nu][mu],ir):
-            localSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
-            localSB(s[nu][mu], ir, assign(unu,it), u[nu][ix])
-            mul(umunu, umu, unu.adj)
-            mul(stf[mu][nu][ir], u[nu][ir], umunu)
-            mul(stf[nu][mu][ir], u[mu][ir], umunu.adj)
-            mul(unumu, u[nu][ir].adj, u[mu][ir])
-            mul(stu[mu][nu][ir], unumu, unu)
-            mul(stu[nu][mu][ir], unumu.adj, umu)
-    toc("makeStaples local")
-    var needBoundary = false
-    for mu in 1..<nd:
-      for nu in 0..<mu:
-        var needBoundaryU = false
-        boundaryWaitSB(s[mu][nu]): needBoundaryU = true
-        boundaryWaitSB(s[nu][mu]): needBoundaryU = true
-        needBoundary = needBoundary or needBoundaryU
-        if needBoundaryU:
-          for ir in lo:
-            if not isLocal(s[mu][nu],ir) or not isLocal(s[nu][mu],ir):
-              getSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
-              getSB(s[nu][mu], ir, assign(unu,it), u[nu][ix])
-              mul(unumu, u[nu][ir].adj, u[mu][ir])
-              mul(stu[mu][nu][ir], unumu, unu)
-              mul(stu[nu][mu][ir], unumu.adj, umu)
-        ss[mu][nu].startSB(stu[mu][nu][ix])
-        ss[nu][mu].startSB(stu[nu][mu][ix])
-    toc("makeStaplesU boundary")
-    if needBoundary:
-      boundarySyncSB()
-      for ir in lo:
-        for mu in 1..<nd:
-          for nu in 0..<mu:
-            if not isLocal(s[mu][nu],ir) or not isLocal(s[nu][mu],ir):
-              getSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
-              getSB(s[nu][mu], ir, assign(unu,it), u[nu][ix])
-              mul(umunu, umu, unu.adj)
-              mul(stf[mu][nu][ir], u[nu][ir], umunu)
-              mul(stf[nu][mu][ir], u[mu][ir], umunu.adj)
-    toc("makeStaplesF boundary")
-  toc("makeStaples threads", flops=flops)
-  return (stf,stu,ss)
+type
+  GaugeActionCoeffs* = object
+    plaq*: float
+    rect*: float
+    pgm*: float
 
 # plaq: 6 types
 # rect: 12 types
@@ -315,13 +154,16 @@ proc gaugeForce*[T](uu: openArray[T]): auto =
   toc("gaugeForce end")
   return f
 
-proc gaugeAction2*(g: array|seq): auto =
+proc gaugeAction2*(c: GaugeActionCoeffs, g: array|seq): auto =
   tic()
   let lo = g[0].l
   let nd = lo.nDim
-  let np = nd*(nd-1) div 2
   let t = newTransporters(g, g[0], 1)
-  var p = newSeq[type(trace(g[0]).re)](np)
+  let t2 = newTransporters(g, g[0], 1)
+  let td = newTransporters(g, g[0], -1)
+  var pl = 0.0
+  var rt = 0.0
+  var pg = 0.0
   toc("gaugeAction2 setup")
   threads:
     tic()
@@ -330,18 +172,36 @@ proc gaugeAction2*(g: array|seq): auto =
     for mu in 1..<nd:
       for nu in 0..<mu:
         tic()
-        #m := (t[mu]^*g[nu]) * (t[nu]^*g[mu]).adj
-        #var tt = trace(m).re
-        var tt = trace((t[mu]^*g[nu]) * (t[nu]^*g[mu]).adj).re
+        var tpl = redot(t[mu]^*g[nu], t[nu]^*g[mu])
         if threadNum==0:
-          p[ip] = tt
-          inc ip
+          pl += tpl
         #echo mu, " ", nu, " ", trace(m)/nc
-        toc("gaugeAction2 mul")
+        toc("gaugeAction2 pl")
+        var tr1 = redot(t[mu]^*t[nu]^*g[nu], t2[nu]^*t[nu]^*g[mu])
+        var tr2 = redot(t2[mu]^*t[mu]^*g[nu], t[nu]^*t[mu]^*g[mu])
+        if threadNum==0:
+          rt += tr1 + tr2
+        toc("gaugeAction2 rt")
+        for sg in 0..<nu:
+          var ts1 = redot(t[mu]^*t[nu]^*g[sg], t[sg]^*t[nu]^*g[mu])
+          var ts2 = redot(t[mu]^*t[sg]^*g[nu], t[nu]^*t[sg]^*g[mu])
+          var ts3 = redot(t[nu]^*t[mu]^*g[sg], t[sg]^*t[mu]^*g[nu])
+          var ts4 = redot(t[nu]^*t[sg]^*g[mu], t[mu]^*t[sg]^*g[nu])
+          var ts5 = redot(t[sg]^*t[mu]^*g[nu], t[nu]^*t[mu]^*g[sg])
+          var ts6 = redot(t[sg]^*t[nu]^*g[mu], t[mu]^*t[nu]^*g[sg])
+          var ts7 = redot(td[sg]^*t[mu]^*td[nu]^*g[sg], td[nu]^*g[mu])
+          var ts8 = redot(td[sg]^*t[nu]^*td[mu]^*g[sg], td[mu]^*g[nu])
+          if threadNum==0:
+            pg += ts1 + ts2 + ts3 + ts4 + ts5 + ts6 + ts7 + ts8
+        toc("gaugeAction2 pg")
     toc("gaugeAction2 work")
   toc("gaugeAction2 threads")
-  echo p
-  result = p.sum
+  echo "plaq: ", pl, "  rect: ", rt, "  pgm: ", pg
+  #result = (pl,rt,pg)
+  result = c.plaq*pl + c.rect*rt + c.pgm*pg
+proc gaugeAction2*(g: array|seq): auto =
+  var c: GaugeActionCoeffs
+  gaugeAction2(c, g)
 
 proc gaugeForce2*(f,g: array|seq) =
   tic()
@@ -380,10 +240,12 @@ when isMainModule:
 
   proc test(g:any) =
     var pl = plaq(g)
+    echo "plaq:"
     echo pl
     echo pl.sum
+    var gc: GaugeActionCoeffs
     var ga = gaugeAction(g)
-    var ga2 = gaugeAction2(g)
+    var ga2 = gc.gaugeAction2(g)
     echo "ga: ", ga, "\t", ga2
     var f = gaugeForce(g)
     var f2 = g[0].l.newGauge
@@ -424,7 +286,8 @@ when isMainModule:
         #let t = 1.0
         p[mu][e][0,1] := t
         p[mu][e][1,0] := -t
-    let ga = gaugeAction2(g)
+    var gc: GaugeActionCoeffs
+    let ga = gc.gaugeAction2(g)
     var p2 = 0.0
     for mu in 0..<p.len: p2 += p[mu].norm2
     let s0 = ga + 0.5*p2
@@ -432,18 +295,18 @@ when isMainModule:
 
     echo "pdiff: ", (p[0]-p[1]).norm2
     echo "gdiff: ", (g[0]-g[1]).norm2
-    echo "ga: ", gaugeAction2(g)
+    echo "ga: ", gc.gaugeAction2(g)
     updateX(g,p,0.5*eps)
     echo "pdiff: ", (p[0]-p[1]).norm2
     echo "gdiff: ", (g[0]-g[1]).norm2
-    echo "ga: ", gaugeAction2(g)
+    echo "ga: ", gc.gaugeAction2(g)
     updateP(g,p,eps)
     echo "pdiff: ", (p[0]-p[1]).norm2
     echo "gdiff: ", (g[0]-g[1]).norm2
-    echo "ga: ", gaugeAction2(g)
+    echo "ga: ", gc.gaugeAction2(g)
     updateX(g,p,0.5*eps)
 
-    let ga2 = gaugeAction2(g)
+    let ga2 = gc.gaugeAction2(g)
     p2 = 0.0
     for mu in 0..<p.len: p2 += p[mu].norm2
     let s2 = ga2 + 0.5*p2
