@@ -26,34 +26,36 @@ QUDADIR='/path/to/quda' CUDADIR='/path/to/cuda/lib' \
 ./configure
 ```
 
-This will create a "Makefile" in the build directory.
-Check the resulting Makefile and edit if necessary.
+This will create `Makefile`, `Makefile.nims`, `config.nims` in the build directory.
+Check the resulting `config.nims` and edit if necessary.
 
 The variables you may need to change are:
 
 ```
-QEXDIR: root directory containing QEX code (where this README.md is)
-QMPDIR, QIODIR: installation directories for respective codes
-CC: C compiler to use
-CC_TYPE: What compiler dialect the Nim code generator should use.
+qexdir: root directory containing QEX code (where this README.md is)
+qmpdir, qiodir, qudadir: installation directories for respective codes
+cudadir: directory containing cuda runtime libraries
+cc: C compiler to use
+ccType: What compiler dialect the Nim code generator should use.
          Common options are: gcc, clang, llvm_gcc, icl (Intel),
          ucc (generic unix cc).
          The full list of known compilers is at the bottom of this page:
          https://github.com/nim-lang/Nim/wiki/Consts-defined-by-the-compiler
-CFLAGS_ALWAYS: CFLAGS that are always used
-CFLAGS_DEBUG: extra CFLAGS used for a debug build (make debug=1 ...)
-CFLAGS_SPEED: extra CFLAGS used for a release build (default)
-VERBOSITY: Nim compiler verbosity
-SIMD: SIMD extensions supported (QPX,SSE,AVX,AVX512)
-VLEN: Simd vector length to use
+cflagsAlways: CFLAGS that are always used
+cflagsDebug: extra CFLAGS used for a debug build (make debug=1 ...)
+cflagsSpeed: extra CFLAGS used for a release build (default)
+verbosity: Nim compiler verbosity
+simd: SIMD extensions supported (QPX,SSE,AVX,AVX512)
+vlen: Simd vector length to use
 ```
 
 Try compiling a simple example:
 ```
 make testStagProp
 ```
+The resulting binary will be in the directory `./bin`.
 
 Then run it
 ```
-./testStagProp
+./bin/testStagProp
 ```
