@@ -9,6 +9,8 @@ when not declared(qexdir):
   var qexdir = "@@QEXDIR"
 var qmpdir = "@@QMPDIR"
 var qiodir = "@@QIODIR"
+var qudadir = "@@QUDADIR"
+var cudadir = "@@CUDADIR"
 
 var ccType = "@@CC_TYPE"
 var cc = "@@CC"
@@ -74,6 +76,10 @@ options.debug ! cflagsDebug
 options.speed ! cflagsSpeed
 options.linker ! ldflags
 putenv ~ ("OMPFLAG=" & ompflags)
+putenv ~ ("QMPDIR=" & qmpdir)
+putenv ~ ("QIODIR=" & qiodir)
+putenv ~ ("QUDADIR=" & qudadir)
+putenv ~ ("CUDADIR=" & cudadir)
 
 threads ~ on
 tlsEmulation ~ off

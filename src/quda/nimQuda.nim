@@ -11,9 +11,15 @@ import ../cg
 import times
 
 import os
-const homeDir = getHomeDir()
-const qudaDir = homeDir & "/lqcdM/build/quda"
-const cudaDir = "/usr/local/cuda/lib64"
+when existsEnv("QUDADIR"):
+  const qudaDir = getEnv("QUDADIR")
+else:
+  const homeDir = getHomeDir()
+  const qudaDir = homeDir & "/lqcdM/build/quda"
+when existsEnv("CUDADIR"):
+  const cudaDir = getEnv("CUDADIR")
+else:
+  const cudaDir = "/usr/local/cuda/lib64"
 const cudaLib = "-L" & cudaDir & " -lcudart -lcufft -Wl,-rpath," & cudaDir
 {.passC: "-I" & qudaDir & "/include".}
 {.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib.}

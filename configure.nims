@@ -20,13 +20,33 @@ set "QEXDIR", qexdir
 
 let home = getHomeDir()
 
-var qmpdir = home / "lqcd/install/qmp"
+when existsEnv("QMPDIR"):
+  const qmpdir = getEnv("QMPDIR")
+else:
+  const qmpdir = home / "lqcd/install/qmp"
 echo "Using QMPDIR ", qmpdir
 set "QMPDIR", qmpdir
 
-var qiodir = home / "lqcd/install/qio"
+when existsEnv("QIODIR"):
+  const qiodir = getEnv("QIODIR")
+else:
+  const qiodir = home / "lqcd/install/qio"
 echo "Using QIODIR ", qiodir
 set "QIODIR", qiodir
+
+when existsEnv("QUDADIR"):
+  const qudadir = getEnv("QUDADIR")
+else:
+  const qudadir = home / "lqcd/install/quda"
+echo "Using QUDADIR ", qudadir
+set "QUDADIR", qudadir
+
+when existsEnv("CUDADIR"):
+  const cudadir = getEnv("CUDADIR")
+else:
+  const cudadir = "/usr/local/cuda/lib64"
+echo "Using CUDADIR ", cudadir
+set "CUDADIR", cudadir
 
 var machine = ""
 CC ~ "mpicc"
@@ -75,8 +95,8 @@ if machine=="" and uname=="Darwin":
 
 # cray/modules
 if machine=="":
-  let mods = split(staticExec "module list -t", "\n")
-  echo mods
+  let mods = split(staticExec "module list -t 2>/dev/null", "\n")
+  if mods.len > 0: echo mods
   if mods.contains "craype-mic-knl":
     # assume cross-compiling for KNL
     machine = "knl"

@@ -19,6 +19,13 @@ using the "installNim" script if it can't find the "nim" executable.
 Create a separate build directory (optional but recommended).
 
 From the build directory run the "configure" script found with the source.
+
+```
+QIODIR='/path/to/qio' QMPDIR='/path/to/qmp' \
+QUDADIR='/path/to/quda' CUDADIR='/path/to/cuda/lib' \
+./configure
+```
+
 This will create a "Makefile" in the build directory.
 Check the resulting Makefile and edit if necessary.
 
