@@ -115,7 +115,7 @@ template rsqrtPHM(r:typed; x:typed):untyped =
     quit(1)
 proc rsqrtPH(r:var Mat1; x:Mat2) = rsqrtPHM(r, x)
 
-proc projectU(r:var Mat1; x:Mat2) =
+proc projectU*(r:var Mat1; x:Mat2) =
   let t = x.adj * x
   var t2{.noInit.}:type(t)
   rsqrtPH(t2, t)

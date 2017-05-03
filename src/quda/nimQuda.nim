@@ -36,9 +36,9 @@ proc qudaSolve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams) =
   let tpresetup = epochTime()
   let lo1 = r.l.physGeom.newLayout 1
   var
-    x1, r1: DLatticeColorVector
+    t1, r1: DLatticeColorVector
     g0, g1: D4LatticeColorMatrix
-  x1.new lo1
+  t1.new lo1
   r1.new lo1
   g0.new lo1
   g1.new lo1
@@ -56,7 +56,7 @@ proc qudaSolve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams) =
     iters:cint = 1
     fatlink: pointer = g1.s.data
     longlink: pointer = g0.s.data
-    srcGpu: pointer = x1.s.data
+    srcGpu: pointer = t1.s.data
     destGpu: pointer = r1.s.data
   invargs.maxIter = sp.maxits.cint
   invargs.evenodd = QUDA_EVEN_PARITY   # QUDA_ODD_PARITY
@@ -67,7 +67,7 @@ proc qudaSolve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams) =
     let ri1 = lo1.rankIndex(cv)
     assert(ri1.rank == r.l.myRank)
     for a in 0..2:
-      x1[ri1.index][a] := x{i}[a]
+      t1[ri1.index][a] := t{i}[a]
       r1[ri1.index][a] := r{i}[a]
     for mu in 0..3:
       for a in 0..2:
@@ -106,9 +106,8 @@ proc qudaSolve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams) =
   echo "GPU presetup time: ", secpresetup
   echo "GPU solve time: ", secsolve
   echo "GPU postproc time: ", secpostproc
-  let m4 = 4*m
   threads:
-    r[s.se.sub] := m4*r
+    r[s.se.sub] := 4*r
     threadBarrier()
     s.eoReconstruct(r, x, m)
 proc qudaSolve*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =
@@ -118,6 +117,8 @@ proc qudaSolve*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =
   qudaSolve(s, r, x, m, sp)
 
 when isMainModule:
+  import ../gaugeUtils
+  import ../matrixFunctions
   qexInit()
   #var lat = [4,4,4,4]
   #var lat = [8,8,8,8]
@@ -134,7 +135,17 @@ when isMainModule:
   for i in 0..<lat.len:
     g[i] = lo.Colormatrix()
     threads: g[i] := 1
-  #g.random
+  g.random
+  for mu in 0..<lat.len:
+    #var t, s: DColorMatrixV   # FIXME: get vectorized code to work with projectU
+    var t, s: DColorMatrix
+    tfor i, 0..<lo.nSites:
+      s := g[mu]{i}
+      t.projectU s
+      for a in 0..2:
+        for b in 0..2:
+          g[mu]{i}[a,b].re := t[a,b].re
+          g[mu]{i}[a,b].im := t[a,b].im
   threads:
     g.setBC
     g.stagPhase
@@ -144,7 +155,7 @@ when isMainModule:
   if myRank == 0:
     src{2}[1] := 1
   var s = g.newStag
-  var m = 0.00123
+  var m = 0.0123
   threads:
     echo "src.norm2: ", src.norm2
     threadBarrier()
