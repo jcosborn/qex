@@ -265,9 +265,11 @@ proc rankIndex*(l:Layout, coords:openArray[int]):tuple[rank,index:int] =
     var c = newSeq[cint](n)
   for i in 0..<n: c[i] = coords[i].cint
   result = l.rankIndex(c)
-proc coord*(l:Layout, coord:openArray[cint], ri:tuple[rank,index:int]) =
-  var li = LayoutIndexQ(rank:ri.rank.cint, index:ri.index.cint)
-  layoutCoordQ(l.lq.addr, coord, li)
+proc coord*(l:Layout, coord:var openArray[cint], ri:tuple[rank,index:int]) =
+  var li: LayoutIndexQ
+  li.rank = ri.rank.cint
+  li.index = ri.index.cint
+  layoutCoordQ(l.lq.addr, coord[0].addr, li.addr)
 
 proc vcoords*[V:static[int]](l:Layout[V]; i:int):seq[array[V,int16]] =
   #for d in 0..<l.nDim:
