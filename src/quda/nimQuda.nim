@@ -2,13 +2,13 @@ import quda_milc_interface
 import quda
 import enum_quda
 
-import ../qex
-import ../qcdTypes
-import ../stagD
-import ../profile
-import ../cg
+import base
+import physics/qcdTypes
+import physics/stagD
+import solvers/cg
 
 import times
+import random
 
 import os
 when existsEnv("QUDADIR"):
@@ -67,13 +67,15 @@ proc qudaSolve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams) =
     let ri1 = lo1.rankIndex(cv)
     assert(ri1.rank == r.l.myRank)
     for a in 0..2:
-      t1[ri1.index][a] := t{i}[a]
-      r1[ri1.index][a] := r{i}[a]
+      t1[ri1.index][a].re := t{i}[a].re
+      t1[ri1.index][a].im := t{i}[a].im
+      r1[ri1.index][a].re := r{i}[a].re
+      r1[ri1.index][a].im := r{i}[a].im
     for mu in 0..3:
       for a in 0..2:
         for b in 0..2:
-          #g1{ri1.index}[mu][a,b] := g[mu]{i}[a,b]
-          g1[ri1.index][mu][a,b] := s.g[mu]{i}[a,b]
+          g1[ri1.index][mu][a,b].re := s.g[mu]{i}[a,b].re
+          g1[ri1.index][mu][a,b].im := s.g[mu]{i}[a,b].im
   let secpresetup = epochTime() - tpresetup
   let tsolve = epochTime()
   # FIX ME and FIX QUDA interface: this is for asqtad, we use zero longlink
@@ -117,8 +119,8 @@ proc qudaSolve*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =
   qudaSolve(s, r, x, m, sp)
 
 when isMainModule:
-  import ../gaugeUtils
-  import ../matrixFunctions
+  import gauge
+  import layout
   qexInit()
   #var lat = [4,4,4,4]
   #var lat = [8,8,8,8]
@@ -135,12 +137,15 @@ when isMainModule:
   for i in 0..<lat.len:
     g[i] = lo.Colormatrix()
     threads: g[i] := 1
-  g.random
+  gauge.random(g)
   for mu in 0..<lat.len:
     #var t, s: DColorMatrixV   # FIXME: get vectorized code to work with projectU
     var t, s: DColorMatrix
     tfor i, 0..<lo.nSites:
-      s := g[mu]{i}
+      for a in 0..2:
+        for b in 0..2:
+          s[a,b].re := g[mu]{i}[a,b].re
+          s[a,b].im := g[mu]{i}[a,b].im
       t.projectU s
       for a in 0..2:
         for b in 0..2:
@@ -152,21 +157,18 @@ when isMainModule:
     src := 0
     dest := 0
     destG := 0
-  if myRank == 0:
-    src{2}[1] := 1
+  tfor i, 0..<lo.nSites:
+    for a in 0..2:
+      src{i}[a].re := (if random(1.0)>0.5: 1.0 else: -1.0)
+      src{i}[a].im := (if random(1.0)>0.5: 1.0 else: -1.0)
   var s = g.newStag
   var m = 0.0123
-  threads:
-    echo "src.norm2: ", src.norm2
-    threadBarrier()
-    s.D(dest, src, m)
-    threadBarrier()
-    echo "dest.norm2: ", dest.norm2
-    echo "dest.even: ", dest.even.norm2
-    echo "dest.odd: ", dest.odd.norm2
-  var res = 1e-8
+  var res = 1e-12
   s.solve(dest, src, m, res)
   threads:
+    echo "src.norm2: ", src.norm2
+    echo "src.even: ", src.even.norm2
+    echo "src.odd: ", src.odd.norm2
     echo "dest.norm2: ", dest.norm2
     echo "dest.even: ", dest.even.norm2
     echo "dest.odd: ", dest.odd.norm2
