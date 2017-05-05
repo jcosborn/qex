@@ -4,7 +4,9 @@ import simdX86Types
 import simdSse
 import simdAvx
 import simdAvx512
-import ../basicOps
+#import ../basicOps
+import base
+import math
 import macros
 
 template binaryMixed(T,op1,op2:untyped):untyped =

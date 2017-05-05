@@ -1,5 +1,5 @@
 import lapack
-import stdUtils
+import base
 
 type
   dvec* = ref object

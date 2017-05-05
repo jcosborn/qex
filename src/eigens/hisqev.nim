@@ -1,8 +1,11 @@
+import base
+import layout
+import field
 import svdLanczos
 import linalgFuncs
 import math
-import profile
-import alignedMem
+#import profile
+#import alignedMem
 include system/ansi_c
 #template printf(fmt: string, args: varargs[untyped]) = cprintf(fmt, args)
 
@@ -134,6 +137,7 @@ proc rayleighRitz2(t: var any, a,b: int) =
     t[a+i].sv = sqrt(ev[i])
 
 proc rayleighRitz(t: var any, a,b: int, op: any) =
+  mixin adj
   tic()
   mixin dot, simdSum, rankSum, `:=`
   let n = b-a+1
@@ -477,10 +481,10 @@ proc hisqev(op: any, opts: any): auto =
 
 when isMainModule:
   import qex
-  import qcdTypes
-  import gaugeUtils
-  import stagD
-  import rng
+  import physics/qcdTypes
+  import gauge
+  import physics/stagD
+  import rng/rng
 
   qexInit()
   var defaultGaugeFile = "l88.scidac"
@@ -509,10 +513,10 @@ when isMainModule:
     r: type(r)
     lo: type(lo)
   var op = MyOp(r:r,s:s,lo:lo)
-  proc gaussian(x: C1, r: var any) =
+  proc gaussian(x: AsVarComplex, r: var any) =
     x.re = gaussian(r)
     x.im = gaussian(r)
-  proc gaussian(x: Vec1, r: var any) =
+  proc gaussian(x: AsVarVector, r: var any) =
     for i in 0..<x.len:
       gaussian(x[i], r)
   proc gaussian(v: Field, r: Field2) =

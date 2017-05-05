@@ -1,11 +1,6 @@
+import base
+import layout
 import fieldProxy
-#import ../globals
-import ../alignedMem
-#import ../threading
-#import ../comms
-import ../layout
-#import ../basicOps
-#import ../profile
 
 type
   FieldObj*[V: static[int], T] = object
@@ -59,7 +54,7 @@ proc newOneOf*(x:Field):auto =
 ]#
 
 when isMainModule:
-  import basicOps
+  #import basicOps
 
   var lat = [4,4,4,4]
   var lo = newLayout(lat)

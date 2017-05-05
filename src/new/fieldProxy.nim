@@ -1,6 +1,5 @@
 import macros
-import ../stdUtils
-import ../metaUtils
+import base
 
 # f := x + y
 # f.even = x + y
@@ -352,6 +351,7 @@ when isMainModule:
     FieldIndexType = FieldProxy[FieldIndexObj]
 
   proc newFieldImpl[T](x: FieldObj, y: T): Field[T] = discard
+  proc newFieldImpl[T](x: FieldObj, y: typedesc[T]): Field[T] = discard
   proc newField[T](): Field[T] = discard
 
   template `[]`(x: FieldObj, y: untyped): untyped =
@@ -367,8 +367,11 @@ when isMainModule:
   fieldScalarOverloads(SomeNumber)
 
   proc newFieldImpl[T](x: FieldIndexObj, y: T): Field[T] = discard
+  proc newFieldImpl[T](x: FieldIndexObj, y: typedesc[T]): Field[T] = discard
   template `[]`(x: FieldIndexObj, y: untyped): untyped = y
   template fieldIndexVal(): untyped = FieldIndexType()
+  template `:=`*(x: float, y: float) = x = y
+  template `+`*(x: float, y: int): float = x + float(y)
 
   var x,y,z: Field[float]
 

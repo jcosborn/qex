@@ -1,7 +1,7 @@
 import os
 import streams
 import strUtils
-import stdUtils
+import base
 import times
 
 const MILC_MAGIC_NUMBER = 20103

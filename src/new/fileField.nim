@@ -1,7 +1,7 @@
 import os
 import streams
 import strUtils
-import stdUtils
+import base
 import fieldProxy
 import memfiles
 
@@ -36,6 +36,7 @@ fieldScalarOverloads(SomeNumber)
 
 
 when isMainModule:
+  import milcIO
   proc product[T](x: openarray[T]): auto =
     result = x[0]
     for i in 1..<x.len: result *= x[i]
