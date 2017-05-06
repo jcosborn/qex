@@ -30,7 +30,7 @@ type
   Adjointed*[T] = object
     v*:T
 
-template adj*(xx:typed):untyped =
+template adj*(xx: typed): untyped =
   mixin adj
   lets(x,xx):
     when isComplex(x):
@@ -53,6 +53,7 @@ template adj*(xx:typed):untyped =
         #(Adjointed[type(x)])(x)
         cast[Adjointed[type(x)]](x)
         #cast[Adjointed[type(x)]]((var t=x; t.addr))
+
 #template `[]`*[T](x:Adjointed[T]):untyped = cast[T](x)
 makeDeref(Adjointed, x.T)
 template `[]`*(x:Adjointed; i:SomeInteger):untyped = x[][i].adj

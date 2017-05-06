@@ -129,11 +129,11 @@ template `[]`*(x:SomeField; st:string):untyped =
 template `[]`*(x:SomeField; st:Subset):untyped =
   Subsetted[type(x),type(st)](field:x,subset:st)
 
-template `[]`*(x:FieldUnop; i:int):untyped =
-  when x.Op == foToSingle:
-    toSingle(x.f1[i])
-  else:
-    toDouble(x.f1[i])
+template `[]`*(x: FieldUnop; i: int): untyped =
+  when x.Op == foAdj: adj(x.f1[i])
+  elif x.Op == foToSingle: toSingle(x.f1[i])
+  elif x.Op == foToDouble: toDouble(x.f1[i])
+  else: {.error.}
 
 template even*(x:Field):untyped = x["even"]
 template odd*(x:Field):untyped = x["odd"]
