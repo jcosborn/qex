@@ -1,5 +1,6 @@
 import macros
 import base
+import strUtils
 
 # f := x + y
 # f.even = x + y
@@ -14,7 +15,8 @@ type
   #SiteIndex* = distinct int
   #VSiteIndex* = distinct int
 
-template `[]`*(x: FieldProxy): untyped = x.field
+template `[]`*(x: FieldProxy): untyped =
+  x.field
 
 proc isFieldProxy(x: NimNode): bool =
   let t = x.getTypeInst
@@ -31,21 +33,88 @@ proc isFieldProxy(x: NimNode): bool =
 template indexFieldProxy*(x: FieldProxy, y: typed): untyped =
   x[][y]
 
+const opNameOps = ['+','-','*','/']
+const opNameNames = ["plus","minus","times","divd"]
+proc opToName(op: string): string =
+  result = ""
+  for c in op:
+    var i = opNameOps.indexOf(c)
+    if i>=opNameOps.len:
+      echo "unknown op: ", c, " in ", op
+      quit 1
+    result &= opNameNames[i]
+proc nameToOp(op: string): string =
+  result = ""
+  var pos = 0
+  while pos<op.len:
+    var i = 0
+    while i<opNameNames.len and not op.continuesWith(opNameNames[i],pos): inc i
+    if i>=opNameNames.len:
+      echo "unknown name: ", op[pos..^1], " in ", op
+      quit 1
+    result &= opNameOps[i]
+    pos += opNameNames[i].len
+proc toSiteLocalName(fn: string): string =
+  var f = fn
+  if f[0] notin IdentStartChars:
+    f = "op_" & opToName(f)
+  f &= "_SiteLocal"
+  result = f
+proc fromSiteLocalName(fn: string): string =
+  var f = fn[0..^11]
+  if f.startsWith("op_"):
+    f = nameToOp(f[3..^1])
+  result = f
+
+# rename site local calls (f_SiteLocal)
+# split equations
+# - rename nonlocal calls (f_Impl)
+#
+proc isSiteLocal(x: string): bool =
+  x.endsWith("_SiteLocal")
+proc splitFieldExpression(x: NimNode): tuple[defs:NimNode,expr:NimNode] =
+  var defs = newStmtList()
+  var expr: NimNode
+  if x.kind in CallNodes:
+    if isSiteLocal($x.name):
+      expr = newNimNode(x.kind)
+      expr.add x.name
+      for i in 1..<x.len:
+        let (df,ex) = splitFieldExpression(x[i])
+        defs.add df
+        expr.add ex
+    else: # FIXME: make recursive & rename nonlocal calls
+      #template myLet(a,b) =
+      #  let a = b
+      #let t = genSym(nskLet, "tmpField")
+      template myLet(a,b) =
+        var a{.noInit.}: type(b)
+        a := b
+      let t = genSym(nskVar, "tmpField")
+      defs.add getAst(myLet(t,x))
+      expr = t
+  else:
+    expr = x
+  result = (defs, expr)
+
 macro indexFieldProxy*(x: FieldProxy{call}, y: typed): untyped =
-  #echo x.treerepr
-  #echo y.treerepr
-  result = newCall(ident($x[0]))
-  for i in 1..<x.len:
-    let xi = x[i]
-    #if isFieldProxy(xi):
-    result.add newCall(!"indexFieldProxy", xi, y)
-    #else:
-    #  result.add xi
+  let f = $x[0]
+  echo "site index: ", f
+  if f.endsWith("_SiteLocal"):
+    let f2 = fromSiteLocalName(f)
+    result = newCall(ident(f2))
+    for i in 1..<x.len:
+      let xi = x[i]
+      result.add newCall(!"indexFieldProxy", xi, y)
+  else:
+    #echo "not found: ", f
+    result = newCall(ident"[]",newCall(ident"[]",x),y)
 
 template `[]`*(x: FieldProxy, y: typed): untyped =
   indexFieldProxy(x, y)
 
-template `[]=`*(x: FieldProxy, y: typed, z: typed): untyped = x[][y] = z
+template `[]=`*(x: FieldProxy, y: typed, z: typed): untyped =
+  x[][y] = z
 
 proc newFieldProxy*(x: FieldProxy, y: typedesc): auto =
   mixin newFieldImpl
@@ -53,11 +122,26 @@ proc newFieldProxy*(x: FieldProxy, y: typedesc): auto =
 
 template `len`*(x: FieldProxy): untyped = x[].len
 
+#macro `=`*[T](r: var FieldProxy[T], x: FieldProxy[T]): auto =
+#  template doAssign(r: FieldProxy, x: FieldProxy): untyped =
+#    mixin indices
+#    for i in indices(r[]):
+#      op(r[i], x[i])
+#  let (df,ex) = splitFieldExpression(x)
+#  result = df
+#  result.add getAst(doAssign(r, ex))
+#  echo result.repr
+
 template assignOverloads(op: untyped) {.dirty.} =
-  template op*(r: FieldProxy, x: FieldProxy2): untyped =
-    mixin indices
-    for i in indices(r[]):
-      op(r[i], x[i])
+  macro op*(r: FieldProxy, x: FieldProxy2): auto =
+    template doAssign(r: FieldProxy, x: FieldProxy2): untyped =
+      mixin indices
+      for i in indices(r[]):
+        op(r[i], x[i])
+    let (df,ex) = splitFieldExpression(x)
+    result = df
+    result.add getAst(doAssign(r, ex))
+    echo result.repr
 
 assignOverloads(`:=`)
 assignOverloads(`+=`)
@@ -77,12 +161,18 @@ unaryOverloads(adj)
 unaryOverloads(toSingle)
 unaryOverloads(toDouble)
 
-template binaryOverloads(fn: untyped) {.dirty.} =
-  proc fn*(x: FieldProxy, y: FieldProxy2): auto {.noInit.} =
+template binaryOverloads2(fn,slfn: untyped) {.dirty.} =
+  proc slfn*(x: FieldProxy, y: FieldProxy2): auto {.noInit.} =
+    echo "unoptimized siteLocal"
     mixin newFieldImpl, indices
     result = newFieldImpl(x[], type(fn(x[0],y[0])))
     for i in indices(result[]):
       result[i] = fn(x[i], y[i])
+  template fn*(x: FieldProxy, y: FieldProxy2): untyped = slfn(x,y)
+macro binaryOverloads(fn: untyped): auto =
+  let f = $fn.name
+  let sln = toSiteLocalName(f)
+  result = getAst(binaryOverloads2(fn, ident(sln)))
 
 binaryOverloads(`+`)
 binaryOverloads(`-`)
@@ -120,9 +210,12 @@ template fieldScalarOverloads*(typ: untyped) {.dirty.} =
   binaryOverloadScalar(`/`, typ)
 
 proc `$`*(x: FieldProxy): string =
-  let n = x.len - 1
-  result = "FieldProxy[0] = " & $x[0] & "\n"
-  result &= "FieldProxy[" & $n & "] = " & $x[n]
+  #let n = x.len
+  #result =  "FieldProxy.len: " & $(x.len) & "\n"
+  #result &= "FieldProxy.first = " & $x[0] & "\n"
+  #result &= "FieldProxy[" & $n & "] = " & $x[n]
+  $(x[])
+
 
 #[
 template `[]`*(x: FieldProxy, s: string): untyped =
@@ -130,9 +223,7 @@ template `[]`*(x: FieldProxy, s: string): untyped =
 template `[]`*(x:SomeField; st:Subset):untyped =
   Subsetted[type(x),type(st)](field:x,subset:st)
 
-
 template numberType*(x: FieldProxy): untyped = numberType(x[])
-
 
 template even*(x:Field):untyped = x["even"]
 template odd*(x:Field):untyped = x["odd"]
@@ -359,11 +450,17 @@ when isMainModule:
   template `[]=`(x: FieldObj, y: untyped, z: untyped): untyped =
     x.v[y] = z
   template `len`*(x: FieldObj): untyped = x.v.len
-  #iterator indices(x: FieldObj): int =
-  #  countup(0,99)
-  #iterator indices(x: FieldObj): int =
-  #  countup(0,99)
-  template indices(x: FieldObj): untyped = 0..99
+  proc `$`*(x: FieldObj): string =
+    let n = x.len - 1
+    result  = "FieldObj[0]: " & $x[0] & "\n"
+    result &= "FieldObj[" & $n & "]: " & $x[n]
+  iterator indices(x: FieldObj): int =
+    var i = 0
+    var n = x.len
+    while i<n:
+      yield i
+      inc i
+
   fieldScalarOverloads(SomeNumber)
 
   proc newFieldImpl[T](x: FieldIndexObj, y: T): Field[T] = discard

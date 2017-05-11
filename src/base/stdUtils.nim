@@ -46,6 +46,10 @@ proc `|`*(f: float, d: tuple[w,p: int]): string =
 proc `|`*(f: float, d: int): string =
   $f | d
 
+proc indexOf*[T](x: openArray[T], y: any): int =
+  let n = x.len
+  while result<n and x[result]!=y: inc result
+
 proc `*`*[T](x:openArray[T], y:int):auto {.inline.} =
   let n = x.len
   var r:array[n,T]

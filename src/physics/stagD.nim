@@ -403,6 +403,19 @@ proc newStag3*[G](g:openArray[G]):auto =
   r.so = initStagD3T(l, t, "odd")
   r.g = @g
   r
+proc newStag3*[G](g,g3:openArray[G]):auto =
+  var l = g[0].l
+  template t:untyped =
+    type(l.ColorVector()[0])
+  var r:Staggered[G,t]
+  r.se = initStagD3T(l, t, "even")
+  r.so = initStagD3T(l, t, "odd")
+  var gg = newSeq[type(g[0])](0)
+  for i in 0..<g.len:
+    gg.add g[i]
+    gg.add g3[i]
+  r.g = @gg
+  r
 
 proc D*(s:Staggered; r,x:Field; m:SomeNumber) =
   stagD(s.se, r, s.g, x, m)

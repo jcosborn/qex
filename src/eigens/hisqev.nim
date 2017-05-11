@@ -484,6 +484,7 @@ when isMainModule:
   import physics/qcdTypes
   import gauge
   import physics/stagD
+  import physics/hisqLinks
   import rng/rng
 
   qexInit()
@@ -495,7 +496,13 @@ when isMainModule:
     #g.random
     g.setBC
     g.stagPhase
-  var s = newStag(g)
+  #var s = newStag(g)
+  var hc: HisqCoefs
+  hc.init()
+  var fl = lo.newGauge()
+  var ll = lo.newGauge()
+  hc.smear(g, fl, ll)
+  var s = newStag3(fl, ll)
 
   var lo1 = newLayout(lat, 1)
   var r: Field[1,RngMilc6]

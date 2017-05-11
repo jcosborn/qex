@@ -393,6 +393,7 @@ type
     field*: F
     sb*: ShiftB[T]
     len: int
+  Shifter*[F,T] = Transporter[void,F,T]
 
 #proc field*(t: Transporter): auto = t.field
 #proc `link=`*(r,x: Transporter) = t.field
@@ -404,7 +405,27 @@ proc newTransporters*[U,F](u: seq[U], f: F, len: int, sub="all"): auto =
   for mu in 0..<nd:
     r[mu].link = u[mu]
     r[mu].field = f.newOneOf
-    r[mu].field := 0
+    #r[mu].field := 0
+    r[mu].sb.initShiftB(f, mu, len, sub)
+    r[mu].len = len
+  r
+
+proc newShifter*[F](f: F, dir,len: int, sub="all"): auto =
+  var r: Shifter[F,type(f[0])]
+  r.field = f.newOneOf
+  #r.field := 0
+  r.sb.initShiftB(f, dir, len, sub)
+  r.len = len
+  r
+
+proc newShifters*[F](f: F, len: int, sub="all"): auto =
+  var r: seq[Transporter[void,F,type(f[0])]]
+  let nd = f.l.nDim
+  r.newSeq(nd)
+  for mu in 0..<nd:
+    #r[mu].link = u[mu]
+    r[mu].field = f.newOneOf
+    #r[mu].field := 0
     r[mu].sb.initShiftB(f, mu, len, sub)
     r[mu].len = len
   r
@@ -412,16 +433,28 @@ proc newTransporters*[U,F](u: seq[U], f: F, len: int, sub="all"): auto =
 proc `^*`*(x: Transporter, y: any): auto =
   mixin mul, load1, adj
   var r = x.field
-  if x.len >= 0:
-    startSB(x.sb, y[ix])
-    for ir in x.sb.subset:
-      localSB(x.sb, ir, mul(r[ir], x.link[ir], it), load1(y[ix]))
-    boundarySB(x.sb, mul(r[ir], x.link[ir], it))
+  when compiles(x.link):
+    if x.len >= 0:
+      startSB(x.sb, y[ix])
+      for ir in x.sb.subset:
+        localSB(x.sb, ir, mul(r[ir], x.link[ir], it), load1(y[ix]))
+      boundarySB(x.sb, mul(r[ir], x.link[ir], it))
+    else:
+      startSB(x.sb, x.link[ix].adj*y[ix])
+      for ir in x.sb.subset:
+        localSB(x.sb, ir, assign(r[ir], it), x.link[ix].adj*y[ix])
+      boundarySB(x.sb, assign(r[ir], it))
   else:
-    startSB(x.sb, x.link[ix].adj*y[ix])
-    for ir in x.sb.subset:
-      localSB(x.sb, ir, assign(r[ir], it), x.link[ix].adj*y[ix])
-    boundarySB(x.sb, assign(r[ir], it))
+    if x.len >= 0:
+      startSB(x.sb, y[ix])
+      for ir in x.sb.subset:
+        localSB(x.sb, ir, assign(r[ir], it), load1(y[ix]))
+      boundarySB(x.sb, assign(r[ir], it))
+    else:
+      startSB(x.sb, y[ix])
+      for ir in x.sb.subset:
+        localSB(x.sb, ir, assign(r[ir], it), y[ix])
+      boundarySB(x.sb, assign(r[ir], it))
   threadBarrier()
   r
 #template `()`*(x: Transporter, y: untyped): untyped = x ^* y

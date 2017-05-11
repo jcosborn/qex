@@ -18,6 +18,11 @@ proc newGauge*(l: Layout): auto =
     result[i] = l.ColorMatrix()
     result[i] := 1
 
+proc newOneOf*[T](x: seq[T]): seq[T] =
+  result.newSeq(x.len)
+  for i in 0..<x.len:
+    result[i] = newOneOf(x[i])
+
 proc loadGauge*[T](g:openArray[T]; fn:string):int =
   var rd = g[0].l.newReader(fn)
   if rd.status!=0: return rd.status
