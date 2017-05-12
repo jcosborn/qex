@@ -14,37 +14,26 @@ template unsafeAddrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
 template `$&`*(x: untyped): string =
   toHex(unsafeAddrInt(x))
 
-proc `|`*(x: int, d: int): string =
-  result = $x
-  var plen = d.abs-len(result)
-  if plen<0: plen = 0
-  let pad = repeat(' ', plen)
-  if d >= 0:
-    result = pad & result
-  else:
-    result = result & pad
-proc `|`*(s: string, d: int): string =
-  let pad = repeat(' ', d.abs-len(s))
-  if d >= 0:
-    result = pad & s
-  else:
-    result = s & pad
 proc `|`*(s: string, d: tuple[w:int,c:char]): string =
-  let pad = repeat(d.c, d.w.abs-len(s))
+  let p = abs(d.w) - len(s)
+  let pad = if p>0: repeat(d.c, p) else: ""
   if d.w >= 0:
     result = pad & s
   else:
     result = s & pad
+proc `|`*(s: string, d: int): string =
+  s | (d,' ')
+proc `|`*(x: int, d: int): string =
+  ($x) | d
 proc `|`*(f: float, d: tuple[w,p: int]): string =
-  result = formatFloat(f, ffDecimal, d.p)
-  let p = d.w.abs-len(result)
-  let pad = if p>0: repeat(' ', p) else: ""
-  if d.w >= 0:
-    result = pad & result
+  if d.p<0:
+    formatFloat(f, ffDecimal, -d.p) | d.w
   else:
-    result = result & pad
+    formatFloat(f, ffDefault, d.p) | d.w
 proc `|`*(f: float, d: int): string =
-  $f | d
+  f | (d,d)
+template `|-`*(x:SomeNumber, y: int): untyped =
+  x | -y
 
 proc indexOf*[T](x: openArray[T], y: any): int =
   let n = x.len

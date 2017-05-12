@@ -4,7 +4,6 @@ import lapack
 import linalgFuncs
 import times
 import strUtils
-include system/ansi_c
 
 template QMP_time() = epochTime()
 var verb: int
@@ -29,15 +28,15 @@ proc svd_bi3*(ev: dvec; m: dmat; ma: dmat; a: dvec; b: dvec) =
   dealloc(d)
   dealloc(e)
   if verb>0:
-    template pv(i: int) =
-      #cprintf("sv[%i] %14.12g ", i, ev[i])
-      echo "sv[$1] $2 "%[$i,ev[i]|(14,12)]
-    pv(0)
-    pv(1)
-    pv(k-1)
-    pv(n-1)
-    echo()
-
+    #template pv(i: int) =
+    #  cprintf("sv[%i] %14.12g ", i, ev[i])
+    #pv(0)
+    #pv(1)
+    #pv(k-1)
+    #pv(n-1)
+    #echo()
+    template pv(i: int): untyped = "sv[$1] $2 "%[$i, ev[i]|(14,12)]
+    echo pv(0), pv(1), pv(k-1), pv(n-1)
 
 template nothreads(x: untyped): untyped = x
 
@@ -91,11 +90,13 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
     if k >= kcheck or k >= kmax:
       getSvals(ev, a, b, k)
       if verb>0:
-        cprintf("%-5i", k)
-        cprintf(" sv%i %-16.12g", 0, dvec_get(ev, 0))
-        cprintf(" sv%i %-16.12g", 1, dvec_get(ev, 1))
-        cprintf(" sv%i %-16.12g", nv-1, dvec_get(ev, nv-1))
-        cprintf(" sv%i %-16.12g\n", k-1, dvec_get(ev, k-1))
+        #cprintf("%-5i", k)
+        #cprintf(" sv%i %-16.12g", 0, dvec_get(ev, 0))
+        #cprintf(" sv%i %-16.12g", 1, dvec_get(ev, 1))
+        #cprintf(" sv%i %-16.12g", nv-1, dvec_get(ev, nv-1))
+        #cprintf(" sv%i %-16.12g\n", k-1, dvec_get(ev, k-1))
+        template sv(n): untyped = " sv$1 $2"%[$n,ev[n]|(-16,12)]
+        echo k|-5, sv(0), sv(1), sv(nv-1), sv(k-1)
       kcheck = 1 + (1.5 * kcheck.float).int
       if k >= kmax: break
 
@@ -113,7 +114,8 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   #echo int(getTics())
   var dtime1 = getElapsedTime()
   if verb>0:
-    cprintf("svd_lanczos %g secs\n", dtime1)
+    #cprintf("svd_lanczos %g secs\n", dtime1)
+    echo "svd_lanczos $1 secs"%[dtime1|-6]
 
   kmax = k
   if nv > kmax:
@@ -133,7 +135,8 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   #echo int(getTics())
   var dtime2 = getElapsedTime()
   if verb>0:
-    cprintf("svd_lanczos %g secs %g\x0A", dtime2-dtime1, dtime2)
+    #cprintf("svd_lanczos %g secs %g\x0A", dtime2-dtime1, dtime2)
+    echo "svd_lanczos $1 secs $2"%[(dtime2-dtime1)|-6, dtime2|-6]
 
   for i in 0..<qv.len:
     qv[i] := 0
@@ -167,7 +170,8 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   #echo int(timer)
   var dtime3 = getElapsedTime()
   if verb>0:
-    cprintf("svd_lanczos %g secs %g\x0A", dtime3-dtime2, dtime3)
+    #cprintf("svd_lanczos %g secs %g\x0A", dtime3-dtime2, dtime3)
+    echo "svd_lanczos $1 secs $2"%[(dtime3-dtime2)|-6, dtime3|-6]
   result = kmax
 
 

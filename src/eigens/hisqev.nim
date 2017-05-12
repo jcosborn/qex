@@ -4,10 +4,7 @@ import field
 import svdLanczos
 import linalgFuncs
 import math
-#import profile
-#import alignedMem
-include system/ansi_c
-#template printf(fmt: string, args: varargs[untyped]) = cprintf(fmt, args)
+import strUtils
 
 type EigTable[T] = object
   v: T
@@ -234,7 +231,7 @@ proc rayleighRitz(t: var any, a,b: int, op: any) =
     sett(t[a+i], op)
   sort(t, a, b)
   var t2 = getElapsedTime()
-  echo "rr dots: ", t0, "  zeigsgv: ", t1-t0, "  vecs: ", t2-t1
+  echo "rr dots: ", t0|-6, "  zeigsgv: ", (t1-t0)|-6, "  vecs: ", (t2-t1)|-6
   toc()
 
 proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
@@ -346,8 +343,9 @@ proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
 
   toc()
   var tm = getElapsedTime()
-  cprintf("merget time = %.2f secs (o1 %.2f o2 %.2f rr %.2f)\n",
-          tm, to1, to2, tr)
+  #cprintf("merget time = %.2f secs (o1 %.2f o2 %.2f rr %.2f)\n",
+  #        tm, to1, to2, tr)
+  echo "merget time = $1 secs (o1 $2 o2 $3 rr $4)"%[tm|-6,to1|-6,to2|-6,tr|-6]
   for i in 0..<vt2.len:
     if nmax+i<vt1.len: vt2[i].v = vt1[nmax+i].v
     else: vt2[i].v = nil
@@ -431,8 +429,10 @@ proc hisqev(op: any, opts: any, vv: any): auto =
 
   geterr(vt1, op)
   for i in 0..<vt1.len:
-    cprintf("  %i\t%-18.12g%-18.12g%-18.12g\n", i, vt1[i].sv, vt1[i].err,
-            vt1[i].err/vt1[i].sv)
+    #cprintf("  %i\t%-18.12g%-18.12g%-18.12g\n", i, vt1[i].sv, vt1[i].err,
+    #        vt1[i].err/vt1[i].sv)
+    echo "  $1\t$2$3$4"%[$i, vt1[i].sv|(-18,12), vt1[i].err|(-18,12),
+                         (vt1[i].err/vt1[i].sv)|(-18,12)]
 
   var ngcount = 0
   var re = relerr
@@ -442,8 +442,10 @@ proc hisqev(op: any, opts: any, vv: any): auto =
     var iv = 0
     while(iv<vt1.len-1 and (vt1[iv].err<ae or vt1[iv].err<re*vt1[iv].sv)):
       inc iv
-    cprintf("iv = %i  sv[iv] = %g\t%g\t%g\n", iv, vt1[iv].sv,
-            vt1[iv].err, vt1[iv].err/vt1[iv].sv)
+    #cprintf("iv = %i  sv[iv] = %g\t%g\t%g\n", iv, vt1[iv].sv,
+    #        vt1[iv].err, vt1[iv].err/vt1[iv].sv)
+    echo "iv = $1  sv[iv] = $2\t$3\t$4"%[$iv, $vt1[iv].sv, $vt1[iv].err,
+                                         $(vt1[iv].err/vt1[iv].sv)]
     if iv>ng:
       ngcount += 1
     else:
@@ -453,7 +455,8 @@ proc hisqev(op: any, opts: any, vv: any): auto =
     emin = 0
     emax = 1e99
     if vt1.len>=ng: emax = vt1[min(vt1.len,nvt)-1].sv
-    cprintf("emin %g  emax %g\n", emin, emax)
+    #cprintf("emin %g  emax %g\n", emin, emax)
+    echo "emin $1  emax $2\n"%[$emin, $emax]
     op.rand(src)
     let srcn2 = src.norm2
     vin += (0.1*vt1[iv].sv/sqrt(srcn2)) * src
@@ -463,16 +466,21 @@ proc hisqev(op: any, opts: any, vv: any): auto =
     vt2.maketable(v, op)
     merget(vt1, vt2, ng, nvt, rrbs, op)
     geterr(vt1, op)
-    cprintf("pass %i\n", iter)
+    #cprintf("pass %i\n", iter)
+    echo "pass ", iter
     for i in 0..<vt1.len:
-      cprintf("  %i\t%-18.12g%-18.12g%-18.12g\n", i, vt1[i].sv, vt1[i].err,
-              vt1[i].err/vt1[i].sv)
+      #cprintf("  %i\t%-18.12g%-18.12g%-18.12g\n", i, vt1[i].sv, vt1[i].err,
+      #        vt1[i].err/vt1[i].sv)
+      echo "  $1\t$2$3$4"%[$i, vt1[i].sv|(-18,12), vt1[i].err|(-18,12),
+                           (vt1[i].err/vt1[i].sv)|(-18,12)]
     toc()
     let tt1 = getTics()
-    cprintf("iteration %i time = %.2f seconds\n", iter, toSeconds(tt1-tt0))
+    #cprintf("iteration %i time = %.2f seconds\n", iter, toSeconds(tt1-tt0))
+    echo "iteration $1 time = $2 seconds"%[$iter, toSeconds(tt1-tt0)|-6]
   toc()
   let t1 = getElapsedTime()
-  cprintf("total time = %.2f seconds\n", t1)
+  #cprintf("total time = %.2f seconds\n", t1)
+  echo "total time = $1 seconds"%[t1|-6]
   vt1
 
 proc hisqev(op: any, opts: any): auto =
