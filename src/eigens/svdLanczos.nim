@@ -1,11 +1,9 @@
+import base
 import math
 import lapack
 import linalgFuncs
 import times
-#import stdUtils
-#import profile
-#import threading
-import base
+import strUtils
 include system/ansi_c
 
 template QMP_time() = epochTime()
@@ -32,7 +30,8 @@ proc svd_bi3*(ev: dvec; m: dmat; ma: dmat; a: dvec; b: dvec) =
   dealloc(e)
   if verb>0:
     template pv(i: int) =
-      cprintf("sv[%i] %14.12g ", i, ev[i])
+      #cprintf("sv[%i] %14.12g ", i, ev[i])
+      echo "sv[$1] $2 "%[$i,ev[i]|(14,12)]
     pv(0)
     pv(1)
     pv(k-1)
