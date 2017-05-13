@@ -300,16 +300,17 @@ template defaultSetup*:untyped {.dirty.} =
     if fileExists(defaultGaugeFile):
       fn = defaultGaugeFile
   if paramCount()>0:
-    if not isDigit(paramStr(1)):
+    if (not isDigit(paramStr(1))) and paramStr(1)[0]!='-':
       fn = paramStr(1)
   if fn != nil:
     lat = getFileLattice(fn)
   else:
     if paramCount()>0 and isDigit(paramStr(1)):
+      lat.newSeq(0)
       var pc = paramCount()
-      lat.newSeq(pc)
-      for i in 0..<pc:
-        lat[i] = parseInt(paramStr(i+1))
+      for i in 1..pc:
+        if not isDigit(paramStr(i)): break
+        lat.add parseInt(paramStr(i))
     else:
       when declared(defaultLat):
         when defaultLat is array:

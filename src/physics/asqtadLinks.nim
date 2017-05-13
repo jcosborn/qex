@@ -1,45 +1,32 @@
 import gauge, gauge/fat7l, maths, physics/stagD, strUtils
 
 type
-  HisqCoefs* = object
-    fat7first*: Fat7lCoefs
-    fat7second*: Fat7lCoefs
+  AsqtadCoefs* = object
+    fat7*: Fat7lCoefs
     naik*: float
 
-proc setHisqFat7*(c: var Fat7lCoefs, f7lf,naik: float) =
+proc setAsqtadFat7*(c: var Fat7lCoefs, f7lf,naik: float) =
   c.oneLink = (1.0+3.0*f7lf+naik)/8.0
   c.threeStaple = -1.0/16.0
   c.fiveStaple = 1.0/64.0
   c.sevenStaple = -1.0/384.0
   c.lepage = -f7lf/16.0
 
-proc init*(c: var HisqCoefs) =
-  var f7lf = 0.0
+proc init*(c: var AsqtadCoefs) =
+  var f7lf = 1.0
   var naik = 1.0
-  c.fat7first.setHisqFat7(f7lf, 0.0)
-  c.fat7second.setHisqFat7(2.0-f7lf, naik)
+  c.fat7.setAsqtadFat7(f7lf, naik)
   c.naik = -naik/24.0
 
-proc `$`*(c: HisqCoefs): string =
-  let f1 = $c.fat7first
-  let f2 = $c.fat7second
-  result  = "fat7first:\n  " & f1.replace("\n","\n  ")
-  result.removeSuffix("  ")
-  result &= "fat7second:\n  " & f2.replace("\n","\n  ")
+proc `$`*(c: AsqtadCoefs): string =
+  let f1 = $c.fat7
+  result  = "fat7:\n  " & f1.replace("\n","\n  ")
   result.removeSuffix("  ")
   result &= "naik: " & $c.naik & "\n"
 
-proc smear*(c: HisqCoefs, g: any, fl,ll: any, t1,t2: any) =
+proc smear*(c: AsqtadCoefs, g: any, fl,ll: any) =
   var info: PerfInfo
-  makeImpLinks(info, t1, g, c.fat7first)
-  for mu in 0..<4:
-    for i in t2[mu]:
-      projectU(t2[mu][i], t1[mu][i])
-  makeImpLinks(info, fl, t2, c.fat7second, ll, t2, c.naik)
-proc smear*(c: HisqCoefs, g: any, fl,ll: any) =
-  var t1 = fl.newOneOf
-  var t2 = fl.newOneOf
-  c.smear(g, fl, ll, t1, t2)
+  makeImpLinks(info, fl, g, c.fat7, ll, g, c.naik)
 
 when isMainModule:
   import qex
@@ -52,7 +39,7 @@ when isMainModule:
   #for mu in 0..<g.len: g[mu] := 1
   #g.random
 
-  var coef: HisqCoefs
+  var coef: AsqtadCoefs
   g.setBC
   g.stagPhase
   coef.init()

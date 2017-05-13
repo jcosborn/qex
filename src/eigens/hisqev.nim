@@ -507,6 +507,7 @@ when isMainModule:
   #var s = newStag(g)
   var hc: HisqCoefs
   hc.init()
+  echo hc
   var fl = lo.newGauge()
   var ll = lo.newGauge()
   hc.smear(g, fl, ll)
@@ -550,14 +551,14 @@ when isMainModule:
 
   var opts: EigOpts
   opts.initOpts
-  opts.nev = 200
-  opts.nvecs = 240
-  opts.rrbs = 240
-  #opts.relerr = 1e-4
-  #opts.abserr = 1e-6
-  opts.relerr = 1e-6
-  opts.abserr = 1e-8
-  opts.svdits = 1200
+  opts.nev = intParam("nev", 200)
+  opts.nvecs = intParam("nvecs", (opts.nev*11) div 10)
+  opts.rrbs = intParam("rrbs", opts.nvecs)
+  opts.relerr = 1e-4
+  opts.abserr = 1e-6
+  #opts.relerr = 1e-6
+  #opts.abserr = 1e-8
+  opts.svdits = intParam("svdits", opts.nev*2)
   opts.maxup = 100
 
   var evals = hisqev(op, opts)

@@ -267,7 +267,7 @@ proc stagD2*(sd:StaggeredD; r:SomeField; g:openArray[Field2];
     rir := a*r[ir] + b*x[ir]
     for mu in 0..<nd:
       localSB(sf0[mu], ir, imadd(rir, g[mu][ir], it), x[ix])
-    for mu in 0..<nd:
+    #for mu in 0..<nd:
       localSB(sb0[mu], ir, isub(rir, it), g[mu][ix].adj*x[ix])
       #localSB(sb0[mu], ir, rir:=it, g[mu][ix].adj*x[ix])
       #var t{.noInit.}:type(load1(x[0]))
@@ -301,7 +301,7 @@ proc stagD*(sd:StaggeredD; r:Field; g:openArray[Field2];
 
 # r = m*x + sc*D*x
 proc stagDb*(sd:StaggeredD; r:Field; g:openArray[Field2];
-            x:Field; m:SomeNumber; sc:SomeNumber=1.0) =
+             x:Field; m:SomeNumber; sc:SomeNumber=1.0) =
   stagD2(sd, r, g, x, 0, m/(0.5*sc))
   #r[sd.subset] := (0.5*sc)*r
   #stagDP2(sd, r, g, x, 6):
@@ -414,7 +414,7 @@ proc newStag3*[G](g,g3:openArray[G]):auto =
   for i in 0..<g.len:
     gg.add g[i]
     gg.add g3[i]
-  r.g = @gg
+  r.g = gg
   r
 
 proc D*(s:Staggered; r,x:Field; m:SomeNumber) =

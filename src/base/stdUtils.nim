@@ -1,6 +1,7 @@
 import macros
 import strUtils
 import metaUtils
+import os
 
 type
   cArray*{.unchecked.}[T] = array[0,T]
@@ -10,6 +11,21 @@ template `&`*(x: ptr cArray): untyped = addr x[0]
 template ptrInt*(x:untyped):untyped = cast[ByteAddress](x)
 template addrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
 template unsafeAddrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
+
+template makeTypeParam(name,typ,deflt,cnvrt: untyped): untyped {.dirty.} =
+  proc name*(s: string, d=deflt): typ =
+    result = d
+    let n = paramCount()
+    for i in 1..n:
+      let p = paramstr(i)
+      if p.startsWith('-'&s):
+        let ll = s.len + 2
+        result = cnvrt(p[ll..^1])
+
+makeTypeParam(intParam, int, 0, parseInt)
+makeTypeParam(floatParam, float, 0.0, parseFloat)
+makeTypeParam(strParam, string, "", string)
+
 
 template `$&`*(x: untyped): string =
   toHex(unsafeAddrInt(x))

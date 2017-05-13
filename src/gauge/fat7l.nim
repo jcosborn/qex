@@ -1,6 +1,7 @@
 import base
 import layout
 import gauge
+import strUtils
 
 type PerfInfo* = object
   flops*: float
@@ -11,6 +12,13 @@ type Fat7lCoefs* = object
   fiveStaple*: float
   sevenStaple*: float
   lepage*: float
+
+proc `$`*(c: Fat7lCoefs): string =
+  result  = "oneLink:     " & $c.oneLink & "\n"
+  result &= "threeStaple: " & $c.threeStaple & "\n"
+  result &= "fiveStaple:  " & $c.fiveStaple & "\n"
+  result &= "sevenStaple: " & $c.sevenStaple & "\n"
+  result &= "lepage:      " & $c.lepage & "\n"
 
 proc computeGenStaple(staple: any, mu,nu: int, link: any, coef: float,
                       gauge: any, fl: any, ts0: any, ts1: any,
@@ -90,13 +98,14 @@ proc makeImpLinks*(info: var PerfInfo, fl: any, gf: any, coef: any,
     nflop = 61632
     staple = QDP_create_M()
     tempmat1 = QDP_create_M()
-    if have3:
+    #if have3:
+    if true:
       t1 = QDP_create_M()
       t2 = QDP_create_M()
       for dir in 0..<4:
         tsl[dir] = newShifter(gf[dir], dir, 1)
         ts1[dir] = newShifter(gf[dir], dir, 1)
-        ts2[dir] = newShifter(gf[dir], dir, 1)
+        ts2[dir] = newShifter(gf[dir], dir, -1)
         for nu in 0..<4:
           if dir!=nu:
             tsg[dir][nu] = newShifter(gf[dir], nu, 1)
@@ -134,8 +143,7 @@ proc makeImpLinks*(info: var PerfInfo, fl: any, gf: any, coef: any,
       #QDP_M_eq_r_times_M(ll[dir], &naik, ll[dir], QDP_all)
       discard tsl[dir] ^* gfLong[dir]
       discard ts1[dir] ^* (gfLong[dir] * tsl[dir].field)
-      discard ts2[dir] ^* (gfLong[dir] * ts1[dir].field)
-      ll[dir] := naik * ts2[dir].field
+      ll[dir] := naik * (gfLong[dir] * ts1[dir].field)
 
   #[
   if have3 or naik!=0.0:
