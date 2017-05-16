@@ -363,7 +363,9 @@ proc svd(op: any, src: any, v: var any, sits: int, emin,emax: float) =
     if v[i].isNil: v[i] = op.newVector()
     qv[i] = v[i].even
     qva[i] = v[i].odd
-  let nits = svdLanczos(op, src.even, sv, qv, qva, rsq, sits, lverb)
+  let nevs = svdLanczos(op, src.even, sv, qv, qva, rsq, sits,
+                        emin, emax, lverb)
+  echo "svd nevs: ", nevs
 
 type EigOpts* = object
   nev: int

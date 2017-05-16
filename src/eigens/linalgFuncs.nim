@@ -4,12 +4,12 @@ import base
 type
   dvec* = ref object
     dat*: ptr carray[float64]
-    `len`: int
+    `len`*: int
     stride: int
     isSub: bool
   dmat* = ref object
     dat*: ptr carray[float64]
-    nrows, ncols: int
+    nrows*, ncols*: int
     rowStride, colStride: int
     isSub: bool
 
@@ -24,6 +24,7 @@ template dvec_alloc*(x: var dvec, n: int) =
   x.isSub = false
 proc newDvec*(n: int): dvec =
   result.dvec_alloc(n)
+template `&`*(x: dvec): untyped = cast[ptr carray[float]](addr x[0])
 template vec_size(x: dvec): int = x.len
 template `[]`*(x: dvec, i: int): untyped = x.dat[i]
 template `[]=`*(x: dvec, i: int, y: untyped): untyped = x.dat[i] = y
@@ -40,13 +41,24 @@ template v_eq_zero(x: dvec) =
 template v_eq_v(x,y: dvec) =
   for i in 0..<x.len: x[i] = y[i]
 template norm2_v(x: dvec): float =
-  for i in 0..<x.len: result += x[i]*x[i]
+  var r = 0.0
+  for i in 0..<x.len: r += x[i]*x[i]
+  r
+template dot*(x,y: dvec): float =
+  var r = 0.0
+  for i in 0..<x.len: r += x[i]*y[i]
+  r
 template v_eq_r_times_v(x: dvec, r: float, y: dvec) =
   for i in 0..<x.len: x[i] = r*y[i]
 template v_peq_r_times_v(x: dvec, r: float, y: dvec) =
   for i in 0..<x.len: x[i] += r*y[i]
 template v_meq_r_times_v(x: dvec, r: float, y: dvec) =
   for i in 0..<x.len: x[i] -= r*y[i]
+template daxpy*(a: float, x: dvec, y: dvec) = v_peq_r_times_v(y, a, x)
+proc normalize*(x: dvec) =
+  let n2 = norm2_v(x)
+  let s = 1.0/sqrt(n2)
+  for i in 0..<x.len: x[i] *= s
 
 proc dmat_free(x: dmat) =
   if not x.isSub:
@@ -59,19 +71,36 @@ template dmat_alloc*(x: dmat, nr,nc: int) =
   x.rowStride = 1
   x.colStride = nr
   x.isSub = false
+proc newDmat*(nr,nc: int): dmat =
+  result.dmat_alloc(nr, nc)
 template mat_nrows*(x: dmat): int = x.nrows
 template mat_ncols*(x: dmat): int = x.ncols
 template `[]`*(x: dmat, i,j: int): untyped = x.dat[i+j*x.nrows]
 template `[]=`*(x: dmat, i: int, y: untyped): untyped = x.dat[i+j*x.nrows] = y
 template dmat_get*(x: dmat, i,j: int): float64 = x[i,j]
 template dmat_set(x: dmat, i,j: int, y: float64) = x[i,j] = y
+template norm2*(x: dmat): float =
+  var r = 0.0
+  for i in 0..<x.nrows:
+    for j in 0..<x.ncols:
+      r += x[i,j]*x[i,j]
+  r
+proc `+=`*(r,x: dmat) =
+  for i in 0..<r.nrows:
+    for j in 0..<r.ncols:
+      r[i,j] += x[i,j]
+proc `-=`*(r,x: dmat) =
+  for i in 0..<r.nrows:
+    for j in 0..<r.ncols:
+      r[i,j] -= x[i,j]
 
-template dcolvec(v: dvec, m: dmat, k: int) =
+template dcolvec*(v: dvec, m: dmat, k: int) =
   v.new
   v.`len` = m.nrows
   v.stride = m.rowStride
   v.isSub = true
   v.dat = cast[type(v.dat)](addr(m[0,k]))
+template colvec*(v: dvec, m: dmat, k: int) = dcolvec(v, m, k)
 
 type
   zheevTmp* = object
@@ -192,8 +221,8 @@ proc zeigsgv*(a: ptr float64; b: ptr float64; e: ptr float64; n: int) =
   dealloc work
   dealloc rwork
 
-proc svdbi*(ev: ptr carray[float64], a: ptr carray[float64],
-            b: ptr carray[float64], n: int) =
+proc svdbi1*(ev: ptr carray[float64], a: ptr carray[float64],
+             b: ptr carray[float64], n: int) =
   var n2 = fint(2*n)
   var d = cast[ptr carray[float64]](alloc0(n2*sizeof(float64)))
   var e = cast[ptr carray[float64]](alloc(n2*sizeof(float64)))
@@ -208,8 +237,27 @@ proc svdbi*(ev: ptr carray[float64], a: ptr carray[float64],
   dealloc(d)
   dealloc(e)
 
+proc svdbi*(ev: ptr carray[float64], a: ptr carray[float64],
+            b: ptr carray[float64], n: int) =
+  var nn = fint(n)
+  var d = cast[ptr carray[float64]](alloc(n*sizeof(float64)))
+  var e = cast[ptr carray[float64]](alloc(n*sizeof(float64)))
+  for i in 0..(n-2):
+    d[i] = a[i]
+    e[i] = b[i]
+  d[n-1] = a[n-1]
+  var work = cast[ptr carray[float64]](alloc(4*n*sizeof(float64)))
+  var info = fint(0)
+  dlasq1(addr(nn), addr(d[0]), addr(e[0]), addr(work[0]), addr(info))
+  for i in 0..<n:
+    ev[i] = d[n-1-i]
+  dealloc(work)
+  dealloc(e)
+  dealloc(d)
+
+
 proc svdBidiag1*(d: ptr carray[float64], e: ptr carray[float64],
-                v: ptr carray[float64], u: ptr carray[float64], n,k: int) =
+                 v: ptr carray[float64], u: ptr carray[float64], n,k: int) =
   let uplo = "U"
   var nn = fint(n)
   var an = addr nn
@@ -224,6 +272,7 @@ proc svdBidiag1*(d: ptr carray[float64], e: ptr carray[float64],
 
   echo nn
   echo nv, "  ", ak[]
+  # dbdsqr computes all singular vectors
   dbdsqr(uplo, an, ak, ak, addr nc, &d, &e, &vv, an, &vu, ak,
          nil, an, work, addr info)
   echo "info: ", info
@@ -257,6 +306,7 @@ proc svdBidiag*(d: ptr carray[float64], e: ptr carray[float64],
   var vu = cast[ptr carray[float64]](alloc(n*n*sizeof(float64)))
   var vv = cast[ptr carray[float64]](alloc(n*n*sizeof(float64)))
 
+  # dbdsdc calculates all singular vectors
   dbdsdc(uplo, compq, addr nn, &d, &e, &vu, addr nn, &vv, addr nn,
          nil, nil, work, iwork, addr info)
   if info!=0:
@@ -264,7 +314,7 @@ proc svdBidiag*(d: ptr carray[float64], e: ptr carray[float64],
 
   for i in 0..<k:
     let j = n-1-i
-    if i!=j:
+    if i<j:
       swap(d[i], d[j])
 
   if not u.isNil:
@@ -347,10 +397,14 @@ proc dsvdbi2*(a: dvec, b: dvec, n: int) =
   dealloc(d)
   dealloc(e)
 
+import eigens/svdBi4
+export svdBi4
 
 when isMainModule:
-  import ../basicOps
-  import ../complexType
+  import base/basicOps
+  import maths/complexType
+  template adj*(x: SomeNumber): untyped = x
+  import times
   type
     Dcmplx = Complex[float64,float64]
     Zmat = object
@@ -398,7 +452,32 @@ when isMainModule:
         echo x[j] - ev[i]*m2[i,j].adj
   #testZeigs()
 
-  proc testSvdbd =
+  proc testSvdbd(n: int) =
+    var v = newSeq[float](n)
+    var d = newSeq[float](n)
+    var e = newSeq[float](n)
+    template `&`(x: seq): untyped = cast[ptr carray[float]](addr x[0])
+    for i in 0..<n:
+      d[i] = (i+1).float
+      e[i] = -(i+1).float
+    svdbi(&v, &d, &e, n)
+    svdbi(&v, &d, &e, n)
+    let t0 = epochTime()
+    svdbi(&v, &d, &e, n)
+    let t1 = epochTime()
+    #for i in 0..<n:
+    #  echo i, ": ", v[i]
+    echo n, " time: ", t1-t0
+  testSvdbd(100)
+  testSvdbd(200)
+  testSvdbd(400)
+  testSvdbd(800)
+  testSvdbd(1600)
+  testSvdbd(3200)
+  testSvdbd(6400)
+  testSvdbd(12800)
+
+  proc testSvdbdv =
     var d = newSeq[float](nr)
     var e = newSeq[float](nr)
     var v = newSeq[float](nr*nr)
@@ -407,6 +486,7 @@ when isMainModule:
     for i in 0..<nr:
       d[i] = (i+1).float
       e[i] = -(i+1).float
-    svdBidiag2(&d, &e, &v, &u, nr)
+    svdBidiag(&d, &e, &v, &u, nr, nr)
     #for j in 0..<nr:
     #    v[i+nr*j]
+  #testSvdbdv()

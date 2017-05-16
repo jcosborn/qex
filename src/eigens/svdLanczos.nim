@@ -42,7 +42,7 @@ template nothreads(x: untyped): untyped = x
 
 # A V = U B, Ad U = V Bd, B = [[a0,b0,0,...][0,a1,b1,0,...]...]
 proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
-                 rsq: float; kmx: int; lverb: int): int =
+                 rsq: float; kmx: int; emin,emax: float, lverb: int): int =
   mixin `:=`
   verb = lverb
   var nv = qv.len
@@ -110,8 +110,6 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
         b[k-1] = bet
     #cprintf("%i\t%16.12g %16.12g\n", k-1, alpha, beta);
 
-  #echo int(timer)
-  #echo int(getTics())
   var dtime1 = getElapsedTime()
   if verb>0:
     #cprintf("svd_lanczos %g secs\n", dtime1)
@@ -127,12 +125,23 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   var
     vr: dmat
     ur: dmat
+    #vr2: dmat
+    #ur2: dmat
   dmat_alloc(vr, kmax, nv)
   dmat_alloc(ur, kmax, nva)
-  svd_bi3(ev, vr, ur, a, b)
-  #var nvout = svd_bi4(e, vr, ur, a, b, kmax, nv, nva, emin, emax)
-  #echo int(timer)
-  #echo int(getTics())
+  #dmat_alloc(vr2, kmax, nv)
+  #dmat_alloc(ur2, kmax, nva)
+  #svd_bi3(ev, vr, ur, a, b)
+  #var nvout = nv
+  var nvout = svdBi4(ev, vr, ur, a, b, kmax, nv, nva, emin, emax)
+  #var s2 = 0.0
+  #for i in 0..<vr.nrows:
+  #  #for j in 0..<vr.ncols:
+  #  for j in 0..<1:
+  #    let d = vr[i,j]*vr2[0,j] - vr2[i,j]*vr[0,j]
+  #    s2 += d*d
+  #echo s2
+
   var dtime2 = getElapsedTime()
   if verb>0:
     #cprintf("svd_lanczos %g secs %g\x0A", dtime2-dtime1, dtime2)
@@ -172,7 +181,7 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   if verb>0:
     #cprintf("svd_lanczos %g secs %g\x0A", dtime3-dtime2, dtime3)
     echo "svd_lanczos $1 secs $2"%[(dtime3-dtime2)|-6, dtime3|-6]
-  result = kmax
+  result = nvout
 
 
 when isMainModule:

@@ -76,3 +76,7 @@ proc dbdsvdx*(uplo: cstring, jobz: cstring, range: cstring, n: ptr fint,
               il: ptr fint, iu: ptr fint, ns: ptr fint, s: ptr float64,
               z: ptr float64, ldz: ptr fint, work: ptr float64,
               iwork: ptr fint, info: ptr fint) {.lapack, importc: "dbdsvdx_".}
+
+proc dlasq1*(n: ptr fint; d: ptr float64; e: ptr float64;
+             work: ptr float64; info: ptr fint) {.lapack, importc: "dlasq1_".}
+
