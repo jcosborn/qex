@@ -2,8 +2,12 @@ import os
 import strUtils
 import stdUtils
 import macros
-#const profileEqns* = true
-const profileEqns* = false
+
+const profileEqnsInt {.intdefine.} = 1
+when profileEqnsInt == 0:
+  const profileEqns* = false
+else:
+  const profileEqns* = true
 
 #var forceInline* {.compiletime.} = false
 var forceInline* {.compiletime.} = true

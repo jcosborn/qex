@@ -110,6 +110,7 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
         b[k-1] = bet
     #cprintf("%i\t%16.12g %16.12g\n", k-1, alpha, beta);
 
+  toc("done iterations 1")
   var dtime1 = getElapsedTime()
   if verb>0:
     #cprintf("svd_lanczos %g secs\n", dtime1)
@@ -134,6 +135,8 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   #svd_bi3(ev, vr, ur, a, b)
   #var nvout = nv
   var nvout = svdBi4(ev, vr, ur, a, b, kmax, nv, nva, emin, emax)
+  nv = min(nv,nvout)
+  nva = min(nva,nvout)
   #var s2 = 0.0
   #for i in 0..<vr.nrows:
   #  #for j in 0..<vr.ncols:
@@ -142,6 +145,7 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   #    s2 += d*d
   #echo s2
 
+  toc("svd")
   var dtime2 = getElapsedTime()
   if verb>0:
     #cprintf("svd_lanczos %g secs %g\x0A", dtime2-dtime1, dtime2)
@@ -158,25 +162,27 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   u := 0
   k = 0
   while true:
+    tic()
     v := p/beta
     #cprintf("v[%i,0]: %.12g\n", k, vr[k,0]/vr[0,0])
     for i in 0..<nv:
-      qv[i] += dmat_get(vr, k, i) * v
+      qv[i] += vr[k,i] * v
+    toc("qv")
     linop.apply(r, v)
+    toc("linop")
     r -= beta*u
     let alpha = sqrt(r.norm2)
     u := r/alpha
     for i in 0..<nva:
-      qva[i] += dmat_get(ur, k, i) * u
+      qva[i] += ur[k,i] * u
     inc k
     if k >= kmax: break
     linop.applyAdj(p, u)
     p -= alpha * v
     beta = sqrt(p.norm2)
+    toc("loop 2")
 
-  toc()
-  #echo int(getTics())
-  #echo int(timer)
+  toc("done")
   var dtime3 = getElapsedTime()
   if verb>0:
     #cprintf("svd_lanczos %g secs %g\x0A", dtime3-dtime2, dtime3)

@@ -149,6 +149,7 @@ proc rayleighRitz(t: var any, a,b: int, op: any) =
   #  for j in 0..i:
   #    m1[j*n+i] = dot(t[a+i].v.odd,t[a+j].v)
   #    m2[j*n+i] = dot(t[a+i].v.even,t[a+j].v)
+  toc("rr setup")
   for i in 0..<n:
     var done = false
     var repcnt = 0
@@ -163,18 +164,21 @@ proc rayleighRitz(t: var any, a,b: int, op: any) =
       m2[i*n+i] := n2
       for j in countdown(i-1,0):
         var m2ji = dot(t[a+i].v.even,t[a+j].v)
-        let o = m2ji.norm2/sqrt(m2[i*n+i].norm2*m2[j*n+j].norm2)
-        if repcnt==0 and o>1.1:
-          inc repcnt
-          echo i, " ", j, ": ", o
-          let s = m2ji.adj / m2[j*n+j]
-          t[a+i].v -= s * t[a+j].v
-          sett(t[a+i], op)
-          done = false
-          break
+        #let o = m2ji.norm2/sqrt(m2[i*n+i].norm2*m2[j*n+j].norm2)
+        #if repcnt==0 and o>1.1:
+        #  inc repcnt
+        #  echo i, " ", j, ": ", o
+        #  let s = m2ji.adj / m2[j*n+j]
+        #  t[a+i].v -= s * t[a+j].v
+        #  sett(t[a+i], op)
+        #  done = false
+        #  break
         m2[j*n+i] = m2ji
+  toc("rr m2")
+  for i in 0..<n:
     for j in 0..i:
       m1[j*n+i] = dot(t[a+i].v.odd,t[a+j].v)
+  toc("rr m1")
 
   #[
   let nu = n*(n+1) div 2
@@ -205,10 +209,12 @@ proc rayleighRitz(t: var any, a,b: int, op: any) =
       m2[i*n+j] = dtes[k+j]
   ]#
 
+  #toc("rr mat")
   var ev = newSeq[float64](n)
   var t0 = getElapsedTime()
   zeigsgv(cast[ptr float64](addr m1[0]), cast[ptr float64](addr m2[0]),
           addr ev[0], n)
+  toc("rr zeigsgv")
   var t1 = getElapsedTime()
   #for i in 0..<n:
   #  echo i, "  ", ev[i]
@@ -230,9 +236,9 @@ proc rayleighRitz(t: var any, a,b: int, op: any) =
     #t[a+i].sv = sqrt(ev[i])
     sett(t[a+i], op)
   sort(t, a, b)
+  toc("rr end")
   var t2 = getElapsedTime()
   echo "rr dots: ", t0|-6, "  zeigsgv: ", (t1-t0)|-6, "  vecs: ", (t2-t1)|-6
-  toc()
 
 proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
             ng,nmx,rrbs: int, op: any) =
