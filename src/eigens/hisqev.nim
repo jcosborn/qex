@@ -268,7 +268,9 @@ proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
   var ndone0 = 0
   var rrMin = 0
   var to1,to2,tr: float
+  toc("merge setup")
   while ndone<ngd:
+    tic()
     #ndone = 0
     #let rrMin = max(ndone-nrrOv,0)
     #let rrMax = min(rrMin+nrr-1,nmax-1)
@@ -283,6 +285,7 @@ proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
     var t2 = getElapsedTime()
     rayleighRitz(t, rrMin, rrMax, op)
     rayleighRitz(t, rrMin, rrMax, op)
+    toc("merge loop rrs")
     var t3 = getElapsedTime()
     to1 += t1 - t0
     to2 += t2 - t1
@@ -346,8 +349,9 @@ proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
     #for i in 0..<nmax:
     #  for j in (i+1)..<nt:
     #    if t[j].sv < t[imn].sv: imn = j
+    toc("merge loop end")
 
-  toc()
+  toc("merge loop")
   var tm = getElapsedTime()
   #cprintf("merget time = %.2f secs (o1 %.2f o2 %.2f rr %.2f)\n",
   #        tm, to1, to2, tr)
@@ -357,6 +361,7 @@ proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
     else: vt2[i].v = nil
   vt1.setLen(nmax)
   for i in 0..<vt1.len: vt1[i] = t[i]
+  toc("merge end")
 
 proc svd(op: any, src: any, v: var any, sits: int, emin,emax: float) =
   let n = v.len
@@ -470,9 +475,13 @@ proc hisqev(op: any, opts: any, vv: any): auto =
     vin += (0.1*vt1[iv].sv/sqrt(srcn2)) * src
     let sits = svdits
     svd(op, vin, v, sits, emin, emax)
+    toc("svd")
     GC_fullCollect()
+    toc("GC")
     vt2.maketable(v, op)
+    toc("maketable")
     merget(vt1, vt2, ng, nvt, rrbs, op)
+    toc("merge")
     geterr(vt1, op)
     #cprintf("pass %i\n", iter)
     echo "pass ", iter
@@ -481,7 +490,7 @@ proc hisqev(op: any, opts: any, vv: any): auto =
       #        vt1[i].err/vt1[i].sv)
       echo "  $1\t$2$3$4"%[$i, vt1[i].sv|(-18,12), vt1[i].err|(-18,12),
                            (vt1[i].err/vt1[i].sv)|(-18,12)]
-    toc()
+    toc("end iter")
     let tt1 = getTics()
     #cprintf("iteration %i time = %.2f seconds\n", iter, toSeconds(tt1-tt0))
     echo "iteration $1 time = $2 seconds"%[$iter, toSeconds(tt1-tt0)|-6]

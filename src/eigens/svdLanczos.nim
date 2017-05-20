@@ -71,11 +71,16 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   var kcheck = 1
   var k = 0
 
+  toc("setup")
   while true:
+    tic()
     nothreads:
+      tic()
       v := p / beta
+      toc("loop1 thread1 exp1")
       #threadBarrier()
       linop.apply(r, v)
+      toc("loop1 thread1 op")
       #threadBarrier()
       #echo "v: ", v.norm2
       #echo "r: ", r.norm2
@@ -85,6 +90,8 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
         alpha = alph
         a[k] = alph
         inc k
+      toc("loop1 thread1 end")
+    toc("loop1 thread1")
 
     #check singular values
     if k >= kcheck or k >= kmax:
@@ -99,16 +106,22 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
         echo k|-5, sv(0), sv(1), sv(nv-1), sv(k-1)
       kcheck = 1 + (1.5 * kcheck.float).int
       if k >= kmax: break
+    toc("loop1 out")
 
     nothreads:
+      tic()
       u := r/alpha
+      toc("loop1 thread2 exp1")
       linop.applyAdj(p, u)
+      toc("loop1 thread2 op")
       p -= alpha*v
       let bet = sqrt(p.norm2)
       if threadNum==0:
         beta = bet
         b[k-1] = bet
     #cprintf("%i\t%16.12g %16.12g\n", k-1, alpha, beta);
+      toc("loop1 thread2 end")
+    toc("loop1 thread2")
 
   toc("done iterations 1")
   var dtime1 = getElapsedTime()
@@ -164,23 +177,27 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   while true:
     tic()
     v := p/beta
+    toc("loop2 eq1")
     #cprintf("v[%i,0]: %.12g\n", k, vr[k,0]/vr[0,0])
     for i in 0..<nv:
       qv[i] += vr[k,i] * v
-    toc("qv")
+    toc("loop2 qv")
     linop.apply(r, v)
-    toc("linop")
+    toc("loop2 linop1")
     r -= beta*u
     let alpha = sqrt(r.norm2)
     u := r/alpha
+    toc("loop2 eq2")
     for i in 0..<nva:
       qva[i] += ur[k,i] * u
+    toc("loop2 qva")
     inc k
     if k >= kmax: break
     linop.applyAdj(p, u)
+    toc("loop2 linop2")
     p -= alpha * v
     beta = sqrt(p.norm2)
-    toc("loop 2")
+    toc("loop 2 end")
 
   toc("done")
   var dtime3 = getElapsedTime()
