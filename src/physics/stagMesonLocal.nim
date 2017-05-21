@@ -55,7 +55,7 @@ proc stagMesonsV*(v: any) =
   var cv = newAlignedMem[array[8,type(v[0].norm2())]](nt)
   var c = newSeq[array[8,float64]](nt)
   threads:
-    for e in 0..<l.nSitesOuter:
+    tfor e, 0, <l.nSitesOuter:
       let i = l.nSitesInner * e
       let t = l.coords[3][i]
       let s = l.corner(i)

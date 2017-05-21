@@ -28,12 +28,23 @@ proc new*[T](t:var alignedMem[T], n:int, align:int=64) =
   t.align = align
   t.stride = sizeof(T)
   t.bytes = t.len * t.stride + t.align
+  unsafeNew(t.mem, t.bytes)
+  t.data = ptrAlign(cast[ptr cArray[T]](t.mem[0].addr), align)
+proc newU*[T](t:var alignedMem[T], n:int, align:int=64) =
+  t.len = n
+  t.align = align
+  t.stride = sizeof(T)
+  t.bytes = t.len * t.stride + t.align
   unsafeNewU(t.mem, t.bytes)
   t.data = ptrAlign(cast[ptr cArray[T]](t.mem[0].addr), align)
 proc newAlignedMem*[T](t:var alignedMem[T], n:int, align:int=64) =
   new(t, n, align)
 proc newAlignedMem*[T](n:int, align:int=64): alignedMem[T] =
   newAlignedMem[T](result, n, align)
+proc newAlignedMemU*[T](t:var alignedMem[T], n:int, align:int=64) =
+  newU(t, n, align)
+proc newAlignedMemU*[T](n:int, align:int=64): alignedMem[T] =
+  newAlignedMemU[T](result, n, align)
 
 template low*(s:alignedMem):untyped = 0
 template high*(s:alignedMem):untyped = s.len-1

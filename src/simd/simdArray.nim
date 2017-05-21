@@ -51,7 +51,7 @@ template makePackPX(F,P,T,L,N0) {.dirty.} =
       const L2 = L div 2
       let ra = cast[ptr array[L2,array[N0,type(r[0])]]](r[0].addr)
       let la = cast[ptr array[L2,array[N0,type(l[0])]]](l[0].addr)
-      let b = P div N0
+      const b = (P div N0) and (L-1)
       var ir,il = 0
       forStatic i, 0, L-1:
         if (i and b) == 0:
@@ -61,6 +61,7 @@ template makePackPX(F,P,T,L,N0) {.dirty.} =
           assign(ra[][ir], x[][i])
           inc ir
 template makePackMX(F,P,T,L,N0) {.dirty.} =
+  # P: perm, T: vector type, L: outer vec len, N0: inner vec len
   when N0>P:
     proc F*(r:var openArray[SomeNumber], x:T,
             l:var openarray[SomeNumber]) {.inline.} =
@@ -75,14 +76,14 @@ template makePackMX(F,P,T,L,N0) {.dirty.} =
       const L2 = L div 2
       let ra = cast[ptr array[L2,array[N0,type(r[0])]]](r[0].addr)
       let la = cast[ptr array[L2,array[N0,type(l[0])]]](l[0].addr)
-      let b = P div N0
+      const b = (P div N0) and (L-1)
       var ir,il = 0
       forStatic i, 0, L-1:
         if (i and b) == 0:
-          assign(ra[][il], x[][i])
+          assign(ra[][ir], x[][i])
           inc ir
         else:
-          assign(la[][ir], x[][i])
+          assign(la[][il], x[][i])
           inc il
 template makePackP(P,T,L,N0) {.dirty.} =
   bind makePackPX
@@ -107,7 +108,7 @@ template makeBlendPX(F,P,T,L,N0) {.dirty.} =
       const L2 = L div 2
       let ra = cast[ptr array[L2,array[N0,type(r[0])]]](unsafeAddr(r[0]))
       let la = cast[ptr array[L2,array[N0,type(l[0])]]](unsafeAddr(l[0]))
-      let b = P div N0
+      const b = (P div N0) and (L-1)
       var ir,il = 0
       forStatic i, 0, L-1:
         if (i and b) == 0:
@@ -131,7 +132,7 @@ template makeBlendMX(F,P,T,L,N0) {.dirty.} =
       const L2 = L div 2
       let ra = cast[ptr array[L2,array[N0,type(r[0])]]](unsafeAddr(r[0]))
       let la = cast[ptr array[L2,array[N0,type(l[0])]]](unsafeAddr(l[0]))
-      let b = P div N0
+      const b = (P div N0) and (L-1)
       var ir,il = 0
       forStatic i, 0, L-1:
         if (i and b) == 0:
