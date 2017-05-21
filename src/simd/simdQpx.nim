@@ -1,6 +1,5 @@
-import metaUtils
-import wrapperTypes
-import basicOps
+import base
+import base/wrapperTypes
 
 type
   #SimdS4* = distinct array[4,float32]
@@ -64,11 +63,13 @@ proc vecNeg*(x:SimdD4):SimdD4 {.importC:"vec_neg",noDecl.}
 proc vecAdd*(x,y:SimdD4):SimdD4 {.importC:"vec_add",noDecl.}
 proc vecSub*(x,y:SimdD4):SimdD4 {.importC:"vec_sub",noDecl.}
 proc vecMul*(x,y:SimdD4):SimdD4 {.importC:"vec_mul",noDecl.}
-proc vecDiv*(x,y:SimdD4):SimdD4 {.importC:"vec_div",noDecl.}
-proc vecMadd*(x,y,z:SimdD4):SimdD4 {.importC:"vec_madd",noDecl.}
-proc vecMsub*(x,y,z:SimdD4):SimdD4 {.importC:"vec_msub",noDecl.}
-proc vecNmadd*(x,y,z:SimdD4):SimdD4 {.importC:"vec_nmadd",noDecl.}
-proc vecNmsub*(x,y,z:SimdD4):SimdD4 {.importC:"vec_nmsub",noDecl.}
+proc vecDiv*(x,y:SimdD4):SimdD4 {.importC:"vec_swdiv",noDecl.}
+proc vecMadd*(x,y,z:SimdD4):SimdD4 {.importC:"vec_madd",noDecl.} # x*y+z
+proc vecMsub*(x,y,z:SimdD4):SimdD4 {.importC:"vec_msub",noDecl.} # x*y-z
+proc vecNmadd*(x,y,z:SimdD4):SimdD4 {.importC:"vec_nmadd",noDecl.} # -x*y-z
+proc vecNmsub*(x,y,z:SimdD4):SimdD4 {.importC:"vec_nmsub",noDecl.} # -x*y+z
+proc vecAbs*(x:SimdD4):SimdD4 {.importC:"vec_abs",noDecl.}
+proc vecSqrt*(x:SimdD4):SimdD4 {.importC:"vec_swsqrt",noDecl.}
 template ld(x:SimdS4):untyped = vecLd(0i32, x[])
 template ld(x:SimdD4):untyped = x #vecLd(0i32, x)
 template ld(x:ToSingle):untyped = ld(x[])
@@ -310,6 +311,28 @@ template makeTrinary(name):untyped =
 makeTrinary(madd)
 makeTrinary(msub)
 
+template abs*(x: SimdSD4): untyped = vecAbs(ld(x))
+template sqrt*(x: SimdSD4): untyped = vecSqrt(ld(x))
+
+proc rsqrt*(x: SimdD4): SimdD4 {.inline,noInit.} =
+  result = 1.0/sqrt(x)
+template rsqrt*(x: SimdS4): untyped = rsqrt(ld(x))
+
+template rsqrt*(r: var SimdSD4, x: SimdSD4) = r = rsqrt(x)
+
+template map1(T,N,op: untyped): untyped {.dirty.} =
+  proc op*(x: T): T {.inline,noInit.} =
+    let t = x.toArray
+    var r{.noInit.}: type(t)
+    for i in 0..<N:
+      r[i] = op(t[i])
+    assign(result, r)
+
+map1(SimdSD4, 4, sin)
+map1(SimdSD4, 4, cos)
+map1(SimdSD4, 4, acos)
+
+
 proc trace*(x:SimdSD4):SimdSD4 {.inline,noInit.}= x
 proc norm2*(x:SimdSD4):SimdD4 {.inline,noInit.} = mul(x,x)
 proc norm2*(r:var SimdD4; x:SimdSD4) {.inline.} = mul(r,x,x)
@@ -534,7 +557,7 @@ when isMainModule:
   foo1(d3, d1, d2)
   s3 := d3
   echo s3
-  
+
   s3 := s1*d1 - s2*d2
   d3 := s1*d2 + s2*d1
   echo s3
