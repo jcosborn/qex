@@ -54,7 +54,7 @@ proc vecSt*(x:SimdD4; y:cint; r:ptr float32) {.importC:"vec_st",noDecl.}
 proc vecSt*(x:SimdD4; y:cint; r:ptr float64) {.importC:"vec_st",noDecl.}
 proc vecSplats*(x:float64):SimdD4 {.importC:"vec_splats",noDecl.}
 proc vecExtract*(x:SimdD4; y:cint):float64 {.importC:"vec_extract",noDecl.}
-proc vecInsert*(x:float64; y:SimdD4; z:cint) {.importC:"vec_insert",noDecl.}
+proc vecInsert*(x:float64; y:SimdD4; z:cint):SimdD4 {.importC:"vec_insert",noDecl.}
 proc vecGpci*(x:cint):SimdD4 {.importC:"vec_gpci",noDecl.}
 proc vecPerm*(x,y,z:SimdD4):SimdD4 {.importC:"vec_perm",noDecl.}
 proc vecSt2*(x:SimdD4; y:cint; z:ptr cdouble) {.importC:"vec_st2",noDecl.}
@@ -84,25 +84,25 @@ template load1*(x:SimdD4):untyped =
   ld(x)
 
 template `[]`*(x:SimdS4; y:SomeInteger):float32 = x[][y]
-#template `[]`*(x:SimdD4; y:SomeInteger):float64 =
-#  vecExtract(x, y.cint)
-proc `[]`*(x:SimdD4; y:SomeInteger):float64 {.inline,noInit.} =
-  #var t{.noInit.}:array[4,float64]
-  #assign(t, x)
-  #vecSt(x, 0, t[0].addr)
-  let t = cast[ptr array[4,float64]](unsafeAddr(x))
-  t[y]
+template `[]`*(x:SimdD4; y:SomeInteger):float64 =
+  vecExtract(x, y.cint)
+#proc `[]`*(x:SimdD4; y:SomeInteger):float64 {.inline,noInit.} =
+#  #var t{.noInit.}:array[4,float64]
+#  #assign(t, x)
+#  #vecSt(x, 0, t[0].addr)
+#  let t = cast[ptr array[4,float64]](unsafeAddr(x))
+#  t[y]
 template `[]=`*(x:SimdS4; y:SomeInteger; z:any) =
   x[][y] = z.float32
-#template `[]=`*(x:SimdD4; y:SomeInteger; z:any) =
-#  vecInsert(z.float64, x, y.cint)
-proc `[]=`*(x:var SimdD4; y:SomeInteger; z:any) {.inline.} =
-  #var t{.noInit.}:array[4,float64]
-  #vecSt(x, 0, t[0].addr)
-  #t[y] = float64(z)
-  #x = vecLd(0, t[0].addr)
-  let t = cast[ptr array[4,float64]](unsafeAddr(x))
-  t[y] = float64(z)
+template `[]=`*(x:SimdD4; y:SomeInteger; z:any) =
+  x = vecInsert(z.float64, x, y.cint)
+#proc `[]=`*(x:var SimdD4; y:SomeInteger; z:any) {.inline.} =
+#  #var t{.noInit.}:array[4,float64]
+#  #vecSt(x, 0, t[0].addr)
+#  #t[y] = float64(z)
+#  #x = vecLd(0, t[0].addr)
+#  let t = cast[ptr array[4,float64]](unsafeAddr(x))
+#  t[y] = float64(z)
 
 proc `$`*(x:SimdS4):string =
   result = "SimdS4[" & $x[][0]

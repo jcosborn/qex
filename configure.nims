@@ -65,7 +65,7 @@ if dirExists "/bgsys":
   machine = "Blue Gene/Q"
   CC ~ qexdir / "build/mpixlc2"
   #CC ~ "mpixlc2"
-  CFLAGS_ALWAYS ~ "-qinfo=pro"
+  CFLAGS_ALWAYS ~ "-qinfo=pro -qstrict=operationprecision"
   CFLAGS_DEBUG ~ "-g3 -O0"
   CFLAGS_SPEED ~ "-g -O3"
   OMPFLAGS ~ "-qsmp=omp"

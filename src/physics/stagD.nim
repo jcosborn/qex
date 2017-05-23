@@ -299,6 +299,16 @@ proc stagD*(sd:StaggeredD; r:Field; g:openArray[Field2];
   #  #for i in 0..<n:
   #  rir := m*getVec(x[ir], ic)
 
+proc stagD1*(sd:StaggeredD; r:Field; g:openArray[Field2];
+             x:Field; m:SomeNumber) =
+  stagDP(sd, r, g, x, 6):
+    rir := 0
+
+proc stagD1x*(sd:StaggeredD; r:Field; g:openArray[Field2];
+              x:Field; m:SomeNumber) =
+  stagDM(sd, r, g, x, 6):
+    rir := 0
+
 # r = m*x + sc*D*x
 proc stagDb*(sd:StaggeredD; r:Field; g:openArray[Field2];
              x:Field; m:SomeNumber; sc:SomeNumber=1.0) =

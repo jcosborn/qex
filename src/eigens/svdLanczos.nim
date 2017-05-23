@@ -64,6 +64,7 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   tic()
   nothreads:
     let sn = sqrt(src.norm2)
+    #echo "sn: ", sn
     v := src / sn
     p := v
     u := 0

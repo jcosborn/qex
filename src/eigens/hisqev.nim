@@ -535,11 +535,11 @@ when isMainModule:
   r.new(lo1)
   var seed = 987654321
   threads:
-    for s in lo1.sites:
-      var l = lo1.coords[lo1.nDim-1][s].int
-      for i in countdown(lo1.nDim-2, 0):
-        l = l * lo1.physGeom[i].int + lo1.coords[i][s].int
-      r[s].seed(seed, l)
+    for j in lo.sites:
+      var l = lo.coords[lo.nDim-1][j].int
+      for i in countdown(lo.nDim-2, 0):
+        l = l * lo.physGeom[i].int + lo.coords[i][j].int
+      r[j].seed(seed, l)
 
   type MyOp = object
     s: type(s)
