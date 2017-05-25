@@ -26,23 +26,26 @@ proc evalArgs*(call:var NimNode; args:NimNode):NimNode =
   for i in 0..<args.len:
     let t = genSym()
     let a = args[i]
-    result.add quote do:
+    result.add(quote do:
       let `t` = `a`
+      )
     call.add(t)
 proc cprintf*(fmt:cstring){.importc:"printf",varargs,header:"<stdio.h>".}
 #proc printfOrdered(
 macro printf*(fmt:string; args:varargs[untyped]):auto =
   var call = newCall(ident("cprintf"), fmt)
   result = evalArgs(call, args)
-  result.add quote do:
+  result.add(quote do:
     if myRank==0 and threadNum==0:
       `call`
+    )
 proc echoRaw*(x: varargs[typed, `$`]) {.magic: "Echo".}
 macro echoAll*(args:varargs[untyped]):auto =
   var call = newCall(bindSym"echoRaw")
   result = evalArgs(call, args)
-  result.add quote do:
+  result.add(quote do:
     `call`
+    )
 macro echoRank*(args:varargs[untyped]):auto =
   var call = newCall(bindSym"echoRaw")
   call.add ident"myRank"
@@ -56,9 +59,10 @@ macro echoRank*(args:varargs[untyped]):auto =
 macro echo0*(args: varargs[untyped]): auto =
   var call = newCall(bindSym"echoRaw")
   result = evalArgs(call, args)
-  result.add quote do:
+  result.add(quote do:
     if myRank==0 and threadNum==0:
       `call`
+    )
 macro makeEchos(n:static[int]):auto =
   template ech(x,y: untyped): untyped =
     template echo*(): untyped =
@@ -93,11 +97,13 @@ proc unwrap(x:NimNode):seq[NimNode] =
     let n = t.len - 1
     for i in 0..<n:
       let id = newLit(i)
-      result.add quote do:
+      result.add(quote do:
         `x`[`id`]
+        )
   else:
-    result.add quote do:
+    result.add(quote do:
       `x`[]
+      )
   #echo result.repr
 
 macro rankSumN*(a:varargs[typed]):auto =
@@ -214,9 +220,10 @@ proc threadRankSumN*(a:NimNode):auto =
   for i in 0..<a.len:
     let gi = !("g" & $i)
     let ai = a[i]
-    result.add quote do:
+    result.add(quote do:
       var `gi`{.global.}:array[`p`*512,type(`ai`)]
       `gi`[`p`*`tid`] = `ai`
+      )
     let s = quote do:
       `ai` = `gi`[0]
       for i in 1..<`nid`:
