@@ -12,6 +12,12 @@ template ptrInt*(x:untyped):untyped = cast[ByteAddress](x)
 template addrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
 template unsafeAddrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
 
+iterator range*[T: SomeInteger](count: T): T =
+  var res = T(0)
+  while res < count:
+    yield res
+    inc res
+
 template makeTypeParam(name,typ,deflt,cnvrt: untyped): untyped {.dirty.} =
   proc name*(s: string, d=deflt): typ =
     result = d

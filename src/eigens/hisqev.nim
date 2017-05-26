@@ -13,7 +13,7 @@ type EigTable[T] = object
   Dvn: float
   sv: float
   err: float
-  fixed: bool
+  updates: int
 
 proc sort[T](t: var seq[EigTable[T]], a=0, bb= -1) =
   var b = bb
@@ -80,7 +80,7 @@ proc ortho1(t: var any; imn,imx: int, op: any) =
   for i in imn..imx:
     sett(t[i], op)
     if t[i].vn0<1e-10:
-      echo "i: ", i, "  vn0: ", t[i].vn0
+      #echo "ortho1 i: ", i, "  vn0: ", t[i].vn0
       if t[i].vn0==0: op.rand(t[i].v)
       for j in 0..<imn:
         t[i].projectOut(t[j])
@@ -240,6 +240,37 @@ proc rayleighRitz(t: var any, a,b: int, op: any) =
   var t2 = getElapsedTime()
   echo "rr dots: ", t0|-6, "  zeigsgv: ", (t1-t0)|-6, "  vecs: ", (t2-t1)|-6
 
+proc sortdown(t: var seq[EigTable], n0,n: int): int =
+  var imin = n
+  for i in countdown(n,n0+1):
+    if t[i].sv < t[i-1].sv:
+      #echo "swap: ", i, ": ", t[i].sv, "  ", t[i-1].sv
+      swap(t[i], t[i-1])
+      imin = min(imin, i-1)
+  imin
+template sortdown(t: var seq[EigTable], n: int): int = sortdown(t, 0, n)
+
+proc merge2(t1: var seq[EigTable], t2: seq[EigTable], rrbs: int, op: any) =
+  for i in range(t2.len):
+    t1.add t2[i]
+
+  let rrBack = 2
+  var rrMax = 0
+  var rrLen = rrbs
+
+  while rrMax < t1.len-1:
+
+    var rrMin = sortdown(t1, t1.len-1)
+    rrMin = max(rrMin-rrBack, 0)
+    rrMax = min(rrMin+rrLen, t1.len) - 1
+    while true:
+      let k = sortdown(t1, t1.len-1)
+      if k >= rrMax: break
+
+    echo "> rrMin: ", rrMin, "  rrMax: ", rrMax
+    rayleighRitz(t1, rrMin, rrMax, op)
+    rayleighRitz(t1, rrMin, rrMax, op)
+
 proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
             ng,nmx,rrbs: int, op: any) =
   tic()
@@ -249,7 +280,7 @@ proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
   var t = newSeq[type(vt1[0])](nt)
   var i1,i2: int
   for i in 0..<t.len:
-    t[i].fixed = false
+    t[i].updates = 0
     if i2>=vt2.len or (i1<vt1.len and vt1[i1].sv<=vt2[i2].sv):
       t[i] = vt1[i1]
       inc i1
@@ -261,6 +292,61 @@ proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
       swap(t[k], t[k+1])
       dec k
 
+  var rrLen = rrbs
+  var rrMin = 0
+  var rrMax = 0
+  var to1 = 0.0
+  var tr1 = 0.0
+
+  toc("merge setup")
+  while rrMax < nt-1:
+    tic()
+    rrMax = rrMin + rrLen - 1
+    var rrMinNext = (rrMin + rrMax + 1) div 2
+    if rrMax >= nt: rrMax = nt-1
+
+    echo "rrMin: ", rrMin, "  rrMax: ", rrMax
+
+    while true:
+      tic()
+      ortho1(t, rrMin, rrMax, op)
+      var t0 = getElapsedTime()
+      rayleighRitz(t, rrMin, rrMax, op)
+      rayleighRitz(t, rrMin, rrMax, op)
+      var t1 = getElapsedTime()
+      #ortho1(t, rrMin, rrMax, op)
+      var t2 = getElapsedTime()
+      to1 += t0 + (t2-t1)
+      tr1 += t1 - t0
+
+      for i in rrMin..rrMax: inc t[i].updates
+      for i in (rrMax+1)..<nt: t[i].updates = 0
+      #if rrMax>=nt-1: break
+      var s = sortdown(t, rrMin, nt-1)
+      #if s>rrMax: break
+      while s<min(nt-1,rrMax+rrLen):
+        s = sortdown(t, rrMin, nt-1)
+      break
+
+    rrMin = 0
+    while rrMin<nt and t[rrMin].updates>=1: inc rrMin
+    rrMin = max(0,rrMin-5)
+    #rrMin += rrLen div 2
+    toc("merge loop end")
+
+  toc("merge loop")
+
+  var tm = getElapsedTime()
+  echo "merget time = $1 secs (o1 $2 r1 $3)"%[tm|-6,to1|-6,tr1|-6]
+
+  for i in 0..<vt2.len:
+    if nmax+i<vt1.len: vt2[i].v = vt1[nmax+i].v
+    else: vt2[i].v = nil
+  vt1.setLen(nmax)
+  for i in 0..<vt1.len: vt1[i] = t[i]
+  toc("merge end")
+
+  #[
   #var nrr = rrbs
   var nrr = 20
   var nrrOv = 0
@@ -362,6 +448,7 @@ proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
   vt1.setLen(nmax)
   for i in 0..<vt1.len: vt1[i] = t[i]
   toc("merge end")
+  ]#
 
 proc svd(op: any, src: any, v: var any, sits: int, emin,emax: float) =
   let n = v.len
