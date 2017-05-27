@@ -114,7 +114,7 @@ proc getu*(a: dvec; b: dvec; v: dvec; u: dvec) =
 ## k: number of singular values wanted
 proc svdBi4*(e: dvec; m: dmat; ma: dmat; a: dvec; b: dvec; k: int;
              nx: int; nax: int; emin: float64; emax: float64): int =
-  svdbi(&e, &a, &b, k)
+  #svdbi(&e, &a, &b, k)
 
   var n = nx
   var na = nax

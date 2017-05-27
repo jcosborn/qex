@@ -122,17 +122,19 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
       if threadNum==0:
         beta = bet
         b[k-1] = bet
-    #cprintf("%i\t%16.12g %16.12g\n", k-1, alpha, beta);
       toc("loop1 thread2 end")
     toc("loop1 thread2")
 
   toc("done iterations 1")
   var dtime1 = getElapsedTime()
   if verb>0:
-    #cprintf("svd_lanczos %g secs\n", dtime1)
-    echo "svd_lanczos $1 secs"%[dtime1|-6]
+    echo "svdLanczos bidiag: $1 secs"%[dtime1|-6]
 
   getsv(ev, a, b, k)
+  toc("getsv")
+  var dtime2 = getElapsedTime()
+  if verb>0:
+    echo "svdLanczos getsv: $1 secs $2"%[(dtime2-dtime1)|-6,dtime2|-6]
 
   kmax = k
   if nv > kmax:
@@ -164,11 +166,10 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   #    s2 += d*d
   #echo s2
 
-  toc("svd")
-  var dtime2 = getElapsedTime()
+  toc("svdbi")
+  var dtime3 = getElapsedTime()
   if verb>0:
-    #cprintf("svd_lanczos %g secs %g\x0A", dtime2-dtime1, dtime2)
-    echo "svd_lanczos $1 secs $2"%[(dtime2-dtime1)|-6, dtime2|-6]
+    echo "svdLanczos svdbi: $1 secs $2"%[(dtime3-dtime2)|-6, dtime3|-6]
 
   threads:
     for i in 0..<qv.len:
@@ -209,10 +210,9 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
     toc("loop 2 end")
 
   toc("done")
-  var dtime3 = getElapsedTime()
+  var dtime4 = getElapsedTime()
   if verb>0:
-    #cprintf("svd_lanczos %g secs %g\x0A", dtime3-dtime2, dtime3)
-    echo "svd_lanczos $1 secs $2"%[(dtime3-dtime2)|-6, dtime3|-6]
+    echo "svdLanczos vecs: $1 secs $2"%[(dtime4-dtime3)|-6, dtime4|-6]
   result = nvout
 
 
