@@ -61,16 +61,25 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   var p = linop.newRightVec
   var v = linop.newRightVec
 
+  template getsv(ev, a, b, k) =
+    getSvals(ev, a, b, k)
+    if verb>0:
+      template sv(n): untyped = " sv$1 $2"%[$n,ev[n]|(-16,12)]
+      echo k|-5, sv(0), sv(1), sv(nv-1), sv(k-1)
+
   tic()
   nothreads:
-    let sn = sqrt(src.norm2)
+    #threadBarrier()
+    let sn2 = src.norm2
+    #threadBarrier()
+    let sn = sqrt(sn2)
+    #threadBarrier()
     #echo "sn: ", sn
     v := src / sn
-    p := v
-    u := 0
-  var alpha = 0.0
+  p := v
+  u := 0
   var beta = 1.0
-  var kcheck = 1
+  var kcheck = kmax+1
   var k = 0
 
   toc("setup")
@@ -87,31 +96,23 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
       #echo "v: ", v.norm2
       #echo "r: ", r.norm2
       r -= beta*u
-      let alph = sqrt(r.norm2)
+      let alpha = sqrt(r.norm2)
       if threadNum==0:
-        alpha = alph
-        a[k] = alph
+        a[k] = alpha
         inc k
       toc("loop1 thread1 end")
     toc("loop1 thread1")
 
+    if k >= kmax: break
     #check singular values
-    if k >= kcheck or k >= kmax:
-      getSvals(ev, a, b, k)
-      if verb>0:
-        #cprintf("%-5i", k)
-        #cprintf(" sv%i %-16.12g", 0, dvec_get(ev, 0))
-        #cprintf(" sv%i %-16.12g", 1, dvec_get(ev, 1))
-        #cprintf(" sv%i %-16.12g", nv-1, dvec_get(ev, nv-1))
-        #cprintf(" sv%i %-16.12g\n", k-1, dvec_get(ev, k-1))
-        template sv(n): untyped = " sv$1 $2"%[$n,ev[n]|(-16,12)]
-        echo k|-5, sv(0), sv(1), sv(nv-1), sv(k-1)
+    if k >= kcheck:
+      getsv(ev, a, b, k)
       kcheck = 1 + (1.5 * kcheck.float).int
-      if k >= kmax: break
     toc("loop1 out")
 
     nothreads:
       tic()
+      let alpha = a[k-1]
       u := r/alpha
       toc("loop1 thread2 exp1")
       linop.applyAdj(p, u)
@@ -131,6 +132,8 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
     #cprintf("svd_lanczos %g secs\n", dtime1)
     echo "svd_lanczos $1 secs"%[dtime1|-6]
 
+  getsv(ev, a, b, k)
+
   kmax = k
   if nv > kmax:
     for i in kmax..<nv:
@@ -143,13 +146,14 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
     ur: dmat
     #vr2: dmat
     #ur2: dmat
-  dmat_alloc(vr, kmax, nv)
-  dmat_alloc(ur, kmax, nva)
+  var nv0 = max(nv,nva)
+  dmat_alloc(vr, kmax, nv0)
+  dmat_alloc(ur, kmax, nv0)
   #dmat_alloc(vr2, kmax, nv)
   #dmat_alloc(ur2, kmax, nva)
   #svd_bi3(ev, vr, ur, a, b)
   #var nvout = nv
-  var nvout = svdBi4(ev, vr, ur, a, b, kmax, nv, nva, emin, emax)
+  var nvout = svdBi4(ev, vr, ur, a, b, kmax, nv0, nv0, emin, emax)
   nv = min(nv,nvout)
   nva = min(nva,nvout)
   #var s2 = 0.0
@@ -166,39 +170,42 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
     #cprintf("svd_lanczos %g secs %g\x0A", dtime2-dtime1, dtime2)
     echo "svd_lanczos $1 secs $2"%[(dtime2-dtime1)|-6, dtime2|-6]
 
-  for i in 0..<qv.len:
-    qv[i] := 0
-  for i in 0..<qva.len:
-    qva[i] := 0
-  beta = sqrt(src.norm2)
-  v := src / beta
+  threads:
+    for i in 0..<qv.len:
+      qv[i] := 0
+    for i in 0..<qva.len:
+      qva[i] := 0
+  var bta = sqrt(src.norm2)
+  v := src / bta
   p := v
-  beta = 1.0
+  bta = 1.0
   u := 0
-  k = 0
+  var kk = 0
   while true:
     tic()
-    v := p/beta
+    v := p/bta
     toc("loop2 eq1")
-    #cprintf("v[%i,0]: %.12g\n", k, vr[k,0]/vr[0,0])
-    for i in 0..<nv:
-      qv[i] += vr[k,i] * v
+    threads:
+      for i in 0..<nv:
+        qv[i] += vr[kk,i] * v
     toc("loop2 qv")
     linop.apply(r, v)
     toc("loop2 linop1")
-    r -= beta*u
-    let alpha = sqrt(r.norm2)
+    r -= bta*u
+    #let alpha = sqrt(r.norm2)
+    let alpha = a[kk]
     u := r/alpha
     toc("loop2 eq2")
     for i in 0..<nva:
-      qva[i] += ur[k,i] * u
+      qva[i] += ur[kk,i] * u
     toc("loop2 qva")
-    inc k
-    if k >= kmax: break
+    inc kk
+    if kk >= kmax: break
     linop.applyAdj(p, u)
     toc("loop2 linop2")
     p -= alpha * v
-    beta = sqrt(p.norm2)
+    #bta = sqrt(p.norm2)
+    bta = b[kk-1]
     toc("loop 2 end")
 
   toc("done")

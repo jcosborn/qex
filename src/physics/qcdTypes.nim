@@ -137,7 +137,7 @@ template simdSum*(xx:tuple):untyped =
 
 template assign*(r: DComplexV, x: SomeNumber) = assignCU(r, x)
 template assign*(r: DColorVectorV, x: SomeNumber) = assignVS(r, x)
-template assign*(r: DColorMatrixV, x: SomeNumber) = assignMS(r, x)
+#template assign*(r: DColorMatrixV, x: SomeNumber) = assignMS(r, x)
 #template `*`*(x: float64, y: DColorVectorV): untyped = mul(x, y)
 #template `*`*(x: ToDouble[Dvec0], y: Dvec0): untyped = `*`(x[],y)
 

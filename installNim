@@ -108,6 +108,10 @@ cd $rootdir
 
 if [ ! -e $nimdir ]; then
   git clone -b $branch https://github.com/nim-lang/Nim.git $nimdir
+  if [ ! -e $nimdir ]; then
+    echo "can't clone Nim branch: $branch"
+    exit 1
+  fi
 fi
 cd $nimdir
 

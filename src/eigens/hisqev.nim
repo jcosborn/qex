@@ -150,34 +150,19 @@ proc rayleighRitz(t: var any, a,b: int, op: any) =
   #    m1[j*n+i] = dot(t[a+i].v.odd,t[a+j].v)
   #    m2[j*n+i] = dot(t[a+i].v.even,t[a+j].v)
   toc("rr setup")
-  for i in 0..<n:
-    var done = false
-    var repcnt = 0
-    while not done:
-      done = true
-      var n2 = t[a+i].v.even.norm2
-      #echo i, ": ", n2
-      if n2<1e-10:
-        echo i, ": ", n2
-        #op.rand(t[a+i].v)
-        sett(t[a+i], op)
-      m2[i*n+i] := n2
+  threads(t):
+    for i in 0..<n:
+      let n2 = t[a+i].v.even.norm2
+      if threadNum==0: m2[i*n+i] := n2
       for j in countdown(i-1,0):
-        var m2ji = dot(t[a+i].v.even,t[a+j].v)
-        #let o = m2ji.norm2/sqrt(m2[i*n+i].norm2*m2[j*n+j].norm2)
-        #if repcnt==0 and o>1.1:
-        #  inc repcnt
-        #  echo i, " ", j, ": ", o
-        #  let s = m2ji.adj / m2[j*n+j]
-        #  t[a+i].v -= s * t[a+j].v
-        #  sett(t[a+i], op)
-        #  done = false
-        #  break
-        m2[j*n+i] = m2ji
+        let m2ji = dot(t[a+i].v.even,t[a+j].v)
+        if threadNum==0: m2[j*n+i] = m2ji
   toc("rr m2")
-  for i in 0..<n:
-    for j in 0..i:
-      m1[j*n+i] = dot(t[a+i].v.odd,t[a+j].v)
+  threads(t):
+    for i in 0..<n:
+      for j in 0..i:
+        let m1t = dot(t[a+i].v.odd,t[a+j].v)
+        if threadNum==0: m1[j*n+i] = m1t
   toc("rr m1")
 
   #[
@@ -299,7 +284,8 @@ proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
   var tr1 = 0.0
 
   toc("merge setup")
-  while rrMax < nt-1:
+  #while rrMax < nt-1:
+  while rrMin < ng:
     tic()
     rrMax = rrMin + rrLen - 1
     var rrMinNext = (rrMin + rrMax + 1) div 2
@@ -346,121 +332,17 @@ proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
   for i in 0..<vt1.len: vt1[i] = t[i]
   toc("merge end")
 
-  #[
-  #var nrr = rrbs
-  var nrr = 20
-  var nrrOv = 0
-  var ndone = 0
-  var ndone0 = 0
-  var rrMin = 0
-  var to1,to2,tr: float
-  toc("merge setup")
-  while ndone<ngd:
-    tic()
-    #ndone = 0
-    #let rrMin = max(ndone-nrrOv,0)
-    #let rrMax = min(rrMin+nrr-1,nmax-1)
-    let rrMax = min(rrMin+nrr-1,nt-1)
-    echo "ndone: ", ndone, "  rrMin: ", rrMin, "  rrMax: ", rrMax
-
-    var t0 = getElapsedTime()
-    #ortho1(t, ndone, rrMax, op)
-    var t1 = getElapsedTime()
-    #ortho2(t, ndone, rrMax, op)
-    #ortho2(t, ndone, rrMax, op)
-    var t2 = getElapsedTime()
-    rayleighRitz(t, rrMin, rrMax, op)
-    rayleighRitz(t, rrMin, rrMax, op)
-    toc("merge loop rrs")
-    var t3 = getElapsedTime()
-    to1 += t1 - t0
-    to2 += t2 - t1
-    tr += t3 - t2
-    #ortho1(t, ndone, rrMax, op)
-    #ortho2(t, ndone, rrMax, op)
-    #for i in rrMin..rrMax:
-    #  sett(t[i], op)
-      #echo "t[",i,"].sv: ", t[i].sv
-
-    #ndone0 = ndone
-    #ndone = ndone0 + nrr div 2
-    #if ndone>=nrr:
-    #  ndone = 0
-    #  nrr *= 2
-    #if ndone>=ngd:
-    #  ndone = 0
-    #  nrr *= 2
-    #if nrr>=ngd:
-    #  ndone = ngd
-
-    #if nrr>=nt:
-    if nrr>=ngd:
-      ndone = ngd
-    rrMin += nrr div 2
-    if rrMin>=nrr:
-      rrMin = 0
-      nrr *= 2
-      sort(t)
-    #[
-    if rrMin+nrr>=nt:
-      rrMin = 0
-      nrr *= 2
-      #sort(t)
-    else:
-      rrMin += nrr div 2
-    ]#
-
-    #[
-    if ndone>=ngd:
-      var epsDone = 1.0 + 1e-2
-      ndone = 0
-      for i in 0..<nmax:
-        var imn = i
-        for j in (i+1)..<nt:
-          if t[j].sv < t[imn].sv: imn = j
-        if i==ndone:
-          if t[imn].sv*epsDone < t[i].sv:
-            echo "updateNdone: ", i, " ", t[i].sv, " : ", imn, " ", t[imn].sv
-            swap(t[i],t[imn])
-          else:
-            inc ndone
-        else:
-          swap(t[i],t[imn])
-      if nrr<ngd:
-        ndone = 0
-        nrr *= 2
-    ]#
-
-    #ndone = max(0,ndone-10)
-    #for i in 0..<nmax:
-    #  for j in (i+1)..<nt:
-    #    if t[j].sv < t[imn].sv: imn = j
-    toc("merge loop end")
-
-  toc("merge loop")
-  var tm = getElapsedTime()
-  #cprintf("merget time = %.2f secs (o1 %.2f o2 %.2f rr %.2f)\n",
-  #        tm, to1, to2, tr)
-  echo "merget time = $1 secs (o1 $2 o2 $3 rr $4)"%[tm|-6,to1|-6,to2|-6,tr|-6]
-  for i in 0..<vt2.len:
-    if nmax+i<vt1.len: vt2[i].v = vt1[nmax+i].v
-    else: vt2[i].v = nil
-  vt1.setLen(nmax)
-  for i in 0..<vt1.len: vt1[i] = t[i]
-  toc("merge end")
-  ]#
-
 proc svd(op: any, src: any, v: var any, sits: int, emin,emax: float) =
   let n = v.len
   var sv = newSeq[float](n)
   var qv = newSeq[type(v[0].even)](n)
-  var qva = newSeq[type(v[0].odd)](n)
+  var qva = newSeq[type(v[0].odd)](0)
   var rsq = 0.0
   var lverb = 3
   for i in 0..<n:
     if v[i].isNil: v[i] = op.newVector()
     qv[i] = v[i].even
-    qva[i] = v[i].odd
+    #qva[i] = v[i].odd
   let nevs = svdLanczos(op, src.even, sv, qv, qva, rsq, sits,
                         emin, emax, lverb)
   echo "svd nevs: ", nevs
