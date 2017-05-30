@@ -57,7 +57,9 @@ proc ioGetCoords[V:static[int]](x:ptr cint; node: cint; index: cint) =
   layoutCoordQ(ioLayout[V]().lq.addr, x, li.addr)
 proc ioNumSites[V:static[int]](node: cint):cint =
   return ioLayout[V]().nSites.cint
-proc ioReadRank*(node: cint): cint = 0.cint
+var readnodes{.global.} = -1
+proc ioReadRank*(node: cint): cint =
+  cint( readnodes * (node div readnodes) )
 proc ioMasterRank*(): cint = 0.cint
 
 proc toString(qs:ptr QIO_String):string =
@@ -84,6 +86,8 @@ proc open(r:var Reader; ql:var QIO_Layout) =
   ql.sites_on_node = r.layout.nSites
   ql.this_node = r.layout.myRank.cint
   ql.number_of_nodes = r.layout.nRanks.cint
+  if readnodes<=0:
+    readnodes = 1 + int( sqrt(ql.number_of_nodes.float) )
   #echo ql.volume
   #echo ql.sites_on_node
   #echo ql.this_node
@@ -94,8 +98,8 @@ proc open(r:var Reader; ql:var QIO_Layout) =
   fs.master_io_node = ioMasterRank
 
   var iflag:QIO_Iflag
-  iflag.serpar = QIO_SERIAL;
-  #iflag.serpar = QIO_PARALLEL
+  #iflag.serpar = QIO_SERIAL;
+  iflag.serpar = QIO_PARALLEL
   #//iflag.volfmt = QIO_UNKNOWN;
   iflag.volfmt = QIO_SINGLEFILE
 

@@ -201,15 +201,47 @@ proc newLayoutX*(lat:openArray[int],V:static[int]):Layout[V] =
   result.new()
   let nd = lat.len
   var rg,ig,og,lg:seq[int]
-  rg.newSeq(nd)
-  ig.newSeq(nd)
+  #rg.newSeq(nd)
+  #ig.newSeq(nd)
   og.newSeq(nd)
   lg.newSeq(nd)
-  partitionGeomF(lg, rg, lat, nRanks, 1)
+
+  rg = intSeqParam("rankgeom")
+  if rg.len == 0:
+    rg.setLen(nd)
+    partitionGeomF(lg, rg, lat, nRanks, 1)
+  else:
+    for i in 0..<nd:
+      lg[i] = lat[i] div rg[i]
+
   echo "#physGeom:" & $(@lat)
   echo "#rankGeom:" & $rg
   echo "#localGeom:" & $lg
-  partitionGeom(og, ig, lg, V, 1)
+
+  ig = intSeqParam("innergeom")
+  if ig.len == 0:
+    ig.setLen(nd)
+    partitionGeom(og, ig, lg, V, 1)
+  else:
+    for i in 0..<nd:
+      og[i] = lg[i] div ig[i]
+  echo "#innerGeom:" & $ig
+  echo "#outerGeom:" & $og
+
+  for i in 0..<nd:
+    if ig[i]>1 and (og[i] mod 2)==1:
+      for j in 1..<nd:
+        let k = (i+j) mod nd
+        if ig[k]==1 and (og[k] mod 4)==0:
+          ig[k] *= 2
+          og[k] = og[k] div 2
+          ig[i] = ig[i] div 2
+          og[i] *= 2
+          break
+    if ig[i]>1 and (og[i] mod 2)==1:
+      echo "error: can't layout inner geom"
+      quit -1
+
   echo "#innerGeom:" & $ig
   echo "#outerGeom:" & $og
   result.lq.myrank = cint(myRank)
