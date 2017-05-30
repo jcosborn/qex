@@ -95,11 +95,20 @@ when isMainModule:
     if 0 != ret:
       echo "Error: set_method returned with nonzero exit status: ", ret
       quit QuitFailure
-    pp.display_params
+  block primmeSetSize:
+    let ret = zprimme(nil,nil,nil,pp.addr)
+    if 0 != ret:
+      echo "Error: zprimme(nil) returned with nonzero exit status: ", ret
+      quit QuitFailure
   var
     evecs = newAlignedMemU[complex[float]](pp.n * pp.numEvals)
     evals = newseq[float](pp.numEvals)
     rnorms = newseq[float](pp.numEvals)
+    iw = newAlignedMemU[char](pp.intWorkSize)
+    rw = newAlignedMemU[char](pp.realWorkSize)
+  pp.intWork = cast[ptr cint](iw.data)
+  pp.realWork = rw.data
+  pp.display_params
   block primmeRun:
     let ret = pp.run(evals, evecs.data, rnorms)
     if ret != 0:
