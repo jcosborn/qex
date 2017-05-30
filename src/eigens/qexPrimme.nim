@@ -12,8 +12,10 @@ proc newOpInfo[S](s:ptr S, m:float):auto =
   r.s = s
   r.m = m
   r.tmp.new(s.g[0].l)
-  r.x = r.tmp
-  r.y = r.tmp
+  r.x.new
+  r.x[] = r.tmp[]
+  r.y.new
+  r.y[] = r.tmp[]
   return r
 proc makeX(op:OpInfo, x:ptr float) = op.x.s.data = cast[type(op.x.s.data)](x)
 proc makeY(op:OpInfo, y:ptr float) = op.y.s.data = cast[type(op.y.s.data)](y)
