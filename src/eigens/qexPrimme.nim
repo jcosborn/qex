@@ -54,6 +54,7 @@ proc sumReal(sendBuf: pointer; recvBuf: pointer; count: ptr cint;
   for i in 0..<count[]:
     asarray[float](recvBuf)[i] = asarray[float](sendBuf)[i]
   QMP_sum_double_array(cast[ptr cdouble](recvBuf), count[])
+  ierr[] = 0
 
 when isMainModule:
   import qex, gauge
