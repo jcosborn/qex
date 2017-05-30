@@ -77,8 +77,7 @@ when isMainModule:
     g.setBC
     g.stagPhase
   var s = g.newStag
-  var m = 0.0123
-  var tmp = lo.ColorVector
+  var m = 0.1
   var opInfo = newOpInfo(s.addr, m)
   var pp = primme_initialize()
   block primmeSetup:
