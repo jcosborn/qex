@@ -32,6 +32,15 @@ makeTypeParam(intParam, int, 0, parseInt)
 makeTypeParam(floatParam, float, 0.0, parseFloat)
 makeTypeParam(strParam, string, "", string)
 
+proc intSeqParam*(s: string, d: seq[int] = @[]): seq[int] =
+  result = d
+  let n = paramCount()
+  for i in 1..n:
+    let p = paramstr(i)
+    if p.startsWith('-'&s):
+      let ll = s.len + 2
+      for c in split(p[ll..^1], ','):
+        result.add parseInt(c)
 
 template `$&`*(x: untyped): string =
   toHex(unsafeAddrInt(x))
