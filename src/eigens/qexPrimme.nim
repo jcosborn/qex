@@ -2,16 +2,19 @@ import primme
 import base, comms/qmp, physics/qcdTypes, physics/stagD
 
 type
-  OpInfo[G,T] = object
-    s:ptr Staggered[G,T]
+  OpInfo[S,F] = object
+    s:ptr S
     m:float
-    x,y,tmp:Field[VLEN,T]
-proc newOpInfo[G,T](s:ptr Staggered[G,T], m:float):OpInfo[G,T] =
-  result.s = s
-  result.m = m
-  result.tmp.new(s.g[0].l)
-  result.x = result.tmp
-  result.y = result.tmp
+    x,y,tmp:F
+proc newOpInfo[S](s:ptr S, m:float):auto =
+  type F = type(s.g[0].l.ColorVector())
+  var r:OpInfo[S,F]
+  r.s = s
+  r.m = m
+  r.tmp.new(s.g[0].l)
+  r.x = r.tmp
+  r.y = r.tmp
+  return r
 proc makeX(op:OpInfo, x:ptr float) = op.x.s.data = cast[type(op.x.s.data)](x)
 proc makeY(op:OpInfo, y:ptr float) = op.y.s.data = cast[type(op.y.s.data)](y)
 proc applyD(op:ptr OpInfo; x,y:ptr float) =
@@ -22,8 +25,10 @@ proc applyD(op:ptr OpInfo; x,y:ptr float) =
   op.s[].D(op.tmp, op.x, op.m)
   op.s[].Ddag(op.y, op.tmp, op.m)
   
-proc matvec(x:pointer, ldx:ptr PRIMME_INT, y:pointer, ldy:ptr PRIMME_INT,
-            blocksize:ptr cint, primme:ptr primme_params, err:ptr cint) {.noconv.} =
+proc matvec[O](x:pointer, ldx:ptr PRIMME_INT,
+               y:pointer, ldy:ptr PRIMME_INT,
+               blocksize:ptr cint,
+               primme:ptr primme_params, err:ptr cint) {.noconv.} =
   var
     x = asarray[cdouble] x
     dx = ldx[]
@@ -33,17 +38,17 @@ proc matvec(x:pointer, ldx:ptr PRIMME_INT, y:pointer, ldy:ptr PRIMME_INT,
     let
       xp = x[i*dx].addr         # Input vector
       yp = y[i*dy].addr         # Output
-    applyD(cast[ptr OpInfo[Field[VLEN,DColorVectorV],DColorVectorV]](primme.matrix), xp, yp)
+    applyD(cast[ptr O](primme.matrix), xp, yp)
   err[] = 0
 
 proc sumReal(sendBuf: pointer; recvBuf: pointer; count: ptr cint;
                primme: ptr primme_params; ierr: ptr cint) {.noconv.} =
   for i in 0..<count[]:
     asarray[float](recvBuf)[i] = asarray[float](sendBuf)[i]
-  QMP_sum_double_array(recvBuf, count[])
+  QMP_sum_double_array(cast[ptr cdouble](recvBuf), count[])
 
 when isMainModule:
-  import qex
+  import qex, gauge
   qexInit()
   var lat = [4,4,4,4]
   threads:
@@ -75,46 +80,46 @@ when isMainModule:
   var m = 0.0123
   var tmp = lo.ColorVector
   var opInfo = newOpInfo(s.addr, m)
-  var primme = primme_initialize()
+  var pp = primme_initialize()
   block primmeSetup:
-    primme.n = 3*lo.physVol
-    primme.nLocal = 3*lo.nSites
-    primme.globalSumReal = sumReal
-    primme.matrixMatvec = matvec
-    primme.matrix = opInfo.addr
-    primme.numEvals = 16
-    primme.eps = 1e-8
-    primme.target = primme_smallest
-    let ret = primme.set_method PRIMME_DYNAMIC
+    pp.n = 3*lo.physVol
+    pp.nLocal = 3*lo.nSites
+    pp.globalSumReal = sumReal
+    pp.matrixMatvec = matvec[type(opInfo)]
+    pp.matrix = opInfo.addr
+    pp.numEvals = 16
+    pp.eps = 1e-8
+    pp.target = primme_smallest
+    let ret = pp.set_method PRIMME_DYNAMIC
     if 0 != ret:
       echo "Error: set_method returned with nonzero exit status: ", ret
       quit QuitFailure
-    primme.display_params
+    pp.display_params
   var
-    evecs = newAlignedMemU[complex[float]](primme.n * primme.numEvals)
-    evals = newseq[float](primme.numEvals)
-    rnorms = newseq[float](primme.numEvals)
+    evecs = newAlignedMemU[complex[float]](pp.n * pp.numEvals)
+    evals = newseq[float](pp.numEvals)
+    rnorms = newseq[float](pp.numEvals)
   block primmeRun:
-    let ret = primme.run(evals, evecs.data, rnorms)
+    let ret = pp.run(evals, evecs.data, rnorms)
     if ret != 0:
       echo "Error: primme returned with nonzero exit status: ", ret
       quit QuitFailure
   block primmeReport:
-    for i in 0..<primme.initSize:
+    for i in 0..<pp.initSize:
       echo "Eval[",i,"]: ",evals[i].ff," rnorm: ",rnorms[i].ff
-    echo " ",primme.initSize," eigenpairs converged"
-    echo "Tolerance  : ",ff primme.aNorm*primme.eps
-    echo "Iterations : ",primme.stats.numOuterIterations
-    echo "Restarts   : ",primme.stats.numRestarts
-    echo "Matvecs    : ",primme.stats.numMatvecs
-    echo "Preconds   : ",primme.stats.numPreconds
-    if primme.locking != 0 and primme.intWork != nil and primme.intWork[] == 1:
+    echo " ",pp.initSize," eigenpairs converged"
+    echo "Tolerance  : ",ff pp.aNorm*pp.eps
+    echo "Iterations : ",pp.stats.numOuterIterations
+    echo "Restarts   : ",pp.stats.numRestarts
+    echo "Matvecs    : ",pp.stats.numMatvecs
+    echo "Preconds   : ",pp.stats.numPreconds
+    if pp.locking != 0 and pp.intWork != nil and pp.intWork[] == 1:
       echo "\nA locking problem has occurred."
       echo "Some eigenpairs do not have a residual norm less than the tolerance."
       echo "However, the subspace of evecs is accurate to the required tolerance."
-    case primme.dynamicMethodSwitch:
+    case pp.dynamicMethodSwitch:
     of -1: echo "Recommended method for next run: DEFAULT_MIN_MATVECS"
     of -2: echo "Recommended method for next run: DEFAULT_MIN_TIME"
     of -3: echo "Recommended method for next run: DYNAMIC (close call)"
     else: discard
-  primme.free
+  pp.free
