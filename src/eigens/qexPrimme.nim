@@ -21,11 +21,17 @@ proc makeX(op:OpInfo, x:ptr float) = op.x.s.data = cast[type(op.x.s.data)](x)
 proc makeY(op:OpInfo, y:ptr float) = op.y.s.data = cast[type(op.y.s.data)](y)
 proc applyD(op:ptr OpInfo; x,y:ptr float) =
   # x in, y out
-  let op = op[]
-  op.makeX x
-  op.makeY y
-  op.s[].D(op.tmp, op.x, op.m)
-  op.s[].Ddag(op.y, op.tmp, op.m)
+  op[].makeX x
+  op[].makeY y
+  threads:
+    stagD(op[].s[].so, op[].tmp.odd.field, op[].s[].g, op[].x.even.field, 0.0)
+    threadBarrier()
+    stagD(op[].s[].se, op[].y.even.field, op[].s[].g, op[].tmp.odd.field, 0.0, -1)
+    #stagD2ee(op[].s[].se, op[].s[].so, op[].y, op[].s[].g, op[].x, op[].m*op[].m)
+    #op[].s[].D(op[].tmp, op[].x, op[].m)
+    #threadBarrier()
+    #op[].s[].Ddag(op[].y, op[].tmp, op[].m)
+    #threadBarrier()
   
 proc matvec[O](x:pointer, ldx:ptr PRIMME_INT,
                y:pointer, ldy:ptr PRIMME_INT,
@@ -51,6 +57,8 @@ proc sumReal(sendBuf: pointer; recvBuf: pointer; count: ptr cint;
 
 when isMainModule:
   import qex, gauge
+  import strutils
+  template ff(x:untyped):auto = formatFloat(x,ffScientific,17)
   qexInit()
   var lat = [4,4,4,4]
   threads:
@@ -89,19 +97,20 @@ when isMainModule:
     pp.matrixMatvec = matvec[type(opInfo)]
     pp.matrix = opInfo.addr
     pp.numEvals = 16
-    pp.eps = 1e-8
+    pp.eps = 1e-4
     pp.target = primme_smallest
+    pp.printLevel = 3
     let ret = pp.set_method PRIMME_DYNAMIC
     if 0 != ret:
       echo "Error: set_method returned with nonzero exit status: ", ret
       quit QuitFailure
   block primmeSetSize:
     let ret = zprimme(nil,nil,nil,pp.addr)
-    if 0 != ret:
-      echo "Error: zprimme(nil) returned with nonzero exit status: ", ret
+    if 1 != ret:
+      echo "Error: zprimme(nil) returned with exit status: ", ret
       quit QuitFailure
   var
-    evecs = newAlignedMemU[complex[float]](pp.n * pp.numEvals)
+    evecs = newAlignedMemU[complex[float]] int(pp.numEvals*pp.n)
     evals = newseq[float](pp.numEvals)
     rnorms = newseq[float](pp.numEvals)
     iw = newAlignedMemU[char](pp.intWorkSize)
@@ -110,7 +119,7 @@ when isMainModule:
   pp.realWork = rw.data
   pp.display_params
   block primmeRun:
-    let ret = pp.run(evals, evecs.data, rnorms)
+    let ret = pp.run(evals, asarray[complex[float]](evecs[0].addr)[], rnorms)
     if ret != 0:
       echo "Error: primme returned with nonzero exit status: ", ret
       quit QuitFailure
