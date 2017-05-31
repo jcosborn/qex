@@ -6,14 +6,14 @@ import linalgFuncs
 import math
 import strUtils
 
-type EigTable[T] = object
-  v: T
-  vn0: float
-  vn: float
-  Dvn: float
-  sv: float
-  err: float
-  updates: int
+type EigTable*[T] = object
+  v*: T
+  vn0*: float
+  vn*: float
+  Dvn*: float
+  sv*: float
+  err*: float
+  updates*: int
 
 proc sort[T](t: var seq[EigTable[T]], a=0, bb= -1) =
   var b = bb

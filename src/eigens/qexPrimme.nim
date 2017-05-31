@@ -110,7 +110,7 @@ when isMainModule:
     pp.matrixMatvec = matvec[type(opInfo)]
     pp.numEvals = 16
     pp.target = primme_smallest
-    pp.eps = 1e-4
+    pp.eps = 1e-9
     pp.numProcs = nRanks.cint
     pp.procId = myRank.cint
     pp.nLocal = 3*lo.nEven
@@ -203,7 +203,18 @@ when isMainModule:
   opts.abserr = 1e-6
   #opts.relerr = 1e-6
   #opts.abserr = 1e-8
-  opts.svdits = intParam("svdits", opts.nev*2)
+  opts.svdits = intParam("svdits", 500)
   opts.maxup = 10
   var evals0 = hisqev(op, opts)
+  import unittest
+  var CT = 1e-10                  # comparison tolerance
+  proc `~=`(x,y:float):bool = abs(x-y)/max(abs(x),abs(y)) < CT
+  if myrank == 0:
+    suite "primme vs. hisqev":
+      test "First 16 evs":
+        forStatic i, 0, 15:
+          check sqrt(evals[i]) ~= evals0[i].sv
+          if not(sqrt(evals[i]) ~= evals0[i].sv):
+            echo "primme: ", sqrt(evals[i]).ff
+            echo "hisqev: ", evals0[i].sv.ff
   qexFinalize()
