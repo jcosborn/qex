@@ -21,26 +21,30 @@ proc newOpInfo[S](s:ptr S, m:float):auto =
   #r.y[] = r.tmp[]
   r.l = 6*s.g[0].l.nEven
   return r
-proc setX(op: ptr OpInfo, x: ptr float) =
-  copymem(op.x.s.data, x, op.l*sizeof(float))
-proc getY(op: ptr OpInfo, y: ptr float) =
-  copymem(y, op.y.s.data, op.l*sizeof(float))
+proc setX(op: ptr OpInfo, xx: ptr float) =
+  #copymem(op.x.s.data, x, op.l*sizeof(float))
+  let x = asarray[float](xx)
+  let n = op.l div 6
+  for i in 0..<n:
+    for j in 0..2:
+      op.x{i}[j].re = x[6*i+2*j]
+      op.x{i}[j].im = x[6*i+2*j+1]
+proc getY(op: ptr OpInfo, yy: ptr float) =
+  #copymem(y, op.y.s.data, op.l*sizeof(float))
+  let y = asarray[float](yy)
+  let n = op.l div 6
+  for i in 0..<n:
+    for j in 0..2:
+      y[6*i+2*j] := op.y{i}[j].re
+      y[6*i+2*j+1] := op.y{i}[j].im
 proc applyD(op:ptr OpInfo; x,y:ptr float) =
   # x in, y out
   op.setX x
   #op[].y := op[].x
   threads:
-    #stagD(op[].s[].so, op[].tmp.odd.field, op[].s[].g, op[].x.even.field, 0.0)
-    #threadBarrier()
-    #stagD(op[].s[].se, op[].y.even.field, op[].s[].g, op[].tmp.odd.field, 0.0, -1)
     stagD(op[].s[].so, op[].tmp, op[].s[].g, op[].x, 0.0)
     threadBarrier()
     stagD(op[].s[].se, op[].y, op[].s[].g, op[].tmp, 0.0, -1.0)
-    #stagD2ee(op[].s[].se, op[].s[].so, op[].y, op[].s[].g, op[].x, op[].m*op[].m)
-    #op[].s[].D(op[].tmp, op[].x, op[].m)
-    #threadBarrier()
-    #op[].s[].Ddag(op[].y, op[].tmp, op[].m)
-    #threadBarrier()
   op.getY y
 
 proc matvec[O](x:pointer, ldx:ptr PRIMME_INT,
@@ -52,7 +56,6 @@ proc matvec[O](x:pointer, ldx:ptr PRIMME_INT,
     dx = ldx[]
     y = asarray[cdouble] y
     dy = ldy[]
-  echo "blocksize: ", blocksize[], "  ldx: ", ldx[], "  ldy: ", ldy[]
   for i in 0..<blocksize[]:
     let
       xp = x[i*dx].addr         # Input vector
@@ -81,7 +84,6 @@ when isMainModule:
   for i in 0..<lat.len:
     g[i] = lo.Colormatrix()
     threads: g[i] := 1
-  #[
   gauge.random(g)
   for mu in 0..<lat.len:
     #var t, s: DColorMatrixV   # FIXME: get vectorized code to work with projectU
@@ -96,7 +98,6 @@ when isMainModule:
         for b in 0..2:
           g[mu]{i}[a,b].re := t[a,b].re
           g[mu]{i}[a,b].im := t[a,b].im
-  ]#
   threads:
     g.setBC
     g.stagPhase
