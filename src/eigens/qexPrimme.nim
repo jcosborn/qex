@@ -159,4 +159,4 @@ when isMainModule:
     of -3: echo "Recommended method for next run: DYNAMIC (close call)"
     else: discard
   pp.free
-  #primme_free(addr pp)
+  qexFinalize()
