@@ -348,13 +348,13 @@ proc svd(op: any, src: any, v: var any, sits: int, emin,emax: float) =
   echo "svd nevs: ", nevs
 
 type EigOpts* = object
-  nev: int
-  nvecs: int
-  relerr: float
-  abserr: float
-  svdits: int
-  maxup: int
-  rrbs: int
+  nev*: int
+  nvecs*: int
+  relerr*: float
+  abserr*: float
+  svdits*: int
+  maxup*: int
+  rrbs*: int
 
 proc initOpts*(eo: var EigOpts) =
   eo.nev = 10
@@ -368,7 +368,7 @@ proc initOpts*(eo: var EigOpts) =
 ## op: operator object
 ## opts: options onject
 ## vv: seq of vectors
-proc hisqev(op: any, opts: any, vv: any): auto =
+proc hisqev*(op: any, opts: any, vv: any): auto =
   let ng = opts.nev
   let nvt = opts.nvecs
   let relerr = opts.relerr
@@ -469,7 +469,7 @@ proc hisqev(op: any, opts: any, vv: any): auto =
   echo "total time = $1 seconds"%[t1|-6]
   vt1
 
-proc hisqev(op: any, opts: any): auto =
+proc hisqev*(op: any, opts: any): auto =
   var v = newSeq[type(op.newVector)](0)
   result = hisqev(op, opts, v)
 

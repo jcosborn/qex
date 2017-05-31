@@ -159,4 +159,51 @@ when isMainModule:
     of -3: echo "Recommended method for next run: DYNAMIC (close call)"
     else: discard
   pp.free
+  import hisqev, rng/rng
+  var lo1 = newLayout(lat, 1)
+  var r: Field[1,RngMilc6]
+  r.new(lo1)
+  var seed = 987654321
+  threads:
+    for j in lo.sites:
+      var l = lo.coords[lo.nDim-1][j].int
+      for i in countdown(lo.nDim-2, 0):
+        l = l * lo.physGeom[i].int + lo.coords[i][j].int
+      r[j].seed(seed, l)
+  type MyOp = object
+    s: type(s)
+    r: type(r)
+    lo: type(lo)
+  var op = MyOp(r:r,s:s,lo:lo)
+  proc gaussian(x: AsVarComplex, r: var any) =
+    x.re = gaussian(r)
+    x.im = gaussian(r)
+  proc gaussian(x: AsVarVector, r: var any) =
+    for i in 0..<x.len:
+      gaussian(x[i], r)
+  proc gaussian(v: Field, r: Field2) =
+    for i in v.l.sites:
+      gaussian(v{i}, r[i])
+  template rand(op: MyOp, v: any) =
+    gaussian(v, op.r)
+  template newVector(op: MyOp): untyped =
+    op.lo.ColorVector()
+  template apply(op: MyOp, r,v: typed) =
+    stagD(op.s.so, r.field, op.s.g, v.field, 0.0)
+  template applyAdj(op: MyOp, r,v: typed) =
+    stagD(op.s.se, r.field, op.s.g, v.field, 0.0, -1)
+  template newRightVec(op: MyOp): untyped = newVector(op).even
+  template newLeftVec(op: MyOp): untyped = newVector(op).odd
+  var opts: EigOpts
+  opts.initOpts
+  opts.nev = intParam("nev", 16)
+  opts.nvecs = intParam("nvecs", (opts.nev*11) div 10)
+  opts.rrbs = intParam("rrbs", opts.nvecs)
+  opts.relerr = 1e-4
+  opts.abserr = 1e-6
+  #opts.relerr = 1e-6
+  #opts.abserr = 1e-8
+  opts.svdits = intParam("svdits", opts.nev*2)
+  opts.maxup = 10
+  var evals0 = hisqev(op, opts)
   qexFinalize()
