@@ -6,33 +6,43 @@ type
     s:ptr S
     m:float
     x,y,tmp:F
+    l: int
 proc newOpInfo[S](s:ptr S, m:float):auto =
-  type F = type(s.g[0].l.ColorVector())
+  type F = type(s.g[0].l.ColorVectorD())
   var r:OpInfo[S,F]
   r.s = s
   r.m = m
   r.tmp.new(s.g[0].l)
-  r.x.new
-  r.x[] = r.tmp[]
-  r.y.new
-  r.y[] = r.tmp[]
+  r.x.new(s.g[0].l)
+  #r.x.new
+  #r.x[] = r.tmp[]
+  r.y.new(s.g[0].l)
+  #r.y.new
+  #r.y[] = r.tmp[]
+  r.l = 6*s.g[0].l.nEven
   return r
-proc makeX(op:OpInfo, x:ptr float) = op.x.s.data = cast[type(op.x.s.data)](x)
-proc makeY(op:OpInfo, y:ptr float) = op.y.s.data = cast[type(op.y.s.data)](y)
+proc setX(op: ptr OpInfo, x: ptr float) =
+  copymem(op.x.s.data, x, op.l*sizeof(float))
+proc getY(op: ptr OpInfo, y: ptr float) =
+  copymem(y, op.y.s.data, op.l*sizeof(float))
 proc applyD(op:ptr OpInfo; x,y:ptr float) =
   # x in, y out
-  op[].makeX x
-  op[].makeY y
+  op.setX x
+  #op[].y := op[].x
   threads:
-    stagD(op[].s[].so, op[].tmp.odd.field, op[].s[].g, op[].x.even.field, 0.0)
+    #stagD(op[].s[].so, op[].tmp.odd.field, op[].s[].g, op[].x.even.field, 0.0)
+    #threadBarrier()
+    #stagD(op[].s[].se, op[].y.even.field, op[].s[].g, op[].tmp.odd.field, 0.0, -1)
+    stagD(op[].s[].so, op[].tmp, op[].s[].g, op[].x, 0.0)
     threadBarrier()
-    stagD(op[].s[].se, op[].y.even.field, op[].s[].g, op[].tmp.odd.field, 0.0, -1)
+    stagD(op[].s[].se, op[].y, op[].s[].g, op[].tmp, 0.0, -1.0)
     #stagD2ee(op[].s[].se, op[].s[].so, op[].y, op[].s[].g, op[].x, op[].m*op[].m)
     #op[].s[].D(op[].tmp, op[].x, op[].m)
     #threadBarrier()
     #op[].s[].Ddag(op[].y, op[].tmp, op[].m)
     #threadBarrier()
-  
+  op.getY y
+
 proc matvec[O](x:pointer, ldx:ptr PRIMME_INT,
                y:pointer, ldy:ptr PRIMME_INT,
                blocksize:ptr cint,
@@ -42,6 +52,7 @@ proc matvec[O](x:pointer, ldx:ptr PRIMME_INT,
     dx = ldx[]
     y = asarray[cdouble] y
     dy = ldy[]
+  echo "blocksize: ", blocksize[], "  ldx: ", ldx[], "  ldy: ", ldy[]
   for i in 0..<blocksize[]:
     let
       xp = x[i*dx].addr         # Input vector
@@ -70,6 +81,7 @@ when isMainModule:
   for i in 0..<lat.len:
     g[i] = lo.Colormatrix()
     threads: g[i] := 1
+  #[
   gauge.random(g)
   for mu in 0..<lat.len:
     #var t, s: DColorMatrixV   # FIXME: get vectorized code to work with projectU
@@ -84,6 +96,7 @@ when isMainModule:
         for b in 0..2:
           g[mu]{i}[a,b].re := t[a,b].re
           g[mu]{i}[a,b].im := t[a,b].im
+  ]#
   threads:
     g.setBC
     g.stagPhase
@@ -92,32 +105,34 @@ when isMainModule:
   var opInfo = newOpInfo(s.addr, m)
   var pp = primme_initialize()
   block primmeSetup:
-    pp.n = 3*lo.physVol
-    pp.nLocal = 3*lo.nSites
-    pp.globalSumReal = sumReal
+    pp.n = 3*lo.physVol div 2
     pp.matrixMatvec = matvec[type(opInfo)]
-    pp.matrix = opInfo.addr
     pp.numEvals = 16
-    pp.eps = 1e-4
     pp.target = primme_smallest
+    pp.eps = 1e-4
+    pp.numProcs = nRanks.cint
+    pp.procId = myRank.cint
+    pp.nLocal = 3*lo.nEven
+    pp.globalSumReal = sumReal
+    pp.matrix = opInfo.addr
     pp.printLevel = 3
     let ret = pp.set_method PRIMME_DYNAMIC
     if 0 != ret:
       echo "Error: set_method returned with nonzero exit status: ", ret
       quit QuitFailure
-  block primmeSetSize:
-    let ret = zprimme(nil,nil,nil,pp.addr)
-    if 1 != ret:
-      echo "Error: zprimme(nil) returned with exit status: ", ret
-      quit QuitFailure
+  #block primmeSetSize:
+  #  let ret = zprimme(nil,nil,nil,pp.addr)
+  #  if 1 != ret:
+  #    echo "Error: zprimme(nil) returned with exit status: ", ret
+  #    quit QuitFailure
   var
-    evecs = newAlignedMemU[complex[float]] int(pp.numEvals*pp.n)
+    evecs = newAlignedMemU[complex[float]] int(pp.numEvals*pp.nLocal)
     evals = newseq[float](pp.numEvals)
     rnorms = newseq[float](pp.numEvals)
-    iw = newAlignedMemU[char](pp.intWorkSize)
-    rw = newAlignedMemU[char](pp.realWorkSize)
-  pp.intWork = cast[ptr cint](iw.data)
-  pp.realWork = rw.data
+    #iw = newAlignedMemU[char](pp.intWorkSize*sizeof(int))
+    #rw = newAlignedMemU[char](pp.realWorkSize*sizeof(float))
+  #pp.intWork = cast[ptr cint](iw.data)
+  #pp.realWork = rw.data
   pp.display_params
   block primmeRun:
     let ret = pp.run(evals, asarray[complex[float]](evecs[0].addr)[], rnorms)
@@ -143,3 +158,4 @@ when isMainModule:
     of -3: echo "Recommended method for next run: DYNAMIC (close call)"
     else: discard
   pp.free
+  #primme_free(addr pp)
