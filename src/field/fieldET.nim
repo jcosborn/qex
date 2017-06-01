@@ -413,12 +413,13 @@ proc norm2P*(f:SomeField):auto =
   #echoAll n2
   result = simdSum(n2)
   toc("norm2 simd sum")
-  #echoAll result
+  #echoAll myRank, ",", threadNum, ": ", result
   #threadSum(result)
   #toc("norm2 thread sum")
   #rankSum(result)
   #toc("norm2 rank sum")
   threadRankSum(result)
+  #echo result
   toc("norm2 thread rank sum")
 template norm2*(f:SomeAllField):untyped =
   when declared(subsetObject):

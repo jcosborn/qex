@@ -64,7 +64,8 @@ prepareShiftBufs(ShiftBuf *sb[], ShiftIndices *si[], int n, int esize)
     sb[i]->first = 0;
     sb[i]->offr = myalloc(MAXTHREADS*sizeof(int));
     sb[i]->lenr = myalloc(MAXTHREADS*sizeof(int));
-    for(int j=0; j<MAXTHREADS; j++) sb[i]->offr[j] = -1;
+    sb[i]->nthreads = myalloc(MAXTHREADS*sizeof(int));
+    for(int j=0; j<MAXTHREADS; j++) sb[i]->nthreads[j] = 0;
   }
   sb[0]->first = 1;
   if(sbs>0) {
@@ -754,9 +755,9 @@ makeShiftMultiSub(ShiftIndices *si[], Layout *l, int *disp[],
     si[n]->perm = perm;
     si[n]->pack = pack;
     si[n]->blend = pack;
-    si[n]->offr = 0;
-    si[n]->lenr = 0;
-    si[n]->nthreads = 0;
+    //si[n]->offr = 0;
+    //si[n]->lenr = 0;
+    //si[n]->nthreads = 0;
 
     //si[n]->sqmpmem = NULL;
     //si[n]->rqmpmem = NULL;

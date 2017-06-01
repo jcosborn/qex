@@ -41,6 +41,82 @@ proc svd_bi3*(ev: dvec; m: dmat; ma: dmat; a: dvec; b: dvec) =
 template nothreads(x: untyped): untyped =
   block: x
 
+
+# A V = U B, Ad U = V Bd, B = [[a0,b0,0,...][0,a1,b1,0,...]...]
+proc getBidiagLanczos*(linop: any; src: any; d: any; e: any;
+                       qv: any; dv: any; qu: any; du: any;
+                       kmx: int; lverb: int): int =
+  ## (out) d: diagonal
+  ## (out) e: super-diagonal
+  ## (in) kmx: max iterations
+  ## (in) qv: vectors to dot with v[i]
+  ## (out) dv: dot products of v[i] with qv[j]: dv[i,j] = dot(v[i],qv[j])
+  ## (in) qu: vectors to dot with u[i]
+  ## (out) du: dot products of u[i] with qu[j]: du[i,j] = dot(u[i],qu[j])
+  mixin `:=`
+  verb = lverb
+  var kmax = kmx
+  var r = linop.newLeftVec
+  var u = linop.newLeftVec
+  var p = linop.newRightVec
+  var v = linop.newRightVec
+
+  tic()
+  nothreads:
+    let sn2 = src.norm2
+    let sn = sqrt(sn2)
+    v := src / sn
+    p := v
+    u := 0
+  var beta = 1.0
+  var k = 0
+
+  toc("setup")
+  while true:
+    tic()
+    nothreads:
+      tic()
+      v := p / beta
+      toc("loop1 thread1 exp1")
+      #threadBarrier()
+      linop.apply(r, v)
+      toc("loop1 thread1 op")
+      #threadBarrier()
+      #echo "v: ", v.norm2
+      #echo "r: ", r.norm2
+      r -= beta*u
+      let alpha = sqrt(r.norm2)
+      if threadNum==0:
+        d[k] = alpha
+        inc k
+      toc("loop1 thread1 end")
+    toc("loop1 thread1")
+
+    if k >= kmax: break
+    toc("loop1 out")
+
+    nothreads:
+      tic()
+      let alpha = d[k-1]
+      u := r / alpha
+      toc("loop1 thread2 exp1")
+      linop.applyAdj(p, u)
+      toc("loop1 thread2 op")
+      p -= alpha*v
+      let bet = sqrt(p.norm2)
+      if threadNum==0:
+        beta = bet
+        e[k-1] = bet
+      toc("loop1 thread2 end")
+    toc("loop1 thread2")
+
+  toc("done iterations 1")
+  var dtime1 = getElapsedTime()
+  if verb>0:
+    echo "svdLanczos bidiag: $1 secs"%[dtime1|-6]
+
+
+
 # A V = U B, Ad U = V Bd, B = [[a0,b0,0,...][0,a1,b1,0,...]...]
 proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
                  rsq: float; kmx: int; emin,emax: float, lverb: int): int =
@@ -68,16 +144,11 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
       echo k|-5, sv(0), sv(1), sv(nv-1), sv(k-1)
 
   tic()
-  nothreads:
-    #threadBarrier()
-    let sn2 = src.norm2
-    #threadBarrier()
-    let sn = sqrt(sn2)
-    #threadBarrier()
-    #echo "sn: ", sn
+  threads:
+    let sn = sqrt(src.norm2)
     v := src / sn
-  p := v
-  u := 0
+    p := v
+    u := 0
   var beta = 1.0
   var kcheck = kmax+1
   var k = 0
@@ -85,14 +156,12 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   toc("setup")
   while true:
     tic()
-    nothreads:
+    threads:
       tic()
       v := p / beta
       toc("loop1 thread1 exp1")
-      #threadBarrier()
       linop.apply(r, v)
       toc("loop1 thread1 op")
-      #threadBarrier()
       #echo "v: ", v.norm2
       #echo "r: ", r.norm2
       r -= beta*u
@@ -102,6 +171,7 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
         inc k
       toc("loop1 thread1 end")
     toc("loop1 thread1")
+    #echoAll "a[$#]: $#"%[$(k-1),$a[k-1]]
 
     if k >= kmax: break
     #check singular values
@@ -110,10 +180,10 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
       kcheck = 1 + (1.5 * kcheck.float).int
     toc("loop1 out")
 
-    nothreads:
+    threads:
       tic()
       let alpha = a[k-1]
-      u := r/alpha
+      u := r / alpha
       toc("loop1 thread2 exp1")
       linop.applyAdj(p, u)
       toc("loop1 thread2 op")
