@@ -1,8 +1,8 @@
 const hdr = currentSourcePath()[0..^11] & "lapack.h"
-const llapack {.strdefine.} = "-llapack"
-#const llapack {.strdefine.} = "/usr/lib/lapack/liblapack.a -lblas -lgfortran"
-#const llapack {.strdefine.} = "-L/usr/lib/lapack -llapack"
-{.passL: llapack.}
+const lapackLib {.strdefine.} = "-llapack"
+#const lapackLib {.strdefine.} = "/usr/lib/lapack/liblapack.a -lblas -lgfortran"
+#const lapackLib {.strdefine.} = "-L/usr/lib/lapack -llapack"
+{.passL: lapackLib.}
 {.pragma: lapack, header: hdr.}
 
 type

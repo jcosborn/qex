@@ -59,3 +59,22 @@ Then run it
 ```
 ./bin/testStagProp
 ```
+
+### Using nimble (new)
+
+Copy the file `qex.nimble` to your build directory, and edit the file.
+
+Run `nimble tasks` for available tasks, and `nimble help` for help building your executables.
+
+```
+To build nim files:
+  nimble make [debug] [FlagsToNim] [Name=Definition] Target [MoreTargets]
+
+`debug' will make debug build.
+`Target' can be any file name, optionally with partial directory names.
+The produced executables will be under `bin/'.
+
+Examples:
+  nimble make debug test0
+  nimble make example/testStagProp
+```
