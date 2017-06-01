@@ -189,8 +189,10 @@ when isMainModule:
   template newVector(op: MyOp): untyped =
     op.lo.ColorVector()
   template apply(op: MyOp, r,v: typed) =
+    threadBarrier()
     stagD(op.s.so, r.field, op.s.g, v.field, 0.0)
   template applyAdj(op: MyOp, r,v: typed) =
+    threadBarrier()
     stagD(op.s.se, r.field, op.s.g, v.field, 0.0, -1)
   template newRightVec(op: MyOp): untyped = newVector(op).even
   template newLeftVec(op: MyOp): untyped = newVector(op).odd
