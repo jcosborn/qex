@@ -81,9 +81,9 @@ type ShiftIndicesQ* {.importc:"ShiftIndices",ql.} = object
   nSendSites1*: cint
   sendSites*: ptr cArray[cint]
   vv*: cint
-  offr*: cint
-  lenr*: cint
-  nthreads*: cint
+  #offr*: cint
+  #lenr*: cint
+  #nthreads*: cint
   perm*: cint
   pack*: cint
   blend*: cint
@@ -382,6 +382,7 @@ type
     first*: cint
     offr*: ptr cArray[cint]
     lenr*: ptr cArray[cint]
+    nthreads*: ptr cArray[cint]
   ShiftBufObj* = object
     sq*:ShiftBufQ
     lbufSize*: int

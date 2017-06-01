@@ -116,7 +116,7 @@ typedef struct {
   int nSendSites1;
   int *sendSites;
   int vv;
-  int offr, lenr, nthreads;
+  //int offr, lenr, nthreads;
   int perm;
   int pack;
   int blend;
@@ -140,6 +140,7 @@ typedef struct {
   int first;
   int *offr;
   int *lenr;
+  int *nthreads;
 } ShiftBuf;
 
 typedef void GatherMap(int *srcRank, int *srcIdx, int dstRank, int *dstIdx, void *args);

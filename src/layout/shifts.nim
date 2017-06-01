@@ -146,6 +146,7 @@ proc boundaryOffsetSB*(s:ShiftB) =
   search(i1, ti1)
   s.sb.sq.offr[threadNum] = cint(i0)
   s.sb.sq.lenr[threadNum] = cint(i1)
+  s.sb.sq.nthreads[threadNum] = numThreads.cint
 
 template boundaryWaitSB*(s:ShiftB, e:untyped):untyped =
   if s.si.nRecvDests > 0:
@@ -190,7 +191,7 @@ template boundarySB*(s:ShiftB; e:untyped):untyped =
   if needBoundary:
     boundarySyncSB()
     if s.si.nRecvDests > 0:
-      if s.sb.sq.offr[threadNum] < 0: boundaryOffsetSB(s)
+      if s.sb.sq.nthreads[threadNum] != numThreads: boundaryOffsetSB(s)
       let ti0 = s.sb.sq.offr[threadNum]
       let ti1 = s.sb.sq.lenr[threadNum]
       if s.si.blend == 0:
@@ -314,7 +315,7 @@ proc boundary*(s:var Shift) =
         #echo "waitRecvBuf"
         waitRecvBuf(sb)
       twait0()
-    if sb.sq.offr[threadNum] < 0:
+    if sb.sq.nthreads[threadNum] != numThreads:
       var ti0 = threadDivideLow(s.subset.lowOuter, s.subset.highOuter)
       var ti1 = threadDivideHigh(s.subset.lowOuter, s.subset.highOuter)
       var i0 = 0
@@ -336,6 +337,7 @@ proc boundary*(s:var Shift) =
       search(i1, ti1)
       sb.sq.offr[threadNum] = cint(i0)
       sb.sq.lenr[threadNum] = cint(i1)
+      sb.sq.nthreads = numThreads
 
     let ti0 = sb.sq.offr[threadNum]
     let ti1 = sb.sq.lenr[threadNum]
