@@ -441,7 +441,7 @@ proc hisqev*(op: any, opts: any, vv: any): auto =
     echo "emin $1  emax $2\n"%[$emin, $emax]
     op.rand(src)
     let srcn2 = src.norm2
-    vin += (0.1*vt1[iv].sv/sqrt(srcn2)) * src
+    vin += (vt1[iv].sv*vt1[iv].sv/sqrt(srcn2)) * src
     let sits = svdits
     svd(op, vin, v, sits, emin, emax)
     toc("svd")

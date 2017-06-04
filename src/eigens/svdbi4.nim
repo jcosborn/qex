@@ -8,7 +8,7 @@ import eigens/linalgFuncs
 # B  v = u ev
 # Bd u = v ev
 
-proc checksv(v: dvec, u: dvec, a: dvec, b: dvec, ev: float): float =
+proc checksv(v: dvec, u: dvec, a: any, b: any, ev: float): float =
   let n = v.len
   for i in 0..<n:
     var x0 = ev*v[i]
@@ -28,7 +28,7 @@ proc dvsort(tg: dvec, itg: var seq[int]) =
   proc sortdv(x,y: int): int = cmp(tg[x], tg[y])
   itg.sort(sortdv)
 
-proc getTwistFac*(a: dvec; b: dvec; ev: float64;
+proc getTwistFac*(a: any; b: any; ev: float64;
                   tl: dvec; tu: dvec; tg: dvec): int =
   var
     ai: float64
@@ -92,7 +92,7 @@ proc twistSolve*(tl: dvec; tu: dvec; v: dvec; k: int) =
   for i in 0..<n:
     v[i] = s * v[i]
 
-proc getu*(a: dvec; b: dvec; v: dvec; u: dvec) =
+proc getu*(a: any; b: any; v: dvec; u: dvec) =
   var
     t = 0.0
     s = 0.0
@@ -112,7 +112,7 @@ proc getu*(a: dvec; b: dvec; v: dvec; u: dvec) =
 ## e: singular values
 ## m: A ma = e m
 ## k: number of singular values wanted
-proc svdBi4*(e: dvec; m: dmat; ma: dmat; a: dvec; b: dvec; k: int;
+proc svdBi4*(e: any; m: dmat; ma: dmat; a: any; b: any; k: int;
              nx: int; nax: int; emin: float64; emax: float64): int =
   #svdbi(&e, &a, &b, k)
 

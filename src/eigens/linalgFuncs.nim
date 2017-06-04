@@ -1,5 +1,6 @@
 import lapack
 import base
+import maths
 
 type
   dvec* = ref object
@@ -9,6 +10,11 @@ type
     isSub: bool
   dmat* = ref object
     dat*: ptr carray[float64]
+    nrows*, ncols*: int
+    rowStride, colStride: int
+    isSub: bool
+  zmat* = ref object
+    dat*: ptr carray[ComplexType[float64]]
     nrows*, ncols*: int
     rowStride, colStride: int
     isSub: bool
@@ -73,10 +79,27 @@ template dmat_alloc*(x: dmat, nr,nc: int) =
   x.isSub = false
 proc newDmat*(nr,nc: int): dmat =
   result.dmat_alloc(nr, nc)
+
+proc zmat_free(x: zmat) =
+  if not x.isSub:
+    dealloc(x.dat)
+template zmat_alloc*(x: zmat, nr,nc: int) =
+  x.new(zmat_free)
+  x.dat = cast[type(x.dat)](alloc(nr*nc*2*sizeof(float64)))
+  x.nrows = nr
+  x.ncols = nc
+  x.rowStride = 1
+  x.colStride = nr
+  x.isSub = false
+proc newZmat*(nr,nc: int): zmat =
+  result.zmat_alloc(nr, nc)
+
+
 template mat_nrows*(x: dmat): int = x.nrows
 template mat_ncols*(x: dmat): int = x.ncols
-template `[]`*(x: dmat, i,j: int): untyped = x.dat[i+j*x.nrows]
-template `[]=`*(x: dmat, i: int, y: untyped): untyped = x.dat[i+j*x.nrows] = y
+template `[]`*(x: dmat|zmat, i,j: int): untyped = x.dat[i+j*x.nrows]
+template `[]=`*(x: dmat|zmat, i,j: int, y: untyped): untyped =
+  x.dat[i+j*x.nrows] = y
 template dmat_get*(x: dmat, i,j: int): float64 = x[i,j]
 template dmat_set(x: dmat, i,j: int, y: float64) = x[i,j] = y
 template norm2*(x: dmat): float =

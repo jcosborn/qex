@@ -43,9 +43,9 @@ template nothreads(x: untyped): untyped =
 
 
 # A V = U B, Ad U = V Bd, B = [[a0,b0,0,...][0,a1,b1,0,...]...]
-proc getBidiagLanczos*(linop: any; src: any; d: any; e: any;
+proc getBidiagLanczos*(linop: any; src: any; d: var any; e: var any;
                        qv: any; dv: any; qu: any; du: any;
-                       kmx: int; lverb: int): int =
+                       kmx: int; lverb: int) =
   ## (out) d: diagonal
   ## (out) e: super-diagonal
   ## (in) kmx: max iterations
@@ -78,6 +78,11 @@ proc getBidiagLanczos*(linop: any; src: any; d: any; e: any;
       tic()
       v := p / beta
       toc("loop1 thread1 exp1")
+      for i in 0..<qv.len:
+        let t = dot(v, qv[i])
+        #echo "k: ", k, "  ", t
+        dv[k,i] = t
+      toc("loop1 dv")
       #threadBarrier()
       linop.apply(r, v)
       toc("loop1 thread1 op")
@@ -86,6 +91,10 @@ proc getBidiagLanczos*(linop: any; src: any; d: any; e: any;
       #echo "r: ", r.norm2
       r -= beta*u
       let alpha = sqrt(r.norm2)
+      u := r / alpha
+      toc("loop1 thread2 exp1")
+      for i in 0..<qu.len:
+        du[k,i] = dot(u, qu[i])
       if threadNum==0:
         d[k] = alpha
         inc k
@@ -98,8 +107,6 @@ proc getBidiagLanczos*(linop: any; src: any; d: any; e: any;
     nothreads:
       tic()
       let alpha = d[k-1]
-      u := r / alpha
-      toc("loop1 thread2 exp1")
       linop.applyAdj(p, u)
       toc("loop1 thread2 op")
       p -= alpha*v
@@ -115,6 +122,80 @@ proc getBidiagLanczos*(linop: any; src: any; d: any; e: any;
   if verb>0:
     echo "svdLanczos bidiag: $1 secs"%[dtime1|-6]
 
+# A V = U B, Ad U = V Bd, B = [[a0,b0,0,...][0,a1,b1,0,...]...]
+proc runBidiagLanczos*(linop: any; src: any; d: any; e: any;
+                       dv: any; qv: any; du: any; qu: any;
+                       kmx: int; lverb: int) =
+  ## (out) d: diagonal
+  ## (out) e: super-diagonal
+  ## (in) kmx: max iterations
+  ## (in) qv: vectors to dot with v[i]
+  ## (out) dv: dot products of v[i] with qv[j]: dv[i,j] = dot(v[i],qv[j])
+  ## (in) qu: vectors to dot with u[i]
+  ## (out) du: dot products of u[i] with qu[j]: du[i,j] = dot(u[i],qu[j])
+  mixin `:=`
+  verb = lverb
+  var kmax = kmx
+  var r = linop.newLeftVec
+  var u = linop.newLeftVec
+  var p = linop.newRightVec
+  var v = linop.newRightVec
+
+  tic()
+  nothreads:
+    let sn2 = src.norm2
+    let sn = sqrt(sn2)
+    v := src / sn
+    p := v
+    u := 0
+  var beta = 1.0
+  var k = 0
+
+  toc("setup")
+  while true:
+    tic()
+    nothreads:
+      tic()
+      v := p / beta
+      toc("loop1 thread1 exp1")
+      for i in 0..<qv.len:
+        qv[i] += dv[k,i] * v
+      toc("loop1 dv")
+      #threadBarrier()
+      linop.apply(r, v)
+      toc("loop1 thread1 op")
+      #threadBarrier()
+      #echo "v: ", v.norm2
+      #echo "r: ", r.norm2
+      r -= beta*u
+      let alpha = d[k]
+      u := r / alpha
+      toc("loop1 thread2 exp1")
+      for i in 0..<qu.len:
+        qu[i] += du[k,i] * u
+      if threadNum==0:
+        inc k
+      toc("loop1 thread1 end")
+    toc("loop1 thread1")
+
+    if k >= kmax: break
+    toc("loop1 out")
+
+    nothreads:
+      tic()
+      let alpha = d[k-1]
+      linop.applyAdj(p, u)
+      toc("loop1 thread2 op")
+      p -= alpha*v
+      if threadNum==0:
+        beta = e[k-1]
+      toc("loop1 thread2 end")
+    toc("loop1 thread2")
+
+  toc("done iterations 1")
+  var dtime1 = getElapsedTime()
+  if verb>0:
+    echo "svdLanczos bidiag: $1 secs"%[dtime1|-6]
 
 
 # A V = U B, Ad U = V Bd, B = [[a0,b0,0,...][0,a1,b1,0,...]...]
