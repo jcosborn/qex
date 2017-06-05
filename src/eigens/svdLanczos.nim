@@ -225,7 +225,7 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
       echo k|-5, sv(0), sv(1), sv(nv-1), sv(k-1)
 
   tic()
-  threads:
+  nothreads:
     let sn = sqrt(src.norm2)
     v := src / sn
     p := v
@@ -237,7 +237,7 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   toc("setup")
   while true:
     tic()
-    threads:
+    nothreads:
       tic()
       v := p / beta
       toc("loop1 thread1 exp1")
@@ -261,7 +261,7 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
       kcheck = 1 + (1.5 * kcheck.float).int
     toc("loop1 out")
 
-    threads:
+    nothreads:
       tic()
       let alpha = a[k-1]
       u := r / alpha
