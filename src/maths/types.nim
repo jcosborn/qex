@@ -169,19 +169,38 @@ template numberType*(x: ToDouble): untyped =
 
 type
   MaskedObj*[T] = object
-    pobj*:ptr T
-    mask*:int
-  Masked*[T] = distinct MaskedObj[T]
+    pobj*: ptr T
+    mask*: int
+  Masked*[T] = MaskedObj[T]
+  #Masked2*[T] = Masked[T]
 template pobj*(x:Masked):untyped = ((MaskedObj[x.T])(x)).pobj
 template mask*(x:Masked):untyped = ((MaskedObj[x.T])(x)).mask
 template `pobj=`*(x:Masked;y:untyped):untyped = ((MaskedObj[x.T])(x)).pobj = y
 template `mask=`*(x:Masked;y:untyped):untyped = ((MaskedObj[x.T])(x)).mask = y
-template maskedObj*(x:typed; msk:int):untyped =
-  (MaskedObj[type(x)])(pobj:x.addr,mask:msk)
-template masked*(): untyped = discard
+template maskedObj*(x: typed, msk: int): untyped =
+  static: echo "maskedObj"
+  let t = MaskedObj[type(x)](pobj: addr(x), mask: msk)
+  static: echo "maskedObj2"
+  #MaskedObj[type(x)](pobj:addr(x),mask:msk)
+  MaskedObj[type(x)](pobj: addr(x), mask: msk)
+#template masked*(): untyped = discard
+template masked*(x: typed, msk: int): untyped =
+  bind maskedObj
+  when isWrapper(x):
+    static: echo "masked typed wrapper"
+    #dumpTree: x
+    asVarWrapper(x, masked(x[], msk))
+  else:
+    static: echo "masked typed not wrapper"
+    #dumpTree: x
+    #(Masked[type(x)])(maskedObj(x,msk))
+    maskedObj(x,msk)
+#[
 template masked*(x:typed; msk:int):untyped =
   mixin masked,isComplex,isVector,isMatrix
-  when isComplex(x):
+  when compiles(maskedImpl(x)):
+    maskedImpl(x)
+  elif isComplex(x):
     #ctrace()
     #asComplex((Masked[type(x)])(maskedObj(x,msk)))
     asVarComplex(masked(x[],msk))
@@ -200,6 +219,7 @@ template masked*(x:typed; msk:int):untyped =
   else:
     #ctrace()
     (Masked[type(x)])(maskedObj(x,msk))
+]#
 #template isRIC*(x:int):untyped = true
 #template isRIC*(m:Masked):untyped = isRIC(m.pobj[])
 #template isComplex*(m:Masked):untyped = isComplex(m.pobj[])

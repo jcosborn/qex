@@ -127,11 +127,14 @@ type
   #Iconcept1* = I1
   #Cconcept1* = C1
   #IC1* = Iconcept1 | Cconcept1
-  ComplexType*[T] = AsComplex[tuple[re,im:T]]
+  ComplexObj*[T] = object
+    re*,im*: T
+  ComplexType*[T] = AsComplex[ComplexObj[T]]
 
 #proc `$`*(x:C1):string =
 #  result = "(" & $x.re & "," & $x.im & ")"
 
+template numberType*[T](x:ComplexObj[T]):untyped = numberType(type(T))
 template numberType*[T](x:AsComplex[T]):untyped = numberType(type(T))
 template numberType*[T](x:typedesc[AsComplex[T]]):untyped = numberType(T)
 
@@ -192,6 +195,16 @@ template apply*(result:RIC1; f:untyped) =
 #  r.re = toDouble(x.re)
 #  r.im = toDouble(x.im)
 #  r
+
+template isWrapper*(x: ComplexObj): untyped = false
+
+template isWrapper*(x: AsComplex): untyped = true
+template copyWrapper*(x: AsComplex, y: typed): untyped =
+  static: echo "copyWrapper AsComplex"
+  asComplex(y)
+
+#template masked*(x: AsComplex; msk: int): untyped =
+#  asVarComplex(masked(x[],msk))
 
 template eval*(x: AsComplex): untyped = asComplex(eval(x[]))
 

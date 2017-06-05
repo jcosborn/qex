@@ -123,6 +123,7 @@ type
 template `len`*(x:MatrixArrayObj):untyped = x.I
 template nrows*(x:MatrixArrayObj):untyped = x.I
 template ncols*(x:MatrixArrayObj):untyped = x.J
+template `[]`*(x:MatrixArrayObj):untyped = x
 template `[]`*(x:MatrixArrayObj; i,j:int):untyped = x.mat[i][j]
 template `[]`*(x:var MatrixArrayObj; i,j:int):untyped = x.mat[i][j]
 template `[]=`*(x:MatrixArrayObj; i,j:int, y:untyped):untyped = x.mat[i][j] = y
@@ -145,6 +146,30 @@ template numNumbers*(x:AsMatrix):untyped =
 template len*(x:MatrixRowObj):untyped = x.mat[].ncols
 template `[]`*(x:MatrixRowObj; i:int):untyped = x.mat[][x.row,i]
 template `[]=`*(x:MatrixRowObj; i:int; y:untyped):untyped = x.mat[][x.row,i] = y
+
+template isWrapper*(x: MatrixArrayObj): untyped = false
+
+template isWrapper*(x: AsMatrix): untyped = true
+template asWrapper*(x: AsMatrix, y: typed): untyped =
+  static: echo "asWrapper AsMatrix"
+  asMatrix(y)
+template asVarWrapper*(x: AsMatrix, y: typed): untyped =
+  static: echo "asVarWrapper AsMatrix"
+  asVarMatrix(y)
+
+template isWrapper*(x: AsVarMatrix): untyped = true
+template asWrapper*(x: AsVarMatrix, y: typed): untyped =
+  static: echo "asWrapper AsVarMatrix"
+  AsVarMatrix(v: y)
+template asVarWrapper*(x: AsVarMatrix, y: typed): untyped =
+  static: echo "asVarWrapper AsVarMatrix"
+  AsVarMatrix(v: y)
+
+#template masked*(x: AsMatrix, msk: typed): untyped =
+#  static: echo "masked AsMatrix"
+#  asVarMatrix(masked(x[],msk))
+#template masked*(x: AsVarMatrix, msk: typed): untyped =
+#  asVarMatrix(masked(x[],msk))
 
 #template isVector(x:Row):untyped = true
 #template isVector(x:Col):untyped = true

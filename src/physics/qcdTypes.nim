@@ -37,10 +37,12 @@ type
   SComplexV* = AsComplex[tuple[re,im:Svec0]]
   #SComplex* = Complex[float32,float32]
   #SComplexV* = Complex[Svec0,Svec0]
-  SColorVector* = VectorArray[nc,SComplex]
-  SColorVectorV* = VectorArray[nc,SComplexV]
-  SColorMatrix* = MatrixArray[nc,nc,SComplex]
-  SColorMatrixV* = MatrixArray[nc,nc,SComplexV]
+  Color*[T] = object
+    v*: T
+  SColorVector* = Color[VectorArray[nc,SComplex]]
+  SColorVectorV* = Color[VectorArray[nc,SComplexV]]
+  SColorMatrix* = Color[MatrixArray[nc,nc,SComplex]]
+  SColorMatrixV* = Color[MatrixArray[nc,nc,SComplexV]]
   SLatticeReal* = Field[1,float32]
   SLatticeRealV* = Field[VLEN,Svec0]
   SLatticeComplex* = Field[1,SComplex]
@@ -49,14 +51,16 @@ type
   SLatticeColorVectorV* = Field[VLEN,SColorVectorV]
   SLatticeColorMatrix* = Field[1,SColorMatrix]
   SLatticeColorMatrixV* = Field[VLEN,SColorMatrixV]
-  DComplex* = AsComplex[tuple[re,im:float64]]
-  DComplexV* = AsComplex[tuple[re,im:Dvec0]]
+  #DComplex* = AsComplex[tuple[re,im:float64]]
+  #DComplexV* = AsComplex[tuple[re,im:Dvec0]]
+  DComplex* = ComplexType[float64]
+  DComplexV* = ComplexType[Dvec0]
   #DComplex* = Complex[float64,float64]
   #DComplexV* = Complex[Dvec0,Dvec0]
-  DColorVector* = VectorArray[nc,DComplex]
-  DColorVectorV* = VectorArray[nc,DComplexV]
-  DColorMatrix* = MatrixArray[nc,nc,DComplex]
-  DColorMatrixV* = MatrixArray[nc,nc,DComplexV]
+  DColorVector* = Color[VectorArray[nc,DComplex]]
+  DColorVectorV* = Color[VectorArray[nc,DComplexV]]
+  DColorMatrix* = Color[MatrixArray[nc,nc,DComplex]]
+  DColorMatrixV* = Color[MatrixArray[nc,nc,DComplexV]]
   DLatticeReal* = Field[1,float64]
   DLatticeRealV* = Field[VLEN,Dvec0]
   DLatticeComplex* = Field[1,DComplex]
@@ -77,6 +81,34 @@ type
 #template `*`*(x: Dvec0, y: Adjointed[Dvec0]): untyped = x*y[]
 #template `:=`*(r: Adjointed, x: Adjointed) = r[] := x[]
 #template assign*(r: Adjointed, x: Adjointed) = r[] := x[]
+
+template asColor*(x: typed): untyped =
+  Color[type(x)](v: x)
+template isWrapper*(x: Color): untyped = true
+template asWrapper*(x: Color, y: typed): untyped =
+  static: echo "asWrapper Color"
+  asColor(y)
+template asVarWrapper*(x: Color, y: typed): untyped =
+  static: echo "asVarWrapper Color"
+  asVarColor(y)
+template `[]`*(x: Color): untyped = x.v
+template `[]`*(x: Color, i: any): untyped = x[][i]
+template `[]`*(x: Color, i: any, j: any): untyped = x[][i,j]
+template `[]`*(x: Color, i: any, j: any, y: any): untyped =
+  x[][i,j] = y
+template forward(t: typedesc, f: untyped) {.dirty.} =
+  template f*(x: t): untyped = f(x[])
+forward(Color, nrows)
+forward(Color, ncols)
+forward(Color, numberType)
+template assign*(r: Color, x: SomeNumber) =
+  assign(r[], x)
+template `*=`*(r: Color, x: SomeNumber) =
+  `*=`(r[], x)
+
+
+template isWrapper*(x: Svec0): untyped = false
+template isWrapper*(x: Dvec0): untyped = false
 
 template simdLength*(x:typedesc[SColorMatrixV]):untyped = simdLength(Svec0)
 template simdLength*(x:typedesc[SColorVectorV]):untyped = simdLength(Svec0)

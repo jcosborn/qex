@@ -8,8 +8,8 @@ import macros
 #import stdUtils
 #import basicOps
 #import profile
+import maths
 import maths/types
-import maths/matrixConcept
 
 type FieldOps* = enum
   foNeg, foAdd, foSub, foMul, foDiv, foAdj, foToSingle, foToDouble
@@ -303,6 +303,8 @@ proc `{}`*(f:Field; i:int):auto =
   #r
   #echoImm: "{}"
   result = masked(f[e], mask)
+#template `{}`*(f: Field; i: int): untyped =
+#  f.mask(i)
 proc `{}`*(f: Subsetted; i: int): auto =
   let e = i div f.field.l.V
   let l = i mod f.field.l.V
