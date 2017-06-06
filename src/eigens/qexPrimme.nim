@@ -71,21 +71,43 @@ proc sumReal(sendBuf: pointer; recvBuf: pointer; count: ptr cint;
   ierr[] = 0
 
 when isMainModule:
-  import qex, gauge
-  import strutils
+  import qex, gauge, rng/rng
+  import strutils, random
   template ff(x:untyped):auto = formatFloat(x,ffScientific,17)
+  proc gaussian(x: AsVarComplex, r: var any) =
+    x.re = gaussian(r)
+    x.im = gaussian(r)
+  proc gaussian(x: AsVarVector, r: var any) =
+    forO i, 0, x.len-1:
+      gaussian(x[i], r)
+  proc gaussian(x: AsVarMatrix, r: var any) =
+    forO i, 0, x.nrows-1:
+      forO j, 0, x.ncols-1:
+        gaussian(x[i,j], r)
+  proc gaussian(v: Field, r: Field2) =
+    for i in v.l.sites:
+      gaussian(v{i}, r[i])
   qexInit()
   var lat = [4,4,4,4]
   threads:
     echo "thread ", threadNum, "/", numThreads
+  const seed = 987654321
   var
     lo = lat.newLayout
+    lo1 = lat.newLayout 1
     g = newSeq[type(lo.ColorMatrix())](lat.len)
-  for i in 0..<lat.len:
-    g[i] = lo.Colormatrix()
-    threads: g[i] := 1
-  gauge.random(g)
+    r: Field[1,RngMilc6]
+  r.new lo1
+  threads:
+    for j in lo.sites:
+      var l = lo.coords[lo.nDim-1][j].int
+      for i in countdown(lo.nDim-2, 0):
+        l = l * lo.physGeom[i].int + lo.coords[i][j].int
+      r[j].seed(seed, l)
   for mu in 0..<lat.len:
+    g[mu] = lo.Colormatrix
+    threads:
+      g[mu].gaussian r
     #var t, s: DColorMatrixV   # FIXME: get vectorized code to work with projectU
     var t, s: DColorMatrix
     tfor i, 0..<lo.nSites:
@@ -159,31 +181,12 @@ when isMainModule:
     of -3: echo "Recommended method for next run: DYNAMIC (close call)"
     else: discard
   pp.free
-  import hisqev, rng/rng
-  var lo1 = newLayout(lat, 1)
-  var r: Field[1,RngMilc6]
-  r.new(lo1)
-  var seed = 987654321
-  threads:
-    for j in lo.sites:
-      var l = lo.coords[lo.nDim-1][j].int
-      for i in countdown(lo.nDim-2, 0):
-        l = l * lo.physGeom[i].int + lo.coords[i][j].int
-      r[j].seed(seed, l)
+  import hisqev
   type MyOp = object
     s: type(s)
     r: type(r)
     lo: type(lo)
   var op = MyOp(r:r,s:s,lo:lo)
-  proc gaussian(x: AsVarComplex, r: var any) =
-    x.re = gaussian(r)
-    x.im = gaussian(r)
-  proc gaussian(x: AsVarVector, r: var any) =
-    for i in 0..<x.len:
-      gaussian(x[i], r)
-  proc gaussian(v: Field, r: Field2) =
-    for i in v.l.sites:
-      gaussian(v{i}, r[i])
   template rand(op: MyOp, v: any) =
     gaussian(v, op.r)
   template newVector(op: MyOp): untyped =
@@ -210,13 +213,33 @@ when isMainModule:
   var evals0 = hisqev(op, opts)
   import unittest
   var CT = 1e-10                  # comparison tolerance
+  const eigenResults = [
+    0.0055851198854,
+    0.0113277827524,
+    0.0190303521552,
+    0.0246828813692,
+    0.0278549950745,
+    0.0336481575597,
+    0.0395180223843,
+    0.0448678361203,
+    0.0535298681860,
+    0.0599862410362,
+    0.0651594072052,
+    0.0697624694074,
+    0.0726489452823,
+    0.0772123224085,
+    0.0920417369866,
+    0.0951845085945]
   proc `~=`(x,y:float):bool = abs(x-y)/max(abs(x),abs(y)) < CT
   if myrank == 0:
     suite "primme vs. hisqev":
       test "First 16 evs":
         forStatic i, 0, 15:
-          check sqrt(evals[i]) ~= evals0[i].sv
-          if not(sqrt(evals[i]) ~= evals0[i].sv):
+          check eigenResults[i] ~= sqrt(evals[i])
+          check eigenResults[i] ~= evals0[i].sv
+          if not(eigenResults[i] ~= sqrt(evals[i])) or
+             not(eigenResults[i] ~= evals0[i].sv):
+            echo "expect: ", $eigenResults[i]
             echo "primme: ", sqrt(evals[i]).ff
             echo "hisqev: ", evals0[i].sv.ff
   qexFinalize()
