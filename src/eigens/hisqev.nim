@@ -6,6 +6,13 @@ import linalgFuncs
 import math
 import strUtils
 
+type
+  LinOp* = concept o
+    o.newVector
+    o.newRightVec
+    o.newLeftVec
+    # We will add more when concept matures in Nim.
+
 type EigTable*[T] = object
   v*: T
   vn0*: float
@@ -73,7 +80,7 @@ proc projectOut(x,y: EigTable) =
   let c = y.v.even.dot(x.v)/y.vn
   x.v.even -= c*y.v
 
-proc ortho1(t: var any; imn,imx: int, op: any) =
+proc ortho1(t: var any; imn,imx: int, op: var LinOp) =
   for j in 0..<imn:
     for i in imn..imx:
       t[i].projectOut(t[j])
@@ -257,7 +264,7 @@ proc merge2(t1: var seq[EigTable], t2: seq[EigTable], rrbs: int, op: any) =
     rayleighRitz(t1, rrMin, rrMax, op)
 
 proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
-            ng,nmx,rrbs: int, op: any) =
+            ng,nmx,rrbs: int, op: var LinOp) =
   tic()
   var nt = vt1.len + vt2.len
   var ngd = min(ng,nt)
@@ -368,7 +375,7 @@ proc initOpts*(eo: var EigOpts) =
 ## op: operator object
 ## opts: options onject
 ## vv: seq of vectors
-proc hisqev*(op: any, opts: any, vv: any): auto =
+proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
   let ng = opts.nev
   let nvt = opts.nvecs
   let relerr = opts.relerr
@@ -469,7 +476,7 @@ proc hisqev*(op: any, opts: any, vv: any): auto =
   echo "total time = $1 seconds"%[t1|-6]
   vt1
 
-proc hisqev*(op: any, opts: any): auto =
+proc hisqev*(op: var LinOp, opts: any): auto =
   var v = newSeq[type(op.newVector)](0)
   result = hisqev(op, opts, v)
 
@@ -479,15 +486,17 @@ when isMainModule:
   import gauge
   import physics/stagD
   import physics/hisqLinks
-  import rng/rng
+  import rng
 
   qexInit()
-  var defaultGaugeFile = "l88.scidac"
-  #var defaultLat = [8,8,8,8]
+  #var defaultGaugeFile = "l88.scidac"
+  var defaultLat = [8,8,8,8]
   #var defaultLat = [16,16,16,16]
   defaultSetup()
+  var r = newRNGField(RngMilc6, lo, 987654321)
+
   threads:
-    #g.random
+    g.random r
     g.setBC
     g.stagPhase
   #var s = newStag(g)
@@ -499,32 +508,12 @@ when isMainModule:
   hc.smear(g, fl, ll)
   var s = newStag3(fl, ll)
 
-  var lo1 = newLayout(lat, 1)
-  var r: Field[1,RngMilc6]
-  r.new(lo1)
-  var seed = 987654321
-  threads:
-    for j in lo.sites:
-      var l = lo.coords[lo.nDim-1][j].int
-      for i in countdown(lo.nDim-2, 0):
-        l = l * lo.physGeom[i].int + lo.coords[i][j].int
-      r[j].seed(seed, l)
-
   type MyOp = object
     s: type(s)
     r: type(r)
     lo: type(lo)
   var op = MyOp(r:r,s:s,lo:lo)
-  proc gaussian(x: AsVarComplex, r: var any) =
-    x.re = gaussian(r)
-    x.im = gaussian(r)
-  proc gaussian(x: AsVarVector, r: var any) =
-    for i in 0..<x.len:
-      gaussian(x[i], r)
-  proc gaussian(v: Field, r: Field2) =
-    for i in v.l.sites:
-      gaussian(v{i}, r[i])
-  template rand(op: MyOp, v: any) =
+  template rand(op: var MyOp, v: any) =
     gaussian(v, op.r)
   template newVector(op: MyOp): untyped =
     op.lo.ColorVector()
