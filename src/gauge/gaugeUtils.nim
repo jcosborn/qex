@@ -359,6 +359,36 @@ proc random*[T](g:openArray[T]) =
   threads:
     g.random r
 
+proc setupLattice*(lat:openarray[int]):auto =
+  var
+    lat:seq[int] = @lat
+    fn = ""
+  let pc = paramCount()
+  if pc > 0:
+    if paramStr(1).isDigit:
+      lat = @[]
+      for i in 1..pc:
+        if not paramStr(i).isDigit: break
+        lat.add paramStr(i).parseInt
+    elif paramStr(1)[0] != '-':
+      fn = paramStr(1)
+      lat = fn.getFileLattice
+      if lat.len == 0:
+        echo "ERROR: getFileLattice failed on '", fn, "'"
+        quit QuitFailure
+  var
+    lo = lat.newLayout
+    g = lo.newGauge
+    r = newRNGField(RngMilc6, lo, intParam("seed", 823543).uint64)
+  for i in 0..<lat.len: g[i] = lo.ColorMatrix
+  if fn.len > 0:
+    if 0 != g.loadGauge(fn):
+      echo "ERROR: loadGauge failed on '", fn, "'"
+      quit QuitFailure
+  else:
+    for i in 0..<g.len: threads: g.random r
+  return (lo, g, r)
+  
 when isMainModule:
   import qex
   import physics/qcdTypes
