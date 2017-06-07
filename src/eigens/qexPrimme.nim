@@ -109,7 +109,7 @@ proc run*(param: var primme_params): PrimmeEvs =
     #rw = newAlignedMemU[char](pp.realWorkSize*sizeof(float))
   #param.intWork = cast[ptr cint](iw.data)
   #param.realWork = rw.data
-  param.display_params
+  if myRank == 0: param.display_params
   let ret = param.run(result.evals,
                       asarray[complex[float]](result.evecs[0].addr)[],
                       result.rnorms)
