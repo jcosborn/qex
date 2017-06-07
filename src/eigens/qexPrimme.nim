@@ -1,13 +1,14 @@
+import strutils
 import primme
-import base, comms/qmp, physics/qcdTypes, physics/stagD
+import base, layout, comms/qmp, physics/qcdTypes, physics/stagD
 
 type
-  OpInfo[S,F] = object
+  OpInfo*[S,F] = object
     s:ptr S
     m:float
     x,y,tmp:F
     l: int
-proc newOpInfo[S](s:ptr S, m:float):auto =
+proc newOpInfo*[S](s:ptr S, m:float = 0):auto =
   type F = type(s.g[0].l.ColorVectorD())
   var r:OpInfo[S,F]
   r.s = s
@@ -70,17 +71,90 @@ proc sumReal(sendBuf: pointer; recvBuf: pointer; count: ptr cint;
   QMP_sum_double_array(cast[ptr cdouble](recvBuf), count[])
   ierr[] = 0
 
+proc primmeInitialize*(lo: Layout, op: var OpInfo): primme_params =
+  result = primme_initialize()
+  result.n = 3*lo.physVol div 2
+  result.matrixMatvec = matvec[type(op)]
+  result.numEvals = 16
+  result.target = primme_smallest
+  result.eps = 1e-9
+  result.numProcs = nRanks.cint
+  result.procId = myRank.cint
+  result.nLocal = 3*lo.nEven
+  result.globalSumReal = sumReal
+  result.matrix = op.addr
+  result.printLevel = 3
+  let ret = result.set_method PRIMME_DYNAMIC
+  if 0 != ret:
+    echo "ERROR: set_method returned with nonzero exit status: ", ret
+    quit QuitFailure
+  #block primmeSetSize:
+  #  let ret = zprimme(nil,nil,nil,pp.addr)
+  #  if 1 != ret:
+  #    echo "Error: zprimme(nil) returned with exit status: ", ret
+  #    quit QuitFailure
+
+template ff(x:untyped):auto = formatFloat(x,ffScientific,17)
+type
+  PrimmeEvs* = object
+    evecs: alignedMem[complex[float]] # Wrap it in Field later.
+    evals*: seq[float]
+    rnorms*: seq[float]
+proc run*(param: var primme_params): PrimmeEvs =
+  result.evecs = newAlignedMemU[complex[float]]int(param.numEvals*param.nLocal)
+  result.evals = newseq[float]param.numEvals
+  result.rnorms = newseq[float]param.numEvals
+  #var
+    #iw = newAlignedMemU[char](pp.intWorkSize*sizeof(int))
+    #rw = newAlignedMemU[char](pp.realWorkSize*sizeof(float))
+  #param.intWork = cast[ptr cint](iw.data)
+  #param.realWork = rw.data
+  param.display_params
+  let ret = param.run(result.evals,
+                      asarray[complex[float]](result.evecs[0].addr)[],
+                      result.rnorms)
+  if ret != 0:
+    echo "Error: primme returned with nonzero exit status: ", ret
+    quit QuitFailure
+  echo "Neigens    : ",param.initSize
+  echo "Tolerance  : ",ff param.aNorm*param.eps
+  echo "Iterations : ",param.stats.numOuterIterations
+  echo "Restarts   : ",param.stats.numRestarts
+  echo "Matvecs    : ",param.stats.numMatvecs
+  echo "Preconds   : ",param.stats.numPreconds
+  echo "GlobalSums : ",param.stats.numGlobalSum
+  echo "VGlobalSum : ",param.stats.volumeGlobalSum
+  echo "OrthoIProd : ",param.stats.numOrthoInnerProds
+  echo "ElapsedT   : ",param.stats.elapsedTime
+  echo "MatvecT    : ",param.stats.timeMatvec
+  echo "PrecondT   : ",param.stats.timePrecond
+  echo "OrthoT     : ",param.stats.timeOrtho
+  echo "GlobalSumT : ",param.stats.timeGlobalSum
+  echo "EstMinEv   : ",param.stats.estimateMinEVal
+  echo "EstMaxEv   : ",param.stats.estimateMaxEVal
+  echo "EstMaxSv   : ",param.stats.estimateLargestSVal
+  echo "EstResid   : ",param.stats.estimateResidualError
+  echo "MaxConvTol : ",param.stats.maxConvTol
+  if param.locking != 0 and param.intWork != nil and param.intWork[] == 1:
+    echo "\nA locking problem has occurred."
+    echo "Some eigenpairs do not have a residual norm less than the tolerance."
+    echo "However, the subspace of evecs is accurate to the required tolerance."
+  case param.dynamicMethodSwitch:
+  of -1: echo "Recommended method for next run: DEFAULT_MIN_MATVECS"
+  of -2: echo "Recommended method for next run: DEFAULT_MIN_TIME"
+  of -3: echo "Recommended method for next run: DYNAMIC (close call)"
+  else: discard
+
+export primme
+
 when isMainModule:
   import qex, gauge, rng
-  import strutils, random
-  template ff(x:untyped):auto = formatFloat(x,ffScientific,17)
   qexInit()
   var lat = [4,4,4,4]
   threads:
     echo "thread ", threadNum, "/", numThreads
   var
     lo = lat.newLayout
-    lo1 = lat.newLayout 1
     g = newSeq[type(lo.ColorMatrix())](lat.len)
     r = RngMilc6.newRNGField(lo, 987654321)
   for mu in 0..<lat.len: g[mu] = lo.Colormatrix
@@ -91,60 +165,10 @@ when isMainModule:
   var s = g.newStag
   var m = 0.1
   var opInfo = newOpInfo(s.addr, m)
-  var pp = primme_initialize()
-  block primmeSetup:
-    pp.n = 3*lo.physVol div 2
-    pp.matrixMatvec = matvec[type(opInfo)]
-    pp.numEvals = 16
-    pp.target = primme_smallest
-    pp.eps = 1e-9
-    pp.numProcs = nRanks.cint
-    pp.procId = myRank.cint
-    pp.nLocal = 3*lo.nEven
-    pp.globalSumReal = sumReal
-    pp.matrix = opInfo.addr
-    pp.printLevel = 3
-    let ret = pp.set_method PRIMME_DYNAMIC
-    if 0 != ret:
-      echo "Error: set_method returned with nonzero exit status: ", ret
-      quit QuitFailure
-  #block primmeSetSize:
-  #  let ret = zprimme(nil,nil,nil,pp.addr)
-  #  if 1 != ret:
-  #    echo "Error: zprimme(nil) returned with exit status: ", ret
-  #    quit QuitFailure
-  var
-    evecs = newAlignedMemU[complex[float]] int(pp.numEvals*pp.nLocal)
-    evals = newseq[float](pp.numEvals)
-    rnorms = newseq[float](pp.numEvals)
-    #iw = newAlignedMemU[char](pp.intWorkSize*sizeof(int))
-    #rw = newAlignedMemU[char](pp.realWorkSize*sizeof(float))
-  #pp.intWork = cast[ptr cint](iw.data)
-  #pp.realWork = rw.data
-  pp.display_params
-  block primmeRun:
-    let ret = pp.run(evals, asarray[complex[float]](evecs[0].addr)[], rnorms)
-    if ret != 0:
-      echo "Error: primme returned with nonzero exit status: ", ret
-      quit QuitFailure
-  block primmeReport:
-    for i in 0..<pp.initSize:
-      echo "Eval[",i,"]: ",evals[i].ff," rnorm: ",rnorms[i].ff
-    echo " ",pp.initSize," eigenpairs converged"
-    echo "Tolerance  : ",ff pp.aNorm*pp.eps
-    echo "Iterations : ",pp.stats.numOuterIterations
-    echo "Restarts   : ",pp.stats.numRestarts
-    echo "Matvecs    : ",pp.stats.numMatvecs
-    echo "Preconds   : ",pp.stats.numPreconds
-    if pp.locking != 0 and pp.intWork != nil and pp.intWork[] == 1:
-      echo "\nA locking problem has occurred."
-      echo "Some eigenpairs do not have a residual norm less than the tolerance."
-      echo "However, the subspace of evecs is accurate to the required tolerance."
-    case pp.dynamicMethodSwitch:
-    of -1: echo "Recommended method for next run: DEFAULT_MIN_MATVECS"
-    of -2: echo "Recommended method for next run: DEFAULT_MIN_TIME"
-    of -3: echo "Recommended method for next run: DYNAMIC (close call)"
-    else: discard
+  var pp = lo.primme_initialize(opInfo)
+  var pevs = pp.run
+  for i in 0..<pp.initSize:
+    echo "Eval[",i,"]: ",pevs.evals[i].ff," rnorm: ",pevs.rnorms[i].ff
   pp.free
   import hisqev
   type MyOp = object
@@ -200,11 +224,11 @@ when isMainModule:
     suite "primme vs. hisqev":
       test "First 16 evs":
         forStatic i, 0, 15:
-          check eigenResults[i] ~= sqrt(evals[i])
+          check eigenResults[i] ~= sqrt(pevs.evals[i])
           check eigenResults[i] ~= evals0[i].sv
-          if not(eigenResults[i] ~= sqrt(evals[i])) or
+          if not(eigenResults[i] ~= sqrt(pevs.evals[i])) or
              not(eigenResults[i] ~= evals0[i].sv):
             echo "expect: ", $eigenResults[i]
-            echo "primme: ", sqrt(evals[i]).ff
+            echo "primme: ", sqrt(pevs.evals[i]).ff
             echo "hisqev: ", evals0[i].sv.ff
   qexFinalize()

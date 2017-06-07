@@ -9,6 +9,14 @@ import field
 export field
 import io
 export io
+import gauge
+export gauge
+import physics/qcdTypes, physics/stagD, physics/hisqLinks
+export qcdTypes, stagD, hisqLinks
+import rng
+export rng
+import eigens
+export eigens
 
 when isMainModule:
   qexInit()
