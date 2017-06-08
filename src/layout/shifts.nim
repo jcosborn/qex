@@ -337,7 +337,7 @@ proc boundary*(s:var Shift) =
       search(i1, ti1)
       sb.sq.offr[threadNum] = cint(i0)
       sb.sq.lenr[threadNum] = cint(i1)
-      sb.sq.nthreads = numThreads
+      sb.sq.nthreads[threadNum] = numThreads.cint
 
     let ti0 = sb.sq.offr[threadNum]
     let ti1 = sb.sq.lenr[threadNum]

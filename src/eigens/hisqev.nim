@@ -489,14 +489,14 @@ when isMainModule:
   import rng
 
   qexInit()
-  #var defaultGaugeFile = "l88.scidac"
-  var defaultLat = [8,8,8,8]
+  var defaultGaugeFile = "l88.scidac"
+  #var defaultLat = [8,8,8,8]
   #var defaultLat = [16,16,16,16]
   defaultSetup()
   var r = newRNGField(RngMilc6, lo, 987654321)
 
   threads:
-    g.random r
+    #g.random r
     g.setBC
     g.stagPhase
   #var s = newStag(g)

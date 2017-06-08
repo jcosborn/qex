@@ -81,6 +81,7 @@ proc getBidiagLanczos*(linop: any; src: any; d: var any; e: var any;
       for i in 0..<qv.len:
         let t = dot(v, qv[i])
         #echo "k: ", k, "  ", t
+        qv[i] -= t*v
         dv[k,i] = t
       toc("loop1 dv")
       #threadBarrier()
@@ -94,7 +95,9 @@ proc getBidiagLanczos*(linop: any; src: any; d: var any; e: var any;
       u := r / alpha
       toc("loop1 thread2 exp1")
       for i in 0..<qu.len:
-        du[k,i] = dot(u, qu[i])
+        let t = dot(u, qu[i])
+        qu[i] -= t*u
+        du[k,i] = t
       if threadNum==0:
         d[k] = alpha
         inc k

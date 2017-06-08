@@ -475,7 +475,7 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams) =
     s.eoReconstruct(r, x, m)
   let secs = t1-t0
   let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
-  echo top
+  echo "op time: ", top
   echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
 proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =
   var sp = initSolverParams()
