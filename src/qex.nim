@@ -15,8 +15,8 @@ import physics/qcdTypes, physics/stagD, physics/hisqLinks
 export qcdTypes, stagD, hisqLinks
 import rng
 export rng
-#import eigens
-#export eigens
+import eigens
+export eigens
 
 when isMainModule:
   qexInit()

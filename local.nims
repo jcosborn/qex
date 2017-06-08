@@ -17,17 +17,10 @@ const
   #primmeDir = "$HOME/pkg/src/primme"
   #qmpDir = "$HOME/pkg/qmp"
   #qioDir = "$HOME/pkg/qio"
-  primmeDir = "$HOME/pkgs/src/primme"
   qmpDir = "$HOME/lqcd/install/qmp"
   qioDir = "$HOME/lqcd/install/qio"
-  #primmeDir = "$HOME/pkgs/build/primme"
   #qmpDir = "/home/osborn/lqcd/install/qmp"
   #qioDir = "/home/osborn/lqcd/install/qio"
-  qudaDir = "$HOME/lqcdM/build/quda"
-  cudaLibDir = "/usr/local/cuda/lib64"
-  #lapackLib = "'-Wl,-framework -Wl,Accelerate'"
-  lapackLib = "'$HOME/pkg/lib/libopenblas.a -fopenmp -lm -lgfortran'"
-  #lapackLib = "'"&llbgq.join" "&"'"
   ccType = "gcc"
   cc = "mpicc"
   #cc = "/home/xyjin/pkgs/src/qex/build/mpixlc2"
@@ -51,5 +44,14 @@ const
   #simd = "QPX"
   #vlen = "4"
   extraDef = ["STATIC_UNROLL=1"]
+  ########################################
+  # Optional dependencies
+  #primmeDir = "$HOME/pkgs/src/primme"
+  #primmeDir = "$HOME/pkgs/build/primme"
+  #lapackLib = "'-Wl,-framework -Wl,Accelerate'"
+  #lapackLib = "'$HOME/pkg/lib/libopenblas.a -fopenmp -lm -lgfortran'"
+  #lapackLib = "'"&llbgq.join" "&"'"
+  #qudaDir = "$HOME/lqcdM/build/quda"
+  #cudaLibDir = "/usr/local/cuda/lib64"
 # End of configurations
 ######################################################################

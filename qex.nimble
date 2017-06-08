@@ -56,6 +56,8 @@ template set(k:string, v:untyped) =
 template `~`(k,v:untyped) = set(astToStr(k), v)
 template `!`(k,v:untyped) = set((ccType&"."&astToStr(k)), v)
 template def(v:untyped) = define ~ (astToStr(v)&"="&v)
+template optDef(v:untyped) =
+  when declared(v): def v
 
 proc setup =
   path ~ srcDir
@@ -81,6 +83,11 @@ proc setup =
   for d in extraDef:
     putenv ~ d  # We'll convert env to def in src soon.
     define ~ d
+  # Here are optional external dependencies.
+  optDef primmeDir
+  optDef lapackLib
+  optDef qudaDir     # This and cuda below are not in effect.
+  optDef cudaLibDir  # Will convert them later.
 
 proc setupRelease =
   define ~ "release"
@@ -96,10 +103,6 @@ proc setupRelease =
   line_dir ~ off
   dead_code_elim ~ on
   opt ~ speed
-
-when declared(primmeDir):
-  def primmeDir
-  def lapackLib
 
 task make, "compile, link, and put executables in `bin'":
   const c = paramCount()
