@@ -24,8 +24,7 @@ pp.numEvals = Nev.cint
 pp.eps = floatParam("eps", 1e-12)
 let pevs = pp.run
 for i in 0..<pp.initSize:
-  echo "$#  $#  $#"%[$i, pevs.evals[i].ff, pevs.rnorms[i].ff]
-pp.free
+  echo "$#  $#  $#"%[$i, pevs.vals[i].ff, pevs.rnorms[i].ff]
 
 type MyOp = object
   s: type(s)
