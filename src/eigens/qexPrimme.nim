@@ -6,47 +6,56 @@ type
   OpInfo*[S,F] = object
     s:ptr S
     m:float
-    x,y,tmp:F
-    l: int
+    x,y:F
 proc newOpInfo*[S](s:ptr S, m:float = 0):auto =
   type F = type(s.g[0].l.ColorVectorD())
   var r:OpInfo[S,F]
   r.s = s
   r.m = m
-  r.tmp.new(s.g[0].l)
   r.x.new(s.g[0].l)
-  #r.x.new
-  #r.x[] = r.tmp[]
   r.y.new(s.g[0].l)
-  #r.y.new
-  #r.y[] = r.tmp[]
-  r.l = 6*s.g[0].l.nEven
   return r
-proc setX(op: ptr OpInfo, xx: ptr float) =
-  #copymem(op.x.s.data, x, op.l*sizeof(float))
-  let x = asarray[float](xx)
-  let n = op.l div 6
-  for i in 0..<n:
-    for j in 0..2:
-      op.x{i}[j].re = x[6*i+2*j]
-      op.x{i}[j].im = x[6*i+2*j+1]
-proc getY(op: ptr OpInfo, yy: ptr float) =
-  #copymem(y, op.y.s.data, op.l*sizeof(float))
-  let y = asarray[float](yy)
-  let n = op.l div 6
-  for i in 0..<n:
-    for j in 0..2:
-      y[6*i+2*j] := op.y{i}[j].re
-      y[6*i+2*j+1] := op.y{i}[j].im
+
+# WARNING: low level implementation details follow.
+proc toPrimmeArray(f:Field, a:ptr float, l:int) =
+  const
+    vl = f.V
+    cl = 2*vl
+  var
+    a = asarray[float]a
+    f = asarray[float]f.s.data
+  let n = l div cl
+  tfor i, 0..<n:
+    forO j, 0, <vl:
+      a[cl*i+2*j] = f[cl*i+j]
+      a[cl*i+2*j+1] = f[cl*i+j+vl]
+template toPrimmeArray(f:Field, a:ptr float) =
+  toPrimmeArray(f, a, 6*f.l.nEven)
+proc fromPrimmeArray(f:Field, a:ptr float, l:int) =
+  const
+    vl = f.V
+    cl = 2*vl
+  var
+    a = asarray[float]a
+    f = asarray[float]f.s.data
+  let n = l div cl
+  tfor i, 0..<n:
+    forO j, 0, <vl:
+      f[cl*i+j] = a[cl*i+2*j]
+      f[cl*i+j+vl] = a[cl*i+2*j+1]
+template fromPrimmeArray(f:Field, a:ptr float) =
+  fromPrimmeArray(f, a, 6*f.l.nEven)
+
 proc applyD(op:ptr OpInfo; x,y:ptr float) =
   # x in, y out
-  op.setX x
-  #op[].y := op[].x
   threads:
-    stagD(op[].s[].so, op[].tmp, op[].s[].g, op[].x, 0.0)
+    op.x.fromPrimmeArray x
     threadBarrier()
-    stagD(op[].s[].se, op[].y, op[].s[].g, op[].tmp, 0.0, -1.0)
-  op.getY y
+    stagD(op.s.so, op.y, op.s.g, op.x, 0.0)
+    threadBarrier()
+    stagD(op.s.se, op.x, op.s.g, op.y, 0.0, -1.0)
+    threadBarrier()
+    op.x.toPrimmeArray y
 
 proc matvec[O](x:pointer, ldx:ptr PRIMME_INT,
                y:pointer, ldy:ptr PRIMME_INT,
@@ -88,30 +97,31 @@ proc primmeInitialize*(lo: Layout, op: var OpInfo): primme_params =
   if 0 != ret:
     echo "ERROR: set_method returned with nonzero exit status: ", ret
     quit QuitFailure
-  #block primmeSetSize:
-  #  let ret = zprimme(nil,nil,nil,pp.addr)
-  #  if 1 != ret:
-  #    echo "Error: zprimme(nil) returned with exit status: ", ret
-  #    quit QuitFailure
 
 template ff(x:untyped):auto = formatFloat(x,ffScientific,17)
 type
   PrimmeEvs* = object
     evecs: alignedMem[complex[float]] # Wrap it in Field later.
+    intWork: alignedMem[char]
+    realWork: alignedMem[char]
     evals*: seq[float]
     rnorms*: seq[float]
 proc run*(param: var primme_params): PrimmeEvs =
   result.evecs = newAlignedMemU[complex[float]]int(param.numEvals*param.nLocal)
   result.evals = newseq[float]param.numEvals
   result.rnorms = newseq[float]param.numEvals
-  #var
-    #iw = newAlignedMemU[char](pp.intWorkSize*sizeof(int))
-    #rw = newAlignedMemU[char](pp.realWorkSize*sizeof(float))
-  #param.intWork = cast[ptr cint](iw.data)
-  #param.realWork = rw.data
+  block primmeSetSize:
+   let ret = zprimme(nil,nil,nil,param.addr)
+   if 1 != ret:
+     echo "Error: zprimme(nil) returned with exit status: ", ret
+     quit QuitFailure
+  result.intWork = newAlignedMemU[char]param.intWorkSize
+  result.realWork = newAlignedMemU[char]param.realWorkSize
+  param.intWork = cast[ptr cint](result.intWork.data)
+  param.realWork = result.realWork.data
   if myRank == 0: param.display_params
   let ret = param.run(result.evals,
-                      asarray[complex[float]](result.evecs[0].addr)[],
+                      asarray[complex[float]](result.evecs.data)[],
                       result.rnorms)
   if ret != 0:
     echo "Error: primme returned with nonzero exit status: ", ret
@@ -169,7 +179,7 @@ when isMainModule:
   var pevs = pp.run
   for i in 0..<pp.initSize:
     echo "Eval[",i,"]: ",pevs.evals[i].ff," rnorm: ",pevs.rnorms[i].ff
-  pp.free
+  #pp.free
   import hisqev
   type MyOp = object
     s: type(s)
