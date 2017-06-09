@@ -2,11 +2,13 @@ import primme
 import qexPrimmeInternal
 import base, layout, physics/stagD
 
-proc newOpInfo*[S](s:ptr S, m:float = 0):auto =
+proc newOpInfo*[S](s:ptr S, relerr:float = 1e-4, abserr:float = 1e-6, m:float = 0):auto =
   type F = type(s.g[0].l.ColorVectorD())
   var r:OpInfo[S,F]
   r.s = s
   r.m = m
+  r.relerr = relerr
+  r.abserr = abserr
   r.x.new(s.g[0].l)
   r.y.new(s.g[0].l)
   return r
@@ -39,6 +41,18 @@ proc matvec[O](x:pointer, ldx:ptr PRIMME_INT,
     applyD(cast[ptr O](primme.matrix), xp, yp)
   err[] = 0
 
+proc convTest[O](val:ptr cdouble; vec:pointer; rNorm:ptr cdouble; isconv:ptr cint;
+                 primme:ptr primme_params; ierr:ptr cint) {.noconv.} =
+  let
+    r = rNorm[].float
+    op = cast[ptr O](primme.matrix)
+    re = op.relerr
+    ae = op.abserr
+  if r < 2*ae*sqrt(val[]) or r < 2*re*val[]:
+    isconv[] = 1
+  else: isconv[] = 0
+  ierr[] = 0
+
 proc primmeInitialize*(lo: Layout, op: var OpInfo): primme_params =
   const nc = op.nc
   result = primme_initialize()
@@ -46,13 +60,13 @@ proc primmeInitialize*(lo: Layout, op: var OpInfo): primme_params =
   result.matrixMatvec = matvec[type(op)]
   result.numEvals = 16
   result.target = primme_smallest
-  result.eps = 1e-9
   result.numProcs = nRanks.cint
   result.procId = myRank.cint
   result.nLocal = nc*lo.nEven
   result.globalSumReal = sumReal[primme_params]
   result.matrix = op.addr
   result.printLevel = 3
+  result.convTestFun = convTest[type(op)]
 
 type
   PrimmeResults* = object
@@ -87,7 +101,6 @@ proc run*(param: var primme_params): PrimmeResults =
     echo "Error: primme returned with nonzero exit status: ", ret
     quit QuitFailure
   echo "Neigens    : ",param.initSize
-  echo "Tolerance  : ",ff param.aNorm*param.eps
   echo "Iterations : ",param.stats.numOuterIterations
   echo "Restarts   : ",param.stats.numRestarts
   echo "Matvecs    : ",param.stats.numMatvecs
@@ -133,8 +146,7 @@ when isMainModule:
     g.setBC
     g.stagPhase
   var s = g.newStag
-  var m = 0.1
-  var opInfo = newOpInfo(s.addr, m)
+  var opInfo = newOpInfo(s.addr)
   var pp = lo.primme_initialize(opInfo)
   var pevs = pp.run
   for i in 0..<pp.initSize:
@@ -172,7 +184,7 @@ when isMainModule:
   opts.maxup = 10
   var evals0 = hisqev(op, opts)
   import unittest
-  var CT = 1e-10                  # comparison tolerance
+  var CT = 1e-8
   const eigenResults = [
     0.0055851198854,
     0.0113277827524,

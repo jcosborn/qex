@@ -6,6 +6,7 @@ type
   OpInfo*[S,F] = object
     s*:ptr S
     m*:float
+    abserr*,relerr*:float
     x*,y*:F
 proc sumReal*[P](sendBuf: pointer; recvBuf: pointer; count: ptr cint;
                primme: ptr P; ierr: ptr cint) {.noconv.} =
