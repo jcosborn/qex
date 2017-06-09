@@ -59,21 +59,22 @@ proc primmeSVDInitialize*(lo: Layout, op: var OpInfo): primme_svds_params =
   result.globalSumReal = sumReal[primme_svds_params]
   result.matrix = op.addr
   result.printLevel = 3
-  let ret = result.set_method(primme_svds_default,
-                              PRIMME_DEFAULT_METHOD, PRIMME_DEFAULT_METHOD)
-  if 0 != ret:
-    echo "ERROR: set_method returned with nonzero exit status: ", ret
-    quit QuitFailure
 
 proc run*(param: var primme_svds_params): PrimmeResults =
-  result.vecs = newAlignedMemU[complex[float]]int(param.numSvals*(param.nLocal+param.mLocal))
-  result.vals = newseq[float]param.numSvals
-  result.rnorms = newseq[float]param.numSvals
+  block primmeSetMethod:
+    let ret = param.set_method(primme_svds_default,
+                               PRIMME_DEFAULT_METHOD, PRIMME_DEFAULT_METHOD)
+    if 0 != ret:
+      echo "ERROR: set_method returned with nonzero exit status: ", ret
+      quit QuitFailure
   block primmeSetSize:
    let ret = zprimme_svds(nil,nil,nil,param.addr)
    if 1 != ret:
      echo "Error: zprimme_svds(nil) returned with exit status: ", ret
      quit QuitFailure
+  result.vecs = newAlignedMemU[complex[float]]int(param.numSvals*(param.nLocal+param.mLocal))
+  result.vals = newseq[float]param.numSvals
+  result.rnorms = newseq[float]param.numSvals
   result.intWork = newAlignedMemU[char]param.intWorkSize
   result.realWork = newAlignedMemU[char]param.realWorkSize
   param.intWork = cast[ptr cint](result.intWork.data)

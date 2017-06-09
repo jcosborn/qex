@@ -184,7 +184,6 @@ proc getWordSize(r:var Reader):int =
     else: result = 0
   #result
 
-import qex
 import physics/qcdTypes
 
 template IOtype(x:typedesc[SColorMatrixV]):typedesc = SColorMatrix

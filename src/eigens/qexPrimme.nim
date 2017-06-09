@@ -53,10 +53,6 @@ proc primmeInitialize*(lo: Layout, op: var OpInfo): primme_params =
   result.globalSumReal = sumReal[primme_params]
   result.matrix = op.addr
   result.printLevel = 3
-  let ret = result.set_method PRIMME_DYNAMIC
-  if 0 != ret:
-    echo "ERROR: set_method returned with nonzero exit status: ", ret
-    quit QuitFailure
 
 type
   PrimmeResults* = object
@@ -66,14 +62,19 @@ type
     vals*: seq[float]
     rnorms*: seq[float]
 proc run*(param: var primme_params): PrimmeResults =
-  result.vecs = newAlignedMemU[complex[float]]int(param.numEvals*param.nLocal)
-  result.vals = newseq[float]param.numEvals
-  result.rnorms = newseq[float]param.numEvals
+  block primmeSetMethod:
+    let ret = param.set_method PRIMME_DYNAMIC
+    if 0 != ret:
+      echo "ERROR: set_method returned with nonzero exit status: ", ret
+      quit QuitFailure
   block primmeSetSize:
    let ret = zprimme(nil,nil,nil,param.addr)
    if 1 != ret:
      echo "Error: zprimme(nil) returned with exit status: ", ret
      quit QuitFailure
+  result.vecs = newAlignedMemU[complex[float]]int(param.numEvals*param.nLocal)
+  result.vals = newseq[float]param.numEvals
+  result.rnorms = newseq[float]param.numEvals
   result.intWork = newAlignedMemU[char]param.intWorkSize
   result.realWork = newAlignedMemU[char]param.realWorkSize
   param.intWork = cast[ptr cint](result.intWork.data)
