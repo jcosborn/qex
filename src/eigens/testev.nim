@@ -4,6 +4,12 @@ import eigens/linalgFuncs
 import strUtils
 
 template `&`(s: seq[float]): untyped = cast[ptr carray[float]](addr s[0])
+template nothreads(x: untyped): untyped =
+  block:
+    x
+template nothreads(v,x: untyped): untyped =
+  block:
+    x
 
 proc makeTri(t0,t1: var any; d,e: any; m: float) =
   let n = t0.len
@@ -50,7 +56,7 @@ proc rayleighRitz(op: any, v: any) =
   var m1 = newSeq[type(dot(v[0].odd,v[0]))](n2)
   var m2 = newSeq[type(dot(v[0].even,v[0]))](n2)
   toc("rr setup")
-  threads:
+  nothreads:
     for i in 0..<n:
       let n2 = v[i].even.norm2
       if threadNum==0: m2[i*n+i] := n2
@@ -58,7 +64,7 @@ proc rayleighRitz(op: any, v: any) =
         let m2ji = dot(v[i].even,v[j])
         if threadNum==0: m2[j*n+i] = m2ji
   toc("rr m2")
-  threads(t):
+  nothreads(t):
     for i in 0..<n:
       op.apply(v[i].odd, v[i].even)
     for i in 0..<n:
@@ -66,8 +72,8 @@ proc rayleighRitz(op: any, v: any) =
         let m1t = dot(v[i].odd,v[j])
         if threadNum==0: m1[j*n+i] = m1t
   toc("rr m1")
-  #for i in 0..<n:
-  #  echo i, "  ", sqrt(m1[i*(n+1)].re/m2[i*(n+1)].re)
+  for i in 0..<n:
+    echo i, "  ", sqrt(m1[i*(n+1)].re/m2[i*(n+1)].re)
 
   var ev = newSeq[float64](n)
   var t0 = getElapsedTime()
@@ -90,9 +96,9 @@ proc rayleighRitz(op: any, v: any) =
     for i in 0..<n:
       v[i][e] := r[i]
   #sort(t, a, b)
-  #for i in 0..<n:
-  #  op.apply(v[i].odd, v[i].even)
-  #  echo i, "  ", sqrt(v[i].odd.norm2/v[i].even.norm2)
+  for i in 0..<n:
+    op.apply(v[i].odd, v[i].even)
+    echo i, "  ", sqrt(v[i].odd.norm2/v[i].even.norm2)
   toc("rr end")
   var t2 = getElapsedTime()
   echo "rr dots: ", t0|-6, "  zeigsgv: ", (t1-t0)|-6, "  vecs: ", (t2-t1)|-6
@@ -145,11 +151,11 @@ proc lowsv(linop: any, dest: any, src: any, maxit: int) =
   let nrr = dest.len
   var d = newSeq[float](maxit)
   var e = newSeq[float](maxit)
-  #var qv = newSeq[type(src)](nrr)
+  var qv = newSeq[type(src.even)](nrr)
   var dv = newDmat(maxit, nrr)
   var qu = newSeq[type(src)](0)
   var du = newZmat(maxit, 0)
-  getBidiagLanczos(linop, src.even, d, e, qu, du, qu, du, maxit, 1)
+  getBidiagLanczos(linop, src, d, e, qu, du, qu, du, maxit, 1)
   e[maxit-1] = 0
   #echo "min d: ", d.min
   #echo "min e: ", e.min
@@ -166,8 +172,9 @@ proc lowsv(linop: any, dest: any, src: any, maxit: int) =
   var y = newDmat(maxit,1)
   var r = newDmat(maxit,1)
   for i in 0..<maxit:
-    x[i,0] = 0.0
-  x[0,0] = 1.0
+    x[i,0] = 1.0/sqrt(maxit.float)
+    #x[i,0] = 0.0
+  #x[0,0] = 1.0
 
   for c in 0..<nrr:
     solveTriL(y, d, e, x)
@@ -187,8 +194,9 @@ proc lowsv(linop: any, dest: any, src: any, maxit: int) =
   # ]#
 
   for i in 0..<dest.len:
-    dest[i] := 0
-  runBidiagLanczos(linop, src.even, d, e, dv, dest, du, qu, maxit, 1)
+    qv[i] = dest[i].even
+    qv[i] := 0
+  runBidiagLanczos(linop, src, d, e, dv, qv, du, qu, maxit, 1)
 
   rayleighRitz(linop, dest)
   rayleighRitz(linop, dest)
