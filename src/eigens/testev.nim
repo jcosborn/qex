@@ -155,19 +155,18 @@ proc lowsv(linop: any, dest: any, src: any, maxit: int) =
   var dv = newDmat(maxit, nrr)
   var qu = newSeq[type(src)](0)
   var du = newZmat(maxit, 0)
-  getBidiagLanczos(linop, src, d, e, qu, du, qu, du, maxit, 1)
-  e[maxit-1] = 0
+  getBidiagLanczos(linop, src.even, d, e, qu, du, qu, du, maxit, 1)
+  #e[maxit-1] = 0
   #echo "min d: ", d.min
   #echo "min e: ", e.min
 
-  #var sv = newSeq[float](maxit)
-  #svdbi(&sv, &d, &e, maxit)
-  #echo "svdbi: ", sv[0], "  ", sv[1]
-  #[
+  var sv = newSeq[float](maxit)
+  svdbi(&sv, &d, &e, maxit)
+  echo "svdbi: ", sv[0], "  ", sv[1]
   var ur = newDmat(maxit, nrr)
   var nvout = svdBi4(sv, dv, ur, d, e, maxit, nrr, nrr, 0.0, 9e99)
-  ]#
 
+  #[
   var x = newDmat(maxit,1)
   var y = newDmat(maxit,1)
   var r = newDmat(maxit,1)
@@ -191,12 +190,13 @@ proc lowsv(linop: any, dest: any, src: any, maxit: int) =
       let c01 = d01/sqrt(d00*d11)
       echo c," c01: ", c01
     orthocols(dv, k)
-  # ]#
+  ]#
 
   for i in 0..<dest.len:
+    dest[i] := 0
     qv[i] = dest[i].even
-    qv[i] := 0
-  runBidiagLanczos(linop, src, d, e, dv, qv, du, qu, maxit, 1)
+    #qv[i] := 0
+  runBidiagLanczos(linop, src.even, d, e, dv, qv, du, qu, maxit, 1)
 
   rayleighRitz(linop, dest)
   rayleighRitz(linop, dest)
@@ -376,6 +376,8 @@ when isMainModule:
     (sv, 0.5*sqrt(t.even.norm2/s2))
 
   var nsrc = intParam("nsrc", 10)
+  echo "maxit: ", maxit
+  echo "nsrc: ", nsrc
   var srcs = newSeq[type(r)](nsrc)
   var dests = newSeq[type(r)](nsrc)
   for i in 0..<nsrc:
@@ -387,6 +389,7 @@ when isMainModule:
     let c = i mod 3
     let s = i div 3
     srcs[i]{s}[c] := 1
+    srcs[i] := 1
 
   while true:
     var re, re0 = 0.0

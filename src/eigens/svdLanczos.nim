@@ -64,8 +64,8 @@ proc getBidiagLanczos*(linop: any; src: any; d: var any; e: var any;
   tic()
   nothreads:
     let sn2 = src.norm2
-    let sn = sqrt(sn2)
-    v := src / sn
+    let sni = 1.0/sqrt(sn2)
+    v := sni*src
     p := v
     u := 0
   var beta = 1.0
@@ -76,7 +76,9 @@ proc getBidiagLanczos*(linop: any; src: any; d: var any; e: var any;
     tic()
     nothreads:
       tic()
-      v := p / beta
+      let bi = 1.0/beta
+      v := bi * p
+      #echo "v2[", k, "]: ", v.norm2
       toc("loop1 thread1 exp1")
       for i in 0..<qv.len:
         let t = dot(v, qv[i])
@@ -91,8 +93,11 @@ proc getBidiagLanczos*(linop: any; src: any; d: var any; e: var any;
       #echo "v: ", v.norm2
       #echo "r: ", r.norm2
       r -= beta*u
-      let alpha = sqrt(r.norm2)
-      u := r / alpha
+      let r2 = r.norm2
+      let alpha = sqrt(r2)
+      let ai = 1.0/alpha
+      u := ai * r
+      #echo "u2[", k, "]: ", u.norm2
       toc("loop1 thread2 exp1")
       for i in 0..<qu.len:
         let t = dot(u, qu[i])
@@ -147,8 +152,8 @@ proc runBidiagLanczos*(linop: any; src: any; d: any; e: any;
   tic()
   nothreads:
     let sn2 = src.norm2
-    let sn = sqrt(sn2)
-    v := src / sn
+    let sni = 1.0/sqrt(sn2)
+    v := sni*src
     p := v
     u := 0
   var beta = 1.0
@@ -159,7 +164,8 @@ proc runBidiagLanczos*(linop: any; src: any; d: any; e: any;
     tic()
     nothreads:
       tic()
-      v := p / beta
+      let bi = 1.0/beta
+      v := bi * p
       toc("loop1 thread1 exp1")
       for i in 0..<qv.len:
         qv[i] += dv[k,i] * v
@@ -172,7 +178,9 @@ proc runBidiagLanczos*(linop: any; src: any; d: any; e: any;
       #echo "r: ", r.norm2
       r -= beta*u
       let alpha = d[k]
-      u := r / alpha
+      #echo("d[", k, "]: ", alpha, " : ", sqrt(r.norm2))
+      let ai = 1.0/alpha
+      u := ai * r
       toc("loop1 thread2 exp1")
       for i in 0..<qu.len:
         qu[i] += du[k,i] * u
@@ -192,6 +200,7 @@ proc runBidiagLanczos*(linop: any; src: any; d: any; e: any;
       p -= alpha*v
       if threadNum==0:
         beta = e[k-1]
+        #echo "e[", k-1, "]: ", beta, " : ", sqrt(p.norm2)
       toc("loop1 thread2 end")
     toc("loop1 thread2")
 
@@ -229,8 +238,8 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
 
   tic()
   nothreads:
-    let sn = sqrt(src.norm2)
-    v := src / sn
+    let sni = 1.0/sqrt(src.norm2)
+    v := sni * src
     p := v
     u := 0
   var beta = 1.0
@@ -242,7 +251,8 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
     tic()
     nothreads:
       tic()
-      v := p / beta
+      let bi = 1.0/beta
+      v := bi*p
       toc("loop1 thread1 exp1")
       linop.apply(r, v)
       toc("loop1 thread1 op")
@@ -267,7 +277,8 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
     nothreads:
       tic()
       let alpha = a[k-1]
-      u := r / alpha
+      let ai = 1.0/alpha
+      u := ai * r
       toc("loop1 thread2 exp1")
       linop.applyAdj(p, u)
       toc("loop1 thread2 op")
@@ -331,14 +342,14 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
     for i in 0..<qva.len:
       qva[i] := 0
   var bta = sqrt(src.norm2)
-  v := src / bta
+  v := src * (1.0/bta)
   p := v
   bta = 1.0
   u := 0
   var kk = 0
   while true:
     tic()
-    v := p/bta
+    v := p*(1.0/bta)
     toc("loop2 eq1")
     threads:
       for i in 0..<nv:
@@ -349,7 +360,7 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
     r -= bta*u
     #let alpha = sqrt(r.norm2)
     let alpha = a[kk]
-    u := r/alpha
+    u := r*(1.0/alpha)
     toc("loop2 eq2")
     for i in 0..<nva:
       qva[i] += ur[kk,i] * u
