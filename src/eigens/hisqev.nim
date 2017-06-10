@@ -69,7 +69,7 @@ proc setterr(t: var EigTable, op: any) =
   let e = t.Dvn/t.vn
   Dv.even := DDv - e*t.v
   let r2 = Dv.even.norm2/t.vn
-  t.err = sqrt(t.sv*t.sv+sqrt(r2)) - t.sv
+  t.err = abs(t.sv - sqrt(abs(t.sv*t.sv-sqrt(r2))))
 
 proc geterr(v: var seq[EigTable], op: any) =
   for i in 0..<v.len:
@@ -360,6 +360,7 @@ type EigOpts* = object
   relerr*: float
   abserr*: float
   svdits*: int
+  svdits2*: int
   maxup*: int
   rrbs*: int
 
@@ -369,6 +370,7 @@ proc initOpts*(eo: var EigOpts) =
   eo.relerr = 1e-4
   eo.abserr = 1e-6
   eo.svdits = 100
+  eo.svdits2 = 20
   eo.maxup = 10
   eo.rrbs = 20
 
@@ -381,6 +383,7 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
   let relerr = opts.relerr
   let abserr = opts.abserr
   let svdits = opts.svdits
+  let svdits2 = opts.svdits2
   let maxup = opts.maxup
   let rrbs = opts.rrbs
 
@@ -390,6 +393,7 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
   echo "relerr = ", relerr
   echo "abserr = ", abserr
   echo "svdits = ", svdits
+  echo "svdits2 = ", svdits2
   echo "maxup = ", maxup
   echo "rrbs = ", rrbs
 
@@ -403,8 +407,21 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
   var src = op.newVector
   var v: seq[type(op.newVector)]
   if not vv.isNil and vv.len>0:
-    shallowCopy(v, vv)
+    #shallowCopy(v, vv)
+    #echo "vv.len: ", vv.len
+    #v.newSeq(vv.len)
+    v.newSeq(ng)
+    #for i in 0..<v.len:
+    #  if i<vv.len:
+    #    v[i] = vv[i]
+    #  else:
+    #    v[i] = op.newVector
+    #    op.rand(v[i])
+    let sits = ng
+    svd(op, vv[0], v, sits, emin, emax)
     vt1.maketable(v, op)
+    rayleighRitz(vt1, 0, ng-1, op)
+    rayleighRitz(vt1, 0, ng-1, op)
   else:
     op.rand(src)
     #mixin `:=`
@@ -439,7 +456,7 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
       ngcount += 1
     else:
       ngcount = 0
-    if ngcount>1: break
+    if ngcount>0: break
     let vin = vt1[iv].v
     emin = 0
     emax = 1e99
@@ -449,7 +466,13 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
     op.rand(src)
     let srcn2 = src.norm2
     vin += (vt1[iv].sv*vt1[iv].sv/sqrt(srcn2)) * src
-    let sits = svdits
+    var sits = svdits
+    if iv>0:
+      var iw = min(iv+1,ng-1)
+      for i in (iv+1)..iw:
+        let f = vt1[iv].sv / vt1[i].sv
+        vin += (f*f) * vt1[i].v
+      sits = svdits2
     svd(op, vin, v, sits, emin, emax)
     toc("svd")
     GC_fullCollect()
@@ -536,9 +559,52 @@ when isMainModule:
   #opts.relerr = 1e-6
   #opts.abserr = 1e-8
   opts.svdits = intParam("svdits", opts.nev*2)
+  opts.svdits2 = intParam("svdits2", opts.svdits div 2)
   opts.maxup = 100
 
   var evals = hisqev(op, opts)
+
+  #[
+  var tv = op.newVector
+  proc unc(vs: any) =
+    let n = vs.len
+    var vt = newSeq[EigTable[type(vs[0])]](n)
+    for i in 0..<n:
+      vt[i].v = vs[i]
+    sett(vt[0], op)
+    for i in 1..<n:
+      op.apply(tv.odd, vt[0].v.even)
+      op.applyAdj(vt[i].v.even, tv.odd)
+      sett(vt[i], op)
+      rayleighRitz(vt, 0, i, op)
+      rayleighRitz(vt, 0, i, op)
+      geterr(vt, op)
+      for j in 0..<n:
+        echo i, " sv[", j, "]: ", vt[j].sv, "  ", vt[j].err
+
+  #var vv = newSeq[type(evals[0].v)](evals.len)
+  #for i in 0..<vv.len:
+  #  vv[i] = evals[i].v
+  var ncmp = 20
+  var vv = newSeq[type(evals[0].v)](ncmp)
+  #var ne = max(10, opts.nev div 20)
+  #for i in 0..ne:
+  #  vv.add evals[i].v
+  #for i in (ne+1)..<opts.nev:
+  #  let c = evals[ne].sv/evals[i].sv
+  #  vv[ne] += (c*c) * evals[i].v
+  for i in 0..<ncmp:
+    vv[i] = op.newVector
+  for i in 1..<ncmp:
+    vv[0] := evals[0].v
+    for j in 1..i:
+      let c = evals[0].sv/evals[j].sv
+      vv[0] += (c*c) * evals[j].v
+    echo "uncompressing ", i
+    unc(vv)
+
+  #var evals2 = hisqev(op, opts, vv)
+  ]#
 
   qexFinalize()
 

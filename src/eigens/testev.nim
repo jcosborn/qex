@@ -147,18 +147,49 @@ proc getSv(d: any, e: any, x: any, y: any, r: any): auto =
   var er = 0.5*sqrt(r2/s2-s2/x2)
   (sv, er)
 
+proc solveN(x: any, d: any, e: any, m: float) =
+  let n = d.len
+  var t0 = newSeq[float](n)
+  var t1 = newSeq[float](n)
+  makeTri(t0, t1, d, e, m)
+  var c0 = newSeq[float](n)
+  var c1 = newSeq[float](n)
+  cholTri(c0, c1, t0, t1)
+  var dv = newDmat(n, 1)
+  var dv0 = newDmat(n, 1)
+  var dv1 = newDmat(n, 1)
+  for i in 0..<n: dv[i,0] = 0
+  dv[0,0] = 1
+  solveTriL(dv0, c0, c1, dv)
+  solveTriU(dv1, c0, c1, dv0)
+  for i in 0..<n: x[i] = dv1[i,0]
+
+proc solveLS(x: any, d: any, e: any, m: float) =
+  let n = d.len - 1
+  var d0 = newSeq[float](n+1)
+  var e0 = newSeq[float](n)
+  for i in 0..<n:
+    d0[i] = d[i]
+    e0[i] = e[i]
+  d0[n] = 0
+  e0[n-1] = 0
+  var t0 = newSeq[float](n+1)
+  var t1 = newSeq[float](n)
+  makeTri(t0, t1, d0, e0, m)
+
+
 proc lowsv(linop: any, dest: any, src: any, maxit: int) =
   let nrr = dest.len
   var d = newSeq[float](maxit)
-  var e = newSeq[float](maxit)
+  var e = newSeq[float](maxit-1)
   var qv = newSeq[type(src.even)](nrr)
   var dv = newDmat(maxit, nrr)
   var qu = newSeq[type(src)](0)
   var du = newZmat(maxit, 0)
   getBidiagLanczos(linop, src.even, d, e, qu, du, qu, du, maxit, 1)
   #e[maxit-1] = 0
-  #echo "min d: ", d.min
-  #echo "min e: ", e.min
+  echo "min d: ", d.min
+  echo "min e: ", e.min
 
   var sv = newSeq[float](maxit)
   svdbi(&sv, &d, &e, maxit)
