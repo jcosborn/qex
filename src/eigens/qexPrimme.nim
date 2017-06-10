@@ -77,9 +77,10 @@ type
     intWork*: alignedMem[char]
     vals*: seq[float]
     rnorms*: seq[float]
-proc run*(param: var primme_params): PrimmeResults =
+proc run*(param: var primme_params,
+          preset: primme_preset_method = PRIMME_DYNAMIC): PrimmeResults =
   block primmeSetMethod:
-    let ret = param.set_method PRIMME_DYNAMIC
+    let ret = param.set_method preset
     if 0 != ret:
       echo "ERROR: set_method returned with nonzero exit status: ", ret
       quit QuitFailure
