@@ -21,6 +21,8 @@ type EigTable*[T] = object
   sv*: float
   err*: float
   updates*: int
+  converged*: bool
+  locked*: bool
 
 proc sort[T](t: var seq[EigTable[T]], a=0, bb= -1) =
   var b = bb
@@ -50,6 +52,9 @@ proc sett[T](t: var EigTable[T], op: any) =
   t.Dvn = Dv.odd.norm2
   t.sv = sqrt(t.Dvn/t.vn)
   #echo t.sv
+  t.updates = 0
+  t.converged = false
+  t.locked = false
 
 proc maketable[T,U](t: var seq[EigTable[T]], v: var seq[U], op: any) =
   for i in 0..<v.len:
@@ -76,6 +81,16 @@ proc geterr(v: var seq[EigTable], op: any) =
     setterr(v[i], op)
 
 # x = x - (<y.x>/<y.y>) y
+proc projectOutV(x: any, y: EigTable) =
+  let c = y.v.even.dot(x)/y.vn
+  x.even -= c*y.v
+
+proc projectLocked(t: any, v: any) =
+  for i in 0..<t.len:
+    if not t[i].locked: break
+    for j in 0..<v.len:
+      v[j].projectOutV(t[i])
+
 proc projectOut(x,y: EigTable) =
   let c = y.v.even.dot(x.v)/y.vn
   x.v.even -= c*y.v
@@ -286,6 +301,10 @@ proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
 
   var rrLen = rrbs
   var rrMin = 0
+  for i in 0..<t.len:
+    if not t[i].locked: break
+    inc t[i].updates
+    rrMin = i
   var rrMax = 0
   var to1 = 0.0
   var tr1 = 0.0
@@ -363,6 +382,7 @@ type EigOpts* = object
   svdits2*: int
   maxup*: int
   rrbs*: int
+  emax*: float
 
 proc initOpts*(eo: var EigOpts) =
   eo.nev = 10
@@ -373,6 +393,7 @@ proc initOpts*(eo: var EigOpts) =
   eo.svdits2 = 20
   eo.maxup = 10
   eo.rrbs = 20
+  eo.emax = 9e99
 
 ## op: operator object
 ## opts: options onject
@@ -386,6 +407,7 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
   let svdits2 = opts.svdits2
   let maxup = opts.maxup
   let rrbs = opts.rrbs
+  let emax0 = opts.emax
 
   echo "starting hisqev"
   echo "ng = ", ng
@@ -396,12 +418,13 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
   echo "svdits2 = ", svdits2
   echo "maxup = ", maxup
   echo "rrbs = ", rrbs
+  echo "emax = ", emax0
 
   tic()
   let tt0 = getTics()
 
   var emin = 0.0
-  var emax = 1e99
+  var emax = emax0
   var vt1 = newSeq[EigTable[type(op.newVector)]](ng)
   var vt2 = newSeq[EigTable[type(op.newVector)]](ng)
   var src = op.newVector
@@ -432,6 +455,9 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
     v.newSeq(ng)
     svd(op, src, v, sits, emin, emax)
     vt1.maketable(v, op)
+    let nr = min(rrbs-1, ng-1)
+    rayleighRitz(vt1, 0, nr, op)
+    rayleighRitz(vt1, 0, nr, op)
 
   geterr(vt1, op)
   for i in 0..<vt1.len:
@@ -445,8 +471,13 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
   var ae = abserr
   for iter in 1..maxup:
     tic()
+    for i in 0..<vt1.len:
+      let cv = max(ae, re*vt1[i].sv)
+      vt1[i].converged = vt1[i].err < cv
+      vt1[i].locked = vt1[i].err < 0.1*cv
     var iv = 0
-    while(iv<vt1.len-1 and (vt1[iv].err<ae or vt1[iv].err<re*vt1[iv].sv)):
+    while iv<vt1.len-1 and vt1[iv].converged:
+    #while iv<vt1.len-1 and vt1[iv].locked:
       inc iv
     #cprintf("iv = %i  sv[iv] = %g\t%g\t%g\n", iv, vt1[iv].sv,
     #        vt1[iv].err, vt1[iv].err/vt1[iv].sv)
@@ -458,9 +489,12 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
       ngcount = 0
     if ngcount>0: break
     let vin = vt1[iv].v
-    emin = 0
-    emax = 1e99
-    if vt1.len>=ng: emax = vt1[min(vt1.len,nvt)-1].sv
+    emin = 0.0
+    emax = emax0
+    for i in 0..<vt1.len:
+      if not vt1[i].locked: break
+      emin = 0.9*vt1[i].sv
+    if vt1.len>=ng: emax = min(emax0, vt1[min(vt1.len,nvt)-1].sv)
     #cprintf("emin %g  emax %g\n", emin, emax)
     echo "emin $1  emax $2\n"%[$emin, $emax]
     op.rand(src)
@@ -468,7 +502,8 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
     vin += (vt1[iv].sv*vt1[iv].sv/sqrt(srcn2)) * src
     var sits = svdits
     if iv>0:
-      var iw = min(iv+1,ng-1)
+      vin += vt1[iv-1].v
+      var iw = min(((iv*11) div 10)+1,ng-1)
       for i in (iv+1)..iw:
         let f = vt1[iv].sv / vt1[i].sv
         vin += (f*f) * vt1[i].v
@@ -477,6 +512,7 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
     toc("svd")
     GC_fullCollect()
     toc("GC")
+    vt1.projectLocked(v)
     vt2.maketable(v, op)
     toc("maketable")
     merget(vt1, vt2, ng, nvt, rrbs, op)
@@ -561,6 +597,7 @@ when isMainModule:
   opts.svdits = intParam("svdits", opts.nev*2)
   opts.svdits2 = intParam("svdits2", opts.svdits div 2)
   opts.maxup = 100
+  opts.emax = floatParam("emax", 9e99)
 
   var evals = hisqev(op, opts)
 
