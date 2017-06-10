@@ -358,7 +358,7 @@ proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
   for i in 0..<vt1.len: vt1[i] = t[i]
   toc("merge end")
 
-proc svd(op: any, src: any, v: var any, sits: int, emin,emax: float) =
+proc svd(op: any, src: any, v: var any, sits: int, emin,emax: float): int =
   let n = v.len
   var sv = newSeq[float](n)
   var qv = newSeq[type(v[0].even)](n)
@@ -372,6 +372,7 @@ proc svd(op: any, src: any, v: var any, sits: int, emin,emax: float) =
   let nevs = svdLanczos(op, src.even, sv, qv, qva, rsq, sits,
                         emin, emax, lverb)
   echo "svd nevs: ", nevs
+  nevs
 
 type EigOpts* = object
   nev*: int
@@ -441,10 +442,11 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
     #    v[i] = op.newVector
     #    op.rand(v[i])
     let sits = ng
-    svd(op, vv[0], v, sits, emin, emax)
+    let nsvd = svd(op, vv[0], v, sits, emin, emax)
     vt1.maketable(v, op)
-    rayleighRitz(vt1, 0, ng-1, op)
-    rayleighRitz(vt1, 0, ng-1, op)
+    let rrmax = min(rrbs-1, nsvd-1)
+    rayleighRitz(vt1, 0, rrmax, op)
+    rayleighRitz(vt1, 0, rrmax, op)
   else:
     op.rand(src)
     #mixin `:=`
@@ -453,11 +455,11 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
     #let sits = 5*ng
     let sits = svdits
     v.newSeq(ng)
-    svd(op, src, v, sits, emin, emax)
+    let nsvd = svd(op, src, v, sits, emin, emax)
     vt1.maketable(v, op)
-    let nr = min(rrbs-1, ng-1)
-    rayleighRitz(vt1, 0, nr, op)
-    rayleighRitz(vt1, 0, nr, op)
+    let rrmax = min(rrbs-1, nsvd-1)
+    rayleighRitz(vt1, 0, rrmax, op)
+    rayleighRitz(vt1, 0, rrmax, op)
 
   geterr(vt1, op)
   for i in 0..<vt1.len:
@@ -508,7 +510,7 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
         let f = vt1[iv].sv / vt1[i].sv
         vin += (f*f) * vt1[i].v
       sits = svdits2
-    svd(op, vin, v, sits, emin, emax)
+    let nsvd = svd(op, vin, v, sits, emin, emax)
     toc("svd")
     GC_fullCollect()
     toc("GC")
