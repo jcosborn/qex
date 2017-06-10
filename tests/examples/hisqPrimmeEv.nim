@@ -15,13 +15,15 @@ var
   fl = lo.newGauge
   ll = lo.newGauge
 hc.smear(g, fl, ll)
+let
+  ae = floatParam("abserr", 1e-6)
+  re = floatParam("relerr", 1e-4)
 var
   s = newStag3(fl, ll)
-  opInfo = newOpInfo(s.addr)
+  opInfo = newOpInfo(s.addr, abserr=ae, relerr=re)
   pp = lo.primmeInitialize opInfo
 let Nev = intParam("nev", 16)
 pp.numEvals = Nev.cint
-pp.eps = floatParam("eps", 1e-12)
 let pevs = pp.run
 for i in 0..<pp.initSize:
   echo "$#  $#  $#"%[$i, pevs.vals[i].ff, pevs.rnorms[i].ff]
