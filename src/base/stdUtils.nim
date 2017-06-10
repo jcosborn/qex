@@ -24,7 +24,7 @@ template makeTypeParam(name,typ,deflt,cnvrt: untyped): untyped {.dirty.} =
     let n = paramCount()
     for i in 1..n:
       let p = paramstr(i)
-      if p.startsWith('-'&s):
+      if p.startsWith('-'&s&':'):
         let ll = s.len + 2
         result = cnvrt(p[ll..^1])
 
