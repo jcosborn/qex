@@ -11,6 +11,8 @@ proc newOpInfo*[S](s:ptr S, relerr:float = 1e-4, abserr:float = 1e-6, m:float = 
   r.abserr = abserr
   r.x.new(s.g[0].l)
   r.y.new(s.g[0].l)
+  echo "RelErr target: ",relerr
+  echo "AbsErr target: ",abserr
   return r
 template nc*(op:OpInfo):auto = op.x[0].len # Can be used as a const.
 
