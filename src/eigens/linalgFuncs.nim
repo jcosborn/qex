@@ -424,10 +424,11 @@ import eigens/svdBi4
 export svdBi4
 
 when isMainModule:
+  import times
+  #[
   import base/basicOps
   import maths/complexType
   template adj*(x: SomeNumber): untyped = x
-  import times
   type
     Dcmplx = Complex[float64,float64]
     Zmat = object
@@ -474,6 +475,7 @@ when isMainModule:
           x[j] += m1[j,k]*m2[i,k].adj
         echo x[j] - ev[i]*m2[i,j].adj
   #testZeigs()
+  ]#
 
   proc testSvdbd(n: int) =
     var v = newSeq[float](n)
@@ -499,7 +501,9 @@ when isMainModule:
   testSvdbd(3200)
   testSvdbd(6400)
   testSvdbd(12800)
+  testSvdbd(25600)
 
+  #[
   proc testSvdbdv =
     var d = newSeq[float](nr)
     var e = newSeq[float](nr)
@@ -513,3 +517,4 @@ when isMainModule:
     #for j in 0..<nr:
     #    v[i+nr*j]
   #testSvdbdv()
+  ]#
