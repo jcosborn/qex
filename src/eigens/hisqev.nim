@@ -640,14 +640,24 @@ when isMainModule:
   getResid(r, d1, src)
   echo "r1: ", r.even.norm2
 
-  src2 := src
-  d2 := 0
+  let ng = opts.nev
   let nv = evals.len
-  var nps = @[0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 16, 20, 30]
-  for i in countup(40,nv,20): nps.add i
-  var np0 = 0
+  #var nps = @[0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 16, 20, 30]
+  var nps = @[0, nv]
+  var step = ng
+  var stepMin = intParam("stepMin", 1)
+  while step>=stepMin:
+    for i in countup(step,nv,step):
+      if not nps.contains(i): nps.add i
+    let f = max(2, factor(step)[^1])
+    step = step div f
+  var np0 = nv+1
   for ip in 0..<nps.len:
     var np = nps[ip]
+    if np<np0:
+      src2 := src
+      d2 := 0
+      np0 = 0
     for i in np0..<np:
       let c = evals[i].v.even.dot(src2)
       src2 -= c*evals[i].v
