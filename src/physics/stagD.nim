@@ -6,6 +6,7 @@ import qcdTypes
 #import stdUtils
 import times
 import solvers/cg
+export cg
 #import types
 #import profile
 #import metaUtils
@@ -451,6 +452,26 @@ proc initSolverParams*():SolverParams =
   result.verbosity = 1
   result.subsetName = "even"
 
+proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
+  var sp = sp0
+  sp.subset.layoutSubset(r.l, sp.subsetName)
+  var t = newOneOf(r)
+  var top = 0.0
+  proc op(a,b:Field) =
+    threadBarrier()
+    if threadNum==0: top -= epochTime()
+    stagD2ee(s.se, s.so, a, s.g, b, m*m)
+    if threadNum==0: top += epochTime()
+    #threadBarrier()
+  let t0 = epochTime()
+  cgSolve(r, x, op, sp)
+  let t1 = epochTime()
+  let secs = t1-t0
+  let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
+  sp0.finalIterations = sp.finalIterations
+  sp0.seconds = secs
+  echo "op time: ", top
+  echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
 proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams) =
   var sp = sp0
   sp.subset.layoutSubset(r.l, sp.subsetName)

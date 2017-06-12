@@ -554,7 +554,7 @@ when isMainModule:
   #var defaultLat = [8,8,8,8]
   #var defaultLat = [16,16,16,16]
   defaultSetup()
-  var r = newRNGField(RngMilc6, lo, 987654321)
+  var rs = newRNGField(RngMilc6, lo, 987654321)
 
   threads:
     #g.random r
@@ -571,9 +571,9 @@ when isMainModule:
 
   type MyOp = object
     s: type(s)
-    r: type(r)
+    r: type(rs)
     lo: type(lo)
-  var op = MyOp(r:r,s:s,lo:lo)
+  var op = MyOp(r:rs,s:s,lo:lo)
   template rand(op: var MyOp, v: any) =
     gaussian(v, op.r)
   template newVector(op: MyOp): untyped =
@@ -602,6 +602,65 @@ when isMainModule:
   opts.emax = floatParam("emax", 9e99)
 
   var evals = hisqev(op, opts)
+
+  var m = floatParam("mass", 0.01)
+  var m2 = m*m
+  var src = lo.ColorVectorD()
+  var src2 = lo.ColorVectorD()
+  var d1 = lo.ColorVectorD()
+  var d2 = lo.ColorVectorD()
+  var d3 = lo.ColorVectorD()
+  var r = lo.ColorVectorD()
+  var t = lo.ColorVectorD()
+  var t2 = lo.ColorVectorD()
+  src := 0
+  if myRank==0:
+    src{0}[0] := 1
+
+  proc getResid(r: any, d,s: any) =
+    apply(op, r.odd, d.even)
+    applyAdj(op, t.even, r.odd)
+    r.even := s - 4.0*(t + m2*d)
+  proc rsolve(dt: any, sc: any, m: float, sp: var SolverParams) =
+    getResid(t2, dt, sc)
+    let s1 = sc.even.norm2
+    let s2 = t2.even.norm2
+    let r2req = sp.r2req
+    sp.r2req = r2req * (s1/s2)
+    s.solveEO(t, t2, m, sp)
+    dt += t
+    sp.r2req = r2req
+
+  var sp = initSolverParams()
+  sp.maxits = 10_000
+  sp.r2req = 1e-16
+
+  d1 := 0
+  s.solveEO(d1, src, m, sp)
+  getResid(r, d1, src)
+  echo "r1: ", r.even.norm2
+
+  src2 := src
+  d2 := 0
+  let nv = evals.len
+  var nps = @[0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 16, 20, 30]
+  for i in countup(40,nv,20): nps.add i
+  var np0 = 0
+  for ip in 0..<nps.len:
+    var np = nps[ip]
+    for i in np0..<np:
+      let c = evals[i].v.even.dot(src2)
+      src2 -= c*evals[i].v
+      let s = 0.25/(evals[i].sv*evals[i].sv + m2)
+      d2 += (s*c)*evals[i].v
+    #d2 := 0.9999*d1
+    d3 := d2
+    rsolve(d3, src, m, sp)
+    getResid(r, d3, src)
+    echo "np: ", np, " its: ", sp.finalIterations,
+         " time: ", sp.seconds, " r2: ", r.even.norm2
+    np0 = np
+
 
   #[
   var tv = op.newVector

@@ -8,6 +8,7 @@ type
     maxits*:int
     verbosity*:int
     finalIterations*:int
+    seconds*: float
     subset*:Subset
     subsetName*:string
 
