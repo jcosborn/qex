@@ -649,8 +649,10 @@ when isMainModule:
   while step>=stepMin:
     for i in countup(step,nv,step):
       if not nps.contains(i): nps.add i
-    let f = max(2, factor(step)[^1])
-    step = step div f
+    if step<=stepMin: break
+    let st = step div stepMin
+    let f = factor(st)[^1]
+    step = max(stepMin, (st*stepMin) div f)
   var np0 = nv+1
   for ip in 0..<nps.len:
     var np = nps[ip]
