@@ -149,9 +149,9 @@ when isMainModule:
     g.setBC
     g.stagPhase
   var s = g.newStag
-  var opInfo = newOpInfo(s.addr)
+  var opInfo = newOpInfo(s.addr, relerr=1e-6, abserr=1e-8)
   var pp = lo.primme_initialize(opInfo)
-  var pevs = pp.run
+  var pevs = pp.run intParam("method", 2).primme_preset_method
   for i in 0..<pp.initSize:
     echo "Eval[",i,"]: ",pevs.vals[i].ff," rnorm: ",pevs.rnorms[i].ff
   # Must avoid calling free, because we allocate memory ourselves.
@@ -177,7 +177,7 @@ when isMainModule:
   var opts: EigOpts
   opts.initOpts
   opts.nev = intParam("nev", 16)
-  opts.nvecs = intParam("nvecs", (opts.nev*11) div 10)
+  opts.nvecs = intParam("nvecs", 32)
   opts.rrbs = intParam("rrbs", opts.nvecs)
   opts.relerr = 1e-4
   opts.abserr = 1e-6
