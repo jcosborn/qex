@@ -341,38 +341,40 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
       qv[i] := 0
     for i in 0..<qva.len:
       qva[i] := 0
-  var bta = sqrt(src.norm2)
-  v := src * (1.0/bta)
+  var btax = sqrt(src.norm2)
+  v := src * (1.0/btax)
   p := v
-  bta = 1.0
   u := 0
-  var kk = 0
-  while true:
-    tic()
-    v := p*(1.0/bta)
-    toc("loop2 eq1")
-    threads:
-      for i in 0..<nv:
-        qv[i] += vr[kk,i] * v
-    toc("loop2 qv")
-    linop.apply(r, v)
-    toc("loop2 linop1")
-    r -= bta*u
-    #let alpha = sqrt(r.norm2)
-    let alpha = a[kk]
-    u := r*(1.0/alpha)
-    toc("loop2 eq2")
-    for i in 0..<nva:
-      qva[i] += ur[kk,i] * u
-    toc("loop2 qva")
-    inc kk
-    if kk >= kmax: break
-    linop.applyAdj(p, u)
-    toc("loop2 linop2")
-    p -= alpha * v
-    #bta = sqrt(p.norm2)
-    bta = b[kk-1]
-    toc("loop 2 end")
+  nothreads:
+    var bta = 1.0
+    var kk = 0
+    while true:
+      tic()
+      v := p*(1.0/bta)
+      toc("loop2 eq1")
+      threads:
+        for i in 0..<nv:
+          qv[i] += vr[kk,i] * v
+      toc("loop2 qv")
+      linop.apply(r, v)
+      toc("loop2 linop1")
+      r -= bta*u
+      #let alpha = sqrt(r.norm2)
+      let alpha = a[kk]
+      u := r*(1.0/alpha)
+      toc("loop2 eq2")
+      threads:
+        for i in 0..<nva:
+          qva[i] += ur[kk,i] * u
+      toc("loop2 qva")
+      inc kk
+      if kk >= kmax: break
+      linop.applyAdj(p, u)
+      toc("loop2 linop2")
+      p -= alpha * v
+      #bta = sqrt(p.norm2)
+      bta = b[kk-1]
+      toc("loop 2 end")
 
   toc("done")
   var dtime4 = getElapsedTime()

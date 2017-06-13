@@ -108,7 +108,7 @@ proc ortho1(t: var any; imn,imx: int, op: var LinOp) =
         t[i].projectOut(t[j])
       sett(t[i], op)
 
-proc ortho2(t: var any; imn,imx: int, op: any) =
+proc ortho2(t: var any; imn,imx: int, op: var LinOp) =
   for i in imn..imx:
     var i0 = i
     for j in (i+1)..imx:
@@ -602,6 +602,15 @@ when isMainModule:
   opts.emax = floatParam("emax", 9e99)
 
   var evals = hisqev(op, opts)
+  let o1t0 = getTics()
+  ortho1(evals, opts.nev, evals.len-1, op)
+  ortho2(evals, opts.nev, evals.len-1, op)
+  geterr(evals, op)
+  let o1t1 = getTics()
+  echo "ortho: ", ticDiffSecs(o1t1,o1t0)
+  for i in 0..<evals.len:
+    echo "  $1\t$2$3$4"%[$i, evals[i].sv|(-18,12), evals[i].err|(-18,12),
+                         (evals[i].err/evals[i].sv)|(-18,12)]
 
   var m = floatParam("mass", 0.01)
   var m2 = m*m
@@ -632,7 +641,7 @@ when isMainModule:
     sp.r2req = r2req
 
   var sp = initSolverParams()
-  sp.maxits = 10_000
+  sp.maxits = 20_000
   sp.r2req = 1e-16
 
   d1 := 0
