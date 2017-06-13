@@ -14,7 +14,7 @@ srcDir        = qexDir/"src"
 
 requires "nim >= 0.16.0"
 when declared(primmeDir):
-  requires "primme >= 0.1.0"
+  requires "primme >= 0.1.1"
 
 type NamePath = tuple[n,p:string]
 proc targets(p:string):seq[NamePath] =

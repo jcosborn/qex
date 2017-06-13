@@ -3,7 +3,7 @@ import base, layout, physics/stagD
 import qexPrimmeInternal
 import qexPrimme
 
-proc applyD(op:ptr OpInfo; x,y:ptr float) =
+proc applyD(op:ptr OpInfo; x,y:ptr complex[float]) =
   # x in, y out
   threads:
     op.x.fromPrimmeArray x      # even
@@ -11,7 +11,7 @@ proc applyD(op:ptr OpInfo; x,y:ptr float) =
     stagD(op.s.so, op.y, op.s.g, op.x, 0.0)
     threadBarrier()
     op.y.toPrimmeArray(y, op.y.l.nEven) # odd
-proc applyDdag(op:ptr OpInfo; x,y:ptr float) =
+proc applyDdag(op:ptr OpInfo; x,y:ptr complex[float]) =
   # x in, y out
   threads:
     op.x.fromPrimmeArray(x, op.x.l.nEven) # odd
@@ -24,9 +24,9 @@ proc matvec[O](x:pointer, ldx:ptr PRIMME_INT,
                blocksize:ptr cint, transpose:ptr cint,
                primme:ptr primme_svds_params, err:ptr cint) {.noconv.} =
   var
-    x = asarray[cdouble] x
+    x = asarray[complex[cdouble]] x
     dx = ldx[]
-    y = asarray[cdouble] y
+    y = asarray[complex[cdouble]] y
     dy = ldy[]
     op = cast[ptr O](primme.matrix)
   if 0 == transpose[]:          # Do y <- A x
@@ -43,6 +43,18 @@ proc matvec[O](x:pointer, ldx:ptr PRIMME_INT,
       op.applyDdag(xp, yp)
   err[] = 0
 
+proc convTest[O](val:ptr cdouble; leftsvec:pointer; rightsvec:pointer;
+                 rNorm:ptr cdouble; isconv:ptr cint;
+                 primme:ptr primme_svds_params; ierr:ptr cint) {.noconv.} =
+  let
+    r = rNorm[].float
+    op = cast[ptr O](primme.matrix)
+    re = op.relerr
+    ae = op.abserr
+  if r < 2*ae*val[] or r < 2*re*val[]*val[]: isconv[] = 1
+  else: isconv[] = 0
+  ierr[] = 0
+
 proc primmeSVDInitialize*(lo: Layout, op: var OpInfo): primme_svds_params =
   const nc = op.nc
   result = primme_svds_initialize()
@@ -51,7 +63,6 @@ proc primmeSVDInitialize*(lo: Layout, op: var OpInfo): primme_svds_params =
   result.matrixMatvec = matvec[type(op)]
   result.numSvals = 16
   result.target = primme_svds_smallest
-  result.eps = 1e-9
   result.numProcs = nRanks.cint
   result.procId = myRank.cint
   result.nLocal = nc*lo.nEven
@@ -59,11 +70,14 @@ proc primmeSVDInitialize*(lo: Layout, op: var OpInfo): primme_svds_params =
   result.globalSumReal = sumReal[primme_svds_params]
   result.matrix = op.addr
   result.printLevel = 3
+  result.convTestFun = convTest[type(op)]
 
-proc run*(param: var primme_svds_params): PrimmeResults =
+proc run*(param: var primme_svds_params,
+          preset: primme_svds_preset_method = primme_svds_default,
+          presetStage1: primme_preset_method = PRIMME_DEFAULT_METHOD,
+          presetStage2: primme_preset_method = PRIMME_DEFAULT_METHOD,): PrimmeResults =
   block primmeSetMethod:
-    let ret = param.set_method(primme_svds_default,
-                               PRIMME_DEFAULT_METHOD, PRIMME_DEFAULT_METHOD)
+    let ret = param.set_method(preset, presetStage1, presetStage2)
     if 0 != ret:
       echo "ERROR: set_method returned with nonzero exit status: ", ret
       quit QuitFailure
@@ -136,7 +150,9 @@ when isMainModule:
   var s = g.newStag
   var opInfo = newOpInfo(s.addr)
   var pp = lo.primmeSVDInitialize(opInfo)
-  var pevs = pp.run
+  var pevs = pp.run(intParam("method", 0).primme_svds_preset_method,
+                    intParam("methodStage1", 0).primme_preset_method,
+                    intParam("methodStage2", 0).primme_preset_method)
   for i in 0..<pp.initSize:
     echo "Sval[",i,"]: ",pevs.vals[i].ff," rnorm: ",pevs.rnorms[i].ff
   # Must avoid calling free, because we allocate memory ourselves.
@@ -162,7 +178,7 @@ when isMainModule:
   var opts: EigOpts
   opts.initOpts
   opts.nev = intParam("nev", 16)
-  opts.nvecs = intParam("nvecs", (opts.nev*11) div 10)
+  opts.nvecs = intParam("nvecs", 32)
   opts.rrbs = intParam("rrbs", opts.nvecs)
   opts.relerr = 1e-4
   opts.abserr = 1e-6
@@ -172,7 +188,7 @@ when isMainModule:
   opts.maxup = 10
   var evals0 = hisqev(op, opts)
   import unittest
-  var CT = 1e-10                  # comparison tolerance
+  var CT = 1e-8                   # comparison tolerance
   const eigenResults = [
     0.0055851198854,
     0.0113277827524,
