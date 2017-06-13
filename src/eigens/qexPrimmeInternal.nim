@@ -16,7 +16,7 @@ proc sumReal*[P](sendBuf: pointer; recvBuf: pointer; count: ptr cint;
   ierr[] = 0
 
 # WARNING: low level implementation details follow.
-template convPrimmeArray(ff:Field, aa:ptr float, ss:int, body:untyped) {.dirty.} =
+template convPrimmeArray(ff:Field, aa:ptr complex[float], ss:int, body:untyped) {.dirty.} =
   const
     nc = ff[0].len
     vl = ff.V
@@ -31,12 +31,12 @@ template convPrimmeArray(ff:Field, aa:ptr float, ss:int, body:untyped) {.dirty.}
     let s = i + skip
     forO j, 0, <vl:
       body
-proc toPrimmeArray*(f:Field, a:ptr float, skip:int = 0) =
+proc toPrimmeArray*(f:Field, a:ptr complex[float], skip:int = 0) =
   ## `skip` is in units of sites.
   convPrimmeArray(f,a,skip):
     a[cl*i+2*j] = f[cl*s+j]
     a[cl*i+2*j+1] = f[cl*s+j+vl]
-proc fromPrimmeArray*(f:Field, a:ptr float, skip:int = 0) =
+proc fromPrimmeArray*(f:Field, a:ptr complex[float], skip:int = 0) =
   ## `skip` is in units of sites.
   convPrimmeArray(f,a,skip):
     f[cl*s+j] = a[cl*i+2*j]

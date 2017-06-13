@@ -16,7 +16,7 @@ proc newOpInfo*[S](s:ptr S, relerr:float = 1e-4, abserr:float = 1e-6, m:float = 
   return r
 template nc*(op:OpInfo):auto = op.x[0].len # Can be used as a const.
 
-proc applyD(op:ptr OpInfo; x,y:ptr float) =
+proc applyD(op:ptr OpInfo; x,y:ptr complex[float]) =
   # x in, y out
   threads:
     op.x.fromPrimmeArray x
@@ -32,9 +32,9 @@ proc matvec[O](x:pointer, ldx:ptr PRIMME_INT,
                blocksize:ptr cint,
                primme:ptr primme_params, err:ptr cint) {.noconv.} =
   var
-    x = asarray[cdouble] x
+    x = asarray[complex[cdouble]] x
     dx = ldx[]
-    y = asarray[cdouble] y
+    y = asarray[complex[cdouble]] y
     dy = ldy[]
   for i in 0..<blocksize[]:
     let
