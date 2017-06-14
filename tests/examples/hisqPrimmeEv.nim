@@ -1,6 +1,23 @@
 import os, strutils
-import qex
+import qex, physics/stagD
+
 template ff(x:untyped):auto = formatFloat(x,ffScientific,17)
+template apply(op:Staggered, x,y:Field) =
+  threadBarrier()
+  op.so.stagD(x, op.g, y, 0.0)
+template applyAdj(op:Staggered, x,y:Field) =
+  threadBarrier()
+  op.se.stagD(x, op.g, y, 0.0, -1.0)
+template newVector(op:Staggered): untyped =
+  op.g[0].l.ColorVector()
+template set(p:typed, n:untyped) =
+  let
+    o = p.n
+    s = astToStr n
+  p.n = intParam(s, p.n).cint
+  if o != p.n:
+    echo "Customize $# : $# -> $#"%[s, $o, $p.n]
+
 qexInit()
 threads: echo "thread $# / $#"%[$threadNum, $numThreads]
 var (lo, g, r) = setupLattice([8,8,8,8])
@@ -20,45 +37,15 @@ let
   re = floatParam("relerr", 1e-4)
 var
   s = newStag3(fl, ll)
-  opInfo = newOpInfo(s.addr, abserr=ae, relerr=re)
-  pp = lo.primmeInitialize opInfo
-let Nev = intParam("nev", 16)
-pp.numEvals = Nev.cint
-let pevs = pp.run
-for i in 0..<pp.initSize:
-  echo "$#  $#  $#"%[$i, pevs.vals[i].ff, pevs.rnorms[i].ff]
-
-type MyOp = object
-  s: type(s)
-  r: type(r)
-  lo: type(lo)
-template rand(op: var MyOp, v: any) =
-  gaussian(v, op.r)
-template newVector(op: MyOp): untyped =
-  op.lo.ColorVector()
-template apply(op: MyOp, r,v: typed) =
-  threadBarrier()
-  stagD(op.s.so, r.field, op.s.g, v.field, 0.0)
-template applyAdj(op: MyOp, r,v: typed) =
-  threadBarrier()
-  stagD(op.s.se, r.field, op.s.g, v.field, 0.0, -1)
-template newRightVec(op: MyOp): untyped = newVector(op).even
-template newLeftVec(op: MyOp): untyped = newVector(op).odd
-if 0 < intParam("hisqev", 0):
-  var op = MyOp(r:r,s:s,lo:lo)
-  var opts: EigOpts
-  opts.initOpts
-  opts.nev = Nev
-  opts.nvecs = intParam("nvecs", (opts.nev*11) div 10)
-  opts.rrbs = intParam("rrbs", opts.nvecs)
-  opts.relerr = 1e-4
-  opts.abserr = 1e-6
-  #opts.relerr = 1e-6
-  #opts.abserr = 1e-8
-  opts.svdits = intParam("svdits", 5000)
-  opts.maxup = 10
-  var evs = hisqev(op, opts)
-  echo "HISQEV evs:"
-  for i in 0..<evs.len:
-    echo "$#  $#  $#"%[$i, evs[i].sv.ff, evs[i].err.ff]
+  pp = lo.primmeInitialize(
+    s, abserr=ae, relerr=re, nVals = intParam("nv", 16),
+    preset = intParam("method", 2).primme_preset_method)
+pp.p.set maxBlockSize
+pp.p.set maxBasisSize
+pp.p.set minRestartSize
+pp.p.restartingParams.set maxPrevRetain
+pp.prepare
+pp.run
+for i in 0..<pp.p.initSize:
+  echo "$#  $#  $#"%[$i, pp.vals[i].ff, pp.rnorms[i].ff]
 qexFinalize()

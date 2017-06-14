@@ -1,24 +1,22 @@
 import primme
-import base, layout, physics/stagD
+import base, layout
 import qexPrimmeInternal
 import qexPrimme
 
-proc applyD(op:ptr OpInfo; x,y:ptr complex[float]) =
+proc applyD(pp:ptr Primme; xi,yo:ptr complex[float]) =
   # x in, y out
   threads:
-    op.x.fromPrimmeArray x      # even
+    pp.x.fromPrimmeArray xi     # even
+    pp.o.apply(pp.y, pp.x)
     threadBarrier()
-    stagD(op.s.so, op.y, op.s.g, op.x, 0.0)
-    threadBarrier()
-    op.y.toPrimmeArray(y, op.y.l.nEven) # odd
-proc applyDdag(op:ptr OpInfo; x,y:ptr complex[float]) =
+    pp.y.toPrimmeArray(yo, pp.y.l.nEven) # odd
+proc applyDdag(pp:ptr Primme; xi,yo:ptr complex[float]) =
   # x in, y out
   threads:
-    op.x.fromPrimmeArray(x, op.x.l.nEven) # odd
+    pp.x.fromPrimmeArray(xi, pp.x.l.nEven) # odd
+    pp.o.applyAdj(pp.y, pp.x)
     threadBarrier()
-    stagD(op.s.se, op.y, op.s.g, op.x, 0.0, -1.0)
-    threadBarrier()
-    op.y.toPrimmeArray y        # even
+    pp.y.toPrimmeArray yo       # even
 proc matvec[O](x:pointer, ldx:ptr PRIMME_INT,
                y:pointer, ldy:ptr PRIMME_INT,
                blocksize:ptr cint, transpose:ptr cint,
@@ -48,82 +46,97 @@ proc convTest[O](val:ptr cdouble; leftsvec:pointer; rightsvec:pointer;
                  primme:ptr primme_svds_params; ierr:ptr cint) {.noconv.} =
   let
     r = rNorm[].float
-    op = cast[ptr O](primme.matrix)
-    re = op.relerr
-    ae = op.abserr
+    pp = cast[ptr O](primme.matrix)
+    re = pp.relerr
+    ae = pp.abserr
   if r < 2*ae*val[] or r < 2*re*val[]*val[]: isconv[] = 1
   else: isconv[] = 0
   ierr[] = 0
 
-proc primmeSVDInitialize*(lo: Layout, op: var OpInfo): primme_svds_params =
-  const nc = op.nc
-  result = primme_svds_initialize()
-  result.n = nc*lo.physVol div 2
-  result.m = result.n
-  result.matrixMatvec = matvec[type(op)]
-  result.numSvals = 16
-  result.target = primme_svds_smallest
-  result.numProcs = nRanks.cint
-  result.procId = myRank.cint
-  result.nLocal = nc*lo.nEven
-  result.mLocal = result.nLocal
-  result.globalSumReal = sumReal[primme_svds_params]
-  result.matrix = op.addr
-  result.printLevel = 3
-  result.convTestFun = convTest[type(op)]
-
-proc run*(param: var primme_svds_params,
-          preset: primme_svds_preset_method = primme_svds_default,
-          presetStage1: primme_preset_method = PRIMME_DEFAULT_METHOD,
-          presetStage2: primme_preset_method = PRIMME_DEFAULT_METHOD,): PrimmeResults =
+proc primmeSVDInitialize*(lo: Layout, op: Operator,
+                          relerr:float = 1e-4, abserr:float = 1e-6, m:float = 0.0,
+                          nVals:int = 16,
+                          printLevel:int = 3,
+                          preset:primme_svds_preset_method = primme_svds_default,
+                          presetStage1:primme_preset_method = PRIMME_DEFAULT_METHOD,
+                          presetStage2:primme_preset_method = PRIMME_DEFAULT_METHOD): auto =
+  var pp:Primme[type(op), type(op.newVector), primme_svds_params]
+  pp.o = op
+  pp.x = op.newVector
+  pp.y = op.newVector
+  pp.abserr = abserr
+  pp.relerr = relerr
+  pp.m = m
+  echo "RelErr target: ",relerr
+  echo "AbsErr target: ",abserr
+  const nc = pp.x[0].len
+  pp.p = primme_svds_initialize()
+  pp.p.n = nc*lo.physVol div 2
+  pp.p.m = pp.p.n
+  pp.p.matrixMatvec = matvec[type(pp)]
+  pp.p.numSvals = nVals.cint
+  pp.p.target = primme_svds_smallest
+  pp.p.numProcs = nRanks.cint
+  pp.p.procId = myRank.cint
+  pp.p.nLocal = nc*lo.nEven
+  pp.p.mLocal = pp.p.nLocal
+  pp.p.globalSumReal = sumReal[primme_svds_params]
+  pp.p.matrix = pp.addr
+  pp.p.printLevel = printLevel.cint
+  pp.p.convTestFun = convTest[type(pp)]
   block primmeSetMethod:
-    let ret = param.set_method(preset, presetStage1, presetStage2)
+    let ret = pp.p.set_method(preset, presetStage1, presetStage2)
     if 0 != ret:
       echo "ERROR: set_method returned with nonzero exit status: ", ret
       quit QuitFailure
-  block primmeSetSize:
-   let ret = zprimme_svds(nil,nil,nil,param.addr)
-   if 1 != ret:
-     echo "Error: zprimme_svds(nil) returned with exit status: ", ret
-     quit QuitFailure
-  result.vecs = newAlignedMemU[complex[float]]int(param.numSvals*(param.nLocal+param.mLocal))
-  result.vals = newseq[float]param.numSvals
-  result.rnorms = newseq[float]param.numSvals
-  result.intWork = newAlignedMemU[char]param.intWorkSize
-  result.realWork = newAlignedMemU[char]param.realWorkSize
-  param.intWork = cast[ptr cint](result.intWork.data)
-  param.realWork = result.realWork.data
-  if myRank == 0: param.display_params
-  let ret = param.run(result.vals,
-                      asarray[complex[float]](result.vecs.data)[],
-                      result.rnorms)
+  pp
+
+proc prepare*[Op,F](pp:var Primme[Op,F,primme_svds_params]) =
+  let ret = zprimme_svds(nil,nil,nil,pp.p.addr)
+  if 1 != ret:
+    echo "Error: zprimme_svds(nil) returned with exit status: ", ret
+    quit QuitFailure
+  pp.vecs = newAlignedMemU[complex[float]]int(pp.p.numSvals*(pp.p.nLocal+pp.p.mLocal))
+  pp.vals = newseq[float]pp.p.numSvals
+  pp.rnorms = newseq[float]pp.p.numSvals
+  pp.intWork = newAlignedMemU[char]pp.p.intWorkSize
+  pp.realWork = newAlignedMemU[char]pp.p.realWorkSize
+
+proc run*[Op,F](pp:var Primme[Op,F,primme_svds_params]) =
+  pp.p.intWork = cast[ptr cint](pp.intWork.data)
+  pp.p.realWork = pp.realWork.data
+  pp.p.matrix = pp.addr
+  if myRank == 0: pp.p.display_params
+  let ret = pp.p.run(pp.vals,
+                     asarray[complex[float]](pp.vecs.data)[],
+                     pp.rnorms)
   if ret != 0:
     echo "Error: primme returned with nonzero exit status: ", ret
     quit QuitFailure
-  echo "Neigens    : ",param.initSize
-  echo "Tolerance  : ",ff param.aNorm*param.eps
-  echo "Iterations : ",param.stats.numOuterIterations
-  echo "Restarts   : ",param.stats.numRestarts
-  echo "Matvecs    : ",param.stats.numMatvecs
-  echo "Preconds   : ",param.stats.numPreconds
-  echo "GlobalSums : ",param.stats.numGlobalSum
-  echo "VGlobalSum : ",param.stats.volumeGlobalSum
-  echo "OrthoIProd : ",param.stats.numOrthoInnerProds
-  echo "ElapsedT   : ",param.stats.elapsedTime
-  echo "MatvecT    : ",param.stats.timeMatvec
-  echo "PrecondT   : ",param.stats.timePrecond
-  echo "OrthoT     : ",param.stats.timeOrtho
-  echo "GlobalSumT : ",param.stats.timeGlobalSum
-  if param.locking != 0 and param.intWork != nil and param.intWork[] == 1:
+  echo "Neigens    : ",pp.p.initSize
+  echo "Tolerance  : ",ff pp.p.aNorm*pp.p.eps
+  echo "Iterations : ",pp.p.stats.numOuterIterations
+  echo "Restarts   : ",pp.p.stats.numRestarts
+  echo "Matvecs    : ",pp.p.stats.numMatvecs
+  echo "Preconds   : ",pp.p.stats.numPreconds
+  echo "GlobalSums : ",pp.p.stats.numGlobalSum
+  echo "VGlobalSum : ",pp.p.stats.volumeGlobalSum
+  echo "OrthoIProd : ",pp.p.stats.numOrthoInnerProds
+  echo "ElapsedT   : ",pp.p.stats.elapsedTime
+  echo "MatvecT    : ",pp.p.stats.timeMatvec
+  echo "PrecondT   : ",pp.p.stats.timePrecond
+  echo "OrthoT     : ",pp.p.stats.timeOrtho
+  echo "GlobalSumT : ",pp.p.stats.timeGlobalSum
+  if pp.p.locking != 0 and pp.p.intWork != nil and pp.p.intWork[] == 1:
     echo "\nA locking problem has occurred."
     echo "Some eigenpairs do not have a residual norm less than the tolerance."
     echo "However, the subspace of evecs is accurate to the required tolerance."
-  case param.primme.dynamicMethodSwitch:
+  case pp.p.primme.dynamicMethodSwitch:
   of -1: echo "Recommended method for next run 1st stage: DEFAULT_MIN_MATVECS"
   of -2: echo "Recommended method for next run 1st stage: DEFAULT_MIN_TIME"
   of -3: echo "Recommended method for next run 1st stage: DYNAMIC (close call)"
   else: discard
-  case param.primmeStage2.dynamicMethodSwitch:
+  case pp.p.primmeStage2.dynamicMethodSwitch:
   of -1: echo "Recommended method for next run 2nd stage: DEFAULT_MIN_MATVECS"
   of -2: echo "Recommended method for next run 2nd stage: DEFAULT_MIN_TIME"
   of -3: echo "Recommended method for next run 2nd stage: DYNAMIC (close call)"
@@ -133,7 +146,15 @@ export primme
 export qexPrimme
 
 when isMainModule:
-  import qex, gauge, rng
+  import qex, gauge, rng, physics/stagD
+  template apply(op:Staggered, x,y:Field) =
+    threadBarrier()
+    op.so.stagD(x, op.g, y, 0.0)
+  template applyAdj(op:Staggered, x,y:Field) =
+    threadBarrier()
+    op.se.stagD(x, op.g, y, 0.0, -1.0)
+  template newVector(op:Staggered): untyped =
+    op.g[0].l.ColorVector()
   qexInit()
   var lat = [4,4,4,4]
   threads:
@@ -148,13 +169,15 @@ when isMainModule:
     g.setBC
     g.stagPhase
   var s = g.newStag
-  var opInfo = newOpInfo(s.addr)
-  var pp = lo.primmeSVDInitialize(opInfo)
-  var pevs = pp.run(intParam("method", 0).primme_svds_preset_method,
-                    intParam("methodStage1", 0).primme_preset_method,
-                    intParam("methodStage2", 0).primme_preset_method)
-  for i in 0..<pp.initSize:
-    echo "Sval[",i,"]: ",pevs.vals[i].ff," rnorm: ",pevs.rnorms[i].ff
+  var pp = lo.primmeSVDInitialize(
+    s, relerr=1e-6, abserr=1e-8,
+    preset = intParam("method", 0).primme_svds_preset_method,
+    presetStage1 = intParam("methodStage1", 2).primme_preset_method,
+    presetStage2 = intParam("methodStage2", 2).primme_preset_method)
+  pp.prepare
+  pp.run
+  for i in 0..<pp.p.initSize:
+    echo "Sval[",i,"]: ",pp.vals[i].ff," rnorm: ",pp.rnorms[i].ff
   # Must avoid calling free, because we allocate memory ourselves.
   #pp.free
   import hisqev
@@ -186,7 +209,7 @@ when isMainModule:
   #opts.abserr = 1e-8
   opts.svdits = intParam("svdits", 500)
   opts.maxup = 10
-  var evals0 = hisqev(op, opts)
+  var ev = hisqev(op, opts)
   import unittest
   var CT = 1e-8                   # comparison tolerance
   const eigenResults = [
@@ -211,11 +234,11 @@ when isMainModule:
     suite "primme vs. hisqev":
       test "First 16 evs":
         forStatic i, 0, 15:
-          check eigenResults[i] ~= pevs.vals[i]
-          check eigenResults[i] ~= evals0[i].sv
-          if not(eigenResults[i] ~= pevs.vals[i]) or
-             not(eigenResults[i] ~= evals0[i].sv):
+          check eigenResults[i] ~= pp.vals[i]
+          check eigenResults[i] ~= ev[i].sv
+          if not(eigenResults[i] ~= pp.vals[i]) or
+             not(eigenResults[i] ~= ev[i].sv):
             echo "expect: ", $eigenResults[i]
-            echo "primme: ", pevs.vals[i].ff
-            echo "hisqev: ", evals0[i].sv.ff
+            echo "primme: ", pp.vals[i].ff
+            echo "hisqev: ", ev[i].sv.ff
   qexFinalize()

@@ -1,6 +1,16 @@
 import os, strutils
-import qex
+import qex, physics/stagD
+
 template ff(x:untyped):auto = formatFloat(x,ffScientific,17)
+template apply(op:Staggered, x,y:Field) =
+  threadBarrier()
+  op.so.stagD(x, op.g, y, 0.0)
+template applyAdj(op:Staggered, x,y:Field) =
+  threadBarrier()
+  op.se.stagD(x, op.g, y, 0.0, -1.0)
+template newVector(op:Staggered): untyped =
+  op.g[0].l.ColorVector()
+
 qexInit()
 threads: echo "thread $# / $#"%[$threadNum, $numThreads]
 var (lo, g, r) = setupLattice([8,8,8,8])
@@ -15,13 +25,16 @@ var
   fl = lo.newGauge
   ll = lo.newGauge
 hc.smear(g, fl, ll)
+let
+  ae = floatParam("abserr", 1e-6)
+  re = floatParam("relerr", 1e-4)
 var
   s = newStag3(fl, ll)
-  opInfo = newOpInfo(s.addr)
-  pp = lo.primmeSVDInitialize opInfo
-pp.numSvals = intParam("nsv", 16).cint
-pp.eps = floatParam("eps", 1e-10)
-let pevs = pp.run
-for i in 0..<pp.initSize:
-  echo "$#  $#  $#"%[$i, pevs.vals[i].ff, pevs.rnorms[i].ff]
+  pp = lo.primmeSVDInitialize(
+    s, abserr=ae, relerr=re, nVals = intParam("nv", 16),
+    presetStage1 = intParam("methodStage1", 2).primme_preset_method)
+pp.prepare
+pp.run
+for i in 0..<pp.p.initSize:
+  echo "$#  $#  $#"%[$i, pp.vals[i].ff, pp.rnorms[i].ff]
 qexFinalize()

@@ -3,13 +3,10 @@ import primme
 import base, field, comms/qmp
 
 type
-  OpInfo*[S,F] = object
-    s*:ptr S
-    m*:float
-    abserr*,relerr*:float
-    x*,y*:F
-proc sumReal*[P](sendBuf: pointer; recvBuf: pointer; count: ptr cint;
-               primme: ptr P; ierr: ptr cint) {.noconv.} =
+  PP = primme_params or primme_svds_params
+
+proc sumReal*[P:PP](sendBuf: pointer; recvBuf: pointer; count: ptr cint;
+                    primme: ptr P; ierr: ptr cint) {.noconv.} =
   for i in 0..<count[]:
     asarray[float](recvBuf)[i] = asarray[float](sendBuf)[i]
   QMP_sum_double_array(cast[ptr cdouble](recvBuf), count[])
