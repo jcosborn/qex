@@ -8,6 +8,10 @@ type
   RNGField* = concept var r
     r[0] is RNG
 
+proc gaussian*(x: var AsComplex, r: var RNG) =
+  mixin gaussian
+  x.re = gaussian(r)
+  x.im = gaussian(r)
 proc gaussian*(x: AsVarComplex, r: var RNG) =
   mixin gaussian
   x.re = gaussian(r)
@@ -19,7 +23,7 @@ proc gaussian*(x: AsVarMatrix, r: var RNG) =
   forO i, 0, x.nrows-1:
     forO j, 0, x.ncols-1:
       gaussian(x[i,j], r)
-proc gaussian*(v: Field, r: RNGField) =
+proc gaussian*[T: RNGField](v: Field, r: var T) =
   for i in v.l.sites:
     gaussian(v{i}, r[i])
 
@@ -38,9 +42,9 @@ proc uniform*(v: Field, r: var RNGField) =
   for i in v.l.sites:
     uniform(v{i}, r[i])
 
-proc newRNGField*(R:typedesc[RNG], lo:Layout,
-                  seed:uint64 = uint64(17^7)):Field[1,R] =
-  var r:Field[1,R]
+proc newRNGField*[R: RNG](rng: typedesc[R], lo: Layout,
+                          seed: uint64 = uint64(17^7)): Field[1,R] =
+  var r: Field[1,R]
   r.new(lo.physGeom.newLayout 1)
   threads:
     for j in lo.sites:
@@ -48,4 +52,4 @@ proc newRNGField*(R:typedesc[RNG], lo:Layout,
       for i in countdown(lo.nDim-2, 0):
         l = l * lo.physGeom[i].int + lo.coords[i][j].int
       r[j].seed(seed, l)
-  return r
+  r

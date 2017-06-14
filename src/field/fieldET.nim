@@ -122,6 +122,7 @@ proc newOneOf*(x:Field):auto =
   r.new(x.l)
   r
 
+template isWrapper*(x: SomeField): untyped = false
 template `[]`*(x:Field; i:int):untyped = x.s[i]
 template `[]`*(x:Subsetted; i:int):untyped = x.field[i]
 template `[]`*(x:SomeField; st:string):untyped =
@@ -287,8 +288,9 @@ iterator items*(x:FieldMul):int {.inline.} =
 #import types
 #export types
 
-#proc `{}`*[V:static[int],T](f:Field[V,T]; i:int):Masked[T] =
-proc `{}`*(f:Field; i:int):auto =
+#proc `{}`*[V:static[int],T](f: Field[V,T]; i:int): var auto =
+#proc `{}`*(f: Field; i: int): var Masked[ =
+template `{}`*(f: Field; i: int): untyped =
   mixin masked
   let e = i div f.l.V
   let l = i mod f.l.V
@@ -302,7 +304,8 @@ proc `{}`*(f:Field; i:int):auto =
   #r.mask = mask
   #r
   #echoImm: "{}"
-  result = masked(f[e], mask)
+  var r = masked(f[e], mask)
+  r
 #template `{}`*(f: Field; i: int): untyped =
 #  f.mask(i)
 proc `{}`*(f: Subsetted; i: int): auto =

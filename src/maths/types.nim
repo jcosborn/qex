@@ -28,31 +28,44 @@ type
   #Adjointed*{.borrow: `.`.}[T] = distinct T
   #Adjointed*[T] = distinct T
   Adjointed*[T] = object
-    v*:T
+    v*: T
 
-template adj*(xx: typed): untyped =
+template adjointed*(x: typed): untyped =
+  Adjointed[type(x)](v: x)
+template adj*(x: typed): untyped =
   mixin adj
-  lets(x,xx):
-    when isComplex(x):
-      asComplex(adj(x[]))
-    elif isVector(x):
-      asVector(adj(x[]))
-    elif isMatrix(x):
-      asMatrix(adj(x[]))
-    elif x is SomeNumber:
-      x
-    elif compiles(adjImpl(x)):
-      adjImpl(x)
-    else:
-      when compiles(addr(x)):
-      #when compiles(unsafeAddr(x)):
-        #cast[ptr Adjointed[type(x)]](addr(x))[]
-        cast[ptr Adjointed[type(x)]](unsafeAddr(x))[]
-        #cast[Adjointed[type(x)]](x)
-      else:
-        #(Adjointed[type(x)])(x)
-        cast[Adjointed[type(x)]](x)
-        #cast[Adjointed[type(x)]]((var t=x; t.addr))
+  bind adjointed
+  when isWrapper(x):
+    static: echo "adj typed wrapper"
+    #dumpTree: x
+    asWrapper(x, adj(x[]))
+  else:
+    static: echo "adj typed not wrapper"
+    #dumpTree: x
+    #(Masked[type(x)])(maskedObj(x,msk))
+    adjointed(x)
+#  mixin adj
+#  lets(x,xx):
+#    when isComplex(x):
+#      asComplex(adj(x[]))
+#    elif isVector(x):
+#      asVector(adj(x[]))
+#    elif isMatrix(x):
+#      asMatrix(adj(x[]))
+#    elif x is SomeNumber:
+#      x
+#    elif compiles(adjImpl(x)):
+#      adjImpl(x)
+#    else:
+#      when compiles(addr(x)):
+#      #when compiles(unsafeAddr(x)):
+#        #cast[ptr Adjointed[type(x)]](addr(x))[]
+#        cast[ptr Adjointed[type(x)]](unsafeAddr(x))[]
+#        #cast[Adjointed[type(x)]](x)
+#      else:
+#        #(Adjointed[type(x)])(x)
+#        cast[Adjointed[type(x)]](x)
+#        #cast[Adjointed[type(x)]]((var t=x; t.addr))
 
 #template `[]`*[T](x:Adjointed[T]):untyped = cast[T](x)
 makeDeref(Adjointed, x.T)
@@ -179,8 +192,8 @@ template `pobj=`*(x:Masked;y:untyped):untyped = ((MaskedObj[x.T])(x)).pobj = y
 template `mask=`*(x:Masked;y:untyped):untyped = ((MaskedObj[x.T])(x)).mask = y
 template maskedObj*(x: typed, msk: int): untyped =
   static: echo "maskedObj"
-  let t = MaskedObj[type(x)](pobj: addr(x), mask: msk)
-  static: echo "maskedObj2"
+  #let t = MaskedObj[type(x)](pobj: addr(x), mask: msk)
+  #static: echo "maskedObj2"
   #MaskedObj[type(x)](pobj:addr(x),mask:msk)
   MaskedObj[type(x)](pobj: addr(x), mask: msk)
 #template masked*(): untyped = discard

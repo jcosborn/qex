@@ -39,6 +39,8 @@ type
   #SComplexV* = Complex[Svec0,Svec0]
   Color*[T] = object
     v*: T
+  Color2*[T] = Color[T]
+  Color3*[T] = Color[T]
   SColorVector* = Color[VectorArray[nc,SComplex]]
   SColorVectorV* = Color[VectorArray[nc,SComplexV]]
   SColorMatrix* = Color[MatrixArray[nc,nc,SComplex]]
@@ -90,7 +92,8 @@ template asWrapper*(x: Color, y: typed): untyped =
   asColor(y)
 template asVarWrapper*(x: Color, y: typed): untyped =
   static: echo "asVarWrapper Color"
-  asVarColor(y)
+  var cy = asColor(y)
+  cy
 template `[]`*(x: Color): untyped = x.v
 template `[]`*(x: Color, i: any): untyped = x[][i]
 template `[]`*(x: Color, i: any, j: any): untyped = x[][i,j]
@@ -101,10 +104,49 @@ template forward(t: typedesc, f: untyped) {.dirty.} =
 forward(Color, nrows)
 forward(Color, ncols)
 forward(Color, numberType)
-template assign*(r: Color, x: SomeNumber) =
+forward(Color, nVectors)
+forward(Color, simdType)
+forward(Color, simdLength)
+template numberType*[T](x: typedesc[Color[T]]): untyped = numberType(T)
+template load1*(x: Color): untyped = asColor(load1(x[]))
+template assign*(r: var Color, x: SomeNumber) =
   assign(r[], x)
-template `*=`*(r: Color, x: SomeNumber) =
+template assign*(r: var Color, x: AsComplex) =
+  assign(r[], x)
+template assign*(r: var Color, x: Color2) =
+  assign(r[], x[])
+template `:=`*(r: var Color, x: Color2) =
+  r[] := x[]
+template `*=`*(r: var Color, x: SomeNumber) =
   `*=`(r[], x)
+template iadd*(r: var Color, x: AsComplex) =
+  iadd(r[], x)
+template iadd*(r: var Color, x: Color2) =
+  iadd(r[], x[])
+template isub*(r: var Color, x: Color2) =
+  isub(r[], x[])
+template imul*(r: var Color, x: SomeNumber) =
+  imul(r[], x)
+template imadd*(r: var Color, x: Color2, y: Color3) =
+  imadd(r[], x[], y[])
+template `+`*(x: Color, y: Color2): untyped =
+  asColor(x[] + y[])
+template `*`*(x: Color, y: SomeNumber): untyped =
+  asColor(x[] * y)
+template `*`*(x: SomeNumber, y: Color2): untyped =
+  asColor(x * y[])
+template `*`*(x: Color, y: Color2): untyped =
+  asColor(x[] * y[])
+template mul*(r: var Color, x: Color2, y: Color3) =
+  mul(r[], x[], y[])
+template gaussian*(x: var Color, r: var untyped) =
+  gaussian(x[], r)
+template projectU*(r: var Color, x: Color2) =
+  projectU(r[], x[])
+template norm2*(x: Color): untyped = norm2(x[])
+template inorm2*(r: var any, x: Color2) = inorm2(r, x[])
+template dot*(x: Color, y: Color2): untyped =
+  dot(x[], y[])
 
 
 template isWrapper*(x: Svec0): untyped = false
@@ -130,12 +172,13 @@ template nVectors(x:Svec0):untyped = 1
 template nVectors(x:Dvec0):untyped = 1
 template nVectors(x:AsComplex):untyped = 2*nVectors(x.re)
 #template nVectors(x:DComplexV):untyped = 2*nVectors(x.re)
-template nVectors(x:AsVector):untyped = x.len*nVectors(x[0])
-template nVectors(x:AsMatrix):untyped = x.nrows*x.ncols*nVectors(x[0,0])
+template nVectors*(x:AsVector):untyped = x.len*nVectors(x[0])
+template nVectors*(x:AsMatrix):untyped = x.nrows*x.ncols*nVectors(x[0,0])
 
 template simdType*(x:tuple):untyped = simdType(x[0])
 template simdType*(x:array):untyped = simdType(x[x.low])
 template simdType*(x:AsComplex):untyped = simdType(x[])
+template simdType*(x:ComplexObj):untyped = simdType(x.re)
 #template simdType*(x:DComplexV):untyped = simdType(x.re)
 template simdType*(x:AsVector):untyped = simdType(x[])
 #template simdType*(x:AsMatrix):untyped = simdType(x[])
@@ -270,7 +313,8 @@ template perm*[T](r0:var T; prm0:int; x0:T) =
     lets(r,r0,prm,prm0,x,x0):
       const n = x.nVectors
       let rr = cast[ptr array[n,simdType(r)]](r.addr)
-      let xx = cast[ptr array[n,simdType(x)]](unsafeAddr(x))
+      var xt = x
+      let xx = cast[ptr array[n,simdType(x)]](addr xt)
       template loop(f:untyped):untyped =
         when compiles(f(rr[0], xx[0])):
           forStatic i, 0, n-1: f(rr[i], xx[i])

@@ -135,6 +135,7 @@ type
 #  result = "(" & $x.re & "," & $x.im & ")"
 
 template numberType*[T](x:ComplexObj[T]):untyped = numberType(type(T))
+template numberType*[T](x:typedesc[ComplexObj[T]]):untyped = numberType(T)
 template numberType*[T](x:AsComplex[T]):untyped = numberType(type(T))
 template numberType*[T](x:typedesc[AsComplex[T]]):untyped = numberType(T)
 
@@ -171,6 +172,9 @@ subst(r,_):
     assign(r, x)
     r
 
+template map*(x: ComplexObj; f: untyped): untyped =
+  let tx = x
+  ComplexObj(re: f(tx.re), im: f(tx.im))
 template map*(x: AsComplex; f: untyped): untyped = asComplex(f(x[]))
 #template map*(x: ; f: untyped): untyped =
 #  ComplexType(re:f(x.re),im:f(x.im))
@@ -202,10 +206,20 @@ template isWrapper*(x: AsComplex): untyped = true
 template copyWrapper*(x: AsComplex, y: typed): untyped =
   static: echo "copyWrapper AsComplex"
   asComplex(y)
+template asWrapper*(x: AsComplex, y: typed): untyped =
+  static: echo "asWrapper AsComplex"
+  asComplex(y)
+template asVarWrapper*(x: AsComplex, y: typed): untyped =
+  static: echo "asVarWrapper AsComplex"
+  var t = asComplex(y)
+  t
 
 #template masked*(x: AsComplex; msk: int): untyped =
 #  asVarComplex(masked(x[],msk))
 
+template eval*(x: ComplexObj): untyped =
+  let tx = x
+  ComplexObj(re: eval(tx.re), im: eval(tx.im))
 template eval*(x: AsComplex): untyped = asComplex(eval(x[]))
 
 template trace*(r:var RIC1; x:RIC2):untyped = map(r, trace, x)

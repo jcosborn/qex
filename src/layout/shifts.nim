@@ -450,7 +450,8 @@ proc `^*`*(x: Transporter, y: any): auto =
     if x.len >= 0:
       startSB(x.sb, y[ix])
       for ir in x.sb.subset:
-        localSB(x.sb, ir, assign(r[ir], it), load1(y[ix]))
+        #localSB(x.sb, ir, assign(r[ir], it), load1(y[ix]))
+        localSB(x.sb, ir, assign(r[ir], it), y[ix])
       boundarySB(x.sb, assign(r[ir], it))
     else:
       startSB(x.sb, y[ix])

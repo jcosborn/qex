@@ -120,6 +120,16 @@ type
   VarMV1* = AsVarMatrix | AsVarVector
   VarAny* = var any #| AsVarMatrix
 
+template isWrapper*(x: array): untyped = false
+
+template isWrapper*(x: AsVector): untyped = true
+template asWrapper*(x: AsVector, y: typed): untyped =
+  static: echo "asWrapper AsVector"
+  asVector(y)
+template asVarWrapper*(x: AsVector, y: typed): untyped =
+  static: echo "asVarWrapper AsVector"
+  asVarVector(y)
+
 template `len`*(x:MatrixArrayObj):untyped = x.I
 template nrows*(x:MatrixArrayObj):untyped = x.I
 template ncols*(x:MatrixArrayObj):untyped = x.J
@@ -257,6 +267,7 @@ template makeLevel1P(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
 template makeLevel1T(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
   template f*(rr:t1, xx:t2): untyped =
     mixin `f s1 s2`
+    dumpTree: `f s1 s2`
     subst(r,rr):
       lets(x,xx):
         `f s1 s2`(r, deref(x))
@@ -282,17 +293,16 @@ template makeLevel2(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
   makeLevel2T(f,s1,t1,s2,t2,s3,t3)
 
 template makeMap1(op:untyped):untyped =
-  makeLevel1(op, S, VarSca1, V, Vec2)
-  makeLevel1(op, S, VarSca1, M, Mat2)
-  makeLevel1(op, V, VarVec1, S, Sca2)
-  #makeLevel1(op, V, Vec1, V, Vec2)
-  makeLevel1(op, V, VarVec1, V, Vec2)
-  makeLevel1(op, V, VarVec1, V, AsVarVector)
+  makeLevel1(op, S, var Sca1, V, Vec2)
+  makeLevel1(op, S, var Sca1, M, Mat2)
+  makeLevel1(op, V, var Vec1, S, Sca2)
+  makeLevel1(op, V, var Vec1, V, Vec2)
+  makeLevel1(op, V, var Vec1, V, AsVarVector)
   makeLevel1(op, V, AsVarVector, S, Sca2)
   makeLevel1(op, V, AsVarVector, V, Vec2)
-  makeLevel1(op, M, VarMat1, S, Sca2)
-  makeLevel1(op, M, VarMat1, V, Vec2)
-  makeLevel1(op, M, VarMat1, M, Mat2)
+  makeLevel1(op, M, var Mat1, S, Sca2)
+  makeLevel1(op, M, var Mat1, V, Vec2)
+  makeLevel1(op, M, var Mat1, M, Mat2)
   makeLevel1(op, M, AsVarMatrix, S, Sca2)
   makeLevel1(op, M, AsVarMatrix, V, Vec2)
   makeLevel1(op, M, AsVarMatrix, M, Mat2)
@@ -366,7 +376,7 @@ makeLevel2(mul, M, VarMat1, M, Mat2, S, Sca3)
 makeLevel2(mul, M, VarMat1, S, Sca2, M, Mat3)
 makeLevel2(mul, V, VarVec1, M, Mat2, V, Vec3)
 #makeLevel2(op, V, Vec1, V, Vec2, M, Mat3)
-makeLevel2(mul, M, VarMat1, M, Mat2, M, Mat3)
+makeLevel2(mul, M, var Mat1, M, Mat2, M, Mat3)
 #makeLevel2(op, M, Mat1, S, Sca2, S, Sca3)
 #makeLevel2(op, M, Mat1, V, Vec2, S, Sca3)
 #makeLevel2(op, M, Mat1, S, Sca2, V, Vec3)
