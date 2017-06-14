@@ -56,6 +56,7 @@ when isMainModule:
   threads:
     for i in 0..<evs.len:
       evs[i] := 0
+      threadBarrier()
       evs[i].fromPrimmeArray(pp.vecs[i*pp.p.nLocal].addr)
 
   # Following copied from hisqev with modifications.
@@ -74,8 +75,8 @@ when isMainModule:
     src{0}[0] := 1
 
   proc getResid(rr: any, dd,ss: any) =
-    apply(s, rr.odd.field, dd.even.field)
-    applyAdj(s, t.even.field, rr.odd.field)
+    s.apply(rr, dd)
+    s.applyAdj(t, rr)
     rr.even := ss - 4.0*(t + m2*dd)
   proc rsolve(dt: any, sc: any, m: float, sp: var SolverParams) =
     getResid(t2, dt, sc)
