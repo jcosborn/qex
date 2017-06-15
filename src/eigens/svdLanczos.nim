@@ -246,16 +246,18 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   var v = linop.newRightVec
 
   template getsv(ev, a, b, k) =
-    when false:
+    when true:
       getSvals(ev, a, b, k)
       if verb>0:
         template sv(n): untyped = " sv$1 $2"%[$n,ev[n]|(-16,12)]
         echo k|-5, sv(0), sv(1), sv(nv-1), sv(k-1)
+        #for i in 0..<nv: echo sv(i)
     else:
       getSvals2(ev, a, b, k, nv)
       if verb>0:
         template sv(n): untyped = " sv$1 $2"%[$n,ev[n]|(-16,12)]
         echo k|-5, sv(0), sv(1), sv(nv-1)
+        #for i in 0..<nv: echo sv(i)
 
   tic()
   nothreads:
