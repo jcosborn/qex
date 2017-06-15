@@ -19,7 +19,7 @@ proc gaussian*(x: AsVarMatrix, r: var RNG) =
   forO i, 0, x.nrows-1:
     forO j, 0, x.ncols-1:
       gaussian(x[i,j], r)
-proc gaussian*(v: Field, r: var RNGField) =
+proc gaussian*(v: Field, r: RNGField) =
   for i in v.l.sites:
     gaussian(v{i}, r[i])
 

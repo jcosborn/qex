@@ -49,6 +49,7 @@ proc sett[T](t: var EigTable[T], op: any) =
   #let Dv = op.newVector
   let Dv = t.v
   op.apply(Dv.odd, t.v.even)
+  #threadBarrier()
   t.Dvn = Dv.odd.norm2
   t.sv = sqrt(t.Dvn/t.vn)
   #echo t.sv
@@ -96,9 +97,10 @@ proc projectOut(x,y: EigTable) =
   x.v.even -= c*y.v
 
 proc ortho1(t: var any; imn,imx: int, op: var LinOp) =
-  for j in 0..<imn:
-    for i in imn..imx:
-      t[i].projectOut(t[j])
+  threads(t):
+    for j in 0..<imn:
+      for i in imn..imx:
+        t[i].projectOut(t[j])
   for i in imn..imx:
     sett(t[i], op)
     if t[i].vn0<1e-10:
@@ -108,12 +110,13 @@ proc ortho1(t: var any; imn,imx: int, op: var LinOp) =
         t[i].projectOut(t[j])
       sett(t[i], op)
 
-proc ortho2(t: var any; imn,imx: int, op: var LinOp) =
+proc ortho2(t: var any; imn,imx: int, op: LinOp) =
   for i in imn..imx:
     var i0 = i
     for j in (i+1)..imx:
       if t[j].sv < t[i0].sv: i0 = j
     if i0!=i: swap(t[i],t[i0])
+    #threads(t):
     for j in (i+1)..imx:
       t[j].projectOut(t[i])
       sett(t[j], op)
@@ -574,7 +577,7 @@ when isMainModule:
     r: type(rs)
     lo: type(lo)
   var op = MyOp(r:rs,s:s,lo:lo)
-  template rand(op: var MyOp, v: any) =
+  template rand(op: MyOp, v: any) =
     gaussian(v, op.r)
   template newVector(op: MyOp): untyped =
     op.lo.ColorVector()

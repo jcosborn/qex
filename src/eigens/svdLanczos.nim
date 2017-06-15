@@ -252,13 +252,15 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
     nothreads:
       tic()
       let bi = 1.0/beta
-      v := bi*p
-      toc("loop1 thread1 exp1")
-      linop.apply(r, v)
-      toc("loop1 thread1 op")
-      #echo "v: ", v.norm2
-      #echo "r: ", r.norm2
-      r -= beta*u
+      threads:
+        v := bi*p
+        #toc("loop1 thread1 exp1")
+        linop.apply(r, v)
+        #toc("loop1 thread1 op")
+        #echo "v: ", v.norm2
+        #echo "r: ", r.norm2
+        threadBarrier()
+        r -= beta*u
       let alpha = sqrt(r.norm2)
       if threadNum==0:
         a[k] = alpha
@@ -279,9 +281,11 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
       let alpha = a[k-1]
       let ai = 1.0/alpha
       u := ai * r
-      toc("loop1 thread2 exp1")
-      linop.applyAdj(p, u)
-      toc("loop1 thread2 op")
+      threads:
+        #toc("loop1 thread2 exp1")
+        linop.applyAdj(p, u)
+      #threadBarrier()
+      #toc("loop1 thread2 op")
       p -= alpha*v
       let bet = sqrt(p.norm2)
       if threadNum==0:
@@ -351,25 +355,28 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
     while true:
       tic()
       v := p*(1.0/bta)
-      toc("loop2 eq1")
       threads:
+        #toc("loop2 eq1")
         for i in 0..<nv:
           qv[i] += vr[kk,i] * v
-      toc("loop2 qv")
-      linop.apply(r, v)
-      toc("loop2 linop1")
+        #toc("loop2 qv")
+        linop.apply(r, v)
+      #threadBarrier()
+      #toc("loop2 linop1")
       r -= bta*u
       #let alpha = sqrt(r.norm2)
       let alpha = a[kk]
       u := r*(1.0/alpha)
-      toc("loop2 eq2")
       threads:
+        #toc("loop2 eq2")
         for i in 0..<nva:
           qva[i] += ur[kk,i] * u
-      toc("loop2 qva")
+        #toc("loop2 qva")
       inc kk
       if kk >= kmax: break
-      linop.applyAdj(p, u)
+      threads:
+        linop.applyAdj(p, u)
+        #threadBarrier()
       toc("loop2 linop2")
       p -= alpha * v
       #bta = sqrt(p.norm2)
