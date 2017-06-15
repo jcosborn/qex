@@ -4,6 +4,7 @@ import lapack
 import linalgFuncs
 import times
 import strUtils
+import svbin
 
 template QMP_time() = epochTime()
 var verb: int
@@ -12,6 +13,20 @@ proc getSvals*(e: dvec; a: dvec; b: dvec; n: int) =
   #for i in 0..<n:
   #  echo i, ": ", a[i], "  ", b[i]
   svdbi(e.dat, a.dat, b.dat, n)
+
+proc getSvals2*(e: dvec; a: dvec; b: dvec; n: int, nv: int) =
+  #for i in 0..<n:
+  #  echo i, ": ", a[i], "  ", b[i]
+  var aa = newSeq[float](n)
+  var bb = newSeq[float](n-1)
+  var sv = newSeq[float](nv)
+  for i in 0..<n:
+    aa[i] = a[i]
+  for i in 0..(n-2):
+    bb[i] = b[i]
+  svbin(sv, aa, bb, 0, 0, nv-1)
+  for i in 0..<nv:
+    e[i] = sv[i]
 
 proc svd_bi3*(ev: dvec; m: dmat; ma: dmat; a: dvec; b: dvec) =
   var n = mat_nrows(m)
@@ -231,10 +246,16 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   var v = linop.newRightVec
 
   template getsv(ev, a, b, k) =
-    getSvals(ev, a, b, k)
-    if verb>0:
-      template sv(n): untyped = " sv$1 $2"%[$n,ev[n]|(-16,12)]
-      echo k|-5, sv(0), sv(1), sv(nv-1), sv(k-1)
+    when false:
+      getSvals(ev, a, b, k)
+      if verb>0:
+        template sv(n): untyped = " sv$1 $2"%[$n,ev[n]|(-16,12)]
+        echo k|-5, sv(0), sv(1), sv(nv-1), sv(k-1)
+    else:
+      getSvals2(ev, a, b, k, nv)
+      if verb>0:
+        template sv(n): untyped = " sv$1 $2"%[$n,ev[n]|(-16,12)]
+        echo k|-5, sv(0), sv(1), sv(nv-1)
 
   tic()
   nothreads:

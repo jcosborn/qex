@@ -1,6 +1,7 @@
 import lapack
 import base
 import maths
+export base
 
 type
   dvec* = ref object

@@ -16,6 +16,14 @@ type
 proc dsterf*(n: ptr fint, d: ptr float64, e: ptr float64,
              info: ptr fint) {.lapack, importC:"dsterf_".}
 
+proc dstebz*(rnge: cstring; order: cstring; n: ptr fint;
+             vl: ptr doublereal; vu: ptr doublereal; il: ptr fint;
+             iu: ptr fint; abstol: ptr doublereal; d: ptr doublereal;
+             e: ptr doublereal; m: ptr fint; nsplit: ptr fint;
+             w: ptr doublereal; iblock: ptr fint; isplit: ptr fint;
+             work: ptr doublereal; iwork: ptr fint; info: ptr fint) {.
+               lapack, importc: "dstebz_".}
+
 proc dgetrf*(m: ptr fint, n: ptr fint, a: ptr float64, lda: ptr fint,
              ipiv: ptr fint, info: ptr fint) {.lapack, importc:"dgetrf_".}
 
