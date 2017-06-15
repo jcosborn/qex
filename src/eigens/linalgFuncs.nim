@@ -279,6 +279,46 @@ proc svdbi*(ev: ptr carray[float64], a: ptr carray[float64],
   dealloc(e)
   dealloc(d)
 
+proc svdbi*(ev: ptr carray[float64], a: ptr carray[float64],
+            b: ptr carray[float64], n,nv: int) =
+  var rnge = "I"
+  var order = "E"
+  var nn = fint(2*n)
+  var vl = 0.0
+  var vu = 9e99
+  var nnv = min(nv, n)
+  var il = (n+1).fint
+  var iu = (n+nnv).fint
+  var abstol = 1e-30
+  var d = cast[ptr carray[float64]](alloc0(nn*sizeof(float64)))
+  var e = cast[ptr carray[float64]](alloc(nn*sizeof(float64)))
+  for i in 0..(n-2):
+    let k = 2*i
+    e[k] = a[i]
+    e[k+1] = b[i]
+  e[2*n-2] = a[n-1]
+  var m = 0.fint
+  var nsplit = 0.fint
+  var w = cast[ptr carray[float64]](alloc(nn*sizeof(float64)))
+  var iblock = cast[ptr carray[fint]](alloc(nn*sizeof(fint)))
+  var isplit = cast[ptr carray[fint]](alloc(nn*sizeof(fint)))
+  var work = cast[ptr carray[float64]](alloc(4*nn*sizeof(float64)))
+  var iwork = cast[ptr carray[fint]](alloc(3*nn*sizeof(fint)))
+  var info = fint(0)
+  dstebz(rnge, order, addr nn, addr vl, addr vu, addr il, addr iu, addr abstol,
+         addr d[0], addr e[0], addr m, addr nsplit, addr w[0], addr iblock[0],
+         addr isplit[0], addr work[0], addr iwork[0], addr info)
+  for i in 0..<nnv:
+    #echo i, ": ", w[i]
+    ev[i] = w[i]
+  #quit(-1)
+  dealloc(iwork)
+  dealloc(work)
+  dealloc(isplit)
+  dealloc(iblock)
+  dealloc(w)
+  dealloc(e)
+  dealloc(d)
 
 proc svdBidiag1*(d: ptr carray[float64], e: ptr carray[float64],
                  v: ptr carray[float64], u: ptr carray[float64], n,k: int) =

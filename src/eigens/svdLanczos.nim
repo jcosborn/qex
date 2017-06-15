@@ -17,6 +17,7 @@ proc getSvals*(e: dvec; a: dvec; b: dvec; n: int) =
 proc getSvals2*(e: dvec; a: dvec; b: dvec; n: int, nv: int) =
   #for i in 0..<n:
   #  echo i, ": ", a[i], "  ", b[i]
+  #[
   var aa = newSeq[float](n)
   var bb = newSeq[float](n-1)
   var sv = newSeq[float](nv)
@@ -27,6 +28,8 @@ proc getSvals2*(e: dvec; a: dvec; b: dvec; n: int, nv: int) =
   svbin(sv, aa, bb, 0, 0, nv-1)
   for i in 0..<nv:
     e[i] = sv[i]
+  ]#
+  svdbi(e.dat, a.dat, b.dat, n, nv)
 
 proc svd_bi3*(ev: dvec; m: dmat; ma: dmat; a: dvec; b: dvec) =
   var n = mat_nrows(m)
@@ -246,7 +249,7 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   var v = linop.newRightVec
 
   template getsv(ev, a, b, k) =
-    when true:
+    when false:
       getSvals(ev, a, b, k)
       if verb>0:
         template sv(n): untyped = " sv$1 $2"%[$n,ev[n]|(-16,12)]
