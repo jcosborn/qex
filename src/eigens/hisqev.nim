@@ -429,7 +429,7 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
 
   var emin = 0.0
   var emax = emax0
-  var vt1 = newSeq[EigTable[type(op.newVector)]](ng)
+  var vt1 = newSeq[EigTable[type(op.newVector)]](nvt)
   var vt2 = newSeq[EigTable[type(op.newVector)]](ng)
   var src = op.newVector
   var v: seq[type(op.newVector)]
@@ -457,7 +457,8 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
     #src[0][0] := 1
     #let sits = 5*ng
     let sits = svdits
-    v.newSeq(ng)
+    #v.newSeq(ng)
+    v.newSeq(nvt)
     let nsvd = svd(op, src, v, sits, emin, emax)
     vt1.maketable(v, op)
     let rrmax = min(rrbs-1, nsvd-1)
@@ -488,7 +489,7 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
     #        vt1[iv].err, vt1[iv].err/vt1[iv].sv)
     echo "iv = $1  sv[iv] = $2\t$3\t$4"%[$iv, $vt1[iv].sv, $vt1[iv].err,
                                          $(vt1[iv].err/vt1[iv].sv)]
-    if iv>ng:
+    if iv>=ng:
       ngcount += 1
     else:
       ngcount = 0
@@ -652,12 +653,12 @@ when isMainModule:
   getResid(r, d1, src)
   echo "r1: ", r.even.norm2
 
-  let ng = opts.nev
+  var stepMin = intParam("stepMin", 1)
+  let ng = max(stepMin, opts.nev)
   let nv = evals.len
   #var nps = @[0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 16, 20, 30]
   var nps = @[0, nv]
-  var step = ng
-  var stepMin = intParam("stepMin", 1)
+  var step = ng * max(1, nv div (2*ng))
   while step>=stepMin:
     for i in countup(step,nv,step):
       if not nps.contains(i): nps.add i

@@ -9,10 +9,11 @@ import svbin
 template QMP_time() = epochTime()
 var verb: int
 
-proc getSvals*(e: dvec; a: dvec; b: dvec; n: int) =
+proc getSvals*(e: dvec; a: dvec; b: dvec; n: int; nv: int) =
   #for i in 0..<n:
   #  echo i, ": ", a[i], "  ", b[i]
-  svdbi(e.dat, a.dat, b.dat, n)
+  #svdbi(e.dat, a.dat, b.dat, n)
+  svdbi(e.dat, a.dat, b.dat, n, nv)
 
 proc getSvals2*(e: dvec; a: dvec; b: dvec; n: int, nv: int) =
   #for i in 0..<n:
@@ -29,7 +30,12 @@ proc getSvals2*(e: dvec; a: dvec; b: dvec; n: int, nv: int) =
   for i in 0..<nv:
     e[i] = sv[i]
   ]#
-  svdbi(e.dat, a.dat, b.dat, n, nv)
+  #svdbi(e.dat, a.dat, b.dat, n, nv)
+  #var sv = newSeq[float](nv)
+  #svdbi(cast[ptr carray[float]](addr sv[0]), a.dat, b.dat, n, nv)
+  svdbi(e.dat, a.dat, b.dat, n)
+  #for i in 0..<nv:
+  #  echo sv[i], " : ", e[i], " : ", sv[i]-e[i]
 
 proc svd_bi3*(ev: dvec; m: dmat; ma: dmat; a: dvec; b: dvec) =
   var n = mat_nrows(m)
@@ -248,19 +254,19 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   var p = linop.newRightVec
   var v = linop.newRightVec
 
-  template getsv(ev, a, b, k) =
-    when false:
-      getSvals(ev, a, b, k)
-      if verb>0:
-        template sv(n): untyped = " sv$1 $2"%[$n,ev[n]|(-16,12)]
-        echo k|-5, sv(0), sv(1), sv(nv-1), sv(k-1)
-        #for i in 0..<nv: echo sv(i)
-    else:
-      getSvals2(ev, a, b, k, nv)
-      if verb>0:
-        template sv(n): untyped = " sv$1 $2"%[$n,ev[n]|(-16,12)]
-        echo k|-5, sv(0), sv(1), sv(nv-1)
-        #for i in 0..<nv: echo sv(i)
+  template getsv(ev, a, b, k, nv) =
+    #when true:
+    getSvals(ev, a, b, k, nv)
+    if verb>0:
+      template sv(n): untyped = " sv$1 $2"%[$n,ev[n]|(-16,12)]
+      echo k|-5, sv(0), sv(1), sv(nv-1), sv(k-1)
+    #    #for i in 0..<nv: echo sv(i)
+    #else:
+    #getSvals2(ev, a, b, k, nv)
+    #if verb>0:
+    #  template sv(n): untyped = " sv$1 $2"%[$n,ev[n]|(-16,12)]
+    #  echo k|-5, sv(0), sv(1), sv(nv-1)
+    #  #for i in 0..<nv: echo sv(i)
 
   tic()
   nothreads:
@@ -298,7 +304,7 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
     if k >= kmax: break
     #check singular values
     if k >= kcheck:
-      getsv(ev, a, b, k)
+      getsv(ev, a, b, k, nv)
       kcheck = 1 + (1.5 * kcheck.float).int
     toc("loop1 out")
 
@@ -325,7 +331,7 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   if verb>0:
     echo "svdLanczos bidiag: $1 secs"%[dtime1|-6]
 
-  getsv(ev, a, b, k)
+  getsv(ev, a, b, k, nv)
   toc("getsv")
   var dtime2 = getElapsedTime()
   if verb>0:

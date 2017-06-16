@@ -289,7 +289,8 @@ proc svdbi*(ev: ptr carray[float64], a: ptr carray[float64],
   var nnv = min(nv, n)
   var il = (n+1).fint
   var iu = (n+nnv).fint
-  var abstol = 1e-30
+  #var abstol = 1e-30
+  var abstol = 0.0
   var d = cast[ptr carray[float64]](alloc0(nn*sizeof(float64)))
   var e = cast[ptr carray[float64]](alloc(nn*sizeof(float64)))
   for i in 0..(n-2):
@@ -300,10 +301,10 @@ proc svdbi*(ev: ptr carray[float64], a: ptr carray[float64],
   var m = 0.fint
   var nsplit = 0.fint
   var w = cast[ptr carray[float64]](alloc(nn*sizeof(float64)))
-  var iblock = cast[ptr carray[fint]](alloc(nn*sizeof(fint)))
-  var isplit = cast[ptr carray[fint]](alloc(nn*sizeof(fint)))
+  var iblock = cast[ptr carray[fint]](alloc(2*nn*sizeof(fint)))
+  var isplit = cast[ptr carray[fint]](alloc(2*nn*sizeof(fint)))
   var work = cast[ptr carray[float64]](alloc(4*nn*sizeof(float64)))
-  var iwork = cast[ptr carray[fint]](alloc(3*nn*sizeof(fint)))
+  var iwork = cast[ptr carray[fint]](alloc(2*3*nn*sizeof(fint)))
   var info = fint(0)
   dstebz(rnge, order, addr nn, addr vl, addr vu, addr il, addr iu, addr abstol,
          addr d[0], addr e[0], addr m, addr nsplit, addr w[0], addr iblock[0],
