@@ -1,4 +1,4 @@
-import os, strutils
+import strutils
 import qex, physics/stagD
 
 template ff(x:untyped):auto = formatFloat(x,ffScientific,17)
