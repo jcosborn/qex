@@ -139,6 +139,7 @@ proc svdBi4*(e: any; m: dmat; ma: dmat; a: any; b: any; k: int;
         tg = newDvec(k)
         v = newSeq[dvec](nn)
         va = newSeq[dvec](nn)
+        vai = newDvec(nn)
       var dotstop = 1e-4
       var ib = 0
       var itg = newSeq[int](k)
@@ -147,7 +148,8 @@ proc svdBi4*(e: any; m: dmat; ma: dmat; a: any; b: any; k: int;
         var ev = e[ie]
         var rsqstop = 1e-6 * ev * ev
         v[i].colvec(m, i)
-        va[i].colvec(ma, i)
+        #va[i].colvec(ma, i)
+        va[i] = vai
         var i0 = getTwistFac(a, b, ev, tl, tu, tg)
         var ig = 0
         twistSolve(tl, tu, v[i], i0)
