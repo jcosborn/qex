@@ -1,5 +1,5 @@
 import math
-import base, field, layout, maths
+import base, field, layout, maths, maths/types
 
 type
   RNG* = concept var r
@@ -23,6 +23,10 @@ proc gaussian*(x: AsVarMatrix, r: var RNG) =
   forO i, 0, x.nrows-1:
     forO j, 0, x.ncols-1:
       gaussian(x[i,j], r)
+template gaussian*(r: AsVar, x: untyped) =
+  mixin gaussian
+  var t = r[]
+  gaussian(t, x)
 proc gaussian*[T: RNGField](v: Field, r: var T) =
   for i in v.l.sites:
     gaussian(v{i}, r[i])

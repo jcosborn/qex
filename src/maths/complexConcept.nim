@@ -129,8 +129,12 @@ type
   #IC1* = Iconcept1 | Cconcept1
   ComplexObj*[T] = object
     re*,im*: T
+  ComplexObj2*[T] = ComplexObj[T]
   ComplexType*[T] = AsComplex[ComplexObj[T]]
 
+template complexObj*(x,y: typed): untyped =
+  ComplexObj[type(x)](re: x, im: y)
+template toDoubleImpl*(x: ComplexObj): untyped = toDoubleX(x)
 #proc `$`*(x:C1):string =
 #  result = "(" & $x.re & "," & $x.im & ")"
 
@@ -174,7 +178,7 @@ subst(r,_):
 
 template map*(x: ComplexObj; f: untyped): untyped =
   let tx = x
-  ComplexObj(re: f(tx.re), im: f(tx.im))
+  complexObj(f(tx.re), f(tx.im))
 template map*(x: AsComplex; f: untyped): untyped = asComplex(f(x[]))
 #template map*(x: ; f: untyped): untyped =
 #  ComplexType(re:f(x.re),im:f(x.im))
@@ -217,14 +221,22 @@ template asVarWrapper*(x: AsComplex, y: typed): untyped =
 #template masked*(x: AsComplex; msk: int): untyped =
 #  asVarComplex(masked(x[],msk))
 
-template eval*(x: ComplexObj): untyped =
+#template eval*(x: ComplexObj): untyped =
+#  let tx = x
+#  #ComplexObj(re: eval(tx.re), im: eval(tx.im))
+#  ComplexObj(re: tx.re, im: tx.im)
+proc eval*(x: ComplexObj): auto =
   let tx = x
-  ComplexObj(re: eval(tx.re), im: eval(tx.im))
-template eval*(x: AsComplex): untyped = asComplex(eval(x[]))
+  ComplexObj2(re: eval(tx.re), im: eval(tx.im))
+  #ComplexObj(re: tx.re, im: tx.im)
+template eval*(x: AsComplex): untyped =
+  #echoType: x
+  #echoType: x[]
+  asComplex(eval(x[]))
 
 template trace*(r:var RIC1; x:RIC2):untyped = map(r, trace, x)
-proc trace*(x:C1):auto {.inline.} =
-  var r{.noInit.}:ComplexType[type(trace(x.re)+trace(x.im))]
+proc trace*(x: C1): auto {.inline.} =
+  var r{.noInit.}: ComplexType[type(trace(x.re)+trace(x.im))]
   r.re = trace(x.re)
   r.im = trace(x.im)
   r

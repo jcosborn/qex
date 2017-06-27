@@ -84,7 +84,8 @@ type
 #template `:=`*(r: Adjointed, x: Adjointed) = r[] := x[]
 #template assign*(r: Adjointed, x: Adjointed) = r[] := x[]
 
-template asColor*(x: typed): untyped =
+template asColor*(xx: typed): untyped =
+  let x = xx
   Color[type(x)](v: x)
 template isWrapper*(x: Color): untyped = true
 template asWrapper*(x: Color, y: typed): untyped =
@@ -92,22 +93,33 @@ template asWrapper*(x: Color, y: typed): untyped =
   asColor(y)
 template asVarWrapper*(x: Color, y: typed): untyped =
   static: echo "asVarWrapper Color"
-  var cy = asColor(y)
-  cy
+  #var cy = asColor(y)
+  #cy
+  asVar(asColor(y))
 template `[]`*(x: Color): untyped = x.v
 template `[]`*(x: Color, i: any): untyped = x[][i]
 template `[]`*(x: Color, i: any, j: any): untyped = x[][i,j]
 template `[]`*(x: Color, i: any, j: any, y: any): untyped =
   x[][i,j] = y
-template forward(t: typedesc, f: untyped) {.dirty.} =
-  template f*(x: t): untyped = f(x[])
-forward(Color, nrows)
-forward(Color, ncols)
-forward(Color, numberType)
-forward(Color, nVectors)
-forward(Color, simdType)
-forward(Color, simdLength)
+forwardFunc(Color, nrows)
+forwardFunc(Color, ncols)
+forwardFunc(Color, numberType)
+forwardFunc(Color, nVectors)
+forwardFunc(Color, simdType)
+forwardFunc(Color, simdLength)
+
+template binDDRet(fn,wr,T1,T2) =
+  template fn*(x: T1, y: T2): untyped =
+    wr(fn(x[], y[]))
+
+binDDRet(`+`, asColor, Color, Color2)
+binDDRet(`-`, asColor, Color, Color2)
+binDDRet(`*`, asColor, Color, Color2)
+binDDRet(`/`, asColor, Color, Color2)
+
 template numberType*[T](x: typedesc[Color[T]]): untyped = numberType(T)
+template numNuumbers*[T](x: typedesc[Color[T]]): untyped = numberType(T)
+template numNumbers*(x: Color): untyped = numNumbers(x[])
 template load1*(x: Color): untyped = asColor(load1(x[]))
 template assign*(r: var Color, x: SomeNumber) =
   assign(r[], x)
@@ -115,8 +127,12 @@ template assign*(r: var Color, x: AsComplex) =
   assign(r[], x)
 template assign*(r: var Color, x: Color2) =
   assign(r[], x[])
+template `:=`*(r: var Color, x: SomeNumber) =
+  `:=`(r[], x)
 template `:=`*(r: var Color, x: Color2) =
   r[] := x[]
+template `+=`*(r: var Color, x: Color2) =
+  r[] += x[]
 template `*=`*(r: var Color, x: SomeNumber) =
   `*=`(r[], x)
 template iadd*(r: var Color, x: AsComplex) =
@@ -129,14 +145,14 @@ template imul*(r: var Color, x: SomeNumber) =
   imul(r[], x)
 template imadd*(r: var Color, x: Color2, y: Color3) =
   imadd(r[], x[], y[])
-template `+`*(x: Color, y: Color2): untyped =
-  asColor(x[] + y[])
+template imsub*(r: var Color, x: Color2, y: Color3) =
+  imsub(r[], x[], y[])
 template `*`*(x: Color, y: SomeNumber): untyped =
   asColor(x[] * y)
 template `*`*(x: SomeNumber, y: Color2): untyped =
   asColor(x * y[])
-template `*`*(x: Color, y: Color2): untyped =
-  asColor(x[] * y[])
+template `*`*(x: AsComplex, y: Color2): untyped =
+  asColor(x * y[])
 template mul*(r: var Color, x: Color2, y: Color3) =
   mul(r[], x[], y[])
 template gaussian*(x: var Color, r: var untyped) =
@@ -147,6 +163,9 @@ template norm2*(x: Color): untyped = norm2(x[])
 template inorm2*(r: var any, x: Color2) = inorm2(r, x[])
 template dot*(x: Color, y: Color2): untyped =
   dot(x[], y[])
+template idot*(r: var any, x: Color2, y: Color3) = idot(r, x[], y[])
+template redot*(x: Color, y: Color2): untyped =
+  redot(x[], y[])
 
 
 template isWrapper*(x: Svec0): untyped = false
@@ -192,6 +211,9 @@ template simdSum*(x:ToDouble):untyped = toDouble(simdSum(x[]))
 template simdSum*(x:AsComplex):untyped = asComplex(simdSum(x[]))
 #template simdSum*(x:Complex):untyped = simdSum(x[])
 template simdSum*(xx:tuple):untyped =
+  lets(x,xx):
+    map(x, simdSum)
+template simdSum*(xx: ComplexObj): untyped =
   lets(x,xx):
     map(x, simdSum)
 #template rankSum*(x:AsComplex) =

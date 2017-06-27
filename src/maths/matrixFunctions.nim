@@ -116,11 +116,12 @@ template rsqrtPHM(r:typed; x:typed):untyped =
     quit(1)
 proc rsqrtPH(r:var Mat1; x:Mat2) = rsqrtPHM(r, x)
 
-proc projectU*(r:var Mat1; x:Mat2) =
-  let t = x.adj * x
-  var t2{.noInit.}:type(t)
+proc projectU*(r: var Mat1; x: Mat2) =
+  let tx = x
+  let t = tx.adj * tx
+  var t2{.noInit.}: type(t)
   rsqrtPH(t2, t)
-  mul(r, x, t2)
+  mul(r, tx, t2)
 
 discard """
 template rsqrtM2(r:typed; x:typed):untyped =

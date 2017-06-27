@@ -35,9 +35,8 @@ macro `$`*(t:typedesc):auto =
 
 macro echoType*(x:typed):auto =
   result = newEmptyNode()
-  let t1 = x.getType
-  echo t1.treeRepr
-  echo t1.getType.treeRepr
+  echo x.getTypeInst.treeRepr
+  echo x.getTypeImpl.treeRepr
 macro echoType*(x:typedesc):auto =
   result = newEmptyNode()
   let t1 = x.getType
