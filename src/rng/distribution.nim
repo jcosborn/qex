@@ -27,7 +27,7 @@ template gaussian*(r: AsVar, x: untyped) =
   mixin gaussian
   var t = r[]
   gaussian(t, x)
-proc gaussian*[T: RNGField](v: Field, r: var T) =
+proc gaussian*[T: RNGField](v: Field, r: T) =
   for i in v.l.sites:
     gaussian(v{i}, r[i])
 

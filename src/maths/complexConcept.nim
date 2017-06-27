@@ -208,13 +208,13 @@ template isWrapper*(x: ComplexObj): untyped = false
 
 template isWrapper*(x: AsComplex): untyped = true
 template copyWrapper*(x: AsComplex, y: typed): untyped =
-  static: echo "copyWrapper AsComplex"
+  #static: echo "copyWrapper AsComplex"
   asComplex(y)
 template asWrapper*(x: AsComplex, y: typed): untyped =
-  static: echo "asWrapper AsComplex"
+  #static: echo "asWrapper AsComplex"
   asComplex(y)
 template asVarWrapper*(x: AsComplex, y: typed): untyped =
-  static: echo "asVarWrapper AsComplex"
+  #static: echo "asVarWrapper AsComplex"
   var t = asComplex(y)
   t
 

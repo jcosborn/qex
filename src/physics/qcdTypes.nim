@@ -89,10 +89,10 @@ template asColor*(xx: typed): untyped =
   Color[type(x)](v: x)
 template isWrapper*(x: Color): untyped = true
 template asWrapper*(x: Color, y: typed): untyped =
-  static: echo "asWrapper Color"
+  #static: echo "asWrapper Color"
   asColor(y)
 template asVarWrapper*(x: Color, y: typed): untyped =
-  static: echo "asVarWrapper Color"
+  #static: echo "asVarWrapper Color"
   #var cy = asColor(y)
   #cy
   asVar(asColor(y))
