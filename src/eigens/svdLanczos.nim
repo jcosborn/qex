@@ -350,9 +350,10 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
     #vr2: dmat
     #ur2: dmat
   var nv0 = max(nv,nva)
+  var nva0 = max(1,nva)
   dmat_alloc(vr, kmax, nv0)
   #dmat_alloc(ur, kmax, nv0)
-  dmat_alloc(ur, kmax, nva)
+  dmat_alloc(ur, kmax, nva0)
   #dmat_alloc(vr2, kmax, nv)
   #dmat_alloc(ur2, kmax, nva)
   #svd_bi3(ev, vr, ur, a, b)

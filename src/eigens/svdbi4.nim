@@ -139,7 +139,7 @@ proc svdBi4*(e: any; m: dmat; ma: dmat; a: any; b: any; k: int;
         tg = newDvec(k)
         v = newSeq[dvec](nn)
         va = newSeq[dvec](nn)
-        vai = newDvec(nn)
+        vai = newDvec(k)
       var dotstop = 1e-4
       var ib = 0
       var itg = newSeq[int](k)
