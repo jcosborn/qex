@@ -430,21 +430,21 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
   var emin = 0.0
   var emax = emax0
   var vt1 = newSeq[EigTable[type(op.newVector)]](nvt)
-  var vt2 = newSeq[EigTable[type(op.newVector)]](ng)
+  var vt2 = newSeq[EigTable[type(op.newVector)]](nvt)
   var src = op.newVector
   var v: seq[type(op.newVector)]
   if not vv.isNil and vv.len>0:
     #shallowCopy(v, vv)
     #echo "vv.len: ", vv.len
     #v.newSeq(vv.len)
-    v.newSeq(ng)
+    v.newSeq(nvt)
     #for i in 0..<v.len:
     #  if i<vv.len:
     #    v[i] = vv[i]
     #  else:
     #    v[i] = op.newVector
     #    op.rand(v[i])
-    let sits = ng
+    let sits = nvt
     let nsvd = svd(op, vv[0], v, sits, emin, emax)
     vt1.maketable(v, op)
     let rrmax = min(rrbs-1, nsvd-1)
