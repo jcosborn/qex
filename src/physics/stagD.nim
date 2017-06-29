@@ -538,6 +538,7 @@ template foldl*(f,n,op:untyped):untyped =
   r
 
 when isMainModule:
+  import rng
   proc runtest(v1,v2,sdAll,sdEven,sdOdd,s,m:any) =
     let g = s.g
     let lo = g[0].l
@@ -546,7 +547,7 @@ when isMainModule:
       v1 := 0
       #v2 := 1
       if myRank==0 and threadNum==0:
-        when type(v1{0}) is AsVarVector:
+        when compiles(v1[0].len):
           v1{0}[0] := 1
         else:
           v1{0} := 1
@@ -563,7 +564,7 @@ when isMainModule:
 
       for e in v1:
         template x(d:int):untyped = lo.vcoords(d,e)
-        when type(v1{0}) is AsVarVector:
+        when compiles(v1[e].len):
           v1[e][0].re := foldl(x, 4, a*10+b)
         else:
           for i in 0..<v1[e].ncols:
@@ -637,6 +638,7 @@ when isMainModule:
   var lo = newLayout(lat)
   var v1 = lo.ColorVector()
   var v2 = lo.ColorVector()
+  var rs = newRNGField(RngMilc6, lo, intParam("seed", 987654321).uint64)
   var g:array[4,type(lo.ColorMatrix())]
   for i in 0..<4:
     g[i] = lo.ColorMatrix()
@@ -672,7 +674,7 @@ when isMainModule:
     g3[2*i  ] = g[i]
     #g3[2*i+1] = g[i]
     g3[2*i+1] = lo.ColorMatrix()
-    g3[2*i+1].random
+    g3[2*i+1].randomU rs
   var s3 = newStag3(@g3)
 
   runtest(v1, v2, sdAll3, sdEven3, sdOdd3, s3, m)
