@@ -41,6 +41,10 @@ template `:=`*(r: AsVar, x: untyped) =
 template `*=`*(r: AsVar, x: untyped) =
   var t = r[]
   t *= x
+template imul*(r: AsVar, x: untyped) =
+  mixin imul
+  var t = r[]
+  imul(t, x)
 forwardFunc(AsVar, nrows)
 forwardFunc(AsVar, ncols)
 forwardFunc(AsVar, numberType)

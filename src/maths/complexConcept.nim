@@ -215,8 +215,9 @@ template asWrapper*(x: AsComplex, y: typed): untyped =
   asComplex(y)
 template asVarWrapper*(x: AsComplex, y: typed): untyped =
   #static: echo "asVarWrapper AsComplex"
-  var t = asComplex(y)
-  t
+  #var t = asComplex(y)
+  #t
+  asVar(asComplex(y))
 
 #template masked*(x: AsComplex; msk: int): untyped =
 #  asVarComplex(masked(x[],msk))

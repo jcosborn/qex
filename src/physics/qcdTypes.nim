@@ -101,6 +101,7 @@ template `[]`*(x: Color, i: any): untyped = x[][i]
 template `[]`*(x: Color, i: any, j: any): untyped = x[][i,j]
 template `[]`*(x: Color, i: any, j: any, y: any): untyped =
   x[][i,j] = y
+forwardFunc(Color, len)
 forwardFunc(Color, nrows)
 forwardFunc(Color, ncols)
 forwardFunc(Color, numberType)
@@ -155,6 +156,8 @@ template `*`*(x: AsComplex, y: Color2): untyped =
   asColor(x * y[])
 template mul*(r: var Color, x: Color2, y: Color3) =
   mul(r[], x[], y[])
+template random*(x: var Color) =
+  gaussian(x[], r)
 template gaussian*(x: var Color, r: var untyped) =
   gaussian(x[], r)
 template projectU*(r: var Color, x: Color2) =

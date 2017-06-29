@@ -43,6 +43,17 @@ template checkInit* =
     #echo format("error: $#($#): threads not initialized",fn,ln)
     #quit(-1)
 
+macro emitStackTraceX(x: typed): untyped =
+  template est(x) =
+    {.emit: "// instantiationInfo: " & x.}
+  let ii = x.repr
+  result = getAst(est(ii))
+
+template emitStackTrace: untyped =
+  emitStackTraceX(instantiationInfo(-1))
+  emitStackTraceX(instantiationInfo(-2))
+  emitStackTraceX(instantiationInfo(-3))
+
 template threads*(body:untyped):untyped =
   checkInit()
   let tidOld = threadNum
@@ -51,6 +62,7 @@ template threads*(body:untyped):untyped =
   #proc tproc2{.genSym,inline.} =
   #  body
   proc tproc{.genSym.} =
+    emitStackTrace()
     var ts:seq[ThreadShare]
     ompParallel:
       threadNum = ompGetThreadNum()
