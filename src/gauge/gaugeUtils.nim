@@ -333,28 +333,35 @@ template defaultSetup*:untyped {.dirty.} =
     for i in 0..<lat.len:
       g[i] := 1
 
-proc random*[T](g:openArray[T], r:var RNGField) =
+proc randomU*(x: any, r: var RNGField) =
+  x.gaussian r
+  for e in x:
+    x[e].projectU x[e]
+  #[
   const
     I = g[0]{0}.nrows
     J = g[0]{0}.ncols
   type M = MatrixArray[I,J,DComplex]
-  for mu in 0..<g.len:
-    g[mu].gaussian r
-    var
-      t{.noinit.}:M
-      s{.noinit.}:M
-    tfor i, 0..<g[mu].l.nSites:
-      forO a, 0, s.nrows-1:
-        forO b, 0, s.ncols-1:
-          s[a,b].re := g[mu]{i}[a,b].re
-          s[a,b].im := g[mu]{i}[a,b].im
-      t.projectU s
-      forO a, 0, t.nrows-1:
-        forO b, 0, t.ncols-1:
-          g[mu]{i}[a,b].re := t[a,b].re
-          g[mu]{i}[a,b].im := t[a,b].im
+  var
+    t{.noinit.}:M
+    s{.noinit.}:M
+  tfor i, 0..<g[mu].l.nSites:
+    forO a, 0, s.nrows-1:
+      forO b, 0, s.ncols-1:
+        s[a,b].re := g[mu]{i}[a,b].re
+        s[a,b].im := g[mu]{i}[a,b].im
+    t.projectU s
+    forO a, 0, t.nrows-1:
+      forO b, 0, t.ncols-1:
+        g[mu]{i}[a,b].re := t[a,b].re
+        g[mu]{i}[a,b].im := t[a,b].im
+  ]#
 
-proc random*[T](g:openArray[T]) =
+proc random*[T](g: openArray[T], r: var RNGField) =
+  for mu in 0..<g.len:
+    randomU(g[mu], r)
+
+proc random*(g: array or seq) =
   var r = newRNGField(RngMilc6, g[0].l)
   threads:
     g.random r
@@ -388,7 +395,8 @@ proc setupLattice*(lat:openarray[int]):auto =
   else:
     for i in 0..<g.len: threads: g.random r
   return (lo, g, r)
-  
+
+
 when isMainModule:
   import qex
   import physics/qcdTypes
