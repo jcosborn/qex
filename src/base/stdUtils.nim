@@ -37,10 +37,31 @@ proc intSeqParam*(s: string, d: seq[int] = @[]): seq[int] =
   let n = paramCount()
   for i in 1..n:
     let p = paramstr(i)
-    if p.startsWith('-'&s):
+    if p.startsWith('-'&s&':'):
       let ll = s.len + 2
       for c in split(p[ll..^1], ','):
         result.add parseInt(c)
+
+template CLIset*(p:typed, n:untyped, prefix:string, runifset:untyped) =
+  let
+    o = p.n
+    s = prefix & astToStr(n)
+  when compiles(strParam(s, p.n)):
+    p.n = type(p.n)strParam(s, p.n)
+  elif compiles(intParam(s, p.n)):
+    p.n = type(p.n)intParam(s, p.n)
+  elif compiles(floatParam(s, p.n)):
+    p.n = type(p.n)floatParam(s, p.n)
+  elif compiles(intSeqParam(s, p.n)):
+    p.n = type(p.n)intSeqParam(s, p.n)
+  else:
+    {.fatal:"Cannot set argument "&s&" of "&astToStr(p)&" for command line.".}
+  if o != p.n:
+    runifset
+    echo "Customize $# : $# -> $#"%[s, $o, $p.n]
+template CLIset*(p:typed, n:untyped, prefix = "") =
+  p.CLIset n, prefix:
+    discard
 
 template `$&`*(x: untyped): string =
   toHex(unsafeAddrInt(x))

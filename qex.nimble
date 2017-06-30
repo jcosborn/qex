@@ -13,7 +13,7 @@ srcDir        = qexDir/"src"
 # Dependencies
 
 requires "nim >= 0.16.0"
-requires "chebyshev >= 0.1.0"
+requires "chebyshev >= 0.2.1"
 when declared(primmeDir):
   requires "primme >= 0.1.1"
 

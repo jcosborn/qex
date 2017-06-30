@@ -21,12 +21,10 @@ type
 
 proc applyD(pp:ptr Primme; xi,yo:ptr complex[float]) =
   # x in, y out
-  threads:
-    pp.x.fromPrimmeArray xi
-    pp.o.apply(pp.y, pp.x)
-    pp.o.applyAdj(pp.x, pp.y)
-    threadBarrier()
-    pp.x.toPrimmeArray yo
+  threads: pp.x.fromPrimmeArray xi
+  pp.o.apply(pp.y, pp.x)
+  pp.o.applyAdj(pp.x, pp.y)
+  threads: pp.x.toPrimmeArray yo
 
 proc matvec[O](x:pointer, ldx:ptr PRIMME_INT,
                y:pointer, ldy:ptr PRIMME_INT,
