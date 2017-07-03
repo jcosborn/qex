@@ -43,6 +43,7 @@ proc intSeqParam*(s: string, d: seq[int] = @[]): seq[int] =
         result.add parseInt(c)
 
 template CLIset*(p:typed, n:untyped, prefix:string, runifset:untyped) =
+  mixin echo
   let
     o = p.n
     s = prefix & astToStr(n)

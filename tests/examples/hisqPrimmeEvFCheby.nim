@@ -72,8 +72,8 @@ var
   ll = lo.newGauge
 hc.smear(g, fl, ll)
 let
-  ae = floatParam("abserr", 1e-6)
-  re = floatParam("relerr", 1e-4)
+  ae = floatParam("abserr", 1e-10)
+  re = floatParam("relerr", 1e-10)
 var
   s = newStag3(fl, ll)
   c = ChebyOp[type(s),type(s.newVector)](o:s,t:s.newVector)
@@ -87,9 +87,35 @@ pp.p.CLIset maxBasisSize
 pp.p.CLIset minRestartSize
 pp.p.CLIset printLevel
 pp.p.restartingParams.CLIset maxPrevRetain
+pp.p.CLIset eps, "":
+  echo "Ignoring abserr and relerr."
+  pp.p.convTestFun = nil
 pp.prepare
 pp.run
 echo "ChebyMatvec : ",cheby.count
 for i in 0..<pp.p.initSize:
   echo "$#  $#  $#"%[$i, pp.vals[i].ff, pp.rnorms[i].ff]
+var
+  evs = newseq[type(s.newVector)](pp.p.initSize)
+  val = newseq[float](pp.p.initSize)
+  err = newseq[float](pp.p.initSize)
+  u = s.newVector
+  v = s.newVector
+for i in 0..<evs.len: evs[i] = s.newVector
+for i in 0..<evs.len:
+  var vn,r2:float
+  threads:
+    evs[i] := 0
+    threadBarrier()
+    evs[i].fromPrimmeArray(pp.vecs[i*pp.p.nLocal].addr)
+    vn = evs[i].even.norm2
+  s.apply(u, evs[i])
+  # echo vn," ",ff(u.odd.norm2/vn)
+  s.applyAdj(v, u)
+  val[i] = sqrt(v.even.norm2/vn)
+  threads:
+    u.even := v - val[i]*evs[i]
+    r2 = u.even.norm2/vn
+  err[i] = abs(val[i] - sqrt(abs(val[i]*val[i]-sqrt(r2))))
+  echo "$#  eval: $#  r: $#  err: $#"%[$i, val[i].ff, r2.sqrt.ff, err[i].ff]
 qexFinalize()
