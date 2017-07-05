@@ -59,6 +59,210 @@ template applyAdj(op:MyOp, x,y:Field) =
   threads: x := y
 template newVector(op:MyOp): untyped = op.o.newVector
 
+type
+  PChebyOp[O,T] = object
+    o:O
+    t:T
+    s:float
+template apply(op:PChebyOp, y,x:Field) =
+  op.o.apply(op.t, x)
+  op.o.applyAdj(y, op.t)
+  threads: y += op.s*x
+template assign(y:Field, x:FieldMul) = assignM(y,x,x.type)
+template assign(y:Field, x:FieldAddSub) = assignM(y,x,x.type)
+template assign(y:Field, x:Field) = assignM(y,x,x.type)
+
+proc cg(x:Field; b:Field2; A:proc; sp:var SolverParams) =
+  # A copy of cgSolve with A running outside of the thread block.
+  tic()
+  let vrb = sp.verbosity
+  template verb(n:int; body:untyped):untyped =
+    if vrb>=n: body
+  let sub = sp.subset
+  template subset(body:untyped):untyped =
+    onNoSync(sub):
+      body
+  template mythreads(body:untyped):untyped =
+    threads:
+      onNoSync(sub):
+        body
+
+  var b2: float
+  mythreads:
+    x := 0
+    b2 = b.norm2
+  verb(1):
+    echo("input norm2: ", b2)
+  if b2 == 0.0:
+    sp.finalIterations = 0
+    return
+
+  var r = newOneOf(x)
+  var p = newOneOf(x)
+  var Ap = newOneOf(x)
+  let r2stop = sp.r2req * b2;
+  let maxits = sp.maxits
+  var finalIterations = 0
+
+  threads:
+    subset:
+      p := 0
+      r := b
+      verb(3):
+        echo("p2: ", p.norm2)
+        echo("r2: ", r.norm2)
+
+  var itn = 0
+  var r2 = b2
+  var r2o = r2
+  verb(1):
+    #echo(-1, " ", r2)
+    echo(itn, " ", r2/b2)
+  toc("cg setup")
+
+  while itn<maxits and r2>=r2stop:
+    tic()
+    inc itn
+    let beta = r2/r2o;
+    r2o = r2
+    threads:
+      subset:
+        p := r + beta*p
+    toc("p update", flops=2*numNumbers(r[0])*sub.lenOuter)
+    A(Ap, p)
+    toc("Ap")
+    threads:
+      subset:
+        let pAp = p.redot(Ap)
+        toc("pAp", flops=2*numNumbers(p[0])*sub.lenOuter)
+        let alpha = r2/pAp
+        x += alpha*p
+        toc("x", flops=2*numNumbers(p[0])*sub.lenOuter)
+        r -= alpha*Ap
+        toc("r", flops=2*numNumbers(r[0])*sub.lenOuter)
+        r2 = r.norm2
+        toc("r2", flops=2*numNumbers(r[0])*sub.lenOuter)
+    verb(2):
+      #echo(itn, " ", r2)
+      echo(itn, " ", r2/b2)
+    verb(3):
+      threads:
+        subset:
+          let pAp = p.redot(Ap)
+          echo "beta: ", beta
+          echo "p2: ", p.norm2
+          echo "Ap2: ", Ap.norm2
+          echo "pAp: ", pAp
+          echo "alpha: ", r2o/pAp
+          echo "x2: ", x.norm2
+          echo "r2: ", r2
+      A(Ap, x)
+      var fr2: float
+      threads:
+        subset:
+          fr2 = (b - Ap).norm2
+      echo "   ", fr2/b2
+  toc("cg iterations")
+  if threadNum==0: finalIterations = itn
+
+  var fr2: float
+  A(Ap, x)
+  threads:
+    subset:
+      r := b - Ap
+      fr2 = r.norm2
+  verb(1):
+    echo finalIterations, " acc r2:", r2/b2
+    echo finalIterations, " tru r2:", fr2/b2
+
+  sp.finalIterations = finalIterations
+  toc("cg final")
+
+type
+  PKind = enum
+    pNone,
+    pCheby,
+    pCG
+  Precond = object
+    case kind:PKind
+    of pNone: discard
+    of pCheby:
+      cheby:Chebyshev
+      chebys:float
+    of pCG:
+      cg:SolverParams
+      cgs:float
+let precondKind = intParam("PKind", 0)
+var precond:Precond
+if 0 == precondKind:
+  echo "Preconditioner: None"
+  precond.kind = pNone
+elif 1 == precondKind:
+  echo "Preconditioner: Chebyshev"
+  precond.kind = pCheby
+  precond.CLIset chebys, "Pshift"
+  let
+    chebyA = floatParam("PChebya", precond.chebys+cheby.s-1)
+    chebyB = floatParam("PChebyb", precond.chebys+cheby.s+2)
+    chebyN = intParam("PChebyn", 6)
+  echo "PChebya: ",chebyA
+  echo "PChebyb: ",chebyB
+  echo "PChebyn: ",chebyN
+  precond.cheby = newChebyshev(chebyA..chebyB, chebyN, 1.0/x)
+  echo "Pshift: ",precond.chebys
+elif 2 == precondKind:
+  echo "Preconditioner: CG"
+  precond.kind = pCG
+  precond.CLIset cgs, "Pshift"
+  precond.cg.r2req = 1e-8
+  precond.cg.maxits = 1000
+  precond.cg.verbosity = 1
+  precond.cg.CLIset r2req, "PCG"
+  precond.cg.CLIset maxits, "PCG"
+  precond.cg.CLIset verbosity, "PCG"
+  echo "Pshift: ",precond.cgs
+else:
+  echo "ERROR: PKind can only be 0..2"
+  qexAbort()
+
+proc applyApproxDInv(pp:ptr Primme; xi,yo:ptr complex[float]) =
+  # x in, y out
+  threads:
+    pp.x.fromPrimmeArray xi
+  case precond.kind:
+  of pNone:
+    echo "Internal ERROR: applyApproxDInv shouldn't be called with PKind of pNone."
+    qexAbort()
+  of pCheby:
+    let o = PChebyOp[type(pp.o),type(pp.x)](o:pp.o,t:newOneOf(pp.x),s:precond.chebys)
+    precond.cheby.apply(pp.y, o, pp.x)
+  of pCG:
+    precond.cg.subset.layoutSubset(pp.y.l, "even")
+    var t = newOneOf(pp.y)
+    proc op(a,b:pp.F) =
+      pp.o.apply(t, b)
+      pp.o.applyAdj(a, t)
+      threads: a.even += precond.cgs*b.even
+    cg(pp.y, pp.x, op, precond.cg)
+  threads:
+    pp.y.toPrimmeArray yo
+
+proc precondFun[O](x:pointer, ldx:ptr PRIMME_INT,
+                y:pointer, ldy:ptr PRIMME_INT,
+                blocksize:ptr cint,
+                primme:ptr primme_params, err:ptr cint) {.noconv.} =
+  var
+    x = asarray[complex[cdouble]] x
+    dx = ldx[]
+    y = asarray[complex[cdouble]] y
+    dy = ldy[]
+  for i in 0..<blocksize[]:
+    let
+      xp = x[i*dx].addr         # Input vector
+      yp = y[i*dy].addr         # Output
+    applyApproxDInv(cast[ptr O](primme.matrix), xp, yp)
+  err[] = 0
+
 var (lo, g, r) = setupLattice([8,8,8,8])
 
 threads:
@@ -90,6 +294,9 @@ pp.p.restartingParams.CLIset maxPrevRetain
 pp.p.CLIset eps, "":
   echo "Ignoring abserr and relerr."
   pp.p.convTestFun = nil
+if precondKind > 0:
+  pp.p.applyPreconditioner = precondFun[type(pp)]
+  pp.p.correctionParams.precondition = 1
 pp.prepare
 pp.run
 echo "ChebyMatvec : ",cheby.count
