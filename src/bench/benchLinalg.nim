@@ -122,8 +122,9 @@ proc test(lat:any) =
     m3 := m1.adj * m2
 
   bench(nc*mvf, 3*mb, 3*mb):
-    for e in v2:
+    for e in m3:
       mulMMM(m3[e], m1[e].adj, m2[e])
+      #mulMMM(m3[e], m1[e], m2[e])
 
   bench(nc*mvf, 3*mb, 3*mb):
     for e in m3:
@@ -136,11 +137,11 @@ proc test(lat:any) =
     m3 += m1 * m2
 
   bench(nc*(mvf+nc2), 4*mb, 3*mb):
-    for e in v2:
+    for e in m3:
       imaddMMM(m3[e], m1[e], m2[e])
 
   bench(nc*(mvf+nc2), 3*mb, 2*mb):
-    for e in v2:
+    for e in m3:
       imaddMMM(m3[e], m1[0], m2[e])
 
 

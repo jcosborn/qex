@@ -56,12 +56,12 @@ forwardFunc(AsVar, simdLength)
 # converter adjMat*[T](x:Adjointed[AsMatrix[T]]):AsMatrix[Adjointed[T]]
 
 type
-  #Adjointed*{.borrow: `.`.}[T] = distinct T
-  #Adjointed*[T] = distinct T
   Adjointed*[T] = object
     v*: T
 
 template adjointed*(x: typed): untyped =
+  #static: echo "adjointed"
+  #dumpTree: x
   Adjointed[type(x)](v: x)
 template adj*(x: typed): untyped =
   mixin adj
@@ -75,28 +75,7 @@ template adj*(x: typed): untyped =
     #dumpTree: x
     #(Masked[type(x)])(maskedObj(x,msk))
     adjointed(x)
-#  mixin adj
-#  lets(x,xx):
-#    when isComplex(x):
-#      asComplex(adj(x[]))
-#    elif isVector(x):
-#      asVector(adj(x[]))
-#    elif isMatrix(x):
-#      asMatrix(adj(x[]))
-#    elif x is SomeNumber:
-#      x
-#    elif compiles(adjImpl(x)):
-#      adjImpl(x)
-#    else:
-#      when compiles(addr(x)):
-#      #when compiles(unsafeAddr(x)):
-#        #cast[ptr Adjointed[type(x)]](addr(x))[]
-#        cast[ptr Adjointed[type(x)]](unsafeAddr(x))[]
-#        #cast[Adjointed[type(x)]](x)
-#      else:
-#        #(Adjointed[type(x)])(x)
-#        cast[Adjointed[type(x)]](x)
-#        #cast[Adjointed[type(x)]]((var t=x; t.addr))
+
 
 #template `[]`*[T](x:Adjointed[T]):untyped = cast[T](x)
 makeDeref(Adjointed, x.T)

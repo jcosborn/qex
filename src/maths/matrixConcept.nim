@@ -72,8 +72,8 @@ type
     mat*: array[I,array[J,T]]
   MatrixArray*[I,J:static[int],T] = AsMatrix[MatrixArrayObj[I,J,T]]
   MatrixRowObj*[T] = object
-    row:int
-    mat:ptr T
+    rw*: int
+    mat*: ptr T
   MatrixRow*[T] = AsVector[MatrixRowObj[T]]
   #MatrixCol*[T] = tuple[col:int,mat:ptr T]
   #MatrixDiag*[T] = tuple[diag:int,mat:ptr T]
@@ -154,14 +154,15 @@ template numNumbers*(x:AsMatrix):untyped =
 #template `[]=`*(x:array; i,j:int, y:untyped):untyped = x[i][j] = y
 
 template len*(x:MatrixRowObj):untyped = x.mat[].ncols
-template `[]`*(x:MatrixRowObj; i:int):untyped = x.mat[][x.row,i]
-template `[]=`*(x:MatrixRowObj; i:int; y:untyped):untyped = x.mat[][x.row,i] = y
+template `[]`*(x:MatrixRowObj; i:int):untyped = x.mat[][x.rw,i]
+template `[]=`*(x:MatrixRowObj; i:int; y:untyped):untyped = x.mat[][x.rw,i] = y
 
 template isWrapper*(x: MatrixArrayObj): untyped = false
 
 template isWrapper*(x: AsMatrix): untyped = true
 template asWrapper*(x: AsMatrix, y: typed): untyped =
   #static: echo "asWrapper AsMatrix"
+  #dumpTree: y
   asMatrix(y)
 template asVarWrapper*(x: AsMatrix, y: typed): untyped =
   #static: echo "asVarWrapper AsMatrix"
@@ -220,7 +221,7 @@ template row*(x:AsMatrix; i:int):untyped =
   #for j in 0..<nc:
   #  assign(r[j], x[i,j])
   #r
-  asVector(MatrixRowObj[type(x)](row:i,mat:unsafeAddr(x)))
+  asVector(MatrixRowObj[type(x)](rw:i,mat:unsafeAddr(x)))
 template setRow*(r:AsVector; x:AsVector; i:int):untyped =
   assign(r, x)
 #proc setRow*(r:var AsMatrix; x:AsVector; i:int) {.inline.} =
@@ -342,7 +343,7 @@ template `*=`*(r:VarMV1; x:Sca2) = imul(r, x)
 
 template makeMap2(op:untyped):untyped =
   makeLevel2(op, V, VarVec1, V, Vec2, S, Sca3)
-  makeLevel2(op, V, VarVec1, S, Sca2, V, Vec3)
+  makeLevel2(op, V, var Vec1, S, Sca2, V, Vec3)
   makeLevel2(op, V, VarVec1, V, Vec2, V, Vec3)
   makeLevel2(op, M, VarMat1, S, Sca2, S, Sca3)
   makeLevel2(op, M, VarMat1, V, Vec2, S, Sca3)
@@ -385,9 +386,9 @@ makeLevel2(mul, M, var Mat1, M, Mat2, M, Mat3)
 #makeLevel2(op, M, Mat1, V, Vec2, V, Vec3)
 #makeLevel2(op, M, Mat1, V, Vec2, M, Mat3)
 
-setBinop(`*`,mul, Sca1,AsVector,VectorArray[y.len,type(x*y[0])])
+#setBinop(`*`,mul, Sca1,AsVector,VectorArray[y.len,type(x*y[0])])
 #setBinop(`*`,mul, float,Vec2,VectorArray[y.len,type(x*y[0])])
-#setBinop(`*`,mul, Sca1,Vec2,VectorArray[y.len,type(x*y[0])])
+setBinop(`*`,mul, Sca1,Vec2,VectorArray[y.len,type(x*y[0])])
 setBinop(`*`,mul, Vec1,Sca2,VectorArray[x.len,type(x[0]*y)])
 setBinop(`*`,mul, Mat1,Vec2,VectorArray[x.nrows,type(x[0,0]*y[0])])
 

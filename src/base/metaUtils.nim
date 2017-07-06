@@ -372,3 +372,24 @@ macro neverInit*(p:untyped):auto =
   insert(result.body, 0, getAst(def()))
   add(result.body, getAst(undef()))
   #echo result.treeRepr
+
+proc normalizeAstR(a: NimNode): NimNode =
+  result = a
+  case a.kind
+  of {nnkStmtList,nnkStmtListExpr}:
+    var i = 0
+    while i<a.len:
+      if a[i].kind in {nnkEmpty,nnkDiscardStmt}:
+        a.del(i)
+      else:
+        a[i] = normalizeAstR(a[i])
+        inc i
+    if a.len == 0: result = newEmptyNode()
+    if a.len == 1: result = a[0]
+  else:
+    discard
+
+macro normalizeAst*(a: typed): untyped =
+  result = normalizeAstR(a)
+  #echo "normalizeAst"
+  #echo result.treerepr

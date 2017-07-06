@@ -25,6 +25,7 @@ import maths
 export maths
 import maths/types
 export types
+import base/wrapperTypes
 
 #var destructors:seq[proc()]
 
@@ -33,8 +34,10 @@ setType(Svec0, "SimdS" & $VLEN)
 setType(Dvec0, "SimdD" & $VLEN)
 type
   SDvec = Svec0 | Dvec0
-  SComplex* = AsComplex[tuple[re,im:float32]]
-  SComplexV* = AsComplex[tuple[re,im:Svec0]]
+  #SComplex* = AsComplex[tuple[re,im:float32]]
+  #SComplexV* = AsComplex[tuple[re,im:Svec0]]
+  SComplex* = ComplexType[float32]
+  SComplexV* = ComplexType[Svec0]
   #SComplex* = Complex[float32,float32]
   #SComplexV* = Complex[Svec0,Svec0]
   Color*[T] = object
@@ -84,19 +87,30 @@ type
 #template `:=`*(r: Adjointed, x: Adjointed) = r[] := x[]
 #template assign*(r: Adjointed, x: Adjointed) = r[] := x[]
 
-template asColor*(xx: typed): untyped =
-  let x = xx
-  Color[type(x)](v: x)
+template asColorX*(xx: typed): untyped =
+  #lets(x,xx):
+  #static: echo "asColor typed"
+  #dumpTree: xx
+  let x_asColor = xx
+  Color[type(x_asColor)](v: x_asColor)
+template asColorX*(xx: typed{nkObjConstr}): untyped =
+  #static: echo "asColor typed{nkObjConstr}"
+  #dumpTree: xx
+  Color[type(xx)](v: xx)
+template asColor*(xx: typed): untyped = asColorX(normalizeAst(xx))
+
 template isWrapper*(x: Color): untyped = true
 template asWrapper*(x: Color, y: typed): untyped =
   #static: echo "asWrapper Color"
+  #dumpTree: y
   asColor(y)
 template asVarWrapper*(x: Color, y: typed): untyped =
   #static: echo "asVarWrapper Color"
   #var cy = asColor(y)
   #cy
   asVar(asColor(y))
-template `[]`*(x: Color): untyped = x.v
+#template `[]`*(x: Color): untyped = x.v
+makeDeref(Color, x.T)
 template `[]`*(x: Color, i: any): untyped = x[][i]
 template `[]`*(x: Color, i: any, j: any): untyped = x[][i,j]
 template `[]`*(x: Color, i: any, j: any, y: any): untyped =
@@ -108,6 +122,11 @@ forwardFunc(Color, numberType)
 forwardFunc(Color, nVectors)
 forwardFunc(Color, simdType)
 forwardFunc(Color, simdLength)
+template row*(x: Color, i: any): untyped =
+  mixin row
+  asColor(row(x[],i))
+template setRow*(r: Color; x: Color2; i: int): untyped =
+  setRow(r[], x[], i)
 
 template binDDRet(fn,wr,T1,T2) =
   template fn*(x: T1, y: T2): untyped =

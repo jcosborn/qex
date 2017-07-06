@@ -349,11 +349,13 @@ template mulMMM*(rr:typed; xx,yy:typed):untyped =
     mixin mul, imadd
     forO i, 0, <r.nrows:
       var tr{.noInit.}:VectorArray[r.ncols,type(x[0,0]*y[0,0])]
-      load(txi0, x[i,0])
+      #load(txi0, x[i,0])
+      let txi0 = x[i,0]
       forO j, 0, <r.ncols:
         mul(tr[j], txi0, y[0,j])
       forO k, 1, <x.ncols:
-        load(txik, x[i,k])
+        #load(txik, x[i,k])
+        let txik = x[i,k]
         forO j, 0, <r.ncols:
           imadd(tr[j], txik, y[k,j])
       forO j, 0, <r.ncols:
