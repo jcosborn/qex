@@ -59,6 +59,31 @@ template applyAdj(op:MyOp, x,y:Field) =
   threads: x := y
 template newVector(op:MyOp): untyped = op.o.newVector
 
+proc convTest[O](val:ptr cdouble; vec:pointer; rNorm:ptr cdouble; isconv:ptr cint;
+                 primme:ptr primme_params; ierr:ptr cint) {.noconv.} =
+  let
+    pp = cast[ptr O](primme.matrix)
+    re = pp.relerr
+    ae = pp.abserr
+  var
+    v = val[].float
+    r = rNorm[].float
+  if vec != nil:
+    echo "convTest: filtered v: ",v,"    r: ",r
+    var u = pp.o.newVector
+    threads: pp.x.fromPrimmeArray cast[ptr complex[float]](vec)
+    pp.o.o.apply(u, pp.x)
+    pp.o.o.applyAdj(pp.y, u)
+    threads:
+      v = sqrt(pp.y.even.norm2/pp.x.even.norm2)
+      pp.y.even -= v*pp.x
+      r = sqrt(pp.y.even.norm2)
+    echo "convTest: original v: ",v,"    r: ",r
+  if r < 2*ae*sqrt(v) or r < 2*re*v:
+    isconv[] = 1
+  else: isconv[] = 0
+  ierr[] = 0
+
 type
   PChebyOp[O,T] = object
     o:O
@@ -276,8 +301,8 @@ var
   ll = lo.newGauge
 hc.smear(g, fl, ll)
 let
-  ae = floatParam("abserr", 1e-10)
-  re = floatParam("relerr", 1e-10)
+  ae = floatParam("abserr", 1e-6)
+  re = floatParam("relerr", 1e-4)
 var
   s = newStag3(fl, ll)
   c = ChebyOp[type(s),type(s.newVector)](o:s,t:s.newVector)
@@ -285,6 +310,7 @@ var
   pp = lo.primmeInitialize(
     myO, abserr=ae, relerr=re, nVals = intParam("nv", 16),
     preset = intParam("method", 2).primme_preset_method)
+pp.p.convTestFun = convTest[type(pp)]
 pp.p.target = primme_largest
 pp.p.CLIset maxBlockSize
 pp.p.CLIset maxBasisSize
