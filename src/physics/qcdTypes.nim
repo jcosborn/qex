@@ -93,10 +93,11 @@ template asColorX*(xx: typed): untyped =
   #dumpTree: xx
   let x_asColor = xx
   Color[type(x_asColor)](v: x_asColor)
-template asColorX*(xx: typed{nkObjConstr}): untyped =
-  #static: echo "asColor typed{nkObjConstr}"
-  #dumpTree: xx
-  Color[type(xx)](v: xx)
+#template asColorX*(xx: typed{nkObjConstr}): untyped =
+#  static: echo "asColor typed{nkObjConstr}"
+#  dumpTree: xx
+#  lets(x,xx):
+#    Color[type(x)](v: x)
 template asColor*(xx: typed): untyped = asColorX(normalizeAst(xx))
 
 template isWrapper*(x: Color): untyped = true
@@ -188,6 +189,7 @@ template dot*(x: Color, y: Color2): untyped =
 template idot*(r: var any, x: Color2, y: Color3) = idot(r, x[], y[])
 template redot*(x: Color, y: Color2): untyped =
   redot(x[], y[])
+template trace*(x: Color): untyped = trace(x[])
 
 
 template isWrapper*(x: Svec0): untyped = false

@@ -270,9 +270,10 @@ template makeLevel1T(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
     #dumpTree: xx
     mixin `f s1 s2`
     #dumpTree: `f s1 s2`
-    subst(r,rr):
-      lets(x,xx):
-        `f s1 s2`(r, deref(x))
+    optimizeAst:
+      subst(r,rr):
+        lets(x,xx):
+          `f s1 s2`(r, deref(x))
 template makeLevel1(f,s1,t1,s2,t2:untyped):untyped =
   makeLevel1T(f,s1,t1,s2,t2)
 
@@ -289,9 +290,10 @@ template makeLevel2P(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
 template makeLevel2T(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
   template f*(rr:t1, xx:t2, yy:t3): untyped =
     #dumpTree: `f s1 s2 s3`
-    subst(r,rr,x,xx,y,yy):
-      lets(xt,x,yt,y):
-        `f s1 s2 s3`(r, xt, yt)
+    optimizeAst:
+      subst(r,rr,x,xx,y,yy):
+        lets(xt,x,yt,y):
+          `f s1 s2 s3`(r, xt, yt)
 template makeLevel2(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
   makeLevel2T(f,s1,t1,s2,t2,s3,t3)
 

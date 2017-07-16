@@ -354,7 +354,7 @@ macro addReturnType(t:untyped; body:untyped):auto =
 macro addArgTypes(t:varargs[untyped]; body:untyped):auto =
   #echo t.repr
   #echo t.treerepr
-  let tt = t
+  #let tt = t
   var a = newSeq[NimNode]()
   for i in 0..<t.len:
     a.add newIdentDefs(ident($chr(ord('a')+i)),t[i])
@@ -375,17 +375,18 @@ macro neverInit*(p:untyped):auto =
 
 proc normalizeAstR(a: NimNode): NimNode =
   result = a
-  case a.kind
+  case result.kind
   of {nnkStmtList,nnkStmtListExpr}:
-    var i = 0
-    while i<a.len:
-      if a[i].kind in {nnkEmpty,nnkDiscardStmt}:
-        a.del(i)
-      else:
-        a[i] = normalizeAstR(a[i])
-        inc i
-    if a.len == 0: result = newEmptyNode()
-    if a.len == 1: result = a[0]
+    var nonempty,last = 0
+    for i in 0..<result.len:
+      result[i] = normalizeAstR(result[i])
+      if result[i].kind notin {nnkEmpty,nnkDiscardStmt}:
+        inc nonempty
+        last = i
+    case nonempty
+    of 0: result = newEmptyNode()
+    of 1: result = result[last]
+    else: discard
   else:
     discard
 
@@ -393,3 +394,182 @@ macro normalizeAst*(a: typed): untyped =
   result = normalizeAstR(a)
   #echo "normalizeAst"
   #echo result.treerepr
+
+proc optimizeAstR(a: NimNode): NimNode =
+  result = a
+  case result.kind
+  of {nnkStmtList,nnkStmtListExpr}:
+    var nonempty,last = 0
+    for i in 0..<result.len:
+      result[i] = normalizeAstR(result[i])
+      if result[i].kind notin {nnkEmpty,nnkDiscardStmt}:
+        inc nonempty
+        last = i
+    case nonempty
+    of 0: result = newEmptyNode()
+    of 1: result = result[last]
+    else: discard
+  else:
+    discard
+
+#proc optStmtList(x: NimNode, sym: var seq[NimSym],
+#                 repl,stmts: var seq[NimNode]): NimNode =
+#  result = x.copyNimNode
+#  for i in 0..<x.len:
+#    result.add optNimTree(x[i], sym,
+
+var reccount{.compiletime.} = 0
+proc inlineLetsR(x: NimNode, sym: var seq[NimSym],
+                 repl,stmts: var seq[NimNode]): NimNode =
+  #echo "new tree"
+  #echo x.treeRepr
+  case x.kind
+  of nnkCommentStmt:
+    result = newEmptyNode()
+  of nnkStmtList:
+    var bstmts = newSeq[NimNode](0)
+    for i in 0..<x.len:
+      let reccount0 = reccount
+      inc reccount
+      #echo "label", reccount0, ": stmtlistin"
+      #echo x[i].repr
+      let r = inlineLetsR(x[i], sym, repl, bstmts)
+      #echo "label", reccount0, ": stmtlistout"
+      #echo r.repr
+      if r.kind != nnkEmpty:
+        bstmts.add r
+    case bstmts.len
+    of 0: result = newEmptyNode()
+    of 1: result = bstmts[0]
+    else:
+      result = x.copyNimNode
+      for c in bstmts:
+        #echo "bstmts: ", c.repr
+        result.add c
+  of nnkStmtListExpr:
+    for i in 0..(x.len-2):
+      let r = inlineLetsR(x[i], sym, repl, stmts)
+      if r.kind != nnkEmpty:
+        stmts.add r
+    result = inlineLetsR(x[^1], sym, repl, stmts)
+  of nnkLetSection:
+    result = x.copyNimNode
+    for i in 0..<x.len:
+      if x[i].kind==nnkIdentDefs:
+        let r = inlineLetsR(x[i][2], sym, repl, stmts)
+        if r.kind in CallNodes:
+          var id = x[i].copyNimNode
+          id.add x[i][0]
+          id.add x[i][1]
+          id.add r
+          result.add id
+        else:
+          #echo c[id][2].treerepr
+          sym.add x[i][0].symbol
+          #echo "sym: ", sym[^1]
+          repl.add r
+      else:
+        result.add x[i]
+    if result.len==0: result = newEmptyNode()
+  of nnkSym:
+    var i = sym.len-1
+    while i>=0:
+      if $sym[i] == $x.symbol: break
+      dec i
+    if i>=0:
+      #echo "found: ", i, " -> ", sym[i]
+      result = repl[i]
+    else:
+      result = x
+  of nnkBlockStmt:
+    echo "nnkBlockStmt"
+    var bstmts = newSeq[NimNode](0)
+    let nsym = sym.len
+    for i in 1..<x.len:
+      let reccount0 = reccount
+      inc reccount
+      #echo "label", reccount0, ": blockin"
+      #echo x[i].repr
+      let r = inlineLetsR(x[i], sym, repl, bstmts)
+      #echo "label", reccount0, ": blockout"
+      #echo r.repr
+      if r.kind != nnkEmpty:
+        bstmts.add r
+    sym.setLen(nsym)
+    repl.setLen(nsym)
+    if bstmts.len>0 or x[0].kind!=nnkEmpty:
+      result = x.copyNimNode
+      result.add x[0]
+      for c in bstmts:
+        #echo "bstmts: ", c.repr
+        result.add c
+    else:
+      result = newEmptyNode()
+  of nnkObjConstr:
+    result = x.copyNimNode
+    result.add x[0]
+    for i in 1..<x.len:
+      var t = x[i].copyNimNode
+      t.add x[i][0]
+      t.add inlineLetsR(x[i][1], sym, repl, stmts)
+      result.add t
+  of nnkDotExpr:
+    let o = inlineLetsR(x[0], sym, repl, stmts)
+    if o.kind == nnkObjConstr:
+      let ss = $(if x[1].kind==nnkSym: x[1] else: x[1][0]).symbol
+      var i = o.len - 1
+      while i>0:
+        if $o[i][0].symbol == ss: break
+        dec i
+      if i==0:
+        result = x.copyNimNode
+        result.add o
+        result.add x[1]
+      else:
+        result = o[i][1]
+    else:
+      result = x.copyNimNode
+      result.add o
+      result.add x[1]
+  of nnkPragma:
+    if x.len==1 and x[0].kind==nnkExprColonExpr and $x[0][0]=="emit":
+      template emt(x): untyped =
+        {.emit: x.}
+      result = getAst(emt(x[0][1][0]))
+    else:
+      result = x.copyNimNode
+      for i in 0..<x.len:
+        result.add inlineLetsR(x[i], sym, repl, stmts)
+  else:
+    #if x.kind==nnkPragma:
+      #echo x.treerepr
+    result = x.copyNimNode
+    for i in 0..<x.len:
+      #echo "Xelse"
+      #echo x[i].repr
+      result.add inlineLetsR(x[i], sym, repl, stmts)
+    #if x.kind==nnkStrLit:
+    #  result = newLit(x.strval)
+
+proc inlineLets(x: NimNode): NimNode =
+  var sym = newSeq[NimSym](0)
+  var repl = newSeq[NimNode](0)
+  var stmts = newSeq[NimNode](0)
+  let r = inlineLetsR(x, sym, repl, stmts)
+  result = newStmtList()
+  for c in stmts:
+    result.add c
+  result.add r
+
+macro optimizeAst*(a: typed): untyped =
+  echo "optimizeAst in"
+  #echo a.treerepr
+  echo a.repr
+  #result = a
+  #result = optimizeAstR(a)
+  result = inlineLets(a)
+  echo "optimizeAst out"
+  echo result.treerepr
+  echo result.repr
+
+macro XoptimizeAst*(a: typed): untyped = a

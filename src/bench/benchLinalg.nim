@@ -144,7 +144,6 @@ proc test(lat:any) =
     for e in m3:
       imaddMMM(m3[e], m1[0], m2[e])
 
-
 qexInit()
 #checkMem()
 test([4,4,4,4])

@@ -159,25 +159,30 @@ template stagDP*(sd:StaggeredD; r:Field; g:openArray[Field2];
                  x:Field3; expFlops:int; exp:untyped) =
   tic()
   for mu in 0..<g.len:
-    startSB(sd.sf[mu], x[ix])
+    optimizeAst:
+      startSB(sd.sf[mu], x[ix])
   toc("startShiftF")
   for mu in 0..<g.len:
-    startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
+    optimizeAst:
+      startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
   toc("startShiftB")
-  for ir{.inject.} in r[sd.subset]:
-    var rir{.inject,noInit.}:type(load1(r[ir]))
-    exp
-    for mu in 0..<g.len:
-      localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), load1(x[ix]))
-    for mu in 0..<g.len:
-      localSB(sd.sb[mu], ir, isub(rir, it), g[mu][ix].adj*x[ix])
-    assign(r[ir], rir)
+  optimizeAst:
+    for ir{.inject.} in r[sd.subset]:
+      var rir{.inject,noInit.}:type(load1(r[ir]))
+      exp
+      for mu in 0..<g.len:
+        localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), load1(x[ix]))
+      for mu in 0..<g.len:
+        localSB(sd.sb[mu], ir, isub(rir, it), g[mu][ix].adj*x[ix])
+      assign(r[ir], rir)
   toc("local", flops=(expFlops+g.len*(72+66+6))*sd.subset.len)
   for mu in 0..<g.len:
-    boundarySB(sd.sf[mu], imadd(r[ir], g[mu][ir], it))
+    optimizeAst:
+      boundarySB(sd.sf[mu], imadd(r[ir], g[mu][ir], it))
   toc("boundaryF")
   for mu in 0..<g.len:
-    boundarySB(sd.sb[mu], isub(r[ir], it))
+    optimizeAst:
+      boundarySB(sd.sb[mu], isub(r[ir], it))
   #threadBarrier()
   toc("boundaryB")
 
@@ -224,24 +229,29 @@ template stagDM*(sd:StaggeredD; r:Field; g:openArray[Field2];
                  x:Field3; expFlops:int; exp:untyped) =
   tic()
   for mu in 0..<g.len:
-    startSB(sd.sf[mu], x[ix])
+    optimizeAst:
+      startSB(sd.sf[mu], x[ix])
   toc("startShiftF")
   for mu in 0..<g.len:
-    startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
+    optimizeAst:
+      startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
   toc("startShiftB")
   for ir{.inject.} in r[sd.subset]:
-    var rir{.inject,noInit.}:type(load1(r[ir]))
-    exp
-    for mu in 0..<g.len:
-      localSB(sd.sf[mu], ir, imsub(rir, g[mu][ir], it), load1(x[ix]))
-      localSB(sd.sb[mu], ir, iadd(rir, it), g[mu][ix].adj*x[ix])
-    assign(r[ir], rir)
+    optimizeAst:
+      var rir{.inject,noInit.}:type(load1(r[ir]))
+      exp
+      for mu in 0..<g.len:
+        localSB(sd.sf[mu], ir, imsub(rir, g[mu][ir], it), load1(x[ix]))
+        localSB(sd.sb[mu], ir, iadd(rir, it), g[mu][ix].adj*x[ix])
+      assign(r[ir], rir)
   toc("local", flops=(expFlops+g.len*(72+66+6))*sd.subset.len)
   for mu in 0..<g.len:
-    boundarySB(sd.sf[mu], imsub(r[ir], g[mu][ir], it))
+    optimizeAst:
+      boundarySB(sd.sf[mu], imsub(r[ir], g[mu][ir], it))
   toc("boundaryF")
   for mu in 0..<g.len:
-    boundarySB(sd.sb[mu], iadd(r[ir], it))
+    optimizeAst:
+      boundarySB(sd.sb[mu], iadd(r[ir], it))
   #threadBarrier()
   toc("boundaryB")
 
