@@ -1,11 +1,12 @@
 import qex
 #import stdUtils
 import field
-import gauge/gaugeUtils
 import physics/qcdTypes
+import gauge/gaugeUtils
 import physics/stagD
 #import profile
 import os
+import rng
 
 qexInit()
 #var defaultLat = [4,4,4,4]
@@ -16,8 +17,9 @@ defaultSetup()
 var v1 = lo.ColorVector()
 var v2 = lo.ColorVector()
 var r = lo.ColorVector()
+var rs = newRNGField(RngMilc6, lo, intParam("seed", 987654321).uint64)
 threads:
-  g.random
+  g.random rs
   g.setBC
   g.stagPhase
   v1 := 0
@@ -62,7 +64,7 @@ var g3:array[8,type(g[0])]
 for i in 0..3:
   g3[2*i] = g[i]
   g3[2*i+1] = lo.ColorMatrix()
-  g3[2*i+1].random
+  g3[2*i+1].randomU rs
 var s3 = newStag3(g3)
 #s3.D(v2, v1, m)
 s3.solve(v2, v1, m, sp)
