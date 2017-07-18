@@ -26,10 +26,16 @@ export maths
 import maths/types
 export types
 import base/wrapperTypes
+import color
+export color
+import spin
+export spin
 
 #var destructors:seq[proc()]
 
 const nc = 3
+const ns = 4
+const nh = 2
 setType(Svec0, "SimdS" & $VLEN)
 setType(Dvec0, "SimdD" & $VLEN)
 type
@@ -40,10 +46,6 @@ type
   SComplexV* = ComplexType[Svec0]
   #SComplex* = Complex[float32,float32]
   #SComplexV* = Complex[Svec0,Svec0]
-  Color*[T] = object
-    v*: T
-  Color2*[T] = Color[T]
-  Color3*[T] = Color[T]
   SColorVector* = Color[VectorArray[nc,SComplex]]
   SColorVectorV* = Color[VectorArray[nc,SComplexV]]
   SColorMatrix* = Color[MatrixArray[nc,nc,SComplex]]
@@ -75,6 +77,24 @@ type
   DLatticeColorMatrix* = Field[1,DColorMatrix]
   DLatticeColorMatrixV* = Field[VLEN,DColorMatrixV]
 
+  SDiracFermion* = Spin[VectorArray[ns,SColorVector]]
+  SDiracFermionV* = Spin[VectorArray[ns,SColorVectorV]]
+  SHalfFermion* = Spin[VectorArray[nh,SColorVector]]
+  SHalfFermionV* = Spin[VectorArray[nh,SColorVectorV]]
+  SLatticeDiracFermion* = Field[1,SDiracFermion]
+  SLatticeDiracFermionV* = Field[VLEN,SDiracFermionV]
+  SLatticeHalfFermion* = Field[1,SHalfFermion]
+  SLatticeHalfFermionV* = Field[VLEN,SHalfFermionV]
+
+  DDiracFermion* = Spin[VectorArray[ns,DColorVector]]
+  DDiracFermionV* = Spin[VectorArray[ns,DColorVectorV]]
+  DHalfFermion* = Spin[VectorArray[nh,DColorVector]]
+  DHalfFermionV* = Spin[VectorArray[nh,DColorVectorV]]
+  DLatticeDiracFermion* = Field[1,DDiracFermion]
+  DLatticeDiracFermionV* = Field[VLEN,DDiracFermionV]
+  DLatticeHalfFermion* = Field[1,DHalfFermion]
+  DLatticeHalfFermionV* = Field[VLEN,DHalfFermionV]
+
 #overloadAsReal(Dvec0)
 #template `re=`*(x: ToDouble, y: untyped): untyped =
 #  x[].re = y
@@ -86,111 +106,6 @@ type
 #template `*`*(x: Dvec0, y: Adjointed[Dvec0]): untyped = x*y[]
 #template `:=`*(r: Adjointed, x: Adjointed) = r[] := x[]
 #template assign*(r: Adjointed, x: Adjointed) = r[] := x[]
-
-template asColorX*(xx: typed): untyped =
-  #lets(x,xx):
-  #static: echo "asColor typed"
-  #dumpTree: xx
-  let x_asColor = xx
-  Color[type(x_asColor)](v: x_asColor)
-#template asColorX*(xx: typed{nkObjConstr}): untyped =
-#  static: echo "asColor typed{nkObjConstr}"
-#  dumpTree: xx
-#  lets(x,xx):
-#    Color[type(x)](v: x)
-template asColor*(xx: typed): untyped = asColorX(normalizeAst(xx))
-
-template isWrapper*(x: Color): untyped = true
-template asWrapper*(x: Color, y: typed): untyped =
-  #static: echo "asWrapper Color"
-  #dumpTree: y
-  asColor(y)
-template asVarWrapper*(x: Color, y: typed): untyped =
-  #static: echo "asVarWrapper Color"
-  #var cy = asColor(y)
-  #cy
-  asVar(asColor(y))
-#template `[]`*(x: Color): untyped = x.v
-makeDeref(Color, x.T)
-template `[]`*(x: Color, i: any): untyped = x[][i]
-template `[]`*(x: Color, i: any, j: any): untyped = x[][i,j]
-template `[]`*(x: Color, i: any, j: any, y: any): untyped =
-  x[][i,j] = y
-forwardFunc(Color, len)
-forwardFunc(Color, nrows)
-forwardFunc(Color, ncols)
-forwardFunc(Color, numberType)
-forwardFunc(Color, nVectors)
-forwardFunc(Color, simdType)
-forwardFunc(Color, simdLength)
-template row*(x: Color, i: any): untyped =
-  mixin row
-  asColor(row(x[],i))
-template setRow*(r: Color; x: Color2; i: int): untyped =
-  setRow(r[], x[], i)
-
-template binDDRet(fn,wr,T1,T2) =
-  template fn*(x: T1, y: T2): untyped =
-    wr(fn(x[], y[]))
-
-binDDRet(`+`, asColor, Color, Color2)
-binDDRet(`-`, asColor, Color, Color2)
-binDDRet(`*`, asColor, Color, Color2)
-binDDRet(`/`, asColor, Color, Color2)
-
-template numberType*[T](x: typedesc[Color[T]]): untyped = numberType(T)
-template numNuumbers*[T](x: typedesc[Color[T]]): untyped = numberType(T)
-template numNumbers*(x: Color): untyped = numNumbers(x[])
-template load1*(x: Color): untyped = asColor(load1(x[]))
-template assign*(r: var Color, x: SomeNumber) =
-  assign(r[], x)
-template assign*(r: var Color, x: AsComplex) =
-  assign(r[], x)
-template assign*(r: var Color, x: Color2) =
-  assign(r[], x[])
-template `:=`*(r: var Color, x: SomeNumber) =
-  `:=`(r[], x)
-template `:=`*(r: var Color, x: Color2) =
-  r[] := x[]
-template `+=`*(r: var Color, x: Color2) =
-  r[] += x[]
-template `*=`*(r: var Color, x: SomeNumber) =
-  `*=`(r[], x)
-template iadd*(r: var Color, x: AsComplex) =
-  iadd(r[], x)
-template iadd*(r: var Color, x: Color2) =
-  iadd(r[], x[])
-template isub*(r: var Color, x: Color2) =
-  isub(r[], x[])
-template imul*(r: var Color, x: SomeNumber) =
-  imul(r[], x)
-template imadd*(r: var Color, x: Color2, y: Color3) =
-  imadd(r[], x[], y[])
-template imsub*(r: var Color, x: Color2, y: Color3) =
-  imsub(r[], x[], y[])
-template `*`*(x: Color, y: SomeNumber): untyped =
-  asColor(x[] * y)
-template `*`*(x: SomeNumber, y: Color2): untyped =
-  asColor(x * y[])
-template `*`*(x: AsComplex, y: Color2): untyped =
-  asColor(x * y[])
-template mul*(r: var Color, x: Color2, y: Color3) =
-  mul(r[], x[], y[])
-template random*(x: var Color) =
-  gaussian(x[], r)
-template gaussian*(x: var Color, r: var untyped) =
-  gaussian(x[], r)
-template projectU*(r: var Color, x: Color2) =
-  projectU(r[], x[])
-template norm2*(x: Color): untyped = norm2(x[])
-template inorm2*(r: var any, x: Color2) = inorm2(r, x[])
-template dot*(x: Color, y: Color2): untyped =
-  dot(x[], y[])
-template idot*(r: var any, x: Color2, y: Color3) = idot(r, x[], y[])
-template redot*(x: Color, y: Color2): untyped =
-  redot(x[], y[])
-template trace*(x: Color): untyped = trace(x[])
-
 
 template isWrapper*(x: Svec0): untyped = false
 template isWrapper*(x: Dvec0): untyped = false
@@ -226,6 +141,11 @@ template simdType*(x:ComplexObj):untyped = simdType(x.re)
 template simdType*(x:AsVector):untyped = simdType(x[])
 #template simdType*(x:AsMatrix):untyped = simdType(x[])
 template simdType*(x:AsMatrix):untyped = simdType(x[0,0])
+
+
+template `*`*(x: Color, y: Spin): untyped =
+  #asScalar(x) * y[]
+  asSpin(x * y[])
 
 
 template trace*(x:SComplexV):untyped = x
@@ -448,6 +368,10 @@ proc ColorMatrixD*(l: Layout): DLatticeColorMatrixV = result.new(l)
 
 proc ColorVector*(l: Layout): auto = ColorVectorD(l)
 proc ColorMatrix*(l: Layout): auto = ColorMatrixD(l)
+
+proc DiracFermionS*(l: Layout): SLatticeDiracFermionV = result.new(l)
+proc DiracFermionD*(l: Layout): DLatticeDiracFermionV = result.new(l)
+proc DiracFermion*(l: Layout): auto = DiracFermionD(l)
 
 when isMainModule:
   import times

@@ -51,14 +51,32 @@ forwardFunc(AsVar, numberType)
 forwardFunc(AsVar, nVectors)
 forwardFunc(AsVar, simdType)
 forwardFunc(AsVar, simdLength)
+forwardFunc(AsVar, norm2)
+template norm2*(r: var any, x: AsVar): untyped =
+  mixin norm2
+  norm2(r, x[])
 
-
-# converter adjMat*[T](x:Adjointed[AsMatrix[T]]):AsMatrix[Adjointed[T]]
+#[
+type
+  AsScalar*[T] = object
+    v*: T
+template asScalar*(x: typed): untyped =
+  let xx = x
+  AsScalar[type(xx)](v: xx)
+makeDeref(AsScalar, x.T)
+template `[]`*(x: AsScalar; i: SomeInteger): untyped = x[][i]
+template `[]`*(x: AsScalar; i,j: SomeInteger): untyped = x[][i,j]
+forwardFunc(AsScalar, nrows)
+forwardFunc(AsScalar, ncols)
+forwardFunc(AsScalar, numberType)
+forwardFunc(AsScalar, nVectors)
+forwardFunc(AsScalar, simdType)
+forwardFunc(AsScalar, simdLength)
+]#
 
 type
   Adjointed*[T] = object
     v*: T
-
 template adjointed*(x: typed): untyped =
   #static: echo "adjointed"
   #dumpTree: x

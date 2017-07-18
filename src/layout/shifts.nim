@@ -10,6 +10,7 @@ import macros
 #import qmp
 #import stdUtils
 import field
+export field
 #import future
 import strUtils
 #import metaUtils
@@ -63,34 +64,34 @@ proc createShiftBufs*(x:any; ln=1; sub="all"):auto =
 #proc init*(s:var ShiftB; ;
 #           dir,len:int; sub="all") =
 
-template startSB*(s:ShiftB; e:untyped) =
+template startSB*(sb0: ShiftB; e: untyped) =
   mixin assign, `[]`, numberType
   if threadNum == 0:
-    if s.si.nRecvRanks > 0:
+    if sb0.si.nRecvRanks > 0:
       #echoRank "startRecvBuf"
-      startRecvBuf(s.sb)
-  if s.si.nSendRanks > 0:
-    if s.si.pack == 0:
-      let b = cast[ptr cArray[s.T]](s.sb.sq.sbuf)
-      #echo "sendSites: ", s.si.nSendSites
-      tFor i, 0..<s.si.nSendSites:
-        let ix{.inject.} = s.si.sendSites[i]
+      startRecvBuf(sb0.sb)
+  if sb0.si.nSendRanks > 0:
+    if sb0.si.pack == 0:
+      let b = cast[ptr cArray[sb0.T]](sb0.sb.sq.sbuf)
+      #echo "sendSites: ", sb0.si.nSendSites
+      tFor i, 0..<sb0.si.nSendSites:
+        let ix{.inject.} = sb0.si.sendSites[i]
         assign(b[i], e)
         #echoAll myrank, " ", i, " ", ix, " ", b[][i]
     else:
-      type F = numberType(s.T)
-      let stride = sizeOf(s.T) div (2*sizeof(F))
-      let b = cast[ptr cArray[F]](s.sb.sq.sbuf)
-      let l = cast[ptr cArray[F]](s.sb.lbuf)
-      tFor i, 0..<s.si.nSendSites:
-        let ix{.inject.} = s.si.sendSites[i]
+      type F = numberType(sb0.T)
+      let stride = sizeOf(sb0.T) div (2*sizeof(F))
+      let b = cast[ptr cArray[F]](sb0.sb.sq.sbuf)
+      let l = cast[ptr cArray[F]](sb0.sb.lbuf)
+      tFor i, 0..<sb0.si.nSendSites:
+        let ix{.inject.} = sb0.si.sendSites[i]
         let j = stride * i
-        pack(b[j].addr, l[j].addr, s.si.pack, e)
+        pack(b[j].addr, l[j].addr, sb0.si.pack, e)
         #echoAll myrank, " ", i, " ", ix, " "
     t0wait()
     if threadNum == 0:
-      #echoRank "send: ", cast[ptr float32](s.sb.sq.sbuf)[]
-      startSendBuf(s.sb)
+      #echoRank "send: ", cast[ptr float32](sb0.sb.sq.sbuf)[]
+      startSendBuf(sb0.sb)
 
 template isLocal*(s: ShiftB; i: int): bool =
   s.si.sq.pidx[i] != -1
@@ -433,7 +434,7 @@ proc newShifters*[F](f: F, len: int, sub="all"): auto =
   r
 
 proc `^*`*(x: Transporter, y: any): auto =
-  mixin mul, load1, adj
+  mixin mul, load1, adj, `[]`
   var r = x.field
   when compiles(x.link):
     if x.len >= 0:

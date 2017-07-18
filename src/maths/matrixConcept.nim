@@ -390,6 +390,7 @@ makeLevel2(mul, M, var Mat1, M, Mat2, M, Mat3)
 
 #setBinop(`*`,mul, Sca1,AsVector,VectorArray[y.len,type(x*y[0])])
 #setBinop(`*`,mul, float,Vec2,VectorArray[y.len,type(x*y[0])])
+#setBinop(`*`,mul, AsScalar,Vec2,VectorArray[y.len,type(x*y[0])])
 setBinop(`*`,mul, Sca1,Vec2,VectorArray[y.len,type(x*y[0])])
 setBinop(`*`,mul, Vec1,Sca2,VectorArray[x.len,type(x[0]*y)])
 setBinop(`*`,mul, Mat1,Vec2,VectorArray[x.nrows,type(x[0,0]*y[0])])

@@ -1,18 +1,18 @@
 import os
-#import basicOps
+import times
 import strUtils
+
+import base
 import layout
+import field
 import qcdTypes
 #import stdUtils
-import times
 import solvers/cg
 export cg
 #import types
 #import profile
 #import metaUtils
 import gauge/gaugeUtils
-
-#{.emit:"#define memset(a,b,c)".}
 
 type StaggeredD*[T] = object
   sf*:seq[ShiftB[T]]
