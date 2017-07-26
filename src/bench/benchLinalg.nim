@@ -40,6 +40,9 @@ proc checkMem =
        getTotalMem())
   echo GC_getStatistics()
 
+# fps: flops per site
+# bps: bytes moved (load+store) per site
+# mm: memory footprint (bytes) per site
 template bench(fps,bps,mm,eqn: untyped) =
   let vol = lo.nSites.float
   let flops = vol * fps.float
@@ -70,13 +73,25 @@ template bench(fps,bps,eqn: untyped) =
 
 proc test(lat:any) =
   var lo = newLayout(lat)
+  when true:
+    template newCV: untyped = lo.ColorVectorS()
+    template newCM: untyped = lo.ColorMatrixS()
+    template newDF: untyped = lo.DiracFermionS()
+  else:
+    template newCV: untyped = lo.ColorVectorD()
+    template newCM: untyped = lo.ColorMatrixD()
+    template newDF: untyped = lo.DiracFermionD()
 
-  var v1 = lo.ColorVectorS()
-  var v2 = lo.ColorVectorS()
-  var v3 = lo.ColorVectorS()
-  var m1 = lo.ColorMatrixS()
-  var m2 = lo.ColorMatrixS()
-  var m3 = lo.ColorMatrixS()
+  var v1 = newCV()
+  var v2 = newCV()
+  var v3 = newCV()
+  var m1 = newCM()
+  var m2 = newCM()
+  var m3 = newCM()
+  var m4 = newCM()
+  var m5 = newCM()
+  var d1 = newDF()
+  var d2 = newDF()
   const nc = v1[0].len
   let sf = sizeof(numberType(v3[0]))
   let nc2 = 2*nc
@@ -143,6 +158,12 @@ proc test(lat:any) =
   bench(nc*(mvf+nc2), 3*mb, 2*mb):
     for e in m3:
       imaddMMM(m3[e], m1[0], m2[e])
+
+  bench(nc*(3*mvf+nc2), 6*mb, 5*mb):
+    m1 += (m2*m3) * (m4*m5).adj
+
+  bench(4*(mvf+nc2), mb+4*3*vb, mb+4*2*vb):
+    d2 += m1 * d1
 
 qexInit()
 #checkMem()

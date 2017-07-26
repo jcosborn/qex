@@ -134,6 +134,9 @@ type
 
 template complexObj*(x,y: typed): untyped =
   ComplexObj[type(x)](re: x, im: y)
+template complexType*(x,y: typed): untyped =
+  asComplex(complexObj(x,y))
+
 template toDoubleImpl*(x: ComplexObj): untyped = toDoubleX(x)
 #proc `$`*(x:C1):string =
 #  result = "(" & $x.re & "," & $x.im & ")"
@@ -440,12 +443,14 @@ template mul*(r:var C1; x:C2; y:R3) =
   mul(r.re, x.re, y.re)
   mul(r.im, x.im, y.re)
 #proc mul*(r:var C1; x:C2; y:C3) {.inline.} =
-template mul*(r:var C1; x:C2; y:C3) =
-  # r.re = x.re*y.re - x.im*y.im
-  # r.im = x.im*y.re + x.re*y.im
-  mixin mul, imadd
-  mul(r, x, y.re.asReal)
-  imadd(r, x, y.im.asImag)
+template mul*(r: var C1; xx: C2; yy: C3) =
+  let x = xx
+  let y = yy
+  r.re = x.re*y.re - x.im*y.im
+  r.im = x.im*y.re + x.re*y.im
+  #mixin mul, imadd
+  #mul(r, x, y.re.asReal)
+  #imadd(r, x, y.im.asImag)
 
 proc redot*(x:C2; y:C3):auto {.inline,noInit.} =
   # x.re*y.re + x.im*y.im
@@ -468,10 +473,15 @@ proc `*`*(x:C1; y:SomeNumber):auto {.inline.} =
   var r{.noInit.}:ComplexType[type(x.re*y)]
   mul(r, x, y)
   r
-proc `*`*(x:C1; y:C2):auto {.inline.} =
-  var r{.noInit.}:ComplexType[type(x.re*y.re)]
-  mul(r, x, y)
-  r
+template `*`*(xx: C1; yy: C2): untyped =
+  let x = xx
+  let y = yy
+  #var r{.noInit.}: ComplexType[type(x.re*y.re)]
+  #mul(r, x, y)
+  #r
+  let rr = x.re*y.re - x.im*y.im
+  let ri = x.im*y.re + x.re*y.im
+  complexType(rr, ri)
 
 proc divd*(r:var C1; x:C2; y:R3) {.inline.} =
   divd(r.re, x.re, y.re)
@@ -549,12 +559,14 @@ template imadd*(r:var C1; x:C2; y:I3) =
   imsub(r.re, x.im, y.im)
   imadd(r.im, x.re, y.im)
 #proc imadd*(r:var C1; x:C2; y:C3) {.inline.} =
-template imadd*(r:var C1; x:C2; y:C3) =
-  # r.re += x.re*y.re - x.im*y.im
-  # r.im += x.re*y.im + x.im*y.re
-  mixin imadd
-  imadd(r, x, y.re.asReal)
-  imadd(r, x, y.im.asImag)
+template imadd*(r: var C1; xx: C2; yy: C3) =
+  let x = xx
+  let y = yy
+  r.re += x.re*y.re - x.im*y.im
+  r.im += x.re*y.im + x.im*y.re
+  #mixin imadd
+  #imadd(r, x, y.re.asReal)
+  #imadd(r, x, y.im.asImag)
 
 template imsubCRC*(rr:typed; xx,yy:typed):untyped =
   # r.re -= x * y.re

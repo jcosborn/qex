@@ -5,12 +5,13 @@ import complexConcept
 import matrixConcept
 import types
 
-proc determinant*(x:any):auto =
+proc determinant*(x: any): auto =
   assert(x.nrows == x.ncols)
   if x.nrows==1:
     result = x[0,0]
   elif x.nrows==2:
-    result = x[0,0]*x[1,1] - x[0,1]*x[1,0]
+    optimizeAst:
+      result = x[0,0]*x[1,1] - x[0,1]*x[1,0]
   elif x.nrows==3:
     result = (x[0,0]*x[1,1]-x[0,1]*x[1,0])*x[2,2] +
              (x[0,2]*x[1,0]-x[0,0]*x[1,2])*x[2,1] +

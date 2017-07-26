@@ -7,6 +7,7 @@ type
     v*: T
   Spin2*[T] = Spin[T]
   Spin3*[T] = Spin[T]
+  SpinMatrix[I,J:static[int],T] = Spin[MatrixArray[I,J,T]]
 
 template asSpin*(xx: typed): untyped =
   #static: echo "asSpin typed"
@@ -104,3 +105,17 @@ template idot*(r: var any, x: Spin2, y: Spin3) = idot(r, x[], y[])
 template redot*(x: Spin, y: Spin2): untyped =
   redot(x[], y[])
 template trace*(x: Spin): untyped = trace(x[])
+
+template spinMatrix*[I,J:static[int],T](a: untyped): untyped =
+  Spin[MatrixArray[I,J,T]](v: MatrixArray[I,J,T](v: MatrixArrayObj[I,J,T](mat: a)))
+
+const z0 = ComplexType[float](v: ComplexObj[float](re: 0.0, im: 0.0))
+const z1 = ComplexType[float](v: ComplexObj[float](re: 1.0, im: 0.0))
+const zi = ComplexType[float](v: ComplexObj[float](re: 0.0, im: 1.0))
+var gamma0* = spinMatrix[4,4,ComplexType[float]]([[z1,z0,z0,z0],[z0,z1,z0,z0],[z0,z0,z1,z0],[z0,z0,z0,z1]])
+var gamma4* = spinMatrix[4,4,ComplexType[float]]([[z0,z0,z1,z0],[z0,z0,z0,z1],[z1,z0,z0,z0],[z0,z1,z0,z0]])
+
+when isMainModule:
+  echo gamma0[0,0]
+  let g2 = gamma0 + gamma4
+  #echo g2[0,0]

@@ -80,7 +80,8 @@ type
 template adjointed*(x: typed): untyped =
   #static: echo "adjointed"
   #dumpTree: x
-  Adjointed[type(x)](v: x)
+  let x_adjointed = x
+  Adjointed[type(x_adjointed)](v: x_adjointed)
 template adj*(x: typed): untyped =
   mixin adj
   bind adjointed

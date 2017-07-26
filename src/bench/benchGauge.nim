@@ -35,7 +35,7 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
   echo "(", exp2string(eqn), ") secs: ", dt|(5,3), "  mf: ", mf.int,
        "  mb: ", mb.int
 
-proc test(lat0:any) =
+proc test(lat0: any) =
   var scale = 1
   var lat = lat0*scale
   var lo = newLayout(lat)
@@ -48,11 +48,11 @@ proc test(lat0:any) =
   g.random
 
   var pl2 = plaq2(g)
-  echo pl2
+  echo "plaq2: ", pl2
 
   var pl = plaq(g)
   echo pl
-  echo pl.sum
+  echo "plaq: ", pl.sum
 
   var ga = gaugeAction(g)
   echo ga

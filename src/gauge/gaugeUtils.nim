@@ -235,31 +235,31 @@ proc plaq2*[T](gg:openArray[T]):auto =
   let nc = g[0][0].ncols
   var m = lo.ColorMatrix()
   var s0 = lo.ColorMatrix()
-  var t0 = lo.ColorMatrix()
+  #var t0 = lo.ColorMatrix()
   var s1 = lo.ColorMatrix()
-  var t1 = lo.ColorMatrix()
+  #var t1 = lo.ColorMatrix()
   var tr:type(trace(m))
   toc("plaq2 setup")
   threads:
-    tic()
+    #tic()
     m := 0
-    toc("plaq2 zero")
+    #toc("plaq2 zero")
     for mu in 1..<nd:
       for nu in 0..<mu:
-        tic()
+        #tic()
         shift(s0, mu,1, g[nu])
-        toc("plaq2 shift1")
+        #toc("plaq2 shift1")
         shift(s1, nu,1, g[mu])
-        toc("plaq2 shift2")
+        #toc("plaq2 shift2")
         #echo "s0: ", trace(s0)
         #echo "s1: ", trace(s1)
         m += (g[mu]*s0) * (g[nu]*s1).adj
         #m += (g[mu]*s0) * (g[nu]*s1)
         #echo mu, " ", nu, " ", trace(m)/nc
-        toc("plaq2 mul")
-    toc("plaq2 work")
+        #toc("plaq2 mul")
+    #toc("plaq2 work")
     tr = trace(m)
-    toc("plaq2 trace")
+    #toc("plaq2 trace")
   toc("plaq2 threads")
   result = tr/(lo.physVol.float*0.5*float(nd*(nd-1)*nc))
 
