@@ -115,6 +115,24 @@ const zi = ComplexType[float](v: ComplexObj[float](re: 0.0, im: 1.0))
 var gamma0* = spinMatrix[4,4,ComplexType[float]]([[z1,z0,z0,z0],[z0,z1,z0,z0],[z0,z0,z1,z0],[z0,z0,z0,z1]])
 var gamma4* = spinMatrix[4,4,ComplexType[float]]([[z0,z0,z1,z0],[z0,z0,z0,z1],[z1,z0,z0,z0],[z0,z1,z0,z0]])
 
+proc spprojP1*(r: var any, x: any) =
+  ## r: HalfFermion
+  ## x: DiracFermion
+  let nc = x[0].len
+  for i in 0..<nc:
+    r[0][i] = x[0][i] + x[2][i]
+    r[1][i] = x[1][i] + x[3][i]
+
+proc spreconP1*(r: var any, x: any) =
+  ## r: DiracFermion
+  ## x: HalfFermion
+  let nc = x[0].len
+  for i in 0..<nc:
+    r[0][i] = x[0][i]
+    r[1][i] = x[1][i]
+    r[2][i] = x[0][i]
+    r[3][i] = x[1][i]
+
 when isMainModule:
   echo gamma0[0,0]
   let g2 = gamma0 + gamma4

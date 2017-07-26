@@ -422,7 +422,8 @@ proc prepareShiftBuf*(sb:var ShiftBuf, si:ShiftIndices, esize:int) =
   #sb.lbufSize = (si.sq.nSendSites*si.nSitesInner-si.sq.nSendSites1)*esize
   sb.lbufSize = si.sq.nSendSites*si.nSitesInner*esize
   sb.lbuf = cast[type(sb.lbuf)](alloc(sb.lbufSize))
-  sb.active = false
+  sb.activeRecv = false
+  sb.activeSend = false
 template startRecvBuf*(sb: ShiftBuf) =
   if not sb.activeRecv:
     sb.activeRecv = true
