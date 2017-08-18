@@ -33,6 +33,7 @@ setType(Svec0, "SimdS" & $VLEN)
 setType(Dvec0, "SimdD" & $VLEN)
 type
   SDvec = Svec0 | Dvec0
+
   SComplex* = AsComplex[tuple[re,im:float32]]
   SComplexV* = AsComplex[tuple[re,im:Svec0]]
   #SComplex* = Complex[float32,float32]
@@ -49,6 +50,7 @@ type
   SLatticeColorVectorV* = Field[VLEN,SColorVectorV]
   SLatticeColorMatrix* = Field[1,SColorMatrix]
   SLatticeColorMatrixV* = Field[VLEN,SColorMatrixV]
+
   DComplex* = AsComplex[tuple[re,im:float64]]
   DComplexV* = AsComplex[tuple[re,im:Dvec0]]
   #DComplex* = Complex[float64,float64]
@@ -319,13 +321,29 @@ proc blend*(r:var any; x:ptr char; b:ptr char; blnd:int) {.inline.} =
   of -8: loop(blendm8)
   else: discard
 
-proc ColorVectorS*(l: Layout): SLatticeColorVectorV = result.new(l)
-proc ColorMatrixS*(l: Layout): SLatticeColorMatrixV = result.new(l)
-proc ColorVectorD*(l: Layout): DLatticeColorVectorV = result.new(l)
-proc ColorMatrixD*(l: Layout): DLatticeColorMatrixV = result.new(l)
+macro makeConstructors(x: untyped): untyped =
+  template mp(f,r,rslt: untyped) =
+    proc f*(l: Layout): r =
+      new(rslt, l)
+  let f = $x
+  let r = "Lattice" & f
+  result = newStmtList()
+  result.add getAst mp(ident(f&"S"), ident("S"&r&"V"), ident"result")
+  result.add getAst mp(ident(f&"D"), ident("D"&r&"V"), ident"result")
+  result.add getAst mp(ident(f), ident("D"&r&"V"), ident"result")
+  echo result.repr
 
-proc ColorVector*(l: Layout): auto = ColorVectorD(l)
-proc ColorMatrix*(l: Layout): auto = ColorMatrixD(l)
+makeConstructors(Real)
+makeConstructors(Complex)
+makeConstructors(ColorVector)
+makeConstructors(ColorMatrix)
+
+#proc ColorVectorS*(l: Layout): SLatticeColorVectorV = result.new(l)
+#proc ColorVectorD*(l: Layout): DLatticeColorVectorV = result.new(l)
+#proc ColorVector*(l: Layout): auto = ColorVectorD(l)
+#proc ColorMatrixS*(l: Layout): SLatticeColorMatrixV = result.new(l)
+#proc ColorMatrixD*(l: Layout): DLatticeColorMatrixV = result.new(l)
+#proc ColorMatrix*(l: Layout): auto = ColorMatrixD(l)
 
 when isMainModule:
   import times

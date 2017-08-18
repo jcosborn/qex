@@ -51,7 +51,7 @@ set "CUDADIR", cudadir
 var machine = ""
 CC ~ "mpicc"
 CC_TYPE ~ "gcc"
-CFLAGS_ALWAYS ~ "-Wall -std=gnu99 -march=native -ldl"
+CFLAGS_ALWAYS ~ "-Wall -std=gnu99 -march=native -fno-strict-aliasing -ldl"
 CFLAGS_DEBUG ~ "-g3 -O0"
 CFLAGS_SPEED ~ "-g -O3"
 OMPFLAGS ~ "-fopenmp"
@@ -101,7 +101,7 @@ if machine=="":
     # assume cross-compiling for KNL
     machine = "knl"
     CC ~ "cc"
-    CFLAGS_ALWAYS ~ "-Wall -std=gnu99 -march=knl -ldl"
+    CFLAGS_ALWAYS ~ "-Wall -std=gnu99 -march=knl -fno-strict-aliasing -ldl"
     LD ~ ( "$CC" % params )
     LDFLAGS ~ ( "$CFLAGS_ALWAYS" % params )
     SIMD ~ "SSE,AVX,AVX512"

@@ -58,9 +58,9 @@ proc ioGetCoords[V:static[int]](x:ptr cint; node: cint; index: cint) =
 proc ioNumSites[V:static[int]](node: cint):cint =
   return ioLayout[V]().nSites.cint
 var readnodes{.global.} = -1
-proc ioReadRank*(node: cint): cint =
+proc ioReadRank(node: cint): cint =
   cint( readnodes * (node div readnodes) )
-proc ioMasterRank*(): cint = 0.cint
+proc ioMasterRank(): cint = 0.cint
 
 proc toString(qs:ptr QIO_String):string =
   let n = qs.length.int
