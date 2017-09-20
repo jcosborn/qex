@@ -72,8 +72,8 @@ proc setup =
   putenv ~ ("OMPFLAG=" & ompFlags)
   putenv ~ ("QMPDIR=" & qmpDir)
   putenv ~ ("QIODIR=" & qioDir)
-  putenv ~ ("QUDADIR=" & qudaDir)
-  putenv ~ ("CUDADIR=" & cudaLibDir)
+  when declared(qudaDir): putenv ~ ("QUDADIR=" & qudaDir)
+  when declared(cudaLibDir): putenv ~ ("CUDADIR=" & cudaLibDir)
   putenv ~ ("VLEN=" & $vlen)
   threads ~ on
   tlsEmulation ~ off

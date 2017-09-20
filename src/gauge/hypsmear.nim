@@ -4,6 +4,8 @@ import gauge
 import strUtils
 import fat7l
 
+export PerfInfo
+
 type HypCoefs* = object
   alpha1*: float
   alpha2*: float

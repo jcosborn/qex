@@ -393,7 +393,7 @@ proc setupLattice*(lat:openarray[int]):auto =
       echo "ERROR: loadGauge failed on '", fn, "'"
       quit QuitFailure
   else:
-    for i in 0..<g.len: threads: g.random r
+    threads: g.random r
   return (lo, g, r)
 
 

@@ -172,9 +172,11 @@ proc assign*(m:Masked[SDvec], x:SDvec) =
       m.pobj[][i] = x[i]
     b = b shr 1
     i.inc
+proc `:=`*(m:Masked[SDvec], x:SDvec) = assign(m,x)
 proc assign*(m:Masked[SDvec], x:Masked[SDvec]) =
   assign(m, x.pobj[])
-proc mul*(m:Masked[SDvec]; x:SDvec; y:int) =
+proc `:=`*(m:Masked[SDvec], x:Masked[SDvec]) = assign(m,x)
+proc mul*(m:Masked[SDvec]; x:SDvec; y:SomeNumber) =
   var i = 0
   var b = m.mask
   #echo b
@@ -184,16 +186,19 @@ proc mul*(m:Masked[SDvec]; x:SDvec; y:int) =
       m.pobj[][i] = x[i] * (type(m.pobj[][i]))(y)
     b = b shr 1
     i.inc
-proc mul*(m:Masked[SDvec]; x:int): auto =
+#[
+proc mul*(m:Masked[SDvec]; x:SomeNumber): auto =
   mul(m, m.pobj[], x)
   m
-proc `*`*(m:Masked[SDvec]; x:int): auto =
+proc `*`*(m:Masked[SDvec]; x:SomeNumber): auto =
   mul(m, m.pobj[], x)
   m
-proc imul*(m:Masked[SDvec]; x:int) =
+]#
+proc imul*(m:Masked[SDvec]; x:SomeNumber) =
   var t = m[]
   imul(t, x)
   assign(m, t)
+proc `*=`*(m:Masked[SDvec]; x:SomeNumber) = m.imul x
 #proc assign*(m:Masked[SComplexV], y:int) =
 #  let p = m.pobj[].re.addr
 #  assign(Masked[type(p[])](pobj:p,mask:m.mask), y)
