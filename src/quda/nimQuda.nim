@@ -8,7 +8,6 @@ import physics/stagD
 import solvers/cg
 
 import times
-import random
 
 import os
 when existsEnv("QUDADIR"):
@@ -119,6 +118,7 @@ proc qudaSolve*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =
   qudaSolve(s, r, x, m, sp)
 
 when isMainModule:
+  import qex
   import gauge
   import layout
   qexInit()
@@ -133,11 +133,10 @@ when isMainModule:
     dest = lo.ColorVector()
     destG = lo.ColorVector()
     r = lo.ColorVector()
-    g = newSeq[type(lo.ColorMatrix())](lat.len)
-  for i in 0..<lat.len:
-    g[i] = lo.Colormatrix()
-    threads: g[i] := 1
-  gauge.random(g)
+    g = lo.newGauge
+    rng = RngMilc6.newRNGField lo
+  g.random rng
+  #[
   for mu in 0..<lat.len:
     #var t, s: DColorMatrixV   # FIXME: get vectorized code to work with projectU
     var t, s: DColorMatrix
@@ -151,16 +150,13 @@ when isMainModule:
         for b in 0..2:
           g[mu]{i}[a,b].re := t[a,b].re
           g[mu]{i}[a,b].im := t[a,b].im
+  ]#
   threads:
     g.setBC
     g.stagPhase
-    src := 0
     dest := 0
     destG := 0
-  tfor i, 0..<lo.nSites:
-    for a in 0..2:
-      src{i}[a].re := (if random(1.0)>0.5: 1.0 else: -1.0)
-      src{i}[a].im := (if random(1.0)>0.5: 1.0 else: -1.0)
+    src.z4 rng
   var s = g.newStag
   var m = 0.0123
   var res = 1e-12
@@ -186,7 +182,7 @@ when isMainModule:
     msGpu: array[4,cint]
   for i in 0..3:
     latGpu[i] = lat[i].cint
-    msGpu[i] = 1   # SINGLE GPU machine for now
+    msGpu[i] = cint(1 + lo.coords[i].min div lo.localGeom[i])
   #initArg.verbosity = QUDA_DEBUG_VERBOSE
   initArg.verbosity = QUDA_SUMMARIZE
   initArg.layout.device = 0   # single gpu
