@@ -208,7 +208,7 @@ proc newLayoutX*(lat:openArray[int],V:static[int]):Layout[V] =
 
   rg = intSeqParam("rankgeom")
   if rg.len == 0:
-    rg.newSeq(nd)
+    rg.setLen(nd)
     partitionGeomF(lg, rg, lat, nRanks, 1)
   else:
     for i in 0..<nd:
@@ -259,6 +259,7 @@ proc newLayoutX*(lat:openArray[int],V:static[int]):Layout[V] =
   result.nDim = nd
   result.physGeom = @lat
   result.localGeom = lg
+  result.rankGeom = rg
   result.physVol = result.lq.physVol.int
   result.nEven = result.lq.nEven.int
   result.nOdd = result.lq.nOdd.int

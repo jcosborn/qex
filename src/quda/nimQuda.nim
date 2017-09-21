@@ -182,7 +182,7 @@ when isMainModule:
     msGpu: array[4,cint]
   for i in 0..3:
     latGpu[i] = lat[i].cint
-    msGpu[i] = cint(1 + lo.coords[i].min div lo.localGeom[i])
+    msGpu[i] = lo.rankGeom[i].cint
   #initArg.verbosity = QUDA_DEBUG_VERBOSE
   initArg.verbosity = QUDA_SUMMARIZE
   initArg.layout.device = 0   # single gpu
