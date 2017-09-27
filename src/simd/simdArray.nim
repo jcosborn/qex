@@ -196,6 +196,17 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   proc simdReduce*(x:T):F {.noInit,inline.} = simdReduce(result, x)
   template simdSum*(r:var SomeNumber; x:T) = simdReduce(r, x)
   template simdSum*(x:T):untyped = simdReduce(x)
+  proc simdMaxReduce*(r:var SomeNumber; x:T) {.inline.} =
+    mixin simdMaxReduce
+    var y = x[][0]
+    subst(i,_):
+      forStatic i, 1, L-1:
+        let c = x[][i]
+        y = max(y, c)
+    r = (type(r))(simdMaxReduce(y))
+  proc simdMaxReduce*(x:T):F {.noinit,inline.} = simdMaxReduce(result, x)
+  template simdMax*(r:var SomeNumber; x:T) = simdMaxReduce(r, x)
+  template simdMax*(x:T):untyped = simdMaxReduce(x)
   proc `-`*(x:T):T {.inline,noInit.} =
     forStatic i, 0, L-1:
       neg(result[][i], x[][i])
@@ -208,6 +219,8 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   map011(T, L, cos, cos)
   map011(T, L, acos, acos)
 
+  map021(T, L, min, min)
+  map021(T, L, max, max)
   map021(T, L, add, add)
   map021(T, L, sub, sub)
   map021(T, L, mul, mul)

@@ -242,6 +242,40 @@ macro threadRankSum*(a:varargs[untyped]):auto =
   else:
     result = threadRankSumN(a)
 
+macro rankMax*(a:varargs[untyped]):auto =
+  if a.len==1:
+    let a0 = a[0]
+    result = quote do:
+      if threadNum==0:
+        qmpMax(`a0`)
+  else:
+    error("rankMax not imlemented for multipel arguments.")
+    result = newCall(ident("rankMaxN"))
+    for v in a: result.add v
+
+template threadRankMax1*(a:untyped):untyped =
+  var ta{.global.}:type(a)
+  if threadNum==0:
+    t0wait()
+    for i in 1..<numThreads:
+      let c = cast[ptr type(a)](threadLocals.share[i].p)[]
+      if a < c: a = c
+    rankMax(a)
+    ta = a
+    twait0()
+  else:
+    threadLocals.share[threadNum].p = a.addr
+    t0wait()
+    twait0()
+    a = ta
+
+macro threadRankMax*(a:varargs[untyped]):auto =
+  if a.len==1:
+    template trm1(x:untyped):untyped = threadRankMax1(x)
+    result = getAst(trm1(a[0]))
+  else:
+    error("threadRankMax not imlemented for multipel arguments.")
+    #result = threadRankMaxN(a)
 
 when isMainModule:
   commsInit()
