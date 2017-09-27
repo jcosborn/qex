@@ -122,6 +122,12 @@ proc projectU*(r:var Mat1; x:Mat2) =
   rsqrtPH(t2, t)
   mul(r, x, t2)
 
+proc checkSU*(x: Mat1): auto {.inline, noinit.} =
+  ## Returns the sum of deviations of x^dag x and det(x) from unitarity.
+  var d = norm2(-1.0 + x.adj * x)
+  d += norm2(-1.0 + x.determinant)
+  return d
+
 discard """
 template rsqrtM2(r:typed; x:typed):untyped =
   load(x00, x[0,0].re)

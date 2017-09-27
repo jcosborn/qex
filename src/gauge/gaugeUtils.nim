@@ -357,6 +357,23 @@ proc randomU*(x: any, r: var RNGField) =
         g[mu]{i}[a,b].im := t[a,b].im
   ]#
 
+proc checkSU*[F:Field](x: openArray[F]): tuple[avg,max:float] {.noinit.} =
+  var a,b:float
+  for mu in x.low..x.high:
+    for s in x[mu]:
+      let d = x[mu][s].checkSU
+      a += d.simdSum
+      let m = d.simdMax
+      if b < m: b = m
+  threadRankSum a
+  threadRankMax b
+  let nc = x[0][0].nrows
+  let vol = x[0].l.physVol
+  let c = float(2*(nc*nc+1))
+  a = sqrt( a / (c*float(x.len*vol)) )
+  b = sqrt( b / c )
+  return (a, b)
+
 proc random*[T](g: openArray[T], r: var RNGField) =
   for mu in 0..<g.len:
     randomU(g[mu], r)
