@@ -64,7 +64,7 @@ var g3:array[8,type(g[0])]
 for i in 0..3:
   g3[2*i] = g[i]
   g3[2*i+1] = lo.ColorMatrix()
-  g3[2*i+1].randomU rs
+  g3[2*i+1].randomSU rs
 var s3 = newStag3(g3)
 #s3.D(v2, v1, m)
 s3.solve(v2, v1, m, sp)

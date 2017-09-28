@@ -332,6 +332,17 @@ map1(SimdSD4, 4, sin)
 map1(SimdSD4, 4, cos)
 map1(SimdSD4, 4, acos)
 
+template map2(T,N,op: untyped): untyped {.dirty.} =
+  proc op*(x: T, y: T): T {.inline,noInit.} =
+    let
+      t = x.toArray
+      u = y.toArray
+    var r{.noInit.}: type(t)
+    for i in 0..<N:
+      r[i] = op(t[i], u[i])
+    assign(result, r)
+
+map2(SimdSD4, 4, atan2)
 
 proc trace*(x:SimdSD4):SimdSD4 {.inline,noInit.}= x
 proc norm2*(x:SimdSD4):SimdD4 {.inline,noInit.} = mul(x,x)

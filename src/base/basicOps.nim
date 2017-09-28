@@ -133,6 +133,8 @@ template perm8*(r:var SomeNumber; x:SomeNumber2):untyped =
 #proc sqrt*(x:float32):float32 {.importC:"sqrtf",header:"math.h".}
 #proc sqrt*(x:float64):float64 {.importC:"sqrt",header:"math.h".}
 proc acos*(x:float64):float64 {.importC:"acos",header:"math.h".}
+proc atan2*(x,y:float64):float64 {.importC:"atan2",header:"math.h".}
+proc atan2*(x,y:float32):float32 {.importC:"atan2f",header:"math.h".}
 template rsqrt*(r:var SomeNumber; x:SomeNumber) =
   r = cnvrt(r,1)/sqrt(cnvrt(r,x))
 

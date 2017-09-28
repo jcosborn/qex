@@ -219,6 +219,7 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   map011(T, L, cos, cos)
   map011(T, L, acos, acos)
 
+  map021(T, L, atan2, atan2)
   map021(T, L, min, min)
   map021(T, L, max, max)
   map021(T, L, add, add)

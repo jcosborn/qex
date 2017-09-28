@@ -139,14 +139,15 @@ when isMainModule:
     echo "plaq ",p
     echo "plaq ss: ",sp," st: ",tp," tot: ",p.sum
 
-  # XXX maybe check unitarity deviation?
-  # This is giving NaNs
-  #[
-  threads:
-    for mu in 0..<g.len:
-      for i in g[mu]:
-        g[mu][i].projectU g[mu][i]
-  ]#
+  block:
+    let d = g.checkSU
+    echo "unitary deviation avg: ",d.avg," max: ",d.max
+  g.printPlaq
+
+  threads: g.projectSU
+  block:
+    let d = g.checkSU
+    echo "new unitary deviation avg: ",d.avg," max: ",d.max
 
   g.printPlaq
 

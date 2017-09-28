@@ -674,7 +674,7 @@ when isMainModule:
     g3[2*i  ] = g[i]
     #g3[2*i+1] = g[i]
     g3[2*i+1] = lo.ColorMatrix()
-    g3[2*i+1].randomU rs
+    g3[2*i+1].randomSU rs
   var s3 = newStag3(@g3)
 
   runtest(v1, v2, sdAll3, sdEven3, sdOdd3, s3, m)

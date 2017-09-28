@@ -28,6 +28,15 @@ template map1(T,N,op:untyped):untyped {.dirty.} =
     for i in 0..<N:
       r[i] = op(t[i])
     assign(result, r)
+template map2(T,N,op:untyped):untyped {.dirty.} =
+  proc op*(x:T, y:T):T {.inline,noInit.} =
+    let
+      t = x.toArray
+      u = y.toArray
+    var r{.noInit.}:type(t)
+    for i in 0..<N:
+      r[i] = op(t[i], u[i])
+    assign(result, r)
 
 template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   template numberType*(x:typedesc[T]):typedesc = F
@@ -182,6 +191,7 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   map1(T,N, sin)
   map1(T,N, cos)
   map1(T,N, acos)
+  map2(T,N, atan2)
 
 basicDefs(m128,  float32,  4, mm, ps)
 basicDefs(m128d, float64,  2, mm, pd)

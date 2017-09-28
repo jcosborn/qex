@@ -136,21 +136,6 @@ when isMainModule:
     g = lo.newGauge
     rng = RngMilc6.newRNGField lo
   g.random rng
-  #[
-  for mu in 0..<lat.len:
-    #var t, s: DColorMatrixV   # FIXME: get vectorized code to work with projectU
-    var t, s: DColorMatrix
-    tfor i, 0..<lo.nSites:
-      for a in 0..2:
-        for b in 0..2:
-          s[a,b].re := g[mu]{i}[a,b].re
-          s[a,b].im := g[mu]{i}[a,b].im
-      t.projectU s
-      for a in 0..2:
-        for b in 0..2:
-          g[mu]{i}[a,b].re := t[a,b].re
-          g[mu]{i}[a,b].im := t[a,b].im
-  ]#
   threads:
     g.setBC
     g.stagPhase
