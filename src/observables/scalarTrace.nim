@@ -48,11 +48,12 @@ iterator sites(l: Layout, d: Dilution): int =
       c = d.c3d
     var i = a
     while i < b:
-      if ((l.coords[0][i].int and 1) +
-         ((l.coords[1][i].int and 1) shl 1) +
-         ((l.coords[2][i].int and 1) shl 2)) == c:
-        yield i
-        i.inc
+      let
+        x = l.coords[0][i].int and 1
+        y = l.coords[1][i].int and 1
+        z = l.coords[2][i].int and 1
+      if (x + (y shl 1) + (z shl 2)) == c: yield i
+      i.inc
 
 iterator dilution(dl:string): Dilution =
   case dl
@@ -91,7 +92,7 @@ when isMainModule:
     # write_group_size = intParam("write_group_size", 128)
 
   var sp = initSolverParams()
-  sp.r2req = cg_prec
+  sp.r2req = cg_prec*cg_prec
   sp.maxits = cg_max
 
   # Load lattice and determine size and parameters
@@ -179,10 +180,14 @@ when isMainModule:
     of "Z4": eta.z4 r
     of "Z2": eta.z2 r
     of "U1": eta.u1 r
-    of "Gauss": eta.gaussian r
+    of "Gauss":
+      eta.gaussian r
+      eta *= 1.0/sqrt(2.0)
     else:
       echo "ERROR: Invalid noise type ",source_type,"."
       qexAbort()
+
+    echo "noise norm2: ",eta.norm2
 
     if save_props:              # XXX save eta
       echo "WARNING: save not implemented"
@@ -200,10 +205,12 @@ when isMainModule:
               tmps{i}[c].re := eta{i}[c].re
               tmps{i}[c].im := eta{i}[c].im
         phi := 0
+        echo "src norm2: ",tmps.norm2
         s.solve(phi, tmps, mass, sp)
+        echo "dest norm2: ",phi.norm2
 
-        if save_props:        # XXX save phi
-          echo "WARNING: save not implemented"
+        # if save_props:        # XXX save phi
+        #   echo "WARNING: save not implemented"
 
         if improved_trace:
           echo "Computing the improved trace."
