@@ -9,6 +9,8 @@ export profile
 
 
 proc qexInit*() =
+  when defined(FUELCompat):
+    echo "FUEL compatibility mode: ON"
   threadsInit()
   commsInit()
   #echo "rank " & $rank & "/" & $size

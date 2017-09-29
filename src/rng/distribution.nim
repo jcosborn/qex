@@ -8,10 +8,22 @@ type
   RNGField* = concept var r
     r[0] is RNG
 
+when defined(FUELCompat):
+  # For maximal compatibility, see below.
+  proc gaussian_call2(x: AsVarComplex, a,b:float) =
+    x.re = a
+    x.im = b
 proc gaussian*(x: AsVarComplex, r: var RNG) =
   mixin gaussian
-  x.re = gaussian(r)
-  x.im = gaussian(r)
+  when defined(FUELCompat):
+    # This is how QLA does it for complex types (e.g. QLA_D3_V_veq_gaussian_S).
+    # Technically which one in this call gets evaluated is undefined in C.
+    # Let's hope if you use the same C compiler,
+    # the evaluation order turns out to be the same.
+    x.gaussian_call2(gaussian(r), gaussian(r))
+  else:
+    x.re = gaussian(r)
+    x.im = gaussian(r)
 proc gaussian*(x: AsVarVector, r: var RNG) =
   forO i, 0, x.len-1:
     gaussian(x[i], r)
@@ -39,20 +51,41 @@ proc uniform*(v: Field, r: var RNGField) =
     uniform(v{i}, r[i])
 
 proc z4*(x: AsVarComplex, r: var RNG) =
-  # This is different from the implemetation used in FUEL
-  let n = r.uniform
-  if n < 0.25:
-    x.re = 1.0
-    x.im = 0.0
-  elif n < 0.5:
-    x.re = 0.0
-    x.im = 1.0
-  elif n < 0.75:
-    x.re = -1.0
-    x.im = 0.0
+  when defined(FUELCompat):
+    x.gaussian r
+    var n,o {.noinit.}: float
+    n := x.re
+    o := x.im
+    if n >= 0:
+      if o >= 0:
+        x.re = 1.0
+        x.im = 0.0
+      else:
+        x.re = 0.0
+        x.im = 1.0
+    else:
+      if o >= 0:
+        x.re = -1.0
+        x.im = 0.0
+      else:
+        x.re = 0.0
+        x.im = -1.0
   else:
-    x.re = 0.0
-    x.im = -1.0
+    let n = r.uniform
+    if n < 0.5:
+      if n < 0.25:
+        x.re = 1.0
+        x.im = 0.0
+      else:
+        x.re = 0.0
+        x.im = 1.0
+    else:
+      if n < 0.75:
+        x.re = -1.0
+        x.im = 0.0
+      else:
+        x.re = 0.0
+        x.im = -1.0
 proc z4*(x: AsVarVector, r: var RNG) =
   forO i, 0, x.len-1: x[i].z4 r
 proc z4*(x: AsVarMatrix, r: var RNG) =
@@ -64,11 +97,17 @@ proc z4*(x: Field, r: var RNGField) =
     x{i}.z4 r[i]
 
 proc z2*(x: AsVarComplex, r: var RNG) =
-  # This is different from the implemetation used in FUEL
-  let n = r.uniform
-  x.im = 0.0
-  if n < 0.5: x.re = 1.0
-  else: x.re = -1.0
+  when defined(FUELCompat):
+    x.gaussian r
+    var n {.noinit.}:float
+    n := x.re
+    if n >= 0: x := 1.0
+    else: x := -1.0
+  else:
+    let n = r.uniform
+    x.im = 0.0
+    if n < 0.5: x.re = 1.0
+    else: x.re = -1.0
 proc z2*(x: AsVarVector, r: var RNG) =
   forO i, 0, x.len-1: x[i].z2 r
 proc z2*(x: AsVarMatrix, r: var RNG) =
@@ -80,15 +119,20 @@ proc z2*(x: Field, r: var RNGField) =
     x{i}.z2 r[i]
 
 proc u1*(x: AsVarComplex, r: var RNG) =
-  x.gaussian r
-  let n = x.norm2
-  if n == 0:
-    x.re = 1.0
-    x.im = 0.0
+  when defined(FUELCompat):
+    x.gaussian r
+    let n = x.norm2
+    if n == 0:
+      x.re = 1.0
+      x.im = 0.0
+    else:
+      let s = 1.0 / sqrt n
+      x.re *= s
+      x.im *= s
   else:
-    let s = 1.0 / sqrt n
-    x.re *= s
-    x.im *= s
+    let n = 2.0 * PI * r.uniform
+    x.re = cos n
+    x.im = sin n
 proc u1*(x: AsVarVector, r: var RNG) =
   forO i, 0, x.len-1: x[i].u1 r
 proc u1*(x: AsVarMatrix, r: var RNG) =
