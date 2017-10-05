@@ -28,7 +28,6 @@ proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
 
   var b2: float
   mythreads:
-    x := 0
     b2 = b.norm2
   verb(1):
     echo("input norm2: ", b2)
@@ -44,59 +43,64 @@ proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
   var finalIterations = 0
 
   threads:
+    var r2:float
+    A(Ap, x)
     subset:
-      p := 0
-      r := b
+      r := b - Ap
+      p := r
+      r2 = r.norm2
       verb(3):
         echo("p2: ", p.norm2)
-        echo("r2: ", r.norm2)
+        echo("r2: ", r2)
 
     var itn = 0
-    var r2 = b2
     var r2o = r2
     verb(1):
       #echo(-1, " ", r2)
       echo(itn, " ", r2/b2)
     toc("cg setup")
 
-    while itn<maxits and r2>=r2stop:
-      tic()
-      inc itn
-      let beta = r2/r2o;
-      r2o = r2
-      subset:
-        p := r + beta*p
-      toc("p update", flops=2*numNumbers(r[0])*sub.lenOuter)
-      A(Ap, p)
-      toc("Ap")
-      subset:
-        let pAp = p.redot(Ap)
-        toc("pAp", flops=2*numNumbers(p[0])*sub.lenOuter)
-        let alpha = r2/pAp
-        x += alpha*p
-        toc("x", flops=2*numNumbers(p[0])*sub.lenOuter)
-        r -= alpha*Ap
-        toc("r", flops=2*numNumbers(r[0])*sub.lenOuter)
-        r2 = r.norm2
-        toc("r2", flops=2*numNumbers(r[0])*sub.lenOuter)
-      verb(2):
-        #echo(itn, " ", r2)
-        echo(itn, " ", r2/b2)
-      verb(3):
+    if r2 >= r2stop:    # skip iterations otherwise
+      while itn<maxits:
+        tic()
+        inc itn
+        A(Ap, p)
+        toc("Ap")
         subset:
           let pAp = p.redot(Ap)
-          echo "beta: ", beta
-          echo "p2: ", p.norm2
-          echo "Ap2: ", Ap.norm2
-          echo "pAp: ", pAp
-          echo "alpha: ", r2o/pAp
-          echo "x2: ", x.norm2
-          echo "r2: ", r2
-        A(Ap, x)
-        var fr2: float
+          toc("pAp", flops=2*numNumbers(p[0])*sub.lenOuter)
+          let alpha = r2/pAp
+          x += alpha*p
+          toc("x", flops=2*numNumbers(p[0])*sub.lenOuter)
+          r -= alpha*Ap
+          toc("r", flops=2*numNumbers(r[0])*sub.lenOuter)
+          r2 = r.norm2
+          toc("r2", flops=2*numNumbers(r[0])*sub.lenOuter)
+        verb(2):
+          #echo(itn, " ", r2)
+          echo(itn, " ", r2/b2)
+        verb(3):
+          subset:
+            let pAp = p.redot(Ap)
+            echo "p2: ", p.norm2
+            echo "Ap2: ", Ap.norm2
+            echo "pAp: ", pAp
+            echo "alpha: ", r2o/pAp
+            echo "x2: ", x.norm2
+            echo "r2: ", r2
+          A(Ap, x)
+          var fr2: float
+          subset:
+            fr2 = (b - Ap).norm2
+          echo "   ", fr2/b2
+        if r2<r2stop: break
+        let beta = r2/r2o
+        r2o = r2
         subset:
-          fr2 = (b - Ap).norm2
-        echo "   ", fr2/b2
+          p := r + beta*p
+        toc("p update", flops=2*numNumbers(r[0])*sub.lenOuter)
+        verb(3):
+          echo "beta: ", beta
     toc("cg iterations")
     if threadNum==0: finalIterations = itn
 
