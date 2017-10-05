@@ -140,16 +140,16 @@ when isMainModule:
     echo "plaq ",p
     echo "plaq ss: ",sp," st: ",tp," tot: ",p.sum
 
-  block:
+  threads:
     let d = g.checkSU
     echo "unitary deviation avg: ",d.avg," max: ",d.max
   g.printPlaq
 
   threads: g.projectSU
-  block:
+
+  threads:
     let d = g.checkSU
     echo "new unitary deviation avg: ",d.avg," max: ",d.max
-
   g.printPlaq
 
   var
@@ -176,18 +176,20 @@ when isMainModule:
     trce := 0
 
     echo "Generating a ",source_type," noise source."
-    case source_type
-    of "Z4": eta.z4 r
-    of "Z2": eta.z2 r
-    of "U1": eta.u1 r
-    of "Gauss":
-      eta.gaussian r
-      eta *= 1.0/sqrt(2.0)
-    else:
-      echo "ERROR: Invalid noise type ",source_type,"."
-      qexAbort()
-
-    echo "noise norm2: ",eta.norm2
+    threads:
+      case source_type
+      of "Z4": eta.z4 r
+      of "Z2": eta.z2 r
+      of "U1": eta.u1 r
+      of "Gauss":
+        eta.gaussian r
+        threadBarrier()
+        eta *= 1.0/sqrt(2.0)
+      else:
+        echo "ERROR: Invalid noise type ",source_type,"."
+        qexAbort()
+      threadBarrier()
+      echo "noise norm2: ",eta.norm2
 
     if save_props:              # XXX save eta
       echo "WARNING: save not implemented"
@@ -195,34 +197,40 @@ when isMainModule:
     for t in 0..<nt:
       for dl in dilution(dilute_type):
         echo "Source ",i," dilution pattern ",dl," timeslice ",t," ."
-        tmps := 0
+        threads:
+          tmps := 0
+          threadBarrier()
 
-        # XXX implement subset later
-        for i in lo.sites(dl):
-          if lo.coords[^1][i] == t:
-            # tmps{i} := eta{i}    # Doesn't work
-            forO c, 0, tmps{0}.len-1:
-              tmps{i}[c].re := eta{i}[c].re
-              tmps{i}[c].im := eta{i}[c].im
-        phi := 0
-        echo "src norm2: ",tmps.norm2
+          # XXX implement subset later
+          for i in lo.sites(dl):
+            if lo.coords[^1][i] == t:
+              # tmps{i} := eta{i}    # Doesn't work
+              forO c, 0, tmps{0}.len-1:
+                tmps{i}[c].re := eta{i}[c].re
+                tmps{i}[c].im := eta{i}[c].im
+          phi := 0
+          threadBarrier()
+          echo "src norm2: ",tmps.norm2
         s.solve(phi, tmps, mass, sp)
-        echo "dest norm2: ",phi.norm2
+        threads:
+          echo "dest norm2: ",phi.norm2
 
         # if save_props:        # XXX save phi
         #   echo "WARNING: save not implemented"
 
-        if improved_trace:
-          echo "Computing the improved trace."
-          for i in trce:
-            trce[i] += mass * phi[i].dot phi[i]
-        else:
-          echo "Computing the unimproved trace."
-          for i in trce:
-            trce[i] += tmps[i].dot phi[i]
+        threads:
+          if improved_trace:
+            echo "Computing the improved trace."
+            for i in trce:
+              trce[i] += mass * phi[i].dot phi[i]
+          else:
+            echo "Computing the unimproved trace."
+            for i in trce:
+              trce[i] += tmps[i].dot phi[i]
 
-    let invnc = 1.0 / tmps[0].len.float
-    trce *= invnc
+    threads:
+      let invnc = 1.0 / tmps[0].len.float
+      trce *= invnc
 
     var est = newseq[float](nt)
     for i in lo.sites:

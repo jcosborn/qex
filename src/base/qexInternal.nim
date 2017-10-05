@@ -7,15 +7,22 @@ export comms
 import profile
 export profile
 
+import algorithm
 
-proc qexInit*() =
+var
+  qexGlobalInitializers* = newseq[proc()]()    ## Will be run in qexInit in forward order
+  qexGlobalFinalizers* = newseq[proc()]()    ## Will be run in qexFinalize in backward order
+
+proc qexInit* =
   when defined(FUELCompat):
     echo "FUEL compatibility mode: ON"
   threadsInit()
   commsInit()
+  for p in qexGlobalInitializers: p()
   #echo "rank " & $rank & "/" & $size
 
-proc qexFinalize*() =
+proc qexFinalize* =
+  for p in qexGlobalFinalizers.reversed: p()
   echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
        getTotalMem())
   echo GC_getStatistics()
@@ -28,6 +35,7 @@ proc qexFinalize*() =
   echoTimers()
 
 proc qexExit*(status = 0) =
+  for p in qexGlobalFinalizers.reversed: p()
   commsFinalize()
   quit(status)
 

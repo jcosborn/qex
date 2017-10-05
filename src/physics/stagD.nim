@@ -472,7 +472,12 @@ proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   sp0.seconds = secs
   echo "op time: ", top
   echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
-proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams) =
+
+# Late import to avoid problem with circular dependence.
+import quda/qudaWrapper
+
+proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams; cpuonly = false) =
+  ## When QUDA is available, we use QUDA unless `cpuonly` is true.
   var sp = sp0
   sp.subset.layoutSubset(r.l, sp.subsetName)
   var t = newOneOf(r)
@@ -488,6 +493,9 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams) =
     s.eoReduce(t, x, m)
     #echo "te2: ", t.even.norm2
   let t0 = epochTime()
+  when defined(qudaDir):
+    if not cpuonly: s.qudaSolveEE(r,t,m,sp)
+    # After QUDA, we still run through our solver.
   cgSolve(r, t, op, sp)
   let t1 = epochTime()
   threads:
@@ -498,12 +506,12 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams) =
   let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
   echo "op time: ", top
   echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
-proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =
+proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float; cpuonly = false) =
   var sp = initSolverParams()
   sp.r2req = res
   #sp.maxits = 1000
   sp.verbosity = 1
-  solve(s, r, x, m, sp)
+  solve(s, r, x, m, sp, cpuonly)
 
 proc solve2*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =
   var sp:SolverParams
