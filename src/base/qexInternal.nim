@@ -7,13 +7,17 @@ export comms
 import profile
 export profile
 
-import algorithm
+import algorithm, times
 
 var
   qexGlobalInitializers* = newseq[proc()]()    ## Will be run in qexInit in forward order
   qexGlobalFinalizers* = newseq[proc()]()    ## Will be run in qexFinalize in backward order
+  qexStartTime: float
+
+proc qexTime*: float = epochTime() - qexStartTime
 
 proc qexInit* =
+  qexStartTime = epochTime()
   when defined(FUELCompat):
     echo "FUEL compatibility mode: ON"
   threadsInit()
@@ -33,10 +37,12 @@ proc qexFinalize* =
   commsFinalize()
   #when profileEqns:
   echoTimers()
+  echo "Total time (Init - Finalize): ",qexTime()," seconds."
 
 proc qexExit*(status = 0) =
   for p in qexGlobalFinalizers.reversed: p()
   commsFinalize()
+  echo "Total time (Init - Finalize): ",qexTime()," seconds."
   quit(status)
 
 proc qexAbort*(status = -1) =

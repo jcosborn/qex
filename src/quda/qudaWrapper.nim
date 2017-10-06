@@ -20,12 +20,16 @@ const cudaLib = "-L" & cudaLibDir & " -lcudart -lcufft -Wl,-rpath," & cudaLibDir
 {.passC: "-I" & qudaDir & "/include".}
 {.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib.}
 
-type QudaParam = object
-  ## For the global quda parameter.
-  initialized: bool
-  initArg: QudaInitArgs_t
-  physGeom,rankGeom: array[4,cint]    ## 4D only, used in QudaInitArgs_t
-  layout: Layout[1]
+type
+  D4ColorMatrix = array[4, DColorMatrix]
+  D4LatticeColorMatrix = Field[1, D4ColorMatrix]
+  QudaParam = object
+    ## For the global quda parameter.
+    initialized: bool
+    initArg: QudaInitArgs_t
+    physGeom,rankGeom: array[4,cint]    ## 4D only, used in QudaInitArgs_t
+    layout: Layout[1]
+    longlinkG: D4LatticeColorMatrix  ## all 0 for staggered
 
 var qudaParam: QudaParam    ## Global quda parameter.
 
@@ -54,25 +58,27 @@ proc qudaSetup*(l:Layout, verbosity = QUDA_SUMMARIZE):Layout[1] =
   if updated or (not qudaParam.initialized):
     if qudaParam.initialized: qudaFinalize()
     qudaInit(qudaParam.initArg)
-    qudaParam.initialized = true
     qudaParam.layout = l.physGeom.newLayout 1
+    qudaParam.longlinkG.new qudaParam.layout
+    threads:
+      for i in qudaParam.longlinkG:
+        forO mu, 0, 3:
+          qudaParam.longlinkG[i][mu] := 0   # zero out for hacking asqtad to do naive
+    qudaParam.initialized = true
   qudaParam.layout
 
-type
-  D4ColorMatrix = array[4, DColorMatrix]
-  D4LatticeColorMatrix = Field[1, D4ColorMatrix]
 proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp:SolverParams) =
-  let tpresetup = epochTime()
+  tic()
   let lo1 = r.l.qudaSetup
-  var rr = newOneOf(r)
+  toc("QUDA one time setup")
   var
-    t2: float
+    # t2: float
     t1, r1: DLatticeColorVector
-    g0, g1: D4LatticeColorMatrix
+    g1: D4LatticeColorMatrix
   t1.new lo1
   r1.new lo1
-  g0.new lo1
   g1.new lo1
+  toc("QUDA alloc")
   var
     invargs: QudaInvertArgs_t
     precision = 2   # 2 - double, 1 - single
@@ -83,73 +89,58 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp:SolverParams) =
     rrelRes:cdouble = 0.0
     iters:cint = 1
     fatlink: pointer = g1.s.data
-    longlink: pointer = g0.s.data
+    longlink: pointer = qudaParam.longlinkG.s.data
     srcGpu: pointer = t1.s.data
     destGpu: pointer = r1.s.data
   invargs.maxIter = sp.maxits.cint
   invargs.evenodd = QUDA_EVEN_PARITY
   invargs.mixedPrecision = 1    # 0: NO, 1: YES
   threads:
-    t2 = t.norm2
-    for i in g0.l.sites:
-      for mu in 0..3:
-        g0[i][mu] := 0   # zero out for hacking asqtad to do naive
-    for i in r.l.sites:
+    # t2 = t.norm2
+    for i in r.sites:
       var cv: array[4,cint]
       r.l.coord(cv,(r.l.myRank,i))
       let ri1 = lo1.rankIndex(cv)
       # assert(ri1.rank == r.l.myRank)
-      for a in 0..2:
+      forO a, 0, 2:
         t1[ri1.index][a].re := t{i}[a].re
         t1[ri1.index][a].im := t{i}[a].im
+    for i in r.sites:
+      var cv: array[4,cint]
+      r.l.coord(cv,(r.l.myRank,i))
+      let ri1 = lo1.rankIndex(cv)
+      # assert(ri1.rank == r.l.myRank)
+      forO a, 0, 2:
         r1[ri1.index][a].re := r{i}[a].re
         r1[ri1.index][a].im := r{i}[a].im
-      for mu in 0..3:
-        for a in 0..2:
-          for b in 0..2:
+    for i in r.sites:
+      var cv: array[4,cint]
+      r.l.coord(cv,(r.l.myRank,i))
+      let ri1 = lo1.rankIndex(cv)
+      # assert(ri1.rank == r.l.myRank)
+      forO mu, 0, 3:
+        forO a, 0, 2:
+          forO b, 0, 2:
             g1[ri1.index][mu][a,b].re := s.g[mu]{i}[a,b].re
             g1[ri1.index][mu][a,b].im := s.g[mu]{i}[a,b].im
-  echo "input norm2: ",t2
-  let secpresetup = epochTime() - tpresetup
-  let tsolve = epochTime()
+  # echo "input norm2: ",t2
+  toc("QUDA setup")
   # FIX ME and FIX QUDA interface: this is for asqtad, we use zero longlink
   qudaInvert(precision.cint, precision.cint,   # host, QUDA
     m.cdouble, invargs, res.cdouble, relRes.cdouble,
     fatlink, longlink, u0.cdouble, srcGpu, destGpu,
     rres.addr, rrelRes.addr, iters.addr)
-  let secsolve = epochTime() - tsolve
-  let tpostproc = epochTime()
+  toc("QUDA invert")
   threads:
-    for i in r.l.sites:
+    for i in r.sites:
       var cv: array[4,cint]
       r.l.coord(cv,(r.l.myRank,i))
       let ri1 = lo1.rankIndex(cv)
       # assert(ri1.rank == r.l.myRank)
-      for a in 0..2:
+      forO a, 0, 2:
         r{i}[a].re := r1[ri1.index][a].re
         r{i}[a].im := r1[ri1.index][a].im
-  var r2: float
-  #[
-  threads:
-    stagD2ee(s.se, s.so, rr, s.g, r, m*m)
-    threadBarrier()
-    rr.even := t - rr
-    threadBarrier()
-    r2 = rr.even.norm2
-  echo "QUDA ",iters," rres: ",rres," rrelRes: ",rrelRes
-  echo "computed r2: ",r2/t2
-  threads:
-    echo "r1.norm2: ", r1.norm2
-    echo "r1.even: ", r1.even.norm2
-    echo "r1.odd: ", r1.odd.norm2
-    echo "r.norm2: ", r.norm2
-    echo "r.even: ", r.even.norm2
-    echo "r.odd: ", r.odd.norm2
-  ]#
-  let secpostproc = epochTime() - tpostproc
-  echo "GPU presetup time: ", secpresetup
-  echo "GPU solve time: ", secsolve
-  echo "GPU postproc time: ", secpostproc
+  toc("QUDA teardown")
 
 when isMainModule:
   import qex
