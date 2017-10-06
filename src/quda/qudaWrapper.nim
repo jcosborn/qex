@@ -20,6 +20,12 @@ const cudaLib = "-L" & cudaLibDir & " -lcudart -lcufft -Wl,-rpath," & cudaLibDir
 {.passC: "-I" & qudaDir & "/include".}
 {.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib.}
 
+proc cudaGetDeviceCount(n:ptr cint):cint {.importc,nodecl.}
+proc cudaGetDeviceCount*: int =
+  var c: cint
+  discard cudaGetDeviceCount(c.addr)
+  c.int
+
 type
   D4ColorMatrix = array[4, DColorMatrix]
   D4LatticeColorMatrix = Field[1, D4ColorMatrix]
@@ -35,7 +41,9 @@ var qudaParam: QudaParam    ## Global quda parameter.
 
 proc qudaInit* =
   ## Just to initialize the global parameter.
-  qudaParam.initArg.layout.device = 0    # Single GPU per rank.
+  ## Assumes single GPU per rank.
+  let n = cudaGetDeviceCount()
+  qudaParam.initArg.layout.device = cint(myrank mod n)
   qudaParam.initArg.layout.latsize = qudaParam.physGeom[0].addr
   qudaParam.initArg.layout.machsize = qudaParam.rankGeom[0].addr
   qudaParam.initArg.verbosity = QUDA_SUMMARIZE
