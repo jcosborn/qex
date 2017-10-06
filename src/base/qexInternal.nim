@@ -18,11 +18,11 @@ proc qexTime*: float = epochTime() - qexStartTime
 
 proc qexInit* =
   qexStartTime = epochTime()
-  when defined(FUELCompat):
-    echo "FUEL compatibility mode: ON"
   threadsInit()
   commsInit()
   for p in qexGlobalInitializers: p()
+  when defined(FUELCompat):
+    echo "FUEL compatibility mode: ON"
   #echo "rank " & $rank & "/" & $size
 
 proc qexFinalize* =
