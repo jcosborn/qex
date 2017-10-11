@@ -103,8 +103,18 @@ template random*(x: var Color) =
   gaussian(x[], r)
 template gaussian*(x: var Color, r: var untyped) =
   gaussian(x[], r)
+template uniform*(x: var Color, r: var untyped) =
+  uniform(x[], r)
+template z4*(x: var Color, r: var untyped) =
+  z4(x[], r)
+template z2*(x: var Color, r: var untyped) =
+  z2(x[], r)
+template u1*(x: var Color, r: var untyped) =
+  u1(x[], r)
 template projectU*(r: var Color, x: Color2) =
   projectU(r[], x[])
+template projectSU*(r: var Color, x: Color2) =
+  projectSU(r[], x[])
 template norm2*(x: Color): untyped = norm2(x[])
 template norm2*(r: var any, x: Color): untyped = norm2(r, x[])
 template inorm2*(r: var any, x: Color2) = inorm2(r, x[])

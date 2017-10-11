@@ -65,7 +65,7 @@ macro echo0*(args: varargs[untyped]): auto =
     )
 macro makeEchos(n:static[int]):auto =
   template ech(x,y: untyped): untyped =
-    template echo*(): untyped =
+    template echo*: untyped =
       when nimvm:
         x
       else:
@@ -82,7 +82,8 @@ macro makeEchos(n:static[int]):auto =
     var t = getAst(ech(er,e0))
     #echo t.treerepr
     for j in 0..<i:
-      t[0][3].add ea[j]
+      if t.kind == nnkTemplateDef: t[3].add ea[j]
+      else: t[0][3].add ea[j]
     result.add t
   #echoAll result.repr
 makeEchos(10)

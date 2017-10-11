@@ -106,14 +106,21 @@ template redot*(x: Spin, y: Spin2): untyped =
   redot(x[], y[])
 template trace*(x: Spin): untyped = trace(x[])
 
-template spinMatrix*[I,J:static[int],T](a: untyped): untyped =
-  Spin[MatrixArray[I,J,T]](v: MatrixArray[I,J,T](v: MatrixArrayObj[I,J,T](mat: a)))
+template spinMatrix*[T](x,y:static[int], a: untyped): untyped =
+  const
+    I:int = x
+    J:int = y
+  type
+    E = T
+    MA = MatrixArray[I,J,E]
+    MAO = MatrixArrayObj[I,J,E]
+  Spin[MA](v: MA(v: MAO(mat: a)))
 
 const z0 = ComplexType[float](v: ComplexObj[float](re: 0.0, im: 0.0))
 const z1 = ComplexType[float](v: ComplexObj[float](re: 1.0, im: 0.0))
 const zi = ComplexType[float](v: ComplexObj[float](re: 0.0, im: 1.0))
-var gamma0* = spinMatrix[4,4,ComplexType[float]]([[z1,z0,z0,z0],[z0,z1,z0,z0],[z0,z0,z1,z0],[z0,z0,z0,z1]])
-var gamma4* = spinMatrix[4,4,ComplexType[float]]([[z0,z0,z1,z0],[z0,z0,z0,z1],[z1,z0,z0,z0],[z0,z1,z0,z0]])
+var gamma0* = spinMatrix[ComplexType[float]](4,4,[[z1,z0,z0,z0],[z0,z1,z0,z0],[z0,z0,z1,z0],[z0,z0,z0,z1]])
+var gamma4* = spinMatrix[ComplexType[float]](4,4,[[z0,z0,z1,z0],[z0,z0,z0,z1],[z1,z0,z0,z0],[z0,z1,z0,z0]])
 
 proc spprojP1*(r: var any, x: any) =
   ## r: HalfFermion
