@@ -28,6 +28,15 @@ template map1(T,N,op:untyped):untyped {.dirty.} =
     for i in 0..<N:
       r[i] = op(t[i])
     assign(result, r)
+template map2(T,N,op:untyped):untyped {.dirty.} =
+  proc op*(x:T, y:T):T {.inline,noInit.} =
+    let
+      t = x.toArray
+      u = y.toArray
+    var r{.noInit.}:type(t)
+    for i in 0..<N:
+      r[i] = op(t[i], u[i])
+    assign(result, r)
 
 template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   template numberType*(x:typedesc[T]):typedesc = F
@@ -174,6 +183,7 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   proc norm2*(r:var T; x:T) {.inline.} = mul(r,x,x)
   proc inorm2*(r:var T; x:T) {.inline.} = imadd(r,x,x)
   proc max*(x,y:T):T {.inline,noInit.} = `P "_max_" S`(x,y)
+  proc min*(x,y:T):T {.inline,noInit.} = `P "_min_" S`(x,y)
   proc abs*(x:T):T {.inline,noInit.} = max(x,neg(x))
   proc sqrt*(x:T):T {.inline,noInit.} = `P "_sqrt_" S`(x)
   proc rsqrt*(x:T):T {.inline,noInit.} = divd(sqrt(x),x)
@@ -181,6 +191,7 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   map1(T,N, sin)
   map1(T,N, cos)
   map1(T,N, acos)
+  map2(T,N, atan2)
 
 basicDefs(m128,  float32,  4, mm, ps)
 basicDefs(m128d, float64,  2, mm, pd)
@@ -233,6 +244,43 @@ template simdSum*(r:var SomeNumber; x:m256) = simdReduce(r, x)
 template simdSum*(r:var SomeNumber; x:m256d) = simdReduce(r, x)
 template simdSum*(r:var SomeNumber; x:m512) = simdReduce(r, x)
 template simdSum*(r:var SomeNumber; x:m512d) = simdReduce(r, x)
+
+proc simdMaxReduce*(r:var SomeNumber; x:m128) {.inline.} =
+  r = x[0]
+  for i in 1..<4:
+    if r < x[i]: r = (type(r))(x[i])
+proc simdMaxReduce*(r:var SomeNumber; x:m256) {.inline.} =
+  r = x[0]
+  for i in 1..<8:
+    if r < x[i]: r = (type(r))(x[i])
+proc simdMaxReduce*(r:var SomeNumber; x:m256d) {.inline.} =
+  r = x[0]
+  for i in 1..<4:
+    if r < x[i]: r = (type(r))(x[i])
+proc simdMaxReduce*(r:var SomeNumber; x:m512) {.inline.} =
+  r = x[0]
+  for i in 1..<16:
+    if r < x[i]: r = (type(r))(x[i])
+proc simdMaxReduce*(r:var SomeNumber; x:m512d) {.inline.} =
+  r = x[0]
+  for i in 1..<8:
+    if r < x[i]: r = (type(r))(x[i])
+proc simdMaxReduce*(x:m128):float32 {.inline,noInit.} = simdMaxReduce(result, x)
+proc simdMaxReduce*(x:m256):float32 {.inline,noInit.} = simdMaxReduce(result, x)
+proc simdMaxReduce*(x:m256d):float64 {.inline,noInit.} = simdMaxReduce(result, x)
+proc simdMaxReduce*(x:m512):float32 {.inline,noInit.} = simdMaxReduce(result, x)
+proc simdMaxReduce*(x:m512d):float64 {.inline,noInit.} = simdMaxReduce(result, x)
+
+template simdMax*(x:m128):untyped = simdMaxReduce(x)
+template simdMax*(x:m256):untyped = simdMaxReduce(x)
+template simdMax*(x:m256d):untyped = simdMaxReduce(x)
+template simdMax*(x:m512):untyped = simdMaxReduce(x)
+template simdMax*(x:m512d):untyped = simdMaxReduce(x)
+template simdMax*(r:var SomeNumber; x:m128) = simdMaxReduce(r, x)
+template simdMax*(r:var SomeNumber; x:m256) = simdMaxReduce(r, x)
+template simdMax*(r:var SomeNumber; x:m256d) = simdMaxReduce(r, x)
+template simdMax*(r:var SomeNumber; x:m512) = simdMaxReduce(r, x)
+template simdMax*(r:var SomeNumber; x:m512d) = simdMaxReduce(r, x)
 
 # include perm, pack and blend
 include simdX86Ops1

@@ -33,6 +33,10 @@ proc QMP_sum_float*(value:ptr cfloat) {.qmp.}
 proc QMP_sum_double*(value:ptr cdouble) {.qmp.}
 proc QMP_sum_float_array*(value:ptr cfloat, length:cint) {.qmp.}
 proc QMP_sum_double_array*(value:ptr cdouble, length:cint) {.qmp.}
+proc QMP_max_float*(value:ptr cfloat) {.qmp.}
+proc QMP_max_double*(value:ptr cdouble) {.qmp.}
+proc QMP_min_float*(value:ptr cfloat) {.qmp.}
+proc QMP_min_double*(value:ptr cdouble) {.qmp.}
 
 proc qmpSum*(v:var int) =
   var t = v.float
@@ -75,6 +79,11 @@ template qmpSum*(v: typed): untyped =
     qmpSum(cast[ptr float64](addr v), sizeof(v) div sizeof(float64))
   else:
     qmpSum(v[])
+
+template qmpMax*(v:float32):untyped = QmpMaxFloat(v.addr)
+template qmpMax*(v:float64):untyped = QmpMaxDouble(v.addr)
+template qmpMin*(v:float32):untyped = QmpMinFloat(v.addr)
+template qmpMin*(v:float64):untyped = QmpMinDouble(v.addr)
 
 when isMainModule:
   var argc {.importc:"cmdCount", global.}:cint

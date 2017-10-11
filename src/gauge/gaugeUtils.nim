@@ -333,33 +333,50 @@ template defaultSetup*:untyped {.dirty.} =
     for i in 0..<lat.len:
       g[i] := 1
 
+proc projectU*(x:Field, y:Field) =
+  for i in x: x[i].projectU y[i]
+
+proc projectU*[F:Field](x: openArray[F], y: openArray[F]) =
+  for i in x.low..x.high: x[i].projectU y[i]
+
+template projectU*(x:any) = x.projectU x
+
+proc projectSU*(x:Field, y:Field) =
+  for i in x: x[i].projectSU y[i]
+
+proc projectSU*[F:Field](x: openArray[F], y: openArray[F]) =
+  for i in x.low..x.high: x[i].projectSU y[i]
+
+template projectSU*(x:any) = x.projectSU x
+
 proc randomU*(x: any, r: var RNGField) =
   x.gaussian r
-  for e in x:
-    x[e].projectU x[e]
-  #[
-  const
-    I = g[0]{0}.nrows
-    J = g[0]{0}.ncols
-  type M = MatrixArray[I,J,DComplex]
-  var
-    t{.noinit.}:M
-    s{.noinit.}:M
-  tfor i, 0..<g[mu].l.nSites:
-    forO a, 0, s.nrows-1:
-      forO b, 0, s.ncols-1:
-        s[a,b].re := g[mu]{i}[a,b].re
-        s[a,b].im := g[mu]{i}[a,b].im
-    t.projectU s
-    forO a, 0, t.nrows-1:
-      forO b, 0, t.ncols-1:
-        g[mu]{i}[a,b].re := t[a,b].re
-        g[mu]{i}[a,b].im := t[a,b].im
-  ]#
+  x.projectU
 
-proc random*[T](g: openArray[T], r: var RNGField) =
-  for mu in 0..<g.len:
-    randomU(g[mu], r)
+proc randomSU*(x: any, r: var RNGField) =
+  x.gaussian r
+  x.projectSU
+
+proc checkSU*[F:Field](x: openArray[F]): tuple[avg,max:float] {.noinit.} =
+  var a,b:float
+  for mu in x.low..x.high:
+    for s in x[mu]:
+      let d = x[mu][s].checkSU
+      a += d.simdSum
+      let m = d.simdMax
+      if b < m: b = m
+  threadRankSum a
+  threadRankMax b
+  let nc = x[0][0].nrows
+  let vol = x[0].l.physVol
+  let c = float(2*(nc*nc+1))
+  a = sqrt( a / (c*float(x.len*vol)) )
+  b = sqrt( b / c )
+  return (a, b)
+
+proc random*[F:Field](g: openArray[F], r: var RNGField) =
+  for mu in g.low..g.high:
+    randomSU(g[mu], r)
 
 proc random*(g: array or seq) =
   var r = newRNGField(RngMilc6, g[0].l)

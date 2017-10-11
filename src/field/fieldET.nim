@@ -241,6 +241,9 @@ iterator items*(l:Layout):int {.inline.} =
 iterator sites*(l:Layout):int {.inline.} =
   let n = l.nSites
   itemsI(0, n)
+iterator sites*(f:Field):int {.inline.} =
+  let n = f.l.nSites
+  itemsI(0, n)
 iterator items*(s:Subset):int {.inline.} =
   let n0 = s.lowOuter
   let n1 = s.highOuter

@@ -17,6 +17,8 @@ import rng
 export rng
 import eigens
 export eigens
+import algorithms/dilution
+export dilution
 
 when isMainModule:
   qexInit()

@@ -9,6 +9,22 @@ import math
 type RngMilc6* = object
   r0, r1, r2, r3, r4, r5, r6: uint32
   icState, multiplier: uint32
+  when defined(FUELCompat):
+    # for Gaussian
+    iset: int32
+    gset: float
+
+proc `$`*(x:RngMilc6):string =
+  result = "RngMilc6 r:[ " & $x.r0
+  result &= " " & $x.r1
+  result &= " " & $x.r2
+  result &= " " & $x.r3
+  result &= " " & $x.r4
+  result &= " " & $x.r5
+  result &= " " & $x.r6
+  result &= " ]  icState: " & $x.icState & " multiplier: " & $x.multiplier
+  when defined(FUELCompat):
+    result &= " iset: " & $x.iset & " gset: " & $x.gset
 
 const
   INDX1 = 69607'u32
@@ -17,25 +33,53 @@ const
   MASK = 0x00FFFFFF'u32
   SCALE = 1.0'f32 / 0x01000000.float32
 
-proc seedX(prn: var RngMilc6; seed0,index: uint32) =
-  ## Seed the generator
-  ## "index" selects which random number generator - which multiplier
-  var seed = seed0
-  template set(x: untyped): untyped =
+when defined(FUELCompat):
+  # Try to strictly follow QLA_seed_random.c
+  proc seedX(prn: var RngMilc6; seed0,index: int32) =
+    const
+      INDX1 = 69607'i32
+      INDX2 = 8'i32
+      ADDEND = 12345'i32
+      MASK = 0x00FFFFFF'i32
+    ## Seed the generator
+    ## "index" selects which random number generator - which multiplier
+    var seed = seed0
+    template set(x: untyped): untyped =
+      seed = (INDX1 + INDX2 * index) * seed + ADDEND
+      x = (seed shr 8) and MASK
+    set(prn.r0)
+    set(prn.r1)
+    set(prn.r2)
+    set(prn.r3)
+    set(prn.r4)
+    set(prn.r5)
+    set(prn.r6)
     seed = (INDX1 + INDX2 * index) * seed + ADDEND
-    x = (seed shr 8) and MASK
-  set(prn.r0)
-  set(prn.r1)
-  set(prn.r2)
-  set(prn.r3)
-  set(prn.r4)
-  set(prn.r5)
-  set(prn.r6)
-  seed = (INDX1 + INDX2 * index) * seed + ADDEND
-  prn.icState = seed
-  prn.multiplier = 100005'u32 + 8'u32 * index
-  #prn.addend = 12345
-  #prn.scale = 1.0 / float32(0x01000000)
+    prn.icState = seed.uint32
+    prn.multiplier = uint32(100005'i32 + 8'i32 * index)
+    prn.iset = 1
+    prn.gset = 0
+  proc seedX(prn: var RngMilc6; seed0,index: uint32) = seedX(prn, seed0.int32, index.int32)
+else:
+  proc seedX(prn: var RngMilc6; seed0,index: uint32) =
+    ## Seed the generator
+    ## "index" selects which random number generator - which multiplier
+    var seed = seed0
+    template set(x: untyped): untyped =
+      seed = (INDX1 + INDX2 * index) * seed + ADDEND
+      x = (seed shr 8) and MASK
+    set(prn.r0)
+    set(prn.r1)
+    set(prn.r2)
+    set(prn.r3)
+    set(prn.r4)
+    set(prn.r5)
+    set(prn.r6)
+    seed = (INDX1 + INDX2 * index) * seed + ADDEND
+    prn.icState = seed
+    prn.multiplier = 100005'u32 + 8'u32 * index
+    #prn.addend = 12345
+    #prn.scale = 1.0 / float32(0x01000000)
 proc seed*(prn: var RngMilc6; sed,index: any) {.inline.} =
   seedX(prn, sed.uint32, index.uint32)
 
@@ -60,28 +104,23 @@ proc gaussian*(prn: var RngMilc6): float32 =
   ## Gaussian normal deviate
   ## Probability distribution exp( -x*x/2 ), so < x^2 > = 1
   #if QLA_use_milc_gaussian:
-  when false:
-    template iset = rs.addend
-    template gset = rs.scale
-    if iset != 0:
-      iset = 0
-      var
-        v1: cdouble
-        v2: cdouble
-        rsq: cdouble
+  when defined(FUELCompat):
+    if prn.iset != 0:
+      prn.iset = 0
+      var v1,v2,rsq: float
       while true:
-        v1 = cast[cdouble](prn.uniform)
-        v2 = cast[cdouble](prn.uniform)
+        v1 = float(prn.uniform)
+        v2 = float(prn.uniform)
         v1 = 2.0 * v1 - 1.0
         v2 = 2.0 * v2 - 1.0
         rsq = v1 * v1 + v2 * v2
         if not ((rsq >= 1.0) or (rsq == 0.0)): break
-      var fac: cdouble = sqrt(-2.0 * ln(rsq) / rsq )
-      gset = v1 * fac
+      var fac = sqrt(-2.0 * ln(rsq) / rsq )
+      prn.gset = v1 * fac
       result = v2 * fac
     else:
-      iset = 1
-      result = gset
+      prn.iset = 1
+      result = prn.gset
   else:
     const
       TINY = 9.999999999999999e-308

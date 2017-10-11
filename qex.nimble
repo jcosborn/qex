@@ -72,8 +72,6 @@ proc setup =
   putenv ~ ("OMPFLAG=" & ompFlags)
   putenv ~ ("QMPDIR=" & qmpDir)
   putenv ~ ("QIODIR=" & qioDir)
-  when declared(qudaDir): putenv ~ ("QUDADIR=" & qudaDir)
-  when declared(cudaLibDir): putenv ~ ("CUDADIR=" & cudaLibDir)
   putenv ~ ("VLEN=" & $vlen)
   threads ~ on
   tlsEmulation ~ off
@@ -87,8 +85,8 @@ proc setup =
   # Here are optional external dependencies.
   optDef primmeDir
   optDef lapackLib
-  optDef qudaDir     # This and cuda below are not in effect.
-  optDef cudaLibDir  # Will convert them later.
+  optDef qudaDir
+  optDef cudaLibDir
 
 proc setupRelease =
   define ~ "release"

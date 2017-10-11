@@ -7,7 +7,7 @@ import types
 
 proc determinant*(x:any):auto =
   assert(x.nrows == x.ncols)
-  if x.nrows==1:
+  when x.nrows==1:
     result = x[0,0]
   elif x.nrows==2:
     result = x[0,0]*x[1,1] - x[0,1]*x[1,0]
@@ -41,7 +41,12 @@ proc rsqrtPHM3f(c0,c1,c2:var any; tr,p2,det:any) =
   let sq = sqrt(q)
   let sq3 = q*sq
   let rsq3 = r/sq3
-  let t = (1.0/3.0)*acos(rsq3)
+  var minv,maxv {.noinit.}:type(rsq3)
+  minv := -1.0
+  maxv := 1.0
+  let rsq3r = min(maxv, max(minv,rsq3))
+  let t = (1.0/3.0)*acos(rsq3r)
+  # let t = (1.0/3.0)*acos(rsq3)
   let st = sin(t)
   let ct = cos(t)
   let sqc = sq*ct
@@ -50,9 +55,6 @@ proc rsqrtPHM3f(c0,c1,c2:var any; tr,p2,det:any) =
   let ll = tr3 + sqc
   let l1 = ll + sqs
   let l2 = ll - sqs
-  #echo l0
-  #echo l1
-  #echo l2
   let sl0 = sqrt(abs(l0))
   let sl1 = sqrt(abs(l1))
   let sl2 = sqrt(abs(l2))
@@ -104,7 +106,7 @@ template rsqrtPHM(r:typed; x:typed):untyped =
   assert(r.nrows == x.nrows)
   assert(r.ncols == x.ncols)
   assert(r.nrows == r.ncols)
-  if r.nrows==1:
+  when r.nrows==1:
     rsqrt(r[0,0].re, x[0,0].re)
     assign(r[0,0].im, 0)
   elif r.nrows==2:
@@ -121,6 +123,22 @@ proc projectU*(r:var Mat1; x:Mat2) =
   var t2{.noInit.}:type(t)
   rsqrtPH(t2, t)
   mul(r, x, t2)
+
+proc projectSU*(r:var Mat1; x:Mat2) =
+  const nc = x.nrows
+  var m{.noinit.}:type(x)
+  m.projectU x
+  var d = m.determinant    # already unitary: 1=|d
+  let p = atan2(d.im, d.re) / float(-nc)
+  d.re = cos p
+  d.im = sin p
+  r := d * m
+
+proc checkSU*(x: Mat1): auto {.inline, noinit.} =
+  ## Returns the sum of deviations of x^dag x and det(x) from unitarity.
+  var d = norm2(-1.0 + x.adj * x)
+  d += norm2(-1.0 + x.determinant)
+  return d
 
 discard """
 template rsqrtM2(r:typed; x:typed):untyped =

@@ -7,13 +7,26 @@ export comms
 import profile
 export profile
 
+import algorithm, times
 
-proc qexInit*() =
+var
+  qexGlobalInitializers* = newseq[proc()]()    ## Will be run in qexInit in forward order
+  qexGlobalFinalizers* = newseq[proc()]()    ## Will be run in qexFinalize in backward order
+  qexStartTime: float
+
+proc qexTime*: float = epochTime() - qexStartTime
+
+proc qexInit* =
+  qexStartTime = epochTime()
   threadsInit()
   commsInit()
+  for p in qexGlobalInitializers: p()
+  when defined(FUELCompat):
+    echo "FUEL compatibility mode: ON"
   #echo "rank " & $rank & "/" & $size
 
-proc qexFinalize*() =
+proc qexFinalize* =
+  for p in qexGlobalFinalizers.reversed: p()
   echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
        getTotalMem())
   echo GC_getStatistics()
@@ -24,9 +37,12 @@ proc qexFinalize*() =
   commsFinalize()
   #when profileEqns:
   echoTimers()
+  echo "Total time (Init - Finalize): ",qexTime()," seconds."
 
 proc qexExit*(status = 0) =
+  for p in qexGlobalFinalizers.reversed: p()
   commsFinalize()
+  echo "Total time (Init - Finalize): ",qexTime()," seconds."
   quit(status)
 
 proc qexAbort*(status = -1) =
