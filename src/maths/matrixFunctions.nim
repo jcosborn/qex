@@ -124,12 +124,12 @@ proc projectU*(r:var Mat1; x:Mat2) =
   rsqrtPH(t2, t)
   mul(r, x, t2)
 
-proc projectSU*(r:var Mat1; x:Mat2) =
+proc projectSU*(r: var Mat1; x: Mat2) =
   const nc = x.nrows
   var m{.noinit.}:type(x)
   m.projectU x
   var d = m.determinant    # already unitary: 1=|d
-  let p = atan2(d.im, d.re) / float(-nc)
+  let p = (1.0/float(-nc)) * atan2(d.im, d.re)
   d.re = cos p
   d.im = sin p
   r := d * m

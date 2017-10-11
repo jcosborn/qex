@@ -474,7 +474,8 @@ proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
 
 # Late import to avoid problem with circular dependence.
-import quda/qudaWrapper
+when defined(qudaDir):
+  import quda/qudaWrapper
 
 proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams; cpuonly = false) =
   ## When QUDA is available, we use QUDA unless `cpuonly` is true.
