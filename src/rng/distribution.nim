@@ -1,5 +1,5 @@
 import math
-import base, field, layout, maths
+import base, field, layout, maths, maths/types
 
 type
   RNG* = concept var r
@@ -10,10 +10,10 @@ type
 
 when defined(FUELCompat):
   # For maximal compatibility, see below.
-  proc gaussian_call2(x: AsVarComplex, a,b:float) =
+  proc gaussian_call2(x: var AsComplex, a,b:float) =
     x.re = a
     x.im = b
-proc gaussian*(x: AsVarComplex, r: var RNG) =
+proc gaussian*(x: var AsComplex, r: var RNG) =
   mixin gaussian
   when defined(FUELCompat):
     # This is how QLA does it for complex types (e.g. QLA_D3_V_veq_gaussian_S).
@@ -31,11 +31,15 @@ proc gaussian*(x: AsVarMatrix, r: var RNG) =
   forO i, 0, x.nrows-1:
     forO j, 0, x.ncols-1:
       gaussian(x[i,j], r)
-proc gaussian*(v: Field, r: RNGField) =
+template gaussian*(r: AsVar, x: untyped) =
+  mixin gaussian
+  var t = r[]
+  gaussian(t, x)
+proc gaussian*[T: RNGField](v: Field, r: T) =
   for i in v.l.sites:
     gaussian(v{i}, r[i])
 
-proc uniform*(x: AsVarComplex, r: var RNG) =
+proc uniform*(x: var AsComplex, r: var RNG) =
   mixin uniform
   x.re = uniform(r)
   x.im = uniform(r)
@@ -50,7 +54,7 @@ proc uniform*(v: Field, r: var RNGField) =
   for i in v.l.sites:
     uniform(v{i}, r[i])
 
-proc z4*(x: AsVarComplex, r: var RNG) =
+proc z4*(x: var AsComplex, r: var RNG) =
   when defined(FUELCompat):
     x.gaussian r
     var n,o {.noinit.}: float
@@ -96,7 +100,7 @@ proc z4*(x: Field, r: var RNGField) =
   for i in x.l.sites:
     x{i}.z4 r[i]
 
-proc z2*(x: AsVarComplex, r: var RNG) =
+proc z2*(x: var AsComplex, r: var RNG) =
   when defined(FUELCompat):
     x.gaussian r
     var n {.noinit.}:float
@@ -118,7 +122,7 @@ proc z2*(x: Field, r: var RNGField) =
   for i in x.l.sites:
     x{i}.z2 r[i]
 
-proc u1*(x: AsVarComplex, r: var RNG) =
+proc u1*(x: var AsComplex, r: var RNG) =
   when defined(FUELCompat):
     x.gaussian r
     let n = x.norm2
@@ -143,9 +147,12 @@ proc u1*(x: Field, r: var RNGField) =
   for i in x.l.sites:
     x{i}.u1 r[i]
 
-proc newRNGField*(R:typedesc[RNG], lo:Layout,
-                  seed:uint64 = uint64(17^7)):auto =
-  var r:Field[1,R]
+#proc newRNGField*(R:typedesc[RNG], lo:Layout,
+#                  seed:uint64 = uint64(17^7)):auto =
+#  var r:Field[1,R]
+proc newRNGField*[R: RNG](rng: typedesc[R], lo: Layout,
+                          seed: uint64 = uint64(17^7)): Field[1,R] =
+  var r: Field[1,R]
   r.new(lo.physGeom.newLayout 1)
   threads:
     for j in lo.sites:
@@ -153,4 +160,4 @@ proc newRNGField*(R:typedesc[RNG], lo:Layout,
       for i in countdown(lo.nDim-2, 0):
         l = l * lo.physGeom[i].int + lo.coords[i][j].int
       r[j].seed(seed, l)
-  return r
+  r

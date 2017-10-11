@@ -40,6 +40,9 @@ proc checkMem =
        getTotalMem())
   echo GC_getStatistics()
 
+# fps: flops per site
+# bps: bytes moved (load+store) per site
+# mm: memory footprint (bytes) per site
 template bench(fps,bps,mm,eqn: untyped) =
   let vol = lo.nSites.float
   let flops = vol * fps.float
@@ -60,7 +63,8 @@ template bench(fps,bps,mm,eqn: untyped) =
     let nnrep = 1 + int(1.1*nrep.float/(dt+1e-9))
     nrep = min(10*nrep, nnrep)
   let mf = int((nrep.float*flops)/(1e6*dt))
-  let mb = int((nrep.float*bytes)/(1e6*dt))
+  #let mb = int((nrep.float*bytes)/(1e6*dt))
+  let mb = int((nrep.float*bytes)/(1024.0*1024.0*dt))
   let mem = vol * (mm.float/(1024.0))
   inc nbench
   echo "bench: ",nbench| -6, "secs: ", dt|(6,3), "  mf: ", mf|7, "  mb: ", mb|7, "  mem: ", mem, "  nrep: ", nrep
@@ -70,13 +74,25 @@ template bench(fps,bps,eqn: untyped) =
 
 proc test(lat:any) =
   var lo = newLayout(lat)
+  when true:
+    template newCV: untyped = lo.ColorVectorS()
+    template newCM: untyped = lo.ColorMatrixS()
+    template newDF: untyped = lo.DiracFermionS()
+  else:
+    template newCV: untyped = lo.ColorVectorD()
+    template newCM: untyped = lo.ColorMatrixD()
+    template newDF: untyped = lo.DiracFermionD()
 
-  var v1 = lo.ColorVectorS()
-  var v2 = lo.ColorVectorS()
-  var v3 = lo.ColorVectorS()
-  var m1 = lo.ColorMatrixS()
-  var m2 = lo.ColorMatrixS()
-  var m3 = lo.ColorMatrixS()
+  var v1 = newCV()
+  var v2 = newCV()
+  var v3 = newCV()
+  var m1 = newCM()
+  var m2 = newCM()
+  var m3 = newCM()
+  var m4 = newCM()
+  var m5 = newCM()
+  var d1 = newDF()
+  var d2 = newDF()
   const nc = v1[0].len
   let sf = sizeof(numberType(v3[0]))
   let nc2 = 2*nc
@@ -122,8 +138,9 @@ proc test(lat:any) =
     m3 := m1.adj * m2
 
   bench(nc*mvf, 3*mb, 3*mb):
-    for e in v2:
+    for e in m3:
       mulMMM(m3[e], m1[e].adj, m2[e])
+      #mulMMM(m3[e], m1[e], m2[e])
 
   bench(nc*mvf, 3*mb, 3*mb):
     for e in m3:
@@ -136,13 +153,18 @@ proc test(lat:any) =
     m3 += m1 * m2
 
   bench(nc*(mvf+nc2), 4*mb, 3*mb):
-    for e in v2:
+    for e in m3:
       imaddMMM(m3[e], m1[e], m2[e])
 
   bench(nc*(mvf+nc2), 3*mb, 2*mb):
-    for e in v2:
+    for e in m3:
       imaddMMM(m3[e], m1[0], m2[e])
 
+  bench(nc*(3*mvf+nc2), 6*mb, 5*mb):
+    m1 += (m2*m3) * (m4*m5).adj
+
+  bench(4*(mvf+nc2), mb+4*3*vb, mb+4*2*vb):
+    d2 += m1 * d1
 
 qexInit()
 #checkMem()
@@ -159,10 +181,10 @@ test([12,12,12,12])
 test([16,16,16,16])
 #test([16,16,16,32])
 #test([24,24,24,12])
-#test([24,24,24,24])
+test([24,24,24,24])
 #test([24,24,24,48])
 #test([32,32,32,16])
-#test([32,32,32,32])
+test([32,32,32,32])
 #test([32,32,32,64])
 #checkMem()
 qexFinalize()

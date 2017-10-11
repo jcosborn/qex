@@ -30,6 +30,7 @@ proc `$`*(c: HisqCoefs): string =
   result &= "naik: " & $c.naik & "\n"
 
 proc smear*(c: HisqCoefs, g: any, fl,ll: any, t1,t2: any) =
+  mixin projectU
   var info: PerfInfo
   makeImpLinks(info, t1, g, c.fat7first)
   for mu in 0..<4:

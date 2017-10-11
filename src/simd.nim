@@ -31,6 +31,7 @@ template assign*(r: SimdD4, x: SimdS4): untyped =
   r = toDouble(x)
 
 when declared(SimdD8) and declared(SimdS8):
+  #template toDouble*(x: SimdD8): untyped = x
   proc toSingle*(x: SimdD8): SimdS8 {.inline,noInit.} =
     for i in 0..<8:
       result[i] = x[i]
@@ -44,7 +45,7 @@ when declared(SimdD8) and declared(SimdS8):
     imadd(r, x, toDouble(y))
   template imsub*(r: SimdD8, x: SimdD8, y: SimdS8): untyped =
     imsub(r, x, toDouble(y))
-  template eval*(x: SimdD8): auto = x
+  template eval*(x: SimdD8): untyped = x
   template `-=`*(r: SimdD8, x: SimdD8): untyped = isub(r, x)
 
 when declared(SimdD8) and declared(SimdS8):

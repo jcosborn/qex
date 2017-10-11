@@ -187,12 +187,15 @@ template setBinopP*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
     fun(r, x, y)
     r
 template setBinopT*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
-  subst(r,_):
+  subst(r_setBinopT,_):
     template op*(xx: t1; yy: t2): untyped =
+      #dumpTree: setBinopT op
+      #echoType: xx
+      #echoType: yy
       lets(x,xx,y,yy):
-        var r{.noInit.}: t3
-        fun(r, x, y)
-        r
+        var r_setBinopT{.noInit.}: t3
+        fun(r_setBinopT, x, y)
+        r_setBinopT
 
 when forceInline:
   template setUnop*(op,fun,t1,t2: untyped): untyped {.dirty.} =
