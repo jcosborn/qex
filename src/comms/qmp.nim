@@ -49,6 +49,8 @@ template qmpSum*(v:ptr tuple, n:int):untyped =
   qmpSum(v[][0].addr, n*(sizeOf(v) div sizeOf(v[0])))
 template qmpSum*(v:ptr object, n:int):untyped =
   qmpSum(v[][].addr, n)
+#template qmpSum*(v: object) =
+#  qmpSum(asNumberPtr(v), numNumbers(v))
 #template qmpSum*(v:ptr typed, n:int):untyped =
 #  qmpSum(v[][].addr, n)
 #template QmpSum(v:array[int,int]):untyped =
@@ -73,6 +75,8 @@ template qmpSum*(v:tuple):untyped =
 template qmpSum*(v: typed): untyped =
   when numberType(v) is float64:
     qmpSum(cast[ptr float64](addr v), sizeof(v) div sizeof(float64))
+  elif numberType(v) is float32:
+    qmpSum(cast[ptr float32](addr v), sizeof(v) div sizeof(float32))
   else:
     qmpSum(v[])
 

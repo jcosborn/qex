@@ -16,12 +16,12 @@ proc gaussian*(x: AsVarComplex, r: var RNG) =
   mixin gaussian
   x.re = gaussian(r)
   x.im = gaussian(r)
-proc gaussian*(x: AsVarVector, r: var RNG) =
+proc gaussian*(x: var AsVector, r: var RNG) =
   forO i, 0, x.len-1:
     gaussian(x[i], r)
-proc gaussian*(x: AsVarMatrix, r: var RNG) =
-  forO i, 0, x.nrows-1:
-    forO j, 0, x.ncols-1:
+proc gaussian*(x: var AsMatrix, r: var RNG) =
+  forO i, 0, getConst(x.nrows-1):
+    forO j, 0, getConst(x.ncols-1):
       gaussian(x[i,j], r)
 template gaussian*(r: AsVar, x: untyped) =
   mixin gaussian
@@ -35,10 +35,10 @@ proc uniform*(x: AsVarComplex, r: var RNG) =
   mixin uniform
   x.re = uniform(r)
   x.im = uniform(r)
-proc uniform*(x: AsVarVector, r: var RNG) =
+proc uniform*(x: var AsVector, r: var RNG) =
   forO i, 0, x.len-1:
     uniform(x[i], r)
-proc uniform*(x: AsVarMatrix, r: var RNG) =
+proc uniform*(x: var AsMatrix, r: var RNG) =
   forO i, 0, x.nrows-1:
     forO j, 0, x.ncols-1:
       uniform(x[i,j], r)

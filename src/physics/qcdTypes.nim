@@ -112,15 +112,16 @@ template isWrapper*(x: Dvec0): untyped = false
 
 template simdLength*(x:typedesc[SColorMatrixV]):untyped = simdLength(Svec0)
 template simdLength*(x:typedesc[SColorVectorV]):untyped = simdLength(Svec0)
-template simdLength*(x:SColorVectorV):untyped = simdLength(Svec0)
+#template simdLength*(x:SColorVectorV):untyped = simdLength(Svec0)
 #template simdLength*(x:SColorMatrixV):untyped = simdLength(Svec0)
 template simdLength*(x:typedesc[DColorMatrixV]):untyped = simdLength(Dvec0)
 template simdLength*(x:typedesc[DColorVectorV]):untyped = simdLength(Dvec0)
-template simdLength*(x:DColorVectorV):untyped = simdLength(Dvec0)
+#template simdLength*(x:DColorVectorV):untyped = simdLength(Dvec0)
 #template simdLength*(x:DColorMatrixV):untyped = simdLength(Dvec0)
 template simdLength*(x:AsComplex):untyped = simdLength(x.re)
 #template simdLength*(x:Complex):untyped = simdLength(x.re)
 template simdLength*(x:AsMatrix):untyped = simdLength(x[0,0])
+template simdLength*(x:AsVector):untyped = simdLength(x[0])
 
 #template nVectors(x:SColorVectorV):untyped = 2*nc
 #template nVectors(x:SColorMatrixV):untyped = 2*nc*nc
@@ -144,22 +145,21 @@ template simdType*(x:AsMatrix):untyped = simdType(x[0,0])
 
 
 template `*`*(x: Color, y: Spin): untyped =
-  #asScalar(x) * y[]
-  asSpin(x * y[])
+  staticTraceReturn timesColorSpin:
+    asSpin(x * y[])
 
 
-template trace*(x:SComplexV):untyped = x
+#template trace*(x:SComplexV):untyped = x
 #proc simdSum*(x:SComplexV):SComplex = complexConcept.map(result, simdSum, x)
 #proc simdSum*(x:DComplexV):DComplex = complexConcept.map(result, simdSum, x)
 template simdSum*(x:ToDouble):untyped = toDouble(simdSum(x[]))
-template simdSum*(x:AsComplex):untyped = asComplex(simdSum(x[]))
+template simdSum*(x: AsComplex): untyped = asComplex(simdSum(x[]))
 #template simdSum*(x:Complex):untyped = simdSum(x[])
-template simdSum*(xx:tuple):untyped =
-  lets(x,xx):
-    map(x, simdSum)
-template simdSum*(xx: ComplexObj): untyped =
-  lets(x,xx):
-    map(x, simdSum)
+#template simdSum*(xx:tuple):untyped =
+#  lets(x,xx):
+#    map(x, simdSum)
+template simdSum*(x: ComplexObj): untyped =
+  mapComplexObj(x, simdReduce)
 #template rankSum*(x:AsComplex) =
 #  #mixin qmpSum
 #  rankSum(x[])

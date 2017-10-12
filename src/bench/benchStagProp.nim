@@ -32,6 +32,8 @@ if myRank==0:
   v1{0}[0] := 1
   #v1{2*1024}[0] := 1
 echo v1.norm2
+#var gs = lo.newGaugeS
+#for i in 0..<gs.len: gs[i] := g[i]
 var s = newStag(g)
 var m = 0.000001
 threads:

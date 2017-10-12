@@ -23,10 +23,15 @@ proc symToIdent*(x: NimNode): NimNode =
 
 macro getConst*(x: static[int]): auto =
   return newLit(x)
+macro getConst*(x: static[int64]): auto =
+  return newLit(x)
 #macro getConst*(x: typed): auto =
   #echo x.treerepr
   #result = newLit(3)
   #result = newLit(x.intVal)
+
+macro makeIdent*(x: untyped): untyped =
+  result = symToIdent(x)
 
 macro delayExpansion*(x:untyped):auto = result = x
 
@@ -35,9 +40,18 @@ macro `$`*(t:typedesc):auto =
 
 macro echoType*(x:typed):auto =
   result = newEmptyNode()
+  echo x.getTypeInst.repr
+  echo x.getTypeImpl.repr
+macro echoType*(x:typedesc):auto =
+  result = newEmptyNode()
+  let t1 = x.getType
+  echo t1.repr
+  echo t1[1].getType.repr
+macro echoTypeTree*(x:typed):auto =
+  result = newEmptyNode()
   echo x.getTypeInst.treeRepr
   echo x.getTypeImpl.treeRepr
-macro echoType*(x:typedesc):auto =
+macro echoTypeTree*(x:typedesc):auto =
   result = newEmptyNode()
   let t1 = x.getType
   echo t1.treeRepr
@@ -50,6 +64,10 @@ macro treerep*(x:typed):auto =
 macro echoAst*(x:untyped):untyped =
   echo x.treeRepr
   x
+
+macro echoRepr*(x: untyped): untyped =
+  echo x.repr
+  newEmptyNode()
 
 #template dump*(x:untyped):untyped =
 #  echo $(x)
@@ -64,6 +82,29 @@ macro dump*(x:untyped):untyped =
   result = quote do:
     echo `x`, ": ", `v`
 
+when true:
+  template staticTraceBegin*(x: untyped) = discard
+  template staticTraceEnd*(x: untyped) = discard
+  template staticTraceReturn*(x,body: untyped): untyped = body
+else:
+  var staticTraceLevel {.compiletime.} = 0
+  macro staticTraceBegin*(x: untyped): untyped =
+    #echo x.treerepr
+    let s = x[0].repr
+    echo repeat("  ", staticTraceLevel) & "-> " & s
+    inc staticTraceLevel
+    newEmptyNode()
+  macro staticTraceEnd*(x: untyped): untyped =
+    let s = x[0].repr
+    dec staticTraceLevel
+    echo repeat("  ", staticTraceLevel) & "<- " & s
+    newEmptyNode()
+  template staticTraceReturn*(x,body: untyped): untyped =
+    staticTraceBegin: x
+    let str = body
+    staticTraceEnd: x
+    str
+
 macro toId*(s:static[string]):untyped =
   echo s
   newIdentNode(!s)
@@ -72,7 +113,7 @@ macro toId*(s:typed):untyped =
   echo s.treeRepr
   #newIdentNode(!s)
 
-macro toString*(id:untyped):untyped =
+macro toString*(id: untyped): untyped =
   #echo id.repr
   echo id.treeRepr
   if id.kind==nnkSym:
@@ -92,6 +133,7 @@ macro setType*(x:untyped; s:static[string]):auto =
   result = quote do:
     type `x`* = `t`
 
+#[
 macro map*(a:tuple; f:untyped; p:varargs[untyped]):untyped =
   #echo a.treeRepr
   #echo f.treeRepr
@@ -108,6 +150,7 @@ macro map*(a:tuple; f:untyped; p:varargs[untyped]):untyped =
     #result.add(newColonExpr(ident("field" & $i),c))
     result.add(newColonExpr(ti[i][0],c))
   #echo result.repr
+]#
 
 macro makeCall*(op:static[string],a:tuple):untyped =
   echo op
@@ -172,10 +215,16 @@ proc replace(id,val,body:NimNode):NimNode =
 macro makeTyped*(x:typed):auto = x
 macro makeUntyped*(x:untyped):auto = x
 
-macro echoTyped*(x:typed):auto =
+macro echoUntyped*(x: untyped): auto =
   result = newEmptyNode()
   echo x.repr
-macro echoTypedTree*(x:typed):auto =
+macro echoUntypedTree*(x: untyped): auto =
+  result = newEmptyNode()
+  echo x.treeRepr
+macro echoTyped*(x: typed): auto =
+  result = newEmptyNode()
+  echo x.repr
+macro echoTypedTree*(x: typed): auto =
   result = newEmptyNode()
   echo x.treeRepr
 
@@ -206,7 +255,7 @@ macro makeUnique*(x:varargs[untyped]):auto =
   #echo result.repr
   result.dumpTyped(result)
 
-macro subst*(x:varargs[untyped]):auto =
+macro subst*(x: varargs[untyped]): untyped =
   let n = x.len
   result = x[n-1]
   #echo result.repr
@@ -216,9 +265,9 @@ macro subst*(x:varargs[untyped]):auto =
     #echo t.repr
     if t.repr == "_":
       t = ident($x[i] & "_" & $idNum & "_")
-      idNum.inc
+      inc idNum
     result = replace(x[i], t, result)
-  #echo result.repr
+  #echo result.treerepr
   #echo "subst: "
   #result.dumpTyped(result)
 
@@ -257,16 +306,24 @@ macro lets*(x:varargs[untyped]):auto =
   #echo "lets: "
   #result.dumpTyped(result)
 
-macro forStaticX2(a,b:static[int]; index,body:untyped):untyped =
+#macro forStaticX2(a,b:static[int]; index,body:untyped):untyped =
+macro forStaticX3(a0,b0: typed; index,body: untyped): untyped =
   #echo(index.repr)
   #echo(index.treeRepr)
   #echo(body.repr)
   #echo(body.treeRepr)
+  #echo a0.treerepr
+  #echo b0.treerepr
+  let a = a0.intVal
+  let b = b0.intVal
   result = newStmtList()
   for i in a..b:
     #result.add(replace(index, newIntLitNode(i), body))
     result.add(newBlockStmt(replace(index, newIntLitNode(i), body)))
   #echo(result.repr)
+
+template forStaticX2(a0,b0: typed; index,body: untyped): untyped =
+  forStaticX3(getConst(a0), getConst(b0), index, body)
 
 macro forStaticX(slice: Slice[int]; index,body: untyped): untyped =
   #echo(index.repr)
@@ -283,11 +340,25 @@ macro forStaticX(slice: Slice[int]; index,body: untyped): untyped =
     result.add(newBlockStmt(replace(index, newIntLitNode(i), body)))
   #echo(result.repr)
 
+macro forStaticU*(a0,b0: typed; fn: untyped): untyped =
+  #echo a0.treerepr
+  #echo b0.treerepr
+  let a = a0.intVal
+  let b = b0.intVal
+  result = newStmtList()
+  for i in a..b:
+    result.add newBlockStmt(newCall(fn,newIntLitNode(i)))
+  #echo result.repr
+
 #template forStatic*(index,slice,body:untyped):untyped =
 #  bind forStaticX
 #  forStaticX(slice, index, body)
 
-template forStatic*(index,i0,i1,body:untyped):untyped =
+#template forStatic*(i0,i1,fn: untyped): untyped {.dirty.}=
+#  bind forStaticU
+#  forStaticU(i0, i1, fn)
+
+template forStatic*(index,i0,i1,body: untyped): untyped {.dirty.}=
   bind forStaticX2
   forStaticX2(i0, i1, index, body)
 

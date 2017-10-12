@@ -18,6 +18,13 @@ proc newGauge*(l: Layout): auto =
     result[i] = l.ColorMatrix()
     result[i] := 1
 
+proc newGaugeS*(l: Layout): auto =
+  let nd = l.nDim
+  result = newSeq[type(l.ColorMatrixS())](nd)
+  for i in 0..<nd:
+    result[i] = l.ColorMatrixS()
+    result[i] := 1
+
 proc newOneOf*[T](x: seq[T]): seq[T] =
   result.newSeq(x.len)
   for i in 0..<x.len:
@@ -131,7 +138,7 @@ proc plaq*[T](uu: openArray[T]): auto =
   let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
   let lo = u[0].l
   let nd = lo.nDim
-  let nc = u[0][0].ncols
+  let nc = getConst(u[0][0].ncols)
   var sf = newSeq[type(createShiftBufs(u[0],1,"all"))](nd)
   for i in 0..<nd-1:
     sf[i] = createShiftBufs(u[0], 1, "all")

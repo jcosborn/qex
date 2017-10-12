@@ -287,8 +287,8 @@ template mulVMV*(rr:typed; xx,yy:typed):untyped =
     mixin nrows, ncols, mul, imadd, assign, load1
     assert(x.nrows == r.len)
     assert(x.ncols == y.len)
-    when true:
-    #when false:
+    #when true:
+    when false:
       tmpvar(tr, r)
       #var tr{.noInit.}:array[r.len,type(load1(r[0]))]
       load(ty0r, y[0].re)
@@ -371,6 +371,15 @@ template imaddSVV*(rr:typed; xx,yy:typed):untyped =
     load(tr, r)
     forO i, 0, <x.len:
       imadd(tr, x[i], y[i])
+    assign(r, tr)
+
+template imaddVSV*(rr:typed; xx,yy:typed):untyped =
+  subst(r,rr,x,xx,y,yy,tr,_,i,_):
+    mixin imadd, assign
+    assert(r.len == y.len)
+    load(tr, r)
+    forO i, 0, <r.len:
+      imadd(r[i], x, y[i])
     assign(r, tr)
 
 template imaddVMV*(rr:typed; xx,yy:typed):untyped =
