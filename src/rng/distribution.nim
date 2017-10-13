@@ -37,7 +37,7 @@ template gaussian*(r: AsVar, x: untyped) =
   gaussian(t, x)
 proc gaussian*(v: Field, r: RNGField) =
   for i in v.l.sites:
-    gaussian(v{i}, r[i])
+    gaussian(v{i}, r{i}[])
 
 proc uniform*(x: var AsComplex, r: var RNG) =
   mixin uniform
@@ -50,9 +50,13 @@ proc uniform*(x: var AsMatrix, r: var RNG) =
   forO i, 0, x.nrows-1:
     forO j, 0, x.ncols-1:
       uniform(x[i,j], r)
+template uniform*(r: AsVar, x: untyped) =
+  mixin uniform
+  var t = r[]
+  uniform(t, x)
 proc uniform*(v: Field, r: RNGField) =
   for i in v.l.sites:
-    uniform(v{i}, r[i])
+    uniform(v{i}, r{i}[])
 
 proc z4*(x: var AsComplex, r: var RNG) =
   when defined(FUELCompat):
@@ -96,9 +100,13 @@ proc z4*(x: var AsMatrix, r: var RNG) =
   forO i, 0, x.nrows-1:
     forO j, 0, x.ncols-1:
       x[i,j].z4 r
+template z4*(r: AsVar, x: untyped) =
+  mixin z4
+  var t = r[]
+  z4(t, x)
 proc z4*(x: Field, r: RNGField) =
   for i in x.l.sites:
-    x{i}.z4 r[i]
+    x{i}.z4 r{i}[]
 
 proc z2*(x: var AsComplex, r: var RNG) =
   when defined(FUELCompat):
@@ -118,9 +126,13 @@ proc z2*(x: var AsMatrix, r: var RNG) =
   forO i, 0, x.nrows-1:
     forO j, 0, x.ncols-1:
       x[i,j].z2 r
+template z2*(r: AsVar, x: untyped) =
+  mixin z2
+  var t = r[]
+  z2(t, x)
 proc z2*(x: Field, r: RNGField) =
   for i in x.l.sites:
-    x{i}.z2 r[i]
+    x{i}.z2 r{i}[]
 
 proc u1*(x: var AsComplex, r: var RNG) =
   when defined(FUELCompat):
@@ -143,15 +155,19 @@ proc u1*(x: var AsMatrix, r: var RNG) =
   forO i, 0, x.nrows-1:
     forO j, 0, x.ncols-1:
       x[i,j].u1 r
+template u1*(r: AsVar, x: untyped) =
+  mixin u1
+  var t = r[]
+  u1(t, x)
 proc u1*(x: Field, r: RNGField) =
   for i in x.l.sites:
-    x{i}.u1 r[i]
+    x{i}.u1 r{i}[]
 
 #proc newRNGField*(R:typedesc[RNG], lo:Layout,
 #                  seed:uint64 = uint64(17^7)):auto =
 #  var r:Field[1,R]
 proc newRNGField*[R: RNG](rng: typedesc[R], lo: Layout,
-                          seed: uint64 = uint64(17^7)): Field[1,R] =
+                          s: uint64 = uint64(17^7)): Field[1,R] =
   var r: Field[1,R]
   r.new(lo.physGeom.newLayout 1)
   threads:
@@ -159,5 +175,5 @@ proc newRNGField*[R: RNG](rng: typedesc[R], lo: Layout,
       var l = lo.coords[lo.nDim-1][j].int
       for i in countdown(lo.nDim-2, 0):
         l = l * lo.physGeom[i].int + lo.coords[i][j].int
-      r[j].seed(seed, l)
+      seed(r{j}[], s, l)
   r

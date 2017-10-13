@@ -14,6 +14,8 @@ type RngMilc6* = object
     iset: int32
     gset: float
 
+template isWrapper*(x: RngMilc6): untyped = false
+
 proc `$`*(x:RngMilc6):string =
   result = "RngMilc6 r:[ " & $x.r0
   result &= " " & $x.r1

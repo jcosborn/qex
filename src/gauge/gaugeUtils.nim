@@ -374,7 +374,7 @@ proc checkSU*[F:Field](x: openArray[F]): tuple[avg,max:float] {.noinit.} =
       if b < m: b = m
   threadRankSum a
   threadRankMax b
-  let nc = x[0][0].nrows
+  const nc = x[0][0].nrows
   let vol = x[0].l.physVol
   let c = float(2*(nc*nc+1))
   a = sqrt( a / (c*float(x.len*vol)) )
