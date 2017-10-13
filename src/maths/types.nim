@@ -38,6 +38,9 @@ template re*(x: AsVar): untyped = x[].re
 template im*(x: AsVar): untyped = x[].im
 template `[]`*(x: AsVar; i: SomeInteger): untyped = x[][i]
 template `[]`*(x: AsVar; i,j: SomeInteger): untyped = x[][i,j]
+template assign*(r: AsVar, x: untyped) =
+  var t = r[]
+  t := x
 template `:=`*(r: AsVar, x: untyped) =
   var t = r[]
   t := x
