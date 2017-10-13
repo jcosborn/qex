@@ -131,6 +131,7 @@ type
     re*,im*: T
   ComplexObj2*[T] = ComplexObj[T]
   ComplexType*[T] = AsComplex[ComplexObj[T]]
+  ComplexType2*[T] = AsComplex[ComplexObj2[T]]
 
 template complexObj*(x,y: typed): untyped =
   ComplexObj[type(x)](re: x, im: y)
@@ -179,9 +180,16 @@ subst(r,_):
     assign(r, x)
     r
 
-template map*(x: ComplexObj; f: untyped): untyped =
+#template mapComplexObj*(x: ComplexObj; f: untyped): untyped =
+template mapComplexObj*(x: untyped; f: untyped): untyped =
+#template mapComplexObj*(x: varargs[untyped]): untyped =
   let tx = x
+  #let fr = f(tx.re)
+  #let fi = f(tx.im)
+  #complexObj(fr, fi)
   complexObj(f(tx.re), f(tx.im))
+  #complexObj(x[1](tx.re), x[1](tx.im))
+template map*(x: ComplexObj; f: untyped): untyped = mapComplexObj(x, f)
 template map*(x: AsComplex; f: untyped): untyped = asComplex(f(x[]))
 #template map*(x: ; f: untyped): untyped =
 #  ComplexType(re:f(x.re),im:f(x.im))
@@ -483,6 +491,9 @@ template `*`*(xx: C1; yy: C2): untyped =
   let ri = x.im*y.re + x.re*y.im
   complexType(rr, ri)
 
+proc divdCCR*(r:var C1; x:C2; y:any) {.inline.} =
+  divd(r.re, x.re, y)
+  divd(r.im, x.im, y)
 proc divd*(r:var C1; x:C2; y:R3) {.inline.} =
   divd(r.re, x.re, y.re)
   divd(r.im, x.im, y.re)
@@ -509,10 +520,10 @@ proc `/`*(x:C1; y:SomeNumber):auto =
   mixin divd
   var r{.noInit.}:type(x)
   #echoType: x
-  divd(r, x, y)
+  divdCCR(r, x, y)
   r
 
-template imaddCCR*(rr:typed; xx,yy:typed):untyped =
+template imaddCCR*(rr: untyped; xx,yy: untyped): untyped =
   # r.re += x.re * y
   # r.im += x.im * y
   mixin imadd

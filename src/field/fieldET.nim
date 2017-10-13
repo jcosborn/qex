@@ -356,12 +356,16 @@ proc applyOp2(x,y:NimNode; ty:typedesc; op:string):auto =
     let yy = `y`
     for e in xx:
       when noAlias:
+        staticTraceBegin: `o Field2`
         type Fpx = object
           v: type(xx[e])
         var xp = cast[ptr carray[Fpx]](xx[0].addr)
         `o`(xp[][e].v, indexField(yy, e))
+        staticTraceEnd: `o Field2`
       else:
+        staticTraceBegin: `o Field2`
         `o`(xx[e], indexField(yy, e))
+        staticTraceEnd: `o Field2`
 template makeOps(op,f,fM,s:untyped):untyped =
   macro f*(x:Subsetted; y:notSomeField2):auto = applyOp1(x,y,s)
   macro f*(x:Subsetted; y:SomeField2):auto = applyOp2(x,y,int,s)
@@ -376,7 +380,10 @@ template makeOps(op,f,fM,s:untyped):untyped =
       #echo "subsetString" & s
       f(x[subsetString], y)
     else:
-      fM(x, y, y.type)
+      #fM(x, y, y.type)
+      staticTraceBegin: `f FieldAny`
+      fM(x, y, int)
+      staticTraceEnd: `f FieldAny`
   when profileEqns:
     template op*(x:Field; y:any):untyped =
       block:

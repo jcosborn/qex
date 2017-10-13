@@ -72,11 +72,11 @@ template startSB*(sb0: ShiftB; e: untyped) =
       startRecvBuf(sb0.sb)
   if sb0.si.nSendRanks > 0:
     if sb0.si.pack == 0:
-      let b = cast[ptr cArray[sb0.T]](sb0.sb.sq.sbuf)
+      let bb = cast[ptr cArray[sb0.T]](sb0.sb.sq.sbuf)
       #echo "sendSites: ", sb0.si.nSendSites
       tFor i, 0..<sb0.si.nSendSites:
         let ix{.inject.} = sb0.si.sendSites[i]
-        assign(b[i], e)
+        assign(bb[i], e)
         #echoAll myrank, " ", i, " ", ix, " ", b[][i]
     else:
       type F = numberType(sb0.T)
@@ -186,7 +186,7 @@ template getSB*(ss:ShiftB; ii:int; e1x,e2x:untyped):untyped =
   else:
     boundaryGetSB(ss, ii, e1x)
 
-template boundarySB*(s:ShiftB; e:untyped):untyped =
+template boundarySB*[T](s:ShiftB[T]; e:untyped):untyped =
   var needBoundary = false
   boundaryWaitSB(s): needBoundary = true
   if needBoundary:
@@ -214,6 +214,39 @@ template boundarySB*(s:ShiftB; e:untyped):untyped =
                 s.sb.sq.rbuf[stride*k2].addr, s.si.blend)
           subst(ir,irr,it,itt):
             e
+      if s.si.nRecvRanks > 0:
+        if threadNum == 0:
+          doneRecvBuf(s.sb)
+    if s.si.nSendRanks > 0:
+      if threadNum == 0:
+        waitSendBuf(s.sb)
+
+template boundarySB2*[T](s: ShiftB[T]; f: untyped): untyped =
+  var needBoundary = false
+  boundaryWaitSB(s): needBoundary = true
+  if needBoundary:
+    boundarySyncSB()
+    if s.si.nRecvDests > 0:
+      if s.sb.sq.nthreads[threadNum] != numThreads: boundaryOffsetSB(s)
+      let ti0 = s.sb.sq.offr[threadNum]
+      let ti1 = s.sb.sq.lenr[threadNum]
+      if s.si.blend == 0:
+        let rr = cast[ptr cArray[s.T]](s.sb.sq.rbuf)
+        for i in ti0..<ti1:
+          #let irr{.inject.} = s.si.sq.recvDests[i]
+          let k2 = s.si.sq.recvRemoteSrcs[i]
+          #echo "blend0: ", i, " ir: ", irr, " k2: ", k2
+          f(s.si.sq.recvDests[i], rr[k2])
+      else:
+        let stride = sizeof(s.T) div 2
+        for i in ti0..<ti1:
+          #let irr{.inject.} = s.si.sq.recvDests[i]
+          let k2 = s.si.sq.recvRemoteSrcs[i]
+          #echo "blendb: ", irr, " sidx: ", s.si.sq.sidx[irr].int
+          var itt{.inject,noInit.}: s.T  # should be load1(s.T)?
+          blend(itt, s.sb.lbuf[stride*i].addr,
+                s.sb.sq.rbuf[stride*k2].addr, s.si.blend)
+          f(s.si.sq.recvDests[i], itt)
       if s.si.nRecvRanks > 0:
         if threadNum == 0:
           doneRecvBuf(s.sb)

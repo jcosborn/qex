@@ -60,7 +60,7 @@ binDDRet(`*`, asColor, Color, Color2)
 binDDRet(`/`, asColor, Color, Color2)
 
 template numberType*[T](x: typedesc[Color[T]]): untyped = numberType(T)
-template numNuumbers*[T](x: typedesc[Color[T]]): untyped = numberType(T)
+#template numNumbers*[T](x: typedesc[Color[T]]): untyped = numberType(T)
 template numNumbers*(x: Color): untyped = numNumbers(x[])
 template load1*(x: Color): untyped = asColor(load1(x[]))
 template assign*(r: var Color, x: SomeNumber) =
@@ -87,6 +87,8 @@ template imul*(r: var Color, x: SomeNumber) =
   imul(r[], x)
 template imadd*(r: var Color, x: Color2, y: Color3) =
   imadd(r[], x[], y[])
+template imadd*(r: var Color, x: AsComplex, y: Color3) =
+  imadd(r[], x, y[])
 template imsub*(r: var Color, x: Color2, y: Color3) =
   imsub(r[], x[], y[])
 template `*`*(x: Color, y: SomeNumber): untyped =
@@ -98,6 +100,8 @@ template `*`*(x: AsComplex, y: Color2): untyped =
 template mul*(r: var Color, x: Color2, y: Color3) =
   mul(r[], x[], y[])
 template mul*(r: var Color, x: SomeNumber, y: Color3) =
+  mul(r[], x, y[])
+template mul*(r: var Color, x: AsComplex, y: Color3) =
   mul(r[], x, y[])
 template random*(x: var Color) =
   gaussian(x[], r)

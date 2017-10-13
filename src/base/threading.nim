@@ -99,6 +99,12 @@ template threads*(x0:untyped;body:untyped):untyped =
   numThreads = nidOld
   threadLocals = tlOld
 
+template nothreads*(body: untyped): untyped =
+  ## convenient way to turn off threading
+  block:
+    body
+
+
 template getMaxThreads*() = ompGetMaxThreads()
 template threadBarrierO* = ompBarrier
 template threadMaster*(x:untyped) = ompMaster(x)

@@ -13,14 +13,14 @@ template binaryMixed(T,op1,op2:untyped):untyped =
   template op1*(x:SomeNumber; y:T):T = op2(x.to(T),y)
   template op1*(x:T; y:SomeNumber):T = op2(x,y.to(T))
 template unaryMixedVar(T,op1,op2:untyped):untyped =
-  template op1*(r:var T; x:SomeNumber) = op2(r,x.to(T))
+  template op1*(r: T; x:SomeNumber) = op2(r,x.to(T))
 template binaryMixedVar(T,op1,op2:untyped):untyped =
-  template op1*(r:var T; x:SomeNumber; y:T) = op2(r,x.to(T),y)
-  template op1*(r:var T; x:T; y:SomeNumber) = op2(r,x,y.to(T))
+  template op1*(r: T; x:SomeNumber; y:T) = op2(r,x.to(T),y)
+  template op1*(r: T; x:T; y:SomeNumber) = op2(r,x,y.to(T))
 template trinaryMixedVar(T,op1,op2:untyped):untyped =
-  template op1*(r:var T; x:SomeNumber; y:T; z:T) = op2(r,x.to(T),y,z)
-  template op1*(r:var T; x:T; y:SomeNumber; z:T) = op2(r,x,y.to(T),z)
-  template op1*(r:var T; x:T; y:T; z:SomeNumber) = op2(r,x,y,z.to(T))
+  template op1*(r: T; x:SomeNumber; y:T; z:T) = op2(r,x.to(T),y,z)
+  template op1*(r: T; x:T; y:SomeNumber; z:T) = op2(r,x,y.to(T),z)
+  template op1*(r: T; x:T; y:T; z:SomeNumber) = op2(r,x,y,z.to(T))
 template map1(T,N,op:untyped):untyped {.dirty.} =
   proc op*(x:T):T {.inline,noInit.} =
     let t = x.toArray
@@ -93,7 +93,7 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   #proc assign*(r:var T; x:T) {.inline.} =
   #  r = x
   #template `=`*(r: var T; x: T) = {.emit: [r, " = ", x].}
-  template assign*(r:var T; x:T) =
+  template assign*(r: T; x:T) =
     r = x
   #proc assign*(r:var array[N,F]; x:T) {.inline.} =
   #  assign(cast[ptr F](r.addr), x)
@@ -125,24 +125,24 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   binaryMixed(T, divd, divd)
 
   template neg*(r:var T; x:T) = r = neg(x)
-  template add*(r:var T; x,y:T) = r = add(x,y)
-  template sub*(r:var T; x,y:T) = r = sub(x,y)
-  template mul*(r:var T; x,y:T) = r = mul(x,y)
-  template divd*(r:var T; x,y:T) = r = divd(x,y)
+  template add*(r: T; x,y:T) = r = add(x,y)
+  template sub*(r: T; x,y:T) = r = sub(x,y)
+  template mul*(r: T; x,y:T) = r = mul(x,y)
+  template divd*(r: T; x,y:T) = r = divd(x,y)
 
   binaryMixedVar(T, add, add)
   binaryMixedVar(T, sub, sub)
   binaryMixedVar(T, mul, mul)
   binaryMixedVar(T, divd, divd)
 
-  template iadd*(r:var T; x:T) = add(r,r,x)
-  template isub*(r:var T; x:T) = sub(r,r,x)
-  template imul*(r:var T; x:T) = mul(r,r,x)
-  template idiv*(r:var T; x:T) = divd(r,r,x)
-  template imadd*(r:var T; x,y:T) = iadd(r,mul(x,y))
-  template imsub*(r:var T; x,y:T) = isub(r,mul(x,y))
-  template madd*(r:var T; x,y,z:T) = add(r,mul(x,y),z)
-  template msub*(r:var T; x,y,z:T) = sub(r,mul(x,y),z)
+  template iadd*(r: T; x:T) = add(r,r,x)
+  template isub*(r: T; x:T) = sub(r,r,x)
+  template imul*(r: T; x:T) = mul(r,r,x)
+  template idiv*(r: T; x:T) = divd(r,r,x)
+  template imadd*(r: T; x,y: T) = iadd(r,mul(x,y))
+  template imsub*(r: T; x,y:T) = isub(r,mul(x,y))
+  template madd*(r: T; x,y,z:T) = add(r,mul(x,y),z)
+  template msub*(r: T; x,y,z:T) = sub(r,mul(x,y),z)
 
   unaryMixedVar(T, iadd, iadd)
   unaryMixedVar(T, isub, isub)
@@ -164,19 +164,19 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   binaryMixed(T, `*`, mul)
   binaryMixed(T, `/`, divd)
 
-  template `:=`*(r:var T; x:T) = assign(r,x)
-  template `+=`*(r:var T, x:T) = iadd(r,x)
-  template `-=`*(r:var T, x:T) = isub(r,x)
-  template `*=`*(r:var T, x:T) = imul(r,x)
-  template `/=`*(r:var T, x:T) = idiv(r,x)
+  template `:=`*(r: T; x:T) = assign(r,x)
+  template `+=`*(r: T, x:T) = iadd(r,x)
+  template `-=`*(r: T, x:T) = isub(r,x)
+  template `*=`*(r: T, x:T) = imul(r,x)
+  template `/=`*(r: T, x:T) = idiv(r,x)
 
   unaryMixedVar(T, `:=`, assign)
-  template `:=`*(r:var T; x:openArray[SomeNumber]) = assign(r,x)
+  template `:=`*(r: T; x:openArray[SomeNumber]) = assign(r,x)
   unaryMixedVar(T, `+=`, iadd)
   unaryMixedVar(T, `-=`, isub)
   unaryMixedVar(T, `*=`, imul)
   #unaryMixedVar(T, `/=`, idiv)
-  template `/=`*(r:var T; x:SomeNumber) = idiv(r,x.to(T))
+  template `/=`*(r: T; x:SomeNumber) = idiv(r,x.to(T))
 
   proc trace*(x:T):T {.inline,noInit.}= x
   proc norm2*(x:T):T {.inline,noInit.} = mul(x,x)
