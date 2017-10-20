@@ -90,7 +90,7 @@ proc z4*(x: AsVarVector, r: var RNG) =
   forO i, 0, x.len-1: x[i].z4 r
 proc z4*(x: AsVarMatrix, r: var RNG) =
   forO i, 0, x.nrows-1:
-    forO i, 0, x.ncols-1:
+    forO j, 0, x.ncols-1:
       x[i,j].z4 r
 proc z4*(x: Field, r: var RNGField) =
   for i in x.l.sites:
@@ -112,7 +112,7 @@ proc z2*(x: AsVarVector, r: var RNG) =
   forO i, 0, x.len-1: x[i].z2 r
 proc z2*(x: AsVarMatrix, r: var RNG) =
   forO i, 0, x.nrows-1:
-    forO i, 0, x.ncols-1:
+    forO j, 0, x.ncols-1:
       x[i,j].z2 r
 proc z2*(x: Field, r: var RNGField) =
   for i in x.l.sites:
@@ -137,7 +137,7 @@ proc u1*(x: AsVarVector, r: var RNG) =
   forO i, 0, x.len-1: x[i].u1 r
 proc u1*(x: AsVarMatrix, r: var RNG) =
   forO i, 0, x.nrows-1:
-    forO i, 0, x.ncols-1:
+    forO j, 0, x.ncols-1:
       x[i,j].u1 r
 proc u1*(x: Field, r: var RNGField) =
   for i in x.l.sites:
