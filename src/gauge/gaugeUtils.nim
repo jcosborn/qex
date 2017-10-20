@@ -138,7 +138,7 @@ proc plaq*[T](uu: openArray[T]): auto =
   let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
   let lo = u[0].l
   let nd = lo.nDim
-  let nc = getConst(u[0][0].ncols)
+  let nc = u[0][0].ncols
   var sf = newSeq[type(createShiftBufs(u[0],1,"all"))](nd)
   for i in 0..<nd-1:
     sf[i] = createShiftBufs(u[0], 1, "all")
