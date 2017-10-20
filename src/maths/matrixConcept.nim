@@ -40,8 +40,8 @@ template createAsType2(t,c:untyped):untyped =
   template `[]=`*(x:t; i,j:SomeInteger; y:untyped):untyped =
     x[][i,j] = y
   template len*(x:t):untyped = x[].len
-  template nrows*(x:t):untyped = x[].nrows
-  template ncols*(x:t):untyped = x[].ncols
+  template nrows*(x:t):untyped = getConst(x[].nrows)
+  template ncols*(x:t):untyped = getConst(x[].ncols)
   #template mvLevel*(x:t):untyped =
   #  mixin mvLevel
   #  mvLevel(x[])
