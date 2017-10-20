@@ -8,8 +8,8 @@ import macros
 #import stdUtils
 #import basicOps
 #import profile
+import maths
 import maths/types
-import maths/matrixConcept
 
 type FieldOps* = enum
   foNeg, foAdd, foSub, foMul, foDiv, foAdj, foToSingle, foToDouble
@@ -122,6 +122,7 @@ proc newOneOf*(x:Field):auto =
   r.new(x.l)
   r
 
+template isWrapper*(x: SomeField): untyped = false
 template `[]`*(x:Field; i:int):untyped = x.s[i]
 template `[]`*(x:Subsetted; i:int):untyped = x.field[i]
 template `[]`*(x:SomeField; st:string):untyped =
@@ -290,22 +291,20 @@ iterator items*(x:FieldMul):int {.inline.} =
 #import types
 #export types
 
-#proc `{}`*[V:static[int],T](f:Field[V,T]; i:int):Masked[T] =
-proc `{}`*(f:Field; i:int):auto =
+proc fmask*(f: Field; i: int): auto =
   mixin masked
   let e = i div f.l.V
   let l = i mod f.l.V
   let mask = 1 shl l
-  #echo i, " ", e, " ", r, " ", mask
-  #result.pobj = f[e].addr
-  #result.mask = mask
-  #result = Masked[f.T](pobj:f[e], mask:mask)
-  #var r:Masked[f.T]
-  #r.pobj = f[e].addr
-  #r.mask = mask
+  var r = masked(f[e], mask)
+  r
+#proc `{}`*[V:static[int],T](f: Field[V,T]; i:int): var auto =
+template `{}`*(f: Field; i: int): untyped =
+  #var r = fmask(f, i)
   #r
-  #echoImm: "{}"
-  result = masked(f[e], mask)
+  fmask(f, i)
+#template `{}`*(f: Field; i: int): untyped =
+#  f.mask(i)
 proc `{}`*(f: Subsetted; i: int): auto =
   let e = i div f.field.l.V
   let l = i mod f.field.l.V
@@ -357,12 +356,16 @@ proc applyOp2(x,y:NimNode; ty:typedesc; op:string):auto =
     let yy = `y`
     for e in xx:
       when noAlias:
+        staticTraceBegin: `o Field2`
         type Fpx = object
           v: type(xx[e])
         var xp = cast[ptr carray[Fpx]](xx[0].addr)
         `o`(xp[][e].v, indexField(yy, e))
+        staticTraceEnd: `o Field2`
       else:
+        staticTraceBegin: `o Field2`
         `o`(xx[e], indexField(yy, e))
+        staticTraceEnd: `o Field2`
 template makeOps(op,f,fM,s:untyped):untyped =
   macro f*(x:Subsetted; y:notSomeField2):auto = applyOp1(x,y,s)
   macro f*(x:Subsetted; y:SomeField2):auto = applyOp2(x,y,int,s)
@@ -377,7 +380,10 @@ template makeOps(op,f,fM,s:untyped):untyped =
       #echo "subsetString" & s
       f(x[subsetString], y)
     else:
-      fM(x, y, y.type)
+      #fM(x, y, y.type)
+      staticTraceBegin: `f FieldAny`
+      fM(x, y, int)
+      staticTraceEnd: `f FieldAny`
   when profileEqns:
     template op*(x:Field; y:any):untyped =
       block:

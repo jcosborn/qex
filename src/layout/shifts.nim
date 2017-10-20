@@ -10,6 +10,7 @@ import macros
 #import qmp
 #import stdUtils
 import field
+export field
 #import future
 import strUtils
 #import metaUtils
@@ -63,34 +64,34 @@ proc createShiftBufs*(x:any; ln=1; sub="all"):auto =
 #proc init*(s:var ShiftB; ;
 #           dir,len:int; sub="all") =
 
-template startSB*(s:ShiftB; e:untyped) =
+template startSB*(sb0: ShiftB; e: untyped) =
   mixin assign, `[]`, numberType
   if threadNum == 0:
-    if s.si.nRecvRanks > 0:
+    if sb0.si.nRecvRanks > 0:
       #echoRank "startRecvBuf"
-      startRecvBuf(s.sb)
-  if s.si.nSendRanks > 0:
-    if s.si.pack == 0:
-      let b = cast[ptr cArray[s.T]](s.sb.sq.sbuf)
-      #echo "sendSites: ", s.si.nSendSites
-      tFor i, 0..<s.si.nSendSites:
-        let ix{.inject.} = s.si.sendSites[i]
-        assign(b[i], e)
+      startRecvBuf(sb0.sb)
+  if sb0.si.nSendRanks > 0:
+    if sb0.si.pack == 0:
+      let bb = cast[ptr cArray[sb0.T]](sb0.sb.sq.sbuf)
+      #echo "sendSites: ", sb0.si.nSendSites
+      tFor i, 0..<sb0.si.nSendSites:
+        let ix{.inject.} = sb0.si.sendSites[i]
+        assign(bb[i], e)
         #echoAll myrank, " ", i, " ", ix, " ", b[][i]
     else:
-      type F = numberType(s.T)
-      let stride = sizeOf(s.T) div (2*sizeof(F))
-      let b = cast[ptr cArray[F]](s.sb.sq.sbuf)
-      let l = cast[ptr cArray[F]](s.sb.lbuf)
-      tFor i, 0..<s.si.nSendSites:
-        let ix{.inject.} = s.si.sendSites[i]
+      type F = numberType(sb0.T)
+      let stride = sizeOf(sb0.T) div (2*sizeof(F))
+      let b = cast[ptr cArray[F]](sb0.sb.sq.sbuf)
+      let l = cast[ptr cArray[F]](sb0.sb.lbuf)
+      tFor i, 0..<sb0.si.nSendSites:
+        let ix{.inject.} = sb0.si.sendSites[i]
         let j = stride * i
-        pack(b[j].addr, l[j].addr, s.si.pack, e)
+        pack(b[j].addr, l[j].addr, sb0.si.pack, e)
         #echoAll myrank, " ", i, " ", ix, " "
     t0wait()
     if threadNum == 0:
-      #echoRank "send: ", cast[ptr float32](s.sb.sq.sbuf)[]
-      startSendBuf(s.sb)
+      #echoRank "send: ", cast[ptr float32](sb0.sb.sq.sbuf)[]
+      startSendBuf(sb0.sb)
 
 template isLocal*(s: ShiftB; i: int): bool =
   s.si.sq.pidx[i] != -1
@@ -185,7 +186,7 @@ template getSB*(ss:ShiftB; ii:int; e1x,e2x:untyped):untyped =
   else:
     boundaryGetSB(ss, ii, e1x)
 
-template boundarySB*(s:ShiftB; e:untyped):untyped =
+template boundarySB*[T](s:ShiftB[T]; e:untyped):untyped =
   var needBoundary = false
   boundaryWaitSB(s): needBoundary = true
   if needBoundary:
@@ -213,6 +214,39 @@ template boundarySB*(s:ShiftB; e:untyped):untyped =
                 s.sb.sq.rbuf[stride*k2].addr, s.si.blend)
           subst(ir,irr,it,itt):
             e
+      if s.si.nRecvRanks > 0:
+        if threadNum == 0:
+          doneRecvBuf(s.sb)
+    if s.si.nSendRanks > 0:
+      if threadNum == 0:
+        waitSendBuf(s.sb)
+
+template boundarySB2*[T](s: ShiftB[T]; f: untyped): untyped =
+  var needBoundary = false
+  boundaryWaitSB(s): needBoundary = true
+  if needBoundary:
+    boundarySyncSB()
+    if s.si.nRecvDests > 0:
+      if s.sb.sq.nthreads[threadNum] != numThreads: boundaryOffsetSB(s)
+      let ti0 = s.sb.sq.offr[threadNum]
+      let ti1 = s.sb.sq.lenr[threadNum]
+      if s.si.blend == 0:
+        let rr = cast[ptr cArray[s.T]](s.sb.sq.rbuf)
+        for i in ti0..<ti1:
+          #let irr{.inject.} = s.si.sq.recvDests[i]
+          let k2 = s.si.sq.recvRemoteSrcs[i]
+          #echo "blend0: ", i, " ir: ", irr, " k2: ", k2
+          f(s.si.sq.recvDests[i], rr[k2])
+      else:
+        let stride = sizeof(s.T) div 2
+        for i in ti0..<ti1:
+          #let irr{.inject.} = s.si.sq.recvDests[i]
+          let k2 = s.si.sq.recvRemoteSrcs[i]
+          #echo "blendb: ", irr, " sidx: ", s.si.sq.sidx[irr].int
+          var itt{.inject,noInit.}: s.T  # should be load1(s.T)?
+          blend(itt, s.sb.lbuf[stride*i].addr,
+                s.sb.sq.rbuf[stride*k2].addr, s.si.blend)
+          f(s.si.sq.recvDests[i], itt)
       if s.si.nRecvRanks > 0:
         if threadNum == 0:
           doneRecvBuf(s.sb)
@@ -433,7 +467,7 @@ proc newShifters*[F](f: F, len: int, sub="all"): auto =
   r
 
 proc `^*`*(x: Transporter, y: any): auto =
-  mixin mul, load1, adj
+  mixin mul, load1, adj, `[]`
   var r = x.field
   when compiles(x.link):
     if x.len >= 0:
@@ -450,7 +484,8 @@ proc `^*`*(x: Transporter, y: any): auto =
     if x.len >= 0:
       startSB(x.sb, y[ix])
       for ir in x.sb.subset:
-        localSB(x.sb, ir, assign(r[ir], it), load1(y[ix]))
+        #localSB(x.sb, ir, assign(r[ir], it), load1(y[ix]))
+        localSB(x.sb, ir, assign(r[ir], it), y[ix])
       boundarySB(x.sb, assign(r[ir], it))
     else:
       startSB(x.sb, y[ix])

@@ -39,7 +39,7 @@ template createAsType2(t,c:untyped):untyped =
     x[][i,j]
   template `[]=`*(x:t; i,j:SomeInteger; y:untyped):untyped =
     x[][i,j] = y
-  template len*(x:t):untyped = getConst(x[].len)
+  template len*(x:t):untyped = x[].len
   template nrows*(x:t):untyped = getConst(x[].nrows)
   template ncols*(x:t):untyped = getConst(x[].ncols)
   #template mvLevel*(x:t):untyped =
@@ -48,20 +48,21 @@ template createAsType2(t,c:untyped):untyped =
 template createAsType(t:untyped):untyped = createAsType2(`As t`, `as t`)
 
 createAsType(Scalar)
-createAsType(VarScalar)
+#createAsType(VarScalar)
 createAsType(Vector)
-createAsType(VarVector)
+#createAsType(VarVector)
 createAsType(Matrix)
-createAsType(VarMatrix)
+#createAsType(VarMatrix)
 
 declareScalar(AsScalar)
-declareScalar(AsVarScalar)
+#declareScalar(AsVarScalar)
 declareVector(AsVector)
-declareVector(AsVarVector)
+#declareVector(AsVarVector)
 declareMatrix(AsMatrix)
-declareMatrix(AsVarMatrix)
+#declareMatrix(AsVarMatrix)
 template deref(x:typed):untyped =
-  when type(x) is AsScalar|AsVarScalar:
+  #when type(x) is AsScalar|AsVarScalar:
+  when type(x) is AsScalar:
     x[]
   else:
     x
@@ -72,8 +73,8 @@ type
     mat*: array[I,array[J,T]]
   MatrixArray*[I,J:static[int],T] = AsMatrix[MatrixArrayObj[I,J,T]]
   MatrixRowObj*[T] = object
-    row:int
-    mat:ptr T
+    rw*: int
+    mat*: ptr T
   MatrixRow*[T] = AsVector[MatrixRowObj[T]]
   #MatrixCol*[T] = tuple[col:int,mat:ptr T]
   #MatrixDiag*[T] = tuple[diag:int,mat:ptr T]
@@ -114,15 +115,28 @@ type
     x isnot MVconcept2
   Sca3* = concept x
     x isnot MVconcept3
-  VarSca1* = var Sca1
-  VarVec1* = var Vec1
-  VarMat1* = var Mat1
-  VarMV1* = AsVarMatrix | AsVarVector
-  VarAny* = var any #| AsVarMatrix
+  #VarSca1* = var Sca1
+  #VarVec1* = var Vec1
+  #VarMat1* = var Mat1
+  #VarMV1* = AsVarMatrix | AsVarVector
+  #VarAny* = var any #| AsVarMatrix
+  #AsVarVector*[T] = AsVar[AsVector[T]]
+  #AsVarMatrix*[T] = AsVar[AsMatrix[T]]
+
+template isWrapper*(x: array): untyped = false
+
+template isWrapper*(x: AsVector): untyped = true
+template asWrapper*(x: AsVector, y: typed): untyped =
+  #static: echo "asWrapper AsVector"
+  asVector(y)
+template asVarWrapper*(x: AsVector, y: typed): untyped =
+  #static: echo "asVarWrapper AsVector"
+  asVar(asVector(y))
 
 template `len`*(x:MatrixArrayObj):untyped = x.I
 template nrows*(x:MatrixArrayObj):untyped = x.I
 template ncols*(x:MatrixArrayObj):untyped = x.J
+template `[]`*(x:MatrixArrayObj):untyped = x
 template `[]`*(x:MatrixArrayObj; i,j:int):untyped = x.mat[i][j]
 template `[]`*(x:var MatrixArrayObj; i,j:int):untyped = x.mat[i][j]
 template `[]=`*(x:MatrixArrayObj; i,j:int, y:untyped):untyped = x.mat[i][j] = y
@@ -143,8 +157,33 @@ template numNumbers*(x:AsMatrix):untyped =
 #template `[]=`*(x:array; i,j:int, y:untyped):untyped = x[i][j] = y
 
 template len*(x:MatrixRowObj):untyped = x.mat[].ncols
-template `[]`*(x:MatrixRowObj; i:int):untyped = x.mat[][x.row,i]
-template `[]=`*(x:MatrixRowObj; i:int; y:untyped):untyped = x.mat[][x.row,i] = y
+template `[]`*(x:MatrixRowObj; i:int):untyped = x.mat[][x.rw,i]
+template `[]=`*(x:MatrixRowObj; i:int; y:untyped):untyped = x.mat[][x.rw,i] = y
+
+template isWrapper*(x: MatrixArrayObj): untyped = false
+
+template isWrapper*(x: AsMatrix): untyped = true
+template asWrapper*(x: AsMatrix, y: typed): untyped =
+  #static: echo "asWrapper AsMatrix"
+  #dumpTree: y
+  asMatrix(y)
+template asVarWrapper*(x: AsMatrix, y: typed): untyped =
+  #static: echo "asVarWrapper AsMatrix"
+  asVar(asMatrix(y))
+
+template isWrapper*(x: AsVar[AsMatrix]): untyped = true
+template asWrapper*(x: AsVar[AsMatrix], y: typed): untyped =
+  #static: echo "asWrapper AsVarMatrix"
+  asVar(asMatrix(v: y))
+template asVarWrapper*(x: AsVar[AsMatrix], y: typed): untyped =
+  #static: echo "asVarWrapper AsVarMatrix"
+  asVar(asMatrix(v: y))
+
+#template masked*(x: AsMatrix, msk: typed): untyped =
+#  static: echo "masked AsMatrix"
+#  asVarMatrix(masked(x[],msk))
+#template masked*(x: AsVarMatrix, msk: typed): untyped =
+#  asVarMatrix(masked(x[],msk))
 
 #template isVector(x:Row):untyped = true
 #template isVector(x:Col):untyped = true
@@ -154,23 +193,23 @@ template `[]=`*(x:MatrixRowObj; i:int; y:untyped):untyped = x.mat[][x.row,i] = y
 #template tmpluntyped*(x:typed):untyped = x
 #template tmptype*(x:Vec1):untyped = VectorArray[x.len,type(load1(x[0]))]
 
-template load1*(xx:Vec1):untyped =
+template load1*(xx: Vec1): untyped =
+  mixin load1
+  lets(x,xx):
+    var r_load1V{.noInit.}: VectorArray[x.len,type(load1(x[0]))]
+    assign(r_load1V, x)
+    r_load1V
+template load1*(xx: AsVar[AsVector]):untyped =
   mixin load1
   lets(x,xx):
     var r{.noInit.}:VectorArray[x.len,type(load1(x[0]))]
     assign(r, x)
     r
-template load1*(xx: AsVarVector):untyped =
-  mixin load1
+template load1*(xx: Mat1): untyped =
   lets(x,xx):
-    var r{.noInit.}:VectorArray[x.len,type(load1(x[0]))]
-    assign(r, x)
-    r
-template load1*(xx:Mat1):untyped =
-  lets(x,xx):
-    var r{.noInit.}: MatrixArray[x.nrows,x.ncols,type(load1(x[0,0]))]
-    assign(r, x)
-    r
+    var r_load1M{.noInit.}: MatrixArray[x.nrows,x.ncols,type(load1(x[0,0]))]
+    assign(r_load1M, x)
+    r_load1M
 #template tmpvar1*(x:Vec1):untyped =
 #  lets(x,xx):
 #    var r{.noInit.}:VectorArray[x.len,type(load1(x[0]))]
@@ -185,14 +224,14 @@ template row*(x:AsMatrix; i:int):untyped =
   #for j in 0..<nc:
   #  assign(r[j], x[i,j])
   #r
-  asVector(MatrixRowObj[type(x)](row:i,mat:unsafeAddr(x)))
+  asVector(MatrixRowObj[type(x)](rw:i,mat:unsafeAddr(x)))
 template setRow*(r:AsVector; x:AsVector; i:int):untyped =
   assign(r, x)
 #proc setRow*(r:var AsMatrix; x:AsVector; i:int) {.inline.} =
 template setRow*(rr:var AsMatrix; xx:AsVector; ii:int): untyped =
   subst(r,rr,x,xx,i,ii,nc,_,j,_):
     lets(xt,x,it,i):
-      const nc = r.ncols
+      const nc = getConst(r.ncols)
       for j in 0..<nc:
         assign(r[it,j], xt[j])
 template column*(x:AsVector; i:int):untyped = x
@@ -231,10 +270,16 @@ template makeLevel1P(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
     `f s1 s2`(r, deref(x))
 template makeLevel1T(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
   template f*(rr:t1, xx:t2): untyped =
+    #dumpTree: `f s1 s2`
+    staticTraceBegin: `f s1 s2`
+    #echoTyped: rr
+    #echoTyped: xx
     mixin `f s1 s2`
-    subst(r,rr):
-      lets(x,xx):
-        `f s1 s2`(r, deref(x))
+    optimizeAst:
+      subst(r,rr):
+        lets(x,xx):
+          `f s1 s2`(r, deref(x))
+    staticTraceEnd: `f s1 s2`
 template makeLevel1(f,s1,t1,s2,t2:untyped):untyped =
   makeLevel1T(f,s1,t1,s2,t2)
 
@@ -250,27 +295,29 @@ template makeLevel2P(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
     func3(`f s1 s2 s3`, r, x, y)
 template makeLevel2T(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
   template f*(rr:t1, xx:t2, yy:t3): untyped =
-    subst(r,rr,x,xx,y,yy):
-      lets(xt,x,yt,y):
-        `f s1 s2 s3`(r, xt, yt)
+    staticTraceBegin: `f s1 s2 s3`
+    optimizeAst:
+      subst(r,rr,x,xx,y,yy):
+        lets(xt,x,yt,y):
+          `f s1 s2 s3`(r, xt, yt)
+    staticTraceEnd: `f s1 s2 s3`
 template makeLevel2(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
   makeLevel2T(f,s1,t1,s2,t2,s3,t3)
 
 template makeMap1(op:untyped):untyped =
-  makeLevel1(op, S, VarSca1, V, Vec2)
-  makeLevel1(op, S, VarSca1, M, Mat2)
-  makeLevel1(op, V, VarVec1, S, Sca2)
-  #makeLevel1(op, V, Vec1, V, Vec2)
-  makeLevel1(op, V, VarVec1, V, Vec2)
-  makeLevel1(op, V, VarVec1, V, AsVarVector)
-  makeLevel1(op, V, AsVarVector, S, Sca2)
-  makeLevel1(op, V, AsVarVector, V, Vec2)
-  makeLevel1(op, M, VarMat1, S, Sca2)
-  makeLevel1(op, M, VarMat1, V, Vec2)
-  makeLevel1(op, M, VarMat1, M, Mat2)
-  makeLevel1(op, M, AsVarMatrix, S, Sca2)
-  makeLevel1(op, M, AsVarMatrix, V, Vec2)
-  makeLevel1(op, M, AsVarMatrix, M, Mat2)
+  makeLevel1(op, S, var Sca1, V, Vec2)
+  makeLevel1(op, S, var Sca1, M, Mat2)
+  makeLevel1(op, V, var Vec1, S, Sca2)
+  makeLevel1(op, V, var Vec1, V, Vec2)
+  #makeLevel1(op, V, var Vec1, V, AsVarVector)
+  #makeLevel1(op, V, AsVarVector, S, Sca2)
+  #makeLevel1(op, V, AsVarVector, V, Vec2)
+  makeLevel1(op, M, var Mat1, S, Sca2)
+  makeLevel1(op, M, var Mat1, V, Vec2)
+  makeLevel1(op, M, var Mat1, M, Mat2)
+  #makeLevel1(op, M, AsVarMatrix, S, Sca2)
+  #makeLevel1(op, M, AsVarMatrix, V, Vec2)
+  #makeLevel1(op, M, AsVarMatrix, M, Mat2)
 
 makeMap1(assign)
 makeMap1(neg)
@@ -280,42 +327,46 @@ makeMap1(isub)
 #template assign*(x:Mat1; y:SomeNumber) =
 #  echo "test"
 
-template `:=`*(x:VarVec1; y:SomeNumber) = assign(x, y)
-template `:=`*(x:AsVarVector; y:SomeNumber) = assign(x, y)
-template `:=`*(x:VarVec1; y:Vec2): untyped = assign(x, y)
-template `:=`*(x:AsVarVector; y:Vec2): untyped = assign(x, y)
-template `:=`*(x:VarMat1; y:SomeNumber) = assign(x, y)
-template `:=`*(x:AsVarMatrix; y:SomeNumber) = assign(x, y)
-template `:=`*(x:VarMat1; y:Vec2) = assign(x, y)
-template `:=`*(x:AsVarMatrix; y:Vec2) = assign(x, y)
-template `:=`*(x:VarMat1; y:Mat2) = assign(x, y)
-template `:=`*(x:AsVarMatrix; y:Mat2) = assign(x, y)
+template `:=`*(x:var Vec1; y:SomeNumber) = assign(x, y)
+#template `:=`*(x:AsVarVector; y:SomeNumber) = assign(x, y)
+template `:=`*(x:var Vec1; y:Vec2): untyped = assign(x, y)
+#template `:=`*(x:AsVarVector; y:Vec2): untyped = assign(x, y)
+template `:=`*(x:var Mat1; y:SomeNumber) = assign(x, y)
+#template `:=`*(x:AsVarMatrix; y:SomeNumber) = assign(x, y)
+template `:=`*(x:var Mat1; y:Vec2) = assign(x, y)
+#template `:=`*(x:AsVarMatrix; y:Vec2) = assign(x, y)
+template `:=`*(x:var Mat1; y:Mat2) = assign(x, y)
+#template `:=`*(x:AsVarMatrix; y:Mat2) = assign(x, y)
 
-template `+=`*(x:VarVec1; y:Vec2) = iadd(x, y)
-template `+=`*(x:VarMat1; y:Mat2) = iadd(x, y)
-template `-=`*(x:VarVec1; y:Vec2) = isub(x, y)
-template `-=`*(x:VarMat1; y:Mat2) = isub(x, y)
+template `+=`*(x:var Vec1; y:Vec2) =
+  staticTraceBegin: peqVV
+  iadd(x, y)
+  staticTraceEnd: peqVV
+template `+=`*(x:var Mat1; y:Mat2) = iadd(x, y)
+template `-=`*(x:var Vec1; y:Vec2) = isub(x, y)
+template `-=`*(x:var Mat1; y:Mat2) = isub(x, y)
 
-makeLevel1(imul, V, VarVec1, S, Sca2)
-makeLevel1(imul, M, VarMat1, S, Sca2)
-makeLevel1(imul, M, AsVarMatrix, S, Sca2)
+makeLevel1(imul, V, var Vec1, S, Sca2)
+makeLevel1(imul, M, var Mat1, S, Sca2)
+#makeLevel1(imul, M, AsVarMatrix, S, Sca2)
 
 template `*=`*(r:var MV1; x:Sca2) = imul(r, x)
-template `*=`*(r:VarMV1; x:Sca2) = imul(r, x)
+template `/=`*(r:var MV1; x:Sca2) = imul(r, x)
+#template `*=`*(r:AsVarMatrix; x:Sca2) = imul(r, x)
 
 template makeMap2(op:untyped):untyped =
-  makeLevel2(op, V, VarVec1, V, Vec2, S, Sca3)
-  makeLevel2(op, V, VarVec1, S, Sca2, V, Vec3)
-  makeLevel2(op, V, VarVec1, V, Vec2, V, Vec3)
-  makeLevel2(op, M, VarMat1, S, Sca2, S, Sca3)
-  makeLevel2(op, M, VarMat1, V, Vec2, S, Sca3)
-  makeLevel2(op, M, VarMat1, S, Sca2, V, Vec3)
-  makeLevel2(op, M, VarMat1, V, Vec2, V, Vec3)
-  makeLevel2(op, M, VarMat1, M, Mat2, S, Sca3)
-  makeLevel2(op, M, VarMat1, S, Sca2, M, Mat3)
-  makeLevel2(op, M, VarMat1, M, Mat2, V, Vec3)
-  makeLevel2(op, M, VarMat1, V, Vec2, M, Mat3)
-  makeLevel2(op, M, VarMat1, M, Mat2, M, Mat3)
+  makeLevel2(op, V, var Vec1, V, Vec2, S, Sca3)
+  makeLevel2(op, V, var Vec1, S, Sca2, V, Vec3)
+  makeLevel2(op, V, var Vec1, V, Vec2, V, Vec3)
+  makeLevel2(op, M, var Mat1, S, Sca2, S, Sca3)
+  makeLevel2(op, M, var Mat1, V, Vec2, S, Sca3)
+  makeLevel2(op, M, var Mat1, S, Sca2, V, Vec3)
+  makeLevel2(op, M, var Mat1, V, Vec2, V, Vec3)
+  makeLevel2(op, M, var Mat1, M, Mat2, S, Sca3)
+  makeLevel2(op, M, var Mat1, S, Sca2, M, Mat3)
+  makeLevel2(op, M, var Mat1, M, Mat2, V, Vec3)
+  makeLevel2(op, M, var Mat1, V, Vec2, M, Mat3)
+  makeLevel2(op, M, var Mat1, M, Mat2, M, Mat3)
 
 makeMap2(add)
 makeMap2(sub)
@@ -334,38 +385,44 @@ setBinop(`-`,sub,Mat1,Sca2,MatrixArray[x.nrows,x.ncols,type(x[0,0]-y)])
 setBinop(`+`,add,Mat1,Mat2,MatrixArray[x.nrows,x.ncols,type(x[0,0]+y[0,0])])
 setBinop(`-`,sub,Mat1,Mat2,MatrixArray[x.nrows,x.ncols,type(x[0,0]-y[0,0])])
 
-makeLevel2(mul, V, VarVec1, V, Vec2, S, Sca3)
-makeLevel2(mul, V, VarVec1, S, Sca2, V, Vec3)
+makeLevel2(mul, V, var Vec1, V, Vec2, S, Sca3)
+
+makeLevel2(mul, V, var Vec1, S, Sca2, V, Vec3)
+#makeLevel2(mul, V, var AsVector, S, Sca2, V, Vec3)
+
 #makeLevel2(op, S, Sca1, V, Vec2, V, Vec3)
-makeLevel2(mul, M, VarMat1, M, Mat2, S, Sca3)
-makeLevel2(mul, M, VarMat1, S, Sca2, M, Mat3)
-makeLevel2(mul, V, VarVec1, M, Mat2, V, Vec3)
+makeLevel2(mul, M, var Mat1, M, Mat2, S, Sca3)
+makeLevel2(mul, M, var Mat1, S, Sca2, M, Mat3)
+makeLevel2(mul, V, var Vec1, M, Mat2, V, Vec3)
 #makeLevel2(op, V, Vec1, V, Vec2, M, Mat3)
-makeLevel2(mul, M, VarMat1, M, Mat2, M, Mat3)
+makeLevel2(mul, M, var Mat1, M, Mat2, M, Mat3)
 #makeLevel2(op, M, Mat1, S, Sca2, S, Sca3)
 #makeLevel2(op, M, Mat1, V, Vec2, S, Sca3)
 #makeLevel2(op, M, Mat1, S, Sca2, V, Vec3)
 #makeLevel2(op, M, Mat1, V, Vec2, V, Vec3)
 #makeLevel2(op, M, Mat1, V, Vec2, M, Mat3)
 
-setBinop(`*`,mul, Sca1,AsVector,VectorArray[y.len,type(x*y[0])])
+#setBinop(`*`,mul, Sca1,AsVector,VectorArray[y.len,type(x*y[0])])
 #setBinop(`*`,mul, float,Vec2,VectorArray[y.len,type(x*y[0])])
-#setBinop(`*`,mul, Sca1,Vec2,VectorArray[y.len,type(x*y[0])])
+#setBinop(`*`,mul, AsScalar,Vec2,VectorArray[y.len,type(x*y[0])])
+setBinop(`*`,mul, Sca1,Vec2,VectorArray[y.len,type(x*y[0])])
 setBinop(`*`,mul, Vec1,Sca2,VectorArray[x.len,type(x[0]*y)])
-setBinop(`*`,mul, Mat1,Vec2,VectorArray[x.nrows,type(x[0,0]*y[0])])
+setBinop(`*`,mul, Mat1,Vec2,VectorArray[getConst(x.nrows),type(x[0,0]*y[0])])
 
 setBinop(`*`,mul, Sca1,Mat2,MatrixArray[y.nrows,y.ncols,type(x*y[0,0])])
 setBinop(`*`,mul, Mat1,Sca2,MatrixArray[x.nrows,x.ncols,type(x[0,0]*y)])
 setBinop(`*`,mul, Mat1,Mat2,MatrixArray[x.nrows,y.ncols,type(x[0,0]*y[0,0])])
 
-makeLevel2(imadd, V, VarVec1, M, Mat2, V, Vec3)
-makeLevel2(imadd, V, AsVarVector, M, Mat2, V, Vec3)
-makeLevel2(imadd, M, VarMat1, M, Mat2, M, Mat3)
+makeLevel2(imadd, V, var Vec1, S, Sca2, V, Vec3)
+#makeLevel2(imadd, V, AsVarVector, S, Sca2, V, Vec3)
+makeLevel2(imadd, V, var Vec1, M, Mat2, V, Vec3)
+#makeLevel2(imadd, V, AsVarVector, M, Mat2, V, Vec3)
+makeLevel2(imadd, M, var Mat1, M, Mat2, M, Mat3)
 
-makeLevel2(imsub, V, VarVec1, S, Sca2, V, Vec3)
-makeLevel2(imsub, V, VarVec1, M, Mat2, V, Vec3)
-makeLevel2(imsub, V, AsVarVector, M, Mat2, V, Vec3)
-makeLevel2(imsub, M, VarMat1, M, Mat2, M, Mat3)
+makeLevel2(imsub, V, var Vec1, S, Sca2, V, Vec3)
+makeLevel2(imsub, V, var Vec1, M, Mat2, V, Vec3)
+#makeLevel2(imsub, V, AsVarVector, M, Mat2, V, Vec3)
+makeLevel2(imsub, M, var Mat1, M, Mat2, M, Mat3)
 
 #proc imadd*(r:VarVec1; x:Mat2; y:Vec3) {.inline.} = imaddVMV(r, x, y)
 #proc imadd*(r:AsVarVector; x:Mat2; y:Vec3) {.inline.} = imaddVMV(r, x, y)
@@ -376,45 +433,47 @@ makeLevel2(imsub, M, VarMat1, M, Mat2, M, Mat3)
 #proc imsub*(r:AsVarVector; x:Mat2; y:Vec3) {.inline.} = imsubVMV(r, x, y)
 #proc imsub*(r:VarMat1; x:Mat2; y:Mat3) {.inline.} = imsubMMM(r, x, y)
 
-proc msub*(r:VarVec1; x:any; y:Vec2; z:Vec3) {.inline.} = msubVSVV(r,x,y,z)
+proc msub*(r:var Vec1; x:any; y:Vec2; z:Vec3) {.inline.} = msubVSVV(r,x,y,z)
 
-proc trace*(r:VarSca1; x:Mat2) {.inline.} =
+#proc trace*(r:var Sca1; x:Mat2) {.inline.} =
+proc trace*(r: var any; x: Mat2) {.inline.} =
   mixin nrows, ncols, trace, iadd
   let n = min(x.nrows, x.ncols)
   assign(r, 0)
   for i in 0..<n:
     let t = trace(x[i,i])
     iadd(r, t)
-proc trace*(x:Mat1):auto {.inline,noInit.} =
-  var t{.noInit.}:type(trace(x[0,0]))
+proc trace*(x: Mat1): auto {.inline,noInit.} =
+  var t{.noInit.}: type(trace(x[0,0]))
+  #static: echo "trace"
   trace(t, x)
   t
 
-proc inorm2*(r:VarAny; x:Vec2) {.inline.} =
+proc inorm2*(r:var any; x:Vec2) {.inline.} =
   mixin inorm2
   for i in 0..<x.len:
     #echo r
     inorm2(r, x[i])
-proc inorm2*(r:VarAny; x:Mat2) {.inline.} =
+proc inorm2*(r:var any; x:Mat2) {.inline.} =
   mixin nrows, ncols, inorm2
   for i in 0..<x.nrows:
     for j in 0..<x.ncols:
       inorm2(r, x[i,j])
-proc norm2*(r:VarAny; x:Vec2) {.inline.} =
+proc norm2*(r:var any; x:Vec2) {.inline.} =
   mixin norm2, iadd
   assign(r, 0)
   for i in 0..<x.len:
     var t{.noInit.}:type(r)
     norm2(t, x[i])
     iadd(r, t)
-proc norm2*(r:VarAny; x: AsVarVector) {.inline.} =
-  mixin norm2, iadd
-  assign(r, 0)
-  for i in 0..<x.len:
-    var t{.noInit.}:type(r)
-    norm2(t, x[i])
-    iadd(r, t)
-proc norm2*(r:VarAny; x:Mat2) {.inline.} =
+#proc norm2*(r:var any; x: AsVarVector) {.inline.} =
+#  mixin norm2, iadd
+#  assign(r, 0)
+#  for i in 0..<x.len:
+#    var t{.noInit.}:type(r)
+#    norm2(t, x[i])
+#    iadd(r, t)
+proc norm2*(r:var any; x:Mat2) {.inline.} =
   mixin nrows, ncols, norm2, iadd
   assign(r, 0)
   for i in 0..<x.nrows:
@@ -426,10 +485,10 @@ proc norm2*(x:Vec1):auto {.inline,noInit.} =
   var t{.noInit.}:type(norm2(x[0]))
   norm2(t, x)
   t
-proc norm2*(x: AsVarVector): auto {.inline,noInit.} =
-  var t{.noInit.}:type(norm2(x[0]))
-  norm2(t, x)
-  t
+#proc norm2*(x: AsVarVector): auto {.inline,noInit.} =
+#  var t{.noInit.}:type(norm2(x[0]))
+#  norm2(t, x)
+#  t
 proc norm2*(x:Mat1):auto {.inline,noInit.} =
   var t{.noInit.}:type(norm2(x[0,0]))
   norm2(t, x)

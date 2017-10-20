@@ -62,9 +62,6 @@ proc svd_bi3*(ev: dvec; m: dmat; ma: dmat; a: dvec; b: dvec) =
     template pv(i: int): untyped = "sv[$1] $2 "%[$i, ev[i]|(14,12)]
     echo pv(0), pv(1), pv(k-1), pv(n-1)
 
-template nothreads(x: untyped): untyped =
-  block: x
-
 
 # A V = U B, Ad U = V Bd, B = [[a0,b0,0,...][0,a1,b1,0,...]...]
 proc getBidiagLanczos*(linop: any; src: any; d: var any; e: var any;

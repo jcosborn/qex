@@ -25,23 +25,31 @@ import maths
 export maths
 import maths/types
 export types
+import base/wrapperTypes
+import color
+export color
+import spin
+export spin
 
 #var destructors:seq[proc()]
 
 const nc = 3
+const ns = 4
+const nh = 2
 setType(Svec0, "SimdS" & $VLEN)
 setType(Dvec0, "SimdD" & $VLEN)
 type
   SDvec = Svec0 | Dvec0
-
-  SComplex* = AsComplex[tuple[re,im:float32]]
-  SComplexV* = AsComplex[tuple[re,im:Svec0]]
+  #SComplex* = AsComplex[tuple[re,im:float32]]
+  #SComplexV* = AsComplex[tuple[re,im:Svec0]]
+  SComplex* = ComplexType[float32]
+  SComplexV* = ComplexType[Svec0]
   #SComplex* = Complex[float32,float32]
   #SComplexV* = Complex[Svec0,Svec0]
-  SColorVector* = VectorArray[nc,SComplex]
-  SColorVectorV* = VectorArray[nc,SComplexV]
-  SColorMatrix* = MatrixArray[nc,nc,SComplex]
-  SColorMatrixV* = MatrixArray[nc,nc,SComplexV]
+  SColorVector* = Color[VectorArray[nc,SComplex]]
+  SColorVectorV* = Color[VectorArray[nc,SComplexV]]
+  SColorMatrix* = Color[MatrixArray[nc,nc,SComplex]]
+  SColorMatrixV* = Color[MatrixArray[nc,nc,SComplexV]]
   SLatticeReal* = Field[1,float32]
   SLatticeRealV* = Field[VLEN,Svec0]
   SLatticeComplex* = Field[1,SComplex]
@@ -50,15 +58,16 @@ type
   SLatticeColorVectorV* = Field[VLEN,SColorVectorV]
   SLatticeColorMatrix* = Field[1,SColorMatrix]
   SLatticeColorMatrixV* = Field[VLEN,SColorMatrixV]
-
-  DComplex* = AsComplex[tuple[re,im:float64]]
-  DComplexV* = AsComplex[tuple[re,im:Dvec0]]
+  #DComplex* = AsComplex[tuple[re,im:float64]]
+  #DComplexV* = AsComplex[tuple[re,im:Dvec0]]
+  DComplex* = ComplexType[float64]
+  DComplexV* = ComplexType[Dvec0]
   #DComplex* = Complex[float64,float64]
   #DComplexV* = Complex[Dvec0,Dvec0]
-  DColorVector* = VectorArray[nc,DComplex]
-  DColorVectorV* = VectorArray[nc,DComplexV]
-  DColorMatrix* = MatrixArray[nc,nc,DComplex]
-  DColorMatrixV* = MatrixArray[nc,nc,DComplexV]
+  DColorVector* = Color[VectorArray[nc,DComplex]]
+  DColorVectorV* = Color[VectorArray[nc,DComplexV]]
+  DColorMatrix* = Color[MatrixArray[nc,nc,DComplex]]
+  DColorMatrixV* = Color[MatrixArray[nc,nc,DComplexV]]
   DLatticeReal* = Field[1,float64]
   DLatticeRealV* = Field[VLEN,Dvec0]
   DLatticeComplex* = Field[1,DComplex]
@@ -67,6 +76,24 @@ type
   DLatticeColorVectorV* = Field[VLEN,DColorVectorV]
   DLatticeColorMatrix* = Field[1,DColorMatrix]
   DLatticeColorMatrixV* = Field[VLEN,DColorMatrixV]
+
+  SDiracFermion* = Spin[VectorArray[ns,SColorVector]]
+  SDiracFermionV* = Spin[VectorArray[ns,SColorVectorV]]
+  SHalfFermion* = Spin[VectorArray[nh,SColorVector]]
+  SHalfFermionV* = Spin[VectorArray[nh,SColorVectorV]]
+  SLatticeDiracFermion* = Field[1,SDiracFermion]
+  SLatticeDiracFermionV* = Field[VLEN,SDiracFermionV]
+  SLatticeHalfFermion* = Field[1,SHalfFermion]
+  SLatticeHalfFermionV* = Field[VLEN,SHalfFermionV]
+
+  DDiracFermion* = Spin[VectorArray[ns,DColorVector]]
+  DDiracFermionV* = Spin[VectorArray[ns,DColorVectorV]]
+  DHalfFermion* = Spin[VectorArray[nh,DColorVector]]
+  DHalfFermionV* = Spin[VectorArray[nh,DColorVectorV]]
+  DLatticeDiracFermion* = Field[1,DDiracFermion]
+  DLatticeDiracFermionV* = Field[VLEN,DDiracFermionV]
+  DLatticeHalfFermion* = Field[1,DHalfFermion]
+  DLatticeHalfFermionV* = Field[VLEN,DHalfFermionV]
 
 #overloadAsReal(Dvec0)
 #template `re=`*(x: ToDouble, y: untyped): untyped =
@@ -80,17 +107,21 @@ type
 #template `:=`*(r: Adjointed, x: Adjointed) = r[] := x[]
 #template assign*(r: Adjointed, x: Adjointed) = r[] := x[]
 
+template isWrapper*(x: Svec0): untyped = false
+template isWrapper*(x: Dvec0): untyped = false
+
 template simdLength*(x:typedesc[SColorMatrixV]):untyped = simdLength(Svec0)
 template simdLength*(x:typedesc[SColorVectorV]):untyped = simdLength(Svec0)
-template simdLength*(x:SColorVectorV):untyped = simdLength(Svec0)
+#template simdLength*(x:SColorVectorV):untyped = simdLength(Svec0)
 #template simdLength*(x:SColorMatrixV):untyped = simdLength(Svec0)
 template simdLength*(x:typedesc[DColorMatrixV]):untyped = simdLength(Dvec0)
 template simdLength*(x:typedesc[DColorVectorV]):untyped = simdLength(Dvec0)
-template simdLength*(x:DColorVectorV):untyped = simdLength(Dvec0)
+#template simdLength*(x:DColorVectorV):untyped = simdLength(Dvec0)
 #template simdLength*(x:DColorMatrixV):untyped = simdLength(Dvec0)
 template simdLength*(x:AsComplex):untyped = simdLength(x.re)
 #template simdLength*(x:Complex):untyped = simdLength(x.re)
 template simdLength*(x:AsMatrix):untyped = simdLength(x[0,0])
+template simdLength*(x:AsVector):untyped = simdLength(x[0])
 
 #template nVectors(x:SColorVectorV):untyped = 2*nc
 #template nVectors(x:SColorMatrixV):untyped = 2*nc*nc
@@ -100,27 +131,35 @@ template nVectors(x:Svec0):untyped = 1
 template nVectors(x:Dvec0):untyped = 1
 template nVectors(x:AsComplex):untyped = 2*nVectors(x.re)
 #template nVectors(x:DComplexV):untyped = 2*nVectors(x.re)
-template nVectors(x:AsVector):untyped = x.len*nVectors(x[0])
-template nVectors(x:AsMatrix):untyped = x.nrows*x.ncols*nVectors(x[0,0])
+template nVectors*(x:AsVector):untyped = x.len*nVectors(x[0])
+template nVectors*(x:AsMatrix):untyped = x.nrows*x.ncols*nVectors(x[0,0])
 
 template simdType*(x:tuple):untyped = simdType(x[0])
 template simdType*(x:array):untyped = simdType(x[x.low])
 template simdType*(x:AsComplex):untyped = simdType(x[])
+template simdType*(x:ComplexObj):untyped = simdType(x.re)
 #template simdType*(x:DComplexV):untyped = simdType(x.re)
 template simdType*(x:AsVector):untyped = simdType(x[])
 #template simdType*(x:AsMatrix):untyped = simdType(x[])
 template simdType*(x:AsMatrix):untyped = simdType(x[0,0])
 
 
-template trace*(x:SComplexV):untyped = x
+template `*`*(x: Color, y: Spin): untyped =
+  staticTraceReturn timesColorSpin:
+    asSpin(x * y[])
+
+
+#template trace*(x:SComplexV):untyped = x
 #proc simdSum*(x:SComplexV):SComplex = complexConcept.map(result, simdSum, x)
 #proc simdSum*(x:DComplexV):DComplex = complexConcept.map(result, simdSum, x)
 template simdSum*(x:ToDouble):untyped = toDouble(simdSum(x[]))
-template simdSum*(x:AsComplex):untyped = asComplex(simdSum(x[]))
+template simdSum*(x: AsComplex): untyped = asComplex(simdSum(x[]))
 #template simdSum*(x:Complex):untyped = simdSum(x[])
-template simdSum*(xx:tuple):untyped =
-  lets(x,xx):
-    map(x, simdSum)
+#template simdSum*(xx:tuple):untyped =
+#  lets(x,xx):
+#    map(x, simdSum)
+template simdSum*(x: ComplexObj): untyped =
+  mapComplexObj(x, simdReduce)
 #template rankSum*(x:AsComplex) =
 #  #mixin qmpSum
 #  rankSum(x[])
@@ -245,7 +284,8 @@ template perm*[T](r0:var T; prm0:int; x0:T) =
     lets(r,r0,prm,prm0,x,x0):
       const n = x.nVectors
       let rr = cast[ptr array[n,simdType(r)]](r.addr)
-      let xx = cast[ptr array[n,simdType(x)]](unsafeAddr(x))
+      var xt = x
+      let xx = cast[ptr array[n,simdType(x)]](addr xt)
       template loop(f:untyped):untyped =
         when compiles(f(rr[0], xx[0])):
           forStatic i, 0, n-1: f(rr[i], xx[i])
@@ -349,6 +389,10 @@ makeConstructors(ColorMatrix)
 #proc ColorMatrixS*(l: Layout): SLatticeColorMatrixV = result.new(l)
 #proc ColorMatrixD*(l: Layout): DLatticeColorMatrixV = result.new(l)
 #proc ColorMatrix*(l: Layout): auto = ColorMatrixD(l)
+
+proc DiracFermionS*(l: Layout): SLatticeDiracFermionV = result.new(l)
+proc DiracFermionD*(l: Layout): DLatticeDiracFermionV = result.new(l)
+proc DiracFermion*(l: Layout): auto = DiracFermionD(l)
 
 when isMainModule:
   import times

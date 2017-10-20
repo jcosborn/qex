@@ -127,11 +127,23 @@ type
   #Iconcept1* = I1
   #Cconcept1* = C1
   #IC1* = Iconcept1 | Cconcept1
-  ComplexType*[T] = AsComplex[tuple[re,im:T]]
+  ComplexObj*[T] = object
+    re*,im*: T
+  ComplexObj2*[T] = ComplexObj[T]
+  ComplexType*[T] = AsComplex[ComplexObj[T]]
+  ComplexType2*[T] = AsComplex[ComplexObj2[T]]
 
+template complexObj*(x,y: typed): untyped =
+  ComplexObj[type(x)](re: x, im: y)
+template complexType*(x,y: typed): untyped =
+  asComplex(complexObj(x,y))
+
+template toDoubleImpl*(x: ComplexObj): untyped = toDoubleX(x)
 #proc `$`*(x:C1):string =
 #  result = "(" & $x.re & "," & $x.im & ")"
 
+template numberType*[T](x:ComplexObj[T]):untyped = numberType(type(T))
+template numberType*[T](x:typedesc[ComplexObj[T]]):untyped = numberType(T)
 template numberType*[T](x:AsComplex[T]):untyped = numberType(type(T))
 template numberType*[T](x:typedesc[AsComplex[T]]):untyped = numberType(T)
 
@@ -168,6 +180,16 @@ subst(r,_):
     assign(r, x)
     r
 
+#template mapComplexObj*(x: ComplexObj; f: untyped): untyped =
+template mapComplexObj*(x: untyped; f: untyped): untyped =
+#template mapComplexObj*(x: varargs[untyped]): untyped =
+  let tx = x
+  #let fr = f(tx.re)
+  #let fi = f(tx.im)
+  #complexObj(fr, fi)
+  complexObj(f(tx.re), f(tx.im))
+  #complexObj(x[1](tx.re), x[1](tx.im))
+template map*(x: ComplexObj; f: untyped): untyped = mapComplexObj(x, f)
 template map*(x: AsComplex; f: untyped): untyped = asComplex(f(x[]))
 #template map*(x: ; f: untyped): untyped =
 #  ComplexType(re:f(x.re),im:f(x.im))
@@ -193,11 +215,40 @@ template apply*(result:RIC1; f:untyped) =
 #  r.im = toDouble(x.im)
 #  r
 
-template eval*(x: AsComplex): untyped = asComplex(eval(x[]))
+template isWrapper*(x: ComplexObj): untyped = false
+
+template isWrapper*(x: AsComplex): untyped = true
+template copyWrapper*(x: AsComplex, y: typed): untyped =
+  #static: echo "copyWrapper AsComplex"
+  asComplex(y)
+template asWrapper*(x: AsComplex, y: typed): untyped =
+  #static: echo "asWrapper AsComplex"
+  asComplex(y)
+template asVarWrapper*(x: AsComplex, y: typed): untyped =
+  #static: echo "asVarWrapper AsComplex"
+  #var t = asComplex(y)
+  #t
+  asVar(asComplex(y))
+
+#template masked*(x: AsComplex; msk: int): untyped =
+#  asVarComplex(masked(x[],msk))
+
+#template eval*(x: ComplexObj): untyped =
+#  let tx = x
+#  #ComplexObj(re: eval(tx.re), im: eval(tx.im))
+#  ComplexObj(re: tx.re, im: tx.im)
+proc eval*(x: ComplexObj): auto =
+  let tx = x
+  ComplexObj2(re: eval(tx.re), im: eval(tx.im))
+  #ComplexObj(re: tx.re, im: tx.im)
+template eval*(x: AsComplex): untyped =
+  #echoType: x
+  #echoType: x[]
+  asComplex(eval(x[]))
 
 template trace*(r:var RIC1; x:RIC2):untyped = map(r, trace, x)
-proc trace*(x:C1):auto {.inline.} =
-  var r{.noInit.}:ComplexType[type(trace(x.re)+trace(x.im))]
+proc trace*(x: C1): auto {.inline.} =
+  var r{.noInit.}: ComplexType[type(trace(x.re)+trace(x.im))]
   r.re = trace(x.re)
   r.im = trace(x.im)
   r
@@ -400,12 +451,14 @@ template mul*(r:var C1; x:C2; y:R3) =
   mul(r.re, x.re, y.re)
   mul(r.im, x.im, y.re)
 #proc mul*(r:var C1; x:C2; y:C3) {.inline.} =
-template mul*(r:var C1; x:C2; y:C3) =
-  # r.re = x.re*y.re - x.im*y.im
-  # r.im = x.im*y.re + x.re*y.im
-  mixin mul, imadd
-  mul(r, x, y.re.asReal)
-  imadd(r, x, y.im.asImag)
+template mul*(r: var C1; xx: C2; yy: C3) =
+  let x = xx
+  let y = yy
+  r.re = x.re*y.re - x.im*y.im
+  r.im = x.im*y.re + x.re*y.im
+  #mixin mul, imadd
+  #mul(r, x, y.re.asReal)
+  #imadd(r, x, y.im.asImag)
 
 proc redot*(x:C2; y:C3):auto {.inline,noInit.} =
   # x.re*y.re + x.im*y.im
@@ -428,11 +481,19 @@ proc `*`*(x:C1; y:SomeNumber):auto {.inline.} =
   var r{.noInit.}:ComplexType[type(x.re*y)]
   mul(r, x, y)
   r
-proc `*`*(x:C1; y:C2):auto {.inline.} =
-  var r{.noInit.}:ComplexType[type(x.re*y.re)]
-  mul(r, x, y)
-  r
+template `*`*(xx: C1; yy: C2): untyped =
+  let x = xx
+  let y = yy
+  #var r{.noInit.}: ComplexType[type(x.re*y.re)]
+  #mul(r, x, y)
+  #r
+  let rr = x.re*y.re - x.im*y.im
+  let ri = x.im*y.re + x.re*y.im
+  complexType(rr, ri)
 
+proc divdCCR*(r:var C1; x:C2; y:any) {.inline.} =
+  divd(r.re, x.re, y)
+  divd(r.im, x.im, y)
 proc divd*(r:var C1; x:C2; y:R3) {.inline.} =
   divd(r.re, x.re, y.re)
   divd(r.im, x.im, y.re)
@@ -459,10 +520,10 @@ proc `/`*(x:C1; y:SomeNumber):auto =
   mixin divd
   var r{.noInit.}:type(x)
   #echoType: x
-  divd(r, x, y)
+  divdCCR(r, x, y)
   r
 
-template imaddCCR*(rr:typed; xx,yy:typed):untyped =
+template imaddCCR*(rr: untyped; xx,yy: untyped): untyped =
   # r.re += x.re * y
   # r.im += x.im * y
   mixin imadd
@@ -509,12 +570,14 @@ template imadd*(r:var C1; x:C2; y:I3) =
   imsub(r.re, x.im, y.im)
   imadd(r.im, x.re, y.im)
 #proc imadd*(r:var C1; x:C2; y:C3) {.inline.} =
-template imadd*(r:var C1; x:C2; y:C3) =
-  # r.re += x.re*y.re - x.im*y.im
-  # r.im += x.re*y.im + x.im*y.re
-  mixin imadd
-  imadd(r, x, y.re.asReal)
-  imadd(r, x, y.im.asImag)
+template imadd*(r: var C1; xx: C2; yy: C3) =
+  let x = xx
+  let y = yy
+  r.re += x.re*y.re - x.im*y.im
+  r.im += x.re*y.im + x.im*y.re
+  #mixin imadd
+  #imadd(r, x, y.re.asReal)
+  #imadd(r, x, y.im.asImag)
 
 template imsubCRC*(rr:typed; xx,yy:typed):untyped =
   # r.re -= x * y.re

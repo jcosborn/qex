@@ -28,7 +28,7 @@ proc new*[T](t:var alignedMem[T], n:int, align:int=64) =
   t.align = align
   t.stride = sizeof(T)
   t.bytes = t.len * t.stride + t.align
-  unsafeNew(t.mem, t.bytes)
+  unsafeNewU(t.mem, t.bytes)
   t.data = ptrAlign(cast[ptr cArray[T]](t.mem[0].addr), align)
 proc newU*[T](t:var alignedMem[T], n:int, align:int=64) =
   t.len = n

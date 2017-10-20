@@ -187,11 +187,10 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
     subst(i,_):
       forStatic i, 0, L-1:
         assign(result[][i], x)
-  proc simdReduce*(r:var SomeNumber; x:T) {.inline.} =
+  proc simdReduce*(r: var SomeNumber; x: T) {.inline.} =
     var y = add(x[][0], x[][1])
-    subst(i,_):
-      forStatic i, 2, L-1:
-        iadd(y, x[][i])
+    forStatic i, 2, L-1:
+      iadd(y, x[][i])
     r = (type(r))(simdReduce(y))
   proc simdReduce*(x:T):F {.noInit,inline.} = simdReduce(result, x)
   template simdSum*(r:var SomeNumber; x:T) = simdReduce(r, x)

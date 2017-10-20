@@ -10,7 +10,6 @@ const llbgq = [
 ######################################################################
 # Configurations
 # Comment starts with `#'
-# Extra quotes may be required for nimble doesn't quote properly.
 const
   qexDir = "."   # Path to qex source directory
   extraSrcDir = @["."]   # Extra paths to search for build targets.
@@ -19,23 +18,21 @@ const
   #qioDir = "$HOME/pkg/qio"
   qmpDir = "$HOME/lqcd/install/qmp"
   qioDir = "$HOME/lqcd/install/qio"
-  #qmpDir = "/home/osborn/lqcd/install/qmp"
-  #qioDir = "/home/osborn/lqcd/install/qio"
   ccType = "gcc"
   cc = "mpicc"
   #cc = "/home/xyjin/pkgs/src/qex/build/mpixlc2"
-  #cflagsAlways = "'-Wall -std=gnu99 -march=native -ldl -Wa,-q'"
-  cflagsAlways = "'-Wall -std=gnu99 -march=native -ldl'"
-  cflagsDebug = "'-g3 -O0'"
-  cflagsSpeed = "'-g -Ofast'"
+  #cflagsAlways = "-Wall -std=gnu11 -march=native -ldl -Wa,-q"
+  cflagsAlways = "-Wall -std=gnu11 -march=native -ldl -fno-strict-aliasing"
+  cflagsDebug = "-g3 -O0"
+  cflagsSpeed = "-g -Ofast"
   ompFlags = "-fopenmp"
-  #cflagsAlways = "'-qinfo=pro'"
-  #cflagsAlways = "'-qinfo=pro -qstrict=operationprecision'"
-  #cflagsDebug = "'-g3 -O0'"
-  #cflagsSpeed = "'-g -O3'"
+  #cflagsAlways = "-qinfo=pro"
+  #cflagsAlways = "-qinfo=pro -qstrict=operationprecision"
+  #cflagsDebug = "-g3 -O0"
+  #cflagsSpeed = "-g -O3"
   #ompFlags = "-qsmp=omp"
   ld = cc
-  ldflags = "'-Wall -std=gnu99 -march=native -ldl'"
+  ldflags = "-Wall -std=gnu11 -march=native -ldl"
   #ldflags = cflagsAlways
   nimcache = "nimcache"
   verbosity = 1

@@ -388,6 +388,8 @@ type
     sq*:ShiftBufQ
     lbufSize*: int
     lbuf*: ptr cArray[char]
+    activeRecv*: bool
+    activeSend*: bool
   ShiftBuf* = ref ShiftBufObj
 
 proc prepareShiftBufQ*(sb:ptr ShiftBufQ, si:ptr ShiftIndicesQ, esize:cint)
@@ -421,11 +423,25 @@ proc prepareShiftBuf*(sb:var ShiftBuf, si:ShiftIndices, esize:int) =
   #sb.lbufSize = (si.sq.nSendSites*si.nSitesInner-si.sq.nSendSites1)*esize
   sb.lbufSize = si.sq.nSendSites*si.nSitesInner*esize
   sb.lbuf = cast[type(sb.lbuf)](alloc(sb.lbufSize))
-proc startRecvBuf*(sb:ShiftBuf) = startRecvBufQ(unsafeAddr(sb.sq))
-proc waitRecvBuf*(sb:ShiftBuf) = waitRecvBufQ(unsafeAddr(sb.sq))
+  sb.activeRecv = false
+  sb.activeSend = false
+template startRecvBuf*(sb: ShiftBuf) =
+  if not sb.activeRecv:
+    sb.activeRecv = true
+    startRecvBufQ(unsafeAddr(sb.sq))
+template waitRecvBuf*(sb: ShiftBuf) =
+  if sb.activeRecv:
+    sb.activeRecv = false
+    waitRecvBufQ(unsafeAddr(sb.sq))
 proc doneRecvBuf*(sb:ShiftBuf) = doneRecvBufQ(unsafeAddr(sb.sq))
-proc startSendBuf*(sb:ShiftBuf) = startSendBufQ(unsafeAddr(sb.sq))
-proc waitSendBuf*(sb:ShiftBuf) = waitSendBufQ(unsafeAddr(sb.sq))
+template startSendBuf*(sb: ShiftBuf) =
+  if not sb.activeSend:
+    sb.activeSend = true
+    startSendBufQ(unsafeAddr(sb.sq))
+template waitSendBuf*(sb: ShiftBuf) =
+  if sb.activeSend:
+    sb.activeSend = false
+    waitSendBufQ(unsafeAddr(sb.sq))
 
 when isMainModule:
   import qex

@@ -39,7 +39,7 @@ basicNumberDefines(float64, 1, float64)
 template numberType*[T](x:tuple[re,im:T]):untyped = numberType(T)
 template numberType*[T](x:typedesc[tuple[re,im:T]]):untyped = numberType(T)
 template numberType*[I,T](x:array[I,T]):untyped = numberType(type(T))
-template numberType*[I,T](x:typedesc[array[I,T]]):untyped = numberType(T)
+template numberType*[I,T](x:typedesc[array[I,T]]):untyped = numberType(type(T))
 #template numberType*(x:not typedesc):untyped = numberType(type(x))
 template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x
 
@@ -187,12 +187,19 @@ template setBinopP*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
     fun(r, x, y)
     r
 template setBinopT*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
-  subst(r,_):
+  #subst(r_setBinopT,_):
     template op*(xx: t1; yy: t2): untyped =
-      lets(x,xx,y,yy):
-        var r{.noInit.}: t3
-        fun(r, x, y)
-        r
+        staticTraceBegin: op
+      #echoUntyped: setBinopT op
+      #echoType: xx
+      #echoType: yy
+      #lets(x,xx,y,yy):
+        let x = xx
+        let y = yy
+        var r_setBinopT{.noInit.}: t3
+        fun(r_setBinopT, x, y)
+        staticTraceEnd: op
+        r_setBinopT
 
 when forceInline:
   template setUnop*(op,fun,t1,t2: untyped): untyped {.dirty.} =

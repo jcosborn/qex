@@ -5,12 +5,13 @@ import complexConcept
 import matrixConcept
 import types
 
-proc determinant*(x:any):auto =
+proc determinant*(x: any): auto =
   assert(x.nrows == x.ncols)
   when x.nrows==1:
     result = x[0,0]
   elif x.nrows==2:
-    result = x[0,0]*x[1,1] - x[0,1]*x[1,0]
+    optimizeAst:
+      result = x[0,0]*x[1,1] - x[0,1]*x[1,0]
   elif x.nrows==3:
     result = (x[0,0]*x[1,1]-x[0,1]*x[1,0])*x[2,2] +
              (x[0,2]*x[1,0]-x[0,0]*x[1,2])*x[2,1] +
@@ -118,11 +119,12 @@ template rsqrtPHM(r:typed; x:typed):untyped =
     quit(1)
 proc rsqrtPH(r:var Mat1; x:Mat2) = rsqrtPHM(r, x)
 
-proc projectU*(r:var Mat1; x:Mat2) =
-  let t = x.adj * x
-  var t2{.noInit.}:type(t)
+proc projectU*(r: var Mat1; x: Mat2) =
+  let tx = x
+  let t = tx.adj * tx
+  var t2{.noInit.}: type(t)
   rsqrtPH(t2, t)
-  mul(r, x, t2)
+  mul(r, tx, t2)
 
 proc projectSU*(r: var Mat1; x: Mat2) =
   const nc = x.nrows
