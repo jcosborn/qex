@@ -9,7 +9,7 @@ type
   Spin3*[T] = Spin[T]
   SpinMatrix[I,J:static[int],T] = Spin[MatrixArray[I,J,T]]
 
-template asSpin*(xx: untyped): untyped =
+template asSpin*(xx: typed): untyped =
   staticTraceBegin: asSpin
   let x_asSpin = xx
   staticTraceEnd: asSpin
@@ -105,6 +105,13 @@ template redot*(x: Spin, y: Spin2): untyped =
   redot(x[], y[])
 template trace*(x: Spin): untyped = trace(x[])
 
+template spinVector*[T](x:static[int], a: untyped): untyped =
+  const
+    I:int = x
+  type
+    E = T
+    VA = VectorArray[I,E]
+  Spin[VA](v: VA(v: a))
 template spinMatrix*[T](x,y:static[int], a: untyped): untyped =
   const
     I:int = x
@@ -119,20 +126,93 @@ template spinMatrix*[T](x,y:static[int], a: untyped): untyped =
 #template spinMatrix*(I,J,T,a: untyped): untyped =
 #  Spin[MatrixArray[I,J,T]](v: MatrixArray[I,J,T](v: MatrixArrayObj[I,J,T](mat: a)))
 
-const z0 = ComplexType[float](v: ComplexObj[float](re: 0.0, im: 0.0))
-const z1 = ComplexType[float](v: ComplexObj[float](re: 1.0, im: 0.0))
-const zi = ComplexType[float](v: ComplexObj[float](re: 0.0, im: 1.0))
-var gamma0* = spinMatrix[ComplexType[float]](4,4,[[z1,z0,z0,z0],[z0,z1,z0,z0],[z0,z0,z1,z0],[z0,z0,z0,z1]])
-var gamma4* = spinMatrix[ComplexType[float]](4,4,[[z0,z0,z1,z0],[z0,z0,z0,z1],[z1,z0,z0,z0],[z0,z1,z0,z0]])
-#var gamma0* = spinMatrix(4,4,ComplexType[float],[[z1,z0,z0,z0],[z0,z1,z0,z0],[z0,z0,z1,z0],[z0,z0,z0,z1]])
-#var gamma4* = spinMatrix(4,4,ComplexType[float],[[z0,z0,z1,z0],[z0,z0,z0,z1],[z1,z0,z0,z0],[z0,z1,z0,z0]])
+const z0 = ComplexType[float](v: ComplexObj[float](re:  0.0, im:  0.0))
+const z1 = ComplexType[float](v: ComplexObj[float](re:  1.0, im:  0.0))
+const zi = ComplexType[float](v: ComplexObj[float](re:  0.0, im:  1.0))
+const n1 = ComplexType[float](v: ComplexObj[float](re: -1.0, im:  0.0))
+const ni = ComplexType[float](v: ComplexObj[float](re:  0.0, im: -1.0))
 
-const spprojmat1p* = spinMatrix[ComplexType[float]](2,4,
-                                [[z1,z0,z0,z0],[z0,z1,z0,z0]])
+template s(r,c,x: untyped): untyped =
+  spinMatrix[ComplexType[float]](r,c,x)
+template g(x: untyped): untyped = s(4,4,x)
+template p(x: untyped): untyped = s(2,4,x)
+template r(x: untyped): untyped = s(4,2,x)
 
-const spreconmat1p* = spinMatrix[ComplexType[float]](4,2,
-                                 [[z1,z0],[z0,z0],[z0,z1],[z0,z0]])
+const
+  gamma0* = g([[ z1, z0, z0, z0 ],
+               [ z0, z1, z0, z0 ],
+               [ z0, z0, z1, z0 ],
+               [ z0, z0, z0, z1 ]])
+  gamma1* = g([[ z0, z0, z0, zi ],
+               [ z0, z0, zi, z0 ],
+               [ z0, ni, z0, z0 ],
+               [ ni, z0, z0, z0 ]])
+  gamma2* = g([[ z0, z0, z0, n1 ],
+               [ z0, z0, z1, z0 ],
+               [ z0, z1, z0, z0 ],
+               [ n1, z0, z0, z0 ]])
+  gamma3* = g([[ z0, z0, zi, z0 ],
+               [ z0, z0, z0, ni ],
+               [ ni, z0, z0, z0 ],
+               [ z0, zi, z0, z0 ]])
+  gamma4* = g([[ z0, z0, z1, z0 ],
+               [ z0, z0, z0, z1 ],
+               [ z1, z0, z0, z0 ],
+               [ z0, z1, z0, z0 ]])
+  gamma5* = g([[ z1, z0, z0, z0 ],
+               [ z0, z1, z0, z0 ],
+               [ z0, z0, n1, z0 ],
+               [ z0, z0, z0, n1 ]])
 
+  spprojmat1p* = p([[ z1, z0, z0, zi ],
+                    [ z0, z1, zi, z0 ]])
+  spprojmat1m* = p([[ z1, z0, z0, ni ],
+                    [ z0, z1, ni, z0 ]])
+  spprojmat2p* = p([[ z1, z0, z0, zi ],
+                    [ z0, z1, zi, z0 ]])
+  spprojmat2m* = p([[ z1, z0, z0, ni ],
+                    [ z0, z1, ni, z0 ]])
+  spprojmat3p* = p([[ z1, z0, z0, zi ],
+                    [ z0, z1, zi, z0 ]])
+  spprojmat3m* = p([[ z1, z0, z0, ni ],
+                    [ z0, z1, ni, z0 ]])
+  spprojmat4p* = p([[ z1, z0, z0, zi ],
+                    [ z0, z1, zi, z0 ]])
+  spprojmat4m* = p([[ z1, z0, z0, ni ],
+                    [ z0, z1, ni, z0 ]])
+
+  spreconmat1p* = r([[ z1, z0 ],
+                     [ z0, z1 ],
+                     [ z0, ni ],
+                     [ ni, z0 ]])
+  spreconmat1m* = r([[ z1, z0 ],
+                     [ z0, z1 ],
+                     [ z0, zi ],
+                     [ zi, z0 ]])
+  spreconmat2p* = r([[ z1, z0 ],
+                     [ z0, z1 ],
+                     [ z0, ni ],
+                     [ ni, z0 ]])
+  spreconmat2m* = r([[ z1, z0 ],
+                     [ z0, z1 ],
+                     [ z0, zi ],
+                     [ zi, z0 ]])
+  spreconmat3p* = r([[ z1, z0 ],
+                     [ z0, z1 ],
+                     [ z0, ni ],
+                     [ ni, z0 ]])
+  spreconmat3m* = r([[ z1, z0 ],
+                     [ z0, z1 ],
+                     [ z0, zi ],
+                     [ zi, z0 ]])
+  spreconmat4p* = r([[ z1, z0 ],
+                     [ z0, z1 ],
+                     [ z0, ni ],
+                     [ ni, z0 ]])
+  spreconmat4m* = r([[ z1, z0 ],
+                     [ z0, z1 ],
+                     [ z0, zi ],
+                     [ zi, z0 ]])
 
 proc spproj1p*(r: var any, x: any) =
   ## r: HalfFermion
@@ -143,14 +223,27 @@ proc spproj1p*(r: var any, x: any) =
   #  r[1][i] = x[1][i] + x[3][i]
   r := spprojmat1p * x
 
+#[
 template spproj1p*(x: any): untyped = spprojmat1p * x
-template spproj2p*(x: any): untyped = spprojmat1p * x
-template spproj3p*(x: any): untyped = spprojmat1p * x
-template spproj4p*(x: any): untyped = spprojmat1p * x
-template spproj1m*(x: any): untyped = spprojmat1p * x
-template spproj2m*(x: any): untyped = spprojmat1p * x
-template spproj3m*(x: any): untyped = spprojmat1p * x
-template spproj4m*(x: any): untyped = spprojmat1p * x
+template spproj2p*(x: any): untyped = spprojmat2p * x
+template spproj3p*(x: any): untyped = spprojmat3p * x
+template spproj4p*(x: any): untyped = spprojmat4p * x
+template spproj1m*(x: any): untyped = spprojmat1m * x
+template spproj2m*(x: any): untyped = spprojmat2m * x
+template spproj3m*(x: any): untyped = spprojmat3m * x
+template spproj4m*(x: any): untyped = spprojmat4m * x
+]#
+
+template spproj1p*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](2,[x[][0],x[][1]])
+template spproj2p*(xx: typed): untyped = spproj1p(xx)
+template spproj3p*(xx: typed): untyped = spproj1p(xx)
+template spproj4p*(xx: typed): untyped = spproj1p(xx)
+template spproj1m*(xx: typed): untyped = spproj1p(xx)
+template spproj2m*(xx: typed): untyped = spproj1p(xx)
+template spproj3m*(xx: typed): untyped = spproj1p(xx)
+template spproj4m*(xx: typed): untyped = spproj1p(xx)
 
 proc sprecon1p*(r: var any, x: any) =
   ## r: DiracFermion
@@ -162,14 +255,27 @@ proc sprecon1p*(r: var any, x: any) =
     r[2][i] = x[0][i]
     r[3][i] = x[1][i]
 
-template sprecon1p*(x: any): untyped = spreconmat1p * x
-template sprecon2p*(x: any): untyped = spreconmat1p * x
-template sprecon3p*(x: any): untyped = spreconmat1p * x
-template sprecon4p*(x: any): untyped = spreconmat1p * x
-template sprecon1m*(x: any): untyped = spreconmat1p * x
-template sprecon2m*(x: any): untyped = spreconmat1p * x
-template sprecon3m*(x: any): untyped = spreconmat1p * x
-template sprecon4m*(x: any): untyped = spreconmat1p * x
+#[
+template sprecon1p*(x: typed): untyped = spreconmat1p * x
+template sprecon2p*(x: typed): untyped = spreconmat2p * x
+template sprecon3p*(x: typed): untyped = spreconmat3p * x
+template sprecon4p*(x: typed): untyped = spreconmat4p * x
+template sprecon1m*(x: typed): untyped = spreconmat1m * x
+template sprecon2m*(x: typed): untyped = spreconmat2m * x
+template sprecon3m*(x: typed): untyped = spreconmat3m * x
+template sprecon4m*(x: typed): untyped = spreconmat4m * x
+]#
+
+template sprecon1p*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](4,[x[][0],x[][1],x[][0],x[][1],])
+template sprecon2p*(xx: typed): untyped = sprecon1p(xx)
+template sprecon3p*(xx: typed): untyped = sprecon1p(xx)
+template sprecon4p*(xx: typed): untyped = sprecon1p(xx)
+template sprecon1m*(xx: typed): untyped = sprecon1p(xx)
+template sprecon2m*(xx: typed): untyped = sprecon1p(xx)
+template sprecon3m*(xx: typed): untyped = sprecon1p(xx)
+template sprecon4m*(xx: typed): untyped = sprecon1p(xx)
 
 when isMainModule:
   echo gamma0[0,0]

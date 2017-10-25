@@ -369,19 +369,23 @@ proc blend*(r:var any; x:ptr char; b:ptr char; blnd:int) {.inline.} =
 macro makeConstructors(x: untyped): untyped =
   template mp(f,r,rslt: untyped) =
     proc f*(l: Layout): r =
+      ## create `r`
       new(rslt, l)
   let f = $x
   let r = "Lattice" & f
   result = newStmtList()
   result.add getAst mp(ident(f&"S"), ident("S"&r&"V"), ident"result")
   result.add getAst mp(ident(f&"D"), ident("D"&r&"V"), ident"result")
-  result.add getAst mp(ident(f), ident("D"&r&"V"), ident"result")
-  echo result.repr
+  const defPrec {.strdefine.} = "D"
+  result.add getAst mp(ident(f), ident(defPrec&r&"V"), ident"result")
+  #echo result.repr
 
 makeConstructors(Real)
 makeConstructors(Complex)
 makeConstructors(ColorVector)
 makeConstructors(ColorMatrix)
+makeConstructors(HalfFermion)
+makeConstructors(DiracFermion)
 
 #proc ColorVectorS*(l: Layout): SLatticeColorVectorV = result.new(l)
 #proc ColorVectorD*(l: Layout): DLatticeColorVectorV = result.new(l)
@@ -389,10 +393,9 @@ makeConstructors(ColorMatrix)
 #proc ColorMatrixS*(l: Layout): SLatticeColorMatrixV = result.new(l)
 #proc ColorMatrixD*(l: Layout): DLatticeColorMatrixV = result.new(l)
 #proc ColorMatrix*(l: Layout): auto = ColorMatrixD(l)
-
-proc DiracFermionS*(l: Layout): SLatticeDiracFermionV = result.new(l)
-proc DiracFermionD*(l: Layout): DLatticeDiracFermionV = result.new(l)
-proc DiracFermion*(l: Layout): auto = DiracFermionD(l)
+#proc DiracFermionS*(l: Layout): SLatticeDiracFermionV = result.new(l)
+#proc DiracFermionD*(l: Layout): DLatticeDiracFermionV = result.new(l)
+#proc DiracFermion*(l: Layout): auto = DiracFermionD(l)
 
 when isMainModule:
   import times

@@ -48,6 +48,7 @@ template bench(fps,bps,mm,eqn: untyped) {.dirty.} =
     let vol = lo.nSites.float
     let flops = vol * fps.float
     let bytes = vol * bps.float
+    let vmm = vol * mm.float
     var nrep = 1
     var dt = 0.0
     while true:
@@ -66,7 +67,7 @@ template bench(fps,bps,mm,eqn: untyped) {.dirty.} =
     let mf = int((nrep.float*flops)/(1e6*dt))
     #let mb = int((nrep.float*bytes)/(1e6*dt))
     let mb = int((nrep.float*bytes)/(1024.0*1024.0*dt))
-    let mem = vol * (mm.float/(1024.0))
+    let mem = vmm/1024.0
     inc nbench
     echo "bench: ",nbench| -6, "secs: ", dt|(6,3), "  mf: ", mf|7, "  mb: ", mb|7, "  mem: ", mem, "  nrep: ", nrep
     echo exp2string(eqn), "\n"
@@ -78,10 +79,12 @@ proc test(lat:any) =
   when true:
     template newCV: untyped = lo.ColorVectorS()
     template newCM: untyped = lo.ColorMatrixS()
+    template newHF: untyped = lo.HalfFermionS()
     template newDF: untyped = lo.DiracFermionS()
   else:
     template newCV: untyped = lo.ColorVectorD()
     template newCM: untyped = lo.ColorMatrixD()
+    template newHF: untyped = lo.HalfFermionD()
     template newDF: untyped = lo.DiracFermionD()
 
   var v1 = newCV()
@@ -92,6 +95,7 @@ proc test(lat:any) =
   var m3 = newCM()
   var m4 = newCM()
   var m5 = newCM()
+  var h1 = newHF()
   var d1 = newDF()
   var d2 = newDF()
   const nc = v1[0].len
@@ -111,6 +115,7 @@ proc test(lat:any) =
   bench(2*nc2, 3*vb, 2*vb):
     v2 := 0.5*v2 + v1
 
+  #[
   bench(mvf, mb+2*vb, mb+2*vb):
     v2 := m1 * v1
 
@@ -160,12 +165,29 @@ proc test(lat:any) =
   bench(nc*(mvf+nc2), 3*mb, 2*mb):
     for e in m3:
       imaddMMM(m3[e], m1[0], m2[e])
+  ]#
 
   bench(nc*(3*mvf+nc2), 6*mb, 5*mb):
     m1 += (m2*m3) * (m4*m5).adj
 
   bench(4*(mvf+nc2), mb+4*3*vb, mb+4*2*vb):
     d2 += m1 * d1
+
+  bench(2*nc2, 6*vb, 6*vb):
+    for e in h1:
+      h1[e] := spproj1p(d1[e])
+
+  bench(2*(nc2+mvf), mb+6*vb, mb+6*vb):
+    for e in h1:
+      h1[e] := m1[e].adj * spproj1m(d1[e])
+
+  bench(2*(nc2+mvf)+4*nc2, mb+12*vb, mb+8*vb):
+    for e in d2:
+      d2[e] -= sprecon1p( m1[e] * spproj1p(d1[e]) )
+
+  bench(2*(nc2+mvf)+4*nc2, mb+12*vb, mb+8*vb):
+    for e in d2:
+      d2[e] -= sprecon1m( m1[e].adj * spproj1m(d1[e]) )
 
 qexInit()
 #checkMem()

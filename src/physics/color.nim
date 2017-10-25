@@ -8,18 +8,24 @@ type
   Color2*[T] = Color[T]
   Color3*[T] = Color[T]
 
-template asColorX*(xx: typed): untyped =
-  #lets(x,xx):
-  #static: echo "asColor typed"
-  #dumpTree: xx
-  let x_asColor = xx
-  Color[type(x_asColor)](v: x_asColor)
+#template asColorX*(xx: typed): untyped =
+#  #lets(x,xx):
+#  #static: echo "asColor typed"
+#  #dumpTree: xx
+#  let x_asColor = xx
+#  Color[type(x_asColor)](v: x_asColor)
 #template asColorX*(xx: typed{nkObjConstr}): untyped =
 #  static: echo "asColor typed{nkObjConstr}"
 #  dumpTree: xx
 #  lets(x,xx):
 #    Color[type(x)](v: x)
-template asColor*(xx: typed): untyped = asColorX(normalizeAst(xx))
+#template asColor*(xx: typed): untyped = asColorX(normalizeAst(xx))
+template asColor*(xx: typed): untyped =
+  #lets(x,xx):
+  #static: echo "asColor typed"
+  #dumpTree: xx
+  let x_asColor = xx
+  Color[type(x_asColor)](v: x_asColor)
 
 template isWrapper*(x: Color): untyped = true
 template asWrapper*(x: Color, y: typed): untyped =

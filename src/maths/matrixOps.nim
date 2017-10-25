@@ -51,13 +51,19 @@ template makeMap1(op:untyped):untyped {.dirty.} =
       load(tx, x)
       forO i, 0, <r.len:
         op(r[i], tx)
-  template `op VV`*(rr:untyped; xx:untyped):untyped =
+  template `op VV`*(r: typed; xx: typed): untyped =
     mixin op
+    #[
     optimizeAst:
       subst(r,rr,x,xx,i,_):
         assert(r.len == x.len)
         forO i, 0, <r.len:
           op(r[i], x[i])
+    ]#
+    let x = xx
+    assert(r.len == x.len)
+    forO i, 0, <r.len:
+      op(r[i], x[i])
   template `op MS`*(rr:typed; xx:typed):untyped =
     subst(r,rr,x,xx,tx,_,i,_,j,_):
       #assert(r.nrows == r.ncols)
@@ -254,13 +260,24 @@ template mulVVS*(r:typed; x,y:typed):untyped =
   forO i, 0, <r.len:
     mul(r[i], x[i], ty)
 
+#[
 template mulVSV*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tx,_,i,_):
-    mixin load, mul
+  #subst(r,rr,x,xx,y,yy,tx,_,i,_):
+  subst(r,rr,x,xx,y,yy,i,_):
+    mixin load1, mul
     assert(r.len == y.len)
-    load(tx, x)
+    #load(tx, x)
+    let txz = load1(x)
     forO i, 0, <r.len:
-      mul(r[i], tx, y[i])
+      mul(r[i], txz, y[i])
+]#
+template mulVSV*(r: typed; xx,yy: typed): untyped =
+  mixin load1, mul
+  let x = load1(xx)
+  let y = yy
+  assert(r.len == y.len)
+  forO i, 0, <r.len:
+    mul(r[i], x, y[i])
 
 template mulMMS*(rr:untyped; xx,yy:untyped):untyped =
   subst(r,rr,x,xx,y,yy,tx,_,i,_,j,_):
@@ -373,14 +390,25 @@ template imaddSVV*(rr:typed; xx,yy:typed):untyped =
       imadd(tr, x[i], y[i])
     assign(r, tr)
 
+#[
 template imaddVSV*(rr:typed; xx,yy:typed):untyped =
   subst(r,rr,x,xx,y,yy,tr,_,i,_):
     mixin imadd, assign
     assert(r.len == y.len)
     load(tr, r)
     forO i, 0, <r.len:
-      imadd(r[i], x, y[i])
+      imadd(tr[i], x, y[i])
     assign(r, tr)
+]#
+template imaddVSV*(r: typed; xx,yy: typed): untyped =
+  mixin imadd, assign
+  let x = xx
+  let y = yy
+  assert(r.len == y.len)
+  load(tr, r)
+  forO i, 0, <r.len:
+    imadd(tr[i], x, y[i])
+  assign(r, tr)
 
 template imaddVMV*(rr:typed; xx,yy:typed):untyped =
   subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_,tyjr,_,tyji,_):

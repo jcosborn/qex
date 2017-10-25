@@ -1,3 +1,11 @@
+import ../base/globals
+#setForceInline(false)
+setForceInline(true)
+#setStaticUnroll(false)
+setStaticUnroll(true)
+setNoAlias(false)
+#setNoAlias(true)
+
 import os
 import times
 import strUtils
@@ -69,7 +77,10 @@ template wilsonDP*(sd: WilsonD; r: Field; g: openArray[Field2];
       assign(r[ir], rir)
   toc("local", flops=(expFlops+2*g.len*(12+2*66+24))*sd.subset.len)
   optimizeAstX:
-    boundarySB(sd.sf[0], r[ir]-=sprecon1p(g[0][ir]*it))
+    #boundarySB(sd.sf[0], r[ir]-=sprecon1p(g[0][ir]*it))
+    template bsb0(ir0,it: typed): untyped =
+      r[ir0] -= sprecon1p(g[0][ir0]*it)
+    boundarySB2(sd.sf[0], bsb0)
     boundarySB(sd.sf[1], r[ir]-=sprecon2p(g[1][ir]*it))
     boundarySB(sd.sf[2], r[ir]-=sprecon3p(g[2][ir]*it))
     boundarySB(sd.sf[3], r[ir]-=sprecon4p(g[3][ir]*it))
@@ -86,19 +97,19 @@ template wilsonDP*(sd: WilsonD; r: Field; g: openArray[Field2];
 template wilsonDM*(sd: WilsonD; r: Field; g: openArray[Field2];
                    x: Field3; expFlops: int; exp: untyped) =
   tic()
-  optimizeAst:
+  optimizeAstX:
     startSB(sd.sf[0], spproj1m(x[ix]))
     startSB(sd.sf[1], spproj2m(x[ix]))
     startSB(sd.sf[2], spproj3m(x[ix]))
     startSB(sd.sf[3], spproj4m(x[ix]))
   toc("startShiftF")
-  optimizeAst:
+  optimizeAstX:
     startSB(sd.sb[0], g[0][ix].adj*spproj1p(x[ix]))
     startSB(sd.sb[1], g[1][ix].adj*spproj2p(x[ix]))
     startSB(sd.sb[2], g[2][ix].adj*spproj3p(x[ix]))
     startSB(sd.sb[3], g[3][ix].adj*spproj4p(x[ix]))
   toc("startShiftB")
-  optimizeAst:
+  optimizeAstX:
     for ir{.inject.} in r[sd.subset]:
       var rir{.inject,noInit.}: type(load1(r[ir]))
       exp
@@ -112,13 +123,13 @@ template wilsonDM*(sd: WilsonD; r: Field; g: openArray[Field2];
       localSB(sd.sb[3], ir, rir-=sprecon4p(it), g[3][ix].adj*spproj4p(x[ix]))
       assign(r[ir], rir)
   toc("local", flops=(expFlops+2*g.len*(12+2*66+24))*sd.subset.len)
-  optimizeAst:
+  optimizeAstX:
     boundarySB(sd.sf[0], r[ir]-=sprecon1m(g[0][ir]*it))
     boundarySB(sd.sf[1], r[ir]-=sprecon2m(g[1][ir]*it))
     boundarySB(sd.sf[2], r[ir]-=sprecon3m(g[2][ir]*it))
     boundarySB(sd.sf[3], r[ir]-=sprecon4m(g[3][ir]*it))
   toc("boundaryF")
-  optimizeAst:
+  optimizeAstX:
     boundarySB(sd.sb[0], r[ir]-=sprecon1p(it))
     boundarySB(sd.sb[1], r[ir]-=sprecon2p(it))
     boundarySB(sd.sb[2], r[ir]-=sprecon3p(it))
@@ -138,6 +149,7 @@ proc wilsonD*(sd:WilsonD; r:Field; g:openArray[Field2];
     #rir := (4.0 + m) + x[ir]
     rir := 0
 
+#[
 proc wilsonD1*(sd:WilsonD; r:Field; g:openArray[Field2];
              x:Field; m:SomeNumber) =
   wilsonDP(sd, r, g, x, 6):
@@ -158,6 +170,7 @@ proc wilsonDb*(sd:WilsonD; r:Field; g:openArray[Field2];
   #  rir := m*getVec(x[ir], ic)
   wilsonDP(sd, r, g, x, 6):
     rir := (4.0 + m) * x[ir]
+]#
 
 # r = m2 - Deo * Doe
 proc wilsonD2ee*(sde,sdo:WilsonD; r:Field; g:openArray[Field2];
@@ -359,7 +372,7 @@ when isMainModule:
       threadBarrier()
       echo v1.norm2
 
-      wilsonDb(sdAll, v2, g, v1, m)
+      wilsonD(sdAll, v2, g, v1, m)
       threadBarrier()
       echo v2.norm2
       #echo v2
@@ -384,16 +397,26 @@ when isMainModule:
     #let nrep = int(2e8/lo.physVol.float)
     #let nrep = int(1e9/lo.physVol.float)
     let nrep = 1
-    template makeBench(name:untyped; bar:untyped):untyped =
+    template makeBench(name:untyped; bar:untyped):untyped {.dirty.} =
       proc `name T`(sd,v1,v2:any, ss="all") =
-        resetTimers()
-        var t0 = epochTime()
-        threads:
-          for rep in 1..nrep:
-            wilsonDb(sd, v2, g, v1, 0.5)
-            when bar: threadBarrier()
-        var t1 = epochTime()
-        let dt = t1-t0
+        var nrep = 1
+        var dt = 0.0
+        while true:
+          resetTimers()
+          threads:
+            threadBarrier()
+            let t0 = getTics()
+            for rep in 1..nrep:
+              wilsonD(sd, v2, g, v1, 0.5)
+              when bar: threadBarrier()
+            let t1 = getTics()
+            var dtt = ticDiffSecs(t1,t0)
+            threadSum(dtt)
+            threadMaster: dt = dtt/numThreads.float
+          if dt>1: break
+          let nnrep = 1 + int(1.1*nrep.float/(dt+1e-9))
+          nrep = min(10*nrep, nnrep)
+
         #var vol = lo.physVol.float
         var vol = lo.nSites.float
         if sd.sub != "all": vol *= 0.5
@@ -444,7 +467,7 @@ when isMainModule:
   var v1 = lo.DiracFermion()
   var v2 = lo.DiracFermion()
   var rs = newRNGField(RngMilc6, lo, intParam("seed", 987654321).uint64)
-  var g:array[4,type(lo.ColorMatrix())]
+  var g: array[4,type(lo.ColorMatrix())]
   for i in 0..<4:
     g[i] = lo.ColorMatrix()
     threads:
@@ -464,7 +487,7 @@ when isMainModule:
   var sdAll = initWilsonD(v1, "all")
   var sdEven = initWilsonD(v1, "even")
   var sdOdd = initWilsonD(v1, "odd")
-  var s = newWilson(@g)
+  var s = newWilson(@g, v1)
   var m = 0.1
   echo "done newWilson"
 

@@ -167,12 +167,11 @@ template load1*(x:I1):untyped =
   var r{.noInit.}:AsImag[type(load1(x.im))]
   assign(r, x)
   r
-subst(r,_):
-  template load1*(x:C1):untyped =
-  #subst(x,xx,r,_):
-    var r{.noInit.}:ComplexType[type(load1(x.re))]
-    assign(r, x)
-    r
+template load1*(x: AsComplex): untyped =
+  let x_load1 = x
+  let x_load1r = load1(x_load1.re)
+  let x_load1i = load1(x_load1.im)
+  complexType(x_load1r, x_load1i)
 subst(r,_):
   template load1*(x: AsVarComplex):untyped =
   #subst(x,xx,r,_):
@@ -306,10 +305,19 @@ template makeUnary(op:untyped):untyped {.dirty.} =
   template op*(r:var C1; x:I2) =
     op(r.re, 0)
     op(r.im, x.im)
-  template op*(r:var C1; xx:C2) =
-    lets(x,xx):
-      op(r.re, x.re)
-      op(r.im, x.im)
+  template op*(r: AsComplex; xx: C2) =
+    #dumpTree: `op`
+    #dumpTree: r
+    #echoRepr: r
+    #echoType: r
+    #echoRepr: xx
+    #echoType: xx
+    #lets(x,xx):
+    #  op(r.re, x.re)
+    #  op(r.im, x.im)
+    let x = xx
+    op(r.re, x.re)
+    op(r.im, x.im)
   template op*(r:var C1; xx:AsVarComplex) =
     lets(x,xx):
       op(r.re, x.re)

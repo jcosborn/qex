@@ -13,6 +13,8 @@ template map021(T,L,op1,op2:untyped):untyped {.dirty.} =
       result[][i] = op2(x[][i], y[][i])
 template map110(T,L,op1,op2:untyped):untyped {.dirty.} =
   proc op1*(r:var T; x:T) {.inline.} =
+  #template op1*(r: T; xx: T) =
+  #  let x = xx
     forStatic i, 0, L-1:
       op2(r[][i], x[][i])
 template map120(T,L,op1,op2:untyped):untyped {.dirty.} =
