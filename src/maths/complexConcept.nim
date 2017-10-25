@@ -104,6 +104,7 @@ type
   #  isComplex(x)
   #C4* = concept x
   #  isComplex(x)
+  AsComplex2*[T] = AsComplex[T]
   C1*[T] = AsComplex[T]
   C2*[T] = AsComplex[T]
   C3*[T] = AsComplex[T]
@@ -127,13 +128,21 @@ type
   #Iconcept1* = I1
   #Cconcept1* = C1
   #IC1* = Iconcept1 | Cconcept1
+  ImagType*[T] = AsImag[T]
   ComplexObj*[T] = object
     re*,im*: T
   ComplexObj2*[T] = ComplexObj[T]
   ComplexType*[T] = AsComplex[ComplexObj[T]]
   ComplexType2*[T] = AsComplex[ComplexObj2[T]]
 
-template complexObj*(x,y: typed): untyped =
+template imagObj*(xx: typed): untyped =
+  let x = xx
+  ImagObj[type(x)](im: x)
+template imagType*(x: typed): untyped =
+  asImag(x)
+
+template complexObj*(xx,y: typed): untyped =
+  let x = xx
   ComplexObj[type(x)](re: x, im: y)
 template complexType*(x,y: typed): untyped =
   asComplex(complexObj(x,y))
@@ -458,6 +467,11 @@ template mul*(r:var C1; x:C2; y:R3) =
   # r.im = x.im * y.re
   mul(r.re, x.re, y.re)
   mul(r.im, x.im, y.re)
+template mul*(r: AsComplex; xx: AsImag; yy: AsComplex2) =
+  let x = xx
+  let y = yy
+  r.re = - x.im*y.im
+  r.im =   x.im*y.re
 #proc mul*(r:var C1; x:C2; y:C3) {.inline.} =
 template mul*(r: var C1; xx: C2; yy: C3) =
   let x = xx
@@ -489,6 +503,15 @@ proc `*`*(x:C1; y:SomeNumber):auto {.inline.} =
   var r{.noInit.}:ComplexType[type(x.re*y)]
   mul(r, x, y)
   r
+template `*`*(xx: AsImag; yy: AsComplex2): untyped =
+  #var r{.noInit.}:ComplexType[type(x*y.re)]
+  #mul(r, x, y)
+  #r
+  let x = xx
+  let y = yy
+  let mulICr = - x.im * y.im
+  let mulICi =   x.im * y.re
+  complexType(mulICr, mulICi)
 template `*`*(xx: C1; yy: C2): untyped =
   let x = xx
   let y = yy

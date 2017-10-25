@@ -69,6 +69,7 @@ template numberType*[T](x: typedesc[Color[T]]): untyped = numberType(T)
 #template numNumbers*[T](x: typedesc[Color[T]]): untyped = numberType(T)
 template numNumbers*(x: Color): untyped = numNumbers(x[])
 template load1*(x: Color): untyped = asColor(load1(x[]))
+template `-`*(x: Color): untyped = asColor(-(x[]))
 template assign*(r: var Color, x: SomeNumber) =
   assign(r[], x)
 template assign*(r: var Color, x: AsComplex) =
@@ -100,6 +101,8 @@ template imsub*(r: var Color, x: Color2, y: Color3) =
 template `*`*(x: Color, y: SomeNumber): untyped =
   asColor(x[] * y)
 template `*`*(x: SomeNumber, y: Color2): untyped =
+  asColor(x * y[])
+template `*`*(x: AsImag, y: Color2): untyped =
   asColor(x * y[])
 template `*`*(x: AsComplex, y: Color2): untyped =
   asColor(x * y[])

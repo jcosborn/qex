@@ -168,18 +168,18 @@ const
                     [ z0, z1, zi, z0 ]])
   spprojmat1m* = p([[ z1, z0, z0, ni ],
                     [ z0, z1, ni, z0 ]])
-  spprojmat2p* = p([[ z1, z0, z0, zi ],
-                    [ z0, z1, zi, z0 ]])
-  spprojmat2m* = p([[ z1, z0, z0, ni ],
-                    [ z0, z1, ni, z0 ]])
-  spprojmat3p* = p([[ z1, z0, z0, zi ],
-                    [ z0, z1, zi, z0 ]])
-  spprojmat3m* = p([[ z1, z0, z0, ni ],
-                    [ z0, z1, ni, z0 ]])
-  spprojmat4p* = p([[ z1, z0, z0, zi ],
-                    [ z0, z1, zi, z0 ]])
-  spprojmat4m* = p([[ z1, z0, z0, ni ],
-                    [ z0, z1, ni, z0 ]])
+  spprojmat2p* = p([[ z1, z0, z0, n1 ],
+                    [ z0, z1, z1, z0 ]])
+  spprojmat2m* = p([[ z1, z0, z0, z1 ],
+                    [ z0, z1, n1, z0 ]])
+  spprojmat3p* = p([[ z1, z0, zi, z0 ],
+                    [ z0, z1, z0, ni ]])
+  spprojmat3m* = p([[ z1, z0, ni, z0 ],
+                    [ z0, z1, z0, zi ]])
+  spprojmat4p* = p([[ z1, z0, z1, z0 ],
+                    [ z0, z1, z0, z1 ]])
+  spprojmat4m* = p([[ z1, z0, n1, z0 ],
+                    [ z0, z1, z0, n1 ]])
 
   spreconmat1p* = r([[ z1, z0 ],
                      [ z0, z1 ],
@@ -191,28 +191,31 @@ const
                      [ zi, z0 ]])
   spreconmat2p* = r([[ z1, z0 ],
                      [ z0, z1 ],
-                     [ z0, ni ],
-                     [ ni, z0 ]])
+                     [ z0, z1 ],
+                     [ n1, z0 ]])
   spreconmat2m* = r([[ z1, z0 ],
                      [ z0, z1 ],
-                     [ z0, zi ],
-                     [ zi, z0 ]])
+                     [ z0, n1 ],
+                     [ z1, z0 ]])
   spreconmat3p* = r([[ z1, z0 ],
                      [ z0, z1 ],
-                     [ z0, ni ],
-                     [ ni, z0 ]])
+                     [ ni, z0 ],
+                     [ z0, zi ]])
   spreconmat3m* = r([[ z1, z0 ],
                      [ z0, z1 ],
-                     [ z0, zi ],
-                     [ zi, z0 ]])
+                     [ zi, z0 ],
+                     [ z0, ni ]])
   spreconmat4p* = r([[ z1, z0 ],
                      [ z0, z1 ],
-                     [ z0, ni ],
-                     [ ni, z0 ]])
+                     [ z1, z0 ],
+                     [ z0, z1 ]])
   spreconmat4m* = r([[ z1, z0 ],
                      [ z0, z1 ],
-                     [ z0, zi ],
-                     [ zi, z0 ]])
+                     [ n1, z0 ],
+                     [ z0, n1 ]])
+
+template I(x: typed): untyped =
+  imagType(1)*x
 
 proc spproj1p*(r: var any, x: any) =
   ## r: HalfFermion
@@ -236,14 +239,28 @@ template spproj4m*(x: any): untyped = spprojmat4m * x
 
 template spproj1p*(xx: typed): untyped =
   let x = xx
-  spinVector[type(x[][0])](2,[x[][0],x[][1]])
-template spproj2p*(xx: typed): untyped = spproj1p(xx)
-template spproj3p*(xx: typed): untyped = spproj1p(xx)
-template spproj4p*(xx: typed): untyped = spproj1p(xx)
-template spproj1m*(xx: typed): untyped = spproj1p(xx)
-template spproj2m*(xx: typed): untyped = spproj1p(xx)
-template spproj3m*(xx: typed): untyped = spproj1p(xx)
-template spproj4m*(xx: typed): untyped = spproj1p(xx)
+  spinVector[type(x[][0])](2,[x[][0]+I(x[][3]),x[][1]+I(x[][2])])
+template spproj2p*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](2,[x[][0]-x[][3],x[][1]+x[][2]])
+template spproj3p*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](2,[x[][0]+I(x[][2]),x[][1]-I(x[][3])])
+template spproj4p*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](2,[x[][0]+x[][2],x[][1]+x[][3]])
+template spproj1m*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](2,[x[][0]-I(x[][3]),x[][1]-I(x[][2])])
+template spproj2m*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](2,[x[][0]+x[][3],x[][1]-x[][2]])
+template spproj3m*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](2,[x[][0]-I(x[][2]),x[][1]+I(x[][3])])
+template spproj4m*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](2,[x[][0]-x[][2],x[][1]-x[][3]])
 
 proc sprecon1p*(r: var any, x: any) =
   ## r: DiracFermion
@@ -268,14 +285,28 @@ template sprecon4m*(x: typed): untyped = spreconmat4m * x
 
 template sprecon1p*(xx: typed): untyped =
   let x = xx
-  spinVector[type(x[][0])](4,[x[][0],x[][1],x[][0],x[][1],])
-template sprecon2p*(xx: typed): untyped = sprecon1p(xx)
-template sprecon3p*(xx: typed): untyped = sprecon1p(xx)
-template sprecon4p*(xx: typed): untyped = sprecon1p(xx)
-template sprecon1m*(xx: typed): untyped = sprecon1p(xx)
-template sprecon2m*(xx: typed): untyped = sprecon1p(xx)
-template sprecon3m*(xx: typed): untyped = sprecon1p(xx)
-template sprecon4m*(xx: typed): untyped = sprecon1p(xx)
+  spinVector[type(x[][0])](4,[x[][0],x[][1],-I(x[][1]),-I(x[][0])])
+template sprecon2p*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](4,[x[][0],x[][1],x[][1],-x[][0]])
+template sprecon3p*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](4,[x[][0],x[][1],-I(x[][0]),I(x[][1])])
+template sprecon4p*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](4,[x[][0],x[][1],x[][0],x[][1]])
+template sprecon1m*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](4,[x[][0],x[][1],I(x[][1]),I(x[][0])])
+template sprecon2m*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](4,[x[][0],x[][1],-x[][1],x[][0]])
+template sprecon3m*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](4,[x[][0],x[][1],I(x[][0]),-I(x[][1])])
+template sprecon4m*(xx: typed): untyped =
+  let x = xx
+  spinVector[type(x[][0])](4,[x[][0],x[][1],-x[][0],-x[][1]])
 
 when isMainModule:
   echo gamma0[0,0]
