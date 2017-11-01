@@ -189,13 +189,13 @@ subst(r,_):
     r
 
 #template mapComplexObj*(x: ComplexObj; f: untyped): untyped =
-template mapComplexObj*(x: untyped; f: untyped): untyped =
 #template mapComplexObj*(x: varargs[untyped]): untyped =
+template mapComplexObj*(x: untyped; f: untyped): untyped =
   let tx = x
-  #let fr = f(tx.re)
-  #let fi = f(tx.im)
-  #complexObj(fr, fi)
-  complexObj(f(tx.re), f(tx.im))
+  let fr = f(tx.re)
+  let fi = f(tx.im)
+  complexObj(fr, fi)
+  #complexObj(f(tx.re), f(tx.im))
   #complexObj(x[1](tx.re), x[1](tx.im))
 template map*(x: ComplexObj; f: untyped): untyped = mapComplexObj(x, f)
 template map*(x: AsComplex; f: untyped): untyped = asComplex(f(x[]))
@@ -253,6 +253,12 @@ template eval*(x: AsComplex): untyped =
   #echoType: x
   #echoType: x[]
   asComplex(eval(x[]))
+
+template simdSum*(xx: ComplexObj): untyped =
+  let x = xx
+  let sr = simdSum(x.re)
+  let si = simdSum(x.im)
+  complexObj(sr, si)
 
 template trace*(r:var RIC1; x:RIC2):untyped = map(r, trace, x)
 proc trace*(x: C1): auto {.inline.} =

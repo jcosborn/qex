@@ -19,15 +19,15 @@ template makeDeref*(t,u:untyped):untyped {.dirty.} =
     else:
       (u)x = y
   ]#
-  template callBracket*(x: t): untyped = x.v
+  #template callBracket*(x: t): untyped = x.v
   #macro callBracket*(x: t{nkObjConstr}): untyped =
   #  #echo x.treerepr
   #  result = x[1][1]
   #template `[]`*(x: t): untyped = callBracket(normalizeAst(x))
-  template `[]`*(x: t): untyped = callBracket(x)
+  #template `[]`*(x: t): untyped = callBracket(x)
   template `[]=`*(x:t; y:any):untyped =
     x.v = y
-  #template `[]`*(x:t):untyped = x.v[]
+  template `[]`*(x:t):untyped = x.v
   #template `[]=`*(x:t; y:any):untyped =
   #  x.v[] = y
 

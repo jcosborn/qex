@@ -239,7 +239,9 @@ template spproj4m*(x: any): untyped = spprojmat4m * x
 
 template spproj1p*(xx: typed): untyped =
   let x = xx
-  spinVector[type(x[][0])](2,[x[][0]+I(x[][3]),x[][1]+I(x[][2])])
+  let v0 = x[][0] + I(x[][3])
+  let v1 = x[][1] + I(x[][2])
+  spinVector[type(v0)](2,[v0,v1])
 template spproj2p*(xx: typed): untyped =
   let x = xx
   spinVector[type(x[][0])](2,[x[][0]-x[][3],x[][1]+x[][2]])
@@ -251,7 +253,9 @@ template spproj4p*(xx: typed): untyped =
   spinVector[type(x[][0])](2,[x[][0]+x[][2],x[][1]+x[][3]])
 template spproj1m*(xx: typed): untyped =
   let x = xx
-  spinVector[type(x[][0])](2,[x[][0]-I(x[][3]),x[][1]-I(x[][2])])
+  let v0 = x[][0] - I(x[][3])
+  let v1 = x[][1] - I(x[][2])
+  spinVector[type(v0)](2,[v0,v1])
 template spproj2m*(xx: typed): untyped =
   let x = xx
   spinVector[type(x[][0])](2,[x[][0]+x[][3],x[][1]-x[][2]])

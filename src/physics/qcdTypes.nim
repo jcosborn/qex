@@ -153,13 +153,16 @@ template `*`*(x: Color, y: Spin): untyped =
 #proc simdSum*(x:SComplexV):SComplex = complexConcept.map(result, simdSum, x)
 #proc simdSum*(x:DComplexV):DComplex = complexConcept.map(result, simdSum, x)
 template simdSum*(x:ToDouble):untyped = toDouble(simdSum(x[]))
-template simdSum*(x: AsComplex): untyped = asComplex(simdSum(x[]))
+template simdSum*(x: AsComplex): untyped =
+  let tSimdSum = simdSum(x[])
+  asComplex(tSimdSum)
 #template simdSum*(x:Complex):untyped = simdSum(x[])
 #template simdSum*(xx:tuple):untyped =
 #  lets(x,xx):
 #    map(x, simdSum)
-template simdSum*(x: ComplexObj): untyped =
-  mapComplexObj(x, simdReduce)
+#template simdSum*(x: ComplexObj): untyped =
+#  #mapComplexObj(x, simdReduce)
+#  map(x, simdReduce)
 #template rankSum*(x:AsComplex) =
 #  #mixin qmpSum
 #  rankSum(x[])

@@ -70,6 +70,10 @@ proc vecNmadd*(x,y,z:SimdD4):SimdD4 {.importC:"vec_nmadd",noDecl.} # -x*y-z
 proc vecNmsub*(x,y,z:SimdD4):SimdD4 {.importC:"vec_nmsub",noDecl.} # -x*y+z
 proc vecAbs*(x:SimdD4):SimdD4 {.importC:"vec_abs",noDecl.}
 proc vecSqrt*(x:SimdD4):SimdD4 {.importC:"vec_swsqrt",noDecl.}
+proc vecCmpgt*(x,y:SimdD4):SimdD4 {.importC:"vec_cmpgt",noDecl.}
+proc vecCmplt*(x,y:SimdD4):SimdD4 {.importC:"vec_cmplt",noDecl.}
+proc vecSel*(x,y,z:SimdD4):SimdD4 {.importC:"vec_sel",noDecl.}
+
 template ld(x:SimdS4):untyped = vecLd(0i32, x[])
 template ld(x:SimdD4):untyped = x #vecLd(0i32, x)
 template ld(x:ToSingle):untyped = ld(x[])
@@ -311,6 +315,15 @@ template makeTrinary(name):untyped =
 makeTrinary(madd)
 makeTrinary(msub)
 
+template min*(xx,yy: SimdSD4): untyped =
+  let x = ld(xx)
+  let y = ld(yy)
+  vecSel(x,y,vecCmpgt(x,y))
+template max*(xx,yy: SimdSD4): untyped =
+  let x = ld(xx)
+  let y = ld(yy)
+  vecSel(x,y,vecCmplt(x,y))
+
 template abs*(x: SimdSD4): untyped = vecAbs(ld(x))
 template sqrt*(x: SimdSD4): untyped = vecSqrt(ld(x))
 
@@ -357,10 +370,11 @@ proc simdSum*(r:var SomeNumber; x:SimdAny) {.inline.} =
   #var r{.noInit.}:numberType(x)
   #simdSum(r, x)
   #r
-proc simdSum*(x:SimdAny):auto {.inline,noInit.} =
+proc simdSum*(x:SimdSD4):auto {.inline,noInit.} =
   var r:numberType(x)
   simdSum(r, x)
   r
+template simdReduce*(x: SimdSD4): untyped = discard #simdSum(x)
 
 proc perm1*(r:var SimdD4; x:SimdD4) {.inline.} =
   r = vecPerm(x,x,vecGpci(0o1032.cint))
