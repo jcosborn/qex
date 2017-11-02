@@ -1,7 +1,8 @@
 import macros
 export macros
 import stdUtils
-#import metaUtils
+import metaUtils
+import strutils
 
 template makeDeref*(t,u:untyped):untyped {.dirty.} =
   #[
@@ -61,3 +62,41 @@ macro makeWrapper*(t,s: untyped): untyped =
   else:
     echo s.treerepr
   result = getAst(makeWrapper2(t,s,xid))
+
+template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
+  type
+    name*[T] = object ## wrapper type
+      fName*: T
+  template asName*(x: typed): untyped =
+    ## wrap an object, x, as a $NAME type
+    #lets(x,xx):
+    #static: echo "asColor typed"
+    #dumpTree: xx
+    let tasName = x
+    name[type(tasName)](fName: tasName)
+    #Color[type(x_asColor)](x_asColor)
+    #Color(x_asColor)
+  template `[]`*(x: name): untyped =
+    ## dereference a $NAME object
+    x.fName
+
+proc makeWrapperTypeP*(name: NimNode; docs: string): NimNode =
+  let Name = capitalize($name)
+  let fName = ident("f" & $Name)
+  let asName = ident("as" & $Name)
+  let tasName = ident("t_as" & $Name)
+  result = getAst(makeWrapperTypeX(name,fName,asName,tasName))
+  result = result.replaceComments(("$DOCS",docs),("$NAME",Name))
+  echo result.repr
+
+macro makeWrapperType*(name,docs: untyped): untyped =
+  #echo $docs[0]
+  #echo name.treerepr
+  var d: string
+  when docs.type is string: d = docs
+  else: d = $docs[0]
+  makeWrapperTypeP(name, d)
+
+macro makeWrapperType*(name: untyped): untyped =
+  let d = "wrapper type for " & $name & " objects"
+  makeWrapperTypeP(name, d)

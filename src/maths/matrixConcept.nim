@@ -5,7 +5,7 @@ import macros
 #import basicOps
 import maths/types
 import base/wrapperTypes
-import complexConcept
+import complexNumbers
 #import complexType
 # opinc, opdec
 # minc, mdec, redotinc, redotdec

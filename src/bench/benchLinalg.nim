@@ -115,7 +115,6 @@ proc test(lat:any) =
   bench(2*nc2, 3*vb, 2*vb):
     v2 := 0.5*v2 + v1
 
-  #[
   bench(mvf, mb+2*vb, mb+2*vb):
     v2 := m1 * v1
 
@@ -165,7 +164,6 @@ proc test(lat:any) =
   bench(nc*(mvf+nc2), 3*mb, 2*mb):
     for e in m3:
       imaddMMM(m3[e], m1[0], m2[e])
-  ]#
 
   bench(nc*(3*mvf+nc2), 6*mb, 5*mb):
     m1 += (m2*m3) * (m4*m5).adj

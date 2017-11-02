@@ -2,30 +2,29 @@ import base/wrapperTypes
 import maths/types
 import maths
 
+makeWrapperType(Color):
+  ## wrapper type for colored objects
+
 type
-  Color*[T] = object
-    v*: T
+  #Color*[T] = object
+  #  fColor*: T
+  #Color*[T] = distinct T
   Color2*[T] = Color[T]
   Color3*[T] = Color[T]
 
-#template asColorX*(xx: typed): untyped =
-#  #lets(x,xx):
-#  #static: echo "asColor typed"
-#  #dumpTree: xx
-#  let x_asColor = xx
-#  Color[type(x_asColor)](v: x_asColor)
-#template asColorX*(xx: typed{nkObjConstr}): untyped =
-#  static: echo "asColor typed{nkObjConstr}"
-#  dumpTree: xx
-#  lets(x,xx):
-#    Color[type(x)](v: x)
-#template asColor*(xx: typed): untyped = asColorX(normalizeAst(xx))
-template asColor*(xx: typed): untyped =
+#template asColor*(xx: typed): untyped =
   #lets(x,xx):
   #static: echo "asColor typed"
   #dumpTree: xx
-  let x_asColor = xx
-  Color[type(x_asColor)](v: x_asColor)
+#  let x_asColor = xx
+#  Color[type(x_asColor)](fColor: x_asColor)
+  #Color[type(x_asColor)](x_asColor)
+  #Color(x_asColor)
+
+#template `[]`*(x: Color): untyped = x.fColor
+#template `[]`*(x: Color): untyped = (x.T)(x)
+#template `[]`*[T](x: Color[T]): untyped = T(x)
+#makeDeref(Color, x.T)
 
 template isWrapper*(x: Color): untyped = true
 template asWrapper*(x: Color, y: typed): untyped =
@@ -37,12 +36,12 @@ template asVarWrapper*(x: Color, y: typed): untyped =
   #var cy = asColor(y)
   #cy
   asVar(asColor(y))
-#template `[]`*(x: Color): untyped = x.v
-makeDeref(Color, x.T)
+
 template `[]`*(x: Color, i: any): untyped = x[][i]
 template `[]`*(x: Color, i: any, j: any): untyped = x[][i,j]
 template `[]`*(x: Color, i: any, j: any, y: any): untyped =
   x[][i,j] = y
+
 forwardFunc(Color, len)
 forwardFunc(Color, nrows)
 forwardFunc(Color, ncols)

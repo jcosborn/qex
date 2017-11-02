@@ -1,5 +1,5 @@
-import maths/complexConcept
-export complexConcept
+import maths/complexNumbers
+export complexNumbers
 import maths/matrixConcept
 export matrixConcept
 import maths/matrixFunctions

@@ -186,6 +186,23 @@ macro makeCall*(op:static[string],a:typed,idx:typed):untyped =
     else:
       quit("makeCall: unhandled number of arguments " & $nargs)
 
+proc replaceComments*(n: NimNode; subs: varargs[(string,string)]): NimNode =
+  #echo n.treeRepr
+  if n.kind == nnkCommentStmt:
+    echo n.strval
+    let s = multiReplace(n.strVal, subs)
+    echo s
+    #echo subs
+    result = newCommentStmtNode(s)
+  #elif n.kind == nnkTypeDef:
+  #  echo n.treerepr
+  #  echo n[2].getType.treerepr
+  else:
+    result = copyNimNode(n)
+    for c in n.children:
+      result.add(replaceComments(c, subs))
+  #echo result.repr
+
 proc evalBackticR(body:NimNode):NimNode =
   #echo body.treeRepr
   if body.kind == nnkAccQuoted:
