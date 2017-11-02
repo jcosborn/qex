@@ -1,20 +1,20 @@
-sudo: false
 language: c
-os:
-  - linux
-dist: trusty
 
-before_script:
-  - set -e
-  - git clone --depth 1 https://github.com/nim-lang/csources.git
+before_install:
+  - git clone -b master --depth 1 git://github.com/nim-lang/Nim
+  - cd Nim
+  - git clone --depth 1 git://github.com/nim-lang/csources
   - cd csources
   - sh build.sh
   - cd ..
-  - export PATH=$(pwd)/bin:$PATH
-script:
-  - nim c koch
-  - ./koch boot
+  - bin/nim c koch
   - ./koch boot -d:release
-  - ./koch nimble
+  - export PATH=$PWD/bin:$PATH
+  - ./koch nimble -d:release
+  - cd ..
+
+script:
   - ./configure
   - make tests
+  - make bench
+  - bin/benchLinalg
