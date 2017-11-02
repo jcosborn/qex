@@ -491,14 +491,15 @@ proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   sp.subset.layoutSubset(r.l, sp.subsetName)
   var t = newOneOf(r)
   var top = 0.0
-  proc op(a,b:Field) =
+  proc op2(a,b: Field) =
     threadBarrier()
     if threadNum==0: top -= epochTime()
     stagD2ee(s.se, s.so, a, s.g, b, m*m)
     if threadNum==0: top += epochTime()
     #threadBarrier()
+  var oa = (apply: op2)
   let t0 = epochTime()
-  cgSolve(r, x, op, sp)
+  cgSolve(r, x, oa, sp)
   let t1 = epochTime()
   let secs = t1-t0
   let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
@@ -517,12 +518,13 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams; cpuonly = fa
   sp.subset.layoutSubset(r.l, sp.subsetName)
   var t = newOneOf(r)
   var top = 0.0
-  proc op(a,b:Field) =
+  proc op(a,b: Field) =
     threadBarrier()
     if threadNum==0: top -= epochTime()
     stagD2ee(s.se, s.so, a, s.g, b, m*m)
     if threadNum==0: top += epochTime()
     #threadBarrier()
+  var oa = (apply: op)
   threads:
     #echo "x2: ", x.norm2
     s.eoReduce(t, x, m)
@@ -531,7 +533,7 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams; cpuonly = fa
   when defined(qudaDir):
     if not cpuonly: s.qudaSolveEE(r,t,m,sp)
     # After QUDA, we still run through our solver.
-  cgSolve(r, t, op, sp)
+  cgSolve(r, t, oa, sp)
   let t1 = epochTime()
   threads:
     r[s.se.sub] := 4*r

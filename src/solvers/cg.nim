@@ -12,7 +12,8 @@ type
     subset*:Subset
     subsetName*:string
 
-proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
+proc cgSolve*(x: Field; b: Field2; op: any; sp: var SolverParams) =
+  mixin apply
   tic()
   let vrb = sp.verbosity
   template verb(n:int; body:untyped):untyped =
@@ -44,7 +45,7 @@ proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
 
   threads:
     var r2:float
-    A(Ap, x)
+    op.apply(Ap, x)
     subset:
       r := b - Ap
       p := r
@@ -64,7 +65,7 @@ proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
       while itn<maxits:
         tic()
         inc itn
-        A(Ap, p)
+        op.apply(Ap, p)
         toc("Ap")
         subset:
           let pAp = p.redot(Ap)
@@ -88,7 +89,7 @@ proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
             echo "alpha: ", r2o/pAp
             echo "x2: ", x.norm2
             echo "r2: ", r2
-          A(Ap, x)
+          op.apply(Ap, x)
           var fr2: float
           subset:
             fr2 = (b - Ap).norm2
@@ -105,7 +106,7 @@ proc cgSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
     if threadNum==0: finalIterations = itn
 
     var fr2: float
-    A(Ap, x)
+    op.apply(Ap, x)
     subset:
       r := b - Ap
       fr2 = r.norm2
@@ -127,8 +128,11 @@ when isMainModule:
   var m = lo.ColorMatrix()
   var v1 = lo.ColorVector()
   var v2 = lo.ColorVector()
-  proc op*(r:type(v1); x:type(v1)) =
-    r := m*x
+  type opArgs = object
+    m: type(m)
+  var oa = opArgs(m: m)
+  proc apply*(oa: opArgs; r: type(v1); x: type(v1)) =
+    r := oa.m*x
     #mul(r, m, x)
   var sp:SolverParams
   sp.r2req = 1e-14
@@ -148,5 +152,5 @@ when isMainModule:
     echo v1.norm2
     echo m.norm2
 
-  cgSolve(v2, v1, op, sp)
+  cgSolve(v2, v1, oa, sp)
   echo sp.finalIterations
