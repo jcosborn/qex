@@ -14,6 +14,7 @@ before_install:
   - cd ..
 
 script:
+  - ./bootstrap-travis
   - ./configure
   - make tests
   - make bench

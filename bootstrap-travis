@@ -1,0 +1,29 @@
+#!/bin/sh
+
+qmpv="qmp-2.5.0"
+qmp="$qmpv.tar.gz"
+if [ ! -f $qmp ]; then
+  wget "http://usqcd-software.github.io/downloads/qmp/$qmp"
+fi
+tar zxvf $qmp
+mkdir qmp
+cd $qmpv
+./configure \
+ --prefix="$PWD/../qmp" \
+ --with-qmp-comms-type=single
+make && make install
+cd ..
+
+qiov="qio-2.5.0"
+qio="$qiov.tar.gz"
+if [ ! -f $qio ]; then
+  wget "http://usqcd-software.github.io/downloads/qio/$qio"
+fi
+tar zxvf $qio
+mkdir qio
+cd $qiov
+./configure \
+ --prefix="$PWD/../qio" \
+ --with-qmp="$PWD/../qmp" \
+make && make install
+cd ..
