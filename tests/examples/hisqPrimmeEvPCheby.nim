@@ -1,6 +1,6 @@
 import strutils
-import qex, physics/stagD
-import eigens/qexPrimmeInternal
+import qex, qex/physics/stagD
+import qex/eigens/qexPrimmeInternal
 import chebyshev
 
 qexInit()

@@ -1,6 +1,6 @@
 import strutils
 import qex
-import eigens/qexPrimmeInternal
+import qex/eigens/qexPrimmeInternal
 
 template ff(x:untyped):auto = formatFloat(x,ffScientific,17)
 

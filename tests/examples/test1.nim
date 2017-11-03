@@ -1,5 +1,5 @@
 import qex
-import physics/qcdTypes
+import qex/physics/qcdTypes
 
 proc test() =
   var lat = [4,4,4,4]

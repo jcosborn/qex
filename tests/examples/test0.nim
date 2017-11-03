@@ -1,4 +1,4 @@
-import base
+import qex/base
 
 when isMainModule:
   threadsInit()

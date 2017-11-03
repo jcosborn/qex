@@ -1,10 +1,10 @@
 import qex
-import physics/qcdTypes
-import gauge
-import physics/stagD
+import qex/physics/qcdTypes
+import qex/gauge
+import qex/physics/stagD
 import os
-import physics/stagMesonLocal
-import physics/hisqLinks
+import qex/physics/stagMesonLocal
+import qex/physics/hisqLinks
 
 qexInit()
 var defaultGaugeFile = "l88.scidac"

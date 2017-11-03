@@ -1,5 +1,5 @@
 import strutils
-import qex, physics/stagD
+import qex, qex/physics/stagD
 
 template ff(x:untyped):auto = formatFloat(x,ffScientific,17)
 template apply(op:Staggered, x,y:Field) =

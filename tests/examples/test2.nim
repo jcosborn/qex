@@ -1,6 +1,6 @@
 import qex
-import physics/qcdTypes
-import gauge
+import qex/physics/qcdTypes
+import qex/gauge
 import os
 
 proc test() =
