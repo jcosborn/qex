@@ -109,8 +109,9 @@ endif
 clean:
 	\rm -rf nimcache
 ifeq ($(TARGETS),all)
+  T0 = $(wildcard $(QEXDIR)/src/qex/*.nim)
   T1 = $(wildcard $(QEXDIR)/src/*.nim)
-  T2 = $(notdir $(T1))
+  T2 = $(notdir $(T0) $(T1))
   T3 = $(basename $(T2))
   T4 = $(filter-out simdQpx,$(T3))
   TARGETS = $(T4)

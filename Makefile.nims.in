@@ -7,7 +7,7 @@ var args = newSeq[string](0)
 var nim = paramStr(0)
 var nimargs = newSeq[string](0)
 var qexdir = "@@QEXDIR"
-var paths = [ "", qexdir/"src", qexdir ]
+var paths = [ "", qexdir/"src/qex", qexdir/"src", qexdir ]
 
 for i in 1..paramCount():
   let p = paramStr(i)
