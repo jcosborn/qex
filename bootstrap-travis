@@ -27,5 +27,7 @@ cd $qiov
 ./configure \
  --prefix="$PWD/../qio" \
  --with-qmp="$PWD/../qmp" \
+ CC=gcc \
+ CFLAGS="-Wall -O3 -std=gnu99 -g -fPIC"
 make && make install
 cd ..
