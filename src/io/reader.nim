@@ -222,7 +222,7 @@ proc read[T](r:var Reader, v:var openArray[ptr T]) =
       let src = cast[ptr srcT](buf)
       let dest = cast[ptr destT](arg)
       let vi = index div simdLength(T)
-      let vl = index mod simdLength(T)
+      let vl = int(index mod simdLength(T))
       for i in 0..<count:
         vcopy(dest[i][vi], vl, src[i])
     r.status = QIO_read(r.qr, r.recordInfo.addr, qioMd, put, vsize.csize,
@@ -238,7 +238,7 @@ proc read[T](r:var Reader, v:var openArray[ptr T]) =
       let src = cast[ptr srcT](buf)
       let dest = cast[ptr destT](arg)
       let vi = index div simdLength(T)
-      let vl = index mod simdLength(T)
+      let vl = int(index mod simdLength(T))
       for i in 0..<count:
         vcopy(dest[i][vi], vl, src[i])
     r.status = QIO_read(r.qr, r.recordInfo.addr, qioMd, put, vsize.csize,

@@ -77,7 +77,7 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
       result = newCall(!"assign1", r, x[0])
     else:
       result = newStmtList()
-      var call = getAst(setX())[0]
+      var call = getAst(setX()).peelStmt
       for i in 0..<N:
         call.add getAst(setF(x[i mod x.len]))
       template asgn(r,c:untyped):untyped = r = c

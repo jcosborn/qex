@@ -1,4 +1,4 @@
-import base/threading
+import base/threading, base/metaUtils
 import times
 import os
 import macros
@@ -79,11 +79,9 @@ macro makeEchos(n:static[int]):auto =
     er.add ai
     e0.add ai
     ea.add newNimNode(nnkIdentDefs).add(ai).add(ident"untyped").add(newEmptyNode())
-    var t = getAst(ech(er,e0))
+    var t = getAst(ech(er,e0)).peelStmt
     #echo t.treerepr
-    for j in 0..<i:
-      if t.kind == nnkTemplateDef: t[3].add ea[j]
-      else: t[0][3].add ea[j]
+    for j in 0..<i: t[3].add ea[j]
     result.add t
   #echoAll result.repr
 makeEchos(10)

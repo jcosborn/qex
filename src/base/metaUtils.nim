@@ -155,6 +155,10 @@ macro map*(a:tuple; f:untyped; p:varargs[untyped]):untyped =
   #echo result.repr
 ]#
 
+proc peelStmt*(n:NimNode): NimNode =
+  if n.len == 1 and n.kind == nnkStmtList: n[0]
+  else: n
+
 macro makeCall*(op:static[string],a:tuple):untyped =
   echo op
   echo a.repr
