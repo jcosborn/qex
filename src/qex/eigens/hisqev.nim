@@ -5,6 +5,7 @@ import svdLanczos
 import linalgFuncs
 import math
 import strUtils
+import gauge/hypsmear
 
 type
   LinOp* = concept o
@@ -560,18 +561,30 @@ when isMainModule:
   defaultSetup()
   var rs = newRNGField(RngMilc6, lo, 987654321)
 
-  threads:
-    #g.random r
-    g.setBC
-    g.stagPhase
-  #var s = newStag(g)
-  var hc: HisqCoefs
-  hc.init()
-  echo hc
-  var fl = lo.newGauge()
-  var ll = lo.newGauge()
-  hc.smear(g, fl, ll)
-  var s = newStag3(fl, ll)
+  when false:  # HISQ
+    threads:
+      #g.random r
+      g.setBC
+      g.stagPhase
+    #var s = newStag(g)
+    var hc: HisqCoefs
+    hc.init()
+    echo hc
+    var fl = lo.newGauge()
+    var ll = lo.newGauge()
+    hc.smear(g, fl, ll)
+    var s = newStag3(fl, ll)
+  else:  # HYP
+    let coef = HypCoefs(alpha1: 0.4, alpha2: 0.5, alpha3: 0.5)
+    echo "smear = ", coef
+    var sg = lo.newGauge
+    var info: PerfInfo
+    coef.smear(g, sg, info)
+    threads:
+      #g.random r
+      sg.setBC
+      sg.stagPhase
+    var s = newStag(sg)
 
   type MyOp = object
     s: type(s)
@@ -640,6 +653,7 @@ when isMainModule:
     let s2 = t2.even.norm2
     let r2req = sp.r2req
     sp.r2req = r2req * (s1/s2)
+    t := 0
     s.solveEO(t, t2, m, sp)
     dt += t
     sp.r2req = r2req
