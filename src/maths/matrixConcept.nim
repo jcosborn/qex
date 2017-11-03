@@ -515,7 +515,7 @@ setBinop(dot, dot, Vec1, Vec2, type(x[0]*y[0]))
 #  subst(tr,_):
 #    assert(x.len == y.len)
 #    load2(tr, r)
-#    forO i, 0, <x.len:
+#    forO i, 0, x.len.pred:
 #      redotinc(tr, x[i], y[i])
 #    assign(r, tr)
 
@@ -529,10 +529,10 @@ setBinop(dot, dot, Vec1, Vec2, type(x[0]*y[0]))
 #    assert(x.nrows == y.nrows)
 #    assert(x.ncols == y.ncols)
 #    var tr = redot(x[0,0], y[0,0])
-#    forO j, 1, <x.ncols:
+#    forO j, 1, x.ncols.pred:
 #      redotinc(tr, x[0,j], y[0,j])
-#    forO i, 1, <x.nrows:
-#      forO k, 0, <x.ncols:
+#    forO i, 1, x.nrows.pred:
+#      forO k, 0, x.ncols.pred:
 #        redotinc(tr, x[i,k], y[i,k])
 #    assign(r, tr)
 
@@ -541,26 +541,26 @@ setBinop(dot, dot, Vec1, Vec2, type(x[0]*y[0]))
 
 proc redot*(x:Vec2; y:Vec3): auto {.inline,noInit.} =
   result = redot(x[0],y[0])
-  forO i, 1, <x.len:
+  forO i, 1, x.len.pred:
     result += redot(x[i],y[i])
 
 proc redot*(x: Mat2; y: Mat3): auto {.inline,noInit.} =
   result = redot(x[0,0],y[0,0])
-  forO j, 1, <x.len:
+  forO j, 1, x.len.pred:
     result += redot(x[0,j],y[0,j])
-  forO i, 1, <x.len:
-    forO j, 0, <x.len:
+  forO i, 1, x.len.pred:
+    forO j, 0, x.len.pred:
       result += redot(x[i,j],y[i,j])
 
 proc simdSum*(x: Vec1): auto {.noInit.} =
   var r{.noInit.}: VectorArray[x.len,type(simdSum(x[0]))]
-  forO i, 0, <x.len:
+  forO i, 0, x.len.pred:
     r[i] := simdSum(x[i])
   r
 proc simdSum*(x: Mat1): auto {.noInit.} =
   var r{.noInit.}: MatrixArray[x.ncols,x.nrows,type(simdSum(x[0,0]))]
-  forO i, 0, <x.ncols:
-    forO j, 0, <x.nrows:
+  forO i, 0, x.ncols.pred:
+    forO j, 0, x.nrows.pred:
       r[i,j] := simdSum(x[i,j])
   r
 

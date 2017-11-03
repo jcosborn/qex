@@ -26,7 +26,7 @@ template convPrimmeArray(ff:Field, aa:ptr complex[float], ss:int, body:untyped) 
     f = asarray[float]ff.s.data
   tfor i, 0..<n:
     let s = i + skip
-    forO j, 0, <vl:
+    forO j, 0, vl.pred:
       body
 proc toPrimmeArray*(f:Field, a:ptr complex[float], skip:int = 0) =
   ## `skip` is in units of sites.

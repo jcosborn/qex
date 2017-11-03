@@ -38,18 +38,18 @@ template makeMap1(op:untyped):untyped {.dirty.} =
   template `op SV`*(rr:untyped; xx:untyped):untyped =
     subst(r,rr,x,xx,i,_):
       op(r, x[0])
-      forO i, 1, <x.len:
+      forO i, 1, x.len.pred:
         `op Iadd`(r, x[i])
   template `op SM`*(rr:typed; xx:typed):untyped =
     subst(r,rr,x,xx,i,_):
       assert(x.nrows == x.ncols)
       op(r, x[0,0])
-      forO i, 1, <x.nrows:
+      forO i, 1, x.nrows.pred:
         `op Iadd`(r, x[i,i])
   template `op VS`*(rr:typed; xx:typed):untyped =
     subst(r,rr,x,xx,tx,_,i,_):
       load(tx, x)
-      forO i, 0, <r.len:
+      forO i, 0, r.len.pred:
         op(r[i], tx)
   template `op VV`*(r: typed; xx: typed): untyped =
     mixin op
@@ -57,19 +57,19 @@ template makeMap1(op:untyped):untyped {.dirty.} =
     optimizeAst:
       subst(r,rr,x,xx,i,_):
         assert(r.len == x.len)
-        forO i, 0, <r.len:
+        forO i, 0, r.len.pred:
           op(r[i], x[i])
     ]#
     let x = xx
     assert(r.len == x.len)
-    forO i, 0, <r.len:
+    forO i, 0, r.len.pred:
       op(r[i], x[i])
   template `op MS`*(rr:typed; xx:typed):untyped =
     subst(r,rr,x,xx,tx,_,i,_,j,_):
       #assert(r.nrows == r.ncols)
       load(tx, x)
-      cfor i, 0, <r.nrows:
-        cfor j, 0, <r.ncols:
+      cfor i, 0, r.nrows.pred:
+        cfor j, 0, r.ncols.pred:
           if i == j:
             op(r[i,j], tx)
           else:
@@ -78,8 +78,8 @@ template makeMap1(op:untyped):untyped {.dirty.} =
     subst(r,rr,x,xx,i,_,j,_):
       assert(r.nrows == x.len)
       assert(r.ncols == x.len)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
+      forO i, 0, r.nrows.pred:
+        forO j, 0, r.ncols.pred:
           if i == j:
             op(r[i,j], x[i])
           else:
@@ -90,8 +90,8 @@ template makeMap1(op:untyped):untyped {.dirty.} =
       subst(r,rr,x,xx,i,_,j,_):
         assert(r.nrows == x.nrows)
         assert(r.ncols == x.ncols)
-        forO i, 0, <r.nrows:
-          forO j, 0, <r.ncols:
+        forO i, 0, r.nrows.pred:
+          forO j, 0, r.ncols.pred:
             op(r[i,j], x[i,j])
 
 makeMap1(assign)
@@ -104,28 +104,28 @@ template makeMap2(op:untyped):untyped {.dirty.} =
     subst(r,rr,x,xx,y,yy,ty,_,i,_):
       assert(r.len == x.len)
       load(ty, y)
-      forO i, 0, <r.len:
+      forO i, 0, r.len.pred:
         op(r[i], x[i], ty)
   template `op VSV`*(rr:typed; xx,yy:typed):untyped =
     subst(r,rr,x,xx,y,yy,tx,_,i,_):
       assert(r.len == y.len)
       load(tx, x)
-      forO i, 0, <r.len:
+      forO i, 0, r.len.pred:
         op(r[i], tx, y[i])
   template `op VVV`*(rr:typed; xx,yy:typed):untyped =
     mixin op
     subst(r,rr,x,xx,y,yy,i,_):
       assert(r.len == y.len)
       assert(r.len == x.len)
-      forO i, 0, <r.len:
+      forO i, 0, r.len.pred:
         op(r[i], x[i], y[i])
   template `op MSS`*(rr:typed; xx,yy:typed):untyped =
     subst(r,rr,x,xx,y,yy,tx,_,ty,_,i,_,j,_):
       assert(r.nrows == r.ncols)
       load(tx, x)
       load(ty, y)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
+      forO i, 0, r.nrows.pred:
+        forO j, 0, r.ncols.pred:
           if i == j:
             op(r[i,j], tx, ty)
           else:
@@ -136,8 +136,8 @@ template makeMap2(op:untyped):untyped {.dirty.} =
       assert(r.nrows == x.len)
       assert(r.ncols == x.len)
       load(ty, y)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
+      forO i, 0, r.nrows.pred:
+        forO j, 0, r.ncols.pred:
           if i == j:
             op(r[i,j], x[i], ty)
           else:
@@ -147,8 +147,8 @@ template makeMap2(op:untyped):untyped {.dirty.} =
       assert(r.nrows == y.len)
       assert(r.ncols == y.len)
       load(tx, x)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
+      forO i, 0, r.nrows.pred:
+        forO j, 0, r.ncols.pred:
           if i == j:
             op(r[i,j], tx, y[i])
           else:
@@ -158,8 +158,8 @@ template makeMap2(op:untyped):untyped {.dirty.} =
       assert(r.nrows == x.len)
       assert(r.ncols == x.len)
       assert(x.len == y.len)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
+      forO i, 0, r.nrows.pred:
+        forO j, 0, r.ncols.pred:
           if i == j:
             op(r[i,j], x[i], y[i])
           else:
@@ -171,8 +171,8 @@ template makeMap2(op:untyped):untyped {.dirty.} =
       assert(r.nrows == x.nrows)
       assert(r.ncols == x.ncols)
       load(ty, y)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
+      forO i, 0, r.nrows.pred:
+        forO j, 0, r.ncols.pred:
           if i == j:
             op(r[i,j], x[i,j], ty)
           else:
@@ -184,8 +184,8 @@ template makeMap2(op:untyped):untyped {.dirty.} =
       assert(r.nrows == y.nrows)
       assert(r.ncols == y.ncols)
       load(tx, x)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
+      forO i, 0, r.nrows.pred:
+        forO j, 0, r.ncols.pred:
           if i == j:
             op(r[i,j], tx, y[i,j])
           else:
@@ -196,8 +196,8 @@ template makeMap2(op:untyped):untyped {.dirty.} =
       assert(r.nrows == x.nrows)
       assert(r.ncols == x.ncols)
       assert(r.nrows == y.len)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
+      forO i, 0, r.nrows.pred:
+        forO j, 0, r.ncols.pred:
           if i == j:
             op(r[i,j], x[i,j], y[i])
           else:
@@ -208,8 +208,8 @@ template makeMap2(op:untyped):untyped {.dirty.} =
       assert(r.nrows == x.len)
       assert(r.nrows == y.nrows)
       assert(r.ncols == y.ncols)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
+      forO i, 0, r.nrows.pred:
+        forO j, 0, r.ncols.pred:
           if i == j:
             op(r[i,j], x[i], y[i,j])
           else:
@@ -221,8 +221,8 @@ template makeMap2(op:untyped):untyped {.dirty.} =
       assert(r.ncols == x.ncols)
       assert(r.nrows == y.nrows)
       assert(r.ncols == y.ncols)
-      forO i, 0, <r.nrows:
-        forO j, 0, <r.ncols:
+      forO i, 0, r.nrows.pred:
+        forO j, 0, r.ncols.pred:
           op(r[i,j], x[i,j], y[i,j])
 
 makeMap2(add)
@@ -232,15 +232,15 @@ template imulVS*(rr:untyped; xx:untyped):untyped =
   mixin imul
   subst(r,rr,x,xx,i,_,tx,_):
     load(tx, x)
-    forO i, 0, <r.len:
+    forO i, 0, r.len.pred:
       imul(r[i], tx)
 
 template imulMS*(rr:untyped; xx:untyped):untyped =
   mixin imul
   subst(r,rr,x,xx,i,_,j,_,tx,_):
     load(tx, x)
-    forO i, 0, <r.nrows:
-      forO j, 0, <r.ncols:
+    forO i, 0, r.nrows.pred:
+      forO j, 0, r.ncols.pred:
         imul(r[i,j], tx)
 
 template mulSVV*(rr:typed; xx,yy:typed):untyped =
@@ -249,7 +249,7 @@ template mulSVV*(rr:typed; xx,yy:typed):untyped =
     assert(x.len == y.len)
     tmpvar(tr, r)
     mul(tr, x[0], y[0])
-    forO i, 1, <x.len:
+    forO i, 1, x.len.pred:
       imadd(tr, x[i], y[i])
     assign(r, tr)
 
@@ -257,7 +257,7 @@ template mulVVS*(r:typed; x,y:typed):untyped =
   mixin mul
   assert(r.len == x.len)
   load(ty, y)
-  forO i, 0, <r.len:
+  forO i, 0, r.len.pred:
     mul(r[i], x[i], ty)
 
 #[
@@ -268,7 +268,7 @@ template mulVSV*(rr:typed; xx,yy:typed):untyped =
     assert(r.len == y.len)
     #load(tx, x)
     let txz = load1(x)
-    forO i, 0, <r.len:
+    forO i, 0, r.len.pred:
       mul(r[i], txz, y[i])
 ]#
 template mulVSV*(r: typed; xx,yy: typed): untyped =
@@ -276,7 +276,7 @@ template mulVSV*(r: typed; xx,yy: typed): untyped =
   let x = load1(xx)
   let y = yy
   assert(r.len == y.len)
-  forO i, 0, <r.len:
+  forO i, 0, r.len.pred:
     mul(r[i], x, y[i])
 
 template mulMMS*(rr:untyped; xx,yy:untyped):untyped =
@@ -285,8 +285,8 @@ template mulMMS*(rr:untyped; xx,yy:untyped):untyped =
     assert(r.nrows == x.nrows)
     assert(r.ncols == x.ncols)
     load(ty, y)
-    forO i, 0, <r.nrows:
-      forO j, 0, <r.ncols:
+    forO i, 0, r.nrows.pred:
+      forO j, 0, r.ncols.pred:
         mul(r[i,j], x[i,j], ty)
 
 template mulMSM*(rr:typed; xx,yy:typed):untyped =
@@ -295,8 +295,8 @@ template mulMSM*(rr:typed; xx,yy:typed):untyped =
     assert(r.nrows == y.nrows)
     assert(r.ncols == y.ncols)
     load(tx, x)
-    forO i, 0, <r.nrows:
-      forO j, 0, <r.ncols:
+    forO i, 0, r.nrows.pred:
+      forO j, 0, r.ncols.pred:
         mul(r[i,j], tx, y[i,j])
 
 template mulVMV*(rr:typed; xx,yy:typed):untyped =
@@ -309,29 +309,29 @@ template mulVMV*(rr:typed; xx,yy:typed):untyped =
       tmpvar(tr, r)
       #var tr{.noInit.}:array[r.len,type(load1(r[0]))]
       load(ty0r, y[0].re)
-      forO i, 0, <x.nrows:
+      forO i, 0, x.nrows.pred:
         mulCCR(tr[i], x[i,0], ty0r)
       load(ty0i, y[0].im)
-      forO i, 0, <x.nrows:
+      forO i, 0, x.nrows.pred:
         imaddCCI(tr[i], x[i,0], ty0i)
-      forO j, 1, <x.ncols:
+      forO j, 1, x.ncols.pred:
         load(tyjr, y[j].re)
-        forO i, 0, <x.nrows:
+        forO i, 0, x.nrows.pred:
           imaddCCR(tr[i], x[i,j], tyjr)
         load(tyji, y[j].im)
-        forO i, 0, <x.nrows:
+        forO i, 0, x.nrows.pred:
           imaddCCI(tr[i], x[i,j], tyji)
       assign(r, tr)
-      #forO i, 0, <r.len: assign(r[i], tr[i])
+      #forO i, 0, r.len.pred: assign(r[i], tr[i])
     else:
       tmpvar(tr, r)
       block:
         load(ty, y[0])
-        forO i, 0, <x.nrows:
+        forO i, 0, x.nrows.pred:
           mul(tr[i], x[i,0], ty)
-      forO j, 1, <x.ncols:
+      forO j, 1, x.ncols.pred:
         load(ty, y[j])
-        forO i, 0, <x.nrows:
+        forO i, 0, x.nrows.pred:
           imadd(tr[i], x[i,j], ty)
       assign(r, tr)
 
@@ -343,21 +343,21 @@ template mulMMM*(rr:typed; xx,yy:typed):untyped =
     assert(r.ncols == y.ncols)
     assert(x.ncols == y.nrows)
     var tr{.noInit.}:VectorArray[r.ncols,type(x[0,0]*y[0,0])]
-    forO i, 0, <r.nrows:
+    forO i, 0, r.nrows.pred:
       load(txi0r, x[i,0].re)
-      forO j, 0, <r.ncols:
+      forO j, 0, r.ncols.pred:
         mulCRC(tr[j], txi0r, y[0,j])
       load(txi0i, x[i,0].im)
-      forO j, 0, <r.ncols:
+      forO j, 0, r.ncols.pred:
         imaddCIC(tr[j], txi0i, y[0,j])
-      forO k, 1, <x.ncols:
+      forO k, 1, x.ncols.pred:
         load(txikr, x[i,k].re)
-        forO j, 0, <r.ncols:
+        forO j, 0, r.ncols.pred:
           imaddCRC(tr[j], txikr, y[k,j])
         load(txiki, x[i,k].im)
-        forO j, 0, <r.ncols:
+        forO j, 0, r.ncols.pred:
           imaddCIC(tr[j], txiki, y[k,j])
-      forO j, 0, <r.ncols:
+      forO j, 0, r.ncols.pred:
         assign(r[i,j], tr[j])
   ]#
   optimizeAst:
@@ -366,18 +366,18 @@ template mulMMM*(rr:typed; xx,yy:typed):untyped =
       assert(x.ncols == y.nrows)
       assert(r.ncols == y.ncols)
       mixin mul, imadd
-      forO i, 0, <r.nrows:
+      forO i, 0, r.nrows.pred:
         var tr{.noInit.}:VectorArray[r.ncols,type(x[0,0]*y[0,0])]
         #load(txi0, x[i,0])
         let txi0 = x[i,0]
-        forO j, 0, <r.ncols:
+        forO j, 0, r.ncols.pred:
           mul(tr[j], txi0, y[0,j])
-        forO k, 1, <x.ncols:
+        forO k, 1, x.ncols.pred:
           #load(txik, x[i,k])
           let txik = x[i,k]
-          forO j, 0, <r.ncols:
+          forO j, 0, r.ncols.pred:
             imadd(tr[j], txik, y[k,j])
-        forO j, 0, <r.ncols:
+        forO j, 0, r.ncols.pred:
           assign(r[i,j], tr[j])
 
 
@@ -386,7 +386,7 @@ template imaddSVV*(rr:typed; xx,yy:typed):untyped =
     mixin imadd, assign
     assert(x.len == y.len)
     load(tr, r)
-    forO i, 0, <x.len:
+    forO i, 0, x.len.pred:
       imadd(tr, x[i], y[i])
     assign(r, tr)
 
@@ -396,7 +396,7 @@ template imaddVSV*(rr:typed; xx,yy:typed):untyped =
     mixin imadd, assign
     assert(r.len == y.len)
     load(tr, r)
-    forO i, 0, <r.len:
+    forO i, 0, r.len.pred:
       imadd(tr[i], x, y[i])
     assign(r, tr)
 ]#
@@ -406,7 +406,7 @@ template imaddVSV*(r: typed; xx,yy: typed): untyped =
   let y = yy
   assert(r.len == y.len)
   load(tr, r)
-  forO i, 0, <r.len:
+  forO i, 0, r.len.pred:
     imadd(tr[i], x, y[i])
   assign(r, tr)
 
@@ -419,24 +419,24 @@ template imaddVMV*(rr:typed; xx,yy:typed):untyped =
     #when false:
       load(tr, r)
       #var tr{.noInit.}:array[r.len,type(load1(r[0]))]
-      #forO i, 0, <r.len: assign(tr[i], r[i])
-      forO j, 0, <x.ncols:
+      #forO i, 0, r.len.pred: assign(tr[i], r[i])
+      forO j, 0, x.ncols.pred:
         load(tyjr, y[j].re)
-        forO i, 0, <x.nrows:
+        forO i, 0, x.nrows.pred:
           imaddCCR(tr[i], x[i,j], tyjr)
         load(tyji, y[j].im)
-        forO i, 0, <x.nrows:
+        forO i, 0, x.nrows.pred:
           imaddCCI(tr[i], x[i,j], tyji)
       assign(r, tr)
-      #forO i, 0, <r.len: assign(r[i], tr[i])
+      #forO i, 0, r.len.pred: assign(r[i], tr[i])
     else:
       load(tr, r)
-      forO j, 0, <x.ncols:
+      forO j, 0, x.ncols.pred:
         load(tyr, asReal(y[j].re))
-        forO i, 0, <x.nrows:
+        forO i, 0, x.nrows.pred:
           imadd(tr[i], x[i,j], tyr)
         load(tyi, asImag(y[j].im))
-        forO i, 0, <x.nrows:
+        forO i, 0, x.nrows.pred:
           imadd(tr[i], x[i,j], tyi)
       assign(r, tr)
 
@@ -449,28 +449,28 @@ template imaddMMM*(rr:typed; xx,yy:typed):untyped =
     #when true:
     when false:
       load(tr, r)
-      forO i, 0, <r.nrows:
-        forO k, 0, <x.ncols:
+      forO i, 0, r.nrows.pred:
+        forO k, 0, x.ncols.pred:
           load(txikr, x[i,k].re)
-          forO j, 0, <r.ncols:
+          forO j, 0, r.ncols.pred:
             imaddCRC(tr[i,j], txikr, y[k,j])
           load(txiki, x[i,k].im)
-          forO j, 0, <r.ncols:
+          forO j, 0, r.ncols.pred:
             imaddCIC(tr[i,j], txiki, y[k,j])
       assign(r, tr)
     else:
-      forO i, 0, <r.nrows:
+      forO i, 0, r.nrows.pred:
         var tr{.noInit.}:VectorArray[r.ncols,type(x[0,0]*y[0,0])]
-        forO j, 0, <r.ncols:
+        forO j, 0, r.ncols.pred:
           assign(tr[j], r[i,j])
-        forO k, 0, <x.ncols:
+        forO k, 0, x.ncols.pred:
           load(txikr, x[i,k].re)
-          forO j, 0, <r.ncols:
+          forO j, 0, r.ncols.pred:
             imaddCRC(tr[j], txikr, y[k,j])
           load(txiki, x[i,k].im)
-          forO j, 0, <r.ncols:
+          forO j, 0, r.ncols.pred:
             imaddCIC(tr[j], txiki, y[k,j])
-        forO j, 0, <r.ncols:
+        forO j, 0, r.ncols.pred:
           assign(r[i,j], tr[j])
 
 template imsubVSV*(rr:typed; xx,yy:typed):untyped =
@@ -478,7 +478,7 @@ template imsubVSV*(rr:typed; xx,yy:typed):untyped =
     mixin imsub
     assert(r.len == y.len)
     load(tx, x)
-    forO i, 0, <r.len:
+    forO i, 0, r.len.pred:
       imsub(r[i], x, y[i])
 
 template imsubVMV*(rr:typed; xx,yy:typed):untyped =
@@ -488,19 +488,19 @@ template imsubVMV*(rr:typed; xx,yy:typed):untyped =
     assert(x.ncols == y.len)
     when true:
       load(tr, r)
-      forO j, 0, <x.ncols:
+      forO j, 0, x.ncols.pred:
         load(ty, y[j])
-        forO i, 0, <x.nrows:
+        forO i, 0, x.nrows.pred:
           imsub(tr[i], x[i,j], ty)
       assign(r, tr)
     else:
       load(tr, r)
-      forO j, 0, <x.ncols:
+      forO j, 0, x.ncols.pred:
         load(tyr, asReal(y[j].re))
-        forO i, 0, <x.nrows:
+        forO i, 0, x.nrows.pred:
           imsub(tr[i], x[i,j], tyr)
         load(tyi, asImag(y[j].im))
-        forO i, 0, <x.nrows:
+        forO i, 0, x.nrows.pred:
           imsub(tr[i], x[i,j], tyi)
       assign(r, tr)
 
@@ -511,13 +511,13 @@ template imsubMMM*(rr:typed; xx,yy:typed):untyped =
     assert(r.ncols == y.ncols)
     assert(x.ncols == y.nrows)
     load(tr, r)
-    forO i, 0, <r.nrows:
-      forO k, 0, <x.ncols:
+    forO i, 0, r.nrows.pred:
+      forO k, 0, x.ncols.pred:
         load(txikr, x[i,k].re)
-        forO j, 0, <r.ncols:
+        forO j, 0, r.ncols.pred:
           imsubCRC(tr[i,j], txikr, y[k,j])
         load(txiki, x[i,k].im)
-        forO j, 0, <r.ncols:
+        forO j, 0, r.ncols.pred:
           imsubCIC(tr[i,j], txiki, y[k,j])
     assign(r, tr)
 
@@ -526,5 +526,5 @@ template msubVSVV*(rr:typed; xx,yy,zz:typed):untyped =
     mixin msub
     assert(r.len == y.len)
     assert(r.len == z.len)
-    forO i, 0, <r.len:
+    forO i, 0, r.len.pred:
       msub(r[i], x, y[i], z[i])

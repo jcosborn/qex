@@ -81,7 +81,7 @@ template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
     x.fName
 
 proc makeWrapperTypeP*(name: NimNode; docs: string): NimNode =
-  let Name = capitalize($name)
+  let Name = capitalizeAscii($name)
   let fName = ident("f" & $Name)
   let asName = ident("as" & $Name)
   let tasName = ident("t_as" & $Name)

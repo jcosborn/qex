@@ -84,7 +84,7 @@ template stagDPN*(sd:openArray[StaggeredD]; r:openArray[Field];
   let ninr = ni * nr
   let n4 = n div nr
   let n4r = n mod nr
-  tFor iri, 0, <nsn:
+  tFor iri, 0, nsn.pred:
       let lr = iri mod nin
       let lr64 = lr div ninr
       let lrr = lr - ninr*lr64

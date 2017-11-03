@@ -76,7 +76,7 @@ template stagDPN*(sd:openArray[StaggeredD]; r:openArray[Field];
   let ns0 = sd[0].subset.lowOuter
   let ns1 = sd[0].subset.highOuter
   let ns = ns1 - ns0
-  #tFor ir, ns0, <ns1:
+  #tFor ir, ns0, ns.pred1:
   #  for i in 0..<n:
   let nsn = ns*n
   let nr = 8
@@ -85,7 +85,7 @@ template stagDPN*(sd:openArray[StaggeredD]; r:openArray[Field];
   let ninr = ni * nr
   let n4 = n div nr
   let n4r = n mod nr
-  tFor iri, 0, <nsn:
+  tFor iri, 0, nsn.pred:
       let lr = iri mod nin
       let lr64 = lr div ninr
       let lrr = lr - ninr*lr64
@@ -213,7 +213,7 @@ template stagDP2*(sd:StaggeredD; r:Field; g:openArray[Field2];
     $n & ": " & $len(x[0])
   for ir{.inject.} in r[sd.subset]:
     for ic{.inject.} in 0..<n:
-    #forStatic ic, 0, <n:
+    #forStatic ic, 0, n.pred:
     #  block:
         var rir{.inject,noInit.}:type(getVec(r[ir],0))
         for mu in 0..<g.len:
@@ -287,7 +287,7 @@ proc stagD2*(sd:StaggeredD; r:SomeField; g:openArray[Field2];
   #let ns0 = sd.subset.lowOuter
   #let ns1 = sd.subset.highOuter
   #let ns = ns1 - ns0
-  #tFor iri, 0, <ns:
+  #tFor iri, 0, ns.pred:
   #  let ir = ns0 + iri
     optimizeAst:
       var rir{.noInit.}:type(r[ir])
