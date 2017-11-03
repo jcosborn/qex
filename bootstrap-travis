@@ -10,7 +10,9 @@ mkdir qmp
 cd $qmpv
 ./configure \
  --prefix="$PWD/../qmp" \
- --with-qmp-comms-type=single
+ --with-qmp-comms-type=single \
+ CC=gcc \
+ CFLAGS="-Wall -O3 -std=gnu99 -g -fPIC"
 make && make install
 cd ..
 

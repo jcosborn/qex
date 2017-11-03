@@ -15,7 +15,9 @@ before_install:
 
 script:
   - ./bootstrap-travis
-  - ./configure
+  - alias mpicc=gcc
+  - QMPDIR=qmp QIODIR=qio ./configure
   - make tests
+  - ./testscript.sh
   - make bench
   - bin/benchLinalg
