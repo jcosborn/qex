@@ -5,7 +5,6 @@ import svdLanczos
 import linalgFuncs
 import math
 import strUtils
-import gauge/hypsmear
 
 type
   LinOp* = concept o
@@ -552,6 +551,7 @@ when isMainModule:
   import qex/gauge
   import qex/physics/stagD
   import qex/physics/hisqLinks
+  import qex/gauge/hypsmear
   import qex/rng
 
   qexInit()

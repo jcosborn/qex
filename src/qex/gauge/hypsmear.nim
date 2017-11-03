@@ -2,7 +2,7 @@ import qex/base
 import qex/layout
 import qex/gauge
 import strUtils
-import qex/fat7l
+import fat7l
 
 export PerfInfo
 
