@@ -1,23 +1,23 @@
 import os
-import base
+import qex/base
 export base
-import layout
+import qex/layout
 export layout
-#import shifts
+#import qex/shifts
 #export shifts
-import field
+import qex/field
 export field
-import io
+import qex/io
 export io
-import gauge
+import qex/gauge
 export gauge
-import physics/qcdTypes, physics/stagD, physics/hisqLinks
+import qex/physics/qcdTypes, qex/physics/stagD, qex/physics/hisqLinks
 export qcdTypes, stagD, hisqLinks
-import rng
+import qex/rng
 export rng
-import eigens
+import qex/eigens
 export eigens
-import algorithms/dilution
+import qex/algorithms/dilution
 export dilution
 
 when isMainModule:
