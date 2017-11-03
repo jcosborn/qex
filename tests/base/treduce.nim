@@ -1,5 +1,5 @@
 import qex
-import physics/qcdTypes
+import qex/physics/qcdTypes
 
 qexInit()
 
