@@ -6,6 +6,7 @@
 #define PAIR
 
 #define MAXTHREADS 512
+#ifndef C2NIM
 #define CAT(a,b) CATX(a,b)
 #define CATX(a,b) a ## b
 #define ARRAY_CREATE(tp,nm) int CAT(n,nm)=0, CAT(nm,len)=0; tp *nm=NULL
@@ -26,6 +27,7 @@
   do { for(int _i=0; _i<CAT(n,nm); _i++) (ds)[_i] = (nm)[_i]; } while(0)
 #define ARRAY_CLONE(tp,ds,nm) \
   do { (ds) = myalloc(CAT(n,nm)*sizeof(tp)); ARRAY_COPY(tp,ds,nm); } while(0)
+#endif //C2NIM
 
 static void *
 myalloc(size_t size)

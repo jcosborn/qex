@@ -505,11 +505,13 @@ proc norm2X*(x:Mat1):auto {.inline,noInit.} =
   t
 
 proc idot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
-  imaddSVV(r, x.adj, y)
-
+  for i in 0..<len(x):
+    r += dot(x[i],y[i])
+    #idot(r,x[i],y[i])
 proc dot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
-  mulSVV(r, x.adj, y)
-setBinop(dot, dot, Vec1, Vec2, type(x[0]*y[0]))
+  r := 0
+  idot(r, x, y)
+setBinop(dot, dot, Vec1, Vec2, type(dot(x[0],y[0])))
 
 #proc iredot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
 #  subst(tr,_):

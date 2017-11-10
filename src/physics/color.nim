@@ -97,6 +97,10 @@ template imadd*(r: var Color, x: AsComplex, y: Color3) =
   imadd(r[], x, y[])
 template imsub*(r: var Color, x: Color2, y: Color3) =
   imsub(r[], x[], y[])
+template add*(r: var Color, x: Color2, y: Color3) =
+  add(r[], x[], y[])
+template sub*(r: var Color, x: Color2, y: Color3) =
+  sub(r[], x[], y[])
 template `*`*(x: Color, y: SomeNumber): untyped =
   asColor(x[] * y)
 template `*`*(x: SomeNumber, y: Color2): untyped =

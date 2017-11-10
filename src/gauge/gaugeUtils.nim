@@ -51,6 +51,15 @@ proc loadGauge*[T](g:openArray[T]; fn:string):int =
   rd.close()
   return 0
 
+proc setBC*(g: openArray[Field]) =
+  let gt = g[3]
+  tfor i, 0..<gt.l.nSites:
+    #let e = i div gt.l.nSitesInner
+    if gt.l.coords[3][i] == gt.l.physGeom[3]-1:
+      gt{i} *= -1
+      #echoAll isMatrix(gt{i})
+      #echoAll i, " ", gt[e][0,0]
+
 #[
 template makeShifts(f:untyped):untyped {.dirty.} =
   template f(mu:int; b:untyped):untyped =

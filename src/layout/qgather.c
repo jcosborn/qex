@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include "qlayout.h"
 
+#ifndef C2NIM
 #define BEGIN_FATAL (void)0
 #define PRINT_FATAL(...) printf0(__VA_ARGS__)
 #define END_FATAL exit(-1)
@@ -27,6 +28,7 @@
   do { (ds) = myalloc(CAT(n,nm)*sizeof(tp)); ARRAY_COPY(tp,ds,nm); } while(0)
 #define printf0(...) if(myRank==0) { printf(__VA_ARGS__); fflush(stdout); }
 #define myalloc malloc
+#endif //C2NIM
 
 // map(&sr,&si,dr>=0,&di>=0) -> sr,si
 // map(&sr>=0,&si,dr>=0,&di0<0) ->

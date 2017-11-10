@@ -1,9 +1,9 @@
 import ../base/globals
 #setForceInline(false)
-setForceInline(true)
+#setForceInline(true)
 #setStaticUnroll(false)
-setStaticUnroll(true)
-setNoAlias(false)
+#setStaticUnroll(true)
+#setNoAlias(false)
 #setNoAlias(true)
 
 import os
@@ -145,9 +145,23 @@ proc wilsonD*(sd:WilsonD; r:Field; g:openArray[Field2];
   #wilsonDP2(sd, r, g, x, 6):
   #  #for i in 0..<n:
   #  rir := m*getVec(x[ir], ic)
+  wilsonDM(sd, r, g, x, 6):
+    rir := (2.0*(4.0 + m)) * x[ir]
+    #rir := 0
+  r[sd.subset] := 0.5*r
+
+# r = m*x + sc*D*x
+proc wilsonDx*(sd:WilsonD; r:Field; g:openArray[Field2];
+              x:Field; m:SomeNumber; sc:SomeNumber=1.0) =
+  #wilsonD2(sd, r, g, x, 0, m/(0.5*sc))
+  #r[sd.subset] := (0.5*sc)*r
+  #wilsonDP2(sd, r, g, x, 6):
+  #  #for i in 0..<n:
+  #  rir := m*getVec(x[ir], ic)
   wilsonDP(sd, r, g, x, 6):
-    #rir := (4.0 + m) + x[ir]
-    rir := 0
+    rir := (2.0*(4.0 + m)) * x[ir]
+    #rir := 0
+  r[sd.subset] := 0.5*r
 
 #[
 proc wilsonD1*(sd:WilsonD; r:Field; g:openArray[Field2];
@@ -215,15 +229,6 @@ proc wilsonD2eeN*(sde,sdo:WilsonD; r:Field; g:openArray[Field2];
       rir := (4.0*m2)*x[ir]
 ]#
 
-proc setBC*(g:openArray[Field]) =
-  let gt = g[3]
-  tfor i, 0..<gt.l.nSites:
-    #let e = i div gt.l.nSitesInner
-    if gt.l.coords[3][i] == gt.l.physGeom[3]-1:
-      gt{i} *= -1
-      #echoAll isMatrix(gt{i})
-      #echoAll i, " ", gt[e][0,0]
-
 proc newWilson*[G,T](g:openArray[G];v:T):auto =
   var l = g[0].l
   template t:untyped =
@@ -249,8 +254,8 @@ proc D*(s:Wilson; r,x:Field; m:SomeNumber) =
   wilsonD(s.se, r, s.g, x, m)
   wilsonD(s.so, r, s.g, x, m)
 proc Ddag*(s:Wilson; r,x:Field; m:SomeNumber) =
-  wilsonD(s.se, r, s.g, x, m, -1)
-  wilsonD(s.so, r, s.g, x, m, -1)
+  wilsonDx(s.se, r, s.g, x, m)
+  wilsonDx(s.so, r, s.g, x, m)
 proc eoReduce*(s:Wilson; r,b:Field; m:SomeNumber) =
   # r.even = (D^+ b).even
   #dump: "b.even.norm2"
@@ -322,9 +327,9 @@ proc solve*(s:Wilson; r,x:Field; m:SomeNumber; res:float) =
   sp.verbosity = 1
   solve(s, r, x, m, sp)
 
-proc solve2*(s:Wilson; r,x:Field; m:SomeNumber; res:float) =
+proc solve2*(s:Wilson; r,x:Field; m:SomeNumber; res2:float) =
   var sp:SolverParams
-  sp.r2req = res
+  sp.r2req = res2
   sp.maxits = 100
   sp.verbosity = 1
   sp.subset.layoutSubset(r.l, "all")
@@ -333,15 +338,17 @@ proc solve2*(s:Wilson; r,x:Field; m:SomeNumber; res:float) =
     #wilsonD2ee(s.se, s.so, r, s.g, x, m*m)
     threadBarrier()
     s.Ddag(t, b, m)
-    #threadBarrier()
+    threadBarrier()
     #echo t.norm2
     s.D(a, t, m)
     #a := b
-    #threadBarrier()
+    threadBarrier()
   #echo r.norm2
-  cgSolve(r, x, op, sp)
+  var oa = (apply: op)
+  cgSolve(r, x, oa, sp)
   threads:
     s.Ddag(t, r, m)
+    threadBarrier()
     r := t
 
 template foldl*(f,n,op:untyped):untyped =
