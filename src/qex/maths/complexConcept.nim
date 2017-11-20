@@ -500,6 +500,10 @@ proc redotinc*(r:var any; x:C2; y:C3) {.inline.} =
   mixin imadd
   imadd(r, x.re, y.re)
   imadd(r, x.im, y.im)
+template dot*(xx: C2; yy: C3): untyped =
+  let x = xx
+  let y = yy
+  x.adj * y
 
 proc `*`*(x:SomeNumber; y:C2):auto {.inline.} =
   var r{.noInit.}:ComplexType[type(x*y.re)]

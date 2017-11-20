@@ -88,6 +88,8 @@ template `*`*(x: SomeNumber, y: Spin2): untyped =
   asSpin(x * y[])
 template `*`*(x: AsComplex, y: Spin2): untyped =
   asSpin(x * y[])
+template sub*(r: var Spin, x: Spin2, y: Spin3) =
+  sub(r[], x[], y[])
 template mul*(r: var Spin, x: Spin2, y: Spin3) =
   mul(r[], x[], y[])
 template random*(x: var Spin) =

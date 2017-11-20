@@ -396,14 +396,6 @@ proc stagD2eeN*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
       rir := (4.0*m2)*x[ir]
 ]#
 
-proc setBC*(g:openArray[Field]) =
-  let gt = g[3]
-  tfor i, 0..<gt.l.nSites:
-    #let e = i div gt.l.nSitesInner
-    if gt.l.coords[3][i] == gt.l.physGeom[3]-1:
-      gt{i} *= -1
-      #echoAll isMatrix(gt{i})
-      #echoAll i, " ", gt[e][0,0]
 proc stagPhase*(g:openArray[Field]) =
   const phases = [8,9,11,0]
   #const phases = [0,1,3,7]
@@ -533,7 +525,9 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams; cpuonly = fa
   when defined(qudaDir):
     if not cpuonly: s.qudaSolveEE(r,t,m,sp)
     # After QUDA, we still run through our solver.
-  cgSolve(r, t, oa, sp)
+  #cgSolve(r, t, oa, sp)
+  var cg = newCgState(r, t)
+  cg.solve(oa, sp)
   let t1 = epochTime()
   threads:
     r[s.se.sub] := 4*r
