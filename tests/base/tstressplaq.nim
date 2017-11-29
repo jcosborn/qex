@@ -65,7 +65,7 @@ suite "Stress plaquette test":
         t := g[0]{i}[a,a].im
         ci += t
       ci /= 3.0
-      echo "i: ",i
+      #echo "i: ",i
       let
         lr = 1 - (1-cr) / float(lo.physVol * g.len)
         li = ci / float(lo.physVol * g.len)
@@ -76,8 +76,6 @@ suite "Stress plaquette test":
       check(l.re~lr)
       check(l.im~li)
       check(p~pe)
-      for a in 0..<g[0][0].ncols:
-        g[0]{i}[a,a].re := 1
-        g[0]{i}[a,a].im := 0
+      g[0]{i} := 1
 
   qexFinalize()
