@@ -222,6 +222,7 @@ freeShiftBufs(ShiftBuf *sb[], int n)
   for(int i=0; i<n; i++) {
     free(sb[i]->offr);
     free(sb[i]->lenr);
+    free(sb[i]->nthreads);
   }
 #ifdef PAIR
   for(int i=0; i<n; i++) {
