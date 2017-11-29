@@ -52,7 +52,7 @@ suite "Stress plaquette test":
     check(p~pe)
 
   test "change single link":
-    for i in lo1.sites:
+    for i in lo.sites:
       g[0]{i}.gaussian rs
       #g[0]{i}.projectSU
       var t:float
