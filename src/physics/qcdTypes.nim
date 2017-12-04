@@ -216,7 +216,22 @@ proc assign*(m:Masked[SDvec], x:SDvec) =
     i.inc
 proc `:=`*(m:Masked[SDvec], x:SDvec) = assign(m,x)
 proc assign*(m:Masked[SDvec], x:Masked[SDvec]) =
-  assign(m, x.pobj[])
+  ## Only works for the same number of unmasked bits,
+  ## and assign those from RHS to LHS in sequence.
+  var
+    i,j = 0
+    b = m.mask
+    c = x.mask
+  while b != 0:
+    if (b and 1) != 0:
+      while c != 0:
+        let p = (c and 1) != 0
+        if p: m.pobj[][i] = x.pobj[][j]
+        c = c shr 1
+        j.inc
+        if p: break
+    b = b shr 1
+    i.inc
 proc `:=`*(m:Masked[SDvec], x:Masked[SDvec]) = assign(m,x)
 proc mul*(m:Masked[SDvec]; x:SDvec; y:SomeNumber) =
   var i = 0
