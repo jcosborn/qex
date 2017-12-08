@@ -39,7 +39,7 @@ template createAsType2(t,c:untyped):untyped =
     x[][i,j]
   template `[]=`*(x:t; i,j:SomeInteger; y:untyped):untyped =
     x[][i,j] = y
-  template len*(x:t):untyped = x[].len
+  template len*(x:t):untyped = getConst(x[].len)
   template nrows*(x:t):untyped = getConst(x[].nrows)
   template ncols*(x:t):untyped = getConst(x[].ncols)
   #template mvLevel*(x:t):untyped =
@@ -68,7 +68,11 @@ template deref(x:typed):untyped =
     x
 
 type
-  VectorArray*[I:static[int],T] = AsVector[array[I,T]]
+  VectorArrayObj*[I:static[int],T] = array[I,T]
+  #VectorArrayObj*[I:static[int],T] = object
+  #  vec*: array[I,T]
+  VectorArray*[I:static[int],T] = AsVector[VectorArrayObj[I,T]]
+  #VectorArray*[I:static[int],T] = AsVector[array[I,T]]
   MatrixArrayObj*[I,J:static[int],T] = object
     mat*: array[I,array[J,T]]
   MatrixArray*[I,J:static[int],T] = AsMatrix[MatrixArrayObj[I,J,T]]
@@ -133,10 +137,29 @@ template asVarWrapper*(x: AsVector, y: typed): untyped =
   #static: echo "asVarWrapper AsVector"
   asVar(asVector(y))
 
+#template `len`*(x:VectorArrayObj):untyped = x.I
+#template `[]`*(x:VectorArrayObj):untyped = x.vec
+#template `[]`*(x:VectorArrayObj; i:int):untyped = x.vec[i]
+#template `[]`*(x:var VectorArrayObj; i:int):untyped = x.vec[i]
+#template `[]=`*(x:VectorArrayObj; i:int, y:untyped):untyped = x.vec[i] = y
+template asVectorArray*(xx: array): untyped =
+  #static: echo "asVectorArray"
+  let x_asVectorArray = xx
+  const n_asVectorArray = x_asVectorArray.len
+  #static: echo "asVectorArray2"
+  asVector( VectorArrayObj[n_asVectorArray,
+                           type(x_asVectorArray[0])](x_asVectorArray) )
+  #let t1 = VectorArrayObj[n_asVectorArray,
+  #                        type(x_asVectorArray[0])](vec: x_asVectorArray)
+  #static: echo "asVectorArray1"
+  #let t = asVector(t1)
+  #static: echo "asVectorArray2"
+  #t
+
 template `len`*(x:MatrixArrayObj):untyped = x.I
 template nrows*(x:MatrixArrayObj):untyped = x.I
 template ncols*(x:MatrixArrayObj):untyped = x.J
-template `[]`*(x:MatrixArrayObj):untyped = x
+template `[]`*(x:MatrixArrayObj):untyped = x.mat
 template `[]`*(x:MatrixArrayObj; i,j:int):untyped = x.mat[i][j]
 template `[]`*(x:var MatrixArrayObj; i,j:int):untyped = x.mat[i][j]
 template `[]=`*(x:MatrixArrayObj; i,j:int, y:untyped):untyped = x.mat[i][j] = y
@@ -144,6 +167,10 @@ template numberType*[T](x:AsVector[T]):untyped = numberType(type(T))
 template numberType*[T](x:AsMatrix[T]):untyped = numberType(type(T))
 template numberType*[T](x:typedesc[AsVector[T]]):untyped = numberType(type(T))
 template numberType*[T](x:typedesc[AsMatrix[T]]):untyped = numberType(type(T))
+template numberType*[I,T](x:VectorArrayObj[I,T]):untyped =
+  numberType(type(T))
+template numberType*[I,T](x:typedesc[VectorArrayObj[I,T]]):untyped =
+  numberType(type(T))
 template numberType*[I,J,T](x:MatrixArrayObj[I,J,T]):untyped =
   numberType(type(T))
 template numberType*[I,J,T](x:typedesc[MatrixArrayObj[I,J,T]]):untyped =
@@ -160,6 +187,7 @@ template len*(x:MatrixRowObj):untyped = x.mat[].ncols
 template `[]`*(x:MatrixRowObj; i:int):untyped = x.mat[][x.rw,i]
 template `[]=`*(x:MatrixRowObj; i:int; y:untyped):untyped = x.mat[][x.rw,i] = y
 
+template isWrapper*(x: VectorArrayObj): untyped = false
 template isWrapper*(x: MatrixArrayObj): untyped = false
 
 template isWrapper*(x: AsMatrix): untyped = true
@@ -193,12 +221,20 @@ template asVarWrapper*(x: AsVar[AsMatrix], y: typed): untyped =
 #template tmpluntyped*(x:typed):untyped = x
 #template tmptype*(x:Vec1):untyped = VectorArray[x.len,type(load1(x[0]))]
 
+template load1*(x: VectorArrayObj): untyped = x
+  #mixin load1
+  #let x = xx
+  #var r_load1V{.noInit.}: VectorArray[x.len,type(load1(x[0]))]
+  #assign(r_load1V, x)
+  #r_load1V
+  #asVector(load1(x[]))
 template load1*(xx: Vec1): untyped =
   mixin load1
-  lets(x,xx):
-    var r_load1V{.noInit.}: VectorArray[x.len,type(load1(x[0]))]
-    assign(r_load1V, x)
-    r_load1V
+  let x = xx
+  var r_load1V{.noInit.}: VectorArray[x.len,type(load1(x[0]))]
+  assign(r_load1V, x)
+  r_load1V
+  #asVector(load1(x[]))
 template load1*(xx: AsVar[AsVector]):untyped =
   mixin load1
   lets(x,xx):
@@ -276,9 +312,10 @@ template makeLevel1T(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
     #echoTyped: xx
     mixin `f s1 s2`
     optimizeAst:
-      subst(r,rr):
-        lets(x,xx):
-          `f s1 s2`(r, deref(x))
+      #subst(r,rr):
+      #lets(x,xx):
+      let x_makeLevel1T = xx
+      `f s1 s2`(rr, deref(x_makeLevel1T))
     staticTraceEnd: `f s1 s2`
 template makeLevel1(f,s1,t1,s2,t2:untyped):untyped =
   makeLevel1T(f,s1,t1,s2,t2)
@@ -297,9 +334,11 @@ template makeLevel2T(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
   template f*(rr:t1, xx:t2, yy:t3): untyped =
     staticTraceBegin: `f s1 s2 s3`
     optimizeAst:
-      subst(r,rr,x,xx,y,yy):
-        lets(xt,x,yt,y):
-          `f s1 s2 s3`(r, xt, yt)
+      #subst(r,rr,x,xx,y,yy):
+      #lets(xt,x,yt,y):
+      let x_makeLevel2T = xx
+      let y_makeLevel2T = yy
+      `f s1 s2 s3`(rr, x_makeLevel2T, y_makeLevel2T)
     staticTraceEnd: `f s1 s2 s3`
 template makeLevel2(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
   makeLevel2T(f,s1,t1,s2,t2,s3,t3)
@@ -407,9 +446,9 @@ makeLevel2(mul, M, var Mat1, M, Mat2, M, Mat3)
 #setBinop(`*`,mul, Sca1,AsVector,VectorArray[y.len,type(x*y[0])])
 #setBinop(`*`,mul, float,Vec2,VectorArray[y.len,type(x*y[0])])
 #setBinop(`*`,mul, AsScalar,Vec2,VectorArray[y.len,type(x*y[0])])
-setBinop(`*`,mul, Sca1,Vec2,VectorArray[y.len,type(x*y[0])])
+setBinop(`*`,mul, Sca1,Vec2,VectorArray[getConst(y.len),type(x*y[0])])
 setBinop(`*`,mul, Vec1,Sca2,VectorArray[x.len,type(x[0]*y)])
-setBinop(`*`,mul, Mat1,Vec2,VectorArray[getConst(x.nrows),type(x[0,0]*y[0])])
+setBinop(`*`,mul, Mat1,Vec2,VectorArray[x.nrows,type(x[0,0]*y[0])])
 
 setBinop(`*`,mul, Sca1,Mat2,MatrixArray[y.nrows,y.ncols,type(x*y[0,0])])
 setBinop(`*`,mul, Mat1,Sca2,MatrixArray[x.nrows,x.ncols,type(x[0,0]*y)])

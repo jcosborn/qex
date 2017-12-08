@@ -172,34 +172,34 @@ template setUnopP*(op,fun,t1,t2: untyped): untyped {.dirty.} =
     fun(r, x)
     r
 template setUnopT*(op,fun,t1,t2: untyped): untyped {.dirty.} =
-  template op*(xx: t1): untyped =
+  template op*(x: t1): untyped =
     #subst(xt,xx,r,_):
     #  lets(x,xt):
-    subst(r,_):
-      lets(x,xx):
-        var r{.noInit.}: t2
-        fun(r, x)
-        r
+    #subst(r,_):
+    #  lets(x,xx):
+    var r_setUnopT{.noInit.}: t2
+    fun(r_setUnopT, x)
+    r_setUnopT
 
 template setBinopP*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
   proc op*(x: t1; y: t2): auto {.inline,noInit.} =
     var r{.noInit.}: t3
     fun(r, x, y)
     r
-template setBinopT*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
-  #subst(r_setBinopT,_):
-    template op*(xx: t1; yy: t2): untyped =
-        staticTraceBegin: op
-      #echoUntyped: setBinopT op
-      #echoType: xx
-      #echoType: yy
-      #lets(x,xx,y,yy):
-        let x = xx
-        let y = yy
-        var r_setBinopT{.noInit.}: t3
-        fun(r_setBinopT, x, y)
-        staticTraceEnd: op
-        r_setBinopT
+template setBinopT*(op,fun,t1,t2,t3: untyped) {.dirty.} =
+  template op*(x: t1; y: t2): untyped =
+    #staticTraceBegin: op
+    #echoUntyped: setBinopT op
+    #echoType: xx
+    #echoType: yy
+    #echoUntyped: t3
+    #echoUntypedTree: t3
+    #let x = xx
+    #let y = yy
+    var r_setBinopT{.noInit.}: t3
+    fun(r_setBinopT, x, y)
+    #staticTraceEnd: op
+    r_setBinopT
 
 when forceInline:
   template setUnop*(op,fun,t1,t2: untyped): untyped {.dirty.} =

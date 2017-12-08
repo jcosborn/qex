@@ -144,8 +144,9 @@ proc test(lat:any) =
 
   bench(nc*mvf, 3*mb, 3*mb):
     for e in m3:
-      mulMMM(m3[e], m1[e].adj, m2[e])
-      #mulMMM(m3[e], m1[e], m2[e])
+      optimizeAst:
+        mulMMM(m3[e], m1[e].adj, m2[e])
+        #mulMMM(m3[e], m1[e], m2[e])
 
   bench(nc*mvf, 3*mb, 3*mb):
     for e in m3:
