@@ -2,7 +2,6 @@ import qex/base
 import qex/layout
 import qex/field
 import qex/io
-export io
 #import qex
 #import stdUtils
 import times
@@ -415,16 +414,15 @@ proc setupLattice*(lat:openarray[int]):auto =
       lat = fn.getFileLattice
       if lat.len == 0:
         echo "ERROR: getFileLattice failed on '", fn, "'"
-        quit QuitFailure
+        qexExit 1
   var
     lo = lat.newLayout
     g = lo.newGauge
     r = newRNGField(RngMilc6, lo, intParam("seed", 823543).uint64)
-  for i in 0..<lat.len: g[i] = lo.ColorMatrix
   if fn.len > 0:
     if 0 != g.loadGauge(fn):
       echo "ERROR: loadGauge failed on '", fn, "'"
-      quit QuitFailure
+      qexExit 1
   else:
     threads: g.random r
   return (lo, g, r)

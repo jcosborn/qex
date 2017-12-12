@@ -163,10 +163,7 @@ proc u1*(x: Field, r: RNGField) =
   for i in x.l.sites:
     x{i}.u1 r{i}[]
 
-#proc newRNGField*(R:typedesc[RNG], lo:Layout,
-#                  seed:uint64 = uint64(17^7)):auto =
-#  var r:Field[1,R]
-proc newRNGField*[R: RNG](rng: typedesc[R], lo: Layout,
+proc newRNGField*[R: RNG](lo: Layout, rng: typedesc[R],
                           s: uint64 = uint64(17^7)): Field[1,R] =
   var r: Field[1,R]
   r.new(lo.physGeom.newLayout 1)
@@ -177,3 +174,6 @@ proc newRNGField*[R: RNG](rng: typedesc[R], lo: Layout,
         l = l * lo.physGeom[i].int + lo.coords[i][j].int
       seed(r{j}[], s, l)
   r
+proc newRNGField*[R: RNG](rng: typedesc[R], lo: Layout,
+                          s: uint64 = uint64(17^7)): Field[1,R] =
+  lo.newRNGField(rng, s)

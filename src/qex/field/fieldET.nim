@@ -221,6 +221,18 @@ template itemsI*(n0,n1:int):untyped =
   while i < ti1:
     yield i
     inc(i)
+template itemsI*(n0,n1,b:int):untyped =
+  ## The same as itemsI(n0,n1), with the extra parameter `b` specifying
+  ## the minimum block size which will not be separated by threads.
+  let n = n1 - n0
+  let nb = (n div b) + int(n mod b > 0)
+  var ti0 = n0 + b*((threadNum*nb) div numThreads)
+  var ti1 = n0 + b*(((threadNum+1)*nb) div numThreads)
+  if ti1 > n1: ti1 = n1
+  var i = ti0
+  while i < ti1:
+    yield i
+    inc(i)
 template itemsI2*(n0,n1:int):untyped =
   #let n = n1 - n0
   #var ti0 = n0 + ((threadNum*n) div numThreads)
@@ -241,10 +253,10 @@ iterator items*(l:Layout):int {.inline.} =
   itemsI(0, n)
 iterator sites*(l:Layout):int {.inline.} =
   let n = l.nSites
-  itemsI(0, n)
+  itemsI(0, n, VLEN)
 iterator sites*(f:Field):int {.inline.} =
   let n = f.l.nSites
-  itemsI(0, n)
+  itemsI(0, n, VLEN)
 iterator items*(s:Subset):int {.inline.} =
   let n0 = s.lowOuter
   let n1 = s.highOuter
@@ -252,7 +264,7 @@ iterator items*(s:Subset):int {.inline.} =
 iterator sites*(s:Subset):int {.inline.} =
   let n0 = s.low
   let n1 = s.high
-  itemsI(n0, n1)
+  itemsI(n0, n1, VLEN)
 #iterator all*(x:Field):int {.inline.} =
 #  let n = x.l.nSitesOuter
 #  itemsI(0, n)
@@ -277,7 +289,7 @@ iterator sites*(x: Subsetted): int {.inline.} =
   let n0 = s.low
   let n1 = s.high
   #echo "n0: ", n0, " n1: ", n1
-  itemsI(n0, n1)
+  itemsI(n0, n1, VLEN)
 iterator items*(x:FieldAddSub):int {.inline.} =
   let n = x.field[0].l.nSitesOuter
   itemsI(0, n)

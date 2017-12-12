@@ -14,16 +14,16 @@ else:
 {. pragma: qio, header: "qio.h" .}
 
 const
-  DML_UNKNOWN* = -1
+  DML_UNKNOWN* = -1.cint
   DML_SINGLEFILE* = 0.cint
   DML_MULTIFILE* = 1.cint
-  DML_PARTFILE* = 2
-  DML_PARTFILE_DIR* = 3
-  DML_FIELD* = 0
-  DML_GLOBAL* = 1
-  DML_HYPER* = 2
-  DML_SERIAL* = 0
-  DML_PARALLEL* = 1
+  DML_PARTFILE* = 2.cint
+  DML_PARTFILE_DIR* = 3.cint
+  DML_FIELD* = 0.cint
+  DML_GLOBAL* = 1.cint
+  DML_HYPER* = 2.cint
+  DML_SERIAL* = 0.cint
+  DML_PARALLEL* = 1.cint
 
 const
   QIO_UNKNOWN* = DML_UNKNOWN
@@ -110,3 +110,13 @@ proc QIO_open_write*(xml_file: ptr QIO_String; filename: cstring; volfmt: cint;
                      layout: ptr QIO_Layout; fs: ptr QIO_Filesystem;
                      oflag: ptr QIO_Oflag): ptr QIO_Writer {.qio.}
 proc QIO_close_write*(`out`: ptr QIO_Writer): cint {.qio.}
+proc QIO_write*(wr:ptr QIO_Writer, record_info:ptr QIO_RecordInfo,
+    xml_record:ptr QIO_String, 
+    get:proc(buf:cstring, index:csize, count:cint, arg:pointer){.nimcall.},
+    datum_size:csize, word_size:cint, arg:pointer):cint {.qio.}
+proc QIO_create_record_info*(recordtype:cint, lower:ptr cint,
+    upper:ptr cint, n:cint,
+    datatype:cstring, precision:cstring,
+    colors:cint, spins:cint, typesize:cint,
+    datacount:cint):ptr QIO_RecordInfo {.qio.}
+proc QIO_destroy_record_info*(record_info:ptr QIO_RecordInfo) {.qio.}

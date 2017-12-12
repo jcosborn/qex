@@ -1,9 +1,12 @@
+static:
+  echo "Starting wilsonD imports: ", staticExec("date")
+
 import qex/base/globals
 #setForceInline(false)
-#setForceInline(true)
+setForceInline(true)
 #setStaticUnroll(false)
-#setStaticUnroll(true)
-#setNoAlias(false)
+setStaticUnroll(true)
+setNoAlias(false)
 #setNoAlias(true)
 
 import os
@@ -21,6 +24,9 @@ export cg
 #import profile
 #import metaUtils
 import qex/gauge/gaugeUtils
+
+static:
+  echo "Starting wilsonD: ", staticExec("date")
 
 type WilsonD*[T] = object
   sf*: seq[ShiftB[T]]
@@ -43,12 +49,14 @@ template initWilsonDT*(l: var Layout; T: typedesc; ss: string): untyped =
   sd
 
 proc initWilsonD*(x: Field; sub: string): auto =
-  result = initWilsonDT(x.l, type(x[0]), sub)
+  result = initWilsonDT(x.l, type(spproj1p(x[0])), sub)
 
 template optimizeAstX(x: untyped): untyped = x
 # normalized to 2*D_w
 template wilsonDP*(sd: WilsonD; r: Field; g: openArray[Field2];
                    x: Field3; expFlops: int; exp: untyped) =
+  static:
+    echo "Starting wilsonDP: ", staticExec("date")
   tic()
   optimizeAstX:
     startSB(sd.sf[0], spproj1p(x[ix]))
@@ -92,22 +100,30 @@ template wilsonDP*(sd: WilsonD; r: Field; g: openArray[Field2];
     boundarySB(sd.sb[3], r[ir]-=sprecon4m(it))
   #threadBarrier()
   toc("boundaryB")
+  static:
+    echo "Done wilsonDP: ", staticExec("date")
 
 # normalized to 2*D_w
 template wilsonDM*(sd: WilsonD; r: Field; g: openArray[Field2];
                    x: Field3; expFlops: int; exp: untyped) =
+  static:
+    echo "Starting wilsonDM: ", staticExec("date")
   tic()
   optimizeAstX:
     startSB(sd.sf[0], spproj1m(x[ix]))
     startSB(sd.sf[1], spproj2m(x[ix]))
     startSB(sd.sf[2], spproj3m(x[ix]))
     startSB(sd.sf[3], spproj4m(x[ix]))
+  static:
+    echo " startShiftF: ", staticExec("date")
   toc("startShiftF")
   optimizeAstX:
     startSB(sd.sb[0], g[0][ix].adj*spproj1p(x[ix]))
     startSB(sd.sb[1], g[1][ix].adj*spproj2p(x[ix]))
     startSB(sd.sb[2], g[2][ix].adj*spproj3p(x[ix]))
     startSB(sd.sb[3], g[3][ix].adj*spproj4p(x[ix]))
+  static:
+    echo " startShiftB: ", staticExec("date")
   toc("startShiftB")
   optimizeAstX:
     for ir{.inject.} in r[sd.subset]:
@@ -122,12 +138,16 @@ template wilsonDM*(sd: WilsonD; r: Field; g: openArray[Field2];
       localSB(sd.sb[2], ir, rir-=sprecon3p(it), g[2][ix].adj*spproj3p(x[ix]))
       localSB(sd.sb[3], ir, rir-=sprecon4p(it), g[3][ix].adj*spproj4p(x[ix]))
       assign(r[ir], rir)
+  static:
+    echo " local: ", staticExec("date")
   toc("local", flops=(expFlops+2*g.len*(12+2*66+24))*sd.subset.len)
   optimizeAstX:
     boundarySB(sd.sf[0], r[ir]-=sprecon1m(g[0][ir]*it))
     boundarySB(sd.sf[1], r[ir]-=sprecon2m(g[1][ir]*it))
     boundarySB(sd.sf[2], r[ir]-=sprecon3m(g[2][ir]*it))
     boundarySB(sd.sf[3], r[ir]-=sprecon4m(g[3][ir]*it))
+  static:
+    echo " boundaryF: ", staticExec("date")
   toc("boundaryF")
   optimizeAstX:
     boundarySB(sd.sb[0], r[ir]-=sprecon1p(it))
@@ -136,6 +156,8 @@ template wilsonDM*(sd: WilsonD; r: Field; g: openArray[Field2];
     boundarySB(sd.sb[3], r[ir]-=sprecon4p(it))
   #threadBarrier()
   toc("boundaryB")
+  static:
+    echo "Done wilsonDM: ", staticExec("date")
 
 # r = m*x + sc*D*x
 proc wilsonD*(sd:WilsonD; r:Field; g:openArray[Field2];
@@ -229,10 +251,10 @@ proc wilsonD2eeN*(sde,sdo:WilsonD; r:Field; g:openArray[Field2];
       rir := (4.0*m2)*x[ir]
 ]#
 
-proc newWilson*[G,T](g:openArray[G];v:T):auto =
+proc newWilson*[G,T](g:openArray[G]; v:T):auto =
   var l = g[0].l
-  template t:untyped =
-    type(v[0])
+  template t: untyped =
+    type(spproj1p(v[0]))
   var r:Wilson[G,t]
   r.se = initWilsonDT(l, t, "even")
   r.so = initWilsonDT(l, t, "odd")
@@ -242,7 +264,7 @@ proc newWilson*[G,T](g:openArray[G];v:T):auto =
 proc newWilson*[G](g:openArray[G]):auto =
   var l = g[0].l
   template t:untyped =
-    type(l.DiracFermion()[0])
+    type(spproj1p(l.DiracFermion()[0]))
     #SColorVectorV
   var r:Wilson[G,t]
   r.se = initWilsonDT(l, t, "even")
@@ -360,6 +382,9 @@ template foldl*(f,n,op:untyped):untyped =
       b {.inject.} = f(i)
     r = op
   r
+
+static:
+  echo "Finished wilsonD: ", staticExec("date")
 
 when isMainModule:
   import qex/rng

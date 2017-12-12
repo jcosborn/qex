@@ -109,7 +109,23 @@ template prefetchSB*(ss:ShiftB; ii:int; e1x:untyped):untyped =
           let ix{.inject.} = -(k1 + 2)
           prefetch(addr(e1))
 
-template localSB*(ss:ShiftB; ii:int; e1x,e2x:untyped):untyped {.dirty.} =
+template localSB*(s: ShiftB; i: int; e1,e2: untyped) {.dirty.} =
+  block:
+    let k_localSB = s.si.sq.pidx[i]
+    if k_localSB >= 0:
+      optimizeAst:
+        let ix = k_localSB
+        let it = e2
+        e1
+    elif k_localSB + 2 <= 0:
+      let ix = -(k_localSB + 2)
+      optimizeAst:
+        let t_localSB = e2
+        var it{.noInit.}: type(t_localSB)
+        perm(it, s.si.perm, t_localSB)
+        e1
+
+template localSB2*(ss:ShiftB; ii:int; e1x,e2x:untyped):untyped {.dirty.} =
   bind subst
   subst(s,ss,i,ii,e1,e1x,e2,e2x,k1,_):
     block:

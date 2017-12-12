@@ -534,7 +534,7 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
     toc("end iter")
     let tt1 = getTics()
     #cprintf("iteration %i time = %.2f seconds\n", iter, toSeconds(tt1-tt0))
-    echo "iteration $1 time = $2 seconds"%[$iter, toSeconds(tt1-tt0)|-6]
+    echo "iteration $1 time = $2 seconds"%[$iter, ticDiffSecs(tt1,tt0)|-6]
   toc()
   let t1 = getElapsedTime()
   #cprintf("total time = %.2f seconds\n", t1)
