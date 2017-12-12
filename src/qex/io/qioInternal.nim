@@ -1,4 +1,4 @@
-import physics/qcdTypes
+import qex/physics/qcdTypes
 export qcdTypes
 
 # For IO with matching types; see read[T]/write[T]
