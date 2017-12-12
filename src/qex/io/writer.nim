@@ -1,9 +1,9 @@
-import base
-import layout
+import qex/base
+import qex/layout
+import qex/field
 import qio
 import strutils
 import macros
-import field
 import os
 
 type Writer*[V: static[int]] = ref object
@@ -193,7 +193,7 @@ proc write*[V:static[int],T](wr:var Writer[V]; v:openArray[Field[V,T]]; md = "";
   wr.write(f,v[0].l.physGeom,md,prec)
 
 when isMainModule:
-  import gauge, rng, reader
+  import qex/[gauge, rng], reader
   proc t(g:any) =
     var tr:type(g[0][0][0,0])
     for i in 0..<4:
