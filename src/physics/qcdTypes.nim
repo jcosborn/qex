@@ -139,7 +139,7 @@ template simdType*(x:array):untyped = simdType(x[x.low])
 template simdType*(x:AsComplex):untyped = simdType(x[])
 template simdType*(x:ComplexObj):untyped = simdType(x.re)
 #template simdType*(x:DComplexV):untyped = simdType(x.re)
-template simdType*(x:AsVector):untyped = simdType(x[])
+template simdType*(x:AsVector):untyped = simdType(x[0])
 #template simdType*(x:AsMatrix):untyped = simdType(x[])
 template simdType*(x:AsMatrix):untyped = simdType(x[0,0])
 
@@ -387,7 +387,7 @@ proc blend*(r:var any; x:ptr char; b:ptr char; blnd:int) {.inline.} =
 macro makeConstructors(x: untyped): untyped =
   template mp(f,r,rslt: untyped) =
     proc f*(l: Layout): r =
-      ## create `r`
+      # ## create `r`
       new(rslt, l)
   let f = $x
   let r = "Lattice" & f

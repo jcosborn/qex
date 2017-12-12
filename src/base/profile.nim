@@ -9,9 +9,22 @@ import os
 import algorithm
 include system/timers
 
+when true:
+  type
+    TicType* = distinct float
+  template getTics*(): untyped = TicType(epochTime())
+  #template toSeconds*(x: TicType): untyped = 1e-9 * x.float
+  template `-`*(x,y: TicType): untyped = TicType(float(x) - float(y))
+  template ticDiffSecs*(x,y: untyped): untyped = float(x - y)
+else:
+  type
+    TicType* = distinct Ticks
+  template getTics*(): untyped = TicType(getTicks())
+  #template toSeconds*(x: TicType): untyped = 1e-9 * x.float
+  template `-`*(x,y: TicType): untyped = TicType(Ticks(x) - Ticks(y))
+  template ticDiffSecs*(x,y: untyped): untyped = 1e-9 * (x - y).float
+
 type
-  #TicType* = float
-  TicType* = distinct Ticks
   TimerInfo* = object
     seconds*: float
     flops*: float
@@ -21,12 +34,6 @@ type
     start*: ptr TimerInfo
     prev*: ptr TimerInfo
     location*: type(instantiationInfo())
-#template getTics(): untyped = epochTime()
-#template ticDiffSecs(x,y: untyped): untyped = x - y
-template getTics*(): untyped = TicType(getTicks())
-template toSeconds*(x: TicType): untyped = 1e-9 * x.float
-template `-`*(x,y: TicType): untyped = TicType(Ticks(x) - Ticks(y))
-template ticDiffSecs*(x,y: untyped): untyped = 1e-9 * (x - y).float
 
 var ticSeq* = newSeq[ptr TimerInfo](0)
 var tocSeq* = newSeq[ptr TimerInfo](0)

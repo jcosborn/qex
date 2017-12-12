@@ -108,12 +108,22 @@ template redot*(x: Spin, y: Spin2): untyped =
 template trace*(x: Spin): untyped = trace(x[])
 
 template spinVector*[T](x:static[int], a: untyped): untyped =
-  const
-    I:int = x
-  type
-    E = T
-    VA = VectorArray[I,E]
-  Spin[VA](v: VA(v: a))
+  #const
+  #  I:int = x
+  #type
+  #  E = T
+  #  VA = VectorArray[I,E]
+  #  VAO = VectorArrayObj[I,E]
+  #Spin[VA](v: VA(v: a))
+  #Spin[VA](v: VA(v: VAO(vec: a)))
+  #asSpin(VA(v: a))
+  #static: echo "spinVector"
+  asSpin(asVectorArray(a))
+  #let t1 = asVectorArray(a)
+  #static: echo "spinVector1"
+  #let t = asSpin(t1)
+  #static: echo "spinVector2"
+  #t
 template spinMatrix*[T](x,y:static[int], a: untyped): untyped =
   const
     I:int = x

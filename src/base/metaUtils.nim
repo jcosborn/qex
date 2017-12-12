@@ -302,7 +302,7 @@ macro subst*(x: varargs[untyped]): untyped =
       inc idNum
     result = replace(x[i], t, result)
   #echo result.treerepr
-  #echo "subst: "
+  echo "subst: ", lineInfo(x[0])
   #result.dumpTyped(result)
 
 proc separateStmtListExpr(st: var NimNode, stex: NimNode): NimNode =
@@ -337,7 +337,7 @@ macro lets*(x:varargs[untyped]):auto =
     result = replace(x[i], t, result)
   result = newStmtList(prestmts, result)
   #echo result.repr
-  #echo "lets: "
+  echo "lets: ", lineInfo(x[0])
   #result.dumpTyped(result)
 
 #macro forStaticX2(a,b:static[int]; index,body:untyped):untyped =
@@ -560,6 +560,36 @@ proc optimizeAstR(a: NimNode): NimNode =
 #  for i in 0..<x.len:
 #    result.add optNimTree(x[i], sym,
 
+# transformations:
+#  let x = y:StmtListExpr -> R( y[0..^2]; let x = y[^1] )
+#  let x = y:ObjConstr -> R( let t_i = y[i] i=1..^1; let x=ObjConstr(t) )
+# BlockStmt
+# BracketExpr
+# DotExpr
+proc inlineLetsR(x: NimNode; sym,repl,stmts: var seq[NimNode]): NimNode
+
+#[
+proc optimizeObjConstr(x: NimNode; sym,repl: var seq[NimNode]): NimNode =
+  x.expectKind(nnkObjConstr)
+  result = x.copyNimNode
+  result.add inlineLetsR(x[0], sym, repl)
+  var sle = newNimNode(nnkStmtListExpr)
+  for i in 1..<x.len:
+    var t = x[i].copyNimNode
+    #var t = newNimNode(nnkExprColonExpr)
+    t.add x[i][0]
+    var r = inlineLetsR(x[i][1], sym, repl, stmts)
+    if r.kind == nnkStmtListExpr:
+      for j in 0..(r.len-2):
+        sle.add r[j]
+      r = r[^1]
+    t.add r
+    result.add t
+  if sle.len>0:
+    sle.add result
+    result = sle
+]#
+
 var reccount{.compiletime.} = 0
 proc inlineLetsR(x: NimNode, sym,repl,stmts: var seq[NimNode]): NimNode =
   #echo "new tree"
@@ -567,58 +597,8 @@ proc inlineLetsR(x: NimNode, sym,repl,stmts: var seq[NimNode]): NimNode =
   case x.kind
   of nnkCommentStmt:
     result = newEmptyNode()
-  of nnkStmtList:
-    var bstmts = newSeq[NimNode](0)
-    for i in 0..<x.len:
-      let reccount0 = reccount
-      inc reccount
-      #echo "label", reccount0, ": stmtlistin"
-      #echo x[i].repr
-      let r = inlineLetsR(x[i], sym, repl, bstmts)
-      #echo "label", reccount0, ": stmtlistout"
-      #echo r.repr
-      if r.kind != nnkEmpty:
-        bstmts.add r
-    case bstmts.len
-    of 0: result = newEmptyNode()
-    of 1: result = bstmts[0]
-    else:
-      result = x.copyNimNode
-      #result = newNimNode(nnkStmtList)
-      for c in bstmts:
-        #echo "bstmts: ", c.repr
-        result.add c
-  of nnkStmtListExpr:
-    for i in 0..(x.len-2):
-      let r = inlineLetsR(x[i], sym, repl, stmts)
-      if r.kind != nnkEmpty:
-        stmts.add r
-    result = inlineLetsR(x[^1], sym, repl, stmts)
-  of nnkLetSection:
-    result = x.copyNimNode
-    #result = newNimNode(nnkLetSection)
-    for i in 0..<x.len:
-      if x[i].kind==nnkIdentDefs:
-        let r = inlineLetsR(x[i][2], sym, repl, stmts)
-        if r.kind in CallNodes:
-          var id = x[i].copyNimNode
-          #var id = newNimNode(nnkIdentDefs)
-          id.add x[i][0]
-          id.add x[i][1]
-          id.add r
-          result.add id
-        else:
-          #echo "let: ", x[i][0].repr, " = ", r.repr
-          #echo c[id][2].treerepr
-          sym.add x[i][0]
-          #echo "sym: ", sym[^1]
-          repl.add r
-      else:
-        #result.add x[i]
-        echo "error: nnkLetSection expected nnkIdentDefs"
-        echo x.treerepr
-        quit -1
-    if result.len==0: result = newEmptyNode()
+  of nnkLiterals+{nnkNone, nnkEmpty, nnkIdent, nnkOpenSymChoice}:
+    result = x
   of nnkSym:
     var i = sym.len-1
     while i>=0:
@@ -629,51 +609,73 @@ proc inlineLetsR(x: NimNode, sym,repl,stmts: var seq[NimNode]): NimNode =
       result = repl[i]
     else:
       result = x
-  of nnkOpenSymChoice:
-    result = x
-  #of nnkVarSection:
-  #  result = x
-  #of nnkIdentDefs:
-  #  result = x.copyNimNode
-  #  #result = newNimNode(nnkIdentDefs)
-  #  result.add x[0]
-  #  result.add x[1]
-  #  result.add inlineLetsR(x[2], sym, repl, stmts)
-  of nnkBlockStmt:
-    #echo "nnkBlockStmt"
-    var bstmts = newSeq[NimNode](0)
-    let nsym = sym.len
-    for i in 1..<x.len:
-      let reccount0 = reccount
-      inc reccount
-      #echo "label", reccount0, ": blockin"
-      #echo x[i].repr
-      let r = inlineLetsR(x[i], sym, repl, bstmts)
-      #echo "label", reccount0, ": blockout"
-      #echo r.repr
+
+  of nnkLetSection:
+    result = newStmtList()
+    for i in 0..<x.len:
+      if x[i].kind==nnkIdentDefs:
+        var r = inlineLetsR(x[i][2], sym, repl, stmts)
+        if r.kind == nnkStmtListExpr:
+          for j in 0..(r.len-2):
+            result.add r[j]
+          r = r[^1]
+        case r.kind
+        of nnkSym:
+          #echo "let: ", x[i][0].repr, " = ", r.repr
+          #echo c[id][2].treerepr
+          sym.add x[i][0]
+          #echo "sym: ", sym[^1]
+          repl.add r
+        else:
+          result.add newLetStmt(x[i][0], r)
+      else:
+        echo "error: nnkLetSection expected nnkIdentDefs"
+        echo x.treerepr
+        quit -1
+    if result.len==0: result = newEmptyNode()
+
+  of nnkStmtListExpr:
+    result = x.copyNimNode
+    for i in 0..(x.len-2):
+      let r = inlineLetsR(x[i], sym, repl, stmts)
       if r.kind != nnkEmpty:
-        bstmts.add r
-    sym.setLen(nsym)
-    repl.setLen(nsym)
-    if bstmts.len>0 or x[0].kind!=nnkEmpty:
-      result = x.copyNimNode
-      #result = newNimNode(nnkBlockStmt)
-      result.add x[0]
-      for c in bstmts:
-        #echo "bstmts: ", c.repr
-        result.add c
+        result.add r
+    let r = inlineLetsR(x[^1], sym, repl, stmts)
+    if r.kind == nnkStmtListExpr:
+      for i in 0..<r.len:
+        result.add r[i]
     else:
-      result = newEmptyNode()
+      result.add r
+
   of nnkObjConstr:
     result = x.copyNimNode
     #result = newNimNode(nnkObjConstr)
     result.add inlineLetsR(x[0], sym, repl, stmts)
+    var sle = newNimNode(nnkStmtListExpr)
     for i in 1..<x.len:
       var t = x[i].copyNimNode
       #var t = newNimNode(nnkExprColonExpr)
       t.add x[i][0]
-      t.add inlineLetsR(x[i][1], sym, repl, stmts)
+      var r = inlineLetsR(x[i][1], sym, repl, stmts)
+      if r.kind == nnkStmtListExpr:
+        for j in 0..(r.len-2):
+          sle.add r[j]
+        r = r[^1]
+      t.add r
       result.add t
+    if sle.len>0:
+      sle.add result
+      result = sle
+
+  of nnkBlockStmt:
+    #echo "nnkBlockStmt"
+    let nsym = sym.len
+    result = x.copyNimNode
+    result.add x[0]
+    for i in 1..<x.len:
+      result.add inlineLetsR(x[i], sym, repl, stmts)
+    sym.setLen(nsym)
+    repl.setLen(nsym)
   of nnkDotExpr:
     let o = inlineLetsR(x[0], sym, repl, stmts)
     if o.kind == nnkObjConstr:
@@ -684,15 +686,19 @@ proc inlineLetsR(x: NimNode, sym,repl,stmts: var seq[NimNode]): NimNode =
         if o[i][0].repr == ss: break
         dec i
       if i==0:
+        #echo "dotExpr objConstr:"
+        #echo " ", x.repr
+        #echo " ", o.repr
+        #echo " ", x[1].repr
         result = x.copyNimNode
         #result = newNimNode(nnkDotExpr)
         result.add o
         result.add x[1]
       else:
         result = o[i][1]
-        #echo "objConstr:"
-        #echo x.repr
-        #echo result.repr
+        #echo "dotExpr objConstr:"
+        #echo " ", x.repr
+        #echo " ", result.repr
         #echo x.getTypeImpl.repr
         #echo result.getTypeImpl.repr
     else:
@@ -700,6 +706,35 @@ proc inlineLetsR(x: NimNode, sym,repl,stmts: var seq[NimNode]): NimNode =
       #result = newNimNode(nnkDotExpr)
       result.add o
       result.add x[1]
+  of nnkBracketExpr:
+    let a = inlineLetsR(x[0], sym, repl, stmts)
+    let k = inlineLetsR(x[1], sym, repl, stmts)
+    var canindex = false
+    var idx: int
+    #echo "BracketExpr:"
+    #echo " ", x.repr
+    #echo " ", a.treerepr
+    #echo " ", k.repr
+    if a.kind==nnkBracket:
+      var n = k
+      if n.kind==nnkHiddenStdConv: n = n[1]
+      if n.kind==nnkIntLit:
+        idx = n.intval.int
+        canindex = true
+      #echo "BracketExpr Bracket:"
+      #echo " ", x.repr
+      #echo " ", a.repr
+      #echo " ", k.repr
+      #if not canindex: echo " failed"
+    if canindex:
+      result = a[idx]
+      #echo " ", result.repr
+    else:
+      result = x.copyNimNode
+      result.add a
+      result.add k
+      for i in 2..<x.len:
+        result.add inlineLetsR(x[i], sym, repl, stmts)
   of nnkPragma:
     if x.len==1 and x[0].kind==nnkExprColonExpr and $x[0][0]=="emit":
       template emt(x): untyped =
@@ -709,10 +744,6 @@ proc inlineLetsR(x: NimNode, sym,repl,stmts: var seq[NimNode]): NimNode =
       result = x.copyNimNode
       for i in 0..<x.len:
         result.add inlineLetsR(x[i], sym, repl, stmts)
-  of {nnkNone, nnkEmpty, nnkIdent, nnkType}:
-    result = x
-  of nnkLiterals:
-    result = x
   #of nnkTypeOfExpr:
   #  result = x
   #of nnkConv:
@@ -752,15 +783,18 @@ proc inlineLets(x: NimNode): NimNode =
     result.add c
   result.add r
 
+import optlet
+
 macro optimizeAst*(a: typed): untyped =
-  #echo "optimizeAst in"
+  #echo "optimizeAst in:"
   #echo a.treerepr
   #echo a.repr
   #let ar = a.repr
   #result = a
   #result = optimizeAstR(a)
-  result = inlineLets(a)
-  #echo "optimizeAst out"
+  #result = inlineLets(a)
+  result = optLets(a)
+  #echo "optimizeAst out:"
   #echo result.treerepr
   #echo result.repr
   #let rr = result.repr
