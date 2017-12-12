@@ -1,2 +1,2 @@
-import io/reader
-export reader
+import io/reader, io/writer
+export reader, writer

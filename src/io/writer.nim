@@ -93,7 +93,24 @@ proc close*(wr: var Writer) =
   wr.setLayout
   wr.status = QIO_close_write(wr.qw)
 
-proc write[T](wr: var Writer, v: var openArray[ptr T], md="", ps="") =
+import typetraits
+import qioInternal
+
+template vcopyImpl(dest:typed; l:int; src:typed):untyped =
+  for i in 0..<dest.nrows:
+    for j in 0..<dest.ncols:
+      dest[i,j].re = src[i,j].re[l]
+      dest[i,j].im = src[i,j].im[l]
+proc vcopy(dest:var SColorMatrix; l:int; src:SColorMatrixV) =
+  vcopyImpl(dest,l,src)
+proc vcopy(dest:var DColorMatrix; l:int; src:DColorMatrixV) =
+  vcopyImpl(dest,l,src)
+proc vcopy(dest:var SColorMatrix; l:int; src:DColorMatrixV) =
+  vcopyImpl(dest,l,src)
+proc vcopy(dest:var DColorMatrix; l:int; src:SColorMatrixV) =
+  vcopyImpl(dest,l,src)
+
+proc write[T](wr: var Writer, v: var openArray[ptr T], lat: openArray[int], md="", ps="") =
   wr.setLayout
 
   var qioMd = QIO_string_create()
@@ -106,14 +123,27 @@ proc write[T](wr: var Writer, v: var openArray[ptr T], md="", ps="") =
   var wordSize = sizeOf(numberType(v[0][]))
   #echo "ws: ", wordSize, "  rws: ", recWordSize
 
-  var precs0 = precString(wordSize)
+  var precs0 = case wordSize:
+    of 4: "F"
+    of 8: "D"
+    else: ""
   var precs = precs0
   if ps != "": precs = ps
+  if (precs != "F" and precs != "D") or (precs0 != "F" and precs0 != "D"):
+    echo "ERROR: Unsupported precision precs=",precs," precs0=",precs0," with wordSize=",wordSize
+    qexExit 1
 
-  var nc = v[0][].nc
-  var ns = v[0][].ns
-  var qpct = qdpPCType(v[0][])
-  var nv = v.len
+  var nc = v[0][].ncols.cint
+  var ns = 0.cint    # Doesn't matter for gauge fields.
+  var datatype = "QEX" & type(v[0][]).name
+  var nv = v.len.cint
+  let nd = lat.len
+  var
+    lower = newseq[cint](nd)
+    upper = newseq[cint](nd)
+  for i in 0..<nd:
+    lower[i] = 0.cint
+    upper[i] = lat[i].cint
 
   if precs == precs0:
     proc get(buf: cstring; index: csize; count: cint; arg: pointer) =
@@ -123,45 +153,84 @@ proc write[T](wr: var Writer, v: var openArray[ptr T], md="", ps="") =
       let dest = cast[ptr destT](buf)
       let src = cast[ptr srcT](arg)
       let vi = index div simdLength(T)
-      let vl = index mod simdLength(T)
+      let vl = int(index mod simdLength(T))
       for i in 0..<count:
         vcopy(dest[i], vl, src[i][vi])
-    var recInfo = QIO_create_record_info(QIO_FIELD, 0, 0, 0, qpct, precs,
-                                         nc, ns, size, nv)
-  status = QIO_write(qdpw->qiow, rec_info, qio_md,
-                     get, qf->size*count, qf->word_size, (void *)qf);
-
-
-var status = QDP_write_check(qw, qioMd, QIO_FIELD, get, &qf, nv,
-                                                       recInfo);
-
-    QIO_destroy_record_info(rec_info);
-
-r.status = QIO_write(r.qr, r.recordInfo.addr, qioMd, put, vsize.csize,
-                        wordSize.cint, v[0].addr)
+    var recInfo = QIO_create_record_info(QIO_FIELD, lower[0].addr, upper[0].addr, nd.cint,
+      datatype, precs, nc, ns, size.cint, nv)
+    wr.status = QIO_write(wr.qw, recInfo, qioMd, get, vsize.csize, wordSize.cint, v[0].addr)
+    QIO_destroy_record_info(recInfo);
   else:
+    var recWordSize = case precs:
+      of "F": 4
+      of "D": 8
+      else: 0
     vsize = (recWordSize*vsize) div wordSize
+    size = vsize div v.len
     wordSize = recWordSize
-    #echo "ws: ", wordSize, "  rws: ", recWordSize, "  vs: ", vsize
-    proc put(buf:cstring; index:csize; count:cint; arg:pointer) =
-      type srcT{.unchecked.} = array[0,IOtypeP(T)]
-      type destT1{.unchecked.} = array[0,T]
-      type destT{.unchecked.} = array[0,ptr destT1]
-      let src = cast[ptr srcT](buf)
-      let dest = cast[ptr destT](arg)
+    # echo "ws: ", wordSize, "  rws: ", recWordSize, "  vs: ", vsize
+    proc get(buf: cstring; index: csize; count: cint; arg: pointer) =
+      type destT{.unchecked.} = array[0,IOtypeP(T)]
+      type srcT1{.unchecked.} = array[0,T]
+      type srcT{.unchecked.} = array[0,ptr srcT1]
+      let dest = cast[ptr destT](buf)
+      let src = cast[ptr srcT](arg)
       let vi = index div simdLength(T)
-      let vl = index mod simdLength(T)
+      let vl = int(index mod simdLength(T))
       for i in 0..<count:
-        vcopy(dest[i][vi], vl, src[i])
-    r.status = QIO_write(r.qr, r.recordInfo.addr, qioMd, put, vsize.csize,
-                        wordSize.cint, v[0].addr)
+        vcopy(dest[i], vl, src[i][vi])
+    var recInfo = QIO_create_record_info(QIO_FIELD, lower[0].addr, upper[0].addr, nd.cint,
+      datatype, precs, nc, ns, size.cint, nv)
+    wr.status = QIO_write(wr.qw, recInfo, qioMd, get, vsize.csize, wordSize.cint, v[0].addr)
+    QIO_destroy_record_info(recInfo);
 
-  r.recordMd = toString(qioMd)
   QIO_string_destroy(qioMd);
-  r.recordInfoValid = true
+
+proc write*[V:static[int],T](wr:var Writer[V]; v:openArray[Field[V,T]]; md = ""; prec = "") =
+  let nv = v.len
+  var f = newSeq[type(v[0][0].addr)](nv)
+  for i in 0..<nv: f[i] = v[i][0].addr
+  wr.write(f,v[0].l.physGeom,md,prec)
 
 when isMainModule:
-  import qex
+  import gauge, rng, reader
+  proc t(g:any) =
+    var tr:type(g[0][0][0,0])
+    for i in 0..<4:
+      for x in g[i].all:
+        for c in 0..<g[i][0].ncols:
+          #echo g[i][x][c,c]
+          tr += g[i][x][c,c]
+    echo tr
+  const fn = "testlat0.bin"
+  proc readTest(lo:any) =
+    var g: array[4,type(lo.ColorMatrix())]
+    for i in 0..<4:
+      g[i] = lo.ColorMatrix()
+    var rd = lo.newReader(fn)
+    echo rd.fileMetadata
+    echo rd.recordMetadata
+    echo rd.recordDate
+    echo rd.datatype
+    echo rd.precision
+    echo rd.colors
+    echo rd.spins
+    echo rd.typesize
+    echo rd.datacount
+    rd.read(g)
+    #rd.nextRecord()
+    #echo rd.status
+    #echo rd.recordMetadata
+    rd.close()
+    g.t
+  proc writeTest(g,prec:any) =
+    var wr = g[0].l.newWriter(fn, "filemd")
+    wr.write(g, "recordmd", prec)
+    wr.close
+
+  if not fileExists(fn):
+    echo "gauge file not found: ", fn
+    qexExit()
   qexInit()
   echo "rank ", myRank, "/", nRanks
   var lat = [8,8,8,8]
@@ -170,36 +239,14 @@ when isMainModule:
   for i in 0..<4:
     g[i] = lo.ColorMatrix()
   g.random
-  var fn = "testlat0.bin"
-  var wr = lo.newWriter(fn, "filemd")
+  g.t
 
-  wr.write(g, "recordmd")
+  echo "#### Write double precision"
+  g.writeTest "D"
+  lo.readTest
 
-  wr.close
+  echo "#### Write single precision"
+  g.writeTest "F"
+  lo.readTest
 
-  if not fileExists(fn):
-    echo "gauge file not found: ", fn
-    qexExit()
-  var rd = lo.newReader(fn)
-  echo rd.fileMetadata
-  echo rd.recordMetadata
-  echo rd.recordDate
-  echo rd.datatype
-  echo rd.precision
-  echo rd.colors
-  echo rd.spins
-  echo rd.typesize
-  echo rd.datacount
-  rd.read(g)
-  #rd.nextRecord()
-  #echo rd.status
-  #echo rd.recordMetadata
-  rd.close()
-  var tr:type(g[0][0][0,0])
-  for i in 0..<4:
-    for x in g[i].all:
-      for c in 0..<g[i][0].ncols:
-        #echo g[i][x][c,c]
-        tr += g[i][x][c,c]
-  echo tr
   qexFinalize()
