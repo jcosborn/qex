@@ -4,7 +4,7 @@ import complexProxy
 export complexProxy
 
 type
-  Imag*[T] = ImagProxy[T]
+  AsImag*[T] = ImagProxy[T]
   ComplexObj*[TR,TI] = object
     reX*: TR
     imX*: TI
@@ -22,6 +22,13 @@ template newComplexImpl*(x,y: typed): untyped =
 template newReal*(x: typed): untyped = newRealImpl(x)
 template newImag*(x: typed): untyped = newImagImpl(x)
 template newComplex*(x,y: typed): untyped = newComplexImpl(x,y)
+
+template isWrapper*(x: ComplexObj): untyped = false
+template isWrapper*(x: ComplexProxy): untyped = true
+template asWrapper*(x: ComplexProxy, y: typed): untyped =
+  newComplexProxy(y)
+template asVarWrapper*(x: ComplexProxy, y: typed): untyped =
+  asVar(newComplexProxy(y))
 
 template re*(x: ComplexObj): untyped = x.reX
 #macro re*(x: ComplexObj{nkObjConstr}): auto =
@@ -91,6 +98,7 @@ template imadd*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3) =
 template load1*(x: ComplexProxy): untyped = x
 template eval*(x: ComplexProxy): untyped = newComplexProxy(eval(x[]))
 template eval*(x: ComplexObj): untyped =
+  mixin eval
   let er = eval(x.re)
   let ei = eval(x.im)
   ComplexObj2[type(er),type(ei)](reX: er, imX: ei)
@@ -102,6 +110,13 @@ template map*(x: ComplexObj; f: untyped): untyped =
   let fi = f(x.im)
   ComplexObj2[type(fr),type(fi)](reX: fr, imX: fi)
 
+template toDoubleImpl*(xx: ComplexObj): untyped =
+  let x = xx
+  let tdiR = toDouble(x.re)
+  let tdiI = toDouble(x.im)
+  ComplexObj2[type(tdiR),type(tdiI)](reX: tdiR, imX: tdiI)
+
+
 template add*(r: var ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
          untyped =  assign(r,x+y)
 template add*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
@@ -112,6 +127,10 @@ template sub*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
 template sub*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3): untyped =
   r := x - y
 
+template neg*(r: ComplexProxy, x: ComplexProxy2): untyped =
+  r := neg(x)
+template dot*(x: ComplexProxy, y: ComplexProxy2): untyped =
+  trace( x.adj * y )
 template mulCCR*(r: var ComplexProxy, y: ComplexProxy2, x: untyped):
          untyped =  assign(r,x*y)
 template mul*(r: ComplexProxy, x: ComplexProxy2, y: SomeNumber): untyped =

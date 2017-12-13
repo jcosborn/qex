@@ -106,6 +106,14 @@ type
 #template `*`*(x: Dvec0, y: Adjointed[Dvec0]): untyped = x*y[]
 #template `:=`*(r: Adjointed, x: Adjointed) = r[] := x[]
 #template assign*(r: Adjointed, x: Adjointed) = r[] := x[]
+overloadAsReal(SDvec)
+template `+`*(x: SDvec): untyped = x
+template adj*(x: SDvec): untyped = x
+template add*(r: AsComplex, x: SDvec, y: AsComplex) =
+  r := add(x,y)
+template mul*(r: AsComplex, x: SDvec, y: AsComplex) =
+  r := mul(x,y)
+#template neg*(r: SComplexV, x: SComplexV) = r := neg(x)
 
 template isWrapper*(x: Svec0): untyped = false
 template isWrapper*(x: Dvec0): untyped = false
@@ -251,6 +259,10 @@ proc `*`*(m:Masked[SDvec]; x:SomeNumber): auto =
   mul(m, m.pobj[], x)
   m
 ]#
+template `*`*(m: Masked[SDvec]; x: SomeNumber): untyped =
+  var t_mulMasked = m.pobj[] * x
+  maskedObj(t_mulMasked, m.mask)
+
 proc imul*(m:Masked[SDvec]; x:SomeNumber) =
   var t = m[]
   imul(t, x)

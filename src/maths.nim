@@ -22,10 +22,10 @@ when declared SimdD8:
     var r: DComplexV
     sub(r, x, y)
     r
-  template `*`*(x: SimdD8, y: AsComplex): untyped =
-    var r: DComplexV
-    mul(r, x, y)
-    r
+  #template `*`*(x: SimdD8, y: AsComplex): untyped =
+  #  var r: DComplexV
+  #  mul(r, x, y)
+  #  r
 
 when declared SimdD16:
   template `-`*(x: SimdD16, y: AsComplex): untyped =

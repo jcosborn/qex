@@ -237,13 +237,14 @@ template imulVS*(rr:untyped; xx:untyped):untyped =
     forO i, 0, r.len.pred:
       imul(r[i], tx)
 
-template imulMS*(rr:untyped; xx:untyped):untyped =
+template imulMS*(r: typed; x: typed): untyped =
   mixin imul
-  subst(r,rr,x,xx,i,_,j,_,tx,_):
-    load(tx, x)
-    forO i, 0, r.nrows.pred:
-      forO j, 0, r.ncols.pred:
-        imul(r[i,j], tx)
+  #subst(r,rr,x,xx,i,_,j,_,tx,_):
+  #load(tx, x)
+  let tx = x
+  forO i, 0, r.nrows.pred:
+    forO j, 0, r.ncols.pred:
+      imul(r[i,j], tx)
 
 template mulSVV*(rr:typed; xx,yy:typed):untyped =
   subst(r,rr,x,xx,y,yy,tr,_,i,_):
@@ -280,7 +281,8 @@ template mulVSV*(r: typed; xx,yy: typed): untyped =
   let y_mulVSV = yy
   assert(r.len == y_mulVSV.len)
   forO i, 0, r.len.pred:
-    mul(r[i], x_mulVSV, y_mulVSV[i])
+    #mul(r[i], x_mulVSV, y_mulVSV[i])
+    r[i] := mul(x_mulVSV, y_mulVSV[i])
 
 template mulMMS*(rr:untyped; xx,yy:untyped):untyped =
   subst(r,rr,x,xx,y,yy,tx,_,i,_,j,_):
@@ -302,7 +304,7 @@ template mulMSM*(rr:typed; xx,yy:typed):untyped =
       forO j, 0, r.ncols.pred:
         mul(r[i,j], tx, y[i,j])
 
-template mulVMV*(rr:typed; xx,yy:typed):untyped =
+template mulVMV*(rr: typed; xx,yy: typed): untyped =
   #[
   subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_,ty0r,_,ty0i,_,tyjr,_,tyji,_):
     mixin nrows, ncols, mul, imadd, assign, load1

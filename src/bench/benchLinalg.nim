@@ -120,7 +120,8 @@ proc test(lat:any) =
 
   bench(mvf, mb+2*vb, mb+2*vb):
     for e in v2:
-      mulVMV(v2[e], m1[e], v1[e])
+      optimizeAst:
+        mulVMV(v2[e], m1[e], v1[e])
 
   bench(mvf, mb+2*vb, mb+2*vb):
     v2 := m1.adj * v1

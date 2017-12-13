@@ -6,40 +6,21 @@ makeWrapperType(Color):
   ## wrapper type for colored objects
 
 type
-  #Color*[T] = object
-  #  fColor*: T
-  #Color*[T] = distinct T
   Color2*[T] = Color[T]
   Color3*[T] = Color[T]
 
-#template asColor*(xx: typed): untyped =
-  #lets(x,xx):
-  #static: echo "asColor typed"
-  #dumpTree: xx
-#  let x_asColor = xx
-#  Color[type(x_asColor)](fColor: x_asColor)
-  #Color[type(x_asColor)](x_asColor)
-  #Color(x_asColor)
-
-#template `[]`*(x: Color): untyped = x.fColor
-#template `[]`*(x: Color): untyped = (x.T)(x)
-#template `[]`*[T](x: Color[T]): untyped = T(x)
-#makeDeref(Color, x.T)
-
-template isWrapper*(x: Color): untyped = true
-template asWrapper*(x: Color, y: typed): untyped =
-  #static: echo "asWrapper Color"
-  #dumpTree: y
-  asColor(y)
 template asVarWrapper*(x: Color, y: typed): untyped =
   #static: echo "asVarWrapper Color"
   #var cy = asColor(y)
   #cy
   asVar(asColor(y))
 
-template `[]`*(x: Color, i: any): untyped = x[][i]
-template `[]`*(x: Color, i: any, j: any): untyped = x[][i,j]
-template `[]`*(x: Color, i: any, j: any, y: any): untyped =
+template `[]`*(x: Color, i: untyped): untyped = x[][i]
+template `[]`*(x: Color, i,j: untyped): untyped = x[][i,j]
+
+template `[]=`*(x: Color, i,y: untyped): untyped =
+  x[][i] = y
+template `[]=`*(x: Color, i,j,y: untyped): untyped =
   x[][i,j] = y
 
 forwardFunc(Color, len)
@@ -49,10 +30,14 @@ forwardFunc(Color, numberType)
 forwardFunc(Color, nVectors)
 forwardFunc(Color, simdType)
 forwardFunc(Color, simdLength)
-template row*(x: Color, i: any): untyped =
+template numberType*[T](x: typedesc[Color[T]]): untyped = numberType(T)
+#template numNumbers*[T](x: typedesc[Color[T]]): untyped = numberType(T)
+template numNumbers*(x: Color): untyped = numNumbers(x[])
+
+template row*(x: Color, i: untyped): untyped =
   mixin row
   asColor(row(x[],i))
-template setRow*(r: Color; x: Color2; i: int): untyped =
+template setRow*(r: Color; x: Color2; i: untyped): untyped =
   setRow(r[], x[], i)
 
 template binDDRet(fn,wr,T1,T2) =
@@ -64,9 +49,6 @@ binDDRet(`-`, asColor, Color, Color2)
 binDDRet(`*`, asColor, Color, Color2)
 binDDRet(`/`, asColor, Color, Color2)
 
-template numberType*[T](x: typedesc[Color[T]]): untyped = numberType(T)
-#template numNumbers*[T](x: typedesc[Color[T]]): untyped = numberType(T)
-template numNumbers*(x: Color): untyped = numNumbers(x[])
 template load1*(x: Color): untyped = asColor(load1(x[]))
 template `-`*(x: Color): untyped = asColor(-(x[]))
 template assign*(r: var Color, x: SomeNumber) =
@@ -109,6 +91,10 @@ template `*`*(x: AsImag, y: Color2): untyped =
   asColor(x * y[])
 template `*`*(x: AsComplex, y: Color2): untyped =
   asColor(x * y[])
+template mul*(x: SomeNumber, y: Color2): untyped =
+  asColor(`*`(x, y[]))
+template mul*(x: Color, y: Color2): untyped =
+  asColor(`*`(x[], y[]))
 template mul*(r: var Color, x: Color2, y: Color3) =
   mul(r[], x[], y[])
 template mul*(r: var Color, x: SomeNumber, y: Color3) =
