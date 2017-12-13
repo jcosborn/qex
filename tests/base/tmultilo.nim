@@ -1,25 +1,7 @@
 import qex
-import unittest, sequtils
+import testutils
+import sequtils
 
-const CT = 1e-14
-proc `~`(x,y:float):bool =
-  if x==0 or y==0: result = x==y
-  else: result = abs(x-y)/max(abs(x),abs(y)) < CT
-  if not result:
-    echo "LHS: ",x
-    echo "RHS: ",y
-proc `~`[T](x,y:openarray[T]):bool =
-  result = x.len == y.len
-  for i in 0..<x.len:
-    result = result and (x[i] ~ y[i])
-  if not result:
-    proc show[T](x:openArray[T]):string =
-      result = $x.len & " #[ "
-      for c in x:
-        result &= $c & " "
-      result &= "]"
-    echo "LHS: ",x.show
-    echo "RHS: ",y.show
 proc linkTrace(g: any):auto =
   let n = g[0][0].ncols * g[0].l.physVol * g.len
   var lt: type(g[0].trace)

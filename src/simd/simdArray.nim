@@ -27,7 +27,7 @@ macro map110(T,L,op1,op2: untyped): untyped =
   let x = ident("x")
   var body = newStmtList()
   body.add newLetStmt(x, xx)
-  let n = L.intval
+  let n = L.intval.int
   for i in 0..<n:
     template bb(t: untyped): untyped =
       newCall(ident"[]",newCall(ident"[]",t),newLit(i))
@@ -329,7 +329,7 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
 
   proc `$`*(x:T):string =
     result = "[" & $x[0]
-    for i in 1..<N:
+    for i in 1..<N.int:
       result &= "," & $x[i]
     result &= "]"
 
