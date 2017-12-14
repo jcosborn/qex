@@ -79,6 +79,11 @@ template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
   # ## dereference a $NAME object
   template `[]`*(x: name): untyped =
     x.fName
+  template isWrapper*(x: name): untyped = true
+  template asWrapper*(x: name, y: typed): untyped =
+    #static: echo "asWrapper Color"
+    #dumpTree: y
+    asName(y)
 
 proc makeWrapperTypeP*(name: NimNode; docs: string): NimNode =
   let Name = capitalizeAscii($name)
@@ -86,7 +91,7 @@ proc makeWrapperTypeP*(name: NimNode; docs: string): NimNode =
   let asName = ident("as" & $Name)
   let tasName = ident("t_as" & $Name)
   result = getAst(makeWrapperTypeX(name,fName,asName,tasName))
-  result = result.replaceComments(("$DOCS",docs),("$NAME",Name))
+  #result = result.replaceComments(("$DOCS",docs),("$NAME",Name))
   #echo result.repr
 
 macro makeWrapperType*(name,docs: untyped): untyped =

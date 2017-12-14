@@ -138,11 +138,11 @@ template spinMatrix*[T](x,y:static[int], a: untyped): untyped =
 #template spinMatrix*(I,J,T,a: untyped): untyped =
 #  Spin[MatrixArray[I,J,T]](v: MatrixArray[I,J,T](v: MatrixArrayObj[I,J,T](mat: a)))
 
-const z0 = ComplexType[float](v: ComplexObj[float](re:  0.0, im:  0.0))
-const z1 = ComplexType[float](v: ComplexObj[float](re:  1.0, im:  0.0))
-const zi = ComplexType[float](v: ComplexObj[float](re:  0.0, im:  1.0))
-const n1 = ComplexType[float](v: ComplexObj[float](re: -1.0, im:  0.0))
-const ni = ComplexType[float](v: ComplexObj[float](re:  0.0, im: -1.0))
+const z0 = newComplex( 0.0,  0.0)
+const z1 = newComplex( 1.0,  0.0)
+const zi = newComplex( 0.0,  1.0)
+const n1 = newComplex(-1.0,  0.0)
+const ni = newComplex( 0.0, -1.0)
 
 template s(r,c,x: untyped): untyped =
   spinMatrix[ComplexType[float]](r,c,x)
@@ -227,7 +227,7 @@ const
                      [ z0, n1 ]])
 
 template I(x: typed): untyped =
-  imagType(1)*x
+  newImag(1)*x
 
 proc spproj1p*(r: var any, x: any) =
   ## r: HalfFermion

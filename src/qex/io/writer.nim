@@ -85,7 +85,7 @@ template newWriter*[V: static[int]](l: Layout[V]; fn,md: string): untyped =
   wr.new
   wr.layout = l
   wr.fileName = fn
-  wr.setLayout
+  setLayout(wr)
   wr.open ql, md
   wr
 
