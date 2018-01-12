@@ -31,6 +31,23 @@ discard MPI_Comm_size(comm, size.addr)
 var fn = "testout.dat"
 if paramCount()>=1:
   fn = paramStr(1)
+var sinfo = true
+
+proc showInfo(fh: MPI_File) =
+  var info: MPI_Info
+  discard MPI_File_get_info(fh, info.addr)
+  var nkeys: cint
+  discard MPI_Info_get_nkeys(info, nkeys.addr)
+  var key = newSeq[char](MPI_MAX_INFO_KEY)
+  var ckey = cast[cstring](key[0].addr)
+  var val = newSeq[char](MPI_MAX_INFO_VAL)
+  var cval = cast[cstring](val[0].addr)
+  var lval = val.len.cint
+  var flag: cint
+  for i in 0..<nkeys:
+    discard MPI_Info_get_nthkey(info, i, ckey)
+    discard MPI_Info_get(info, ckey, lval, cval, flag.addr)
+    echo ckey, ": ", cval
 
 proc testContig(n: int) =
   var buf = newSeq[cint](n)
@@ -40,20 +57,25 @@ proc testContig(n: int) =
   discard MPI_Type_contiguous(n.cint, etype, filetype.addr)
   discard MPI_Type_commit(filetype.addr)
 
-  # MPI_File_get_info
-  # cb_nodes
-  # MPI_Info info;
-  # MPI_Info_create(&info);
-  # MPI_Info_set(info, "ind_rd_buffer_size", info_value);
+  var info: MPI_Info
+  info = MPI_INFO_NULL
+  #discard MPI_Info_create(info.addr)
+  #let cbnodes = size div 8
+  #discard MPI_Info_set(info, "cb_nodes", $cbnodes);
+
   # MPI_File_open(comm, filename, MPI_MODE_RDONLY, info, &fh);
-  # MPI_Info_free(&info);
+  #MPI_TYPE_CREATE_SUBARRAY(ndims, iarray_of_sizes, iarray_of_subsizes,
+  #                         iarray_of_starts, MPI_ORDER_FORTRAN, MPI_REAL,
+  #                         ifiletype, ierr)
+  #MPI_TYPE_COMMIT(ifiletype#, ierr)
 
   var fh: MPI_File
   let wmode = MPI_MODE_CREATE or MPI_MODE_WRONLY
   tic()
-  discard MPI_File_open(comm, fn, wmode, MPI_INFO_NULL, fh.addr)
+  discard MPI_File_open(comm, fn, wmode, info, fh.addr)
   toc("MPI_File_open write")
-  discard MPI_File_set_view(fh, disp, etype, filetype, "native", MPI_INFO_NULL)
+  discard MPI_File_set_view(fh, disp, etype, filetype, "native", info)
+  if rank==0 and sinfo: showInfo(fh)
   toc("MPI_File_set_view write")
   discard MPI_File_write_all(fh,buf[0].voidaddr,n.cint,etype,MPI_STATUS_IGNORE)
   discard MPI_barrier(comm)
@@ -63,9 +85,9 @@ proc testContig(n: int) =
   toc("MPI_File_close write")
 
   let rmode = MPI_MODE_RDONLY
-  discard MPI_File_open(comm, fn, rmode, MPI_INFO_NULL, fh.addr)
+  discard MPI_File_open(comm, fn, rmode, info, fh.addr)
   toc("MPI_File_open read")
-  discard MPI_File_set_view(fh, disp, etype, filetype, "native", MPI_INFO_NULL)
+  discard MPI_File_set_view(fh, disp, etype, filetype, "native", info)
   toc("MPI_File_set_view read")
   discard MPI_File_read_all(fh,buf[0].voidaddr,n.cint,etype,MPI_STATUS_IGNORE)
   discard MPI_barrier(comm)
@@ -74,6 +96,7 @@ proc testContig(n: int) =
   discard MPI_barrier(comm)
   toc("MPI_File_close read")
 
+  #discard MPI_Info_free(info.addr)
   if rank==0: removeFile(fn)
 
 
@@ -82,7 +105,7 @@ if rank==0:
   echo "using file: ", fn
 
 var n = 1024
-var nmax = 2*72*16*1024 
+var nmax = 2*72*16*1024
 if paramCount()>=2:
   nmax = parseInt(paramStr(2))*1024*1024
 while n<=nmax:
@@ -90,6 +113,7 @@ while n<=nmax:
     let b = formatSize(n*size*sizeof(cint))
     echo "total file size: ", b
   testContig(n)
+  sinfo = false
   testContig(n)
   for i in 0..<deltas.len:
     deltas[i].d = 0.0
