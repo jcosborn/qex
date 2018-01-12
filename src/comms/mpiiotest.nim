@@ -28,6 +28,9 @@ let comm = MPI_COMM_WORLD
 var rank, size: cint
 discard MPI_Comm_rank(comm, rank.addr)
 discard MPI_Comm_size(comm, size.addr)
+var fn = "testout.dat"
+if paramCount()>=1:
+  fn = paramStr(1)
 
 proc testContig(n: int) =
   var buf = newSeq[cint](n)
@@ -38,7 +41,6 @@ proc testContig(n: int) =
   discard MPI_Type_commit(filetype.addr)
 
   var fh: MPI_File
-  var fn = "testout.dat"
   let wmode = MPI_MODE_CREATE or MPI_MODE_WRONLY
   tic()
   discard MPI_File_open(comm, fn, wmode, MPI_INFO_NULL, fh.addr)
@@ -69,6 +71,7 @@ proc testContig(n: int) =
 
 if rank==0:
   echo "total ranks: ", size
+  echo "using file: ", fn
 
 var n = 1024
 while n<=(2*72*16*1024):
@@ -84,8 +87,9 @@ while n<=(2*72*16*1024):
   testContig(n)
   for i in 0..<deltas.len:
     if rank==0:
-      let sp = max(0, 20-deltas[i].s.len)
-      echo deltas[i].s, spaces(sp), ": ", deltas[i].d/deltas[i].n.float
+      let sp = max(0, 23-deltas[i].s.len)
+      let t = formatFloat(1e6*deltas[i].d/deltas[i].n.float, ffDecimal, 3)
+      echo deltas[i].s, spaces(sp), ": ", align(t,15)
   n *= 2
 
 discard MPI_Finalize()
