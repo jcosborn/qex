@@ -40,6 +40,14 @@ proc testContig(n: int) =
   discard MPI_Type_contiguous(n.cint, etype, filetype.addr)
   discard MPI_Type_commit(filetype.addr)
 
+  # MPI_File_get_info
+  # cb_nodes
+  # MPI_Info info;
+  # MPI_Info_create(&info);
+  # MPI_Info_set(info, "ind_rd_buffer_size", info_value);
+  # MPI_File_open(comm, filename, MPI_MODE_RDONLY, info, &fh);
+  # MPI_Info_free(&info);
+
   var fh: MPI_File
   let wmode = MPI_MODE_CREATE or MPI_MODE_WRONLY
   tic()
@@ -74,7 +82,10 @@ if rank==0:
   echo "using file: ", fn
 
 var n = 1024
-while n<=(2*72*16*1024):
+var nmax = 2*72*16*1024 
+if paramCount()>=2:
+  nmax = parseInt(paramStr(2))*1024*1024
+while n<=nmax:
   if rank==0:
     let b = formatSize(n*size*sizeof(cint))
     echo "total file size: ", b
