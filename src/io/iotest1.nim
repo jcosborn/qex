@@ -40,7 +40,8 @@ proc testContig(n: int) =
   for i in 0..<n:
     wbuf[i] = cint(i+1)
 
-  let wflags = O_CREAT or O_WRONLY
+  let wflags0 = O_CREAT or O_WRONLY
+  let wflags1 = O_WRONLY
   let wmode = 0o666
   let wsize = wbuf.len*sizeof(type(wbuf[0]))
   let woffset = rank*wsize
@@ -51,15 +52,24 @@ proc testContig(n: int) =
   let roffset = rank*rsize
 
   tic()
-  let wfd = open(fn, wflags, wmode)
-  discard MPI_barrier(comm)
+  var wfd: cint
+  if rank==0:
+    wfd = open(fn, wflags0, wmode)
+    discard MPI_barrier(comm)
+    discard MPI_barrier(comm)
+  else:
+    discard MPI_barrier(comm)
+    wfd = open(fn, wflags1, wmode)
+    discard MPI_barrier(comm)
   toc("open write")
   let woff2 = lseek(wfd, woffset, SEEK_SET)
+  discard MPI_barrier(comm)
   toc("seek write")
   let wsize2 = write(wfd, wbuf[0].voidaddr, wsize)
   discard MPI_barrier(comm)
   toc("write")
   discard close(wfd)
+  discard MPI_barrier(comm)
   toc("write close")
 
   tic()
@@ -67,18 +77,21 @@ proc testContig(n: int) =
   discard MPI_barrier(comm)
   toc("open read")
   let roff2 = lseek(rfd, roffset, SEEK_SET)
+  discard MPI_barrier(comm)
   toc("seek read")
   let rsize2 = read(rfd, rbuf[0].voidaddr, rsize)
   discard MPI_barrier(comm)
   toc("read")
   discard close(rfd)
+  discard MPI_barrier(comm)
   toc("read close")
 
   var errors,errors2 = 0
   for i in 0..<n:
    if rbuf[i] != wbuf[i]:
+     #echo rank, ": ", i, ": rbuf: ", rbuf[i], " wbuf: ", wbuf[i]
      inc errors
-     break
+     #break
   discard MPI_Allreduce(errors.voidaddr, errors2.voidaddr,
                         1.cint, MPI_INT64_T, MPI_SUM, comm)
   if errors2>0:
@@ -114,7 +127,7 @@ while n<=nmax:
   testContig(n)
   for i in 0..<deltas.len:
     if rank==0:
-      let sp = max(0, 23-deltas[i].s.len)
+      let sp = max(0, 11-deltas[i].s.len)
       let t = formatFloat(1e6*deltas[i].d/deltas[i].n.float, ffDecimal, 3)
       echo deltas[i].s, spaces(sp), ": ", align(t,15)
   n *= 2
