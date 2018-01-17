@@ -32,7 +32,14 @@ discard MPI_Comm_size(comm, size.addr)
 var fn = "testout.dat"
 if paramCount()>=1:
   fn = paramStr(1)
-var sinfo = true
+var nwriters = size.int
+var nreaders = size.int
+if paramCount()>=3:
+  nwriters = parseInt(paramStr(3))
+nreaders = nwriters
+if paramCount()>=4:
+  nreaders = parseInt(paramStr(4))
+var maxBlock = 16*1024*1024
 
 proc testContig(n: int) =
   var wbuf = newSeq[cint](n)
@@ -65,8 +72,17 @@ proc testContig(n: int) =
   let woff2 = lseek(wfd, woffset, SEEK_SET)
   discard MPI_barrier(comm)
   toc("seek write")
-  let wsize2 = write(wfd, wbuf[0].voidaddr, wsize)
-  discard MPI_barrier(comm)
+  let wMaxElems = maxBlock div sizeof(type(wbuf[0]))
+  let wb = (n+wMaxElems-1) div wMaxElems
+  let wn = (size+nwriters-1) div nwriters
+  for b in 0..<wb:
+    let we0 = b*wMaxElems
+    let we1 = min((b+1)*wMaxElems,n)
+    let wen = (we1-we0)*sizeof(type(wbuf[0]))
+    for i in 0..<wn:
+      if i == rank mod wn:
+        let wsize2 = write(wfd, wbuf[we0].voidaddr, wen)
+      discard MPI_barrier(comm)
   toc("write")
   discard close(wfd)
   discard MPI_barrier(comm)
@@ -79,8 +95,11 @@ proc testContig(n: int) =
   let roff2 = lseek(rfd, roffset, SEEK_SET)
   discard MPI_barrier(comm)
   toc("seek read")
-  let rsize2 = read(rfd, rbuf[0].voidaddr, rsize)
-  discard MPI_barrier(comm)
+  let rn = (size+nreaders-1) div nreaders
+  for i in 0..<rn:
+    if i == rank mod rn:
+      let rsize2 = read(rfd, rbuf[0].voidaddr, rsize)
+    discard MPI_barrier(comm)
   toc("read")
   discard close(rfd)
   discard MPI_barrier(comm)
@@ -101,24 +120,26 @@ proc testContig(n: int) =
   if rank==0: removeFile(fn)
 
 
-proc disp =
-  if rank==0:
-    echo "total ranks: ", size
-    echo "using file: ", fn
-    echo "sizeof(Off): ", sizeof(Off)
-    {.emit:"""printf("sizeof(off_t): %i\n", sizeof(off_t));""".}
-disp()
-
 var n = 1024
 var nmax = 2*72*16*1024
 if paramCount()>=2:
   nmax = parseInt(paramStr(2))*1024*1024
+
+proc disp =
+  if rank==0:
+    echo "total ranks: ", size
+    echo "using file: ", fn
+    echo "nwriters: ", nwriters
+    echo "nreaders: ", nreaders
+    echo "sizeof(Off): ", sizeof(Off)
+    {.emit:"""printf("sizeof(off_t): %i\n", sizeof(off_t));""".}
+disp()
+
 while n<=nmax:
   if rank==0:
     let b = formatSize(n*size*sizeof(cint))
     echo "total file size: ", b
   testContig(n)
-  sinfo = false
   testContig(n)
   for i in 0..<deltas.len:
     deltas[i].d = 0.0

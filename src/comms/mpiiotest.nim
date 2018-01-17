@@ -23,6 +23,13 @@ template toc(st: string) =
     timer = t
     inc to.n
 
+template chkerr(f: cint) =
+  block:
+    let err = f
+    if err!=MPI_SUCCESS:
+      echo "MPI error: ", err
+      echo instantiationInfo(-1)
+
 discard MPI_init()
 let comm = MPI_COMM_WORLD
 var rank, size: cint
@@ -32,10 +39,9 @@ var fn = "testout.dat"
 if paramCount()>=1:
   fn = paramStr(1)
 var sinfo = true
+var cbnodes = 0
 
-proc showInfo(fh: MPI_File) =
-  var info: MPI_Info
-  discard MPI_File_get_info(fh, info.addr)
+proc showInfo(info: MPI_Info) =
   var nkeys: cint
   discard MPI_Info_get_nkeys(info, nkeys.addr)
   var key = newSeq[char](MPI_MAX_INFO_KEY)
@@ -48,6 +54,11 @@ proc showInfo(fh: MPI_File) =
     discard MPI_Info_get_nthkey(info, i, ckey)
     discard MPI_Info_get(info, ckey, lval, cval, flag.addr)
     echo ckey, ": ", cval
+proc showInfo(fh: MPI_File) =
+  var info: MPI_Info
+  discard MPI_File_get_info(fh, info.addr)
+  showInfo(info)
+  discard MPI_Info_free(info.addr)
 
 proc testContig(n: int) =
   var buf = newSeq[cint](n)
@@ -58,10 +69,13 @@ proc testContig(n: int) =
   discard MPI_Type_commit(filetype.addr)
 
   var info: MPI_Info
-  info = MPI_INFO_NULL
-  #discard MPI_Info_create(info.addr)
-  #let cbnodes = size div 8
-  #discard MPI_Info_set(info, "cb_nodes", $cbnodes);
+  if cbnodes<=0:
+    info = MPI_INFO_NULL
+  else:
+    chkerr MPI_Info_create(info.addr)
+    #chkerr MPI_Info_set(info, "cb_nodes", $cbnodes)
+    chkerr MPI_Info_set(info, "bg_nodes_pset", $cbnodes)
+    #showInfo(info)
 
   # MPI_File_open(comm, filename, MPI_MODE_RDONLY, info, &fh);
   #MPI_TYPE_CREATE_SUBARRAY(ndims, iarray_of_sizes, iarray_of_subsizes,
@@ -96,18 +110,24 @@ proc testContig(n: int) =
   discard MPI_barrier(comm)
   toc("MPI_File_close read")
 
-  #discard MPI_Info_free(info.addr)
+  if cbnodes>0:
+    discard MPI_Info_free(info.addr)
+  discard MPI_Type_free(filetype.addr)
   if rank==0: removeFile(fn)
 
-
-if rank==0:
-  echo "total ranks: ", size
-  echo "using file: ", fn
 
 var n = 1024
 var nmax = 2*72*16*1024
 if paramCount()>=2:
   nmax = parseInt(paramStr(2))*1024*1024
+if paramCount()>=3:
+  cbnodes = parseInt(paramStr(3))
+
+if rank==0:
+  echo "total ranks: ", size
+  echo "using file: ", fn
+  echo "cbnodes: ", cbnodes
+
 while n<=nmax:
   if rank==0:
     let b = formatSize(n*size*sizeof(cint))
