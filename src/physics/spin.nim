@@ -249,34 +249,35 @@ template spproj3m*(x: any): untyped = spprojmat3m * x
 template spproj4m*(x: any): untyped = spprojmat4m * x
 ]#
 
-template spproj1p*(xx: typed): untyped =
-  let x = xx
-  let v0 = x[][0] + I(x[][3])
-  let v1 = x[][1] + I(x[][2])
+template spproj1p*(xx: Spin): untyped =
+  let x = xx[]
+  #let v0 = x[0] + I(x[3])
+  #let v1 = x[1] + I(x[2])
+  #spinVector[type(v0)](2,[v0,v1])
+  spinVector[type(x[0])](2,[x[0]+I(x[3]),x[1]+I(x[2])])
+template spproj2p*(xx: Spin): untyped =
+  let x = xx[]
+  spinVector[type(x[0])](2,[x[0]-x[3],x[1]+x[2]])
+template spproj3p*(xx: Spin): untyped =
+  let x = xx[]
+  spinVector[type(x[0])](2,[x[0]+I(x[2]),x[1]-I(x[3])])
+template spproj4p*(xx: Spin): untyped =
+  let x = xx[]
+  spinVector[type(x[0])](2,[x[0]+x[2],x[1]+x[3]])
+template spproj1m*(xx: Spin): untyped =
+  let x = xx[]
+  let v0 = x[0] - I(x[3])
+  let v1 = x[1] - I(x[2])
   spinVector[type(v0)](2,[v0,v1])
-template spproj2p*(xx: typed): untyped =
-  let x = xx
-  spinVector[type(x[][0])](2,[x[][0]-x[][3],x[][1]+x[][2]])
-template spproj3p*(xx: typed): untyped =
-  let x = xx
-  spinVector[type(x[][0])](2,[x[][0]+I(x[][2]),x[][1]-I(x[][3])])
-template spproj4p*(xx: typed): untyped =
-  let x = xx
-  spinVector[type(x[][0])](2,[x[][0]+x[][2],x[][1]+x[][3]])
-template spproj1m*(xx: typed): untyped =
-  let x = xx
-  let v0 = x[][0] - I(x[][3])
-  let v1 = x[][1] - I(x[][2])
-  spinVector[type(v0)](2,[v0,v1])
-template spproj2m*(xx: typed): untyped =
-  let x = xx
-  spinVector[type(x[][0])](2,[x[][0]+x[][3],x[][1]-x[][2]])
-template spproj3m*(xx: typed): untyped =
-  let x = xx
-  spinVector[type(x[][0])](2,[x[][0]-I(x[][2]),x[][1]+I(x[][3])])
-template spproj4m*(xx: typed): untyped =
-  let x = xx
-  spinVector[type(x[][0])](2,[x[][0]-x[][2],x[][1]-x[][3]])
+template spproj2m*(xx: Spin): untyped =
+  let x = xx[]
+  spinVector[type(x[0])](2,[x[0]+x[3],x[1]-x[2]])
+template spproj3m*(xx: Spin): untyped =
+  let x = xx[]
+  spinVector[type(x[0])](2,[x[0]-I(x[2]),x[1]+I(x[3])])
+template spproj4m*(xx: Spin): untyped =
+  let x = xx[]
+  spinVector[type(x[0])](2,[x[0]-x[2],x[1]-x[3]])
 
 proc sprecon1p*(r: var any, x: any) =
   ## r: DiracFermion
@@ -289,40 +290,40 @@ proc sprecon1p*(r: var any, x: any) =
     r[3][i] = x[1][i]
 
 #[
-template sprecon1p*(x: typed): untyped = spreconmat1p * x
-template sprecon2p*(x: typed): untyped = spreconmat2p * x
-template sprecon3p*(x: typed): untyped = spreconmat3p * x
-template sprecon4p*(x: typed): untyped = spreconmat4p * x
-template sprecon1m*(x: typed): untyped = spreconmat1m * x
-template sprecon2m*(x: typed): untyped = spreconmat2m * x
-template sprecon3m*(x: typed): untyped = spreconmat3m * x
-template sprecon4m*(x: typed): untyped = spreconmat4m * x
+template sprecon1p*(x: Spin): untyped = spreconmat1p * x
+template sprecon2p*(x: Spin): untyped = spreconmat2p * x
+template sprecon3p*(x: Spin): untyped = spreconmat3p * x
+template sprecon4p*(x: Spin): untyped = spreconmat4p * x
+template sprecon1m*(x: Spin): untyped = spreconmat1m * x
+template sprecon2m*(x: Spin): untyped = spreconmat2m * x
+template sprecon3m*(x: Spin): untyped = spreconmat3m * x
+template sprecon4m*(x: Spin): untyped = spreconmat4m * x
 ]#
 
-template sprecon1p*(xx: typed): untyped =
-  let x = xx
-  spinVector[type(x[][0])](4,[x[][0],x[][1],-I(x[][1]),-I(x[][0])])
-template sprecon2p*(xx: typed): untyped =
-  let x = xx
-  spinVector[type(x[][0])](4,[x[][0],x[][1],x[][1],-x[][0]])
-template sprecon3p*(xx: typed): untyped =
-  let x = xx
-  spinVector[type(x[][0])](4,[x[][0],x[][1],-I(x[][0]),I(x[][1])])
-template sprecon4p*(xx: typed): untyped =
-  let x = xx
-  spinVector[type(x[][0])](4,[x[][0],x[][1],x[][0],x[][1]])
-template sprecon1m*(xx: typed): untyped =
-  let x = xx
-  spinVector[type(x[][0])](4,[x[][0],x[][1],I(x[][1]),I(x[][0])])
-template sprecon2m*(xx: typed): untyped =
-  let x = xx
-  spinVector[type(x[][0])](4,[x[][0],x[][1],-x[][1],x[][0]])
-template sprecon3m*(xx: typed): untyped =
-  let x = xx
-  spinVector[type(x[][0])](4,[x[][0],x[][1],I(x[][0]),-I(x[][1])])
-template sprecon4m*(xx: typed): untyped =
-  let x = xx
-  spinVector[type(x[][0])](4,[x[][0],x[][1],-x[][0],-x[][1]])
+template sprecon1p*(xx: Spin): untyped =
+  let x = xx[]
+  spinVector[type(x[0])](4,[x[0],x[1],-I(x[1]),-I(x[0])])
+template sprecon2p*(xx: Spin): untyped =
+  let x = xx[]
+  spinVector[type(x[0])](4,[x[0],x[1],x[1],-x[0]])
+template sprecon3p*(xx: Spin): untyped =
+  let x = xx[]
+  spinVector[type(x[0])](4,[x[0],x[1],-I(x[0]),I(x[1])])
+template sprecon4p*(xx: Spin): untyped =
+  let x = xx[]
+  spinVector[type(x[0])](4,[x[0],x[1],x[0],x[1]])
+template sprecon1m*(xx: Spin): untyped =
+  let x = xx[]
+  spinVector[type(x[0])](4,[x[0],x[1],I(x[1]),I(x[0])])
+template sprecon2m*(xx: Spin): untyped =
+  let x = xx[]
+  spinVector[type(x[0])](4,[x[0],x[1],-x[1],x[0]])
+template sprecon3m*(xx: Spin): untyped =
+  let x = xx[]
+  spinVector[type(x[0])](4,[x[0],x[1],I(x[0]),-I(x[1])])
+template sprecon4m*(xx: Spin): untyped =
+  let x = xx[]
+  spinVector[type(x[0])](4,[x[0],x[1],-x[0],-x[1]])
 
 when isMainModule:
   echo gamma0[0,0]
