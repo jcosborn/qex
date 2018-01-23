@@ -39,7 +39,7 @@ if paramCount()>=3:
 nreaders = nwriters
 if paramCount()>=4:
   nreaders = parseInt(paramStr(4))
-var maxBlock = 16*1024*1024
+var maxBlock = 16*1024*1024*1024
 
 proc testContig(n: int) =
   var wbuf = newSeq[cint](n)
@@ -51,17 +51,19 @@ proc testContig(n: int) =
   let wflags1 = O_WRONLY
   let wmode = 0o666
   let wsize = wbuf.len*sizeof(type(wbuf[0]))
-  let woffset = rank*wsize
+  var woffset = rank*wsize
 
   let rflags = O_RDONLY
   let rmode = 0o666
   let rsize = rbuf.len*sizeof(type(rbuf[0]))
-  let roffset = rank*rsize
+  var roffset = rank*rsize
 
   tic()
   var wfd: cint
   if rank==0:
     wfd = open(fn, wflags0, wmode)
+    let gsize = wsize*size
+    discard ftruncate(wfd, gsize)
     discard MPI_barrier(comm)
     discard MPI_barrier(comm)
   else:
@@ -69,20 +71,24 @@ proc testContig(n: int) =
     wfd = open(fn, wflags1, wmode)
     discard MPI_barrier(comm)
   toc("open write")
-  let woff2 = lseek(wfd, woffset, SEEK_SET)
-  discard MPI_barrier(comm)
-  toc("seek write")
+  #let woff2 = lseek(wfd, woffset, SEEK_SET)
+  #discard MPI_barrier(comm)
+  #toc("seek write")
   let wMaxElems = maxBlock div sizeof(type(wbuf[0]))
   let wb = (n+wMaxElems-1) div wMaxElems
   let wn = (size+nwriters-1) div nwriters
-  for i in 0..<wn:
-    if i == rank mod wn:
-      for b in 0..<wb:
+  let woffi1 = size div wn
+  let woffi2 = rank div wn
+  for b in 0..<wb:
+    for i in 0..<wn:
+      if i == rank mod wn:
         let we0 = b*wMaxElems
         let we1 = min((b+1)*wMaxElems,n)
         let wen = (we1-we0)*sizeof(type(wbuf[0]))
+        woffset = wen * (((b)*wn+i)*woffi1+woffi2)
+        let woff2 = lseek(wfd, woffset, SEEK_SET)
         let wsize2 = write(wfd, wbuf[we0].voidaddr, wen)
-    discard MPI_barrier(comm)
+      discard MPI_barrier(comm)
   toc("write")
   discard close(wfd)
   discard MPI_barrier(comm)
@@ -92,20 +98,24 @@ proc testContig(n: int) =
   let rfd = open(fn, rflags, rmode)
   discard MPI_barrier(comm)
   toc("open read")
-  let roff2 = lseek(rfd, roffset, SEEK_SET)
-  discard MPI_barrier(comm)
-  toc("seek read")
+  #let roff2 = lseek(rfd, roffset, SEEK_SET)
+  #discard MPI_barrier(comm)
+  #toc("seek read")
   let rMaxElems = maxBlock div sizeof(type(rbuf[0]))
   let rb = (n+rMaxElems-1) div rMaxElems
   let rn = (size+nreaders-1) div nreaders
-  for i in 0..<rn:
-    if i == rank mod rn:
-      for b in 0..<rb:
+  let roffi1 = size div wn
+  let roffi2 = rank div wn
+  for b in 0..<rb:
+    for i in 0..<rn:
+      if i == rank mod rn:
         let re0 = b*rMaxElems
         let re1 = min((b+1)*rMaxElems,n)
         let ren = (re1-re0)*sizeof(type(rbuf[0]))
+        roffset = ren * (((b)*rn+i)*roffi1+roffi2)
+        let roff2 = lseek(rfd, roffset, SEEK_SET)
         let rsize2 = read(rfd, rbuf[re0].voidaddr, ren)
-    discard MPI_barrier(comm)
+      discard MPI_barrier(comm)
   toc("read")
   discard close(rfd)
   discard MPI_barrier(comm)
@@ -113,10 +123,10 @@ proc testContig(n: int) =
 
   var errors,errors2 = 0
   for i in 0..<n:
-   if rbuf[i] != wbuf[i]:
-     #echo rank, ": ", i, ": rbuf: ", rbuf[i], " wbuf: ", wbuf[i]
-     inc errors
-     #break
+    if rbuf[i] != wbuf[i]:
+      #echo rank, ": ", i, ": rbuf: ", rbuf[i], " wbuf: ", wbuf[i]
+      inc errors
+      #break
   discard MPI_Allreduce(errors.voidaddr, errors2.voidaddr,
                         1.cint, MPI_INT64_T, MPI_SUM, comm)
   if errors2>0:
@@ -146,8 +156,8 @@ while n<=nmax:
   if rank==0:
     let b = formatSize(n*size*sizeof(cint))
     echo "total file size: ", b
-  testContig(n)
-  testContig(n)
+  #testContig(n)
+  #testContig(n)
   for i in 0..<deltas.len:
     deltas[i].d = 0.0
     deltas[i].n = 0
