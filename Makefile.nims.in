@@ -97,7 +97,7 @@ if args.len>0 and args[0] == "help": help()
 while iarg<args.len:
   var found = false
   for t in configTasks:
-    if args[iarg][0..(t.cmd.len-1)] == t.cmd:
+    if args[iarg].len>=t.cmd.len and args[iarg][0..(t.cmd.len-1)] == t.cmd:
       found = true
       t.f()
   if not found: break
