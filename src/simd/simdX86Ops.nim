@@ -373,13 +373,13 @@ when isMainModule:
   echo d8[0]
   echo d8[1]
 
-  var h:SimdH8
-  s = toSingle(h)
-  h = toHalf(s)
-  assign(s,[1,2,3,4,5,6,7,8])
-  h = toHalf(s)
-  s8 = toSingle(h)
-  echo s8
+  #var h:SimdH8
+  #s = toSingle(h)
+  #h = toHalf(s)
+  #assign(s,[1,2,3,4,5,6,7,8])
+  #h = toHalf(s)
+  #s8 = toSingle(h)
+  #echo s8
 
   when declared(SimdS16):
     var s16:SimdS16
@@ -387,3 +387,101 @@ when isMainModule:
     var h16 = toHalf(s16)
     var t16 = toSingle(h16)
     echo t16
+
+  proc testm128 =
+    echo "testing perms m128"
+    var x0,y0,z0: m128
+    assign(x0, 1, 2, 3, 4)
+    echo x0
+    echo perm(x0, 0)
+    perm1(y0, x0)
+    echo y0
+    echo perm(x0, 1)
+    perm2(y0, x0)
+    echo y0
+    echo perm(x0, 2)
+    perm1(z0, y0)
+    echo z0
+    echo perm(x0, 3)
+    echo perm(x0, 4)
+  testm128()
+
+  proc testm256d =
+    echo "testing perms m256d"
+    var x0,y0,z0: m256d
+    assign(x0, 1, 2, 3, 4)
+    echo x0
+    echo perm(x0, 0)
+    perm1(y0, x0)
+    echo y0
+    echo perm(x0, 1)
+    perm2(y0, x0)
+    echo y0
+    echo perm(x0, 2)
+    perm1(z0, y0)
+    echo z0
+    echo perm(x0, 3)
+    echo perm(x0, 4)
+  testm256d()
+
+  proc testm256 =
+    echo "testing perms m256"
+    var x0,y0,z0,w0: m256
+    assign(x0, 1, 2, 3, 4, 5, 6, 7, 8)
+    echo x0
+    echo perm(x0, 0)
+    perm1(y0, x0)
+    echo y0
+    echo perm(x0, 1)
+    perm2(y0, x0)
+    echo y0
+    echo perm(x0, 2)
+    perm1(z0, y0)
+    echo z0
+    echo perm(x0, 3)
+    perm4(y0, x0)
+    echo y0
+    echo perm(x0, 4)
+    perm1(z0, y0)
+    echo z0
+    echo perm(x0, 5)
+    perm2(z0, y0)
+    echo z0
+    echo perm(x0, 6)
+    perm1(w0, z0)
+    echo w0
+    echo perm(x0, 7)
+    echo perm(x0, 8)
+  testm256()
+
+  when defined(AVX512):
+    proc testm512 =
+      echo "testing perms m512"
+      var x0,y0,z0,w0: m512
+      assign(x0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+      echo x0
+      echo perm(x0, 0)
+      perm1(y0, x0)
+      echo y0
+      echo perm(x0, 1)
+      perm2(y0, x0)
+      echo y0
+      echo perm(x0, 2)
+      perm1(z0, y0)
+      echo z0
+      echo perm(x0, 3)
+      perm4(y0, x0)
+      echo y0
+      echo perm(x0, 4)
+      perm1(z0, y0)
+      echo z0
+      echo perm(x0, 5)
+      perm2(z0, y0)
+      echo z0
+      echo perm(x0, 6)
+      perm1(w0, z0)
+      echo w0
+      echo perm(x0, 7)
+      echo perm(x0, 8)
+    testm512()
+

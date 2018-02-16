@@ -56,7 +56,9 @@ when declared(SimdD8) and declared(SimdS8):
     for i in 0..<8:
       result[i] = x[i]
   template assign*(r: SimdS8, x: SimdD8): untyped =
-    r = toSingle(x)
+    r := toSingle(x)
+  template `:=`*(r: SimdS8, x: SimdD8): untyped =
+    assign(r, x)
   template assign*(r: SimdD8, x: SimdS8): untyped =
     r = toDouble(x)
   converter promote*(x: SimdS8): SimdD8 =

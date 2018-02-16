@@ -9,7 +9,6 @@ proc baseImpl(b:NimNode; x:NimNode):NimNode =
 macro BASE(b:untyped; x:varargs[untyped]):auto = baseImpl(b, x)
 macro BASE4(x:varargs[untyped]):auto = baseImpl(newLit(4), x)
 
-
 # m128 operations
 
 proc perm1*(r:var m128; x:m128) {.inline.} =
@@ -20,6 +19,15 @@ proc perm4*(r:var m128; x:m128) {.inline.} =
   assert(false, "perm4 not valid for m128")
 proc perm8*(r:var m128; x:m128) {.inline.} =
   assert(false, "perm8 not valid for m128")
+
+var simdPermM128 = [
+  mm_set_epi32(3,2,1,0),
+  mm_set_epi32(2,3,0,1),
+  mm_set_epi32(1,0,3,2),
+  mm_set_epi32(0,1,2,3)
+]
+template perm*(x: m128, p: SomeNumber): untyped =
+  mm_permutevar_ps(x, simdPermM128[p mod 4])
 
 proc packp1*(r:var openArray[SomeNumber]; x:m128;
              l:var openArray[SomeNumber]) {.inline.} =
@@ -118,6 +126,19 @@ proc perm4*(r:var m256; x:m256) {.inline.} =
   r = mm256_permute2f128_ps(x, x, 1)
 proc perm8*(r:var m256; x:m256) {.inline.} =
   assert(false, "perm8 not valid for m256")
+
+var simdPermM256 = [
+  mm256_set_epi32(7,6,5,4,3,2,1,0),
+  mm256_set_epi32(6,7,4,5,2,3,0,1),
+  mm256_set_epi32(5,4,7,6,1,0,3,2),
+  mm256_set_epi32(4,5,6,7,0,1,2,3),
+  mm256_set_epi32(3,2,1,0,7,6,5,4),
+  mm256_set_epi32(2,3,0,1,6,7,4,5),
+  mm256_set_epi32(1,0,3,2,5,4,7,6),
+  mm256_set_epi32(0,1,2,3,4,5,6,7)
+]
+template perm*(x: m256, p: SomeNumber): untyped =
+  mm256_permutevar8x32_ps(x, simdPermM256[p mod 8])
 
 proc packp1*(r:var openArray[SomeNumber]; x:m256;
              l:var openArray[SomeNumber]) {.inline.} =
@@ -274,6 +295,16 @@ proc blendm8*(x:var m256; r:openArray[SomeNumber];
 
 # m256d operations
 
+var simdPermM256d = [
+  mm256_set_epi32(7,6,5,4,3,2,1,0),
+  mm256_set_epi32(5,4,7,6,1,0,3,2),
+  mm256_set_epi32(3,2,1,0,7,6,5,4),
+  mm256_set_epi32(1,0,3,2,5,4,7,6)
+]
+template perm*(x: m256d, p: SomeNumber): untyped =
+  mm256_castps_pd(mm256_permutevar8x32_ps(mm256_castpd_ps(x),
+                                          simdPermM256d[p mod 4]))
+
 proc perm1*(r:var m256d; x:m256d) {.inline.} =
   r = mm256_permute_pd(x, 5)
 proc perm2*(r:var m256d; x:m256d) {.inline.} =
@@ -371,6 +402,20 @@ proc blendm8*(x:var m256d; r:openArray[SomeNumber];
 
 
 # m512 operations
+
+when defined(AVX512):
+  var simdPermM512 = [
+    mm512_set_epi32(15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0)
+    #mm512_set_epi32(6,7,4,5,2,3,0,1),
+    #mm512_set_epi32(5,4,7,6,1,0,3,2),
+    #mm512_set_epi32(4,5,6,7,0,1,2,3),
+    #mm512_set_epi32(3,2,1,0,7,6,5,4),
+    #mm512_set_epi32(2,3,0,1,6,7,4,5),
+    #mm512_set_epi32(1,0,3,2,5,4,7,6),
+    #mm512_set_epi32(0,1,2,3,4,5,6,7)
+  ]
+  template perm*(x: m512, p: SomeNumber): untyped =
+    mm512_permutexvar_ps(simdPermM512[p mod 16], x)
 
 #proc perm1*(r:var m512; x:m512) {.inline.} =
 template perm1*(r:var m512; x:m512) =

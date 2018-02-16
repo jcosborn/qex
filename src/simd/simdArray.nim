@@ -338,6 +338,10 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   makePerm(4,T,L,N0)
   makePerm(8,T,L,N0)
   makePerm(16,T,L,N0)
+  proc perm*(x: T, p: SomeNumber): T {.inline,noInit.} =
+    let b = (p div N0) and (L-1)
+    forStatic i, 0, L-1:
+      assign(result[][i], perm(x[][i xor b],p))
 
   makePackP(1,T,L,N0)
   makePackP(2,T,L,N0)
