@@ -27,12 +27,13 @@ template forwardFunc*(t: typedesc, f: untyped) {.dirty.} =
     mixin f
     f(x[])
 
-type
-  AsVar*[T] = object
-    v*: T
-template asVar*(x: typed): untyped =
-  AsVar[type(x)](v: x)
-makeDeref(AsVar, x.T)
+#type
+#  AsVar*[T] = object
+#    v*: T
+#template asVar*(x: typed): untyped =
+#  AsVar[type(x)](v: x)
+#makeDeref(AsVar, x.T)
+makeWrapperType(AsVar)
 template len*(x: AsVar): untyped = x[].len
 template re*(x: AsVar): untyped = x[].re
 template im*(x: AsVar): untyped = x[].im
@@ -80,17 +81,18 @@ forwardFunc(AsScalar, simdType)
 forwardFunc(AsScalar, simdLength)
 ]#
 
-type
-  Adjointed*[T] = object
-    v*: T
-template adjointed*(x: typed): untyped =
+#type
+#  Adjointed*[T] = object
+#    v*: T
+#template adjointed*(x: typed): untyped =
   #static: echo "adjointed"
   #dumpTree: x
-  let x_adjointed = x
-  Adjointed[type(x_adjointed)](v: x_adjointed)
+#  let x_adjointed = x
+#  Adjointed[type(x_adjointed)](v: x_adjointed)
+makeWrapperType(Adjointed)
 template adj*(x: typed): untyped =
-  mixin adj
-  bind adjointed
+  mixin adj, isWrapper, asWrapper
+  bind asAdjointed
   when isWrapper(x):
     #static: echo "adj typed wrapper"
     #dumpTree: x
@@ -99,11 +101,9 @@ template adj*(x: typed): untyped =
     #static: echo "adj typed not wrapper"
     #dumpTree: x
     #(Masked[type(x)])(maskedObj(x,msk))
-    adjointed(x)
-
-
+    asAdjointed(x)
 #template `[]`*[T](x:Adjointed[T]):untyped = cast[T](x)
-makeDeref(Adjointed, x.T)
+#makeDeref(Adjointed, x.T)
 template `[]`*(x:Adjointed; i:SomeInteger):untyped = x[][i].adj
 template `[]`*(x:Adjointed; i,j:SomeInteger):untyped = x[][j,i].adj
 template len*(x:Adjointed):untyped = x[].len
@@ -197,7 +197,7 @@ type
 template toDoubleX*(x: typed): untyped =
   ToDouble[type(x)](v: x)
 template toDouble*(x: typed): untyped =
-  mixin toDouble, toDoubleImpl
+  mixin toDouble, toDoubleImpl, isWrapper, asWrapper
   when isWrapper(x):
     #static: echo "toDouble typed wrapper"
     #dumpTree: x
@@ -247,6 +247,7 @@ template maskedObj*(x: typed, msk: int): untyped =
 #template masked*(): untyped = discard
 template masked*(x: typed, msk: int): untyped =
   bind maskedObj
+  mixin isWrapper
   when isWrapper(x):
     #static: echo "masked typed wrapper"
     #dumpTree: x
