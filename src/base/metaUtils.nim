@@ -801,3 +801,74 @@ macro optimizeAst*(a: typed): untyped =
   #echo "ar == rr: ", ar==rr
 
 macro XoptimizeAst*(a: typed): untyped = a
+
+var flattenArgLetCount {.compileTime.} = 0
+proc flattenArgP(arg: NimNode): tuple[sl:NimNode,a:NimNode] =
+  result.sl = newStmtList()
+  case arg.kind
+  of AtomicNodes:
+    result.a = arg
+  of {nnkStmtList,nnkStmtListExpr}:
+    for i in 0..(arg.len-2):
+      result.sl.add arg[i]
+      #let t = flattenArgP(arg[i])
+      #t.sl.copyChildrenTo result.sl
+      #result.sl.add t.a
+    let r = flattenArgP(arg[^1])
+    r.sl.copyChildrenTo result.sl
+    result.a = r.a
+  of {nnkObjConstr}:
+    var a = arg.copy
+    for i in 1..<arg.len:
+      let r = flattenArgP(arg[i][1])
+      r.sl.copyChildrenTo result.sl
+      a[i][1] = r.a
+    result.a = a
+  of {nnkBracketExpr,nnkDotExpr,nnkDerefExpr,nnkHiddenDeref,nnkHiddenStdConv}:
+    var a = arg.copy
+    for i in 0..<arg.len:
+      let r = flattenArgP(arg[i])
+      r.sl.copyChildrenTo result.sl
+      a[i] = r.a
+    result.a = a
+  # FIXME: should transform nnkCallKinds to pass in result var
+  else:
+    #echo "flattenArgP else: ", arg.kind
+    #if arg.kind in nnkCallKinds: echo "  ", arg[0].repr
+    #let n = genSym(nskLet, "flattenArgP" & $flattenArgLetCount)
+    #inc flattenArgLetCount
+    #result.sl.add newLetStmt(n, arg)
+    #result.a = n
+    result.a = arg
+
+macro flattenCallArgs2*(dbg: static[bool], fn: static[string],
+                        args: varargs[untyped]): untyped =
+  if dbg:
+    echo "flattenCallArgs in: ", fn
+    echo args.repr
+  var sl = newStmtList()
+  var call = newCall(ident(fn))
+  for i in 0..<args.len:
+    var t = flattenArgP(args[i])
+    t.sl.copyChildrenTo sl
+    call.add t.a
+  if sl.len>0:
+    result = sl
+    result.add call
+  else:
+    result = call
+  if dbg:
+    echo "flattenCallArgs out: ", fn
+    echo result.repr
+macro flattenCallArgs*(args: varargs[untyped]): auto =
+  result = newCall(bindSym"flattenCallArgs2")
+  result.add ident("false")
+  result.add newLit(args[0].repr)
+  for i in 1..<args.len:
+    result.add args[i]
+macro flattenCallArgsD*(args: varargs[untyped]): auto =
+  result = newCall(bindSym"flattenCallArgs2")
+  result.add ident("true")
+  result.add newLit(args[0].repr)
+  for i in 1..<args.len:
+    result.add args[i]

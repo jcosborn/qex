@@ -4,6 +4,34 @@ import stdUtils
 import metaUtils
 import strutils
 
+macro makeCall(f: string, a: varargs[untyped]): untyped =
+  result = newCall(ident(f.strVal))
+  for i in 0..<a.len:
+    result.add a[i]
+
+template makeFieldGetter(t,f,f0: untyped) {.dirty.} =
+  template f*(x: t): untyped =
+    #static: echo "fMulMV0"
+    #echoKind: x
+    x.f0
+  macro f*(x: t{nkObjConstr}): untyped =
+    #echo x.repr
+    for i in countdown(x.len-1, 1):
+      #echo x[i][0].repr
+      #echo astToStr(f0)
+      if x[i][0].repr == astToStr(f0):
+        result = x[i][1]
+        break
+  macro f*(x: t{nkStmtListExpr}): untyped =
+    result = newNimNode(nnkStmtListExpr)
+    for i in 0..(x.len-2):
+      result.add x[i]
+    result.add newCall(ident(astToStr(f)), x[^1])
+
+macro makeDerefOp(t: untyped): untyped =
+  newCall(bindSym("makeFieldGetter"), t, ident("[]"), ident("f"&t.repr))
+
+
 template makeDeref*(t,u:untyped):untyped {.dirty.} =
   #[
   bind ctrace
@@ -67,18 +95,28 @@ template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
   type
     name*[T] = object # ## wrapper type
       fName*: T
+  template tasName*(x: typed): untyped =
+    name[type(x)](fName: x)
   template asName*(x: typed): untyped =
     # ## wrap an object, x, as a $NAME type
     #lets(x,xx):
     #static: echo "asColor typed"
     #dumpTree: xx
-    let tasName = x
-    name[type(tasName)](fName: tasName)
+    #name[type(x)](fName: x)
+    #let tasName = x
+    #name[type(tasName)](fName: tasName)
     #Color[type(x_asColor)](x_asColor)
     #Color(x_asColor)
+    flattenCallArgs(tasName, x)
   # ## dereference a $NAME object
+  #template `[]`*(x: name): untyped =
+  #  x.fName
+  #makeDerefOp(name)
+  #template derefXX*(x: name): untyped =
+  #  x.fName
+  makeFieldGetter(name, derefXX, fName)
   template `[]`*(x: name): untyped =
-    x.fName
+    flattenCallArgs(derefXX, x)
   template isWrapper*(x: name): untyped = true
   template asWrapper*(x: name, y: typed): untyped =
     #static: echo "asWrapper Color"
@@ -86,10 +124,12 @@ template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
     asName(y)
 
 proc makeWrapperTypeP*(name: NimNode; docs: string): NimNode =
-  let Name = capitalizeAscii($name)
-  let fName = ident("f" & $Name)
-  let asName = ident("as" & $Name)
-  let tasName = ident("t_as" & $Name)
+  let Name = capitalizeAscii(name.repr)
+  let aName = if Name[0..1]=="As": "a"&Name[1..^1]
+              else: "as"&Name
+  let fName = ident("f" & Name)
+  let asName = ident(aName)
+  let tasName = ident("t_" & aName)
   result = getAst(makeWrapperTypeX(name,fName,asName,tasName))
   #result = result.replaceComments(("$DOCS",docs),("$NAME",Name))
   #echo result.repr

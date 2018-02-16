@@ -42,6 +42,7 @@ template numberType*[I,T](x:array[I,T]):untyped = numberType(type(T))
 template numberType*[I,T](x:typedesc[array[I,T]]):untyped = numberType(type(T))
 #template numberType*(x:not typedesc):untyped = numberType(type(x))
 template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x
+template isWrapper*(x: SomeNumber): untyped = false
 
 template cnvrt(r,x):untyped = ((type(r))(x))
 template to*(x:any; t:typedesc[SomeNumber]):untyped =
@@ -69,7 +70,7 @@ template assign*(r:var SomeNumber, x:SomeNumber2):untyped =
 #proc assign*(r:var SomeNumber, x:SomeNumber2) {.inline.} =
   r = cnvrt(r,x)
 
-#template adj*(x: SomeNumber): untyped = x
+template adj*(x: SomeNumber): untyped = x
 template inv*(x: SomeNumber): untyped = (type(x)(1))/x
 
 template neg*(r:var SomeNumber, x:SomeNumber2):untyped =
