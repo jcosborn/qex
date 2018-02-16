@@ -24,6 +24,13 @@ proc newGaugeS*(l: Layout): auto =
     result[i] = l.ColorMatrixS()
     result[i] := 1
 
+proc newGaugeS*[T](g: seq[T]): auto =
+  let nd = g.len
+  result = newSeq[type(g[0].l.ColorMatrixS())](nd)
+  for i in 0..<nd:
+    result[i] = g[0].l.ColorMatrixS()
+    result[i] := g[i]
+
 proc newOneOf*[T](x: seq[T]): seq[T] =
   result.newSeq(x.len)
   for i in 0..<x.len:
