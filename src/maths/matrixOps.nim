@@ -52,6 +52,7 @@ template makeMap1(op:untyped):untyped {.dirty.} =
     let tx_opVS = x
     forO i, 0, r.len.pred:
       op(r[i], tx_opVS)
+  #[
   template `op VV`*(r: typed; xx: typed): untyped =
     mixin op
     #[
@@ -65,6 +66,14 @@ template makeMap1(op:untyped):untyped {.dirty.} =
     assert(r.len == x.len)
     forO i, 0, r.len.pred:
       op(r[i], x[i])
+  ]#
+  template `op VVU`*(r: typed; x: typed): untyped =
+    mixin op
+    assert(r.len == x.len)
+    forO i, 0, r.len.pred:
+      op(r[i], x[i])
+  template `op VV`*(r: typed; x: typed): untyped =
+    flattenCallArgs(`op VVU`, r, x)
   template `op MS`*(r: typed; x: typed): untyped =
     #subst(r,rr,x,xx,tx,_,i,_,j,_):
     #assert(r.nrows == r.ncols)
@@ -274,15 +283,16 @@ template mulVSV*(rr:typed; xx,yy:typed):untyped =
     forO i, 0, r.len.pred:
       mul(r[i], txz, y[i])
 ]#
-template mulVSV*(r: typed; xx,yy: typed): untyped =
-  mixin load1, mul
-  #let x_mulVSV = load1(xx)
-  let x_mulVSV = xx
-  let y_mulVSV = yy
-  assert(r.len == y_mulVSV.len)
+template mulVSVU*(r: typed; x,y: typed): untyped =
+  mixin mul
+  assert(r.len == y.len)
   forO i, 0, r.len.pred:
-    #mul(r[i], x_mulVSV, y_mulVSV[i])
-    r[i] := mul(x_mulVSV, y_mulVSV[i])
+    #mul(r[i], x, y[i])
+    r[i] := mul(x, y[i])
+template mulVSV*(r: typed; x,y: typed): untyped =
+  # prepMultipleAccess(x)
+  # prepLinearAccess(y)
+  flattenCallArgs(mulVSVU, r, x, y)
 
 template mulMMS*(rr:untyped; xx,yy:untyped):untyped =
   subst(r,rr,x,xx,y,yy,tx,_,i,_,j,_):
@@ -304,6 +314,7 @@ template mulMSM*(rr:typed; xx,yy:typed):untyped =
       forO j, 0, r.ncols.pred:
         mul(r[i,j], tx, y[i,j])
 
+#[
 template mulVMV*(rr: typed; xx,yy: typed): untyped =
   #[
   subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_,ty0r,_,ty0i,_,tyjr,_,tyji,_):
@@ -360,6 +371,35 @@ template mulVMV*(rr: typed; xx,yy: typed): untyped =
     forO i, 0, x.nrows.pred:
       imadd(tr_mulVMV[i], x[i,j], ty_mulVMV)
   assign(r, tr_mulVMV)
+]#
+#[
+template mulVMVU*(r: typed; x,y: typed): untyped =
+  mixin nrows, ncols, mul, imadd, assign, load1
+  assert(x.nrows == r.len)
+  assert(x.ncols == y.len)
+  block:
+    #let ty_mulVMV = y[0]
+    let ty_mulVMV = load1(y[0])
+    forO i, 0, x.nrows.pred:
+      mul(r[i], x[i,0], ty_mulVMV)
+  forO j, 1, x.ncols.pred:
+    #let ty_mulVMV = y[j]
+    let ty_mulVMV = load1(y[j])
+    forO i, 0, x.nrows.pred:
+      imadd(r[i], x[i,j], ty_mulVMV)
+]#
+template mulVMVU*(r: typed; x,y: typed): untyped =
+  mixin nrows, ncols, mul, imadd, assign
+  assert(x.nrows == r.len)
+  assert(x.ncols == y.len)
+  forO i, 0, x.nrows.pred:
+    var t_mulVMVU{.noInit.}: type(x[i,0]*y[0])
+    t_mulVMVU := x[i,0] * y[0]
+    forO j, 1, x.ncols.pred:
+      imadd(t_mulVMVU, x[i,j], y[j])
+    r[i] := t_mulVMVU
+template mulVMV*(r: typed; x,y: typed): untyped =
+  flattenCallArgs(mulVMVU, r, x, y)
 
 template mulMMM*(rr:typed; xx,yy:typed):untyped =
   #[
@@ -436,6 +476,7 @@ template imaddVSV*(r: typed; xx,yy: typed): untyped =
     imadd(tr[i], x, y[i])
   assign(r, tr)
 
+#[
 template imaddVMV*(rr:typed; xx,yy:typed):untyped =
   subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_,tyjr,_,tyji,_):
     mixin nrows, ncols, mul, imadd, assign, load1
@@ -465,6 +506,22 @@ template imaddVMV*(rr:typed; xx,yy:typed):untyped =
         forO i, 0, x.nrows.pred:
           imadd(tr[i], x[i,j], tyi)
       assign(r, tr)
+]#
+template imaddVMVU*(r: typed; x,y: typed): untyped =
+  mixin nrows, ncols, imadd
+  assert(x.nrows == r.len)
+  assert(x.ncols == y.len)
+  forO i, 0, x.nrows.pred:
+    #var t = x[i,0] * y[0]
+    #forO j, 1, x.ncols.pred:
+    #  imadd(t, x[i,j], y[j])
+    #r[i] += t
+    var t = r[i]
+    forO j, 0, x.ncols.pred:
+      imadd(t, x[i,j], y[j])
+    r[i] := t
+template imaddVMV*(r: typed; x,y: typed): untyped =
+  flattenCallArgs(imaddVMVU, r, x, y)
 
 template imaddMMM*(rr:typed; xx,yy:typed):untyped =
   subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_,k,_,tyjr,_,tyji,_):

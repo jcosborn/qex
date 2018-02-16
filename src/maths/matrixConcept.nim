@@ -21,7 +21,8 @@ import complexNumbers
 
 template createAsType2(t,c:untyped):untyped =
   mixin `[]`
-  makeWrapper(t, c)
+  #makeWrapper(t, c)
+  makeWrapperType(t)
   template `[]`*(x:t; i:SomeInteger):untyped = x[][i]
   template `[]`*(x:t; i,j:SomeInteger):untyped =
     #echoType: x
@@ -35,9 +36,9 @@ template createAsType2(t,c:untyped):untyped =
     #let t2 = t1[i][j]
     #ctrace()
     #t2
-  template `[]`*(x:var t; i,j:SomeInteger):untyped =
-    x[][i,j]
-  template `[]=`*(x:t; i,j:SomeInteger; y:untyped):untyped =
+  #template `[]`*(x: t; i,j: SomeInteger): untyped =
+  #  x[][i,j]
+  template `[]=`*(x: t; i,j: SomeInteger; y: untyped): untyped =
     x[][i,j] = y
   template len*(x:t):untyped = getConst(x[].len)
   template nrows*(x:t):untyped = getConst(x[].nrows)
@@ -45,7 +46,9 @@ template createAsType2(t,c:untyped):untyped =
   #template mvLevel*(x:t):untyped =
   #  mixin mvLevel
   #  mvLevel(x[])
-template createAsType(t:untyped):untyped = createAsType2(`As t`, `as t`)
+#template createAsType(t:untyped):untyped = createAsType2(`As t`, `as t`)
+macro createAsType(t: untyped): untyped =
+  newCall(bindsym("createAsType2"), ident("As" & t.repr), ident("as" & t.repr))
 
 createAsType(Scalar)
 #createAsType(VarScalar)
@@ -305,6 +308,11 @@ template makeLevel1P(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
   proc f*(r:t1, x:t2) {.inline.} =
     `f s1 s2`(r, deref(x))
 template makeLevel1T(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
+  template `f U`*(r: t1, x: t2): untyped =
+    `f s1 s2`(r, x)
+  template f*(r: t1, x: t2): untyped =
+    flattenCallArgs(`f U`, r, x)
+  #[
   template f*(rr:t1, xx:t2): untyped =
     #dumpTree: `f s1 s2`
     staticTraceBegin: `f s1 s2`
@@ -317,6 +325,7 @@ template makeLevel1T(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
       let x_makeLevel1T = xx
       `f s1 s2`(rr, deref(x_makeLevel1T))
     staticTraceEnd: `f s1 s2`
+  ]#
 template makeLevel1(f,s1,t1,s2,t2:untyped):untyped =
   makeLevel1T(f,s1,t1,s2,t2)
 
@@ -330,7 +339,12 @@ template makeLevel2P(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
   proc f*(r:t1, x:t2, y:t3) {.inline.} =
     #`f s1 s2 s3`(r, x, y)
     func3(`f s1 s2 s3`, r, x, y)
-template makeLevel2T(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
+template makeLevel2T(f,s1,t1,s2,t2,s3,t3: untyped): untyped {.dirty.} =
+  template `f U`*(r: t1, x: t2, y: t3): untyped =
+    `f s1 s2 s3`(r, x, y)
+  template f*(r: t1, x: t2, y: t3): untyped =
+    flattenCallArgs(`f U`, r, x, y)
+  #[
   template f*(rr:t1, xx:t2, yy:t3): untyped =
     staticTraceBegin: `f s1 s2 s3`
     optimizeAst:
@@ -340,6 +354,7 @@ template makeLevel2T(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
       let y_makeLevel2T = yy
       `f s1 s2 s3`(rr, x_makeLevel2T, y_makeLevel2T)
     staticTraceEnd: `f s1 s2 s3`
+  ]#
 template makeLevel2(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
   makeLevel2T(f,s1,t1,s2,t2,s3,t3)
 
@@ -379,7 +394,7 @@ template `:=`*(x:var Mat1; y:Vec2) = assign(x, y)
 template `:=`*(x:var Mat1; y:Mat2) = assign(x, y)
 #template `:=`*(x:AsVarMatrix; y:Mat2) = assign(x, y)
 
-template `+=`*(x:var Vec1; y:Vec2) =
+template `+=`*(x: var Vec1; y: Vec2) =
   staticTraceBegin: peqVV
   iadd(x, y)
   staticTraceEnd: peqVV
@@ -442,6 +457,7 @@ makeLevel2(mul, M, var Mat1, M, Mat2, M, Mat3)
 #makeLevel2(op, M, Mat1, S, Sca2, V, Vec3)
 #makeLevel2(op, M, Mat1, V, Vec2, V, Vec3)
 #makeLevel2(op, M, Mat1, V, Vec2, M, Mat3)
+setBinop(mul,mul, Sca1,Vec2,VectorArray[getConst(y.len),type(x*y[0])])
 
 #setBinop(`*`,mul, Sca1,AsVector,VectorArray[y.len,type(x*y[0])])
 #setBinop(`*`,mul, float,Vec2,VectorArray[y.len,type(x*y[0])])

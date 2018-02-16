@@ -17,8 +17,10 @@ type
 
 template newRealImpl*(x: typed): untyped = x
 template newImagImpl*(x: typed): untyped = newImagProxy(x)
-template newComplexImpl*(x,y: typed): untyped =
+template newComplexImplU*(x,y: typed): untyped =
   newComplexProxy(ComplexObj[type(x),type(y)](reX: x, imX: y))
+template newComplexImpl*(x,y: typed): untyped =
+  flattenCallArgs(newComplexImplU, x, y)
 template newReal*(x: typed): untyped = newRealImpl(x)
 template newImag*(x: typed): untyped = newImagImpl(x)
 template newComplex*(x,y: typed): untyped = newComplexImpl(x,y)
@@ -31,15 +33,15 @@ template asVarWrapper*(x: ComplexProxy, y: typed): untyped =
   asVar(newComplexProxy(y))
 
 template re*(x: ComplexObj): untyped = x.reX
-#macro re*(x: ComplexObj{nkObjConstr}): auto =
-#  #echo x.treerepr
-#  result = x[1][1]
-#  #echo result.treerepr
+macro re*(x: ComplexObj{nkObjConstr}): untyped =
+  #echo x.treerepr
+  result = x[1][1]
+  #echo result.treerepr
 template im*(x: ComplexObj): untyped = x.imX
-#macro im*(x: ComplexObj{nkObjConstr}): auto =
-#  #echo x.treerepr
-#  result = x[2][1]
-#  #echo result.treerepr
+macro im*(x: ComplexObj{nkObjConstr}): untyped =
+  #echo x.treerepr
+  result = x[2][1]
+  #echo result.treerepr
 
 template `re=`*(x: ComplexObj, y: untyped): untyped =
   #dumpTree: x
