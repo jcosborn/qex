@@ -2,28 +2,33 @@ import base/wrapperTypes
 import maths/types
 import maths
 
+makeWrapperType(Spin):
+  ## wrapper type for spin objects
+
 type
-  Spin*[T] = object
-    v*: T
+  #Spin*[T] = object
+  #  v*: T
   Spin2*[T] = Spin[T]
   Spin3*[T] = Spin[T]
   SpinMatrix[I,J:static[int],T] = Spin[MatrixArray[I,J,T]]
 
-template asSpin*(xx: typed): untyped =
-  staticTraceBegin: asSpin
-  let x_asSpin = xx
-  staticTraceEnd: asSpin
-  Spin[type(x_asSpin)](v: x_asSpin)
+#template asSpin*(xx: typed): untyped =
+#  #staticTraceBegin: asSpin
+#  let x_asSpin = xx
+#  #staticTraceEnd: asSpin
+#  Spin[type(x_asSpin)](v: x_asSpin)
 
-template isWrapper*(x: Spin): untyped = true
-template asWrapper*(x: Spin, y: typed): untyped =
-  asSpin(y)
+#template isWrapper*(x: Spin): untyped = true
+#template asWrapper*(x: Spin, y: typed): untyped =
+#  asSpin(y)
 template asVarWrapper*(x: Spin, y: typed): untyped =
   asVar(asSpin(y))
-makeDeref(Spin, x.T)
-template `[]`*(x: Spin, i: any): untyped = x[][i]
-template `[]`*(x: Spin, i: any, j: any): untyped = x[][i,j]
-template `[]`*(x: Spin, i: any, j: any, y: any): untyped =
+#makeDeref(Spin, x.T)
+template `[]`*(x: Spin, i: typed): untyped = x[][i]
+template `[]`*(x: Spin, i,j: typed): untyped = x[][i,j]
+template `[]=`*(x: Spin, i,y: typed): untyped =
+  x[][i] = y
+template `[]=`*(x: Spin, i,j,y: typed): untyped =
   x[][i,j] = y
 forwardFunc(Spin, len)
 forwardFunc(Spin, nrows)
@@ -32,7 +37,7 @@ forwardFunc(Spin, numberType)
 forwardFunc(Spin, nVectors)
 forwardFunc(Spin, simdType)
 forwardFunc(Spin, simdLength)
-template row*(x: Spin, i: any): untyped =
+template row*(x: Spin, i: typed): untyped =
   mixin row
   asSpin(row(x[],i))
 template setRow*(r: Spin; x: Spin2; i: int): untyped =
@@ -99,10 +104,10 @@ template gaussian*(x: var Spin, r: var untyped) =
 template projectU*(r: var Spin, x: Spin2) =
   projectU(r[], x[])
 template norm2*(x: Spin): untyped = norm2(x[])
-template inorm2*(r: var any, x: Spin2) = inorm2(r, x[])
+template inorm2*(r: var typed, x: Spin2) = inorm2(r, x[])
 template dot*(x: Spin, y: Spin2): untyped =
   dot(x[], y[])
-template idot*(r: var any, x: Spin2, y: Spin3) = idot(r, x[], y[])
+template idot*(r: var typed, x: Spin2, y: Spin3) = idot(r, x[], y[])
 template redot*(x: Spin, y: Spin2): untyped =
   redot(x[], y[])
 template trace*(x: Spin): untyped = trace(x[])
@@ -132,7 +137,7 @@ template spinMatrix*[T](x,y:static[int], a: untyped): untyped =
     E = T
     MA = MatrixArray[I,J,E]
     MAO = MatrixArrayObj[I,J,E]
-  Spin[MA](v: MA(v: MAO(mat: a)))
+  asSpin(asMatrix(MAO(mat: a)))
 #template spinMatrix*[I,J:static[int],T](a: untyped): untyped =
 #  Spin[MatrixArray[I,J,T]](v: MatrixArray[I,J,T](v: MatrixArrayObj[I,J,T](mat: a)))
 #template spinMatrix*(I,J,T,a: untyped): untyped =
@@ -249,12 +254,13 @@ template spproj3m*(x: any): untyped = spprojmat3m * x
 template spproj4m*(x: any): untyped = spprojmat4m * x
 ]#
 
-template spproj1p*(xx: Spin): untyped =
-  let x = xx[]
-  #let v0 = x[0] + I(x[3])
-  #let v1 = x[1] + I(x[2])
+template spproj1pU*(x: Spin): untyped =
+  #let v0 = x[][0] + I(x[][3])
+  #let v1 = x[][1] + I(x[][2])
   #spinVector[type(v0)](2,[v0,v1])
-  spinVector[type(x[0])](2,[x[0]+I(x[3]),x[1]+I(x[2])])
+  spinVector[type(x[][0])](2,[x[][0]+I(x[][3]),x[][1]+I(x[][2])])
+template spproj1p*(x: Spin): untyped =
+  flattenCallArgs(spproj1pU, x)
 template spproj2p*(xx: Spin): untyped =
   let x = xx[]
   spinVector[type(x[0])](2,[x[0]-x[3],x[1]+x[2]])

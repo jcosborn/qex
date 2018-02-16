@@ -15,12 +15,11 @@ template asVarWrapper*(x: Color, y: typed): untyped =
   #cy
   asVar(asColor(y))
 
-template `[]`*(x: Color, i: untyped): untyped = x[][i]
-template `[]`*(x: Color, i,j: untyped): untyped = x[][i,j]
-
-template `[]=`*(x: Color, i,y: untyped): untyped =
+template `[]`*(x: Color, i: typed): untyped = x[][i]
+template `[]`*(x: Color, i,j: typed): untyped = x[][i,j]
+template `[]=`*(x: Color, i,y: typed): untyped =
   x[][i] = y
-template `[]=`*(x: Color, i,j,y: untyped): untyped =
+template `[]=`*(x: Color, i,j,y: typed): untyped =
   x[][i,j] = y
 
 forwardFunc(Color, len)
@@ -101,6 +100,8 @@ template mul*(r: var Color, x: SomeNumber, y: Color3) =
   mul(r[], x, y[])
 template mul*(r: var Color, x: AsComplex, y: Color3) =
   mul(r[], x, y[])
+template mul*(x: AsComplex, y: Color2): untyped =
+  asColor(mul(x, y[]))
 template random*(x: var Color) =
   gaussian(x[], r)
 template gaussian*(x: var Color, r: var untyped) =

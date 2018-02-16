@@ -20,6 +20,7 @@ import qcdTypes
 #import stdUtils
 import solvers/cg
 export cg
+import solvers/bicgstab
 #import types
 #import profile
 #import metaUtils
@@ -168,9 +169,9 @@ proc wilsonD*(sd:WilsonD; r:Field; g:openArray[Field2];
   #  #for i in 0..<n:
   #  rir := m*getVec(x[ir], ic)
   wilsonDM(sd, r, g, x, 6):
-    rir := (2.0*(4.0 + m)) * x[ir]
+    rir := (2.0*(4.0 + m)/sc) * x[ir]
     #rir := 0
-  r[sd.subset] := 0.5*r
+  r[sd.subset] := (0.5*sc)*r
 
 # r = m*x + sc*D*x
 proc wilsonDx*(sd:WilsonD; r:Field; g:openArray[Field2];
@@ -218,7 +219,37 @@ proc wilsonD2ee*(sde,sdo:WilsonD; r:Field; g:openArray[Field2];
     if threadNum==0:
       t = newOneOf(x)
     threadBarrier()
-  #threadBarrier()
+  threadBarrier()
+  #wilsonD(sdo, t, g, x, 0.0)
+  toc("wilsonD2ee init")
+  block:
+    wilsonDM(sdo, t, g, x, 0):
+      rir := 0
+  toc("wilsonD2ee DP")
+  threadBarrier()
+  toc("wilsonD2ee barrier")
+  #wilsonD(sde, r, g, t, 0.0)
+  block:
+    wilsonDM(sde, r, g, t, 6):
+      rir := (-4.0*m2)*x[ir]
+  toc("wilsonD2ee DM")
+  threadBarrier()
+  #r[sde.sub] := m2*x - r
+  #for ir in r[sde.subset]:
+  #  msubVSVV(r[ir], m2, x[ir], r[ir])
+  r[sde.sub] := -0.25*r
+
+# r = m2 - [Deo * Doe]'
+proc wilsonD2eex*(sde,sdo:WilsonD; r:Field; g:openArray[Field2];
+               x:Field; m2:SomeNumber) =
+  tic()
+  var t{.global.}:type(x)
+  if t==nil:
+    threadBarrier()
+    if threadNum==0:
+      t = newOneOf(x)
+    threadBarrier()
+  threadBarrier()
   #wilsonD(sdo, t, g, x, 0.0)
   toc("wilsonD2ee init")
   block:
@@ -229,14 +260,14 @@ proc wilsonD2ee*(sde,sdo:WilsonD; r:Field; g:openArray[Field2];
   toc("wilsonD2ee barrier")
   #wilsonD(sde, r, g, t, 0.0)
   block:
-    wilsonDM(sde, r, g, t, 6):
-      rir := (4.0*m2)*x[ir]
+    wilsonDP(sde, r, g, t, 6):
+      rir := (-4.0*m2)*x[ir]
   toc("wilsonD2ee DM")
-  #threadBarrier()
+  threadBarrier()
   #r[sde.sub] := m2*x - r
   #for ir in r[sde.subset]:
   #  msubVSVV(r[ir], m2, x[ir], r[ir])
-  #r[sde.sub] := 0.25*r
+  r[sde.sub] := -0.25*r
 
 #[
 # r = m2 - Deo * Doe
@@ -272,6 +303,17 @@ proc newWilson*[G](g:openArray[G]):auto =
   r.g = @g
   r
 
+proc newWilsonS*[G](g:openArray[G]):auto =
+  var l = g[0].l
+  template t:untyped =
+    type(spproj1p(l.DiracFermionS()[0]))
+    #SColorVectorV
+  var r:Wilson[G,t]
+  r.se = initWilsonDT(l, t, "even")
+  r.so = initWilsonDT(l, t, "odd")
+  r.g = @g
+  r
+
 proc D*(s:Wilson; r,x:Field; m:SomeNumber) =
   wilsonD(s.se, r, s.g, x, m)
   wilsonD(s.so, r, s.g, x, m)
@@ -288,7 +330,8 @@ proc eoReduce*(s:Wilson; r,b:Field; m:SomeNumber) =
 proc eoReconstruct*(s:Wilson; r,b:Field; m:SomeNumber) =
   # r.odd = (b.odd - Doe r.even)/m
   wilsonD(s.so, r, s.g, r, 0.0, -1.0/m)
-  r.odd += b/m
+  let mi = 1.0/m
+  r.odd += mi*b
 
 proc initSolverParams*():SolverParams =
   result.r2req = 1e-6
@@ -300,31 +343,54 @@ proc solveEO*(s: Wilson; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   var sp = sp0
   sp.subset.layoutSubset(r.l, sp.subsetName)
   var t = newOneOf(r)
+  var x2 = newOneOf(x)
   var top = 0.0
+  let m4 = 4.0 + m
+  let m2 = m4*m4
   proc op(a,b:Field) =
     threadBarrier()
     if threadNum==0: top -= epochTime()
-    wilsonD2ee(s.se, s.so, a, s.g, b, m*m)
+    wilsonD2eex(s.se, s.so, t, s.g, b, m2)
+    threadBarrier()
+    wilsonD2ee(s.se, s.so, a, s.g, t, m2)
     if threadNum==0: top += epochTime()
-    #threadBarrier()
+    threadBarrier()
+  threads:
+    #echo "x2: ", x.norm2
+    s.eoReduce(x2, x, m)
   let t0 = epochTime()
-  cgSolve(r, x, op, sp)
+  var oa = (apply: op)
+  cgSolve(r, x2, oa, sp)
+  threads:
+    wilsonD2eex(s.se, s.so, t, s.g, r, m2)
+    threadBarrier()
+    r[s.se.sub] := t
+    threadBarrier()
+    s.eoReconstruct(r, x, m4)
   let t1 = epochTime()
   let secs = t1-t0
-  let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
+  let flops = (2*2*s.g.len*(12+2*66+24)+2*60)*r.l.nEven*sp.finalIterations
   sp0.finalIterations = sp.finalIterations
   sp0.seconds = secs
   echo "op time: ", top
   echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
+proc solveEO*(s:Wilson; r,x:Field; m:SomeNumber; res:float) =
+  var sp = initSolverParams()
+  sp.r2req = res
+  #sp.maxits = 1000
+  sp.verbosity = 1
+  solveEO(s, r, x, m, sp)
 proc solve*(s:Wilson; r,x:Field; m:SomeNumber; sp0:SolverParams) =
   var sp = sp0
   sp.subset.layoutSubset(r.l, sp.subsetName)
   var t = newOneOf(r)
   var top = 0.0
+  let m4 = 4.0 + m
+  let m2 = m4*m4
   proc op(a,b:Field) =
     threadBarrier()
     if threadNum==0: top -= epochTime()
-    wilsonD2ee(s.se, s.so, a, s.g, b, m*m)
+    wilsonD2ee(s.se, s.so, a, s.g, b, m2)
     if threadNum==0: top += epochTime()
     #threadBarrier()
   threads:
@@ -332,12 +398,10 @@ proc solve*(s:Wilson; r,x:Field; m:SomeNumber; sp0:SolverParams) =
     s.eoReduce(t, x, m)
     #echo "te2: ", t.even.norm2
   let t0 = epochTime()
-  cgSolve(r, t, op, sp)
+  bicgstabSolve(r, t, op, sp)
   let t1 = epochTime()
   threads:
-    r[s.se.sub] := 4*r
-    threadBarrier()
-    s.eoReconstruct(r, x, m)
+    s.eoReconstruct(r, x, m4)
   let secs = t1-t0
   let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
   echo "op time: ", top
