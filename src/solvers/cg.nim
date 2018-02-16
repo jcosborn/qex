@@ -1,17 +1,10 @@
 import base
 import layout
 import field
+import solverBase
+export solverBase
 
 type
-  SolverParams* = object
-    r2req*:float
-    maxits*:int
-    verbosity*:int
-    finalIterations*:int
-    seconds*: float
-    subset*:Subset
-    subsetName*:string
-
   CgState*[T] = object
     r,p,Ap,x,b: T
     b2,r2,r2old,r2stop: float

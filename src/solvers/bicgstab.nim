@@ -1,15 +1,9 @@
 import base
 import layout
 import field
-
-type
-  SolverParams* = object
-    r2req*:float
-    maxits*:int
-    verbosity*:int
-    finalIterations*:int
-    subset*:Subset
-    subsetName*:string
+import solverBase
+export solverBase
+import physics/qcdTypes
 
 # BICGSTAB solutions to Mphi = b
 #  see https://en.wikipedia.org/wiki/Biconjugate_gradient_stabilized_method
@@ -26,8 +20,10 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
     threads:
       onNoSync(sub):
         body
+  #type Cmplx = type(x.dot(b))
+  type Cmplx = DComplex
 
-  var b2:float
+  var b2: float
   mythreads:
     x := 0
     b2 = b.norm2
@@ -56,16 +52,11 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
       r := b
       r0 := r
 
-    # Remark: Could use ComplexType[NumberType[x]]. NumberType[x] would return
-    #        the precision (ex, system.float32) used inside x, then ComplexType
-    #        would create a complex with that underlying precision.
-    #        Instead we just use double precision for the scalars.
-
-    var rho: DComplex
+    var rho: Cmplx
     rho := 1
-    var alpha: DComplex
+    var alpha: Cmplx
     alpha := 1
-    var omega: DComplex
+    var omega: Cmplx
     omega := 1
 
     var itn = 0
@@ -79,7 +70,10 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
       tic()
       inc itn
       # rhoNew = <rhat0, r>
-      let rhoNew  = r0.dot(r)
+      var rhoNew: Cmplx
+      subset:
+        rhoNew := r0.dot(r)
+      #echo "rhoNew: ", rhoNew
 
       # beta = (rhoNew/rho)*(alpha/omega)
       let beta = (rhoNew/rho)*(alpha/omega)
@@ -88,49 +82,50 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
       # p = r + beta(p - omega v)
       subset:
         p := r + beta*(p - omega*v)
-      toc("p update", flops=5*numNumbers(r[0])*sub.lenOuter) # No idea of the factor of 5 is right, probably is.
+      toc("p update", flops=4*numNumbers(r[0])*sub.lenOuter)
       #echo("p2: ", p.norm2)
 
       # Apply the matrix.
+      threadBarrier()
       A(v, p)
+      threadBarrier()
       toc("v")
-
-      # alpha = rho/<rhat0, v>
-      alpha := rho/r0.dot(v)
 
       # Update s.
       subset:
+        # alpha = rho/<rhat0, v>
+        let a = r0.dot(v)
+        alpha := rho/a
+        #alpha := rho/r0.dot(v)
         s := r - alpha*v
-        toc("s", flops=3*numNumbers(s[0])*sub.lenOuter)
-        r2 := s.norm2 # Sane names for variables are overrated.
+        toc("s", flops=2*numNumbers(s[0])*sub.lenOuter)
+        r2 := s.norm2
         toc("r2", flops=2*numNumbers(s[0])*sub.lenOuter)
 
       verb(2):
         echo(itn, " ", r2)
-      verb(3):
-        A(t, s)
-        var fr2: float
-        subset:
-          fr2 = (b - t).norm2
-        echo "   ", fr2/b2
 
-      if r2>=r2stop:
+      if r2<=r2stop:
         # Update the solution one last time.
-        x += alpha*p
+        subset:
+          x += alpha*p
         toc("x", flops=2*numNumbers(s[0])*sub.lenOuter)
       else:
         # t = As
+        threadBarrier()
         A(t,s)
-
-        # omega = <t,s>/<t,t>
-        omega := t.dot(s)/t.norm2
+        threadBarrier()
 
         # Update x, r.
         subset:
+          # omega = <t,s>/<t,t>
+          omega := t.dot(s)/t.norm2
           x += alpha*p + omega*s
           toc("x", flops=4*numNumbers(s[0])*sub.lenOuter)
           r := s - omega*t
           toc("r", flops=3*numNumbers(s[0])*sub.lenOuter)
+          r2 := r.norm2
+          toc("r2", flops=2*numNumbers(s[0])*sub.lenOuter)
 
     toc("bicgstab iterations")
     if threadNum==0: finalIterations = itn
@@ -155,27 +150,28 @@ when isMainModule:
   #var lat = [8,8,8,8]
   var lat = [4,4,4,4]
   var lo = newLayout(lat)
-  var m = lo.ColorMatrix()
-  var v1 = lo.ColorVector()
-  var v2 = lo.ColorVector()
+  var m = lo.ColorMatrixD()
+  var v1 = lo.ColorVectorD()
+  var v2 = lo.ColorVectorD()
   proc op*(r:type(v1); x:type(v1)) =
     r := m*x
     #mul(r, m, x)
-  var sp:SolverParams
-  sp.r2req = 1e-14
-  sp.maxits = 100
+  var sp: SolverParams
+  sp.r2req = 1e-10
+  sp.maxits = 200
   sp.verbosity = 3
   sp.subset.layoutSubset(lo, "all")
   threads:
     m.even := 1
     m.odd := 10
     threadBarrier()
-    for i in m:
+    tfor i, 0, lo.nSites-1:
       m{i} := i+1
     threadBarrier()
     v1.even := 1
     v1.odd := 2
     v2 := 0
+    threadBarrier()
     echo v1.norm2
     echo m.norm2
 
