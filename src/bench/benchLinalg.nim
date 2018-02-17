@@ -1,8 +1,8 @@
 import ../base/globals
 #setForceInline(false)
 setForceInline(true)
-#setStaticUnroll(false)
-setStaticUnroll(true)
+setStaticUnroll(false)
+#setStaticUnroll(true)
 setNoAlias(false)
 #setNoAlias(true)
 

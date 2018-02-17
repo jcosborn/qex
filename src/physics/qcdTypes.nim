@@ -326,6 +326,13 @@ template perm*[T](r0:var T; prm0:int; x0:T) =
       of 4: loop(perm4)
       of 8: loop(perm8)
       else: discard
+template perm2*[T](r: var T; prm: int; x: T) =
+  const n = x.nVectors
+  let rr = cast[ptr array[n,simdType(r)]](r.addr)
+  var xt = x
+  let xx = cast[ptr array[n,simdType(xt)]](addr xt)
+  forStatic i, 0, n-1:
+    rr[i] = perm(xx[i], prm)
 #proc pack*(r:ptr any; l:ptr any; pck:int; x:PackTypes) {.inline.} =
 proc pack*(r:ptr any; l:ptr any; pck:int; x:any) {.inline.} =
   if pck==0:

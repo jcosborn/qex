@@ -76,12 +76,23 @@ when isMainModule:
   rv.new(loF)
   pv.new(loF)
 
+  var rs = newRNGField(RngMilc6, lo, 987654321)
+  gaussian(rv, rs)
+
   let r = newMgRestrictor(b, rv)
   let p = newMgProlongator(b, pv)
   var fv = loF.DiracFermionS()
   var cv: SLatticeMgVector1V
   cv.new(loC)
+
+
   r.apply(cv, fv)
   p.apply(fv, cv)
 
   qexFinalize()
+
+
+
+#[
+
+]#

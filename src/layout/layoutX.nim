@@ -129,6 +129,8 @@ type
     shifts*: Table[ShiftKey,ShiftIndices]
     coords*: seq[seq[int16]]
     vcoordTemp*: seq[array[V,int16]]
+  Layout2*[V:static[int]] = Layout[V]
+  Layout3*[V:static[int]] = Layout[V]
   Subset* = object
     low*: int
     high*: int
