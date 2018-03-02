@@ -108,9 +108,9 @@ else:
     staticTraceEnd: x
     str
 
-macro toId*(s:static[string]):untyped =
+macro toId*(s: static[string]):untyped =
   echo s
-  newIdentNode(!s)
+  ident(s)
 
 macro toId*(s:typed):untyped =
   echo s.treeRepr
@@ -164,7 +164,7 @@ macro makeCall*(op:static[string],a:tuple):untyped =
   echo a.repr
   #echo a[0].repr
   echo a.treeRepr
-  result = newCall(!op)
+  result = newCall(ident(op))
   let nargs = a.getType.len - 1
   for i in 0..<nargs:
     result.add(a[i][1])
@@ -178,7 +178,7 @@ macro makeCall*(op:static[string],a:typed,idx:typed):untyped =
   #echo a.treeRepr
   #echo a.getType.treeRepr
   #echo a.getType.len
-  var opid = !op
+  var opid = ident(op)
   let nargs = a.getType.len - 1
   case nargs
     of 1:
@@ -631,7 +631,7 @@ proc inlineLetsR(x: NimNode, sym,repl,stmts: var seq[NimNode]): NimNode =
       else:
         echo "error: nnkLetSection expected nnkIdentDefs"
         echo x.treerepr
-        quit -1
+        error "error"
     if result.len==0: result = newEmptyNode()
 
   of nnkStmtListExpr:

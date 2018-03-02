@@ -27,16 +27,16 @@ proc qexInit* =
 
 proc qexFinalize* =
   for p in qexGlobalFinalizers.reversed: p()
-  echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
-       getTotalMem())
-  echo GC_getStatistics()
-  GC_fullCollect()
-  echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
-       getTotalMem())
-  echo GC_getStatistics()
+  #echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
+  #     getTotalMem())
+  #echo GC_getStatistics()
+  #GC_fullCollect()
+  #echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
+  #     getTotalMem())
+  #echo GC_getStatistics()
   commsFinalize()
   #when profileEqns:
-  echoTimers()
+  #echoTimers()
   echo "Total time (Init - Finalize): ",qexTime()," seconds."
 
 proc qexExit*(status = 0) =

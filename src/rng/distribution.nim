@@ -24,6 +24,12 @@ proc gaussian*(x: var AsComplex, r: var RNG) =
   else:
     x.re = gaussian(r)
     x.im = gaussian(r)
+proc gaussian*[T:array](x: MaskedObj[T], r: var RNG) =
+  for i in 0..<x.len:
+    gaussian(x[i], r)
+proc gaussian*(x: var array, r: var RNG) =
+  for i in 0..<x.len:
+    gaussian(x[i], r)
 proc gaussian*(x: var AsVector, r: var RNG) =
   forO i, 0, x.len-1:
     gaussian(x[i], r)

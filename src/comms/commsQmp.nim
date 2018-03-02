@@ -135,7 +135,7 @@ macro rankSumN*(a:varargs[typed]):auto =
       let ai = a[i]
       let x = quote do:
         `ai` = `t`[`i`]
-      s.add x[0]
+      s.add x
     result = quote do:
       if threadNum==0:
         var `t` = `a`

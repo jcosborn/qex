@@ -175,7 +175,7 @@ proc optLetsR(x: NimNode, os: var OptState): NimNode =
       else:
         echo "error: nnkLetSection expected nnkIdentDefs"
         echo x.treerepr
-        quit -1
+        error "error"
     if result.len==0: result = newEmptyNode()
 
   of nnkObjConstr:

@@ -199,16 +199,20 @@ proc partitionGeomF(lx,nx:var openArray[int]; x:openArray[int]; n,dist:int) =
     nx[k] *= f
     lx[k] = lx[k] div f
 
-proc newLayoutX*(lat:openArray[int],V:static[int]):Layout[V] =
+proc newLayoutX*(lat: openArray[int]; V: static[int];
+                 rg0,ig0: openArray[int]): Layout[V] =
   result.new()
   let nd = lat.len
-  var rg,ig,og,lg:seq[int]
-  #rg.newSeq(nd)
-  #ig.newSeq(nd)
+  var rg,ig,og,lg: seq[int]
   og.newSeq(nd)
   lg.newSeq(nd)
 
-  rg = intSeqParam("rankgeom")
+  if rg0.len == 0:
+    rg = intSeqParam("rankgeom")
+  else:
+    rg.newSeq(nd)
+    for i in 0..<nd:
+      rg[i] = rg0[i]
   if rg.len == 0:
     rg.setLen(nd)
     partitionGeomF(lg, rg, lat, nRanks, 1)
@@ -220,7 +224,12 @@ proc newLayoutX*(lat:openArray[int],V:static[int]):Layout[V] =
   echo "#rankGeom:" & $rg
   echo "#localGeom:" & $lg
 
-  ig = intSeqParam("innergeom")
+  if ig0.len == 0:
+    ig = intSeqParam("innergeom")
+  else:
+    ig.newSeq(nd)
+    for i in 0..<nd:
+      ig[i] = ig0[i]
   if ig.len == 0:
     ig.setLen(nd)
     partitionGeom(og, ig, lg, V, 1)
@@ -262,6 +271,7 @@ proc newLayoutX*(lat:openArray[int],V:static[int]):Layout[V] =
   result.physGeom = @lat
   result.localGeom = lg
   result.rankGeom = rg
+  result.innerGeom = ig
   result.physVol = result.lq.physVol.int
   result.nEven = result.lq.nEven.int
   result.nOdd = result.lq.nOdd.int
@@ -282,8 +292,12 @@ proc newLayoutX*(lat:openArray[int],V:static[int]):Layout[V] =
     #echo coords[0]
     for d in 0..<nd: result.coords[d][i] = coords[d].int16
   result.vcoordTemp.newSeq(nd)
-template newLayout*(l:openArray[int]; n:static[int]):untyped = newLayoutX(l,n)
-template newLayout*(l:openArray[int]):untyped = newLayoutX(l,VLEN)
+template newLayout*(l:openArray[int]; n:static[int], rg,ig: seq[int]):untyped =
+  newLayoutX(l, n, rg, ig)
+template newLayout*(l:openArray[int]; n:static[int]):untyped =
+  newLayoutX(l, n, [], [])
+template newLayout*(l:openArray[int]):untyped =
+  newLayoutX(l, VLEN, [], [])
 
 proc rankIndex*(l:Layout, coords:openArray[cint]):tuple[rank,index:int] =
   var li:LayoutIndexQ
@@ -336,6 +350,11 @@ template getSubset*(l:Layout; sub:string):Subset =
   var s{.noInit.}:Subset
   layoutSubset(s, l, sub)
   s
+proc paritySubset*(s: var Subset; l: Layout; par: int) =
+  if par==0:
+    s.layoutSubset(l, "e")
+  else:
+    s.layoutSubset(l, "o")
 template `len`*(s:Subset):untyped = s.high-s.low
 template `lenOuter`*(s:Subset):untyped = s.highOuter-s.lowOuter
 

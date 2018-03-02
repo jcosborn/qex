@@ -155,8 +155,8 @@ when isMainModule:
   import gauge
   qexInit()
   #var lat = [4,4,4,4]
-  #var lat = [8,8,8,8]
-  var lat = [16,8,4,32]
+  var lat = [8,8,8,8]
+  #var lat = [16,8,4,32]
   threads:
     echo "thread ", threadNum, "/", numThreads
   var
@@ -178,6 +178,8 @@ when isMainModule:
   var m = 0.0123
   var res = 1e-12
   s.solve(dest, src, m, res, cpuonly = true)
+  s.solve(dest, src, m, res, cpuonly = true)
+  s.solve(dest, src, m, res, cpuonly = true)
   var n2: tuple[a,e,o:float]
   threads:
     echo "src.norm2: ", src.norm2
@@ -197,6 +199,8 @@ when isMainModule:
     echo "r.even: ", r.even.norm2
     echo "r.odd: ", r.odd.norm2
 
+  s.solve(destG, src, m, res)
+  s.solve(destG, src, m, res)
   s.solve(destG, src, m, res)
 
   threads:
