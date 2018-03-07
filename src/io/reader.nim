@@ -36,27 +36,15 @@ type Reader*[V:static[int]] = ref object
   recordInfo:QIO_RecordInfo
   qr:ptr QIO_Reader
 
-proc ioLayout[V:static[int]](x:Layout[V]):Layout[V] =
-  var ioLayoutV{.global.}:Layout[x.V]
+proc ioLayout(x: Layout): Layout =
+  var ioLayoutV{.global.}: Layout
   result = ioLayoutV
   if not x.isNil: ioLayoutV = x
-template setLayout(x:Reader):untyped =
+template setLayout(x: Reader): untyped =
   discard ioLayout(x.layout)
-proc ioNodeNumber[V:static[int]](x:ptr cint):cint =
-  result = 0
-  #var li:LayoutIndexQ
-  #layoutIndexQ(ioLayout[V](nil).lq.addr, li.addr, x)
-  #result = li.rank
-  discard
-proc ioNodeIndex[V:static[int]](x:ptr cint):cint =
-  var li:LayoutIndexQ
-  layoutIndexQ(ioLayout[V]().lq.addr, li.addr, x)
-  return li.index
-proc ioGetCoords[V:static[int]](x:ptr cint; node: cint; index: cint) =
-  var li = LayoutIndexQ((node, index))
-  layoutCoordQ(ioLayout[V]().lq.addr, x, li.addr)
-proc ioNumSites[V:static[int]](node: cint):cint =
-  return ioLayout[V]().nSites.cint
+template getLayout(x: static[int]): untyped =
+  ioLayout(Layout[x](nil))
+
 var readnodes{.global.} = -1
 proc ioReadRank(node: cint): cint =
   cint( readnodes * (node div readnodes) )
@@ -69,13 +57,6 @@ proc toString(qs:ptr QIO_String):string =
     result[i] = qs.string[i]
 
 proc open(r:var Reader; ql:var QIO_Layout) =
-  #r.setLayout()
-  #dumpTree: "test"
-  #var layout:QIO_Layout
-  #layout.node_number = ioNodeNumber2
-  #layout.node_index = ioNodeIndex
-  #layout.get_coords = ioGetCoords
-  #layout.num_sites = ioNumSites
   let nd = r.layout.nDim.cint
   ql.latdim = nd
   r.latsize.newSeq(nd)
@@ -88,10 +69,6 @@ proc open(r:var Reader; ql:var QIO_Layout) =
   ql.number_of_nodes = r.layout.nRanks.cint
   if readnodes<=0:
     readnodes = 1 + int( sqrt(ql.number_of_nodes.float) )
-  #echo ql.volume
-  #echo ql.sites_on_node
-  #echo ql.this_node
-  #echo ql.number_of_nodes
 
   var fs:QIO_Filesystem
   fs.my_io_node = ioReadRank
@@ -110,27 +87,20 @@ proc open(r:var Reader; ql:var QIO_Layout) =
   r.recordInfoValid = false
   if r.qr==nil: r.status = -1
 
-template newReader*[V:static[int]](l:Layout[V]; fn:string):untyped =
-  var iol{.global.}:type(l) = nil
-  var rd:Reader[V]
+template newReader*[V: static[int]](l: Layout[V]; fn: string): untyped =
+  var rd: Reader[V]
   if not existsFile(fn):
     warn "file not found: ", fn
   else:
-    iol = l
     proc ioNodeNumber2(x:ptr cint):cint =
-      var li:LayoutIndexQ
-      layoutIndexQ(iol.lq.addr, li.addr, x)
-      result = li.rank
+      rankIndex(getLayout(V), x).rank.cint
     proc ioNodeIndex2(x:ptr cint):cint =
-      var li:LayoutIndexQ
-      layoutIndexQ(iol.lq.addr, li.addr, x)
-      return li.index
+      rankIndex(getLayout(V), x).index.cint
     proc ioGetCoords2(x:ptr cint; node: cint; index: cint) =
-      var li = LayoutIndexQ((node, index))
-      layoutCoordQ(iol.lq.addr, x, li.addr)
+      getLayout(V).coord(x, (node,index))
     proc ioNumSites2(node: cint):cint =
-      return iol.nSites.cint
-    var ql:QIO_Layout
+      return getLayout(V).nSites.cint
+    var ql: QIO_Layout
     ql.node_number = ioNodeNumber2
     ql.node_index = ioNodeIndex2
     ql.get_coords = ioGetCoords2
@@ -138,6 +108,7 @@ template newReader*[V:static[int]](l:Layout[V]; fn:string):untyped =
     rd.new()
     rd.layout = l
     rd.fileName = fn
+    setLayout(rd)
     open(rd, ql)
   rd
 
@@ -159,11 +130,13 @@ proc nextRecord*(r:var Reader) =
   r.recordInfoValid = false
 
 proc recordMetadata*(r:var Reader):string =
+  r.setLayout()
   if not r.recordInfoValid: r.readRecordInfo()
   return r.recordMd
 
 template recGet(f,t:untyped):untyped =
   proc f*(r:var Reader):auto =
+    r.setLayout()
     if not r.recordInfoValid: r.readRecordInfo()
     let x = `"QIO_get_" f`(r.recordInfo.addr)
     return t(x)
@@ -201,6 +174,7 @@ proc vcopy(dest:var DColorMatrixV; l:int; src:SColorMatrix) =
   vcopyImpl(dest,l,src)
 
 proc read[T](r:var Reader, v:var openArray[ptr T]) =
+  r.setLayout()
   var qioMd = QIO_string_create()
 
   r.readRecordInfo()
