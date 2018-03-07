@@ -185,10 +185,11 @@ proc rankIndex*(l:Layout, coords: ptr cArray[cint]):tuple[rank,index:int] =
   result = (rank:li.rank.int,index:li.index.int)
 proc rankIndex*(l:Layout, coords: ptr cint):tuple[rank,index:int] =
   rankIndex(l, cast[ptr cArray[cint]](coords))
-proc rankIndex*(l:Layout, coords:openArray[cint]):tuple[rank,index:int] =
-  var li:LayoutIndexQ
-  layoutIndexQ(l.lq.addr, li.addr, unsafeAddr(coords[0]))
-  result = (rank:li.rank.int,index:li.index.int)
+proc rankIndex*(l: Layout, coords: openArray[cint]): tuple[rank,index:int] =
+  var li: LayoutIndexQ
+  layoutIndexQ(l.lq.addr, li.addr,
+               cast[ptr cArray[cint]](unsafeAddr(coords[0])))
+  result = (rank:li.rank.int, index:li.index.int)
 proc rankIndex*(l:Layout, coords:openArray[int]):tuple[rank,index:int] =
   when compiles((const n=coords.len;n)):
     const n=coords.len
@@ -201,12 +202,12 @@ proc rankIndex*(l:Layout, coords:openArray[int]):tuple[rank,index:int] =
 #proc coord*(l:Layout, coord:openArray[cint], ri:tuple[rank,index:int]) =
 #  var li = LayoutIndexQ(rank:ri.rank.cint, index:ri.index.cint)
 #  layoutCoordQ(l.lq.addr, coord, li)
-proc coord*(l:Layout, coord:var openArray[cint], ri:tuple[rank,index:int]) =
+proc coord*(l: Layout, coord: var openArray[cint], ri: tuple[rank,index:int]) =
   var li: LayoutIndexQ
   li.rank = ri.rank.cint
   li.index = ri.index.cint
-  layoutCoordQ(l.lq.addr, coord[0].addr, li.addr)
-proc coord*(l:Layout, coord: ptr cint, ri:tuple[rank,index:cint]) =
+  layoutCoordQ(l.lq.addr, cast[ptr cArray[cint]](coord[0].addr), li.addr)
+proc coord*(l: Layout, coord: ptr cint, ri: tuple[rank,index:cint]) =
   var li: LayoutIndexQ
   li.rank = ri.rank.cint
   li.index = ri.index.cint
