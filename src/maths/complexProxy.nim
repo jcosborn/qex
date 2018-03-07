@@ -418,7 +418,11 @@ iBinaryOverloads(`/=`, idivd, divd)
 # sqrt, rsqrt, exp, ...
 # import complexFuncs
 template redot*(x: ComplexProxy, y: ComplexProxy2): untyped =
-  (x.adj * y).re
+  #(x.adj * y).re
+  # below needed to workaround C++ backend issue (duplicate variable name)
+  let xx = x
+  let yy = y
+  xx.re*yy.re + xx.im*yy.im
 template redotinc*(r: RealProxy, x: ComplexProxy2, y: ComplexProxy3):
   untyped =  r += redot(x,y)
 
