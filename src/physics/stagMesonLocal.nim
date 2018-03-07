@@ -21,6 +21,8 @@ proc stagMesons*(v: any) =
     for i in l.sites:
       let t = l.coords[3][i]
       let s = l.corner(i)
+      #let a = v[i div l.nSitesInner].norm2()
+      #c[t][s] += a[i mod l.nSitesInner]
       c[t][s] += v{i}.norm2()
       #assign(x, v{i})
       #c[t][s] += x.norm2
@@ -53,21 +55,32 @@ proc stagMesonsV*(v: any) =
   let l = v.l
   let nt = l.physGeom[3]
   var cv = newAlignedMem[array[8,type(v[0].norm2())]](nt)
+  for i in 0..<nt:
+    for j in 0..<8:
+      cv[i][j] := 0
   var c = newSeq[array[8,float64]](nt)
-  threads:
-    tfor e, 0, l.nSitesOuter.pred:
+  when true:
+    threads:
+      for e in 0..<l.nSitesOuter:
+        let i = l.nSitesInner * e
+        let t = l.coords[3][i]
+        let s = l.corner(i)
+        let tpar = (8*t+s) mod numThreads
+        if tpar==threadNum:
+          cv[t][s] += v[e].norm2
+  else:
+    for e in 0..<l.nSitesOuter:
       let i = l.nSitesInner * e
       let t = l.coords[3][i]
       let s = l.corner(i)
-      let tpar = (8*t+s) mod numThreads
-      if tpar==threadNum:
-        cv[t][s] += v[e].norm2
+      cv[t][s] += v[e].norm2
   for tt in 0..<nt:
     let tt0 = tt - l.coords[3][0] + nt
+    #let tt0 = tt + nt
     for ss in 0..<8:
       for i in 0..<l.nSitesInner:
         let t = (tt0 + l.coords[3][i]) mod nt
-        let s = l.addCorner(ss, i)
+        let s = ss #l.addCorner(ss, i)
         c[t][s] += cv[tt][ss][i]
   rankSum(c)
   for s in 0..<8:

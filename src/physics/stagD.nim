@@ -615,8 +615,8 @@ when isMainModule:
       echo v2[0][0]
 
     #let nrep = int(1e7/lo.physVol.float)
-    #let nrep = int(2e8/lo.physVol.float)
-    let nrep = int(1e9/lo.physVol.float)
+    let nrep = int(2e8/lo.physVol.float)
+    #let nrep = int(1e9/lo.physVol.float)
     #let nrep = 1
     template makeBench(name:untyped; bar:untyped):untyped =
       proc `name T`(sd,v1,v2:any, ss="all") =
