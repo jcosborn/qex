@@ -30,9 +30,9 @@ suite "Test gauge IO":
     if 0 != gg.loadGauge(fn):
       echo "Error: failed to load gauge from ",fn
       qexExit 1
-    threads: gg.projectSU
+    #threads: gg.projectSU
     var pp = gg.plaq
-    CT = 1E-6
+    CT = 1E-5
     check(p ~ pp)
 
   qexFinalize()
