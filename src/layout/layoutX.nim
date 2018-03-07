@@ -1,143 +1,22 @@
-const hdr = currentSourcePath()[0..^12] & "qlayout.h"
-{. pragma: ql, header:hdr .}
-{. passC:"-I." .}
-{. compile:"qlayout.c" .}
-{. compile:"qshifts.c" .}
-{. compile:"qgather.c" .}
-
 import tables
 export tables
 import base
 import comms/qmp
+import qgather
+import layoutTypes
+export layoutTypes
+import shiftX
+export shiftX
 
-type
-  llist* {.importc,ql.} = object
-    value*: pointer
-    next*: ptr llist
-
-# k = sum_i sum_j ((x[i]/d[i][j])%m[i][j])*f[i][j]
-# x[i] = sum_j ((k/f[i][j])%m[i][j])*d[i][j]
-# parity?
-type
-  LayoutQ* {.importC:"Layout",ql.} = object
-    nDim*: cint
-    physGeom*: ptr cArray[cint]
-    rankGeom*: ptr cArray[cint]
-    innerGeom*: ptr cArray[cint]      #wrap
-    outerGeom*: ptr cArray[cint]      #wls
-    localGeom*: ptr cArray[cint]
-    physVol*: cint
-    nEven*: cint
-    nOdd*: cint
-    nSites*: cint
-    nEvenOuter*: cint
-    nOddOuter*: cint
-    nSitesOuter*: cint
-    nSitesInner*: cint
-    innerCb*: cint
-    innerCbDir*: cint
-    shifts*: ptr llist
-    nranks*: cint
-    myrank*: cint
-  LayoutIndexQ* = tuple[rank,index:cint]
-  SubsetQ* {.importc:"Subset",ql.} = object
-    begin*: cint
-    `end`*: cint
-    beginOuter*: cint
-    endOuter*: cint
-
+import qlayout
+#[
 proc layoutSetupQ*(l:ptr LayoutQ) {.importC:"layoutSetup",ql.}
 proc layoutIndexQ*(l:ptr LayoutQ; li:ptr LayoutIndexQ, coords:ptr cint)
   {.importC:"layoutIndex",ql.}
 proc layoutCoordQ*(l:ptr LayoutQ; coords:ptr cint, li:ptr LayoutIndexQ)
   {.importC:"layoutCoord",ql.}
+]#
 
-type GatherIndicesQ* {.importc:"GatherIndices",ql.} = object
-
-type ShiftIndicesQ* {.importc:"ShiftIndices",ql.} = object
-  gi*: GatherIndicesQ
-  disp*: ptr cArray[cint]
-  sidx*: ptr cArray[cint]
-  pidx*: ptr cArray[cint]
-  nRecvRanks*: cint
-  recvRanks*: ptr cArray[cint]
-  recvRankSizes*: ptr cArray[cint]
-  recvRankSizes1*: ptr cArray[cint]
-  recvRankOffsets*: ptr cArray[cint]
-  recvRankOffsets1*: ptr cArray[cint]
-  nRecvSites*: cint
-  nRecvSites1*: cint
-  nRecvDests*: cint
-  recvDests*: ptr cArray[cint]
-  recvLocalSrcs*: ptr cArray[cint]
-  recvRemoteSrcs*: ptr cArray[cint]
-  nSendRanks*: cint
-  sendRanks*: ptr cArray[cint]
-  sendRankSizes*: ptr cArray[cint]
-  sendRankSizes1*: ptr cArray[cint]
-  sendRankOffsets*: ptr cArray[cint]
-  sendRankOffsets1*: ptr cArray[cint]
-  nSendSites*: cint
-  nSendSites1*: cint
-  sendSites*: ptr cArray[cint]
-  vv*: cint
-  #offr*: cint
-  #lenr*: cint
-  #nthreads*: cint
-  perm*: cint
-  pack*: cint
-  blend*: cint
-  #sqmpmem*: QMP_msgmem_t
-  #smsg*: QMP_msghandle_t
-  #rqmpmem*: QMP_msgmem_t
-  #rmsg*: QMP_msghandle_t
-  #pairmsg*: QMP_msghandle_t
-
-type ShiftIndices* = ref object
-  sq*: ShiftIndicesQ
-  nRecvRanks*: int
-  nRecvDests*: int
-  nSendRanks*: int
-  nSendSites*: int
-  sendSites*: seq[int32]
-  perm*: int
-  pack*: int
-  blend*: int
-  nSitesInner*: int
-
-type
-  ShiftKey = tuple[dir,len:int;sub:string]
-  #Layout[D:static[int]]* = ref object
-  Layout*[V:static[int]] = ref object
-    nDim*: int
-    physGeom*:seq[int]
-    rankGeom*:seq[int]
-    innerGeom*:seq[int]
-    outerGeom*:seq[int]
-    localGeom*:seq[int]
-    physVol*: int
-    nEven*: int
-    nOdd*: int
-    nSites*: int
-    nEvenOuter*: int
-    nOddOuter*: int
-    nSitesOuter*: int
-    nSitesInner*: int
-    nranks*: int
-    myrank*: int
-    lq*: LayoutQ
-    shifts*: Table[ShiftKey,ShiftIndices]
-    coords*: seq[seq[int16]]
-    vcoordTemp*: seq[array[V,int16]]
-  Layout2*[V:static[int]] = Layout[V]
-  Layout3*[V:static[int]] = Layout[V]
-  Subset* = object
-    low*: int
-    high*: int
-    lowOuter*: int
-    highOuter*: int
-
-proc makeShiftKey*(d,l:int;s:string):ShiftKey = ShiftKey((dir:d,len:l,sub:s))
 #proc layoutCoord*(l:Layout; coords:var openArray[int]; rank,index:int) =
 #  var c = cast[ptr array[0,cint]](coords[0].addr)
 #  var liq = LayoutIndexQ((rank.cint,index.cint))
@@ -282,13 +161,14 @@ proc newLayoutX*(lat: openArray[int]; V: static[int];
   result.nSitesInner = result.lq.nSitesInner.int
   result.nranks = nRanks
   result.myrank = myRank
-  result.shifts = initTable[ShiftKey,ShiftIndices]()
+  result.shifts.init
   result.coords.newSeq(nd)
   for i in 0..<nd: result.coords[i].newSeq(result.nSites)
   var coords = newSeq[cint](nd)
+  let coa = cast[ptr cArray[cint]](addr(coords[0]))
   for i in 0..<result.nSites:
     var li = LayoutIndexQ((rank:myRank.cint,index:i.cint))
-    layoutCoordQ(result.lq.addr, coords[0].addr, li.addr)
+    layoutCoordQ(result.lq.addr, coa, li.addr)
     #echo coords[0]
     for d in 0..<nd: result.coords[d][i] = coords[d].int16
   result.vcoordTemp.newSeq(nd)
@@ -299,6 +179,12 @@ template newLayout*(l:openArray[int]; n:static[int]):untyped =
 template newLayout*(l:openArray[int]):untyped =
   newLayoutX(l, VLEN, [], [])
 
+proc rankIndex*(l:Layout, coords: ptr cArray[cint]):tuple[rank,index:int] =
+  var li:LayoutIndexQ
+  layoutIndexQ(l.lq.addr, li.addr, coords)
+  result = (rank:li.rank.int,index:li.index.int)
+proc rankIndex*(l:Layout, coords: ptr cint):tuple[rank,index:int] =
+  rankIndex(l, cast[ptr cArray[cint]](coords))
 proc rankIndex*(l:Layout, coords:openArray[cint]):tuple[rank,index:int] =
   var li:LayoutIndexQ
   layoutIndexQ(l.lq.addr, li.addr, unsafeAddr(coords[0]))
@@ -320,6 +206,11 @@ proc coord*(l:Layout, coord:var openArray[cint], ri:tuple[rank,index:int]) =
   li.rank = ri.rank.cint
   li.index = ri.index.cint
   layoutCoordQ(l.lq.addr, coord[0].addr, li.addr)
+proc coord*(l:Layout, coord: ptr cint, ri:tuple[rank,index:cint]) =
+  var li: LayoutIndexQ
+  li.rank = ri.rank.cint
+  li.index = ri.index.cint
+  layoutCoordQ(l.lq.addr, cast[ptr cArray[cint]](coord), li.addr)
 
 proc vcoords*[V:static[int]](l:Layout[V]; i:int):seq[array[V,int16]] =
   #for d in 0..<l.nDim:
@@ -358,120 +249,3 @@ proc paritySubset*(s: var Subset; l: Layout; par: int) =
 template `len`*(s:Subset):untyped = s.high-s.low
 template `lenOuter`*(s:Subset):untyped = s.highOuter-s.lowOuter
 
-proc makeShiftSubQ(si:ptr ShiftIndicesQ; l:ptr LayoutQ; d:ptr cint; s:cstring)
-  {.importC:"makeShiftSub",ql.}
-proc makeShiftMultiSubQ(si:ptr ptr ShiftIndicesQ; l:ptr LayoutQ;
-                        d:ptr ptr cint; s:ptr cstring; ndisp:cint)
-  {.importC:"makeShiftMultiSub",ql.}
-
-# x>0 -> 2*x-1; x<= -> -2*x
-#proc makeShift(l:Layout; disp:openArray[int]; sub:string="all") =
-proc makeShift*(l:var Layout; dir,len:int; sub:string="all") =
-  var si = ShiftIndices.new()
-  #echo l.nDim
-  var disp = newSeq[cint](l.nDim)
-  disp[dir] = -len.cint
-  makeShiftSubQ(si.sq.addr, l.lq.unsafeAddr, disp[0].addr, sub)
-  let key = makeShiftKey(dir, len, sub)
-  l.shifts[key] = si
-  si.nRecvRanks = si.sq.nRecvRanks
-  si.nRecvDests = si.sq.nRecvDests
-  si.nSendRanks = si.sq.nSendRanks
-  si.nSendSites = si.sq.nSendSites
-  si.sendSites.newSeq(si.nSendSites)
-  for i in 0..<si.nSendSites: si.sendSites[i] = si.sq.sendSites[i]
-  si.perm = si.sq.perm
-  si.pack = si.sq.pack
-  si.blend = si.sq.blend
-  si.nSitesInner = l.nSitesInner
-proc getShift*(l:var Layout; dir,len:int; sub:string="all"):ShiftIndices =
-  let key = makeShiftKey(dir, len, sub)
-  if not hasKey(l.shifts, key):
-    makeShift(l, dir, len, sub)
-  result = l.shifts[key]
-
-type
-  ShiftBufQ* {.importc:"ShiftBuf",ql.} = object
-    sqmpmem*: QMP_msgmem_t
-    smsg*: QMP_msghandle_t
-    rqmpmem*: QMP_msgmem_t
-    rmsg*: QMP_msghandle_t
-    pairmsg*: QMP_msghandle_t
-    sbuf*: ptr cArray[char]
-    rbuf*: ptr cArray[char]
-    sbufSize*: cint
-    rbufSize*: cint
-    first*: cint
-    offr*: ptr cArray[cint]
-    lenr*: ptr cArray[cint]
-    nthreads*: ptr cArray[cint]
-  ShiftBufObj* = object
-    sq*:ShiftBufQ
-    lbufSize*: int
-    lbuf*: ptr cArray[char]
-    activeRecv*: bool
-    activeSend*: bool
-  ShiftBuf* = ref ShiftBufObj
-
-proc prepareShiftBufQ*(sb:ptr ShiftBufQ, si:ptr ShiftIndicesQ, esize:cint)
-  {.importc:"prepareShiftBuf",ql.}
-proc freeShiftBufQ*(sb:ptr ShiftBufQ)
-  {.importc:"freeShiftBuf", ql.}
-proc startRecvBufQ*(sb:ptr ShiftBufQ)
-  {.importc:"startRecvBuf", ql.}
-proc waitRecvBufQ*(sb:ptr ShiftBufQ)
-  {.importc:"waitRecvBuf", ql.}
-proc doneRecvBufQ*(sb:ptr ShiftBufQ)
-  {.importc:"doneRecvBuf", ql.}
-proc startSendBufQ*(sb:ptr ShiftBufQ)
-  {.importc:"startSendBuf", ql.}
-proc waitSendBufQ*(sb:ptr ShiftBufQ)
-  {.importc:"waitSendBuf", ql.}
-
-proc freeShiftBuf*(sb:ShiftBuf) =
-  if sb.lbuf != nil:
-    let a = unsafeaddr(sb.sq)
-    #echo "freeShiftBuf: ", cast[int](a)
-    freeShiftBufQ(sb.sq.addr)
-    dealloc(sb.lbuf)
-    sb.lbuf = nil
-proc prepareShiftBuf*(sb:var ShiftBuf, si:ShiftIndices, esize:int) =
-  #sb.new()
-  sb.new(freeShiftBuf)
-  let a = unsafeaddr(sb.sq)
-  #echo "prepareShiftBuf: ", cast[int](a)
-  prepareShiftBufQ(sb.sq.addr, si.sq.addr, esize.cint)
-  #sb.lbufSize = (si.sq.nSendSites*si.nSitesInner-si.sq.nSendSites1)*esize
-  sb.lbufSize = si.sq.nSendSites*si.nSitesInner*esize
-  sb.lbuf = cast[type(sb.lbuf)](alloc(sb.lbufSize))
-  sb.activeRecv = false
-  sb.activeSend = false
-template startRecvBuf*(sb: ShiftBuf) =
-  if not sb.activeRecv:
-    sb.activeRecv = true
-    startRecvBufQ(unsafeAddr(sb.sq))
-template waitRecvBuf*(sb: ShiftBuf) =
-  if sb.activeRecv:
-    sb.activeRecv = false
-    waitRecvBufQ(unsafeAddr(sb.sq))
-proc doneRecvBuf*(sb:ShiftBuf) = doneRecvBufQ(unsafeAddr(sb.sq))
-template startSendBuf*(sb: ShiftBuf) =
-  if not sb.activeSend:
-    sb.activeSend = true
-    startSendBufQ(unsafeAddr(sb.sq))
-template waitSendBuf*(sb: ShiftBuf) =
-  if sb.activeSend:
-    sb.activeSend = false
-    waitSendBufQ(unsafeAddr(sb.sq))
-
-when isMainModule:
-  import qex
-  qexInit()
-  echo "rank ", myRank, "/", nRanks
-  var lat = [4,4,4,4]
-  var lo = newLayout(lat)
-  lo.makeShift(0,1)
-  lo.makeShift(3,-2,"even")
-  for i in 0..<lo.nSites:
-    let x = lo.vcoords(i)
-  qexFinalize()
