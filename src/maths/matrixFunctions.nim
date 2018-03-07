@@ -41,13 +41,21 @@ proc rsqrtPHM3f(c0,c1,c2:var any; tr,p2,det:any) =
   let r = 0.25*tr3*(5*tr32-p2) - 0.5*det
   let sq = sqrt(q)
   let sq3 = q*sq
-  let rsq3 = r/sq3
-  var minv,maxv {.noinit.}:type(rsq3)
-  minv := -1.0
-  maxv := 1.0
-  let rsq3r = min(maxv, max(minv,rsq3))
-  let t = (1.0/3.0)*acos(rsq3r)
-  # let t = (1.0/3.0)*acos(rsq3)
+  #let rsq3 = r/sq3
+  #var minv,maxv {.noinit.}:type(rsq3)
+  #minv := -1.0
+  #maxv := 1.0
+  #let rsq3r = min(maxv, max(minv,rsq3))
+  let isq3 = 1.0/sq3
+  var minv,maxv {.noinit.}: type(isq3)
+  maxv := 3e38
+  minv := -3e38
+  let isq3c = min(maxv, max(minv,isq3))
+  let rsq3c = r * isq3c
+  maxv := 1
+  minv := -1
+  let rsq3 = min(maxv, max(minv,rsq3c))
+  let t = (1.0/3.0)*acos(rsq3)
   let st = sin(t)
   let ct = cos(t)
   let sqc = sq*ct
