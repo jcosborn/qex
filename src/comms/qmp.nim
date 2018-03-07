@@ -89,6 +89,33 @@ template qmpMax*(v:float64):untyped = QmpMaxDouble(v.addr)
 template qmpMin*(v:float32):untyped = QmpMinFloat(v.addr)
 template qmpMin*(v:float64):untyped = QmpMinDouble(v.addr)
 
+proc QMP_declare_msgmem*(mem: pointer; nbytes: csize): QMP_msgmem_t {.
+    importc: "QMP_declare_msgmem", header: "qmp.h".}
+proc QMP_declare_send_to*(m: QMP_msgmem_t; rem_node_rank: cint;
+                          priority: cint): QMP_msghandle_t {.
+    importc: "QMP_declare_send_to", header: "qmp.h".}
+proc QMP_declare_receive_from*(m: QMP_msgmem_t; rem_node_rank: cint;
+                               priority: cint): QMP_msghandle_t {.
+    importc: "QMP_declare_receive_from", header: "qmp.h".}
+proc QMP_declare_send_recv_pairs*(msgh: ptr QMP_msghandle_t;
+                                  num: cint): QMP_msghandle_t {.
+    importc: "QMP_declare_send_recv_pairs", header: "qmp.h".}
+proc QMP_start*(h: QMP_msghandle_t): QMP_status_t {.importc: "QMP_start",
+    header: "qmp.h".}
+proc QMP_wait*(h: QMP_msghandle_t): QMP_status_t {.importc: "QMP_wait",
+    header: "qmp.h".}
+type QMP_clear_to_send_t* {.importC, header:"qmp.h".} = cint
+var QMP_CTS_DISABLED*{.importC, header:"qmp.h".}: QMP_clear_to_send_t
+var QMP_CTS_NOT_READY*{.importC, header:"qmp.h".}: QMP_clear_to_send_t
+var QMP_CTS_READY*{.importC, header:"qmp.h".}: QMP_clear_to_send_t
+proc QMP_clear_to_send*(mh: QMP_msghandle_t;
+                        cts: QMP_clear_to_send_t): QMP_status_t {.
+    importc: "QMP_clear_to_send", header: "qmp.h".}
+proc QMP_free_msghandle*(h: QMP_msghandle_t) {.importc: "QMP_free_msghandle",
+    header: "qmp.h".}
+proc QMP_free_msgmem*(m: QMP_msgmem_t) {.importc: "QMP_free_msgmem", header: "qmp.h".}
+
+
 when isMainModule:
   var argc {.importc:"cmdCount", global.}:cint
   var argv {.importc:"cmdLine", global.}:ptr cstring
