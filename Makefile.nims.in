@@ -120,6 +120,7 @@ proc nimRun(f: string, outfile="") =
       mkDir("bin")
     name = "bin" / name
   let s = nimcmd & " c -o:" & name & " " & f
+  #let s = nimcmd & " cpp -o:" & name & " " & f
   echo "running: ", s
   exec s
 

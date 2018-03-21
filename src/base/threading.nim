@@ -188,7 +188,7 @@ macro threadSum*(a:varargs[untyped]):auto =
   let nid = ident("numThreads")
   let p = newLit(1)
   for i in 0..<a.len:
-    let gi = !("g" & $i)
+    let gi = ident("g" & $i)
     let ai = a[i]
     result.add(quote do:
       var `gi`{.global.}:array[`p`*512,type(`ai`)]
@@ -214,7 +214,7 @@ macro threadSum2*(a:varargs[untyped]):auto =
   var gp = newNimNode(nnkStmtList)
   var a0 = newNimNode(nnkStmtList)
   for i in 0..<a.len:
-    let gi = !("g" & $i)
+    let gi = ident("g" & $i)
     let ai = a[i]
     let t = quote do:
       var `gi`{.global.}:type(`ai`)

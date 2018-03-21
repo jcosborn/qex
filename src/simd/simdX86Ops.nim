@@ -74,7 +74,7 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   template setF(x):untyped = F(x)
   macro assign*(r:var T; x:varargs[SomeNumber]):auto =
     if x.len==1:
-      result = newCall(!"assign1", r, x[0])
+      result = newCall(ident"assign1", r, x[0])
     else:
       result = newStmtList()
       var call = getAst(setX()).peelStmt

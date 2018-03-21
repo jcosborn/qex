@@ -516,7 +516,7 @@ when isMainModule:
         #var vol = lo.physVol.float
         var vol = lo.nSites.float
         if sd.sub != "all": vol *= 0.5
-        let flops = nv * (6.0+g.len*2.0*72.0) * vol
+        let flops = nv * (24.0+g.len*2.0*(12+2*66+24)) * vol
         echo ss & "secs: ", dt, "  mf: ", (nrep.float*flops)/(1e6*dt)
         echoTimers()
       template name(sd:any, ss="all") = `name T`(sd, v1, v2, ss)
@@ -539,7 +539,7 @@ when isMainModule:
       let dt = t1-t0
       #var vol = 0.5 * lo.physVol.float
       var vol = 0.5 * lo.nSites.float
-      let flops = nv * (6.0+g.len*2.0*2.0*72.0) * vol
+      let flops = nv * (24.0+g.len*4.0*(12+2*66+24)) * vol
       echo "EO   secs: ", dt, "  mf: ", (nrep.float*flops)/(1e6*dt)
       #echoTimers()
     benchEO()
