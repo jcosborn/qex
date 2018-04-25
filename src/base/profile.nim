@@ -7,7 +7,7 @@ import strUtils
 import macros
 import os
 import algorithm
-include system/timers
+#include system/timers
 
 when true:
   type

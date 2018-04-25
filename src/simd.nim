@@ -7,9 +7,31 @@ when defined(SSE) or defined(AVX) or defined(AVX512):
 elif defined(QPX):
   import simd/simdQpx
   export simdQpx
+else:
+  import base/globals
+  import base/basicOps
+  import simd/simdArray
+  export simdArray
+  when VLEN==1:
+    makeSimdArray(SimdS1, 1, float32)
+    makeSimdArray(SimdD1, 1, float64)
+  when VLEN==2:
+    makeSimdArray(SimdS2, 2, float32)
+    makeSimdArray(SimdD2, 2, float64)
+  when VLEN==4:
+    makeSimdArray(SimdS4, 4, float32)
+    makeSimdArray(SimdD4, 4, float64)
+  when VLEN==8:
+    makeSimdArray(SimdS8, 8, float32)
+    makeSimdArray(SimdD8, 8, float64)
 
 #import simd/simdGeneric
 #export simdGeneric
+
+when declared(SimdD1):
+  template eval*(x: SimdD1): untyped = x
+  template toSingleImpl*(x: SimdD1): untyped = toSingle(x)
+  template toDoubleImpl*(x: SimdD1): untyped = x
 
 when declared(SimdS4):
   template eval*(x: SimdS4): untyped = x
@@ -53,6 +75,9 @@ when declared(SimdD8):
 when declared(SimdD8) and declared(SimdS8):
   #template toDouble*(x: SimdD8): untyped = x
   proc toSingle*(x: SimdD8): SimdS8 {.inline,noInit.} =
+    for i in 0..<8:
+      result[i] = x[i]
+  proc toDouble*(x: SimdS8): SimdD8 {.inline,noInit.} =
     for i in 0..<8:
       result[i] = x[i]
   template assign*(r: SimdS8, x: SimdD8): untyped =

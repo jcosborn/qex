@@ -4,6 +4,7 @@ import complexProxy
 export complexProxy
 
 type
+  AsReal*[T] = RealProxy[T]
   AsImag*[T] = ImagProxy[T]
   ComplexObj*[TR,TI] = object
     reX*: TR
@@ -24,6 +25,7 @@ template newComplexImpl*(x,y: typed): untyped =
 template newReal*(x: typed): untyped = newRealImpl(x)
 template newImag*(x: typed): untyped = newImagImpl(x)
 template newComplex*(x,y: typed): untyped = newComplexImpl(x,y)
+template asReal*(x: untyped): untyped = newRealProxy(x)
 
 template isWrapper*(x: ComplexObj): untyped = false
 template isWrapper*(x: ComplexProxy): untyped = true

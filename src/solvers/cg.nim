@@ -178,8 +178,8 @@ when isMainModule:
     #mul(r, m, x)
   var sp:SolverParams
   sp.r2req = 1e-20
-  sp.maxits = 100
-  sp.verbosity = 3
+  sp.maxits = 200
+  sp.verbosity = 2
   sp.subset.layoutSubset(lo, "all")
   threads:
     m.even := 1

@@ -130,7 +130,7 @@ macro rankSumN*(a:varargs[typed]):auto =
         break
   if i0<0:
     var s = newNimNode(nnkStmtList)
-    let t = !"t"
+    let t = ident("t")
     for i in 0..<a.len:
       let ai = a[i]
       let x = quote do:
@@ -142,7 +142,7 @@ macro rankSumN*(a:varargs[typed]):auto =
         qmpSum(`t`)
         `s`
   else:
-    result = newCall(!"rankSum")
+    result = newCall("rankSum")
     for i in 0..<a.len:
       if i==i0:
         let ai = unwrap(a[i])
@@ -217,7 +217,7 @@ proc threadRankSumN*(a:NimNode):auto =
   let nid = ident("numThreads")
   let p = newLit(1)
   for i in 0..<a.len:
-    let gi = !("g" & $i)
+    let gi = ident("g" & $i)
     let ai = a[i]
     result.add(quote do:
       var `gi`{.global.}:array[`p`*512,type(`ai`)]

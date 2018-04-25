@@ -1,14 +1,16 @@
 import macros
 import base
-#import ../metaUtils
+import base/metaUtils
 #import ../basicOps
 
 template map011(T,L,op1,op2:untyped):untyped {.dirty.} =
   proc op1*(x:T):T {.inline,noInit.} =
+    bind forStatic
     forStatic i, 0, L-1:
       result[][i] = op2(x[][i])
 template map021(T,L,op1,op2:untyped):untyped {.dirty.} =
   proc op1*(x,y:T):T {.inline,noInit.} =
+    bind forStatic
     forStatic i, 0, L-1:
       result[][i] = op2(x[][i], y[][i])
 #template map110(T,L,op1,op2:untyped):untyped {.dirty.} =
@@ -37,10 +39,12 @@ macro map110(T,L,op1,op2: untyped): untyped =
 
 template map120(T,L,op1,op2:untyped):untyped {.dirty.} =
   proc op1*(r:var T; x,y:T) {.inline.} =
+    bind forStatic
     forStatic i, 0, L-1:
       op2(r[][i], x[][i], y[][i])
 template map130(T,L,op1,op2:untyped):untyped {.dirty.} =
   proc op1*(r:var T; x,y,z:T) {.inline.} =
+    bind forStatic
     forStatic i, 0, L-1:
       op2(r[][i], x[][i], y[][i], z[][i])
 template makePermX(F,P,T,L,N0) {.dirty.} =
@@ -50,10 +54,11 @@ template makePermX(F,P,T,L,N0) {.dirty.} =
   else:
     proc F*(r:var T; x:T) {.inline.} =
       const b = (P div N0) and (L-1)
+      bind forStatic
       forStatic i, 0, L-1:
         assign(r[][i], x[][i xor b])
 template makePerm(P,T,L,N0) {.dirty.} =
-  bind makePermX
+  bind evalBacktic, makePermX
   evalBacktic:
     makePermX(`"perm" P`,P,T,L,N0)
 template makePackPX(F,P,T,L,N0) {.dirty.} =
@@ -63,6 +68,7 @@ template makePackPX(F,P,T,L,N0) {.dirty.} =
       const N02 = N0 div 2
       let ra = cast[ptr array[L,array[N02,type(r[0])]]](r[0].addr)
       let la = cast[ptr array[L,array[N02,type(l[0])]]](l[0].addr)
+      bind forStatic
       forStatic i, 0, L-1:
         F(ra[][i], x[][i], la[][i])
   else:
@@ -73,12 +79,19 @@ template makePackPX(F,P,T,L,N0) {.dirty.} =
       let la = cast[ptr array[L2,array[N0,type(l[0])]]](l[0].addr)
       const b = (P div N0) and (L-1)
       var ir,il = 0
+      bind forStatic
       forStatic i, 0, L-1:
         if (i and b) == 0:
-          assign(la[][il], x[][i])
+          when N0==1:
+            la[][il][0] = x[][i]
+          else:
+            assign(la[][il], x[][i])
           inc il
         else:
-          assign(ra[][ir], x[][i])
+          when N0==1:
+            ra[][ir][0] = x[][i]
+          else:
+            assign(ra[][ir], x[][i])
           inc ir
 template makePackMX(F,P,T,L,N0) {.dirty.} =
   # P: perm, T: vector type, L: outer vec len, N0: inner vec len
@@ -88,6 +101,7 @@ template makePackMX(F,P,T,L,N0) {.dirty.} =
       const N02 = N0 div 2
       let ra = cast[ptr array[L,array[N02,type(r[0])]]](r[0].addr)
       let la = cast[ptr array[L,array[N02,type(l[0])]]](l[0].addr)
+      bind forStatic
       forStatic i, 0, L-1:
         F(ra[][i], x[][i], la[][i])
   else:
@@ -98,19 +112,26 @@ template makePackMX(F,P,T,L,N0) {.dirty.} =
       let la = cast[ptr array[L2,array[N0,type(l[0])]]](l[0].addr)
       const b = (P div N0) and (L-1)
       var ir,il = 0
+      bind forStatic
       forStatic i, 0, L-1:
         if (i and b) == 0:
-          assign(ra[][ir], x[][i])
+          when N0==1:
+            ra[][ir][0] = x[][i]
+          else:
+            assign(ra[][ir], x[][i])
           inc ir
         else:
-          assign(la[][il], x[][i])
+          when N0==1:
+            la[][il][0] = x[][i]
+          else:
+            assign(la[][il], x[][i])
           inc il
 template makePackP(P,T,L,N0) {.dirty.} =
-  bind makePackPX
+  bind evalBacktic, makePackPX
   evalBacktic:
     makePackPX(`"packp" P`,P,T,L,N0)
 template makePackM(P,T,L,N0) {.dirty.} =
-  bind makePackMX
+  bind evalBacktic, makePackMX
   evalBacktic:
     makePackMX(`"packm" P`,P,T,L,N0)
 template makeBlendPX(F,P,T,L,N0) {.dirty.} =
@@ -130,12 +151,19 @@ template makeBlendPX(F,P,T,L,N0) {.dirty.} =
       let la = cast[ptr array[L2,array[N0,type(l[0])]]](unsafeAddr(l[0]))
       const b = (P div N0) and (L-1)
       var ir,il = 0
+      bind forStatic
       forStatic i, 0, L-1:
         if (i and b) == 0:
-          assign(x[][i], la[][il])
+          when N0==1:
+            x[][i] = la[][il][0]
+          else:
+            assign(x[][i], la[][il])
           inc il
         else:
-          assign(x[][i], ra[][ir])
+          when N0==1:
+            x[][i] = ra[][ir][0]
+          else:
+            assign(x[][i], ra[][ir])
           inc ir
 template makeBlendMX(F,P,T,L,N0) {.dirty.} =
   when N0>P:
@@ -144,6 +172,7 @@ template makeBlendMX(F,P,T,L,N0) {.dirty.} =
       const N02 = N0 div 2
       let ra = cast[ptr array[L,array[N02,type(r[0])]]](unsafeAddr(r[0]))
       let la = cast[ptr array[L,array[N02,type(l[0])]]](unsafeAddr(l[0]))
+      bind forStatic
       forStatic i, 0, L-1:
         F(x[][i], ra[][i], la[][i])
   else:
@@ -154,19 +183,26 @@ template makeBlendMX(F,P,T,L,N0) {.dirty.} =
       let la = cast[ptr array[L2,array[N0,type(l[0])]]](unsafeAddr(l[0]))
       const b = (P div N0) and (L-1)
       var ir,il = 0
+      bind forStatic
       forStatic i, 0, L-1:
         if (i and b) == 0:
-          assign(x[][i], ra[][ir])
+          when N0==1:
+            x[][i] = ra[][ir][0]
+          else:
+            assign(x[][i], ra[][ir])
           inc ir
         else:
-          assign(x[][i], la[][il])
+          when N0==1:
+            x[][i] = la[][il][0]
+          else:
+            assign(x[][i], la[][il])
           inc il
 template makeBlendP(P,T,L,N0) {.dirty.} =
-  bind makeBlendPX
+  bind evalBacktic, makeBlendPX
   evalBacktic:
     makeBlendPX(`"blendp" P`,P,T,L,N0)
 template makeBlendM(P,T,L,N0) {.dirty.} =
-  bind makeBlendMX
+  bind evalBacktic, makeBlendMX
   evalBacktic:
     makeBlendMX(`"blendm" P`,P,T,L,N0)
 
@@ -200,15 +236,21 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   template simdLength*(x:typedesc[T]):untyped = N
   #template `[]`*(x:T):untyped = (array[L,B])(x)
   template `[]`*(x:T):untyped = x.v
-  template `[]`*(x:T; i:SomeInteger):untyped = x[][i div N0][i mod N0]
-  template `[]=`*(x:T; i:SomeInteger; y:any) = x[][i div N0][i mod N0] = y
+  when B is SomeNumber:
+    template `[]`*(x:T; i:SomeInteger):untyped = x[][i div N0]
+    template `[]=`*(x:T; i:SomeInteger; y:any) = x[][i div N0] := y
+  else:
+    template `[]`*(x:T; i:SomeInteger):untyped = x[][i div N0][i mod N0]
+    template `[]=`*(x:T; i:SomeInteger; y:any) = x[][i div N0][i mod N0] = y
   template load1*(x:T):untyped = x
   proc to*(x:SomeNumber; y:typedesc[T]):T {.inline,noInit.} =
-    subst(i,_):
-      forStatic i, 0, L-1:
-        assign(result[][i], x)
+    bind forStatic
+    #subst(i,_):
+    forStatic i, 0, L-1:
+      assign(result[][i], x)
   proc simdReduce*(r: var SomeNumber; x: T) {.inline.} =
-    var y = add(x[][0], x[][1])
+    #mixin add
+    var y = x[][0] + x[][1]
     forStatic i, 2, L-1:
       iadd(y, x[][i])
     r = (type(r))(simdReduce(y))
@@ -218,10 +260,10 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   proc simdMaxReduce*(r:var SomeNumber; x:T) {.inline.} =
     mixin simdMaxReduce
     var y = x[][0]
-    subst(i,_):
-      forStatic i, 1, L-1:
-        let c = x[][i]
-        y = max(y, c)
+    #subst(i,_):
+    forStatic i, 1, L-1:
+      let c = x[][i]
+      y = max(y, c)
     r = (type(r))(simdMaxReduce(y))
   proc simdMaxReduce*(x:T):F {.noinit,inline.} = simdMaxReduce(result, x)
   template simdMax*(r:var SomeNumber; x:T) = simdMaxReduce(r, x)
@@ -241,14 +283,14 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   map021(T, L, atan2, atan2)
   map021(T, L, min, min)
   map021(T, L, max, max)
-  map021(T, L, add, add)
-  map021(T, L, sub, sub)
-  map021(T, L, mul, mul)
-  map021(T, L, divd, divd)
-  map021(T, L, `+`, add)
-  map021(T, L, `-`, sub)
-  map021(T, L, `*`, mul)
-  map021(T, L, `/`, divd)
+  map021(T, L, add, `+`)
+  map021(T, L, sub, `-`)
+  map021(T, L, mul, `*`)
+  map021(T, L, divd, `/`)
+  map021(T, L, `+`, `+`)
+  map021(T, L, `-`, `-`)
+  map021(T, L, `*`, `*`)
+  map021(T, L, `/`, `/`)
 
   map110(T, L, assign, assign)
   map110(T, L, neg, neg)
@@ -305,7 +347,12 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
       forStatic i, 0, L-1:
         assign(r[][i], unsafeAddr(y[i*N0]))
   proc assign*(r:var array[N,SomeNumber], x:T) {.inline.} =
-    subst(i,_):
+    bind forStatic
+    #subst(i,_):
+    when B is SomeNumber:
+      forStatic i, 0, L-1:
+        r[i] = x[][i]
+    else:
       forStatic i, 0, L-1:
         assign(addr(r[i*N0]), x[][i])
   template add*(r:var T; x:SomeNumber; y:T) = add(r, x.to(T), y)

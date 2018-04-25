@@ -79,14 +79,14 @@ macro makeWrapper*(t,s: untyped): untyped =
   var xid = s
   case s.kind
   of nnkIdent:
-    xid = newIdentNode(!("t_" & $s))
+    xid = newIdentNode("t_" & $s)
   of nnkAccQuoted:
     var a = "t_"
     for c in s:
       a &= $c
     #echo s.treerepr
     #echo a
-    xid = newIdentNode(!a)
+    xid = newIdentNode(a)
   else:
     echo s.treerepr
   result = getAst(makeWrapper2(t,s,xid))

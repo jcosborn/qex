@@ -123,6 +123,7 @@ template simdSum*(x:SomeNumber):untyped = x
 template simdSum*(r:var SomeNumber; x:SomeNumber2):untyped =
  r = (type(r))(x)
 template simdReduce*(x:SomeNumber):untyped = x
+template simdMaxReduce*(x:SomeNumber):untyped = x
 template perm1*(r:var SomeNumber; x:SomeNumber2):untyped =
  r = (type(r))(x)
 template perm2*(r:var SomeNumber; x:SomeNumber2):untyped =

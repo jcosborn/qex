@@ -28,7 +28,7 @@ let
   # Required parameters
   inlat = strParam("inlat")   # Input gauge file name
   outfn = strParam("outfn")   # Save results to outfn.{trace,noise,prop}
-  mass = floatParam("mass")   # The quark mass
+  mass = floatParam("mass", 0.1)   # The quark mass
 
   # optional parameters
   cg_prec = floatParam("cg_prec", 1e-9) # Max residual with default
@@ -117,7 +117,7 @@ var s = sg.newStag
 var
   eta = lo.ColorVector        # Noise source
   phi = lo.ColorVector        # Propagator
-  trce = lo.Complex     # Trace
+  trce = lo.complex     # Trace
   tmps = lo.ColorVector
 
 for i in 0..<num_stoch:

@@ -86,6 +86,8 @@ template `*`*(x: Color, y: SomeNumber): untyped =
   asColor(x[] * y)
 template `*`*(x: SomeNumber, y: Color2): untyped =
   asColor(x * y[])
+template `*`*(x: AsReal, y: Color2): untyped =
+  asColor(x * y[])
 template `*`*(x: AsImag, y: Color2): untyped =
   asColor(x * y[])
 template `*`*(x: AsComplex, y: Color2): untyped =
