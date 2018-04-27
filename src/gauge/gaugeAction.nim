@@ -157,7 +157,7 @@ proc gaugeForce*[T](uu: openArray[T]): auto =
   toc("gaugeForce end")
   return f
 
-proc gaugeAction2*(c: GaugeActionCoeffs, g: array|seq): auto =
+proc gaugeAction2*[T](c: GaugeActionCoeffs, g: openArray[T]): auto =
   mixin redot
   tic()
   let lo = g[0].l
@@ -209,7 +209,7 @@ proc gaugeAction2*(g: array|seq): auto =
   var c: GaugeActionCoeffs
   gaugeAction2(c, g)
 
-proc gaugeForce2*(f,g: array|seq) =
+proc gaugeForce2*[T](f,g: openArray[T]) =
   mixin adj
   tic()
   let lo = g[0].l

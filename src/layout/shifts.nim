@@ -450,7 +450,7 @@ type
 #proc field*(t: Transporter): auto = t.field
 #proc `link=`*(r,x: Transporter) = t.field
 
-proc newTransporters*[U,F](u: seq[U], f: F, len: int, sub="all"): auto =
+proc newTransporters*[U,F](u: openArray[U], f: F, len: int, sub="all"): auto =
   var r: seq[Transporter[type(u[0]),F,type(f[0])]]
   let nd = u.len
   r.newSeq(nd)
