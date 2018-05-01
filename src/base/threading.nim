@@ -46,7 +46,7 @@ template checkInit* =
 macro emitStackTraceX(x: typed): untyped =
   template est(x) =
     {.emit: "// instantiationInfo: " & x.}
-  let ii = x.repr
+  let ii = x.repr.replace("\n","")
   result = getAst(est(ii))
 
 template emitStackTrace: untyped =

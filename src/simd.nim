@@ -33,6 +33,11 @@ when declared(SimdD1):
   template toSingleImpl*(x: SimdD1): untyped = toSingle(x)
   template toDoubleImpl*(x: SimdD1): untyped = x
 
+when declared(SimdD2):
+  template eval*(x: SimdD2): untyped = x
+  template toSingleImpl*(x: SimdD2): untyped = toSingle(x)
+  template toDoubleImpl*(x: SimdD2): untyped = x
+
 when declared(SimdS4):
   template eval*(x: SimdS4): untyped = x
   template toSingleImpl*(x: SimdS4): untyped = x

@@ -76,16 +76,20 @@ template bench(fps,bps,eqn: untyped) =
 
 proc test(lat:any) =
   var lo = newLayout(lat)
-  when true:
-    template newCV: untyped = lo.ColorVectorS()
-    template newCM: untyped = lo.ColorMatrixS()
-    template newHF: untyped = lo.HalfFermionS()
-    template newDF: untyped = lo.DiracFermionS()
-  else:
-    template newCV: untyped = lo.ColorVectorD()
-    template newCM: untyped = lo.ColorMatrixD()
-    template newHF: untyped = lo.HalfFermionD()
-    template newDF: untyped = lo.DiracFermionD()
+  template newCV: untyped = lo.ColorVector()
+  template newCM: untyped = lo.ColorMatrix()
+  template newHF: untyped = lo.HalfFermion()
+  template newDF: untyped = lo.DiracFermion()
+  #when true:
+  #  template newCV: untyped = lo.ColorVectorS()
+  #  template newCM: untyped = lo.ColorMatrixS()
+  #  template newHF: untyped = lo.HalfFermionS()
+  #  template newDF: untyped = lo.DiracFermionS()
+  #else:
+  #  template newCV: untyped = lo.ColorVectorD()
+  #  template newCM: untyped = lo.ColorMatrixD()
+  #  template newHF: untyped = lo.HalfFermionD()
+  #  template newDF: untyped = lo.DiracFermionD()
 
   var v1 = newCV()
   var v2 = newCV()
@@ -190,6 +194,9 @@ proc test(lat:any) =
       d2[e] -= sprecon1m( m1[e].adj * spproj1m(d1[e]) )
 
 qexInit()
+echo "rank ", myRank, "/", nRanks
+threads:
+  echo "thread ", threadNum, "/", numThreads
 #checkMem()
 test([4,4,4,4])
 #test([4,4,4,8])

@@ -301,6 +301,7 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   map110(T, L, inorm2, inorm2)
   map110(T, L, rsqrt, rsqrt)
   map110(T, L, `+=`, iadd)
+  map110(T, L, `-=`, isub)
 
   map120(T, L, add, add)
   map120(T, L, sub, sub)
