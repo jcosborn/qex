@@ -21,7 +21,7 @@ type
 #  plaq: U[mu]^+ * sum_{nu!=mu} s[mu][nu] (6)
 #  rect: shift(s[mu][nu], nu) (12 shifts)
 #  pgm: shift(s[mu][nu], sig) (24 shifts)
-proc gaugeAction*[T](uu: openArray[T]): auto =
+proc gaugeAction*(uu: array|seq): auto =
   mixin mul, redot, load1
   tic()
   let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
@@ -157,7 +157,7 @@ proc gaugeForce*[T](uu: openArray[T]): auto =
   toc("gaugeForce end")
   return f
 
-proc gaugeAction2*[T](c: GaugeActionCoeffs, g: openArray[T]): auto =
+proc gaugeAction2*(c: GaugeActionCoeffs, g: array|seq): auto =
   mixin redot
   tic()
   let lo = g[0].l
@@ -209,7 +209,7 @@ proc gaugeAction2*(g: array|seq): auto =
   var c: GaugeActionCoeffs
   gaugeAction2(c, g)
 
-proc gaugeForce2*[T](f,g: openArray[T]) =
+proc gaugeForce2*(f,g: array|seq) =
   mixin adj
   tic()
   let lo = g[0].l

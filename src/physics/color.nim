@@ -78,6 +78,10 @@ template imadd*(r: var Color, x: AsComplex, y: Color3) =
   imadd(r[], x, y[])
 template imsub*(r: var Color, x: Color2, y: Color3) =
   imsub(r[], x[], y[])
+template `+`*(r: Color, x: AsComplex): untyped =
+  asColor(r[] + x)
+template `-`*(r: Color, x: AsComplex): untyped =
+  asColor(r[] - x)
 template add*(r: var Color, x: Color2, y: Color3) =
   add(r[], x[], y[])
 template sub*(r: var Color, x: Color2, y: Color3) =
@@ -130,3 +134,4 @@ template idot*(r: var any, x: Color2, y: Color3) = idot(r, x[], y[])
 template redot*(x: Color, y: Color2): untyped =
   redot(x[], y[])
 template trace*(x: Color): untyped = trace(x[])
+template exp*(x: Color): untyped = asColor(x[])

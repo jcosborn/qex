@@ -370,6 +370,7 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   template `:=`*(r:var T; x:array[N,SomeNumber]) = assign(r, x)
   template `+`*(x:SomeNumber; y:T):T = add(x.to(T), y)
   template `-`*(x:SomeNumber; y:T):T = sub(x.to(T), y)
+  template `-`*(x:T; y:SomeNumber):T = sub(x, y.to(T))
   template `*`*(x:SomeNumber; y:T):T = mul(x.to(T), y)
   template `*`*(x:T; y:SomeNumber):T = mul(x, y.to(T))
   template `/`*(x:SomeNumber; y:T):T = divd(x.to(T), y)

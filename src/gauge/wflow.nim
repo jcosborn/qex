@@ -18,7 +18,7 @@ Zi = eps Z(Wi)
 
 ]#
 
-proc gaugeFlow*[T](g:openArray[T], tmax = 1.0, eps = 0.01) =
+proc gaugeFlow*(g: array|seq, tmax = 1.0, eps = 0.01) =
   ## Wilson flow.
   ## The input gauge field will be modified.
   var

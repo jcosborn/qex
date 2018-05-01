@@ -128,6 +128,8 @@ template add*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
 
 template sub*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
   r := x - y
+template sub*(r: ComplexProxy, x: ComplexProxy2, y: SomeNumber): untyped =
+  r := x - y
 template sub*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3): untyped =
   r := x - y
 
