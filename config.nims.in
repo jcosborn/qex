@@ -11,6 +11,7 @@ var qmpdir = "@@QMPDIR"
 var qiodir = "@@QIODIR"
 #var qudadir = "@@QUDADIR"
 #var cudadir = "@@CUDADIR"
+#var cudaLibDir = cudadir / "lib64"
 
 var ccType = "@@CC_TYPE"
 var cc = "@@CC"

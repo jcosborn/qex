@@ -21,7 +21,7 @@ type
 #  plaq: U[mu]^+ * sum_{nu!=mu} s[mu][nu] (6)
 #  rect: shift(s[mu][nu], nu) (12 shifts)
 #  pgm: shift(s[mu][nu], sig) (24 shifts)
-proc gaugeAction*(uu: array|seq): auto =
+proc gaugeAction1*[T](uu: openarray[T]): auto =
   mixin mul, redot, load1
   tic()
   let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
@@ -252,12 +252,13 @@ when isMainModule:
     echo pl
     echo pl.sum
     var gc: GaugeActionCoeffs
-    var ga = gaugeAction(g)
-    var ga2 = gc.gaugeAction2(g)
+    #var ga = gaugeAction(g)
+    var ga = gaugeAction.gaugeAction1(g)
+    var ga2 = gaugeAction.gaugeAction2(gc,g)
     echo "ga: ", ga, "\t", ga2
-    var f = gaugeForce(g)
+    var f = gaugeAction.gaugeForce(g)
     var f2 = g[0].l.newGauge
-    gaugeForce2(f2,g)
+    gaugeAction.gaugeForce2(f2,g)
     for i in 0..<f.len:
       echo "f[", i, "]: ", f[i].norm2, "\t", f2[i].norm2
 
@@ -277,7 +278,7 @@ when isMainModule:
   proc updateP(g,p,eps:any) =
     #let f = gaugeForce(g)
     var f = g[0].l.newGauge
-    gaugeForce2(f, g)
+    gaugeAction.gaugeForce2(f, g)
     #gaugeForce2(f, g)
     #gaugeForce2(f, g)
     for mu in 0..<f.len:
@@ -296,7 +297,7 @@ when isMainModule:
         p[mu][e][0,1] := t
         p[mu][e][1,0] := -t
     var gc: GaugeActionCoeffs
-    let ga = gc.gaugeAction2(g)
+    let ga = gaugeAction.gaugeAction2(gc,g)
     var p2 = 0.0
     for mu in 0..<p.len: p2 += p[mu].norm2
     let s0 = ga + 0.5*p2
@@ -304,18 +305,18 @@ when isMainModule:
 
     echo "pdiff: ", (p[0]-p[1]).norm2
     echo "gdiff: ", (g[0]-g[1]).norm2
-    echo "ga: ", gc.gaugeAction2(g)
+    echo "ga: ", gaugeAction.gaugeAction2(gc,g)
     updateX(g,p,0.5*eps)
     echo "pdiff: ", (p[0]-p[1]).norm2
     echo "gdiff: ", (g[0]-g[1]).norm2
-    echo "ga: ", gc.gaugeAction2(g)
+    echo "ga: ", gaugeAction.gaugeAction2(gc,g)
     updateP(g,p,eps)
     echo "pdiff: ", (p[0]-p[1]).norm2
     echo "gdiff: ", (g[0]-g[1]).norm2
-    echo "ga: ", gc.gaugeAction2(g)
+    echo "ga: ", gaugeAction.gaugeAction2(gc,g)
     updateX(g,p,0.5*eps)
 
-    let ga2 = gc.gaugeAction2(g)
+    let ga2 = gaugeAction.gaugeAction2(gc,g)
     p2 = 0.0
     for mu in 0..<p.len: p2 += p[mu].norm2
     let s2 = ga2 + 0.5*p2
