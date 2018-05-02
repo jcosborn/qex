@@ -9,8 +9,8 @@ when not declared(qexdir):
   var qexdir = "@@QEXDIR"
 var qmpdir = "@@QMPDIR"
 var qiodir = "@@QIODIR"
-var qudadir = "@@QUDADIR"
-var cudadir = "@@CUDADIR"
+#var qudadir = "@@QUDADIR"
+#var cudadir = "@@CUDADIR"
 
 var ccType = "@@CC_TYPE"
 var cc = "@@CC"
@@ -80,12 +80,16 @@ putenv ~ ("QMPDIR=" & qmpdir)
 putenv ~ ("QIODIR=" & qiodir)
 putenv ~ ("QUDADIR=" & qudadir)
 putenv ~ ("CUDADIR=" & cudadir)
+when declared(qudaDir):
+  d ~ ("qudaDir:" & qudaDir)
+  d ~ ("cudaLibDir:" & cudaLibDir)
 
 threads ~ on
 tlsEmulation ~ off
 verbosity ~ verbosity
 nimcache ~ nimcache
 warning[SmallLshouldNotBeUsed] ~ off
+embedsrc ~ ""
 
 when not declared(debug):
   var debug = false
