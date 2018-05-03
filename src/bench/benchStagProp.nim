@@ -72,5 +72,6 @@ var s3 = newStag3(g3)
 s3.solve(v2, v1, m, sp)
 resetTimers()
 s3.solve(v2, v1, m, sp)
+echoTimers()
 
 qexFinalize()

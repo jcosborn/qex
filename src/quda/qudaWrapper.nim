@@ -75,7 +75,7 @@ proc qudaSetup*(l:Layout, verbosity = QUDA_SUMMARIZE):Layout[1] =
     qudaParam.initialized = true
   qudaParam.layout
 
-proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp:SolverParams) =
+proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
   tic()
   let lo1 = r.l.qudaSetup
   toc("QUDA one time setup")
@@ -121,16 +121,33 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp:SolverParams) =
       forO a, 0, 2:
         r1[ri1.index][a].re := r{i}[a].re
         r1[ri1.index][a].im := r{i}[a].im
-    for i in r.sites:
-      var cv: array[4,cint]
-      r.l.coord(cv,(r.l.myRank,i))
-      let ri1 = lo1.rankIndex(cv)
-      # assert(ri1.rank == r.l.myRank)
-      forO mu, 0, 3:
-        forO a, 0, 2:
-          forO b, 0, 2:
-            g1[ri1.index][mu][a,b].re := s.g[mu]{i}[a,b].re
-            g1[ri1.index][mu][a,b].im := s.g[mu]{i}[a,b].im
+    if s.g.len == 4: # plain staggered
+      for i in r.sites:
+        var cv: array[4,cint]
+        r.l.coord(cv,(r.l.myRank,i))
+        let ri1 = lo1.rankIndex(cv)
+        # assert(ri1.rank == r.l.myRank)
+        forO mu, 0, 3:
+          forO a, 0, 2:
+            forO b, 0, 2:
+              g1[ri1.index][mu][a,b].re := s.g[mu]{i}[a,b].re
+              g1[ri1.index][mu][a,b].im := s.g[mu]{i}[a,b].im
+    elif s.g.len == 8: # Naik staggered
+      for i in r.sites:
+        var cv: array[4,cint]
+        r.l.coord(cv,(r.l.myRank,i))
+        let ri1 = lo1.rankIndex(cv).index
+        # assert(ri1.rank == r.l.myRank)
+        forO mu, 0, 3:
+          forO a, 0, 2:
+            forO b, 0, 2:
+              g1[ri1][mu][a,b].re := s.g[2*mu]{i}[a,b].re
+              g1[ri1][mu][a,b].im := s.g[2*mu]{i}[a,b].im
+              qudaParam.longlinkG[ri1][mu][a,b].re := s.g[2*mu+1]{i}[a,b].re
+              qudaParam.longlinkG[ri1][mu][a,b].im := s.g[2*mu+1]{i}[a,b].im
+    else:
+      echo "unknown s.g.len: ", s.g.len
+      quit(-1)
   # echo "input norm2: ",t2
   toc("QUDA setup")
   # FIX ME and FIX QUDA interface: this is for asqtad, we use zero longlink
@@ -139,6 +156,7 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp:SolverParams) =
     fatlink, longlink, u0.cdouble, srcGpu, destGpu,
     rres.addr, rrelRes.addr, iters.addr)
   toc("QUDA invert")
+  sp.finalIterations = iters.int
   threads:
     for i in r.sites:
       var cv: array[4,cint]

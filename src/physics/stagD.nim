@@ -507,6 +507,7 @@ when defined(qudaDir):
 proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams; cpuonly = false) =
   ## When QUDA is available, we use QUDA unless `cpuonly` is true.
   var sp = sp0
+  var its = 0
   sp.subset.layoutSubset(r.l, sp.subsetName)
   var t = newOneOf(r)
   var top = 0.0
@@ -523,7 +524,10 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams; cpuonly = fa
     #echo "te2: ", t.even.norm2
   let t0 = epochTime()
   when defined(qudaDir):
-    if not cpuonly: s.qudaSolveEE(r,t,m,sp)
+    if not cpuonly:
+      s.qudaSolveEE(r,t,m,sp)
+      its = sp.finalIterations
+      sp.finalIterations = 0
     # After QUDA, we still run through our solver.
   #cgSolve(r, t, oa, sp)
   var cg = newCgState(r, t)
@@ -533,6 +537,7 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams; cpuonly = fa
     r[s.se.sub] := 4*r
     threadBarrier()
     s.eoReconstruct(r, x, m)
+  sp.finalIterations += its
   let secs = t1-t0
   let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
   echo "op time: ", top
