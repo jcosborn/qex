@@ -100,6 +100,8 @@ template imadd*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3) =
   r += x*y
 
 template load1*(x: ComplexProxy): untyped = x
+template load1*(x: RealProxy): untyped = x
+template load1*(x: ImagProxy): untyped = x
 template eval*(x: ComplexProxy): untyped = newComplexProxy(eval(x[]))
 template eval*(x: ComplexObj): untyped =
   mixin eval
@@ -142,6 +144,8 @@ template mulCCR*(r: var ComplexProxy, y: ComplexProxy2, x: untyped):
 template mul*(r: ComplexProxy, x: ComplexProxy2, y: SomeNumber): untyped =
   r := x * y
 template mul*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
+  r := x * y
+template mul*(r: ComplexProxy, x: ImagProxy, y: ComplexProxy3): untyped =
   r := x * y
 template mul*(r: var ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
          untyped =  assign(r,x*y)

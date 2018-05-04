@@ -233,7 +233,9 @@ when isMainModule:
       m3 := m2.adj*m2
       let err2 = sqrt((1-m3).norm2/(N*N))
       echo "err2: ", err2
+      m2 := 0.1*(m2 - (trace(m2)/N))
       m3 := exp(m2)
+      echo "exp ",m2,"\n\t= ",m3
   macro makeTest(n:untyped):auto =
     let f = ident("test" & n.repr)
     result = quote do: makeTest2(`n`,`f`)
@@ -250,7 +252,7 @@ when isMainModule:
     #check(test3[float32]())
     #check(test1[float64]())
     #check(test2[float64]())
-    #check(test3[float64]())
+    check(test3[float64]())
   block:
     template check(x:untyped):untyped =
       let r0 = x

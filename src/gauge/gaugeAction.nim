@@ -206,7 +206,7 @@ proc gaugeAction2*(c: GaugeActionCoeffs, g: array|seq): auto =
   #result = (pl,rt,pg)
   result = c.plaq*pl + c.rect*rt + c.pgm*pg
 proc gaugeAction2*(g: array|seq): auto =
-  var c: GaugeActionCoeffs
+  var c = GaugeActionCoeffs(plaq:1.0)
   gaugeAction2(c, g)
 
 proc gaugeForce2*(f,g: array|seq) =
@@ -243,15 +243,15 @@ when isMainModule:
   #let defaultLat = @[2,2,2,2]
   let defaultLat = @[8,8,8,8]
   defaultSetup()
-  for mu in 0..<g.len: g[mu] := 1
-  #g.random
+  #for mu in 0..<g.len: g[mu] := 1
+  g.random
 
   proc test(g:any) =
     var pl = plaq(g)
     echo "plaq:"
     echo pl
     echo pl.sum
-    var gc: GaugeActionCoeffs
+    var gc = GaugeActionCoeffs(plaq:1.0)
     #var ga = gaugeAction(g)
     var ga = gaugeAction.gaugeAction1(g)
     var ga2 = gaugeAction.gaugeAction2(gc,g)
@@ -273,7 +273,7 @@ when isMainModule:
       for e in g[mu]:
         let t = exp(eps*p[mu][e])*g[mu][e]
         g[mu][e] := t
-      echo "g[", mu, "]: ", g[mu].norm2
+      #echo "g[", mu, "]: ", g[mu].norm2
 
   proc updateP(g,p,eps:any) =
     #let f = gaugeForce(g)
@@ -282,13 +282,17 @@ when isMainModule:
     #gaugeForce2(f, g)
     #gaugeForce2(f, g)
     for mu in 0..<f.len:
-      echo "f[", mu, "]: ", f[mu].norm2
+      #echo "f[", mu, "]: ", f[mu].norm2
       p[mu] += eps*f[mu]
 
-  proc test2(g,eps:any) =
+  var g0 = g[0].l.newGauge
+  for mu in 0..<g.len: g0[mu] := g[mu]
+  proc test2(steps:int) =
+    const t = 0.02
+    let eps = t/steps.float
     var p = newSeq[type(g[0])](g.len)
     for mu in 0..<p.len:
-      g[mu] := 1
+      g[mu] := g0[mu]
       p[mu].new(g[0].l)
       for e in p[mu]:
         p[mu][e] := 0
@@ -296,38 +300,39 @@ when isMainModule:
         #let t = 1.0
         p[mu][e][0,1] := t
         p[mu][e][1,0] := -t
-    var gc: GaugeActionCoeffs
+    var gc = GaugeActionCoeffs(plaq:1.0)
     let ga = gaugeAction.gaugeAction2(gc,g)
     var p2 = 0.0
     for mu in 0..<p.len: p2 += p[mu].norm2
     let s0 = ga + 0.5*p2
     echo "ACT: ", ga, "\t", 0.5*p2, "\t", s0
 
-    echo "pdiff: ", (p[0]-p[1]).norm2
-    echo "gdiff: ", (g[0]-g[1]).norm2
-    echo "ga: ", gaugeAction.gaugeAction2(gc,g)
-    updateX(g,p,0.5*eps)
-    echo "pdiff: ", (p[0]-p[1]).norm2
-    echo "gdiff: ", (g[0]-g[1]).norm2
-    echo "ga: ", gaugeAction.gaugeAction2(gc,g)
-    updateP(g,p,eps)
-    echo "pdiff: ", (p[0]-p[1]).norm2
-    echo "gdiff: ", (g[0]-g[1]).norm2
-    echo "ga: ", gaugeAction.gaugeAction2(gc,g)
-    updateX(g,p,0.5*eps)
+    for n in 1..steps:
+      #echo "pdiff: ", (p[0]-p[1]).norm2
+      #echo "gdiff: ", (g[0]-g[1]).norm2
+      #echo "ga: ", gaugeAction.gaugeAction2(gc,g)
+      updateX(g,p,0.5*eps)
+      #echo "pdiff: ", (p[0]-p[1]).norm2
+      #echo "gdiff: ", (g[0]-g[1]).norm2
+      #echo "ga: ", gaugeAction.gaugeAction2(gc,g)
+      updateP(g,p,eps)
+      #echo "pdiff: ", (p[0]-p[1]).norm2
+      #echo "gdiff: ", (g[0]-g[1]).norm2
+      #echo "ga: ", gaugeAction.gaugeAction2(gc,g)
+      updateX(g,p,0.5*eps)
 
     let ga2 = gaugeAction.gaugeAction2(gc,g)
     p2 = 0.0
     for mu in 0..<p.len: p2 += p[mu].norm2
     let s2 = ga2 + 0.5*p2
-    echo ga2, "\t", 0.5*p2, "\t", s2
-    echo s2 - s0
+    echo "ACT2: ", ga2, "\t", 0.5*p2, "\t", s2
+    echo "dH: ", s2 - s0
     let sr = (s2-s0)/(eps*eps)
-    echo sr
+    echo "error rate: ", sr
 
-  test2(g, 1e-5)
-  test2(g, 1e-4)
-  test2(g, 1e-3)
-  test2(g, 1e-2)
+  #test2(2000)
+  test2(200)
+  test2(20)
+  test2(2)
 
   qexFinalize()
