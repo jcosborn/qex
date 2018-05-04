@@ -79,9 +79,9 @@ options.linker ! ldflags
 putenv ~ ("OMPFLAG=" & ompflags)
 putenv ~ ("QMPDIR=" & qmpdir)
 putenv ~ ("QIODIR=" & qiodir)
-putenv ~ ("QUDADIR=" & qudadir)
-putenv ~ ("CUDADIR=" & cudadir)
 when declared(qudaDir):
+  putenv ~ ("QUDADIR=" & qudadir)
+  putenv ~ ("CUDADIR=" & cudadir)
   d ~ ("qudaDir:" & qudaDir)
   d ~ ("cudaLibDir:" & cudaLibDir)
 
