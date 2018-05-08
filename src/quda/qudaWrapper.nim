@@ -16,7 +16,7 @@ when not defined(cudaLibDir):
   {.fatal:"Must define cudaLibDir to use QUDA.".}
 const qudaDir {.strdefine.} = ""
 const cudaLibDir {.strdefine.} = ""
-const cudaLib = "-L" & cudaLibDir & " -lcudart -lcufft -Wl,-rpath," & cudaLibDir
+const cudaLib = "-L" & cudaLibDir & " -lcudart -lcufft -Wl,-rpath," & cudaLibDir & " -L" & cudaLibDir & "/stubs -lcuda"
 {.passC: "-I" & qudaDir & "/include".}
 {.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib.}
 
@@ -35,7 +35,7 @@ type
     initArg: QudaInitArgs_t
     physGeom,rankGeom: array[4,cint]    ## 4D only, used in QudaInitArgs_t
     layout: Layout[1]
-    longlinkG: D4LatticeColorMatrix  ## all 0 for staggered
+    #longlinkG: D4LatticeColorMatrix  ## all 0 for staggered
 
 var qudaParam: QudaParam    ## Global quda parameter.
 
@@ -67,11 +67,11 @@ proc qudaSetup*(l:Layout, verbosity = QUDA_SUMMARIZE):Layout[1] =
     if qudaParam.initialized: qudaFinalize()
     qudaInit(qudaParam.initArg)
     qudaParam.layout = l.physGeom.newLayout 1
-    qudaParam.longlinkG.new qudaParam.layout
-    threads:
-      for i in qudaParam.longlinkG:
-        forO mu, 0, 3:
-          qudaParam.longlinkG[i][mu] := 0   # zero out for hacking asqtad to do naive
+    #qudaParam.longlinkG.new qudaParam.layout
+    #threads:
+    #  for i in qudaParam.longlinkG:
+    #    forO mu, 0, 3:
+    #      qudaParam.longlinkG[i][mu] := 0   # zero out for hacking asqtad to do naive
     qudaParam.initialized = true
   qudaParam.layout
 
@@ -83,9 +83,11 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
     # t2: float
     t1, r1: DLatticeColorVector
     g1: D4LatticeColorMatrix
+    g3: D4LatticeColorMatrix
   t1.new lo1
   r1.new lo1
   g1.new lo1
+  g3.new lo1
   toc("QUDA alloc")
   var
     invargs: QudaInvertArgs_t
@@ -97,7 +99,7 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
     rrelRes:cdouble = 0.0
     iters:cint = 1
     fatlink: pointer = g1.s.data
-    longlink: pointer = qudaParam.longlinkG.s.data
+    longlink: pointer = g3.s.data
     srcGpu: pointer = t1.s.data
     destGpu: pointer = r1.s.data
   invargs.maxIter = sp.maxits.cint
@@ -122,6 +124,7 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
         r1[ri1.index][a].re := r{i}[a].re
         r1[ri1.index][a].im := r{i}[a].im
     if s.g.len == 4: # plain staggered
+      longlink = nil
       for i in r.sites:
         var cv: array[4,cint]
         r.l.coord(cv,(r.l.myRank,i))
@@ -143,8 +146,8 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
             forO b, 0, 2:
               g1[ri1][mu][a,b].re := s.g[2*mu]{i}[a,b].re
               g1[ri1][mu][a,b].im := s.g[2*mu]{i}[a,b].im
-              qudaParam.longlinkG[ri1][mu][a,b].re := s.g[2*mu+1]{i}[a,b].re
-              qudaParam.longlinkG[ri1][mu][a,b].im := s.g[2*mu+1]{i}[a,b].im
+              g3[ri1][mu][a,b].re := s.g[2*mu+1]{i}[a,b].re
+              g3[ri1][mu][a,b].im := s.g[2*mu+1]{i}[a,b].im
     else:
       echo "unknown s.g.len: ", s.g.len
       quit(-1)
