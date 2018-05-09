@@ -152,8 +152,14 @@ proc gaugeForce*[T](uu: openArray[T]): auto =
     for e in f[mu]:
       mixin trace
       let s = u[mu][e]*f[mu][e].adj
-      let t = -0.5*(s-s.adj)
-      f[mu][e] := t - (trace(t)*(1.0/t.nrows.float))
+      when s.nrows==1:
+        let t = 0.5*(s-s.adj)
+        f[mu][e] := t
+      else:
+        let t = 0.5*(s-s.adj)
+        f[mu][e] := t - (trace(t)*(1.0/nc.float))
+      #let t = -0.5*(s-s.adj)
+      #f[mu][e] := t - (trace(t)*(1.0/t.nrows.float))
   toc("gaugeForce end")
   return f
 
@@ -246,6 +252,8 @@ when isMainModule:
   var defaultGaugeFile = "l88.scidac"
   #let defaultLat = @[2,2,2,2]
   let defaultLat = @[8,8,8,8]
+  #let defaultLat = @[8,8,8]
+  #let defaultLat = @[8,8]
   defaultSetup()
   #for mu in 0..<g.len: g[mu] := 1
   g.random

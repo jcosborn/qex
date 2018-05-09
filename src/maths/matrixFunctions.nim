@@ -190,19 +190,26 @@ proc rsqrt(r:var Mat1; x:Mat2) = rsqrt(r, x)
 
 proc exp*(m: Mat1): auto {.noInit.} =
   var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
-  type ft = numberType(m)
-  template term(n,x: typed): untyped =
-    when x.type is nil.type: 1 + ft(n)*m
-    else: 1 + ft(n)*m*x
-  #template r3:untyped = nil
-  let r8 = term(1.0/8.0, nil)
-  let r7 = term(1.0/7.0, r8)
-  let r6 = term(1.0/6.0, r7)
-  let r5 = term(1.0/5.0, r6)
-  let r4 = term(1.0/4.0, r5)
-  let r3 = term(1.0/3.0, r4)
-  let r2 = term(1.0/2.0, r3)
-  r := 1 + m*r2
+  when m.nrows == 1:
+    r := exp(m[0,0])
+  else:
+    type ft = numberType(m)
+    template term(n,x: typed): untyped =
+      when x.type is nil.type: 1 + ft(n)*m
+      else: 1 + ft(n)*m*x
+    #template r3:untyped = nil
+    let r12 = term(1.0/12.0, nil)
+    let r11 = term(1.0/11.0, r12)
+    let r10 = term(1.0/10.0, r11)
+    let r9 = term(1.0/9.0, r10)
+    let r8 = term(1.0/8.0, r9)
+    let r7 = term(1.0/7.0, r8)
+    let r6 = term(1.0/6.0, r7)
+    let r5 = term(1.0/5.0, r6)
+    let r4 = term(1.0/4.0, r5)
+    let r3 = term(1.0/3.0, r4)
+    let r2 = term(1.0/2.0, r3)
+    r := 1 + m*r2
   r
 
 when isMainModule:
