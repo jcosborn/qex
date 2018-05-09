@@ -128,8 +128,8 @@ proc newLayoutX*(lat: openArray[int]; V: static[int];
           ig[i] = ig[i] div 2
           og[i] *= 2
           break
-    if ig[i]>1 and (og[i] mod 2)==1:
-      echo "error: can't layout inner geom"
+    if (ig[i]>1 and (og[i] mod 2)==1) or (ig[i]>2):
+      echo "error: can't lay out inner geom"
       quit -1
 
   echo "#innerGeom:" & $ig
