@@ -300,6 +300,7 @@ template mvLevel*(m:Masked):untyped =
   mixin mvLevel
   mvLevel(m.pobj[])
 template numNumbers*(m:Masked):untyped = numNumbers(m[])
+template numberType*(m:Masked):untyped = numberType(m[])
 template len*(m:Masked):untyped =
   mixin len
   len(m.pobj[])

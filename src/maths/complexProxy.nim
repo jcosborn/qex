@@ -238,6 +238,14 @@ proc inv*(x: ComplexProxy): auto {.inline,noInit.} =
   x.adj * x.norm2.inv
 template `/`*(x: ComplexProxy): untyped = inv(x)
 
+proc exp*(x: ComplexProxy): auto {.inline,noInit.} =
+  mixin exp, cos, sin
+  let er = exp(x.re)
+  let xi = x.im
+  let ci = cos(xi)
+  let si = sin(xi)
+  newComplexP(er*ci, er*si)
+
 # add, sub, mul, divd
 
 template binaryOverloadsAddSub(op,fn: untyped) {.dirty.} =

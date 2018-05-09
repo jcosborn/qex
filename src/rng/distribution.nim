@@ -152,7 +152,7 @@ proc u1*(x: var AsComplex, r: var RNG) =
       x.re *= s
       x.im *= s
   else:
-    let n = 2.0 * PI * r.uniform
+    let n = (x.numberType)(2.0 * PI * r.uniform)
     x.re = cos n
     x.im = sin n
 proc u1*(x: var AsVector, r: var RNG) =

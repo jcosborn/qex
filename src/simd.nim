@@ -1,5 +1,7 @@
 #import simdGcc
 #export simdGcc
+import base/metaUtils
+import math
 
 when defined(SSE) or defined(AVX) or defined(AVX512):
   import simd/simdX86
@@ -31,10 +33,16 @@ else:
 #import simd/simdGeneric
 #export simdGeneric
 
+template mapSimd*(t,f: untyped) {.dirty.} =
+  proc f*(x: t): t {.inline,noInit.} =
+    forStatic i, 0, x.numNumbers-1:
+      result[i] = f(x[i])
+
 when declared(SimdD1):
   template eval*(x: SimdD1): untyped = x
   template toSingleImpl*(x: SimdD1): untyped = toSingle(x)
   template toDoubleImpl*(x: SimdD1): untyped = x
+  mapSimd(SimdD1, exp)
 
 when declared(SimdD2):
   template eval*(x: SimdD2): untyped = x
@@ -52,6 +60,7 @@ when declared(SimdD4):
   template eval*(x: SimdD4): untyped = x
   template toSingleImpl*(x: SimdD4): untyped = toSingle(x)
   template toDoubleImpl*(x: SimdD4): untyped = x
+  mapSimd(SimdD4, exp)
 
 when declared(SimdS4) and declared(SimdD4):
   proc toSingle*(x: SimdD4): SimdS4 {.inline,noInit.} =
@@ -70,15 +79,16 @@ when declared(SimdS4) and declared(SimdD4):
     let y = toDouble(x)
     inorm2(r, y)
 
-
 when declared(SimdS8):
   template toSingleImpl*(x: SimdS8): untyped = x
   template toSingleImpl*(x: SimdD8): untyped = toSingle(x)
   template toDoubleImpl*(x: SimdS8): untyped = toDouble(x)
   template toDoubleImpl*(x: SimdD8): untyped = x
+  mapSimd(SimdS8, exp)
 
 when declared(SimdD8):
   template eval*(x: SimdD8): untyped = x
+  mapSimd(SimdD8, exp)
 
 when declared(SimdD8) and declared(SimdS8):
   #template toDouble*(x: SimdD8): untyped = x
