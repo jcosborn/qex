@@ -366,7 +366,10 @@ template binaryOverloadsMul(op,fn: untyped) {.dirty.} =
   template op*(x: ComplexProxy, y: ImagProxy2): untyped = fn(x,y)
 
   template `fn U`*(x: ComplexProxy, y: ComplexProxy2): untyped =
-    newComplexP(op(x.re,y.re)-op(x.im,y.im),op(x.re,y.im)+op(x.im,y.re))
+    #newComplexP(op(x.re,y.re)-op(x.im,y.im),op(x.re,y.im)+op(x.im,y.re))
+    let `t fn R` = op(x.re,y.re)-op(x.im,y.im)
+    let `t fn I` = op(x.re,y.im)+op(x.im,y.re)
+    newComplexP(`t fn R`, `t fn I`)
   template fn*(x: ComplexProxy, y: ComplexProxy2): untyped =
     flattenCallArgs(`fn U`, x, y)
   #proc fn*(x: ComplexProxy, y: ComplexProxy2): auto {.inline,noInit.} =
