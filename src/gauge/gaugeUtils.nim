@@ -225,8 +225,8 @@ proc plaq*[T](uu: openArray[T]): auto =
     toc("plaq boundary")
     threadSum(plt)
     if threadNum == 0:
-      for i,v in pairs(plt):
-        pl[i] = v/(lo.physVol.float*float(np*nc))
+      for i in 0..<pl.len:
+        pl[i] = plt[i]/(lo.physVol.float*float(np*nc))
       rankSum(pl)
     toc("plaq sum")
   result = pl
