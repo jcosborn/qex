@@ -54,7 +54,7 @@ proc test(lat0: any) =
   echo pl
   echo "plaq: ", pl.sum
 
-  var ga = gaugeAction(g)
+  var ga = gaugeAction1(g)
   echo ga
 
   resetTimers()
@@ -66,7 +66,7 @@ proc test(lat0: any) =
     var pl = plaq(g)
 
   bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
-    var ga = gaugeAction(g)
+    var ga = gaugeAction1(g)
 
   echoTimers()
   resetTimers()
