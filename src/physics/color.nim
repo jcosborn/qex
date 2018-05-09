@@ -57,13 +57,15 @@ template assign*(r: var Color, x: AsComplex) =
 template assign*(r: var Color, x: Color2) =
   assign(r[], x[])
 template `:=`*(r: var Color, x: SomeNumber) =
-  `:=`(r[], x)
+  r[] := x
+template `:=`*(r: var Color, x: AsComplex) =
+  r[] := x
 template `:=`*(r: var Color, x: Color2) =
   r[] := x[]
 template `+=`*(r: var Color, x: Color2) =
   r[] += x[]
 template `*=`*(r: var Color, x: SomeNumber) =
-  `*=`(r[], x)
+  r[] *= x
 template iadd*(r: var Color, x: AsComplex) =
   iadd(r[], x)
 template iadd*(r: var Color, x: Color2) =

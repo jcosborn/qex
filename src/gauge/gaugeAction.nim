@@ -231,8 +231,12 @@ proc gaugeForce2*(f,g: array|seq) =
       for e in f[mu]:
         mixin trace
         let s = g[mu][e] * f[mu][e].adj
-        let t = 0.5*(s-s.adj)
-        f[mu][e] := t - (trace(t)*(1.0/nc.float))
+        when s.nrows==1:
+          let t = 0.5*(s-s.adj)
+          f[mu][e] := t
+        else:
+          let t = 0.5*(s-s.adj)
+          f[mu][e] := t - (trace(t)*(1.0/nc.float))
 
 when isMainModule:
   import qex
@@ -295,11 +299,15 @@ when isMainModule:
       g[mu] := g0[mu]
       p[mu].new(g[0].l)
       for e in p[mu]:
-        p[mu][e] := 0
-        let t = (2*(e mod 2)-1).float
-        #let t = 1.0
-        p[mu][e][0,1] := t
-        p[mu][e][1,0] := -t
+        when p[mu][e].nrows==1:
+          #p[mu][e] := asImag(1)
+          p[mu][e] := newComplex(0,1)
+        else:
+          p[mu][e] := 0
+          let t = (2*(e mod 2)-1).float
+          #let t = 1.0
+          p[mu][e][0,1] := t
+          p[mu][e][1,0] := -t
     var gc = GaugeActionCoeffs(plaq:1.0)
     let ga = gaugeAction.gaugeAction2(gc,g)
     var p2 = 0.0

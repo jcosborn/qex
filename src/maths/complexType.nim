@@ -14,6 +14,7 @@ type
   Complex2*[TR,TI] = Complex[TR,TI]
   Complex3*[TR,TI] = Complex[TR,TI]
   AsComplex*[T] = ComplexProxy[T]
+  AsComplex2*[T] = ComplexProxy[T]
   ComplexType*[T] = Complex[T,T]
 
 template newRealImpl*(x: typed): untyped = x
@@ -26,6 +27,7 @@ template newReal*(x: typed): untyped = newRealImpl(x)
 template newImag*(x: typed): untyped = newImagImpl(x)
 template newComplex*(x,y: typed): untyped = newComplexImpl(x,y)
 template asReal*(x: untyped): untyped = newRealProxy(x)
+template asImag*(x: untyped): untyped = newImagProxy(x)
 
 template isWrapper*(x: ComplexObj): untyped = false
 template isWrapper*(x: ComplexProxy): untyped = true

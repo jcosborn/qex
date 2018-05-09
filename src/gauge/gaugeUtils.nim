@@ -413,7 +413,10 @@ proc checkSU*[F:Field](x: openArray[F]): tuple[avg,max:float] {.noinit.} =
 
 proc random*[F:Field](g: openArray[F], r: var RNGField) =
   for mu in g.low..g.high:
-    randomSU(g[mu], r)
+    when g[mu][0].nrows==1:
+      randomU(g[mu], r)
+    else:
+      randomSU(g[mu], r)
 
 proc random*(g: array or seq) =
   var r = newRNGField(RngMilc6, g[0].l)
