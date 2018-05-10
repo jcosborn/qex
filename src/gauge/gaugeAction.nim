@@ -205,11 +205,12 @@ proc gaugeAction2*(c: GaugeActionCoeffs, g: array|seq): auto =
   echo "plaq: ", pl, "  rect: ", rt, "  pgm: ", pg
   #result = (pl,rt,pg)
   result = (-1.0/nc.float) * (c.plaq*pl + c.rect*rt + c.pgm*pg)
+template gaugeAction2*(g: array|seq, c: GaugeActionCoeffs): untyped = gaugeAction2(c, g)
 proc gaugeAction2*(g: array|seq): auto =
   var c = GaugeActionCoeffs(plaq:1.0)
   gaugeAction2(c, g)
 
-proc gaugeForce2*(f,g: array|seq) =
+proc gaugeForce2*(f,g: array|seq, c: GaugeActionCoeffs) =
   mixin adj,projectTAH
   tic()
   let lo = g[0].l
@@ -230,8 +231,11 @@ proc gaugeForce2*(f,g: array|seq) =
     for mu in 0..<nd:
       for e in f[mu]:
         mixin trace
-        let s = g[mu][e] * f[mu][e].adj
+        let s = (c.plaq/nc.float) * g[mu][e] * f[mu][e].adj
         f[mu][e].projectTAH s
+proc gaugeForce2*(f,g: array|seq): auto =
+  var c = GaugeActionCoeffs(plaq:1.0)
+  gaugeForce2(f,g,c)
 
 when isMainModule:
   import qex
