@@ -93,7 +93,7 @@ proc gaugeAction1*[T](uu: openarray[T]): auto =
   #echo "plaq: ", a[0]
   #echo "rect: ", a[1]
   #echo "pgm: ", a[2]
-  result = a[0]
+  result = (-1.0/nc.float) * a[0]
   toc("gaugeAction end")
 
 proc gaugeForce*[T](uu: openArray[T]): auto =
@@ -152,20 +152,14 @@ proc gaugeForce*[T](uu: openArray[T]): auto =
     for e in f[mu]:
       mixin trace
       let s = u[mu][e]*f[mu][e].adj
-      when s.nrows==1:
-        let t = 0.5*(s-s.adj)
-        f[mu][e] := t
-      else:
-        let t = 0.5*(s-s.adj)
-        f[mu][e] := t - (trace(t)*(1.0/nc.float))
-      #let t = -0.5*(s-s.adj)
-      #f[mu][e] := t - (trace(t)*(1.0/t.nrows.float))
+      f[mu][e].projectTAH s
   toc("gaugeForce end")
   return f
 
 proc gaugeAction2*(c: GaugeActionCoeffs, g: array|seq): auto =
   mixin redot
   tic()
+  const nc = g[0][0].nrows
   let lo = g[0].l
   let nd = lo.nDim
   let t = newTransporters(g, g[0], 1)
@@ -210,17 +204,17 @@ proc gaugeAction2*(c: GaugeActionCoeffs, g: array|seq): auto =
   toc("gaugeAction2 threads")
   echo "plaq: ", pl, "  rect: ", rt, "  pgm: ", pg
   #result = (pl,rt,pg)
-  result = c.plaq*pl + c.rect*rt + c.pgm*pg
+  result = (-1.0/nc.float) * (c.plaq*pl + c.rect*rt + c.pgm*pg)
 proc gaugeAction2*(g: array|seq): auto =
   var c = GaugeActionCoeffs(plaq:1.0)
   gaugeAction2(c, g)
 
 proc gaugeForce2*(f,g: array|seq) =
-  mixin adj
+  mixin adj,projectTAH
   tic()
   let lo = g[0].l
   let nd = lo.nDim
-  let nc = g[0][0].nrows
+  const nc = g[0][0].nrows
   let t = newTransporters(g, g[0], 1)
   let td = newTransporters(g, g[0], -1)
   toc("gaugeForce2 setup")
@@ -237,12 +231,7 @@ proc gaugeForce2*(f,g: array|seq) =
       for e in f[mu]:
         mixin trace
         let s = g[mu][e] * f[mu][e].adj
-        when s.nrows==1:
-          let t = 0.5*(s-s.adj)
-          f[mu][e] := t
-        else:
-          let t = 0.5*(s-s.adj)
-          f[mu][e] := t - (trace(t)*(1.0/nc.float))
+        f[mu][e].projectTAH s
 
 when isMainModule:
   import qex
@@ -295,7 +284,7 @@ when isMainModule:
     #gaugeForce2(f, g)
     for mu in 0..<f.len:
       #echo "f[", mu, "]: ", f[mu].norm2
-      p[mu] += eps*f[mu]
+      p[mu] += (-eps)*f[mu]
 
   var g0 = g[0].l.newGauge
   for mu in 0..<g.len: g0[mu] := g[mu]

@@ -110,8 +110,6 @@ template mul*(r: var Color, x: AsComplex, y: Color3) =
   mul(r[], x, y[])
 template mul*(x: AsComplex, y: Color2): untyped =
   asColor(mul(x, y[]))
-template random*(x: var Color) =
-  gaussian(x[], r)
 template gaussian*(x: var Color, r: var untyped) =
   gaussian(x[], r)
 template uniform*(x: var Color, r: var untyped) =
@@ -126,6 +124,8 @@ template projectU*(r: var Color, x: Color2) =
   projectU(r[], x[])
 template projectSU*(r: var Color, x: Color2) =
   projectSU(r[], x[])
+template projectTAH*(r: var Color, x: Color2) =
+  projectTAH(r[], x[])
 template checkSU*(x: Color):untyped = checkSU(x[])
 template norm2*(x: Color): untyped = norm2(x[])
 template norm2*(r: var any, x: Color): untyped = norm2(r, x[])

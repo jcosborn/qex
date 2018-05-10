@@ -386,13 +386,22 @@ proc projectSU*[F:Field](x: openArray[F], y: openArray[F]) =
 
 template projectSU*(x:any) = x.projectSU x
 
-proc randomU*(x: any, r: var RNGField) =
+proc projectTAH*(x:Field, y:Field) =
+  for i in x: x[i].projectTAH y[i]
+
+template projectTAH*(x:any) = x.projectTAH x
+
+proc randomU*(x: Field, r: var RNGField) =
   x.gaussian r
   x.projectU
 
-proc randomSU*(x: any, r: var RNGField) =
+proc randomSU*(x: Field, r: var RNGField) =
   x.gaussian r
   x.projectSU
+
+proc randomTAH*(x: Field, r: var RNGField) =
+  x.gaussian r
+  x.projectTAH
 
 proc checkSU*[F:Field](x: openArray[F]): tuple[avg,max:float] {.noinit.} =
   var a,b:float
@@ -422,6 +431,10 @@ proc random*(g: array or seq) =
   var r = newRNGField(RngMilc6, g[0].l)
   threads:
     g.random r
+
+proc randomTAH*[F:Field](g: openArray[F], r: var RNGField) =
+  for mu in g.low..g.high:
+    randomTAH(g[mu], r)
 
 proc setupLattice*(lat:openarray[int]):auto =
   var

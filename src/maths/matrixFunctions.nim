@@ -144,6 +144,15 @@ proc projectSU*(r: var Mat1; x: Mat2) =
   d.im = sin p
   r := d * m
 
+proc projectTAH*(r: var Mat1; x: Mat2) =
+  let tx = x
+  let t = 0.5*(tx-tx.adj)
+  const nc = x.nrows
+  when nc == 1:
+    r := t
+  else:
+    r := t - (t.trace * (1.0/nc.float))
+
 proc checkSU*(x: Mat1): auto {.inline, noinit.} =
   ## Returns the sum of deviations of x^dag x and det(x) from unitarity.
   var d = norm2(-1.0 + x.adj * x)
