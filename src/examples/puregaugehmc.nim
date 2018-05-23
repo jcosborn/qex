@@ -31,16 +31,13 @@ let
   steps = 10
   trajs = 100
 
-type
-  MDT = object
-  MDV = object
-proc evolve(s:MDT, t:float) =
+proc mdt(t:float) =
   threads:
     for i in 0..<g.len:
       for e in g[i]:
         let etpg = exp(t*p[i][e])*g[i][e]
         g[i][e] := etpg
-proc evolve(s:MDV, t:float) =
+proc mdv(t:float) =
   f.gaugeforce2(g, gc)
   threads:
     for i in 0..<f.len:
@@ -48,13 +45,31 @@ proc evolve(s:MDV, t:float) =
         let tf = (-t)*f[i][e]
         p[i][e] += tf
 
+# For FGYin11
+proc fgv(t:float) =
+  f.gaugeforce2(g, gc)
+  threads:
+    for i in 0..<g.len:
+      for e in g[i]:
+        let etfg = exp((-t)*f[i][e])*g[i][e]
+        g[i][e] := etfg
+var gg = lo.newgauge
+proc fgsave =
+  threads:
+    for i in 0..<g.len:
+      gg[i] := g[i]
+proc fgload =
+  threads:
+    for i in 0..<g.len:
+      g[i] := gg[i]
+
 let
-  # H = mkLeapfrog(steps, MDV(), MDT())
-  # H = mkSW92(steps, MDV(), MDT())
-  # H = mkOmelyan2MN(steps, T=MDT(), V=MDV())
-  # H = mkOmelyan4MN4FP(steps, T=MDT(), V=MDV())
-  H = mkOmelyan4MN5FV(steps, T=MDT(), V=MDV())
-  # H = mkFGYin11(steps, MDV(), MDT())
+  # H = mkLeapfrog(steps = steps, V = mdv, T = mdt)
+  # H = mkSW92(steps = steps, V = mdv, T = mdt)
+  # H = mkOmelyan2MN(steps = steps, V = mdv, T = mdt)
+  # H = mkOmelyan4MN4FP(steps = steps, V = mdv, T = mdt)
+  # H = mkOmelyan4MN5FV(steps = steps, V = mdv, T = mdt)
+  H = mkFGYin11(steps = steps, V = mdv, T = mdt, Vfg = fgv, save = fgsave(), load = fgload())
 
 for n in 1..trajs:
   var p2 = 0.0
