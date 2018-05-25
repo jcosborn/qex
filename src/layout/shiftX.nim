@@ -54,8 +54,8 @@ proc freeShiftBuf*(sb:ShiftBuf) =
     dealloc(sb.lbuf)
     sb.lbuf = nil
 proc prepareShiftBuf*(sb:var ShiftBuf, si:ShiftIndices, esize:int) =
-  sb.new()
-  #sb.new(freeShiftBuf)
+  #sb.new()
+  sb.new(freeShiftBuf)
   #let a = unsafeaddr(sb.sq)
   #echo "prepareShiftBuf: ", cast[int](a)
   prepareShiftBufQ(sb.sq.addr, si.sq.addr, esize.cint)
