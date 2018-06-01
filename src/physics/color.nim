@@ -80,6 +80,10 @@ template imadd*(r: var Color, x: AsComplex, y: Color3) =
   imadd(r[], x, y[])
 template imsub*(r: var Color, x: Color2, y: Color3) =
   imsub(r[], x[], y[])
+template `+`*(r: Color, x: SomeNumber): untyped =
+  asColor(r[] + x)
+template `-`*(r: Color, x: SomeNumber): untyped =
+  asColor(r[] - x)
 template `+`*(r: Color, x: AsComplex): untyped =
   asColor(r[] + x)
 template `-`*(r: Color, x: AsComplex): untyped =
@@ -98,6 +102,8 @@ template `*`*(x: AsImag, y: Color2): untyped =
   asColor(x * y[])
 template `*`*(x: AsComplex, y: Color2): untyped =
   asColor(x * y[])
+template `*`*(x: Color, y: AsComplex): untyped =
+  asColor(x[] * y)
 template mul*(x: SomeNumber, y: Color2): untyped =
   asColor(`*`(x, y[]))
 template mul*(x: Color, y: Color2): untyped =
@@ -110,6 +116,8 @@ template mul*(r: var Color, x: AsComplex, y: Color3) =
   mul(r[], x, y[])
 template mul*(x: AsComplex, y: Color2): untyped =
   asColor(mul(x, y[]))
+template random*(x: var Color) =
+  gaussian(x[], r)
 template gaussian*(x: var Color, r: var untyped) =
   gaussian(x[], r)
 template uniform*(x: var Color, r: var untyped) =

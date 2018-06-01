@@ -3,7 +3,7 @@ import qex
 import field
 import physics/qcdTypes
 import gauge/gaugeUtils
-import physics/stagD
+import physics/stagSolve
 #import profile
 import os
 import rng

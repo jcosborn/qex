@@ -6,7 +6,8 @@ export solverBase
 
 type
   CgState*[T] = object
-    r,p,Ap,x,b: T
+    r,Ap,b: T
+    p,x: T
     b2,r2,r2old,r2stop: float
     iterations: int
 
@@ -17,11 +18,11 @@ proc reset*(cgs: var CgState) =
   cgs.r2stop = 0.0
 
 proc newCgState*[T](x,b: T): CgState[T] =
-  result.r = newOneOf(x)
-  result.p = newOneOf(x)
-  result.Ap = newOneOf(x)
-  result.x = x
+  result.r = newOneOf(b)
+  result.Ap = newOneOf(b)
   result.b = b
+  result.p = newOneOf(x)
+  result.x = x
   result.reset
 
 # solves: A x = b
@@ -125,7 +126,7 @@ proc solve*(state: var CgState; op: any; sp: var SolverParams) =
           var fr2: float
           subset:
             fr2 = (b - Ap).norm2
-          echo "   ", fr2/b2
+          echo "    ", fr2, "    ", fr2/b2
       toc("cg iterations")
       if threadNum==0:
         itn0 = itn
@@ -144,6 +145,12 @@ proc solve*(state: var CgState; op: any; sp: var SolverParams) =
   state.r2 = r2
   verb(1):
     echo state.iterations, " acc r2:", r2/b2
+    #threads:
+    #  op.apply(Ap, x)
+    #  var fr2: float
+    #  subset:
+    #    fr2 = (b - Ap).norm2
+    #  echo "   ", fr2/b2
   sp.finalIterations = state.iterations
   toc("cg final")
 
@@ -212,8 +219,8 @@ when isMainModule:
     v3.resid(v1,v2,oa)
     let tr2 = v3.norm2
     echo cg.iterations, " ", cg.r2, "/", cg.r2stop, " ", tr2
-    cg.r := v3
-    cg.r2 = tr2
+    #cg.r := v3
+    #cg.r2 = tr2
   echo sp.finalIterations, " ", cg.r2, "/", cg.r2stop
 
   v2 := 0

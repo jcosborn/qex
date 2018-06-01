@@ -1,7 +1,7 @@
 import qex
 import physics/qcdTypes
 import gauge
-import physics/stagD
+import physics/stagSolve
 import os
 import physics/stagMesonLocal
 import physics/hisqLinks

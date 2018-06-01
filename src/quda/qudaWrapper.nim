@@ -42,7 +42,7 @@ var qudaParam: QudaParam    ## Global quda parameter.
 proc qudaInit* =
   ## Just to initialize the global parameter.
   ## Assumes single GPU per rank.
-  let n = cudaGetDeviceCount()
+  let n = max(1,cudaGetDeviceCount())
   qudaParam.initArg.layout.device = cint(myrank mod n)
   qudaParam.initArg.layout.latsize = qudaParam.physGeom[0].addr
   qudaParam.initArg.layout.machsize = qudaParam.rankGeom[0].addr

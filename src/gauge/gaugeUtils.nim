@@ -432,6 +432,10 @@ proc random*(g: array or seq) =
   threads:
     g.random r
 
+proc unit*(g: array or seq) =
+  for i in 0..<g.len:
+    g[i] := 1
+
 proc randomTAH*[F:Field](g: openArray[F], r: var RNGField) =
   for mu in g.low..g.high:
     randomTAH(g[mu], r)

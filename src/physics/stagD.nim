@@ -53,6 +53,18 @@ template initStagD3T*(l:var Layout; T:typedesc; ss:string):untyped =
 proc initStagD3*(x:Field; sub:string):auto =
   result = initStagD3T(x.l, type(x[0]), sub)
 
+proc trace*(stag: Staggered, mass: float): float =
+  let v = stag.g[0][0].ncols * stag.g[0].l.physVol
+  result = mass*v.float
+
+proc norm2*(stag: Staggered, mass: float): float =
+  var s = 0.0
+  for i in 0..<stag.g.len:
+    s += stag.g[i].norm2
+  let v = stag.g[0][0].ncols * stag.g[0].l.physVol
+  result = mass*mass*v.float + 0.5*s
+
+
 template stagDPN*(sd:openArray[StaggeredD]; r:openArray[Field];
                   g:openArray[Field2]; x:openArray[Field3];
                   expFlops:int; exp:untyped) {.dirty.} =
@@ -472,105 +484,6 @@ proc eoReconstruct*(s:Staggered; r,b:Field; m:SomeNumber) =
   stagD(s.so, r, s.g, r, 0.0, -1.0/m)
   r.odd += b/m
 
-proc initSolverParams*():SolverParams =
-  result.r2req = 1e-6
-  result.maxits = 2000
-  result.verbosity = 1
-  result.subsetName = "even"
-
-proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
-  var sp = sp0
-  sp.subset.layoutSubset(r.l, sp.subsetName)
-  var t = newOneOf(r)
-  var top = 0.0
-  proc op2(a,b: Field) =
-    threadBarrier()
-    if threadNum==0: top -= epochTime()
-    stagD2ee(s.se, s.so, a, s.g, b, m*m)
-    if threadNum==0: top += epochTime()
-    #threadBarrier()
-  var oa = (apply: op2)
-  let t0 = epochTime()
-  cgSolve(r, x, oa, sp)
-  let t1 = epochTime()
-  let secs = t1-t0
-  let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
-  sp0.finalIterations = sp.finalIterations
-  sp0.seconds = secs
-  echo "op time: ", top
-  echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
-
-# Late import to avoid problem with circular dependence.
-when defined(qudaDir):
-  import quda/qudaWrapper
-
-proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams; cpuonly = false) =
-  ## When QUDA is available, we use QUDA unless `cpuonly` is true.
-  var sp = sp0
-  var its = 0
-  sp.subset.layoutSubset(r.l, sp.subsetName)
-  var t = newOneOf(r)
-  var top = 0.0
-  proc op(a,b: Field) =
-    threadBarrier()
-    if threadNum==0: top -= epochTime()
-    stagD2ee(s.se, s.so, a, s.g, b, m*m)
-    if threadNum==0: top += epochTime()
-    #threadBarrier()
-  var oa = (apply: op)
-  threads:
-    #echo "x2: ", x.norm2
-    s.eoReduce(t, x, m)
-    #echo "te2: ", t.even.norm2
-  let t0 = epochTime()
-  when defined(qudaDir):
-    if not cpuonly:
-      s.qudaSolveEE(r,t,m,sp)
-      its = sp.finalIterations
-      sp.finalIterations = 0
-    # After QUDA, we still run through our solver.
-  #cgSolve(r, t, oa, sp)
-  var cg = newCgState(r, t)
-  cg.solve(oa, sp)
-  let t1 = epochTime()
-  threads:
-    r[s.se.sub] := 4*r
-    threadBarrier()
-    s.eoReconstruct(r, x, m)
-  sp.finalIterations += its
-  let secs = t1-t0
-  let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
-  echo "op time: ", top
-  echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
-proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float; cpuonly = false) =
-  var sp = initSolverParams()
-  sp.r2req = res
-  #sp.maxits = 1000
-  sp.verbosity = 1
-  solve(s, r, x, m, sp, cpuonly)
-
-proc solve2*(s:Staggered; r,x:Field; m:SomeNumber; res:float) =
-  var sp:SolverParams
-  sp.r2req = res
-  sp.maxits = 100
-  sp.verbosity = 1
-  sp.subset.layoutSubset(r.l, "all")
-  var t = newOneOf(r)
-  proc op(a,b:Field) =
-    #stagD2ee(s.se, s.so, r, s.g, x, m*m)
-    threadBarrier()
-    s.Ddag(t, b, m)
-    #threadBarrier()
-    #echo t.norm2
-    s.D(a, t, m)
-    #a := b
-    #threadBarrier()
-  #echo r.norm2
-  cgSolve(r, x, op, sp)
-  threads:
-    s.Ddag(t, r, m)
-    r := t
-
 template foldl*(f,n,op:untyped):untyped =
   var r:type(f(0))
   r = f(0)
@@ -580,6 +493,8 @@ template foldl*(f,n,op:untyped):untyped =
       b {.inject.} = f(i)
     r = op
   r
+
+import stagSolve
 
 when isMainModule:
   import rng

@@ -53,6 +53,7 @@ when declared(SimdS4):
   template eval*(x: SimdS4): untyped = x
   template toSingleImpl*(x: SimdS4): untyped = x
   template toDoubleImpl*(x: SimdS4): untyped = toDouble(x)
+  template inv*(x: SimdS4): untyped = 1.0/x
 
 when declared(SimdD4):
   template assign*(r: array[4,float32], x: SimdD4): untyped =
@@ -61,6 +62,7 @@ when declared(SimdD4):
   template toSingleImpl*(x: SimdD4): untyped = toSingle(x)
   template toDoubleImpl*(x: SimdD4): untyped = x
   mapSimd(SimdD4, exp)
+  template inv*(x: SimdD4): untyped = 1.0/x
 
 when declared(SimdS4) and declared(SimdD4):
   proc toSingle*(x: SimdD4): SimdS4 {.inline,noInit.} =
@@ -85,10 +87,12 @@ when declared(SimdS8):
   template toDoubleImpl*(x: SimdS8): untyped = toDouble(x)
   template toDoubleImpl*(x: SimdD8): untyped = x
   mapSimd(SimdS8, exp)
+  template inv*(x: SimdS8): untyped = 1.0/x
 
 when declared(SimdD8):
   template eval*(x: SimdD8): untyped = x
   mapSimd(SimdD8, exp)
+  template inv*(x: SimdD8): untyped = 1.0/x
 
 when declared(SimdD8) and declared(SimdS8):
   #template toDouble*(x: SimdD8): untyped = x

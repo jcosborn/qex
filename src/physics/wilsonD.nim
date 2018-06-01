@@ -333,15 +333,10 @@ proc eoReconstruct*(s:Wilson; r,b:Field; m:SomeNumber) =
   let mi = 1.0/m
   r.odd += mi*b
 
-proc initSolverParams*():SolverParams =
-  result.r2req = 1e-6
-  result.maxits = 2000
-  result.verbosity = 1
-  result.subsetName = "even"
-
 proc solveEO*(s: Wilson; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   var sp = sp0
   sp.subset.layoutSubset(r.l, sp.subsetName)
+  if sp.subsetName=="all": sp.subset.layoutSubset(r.l, "even")
   var t = newOneOf(r)
   var x2 = newOneOf(x)
   var top = 0.0
@@ -383,6 +378,7 @@ proc solveEO*(s:Wilson; r,x:Field; m:SomeNumber; res:float) =
 proc solve*(s:Wilson; r,x:Field; m:SomeNumber; sp0:SolverParams) =
   var sp = sp0
   sp.subset.layoutSubset(r.l, sp.subsetName)
+  if sp.subsetName=="all": sp.subset.layoutSubset(r.l, "even")
   var t = newOneOf(r)
   var top = 0.0
   let m4 = 4.0 + m
