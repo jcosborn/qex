@@ -226,7 +226,8 @@ proc gaugeForce2*(f,g: array|seq, c: GaugeActionCoeffs) =
       for nu in 0..<nd:
         if nu==mu: continue
         discard t[nu] ^* g[mu]
-        shiftExpr(t[mu].sb, f[mu][ir] += t[nu].field[ir] * it, g[nu][ix].adj)
+        #shiftExpr(t[mu].sb, f[mu][ir] += t[nu].field[ir] * it, g[nu][ix].adj)
+        shiftExpr(t[mu].sb, f[mu][ir] += t[nu].field[ir]*adj(it), g[nu][ix])
         f[mu] += td[nu] ^* t[mu] ^* g[nu]
     for mu in 0..<nd:
       for e in f[mu]:
