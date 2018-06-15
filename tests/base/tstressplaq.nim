@@ -19,8 +19,7 @@ suite "Stress plaquette test":
   var
     lo = lat.newLayout
     g = lo.newGauge
-    rs: RngMilc6
-  rs.seed(7,11)
+    rs = newRNGField(RngMilc6, lo, 987654321)
 
   test "unit gauge":
     let
@@ -34,8 +33,10 @@ suite "Stress plaquette test":
     check(p~pe)
 
   test "change single link":
-    for i in lo.sites:
-      g[0]{i}.gaussian rs
+    for s in 0..<lo.physVol:
+      let ri = lo.rankIndex(s)
+      let i = ri.index
+      g[0]{i}.gaussian rs{i}[]
       #g[0]{i}.projectSU
       var t:float
       var cr,ci:float
@@ -48,6 +49,8 @@ suite "Stress plaquette test":
         ci += t
       ci /= 3.0
       #echo "i: ",i
+      rankSum(cr)
+      rankSum(ci)
       let
         lr = 1 - (1-cr) / float(lo.physVol * g.len)
         li = ci / float(lo.physVol * g.len)

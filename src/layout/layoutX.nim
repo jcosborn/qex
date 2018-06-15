@@ -213,6 +213,15 @@ proc coord*(l: Layout, coord: ptr cint, ri: tuple[rank,index:cint]) =
   li.index = ri.index.cint
   layoutCoordQ(l.lq.addr, cast[ptr cArray[cint]](coord), li.addr)
 
+proc rankIndex*(lo: Layout, lex: int): tuple[rank,index:int] =
+  let n = lo.nDim
+  var c = newSeq[cint](n)
+  var k = lex
+  for i in 0..<n:
+    c[i] = (k mod lo.physGeom[i]).cint
+    k = k div lo.physGeom[i]
+  rankIndex(lo, c)
+
 proc vcoords*[V:static[int]](l:Layout[V]; i:int):seq[array[V,int16]] =
   #for d in 0..<l.nDim:
   #  for j in 0..<V:

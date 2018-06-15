@@ -1,5 +1,11 @@
 language: c
 
+addons:
+  apt:
+    packages:
+    - openmpi-bin
+    - libopenmpi-dev
+
 before_install:
   - git clone -b master --depth 1 git://github.com/nim-lang/Nim
   - cd Nim
@@ -16,7 +22,7 @@ before_install:
 script:
   - ./bootstrap-travis
   - QMPDIR=qmp QIODIR=qio ./configure
-  - sed -i 's/mpicc/gcc/' config.nims
+  - #sed -i 's/mpicc/gcc/' config.nims
   - make tests
   - ./testscript.sh
   - make bench

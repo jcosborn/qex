@@ -59,8 +59,8 @@ suite "Multi-Layout test":
     g1 = lo1.newGauge
     lo2 = lat2.newLayout
     g2 = lo2.newGauge
-    rs: RngMilc6
-  rs.seed(7,11)
+    rs1 = newRNGField(RngMilc6, lo1, 987654321)
+    rs2 = newRNGField(RngMilc6, lo2, 987654321)
 
   test "unit gauge":
     let
@@ -84,7 +84,7 @@ suite "Multi-Layout test":
     for i in lo1.sites:
     #for i in 0..128:
     #for i in {0,128}:
-      g1[0]{i}.gaussian rs
+      g1[0]{i}.gaussian rs1{i}[]
       #g1[0]{i}.projectSU
       #g1[0]{i}[a,a].re := c
       #g1[0]{i}[a,a].im := c
@@ -103,7 +103,7 @@ suite "Multi-Layout test":
       block:
         let j = 0
         #echo "j: ",j
-        g2[0]{j}.gaussian rs
+        g2[0]{j}.gaussian rs2{i}[]
         #g2[0]{j}.projectSU
         #g2[0]{j}[a,a].re := c
         #g2[0]{j}[a,a].im := c
@@ -146,7 +146,7 @@ suite "Multi-Layout test":
       #for mu in 0..<nd:
       block:
         let mu = 1
-        g1[mu]{i}.gaussian rs
+        g1[mu]{i}.gaussian rs1{i}[]
         #g1[mu]{i}[a,a].re := c
         #g1[mu]{i}[a,a].im := c
         var t:float

@@ -118,7 +118,7 @@ template mul*(x: AsComplex, y: Color2): untyped =
   asColor(mul(x, y[]))
 template random*(x: var Color) =
   gaussian(x[], r)
-template gaussian*(x: var Color, r: var untyped) =
+template gaussian*(x: Color, r: untyped) =
   gaussian(x[], r)
 template uniform*(x: var Color, r: var untyped) =
   uniform(x[], r)
