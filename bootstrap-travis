@@ -10,8 +10,8 @@ mkdir qmp
 cd $qmpv
 ./configure \
  --prefix="$PWD/../qmp" \
- --with-qmp-comms-type=single \
- CC=gcc \
+ --with-qmp-comms-type=mpi \
+ CC=mpicc \
  CFLAGS="-Wall -O3 -std=gnu99 -g -fPIC"
 make && make install
 cd ..
@@ -27,7 +27,7 @@ cd $qiov
 ./configure \
  --prefix="$PWD/../qio" \
  --with-qmp="$PWD/../qmp" \
- CC=gcc \
+ CC=mpicc \
  CFLAGS="-Wall -O3 -std=gnu99 -g -fPIC"
 make && make install
 cd ..
