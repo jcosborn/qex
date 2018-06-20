@@ -58,7 +58,7 @@ template set(key: string, val: untyped) =
     else:
       defargs.add "--" & key & ":\"" & v & "\""
   else:
-    if key[0..6]!="warning":  # warnings don't seem to work here
+    if key.len>=7 and key[0..6]!="warning":  # warnings don't seem to work here
       switch(key, v)
 # "key ~ val" sets "key" to "val"
 template `~`(key,val: untyped) =

@@ -1,7 +1,7 @@
 import qex
 import physics/qcdTypes
 import gauge
-import physics/stagD
+import physics/stagSolve
 
 proc pointSource(r:Field; c:openArray[int]; ic:int) =
   let (ptRank,ptIndex) = r.l.rankIndex(c)
@@ -33,15 +33,16 @@ proc stagLocalMesons(v1,v2:any, t0=0):auto =
   var c = newSeq[array[8,float]](nt)
   when true:
   #when false:
-    var x1:VectorArray[3,DComplex]
-    var x2:VectorArray[3,DComplex]
+    var x1: VectorArray[3,DComplex]
+    var x2: VectorArray[3,DComplex]
     for i in 0..<l.nSites:
       let t = l.coords[3][i]
       let s = (l.coords[0][i].int and 1) + ((l.coords[1][i].int and 1) shl 1) +
               ((l.coords[2][i].int and 1) shl 2)
       let tt = (t+nt-t0) mod nt
-      assign(x1, v1{i})
-      assign(x2, v2{i})
+      #c[tt][s] += redot(v1{i}, v2{i})
+      assign(x1, v1{i}[][][])
+      assign(x2, v2{i}[][][])
       c[tt][s] += redot(x1, x2)
   else:
     threads:
@@ -81,9 +82,9 @@ proc printLocalMesons(c:var any, f=1.0) =
 proc `+=`[T](r:var openArray[T]; x:openArray[T]) =
   for i in 0..<r.len: r[i] += x[i]
 
-template mysolve(dest, src){.dirty.} =
+template mysolve(dest, src) =
   #threads: dest := 0
-  s.solve(dest, src, m, 1e-16)
+  s.solve(dest, src, m, sp)
   threads:
     echo "dest: ", dest.norm2
     echo "dest.even: ", dest.even.norm2
@@ -110,6 +111,8 @@ when isMainModule:
     g.stagPhase
   var s = newStag(g)
   var m = 0.1
+  var sp = initSolverParams()
+  sp.r2req = 1e-16
   let nt = lo.physGeom[3]
   var cl = newSeq[array[8,float]](nt)
   var cx = newSeq[array[8,float]](nt)

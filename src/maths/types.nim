@@ -42,6 +42,8 @@ template `[]`*(x: AsVar; i,j: SomeInteger): untyped = x[][i,j]
 template assign*(r: AsVar, x: untyped) =
   var t = r[]
   t := x
+template assign*(r: not AsVar, x: AsVar) =
+  r := x[]
 template `:=`*(r: AsVar, x: untyped) =
   var t = r[]
   t := x
@@ -62,6 +64,9 @@ forwardFunc(AsVar, norm2)
 template norm2*(r: var any, x: AsVar): untyped =
   mixin norm2
   norm2(r, x[])
+template redot*(x: AsVar, y: AsVar): untyped =
+  mixin redot
+  redot(x[], y[])
 
 #[
 type

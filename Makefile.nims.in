@@ -68,6 +68,7 @@ buildTask tests, "build unit tests":
       #echo dir, " ", name, " ", ext
       if name[0]=='t' and ext==".nim":
         nimRun f, outdir/name
+        runscript.add("echo Running: "&(outdir/name))
         runscript.add("$RUNJOB "&(outdir/name))
   #echo runscript.join("\n")
   runscript.add("$CLEANUPJOBS")

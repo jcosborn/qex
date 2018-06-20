@@ -33,7 +33,7 @@ proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
 when defined(qudaDir):
   import quda/qudaWrapper
 
-proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams;
+proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0: var SolverParams;
             cpuonly = false) =
   ## When QUDA is available, we use QUDA unless `cpuonly` is true.
   var sp = sp0
@@ -64,6 +64,7 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams;
   sp.subset.layoutSubset(r.l, sp.subsetName)
   if sp.subsetName=="all": sp.subset.layoutSubset(r.l, "even")
   cg.solve(oa, sp)
+  its += sp.finalIterations
   let t1 = epochTime()
   #var u = newOneOf(r)
   #stagD2ee(s.se, s.so, u, s.g, r, m*m)
@@ -73,7 +74,7 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0:SolverParams;
     r[s.se.sub] := 4*r
     threadBarrier()
     s.eoReconstruct(r, x, m)
-  sp.finalIterations += its
+  sp0.finalIterations += its
   let secs = t1-t0
   let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
   echo "op time: ", top
