@@ -145,13 +145,14 @@ template asVarWrapper*(x: AsVector, y: typed): untyped =
 #template `[]`*(x:VectorArrayObj; i:int):untyped = x.vec[i]
 #template `[]`*(x:var VectorArrayObj; i:int):untyped = x.vec[i]
 #template `[]=`*(x:VectorArrayObj; i:int, y:untyped):untyped = x.vec[i] = y
-template asVectorArray*(xx: array): untyped =
+template asVectorArray*[N:static[int],T](x: array[N,T]): untyped =
   #static: echo "asVectorArray"
-  let x_asVectorArray = xx
-  const n_asVectorArray = x_asVectorArray.len
+  #let x_asVectorArray = xx
+  #const n_asVectorArray = x_asVectorArray.len
   #static: echo "asVectorArray2"
-  asVector( VectorArrayObj[n_asVectorArray,
-                           type(x_asVectorArray[0])](x_asVectorArray) )
+  #asVector( VectorArrayObj[n_asVectorArray,
+  #                         type(x_asVectorArray[0])](x_asVectorArray) )
+  asVector( VectorArrayObj[N,type(T)](x) )
   #let t1 = VectorArrayObj[n_asVectorArray,
   #                        type(x_asVectorArray[0])](vec: x_asVectorArray)
   #static: echo "asVectorArray1"
