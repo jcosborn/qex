@@ -112,7 +112,7 @@ template redot*(x: Spin, y: Spin2): untyped =
   redot(x[], y[])
 template trace*(x: Spin): untyped = trace(x[])
 
-template spinVector*[T](x:static[int], a: untyped): untyped =
+template spinVector*(x: static[int], a: untyped): untyped =
   #const
   #  I:int = x
   #type
@@ -258,7 +258,8 @@ template spproj1pU*(x: Spin): untyped =
   #let v0 = x[][0] + I(x[][3])
   #let v1 = x[][1] + I(x[][2])
   #spinVector[type(v0)](2,[v0,v1])
-  spinVector[type(x[][0])](2,[x[][0]+I(x[][3]),x[][1]+I(x[][2])])
+  #spinVector[type(x[][0])](2,[x[][0]+I(x[][3]),x[][1]+I(x[][2])])
+  spinVector(2,[x[][0]+I(x[][3]),x[][1]+I(x[][2])])
 template spproj1p*(x: Spin): untyped =
   flattenCallArgs(spproj1pU, x)
 template spproj2p*(xx: Spin): untyped =
@@ -274,16 +275,16 @@ template spproj1m*(xx: Spin): untyped =
   let x = xx[]
   let v0 = x[0] - I(x[3])
   let v1 = x[1] - I(x[2])
-  spinVector[type(v0)](2,[v0,v1])
+  spinVector(2,[v0,v1])
 template spproj2m*(xx: Spin): untyped =
   let x = xx[]
-  spinVector[type(x[0])](2,[x[0]+x[3],x[1]-x[2]])
+  spinVector(2,[x[0]+x[3],x[1]-x[2]])
 template spproj3m*(xx: Spin): untyped =
   let x = xx[]
-  spinVector[type(x[0])](2,[x[0]-I(x[2]),x[1]+I(x[3])])
+  spinVector(2,[x[0]-I(x[2]),x[1]+I(x[3])])
 template spproj4m*(xx: Spin): untyped =
   let x = xx[]
-  spinVector[type(x[0])](2,[x[0]-x[2],x[1]-x[3]])
+  spinVector(2,[x[0]-x[2],x[1]-x[3]])
 
 proc sprecon1p*(r: var any, x: any) =
   ## r: DiracFermion
@@ -308,28 +309,28 @@ template sprecon4m*(x: Spin): untyped = spreconmat4m * x
 
 template sprecon1p*(xx: Spin): untyped =
   let x = xx[]
-  spinVector[type(x[0])](4,[x[0],x[1],-I(x[1]),-I(x[0])])
+  spinVector(4,[x[0],x[1],-I(x[1]),-I(x[0])])
 template sprecon2p*(xx: Spin): untyped =
   let x = xx[]
-  spinVector[type(x[0])](4,[x[0],x[1],x[1],-x[0]])
+  spinVector(4,[x[0],x[1],x[1],-x[0]])
 template sprecon3p*(xx: Spin): untyped =
   let x = xx[]
-  spinVector[type(x[0])](4,[x[0],x[1],-I(x[0]),I(x[1])])
+  spinVector(4,[x[0],x[1],-I(x[0]),I(x[1])])
 template sprecon4p*(xx: Spin): untyped =
   let x = xx[]
-  spinVector[type(x[0])](4,[x[0],x[1],x[0],x[1]])
+  spinVector(4,[x[0],x[1],x[0],x[1]])
 template sprecon1m*(xx: Spin): untyped =
   let x = xx[]
-  spinVector[type(x[0])](4,[x[0],x[1],I(x[1]),I(x[0])])
+  spinVector(4,[x[0],x[1],I(x[1]),I(x[0])])
 template sprecon2m*(xx: Spin): untyped =
   let x = xx[]
-  spinVector[type(x[0])](4,[x[0],x[1],-x[1],x[0]])
+  spinVector(4,[x[0],x[1],-x[1],x[0]])
 template sprecon3m*(xx: Spin): untyped =
   let x = xx[]
-  spinVector[type(x[0])](4,[x[0],x[1],I(x[0]),-I(x[1])])
+  spinVector(4,[x[0],x[1],I(x[0]),-I(x[1])])
 template sprecon4m*(xx: Spin): untyped =
   let x = xx[]
-  spinVector[type(x[0])](4,[x[0],x[1],-x[0],-x[1]])
+  spinVector(4,[x[0],x[1],-x[0],-x[1]])
 
 when isMainModule:
   echo gamma0[0,0]
