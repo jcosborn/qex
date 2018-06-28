@@ -78,7 +78,7 @@ buildTask tests, "build unit tests":
     exec "./testscript.sh"
 
 proc help =
-  let s = repeatChar(70, '-')
+  let s = repeat('-', 70)
   echo s
   echo "QEX build script usage:"
   echo "  make [config commands] [build commands]"

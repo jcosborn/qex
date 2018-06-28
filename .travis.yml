@@ -6,6 +6,13 @@ addons:
     - openmpi-bin
     - libopenmpi-dev
 
+notifications:
+  email:
+    recipients:
+    - osborn@alcf.anl.gov
+    on_success: always
+    on_failure: always
+
 before_install:
   - git clone -b master --depth 1 git://github.com/nim-lang/Nim
   - cd Nim
