@@ -95,9 +95,12 @@ template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
   type
     name*[T] = object # ## wrapper type
       fName*: T
-  template tasName*(x: typed): untyped =
-    name[type(x)](fName: x)
-  template asName*(x: typed): untyped =
+  #template tasName*(x: typed): untyped =
+  #  name[type(x)](fName: x)
+  #proc tasName*[T](x: T): name[T] {.inline,noInit.} =
+  #  result.fName = x
+  template asName*[T](x: T): untyped =
+    name[type(T)](fName: x)
     # ## wrap an object, x, as a $NAME type
     #lets(x,xx):
     #static: echo "asColor typed"
@@ -107,7 +110,9 @@ template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
     #name[type(tasName)](fName: tasName)
     #Color[type(x_asColor)](x_asColor)
     #Color(x_asColor)
-    flattenCallArgs(tasName, x)
+  #  flattenCallArgs(tasName, x)
+  #proc asName*[T](x: T): name[T] {.inline,noInit.} =
+  #  result.fName = x
   # ## dereference a $NAME object
   #template `[]`*(x: name): untyped =
   #  x.fName
