@@ -303,34 +303,21 @@ iterator items*(x:FieldMul):int {.inline.} =
 #import types
 #export types
 
-proc fmask*(f: Field; i: int): auto =
-  mixin masked
-  let e = i div f.l.V
-  let l = i mod f.l.V
-  let mask = 1 shl l
-  var r = masked(f[e], mask)
-  r
-#proc `{}`*[V:static[int],T](f: Field[V,T]; i:int): var auto =
+template fmask*(f: Field; i: int): untyped =
+  mixin varMasked
+  when f.l.V == 1:
+    f[i]
+  else:
+    let e = i div f.l.V
+    let l = i mod f.l.V
+    let mask = 1 shl l
+    varMasked(f[e], mask)
+
 template `{}`*(f: Field; i: int): untyped =
-  #var r = fmask(f, i)
-  #r
   fmask(f, i)
-#template `{}`*(f: Field; i: int): untyped =
-#  f.mask(i)
-proc `{}`*(f: Subsetted; i: int): auto =
-  let e = i div f.field.l.V
-  let l = i mod f.field.l.V
-  let mask = 1 shl l
-  #echo i, " ", e, " ", r, " ", mask
-  #result.pobj = f[e].addr
-  #result.mask = mask
-  #result = Masked[f.T](pobj:f[e], mask:mask)
-  #var r:Masked[f.T]
-  #r.pobj = f[e].addr
-  #r.mask = mask
-  #r
-  #echoImm: "{}"
-  result = masked(f.field[e], mask)
+
+template `{}`*(f: Subsetted; i: int): untyped =
+  fmask(f.field, i)
 
 #proc `$`*(x:Field):string =
 #  $(x[0])

@@ -32,10 +32,14 @@ proc replicate(g2,g1:openarray[Field]) =
       # echo "    ",cv
       let i = lo1.rankIndex(cv).index
       # echo "copy ", j," <- ",i
-      forO a, 0, 2:
-        forO b, 0, 2:
-          g2[mu]{j}[a,b].re := g1[mu]{i}[a,b].re
-          g2[mu]{j}[a,b].im := g1[mu]{i}[a,b].im
+      g2[mu]{j} := g1[mu]{i}
+      #for a in 0..2:
+      #  for b in 0..2:
+      #    g2[mu]{j}[a,b] := g1[mu]{i}[a,b]
+      #    #g2[mu]{j}[a,b].re := g1[mu]{i}[a,b].re
+      #    #g2[mu]{j}[a,b].im := g1[mu]{i}[a,b].im
+      #    #echotyped:
+      #    #  g2[mu]{j}[a,b] := g1[mu]{i}[a,b]
       #[
       block:
         var x,y:float
@@ -84,7 +88,7 @@ suite "Multi-Layout test":
     for i in lo1.sites:
     #for i in 0..128:
     #for i in {0,128}:
-      g1[0]{i}.gaussian rs1{i}[]
+      g1[0]{i}.gaussian rs1{i}
       #g1[0]{i}.projectSU
       #g1[0]{i}[a,a].re := c
       #g1[0]{i}[a,a].im := c
@@ -103,7 +107,7 @@ suite "Multi-Layout test":
       block:
         let j = 0
         #echo "j: ",j
-        g2[0]{j}.gaussian rs2{i}[]
+        g2[0]{j}.gaussian rs2{i}
         #g2[0]{j}.projectSU
         #g2[0]{j}[a,a].re := c
         #g2[0]{j}[a,a].im := c
@@ -146,7 +150,7 @@ suite "Multi-Layout test":
       #for mu in 0..<nd:
       block:
         let mu = 1
-        g1[mu]{i}.gaussian rs1{i}[]
+        g1[mu]{i}.gaussian rs1{i}
         #g1[mu]{i}[a,a].re := c
         #g1[mu]{i}[a,a].im := c
         var t:float

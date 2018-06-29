@@ -43,7 +43,7 @@ template gaussian*(r: AsVar, x: untyped) =
   gaussian(t, x)
 proc gaussian*(v: Field, r: RNGField) =
   for i in v.l.sites:
-    gaussian(v{i}, r{i}[])
+    gaussian(v{i}, r{i})
 
 proc uniform*(x: var AsComplex, r: var RNG) =
   mixin uniform
@@ -171,14 +171,15 @@ proc u1*(x: Field, r: RNGField) =
 
 proc newRNGField*[R: RNG](lo: Layout, rng: typedesc[R],
                           s: uint64 = uint64(17^7)): Field[1,R] =
-  var r: Field[1,R]
+  var r: Field[1,rng]
+  let t = sizeof(r[0]) # workaround Nim bug
   r.new(lo.physGeom.newLayout 1)
   threads:
     for j in lo.sites:
       var l = lo.coords[lo.nDim-1][j].int
       for i in countdown(lo.nDim-2, 0):
         l = l * lo.physGeom[i].int + lo.coords[i][j].int
-      seed(r{j}[], s, l)
+      seed(r[j], s, l)
   r
 proc newRNGField*[R: RNG](rng: typedesc[R], lo: Layout,
                           s: uint64 = uint64(17^7)): Field[1,R] =

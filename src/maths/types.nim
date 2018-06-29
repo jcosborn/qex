@@ -30,8 +30,11 @@ template forwardFunc*(t: typedesc, f: untyped) {.dirty.} =
 #type
 #  AsVar*[T] = object
 #    v*: T
+#template asVar*[T](x: T): untyped =
+#  AsVar[type(T)](v: x)
 #template asVar*(x: typed): untyped =
-#  AsVar[type(x)](v: x)
+#  var tAsVar = x
+#  tAsVar
 #makeDeref(AsVar, x.T)
 makeWrapperType(AsVar)
 template len*(x: AsVar): untyped = x[].len
@@ -232,61 +235,34 @@ template numberType*(x: ToDouble): untyped =
   numberType(x[])
 
 
-
+# FIXME?: Masked, VarMasked
 type
   MaskedObj*[T] = object
     pobj*: ptr T
     mask*: int
   Masked*[T] = MaskedObj[T]
   #Masked2*[T] = Masked[T]
-template pobj*(x:Masked):untyped = ((MaskedObj[x.T])(x)).pobj
-template mask*(x:Masked):untyped = ((MaskedObj[x.T])(x)).mask
-template `pobj=`*(x:Masked;y:untyped):untyped = ((MaskedObj[x.T])(x)).pobj = y
-template `mask=`*(x:Masked;y:untyped):untyped = ((MaskedObj[x.T])(x)).mask = y
-template maskedObj*(x: typed, msk: int): untyped =
-  #static: echo "maskedObj"
-  #let t = MaskedObj[type(x)](pobj: addr(x), mask: msk)
-  #static: echo "maskedObj2"
-  #MaskedObj[type(x)](pobj:addr(x),mask:msk)
-  MaskedObj[type(x)](pobj: addr(x), mask: msk)
-#template masked*(): untyped = discard
-template masked*(x: typed, msk: int): untyped =
+#template pobj*(x:Masked):untyped = ((MaskedObj[x.T])(x)).pobj
+#template mask*(x:Masked):untyped = ((MaskedObj[x.T])(x)).mask
+#template `pobj=`*(x:Masked;y:untyped):untyped = ((MaskedObj[x.T])(x)).pobj = y
+#template `mask=`*(x:Masked;y:untyped):untyped = ((MaskedObj[x.T])(x)).mask = y
+template maskedObj*[T](x: T, msk: int): untyped =
+  MaskedObj[type(T)](pobj: addr(x), mask: msk)
+template maskedX*(x: typed, msk: int): untyped =
   bind maskedObj
   mixin isWrapper
   when isWrapper(x):
-    #static: echo "masked typed wrapper"
-    #dumpTree: x
-    asVarWrapper(x, masked(x[], msk))
+    asWrapper(x, maskedX(x[], msk))
   else:
-    #static: echo "masked typed not wrapper"
-    #dumpTree: x
-    #(Masked[type(x)])(maskedObj(x,msk))
-    maskedObj(x,msk)
-#[
-template masked*(x:typed; msk:int):untyped =
-  mixin masked,isComplex,isVector,isMatrix
-  when compiles(maskedImpl(x)):
-    maskedImpl(x)
-  elif isComplex(x):
-    #ctrace()
-    #asComplex((Masked[type(x)])(maskedObj(x,msk)))
-    asVarComplex(masked(x[],msk))
-  elif isVector(x):
-    #ctrace()
-    #asVarMatrix((Masked[type(x)])(maskedObj(x,msk)))
-    asVarVector(masked(x[],msk))
-  elif isMatrix(x):
-    #ctrace()
-    #asVarMatrix((Masked[type(x)])(maskedObj(x,msk)))
-    asVarMatrix(masked(x[],msk))
-  elif x is SomeNumber:
-    #ctrace()
-    #asVarMatrix((Masked[type(x)])(maskedObj(x,msk)))
-    x
-  else:
-    #ctrace()
-    (Masked[type(x)])(maskedObj(x,msk))
-]#
+    maskedObj(x, msk)
+template masked*(x: typed, msk: int): untyped =
+  bind maskedX
+  var tMasked = maskedX(x, msk)
+  tMasked
+template varMasked*(x: typed, msk: int): untyped =
+  bind maskedX
+  var tMasked = maskedX(x, msk)
+  tMasked
 #template isRIC*(x:int):untyped = true
 #template isRIC*(m:Masked):untyped = isRIC(m.pobj[])
 #template isComplex*(m:Masked):untyped = isComplex(m.pobj[])
@@ -330,7 +306,8 @@ template `im=`*(m:Masked; x:any):untyped =
 #template `[]`*(x:Masked; i:int):untyped = Masked(x:x.pobj[i],mask:x.mask)
 #template `[]`*(m:Masked; i,j:int):untyped =
 #  Masked(x:unsafeAddr(m.pobj[][i,j]), mask:m.mask)
-proc `[]`*[T](m:Masked[T]):var T {.inline.} = m.pobj[]
+#proc `[]`*[T](m:Masked[T]):var T {.inline.} = m.pobj[]
+template `[]`*(m:Masked): untyped = m.pobj[]
 template `[]`*(m:Masked; i:int):untyped = masked(m[][i],m.mask)
 #proc `[]`*[T](m:Masked[T]; i:int):auto =
 #  var r:Masked[type(m.pobj[][i])]

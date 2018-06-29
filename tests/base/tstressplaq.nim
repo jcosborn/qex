@@ -36,7 +36,7 @@ suite "Stress plaquette test":
     for s in 0..<lo.physVol:
       let ri = lo.rankIndex(s)
       let i = ri.index
-      g[0]{i}.gaussian rs{i}[]
+      g[0]{i}.gaussian rs{i}
       #g[0]{i}.projectSU
       var t:float
       var cr,ci:float
