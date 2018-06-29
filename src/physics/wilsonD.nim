@@ -455,7 +455,8 @@ when isMainModule:
     const nv = 1
     threads:
       v1 := 0
-      #v2 := 1
+      v2 := 1
+      threadBarrier()
       if myRank==0 and threadNum==0:
         when compiles(v1[0].len):
           v1{0}[0][0] := 1
@@ -471,6 +472,7 @@ when isMainModule:
       s.D(v2, v1, m)
       threadBarrier()
       echo v2.norm2
+      echo "expect 20.81"
 
       for e in v1:
         template x(d:int):untyped = lo.vcoords(d,e)
@@ -567,11 +569,6 @@ when isMainModule:
   threads:
     g.setBC
     threadBarrier()
-    for i in 0..<4:
-      echo g[i].norm2
-    threadBarrier()
-    #g.wilsonPhase
-    #threadBarrier()
     for i in 0..<4:
       echo g[i].norm2
 
