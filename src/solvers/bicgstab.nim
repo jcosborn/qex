@@ -106,11 +106,13 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
         echo(itn, " ", r2)
 
       if r2<=r2stop:
+        tic()
         # Update the solution one last time.
         subset:
           x += alpha*p
         toc("x", flops=2*numNumbers(s[0])*sub.lenOuter)
       else:
+        tic()
         # t = As
         threadBarrier()
         A(t,s)

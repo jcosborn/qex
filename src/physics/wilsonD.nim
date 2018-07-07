@@ -487,10 +487,6 @@ when isMainModule:
       echo v1[0][0]
       echo v2[0][0]
 
-    #let nrep = int(1e7/lo.physVol.float)
-    #let nrep = int(2e8/lo.physVol.float)
-    #let nrep = int(1e9/lo.physVol.float)
-    let nrep = 1
     template makeBench(name:untyped; bar:untyped):untyped {.dirty.} =
       proc `name T`(sd,v1,v2:any, ss="all") =
         var nrep = 1
@@ -528,19 +524,33 @@ when isMainModule:
       bench(sdOdd, "odd  ")
       benchB(sdOdd, "odd  ")
     proc benchEO() =
-      resetTimers()
-      var t0 = epochTime()
-      threads:
-        for rep in 1..nrep:
-          wilsonD2ee(sdEven, sdOdd, v2, g, v1, 0.1)
-      var t1 = epochTime()
-      let dt = t1-t0
-      #var vol = 0.5 * lo.physVol.float
+      var nrep = 1
+      var dt = 0.0
+      while true:
+        resetTimers()
+        threads:
+          threadBarrier()
+          let t0 = getTics()
+          for rep in 1..nrep:
+            wilsonD2ee(sdEven, sdOdd, v2, g, v1, 0.1)
+            #s.D(v2, v1, 0.1)
+            #when bar: threadBarrier()
+          let t1 = getTics()
+          var dtt = ticDiffSecs(t1,t0)
+          threadSum(dtt)
+          threadMaster: dt = dtt/numThreads.float
+        if dt>1: break
+        let nnrep = 1 + int(1.1*nrep.float/(dt+1e-9))
+        nrep = min(10*nrep, nnrep)
+
       var vol = 0.5 * lo.nSites.float
       let flops = nv * (24.0+g.len*4.0*(12+2*66+24)) * vol
       echo "EO   secs: ", dt, "  mf: ", (nrep.float*flops)/(1e6*dt)
-      #echoTimers()
+      echoTimers()
     benchEO()
+    resetTimers()
+    s.solve(v2, v1, 0.1, 1e-12)
+    echoTimers()
 
   qexInit()
   echo "rank ", myRank, "/", nRanks
@@ -583,7 +593,6 @@ when isMainModule:
   wilsonD(sdAll, v2, g, v1, m)
 
   runtest(v1, v2, sdAll, sdEven, sdOdd, s, m)
-  echoTimers()
 
   #[
   var sdAll3 = initWilsonD3(v1, "all")

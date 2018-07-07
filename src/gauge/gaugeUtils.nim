@@ -327,7 +327,7 @@ proc plaq3*[T](g: seq[T]): auto =
   result = tr/(lo.physVol.float*0.5*float(nd*(nd-1)*nc))
 
 template defaultSetup*:untyped {.dirty.} =
-  bind paramCount, paramStr, isDigit, parseInt, fileExists
+  bind paramCount, paramStr, isDigit, parseInt, fileExists, getFileLattice
   echo "rank ", myRank, "/", nRanks
   threads:
     echo "thread ", threadNum, "/", numThreads

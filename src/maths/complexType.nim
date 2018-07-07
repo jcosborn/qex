@@ -17,6 +17,9 @@ type
   AsComplex2*[T] = ComplexProxy[T]
   ComplexType*[T] = Complex[T,T]
 
+template newComplexObj*[TR,TI](x: TR, y: TI): untyped =
+  ComplexObj[type(TR),type(TI)](reX: x, imX: y)
+
 template newRealImpl*(x: typed): untyped = x
 template newImagImpl*(x: typed): untyped = newImagProxy(x)
 #template newComplexImplU*(x,y: typed): untyped =
@@ -132,6 +135,9 @@ template toDoubleImpl*(xx: ComplexProxy): untyped =
   let x = xx[]
   newComplex(toDouble(x.re),toDouble(x.im))
 
+template toDoubleImpl*(xx: ComplexObj): untyped =
+  let x = xx
+  newComplexObj(toDouble(x.re),toDouble(x.im))
 
 template add*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
          untyped =  assign(r,x+y)
