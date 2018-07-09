@@ -7,12 +7,18 @@ const
   PAIR = true
   MAXTHREADS = 512
 
-template aalloc(n: SomeInteger): untyped =
+proc aalloc(n: SomeInteger): pointer =
   let a = 64
-  let x = cast[ByteAddress](alloc(n+a))
-  let a1 = a - 1
-  let y = x + (a1-((x+a1) mod a))
+  let b = a + sizeof(ByteAddress)
+  let x = cast[ByteAddress](alloc(n+b))
+  let y = a * ((x+b) div a)
+  let z = cast[ptr ByteAddress](y - sizeof(ByteAddress))
+  z[] = x
   cast[pointer](y)
+
+proc afree(y: pointer) =
+  let z = cast[ptr pointer](cast[ByteAddress](y) - sizeof(ByteAddress))
+  dealloc(z[])
 
 proc prepareShiftBufsQ*(sb: openArray[ptr ShiftBufQ];
                         si: openArray[ptr ShiftIndicesQ];
@@ -161,8 +167,8 @@ proc freeShiftBufsQ*(sb: openArray[ptr ShiftBufQ]) =
       inc(i)
   i=0
   while i < n:
-    if sb[i].first!=0 and sb[i].sbufSize > 0: dealloc(sb[i].sbuf)
-    if sb[i].first!=0 and sb[i].rbufSize > 0: dealloc(sb[i].rbuf)
+    if sb[i].first!=0 and sb[i].sbufSize > 0: afree(sb[i].sbuf)
+    if sb[i].first!=0 and sb[i].rbufSize > 0: afree(sb[i].rbuf)
     inc(i)
 
 proc freeShiftBufQ*(sb: ptr ShiftBufQ) =

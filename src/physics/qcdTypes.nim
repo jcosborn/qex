@@ -312,7 +312,8 @@ type PackTypes = any
 template perm*[T](r0:var T; prm0:int; x0:T) =
   subst(n,_,rr,_,xx,_):
     lets(r,r0,prm,prm0,x,x0):
-      const n = x.nVectors
+      #const n = x.nVectors
+      const n = x.numNumbers div x.simdLength
       let rr = cast[ptr array[n,simdType(r)]](r.addr)
       var xt = x
       let xx = cast[ptr array[n,simdType(x)]](addr xt)
@@ -336,13 +337,15 @@ template perm2*[T](r: var T; prm: int; x: T) =
 #proc pack*(r:ptr any; l:ptr any; pck:int; x:PackTypes) {.inline.} =
 proc pack*(r:ptr any; l:ptr any; pck:int; x:any) {.inline.} =
   if pck==0:
-    const n = x.nVectors
+    #const n = x.nVectors
+    const n = x.numNumbers div x.simdLength
     let rr = cast[ptr array[n,array[simdLength(x),type(r[])]]](r)
     let xx = cast[ptr array[n,simdType(x)]](unsafeAddr(x))
     for i in 0..<n:
       assign(rr[i], xx[i])
   else:
-    const n = x.nVectors
+    #const n = x.nVectors
+    const n = x.numNumbers div x.simdLength
     const vl2 = x.simdLength div 2
     let rr = cast[ptr array[n,array[vl2,type(r[])]]](r)
     let ll = cast[ptr array[n,array[vl2,type(l[])]]](l)
@@ -384,7 +387,8 @@ proc pack*(r:ptr char; pck:int; x: any) =
     of -8: loop(packm8)
     else: discard
 proc blend*(r:var any; x:ptr char; b:ptr char; blnd:int) {.inline.} =
-  const n = r.nVectors
+  #const n = r.nVectors
+  const n = r.numNumbers div r.simdLength
   const n2 = n div 2
   const stride = r.simdLength div 2
   var rr = cast[ptr array[n,simdType(r)]](r.addr)

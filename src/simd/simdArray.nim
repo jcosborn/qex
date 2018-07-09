@@ -250,8 +250,8 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
       assign(result[][i], x)
   proc simdReduce*(r: var SomeNumber; x: T) {.inline.} =
     #mixin add
-    var y = x[][0] + x[][1]
-    forStatic i, 2, L-1:
+    var y = x[][0]
+    forStatic i, 1, L-1:
       iadd(y, x[][i])
     r = (type(r))(simdReduce(y))
   proc simdReduce*(x:T):F {.noInit,inline.} = simdReduce(result, x)
