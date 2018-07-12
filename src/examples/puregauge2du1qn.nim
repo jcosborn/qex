@@ -6,7 +6,7 @@ import random  # for seeding our RNGs
 
 const CHECK = true
 const CHECKLBFGS = false
-const CHECKLBFGSMOM = true
+const CHECKLBFGSMOM = false
 const CHECKLBFGSEIGEN = true
 
 when CHECKLBFGSEIGEN:
@@ -121,7 +121,7 @@ proc maxTreeFix(f:seq, val:float, fixextra:bool) =
 
 type LBFGS[F] = object
   ys,gamma:seq[float]
-  y,s,v:seq[F]  ## v_k = y_k + beta_k G_k-1 s_k
+  y,s,v,u:seq[F]  ## v, u for the product form
   sortedix:seq[int]
   p:int  ## Index for a new addition, or 1 plus the end of the ring.  Temporary storage at p-1.
   sortedlen:int
@@ -138,23 +138,22 @@ proc initLBFGS(lo:Layout, n:int, h0 = 1.0, kappa:float = 0.0):auto =
   r.y.newseq(n)
   r.s.newseq(n)
   r.sortedlen = 0
-  r.sortedix.newseq(n-2)  # N states -> N differences ->  N-2 excluding 1 state
-  r.v.newseq(n-2)  # ditto
-  r.gamma.newseq(n-2)
+  r.sortedix.newseq(n-2)  # !IMPORTANT!  N states -> N differences ->  N-2 excluding 1 state
+  r.v.newseq(n)
+  r.u.newseq(n)
+  r.gamma.newseq(n)  # coefficients for inversion, g = v^\dag u - 1
   r.invH0 = 1.0 / h0
   r.kappa = kappa
   for i in 0..<n:
     r.y[i] = lo.newGauge
     r.s[i] = lo.newGauge
-  for i in 0..<n-2:
+  for i in 0..<n:
     r.v[i] = lo.newGauge
+    r.u[i] = lo.newGauge
   r
 
 proc add[F](o:var LBFGS[F]; x,f:F) =
   var n = o.p
-  let
-    k = o.kappa
-    k1 = 1.0 - k
   if o.first:
     o.first = false
   else:
@@ -186,7 +185,6 @@ proc add[F](o:var LBFGS[F]; x,f:F) =
           var r = o.y[n1][mu][i] - f[mu][i]
         else:
           var r = (o.y[n1][mu][i] - f[mu][i]).im
-        r = k * t + k1 * r  # FIXME: this is useless
         when CHECK and false:
           if i == 0:
             let
@@ -245,25 +243,25 @@ proc reverseadd[F](o:var LBFGS[F]; x,f:F) =
   o.p = 0
 
 proc A[F](o:LBFGS[F], k:int, z:var F) =
-  ## A_k z  ->  z  where  H_k = A_k A_k^\dag
+  ## A_k z  ->  z  where  H_k = A_k A_k^\dag, A_k = (1 - u v^\dag) A_{k-1}
   # A0 z -> z
   let a0 = 1.0 / sqrt o.invH0
   for mu in 0..<z.len: z[mu] *= a0
   for j in 0..k:
     let i = o.sortedix[j]
-    let sz = (-o.gamma[j]) * o.s[i].dot z
+    let vz = -(o.v[i].dot z)
     for mu in 0..<z.len:
       for e in z[mu]:
-        let t = z[mu][e] + sz * o.v[j][mu][e]
+        let t = z[mu][e] + vz * o.u[i][mu][e]
         z[mu][e] := t
 proc Adag[F](o:LBFGS[F], k:int, z:var F) =
-  ## A_k^\dag z  ->  z  where  H_k = A_k A_k^\dag
+  ## A_k^\dag z  ->  z  where  H_k = A_k A_k^\dag, A_k^\dag = A_{k-1}^\dag (1 - v u^\dag)
   for j in countdown(k,0):
     let i = o.sortedix[j]
-    let vz = (-o.gamma[j]) * o.v[j].dot z
+    let uz = -(o.u[i].dot z)
     for mu in 0..<z.len:
       for e in z[mu]:
-        let t = z[mu][e] + vz * o.s[i][mu][e]
+        let t = z[mu][e] + uz * o.v[i][mu][e]
         z[mu][e] := t
   # A0d z -> z
   let a0 = 1.0 / sqrt o.invH0
@@ -289,25 +287,25 @@ proc sqrtH[F](o:LBFGS[F]; x:var F) =
   o.A(n-1, x)
 
 proc B[F](o:LBFGS[F], k:int, z:var F) =
-  ## B_k z  ->  z  where  H_k^-1 = B_k B_k^\dag
+  ## B_k z  ->  z  where  H_k^-1 = B_k B_k^\dag, B_k = (1 - v u^\dag / g) B_{k-1}
   # B0 z -> z
   let b0 = sqrt o.invH0
   for mu in 0..<z.len: z[mu] *= b0
   for j in 0..k:
     let i = o.sortedix[j]
-    let vz = (o.v[j].dot z) / (-o.ys[i])
+    let uz = (o.u[i].dot z) / (-o.gamma[i])
     for mu in 0..<z.len:
       for e in z[mu]:
-        let t = z[mu][e] + vz * o.s[i][mu][e]
+        let t = z[mu][e] + uz * o.v[i][mu][e]
         z[mu][e] := t
 proc Bdag[F](o:LBFGS[F], k:int, z:var F) =
-  ## A_k^\dag z  ->  z  where  H_k^-1 = B_k B_k^\dag
+  ## A_k^\dag z  ->  z  where  H_k^-1 = B_k B_k^\dag, B_k^\dag = B_{k-1}^\dag (1 - u v^\dag / g)
   for j in countdown(k,0):
     let i = o.sortedix[j]
-    let sz = (o.s[i].dot z) / (-o.ys[i])
+    let vz = (o.v[i].dot z) / (-o.gamma[i])
     for mu in 0..<z.len:
       for e in z[mu]:
-        let t = z[mu][e] + sz * o.v[j][mu][e]
+        let t = z[mu][e] + vz * o.u[i][mu][e]
         z[mu][e] := t
   # B0d z -> z
   let b0 = sqrt o.invH0
@@ -332,62 +330,6 @@ proc sqrtInvH[F](o:LBFGS[F]; x:var F) =
   let n = o.sortedlen
   o.B(n-1, x)
 
-proc invHl[F](o:LBFGS[F]; x:var F) =
-  ## The basic lBGFS 2-loop algorithm.
-  ## H^-1 y  ->  x
-  let n = o.sortedlen
-  type C = type(x.dot x)
-  var alpha = newseq[C](n)
-  for j in countdown(n-1,0):
-    let k = o.sortedix[j]
-    let a = (o.s[k].dot x) / o.ys[k]
-    alpha[j] := a
-    when CHECK and false:
-      echo "invH ",j," (",k,")"
-      echo "x.norm2: ",x.norm2
-      echo "alpha: ",a
-      echo "a^2*o.y[",k,"].norm2: ",(a*a*o.y[k].norm2)
-    for mu in 0..<x.len:
-      for e in x[mu]:
-        let ay = a * o.y[k][mu][e]
-        let t = x[mu][e] - ay
-        when CHECK and false:
-          if e == 0:
-            echo "x[",mu,"][0]: ",x[mu][e]
-            echo "a*o.y[",k,"][",mu,"][0]: ",ay
-            echo "t: ",t
-        x[mu][e] := t
-    when CHECK and false:
-      echo "(1-rys)x.norm2: ",x.norm2
-  # Initial inverse Hessian:  x *= YS/YY
-  for mu in 0..<x.len: x[mu] *= o.invH0
-  for j in 0..<n:
-    let k = o.sortedix[j]
-    let r = (o.y[k].dot x) / o.ys[k]
-    let beta = alpha[j] - r
-    when CHECK and false:
-      echo "invH2 ",j," (",k,")"
-      echo "alpha: ",alpha[j]
-      echo "o.y[",k,"].dot(x)/o.ys[",k,"] ",r
-      echo "beta: ",beta
-      echo "x.norm2: ",x.norm2
-    for mu in 0..<x.len:
-      for e in x[mu]:
-        let bs = beta * o.s[k][mu][e]
-        let t = x[mu][e] + bs
-        when CHECK and false:
-          if e == 0:
-            echo "x[",mu,"][0]: ",x[mu][e]
-            echo "beta*o.s[",k,"][",mu,"][0]: ",bs
-            echo "t: ",t
-        x[mu][e] := t
-    when CHECK and false:
-      echo "(1+bs)x.norm2: ",x.norm2
-proc invHl[F](x:var F; o:LBFGS[F]; y:F) =
-  ## H^-1 y  ->  x
-  for mu in 0..<x.len: x[mu] := y[mu]
-  o.invHl x
-
 when CHECKLBFGSEIGEN:
   template genMatvec(op:untyped):untyped =
     proc `lbfgs op Matvec`[MI](x:pointer, ldx:ptr PRIMME_INT, y:pointer, ldy:ptr PRIMME_INT,
@@ -408,7 +350,6 @@ when CHECKLBFGSEIGEN:
         g.toPrimmeArrayGauge yp
       err[] = 0
   genMatvec(invH)
-  genMatvec(invHl)
   genMatvec(H)
   genMatvec(sqrtH)
 
@@ -435,50 +376,50 @@ proc prep[F](o:var LBFGS[F], cutoff = 0.0, reduce = 0) =
     #  result = -result
   o.sortedix.sort(cmpys, SortOrder.Descending)
   var unset = true
-  for i in 0..<o.sortedix.len:
-    let k = o.sortedix[i]
-    let yy = o.y[k].norm2
-    let ss = o.s[k].norm2
-    echo i," ix ",k," ys ",o.ys[k]," ys/yy ",(o.ys[k]/yy)," yy ",yy," ss ",ss
-    if unset and o.ys[k] <= cutoff:  # FIXME how to tune this?
-      o.sortedlen = i
+  for j in 0..<o.sortedix.len:
+    let i = o.sortedix[j]
+    let yy = o.y[i].norm2
+    let ss = o.s[i].norm2
+    echo j," ix ",i," ys ",o.ys[i]," ys/yy ",(o.ys[i]/yy)," yy ",yy," ss ",ss
+    if unset and o.ys[i] <= cutoff:  # FIXME how to tune this?
+      o.sortedlen = j
       unset = false
   if reduce > 0:
     echo "lBGFS nmem reduce: ",reduce
     o.sortedlen -= reduce
     if o.sortedlen < 0: o.sortedlen = 0
   echo "lBFGS nmem = ",o.sortedlen
-  #if o.sortedlen > 0 and false:
-  #  #let k = o.sortedix[o.sortedlen-1]
-  #  let k = o.sortedix[0]  # FIXME: Does not help stability
-  #  let yy = o.y[k].norm2
-  #  when CHECK and false:
-  #    #let yr = o.y[k].redot o.y[k]
-  #    #let yd = o.y[k].dot o.y[k]
-  #    #echo "y.dot y: ",yd
-  #    #echo "y.redot y: ",yr
-  #    echo "y.norm2: ",yy
-  #  o.invH0 = o.ys[k] / yy
-  #else:
-  #  o.invH0 = 1.0
-  var gs = o.s[0].newOneOf
-  for j in 0..<o.sortedlen:  # Compute v_k and gamma_k
-    # FIXME maybe save more vectors?  possibly linear time?
-    let k = o.sortedix[j]
-    gs.H(o, j-1, o.s[k])  # G_k-1 s_k  (j is the actual order number)
-    let alpha = 1.0 / o.s[k].redot gs
-    when CHECK and false:
-      let alphad = 1.0 / o.s[k].dot gs
-      echo "alpha: ",alpha
-      echo "alphad: ",alphad
-    let beta = -sqrt(alpha * o.ys[k])  # FIXME: negative sign more stable?
-    o.gamma[j] = beta / o.ys[k]
+  for j in 0..<o.sortedlen:  # Compute v_i, u_i, and gamma_i
+    let i = o.sortedix[j]
+    o.u[i].H(o, j-1, o.s[i])  # temporarily u <- G_{k-1} s_k  (j is the actual order number)
+    o.v[i].invH(o, j-1, o.y[i])  # temporarily v <- G_{k-1}^{-1} y_k
+    let
+      sgs = o.s[i].redot o.u[i]
+      sggs = o.u[i].norm2
+      ygiy = o.y[i].redot o.v[i]
+    var delta1 = o.kappa*sgs/sggs  # = 1-delta
+    if delta1 > 1.0: delta1 = 1.0
+    let
+      delta = 1.0 - delta1
+      wgiw = ygiy / o.ys[i]
+      cy = 1.0 / sqrt(o.ys[i])
+      cs = sqrt(delta/sgs)
+      wgiz = cs/cy
+    o.gamma[i] = sqrt(delta1*(wgiw - o.ys[i]/sgs + 1.0) + o.ys[i]/sgs)  # negative sign works, too
+    let
+      theta = (delta1+o.gamma[i]-wgiz) / (2.0*wgiz+wgiw+delta)
+      cyv = cy*theta
+      csv = cs*(1.0+theta)
     when CHECK:
-      echo j," alpha: ",alpha," beta: ",beta," gamma: ",o.gamma[j]
-    for mu in 0..<gs.len:
-      for e in gs[mu]:
-        let t = o.y[k][mu][e] + beta * gs[mu][e]
-        o.v[j][mu][e] := t
+      echo j," delta: ",delta," sgs: ",sgs," sggs: ",sggs," ygiy: ",ygiy," gamma: ",o.gamma[i]
+    for mu in 0..<o.u[i].len:
+      for e in o.u[i][mu]:
+        let t = cy*o.y[i][mu][e] + cs*o.u[i][mu][e]
+        o.u[i][mu][e] := t
+    for mu in 0..<o.v[i].len:
+      for e in o.v[i][mu]:
+        let t = cyv*o.v[i][mu][e] + csv*o.s[i][mu][e]
+        o.v[i][mu][e] := t
   when CHECKLBFGSEIGEN:
     type MatrixInfo = object
       lbfgs: type(o)
@@ -789,7 +730,6 @@ for n in 1..trajs:
       lbfgs.add(x = gs[i], f = f)
     when CHECKLBFGSMOM:
       # Refreshing the momentum and check lbfgs stability.
-      var pcheck = newOneOf p
       proc checklbfgsmom =
         var p2 = 0.0
         threads: p.randomTAH r
@@ -802,23 +742,19 @@ for n in 1..trajs:
         lbfgs.sqrtH p
         if gfix: p.maxTreeFix(0.0, gfixextra)  # FIXME
         hinvp.invH(lbfgs, p)
-        pcheck.invHl(lbfgs, p)
         #threads:
         block:
-          var p2t,p2tc,p2nt,hp2 = 0.0
+          var p2t,p2nt,hp2 = 0.0
           for i in 0..<p.len:
             p2t += p[i].redot hinvp[i]
-            p2tc += p[i].redot pcheck[i]
             p2nt += hinvp[i].norm2
             hp2 += p[i].norm2
           #threadMaster:
           block:
             let e = abs(p2-p2t)/max(p2.abs,p2t.abs)
-            let el = abs(p2-p2tc)/max(p2.abs,p2tc.abs)
             echo "SqrtHP.norm2: ",hp2," HinvP.norm2: ",p2nt
             echo "p2: ",p2
             echo "p2_Hinv: ",p2t," err: ",e
-            echo "p2_Hinvl: ",p2tc," err: ",el
       for c in countdown(10,0):
         let cut = float(c*lat[0])
         echo "LBFGS cutoff: ",cut
