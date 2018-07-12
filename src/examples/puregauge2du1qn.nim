@@ -125,11 +125,12 @@ type LBFGS[F] = object
   sortedix:seq[int]
   p:int  ## Index for a new addition, or 1 plus the end of the ring.  Temporary storage at p-1.
   sortedlen:int
-  kappa:float  ## minimum eigen value of H to regularize the zero modes.
-  invH0:float
+  lambda:float  ## minimum eigen value of H to regularize the zero modes.
+  invsqrtH0:float
+  yscale:float  ## scale y <- yscale*y
   first:bool
 
-proc initLBFGS(lo:Layout, n:int, h0 = 1.0, kappa:float = 0.0):auto =
+proc initLBFGS(lo:Layout, n:int, h0 = 1.0, lambda:float = 0.0, yscale:float = 1.0):auto =
   type F = type(lo.newGauge)
   var r {.noinit.} :LBFGS[F]
   r.p = 0
@@ -142,8 +143,9 @@ proc initLBFGS(lo:Layout, n:int, h0 = 1.0, kappa:float = 0.0):auto =
   r.v.newseq(n)
   r.u.newseq(n)
   r.gamma.newseq(n)  # coefficients for inversion, g = v^\dag u - 1
-  r.invH0 = 1.0 / h0
-  r.kappa = kappa
+  r.invsqrtH0 = 1.0 / sqrt(h0)
+  r.lambda = lambda
+  r.yscale = yscale
   for i in 0..<n:
     r.y[i] = lo.newGauge
     r.s[i] = lo.newGauge
@@ -157,7 +159,7 @@ proc add[F](o:var LBFGS[F]; x,f:F) =
   if o.first:
     o.first = false
   else:
-    # save new s = ln(x_old x.adj), y = k s + (1-k) (f_old-f)
+    # save new s = ln(x_old x.adj), y = yscale*(f_old-f)
     let n1 = if n == 0: o.ys.len - 1 else: n - 1
     o.ys[n1] = 0.0
     for mu in 0..<x.len:
@@ -185,6 +187,7 @@ proc add[F](o:var LBFGS[F]; x,f:F) =
           var r = o.y[n1][mu][i] - f[mu][i]
         else:
           var r = (o.y[n1][mu][i] - f[mu][i]).im
+        r *= o.yscale
         when CHECK and false:
           if i == 0:
             let
@@ -245,7 +248,7 @@ proc reverseadd[F](o:var LBFGS[F]; x,f:F) =
 proc A[F](o:LBFGS[F], k:int, z:var F) =
   ## A_k z  ->  z  where  H_k = A_k A_k^\dag, A_k = (1 - u v^\dag) A_{k-1}
   # A0 z -> z
-  let a0 = 1.0 / sqrt o.invH0
+  let a0 = 1.0 / o.invsqrtH0
   for mu in 0..<z.len: z[mu] *= a0
   for j in 0..k:
     let i = o.sortedix[j]
@@ -264,7 +267,7 @@ proc Adag[F](o:LBFGS[F], k:int, z:var F) =
         let t = z[mu][e] + uz * o.v[i][mu][e]
         z[mu][e] := t
   # A0d z -> z
-  let a0 = 1.0 / sqrt o.invH0
+  let a0 = 1.0 / o.invsqrtH0
   for mu in 0..<z.len: z[mu] *= a0
 proc H[F](o:LBFGS[F], k:int, r:var F) =
   when CHECKLBFGS and false: echo "r: ",r
@@ -289,7 +292,7 @@ proc sqrtH[F](o:LBFGS[F]; x:var F) =
 proc B[F](o:LBFGS[F], k:int, z:var F) =
   ## B_k z  ->  z  where  H_k^-1 = B_k B_k^\dag, B_k = (1 - v u^\dag / g) B_{k-1}
   # B0 z -> z
-  let b0 = sqrt o.invH0
+  let b0 = o.invsqrtH0
   for mu in 0..<z.len: z[mu] *= b0
   for j in 0..k:
     let i = o.sortedix[j]
@@ -308,7 +311,7 @@ proc Bdag[F](o:LBFGS[F], k:int, z:var F) =
         let t = z[mu][e] + vz * o.u[i][mu][e]
         z[mu][e] := t
   # B0d z -> z
-  let b0 = sqrt o.invH0
+  let b0 = o.invsqrtH0
   for mu in 0..<z.len: z[mu] *= b0
 proc invH[F](o:LBFGS[F], k:int, r:var F) =
   when CHECKLBFGS and false: echo "r: ",r
@@ -381,7 +384,7 @@ proc prep[F](o:var LBFGS[F], cutoff = 0.0, reduce = 0) =
     let yy = o.y[i].norm2
     let ss = o.s[i].norm2
     echo j," ix ",i," ys ",o.ys[i]," ys/yy ",(o.ys[i]/yy)," yy ",yy," ss ",ss
-    if unset and o.ys[i] <= cutoff:  # FIXME how to tune this?
+    if unset and o.ys[i] <= cutoff:
       o.sortedlen = j
       unset = false
   if reduce > 0:
@@ -394,10 +397,11 @@ proc prep[F](o:var LBFGS[F], cutoff = 0.0, reduce = 0) =
     o.u[i].H(o, j-1, o.s[i])  # temporarily u <- G_{k-1} s_k  (j is the actual order number)
     o.v[i].invH(o, j-1, o.y[i])  # temporarily v <- G_{k-1}^{-1} y_k
     let
+      ss = o.s[i].norm2
       sgs = o.s[i].redot o.u[i]
-      sggs = o.u[i].norm2
+      # sggs = o.u[i].norm2
       ygiy = o.y[i].redot o.v[i]
-    var delta1 = o.kappa*sgs/sggs  # = 1-delta
+    var delta1 = o.lambda*ss/sgs  # = 1-delta
     if delta1 > 1.0: delta1 = 1.0
     let
       delta = 1.0 - delta1
@@ -411,7 +415,7 @@ proc prep[F](o:var LBFGS[F], cutoff = 0.0, reduce = 0) =
       cyv = cy*theta
       csv = cs*(1.0+theta)
     when CHECK:
-      echo j," delta: ",delta," sgs: ",sgs," sggs: ",sggs," ygiy: ",ygiy," gamma: ",o.gamma[i]
+      echo j," delta: ",delta," sgs: ",sgs," ygiy: ",ygiy," gamma: ",o.gamma[i]
     for mu in 0..<o.u[i].len:
       for e in o.u[i][mu]:
         let t = cy*o.y[i][mu][e] + cs*o.u[i][mu][e]
@@ -559,7 +563,9 @@ when CHECKLBFGS:
     cklbfgsr.sortedix.newseq(nseq-2)  # N states -> N differences ->  N-2 excluding 1 state
     cklbfgsr.v.newseq(nseq-2)  # ditto
     cklbfgsr.gamma.newseq(nseq-2)
-    cklbfgsr.invH0 = 1.0
+    cklbfgsr.invsqrtH0 = 1.0
+    cklbfgsr.yscale = 1.0
+    cklbfgsr.lambda = 0.0
     for i in 0..<nseq:
       cklbfgsr.y[i].newseq(1)
       cklbfgsr.s[i].newseq(1)
@@ -593,18 +599,10 @@ when CHECKLBFGS:
     cklbfgsr.invH hinvhx
     echo "hinvhx: ",hinvhx
     echo "hinvhx err: ",norm2(hinvhx[0]-x)
-    var hlinvhx = hx
-    cklbfgsr.invHl hlinvhx
-    echo "hlinvhx: ",hlinvhx
-    echo "hlinvhx err: ",norm2(hlinvhx[0]-x)
     var hinvy = @[y]
     cklbfgsr.invH hinvy
     echo "hinvy: ",hinvy
     echo "hinvy err: ",norm2(hinvy[0]-x)
-    var hlinvy = @[y]
-    cklbfgsr.invHl hlinvy
-    echo "hlinvy: ",hlinvy
-    echo "hlinvy err: ",norm2(hlinvy[0]-x)
     var hsqrtx = @[x]
     cklbfgsr.sqrtH hsqrtx
     echo "hsqrtx: ",hsqrtx
@@ -619,15 +617,17 @@ let
   qnbegin = intParam("qnbegin",64)
   tau = floatParam("tau", 2.0)
   steps = intParam("steps", 10)
-  qntau = floatParam("qntau", tau * sqrt(2*beta))  # sqrt diagonal term of the Hessian
+  qntau = floatParam("qntau", tau)
   qnsteps = intParam("qnsteps", steps)
   qnyscut = floatParam("qnyscut",9)
+  qnyscale = floatParam("qnyscale", 1.0/(2.0*beta))  # inverse diagonal term of the Hessian
+  qnh0 = floatParam("qnh0",1.0)  # initial diagonal term of the Hessian
   seed = intParam("seed", 11^11)
   gfix = intParam("gfix", 0).bool
   gfixextra = intParam("gfixextra", 0).bool
   gfixunit = intParam("gfixunit", 1).bool
   nstream = intParam("nstream", 10)
-  kappa = floatParam("kappa", 0)
+  lambda = floatParam("lambda", 0)
 
 echo "beta = ",beta
 echo "trajs = ",trajs
@@ -637,11 +637,13 @@ echo "qnbegin = ",qnbegin
 echo "qntau = ",qntau
 echo "qnsteps = ",qnsteps
 echo "qnyscut = ",qnyscut
+echo "qnyscale = ",qnyscale
+echo "qnh0 = ",qnh0
 echo "gfix = ",gfix.int
 echo "gfixextra = ",gfixextra.int
 echo "gfixunit = ",gfixunit.int
 echo "nstream = ",nstream
-echo "kappa = ",kappa
+echo "lambda = ",lambda
 echo "seed = ",seed
 
 var (gs,r,R) = setup([64,64],nstream,seed)
@@ -660,7 +662,7 @@ template getforce(f,g:untyped) =
   if gfix: f.maxTreeFix(0.0, gfixextra)
 
 var
-  lbfgs = lo.initLBFGS(nstream, h0 = 2*beta, kappa = kappa)
+  lbfgs = lo.initLBFGS(nstream, h0 = qnh0, lambda = lambda, yscale = qnyscale)
   p = lo.newgauge
   f = lo.newgauge
   g0 = lo.newgauge
