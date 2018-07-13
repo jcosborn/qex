@@ -284,7 +284,7 @@ template mulVSV*(rr:typed; xx,yy:typed):untyped =
       mul(r[i], txz, y[i])
 ]#
 template mulVSVU*(r: typed; x,y: typed): untyped =
-  mixin mul
+  mixin mul, `:=`
   assert(r.len == y.len)
   forO i, 0, r.len.pred:
     #mul(r[i], x, y[i])
@@ -389,7 +389,7 @@ template mulVMVU*(r: typed; x,y: typed): untyped =
       imadd(r[i], x[i,j], ty_mulVMV)
 ]#
 template mulVMVU*(r: typed; x,y: typed): untyped =
-  mixin nrows, ncols, mul, imadd, assign
+  mixin nrows, ncols, mul, imadd, assign, `:=`
   assert(x.nrows == r.len)
   assert(x.ncols == y.len)
   forO i, 0, x.nrows.pred:
@@ -508,7 +508,7 @@ template imaddVMV*(rr:typed; xx,yy:typed):untyped =
       assign(r, tr)
 ]#
 template imaddVMVU*(r: typed; x,y: typed): untyped =
-  mixin nrows, ncols, imadd
+  mixin nrows, ncols, imadd, `:=`
   assert(x.nrows == r.len)
   assert(x.ncols == y.len)
   forO i, 0, x.nrows.pred:
