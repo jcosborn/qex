@@ -1,7 +1,7 @@
 import qex
 import gauge, physics/qcdTypes
 import mdevolve
-import os, strutils, algorithm, macros
+import os, strutils, algorithm, macros, times
 import random  # for seeding our RNGs
 
 const CHECK = true
@@ -119,7 +119,7 @@ proc maxTreeFix(f:seq, val:float, fixextra:bool) =
             for k in 0..<i: zerobefore = zerobefore and co[k] == 0
             if zerobefore: f[i]{j} := val
 
-type LBFGS[F] = object
+type LBFGS[F] = ref object
   ys,gamma:seq[float]
   y,s,v,u:seq[F]  ## v, u for the product form
   sortedix:seq[int]
@@ -133,6 +133,7 @@ type LBFGS[F] = object
 proc initLBFGS(lo:Layout, n:int, h0 = 1.0, lambda:float = 0.0, yscale:float = 1.0):auto =
   type F = type(lo.newGauge)
   var r {.noinit.} :LBFGS[F]
+  r.new
   r.p = 0
   r.first = true
   r.ys.newseq(n)
@@ -154,63 +155,67 @@ proc initLBFGS(lo:Layout, n:int, h0 = 1.0, lambda:float = 0.0, yscale:float = 1.
     r.u[i] = lo.newGauge
   r
 
-proc add[F](o:var LBFGS[F]; x,f:F) =
+proc add[F](o:LBFGS[F]; x,f:F) =
   var n = o.p
   if o.first:
     o.first = false
   else:
     # save new s = ln(x_old x.adj), y = yscale*(f_old-f)
     let n1 = if n == 0: o.ys.len - 1 else: n - 1
-    o.ys[n1] = 0.0
-    for mu in 0..<x.len:
-      for i in x[mu]:
-        when CHECKLBFGS:
-          var t = o.s[n1][mu][i] - x[mu][i]
-        else:
-          var t = ln(o.s[n1][mu][i] * x[mu][i].adj)
-          t.projectTAH t
-          t := t.im
-        when CHECK and false:
-          if i == 0:
-            echo "For mu = ",mu
-            let
-              si = o.s[n1][mu][i]
-              xi = x[mu][i]
-              xia = xi.adj
-            echo "xi_old: ",si
-            echo "xi: ",xi
-            echo "xi.adj: ",xia
-            echo "ln(xi_old*xi.adj): ",ln(si * xia)
-            echo "==t: ",t
-        o.s[n1][mu][i] := t
-        when CHECKLBFGS:
-          var r = o.y[n1][mu][i] - f[mu][i]
-        else:
-          var r = (o.y[n1][mu][i] - f[mu][i]).im
-        r *= o.yscale
-        when CHECK and false:
-          if i == 0:
-            let
-              yi = o.y[n1][mu][i]
-              fi = f[mu][i]
-            echo "fi_old: ",yi
-            echo "fi: ",fi
-            echo "fi-fi_old: ",fi-yi
-            echo "==r: ",r
-        o.y[n1][mu][i] := r
-      o.ys[n1] += o.y[n1][mu].redot o.s[n1][mu]
+    threads:
+      var ys = 0.0
+      for mu in 0..<x.len:
+        for i in x[mu]:
+          when CHECKLBFGS:
+            var t = o.s[n1][mu][i] - x[mu][i]
+          else:
+            var t = ln(o.s[n1][mu][i] * x[mu][i].adj)
+            t.projectTAH t
+            #t := t.im
+          when CHECK and false:
+            if i == 0:
+              echo "For mu = ",mu
+              let
+                si = o.s[n1][mu][i]
+                xi = x[mu][i]
+                xia = xi.adj
+              echo "xi_old: ",si
+              echo "xi: ",xi
+              echo "xi.adj: ",xia
+              echo "ln(xi_old*xi.adj): ",ln(si * xia)
+              echo "==t: ",t
+          o.s[n1][mu][i] := t
+          #when CHECKLBFGS:
+          #  var r = o.y[n1][mu][i] - f[mu][i]
+          #else:
+          #  var r = (o.y[n1][mu][i] - f[mu][i]).im
+          #r *= o.yscale
+          let r = o.yscale*(o.y[n1][mu][i] - f[mu][i])
+          when CHECK and false:
+            if i == 0:
+              let
+                yi = o.y[n1][mu][i]
+                fi = f[mu][i]
+              echo "fi_old: ",yi
+              echo "fi: ",fi
+              echo "fi-fi_old: ",fi-yi
+              echo "==r: ",r
+          o.y[n1][mu][i] := r
+        ys += o.y[n1][mu].redot o.s[n1][mu]
+      threadmaster:
+        o.ys[n1] = ys
     when CHECK and false:
       let ysd = o.y[n1].dot o.s[n1]
       echo "ysd: ",ysd
       echo "ys[",n1,"]: ",o.ys[n1]
-  for mu in 0..<x.len:
-    o.s[n][mu] := x[mu]  # TODO: we can elide this extra copy
-    o.y[n][mu] := f[mu]
+    for mu in 0..<x.len:
+      o.s[n][mu] := x[mu]  # TODO: we can elide this extra copy
+      o.y[n][mu] := f[mu]
   inc n
   if n == o.ys.len: n = 0
   o.p = n
 
-proc reverseadd[F](o:var LBFGS[F]; x,f:F) =
+proc reverseadd[F](o:LBFGS[F]; x,f:F) =
   # Eg. 4 states, after one forward pass, we have saved
   # 0'    1-2  2-3  3-0',  p = 1
   # 0'-1'  1'    2-3  3-0',  p = 2
@@ -231,104 +236,110 @@ proc reverseadd[F](o:var LBFGS[F]; x,f:F) =
     let t = o.ys[i]
     o.ys[i] = o.ys[p-1-i]
     o.ys[p-1-i] = t
-    for mu in 0..<o.y[p].len:
-      for e in o.y[i][mu]:
-        let t = o.y[i][mu][e]
-        o.y[i][mu][e] := o.y[p-1-i][mu][e]
-        o.y[p-1-i][mu][e] := t
-        let r = o.s[i][mu][e]
-        o.s[i][mu][e] := o.s[p-1-i][mu][e]
-        o.s[p-1-i][mu][e] := r
-  for mu in 0..<x.len:
-    o.s[p][mu] := x[mu]
-    o.y[p][mu] := f[mu]
+  threads:
+    for i in 0..<(p div 2):
+      for mu in 0..<o.y[p].len:  # FIXME: use one more index indirection to avoid copy
+        for e in o.y[i][mu]:
+          let t = o.y[i][mu][e]
+          o.y[i][mu][e] := o.y[p-1-i][mu][e]
+          o.y[p-1-i][mu][e] := t
+          let r = o.s[i][mu][e]
+          o.s[i][mu][e] := o.s[p-1-i][mu][e]
+          o.s[p-1-i][mu][e] := r
+    for mu in 0..<x.len:
+      o.s[p][mu] := x[mu]
+      o.y[p][mu] := f[mu]
   # o.ys[p] doesn't matter.
   o.p = 0
 
-proc A[F](o:LBFGS[F], k:int, z:var F) =
+proc A[F](o:LBFGS[F], k:int, z:F) =
   ## A_k z  ->  z  where  H_k = A_k A_k^\dag, A_k = (1 - u v^\dag) A_{k-1}
-  # A0 z -> z
-  let a0 = 1.0 / o.invsqrtH0
-  for mu in 0..<z.len: z[mu] *= a0
-  for j in 0..k:
-    let i = o.sortedix[j]
-    let vz = -(o.v[i].dot z)
-    for mu in 0..<z.len:
-      for e in z[mu]:
-        let t = z[mu][e] + vz * o.u[i][mu][e]
-        z[mu][e] := t
-proc Adag[F](o:LBFGS[F], k:int, z:var F) =
+  threads:
+    # A0 z -> z
+    let a0 = 1.0 / o.invsqrtH0
+    for mu in 0..<z.len: z[mu] *= a0
+    for j in 0..k:
+      let i = o.sortedix[j]
+      let vz = -(o.v[i].dot z)
+      for mu in 0..<z.len:
+        for e in z[mu]:
+          let t = z[mu][e] + vz * o.u[i][mu][e]
+          z[mu][e] := t
+proc Adag[F](o:LBFGS[F], k:int, z:F) =
   ## A_k^\dag z  ->  z  where  H_k = A_k A_k^\dag, A_k^\dag = A_{k-1}^\dag (1 - v u^\dag)
-  for j in countdown(k,0):
-    let i = o.sortedix[j]
-    let uz = -(o.u[i].dot z)
-    for mu in 0..<z.len:
-      for e in z[mu]:
-        let t = z[mu][e] + uz * o.v[i][mu][e]
-        z[mu][e] := t
-  # A0d z -> z
-  let a0 = 1.0 / o.invsqrtH0
-  for mu in 0..<z.len: z[mu] *= a0
-proc H[F](o:LBFGS[F], k:int, r:var F) =
+  threads:
+    for j in countdown(k,0):
+      let i = o.sortedix[j]
+      let uz = -(o.u[i].dot z)
+      for mu in 0..<z.len:
+        for e in z[mu]:
+          let t = z[mu][e] + uz * o.v[i][mu][e]
+          z[mu][e] := t
+    # A0d z -> z
+    let a0 = 1.0 / o.invsqrtH0
+    for mu in 0..<z.len: z[mu] *= a0
+proc H[F](o:LBFGS[F], k:int, r:F) =
   when CHECKLBFGS and false: echo "r: ",r
   o.Adag(k, r)
   when CHECKLBFGS and false: echo "Adr: ",r
   o.A(k, r)
   when CHECKLBFGS and false: echo "AAdr: ",r
-proc H[F](r:var F, o:LBFGS[F], k:int, z:F) =
+proc H[F](r:F, o:LBFGS[F], k:int, z:F) =
   for mu in 0..<z.len: r[mu] := z[mu]
   o.H(k,r)
-proc H[F](o:LBFGS[F], r:var F) =
+proc H[F](o:LBFGS[F], r:F) =
   let n = o.sortedlen
   o.H(n-1, r)
-proc H[F](r:var F, o:LBFGS[F], z:F) =
+proc H[F](r:F, o:LBFGS[F], z:F) =
   let n = o.sortedlen
   r.H(o, n-1, z)
-proc sqrtH[F](o:LBFGS[F]; x:var F) =
+proc sqrtH[F](o:LBFGS[F]; x:F) =
   ## A x  ->  x  where  H = A A^\dag
   let n = o.sortedlen
   o.A(n-1, x)
 
-proc B[F](o:LBFGS[F], k:int, z:var F) =
+proc B[F](o:LBFGS[F], k:int, z:F) =
   ## B_k z  ->  z  where  H_k^-1 = B_k B_k^\dag, B_k = (1 - v u^\dag / g) B_{k-1}
-  # B0 z -> z
-  let b0 = o.invsqrtH0
-  for mu in 0..<z.len: z[mu] *= b0
-  for j in 0..k:
-    let i = o.sortedix[j]
-    let uz = (o.u[i].dot z) / (-o.gamma[i])
-    for mu in 0..<z.len:
-      for e in z[mu]:
-        let t = z[mu][e] + uz * o.v[i][mu][e]
-        z[mu][e] := t
-proc Bdag[F](o:LBFGS[F], k:int, z:var F) =
+  threads:
+    # B0 z -> z
+    let b0 = o.invsqrtH0
+    for mu in 0..<z.len: z[mu] *= b0
+    for j in 0..k:
+      let i = o.sortedix[j]
+      let uz = (o.u[i].dot z) / (-o.gamma[i])
+      for mu in 0..<z.len:
+        for e in z[mu]:
+          let t = z[mu][e] + uz * o.v[i][mu][e]
+          z[mu][e] := t
+proc Bdag[F](o:LBFGS[F], k:int, z:F) =
   ## A_k^\dag z  ->  z  where  H_k^-1 = B_k B_k^\dag, B_k^\dag = B_{k-1}^\dag (1 - u v^\dag / g)
-  for j in countdown(k,0):
-    let i = o.sortedix[j]
-    let vz = (o.v[i].dot z) / (-o.gamma[i])
-    for mu in 0..<z.len:
-      for e in z[mu]:
-        let t = z[mu][e] + vz * o.u[i][mu][e]
-        z[mu][e] := t
-  # B0d z -> z
-  let b0 = o.invsqrtH0
-  for mu in 0..<z.len: z[mu] *= b0
-proc invH[F](o:LBFGS[F], k:int, r:var F) =
+  threads:
+    for j in countdown(k,0):
+      let i = o.sortedix[j]
+      let vz = (o.v[i].dot z) / (-o.gamma[i])
+      for mu in 0..<z.len:
+        for e in z[mu]:
+          let t = z[mu][e] + vz * o.u[i][mu][e]
+          z[mu][e] := t
+    # B0d z -> z
+    let b0 = o.invsqrtH0
+    for mu in 0..<z.len: z[mu] *= b0
+proc invH[F](o:LBFGS[F], k:int, r:F) =
   when CHECKLBFGS and false: echo "r: ",r
   o.Bdag(k, r)
   when CHECKLBFGS and false: echo "Bdr: ",r
   o.B(k, r)
   when CHECKLBFGS and false: echo "BBdr: ",r
-proc invH[F](r:var F, o:LBFGS[F], k:int, z:F) =
+proc invH[F](r:F, o:LBFGS[F], k:int, z:F) =
   for mu in 0..<z.len: r[mu] := z[mu]
   o.invH(k,r)
-proc invH[F](o:LBFGS[F], r:var F) =
+proc invH[F](o:LBFGS[F], r:F) =
   let n = o.sortedlen
   o.invH(n-1, r)
-proc invH[F](r:var F, o:LBFGS[F], z:F) =
+proc invH[F](r:F, o:LBFGS[F], z:F) =
   let n = o.sortedlen
   r.invH(o, n-1, z)
-proc sqrtInvH[F](o:LBFGS[F]; x:var F) =
+proc sqrtInvH[F](o:LBFGS[F]; x:F) =
   ## B x  ->  x  where  H^-1 = B B^\dag
   let n = o.sortedlen
   o.B(n-1, x)
@@ -348,18 +359,19 @@ when CHECKLBFGSEIGEN:
           yp = y[i*dy].addr         # Output
           m = cast[ptr MI](primme.matrix)
         var g = m.tmpgauge
-        g.fromPrimmeArrayGauge xp
+        threads: g.fromPrimmeArrayGauge xp
         m.lbfgs.op g
-        g.toPrimmeArrayGauge yp
+        threads: g.toPrimmeArrayGauge yp
       err[] = 0
   genMatvec(invH)
   genMatvec(H)
   genMatvec(sqrtH)
 
-proc prep[F](o:var LBFGS[F], cutoff = 0.0, reduce = 0) =
+proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
   ## For differences y and s, the item k has the difference between k and k+1.
   ## Before using the approximation, o.p points to the current updating stream number.
   ## We sort according to ys, excluding item o.p and o.p-1, so we don't depend on ourselves.
+  let t0 = epochTime()
   let e0 = o.p
   var e1 = e0 - 1
   if e1 < 0: e1 = o.ys.len - 1
@@ -381,8 +393,13 @@ proc prep[F](o:var LBFGS[F], cutoff = 0.0, reduce = 0) =
   var unset = true
   for j in 0..<o.sortedix.len:
     let i = o.sortedix[j]
-    let yy = o.y[i].norm2
-    let ss = o.s[i].norm2
+    var yy,ss:float
+    threads:
+      let y2 = o.y[i].norm2
+      let s2 = o.s[i].norm2
+      threadmaster:
+        yy = y2
+        ss = s2
     echo j," ix ",i," ys ",o.ys[i]," ys/yy ",(o.ys[i]/yy)," yy ",yy," ss ",ss
     if unset and o.ys[i] <= cutoff:
       o.sortedlen = j
@@ -396,11 +413,16 @@ proc prep[F](o:var LBFGS[F], cutoff = 0.0, reduce = 0) =
     let i = o.sortedix[j]
     o.u[i].H(o, j-1, o.s[i])  # temporarily u <- G_{k-1} s_k  (j is the actual order number)
     o.v[i].invH(o, j-1, o.y[i])  # temporarily v <- G_{k-1}^{-1} y_k
-    let
-      ss = o.s[i].norm2
-      sgs = o.s[i].redot o.u[i]
-      # sggs = o.u[i].norm2
-      ygiy = o.y[i].redot o.v[i]
+    var ss,sgs,ygiy:float
+    threads:
+      let
+        tss = o.s[i].norm2
+        tsgs = o.s[i].redot o.u[i]
+        tygiy = o.y[i].redot o.v[i]
+      threadmaster:
+        ss = tss
+        sgs = tsgs
+        ygiy = tygiy
     var delta1 = o.lambda*ss/sgs  # = 1-delta
     if delta1 > 1.0: delta1 = 1.0
     let
@@ -416,15 +438,19 @@ proc prep[F](o:var LBFGS[F], cutoff = 0.0, reduce = 0) =
       csv = cs*(1.0+theta)
     when CHECK:
       echo j," delta: ",delta," sgs: ",sgs," ygiy: ",ygiy," gamma: ",o.gamma[i].float
-    for mu in 0..<o.u[i].len:
-      for e in o.u[i][mu]:
-        let t = cy*o.y[i][mu][e] + cs*o.u[i][mu][e]
-        o.u[i][mu][e] := t
-    for mu in 0..<o.v[i].len:
-      for e in o.v[i][mu]:
-        let t = cyv*o.v[i][mu][e] + csv*o.s[i][mu][e]
-        o.v[i][mu][e] := t
+    threads:
+      for mu in 0..<o.u[i].len:
+        for e in o.u[i][mu]:
+          let t = cy*o.y[i][mu][e] + cs*o.u[i][mu][e]
+          o.u[i][mu][e] := t
+      for mu in 0..<o.v[i].len:
+        for e in o.v[i][mu]:
+          let t = cyv*o.v[i][mu][e] + csv*o.s[i][mu][e]
+          o.v[i][mu][e] := t
+  let t1 = epochTime()
+  echo "LBFGS prep time: ",t1-t0
   when CHECKLBFGSEIGEN:
+    let te0 = epochTime()
     type MatrixInfo = object
       lbfgs: type(o)
       tmpgauge: type(o.y[0])
@@ -502,6 +528,8 @@ proc prep[F](o:var LBFGS[F], cutoff = 0.0, reduce = 0) =
         echo i," ev ",vals[i]," rnorm ",rnorms[i]
     o.lbfgseigen(primme_smallest)
     o.lbfgseigen(primme_largest)
+    let te1 = epochTime()
+    echo "LBFGS eigen time: ",te1-te0
     #qexExit 0
 
 when CHECKLBFGS:
@@ -554,6 +582,7 @@ when CHECKLBFGS:
         for i in 0..<m.len:
           result[i] += m[i][j] * y[j]
     var cklbfgsr {.noinit.} :LBFGS[F]
+    cklbfgsr.new
     cklbfgsr.p = 0
     cklbfgsr.first = true
     cklbfgsr.ys.newseq(nseq)
@@ -619,15 +648,15 @@ let
   steps = intParam("steps", 10)
   qntau = floatParam("qntau", tau)
   qnsteps = intParam("qnsteps", steps)
-  qnyscut = floatParam("qnyscut",9)
+  qnyscut = floatParam("qnyscut",0)
   qnyscale = floatParam("qnyscale", 1.0/(2.0*beta))  # inverse diagonal term of the Hessian
   qnh0 = floatParam("qnh0",1.0)  # initial diagonal term of the Hessian
   seed = intParam("seed", 11^11)
-  gfix = intParam("gfix", 0).bool
+  gfix = intParam("gfix", 1).bool
   gfixextra = intParam("gfixextra", 0).bool
   gfixunit = intParam("gfixunit", 1).bool
   nstream = intParam("nstream", 10)
-  lambda = floatParam("lambda", 0)
+  lambda = floatParam("lambda", 0.1)
 
 echo "beta = ",beta
 echo "trajs = ",trajs
@@ -724,6 +753,7 @@ var
   # md = mkOmelyan4MN5FV(steps = steps, V = mdv, T = mdt)
 
 for n in 1..trajs:
+  let tt0 = epochTime()
   if n == qnbegin:
     echo "STARTING QN update"
     md.steps = qnsteps
@@ -735,14 +765,14 @@ for n in 1..trajs:
       proc checklbfgsmom =
         var p2 = 0.0
         threads: p.randomTAH r
-        if gfix: p.maxTreeFix(0.0, gfixextra)  # FIXME maybe only one is needed
+        if gfix: p.maxTreeFix(0.0, gfixextra)
         threads:
           var p2t = 0.0
           for i in 0..<p.len:
             p2t += p[i].norm2
           threadMaster: p2 = p2t
         lbfgs.sqrtH p
-        if gfix: p.maxTreeFix(0.0, gfixextra)  # FIXME
+        #if gfix: p.maxTreeFix(0.0, gfixextra)  # FIXME
         hinvp.invH(lbfgs, p)
         #threads:
         block:
@@ -767,6 +797,7 @@ for n in 1..trajs:
       qexExit 0
 
   for ns in 0..<nstream:
+    let ts0 = epochTime()
     nsnow = if forward: ns else: nstream-1-ns
     echo "Begin traj: ",n," nsNow: ",nsnow," ",(if forward: "forward" else: "backward")
     if n >= qnbegin:
@@ -799,7 +830,7 @@ for n in 1..trajs:
 
     var p2 = 0.0
     threads: p.randomTAH r
-    if gfix: p.maxTreeFix(0.0, gfixextra)  # FIXME maybe only one is needed
+    if gfix: p.maxTreeFix(0.0, gfixextra)
     if CHECK or n < qnbegin:
       threads:
         var p2t = 0.0
@@ -809,7 +840,7 @@ for n in 1..trajs:
 
     if n >= qnbegin:
       lbfgs.sqrtH p
-      if gfix: p.maxTreeFix(0.0, gfixextra)  # FIXME
+      #if gfix: p.maxTreeFix(0.0, gfixextra)  # FIXME maybe remove this one
       hinvp.invH(lbfgs, p)
       threads:
         var p2t = 0.0
@@ -914,6 +945,12 @@ for n in 1..trajs:
         f.getforce gs[nstream-1-nsnow]
         lbfgs.reverseadd(x = gs[nstream-1-nsnow], f = f)
         forward = not forward
+
+    let ts1 = epochTime()
+    echo "Stream trajectory time: ",ts1-ts0
+
+  let tt1 = epochTime()
+  echo "Total trajectory time: ",tt1-tt0
 
 echoTimers()
 checkgc()
