@@ -92,21 +92,23 @@ proc indexOf*[T](x: openArray[T], y: any): int =
   let n = x.len
   while result<n and x[result]!=y: inc result
 
-proc `*`*[A:array](x: A, y0: SomeNumber): A {.inline,noInit.} =
-  let y = (type(result[0]))(y0)
-  for i in 0..<result.len:
-    result[i] = x[i] * y
-proc `*`*[A:array](x0: SomeNumber, y: A): A {.inline,noInit.} =
-  let x = (type(result[0]))(x0)
-  for i in 0..<result.len:
-    result[i] = x * y[i]
+proc `*`*(x: array, y: SomeNumber): auto {.inline,noInit.} =
+  var r: array[x.len, type(x[0]*y)]
+  for i in 0..<r.len:
+    r[i] = x[i] * y
+  r
+proc `*`*(x: SomeNumber, y: array): auto {.inline,noInit.} =
+  var r: array[y.len, type(x*y[0])]
+  for i in 0..<r.len:
+    r[i] = x * y[i]
+  r
 
 #proc `+`*[A:array](x,y: A): A {.inline,noInit.} =
 #  for i in 0..<result.len:
 #    result[i] = x[i] + y[i]
 
-proc `+`*[N1,T1,N2,T2](x: array[N1,T1], y: array[N2,T2]): auto {.inline,noInit.} =
-  const n = min(x.len, y.len)
+proc `+`*[N,T1,T2](x: array[N,T1], y: array[N,T2]): auto {.inline,noInit.} =
+  const n = x.len
   var r: array[n, type(x[0]+y[0])]
   for i in 0..<n:
     r[i] = x[i] + y[i]
@@ -116,6 +118,8 @@ proc `+=`*[T](x:var openArray[T], y: openArray[T]) {.inline.} =
   let n = x.len
   for i in 0..<n:
     x[i] += y[i]
+
+#[
 template makeArrayOverloads(n:int):untyped =
   proc `+`*[T](x,y:array[n,T]):array[n,T] {.inline.} =
     for i in 0..<x.len:
@@ -129,6 +133,7 @@ template makeArrayOverloads(n:int):untyped =
 makeArrayOverloads(4)
 makeArrayOverloads(8)
 makeArrayOverloads(16)
+]#
 
 #proc sum*[T](x:openArray[T]): auto =
 #  result = x[0]

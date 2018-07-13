@@ -494,8 +494,6 @@ template foldl*(f,n,op:untyped):untyped =
     r = op
   r
 
-import stagSolve
-
 when isMainModule:
   import rng
   proc runtest(v1,v2,sdAll,sdEven,sdOdd,s,m:any) =
@@ -524,10 +522,10 @@ when isMainModule:
       for e in v1:
         template x(d:int):untyped = lo.vcoords(d,e)
         when compiles(v1[e].len):
-          v1[e][0].re := foldl(x, 4, a*10+b)
+          v1[e][0].re := foldl(x, 4, a*10.int16+b)
         else:
           for i in 0..<v1[e].ncols:
-            v1[e][0,i].re := foldl(x, 4, a*10+b)
+            v1[e][0,i].re := foldl(x, 4, a*10.int16+b)
         #echo v1[e][0]
       threadBarrier()
       stagD(sdAll, v2, g, v1, 0.5)
