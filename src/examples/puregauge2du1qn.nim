@@ -415,7 +415,7 @@ proc prep[F](o:var LBFGS[F], cutoff = 0.0, reduce = 0) =
       cyv = cy*theta
       csv = cs*(1.0+theta)
     when CHECK:
-      echo j," delta: ",delta," sgs: ",sgs," ygiy: ",ygiy," gamma: ",o.gamma[i]
+      echo j," delta: ",delta," sgs: ",sgs," ygiy: ",ygiy," gamma: ",o.gamma[i].float
     for mu in 0..<o.u[i].len:
       for e in o.u[i][mu]:
         let t = cy*o.y[i][mu][e] + cs*o.u[i][mu][e]
