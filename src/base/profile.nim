@@ -38,10 +38,14 @@ type
 var ticSeq* = newSeq[ptr TimerInfo](0)
 var tocSeq* = newSeq[ptr TimerInfo](0)
 
-macro getFunctionName:auto =
+#var cFunc {.importC: "__func__", noDecl.}: cstring
+#template getFunctionName(): untyped = $cFunc
+template getFunctionName(): untyped = ""
+
+#macro getFunctionName:auto =
   #let s = callsite()
   #echo s.repr
-  return newLit("")
+  #return newLit("")
 
 #{.emit:"#include <stdio.h>".}
 #template ctrace(s:cstring):untyped =
@@ -50,37 +54,45 @@ macro getFunctionName:auto =
 #endif""".}
 #macro ctrace(s:string):auto =
 
+proc init*(ti: var TimerInfo, s: string, timer: var TicType, inst: tuple) =
+  ti.name = s
+  ti.timerP = timer.addr
+  ti.location = inst
+  #echo "tic", ti.location, cast[ByteAddress](ti.timerP)
+  ticSeq.add ti.addr
 
 template tic*(n= -1):untyped =
-  var ti{.global.}:TimerInfo
+  var ti{.global.}: TimerInfo
   var timer{.global,inject.}: TicType
   if threadNum==0:
     if ti.timerP==nil:
-      ti.name = getFunctionName()
-      ti.timerP = timer.addr
-      ti.location = instantiationInfo(n)
+      ti.init(getFunctionName(), timer, instantiationInfo(n))
+      #ti.name = getFunctionName()
+      #ti.timerP = timer.addr
+      #ti.location = instantiationInfo(n)
       #echo "tic", ti.location, cast[ByteAddress](ti.timerP)
-      ticSeq.add ti.addr
+      #ticSeq.add ti.addr
     inc ti.count
     timer = getTics()
 template tocI(f:untyped; s=""; n= -1):untyped =
   var ti{.global.}:TimerInfo
   if threadNum==0:
     if ti.timerP==nil:
-      ti.name = s
-      ti.timerP = timer.addr
-      ti.location = instantiationInfo(n)
+      ti.init(s, timer, instantiationInfo(n))
+      #ti.name = s
+      #ti.timerP = timer.addr
+      #ti.location = instantiationInfo(n)
       #echo "toc", ti.location, cast[ByteAddress](ti.timerP)
-      tocSeq.add ti.addr
+      #tocSeq.add ti.addr
     ti.flops += f.float
     inc ti.count
     ti.seconds += ticDiffSecs(getTics(), timer)
 template toc*(s=""; n= -1; flops:untyped):untyped = tocI(flops, s, n-1)
 template toc*(n= -1; flops:untyped):untyped = tocI(flops, "", n-1)
-template toc*(s:string; n:int):untyped = tocI(-1, s, n-1)
-template toc*(s:string):untyped = tocI(-1, s, -2)
-template toc*(n:int):untyped = tocI(-1, "", n-1)
-template toc*():untyped = tocI(-1, "", -2)
+template toc*(s:string; n:int):untyped = tocI(0, s, n-1)
+template toc*(s:string):untyped = tocI(0, s, -2)
+template toc*(n:int):untyped = tocI(0, "", n-1)
+template toc*():untyped = tocI(0, "", -2)
 template getElapsedTime*(): untyped {.dirty.} =
   mixin timer
   ticDiffSecs(getTics(), timer)

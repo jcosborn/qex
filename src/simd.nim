@@ -108,7 +108,7 @@ when declared(SimdD8) and declared(SimdS8):
     assign(r, x)
   template assign*(r: SimdD8, x: SimdS8): untyped =
     r = toDouble(x)
-  converter promote*(x: SimdS8): SimdD8 =
+  converter promote*(x: SimdS8): SimdD8 {.inline,noInit.} =
     assign(result, x)
   template isub*(r: SimdD8, x: SimdS8): untyped =
     isub(r, toDouble(x))
@@ -127,7 +127,7 @@ when declared(SimdS16):
     r = toSingle(x)
   template assign*(r: SimdD16, x: SimdS16): untyped =
     r = toDouble(x)
-  converter promote*(x: SimdS16): SimdD16 =
+  converter promote*(x: SimdS16): SimdD16 {.inline,noInit.} =
     assign(result, x)
   template toSingleImpl*(x: SimdS16): untyped = x
   template toSingleImpl*(x: SimdD16): untyped = toSingle(x)
