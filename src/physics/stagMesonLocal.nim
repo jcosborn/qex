@@ -52,6 +52,7 @@ proc stagMesons*(v: any) =
     echo t, " ", r
 
 proc stagMesonsV*(v: any) =
+  mixin `:=`
   let l = v.l
   let nt = l.physGeom[3]
   var cv = newAlignedMem[array[8,type(v[0].norm2())]](nt)
