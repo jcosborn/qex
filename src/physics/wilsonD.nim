@@ -433,7 +433,7 @@ proc solve2*(s:Wilson; r,x:Field; m:SomeNumber; res2:float) =
     threadBarrier()
     r := t
 
-template foldl*(f,n,op:untyped):untyped =
+template foldl(f,n,op:untyped):untyped =
   var r:type(f(0))
   r = f(0)
   for i in 1..<n:
@@ -477,10 +477,10 @@ when isMainModule:
       for e in v1:
         template x(d:int):untyped = lo.vcoords(d,e)
         when compiles(v1[e].len):
-          v1[e][0][0].re := foldl(x, 4, a*10+b)
+          v1[e][0][0].re := foldl(x, 4, a*10.int16+b)
         else:
           for i in 0..<v1[e].ncols:
-            v1[e][0,i].re := foldl(x, 4, a*10+b)
+            v1[e][0,i].re := foldl(x, 4, a*10.int16+b)
         #echo v1[e][0]
       threadBarrier()
       wilsonD(sdAll, v2, g, v1, 0.5)
