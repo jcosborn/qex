@@ -73,16 +73,18 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
       var rhoNew: Cmplx
       subset:
         rhoNew := r0.dot(r)
+      toc("rhoNew", flops=4*numNumbers(r[0])*sub.lenOuter)
       #echo "rhoNew: ", rhoNew
 
       # beta = (rhoNew/rho)*(alpha/omega)
-      let beta = (rhoNew/rho)*(alpha/omega)
+      #let beta = (rhoNew/rho)*(alpha/omega)
+      let beta = (rhoNew*alpha)/(rho*omega)
       let rho = rhoNew
 
       # p = r + beta(p - omega v)
       subset:
         p := r + beta*(p - omega*v)
-      toc("p update", flops=4*numNumbers(r[0])*sub.lenOuter)
+      toc("p update", flops=8*numNumbers(r[0])*sub.lenOuter)
       #echo("p2: ", p.norm2)
 
       # Apply the matrix.
@@ -97,8 +99,9 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
         let a = r0.dot(v)
         alpha := rho/a
         #alpha := rho/r0.dot(v)
+        toc("alpha", flops=4*numNumbers(r0[0])*sub.lenOuter)
         s := r - alpha*v
-        toc("s", flops=2*numNumbers(s[0])*sub.lenOuter)
+        toc("s", flops=4*numNumbers(s[0])*sub.lenOuter)
         r2 := s.norm2
         toc("r2", flops=2*numNumbers(s[0])*sub.lenOuter)
 
@@ -110,24 +113,26 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
         # Update the solution one last time.
         subset:
           x += alpha*p
-        toc("x", flops=2*numNumbers(s[0])*sub.lenOuter)
+        toc("x", flops=4*numNumbers(s[0])*sub.lenOuter)
       else:
         tic()
         # t = As
         threadBarrier()
         A(t,s)
         threadBarrier()
+        toc("t")
 
         # Update x, r.
         subset:
           # omega = <t,s>/<t,t>
           omega := t.dot(s)/t.norm2
+          toc("omega")
           x += alpha*p + omega*s
-          toc("x", flops=4*numNumbers(s[0])*sub.lenOuter)
+          toc("x", flops=8*numNumbers(s[0])*sub.lenOuter)
           r := s - omega*t
-          toc("r", flops=3*numNumbers(s[0])*sub.lenOuter)
+          toc("r", flops=4*numNumbers(r[0])*sub.lenOuter)
           r2 := r.norm2
-          toc("r2", flops=2*numNumbers(s[0])*sub.lenOuter)
+          toc("r2", flops=2*numNumbers(r[0])*sub.lenOuter)
 
     toc("bicgstab iterations")
     if threadNum==0: finalIterations = itn

@@ -99,6 +99,7 @@ when declared(SimdD8) and declared(SimdS8):
   proc toSingle*(x: SimdD8): SimdS8 {.inline,noInit.} =
     for i in 0..<8:
       result[i] = x[i]
+  template toSingle*(x: typedesc[SimdD8]): untyped = SimdS8
   #proc toDouble*(x: SimdS8): SimdD8 {.inline,noInit.} =
   #  for i in 0..<8:
   #    result[i] = x[i]

@@ -268,7 +268,8 @@ template mulSVV*(rr:typed; xx,yy:typed):untyped =
 template mulVVS*(r:typed; x,y:typed):untyped =
   mixin mul
   assert(r.len == x.len)
-  load(ty, y)
+  #load(ty, y)
+  let ty = y
   forO i, 0, r.len.pred:
     mul(r[i], x[i], ty)
 

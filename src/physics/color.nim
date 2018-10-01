@@ -32,6 +32,8 @@ forwardFunc(Color, simdLength)
 template numberType*[T](x: typedesc[Color[T]]): untyped = numberType(T)
 #template numNumbers*[T](x: typedesc[Color[T]]): untyped = numberType(T)
 template numNumbers*(x: Color): untyped = numNumbers(x[])
+template toSingle*[T](x: typedesc[Color[T]]): untyped =
+  Color[toSingle(type(T))]
 
 template row*(x: Color, i: untyped): untyped =
   mixin row
@@ -82,6 +84,8 @@ template imsub*(r: var Color, x: Color2, y: Color3) =
   imsub(r[], x[], y[])
 template `+`*(r: Color, x: SomeNumber): untyped =
   asColor(r[] + x)
+template `+`*(r: SomeNumber, x: Color): untyped =
+  asColor(r + x[])
 template `-`*(r: Color, x: SomeNumber): untyped =
   asColor(r[] - x)
 template `+`*(r: Color, x: AsComplex): untyped =
@@ -112,6 +116,8 @@ template mul*(r: var Color, x: Color2, y: Color3) =
   mul(r[], x[], y[])
 template mul*(r: var Color, x: SomeNumber, y: Color3) =
   mul(r[], x, y[])
+template mul*(r: var Color, x: Color2, y: SomeNumber) =
+  mul(r[], x[], y)
 template mul*(r: var Color, x: AsComplex, y: Color3) =
   mul(r[], x, y[])
 template mul*(x: AsComplex, y: Color2): untyped =

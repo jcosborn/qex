@@ -35,7 +35,7 @@ macro makeIdent*(x: untyped): untyped =
 
 macro delayExpansion*(x:untyped):auto = result = x
 
-macro `$`*(t:typedesc):auto =
+macro `$`*(t: type): untyped =
   result = newLit(t.getType[1].repr)
 
 macro echoType*(x:typed):auto =

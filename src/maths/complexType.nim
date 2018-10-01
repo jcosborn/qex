@@ -55,15 +55,15 @@ macro im*(x: ComplexObj{nkObjConstr}): untyped =
 
 template `re=`*(x: ComplexObj, y: untyped): untyped =
   #dumpTree: x
-  mixin `:=`
-  x.reX := y
-  #assign(x.reX, y)
+  #mixin `:=`
+  #x.reX := y
+  assign(x.reX, y)
 #template `re=`*[TR,TI](x: ComplexObj[TR,TI], y: TR): untyped =
 #  #x.reX = y
 #  assign(x.reX, y)
 template `im=`*(x: ComplexObj, y: untyped): untyped =
-  x.imX := y
-  #assign(x.imX, y)
+  #x.imX := y
+  assign(x.imX, y)
 #template `im=`*[TR,TI](x: ComplexObj[TR,TI], y: TI): untyped =
 #  #x.imX = y
 #  assign(x.imX, y)
@@ -88,6 +88,11 @@ template simdType*[TR,TI](x: ComplexObj[TR,TI]): untyped =
   simdType(TR)
 template simdSum*(x: ComplexObj): untyped =
   newComplex(simdSum(x.re),simdSum(x.im))
+
+template toSingle*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): untyped =
+  ComplexObj[toSingle(type(TR)),toSingle(type(TI))]
+template toSingle*[T](x: typedesc[ComplexProxy[T]]): untyped =
+  ComplexProxy[toSingle(type(T))]
 
 template isComplex*(x: ComplexProxy): untyped = true
 template asComplex*(x: untyped): untyped = newComplexProxy(x)

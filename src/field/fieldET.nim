@@ -36,8 +36,10 @@ type
     field*:T
     dir*:int
     ln*:int
-  Field2* = distinct Field
-  Field3* = distinct Field
+  #Field2* = distinct Field
+  #Field3* = distinct Field
+  Field2*[V:static[int],T] = Field[V,T]
+  Field3*[V:static[int],T] = Field[V,T]
   SomeField* = Field | Subsetted | FieldBinop | FieldAddSub | FieldMul|Shifted | FieldUnop
   #SomeField2* = Field | Subsetted | FieldBinop | FieldAddSub|FieldMul|Shifted
   SomeField2* = concept x
@@ -105,6 +107,10 @@ template toSingleImpl*(x: SomeField): untyped =
 template toDoubleImpl*(x: SomeField): untyped =
   fieldUnop(foToDouble, x)
 
+template evalType*[V,T](x: FieldUnop[foToSingle,Field[V,T]]): untyped =
+  mixin toSingle
+  Field2[V,toSingle(type(T))]
+
 proc new*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) =
   x.l = l
   x.s.new(l.nSitesOuter)
@@ -117,10 +123,17 @@ proc new*[V:static[int],T](x:var FieldObj[V,T]; y:Field) = x.new(y.l)
 proc new*[V:static[int],T](x:var Field[V,T]; y:Field) = x.new(y.l)
 proc newField*[V:static[int],T](l:Layout[V]; t:typedesc[T]):Field[V,T] =
   result.new(l)
-proc newOneOf*(x:Field):auto =
-  var r:type(x)
+proc newOneOf*(x: Field): auto =
+  var r: type(x)
   r.new(x.l)
   r
+template l*(x: FieldUnop): untyped = x.f1.l
+proc newOneOf*(x: FieldUnop): auto =
+  var r: evalType(x)
+  r.new(x.l)
+  r
+template new*(x: typedesc[Field], l: Layout): untyped =
+  newField(l, x.T)
 
 template isWrapper*(x: SomeField): untyped = false
 template `[]`*(x:Field; i:int):untyped = x.s[i]
@@ -346,25 +359,41 @@ proc applyOp1(x,y:NimNode; op:string):auto =
       #mixin isMatrix
       #echoAll isMatrix(`x`[e])
       `o`(tx[e], ty)
+
+var exprInstInfo {.compiletime.}: type(instantiationInfo())
+macro debugExpr(body: typed): untyped =
+  #let ii = instantiationInfo(1)
+  #let ii = lineInfoObj(body)
+  #let ii = lineInfo(body)
+  let ii = $exprInstInfo
+  let br = body.repr
+  result = newStmtList()
+  result.add quote do:
+    {.emit: ["\n/* debugExpr\n", `ii`, "\n", `br`, "\n*/\n"] .}
+  result.add body
+  echo ii
+  echo br
+
 proc applyOp2(x,y:NimNode; ty:typedesc; op:string):auto =
   #echo ty.getType.treeRepr
   #echo ty.getType.getImpl.treeRepr
   let o = ident(op)
   result = quote do:
-    let xx = `x`
-    let yy = `y`
-    for e in xx:
-      when noAlias:
-        staticTraceBegin: `o Field2`
-        type Fpx = object
-          v: type(xx[e])
-        var xp = cast[ptr carray[Fpx]](xx[0].addr)
-        `o`(xp[][e].v, indexField(yy, e))
-        staticTraceEnd: `o Field2`
-      else:
-        staticTraceBegin: `o Field2`
-        `o`(xx[e], indexField(yy, e))
-        staticTraceEnd: `o Field2`
+    #debugExpr:
+      let xx = `x`
+      let yy = `y`
+      for e in xx:
+        when noAlias:
+          staticTraceBegin: `o Field2`
+          type Fpx = object
+            v: type(xx[e])
+          var xp = cast[ptr carray[Fpx]](xx[0].addr)
+          `o`(xp[][e].v, indexField(yy, e))
+          staticTraceEnd: `o Field2`
+        else:
+          staticTraceBegin: `o Field2`
+          `o`(xx[e], indexField(yy, e))
+          staticTraceEnd: `o Field2`
 template makeOps(op,f,fM,s: untyped): untyped {.dirty.} =
   macro f*(x:Subsetted; y:notSomeField2):auto = applyOp1(x,y,s)
   macro f*(x:Subsetted; y:SomeField2):auto = applyOp2(x,y,int,s)
@@ -385,19 +414,25 @@ template makeOps(op,f,fM,s: untyped): untyped {.dirty.} =
       staticTraceEnd: `f FieldAny`
   when profileEqns:
     template op*(x:Field; y:any):untyped =
+      static: exprInstInfo = instantiationInfo(-1)
       block:
         tic(-2)
         f(x, y)
         toc(-2)
     template op*(x:Subsetted; y:any):untyped =
+      static: exprInstInfo = instantiationInfo(-1)
       block:
         tic(-2)
         f(x, y)
         toc(-2)
   else:
-    template op*(x:Field; y:any):untyped = f(x, y)
+    template op*(x:Field; y:any):untyped =
+      static: exprInstInfo = instantiationInfo(1)
+      f(x, y)
     #template op*(x:var Field; y:any):untyped = f(x, y)
-    template op*(x:Subsetted; y:any):untyped = f(x, y)
+    template op*(x:Subsetted; y:any):untyped =
+      static: exprInstInfo = instantiationInfo(1)
+      f(x, y)
 makeOps(`:=`, assign, assignM, "assign")
 makeOps(`+=`, iadd, iaddM, "iadd")
 makeOps(`-=`, isub, isubM, "isub")

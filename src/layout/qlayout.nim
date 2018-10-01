@@ -97,7 +97,7 @@ proc lex_i*(x: ptr cArray[cint]; s: ptr cArray[cint];
     dec(i)
   return l
 
-when 0:
+when false:
   # x[0] is slowest
   proc lexr_i*(x: ptr cint; s: ptr cint; d: ptr cint; ndim: cint): cint = 
     var l: cint = 0

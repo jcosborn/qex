@@ -143,7 +143,7 @@ template toSingleDefault*(xx: typed): untyped =
       #(ToSingle[type(x)])(x)
       cast[ToSingle[type(x)]](x)
       #cast[ToSingle[type(x)]]((var t=x; t.addr))
-template toSingle*(xx:typed):untyped =
+template toSingle*(xx: not typedesc):untyped =
   mixin isVector, isMatrix
   lets(x,xx):
     when compiles(toSingleImpl(x)):

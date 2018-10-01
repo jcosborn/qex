@@ -2,64 +2,51 @@ import qex
 import mgblocks
 
 type
-  MgRestrictor*[VF,VC: static[int]; R] = object
-    mgb: MgBlock[VF,VC]
-    rv: Field[VF,R]
-  MgProlongator*[VF,VC: static[int]; P] = object
-    mgb: MgBlock[VF,VC]
-    pv: Field[VF,P]
+  MgTransfer*[VF,VC: static[int]; T] = object
+    mgb*: MgBlock[VF,VC]
+    v*: Field[VF,T]
 
-proc newMgRestrictor*[VF,VC: static[int]; R](mgb: MgBlock[VF,VC],
-                                  rv: Field[VF,R]): MgRestrictor[VF,VC,R] =
+proc newMgTransfer*[VF,VC: static[int]; T](mgb: MgBlock[VF,VC],
+                                  tv: Field[VF,T]): MgTransfer[VF,VC,T] =
   result.mgb = mgb
-  result.rv = rv
-
-proc newMgProlongator*[VF,VC: static[int]; P](mgb: MgBlock[VF,VC],
-                                  pv: Field[VF,P]): MgProlongator[VF,VC,P] =
-  result.mgb = mgb
-  result.pv = pv
+  result.v = tv
 
 template paritySitesV*(f: Field, par: int): untyped =
   var s: Subset
   s.paritySubset(f.l, par)
   f[s]
 
-proc apply*[VF,VC:static[int];R](r: MgRestrictor[VF,VC,R],
-                                 fc: var Field, ff: Field2, par=0) =
-  let nv = r.rv[0].len
-  #var s = 0.0
-  #var s: type(dot(r.rv[0][0],ff[0]))
-  for fsv in ff.paritySitesV(par):
+proc restrict*(r: MgTransfer, fc: Field, ff: Field2, par=0) =
+  fc := 0
+  let VF = r.VF
+  let VC = r.VC
+  let nv = r.v[0].len
+  #for fsv in ff.paritySitesV(par):
+  for fsv in ff:
     for i in 0..<nv:
-      let t = dot(r.rv[fsv][i],ff[fsv])
-      #s += t
+      let t = dot(r.v[fsv][i],ff[fsv])
       for j in 0..<VF:
         let cs = r.mgb.csites[fsv*VF+j]
-        #if i==0: echo "fsv: ", fsv, "  j: ", j, "  cs: ", cs
         let csv = cs div VC
         let cj = cs mod VC
         fc[csv][i].re[cj] = fc[csv][i].re[cj] + t.re[j]
         fc[csv][i].im[cj] = fc[csv][i].im[cj] + t.im[j]
-        #let tt = fc[csv][i].re[cj] + t.re[j]
-        #fc[csv][i].re[cj] = tt
-        #if i==0: s += t*t
-  #echo "s: ", s
 
-proc apply*[VF,VC:static[int];P](p: MgProlongator[VF,VC,P],
-                                 ff: var Field, fc: Field2, par=0) =
-  let nv = p.pv[0].len
-  for fsv in ff.paritySitesV(par):
+proc prolong*[VF,VC:static[int];T,TF,TC](
+    p: MgTransfer[VF,VC,T], ff: Field[VF,TF], fc: Field2[VC,TC], par=0) =
+  ff := 0
+  let nv = p.v[0].len
+  #for fsv in ff.paritySitesV(par):
+  for fsv in ff:
     for i in 0..<nv:
-      var t: type(dot(p.pv[fsv][i],ff[fsv]))
+      var t: type(dot(p.v[fsv][i],ff[fsv]))
       for j in 0..<VF:
         let cs = p.mgb.csites[fsv*VF+j]
         let csv = cs div VC
         let cj = cs mod VC
-        #let tt = fc[csv][i].re[cj]
-        #t.re[j] = tt
         t.re[j] = fc[csv][i].re[cj]
         t.im[j] = fc[csv][i].im[cj]
-      ff[fsv] += t * p.pv[fsv][i]
+      ff[fsv] += t * p.v[fsv][i]
 
 when isMainModule:
   qexInit()
@@ -88,12 +75,6 @@ when isMainModule:
   template assign(r: var SMgR1V, x: SMgR1V) =
     for i in 0..<r.len:
       r[i] := x[i]
-  proc mgextract(r: var Field, x: Field2, n: int) =
-    for e in r:
-      r[e] := x[e][n]
-  proc mginsert(r: var Field, x: Field2, n: int) =
-    for e in r:
-      r[e][n] := x[e]
   proc mgdot(x: Field, y: Field2): array[nmgv1,float] =
     var s: array[nmgv1,type(dot(x[0][0],y[0]))]
     for e in x:
@@ -119,8 +100,8 @@ when isMainModule:
   var fv = loF.DiracFermionS()
   var fv2 = loF.DiracFermionS()
   var rs = newRNGField(RngMilc6, loF, 987654321)
-  let r = newMgRestrictor(b, rv)
-  let p = newMgProlongator(b, pv)
+  let r = newMgTransfer(b, rv)
+  let p = newMgTransfer(b, pv)
   var cv: SLatticeMgVector1V
   cv.new(loC)
 
@@ -138,9 +119,9 @@ when isMainModule:
     gaussian(fv, rs)
     echo "gaussian: ", fv.even.norm2
     cv := 0
-    r.apply(cv, fv)
+    r.restrict(cv, fv)
     fv2 := 0
-    p.apply(fv2, cv)
+    p.prolong(fv2, cv)
     echo "fv2: ", fv2.even.norm2
     fv -= fv2
     echo "fv:  ", fv.even.norm2
@@ -148,10 +129,10 @@ when isMainModule:
     pv := rv
 
     cv := 0
-    r.apply(cv, fv)
+    r.restrict(cv, fv)
     cv.invsqrt(i)
     fv2 := 0
-    p.apply(fv2, cv)
+    p.prolong(fv2, cv)
     echo "fv2: ", fv2.even.norm2
     rv.mginsert(fv2, i)
     pv := rv
@@ -160,12 +141,12 @@ when isMainModule:
     mgextract(fv, rv, i)
     echo "fv even: ", fv.even.norm2
     cv := 0
-    r.apply(cv, fv)
+    r.restrict(cv, fv)
     #echo "cv all:  ", cv.norm2
     #echo "cv even: ", cv.even.norm2
     #echo "cv odd:  ", cv.odd.norm2
     fv2 := 0
-    p.apply(fv2, cv)
+    p.prolong(fv2, cv)
     echo "fv2: ", fv2.norm2
 
   qexFinalize()

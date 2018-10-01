@@ -137,8 +137,8 @@ template assign*(x: ComplexProxy, y: ImagProxy2): untyped =
   x[].re = 0
   x[].im = y[]
 template assignU*(x: ComplexProxy, y: ComplexProxy2): untyped =
-  x.re := y.re
-  x.im := y.im
+  x.re = y.re
+  x.im = y.im
 template assign*(x: ComplexProxy, y: ComplexProxy2): untyped =
   flattenCallArgs(assignU, x, y)
 
@@ -433,7 +433,9 @@ template binaryOverloadsF(op,fn,impl: untyped) {.dirty.} =
   template fn*(x: ComplexProxy, y: ComplexProxy2): untyped = impl(x,y)
   template op*(x: ComplexProxy, y: ComplexProxy2): untyped = fn(x,y)
 
-template divdComplexU*(x,y: untyped): untyped = x*inv(y)
+template divdComplexU*(x,y: untyped): untyped =
+  let iy = inv(y)
+  x*iy
 binaryOverloadsF(`/`, divd, divdComplexU)
 
 # iadd, isub, imul, idivd

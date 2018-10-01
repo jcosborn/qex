@@ -282,7 +282,7 @@ template stagDM*(sd:StaggeredD; r:Field; g:openArray[Field2];
 
 # r = a*r + b*x + (2D)*x
 proc stagD2*(sd:StaggeredD; r:SomeField; g:openArray[Field2];
-             x:Field2; a:SomeNumber; b:SomeNumber2) =
+             x:Field3; a:SomeNumber; b:SomeNumber2) =
   template sf0:untyped = sd.sf
   template sb0:untyped = sd.sb
   let nd = g.len

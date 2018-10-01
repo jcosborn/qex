@@ -178,7 +178,7 @@ proc makeRecvInfo*(gi: ptr GatherIndices; gd: ptr GatherDescription) =
   gi.recvDestIndices = nil
   gi.recvBufIndices = nil
   if ni == 0: return
-  when 1:
+  when true:
     # sort: srcRank, destIndex
     # perm(p): srcRank, srcIndex, destIndex  : a[p[i]] < a[p[j]] (i<j)
     # add firstDestIndex[p[i]] = p[i-?]

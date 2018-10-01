@@ -91,19 +91,24 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float;
 
 type S2oa*[T] = object
   s: T
+  s2: T
   m: float
 proc apply*(oa: S2oa; Dt,t: Field) =
   threadBarrier()
   oa.s.D(Dt, t, oa.m)
   threadBarrier()
 proc preconditioner*(oa: S2oa; z: Field; gs: GcrState) =
-  #r := gs.r
-  for e in z:
-    #let r2 = gs.r[e].norm2
-    let x2 = gs.x[e].norm2
-    let s = 1.0/(1e10+x2)
-    z[e] := asReal(s)*gs.r[e]
-proc solve2*(s:Staggered; x,b:Field; m:SomeNumber; sp:var SolverParams) =
+  threadBarrier()
+  z := gs.r
+  #oa.s2.Ddag(z, gs.r, oa.m)
+  threadBarrier()
+  #for e in z:
+  #  #let r2 = gs.r[e].norm2
+  #  let x2 = gs.x[e].norm2
+  #  let s = 1.0/(1e10+x2)
+  #  z[e] := asReal(s)*gs.r[e]
+proc solve2*(s:Staggered; x,b:Field; m:SomeNumber;
+             sp:var SolverParams; s2: Staggered) =
   #var t = newOneOf(r)
   var gcr = newGcrState(x=x, b=b)
   #proc op(Dt,t: Field) =
@@ -113,16 +118,16 @@ proc solve2*(s:Staggered; x,b:Field; m:SomeNumber; sp:var SolverParams) =
   #proc id(z: Field, c: type(gcr)) =
   #  assign(z, c.r)
   #var oa = (apply: op, preconditioner: id)
-  let s2oa = S2oa[type(s)](s: s, m: m)
+  let s2oa = S2oa[type(s)](s: s, s2: s2, m: m)
   gcr.solve(s2oa, sp)
 
-proc solve2*(s:Staggered; r,x:Field; m:SomeNumber; res:float;
+proc solve2*(s:Staggered; r,x:Field; m:SomeNumber; res:float; s2: Staggered;
              cpuonly = false) =
   var sp = initSolverParams()
   sp.r2req = res
   #sp.maxits = 1000
   sp.verbosity = 1
-  solve2(s, r, x, m, sp, cpuonly)
+  solve2(s, r, x, m, sp, s2, cpuonly)
 
 
 when isMainModule:
@@ -138,7 +143,7 @@ when isMainModule:
   var r = lo.ColorVector()
   var rs = newRNGField(RngMilc6, lo, intParam("seed", 987654321).uint64)
   threads:
-    g.random rs
+    #g.random rs
     g.setBC
     g.stagPhase
     v1 := 0
@@ -147,6 +152,14 @@ when isMainModule:
     #  v1[e][0].re := foldl(x, 4, a*10+b)
     #  #echo v1[e][0]
   #echo v1.norm2
+  var g2 = lo.newGauge
+  for mu in 0..<g2.len:
+    for s in 0..<lo.nSites:
+      if lo.coords[mu][s] mod 2 == 1:
+        g2[mu]{s} := 0
+      else:
+        g2[mu]{s} := g[mu]{s}
+  var s2 = newStag(g2)
   if myRank==0:
     v1{0}[0] := 1
     #v1{2*1024}[0] := 1
@@ -167,9 +180,9 @@ when isMainModule:
   var sp = initSolverParams()
   sp.subset.layoutSubset(lo, "all")
   sp.maxits = int(1e9/lo.physVol.float)
-  s.solve2(v2, v1, m, sp)
-  resetTimers()
-  s.solve2(v2, v1, m, sp)
+  s.solve(v2, v1, m, sp)
+  #resetTimers()
+  s.solve2(v2, v1, m, sp, s2)
   threads:
     echo "v2: ", v2.norm2
     echo "v2.even: ", v2.even.norm2
@@ -180,4 +193,4 @@ when isMainModule:
     threadBarrier()
     echo r.norm2
   #echo v2
-  echoTimers()
+  #echoTimers()

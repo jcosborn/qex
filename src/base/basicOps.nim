@@ -64,10 +64,9 @@ template toDoubleImpl*(x:SomeNumber):untyped =
   else:
     float64(x)
 
-template assign*(x:var SomeNumber; y:ptr SomeNumber2):untyped =
-  x = cnvrt(x,y[])
-template assign*(r:var SomeNumber, x:SomeNumber2):untyped =
-#proc assign*(r:var SomeNumber, x:SomeNumber2) {.inline.} =
+template assign*(r: SomeNumber; x: ptr SomeNumber2) =
+  r = cnvrt(r,x[])
+template assign*(r: SomeNumber, x: SomeNumber2) =
   r = cnvrt(r,x)
 
 template adj*(x: SomeNumber): untyped = x
@@ -107,8 +106,8 @@ template nmadd*(r:var SomeNumber, x:SomeNumber2,
 template nmsub*(r:var SomeNumber, x:SomeNumber2,
                 y:SomeNumber3, z:SomeNumber4):untyped =
   r = cnvrt(r,-z) - (cnvrt(r,x) * cnvrt(r,y))
-template conj*(r:var SomeNumber, x:SomeNumber2):untyped = assign(r, x)
-template adj*(r:var SomeNumber, x:SomeNumber2):untyped = assign(r, x)
+template conj*(r:var SomeNumber, x:SomeNumber2) = assign(r, x)
+template adj*(r:var SomeNumber, x:SomeNumber2) = assign(r, x)
 template trace*(x:SomeNumber):untyped = x
 template norm2*(r:var SomeNumber, x:SomeNumber2):untyped = mul(r, x, x)
 template norm2*(x:SomeNumber):untyped = x*x
@@ -161,7 +160,7 @@ template load*(r:untyped, x:untyped):untyped =
   mixin load2
   load2(r, x)
 
-template `:=`*(x:var SomeNumber; y:SomeNumber2):untyped = assign(x,y)
+template `:=`*(x: SomeNumber; y: SomeNumber2) = assign(x,y)
 template `+`*(x:SomeReal; y:SomeInteger):auto = x + cnvrt(x,y)
 template `+`*(x:SomeInteger; y:SomeReal):auto = cnvrt(y,x) + y
 template `-`*(x:SomeReal; y:SomeInteger):auto = x - cnvrt(x,y)

@@ -211,6 +211,12 @@ template asVarWrapper*(x: AsVar[AsMatrix], y: typed): untyped =
   #static: echo "asVarWrapper AsVarMatrix"
   asVar(asMatrix(v: y))
 
+template toSingle*[I,T](x: typedesc[VectorArrayObj[I,T]]): untyped =
+  mixin toSingle
+  VectorArrayObj[I,toSingle(type(T))]
+template toSingle*[T](x: typedesc[AsVector[T]]): untyped =
+  AsVector[toSingle(type(T))]
+
 #template masked*(x: AsMatrix, msk: typed): untyped =
 #  static: echo "masked AsMatrix"
 #  asVarMatrix(masked(x[],msk))
@@ -508,11 +514,21 @@ proc trace*(x: Mat1): auto {.inline,noInit.} =
   trace(t, x)
   t
 
-proc inorm2*(r:var any; x:Vec2) {.inline.} =
+
+#proc inorm2*(r:var any; x:Vec2) {.inline.} =
+#  mixin inorm2
+#  for i in 0..<x.len:
+#    #echo r
+#    inorm2(r, x[i])
+
+template inorm2*(r: var any; x: Vec2) =
   mixin inorm2
-  for i in 0..<x.len:
+  let xx = x
+  for i in 0..<xx.len:
     #echo r
-    inorm2(r, x[i])
+    inorm2(r, xx[i])
+
+
 proc inorm2*(r:var any; x:Mat2) {.inline.} =
   mixin nrows, ncols, inorm2
   for i in 0..<x.nrows:

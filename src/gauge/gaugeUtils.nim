@@ -326,6 +326,15 @@ proc plaq3*[T](g: seq[T]): auto =
   toc("plaq3 threads")
   result = tr/(lo.physVol.float*0.5*float(nd*(nd-1)*nc))
 
+proc echoPlaq*(g: any) =
+  var pl = plaq(g)
+  let nt = g.len - 1
+  let ns = pl.len - nt
+  var ps, pt: float
+  for i in 0..<ns: ps += pl[i]
+  for i in ns..<pl.len: pt += pl[i]
+  echo "plaqS: ", 2*ps, "  plaqT: ", 2*pt, "  plaq: ", ps+pt
+
 template defaultSetup*:untyped {.dirty.} =
   bind paramCount, paramStr, isDigit, parseInt, fileExists, getFileLattice
   echo "rank ", myRank, "/", nRanks
@@ -339,7 +348,7 @@ template defaultSetup*:untyped {.dirty.} =
   if paramCount()>0:
     if (not isDigit(paramStr(1))) and paramStr(1)[0]!='-':
       fn = paramStr(1)
-  if fn != nil:
+  if fn != "":
     lat = getFileLattice(fn)
   else:
     if paramCount()>0 and isDigit(paramStr(1)):
@@ -360,7 +369,7 @@ template defaultSetup*:untyped {.dirty.} =
   var g = newSeq[type(lo.ColorMatrix())](lat.len)
   for i in 0..<lat.len:
     g[i] = lo.ColorMatrix()
-  if fn != nil:
+  if fn != "":
     let status = g.loadGauge(fn)
     if status!=0:
       echo "ERROR: couldn't load gauge file ", fn
@@ -426,6 +435,17 @@ proc random*[F:Field](g: openArray[F], r: var RNGField) =
       randomU(g[mu], r)
     else:
       randomSU(g[mu], r)
+
+proc warm*[F:Field](g: openArray[F], s: float, r: var RNGField) =
+  for mu in g.low..g.high:
+    when g[mu][0].nrows==1:
+      g[mu].gaussian r
+      g[mu] := (1-s) + s*g[mu]
+      g[mu].projectU
+    else:
+      g[mu].gaussian r
+      g[mu] := (1-s) + s*g[mu]
+      g[mu].projectSU
 
 proc random*(g: array or seq) =
   var r = newRNGField(RngMilc6, g[0].l)

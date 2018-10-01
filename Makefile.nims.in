@@ -78,7 +78,7 @@ buildTask tests, "build unit tests":
     exec "./testscript.sh"
 
 proc help =
-  let s = repeat('-', 70)
+  let s = '-'.repeat(70)
   echo s
   echo "QEX build script usage:"
   echo "  make [config commands] [build commands]"
@@ -112,7 +112,9 @@ when existsFile("config.nims"):
   include "config.nims"
 
 proc nimRun(f: string, outfile="") =
-  var nimcmd = nim & " " & join(nimargs," ") & " " & join(defargs," ")
+  var tool = ""
+  #tool = "valgrind "
+  var nimcmd = tool & nim & " " & join(nimargs," ") & " " & join(defargs," ")
   if run: nimcmd &= " -r "
   var (dir, name, ext) = splitFile(f)
   if outfile!="": name = outfile
@@ -123,7 +125,10 @@ proc nimRun(f: string, outfile="") =
   let s = nimcmd & " c -o:" & name & " " & f
   #let s = nimcmd & " cpp -o:" & name & " " & f
   echo "running: ", s
-  exec s
+  try:
+    exec s
+  except:
+    quit(-1)
 
 for t in buildTasks:
   if args[iarg][0..(t.cmd.len-1)] == t.cmd:
@@ -145,21 +150,21 @@ proc findDir(f: string): string =
 var cmd = args[iarg]
 echo "command: ", cmd
 
-var f: string
+var f = ""
 block:
   var t = cmd
   if t[^4..^1] != ".nim": t &= ".nim"
   f = findFile(t)
-if not f.isNil:
+if f != "":
   nimRun(f)
 else:
   f = findDir(cmd)
-  if not f.isNil and dirExists(f):
+  if dirExists(f):
     echo "Building files in directory: ", f
     for t in listFiles(f):
       echo "file: ", t
       if t[^4..^1] == ".nim":
         nimRun(t)
 
-if f.isNil:
+if f == "":
   echo "unknown build target: ", cmd

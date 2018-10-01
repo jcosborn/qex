@@ -51,6 +51,7 @@ type
   SColorMatrix* = Color[MatrixArray[nc,nc,SComplex]]
   SColorMatrixV* = Color[MatrixArray[nc,nc,SComplexV]]
   SLatticeReal* = Field[1,float32]
+  #SLatticeRealG*[V:static[int]] = Field[V,Svec0]
   SLatticeRealV* = Field[VLEN,Svec0]
   SLatticeComplex* = Field[1,SComplex]
   SLatticeComplexV* = Field[VLEN,SComplexV]

@@ -23,11 +23,22 @@ type
     iterations*: int
 
 proc reset*(gs: var GcrState) =
+  ## reset GcrState, forgetting previous vectors
   gs.b2 = -1
   gs.iterations = 0
   gs.r2old = 1.0
   gs.r2stop = 0.0
   gs.nv = 0
+
+#[
+proc restart*(gs: var GcrState) =
+  ## restart solve keeping previous vectors
+  gs.b2 = -1
+  gs.iterations = 0
+  gs.r2old = 1.0
+  gs.r2stop = 0.0
+  gs.nv = 0
+]#
 
 proc newGcrState*[T,U](x: T; b: U): GcrState[T,U] =
   result.p = newOneOf(x)
@@ -88,7 +99,7 @@ proc orth*(gs: var GcrState) =
 proc getx*(gs: GcrState) =
   let nv = gs.nv
   var b = newSeq[Cmplx](nv)
-  gs.x := gs[nv-1].alpha * gs[nv-1].vec
+  gs.x += gs[nv-1].alpha * gs[nv-1].vec
   for i in 0 .. (nv-2):
     b[i] := gs[nv-1].alpha * gs[nv-1].beta[i]
   for i in countdown(nv-2,0):
@@ -101,7 +112,7 @@ proc getx*(gs: GcrState) =
 #         res_arg: ptr QOP_resid_arg_t; `out`: ptr Vector;
 #         `in`: ptr Vector; r: ptr Vector; subset: QDP_Subset): QOP_status_t =
 # solves: A x = b
-proc solve*(gs: var GcrState; op: any; sp: var SolverParams) =
+proc solve*(gs: var GcrState; opx: var any; sp: var SolverParams) =
   mixin apply
   tic()
   let vrb = sp.verbosity
@@ -109,11 +120,11 @@ proc solve*(gs: var GcrState; op: any; sp: var SolverParams) =
     if vrb>=n: body
   let sub = sp.subset
   template subset(body:untyped):untyped =
-    onNoSync(sub):
+    #onNoSync(sub):
       body
   template mythreads(body:untyped):untyped =
     threads:
-      onNoSync(sub):
+      #onNoSync(sub):
         body
 
   let
@@ -123,36 +134,37 @@ proc solve*(gs: var GcrState; op: any; sp: var SolverParams) =
     x = gs.x
     b = gs.b
   var
-    b2 = gs.b2
-    r2 = gs.r2
+    insq = gs.b2
+    rsq = gs.r2
+    op = opx
 
-  if b2<0:  # first call
+  if insq<0:  # first call
     mythreads:
-      echo b.norm2
-      b2 = b.norm2
-    gs.b2 = b2
+      #echo b.norm2
+      insq = b.norm2
+    gs.b2 = insq
     verb(1):
-      echo("input norm2: ", b2)
-    if b2 == 0.0:
+      echo("input norm2: ", insq)
+    if insq == 0.0:
       mythreads:
         x := 0
         r := 0
-      r2 = 0.0
+      rsq = 0.0
     else:
       threads:
         op.apply(Ap, x)
         subset:
           r := b - Ap
           #p := 0
-          r2 = r.norm2
+          rsq = r.norm2
           verb(3):
             #echo("p2: ", p.norm2)
-            echo("r2: ", r2)
+            echo("r2: ", rsq)
 
 
   var
-    rsq: float
-    insq: float
+    #rsq: float
+    #insq: float
     rsqstop: float
     alpha: float
     iteration = 0
@@ -165,16 +177,16 @@ proc solve*(gs: var GcrState; op: any; sp: var SolverParams) =
   #res_arg.final_rel = 0
   #res_arg.final_iter = 0
   #res_arg.final_restart = 0
-  insq = gs.b2
+  #insq = gs.b2
   rsqstop = sp.r2req * insq
   #VERB(LOW, "GCR2: rsqstop = %g\x0A", rsqstop)
 
   #gs.init()
   #V_eq_V(r, `in`, subset)
-  r := b
+  #r := b
   #r_eq_norm2_V(addr(rsq), r, subset)
-  rsq = r.norm2
-  gs.r2 = rsq
+  #rsq = r.norm2
+  #gs.r2 = rsq
   while rsq > rsqstop and total_iterations < max_iterations:
     inc(iteration)
     inc(total_iterations)
@@ -184,11 +196,14 @@ proc solve*(gs: var GcrState; op: any; sp: var SolverParams) =
       gs[0].vec := gs[0].alpha * gs[0].vec
       op.apply(gs[0].Avec, gs[0].vec)
       gs[0].Avn = gs[0].Avec.norm2
-      let ctmp = dot(gs[0].Avec, b)
+      op.apply(Ap, x)
+      r := b - Ap
+      let ctmp = dot(gs[0].Avec, r)
       gs[0].alpha = ctmp / gs[0].Avn
-      r := b - gs[0].alpha * gs[0].Avec
+      r -= gs[0].alpha * gs[0].Avec
       rsq = r.norm2
-      echo "rsq: ", gs.r2, " -> ", rsq
+      verb(2):
+        echo iteration, "  rsq: ", gs.r2, " -> ", rsq
       gs.r2 = rsq
     op.preconditioner(gs[nv].vec, gs)
     op.apply(gs[nv].Avec, gs[nv].vec)
@@ -196,27 +211,36 @@ proc solve*(gs: var GcrState; op: any; sp: var SolverParams) =
     gs[nv].Avn = gs[nv].Avec.norm2
     let ctmp = dot(gs[nv].Avec, r)
     gs[nv].alpha = ctmp / gs[nv].Avn
+    #echo "pAAp: ", gs[nv].Avn
+    #echo "pAr: ", ctmp
+    #echo "alpha: ", gs[nv].alpha
     r -= gs[nv].alpha * gs[nv].Avec
-    rsq -= gs[nv].alpha.norm2 * gs[nv].Avn
+    #rsq -= gs[nv].alpha.norm2 * gs[nv].Avn
+    rsq = r.norm2
     gs.r2 = rsq
     #rsq = r.norm2
     #VERB(HI, "GCR2: iter %i rsq = %g rel = %g\x0A", total_iterations, rsq,
     #     relnorm2)
-    echo iteration, ": ", rsq/gs.b2
-    when 0:
+    verb(3):
+      echo iteration, ": ", rsq/gs.b2
+    when false:
       getx(r, subset)
       linop(`out`, r, subset)
       V_eq_V_minus_V(r, `in`, `out`, subset)
       r_eq_norm2_V(addr(rsq), r, subset)
       #VERB(HI, "GCR2: iter %i rsq = %g rel = %g\x0A", total_iterations, rsq,
       #     relnorm2)
+
   #VERB(LOW, "GCR2: done: iter %i rsq = %g rel = %g\x0A", total_iterations,
   #     rsq, relnorm2)
   gs.getx()
   #gs.fini()
+  opx = op
   #res_arg.final_rsq = rsq div insq
   #res_arg.final_rel = relnorm2
   sp.finalIterations = iteration
+  verb(1):
+    echo "GCR: its: ", iteration, "  rsq: ", rsq
   #return QOP_SUCCESS
 
 when isMainModule:

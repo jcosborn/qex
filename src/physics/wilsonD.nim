@@ -269,6 +269,10 @@ proc wilsonD2eex*(sde,sdo:WilsonD; r:Field; g:openArray[Field2];
   #  msubVSVV(r[ir], m2, x[ir], r[ir])
   r[sde.sub] := -0.25*r
 
+proc wilsonD2oo*(sde,sdo:WilsonD; r:Field; g:openArray[Field2];
+                 x:Field; m2:SomeNumber) =
+  wilsonD2ee(sdo, sde, r, g, x, m2)
+
 #[
 # r = m2 - Deo * Doe
 proc wilsonD2eeN*(sde,sdo:WilsonD; r:Field; g:openArray[Field2];
@@ -322,6 +326,7 @@ proc Ddag*(s:Wilson; r,x:Field; m:SomeNumber) =
   wilsonDx(s.so, r, s.g, x, m)
 proc eoReduce*(s:Wilson; r,b:Field; m:SomeNumber) =
   # r.even = (D^+ b).even
+  # re = Dee be - Deo bo
   #dump: "b.even.norm2"
   #dump: "b.odd.norm2"
   wilsonD(s.se, r, s.g, b, m, -1)
@@ -329,9 +334,19 @@ proc eoReduce*(s:Wilson; r,b:Field; m:SomeNumber) =
   #dump: r.odd.norm2
 proc eoReconstruct*(s:Wilson; r,b:Field; m:SomeNumber) =
   # r.odd = (b.odd - Doe r.even)/m
-  wilsonD(s.so, r, s.g, r, 0.0, -1.0/m)
-  let mi = 1.0/m
+  let mi = 1.0/(4.0+m)
+  wilsonD(s.so, r, s.g, r, 0.0, -mi)
   r.odd += mi*b
+
+proc eoReduceO*(s:Wilson; r,b:Field; m:SomeNumber) =
+  # r.odd = (D^+ b).odd
+  # ro = Doo bo - Doe be
+  wilsonD(s.so, r, s.g, b, m, -1)
+proc eoReconstructO*(s:Wilson; r,b:Field; m:SomeNumber) =
+  # r.even = (b.even - Deo r.odd)/m
+  wilsonD(s.se, r, s.g, r, 0.0, -1.0/m)
+  let mi = 1.0/m
+  r.even += mi*b
 
 proc solveEO*(s: Wilson; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   var sp = sp0
@@ -361,7 +376,7 @@ proc solveEO*(s: Wilson; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
     threadBarrier()
     r[s.se.sub] := t
     threadBarrier()
-    s.eoReconstruct(r, x, m4)
+    s.eoReconstruct(r, x, m)
   let t1 = epochTime()
   let secs = t1-t0
   let flops = (2*2*s.g.len*(12+2*66+24)+2*60)*r.l.nEven*sp.finalIterations
@@ -397,9 +412,10 @@ proc solve*(s:Wilson; r,x:Field; m:SomeNumber; sp0:SolverParams) =
   bicgstabSolve(r, t, op, sp)
   let t1 = epochTime()
   threads:
-    s.eoReconstruct(r, x, m4)
+    s.eoReconstruct(r, x, m)
   let secs = t1-t0
-  let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
+  #let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
+  let flops = (2*2*s.g.len*(12+2*66+24)+2*60)*r.l.nEven*sp.finalIterations
   echo "op time: ", top
   echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
 proc solve*(s:Wilson; r,x:Field; m:SomeNumber; res:float) =

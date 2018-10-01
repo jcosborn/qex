@@ -56,8 +56,8 @@ type
     sites: ptr carray[int32]
     nsites: int
   MgBlock*[VF,VC: static[int]] = object
-    fine: Layout[VF]
-    coarse: Layout[VC]
+    fine*: Layout[VF]
+    coarse*: Layout[VC]
     lb: seq[array[2,MgBlockSites]]
     sites: seq[int32]
     csites*: seq[int32]
