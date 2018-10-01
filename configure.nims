@@ -20,31 +20,27 @@ set "QEXDIR", qexdir
 
 let home = getHomeDir()
 
+var qmpdir = home / "lqcd/install/qmp"
 if existsEnv("QMPDIR"):
-  let qmpdir = getEnv("QMPDIR")
-else:
-  let qmpdir = home / "lqcd/install/qmp"
+  qmpdir = getEnv("QMPDIR")
 echo "Using QMPDIR ", qmpdir
 set "QMPDIR", qmpdir
 
+var qiodir = home / "lqcd/install/qio"
 if existsEnv("QIODIR"):
-  let qiodir = getEnv("QIODIR")
-else:
-  let qiodir = home / "lqcd/install/qio"
+  qiodir = getEnv("QIODIR")
 echo "Using QIODIR ", qiodir
 set "QIODIR", qiodir
 
+var qudadir = home / "lqcd/install/quda"
 if existsEnv("QUDADIR"):
-  let qudadir = getEnv("QUDADIR")
-else:
-  let qudadir = home / "lqcd/install/quda"
+  qudadir = getEnv("QUDADIR")
 echo "Using QUDADIR ", qudadir
 set "QUDADIR", qudadir
 
+var cudadir = "/usr/local/cuda/lib64"
 if existsEnv("CUDADIR"):
-  let cudadir = getEnv("CUDADIR")
-else:
-  let cudadir = "/usr/local/cuda/lib64"
+  cudadir = getEnv("CUDADIR")
 echo "Using CUDADIR ", cudadir
 set "CUDADIR", cudadir
 
