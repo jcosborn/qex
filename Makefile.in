@@ -5,6 +5,7 @@
 #   make NIMFLAGS="--rangeChecks:on --assertions:on" <myprog>
 
 NIM = @@NIM
+#NIMFLAGS = "-d:defPrec:S"
 #NIMFLAGS =
 
 runNim:

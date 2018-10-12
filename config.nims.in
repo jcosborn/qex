@@ -29,6 +29,13 @@ var simd = "@@SIMD"
 var vlen = "@@VLEN"
 @@ENVS
 
+var cpp = "@@CC"
+var cppflagsAlways = cflagsAlways & " -fpermissive"
+var cppflagsDebug = cflagsDebug
+var cppflagsSpeed = cflagsSpeed
+var ldpp = cpp
+var ldppflags = cppflagsAlways
+
 #[
 DBG += "--hint[XDeclaredButNotUsed]:off"
 DBG += "--implicitStatic:on"
@@ -76,6 +83,12 @@ options.always ! cflagsAlways
 options.debug ! cflagsDebug
 options.speed ! cflagsSpeed
 options.linker ! ldflags
+cpp.exe ! cpp
+cpp.linkerexe ! ldpp
+cpp.options.always ! cppflagsAlways
+cpp.options.debug ! cppflagsDebug
+cpp.options.speed ! cppflagsSpeed
+cpp.options.linker ! ldppflags
 putenv ~ ("OMPFLAG=" & ompflags)
 putenv ~ ("QMPDIR=" & qmpdir)
 putenv ~ ("QIODIR=" & qiodir)
