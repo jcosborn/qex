@@ -17,12 +17,12 @@ type
   SomeInteger2* = int|int8|int16|int32|int64
   SomeInteger3* = int|int8|int16|int32|int64
   SomeInteger4* = int|int8|int16|int32|int64
-  SomeReal2* = float|float32|float64
-  SomeReal3* = float|float32|float64
-  SomeReal4* = float|float32|float64
-  SomeNumber2* = SomeInteger2 | SomeReal2
-  SomeNumber3* = SomeInteger3 | SomeReal3
-  SomeNumber4* = SomeInteger4 | SomeReal4
+  SomeFloat2* = float|float32|float64
+  SomeFloat3* = float|float32|float64
+  SomeFloat4* = float|float32|float64
+  SomeNumber2* = SomeInteger2 | SomeFloat2
+  SomeNumber3* = SomeInteger3 | SomeFloat3
+  SomeNumber4* = SomeInteger4 | SomeFloat4
 
 var FLT_EPSILON*{.importC,header:"<float.h>".}:float32
 var DBL_EPSILON*{.importC,header:"<float.h>".}:float64
@@ -161,11 +161,11 @@ template load*(r:untyped, x:untyped):untyped =
   load2(r, x)
 
 template `:=`*(x: SomeNumber; y: SomeNumber2) = assign(x,y)
-template `+`*(x:SomeReal; y:SomeInteger):auto = x + cnvrt(x,y)
-template `+`*(x:SomeInteger; y:SomeReal):auto = cnvrt(y,x) + y
-template `-`*(x:SomeReal; y:SomeInteger):auto = x - cnvrt(x,y)
-template `-`*(x:SomeInteger; y:SomeReal):auto = cnvrt(y,x) - y
-template `*`*(x:SomeInteger; y:SomeReal):auto = cnvrt(y,x) * y
+template `+`*(x:SomeFloat; y:SomeInteger):auto = x + cnvrt(x,y)
+template `+`*(x:SomeInteger; y:SomeFloat):auto = cnvrt(y,x) + y
+template `-`*(x:SomeFloat; y:SomeInteger):auto = x - cnvrt(x,y)
+template `-`*(x:SomeInteger; y:SomeFloat):auto = cnvrt(y,x) - y
+template `*`*(x:SomeInteger; y:SomeFloat):auto = cnvrt(y,x) * y
 
 template setUnopP*(op,fun,t1,t2: untyped): untyped {.dirty.} =
   proc op*(x: t1): auto {.inline,noInit.} =
