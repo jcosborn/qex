@@ -139,7 +139,15 @@ template assign*(x: ComplexProxy, y: ImagProxy2): untyped =
 template assignU*(x: ComplexProxy, y: ComplexProxy2): untyped =
   x.re = y.re
   x.im = y.im
+#template assignU*(x: ComplexProxy, yy: ComplexProxy2{call}): untyped =
+#  let ya {.noInit.} = yy
+#  #var ya {.noInit.} = yy
+#  #var ya {.noInit.}: T2
+#  #ya = yy
+#  assignU(x, ya)
 template assign*(x: ComplexProxy, y: ComplexProxy2): untyped =
+  #let yy = y
+  #assignU(x, yy)
   flattenCallArgs(assignU, x, y)
 
 template `:=`*(x: RealProxy, y: RealProxy2): untyped = assign(x,y)

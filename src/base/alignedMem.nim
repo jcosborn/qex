@@ -48,10 +48,10 @@ proc newAlignedMemU*[T](n:int, align:int=64): alignedMem[T] =
 
 template low*(s:alignedMem):untyped = 0
 template high*(s:alignedMem):untyped = s.len-1
-proc `[]`*[T](s:alignedMem[T], i:SomeInteger):var T =
-  result = s.data[i]
+#proc `[]`*[T](s:alignedMem[T], i:SomeInteger):var T =
+#  result = s.data[i]
 #template `[]`*[T](s:alignedMem[T], i:SomeInteger):untyped = s.data[i]
-template `[]`*[T](s:var alignedMem[T], i:SomeInteger):untyped = s.data[i]
+template `[]`*[T](s: alignedMem[T], i:SomeInteger):untyped = s.data[i]
 template `[]=`*[T](s:var alignedMem[T], i:SomeInteger, v:untyped) =
   s.data[i] = v
 

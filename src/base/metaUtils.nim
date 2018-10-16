@@ -802,9 +802,17 @@ macro optimizeAst*(a: typed): untyped =
 
 macro XoptimizeAst*(a: typed): untyped = a
 
+var flattenArgDebug {.compiletime.} = false
+template debugFlattenCallArgs*(b: bool) =
+  #bind flattenArgDebug
+  static: flattenArgDebug = b
+
 var flattenArgLetCount {.compileTime.} = 0
 proc flattenArgP(arg: NimNode): tuple[sl:NimNode,a:NimNode] =
   result.sl = newStmtList()
+  if flattenArgDebug:
+    echo "flattenArgP: ", arg.kind
+    echo arg.repr
   case arg.kind
   of AtomicNodes:
     result.a = arg
@@ -824,14 +832,35 @@ proc flattenArgP(arg: NimNode): tuple[sl:NimNode,a:NimNode] =
       r.sl.copyChildrenTo result.sl
       a[i][1] = r.a
     result.a = a
-  of {nnkBracketExpr,nnkDotExpr,nnkDerefExpr,nnkHiddenDeref,nnkHiddenStdConv}:
+  # FIXME: should transform nnkCallKinds to pass in result var
+  of nnkCallKinds:
+    var a = arg.copy
+    for i in 0..<arg.len:
+      a[i] = arg[i].copy
+      #let r = flattenArgP(arg[i])
+      #r.sl.copyChildrenTo result.sl
+      #a[i] = r.a
+    let v = genSym(nskLet, "flattenTmp")
+    result.sl.add getAst(newLet(v,a))
+    result.a = v
+  of nnkBracketExpr:
+    var a = arg.copy
+    let r = flattenArgP(arg[0])
+    r.sl.copyChildrenTo result.sl
+    a[0] = r.a
+    for i in 1..<arg.len:
+      #let r = flattenArgP(arg[i])
+      #r.sl.copyChildrenTo result.sl
+      #a[i] = r.a
+      a[i] = arg[i].copy
+    result.a = a
+  of {nnkDotExpr,nnkDerefExpr,nnkHiddenDeref,nnkHiddenStdConv}:
     var a = arg.copy
     for i in 0..<arg.len:
       let r = flattenArgP(arg[i])
       r.sl.copyChildrenTo result.sl
       a[i] = r.a
     result.a = a
-  # FIXME: should transform nnkCallKinds to pass in result var
   else:
     #echo "flattenArgP else: ", arg.kind
     #if arg.kind in nnkCallKinds: echo "  ", arg[0].repr

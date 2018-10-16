@@ -54,7 +54,7 @@ proc wmgdot*(x: Field, y: Field2): auto =
   t
 
 # assumes vectors in t are normalized
-proc wmgProject*(x: var Field, t: MgTransfer) =
+proc wmgProject*(x: Field, t: MgTransfer) =
   var s = wmgdot(t.v, x)
   let n = s.len
   #let fv = t.mgb.fine.physVol
@@ -68,7 +68,7 @@ proc wmgProject*(x: var Field, t: MgTransfer) =
     for i in 0..<n:
       x[e] -= s[i] * t.v[e][i]
 
-proc wmgNormalize*(x: var Field) =
+proc wmgNormalize*(x: Field) =
   let t = x.norm2
   let s = 1/sqrt(t)
   x := s*x
@@ -82,7 +82,7 @@ proc wmgInvsqrt*(x: Field, i: int) =
         let s = 1/sqrt(t[j])
         x[e][i].re[j] = s
 
-proc wmgBlockProject*(x: var Field, t: MgTransfer, f: Field2, c: Field3) =
+proc wmgBlockProject*(x: Field, t: MgTransfer, f: Field2, c: Field3) =
   t.restrict(c, x)
   echo "c2: ", c.norm2
   t.prolong(f, c)
@@ -91,7 +91,7 @@ proc wmgBlockProject*(x: var Field, t: MgTransfer, f: Field2, c: Field3) =
   t.restrict(c, x)
   echo "c2: ", c.norm2
 
-proc wmgBlockNormalizeInsert*(t: var MgTransfer, x: var Field, i: int,
+proc wmgBlockNormalizeInsert*(t: var MgTransfer, x: Field, i: int,
                               f: Field2, c: Field3) =
   t.restrict(c, x)
   echo "c2: ", c.norm2
@@ -117,7 +117,7 @@ proc wmgBlockNormalizeInsert*(t: var MgTransfer, x: var Field, i: int,
   echo "x2: ", x2, "   ", x.norm2
   x := f
 
-proc wmgBlockProjectInsert*(t: var MgTransfer, x: var Field, i: int,
+proc wmgBlockProjectInsert*(t: var MgTransfer, x: Field, i: int,
                             f: Field2, c: Field3) =
   t.restrict(c, x)
   echo "c2: ", c.norm2

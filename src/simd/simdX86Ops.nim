@@ -68,7 +68,8 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
     toSimd(x)
   proc to*(x:T; t:typedesc[array[N,F]]):array[N,F] {.inline,noInit.} =
     `P "_storeu_" S`(cast[ptr F](result.addr), x)
-  proc assign1*(r:var T; x:SomeNumber) {.inline.} =
+  #proc assign1*(r:var T; x:SomeNumber) {.inline.} =
+  template assign1*(r: var T; x: SomeNumber) =
     r = `P "_set1_" S`(F(x))
   template setX:untyped = `P "_setr_" S`()
   template setF(x):untyped = F(x)
@@ -178,7 +179,8 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   #unaryMixedVar(T, `/=`, idiv)
   template `/=`*(r: T; x:SomeNumber) = idiv(r,x.to(T))
 
-  proc trace*(x:T):T {.inline,noInit.}= x
+  #proc trace*(x:T):T {.inline,noInit.}= x
+  template trace*(x: T): T = x
   proc norm2*(x:T):T {.inline,noInit.} = mul(x,x)
   proc norm2*(r:var T; x:T) {.inline.} = mul(r,x,x)
   proc inorm2*(r:var T; x:T) {.inline.} = imadd(r,x,x)

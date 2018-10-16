@@ -67,6 +67,7 @@ proc combine*(gs: var GcrState, n: int) =
 
 proc addvec*(gs: var GcrState) =
   var nv = gs.nv
+  #echo("[GCR] Starting addvec; nv: ", nv)
   # #[
   if nv > 31:
     var n = nv - 1
@@ -161,7 +162,6 @@ proc solve*(gs: var GcrState; opx: var any; sp: var SolverParams) =
             #echo("p2: ", p.norm2)
             echo("r2: ", rsq)
 
-
   var
     #rsq: float
     #insq: float
@@ -187,10 +187,13 @@ proc solve*(gs: var GcrState; opx: var any; sp: var SolverParams) =
   #r_eq_norm2_V(addr(rsq), r, subset)
   #rsq = r.norm2
   #gs.r2 = rsq
+  verb(1): echo("[GCR] Starting iterations")
   while rsq > rsqstop and total_iterations < max_iterations:
     inc(iteration)
     inc(total_iterations)
+    #echo "begin addvec"
     gs.addvec
+    #echo "end addvec"
     let nv = gs.nv - 1
     if nv == 1:
       gs[0].vec := gs[0].alpha * gs[0].vec
@@ -231,6 +234,7 @@ proc solve*(gs: var GcrState; opx: var any; sp: var SolverParams) =
       #VERB(HI, "GCR2: iter %i rsq = %g rel = %g\x0A", total_iterations, rsq,
       #     relnorm2)
 
+  #echo "[GCR] end iterations"
   #VERB(LOW, "GCR2: done: iter %i rsq = %g rel = %g\x0A", total_iterations,
   #     rsq, relnorm2)
   gs.getx()

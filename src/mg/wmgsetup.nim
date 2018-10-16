@@ -22,7 +22,7 @@ template newLeftVec*(op: SvdOp): untyped =
   #newVector(op).odd
   newVector(op)
 
-proc mgsetupSvd*(r,p: var MgTransfer, op: any, x: var Field) =
+proc mgsetupSvd*(r,p: var MgTransfer, op: any, x: Field) =
   var op = SvdOp[type(op),type(x.l),type(x)](op: op, lo: x.l)
   var src = newOneOf(x)
   src := 1
@@ -46,5 +46,13 @@ proc mgsetupSvd*(r,p: var MgTransfer, op: any, x: var Field) =
   r.v.wmgzero
   p.v.wmgzero
   for i in 0..<nv:
-    p.wmgBlockNormalizeInsert(qv[i], i, x, op.op.cb)
-    r.wmgBlockNormalizeInsert(qva[i], i, x, op.op.cb)
+    #op.apply(qva[i], qv[i])
+    #p.wmgBlockNormalizeInsert(qv[i], i, x, op.op.cb)
+    qv[i].wmgProject(p)
+    qv[i].normalize
+    p.v.wmgInsert(qv[i], i)
+    #r.wmgBlockNormalizeInsert(qva[i], i, x, op.op.cb)
+    #qva[i].wmgProject(r)
+    #qva[i].normalize
+    #r.v.wmgInsert(qva[i], i)
+    r.v.wmgInsert(qv[i], i)

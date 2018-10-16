@@ -40,9 +40,10 @@ proc test =
       d2 := m1 * d1
   let t1 = epochTime()
   echo "time: ", (t1-t0)
-  echo d1.s[0][0][0]
-  echo d1.s[lo.nSitesOuter-1][0][0]
-  echo d2.s[lo.nSitesOuter-1][0][0]
+  echo d1[0][0][0]
+  let ns = lo.nSitesOuter-1
+  echo d1[ns][0][0]
+  echo d2[ns][0][0]
   echo "mflops: ", (66e-6*lo.nSites.float*nrep.float)/(t1-t0)
 
   echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",

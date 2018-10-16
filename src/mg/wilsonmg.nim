@@ -21,18 +21,23 @@ proc newWilsonMg[W: WilsonD](w: W): WilsonMg[W] =
   result.w = w
   result.sp.init
 
+proc apply*(o: tuple; r: any; x: any) =
+  mixin D
+  threadBarrier()
+  o.w.D(r, x, o.m)
+  threadBarrier()
+proc applyAdj*(o: tuple; r: any; x: any) =
+  mixin Ddag
+  threadBarrier()
+  o.w.Ddag(r, x, o.m)
+  threadBarrier()
+
 type opArgs[T] = object
   a: T
 proc apply*(oa: opArgs; r: any; x: any) =
-  mixin D
-  threadBarrier()
-  oa.a.w.D(r, x, oa.a.m)
-  threadBarrier()
+  oa.a.apply(r, x)
 proc applyAdj*(oa: opArgs; r: any; x: any) =
-  mixin Ddag
-  threadBarrier()
-  oa.a.w.Ddag(r, x, oa.a.m)
-  threadBarrier()
+  oa.a.applyAdj(r, x)
 proc preconditioner*(oa: opArgs; z: any; gs: GcrState) =
   z := gs.r
 
@@ -77,12 +82,12 @@ proc solveGcrEo*(w: Wilson; x,b: Field; m: SomeNumber; sp: var SolverParams) =
     w.eoReconstruct(x, b, m)
   echo sp.finalIterations
 
-proc normalize(x: var Field) =
+proc normalize(x: Field) =
   let t = x.norm2
   let s = 1/sqrt(t)
   x := s*x
 
-proc projectOut(x: var Field, y: Field2) =
+proc projectOut(x: Field, y: Field2) =
   let yx = dot(y,x)
   let yy = y.norm2
   let s = yx / yy
@@ -95,7 +100,7 @@ proc Anorm(op: any, x: Field, y: Field2): auto =
   let y2 = y.norm2
   y2/x2
 
-proc mgsetup(r,p: var MgTransfer, op: any, x: var Field) =
+proc mgsetup(r,p: var MgTransfer, op: any, x: Field) =
   let nmgv1 = p.v[0].len
   var b = newOneOf(x)
   var t = newOneOf(x)
@@ -139,7 +144,8 @@ proc mgsetup(r,p: var MgTransfer, op: any, x: var Field) =
     p.v.wmgInsert(x, i)
 
     mixin apply
-    op.apply(t, x)
+    #op.apply(t, x)
+    t := x
     t.wmgProject(r)
     t.normalize
     #r.wmgBlockNormalizeInsert(t, i, x, op.cb)
@@ -168,18 +174,50 @@ proc preconditioner*(oa: opArgs2; z: any; gs: GcrState) =
   oa.applyDag(z, gs.r)
   threadBarrier()
 
+type opArgs3[T] = object
+  a: T
+proc apply*(oa: opArgs3; r: any; x: any) =
+  threadBarrier()
+  oa.a.p.prolong(oa.a.f, x)
+  threadBarrier()
+  oa.a.apply(oa.a.f2, oa.a.f)
+  threadBarrier()
+  oa.a.r.restrict(r, oa.a.f2)
+  threadBarrier()
+proc applyDag*(oa: opArgs3; r: any; x: any) =
+  mixin applyDag
+  threadBarrier()
+  oa.a.r.prolong(oa.a.f, x)
+  threadBarrier()
+  oa.a.applyDag(oa.a.f2, oa.a.f)
+  threadBarrier()
+  oa.a.p.restrict(r, oa.a.f2)
+  threadBarrier()
+proc preconditioner*(oa: opArgs3; z: any; gs: GcrState) =
+  z := gs.r
+  #threadBarrier()
+  #oa.applyDag(z, gs.r)
+  #threadBarrier()
+
 type opArgsVc[T,C,F,P,R] = object
   a: T
   cb,cx: C
-  f: F
+  f,f2: F
   p: P
   r: R
-  lp,nv: int
+  lp,nv,csType,eo: int
 proc apply*(oa: opArgsVc; r: any; x: any) =
   mixin D
-  threadBarrier()
-  oa.a.w.D(r, x, oa.a.m)
-  threadBarrier()
+  if oa.eo == 0:
+    threadBarrier()
+    oa.a.w.D(r, x, oa.a.m)
+    threadBarrier()
+  else:
+    let m4 = 4.0 + oa.a.m
+    let m2 = m4*m4
+    threadBarrier()
+    wilsonD2ee(oa.a.w.se, oa.a.w.so, r, oa.a.w.g, x, m2)
+    threadBarrier()
 proc applyDag*(oa: opArgsVc; r: any; x: any) =
   mixin Ddag
   threadBarrier()
@@ -187,19 +225,28 @@ proc applyDag*(oa: opArgsVc; r: any; x: any) =
   threadBarrier()
 proc smoother*(oa: opArgsVc; x: any; b: any) =
   var sp: SolverParams
-  sp.maxits = 4
+  sp.maxits = 6
   sp.verbosity = 2
   sp.r2req = 0.01
-  sp.subset.layoutSubset(x.l, "all")
-  var gcr = newGcrState(x=x, b=b)
-  echo "starting gcr"
-  var oa2 = opArgs[type(oa.a)](a: oa.a)
-  gcr.solve(oa2, sp)
-  echo sp.finalIterations
-  echo gcr.r2
+  if oa.eo == 0:
+    sp.subset.layoutSubset(x.l, "all")
+    var gcr = newGcrState(x=x, b=b)
+    echo "starting gcr"
+    var oa2 = opArgs[type(oa.a)](a: oa.a)
+    gcr.solve(oa2, sp)
+    echo sp.finalIterations
+    echo gcr.r2
+  else:
+    sp.subset.layoutSubset(x.l, "even")
+    var gcr = newGcrState(x=x, b=b)
+    echo "starting gcr"
+    var oa2 = opArgs[type(oa)](a: oa)
+    gcr.solve(oa2, sp)
+    echo sp.finalIterations
+    echo gcr.r2
 proc csolve*(oa: opArgsVc; x: any; b: any) =
   var sp: SolverParams
-  sp.maxits = 500
+  sp.maxits = 100
   sp.verbosity = 2
   sp.r2req = 0.01
   sp.subset.layoutSubset(x.l, "all")
@@ -210,54 +257,108 @@ proc csolve*(oa: opArgsVc; x: any; b: any) =
   gcr.solve(oa2, sp)
   echo sp.finalIterations
   echo gcr.r2
+proc csolve1*(oa: opArgsVc; x: any; b: any) =
+  var sp: SolverParams
+  sp.maxits = 100
+  sp.verbosity = 2
+  sp.r2req = 0.01
+  sp.subset.layoutSubset(x.l, "all")
+  var gcr = newGcrState(x=x, b=b)
+  echo "starting gcr"
+  var oa3 = opArgs3[type(oa)](a: oa)
+  x := 0
+  gcr.solve(oa3, sp)
+  echo sp.finalIterations
+  echo gcr.r2
+proc csolve2*(oa: opArgsVc; x: any; b: any) =
+  var sp: SolverParams
+  sp.maxits = 100
+  sp.verbosity = 2
+  sp.r2req = 0.01
+  sp.subset.layoutSubset(x.l, "all")
+  var gcr = newGcrState(x=x, b=b)
+  echo "starting gcr"
+  var oa3 = opArgs3[type(oa)](a: oa)
+  x := 0
+  gcr.solve(oa3, sp)
+  echo sp.finalIterations
+  echo gcr.r2
 proc preconditioner*(oa: var opArgsVc; z: var any; gs: GcrState) =
-  # z = r (r'A'r)/(r'A'Ar)
-  oa.apply(oa.f, gs.r)
-  let rar = dot(oa.f, gs.r)
-  let raar = oa.f.norm2
-  let c = rar/raar
-  z := c * gs.r
-  oa.apply(oa.f, z)
-  oa.f -= gs.r
-  echo "r: ", oa.f.norm2
+  if oa.eo == 0: # all sites
+    # z = r (r'A'r)/(r'A'Ar)
+    oa.apply(oa.f, gs.r)
+    let rar = dot(oa.f, gs.r)
+    let raar = oa.f.norm2
+    let c = rar/raar
+    z := c * gs.r
+    oa.apply(oa.f, z)
+    oa.f -= gs.r
+    echo "r: ", oa.f.norm2
 
-  z := gs.r
-  z.wmgProject(oa.r)
-  echo "wmgProj: ", z.norm2
+    z := gs.r
+    z.wmgProject(oa.r)
+    echo "wmgProj: ", z.norm2
 
-  oa.applyDag(z, gs.r)
-  z.wmgBlockProject(oa.p, oa.f, oa.cb)
-  echo "wmgBlockProj: ", z.norm2
+    oa.applyDag(z, gs.r)
+    z.wmgBlockProject(oa.p, oa.f, oa.cb)
+    echo "wmgBlockProj: ", z.norm2
 
-  #oa.p.restrict(oa.cb, gs.r)
-  #oa.cx := oa.cb
-  #[
-  var p = oa.p
-  z := gs.r
-  #p.v.wmgzero(0)
-  let lp = oa.lp
-  echo "lp: ", lp
-  p.wmgBlockNormalizeInsert(z, lp, oa.f, oa.cb)
-  oa.lp = (lp+1) mod oa.nv
-  oa.p.restrict(oa.cx, gs.r)
-  oa.p.prolong(z, oa.cx)
-  z -= gs.r
-  echo "z: ", z.norm2
-  ]#
+    #oa.p.restrict(oa.cb, gs.r)
+    #oa.cx := oa.cb
+    #[
+    var p = oa.p
+    z := gs.r
+    #p.v.wmgzero(0)
+    let lp = oa.lp
+    echo "lp: ", lp
+    p.wmgBlockNormalizeInsert(z, lp, oa.f, oa.cb)
+    oa.lp = (lp+1) mod oa.nv
+    oa.p.restrict(oa.cx, gs.r)
+    oa.p.prolong(z, oa.cx)
+    z -= gs.r
+    echo "z: ", z.norm2
+    ]#
 
-  oa.csolve(oa.cx, gs.r)
-  #oa.gcrc.solve(oa.c, oa.sp)
-  oa.p.prolong(z, oa.cx)
-  oa.apply(oa.f, z)
-  oa.f -= gs.r
-  echo "csolve: ", oa.f.norm2
-  oa.smoother(z, gs.r)
-  oa.apply(oa.f, z)
-  oa.f -= gs.r
-  echo "prec: ", oa.f.norm2
-  #z := gs.r
+    case oa.csType:
+    of 0:
+      oa.csolve(oa.cx, gs.r)
+      #oa.gcrc.solve(oa.c, oa.sp)
+      oa.p.prolong(z, oa.cx)
+    else:
+      oa.r.restrict(oa.cb, gs.r)
+      oa.csolve1(oa.cx, oa.cb)
+      #oa.gcrc.solve(oa.c, oa.sp)
+      oa.p.prolong(z, oa.cx)
+
+    oa.apply(oa.f, z)
+    oa.f -= gs.r
+    echo "csolve: ", oa.f.norm2
+    oa.smoother(z, gs.r)
+    oa.apply(oa.f, z)
+    oa.f -= gs.r
+    echo "prec: ", oa.f.norm2
+    #z := gs.r
+  else:  # even only
+    #z := gs.r
+    oa.cb := 0
+    oa.r.restrict(oa.cb, gs.r)
+    oa.cx := 0
+    oa.csolve2(oa.cx, oa.cb)
+    z := 0
+    oa.p.prolong(z, oa.cx)
+    z.odd := 0
+
+    oa.f := 0
+    oa.apply(oa.f, z)
+    oa.f -= gs.r
+    echo "csolve: ", oa.f.norm2
+    oa.smoother(z, gs.r)
+    oa.f := 0
+    oa.apply(oa.f, z)
+    oa.f -= gs.r
+    echo "prec: ", oa.f.norm2
 proc solveGcrVc*(w: Wilson; x: var Field; b: Field; m: SomeNumber;
-                 sp: var SolverParams) =
+                 sp: var SolverParams, cst=0) =
   sp.subset.layoutSubset(x.l, "all")
   let t = (w:w, m:m)
   #let rs = b.toSingle.newOneOf
@@ -266,7 +367,7 @@ proc solveGcrVc*(w: Wilson; x: var Field; b: Field; m: SomeNumber;
   let latC = [4,4,4,4]
   let loC = newLayout(latC, loF.V, loF.rankGeom, loF.innerGeom)
   let mgb1 = newMgBlock(loF, loC)
-  const nmgv1 {.intDefine.} = 64
+  const nmgv1 {.intDefine.} = 48
   var rv,pv: LatticeWmgVectorsV[nmgv1]
   rv.new(loF)
   pv.new(loF)
@@ -274,14 +375,16 @@ proc solveGcrVc*(w: Wilson; x: var Field; b: Field; m: SomeNumber;
   var p = newMgTransfer(mgb1, pv)
 
   var f = x.newOneOf()
+  var f2 = x.newOneOf()
   var cb: LatticeMgColorVectorV[nmgv1]
   cb.new(loC)
   var cx: LatticeMgColorVectorV[nmgv1]
   cx.new(loC)
-  var oa = opArgsVc[type(t),type(cb),type(f),type(p),type(r)](a: t, cb: cb,
-                                                              cx: cx, f:f,
-                                                              p: p, r: r)
+  var oa = opArgsVc[type(t),type(cb),type(f),type(p),type(r)](
+                    a: t, cb: cb, cx: cx, f: f, f2: f2, p: p, r: r)
   oa.nv = nmgv1
+  oa.csType = cst
+  oa.eo = 0
   let setupKind = intParam("s", 1)
   case setupKind:
     of 0: mgsetup(r, p, oa, x)
@@ -291,41 +394,51 @@ proc solveGcrVc*(w: Wilson; x: var Field; b: Field; m: SomeNumber;
   gcr.solve(oa, sp)
   echo sp.finalIterations
 
-
-
-#[
-proc solveGcrEoVc*(w: Wilson; x,b: Field; m: SomeNumber;
-                   sp: var SolverParams) =
+proc solveGcrEoVc*(w: Wilson; x: Field; b: Field; m: SomeNumber;
+                   sp: var SolverParams, cst=0) =
   sp.subset.layoutSubset(x.l, "even")
-  let wx = Weo[type(w)](w: w)
-  let t = (w:wx, m:m)
+  let t = (w:w, m:m)
   #let rs = b.toSingle.newOneOf
   #let zs = b.toSingle.newOneOf
   let loF = x.l
   let latC = [4,4,4,4]
   let loC = newLayout(latC, loF.V, loF.rankGeom, loF.innerGeom)
   let mgb1 = newMgBlock(loF, loC)
-  const nmgv1 {.intDefine.} = 2
+  const nmgv1 {.intDefine.} = 48
   var rv,pv: LatticeWmgVectorsV[nmgv1]
   rv.new(loF)
   pv.new(loF)
-  let r = newMgTransfer(mgb1, rv)
-  let p = newMgTransfer(mgb1, pv)
+  var r = newMgTransfer(mgb1, rv)
+  var p = newMgTransfer(mgb1, pv)
+
+  var f = x.newOneOf()
+  var f2 = x.newOneOf()
   var cb: LatticeMgColorVectorV[nmgv1]
   cb.new(loC)
   var cx: LatticeMgColorVectorV[nmgv1]
   cx.new(loC)
-  var oa = opArgsVc[type(t),type(cb),type(p),type(r)](a: t, cb: cb, cx: cx,
-                                                      p: p, r: r)
-  let be = b.newOneOf
+  var oa = opArgsVc[type(t),type(cb),type(f),type(p),type(r)](
+                    a: t, cb: cb, cx: cx, f: f, f2: f2, p: p, r: r)
+  oa.nv = nmgv1
+  oa.csType = cst
+  oa.eo = 0  # no EO for setup
+  let setupKind = intParam("s", 1)
+  case setupKind:
+    of 0: mgsetup(r, p, oa, x)
+    else: mgsetupSvd(r, p, oa, x)
+  oa.eo = 1
+  var be = b.newOneOf()
+  be := 0
   threads:
     w.eoReduce(be, b, m)
   var gcr = newGcrState(x=x, b=be)
+  x := 0
   gcr.solve(oa, sp)
   threads:
     w.eoReconstruct(x, b, m)
   echo sp.finalIterations
-]#
+
+
 
 
 when isMainModule:
@@ -445,12 +558,26 @@ when isMainModule:
     #fr = relResid(r,v2,1e-30)
     #echo "fnalResid: ", fr
 
+    #[
     echo "GCR VC:"
     threads:
       v2 := 0
     #resetTimers()
     sp.verbosity = 3
-    w.solveGcrVc(v2, src, m, sp)
+    w.solveGcrVc(v2, src, m, sp, 1)
+    sp.verbosity = 1
+    #echoTimers()
+    checkResid(src, soln, v2)
+    #fr = relResid(r,v2,1e-30)
+    #echo "fnalResid: ", fr
+    ]#
+
+    echo "GCR EO VC:"
+    threads:
+      v2 := 0
+    #resetTimers()
+    sp.verbosity = 3
+    w.solveGcrEoVc(v2, src, m, sp, 1)
     sp.verbosity = 1
     #echoTimers()
     checkResid(src, soln, v2)

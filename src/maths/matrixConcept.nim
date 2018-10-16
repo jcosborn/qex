@@ -577,11 +577,15 @@ proc norm2X*(x:Mat1):auto {.inline,noInit.} =
   norm2(t, x)
   t
 
-proc idot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
+#proc idot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
+template idot*(r: var Sca1; xx: Vec2; yy: Vec3) =
+  let x = xx
+  let y = yy
   for i in 0..<len(x):
     r += dot(x[i],y[i])
     #idot(r,x[i],y[i])
-proc dot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
+#proc dot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
+template dot*(r: var Sca1; x: Vec2; y: Vec3) =
   r := 0
   idot(r, x, y)
 setBinop(dot, dot, Vec1, Vec2, type(dot(x[0],y[0])))
