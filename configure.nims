@@ -47,13 +47,13 @@ set "CUDADIR", cudadir
 var machine = ""
 CC ~ "mpicc"
 CC_TYPE ~ "gcc"
-CFLAGS_ALWAYS ~ "-Wall -std=gnu99 -march=native -fno-strict-aliasing -ldl"
+CFLAGS_ALWAYS ~ "-std=gnu99 -march=native -fno-strict-aliasing -ldl"
 CFLAGS_DEBUG ~ "-g3 -O0"
 CFLAGS_SPEED ~ "-g -O3 -ffast-math"
 OMPFLAGS ~ "-fopenmp"
 LD ~ ( "$CC" % params )
 LDFLAGS ~ ( "$CFLAGS_ALWAYS" % params )
-VERBOSITY ~ "0"
+VERBOSITY ~ "1"
 SIMD ~ ""
 VLEN ~ "1"
 
