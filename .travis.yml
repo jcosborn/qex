@@ -14,6 +14,7 @@ notifications:
     on_failure: always
 
 before_install:
+  - cd ..
   - git clone -b master --depth 1 git://github.com/nim-lang/Nim
   - cd Nim
   - git clone --depth 1 git://github.com/nim-lang/csources
@@ -23,15 +24,17 @@ before_install:
   - bin/nim c koch
   - ./koch boot -d:release
   - export PATH=$PWD/bin:$PATH
+  - echo $PATH
   - nim -v
   - ./koch nimble -d:release
   - cd ..
+  - cd qex
 
 script:
   - ./bootstrap-travis
   - QMPDIR=qmp QIODIR=qio ./configure
   - #sed -i 's/mpicc/gcc/' config.nims
-  - make NIMFLAGS="--parallelBuild:1" verb:0 tests
+  - make NIMFLAGS="--parallelBuild:1" tests
   - ./testscript.sh
   - make bench
   - bin/benchLinalg

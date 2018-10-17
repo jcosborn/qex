@@ -53,7 +53,7 @@ CFLAGS_SPEED ~ "-g -O3 -ffast-math"
 OMPFLAGS ~ "-fopenmp"
 LD ~ ( "$CC" % params )
 LDFLAGS ~ ( "$CFLAGS_ALWAYS" % params )
-VERBOSITY ~ "1"
+VERBOSITY ~ "0"
 SIMD ~ ""
 VLEN ~ "1"
 
