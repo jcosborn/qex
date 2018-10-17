@@ -34,7 +34,7 @@ script:
   - ./bootstrap-travis
   - QMPDIR=qmp QIODIR=qio ./configure
   - #sed -i 's/mpicc/gcc/' config.nims
-  - make NIMFLAGS="--parallelBuild:1" tests
+  - make NIMFLAGS="--parallelBuild:2" tests
   - ./testscript.sh
   - make bench
   - bin/benchLinalg
