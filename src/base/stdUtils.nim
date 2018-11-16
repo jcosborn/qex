@@ -4,7 +4,7 @@ import metaUtils
 import os
 
 type
-  cArray*{.unchecked.}[T] = array[0,T]
+  cArray*[T] = UncheckedArray[T]
 template `[]`*(x: cArray): untyped = addr x[0]
 template `&`*(x: ptr cArray): untyped = addr x[0]
 

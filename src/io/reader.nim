@@ -185,9 +185,9 @@ proc read[T](r:var Reader, v:var openArray[ptr T]) =
   #echo "ws: ", wordSize, "  rws: ", recWordSize
   if wordSize==recWordSize:
     proc put(buf:cstring; index:csize; count:cint; arg:pointer) =
-      type srcT{.unchecked.} = array[0,IOtype(T)]
-      type destT1{.unchecked.} = array[0,T]
-      type destT{.unchecked.} = array[0,ptr destT1]
+      type srcT = cArray[IOtype(T)]
+      type destT1 = cArray[T]
+      type destT = cArray[ptr destT1]
       let src = cast[ptr srcT](buf)
       let dest = cast[ptr destT](arg)
       let vi = index div simdLength(T)
@@ -201,9 +201,9 @@ proc read[T](r:var Reader, v:var openArray[ptr T]) =
     wordSize = recWordSize
     #echo "ws: ", wordSize, "  rws: ", recWordSize, "  vs: ", vsize
     proc put(buf:cstring; index:csize; count:cint; arg:pointer) =
-      type srcT{.unchecked.} = array[0,IOtypeP(T)]
-      type destT1{.unchecked.} = array[0,T]
-      type destT{.unchecked.} = array[0,ptr destT1]
+      type srcT = cArray[IOtypeP(T)]
+      type destT1 = cArray[T]
+      type destT = cArray[ptr destT1]
       let src = cast[ptr srcT](buf)
       let dest = cast[ptr destT](arg)
       let vi = index div simdLength(T)

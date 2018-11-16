@@ -142,9 +142,9 @@ proc write[T](wr: var Writer, v: var openArray[ptr T], lat: openArray[int], md="
 
   if precs == precs0:
     proc get(buf: cstring; index: csize; count: cint; arg: pointer) =
-      type destT{.unchecked.} = array[0,IOtype(T)]
-      type srcT1{.unchecked.} = array[0,T]
-      type srcT{.unchecked.} = array[0,ptr srcT1]
+      type destT = cArray[IOtype(T)]
+      type srcT1 = cArray[T]
+      type srcT = cArray[ptr srcT1]
       let dest = cast[ptr destT](buf)
       let src = cast[ptr srcT](arg)
       let vi = index div simdLength(T)
@@ -165,9 +165,9 @@ proc write[T](wr: var Writer, v: var openArray[ptr T], lat: openArray[int], md="
     wordSize = recWordSize
     # echo "ws: ", wordSize, "  rws: ", recWordSize, "  vs: ", vsize
     proc get(buf: cstring; index: csize; count: cint; arg: pointer) =
-      type destT{.unchecked.} = array[0,IOtypeP(T)]
-      type srcT1{.unchecked.} = array[0,T]
-      type srcT{.unchecked.} = array[0,ptr srcT1]
+      type destT = cArray[IOtypeP(T)]
+      type srcT1 = cArray[T]
+      type srcT = cArray[ptr srcT1]
       let dest = cast[ptr destT](buf)
       let src = cast[ptr srcT](arg)
       let vi = index div simdLength(T)
