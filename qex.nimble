@@ -96,6 +96,7 @@ proc setupRelease =
   range_checks ~ off
   bound_checks ~ off
   overflow_checks ~ off
+  nilchecks ~ off
   assertions ~ off
   stacktrace ~ off
   linetrace ~ off
