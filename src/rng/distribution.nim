@@ -172,8 +172,8 @@ proc u1*(x: Field, r: RNGField) =
 proc newRNGField*[R: RNG](lo: Layout, rng: typedesc[R],
                           s: uint64 = uint64(17^7)): Field[1,R] =
   var r: Field[1,rng]
-  let t = sizeof(r[0]) # workaround Nim bug
   r.new(lo.physGeom.newLayout 1)
+  let t = r[0]  # Workaround Nim bug (Nim needs to see the type instantiated.)
   threads:
     for j in lo.sites:
       var l = lo.coords[lo.nDim-1][j].int
