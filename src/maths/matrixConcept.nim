@@ -186,6 +186,10 @@ template numNumbers*(x:AsMatrix):untyped =
   x.nrows*x.ncols*numNumbers(x[0,0])
 #template `[]`*(x:array; i,j:int):untyped = x[i][j]
 #template `[]=`*(x:array; i,j:int, y:untyped):untyped = x[i][j] = y
+template getNc*(x: AsVector): untyped = getNc(x[0])
+template getNc*(x: AsMatrix): untyped = getNc(x[0,0])
+template getNs*(x: AsVector): untyped = getNs(x[0])
+template getNs*(x: AsMatrix): untyped = getNs(x[0,0])
 
 template len*(x:MatrixRowObj):untyped = x.mat[].ncols
 template `[]`*(x:MatrixRowObj; i:int):untyped = x.mat[][x.rw,i]
@@ -350,6 +354,7 @@ template makeLevel2T(f,s1,t1,s2,t2,s3,t3: untyped): untyped {.dirty.} =
   template `f U`*(r: t1, x: t2, y: t3): untyped =
     `f s1 s2 s3`(r, x, y)
   template f*(r: t1, x: t2, y: t3): untyped =
+    #echoType: r
     flattenCallArgs(`f U`, r, x, y)
   #[
   template f*(rr:t1, xx:t2, yy:t3): untyped =
@@ -408,6 +413,7 @@ template `+=`*(x: var Vec1; y: Vec2) =
   staticTraceEnd: peqVV
 template `+=`*(x:var Mat1; y:Mat2) = iadd(x, y)
 template `-=`*(x:var Vec1; y:Vec2) = isub(x, y)
+template `-=`*(x:var Mat1; y:Sca2) = isub(x, y)
 template `-=`*(x:var Mat1; y:Mat2) = isub(x, y)
 
 makeLevel1(imul, V, var Vec1, S, Sca2)

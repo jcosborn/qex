@@ -75,6 +75,7 @@ template makeMap1(op:untyped):untyped {.dirty.} =
   template `op VV`*(r: typed; x: typed): untyped =
     flattenCallArgs(`op VVU`, r, x)
   template `op MS`*(r: typed; x: typed): untyped =
+    mixin op
     #subst(r,rr,x,xx,tx,_,i,_,j,_):
     #assert(r.nrows == r.ncols)
     #load(tx, x)
@@ -402,7 +403,7 @@ template mulVMVU*(r: typed; x,y: typed): untyped =
 template mulVMV*(r: typed; x,y: typed): untyped =
   flattenCallArgs(mulVMVU, r, x, y)
 
-template mulMMM*(rr:typed; xx,yy:typed):untyped =
+template mulMMM*(r: typed; x,y: typed): untyped =
   #[
   subst(r,rr,x,xx,y,yy,tr,_,i,_,j,_,k,_,txi0r,_,txi0i,_,txikr,_,txiki,_):
     mixin nrows, ncols, mul, imadd, assign, load1
@@ -427,8 +428,8 @@ template mulMMM*(rr:typed; xx,yy:typed):untyped =
       forO j, 0, r.ncols.pred:
         assign(r[i,j], tr[j])
   ]#
-  XoptimizeAst:
-    subst(r,rr,x,xx,y,yy,tr,_,i,_,j,_,k,_,txi0r,_,txi0i,_,txikr,_,txiki,_):
+  #XoptimizeAst:
+    #subst(x,xx,y,yy,tr,_,i,_,j,_,k,_,txi0r,_,txi0i,_,txikr,_,txiki,_):
       assert(x.nrows == r.nrows)
       assert(x.ncols == y.nrows)
       assert(r.ncols == y.ncols)
@@ -445,6 +446,7 @@ template mulMMM*(rr:typed; xx,yy:typed):untyped =
           forO j, 0, r.ncols.pred:
             imadd(tr[j], txik, y[k,j])
         forO j, 0, r.ncols.pred:
+          #echoRepr: r
           assign(r[i,j], tr[j])
 
 

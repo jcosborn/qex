@@ -105,6 +105,8 @@ template adj*(x: typed): untyped =
     #static: echo "adj typed wrapper"
     #dumpTree: x
     asWrapper(x, adj(x[]))
+  elif compiles(adjImpl(x)):
+    adjImpl(x)
   else:
     #static: echo "adj typed not wrapper"
     #dumpTree: x

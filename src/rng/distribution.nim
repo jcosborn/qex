@@ -44,6 +44,9 @@ template gaussian*(r: AsVar, x: untyped) =
 proc gaussian*(v: Field, r: RNGField) =
   for i in v.l.sites:
     gaussian(v{i}, r{i})
+proc gaussian*[T](a: openArray[T], r: RNGField) =
+  for i in 0..<a.len:
+    gaussian(a[i], r)
 
 proc uniform*(x: var AsComplex, r: var RNG) =
   mixin uniform

@@ -2,8 +2,8 @@ static:
   echo "Starting wilsonD imports: ", staticExec("date")
 
 import ../base/globals
-#setForceInline(false)
-setForceInline(true)
+setForceInline(false)
+#setForceInline(true)
 setStaticUnroll(false)
 #setStaticUnroll(true)
 setNoAlias(false)
@@ -86,10 +86,10 @@ template wilsonDP*(sd: WilsonD; r: Field; g: openArray[Field2];
       assign(r[ir], rir)
   toc("local", flops=(expFlops+2*g.len*(12+2*66+24))*sd.subset.len)
   optimizeAstX:
-    #boundarySB(sd.sf[0], r[ir]-=sprecon1p(g[0][ir]*it))
-    template bsb0(ir0,it: typed): untyped =
-      r[ir0] -= sprecon1p(g[0][ir0]*it)
-    boundarySB2(sd.sf[0], bsb0)
+    #template bsb0(ir0,it: typed): untyped =
+    #  r[ir0] -= sprecon1p(g[0][ir0]*it)
+    #boundarySB2(sd.sf[0], bsb0)
+    boundarySB(sd.sf[0], r[ir]-=sprecon1p(g[0][ir]*it))
     boundarySB(sd.sf[1], r[ir]-=sprecon2p(g[1][ir]*it))
     boundarySB(sd.sf[2], r[ir]-=sprecon3p(g[2][ir]*it))
     boundarySB(sd.sf[3], r[ir]-=sprecon4p(g[3][ir]*it))

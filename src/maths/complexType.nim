@@ -10,12 +10,13 @@ type
     reX*: TR
     imX*: TI
   ComplexObj2*[TR,TI] = ComplexObj[TR,TI]
-  Complex*[TR,TI] = ComplexProxy[ComplexObj[TR,TI]]
-  Complex2*[TR,TI] = Complex[TR,TI]
-  Complex3*[TR,TI] = Complex[TR,TI]
+  ComplexTT*[TR,TI] = ComplexProxy[ComplexObj[TR,TI]]
+  ComplexTT2*[TR,TI] = ComplexTT[TR,TI]
+  ComplexTT3*[TR,TI] = ComplexTT[TR,TI]
   AsComplex*[T] = ComplexProxy[T]
   AsComplex2*[T] = ComplexProxy[T]
-  ComplexType*[T] = Complex[T,T]
+  ComplexT*[T] = ComplexTT[T,T]
+  ComplexType*[T] = ComplexT[T]
 
 template newComplexObj*[TR,TI](x: TR, y: TI): untyped =
   ComplexObj[type(TR),type(TI)](reX: x, imX: y)
@@ -54,7 +55,7 @@ macro im*(x: ComplexObj{nkObjConstr}): untyped =
   #echo result.treerepr
 
 template `re=`*(x: ComplexObj, y: untyped): untyped =
-  #dumpTree: x
+  #echoRepr: x
   #mixin `:=`
   #x.reX := y
   assign(x.reX, y)
@@ -83,11 +84,17 @@ template numNumbers*(x: ComplexProxy): untyped =
   mixin numNumbers
   2*numNumbers(x.re)
 template simdType*[T](x: ComplexProxy[T]): untyped = simdType(T)
+template simdType*[T](x: type ComplexProxy[T]): untyped = simdType(T)
 template simdType*[TR,TI](x: ComplexObj[TR,TI]): untyped =
   mixin simdType
   simdType(TR)
+template simdLength*[TR,TI](x: ComplexObj[TR,TI]): untyped = simdLength(TR)
+template simdLength*[T](x: ComplexProxy[T]): untyped = simdLength(T)
+template simdLength*[T](x: type ComplexProxy[T]): untyped = simdLength(T)
 template simdSum*(x: ComplexObj): untyped =
   newComplex(simdSum(x.re),simdSum(x.im))
+template getNc*(x: ComplexProxy): untyped = 1
+template getNs*(x: ComplexProxy): untyped = 1
 
 template toSingle*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): untyped =
   ComplexObj[toSingle(type(TR)),toSingle(type(TI))]

@@ -63,6 +63,8 @@ when declared(SimdD4):
   template toDoubleImpl*(x: SimdD4): untyped = x
   mapSimd(SimdD4, exp)
   template inv*(x: SimdD4): untyped = 1.0/x
+  template min*(x: SomeNumber, y: SimdD4): untyped = min(x.to(SimdD4), y)
+  template max*(x: SomeNumber, y: SimdD4): untyped = max(x.to(SimdD4), y)
 
 when declared(SimdS4) and declared(SimdD4):
   proc toSingle*(x: SimdD4): SimdS4 {.inline,noInit.} =

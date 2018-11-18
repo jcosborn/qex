@@ -41,6 +41,21 @@ template row*(x: Color, i: untyped): untyped =
 template setRow*(r: Color; x: Color2; i: untyped): untyped =
   setRow(r[], x[], i)
 
+template getNc*(x: Color): untyped =
+  when x[] is Mat1:
+    x[].nrows
+  elif x[] is Vec1:
+    x[].len
+  else:
+    static:
+      echo "error: unknown Nc"
+      echo x.repr
+      echo type(x).name
+      qexExit 1
+    0
+
+template getNs*(x: Color): untyped = getNs(x[])
+
 template binDDRet(fn,wr,T1,T2) =
   template fn*(x: T1, y: T2): untyped =
     wr(fn(x[], y[]))

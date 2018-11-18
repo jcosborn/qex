@@ -135,8 +135,8 @@ proc projectU*(r: var Mat1; x: Mat2) =
   mul(r, tx, t2)
 
 proc projectSU*(r: var Mat1; x: Mat2) =
-  const nc = x.nrows
-  var m{.noinit.}:type(x)
+  const nc = r.nrows
+  var m{.noinit.}: type(r)
   m.projectU x
   var d = m.determinant    # already unitary: 1=|d
   let p = (1.0/float(-nc)) * atan2(d.im, d.re)
@@ -145,13 +145,11 @@ proc projectSU*(r: var Mat1; x: Mat2) =
   r := d * m
 
 proc projectTAH*(r: var Mat1; x: Mat2) =
-  let tx = x
-  let t = 0.5*(tx-tx.adj)
+  r := 0.5*(x-x.adj)
   const nc = x.nrows
-  when nc == 1:
-    r := t
-  else:
-    r := t - (t.trace * (1.0/nc.float))
+  when nc > 1:
+    let d = r.trace / nc.float
+    r -= d
 
 proc checkSU*(x: Mat1): auto {.inline, noinit.} =
   ## Returns the sum of deviations of x^dag x and det(x) from unitarity.

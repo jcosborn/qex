@@ -91,7 +91,7 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
       threadBarrier()
       A(v, p)
       threadBarrier()
-      toc("v")
+      toc("v=A(p)")
 
       # Update s.
       subset:
@@ -120,7 +120,7 @@ proc bicgstabSolve*(x:Field; b:Field2; A:proc; sp:var SolverParams) =
         threadBarrier()
         A(t,s)
         threadBarrier()
-        toc("t")
+        toc("t=A(s)")
 
         # Update x, r.
         subset:

@@ -424,7 +424,7 @@ macro makeConstructors(x: untyped): untyped =
 
 makeConstructors(Real)
 makeConstructors(Complex)
-makeConstructors(complex)
+#makeConstructors(complex)
 makeConstructors(ColorVector)
 makeConstructors(ColorMatrix)
 makeConstructors(HalfFermion)
