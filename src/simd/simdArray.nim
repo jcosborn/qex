@@ -276,6 +276,7 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   map011(T, L, trace, trace)
   map011(T, L, norm2, norm2)
   map011(T, L, sqrt, sqrt)
+  map011(T, L, rsqrt, rsqrt)
   map011(T, L, sin, sin)
   map011(T, L, cos, cos)
   map011(T, L, acos, acos)
