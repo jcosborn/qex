@@ -122,7 +122,7 @@ proc gfLocalMetric(m: Field, g: any, dirs: array|seq) =
       m[e] := t
   toc("LocalMetric done")
 
-proc gfMetric(g: any, dirs: array|seq): float =
+proc linkTrace*(g: any, dirs: array|seq): float =
   tic()
   let sf = 1.0/(dirs.len.float*g[0].l.physVol.float*g[0][0].nrows)
   result = 0.0
@@ -130,6 +130,7 @@ proc gfMetric(g: any, dirs: array|seq): float =
     result += trace(g[d]).re
   toc("metric done")
   result *= sf
+template gfMetric(g: any, dirs: array|seq): float = linkTrace(g, dirs)
 
 proc gfMetrics(gd: any, t: any, nd: int): auto =
   tic()
@@ -191,16 +192,16 @@ proc gfLineMin(g: any, gd: any, t,t0: any,
     for e in gd:
       var tgd = t[e][]*gd[e][]
       gd[e][].projectTAH(tgd)
-  echo "eps: ", 0.0, "  ", m0
+  #echo "eps: ", 0.0, "  ", m0
   #t := t0
   t.gtUpdate(gd, eps)
   #t.projectSU
   var m1 = gfMetric(g, t, dirs)
-  echo "eps: ", eps, "  ", m1
+  #echo "eps: ", eps, "  ", m1
   t.gtUpdate(gd, eps)
   #t.projectSU
   var m2 = gfMetric(g, t, dirs)
-  echo "eps: ", 2*eps, "  ", m2
+  #echo "eps: ", 2*eps, "  ", m2
   # m = m0 (x-e)(x-2e)/(2e^2) - m1 (x)(x-2e)/(e^2) + m2 (x)(x-e)/(2e^2)
   # m = [m0(x-e)(x-2e) - 2m1 x(x-2e) + m2 x(x-e) ]/(2e^2)
   # m' = [m0(2x-3e) - 4m1 (x-e) + m2 (2x-e) ]/(2e^2)
@@ -212,7 +213,7 @@ proc gfLineMin(g: any, gd: any, t,t0: any,
   t.gtUpdate(gd, eps)
   t.projectSU
   var m3 = gfMetric(g, t, dirs)
-  echo "eps: ", eps, "  ", m3
+  #echo "eps: ", eps, "  ", m3
   toc("gfLineMin")
 
 proc moveFromZero(x: float, eps: float): float =
@@ -296,8 +297,8 @@ proc relaxO(t: any, gd: Field2, g: any, dirs: array|seq, orf: float) =
       #t[e][].projectSU
   toc("relaxO")
 
-proc getGaugeFixTransform(t: Field, g: any, dirs: seq[int],
-                          gstop=1e-5, orf=1.8) =
+proc getGaugeFixTransform*(t: Field, g: any, dirs: seq[int],
+                           gstop=1e-5, orf=1.8, verb=0) =
   tic()
   var gd = t.newOneOf
   var t0 = t.newOneOf
@@ -311,15 +312,17 @@ proc getGaugeFixTransform(t: Field, g: any, dirs: seq[int],
     let mets = gfMetrics(gd, t, dirs.len)
     let met = mets.met
     let gdsq = mets.gre+mets.gro
-    echo its, "  tr: ", met
-    echo "  gradE: ", 2.0*mets.gre
-    echo "  gradO: ", 2.0*mets.gro
-    echo "  grad:  ", gdsq
-    toc("metrics")
     if gdsq <= gstop:
       inc polish
     else:
       polish = 0
+    if (verb>0 and (its mod verb == 0)) or polish>10:
+      echo "[GFIX] iterations: ", its
+      echo "[GFIX] link trace: ", met
+      echo "[GFIX] gradE: ", 2.0*mets.gre
+      echo "[GFIX] gradO: ", 2.0*mets.gro
+      echo "[GFIX] grad:  ", gdsq
+    toc("metrics")
     if polish>10: break
     inc its
     var updateType = its mod 2

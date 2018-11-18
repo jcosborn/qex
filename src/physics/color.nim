@@ -85,6 +85,8 @@ template `-=`*(r: var Color, x: Color2) =
   r[] -= x[]
 template `*=`*(r: var Color, x: SomeNumber) =
   r[] *= x
+template iadd*(r: var Color, x: SomeNumber) =
+  iadd(r[], x)
 template iadd*(r: var Color, x: AsComplex) =
   iadd(r[], x)
 template iadd*(r: var Color, x: Color2) =
