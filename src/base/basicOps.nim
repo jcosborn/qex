@@ -138,6 +138,7 @@ proc atan2*(x,y:float64):float64 {.importC:"atan2",header:"math.h".}
 proc atan2*(x,y:float32):float32 {.importC:"atan2f",header:"math.h".}
 template rsqrt*(r:var SomeNumber; x:SomeNumber) =
   r = cnvrt(r,1)/sqrt(cnvrt(r,x))
+template rsqrt*[T](x: T): untyped = T(1)/sqrt(x)
 
 template load1*(x:SomeNumber):untyped = x
 
