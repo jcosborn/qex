@@ -51,7 +51,7 @@ proc ioReadRank(node: cint): cint =
 proc ioMasterRank(): cint = 0.cint
 
 proc toString(qs:ptr QIO_String):string =
-  let n = qs.length.int
+  let n = qs.length.int - 2  # seems to have 2 byte padding
   result = spaces(n)
   for i in 0..<n:
     result[i] = qs.string[i]
@@ -159,19 +159,29 @@ proc getWordSize(r:var Reader):int =
 
 import qioInternal
 
-template vcopyImpl(dest:typed; l:int; src:typed):untyped =
-  for i in 0..<dest.nrows:
-    for j in 0..<dest.ncols:
-      dest[i,j].re[l] = src[i,j].re
-      dest[i,j].im[l] = src[i,j].im
-proc vcopy(dest:var SColorMatrixV; l:int; src:SColorMatrix) =
-  vcopyImpl(dest,l,src)
-proc vcopy(dest:var DColorMatrixV; l:int; src:DColorMatrix) =
-  vcopyImpl(dest,l,src)
-proc vcopy(dest:var SColorMatrixV; l:int; src:DColorMatrix) =
-  vcopyImpl(dest,l,src)
-proc vcopy(dest:var DColorMatrixV; l:int; src:SColorMatrix) =
-  vcopyImpl(dest,l,src)
+proc put[T](buf: cstring; index: csize; count: cint; arg: pointer) =
+  type srcT = cArray[IOtype(T)]
+  type destT1 = cArray[T]
+  type destT = cArray[ptr destT1]
+  let src = cast[ptr srcT](buf)
+  let dest = cast[ptr destT](arg)
+  let vi = index div simdLength(T)
+  let vl = int(index mod simdLength(T))
+  let vlm = 1 shl vl
+  for i in 0..<count:
+    masked(dest[i][vi], vlm) := src[i]
+
+proc putP[T](buf: cstring; index: csize; count: cint; arg: pointer) =
+  type srcT = cArray[IOtypeP(T)]
+  type destT1 = cArray[T]
+  type destT = cArray[ptr destT1]
+  let src = cast[ptr srcT](buf)
+  let dest = cast[ptr destT](arg)
+  let vi = index div simdLength(T)
+  let vl = int(index mod simdLength(T))
+  let vlm = 1 shl vl
+  for i in 0..<count:
+    masked(dest[i][vi], vlm) := src[i]
 
 proc read[T](r:var Reader, v:var openArray[ptr T]) =
   r.setLayout()
@@ -182,35 +192,13 @@ proc read[T](r:var Reader, v:var openArray[ptr T]) =
   var size = sizeOf(v[0][]) div r.layout.nSitesInner
   var vsize = size*v.len
   var wordSize = sizeOf(numberType(v[0][]))
-  #echo "ws: ", wordSize, "  rws: ", recWordSize
   if wordSize==recWordSize:
-    proc put(buf:cstring; index:csize; count:cint; arg:pointer) =
-      type srcT = cArray[IOtype(T)]
-      type destT1 = cArray[T]
-      type destT = cArray[ptr destT1]
-      let src = cast[ptr srcT](buf)
-      let dest = cast[ptr destT](arg)
-      let vi = index div simdLength(T)
-      let vl = int(index mod simdLength(T))
-      for i in 0..<count:
-        vcopy(dest[i][vi], vl, src[i])
-    r.status = QIO_read(r.qr, r.recordInfo.addr, qioMd, put, vsize.csize,
+    r.status = QIO_read(r.qr, r.recordInfo.addr, qioMd, put[T], vsize.csize,
                         wordSize.cint, v[0].addr)
   else:
     vsize = (recWordSize*vsize) div wordSize
     wordSize = recWordSize
-    #echo "ws: ", wordSize, "  rws: ", recWordSize, "  vs: ", vsize
-    proc put(buf:cstring; index:csize; count:cint; arg:pointer) =
-      type srcT = cArray[IOtypeP(T)]
-      type destT1 = cArray[T]
-      type destT = cArray[ptr destT1]
-      let src = cast[ptr srcT](buf)
-      let dest = cast[ptr destT](arg)
-      let vi = index div simdLength(T)
-      let vl = int(index mod simdLength(T))
-      for i in 0..<count:
-        vcopy(dest[i][vi], vl, src[i])
-    r.status = QIO_read(r.qr, r.recordInfo.addr, qioMd, put, vsize.csize,
+    r.status = QIO_read(r.qr, r.recordInfo.addr, qioMd, putP[T], vsize.csize,
                         wordSize.cint, v[0].addr)
 
   r.recordMd = toString(qioMd)
@@ -221,6 +209,10 @@ proc read*[V:static[int],T](r:var Reader[V]; v:openArray[Field[V,T]]) =
   let nv = v.len
   var f = newSeq[type(v[0][0].addr)](nv)
   for i in 0..<nv: f[i] = v[i][0].addr
+  r.read(f)
+
+proc read*(r: var Reader; v: Field) =
+  var f = @[ v[0].addr ]
   r.read(f)
 
 when isMainModule:
