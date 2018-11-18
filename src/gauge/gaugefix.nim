@@ -222,11 +222,9 @@ proc moveFromZero(x: float, eps: float): float =
     if x<0: result = -eps
     else: result = eps
 
-proc moveFromZero(x: SimdD4, e: float): SimdD4 =
-  result[0] = moveFromZero(x[0], e)
-  result[1] = moveFromZero(x[1], e)
-  result[2] = moveFromZero(x[2], e)
-  result[3] = moveFromZero(x[3], e)
+proc moveFromZero[T](x: T, e: float): T =
+  for i in 0..<x.numNumbers:
+    result[i] = moveFromZero(x[i], e)
 
 proc overRelaxSu2(r: var any, x: any, i,j: int, o: float) =
   mixin rsqrt
