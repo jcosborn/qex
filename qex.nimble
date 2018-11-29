@@ -79,7 +79,8 @@ proc setup =
   verbosity ~ verbosity
   nimcache ~ nimcache
   warning[SmallLshouldNotBeUsed] ~ off
-  for s in simd.split(" "): define ~ s
+  when declared(simd):
+    for s in simd.split(" "): define ~ s
   for d in extraDef:
     putenv ~ d  # We'll convert env to def in src soon.
     define ~ d
