@@ -8,7 +8,7 @@ import physics/stagD
 import solvers/cg
 import layout
 
-import times
+import os, times
 
 when not defined(qudaDir):
   {.fatal:"Must define qudaDir to use QUDA.".}
@@ -18,7 +18,19 @@ const qudaDir {.strdefine.} = ""
 const cudaLibDir {.strdefine.} = ""
 const cudaLib = "-L" & cudaLibDir & " -lcudart -lcufft -Wl,-rpath," & cudaLibDir & " -L" & cudaLibDir & "/stubs -lcuda"
 {.passC: "-I" & qudaDir & "/include".}
-{.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib.}
+
+const qmpDir {.strdefine.} = getEnv("QMPDIR")
+const qioDir {.strdefine.} = getEnv("QIODIR")
+
+when qioDir.len > 0:
+  when qmpDir.len > 0:
+    # Assume quda is built with QIO and QMP.
+    {.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib & " -L" & qioDir & "/lib -lqio -llime -L" & qmpDir & "/lib -lqmp".}
+  else:
+    # Assume QUDA is built with QIO.
+    {.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib & " -L" & qioDir & "/lib -lqio -llime".}
+else:
+  {.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib.}
 
 proc cudaGetDeviceCount(n:ptr cint):cint {.importc,nodecl.}
 proc cudaGetDeviceCount*: int =
@@ -94,7 +106,6 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
     precision = 2   # 2 - double, 1 - single
     res = sqrt sp.r2req
     relRes = 0
-    u0 = 1.0
     rres:cdouble = 0.0
     rrelRes:cdouble = 0.0
     iters:cint = 1
@@ -156,7 +167,7 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
   # FIX ME and FIX QUDA interface: this is for asqtad, we use zero longlink
   qudaInvert(precision.cint, precision.cint,   # host, QUDA
     m.cdouble, invargs, res.cdouble, relRes.cdouble,
-    fatlink, longlink, u0.cdouble, srcGpu, destGpu,
+    fatlink, longlink, srcGpu, destGpu,
     rres.addr, rrelRes.addr, iters.addr)
   toc("QUDA invert")
   sp.finalIterations = iters.int
@@ -174,6 +185,7 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
 when isMainModule:
   import qex
   import gauge
+  import physics/stagSolve
   qexInit()
   #var lat = [4,4,4,4]
   var lat = [8,8,8,8]
