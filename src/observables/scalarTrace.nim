@@ -18,7 +18,7 @@
   Optionally, this script saves the original noise sources and propagators.
 ]#
 
-import qex, gauge/hypsmear
+import qex, gauge/hypsmear, physics/stagSolve
 import times
 
 qexInit()
@@ -117,7 +117,7 @@ var s = sg.newStag
 var
   eta = lo.ColorVector        # Noise source
   phi = lo.ColorVector        # Propagator
-  trce = lo.complex     # Trace
+  trce = lo.Complex     # Trace
   tmps = lo.ColorVector
 
 for i in 0..<num_stoch:
