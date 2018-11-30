@@ -132,7 +132,7 @@ const
 
 type
   QudaMatPCType* {.size: sizeof(cint).} = enum
-    QUDA_MATPC_INVALID = QUDA_INVALID_ENUM
+    QUDA_MATPC_INVALID = QUDA_INVALID_ENUM,
     QUDA_MATPC_EVEN_EVEN = 0, QUDA_MATPC_ODD_ODD, QUDA_MATPC_EVEN_EVEN_ASYMMETRIC,
     QUDA_MATPC_ODD_ODD_ASYMMETRIC
   QudaDagType* {.size: sizeof(cint).} = enum
