@@ -550,7 +550,7 @@ when isMainModule:
   import qex
   import physics/qcdTypes
   import gauge
-  import physics/stagD
+  import physics/stagD, physics/stagSolve
   import physics/hisqLinks
   import rng
 
