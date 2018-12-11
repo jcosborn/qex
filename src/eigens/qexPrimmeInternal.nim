@@ -1,6 +1,8 @@
 import strutils
-import primme
+import primme, primme/ccomplex
 import base, field, comms/qmp
+
+export ccomplex
 
 type
   PP = primme_params or primme_svds_params
@@ -13,7 +15,7 @@ proc sumReal*[P:PP](sendBuf: pointer; recvBuf: pointer; count: ptr cint;
   ierr[] = 0
 
 # WARNING: low level implementation details follow.
-template convPrimmeArray(ff:Field, aa:ptr complex[float], ss:int, body:untyped) {.dirty.} =
+template convPrimmeArray(ff:Field, aa:ptr ccomplex[float], ss:int, body:untyped) {.dirty.} =
   const
     nc = ff[0].len
     vl = ff.V
@@ -28,12 +30,12 @@ template convPrimmeArray(ff:Field, aa:ptr complex[float], ss:int, body:untyped) 
     let s = i + skip
     forO j, 0, vl.pred:
       body
-proc toPrimmeArray*(f:Field, a:ptr complex[float], skip:int = 0) =
+proc toPrimmeArray*(f:Field, a:ptr ccomplex[float], skip:int = 0) =
   ## `skip` is in units of sites.
   convPrimmeArray(f,a,skip):
     a[cl*i+2*j] = f[cl*s+j]
     a[cl*i+2*j+1] = f[cl*s+j+vl]
-proc fromPrimmeArray*(f:Field, a:ptr complex[float], skip:int = 0) =
+proc fromPrimmeArray*(f:Field, a:ptr ccomplex[float], skip:int = 0) =
   ## `skip` is in units of sites.
   convPrimmeArray(f,a,skip):
     f[cl*s+j] = a[cl*i+2*j]

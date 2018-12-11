@@ -16,7 +16,7 @@ requires "nim >= 0.19.0"
 requires "chebyshev >= 0.2.1"
 requires "mdevolve >= 0.1.0"
 when declared(primmeDir):
-  requires "primme >= 2.1.0"
+  requires "primme >= 2.1.1"
 
 type NamePath = tuple[n,p:string]
 proc targets(p:string):seq[NamePath] =
