@@ -434,7 +434,7 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
   var vt2 = newSeq[EigTable[type(op.newVector)]](nvt)
   var src = op.newVector
   var v: seq[type(op.newVector)]
-  if not vv.isNil and vv.len>0:
+  if vv.len>0:
     #shallowCopy(v, vv)
     #echo "vv.len: ", vv.len
     #v.newSeq(vv.len)
