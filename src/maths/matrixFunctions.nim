@@ -218,6 +218,26 @@ proc exp*(m: Mat1): auto {.noInit.} =
     let r2 = term(1.0/2.0, r3)
     r := 1 + m*r2
   r
+proc ln*(m: Mat1): auto {.noInit.} =
+  var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
+  when m.nrows == 1:
+    r := ln(m[0,0])
+  else:
+    static: error("ln of matrix not implimented.")
+  r
+
+proc re*(m: Mat1): auto {.noInit.} =
+  var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
+  for i in 0..<m.nrows:
+    for j in 0..<m.ncols:
+      r[i,j] := re(m[i,j])
+  r
+proc im*(m: Mat1): auto {.noInit.} =
+  var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
+  for i in 0..<m.nrows:
+    for j in 0..<m.ncols:
+      r[i,j] := im(m[i,j])
+  r
 
 when isMainModule:
   import macros

@@ -272,6 +272,13 @@ proc exp*(x: ComplexProxy): auto {.inline,noInit.} =
   let si = sin(xi)
   newComplexP(er*ci, er*si)
 
+proc ln*(x: ComplexProxy): auto {.inline,noInit.} =
+  mixin ln, atan2
+  let n = 0.5 * x.norm2.ln
+  let xr = x.re
+  let xi = x.im
+  newComplexP(n, atan2(xi,xr))
+
 # add, sub, mul, divd
 
 template binaryOverloadsAddSub(op,fn: untyped) {.dirty.} =

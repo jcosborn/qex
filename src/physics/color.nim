@@ -169,4 +169,7 @@ template idot*(r: var any, x: Color2, y: Color3) = idot(r, x[], y[])
 template redot*(x: Color, y: Color2): untyped =
   redot(x[], y[])
 template trace*(x: Color): untyped = trace(x[])
+template re*(x: Color): untyped = asColor(re(x[]))
+template im*(x: Color): untyped = asColor(im(x[]))
 template exp*(x: Color): untyped = asColor(exp(x[]))
+template ln*(x: Color): untyped = asColor(ln(x[]))
