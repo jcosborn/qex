@@ -90,6 +90,12 @@ proc setup =
   optDef qudaDir
   optDef cudaLibDir
 
+proc setupDebug =
+  echo "debug build"
+  # debugger ~ native  # Requires fixing #5989, #6345.
+  # lineDir ~ off      # We can't override the above line with this in nimble.
+  switch"debugInfo"    # This is the only thing we can do now.
+
 proc setupRelease =
   define ~ "release"
   obj_checks ~ off
@@ -138,7 +144,7 @@ task make, "compile, link, and put executables in `bin'":
       else: a[i..<j].switch
     if not dirExists("bin"): mkDir"bin"
     "out".set("bin/"&name)
-    if debug: echo "debug build"
+    if debug: setupDebug()
     else: setupRelease()
     setCommand "c", target
 
