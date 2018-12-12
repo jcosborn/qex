@@ -35,7 +35,7 @@ suite "Test Gauge Fixing":
     g2.gaugeTransform(g1, t2)
     let d = getDiff(g, g2).sqrt
     echo "RMS diff: ", d
-    check(d <= 1e-11)
+    check(d <= 1e-10)
 
   test "gauge transform from random":
     threads:
