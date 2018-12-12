@@ -65,6 +65,7 @@ suite "Multi-Layout test":
     g2 = lo2.newGauge
     rs1 = newRNGField(RngMilc6, lo1, 987654321)
     rs2 = newRNGField(RngMilc6, lo2, 987654321)
+    rsX: RngMilc6  # workaround Nim codegen bug
 
   test "unit gauge":
     let

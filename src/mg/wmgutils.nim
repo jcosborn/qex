@@ -92,31 +92,35 @@ proc wmgBlockProject*(x: Field, t: MgTransfer, f: Field2, c: Field3) =
   echo "c2: ", c.norm2
 
 proc wmgBlockNormalizeInsert*(t: var MgTransfer, x: Field, i: int,
-                              f: Field2, c: Field3) =
-  t.restrict(c, x)
+                              f: Field2, c: Field3, par= -1) =
+  t.restrict(c, x, par)
   echo "c2: ", c.norm2
-  t.prolong(f, c)
+  f := 0
+  t.prolong(f, c, par)
   x -= f
 
-  t.restrict(c, x)
+  t.restrict(c, x, par)
   echo "c2: ", c.norm2
 
   var v = t.v
   #v.wmgzero()
   v.wmginsert(x, i)
-  t.restrict(c, x)
+  t.restrict(c, x, par)
   c.wmginvsqrt(i)
-  t.prolong(f, c)
+  f := x
+  t.prolong(f, c, par)
   t.v.wmginsert(f, i)
   echo "f2: ", f.norm2
   x := f
 
   let x2 = x.norm2
-  t.restrict(c, x)
-  t.prolong(x, c)
+  t.restrict(c, x, par)
+  x := 0
+  t.prolong(x, c, par)
   echo "x2: ", x2, "   ", x.norm2
   x := f
 
+#[
 proc wmgBlockProjectInsert*(t: var MgTransfer, x: Field, i: int,
                             f: Field2, c: Field3) =
   t.restrict(c, x)
@@ -142,6 +146,7 @@ proc wmgBlockProjectInsert*(t: var MgTransfer, x: Field, i: int,
   t.prolong(x, c)
   echo "x2: ", x2, "   ", x.norm2
   x := f
+]#
 
 when isMainModule:
   qexInit()

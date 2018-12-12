@@ -37,6 +37,10 @@ proc gaussian*(x: var AsMatrix, r: var RNG) =
   forO i, 0, getConst(x.nrows-1):
     forO j, 0, getConst(x.ncols-1):
       gaussian(x[i,j], r)
+proc gaussian*(x: var AsMatrix, r: Masked) =
+  forO i, 0, getConst(x.nrows-1):
+    forO j, 0, getConst(x.ncols-1):
+      gaussian(x[i,j], r[])
 template gaussian*(r: AsVar, x: untyped) =
   mixin gaussian
   var t = r[]

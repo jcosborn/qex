@@ -16,7 +16,7 @@ type RngMilc6* = object
 
 template isWrapper*(x: RngMilc6): untyped = false
 
-template `[]`*(x: RngMilc6): untyped = x
+#template `[]`*(x: RngMilc6): untyped = x
 
 proc `$`*(x:RngMilc6):string =
   result = "RngMilc6 r:[ " & $x.r0

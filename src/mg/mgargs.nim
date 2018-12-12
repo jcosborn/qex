@@ -13,31 +13,45 @@ proc newMgTransfer*[VF,VC: static[int]; T](mgb: MgBlock[VF,VC],
 
 template paritySitesV*(f: Field, par: int): untyped =
   var s: Subset
-  s.paritySubset(f.l, par)
+  if par<0:
+    s.layoutSubset(f.l, "all")
+  else:
+    s.paritySubset(f.l, par)
   f[s]
 
-proc restrict*(r: MgTransfer, fc: Field, ff: Field2, par=0) =
+# par: all, even, odd, split even/odd
+proc restrict*(r: MgTransfer, fc: Field, ff: Field2, par= -1) =
   fc := 0
   let VF = r.VF
   let VC = r.VC
   let nv = r.v[0].len
-  #for fsv in ff.paritySitesV(par):
-  for fsv in ff:
+  for fsv in ff.paritySitesV(par):
     for i in 0..<nv:
       let t = dot(r.v[fsv][i],ff[fsv])
-      for j in 0..<VF:
-        let cs = r.mgb.csites[fsv*VF+j]
-        let csv = cs div VC
-        let cj = cs mod VC
-        fc[csv][i].re[cj] = fc[csv][i].re[cj] + t.re[j]
-        fc[csv][i].im[cj] = fc[csv][i].im[cj] + t.im[j]
+      when t is array:
+        for k in 0..<t.len:
+          let ik = i*t.len + k
+          for j in 0..<VF:
+            let cs = r.mgb.csites[fsv*VF+j]
+            let csv = cs div VC
+            let cj = cs mod VC
+            fc[csv][ik].re[cj] = fc[csv][ik].re[cj] + t[k].re[j]
+            fc[csv][ik].im[cj] = fc[csv][ik].im[cj] + t[k].im[j]
+      else:
+        for j in 0..<VF:
+          let cs = r.mgb.csites[fsv*VF+j]
+          let csv = cs div VC
+          let cj = cs mod VC
+          fc[csv][i].re[cj] = fc[csv][i].re[cj] + t.re[j]
+          fc[csv][i].im[cj] = fc[csv][i].im[cj] + t.im[j]
 
-proc prolong*[VF,VC:static[int];T,TF,TC](
-    p: MgTransfer[VF,VC,T], ff: Field[VF,TF], fc: Field2[VC,TC], par=0) =
-  ff := 0
+proc prolong*(p: MgTransfer, ff: Field, fc: Field2, par= -1) =
+  #ff := 0
+  let VF = p.VF
+  let VC = p.VC
   let nv = p.v[0].len
-  #for fsv in ff.paritySitesV(par):
-  for fsv in ff:
+  for fsv in ff.paritySitesV(par):
+    ff[fsv] := 0
     for i in 0..<nv:
       var t: type(dot(p.v[fsv][i],ff[fsv]))
       for j in 0..<VF:

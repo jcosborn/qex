@@ -20,6 +20,7 @@ suite "Stress plaquette test":
     lo = lat.newLayout
     g = lo.newGauge
     rs = newRNGField(RngMilc6, lo, 987654321)
+    rsX: RngMilc6  # workaround Nim codegen bug
 
   test "unit gauge":
     let

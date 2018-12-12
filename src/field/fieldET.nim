@@ -318,13 +318,14 @@ iterator items*(x:FieldMul):int {.inline.} =
 
 template fmask*(f: Field; i: int): untyped =
   mixin varMasked
-  when f.l.V == 1:
-    f[i]
-  else:
-    let e = i div f.l.V
-    let l = i mod f.l.V
-    let mask = 1 shl l
-    varMasked(f[e], mask)
+  #when f.l.V == 1:
+  #  f[i]
+  #else:
+  let e = i div f.l.V
+  let l = i mod f.l.V
+  let mask = 1 shl l
+  #let fe = f[e]  # workaround for Nim codegen bug
+  varMasked(f[e], mask)
 
 template `{}`*(f: Field; i: int): untyped =
   fmask(f, i)
