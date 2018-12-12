@@ -1,8 +1,8 @@
 import strutils
-import primme, primme/ccomplex
+import primme, primme/complex
 import base, field, comms/qmp
 
-export ccomplex
+export complex
 
 type
   PP = primme_params or primme_svds_params

@@ -7,7 +7,7 @@ type
     o.newVector
     #o.apply(Field, Field)
     #o.applyAdj(Field, Field)
-  Primme*[Op,F,P] = object
+  PrimmeObj[Op,F,P] = object
     o*:Op
     x*,y*:F
     abserr*,relerr*:float
@@ -18,8 +18,10 @@ type
     intWork*: alignedMem[char]
     vals*: seq[float]
     rnorms*: seq[float]
+  Primme*[Op,F,P] = ref PrimmeObj[Op,F,P]
+  PrimmePtr*[Op,F,P] = ptr PrimmeObj[Op,F,P]
 
-proc applyD(pp:ptr Primme; xi,yo:ptr ccomplex[float]) =
+proc applyD(pp:PrimmePtr; xi,yo:ptr ccomplex[float]) =
   # x in, y out
   threads: pp.x.fromPrimmeArray xi
   pp.o.apply(pp.y, pp.x)
@@ -39,14 +41,14 @@ proc matvec[O](x:pointer, ldx:ptr PRIMME_INT,
     let
       xp = x[i*dx].addr         # Input vector
       yp = y[i*dy].addr         # Output
-    applyD(cast[ptr O](primme.matrix), xp, yp)
+    applyD(cast[O](primme.matrix), xp, yp)
   err[] = 0
 
 proc convTest[O](val:ptr cdouble; vec:pointer; rNorm:ptr cdouble; isconv:ptr cint;
                  primme:ptr primme_params; ierr:ptr cint) {.noconv.} =
   let
     r = rNorm[].float
-    pp = cast[ptr O](primme.matrix)
+    pp = cast[O](primme.matrix)
     re = pp.relerr
     ae = pp.abserr
   if r < 2*ae*sqrt(val[]) or r < 2*re*val[]:
@@ -59,7 +61,7 @@ proc primmeInitialize*[O:Operator](lo: Layout, op: O,
                        nVals:int = 16,
                        printLevel:int = 3,
                        preset:primme_preset_method = PRIMME_DEFAULT_METHOD): auto =
-  var pp:Primme[O, type(op.newVector), primme_params]
+  var pp = new(Primme[O, type(op.newVector), primme_params])
   pp.o = op
   pp.x = op.newVector
   pp.y = op.newVector
@@ -71,7 +73,7 @@ proc primmeInitialize*[O:Operator](lo: Layout, op: O,
   const nc = pp.x[0].len
   pp.p = primme_initialize()
   pp.p.n = nc*lo.physVol div 2
-  pp.p.matrixMatvec = matvec[type(pp)]
+  pp.p.matrixMatvec = matvec[type(pp[].addr)]
   pp.p.numEvals = nVals.cint
   pp.p.target = primme_smallest
   pp.p.numProcs = nRanks.cint
@@ -87,7 +89,7 @@ proc primmeInitialize*[O:Operator](lo: Layout, op: O,
       qexAbort()
   pp
   
-proc prepare*[Op,F](pp:var Primme[Op,F,primme_params]) =
+proc prepare*[Op,F](pp:Primme[Op,F,primme_params]) =
   let ret = zprimme(nil,nil,nil,pp.p.addr)
   if 1 != ret:
     echo "Error: zprimme(nil) returned with exit status: ", ret
@@ -98,14 +100,12 @@ proc prepare*[Op,F](pp:var Primme[Op,F,primme_params]) =
   pp.intWork = newAlignedMemU[char]pp.p.intWorkSize
   pp.realWork = newAlignedMemU[char]pp.p.realWorkSize
 
-proc run*[Op,F](pp:var Primme[Op,F,primme_params]) =
+proc run*[Op,F](pp:Primme[Op,F,primme_params]) =
   pp.p.intWork = cast[ptr cint](pp.intWork.data)
   pp.p.realWork = pp.realWork.data
-  pp.p.matrix = pp.addr
+  pp.p.matrix = pp[].addr
   if myRank == 0: pp.p.display_params
-  let ret = pp.p.run(pp.vals,
-                     asarray[ccomplex[float]](pp.vecs.data)[],
-                     pp.rnorms)
+  let ret = pp.p.run(pp.vals, pp.vecs[0].addr, pp.rnorms)
   if ret != 0:
     echo "Error: primme returned with nonzero exit status: ", ret
     qexAbort()

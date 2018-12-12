@@ -3,14 +3,14 @@ import base, layout
 import qexPrimmeInternal
 import qexPrimme
 
-proc applyD(pp:ptr Primme; xi,yo:ptr ccomplex[float]) =
+proc applyD(pp:PrimmePtr; xi,yo:ptr ccomplex[float]) =
   # x in, y out
   threads:
     pp.x.fromPrimmeArray xi     # even
     pp.o.apply(pp.y, pp.x)
     threadBarrier()
     pp.y.toPrimmeArray(yo, pp.y.l.nEven) # odd
-proc applyDdag(pp:ptr Primme; xi,yo:ptr ccomplex[float]) =
+proc applyDdag(pp:PrimmePtr; xi,yo:ptr ccomplex[float]) =
   # x in, y out
   threads:
     pp.x.fromPrimmeArray(xi, pp.x.l.nEven) # odd
@@ -26,7 +26,7 @@ proc matvec[O](x:pointer, ldx:ptr PRIMME_INT,
     dx = ldx[]
     y = asarray[ccomplex[cdouble]] y
     dy = ldy[]
-    op = cast[ptr O](primme.matrix)
+    op = cast[O](primme.matrix)
   if 0 == transpose[]:          # Do y <- A x
     for i in 0..<blocksize[]:
       let
@@ -46,21 +46,21 @@ proc convTest[O](val:ptr cdouble; leftsvec:pointer; rightsvec:pointer;
                  primme:ptr primme_svds_params; ierr:ptr cint) {.noconv.} =
   let
     r = rNorm[].float
-    pp = cast[ptr O](primme.matrix)
+    pp = cast[O](primme.matrix)
     re = pp.relerr
     ae = pp.abserr
   if r < 2*ae*val[] or r < 2*re*val[]*val[]: isconv[] = 1
   else: isconv[] = 0
   ierr[] = 0
 
-proc primmeSVDInitialize*(lo: Layout, op: Operator,
+proc primmeSVDInitialize*[Op:Operator](lo: Layout, op: Op,
                           relerr:float = 1e-4, abserr:float = 1e-6, m:float = 0.0,
                           nVals:int = 16,
                           printLevel:int = 3,
                           preset:primme_svds_preset_method = primme_svds_default,
                           presetStage1:primme_preset_method = PRIMME_DEFAULT_METHOD,
                           presetStage2:primme_preset_method = PRIMME_DEFAULT_METHOD): auto =
-  var pp:Primme[type(op), type(op.newVector), primme_svds_params]
+  var pp = new(Primme[Op, type(op.newVector), primme_svds_params])
   pp.o = op
   pp.x = op.newVector
   pp.y = op.newVector
@@ -73,7 +73,7 @@ proc primmeSVDInitialize*(lo: Layout, op: Operator,
   pp.p = primme_svds_initialize()
   pp.p.n = nc*lo.physVol div 2
   pp.p.m = pp.p.n
-  pp.p.matrixMatvec = matvec[type(pp)]
+  pp.p.matrixMatvec = matvec[type(pp[].addr)]
   pp.p.numSvals = nVals.cint
   pp.p.target = primme_svds_smallest
   pp.p.numProcs = nRanks.cint
@@ -81,7 +81,7 @@ proc primmeSVDInitialize*(lo: Layout, op: Operator,
   pp.p.nLocal = nc*lo.nEven
   pp.p.mLocal = pp.p.nLocal
   pp.p.globalSumReal = sumReal[primme_svds_params]
-  pp.p.matrix = pp.addr
+  pp.p.matrix = pp[].addr
   pp.p.printLevel = printLevel.cint
   pp.p.convTestFun = convTest[type(pp)]
   block primmeSetMethod:
@@ -91,7 +91,7 @@ proc primmeSVDInitialize*(lo: Layout, op: Operator,
       quit QuitFailure
   pp
 
-proc prepare*[Op,F](pp:var Primme[Op,F,primme_svds_params]) =
+proc prepare*[Op,F](pp:Primme[Op,F,primme_svds_params]) =
   let ret = zprimme_svds(nil,nil,nil,pp.p.addr)
   if 1 != ret:
     echo "Error: zprimme_svds(nil) returned with exit status: ", ret
@@ -102,14 +102,12 @@ proc prepare*[Op,F](pp:var Primme[Op,F,primme_svds_params]) =
   pp.intWork = newAlignedMemU[char]pp.p.intWorkSize
   pp.realWork = newAlignedMemU[char]pp.p.realWorkSize
 
-proc run*[Op,F](pp:var Primme[Op,F,primme_svds_params]) =
+proc run*[Op,F](pp:Primme[Op,F,primme_svds_params]) =
   pp.p.intWork = cast[ptr cint](pp.intWork.data)
   pp.p.realWork = pp.realWork.data
-  pp.p.matrix = pp.addr
+  pp.p.matrix = pp[].addr
   if myRank == 0: pp.p.display_params
-  let ret = pp.p.run(pp.vals,
-                     asarray[ccomplex[float]](pp.vecs.data)[],
-                     pp.rnorms)
+  let ret = pp.p.run(pp.vals, pp.vecs[0].addr, pp.rnorms)
   if ret != 0:
     echo "Error: primme returned with nonzero exit status: ", ret
     quit QuitFailure
