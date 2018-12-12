@@ -398,6 +398,9 @@ template projectSU*(x:any) = x.projectSU x
 proc projectTAH*(x:Field, y:Field) =
   for i in x: x[i].projectTAH y[i]
 
+proc projectTAH*[F:Field](x: openArray[F], y: openArray[F]) =
+  for i in x.low..x.high: x[i].projectTAH y[i]
+
 template projectTAH*(x:any) = x.projectTAH x
 
 proc randomU*(x: Field, r: var RNGField) =
