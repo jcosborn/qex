@@ -165,8 +165,8 @@ template sub*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3): untyped =
 
 template neg*(r: ComplexProxy, x: ComplexProxy2): untyped =
   r := neg(x)
-template dot*(x: ComplexProxy, y: ComplexProxy2): untyped =
-  trace( x.adj * y )
+#template dot*(x: ComplexProxy, y: ComplexProxy2): untyped =
+#  trace( x.adj * y )
 template mulCCR*(r: ComplexProxy, y: ComplexProxy2, x: untyped):
          untyped =  assign(r,x*y)
 template mul*(r: ComplexProxy, x: ComplexProxy2, y: SomeNumber): untyped =

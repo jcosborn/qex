@@ -596,6 +596,14 @@ template dot*(r: var Sca1; x: Vec2; y: Vec3) =
   idot(r, x, y)
 setBinop(dot, dot, Vec1, Vec2, type(dot(x[0],y[0])))
 
+proc dot*(x: Mat2; y: Mat3): auto {.inline,noInit.} =
+  result = dot(x[0,0],y[0,0])
+  forO j, 1, x.len.pred:
+    result += dot(x[0,j],y[0,j])
+  forO i, 1, x.len.pred:
+    forO j, 0, x.len.pred:
+      result += dot(x[i,j],y[i,j])
+
 #proc iredot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
 #  subst(tr,_):
 #    assert(x.len == y.len)

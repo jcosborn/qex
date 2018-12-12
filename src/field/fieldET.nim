@@ -477,17 +477,22 @@ template norm2*(f:SomeAllField):untyped =
 template norm2*(f:Subsetted):untyped = norm2P(f)
 
 proc dotP*(f1:SomeField; f2:SomeField2):auto =
+  tic()
   mixin dot, idot, simdSum, items, toDouble, eval
   #var d:type(dot(f1[0],f2[0]))
   var d:type(eval(toDouble(dot(f1[0],f2[0]))))
   let t1 = f1
   let t2 = f2
   for x in items(t1):
-    idot(d, t1[x], t2[x])
+    #idot(d, t1[x], t2[x])
+    d += dot(t1[x], t2[x])
+  toc("dot local")
   result = simdSum(d)
+  toc("dot simd sum")
   #threadSum(result)
   #rankSum(result)
   threadRankSum(result)
+  toc("dot thread rank sum")
 template dot*(f1:SomeAllField; f2:SomeAllField2):untyped =
   when declared(subsetObject):
     #echo "subsetObj" & s

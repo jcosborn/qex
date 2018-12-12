@@ -477,6 +477,9 @@ template redotinc*(r: RealProxy, x: ComplexProxy2,
                    y: ComplexProxy3): untyped =
   r += redot(x,y)
 
+template dot*(x: ComplexProxy, y: ComplexProxy2): untyped =
+  x.adj * y
+
 
 template overloadAsReal2(T: typedesc, op,fn: untyped) {.dirty.} =
   template fn*(x: T, y: RealProxy): untyped = fn(newRealProxy(x),y)
