@@ -481,7 +481,7 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
           echo "Error: zprimme(nil) returned with exit status: ", ret
           qexAbort()
       var
-        vecs = newAlignedMemU[complex[float]]int(p.numEvals*p.nLocal)
+        vecs = newAlignedMemU[ccomplex[float]]int(p.numEvals*p.nLocal)
         vals = newseq[float]p.numEvals
         rnorms = newseq[float]p.numEvals
         intWork = newAlignedMemU[char]p.intWorkSize
@@ -493,7 +493,8 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
       p.matrix = mi.addr
       if myRank == 0: p.display_params
       block run:
-        let ret = p.run(vals, asarray[PRIMME_COMPLEX_DOUBLE](vecs.data)[], rnorms)
+        let t = vecs[0]  # XXX Force instantiating the type, works around Nim compiler bug.
+        let ret = p.run(vals, vecs[0].addr, rnorms)
         if ret != 0:
           echo "Error: primme returned with nonzero exit status: ", ret
           qexAbort()
