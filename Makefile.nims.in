@@ -53,7 +53,7 @@ buildTask clean, "remove nimcache dir":
   exec "rm -rf nimcache"
 
 buildTask tests, "build unit tests":
-  var runscript = @["#!/bin/sh","$SETUPJOBS"]
+  var runscript = @["#!/bin/sh","$SETUPJOBS","failed=''"]
   var dorun = run
   run = false
   if not existsDir("tests"):
@@ -69,9 +69,10 @@ buildTask tests, "build unit tests":
       if name[0]=='t' and ext==".nim":
         nimRun f, outdir/name
         runscript.add("echo Running: "&(outdir/name))
-        runscript.add("$RUNJOB "&(outdir/name))
+        runscript.add("$RUNJOB "&(outdir/name)&" || failed=\"$failed "&name&"\"")
   #echo runscript.join("\n")
   runscript.add("$CLEANUPJOBS")
+  runscript.add("if [[ -n $failed ]];then echo Failed tests: $failed;exit 1;fi")
   writeFile("testscript.sh", runscript.join("\n"))
   exec("chmod 755 testscript.sh")
   if dorun:
