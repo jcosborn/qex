@@ -100,7 +100,7 @@ proc get[T](buf: cstring; index: csize; count: cint; arg: pointer) =
   let vi = index div simdLength(T)
   let vl = int(index mod simdLength(T))
   let vlm = 1 shl vl
-  var s: destT
+  #var s: ptr destT
   for i in 0..<count:
     #vcopy(dest[i], vl, src[i][vi])
     let t = masked(src[i][vi], vlm)
@@ -115,7 +115,7 @@ proc getP[T](buf: cstring; index: csize; count: cint; arg: pointer) =
   let vi = index div simdLength(T)
   let vl = int(index mod simdLength(T))
   let vlm = 1 shl vl
-  var s: destT
+  #var s: ptr destT
   for i in 0..<count:
     #vcopy(dest[i], vl, src[i][vi])
     dest[i] := masked(src[i][vi], vlm)
