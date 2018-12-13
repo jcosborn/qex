@@ -72,7 +72,7 @@ buildTask tests, "build unit tests":
         runscript.add("$RUNJOB "&(outdir/name)&" || failed=\"$failed "&name&"\"")
   #echo runscript.join("\n")
   runscript.add("$CLEANUPJOBS")
-  runscript.add("if [[ -n $failed ]];then echo Failed tests: $failed;exit 1;fi")
+  runscript.add("if [ X != X$failed ];then echo Failed tests: $failed;exit 1;fi")
   writeFile("testscript.sh", runscript.join("\n"))
   exec("chmod 755 testscript.sh")
   if dorun:
