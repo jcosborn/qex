@@ -62,7 +62,7 @@ suite "Test Gauge Fixing":
       t1.randomSU rnd
     let p0 = g.plaq
     g1.gaugeTransform(g, t1)
-    var gstop = 1e-12
+    var gstop = 1e-10
     var orf = 1.5
     let tdirs = @[ @[0,1,2,3], @[0,1,2], @[3], @[1,2,3], @[0,2,3] ]
     for dirs in tdirs:
@@ -73,7 +73,7 @@ suite "Test Gauge Fixing":
       g2.gaugeTransform(g1, t)
       let p2 = g2.plaq
       let l2 = g2.linkTrace dirs
-      CT = 1e-13
+      CT = 1e-11
       check(p0 ~ p2)
       check(l0 ~ l2)
 
