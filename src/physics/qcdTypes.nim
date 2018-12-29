@@ -261,8 +261,9 @@ proc `*`*(m:Masked[SDvec]; x:SomeNumber): auto =
   m
 ]#
 template `*`*(m: Masked[SDvec]; x: SomeNumber): untyped =
-  var t_mulMasked = m.pobj[] * x
-  maskedObj(t_mulMasked, m.mask)
+  var t_mulMasked = m
+  var t_mulMasked2 = t_mulMasked.pobj[] * x
+  maskedObj(t_mulMasked2, t_mulMasked.mask)
 
 proc imul*(m:Masked[SDvec]; x:SomeNumber) =
   var t = m[]

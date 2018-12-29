@@ -293,18 +293,21 @@ template nrows*(m:Masked):untyped =
 template ncols*(m:Masked):untyped =
   mixin ncols
   ncols(m.pobj[])
-template re*(m:Masked):untyped =
+template re*(m: Masked): untyped =
   mixin re
-  masked(m.pobj[].re, m.mask)
+  let tMaskedRe = m
+  masked(tMaskedRe.pobj[].re, tMaskedRe.mask)
 template im*(m:Masked):untyped =
   mixin im
   masked(m.pobj[].im, m.mask)
-template `re=`*(m:Masked; x:any):untyped =
+template `re=`*(m: Masked; x: any): untyped =
   mixin re
-  assign(masked(m.pobj[].re, m.mask), x)
-template `im=`*(m:Masked; x:any):untyped =
+  let tMaskedReEq = m
+  assign(masked(tMaskedReEq.pobj[].re, tMaskedReEq.mask), x)
+template `im=`*(m: Masked; x: any): untyped =
   mixin im
-  assign(masked(m.pobj[].im, m.mask), x)
+  let tMaskedImEq = m
+  assign(masked(tMaskedImEq.pobj[].im, tMaskedImEq.mask), x)
 #template `[]`*(x:Masked; i:int):untyped = Masked(x:x.pobj[i],mask:x.mask)
 #template `[]`*(m:Masked; i,j:int):untyped =
 #  Masked(x:unsafeAddr(m.pobj[][i,j]), mask:m.mask)

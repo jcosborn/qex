@@ -130,9 +130,14 @@ template assign*(x: RealProxy, y: RealProxy2): untyped =
   x[] = y[]
 template assign*(x: ImagProxy, y: ImagProxy2): untyped =
   x[] = y[]
-template assign*(x: ComplexProxy, y: RealProxy2): untyped =
+template assignU*(x: ComplexProxy, y: RealProxy2): untyped =
   x[].re = y[]
   x[].im = 0
+template assign*(x: ComplexProxy, y: RealProxy2): untyped =
+  #echoRepr: x
+  let assignCR = y
+  #assignU(x, yy)
+  flattenCallArgs(assignU, x, assignCR)
 template assign*(x: ComplexProxy, y: ImagProxy2): untyped =
   x[].re = 0
   x[].im = y[]
@@ -148,9 +153,9 @@ template assignU*(x: ComplexProxy, y: ComplexProxy2): untyped =
 #  assignU(x, ya)
 template assign*(x: ComplexProxy, y: ComplexProxy2): untyped =
   #echoRepr: x
-  let yy = y
-  assignU(x, yy)
-  #flattenCallArgs(assignU, x, y)
+  let assignCC = y
+  #assignU(x, yy)
+  flattenCallArgs(assignU, x, assignCC)
 
 template `:=`*(x: RealProxy, y: RealProxy2): untyped = assign(x,y)
 template `:=`*(x: ImagProxy, y: ImagProxy2): untyped = assign(x,y)
@@ -413,7 +418,8 @@ template binaryOverloadsMul(op,fn: untyped) {.dirty.} =
     let yr = y.re
     let yi = y.im
     newComplexP(op(xr,yr)-op(xi,yi),op(xr,yi)+op(xi,yr))
-  template fn*(x: ComplexProxy, y: ComplexProxy2): untyped =
+  template fn*(x: ComplexProxy, yy: ComplexProxy2): untyped =
+    let y = yy
     flattenCallArgs(`fn CCU`, x, y)
   #proc fn*(x: ComplexProxy, y: ComplexProxy2): auto {.inline,noInit.} =
   #  newComplexP(op(x.re,y.re)-op(x.im,y.im),op(x.re,y.im)+op(x.im,y.re))
@@ -458,9 +464,13 @@ binaryOverloadsF(`/`, divd, divdComplexU)
 # iadd, isub, imul, idivd
 
 template iBinaryOverloads(op,fn,impl: untyped) {.dirty.} =
-  template fn*(x: ComplexProxy, y: RealProxy2) =    assign(x, impl(x,y))
+  template `fn U`*(x: ComplexProxy, y: RealProxy2) = assign(x, impl(x,y))
+  template fn*(x: ComplexProxy, y: RealProxy2) =
+    flattenCallArgs(`fn U`, x, y)
   template fn*(x: ComplexProxy, y: ImagProxy2) =    assign(x, impl(x,y))
-  template fn*(x: ComplexProxy, y: ComplexProxy2) = assign(x, impl(x,y))
+  template `fn U`*(x: ComplexProxy, y: ComplexProxy2) = assign(x, impl(x,y))
+  template fn*(x: ComplexProxy, y: ComplexProxy2) =
+    flattenCallArgs(`fn U`, x, y)
   template op*(x: ComplexProxy, y: RealProxy2) =    fn(x,y)
   template op*(x: ComplexProxy, y: ImagProxy2) =    fn(x,y)
   template op*(x: ComplexProxy, y: ComplexProxy2) = fn(x,y)
