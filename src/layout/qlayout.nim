@@ -1,17 +1,17 @@
 import strutils
 import base
 import layoutTypes
-#const 
+#const
 #  myalloc* = malloc
-#template PRINTV*(s, f, v, n: expr): stmt = 
-#  while true: 
+#template PRINTV*(s, f, v, n: expr): stmt =
+#  while true:
 #  printf(s)
 #  var _i: cint = 0
-#  while _i < n: 
+#  while _i < n:
 #    printf(" ", f, (v)[_i])
 #    inc(_i)
 #  printf("\x0A")
-#  if not 0: break 
+#  if not 0: break
 
 proc `$`(a: ptr cArray[system.cint]): string =
   result.add $a[0]
@@ -76,6 +76,7 @@ proc layoutSetupQ*(l: ptr LayoutQ) =
     echo "#innerCb: ", icb
     echo "#innerCbDir: ", icbd
 
+
 proc lex_x*(x: var openArray[cint]; ll: cint;
             s: ptr cArray[cint]; ndim: cint) =
   var i: cint = 0
@@ -84,6 +85,13 @@ proc lex_x*(x: var openArray[cint]; ll: cint;
     x[i] = l mod s[i]
     l = l div s[i]
     inc(i)
+
+proc lexr_x*(x: var openArray[cint]; ll: cint;
+             s: ptr cArray[cint]; ndim: cint) =
+  var l = ll
+  for i in countdown(ndim-1, 0):
+    x[i] = l mod s[i]
+    l = l div s[i]
 
 # x[0] is fastest
 proc lex_i*(x: ptr cArray[cint]; s: ptr cArray[cint];
@@ -97,22 +105,23 @@ proc lex_i*(x: ptr cArray[cint]; s: ptr cArray[cint];
     dec(i)
   return l
 
-when false:
-  # x[0] is slowest
-  proc lexr_i*(x: ptr cint; s: ptr cint; d: ptr cint; ndim: cint): cint = 
-    var l: cint = 0
-    var i: cint = 0
-    while i < ndim: 
-      var xx: cint = x[i]
-      if d: xx = xx div d[i]
-      l = l * s[i] + (xx mod s[i])
-      inc(i)
-    return l
+# x[0] is slowest
+proc lexr_i*(x: ptr UncheckedArray[cint];
+             s: ptr UncheckedArray[cint];
+             d: ptr UncheckedArray[cint]; ndim: cint): cint =
+  var l: cint = 0
+  var i: cint = 0
+  while i < ndim:
+    var xx: cint = x[i]
+    if not d.isNil: xx = xx div d[i]
+    l = l * s[i] + (xx mod s[i])
+    inc(i)
+  return l
 
 proc layoutIndexQ*(l: ptr LayoutQ; li: ptr LayoutIndexQ;
                    coords: ptr cArray[cint]) =
   var nd: cint = l.nDim
-  var ri: cint = lex_i(coords, l.rankGeom, l.localGeom, nd)
+  var ri: cint = lexr_i(coords, l.rankGeom, l.localGeom, nd)
   var ii: cint = lex_i(coords, l.innerGeom, l.outerGeom, nd)
   var ib: cint = 0
   var i: cint = 0
@@ -139,7 +148,7 @@ proc layoutCoordQ*(l: ptr LayoutQ; coords: ptr cArray[cint];
                    li: ptr LayoutIndexQ) =
   var nd: cint = l.nDim
   var cr = newSeq[cint](nd)
-  lex_x(cr, li.rank, l.rankGeom, nd)
+  lexr_x(cr, li.rank, l.rankGeom, nd)
   var p: cint = 0
   var ll: cint = li.index mod l.nSitesInner
   var ib: cint = 0
