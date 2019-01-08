@@ -55,9 +55,14 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0: var SolverParams;
   let t0 = epochTime()
   when defined(qudaDir):
     if not cpuonly:
+      let tquda0 = epochTime()
       s.qudaSolveEE(r,t,m,sp)
+      let tquda1 = epochTime()
+      let squda = tquda1-tquda0
       its = sp.finalIterations
       sp.finalIterations = 0
+      let flopsquda = (s.g.len*4*72+60)*r.l.nEven*its
+      echo "quda time: ",squda,"  Gflops: ", 1e-9*flopsquda.float/squda
     # After QUDA, we still run through our solver.
   #cgSolve(r, t, oa, sp)
   var cg = newCgState(r, t)
