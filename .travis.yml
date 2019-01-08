@@ -15,9 +15,9 @@ notifications:
 
 before_install:
   - cd ..
-  - #git clone -b master --depth 1 git://github.com/nim-lang/Nim
-  - git clone -b version-0-19 --depth 1 git://github.com/nim-lang/Nim
+  - git clone -b master --depth 1 git://github.com/nim-lang/Nim
   - cd Nim
+  - git checkout a29ab5e65f35431aa1f4cfdfb4189b5328a44b12
   - git clone --depth 1 git://github.com/nim-lang/csources
   - cd csources
   - sh build.sh
