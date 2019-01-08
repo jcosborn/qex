@@ -55,6 +55,7 @@ proc qudaInit* =
   ## Just to initialize the global parameter.
   ## Assumes single GPU per rank.
   let n = max(1,cudaGetDeviceCount())
+  echo "cudaGetDeviceCount: ",n
   qudaParam.initArg.layout.device = cint(myrank mod n)
   qudaParam.initArg.layout.latsize = qudaParam.physGeom[0].addr
   qudaParam.initArg.layout.machsize = qudaParam.rankGeom[0].addr
@@ -135,6 +136,7 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
         r1[ri1.index][a].re := r{i}[a].re
         r1[ri1.index][a].im := r{i}[a].im
     if s.g.len == 4: # plain staggered
+      echo "wrapping plain staggered"
       longlink = nil
       for i in r.sites:
         var cv: array[4,cint]
@@ -147,6 +149,7 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
               g1[ri1.index][mu][a,b].re := s.g[mu]{i}[a,b].re
               g1[ri1.index][mu][a,b].im := s.g[mu]{i}[a,b].im
     elif s.g.len == 8: # Naik staggered
+      echo "wrapping Naik staggered"
       for i in r.sites:
         var cv: array[4,cint]
         r.l.coord(cv,(r.l.myRank,i))
@@ -164,7 +167,6 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
       quit(-1)
   # echo "input norm2: ",t2
   toc("QUDA setup")
-  # FIX ME and FIX QUDA interface: this is for asqtad, we use zero longlink
   qudaInvert(precision.cint, precision.cint,   # host, QUDA
     m.cdouble, invargs, res.cdouble, relRes.cdouble,
     fatlink, longlink, srcGpu, destGpu,
@@ -188,8 +190,11 @@ when isMainModule:
   import physics/stagSolve
   qexInit()
   #var lat = [4,4,4,4]
-  var lat = [8,8,8,8]
+  #var lat = [8,8,8,8]
+  var lat = [24,24,24,48]
+  #var lat = [32,32,32,64]
   #var lat = [16,8,4,32]
+  echo "rank ", myRank, "/", nRanks
   threads:
     echo "thread ", threadNum, "/", numThreads
   var
@@ -254,3 +259,4 @@ when isMainModule:
     echo "gpu-cpu:odd ", r.odd.norm2 / n2.o
 
   qexFinalize()
+  echoTimers()
