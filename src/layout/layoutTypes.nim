@@ -100,6 +100,7 @@ type
     innerGeom*:seq[int]
     outerGeom*:seq[int]
     localGeom*:seq[int]
+    temp*:seq[int]
     physVol*: int
     nEven*: int
     nOdd*: int

@@ -151,6 +151,7 @@ proc newLayoutX*(lat: openArray[int]; V: static[int];
   result.localGeom = lg
   result.rankGeom = rg
   result.innerGeom = ig
+  result.temp = newSeq[int](nd)
   result.physVol = result.lq.physVol.int
   result.nEven = result.lq.nEven.int
   result.nOdd = result.lq.nOdd.int
@@ -221,6 +222,12 @@ proc rankIndex*(lo: Layout, lex: int): tuple[rank,index:int] =
     c[i] = (k mod lo.physGeom[i]).cint
     k = k div lo.physGeom[i]
   rankIndex(lo, c)
+
+proc rankFromRankCoords*(l: Layout, coords: ptr cArray): int =
+  for i in 0..<l.nDim:
+    l.temp[i] = l.localGeom[i] * coords[i]
+  let ri = l.rankIndex(l.temp)
+  ri.rank
 
 proc vcoords*[V:static[int]](l:Layout[V]; i:int):seq[array[V,int16]] =
   #for d in 0..<l.nDim:

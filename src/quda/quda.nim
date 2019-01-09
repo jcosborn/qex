@@ -434,7 +434,7 @@ proc setVerbosityQuda*(verbosity: QudaVerbosity; prefix: ptr char; outfile: ptr 
 ##
 
 type
-  QudaCommsMap* = proc (coords: ptr cint; fdata: pointer): cint
+  QudaCommsMap* = proc (coords: ptr cint; fdata: pointer): cint {.cdecl.}
 
 ## *
 ##  Declare the grid mapping ("logical topology" in QMP parlance)

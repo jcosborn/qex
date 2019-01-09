@@ -65,7 +65,7 @@ proc qudaInit* =
 qexGlobalInitializers.add qudaInit
 qexGlobalFinalizers.add qudaFinalize
 
-proc qudaSetup*(l:Layout, verbosity = QUDA_SUMMARIZE):Layout[1] =
+proc qudaSetup*(l: Layout, verbosity = QUDA_SUMMARIZE): Layout[1] =
   ## Actually initialize QUDA given the specific layout.
   var updated = false
   template update(a,b:typed) =
@@ -78,6 +78,13 @@ proc qudaSetup*(l:Layout, verbosity = QUDA_SUMMARIZE):Layout[1] =
     qudaParam.rankGeom[i].update l.rankGeom[i].cint
   if updated or (not qudaParam.initialized):
     if qudaParam.initialized: qudaFinalize()
+    proc qudaCommsMap(coords0: ptr cint; fdata: pointer): cint {.cdecl.} =
+      let pl = cast[ptr type(l)](fdata)
+      let coords = cast[ptr UncheckedArray[cint]](coords0)
+      let r = pl[].rankFromRankCoords(coords)
+      r.cint
+    initCommsGridQuda(qudaParam.rankGeom.len.cint, qudaParam.rankGeom[0].addr,
+                      qudaCommsMap, unsafeAddr(l))
     qudaInit(qudaParam.initArg)
     qudaParam.layout = l.physGeom.newLayout 1
     #qudaParam.longlinkG.new qudaParam.layout
@@ -189,23 +196,21 @@ when isMainModule:
   import gauge
   import physics/stagSolve
   qexInit()
-  #var lat = [4,4,4,4]
-  #var lat = [8,8,8,8]
-  var lat = [24,24,24,48]
-  #var lat = [32,32,32,64]
-  #var lat = [16,8,4,32]
+  var defaultLat = @[8,8,8,8]
+  defaultSetup()
   echo "rank ", myRank, "/", nRanks
   threads:
     echo "thread ", threadNum, "/", numThreads
   var
-    lo = lat.newLayout
+    #lo = lat.newLayout
     src = lo.ColorVector()
     dest = lo.ColorVector()
     destG = lo.ColorVector()
     r = lo.ColorVector()
-    g = lo.newGauge
+    #g = lo.newGauge
     rng = RngMilc6.newRNGField lo
-  g.random rng
+  if fn == "":
+    g.random rng
   threads:
     g.setBC
     g.stagPhase

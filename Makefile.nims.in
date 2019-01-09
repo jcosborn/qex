@@ -132,7 +132,7 @@ proc nimRun(f: string, outfile="") =
     quit(-1)
 
 for t in buildTasks:
-  if args[iarg][0..(t.cmd.len-1)] == t.cmd:
+  if args[iarg].startsWith(t.cmd):
     t.f()
     quit 0
 
@@ -154,7 +154,7 @@ echo "command: ", cmd
 var f = ""
 block:
   var t = cmd
-  if t[^4..^1] != ".nim": t &= ".nim"
+  if not t.endsWith(".nim"): t &= ".nim"
   f = findFile(t)
 if f != "":
   nimRun(f)
@@ -164,7 +164,7 @@ else:
     echo "Building files in directory: ", f
     for t in listFiles(f):
       echo "file: ", t
-      if t[^4..^1] == ".nim":
+      if t.endsWith(".nim"):
         nimRun(t)
 
 if f == "":
