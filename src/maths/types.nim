@@ -249,7 +249,7 @@ type
 #template `pobj=`*(x:Masked;y:untyped):untyped = ((MaskedObj[x.T])(x)).pobj = y
 #template `mask=`*(x:Masked;y:untyped):untyped = ((MaskedObj[x.T])(x)).mask = y
 template maskedObj*[T](x: T, msk: int): untyped =
-  MaskedObj[type(T)](pobj: addr(x), mask: msk)
+  MaskedObj[type(T)](pobj: addr(x).regenSym, mask: msk.regenSym)
 template maskedX*(x: typed, msk: int): untyped =
   bind maskedObj
   mixin isWrapper

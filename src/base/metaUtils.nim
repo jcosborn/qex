@@ -1,6 +1,153 @@
 import macros
 import strUtils
 
+proc has(n:NimNode, k:NimNodeKind):bool =
+  for c in n:
+    if c.kind == k: return true
+  return false
+
+const exprNodes = {
+  nnkExprEqExpr,
+  nnkExprColonExpr,
+  nnkCurlyExpr,
+  nnkBracketExpr,
+  nnkPragmaExpr,
+  nnkDotExpr,
+  nnkCheckedFieldExpr,
+  nnkDerefExpr,
+  nnkIfExpr,
+  nnkElifExpr,
+  nnkElseExpr,
+  nnkStaticExpr,
+  nnkStmtListExpr,
+  nnkBlockExpr,
+  nnkTypeOfExpr }
+
+proc rebuild(n:NimNode):NimNode =
+  #echo "### enter rebuild"
+  # Typed AST has extra information in its nodes.
+  # Replacing nodes in a typed AST can break its consistencies,
+  # for which the compiler is not well prepared.
+  # Here we simply rebuild some offensive nodes from scratch,
+  # and force the compiler to rebuild its type information.
+
+  # Note that the compiler currently (v0.17) only retype the AST
+  # after a macro returns, so to preserve type information while
+  # traversing the AST, call this proc on the result
+  #    result = rebuild result
+  # just before macro returns.
+
+  # Special node kinds have to be taken care of.
+  if n.kind == nnkConv:
+    result = newNimNode(nnkCall, n).add(rebuild n[0], rebuild n[1])
+  elif n.kind in nnkCallKinds and n[^1].kind == nnkBracket and
+       n[^1].len>0 and n[^1].has(nnkHiddenCallConv):
+    # special case of varargs
+    result = newCall(rebuild n[0])
+    for i in 1..<n.len-1: result.add rebuild n[i]
+    for c in n[^1]:
+      if c.kind == nnkHiddenCallConv: result.add rebuild c[1]
+      else: result.add rebuild c
+  elif n.kind in nnkCallKinds and n[0] == bindsym"echo" and n.len>0 and n[1].kind == nnkBracket:
+    # One dirty hack for the builtin echo, with no nnkHiddenCallConv (this is been caught above)
+    result = newCall(rebuild n[0])
+    for c in n[1]: result.add rebuild c
+  elif n.kind in nnkCallKinds and n[^1].kind == nnkHiddenStdConv and n[^1][1].kind == nnkBracket and
+       n[^1][1].len>0 and n[^1][1].has(nnkHiddenCallConv):
+    # Deals with varargs
+    result = newCall(rebuild n[0])
+    for i in 1..<n.len-1: result.add rebuild n[i]
+    for c in n[^1][1]:
+      if c.kind == nnkHiddenCallConv: result.add rebuild c[1]
+      else: result.add rebuild c
+  elif n.kind in nnkCallKinds:
+    result = newCall(rebuild n[0])
+    for i in 1..<n.len: result.add rebuild n[i]
+  elif n.kind == nnkHiddenStdConv:
+    # Generic HiddenStdConv
+    result = rebuild n[1]
+  elif n.kind == nnkHiddenAddr and n[0].kind == nnkHiddenDeref:
+    result = rebuild n[0][0]
+  elif n.kind == nnkHiddenDeref and n[0].kind == nnkHiddenAddr:
+    result = rebuild n[0][0]
+  elif n.kind in {nnkHiddenAddr,nnkHiddenDeref}:
+    result = rebuild n[0]
+  elif n.kind == nnkTypeSection:
+    # Type section is special.  Once the type is instantiated, it exists, and we don't want duplicates.
+    result = newNimNode(nnkDiscardStmt,n).add(newStrLitNode(n.lisprepr))
+
+  # Strip information from other kinds
+  else:
+    if n.kind in AtomicNodes:
+      result = n.copyNimNode
+    else:
+      result = newNimNode(n.kind, n)
+#[
+    # If something breaks, try adding the offensive node here.
+    #if n.kind in nnkCallKinds + {nnkBracketExpr,nnkBracket,nnkDotExpr}:
+    if n.kind in nnkCallKinds + exprNodes + {nnkAsgn}:
+      result = newNimNode(n.kind, n)
+    # Copy other kinds of node.
+    else:
+      result = n.copyNimNode
+]#
+    for c in n:
+      result.add rebuild c
+  #echo result.treerepr
+  #echo "### leave rebuild"
+
+proc append(x,y:NimNode) =
+  for c in y: x.add c
+
+proc replaceExcl(n,x,y:NimNode, k:NimNodeKind):NimNode =
+  # Same as replace but the optional parent node kind k excludes the replacement.
+  if n.kind == k and n.len==1 and n[0] == x:
+    result = n.copyNimTree
+  elif n == x:
+    result = y.copyNimTree
+  else:
+    result = n.copyNimNode
+    for c in n:
+      result.add c.replaceExcl(x,y,k)
+
+#var regenSymCounter {.compileTime.} = 0
+proc regenSym(n:NimNode):NimNode =
+  # Only regen nskVar and nskLet symbols.
+
+  # We need to regenerate symbols for multiple inlined procs,
+  # because cpp backend put variables on top level, although
+  # the c backend works without this.
+  proc get(n:NimNode,k:NimNodeKind):NimNode =
+    result = newPar()
+    if n.kind == k:
+      for d in n:
+        if d.kind != nnkIdentDefs or d.len<3:
+          echo "Internal ERROR: regenSym: get: can't handle:"
+          echo n.treerepr
+          quit 1
+        for i in 0..<d.len-2:   # Last 2 is type and value.
+          if d[i].kind == nnkSym: result.add d[i]
+        for c in d[^1]: result.append c.get k
+    else:
+      for c in n: result.append c.get k
+  result = n.copyNimTree
+  # We ignore anything inside a typeOfExpr, because we need the
+  # type information in there, but our new symbols wouldn't have
+  # any type info.
+  for x in result.get nnkLetSection:
+    #echo "Regen Let: ",x.repr
+    let y = genSym(nskLet, $x.symbol)
+    #let y = genSym(nskLet, "l" & $regenSymCounter & "_" & $x.symbol)
+    #inc regenSymCounter
+    result = result.replaceExcl(x,y,nnkTypeOfExpr)
+  for x in result.get nnkVarSection:
+    #echo "Regen Var: ",x.repr
+    let y = genSym(nskVar, $x.symbol)
+    #let y = genSym(nskVar, "v" & $regenSymCounter & "_" & $x.symbol)
+    #inc regenSymCounter
+    result = result.replaceExcl(x,y,nnkTypeOfExpr)
+macro regenSym*(n: typed): untyped = regenSym(n)
+
 proc symToIdent*(x: NimNode): NimNode =
   case x.kind:
     of nnkCharLit..nnkUInt64Lit:
@@ -65,6 +212,11 @@ macro treerep*(x:typed):auto =
 macro echoAst*(x:untyped):untyped =
   echo x.lineinfo
   echo x.treeRepr
+  x
+
+macro echoRep*(x: typed): typed =
+  echo x.lineinfo
+  echo x.repr
   x
 
 macro echoRepr*(x: untyped): untyped =
@@ -394,6 +546,8 @@ template forStaticUntyped*(index,i0,i1,body:untyped):untyped =
   forStaticX2(i0, i1, index, body)
 
 proc unrollFor*(n:NimNode):NimNode =
+  #echo "### enter unrollFor"
+  #echo n.repr
   template must(p:bool) =
     if not p:
       echo "unrollFor can't handle it:"
@@ -408,6 +562,8 @@ proc unrollFor*(n:NimNode):NimNode =
   must: n[1].kind == nnkInfix
   must: n[1].len == 3
   must: n[1][0].eqident ".."
+  if n[1][1].kind == nnkHiddenStdConv:
+    n[1][1] = n[1][1][1]
   must: n[1][1].kind in nnkCharLit..nnkUInt64Lit
   must: n[1][2].kind in nnkCharLit..nnkUInt64Lit
   let
@@ -416,22 +572,32 @@ proc unrollFor*(n:NimNode):NimNode =
   result = newStmtList()
   for i in a..b:
     result.add newNimNode(nnkBlockStmt, n).add(
-      ident("ITR: " & $i & " :: " & n.repr), replaceConv(n[0], newIntLitNode(i), n[2]))
+        ident("ITR: " & $i & " :: \n#[" & n.repr & "]#\n"), replace(n[0], newIntLitNode(i), n[2]).regenSym)
   #echo result.treerepr
+  #echo result.repr
+  #echo "### leave unrollFor"
 macro unrollFor*(n:typed):untyped =
-  if n.kind == nnkForStmt: return n.unrollFor
-  result = newstmtlist()
-  for c in n:
-    if c.kind == nnkForStmt: result.add c.unrollFor
-    else: result.add c
+  if n.kind == nnkForStmt:
+    result = n.unrollFor.rebuild
+  else:
+    result = newstmtlist()
+    for c in n:
+      if c.kind == nnkForStmt: result.add c.unrollFor.rebuild
+      else: result.add c
+  #echo n[^1].lineinfo
+  #echo n.treerepr
+  #echo result.treerepr
 
 template forStaticUnRollFor*(index,i0,i1,body:untyped):untyped =
+  const
+    a = i0
+    b = i1
   unrollFor:
-    for index in i0..i1: body
+    for index in a..b: body
 
 template forStatic*(index,i0,i1,body:untyped):untyped =
-  forStaticUntyped(index,i0,i1,body)
-  # forStaticUnRollFor(index,i0,i1,body)
+  # forStaticUntyped(index,i0,i1,body)
+  forStaticUnRollFor(index,i0,i1,body)
 
 template forOpt*(i,r0,r1,b:untyped):untyped =
   when compiles((const x=r0;const y=r1;x;y)):
