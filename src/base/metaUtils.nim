@@ -38,7 +38,10 @@ proc rebuild(n:NimNode):NimNode =
   # just before macro returns.
 
   # Special node kinds have to be taken care of.
-  if n.kind == nnkConv:
+  if n.kind == nnkAddr:
+    # We process typed NimNode, so addr is already checked.
+    result = newCall(bindsym"unsafeAddr", rebuild n[0])
+  elif n.kind == nnkConv:
     result = newNimNode(nnkCall, n).add(rebuild n[0], rebuild n[1])
   elif n.kind in nnkCallKinds and n[^1].kind == nnkBracket and
        n[^1].len>0 and n[^1].has(nnkHiddenCallConv):
