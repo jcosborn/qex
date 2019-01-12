@@ -38,10 +38,10 @@ suite "test random source and masked assignment":
           threadBarrier()
           for i in tmps.sites(dl):
             if lo.coords[^1][i] == t:
-              # tmps{i} := eta{i}    # Doesn't work
-              forO c, 0, tmps{0}.len-1:
-                tmps{i}[c].re := eta{i}[c].re
-                tmps{i}[c].im := eta{i}[c].im
+              tmps{i} := eta{i}
+              #forO c, 0, tmps{0}.len-1:
+              #  tmps{i}[c].re := eta{i}[c].re
+              #  tmps{i}[c].im := eta{i}[c].im
           threadBarrier()
           var n = tmps.norm2
           threadSingle:

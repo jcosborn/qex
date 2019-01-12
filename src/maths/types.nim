@@ -249,7 +249,8 @@ type
 #template `pobj=`*(x:Masked;y:untyped):untyped = ((MaskedObj[x.T])(x)).pobj = y
 #template `mask=`*(x:Masked;y:untyped):untyped = ((MaskedObj[x.T])(x)).mask = y
 template maskedObj*[T](x: T, msk: int): untyped =
-  MaskedObj[type(T)](pobj: addr(x).regenSym, mask: msk.regenSym)
+  MaskedObj[type(T)](pobj: addr(x), mask: msk)
+  #MaskedObj[type(T)](pobj: addr(x).regenSym, mask: msk.regenSym)
 template maskedX*(x: typed, msk: int): untyped =
   bind maskedObj
   mixin isWrapper
@@ -263,8 +264,20 @@ template masked*(x: typed, msk: int): untyped =
   tMasked
 template varMasked*(x: typed, msk: int): untyped =
   bind maskedX
-  var tMasked = maskedX(x, msk)
-  tMasked
+  var tVarMasked = maskedX(x, msk)
+  tVarMasked
+template `[]`*(m: Masked): untyped = m.pobj[]
+macro `[]`*(m: Masked{nkObjConstr}): untyped = m[1][1]
+template getMask*(m: Masked): untyped = m.mask
+template index1U*(m: Masked; i: typed): untyped =
+  masked(m[][i], m.getMask)
+  #let tMaskedIndex1 = m
+  #masked(tMaskedIndex1[][i], tMaskedIndex1.mask)
+template `[]`*(m: Masked; i: typed): untyped =
+  flattenCallArgs(index1U, m, i)
+template `[]`*(m: Masked; i,j: typed): untyped =
+  let tMaskedIndex2 = m
+  masked(tMaskedIndex2[][i,j], tMaskedIndex2.mask)
 #template isRIC*(x:int):untyped = true
 #template isRIC*(m:Masked):untyped = isRIC(m.pobj[])
 #template isComplex*(m:Masked):untyped = isComplex(m.pobj[])
@@ -279,9 +292,9 @@ template isVector*(m:Masked):untyped =
   #echo "isMatrix"
   #echo isMatrix(m.pobj[])
 #  isMatrix(m.pobj[])
-template mvLevel*(m:Masked):untyped =
-  mixin mvLevel
-  mvLevel(m.pobj[])
+#template mvLevel*(m:Masked):untyped =
+#  mixin mvLevel
+#  mvLevel(m.pobj[])
 template numNumbers*(m:Masked):untyped = numNumbers(m[])
 template numberType*(m:Masked):untyped = numberType(m[])
 template len*(m:Masked):untyped =
@@ -297,9 +310,10 @@ template re*(m: Masked): untyped =
   mixin re
   let tMaskedRe = m
   masked(tMaskedRe.pobj[].re, tMaskedRe.mask)
-template im*(m:Masked):untyped =
+template im*(m: Masked): untyped =
   mixin im
-  masked(m.pobj[].im, m.mask)
+  let tMaskedIm = m
+  masked(tMaskedIm.pobj[].im, tMaskedIm.mask)
 template `re=`*(m: Masked; x: any): untyped =
   mixin re
   let tMaskedReEq = m
@@ -308,49 +322,7 @@ template `im=`*(m: Masked; x: any): untyped =
   mixin im
   let tMaskedImEq = m
   assign(masked(tMaskedImEq.pobj[].im, tMaskedImEq.mask), x)
-#template `[]`*(x:Masked; i:int):untyped = Masked(x:x.pobj[i],mask:x.mask)
-#template `[]`*(m:Masked; i,j:int):untyped =
-#  Masked(x:unsafeAddr(m.pobj[][i,j]), mask:m.mask)
-#proc `[]`*[T](m:Masked[T]):var T {.inline.} = m.pobj[]
-template `[]`*(m:Masked): untyped = m.pobj[]
-template `[]`*(m:Masked; i:int):untyped = masked(m[][i],m.mask)
-#proc `[]`*[T](m:Masked[T]; i:int):auto =
-#  var r:Masked[type(m.pobj[][i])]
-#  #Masked(pobj:unsafeAddr(m.pobj[][i,j]), mask:m.mask)
-#  r.pobj = addr(m.pobj[][i])
-#  r.mask = m.mask
-#  r
-#proc `[]`*(m:Masked; i,j:int):var Masked[type(m.pobj[][i,j])] =
-template `[]`*(m:Masked; i,j:int):untyped = masked(m[][i,j],m.mask)
-  #var t = m[].addr
-  #var tij = t[][i,j].addr
-  #let tm = masked(tij[],m.mask)
-  #ctrace()
-  #tm
-  #var r:Masked[type(tij)]
-  #var r:Masked[type(m[][i,j])]
-#  #Masked(pobj:unsafeAddr(m.pobj[][i,j]), mask:m.mask)
-  #r.pobj = m.pobj[][i,j].addr
-  #r.mask = m.mask
-  #0
-#template `[]`*(m:Masked; i,j:int):untyped =
-#  Masked[type((pobj:m[][i,j].addr,mask:m.mask)
-#template `[]=`*(m:Masked; i,j:int; y:untyped):untyped =
-#  set(Masked(pobj:m.pobj[i,j].addr,mask:x.mask), y)
-#proc `:=`*(x:Masked; y:int) =
-#  mixin assign
-#  var t = x
-#  assign(t, y)
-#proc `*=`*(x:Masked; y:int) =
-  #echo "*="
-#  mixin mul
-  #echoAll isMatrix(t)
-  #echoAll isMatrix(x.pobj[])
-  #echoAll isScalar(y)
-#  mul(x, x[], y)
-  #echo "*="
-#proc `$`*(x:Masked):string =
-#  result = $(x[])
+
 
 #template eval*(x: AsComplex): untyped = asComplex(eval(x[]))
 template eval*(x: ToDouble): untyped =
