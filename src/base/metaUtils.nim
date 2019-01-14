@@ -575,7 +575,7 @@ proc unrollFor*(n:NimNode):NimNode =
   result = newStmtList()
   for i in a..b:
     result.add newNimNode(nnkBlockStmt, n).add(
-        ident("ITR: " & $i & " :: \n#[" & n.repr & "]#\n"), replace(n[0], newIntLitNode(i), n[2]).regenSym)
+        ident("ITR: " & $i & " :: \n#[" & n.repr & "]#\n"), replace(n[0], newIntLitNode(i), n[2]))
   #echo result.treerepr
   #echo result.repr
   #echo "### leave unrollFor"
