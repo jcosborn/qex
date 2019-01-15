@@ -48,9 +48,9 @@ when defined(FUELCompat):
     ## Seed the generator
     ## "index" selects which random number generator - which multiplier
     var seed = seed0
-    template set(x: untyped): untyped =
+    template set(x: uint32) =
       seed = (INDX1 + INDX2 * index) * seed + ADDEND
-      x = (seed shr 8) and MASK
+      x = cast[uint32]((seed shr 8) and MASK)
     set(prn.r0)
     set(prn.r1)
     set(prn.r2)
@@ -69,7 +69,7 @@ else:
     ## Seed the generator
     ## "index" selects which random number generator - which multiplier
     var seed = seed0
-    template set(x: untyped): untyped =
+    template set(x: uint32) =
       seed = (INDX1 + INDX2 * index) * seed + ADDEND
       x = (seed shr 8) and MASK
     set(prn.r0)
