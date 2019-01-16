@@ -144,7 +144,6 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
         r1[ri1.index][a].re := r{i}[a].re
         r1[ri1.index][a].im := r{i}[a].im
     if s.g.len == 4: # plain staggered
-      echo "wrapping plain staggered"
       longlink = nil
       for i in r.sites:
         var cv: array[4,cint]
@@ -157,7 +156,6 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
               g1[ri1.index][mu][a,b].re := s.g[mu]{i}[a,b].re
               g1[ri1.index][mu][a,b].im := s.g[mu]{i}[a,b].im
     elif s.g.len == 8: # Naik staggered
-      echo "wrapping Naik staggered"
       for i in r.sites:
         var cv: array[4,cint]
         r.l.coord(cv,(r.l.myRank,i))

@@ -27,7 +27,7 @@ qexInit()
 let
   # Required parameters
   inlat = strParam("inlat")   # Input gauge file name
-  outfn = strParam("outfn")   # Save results to outfn.{trace,noise,prop}
+  outfn = strParam("outfn", "output")   # Save results to outfn.{trace,noise,prop}
   mass = floatParam("mass", 0.1)   # The quark mass
 
   # optional parameters
@@ -59,6 +59,15 @@ template getLat(fn:string): seq[int] =
 let
   lat = inlat.getLat
   nt = lat[^1]
+  metadata_prefix = "l" & $lat[0] & ".t" & $nt & ".m" & $mass & ".cfg" & inlat
+
+proc trace_file(i:int):string =
+  let imp = if improved_trace: "1" else: "0"
+  outfn & ".trace" & $i & "." & source_type & ".imp" & imp & "." & $dilute_type
+proc trace_meta(i:int):string =
+  let imp = if improved_trace: "1" else: "0"
+  metadata_prefix & ".type" & source_type & ".src" & $i & ".imp" & imp & "." & $dilute_type
+
 var
   lo = lat.newLayout
   g = lo.newGauge
@@ -154,10 +163,10 @@ for i in 0..<num_stoch:
         # XXX implement subset later
         for i in tmps.sites(dl):
           if lo.coords[^1][i] == t:
-            # tmps{i} := eta{i}    # Doesn't work
-            forO c, 0, tmps{0}.len-1:
-              tmps{i}[c].re := eta{i}[c].re
-              tmps{i}[c].im := eta{i}[c].im
+            tmps{i} := eta{i}
+            #forO c, 0, tmps{0}.len-1:
+            #  tmps{i}[c].re := eta{i}[c].re
+            #  tmps{i}[c].im := eta{i}[c].im
         phi := 0
         threadBarrier()
         echo "src norm2: ",tmps.norm2
@@ -191,6 +200,31 @@ for i in 0..<num_stoch:
   for t in 0..<nt:
     echo "initsrc ",i," timeslice ",t," pbp ",est[t] / spatv.float
 
-# XXX save trce
+  var trceWriter = lo.newWriter(trace_file(i), trace_meta(i))
+  trceWriter.write(trce, trace_meta(i), "D")
+  trceWriter.close
+
+# Test loading traces
+for i in 0..<num_stoch:
+  echo "Loading trace from source ", i
+
+  var trceReader = lo.newReader trace_file(i)
+  trceReader.read trce
+  trceReader.close
+
+  echo "File metadata for trace ", i, ": ", trceReader.fileMetadata
+  echo "Trace metadata for trace ", i, ": ", trceReader.recordMetadata
+
+  # per-slice estimate at 0 momentum
+  var est = newseq[float](nt)
+  for i in trce.sites:
+    var t:float
+    t := trce{i}.re
+    est[lo.coords[3][i]] += t
+  est.ranksum
+  for t in 0..<nt:
+    echo "loadsrc ",i," mom 0 0 0 timeslice ",t," pbp ",est[t] / spatv.float
+
+  # per-slice estimate at +z momentum XXX
 
 qexFinalize()
