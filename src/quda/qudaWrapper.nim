@@ -56,7 +56,8 @@ proc qudaInit* =
   ## Assumes single GPU per rank.
   let n = max(1,cudaGetDeviceCount())
   echo "cudaGetDeviceCount: ",n
-  qudaParam.initArg.layout.device = cint(myrank mod n)
+  #qudaParam.initArg.layout.device = cint(myrank mod n)
+  qudaParam.initArg.layout.device = -1.cint
   qudaParam.initArg.layout.latsize = qudaParam.physGeom[0].addr
   qudaParam.initArg.layout.machsize = qudaParam.rankGeom[0].addr
   qudaParam.initArg.verbosity = QUDA_SUMMARIZE
