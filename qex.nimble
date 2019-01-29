@@ -14,7 +14,7 @@ srcDir        = qexDir/"src"
 
 requires "nim >= 0.19.0"
 requires "chebyshev >= 0.2.1"
-requires "mdevolve >= 0.1.0"
+requires "mdevolve >= 0.1.1"
 when declared(primmeDir):
   requires "primme >= 3.0.0"
 
