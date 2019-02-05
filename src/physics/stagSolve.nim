@@ -85,12 +85,13 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0: var SolverParams;
   echo "op time: ", top
   echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
 proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float;
-            cpuonly = false) =
+            cpuonly = false; sloppySolve = SloppyNone) =
   var sp = initSolverParams()
   sp.r2req = res
   #sp.maxits = 1000
   sp.verbosity = 1
   sp.subsetName = "even"
+  sp.sloppySolve = sloppySolve
   solve(s, r, x, m, sp, cpuonly)
 
 

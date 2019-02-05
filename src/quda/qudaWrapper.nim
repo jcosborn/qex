@@ -124,7 +124,10 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
     destGpu: pointer = r1.s.data
   invargs.maxIter = sp.maxits.cint
   invargs.evenodd = QUDA_EVEN_PARITY
-  invargs.mixedPrecision = 1    # 0: NO, 1: YES
+  invargs.mixedPrecision = case sp.sloppySolve:
+    of SloppyNone: 0
+    of SloppySingle: 1
+    of SloppyHalf: 2
   threads:
     # t2 = t.norm2
     for i in r.sites:
@@ -217,10 +220,9 @@ when isMainModule:
     destG := 0
     src.z4 rng
   var s = g.newStag
-  var m = 0.0123
-  var res = 1e-12
-  s.solve(dest, src, m, res, cpuonly = true)
-  s.solve(dest, src, m, res, cpuonly = true)
+  let m = floatParam("mass", 0.02)
+  let res = floatParam("cg_prec", 1e-9)
+  let sloppy = intParam("sloppy", 2).SloppyType
   s.solve(dest, src, m, res, cpuonly = true)
   var n2: tuple[a,e,o:float]
   threads:
@@ -241,9 +243,9 @@ when isMainModule:
     echo "r.even: ", r.even.norm2
     echo "r.odd: ", r.odd.norm2
 
-  s.solve(destG, src, m, res)
-  s.solve(destG, src, m, res)
-  s.solve(destG, src, m, res)
+  s.solve(destG, src, m, res, sloppySolve = sloppy)
+  s.solve(destG, src, m, res, sloppySolve = sloppy)
+  s.solve(destG, src, m, res, sloppySolve = sloppy)
 
   threads:
     echo "destG.norm2: ", destG.norm2

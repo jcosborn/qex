@@ -44,6 +44,7 @@ let
 var sp = initSolverParams()
 sp.r2req = cg_prec*cg_prec
 sp.maxits = cg_max
+sp.sloppySolve = intParam("sloppy", 2).SloppyType # 0: None, 1: Single, 2: Half
 
 # Load lattice and determine size and parameters
 template getLat(fn:string): seq[int] =
