@@ -208,7 +208,7 @@ proc coord*(l: Layout, coord: var openArray[cint]; rank,index: int) =
   li.rank = rank.cint
   li.index = index.cint
   layoutCoordQ(l.lq.addr, cast[ptr cArray[cint]](coord[0].addr), li.addr)
-template coord*(l: Layout, crd: var typed, ri: tuple[rank,index:int]) =
+proc coord*(l: Layout, crd: var any, ri: tuple[rank,index:int]) =
   coord(l, crd, ri.rank, ri.index)
 template coord*(l: Layout, crd: var typed, index: int) =
   coord(l, crd, l.myrank, index)
