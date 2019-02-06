@@ -421,6 +421,10 @@ macro makeConstructors(x: untyped): untyped =
   result.add getAst mp(ident(f&"D"), ident("D"&r&"V"), ident"result")
   const defPrec {.strdefine.} = "D"
   result.add getAst mp(ident(f), ident(defPrec&r&"V"), ident"result")
+  # non-Simd versions
+  result.add getAst mp(ident(f&"S1"), ident("S"&r), ident"result")
+  result.add getAst mp(ident(f&"D1"), ident("D"&r), ident"result")
+  result.add getAst mp(ident(f&"1"), ident(defPrec&r), ident"result")
   #echo result.repr
 
 makeConstructors(Real)

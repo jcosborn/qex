@@ -1,13 +1,19 @@
+#RUNCMD $RUN1
+
 import unittest
+#import streams
+addOutputFormatter(newConsoleOutputFormatter(PRINT_FAILURES))
+#let strm = newFileStream("ut.out", fmWrite)
+#let ju = newJUnitOutputFormatter(strm)
 
 suite "description for this stuff":
-  echo "suite setup: run once before the tests"
+  #echo "suite setup: run once before the tests"
 
-  setup:
-    echo "run before each test"
+  #setup:
+    #echo "run before each test"
 
-  teardown:
-    echo "run after each test"
+  #teardown:
+    #echo "run after each test"
 
   test "essential truths":
     # give up and stop if this fails
@@ -25,4 +31,6 @@ suite "description for this stuff":
     #expect(IndexError):
     #  discard v[4]
 
-  echo "suite teardown: run once after the tests"
+  #echo "suite teardown: run once after the tests"
+
+#close(strm)

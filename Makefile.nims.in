@@ -67,12 +67,14 @@ buildTask tests, "build unit tests":
       let (dir, name, ext) = splitFile(f)
       #echo dir, " ", name, " ", ext
       if name[0]=='t' and ext==".nim":
+        var rj = gorge("awk '/^#RUNCMD/{print(substr($0,9))}' "&f)
+        if rj == "": rj = "$RUNJOB"
         nimRun f, outdir/name
         runscript.add("echo Running: "&(outdir/name))
-        runscript.add("$RUNJOB "&(outdir/name)&" || failed=\"$failed "&name&"\"")
+        runscript.add(rj&" "&(outdir/name)&" || failed=\"$failed "&name&"\"")
   #echo runscript.join("\n")
   runscript.add("$CLEANUPJOBS")
-  runscript.add("if [ X != X$failed ];then echo Failed tests: $failed;exit 1;fi")
+  runscript.add("if [ X != \"X$failed\" ];then echo Failed tests: $failed;exit 1;fi")
   writeFile("testscript.sh", runscript.join("\n"))
   exec("chmod 755 testscript.sh")
   if dorun:

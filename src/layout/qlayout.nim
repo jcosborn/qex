@@ -121,7 +121,7 @@ proc lexr_i*(x: ptr UncheckedArray[cint];
 proc layoutIndexQ*(l: ptr LayoutQ; li: ptr LayoutIndexQ;
                    coords: ptr cArray[cint]) =
   var nd: cint = l.nDim
-  var ri: cint = lex_i(coords, l.rankGeom, l.localGeom, nd)
+  var ri: cint = lexr_i(coords, l.rankGeom, l.localGeom, nd)
   var ii: cint = lex_i(coords, l.innerGeom, l.outerGeom, nd)
   var ib: cint = 0
   var i: cint = 0
@@ -148,7 +148,7 @@ proc layoutCoordQ*(l: ptr LayoutQ; coords: ptr cArray[cint];
                    li: ptr LayoutIndexQ) =
   var nd: cint = l.nDim
   var cr = newSeq[cint](nd)
-  lex_x(cr, li.rank, l.rankGeom, nd)
+  lexr_x(cr, li.rank, l.rankGeom, nd)
   var p: cint = 0
   var ll: cint = li.index mod l.nSitesInner
   var ib: cint = 0

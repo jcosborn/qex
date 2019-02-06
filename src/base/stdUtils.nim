@@ -39,6 +39,7 @@ proc intSeqParam*(s: string, d: seq[int] = @[]): seq[int] =
   for i in 1..n:
     let p = paramstr(i)
     if p.startsWith('-'&s&':'):
+      result.setLen(0)
       let ll = s.len + 2
       for c in split(p[ll..^1], ','):
         result.add parseInt(c)
@@ -136,9 +137,12 @@ makeArrayOverloads(8)
 makeArrayOverloads(16)
 ]#
 
-#proc sum*[T](x:openArray[T]): auto =
-#  result = x[0]
-#  for i in 1..<x.len: result += x[i]
+proc sum*[T](x: openArray[T]): T =
+  for i in 0..<x.len: result += x[i]
+
+proc product*[T](x: openArray[T]): T =
+  result = T(1)
+  for i in 0..<x.len: result *= x[i]
 
 macro echoImm*(s:varargs[typed]):auto =
   result = newEmptyNode()

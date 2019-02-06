@@ -18,6 +18,7 @@ type QMP_thread_level_t*{.qmp.} = enum
   QMP_THREAD_SERIALIZED,
   QMP_THREAD_MULTIPLE
 type
+  QMP_comm_t*{.qmp.} = pointer
   QMP_msgmem_t*{.qmp.} = pointer
   QMP_msghandle_t*{.qmp.} = pointer
 
@@ -37,6 +38,13 @@ proc QMP_max_float*(value:ptr cfloat) {.qmp.}
 proc QMP_max_double*(value:ptr cdouble) {.qmp.}
 proc QMP_min_float*(value:ptr cfloat) {.qmp.}
 proc QMP_min_double*(value:ptr cdouble) {.qmp.}
+proc QMP_comm_get_default*(): QMP_comm_t {.qmp.}
+proc QMP_comm_get_number_of_nodes*(comm: QMP_comm_t):cint {.qmp.}
+proc QMP_comm_get_node_number*(comm: QMP_comm_t):cint {.qmp.}
+proc QMP_comm_barrier*(comm: QMP_comm_t) {.qmp.}
+
+
+
 
 proc qmpSum*(v:var int) =
   var t = v.float
