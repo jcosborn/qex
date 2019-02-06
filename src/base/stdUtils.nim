@@ -137,8 +137,8 @@ makeArrayOverloads(8)
 makeArrayOverloads(16)
 ]#
 
-proc sum*[T](x: openArray[T]): T =
-  for i in 0..<x.len: result += x[i]
+#proc sum*[T](x: openArray[T]): T =
+#  for i in 0..<x.len: result += x[i]
 
 proc product*[T](x: openArray[T]): T =
   result = T(1)
