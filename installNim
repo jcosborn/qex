@@ -142,6 +142,7 @@ else
       0.17.*) cb="v0.17.0";;
       0.18.*) cb="v0.18.0";;
     esac
+    echo "Installing csources '$cb'"
     git clone -b $cb --depth 1 https://github.com/nim-lang/csources
   fi
 fi
