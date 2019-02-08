@@ -2,7 +2,7 @@
 
 #echo "pwd: `pwd`"
 
-#newargs[0]="-D__inline=inline"
+#newargs[0]="-D__inline__=inline"
 newargs[0]="-D__GNUC__"
 #newargs[0]="-D__TINYC__"
 for a in "$@"; do

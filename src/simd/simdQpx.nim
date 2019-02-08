@@ -4,7 +4,7 @@ import base/wrapperTypes
 type
   #SimdS4* = distinct array[4,float32]
   SimdS4* = object
-    v: array[4,float32]
+    v*: array[4,float32]
   #SimdS4* = object
   #  v: ptr array[4,float32]
   SimdD4* {.importc:"__vector4double".} = object
