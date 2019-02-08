@@ -127,7 +127,7 @@ when declared(SimdD8) and declared(SimdS8):
     imadd(r, x, toDouble(y))
   template imsub*(r: SimdD8, x: SimdD8, y: SimdS8): untyped =
     imsub(r, x, toDouble(y))
-  template `-=`*(r: SimdD8, x: SimdD8): untyped = isub(r, x)
+  #template `-=`*(r: SimdD8, x: SimdD8): untyped = isub(r, x)
 
 
 when declared(SimdS16):
