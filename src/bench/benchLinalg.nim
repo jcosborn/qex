@@ -16,7 +16,7 @@ import parseUtils
 #import profile
 
 proc fixBracket*(x: NimNode): NimNode =
-  if x.kind == nnkCall and eqIdent(x.name,"[]"):
+  if x.kind == nnkCall and eqIdent(x[0],"[]"):
     #echo x.name.treerepr
     result = newNimNode(nnkBracketExpr)
     for i in 1..<x.len:
