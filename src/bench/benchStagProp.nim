@@ -35,26 +35,26 @@ echo v1.norm2
 #var gs = lo.newGaugeS
 #for i in 0..<gs.len: gs[i] := g[i]
 var s = newStag(g)
-var m = 0.000001
+var mass = floatParam("mass", 0.000001)
 threads:
   v2 := 0
   echo v2.norm2
   threadBarrier()
-  s.D(v2, v1, m)
+  s.D(v2, v1, mass)
   threadBarrier()
   #echoAll v2
   echo v2.norm2
 #echo v2
 var sp = initSolverParams()
 sp.maxits = int(1e9/lo.physVol.float)
-s.solve(v2, v1, m, sp)
+s.solve(v2, v1, mass, sp)
 resetTimers()
-s.solve(v2, v1, m, sp)
+s.solve(v2, v1, mass, sp)
 threads:
   echo "v2: ", v2.norm2
   echo "v2.even: ", v2.even.norm2
   echo "v2.odd: ", v2.odd.norm2
-  s.D(r, v2, m)
+  s.D(r, v2, mass)
   threadBarrier()
   r := v1 - r
   threadBarrier()
@@ -69,9 +69,9 @@ for i in 0..3:
   g3[2*i+1].randomSU rs
 var s3 = newStag3(g3)
 #s3.D(v2, v1, m)
-s3.solve(v2, v1, m, sp)
+s3.solve(v2, v1, mass, sp)
 resetTimers()
-s3.solve(v2, v1, m, sp)
+s3.solve(v2, v1, mass, sp)
 echoTimers()
 
 qexFinalize()

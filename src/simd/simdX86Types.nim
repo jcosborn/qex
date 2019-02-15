@@ -32,4 +32,4 @@ when defined(AVX512):
     SimdS16* = m512
     SimdD8*  = m512d
     SimdI16* = m512i
-    SimdH16* = distinct SimdI8
+    SimdH16* = distinct m256i
