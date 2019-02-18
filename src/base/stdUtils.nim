@@ -94,6 +94,12 @@ proc indexOf*[T](x: openArray[T], y: any): int =
   let n = x.len
   while result<n and x[result]!=y: inc result
 
+proc `+`*(x: SomeNumber, y: array): auto {.inline,noInit.} =
+  var r: array[y.len, type(x+y[0])]
+  for i in 0..<r.len:
+    r[i] = x + y[i]
+  r
+
 proc `*`*(x: array, y: SomeNumber): auto {.inline,noInit.} =
   var r: array[x.len, type(x[0]*y)]
   for i in 0..<r.len:
@@ -105,6 +111,12 @@ proc `*`*(x: SomeNumber, y: array): auto {.inline,noInit.} =
     r[i] = x * y[i]
   r
 
+proc `/`*(x: SomeNumber, y: array): auto {.inline,noInit.} =
+  var r: array[y.len, type(x/y[0])]
+  for i in 0..<r.len:
+    r[i] = x / y[i]
+  r
+
 #proc `+`*[A:array](x,y: A): A {.inline,noInit.} =
 #  for i in 0..<result.len:
 #    result[i] = x[i] + y[i]
@@ -114,6 +126,13 @@ proc `+`*[N,T1,T2](x: array[N,T1], y: array[N,T2]): auto {.inline,noInit.} =
   var r: array[n, type(x[0]+y[0])]
   for i in 0..<n:
     r[i] = x[i] + y[i]
+  r
+
+proc `-`*[N,T1,T2](x: array[N,T1], y: array[N,T2]): auto {.inline,noInit.} =
+  const n = x.len
+  var r: array[n, type(x[0]-y[0])]
+  for i in 0..<n:
+    r[i] = x[i] - y[i]
   r
 
 proc `+=`*[T](x:var openArray[T], y: openArray[T]) {.inline.} =

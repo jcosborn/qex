@@ -69,7 +69,7 @@ proc readSingle*(r: var ParallelReader, buf: pointer, bytes: int) =
 proc readSingle*(r: var ParallelReader, s: var string) =
   r.readSingle(addr(s[0]), s.len)
 
-proc readBigInt32(pr: var ParallelReader): int32 =
+proc readBigInt32*(pr: var ParallelReader): int32 =
   when system.cpuEndian == bigEndian:
     pr.readAll(result)
   else:
