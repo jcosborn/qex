@@ -7,8 +7,8 @@ import random  # for seeding our RNGs
 const CHECK = false
 const CHECKLBFGS = false
 const CHECKLBFGSMOM = false
-const CHECKLBFGSEIGEN = false
-const CHECKHESSIAN = false
+const CHECKLBFGSEIGEN = false and not CHECKLBFGSMOM
+const CHECKHESSIAN = true
 
 when CHECKLBFGSEIGEN:
   when not defined primmeDir:
@@ -173,7 +173,7 @@ proc add[F](o:LBFGS[F]; x,f:F) =
             var t = ln(o.s[n1][mu][i] * x[mu][i].adj)
             t.projectTAH t
             #t := t.im
-          when CHECK and false:
+          when CHECK:
             if i == 0:
               echo "For mu = ",mu
               let
@@ -192,7 +192,7 @@ proc add[F](o:LBFGS[F]; x,f:F) =
           #  var r = (o.y[n1][mu][i] - f[mu][i]).im
           #r *= o.yscale
           let r = o.yscale*(o.y[n1][mu][i] - f[mu][i])
-          when CHECK and false:
+          when CHECK:
             if i == 0:
               let
                 yi = o.y[n1][mu][i]
@@ -203,15 +203,18 @@ proc add[F](o:LBFGS[F]; x,f:F) =
               echo "==r: ",r
           o.y[n1][mu][i] := r
         ys += o.y[n1][mu].redot o.s[n1][mu]
-      threadmaster:
+      threadMaster:
         o.ys[n1] = ys
-    when CHECK and false:
+    when CHECK:
       let ysd = o.y[n1].dot o.s[n1]
       echo "ysd: ",ysd
-      echo "ys[",n1,"]: ",o.ys[n1]
-    for mu in 0..<x.len:
-      o.s[n][mu] := x[mu]  # TODO: we can elide this extra copy
-      o.y[n][mu] := f[mu]
+      echo "ys[",n1,"]: ",o.ys[n1].float
+  for mu in 0..<x.len:
+    o.s[n][mu] := x[mu]  # TODO: we can elide this extra copy
+    o.y[n][mu] := f[mu]
+    if CHECKLBFGS:
+      echo "    x[mu][0]: ",x[mu][0]
+      echo "    f[mu][0]: ",f[mu][0]
   inc n
   if n == o.ys.len: n = 0
   o.p = n
@@ -398,7 +401,7 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
     threads:
       let y2 = o.y[i].norm2
       let s2 = o.s[i].norm2
-      threadmaster:
+      threadMaster:
         yy = y2
         ss = s2
     when CHECK:
@@ -421,7 +424,7 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
         tss = o.s[i].norm2
         tsgs = o.s[i].redot o.u[i]
         tygiy = o.y[i].redot o.v[i]
-      threadmaster:
+      threadMaster:
         ss = tss
         sgs = tsgs
         ygiy = tygiy
@@ -536,54 +539,51 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
     #qexExit 0
 
 when CHECKLBFGS:
-    const cklbfgsnd = 64
-    let nseq = 65536
-    type V = array[cklbfgsnd,float]
-    type M = array[cklbfgsnd,V]
-    type D = distinct V
-    template len(x:D):int = V(x).len
-    template `[]`(x:D,i:untyped):untyped = V(x)[i]
-    template `[]=`(x:D,i:untyped,y:untyped):untyped = V(x)[i] = y
-    template `$`(x:D):string = $V(x)
-    iterator items(x:D):int =
-      for i in 0..<x.len: yield i
-    proc `*`(c:float,x:D):D =
-      for i in x:
-        result[i] = c * x[i]
-    proc `+`(x,y:D):D =
-      for i in x:
-        result[i] = x[i] + y[i]
-    proc `-`(x,y:D):D =
-      for i in x:
-        result[i] = x[i] - y[i]
-    proc dot(x,y:D):float =
-      for i in x:
-        result += x[i]*y[i]
-    proc `*=`(x:var D,y:float) =
-      for i in x:
-        x[i] *= y
-    proc `-=`(x:var D,y:D) =
-      for i in x:
-        x[i] -= y[i]
-    template `:=`(x,y:float) = x = y
-    template `:=`(x,y:D) =
-      for i in x:
-        x[i] = y[i]
-    template redot(x,y:D):float = x.dot y
-    template norm2(x:D):float = x.dot x
-    proc newOneOf(x:D):D = x
-    type F = seq[D]
-    proc dot(x,y:F):float =
-      for i in 0..<x.len:
-        result += x[i].dot y[i]
-    template redot(x,y:F):float = x.dot y
-    template norm2(y:F):float =
-      let x = y
-      x.dot x
-    proc `*`(m:M,y:D):D =
-      for j in 0..<m.len:
-        for i in 0..<m.len:
-          result[i] += m[i][j] * y[j]
+  const cklbfgsnd = 32
+  let nseq = 8192
+  type V = array[cklbfgsnd,float]
+  type rV = ref[V]
+  type M = array[cklbfgsnd,V]
+  type D = distinct rV
+  proc initD:D = D(V.new)
+  template newOneOf(x:D):D = initD()
+  template len(x:D):int = x.rV[].len
+  template `[]`(x:D,i:untyped):untyped = x.rV[][i]
+  template `[]=`(x:D,i:untyped,y:untyped):untyped = x.rV[][i] = y
+  template `$`(x:D):string = $x.rV[]
+  iterator items(x:D):int =
+    for i in 0..<x.len: yield i
+  template getdiff(z,x,y:D) =
+    for i in x:
+      z[i] = x[i] - y[i]
+  proc dot(x,y:D):float =
+    for i in x:
+      result += x[i]*y[i]
+  template `*=`(x:D,y:float) =
+    for i in x:
+      x[i] *= y
+  template `-=`(x:D,y:D) =
+    for i in x:
+      x[i] -= y[i]
+  template `:=`(x,y:float) = x = y
+  template `:=`(x,y:D) =
+    for i in x:
+      x[i] = y[i]
+  template redot(x,y:D):float = x.dot y
+  template norm2(x:D):float = x.dot x
+  type F = seq[D]
+  proc dot(x,y:F):float =
+    for i in 0..<x.len:
+      result += x[i].dot y[i]
+  template redot(x,y:F):float = x.dot y
+  template norm2(y:F):float =
+    let x = y
+    x.dot x
+  template getforce(z:D,m:M,y:D)=
+    for j in 0..<m.len:
+      for i in 0..<m.len:
+        z[i] += m[i][j] * y[j]
+  proc checklbfgs =
     var cklbfgsr {.noinit.} :LBFGS[F]
     cklbfgsr.new
     cklbfgsr.p = 0
@@ -593,16 +593,22 @@ when CHECKLBFGS:
     cklbfgsr.s.newseq(nseq)
     cklbfgsr.sortedlen = 0
     cklbfgsr.sortedix.newseq(nseq-2)  # N states -> N differences ->  N-2 excluding 1 state
-    cklbfgsr.v.newseq(nseq-2)  # ditto
-    cklbfgsr.gamma.newseq(nseq-2)
+    cklbfgsr.v.newseq(nseq)
+    cklbfgsr.u.newseq(nseq)
+    cklbfgsr.gamma.newseq(nseq)
     cklbfgsr.invsqrtH0 = 1.0
     cklbfgsr.yscale = 1.0
     cklbfgsr.lambda = 0.0
     for i in 0..<nseq:
       cklbfgsr.y[i].newseq(1)
+      cklbfgsr.y[i][0] = initD()
       cklbfgsr.s[i].newseq(1)
-    for i in 0..<nseq-2:
+      cklbfgsr.s[i][0] = initD()
+    for i in 0..<nseq:
       cklbfgsr.v[i].newseq(1)
+      cklbfgsr.v[i][0] = initD()
+      cklbfgsr.u[i].newseq(1)
+      cklbfgsr.u[i][0] = initD()
     var rng = initRand 5^5
     var m:M
     for i in 0..<m.len-1:
@@ -611,34 +617,42 @@ when CHECKLBFGS:
       m[i+1][i] = 1
     m[m.len-1][m.len-1] = 1
     for i in 0..<nseq:
-      var x:D
+      var x = initD()
       for k in 0..<cklbfgsnd: x[k] = rng.rand 1.0
       #echo "x: ",x
-      let y = m * x
+      var y = initD()
+      y.getforce(m, x)
       #echo "y: ",y
       cklbfgsr.add(x = @[x], f = @[y])
     cklbfgsr.prep
-    var x:D
+    var x = initD()
     for i in x: x[i] = 1
     echo "test x: ",x
-    let y = m * x
+    var y = initD()
+    y.getforce(m, x)
     echo "test y: ",y
     var hx = @[x]
+    var tmp = initD()
     cklbfgsr.H hx
+    tmp.getdiff(hx[0], y)
     echo "hx: ",hx
-    echo "hx err: ",norm2(hx[0]-y)
+    echo "hx err: ",norm2(tmp)
     var hinvhx = hx
     cklbfgsr.invH hinvhx
+    tmp.getdiff(hinvhx[0], x)
     echo "hinvhx: ",hinvhx
-    echo "hinvhx err: ",norm2(hinvhx[0]-x)
+    echo "hinvhx err: ",norm2(tmp)
     var hinvy = @[y]
     cklbfgsr.invH hinvy
+    tmp.getdiff(hinvy[0], x)
     echo "hinvy: ",hinvy
-    echo "hinvy err: ",norm2(hinvy[0]-x)
+    echo "hinvy err: ",norm2(tmp)
     var hsqrtx = @[x]
     cklbfgsr.sqrtH hsqrtx
     echo "hsqrtx: ",hsqrtx
-    qexExit 0
+  qexinit()
+  checklbfgs()
+  qexExit 0
 
 qexinit()
 threads: echo "thread ",threadNum," / ",numThreads
@@ -654,8 +668,8 @@ let
   qntau = floatParam("qntau", tau)
   qnsteps = intParam("qnsteps", steps)
   qnyscut = floatParam("qnyscut",0)
-  qnyscale = floatParam("qnyscale", 1.0/(2.0*beta))  # inverse diagonal term of the Hessian
-  qnh0 = floatParam("qnh0",1.0)  # initial diagonal term of the Hessian
+  qnyscale = floatParam("qnyscale", 1.0/(2.0*beta))  # scaling the approximated Hessian by inverse diagonal term of the free field Hessian
+  qnh0 = floatParam("qnh0",1.0)  # initial diagonal term of the approximated Hessian
   seed = intParam("seed", 11^11)
   gfix = intParam("gfix", 1).bool
   gfixextra = intParam("gfixextra", 0).bool
