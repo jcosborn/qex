@@ -4,10 +4,11 @@ import mdevolve
 import os, strutils, algorithm, macros, times
 import random  # for seeding our RNGs
 
-const CHECK = true
+const CHECK = false
 const CHECKLBFGS = false
 const CHECKLBFGSMOM = false
-const CHECKLBFGSEIGEN = true
+const CHECKLBFGSEIGEN = false
+const CHECKHESSIAN = false
 
 when CHECKLBFGSEIGEN:
   when not defined primmeDir:
@@ -400,7 +401,8 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
       threadmaster:
         yy = y2
         ss = s2
-    echo j," ix ",i," ys ",o.ys[i]," ys/yy ",(o.ys[i]/yy)," yy ",yy," ss ",ss
+    when CHECK:
+      echo j," ix ",i," ys ",o.ys[i]," ys/yy ",(o.ys[i]/yy)," yy ",yy," ss ",ss
     if unset and o.ys[i] <= cutoff:
       o.sortedlen = j
       unset = false
@@ -526,7 +528,7 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
       of -3: echo "Recommended method for next run: DYNAMIC (close call)"
       else: discard
       for i in 0..<p.numEvals:
-        echo i," ev ",vals[i]," rnorm ",rnorms[i]
+        echo i," ev ",vals[i].float," rnorm ",rnorms[i].float
     o.lbfgseigen(primme_smallest)
     o.lbfgseigen(primme_largest)
     let te1 = epochTime()
@@ -643,6 +645,8 @@ threads: echo "thread ",threadNum," / ",numThreads
 
 let
   beta = floatParam("beta", 5.0)
+  nx = intParam("nx", 64)
+  nt = intParam("nt", nx)
   trajs = intParam("trajs", 512)
   qnbegin = intParam("qnbegin",64)
   tau = floatParam("tau", 2.0)
@@ -658,8 +662,11 @@ let
   gfixunit = intParam("gfixunit", 1).bool
   nstream = intParam("nstream", 10)
   lambda = floatParam("lambda", 0.1)
+  randomInit = intParam("randomInit", 1).bool
 
 echo "beta = ",beta
+echo "nx = ",nx
+echo "nt = ",nt
 echo "trajs = ",trajs
 echo "tau = ",tau
 echo "steps = ",steps
@@ -675,8 +682,9 @@ echo "gfixunit = ",gfixunit.int
 echo "nstream = ",nstream
 echo "lambda = ",lambda
 echo "seed = ",seed
+echo "randomInit = ",randomInit.int
 
-var (gs,r,R) = setup([64,64],nstream,seed)
+var (gs,r,R) = setup([nx,nt],nstream,seed)
 
 let
   lo = gs[0][0].l
@@ -701,7 +709,10 @@ var
   hinvp = lo.newgauge
 
 for i in 0..<nstream:
-  gs[i].random r
+  if randomInit:
+    gs[i].random r
+  else:
+    for mu in 0..<gs[i].len: gs[i][mu] := 1
   if gfix and gfixunit: gs[i].maxTreeFix(1.0, gfixextra)
   echo "Initial plaq@gs[",i,"]: ",gs[i].plaq3
 
@@ -803,31 +814,36 @@ for n in 1..trajs:
     echo "Begin traj: ",n," nsNow: ",nsnow," ",(if forward: "forward" else: "backward")
     if n >= qnbegin:
       lbfgs.prep(cutoff = qnyscut * lat[0].float)
-      when CHECK and false:
+      when CHECKHESSIAN:
         # Goodness of the Hessian approximation
-        let dev = 0.001
+        # ./bin/puregauge2du1qn -beta:32 -nx:8 -steps:20 -gfix:1 -gfixextra:1
+        #     -nstream:400 -qnbegin:8 -trajs:9 -randomInit:0 -lambda:0
+        # Should see ratios of errors with and without the 2nd order term about -0.0204(8)
+        let dev = 0.01
         let s0 = gs[nsnow].gaugeAction2 gc
         f.getforce gs[nsnow]
         for i in 0..<g0.len:
           for j in g0[i]:
             let t = dev * ln gs[nsnow][i][j]
             g0[i][j] := t
-        let s01 = f.redot g0
-        lbfgs.sqrtH g0
         if gfix: g0.maxTreeFix(0.0, gfixextra)
-        let s02 = 0.5 * g0.norm2
+        let s01 = f.redot g0
+        p.H(lbfgs, g0)
+        let s02 = (0.5/lbfgs.yscale) * p.redot g0
         let s1a = s0 + s01 + s02
         for i in 0..<g0.len:
           for j in g0[i]:
-            let t = exp((1+dev) * ln gs[nsnow][i][j])
+            let t = gs[nsnow][i][j] * exp(dev * ln gs[nsnow][i][j])
             g0[i][j] := t
         if gfix: g0.maxTreeFix(1.0, gfixextra)
         let s1 = g0.gaugeAction2 gc
         echo "s0: ",s0," s01: ",s01," s02: ",s02
         echo "s1a: ",s1a
         echo "s1: ",s1
-        echo "error: ",(s1-s1a)
-        echo "s1-(s0+s01): ",(s1-(s0+s01))
+        let e12 = s1-s1a
+        let e11 = s1-(s0+s01)
+        echo "error: ",e12, " s1-(s0+s01): ",e11, " ratio: ",e12/e11
+        #qexexit()
 
     var p2 = 0.0
     threads: p.randomTAH r
