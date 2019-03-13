@@ -9,6 +9,7 @@ const CHECKLBFGS = false
 const CHECKLBFGSMOM = false
 const CHECKLBFGSEIGEN = false and not CHECKLBFGSMOM
 const CHECKHESSIAN = true
+const CHECKREVERSIBLE = false
 
 when CHECKLBFGSEIGEN:
   when not defined primmeDir:
@@ -778,6 +779,126 @@ var
   # md = mkOmelyan4MN4FP(steps = steps, V = mdv, T = mdt)
   # md = mkOmelyan4MN5FV(steps = steps, V = mdv, T = mdt)
 
+when CHECKLBFGSMOM:
+  proc checkmom =
+    # Refreshing the momentum and check lbfgs stability.
+    proc checklbfgsmom =
+      var p2 = 0.0
+      threads: p.randomTAH r
+      if gfix: p.maxTreeFix(0.0, gfixextra)
+      threads:
+        var p2t = 0.0
+        for i in 0..<p.len:
+          p2t += p[i].norm2
+        threadMaster: p2 = p2t
+      lbfgs.sqrtH p
+      #if gfix: p.maxTreeFix(0.0, gfixextra)  # FIXME
+      hinvp.invH(lbfgs, p)
+      #threads:
+      block:
+        var p2t,p2nt,hp2 = 0.0
+        for i in 0..<p.len:
+          p2t += p[i].redot hinvp[i]
+          p2nt += hinvp[i].norm2
+          hp2 += p[i].norm2
+        #threadMaster:
+        block:
+          let e = abs(p2-p2t)/max(p2.abs,p2t.abs)
+          echo "SqrtHP.norm2: ",hp2," HinvP.norm2: ",p2nt
+          echo "p2: ",p2
+          echo "p2_Hinv: ",p2t," err: ",e
+    for c in countdown(10,0):
+      let cut = float(c*lat[0])
+      echo "LBFGS cutoff: ",cut
+      lbfgs.prep(cutoff = cut)
+      for i in 0..<1024: checklbfgsmom()
+
+when CHECKHESSIAN:
+  proc checkhession(nsnow:int) =
+    # Goodness of the Hessian approximation
+    # ./bin/puregauge2du1qn -beta:32 -nx:8 -steps:20 -gfix:1 -gfixextra:1
+    #     -nstream:400 -qnbegin:8 -trajs:9 -randomInit:0 -lambda:0
+    # Should see ratios of errors with and without the 2nd order term about -0.0204(8)
+    let dev = 0.01
+    let s0 = gs[nsnow].gaugeAction2 gc
+    f.getforce gs[nsnow]
+    for i in 0..<g0.len:
+      for j in g0[i]:
+        let t = dev * ln gs[nsnow][i][j]
+        g0[i][j] := t
+    if gfix: g0.maxTreeFix(0.0, gfixextra)
+    let s01 = f.redot g0
+    p.H(lbfgs, g0)
+    let s02 = (0.5/lbfgs.yscale) * p.redot g0
+    let s1a = s0 + s01 + s02
+    for i in 0..<g0.len:
+      for j in g0[i]:
+        let t = gs[nsnow][i][j] * exp(dev * ln gs[nsnow][i][j])
+        g0[i][j] := t
+    if gfix: g0.maxTreeFix(1.0, gfixextra)
+    let s1 = g0.gaugeAction2 gc
+    echo "s0: ",s0," s01: ",s01," s02: ",s02
+    echo "s1a: ",s1a
+    echo "s1: ",s1
+    let e12 = s1-s1a
+    let e11 = s1-(s0+s01)
+    echo "error: ",e12, " s1-(s0+s01): ",e11, " ratio: ",e12/e11
+
+proc getp2:float =
+  var p2 = 0.0
+  threads:
+    var p2t = 0.0
+    for i in 0..<p.len:
+      p2t += p[i].norm2
+    threadMaster:
+      p2 = p2t
+  p2
+
+proc getpgp:float =
+  var p2 = 0.0
+  threads:
+    var p2t = 0.0
+    when CHECK:
+      var p2nt,hp2 = 0.0
+    for i in 0..<p.len:
+      p2t += p[i].redot hinvp[i]
+      when CHECK:
+        p2nt += hinvp[i].norm2
+        hp2 += p[i].norm2
+    threadMaster:
+      when CHECK:
+        echo "SqrtHP.norm2: ",hp2
+        echo "HinvP.norm2: ",p2nt
+        echo "p2 simple: ",p2
+        echo "p2 with_Hinv: ",p2t
+        var e = abs(p2-p2t)/max(p2.abs,p2t.abs)
+        if e > 1e-12:
+          echo "ERROR: Failed lbfgs consistency check: e = ",e
+      p2 = p2t
+  p2
+
+when CHECKREVERSIBLE:
+  proc checkreversible(nsnow:int) =
+    var g1 = lo.newgauge
+    var p1 = lo.newgauge
+    threads:
+      for i in 0..<g1.len:
+        g1[i] := gs[nsnow][i]
+        p1[i] := p[i]
+        p[i] := -1*p[i]
+    H.evolve tau
+    p2 = getp2()
+    let
+      ga1 = gs[nsnow].gaugeAction2 gc
+      t1 = 0.5*p2
+      h1 = ga1 + t1
+    echo "Reversed H: ",h1,"  Sg: ",ga1,"  T: ",t1
+    echo "Reversibility: dH: ",h1-h0,"  dSg: ",ga1-ga0,"  dT: ",t1-t0
+    #echo p[0][0]
+    for i in 0..<g1.len:
+      gs[nsnow][i] := g1[i]
+      p[i] := p1[i]
+
 for n in 1..trajs:
   let tt0 = epochTime()
   if n == qnbegin:
@@ -787,37 +908,7 @@ for n in 1..trajs:
       f.getforce gs[i]
       lbfgs.add(x = gs[i], f = f)
     when CHECKLBFGSMOM:
-      # Refreshing the momentum and check lbfgs stability.
-      proc checklbfgsmom =
-        var p2 = 0.0
-        threads: p.randomTAH r
-        if gfix: p.maxTreeFix(0.0, gfixextra)
-        threads:
-          var p2t = 0.0
-          for i in 0..<p.len:
-            p2t += p[i].norm2
-          threadMaster: p2 = p2t
-        lbfgs.sqrtH p
-        #if gfix: p.maxTreeFix(0.0, gfixextra)  # FIXME
-        hinvp.invH(lbfgs, p)
-        #threads:
-        block:
-          var p2t,p2nt,hp2 = 0.0
-          for i in 0..<p.len:
-            p2t += p[i].redot hinvp[i]
-            p2nt += hinvp[i].norm2
-            hp2 += p[i].norm2
-          #threadMaster:
-          block:
-            let e = abs(p2-p2t)/max(p2.abs,p2t.abs)
-            echo "SqrtHP.norm2: ",hp2," HinvP.norm2: ",p2nt
-            echo "p2: ",p2
-            echo "p2_Hinv: ",p2t," err: ",e
-      for c in countdown(10,0):
-        let cut = float(c*lat[0])
-        echo "LBFGS cutoff: ",cut
-        lbfgs.prep(cutoff = cut)
-        for i in 0..<1024: checklbfgsmom()
+      checkmom()
       echoTimers()
       checkgc()
       qexExit 0
@@ -829,69 +920,19 @@ for n in 1..trajs:
     if n >= qnbegin:
       lbfgs.prep(cutoff = qnyscut * lat[0].float)
       when CHECKHESSIAN:
-        # Goodness of the Hessian approximation
-        # ./bin/puregauge2du1qn -beta:32 -nx:8 -steps:20 -gfix:1 -gfixextra:1
-        #     -nstream:400 -qnbegin:8 -trajs:9 -randomInit:0 -lambda:0
-        # Should see ratios of errors with and without the 2nd order term about -0.0204(8)
-        let dev = 0.01
-        let s0 = gs[nsnow].gaugeAction2 gc
-        f.getforce gs[nsnow]
-        for i in 0..<g0.len:
-          for j in g0[i]:
-            let t = dev * ln gs[nsnow][i][j]
-            g0[i][j] := t
-        if gfix: g0.maxTreeFix(0.0, gfixextra)
-        let s01 = f.redot g0
-        p.H(lbfgs, g0)
-        let s02 = (0.5/lbfgs.yscale) * p.redot g0
-        let s1a = s0 + s01 + s02
-        for i in 0..<g0.len:
-          for j in g0[i]:
-            let t = gs[nsnow][i][j] * exp(dev * ln gs[nsnow][i][j])
-            g0[i][j] := t
-        if gfix: g0.maxTreeFix(1.0, gfixextra)
-        let s1 = g0.gaugeAction2 gc
-        echo "s0: ",s0," s01: ",s01," s02: ",s02
-        echo "s1a: ",s1a
-        echo "s1: ",s1
-        let e12 = s1-s1a
-        let e11 = s1-(s0+s01)
-        echo "error: ",e12, " s1-(s0+s01): ",e11, " ratio: ",e12/e11
+        checkhession(nsnow)
         #qexexit()
 
     var p2 = 0.0
     threads: p.randomTAH r
     if gfix: p.maxTreeFix(0.0, gfixextra)
     if CHECK or n < qnbegin:
-      threads:
-        var p2t = 0.0
-        for i in 0..<p.len:
-          p2t += p[i].norm2
-        threadMaster: p2 = p2t
+      p2 = getp2()
 
     if n >= qnbegin:
       lbfgs.sqrtH p
-      #if gfix: p.maxTreeFix(0.0, gfixextra)  # FIXME maybe remove this one
       hinvp.invH(lbfgs, p)
-      threads:
-        var p2t = 0.0
-        when CHECK:
-          var p2nt,hp2 = 0.0
-        for i in 0..<p.len:
-          p2t += p[i].redot hinvp[i]
-          when CHECK:
-            p2nt += hinvp[i].norm2
-            hp2 += p[i].norm2
-        threadMaster:
-          when CHECK:
-            echo "SqrtHP.norm2: ",hp2
-            echo "HinvP.norm2: ",p2nt
-            echo "p2 simple: ",p2
-            echo "p2 with_Hinv: ",p2t
-            var e = abs(p2-p2t)/max(p2.abs,p2t.abs)
-            if e > 1e-12:
-              echo "ERROR: Failed lbfgs consistency check: e = ",e
-          p2 = p2t
+      p2 = getpgp()
 
     threads:
       for i in 0..<g0.len:
@@ -906,18 +947,10 @@ for n in 1..trajs:
     if n >= qnbegin:
       md.evolve qntau
       hinvp.invH(lbfgs, p)
-      threads:
-        var p2t = 0.0
-        for i in 0..<p.len:
-          p2t += p[i].redot hinvp[i]
-        threadMaster: p2 = p2t
+      p2 = getpgp()
     else:
       md.evolve tau
-      threads:
-        var p2t = 0.0
-        for i in 0..<p.len:
-          p2t += p[i].norm2
-        threadMaster: p2 = p2t
+      p2 = getp2()
 
     let
       ga1 = gs[nsnow].gaugeAction2 gc
@@ -925,32 +958,8 @@ for n in 1..trajs:
       h1 = ga1 + t1
     echo "End H ",nsnow," : ",h1,"  Sg: ",ga1,"  T: ",t1," g.norm2: ",gs[nsnow].norm2
 
-    #when true:
-    when false:
-      block:
-        var g1 = lo.newgauge
-        var p1 = lo.newgauge
-        threads:
-          for i in 0..<g1.len:
-            g1[i] := gs[nsnow][i]
-            p1[i] := p[i]
-            p[i] := -1*p[i]
-        H.evolve tau
-        threads:
-          var p2t = 0.0
-          for i in 0..<p.len:
-            p2t += p[i].norm2
-          threadMaster: p2 = p2t
-        let
-          ga1 = gs[nsnow].gaugeAction2 gc
-          t1 = 0.5*p2
-          h1 = ga1 + t1
-        echo "Reversed H: ",h1,"  Sg: ",ga1,"  T: ",t1
-        echo "Reversibility: dH: ",h1-h0,"  dSg: ",ga1-ga0,"  dT: ",t1-t0
-        #echo p[0][0]
-        for i in 0..<g1.len:
-          gs[nsnow][i] := g1[i]
-          p[i] := p1[i]
+    when CHECKREVERSIBLE:
+      checkreversible(nsnow)
 
     let
       dH = h1 - h0
