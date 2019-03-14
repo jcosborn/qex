@@ -4,7 +4,8 @@ import mdevolve
 import os, strutils, algorithm, macros, times
 import random  # for seeding our RNGs
 
-const CHECK = true
+const CHECK = false
+const CHECKP2 = true
 const CHECKLBFGS = false
 const CHECKLBFGSMOM = false
 const CHECKLBFGSEIGEN = false and not CHECKLBFGSMOM
@@ -915,24 +916,30 @@ proc getpgp:float =
   var p2 = 0.0
   threads:
     var p2t = 0.0
-    when CHECK:
-      var p2nt,hp2 = 0.0
     for i in 0..<p.len:
       p2t += p[i].redot hinvp[i]
-      when CHECK:
-        p2nt += hinvp[i].norm2
-        hp2 += p[i].norm2
     threadMaster:
-      when CHECK:
-        echo "SqrtHP.norm2: ",hp2
-        echo "HinvP.norm2: ",p2nt
-        echo "p2 simple: ",p2
-        echo "p2 with_Hinv: ",p2t
-        var e = abs(p2-p2t)/max(p2.abs,p2t.abs)
-        if e > 1e-12:
-          echo "ERROR: Failed lbfgs consistency check: e = ",e
       p2 = p2t
   p2
+when CHECKP2:
+  proc getpgp(p2s:float):float =
+    var p2 = 0.0
+    threads:
+      var p2t = 0.0
+      var p2nt,hp2 = 0.0
+      for i in 0..<p.len:
+        p2t += p[i].redot hinvp[i]
+        p2nt += hinvp[i].norm2
+        hp2 += p[i].norm2
+      threadMaster:
+        echo "SqrtHP.norm2: ",hp2
+        echo "HinvP.norm2: ",p2nt
+        var e = abs(p2s-p2t)/max(p2s.abs,p2t.abs)
+        echo "p2 simple: ",p2s," with_Hinv: ",p2t," e_rel: ",e
+        if e > 1e-12:
+          echo "ERROR: Failed lbfgs consistency check"
+        p2 = p2t
+    p2
 
 when CHECKREVERSIBLE:
   proc checkreversible(nsnow:int) =
@@ -990,13 +997,18 @@ for n in 1..trajs:
     var p2 = 0.0
     threads: p.randomTAH r
     if gfix: p.maxTreeFix(0.0, gfixextra)
-    if CHECK or n < qnbegin:
-      p2 = getp2()
 
     if n >= qnbegin:
+      when CHECKP2:
+        let p2s = getp2()
       lbfgs.sqrtH p
       hinvp.invH(lbfgs, p)
-      p2 = getpgp()
+      when CHECKP2:
+        p2 = getpgp(p2s)
+      else:
+        p2 = getpgp()
+    else:
+      p2 = getp2()
 
     threads:
       for i in 0..<g0.len:
