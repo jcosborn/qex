@@ -4,7 +4,7 @@ import mdevolve
 import os, strutils, algorithm, macros, times
 import random  # for seeding our RNGs
 
-const CHECK = false
+const CHECK = true
 const CHECKLBFGS = false
 const CHECKLBFGSMOM = false
 const CHECKLBFGSEIGEN = false and not CHECKLBFGSMOM
@@ -121,105 +121,168 @@ proc maxTreeFix(f:seq, val:float, fixextra:bool) =
             for k in 0..<i: zerobefore = zerobefore and co[k] == 0
             if zerobefore: f[i]{j} := val
 
-type LBFGS[F] = ref object
-  ys,gamma:seq[float]
-  y,s,v,u:seq[F]  ## v, u for the product form
-  sortedix:seq[int]
-  p:int  ## Index for a new addition, or 1 plus the end of the ring.  Temporary storage at p-1.
-  sortedlen:int
-  lambda:float  ## minimum eigen value of H to regularize the zero modes.
-  invsqrtH0:float
-  yscale:float  ## scale y <- yscale*y
-  first:bool
-
-proc initLBFGS(lo:Layout, n:int, h0 = 1.0, lambda:float = 0.0, yscale:float = 1.0):auto =
-  type F = type(lo.newGauge)
-  var r {.noinit.} :LBFGS[F]
-  r.new
+type ring[O] = object
+  o:seq[O]  ## objects in the ring
+  ixmap:seq[int]  ## index mapping for iterators, ixloop & ixlooprev
+  p:int  ## pointer for the next add
+  step:int ## the step to move the pointer after an add
+proc initring[O](r:var ring[O], n:int) =
+  r.o.newseq(n)
+  r.ixmap = newseqofcap[int](n)
   r.p = 0
+  r.step = 1
+proc `$`(r:ring):string =
+  result = "ring of len: " & $r.len & " p: " & $r.p & " step: " & $r.step
+  result &= "\n    ixmap: " & $r.ixmap
+iterator ixloop(r:ring, b,a = 0):int =
+  for i in a..b:
+    yield r.ixmap[i]
+iterator ixlooprev(r:ring, b,a = 0):int =
+  for i in countdown(b,a):
+    yield r.ixmap[i]
+template `[]`[O](r:ring[O], i:int):O = r.o[i]
+template `[]=`[O](r:ring[O], i:int, x:O) = r.o[i] = x
+template current(r:ring):untyped = r.o[r.p]
+template currentix(r:ring):int = r.p
+func len(r:ring):int = r.o.len
+template ringix(r:ring, i:int):int =
+  let n = r.len
+  if i >= n: i-n elif i < 0: i+n else: i
+func previousix(r:ring):int = r.ringix(r.p-r.step)
+func nextix(r:ring):int = r.ringix(r.p+r.step)
+proc reverse(r:var ring) = r.step = -r.step
+proc move(r:var ring) = r.p = r.nextix
+template sortix[O](r:ring[O], incl:auto, cmpf:auto, ord:SortOrder):int =
+  var ix = 0
+  r.ixmap.setlen 0
+  for i in 0..<r.len:
+    if incl i: r.ixmap.add i
+  r.ixmap.sort(cmpf, ord)
+  r.ixmap.len
+
+#[
+Example LBFGS with 4 streams, 1 state per stream
+- Fill
+  tmpsave 0: 0p  -   -   -
+  add 1: 0-1 1p  -   -
+  add 2: 0-1 1-2 2p  -
+  add 3: 0-1 1-2 2-3 3p
+- Forward & backward pass
+  add 0': 0'p   1-2   2-3   3-0'
+  add 1': 0'-1' 1'p   2-3   3-0'
+  add 2': 0'-1' 1'-2' 2'p   3-0'
+  add 3': 0'-1' 1'-2' 2'-3' 3'p
+  complete the ring: tmpsave 0' again
+          0'-1' 1'-2' 2'-3' 0'p
+  reverse direction
+  add 3:  0'-1' 1'-2' 3p    0'-3
+  add 2:  0'-1' 2p    3-2   0'-3
+  add 1:  1p    2-1   3-2   0'-3
+  add 0:  1-0   2-1   3-2   0p
+  complete the ring: tmpsave 3 again
+          1-0   2-1   3-2   3p
+  reverse direction
+- Note that the commutation of the difference does not matter.
+]#
+
+type
+  BFGSstate[F] = object
+    ys,gamma:float  ## coefficients for inversion, g = v^\dag u - 1
+    y,s,v,u:F
+  LBFGS[F] = ref object
+    state:ring[BFGSstate[F]]
+    sortedlen:int
+    lambda:float  ## scaled minimum eigen value of H to regularize the zero modes.
+    invsqrtH0:float
+    yscale:float  ## scale y <- yscale*y
+    first:bool
+proc initBFGSstate(s:var BFGSstate, lo:Layout) =
+  s.ys = 0
+  s.gamma = 0
+  s.y = lo.newGauge
+  s.s = lo.newGauge
+  s.v = lo.newGauge
+  s.u = lo.newGauge
+proc newLBFGS(lo:Layout, n:int, h0 = 1.0, lambda:float = 0.0, yscale:float = 1.0):auto =
+  type F = type(lo.newGauge)
+  var r:LBFGS[F]
+  r.new
   r.first = true
-  r.ys.newseq(n)
-  r.y.newseq(n)
-  r.s.newseq(n)
   r.sortedlen = 0
-  r.sortedix.newseq(n-2)  # !IMPORTANT!  N states -> N differences ->  N-2 excluding 1 state
-  r.v.newseq(n)
-  r.u.newseq(n)
-  r.gamma.newseq(n)  # coefficients for inversion, g = v^\dag u - 1
   r.invsqrtH0 = 1.0 / sqrt(h0)
   r.lambda = lambda
   r.yscale = yscale
+  r.state.initring(n)
   for i in 0..<n:
-    r.y[i] = lo.newGauge
-    r.s[i] = lo.newGauge
-  for i in 0..<n:
-    r.v[i] = lo.newGauge
-    r.u[i] = lo.newGauge
+    r.state[i].initBFGSstate lo
   r
 
-proc add[F](o:LBFGS[F]; x,f:F) =
-  var n = o.p
-  if o.first:
-    o.first = false
-  else:
-    # save new s = ln(x_old x.adj), y = yscale*(f_old-f)
-    let n1 = if n == 0: o.ys.len - 1 else: n - 1
-    threads:
-      var ys = 0.0
-      for mu in 0..<x.len:
-        for i in x[mu]:
-          when CHECKLBFGS:
-            var t = o.s[n1][mu][i] - x[mu][i]
-          else:
-            var t = ln(o.s[n1][mu][i] * x[mu][i].adj)
-            t.projectTAH t
-            #t := t.im
-          when CHECK:
-            if i == 0:
-              echo "For mu = ",mu
-              let
-                si = o.s[n1][mu][i]
-                xi = x[mu][i]
-                xia = xi.adj
-              echo "xi_old: ",si
-              echo "xi: ",xi
-              echo "xi.adj: ",xia
-              echo "ln(xi_old*xi.adj): ",ln(si * xia)
-              echo "==t: ",t
-          o.s[n1][mu][i] := t
-          #when CHECKLBFGS:
-          #  var r = o.y[n1][mu][i] - f[mu][i]
-          #else:
-          #  var r = (o.y[n1][mu][i] - f[mu][i]).im
-          #r *= o.yscale
-          let r = o.yscale*(o.y[n1][mu][i] - f[mu][i])
-          when CHECK:
-            if i == 0:
-              let
-                yi = o.y[n1][mu][i]
-                fi = f[mu][i]
-              echo "fi_old: ",yi
-              echo "fi: ",fi
-              echo "fi-fi_old: ",fi-yi
-              echo "==r: ",r
-          o.y[n1][mu][i] := r
-        ys += o.y[n1][mu].redot o.s[n1][mu]
-      threadMaster:
-        o.ys[n1] = ys
-    when CHECK:
-      let ysd = o.y[n1].dot o.s[n1]
-      echo "ysd: ",ysd
-      echo "ys[",n1,"]: ",o.ys[n1].float
+proc tmpsave[F](o:LBFGS[F]; x,f:F) =
+  ## Just save x and f to the current state in the ring.
   for mu in 0..<x.len:
-    o.s[n][mu] := x[mu]  # TODO: we can elide this extra copy
-    o.y[n][mu] := f[mu]
-    if CHECKLBFGS:
-      echo "    x[mu][0]: ",x[mu][0]
-      echo "    f[mu][0]: ",f[mu][0]
-  inc n
-  if n == o.ys.len: n = 0
-  o.p = n
+    o.state.current.s[mu] := x[mu]
+    o.state.current.y[mu] := f[mu]
+    if CHECK:
+      echo "    x[",mu,"][0]: ",x[mu][0]
+      echo "    f[",mu,"][0]: ",f[mu][0]
+  if CHECK:
+    echo o.state
+proc add[F](o:LBFGS[F]; x,f:F) =
+  ## The current state in the ring is from previous configuration,
+  ## we use this for computing the differences and save the differences in the current.
+  ## Then we move to the next and save the current configuration there.
+  # save new s = ln(x_old x.adj), y = yscale*(f_old-f)
+  threads:
+    var ys = 0.0
+    for mu in 0..<x.len:
+      for i in x[mu]:
+        # For s.
+        when CHECKLBFGS:
+          var t = o.state.current.s[mu][i] - x[mu][i]  # flat space
+        else:
+          var t = ln(o.state.current.s[mu][i] * x[mu][i].adj)  # Lie group space
+          t.projectTAH t
+          #t := t.im
+        when CHECK:
+          if i == 0:
+            echo "For mu = ",mu
+            let
+              si = o.state.current.s[mu][i]
+              xi = x[mu][i]
+              xia = xi.adj
+            echo "xi_old: ",si
+            echo "xi: ",xi
+            echo "xi.adj: ",xia
+            echo "ln(xi_old*xi.adj): ",ln(si * xia)
+            echo "==t: ",t
+        o.state.current.s[mu][i] := t
+        # For y.
+        let r = o.yscale*(o.state.current.y[mu][i] - f[mu][i])
+        when CHECK:
+          if i == 0:
+            let
+              yi = o.state.current.y[mu][i]
+              fi = f[mu][i]
+            echo "fi_old: ",yi
+            echo "fi: ",fi
+            echo "fi-fi_old: ",fi-yi
+            echo "yscale: ",o.yscale
+            echo "==r: ",r
+        o.state.current.y[mu][i] := r
+      ys += o.state.current.y[mu].redot o.state.current.s[mu]
+    threadMaster:
+      o.state.current.ys = ys
+  when CHECK:
+    let ysd = o.state.current.y.dot o.state.current.s
+    echo "ysd: ",ysd
+    echo "ys: ",o.state.current.ys.float
+  o.state.move
+  o.tmpsave(x = x, f = f)
 
+proc reverse(o:LBFGS) =
+  o.state.reverse
+
+#[
 proc reverseadd[F](o:LBFGS[F]; x,f:F) =
   # Eg. 4 states, after one forward pass, we have saved
   # 0'    1-2  2-3  3-0',  p = 1
@@ -256,29 +319,31 @@ proc reverseadd[F](o:LBFGS[F]; x,f:F) =
       o.y[p][mu] := f[mu]
   # o.ys[p] doesn't matter.
   o.p = 0
+]#
 
+#
+# In the following, for A and B, k=-1 is the base case.
+#
 proc A[F](o:LBFGS[F], k:int, z:F) =
   ## A_k z  ->  z  where  H_k = A_k A_k^\dag, A_k = (1 - u v^\dag) A_{k-1}
   threads:
     # A0 z -> z
     let a0 = 1.0 / o.invsqrtH0
     for mu in 0..<z.len: z[mu] *= a0
-    for j in 0..k:
-      let i = o.sortedix[j]
-      let vz = -(o.v[i].dot z)
+    for i in o.state.ixloop(k):
+      let vz = -(o.state[i].v.dot z)
       for mu in 0..<z.len:
         for e in z[mu]:
-          let t = z[mu][e] + vz * o.u[i][mu][e]
+          let t = z[mu][e] + vz * o.state[i].u[mu][e]
           z[mu][e] := t
 proc Adag[F](o:LBFGS[F], k:int, z:F) =
   ## A_k^\dag z  ->  z  where  H_k = A_k A_k^\dag, A_k^\dag = A_{k-1}^\dag (1 - v u^\dag)
   threads:
-    for j in countdown(k,0):
-      let i = o.sortedix[j]
-      let uz = -(o.u[i].dot z)
+    for i in o.state.ixlooprev(k):
+      let uz = -(o.state[i].u.dot z)
       for mu in 0..<z.len:
         for e in z[mu]:
-          let t = z[mu][e] + uz * o.v[i][mu][e]
+          let t = z[mu][e] + uz * o.state[i].v[mu][e]
           z[mu][e] := t
     # A0d z -> z
     let a0 = 1.0 / o.invsqrtH0
@@ -309,22 +374,20 @@ proc B[F](o:LBFGS[F], k:int, z:F) =
     # B0 z -> z
     let b0 = o.invsqrtH0
     for mu in 0..<z.len: z[mu] *= b0
-    for j in 0..k:
-      let i = o.sortedix[j]
-      let uz = (o.u[i].dot z) / (-o.gamma[i])
+    for i in o.state.ixloop(k):
+      let uz = (o.state[i].u.dot z) / (-o.state[i].gamma)
       for mu in 0..<z.len:
         for e in z[mu]:
-          let t = z[mu][e] + uz * o.v[i][mu][e]
+          let t = z[mu][e] + uz * o.state[i].v[mu][e]
           z[mu][e] := t
 proc Bdag[F](o:LBFGS[F], k:int, z:F) =
   ## A_k^\dag z  ->  z  where  H_k^-1 = B_k B_k^\dag, B_k^\dag = B_{k-1}^\dag (1 - u v^\dag / g)
   threads:
-    for j in countdown(k,0):
-      let i = o.sortedix[j]
-      let vz = (o.v[i].dot z) / (-o.gamma[i])
+    for i in o.state.ixlooprev(k):
+      let vz = (o.state[i].v.dot z) / (-o.state[i].gamma)
       for mu in 0..<z.len:
         for e in z[mu]:
-          let t = z[mu][e] + vz * o.u[i][mu][e]
+          let t = z[mu][e] + vz * o.state[i].u[mu][e]
           z[mu][e] := t
     # B0d z -> z
     let b0 = o.invsqrtH0
@@ -377,54 +440,50 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
   ## Before using the approximation, o.p points to the current updating stream number.
   ## We sort according to ys, excluding item o.p and o.p-1, so we don't depend on ourselves.
   let t0 = epochTime()
-  let e0 = o.p
-  var e1 = e0 - 1
-  if e1 < 0: e1 = o.ys.len - 1
-  o.sortedlen = o.sortedix.len
-  var ix = 0
-  for i in 0..<o.sortedix.len:
-    if ix == e1: ix += 2
-    elif ix == e0: ix += 1
-    o.sortedix[i] = ix
-    inc ix
-  let ys = o.ys
+  let
+    e0 = o.state.currentix
+    e1 = o.state.nextix
+  template inclix(i:int):bool = i != e0 and i != e1
   proc cmpys(i,j:int):int =
-    let a = ys[i]
-    let b = ys[j]
+    let a = o.state[i].ys
+    let b = o.state[j].ys
     result = cmp(a,b)
     #if a <= 0 or b <= 0:
     #  result = -result
-  o.sortedix.sort(cmpys, SortOrder.Descending)
-  var unset = true
-  for j in 0..<o.sortedix.len:
-    let i = o.sortedix[j]
-    var yy,ss:float
-    threads:
-      let y2 = o.y[i].norm2
-      let s2 = o.s[i].norm2
-      threadMaster:
-        yy = y2
-        ss = s2
-    when CHECK:
-      echo j," ix ",i," ys ",o.ys[i]," ys/yy ",(o.ys[i]/yy)," yy ",yy," ss ",ss
-    if unset and o.ys[i] <= cutoff:
-      o.sortedlen = j
-      unset = false
+  o.sortedlen = o.state.sortix(inclix, cmpys, SortOrder.Descending)
+  if CHECK or cutoff > 0:
+    var unset = true
+    var j = 0
+    for i in o.state.ixloop(o.sortedlen-1):
+      var yy,ss:float
+      threads:
+        let y2 = o.state[i].y.norm2
+        let s2 = o.state[i].s.norm2
+        threadMaster:
+          yy = y2
+          ss = s2
+      when CHECK:
+        echo j," ix ",i," ys ",o.state[i].ys," ys/yy ",(o.state[i].ys/yy)," yy ",yy," ss ",ss
+      if unset and o.state[i].ys <= cutoff:
+        o.sortedlen = j
+        unset = false
+      j.inc
   if reduce > 0:
     echo "lBGFS nmem reduce: ",reduce
     o.sortedlen -= reduce
     if o.sortedlen < 0: o.sortedlen = 0
   echo "lBFGS nmem = ",o.sortedlen
-  for j in 0..<o.sortedlen:  # Compute v_i, u_i, and gamma_i
-    let i = o.sortedix[j]
-    o.u[i].H(o, j-1, o.s[i])  # temporarily u <- G_{k-1} s_k  (j is the actual order number)
-    o.v[i].invH(o, j-1, o.y[i])  # temporarily v <- G_{k-1}^{-1} y_k
+  # Compute v_i, u_i, and gamma_i
+  var j = 0
+  for i in o.state.ixloop(o.sortedlen-1):
+    o.state[i].u.H(o, j-1, o.state[i].s)  # temporarily u <- G_{k-1} s_k  (j is the actual order number)
+    o.state[i].v.invH(o, j-1, o.state[i].y)  # temporarily v <- G_{k-1}^{-1} y_k
     var ss,sgs,ygiy:float
     threads:
       let
-        tss = o.s[i].norm2
-        tsgs = o.s[i].redot o.u[i]
-        tygiy = o.y[i].redot o.v[i]
+        tss = o.state[i].s.norm2
+        tsgs = o.state[i].s.redot o.state[i].u
+        tygiy = o.state[i].y.redot o.state[i].v
       threadMaster:
         ss = tss
         sgs = tsgs
@@ -433,42 +492,44 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
     if delta1 > 1.0: delta1 = 1.0
     let
       delta = 1.0 - delta1
-      wgiw = ygiy / o.ys[i]
-      cy = 1.0 / sqrt(o.ys[i])
+      wgiw = ygiy / o.state[i].ys
+      cy = 1.0 / sqrt(o.state[i].ys)
       cs = sqrt(delta/sgs)
       wgiz = cs/cy
-    o.gamma[i] = sqrt(delta1*(wgiw - o.ys[i]/sgs + 1.0) + o.ys[i]/sgs)  # negative sign works, too
+    o.state[i].gamma = sqrt(delta1*(wgiw - o.state[i].ys/sgs + 1.0) + o.state[i].ys/sgs)  # negative sign works, too
     let
-      theta = (delta1+o.gamma[i]-wgiz) / (2.0*wgiz+wgiw+delta)
+      theta = (delta1+o.state[i].gamma-wgiz) / (2.0*wgiz+wgiw+delta)
       cyv = cy*theta
       csv = cs*(1.0+theta)
     when CHECK:
-      echo j," delta: ",delta," sgs: ",sgs," ygiy: ",ygiy," gamma: ",o.gamma[i].float
+      echo j," delta: ",delta," sgs: ",sgs," ygiy: ",ygiy," gamma: ",o.state[i].gamma.float
     threads:
-      for mu in 0..<o.u[i].len:
-        for e in o.u[i][mu]:
-          let t = cy*o.y[i][mu][e] + cs*o.u[i][mu][e]
-          o.u[i][mu][e] := t
-      for mu in 0..<o.v[i].len:
-        for e in o.v[i][mu]:
-          let t = cyv*o.v[i][mu][e] + csv*o.s[i][mu][e]
-          o.v[i][mu][e] := t
+      for mu in 0..<o.state[i].u.len:
+        for e in o.state[i].u[mu]:
+          let t = cy*o.state[i].y[mu][e] + cs*o.state[i].u[mu][e]
+          o.state[i].u[mu][e] := t
+      for mu in 0..<o.state[i].v.len:
+        for e in o.state[i].v[mu]:
+          let t = cyv*o.state[i].v[mu][e] + csv*o.state[i].s[mu][e]
+          o.state[i].v[mu][e] := t
+    j.inc
   let t1 = epochTime()
   echo "LBFGS prep time: ",t1-t0
+  when CHECK: echo "state: ",lbfgs.state
   when CHECKLBFGSEIGEN:
     let te0 = epochTime()
     type MatrixInfo = object
       lbfgs: type(o)
-      tmpgauge: type(o.y[0])
-    const nc = o.y[0][0][0].nrows
+      tmpgauge: type(o.state[0].y)
+    const nc = o.state[0].y[0][0].nrows
     let
-      lo = o.y[0][0].l
+      lo = o.state[0].y[0].l
       nd = lo.nDim
     proc lbfgseigen(o:LBFGS[F],t:primme_target) =
       var p = primme_initialize()
       p.n = nc*nc*nd*lo.physVol
       p.matrixMatvec = lbfgsHMatvec[MatrixInfo]
-      p.numEvals = min(o.y.len, p.n div 2).cint
+      p.numEvals = min(o.state.len, p.n div 2).cint
       p.target = t
       p.eps = 1e-13
       p.numProcs = nRanks.cint
@@ -493,7 +554,7 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
         intWork = newAlignedMemU[char]p.intWorkSize
         realWork = newAlignedMemU[char]p.realWorkSize
       var mi = MatrixInfo(lbfgs: o)
-      mi.tmpgauge = newOneOf o.y[0]
+      mi.tmpgauge = newOneOf o.state[0].y
       p.intWork = cast[ptr cint](intWork.data)
       p.realWork = realWork.data
       p.matrix = mi.addr
@@ -587,29 +648,23 @@ when CHECKLBFGS:
   proc checklbfgs =
     var cklbfgsr {.noinit.} :LBFGS[F]
     cklbfgsr.new
-    cklbfgsr.p = 0
     cklbfgsr.first = true
-    cklbfgsr.ys.newseq(nseq)
-    cklbfgsr.y.newseq(nseq)
-    cklbfgsr.s.newseq(nseq)
     cklbfgsr.sortedlen = 0
-    cklbfgsr.sortedix.newseq(nseq-2)  # N states -> N differences ->  N-2 excluding 1 state
-    cklbfgsr.v.newseq(nseq)
-    cklbfgsr.u.newseq(nseq)
-    cklbfgsr.gamma.newseq(nseq)
     cklbfgsr.invsqrtH0 = 1.0
     cklbfgsr.yscale = 1.0
     cklbfgsr.lambda = 0.0
+    cklbfgsr.state.initring(nseq)
     for i in 0..<nseq:
-      cklbfgsr.y[i].newseq(1)
-      cklbfgsr.y[i][0] = initD()
-      cklbfgsr.s[i].newseq(1)
-      cklbfgsr.s[i][0] = initD()
-    for i in 0..<nseq:
-      cklbfgsr.v[i].newseq(1)
-      cklbfgsr.v[i][0] = initD()
-      cklbfgsr.u[i].newseq(1)
-      cklbfgsr.u[i][0] = initD()
+      cklbfgsr.state[i].ys = 0
+      cklbfgsr.state[i].gamma = 0
+      cklbfgsr.state[i].y.newseq(1)
+      cklbfgsr.state[i].y[0] = initD()
+      cklbfgsr.state[i].s.newseq(1)
+      cklbfgsr.state[i].s[0] = initD()
+      cklbfgsr.state[i].v.newseq(1)
+      cklbfgsr.state[i].v[0] = initD()
+      cklbfgsr.state[i].u.newseq(1)
+      cklbfgsr.state[i].u[0] = initD()
     var rng = initRand 5^5
     var m:M
     for i in 0..<m.len-1:
@@ -676,6 +731,7 @@ let
   gfixextra = intParam("gfixextra", 0).bool
   gfixunit = intParam("gfixunit", 1).bool
   nstream = intParam("nstream", 10)
+  nstate = intParam("nstate", 1)
   lambda = floatParam("lambda", 0.1)
   randomInit = intParam("randomInit", 1).bool
 
@@ -695,6 +751,7 @@ echo "gfix = ",gfix.int
 echo "gfixextra = ",gfixextra.int
 echo "gfixunit = ",gfixunit.int
 echo "nstream = ",nstream
+echo "nstate = ",nstate
 echo "lambda = ",lambda
 echo "seed = ",seed
 echo "randomInit = ",randomInit.int
@@ -715,7 +772,7 @@ template getforce(f,g:untyped) =
   if gfix: f.maxTreeFix(0.0, gfixextra)
 
 var
-  lbfgs = lo.initLBFGS(nstream, h0 = qnh0, lambda = lambda, yscale = qnyscale)
+  lbfgs = lo.newLBFGS(nstream, h0 = qnh0, lambda = lambda, yscale = qnyscale)
   p = lo.newgauge
   f = lo.newgauge
   g0 = lo.newgauge
@@ -899,12 +956,19 @@ when CHECKREVERSIBLE:
       gs[nsnow][i] := g1[i]
       p[i] := p1[i]
 
+#
+# MCMC
+#
 for n in 1..trajs:
   let tt0 = epochTime()
+
   if n == qnbegin:
     echo "STARTING QN update"
     md.steps = qnsteps
-    for i in 0..<nstream:
+    # Fill out the structure
+    f.getforce gs[0]
+    lbfgs.tmpsave(x = gs[0], f = f)
+    for i in 1..<nstream:
       f.getforce gs[i]
       lbfgs.add(x = gs[i], f = f)
     when CHECKLBFGSMOM:
@@ -978,12 +1042,12 @@ for n in 1..trajs:
     echo "topo ",nsnow," : ",gs[nsnow].topo2DU1
 
     if n >= qnbegin:
-      if ns < nstream-1:
-        f.getforce gs[nsnow]
-        lbfgs.add(x = gs[nsnow], f = f)
-      else:  # Skip add at the end, only reverse
+      f.getforce gs[nsnow]
+      lbfgs.add(x = gs[nsnow], f = f)
+      if ns == nstream-1:  # At the end, tmpsave the initial one and reverse
         f.getforce gs[nstream-1-nsnow]
-        lbfgs.reverseadd(x = gs[nstream-1-nsnow], f = f)
+        lbfgs.tmpsave(x = gs[nstream-1-nsnow], f = f)
+        lbfgs.reverse
         forward = not forward
 
     let ts1 = epochTime()
