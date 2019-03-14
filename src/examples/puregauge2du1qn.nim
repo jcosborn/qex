@@ -4,25 +4,25 @@ import mdevolve
 import os, strutils, algorithm, macros, times
 import random  # for seeding our RNGs
 
-const CHECK = false
-const CHECKP2 = true
-const CHECKLBFGS = false
-const CHECKLBFGSMOM = false
-const CHECKLBFGSEIGEN = false and not CHECKLBFGSMOM
+const CHECKDETAIL = false
+const CHECKP2 = false
+const CHECKCONV = false
+const CHECKMOM = false
+const CHECKEIGEN = false and not CHECKMOM
 const CHECKHESSIAN = true
 const CHECKREVERSIBLE = false
 
-when CHECKLBFGSEIGEN:
+when CHECKEIGEN:
   when not defined primmeDir:
-    static: error "Must declare primmeDir to CHECKLBFGSEIGEN"
+    static: error "Must declare primmeDir to CHECKEIGEN"
   when not defined lapackLib:
-    static: error "Must declare lapackLib to CHECKLBFGSEIGEN"
+    static: error "Must declare lapackLib to CHECKEIGEN"
   import eigens/qexPrimmeInternal
   import primme
 
 template checkgc =
   let fl = instantiationInfo(fullPaths=true)
-  echo "CHECK GC: ",fl.filename,":",fl.line
+  echo "GC: ",fl.filename,":",fl.line
   GC_fullCollect()
   echo GC_getStatistics()
   #dumpNumberOfInstances()  # remember to -d:nimTypeNames
@@ -223,10 +223,10 @@ proc tmpsave[F](o:LBFGS[F]; x,f:F) =
   for mu in 0..<x.len:
     o.state.current.s[mu] := x[mu]
     o.state.current.y[mu] := f[mu]
-    if CHECK:
+    if CHECKDETAIL:
       echo "    x[",mu,"][0]: ",x[mu][0]
       echo "    f[",mu,"][0]: ",f[mu][0]
-  if CHECK:
+  if CHECKDETAIL:
     echo o.state
 proc add[F](o:LBFGS[F]; x,f:F) =
   ## The current state in the ring is from previous configuration,
@@ -238,13 +238,13 @@ proc add[F](o:LBFGS[F]; x,f:F) =
     for mu in 0..<x.len:
       for i in x[mu]:
         # For s.
-        when CHECKLBFGS:
+        when CHECKCONV:
           var t = o.state.current.s[mu][i] - x[mu][i]  # flat space
         else:
           var t = ln(o.state.current.s[mu][i] * x[mu][i].adj)  # Lie group space
           t.projectTAH t
           #t := t.im
-        when CHECK:
+        when CHECKDETAIL:
           if i == 0:
             echo "For mu = ",mu
             let
@@ -259,7 +259,7 @@ proc add[F](o:LBFGS[F]; x,f:F) =
         o.state.current.s[mu][i] := t
         # For y.
         let r = o.yscale*(o.state.current.y[mu][i] - f[mu][i])
-        when CHECK:
+        when CHECKDETAIL:
           if i == 0:
             let
               yi = o.state.current.y[mu][i]
@@ -273,7 +273,7 @@ proc add[F](o:LBFGS[F]; x,f:F) =
       ys += o.state.current.y[mu].redot o.state.current.s[mu]
     threadMaster:
       o.state.current.ys = ys
-  when CHECK:
+  when CHECKDETAIL:
     let ysd = o.state.current.y.dot o.state.current.s
     echo "ysd: ",ysd
     echo "ys: ",o.state.current.ys.float
@@ -350,11 +350,8 @@ proc Adag[F](o:LBFGS[F], k:int, z:F) =
     let a0 = 1.0 / o.invsqrtH0
     for mu in 0..<z.len: z[mu] *= a0
 proc H[F](o:LBFGS[F], k:int, r:F) =
-  when CHECKLBFGS and false: echo "r: ",r
   o.Adag(k, r)
-  when CHECKLBFGS and false: echo "Adr: ",r
   o.A(k, r)
-  when CHECKLBFGS and false: echo "AAdr: ",r
 proc H[F](r:F, o:LBFGS[F], k:int, z:F) =
   for mu in 0..<z.len: r[mu] := z[mu]
   o.H(k,r)
@@ -394,11 +391,8 @@ proc Bdag[F](o:LBFGS[F], k:int, z:F) =
     let b0 = o.invsqrtH0
     for mu in 0..<z.len: z[mu] *= b0
 proc invH[F](o:LBFGS[F], k:int, r:F) =
-  when CHECKLBFGS and false: echo "r: ",r
   o.Bdag(k, r)
-  when CHECKLBFGS and false: echo "Bdr: ",r
   o.B(k, r)
-  when CHECKLBFGS and false: echo "BBdr: ",r
 proc invH[F](r:F, o:LBFGS[F], k:int, z:F) =
   for mu in 0..<z.len: r[mu] := z[mu]
   o.invH(k,r)
@@ -413,7 +407,7 @@ proc sqrtInvH[F](o:LBFGS[F]; x:F) =
   let n = o.sortedlen
   o.B(n-1, x)
 
-when CHECKLBFGSEIGEN:
+when CHECKEIGEN:
   template genMatvec(op:untyped):untyped =
     proc `lbfgs op Matvec`[MI](x:pointer, ldx:ptr PRIMME_INT, y:pointer, ldy:ptr PRIMME_INT,
         blocksize:ptr cint, primme:ptr primme_params, err:ptr cint) {.noconv.} =
@@ -440,6 +434,7 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
   ## For differences y and s, the item k has the difference between k and k+1.
   ## Before using the approximation, o.p points to the current updating stream number.
   ## We sort according to ys, excluding item o.p and o.p-1, so we don't depend on ourselves.
+  ## `cutoff` must be >= 0 for reasonable results, but it is not checked in code.
   let t0 = epochTime()
   let
     e0 = o.state.currentix
@@ -452,7 +447,7 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
     #if a <= 0 or b <= 0:
     #  result = -result
   o.sortedlen = o.state.sortix(inclix, cmpys, SortOrder.Descending)
-  if CHECK or cutoff > 0:
+  block:
     var unset = true
     var j = 0
     for i in o.state.ixloop(o.sortedlen-1):
@@ -463,11 +458,12 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
         threadMaster:
           yy = y2
           ss = s2
-      when CHECK:
+      when CHECKDETAIL:
         echo j," ix ",i," ys ",o.state[i].ys," ys/yy ",(o.state[i].ys/yy)," yy ",yy," ss ",ss
       if unset and o.state[i].ys <= cutoff:
         o.sortedlen = j
         unset = false
+        when not CHECKDETAIL: break
       j.inc
   if reduce > 0:
     echo "lBGFS nmem reduce: ",reduce
@@ -502,7 +498,7 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
       theta = (delta1+o.state[i].gamma-wgiz) / (2.0*wgiz+wgiw+delta)
       cyv = cy*theta
       csv = cs*(1.0+theta)
-    when CHECK:
+    when CHECKDETAIL:
       echo j," delta: ",delta," sgs: ",sgs," ygiy: ",ygiy," gamma: ",o.state[i].gamma.float
     threads:
       for mu in 0..<o.state[i].u.len:
@@ -516,8 +512,8 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
     j.inc
   let t1 = epochTime()
   echo "LBFGS prep time: ",t1-t0
-  when CHECK: echo "state: ",lbfgs.state
-  when CHECKLBFGSEIGEN:
+  when CHECKDETAIL: echo "state: ",lbfgs.state
+  when CHECKEIGEN:
     let te0 = epochTime()
     type MatrixInfo = object
       lbfgs: type(o)
@@ -601,7 +597,7 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
     echo "LBFGS eigen time: ",te1-te0
     #qexExit 0
 
-when CHECKLBFGS:
+when CHECKCONV:
   const cklbfgsnd = 32
   let nseq = 8192
   type V = array[cklbfgsnd,float]
@@ -798,7 +794,7 @@ proc mdt(t:float) =
           gs[nsnow][i][e] := etpg
   else:
     hinvp.invH(lbfgs, p)
-    when CHECK and false:
+    when CHECKDETAIL and false:
       var pn2 = hinvp.norm2
       echo "p.norm2: ",p.norm2,"  hinvp.norm2: ",pn2,"  p.hinv.p.norm2: ",(p.redot hinvp)
       #echo "p[0][0]: ",p[0][0]
@@ -806,7 +802,7 @@ proc mdt(t:float) =
       echo "hinvp[0][0]: ",hinvp[0][0]
       #echo "hinvp[1][0]: ",hinvp[1][0]
     #hinvp.projectTAH
-    #when CHECK:
+    #when CHECKDETAIL:
     #  let ppn2 = hinvp.norm2
     #  let e = abs(pn2-ppn2)/max(pn2.abs,ppn2.abs)
     #  echo "hinvp.p[0][0]: ",hinvp[0][0]
@@ -816,7 +812,7 @@ proc mdt(t:float) =
       for i in 0..<gs[nsnow].len:
         for e in gs[nsnow][i]:
           let etp = exp((-t)*hinvp[i][e])
-          when CHECK and false:
+          when CHECKDETAIL and false:
             if e == 0:
               echo "etp[",i,"][0]: ",etp
           let etpg = etp*gs[nsnow][i][e]
@@ -836,40 +832,6 @@ var
   md = mkOmelyan2MN(steps = steps, V = mdv, T = mdt)
   # md = mkOmelyan4MN4FP(steps = steps, V = mdv, T = mdt)
   # md = mkOmelyan4MN5FV(steps = steps, V = mdv, T = mdt)
-
-when CHECKLBFGSMOM:
-  proc checkmom =
-    # Refreshing the momentum and check lbfgs stability.
-    proc checklbfgsmom =
-      var p2 = 0.0
-      threads: p.randomTAH r
-      if gfix: p.maxTreeFix(0.0, gfixextra)
-      threads:
-        var p2t = 0.0
-        for i in 0..<p.len:
-          p2t += p[i].norm2
-        threadMaster: p2 = p2t
-      lbfgs.sqrtH p
-      #if gfix: p.maxTreeFix(0.0, gfixextra)  # FIXME
-      hinvp.invH(lbfgs, p)
-      #threads:
-      block:
-        var p2t,p2nt,hp2 = 0.0
-        for i in 0..<p.len:
-          p2t += p[i].redot hinvp[i]
-          p2nt += hinvp[i].norm2
-          hp2 += p[i].norm2
-        #threadMaster:
-        block:
-          let e = abs(p2-p2t)/max(p2.abs,p2t.abs)
-          echo "SqrtHP.norm2: ",hp2," HinvP.norm2: ",p2nt
-          echo "p2: ",p2
-          echo "p2_Hinv: ",p2t," err: ",e
-    for c in countdown(10,0):
-      let cut = float(c*lat[0])
-      echo "LBFGS cutoff: ",cut
-      lbfgs.prep(cutoff = cut)
-      for i in 0..<1024: checklbfgsmom()
 
 when CHECKHESSIAN:
   proc checkhession(nsnow:int) =
@@ -921,25 +883,43 @@ proc getpgp:float =
     threadMaster:
       p2 = p2t
   p2
-when CHECKP2:
+when CHECKP2 or CHECKMOM:
   proc getpgp(p2s:float):float =
-    var p2 = 0.0
+    var p2, hip2, hp2 = 0.0
     threads:
-      var p2t = 0.0
-      var p2nt,hp2 = 0.0
+      var p2t,hip2t,hp2t = 0.0
       for i in 0..<p.len:
         p2t += p[i].redot hinvp[i]
-        p2nt += hinvp[i].norm2
-        hp2 += p[i].norm2
+        hip2t += hinvp[i].norm2
+        hp2t += p[i].norm2
       threadMaster:
-        echo "SqrtHP.norm2: ",hp2
-        echo "HinvP.norm2: ",p2nt
-        var e = abs(p2s-p2t)/max(p2s.abs,p2t.abs)
-        echo "p2 simple: ",p2s," with_Hinv: ",p2t," e_rel: ",e
-        if e > 1e-12:
-          echo "ERROR: Failed lbfgs consistency check"
         p2 = p2t
+        hp2 = hp2t
+        hip2 = hip2t
+    echo "SqrtHP.norm2: ",hp2
+    echo "HinvP.norm2: ",hip2
+    let e = abs(p2s-p2)/max(p2s.abs,p2.abs)
+    echo "p2 simple: ",p2s," with_Hinv: ",p2," e_rel: ",e
+    if e > 1e-12:
+      echo "ERROR: Failed lbfgs consistency check"
     p2
+
+when CHECKMOM:
+  proc checkmom =
+    # Refreshing the momentum and check lbfgs stability.
+    proc checklbfgsmom =
+      var p2 = 0.0
+      threads: p.randomTAH r
+      if gfix: p.maxTreeFix(0.0, gfixextra)
+      let p2s = getp2()
+      lbfgs.sqrtH p
+      hinvp.invH(lbfgs, p)
+      discard getpgp(p2s)
+    for c in countdown(10,0):
+      let cut = float(c*lat[0])
+      echo "LBFGS cutoff: ",cut
+      lbfgs.prep(cutoff = cut)
+      for i in 0..<1024: checklbfgsmom()
 
 when CHECKREVERSIBLE:
   proc checkreversible(nsnow:int) =
@@ -978,7 +958,7 @@ for n in 1..trajs:
     for i in 1..<nstream:
       f.getforce gs[i]
       lbfgs.add(x = gs[i], f = f)
-    when CHECKLBFGSMOM:
+    when CHECKMOM:
       checkmom()
       echoTimers()
       checkgc()
