@@ -84,6 +84,10 @@ proc setup =
   for d in extraDef:
     putenv ~ d  # We'll convert env to def in src soon.
     define ~ d
+  when declared(cudaARCH):  # Our ccwrapper needs those.
+    putenv ~ ("CUDAARCH=" & cudaARCH)
+    putenv ~ ("CUDANVCC=" & cudaNVCC)
+    putenv ~ ("CUDACCBIN=" & cudaCCBIN)
   # Here are optional external dependencies.
   optDef primmeDir
   optDef lapackLib

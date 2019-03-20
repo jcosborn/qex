@@ -2,10 +2,12 @@ import macros
 import strUtils
 
 proc isMagic(x: NimNode): bool =
-  #echo x.treerepr
+  # echo x.treerepr
   let pragmas = x[4]
   if pragmas.kind==nnkPragma and pragmas[0].kind==nnkExprColonExpr and
      $pragmas[0][0]=="magic": result = true
+
+template isNotMagic(x: NimNode): bool = not isMagic(x)
 
 proc getParam(fp: NimNode, n: int): auto =
   # n counts from 1
@@ -590,8 +592,10 @@ proc inlineProcsX(body: NimNode): NimNode =
       # echo "inspecting call"
       # echo it.lisprepr
       # echo procImpl.repr
-      if procImpl.body.kind!=nnkEmpty and
-          not isMagic(procImpl) and
+      # echo isMagic(procImpl)
+      if procImpl.kind == nnkTypeDef: return it.copyNimTree
+      if procImpl.isNotMagic and
+          procImpl.body.kind!=nnkEmpty and
           procImpl.kind != nnkIteratorDef:
         return recurse inlineProcsY(it, procImpl)
     result = copyNimNode(it)
