@@ -168,7 +168,7 @@ proc rebuild*(n:NimNode):NimNode =
     result = rebuild n[0]
   elif n.kind == nnkTypeSection:
     # Type section is special.  Once the type is instantiated, it exists, and we don't want duplicates.
-    result = newNimNode(nnkDiscardStmt,n).add(newStrLitNode(n.lisprepr))
+    result = newNimNode(nnkDiscardStmt,n).add(newStrLitNode(n.repr))
 
   # Strip information from other kinds
   else:
@@ -356,7 +356,7 @@ proc cleanIterator(n:NimNode):NimNode =
       # echo keep," ",n.repr
       if keep.len == 0:
         # echo "Removing declaration: ",n.lisprepr
-        result = newNimNode(nnkDiscardStmt,n).add newStrLitNode(n.lisprepr)
+        result = newNimNode(nnkDiscardStmt,n).add newStrLitNode(n.repr)
       else:
         result = n.copyNimNode
         for i in keep: result.add removeDeclare n[i]

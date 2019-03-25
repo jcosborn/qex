@@ -95,8 +95,10 @@ template cudaDefs(body: untyped): untyped {.dirty.} =
   template getThreadNum: untyped {.used.} = blockDim.x * blockIdx.x + threadIdx.x
   template getNumThreads: untyped {.used.} = gridDim.x * blockDim.x
   bind inlineProcs
+  {.emit:"#define nimZeroMem(b,len) memset((b),0,(len))".}
   inlineProcs:
     body
+  {.emit:"#undef nimZeroMem".}
 
 template cudaLaunch*(p: proc; blocksPerGrid,threadsPerBlock: SomeInteger;
                      arg: varargs[pointer,dataAddr]) =
