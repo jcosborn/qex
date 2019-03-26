@@ -356,7 +356,7 @@ template norm2*(xx:ShortVector):untyped =
   r = x[0].norm2
   when V>0:
     unrollfor:
-      for i in 0..V: r += x[i].norm2
+      for i in 1..V: r += x[i].norm2
   r
 
 when isMainModule:

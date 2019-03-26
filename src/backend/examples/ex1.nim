@@ -19,15 +19,20 @@ onGpu:
   x += y * z
   z := 4
 
+var r2:float
 threads:
   # do something on CPU again
   x += y * z
+  var r = x.norm2
+  threadSingle:
+    r2 = r
 
-if x[0][0,0].re == 21.0:
+if x[0][0,0].re == 21.0 and r2 == float(21*21*3*N):
   echo "yay, it worked!"
   echo "do you agree, GPU?"
 else:
   echo x[0][0,0].re
+  echo r2/float(3*N)
 
 onGpu:
   if getThreadNum()==0:

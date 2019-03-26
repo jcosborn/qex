@@ -206,8 +206,8 @@ iterator vIndicesT*(x:ArrayObj):ShortVectorIndex =
     n1 = x.veclen
     n = n1 - n0
     ti0 = n0 + ((tid*n) div nid)
-    ti1 = n0 + (((threadNum+1)*n) div nid)
-  #echo "ti0: ", ti0, "  ti1: ", ti1
+    ti1 = n0 + (((tid+1)*n) div nid)
+  # echo "ti0: ", ti0, "  ti1: ", ti1
   var i = ti0
   while i < ti1:
     yield i.ShortVectorIndex
