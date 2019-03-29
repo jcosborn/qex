@@ -20,8 +20,8 @@ const
   qioDir = "$HOME/lqcd/install/qio"
   ccType = "gcc"
   cc = "mpicc"
-  #cc = qexDir & "/src/backend/util/ccwrapper"
   cflagsAlways = "-Wall -std=gnu11 -march=native -ldl -fno-strict-aliasing"
+  #cflagsAlways = "-w -std=c11 -qarch=pwr9 -qtune=pwr9"
   #cflagsAlways = "-Wall -std=gnu11 -march=native -ldl -Wa,-q"
   #cflagsAlways = "-x cu -std=c++11 -Xcompiler -mcpu=native"
   cflagsDebug = "-g3 -O0"
@@ -45,6 +45,7 @@ const
   extraDef = ["STATIC_UNROLL=1"]
   ########################################
   # Optional dependencies
+  #Backend = "OpenMP"  # "CUDA"  "OpenCL"
   #primmeDir = "$HOME/pkgs/src/primme"
   #primmeDir = "$HOME/pkgs/build/primme"
   #lapackLib = "'-Wl,-framework -Wl,Accelerate'"
@@ -52,8 +53,7 @@ const
   #lapackLib = "'"&llbgq.join" "&"'"
   #qudaDir = "$HOME/lqcdM/build/quda"
   #cudaLibDir = "/usr/local/cuda/lib64"
-  #cudaArch = "sm_37"
-  #cudaCCBIN = "gcc"
+  #cudaArch = "sm_70"
   #cudaNVCC = "nvcc"
 # End of configurations
 ######################################################################

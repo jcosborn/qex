@@ -64,8 +64,19 @@ template optDef(v:untyped) =
 proc setup =
   path ~ srcDir
   cc ~ ccType
-  exe ! cc
-  linkerexe ! ld
+  var
+    qexcc = cc
+    qexld = ld
+  when declared(Backend):
+    if Backend == "CUDA":
+      putenv ~ ("CUDAARCH=" & cudaARCH)
+      putenv ~ ("CUDANVCC=" & cudaNVCC)
+      putenv ~ ("CUDACCBIN=" & cc)
+      qexcc = (qexDir & "/src/Backend/util/ccwrapper")
+      qexld = qexcc
+    def Backend
+  exe ! qexcc
+  linkerexe ! qexld
   options.always ! cflagsAlways
   options.debug ! cflagsDebug
   options.speed ! cflagsSpeed
@@ -84,10 +95,6 @@ proc setup =
   for d in extraDef:
     putenv ~ d  # We'll convert env to def in src soon.
     define ~ d
-  when declared(cudaARCH):  # Our ccwrapper needs those.
-    putenv ~ ("CUDAARCH=" & cudaARCH)
-    putenv ~ ("CUDANVCC=" & cudaNVCC)
-    putenv ~ ("CUDACCBIN=" & cudaCCBIN)
   # Here are optional external dependencies.
   optDef primmeDir
   optDef lapackLib
