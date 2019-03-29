@@ -1,10 +1,16 @@
 import coalesced
 
-when not declared(haveCuda):
-  const haveCuda = true
+const Backend {.strdefine.} = "OpenMP"
 
-when haveCuda:
+when Backend == "CUDA":
   import cuda
+elif Backend == "OpenCL":
+  import opencl
+elif Backend == "OpenMP":
+  import openmp
+else:
+  {.warning: "Backend unknown, use OpenMP by default.".}
+  import openmp
 
 import macros
 include system/ansi_c
@@ -37,21 +43,13 @@ type
 #   r.new
 #   r[].init(n)
 
-proc free*(r: var GpuArrayObj) =
-  when haveCuda: discard r.p.p.cudaFree
+proc free*(r: var GpuArrayObj) = r.p.p.gpuFree
 # proc free*[V,M:static[int],T](r: GpuArrayRef[V,M,T]) =
 #   when haveCuda: discard r.p.p.cudaFree
 
 proc initGpuArrayObj*(r: var GpuArrayObj, n: int) =
   type T = r.T
-  var p: ptr T
-  when haveCuda:
-    let err = cudaMalloc(cast[ptr pointer](addr p), n*sizeof(T))
-    if err:
-      echo "alloc err: ", err
-      quit(-1)
-  else:
-    p = createSharedU(T, n)
+  var p: ptr T = cast[ptr T](gpuMalloc(n*sizeof(T)))
   r.n = n
   r.p.initCoalesced(p, n)
   # echo "GpuArray init done."
@@ -72,6 +70,15 @@ template getGpuPtr*(x: GpuArrayObj): untyped = x
 # template getGpuPtr*(x: GpuArrayRef): untyped = x[]
 #template getGpuPtr(x: GpuArrayRef): untyped = x.p
 #template getGpuPtr(x: GpuArrayRef): untyped = (p:x.p,n:x.n)
+
+template offloadUseVar*(x:GpuArrayObj):bool = true
+template offloadUsePtr*(x:GpuArrayObj):bool = true
+template rungpuPrepareOffload*(x:GpuArrayObj):bool = true
+template runcpuFinalizeOffload*(x:GpuArrayObj):bool = false
+template gpuVarPtr*(v:GpuArrayObj,p:untyped):untyped = v
+template offloadPtr(x:GpuArrayObj):untyped = x.p.p
+template offloadVar*(x:GpuArrayObj,p:untyped):untyped = x
+template gpuPrepareOffload*(v:GpuArrayObj,pp:untyped):untyped = v.p.p = pp
 
 template indexGpuArray*(x: GpuArrayObj, i: SomeInteger): untyped =
   x.p[i]

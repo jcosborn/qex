@@ -6,7 +6,7 @@ when defined(noOpenmp):
   template omp_get_max_threads*(): cint = 1
   template omp_get_thread_num*(): cint = 0
   template ompPragma(p:string):untyped = discard
-  template ompBlock(p:string; body:untyped):untyped =
+  template ompBlock*(p:string; body:untyped):untyped =
     block:
       body
 else:
@@ -25,7 +25,7 @@ else:
   template ompPragma(p:string):untyped =
     #forceOmpOn()
     {. emit:"#pragma omp " & p .}
-  template ompBlock(p:string; body:untyped):untyped =
+  template ompBlock*(p:string; body:untyped):untyped =
     {. emit:"#pragma omp " & p .}
     {. emit:"{ /* Inserted by ompBlock " & p & " */".}
     block:
