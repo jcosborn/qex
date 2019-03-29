@@ -16,9 +16,8 @@ notifications:
 before_install:
   - cd ..
   - #git clone -b master --depth 1 git://github.com/nim-lang/Nim
-  - git clone -b devel git://github.com/nim-lang/Nim
+  - git clone -b devel --depth 1 git://github.com/nim-lang/Nim
   - cd Nim
-  - git checkout 25649616e
   - sh build_all.sh
   - export PATH=$PWD/bin:$PATH
   - echo $PATH

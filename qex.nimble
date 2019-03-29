@@ -68,7 +68,7 @@ proc setup =
     qexcc = cc
     qexld = ld
   when declared(Backend):
-    if Backend == "CUDA":
+    when Backend == "CUDA":
       putenv ~ ("CUDAARCH=" & cudaARCH)
       putenv ~ ("CUDANVCC=" & cudaNVCC)
       putenv ~ ("CUDACCBIN=" & cc)
