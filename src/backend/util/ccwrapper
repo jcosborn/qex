@@ -12,8 +12,10 @@ ccargs=""
 verbosity=0 # 1
 forcc(){
 	case "$1" in
-	"-pthread") return 0 ;;
-	"-fopenmp") return 0 ;;
+	-Wall) return 0 ;;
+	-pthread) return 0 ;;
+	-fopenmp|-fno*) return 0 ;;
+	-march=*|-mcpu=*|-mtune=*) return 0 ;;
 	*) return 1 ;;
 	esac
 }

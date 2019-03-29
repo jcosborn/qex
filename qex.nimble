@@ -72,12 +72,12 @@ proc setup =
       putenv ~ ("CUDAARCH=" & cudaARCH)
       putenv ~ ("CUDANVCC=" & cudaNVCC)
       putenv ~ ("CUDACCBIN=" & cc)
-      qexcc = (qexDir & "/src/Backend/util/ccwrapper")
+      qexcc = (qexDir & "/src/backend/util/ccwrapper")
       qexld = qexcc
     def Backend
   exe ! qexcc
   linkerexe ! qexld
-  options.always ! cflagsAlways
+  options.always ! ('-x cu ' & cflagsAlways)
   options.debug ! cflagsDebug
   options.speed ! cflagsSpeed
   options.linker ! ldflags

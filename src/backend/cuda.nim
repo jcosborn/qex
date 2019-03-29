@@ -71,6 +71,29 @@ template cudaMemcpy*(dst,src: typed, count: csize,
   let psrc = toPointer(src)
   cudaMemcpyX(pdst, psrc, count, kind)
 
+template gpuMalloc*(size:csize):pointer =
+  var p:pointer
+  let err = cudaMalloc(p, size)
+  if err:
+    echo err
+    p = cast[pointer](0)
+  p
+template gpuFree*(p:pointer) =
+  let err = cudaFree(p)
+  if err:
+    echo err
+    quit cast[cint](err)
+template gpuMemCpyToGpu*(dst,src: pointer, count: csize):cint =
+  let err = cudaMemcpy(dst,src,count,cudaMemcpyHostToDevice)
+  if err:
+    echo err
+  cast[cint](err)
+template gpuMemCpyToCpu*(dst,src: pointer, count: csize):cint =
+  let err = cudaMemcpy(dst,src,count,cudaMemcpyDeviceToHost)
+  if err:
+    echo err
+  cast[cint](err)
+
 proc cudaLaunchKernel(p:pointer, gd,bd: CudaDim3, args: ptr pointer):
   cudaError_t {.importC,header:"cuda_runtime.h".}
 
