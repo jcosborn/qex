@@ -43,7 +43,10 @@ type
 #   r.new
 #   r[].init(n)
 
-proc free*(r: var GpuArrayObj) = r.p.p.gpuFree
+proc free*(r: var GpuArrayObj) =
+  if r.n > 0:
+    r.p.p.gpuFree
+    r.n = 0
 # proc free*[V,M:static[int],T](r: GpuArrayRef[V,M,T]) =
 #   when haveCuda: discard r.p.p.cudaFree
 
