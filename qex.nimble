@@ -67,17 +67,19 @@ proc setup =
   var
     qexcc = cc
     qexld = ld
+    qexCflagsAlways = cflagsAlways
   when declared(Backend):
     when Backend == "CUDA":
       putenv ~ ("CUDAARCH=" & cudaARCH)
       putenv ~ ("CUDANVCC=" & cudaNVCC)
       putenv ~ ("CUDACCBIN=" & cc)
-      qexcc = (qexDir & "/src/backend/util/ccwrapper")
+      qexcc = qexDir & "/src/backend/util/ccwrapper"
       qexld = qexcc
+      qexCflagsAlways = "-x cu " & qexCflagsAlways
     def Backend
   exe ! qexcc
   linkerexe ! qexld
-  options.always ! ('-x cu ' & cflagsAlways)
+  options.always ! qexCflagsAlways
   options.debug ! cflagsDebug
   options.speed ! cflagsSpeed
   options.linker ! ldflags
