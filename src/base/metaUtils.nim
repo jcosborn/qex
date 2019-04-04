@@ -22,7 +22,7 @@ proc has(n:NimNode, k:NimNodeKind):bool =
     if c.kind == k: return true
   return false
 
-proc replace(n,x,y:NimNode):NimNode =
+proc replace*(n,x,y:NimNode):NimNode =
   if n == x:
     result = y.copyNimTree
   else:

@@ -2,7 +2,10 @@ import macros
 import base/metaUtils
 import base/omp
 
-{. pragma: omp, header:"omp.h" .}
+{.pragma: omp, header:"omp.h".}
+template mkMemoryPragma*:untyped =
+  {.pragma: restrict, codegenDecl: "$# __restrict__ $#".}
+  #{.pragma: align(n), codegenDecl: "$# $# __attribute__((aligned(n)))".}
 
 proc addChildrenFrom*(dst,src: NimNode): NimNode =
   for c in src: dst.add(c)
@@ -242,6 +245,110 @@ template rungpuPrepareOffload*(x:SomeNumber):bool = false
 template runcpuFinalizeOffload*(x:SomeNumber):bool = false
 template gpuVarPtr*(v:SomeNumber,p:untyped):untyped = v
 template offloadVar*(x:SomeNumber,p:untyped):untyped = x
+
+template toUArray(a:untyped):untyped = cast[ptr UncheckedArray[typeof(a[0])]](a[0].unsafeaddr)
+proc cleanAst(n:NimNode):NimNode =
+  if n.kind in {nnkHiddenDeref,nnkHiddenCallConv,nnkHiddenStdConv}:
+    result = n[0].cleanAst
+  else:
+    result = n.copyNimNode
+    for c in n:
+      result.add c.cleanAst
+proc identStr(n:NimNode):string =
+  result = n.repr
+  for i in 0..<result.len:
+    if result[i] in {'.','[',']',':'}: result[i] = '_'
+proc isIndex(n,i:NimNode):bool =
+  result = n.eqident i
+  if n.kind == nnkHiddenStdConv:
+    result = n[1].eqident i
+macro simdForImpl(n:typed):untyped =
+  proc getIndexedPtrs(n,i:NimNode):seq[NimNode] =
+    #echo "### getIndexedPtrs: ", i.repr
+    #echo n.treerepr
+    var ptrs = newseq[NimNode]()
+    proc get(n:NimNode):NimNode =
+          var m = -1
+          for j in 0..<ptrs.len:
+            if ptrs[j][1] == n:
+              m = j
+              break
+          if m < 0:
+            let v = gensym(nskVar, n.cleanAst.identStr)
+            ptrs.add newPar(v, n)
+            return v
+          else:
+            return ptrs[m][0]
+    proc go(n:NimNode) =
+      if n.kind in CallNodes and ($n[0] == "[]" or $n[0] == "[]="):
+        if n.len > 2 and n[2].isIndex i:
+          n[1] = n[1].get
+      elif n.kind == nnkBracketExpr:
+        if n[1].isIndex i:
+          n[0] = n[0].get
+      for c in n:
+        c.go
+    n.go
+    ptrs
+  template res(setup, i, lo, hi, body: untyped): untyped =
+    block:
+      var i {.codegendecl:"/* $# $# */",noinit.}: cint
+      setup
+      {.emit:
+        ["\n#pragma omp simd aligned(","\n",
+          "for(int ",
+          i,"=",lo,";",
+          i,"<=",hi,";",
+          i,"++){\n"
+        ].}
+      body
+      {.emit:["\n}\n"].}
+
+  #echo n.treerepr
+  n.expectkind nnkForStmt
+  #echo n[1][0].getimpl.treerepr
+  let ptrs = n[2].getIndexedPtrs(n[0])
+  if ptrs.len == 0:
+    echo "simdForImpl finds no pointers: ",n.treerepr
+    quit 1
+  let setup = newNimNode nnkVarSection
+  for p in ptrs:
+    setup.add newIdentDefs(
+      #p[0],
+      newNimNode(nnkPragmaExpr).add(
+        p[0],
+        newNimNode(nnkPragma).add(
+          newNimNode(nnkExprColonExpr).add(ident"codegenDecl", newLit"$# __restrict__ $#"))),
+      newEmptyNode(), newcall(bindsym"toUArray", p[1]))
+  result = getast res(setup, n[0], n[1][1], n[1][2], n[2])
+  #echo result.treerepr
+  let e = result[1][2]
+  e.expectkind nnkPragma
+  for i in 0..<ptrs.len:
+    if i == 0: e[0][1].insert(1,newLit")")
+    else: e[0][1].insert(1,newLit",")
+    e[0][1].insert(1,ptrs[i][0])
+  let i = gensym(nskvar, $n[0])
+  result = result.replace(n[0], i).rebuild
+  #echo result.repr
+  #echo result.treerepr
+  #quit 1
+
+macro simdFor*(n:untyped):untyped =
+  proc p(n:NimNode):NimNode =
+    if n.kind == nnkForStmt:
+      n[2] = newCall(bindsym"inlineProcs", n[2])
+      #echo n.treerepr
+      return newCall(bindsym"simdForImpl", n)
+    elif n.kind == nnkStmtList:
+      for i in 0..<n.len:
+        n[i] = p n[i]
+      return n
+    else:
+      echo "simdFor cannot handle:"
+      echo n.treerepr
+      quit 1
+  p n
 
 when isMainModule:
   type FltArr = object

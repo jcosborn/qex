@@ -22,9 +22,11 @@ defined corresponding to those of T.
 
 ]#
 
-import coalesced
+import coalesced, openmp
 import base/metaUtils
 import macros
+
+mkMemoryPragma()
 
 const CPUVLEN* {.intdefine.} = 0 ## CPU SIMD vector length in bits.  Zero lets compiler auto-vectorize.
 const SupportedCPUVLENs = {128,256,512}
@@ -89,9 +91,9 @@ type
   ShortVector*[V:static[int],E] = object
     a*:array[V,E]
   ShortVectorIndex* = distinct int
-  VectorizedObj*[V,M:static[int],T] = object
-    o*:Coalesced[V,M,T]
-    i*:ShortVectorIndex
+  VectorizedObj[V,M:static[int],T] = object
+    o:Coalesced[V,M,T]
+    i:ShortVectorIndex
 
 template `[]`*(x:Coalesced, ix:ShortVectorIndex):untyped = VectorizedObj[x.V,x.M,x.T](o:x,i:ix)
 template veclen*(x:Coalesced):untyped = x.n div x.V
@@ -102,54 +104,82 @@ template len*(x:ShortVector):int = x.V
 
 type RWA = ptr UncheckedArray[RegisterWord]
 
-template fromVectorized*(x:VectorizedObj):untyped =
+proc unpackCall(f,x:NimNode, args:varargs[NimNode]):NimNode =
+  proc go(n:NimNode, args:varargs[NimNode]):NimNode =
+    result = newCall f
+    for i in 1..<n.len:
+      result.add(n[i][1])
+    for c in args:
+      result.add c
+  result = newEmptyNode()
+  if x.kind == nnkObjConstr:
+    result = x.go args
+  elif x.kind == nnkSym:
+    let xx = x.getimpl
+    #echo xx.treerepr
+    if xx.kind == nnkIdentDefs and xx[2].kind == nnkObjConstr:
+      result = xx[2].go args
+  if result.kind == nnkEmpty:
+    echo "unpackCall: failed on the AST"
+    echo x.treerepr
+    quit 1
+
+template fromVectorizedImpl(xxo, xxi:untyped):untyped =
   const
-    C = x.M*sizeof(RegisterWord) # MemoryWord size
-    N = getSize(x.T) div C       # Number of MemoryWord in the type x.T
-    S = N*x.V*x.M                # Number of RegisterWord in a block of x.V objects
+    xV = int(xxo.V)
+    xM = int(xxo.M)
+  let
+    xo {.noinit.} = xxo
+    xi {.noinit.} = xxi
+  type xT = xo.T
+  const
+    C = xM*sizeof(RegisterWord) # MemoryWord size
+    N = getSize(xT) div C       # Number of MemoryWord in the type xT
+    S = N*xV*xM                 # Number of RegisterWord in a block of xV objects
   mixin vectorType, elementType
   type
-    E = elementType(x.T)
-    V = vectorType(x.V,x.T)
-  let ix = x.i.int
+    E = elementType(xT)
+    V = vectorType(xV,xT)
+  let ix = xi.int
   var r {.noinit.}: V
   when sizeof(E) == C:
     # echo "sizeof(E) = C"
     type
       VE = vectorizedElementType(E) # Machine simd vector if available
       VEA = ptr UncheckedArray[VE]
-    const VL = (x.V * getSize(x.T)) div getSize(VE) # Number of vectorized element in a block of x.V objects
+    const VL = (xV * getSize(xT)) div getSize(VE) # Number of vectorized element in a block of xV objects
     let
-      vp = cast[VEA](cast[RWA](x.o.p)[ix*S].addr)
-      vm = cast[VEA](r.addr)
+      vp {.restrict.} = cast[VEA](cast[RWA](xo.p)[ix*S].addr)
+      vm {.restrict.} = cast[VEA](r.addr)
     # for i in 0..<S: m[i] = p[i]
-    unrollfor:
+    simdfor:
       for i in 0..VL-1: vm[i] = vp[i]
   elif sizeof(E) > C:
     # echo "sizeof(E) > C"
     let
-      p = cast[RWA](cast[RWA](x.o.p)[ix*S].addr)
-      m = cast[RWA](r.addr)
+      p {.restrict.} = cast[RWA](cast[RWA](xo.p)[ix*S].addr)
+      m {.restrict.} = cast[RWA](r.addr)
     const L = sizeof(E) div C
     when L*C != sizeof(E):
       # We can deal with this but let's leave it for future exercises.
       {.fatal:"Vector element size not divisible by memory word size.".}
     #staticfor i, 0, N-1:
     for i in 0..<N:
-      #staticfor j, 0, x.V-1:
-      for j in 0..<x.V:
-        #staticfor k, 0, x.M-1:
-        for k in 0..<x.M:
-          m[x.V*x.M*L*(i div L) + x.M*L*j + k + x.M*(i mod L)] = p[x.V*x.M*i + x.M*j + k]
+      #staticfor j, 0, xV-1:
+      for j in 0..<xV:
+        #staticfor k, 0, xM-1:
+        unrollFor:
+          for k in 0..xM-1:
+            m[xV*xM*L*(i div L) + xM*L*j + k + xM*(i mod L)] = p[xV*xM*i + xM*j + k]
   elif sizeof(E) >= sizeof(RegisterWord): # sizeof(E) < C
     # echo "sizeof(RegisterWord) <= sizeof(E) < C"
     let
-      p = cast[RWA](cast[RWA](x.o.p)[ix*S].addr)
-      m = cast[RWA](r.addr)
+      p {.restrict.} = cast[RWA](cast[RWA](xo.p)[ix*S].addr)
+      m {.restrict.} = cast[RWA](r.addr)
     const
       L = C div sizeof(E)
       K = sizeof(E) div sizeof(RegisterWord)
-    # x.M = L*K
+    # xM = L*K
     when K*sizeof(RegisterWord) != sizeof(E):
       # We can deal with this but let's leave it for future exercises.
       {.fatal:"Vector element size not divisible by register word size.".}
@@ -158,15 +188,20 @@ template fromVectorized*(x:VectorizedObj):untyped =
       {.fatal:"Memory word size not divisible by vector element size.".}
     #staticfor i, 0, N-1:
     for i in 0..<N:
-      #staticfor j, 0, x.V-1:
-      for j in 0..<x.V:
-        #staticfor k, 0, x.M-1:
-        for k in 0..<x.M:
-          m[x.V*K*(k div K) + x.V*x.M*i + K*j + (k mod K)] = p[x.V*x.M*i + x.M*j + k]
+      #staticfor j, 0, xV-1:
+      for j in 0..<xV:
+        #staticfor k, 0, xM-1:
+        unrollFor:
+          for k in 0..xM-1:
+            m[xV*K*(k div K) + xV*xM*i + K*j + (k mod K)] = p[xV*xM*i + xM*j + k]
   else:
     # We can deal with this but let's leave it for future exercises.
     {.fatal:"Register word size larger than vector element size.".}
   r
+macro fromVectorized*(x:VectorizedObj):untyped =
+  #echo x.treerepr
+  unpackCall(bindSym"fromVectorizedImpl", x)
+
 macro `[]`*(x:VectorizedObj, ys:varargs[untyped]):untyped =
   let o = newCall(bindsym"fromVectorized", x)
   if ys.len == 0:
@@ -176,53 +211,63 @@ macro `[]`*(x:VectorizedObj, ys:varargs[untyped]):untyped =
     for y in ys: result.add y
 
 #proc `:=`*[V,M:static[int],X,Y](x:VectorizedObj[V,M,X], y:var Y) {.inline.} =
-template `:=`*[Y](x:VectorizedObj, y:var Y) =
+#template `:=`*[Y](x:VectorizedObj, y:var Y) =
+template `assignVectorizedImpl`[Y](xxo, xxi:untyped, y:Y) =
   mixin vectorType, elementType
-  type E = elementType(x.T)
-  type V = vectorType(x.V,x.T)
+  mkMemoryPragma()
+  const
+    xV = int(xxo.V)
+    xM = int(xxo.M)
+  let
+    xo {.noinit.} = xxo
+    xi {.noinit.} = xxi
+  type xT = xxo.T
+  type E = elementType(xT)
+  type V = vectorType(xV,xT)
   when Y is V:
     const
-      C = x.M*sizeof(RegisterWord)
-      N = getSize(x.T) div C
-      S = N*x.V*x.M
-    let ix = x.i.int
+      C = xM*sizeof(RegisterWord)
+      N = getSize(xT) div C
+      S = N*xV*xM
+    let ix = xi.int
     when sizeof(E) == C:
       # echo "sizeof(E) = C"
       type
         VE = vectorizedElementType(E)
         VEA = ptr UncheckedArray[VE]
-      const VL = (x.V * getSize(x.T)) div getSize(VE)
+      const VL = (xV * getSize(xT)) div getSize(VE)
       let
-        vp = cast[VEA](cast[RWA](x.o.p)[ix*S].addr)
-        vm = cast[VEA](y.addr)
+        vp {.restrict.} = cast[VEA](cast[RWA](xo.p)[ix*S].addr)
+        vm {.restrict.} = cast[VEA](y.addr)
       # for i in 0..<S: p[i] = m[i]
-      unrollFor:
+      simdfor:
         for i in 0..VL-1: vp[i] = vm[i]
     elif sizeof(E) > C:
       # echo "sizeof(E) > C"
       let
-        p = cast[RWA](cast[RWA](x.o.p)[ix*S].addr)
-        m = cast[RWA](y.addr)
+        p {.restrict.} = cast[RWA](cast[RWA](xo.p)[ix*S].addr)
+        m {.restrict.} = cast[RWA](y.addr)
       const L = sizeof(E) div C
       when L*C != sizeof(E):
         # We can deal with this but let's leave it for future exercises.
         {.fatal:"Vector element size not divisible by memory word size.".}
       #staticfor i, 0, N-1:
       for i in 0..<N:
-        #staticfor j, 0, x.V-1:
+        #staticfor j, 0, xV-1:
         for j in 0..<x.V:
-          #staticfor k, 0, x.M-1:
-          for k in 0..<x.M:
-            p[x.V*x.M*i + x.M*j + k] = m[x.V*x.M*L*(i div L) + x.M*L*j + k + x.M*(i mod L)]
+          #staticfor k, 0, xM-1:
+          unrollFor:
+            for k in 0..xM-1:
+              p[xV*xM*i + xM*j + k] = m[xV*xM*L*(i div L) + xM*L*j + k + xM*(i mod L)]
     elif sizeof(E) >= sizeof(RegisterWord): # sizeof(E) < C
       # echo "sizeof(RegisterWord) <= sizeof(E) < C"
       let
-        p = cast[RWA](cast[RWA](x.o.p)[ix*S].addr)
-        m = cast[RWA](y.addr)
+        p {.restrict.} = cast[RWA](cast[RWA](xo.p)[ix*S].addr)
+        m {.restrict.} = cast[RWA](y.addr)
       const
         L = C div sizeof(E)
         K = sizeof(E) div sizeof(RegisterWord)
-      # x.M = L*K
+      # xM = L*K
       when K*sizeof(RegisterWord) != sizeof(E):
         # We can deal with this but let's leave it for future exercises.
         {.fatal:"Vector element size not divisible by register word size.".}
@@ -231,11 +276,12 @@ template `:=`*[Y](x:VectorizedObj, y:var Y) =
         {.fatal:"Memory word size not divisible by vector element size.".}
       #staticfor i, 0, N-1:
       for i in 0..<N:
-        #staticfor j, 0, x.V-1:
+        #staticfor j, 0, xV-1:
         for j in 0..<x.V:
-          #staticfor k, 0, x.M-1:
-          for k in 0..<x.M:
-            p[x.V*x.M*i + x.M*j + k] = m[x.V*K*(k div K) + x.V*x.M*i + K*j + (k mod K)]
+          #staticfor k, 0, xM-1:
+          unrollFor:
+            for k in 0..xM-1:
+              p[xV*xM*i + xM*j + k] = m[xV*K*(k div K) + xV*xM*i + K*j + (k mod K)]
     else:
       # We can deal with this but let's leave it for future exercises.
       {.fatal:"Register word size larger than vector element size.".}
@@ -244,7 +290,8 @@ template `:=`*[Y](x:VectorizedObj, y:var Y) =
       mixin `:=`
       var ty {.noinit.}:V
       ty := y
-      x := y
+      xxo[xxi] := ty
+#[
 template `:=`*[Y](x:VectorizedObj, y:Y) =
   inlineProcs:
     mixin `:=`,vectorType,elementType
@@ -252,21 +299,20 @@ template `:=`*[Y](x:VectorizedObj, y:Y) =
     var ty {.noinit.}:V
     ty := y
     x := ty
+]#
+macro `:=`*[Y](x:VectorizedObj, y:Y):untyped =
+  unpackCall(bindsym"assignVectorizedImpl", x, y)
 
-template `+=`*(xx:VectorizedObj, yy:typed) =
+template `+=`*(x:VectorizedObj, yy:typed) =
   inlineProcs:
-    let
-      x = xx
-      y = yy
+    let y = yy
     var xy {.noinit.} = x[]
     xy += y
     x := xy
 
-template `*=`*(xx:VectorizedObj, yy:typed) =
+template `*=`*(x:VectorizedObj, yy:typed) =
   inlineProcs:
-    let
-      x = xx
-      y = yy
+    let y = yy
     var xv {.noinit.} = x[]
     xv *= y
     x := xv
@@ -295,7 +341,7 @@ template `+`*(x:ShortVector, y:SomeNumber):untyped =
     xx = x
     yy = y
   var z {.noinit.}:tx
-  unrollfor:
+  simdfor:
     for i in 0..V: z[i] = xx[i] + yy
   z
 template `+`*(x,y:ShortVector):untyped =
@@ -305,7 +351,7 @@ template `+`*(x,y:ShortVector):untyped =
     xx = x
     yy = y
   var z {.noinit.}:tx
-  unrollfor:
+  simdfor:
     for i in 0..V: z[i] = xx[i] + yy[i]
   z
 template `-`*(x,y:ShortVector):untyped =
@@ -315,7 +361,7 @@ template `-`*(x,y:ShortVector):untyped =
     xx = x
     yy = y
   var z {.noinit.}:tx
-  unrollfor:
+  simdfor:
     for i in 0..V: z[i] = xx[i] - yy[i]
   z
 template `*`*(x,y:ShortVector):untyped =
@@ -325,28 +371,28 @@ template `*`*(x,y:ShortVector):untyped =
     xx = x
     yy = y
   var z {.noinit.}:tx
-  unrollfor:
+  simdfor:
     for i in 0..V: z[i] = xx[i] * yy[i]
   z
 template `+=`*(x:var ShortVector, y:ShortVector) =
   const V = x.len-1
   let yy = y
-  unrollfor:
+  simdfor:
     for i in 0..V: x[i] += yy[i]
 template `:=`*(x:var ShortVector, y:ShortVector) =
   const V = x.len-1
   let yy = y
-  unrollfor:
+  simdfor:
     for i in 0..V: x[i] = yy[i]
 template `:=`*(x:var ShortVector, y:SomeNumber) =
   const V = x.len-1
   let yy = y
-  unrollfor:
+  simdfor:
     for i in 0..V: x[i] := yy
 template `*=`*(x:var ShortVector, y:SomeNumber) =
   const V = x.len-1
   let yy = y
-  unrollfor:
+  simdfor:
     for i in 0..V: x[i] *= yy
 template norm2*(xx:ShortVector):untyped =
   const V = xx.len-1
