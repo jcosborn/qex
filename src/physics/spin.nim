@@ -102,6 +102,12 @@ template random*(x: var Spin) =
   gaussian(x[], r)
 template gaussian*(x: var Spin, r: var untyped) =
   gaussian(x[], r)
+template z4*(x: var Spin, r: var untyped) =
+  z4(x[], r)
+template z2*(x: var Spin, r: var untyped) =
+  z2(x[], r)
+template u1*(x: var Spin, r: var untyped) =
+  u1(x[], r)
 template projectU*(r: var Spin, x: Spin2) =
   projectU(r[], x[])
 template norm2*(x: Spin): untyped = norm2(x[])

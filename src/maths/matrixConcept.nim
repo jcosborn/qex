@@ -1,7 +1,8 @@
-import base
+import macros
+import base/basicOps
+import base/metaUtils
 #import stdUtils
 #import metaUtils
-import macros
 #import basicOps
 import maths/types
 import base/wrapperTypes

@@ -10,6 +10,34 @@ template `&`[T](x: seq[T]): untyped =
   cast[ptr UncheckedArray[T]](unsafeAddr(x[0]))
 template `&&`(x: char): untyped = cast[pointer](unsafeAddr(x))
 template `&&`(x: seq): untyped = cast[pointer](unsafeAddr(x[0]))
+template `&&`(x: SomeNumber): untyped = cast[pointer](unsafeAddr(x))
+
+proc toBigEndian*(x: int32): int32 =
+  when system.cpuEndian == bigEndian:
+    result = x
+  else:
+    swapEndian32(&&result, &&x)
+
+proc toBigEndian*(x: float32): float32 =
+  when system.cpuEndian == bigEndian:
+    result = x
+  else:
+    swapEndian32(&&result, &&x)
+
+proc swapEndian32*(p: pointer, bytes: int) =
+  let s = cast[ptr UncheckedArray[int32]](p)
+  let n = bytes div 4
+  for i in 0..<n:
+    var t = s[][i]
+    swapEndian32(&&s[][i], &&t)
+
+proc swapEndian64*(p: pointer, bytes: int) =
+  let s = cast[ptr UncheckedArray[int64]](p)
+  let n = bytes div 8
+  for i in 0..<n:
+    var t = s[][i]
+    swapEndian64(&&s[][i], &&t)
+
 
 proc posixOpenWrite*(fn: string): cint =
   let flags = O_WRONLY
@@ -29,6 +57,7 @@ type
     comm*: Comm
     pos*: int
     fd*: cint
+    swap*: int
 
 proc openRead*(c: Comm, fn: string): ParallelReader =
   result.comm = c
@@ -43,13 +72,36 @@ proc close*(r: ParallelReader) =
   r.comm.barrier()
   discard close(r.fd)
 
+proc setSwap*(r: var ParallelReader, sw: int) =
+  r.swap = sw
+
+proc setBig32*(r: var ParallelReader) =
+  when system.cpuEndian == bigEndian:
+    r.swap = 0
+  else:
+    r.swap = 32
+
+proc setBig64*(r: var ParallelReader) =
+  when system.cpuEndian == bigEndian:
+    r.swap = 0
+  else:
+    r.swap = 64
+
 proc seekCur*(r: var ParallelReader, offset: int) =
   r.pos += offset
   discard lseek(r.fd, offset, SEEK_CUR)
 
+proc seekSet*(r: var ParallelReader, offset: int) =
+  r.pos = offset
+  discard lseek(r.fd, offset, SEEK_SET)
+
 proc read*(r: var ParallelReader, buf: pointer, bytes: int) =
   r.pos += bytes
   discard read(r.fd, buf, bytes)
+  case r.swap
+  of 32: swapEndian32(buf, bytes)
+  of 64: swapEndian64(buf, bytes)
+  else: discard
 
 proc readAll*(r: var ParallelReader, buf: pointer, bytes: int) =
   r.read(buf, bytes)
@@ -77,6 +129,15 @@ proc readBigInt32*(pr: var ParallelReader): int32 =
     pr.readAll(t)
     template `&&`(x: int32): untyped = cast[pointer](unsafeAddr(x))
     swapEndian32(&&result, &&t)
+
+proc readBigInt64*(pr: var ParallelReader): int64 =
+  when system.cpuEndian == bigEndian:
+    pr.readAll(result)
+  else:
+    var t: int64
+    pr.readAll(t)
+    template `&&`(x: int64): untyped = cast[pointer](unsafeAddr(x))
+    swapEndian64(&&result, &&t)
 
 
 type

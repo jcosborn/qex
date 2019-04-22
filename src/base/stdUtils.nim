@@ -121,6 +121,12 @@ proc `/`*(x: SomeNumber, y: array): auto {.inline,noInit.} =
 #  for i in 0..<result.len:
 #    result[i] = x[i] + y[i]
 
+proc `:=`*[N,T1,T2](r: var array[N,T1], x: array[N,T2]) {.inline.} =
+  mixin `:=`
+  const n = r.len
+  for i in 0..<n:
+    r[i] := x[i]
+
 proc `+`*[N,T1,T2](x: array[N,T1], y: array[N,T2]): auto {.inline,noInit.} =
   const n = x.len
   var r: array[n, type(x[0]+y[0])]
@@ -135,10 +141,17 @@ proc `-`*[N,T1,T2](x: array[N,T1], y: array[N,T2]): auto {.inline,noInit.} =
     r[i] = x[i] - y[i]
   r
 
-proc `+=`*[T](x:var openArray[T], y: openArray[T]) {.inline.} =
-  let n = x.len
+proc `*`*[N,T1,T2](x: array[N,T1], y: array[N,T2]): auto {.inline,noInit.} =
+  const n = x.len
+  var r: array[n, type(x[0]*y[0])]
   for i in 0..<n:
-    x[i] += y[i]
+    r[i] = x[i] * y[i]
+  r
+
+proc `+=`*[T](r: var openArray[T], x: openArray[T]) {.inline.} =
+  let n = r.len
+  for i in 0..<n:
+    r[i] += x[i]
 
 #[
 template makeArrayOverloads(n:int):untyped =

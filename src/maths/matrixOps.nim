@@ -1,8 +1,10 @@
-import base
+import macros
+import base/globals
+import base/basicOps
+import base/metaUtils
 #import globals
 #import basicOps
 #import matrixConcept
-import macros
 
 template cfor*(i,r0,r1,b:untyped):untyped =
   block:

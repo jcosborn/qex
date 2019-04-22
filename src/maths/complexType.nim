@@ -1,5 +1,5 @@
 import macros
-import base
+import base/basicOps
 import complexProxy
 export complexProxy
 

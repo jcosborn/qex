@@ -180,6 +180,8 @@ template newLayout*(l:openArray[int]; n:static[int]):untyped =
 template newLayout*(l:openArray[int]):untyped =
   newLayoutX(l, VLEN, [], [])
 
+template `[]`*(l: Layout, i: int): untyped = l.physGeom[i]
+
 proc rankIndex*(l:Layout, coords: ptr cArray[cint]):tuple[rank,index:int] =
   var li:LayoutIndexQ
   layoutIndexQ(l.lq.addr, li.addr, coords)
@@ -270,3 +272,4 @@ proc paritySubset*(s: var Subset; l: Layout; par: int) =
 template `len`*(s:Subset):untyped = s.high-s.low
 template `lenOuter`*(s:Subset):untyped = s.highOuter-s.lowOuter
 
+template singleSites*(l: Layout): untyped = 0..<l.nSites

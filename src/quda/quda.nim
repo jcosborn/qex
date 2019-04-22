@@ -16,7 +16,7 @@ import quda_constants
 ##
 
 type
-  QudaGaugeParam* {.importc: "struct QudaGaugeParam", header: "quda.h", bycopy.} = object
+  QudaGaugeParam* {.importc: "QudaGaugeParam", header: "quda.h", bycopy.} = object
     location* {.importc: "location".}: QudaFieldLocation ## *< The location of the gauge field
     X* {.importc: "X".}: array[4, cint] ## *< The local space-time dimensions (without checkboarding)
     anisotropy* {.importc: "anisotropy".}: cdouble ## *< Used for Wilson and Wilson-clover
@@ -61,7 +61,7 @@ type
 ##
 
 type
-  QudaInvertParam* {.importc: "struct QudaInvertParam", header: "quda.h", bycopy.} = object
+  QudaInvertParam* {.importc: "QudaInvertParam", header: "quda.h", bycopy.} = object
     input_location* {.importc: "input_location".}: QudaFieldLocation ## *< The location of the input field
     output_location* {.importc: "output_location".}: QudaFieldLocation ## *< The location of the output field
     dslash_type* {.importc: "dslash_type".}: QudaDslashType ## *< The Dirac Dslash type that is being used
