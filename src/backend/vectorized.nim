@@ -303,16 +303,14 @@ template `:=`*[Y](x:VectorizedObj, y:Y) =
 macro `:=`*[Y](x:VectorizedObj, y:Y):untyped =
   unpackCall(bindsym"assignVectorizedImpl", x, y)
 
-template `+=`*(x:VectorizedObj, yy:typed) =
+template `+=`*(x:VectorizedObj, y:typed) =
   inlineProcs:
-    let y = yy
     var xy {.noinit.} = x[]
     xy += y
     x := xy
 
-template `*=`*(x:VectorizedObj, yy:typed) =
+template `*=`*(x:VectorizedObj, y:typed) =
   inlineProcs:
-    let y = yy
     var xv {.noinit.} = x[]
     xv *= y
     x := xv

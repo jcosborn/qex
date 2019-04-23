@@ -9,7 +9,7 @@ const CHECKP2 = false
 const CHECKCONV = false
 const CHECKMOM = false
 const CHECKEIGEN = false and not CHECKMOM
-const CHECKHESSIAN = true
+const CHECKHESSIAN = false
 const CHECKREVERSIBLE = false
 
 when CHECKEIGEN:
