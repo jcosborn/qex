@@ -141,7 +141,8 @@ template fromVectorizedImpl(xxo, xxi:untyped):untyped =
     E = elementType(xT)
     V = vectorType(xV,xT)
   let ix = xi.int
-  var r {.noinit.}: V
+  alignat(xV*sizeof(E)):
+    var r {.noinit.}: V
   when sizeof(E) == C:
     # echo "sizeof(E) = C"
     type
@@ -166,11 +167,13 @@ template fromVectorizedImpl(xxo, xxi:untyped):untyped =
     #staticfor i, 0, N-1:
     for i in 0..<N:
       #staticfor j, 0, xV-1:
-      for j in 0..<xV:
-        #staticfor k, 0, xM-1:
-        unrollFor:
-          for k in 0..xM-1:
-            m[xV*xM*L*(i div L) + xM*L*j + k + xM*(i mod L)] = p[xV*xM*i + xM*j + k]
+      #for j in 0..<xV:
+      simdfor:
+        for j in 0..xV-1:
+        #forstaticUntyped k, 0, xM-1:
+          unrollFor:
+            for k in 0..xM-1:
+              m[xV*xM*L*(i div L) + xM*L*j + k + xM*(i mod L)] = p[xV*xM*i + xM*j + k]
   elif sizeof(E) >= sizeof(RegisterWord): # sizeof(E) < C
     # echo "sizeof(RegisterWord) <= sizeof(E) < C"
     let
@@ -189,11 +192,13 @@ template fromVectorizedImpl(xxo, xxi:untyped):untyped =
     #staticfor i, 0, N-1:
     for i in 0..<N:
       #staticfor j, 0, xV-1:
-      for j in 0..<xV:
-        #staticfor k, 0, xM-1:
-        unrollFor:
-          for k in 0..xM-1:
-            m[xV*K*(k div K) + xV*xM*i + K*j + (k mod K)] = p[xV*xM*i + xM*j + k]
+      #for j in 0..<xV:
+      simdfor:
+        for j in 0..xV-1:
+        #forstaticUntyped k, 0, xM-1:
+          unrollFor:
+            for k in 0..xM-1:
+              m[xV*K*(k div K) + xV*xM*i + K*j + (k mod K)] = p[xV*xM*i + xM*j + k]
   else:
     # We can deal with this but let's leave it for future exercises.
     {.fatal:"Register word size larger than vector element size.".}
@@ -254,11 +259,12 @@ template `assignVectorizedImpl`[Y](xxo, xxi:untyped, y:Y) =
       #staticfor i, 0, N-1:
       for i in 0..<N:
         #staticfor j, 0, xV-1:
-        for j in 0..<x.V:
+        simdfor:
+          for j in 0..xV-1:
           #staticfor k, 0, xM-1:
-          unrollFor:
-            for k in 0..xM-1:
-              p[xV*xM*i + xM*j + k] = m[xV*xM*L*(i div L) + xM*L*j + k + xM*(i mod L)]
+            unrollFor:
+              for k in 0..xM-1:
+                p[xV*xM*i + xM*j + k] = m[xV*xM*L*(i div L) + xM*L*j + k + xM*(i mod L)]
     elif sizeof(E) >= sizeof(RegisterWord): # sizeof(E) < C
       # echo "sizeof(RegisterWord) <= sizeof(E) < C"
       let
@@ -277,42 +283,33 @@ template `assignVectorizedImpl`[Y](xxo, xxi:untyped, y:Y) =
       #staticfor i, 0, N-1:
       for i in 0..<N:
         #staticfor j, 0, xV-1:
-        for j in 0..<x.V:
+        simdfor:
+          for j in 0..xV-1:
           #staticfor k, 0, xM-1:
-          unrollFor:
-            for k in 0..xM-1:
-              p[xV*xM*i + xM*j + k] = m[xV*K*(k div K) + xV*xM*i + K*j + (k mod K)]
+            unrollFor:
+              for k in 0..xM-1:
+                p[xV*xM*i + xM*j + k] = m[xV*K*(k div K) + xV*xM*i + K*j + (k mod K)]
     else:
       # We can deal with this but let's leave it for future exercises.
       {.fatal:"Register word size larger than vector element size.".}
   else:
     inlineProcs:
       mixin `:=`
-      var ty {.noinit.}:V
+      alignat(xV*sizeof(E)):
+        var ty {.noinit.}:V
       ty := y
       xxo[xxi] := ty
-#[
-template `:=`*[Y](x:VectorizedObj, y:Y) =
-  inlineProcs:
-    mixin `:=`,vectorType,elementType
-    type V = vectorType(x.V,x.T)
-    var ty {.noinit.}:V
-    ty := y
-    x := ty
-]#
 macro `:=`*[Y](x:VectorizedObj, y:Y):untyped =
   unpackCall(bindsym"assignVectorizedImpl", x, y)
 
-template `+=`*(x:VectorizedObj, yy:typed) =
+template `+=`*(x:VectorizedObj, y:typed) =
   inlineProcs:
-    let y = yy
     var xy {.noinit.} = x[]
     xy += y
     x := xy
 
-template `*=`*(x:VectorizedObj, yy:typed) =
+template `*=`*(x:VectorizedObj, y:typed) =
   inlineProcs:
-    let y = yy
     var xv {.noinit.} = x[]
     xv *= y
     x := xv
