@@ -5,7 +5,41 @@ import base/omp
 {.pragma: omp, header:"omp.h".}
 template mkMemoryPragma*:untyped =
   {.pragma: restrict, codegenDecl: "$# __restrict__ $#".}
-  #{.pragma: align(n), codegenDecl: "$# $# __attribute__((aligned(n)))".}
+  {.pragma: aligned, codegenDecl: "$# $# __attribute__((aligned))".}
+  {.pragma: aligned1, codegenDecl: "$# $# __attribute__((aligned(8*1)))".}
+  {.pragma: aligned2, codegenDecl: "$# $# __attribute__((aligned(8*2)))".}
+  {.pragma: aligned4, codegenDecl: "$# $# __attribute__((aligned(8*4)))".}
+  {.pragma: aligned8, codegenDecl: "$# $# __attribute__((aligned(8*8)))".}
+  {.pragma: aligned16, codegenDecl: "$# $# __attribute__((aligned(8*16)))".}
+  {.pragma: aligned32, codegenDecl: "$# $# __attribute__((aligned(8*32)))".}
+  {.pragma: aligned64, codegenDecl: "$# $# __attribute__((aligned(8*64)))".}
+  {.pragma: aligned128, codegenDecl: "$# $# __attribute__((aligned(8*128)))".}
+  {.pragma: aligned256, codegenDecl: "$# $# __attribute__((aligned(8*256)))".}
+  {.pragma: alignedType, codegenDecl: "$# $# __attribute__((aligned(8*sizeof($1))))".}
+
+proc alignatImpl(n:NimNode, byte:int): NimNode =
+  result = n.copyNimNode
+  if n.kind == nnkIdentDefs:
+    let a = ident("aligned" & $byte)
+    for i in 0..<n.len-2:
+      if n[i].kind == nnkPragmaExpr:
+        result.add n[i]
+        result[i][1].expectKind nnkPragma
+        result[i][1].add a
+      else:
+        result.add newNimNode(nnkPragmaExpr).add(n[i], newNimNode(nnkPragma).add a)
+    for i in n.len-2..<n.len:
+      result.add n[i]
+  else:
+    for c in n:
+      result.add c.alignatImpl byte
+macro alignat*(byte:static[int], n:untyped): untyped =
+  if byte notin {1,2,4,8,16,32,64,128,256}:
+    error("macro alignat: unsupported alignment: " & $byte, n)
+  #echo "alignatImpl ", byte
+  #echo n.treerepr
+  result = n.alignatImpl byte
+  #error result.treerepr
 
 proc addChildrenFrom*(dst,src: NimNode): NimNode =
   for c in src: dst.add(c)
@@ -281,10 +315,10 @@ macro simdForImpl(n:typed):untyped =
             return ptrs[m][0]
     proc go(n:NimNode) =
       if n.kind in CallNodes and ($n[0] == "[]" or $n[0] == "[]="):
-        if n.len > 2 and n[2].isIndex i:
+        if n.len > 2: # and n[2].isIndex i:
           n[1] = n[1].get
       elif n.kind == nnkBracketExpr:
-        if n[1].isIndex i:
+        #if n[1].isIndex i:
           n[0] = n[0].get
       for c in n:
         c.go
