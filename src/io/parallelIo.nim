@@ -3,7 +3,7 @@ import ../comms/comms
 import strformat
 import ../comms/gather
 import layout
-import endians
+import endians, crc32
 
 template `&`(x: char): untyped = cast[ptr UncheckedArray[char]](unsafeAddr(x))
 template `&`[T](x: seq[T]): untyped =
@@ -58,11 +58,15 @@ type
     pos*: int
     fd*: cint
     swap*: int
+    active*: bool
 
 proc openRead*(c: Comm, fn: string): ParallelReader =
   result.comm = c
   let flags = O_RDONLY
   result.fd = open(fn, flags)
+  if result.fd < 0:
+    echo "error opening file: ", fn
+  result.active = true
 
 proc openRead*(fn: string): ParallelReader =
   var c = getComm()
@@ -87,6 +91,15 @@ proc setBig64*(r: var ParallelReader) =
   else:
     r.swap = 64
 
+proc setActive*(r: var ParallelReader, a: bool) =
+  r.active = a
+
+proc setSingle*(r: var ParallelReader) =
+  if r.comm.isMaster:
+    r.setActive true
+  else:
+    r.setActive false
+
 proc seekCur*(r: var ParallelReader, offset: int) =
   r.pos += offset
   discard lseek(r.fd, offset, SEEK_CUR)
@@ -96,12 +109,15 @@ proc seekSet*(r: var ParallelReader, offset: int) =
   discard lseek(r.fd, offset, SEEK_SET)
 
 proc read*(r: var ParallelReader, buf: pointer, bytes: int) =
-  r.pos += bytes
-  discard read(r.fd, buf, bytes)
-  case r.swap
-  of 32: swapEndian32(buf, bytes)
-  of 64: swapEndian64(buf, bytes)
-  else: discard
+  if r.active:
+    r.pos += bytes
+    discard read(r.fd, buf, bytes)
+    case r.swap
+    of 32: swapEndian32(buf, bytes)
+    of 64: swapEndian64(buf, bytes)
+    else: discard
+  else:
+    r.seekCur(bytes)
 
 proc readAll*(r: var ParallelReader, buf: pointer, bytes: int) =
   r.read(buf, bytes)
@@ -145,9 +161,23 @@ type
     comm*: Comm
     pos*: int
     fd*: cint
+    active*: bool
+    doChecksum*: bool
+    crc32*: TCrc32
+
+proc beginChecksum*(w: var ParallelWriter) =
+  w.crc32 = InitCrc32
+  w.doChecksum = true
+
+proc endChecksum*(w: var ParallelWriter) =
+  w.crc32.finishCrc32()
+  w.doChecksum = false
 
 proc openCreate*(c: Comm, fn: string, size=0): ParallelWriter =
   result.comm = c
+  result.active = true
+  result.beginChecksum
+  result.endChecksum
   if c.isMaster:
     result.fd = posixCreate(fn, size)
     c.barrier
@@ -164,13 +194,37 @@ proc close*(w: ParallelWriter) =
   w.comm.barrier()
   discard close(w.fd)
 
+proc setActive*(w: var ParallelWriter, a: bool) =
+  w.active = a
+
+proc setSingle*(w: var ParallelWriter) =
+  if w.comm.isMaster:
+    w.setActive true
+  else:
+    w.setActive false
+
+proc seekSet*(w: var ParallelWriter, offset: int) =
+  w.pos = offset
+  discard lseek(w.fd, offset, SEEK_SET)
+
 proc seekCur*(w: var ParallelWriter, offset: int) =
   w.pos += offset
   discard lseek(w.fd, offset, SEEK_CUR)
 
 proc write*(w: var ParallelWriter, buf: pointer, bytes: int) =
-  w.pos += bytes
-  discard write(w.fd, buf, bytes)
+  if w.active:
+    w.pos += bytes
+    discard write(w.fd, buf, bytes)
+    if w.doChecksum:
+      w.crc32.updateCrc32(buf, bytes)
+  else:
+    w.seekCur(bytes)
+
+proc write*(w: var ParallelWriter, s: SomeNumber) =
+  w.write(unsafeAddr(s), sizeof(s))
+
+proc write*(w: var ParallelWriter, s: string) =
+  w.write(unsafeAddr(s[0]), s.len)
 
 proc writeSingle*(w: var ParallelWriter, buf: pointer, bytes: int) =
   if w.comm.isMaster:
@@ -181,6 +235,21 @@ proc writeSingle*(w: var ParallelWriter, buf: pointer, bytes: int) =
 proc writeSingle*(w: var ParallelWriter, s: string) =
   w.writeSingle(unsafeAddr(s[0]), s.len)
 
+proc writeBigInt32*(pr: var ParallelWriter, x: SomeNumber) =
+  let b = int32(x)
+  when system.cpuEndian == littleEndian:
+    var t = b
+    template `&&`(x: int32): untyped = cast[pointer](unsafeAddr(x))
+    swapEndian32(&&b, &&t)
+  pr.write(b)
+
+proc writeBigInt64*(pr: var ParallelWriter, x: SomeNumber) =
+  let b = int64(x)
+  when system.cpuEndian == littleEndian:
+    var t = b
+    template `&&`(x: int64): untyped = cast[pointer](unsafeAddr(x))
+    swapEndian64(&&b, &&t)
+  pr.write(b)
 
 
 type
