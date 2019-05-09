@@ -45,7 +45,13 @@ if [ "X$1" != "X" ]; then
 fi
 
 rootdir="$HOME/nim"
+if [ "X$NIMDIR" != "X" ]; then
+  rootdir="$NIMDIR"
+fi
 bindir="$HOME/bin"
+if [ "X$BINDIR" != "X" ]; then
+  bindir="$BINDIR"
+fi
 nimdir="Nim-$ver"
 
 getVer() {
