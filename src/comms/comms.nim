@@ -23,7 +23,14 @@ type
 method commrank*(c: Comm): int {.base.} = discard
 method commsize*(c: Comm): int {.base.} = discard
 method isMaster*(c: Comm): bool {.base.} = discard
+
+template rank*(c: Comm): int = commrank(c)
+template size*(c: Comm): int = commsize(c)
+
 method barrier*(c: Comm) {.base.} = discard
+method allReduce*(c: Comm, x: var int) {.base.} = discard
+method allReduceXor*(c: Comm, x: var int) {.base.} = discard
+
 method nsends*(c: Comm): int {.base.} = discard
 method nrecvs*(c: Comm): int {.base.} = discard
 method pushSend*(c: Comm, rank: int, p: pointer, bytes: int) {.base.} =
@@ -111,6 +118,15 @@ method isMaster*(c: CommQmp): bool =
 
 method barrier*(c: CommQmp) =
   QMP_comm_barrier(c.comm)
+
+method allReduce*(c: CommQmp, x: var SomeNumber) =
+  var t = float(x)
+  QMP_comm_sum_double(c.comm, addr t)
+  x = (type x)(t)
+
+method allReduceXor*(c: CommQmp, x: var int) =
+  var t = cast[ptr culong](addr x)
+  QMP_comm_xor_ulong(c.comm, t)
 
 method nsends*(c: CommQmp): int = c.smsg.len
 method nrecvs*(c: CommQmp): int = c.rmsg.len

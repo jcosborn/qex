@@ -34,7 +34,7 @@ let fn1 = f.norm2
 let f2n1 = f2.norm2
 echo "f: ", fn1
 echo "f2: ", f2n1
-c.gather(gm, sizeof(f[0]), &&f, &&f2)
+c.gather(gm, sizeof(f[0]), &&f2, &&f)
 let fn2 = f.norm2
 let f2n2 = f2.norm2
 echo "f: ", fn2
@@ -43,7 +43,7 @@ let f2n = (fn1*lat2[^1].float)/lat[^1].float
 echo "f2: ", f2n
 
 f2 := 2
-c.gatherReversed(gm, sizeof(f[0]), &&f2, &&f)
+c.gatherReversed(gm, sizeof(f[0]), &&f, &&f2)
 let fn3 = f.norm2
 let f2n3 = f2.norm2
 echo "f: ", fn3

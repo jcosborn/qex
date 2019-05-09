@@ -18,6 +18,21 @@ iterator range*[T: SomeInteger](count: T): T =
     yield res
     inc res
 
+var paramNames = newSeq[string](0)
+var paramValues = newSeq[string](0)
+
+proc addParam(s,r: string) =
+  var i = paramNames.find(s)
+  if i>=0:
+    paramValues[i] = r
+  else:
+    paramNames.add s
+    paramValues.add r
+
+proc echoParams*() =
+  for i in 0..<paramNames.len:
+    echo paramNames[i], ": ", paramValues[i]
+
 template makeTypeParam(name,typ,deflt,cnvrt: untyped): untyped {.dirty.} =
   proc name*(s: string, d=deflt): typ =
     result = d
@@ -27,6 +42,7 @@ template makeTypeParam(name,typ,deflt,cnvrt: untyped): untyped {.dirty.} =
       if p.startsWith('-'&s&':'):
         let ll = s.len + 2
         result = cnvrt(p[ll..^1])
+    addParam(s, $result)
 
 makeTypeParam(intParam, int, 0, parseInt)
 makeTypeParam(floatParam, float, 0.0, parseFloat)
@@ -43,6 +59,7 @@ proc intSeqParam*(s: string, d: seq[int] = @[]): seq[int] =
       let ll = s.len + 2
       for c in split(p[ll..^1], ','):
         result.add parseInt(c)
+  addParam(s, join(result," "))
 
 template CLIset*(p:typed, n:untyped, prefix:string, runifset:untyped) =
   mixin echo

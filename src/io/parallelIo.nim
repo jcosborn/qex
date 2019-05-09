@@ -17,6 +17,7 @@ proc toBigEndian*(x: int32): int32 =
     result = x
   else:
     swapEndian32(&&result, &&x)
+template fromBigEndian*(x: int32): int32 = toBigEndian(x)
 
 proc toBigEndian*(x: float32): float32 =
   when system.cpuEndian == bigEndian:
@@ -56,25 +57,41 @@ type
   ParallelReader* = object
     comm*: Comm
     pos*: int
-    fd*: cint
+    retval*: int
     swap*: int
+    fd*: cint
+    crc32*: Crc32
     active*: bool
+    doChecksum*: bool
 
 proc openRead*(c: Comm, fn: string): ParallelReader =
-  result.comm = c
   let flags = O_RDONLY
   result.fd = open(fn, flags)
   if result.fd < 0:
     echo "error opening file: ", fn
+  result.comm = c
+  result.pos = 0
+  result.retval = 0
+  result.swap = 0
   result.active = true
+  result.doChecksum = false
 
 proc openRead*(fn: string): ParallelReader =
   var c = getComm()
   c.openRead(fn)
 
-proc close*(r: ParallelReader) =
+proc close*(r: var ParallelReader) =
   r.comm.barrier()
-  discard close(r.fd)
+  r.retval = close(r.fd)
+
+proc setActive*(r: var ParallelReader, a: bool) =
+  r.active = a
+
+proc setSingle*(r: var ParallelReader) =
+  if r.comm.isMaster:
+    r.setActive true
+  else:
+    r.setActive false
 
 proc setSwap*(r: var ParallelReader, sw: int) =
   r.swap = sw
@@ -91,27 +108,52 @@ proc setBig64*(r: var ParallelReader) =
   else:
     r.swap = 64
 
-proc setActive*(r: var ParallelReader, a: bool) =
-  r.active = a
-
-proc setSingle*(r: var ParallelReader) =
+proc beginChecksum*(r: var ParallelReader) =
+  r.doChecksum = true
   if r.comm.isMaster:
-    r.setActive true
+    r.crc32 = InitCrc32
   else:
-    r.setActive false
+    r.crc32 = Crc32(0)
 
-proc seekCur*(r: var ParallelReader, offset: int) =
-  r.pos += offset
-  discard lseek(r.fd, offset, SEEK_CUR)
+proc endChecksum*(r: var ParallelReader) =
+  r.doChecksum = false
+  var t = int(r.crc32)
+  r.comm.allReduceXor(t)
+  r.crc32 = finishCrc32(Crc32(t))
+
+proc beginLocalChecksum*(r: var ParallelReader) =
+  r.doChecksum = true
+  r.crc32 = InitCrc32
+
+proc endLocalChecksum*(r: var ParallelReader) =
+  r.doChecksum = false
+  r.crc32 = finishCrc32(r.crc32)
 
 proc seekSet*(r: var ParallelReader, offset: int) =
+  r.retval = lseek(r.fd, offset, SEEK_SET).int
+  if r.doChecksum:
+    let offs = offset - r.pos
+    doAssert(offs >= 0)
+    r.crc32 = zeroPadCrc32(r.crc32, offs)
   r.pos = offset
-  discard lseek(r.fd, offset, SEEK_SET)
+
+proc seekCur*(r: var ParallelReader, offset: int) =
+  r.retval = lseek(r.fd, offset, SEEK_CUR).int
+  if r.doChecksum:
+    doAssert(offset >= 0)
+    r.crc32 = zeroPadCrc32(r.crc32, offset)
+  r.pos += offset
+
+proc readRaw*(r: var ParallelReader, buf: pointer, bytes: int) =
+  r.retval = read(r.fd, buf, bytes)
+  if r.doChecksum:
+    doAssert(bytes >= 0)
+    r.crc32 = updateCrc32(r.crc32, buf, bytes)
+  r.pos += bytes
 
 proc read*(r: var ParallelReader, buf: pointer, bytes: int) =
   if r.active:
-    r.pos += bytes
-    discard read(r.fd, buf, bytes)
+    readRaw(r, buf, bytes)
     case r.swap
     of 32: swapEndian32(buf, bytes)
     of 64: swapEndian64(buf, bytes)
@@ -119,65 +161,52 @@ proc read*(r: var ParallelReader, buf: pointer, bytes: int) =
   else:
     r.seekCur(bytes)
 
+proc read*(r: var ParallelReader, s: var SomeNumber) =
+  r.read(addr(s), sizeof(s))
+
+proc read*(r: var ParallelReader, s: var string) =
+  r.read(addr(s[0]), s.len)
+
 proc readAll*(r: var ParallelReader, buf: pointer, bytes: int) =
+  let a = r.active
+  r.setActive true
   r.read(buf, bytes)
-
-proc readAll*(r: var ParallelReader, s: var SomeNumber) =
-  r.readAll(addr(s), sizeof(s))
-
-proc readAll*(r: var ParallelReader, s: var string) =
-  r.readAll(addr(s[0]), s.len)
+  r.setActive a
 
 proc readSingle*(r: var ParallelReader, buf: pointer, bytes: int) =
-  if r.comm.isMaster:
-    r.read(buf, bytes)
-  else:
-    r.seekCur(bytes)
+  let a = r.active
+  r.setActive r.comm.isMaster
+  r.read(buf, bytes)
+  r.setActive a
 
 proc readSingle*(r: var ParallelReader, s: var string) =
   r.readSingle(addr(s[0]), s.len)
 
 proc readBigInt32*(pr: var ParallelReader): int32 =
-  when system.cpuEndian == bigEndian:
-    pr.readAll(result)
-  else:
-    var t: int32
-    pr.readAll(t)
-    template `&&`(x: int32): untyped = cast[pointer](unsafeAddr(x))
-    swapEndian32(&&result, &&t)
+  let s = pr.swap
+  pr.setBig32()
+  pr.read(&&result, sizeof(result))
+  pr.setSwap s
 
 proc readBigInt64*(pr: var ParallelReader): int64 =
-  when system.cpuEndian == bigEndian:
-    pr.readAll(result)
-  else:
-    var t: int64
-    pr.readAll(t)
-    template `&&`(x: int64): untyped = cast[pointer](unsafeAddr(x))
-    swapEndian64(&&result, &&t)
+  let s = pr.swap
+  pr.setBig64()
+  pr.read(&&result, sizeof(result))
+  pr.setSwap s
 
 
 type
   ParallelWriter* = object
     comm*: Comm
     pos*: int
+    retval*: int
+    swap*: int
     fd*: cint
+    crc32*: Crc32
     active*: bool
     doChecksum*: bool
-    crc32*: TCrc32
-
-proc beginChecksum*(w: var ParallelWriter) =
-  w.crc32 = InitCrc32
-  w.doChecksum = true
-
-proc endChecksum*(w: var ParallelWriter) =
-  w.crc32.finishCrc32()
-  w.doChecksum = false
 
 proc openCreate*(c: Comm, fn: string, size=0): ParallelWriter =
-  result.comm = c
-  result.active = true
-  result.beginChecksum
-  result.endChecksum
   if c.isMaster:
     result.fd = posixCreate(fn, size)
     c.barrier
@@ -185,14 +214,20 @@ proc openCreate*(c: Comm, fn: string, size=0): ParallelWriter =
     c.barrier
     result.fd = posixOpenWrite(fn)
   c.barrier
+  result.comm = c
+  result.pos = 0
+  result.retval = 0
+  result.swap = 0
+  result.active = true
+  result.doChecksum = false
 
 proc openCreate*(fn: string, size=0): ParallelWriter =
   var c = getComm()
   c.openCreate(fn, size)
 
-proc close*(w: ParallelWriter) =
+proc close*(w: var ParallelWriter) =
   w.comm.barrier()
-  discard close(w.fd)
+  w.retval = close(w.fd)
 
 proc setActive*(w: var ParallelWriter, a: bool) =
   w.active = a
@@ -203,20 +238,68 @@ proc setSingle*(w: var ParallelWriter) =
   else:
     w.setActive false
 
+proc setSwap*(w: var ParallelWriter, sw: int) =
+  w.swap = sw
+
+proc setBig32*(w: var ParallelWriter) =
+  when system.cpuEndian == bigEndian:
+    w.swap = 0
+  else:
+    w.swap = 32
+
+proc setBig64*(w: var ParallelWriter) =
+  when system.cpuEndian == bigEndian:
+    w.swap = 0
+  else:
+    w.swap = 64
+
+proc beginChecksum*(w: var ParallelWriter) =
+  w.doChecksum = true
+  if w.comm.isMaster:
+    w.crc32 = InitCrc32
+  else:
+    w.crc32 = Crc32(0)
+
+proc endChecksum*(w: var ParallelWriter) =
+  w.doChecksum = false
+  var t = int(w.crc32)
+  w.comm.allReduceXor(t)
+  w.crc32 = finishCrc32(Crc32(t))
+
 proc seekSet*(w: var ParallelWriter, offset: int) =
+  w.retval = lseek(w.fd, offset, SEEK_SET).int
+  if w.doChecksum:
+    let offs = offset - w.pos
+    doAssert(offs >= 0)
+    w.crc32 = zeroPadCrc32(w.crc32, offs)
   w.pos = offset
-  discard lseek(w.fd, offset, SEEK_SET)
 
 proc seekCur*(w: var ParallelWriter, offset: int) =
+  w.retval = lseek(w.fd, offset, SEEK_CUR).int
+  if w.doChecksum:
+    doAssert(offset >= 0)
+    w.crc32 = zeroPadCrc32(w.crc32, offset)
   w.pos += offset
-  discard lseek(w.fd, offset, SEEK_CUR)
+
+proc writeRaw*(w: var ParallelWriter, buf: pointer, bytes: int) =
+  #echo "writing at: ", w.pos, "  bytes: ", bytes
+  w.retval = write(w.fd, buf, bytes)
+  if w.doChecksum:
+    doAssert(bytes >= 0)
+    w.crc32 = updateCrc32(w.crc32, buf, bytes)
+  w.pos += bytes
 
 proc write*(w: var ParallelWriter, buf: pointer, bytes: int) =
   if w.active:
-    w.pos += bytes
-    discard write(w.fd, buf, bytes)
-    if w.doChecksum:
-      w.crc32.updateCrc32(buf, bytes)
+    case w.swap
+    of 32: swapEndian32(buf, bytes)
+    of 64: swapEndian64(buf, bytes)
+    else: discard
+    writeRaw(w, buf, bytes)
+    case w.swap
+    of 32: swapEndian32(buf, bytes)
+    of 64: swapEndian64(buf, bytes)
+    else: discard
   else:
     w.seekCur(bytes)
 
@@ -227,29 +310,25 @@ proc write*(w: var ParallelWriter, s: string) =
   w.write(unsafeAddr(s[0]), s.len)
 
 proc writeSingle*(w: var ParallelWriter, buf: pointer, bytes: int) =
-  if w.comm.isMaster:
-    w.write(buf, bytes)
-  else:
-    w.seekCur(bytes)
+  let a = w.active
+  w.setActive w.comm.isMaster
+  w.write(buf, bytes)
+  w.setActive a
 
 proc writeSingle*(w: var ParallelWriter, s: string) =
   w.writeSingle(unsafeAddr(s[0]), s.len)
 
-proc writeBigInt32*(pr: var ParallelWriter, x: SomeNumber) =
-  let b = int32(x)
-  when system.cpuEndian == littleEndian:
-    var t = b
-    template `&&`(x: int32): untyped = cast[pointer](unsafeAddr(x))
-    swapEndian32(&&b, &&t)
-  pr.write(b)
+proc writeBigInt32*(pw: var ParallelWriter, x: SomeNumber) =
+  let s = pw.swap
+  pw.setBig32()
+  pw.write(x.int32)
+  pw.setSwap s
 
-proc writeBigInt64*(pr: var ParallelWriter, x: SomeNumber) =
-  let b = int64(x)
-  when system.cpuEndian == littleEndian:
-    var t = b
-    template `&&`(x: int64): untyped = cast[pointer](unsafeAddr(x))
-    swapEndian64(&&b, &&t)
-  pr.write(b)
+proc writeBigInt64*(pw: var ParallelWriter, x: SomeNumber) =
+  let s = pw.swap
+  pw.setBig64()
+  pw.write(x.int64)
+  pw.setSwap s
 
 
 type
@@ -311,16 +390,6 @@ proc setupWrite*(lo: Layout, size: seq[int], offset: seq[int],
     result.offset = o
     result.endoffset = nsites - o2
 
-#[
-type
-  IndexMapObj* = object
-    srcidx*: int32
-    destidx*: int32
-proc createWriteMap*(wim: seq[IndexMapObj], c: Comm, nwriters=0): WriteMap =
-  let rank = c.commrank
-  let nranks = c.commsize
-]#
-
 proc read*(pr: var ParallelReader, wm: WriteMap,
            elemsize: int, dbuf: pointer) =
   let rsize = elemsize * wm.gm.ndest
@@ -333,7 +402,7 @@ proc read*(pr: var ParallelReader, wm: WriteMap,
     pr.seekCur(elemsize*wm.offset)
     pr.read(rp, rsize)
 
-  pr.comm.gatherReversed(wm.gm, elemsize, rp, dbuf)
+  pr.comm.gatherReversed(wm.gm, elemsize, dbuf, rp)
 
   pr.seekCur(elemsize*wm.endoffset)
 
@@ -346,7 +415,7 @@ proc write*(pw: var ParallelWriter, wm: WriteMap,
     var wbuf = newSeq[char](wsize)
     wp = &&wbuf
 
-  pw.comm.gather(wm.gm, elemsize, sbuf, wp)
+  pw.comm.gather(wm.gm, elemsize, wp, sbuf)
 
   # write data
   if wsize > 0:
@@ -356,22 +425,34 @@ proc write*(pw: var ParallelWriter, wm: WriteMap,
 
 import field
 
+#proc getAddr[T](x: var T): ptr T = addr x
+
 proc read*(pr: var ParallelReader, f: Field, wm: WriteMap) =
-  let elemsize = sizeof(f[0])
   when f.V==1:
-    pr.read(wm, elemsize, cast[pointer](unsafeAddr f[0]))
+    let elemsize = sizeof(f[0])
+    pr.read(wm, elemsize, cast[pointer](addr f[0]))
+    #pr.read(wm, elemsize, cast[pointer](getAddr f[0]))
   else:
     echo "parallel read V: ", f.V, " not supported yet!"
     qexAbort(-1)
 
 proc write*(pw: var ParallelWriter, f: Field, wm: WriteMap) =
-  let elemsize = sizeof(f[0])
   when f.V==1:
-    pw.write(wm, elemsize, cast[pointer](unsafeAddr f[0]))
+    let elemsize = sizeof(f[0])
+    pw.write(wm, elemsize, cast[pointer](addr f[0]))
+    #pw.write(wm, elemsize, cast[pointer](getAddr f[0]))
   else:
     echo "parallel write V: ", f.V, " not supported yet!"
     qexAbort(-1)
 
+#[
+type
+  IndexMapObj* = object
+    srcidx*: int32
+    destidx*: int32
+proc createWriteMap*(wim: seq[IndexMapObj], c: Comm, nwriters=0): WriteMap =
+  let rank = c.commrank
+  let nranks = c.commsize
 
 type
   ReadMap* = object
@@ -437,7 +518,7 @@ proc read*(pr: var ParallelReader, rm: ReadMap, c: Comm,
 
   # wait sends
   c.waitSends(rm.smsginfo.len)
-
+]#
 
 when isMainModule:
   proc dowrite(fn: string; x: seq; srcoffset,srcstride: int;

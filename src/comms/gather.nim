@@ -149,7 +149,7 @@ proc makeGatherMap*(c: Comm, sl: var seq[SendList]): GatherMap =
   result.ndest = nrecv + result.lidx.len
   #echoAll fmt"{rank}: {result.smsginfo}, {result.rmsginfo}"
 
-proc gather*(c: Comm; gm: GatherMap; elemsize: int; src,dest: pointer) =
+proc gather*(c: Comm; gm: GatherMap; elemsize: int; dest,src: pointer) =
   let srcbuf = cast[ptr UncheckedArray[char]](src)
   let destbuf = cast[ptr UncheckedArray[char]](dest)
 
@@ -188,7 +188,7 @@ proc gather*(c: Comm; gm: GatherMap; elemsize: int; src,dest: pointer) =
   c.waitSends(gm.smsginfo.len)
 
 proc gatherReversed*(c: Comm; gm: GatherMap; elemsize: int;
-                     src,dest: pointer) =
+                     dest,src: pointer) =
   var r: GatherMap
   r.nsrc = gm.ndest
   r.ndest = gm.nsrc
@@ -200,7 +200,7 @@ proc gatherReversed*(c: Comm; gm: GatherMap; elemsize: int;
   r.ldest = gm.lidx
   r.sendbuf = gm.recvbuf
   r.recvbuf = gm.sendbuf
-  c.gather(r, elemsize, src, dest)
+  c.gather(r, elemsize, dest, src)
 
 when isMainModule:
   commsInit()
@@ -226,7 +226,7 @@ when isMainModule:
     src1[i] = i xor 1
     dst1[i] = -1
 
-  c.gather(gm, sizeof(int), &&src1, &&dst1)
+  c.gather(gm, sizeof(int), &&dst1, &&src1)
 
   echo dst1
 

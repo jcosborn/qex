@@ -5,6 +5,58 @@ import complexNumbers
 import matrixConcept
 import types
 
+proc determinantN*(a: any): auto =
+  const nc = a.nrows
+  var c {.noInit.}: type(a)
+  var row: array[nc,int]
+  var nswaps = 0
+  var r: type(a[0,0])
+  r := 1
+
+  for i in 0..<nc:
+    for j in 0..<nc:
+      c[i,j] = a[i,j]
+    row[i] = i
+
+  for j in 0..<nc:
+    if j>0:
+      for i in j..<nc:
+        var t2 = c[i,j]
+        for k in 0..<j:
+          t2 -= c[i,k] * c[k,j]
+        c[i,j] := t2
+
+    var rmax = c[j,j].norm2
+    #[
+    var kmax = j
+    for k in (j+1)..<nc:
+      var rn = c[k,j].norm2
+      if rn>rmax:
+        rmax = rn
+        kmax = k
+    if rmax==0: # matrix is singular
+      r := 0
+      return r
+    if kmax != j:
+      swap(row[j], row[kmax])
+      inc nswaps
+    ]#
+
+    r *= c[j,j]
+
+    let ri = 1.0/rmax
+    var Cjji = ri * c[j,j]
+    for i in (j+1)..<nc:
+      var t2 = c[j,i]
+      for k in 0..<j:
+        t2 -= c[j,k] * c[k,i]
+      c[j,i] := t2 * Cjji
+
+  if (nswaps and 1) != 0:
+    r := -r
+
+  r
+
 proc determinant*(x: any): auto =
   assert(x.nrows == x.ncols)
   when x.nrows==1:
@@ -17,8 +69,7 @@ proc determinant*(x: any): auto =
              (x[0,2]*x[1,0]-x[0,0]*x[1,2])*x[2,1] +
              (x[0,1]*x[1,2]-x[0,2]*x[1,1])*x[2,0]
   else:
-    echo "unimplemented"
-    quit(1)
+    result = determinantN(x)
 
 template rsqrtPHM2(r:typed; x:typed):untyped =
   let x00 = x[0,0].re

@@ -45,7 +45,7 @@ let f2n1 = f2.norm2
 echo "f: ", fn1
 echo "f2: ", f2n1
 toc("begin gather")
-c.gather(gm, sizeof(f[0]), &&f, &&f2)
+c.gather(gm, sizeof(f[0]), &&f2, &&f)
 toc("end gather")
 let fn2 = f.norm2
 let f2n2 = f2.norm2
@@ -56,7 +56,7 @@ echo "f2: ", f2n
 
 f2 := 2
 toc("begin gatherReversed")
-c.gatherReversed(gm, sizeof(f[0]), &&f2, &&f)
+c.gatherReversed(gm, sizeof(f[0]), &&f, &&f2)
 toc("end gatherReversed")
 let fn3 = f.norm2
 let f2n3 = f2.norm2

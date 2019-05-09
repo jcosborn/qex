@@ -16,6 +16,8 @@ when declared SimdD4:
     var r: DComplexV
     mul(r, x, y)
     r
+  template sub*(r: var AsComplex, x: SimdD4, y: AsComplex2): untyped =
+    r := asReal(x) - y
 
 when declared SimdD8:
   template `-`*(x: SimdD8, y: AsComplex): untyped =

@@ -256,6 +256,8 @@ template maskedX*(x: typed, msk: int): untyped =
   mixin isWrapper
   when isWrapper(x):
     asWrapper(x, maskedX(x[], msk))
+  #elif x is SomeNumber:
+  #  x
   else:
     maskedObj(x, msk)
 template masked*(x: typed, msk: int): untyped =
@@ -314,6 +316,8 @@ template im*(m: Masked): untyped =
   mixin im
   let tMaskedIm = m
   masked(tMaskedIm.pobj[].im, tMaskedIm.mask)
+template assign*(m: Masked; x: SomeNumber): untyped =
+  m.pobj[] = x
 template `re=`*(m: Masked; x: any): untyped =
   mixin re
   let tMaskedReEq = m
