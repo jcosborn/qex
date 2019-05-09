@@ -200,6 +200,10 @@ proc naiveContract() =
         t += dot(p1[i], p2[j])
       g1[j] = t
   toc("naiveContract")
+  let n = nccv1*nccv2*2
+  let p = cast[ptr type(gp[0].re)](gp)
+  comm.allReduce(p, n)
+  toc("reduce")
 
 toc("begin loop")
 

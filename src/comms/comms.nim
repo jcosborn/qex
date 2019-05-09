@@ -29,6 +29,8 @@ template size*(c: Comm): int = commsize(c)
 
 method barrier*(c: Comm) {.base.} = discard
 method allReduce*(c: Comm, x: var int) {.base.} = discard
+method allReduce*(c: Comm, x: ptr float32, n: int) {.base.} = discard
+method allReduce*(c: Comm, x: var UncheckedArray[float32], n: int) {.base.} = discard
 method allReduceXor*(c: Comm, x: var int) {.base.} = discard
 
 method nsends*(c: Comm): int {.base.} = discard
@@ -123,6 +125,12 @@ method allReduce*(c: CommQmp, x: var SomeNumber) =
   var t = float(x)
   QMP_comm_sum_double(c.comm, addr t)
   x = (type x)(t)
+
+method allReduce*(c: CommQmp, x: ptr float32, n: int) =
+  QMP_comm_sum_float_array(c.comm, x, n.cint)
+
+method allReduce*(c: CommQmp, x: var UncheckedArray[float32], n: int) =
+  QMP_comm_sum_float_array(c.comm, addr x[0], n.cint)
 
 method allReduceXor*(c: CommQmp, x: var int) =
   var t = cast[ptr culong](addr x)

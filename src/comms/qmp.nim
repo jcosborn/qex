@@ -35,6 +35,8 @@ proc QMP_sum_double*(value:ptr cdouble) {.qmp.}
 proc QMP_comm_sum_double*(comm: QMP_comm_t, value:ptr cdouble) {.qmp.}
 proc QMP_sum_float_array*(value:ptr cfloat, length:cint) {.qmp.}
 proc QMP_sum_double_array*(value:ptr cdouble, length:cint) {.qmp.}
+proc QMP_comm_sum_float_array*(comm: QMP_comm_t, value:ptr cfloat, length:cint) {.qmp.}
+proc QMP_comm_sum_double_array*(comm: QMP_comm_t, value:ptr cdouble, length:cint) {.qmp.}
 proc QMP_max_float*(value:ptr cfloat) {.qmp.}
 proc QMP_max_double*(value:ptr cdouble) {.qmp.}
 proc QMP_min_float*(value:ptr cfloat) {.qmp.}

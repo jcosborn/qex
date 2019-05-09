@@ -29,7 +29,8 @@ proc addParam(s,r: string) =
     paramNames.add s
     paramValues.add r
 
-proc echoParams*() =
+template echoParams*() =
+  mixin echo
   for i in 0..<paramNames.len:
     echo paramNames[i], ": ", paramValues[i]
 
