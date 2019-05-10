@@ -4,6 +4,7 @@ import modfile
 import timesliceIo
 import physics/wilsonD
 import physics/wilsonSolve
+import contract
 import xmlparser, xmltree, strutils, sequtils, endians, times
 template `&&`(x: int32): untyped = cast[pointer](unsafeAddr(x))
 template `&&`(x: Field): untyped = cast[pointer](unsafeAddr(x[0]))
@@ -190,7 +191,9 @@ let nccv2 = nccv1 * nmomsh
 let gp = cast[CmplxArray](alloc(nccv1*nccv2*sizeof(Cmplx)))
 proc naiveContract() =
   tic()
-  for i in 0..<nccv1:
+  #[
+  #for i in 0..<nccv1:
+  tfor i, 0, nccv1-1:
     let p1 = cast[CvArray](addr prp1[i*localSites2])
     let g1 = cast[CmplxArray](addr gp[i*nccv2])
     for j in 0..<nccv2:
@@ -199,6 +202,11 @@ proc naiveContract() =
       for k in 0..<localSites2:
         t += dot(p1[i], p2[j])
       g1[j] = t
+  ]#
+  #template numberType(x: ComplexType): untyped = numberType(x.re)
+  #template numberType(x: Color): untyped = numberType(x[])
+  template `&|`(x: typed): untyped = cast[ptr numberType(x[0])](x)
+  cmatmul(&|gp, &|prp1, &|prp2, nccv1, nccv2, 3*localSites2)
   toc("naiveContract")
   let n = nccv1*nccv2*2
   let p = cast[ptr type(gp[0].re)](gp)

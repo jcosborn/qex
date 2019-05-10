@@ -1,5 +1,5 @@
 const hdr = currentSourcePath()[0..^11] & "lapack.h"
-const lapackLib {.strdefine.} = "-llapack"
+const lapackLib {.strdefine.} = "-llapack -lblas"
 #const lapackLib {.strdefine.} = "/usr/lib/lapack/liblapack.a -lblas -lgfortran"
 #const lapackLib {.strdefine.} = "-L/usr/lib/lapack -llapack"
 {.passL: lapackLib.}
@@ -10,8 +10,16 @@ type
   #fint* = int64
   doublereal* = float64
   doublecomplex* = dcomplex
+  scomplex* = object
+    re*,im*: float32
   dcomplex* = object
     re*,im*: float64
+
+proc cgemm*(transa: cstring; transb: cstring; m: ptr fint; n: ptr fint;
+            k: ptr fint; alpha: ptr scomplex; a: ptr scomplex;
+            lda: ptr fint; b: ptr scomplex; ldb: ptr fint;
+            beta: ptr scomplex; c: ptr scomplex; ldc: ptr fint) {.
+              lapack, importc: "cgemm_".}
 
 proc dsterf*(n: ptr fint, d: ptr float64, e: ptr float64,
              info: ptr fint) {.lapack, importC:"dsterf_".}
