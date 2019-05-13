@@ -119,12 +119,18 @@ template im*(x: ImagProxy): untyped = x[]
 template re*(x: ComplexProxy): untyped = x[].re
 template im*(x: ComplexProxy): untyped = x[].im
 
-template `re=`*(x: RealProxy, y: untyped): untyped = x[] = y
-template `im=`*(x: RealProxy, y: untyped): untyped = discard
-template `re=`*(x: ImagProxy, y: untyped): untyped = discard
-template `im=`*(x: ImagProxy, y: untyped): untyped = x[] = y
-template `re=`*(x: ComplexProxy, y: untyped): untyped = x[].re = y
-template `im=`*(x: ComplexProxy, y: untyped): untyped = x[].im = y
+template `re=`*(x: RealProxy, y: untyped) = x[] = y
+template `im=`*(x: RealProxy, y: untyped) = discard
+template `re=`*(x: ImagProxy, y: untyped) = discard
+template `im=`*(x: ImagProxy, y: untyped) = x[] = y
+template `re=`*(x: ComplexProxy, y: untyped) = x[].re = y
+template `im=`*(x: ComplexProxy, y: untyped) = x[].im = y
+
+template setU*(r: ComplexProxy, x: typed, y: typed) =
+  r[].re := x
+  r[].im := y
+template set*(r: ComplexProxy, x: typed, y: typed) =
+  flattenCallArgs(setU, r, x, y)
 
 template assign*(x: RealProxy, y: RealProxy2): untyped =
   x[] = y[]

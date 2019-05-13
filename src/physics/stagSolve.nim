@@ -26,8 +26,9 @@ proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
   sp0.finalIterations = sp.finalIterations
   sp0.seconds = secs
-  echo "op time: ", top
-  echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
+  if sp0.verbosity>0:
+    echo "op time: ", top
+    echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
 
 # Late import to avoid problem with circular dependence.
 when defined(qudaDir):
@@ -62,7 +63,8 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0: var SolverParams;
       its = sp.finalIterations
       sp.finalIterations = 0
       let flopsquda = (s.g.len*4*72+60)*r.l.nEven*its
-      echo "quda time: ",squda,"  Gflops: ", 1e-9*flopsquda.float/squda
+      if sp0.verbosity>0:
+        echo "quda time: ",squda,"  Gflops: ", 1e-9*flopsquda.float/squda
     # After QUDA, we still run through our solver.
   #cgSolve(r, t, oa, sp)
   var cg = newCgState(r, t)
@@ -82,8 +84,9 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0: var SolverParams;
   sp0.finalIterations += its
   let secs = t1-t0
   let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
-  echo "op time: ", top
-  echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
+  if sp0.verbosity>0:
+    echo "op time: ", top
+    echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
 proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float;
             cpuonly = false; sloppySolve = SloppyNone) =
   var sp = initSolverParams()

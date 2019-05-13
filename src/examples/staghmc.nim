@@ -1,5 +1,6 @@
 import qex
 import gauge, physics/qcdTypes
+import physics/stagSolve
 import mdevolve
 
 qexinit()
@@ -19,18 +20,64 @@ var g = lo.newgauge
 #g.random r
 g.unit
 
-echo g.plaq
+echo 6.0*g.plaq
 echo g.gaugeAction2 gc
 
 var
   p = lo.newgauge
   f = lo.newgauge
   g0 = lo.newgauge
+  phi = lo.ColorVector()
+  psi = lo.ColorVector()
+
+let mass = floatParam("mass", 0.1)
+let stag = newStag(g)
+var spa = initSolverParams()
+#spa.subsetName = "even"
+spa.r2req = floatParam("arsq", 1e-18)
+spa.maxits = 1000
+var spf = initSolverParams()
+#spf.subsetName = "even"
+spf.r2req = floatParam("frsq", 1e-18)
+spf.maxits = 1000
+spf.verbosity = 0
 
 let
   tau = 1.0
-  steps = 100
+  gsteps = 100
+  fsteps = 100
   trajs = 10
+
+template rephase(g: typed) =
+  g.setBC
+  threadBarrier()
+  g.stagPhase
+
+proc olf(f: var any, v1: any, v2: any) =
+  var t {.noInit.}: type(f)
+  for i in 0..<v1.len:
+    for j in 0..<v2.len:
+      t[i,j] := v1[i] * v2[j].adj
+  projectTAH(f, t)
+
+proc oneLinkForce(f: any, p: any, g: any) =
+  let t = newTransporters(g, p, 1)
+  for mu in 0..<g.len:
+    discard t[mu] ^* p
+  for mu in 0..<g.len:
+    for i in f[mu]:
+      olf(f[mu][i], p[i], t[mu].field[i])
+    for i in f[mu].odd:
+      f[mu][i] *= -1
+
+proc fforce(f: any) =
+  threads:
+    g.rephase
+  stag.solve(psi, phi, mass, spf)
+  #stagD(stag.so, psi, g, psi, 0.0)
+  f.oneLinkForce(psi, g)
+  threads:
+    g.rephase
 
 proc mdt(t: float) =
   threads:
@@ -42,6 +89,18 @@ proc mdv(t: float) =
   threads:
     for mu in 0..<f.len:
       p[mu] -= t*f[mu]
+
+proc mdvf(t: float) =
+  #let s = t*floatParam("s", 1.0)
+  let s = -0.5*t/mass
+  f.fforce()
+  threads:
+    for mu in 0..<f.len:
+      p[mu] -= s*f[mu]
+
+proc mdvf2(t: float) =
+  mdv(t)
+  mdvf(t)
 
 # For FGYin11
 proc fgv(t: float) =
@@ -61,15 +120,21 @@ proc fgload =
       g[mu] := gg[mu]
 
 let
-  #H = mkLeapfrog(steps = steps, V = mdv, T = mdt)
+  # H = mkLeapfrog(steps = steps, V = mdv, T = mdt)
   # H = mkSW92(steps = steps, V = mdv, T = mdt)
-  H = mkOmelyan2MN(steps = steps, V = mdv, T = mdt)
+  H = mkOmelyan2MN(steps = gsteps, V = mdvf2, T = mdt)
   # H = mkOmelyan4MN4FP(steps = steps, V = mdv, T = mdt)
-  # H = mkOmelyan4MN5FV(steps = steps, V = mdv, T = mdt)
+  #H = mkOmelyan4MN5FV(steps = gsteps, V = mdvf2, T = mdt)
   #H = mkFGYin11(steps = steps, V = mdv, T = mdt, Vfg = fgv, save = fgsave(), load = fgload())
+  #Hg = mkOmelyan2MN(steps = gsteps, V = mdv, T = mdt, shared=1)
+  #Hf = mkOmelyan2MN(steps = fsteps, V = mdvf, T = mdt, shared=1)
+  #Hg = mkOmelyan4MN5FV(steps = gsteps, V = mdv, T = mdt, shared=1)
+  #Hf = mkOmelyan4MN5FV(steps = fsteps, V = mdvf, T = mdt, shared=1)
+  #H = mkSharedEvolution(Hg, Hf)
 
 for n in 1..trajs:
   var p2 = 0.0
+  var f2 = 0.0
   threads:
     p.randomTAH r
     var p2t = 0.0
@@ -77,11 +142,23 @@ for n in 1..trajs:
       p2t += p[i].norm2
       g0[i] := g[i]
     threadMaster: p2 = p2t
+    psi.gaussian r
+    g.rephase
+    threadBarrier()
+    stag.D(phi, psi, mass)
+    threadBarrier()
+    phi.odd := 0
+  stag.solve(psi, phi, mass, spa)
+  threads:
+    var psi2 = psi.norm2()
+    threadMaster: f2 = psi2
+    g.rephase
   let
     ga0 = g0.gaugeAction2 gc
+    fa0 = 0.5*f2
     t0 = 0.5*p2
-    h0 = ga0 + t0
-  echo "Begin H: ",h0,"  Sg: ",ga0,"  T: ",t0
+    h0 = ga0 + fa0 + t0
+  echo "Begin H: ",h0,"  Sg: ",ga0,"  Sf: ",fa0,"  T: ",t0
 
   H.evolve tau
 
@@ -90,11 +167,18 @@ for n in 1..trajs:
     for i in 0..<p.len:
       p2t += p[i].norm2
     threadMaster: p2 = p2t
+    g.rephase
+  stag.solve(psi, phi, mass, spa)
+  threads:
+    var psi2 = psi.norm2()
+    threadMaster: f2 = psi2
+    g.rephase
   let
     ga1 = g.gaugeAction2 gc
+    fa1 = 0.5*f2
     t1 = 0.5*p2
-    h1 = ga1 + t1
-  echo "End H: ",h1,"  Sg: ",ga1,"  T: ",t1
+    h1 = ga1 + fa1 + t1
+  echo "End H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
 
   #when true:
   when false:
@@ -135,7 +219,7 @@ for n in 1..trajs:
       for i in 0..<g.len:
         g[i] := g0[i]
 
-  echo g.plaq
+  echo 6.0*g.plaq
 
 echoTimers()
 qexfinalize()

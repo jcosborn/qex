@@ -128,6 +128,10 @@ proc `*`*(x: SomeNumber, y: array): auto {.inline,noInit.} =
   for i in 0..<r.len:
     r[i] = x * y[i]
   r
+proc `*`*[T](x: SomeNumber, y: seq[T]): seq[T] {.inline,noInit.} =
+  result.newSeq(y.len)
+  for i in 0..<result.len:
+    result[i] = x * y[i]
 
 proc `/`*(x: SomeNumber, y: array): auto {.inline,noInit.} =
   var r: array[y.len, type(x/y[0])]

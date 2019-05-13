@@ -411,9 +411,34 @@ proc randomSU*(x: Field, r: var RNGField) =
   x.gaussian r
   x.projectSU
 
+proc randTah3(m: var any, s: var any) =
+  let s2 = 0.70710678118654752440;  # sqrt(1/2)
+  let s3 = 0.57735026918962576450;  # sqrt(1/3)
+  let r3 = s2 * gaussian(s)
+  let r8 = s2 * s3 * gaussian(s)
+  m[0,0].set 0, r8+r3
+  m[1,1].set 0, r8-r3
+  m[2,2].set 0, -2*r8
+  let r01 = s2 * gaussian(s)
+  let r02 = s2 * gaussian(s)
+  let r12 = s2 * gaussian(s)
+  let i01 = s2 * gaussian(s)
+  let i02 = s2 * gaussian(s)
+  let i12 = s2 * gaussian(s)
+  m[0,1].set  r01, i01
+  m[1,0].set -r01, i01
+  m[0,2].set  r02, i02
+  m[2,0].set -r02, i02
+  m[1,2].set  r12, i12
+  m[2,1].set -r12, i12
+
 proc randomTAH*(x: Field, r: var RNGField) =
-  x.gaussian r
-  x.projectTAH
+  when x[0].nrows == 3:
+    for i in x.sites:
+      randTah3(x{i}, r[i])
+  else:
+    x.gaussian r
+    x.projectTAH
 
 proc checkSU*[F:Field](x: openArray[F]): tuple[avg,max:float] {.noinit.} =
   var a,b:float

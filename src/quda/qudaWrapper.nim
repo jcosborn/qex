@@ -60,13 +60,14 @@ proc qudaInit* =
   qudaParam.initArg.layout.device = -1.cint
   qudaParam.initArg.layout.latsize = qudaParam.physGeom[0].addr
   qudaParam.initArg.layout.machsize = qudaParam.rankGeom[0].addr
-  qudaParam.initArg.verbosity = QUDA_SUMMARIZE
+  #qudaParam.initArg.verbosity = QUDA_SUMMARIZE
+  qudaParam.initArg.verbosity = QUDA_SILENT
   qudaParam.initialized = false
 
 qexGlobalInitializers.add qudaInit
 qexGlobalFinalizers.add qudaFinalize
 
-proc qudaSetup*(l: Layout, verbosity = QUDA_SUMMARIZE): Layout[1] =
+proc qudaSetup*(l: Layout, verbosity = QUDA_SILENT): Layout[1] =
   ## Actually initialize QUDA given the specific layout.
   var updated = false
   template update(a,b:typed) =
