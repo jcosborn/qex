@@ -122,15 +122,17 @@ proc fgload =
 let
   # H = mkLeapfrog(steps = steps, V = mdv, T = mdt)
   # H = mkSW92(steps = steps, V = mdv, T = mdt)
-  H = mkOmelyan2MN(steps = gsteps, V = mdvf2, T = mdt)
+  #H = mkOmelyan2MN(steps = gsteps, V = mdvf2, T = mdt)
   # H = mkOmelyan4MN4FP(steps = steps, V = mdv, T = mdt)
   #H = mkOmelyan4MN5FV(steps = gsteps, V = mdvf2, T = mdt)
   #H = mkFGYin11(steps = steps, V = mdv, T = mdt, Vfg = fgv, save = fgsave(), load = fgload())
+  #Hg = mkLeapfrog(steps = gsteps, V = mdv, T = mdt, shared=1)
+  #Hf = mkLeapfrog(steps = fsteps, V = mdvf, T = mdt, shared=1)
   #Hg = mkOmelyan2MN(steps = gsteps, V = mdv, T = mdt, shared=1)
   #Hf = mkOmelyan2MN(steps = fsteps, V = mdvf, T = mdt, shared=1)
-  #Hg = mkOmelyan4MN5FV(steps = gsteps, V = mdv, T = mdt, shared=1)
-  #Hf = mkOmelyan4MN5FV(steps = fsteps, V = mdvf, T = mdt, shared=1)
-  #H = mkSharedEvolution(Hg, Hf)
+  Hg = mkOmelyan4MN5FV(steps = gsteps, V = mdv, T = mdt, shared=1)
+  Hf = mkOmelyan4MN5FV(steps = fsteps, V = mdvf, T = mdt, shared=1)
+  H = mkSharedEvolution(Hg, Hf)
 
 for n in 1..trajs:
   var p2 = 0.0
