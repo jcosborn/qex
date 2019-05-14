@@ -44,8 +44,8 @@ spf.verbosity = 0
 
 let
   tau = 1.0
-  gsteps = 100
-  fsteps = 100
+  gsteps = intParam("gsteps", 100)
+  fsteps = intParam("fsteps", 100)
   trajs = 10
 
 template rephase(g: typed) =
@@ -126,12 +126,12 @@ let
   # H = mkOmelyan4MN4FP(steps = steps, V = mdv, T = mdt)
   #H = mkOmelyan4MN5FV(steps = gsteps, V = mdvf2, T = mdt)
   #H = mkFGYin11(steps = steps, V = mdv, T = mdt, Vfg = fgv, save = fgsave(), load = fgload())
-  #Hg = mkLeapfrog(steps = gsteps, V = mdv, T = mdt, shared=1)
-  #Hf = mkLeapfrog(steps = fsteps, V = mdvf, T = mdt, shared=1)
-  #Hg = mkOmelyan2MN(steps = gsteps, V = mdv, T = mdt, shared=1)
-  #Hf = mkOmelyan2MN(steps = fsteps, V = mdvf, T = mdt, shared=1)
-  Hg = mkOmelyan4MN5FV(steps = gsteps, V = mdv, T = mdt, shared=1)
-  Hf = mkOmelyan4MN5FV(steps = fsteps, V = mdvf, T = mdt, shared=1)
+  #Hg = mkLeapfrog(steps = gsteps, V = mdv, T = mdt, shared=0)
+  #Hf = mkLeapfrog(steps = fsteps, V = mdvf, T = mdt, shared=0)
+  Hg = mkOmelyan2MN(steps = gsteps, V = mdv, T = mdt, shared=0)
+  Hf = mkOmelyan2MN(steps = fsteps, V = mdvf, T = mdt, shared=0)
+  #Hg = mkOmelyan4MN5FV(steps = gsteps, V = mdv, T = mdt, shared=1)
+  #Hf = mkOmelyan4MN5FV(steps = fsteps, V = mdvf, T = mdt, shared=1)
   H = mkSharedEvolution(Hg, Hf)
 
 for n in 1..trajs:
