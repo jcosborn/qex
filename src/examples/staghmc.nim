@@ -6,7 +6,7 @@ import mdevolve
 qexinit()
 
 let
-  lat = @[8,8,8,8]
+  lat = intSeqParam("lat", @[8,8,8,8])
   #lat = @[8,8,8]
   #lat = @[32,32]
   #lat = @[1024,1024]
@@ -34,19 +34,19 @@ let mass = floatParam("mass", 0.1)
 let stag = newStag(g)
 var spa = initSolverParams()
 #spa.subsetName = "even"
-spa.r2req = floatParam("arsq", 1e-18)
-spa.maxits = 1000
+spa.r2req = floatParam("arsq", 1e-20)
+spa.maxits = 10000
 var spf = initSolverParams()
 #spf.subsetName = "even"
-spf.r2req = floatParam("frsq", 1e-18)
-spf.maxits = 1000
+spf.r2req = floatParam("frsq", 1e-12)
+spf.maxits = 10000
 spf.verbosity = 0
 
 let
-  tau = 1.0
+  tau = floatParam("tau", 1.0)
   gsteps = intParam("gsteps", 100)
   fsteps = intParam("fsteps", 100)
-  trajs = 10
+  trajs = intParam("ntraj", 10)
 
 template rephase(g: typed) =
   g.setBC
@@ -71,32 +71,43 @@ proc oneLinkForce(f: any, p: any, g: any) =
       f[mu][i] *= -1
 
 proc fforce(f: any) =
+  tic()
   threads:
     g.rephase
+  toc("fforce rephase")
   stag.solve(psi, phi, mass, spf)
+  toc("fforce solve")
   #stagD(stag.so, psi, g, psi, 0.0)
   f.oneLinkForce(psi, g)
+  toc("fforce olf")
   threads:
     g.rephase
+  toc("fforce rephase 2")
 
 proc mdt(t: float) =
+  tic()
   threads:
     for mu in 0..<g.len:
       for s in g[mu]:
         g[mu][s] := exp(t*p[mu][s])*g[mu][s]
+  toc("mdt")
 proc mdv(t: float) =
+  tic()
   f.gaugeforce2(g, gc)
   threads:
     for mu in 0..<f.len:
       p[mu] -= t*f[mu]
+  toc("mdv")
 
 proc mdvf(t: float) =
+  tic()
   #let s = t*floatParam("s", 1.0)
   let s = -0.5*t/mass
   f.fforce()
   threads:
     for mu in 0..<f.len:
       p[mu] -= s*f[mu]
+  toc("mdvf")
 
 proc mdvf2(t: float) =
   mdv(t)
@@ -135,6 +146,7 @@ let
   H = mkSharedEvolution(Hg, Hf)
 
 for n in 1..trajs:
+  tic()
   var p2 = 0.0
   var f2 = 0.0
   threads:
@@ -150,7 +162,9 @@ for n in 1..trajs:
     stag.D(phi, psi, mass)
     threadBarrier()
     phi.odd := 0
+  toc("init traj")
   stag.solve(psi, phi, mass, spa)
+  toc("fa solve 1")
   threads:
     var psi2 = psi.norm2()
     threadMaster: f2 = psi2
@@ -160,9 +174,11 @@ for n in 1..trajs:
     fa0 = 0.5*f2
     t0 = 0.5*p2
     h0 = ga0 + fa0 + t0
+  toc("init gauge action")
   echo "Begin H: ",h0,"  Sg: ",ga0,"  Sf: ",fa0,"  T: ",t0
 
   H.evolve tau
+  toc("evolve")
 
   threads:
     var p2t = 0.0
@@ -170,7 +186,9 @@ for n in 1..trajs:
       p2t += p[i].norm2
     threadMaster: p2 = p2t
     g.rephase
+  toc("p norm2, rephase")
   stag.solve(psi, phi, mass, spa)
+  toc("fa solve 2")
   threads:
     var psi2 = psi.norm2()
     threadMaster: f2 = psi2
@@ -180,6 +198,7 @@ for n in 1..trajs:
     fa1 = 0.5*f2
     t1 = 0.5*p2
     h1 = ga1 + fa1 + t1
+  toc("final gauge action")
   echo "End H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
 
   #when true:

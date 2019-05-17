@@ -2,11 +2,11 @@ import quda_milc_interface
 import quda
 import enum_quda
 
-import base
+#import base
+import layout
 import physics/qcdTypes
 import physics/stagD
-import solvers/cg
-import layout
+#import solvers/cg
 
 import os, times
 
@@ -182,7 +182,7 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
     fatlink, longlink, srcGpu, destGpu,
     rres.addr, rrelRes.addr, iters.addr)
   toc("QUDA invert")
-  sp.finalIterations = iters.int
+  sp.iterations = iters.int
   threads:
     for i in r.sites:
       var cv: array[4,cint]

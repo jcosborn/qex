@@ -1,11 +1,15 @@
-import times
+import times, strformat
+export strformat  # workaround #7632
 import base
 import layout
 import field
 import stagD
 export stagD
+import solvers/bicgstab
 import solvers/gcr
 import maths
+when defined(qudaDir):
+  import quda/qudaWrapper
 
 proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   var sp = sp0
@@ -30,66 +34,173 @@ proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
     echo "op time: ", top
     echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
 
-# Late import to avoid problem with circular dependence.
-when defined(qudaDir):
-  import quda/qudaWrapper
-
-proc solve*(s:Staggered; r,x:Field; m:SomeNumber; sp0: var SolverParams;
-            cpuonly = false) =
-  ## When QUDA is available, we use QUDA unless `cpuonly` is true.
+proc solveEE*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams,
+              cpuonly = false) =
+  tic()
   var sp = sp0
-  var its = 0
-  var t = newOneOf(r)
-  var top = 0.0
-  proc op(a,b: Field) =
-    threadBarrier()
-    if threadNum==0: top -= epochTime()
-    stagD2ee(s.se, s.so, a, s.g, b, m*m)
-    if threadNum==0: top += epochTime()
-    #threadBarrier()
-  var oa = (apply: op)
+  sp.resetStats()
+  dec sp.verbosity
   threads:
-    #echo "x2: ", x.norm2
-    s.eoReduce(t, x, m)
-    #echo "te2: ", t.even.norm2
     r := 0
-  let t0 = epochTime()
-  when defined(qudaDir):
-    if not cpuonly:
-      let tquda0 = epochTime()
-      s.qudaSolveEE(r,t,m,sp)
-      let tquda1 = epochTime()
-      let squda = tquda1-tquda0
-      its = sp.finalIterations
-      sp.finalIterations = 0
-      let flopsquda = (s.g.len*4*72+60)*r.l.nEven*its
+  ## When QUDA is available, we use QUDA unless `cpuonly` is true.
+  let useGpu = defined(qudaDir) and (not cpuonly)
+  #if useGpu:
+  var solver = (if useGpu: 0 else: 1)
+  #solver = 1
+  case solver
+  of 0:
+    when defined(qudaDir):
+      tic()
+      s.qudaSolveEE(r,x,m,sp)
+      toc("qudaSolveEE")
+      sp.calls = 1
+      sp.seconds = getElapsedTime()
+      let flopsquda = (s.g.len*4*72+60)*r.l.nEven*sp.iterations
+      sp.flops = flopsquda.float
       if sp0.verbosity>0:
-        echo "quda time: ",squda,"  Gflops: ", 1e-9*flopsquda.float/squda
-    # After QUDA, we still run through our solver.
-  #cgSolve(r, t, oa, sp)
-  var cg = newCgState(r, t)
-  sp.subset.layoutSubset(r.l, sp.subsetName)
-  if sp.subsetName=="all": sp.subset.layoutSubset(r.l, "even")
-  cg.solve(oa, sp)
-  its += sp.finalIterations
-  let t1 = epochTime()
-  #var u = newOneOf(r)
-  #stagD2ee(s.se, s.so, u, s.g, r, m*m)
-  #u := t - u
-  #echo "u2: ", u.even.norm2
-  threads:
-    r[s.se.sub] := 4*r
-    threadBarrier()
-    s.eoReconstruct(r, x, m)
-  sp0.finalIterations += its
-  let secs = t1-t0
-  let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
+        echo "solveEE(QUDA): ", sp.getStats
+    else:
+      echo "error: QUDA not available"
+  of 1:
+    tic()
+    proc op(a,b: Field) =
+      tic()
+      threadBarrier()
+      stagD2ee(s.se, s.so, a, s.g, b, m*m)
+      #threadBarrier()
+      toc("stagD2ee")
+    var oa = (apply: op)
+    var cg = newCgState(r, x)
+    sp.subset.layoutSubset(r.l, sp.subsetName)
+    if sp.subsetName=="all": sp.subset.layoutSubset(r.l, "even")
+    cg.solve(oa, sp)
+    toc("cg.solve")
+    sp.calls = 1
+    sp.seconds = getElapsedTime()
+    let flops = (s.g.len*4*72+60)*r.l.nEven*sp.iterations
+    sp.flops = flops.float
+    if sp0.verbosity>0:
+      echo "solveEE: ", sp.getStats
+  else:
+    tic()
+    proc op(a,b: Field) =
+      tic()
+      threadBarrier()
+      s.D(a, b, m*m)
+      threadBarrier()
+      a.odd += (1-m*m)*b
+      toc("stagDee2")
+    #var oa = (apply: op)
+    #var cg = newCgState(r, x)
+    sp.subsetName = "all"
+    sp.subset.layoutSubset(r.l, sp.subsetName)
+    x.odd := 0
+    #cg.solve(oa, sp)
+    bicgstabSolve(r, x, op, sp)
+    toc("bicg.solve")
+    r.even := 0.25*r
+    r.odd := 0
+    sp.calls = 1
+    sp.seconds = getElapsedTime()
+    let flops = (s.g.len*4*72+60)*r.l.nEven*sp.iterations
+    sp.flops = flops.float
+    if sp0.verbosity>0:
+      echo "solveEE: ", sp.getStats
+  sp.iterationsMax = sp.iterations
+  sp.r2.push 0.0
+  sp0.addStats(sp)
+
+# solveInner {init, run, free}
+
+proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams;
+            cpuonly = false) =
+  tic()
+  var c = newOneOf(b)
+  var b2,r2 = 0.0
+  if sp0.usePrevSoln:
+    threads:
+      s.D(c, x, m)
+      threadBarrier()
+      c := b - c
+      let
+        b2t = b.norm2
+        c2t = c.norm2
+      threadMaster:
+        b2 = b2t
+        r2 = c2t
+  else:
+    threads:
+      x := 0
+      c := b
+      let
+        b2t = b.norm2
+      threadMaster:
+        b2 = b2t
+        r2 = b2t
+  var r2stop = sp0.r2req * b2
+  if sp0.verbosity>1:
+    echo &"stagSolve b2: {b2:.6g}  r2: {r2/b2:.6g}  r2stop: {r2stop:.6g}"
+  var d = newOneOf(b)
+  var y = newOneOf(x)
+  var sp = sp0
+  sp.resetStats()
+  dec sp.verbosity
+  sp.usePrevSoln = false
+  while r2 > r2stop:
+    var d2e,d2o = 0.0
+    threads:
+      #s.eoReduce(t, x, m)
+      s.Ddag(d, c, m)
+      y := 0
+      threadBarrier()
+      let
+        d2et = d.even.norm2
+        #d2ot = d.odd.norm2
+      threadMaster:
+        d2e = d2et
+        #d2o = d2ot
+    #echo "d2e: ", d2e, "  d2o: ", d2o
+    sp.r2req = sp0.r2req * b2 * m*m / d2e
+    toc("setup")
+    s.solveEE(y, d, m, sp)
+    toc("solveEE")
+    threads:
+      y.even := 4*y
+      threadBarrier()
+      s.eoReconstruct(y, c, m)
+      threadBarrier()
+      x += y
+      threadBarrier()
+      s.D(c, x, m)
+      threadBarrier()
+      c := b - c
+      let
+        c2t = c.norm2
+      threadMaster:
+        r2 = c2t
+    toc("reconstruct")
+    if sp.verbosity>0:
+      echo "stagSolve r2: ", r2/b2
+
+  #echo "r2: ", r2
+  #sp.r2sum = r2/b2
+  #sp.r2max = r2/b2
+  sp.r2.init r2/b2
+  sp.calls = 1
+  sp.seconds = getElapsedTime()
+  sp.flops += float((s.g.len*4*72+24)*r.l.nEven)
   if sp0.verbosity>0:
-    echo "op time: ", top
-    echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
+    #let its = sp.iterations
+    #let s = sp.seconds
+    #let f = sp.flops
+    #let gf = 1e-9*f/s
+    #echo "op time: ", top
+    echo "stagSolve: ", sp.getStats
+  sp0.addStats(sp)
+
 proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float;
             cpuonly = false; sloppySolve = SloppyNone) =
-  var sp = initSolverParams()
+  var sp = newSolverParams()
   sp.r2req = res
   #sp.maxits = 1000
   sp.verbosity = 1
@@ -132,7 +243,7 @@ proc solve2*(s:Staggered; x,b:Field; m:SomeNumber;
 
 proc solve2*(s:Staggered; r,x:Field; m:SomeNumber; res:float; s2: Staggered;
              cpuonly = false) =
-  var sp = initSolverParams()
+  var sp = newSolverParams()
   sp.r2req = res
   #sp.maxits = 1000
   sp.verbosity = 1
@@ -149,57 +260,64 @@ when isMainModule:
   defaultSetup()
   var v1 = lo.ColorVector()
   var v2 = lo.ColorVector()
+  var v3 = lo.ColorVector()
   var r = lo.ColorVector()
   var rs = newRNGField(RngMilc6, lo, intParam("seed", 987654321).uint64)
+
   threads:
-    #g.random rs
+    g.random rs
     g.setBC
     g.stagPhase
-    v1 := 0
-    #for e in v1:
-    #  template x(d:int):untyped = lo.vcoords(d,e)
-    #  v1[e][0].re := foldl(x, 4, a*10+b)
-    #  #echo v1[e][0]
-  #echo v1.norm2
-  var g2 = lo.newGauge
-  for mu in 0..<g2.len:
-    for s in 0..<lo.nSites:
-      if lo.coords[mu][s] mod 2 == 1:
-        g2[mu]{s} := 0
-      else:
-        g2[mu]{s} := g[mu]{s}
-  var s2 = newStag(g2)
-  if myRank==0:
-    v1{0}[0] := 1
-    #v1{2*1024}[0] := 1
+    #v1 := 0
+    v1.gaussian rs
+  #if myRank==0:
+  #  v1{0}[0] := 1
+  #  #v1{2*1024}[0] := 1
   echo v1.norm2
-  #var gs = lo.newGaugeS
-  #for i in 0..<gs.len: gs[i] := g[i]
+
   var s = newStag(g)
-  var m = 0.1
-  threads:
-    v2 := 0
-    echo v2.norm2
-    threadBarrier()
-    s.D(v2, v1, m)
-    threadBarrier()
-    #echoAll v2
-    echo v2.norm2
-  #echo v2
-  var sp = initSolverParams()
+  var m = floatParam("m", 0.01)
+  var sp = newSolverParams()
+  sp.verbosity = intParam("verb", 2)
   sp.subset.layoutSubset(lo, "all")
   sp.maxits = int(1e9/lo.physVol.float)
-  s.solve(v2, v1, m, sp)
-  #resetTimers()
-  s.solve2(v2, v1, m, sp, s2)
-  threads:
-    echo "v2: ", v2.norm2
-    echo "v2.even: ", v2.even.norm2
-    echo "v2.odd: ", v2.odd.norm2
-    s.D(r, v2, m)
-    threadBarrier()
-    r := v1 - r
-    threadBarrier()
-    echo r.norm2
-  #echo v2
-  #echoTimers()
+  sp.r2req = floatParam("rsq", 1e-12)
+
+  proc test =
+    v2 := 0
+    s.solve(v2, v1, m, sp)
+    threads:
+      s.D(v3, v2, m)
+      v1 := 0
+    resetTimers()
+    s.solve(v1, v3, m, sp)
+    threads:
+      r := v1 - v2
+      echo "err2: ", r.norm2
+
+  block:
+    v1 := 0
+    let p = lo.rankIndex([0,0,0,0])
+    if myRank==p.rank:
+      v1{p.index}[0] := 1
+    echo "even point"
+    test()
+    echo sp.getStats()
+
+  block:
+    v1 := 0
+    let p = lo.rankIndex([0,0,0,1])
+    if myRank==p.rank:
+      v1{p.index}[0] := 1
+    echo "odd point"
+    test()
+    echo sp.getStats()
+
+  block:
+    v1.gaussian rs
+    echo "random"
+    test()
+    echo sp.getStats()
+
+  if intParam("timers", 0)!=0:
+    echoTimers()

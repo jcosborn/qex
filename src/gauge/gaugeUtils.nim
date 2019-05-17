@@ -10,6 +10,17 @@ import os
 import strUtils
 import maths, rng, physics/qcdTypes
 
+#[
+type
+  GroupKind* = enum
+    gkU, gkSU, gkHerm, gkAntiHerm  # traceless, real/complex
+  Gauge*[T] = object
+    u*: seq[T]
+    n*: int
+    group*: GroupKind
+]#
+
+
 proc newGauge*(l: Layout): auto =
   let nd = l.nDim
   result = newSeq[type(l.ColorMatrix())](nd)
