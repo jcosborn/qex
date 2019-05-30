@@ -2,6 +2,7 @@ import comms
 import rankScatter
 import strformat
 import algorithm
+import base/profile
 
 template `&&`(x: char): untyped = cast[pointer](unsafeAddr(x))
 template `&&`(x: int32): untyped = cast[pointer](unsafeAddr(x))
@@ -150,42 +151,63 @@ proc makeGatherMap*(c: Comm, sl: var seq[SendList]): GatherMap =
   #echoAll fmt"{rank}: {result.smsginfo}, {result.rmsginfo}"
 
 proc gather*(c: Comm; gm: GatherMap; elemsize: int; dest,src: pointer) =
+  tic()
   let srcbuf = cast[ptr UncheckedArray[char]](src)
   let destbuf = cast[ptr UncheckedArray[char]](dest)
 
   # start recvs
-  var recvbuf = newSeq[char](elemsize*gm.rdest.len)
+  let rsize = elemsize*gm.rdest.len
+  #echo "rsize: ", rsize
+  var recvbuf = newSeqUninitialized[int8](rsize)
   for i in 0..<gm.rmsginfo.len:
     #echoAll "pushRecv: ", i, "  ", gm.rmsginfo[i].rank
     c.pushRecv(gm.rmsginfo[i].rank, &&recvbuf[elemsize*gm.rmsginfo[i].start],
                elemsize*gm.rmsginfo[i].count)
+  toc("gather: start recvs")
 
   # fill send buffers and send
-  var sendbuf = newSeq[char](elemsize*gm.sidx.len)
+  let ssize = elemsize*gm.sidx.len
+  #echo "ssize: ", ssize
+  var sendbuf = newSeqUninitialized[int8](ssize)
+  toc("gather: alloc sendbuf")
   for i in 0..<gm.smsginfo.len:
+    #tic()
     #echoAll "pushSend: ", i
-    for j in 0..<gm.smsginfo[i].count:
-      let k = gm.smsginfo[i].start + j
-      copyMem(&&sendbuf[elemsize*k], &&srcbuf[elemsize*gm.sidx[k]], elemsize)
+    threads:
+      tfor j, 0..<gm.smsginfo[i].count:
+        let k = gm.smsginfo[i].start + j
+        copyMem(&&sendbuf[elemsize*k], &&srcbuf[elemsize*gm.sidx[k]], elemsize)
+    #toc("gather: fill")
     c.pushSend(gm.smsginfo[i].rank,
                &&sendbuf[elemsize*gm.smsginfo[i].start],
                elemsize*gm.smsginfo[i].count)
+    #toc("gather: send")
+  toc("gather: fill and send")
 
   # copy local sites
-  for i in 0..<gm.ldest.len:
-    copyMem(&&destbuf[elemsize*gm.ldest[i]], &&srcbuf[elemsize*gm.lidx[i]], elemsize)
+  threads:
+    tfor i, 0..<gm.ldest.len:
+      copyMem(&&destbuf[elemsize*gm.ldest[i]], &&srcbuf[elemsize*gm.lidx[i]], elemsize)
+  toc("gather: copy local")
 
   # wait recvs and copy
   for i in 0..<gm.rmsginfo.len:
+    #tic()
     #echo "waitRecv: ", i
     c.waitRecv(i, free=false)
-    for j in 0..<gm.rmsginfo[i].count:
-      let k = gm.rmsginfo[i].start + j
-      copyMem(&&destbuf[elemsize*gm.rdest[k]], &&recvbuf[elemsize*k], elemsize)
+    #toc("gather: wait recv")
+    threads:
+      tfor j, 0..<gm.rmsginfo[i].count:
+        let k = gm.rmsginfo[i].start + j
+        copyMem(&&destbuf[elemsize*gm.rdest[k]], &&recvbuf[elemsize*k], elemsize)
+    #toc("gather: copy")
+  toc("gather: wait recvs and copy")
 
   # free recvs and wait sends
   c.freeRecvs(gm.rmsginfo.len)
+  toc("gather: free recvs")
   c.waitSends(gm.smsginfo.len)
+  toc("gather: wait sends")
 
 proc gatherReversed*(c: Comm; gm: GatherMap; elemsize: int;
                      dest,src: pointer) =

@@ -1,5 +1,6 @@
 import commsQmp
 export commsQmp
+#import base/profile
 
 import qmp
 
@@ -154,17 +155,25 @@ method pushRecv*(c: CommQmp, rank: int, p: pointer, bytes: int) =
   c.rmsg.add h
 
 method waitSends*(c: CommQmp; i0,i1: int) =
+  #tic()
   for i in i0..i1:
+    #tic()
     discard QMP_wait(c.smsg[i])
+    #toc("waitSends: wait")
     QMP_free_msghandle(c.smsg[i])
+    #toc("waitSends: free msghandle")
     QMP_free_msgmem(c.smem[i])
+    #toc("waitSends: free msgmem")
+  #toc("waitSends: wait and free")
   for i in (i1+1)..<c.smsg.len:
     let k = i - i1 - 1 + i0
     c.smem[k] = c.smem[i]
     c.smsg[k] = c.smsg[i]
+  #toc("waitSends: copy")
   let n = c.smsg.len - (i1-i0+1)
   c.smem.setLen(n)
   c.smsg.setLen(n)
+  #toc("waitSends: setLen")
 
 method freeRecvs*(c: CommQmp; i0,i1: int) =
   for i in i0..i1:

@@ -134,18 +134,21 @@ for i in lo.sites:
 
 proc setSpin(src: Field, v1: Field2, sp: int) =
   tic()
-  for i in src.sites:
-    let j = lomap1[i]
-    src{i}[sp] := v1[j]
+  threads:
+    for i in src.sites:
+      let j = lomap1[i]
+      src{i}[sp] := v1[j]
   toc("setSpin")
 
 proc getProp(dest: Field, src: Field2, cv: Field3, s: int) =
   tic()
-  src := 0
+  threads:
+    src := 0
   src.setSpin(cv, s)
   #echo src.norm2
   #w.solve(dest, src, m, sp)
-  dest := src
+  threads:
+    dest := src
   toc("getProp")
 
 var rl = newSeq[RecvList](0)
@@ -171,20 +174,24 @@ let prp2 = cast[CvArray](alloc(ncv2*sizeof(CvType)))
 
 proc chopLat(dest: Field, s,n: int) =
   tic()
-  for i in 0..<lo1.nsites:
-    dest1[i] := dest{i}
+  threads:
+    tfor i, 0..<lo1.nsites:
+      dest1[i] := dest{i}
+  toc("chopLat copy")
   comm.gather(gm, sizeof(dest2[0]), &&dest2, &&dest1)
+  toc("chopLat gather")
   #echo "chop: ", dest.norm2, " -> ", dest2.norm2
 # [vn][srcspin][destspin][site][cv]
 # [mom,shift][vn][srcspin][destspin][site][cv]
   let off1 = (n*16 + s*4)*localSites2
   let p1 = cast[CvArray](addr prp1[off1])
   let p2 = cast[CvArray](addr prp2[off1])
-  for i in 0..<localSites2:
-    for j in 0..<4:
-      p1[j*localSites2+i] := dest2[i][j]
-      p2[j*localSites2+i] := dest2[i][j]
-  toc("chopLat")
+  threads:
+    tfor i, 0..<localSites2:
+      for j in 0..<4:
+        p1[j*localSites2+i] := dest2[i][j]
+        p2[j*localSites2+i] := dest2[i][j]
+  toc("chopLat pack")
 
 let nccv1 = 16 * nv
 let nccv2 = nccv1 * nmomsh
@@ -216,7 +223,8 @@ proc naiveContract() =
 toc("begin loop")
 
 for i in 0..<nv:
-  cv1 := 0
+  threads:
+    cv1 := 0
   getLapl(cv1, mr, tsio, tsrc, i)
   #echo cv1.norm2
   for s in 0..<4:
