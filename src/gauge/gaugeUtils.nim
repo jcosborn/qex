@@ -376,7 +376,8 @@ template defaultSetup*:untyped {.dirty.} =
           lat = defaultLat
       else:
         lat = @[8,8,8,8]
-  var lo = newLayout(lat)
+  var rankGeom = intSeqParam("rg", newSeq[int](0))
+  var lo = newLayout(lat, rankGeom)
   var g = newSeq[type(lo.ColorMatrix())](lat.len)
   for i in 0..<lat.len:
     g[i] = lo.ColorMatrix()

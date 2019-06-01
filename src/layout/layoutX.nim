@@ -175,8 +175,12 @@ proc newLayoutX*(lat: openArray[int]; V: static[int];
   result.vcoordTemp.newSeq(nd)
 template newLayout*(l:openArray[int]; n:static[int], rg,ig: seq[int]):untyped =
   newLayoutX(l, n, rg, ig)
+template newLayout*(l:openArray[int]; n:static[int], rg: seq[int]):untyped =
+  newLayoutX(l, n, rg, [])
 template newLayout*(l:openArray[int]; n:static[int]):untyped =
   newLayoutX(l, n, [], [])
+template newLayout*(l:openArray[int]; rg: seq[int]):untyped =
+  newLayoutX(l, VLEN, rg, [])
 template newLayout*(l:openArray[int]):untyped =
   newLayoutX(l, VLEN, [], [])
 
