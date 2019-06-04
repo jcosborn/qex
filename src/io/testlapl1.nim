@@ -77,7 +77,8 @@ var lat2 = lat
 lat2[^1] = dt
 
 var lo1 = newLayout(lat, 1, lo.rankGeom, @[1,1,1,1])
-var lo2 = newLayout(lat2, 1)
+var rg2 = intSeqParam("rg2", newSeq[int](0))
+var lo2 = newLayout(lat2, 1, rg2)
 
 var cv1 = lo1.ColorVectorS1()
 var src = lo.DiracFermion()
@@ -151,14 +152,17 @@ proc getProp(dest: Field, src: Field2, cv: Field3, s: int) =
     dest := src
   toc("getProp")
 
+toc("begin gm")
 var rl = newSeq[RecvList](0)
 var x = newSeq[int32](lat.len)
 for i in 0..<lo2.nSites:
   lo2.coord(x, i)
-  x[^1] = ((x[^1] + tsrc) mod lo2[^1]).int32
+  x[^1] = ((x[^1] + tsrc) mod lo1[^1]).int32
   let ri = lo1.rankIndex(x)
   rl.add RecvList(didx: i.int32, srank: ri.rank.int32, sidx: ri.index.int32)
+toc("RecvList")
 let gm = comm.makeGatherMap(rl)
+toc("makeGatherMap")
 
 type CvType = type(cv1[0])
 type CvArray = ptr UncheckedArray[CvType]
