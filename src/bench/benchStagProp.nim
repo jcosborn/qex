@@ -46,7 +46,7 @@ threads:
   echo v2.norm2
 #echo v2
 var sp = initSolverParams()
-sp.maxits = int(1e9/lo.physVol.float)
+sp.maxits = intParam("maxits",int(1e9/lo.nSitesOuter.float))
 s.solve(v2, v1, mass, sp)
 resetTimers()
 s.solve(v2, v1, mass, sp)

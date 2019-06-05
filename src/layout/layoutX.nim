@@ -94,7 +94,7 @@ proc newLayoutX*(lat: openArray[int]; V: static[int];
       rg[i] = rg0[i]
   if rg.len == 0:
     rg.setLen(nd)
-    partitionGeomF(lg, rg, lat, nRanks, 1)
+    partitionGeomF(lg, rg, lat, nRanks, 0)
   else:
     for i in 0..<nd:
       lg[i] = lat[i] div rg[i]
