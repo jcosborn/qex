@@ -680,7 +680,7 @@ macro echoAst*(x:untyped):untyped =
   echo x.treeRepr
   x
 
-macro echoRep*(x: typed): typed =
+macro echoRep*(x: typed): untyped =
   echo x.lineinfo
   echo x.repr
   x

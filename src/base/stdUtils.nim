@@ -12,6 +12,10 @@ template ptrInt*(x:untyped):untyped = cast[ByteAddress](x)
 template addrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
 template unsafeAddrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
 
+proc newSeqU*[T](n: int): seq[T] =
+  result = newSeqOfCap[T](n)
+  result.setLen(n)
+
 iterator range*[T: SomeInteger](count: T): T =
   var res = T(0)
   while res < count:
