@@ -375,7 +375,8 @@ macro debugExpr(body: typed): untyped =
   echo ii
   echo br
 
-proc applyOp2(x,y:NimNode; ty:typedesc; op:string):auto =
+#proc applyOp2(x,y:NimNode; ty:typedesc; op:string):auto =
+proc applyOp2(x,y:NimNode; ty:NimNode; op:string):auto =
   #echo ty.getType.treeRepr
   #echo ty.getType.getImpl.treeRepr
   let o = ident(op)
@@ -397,7 +398,7 @@ proc applyOp2(x,y:NimNode; ty:typedesc; op:string):auto =
           staticTraceEnd: `o Field2`
 template makeOps(op,f,fM,s: untyped): untyped {.dirty.} =
   macro f*(x:Subsetted; y:notSomeField2):auto = applyOp1(x,y,s)
-  macro f*(x:Subsetted; y:SomeField2):auto = applyOp2(x,y,int,s)
+  macro f*(x:Subsetted; y:SomeField2):auto = applyOp2(x,y,int.getType,s)
   macro fM*(x:Field; y:notSomeField; ty:typedesc):auto = applyOp1(x,y,s)
   macro fM*(x:Field; y:SomeField; ty:typedesc):auto = applyOp2(x,y,ty,s)
   template f*(x:Field; y:any):untyped =
