@@ -79,7 +79,7 @@ ifneq ($(origin VLEN), undefined)
   ENVS += VLEN=$(VLEN)
 endif
 
-DBG = "-d:release"
+DBG = "-d:release -d:danger"
 ifeq ($(debug),1)
   DBG = "-d:debug"
 endif

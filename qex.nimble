@@ -111,6 +111,7 @@ proc setupDebug =
 
 proc setupRelease =
   define ~ "release"
+  define ~ "danger"
   obj_checks ~ off
   field_checks ~ off
   range_checks ~ off
