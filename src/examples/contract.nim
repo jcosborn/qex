@@ -1,3 +1,4 @@
+import base, maths
 import eigens/lapack
 
 template toPtrInt32(x: int): ptr int32 =
@@ -11,11 +12,32 @@ template `&`(x: int): untyped = toPtrInt32(x)
 template `&&`(x: int): untyped = toPtrScomplex(x)
 template `&<`(x: ptr float32): untyped = cast[ptr scomplex](x)
 
+type F32A = ptr UncheckedArray[float32]
+type S32A = ptr UncheckedArray[ComplexType[float32]]
+
+# C = A x B'     ->  C^T = B^* x A^T
 # C^T = A^* * B^T
-proc cmatmul(c,a,b: ptr scomplex, cr,cc,bc: int) =
-  cgemm("C","N", &cr,&cc,&bc, &&1, a,&bc, b,&bc, &&0, c,&cc)
-template cmatmul*(c,a,b: ptr float32, cr,cc,bc: int) =
-  cmatmul(&<c, &<a, &<b, cr, cc, bc)
+proc cmatmul*(c,a,b: ptr scomplex, cr,cc,bc: int) =
+  cgemm("C","N", &cc,&cr,&bc, &&1, b,&bc, a,&bc, &&0, c,&cc)
+proc cmatmul*(c,a,b: S32A, cr,cc,bc: int) =
+  template `/`(x: S32A): untyped = cast[ptr scomplex](x)
+  cmatmul(/c, /a, /b, cr, cc, bc)
+#template cmatmul*(c,a,b: ptr float32, cr,cc,bc: int) =
+#  cmatmul(&<c, &<a, &<b, cr, cc, bc)
+#template cmatmul*(c,a,b: F32A, cr,cc,bc: int) =
+#  cmatmul(&<c, &<a, &<b, cr, cc, bc)
+
+#template adj(x: scomplex): untyped = scomplex(re: x.re, im: -x.im)
+# C[cr,cc] = A[cr,bc] x B[cc,bc]'
+proc cmatmulX*(c,a,b: S32A, cr,cc,bc: int) =
+  for i in 0..<cr:
+    for j in 0..<cc:
+      var t = a[i*bc] * adj(b[j*bc])
+      for k in 1..<bc:
+        t += a[i*bc+k] * adj(b[j*bc+k])
+      c[i*cc+j] = t
+#template cmatmulX*(c,a,b: F32A, cr,cc,bc: int) =
+#  cmatmulX(&<c, &<a, &<b, cr, cc, bc)
 
 when isMainModule:
   import maths/complexType
@@ -26,7 +48,19 @@ when isMainModule:
   var n = 20
   var k = 3
   var c = cast[ptr UncheckedArray[Cmplx]](alloc(m*n*sizeof(Cmplx)))
+  var d = cast[ptr UncheckedArray[Cmplx]](alloc(m*n*sizeof(Cmplx)))
   var a = cast[ptr UncheckedArray[Cmplx]](alloc(m*k*sizeof(Cmplx)))
   var b = cast[ptr UncheckedArray[Cmplx]](alloc(n*k*sizeof(Cmplx)))
 
-  cmatmul(c, a, b, m, n, k)
+  for i in 0..<(m*k):
+    a[i] := newComplex(i+1,i+2)
+  for i in 0..<(n*k):
+    b[i] := newComplex(i+2,i+1)
+
+  cmatmulX(c, a, b, m, n, k)
+  cmatmul(d, a, b, m, n, k)
+  var s = 0.0
+  for i in 0..<(m*n):
+    let t = d[i] - c[i]
+    s += t.norm2
+  echo s
