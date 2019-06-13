@@ -357,16 +357,16 @@ template defaultSetup*:untyped {.dirty.} =
     if fileExists(defaultGaugeFile):
       fn = defaultGaugeFile
   if paramCount()>0:
-    if (not isDigit(paramStr(1))) and paramStr(1)[0]!='-':
+    if (not isDigit(paramStr(1)[0])) and paramStr(1)[0]!='-':
       fn = paramStr(1)
   if fn != "":
     lat = getFileLattice(fn)
   else:
-    if paramCount()>0 and isDigit(paramStr(1)):
+    if paramCount()>0 and isDigit(paramStr(1)[0]):
       lat.newSeq(0)
       var pc = paramCount()
       for i in 1..pc:
-        if not isDigit(paramStr(i)): break
+        if not isDigit(paramStr(i)[0]): break
         lat.add parseInt(paramStr(i))
     else:
       when declared(defaultLat):
@@ -506,10 +506,10 @@ proc setupLattice*(lat:openarray[int]):auto =
     fn = ""
   let pc = paramCount()
   if pc > 0:
-    if paramStr(1).isDigit:
+    if paramStr(1)[0].isDigit:
       lat = @[]
       for i in 1..pc:
-        if not paramStr(i).isDigit: break
+        if not paramStr(i)[0].isDigit: break
         lat.add paramStr(i).parseInt
     elif paramStr(1)[0] != '-':
       fn = paramStr(1)

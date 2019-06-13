@@ -25,13 +25,10 @@ method commrank*(c: Comm): int {.base.} = discard
 method commsize*(c: Comm): int {.base.} = discard
 method isMaster*(c: Comm): bool {.base.} = discard
 
-template rank*(c: Comm): int = commrank(c)
-template size*(c: Comm): int = commsize(c)
-
 method barrier*(c: Comm) {.base.} = discard
-method allReduce*(c: Comm, x: var int) {.base.} = discard
+method allReduce*(c: Comm, x: var float64) {.base.} = discard
 method allReduce*(c: Comm, x: ptr float32, n: int) {.base.} = discard
-method allReduce*(c: Comm, x: var UncheckedArray[float32], n: int) {.base.} = discard
+method allReduce*(c: Comm, x: ptr float64, n: int) {.base.} = discard
 method allReduceXor*(c: Comm, x: var int) {.base.} = discard
 
 method nsends*(c: Comm): int {.base.} = discard
@@ -43,6 +40,17 @@ method pushRecv*(c: Comm, rank: int, p: pointer, bytes: int) {.base.} =
 method waitSends*(c: Comm; i0,i1: int) {.base.} = discard
 method freeRecvs*(c: Comm; i0,i1: int) {.base.} = discard
 method waitRecvs*(c: Comm; i0,i1: int; free=true) {.base.} = discard
+
+template rank*(c: Comm): int = commrank(c)
+template size*(c: Comm): int = commsize(c)
+
+template allReduce*(c: Comm, x: var SomeNumber) =
+  var t = float(x)
+  c.allreduce(addr t)
+  x = (type x)(t)
+
+template allReduce*(c: Comm, x: var UncheckedArray[float32], n: int) =
+  c.allReduce(addr x[0], n.cint)
 
 template pushSend*(c: Comm, rank: int, xx: SomeNumber) =
   var x = xx
@@ -122,16 +130,14 @@ method isMaster*(c: CommQmp): bool =
 method barrier*(c: CommQmp) =
   QMP_comm_barrier(c.comm)
 
-method allReduce*(c: CommQmp, x: var SomeNumber) =
-  var t = float(x)
-  QMP_comm_sum_double(c.comm, addr t)
-  x = (type x)(t)
+method allReduce*(c: CommQmp, x: var float64) =
+  QMP_comm_sum_double(c.comm, addr x)
 
 method allReduce*(c: CommQmp, x: ptr float32, n: int) =
   QMP_comm_sum_float_array(c.comm, x, n.cint)
 
-method allReduce*(c: CommQmp, x: var UncheckedArray[float32], n: int) =
-  QMP_comm_sum_float_array(c.comm, addr x[0], n.cint)
+method allReduce*(c: CommQmp, x: ptr float64, n: int) =
+  QMP_comm_sum_double_array(c.comm, x, n.cint)
 
 method allReduceXor*(c: CommQmp, x: var int) =
   var t = cast[ptr culong](addr x)

@@ -1,7 +1,7 @@
 import strutils
 
 type Crc32* = uint32
-const InitCrc32* = Crc32(-1)
+const InitCrc32* = Crc32(not 0'u32)
 const crc32PolyLow = Crc32(0xedb88320)
 const crc32Poly = uint64(0x100000000) + uint64(crc32PolyLow)
 
