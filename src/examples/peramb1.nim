@@ -16,6 +16,7 @@ var dt = intParam("dt", (lat[^1] div 2))
 var nv0 = intParam("nv", 10)
 var srcfn = stringParam("srcfn", "testevecs.mod")
 
+echo "lo1:"
 var lo1 = newLayout(lat, 1, lo.rankGeom, @[1,1,1,1])
 var cv1 = lo1.ColorVectorS1()
 
@@ -58,6 +59,7 @@ var comm = getComm()
 var lat2 = lat
 lat2[^1] = dt
 var rg2 = intSeqParam("rg2", newSeq[int](0))
+echo "lo2:"
 var lo2 = newLayout(lat2, 1, rg2)
 let tsio2 = newTimesliceIo(lo2)
 
@@ -79,6 +81,7 @@ for i in 0..<localSites2:
   map2[i] = int32(t*nvx2 + xn[t])
   map2s[i] = int32(t*nvx2s + xn[t])
   inc xn[t]
+toc("make map2")
 
 # read in the eigenvectors for the sink
 var cv2 = lo2.ColorVectorS1()
@@ -99,6 +102,7 @@ for v in 0..<nv:
 #echo sink[0]
 #echo sink[1]
 #echo "----"
+toc("read sink")
 
 const nc = cv1[0].len
 type Cmplx = type(cv1[0][0])
@@ -120,6 +124,7 @@ for i in lo.sites:
   lo.coord(cv,(lo.myRank,i))
   let j = lo1.rankIndex(cv).index
   lomap1[i] = j.int32
+toc("make map1")
 
 let ncv0 = localSites2 * 16
 let ncv1 = localSites2 * 16 * nv
@@ -235,6 +240,7 @@ for i in 0..<nv:
     #echo dest[0][s]
     #echo dest[1][s]
     chopLat(gm, dest, s, i)
+toc("end loop")
 
 for i in 0..<nx2:
   let t = sink[i] - prp1[i]
@@ -243,68 +249,9 @@ for i in 0..<nx2:
   #echo sink[i]
   #echo prp1[i]
 
-toc("end loop")
+toc("test1")
 
 naiveContract()
-
-#[
-toc("begin loop")
-for t in 0..<nt:
-#for t in 0..<1:
-  for i in 0..<nv:
-  #for i in 0..<1:
-    cv1 := 0
-    getLapl(cv1, mr, tsio, t, i)
-    #echo cv1.norm2
-    for s in 0..<4:
-      getProp(dest, src, cv1, s)
-      chopLat(dest)
-toc("end loop")
-]#
-
-#[
-var f = lo.DiracFermion1()
-f := 1
-echo f.norm2
-var f2 = lo.DiracFermion1()
-echo f2.norm2
-
-var t0 = lat[^1] - 1
-var size = lat
-var offset = newSeq[int](lat.len)
-var ioranks = intSeqParam("ior", @[0])
-#size[^1] = 1
-#offset[^1] = t0
-
-echo "lat: ", lat
-echo "size: ", size
-echo "offset: ", offset
-echo "ioranks: ", ioranks
-var wm = lo.setupWrite(size, offset, ioranks)
-
-var pw = openCreate("pwtest.bin")
-pw.writeSingle("header::")
-pw.write(f, wm)
-pw.writeSingle("::midd::")
-f := 2
-pw.write(f, wm)
-pw.writeSingle("::footer")
-pw.close()
-
-var pr = openRead("pwtest.bin")
-var header = newString(8)
-pr.readSingle(header)
-echo "header: '", header, "'"
-pr.read(f2, wm)
-echo f2.norm2
-pr.readSingle(header)
-echo "header: '", header, "'"
-pr.read(f2, wm)
-echo f2.norm2
-pr.readSingle(header)
-echo "header: '", header, "'"
-pr.close()
-]#
 
 toc("end")
 echoTimers()
