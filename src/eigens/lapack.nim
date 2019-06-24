@@ -21,6 +21,12 @@ proc cgemm*(transa: cstring; transb: cstring; m: ptr fint; n: ptr fint;
             beta: ptr scomplex; c: ptr scomplex; ldc: ptr fint) {.
               lapack, importc: "cgemm_".}
 
+proc zgemm*(transa: cstring; transb: cstring; m: ptr fint; n: ptr fint;
+            k: ptr fint; alpha: ptr dcomplex; a: ptr dcomplex;
+            lda: ptr fint; b: ptr dcomplex; ldb: ptr fint;
+            beta: ptr dcomplex; c: ptr dcomplex; ldc: ptr fint) {.
+              lapack, importc: "zgemm_".}
+
 proc dsterf*(n: ptr fint, d: ptr float64, e: ptr float64,
              info: ptr fint) {.lapack, importC:"dsterf_".}
 

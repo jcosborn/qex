@@ -4,6 +4,7 @@ import io / [parallelIo, timesliceIo, modfile]
 import physics / [wilsonD, wilsonSolve]
 import contract, modeigs1
 import xmlparser, xmltree, strutils, sequtils, endians, times, strformat
+import niledb, hashes, serializetools/array2d, posix
 template `&&`(x: int32): untyped = cast[pointer](unsafeAddr(x))
 template `&&`(x: Field): untyped = cast[pointer](unsafeAddr(x[0]))
 
@@ -15,17 +16,19 @@ var tsrc = intParam("tsrc", 0)
 var dt = intParam("dt", (lat[^1] div 2))
 var nv0 = intParam("nv", 10)
 var srcfn = stringParam("srcfn", "testevecs.mod")
+var perambfn = stringParam("perambfn", "testperamb.db")
 
 echo "lo1:"
 var lo1 = newLayout(lat, 1, lo.rankGeom, @[1,1,1,1])
-var cv1 = lo1.ColorVectorS1()
+var cv1 = lo1.ColorVector1()
+var cv1s = lo1.ColorVectorS1()
 
 tic()
 let tsio1 = newTimesliceIo(lo1)
 toc("newTimesliceIo")
 echo "ioRanks: ", tsio1.ioRanks
 
-makeTestEigFile(srcfn, cv1, nv0, tsio1)
+makeTestEigFile(srcfn, cv1s, nv0, tsio1)
 toc("makeTestEigFile")
 
 var mr = newModFileReader(srcfn)
@@ -168,9 +171,32 @@ proc chopLat(gm: GatherMap, dest: Field, s,n: int) =
   #echo prp1[1]
   toc("chopLat pack")
 
+type
+  KeyPropElementalOperator = object
+    t_slice:    cint           ## Propagator time slice
+    t_source:   cint           ## Source time slice
+    spin_l:     cint           ## Sink spin index
+    spin_r:     cint           ## spin index
+    #mass_label: SerialString   ## A mass label
+  ValPropElementalOperator = object
+    mat*: Array2d[Cmplx]   ## Propagator time slice
+
+proc hash(x: KeyPropElementalOperator): Hash =
+  ## Computes a Hash from `x`.
+  var h: Hash = 0
+  # Iterate over parts of `x`.
+  for xAtom in x.fields:
+    # Mix the atom with the partial hash.
+    h = h !& hash(xAtom)
+    # Finish the hash.
+    result = !$h
+
 let nccv1 = 16 * nv * nv
 let prmb = cast[CmplxArray](alloc(nccv1*sizeof(Cmplx)))
+var prmb0: ValPropElementalOperator
+prmb0.mat = newArray2d[Cmplx](nv,nv)
 proc naiveContract() =
+  var kv = initTable[KeyPropElementalOperator,ValPropElementalOperator]()
   let n = nccv1*2
   let pr = cast[ptr type(prmb[0].re)](prmb)
   tic()
@@ -185,6 +211,39 @@ proc naiveContract() =
     #for i in 0..<16*nv:
     #  for j in 0..<nv:
     #    echo &"{i} {j} {prmb[i*nv+j]}"
+    for sl in 0..3:
+      for sr in 0..3:
+        let s0 = (sl*4+sr)*nv*nv
+        #echo "t_slice= ", t_slice, " sl= ", sl, " sr= ", sr
+        let t_slice = (tsrc+t) mod lo[^1]
+        let key = KeyPropElementalOperator(t_slice: cint(t_slice),
+                                           t_source: cint(tsrc),
+                                           spin_l: cint(sl),
+                                           spin_r: cint(sr))
+                                           #mass_label: SerialString(ll))
+        for i in 0..<nv:
+          for j in 0..<nv:
+            prmb0.mat[i,j] = prmb[s0+i*nv+j]
+        kv.add(key,prmb0)
+    toc("kv add")
+  toc("make table")
+  if comm.rank==0:
+    var db = newConfDataStoreDB()
+    var ret = db.open(perambfn, O_RDWR or O_TRUNC or O_CREAT, 0o664)
+    if ret != 0:
+      echo "Error opening DB: ", perambfn
+      quit()
+    #ret = db.insertUserdata(meta)
+    # insert the entire table
+    ret = db.insert(kv)
+    toc("db insert")
+    if ret != 0:
+      echo "Ooops, ret= ", ret
+      quit("Error in insertion")
+    ret = db.close()
+    if ret != 0:
+      echo "Ooops, ret= ", ret
+      quit("Error in closing")
   toc("naiveContract")
 
 
@@ -229,8 +288,10 @@ toc("makeGatherMap")
 
 for i in 0..<nv:
   threads:
-    cv1 := 0
-  getLapl(cv1, mr, tsio1, tsrc, i, tsrc)
+    cv1s := 0
+  getLapl(cv1s, mr, tsio1, tsrc, i, tsrc)
+  threads:
+    cv1 := cv1s
   #echo "getLapl:"
   #echo cv1[0]
   #echo cv1[1]
