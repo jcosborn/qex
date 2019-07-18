@@ -11,6 +11,7 @@ type
     plaq*: float
     rect*: float
     pgm*: float
+    adjplaq*: float
 
 # plaq: 6 types
 # rect: 12 types
@@ -136,6 +137,7 @@ proc gaugeForce*[T](uu: openArray[T]): auto =
         boundaryWaitSB(ss[mu][nu]): needBoundary = true
         boundaryWaitSB(ss[nu][mu]): needBoundary = true
         if needBoundary:
+          boundarySyncSB()
           for ir in lo:
             if not isLocal(ss[mu][nu],ir):
               var bmu: type(load1(u[0][0]))
@@ -207,7 +209,8 @@ proc gaugeAction2*(c: GaugeActionCoeffs, g: array|seq): auto =
   #echo "plaq: ", pl, "  rect: ", rt, "  pgm: ", pg
   #result = (pl,rt,pg)
   result = (-1.0/nc.float) * (c.plaq*pl + c.rect*rt + c.pgm*pg)
-template gaugeAction2*(g: array|seq, c: GaugeActionCoeffs): untyped = gaugeAction2(c, g)
+template gaugeAction2*(g: array|seq, c: GaugeActionCoeffs): untyped =
+  gaugeAction2(c, g)
 proc gaugeAction2*(g: array|seq): auto =
   var c = GaugeActionCoeffs(plaq:1.0)
   gaugeAction2(c, g)
@@ -239,6 +242,138 @@ proc gaugeForce2*(f,g: array|seq, c: GaugeActionCoeffs) =
 proc gaugeForce2*(f,g: array|seq): auto =
   var c = GaugeActionCoeffs(plaq:1.0)
   gaugeForce2(f,g,c)
+
+proc actionA*(c: GaugeActionCoeffs, g: any): auto =
+  ## Specialized gauge action for plaq + adjplaq
+  mixin mul, load1, createShiftBufs
+  tic()
+  let lo = g[0].l
+  let nd = lo.nDim
+  let nc = g[0][0].ncols
+  var sf = newSeq[type(createShiftBufs(g[0],1,"all"))](nd)
+  for i in 0..<nd-1:
+    sf[i] = createShiftBufs(g[0], 1, "all")
+  sf[nd-1].newSeq(nd)
+  for i in 0..<nd-1: sf[nd-1][i] = sf[i][i]
+  var pl = [0.0, 0.0]
+  toc("plaq setup")
+  threads:
+    tic()
+    var plt = [0.0, 0.0]
+    var umunu,unumu: type(load1(g[0][0]))
+    for mu in 0..<nd:
+      for nu in 0..<nd:
+        if mu != nu:
+          startSB(sf[mu][nu], g[mu][ix])
+    toc("plaq start shifts")
+    for ir in g[0]:
+      for mu in 1..<nd:
+        for nu in 0..<mu:
+          if isLocal(sf[mu][nu],ir) and isLocal(sf[nu][mu],ir):
+            localSB(sf[mu][nu], ir, mul(unumu,g[nu][ir],it), g[mu][ix])
+            localSB(sf[nu][mu], ir, mul(umunu,g[mu][ir],it), g[nu][ix])
+            let dt = dot(umunu,unumu)
+            plt[0] += simdSum(dt.re)
+            plt[1] += simdSum(dt.norm2)
+    toc("plaq local")
+    var needBoundary = false
+    for mu in 0..<nd:
+      for nu in 0..<nd:
+        if mu != nu:
+          boundaryWaitSB(sf[mu][nu]): needBoundary = true
+    toc("plaq wait")
+    if needBoundary:
+      boundarySyncSB()
+      for ir in g[0]:
+        for mu in 1..<nd:
+          for nu in 0..<mu:
+            if not isLocal(sf[mu][nu],ir) or not isLocal(sf[nu][mu],ir):
+              if isLocal(sf[mu][nu], ir):
+                localSB(sf[mu][nu], ir, mul(unumu,g[nu][ir],it), g[mu][ix])
+              else:
+                boundaryGetSB(sf[mu][nu], ir):
+                  mul(unumu, g[nu][ir], it)
+              if isLocal(sf[nu][mu], ir):
+                localSB(sf[nu][mu], ir, mul(umunu,g[mu][ir],it), g[nu][ix])
+              else:
+                boundaryGetSB(sf[nu][mu], ir):
+                  mul(umunu, g[mu][ir], it)
+              let dt = dot(umunu,unumu)
+              plt[0] += simdSum(dt.re)
+              plt[1] += simdSum(dt.norm2)
+    toc("plaq boundary")
+    threadSum(plt)
+    if threadNum == 0:
+      for i in 0..<pl.len:
+        pl[i] = (-1.0/(float(nc))) * plt[i]
+      rankSum(pl)
+    toc("plaq sum")
+  #result = pl
+  result = c.plaq*pl[0] + c.adjplaq*pl[1]
+  toc("plaq end", flops=lo.nSites.float*float(2*8*nc*nc*nc-1))
+
+proc forceA*(c: GaugeActionCoeffs, g,f: any) =
+  ## Specialized gauge force for plaq + adjplaq
+  mixin load1, adj
+  tic()
+  let lo = g[0].l
+  let nd = lo.nDim
+  let nc = g[0][0].ncols
+  let cp = (1.0/float(nc)) * c.plaq
+  let ca = (2.0/float(nc)) * c.adjplaq
+  var cs = startCornerShifts(g)
+  toc("gaugeForce startCornerShifts")
+  var (stf,stu,ss) = makeStaples(g, cs)
+  toc("gaugeForce makeStaples")
+  for i in 0..<nd:
+    f[i] := 0
+  threads:
+    tic()
+    for ir in g[0]:
+      for mu in 1..<nd:
+        for nu in 0..<mu:
+          let tmn = dot(stf[mu][nu][ir], g[mu][ir])
+          f[mu][ir] += (cp+ca*tmn) * stf[mu][nu][ir]
+          let tnm = dot(stf[nu][mu][ir], g[nu][ir])
+          f[nu][ir] += (cp+ca*tnm) * stf[nu][mu][ir]
+          if isLocal(ss[mu][nu],ir):
+            var bmu: type(load1(g[0][0]))
+            localSB(ss[mu][nu], ir, assign(bmu,it), stu[mu][nu][ix])
+            let tmu = dot(bmu, g[mu][ir])
+            f[mu][ir] += (cp+ca*tmu) * bmu
+          if isLocal(ss[nu][mu],ir):
+            var bnu: type(load1(g[0][0]))
+            localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu][mu][ix])
+            let tnu = dot(bnu, g[nu][ir])
+            f[nu][ir] += (cp+ca*tnu) * bnu
+    toc("gaugeForce local")
+    for mu in 1..<nd:
+      for nu in 0..<mu:
+        var needBoundary = false
+        boundaryWaitSB(ss[mu][nu]): needBoundary = true
+        boundaryWaitSB(ss[nu][mu]): needBoundary = true
+        if needBoundary:
+          boundarySyncSB()
+          for ir in lo:
+            if not isLocal(ss[mu][nu],ir):
+              var bmu: type(load1(g[0][0]))
+              getSB(ss[mu][nu], ir, assign(bmu,it), stu[mu][nu][ix])
+              let tmu = dot(bmu, g[mu][ir])
+              f[mu][ir] += (cp+ca*tmu) * bmu
+            if not isLocal(ss[nu][mu],ir):
+              var bnu: type(load1(g[0][0]))
+              getSB(ss[nu][mu], ir, assign(bnu,it), stu[nu][mu][ix])
+              let tnu = dot(bnu, g[nu][ir])
+              f[nu][ir] += (cp+ca*tnu) * bnu
+    #toc("gaugeForce boundary")
+  toc("gaugeForce threads")
+  #toc("gaugeAction end")
+  for mu in 0..<f.len:
+    for e in f[mu]:
+      mixin trace
+      let s = g[mu][e]*f[mu][e].adj
+      f[mu][e].projectTAH s
+  toc("gaugeForce end")
 
 when isMainModule:
   import qex

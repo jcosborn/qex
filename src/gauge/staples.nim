@@ -148,6 +148,7 @@ proc makeStaples*[T](uu: openArray[T], s: any): auto =
         boundaryWaitSB(s[nu][mu]): needBoundaryU = true
         needBoundary = needBoundary or needBoundaryU
         if needBoundaryU:
+          boundarySyncSB()
           for ir in lo:
             if not isLocal(s[mu][nu],ir) or not isLocal(s[nu][mu],ir):
               getSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
@@ -155,6 +156,7 @@ proc makeStaples*[T](uu: openArray[T], s: any): auto =
               mul(unumu, u[nu][ir].adj, u[mu][ir])
               mul(stu[mu][nu][ir], unumu, unu)
               mul(stu[nu][mu][ir], unumu.adj, umu)
+        threadBarrier()
         ss[mu][nu].startSB(stu[mu][nu][ix])
         ss[nu][mu].startSB(stu[nu][mu][ix])
     toc("makeStaplesU boundary")

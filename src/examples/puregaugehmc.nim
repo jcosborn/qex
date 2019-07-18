@@ -10,7 +10,7 @@ let
   #lat = @[32,32]
   #lat = @[1024,1024]
   lo = lat.newLayout
-  gc = GaugeActionCoeffs(plaq:6)
+  gc = GaugeActionCoeffs(plaq: 6.0, adjplaq: -2.0)
 var r = lo.newRNGField(RngMilc6, 987654321)
 var R:RngMilc6  # global RNG
 R.seed(987654321, 987654321)
@@ -21,6 +21,7 @@ g.unit
 
 echo g.plaq
 echo g.gaugeAction2 gc
+echo gc.actionA g
 
 var
   p = lo.newgauge
@@ -38,14 +39,16 @@ proc mdt(t: float) =
       for s in g[mu]:
         g[mu][s] := exp(t*p[mu][s])*g[mu][s]
 proc mdv(t: float) =
-  f.gaugeforce2(g, gc)
+  #f.gaugeforce2(g, gc)
+  gc.forceA(g, f)
   threads:
     for mu in 0..<f.len:
       p[mu] -= t*f[mu]
 
 # For FGYin11
 proc fgv(t: float) =
-  f.gaugeforce2(g, gc)
+  #f.gaugeforce2(g, gc)
+  gc.forceA(g, f)
   threads:
     for mu in 0..<g.len:
       for s in g[mu]:
@@ -78,7 +81,8 @@ for n in 1..trajs:
       g0[i] := g[i]
     threadMaster: p2 = p2t
   let
-    ga0 = g0.gaugeAction2 gc
+    #ga0 = g0.gaugeAction2 gc
+    ga0 = gc.actionA g0
     t0 = 0.5*p2
     h0 = ga0 + t0
   echo "Begin H: ",h0,"  Sg: ",ga0,"  T: ",t0
@@ -91,7 +95,8 @@ for n in 1..trajs:
       p2t += p[i].norm2
     threadMaster: p2 = p2t
   let
-    ga1 = g.gaugeAction2 gc
+    #ga1 = g.gaugeAction2 gc
+    ga1 = gc.actionA g
     t1 = 0.5*p2
     h1 = ga1 + t1
   echo "End H: ",h1,"  Sg: ",ga1,"  T: ",t1
