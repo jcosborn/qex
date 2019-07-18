@@ -304,12 +304,12 @@ proc actionA*(c: GaugeActionCoeffs, g: any): auto =
     toc("plaq boundary")
     threadSum(plt)
     if threadNum == 0:
-      for i in 0..<pl.len:
-        pl[i] = (-1.0/(float(nc))) * plt[i]
+      pl[0] = plt[0] / float(nc)
+      pl[1] = plt[1] / float(nc*nc)
       rankSum(pl)
     toc("plaq sum")
-  #result = pl
-  result = c.plaq*pl[0] + c.adjplaq*pl[1]
+  let a0 = 6 * lo.nSites.float
+  result = c.plaq*(a0-pl[0]) + c.adjplaq*(a0-pl[1])
   toc("plaq end", flops=lo.nSites.float*float(2*8*nc*nc*nc-1))
 
 proc forceA*(c: GaugeActionCoeffs, g,f: any) =
@@ -319,8 +319,8 @@ proc forceA*(c: GaugeActionCoeffs, g,f: any) =
   let lo = g[0].l
   let nd = lo.nDim
   let nc = g[0][0].ncols
-  let cp = (1.0/float(nc)) * c.plaq
-  let ca = (2.0/float(nc)) * c.adjplaq
+  let cp = c.plaq / float(nc)
+  let ca = 2.0 * c.adjplaq / float(nc*nc)
   var cs = startCornerShifts(g)
   toc("gaugeForce startCornerShifts")
   var (stf,stu,ss) = makeStaples(g, cs)
