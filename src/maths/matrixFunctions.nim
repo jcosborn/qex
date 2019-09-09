@@ -71,6 +71,39 @@ proc determinant*(x: any): auto =
   else:
     result = determinantN(x)
 
+proc eigs3(e0,e1,e2: var any; tr,p2,det: any) =
+  mixin sin,cos,acos
+  let tr3 = (1.0/3.0)*tr
+  let p23 = (1.0/3.0)*p2
+  let tr32 = tr3*tr3
+  let q = abs(0.5*(p23-tr32))
+  let r = 0.25*tr3*(5*tr32-p2) - 0.5*det
+  let sq = sqrt(q)
+  let sq3 = q*sq
+  #let rsq3 = r/sq3
+  #var minv,maxv {.noinit.}:type(rsq3)
+  #minv := -1.0
+  #maxv := 1.0
+  #let rsq3r = min(maxv, max(minv,rsq3))
+  let isq3 = 1.0/sq3
+  var minv,maxv {.noinit.}: type(isq3)
+  maxv := 3e38
+  minv := -3e38
+  let isq3c = min(maxv, max(minv,isq3))
+  let rsq3c = r * isq3c
+  maxv := 1
+  minv := -1
+  let rsq3 = min(maxv, max(minv,rsq3c))
+  let t = (1.0/3.0)*acos(rsq3)
+  let st = sin(t)
+  let ct = cos(t)
+  let sqc = sq*ct
+  let sqs = 1.73205080756887729352*sq*st  # sqrt(3)
+  let ll = tr3 + sqc
+  e0 = tr3 - 2*sqc
+  e1 = ll + sqs
+  e2 = ll - sqs
+
 template rsqrtPHM2(r:typed; x:typed):untyped =
   let x00 = x[0,0].re
   let x11 = x[1,1].re
@@ -84,6 +117,7 @@ template rsqrtPHM2(r:typed; x:typed):untyped =
   r := c0 - c1*x
 
 proc rsqrtPHM3f(c0,c1,c2:var any; tr,p2,det:any) =
+  #[
   mixin sin,cos,acos
   let tr3 = (1.0/3.0)*tr
   let p23 = (1.0/3.0)*p2
@@ -115,6 +149,9 @@ proc rsqrtPHM3f(c0,c1,c2:var any; tr,p2,det:any) =
   let ll = tr3 + sqc
   let l1 = ll + sqs
   let l2 = ll - sqs
+  ]#
+  var l0,l1,l2 {.noInit.}: type(tr)
+  eigs3(l0,l1,l2, tr,p2,det)
   let sl0 = sqrt(abs(l0))
   let sl1 = sqrt(abs(l1))
   let sl2 = sqrt(abs(l2))
@@ -162,7 +199,7 @@ template rsqrtPHMN(r:typed; x:typed):untyped =
   r := x/sqrt(ds)
 
 template rsqrtPHM(r:typed; x:typed):untyped =
-  mixin rsqrt
+  mixin rsqrt, nrows
   assert(r.nrows == x.nrows)
   assert(r.ncols == x.ncols)
   assert(r.nrows == r.ncols)
@@ -176,9 +213,23 @@ template rsqrtPHM(r:typed; x:typed):untyped =
   else:
     echo "unimplemented"
     quit(1)
-proc rsqrtPH(r:var Mat1; x:Mat2) = rsqrtPHM(r, x)
+proc rsqrtPH*(r: var Mat1; x: Mat2) = rsqrtPHM(r, x)
+template rsqrtPH*[T:Mat1](x: T): T =
+  var r {.noInit.}: T
+  rsqrtPH(r, x)
+  r
 
+# x (x'x)^{-1/2}
 proc projectU*(r: var Mat1; x: Mat2) =
+  let t = x.adj * x
+  var t2{.noInit.}: type(t)
+  rsqrtPH(t2, t)
+  mul(r, x, t2)
+
+# (d/dx') Tr (x'x)^{-1/2} x' c
+# = (d/dx') Tr (x'x)^{1/2} x^-1 c
+# = (d/dx') Tr (x'x)^{-1/2} c x
+proc projectUderiv*(r: var Mat1; x: Mat2; c: Mat3) =
   let tx = x
   let t = tx.adj * tx
   var t2{.noInit.}: type(t)

@@ -988,7 +988,8 @@ template forStaticUntyped*(index,i0,i1,body:untyped):untyped =
   bind forStaticX2
   forStaticX2(i0, i1, index, body)
 
-proc unrollFor*(n:NimNode):NimNode =
+proc unrollFor*(n0: NimNode): NimNode =
+  var n = n0.copyNimTree
   #echo "### enter unrollFor"
   #echo n.repr
   #echo n.treerepr

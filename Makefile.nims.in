@@ -75,6 +75,7 @@ buildTask tests, "build unit tests":
   #echo runscript.join("\n")
   runscript.add("$CLEANUPJOBS")
   runscript.add("if [ X != \"X$failed\" ];then echo Failed tests: $failed;exit 1;fi")
+  runscript.add("echo $0: All tests passed")
   writeFile("testscript.sh", runscript.join("\n"))
   exec("chmod 755 testscript.sh")
   if dorun:

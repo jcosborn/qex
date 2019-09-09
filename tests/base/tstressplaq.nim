@@ -35,21 +35,23 @@ suite "Stress plaquette test":
 
   test "change single link":
     for s in 0..<lo.physVol:
+      var cr,ci: float
       let ri = lo.rankIndex(s)
-      let i = ri.index
-      g[0]{i}.gaussian rs{i}
-      #g[0]{i}.projectSU
-      var t:float
-      var cr,ci:float
-      for a in 0..<g[0][0].ncols:
-        t := g[0]{i}[a,a].re
-        cr += t
-      cr /= 3.0
-      for a in 0..<g[0][0].ncols:
-        t := g[0]{i}[a,a].im
-        ci += t
-      ci /= 3.0
-      #echo "i: ",i
+      let r = ri.rank
+      if lo.myrank == r:
+        let i = ri.index
+        g[0]{i}.gaussian rs{i}
+        #g[0]{i}.projectSU
+        var t: float
+        for a in 0..<g[0][0].ncols:
+          t := g[0]{i}[a,a].re
+          cr += t
+        cr /= 3.0
+        for a in 0..<g[0][0].ncols:
+          t := g[0]{i}[a,a].im
+          ci += t
+        ci /= 3.0
+        #echo "i: ",i
       rankSum(cr)
       rankSum(ci)
       let
@@ -62,6 +64,8 @@ suite "Stress plaquette test":
       check(l.re~lr)
       check(l.im~li)
       check(p~pe)
-      g[0]{i} := 1
+      if lo.myrank == r:
+        let i = ri.index
+        g[0]{i} := 1
 
   qexFinalize()
