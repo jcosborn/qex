@@ -11,7 +11,8 @@ let
   #lat = @[32,32]
   #lat = @[1024,1024]
   lo = lat.newLayout
-  gc = GaugeActionCoeffs(plaq:6)
+  #gc = GaugeActionCoeffs(plaq:6)
+  gc = GaugeActionCoeffs(plaq:6,adjplaq:)
 var r = lo.newRNGField(RngMilc6, 987654321)
 var R:RngMilc6  # global RNG
 R.seed(987654321, 987654321)

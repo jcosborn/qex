@@ -149,6 +149,12 @@ template `[]`*(x: FieldUnop; i: int): untyped =
   elif x.Op == foToDouble: toDouble(x.f1[i])
   else: {.error.}
 
+template `[]`*(x: Field; c: openarray): untyped =
+  let ri = x.l.rankIndex(c)
+  x{ri.index}
+  #let t = eval(x{ri.index})
+  #t
+
 template even*(x:Field):untyped = x["even"]
 template odd*(x:Field):untyped = x["odd"]
 template all*(x:Field):untyped = x["all"]
