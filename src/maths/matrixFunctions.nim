@@ -4,6 +4,7 @@ import complexNumbers
 #import complexType
 import matrixConcept
 import types
+import projUderiv
 
 proc determinantN*(a: any): auto =
   const nc = a.nrows
@@ -226,15 +227,38 @@ proc projectU*(r: var Mat1; x: Mat2) =
   rsqrtPH(t2, t)
   mul(r, x, t2)
 
-# (d/dx') Tr (x'x)^{-1/2} x' c
-# = (d/dx') Tr (x'x)^{1/2} x^-1 c
-# = (d/dx') Tr (x'x)^{-1/2} c x
-proc projectUderiv*(r: var Mat1; x: Mat2; c: Mat3) =
-  let tx = x
-  let t = tx.adj * tx
-  var t2{.noInit.}: type(t)
-  rsqrtPH(t2, t)
-  mul(r, tx, t2)
+# (d/dX') Tr(U'C+C'U) / 2 = (d/dX') Tr(X'CZ+C'XZ) / 2
+# = CZ - (1/2) < Z (X'C + C'X) Z (dY/dX') >
+# (dY/dX') Y + Y (dY/dX') = 2X
+# Z(dY/dX') Y + Y Z(dY/dX') = 2ZX
+# S Y + Y S = U' C Z = Z X' C Z
+# cz-xz^3(x'c+c'x)/2
+# CH: 4528 flops
+proc projectUderiv*(r: var Mat1, u: Mat2, x: Mat3, chain: Mat4) =
+  # U = X (X'X)^{-1/2} = (XX')^{-1/2} X
+  # Y = sqrt(X'X)
+  # Z = (X'X)^{-1/2}
+  # F = C Z - z (Cd U + Ud C) z (dY/dX)
+  var y, z, t1, t2: Mat1
+  y := x.adj * u
+  inverse(z, y)
+  #QLA_M_eq_M_times_M(d, c, &z);
+  r := chain * z
+  #QLA_M_eq_Ma_times_M(&t1, p, d);
+  t1 := u.adj * r
+  #sylsolve_site(NCARG &t2, &y, &y, &t1);
+  sylsolve(t2, y, t1)
+  #QLA_M_eq_M(&t1, &t2);
+  #QLA_M_peq_Ma(&t1, &t2);
+  #QLA_M_eq_M_times_M(&t2, m, &t1);
+  #QLA_M_meq_M(d, &t2);
+  t1 := t2 + t2.adj
+  r -= x * t1
+
+proc projectUderiv*(r: var Mat1, x: Mat2, c: Mat3) =
+  var u {.noInit.}: type(r)
+  projectU(u, x)
+  projectUderiv(r, u, x, c)
 
 proc projectSU*(r: var Mat1; x: Mat2) =
   const nc = r.nrows
@@ -344,34 +368,88 @@ proc im*(m: Mat1): auto {.noInit.} =
 when isMainModule:
   import macros
   import simd
+  template `+`(x: SimdS4): untyped = x
+  template `+`(x: SimdS4, y: ComplexType): untyped =
+    asReal(x) + y
+  template `-`(x: SimdS4, y: ComplexType): untyped =
+    asReal(x) - y
+  template `*`(x: SimdS4, y: ComplexType): untyped =
+    asReal(x) * y
+  template `*`(x: ComplexType, y: SimdS4): untyped =
+    x * asReal(y)
+  template add(r: ComplexType, x: SimdS4, y: ComplexType): untyped =
+    add(r, asReal(x), y)
+  template sub(r: ComplexType, x: SimdS4, y: ComplexType): untyped =
+    sub(r, asReal(x), y)
+  template mul(r: ComplexType, x: SimdS4, y: ComplexType): untyped =
+    mul(r, asReal(x), y)
   template makeTest2(n,f:untyped):untyped =
     proc f[T]:auto =
       const N = n
       type
         Cmplx = ComplexType[T]
         M2 = MatrixArray[N,N,Cmplx]
-      var m1,m2,m3,m4:M2
+      var m1,m2,m3,m4: M2
       for i in 0..<N:
         for j in 0..<N:
-          #if i==j:
-            m1[i,j] = cast[Cmplx](((0.5+i+j-i*j).to(T),(i-j-i*i+j*j).to(T)))
+          let fi = i.float
+          let fj = j.float
+          m1[i,j].re := 0.5 + 0.4*fi + 1.3*fj - fi*fj
+          m1[i,j].im := 0.1 + 0.6*fi - 1.4*fj - fi*fi + fj*fj
+      echo "test " & $N & " " & $T
+      echo "m1: ", m1
       m2 := m1.adj * m1
       #echo m2
       rsqrtPH(m3, m2)
       #echo m3
       m4 := m3*m2*m3
       let err = sqrt((1-m4).norm2/(N*N))
-      echo "test " & $N & " " & $T
       #echo m4
       echo err
       result = err
+      let eps = epsilon(simdSum(err))
+      let seps = sqrt(eps)
+      echo "eps: ", eps
       projectU(m2, m1)
       m3 := m2.adj*m2
-      let err2 = sqrt((1-m3).norm2/(N*N))
-      echo "err2: ", err2
-      m2 := 0.1*(m2 - (trace(m2)/N))
-      m3 := exp(m2)
-      echo "exp ",m2,"\n\t= ",m3
+      var err2 = sqrt((1-m3).norm2/(N*N))
+      echo " projectU err: ", err2
+      doAssert(simdSum(err2)<simdLength(err2)*N*eps*30)
+      #m2 := 0.1*(m2 - (trace(m2)/N))
+      let m2n = 1/(10*sqrt(m2.norm2))
+      m3 := exp(m2n*m2)
+      m4 := exp(-m2n*m2)
+      m2 := m3*m4
+      #echo "exp ",m2,"\n\t= ",m3
+      err2 = sqrt((1-m2).norm2/(N*N))
+      echo " exp err: ", err2
+      doAssert(simdSum(err2)<simdLength(err2)*N*eps*2)
+      inverse(m4, m1)
+      m3 := m1*m4
+      echo m3
+      err2 = sqrt((1-m3).norm2/(N*N))
+      echo " inverse err: ", err2
+      doAssert(simdSum(err2)<simdLength(err2)*N*eps*2)
+      projectU(m2, m1)
+      let r1 = trace(m4.adj*m2).re
+      m3 := m1 + 3*seps*m1*m1
+      #m3 := m1 + 1e-3'f32*m1*m1
+      projectU(m2, m3)
+      let r2 = trace(m4.adj*m2).re
+      projectUderiv(m2, m1, m4)
+      let dr = r2 - r1
+      let dm = trace((m3-m1).adj * m2).re
+      echo " r1: ", r1
+      echo " r2: ", r2
+      echo " dr: ", dr
+      echo " dm: ", dm
+      #echo "m1: ", m1
+      #echo "m3: ", m3
+      let dd = abs(dr - dm)
+      echo " dd: ", dd
+      doAssert(simdSum(dd)<simdLength(dd)*N*eps*40)
+
+
   macro makeTest(n:untyped):auto =
     let f = ident("test" & n.repr)
     result = quote do: makeTest2(`n`,`f`)
@@ -384,10 +462,10 @@ when isMainModule:
       echo "error/eps: ", r/epsilon(r)
       doAssert(abs(r)<128*epsilon(r))
     check(test1[float32]())
-    #check(test2[float32]())
-    #check(test3[float32]())
-    #check(test1[float64]())
-    #check(test2[float64]())
+    check(test2[float32]())
+    check(test3[float32]())
+    check(test1[float64]())
+    check(test2[float64]())
     check(test3[float64]())
   block:
     template check(x:untyped):untyped =
@@ -400,7 +478,7 @@ when isMainModule:
         check(test1[t]())
         check(test2[t]())
         check(test3[t]())
-    #doTest(SimdS4)
+    doTest(SimdS4)
     #doTest(SimdD4)
     #doTest(SimdS8)
     #doTest(SimdD8)

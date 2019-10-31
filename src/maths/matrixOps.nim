@@ -99,8 +99,8 @@ template makeMap1(op:untyped):untyped {.dirty.} =
           else:
             op(r[i,j], 0)
   template `op MM`*(rr:untyped; xx:untyped):untyped =
-    mixin op
-    optimizeAst:
+      mixin op
+    #optimizeAst:
       subst(r,rr,x,xx,i,_,j,_):
         assert(r.nrows == x.nrows)
         assert(r.ncols == x.ncols)

@@ -111,6 +111,7 @@ type
   Mat1*[T] = AsMatrix[T]
   Mat2*[T] = AsMatrix[T]
   Mat3*[T] = AsMatrix[T]
+  Mat4*[T] = AsMatrix[T]
   MV1* = Mat1 | Vec1
   MV2* = Mat2 | Vec2
   MV3* = Mat3 | Vec3
