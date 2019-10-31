@@ -88,7 +88,9 @@ template simdType*[T](x: type ComplexProxy[T]): untyped = simdType(T)
 template simdType*[TR,TI](x: ComplexObj[TR,TI]): untyped =
   mixin simdType
   simdType(TR)
-template simdLength*[TR,TI](x: ComplexObj[TR,TI]): untyped = simdLength(TR)
+template simdLength*[TR,TI](x: ComplexObj[TR,TI]): untyped =
+  mixin simdLength
+  simdLength(TR)
 template simdLength*[T](x: ComplexProxy[T]): untyped = simdLength(T)
 template simdLength*[T](x: type ComplexProxy[T]): untyped = simdLength(T)
 template simdSum*(x: ComplexObj): untyped =
@@ -155,8 +157,12 @@ template add*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
          untyped =  assign(r,x+y)
 template add*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
   r := x + y
+template add*(r: ComplexProxy, x: RealProxy, y: ComplexProxy3): untyped =
+  r := x + y
 
 template sub*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
+  r := x - y
+template sub*(r: ComplexProxy, x: RealProxy, y: ComplexProxy3): untyped =
   r := x - y
 template sub*(r: ComplexProxy, x: ComplexProxy2, y: SomeNumber): untyped =
   r := x - y
@@ -172,6 +178,8 @@ template mulCCR*(r: ComplexProxy, y: ComplexProxy2, x: untyped):
 template mul*(r: ComplexProxy, x: ComplexProxy2, y: SomeNumber): untyped =
   r := x * y
 template mul*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
+  r := x * y
+template mul*(r: ComplexProxy, x: RealProxy, y: ComplexProxy3): untyped =
   r := x * y
 template mul*(r: ComplexProxy, x: ImagProxy, y: ComplexProxy3): untyped =
   r := x * y

@@ -39,6 +39,8 @@ template mapSimd*(t,f: untyped) {.dirty.} =
       result[i] = f(x[i])
 
 when declared(SimdD1):
+  template isWrapper*(x: SimdD1): untyped = false
+  template adj*(x: SimdD1): untyped = x
   template eval*(x: SimdD1): untyped = x
   template toSingleImpl*(x: SimdD1): untyped = toSingle(x)
   template toDoubleImpl*(x: SimdD1): untyped = x
@@ -46,6 +48,8 @@ when declared(SimdD1):
   mapSimd(SimdD1, ln)
 
 when declared(SimdD2):
+  template isWrapper*(x: SimdD2): untyped = false
+  template adj*(x: SimdD2): untyped = x
   template eval*(x: SimdD2): untyped = x
   template toSingleImpl*(x: SimdD2): untyped = toSingle(x)
   template toDoubleImpl*(x: SimdD2): untyped = x
@@ -53,6 +57,8 @@ when declared(SimdD2):
   mapSimd(SimdD2, ln)
 
 when declared(SimdS4):
+  template isWrapper*(x: SimdS4): untyped = false
+  template adj*(x: SimdS4): untyped = x
   template eval*(x: SimdS4): untyped = x
   template toSingleImpl*(x: SimdS4): untyped = x
   template toDoubleImpl*(x: SimdS4): untyped = toDouble(x)
@@ -61,6 +67,8 @@ when declared(SimdS4):
   mapSimd(SimdS4, ln)
 
 when declared(SimdD4):
+  template isWrapper*(x: SimdD4): untyped = false
+  template adj*(x: SimdD4): untyped = x
   template assign*(r: array[4,float32], x: SimdD4): untyped =
     assign(r, toSingle(x))
   template eval*(x: SimdD4): untyped = x
@@ -90,6 +98,8 @@ when declared(SimdS4) and declared(SimdD4):
     inorm2(r, y)
 
 when declared(SimdS8):
+  template isWrapper*(x: SimdS8): untyped = false
+  template adj*(x: SimdS8): untyped = x
   template toSingleImpl*(x: SimdS8): untyped = x
   template toSingleImpl*(x: SimdD8): untyped = toSingle(x)
   template toDoubleImpl*(x: SimdS8): untyped = toDouble(x)
@@ -99,7 +109,9 @@ when declared(SimdS8):
   mapSimd(SimdS8, ln)
 
 when declared(SimdD8):
+  template isWrapper*(x: SimdD8): untyped = false
   template eval*(x: SimdD8): untyped = x
+  template adj*(x: SimdD8): untyped = x
   template inv*(x: SimdD8): untyped = 1.0/x
   mapSimd(SimdD8, exp)
   mapSimd(SimdD8, ln)
@@ -131,6 +143,8 @@ when declared(SimdD8) and declared(SimdS8):
 
 
 when declared(SimdS16):
+  template isWrapper*(x: SimdS16): untyped = false
+  template adj*(x: SimdS16): untyped = x
   proc toSingle*(x: SimdD16): SimdS16 {.inline,noInit.} =
     for i in 0..<16:
       result[i] = x[i]
@@ -148,6 +162,8 @@ when declared(SimdS16):
   mapSimd(SimdS16, ln)
 
 when declared(SimdD16):
+  template isWrapper*(x: SimdD16): untyped = false
+  template adj*(x: SimdD16): untyped = x
   template eval*(x: SimdD16): auto = x
   mapSimd(SimdD16, exp)
   mapSimd(SimdD16, ln)
