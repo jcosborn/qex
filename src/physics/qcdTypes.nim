@@ -109,22 +109,22 @@ type
 #template assign*(r: Adjointed, x: Adjointed) = r[] := x[]
 overloadAsReal(SDvec)
 template `+`*(x: SDvec): untyped = x
-template adj*(x: SDvec): untyped = x
 template add*(r: AsComplex, x: SDvec, y: AsComplex) =
   r := add(x,y)
 template mul*(r: AsComplex, x: SDvec, y: AsComplex) =
   r := mul(x,y)
 #template neg*(r: SComplexV, x: SComplexV) = r := neg(x)
 
-template isWrapper*(x: Svec0): untyped = false
-template isWrapper*(x: Dvec0): untyped = false
-
-template simdLength*(x:typedesc[SColorMatrixV]):untyped = simdLength(Svec0)
+template simdLength*(x:typedesc[SColorMatrixV]):untyped =
+  mixin simdLength
+  simdLength(Svec0)
 template simdLength*(x:typedesc[SColorVectorV]):untyped = simdLength(Svec0)
 #template simdLength*(x:SColorVectorV):untyped = simdLength(Svec0)
 #template simdLength*(x:SColorMatrixV):untyped = simdLength(Svec0)
 template simdLength*(x:typedesc[DColorMatrixV]):untyped = simdLength(Dvec0)
-template simdLength*(x:typedesc[DColorVectorV]):untyped = simdLength(Dvec0)
+template simdLength*(x:typedesc[DColorVectorV]):untyped =
+  mixin simdLength
+  simdLength(Dvec0)
 #template simdLength*(x:DColorVectorV):untyped = simdLength(Dvec0)
 #template simdLength*(x:DColorMatrixV):untyped = simdLength(Dvec0)
 template simdLength*(x:AsComplex):untyped = simdLength(x.re)
@@ -338,6 +338,7 @@ template perm2*[T](r: var T; prm: int; x: T) =
     rr[i] = perm(xx[i], prm)
 #proc pack*(r:ptr any; l:ptr any; pck:int; x:PackTypes) {.inline.} =
 proc pack*(r:ptr any; l:ptr any; pck:int; x:any) {.inline.} =
+  mixin simdLength
   if pck==0:
     #const n = x.nVectors
     const n = x.numNumbers div x.simdLength

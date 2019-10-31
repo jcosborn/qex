@@ -422,24 +422,24 @@ template makeOps(op,f,fM,s: untyped): untyped {.dirty.} =
       staticTraceEnd: `f FieldAny`
   when profileEqns:
     template op*(x:Field; y:any):untyped =
-      static: exprInstInfo = instantiationInfo(-1)
+      #static: exprInstInfo = instantiationInfo(-1)
       block:
         tic(-2)
         f(x, y)
         toc(-2)
     template op*(x:Subsetted; y:any):untyped =
-      static: exprInstInfo = instantiationInfo(-1)
+      #static: exprInstInfo = instantiationInfo(-1)
       block:
         tic(-2)
         f(x, y)
         toc(-2)
   else:
     template op*(x:Field; y:any):untyped =
-      static: exprInstInfo = instantiationInfo(1)
+      #static: exprInstInfo = instantiationInfo(1)
       f(x, y)
     #template op*(x:var Field; y:any):untyped = f(x, y)
     template op*(x:Subsetted; y:any):untyped =
-      static: exprInstInfo = instantiationInfo(1)
+      #static: exprInstInfo = instantiationInfo(1)
       f(x, y)
 makeOps(`:=`, assign, assignM, "assign")
 makeOps(`+=`, iadd, iaddM, "iadd")
