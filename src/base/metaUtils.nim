@@ -648,8 +648,8 @@ macro makeIdent*(x: untyped): untyped =
 
 macro delayExpansion*(x:untyped):auto = result = x
 
-macro `$`*(t: type): untyped =
-  result = newLit(t.getType[1].repr)
+#macro `$`*(t: type): untyped =
+#  result = newLit(t.getType[1].repr)
 
 macro echoType*(x:typed):auto =
   result = newEmptyNode()

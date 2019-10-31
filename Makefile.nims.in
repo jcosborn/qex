@@ -38,6 +38,7 @@ proc nimRun(f: string, outfile="")
 
 var debug = false
 var run = false
+var usecpp = false
 var verbosity = -1
 
 configTask debug, "set debug build":
@@ -45,6 +46,9 @@ configTask debug, "set debug build":
 
 configTask run, "run executable after building":
   run = true
+
+configTask cpp, "compile in cpp mode":
+  usecpp = true
 
 configTask verb, "set build verbosity":
   verbosity = getInt()
@@ -126,7 +130,8 @@ proc nimRun(f: string, outfile="") =
     if not dirExists("bin"):
       mkDir("bin")
     name = "bin" / name
-  let s = nimcmd & " c -o:" & name & " " & f
+  let cc = if usecpp: "cpp" else: "c"
+  let s = nimcmd & " " & cc & " -o:" & name & " " & f
   #let s = nimcmd & " cpp -o:" & name & " " & f
   echo "running: ", s
   try:

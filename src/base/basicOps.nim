@@ -118,6 +118,7 @@ template idot*(r:var SomeNumber; x:SomeNumber2;y:SomeNumber3):untyped =
 template redot*(x:SomeNumber; y:SomeNumber2):untyped = x*y
 template redotinc*(r:var SomeNumber; x:SomeNumber2; y:SomeNumber3):untyped =
   r += x*y
+template simdLength*(x:SomeNumber):untyped = 1
 template simdSum*(x:SomeNumber):untyped = x
 template simdSum*(r:var SomeNumber; x:SomeNumber2):untyped =
  r = (type(r))(x)
