@@ -63,6 +63,7 @@ macro echo0*(args: varargs[untyped]): auto =
     if myRank==0 and threadNum==0:
       `call`
     )
+  #echo result.repr
 macro makeEchos(n:static[int]):auto =
   template ech(x,y: untyped): untyped =
     template echo*: untyped =
@@ -83,7 +84,7 @@ macro makeEchos(n:static[int]):auto =
     #echo t.treerepr
     for j in 0..<i: t[3].add ea[j]
     result.add t
-  #echoAll result.repr
+  #echo result.repr
 makeEchos(10)
 
 proc unwrap(x:NimNode):seq[NimNode] =

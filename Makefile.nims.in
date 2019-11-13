@@ -132,7 +132,6 @@ proc nimRun(f: string, outfile="") =
     name = "bin" / name
   let cc = if usecpp: "cpp" else: "c"
   let s = nimcmd & " " & cc & " -o:" & name & " " & f
-  #let s = nimcmd & " cpp -o:" & name & " " & f
   echo "running: ", s
   try:
     exec s

@@ -35,8 +35,8 @@ proc prepareShiftBufsQ*(sb: openArray[ptr ShiftBufQ];
   while i < n:
     sb[i].sbufSize = sbs
     sb[i].rbufSize = rbs
-    sb[i].smsg = nil
-    sb[i].rmsg = nil
+    sb[i].smsg.clear
+    sb[i].rmsg.clear
     sb[i].first = 0
     sb[i].offr = cast[type(sb[i].offr)](alloc(MAXTHREADS * sizeof(cint)))
     sb[i].lenr = cast[type(sb[i].lenr)](alloc(MAXTHREADS * sizeof(cint)))
@@ -76,14 +76,14 @@ proc prepareShiftBufsQ*(sb: openArray[ptr ShiftBufQ];
     var nn: cint = 0
     i=0
     while i < n:
-      if not isNil sb[i].rmsg:
+      if not isEmpty sb[i].rmsg:
         p[nn] = sb[i].rmsg
         inc(nn)
-      if not isNil sb[i].smsg:
+      if not isEmpty sb[i].smsg:
         p[nn] = sb[i].smsg
         inc(nn)
       inc(i)
-    var pairmsg: QMP_msghandle_t = nil
+    var pairmsg: QMP_msghandle_t
     if nn > 0:
       pairmsg = QMP_declare_send_recv_pairs(p[0].addr, nn)
     i=0
@@ -99,10 +99,10 @@ proc prepareShiftBufQ*(sb: ptr ShiftBufQ; si: ptr ShiftIndicesQ; esize: cint) =
 proc startSendBufQ*(sb: ptr ShiftBufQ) =
   #printf("send: %g\n",*(float *)(sb->sbuf));
   when PAIR:
-    if not isNil sb.pairmsg:
+    if not isEmpty sb.pairmsg:
       discard QMP_start(sb.pairmsg)
   else:
-    if not isNil sb.smsg:
+    if not isEmpty sb.smsg:
       discard QMP_start(sb.smsg)
 
 proc startRecvBufQ*(sb: ptr ShiftBufQ) =
@@ -117,15 +117,15 @@ proc waitSendBufQ*(sb: ptr ShiftBufQ) =
 
 proc waitRecvBufQ*(sb: ptr ShiftBufQ) =
   when PAIR:
-    if not isNil sb.pairmsg:
+    if not isEmpty sb.pairmsg:
       discard QMP_wait(sb.pairmsg)
   else:
-    if not isNil sb.rmsg: QMP_wait(sb.rmsg)
+    if not isEmpty sb.rmsg: QMP_wait(sb.rmsg)
   #printf("recv: %g\n",*(float *)(sb->rbuf));
 
 proc doneRecvBufQ*(sb: ptr ShiftBufQ) =
   when PAIR:
-    if not isNil sb.pairmsg:
+    if not isEmpty sb.pairmsg:
       discard QMP_clear_to_send(sb.pairmsg, QMP_CTS_READY)
 
 proc freeShiftBufsQ*(sb: openArray[ptr ShiftBufQ]) =
@@ -139,27 +139,27 @@ proc freeShiftBufsQ*(sb: openArray[ptr ShiftBufQ]) =
   when PAIR:
     i=0
     while i < n:
-      if sb[i].first!=0 and not isNil sb[i].pairmsg:
+      if sb[i].first!=0 and not isEmpty sb[i].pairmsg:
         QMP_free_msghandle(sb[i].pairmsg)
-      sb[i].pairmsg = nil
-      if not isNil sb[i].smsg:
-        sb[i].smsg = nil
+      sb[i].pairmsg.clear
+      if not isEmpty sb[i].smsg:
+        sb[i].smsg.clear
         QMP_free_msgmem(sb[i].sqmpmem)
         sb[i].sqmpmem = nil
-      if not isNil sb[i].rmsg:
-        sb[i].rmsg = nil
+      if not isEmpty sb[i].rmsg:
+        sb[i].rmsg.clear
         QMP_free_msgmem(sb[i].rqmpmem)
         sb[i].rqmpmem = nil
       inc(i)
   else:
     var i: cint = 0
-    while i < n: 
-      if sb[i].smsg: 
+    while i < n:
+      if sb[i].smsg:
         QMP_free_msghandle(sb[i].smsg)
         sb[i].smsg = nil
         QMP_free_msgmem(sb[i].sqmpmem)
         sb[i].sqmpmem = nil
-      if sb[i].rmsg: 
+      if sb[i].rmsg:
         QMP_free_msghandle(sb[i].rmsg)
         sb[i].rmsg = nil
         QMP_free_msgmem(sb[i].rqmpmem)
