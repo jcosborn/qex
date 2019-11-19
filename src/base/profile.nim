@@ -16,6 +16,7 @@ when true:
   #template toSeconds*(x: TicType): untyped = 1e-9 * x.float
   template `-`*(x,y: TicType): untyped = TicType(float(x) - float(y))
   template ticDiffSecs*(x,y: untyped): untyped = float(x - y)
+  #proc ticDiffSecs*(x,y: TicType): float = float(x - y)
 else:
   type
     TicType* = distinct Ticks
@@ -62,7 +63,8 @@ proc initTic*(ti: var TimerInfo, s: string, timer: var TicType, inst: tuple) =
   ticSeq.add ti.addr
 template tic*(n= -1): untyped =
   var ti {.global.}: TimerInfo
-  var timer {.global,inject.}: TicType
+  #var timer {.global,inject.}: TicType
+  var timer {.inject.}: TicType
   if threadNum==0:
     if ti.timerP==nil:
       ti.initTic(getFunctionName(), timer, instantiationInfo(n))
@@ -92,6 +94,9 @@ template toc*():untyped = tocI(0, "", -2)
 
 template getElapsedTime*(): untyped {.dirty.} =
   mixin timer
+  ticDiffSecs(getTics(), timer)
+
+template getElapsedTime2*(): untyped {.dirty.} =
   ticDiffSecs(getTics(), timer)
 
 proc resetTimers* =

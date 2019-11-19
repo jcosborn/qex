@@ -20,7 +20,9 @@ proc symStaple(s: any, alp: float, g1: any, g2: any,
                s1: any, s2: any, tm: any, sm: any) =
   mixin adj
   tm := g1.adj * g2 * s1.field
+  threadBarrier()
   discard sm ^* tm
+  threadBarrier()
   s += alp * ( g1 * s2.field * s1.field.adj )
   s += alp * sm.field
 
@@ -91,6 +93,7 @@ proc smear*(coef: HypCoefs, gf: any, fl: any,
               let b = 1+2+3-mu-nu-a
               discard s1[nu][mu] ^* l1[a][b]
               discard s1[mu][a] ^* l1[mu][b]
+              threadBarrier()
               symStaple(l2[mu][nu], alp2, l1[a][b], l1[mu][b],
                         s1[nu][mu], s1[mu][a], tm1, sm1[a])
           proj l2[mu][nu]
@@ -102,6 +105,7 @@ proc smear*(coef: HypCoefs, gf: any, fl: any,
         if nu!=mu:
           discard s1[nu][mu] ^* l2[nu][mu]
           discard s1[mu][nu] ^* l2[mu][nu]
+          threadBarrier()
           symStaple(fl[mu], alp3, l2[nu][mu], l2[mu][nu],
                     s1[nu][mu], s1[mu][nu], tm1, sm1[nu])
       proj fl[mu]
