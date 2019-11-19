@@ -53,7 +53,7 @@ proc polyRem(x0: uint64, y0: uint64): uint32 =
   var y = y0
   var b = 1.uint32
   var q = 0.uint32
-  while (y and 0x8000000000000000.uint64) == 0:
+  while (y and 0x8000000000000000'u64) == 0:
     y = y shl 1
     b = b shl 1
   while b != 0:

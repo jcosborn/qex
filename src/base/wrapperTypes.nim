@@ -4,10 +4,12 @@ import stdUtils
 import metaUtils
 import strutils
 
+#[
 macro makeCall(f: string, a: varargs[untyped]): untyped =
   result = newCall(ident(f.strVal))
   for i in 0..<a.len:
     result.add a[i]
+]#
 
 template makeFieldGetter(t,f,f0: untyped) {.dirty.} =
   template f*(x: t): untyped =
@@ -22,15 +24,19 @@ template makeFieldGetter(t,f,f0: untyped) {.dirty.} =
       if x[i][0].repr == astToStr(f0):
         result = x[i][1]
         break
+      if i==1:
+        echo "error: field name not found: ", astToStr(f0)
+        quit -1
   macro f*(x: t{nkStmtListExpr}): untyped =
     result = newNimNode(nnkStmtListExpr)
     for i in 0..(x.len-2):
       result.add x[i]
     result.add newCall(ident(astToStr(f)), x[^1])
 
+#[
 macro makeDerefOp(t: untyped): untyped =
   newCall(bindSym("makeFieldGetter"), t, ident("[]"), ident("f"&t.repr))
-
+]#
 
 template makeDeref*(t,u:untyped):untyped {.dirty.} =
   #[
@@ -60,6 +66,7 @@ template makeDeref*(t,u:untyped):untyped {.dirty.} =
   #template `[]=`*(x:t; y:any):untyped =
   #  x.v[] = y
 
+#[
 template makeWrapper2(t,s,u: untyped): untyped {.dirty.} =
   #type t*[T] = distinct T
   type t*[T] = object
@@ -90,6 +97,7 @@ macro makeWrapper*(t,s: untyped): untyped =
   else:
     echo s.treerepr
   result = getAst(makeWrapper2(t,s,xid))
+]#
 
 template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
   type
@@ -100,7 +108,7 @@ template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
   #proc tasName*[T](x: T): name[T] {.inline,noInit.} =
   #  result.fName = x
   template asName*[T](x: T): untyped =
-    name[type(T)](fName: x)
+    name[T](fName: x)
     # ## wrap an object, x, as a $NAME type
     #lets(x,xx):
     #static: echo "asColor typed"
@@ -120,7 +128,10 @@ template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
   #template derefXX*(x: name): untyped =
   #  x.fName
   makeFieldGetter(name, derefXX, fName)
+  template `[]`*[T](x: typedesc[name[T]]): untyped = T
   template `[]`*(x: name): untyped =
+    #static: echo "wrapper []"
+    #debugType: x
     flattenCallArgs(derefXX, x)
   template isWrapper*(x: name): untyped = true
   template asWrapper*(x: name, y: typed): untyped =

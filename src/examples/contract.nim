@@ -16,6 +16,7 @@ template `&&`(x: int): untyped = toPtrScomplex(x)
 template `&&&`(x: int): untyped = toPtrDcomplex(x)
 template `&<`(x: ptr float32): untyped = cast[ptr scomplex](x)
 
+type CmplxA*[T] = UncheckedArray[ComplexType[T]]
 type F32A = ptr UncheckedArray[float32]
 type S32A = ptr UncheckedArray[ComplexType[float32]]
 type F64A = ptr UncheckedArray[float64]

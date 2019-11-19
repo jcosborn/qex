@@ -1512,3 +1512,26 @@ macro flattenCallArgsD*(args: varargs[untyped]): auto =
   result.add newLit(args[0].repr)
   for i in 1..<args.len:
     result.add args[i]
+
+
+macro debugCall*(c: untyped): untyped =
+  echo "debugCall:"
+  echo "  ", c.treerepr
+  result = c
+  var s = c
+  if s.kind==nnkStmtList and s.len==1:
+    s = c[0]
+  echo "  ", s.repr
+  let f = s[0]
+  for i in 0..<f.len:
+    let fi = f[i].getImpl
+    echo "  ", i, ":  ", fi.repr
+
+macro debugType*(v: typed): untyped =
+  result = newEmptyNode()
+  echo "debugType:"
+  echo "  ", v.repr
+  let t1 = v.getTypeInst
+  echo "  ", t1.repr
+  let t2 = v.getTypeImpl
+  echo "  ", t2.repr

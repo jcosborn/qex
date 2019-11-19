@@ -1,7 +1,7 @@
 import qex
-import parallelIo, comms/gather
-import modfile
-import timesliceIo
+import io/parallelIo, comms/gather
+import io/modfile
+import io/timesliceIo
 import physics/wilsonD
 import physics/wilsonSolve
 import contract
@@ -216,7 +216,7 @@ proc naiveContract() =
   ]#
   #template numberType(x: ComplexType): untyped = numberType(x.re)
   #template numberType(x: Color): untyped = numberType(x[])
-  template `&|`(x: typed): untyped = cast[ptr numberType(x[0])](x)
+  template `&|`(x: typed): untyped = cast[ptr CmplxA[numberType(x[0])]](x)
   cmatmul(&|gp, &|prp1, &|prp2, nccv1, nccv2, 3*localSites2)
   toc("naiveContract")
   let n = nccv1*nccv2*2
