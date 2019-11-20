@@ -1,5 +1,5 @@
-const hdr = currentSourcePath()[0..^11] & "qlayout.h"
-{. pragma: ql, header:hdr .}
+#const hdr = currentSourcePath()[0..^11] & "qlayout.h"
+#{. pragma: ql, header:hdr .}
 import layoutTypes
 import comms/qmp
 import base
@@ -20,7 +20,7 @@ type
     lenr*: ptr cArray[cint]
     nthreads*: ptr cArray[cint]
   ShiftBufObj* = object
-    sq*:ShiftBufQ
+    sq*: ShiftBufQ
     lbufSize*: int
     lbuf*: ptr cArray[char]
     activeRecv*: bool

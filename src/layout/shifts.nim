@@ -1,7 +1,7 @@
 import base
 #import threading
 #import comms
-import layout
+import layoutX
 #import matrixConcept
 #import complexConcept
 #import times
@@ -77,7 +77,7 @@ template startSB*(sb0: ShiftB; e: untyped) =
       tFor i, 0..<sb0.si.nSendSites:
         let ix{.inject.} = sb0.si.sendSites[i]
         assign(bb[i], e)
-        #echoAll myrank, " ", i, " ", ix, " ", b[][i]
+        #echoAll myrank, " ", i, " ", ix, " ", bb[][i]
     else:
       type F = numberType(sb0.T)
       let stride = sizeOf(sb0.T) div (2*sizeof(F))
@@ -207,12 +207,17 @@ template boundarySB*[T](s:ShiftB[T]; e:untyped):untyped =
   boundaryWaitSB(s): needBoundary = true
   if needBoundary:
     boundarySyncSB()
+    #echo "nb"
     if s.si.nRecvDests > 0:
+      #echo "nrd"
       if s.sb.sq.nthreads[threadNum] != numThreads: boundaryOffsetSB(s)
       let ti0 = s.sb.sq.offr[threadNum]
       let ti1 = s.sb.sq.lenr[threadNum]
       if s.si.blend == 0:
-        let rr = cast[ptr cArray[s.T]](s.sb.sq.rbuf)
+        #echo "blend==0"
+        let rr = cast[ptr cArray[T]](s.sb.sq.rbuf)
+        #let tt = rr[0]
+        #echo tt
         for i in ti0..<ti1:
           let irr = s.si.sq.recvDests[i]
           let k2 = s.si.sq.recvRemoteSrcs[i]
@@ -494,6 +499,7 @@ proc newShifters*[F](f: F, len: int, sub="all"): auto =
 proc `^*`*(x: Transporter, y: any): auto =
   mixin mul, load1, adj, `[]`
   var r = x.field
+  threadBarrier()
   when compiles(x.link):
     if x.len >= 0:
       startSB(x.sb, y[ix])

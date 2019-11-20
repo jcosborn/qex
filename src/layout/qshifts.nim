@@ -1,7 +1,7 @@
 import qgather
 import layoutTypes, shiftX
 import comms/qmp
-import strutils
+import strutils, strformat
 
 const
   PAIR = true
@@ -37,6 +37,7 @@ proc prepareShiftBufsQ*(sb: openArray[ptr ShiftBufQ];
     sb[i].rbufSize = rbs
     sb[i].smsg.clear
     sb[i].rmsg.clear
+    #echo &"sb[{i}].rmsg.isEmpty: {sb[i].rmsg.isEmpty}"
     sb[i].first = 0
     sb[i].offr = cast[type(sb[i].offr)](alloc(MAXTHREADS * sizeof(cint)))
     sb[i].lenr = cast[type(sb[i].lenr)](alloc(MAXTHREADS * sizeof(cint)))
@@ -56,8 +57,7 @@ proc prepareShiftBufsQ*(sb: openArray[ptr ShiftBufQ];
       if si[i].nSendRanks > 0:
         sb[i].sqmpmem = QMP_declare_msgmem(sbuf, sbs)
         sb[i].smsg = QMP_declare_send_to(sb[i].sqmpmem, si[i].sendRanks[0], 0)
-        #printf("send: to: %i\tsize: %i\t%p\t%p\n",si[i]->sendRanks[0],sbs,sbuf,sb[i]->smsg);
-        #fflush(stdout);
+        #echo &"->{si[i].sendRanks[0]}: {sbs}"
       inc(i)
   if rbs > 0:
     var rbuf: pointer = aalloc(rbs)
@@ -68,8 +68,8 @@ proc prepareShiftBufsQ*(sb: openArray[ptr ShiftBufQ];
         sb[i].rqmpmem = QMP_declare_msgmem(rbuf, rbs)
         sb[i].rmsg = QMP_declare_receive_from(sb[i].rqmpmem,
                                               si[i].recvRanks[0], 0)
-        #printf("recv: fr: %i\tsize: %i\t%p\t%p\n",si[i]->recvRanks[0],rbs,rbuf,sb[i]->rmsg);
-        #fflush(stdout);
+        #echo &"<-{si[i].recvRanks[0]}: {rbs}"
+        #echo &"sb[{i}].rmsg.isEmpty: {sb[i].rmsg.isEmpty}"
       inc(i)
   when PAIR:
     var p = newSeq[QMP_msghandle_t](2*n)
@@ -98,8 +98,10 @@ proc prepareShiftBufQ*(sb: ptr ShiftBufQ; si: ptr ShiftIndicesQ; esize: cint) =
 
 proc startSendBufQ*(sb: ptr ShiftBufQ) =
   #printf("send: %g\n",*(float *)(sb->sbuf));
+  #echo "startSendBufQ"
   when PAIR:
     if not isEmpty sb.pairmsg:
+      #echo "QMP_start"
       discard QMP_start(sb.pairmsg)
   else:
     if not isEmpty sb.smsg:

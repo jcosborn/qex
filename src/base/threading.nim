@@ -70,6 +70,7 @@ template threads*(body:untyped):untyped =
       if threadNum==0: ts.newSeq(numThreads)
       threadBarrierO()
       initThreadLocals(ts)
+      threadBarrierO()
       #echoAll threadNum, " s: ", ptrInt(threadLocals.share)
       body
       #tproc2()
@@ -91,9 +92,11 @@ template threads*(x0:untyped;body:untyped):untyped =
       if threadNum==0: ts.newSeq(numThreads)
       threadBarrierO()
       initThreadLocals(ts)
+      threadBarrierO()
       #echoAll threadNum, " s: ", ptrInt(threadLocals.share)
       subst(x0,xx):
         body
+      threadBarrierO()
   tproc(x0)
   threadNum = tidOld
   numThreads = nidOld
@@ -150,7 +153,7 @@ iterator `.|`*[S, T](a: S, b: T): T {.inline.} =
     inc(res)
 """
 
-template t0wait* = threadBarrier()
+template t0waitO* = threadBarrier()
 template t0waitX* =
   if threadNum==0:
     inc threadLocals.share[0].counter
@@ -162,8 +165,10 @@ template t0waitX* =
   else:
     inc threadLocals.share[threadNum].counter
     #fence()
+  fence()
+template t0wait* = t0waitX
 
-template twait0* = threadBarrier()
+template twait0O* = threadBarrier()
 template twait0X* =
   if threadNum==0:
     inc threadLocals.share[0].counter
@@ -174,10 +179,12 @@ template twait0X* =
     let p{.volatile.} = threadLocals.share[0].counter.addr
     while true:
       if p[] >= tbar0: break
+  fence()
+template twait0* = twait0X
 
 template threadBarrier* =
-  #t0wait
-  #twait0
+  #t0waitX
+  #twait0X
   ompBarrier
 
 macro threadSum*(a:varargs[untyped]):auto =

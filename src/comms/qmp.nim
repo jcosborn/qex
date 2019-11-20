@@ -22,13 +22,13 @@ type
   QMP_msgmem_t*{.qmp.} = pointer
   QMP_msghandle_t*{.qmp.} = object
 
-var emptyQmpMsgHandle: QMP_msghandle_t
-
 proc clear*(x: var QMP_msghandle_t) =
-  x = emptyQmpMsgHandle
+  var p = cast[pointer](x)
+  p = nil
 
 proc isEmpty*(x: QMP_msghandle_t): bool =
-  x == emptyQmpMsgHandle
+  var p = cast[pointer](x)
+  p == nil
 
 proc QMP_init_msg_passing*(argc:ptr cint; argv:ptr ptr cstring;
                            required:QMP_thread_level_t;
