@@ -355,6 +355,15 @@ proc assign*[T](m: Masked[T], x: SomeNumber) =
     b = b shr 1
     i.inc
 proc `:=`*[T](m:Masked[T], x: SomeNumber) = assign(m,x)
+template defopeq(oe,o:untyped) =
+  proc oe*[T](m:Masked[T], x: SomeNumber) =
+    var t: type(x)
+    t := m
+    m := o(t,x)
+defopeq(`+=`, `+`)
+defopeq(`-=`, `-`)
+defopeq(`*=`, `*`)
+defopeq(`/=`, `/`)
 proc assign*[T](m: var SomeNumber, x:Masked[T]) =
   var
     i = 0
