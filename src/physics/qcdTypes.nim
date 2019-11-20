@@ -96,24 +96,11 @@ type
   DLatticeHalfFermion* = Field[1,DHalfFermion]
   DLatticeHalfFermionV* = Field[VLEN,DHalfFermionV]
 
-#overloadAsReal(Dvec0)
-#template `re=`*(x: ToDouble, y: untyped): untyped =
-#  x[].re = y
-#template `im=`*(x: ToDouble, y: untyped): untyped =
-#  x[].im = y
-#template `+`*(x: Dvec0): untyped = x
 #template `-`*(x: Adjointed[Dvec0]): untyped = -x[]
 #template `*`*(x: Adjointed[Dvec0], y: Dvec0): untyped = x[]*y
 #template `*`*(x: Dvec0, y: Adjointed[Dvec0]): untyped = x*y[]
 #template `:=`*(r: Adjointed, x: Adjointed) = r[] := x[]
 #template assign*(r: Adjointed, x: Adjointed) = r[] := x[]
-overloadAsReal(SDvec)
-template `+`*(x: SDvec): untyped = x
-template add*(r: AsComplex, x: SDvec, y: AsComplex) =
-  r := add(x,y)
-template mul*(r: AsComplex, x: SDvec, y: AsComplex) =
-  r := mul(x,y)
-#template neg*(r: SComplexV, x: SComplexV) = r := neg(x)
 
 template simdLength*(x:typedesc[SColorMatrixV]):untyped =
   mixin simdLength
@@ -193,8 +180,6 @@ template simdSum*(x: AsComplex): untyped =
 #template assign*(r: DColorMatrixV, x: SomeNumber) = assignMS(r, x)
 #template `*`*(x: float64, y: DColorVectorV): untyped = mul(x, y)
 #template `*`*(x: ToDouble[Dvec0], y: Dvec0): untyped = `*`(x[],y)
-
-template `:=`*(m:SDvec, x:SomeNumber) = assign(m, x)
 
 proc assign*(r:var SomeNumber; m:Masked[SDvec]) =
   var i = 0

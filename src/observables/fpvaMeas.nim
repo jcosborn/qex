@@ -41,8 +41,8 @@ proc stagLocalMesons(v1,v2:any, t0=0):auto =
               ((l.coords[2][i].int and 1) shl 2)
       let tt = (t+nt-t0) mod nt
       #c[tt][s] += redot(v1{i}, v2{i})
-      assign(x1, v1{i}[][][])
-      assign(x2, v2{i}[][][])
+      assign(x1, v1{i}[])
+      assign(x2, v2{i}[])
       c[tt][s] += redot(x1, x2)
   else:
     threads:

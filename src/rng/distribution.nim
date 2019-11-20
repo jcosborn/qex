@@ -115,7 +115,7 @@ template z4*(r: AsVar, x: untyped) =
   z4(t, x)
 proc z4*(x: Field, r: RNGField) =
   for i in x.l.sites:
-    x{i}.z4 r{i}[]
+    x{i}.z4 r{i}
 
 proc z2*(x: var AsComplex, r: var RNG) =
   when defined(FUELCompat):
@@ -141,7 +141,7 @@ template z2*(r: AsVar, x: untyped) =
   z2(t, x)
 proc z2*(x: Field, r: RNGField) =
   for i in x.l.sites:
-    x{i}.z2 r{i}[]
+    x{i}.z2 r{i}
 
 proc u1*(x: var AsComplex, r: var RNG) =
   when defined(FUELCompat):
@@ -170,7 +170,7 @@ template u1*(r: AsVar, x: untyped) =
   u1(t, x)
 proc u1*(x: Field, r: RNGField) =
   for i in x.l.sites:
-    x{i}.u1 r{i}[]
+    x{i}.u1 r{i}
 
 proc newRNGField*[R: RNG](lo: Layout, rng: typedesc[R],
                           s: uint64 = uint64(17^7)): Field[1,R] =

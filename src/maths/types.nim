@@ -316,8 +316,8 @@ template im*(m: Masked): untyped =
   mixin im
   let tMaskedIm = m
   masked(tMaskedIm.pobj[].im, tMaskedIm.mask)
-template assign*(m: Masked; x: SomeNumber): untyped =
-  m.pobj[] = x
+#template assign*(m: Masked; x: SomeNumber): untyped =
+#  m.pobj[] = x
 template `re=`*(m: Masked; x: any): untyped =
   mixin re
   let tMaskedReEq = m
@@ -326,7 +326,61 @@ template `im=`*(m: Masked; x: any): untyped =
   mixin im
   let tMaskedImEq = m
   assign(masked(tMaskedImEq.pobj[].im, tMaskedImEq.mask), x)
-
+proc assign*[T,U](m:Masked[T], x:Masked[U]) =
+  ## Only works for the same number of unmasked bits,
+  ## and assign those from RHS to LHS in sequence.
+  var
+    i,j = 0
+    b = m.mask
+    c = x.mask
+  while b != 0:
+    if (b and 1) != 0:
+      while c != 0:
+        let p = (c and 1) != 0
+        if p: m.pobj[][i] = x.pobj[][j]
+        c = c shr 1
+        j.inc
+        if p: break
+    b = b shr 1
+    i.inc
+proc `:=`*[T,U](m:Masked[T], x:Masked[U]) = assign(m,x)
+proc assign*[T](m: Masked[T], x: SomeNumber) =
+  var
+    i = 0
+    b = m.mask
+  while b != 0:
+    if (b and 1) != 0:
+      m.pobj[][i] = x
+      break
+    b = b shr 1
+    i.inc
+proc `:=`*[T](m:Masked[T], x: SomeNumber) = assign(m,x)
+proc assign*[T](m: var SomeNumber, x:Masked[T]) =
+  var
+    i = 0
+    b = x.mask
+  while b != 0:
+    if (b and 1) != 0:
+      m = x.pobj[][i]
+      break
+    b = b shr 1
+    i.inc
+template `:=`*[T](m: SomeNumber, x: Masked[T]) = assign(m,x)
+template `+=`*[T](m: SomeNumber, x: Masked[T]) =
+  var t: type(m)
+  t := x
+  m += t
+proc norm2*(m: Masked): float =
+  #var r: type(toDouble(m.pobj[][0]))
+  var
+    i = 0
+    b = m.mask
+  while b != 0:
+    if (b and 1) != 0:
+      let t = m.pobj[][i]
+      result += t*t
+    b = b shr 1
+    i.inc
 
 #template eval*(x: AsComplex): untyped = asComplex(eval(x[]))
 template eval*(x: ToDouble): untyped =

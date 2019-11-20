@@ -16,16 +16,25 @@ proc test2(Smd: typedesc, lat: array): float =
   for e in x:
     var t: array[vl,int]
     for i in 0..<nd:
-      t = 10*t + lo.vcoords(i,e)
+      t = 1 + 10*t + lo.vcoords(i,e)
     x[e] := t
-  for mu in 0..<nd:
-    y := f[mu] ^* x
-    z := b[mu] ^* y
-    let r = norm2(z-x)
-    if r != 0.0:
-      echo "mu: ", mu, "  r: ", r
-    threadMaster:
-      result += r
+  var res = 0.0
+  threads:
+    for mu in 0..<nd:
+      y := f[mu] ^* x
+      z := b[mu] ^* y
+      let r = norm2(z-x)
+      if r != 0.0:
+        echo "mu: ", mu, "  r: ", r
+        for i in x.sites:
+          var xi,yi,zi: float
+          xi := x{i}
+          yi := y{i}
+          zi := z{i}
+          echoAll xi, " ", yi, " ", zi
+      threadMaster:
+        res += r
+  result = res
 
 template test1(Smd: typedesc, lat: array) =
   test "lattice: " & $lat:
@@ -34,9 +43,11 @@ template test1(Smd: typedesc, lat: array) =
 
 qexInit()
 
-makeSimdArray(SimdD1, 1, float64)
-template isWrapper*(x: SimdD1): untyped = false
-template toDoubleImpl*(x: SimdD1): untyped = x
+template makeSimdArrayX(T,N,B: untyped) {.dirty.} =
+  makeSimdArray(`T X`, N, B)
+  type T = Simd[`T X`]
+
+makeSimdArrayX(SimdD1, 1, float64)
 suite "SimdD1":
   test1(SimdD1, [8])
   test1(SimdD1, [8,8])
@@ -45,8 +56,6 @@ suite "SimdD1":
   test1(SimdD1, [8,8,8,8,8])
 
 makeSimdArray(SimdD2, 2, float64)
-template isWrapper*(x: SimdD2): untyped = false
-template toDoubleImpl*(x: SimdD2): untyped = x
 suite "SimdD2":
   test1(SimdD2, [16])
   test1(SimdD2, [8,8])

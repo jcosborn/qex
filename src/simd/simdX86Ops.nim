@@ -6,6 +6,7 @@ import simdAvx
 import simdAvx512
 #import ../basicOps
 import base
+import maths/types
 import math
 import macros
 
@@ -39,12 +40,14 @@ template map2(T,N,op:untyped):untyped {.dirty.} =
     assign(result, r)
 
 template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
-  template numberType*(x:typedesc[T]):typedesc = F
-  template numberType*(x:T):typedesc = F
+  template isWrapper*(x:typedesc[T]): bool = false
+  template isWrapper*(x:T): bool = false
+  template numberType*(x:typedesc[T]):untyped = F
+  template numberType*(x:T):untyped = F
   template numNumbers*(x:typedesc[T]):untyped = N
   template numNumbers*(x:T):untyped = N
-  template simdType*(x:typedesc[T]):typedesc = T
-  template simdType*(x:T):typedesc = T
+  template simdType*(x:typedesc[T]):untyped = T
+  template simdType*(x:T):untyped = T
   template simdLength*(x:T):untyped = N
   template simdLength*(x:typedesc[T]):untyped = N
   template load1*(x:T):untyped = x
@@ -68,9 +71,16 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
     toSimd(x)
   proc to*(x:T; t:typedesc[array[N,F]]):array[N,F] {.inline,noInit.} =
     `P "_storeu_" S`(cast[ptr F](result.addr), x)
+  when F is float32:
+    template toSingleImpl*(x: T): untyped = x
+    template toSingle*(x: T): untyped = x
+  else:
+    template toDoubleImpl*(x: T): untyped = x
+    template toDouble*(x: T): untyped = x
   #proc assign1*(r:var T; x:SomeNumber) {.inline.} =
   template assign1*(r: var T; x: SomeNumber) =
     r = `P "_set1_" S`(F(x))
+  template assign*(r: var T; x: SomeNumber) = assign1(r, x)
   template setX:untyped = `P "_setr_" S`()
   template setF(x):untyped = F(x)
   macro assign*(r:var T; x:varargs[SomeNumber]):auto =
@@ -100,6 +110,16 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   #  assign(cast[ptr F](r.addr), x)
   proc assign*(r:var array[N,F]; x:T) {.inline.} =
     assign(r[0].addr, x)
+  proc assign*(m: Masked[T], x: SomeNumber) =
+    #static: echo "a mask"
+    var i = 0
+    var b = m.mask
+    while b != 0:
+      if (b and 1) != 0:
+        m.pobj[][i] = x
+      b = b shr 1
+      i.inc
+    #static: echo "end a mask"
   proc `[]`*(x:T; i:SomeInteger):F {.inline,noInit.} =
     toArray(x)[i]
   proc `[]=`*(r:var T; i:SomeInteger; x:SomeNumber) {.inline,noInit.} =
@@ -289,21 +309,12 @@ include simdX86Ops1
 
 when defined(AVX):
   when defined(AVX512):
-    proc toDouble*(x:SimdS8):SimdD8 {.inline,noInit.} =
+    proc toDouble*(x: m256): m512d {.inline,noInit.} =
       result = mm512_cvtps_pd(x)
   else:
-    proc toDoubleA*(x:SimdS8):array[2,SimdD4] {.inline,noInit.} =
+    proc toDoubleA*(x: m256): array[2,m256d] {.inline,noInit.} =
       result[0] = mm256_cvtps_pd(mm256_extractf128_ps(x,0))
       result[1] = mm256_cvtps_pd(mm256_extractf128_ps(x,1))
-      #for i in 0..3: result[0][i] = x[i]
-      #for i in 0..3: result[1][i] = x[4+i]
-
-when defined(AVX512):
-  proc toDoubleA*(x:SimdS16):array[2,SimdD8] {.inline,noInit.} =
-    result[0] = mm512_cvtps_pd(mm512_castps512_ps256(x))
-    var y{.noInit.}:SimdS16
-    perm8(y, x)
-    result[1] = mm512_cvtps_pd(mm512_castps512_ps256(y))
 
 when defined(SimdS4):
   proc mm_cvtph_ps(x:m128i):m128
@@ -319,14 +330,10 @@ when defined(SimdS8):
     {.importC:"_mm256_cvtps_ph",header:"f16cintrin.h".}
   template toHalf(x:SimdS8):SimdH8 = SimdH8(mm256_cvtps_ph(x,0))
   template toSingle(x:SimdH8):SimdS8 = mm256_cvtph_ps(m128i(x))
-when defined(SimdS16):
-  template toHalf(x:SimdS16):SimdH16 = SimdH16(mm512_cvtps_ph(x,0))
-  template toSingle(x:SimdH16):SimdS16 = mm512_cvtph_ps(m256i(x))
+when defined(m512):
+  template toHalf(x:m512):SimdH16 = SimdH16(mm512_cvtps_ph(x,0))
+  template toSingle(x:SimdH16):m512 = mm512_cvtph_ps(m256i(x))
 
-# toSingle, toDouble, to(x,float32), to(x,float64)
-discard """
-template `lid`(x:untyped):untyped = to(x,`id`)
-"""
 
 when isMainModule:
   var x,y,z:m256d

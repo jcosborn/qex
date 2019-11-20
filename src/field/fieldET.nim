@@ -323,15 +323,15 @@ iterator items*(x:FieldMul):int {.inline.} =
 #export types
 
 template fmask*(f: Field; i: int): untyped =
-  mixin varMasked
-  #when f.l.V == 1:
-  #  f[i]
-  #else:
-  let e = i div f.l.V
-  let l = i mod f.l.V
-  let mask = 1 shl l
-  #let fe = f[e]  # workaround for Nim codegen bug
-  varMasked(f[e], mask)
+  when f.l.V == 1:
+    f[i]
+  else:
+    mixin varMasked
+    let e = i div f.l.V
+    let l = i mod f.l.V
+    let mask = 1 shl l
+    #let fe = f[e]  # workaround for Nim codegen bug
+    varMasked(f[e], mask)
 
 template `{}`*(f: Field; i: int): untyped =
   fmask(f, i)
@@ -402,6 +402,7 @@ proc applyOp2(x,y:NimNode; ty:NimNode; op:string):auto =
           staticTraceBegin: `o Field2`
           `o`(xx[e], indexField(yy, e))
           staticTraceEnd: `o Field2`
+  #echo result.treerepr
 template makeOps(op,f,fM,s: untyped): untyped {.dirty.} =
   macro f*(x:Subsetted; y:notSomeField2):auto = applyOp1(x,y,s)
   macro f*(x:Subsetted; y:SomeField2):auto = applyOp2(x,y,int.getType,s)

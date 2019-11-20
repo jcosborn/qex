@@ -33,8 +33,8 @@ template newComplexImpl*[TR,TI](x: TR, y: TI): untyped =
 template newReal*(x: typed): untyped = newRealImpl(x)
 template newImag*(x: typed): untyped = newImagImpl(x)
 template newComplex*(x,y: typed): untyped = newComplexImpl(x,y)
-template asReal*(x: untyped): untyped = newRealProxy(x)
-template asImag*(x: untyped): untyped = newImagProxy(x)
+template asReal*(x: typed): untyped = newRealProxy(x)
+template asImag*(x: typed): untyped = newImagProxy(x)
 
 template isWrapper*(x: ComplexObj): untyped = false
 template isWrapper*(x: ComplexProxy): untyped = true
@@ -54,20 +54,16 @@ macro im*(x: ComplexObj{nkObjConstr}): untyped =
   result = x[2][1]
   #echo result.treerepr
 
-template `re=`*(x: ComplexObj, y: untyped): untyped =
-  #echoRepr: x
-  #mixin `:=`
-  #x.reX := y
+template `re=`*(x: var ComplexObj, y: typed): untyped =
+  #static: echo "co re="
+  #debugType: x
+  #debugType: y
+  mixin assign
+  #debugCall:
   assign(x.reX, y)
-#template `re=`*[TR,TI](x: ComplexObj[TR,TI], y: TR): untyped =
-#  #x.reX = y
-#  assign(x.reX, y)
-template `im=`*(x: ComplexObj, y: untyped): untyped =
+template `im=`*(x: ComplexObj, y: typed): untyped =
   #x.imX := y
   assign(x.imX, y)
-#template `im=`*[TR,TI](x: ComplexObj[TR,TI], y: TI): untyped =
-#  #x.imX = y
-#  assign(x.imX, y)
 
 overloadAsReal(SomeNumber)
 template I*(x: SomeNumber): untyped = newImag(x)
@@ -192,6 +188,18 @@ template norm2*(r: any, x: ComplexProxy2): untyped =
   r = x.norm2
 template inorm2*(r: any, x: ComplexProxy2): untyped =
   r += x.norm2
+
+
+import simd
+
+overloadAsReal(Simd)
+template add*(r: AsComplex, x: Simd, y: AsComplex) =
+  r := add(x,y)
+template sub*(r: AsComplex, x: Simd, y: AsComplex) =
+  r := sub(x,y)
+template mul*(r: AsComplex, x: Simd, y: AsComplex) =
+  r := mul(x,y)
+
 
 when isMainModule:
   template pos(x: SomeNumber): untyped = x

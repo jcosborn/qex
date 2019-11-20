@@ -1,6 +1,8 @@
 import macros
 import base
 import base/metaUtils
+import maths/types
+export types
 #import ../basicOps
 
 template map011(T,L,op1,op2:untyped):untyped {.dirty.} =
@@ -226,12 +228,14 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   #type T* = distinct array[L,B]
   type T* = object
     v*: array[L,B]
-  template numberType*(x:typedesc[T]):typedesc = F
-  template numberType*(x:T):typedesc = F
+  template isWrapper*(x:typedesc[T]): bool = false
+  template isWrapper*(x:T): bool = false
+  template numberType*(x:typedesc[T]):untyped = F
+  template numberType*(x:T):untyped = F
   template numNumbers*(x:typedesc[T]):untyped = N
   template numNumbers*(x:T):untyped = N
-  template simdType*(x:typedesc[T]):typedesc = T
-  template simdType*(x:T):typedesc = T
+  template simdType*(x:typedesc[T]):untyped = T
+  template simdType*(x:T):untyped = T
   template simdLength*(x:T):untyped = N
   template simdLength*(x:typedesc[T]):untyped = N
   #template `[]`*(x:T):untyped = (array[L,B])(x)
@@ -248,6 +252,11 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
     #subst(i,_):
     forStatic i, 0, L-1:
       assign(result[][i], x)
+  #echoAst: F
+  #static: echo F.treerepr
+  #when not(F is float32):
+  when F is float64:
+    template toDoubleImpl*(x: T): untyped = x
   proc simdReduce*(r: var SomeNumber; x: T) {.inline.} =
     #mixin add
     var y = x[][0]
@@ -334,12 +343,15 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
     let xx = x
     forStatic i, 0, L-1:
       r[][i] = xx[i]
+  when N==1:
+    template assign*(r: SomeNumber, x: T): untyped = r = x[0]
   #proc assign*(r:var T; x:SomeNumber) {.inline,neverInit.} =
-  proc assign*(r:var T; x:SomeNumber) {.inline.} =
+  proc assign*(r: var T; x: SomeNumber) {.inline.} =
     #{.emit:"#define memset(a,b,c)".}
     assign(r, x.to(T))
     #assign(r[][0], x)
     #assign(r[][1], r[][0])
+  template `:=`*(r: T, x: SomeNumber) = assign(r, x)
   proc assign*(r:var T; x:array[N,SomeNumber]) {.inline.} =
     when compiles(assign(r[][0], unsafeAddr(x[0]))):
       forStatic i, 0, L-1:
@@ -357,6 +369,16 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
     else:
       forStatic i, 0, L-1:
         assign(addr(r[i*N0]), x[][i])
+  proc assign*(m: Masked[T], x: SomeNumber) =
+    #static: echo "a mask"
+    var i = 0
+    var b = m.mask
+    while b != 0:
+      if (b and 1) != 0:
+        m.pobj[][i] = x
+      b = b shr 1
+      i.inc
+    #static: echo "end a mask"
   template add*(r:var T; x:SomeNumber; y:T) = add(r, x.to(T), y)
   template sub*(r:var T; x:SomeNumber; y:T) = sub(r, x.to(T), y)
   template sub*(r:var T; x:T; y:SomeNumber) = sub(r, x, y.to(T))

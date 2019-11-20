@@ -123,8 +123,8 @@ template `re=`*(x: RealProxy, y: untyped) = x[] = y
 template `im=`*(x: RealProxy, y: untyped) = discard
 template `re=`*(x: ImagProxy, y: untyped) = discard
 template `im=`*(x: ImagProxy, y: untyped) = x[] = y
-template `re=`*(x: ComplexProxy, y: untyped) = x[].re = y
-template `im=`*(x: ComplexProxy, y: untyped) = x[].im = y
+template `re=`*(x: ComplexProxy, y: typed) = x[].re = y
+template `im=`*(x: ComplexProxy, y: typed) = x[].im = y
 
 template setU*(r: ComplexProxy, x: typed, y: typed) =
   r[].re := x
@@ -149,6 +149,7 @@ template assign*(x: ComplexProxy, y: ImagProxy2): untyped =
   x[].im = y[]
 template assignU*(x: ComplexProxy, y: ComplexProxy2): untyped =
   #echoRepr: x
+  #static: echo "cp assignU"
   x.re = y.re
   x.im = y.im
 #template assignU*(x: ComplexProxy, yy: ComplexProxy2{call}): untyped =
