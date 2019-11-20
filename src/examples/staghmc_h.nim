@@ -1,7 +1,12 @@
+## staghmc.nim with Hasenbusch masses.
+
 import qex
 import gauge, physics/qcdTypes
 import physics/stagSolve
 import mdevolve
+import math, sequtils
+
+const ReversibilityCheck {.booldefine.} = false
 
 qexinit()
 
@@ -13,9 +18,10 @@ let
   lo = lat.newLayout
   #gc = GaugeActionCoeffs(plaq:6)
   gc = GaugeActionCoeffs(plaq:6,adjplaq:1)
-var r = lo.newRNGField(RngMilc6, 987654321)
+  seed = intParam("seed", 987654321).uint
+var r = lo.newRNGField(RngMilc6, seed)
 var R:RngMilc6  # global RNG
-R.seed(987654321, 987654321)
+R.seed(987654321u+seed, 987654321)
 
 var g = lo.newgauge
 #g.random r
@@ -28,16 +34,24 @@ var
   p = lo.newgauge
   f = lo.newgauge
   g0 = lo.newgauge
-  phi = lo.ColorVector()
-  psi = lo.ColorVector()
 
 let mass = floatParam("mass", 0.1)
+let hmasses = floatSeqParam("hmasses", @[0.2,0.4])  # Hasenbusch masses
+
+var
+  ftmp = lo.ColorVector()
+  phi = newseq[typeof(lo.ColorVector())](hmasses.len+1)
+  psi = newseq[typeof(lo.ColorVector())](hmasses.len+1)
+for i in 0..<phi.len:
+  phi[i] = lo.ColorVector()
+  psi[i] = lo.ColorVector()
+
 let stag = newStag(g)
 var spa = initSolverParams()
 #spa.subsetName = "even"
 spa.r2req = floatParam("arsq", 1e-20)
 spa.maxits = 10000
-var spf = initSolverParams()
+var spf = initSolverParams()  # TODO: separate for hmasses
 #spf.subsetName = "even"
 spf.r2req = floatParam("frsq", 1e-12)
 spf.maxits = 10000
@@ -46,13 +60,41 @@ spf.verbosity = 0
 let
   tau = floatParam("tau", 1.0)
   gsteps = intParam("gsteps", 100)
-  fsteps = intParam("fsteps", 100)
+  fsteps = intParam("fsteps", 20)  # TODO: separate for hmasses
   trajs = intParam("ntraj", 10)
 
 template rephase(g: typed) =
   g.setBC
   threadBarrier()
   g.stagPhase
+
+template pnorm2(p2:float) =
+  threads:
+    var p2t = 0.0
+    for i in 0..<p.len:
+      p2t += p[i].norm2
+    threadMaster: p2 = p2t
+    g.rephase
+
+proc gaction(g:any, f2:seq[float], p2:float):auto =
+  let
+    ga = g.gaugeAction2 gc
+    fa = f2.mapit(0.5*it)
+    t = 0.5*p2
+    h = ga + fa.sum + t
+  (ga, fa, t, h)
+
+template faction(fa:seq[float]) =
+  for i in 0..<phi.len-1:
+    threads:
+      stag.D(ftmp, phi[i], hmasses[i])
+    stag.solve(psi[i], ftmp, if i==0: mass else: hmasses[i-1], spa)
+  stag.solve(psi[^1], phi[^1], hmasses[^1], spa)
+  threads:
+    for i in 0..<psi.len:
+      var psi2 = psi[i].norm2()
+      threadMaster: fa[i] = psi2
+    g.rephase
 
 proc olf(f: var any, v1: any, v2: any) =
   var t {.noInit.}: type(f)
@@ -71,15 +113,14 @@ proc oneLinkForce(f: any, p: any, g: any) =
     for i in f[mu].odd:
       f[mu][i] *= -1
 
-proc fforce(f: any) =
+proc fforce(f: any, i: int) =
   tic()
   threads:
     g.rephase
   toc("fforce rephase")
-  stag.solve(psi, phi, mass, spf)
+  stag.solve(ftmp, phi[i], if i==0: mass else: hmasses[i-1], spf)
   toc("fforce solve")
-  #stagD(stag.so, psi, g, psi, 0.0)
-  f.oneLinkForce(psi, g)
+  f.oneLinkForce(ftmp, g)
   toc("fforce olf")
   threads:
     g.rephase
@@ -100,19 +141,22 @@ proc mdv(t: float) =
       p[mu] -= t*f[mu]
   toc("mdv")
 
-proc mdvf(t: float) =
+proc mdvf(i:int, t:float) =
+  proc sq(x:float):float = x*x
   tic()
-  #let s = t*floatParam("s", 1.0)
-  let s = -0.5*t/mass
-  f.fforce()
+  let s =
+    if i == 0: -0.5*t*(hmasses[0].sq-mass.sq)/mass
+    elif i < hmasses.len: -0.5*t*(hmasses[i].sq-hmasses[i-1].sq)/hmasses[i-1]
+    else: -0.5*t/hmasses[i-1]
+  f.fforce i
   threads:
     for mu in 0..<f.len:
       p[mu] -= s*f[mu]
   toc("mdvf")
 
-proc mdvf2(t: float) =
-  mdv(t)
-  mdvf(t)
+#proc mdvf2(t: float) =
+#  mdv(t)
+#  mdvf(t)
 
 # For FGYin11
 proc fgv(t: float) =
@@ -136,9 +180,11 @@ proc mdvAll(t: openarray[float]) =
   # TODO: actually share computation.
   # For now, just do it separately.
   if t[0] != 0: mdv t[0]
-  if t[1] != 0: mdvf t[1]
+  for i in 0..hmasses.len:
+    if t[i+1] != 0:
+      mdvf(i, t[i+1])
 
-#[
+#[ mdevolve v0
 let
   # H = mkLeapfrog(steps = steps, V = mdv, T = mdt)
   # H = mkSW92(steps = steps, V = mdv, T = mdt)
@@ -155,40 +201,51 @@ let
   H = mkSharedEvolution(Hg, Hf)
 ]#
 
+# Nested integrator
+let (V, T) = wrap(mdvAll, mdt)
+var H = mkOmelyan2MN(steps = gsteps div fsteps, V = V[0], T = T)
+for i in 0..<hmasses.len:
+  H = mkOmelyan2MN(steps = 1, V = V[i+1], T = H)
+H = mkOmelyan2MN(steps = fsteps, V = V[hmasses.len+1], T = H)
+
+#[ TODO: test parallel evolution
 let
   (V, T) = wrap(mdvAll, mdt)
-  Hg = mkOmelyan2MN(steps = gsteps div fsteps, V = V[0], T = T)
-  H = mkOmelyan2MN(steps = fsteps, V = V[1], T = Hg)
+  Hg = mkOmelyan2MN(steps = gsteps, V = V[0], T = mdt)
+  Hf = mkOmelyan2MN(steps = fsteps, V = V[1], T = mdt)
+var H = newParallelEvolution(Hg, Hf)
+for i in 0..<hmasses.len:
+  H.add mkOmelyan2MN(steps = fsteps, V = V[i+2], T = mdt)
+]#
 
 for n in 1..trajs:
   tic()
   var p2 = 0.0
-  var f2 = 0.0
+  var f2 = newseq[float](phi.len)
   threads:
     p.randomTAH r
-    var p2t = 0.0
     for i in 0..<p.len:
-      p2t += p[i].norm2
       g0[i] := g[i]
-    threadMaster: p2 = p2t
-    psi.gaussian r
-    g.rephase
-    threadBarrier()
-    stag.D(phi, psi, mass)
-    threadBarrier()
-    phi.odd := 0
+  toc("p refresh, save g")
+  p2.pnorm2
+  toc("p norm2 1, rephase")
+  # phi = D(m2)^{-1} D(m1) psi
+  for i in 0..<phi.len:
+    threads:
+      psi[i].gaussian r
+      threadBarrier()
+      if i != phi.len-1:
+        stag.D(ftmp, psi[i], if i==0: mass else: hmasses[i-1])
+      else:
+        stag.D(phi[i], psi[i], hmasses[i-1])
+    if i != phi.len-1:
+      stag.solve(phi[i], ftmp, hmasses[i], spa)
+    threads:
+      phi[i].odd := 0
   toc("init traj")
-  stag.solve(psi, phi, mass, spa)
-  toc("fa solve 1")
-  threads:
-    var psi2 = psi.norm2()
-    threadMaster: f2 = psi2
-    g.rephase
-  let
-    ga0 = g0.gaugeAction2 gc
-    fa0 = 0.5*f2
-    t0 = 0.5*p2
-    h0 = ga0 + fa0 + t0
+  f2.faction
+  toc("fa solve 1, rephase")
+  let (ga0,fa0,t0,h0) = g0.gaction(f2,p2)
   toc("init gauge action")
   echo "Begin H: ",h0,"  Sg: ",ga0,"  Sf: ",fa0,"  T: ",t0
 
@@ -196,29 +253,15 @@ for n in 1..trajs:
   H.finish
   toc("evolve")
 
-  threads:
-    var p2t = 0.0
-    for i in 0..<p.len:
-      p2t += p[i].norm2
-    threadMaster: p2 = p2t
-    g.rephase
-  toc("p norm2, rephase")
-  stag.solve(psi, phi, mass, spa)
-  toc("fa solve 2")
-  threads:
-    var psi2 = psi.norm2()
-    threadMaster: f2 = psi2
-    g.rephase
-  let
-    ga1 = g.gaugeAction2 gc
-    fa1 = 0.5*f2
-    t1 = 0.5*p2
-    h1 = ga1 + fa1 + t1
+  p2.pnorm2
+  toc("p norm2 2, rephase")
+  f2.faction
+  toc("fa solve 2, rephase")
+  let (ga1,fa1,t1,h1) = g.gaction(f2,p2)
   toc("final gauge action")
   echo "End H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
 
-  #when true:
-  when false:
+  when ReversibilityCheck:
     block:
       var g1 = lo.newgauge
       var p1 = lo.newgauge
@@ -228,21 +271,18 @@ for n in 1..trajs:
           p1[i] := p[i]
           p[i] := -1*p[i]
       H.evolve tau
-      threads:
-        var p2t = 0.0
-        for i in 0..<p.len:
-          p2t += p[i].norm2
-        threadMaster: p2 = p2t
-      let
-        ga1 = g.gaugeAction2 gc
-        t1 = 0.5*p2
-        h1 = ga1 + t1
-      echo "Reversed H: ",h1,"  Sg: ",ga1,"  T: ",t1
-      echo "Reversibility: dH: ",h1-h0,"  dSg: ",ga1-ga0,"  dT: ",t1-t0
-      #echo p[0][0]
+      H.finish
+      p2.pnorm2
+      f2.faction
+      let (ga1,fa1,t1,h1) = g.gaction(f2,p2)
+      var dsf = newseq[float](fa1.len)
+      for i in 0..<fa1.len: dsf[i] = fa1[i] - fa0[i]
+      echo "Reversed H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
+      echo "Reversibility: dH: ",h1-h0,"  dSg: ",ga1-ga0,"  dSf: ",dsf,"  dT: ",t1-t0
       for i in 0..<g1.len:
         g[i] := g1[i]
         p[i] := p1[i]
+    toc("reversibility")
 
   let
     dH = h1 - h0
