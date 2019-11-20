@@ -17,18 +17,21 @@ else:
   import base/basicOps
   import simd/simdArray
   export simdArray
+  template msa(T,N,F: untyped) {.dirty.} =
+    makeSimdArray(`T Obj`, N, F)
+    type T* = Simd[`T Obj`]
   when VLEN==1:
-    makeSimdArray(SimdS1, 1, float32)
-    makeSimdArray(SimdD1, 1, float64)
+    msa(SimdS1, 1, float32)
+    msa(SimdD1, 1, float64)
   when VLEN==2:
-    makeSimdArray(SimdS2, 2, float32)
-    makeSimdArray(SimdD2, 2, float64)
+    msa(SimdS2, 2, float32)
+    msa(SimdD2, 2, float64)
   when VLEN==4:
-    makeSimdArray(SimdS4, 4, float32)
-    makeSimdArray(SimdD4, 4, float64)
+    msa(SimdS4, 4, float32)
+    msa(SimdD4, 4, float64)
   when VLEN==8:
-    makeSimdArray(SimdS8, 8, float32)
-    makeSimdArray(SimdD8, 8, float64)
+    msa(SimdS8, 8, float32)
+    msa(SimdD8, 8, float64)
     proc toDouble*(x: SimdS8): SimdD8 {.inline,noInit.} =
       for i in 0..<8:
         result[i] = x[i]
