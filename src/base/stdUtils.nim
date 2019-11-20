@@ -66,6 +66,18 @@ proc intSeqParam*(s: string, d: seq[int] = @[]): seq[int] =
         result.add parseInt(c)
   addParam(s, join(result," "))
 
+proc floatSeqParam*(s: string, d: seq[float] = @[]): seq[float] =
+  result = d
+  let n = paramCount()
+  for i in 1..n:
+    let p = paramstr(i)
+    if p.startsWith('-'&s&':'):
+      result.setLen(0)
+      let ll = s.len + 2
+      for c in split(p[ll..^1], ','):
+        result.add parseFloat(c)
+  addParam(s, join(result," "))
+
 template CLIset*(p:typed, n:untyped, prefix:string, runifset:untyped) =
   mixin echo
   let
@@ -79,6 +91,8 @@ template CLIset*(p:typed, n:untyped, prefix:string, runifset:untyped) =
     p.n = type(p.n)floatParam(s, p.n)
   elif compiles(intSeqParam(s, p.n)):
     p.n = type(p.n)intSeqParam(s, p.n)
+  elif compiles(floatSeqParam(s, p.n)):
+    p.n = type(p.n)floatSeqParam(s, p.n)
   else:
     {.fatal:"Cannot set argument "&s&" of "&astToStr(p)&" for command line.".}
   if o != p.n:
