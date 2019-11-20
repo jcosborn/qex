@@ -1,6 +1,7 @@
 include "local.nims"
 
-import ospaths, sequtils, strutils
+from sequtils import filterIt, mapIt
+from os import `/`, splitPath, splitFile
 
 # Package
 
@@ -12,9 +13,9 @@ srcDir        = qexDir/"src"
 
 # Dependencies
 
-requires "nim >= 0.19.0"
+requires "nim >= 1.0.2"
 requires "chebyshev >= 0.2.1"
-requires "mdevolve >= 0.1.1"
+requires "mdevolve >= 1.0.0"
 when declared(primmeDir):
   requires "primme >= 3.0.0"
 
@@ -128,12 +129,17 @@ proc setupRelease =
 
 task make, "compile, link, and put executables in `bin'":
   const c = paramCount()
+  var makeix = 0
+  for i in 0..c:
+    if paramStr(i) == "make":
+      makeix = i
+      break
   var debug = false
   var
     ts = newseq[string]()
     args = newseq[string]()
     defs = newseq[string]()
-  for i in 1..c:
+  for i in makeix..c:
     let pi = paramStr i
     if pi[0] == '-': args.add pi
     elif ts.len == 0 and pi == "make": continue
@@ -144,7 +150,7 @@ task make, "compile, link, and put executables in `bin'":
       exec(paramStr(0)&" help")
   elif ts.len > 1:
     for i in 0..<ts.len:
-      exec(paramStr(0)&" make "&args.join(" ")&" "&ts[i]&" "&defs.join(" "))
+      exec("nimble make "&args.join(" ")&" "&ts[i]&" "&defs.join(" "))
   else:
     let (name,target) = (extraSrcDir&qexDir).recTargets.findTarget ts[0]
     setup()
