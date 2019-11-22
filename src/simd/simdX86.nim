@@ -55,14 +55,6 @@ when defined(AVX):
       #result = SimdD8(toDoubleA(x))
       result[] := toDoubleA(x[])
 
-when defined(AVX512):
-  proc toDoubleA*(x:m512):array[2,SimdD8] {.inline,noInit.} =
-    result[0] = mm512_cvtps_pd(mm512_castps512_ps256(x))
-    var y{.noInit.}:m512
-    perm8(y, x)
-    result[1] = mm512_cvtps_pd(mm512_castps512_ps256(y))
-
-
 when declared(SimdS8):
   #proc toDouble*(x:SimdS8):SimdD8 {.inline,noInit.} =
   #  result = SimdD8(toDoubleA(x))
@@ -79,9 +71,12 @@ when declared(SimdS8):
     imsub(r, xd, yd)
 
 when declared(SimdS16):
-  proc toDouble*(x:SimdS16):SimdD16 {.inline,noInit.} =
+  proc toDouble*(x: SimdS16): SimdD16 {.inline,noInit.} =
     #for i in 0..15: result[i] = float64(x[i])
-    result = SimdD16(v: toDoubleA(x))
+    #let t = toDoubleA(x[])
+    #result[0] = t[0]
+    #result[1] = t[1]
+    result[][] = toDOubleA(x[])
   proc inorm2*(r:var SimdD16; x:SimdS16) {.inline.} = inorm2(r, toDouble(x))
   proc imadd*(r:var SimdD16; x,y:SimdS16) {.inline.} =
     var xx{.noInit.} = toDouble(x)

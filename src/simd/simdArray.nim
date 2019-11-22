@@ -240,6 +240,7 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   template simdLength*(x:typedesc[T]):untyped = N
   #template `[]`*(x:T):untyped = (array[L,B])(x)
   template `[]`*(x:T):untyped = x.v
+  template `[]=`*(x: T; y: typed) = x.v = y
   when B is SomeNumber:
     template `[]`*(x:T; i:SomeInteger):untyped = x[][i div N0]
     template `[]=`*(x:T; i:SomeInteger; y:any) = x[][i div N0] := y
@@ -369,6 +370,8 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
     else:
       forStatic i, 0, L-1:
         assign(addr(r[i*N0]), x[][i])
+  #proc assign*(r: var T; x: array[N0,B]) {.inline.} =
+  #  r[]
   proc assign*(m: Masked[T], x: SomeNumber) =
     #static: echo "a mask"
     var i = 0

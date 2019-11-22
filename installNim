@@ -44,14 +44,44 @@ if [ "X$1" != "X" ]; then
   esac
 fi
 
-rootdir="$HOME/nim"
-if [ "X$NIMDIR" != "X" ]; then
-  rootdir="$NIMDIR"
-fi
+testWrite() {
+  tmpf="$1/.tmpfile.installNim"
+  if touch $tmpf; then
+    rm $tmpf
+    exit 0
+  fi
+  exit -1
+}
+
+# find user bin directory
 bindir="$HOME/bin"
+while read -r p; do
+  #echo $p
+  if [ `expr $p : ${HOME}` -ne 0 ]; then
+    if [ -d $p -a -w $p ]; then
+    #tmpf=$p/.tmpfile.installNim
+    #if touch $tmpf; then
+      #rm $tmpf
+      bindir=$p
+      break
+    fi
+  fi
+done <<<"$(echo "$PATH" |tr ':' '\n')"
 if [ "X$BINDIR" != "X" ]; then
   bindir="$BINDIR"
 fi
+echo $bindir
+
+topdir=`dirname "$bindir"`
+rootdir="$topdir/nim"
+if [ ! -d $topdir -o ! -w $topdir ]; then
+  rootdir="$bindir/nim"
+fi
+if [ "X$NIMDIR" != "X" ]; then
+  rootdir="$NIMDIR"
+fi
+echo $rootdir
+
 nimdir="Nim-$ver"
 
 getVer() {

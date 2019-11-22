@@ -316,6 +316,13 @@ when defined(AVX):
       result[0] = mm256_cvtps_pd(mm256_extractf128_ps(x,0))
       result[1] = mm256_cvtps_pd(mm256_extractf128_ps(x,1))
 
+when defined(AVX512):
+  proc toDoubleA*(x:m512):array[2,m512d] {.inline,noInit.} =
+    result[0] = mm512_cvtps_pd(mm512_castps512_ps256(x))
+    var y{.noInit.}: m512
+    perm8(y, x)
+    result[1] = mm512_cvtps_pd(mm512_castps512_ps256(y))
+
 when defined(SimdS4):
   proc mm_cvtph_ps(x:m128i):m128
     {.importC:"_mm_cvtph_ps",header:"f16cintrin.h".}
