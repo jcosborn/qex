@@ -1,7 +1,10 @@
 import os, strformat, strutils
 import qdpxxwrap, cppstring
 
-const chroma_path = getenv("HOME")&"/lqcd/install/chroma"
+when existsEnv("CHROMADIR"):
+  const chroma_path = getEnv("CHROMADIR")
+else:
+  const chroma_path = getEnv("HOME")&"/lqcd/install/chroma"
 const chroma_config   = chroma_path & "/bin/chroma-config"
 const chroma_cxxflags = gorge(chroma_config & " --cxxflags")
 const chroma_ldflags  = gorge(chroma_config & " --ldflags")

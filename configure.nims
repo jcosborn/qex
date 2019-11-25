@@ -57,6 +57,9 @@ VERBOSITY ~ "1"
 SIMD ~ ""
 VLEN ~ "1"
 
+CPP ~ "mpicxx"
+CPPFLAGS_ALWAYS ~ "-std=gnu++11 -march=native -fno-strict-aliasing -ldl -fpermissive"
+
 if dirExists "/bgsys":
   machine = "Blue Gene/Q"
   CC ~ qexdir / "build/mpixlc2"

@@ -12,6 +12,7 @@ var qiodir = "@@QIODIR"
 #var qudadir = "@@QUDADIR"
 #var cudadir = "@@CUDADIR"
 #var cudaLibDir = cudadir / "lib64"
+#var chromaDir = ""
 
 var ccType = "@@CC_TYPE"
 var cc = "@@CC"
@@ -29,8 +30,8 @@ var simd = "@@SIMD"
 var vlen = "@@VLEN"
 @@ENVS
 
-var cpp = "@@CC"
-var cppflagsAlways = cflagsAlways & " -fpermissive"
+var cpp = "@@CPP"
+var cppflagsAlways = "@@CPPFLAGS_ALWAYS"
 var cppflagsDebug = cflagsDebug
 var cppflagsSpeed = cflagsSpeed
 var ldpp = cpp
@@ -97,6 +98,8 @@ when declared(qudaDir):
   putenv ~ ("CUDADIR=" & cudadir)
   d ~ ("qudaDir:" & qudaDir)
   d ~ ("cudaLibDir:" & cudaLibDir)
+when declared(chromaDir):
+  putenv ~ ("CHROMADIR=" & chromaDir)
 
 threads ~ on
 tlsEmulation ~ off
