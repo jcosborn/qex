@@ -166,7 +166,7 @@ template t0waitX* =
     inc threadLocals.share[threadNum].counter
     #fence()
   fence()
-template t0wait* = t0waitX
+template t0wait* = threadBarrier()
 
 template twait0O* = threadBarrier()
 template twait0X* =
@@ -180,7 +180,7 @@ template twait0X* =
     while true:
       if p[] >= tbar0: break
   fence()
-template twait0* = twait0X
+template twait0* = threadBarrier()
 
 template threadBarrier* =
   #t0waitX
