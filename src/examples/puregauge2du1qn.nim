@@ -826,12 +826,13 @@ proc mdv(t:float) =
         p[i][e] += tf
 
 
-var
-  # md = mkLeapfrog(steps = steps, V = mdv, T = mdt)
-  # md = mkSW92(steps = steps, V = mdv, T = mdt)
-  md = mkOmelyan2MN(steps = steps, V = mdv, T = mdt)
-  # md = mkOmelyan4MN4FP(steps = steps, V = mdv, T = mdt)
-  # md = mkOmelyan4MN5FV(steps = steps, V = mdv, T = mdt)
+let
+  (V,T) = newIntegratorPair(mdv,mdt)
+  # md = mkLeapfrog(steps = steps, V = V, T = T)
+  # md = mkSW92(steps = steps, V = V, T = T)
+  md = mkOmelyan2MN(steps = steps, V = V, T = T)
+  # md = mkOmelyan4MN4FP(steps = steps, V = V, T = T)
+  # md = mkOmelyan4MN5FV(steps = steps, V = V, T = T)
 
 when CHECKHESSIAN:
   proc checkhession(nsnow:int) =
@@ -930,7 +931,8 @@ when CHECKREVERSIBLE:
         g1[i] := gs[nsnow][i]
         p1[i] := p[i]
         p[i] := -1*p[i]
-    H.evolve tau
+    md.evolve tau
+    md.finish
     p2 = getp2()
     let
       ga1 = gs[nsnow].gaugeAction2 gc
@@ -1002,10 +1004,12 @@ for n in 1..trajs:
 
     if n >= qnbegin:
       md.evolve qntau
+      md.finish
       hinvp.invH(lbfgs, p)
       p2 = getpgp()
     else:
       md.evolve tau
+      md.finish
       p2 = getp2()
 
     let

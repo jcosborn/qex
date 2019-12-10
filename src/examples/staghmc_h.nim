@@ -28,7 +28,7 @@ var g = lo.newgauge
 g.unit
 
 echo 6.0*g.plaq
-echo g.gaugeAction2 gc
+echo gc.actionA g
 
 var
   p = lo.newgauge
@@ -59,8 +59,8 @@ spf.verbosity = 0
 
 let
   tau = floatParam("tau", 1.0)
-  gsteps = intParam("gsteps", 100)
-  fsteps = intParam("fsteps", 20)  # TODO: separate for hmasses
+  gsteps = intParam("gsteps", 4)
+  fsteps = intParam("fsteps", 4)  # TODO: separate for hmasses
   trajs = intParam("ntraj", 10)
 
 template rephase(g: typed) =
@@ -78,7 +78,7 @@ template pnorm2(p2:float) =
 
 proc gaction(g:any, f2:seq[float], p2:float):auto =
   let
-    ga = g.gaugeAction2 gc
+    ga = gc.actionA g
     fa = f2.mapit(0.5*it)
     t = 0.5*p2
     h = ga + fa.sum + t
@@ -135,14 +135,15 @@ proc mdt(t: float) =
   toc("mdt")
 proc mdv(t: float) =
   tic()
-  f.gaugeforce2(g, gc)
+  gc.forceA(g, f)
   threads:
     for mu in 0..<f.len:
       p[mu] -= t*f[mu]
   toc("mdv")
 
+func sq(x:float):float = x*x
+
 proc mdvf(i:int, t:float) =
-  proc sq(x:float):float = x*x
   tic()
   let s =
     if i == 0: -0.5*t*(hmasses[0].sq-mass.sq)/mass
@@ -154,17 +155,27 @@ proc mdvf(i:int, t:float) =
       p[mu] -= s*f[mu]
   toc("mdvf")
 
-#proc mdvf2(t: float) =
-#  mdv(t)
-#  mdvf(t)
-
-# For FGYin11
+# For force gradient update
+const useFG = true
+const useApproxFG2 = false
 proc fgv(t: float) =
-  f.gaugeforce2(g, gc)
+  gc.forceA(g, f)
   threads:
     for mu in 0..<g.len:
       for s in g[mu]:
         g[mu][s] := exp((-t)*f[mu][s])*g[mu][s]
+proc fgvf(i:int, t:float) =
+  tic()
+  let t =
+    if i == 0: -0.5*t*(hmasses[0].sq-mass.sq)/mass
+    elif i < hmasses.len: -0.5*t*(hmasses[i].sq-hmasses[i-1].sq)/hmasses[i-1]
+    else: -0.5*t/hmasses[i-1]
+  f.fforce i
+  threads:
+    for mu in 0..<g.len:
+      for s in g[mu]:
+        g[mu][s] := exp((-t)*f[mu][s])*g[mu][s]
+  toc("fgvf")
 var gg = lo.newgauge
 proc fgsave =
   threads:
@@ -175,7 +186,7 @@ proc fgload =
     for mu in 0..<g.len:
       g[mu] := gg[mu]
 
-# Compined update for sharing computations, requires mdevolve v1
+# Compined update for sharing computations
 proc mdvAll(t: openarray[float]) =
   # TODO: actually share computation.
   # For now, just do it separately.
@@ -183,40 +194,99 @@ proc mdvAll(t: openarray[float]) =
   for i in 0..hmasses.len:
     if t[i+1] != 0:
       mdvf(i, t[i+1])
+proc mdvAllfga(ts,gs:openarray[float]) =
+  # TODO: actually share computation.
+  # For now, just do it separately.
+  let
+    gt = ts[0] # 0 for gauge
+    gg = gs[0]
+  # For gauge
+  if gg != 0:
+    if gt != 0:
+      fgsave()
+      if useApproxFG2:
+        # Approximate the force gradient update with two Taylor expansions.
+        let (tf,tg) = approximateFGcoeff2(gt,gg)
+        fgv tg[0]
+        mdv tf[0]
+        fgload()
+        fgv tg[1]
+        mdv tf[1]
+      else:
+        # Approximate the force gradient update with a Taylor expansion.
+        let (tf,tg) = approximateFGcoeff(gt,gg)
+        # echo "gauge fg: ",tf," ",tg
+        fgv tg
+        mdv tf
+      fgload()
+    else:
+      quit("Force gradient without the force update.")
+  elif gt != 0:
+    mdv gt
+  # For fermion
+  for i in 0..hmasses.len:
+    let
+      ft = ts[i+1]
+      fg = gs[i+1]
+    if fg != 0:
+      if ft != 0:
+        fgsave()
+        if useApproxFG2:
+          # Approximate the force gradient update with two Taylor expansions.
+          let (tf,tg) = approximateFGcoeff2(ft,fg)
+          fgvf i,tg[0]
+          mdvf i,tf[0]
+          fgload()
+          fgvf i,tg[1]
+          mdvf i,tf[1]
+        else:
+          # Approximate the force gradient update with a Taylor expansion.
+          let (tf,tg) = approximateFGcoeff(ft,fg)
+          # echo "fermion fg: ",tf," ",tg
+          fgvf i,tg
+          mdvf i,tf
+        fgload()
+      else:
+        quit("Force gradient without the force update.")
+    elif ft != 0:
+      mdvf i,ft
 
-#[ mdevolve v0
-let
-  # H = mkLeapfrog(steps = steps, V = mdv, T = mdt)
-  # H = mkSW92(steps = steps, V = mdv, T = mdt)
-  #H = mkOmelyan2MN(steps = gsteps, V = mdvf2, T = mdt)
-  # H = mkOmelyan4MN4FP(steps = steps, V = mdv, T = mdt)
-  #H = mkOmelyan4MN5FV(steps = gsteps, V = mdvf2, T = mdt)
-  #H = mkFGYin11(steps = steps, V = mdv, T = mdt, Vfg = fgv, save = fgsave(), load = fgload())
-  #Hg = mkLeapfrog(steps = gsteps, V = mdv, T = mdt, shared=0)
-  #Hf = mkLeapfrog(steps = fsteps, V = mdvf, T = mdt, shared=0)
-  Hg = mkOmelyan2MN(steps = gsteps, V = mdv, T = mdt, shared=0)
-  Hf = mkOmelyan2MN(steps = fsteps, V = mdvf, T = mdt, shared=0)
-  #Hg = mkOmelyan4MN5FV(steps = gsteps, V = mdv, T = mdt, shared=1)
-  #Hf = mkOmelyan4MN5FV(steps = fsteps, V = mdvf, T = mdt, shared=1)
-  H = mkSharedEvolution(Hg, Hf)
-]#
-
-# Nested integrator
-let (V, T) = wrap(mdvAll, mdt)
+#[ Nested integrator
+let (V, T) = newIntegratorPair(mdvAll, mdt)
 var H = mkOmelyan2MN(steps = gsteps div fsteps, V = V[0], T = T)
 for i in 0..<hmasses.len:
   H = mkOmelyan2MN(steps = 1, V = V[i+1], T = H)
 H = mkOmelyan2MN(steps = fsteps, V = V[hmasses.len+1], T = H)
-
-#[ TODO: test parallel evolution
-let
-  (V, T) = wrap(mdvAll, mdt)
-  Hg = mkOmelyan2MN(steps = gsteps, V = V[0], T = mdt)
-  Hf = mkOmelyan2MN(steps = fsteps, V = V[1], T = mdt)
-var H = newParallelEvolution(Hg, Hf)
-for i in 0..<hmasses.len:
-  H.add mkOmelyan2MN(steps = fsteps, V = V[i+2], T = mdt)
 ]#
+
+# Omelyan's triple star integrators, see Omelyan et. al. (2003)
+when useFG:
+  let
+    (V,T) = newIntegratorPair(mdvAllfga, mdt)
+    # mkOmelyan4MN4F2GVG(steps = gsteps, V = V[0], T = T),
+    # mkOmelyan4MN4F2GV(steps = gsteps, V = V[0], T = T),
+    # mkOmelyan4MN5F1GV(steps = gsteps, V = V[0], T = T),
+    # mkOmelyan4MN5F1GP(steps = gsteps, V = V[0], T = T),
+    # mkOmelyan4MN5F2GV(steps = gsteps, V = V[0], T = T),
+    # mkOmelyan4MN5F2GP(steps = gsteps, V = V[0], T = T),
+    # mkOmelyan6MN5F3GP(steps = gsteps, V = V[0], T = T),
+    Hg = mkOmelyan4MN5F2GP(steps = gsteps, V = V[0], T = T)
+    Hf = mkOmelyan4MN5F2GP(steps = fsteps, V = V[1], T = T)
+    H = newParallelEvolution(Hg, Hf)
+  for i in 0..<hmasses.len:
+    H.add mkOmelyan4MN5F2GP(steps = fsteps, V = V[i+2], T = T)
+else:
+  let
+    (V,T) = newIntegratorPair(mdvAll, mdt)
+    # mkOmelyan2MN(steps = gsteps, V = V[0], T = T),
+    # mkOmelyan4MN5FP(steps = gsteps, V = V[0], T = T),
+    # mkOmelyan4MN5FV(steps = gsteps, V = V[0], T = T),
+    # mkOmelyan6MN7FV(steps = gsteps, V = V[0], T = T),
+    Hg = mkOmelyan6MN7FV(steps = gsteps, V = V[0], T = T)
+    Hf = mkOmelyan6MN7FV(steps = fsteps, V = V[1], T = T)
+    H = newParallelEvolution(Hg, Hf)
+  for i in 0..<hmasses.len:
+    H.add mkOmelyan6MN7FV(steps = fsteps, V = V[i+2], T = T)
 
 for n in 1..trajs:
   tic()

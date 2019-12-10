@@ -75,7 +75,7 @@ let
   beta = floatParam("beta", 5.0)
   trajs = intParam("trajs", 512)
   tau = floatParam("tau", 2.0)
-  steps = intParam("steps", 10)
+  steps = intParam("steps", 5)
   fseed = intParam("fseed", 11^11).uint64
   gseed = intParam("gseed", 7^7).uint64
   gfix = intParam("gfix", 0).bool
@@ -128,9 +128,10 @@ proc mdv(t:float) =
         let tf = (-t)*f[i][e]
         p[i][e] += tf
 
-# For FGYin11
-const useFGYin11 = false
-when useFGYin11:
+# For force gradient update
+const useFG = true
+const useApproxFG2 = false
+when useFG:
   proc fgv(t:float) =
     f.gaugeforce2(g, gc)
     if gfix: f.maxTreeFix 0.0
@@ -148,18 +149,68 @@ when useFGYin11:
     threads:
       for i in 0..<g.len:
         g[i] := gg[i]
+  proc updatefga(ts,gs:openarray[float]) =
+    let
+      t = ts[0]
+      g = gs[0]
+    if g != 0:
+      if t != 0:
+        # Approximate the force gradient update with a Taylor expansion.
+        let (tf,tg) = approximateFGcoeff(t,g)
+        fgsave()
+        fgv tg
+        mdv tf
+        fgload()
+      else:
+        quit("Force gradient without the force update.")
+    elif t != 0:
+      mdv t
+    else:
+      quit("No updates required.")
+  proc updatefga2(ts,gs:openarray[float]) =
+    let
+      t = ts[0]
+      g = gs[0]
+    if g != 0:
+      if t != 0:
+        # Approximate the force gradient update with two Taylor expansions.
+        let (tf,tg) = approximateFGcoeff2(t,g)
+        fgsave()
+        fgv tg[0]
+        mdv tf[0]
+        fgload()
+        fgv tg[1]
+        mdv tf[1]
+        fgload()
+      else:
+        quit("Force gradient without the force update.")
+    elif t != 0:
+      mdv t
+    else:
+      quit("No updates required.")
 
 let
-  # H = mkLeapfrog(steps = steps, V = mdv, T = mdt)
-  # H = mkSW92(steps = steps, V = mdv, T = mdt)
-  # H = mkOmelyan2MN(steps = steps, V = mdv, T = mdt)
-  # H = mkOmelyan4MN4FP(steps = steps, V = mdv, T = mdt)
-  # H = mkOmelyan4MN5FV(steps = steps, V = mdv, T = mdt)
+  # Omelyan's triple star integrators, see Omelyan et. al. (2003)
   H =
-    when useFGYin11:
-      mkFGYin11(steps = steps, V = mdv, T = mdt, Vfg = fgv, save = fgsave(), load = fgload())
+    when useFG:
+      let
+        (VG,T) =
+          if useApproxFG2: newIntegratorPair(updatefga2, mdt)
+          else: newIntegratorPair(updatefga, mdt)
+        V = VG[0]
+      # mkOmelyan4MN4F2GVG(steps = steps, V = V, T = T)
+      # mkOmelyan4MN4F2GV(steps = steps, V = V, T = T)
+      # mkOmelyan4MN5F1GV(steps = steps, V = V, T = T)
+      # mkOmelyan4MN5F1GP(steps = steps, V = V, T = T)
+      # mkOmelyan4MN5F2GV(steps = steps, V = V, T = T)
+      mkOmelyan4MN5F2GP(steps = steps, V = V, T = T)
+      # mkOmelyan6MN5F3GP(steps = steps, V = V, T = T)
     else:
-      mkOmelyan4MN5FV(steps = steps, V = mdv, T = mdt)
+      let (V,T) = newIntegratorPair(mdv, mdt)
+      mkOmelyan2MN(steps = steps, V = V, T = T)
+      # mkOmelyan4MN5FP(steps = steps, V = V, T = T)
+      # mkOmelyan4MN5FV(steps = steps, V = V, T = T)
+      # mkOmelyan6MN7FV(steps = steps, V = V, T = T)
 
 for n in 1..trajs:
   echo "Begin traj: ",n
@@ -180,6 +231,7 @@ for n in 1..trajs:
   #echo "Begin H: ",h0,"  Sg: ",ga0,"  T: ",t0
 
   H.evolve tau
+  H.finish
 
   threads:
     var p2t = 0.0
@@ -203,6 +255,7 @@ for n in 1..trajs:
           p1[i] := p[i]
           p[i] := -1*p[i]
       H.evolve tau
+      H.finish
       threads:
         var p2t = 0.0
         for i in 0..<p.len:
