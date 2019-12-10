@@ -155,8 +155,12 @@ proc translate(r: Field, x: Field2, pt: openArray[int]) =
   for mu in 0..<pt.len:
     let n = pt[mu]
     #echo &"translate: {mu} {n} ", r.norm2
-    var s = newShifter(r, mu, n)
-    r := s ^* r
+    # Works around a bug.
+    # var s = newShifter(r, mu, n)
+    # r := s ^* r
+    var s = newShifter(r, mu, 1)
+    for i in 1..n:
+      r := s ^* r
     #echo &"translate:     ", r.norm2
 
 var
