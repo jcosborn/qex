@@ -44,14 +44,15 @@ template projDeriv(r: any, x: any, c: any) =
 # fl[mu] = P( (1-a3)*g[mu] + a3/6 sum{nu!=mu} SS(L2[nu][mu],L2[mu][nu]) )
 #proc smear*(coef: HypCoefs, gf: any, fl: any, ht: HypTemps,
 #            info: var PerfInfo) =
-proc smear*(coef: HypCoefs, gf: any, fl: any,
-            info: var PerfInfo) =
+proc smear*[G](coef: HypCoefs, gf: G, fl: G,
+            info: var PerfInfo):auto {.discardable.} =
   tic()
   type lcm = type(gf[0])
   proc newlcm: lcm = result.new(gf[0].l)
   var
     l1: array[4,array[4,lcm]]
     l2: array[4,array[4,lcm]]
+    fl0: array[4,lcm]
     tm1: lcm
     sm1: array[4,Shifter[lcm,type(gf[0][0])]]
     s1: array[4,array[4,Shifter[lcm,type(gf[0][0])]]]
@@ -60,6 +61,7 @@ proc smear*(coef: HypCoefs, gf: any, fl: any,
 
   tm1 = newlcm()
   for mu in 0..<4:
+    fl0[mu] = newlcm()
     sm1[mu] = newShifter(gf[mu], mu, -1)
     for nu in 0..<4:
       if nu!=mu:
@@ -100,17 +102,62 @@ proc smear*(coef: HypCoefs, gf: any, fl: any,
           #fl[mu] += l1[mu][nu]
 
     for mu in 0..<4:
-      fl[mu] := (1-coef.alpha3) * gf[mu]
+      fl0[mu] := (1-coef.alpha3) * gf[mu]
       for nu in 0..<4:
         if nu!=mu:
           discard s1[nu][mu] ^* l2[nu][mu]
           discard s1[mu][nu] ^* l2[mu][nu]
           threadBarrier()
-          symStaple(fl[mu], alp3, l2[nu][mu], l2[mu][nu],
+          symStaple(fl0[mu], alp3, l2[nu][mu], l2[mu][nu],
                     s1[nu][mu], s1[mu][nu], tm1, sm1[nu])
-      proj fl[mu]
+      fl[mu].proj fl0[mu]
+
+  proc smearedForce(f,chain:G) {.closure.} =
+    # fₓₚₜ ← chainₘₖₕ d/dUₓₚₜ^*[Vₘₖₕ(U)^*] + chainₘₕₖ^* d/dUₓₚₜ^*[Vₘₕₖ(U)]
+    var
+      fc: array[4,lcm]
+      fs: array[4,Shifter[lcm,type(gf[0][0])]]
+      tm2: lcm
+    tm2 = newlcm()
+    for mu in 0..<4:
+      fc[mu] = newlcm()
+      fs[mu] = newShifter(fc[mu], mu, 1)
+
+    threads:
+      # proj
+      for mu in 0..<4:
+        for i in fc[mu]:
+          fc[mu][i].projectUDeriv(fl0[mu][i], chain[mu][i])
+      # link
+      for mu in 0..<4:
+        f[mu] := (1-coef.alpha3) * fc[mu]
+      # staples  XXX assume APE, so accumulating to f[mu]
+      for mu in 0..<4:
+        for nu in 0..<4:
+          if nu!=mu:
+            discard s1[nu][mu] ^* l2[nu][mu]
+            discard s1[mu][nu] ^* l2[mu][nu]
+            discard fs[nu] ^* fc[mu]
+            threadBarrier()
+            # ∪ fs[nu].field.adj * l2[nu][mu].adj * l2[mu][nu] * s1[nu][mu].field
+            # ∪† fs[nu].field * s1[nu][mu].field.adj * l2[mu][nu].adj * l2[nu][mu]
+            # ∩ fc[mu].adj * l2[nu][mu] * s1[mu][nu].field * s1[nu][mu].field.adj
+            # ∩† fc[mu] * s1[nu][mu].field * s1[mu][nu].field.adj * l2[nu][mu].adj
+            tm1 := l2[nu][mu].adj * fc[mu] * s1[nu][mu].field  # ∩†2
+            tm2 := l2[mu][nu].adj * l2[nu][mu] * fs[nu].field  # ∪†1
+            tm2 += fc[mu].adj * l2[nu][mu] * s1[mu][nu].field  # ∩3
+            threadBarrier()
+            discard sm1[nu] ^* tm1
+            discard sm1[mu] ^* tm2
+            threadBarrier()
+            f[nu] += alp3*(l2[mu][nu] * s1[nu][mu].field * fs[nu].field.adj)  # ∪1
+            f[nu] += alp3*(fc[mu] * s1[nu][mu].field * s1[mu][nu].field.adj)  # ∩†3
+            f[mu] += alp3*(l2[nu][mu] * fs[nu].field * s1[nu][mu].field.adj)  # ∪†2
+            f[mu] += alp3*sm1[nu].field
+            f[nu] += alp3*sm1[mu].field
 
   toc()
+  smearedForce
 
 #proc smear*(c: HypCoefs, gf: any, fl: any, info: var PerfInfo) =
 #  var t = newHypTemps(gf)
