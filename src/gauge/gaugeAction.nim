@@ -308,7 +308,7 @@ proc actionA*(c: GaugeActionCoeffs, g: any): auto =
       pl[1] = plt[1] / float(nc*nc)
       rankSum(pl)
     toc("plaq sum")
-  let a0 = 6 * lo.nSites.float
+  let a0 = 0.5 * float(nd*(nd-1)*lo.physVol)
   result = c.plaq*(a0-pl[0]) + c.adjplaq*(a0-pl[1])
   toc("plaq end", flops=lo.nSites.float*float(2*8*nc*nc*nc-1))
 
