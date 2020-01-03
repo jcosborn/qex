@@ -66,7 +66,7 @@ proc smearRephase(g: any, sg: any):auto {.discardable.} =
     sg.setBC
     threadBarrier()
     sg.stagPhase
-  toc("BC & Phase 2")
+  toc("BC & Phase")
   smearedForce
 
 proc smearedOneLinkForce(f: any, smearedForce: proc, p: any, g:any) =
@@ -113,7 +113,6 @@ proc fforce(f: any) =
   toc("fforce solve")
   f.smearedOneLinkForce(smearedForce, psi, g)
   toc("fforce olf")
-  toc("fforce rephase 2")
 
 proc mdt(t: float) =
   tic()
