@@ -12,9 +12,11 @@ type HypCoefs* = object
   alpha3*: float
 
 proc `$`*(c: HypCoefs): string =
-  result  = "alpha1: " & $c.alpha1 & "\n"
-  result &= "alpha2: " & $c.alpha2 & "\n"
-  result &= "alpha3: " & $c.alpha3
+  result = "Hyp{\n"
+  result &= "  alpha1: " & $c.alpha1 & "\n"
+  result &= "  alpha2: " & $c.alpha2 & "\n"
+  result &= "  alpha3: " & $c.alpha3 & "\n"
+  result &= "}"
 
 proc symStaple(s: any, alp: float, g1: any, g2: any,
                s1: any, s2: any, tm: any, sm: any) =
@@ -26,6 +28,31 @@ proc symStaple(s: any, alp: float, g1: any, g2: any,
   s += alp * ( g1 * s2.field * s1.field.adj )
   s += alp * sm.field
 
+proc symStapleDeriv(f1, f2: any;  # output
+                    g1, g2: any; s1, s2: any;  # same as symStaple
+                    c: any, s: any;  # chain and shift
+                    tm1, tm2: any;  # temporary fields
+                    sm1, sm2: any;  # shifts
+                   ) =
+  mixin adj
+  # ∪ s.field.adj * g1.adj * g2 * s1.field
+  # ∪† s.field * s1.field.adj * g2.adj * g1
+  # ∩ c.adj * g1 * s2.field * s1.field.adj
+  # ∩† c * s1.field * s2.field.adj * g1.adj
+  tm1 := g1.adj * c * s1.field  # ∩†2  s2
+  tm2 := g2.adj * g1 * s.field  # ∪†1  s1
+  tm2 += c.adj * g1 * s2.field  # ∩3   s1
+  threadBarrier()
+  discard sm1 ^* tm1
+  discard sm2 ^* tm2
+  threadBarrier()
+  f1 += g2 * s1.field * s.field.adj  # ∪1   g1
+  f1 += c * s1.field * s2.field.adj  # ∩†3  g1
+  f2 += g1 * s.field * s1.field.adj  # ∪†2  g2
+  f2 += sm1.field
+  f1 += sm2.field
+
+
 template proj(x: any) =
   for e in x:
     x[e].projectU x[e]
@@ -35,9 +62,12 @@ template proj(r: any, x: any) =
     r[e].projectU x[e]
 
 template projDeriv(r: any, x: any, c: any) =
-  r := c
-  #for e in r:
-  #  r[e].projectU x[e]
+  for i in r:
+    r[i].projectUDeriv(x[i], c[i])
+
+template projDeriv(r: any, u, x: any, c: any) =
+  for i in r:
+    r[i].projectUDeriv(u[i], x[i], c[i])
 
 # L[mu][nu] = P( (1-a1)*g[mu] + 0.5*a1 SS(g[nu],g[mu]) )
 # L2[mu][nu] = P( (1-a2)*g[mu] + 0.25*a2 sum{a,b!=mu,nu} SS(L[a][b],L[mu][b]) )
@@ -52,7 +82,9 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
   var
     l1: array[4,array[4,lcm]]
     l2: array[4,array[4,lcm]]
-    fl0: array[4,lcm]
+    l1x: array[4,array[4,lcm]]
+    l2x: array[4,array[4,lcm]]
+    flx: array[4,lcm]
     tm1: lcm
     sm1: array[4,Shifter[lcm,type(gf[0][0])]]
     s1: array[4,array[4,Shifter[lcm,type(gf[0][0])]]]
@@ -61,77 +93,90 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
 
   tm1 = newlcm()
   for mu in 0..<4:
-    fl0[mu] = newlcm()
+    flx[mu] = newlcm()
     sm1[mu] = newShifter(gf[mu], mu, -1)
     for nu in 0..<4:
       if nu!=mu:
         l1[mu][nu] = newlcm()
         l2[mu][nu] = newlcm()
+        l1x[mu][nu] = newlcm()
+        l2x[mu][nu] = newlcm()
         s1[mu][nu] = newShifter(gf[mu], nu, 1)
         discard s1[mu][nu] ^* gf[mu]
 
-  let alp1 = coef.alpha1 / 2.0
-  let alp2 = coef.alpha2 / 4.0
-  let alp3 = coef.alpha3 / 6.0
+  let
+    alp1 = coef.alpha1 / 2.0
+    alp2 = coef.alpha2 / 4.0
+    alp3 = coef.alpha3 / 6.0
+    ma1 = 1 - coef.alpha1
+    ma2 = 1 - coef.alpha2
+    ma3 = 1 - coef.alpha3
 
   threads:
     for mu in 0..<4:
-      #fl[mu] := 0
       for nu in 0..<4:
         if nu!=mu:
-          l1[mu][nu] := (1-coef.alpha1) * gf[mu]
-          symStaple(l1[mu][nu], alp1, gf[nu], gf[mu],
+          l1x[mu][nu] := ma1 * gf[mu]
+          symStaple(l1x[mu][nu], alp1, gf[nu], gf[mu],
                     s1[nu][mu], s1[mu][nu], tm1, sm1[nu])
-          proj l1[mu][nu]
-          #fl[mu] += l1[mu][nu]
+          l1[mu][nu].proj l1x[mu][nu]
 
     for mu in 0..<4:
-      #fl[mu] := 0
       for nu in 0..<4:
         if nu!=mu:
-          l2[mu][nu] := (1-coef.alpha2) * gf[mu]
+          l2x[mu][nu] := ma2 * gf[mu]
           for a in 0..<4:
             if a!=mu and a!=nu:
               let b = 1+2+3-mu-nu-a
               discard s1[nu][mu] ^* l1[a][b]
               discard s1[mu][a] ^* l1[mu][b]
               threadBarrier()
-              symStaple(l2[mu][nu], alp2, l1[a][b], l1[mu][b],
+              symStaple(l2x[mu][nu], alp2, l1[a][b], l1[mu][b],
                         s1[nu][mu], s1[mu][a], tm1, sm1[a])
-          proj l2[mu][nu]
-          #fl[mu] += l1[mu][nu]
+          l2[mu][nu].proj l2x[mu][nu]
 
     for mu in 0..<4:
-      fl0[mu] := (1-coef.alpha3) * gf[mu]
+      flx[mu] := ma3 * gf[mu]
       for nu in 0..<4:
         if nu!=mu:
           discard s1[nu][mu] ^* l2[nu][mu]
           discard s1[mu][nu] ^* l2[mu][nu]
           threadBarrier()
-          symStaple(fl0[mu], alp3, l2[nu][mu], l2[mu][nu],
+          symStaple(flx[mu], alp3, l2[nu][mu], l2[mu][nu],
                     s1[nu][mu], s1[mu][nu], tm1, sm1[nu])
-      fl[mu].proj fl0[mu]
+      fl[mu].proj flx[mu]
 
-  proc smearedForce(f,chain:G) {.closure.} =
+  proc smearedForce(f,chain:G) =
     # fₓₚₜ ← chainₘₖₕ d/dUₓₚₜ^*[Vₘₖₕ(U)^*] + chainₘₕₖ^* d/dUₓₚₜ^*[Vₘₕₖ(U)]
     var
+      fl1: array[4,array[4,lcm]]
+      fl2: array[4,array[4,lcm]]
       fc: array[4,lcm]
       fs: array[4,Shifter[lcm,type(gf[0][0])]]
       tm2: lcm
     tm2 = newlcm()
     for mu in 0..<4:
+      for nu in 0..<4:
+        if nu!=mu:
+          fl1[mu][nu] = newlcm()
+          fl2[mu][nu] = newlcm()
       fc[mu] = newlcm()
       fs[mu] = newShifter(fc[mu], mu, 1)
 
     threads:
-      # proj
       for mu in 0..<4:
-        for i in fc[mu]:
-          fc[mu][i].projectUDeriv(fl0[mu][i], chain[mu][i])
-      # link
+        for nu in 0..<4:
+          if nu!=mu:
+            fl1[mu][nu] := 0
+            fl2[mu][nu] := 0
+
+      # proj flx → fl, fc ← chain
       for mu in 0..<4:
-        f[mu] := (1-coef.alpha3) * fc[mu]
-      # staples  XXX assume APE, so accumulating to f[mu]
+        fc[mu].projDeriv(flx[mu], chain[mu])
+      # link (gf, l2) → flx, (f, fl2) ← fc
+      for mu in 0..<4:
+        f[mu] := ma3 * fc[mu]
+        fc[mu] *= alp3
       for mu in 0..<4:
         for nu in 0..<4:
           if nu!=mu:
@@ -139,22 +184,55 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
             discard s1[mu][nu] ^* l2[mu][nu]
             discard fs[nu] ^* fc[mu]
             threadBarrier()
-            # ∪ fs[nu].field.adj * l2[nu][mu].adj * l2[mu][nu] * s1[nu][mu].field
-            # ∪† fs[nu].field * s1[nu][mu].field.adj * l2[mu][nu].adj * l2[nu][mu]
-            # ∩ fc[mu].adj * l2[nu][mu] * s1[mu][nu].field * s1[nu][mu].field.adj
-            # ∩† fc[mu] * s1[nu][mu].field * s1[mu][nu].field.adj * l2[nu][mu].adj
-            tm1 := l2[nu][mu].adj * fc[mu] * s1[nu][mu].field  # ∩†2
-            tm2 := l2[mu][nu].adj * l2[nu][mu] * fs[nu].field  # ∪†1
-            tm2 += fc[mu].adj * l2[nu][mu] * s1[mu][nu].field  # ∩3
+            symStapleDeriv(fl2[nu][mu], fl2[mu][nu],
+                           l2[nu][mu], l2[mu][nu], s1[nu][mu], s1[mu][nu],
+                           fc[mu], fs[nu], tm1, tm2, sm1[nu], sm1[mu])
+
+      # proj l2x → l2, fl2 ← fl2
+      for mu in 0..<4:
+        for nu in 0..<4:
+          if nu!=mu:
+            fl2[mu][nu].projDeriv(l2[mu][nu], l2x[mu][nu], fl2[mu][nu])
+      # link (gf, l1) → l2x, (f, fl1) ← fl2
+      for mu in 0..<4:
+        for nu in 0..<4:
+          if nu!=mu:
+            f[mu] += ma2 * fl2[mu][nu]
+            fl2[mu][nu] *= alp2
+      for mu in 0..<4:
+        for nu in 0..<4:
+          if nu!=mu:
+            for a in 0..<4:
+              if a!=mu and a!=nu:
+                let b = 1+2+3-mu-nu-a
+                discard s1[nu][mu] ^* l1[a][b]
+                discard s1[mu][a] ^* l1[mu][b]
+                discard fs[a] ^* fl2[mu][nu]
+                threadBarrier()
+                symStapleDeriv(fl1[a][b], fl1[mu][b],
+                               l1[a][b], l1[mu][b], s1[nu][mu], s1[mu][a],
+                               fl2[mu][nu], fs[a], tm1, tm2, sm1[a], sm1[mu])
+
+      # proj l1x → l1, fl1 ← fl1
+      for mu in 0..<4:
+        for nu in 0..<4:
+          if nu!=mu:
+            fl1[mu][nu].projDeriv(l1[mu][nu], l1x[mu][nu], fl1[mu][nu])
+            discard s1[mu][nu] ^* gf[mu]
+      # link gf → l1, f ← fl1
+      for mu in 0..<4:
+        for nu in 0..<4:
+          if nu!=mu:
+            f[mu] += ma1 * fl1[mu][nu]
+            fl1[mu][nu] *= alp1
+      for mu in 0..<4:
+        for nu in 0..<4:
+          if nu!=mu:
+            discard fs[nu] ^* fl1[mu][nu]
             threadBarrier()
-            discard sm1[nu] ^* tm1
-            discard sm1[mu] ^* tm2
-            threadBarrier()
-            f[nu] += alp3*(l2[mu][nu] * s1[nu][mu].field * fs[nu].field.adj)  # ∪1
-            f[nu] += alp3*(fc[mu] * s1[nu][mu].field * s1[mu][nu].field.adj)  # ∩†3
-            f[mu] += alp3*(l2[nu][mu] * fs[nu].field * s1[nu][mu].field.adj)  # ∪†2
-            f[mu] += alp3*sm1[nu].field
-            f[nu] += alp3*sm1[mu].field
+            symStapleDeriv(f[nu], f[mu],
+                           gf[nu], gf[mu], s1[nu][mu], s1[mu][nu],
+                           fl1[mu][nu], fs[nu], tm1, tm2, sm1[nu], sm1[mu])
 
   toc()
   smearedForce

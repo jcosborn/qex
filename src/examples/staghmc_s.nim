@@ -53,8 +53,7 @@ let
 
 var
   info: PerfInfo
-  #coef = HypCoefs(alpha1:0.4, alpha2:0.5, alpha3:0.5)
-  coef = HypCoefs(alpha1:0.0, alpha2:0.0, alpha3:0.5)
+  coef = HypCoefs(alpha1:0.4, alpha2:0.5, alpha3:0.5)
 echo "smear = ",coef
 var sg = lo.newGauge
 let stag = newStag(sg)
