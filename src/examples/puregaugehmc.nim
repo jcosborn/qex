@@ -1,6 +1,6 @@
-import qex
-import gauge, physics/qcdTypes
+import qex, gauge, physics/qcdTypes
 import mdevolve
+import times, macros
 
 qexinit()
 
@@ -9,13 +9,32 @@ let
   #lat = @[8,8,8]
   #lat = @[32,32]
   #lat = @[1024,1024]
-  lo = lat.newLayout
   beta = floatParam("beta", 6.0)
   adjFac = floatParam("adjFac", -0.25)
+  tau = floatParam("tau", 2.0)
+  steps = intParam("steps", 4)
+  trajs = intParam("trajs", 10)
+  seed = intParam("seed", int(1000*epochTime())).uint64
+
+macro echoparam(x: typed): untyped =
+  let n = x.repr
+  result = quote do:
+    echo `n`, ": ", `x`
+
+echoparam(beta)
+echoparam(adjFac)
+echoparam(tau)
+echoparam(steps)
+echoparam(trajs)
+echoparam(seed)
+
+let
   gc = GaugeActionCoeffs(plaq: beta, adjplaq: beta*adjFac)
-var r = lo.newRNGField(RngMilc6, 987654321)
+  lo = lat.newLayout
+
+var r = lo.newRNGField(RngMilc6, seed)
 var R:RngMilc6  # global RNG
-R.seed(987654321, 987654321)
+R.seed(seed, 987654321)
 
 var g = lo.newgauge
 #g.random r
@@ -30,11 +49,6 @@ var
   f = lo.newgauge
   g0 = lo.newgauge
 
-let
-  tau = 2.0
-  steps = 4
-  trajs = 10
-
 proc mdt(t: float) =
   threads:
     for mu in 0..<g.len:
@@ -48,7 +62,8 @@ proc mdv(t: float) =
       p[mu] -= t*f[mu]
 
 # For force gradient update
-const useFG = true
+#const useFG = true
+const useFG = false
 const useApproxFG2 = false
 proc fgv(t: float) =
   #f.gaugeforce2(g, gc)
@@ -124,10 +139,10 @@ let
       # mkOmelyan6MN5F3GP(steps = steps, V = V, T = T)
     else:
       let (V,T) = newIntegratorPair(mdv, mdt)
-      # mkOmelyan2MN(steps = steps, V = V, T = T)
+      mkOmelyan2MN(steps = steps, V = V, T = T)
       # mkOmelyan4MN5FP(steps = steps, V = V, T = T)
       # mkOmelyan4MN5FV(steps = steps, V = V, T = T)
-      mkOmelyan6MN7FV(steps = steps, V = V, T = T)
+      #mkOmelyan6MN7FV(steps = steps, V = V, T = T)
 
 for n in 1..trajs:
   var p2 = 0.0
