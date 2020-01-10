@@ -1,7 +1,6 @@
-import qex
-import gauge, gauge/hypsmear, physics/qcdTypes
-import physics/stagSolve
+import qex, gauge, gauge/hypsmear, physics/qcdTypes, physics/stagSolve
 import mdevolve
+import times, macros
 
 const ReversibilityCheck {.booldefine.} = false
 
@@ -12,12 +11,41 @@ let
   #lat = @[8,8,8]
   #lat = @[32,32]
   #lat = @[1024,1024]
+  beta = floatParam("beta", 6.0)
+  adjFac = floatParam("adjFac", -0.25)
+  tau = floatParam("tau", 2.0)
+  gsteps = intParam("gsteps", 4)
+  fsteps = intParam("fsteps", 4)
+  trajs = intParam("trajs", 10)
+  seed = intParam("seed", int(1000*epochTime())).uint64
+  mass = floatParam("mass", 0.1)
+  arsq = floatParam("arsq", 1e-20)
+  frsq = floatParam("frsq", 1e-12)
+
+macro echoparam(x: typed): untyped =
+  let n = x.repr
+  result = quote do:
+    echo `n`, ": ", `x`
+
+echoparam(beta)
+echoparam(adjFac)
+echoparam(tau)
+echoparam(gsteps)
+echoparam(fsteps)
+echoparam(trajs)
+echoparam(seed)
+echoparam(mass)
+echoparam(arsq)
+echoparam(frsq)
+
+let
+  gc = GaugeActionCoeffs(plaq: beta, adjplaq: beta*adjFac)
   lo = lat.newLayout
-  #gc = GaugeActionCoeffs(plaq:6)
-  gc = GaugeActionCoeffs(plaq:6,adjplaq:1)
-var r = lo.newRNGField(RngMilc6, 987654321)
+  vol = lo.physVol
+
+var r = lo.newRNGField(RngMilc6, seed)
 var R:RngMilc6  # global RNG
-R.seed(987654321, 987654321)
+R.seed(seed, 987654321)
 
 var g = lo.newgauge
 #g.random r
@@ -34,22 +62,15 @@ var
   phi = lo.ColorVector()
   psi = lo.ColorVector()
 
-let mass = floatParam("mass", 0.1)
 var spa = initSolverParams()
 #spa.subsetName = "even"
-spa.r2req = floatParam("arsq", 1e-20)
+spa.r2req = arsq
 spa.maxits = 10000
 var spf = initSolverParams()
 #spf.subsetName = "even"
-spf.r2req = floatParam("frsq", 1e-12)
+spf.r2req = frsq
 spf.maxits = 10000
 spf.verbosity = 0
-
-let
-  tau = floatParam("tau", 1.0)
-  gsteps = intParam("gsteps", 5)
-  fsteps = intParam("fsteps", 5)
-  trajs = intParam("ntraj", 1)
 
 var
   info: PerfInfo
@@ -140,7 +161,8 @@ proc mdvf(t: float) =
   toc("mdvf")
 
 # For force gradient update
-const useFG = true
+#const useFG = true
+const useFG = false
 const useApproxFG2 = false
 proc fgv(t: float) =
   tic()
@@ -260,11 +282,12 @@ let
         V = VAll[0]
         Vf = VAll[1]
       newParallelEvolution(
-        # mkOmelyan2MN(steps = gsteps, V = V, T = T),
+        mkOmelyan2MN(steps = gsteps, V = V, T = T),
+        mkOmelyan2MN(steps = fsteps, V = Vf, T = T))
         # mkOmelyan4MN5FP(steps = gsteps, V = V, T = T),
         # mkOmelyan4MN5FV(steps = gsteps, V = V, T = T),
-        mkOmelyan6MN7FV(steps = gsteps, V = V, T = T),
-        mkOmelyan6MN7FV(steps = fsteps, V = Vf, T = T))
+        #mkOmelyan6MN7FV(steps = gsteps, V = V, T = T),
+        #mkOmelyan6MN7FV(steps = fsteps, V = Vf, T = T))
 
 for n in 1..trajs:
   tic()
@@ -282,7 +305,7 @@ for n in 1..trajs:
   g.smearRephase sg
   toc("init traj smear & rephase")
   threads:
-    stag.D(phi, psi, mass)
+    stag.D(phi, psi, -mass)   # match bsm.lua convention
     threadBarrier()
     phi.odd := 0
   toc("init traj D")
@@ -294,7 +317,7 @@ for n in 1..trajs:
   let
     ga0 = gc.actionA g0
     fa0 = 0.5*f2
-    t0 = 0.5*p2
+    t0 = 0.5*p2 - (16*vol).float
     h0 = ga0 + fa0 + t0
   toc("init gauge action")
   echo "Begin H: ",h0,"  Sg: ",ga0,"  Sf: ",fa0,"  T: ",t0
@@ -319,7 +342,7 @@ for n in 1..trajs:
   let
     ga1 = gc.actionA g
     fa1 = 0.5*f2
-    t1 = 0.5*p2
+    t1 = 0.5*p2 - (16*vol).float
     h1 = ga1 + fa1 + t1
   toc("final gauge action")
   echo "End H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
