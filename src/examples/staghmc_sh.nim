@@ -2,9 +2,79 @@
 
 import qex, gauge, gauge/hypsmear, physics/qcdTypes, physics/stagSolve
 import mdevolve
-import math, sequtils, times
+import math, sequtils, strutils, times
 
 const ReversibilityCheck {.booldefine.} = false
+
+type IntProc = proc(T,V:Integrator; steps:int):Integrator
+converter toIntProc(s:string):IntProc =
+  template mkProc1(s:untyped):IntProc =
+    proc mkInt(T,V:Integrator; steps:int):Integrator {.gensym.} =
+      `mk s`(T = T, V = V, steps = steps)
+    mkInt
+  template mkProc2(s:untyped):IntProc =
+    proc mkInt(T,V:Integrator; steps:int):Integrator {.gensym.} =
+      `mk s`(T = T, V = V, steps = steps, ss[1].parseFloat)
+    mkInt
+  template mkProc3(s:untyped):IntProc =
+    proc mkInt(T,V:Integrator; steps:int):Integrator {.gensym.} =
+      `mk s`(T = T, V = V, steps = steps, ss[1].parseFloat, ss[2].parseFloat)
+    mkInt
+  template mkProc4(s:untyped):IntProc =
+    proc mkInt(T,V:Integrator; steps:int):Integrator {.gensym.} =
+      `mk s`(T = T, V = V, steps = steps, ss[1].parseFloat, ss[2].parseFloat, ss[3].parseFloat)
+    mkInt
+  template mkProc5(s:untyped):IntProc =
+    proc mkInt(T,V:Integrator; steps:int):Integrator {.gensym.} =
+      `mk s`(T = T, V = V, steps = steps, ss[1].parseFloat, ss[2].parseFloat, ss[3].parseFloat, ss[4].parseFloat)
+    mkInt
+  let ss = s.split(',')
+  # Omelyan's triple star integrators, see Omelyan et. al. (2003)
+  case ss[0]:
+  of "2MN":
+    if ss.len == 1: return mkProc1(Omelyan2MN)
+    else: return mkProc2(Omelyan2MN)
+  of "4MN5FP":
+    if ss.len == 1: return mkProc1(Omelyan4MN5FP)
+    elif ss.len == 2: return mkProc2(Omelyan4MN5FP)
+    elif ss.len == 3: return mkProc3(Omelyan4MN5FP)
+    elif ss.len == 4: return mkProc4(Omelyan4MN5FP)
+    elif ss.len == 5: return mkProc5(Omelyan4MN5FP)
+    else: return mkProc2(Omelyan4MN5FP)
+  of "4MN5FV":
+    if ss.len == 1: return mkProc1(Omelyan4MN5FV)
+    elif ss.len == 2: return mkProc2(Omelyan4MN5FV)
+    elif ss.len == 3: return mkProc3(Omelyan4MN5FV)
+    elif ss.len == 4: return mkProc4(Omelyan4MN5FV)
+    elif ss.len == 5: return mkProc5(Omelyan4MN5FV)
+    else: return mkProc2(Omelyan4MN5FV)
+  of "6MN7FV": return mkProc1(Omelyan6MN7FV)
+  of "4MN3F1GP":  # lambda = 0.2725431326761773  is  FUEL f3g a0=0.109
+    if ss.len == 1: return mkProc1(Omelyan4MN3F1GP)
+    else: return mkProc2(Omelyan4MN3F1GP)
+  of "4MN4F2GVG": return mkProc1(Omelyan4MN4F2GVG)
+  of "4MN4F2GV": return mkProc1(Omelyan4MN4F2GV)
+  of "4MN5F1GV": return mkProc1(Omelyan4MN5F1GV)
+  of "4MN5F1GP": return mkProc1(Omelyan4MN5F1GP)
+  of "4MN5F2GV": return mkProc1(Omelyan4MN5F2GV)
+  of "4MN5F2GP": return mkProc1(Omelyan4MN5F2GP)
+  of "6MN5F3GP": return mkProc1(Omelyan6MN5F3GP)
+  else:
+    echo "Error: cannot parse integrator: '", ss, "'"
+    echo """Available integrators (with default parameters):
+      2MN,0.1931833275037836
+      4MN5FP,0.2750081212332419,-0.1347950099106792,-0.08442961950707149,0.3549000571574260
+      4MN5FV,0.2539785108410595,-0.03230286765269967,0.08398315262876693,0.6822365335719091
+      6MN7FV
+      4MN3F1GP,0.2470939580390842
+      4MN4F2GVG
+      4MN4F2GV
+      4MN5F1GV
+      4MN5F1GP
+      4MN5F2GV
+      4MN5F2GP
+      6MN5F3GP"""
+    qexAbort()
 
 qexinit()
 
@@ -20,11 +90,20 @@ letParam:
   mass = 0.1
   hmasses = @[0.2,0.4]  # Hasenbusch masses
   hfsteps = @[fsteps,fsteps]  # nsteps for Hasenbusch masses
+  gintalg:IntProc = "4MN5F2GP"
+  fintalg:IntProc = "4MN5F2GP"
+  useFG2:bool = 0
   arsq = 1e-20
   frsq = 1e-12
+  hfrsq = @[frsq,frsq]
   maxits = 10000
 
 echoParams()
+
+if hmasses.len != hfsteps.len or
+    hmasses.len != hfrsq.len:
+  echo "Error: Hasenbusch parameters lengths mismatch."
+  qexAbort()
 
 let
   lo = lat.newLayout
@@ -60,11 +139,17 @@ var spa = initSolverParams()
 #spa.subsetName = "even"
 spa.r2req = arsq
 spa.maxits = maxits
-var spf = initSolverParams()  # TODO: separate for hmasses
+var spf = initSolverParams()
 #spf.subsetName = "even"
 spf.r2req = frsq
 spf.maxits = maxits
 spf.verbosity = 0
+var spfh = newseq[typeof(spf)](hfrsq.len)
+for i in 0..<spfh.len:
+  spfh[i] = initSolverParams()
+  spfh[i].r2req = hfrsq[i]
+  spfh[i].maxits = maxits
+  spfh[i].verbosity = 0
 
 var
   info: PerfInfo
@@ -149,7 +234,10 @@ proc smearedOneLinkForce(f: any, smearedForce: proc, p: any, g:any) =
 
 proc fforce(f: any, sf: proc, i: int) =
   tic()
-  stag.solve(ftmp, phi[i], if i==0: mass else: hmasses[i-1], spf)
+  if i == 0:
+    stag.solve(ftmp, phi[i], mass, spf)
+  else:
+    stag.solve(ftmp, phi[i], hmasses[i-1], spfh[i-1])
   toc("fforce solve")
   f.smearedOneLinkForce(sf, ftmp, g)
   toc("fforce olf")
@@ -183,9 +271,6 @@ proc mdvf(i:int, sf:proc, t:float) =
       p[mu] -= s*f[mu]
   toc("mdvf")
 
-# For force gradient update
-const useFG = false
-const useApproxFG2 = false
 proc fgv(t: float) =
   gc.forceA(g, f)
   threads:
@@ -238,7 +323,7 @@ proc mdvAllfga(ts,gs:openarray[float]) =
   if gg != 0:
     if gt != 0:
       fgsave()
-      if useApproxFG2:
+      if useFG2:
         # Approximate the force gradient update with two Taylor expansions.
         let (tf,tg) = approximateFGcoeff2(gt,gg)
         fgv tg[0]
@@ -274,7 +359,7 @@ proc mdvAllfga(ts,gs:openarray[float]) =
       if fg != 0:
         if ft != 0:
           fgsave()
-          if useApproxFG2:
+          if useFG2:
             # Approximate the force gradient update with two Taylor expansions.
             let (tf,tg) = approximateFGcoeff2(ft,fg)
             fgvf i,smearedForce,tg[0]
@@ -303,34 +388,15 @@ for i in 0..<hmasses.len:
 H = mkOmelyan2MN(steps = fsteps, V = V[hmasses.len+1], T = H)
 ]#
 
-# Omelyan's triple star integrators, see Omelyan et. al. (2003)
-when useFG:
-  let
-    (V,T) = newIntegratorPair(mdvAllfga, mdt)
-    # mkOmelyan4MN4F2GVG(steps = gsteps, V = V[0], T = T),
-    # mkOmelyan4MN4F2GV(steps = gsteps, V = V[0], T = T),
-    # mkOmelyan4MN5F1GV(steps = gsteps, V = V[0], T = T),
-    # mkOmelyan4MN5F1GP(steps = gsteps, V = V[0], T = T),
-    # mkOmelyan4MN5F2GV(steps = gsteps, V = V[0], T = T),
-    # mkOmelyan4MN5F2GP(steps = gsteps, V = V[0], T = T),
-    # mkOmelyan6MN5F3GP(steps = gsteps, V = V[0], T = T),
-    Hg = mkOmelyan4MN5F2GP(steps = gsteps, V = V[0], T = T)
-    Hf = mkOmelyan4MN5F2GP(steps = fsteps, V = V[1], T = T)
-    H = newParallelEvolution(Hg, Hf)
-  for i in 0..<hmasses.len:
-    H.add mkOmelyan4MN5F2GP(steps = hfsteps[i], V = V[i+2], T = T)
-else:
-  let
-    (V,T) = newIntegratorPair(mdvAll, mdt)
-    # mkOmelyan2MN(steps = gsteps, V = V[0], T = T),
-    # mkOmelyan4MN5FP(steps = gsteps, V = V[0], T = T),
-    # mkOmelyan4MN5FV(steps = gsteps, V = V[0], T = T),
-    # mkOmelyan6MN7FV(steps = gsteps, V = V[0], T = T),
-    Hg = mkOmelyan2MN(steps = gsteps, V = V[0], T = T)
-    Hf = mkOmelyan2MN(steps = fsteps, V = V[1], T = T)
-    H = newParallelEvolution(Hg, Hf)
-  for i in 0..<hmasses.len:
-    H.add mkOmelyan2MN(steps = hfsteps[i], V = V[i+2], T = T)
+let
+  (V,T) = newIntegratorPair(mdvAllfga, mdt)
+  Hg = gintalg(T = T, V = V[0], steps = gsteps)
+  Hf = fintalg(T = T, V = V[1], steps = fsteps)
+  H = newParallelEvolution(Hg, Hf)
+for i in 0..<hmasses.len:
+  H.add fintalg(T = T, V = V[i+2], steps = hfsteps[i])
+
+echo H
 
 for n in 1..trajs:
   tic()
