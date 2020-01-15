@@ -78,6 +78,29 @@ proc floatSeqParam*(s: string, d: seq[float] = @[]): seq[float] =
         result.add parseFloat(c)
   addParam(s, join(result," "))
 
+template setParam*(s:string, d:string):string = strParam(s,d)
+template setParam*(s:string, d:int):int = intParam(s,d)
+template setParam*(s:string, d:float):float = floatParam(s,d)
+template setParam*(s:string, d:seq[int]):seq[int] = intSeqParam(s,d)
+template setParam*(s:string, d:seq[float]):seq[float] = floatSeqParam(s,d)
+
+macro letParam*(decls:untyped):auto =
+  #echo decls.treerepr
+  result = newNimNode(nnkLetSection, decls)
+  for decl in decls:
+    if decl.kind == nnkAsgn:
+      result.add newIdentDefs(decl[0], newEmptyNode(), newCall("setParam", newLit($decl[0]), decl[1]))
+    elif decl.kind in CallNodes and decl.len == 2 and
+        decl[1].kind == nnkStmtList and decl[1].len == 1 and
+        decl[1][0].kind == nnkAsgn:
+      result.add newIdentDefs(decl[0], decl[1][0][0],
+        newCall(decl[1][0][0], newCall("setParam", newLit($decl[0]), decl[1][0][1])))
+    else:
+      let li = decl.lineInfoObj
+      error("letParam: syntax error: " &
+        li.filename & ":" & $li.line & ":" & $li.column & "\n" & $decl)
+  #echo result.repr
+
 template CLIset*(p:typed, n:untyped, prefix:string, runifset:untyped) =
   mixin echo
   let

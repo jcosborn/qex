@@ -1,27 +1,40 @@
 ## staghmc_s.nim (hypsmear) with Hasenbusch masses.
 
-import qex
-import gauge, gauge/hypsmear, physics/qcdTypes
-import physics/stagSolve
+import qex, gauge, gauge/hypsmear, physics/qcdTypes, physics/stagSolve
 import mdevolve
-import math, sequtils
+import math, sequtils, times
 
 const ReversibilityCheck {.booldefine.} = false
 
 qexinit()
 
+letParam:
+  lat = @[8,8,8,8]
+  beta = 6.0
+  adjFac = -0.25
+  tau = 2.0
+  gsteps = 4
+  fsteps = 4
+  trajs = 10
+  seed:uint64 = int(1000*epochTime())
+  mass = 0.1
+  hmasses = @[0.2,0.4]  # Hasenbusch masses
+  hfsteps = @[fsteps,fsteps]  # nsteps for Hasenbusch masses
+  arsq = 1e-20
+  frsq = 1e-12
+  maxits = 10000
+
+echoParams()
+
 let
-  lat = intSeqParam("lat", @[8,8,8,8])
-  #lat = @[8,8,8]
-  #lat = @[32,32]
-  #lat = @[1024,1024]
   lo = lat.newLayout
   #gc = GaugeActionCoeffs(plaq:6)
-  gc = GaugeActionCoeffs(plaq:6,adjplaq:1)
-  seed = intParam("seed", 987654321).uint
+  gc = GaugeActionCoeffs(plaq: beta, adjplaq: beta*adjFac)
+  vol = lo.physVol
+
 var r = lo.newRNGField(RngMilc6, seed)
 var R:RngMilc6  # global RNG
-R.seed(987654321u+seed, 987654321)
+R.seed(seed, 987654321)
 
 var g = lo.newgauge
 #g.random r
@@ -35,9 +48,6 @@ var
   f = lo.newgauge
   g0 = lo.newgauge
 
-let mass = floatParam("mass", 0.1)
-let hmasses = floatSeqParam("hmasses", @[0.2,0.4])  # Hasenbusch masses
-
 var
   ftmp = lo.ColorVector()
   phi = newseq[typeof(lo.ColorVector())](hmasses.len+1)
@@ -48,19 +58,13 @@ for i in 0..<phi.len:
 
 var spa = initSolverParams()
 #spa.subsetName = "even"
-spa.r2req = floatParam("arsq", 1e-20)
-spa.maxits = 10000
+spa.r2req = arsq
+spa.maxits = maxits
 var spf = initSolverParams()  # TODO: separate for hmasses
 #spf.subsetName = "even"
-spf.r2req = floatParam("frsq", 1e-12)
-spf.maxits = 10000
+spf.r2req = frsq
+spf.maxits = maxits
 spf.verbosity = 0
-
-let
-  tau = floatParam("tau", 1.0)
-  gsteps = intParam("gsteps", 4)
-  fsteps = intParam("fsteps", 4)  # TODO: separate for hmasses
-  trajs = intParam("ntraj", 10)
 
 var
   info: PerfInfo
@@ -91,7 +95,7 @@ proc gaction(g:any, f2:seq[float], p2:float):auto =
   let
     ga = gc.actionA g
     fa = f2.mapit(0.5*it)
-    t = 0.5*p2
+    t = 0.5*p2 - float(16*vol)
     h = ga + fa.sum + t
   (ga, fa, t, h)
 
@@ -180,7 +184,7 @@ proc mdvf(i:int, sf:proc, t:float) =
   toc("mdvf")
 
 # For force gradient update
-const useFG = true
+const useFG = false
 const useApproxFG2 = false
 proc fgv(t: float) =
   gc.forceA(g, f)
@@ -314,7 +318,7 @@ when useFG:
     Hf = mkOmelyan4MN5F2GP(steps = fsteps, V = V[1], T = T)
     H = newParallelEvolution(Hg, Hf)
   for i in 0..<hmasses.len:
-    H.add mkOmelyan4MN5F2GP(steps = fsteps, V = V[i+2], T = T)
+    H.add mkOmelyan4MN5F2GP(steps = hfsteps[i], V = V[i+2], T = T)
 else:
   let
     (V,T) = newIntegratorPair(mdvAll, mdt)
@@ -322,11 +326,11 @@ else:
     # mkOmelyan4MN5FP(steps = gsteps, V = V[0], T = T),
     # mkOmelyan4MN5FV(steps = gsteps, V = V[0], T = T),
     # mkOmelyan6MN7FV(steps = gsteps, V = V[0], T = T),
-    Hg = mkOmelyan6MN7FV(steps = gsteps, V = V[0], T = T)
-    Hf = mkOmelyan6MN7FV(steps = fsteps, V = V[1], T = T)
+    Hg = mkOmelyan2MN(steps = gsteps, V = V[0], T = T)
+    Hf = mkOmelyan2MN(steps = fsteps, V = V[1], T = T)
     H = newParallelEvolution(Hg, Hf)
   for i in 0..<hmasses.len:
-    H.add mkOmelyan6MN7FV(steps = fsteps, V = V[i+2], T = T)
+    H.add mkOmelyan2MN(steps = hfsteps[i], V = V[i+2], T = T)
 
 for n in 1..trajs:
   tic()
@@ -347,11 +351,11 @@ for n in 1..trajs:
       psi[i].gaussian r
       threadBarrier()
       if i != phi.len-1:
-        stag.D(ftmp, psi[i], if i==0: mass else: hmasses[i-1])
+        stag.D(ftmp, psi[i], if i==0: -mass else: -hmasses[i-1])  # `-` for bsm.lua convention giving -D⁺
       else:
-        stag.D(phi[i], psi[i], hmasses[i-1])
+        stag.D(phi[i], psi[i], -hmasses[i-1])
     if i != phi.len-1:
-      stag.solve(phi[i], ftmp, hmasses[i], spa)
+      stag.solve(phi[i], ftmp, -hmasses[i], spa)
     threads:
       phi[i].odd := 0
   toc("init traj")
