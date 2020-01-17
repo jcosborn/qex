@@ -290,14 +290,23 @@ proc fgvf(i:int, sf:proc, t:float) =
         g[mu][s] := exp((-t)*f[mu][s])*g[mu][s]
   toc("fgvf")
 var gg = lo.newgauge
+var sgg = lo.newgauge
 proc fgsave =
   threads:
     for mu in 0..<g.len:
       gg[mu] := g[mu]
+proc fgsaves =
+  threads:
+    for mu in 0..<g.len:
+      sgg[mu] := sg[mu]
 proc fgload =
   threads:
     for mu in 0..<g.len:
       g[mu] := gg[mu]
+proc fgloads =
+  threads:
+    for mu in 0..<g.len:
+      sg[mu] := sgg[mu]
 
 # Compined update for sharing computations
 proc mdvAll(t: openarray[float]) =
@@ -316,13 +325,24 @@ proc mdvAll(t: openarray[float]) =
         mdvf(i, smearedForce, t[i+1])
     toc("mdvAll ff")
 proc mdvAllfga(ts,gs:openarray[float]) =
+  var
+    saved = false
+    saveds = false
+  proc save1 =
+    if not saved:
+      fgsave()
+      saved = true
+  proc saves1 =
+    if not saveds:
+      fgsaves()
+      saveds = true
   let
     gt = ts[0] # 0 for gauge
     gg = gs[0]
   # For gauge
   if gg != 0:
     if gt != 0:
-      fgsave()
+      save1()
       if useFG2:
         # Approximate the force gradient update with two Taylor expansions.
         let (tf,tg) = approximateFGcoeff2(gt,gg)
@@ -358,22 +378,30 @@ proc mdvAllfga(ts,gs:openarray[float]) =
         fg = gs[i+1]
       if fg != 0:
         if ft != 0:
-          fgsave()
+          save1()
+          saves1()
           if useFG2:
             # Approximate the force gradient update with two Taylor expansions.
             let (tf,tg) = approximateFGcoeff2(ft,fg)
             fgvf i,smearedForce,tg[0]
-            mdvf i,smearedForce,tf[0]
+            block:
+              let smearedForce2 = g.smearRephase sg
+              mdvf i,smearedForce2,tf[0]
             fgload()
+            fgloads()
             fgvf i,smearedForce,tg[1]
-            mdvf i,smearedForce,tf[1]
+            block:
+              let smearedForce2 = g.smearRephase sg
+              mdvf i,smearedForce2,tf[1]
           else:
             # Approximate the force gradient update with a Taylor expansion.
             let (tf,tg) = approximateFGcoeff(ft,fg)
             # echo "fermion fg: ",tf," ",tg
             fgvf i,smearedForce,tg
-            mdvf i,smearedForce,tf
+            let smearedForce2 = g.smearRephase sg
+            mdvf i,smearedForce2,tf
           fgload()
+          fgloads()
         else:
           quit("Force gradient without the force update.")
       elif ft != 0:
