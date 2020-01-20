@@ -155,8 +155,23 @@ var
   info: PerfInfo
   coef = HypCoefs(alpha1:0.4, alpha2:0.5, alpha3:0.5)
 echo "smear = ",coef
-var sg = lo.newGauge
-let stag = newStag(sg)
+
+var
+  sg = lo.newGauge  # smeared gauge
+  gg = lo.newgauge  # FG backup gauge
+  sgg = lo.newgauge  # FG backup smeared gauge
+let
+  stag = newStag(sg)
+  stagg = newStag(sgg)
+
+proc fgsave =
+  threads:
+    for mu in 0..<g.len:
+      gg[mu] := g[mu]
+proc fgload =
+  threads:
+    for mu in 0..<g.len:
+      g[mu] := gg[mu]
 
 proc smearRephase(g: any, sg: any):auto {.discardable.} =
   tic()
@@ -232,7 +247,7 @@ proc smearedOneLinkForce(f: any, smearedForce: proc, p: any, g:any) =
         projectTAH(f[mu][i], s)
 
 
-proc fforce(f: any, sf: proc, i: int) =
+proc fforce(stag: any, f: any, sf: proc, g: any, i: int) =
   tic()
   if i == 0:
     stag.solve(ftmp, phi[i], mass, spf)
@@ -259,154 +274,109 @@ proc mdv(t: float) =
 
 func sq(x:float):float = x*x
 
+proc fscale(i:int, t:float):float =
+  if i == 0: -0.5*t*(hmasses[0].sq-mass.sq)/mass
+  elif i < hmasses.len: -0.5*t*(hmasses[i].sq-hmasses[i-1].sq)/hmasses[i-1]
+  else: -0.5*t/hmasses[i-1]
+
 proc mdvf(i:int, sf:proc, t:float) =
   tic()
-  let s =
-    if i == 0: -0.5*t*(hmasses[0].sq-mass.sq)/mass
-    elif i < hmasses.len: -0.5*t*(hmasses[i].sq-hmasses[i-1].sq)/hmasses[i-1]
-    else: -0.5*t/hmasses[i-1]
-  f.fforce sf, i
+  let s = fscale(i, t)
+  stag.fforce(f, sf, g, i)
   threads:
     for mu in 0..<f.len:
       p[mu] -= s*f[mu]
   toc("mdvf")
 
+# FG update g from backup, gg and sgg
 proc fgv(t: float) =
-  gc.forceA(g, f)
+  tic()
+  gc.forceA(gg, f)
   threads:
     for mu in 0..<g.len:
       for s in g[mu]:
         g[mu][s] := exp((-t)*f[mu][s])*g[mu][s]
+  toc("fgv")
 proc fgvf(i:int, sf:proc, t:float) =
   tic()
-  let t =
-    if i == 0: -0.5*t*(hmasses[0].sq-mass.sq)/mass
-    elif i < hmasses.len: -0.5*t*(hmasses[i].sq-hmasses[i-1].sq)/hmasses[i-1]
-    else: -0.5*t/hmasses[i-1]
-  f.fforce sf, i
+  let t = fscale(i, t)
+  stagg.fforce(f, sf, gg, i)
   threads:
     for mu in 0..<g.len:
       for s in g[mu]:
         g[mu][s] := exp((-t)*f[mu][s])*g[mu][s]
   toc("fgvf")
-var gg = lo.newgauge
-var sgg = lo.newgauge
-proc fgsave =
-  threads:
-    for mu in 0..<g.len:
-      gg[mu] := g[mu]
-proc fgsaves =
-  threads:
-    for mu in 0..<g.len:
-      sgg[mu] := sg[mu]
-proc fgload =
-  threads:
-    for mu in 0..<g.len:
-      g[mu] := gg[mu]
-proc fgloads =
-  threads:
-    for mu in 0..<g.len:
-      sg[mu] := sgg[mu]
 
 # Compined update for sharing computations
-proc mdvAll(t: openarray[float]) =
-  if t[0] != 0: mdv t[0]
-  var ff = false
-  for i in 0..hmasses.len:
-    if t[i+1] != 0:
-      ff = true
-      break
-  if ff:
-    tic()
-    let smearedForce = g.smearRephase sg
-    toc("mdvAll smear rephase")
-    for i in 0..hmasses.len:
-      if t[i+1] != 0:
-        mdvf(i, smearedForce, t[i+1])
-    toc("mdvAll ff")
 proc mdvAllfga(ts,gs:openarray[float]) =
+  tic()
   var
-    saved = false
-    saveds = false
-  proc save1 =
-    if not saved:
-      fgsave()
-      saved = true
-  proc saves1 =
-    if not saveds:
-      fgsaves()
-      saveds = true
-  let
-    gt = ts[0] # 0 for gauge
-    gg = gs[0]
-  # For gauge
-  if gg != 0:
-    if gt != 0:
-      save1()
+    sforce:typeof(g.smearRephase sg) = nil
+    updateF = newseq[int](0)
+    updateFG = newseq[int](0)
+  let approxOrder = if useFG2: 2 else: 1
+  type FGstep = tuple[t,g:float]
+  var fgs: array[2,seq[FGstep]]  # 2nd item for 2nd order approximation
+  for i in 0..1:
+    fgs[i] = newseq[FGstep](gs.len)
+  for i in 0..<gs.len:
+    if gs[i] != 0:
+      updateFG.add i
+      if ts[i] == 0:
+        echo "Error: Force gradient without the force update."
+        qexAbort()
       if useFG2:
-        # Approximate the force gradient update with two Taylor expansions.
-        let (tf,tg) = approximateFGcoeff2(gt,gg)
-        fgv tg[0]
-        mdv tf[0]
-        fgload()
-        fgv tg[1]
-        mdv tf[1]
+        let (tf,tg) = approximateFGcoeff2(ts[i],gs[i])
+        for k in 0..1:
+          fgs[k][i] = (t:tf[k], g:tg[k])
       else:
-        # Approximate the force gradient update with a Taylor expansion.
-        let (tf,tg) = approximateFGcoeff(gt,gg)
-        # echo "gauge fg: ",tf," ",tg
-        fgv tg
-        mdv tf
-      fgload()
-    else:
-      quit("Force gradient without the force update.")
-  elif gt != 0:
-    mdv gt
-  # For fermion
-  var ff = false
-  for i in 0..hmasses.len:
-    if ts[i+1] != 0:
-      ff = true
-      break
-  if ff:
+        let (tf,tg) = approximateFGcoeff(ts[i],gs[i])
+        fgs[0][i] = (t:tf, g:tg)
+    elif ts[i] != 0:
+      updateF.add i
+
+  if updateFG.len > 0:
     tic()
-    let smearedForce = g.smearRephase sg
-    toc("mdvAllfga smear rephase")
-    for i in 0..hmasses.len:
-      let
-        ft = ts[i+1]
-        fg = gs[i+1]
-      if fg != 0:
-        if ft != 0:
-          save1()
-          saves1()
-          if useFG2:
-            # Approximate the force gradient update with two Taylor expansions.
-            let (tf,tg) = approximateFGcoeff2(ft,fg)
-            fgvf i,smearedForce,tg[0]
-            block:
-              let smearedForce2 = g.smearRephase sg
-              mdvf i,smearedForce2,tf[0]
-            fgload()
-            fgloads()
-            fgvf i,smearedForce,tg[1]
-            block:
-              let smearedForce2 = g.smearRephase sg
-              mdvf i,smearedForce2,tf[1]
-          else:
-            # Approximate the force gradient update with a Taylor expansion.
-            let (tf,tg) = approximateFGcoeff(ft,fg)
-            # echo "fermion fg: ",tf," ",tg
-            fgvf i,smearedForce,tg
-            let smearedForce2 = g.smearRephase sg
-            mdvf i,smearedForce2,tf
-          fgload()
-          fgloads()
-        else:
-          quit("Force gradient without the force update.")
-      elif ft != 0:
-        mdvf i,smearedForce,ft
-    toc("mdvAllfga ff")
+    fgsave()
+    toc("mdvAllfga save")
+    if updateFG[^1] != 0:  # requires fermion update
+      sforce = gg.smearRephase sgg  # FG update use the backup
+      toc("mdvAllfga FG smear rephase")
+    for k in 0..<approxOrder:
+      for i in updateFG:
+        if i == 0:  # gauge
+          fgv fgs[k][0].g
+        else:  # fermion
+          fgvf((i-1), sforce, fgs[k][i].g)
+      toc("mdvAllfga FG")
+      let sforce2 = g.smearRephase sg
+      toc("mdvAllfga FG smear rephase temp")
+      for i in updateFG:
+        if i == 0:  # gauge
+          mdv fgs[k][0].t
+        else:  # fermion
+          mdvf((i-1), sforce2, fgs[k][i].t)
+      toc("mdvAllfga FG MD")
+      fgload()
+      toc("mdvAllfga load")
+
+  if updateF.len > 0:
+    tic()
+    if updateF[^1] != 0:
+      if sforce == nil:
+        sforce = g.smearRephase sg
+        toc("mdvAllfga MD smear rephase")
+      else:  # smeared gg in sgg
+        threads:
+          for mu in 0..<sg.len:
+            sg[mu] := sgg[mu]
+    for i in updateF:
+      if i == 0:
+        mdv ts[0]
+      else:
+        mdvf((i-1), sforce, ts[i])
+    toc("mdvAllfga MD")
+  toc("mdvAllfga")
 
 #[ Nested integrator
 let (V, T) = newIntegratorPair(mdvAll, mdt)
