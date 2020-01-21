@@ -454,12 +454,21 @@ for n in 1..trajs:
   toc("p norm2 1")
   g.smearRephase sg
   toc("smear & rephase 1")
+  # conforms to the initialization order in bsm.lua
+  threads:
+    var i = 0
+    var running = true
+    while running:
+      running = false
+      for k in 0..<psi.len:
+        if i >= psi[k].len: continue
+        psi[k][i].gaussian r
+        running = true
+      inc i
   # phi = D(m2)^{-1} D(m1) psi
   for k in 0..<phi.len:
     for i in 0..<phi[k].len:
       threads:
-        psi[k][i].gaussian r
-        threadBarrier()
         if i != phi[k].len-1:
           stag.D(ftmp, psi[k][i], if i==0: -mass[k] else: -hmasses[k][i-1])  # `-` for bsm.lua convention giving -D⁺
         else:
