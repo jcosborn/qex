@@ -63,7 +63,8 @@ proc intSeqParam*(s: string, d: seq[int] = @[]): seq[int] =
       result.setLen(0)
       let ll = s.len + 2
       for c in split(p[ll..^1], ','):
-        result.add parseInt(c)
+        if c.len > 0:
+          result.add parseInt(c)
   addParam(s, join(result," "))
 
 proc floatSeqParam*(s: string, d: seq[float] = @[]): seq[float] =
@@ -75,7 +76,8 @@ proc floatSeqParam*(s: string, d: seq[float] = @[]): seq[float] =
       result.setLen(0)
       let ll = s.len + 2
       for c in split(p[ll..^1], ','):
-        result.add parseFloat(c)
+        if c.len > 0:
+          result.add parseFloat(c)
   addParam(s, join(result," "))
 
 template setParam*(s:string, d:string):string = strParam(s,d)

@@ -89,13 +89,13 @@ letParam:
   seed:uint64 = int(1000*epochTime())
   mass = 0.1
   hmasses = @[0.2,0.4]  # Hasenbusch masses
-  hfsteps = @[fsteps,fsteps]  # nsteps for Hasenbusch masses
+  hfsteps = fsteps.repeat hmasses.len  # nsteps for Hasenbusch masses
   gintalg:IntProc = "4MN5F2GP"
   fintalg:IntProc = "4MN5F2GP"
   useFG2:bool = 0
   arsq = 1e-20
   frsq = 1e-12
-  hfrsq = @[frsq,frsq]
+  hfrsq = frsq.repeat hmasses.len
   maxits = 10000
 
 echoParams()
@@ -204,7 +204,7 @@ template faction(fa:seq[float]) =
     threads:
       stag.D(ftmp, phi[i], hmasses[i])
     stag.solve(psi[i], ftmp, if i==0: mass else: hmasses[i-1], spa)
-  stag.solve(psi[^1], phi[^1], hmasses[^1], spa)
+  stag.solve(psi[^1], phi[^1], if hmasses.len>0: hmasses[^1] else: mass, spa)
   threads:
     for i in 0..<psi.len:
       var psi2 = psi[i].norm2()
@@ -275,7 +275,8 @@ proc mdv(t: float) =
 func sq(x:float):float = x*x
 
 proc fscale(i:int, t:float):float =
-  if i == 0: -0.5*t*(hmasses[0].sq-mass.sq)/mass
+  if hmasses.len == 0: -0.5*t/mass
+  elif i == 0: -0.5*t*(hmasses[0].sq-mass.sq)/mass
   elif i < hmasses.len: -0.5*t*(hmasses[i].sq-hmasses[i-1].sq)/hmasses[i-1]
   else: -0.5*t/hmasses[i-1]
 
@@ -417,7 +418,7 @@ for n in 1..trajs:
       if i != phi.len-1:
         stag.D(ftmp, psi[i], if i==0: -mass else: -hmasses[i-1])  # `-` for bsm.lua convention giving -D⁺
       else:
-        stag.D(phi[i], psi[i], -hmasses[i-1])
+        stag.D(phi[i], psi[i], if hmasses.len>0: -hmasses[i-1] else: -mass)
     if i != phi.len-1:
       stag.solve(phi[i], ftmp, -hmasses[i], spa)
     threads:
