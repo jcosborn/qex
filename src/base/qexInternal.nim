@@ -47,3 +47,10 @@ proc qexExit*(status = 0) =
 
 proc qexAbort*(status = -1) =
   commsAbort(status)
+
+template qexError*(s:varargs[string,`$`]) =
+  let ii = instantiationInfo()
+  echo "Error: ", ii.filename, ":", ii.line, ":"
+  if s.len > 0:
+    echo "  ", s.join
+  qexAbort()

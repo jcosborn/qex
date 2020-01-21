@@ -60,8 +60,8 @@ converter toIntProc(s:string):IntProc =
   of "4MN5F2GP": return mkProc1(Omelyan4MN5F2GP)
   of "6MN5F3GP": return mkProc1(Omelyan6MN5F3GP)
   else:
-    echo "Error: cannot parse integrator: '", ss, "'"
-    echo """Available integrators (with default parameters):
+    qexError "Cannot parse integrator: '", s, "'\n",
+      """Available integrators (with default parameters):
       2MN,0.1931833275037836
       4MN5FP,0.2750081212332419,-0.1347950099106792,-0.08442961950707149,0.3549000571574260
       4MN5FV,0.2539785108410595,-0.03230286765269967,0.08398315262876693,0.6822365335719091
@@ -74,7 +74,6 @@ converter toIntProc(s:string):IntProc =
       4MN5F2GV
       4MN5F2GP
       6MN5F3GP"""
-    qexAbort()
 
 qexinit()
 
@@ -83,27 +82,50 @@ letParam:
   beta = 6.0
   adjFac = -0.25
   tau = 2.0
-  gsteps = 4
-  fsteps = 4
   trajs = 10
   seed:uint64 = int(1000*epochTime())
-  mass = 0.1
-  hmasses = @[0.2,0.4]  # Hasenbusch masses
-  hfsteps = fsteps.repeat hmasses.len  # nsteps for Hasenbusch masses
   gintalg:IntProc = "4MN5F2GP"
+  gsteps = 4
+  mass = @[0.1]  # mass for each staggered species
+  hmasses0 = @[0.2,0.4]  # Hasenbusch masses for mass[0]
+  hmasses1 = if mass.len>1: hmasses0 else: @[]  # Hasenbusch masses for mass[1]
+  hmasses2 = if mass.len>2: hmasses0 else: @[]  # Hasenbusch masses for mass[2]
+  hmasses3 = if mass.len>3: hmasses0 else: @[]  # Hasenbusch masses for mass[3]
+  hmasses4 = if mass.len>4: hmasses0 else: @[]  # Hasenbusch masses for mass[4]
   fintalg:IntProc = "4MN5F2GP"
-  useFG2:bool = 0
-  arsq = 1e-20
-  frsq = 1e-12
-  hfrsq = frsq.repeat hmasses.len
+  fsteps = repeat(4, mass.len)  # nsteps for each mass
+  hfsteps0 = fsteps[0].repeat hmasses0.len  # nsteps for Hasenbusch masses 0
+  hfsteps1 = fsteps[0].repeat hmasses1.len  # nsteps for Hasenbusch masses 1
+  hfsteps2 = fsteps[0].repeat hmasses2.len  # nsteps for Hasenbusch masses 2
+  hfsteps3 = fsteps[0].repeat hmasses3.len  # nsteps for Hasenbusch masses 3
+  hfsteps4 = fsteps[0].repeat hmasses4.len  # nsteps for Hasenbusch masses 4
+  arsq = 1e-20  # CG r^2 for fermion action
+  frsq = repeat(1e-12, mass.len)  # CG r^2 for fermion force for each mass
+  hfrsq0 = frsq[0].repeat hmasses0.len  # frsq for Hasenbusch masses 0
+  hfrsq1 = frsq[0].repeat hmasses1.len  # frsq for Hasenbusch masses 1
+  hfrsq2 = frsq[0].repeat hmasses2.len  # frsq for Hasenbusch masses 2
+  hfrsq3 = frsq[0].repeat hmasses3.len  # frsq for Hasenbusch masses 3
+  hfrsq4 = frsq[0].repeat hmasses4.len  # frsq for Hasenbusch masses 4
   maxits = 10000
+  useFG2:bool = 0
 
 echoParams()
 
-if hmasses.len != hfsteps.len or
-    hmasses.len != hfrsq.len:
-  echo "Error: Hasenbusch parameters lengths mismatch."
-  qexAbort()
+if mass.len > 5:
+  qexError "Unimlemented for mass: ", mass
+if mass.len != fsteps.len or
+    mass.len != frsq.len:
+  qexError "Parameters for staggered species mismatch."
+
+let
+  hmasses = @[hmasses0, hmasses1, hmasses2, hmasses3, hmasses4][0..<mass.len]
+  hfsteps = @[hfsteps0, hfsteps1, hfsteps2, hfsteps3, hfsteps4][0..<mass.len]
+  hfrsq = @[hfrsq0, hfrsq1, hfrsq2, hfrsq3, hfrsq4][0..<mass.len]
+
+for k in 0..<mass.len:
+  if hmasses[k].len != hfsteps[k].len or
+      hmasses[k].len != hfrsq[k].len:
+    qexError "Hasenbusch parameters lengths mismatch."
 
 let
   lo = lat.newLayout
@@ -127,29 +149,39 @@ var
   f = lo.newgauge
   g0 = lo.newgauge
 
+var ftmp = lo.ColorVector()
+type CV = typeof(ftmp)
 var
-  ftmp = lo.ColorVector()
-  phi = newseq[typeof(lo.ColorVector())](hmasses.len+1)
-  psi = newseq[typeof(lo.ColorVector())](hmasses.len+1)
-for i in 0..<phi.len:
-  phi[i] = lo.ColorVector()
-  psi[i] = lo.ColorVector()
+  phi = newseq[seq[CV]](mass.len)
+  psi = newseq[seq[CV]](mass.len)
+for k in 0..<mass.len:
+  phi[k] = newseq[typeof(ftmp)](hmasses[k].len+1)
+  psi[k] = newseq[typeof(ftmp)](hmasses[k].len+1)
+  for i in 0..<phi[k].len:
+    phi[k][i] = lo.ColorVector()
+    psi[k][i] = lo.ColorVector()
 
 var spa = initSolverParams()
 #spa.subsetName = "even"
 spa.r2req = arsq
 spa.maxits = maxits
-var spf = initSolverParams()
-#spf.subsetName = "even"
-spf.r2req = frsq
-spf.maxits = maxits
-spf.verbosity = 0
-var spfh = newseq[typeof(spf)](hfrsq.len)
-for i in 0..<spfh.len:
-  spfh[i] = initSolverParams()
-  spfh[i].r2req = hfrsq[i]
-  spfh[i].maxits = maxits
-  spfh[i].verbosity = 0
+
+var spf = newseq[typeof(spa)](mass.len)
+for k in 0..<mass.len:
+  spf[k] = initSolverParams()
+  #spf[k].subsetName = "even"
+  spf[k].r2req = frsq[k]
+  spf[k].maxits = maxits
+  spf[k].verbosity = 0
+
+var spfh = newseq[typeof(spf)](mass.len)
+for k in 0..<mass.len:
+  spfh[k] = newseq[typeof(spa)](hfrsq[k].len)
+  for i in 0..<spfh[k].len:
+    spfh[k][i] = initSolverParams()
+    spfh[k][i].r2req = hfrsq[k][i]
+    spfh[k][i].maxits = maxits
+    spfh[k][i].verbosity = 0
 
 var
   info: PerfInfo
@@ -191,24 +223,25 @@ template pnorm2(p2:float) =
       p2t += p[i].norm2
     threadMaster: p2 = p2t
 
-proc gaction(g:any, f2:seq[float], p2:float):auto =
+proc gaction(g:any, f2:seq[seq[float]], p2:float):auto =
   let
     ga = gc.actionA g
     fa = f2.mapit(0.5*it)
     t = 0.5*p2 - float(16*vol)
-    h = ga + fa.sum + t
+    h = ga + fa.mapit(sum it).sum + t
   (ga, fa, t, h)
 
-template faction(fa:seq[float]) =
-  for i in 0..<phi.len-1:
+template faction(fa:seq[seq[float]]) =
+  for k in 0..<fa.len:
+    for i in 0..<phi[k].len-1:
+      threads:
+        stag.D(ftmp, phi[k][i], hmasses[k][i])
+      stag.solve(psi[k][i], ftmp, if i==0: mass[k] else: hmasses[k][i-1], spa)
+    stag.solve(psi[k][^1], phi[k][^1], if hmasses[k].len>0: hmasses[k][^1] else: mass[k], spa)
     threads:
-      stag.D(ftmp, phi[i], hmasses[i])
-    stag.solve(psi[i], ftmp, if i==0: mass else: hmasses[i-1], spa)
-  stag.solve(psi[^1], phi[^1], if hmasses.len>0: hmasses[^1] else: mass, spa)
-  threads:
-    for i in 0..<psi.len:
-      var psi2 = psi[i].norm2()
-      threadMaster: fa[i] = psi2
+      for i in 0..<psi[k].len:
+        var psi2 = psi[k][i].norm2
+        threadMaster: fa[k][i] = psi2
 
 proc smearedOneLinkForce(f: any, smearedForce: proc, p: any, g:any) =
   # reverse accumulation of the derivative
@@ -247,12 +280,12 @@ proc smearedOneLinkForce(f: any, smearedForce: proc, p: any, g:any) =
         projectTAH(f[mu][i], s)
 
 
-proc fforce(stag: any, f: any, sf: proc, g: any, i: int) =
+proc fforce(stag: any, f: any, sf: proc, g: any, k,i: int) =
   tic()
   if i == 0:
-    stag.solve(ftmp, phi[i], mass, spf)
+    stag.solve(ftmp, phi[k][i], mass[k], spf[k])
   else:
-    stag.solve(ftmp, phi[i], hmasses[i-1], spfh[i-1])
+    stag.solve(ftmp, phi[k][i], hmasses[k][i-1], spfh[k][i-1])
   toc("fforce solve")
   f.smearedOneLinkForce(sf, ftmp, g)
   toc("fforce olf")
@@ -274,16 +307,30 @@ proc mdv(t: float) =
 
 func sq(x:float):float = x*x
 
-proc fscale(i:int, t:float):float =
-  if hmasses.len == 0: -0.5*t/mass
-  elif i == 0: -0.5*t*(hmasses[0].sq-mass.sq)/mass
-  elif i < hmasses.len: -0.5*t*(hmasses[i].sq-hmasses[i-1].sq)/hmasses[i-1]
-  else: -0.5*t/hmasses[i-1]
+proc massIndex(i:int):(int,int) =
+  var
+   i = i
+   k = 0
+  for j in 0..<mass.len:
+    let h = hmasses[j].len + 1
+    if i >= h:
+      i -= h
+    else:
+      k = j
+      break
+  (k,i)
+
+proc fscale(k,i:int, t:float):float =
+  if hmasses[k].len == 0: -0.5*t/mass[k]
+  elif i == 0: -0.5*t*(hmasses[k][0].sq-mass[k].sq)/mass[k]
+  elif i < hmasses[k].len: -0.5*t*(hmasses[k][i].sq-hmasses[k][i-1].sq)/hmasses[k][i-1]
+  else: -0.5*t/hmasses[k][i-1]
 
 proc mdvf(i:int, sf:proc, t:float) =
   tic()
-  let s = fscale(i, t)
-  stag.fforce(f, sf, g, i)
+  let (k,i) = massIndex i
+  let s = fscale(k, i, t)
+  stag.fforce(f, sf, g, k, i)
   threads:
     for mu in 0..<f.len:
       p[mu] -= s*f[mu]
@@ -300,8 +347,9 @@ proc fgv(t: float) =
   toc("fgv")
 proc fgvf(i:int, sf:proc, t:float) =
   tic()
-  let t = fscale(i, t)
-  stagg.fforce(f, sf, gg, i)
+  let (k,i) = massIndex i
+  let t = fscale(k, i, t)
+  stagg.fforce(f, sf, gg, k, i)
   threads:
     for mu in 0..<g.len:
       for s in g[mu]:
@@ -324,12 +372,11 @@ proc mdvAllfga(ts,gs:openarray[float]) =
     if gs[i] != 0:
       updateFG.add i
       if ts[i] == 0:
-        echo "Error: Force gradient without the force update."
-        qexAbort()
+        qexError "Force gradient without the force update."
       if useFG2:
         let (tf,tg) = approximateFGcoeff2(ts[i],gs[i])
-        for k in 0..1:
-          fgs[k][i] = (t:tf[k], g:tg[k])
+        for o in 0..1:
+          fgs[o][i] = (t:tf[o], g:tg[o])
       else:
         let (tf,tg) = approximateFGcoeff(ts[i],gs[i])
         fgs[0][i] = (t:tf, g:tg)
@@ -343,20 +390,20 @@ proc mdvAllfga(ts,gs:openarray[float]) =
     if updateFG[^1] != 0:  # requires fermion update
       sforce = gg.smearRephase sgg  # FG update use the backup
       toc("mdvAllfga FG smear rephase")
-    for k in 0..<approxOrder:
+    for o in 0..<approxOrder:
       for i in updateFG:
         if i == 0:  # gauge
-          fgv fgs[k][0].g
+          fgv fgs[o][0].g
         else:  # fermion
-          fgvf((i-1), sforce, fgs[k][i].g)
+          fgvf((i-1), sforce, fgs[o][i].g)
       toc("mdvAllfga FG")
       let sforce2 = g.smearRephase sg
       toc("mdvAllfga FG smear rephase temp")
       for i in updateFG:
         if i == 0:  # gauge
-          mdv fgs[k][0].t
+          mdv fgs[o][0].t
         else:  # fermion
-          mdvf((i-1), sforce2, fgs[k][i].t)
+          mdvf((i-1), sforce2, fgs[o][i].t)
       toc("mdvAllfga FG MD")
       fgload()
       toc("mdvAllfga load")
@@ -379,28 +426,25 @@ proc mdvAllfga(ts,gs:openarray[float]) =
     toc("mdvAllfga MD")
   toc("mdvAllfga")
 
-#[ Nested integrator
-let (V, T) = newIntegratorPair(mdvAll, mdt)
-var H = mkOmelyan2MN(steps = gsteps div fsteps, V = V[0], T = T)
-for i in 0..<hmasses.len:
-  H = mkOmelyan2MN(steps = 1, V = V[i+1], T = H)
-H = mkOmelyan2MN(steps = fsteps, V = V[hmasses.len+1], T = H)
-]#
-
 let
   (V,T) = newIntegratorPair(mdvAllfga, mdt)
-  Hg = gintalg(T = T, V = V[0], steps = gsteps)
-  Hf = fintalg(T = T, V = V[1], steps = fsteps)
-  H = newParallelEvolution(Hg, Hf)
-for i in 0..<hmasses.len:
-  H.add fintalg(T = T, V = V[i+2], steps = hfsteps[i])
+  H = newParallelEvolution gintalg(T = T, V = V[0], steps = gsteps)
+block:
+  var j = 0
+  for k in 0..<mass.len:
+    inc j
+    H.add fintalg(T = T, V = V[j], steps = fsteps[k])
+    for i in 0..<hfsteps[k].len:
+      inc j
+      H.add fintalg(T = T, V = V[j], steps = hfsteps[k][i])
 
 echo H
 
 for n in 1..trajs:
   tic()
   var p2 = 0.0
-  var f2 = newseq[float](phi.len)
+  var f2 = newseq[seq[float]](phi.len)
+  for k in 0..<phi.len: f2[k] = newseq[float](phi[k].len)
   threads:
     p.randomTAH r
     for i in 0..<p.len:
@@ -411,18 +455,19 @@ for n in 1..trajs:
   g.smearRephase sg
   toc("smear & rephase 1")
   # phi = D(m2)^{-1} D(m1) psi
-  for i in 0..<phi.len:
-    threads:
-      psi[i].gaussian r
-      threadBarrier()
-      if i != phi.len-1:
-        stag.D(ftmp, psi[i], if i==0: -mass else: -hmasses[i-1])  # `-` for bsm.lua convention giving -D⁺
-      else:
-        stag.D(phi[i], psi[i], if hmasses.len>0: -hmasses[i-1] else: -mass)
-    if i != phi.len-1:
-      stag.solve(phi[i], ftmp, -hmasses[i], spa)
-    threads:
-      phi[i].odd := 0
+  for k in 0..<phi.len:
+    for i in 0..<phi[k].len:
+      threads:
+        psi[k][i].gaussian r
+        threadBarrier()
+        if i != phi[k].len-1:
+          stag.D(ftmp, psi[k][i], if i==0: -mass[k] else: -hmasses[k][i-1])  # `-` for bsm.lua convention giving -D⁺
+        else:
+          stag.D(phi[k][i], psi[k][i], if hmasses[k].len>0: -hmasses[k][i-1] else: -mass[k])
+      if i != phi[k].len-1:
+        stag.solve(phi[k][i], ftmp, -hmasses[k][i], spa)
+      threads:
+        phi[k][i].odd := 0
   toc("init traj")
   f2.faction
   toc("fa solve 1")
@@ -462,8 +507,11 @@ for n in 1..trajs:
       f2.faction
       toc("fa solve 2")
       let (ga1,fa1,t1,h1) = g.gaction(f2,p2)
-      var dsf = newseq[float](fa1.len)
-      for i in 0..<fa1.len: dsf[i] = fa1[i] - fa0[i]
+      var dsf = newseq[seq[float]](fa1.len)
+      for k in 0..<fa1.len:
+        dsf[k] = newseq[float](fa1[k].len)
+        for i in 0..<fa1[k].len:
+          dsf[k][i] = fa1[k][i] - fa0[k][i]
       echo "Reversed H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
       echo "Reversibility: dH: ",h1-h0,"  dSg: ",ga1-ga0,"  dSf: ",dsf,"  dT: ",t1-t0
       for i in 0..<g1.len:
