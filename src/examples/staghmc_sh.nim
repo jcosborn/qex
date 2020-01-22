@@ -106,6 +106,9 @@ letParam:
   hfrsq2 = frsq[0].repeat hmasses2.len  # frsq for Hasenbusch masses 2
   hfrsq3 = frsq[0].repeat hmasses3.len  # frsq for Hasenbusch masses 3
   hfrsq4 = frsq[0].repeat hmasses4.len  # frsq for Hasenbusch masses 4
+  pbpmass = mass
+  pbpreps = repeat(1, pbpmass.len)
+  pbprsq = arsq
   maxits = 10000
   useFG2:bool = 0
 
@@ -126,6 +129,9 @@ for k in 0..<mass.len:
   if hmasses[k].len != hfsteps[k].len or
       hmasses[k].len != hfrsq[k].len:
     qexError "Hasenbusch parameters lengths mismatch."
+
+if pbpmass.len != pbpreps.len:
+  qexError "The lengths of pbpmass and pbpreps differ."
 
 let
   lo = lat.newLayout
@@ -148,6 +154,7 @@ var
   p = lo.newgauge
   f = lo.newgauge
   g0 = lo.newgauge
+  sg0 = lo.newgauge
 
 var ftmp = lo.ColorVector()
 type CV = typeof(ftmp)
@@ -160,6 +167,10 @@ for k in 0..<mass.len:
   for i in 0..<phi[k].len:
     phi[k][i] = lo.ColorVector()
     psi[k][i] = lo.ColorVector()
+
+var pbpsp = initSolverParams()
+pbpsp.r2req = pbprsq
+pbpsp.maxits = maxits
 
 var spa = initSolverParams()
 #spa.subsetName = "even"
@@ -194,7 +205,20 @@ var
   sgg = lo.newgauge  # FG backup smeared gauge
 let
   stag = newStag(sg)
+  stag0 = newStag(sg0)
   stagg = newStag(sgg)
+
+proc pbp(stag:any) =
+  var ftmp2 = lo.ColorVector()
+  for k in 0..<pbpmass.len:
+    for i in 0..<pbpreps[k]:
+      threads:
+        ftmp.u1 r
+      stag0.solve(ftmp2, ftmp, pbpmass[k], pbpsp)
+      threads:
+        var pbp = ftmp2.norm2
+        threadMaster:
+          echo "MEASpbp mass ",pbpmass[k]," : ",0.5*pbpmass[k]*pbp/vol.float
 
 proc fgsave =
   threads:
@@ -447,13 +471,16 @@ for n in 1..trajs:
   for k in 0..<phi.len: f2[k] = newseq[float](phi[k].len)
   threads:
     p.randomTAH r
-    for i in 0..<p.len:
+    for i in 0..<g.len:
       g0[i] := g[i]
   toc("p refresh, save g")
   p2.pnorm2
   toc("p norm2 1")
   g.smearRephase sg
   toc("smear & rephase 1")
+  threads:
+    for i in 0..<sg.len:
+      sg0[i] := sg[i]
   # conforms to the initialization order in bsm.lua
   threads:
     var i = 0
@@ -534,13 +561,16 @@ for n in 1..trajs:
     accr = R.uniform
   if accr <= acc:  # accept
     echo "ACCEPT:  dH: ",dH,"  exp(-dH): ",acc,"  r: ",accr
+    stag.pbp
   else:  # reject
     echo "REJECT:  dH: ",dH,"  exp(-dH): ",acc,"  r: ",accr
     threads:
       for i in 0..<g.len:
         g[i] := g0[i]
+    stag0.pbp
 
   echo 6.0*g.plaq
+
 
 echoTimers()
 qexfinalize()
