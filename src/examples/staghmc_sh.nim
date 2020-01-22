@@ -218,7 +218,7 @@ proc pbp(stag:any) =
       threads:
         var pbp = ftmp2.norm2
         threadMaster:
-          echo "MEASpbp mass ",pbpmass[k]," : ",0.5*pbpmass[k]*pbp/vol.float
+          echo "MEASpbp mass ",pbpmass[k]," : ",pbpmass[k]*pbp/vol.float
 
 proc fgsave =
   threads:
