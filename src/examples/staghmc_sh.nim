@@ -214,7 +214,7 @@ proc pbp(stag:any) =
     for i in 0..<pbpreps[k]:
       threads:
         ftmp.u1 r
-      stag0.solve(ftmp2, ftmp, pbpmass[k], pbpsp)
+      stag.solve(ftmp2, ftmp, pbpmass[k], pbpsp)
       threads:
         var pbp = ftmp2.norm2
         threadMaster:
