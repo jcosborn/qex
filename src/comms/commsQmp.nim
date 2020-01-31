@@ -27,7 +27,10 @@ proc evalArgs*(call:var NimNode; args:NimNode):NimNode =
     let t = genSym()
     let a = args[i]
     result.add(quote do:
-      let `t` = `a`
+      when `a` is openarray:
+        let `t` = $`a`
+      else:
+        let `t` = `a`
       )
     call.add(t)
 proc cprintf*(fmt:cstring){.importc:"printf",varargs,header:"<stdio.h>".}

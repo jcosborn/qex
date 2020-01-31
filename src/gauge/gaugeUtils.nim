@@ -7,7 +7,7 @@ import io
 import times
 #import profile
 import os
-import strUtils
+import strUtils, sequtils
 import maths, rng, physics/qcdTypes
 
 #[
@@ -346,6 +346,172 @@ proc echoPlaq*(g: any) =
   for i in ns..<pl.len: pt += pl[i]
   echo "plaqS: ", 2*ps, "  plaqT: ", 2*pt, "  plaq: ", ps+pt
 
+type
+  Link[F:ref] = object
+    field:F
+    forward:bool
+    slen:seq[int]
+proc wlineReduce(line:openarray[Link]):seq[Link] =
+  ## Compute any (possibly gapped) Wilson line in pairs of links,
+  ## and return a reduced line.
+  ## `line` is a list of fields, directions and shift lengths,
+  ## where `forward` denotes whether taking an adjoint of `field`,
+  ## `slen[i]` is the shift length in `i` direction,
+  ## and `abs(line[i])>1` means gaps in the line.
+  tic()
+  type
+    F = Link.F
+    S = typeof(line[0].field[0])
+    OPs = tuple
+      u1:F
+      f1:bool
+      u2:F
+      f2:bool
+      slen:seq[int]
+      res:F
+  let
+    lo = line[0].field.l
+    nd = lo.nDim
+    nl = (line.len+1) div 2
+  var
+    lnew = newseq[Link]()
+    fs = newseq[OPs]()
+    sf = newseq[Shifter[F,S]](nd)
+    sb = newseq[Shifter[F,S]](nd)
+    pd = newseq[int](nd)
+    pf = true
+  for i in 0..<nl:
+    let
+      a = i+i
+      b = a+1
+    if b < line.len:
+      let
+        (u1, f1, p) = block:
+          let la = line[a]
+          (la.field, la.forward, la.slen)
+        (u2, f2, s) = block:
+          let lb = line[b]
+          (lb.field, lb.forward, lb.slen)
+      var
+        res:F = nil
+        forward = true
+      for k in 0..<fs.len:
+        if f1 == fs[k].f1 and f2 == fs[k].f2 and
+            u1 == fs[k].u1 and u2 == fs[k].u2 and s == fs[k].slen:
+          res = fs[k].res
+          break
+        elif f1 != fs[k].f2 and f2 != fs[k].f1 and
+            u1 == fs[k].u2 and u2 == fs[k].u1 and s == fs[k].slen:
+          res = fs[k].res
+          forward = false
+          break
+      if res.isnil:
+        res = newOneOf(u1)
+        if f1 or f2:
+          fs.add (u1, f1, u2, f2, s, res)
+        else:
+          let ms = s.mapIt(-it)
+          fs.add (u2, not f2, u1, not f1, ms, res)
+          forward = false
+      # echo s, p
+      var dis = p
+      if pf:
+        for k in 0..<p.len:
+          dis[k] += pd[k]
+      if forward:
+        pd = s
+      else:
+        for k in 0..<p.len:
+          dis[k] += s[k]
+        pd = s.mapIt(-it)
+      pf = forward
+      # echo forward," ",dis
+      lnew.add Link(field:res, forward:forward, slen:dis)
+    else:
+      lnew.add line[a]
+  toc("wlineReduce prepare")
+
+  # Only use single shift in the following until we resolve the issue with multi-shifts.
+  block:
+    var f,b = newseq[bool](nd)
+    for i in 0..<fs.len:
+      let sl = fs[i].slen
+      for d in 0..<sl.len:
+        if (not f[d]) and sl[d] > 0:
+          f[d] = true
+          sf[d] = newShifter(line[0].field, d, 1)
+        elif (not b[d]) and sl[d] < 0:
+          b[d] = true
+          sb[d] = newShifter(line[0].field, d, -1)
+  toc("wlineReduce init shifts")
+
+  threads:
+    tic()
+    for (u1, f1, u2, f2, slen, res) in fs:
+      res := u2
+      # echo f1," ",f2," ",slen
+      for mu in 0..<nd:
+        let n = slen[mu]
+        # echo n
+        for i in 1..abs(n):
+          if n > 0:
+            res := sf[mu] ^* res
+          elif n < 0:
+            res := sb[mu] ^* res
+      toc("wlineReduce Thr shifts")
+      if f1 and f2:
+        res := u1 * res
+      elif not (f1 or f2):
+        qexError("Internal logic error.")
+      elif f1:
+        res := u1 * res.adj
+      else:
+        res := u1.adj * res
+      toc("wlineReduce Thr mul")
+    toc("wlineReduce Thr")
+  toc("wlineReduce compute")
+  lnew
+
+proc wline*(g:any, line:openarray[int]):auto =
+  ## Compute the trace of ordered product of gauge links, the Wilson Line.
+  ## The line is given as a list of integers +/- 1..nd, where the sign
+  ## denotes forward/backward and the number denotes the dimension.
+  tic()
+  # echo line
+  type L = Link[typeof(g[0])]
+  const nc = g[0][0].ncols
+  let
+    vol = g[0].l.physVol
+    nd = g[0].l.nDim
+  var
+    link = newseq[L]()
+    pd = -1
+    pf = true
+  for d in line:
+    let
+      mu = abs(d) - 1
+      forward = d > 0
+    if mu<0 or mu>=nd:
+      qexError("wline: Unable to parse line: ", line)
+    var s = newseq[int](nd)
+    if pd>=0 and pf:
+      s[pd] += 1
+    if not forward:
+      s[mu] -= 1
+    link.add L(field:g[mu], forward:forward, slen:s)
+    pd = mu
+    pf = forward
+  while link.len > 1:
+    # echo "Call wlineReduce: ",link.mapIt((it.forward,it.slen))
+    link = link.wlineReduce
+  toc("wline wlineReduce")
+  var r: typeof(trace(g[0]))
+  if link.len == 1:
+    threads:
+      r = link[0].field.trace
+  result = r / float(vol*nc)
+  toc("wline trace")
+
 template defaultSetup*:untyped {.dirty.} =
   bind paramCount, paramStr, isDigit, parseInt, fileExists, getFileLattice
   echo "rank ", myRank, "/", nRanks
@@ -548,6 +714,20 @@ when isMainModule:
   var pl = plaq(g)
   echo pl
   echo pl.sum
+  echo pl.mapIt(it*float(lo.nDim*(lo.nDim-1) div 2))
+
+  echo @[wline(g, [1,2,-1,-2]), wline(g, [1,3,-1,-3]), wline(g, [2,3,-2,-3]),
+    wline(g, [1,4,-1,-4]), wline(g, [2,4,-2,-4]), wline(g, [3,4,-3,-4])]
+
+  echoTimers()
+  resetTimers()
+
+  echo @[wline(g, [2,-1,-2,1]), wline(g, [3,-1,-3,1]), wline(g, [3,-2,-3,2]),
+    wline(g, [4,-1,-4,1]), wline(g, [4,-2,-4,2]), wline(g, [4,-3,-4,3])]
+  echo @[wline(g, [-1,-2,1,2]), wline(g, [-1,-3,1,3]), wline(g, [-2,-3,2,3]),
+    wline(g, [-1,-4,1,4]), wline(g, [-2,-4,2,4]), wline(g, [-3,-4,3,4])]
+  echo @[wline(g, [-2,1,2,-1]), wline(g, [-3,1,3,-1]), wline(g, [-3,2,3,-2]),
+    wline(g, [-4,1,4,-1]), wline(g, [-4,2,4,-2]), wline(g, [-4,3,4,-3])]
 
   #[
   var st = lo.newGauge()
@@ -561,4 +741,5 @@ when isMainModule:
     echo st[i].norm2
   ]#
 
+  echoTimers()
   qexFinalize()
