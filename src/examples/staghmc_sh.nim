@@ -211,14 +211,33 @@ let
 proc pbp(stag:any) =
   var ftmp2 = lo.ColorVector()
   for k in 0..<pbpmass.len:
+    let m = pbpmass[k]
     for i in 0..<pbpreps[k]:
       threads:
         ftmp.u1 r
-      stag.solve(ftmp2, ftmp, pbpmass[k], pbpsp)
+      stag.solve(ftmp2, ftmp, m, pbpsp)
       threads:
         var pbp = ftmp2.norm2
         threadMaster:
-          echo "MEASpbp mass ",pbpmass[k]," : ",pbpmass[k]*pbp/vol.float
+          echo "MEASpbp mass ",m," : ",m*pbp/vol.float
+
+proc mplaq(g:any) =
+  let
+    pl = g.plaq
+    nl = pl.len div 2
+    ps = pl[0..<nl].sum * 2.0
+    pt = pl[nl..^1].sum * 2.0
+  echo "MEASplaq ss: ",ps,"  st: ",pt,"  tot: ",0.5*(ps+pt)
+
+proc ploop(g:any) =
+  let pg = g[0].l.physGeom
+  var pl = newseq[typeof(g.wline @[1])](pg.len)
+  for i in 0..<pg.len:
+    pl[i] = g.wline repeat(i+1, pg[i])
+  let
+    pls = pl[0..^2].sum / float(pl.len-1)
+    plt = pl[^1]
+  echo "MEASploop spatial: ",pls.re," ",pls.im," temporal: ",plt.re," ",plt.im
 
 proc fgsave =
   threads:
@@ -569,7 +588,8 @@ for n in 1..trajs:
         g[i] := g0[i]
     stag0.pbp
 
-  echo 6.0*g.plaq
+  g.mplaq
+  g.ploop
 
 
 echoTimers()
