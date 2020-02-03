@@ -229,6 +229,11 @@ proc simdReduce*(r:var SomeNumber; x:m128) {.inline.} =
   var t{.noInit.}:float32
   mm_store_ss(t.addr, z)
   r = (type(r))(t)
+proc simdReduce*(r:var SomeNumber; x:m128d) {.inline.} =
+  let y = mm_hadd_pd(x, x)
+  var t{.noInit.}:float64
+  mm_store_sd(t.addr, y)
+  r = (type(r))(t)
 proc simdReduce*(r:var SomeNumber; x:m256) {.inline.} =
   let y = mm256_hadd_ps(x, mm256_permute2f128_ps(x, x, 1))
   let z = mm256_hadd_ps(y, y)
@@ -251,12 +256,14 @@ proc simdReduce*(r:var SomeNumber; x:m512d) {.inline.} =
   for i in 1..<8:
     r += x[i]
 proc simdReduce*(x:m128):float32 {.inline,noInit.} = simdReduce(result, x)
+proc simdReduce*(x:m128d):float32 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m256):float32 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m256d):float64 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m512):float32 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m512d):float64 {.inline,noInit.} = simdReduce(result, x)
 
 template simdSum*(x:m128):untyped = simdReduce(x)
+template simdSum*(x:m128d):untyped = simdReduce(x)
 template simdSum*(x:m256):untyped = simdReduce(x)
 template simdSum*(x:m256d):untyped = simdReduce(x)
 template simdSum*(x:m512):untyped = simdReduce(x)

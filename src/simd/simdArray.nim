@@ -64,6 +64,7 @@ template makePerm(P,T,L,N0) {.dirty.} =
   evalBacktic:
     makePermX(`"perm" P`,P,T,L,N0)
 template makePackPX(F,P,T,L,N0) {.dirty.} =
+  # P: perm, T: vector type, L: outer vec len, N0: inner vec len
   when N0>P:
     proc F*(r:var openArray[SomeNumber], x:T,
             l:var openarray[SomeNumber]) {.inline.} =

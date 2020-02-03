@@ -116,6 +116,78 @@ proc blendm8*(x:var m128; r:openArray[SomeNumber];
   assert(false, "blendm8 not valid for m128")
 
 
+# m128d operations
+
+proc perm1*(r: var m128d; x: m128d) {.inline.} =
+  r = mm_shuffle_pd(x, x, cint(1))
+proc perm2*(r: var m128d; x: m128d) {.inline.} =
+  assert(false, "perm2 not valid for m128d")
+proc perm4*(r: var m128d; x: m128d) {.inline.} =
+  assert(false, "perm4 not valid for m128d")
+proc perm8*(r: var m128d; x: m128d) {.inline.} =
+  assert(false, "perm8 not valid for m128d")
+
+proc packp1*(r: var openArray[SomeNumber]; x: m128d;
+             l: var openArray[SomeNumber]) {.inline.} =
+  let t = x.toArray
+  l[0] = t[0]
+  r[0] = t[1]
+proc packm1*(r: var openArray[SomeNumber]; x: m128d;
+             l: var openArray[SomeNumber]) {.inline.} =
+  let t = x.toArray
+  r[0] = t[0]
+  l[0] = t[1]
+proc packp2*(r: var openArray[SomeNumber]; x: m128d;
+             l: var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packp2 not valid for m128d")
+proc packm2*(r: var openArray[SomeNumber]; x: m128d;
+             l: var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packp2 not valid for m128d")
+proc packp4*(r: var openArray[SomeNumber]; x: m128d;
+             l: var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packp4 not valid for m128d")
+proc packm4*(r:var openArray[SomeNumber]; x:m128d;
+             l:var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packm4 not valid for m128d")
+proc packp8*(r:var openArray[SomeNumber]; x:m128d;
+             l:var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packp8 not valid for m128d")
+proc packm8*(r:var openArray[SomeNumber]; x:m128d;
+             l:var openArray[SomeNumber]) {.inline.} =
+  assert(false, "packm8 not valid for m128d")
+
+proc blendp1*(x:var m128d; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  var t{.noInit.}:type(toArray(x))
+  t[0] = l[0]
+  t[1] = r[0]
+  assign(x, t)
+proc blendm1*(x:var m128d; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  var t{.noInit.}:type(toArray(x))
+  t[0] = r[0]
+  t[1] = l[0]
+  assign(x, t)
+proc blendp2*(x:var m128d; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendp2 not valid for m128d")
+proc blendm2*(x:var m128d; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendm2 not valid for m128d")
+proc blendp4*(x:var m128d; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendp4 not valid for m128d")
+proc blendm4*(x:var m128d; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendm4 not valid for m128d")
+proc blendp8*(x:var m128d; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendp8 not valid for m128d")
+proc blendm8*(x:var m128d; r:openArray[SomeNumber];
+              l:openArray[SomeNumber]) {.inline.} =
+  assert(false, "blendm8 not valid for m128d")
+
+
 # m256 operations
 
 proc perm1*(r:var m256; x:m256) {.inline.} =
