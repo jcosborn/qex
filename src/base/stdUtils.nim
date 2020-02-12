@@ -139,9 +139,9 @@ proc `|`*(s: string, d: tuple[w:int,c:char]): string =
     result = s & pad
 proc `|`*(s: string, d: int): string =
   s | (d,' ')
-proc `|`*(x: int, d: int): string =
+proc `|`*(x: SomeInteger, d: int): string =
   ($x) | d
-proc `|`*(f: float, d: tuple[w,p: int]): string =
+proc `|`*(f: SomeFloat, d: tuple[w,p: int]): string =
   if d.p<0:
     formatFloat(f, ffDecimal, -d.p) | d.w
   else:

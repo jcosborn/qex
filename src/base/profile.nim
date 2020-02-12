@@ -2,173 +2,565 @@ import threading
 export threading
 import comms/comms
 import stdUtils
-import times
-import strUtils
-import macros
-import os
-import algorithm
-#include system/timers
+import os, strutils, sequtils, std/monotimes
+export monotimes
 
-when true:
-  type
-    TicType* = distinct float
-  template getTics*(): untyped = TicType(epochTime())
-  #template toSeconds*(x: TicType): untyped = 1e-9 * x.float
-  template `-`*(x,y: TicType): untyped = TicType(float(x) - float(y))
-  template ticDiffSecs*(x,y: untyped): untyped = float(x - y)
-  #proc ticDiffSecs*(x,y: TicType): float = float(x - y)
-else:
-  type
-    TicType* = distinct Ticks
-  template getTics*(): untyped = TicType(getTicks())
-  #template toSeconds*(x: TicType): untyped = 1e-9 * x.float
-  template `-`*(x,y: TicType): untyped = TicType(Ticks(x) - Ticks(y))
-  template ticDiffSecs*(x,y: untyped): untyped = 1e-9 * (x - y).float
+type TicType* = distinct int64
+template getTics*: TicType = TicType(getMonoTime().ticks)
+template nsec*(t:TicType):int64 = int64(t)
+template ticDiffSecs*(x,y: TicType): float = 1e-9 * float(x.int64 - y.int64)
+template `-`*(x,y: TicType): TicType = TicType(x.int64 - y.int64)
+
+var
+  DropWasteTimerRatio* = 0.05  ## Drop children timers if the proportion of their overhead is larger than this.
+  ShowDroppedTimers* = false
+
+##[
+
+Each Tic starts a local timer.  Each Toc records the time difference
+of the current time with the one in the local timer visible in the
+scope, and then update the timer with the current time.
+
+A tree structure saves the time durations, and represents the
+hierarchical runtimes of each code segments between tic/toc's.
+
+tic() injects symbols:
+  localTimer
+  prevRTI
+  localTimerStart
+  localTic
+
+]##
 
 type
-  TimerInfo* = object
-    seconds*: float
-    flops*: float
-    count*: int
-    name*: string
-    timerP*: ptr TicType
-    start*: ptr TimerInfo
-    prev*: ptr TimerInfo
-    location*: type(instantiationInfo())
+  II = typeof(instantiationInfo())
+  RTInfo = distinct int
+  RTInfoObj = object
+    nsec: int64
+    flops: float
+    count: int
+    overhead: int64
+    childrenOverhead: int64
+    tic, prev, curr: CodePoint
+    children: RTInfoObjList
+  CodePoint = distinct int
+  CodePointObj = object
+    toDropTimer: bool
+    name: string
+    loc: II
+  SString = static[string] | string
+  List[T] = object  # No GCed type allowed
+    len,cap:int
+    data:ptr UncheckedArray[T]
+  RTInfoObjList = distinct List[RTInfoObj]
 
-var ticSeq* = newSeq[ptr TimerInfo](0)
-var tocSeq* = newSeq[ptr TimerInfo](0)
+proc newList[T](len = 0):List[T] {.noinit.} =
+  var cap = 8
+  while cap < len: cap *= 2
+  result.len = len
+  result.cap = cap
+  result.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap))
+proc newListOfCap[T](cap:int):List[T] {.noinit.} =
+  result.len = 0
+  result.cap = cap
+  result.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap))
+proc setLen[T](ls:var List[T], len:int) =
+  if len > ls.cap:
+    var cap = ls.cap
+    if cap == 0: cap = 8
+    while cap < len: cap *= 2
+    ls.cap = cap
+    ls.data = cast[ptr UncheckedArray[T]](realloc(ls.data, sizeof(T)*cap))
+  ls.len = len
+proc free[T](ls:var List[T]) =
+  dealloc(ls.data)
+  ls.len = 0
+  ls.cap = 0
+  ls.data = nil
+template `[]`[T](ls:List[T], n:int):untyped = ls.data[n]
+proc add[T](ls:var List[T], x:T) =
+  let n = ls.len
+  ls.setLen(n+1)
+  ls.data[n] = x
+iterator items[T](ls:List[T]):T =
+  for i in 0..<ls.len:
+    yield ls[i]
 
-#var cFunc {.importC: "__func__", noDecl.}: cstring
-#template getFunctionName(): untyped = $cFunc
-template getFunctionName(): untyped = ""
+proc setLen(ls:var RTInfoObjList, len:int) {.borrow.}
+proc free(ls:var RTInfoObjList) {.borrow.}
+template len(ls:RTInfoObjList):int = List[RTInfoObj](ls).len
+template `[]`(ls:RTInfoObjList, n:int):untyped = List[RTInfoObj](ls)[n]
+iterator mitems(ls:RTInfoObjList):var RTInfoObj =
+  for i in 0..<ls.len:
+    yield ls[i]
 
-#macro getFunctionName:auto =
-  #let s = callsite()
-  #echo s.repr
-  #return newLit("")
+func isNil(x:RTInfo):bool = x.int<0
+func isNil(x:CodePoint):bool = x.int<0
 
-#{.emit:"#include <stdio.h>".}
-#template ctrace(s:cstring):untyped =
-#  {.emit:"""#ifdef __func__
-#printf("%s(%i): %s\n", __func__, __LINE__, `s`);
-#endif""".}
-#macro ctrace(s:string):auto =
+func `$`(x:II):string =
+  x.filename & ":" & $x.line & ":" & $x.column
 
-proc initTic*(ti: var TimerInfo, s: string, timer: var TicType, inst: tuple) =
-  ti.name = s
-  ti.timerP = timer.addr
-  ti.location = inst
-  #echo "tic", ti.location, cast[ByteAddress](ti.timerP)
-  ticSeq.add ti.addr
-template tic*(n= -1): untyped =
-  var ti {.global.}: TimerInfo
-  #var timer {.global,inject.}: TicType
-  var timer {.inject.}: TicType
+func `$`(x:List[RTInfo]):string =
+  result = "RTInfo[ "
+  for i in x: result &= $i.int & " "
+  result &= "]"
+func `$`(x:List[CodePoint]):string =
+  result = "CodePoint[ "
+  for i in x: result &= $i.int & " "
+  result &= "]"
+func `$`(x:RTInfo):string = "RTInfo(" & $x.int & ")"
+func `$`(x:CodePoint):string = "CodePonit(" & $x.int & ")"
+
+func `$`(x:List[RTInfoObj]):string  # declaration
+func `$`(x:RTInfoObjList):string {.borrow.}
+func `$`(x:RTInfoObj):string =
+  if x.prev.isNil:
+    result = "RTInfoObj:TIC CodePoint(" & $x.curr.int & ")"
+  else:
+    result = "RTInfoObj(" & $x.nsec & " + " & $x.overhead & " + " & $x.childrenOverhead & " ns "
+    result &= $x.flops & " f " & $x.count
+    result &= " CodePoint(" & $x.tic.int & ":" & $x.prev.int & ".." & $x.curr.int & ") "
+    result &= indent($x.children, 3)[3..^1] & ")"
+func `$`(x:List[RTInfoObj]):string =
+  result = "RTInfoObj[\n"
+  for i in 0..<x.len:
+    result &= "   " & $i & ":" & $x[i] & "\n"
+  result[^1] = ']'
+
+func `$`(x:seq[CodePointObj]):string =
+  result = "CodePointObj[\n"
+  for i in 0..<x.len:
+    result &= "   " & $i & ":" & $x[i] & "\n"
+  result[^1] = ']'
+
+proc `==`(x,y:RTInfo):bool = x.int==y.int
+proc `==`(x,y:CodePoint):bool = x.int==y.int
+
+const
+  defaultRTICap = 512
+  defaultLocalRTICap = 8
+
+var
+  rtiStack = newListOfCap[RTInfoObj](defaultRTICap)
+  cpHeap = newSeqOfCap[CodePointObj](defaultRTICap)
+  frozenTimers = false
+
+proc timersFrozen*:bool = frozenTimers
+proc thawTimers* = frozenTimers = false
+proc freezeTimers* = frozenTimers = true
+
+proc newCodePoint(ii:II, s:SString = ""):CodePoint =
+  let n = cpHeap.len
+  cpHeap.setlen(n+1)
+  cpHeap[n].toDropTimer = false
+  cpHeap[n].name = s
+  cpHeap[n].loc = ii
+  CodePoint(n)
+
+template name(x:CodePoint):string = cpHeap[x.int].name
+template loc(x:CodePoint):II = cpHeap[x.int].loc
+template toDropTimer(x:CodePoint):bool = cpHeap[x.int].toDropTimer
+
+template istic(x:RTInfoObj):bool = x.prev.isNil
+template isnottic(x:RTInfoObj):bool = not x.prev.isNil
+
+template dropTimer(x:RTInfo):untyped = toDropTimer(rtiStack[x.int].curr) = true
+
+template combine(acc:var RTInfoObjList, x:var RTInfoObj):untyped =
+  if x.isnottic:
+    let
+      nsec = x.nsec
+      flops = x.flops
+      count = x.count
+      overhead = x.overhead
+      childrenOverhead = x.childrenOverhead
+      tic = x.tic
+      prev = x.prev
+      curr = x.curr
+    var children = x.children
+    var ci = -1
+    for i in 0..<acc.len:
+      if tic == acc[i].tic and prev == acc[i].prev and curr == acc[i].curr:
+        ci = i
+        break
+    if ci < 0:
+      # new
+      let n = acc.len
+      acc.setlen(n+1)
+      acc[n].nsec = nsec
+      acc[n].flops = flops
+      acc[n].count = count
+      acc[n].overhead = overhead
+      acc[n].childrenOverhead = childrenOverhead
+      acc[n].tic = tic
+      acc[n].prev = prev
+      acc[n].curr = curr
+      acc[n].children = children
+    else:
+      # add to ci
+      acc[ci].nsec += nsec
+      acc[ci].flops += flops
+      acc[ci].count += count
+      acc[ci].overhead += overhead
+      acc[ci].childrenOverhead += childrenOverhead
+      combineList(acc[ci].children, children)
+      children.free
+
+proc combineList(acc:var RTInfoObjList, xs:RTInfoObjList) =
+  for i in 0..<xs.len:
+    combine(acc, xs[i])
+
+proc record(tic:RTInfo, prev:RTInfo, curr:CodePoint, t:TicType, f:float):RTInfo =
+  var
+    children = RTInfoObjList(newListOfCap[RTInfoObj](defaultLocalRTICap))
+    oh:int64 = 0
+  for i in prev.int+1..<rtiStack.len:
+    # need to consolidate the stack
+    combine(children, rtiStack[i])
+    if rtiStack[i].isnottic:
+      oh += rtiStack[i].overhead
+      oh += rtiStack[i].childrenOverhead
+
+  # Now for current RTInfo
+  let n = prev.int+1
+  rtiStack.setlen(n+1)
+  rtiStack[n].nsec = nsec(t)
+  rtiStack[n].flops = f
+  rtiStack[n].count = 1
+  # Assign overhead later.
+  rtiStack[n].childrenOverhead = oh
+  rtiStack[n].tic = rtiStack[tic.int].curr
+  rtiStack[n].prev = rtiStack[prev.int].curr
+  rtiStack[n].curr = curr
+  rtiStack[n].children = children
+  RTInfo(n)
+
+proc recordTic(this:CodePoint):RTInfo =
+  # only needs prev and curr for tic
+  let n = rtiStack.len
+  rtiStack.setlen(n+1)
+  rtiStack[n].prev = CodePoint(-1)
+  rtiStack[n].curr = this
+  RTInfo(n)
+
+template ticI(n = -1; s:SString = ""): untyped =
+  bind items
+  const
+    cname = compiles(static[string](s))
+    ii = instantiationInfo(n)
+  var
+    localTimer {.inject.}: TicType
+    prevRTI {.inject.}: RTInfo
+    restartTimer {.inject.} = false
+  when cname:
+    var thisCode {.global.} = CodePoint(-1)
+  else:
+    var
+      localCode {.global.} = newList[CodePoint]()
+      thisCode = CodePoint(-1)
   if threadNum==0:
-    if ti.timerP==nil:
-      ti.initTic(getFunctionName(), timer, instantiationInfo(n))
-    inc ti.count
-    timer = getTics()
+    #echo "#### begin tic ",ii
+    when not cname:
+      for c in items(localCode):
+        if cpHeap[c.int].name == s:
+          thisCode = c
+          break
+    if thisCode.isNil:
+      thisCode = newCodePoint(ii, s)
+      when not cname:
+        localCode.add thisCode
+    prevRTI = recordTic(thisCode)
+    if (not timersFrozen()) and toDropTimer(thisCode):
+      freezeTimers()
+      restartTimer = true
+    localTimer = getTics()
+    #echo "#### end tic ",ii
+  let
+    localTimerStart {.inject, used.} = localTimer
+    localTic {.inject, used.} = prevRTI
 
-proc initToc*(ti: var TimerInfo, s: string, timer: var TicType, inst: tuple) =
-  ti.name = s
-  ti.timerP = timer.addr
-  ti.location = inst
-  #echo "toc", ti.location, cast[ByteAddress](ti.timerP)
-  tocSeq.add ti.addr
-template tocI(f: untyped; s=""; n= -1): untyped =
-  var ti {.global.}: TimerInfo
+template tic*(n = -1; s:SString = ""): untyped = ticI(n-1,s)
+template tic*(s:SString = ""): untyped = ticI(-2,s)
+
+template tocI(f: SomeNumber; s:SString = ""; n = -1): untyped =
+  bind items
+  const
+    cname = compiles(static[string](s))
+    ii = instantiationInfo(n)
+  when cname:
+    var thisCode {.global.} = CodePoint(-1)
+  else:
+    var
+      localCode {.global.} = newList[CodePoint]()
+      thisCode = CodePoint(-1)
   if threadNum==0:
-    if ti.timerP==nil:
-      ti.initToc(s, timer, instantiationInfo(n))
-    ti.flops += f.float
-    inc ti.count
-    ti.seconds += ticDiffSecs(getTics(), timer)
-template toc*(s=""; n= -1; flops:untyped):untyped = tocI(flops, s, n-1)
-template toc*(n= -1; flops:untyped):untyped = tocI(flops, "", n-1)
-template toc*(s:string; n:int):untyped = tocI(0, s, n-1)
-template toc*(s:string):untyped = tocI(0, s, -2)
+    #echo "==== begin toc ",s," ",ii
+    #echo "     rtiStack: ",indent($rtiStack,5)
+    #echo "     cpHeap: ",indent($cpHeap,5)
+    let theTime = getTics()
+    if restartTimer:
+      thawTimers()
+      restartTimer = false
+    if not timersFrozen():
+      when not cname:
+        for c in items(localCode):
+          if cpHeap[c.int].name == s:
+            thisCode = c
+            break
+      if thisCode.isNil:
+        thisCode = newCodePoint(ii, s)
+        when not cname:
+          localCode.add thisCode
+      let thisRTI = record(localTic, prevRTI, thisCode, theTime-localTimer, float(f))
+      if rtiStack[thisRTI.int].childrenOverhead.float / rtiStack[thisRTI.int].nsec.float > DropWasteTimerRatio:
+        # Signal stop if the overhead is too large.
+        dropTimer(prevRTI)
+      if toDropTimer(thisCode):
+        freezeTimers()
+        restartTimer = true
+      localTimer = getTics()
+      rtiStack[thisRTI.int].overhead = nsec(localTimer-theTime)
+      prevRTI = thisRTI
+    #echo "==== end toc ",s," ",ii
+
+template toc*(s:SString = ""; n = -1; flops:SomeNumber):untyped = tocI(flops, s, n-1)
+template toc*(n = -1; flops:SomeNumber):untyped = tocI(flops, "", n-1)
+template toc*(s:SString; n:int):untyped = tocI(0, s, n-1)
+template toc*(s:SString):untyped = tocI(0, s, -2)
 template toc*(n:int):untyped = tocI(0, "", n-1)
 template toc*():untyped = tocI(0, "", -2)
 
-template getElapsedTime*(): untyped {.dirty.} =
-  mixin timer
-  ticDiffSecs(getTics(), timer)
+template getElapsedTime*: float = ticDiffSecs(getTics(), localTimerStart)
 
-template getElapsedTime2*(): untyped {.dirty.} =
-  ticDiffSecs(getTics(), timer)
+proc reset(x:var RTInfoObj) =
+  x.nsec = 0
+  x.flops = 0.0
+  x.count = 0
+  x.overhead = 0
+  x.childrenOverhead = 0
+  for c in mitems(x.children):
+    reset c
 
-proc resetTimers* =
-  for ti in tocSeq:
-    ti.seconds = 0.0
-    ti.count = 0
-    ti.flops = 0.0
+template resetTimers* =
+  ## Reset timers in the local scope, starting from the local tic, and below.
+  when declared(localTic):
+    let p = localTic.int
+  else:
+    let p = 0
+  for j in p..<rtiStack.len:
+    reset rtiStack[j]
 
-proc echoTimers* =
-  for ti in tocSeq:
-    for t in ticSeq:
-      if t.timerP == ti.timerP: ti.start = t; break
-  tocSeq.sort do (x, y: ptr TimerInfo) -> int:
-    #result = cmp(x.location.filename, y.location.filename)
-    result = cmp(x.timerP.ptrInt, y.timerP.ptrInt)
-    #if result==0:
-    #  result = cmp(x.start.location.line, y.start.location.line)
-    if result==0:
-      result = cmp(x.location.line, y.location.line)
-  var prev:ptr TimerInfo = nil
-  for ti in tocSeq:
-    if prev!=nil and ti.timerP==prev.timerP:
-      ti.prev = prev
-    prev = ti
-    #echo ti.location.line, " ", ti.timerP.ptrInt
-  tocSeq.sort do (x, y: ptr TimerInfo) -> int:
-    result = cmp(x.location.filename, y.location.filename)
-    if result==0:
-      result = cmp(x.location.line, y.location.line)
-    if result==0:
-      result = cmp(x.timerP.ptrInt, y.timerP.ptrInt)
+type
+  Tstr = tuple
+    label: string
+    stats: string
+template ppT(ts:RTInfoObjList, prefix = "-", total,overhead:int64 = 0, count = 0, initIx = 0):seq[Tstr] =
+  ppT(List[RTInfoObj](ts), prefix, total, overhead, count, initIx)
+proc ppT(ts:List[RTInfoObj], prefix = "-",
+    total,overhead:int64 = 0, count = 0, initIx = 0):seq[Tstr] =
+  proc markDrop(drop:bool,str:string):string =
+    if drop: "[" & str & "]"
+    else: str
+  var
+    sub:int64 = 0
+    subo:int64 = 0
+    pre = prefix
+  for j in initIx..<ts.len:
+    let nc = ts[j].count
+    if ts[j].istic or nc==0: continue
+    if j==ts.len-1 and prefix.len>1:
+      pre[^3] = '`'
+    let
+      f0 = splitFile(ts[j].prev.loc.filename)[1]
+      l0 = ts[j].prev.loc.line
+      f = splitFile(ts[j].curr.loc.filename)[1]
+      l = ts[j].curr.loc.line
+      drop = ts[j].prev.toDropTimer
+      loc = pre & markDrop(drop, f0 & "(" & $l0 & "-" & (if f==f0:"" else:f) & $l & ")")
+      coh = ts[j].childrenOverhead
+      soh = ts[j].overhead
+      nsec = ts[j].nsec
+      ns = nsec - coh
+      oh = soh + coh
+      nf = ts[j].flops
+      tn = ts[j].tic.name
+      pn = ts[j].prev.name
+      nm = pre & markDrop(drop, (if tn=="":"" else:tn&":") & (if pn=="":"" else:pn&"-") & ts[j].curr.name)
+      st = ns div 1000
+      ot = oh div 1000
+      sc = ns div nc
+      oc = oh div nc
+      mf = nf*1e3 / ns.float
+    if total!=0:
+      let
+        cent = 1e2 * ns.float / total.float
+        ohcent = 1e2 * oh.float / total.float
+      result.add (loc, cent|(6,-1) & ohcent|(6,-1) & st|12 & ot|8 & " /" & nc|7 & " =" & sc|12 & oc|8 & int(mf)|8 & " " & nm)
+    else:
+      result.add (loc, ""|6 & ""|6 & st|12 & ot|8 & " /" & nc|7 & " =" & sc|12 & oc|8 & int(mf)|8 & " " & nm)
+    if ts[j].children.len>0 and (not drop) or ShowDroppedTimers:
+      let newprefix =
+        if prefix.len==1: "|--"
+        elif j<ts.len-1: prefix[0..^4] & "| |--"
+        else: prefix[0..^4] & "  |--"
+      result.add ppT(ts[j].children, newprefix, nsec+soh, soh, nc)
+    sub += ns
+    subo += oh
+  if total!=0 and count!=0:
+    let
+      ns = total-overhead-sub-subo
+      st = ns div 1000
+      ot = overhead div 1000
+      sc = ns div count
+      oc = overhead div count
+      cent = 1e2 * ns.float / total.float
+      ohcent = 1e2 * overhead.float / total.float
+    result = @[(prefix & "#me",
+      cent|(6,-1) & ohcent|(6,-1) & st|12 & ot|8 & " /" & count|7 & " =" & sc|12 & oc|8 & ""|8 & " " & prefix & "#me")] & result
 
-  echo '='.repeat(76)
-  echo "file(lines)"|(-24), "microsecs"|10, "count"|8, "ns/count"|12, "mf"|8, " label"
-  echo '='.repeat(76)
-  #var tot = 0.0
-  for ti in tocSeq:
-    let tc = ti.start
-    let f = splitFile($ti.location.filename)[1]
-    let l = $ti.location.line
-    var l0 = tc.location.line
-    var secs = ti.seconds
-    if ti.prev!=nil:
-      l0 = ti.prev.location.line
-      secs -= ti.prev.seconds
-    let loc = f & "(" & $l0 & "-" & $l & ")"
-    let st = (secs*1e6+0.5).int | 10
-    let c = ti.count | 6
-    let sc = (secs*1e9/(ti.count.float+1e-9)).int | 10
-    var mf = (ti.flops*1e-6/(secs+1e-9)).int | 8
-    if ti.flops<0 or ti.count==0: mf = "-"|8
-    echo loc|(-24,'.'), st, " /", c, " =", sc, mf, " ", ti.name
-    #tot += secs
-  #echo "total"|(-24,'.'), (tot*1e6).int | 10
-  echo '='.repeat(76)
+proc totalTime(ts:List[RTInfoObj], initIx = 0):int64 =
+  for j in initIx..<ts.len:
+    if ts[j].isnottic:
+      result += ts[j].nsec + ts[j].overhead
+
+proc totalOverhead(ts:List[RTInfoObj], initIx = 0):int64 =
+  for j in initIx..<ts.len:
+    if ts[j].isnottic:
+      result += ts[j].overhead + ts[j].childrenOverhead
+
+template echoTimers* =
+  ## Echo timers in the local scope, starting from the local tic, and below.
+  const width = 104
+  when declared(localTic):
+    let p = localTic.int
+  else:
+    let p = 0
+  let
+    pp = ppT(rtiStack, initIx = p)
+    tt = totalTime(rtiStack, initIx = p)
+    oh = totalOverhead(rtiStack, initIx = p)
+  var n = 24
+  for (s,_) in pp:
+    if n<s.len: n = s.len
+  inc n
+  echo "Timer total ",(tt.float*1e-6)|(0,-3)," ms, overhead ",(oh.float*1e-6)|(0,-3)," ms ~ ",(1e2*oh.float/tt.float)|(0,-1)," %"
+  echo '='.repeat(width)
+  echo "file(lines)"|(-n), "%"|6, "OH%"|6, "microsecs"|12, "OH"|8, "count"|9, "ns/count"|14, "OH/c"|8, "mf"|8, " label"
+  echo '='.repeat(width)
+  for (s,t) in pp:
+    echo s|(-n,'.'), t
+  echo '='.repeat(width)
+
+proc echoTimersRaw* =
+  echo cpHeap
+  echo rtiStack
 
 when isMainModule:
   import os
   proc test =
-    tic()
+    tic("test")
+    sleep(100)
+    toc("sleep 100")
+    block:
+      tic("block")
+      sleep(1000)
+      toc("sleep 1000")
+    toc("sleep block")
+  proc f(n = 1) =
+    #echo "*** f"
+    tic("f" & $n)
+    sleep(10*n)
+    toc("end")
+  proc g(n = 5) =
+    #echo "*** g"
+    tic("g" & $n)
+    sleep(1*n)
+    toc("end")
+  proc r(n = 2)
+  proc s(n = 2) =
+    #echo "*** s ",n
+    tic("s " & $n)
+    if n > 0:
+      toc("s work")
+      r(n-1)
+      toc("s r")
+    toc("s end")
+  proc r(n = 2) =
+    #echo "*** r ",n
+    tic("r " & $n)
+    if n > 0:
+      sleep 20
+      toc("r work")
+      s(n)
+      toc("r s")
+    toc("r end")
+  proc loop =
+    tic("loop")
+    for i in 0..3:
+      sleep 40
+      toc("no local tic")
+    for i in 0..4:
+      f()
+      g(i)
+    toc("f g")
+    for i in 0..3:
+      tic()
+      sleep 15
+      toc("sleep")
+    toc("end")
+  proc longloop =
+    tic("longloop")
+    for i in 1..10000:
+      tic()
+      f(0)
+      toc("f")
+      g(0)
+      toc("g")
+    toc("end")
+  proc test2 =
+    tic("test2")
     sleep(100)
     toc()
+    f()
+    toc("f 1")
     block:
       tic()
-      sleep(1000)
-      toc()
-    toc("sleep2")
+      sleep(100)
+      toc("sleep 2")
+      var runf {.global.} = 2
+      if runf > 0:
+        f()
+        toc("f 2")
+        dec runf
+    toc("block")
+  DropWasteTimerRatio = 0.10
   test()
   echoTimers()
   test()
   echoTimers()
   resetTimers()
-  echoTimers()
   test()
   echoTimers()
+  test2()
+  echoTimers()
+  tic()
+  test2()
+  toc("test2 1")
+  for i in 0..1:
+    test2()
+  toc("test2 loop")
+  test2()
+  toc("test2 2")
+  echoTimers()
+  resetTimers()
+  r()
+  echoTimers()
+  loop()
+  echoTimers()
+  for i in 0..4:
+    tic("llloop")
+    longloop()
+    toc("one")
+  toc("end")
+  echoTimers()
+  echoTimersRaw()

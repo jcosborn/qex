@@ -12,12 +12,12 @@ import algorithm, times
 var
   qexGlobalInitializers* = newseq[proc()]()    ## Will be run in qexInit in forward order
   qexGlobalFinalizers* = newseq[proc()]()    ## Will be run in qexFinalize in backward order
-  qexStartTime: float
+  qexStartTime: TicType
 
-proc qexTime*: float = epochTime() - qexStartTime
+proc qexTime*: float = ticDiffSecs(getTics(), qexStartTime)
 
 proc qexInit* =
-  qexStartTime = epochTime()
+  qexStartTime = getTics()
   threadsInit()
   commsInit()
   for p in qexGlobalInitializers: p()

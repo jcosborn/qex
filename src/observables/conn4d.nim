@@ -198,7 +198,7 @@ for i in 0..<num_source:
 
     locmes += n2phit
 
-    var indiv_time = getElapsedTime2()
+    var indiv_time = getElapsedTime()
     echo "one inversion and shift time: ", indiv_time
 
 # rephase and get correlator

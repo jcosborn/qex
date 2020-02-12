@@ -427,13 +427,13 @@ template makeOps(op,f,fM,s: untyped): untyped {.dirty.} =
       block:
         tic(-2)
         f(x, y)
-        toc(-2)
+        toc(asttostr(op), -2)
     template op*(x:Subsetted; y:any):untyped =
       #static: exprInstInfo = instantiationInfo(-1)
       block:
         tic(-2)
         f(x, y)
-        toc(-2)
+        toc(asttostr(op), -2)
   else:
     template op*(x:Field; y:any):untyped =
       #static: exprInstInfo = instantiationInfo(1)
