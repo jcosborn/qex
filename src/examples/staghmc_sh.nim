@@ -2,7 +2,7 @@
 
 import qex, gauge, gauge/hypsmear, physics/qcdTypes, physics/stagSolve
 import mdevolve
-import math, sequtils, strutils, times
+import math, os, sequtils, strutils, times
 
 const ReversibilityCheck {.booldefine.} = false
 
@@ -77,11 +77,23 @@ converter toIntProc(s:string):IntProc =
 
 qexinit()
 
+tic()
+
 letParam:
-  lat = @[8,8,8,8]
+  gaugefile = ""
+  savefile = "lattice"
+  savefreq = 10
+  lat =
+    if existsFile(gaugefile):
+      getFileLattice gaugefile
+    else:
+      if gaugefile.len > 0:
+        qexWarn "Nonexistent gauge file: ", gaugefile
+      @[8,8,8,8]
   beta = 6.0
   adjFac = -0.25
   tau = 2.0
+  inittraj = 0
   trajs = 10
   seed:uint64 = int(1000*epochTime())
   gintalg:IntProc = "4MN5F2GP"
@@ -111,8 +123,15 @@ letParam:
   pbprsq = arsq
   maxits = 10000
   useFG2:bool = 0
+  timerWasteRatio = 0.02
+  showAllTimers:bool = 0
 
 echoParams()
+echo "rank ", myRank, "/", nRanks
+threads: echo "thread ", threadNum, "/", numThreads
+
+DropWasteTimerRatio = timerWasteRatio
+ShowDroppedTimers = showAllTimers
 
 if mass.len > 5:
   qexError "Unimlemented for mass: ", mass
@@ -143,18 +162,24 @@ var r = lo.newRNGField(RngMilc6, seed)
 var R:RngMilc6  # global RNG
 R.seed(seed, 987654321)
 
-var g = lo.newgauge
-#g.random r
-g.unit
-
-echo 6.0*g.plaq
-echo gc.actionA g
-
 var
+  g = lo.newgauge
   p = lo.newgauge
   f = lo.newgauge
   g0 = lo.newgauge
   sg0 = lo.newgauge
+  sg = lo.newGauge  # smeared gauge
+  gg = lo.newgauge  # FG backup gauge
+  sgg = lo.newgauge  # FG backup smeared gauge
+let
+  stag = newStag(sg)
+  stag0 = newStag(sg0)
+  stagg = newStag(sgg)
+
+var
+  info: PerfInfo
+  coef = HypCoefs(alpha1:0.4, alpha2:0.5, alpha3:0.5)
+echo "smear = ",coef
 
 var ftmp = lo.ColorVector()
 type CV = typeof(ftmp)
@@ -172,12 +197,24 @@ var pbpsp = initSolverParams()
 pbpsp.r2req = pbprsq
 pbpsp.maxits = maxits
 
-var spa = initSolverParams()
-#spa.subsetName = "even"
-spa.r2req = arsq
-spa.maxits = maxits
+var spa = newseq[typeof(pbpsp)](mass.len)
+for k in 0..<mass.len:
+  spa[k] = initSolverParams()
+  #spa[k].subsetName = "even"
+  spa[k].r2req = arsq
+  spa[k].maxits = maxits
+  spa[k].verbosity = 0
 
-var spf = newseq[typeof(spa)](mass.len)
+var spah = newseq[typeof(spa)](mass.len)
+for k in 0..<mass.len:
+  spah[k] = newseq[typeof(pbpsp)](hmasses[k].len)
+  for i in 0..<spah[k].len:
+    spah[k][i] = initSolverParams()
+    spah[k][i].r2req = arsq
+    spah[k][i].maxits = maxits
+    spah[k][i].verbosity = 0
+
+var spf = newseq[typeof(pbpsp)](mass.len)
 for k in 0..<mass.len:
   spf[k] = initSolverParams()
   #spf[k].subsetName = "even"
@@ -187,28 +224,33 @@ for k in 0..<mass.len:
 
 var spfh = newseq[typeof(spf)](mass.len)
 for k in 0..<mass.len:
-  spfh[k] = newseq[typeof(spa)](hfrsq[k].len)
+  spfh[k] = newseq[typeof(pbpsp)](hmasses[k].len)
   for i in 0..<spfh[k].len:
     spfh[k][i] = initSolverParams()
     spfh[k][i].r2req = hfrsq[k][i]
     spfh[k][i].maxits = maxits
     spfh[k][i].verbosity = 0
 
-var
-  info: PerfInfo
-  coef = HypCoefs(alpha1:0.4, alpha2:0.5, alpha3:0.5)
-echo "smear = ",coef
+proc checkStats(label:string, sp:var SolverParams) =
+  echo label,sp.getAveStats
+  if sp.r2.max > sp.r2req:
+    qexError "Max r2 larger than requested."
+  sp.resetStats
 
-var
-  sg = lo.newGauge  # smeared gauge
-  gg = lo.newgauge  # FG backup gauge
-  sgg = lo.newgauge  # FG backup smeared gauge
-let
-  stag = newStag(sg)
-  stag0 = newStag(sg0)
-  stagg = newStag(sgg)
+proc reunit(g:any) =
+  tic()
+  threads:
+    let d = g.checkSU
+    threadBarrier()
+    echo "unitary deviation avg: ",d.avg," max: ",d.max
+    g.projectSU
+    threadBarrier()
+    let dd = g.checkSU
+    echo "new unitary deviation avg: ",dd.avg," max: ",dd.max
+  toc("reunit")
 
 proc pbp(stag:any) =
+  tic()
   var ftmp2 = lo.ColorVector()
   for k in 0..<pbpmass.len:
     let m = pbpmass[k]
@@ -220,16 +262,20 @@ proc pbp(stag:any) =
         var pbp = ftmp2.norm2
         threadMaster:
           echo "MEASpbp mass ",m," : ",m*pbp/vol.float
+  toc("pbp")
 
 proc mplaq(g:any) =
+  tic()
   let
     pl = g.plaq
     nl = pl.len div 2
     ps = pl[0..<nl].sum * 2.0
     pt = pl[nl..^1].sum * 2.0
   echo "MEASplaq ss: ",ps,"  st: ",pt,"  tot: ",0.5*(ps+pt)
+  toc("plaq")
 
 proc ploop(g:any) =
+  tic()
   let pg = g[0].l.physGeom
   var pl = newseq[typeof(g.wline @[1])](pg.len)
   for i in 0..<pg.len:
@@ -238,6 +284,7 @@ proc ploop(g:any) =
     pls = pl[0..^2].sum / float(pl.len-1)
     plt = pl[^1]
   echo "MEASploop spatial: ",pls.re," ",pls.im," temporal: ",plt.re," ",plt.im
+  toc("ploop")
 
 proc fgsave =
   threads:
@@ -279,14 +326,29 @@ template faction(fa:seq[seq[float]]) =
     for i in 0..<phi[k].len-1:
       threads:
         stag.D(ftmp, phi[k][i], hmasses[k][i])
-      stag.solve(psi[k][i], ftmp, if i==0: mass[k] else: hmasses[k][i-1], spa)
-    stag.solve(psi[k][^1], phi[k][^1], if hmasses[k].len>0: hmasses[k][^1] else: mass[k], spa)
+      if i == 0:
+        tic()
+        stag.solve(psi[k][i], ftmp, mass[k], spa[k])
+        toc("asolve " & $mass[k])
+      else:
+        tic()
+        stag.solve(psi[k][i], ftmp, hmasses[k][i-1], spah[k][i-1])
+        toc("asolve " & $hmasses[k][i-1])
+    if hmasses[k].len>0:
+      tic()
+      stag.solve(psi[k][^1], phi[k][^1], hmasses[k][^1], spah[k][^1])
+      toc("asolve " & $hmasses[k][^1])
+    else:
+      tic()
+      stag.solve(psi[k][^1], phi[k][^1], mass[k], spa[k])
+      toc("asolve " & $mass[k])
     threads:
       for i in 0..<psi[k].len:
         var psi2 = psi[k][i].norm2
         threadMaster: fa[k][i] = psi2
 
 proc smearedOneLinkForce(f: any, smearedForce: proc, p: any, g:any) =
+  tic("olf")
   # reverse accumulation of the derivative
   # 1. Dslash
   var t: array[4,Shifter[typeof(p), typeof(p[0])]]
@@ -300,6 +362,7 @@ proc smearedOneLinkForce(f: any, smearedForce: proc, p: any, g:any) =
         forO a, 0, n-1:
           forO b, 0, n-1:
             f[mu][i][a,b] := p[i][a] * t[mu].field[i][b].adj
+  toc("Dslash")
 
   # 2. correcting phase
   threads:
@@ -310,9 +373,11 @@ proc smearedOneLinkForce(f: any, smearedForce: proc, p: any, g:any) =
     for mu in 0..<f.len:
       for i in f[mu].odd:
         f[mu][i] *= -1
+  toc("phase")
 
   # 3. smearing
   f.smearedForce f
+  toc("smear")
 
   # 4. Tₐ ReTr( Tₐ U F† )
   threads:
@@ -321,17 +386,21 @@ proc smearedOneLinkForce(f: any, smearedForce: proc, p: any, g:any) =
         var s {.noinit.}: typeof(f[0][0])
         s := f[mu][i] * g[mu][i].adj
         projectTAH(f[mu][i], s)
-
+  toc("combine")
 
 proc fforce(stag: any, f: any, sf: proc, g: any, k,i: int) =
-  tic()
+  tic("fforce")
   if i == 0:
+    tic()
     stag.solve(ftmp, phi[k][i], mass[k], spf[k])
+    toc("fsolve " & $mass[k])
   else:
+    tic()
     stag.solve(ftmp, phi[k][i], hmasses[k][i-1], spfh[k][i-1])
-  toc("fforce solve")
+    toc("fsolve " & $hmasses[k][i-1])
+  toc("solve")
   f.smearedOneLinkForce(sf, ftmp, g)
-  toc("fforce olf")
+  toc("olf")
 
 proc mdt(t: float) =
   tic()
@@ -401,7 +470,7 @@ proc fgvf(i:int, sf:proc, t:float) =
 
 # Compined update for sharing computations
 proc mdvAllfga(ts,gs:openarray[float]) =
-  tic()
+  tic("mdvAllfga")
   var
     sforce:typeof(g.smearRephase sg) = nil
     updateF = newseq[int](0)
@@ -427,36 +496,36 @@ proc mdvAllfga(ts,gs:openarray[float]) =
       updateF.add i
 
   if updateFG.len > 0:
-    tic()
+    tic("updateFG")
     fgsave()
-    toc("mdvAllfga save")
+    toc("save")
     if updateFG[^1] != 0:  # requires fermion update
       sforce = gg.smearRephase sgg  # FG update use the backup
-      toc("mdvAllfga FG smear rephase")
+      toc("FG smear rephase")
     for o in 0..<approxOrder:
       for i in updateFG:
         if i == 0:  # gauge
           fgv fgs[o][0].g
         else:  # fermion
           fgvf((i-1), sforce, fgs[o][i].g)
-      toc("mdvAllfga FG")
+      toc("FG")
       let sforce2 = g.smearRephase sg
-      toc("mdvAllfga FG smear rephase temp")
+      toc("FG smear rephase temp")
       for i in updateFG:
         if i == 0:  # gauge
           mdv fgs[o][0].t
         else:  # fermion
           mdvf((i-1), sforce2, fgs[o][i].t)
-      toc("mdvAllfga FG MD")
+      toc("FG MD")
       fgload()
-      toc("mdvAllfga load")
+      toc("load")
 
   if updateF.len > 0:
-    tic()
+    tic("updateF")
     if updateF[^1] != 0:
       if sforce == nil:
         sforce = g.smearRephase sg
-        toc("mdvAllfga MD smear rephase")
+        toc("MD smear rephase")
       else:  # smeared gg in sgg
         threads:
           for mu in 0..<sg.len:
@@ -466,8 +535,8 @@ proc mdvAllfga(ts,gs:openarray[float]) =
         mdv ts[0]
       else:
         mdvf((i-1), sforce, ts[i])
-    toc("mdvAllfga MD")
-  toc("mdvAllfga")
+    toc("MD")
+  toc("end")
 
 let
   (V,T) = newIntegratorPair(mdvAllfga, mdt)
@@ -481,10 +550,23 @@ block:
       inc j
       H.add fintalg(T = T, V = V[j], steps = hfsteps[k][i])
 
+if existsFile(gaugefile):
+  if 0 != g.loadGauge gaugefile:
+    qexError "failed to load gauge file: ", gaugefile
+  qexLog "loaded gauge from file: ", gaugefile
+  g.reunit
+else:
+  #g.random r
+  g.unit
+
+g.mplaq
+
 echo H
 
-for n in 1..trajs:
-  tic()
+toc("prep")
+
+for n in inittraj+1..inittraj+trajs:
+  tic("traj")
   var p2 = 0.0
   var f2 = newseq[seq[float]](phi.len)
   for k in 0..<phi.len: f2[k] = newseq[float](phi[k].len)
@@ -520,15 +602,15 @@ for n in 1..trajs:
         else:
           stag.D(phi[k][i], psi[k][i], if hmasses[k].len>0: -hmasses[k][i-1] else: -mass[k])
       if i != phi[k].len-1:
-        stag.solve(phi[k][i], ftmp, -hmasses[k][i], spa)
+        stag.solve(phi[k][i], ftmp, -hmasses[k][i], spah[k][i])
       threads:
         phi[k][i].odd := 0
-  toc("init traj")
+  toc("init")
   f2.faction
   toc("fa solve 1")
   let (ga0,fa0,t0,h0) = g0.gaction(f2,p2)
   toc("init gauge action")
-  echo "Begin H: ",h0,"  Sg: ",ga0,"  Sf: ",fa0,"  T: ",t0
+  qexLog "Begin H: ",h0,"  Sg: ",ga0,"  Sf: ",fa0,"  T: ",t0
 
   H.evolve tau
   H.finish
@@ -542,7 +624,7 @@ for n in 1..trajs:
   toc("fa solve 2")
   let (ga1,fa1,t1,h1) = g.gaction(f2,p2)
   toc("final gauge action")
-  echo "End H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
+  qexLog "End H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
 
   when ReversibilityCheck:
     block:
@@ -580,6 +662,8 @@ for n in 1..trajs:
     accr = R.uniform
   if accr <= acc:  # accept
     echo "ACCEPT:  dH: ",dH,"  exp(-dH): ",acc,"  r: ",accr
+    g.reunit
+    g.smearRephase sg
     stag.pbp
   else:  # reject
     echo "REJECT:  dH: ",dH,"  exp(-dH): ",acc,"  r: ",accr
@@ -590,7 +674,31 @@ for n in 1..trajs:
 
   g.mplaq
   g.ploop
+  toc("measure")
 
+  if n mod savefreq == 0:
+    let fn = savefile & "." & $n
+    if 0 != g.saveGauge(fn):
+      qexError "Failed to save gauge to file: ",fn
+    qexLog "saved gauge to file: ",fn
+    toc("save")
+
+  checkStats("Solver[pbp]: ", pbpsp)
+  echo "Solver[action]:"
+  for k in 0..<spa.len:
+    checkStats("  A m=" & $mass[k] & " ", spa[k])
+    for i in 0..<spah[k].len:
+      checkStats("  A m=" & $hmasses[k][i] & " ", spah[k][i])
+  echo "Solver[force]:"
+  for k in 0..<spf.len:
+    checkStats("  F m=" & $mass[k] & " ", spf[k])
+    for i in 0..<spfh[k].len:
+      checkStats("  F m=" & $hmasses[k][i] & " ", spfh[k][i])
+
+  qexLog "traj ",n," secs: ",getElapsedTime()
+  toc("traj end")
+
+toc("hmc")
 
 echoTimers()
 qexfinalize()

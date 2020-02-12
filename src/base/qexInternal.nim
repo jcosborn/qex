@@ -7,7 +7,7 @@ export comms
 import profile
 export profile
 
-import algorithm, times
+import algorithm, strutils
 
 var
   qexGlobalInitializers* = newseq[proc()]()    ## Will be run in qexInit in forward order
@@ -15,6 +15,24 @@ var
   qexStartTime: TicType
 
 proc qexTime*: float = ticDiffSecs(getTics(), qexStartTime)
+
+template qexLog*(s:varargs[string,`$`]) =
+  let t = qexTime()
+  if s.len > 0:
+    echo "[", formatFloat(t,ffDecimal,3), " s] ", s.join
+
+template qexWarn*(s:varargs[string,`$`]) =
+  let ii = instantiationInfo()
+  echo "Warning: ", ii.filename, ":", ii.line, ":"
+  if s.len > 0:
+    echo "  ", s.join
+
+template qexError*(s:varargs[string,`$`]) =
+  let ii = instantiationInfo()
+  echo "Error: ", ii.filename, ":", ii.line, ":"
+  if s.len > 0:
+    echo "  ", s.join
+  qexAbort()
 
 proc qexInit* =
   qexStartTime = getTics()
@@ -37,20 +55,13 @@ proc qexFinalize* =
   commsFinalize()
   #when profileEqns:
   #echoTimers()
-  echo "Total time (Init - Finalize): ",qexTime()," seconds."
+  qexLog "Total time (Init - Finalize): ",qexTime()," seconds."
 
 proc qexExit*(status = 0) =
   for p in qexGlobalFinalizers.reversed: p()
   commsFinalize()
-  echo "Total time (Init - Finalize): ",qexTime()," seconds."
+  qexLog "Total time (Init - Finalize): ",qexTime()," seconds."
   quit(status)
 
 proc qexAbort*(status = -1) =
   commsAbort(status)
-
-template qexError*(s:varargs[string,`$`]) =
-  let ii = instantiationInfo()
-  echo "Error: ", ii.filename, ":", ii.line, ":"
-  if s.len > 0:
-    echo "  ", s.join
-  qexAbort()
