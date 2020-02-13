@@ -118,20 +118,21 @@ letParam:
   hfrsq2 = frsq[0].repeat hmasses2.len  # frsq for Hasenbusch masses 2
   hfrsq3 = frsq[0].repeat hmasses3.len  # frsq for Hasenbusch masses 3
   hfrsq4 = frsq[0].repeat hmasses4.len  # frsq for Hasenbusch masses 4
+  revCheckFreq = savefreq
   pbpmass = mass
   pbpreps = repeat(1, pbpmass.len)
   pbprsq = arsq
   maxits = 10000
   useFG2:bool = 0
   timerWasteRatio = 0.02
-  showAllTimers:bool = 0
+  timerEchoDropped:bool = 0
+  timerExpandRatio = 0.05
 
 echoParams()
 echo "rank ", myRank, "/", nRanks
 threads: echo "thread ", threadNum, "/", numThreads
 
 DropWasteTimerRatio = timerWasteRatio
-ShowDroppedTimers = showAllTimers
 
 if mass.len > 5:
   qexError "Unimlemented for mass: ", mass
@@ -625,35 +626,35 @@ for n in inittraj+1..inittraj+trajs:
   let (ga1,fa1,t1,h1) = g.gaction(f2,p2)
   toc("final gauge action")
   qexLog "End H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
+  toc("end evolve")
 
-  when ReversibilityCheck:
-    block:
-      var g1 = lo.newgauge
-      var p1 = lo.newgauge
-      threads:
-        for i in 0..<g1.len:
-          g1[i] := g[i]
-          p1[i] := p[i]
-          p[i] := -1*p[i]
-      H.evolve tau
-      H.finish
-      p2.pnorm2
-      toc("p norm2 2")
-      g.smearRephase sg
-      toc("smear & rephase 2")
-      f2.faction
-      toc("fa solve 2")
-      let (ga1,fa1,t1,h1) = g.gaction(f2,p2)
-      var dsf = newseq[seq[float]](fa1.len)
-      for k in 0..<fa1.len:
-        dsf[k] = newseq[float](fa1[k].len)
-        for i in 0..<fa1[k].len:
-          dsf[k][i] = fa1[k][i] - fa0[k][i]
-      echo "Reversed H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
-      echo "Reversibility: dH: ",h1-h0,"  dSg: ",ga1-ga0,"  dSf: ",dsf,"  dT: ",t1-t0
+  if revCheckFreq > 0 and n mod revCheckFreq == 0:
+    var g1 = lo.newgauge
+    var p1 = lo.newgauge
+    threads:
       for i in 0..<g1.len:
-        g[i] := g1[i]
-        p[i] := p1[i]
+        g1[i] := g[i]
+        p1[i] := p[i]
+        p[i] := -1*p[i]
+    H.evolve tau
+    H.finish
+    p2.pnorm2
+    toc("p norm2 2")
+    g.smearRephase sg
+    toc("smear & rephase 2")
+    f2.faction
+    toc("fa solve 2")
+    let (ga1,fa1,t1,h1) = g.gaction(f2,p2)
+    var dsf = newseq[seq[float]](fa1.len)
+    for k in 0..<fa1.len:
+      dsf[k] = newseq[float](fa1[k].len)
+      for i in 0..<fa1[k].len:
+        dsf[k][i] = fa1[k][i] - fa0[k][i]
+    echo "Reversed H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
+    echo "Reversibility: dH: ",h1-h0,"  dSg: ",ga1-ga0,"  dSf: ",dsf,"  dT: ",t1-t0
+    for i in 0..<g1.len:
+      g[i] := g1[i]
+      p[i] := p1[i]
     toc("reversibility")
 
   let
@@ -676,7 +677,7 @@ for n in inittraj+1..inittraj+trajs:
   g.ploop
   toc("measure")
 
-  if n mod savefreq == 0:
+  if savefreq > 0 and n mod savefreq == 0:
     let fn = savefile & "." & $n
     if 0 != g.saveGauge(fn):
       qexError "Failed to save gauge to file: ",fn
@@ -700,5 +701,5 @@ for n in inittraj+1..inittraj+trajs:
 
 toc("hmc")
 
-echoTimers()
+echoTimers(timerExpandRatio, timerEchoDropped)
 qexfinalize()
