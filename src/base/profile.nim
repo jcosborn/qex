@@ -11,9 +11,7 @@ template nsec*(t:TicType):int64 = int64(t)
 template ticDiffSecs*(x,y: TicType): float = 1e-9 * float(x.int64 - y.int64)
 template `-`*(x,y: TicType): TicType = TicType(x.int64 - y.int64)
 
-var
-  DropWasteTimerRatio* = 0.05  ## Drop children timers if the proportion of their overhead is larger than this.
-  ShowDroppedTimers* = false
+var DropWasteTimerRatio* = 0.05  ## Drop children timers if the proportion of their overhead is larger than this.
 
 ##[
 
@@ -356,12 +354,13 @@ type
   Tstr = tuple
     label: string
     stats: string
-template ppT(ts:RTInfoObjList, prefix = "-", total,overhead:int64 = 0, count = 0, initIx = 0):seq[Tstr] =
-  ppT(List[RTInfoObj](ts), prefix, total, overhead, count, initIx)
+template ppT(ts:RTInfoObjList, prefix = "-", total,overhead:int64 = 0, count = 0, initIx = 0, showAbove = 0.0, showDropped = true):seq[Tstr] =
+  ppT(List[RTInfoObj](ts), prefix, total, overhead, count, initIx, showAbove, showDropped)
 proc ppT(ts:List[RTInfoObj], prefix = "-",
-    total,overhead:int64 = 0, count = 0, initIx = 0):seq[Tstr] =
-  proc markDrop(drop:bool,str:string):string =
-    if drop: "[" & str & "]"
+    total,overhead:int64 = 0, count = 0, initIx = 0,
+    showAbove = 0.0, showDropped = true):seq[Tstr] =
+  proc markMissing(p:bool,str:string):string =
+    if p: "[" & str & "]"
     else: str
   var
     sub:int64 = 0
@@ -378,7 +377,6 @@ proc ppT(ts:List[RTInfoObj], prefix = "-",
       f = splitFile(ts[j].curr.loc.filename)[1]
       l = ts[j].curr.loc.line
       drop = ts[j].prev.toDropTimer
-      loc = pre & markDrop(drop, f0 & "(" & $l0 & "-" & (if f==f0:"" else:f) & $l & ")")
       coh = ts[j].childrenOverhead
       soh = ts[j].overhead
       nsec = ts[j].nsec
@@ -387,12 +385,15 @@ proc ppT(ts:List[RTInfoObj], prefix = "-",
       nf = ts[j].flops
       tn = ts[j].tic.name
       pn = ts[j].prev.name
-      nm = pre & markDrop(drop, (if tn=="":"" else:tn&":") & (if pn=="":"" else:pn&"-") & ts[j].curr.name)
       st = ns div 1000
       ot = oh div 1000
       sc = ns div nc
       oc = oh div nc
       mf = nf*1e3 / ns.float
+      small = total!=0 and ns.float/total.float<showAbove
+      noexpand = drop or (small and ts[j].children.len>0)
+      loc = pre & markMissing(noexpand, f0 & "(" & $l0 & "-" & (if f==f0:"" else:f) & $l & ")")
+      nm = pre & markMissing(noexpand, (if tn=="":"" else:tn&":") & (if pn=="":"" else:pn&"-") & ts[j].curr.name)
     if total!=0:
       let
         cent = 1e2 * ns.float / total.float
@@ -400,12 +401,14 @@ proc ppT(ts:List[RTInfoObj], prefix = "-",
       result.add (loc, cent|(6,-1) & ohcent|(6,-1) & st|12 & ot|8 & " /" & nc|7 & " =" & sc|12 & oc|8 & int(mf)|8 & " " & nm)
     else:
       result.add (loc, ""|6 & ""|6 & st|12 & ot|8 & " /" & nc|7 & " =" & sc|12 & oc|8 & int(mf)|8 & " " & nm)
-    if ts[j].children.len>0 and (not drop) or ShowDroppedTimers:
+    if ts[j].children.len>0 and
+        (not small) and
+        ((not drop) or showDropped):
       let newprefix =
         if prefix.len==1: "|--"
         elif j<ts.len-1: prefix[0..^4] & "| |--"
         else: prefix[0..^4] & "  |--"
-      result.add ppT(ts[j].children, newprefix, nsec+soh, soh, nc)
+      result.add ppT(ts[j].children, newprefix, nsec+soh, soh, nc, 0, showAbove, showDropped)
     sub += ns
     subo += oh
   if total!=0 and count!=0:
@@ -430,22 +433,24 @@ proc totalOverhead(ts:List[RTInfoObj], initIx = 0):int64 =
     if ts[j].isnottic:
       result += ts[j].overhead + ts[j].childrenOverhead
 
-template echoTimers* =
+template echoTimers*(expandAbove = 0.0, expandDropped = true):untyped =
   ## Echo timers in the local scope, starting from the local tic, and below.
+  ## Expand children timers if the proportion of the current work time is more than expandAbove.
   const width = 104
   when declared(localTic):
     let p = localTic.int
   else:
     let p = 0
   let
-    pp = ppT(rtiStack, initIx = p)
+    pp = ppT(rtiStack, initIx = p, showAbove = expandAbove, showDropped = expandDropped)
     tt = totalTime(rtiStack, initIx = p)
     oh = totalOverhead(rtiStack, initIx = p)
   var n = 24
   for (s,_) in pp:
     if n<s.len: n = s.len
   inc n
-  echo "Timer total ",(tt.float*1e-6)|(0,-3)," ms, overhead ",(oh.float*1e-6)|(0,-3)," ms ~ ",(1e2*oh.float/tt.float)|(0,-1)," %"
+  let notshowing = if expandAbove>0.0: ", not expanding contributions less than " & $(1e2*expandAbove) & " %" else:""
+  echo "Timer total ",(tt.float*1e-6)|(0,-3)," ms, overhead ",(oh.float*1e-6)|(0,-3)," ms ~ ",(1e2*oh.float/tt.float)|(0,-1)," %",notshowing
   echo '='.repeat(width)
   echo "file(lines)"|(-n), "%"|6, "OH%"|6, "microsecs"|12, "OH"|8, "count"|9, "ns/count"|14, "OH/c"|8, "mf"|8, " label"
   echo '='.repeat(width)
@@ -553,7 +558,7 @@ when isMainModule:
   toc("test2 loop")
   test2()
   toc("test2 2")
-  echoTimers()
+  echoTimers(0.1)
   resetTimers()
   r()
   echoTimers()
