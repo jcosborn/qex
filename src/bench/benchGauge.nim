@@ -26,9 +26,12 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
   #echo nrep
   var t0 = epochTime()
   #threads:
-  for rep in 1..nrep:
-    #echo rep
-    eqn
+  block:
+    tic()
+    for rep in 1..nrep:
+      #echo rep
+      eqn
+    toc(exp2string(eqn))
   var t1 = epochTime()
   let dt = t1 - t0
   let dtn = dt / nrep.float

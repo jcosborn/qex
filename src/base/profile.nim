@@ -64,6 +64,7 @@ proc newListOfCap[T](cap:int):List[T] {.noinit.} =
   result.len = 0
   result.cap = cap
   result.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap))
+proc len[T](ls:List[T]):int = ls.len
 proc setLen[T](ls:var List[T], len:int) =
   if len > ls.cap:
     var cap = ls.cap
@@ -338,6 +339,7 @@ proc reset(x:var RTInfoObj) =
   x.count = 0
   x.overhead = 0
   x.childrenOverhead = 0
+  toDropTimer(x.curr) = false
   for c in mitems(x.children):
     reset c
 
@@ -347,7 +349,7 @@ template resetTimers* =
     let p = localTic.int
   else:
     let p = 0
-  for j in p..<rtiStack.len:
+  for j in p..<len(rtiStack):
     reset rtiStack[j]
 
 type
