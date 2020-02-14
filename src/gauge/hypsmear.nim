@@ -20,6 +20,7 @@ proc `$`*(c: HypCoefs): string =
 
 proc symStaple(s: any, alp: float, g1: any, g2: any,
                s1: any, s2: any, tm: any, sm: any) =
+  tic()
   mixin adj
   tm := g1.adj * g2 * s1.field
   threadBarrier()
@@ -27,6 +28,7 @@ proc symStaple(s: any, alp: float, g1: any, g2: any,
   threadBarrier()
   s += alp * ( g1 * s2.field * s1.field.adj )
   s += alp * sm.field
+  toc("symStaple")
 
 proc symStapleDeriv(f1, f2: any;  # output
                     g1, g2: any; s1, s2: any;  # same as symStaple
@@ -34,6 +36,7 @@ proc symStapleDeriv(f1, f2: any;  # output
                     tm1, tm2: any;  # temporary fields
                     sm1, sm2: any;  # shifts
                    ) =
+  tic()
   mixin adj
   # ∪ s.field.adj * g1.adj * g2 * s1.field
   # ∪† s.field * s1.field.adj * g2.adj * g1
@@ -51,7 +54,7 @@ proc symStapleDeriv(f1, f2: any;  # output
   f2 += g1 * s.field * s1.field.adj  # ∪†2  g2
   f2 += sm1.field
   f1 += sm2.field
-
+  toc("symStapleDeriv")
 
 template proj(x: any) =
   for e in x:
@@ -112,6 +115,7 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
     ma2 = 1 - coef.alpha2
     ma3 = 1 - coef.alpha3
 
+  toc("prep")
   threads:
     for mu in 0..<4:
       for nu in 0..<4:
@@ -120,6 +124,7 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
           symStaple(l1x[mu][nu], alp1, gf[nu], gf[mu],
                     s1[nu][mu], s1[mu][nu], tm1, sm1[nu])
           l1[mu][nu].proj l1x[mu][nu]
+    toc("1")
 
     for mu in 0..<4:
       for nu in 0..<4:
@@ -134,6 +139,7 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
               symStaple(l2x[mu][nu], alp2, l1[a][b], l1[mu][b],
                         s1[nu][mu], s1[mu][a], tm1, sm1[a])
           l2[mu][nu].proj l2x[mu][nu]
+    toc("2")
 
     for mu in 0..<4:
       flx[mu] := ma3 * gf[mu]
@@ -145,8 +151,10 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
           symStaple(flx[mu], alp3, l2[nu][mu], l2[mu][nu],
                     s1[nu][mu], s1[mu][nu], tm1, sm1[nu])
       fl[mu].proj flx[mu]
+  toc("threads end")
 
   proc smearedForce(f,chain:G) =
+    tic("smearedF")
     # fₓₚₜ ← chainₘₖₕ d/dUₓₚₜ^*[Vₘₖₕ(U)^*] + chainₘₕₖ^* d/dUₓₚₜ^*[Vₘₕₖ(U)]
     var
       fl1: array[4,array[4,lcm]]
@@ -162,6 +170,7 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
           fl2[mu][nu] = newlcm()
       fc[mu] = newlcm()
       fs[mu] = newShifter(fc[mu], mu, 1)
+    toc("prep")
 
     threads:
       for mu in 0..<4:
@@ -187,6 +196,7 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
             symStapleDeriv(fl2[nu][mu], fl2[mu][nu],
                            l2[nu][mu], l2[mu][nu], s1[nu][mu], s1[mu][nu],
                            fc[mu], fs[nu], tm1, tm2, sm1[nu], sm1[mu])
+      toc("1")
 
       # proj l2x → l2, fl2 ← fl2
       for mu in 0..<4:
@@ -212,6 +222,7 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
                 symStapleDeriv(fl1[a][b], fl1[mu][b],
                                l1[a][b], l1[mu][b], s1[nu][mu], s1[mu][a],
                                fl2[mu][nu], fs[a], tm1, tm2, sm1[a], sm1[mu])
+      toc("2")
 
       # proj l1x → l1, fl1 ← fl1
       for mu in 0..<4:
@@ -233,8 +244,9 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
             symStapleDeriv(f[nu], f[mu],
                            gf[nu], gf[mu], s1[nu][mu], s1[mu][nu],
                            fl1[mu][nu], fs[nu], tm1, tm2, sm1[nu], sm1[mu])
+    toc("end")
 
-  toc()
+  toc("end")
   smearedForce
 
 #proc smear*(c: HypCoefs, gf: any, fl: any, info: var PerfInfo) =
