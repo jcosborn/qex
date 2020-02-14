@@ -403,6 +403,7 @@ proc fforce(stag: any, f: any, sf: proc, g: any, ix:openarray[int], ts:openarray
     t[mu] = newShifter(ftmp, mu, 1)
   var first = true
   for j in ix:
+    tic("floop")
     let (k,i) = massIndex j
     if i == 0:
       tic()
@@ -435,6 +436,7 @@ proc fforce(stag: any, f: any, sf: proc, g: any, ix:openarray[int], ts:openarray
                 let x = f[mu][i][a,b]
                 f[mu][i][a,b] += s * ftmp[i][a] * t[mu].field[i][b].adj
     toc("outer")
+  toc("solves")
   f.smearedOneLinkForce(sf, g)
   toc("olf")
 
