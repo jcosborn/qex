@@ -348,24 +348,31 @@ template faction(fa:seq[seq[float]]) =
         var psi2 = psi[k][i].norm2
         threadMaster: fa[k][i] = psi2
 
-proc smearedOneLinkForce(f: any, smearedForce: proc, p: any, g:any) =
-  tic("olf")
-  # reverse accumulation of the derivative
-  # 1. Dslash
-  var t: array[4,Shifter[typeof(p), typeof(p[0])]]
-  for mu in 0..<f.len:
-    t[mu] = newShifter(p, mu, 1)
-    discard t[mu] ^* p
-  const n = p[0].len
-  threads:
-    for mu in 0..<f.len:
-      for i in f[mu]:
-        forO a, 0, n-1:
-          forO b, 0, n-1:
-            f[mu][i][a,b] := p[i][a] * t[mu].field[i][b].adj
-  toc("Dslash")
+proc massIndex(i:int):(int,int) =
+  var
+   i = i
+   k = 0
+  for j in 0..<mass.len:
+    let h = hmasses[j].len + 1
+    if i >= h:
+      i -= h
+    else:
+      k = j
+      break
+  (k,i)
 
-  # 2. correcting phase
+func sq(x:float):float = x*x
+
+proc fscale(k,i:int, t:float):float =
+  if hmasses[k].len == 0: 0.5*t/mass[k]
+  elif i == 0: 0.5*t*(hmasses[k][0].sq-mass[k].sq)/mass[k]
+  elif i < hmasses[k].len: 0.5*t*(hmasses[k][i].sq-hmasses[k][i-1].sq)/hmasses[k][i-1]
+  else: 0.5*t/hmasses[k][i-1]
+
+proc smearedOneLinkForce(f: any, smearedForce: proc, g:any) =
+  tic("olf")
+  # Reverse accumulation of the smearing derivatives
+  # 1. correcting phase
   threads:
     f.setBC
     threadBarrier()
@@ -376,11 +383,11 @@ proc smearedOneLinkForce(f: any, smearedForce: proc, p: any, g:any) =
         f[mu][i] *= -1
   toc("phase")
 
-  # 3. smearing
+  # 2. smearing
   f.smearedForce f
   toc("smear")
 
-  # 4. Tₐ ReTr( Tₐ U F† )
+  # 3. Tₐ ReTr( Tₐ U F† )
   threads:
     for mu in 0..<f.len:
       for i in f[mu]:
@@ -389,18 +396,46 @@ proc smearedOneLinkForce(f: any, smearedForce: proc, p: any, g:any) =
         projectTAH(f[mu][i], s)
   toc("combine")
 
-proc fforce(stag: any, f: any, sf: proc, g: any, k,i: int) =
+proc fforce(stag: any, f: any, sf: proc, g: any, ix:openarray[int], ts:openarray[float]) =
   tic("fforce")
-  if i == 0:
-    tic()
-    stag.solve(ftmp, phi[k][i], mass[k], spf[k])
-    toc("fsolve " & $mass[k])
-  else:
-    tic()
-    stag.solve(ftmp, phi[k][i], hmasses[k][i-1], spfh[k][i-1])
-    toc("fsolve " & $hmasses[k][i-1])
-  toc("solve")
-  f.smearedOneLinkForce(sf, ftmp, g)
+  var t: array[4,Shifter[typeof(ftmp), typeof(ftmp[0])]]
+  for mu in 0..<f.len:
+    t[mu] = newShifter(ftmp, mu, 1)
+  var first = true
+  for j in ix:
+    let (k,i) = massIndex j
+    if i == 0:
+      tic()
+      stag.solve(ftmp, phi[k][i], mass[k], spf[k])
+      toc("fsolve " & $mass[k])
+    else:
+      tic()
+      stag.solve(ftmp, phi[k][i], hmasses[k][i-1], spfh[k][i-1])
+      toc("fsolve " & $hmasses[k][i-1])
+    toc("solve")
+
+    for mu in 0..<f.len:
+      discard t[mu] ^* ftmp
+    const n = ftmp[0].len
+    let s = fscale(k, i, ts[j])
+    if first:
+      first = false
+      threads:
+        for mu in 0..<f.len:
+            for i in f[mu]:
+              forO a, 0, n-1:
+                forO b, 0, n-1:
+                  f[mu][i][a,b] := s * ftmp[i][a] * t[mu].field[i][b].adj
+    else:
+      threads:
+        for mu in 0..<f.len:
+          for i in f[mu]:
+            forO a, 0, n-1:
+              forO b, 0, n-1:
+                let x = f[mu][i][a,b]
+                f[mu][i][a,b] += s * ftmp[i][a] * t[mu].field[i][b].adj
+    toc("outer")
+  f.smearedOneLinkForce(sf, g)
   toc("olf")
 
 proc mdt(t: float) =
@@ -418,35 +453,12 @@ proc mdv(t: float) =
       p[mu] -= t*f[mu]
   toc("mdv")
 
-func sq(x:float):float = x*x
-
-proc massIndex(i:int):(int,int) =
-  var
-   i = i
-   k = 0
-  for j in 0..<mass.len:
-    let h = hmasses[j].len + 1
-    if i >= h:
-      i -= h
-    else:
-      k = j
-      break
-  (k,i)
-
-proc fscale(k,i:int, t:float):float =
-  if hmasses[k].len == 0: -0.5*t/mass[k]
-  elif i == 0: -0.5*t*(hmasses[k][0].sq-mass[k].sq)/mass[k]
-  elif i < hmasses[k].len: -0.5*t*(hmasses[k][i].sq-hmasses[k][i-1].sq)/hmasses[k][i-1]
-  else: -0.5*t/hmasses[k][i-1]
-
-proc mdvf(i:int, sf:proc, t:float) =
+proc mdvf(ix:openarray[int], sf:proc, ts:openarray[float]) =
   tic()
-  let (k,i) = massIndex i
-  let s = fscale(k, i, t)
-  stag.fforce(f, sf, g, k, i)
+  stag.fforce(f, sf, g, ix, ts)
   threads:
     for mu in 0..<f.len:
-      p[mu] -= s*f[mu]
+      p[mu] += f[mu]
   toc("mdvf")
 
 # FG update g from backup, gg and sgg
@@ -458,86 +470,100 @@ proc fgv(t: float) =
       for s in g[mu]:
         g[mu][s] := exp((-t)*f[mu][s])*g[mu][s]
   toc("fgv")
-proc fgvf(i:int, sf:proc, t:float) =
+proc fgvf(ix:openarray[int], sf:proc, ts:openarray[float]) =
   tic()
-  let (k,i) = massIndex i
-  let t = fscale(k, i, t)
-  stagg.fforce(f, sf, gg, k, i)
+  stagg.fforce(f, sf, gg, ix, ts)
   threads:
     for mu in 0..<g.len:
       for s in g[mu]:
-        g[mu][s] := exp((-t)*f[mu][s])*g[mu][s]
+        g[mu][s] := exp(f[mu][s])*g[mu][s]
   toc("fgvf")
 
-# Compined update for sharing computations
+# Combined update for sharing computations
 proc mdvAllfga(ts,gs:openarray[float]) =
   tic("mdvAllfga")
   var
     sforce:typeof(g.smearRephase sg) = nil
+    updateG = false
+    updateGG = false
     updateF = newseq[int](0)
     updateFG = newseq[int](0)
   let approxOrder = if useFG2: 2 else: 1
-  type FGstep = tuple[t,g:float]
-  var fgs: array[2,seq[FGstep]]  # 2nd item for 2nd order approximation
-  for i in 0..1:
-    fgs[i] = newseq[FGstep](gs.len)
-  for i in 0..<gs.len:
+  type
+    GGstep = tuple[t,g:float]
+    FGstep = tuple[t,g:seq[float]]
+  var
+    ggs: array[2,GGstep]
+    fgs: array[2,FGstep]  # 2nd item for 2nd order approximation
+  for o in 0..1:
+    fgs[o].t = newseq[float](gs.len-1)
+    fgs[o].g = newseq[float](gs.len-1)
+
+  # gauge
+  if gs[0] != 0:
+    updateGG = true
+    if ts[0] == 0:
+      qexError "Force gradient without the force update."
+    if useFG2:
+      let (tf,tg) = approximateFGcoeff2(ts[0],gs[0])
+      for o in 0..1:
+        ggs[o] = (t:tf[o], g:tg[o])
+    else:
+      let (tf,tg) = approximateFGcoeff(ts[0],gs[0])
+      ggs[0] = (t:tf, g:tg)
+  elif ts[0] != 0:
+    updateG = true
+
+  # fermions
+  for k in 0..<gs.len-1:
+    let i = k+1
     if gs[i] != 0:
-      updateFG.add i
+      updateFG.add k
       if ts[i] == 0:
         qexError "Force gradient without the force update."
       if useFG2:
         let (tf,tg) = approximateFGcoeff2(ts[i],gs[i])
         for o in 0..1:
-          fgs[o][i] = (t:tf[o], g:tg[o])
+          fgs[o].t[k] = tf[o]
+          fgs[o].g[k] = tg[o]
       else:
         let (tf,tg) = approximateFGcoeff(ts[i],gs[i])
-        fgs[0][i] = (t:tf, g:tg)
+        fgs[0].t[k] = tf
+        fgs[0].g[k] = tg
     elif ts[i] != 0:
-      updateF.add i
+      updateF.add k
 
-  if updateFG.len > 0:
+  if updateGG or updateFG.len > 0:
     tic("updateFG")
     fgsave()
     toc("save")
-    if updateFG[^1] != 0:  # requires fermion update
+    if updateFG.len > 0:  # requires fermion update
       sforce = gg.smearRephase sgg  # FG update use the backup
       toc("FG smear rephase")
     for o in 0..<approxOrder:
-      for i in updateFG:
-        if i == 0:  # gauge
-          fgv fgs[o][0].g
-        else:  # fermion
-          fgvf((i-1), sforce, fgs[o][i].g)
+      if updateGG: fgv ggs[o].g
+      if updateFG.len > 0: fgvf(updateFG, sforce, fgs[o].g)
       toc("FG")
-      let sforce2 = g.smearRephase sg
+      let sforceg = g.smearRephase sg
       toc("FG smear rephase temp")
-      for i in updateFG:
-        if i == 0:  # gauge
-          mdv fgs[o][0].t
-        else:  # fermion
-          mdvf((i-1), sforce2, fgs[o][i].t)
+      if updateGG: mdv ggs[o].t
+      if updateFG.len > 0: mdvf(updateFG, sforceg, fgs[o].t)
       toc("FG MD")
       fgload()
       toc("load")
+  toc("FG")
 
+  if updateG: mdv ts[0]
   if updateF.len > 0:
-    tic("updateF")
-    if updateF[^1] != 0:
-      if sforce == nil:
-        sforce = g.smearRephase sg
-        toc("MD smear rephase")
-      else:  # smeared gg in sgg
-        threads:
-          for mu in 0..<sg.len:
-            sg[mu] := sgg[mu]
-    for i in updateF:
-      if i == 0:
-        mdv ts[0]
-      else:
-        mdvf((i-1), sforce, ts[i])
-    toc("MD")
-  toc("end")
+    if updateFG.len == 0:
+      sforce = g.smearRephase sg
+      toc("MD smear rephase")
+    else:  # smeared gg in sgg
+      threads:
+        for mu in 0..<sg.len:
+          sg[mu] := sgg[mu]
+    mdvf(updateF, sforce, ts[1..^1])
+  toc("MD")
 
 let
   (V,T) = newIntegratorPair(mdvAllfga, mdt)
