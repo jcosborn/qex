@@ -310,8 +310,15 @@ template tocI(f: SomeNumber; s:SString = ""; n = -1): untyped =
         thisCode = newCodePoint(ii, s)
         when not cname:
           localCode.add thisCode
-      let thisRTI = record(localTic, prevRTI, thisCode, theTime-localTimer, float(f))
-      if rtiStack[thisRTI.int].childrenOverhead.float / rtiStack[thisRTI.int].nsec.float > DropWasteTimerRatio:
+      let
+        ns = theTime-localTimer
+        thisRTI = record(localTic, prevRTI, thisCode, ns, float(f))
+      var oh = rtiStack[thisRTI.int].childrenOverhead
+      let c = rtiStack[thisRTI.int].children
+      for i in 0..<c.len:
+        if toDropTimer(c[i].prev):
+          oh -= c[i].childrenOverhead
+      if oh.float / ns.float > DropWasteTimerRatio:
         # Signal stop if the overhead is too large.
         dropTimer(prevRTI)
       if toDropTimer(thisCode):
