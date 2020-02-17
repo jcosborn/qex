@@ -703,7 +703,7 @@ for n in inittraj+1..inittraj+trajs:
   toc("measure")
 
   if savefreq > 0 and n mod savefreq == 0:
-    let fn = savefile & &"{n:05}.lime"
+    let fn = savefile & &".{n:05}.lime"
     if 0 != g.saveGauge(fn):
       qexError "Failed to save gauge to file: ",fn
     qexLog "saved gauge to file: ",fn
