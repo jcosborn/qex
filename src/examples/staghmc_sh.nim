@@ -4,8 +4,6 @@ import qex, gauge, gauge/hypsmear, physics/qcdTypes, physics/stagSolve
 import mdevolve
 import math, os, sequtils, strutils, times
 
-const ReversibilityCheck {.booldefine.} = false
-
 type IntProc = proc(T,V:Integrator; steps:int):Integrator
 converter toIntProc(s:string):IntProc =
   template mkProc1(s:untyped):IntProc =
@@ -81,7 +79,7 @@ tic()
 
 letParam:
   gaugefile = ""
-  savefile = "lattice"
+  savefile = "config"
   savefreq = 10
   lat =
     if existsFile(gaugefile):
@@ -122,9 +120,9 @@ letParam:
   pbpmass = mass
   pbpreps = repeat(1, pbpmass.len)
   pbprsq = arsq
-  maxits = 10000
+  maxits = 1000000
   useFG2:bool = 0
-  timerWasteRatio = 0.02
+  timerWasteRatio = 0.05
   timerEchoDropped:bool = 0
   timerExpandRatio = 0.05
 
@@ -433,7 +431,6 @@ proc fforce(stag: any, f: any, sf: proc, g: any, ix:openarray[int], ts:openarray
           for i in f[mu]:
             forO a, 0, n-1:
               forO b, 0, n-1:
-                let x = f[mu][i][a,b]
                 f[mu][i][a,b] += s * ftmp[i][a] * t[mu].field[i][b].adj
     toc("outer")
   toc("solves")
@@ -706,7 +703,7 @@ for n in inittraj+1..inittraj+trajs:
   toc("measure")
 
   if savefreq > 0 and n mod savefreq == 0:
-    let fn = savefile & "." & $n
+    let fn = savefile & &"{n:05}.lime"
     if 0 != g.saveGauge(fn):
       qexError "Failed to save gauge to file: ",fn
     qexLog "saved gauge to file: ",fn
