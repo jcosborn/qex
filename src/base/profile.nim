@@ -52,27 +52,41 @@ type
     data:ptr UncheckedArray[T]
   RTInfoObjList = distinct List[RTInfoObj]
 
+var
+  rtiListLength:int = 0
+  rtiListLengthMax:int = 0
+template listChangeLen[T](n:int):untyped =
+  when T is RTInfoObj:
+    rtiListLength += n
+    if n>0 and rtiListLength>rtiListLengthMax:
+      rtiListLengthMax = rtiListLength
+
 proc newList[T](len = 0):List[T] {.noinit.} =
   var cap = 8
   while cap < len: cap *= 2
   result.len = len
   result.cap = cap
   result.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap))
+  listChangeLen[T](cap)
 proc newListOfCap[T](cap:int):List[T] {.noinit.} =
   result.len = 0
   result.cap = cap
   result.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap))
+  listChangeLen[T](cap)
 proc len[T](ls:List[T]):int = ls.len
 proc setLen[T](ls:var List[T], len:int) =
   if len > ls.cap:
     var cap = ls.cap
+    listChangeLen[T](-cap)
     if cap == 0: cap = 8
     while cap < len: cap *= 2
     ls.cap = cap
     ls.data = cast[ptr UncheckedArray[T]](realloc(ls.data, sizeof(T)*cap))
+    listChangeLen[T](cap)
   ls.len = len
 proc free[T](ls:var List[T]) =
   dealloc(ls.data)
+  listChangeLen[T](-ls.cap)
   ls.len = 0
   ls.cap = 0
   ls.data = nil
@@ -515,7 +529,7 @@ template echoTimers*(expandAbove = 0.0, expandDropped = true, aggregate = true):
     if n<s.len: n = s.len
   inc n
   let notshowing = if expandAbove>0.0: ", not expanding contributions less than " & $(1e2*expandAbove) & " %" else:""
-  echo "Timer total ",(tt.float*1e-6)|(0,-3)," ms, overhead ",(oh.float*1e-6)|(0,-3)," ms ~ ",(1e2*oh.float/tt.float)|(0,-1)," %",notshowing
+  echo "Timer total ",(tt.float*1e-6)|(0,-3)," ms, overhead ",(oh.float*1e-6)|(0,-3)," ms ~ ",(1e2*oh.float/tt.float)|(0,-1)," %, memory ",rtiListLength*sizeof(RTInfoObj)," B, max ",rtiListLengthMax*sizeof(RTInfoObj)," B",notshowing
   echo '='.repeat(width)
   echo "file(lines)"|(-n), "%"|6, "OH%"|6, "microsecs"|12, "OH"|8, "count"|9, "ns/count"|14, "OH/c"|8, "mf"|8, " label"
   echo '='.repeat(width)
