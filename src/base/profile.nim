@@ -165,6 +165,9 @@ template isnottic(x:RTInfoObj):bool = not x.prev.isNil
 
 template dropTimer(x:RTInfo):untyped = toDropTimer(rtiStack[x.int].curr) = true
 
+template identical(x,y:RTInfoObj):bool =
+  x.tic == y.tic and x.prev == y.prev and x.curr == y.curr
+
 template combine(acc:var RTInfoObjList, x:var RTInfoObj):untyped =
   if x.isnottic:
     let
@@ -179,7 +182,7 @@ template combine(acc:var RTInfoObjList, x:var RTInfoObj):untyped =
     var children = x.children
     var ci = -1
     for i in 0..<acc.len:
-      if tic == acc[i].tic and prev == acc[i].prev and curr == acc[i].curr:
+      if identical(x,acc[i]):
         ci = i
         break
     if ci < 0:
@@ -216,9 +219,8 @@ proc record(tic:RTInfo, prev:RTInfo, curr:CodePoint, t:TicType, f:float):RTInfo 
   for i in prev.int+1..<rtiStack.len:
     # need to consolidate the stack
     combine(children, rtiStack[i])
-    if rtiStack[i].isnottic:
-      oh += rtiStack[i].overhead
-      oh += rtiStack[i].childrenOverhead
+    oh += rtiStack[i].overhead
+    oh += rtiStack[i].childrenOverhead
 
   # Now for current RTInfo
   let n = prev.int+1
@@ -236,10 +238,13 @@ proc record(tic:RTInfo, prev:RTInfo, curr:CodePoint, t:TicType, f:float):RTInfo 
 
 proc recordTic(this:CodePoint):RTInfo =
   # only needs prev and curr for tic
+  # childrenOverhead for others
+  # Assign overhead later.
   let n = rtiStack.len
   rtiStack.setlen(n+1)
   rtiStack[n].prev = CodePoint(-1)
   rtiStack[n].curr = this
+  rtiStack[n].childrenOverhead = 0
   RTInfo(n)
 
 template ticI(n = -1; s:SString = ""): untyped =
@@ -259,6 +264,7 @@ template ticI(n = -1; s:SString = ""): untyped =
       thisCode = CodePoint(-1)
   if threadNum==0:
     #echo "#### begin tic ",ii
+    let theTime = getTics()
     when not cname:
       for c in items(localCode):
         if cpHeap[c.int].name == s:
@@ -273,6 +279,7 @@ template ticI(n = -1; s:SString = ""): untyped =
       freezeTimers()
       restartTimer = true
     localTimer = getTics()
+    rtiStack[prevRTI.int].overhead = nsec(localTimer-theTime)
     #echo "#### end tic ",ii
   let
     localTimerStart {.inject, used.} = localTimer
@@ -358,6 +365,53 @@ template resetTimers* =
   for j in p..<len(rtiStack):
     reset rtiStack[j]
 
+template aggregateTimers* =
+  ## Aggregate timers in the local scope, starting from the local tic, and below.
+  ## It scrambles the local timer branches, and the direct children of the current timer.
+  when declared(localTic):
+    let
+      p = localTic.int+1
+      theTime = getTics()
+  else:
+    let p = 0
+  if p<rtiStack.len-2:
+    var
+      rs = RTInfoObjList(newListOfCap[RTInfoObj](defaultLocalRTICap))
+      oh:int64 = 0
+    for i in p..<rtiStack.len:
+      combine(rs, rtiStack[i])
+      when declared(localTic):
+        if rtiStack[i].istic:
+          # Combine ignores the tics, so we do it here.
+          # The overhead counts are lost if we don't have a localTic.
+          oh += rtiStack[i].overhead
+          oh += rtiStack[i].childrenOverhead
+    when declared(localTic):
+      rtiStack[localTic.int].childrenOverhead += oh
+    let nl = rs.len
+    if nl!=rtiStack.len-p:
+      when declared(prevRTI):
+        if prevRTI.int > p:  # It's fine if prevRTI.int==p.
+          let pr = prevRTI.int-p
+          if not(pr<nl and identical(rs[pr], rtiStack[prevRTI.int])):
+            # Need to make sure prevRTI is still correct.
+            # Unlike `record`, here we aggregate from local tic instead of prevRTI.
+            # `combine` considers identical timers if they have the save tic/curr/prev,
+            # and add local and children tocs together.
+            # In general, for a rtiStack:
+            # ... localTic [... A B C ... A ...] [X] [... B D E ...] X(=prevRTI) [... C D F ...]
+            # we get
+            # ... localTic [... A B C ...] X(=prevRTI) [... D E ... ] [... F ...]
+            for i in 1..<nl:
+              if identical(rs[i], rtiStack[prevRTI.int]):
+                prevRTI = RTInfo(p+i)
+                break
+      copyMem(rtiStack[p].addr, rs[0].addr, nl*sizeof(RTInfoObj))
+      rtiStack.setlen(p+nl)
+    free(rs)
+  when declared(localTic):
+    rtiStack[localTic.int].childrenOverhead += nsec(getTics()-theTime)
+
 type
   Tstr = tuple
     label: string
@@ -433,15 +487,16 @@ proc ppT(ts:List[RTInfoObj], prefix = "-",
 
 proc totalTime(ts:List[RTInfoObj], initIx = 0):int64 =
   for j in initIx..<ts.len:
-    if ts[j].isnottic:
+    if ts[j].istic:
+      result += ts[j].overhead
+    else:
       result += ts[j].nsec + ts[j].overhead
 
 proc totalOverhead(ts:List[RTInfoObj], initIx = 0):int64 =
   for j in initIx..<ts.len:
-    if ts[j].isnottic:
-      result += ts[j].overhead + ts[j].childrenOverhead
+    result += ts[j].overhead + ts[j].childrenOverhead
 
-template echoTimers*(expandAbove = 0.0, expandDropped = true):untyped =
+template echoTimers*(expandAbove = 0.0, expandDropped = true, aggregate = true):untyped =
   ## Echo timers in the local scope, starting from the local tic, and below.
   ## Expand children timers if the proportion of the current work time is more than expandAbove.
   const width = 104
@@ -449,6 +504,7 @@ template echoTimers*(expandAbove = 0.0, expandDropped = true):untyped =
     let p = localTic.int
   else:
     let p = 0
+  if aggregate: aggregateTimers()
   let
     pp = ppT(rtiStack, initIx = p, showAbove = expandAbove, showDropped = expandDropped)
     tt = totalTime(rtiStack, initIx = p)
@@ -550,12 +606,13 @@ when isMainModule:
     toc("block")
   DropWasteTimerRatio = 0.10
   test()
-  echoTimers()
+  echoTimers(aggregate=false)
   test()
-  echoTimers()
+  echoTimers(aggregate=false)
   resetTimers()
   test()
-  echoTimers()
+  echoTimers(aggregate=false)
+  test()
   test2()
   echoTimers()
   tic()
