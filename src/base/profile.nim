@@ -382,7 +382,7 @@ template aggregateTimers* =
     for i in p..<rtiStack.len:
       combine(rs, rtiStack[i])
       when declared(localTic):
-        if rtiStack[i].istic:
+        if istic(rtiStack[i]):
           # Combine ignores the tics, so we do it here.
           # The overhead counts are lost if we don't have a localTic.
           oh += rtiStack[i].overhead
