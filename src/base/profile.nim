@@ -345,8 +345,9 @@ proc reset(x:var RTInfoObj) =
   x.overhead = 0
   x.childrenOverhead = 0
   toDropTimer(x.curr) = false
-  for c in mitems(x.children):
-    reset c
+  if x.isnottic():  # The children list is not initialized for tics.
+    for c in mitems(x.children):
+      reset c
 
 template resetTimers* =
   ## Reset timers in the local scope, starting from the local tic, and below.
