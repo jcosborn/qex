@@ -168,8 +168,9 @@ template dropTimer(x:RTInfo):untyped = toDropTimer(rtiStack[x.int].curr) = true
 template identical(x,y:RTInfoObj):bool =
   x.tic == y.tic and x.prev == y.prev and x.curr == y.curr
 
+proc combineList(acc:var RTInfoObjList, xs:RTInfoObjList)  # forward declaration
 template combine(acc:var RTInfoObjList, x:var RTInfoObj):untyped =
-  if x.isnottic:
+  if isnottic(x):
     let
       nsec = x.nsec
       flops = x.flops
@@ -375,9 +376,9 @@ template aggregateTimers* =
   else:
     let p = 0
   if p<rtiStack.len-2:
-    var
-      rs = RTInfoObjList(newListOfCap[RTInfoObj](defaultLocalRTICap))
-      oh:int64 = 0
+    var rs = RTInfoObjList(newListOfCap[RTInfoObj](defaultLocalRTICap))
+    when declared(localTic):
+      var oh:int64 = 0
     for i in p..<rtiStack.len:
       combine(rs, rtiStack[i])
       when declared(localTic):
