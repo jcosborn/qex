@@ -1,0 +1,16 @@
+#!/bin/sh
+file="$1"
+label="${2:-.}"
+level="${3:-1}"
+awk -v "label=$label" -v "level=$level" '
+match($0,"^[`| -]*-"){
+	if($0 ~ label){
+		l=RLENGTH;
+		p=1;
+	}else{
+		if(RLENGTH<=l) p=0;
+	}
+}
+p && RLENGTH<=l+2*level
+' \
+	"$file"

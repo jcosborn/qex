@@ -1,0 +1,17 @@
+#!/bin/sh
+file="$1"
+label="${2:-.}"
+awk -v "label=$label" '
+match($0,"^[`| -]*-"){
+	l=int(RLENGTH/2);
+	t[l]=$0;
+	n[l]=NR;
+	if($0 ~ label){
+		for(i=0;i<=l;i++){
+			if(n[i]>pn) print t[i]
+		}
+		pn=NR;
+	}
+}
+' \
+	"$file"
