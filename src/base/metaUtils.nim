@@ -655,11 +655,11 @@ macro echoType*(x:typed):auto =
   result = newEmptyNode()
   echo x.getTypeInst.repr
   echo x.getTypeImpl.repr
-macro echoType*(x:typedesc):auto =
-  result = newEmptyNode()
-  let t1 = x.getType
-  echo t1.repr
-  echo t1[1].getType.repr
+#macro echoType*(x:typedesc):auto =
+#  result = newEmptyNode()
+#  let t1 = x.getType
+#  echo t1.repr
+#  echo t1[1].getType.repr
 macro echoTypeTree*(x:typed):auto =
   result = newEmptyNode()
   echo x.getTypeInst.treeRepr

@@ -31,7 +31,7 @@ proc run*(t: AgTape) =
 proc grad*(t: AgTape) =
   let n = t.ops.len - 1
   # t.ops[n].vars[^1]
-  for i in countdown(n, 1):
+  for i in countdown(n, 0):
     t.ops[i].bck(t.ops[i])
 
 template newAgOp[T,U](ip: T; op: U; ni,no: int; sv: seq[AgVarBase];
@@ -47,39 +47,82 @@ template newAgOp[T,U](ip: T; op: U; ni,no: int; sv: seq[AgVarBase];
   o
 
 proc addfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
-  op.outputs.obj = op.inputs[0].obj + op.inputs[1].obj
+  mixin add
+  add(op.outputs.obj, op.inputs[0].obj, op.inputs[1].obj)
 
 proc addbck[I,O](op: AgOp[I,O]) {.nimcall.} =
+  mixin assign
   if op.inputs[0].doGrad:
-    op.inputs[0].grad += op.outputs.grad
+    assign(op.inputs[0].grad, op.outputs.grad)
   if op.inputs[1].doGrad:
-    op.inputs[1].grad += op.outputs.grad
+    assign(op.inputs[1].grad, op.outputs.grad)
 
-proc add[R,T,U](r: AgVar[R], x: AgVar[T], y: AgVar[U]) =
-  assert(x.ctx == y.ctx)
-  let ctx = x.ctx
+proc add[R,T,U](c: AgTape, r: AgVar[R], x: AgVar[T], y: AgVar[U]) =
   var op = newAgOp((x,y), r, 2, 1, @[x.AgVarBase,y,r], addfwd, addbck)
-  ctx.ops.add op
+  c.ops.add op
   op.fwd(op)
+template add[R,T,U](r: AgVar[R], x: AgVar[T], y: AgVar[U]) =
+  r.ctx.add(r, x, y)
 
 
-type
-  FV = AgVar[float]
+proc mulfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
+  mixin mul
+  mul(op.outputs.obj, op.inputs[0].obj, op.inputs[1].obj)
 
-template newFV(c: AgTape, x: float): untyped =
-  var t = FV.new()
-  t.wantGrad = true
-  t.ctx = c
-  t.obj = x
-  t
+proc mulbck[I,O](op: AgOp[I,O]) {.nimcall.} =
+  mixin mul
+  if op.inputs[0].doGrad:  # mulna
+    mul(op.inputs[0].grad, op.outputs.grad, op.inputs[1].obj)
+  if op.inputs[1].doGrad:  # mulan
+    mul(op.inputs[1].grad, op.inputs[0].obj, op.outputs.grad)
 
-var c = AgTape.new()
+proc mul[R,T,U](c: AgTape, r: AgVar[R], x: AgVar[T], y: AgVar[U]) =
+  var op = newAgOp((x,y), r, 2, 1, @[x.AgVarBase,y,r], mulfwd, mulbck)
+  c.ops.add op
+  op.fwd(op)
+template mul[R,T,U](r: AgVar[R], x: AgVar[T], y: AgVar[U]) =
+  r.ctx.mul(r, x, y)
 
-var x = c.newFV(1.0)
-var y = c.newFV(2.0)
-var z = c.newFV(4.0)
 
-echo z.obj
-add(z, x, y)
-echo z.obj
 
+when isMainModule:
+  template assign(x: var SomeNumber; y: SomeNumber) =
+    x = y
+  template add(x: var SomeNumber; y,z: SomeNumber) =
+    x = y + z
+  template mul(x: var SomeNumber; y,z: SomeNumber) =
+    x = y * z
+  type
+    FV = AgVar[float]
+
+  template newFV(c: AgTape, x: float): untyped =
+    var t = FV.new()
+    t.wantGrad = true
+    t.doGrad = true
+    t.ctx = c
+    t.obj = x
+    t.grad = 0.0
+    t
+
+  var c = AgTape.new()
+  var c2 = AgTape.new()
+
+  var x = c.newFV(1.0)
+  var y = c.newFV(2.0)
+  var z = c.newFV(4.0)
+
+  echo z.obj
+  add(z, x, y)
+  echo z.obj
+
+  z.grad = 1.0
+  c.grad()
+  echo "x.grad: ", x.grad
+  echo "y.grad: ", y.grad
+
+  c2.mul(z, x, y)
+  z.grad = 2.0
+  c2.grad()
+  echo z.obj
+  echo "x.grad: ", x.grad
+  echo "y.grad: ", y.grad
