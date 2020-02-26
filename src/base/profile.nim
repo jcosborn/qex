@@ -174,6 +174,8 @@ template name(x:CodePoint):string = cpHeap[x.int].name
 template loc(x:CodePoint):II = cpHeap[x.int].loc
 template toDropTimer(x:CodePoint):bool = cpHeap[x.int].toDropTimer
 
+template overhead(x:RTInfoObj):untyped = x.overhead
+template childrenOverhead(x:RTInfoObj):untyped = x.childrenOverhead
 template istic(x:RTInfoObj):bool = x.prev.isNil
 template isnottic(x:RTInfoObj):bool = not x.prev.isNil
 
@@ -399,10 +401,10 @@ template aggregateTimers* =
         if istic(rtiStack[i]):
           # Combine ignores the tics, so we do it here.
           # The overhead counts are lost if we don't have a localTic.
-          oh += rtiStack[i].overhead
-          oh += rtiStack[i].childrenOverhead
+          oh += overhead(rtiStack[i])
+          oh += childrenOverhead(rtiStack[i])
     when declared(localTic):
-      rtiStack[localTic.int].childrenOverhead += oh
+      childrenOverhead(rtiStack[localTic.int]) += oh
     let nl = rs.len
     if nl!=rtiStack.len-p:
       when declared(prevRTI):
@@ -425,7 +427,7 @@ template aggregateTimers* =
       rtiStack.setlen(p+nl)
     free(rs)
   when declared(localTic):
-    rtiStack[localTic.int].childrenOverhead += nsec(getTics()-theTime)
+    childrenOverhead(rtiStack[localTic.int]) += nsec(getTics()-theTime)
 
 type
   Tstr = tuple
