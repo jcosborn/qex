@@ -375,59 +375,61 @@ proc reset(x:var RTInfoObj) =
 
 template resetTimers* =
   ## Reset timers in the local scope, starting from the local tic, and below.
-  when declared(localTic):
-    let p = localTic.int
-  else:
-    let p = 0
-  for j in p..<len(rtiStack):
-    reset rtiStack[j]
+  if threadNum==0:
+    when declared(localTic):
+      let p = localTic.int
+    else:
+      let p = 0
+    for j in p..<len(rtiStack):
+      reset rtiStack[j]
 
 template aggregateTimers* =
   ## Aggregate timers in the local scope, starting from the local tic, and below.
   ## It scrambles the local timer branches, and the direct children of the current timer.
-  when declared(localTic):
-    let
-      p = localTic.int+1
-      theTime = getTics()
-  else:
-    let p = 0
-  if p<rtiStack.len-2:
-    var rs = RTInfoObjList(newListOfCap[RTInfoObj](defaultLocalRTICap))
+  if threadNum==0:
     when declared(localTic):
-      var oh:int64 = 0
-    for i in p..<rtiStack.len:
-      combine(rs, rtiStack[i])
+      let
+        p = localTic.int+1
+        theTime = getTics()
+    else:
+      let p = 0
+    if p<rtiStack.len-2:
+      var rs = RTInfoObjList(newListOfCap[RTInfoObj](defaultLocalRTICap))
       when declared(localTic):
-        if istic(rtiStack[i]):
-          # Combine ignores the tics, so we do it here.
-          # The overhead counts are lost if we don't have a localTic.
-          oh += overhead(rtiStack[i])
-          oh += childrenOverhead(rtiStack[i])
+        var oh:int64 = 0
+      for i in p..<rtiStack.len:
+        combine(rs, rtiStack[i])
+        when declared(localTic):
+          if istic(rtiStack[i]):
+            # Combine ignores the tics, so we do it here.
+            # The overhead counts are lost if we don't have a localTic.
+            oh += overhead(rtiStack[i])
+            oh += childrenOverhead(rtiStack[i])
+      when declared(localTic):
+        childrenOverhead(rtiStack[localTic.int]) += oh
+      let nl = rs.len
+      if nl!=rtiStack.len-p:
+        when declared(prevRTI):
+          if prevRTI.int > p:  # It's fine if prevRTI.int==p.
+            let pr = prevRTI.int-p
+            if not(pr<nl and identical(rs[pr], rtiStack[prevRTI.int])):
+              # Need to make sure prevRTI is still correct.
+              # Unlike `record`, here we aggregate from local tic instead of prevRTI.
+              # `combine` considers identical timers if they have the save tic/curr/prev,
+              # and add local and children tocs together.
+              # In general, for a rtiStack:
+              # ... localTic [... A B C ... A ...] [X] [... B D E ...] X(=prevRTI) [... C D F ...]
+              # we get
+              # ... localTic [... A B C ...] X(=prevRTI) [... D E ... ] [... F ...]
+              for i in 1..<nl:
+                if identical(rs[i], rtiStack[prevRTI.int]):
+                  prevRTI = RTInfo(p+i)
+                  break
+        copyMem(rtiStack[p].addr, rs[0].addr, nl*sizeof(RTInfoObj))
+        rtiStack.setlen(p+nl)
+      free(rs)
     when declared(localTic):
-      childrenOverhead(rtiStack[localTic.int]) += oh
-    let nl = rs.len
-    if nl!=rtiStack.len-p:
-      when declared(prevRTI):
-        if prevRTI.int > p:  # It's fine if prevRTI.int==p.
-          let pr = prevRTI.int-p
-          if not(pr<nl and identical(rs[pr], rtiStack[prevRTI.int])):
-            # Need to make sure prevRTI is still correct.
-            # Unlike `record`, here we aggregate from local tic instead of prevRTI.
-            # `combine` considers identical timers if they have the save tic/curr/prev,
-            # and add local and children tocs together.
-            # In general, for a rtiStack:
-            # ... localTic [... A B C ... A ...] [X] [... B D E ...] X(=prevRTI) [... C D F ...]
-            # we get
-            # ... localTic [... A B C ...] X(=prevRTI) [... D E ... ] [... F ...]
-            for i in 1..<nl:
-              if identical(rs[i], rtiStack[prevRTI.int]):
-                prevRTI = RTInfo(p+i)
-                break
-      copyMem(rtiStack[p].addr, rs[0].addr, nl*sizeof(RTInfoObj))
-      rtiStack.setlen(p+nl)
-    free(rs)
-  when declared(localTic):
-    childrenOverhead(rtiStack[localTic.int]) += nsec(getTics()-theTime)
+      childrenOverhead(rtiStack[localTic.int]) += nsec(getTics()-theTime)
 
 type
   Tstr = tuple
@@ -516,32 +518,34 @@ proc totalOverhead(ts:List[RTInfoObj], initIx = 0):int64 =
 template echoTimers*(expandAbove = 0.0, expandDropped = true, aggregate = true):untyped =
   ## Echo timers in the local scope, starting from the local tic, and below.
   ## Expand children timers if the proportion of the current work time is more than expandAbove.
-  const width = 104
-  when declared(localTic):
-    let p = localTic.int
-  else:
-    let p = 0
-  if aggregate: aggregateTimers()
-  let
-    pp = ppT(rtiStack, initIx = p, showAbove = expandAbove, showDropped = expandDropped)
-    tt = totalTime(rtiStack, initIx = p)
-    oh = totalOverhead(rtiStack, initIx = p)
-  var n = 24
-  for (s,_) in pp:
-    if n<s.len: n = s.len
-  inc n
-  let notshowing = if expandAbove>0.0: ", not expanding contributions less than " & $(1e2*expandAbove) & " %" else:""
-  echo "Timer total ",(tt.float*1e-6)|(0,-3)," ms, overhead ",(oh.float*1e-6)|(0,-3)," ms ~ ",(1e2*oh.float/tt.float)|(0,-1)," %, memory ",rtiListLength*sizeof(RTInfoObj)," B, max ",rtiListLengthMax*sizeof(RTInfoObj)," B",notshowing
-  echo '='.repeat(width)
-  echo "file(lines)"|(-n), "%"|6, "OH%"|6, "microsecs"|12, "OH"|8, "count"|9, "ns/count"|14, "OH/c"|8, "mf"|8, " label"
-  echo '='.repeat(width)
-  for (s,t) in pp:
-    echo s|(-n,'.'), t
-  echo '='.repeat(width)
+  if threadNum==0:
+    const width = 104
+    when declared(localTic):
+      let p = localTic.int
+    else:
+      let p = 0
+    if aggregate: aggregateTimers()
+    let
+      pp = ppT(rtiStack, initIx = p, showAbove = expandAbove, showDropped = expandDropped)
+      tt = totalTime(rtiStack, initIx = p)
+      oh = totalOverhead(rtiStack, initIx = p)
+    var n = 24
+    for (s,_) in pp:
+      if n<s.len: n = s.len
+    inc n
+    let notshowing = if expandAbove>0.0: ", not expanding contributions less than " & $(1e2*expandAbove) & " %" else:""
+    echo "Timer total ",(tt.float*1e-6)|(0,-3)," ms, overhead ",(oh.float*1e-6)|(0,-3)," ms ~ ",(1e2*oh.float/tt.float)|(0,-1)," %, memory ",rtiListLength*sizeof(RTInfoObj)," B, max ",rtiListLengthMax*sizeof(RTInfoObj)," B",notshowing
+    echo '='.repeat(width)
+    echo "file(lines)"|(-n), "%"|6, "OH%"|6, "microsecs"|12, "OH"|8, "count"|9, "ns/count"|14, "OH/c"|8, "mf"|8, " label"
+    echo '='.repeat(width)
+    for (s,t) in pp:
+      echo s|(-n,'.'), t
+    echo '='.repeat(width)
 
 proc echoTimersRaw* =
-  echo cpHeap
-  echo rtiStack
+  if threadNum==0:
+    echo cpHeap
+    echo rtiStack
 
 when isMainModule:
   import os
