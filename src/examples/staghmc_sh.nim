@@ -563,6 +563,8 @@ proc mdvAllfga(ts,gs:openarray[float]) =
           sg[mu] := sgg[mu]
     mdvf(updateF, sforce, ts[1..^1])
   toc("MD")
+  GC_fullCollect()
+  toc("GC")
 
 let
   (V,T) = newIntegratorPair(mdvAllfga, mdt)
