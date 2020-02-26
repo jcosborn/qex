@@ -88,7 +88,7 @@ macro makeEchos(n:static[int]):auto =
     for j in 0..<i: t[3].add ea[j]
     result.add t
   #echo result.repr
-makeEchos(10)
+makeEchos(64)
 
 proc unwrap(x:NimNode):seq[NimNode] =
   result = @[]
