@@ -127,6 +127,7 @@ proc solve*(state: var CgState; op: any; sp: var SolverParams) =
           subset:
             fr2 = (b - Ap).norm2
           echo "    ", fr2, "    ", fr2/b2
+        if itn mod 64 == 0: aggregateTimers()
       toc("cg iterations")
       if threadNum==0:
         itn0 = itn
