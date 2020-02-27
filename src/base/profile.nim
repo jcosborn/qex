@@ -150,8 +150,8 @@ proc `==`(x,y:RTInfo):bool = x.int==y.int
 proc `==`(x,y:CodePoint):bool = x.int==y.int
 
 const
-  defaultRTICap = 512
-  defaultLocalRTICap = 8
+  defaultRTICap {.intDefine.} = 512
+  defaultLocalRTICap {.intDefine.} = 2
 
 var
   rtiStack = newListOfCap[RTInfoObj](defaultRTICap)
