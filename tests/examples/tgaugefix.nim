@@ -47,12 +47,12 @@ suite "Test Gauge Fixing":
     let p0 = g.plaq
     g1.gaugeTransform(g, t1)
     let p1 = g1.plaq
-    CT = 1e-10
+    CT = 1e-8
     check(p0 ~ p1)
     g2.gaugeTransform(g1, t2)
     let d = getDiff(g, g2).sqrt
     echo "RMS diff: ", d
-    check(d <= 1e-9)
+    check(d <= 1e-8)
 
   test "gauge fix from transform of unity":
     threads:
