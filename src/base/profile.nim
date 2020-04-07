@@ -62,30 +62,41 @@ template listChangeLen[T](n:int):untyped =
       rtiListLengthMax = rtiListLength
 
 proc newList[T](len = 0):List[T] {.noinit.} =
-  var cap = 8
+  var cap = if len == 0: 0 else: 1
   while cap < len: cap *= 2
   result.len = len
   result.cap = cap
-  result.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap))
-  listChangeLen[T](cap)
+  if cap > 0:
+    result.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap))
+    listChangeLen[T](cap)
+  else:
+    result.data = nil
 proc newListOfCap[T](cap:int):List[T] {.noinit.} =
   result.len = 0
   result.cap = cap
-  result.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap))
-  listChangeLen[T](cap)
+  if cap > 0:
+    result.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap))
+    listChangeLen[T](cap)
+  else:
+    result.data = nil
 proc len[T](ls:List[T]):int = ls.len
 proc setLen[T](ls:var List[T], len:int) =
   if len > ls.cap:
-    var cap = ls.cap
-    listChangeLen[T](-cap)
-    if cap == 0: cap = 8
-    while cap < len: cap *= 2
+    let cap0 = ls.cap
+    var cap = cap0
+    if cap0 == 0:
+      cap = 1
+      while cap < len: cap *= 2
+      ls.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap))
+    else:
+      while cap < len: cap *= 2
+      ls.data = cast[ptr UncheckedArray[T]](realloc(ls.data, sizeof(T)*cap))
     ls.cap = cap
-    ls.data = cast[ptr UncheckedArray[T]](realloc(ls.data, sizeof(T)*cap))
-    listChangeLen[T](cap)
+    listChangeLen[T](cap-cap0)
   ls.len = len
 proc free[T](ls:var List[T]) =
-  dealloc(ls.data)
+  if ls.cap > 0:
+    dealloc(ls.data)
   listChangeLen[T](-ls.cap)
   ls.len = 0
   ls.cap = 0
@@ -151,7 +162,7 @@ proc `==`(x,y:CodePoint):bool = x.int==y.int
 
 const
   defaultRTICap {.intDefine.} = 512
-  defaultLocalRTICap {.intDefine.} = 2
+  defaultLocalRTICap {.intDefine.} = 0
 
 var
   rtiStack = newListOfCap[RTInfoObj](defaultRTICap)
