@@ -26,6 +26,7 @@ method commsize*(c: Comm): int {.base.} = discard
 method isMaster*(c: Comm): bool {.base.} = discard
 
 method barrier*(c: Comm) {.base.} = discard
+method broadcast*(c: Comm, p: pointer, bytes: int) {.base.} = discard
 method allReduce*(c: Comm, x: var float64) {.base.} = discard
 method allReduce*(c: Comm, x: ptr float32, n: int) {.base.} = discard
 method allReduce*(c: Comm, x: ptr float64, n: int) {.base.} = discard
@@ -43,6 +44,15 @@ method waitRecvs*(c: Comm; i0,i1: int; free=true) {.base.} = discard
 
 template rank*(c: Comm): int = commrank(c)
 template size*(c: Comm): int = commsize(c)
+
+template broadcast*(c: Comm, x: var SomeNumber) =
+  c.broadcast(cast[pointer](addr x), sizeof(x))
+
+template broadcast*(c: Comm, x: var string) =
+  var n = x.len
+  c.broadcast(n)
+  x.setLen(n)
+  c.broadcast(cast[pointer](addr x[0]), n)
 
 template allReduce*(c: Comm, x: var SomeNumber) =
   var t = float(x)
@@ -130,6 +140,9 @@ method isMaster*(c: CommQmp): bool =
 method barrier*(c: CommQmp) =
   QMP_comm_barrier(c.comm)
 
+method broadcast*(c: CommQMP, p: pointer, bytes: int) =
+  QMP_comm_broadcast(c.comm, p, bytes)
+
 method allReduce*(c: CommQmp, x: var float64) =
   QMP_comm_sum_double(c.comm, addr x)
 
@@ -210,11 +223,18 @@ method waitRecvs*(c: CommQmp; i0,i1: int; free=true) =
 
 when isMainModule:
   commsInit()
-  echo "rank ", myRank, "/", nRanks
-  printf("rank %i/%i\n", myRank, nRanks)
+  #echoAll "rank ", myRank, "/", nRanks
+  #printf("rank %i/%i\n", myRank, nRanks)
 
   var c = getComm()
   let orank = 1-myRank
+
+  c.barrier
+
+  var bcst = myRank + 10
+  echoAll myRank, "/", nRanks, " bcst: ", bcst
+  c.broadcast(bcst)
+  echoAll myRank, "/", nRanks, " bcst: ", bcst
 
   var sx = 10
   var rx = 0

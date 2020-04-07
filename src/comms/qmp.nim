@@ -38,6 +38,7 @@ proc QMP_abort*(error_code:cint) {.qmp.}
 proc QMP_get_number_of_nodes*():cint {.qmp.}
 proc QMP_get_node_number*():cint {.qmp.}
 proc QMP_barrier*() {.qmp.}
+proc QMP_broadcast*(buffer: pointer, nbytes: csize_t) {.qmp.}
 proc QMP_sum_float*(value:ptr cfloat) {.qmp.}
 proc QMP_sum_double*(value:ptr cdouble) {.qmp.}
 proc QMP_comm_sum_double*(comm: QMP_comm_t, value:ptr cdouble) {.qmp.}
@@ -54,9 +55,10 @@ proc QMP_comm_get_default*(): QMP_comm_t {.qmp.}
 proc QMP_comm_get_number_of_nodes*(comm: QMP_comm_t):cint {.qmp.}
 proc QMP_comm_get_node_number*(comm: QMP_comm_t):cint {.qmp.}
 proc QMP_comm_barrier*(comm: QMP_comm_t) {.qmp.}
+proc QMP_comm_broadcast*(comm: QMP_comm_t, buffer: pointer, nbytes: csize_t) {.qmp.}
 
-
-
+template QMP_comm_broadcast*(c: QMP_comm_t, b: pointer, n: int) =
+  QMP_comm_broadcast(c, b, (csize_t)n)
 
 proc qmpSum*(v:var int) =
   var t = v.float
