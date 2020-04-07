@@ -1,4 +1,5 @@
 import macros
+import parseutils
 import strUtils
 import metaUtils
 
@@ -20,6 +21,10 @@ iterator range*[T: SomeInteger](count: T): T =
   while res < count:
     yield res
     inc res
+
+proc isInteger*(s: string):bool =
+  var t:int
+  parseInt(s, t) == s.len
 
 template `$&`*(x: untyped): string =
   toHex(unsafeAddrInt(x))

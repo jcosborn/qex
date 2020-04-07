@@ -14,10 +14,10 @@ proc setup(defaultLat:openarray[int],
     fseed:uint64 = uint64(11^11), gseed:uint64 = uint64(7^7)):auto =
   var lat:seq[int]
   let pc = paramCount()
-  if pc > 0 and paramStr(1).isDigit:
+  if pc > 0 and paramStr(1).isInteger:
     lat = @[]
     for i in 1..pc:
-      if not paramStr(i).isDigit: break
+      if not paramStr(i).isInteger: break
       lat.add paramStr(i).parseInt
   else:
     lat = @defaultLat

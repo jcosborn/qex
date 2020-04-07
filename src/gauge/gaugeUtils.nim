@@ -513,7 +513,7 @@ proc wline*(g:any, line:openarray[int]):auto =
   toc("wline trace")
 
 template defaultSetup*:untyped {.dirty.} =
-  bind paramCount, paramStr, isDigit, parseInt, fileExists, getFileLattice
+  bind paramCount, paramStr, isInteger, parseInt, fileExists, getFileLattice
   echo "rank ", myRank, "/", nRanks
   threads:
     echo "thread ", threadNum, "/", numThreads
@@ -523,16 +523,16 @@ template defaultSetup*:untyped {.dirty.} =
     if fileExists(defaultGaugeFile):
       fn = defaultGaugeFile
   if paramCount()>0:
-    if (not isDigit(paramStr(1)[0])) and paramStr(1)[0]!='-':
+    if (not isInteger(paramStr(1))) and paramStr(1)[0]!='-':
       fn = paramStr(1)
   if fn != "":
     lat = getFileLattice(fn)
   else:
-    if paramCount()>0 and isDigit(paramStr(1)[0]):
+    if paramCount()>0 and isInteger(paramStr(1)):
       lat.newSeq(0)
       var pc = paramCount()
       for i in 1..pc:
-        if not isDigit(paramStr(i)[0]): break
+        if not isInteger(paramStr(i)): break
         lat.add parseInt(paramStr(i))
     else:
       when declared(defaultLat):
@@ -672,10 +672,10 @@ proc setupLattice*(lat:openarray[int]):auto =
     fn = ""
   let pc = paramCount()
   if pc > 0:
-    if paramStr(1)[0].isDigit:
+    if paramStr(1).isInteger:
       lat = @[]
       for i in 1..pc:
-        if not paramStr(i)[0].isDigit: break
+        if not paramStr(i).isInteger: break
         lat.add paramStr(i).parseInt
     elif paramStr(1)[0] != '-':
       fn = paramStr(1)
