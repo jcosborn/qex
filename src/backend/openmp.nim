@@ -6,16 +6,16 @@ import base/omp
 template mkMemoryPragma*:untyped =
   {.pragma: restrict, codegenDecl: "$# __restrict__ $#".}
   {.pragma: aligned, codegenDecl: "$# $# __attribute__((aligned))".}
-  {.pragma: aligned1, codegenDecl: "$# $# __attribute__((aligned(8*1)))".}
-  {.pragma: aligned2, codegenDecl: "$# $# __attribute__((aligned(8*2)))".}
-  {.pragma: aligned4, codegenDecl: "$# $# __attribute__((aligned(8*4)))".}
-  {.pragma: aligned8, codegenDecl: "$# $# __attribute__((aligned(8*8)))".}
-  {.pragma: aligned16, codegenDecl: "$# $# __attribute__((aligned(8*16)))".}
-  {.pragma: aligned32, codegenDecl: "$# $# __attribute__((aligned(8*32)))".}
-  {.pragma: aligned64, codegenDecl: "$# $# __attribute__((aligned(8*64)))".}
-  {.pragma: aligned128, codegenDecl: "$# $# __attribute__((aligned(8*128)))".}
-  {.pragma: aligned256, codegenDecl: "$# $# __attribute__((aligned(8*256)))".}
-  {.pragma: alignedType, codegenDecl: "$# $# __attribute__((aligned(8*sizeof($1))))".}
+  {.pragma: aligned1, codegenDecl: "$# $# __attribute__((aligned(1)))".}
+  {.pragma: aligned2, codegenDecl: "$# $# __attribute__((aligned(2)))".}
+  {.pragma: aligned4, codegenDecl: "$# $# __attribute__((aligned(4)))".}
+  {.pragma: aligned8, codegenDecl: "$# $# __attribute__((aligned(8)))".}
+  {.pragma: aligned16, codegenDecl: "$# $# __attribute__((aligned(16)))".}
+  {.pragma: aligned32, codegenDecl: "$# $# __attribute__((aligned(32)))".}
+  {.pragma: aligned64, codegenDecl: "$# $# __attribute__((aligned(64)))".}
+  {.pragma: aligned128, codegenDecl: "$# $# __attribute__((aligned(128)))".}
+  {.pragma: aligned256, codegenDecl: "$# $# __attribute__((aligned(256)))".}
+  {.pragma: alignedType, codegenDecl: "$# $# __attribute__((aligned(sizeof($1))))".}
 
 proc alignatImpl(n:NimNode, byte:int): NimNode =
   result = n.copyNimNode
@@ -51,30 +51,30 @@ macro procInst*(p: typed): auto =
 macro makeCall*(p: proc, x: tuple): NimNode =
   result = newCall(p).addChildrenFrom(x)
 
-proc omp_target_alloc*(size: csize, device_num: cint): pointer {.omp.}
+proc omp_target_alloc*(size: csize_t, device_num: cint): pointer {.omp.}
 proc omp_target_free*(device_ptr: pointer, device_num: cint) {.omp.}
 proc omp_target_memcpy*(dst: pointer, src: pointer;
-    length, dst_offset, src_offset: csize;
+    length, dst_offset, src_offset: csize_t;
     dst_device_num, src_device_num: cint): cint {.omp.}
 proc omp_get_default_device*: cint {.omp.}
 proc omp_get_initial_device*: cint {.omp.}
 proc omp_get_num_teams*: cint {.omp.}
 proc omp_get_team_num*: cint {.omp.}
 
-template omp_target_alloc*(size: csize): pointer =
+template omp_target_alloc*(size: csize_t): pointer =
   omp_target_alloc(size, omp_get_default_device())
-template omp_target_memcpy_tocpu*(dst: pointer, src: pointer; length: csize): cint =
+template omp_target_memcpy_tocpu*(dst: pointer, src: pointer; length: csize_t): cint =
   omp_target_memcpy(dst, src, length, 0, 0, omp_get_initial_device(), omp_get_default_device())
-template omp_target_memcpy_togpu*(dst: pointer, src: pointer; length: csize): cint =
+template omp_target_memcpy_togpu*(dst: pointer, src: pointer; length: csize_t): cint =
   omp_target_memcpy(dst, src, length, 0, 0, omp_get_default_device(), omp_get_initial_device())
 template omp_target_free*(device_ptr: pointer) =
   omp_target_free(device_ptr, omp_get_default_device())
 
-template gpuMalloc*(size:csize):pointer = omp_target_alloc(size)
+template gpuMalloc*(size csize_t):pointer = omp_target_alloc(size)
 template gpuFree*(device_ptr:pointer) = omp_target_free(device_ptr)
-template gpuMemCpyToCPU*(dst: pointer, src: pointer; length: csize): cint =
+template gpuMemCpyToCPU*(dst: pointer, src: pointer; length: csize_t): cint =
   omp_target_memcpy_tocpu(dst, src, length)
-template gpuMemCpyToGPU*(dst: pointer, src: pointer; length: csize): cint =
+template gpuMemCpyToGPU*(dst: pointer, src: pointer; length: csize_t): cint =
   omp_target_memcpy_togpu(dst, src, length)
 
 template toPointer*(x: typed): pointer =
@@ -103,8 +103,8 @@ template openmpDefs(body: untyped): untyped =
     let
       numThreads = omp_get_num_threads()
       threadNum = omp_get_thread_num()
-    template getThreadNum: untyped {.used.} = teamNum.csize * numThreads.csize + threadNum.csize
-    template getNumThreads: untyped {.used.} = numTeams.csize * numThreads.csize
+    template getThreadNum: untyped {.used.} = teamNum.csize_t * numThreads.csize_t + threadNum.csize_t
+    template getNumThreads: untyped {.used.} = numTeams.csize_t * numThreads.csize_t
     {.emit:"#define nimZeroMem(b,len) memset((b),0,(len))".}
     inlineProcs:
       body

@@ -34,8 +34,8 @@ proc open(wr: var Writer; ql: var QIO_Layout, md: string) =
   for i in 0..<nd:
     wr.latsize[i] = wr.layout.physGeom[i].cint
   ql.latsize = wr.latsize[0].addr
-  ql.volume = wr.layout.physVol
-  ql.sites_on_node = wr.layout.nSites
+  ql.volume = wr.layout.physVol.csize_t
+  ql.sites_on_node = wr.layout.nSites.csize_t
   ql.this_node = wr.layout.myRank.cint
   ql.number_of_nodes = wr.layout.nRanks.cint
   if writenodes<=0:
@@ -91,7 +91,7 @@ proc close*(wr: var Writer) =
 import typetraits
 import qioInternal
 
-proc get[T](buf: cstring; index: csize; count: cint; arg: pointer) =
+proc get[T](buf: cstring; index: csize_t; count: cint; arg: pointer) =
   type destT = cArray[IOtype(T)]
   type srcT1 = cArray[T]
   type srcT = cArray[ptr srcT1]
@@ -106,7 +106,7 @@ proc get[T](buf: cstring; index: csize; count: cint; arg: pointer) =
     let t = masked(src[i][vi], vlm)
     dest[i] := t
 
-proc getP[T](buf: cstring; index: csize; count: cint; arg: pointer) =
+proc getP[T](buf: cstring; index: csize_t; count: cint; arg: pointer) =
   type destT = cArray[IOtypeP(T)]
   type srcT1 = cArray[T]
   type srcT = cArray[ptr srcT1]
@@ -161,7 +161,7 @@ proc write[T](wr: var Writer, v: var openArray[ptr T], lat: openArray[int],
     var recInfo = QIO_create_record_info(QIO_FIELD, lower[0].addr,
                                          upper[0].addr, nd.cint, datatype,
                                          precs, nc, ns, size.cint, nv)
-    wr.status = QIO_write(wr.qw, recInfo, qioMd, get[T], vsize.csize,
+    wr.status = QIO_write(wr.qw, recInfo, qioMd, get[T], vsize.csize_t,
                           wordSize.cint, v[0].addr)
     QIO_destroy_record_info(recInfo)
   else:
@@ -176,7 +176,7 @@ proc write[T](wr: var Writer, v: var openArray[ptr T], lat: openArray[int],
     var recInfo = QIO_create_record_info(QIO_FIELD, lower[0].addr,
                                          upper[0].addr, nd.cint, datatype,
                                          precs, nc, ns, size.cint, nv)
-    wr.status = QIO_write(wr.qw, recInfo, qioMd, getP[T], vsize.csize,
+    wr.status = QIO_write(wr.qw, recInfo, qioMd, getP[T], vsize.csize_t,
                           wordSize.cint, v[0].addr)
     QIO_destroy_record_info(recInfo);
 

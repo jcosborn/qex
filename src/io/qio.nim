@@ -44,7 +44,7 @@ var QIO_TRUNC*{.importc,qio.}: cint
 type
   QIO_String* {.qio.} = object
     string*: cstring
-    length*: csize
+    length*: csize_t
 
 type
   QIO_Layout* {.qio.} = object
@@ -54,8 +54,8 @@ type
     num_sites*: proc (node: cint): cint {.nimcall.}
     latsize*: ptr cint
     latdim*: cint
-    volume*: csize
-    sites_on_node*: csize
+    volume*: csize_t
+    sites_on_node*: csize_t
     this_node*: cint
     number_of_nodes*: cint
   DML_io_node_t* = proc (a2: cint): cint {.nimcall.}
@@ -100,9 +100,9 @@ proc QIO_get_typesize*(record_info:ptr QIO_RecordInfo):cint {.qio.}
 proc QIO_get_datacount*(record_info:ptr QIO_RecordInfo):cint {.qio.}
 proc QIO_read*(r:ptr QIO_Reader; record_info: ptr QIO_RecordInfo;
                xml_record: ptr QIO_String;
-               put:proc(buf:cstring; index:csize; count:cint; arg:pointer)
+               put:proc(buf:cstring; index:csize_t; count:cint; arg:pointer)
                {.nimcall.};
-               datum_size: csize; word_size: cint; arg: pointer):cint {.qio.}
+               datum_size: csize_t; word_size: cint; arg: pointer):cint {.qio.}
 proc QIO_get_reader_latdim*(`in`:ptr QIO_Reader):cint {.qio.}
 proc QIO_get_reader_latsize*(`in`:ptr QIO_Reader):ptr cArray[cint] {.qio.}
 
@@ -112,8 +112,8 @@ proc QIO_open_write*(xml_file: ptr QIO_String; filename: cstring; volfmt: cint;
 proc QIO_close_write*(`out`: ptr QIO_Writer): cint {.qio.}
 proc QIO_write*(wr:ptr QIO_Writer, record_info:ptr QIO_RecordInfo,
     xml_record:ptr QIO_String, 
-    get:proc(buf:cstring, index:csize, count:cint, arg:pointer){.nimcall.},
-    datum_size:csize, word_size:cint, arg:pointer):cint {.qio.}
+    get:proc(buf:cstring, index:csize_t, count:cint, arg:pointer){.nimcall.},
+    datum_size:csize_t, word_size:cint, arg:pointer):cint {.qio.}
 proc QIO_create_record_info*(recordtype:cint, lower:ptr cint,
     upper:ptr cint, n:cint,
     datatype:cstring, precision:cstring,

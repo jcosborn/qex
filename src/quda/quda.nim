@@ -51,9 +51,9 @@ type
     make_resident_mom* {.importc: "make_resident_mom".}: cint ## *< Make the result momentum field resident
     return_result_gauge* {.importc: "return_result_gauge".}: cint ## *< Return the result gauge field
     return_result_mom* {.importc: "return_result_mom".}: cint ## *< Return the result momentum field
-    gauge_offset* {.importc: "gauge_offset".}: csize ## *< Offset into MILC site struct to the gauge field (only if gauge_order=MILC_SITE_GAUGE_ORDER)
-    mom_offset* {.importc: "mom_offset".}: csize ## *< Offset into MILC site struct to the momentum field (only if gauge_order=MILC_SITE_GAUGE_ORDER)
-    site_size* {.importc: "site_size".}: csize ## *< Size of MILC site struct (only if gauge_order=MILC_SITE_GAUGE_ORDER)
+    gauge_offset* {.importc: "gauge_offset".}: csize_t ## *< Offset into MILC site struct to the gauge field (only if gauge_order=MILC_SITE_GAUGE_ORDER)
+    mom_offset* {.importc: "mom_offset".}: csize_t ## *< Offset into MILC site struct to the momentum field (only if gauge_order=MILC_SITE_GAUGE_ORDER)
+    site_size* {.importc: "site_size".}: csize_t ## *< Size of MILC site struct (only if gauge_order=MILC_SITE_GAUGE_ORDER)
 
 
 ## *

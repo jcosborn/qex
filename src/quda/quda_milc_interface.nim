@@ -19,10 +19,10 @@ type
                       header: "quda_milc_interface.h", bycopy.} = object
     site* {.importc: "site".}: pointer ## * Pointer to beginning of site array
     link* {.importc: "link".}: pointer ## * Pointer to link field (only used if site is not set)
-    link_offset* {.importc: "link_offset".}: csize ## * Offset to link entry in site struct (bytes)
+    link_offset* {.importc: "link_offset".}: csize_t ## * Offset to link entry in site struct (bytes)
     mom* {.importc: "mom".}: pointer ## * Pointer to link field (only used if site is not set)
-    mom_offset* {.importc: "mom_offset".}: csize ## * Offset to mom entry in site struct (bytes)
-    size* {.importc: "size".}: csize ## * Size of site struct (bytes)
+    mom_offset* {.importc: "mom_offset".}: csize_t ## * Offset to mom entry in site struct (bytes)
+    size* {.importc: "size".}: csize_t ## * Size of site struct (bytes)
 
 
 ## *
@@ -145,7 +145,7 @@ proc qudaFinalize*() {.importc: "qudaFinalize", header: "quda_milc_interface.h".
 ##  @return Pointer to allocated memory
 ##
 
-proc qudaAllocatePinned*(bytes: csize): pointer {.importc: "qudaAllocatePinned",
+proc qudaAllocatePinned*(bytes: csize_t): pointer {.importc: "qudaAllocatePinned",
     header: "quda_milc_interface.h".}
 ## *
 ##  Free pinned memory

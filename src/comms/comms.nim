@@ -160,14 +160,14 @@ method nsends*(c: CommQmp): int = c.smsg.len
 method nrecvs*(c: CommQmp): int = c.rmsg.len
 
 method pushSend*(c: CommQmp, rank: int, p: pointer, bytes: int) =
-  let m = QMP_declare_msgmem(p, bytes)
+  let m = QMP_declare_msgmem(p, bytes.csize_t)
   let h = QMP_declare_send_to(m, rank.cint, 0.cint)
   let stat = QMP_start(h)
   c.smem.add m
   c.smsg.add h
 
 method pushRecv*(c: CommQmp, rank: int, p: pointer, bytes: int) =
-  let m = QMP_declare_msgmem(p, bytes)
+  let m = QMP_declare_msgmem(p, bytes.csize_t)
   let h = QMP_declare_receive_from(m, rank.cint, 0.cint)
   let stat = QMP_start(h)
   c.rmem.add m

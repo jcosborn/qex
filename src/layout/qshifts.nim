@@ -55,7 +55,7 @@ proc prepareShiftBufsQ*(sb: openArray[ptr ShiftBufQ];
     while i < n:
       sb[i].sbuf = cast[type(sb[i].sbuf)](sbuf)
       if si[i].nSendRanks > 0:
-        sb[i].sqmpmem = QMP_declare_msgmem(sbuf, sbs)
+        sb[i].sqmpmem = QMP_declare_msgmem(sbuf, sbs.csize_t)
         sb[i].smsg = QMP_declare_send_to(sb[i].sqmpmem, si[i].sendRanks[0], 0)
         #echo &"->{si[i].sendRanks[0]}: {sbs}"
       inc(i)
@@ -65,7 +65,7 @@ proc prepareShiftBufsQ*(sb: openArray[ptr ShiftBufQ];
     while i < n:
       sb[i].rbuf = cast[type(sb[i].rbuf)](rbuf)
       if si[i].nRecvRanks > 0:
-        sb[i].rqmpmem = QMP_declare_msgmem(rbuf, rbs)
+        sb[i].rqmpmem = QMP_declare_msgmem(rbuf, rbs.csize_t)
         sb[i].rmsg = QMP_declare_receive_from(sb[i].rqmpmem,
                                               si[i].recvRanks[0], 0)
         #echo &"<-{si[i].recvRanks[0]}: {rbs}"

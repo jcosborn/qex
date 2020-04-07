@@ -54,24 +54,24 @@ proc `$`*(error: cudaError_t): string =
 converter toBool*(e: cudaError_t): bool =
   cast[cint](e) != cast[cint](cudaSuccess)
 
-proc cudaMalloc*(p:ptr pointer, size: csize): cudaError_t
+proc cudaMalloc*(p:ptr pointer, size: csize_t): cudaError_t
   {.importC,header:"cuda_runtime.h".}
-template cudaMalloc*(p:pointer, size: csize): cudaError_t =
+template cudaMalloc*(p:pointer, size: csize_t): cudaError_t =
   cudaMalloc((ptr pointer)(p.addr), size)
 proc cudaFree*(p: pointer): cudaError_t
   {.importC,header:"cuda_runtime.h".}
-proc cudaMallocManaged*(p: ptr pointer, size: csize): cudaError_t
+proc cudaMallocManaged*(p: ptr pointer, size: csize_t): cudaError_t
   {.importC,header:"cuda_runtime.h".}
 
-proc cudaMemcpyX*(dst,src: pointer, count: csize, kind: cudaMemcpyKind):
+proc cudaMemcpyX*(dst,src: pointer, count: csize_t, kind: cudaMemcpyKind):
   cudaError_t {.importC:"cudaMemcpy",header:"cuda_runtime.h".}
-template cudaMemcpy*(dst,src: typed, count: csize,
+template cudaMemcpy*(dst,src: typed, count: csize_t,
                      kind: cudaMemcpyKind): cudaError_t =
   let pdst = toPointer(dst)
   let psrc = toPointer(src)
   cudaMemcpyX(pdst, psrc, count, kind)
 
-template gpuMalloc*(size:csize):pointer =
+template gpuMalloc*(size: csize_t):pointer =
   var p:pointer
   let err = cudaMalloc(p, size)
   if err:
@@ -83,12 +83,12 @@ template gpuFree*(p:pointer) =
   if err:
     echo err
     quit cast[cint](err)
-template gpuMemCpyToGpu*(dst,src: pointer, count: csize):cint =
+template gpuMemCpyToGpu*(dst,src: pointer, count: csize_t):cint =
   let err = cudaMemcpy(dst,src,count,cudaMemcpyHostToDevice)
   if err:
     echo err
   cast[cint](err)
-template gpuMemCpyToCpu*(dst,src: pointer, count: csize):cint =
+template gpuMemCpyToCpu*(dst,src: pointer, count: csize_t):cint =
   let err = cudaMemcpy(dst,src,count,cudaMemcpyDeviceToHost)
   if err:
     echo err
@@ -104,7 +104,7 @@ proc cudaDeviceSynchronize*(): cudaError_t
 
 #proc printf*(fmt:cstring):cint {.importc,varargs,header:"<stdio.h>",discardable.}
 #proc fprintf*(stream:ptr FILE,fmt:cstring):cint {.importc,varargs,header:"<stdio.h>".}
-#proc malloc*(size: csize):pointer {.importc,header:"<stdlib.h>".}
+#proc malloc*(size: csize_t):pointer {.importc,header:"<stdlib.h>".}
 
 template cudaDefs(body: untyped): untyped {.dirty.} =
   var gridDim{.global,importC,noDecl.}: CudaDim3

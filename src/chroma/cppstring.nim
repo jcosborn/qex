@@ -7,7 +7,7 @@ proc newStdString*(): StdString {.
 proc newStdString*(s: cstring): StdString {.
   constructor, importCpp: "std::string(@)", header: "<string>".}
 
-proc size*(this: var StdString): csize {.
+proc size*(this: var StdString): csize_t {.
   importCpp: "size", header: "<string>".}
 
 proc append*(this: var StdString, str: StdString): var StdString {.

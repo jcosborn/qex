@@ -111,7 +111,7 @@ template qmpMax*(v:float64):untyped = QmpMaxDouble(v.addr)
 template qmpMin*(v:float32):untyped = QmpMinFloat(v.addr)
 template qmpMin*(v:float64):untyped = QmpMinDouble(v.addr)
 
-proc QMP_declare_msgmem*(mem: pointer; nbytes: csize): QMP_msgmem_t {.
+proc QMP_declare_msgmem*(mem: pointer; nbytes: csize_t): QMP_msgmem_t {.
     importc: "QMP_declare_msgmem", header: "qmp.h".}
 proc QMP_declare_send_to*(m: QMP_msgmem_t; rem_node_rank: cint;
                           priority: cint): QMP_msghandle_t {.
@@ -122,6 +122,8 @@ proc QMP_declare_receive_from*(m: QMP_msgmem_t; rem_node_rank: cint;
 proc QMP_declare_send_recv_pairs*(msgh: ptr QMP_msghandle_t;
                                   num: cint): QMP_msghandle_t {.
     importc: "QMP_declare_send_recv_pairs", header: "qmp.h".}
+proc QMP_declare_multiple*(msgh: ptr QMP_msghandle_t; num: cint): QMP_msghandle_t {.
+    importc: "QMP_declare_multiple", header: "qmp.h".}
 proc QMP_start*(h: QMP_msghandle_t): QMP_status_t {.importc: "QMP_start",
     header: "qmp.h".}
 proc QMP_wait*(h: QMP_msghandle_t): QMP_status_t {.importc: "QMP_wait",

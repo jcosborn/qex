@@ -63,8 +63,8 @@ proc open(r:var Reader; ql:var QIO_Layout) =
   for i in 0..<nd:
     r.latsize[i] = r.layout.physGeom[i].cint
   ql.latsize = r.latsize[0].addr
-  ql.volume = r.layout.physVol
-  ql.sites_on_node = r.layout.nSites
+  ql.volume = r.layout.physVol.csize_t
+  ql.sites_on_node = r.layout.nSites.csize_t
   ql.this_node = r.layout.myRank.cint
   ql.number_of_nodes = r.layout.nRanks.cint
   if readnodes<=0:
@@ -159,7 +159,7 @@ proc getWordSize(r:var Reader):int =
 
 import qioInternal
 
-proc put[T](buf: cstring; index: csize; count: cint; arg: pointer) =
+proc put[T](buf: cstring; index: csize_t, count: cint; arg: pointer) =
   type srcT = cArray[IOtype(T)]
   type destT1 = cArray[T]
   type destT = cArray[ptr destT1]
@@ -171,7 +171,7 @@ proc put[T](buf: cstring; index: csize; count: cint; arg: pointer) =
   for i in 0..<count:
     masked(dest[i][vi], vlm) := src[i]
 
-proc putP[T](buf: cstring; index: csize; count: cint; arg: pointer) =
+proc putP[T](buf: cstring; index: csize_t, count: cint; arg: pointer) =
   type srcT = cArray[IOtypeP(T)]
   type destT1 = cArray[T]
   type destT = cArray[ptr destT1]
@@ -193,12 +193,12 @@ proc read[T](r:var Reader, v:var openArray[ptr T]) =
   var vsize = size*v.len
   var wordSize = sizeOf(numberType(v[0][]))
   if wordSize==recWordSize:
-    r.status = QIO_read(r.qr, r.recordInfo.addr, qioMd, put[T], vsize.csize,
+    r.status = QIO_read(r.qr, r.recordInfo.addr, qioMd, put[T], vsize.csize_t,
                         wordSize.cint, v[0].addr)
   else:
     vsize = (recWordSize*vsize) div wordSize
     wordSize = recWordSize
-    r.status = QIO_read(r.qr, r.recordInfo.addr, qioMd, putP[T], vsize.csize,
+    r.status = QIO_read(r.qr, r.recordInfo.addr, qioMd, putP[T], vsize.csize_t,
                         wordSize.cint, v[0].addr)
 
   r.recordMd = toString(qioMd)
