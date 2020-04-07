@@ -14,8 +14,8 @@ let
   beta = floatParam("beta", 6.0)
   adjFac = floatParam("adjFac", -0.25)
   tau = floatParam("tau", 2.0)
-  gsteps = intParam("gsteps", 4)
-  fsteps = intParam("fsteps", 4)
+  gsteps = intParam("gsteps", 64)
+  fsteps = intParam("fsteps", 32)
   trajs = intParam("trajs", 10)
   seed = intParam("seed", int(1000*epochTime())).uint64
   mass = floatParam("mass", 0.1)

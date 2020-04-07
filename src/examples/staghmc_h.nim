@@ -13,8 +13,8 @@ letParam:
   beta = 6.0
   adjFac = -0.25
   tau = 2.0
-  gsteps = 4
-  fsteps = 4
+  gsteps = 64
+  fsteps = 32
   trajs = 10
   seed:uint64 = int(1000*epochTime())
   mass = 0.1
