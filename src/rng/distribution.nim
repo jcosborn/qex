@@ -1,5 +1,6 @@
 import math
 import base, field, layout, maths, maths/types
+import comms/qmp
 
 type
   RNG* = concept var r
@@ -174,6 +175,9 @@ proc u1*(x: Field, r: RNGField) =
 
 proc newRNGField*[R: RNG](lo: Layout, rng: typedesc[R],
                           s: uint64 = uint64(17^7)): Field[1,R] =
+  ## The seed `s` is broadcasted from rank 0.
+  var ss = s
+  QMP_broadcast(ss.addr, sizeof(ss).csize_t)
   var r: Field[1,rng]
   when lo.V == 1:
     r.new(lo)
@@ -186,7 +190,7 @@ proc newRNGField*[R: RNG](lo: Layout, rng: typedesc[R],
       var l = lo.coords[lo.nDim-1][j].int
       for i in countdown(lo.nDim-2, 0):
         l = l * lo.physGeom[i].int + lo.coords[i][j].int
-      seed(r[j], s, l)
+      seedIndep(r[j], ss, l)
   r
 proc newRNGField*[R: RNG](rng: typedesc[R], lo: Layout,
                           s: uint64 = uint64(17^7)): Field[1,R] =

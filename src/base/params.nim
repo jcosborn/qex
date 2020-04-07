@@ -1,7 +1,6 @@
 import macros
 import strUtils
 #import metaUtils
-import comms/comms
 import os
 
 var paramNames = newSeq[string](0)
@@ -23,7 +22,6 @@ template echoParams*() =
 template makeTypeParam(name,typ,deflt,cnvrt: untyped): untyped {.dirty.} =
   proc name*(s: string, d=deflt): typ =
     result = d
-    getComm().broadcast(result)
     let n = paramCount()
     for i in 1..n:
       let p = paramstr(i)
@@ -109,4 +107,3 @@ template CLIset*(p:typed, n:untyped, prefix:string, runifset:untyped) =
 template CLIset*(p:typed, n:untyped, prefix = "") =
   p.CLIset n, prefix:
     discard
-

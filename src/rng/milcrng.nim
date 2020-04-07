@@ -1,4 +1,5 @@
 import math
+import comms/qmp
 
 # RNG from MILC version 6
 # C language random number generator for parallel processors
@@ -84,8 +85,14 @@ else:
     prn.multiplier = 100005'u32 + 8'u32 * index
     #prn.addend = 12345
     #prn.scale = 1.0 / float32(0x01000000)
-proc seed*(prn: var RngMilc6; sed,index: any) {.inline.} =
+proc seedIndep*(prn: var RngMilc6; sed,index: any) {.inline.} =
   seedX(prn, sed.uint32, index.uint32)
+proc seed*(prn: var RngMilc6; sed,index: any) {.inline.} =
+  ## The seed `sed` is broadcasted from rank 0.
+  ## For independent seeding, use `seedIndep`.
+  var ss = sed
+  QMP_broadcast(ss.addr, sizeof(ss).csize_t)
+  seedIndep(prn, ss, index)
 
 proc uniform*(prn: var RngMilc6): float32 =
   ## Return random number uniform on [0,1]
