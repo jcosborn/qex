@@ -16,7 +16,7 @@ let seed:uint64 = 7_005_003_002_001_000_000u64 + myRank.uint64
 echoRankS "seed: ",seed
 
 var
-  lo = newLayout([8,8])
+  lo = newLayout([8,8,8,8])
   p = lo.newGauge
   r = lo.newRNGField(RngMilc6, seed)
   R:RngMilc6
@@ -64,9 +64,9 @@ if myRank == 0:
   suite "RNG seeding always from rank 0":
     test "random field":
       when defined(FUELCompat):
-        let p2Expected = 1100.039788279747
+        let p2Expected = 130731.9294737126
       else:
-        let p2Expected = 1076.523902084838
+        let p2Expected = 131563.7475902051
       check(p2 ~ p2Expected)
     test "global random number":
       let uExpected = 0.7708062529563904
