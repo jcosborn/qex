@@ -165,8 +165,8 @@ proc put[T](buf: cstring; index: csize_t, count: cint; arg: pointer) =
   type destT = cArray[ptr destT1]
   let src = cast[ptr srcT](buf)
   let dest = cast[ptr destT](arg)
-  let vi = index div simdLength(T)
-  let vl = int(index mod simdLength(T))
+  let vi = index div simdLength(T).csize_t
+  let vl = int(index mod simdLength(T).csize_t)
   let vlm = 1 shl vl
   for i in 0..<count:
     masked(dest[i][vi], vlm) := src[i]
@@ -177,8 +177,8 @@ proc putP[T](buf: cstring; index: csize_t, count: cint; arg: pointer) =
   type destT = cArray[ptr destT1]
   let src = cast[ptr srcT](buf)
   let dest = cast[ptr destT](arg)
-  let vi = index div simdLength(T)
-  let vl = int(index mod simdLength(T))
+  let vi = index div simdLength(T).csize_t
+  let vl = int(index mod simdLength(T).csize_t)
   let vlm = 1 shl vl
   for i in 0..<count:
     masked(dest[i][vi], vlm) := src[i]
