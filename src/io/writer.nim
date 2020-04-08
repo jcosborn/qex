@@ -97,8 +97,8 @@ proc get[T](buf: cstring; index: csize_t; count: cint; arg: pointer) =
   type srcT = cArray[ptr srcT1]
   let dest = cast[ptr destT](buf)
   let src = cast[ptr srcT](arg)
-  let vi = index div simdLength(T)
-  let vl = int(index mod simdLength(T))
+  let vi = index div simdLength(T).csize_t
+  let vl = int(index mod simdLength(T).csize_t)
   let vlm = 1 shl vl
   #var s: ptr destT
   for i in 0..<count:
@@ -112,8 +112,8 @@ proc getP[T](buf: cstring; index: csize_t; count: cint; arg: pointer) =
   type srcT = cArray[ptr srcT1]
   let dest = cast[ptr destT](buf)
   let src = cast[ptr srcT](arg)
-  let vi = index div simdLength(T)
-  let vl = int(index mod simdLength(T))
+  let vi = index div simdLength(T).csize_t
+  let vl = int(index mod simdLength(T).csize_t)
   let vlm = 1 shl vl
   #var s: ptr destT
   for i in 0..<count:
