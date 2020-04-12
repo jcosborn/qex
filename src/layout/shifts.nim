@@ -207,21 +207,21 @@ template boundarySB*[T](s:ShiftB[T]; e:untyped):untyped =
   boundaryWaitSB(s): needBoundary = true
   if needBoundary:
     boundarySyncSB()
-    #echo "nb"
+    #echoAll myrank, ": nb"
     if s.si.nRecvDests > 0:
       #echo "nrd"
       if s.sb.sq.nthreads[threadNum] != numThreads: boundaryOffsetSB(s)
       let ti0 = s.sb.sq.offr[threadNum]
       let ti1 = s.sb.sq.lenr[threadNum]
       if s.si.blend == 0:
-        #echo "blend==0"
+        #echoAll "blend==0"
         let rr = cast[ptr cArray[T]](s.sb.sq.rbuf)
         #let tt = rr[0]
         #echo tt
         for i in ti0..<ti1:
           let irr = s.si.sq.recvDests[i]
           let k2 = s.si.sq.recvRemoteSrcs[i]
-          #echo "blend0: ", i, " ir: ", irr, " k2: ", k2
+          #echoAll myrank, ": blend0: ", i, " ir: ", irr, " k2: ", k2
           subst(ir,irr,it,rr[k2]):
             e
       else:
@@ -229,7 +229,7 @@ template boundarySB*[T](s:ShiftB[T]; e:untyped):untyped =
         for i in ti0..<ti1:
           let irr = s.si.sq.recvDests[i]
           let k2 = s.si.sq.recvRemoteSrcs[i]
-          #echo "blendb: ", irr, " sidx: ", s.si.sq.sidx[irr].int
+          #echoAll myrank, ": blendb: ", irr, " sidx: ", s.si.sq.sidx[irr].int
           var itt{.noInit.}: s.T  # should be load1(s.T)?
           blend(itt, s.sb.lbuf[stride*i].addr,
                 s.sb.sq.rbuf[stride*k2].addr, s.si.blend)
@@ -464,6 +464,12 @@ proc newTransporter*(u: Field, f: Field2, dir,len: int, sub="all"): auto =
   t.len = len
   t
 
+proc setLink*(t: var Transporter, u: Field) =
+  t.link = u
+
+proc clearLink*(t: var Transporter) =
+  t.link = nil
+
 proc newTransporters*[U,F](u: openArray[U], f: F, len: int, sub="all"): auto =
   var r: seq[Transporter[type(u[0]),F,type(f[0])]]
   let nd = u.len
@@ -475,6 +481,14 @@ proc newTransporters*[U,F](u: openArray[U], f: F, len: int, sub="all"): auto =
     r[mu].sb.initShiftB(f, mu, len, sub)
     r[mu].len = len
   r
+
+proc setLinks*(t: var openArray[Transporter], u: openArray[Field]) =
+  for i in 0..<t.len:
+    t[i].link = u[i]
+
+proc clearLinks*(t: var openArray[Transporter]) =
+  for i in 0..<t.len:
+    t[i].link = nil
 
 proc newShifter*[F](f: F, dir,len: int, sub="all"): auto =
   var r: Shifter[F,type(f[0])]
