@@ -68,7 +68,7 @@ when declared(SimdS4):
   template eval*(x: SimdS4): untyped = x
   template toSingleImpl*(x: SimdS4): untyped = x
   template toDoubleImpl*(x: SimdS4): untyped = toDouble(x)
-  template inv*(x: SimdS4): untyped = 1.0/x
+  #template inv*(x: SimdS4): untyped = 1.0/x
   mapSimd(SimdS4, exp)
   mapSimd(SimdS4, ln)
 
@@ -80,7 +80,7 @@ when declared(SimdD4):
   template eval*(x: SimdD4): untyped = x
   template toSingleImpl*(x: SimdD4): untyped = toSingle(x)
   template toDoubleImpl*(x: SimdD4): untyped = x
-  template inv*(x: SimdD4): untyped = 1.0/x
+  #template inv*(x: SimdD4): untyped = 1.0/x
   template min*(x: SomeNumber, y: SimdD4): untyped = min(x.to(SimdD4), y)
   template max*(x: SomeNumber, y: SimdD4): untyped = max(x.to(SimdD4), y)
   mapSimd(SimdD4, exp)
@@ -110,7 +110,7 @@ when declared(SimdS8):
   template toSingleImpl*(x: SimdD8): untyped = toSingle(x)
   template toDoubleImpl*(x: SimdS8): untyped = toDouble(x)
   template toDoubleImpl*(x: SimdD8): untyped = x
-  template inv*(x: SimdS8): untyped = 1.0/x
+  #template inv*(x: SimdS8): untyped = 1.0/x
   mapSimd(SimdS8, exp)
   mapSimd(SimdS8, ln)
 
@@ -118,7 +118,7 @@ when declared(SimdD8):
   #template isWrapper*(x: SimdD8): untyped = false
   template eval*(x: SimdD8): untyped = x
   template adj*(x: SimdD8): untyped = x
-  template inv*(x: SimdD8): untyped = 1.0/x
+  #template inv*(x: SimdD8): untyped = 1.0/x
   mapSimd(SimdD8, exp)
   mapSimd(SimdD8, ln)
 

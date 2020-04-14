@@ -79,6 +79,7 @@ template f2s(f: untyped): untyped {.dirty.} =
 
 f1(`-`)
 f1(abs)
+f1(inv)
 f1(sqrt)
 f1(rsqrt)
 f1(sin)

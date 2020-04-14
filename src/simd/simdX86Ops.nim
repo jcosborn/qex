@@ -139,6 +139,8 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   template mul*(x,y:T):T = `P "_mul_" S`(x,y)
   template divd*(x,y:T):T = `P "_div_" S`(x,y)
   template neg*(x:T):T = sub(`P "_setzero_" S`(), x)
+  #template inv*(x:T):T = `P "_rcp_" S`(x)
+  template inv*(x:T):T = divd(1.0,x)
 
   binaryMixed(T, add, add)
   binaryMixed(T, sub, sub)
