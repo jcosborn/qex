@@ -3,24 +3,37 @@
 ]#
 
 import qex, gauge/hypsmear, physics/stagSolve
-import times, strformat
+import times, strformat, os
 
 qexInit()
 
 # Accept command line arguments and set up parameters
-let
+letParam:
   # Required parameters
-  inlat = strParam("inlat")   # Input gauge file name
-  outfn = strParam("outfn", "scprop.out") # Save results to outfn
-  mass = floatParam("mass", 0.1)   # The quark mass
+  inlat = ""   # Input gauge file name
+  outfn = "scprop.out" # Save results to outfn
+  mass = 0.1   # The quark mass
 
   # optional parameters
-  cg_prec = floatParam("cg_prec", 1e-9) # Max residual with default
-  cg_max = intParam("cg_max", 10_000)  # Max number of iterations
-  num_source = intParam("num_source", 16)  # Number of stochastic sources
-  sq_min_distance0 = intParam("sq_min_distance", 0)
-  seed = intParam("seed", int(1000*epochTime())).uint64
-  write_group_size = intParam("write_group_size", 128)
+  lat =
+    if existsFile(inlat):
+      getFileLattice inlat
+    else:
+      qexWarn "Nonexistent gauge file: ", inlat
+      @[4,4,4,8]
+  cg_prec = 1e-9 # Max residual with default
+  cg_max = 100_000  # Max number of iterations
+  num_source = 16  # Number of stochastic sources
+  sq_min_distance =  # squared minimum distance
+    floor(0.25*sqrt(float(lat[0]*lat[1]*lat[2]*lat[3])/num_source.float)).int
+  seed:uint64 = int(1000*epochTime())
+  ## write_group_size = 128
+  showTimers:bool = 0 # print out the timers in the end
+
+echoParams()
+
+echo "rank ", myRank, "/", nRanks
+threads: echo "thread ", threadNum, "/", numThreads
 
 var sp = initSolverParams()
 sp.r2req = cg_prec*cg_prec
@@ -28,18 +41,7 @@ sp.maxits = cg_max
 sp.sloppySolve = intParam("sloppy", 2).SloppyType # 0: None, 1: Single, 2: Half
 
 # Load lattice and determine size and parameters
-template getLat(fn:string): seq[int] =
-  if inlat.len == 0:
-    echo "WARNING: no input lattice file specicified."
-    @[4,4,4,8]
-  else:
-    let lat = inlat.getFileLattice
-    if lat.len == 0:
-      echo "ERROR: getFileLattice failed on '", inlat, "'."
-      qexAbort()
-    lat
 let
-  lat = inlat.getLat
   nt = lat[^1]
   metadata_prefix = "l" & $lat[0] & ".t" & $nt & ".m" & $mass
 
@@ -56,23 +58,12 @@ if inlat.len == 0:
     #g.random r
 else:
   if 0 != g.loadGauge(inlat):
-    echo "ERROR: loadGauge failed on '", inlat, "'."
-    qexAbort()
-
-qexLog "Finished loading conifguration."
+    qexError "loadGauge failed on '", inlat, "'."
 
 echo "latsize = ",lo.physGeom
 echo "volume = ",lo.physVol
-echo "mass = ",mass
-echo "seed = ",seed
-echo "cg_prec = ",cg_prec
-echo "num_source = ",num_source
 
-var sq_min_distance = sq_min_distance0
-if sq_min_distance == 0:
-  let v = lo.physVol.float / num_source.float
-  sq_min_distance = floor(0.9*sqrt(v)).int
-echo "sq_min_distance = ", sq_min_distance
+qexLog "Finished loading conifguration."
 
 var spatv = 1
 for i in 0..<lat.len-1: spatv *= lat[i]
@@ -152,8 +143,8 @@ proc randomPoint(): seq[int] =
     if far:
       pts.add result
       return
-  qexError("max iteration reached without finding a random point.\n" &
-    &"Perhaps sq_min_distance={sq_min_distance} is too large.")
+  qexError "max iteration reached without finding a random point.\n",
+    "Perhaps sq_min_distance=", sq_min_distance, " is too large."
 
 proc pointSource(r: Field; c: openArray[int]; ic: int) =
   let (ptRank,ptIndex) = r.l.rankIndex(c)
@@ -259,6 +250,5 @@ for t in 0..<nt:
 
 ]#
 
-
-echoTimers()
+if showTimers: echoTimers()
 qexFinalize()
