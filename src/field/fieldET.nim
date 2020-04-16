@@ -20,6 +20,9 @@ type
     l*:Layout[V]
     elemSize*:int
   Field*[V:static[int],T] = ref FieldObj[V,T]
+  FieldArray*[N:static[int],V:static[int],T] = object  ## share a single alignedMem
+    shape*:seq[int]
+    arr:array[N,Field[V,T]]
   Subsetted*[F,S] = object
     field*:F
     subset*:S
@@ -112,6 +115,7 @@ template evalType*[V,T](x: FieldUnop[foToSingle,Field[V,T]]): untyped =
   Field2[V,toSingle(type(T))]
 
 proc new*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) =
+  # remember to change newFieldArray if the following changes
   x.l = l
   x.s.new(l.nSitesOuter)
   #fence()
@@ -135,6 +139,64 @@ proc newOneOf*(x: FieldUnop): auto =
 template new*(x: typedesc[Field], l: Layout): untyped =
   newField(l, x.T)
 
+proc newFarrElem[V:static[int],T](f:var Field[V,T]; l:Layout[V]; s:alignedMem[T]; offset:int) =
+  f.new()
+  f.l = l
+  f.s = s
+  f.s.data = cast[typeof(s.data)](cast[ByteAddress](s.data) + offset*l.nSitesOuter*s.stride)
+  f.elemSize = sizeOf(T)
+
+proc newFieldArray*[V:static[int],T](l:Layout[V]; t:typedesc[Field[V,T]]; n: static[int]):FieldArray[n,V,T] =
+  result.shape = @[n]
+  var s:typeof(result.arr[0].s)
+  s.new(l.nSitesOuter*n)
+  for i in 0..<n:
+    newFarrElem(result.arr[i], l, s, i)
+
+template newFieldArray2*[V:static[int],T](l:Layout[V]; ty:typedesc[Field[V,T]];
+    ns: static[array[2,int]]; constraint: untyped):untyped =
+  const n = ns[0]
+  const m = ns[1]
+  var r:FieldArray[n*m,V,T]
+  r.shape = @[n,m]
+  var t = 0
+  for i in 0..<n:
+    for j in 0..<m:
+      let mu {.inject.} = i
+      let nu {.inject.} = j
+      if constraint: inc t
+  var s:typeof(r.arr[0].s)
+  s.new(l.nSitesOuter*t)
+  var k = 0
+  t = 0
+  for i in 0..<n:
+    for j in 0..<m:
+      let mu {.inject.} = i
+      let nu {.inject.} = j
+      if constraint:
+        newFarrElem(r.arr[k], l, s, t)
+        inc t
+      inc k
+  r
+
+proc newOneOf*[N:static[int],V:static[int],T](fa:FieldArray[N,V,T]):FieldArray[N,V,T] =
+  result.shape = fa.shape
+  var s:typeof(fa.arr[0].s)
+  let (l,n) = block:
+    var n = -1
+    for i in 0..<fa.arr.len:
+      if fa.arr[i] != nil:
+        n = i
+        break
+    if n < 0: return
+    (fa.arr[n].l, fa.arr[n].s.len)
+  s.new(n)
+  var t = 0
+  for i in 0..<fa.arr.len:
+    if fa.arr[i] == nil: continue
+    newFarrElem(result.arr[i], l, s, t)
+    inc t
+
 template isWrapper*(x: SomeField): untyped = false
 template `[]`*(x:Field; i:int):untyped = x.s[i]
 template `[]`*(x:Subsetted; i:int):untyped = x.field[i]
@@ -154,6 +216,9 @@ template `[]`*(x: Field; c: openarray): untyped =
   x{ri.index}
   #let t = eval(x{ri.index})
   #t
+
+template `[]`*(x:FieldArray, i:int):untyped = x.arr[i]
+template `[]`*(x:FieldArray, i,j:int):untyped = x.arr[i*x.shape[1]+j]
 
 template even*(x:Field):untyped = x["even"]
 template odd*(x:Field):untyped = x["odd"]
