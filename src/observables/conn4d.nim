@@ -14,21 +14,32 @@ letParam:
   outfn = "scprop.out" # Save results to outfn
   mass = 0.1   # The quark mass
 
-  # optional parameters
+  # Intermediate definitions
   lat =
     if existsFile(inlat):
       getFileLattice inlat
     else:
       qexWarn "Nonexistent gauge file: ", inlat
       @[4,4,4,8]
+
+  # optional parameters
+  sources = newseq[int]() # use specific source locations
   cg_prec = 1e-9 # Max residual with default
   cg_max = 100_000  # Max number of iterations
-  num_source = 16  # Number of stochastic sources
+  num_source = # Number of stochastic sources
+    if (let n = sources.len; n > 0):
+      n div lat.len
+    else:
+      16
   sq_min_distance =  # squared minimum distance
     floor(0.25*sqrt(float(lat[0]*lat[1]*lat[2]*lat[3])/num_source.float)).int
   seed:uint64 = int(1000*epochTime())
   ## write_group_size = 128
   showTimers:bool = 0 # print out the timers in the end
+
+if sources.len mod lat.len != 0:
+  qexError "sources should be an integer array with its length divisable by ",lat.len,"\n",
+    "  received: ",sources
 
 echoParams()
 
@@ -146,6 +157,19 @@ proc randomPoint(): seq[int] =
   qexError "max iteration reached without finding a random point.\n",
     "Perhaps sq_min_distance=", sq_min_distance, " is too large."
 
+proc getPoint(): seq[int] =
+  if sources.len > 0:
+    var n {.global.} = 0
+    let nd = lo.nDim
+    result.newseq(nd)
+    for i in 0..<nd:
+      if n >= sources.len:
+        qexError "exhauseted provided sources."
+      result[i] = sources[n]
+      inc n
+  else:
+    result = randomPoint()
+
 proc pointSource(r: Field; c: openArray[int]; ic: int) =
   let (ptRank,ptIndex) = r.l.rankIndex(c)
   threads:
@@ -181,7 +205,7 @@ locmes := 0
 
 for i in 0..<num_source:
   # Generate a random point to place the point source.
-  var pt = randomPoint()
+  var pt = getPoint()
   #var pt = @[0,0,0,0]
   qexLog &"Starting inversion work on point source {i}, living at {pt}."
 
