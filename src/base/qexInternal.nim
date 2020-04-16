@@ -34,6 +34,7 @@ template qexError*(s:varargs[string,`$`]) =
     echo "  ", s.join
   flushFile stdout
   flushFile stderr
+  getComm().barrier
   qexAbort()
 
 proc qexInit* =
