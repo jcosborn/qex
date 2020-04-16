@@ -59,6 +59,8 @@ else:
     echo "ERROR: loadGauge failed on '", inlat, "'."
     qexAbort()
 
+qexLog "Finished loading conifguration."
+
 echo "latsize = ",lo.physGeom
 echo "volume = ",lo.physVol
 echo "mass = ",mass
@@ -95,25 +97,37 @@ threads:
   echo "new unitary deviation avg: ",d.avg," max: ",d.max
 g.printPlaq
 
-var
-  info: PerfInfo
-  coef = HypCoefs(alpha1:0.4, alpha2:0.5, alpha3:0.5)
-echo "smear = ",coef
+qexLog "Finished re-unitarization."
+
+proc smear(sg,g:any) =
+  var
+    info: PerfInfo
+    coef = HypCoefs(alpha1:0.4, alpha2:0.5, alpha3:0.5)
+  echo "smear = ",coef
+  coef.smear(g, sg, info)
+
 var sg = lo.newGauge
-coef.smear(g, sg, info)
-#for i in 0..<g.len:
-#  sg[i] := g[i]
+sg.smear g
+
+#echo GC_getStatistics()
+GC_fullCollect()
+#echo GC_getStatistics()
+
+qexLog "Finished smearing."
 
 threads:
   sg.setBC
   sg.stagPhase
 var s = sg.newStag
 
+qexLog "Finished stagPhase."
+
 var pts = newSeq[seq[int]]()
 proc randomPoint(): seq[int] =
   let nd = lo.nDim
   result.newSeq(nd)
-  while true:
+  const maxiter = 1_000_000_000
+  for iter in 0..<maxiter:
     for i in 0..<nd:
       let li = lo[i]
       result[i] = floor(li * R.uniform()).int
@@ -137,7 +151,9 @@ proc randomPoint(): seq[int] =
       result[j] = result[j] - (result[j] mod 2)
     if far:
       pts.add result
-      break
+      return
+  qexError("max iteration reached without finding a random point.\n" &
+    &"Perhaps sq_min_distance={sq_min_distance} is too large.")
 
 proc pointSource(r: Field; c: openArray[int]; ic: int) =
   let (ptRank,ptIndex) = r.l.rankIndex(c)
@@ -172,12 +188,11 @@ var
   scal = 1.0/num_source.float
 locmes := 0
 
-tic()
 for i in 0..<num_source:
   # Generate a random point to place the point source.
   var pt = randomPoint()
   #var pt = @[0,0,0,0]
-  echo &"Starting inversion work on point source {i}, living at {pt}."
+  qexLog &"Starting inversion work on point source {i}, living at {pt}."
 
   for c in 0..<nc:
     echo "Color ", c
@@ -188,7 +203,7 @@ for i in 0..<num_source:
     # Invert
     phi := 0
     s.solve(phi, eta, mass, sp)
-    echo phi.norm2
+    echo "norm2: ", phi.norm2
 
     threads:
       for i in phi:
@@ -200,6 +215,8 @@ for i in 0..<num_source:
 
     var indiv_time = getElapsedTime()
     echo "one inversion and shift time: ", indiv_time
+
+qexLog "Finished all sources."
 
 # rephase and get correlator
 var est = newSeq[float](nt)
@@ -243,4 +260,5 @@ for t in 0..<nt:
 ]#
 
 
+echoTimers()
 qexFinalize()
