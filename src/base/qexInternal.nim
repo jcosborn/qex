@@ -32,6 +32,8 @@ template qexError*(s:varargs[string,`$`]) =
   echo "Error: ", ii.filename, ":", ii.line, ":"
   if s.len > 0:
     echo "  ", s.join
+  flushFile stdout
+  flushFile stderr
   qexAbort()
 
 proc qexInit* =
