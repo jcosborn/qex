@@ -78,10 +78,12 @@ macro letParam*(decls:untyped):auto =
         decl[1][0].kind == nnkAsgn:
       result.add newIdentDefs(decl[0], decl[1][0][0],
         newCall(decl[1][0][0], newCall("setParam", newLit($decl[0]), decl[1][0][1])))
+    elif decl.kind == nnkCommentStmt:
+      result.add decl
     else:
       let li = decl.lineInfoObj
       error("letParam: syntax error: " &
-        li.filename & ":" & $li.line & ":" & $li.column & "\n" & $decl)
+        li.filename & ":" & $li.line & ":" & $li.column & "\n" & decl.lisprepr)
   #echo result.repr
 
 template CLIset*(p:typed, n:untyped, prefix:string, runifset:untyped) =
