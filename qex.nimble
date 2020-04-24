@@ -125,6 +125,7 @@ proc setupRelease =
   debugger ~ off
   line_dir ~ off
   dead_code_elim ~ on
+  panics ~ on
   opt ~ speed
 
 task make, "compile, link, and put executables in `bin'":
