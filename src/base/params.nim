@@ -76,7 +76,7 @@ macro letParam*(decls:untyped):auto =
     elif decl.kind in CallNodes and decl.len == 2 and
         decl[1].kind == nnkStmtList and decl[1].len == 1 and
         decl[1][0].kind == nnkAsgn:
-      result.add newIdentDefs(decl[0], decl[1][0][0],
+      result.add newIdentDefs(decl[0], newEmptyNode(),
         newCall(decl[1][0][0], newCall("setParam", newLit($decl[0]), decl[1][0][1])))
     elif decl.kind == nnkCommentStmt:
       result.add decl
