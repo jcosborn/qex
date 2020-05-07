@@ -37,3 +37,10 @@ else:
 
 static:
   echo "VLEN: ", VLEN
+
+var defaultNc {.compiletime.} = 3
+macro setDefaultNc*(n: static[int]): untyped =
+  defaultNc = n
+  result = newEmptyNode()
+macro getDefaultNc*(): untyped =
+  return newLit(defaultNc)

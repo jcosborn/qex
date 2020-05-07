@@ -1,5 +1,5 @@
 import math
-import base, field, layout, maths, maths/types
+import base, field, layout, maths, maths/types, simd
 import comms/qmp
 
 type
@@ -14,7 +14,13 @@ when defined(FUELCompat):
   proc gaussian_call2(x: var AsComplex, a,b:float) =
     x.re = a
     x.im = b
-proc gaussian*(x: var AsComplex, r: var RNG) =
+proc gaussian*(x: var SomeNumber, r: var RNG) =
+  mixin gaussian
+  x = gaussian(r)
+proc gaussian*(x: var Simd, r: var RNG) =  # FIXME to set all lanes
+  mixin gaussian
+  x[] := gaussian(r)
+proc gaussian*(x: var AsComplex, r: var RNG) =  # FIXME to set all lanes
   mixin gaussian
   when defined(FUELCompat):
     # This is how QLA does it for complex types (e.g. QLA_D3_V_veq_gaussian_S).

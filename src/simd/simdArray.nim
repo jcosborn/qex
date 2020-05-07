@@ -5,6 +5,8 @@ import maths/types
 export types
 #import ../basicOps
 
+# map (var param) (param) (return)
+
 template map011(T,L,op1,op2:untyped):untyped {.dirty.} =
   proc op1*(x:T):T {.inline,noInit.} =
     bind forStatic

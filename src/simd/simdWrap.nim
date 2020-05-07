@@ -44,7 +44,17 @@ template p3(f: untyped) {.dirty.} =
     mixin f
     f(x[], y[], z[])
 
+template p3s(f: untyped) {.dirty.} =
+  template f*(x: var Simd, y: SomeNumber, z: Simd3) =
+    mixin f
+    f(x[], y, z[])
+  template f*(x: var Simd, y: Simd2, z: SomeNumber) =
+    mixin f
+    f(x[], y[], z)
+  p3(f)
+
 p2(rsqrt)
+p2(norm2)
 p2s(assign)
 p2s(`:=`)
 p2s(`+=`)
@@ -55,6 +65,10 @@ p2s(iadd)
 p2s(inorm2)
 p3(imadd)
 p3(imsub)
+p3s(add)
+p3s(sub)
+p3s(mul)
+p3s(divd)
 
 
 # with return value
@@ -103,9 +117,14 @@ f2s(max)
 template getNc*(x: Simd): untyped = 1
 template getNs*(x: Simd): untyped = 1
 
+template to*[T](x: SomeNumber, y: typedesc[Simd[T]]): untyped =
+  asSimd(x.to(type(T)))
+
 template `+`*(x: Simd): untyped = x
+template adj*(x: Simd): untyped = x
 
 template norm2*[T](x: Simd[T]): untyped =
+  mixin norm2
   when T is Masked:
     norm2(x[])
   else:
@@ -115,11 +134,16 @@ template trace*(x: Simd): untyped = x
 
 template simdSum*(x: Simd): untyped = simdSum(x[])
 template simdMax*(x: Simd): untyped = simdMax(x[])
+template re*(x: Simd): untyped = x
+template im*[T:Simd](x: T): untyped = 0.to(type(T))
 
 template assign*(x: Simd, y: array) = assign(x[], y)
 template `:=`*(x: Simd, y: array) = assign(x[], y)
 
 template assign*(x: SomeNumber, y: Simd) = assign(x, y[])  # Masked
 template `:=`*(x: SomeNumber, y: Simd) = assign(x, y[])  # Masked
-template `+=`*(x: SomeNumber, y: Simd) = x += y[]  # Masked
-
+template `+=`*(x: SomeNumber, y: Simd) =
+  when y.simdLength == 1:
+    x += y[0]
+  else:
+    x += y[]  # Masked

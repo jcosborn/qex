@@ -7,6 +7,7 @@ import base/metaUtils
 import maths/types
 import base/wrapperTypes
 import complexNumbers
+import simd/simdWrap
 #import complexType
 # opinc, opdec
 # minc, mdec, redotinc, redotdec
@@ -402,6 +403,7 @@ template `:=`*(x:var Vec1; y:SomeNumber) = assign(x, y)
 template `:=`*(x:var Vec1; y:Vec2): untyped = assign(x, y)
 #template `:=`*(x:AsVarVector; y:Vec2): untyped = assign(x, y)
 template `:=`*(x:var Mat1; y:SomeNumber) = assign(x, y)
+template `:=`*(x:var Mat1; y:Simd) = assign(x, y)
 template `:=`*(x:var Mat1; y:AsComplex) = assign(x, y)
 #template `:=`*(x:AsVarMatrix; y:SomeNumber) = assign(x, y)
 template `:=`*(x:var Mat1; y:Vec2) = assign(x, y)

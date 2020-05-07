@@ -4,6 +4,8 @@ import complexNumbers
 #import complexType
 import matrixConcept
 import types
+import matinv
+export matinv
 import projUderiv
 
 proc determinantN*(a: any): auto =
@@ -175,30 +177,97 @@ template rsqrtPHM3(r:typed; x:typed):untyped =
   r := c0 + c1*x + c2*x2
 
 template rsqrtPHMN(r:typed; x:typed):untyped =
-  var ds = x.norm2
-  #if ds == 0.0
-  #    M_eq_d(r, 1./0.);
-  #    return;
-  #  }
-  ds = sqrt(ds)
+  let xi = 1/x
+  let xi2 = xi.norm2
+  let xit = trace(xi).re
+  let ds = xit/xi2
+  #var ds = x.norm2.simdMax
+  #ds = 0.5*sqrt(ds)
+  #echo "ds: ", ds
 
-  var e = (0.5*ds)/x - 0.5
+  var e = (0.5*ds)*xi - 0.5
   var s = 1 + e
+  #echo "e: ", e
+  #echo "s: ", s
 
-  let estop = epsilon(ds)
+  let estop = epsilon(ds.simdMax)^2
   let maxit = 20
   var nit = 0
   while true:
     inc nit
     #let t = (e/s) * e
-    #e = -0.5 * t
-    let t = e * (s \ e)
+    #let t = e * (s \ e)
+    let si = 1/s
+    let t = e * (si * e)
     e := -0.5 * t
     s += e
-    let enorm = e.norm2
-    #//printf("%i enorm = %g\n", nit, enorm);
+    let enorm = e.norm2.simdMax
+    #echo nit, " enorm: ", enorm
     if nit>=maxit or enorm<estop: break
-  r := x/sqrt(ds)
+  let sds = 1/sqrt(ds)
+  r := sds*s
+
+# Bini (https://arxiv.org/pdf/1703.02456.pdf)
+template rsqrtPHMN2(r:typed; x:typed):untyped =
+  let xn = x.norm2
+  let ds = sqrt(xn)
+  let dsi = 3/ds
+  #echo "ds: ", ds
+
+  var a = dsi * x
+  var b {.noInit.} :type(r)
+  b := 1
+  #var b = (1.4/xn)*x
+
+  let estop = epsilon(ds.simdMax)^2
+  let maxit = 20
+  var nit = 0
+  while true:
+    let e = 1 - b*a*b
+    let enorm = e.norm2.simdMax
+    echo nit, " enorm: ", enorm
+    if nit>=maxit or enorm<estop: break
+    inc nit
+    let t = b*e
+    #let t2 = t.norm2
+    #let c = 0.5/sqrt(t2)
+    let c = 0.5
+    b += c*t
+  let sds = sqrt(dsi)
+  r := sds*b
+  #r := b
+
+# -0.5[B+((1-BBA)^3-1)/(BA)] = -0.5B[1-3+3BBA-BBBBAA] = 0.5B[2-3BBA+BBBBAA]
+# = 0.5B[1-BBA][2-BBA]
+template rsqrtPHMN3(r:typed; x:typed):untyped =
+  let xn = x.norm2
+  let ds = sqrt(xn)
+  let dsi = 1/ds
+  #echo "ds: ", ds
+
+  var a = dsi * x
+  var b {.noInit.} :type(r)
+  b := 1
+  #var b = (1.4/xn)*x
+
+  let estop = epsilon(ds.simdMax)^2
+  let maxit = 20
+  var nit = 0
+  while true:
+    let e = 1 - b*a*b
+    let enorm = e.norm2.simdMax
+    echo nit, " enorm: ", enorm
+    if nit>=maxit or enorm<estop: break
+    inc nit
+    let t = b*e*(1+e)
+    #let t2 = t.norm2
+    #let c = 0.5/sqrt(t2)
+    let c = 0.5
+    b += c*t
+  let sds = sqrt(dsi)
+  r := sds*b
+  #r := b
+
 
 template rsqrtPHM(r:typed; x:typed):untyped =
   mixin rsqrt, nrows
@@ -206,15 +275,16 @@ template rsqrtPHM(r:typed; x:typed):untyped =
   assert(r.ncols == x.ncols)
   assert(r.nrows == r.ncols)
   when r.nrows==1:
-    rsqrt(r[0,0].re, x[0,0].re)
-    assign(r[0,0].im, 0)
+    let t = rsqrt(x[0,0].re)
+    r := t
   elif r.nrows==2:
     rsqrtPHM2(r, x)
   elif r.nrows==3:
     rsqrtPHM3(r, x)
   else:
-    echo "unimplemented"
-    quit(1)
+    rsqrtPHMN(r, x)
+    #rsqrtPHMN2(r, x)
+    #rsqrtPHMN3(r, x)
 proc rsqrtPH*(r: var Mat1; x: Mat2) = rsqrtPHM(r, x)
 template rsqrtPH*[T:Mat1](x: T): T =
   var r {.noInit.}: T
@@ -277,6 +347,11 @@ proc projectTAH*(r: var Mat1; x: Mat2) =
   when nc > 1:
     let d = r.trace / nc.float
     r -= d
+
+proc checkU*(x: Mat1): auto {.inline, noinit.} =
+  ## Returns the sum of deviations of x^dag x and det(x) from unitarity.
+  var d = norm2(-1.0 + x.adj * x)
+  return d
 
 proc checkSU*(x: Mat1): auto {.inline, noinit.} =
   ## Returns the sum of deviations of x^dag x and det(x) from unitarity.
@@ -378,61 +453,66 @@ when isMainModule:
     asReal(x) * y
   template `*`(x: ComplexType, y: SimdS4): untyped =
     x * asReal(y)
+  template `/`(x: SomeFloat, y: SomeInteger): untyped = x/(type(x))(y)
   template add(r: ComplexType, x: SimdS4, y: ComplexType): untyped =
     add(r, asReal(x), y)
   template sub(r: ComplexType, x: SimdS4, y: ComplexType): untyped =
     sub(r, asReal(x), y)
   template mul(r: ComplexType, x: SimdS4, y: ComplexType): untyped =
     mul(r, asReal(x), y)
-  template makeTest2(n,f:untyped):untyped =
-    proc f[T]:auto =
-      const N = n
-      type
-        Cmplx = ComplexType[T]
-        M2 = MatrixArray[N,N,Cmplx]
-      var m1,m2,m3,m4: M2
-      for i in 0..<N:
-        for j in 0..<N:
-          let fi = i.float
-          let fj = j.float
-          m1[i,j].re := 0.5 + 0.4*fi + 1.3*fj - fi*fj
-          m1[i,j].im := 0.1 + 0.6*fi - 1.4*fj - fi*fi + fj*fj
-      echo "test " & $N & " " & $T
-      echo "m1: ", m1
-      m2 := m1.adj * m1
-      #echo m2
-      rsqrtPH(m3, m2)
-      #echo m3
-      m4 := m3*m2*m3
-      let err = sqrt((1-m4).norm2/(N*N))
-      #echo m4
-      echo err
-      result = err
-      let eps = epsilon(simdSum(err))
-      let seps = sqrt(eps)
-      echo "eps: ", eps
-      projectU(m2, m1)
-      m3 := m2.adj*m2
-      var err2 = sqrt((1-m3).norm2/(N*N))
-      echo " projectU err: ", err2
-      doAssert(simdSum(err2)<simdLength(err2)*N*eps*30)
-      #m2 := 0.1*(m2 - (trace(m2)/N))
-      let m2n = 1/(10*sqrt(m2.norm2))
-      m3 := exp(m2n*m2)
-      m4 := exp(-m2n*m2)
-      m2 := m3*m4
-      #echo "exp ",m2,"\n\t= ",m3
-      err2 = sqrt((1-m2).norm2/(N*N))
-      echo " exp err: ", err2
-      doAssert(simdSum(err2)<simdLength(err2)*N*eps*2)
-      inverse(m4, m1)
-      m3 := m1*m4
-      echo m3
-      err2 = sqrt((1-m3).norm2/(N*N))
-      echo " inverse err: ", err2
-      doAssert(simdSum(err2)<simdLength(err2)*N*eps*2)
+  template check(x:untyped, n:SomeNumber):untyped =
+    let r0 = x
+    let r = simdSum(r0)/simdLength(r0)
+    echo "error/eps: ", r/epsilon(r)
+    doAssert(abs(r)<n*epsilon(r))
+  proc test(T: typedesc) =
+    var m1,m2,m3,m4: T
+    let N = m1.nrows
+    for i in 0..<N:
+      for j in 0..<N:
+        let fi = i.float
+        let fj = j.float
+        m1[i,j].re := 0.5 + 0.7/(0.9+1.3*fi-fj)
+        m1[i,j].im := 0.1 + 0.3/(0.4+fi-1.1*fj)
+    echo "test " & $N & " " & $T
+    #echo "m1: ", m1
+    m2 := m1.adj * m1
+    #echo m2
+    rsqrtPH(m3, m2)
+    #echo m3
+    m4 := m3*m2*m3
+    let err = sqrt((1-m4).norm2)/N
+    #echo m4
+    echo " rsqrtPH err: ", err
+    check(err, 50)
+
+    projectU(m2, m1)
+    m3 := m2.adj*m2
+    var err2 = sqrt((1-m3).norm2)/N
+    echo " projectU err: ", err2
+    check(err, 50)
+
+    #m2 := 0.1*(m2 - (trace(m2)/N))
+    let m2n = 1/(10*sqrt(m2.norm2))
+    m3 := exp(m2n*m2)
+    m4 := exp(-m2n*m2)
+    m2 := m3*m4
+    #echo "exp ",m2,"\n\t= ",m3
+    err2 = sqrt((1-m2).norm2/(N*N))
+    echo " exp err: ", err2
+    check(err2, 5)
+
+    inverse(m4, m1)
+    m3 := m1*m4
+    #echo m3
+    err2 = sqrt((1-m3).norm2/(N*N))
+    echo " inverse err: ", err2
+    check(err2, 5)
+
+    if N<4:
       projectU(m2, m1)
       let r1 = trace(m4.adj*m2).re
+      let seps = sqrt(epsilon(simdSum(r1)))
       m3 := m1 + 3*seps*m1*m1
       #m3 := m1 + 1e-3'f32*m1*m1
       projectU(m2, m3)
@@ -440,46 +520,30 @@ when isMainModule:
       projectUderiv(m2, m1, m4)
       let dr = r2 - r1
       let dm = trace((m3-m1).adj * m2).re
-      echo " r1: ", r1
-      echo " r2: ", r2
-      echo " dr: ", dr
-      echo " dm: ", dm
+      #echo " r1: ", r1
+      #echo " r2: ", r2
+      #echo " dr: ", dr
+      #echo " dm: ", dm
       #echo "m1: ", m1
       #echo "m3: ", m3
       let dd = abs(dr - dm)
-      echo " dd: ", dd
-      doAssert(simdSum(dd)<simdLength(dd)*N*eps*40)
+      echo " projectUderiv err: ", dd
+      #doAssert(simdSum(dd)<simdLength(dd)*N*eps*40)
+      check(dd, 20*N)
 
 
-  macro makeTest(n:untyped):auto =
-    let f = ident("test" & n.repr)
-    result = quote do: makeTest2(`n`,`f`)
-  makeTest(1)
-  makeTest(2)
-  makeTest(3)
-  block:
-    template check(x:untyped):untyped =
-      let r = x
-      echo "error/eps: ", r/epsilon(r)
-      doAssert(abs(r)<128*epsilon(r))
-    check(test1[float32]())
-    check(test2[float32]())
-    check(test3[float32]())
-    check(test1[float64]())
-    check(test2[float64]())
-    check(test3[float64]())
-  block:
-    template check(x:untyped):untyped =
-      let r0 = x
-      let r = simdReduce(r0)/simdLength(r0)
-      echo "error/eps: ", r/epsilon(r)
-      doAssert(abs(r)<64*epsilon(r))
-    template doTest(t:untyped) =
-      when declared(t):
-        check(test1[t]())
-        check(test2[t]())
-        check(test3[t]())
-    doTest(SimdS4)
-    #doTest(SimdD4)
-    #doTest(SimdS8)
-    #doTest(SimdD8)
+  type
+    Cmplx[T] = ComplexType[T]
+    CM[N:static[int],T] = MatrixArray[N,N,Cmplx[T]]
+  template doTest(t:untyped) =
+    when declared(t):
+      test(CM[1,t])
+      test(CM[2,t])
+      test(CM[3,t])
+      test(CM[4,t])
+  doTest(float32)
+  doTest(float64)
+  doTest(SimdS4)
+  doTest(SimdD4)
+  doTest(SimdS8)
+  doTest(SimdD8)

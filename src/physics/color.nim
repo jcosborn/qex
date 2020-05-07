@@ -164,6 +164,7 @@ template projectSU*(r: var Color, x: Color2) =
   projectSU(r[], x[])
 template projectTAH*(r: var Color, x: Color2) =
   projectTAH(r[], x[])
+template checkU*(x: Color):untyped = checkU(x[])
 template checkSU*(x: Color):untyped = checkSU(x[])
 template norm2*(x: Color): untyped = norm2(x[])
 template norm2*(r: var any, x: Color): untyped = norm2(r, x[])

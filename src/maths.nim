@@ -5,8 +5,9 @@ export matrixConcept
 import maths/matrixFunctions
 export matrixFunctions
 
-import simd
 
+#[
+import simd
 when declared SimdD4:
   template `-`*(x: SimdD4, y: AsComplex): untyped =
     var r: DComplexV
@@ -41,3 +42,4 @@ when declared SimdD16:
     var r: DComplexV
     mul(r, x, y)
     r
+]#

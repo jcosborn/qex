@@ -36,49 +36,6 @@ proc adjugate*(r: var Mat1, x: Mat2) =
     echo &"adjugate n({nc})>3 not supported"
     doAssert(false)
 
-proc inverse*(r: var Mat1, x: Mat2) =
-  const nc = r.nrows
-  when nc==1:
-    r := 1 / x[0,0]
-  elif nc==2:
-    let x00 = x[0,0]
-    let x01 = x[0,1]
-    let x10 = x[1,0]
-    let x11 = x[1,1]
-    let det = x00*x11 - x01*x10
-    let idet = 1 / det
-    r[0,0] :=  idet * x11
-    r[0,1] := -idet * x01
-    r[1,0] := -idet * x10
-    r[1,1] :=  idet * x00
-  elif nc==3:
-    let x00 = x[0,0]
-    let x01 = x[0,1]
-    let x02 = x[0,2]
-    let x10 = x[1,0]
-    let x11 = x[1,1]
-    let x12 = x[1,2]
-    let x20 = x[2,0]
-    let x21 = x[2,1]
-    let x22 = x[2,2]
-    let det0 = x00 * x11 - x01 * x10
-    let det1 = x02 * x10 - x00 * x12
-    let det2 = x01 * x12 - x02 * x11
-    let det = det0*x22 + det1*x21 + det2*x20
-    let idet = 1 / det
-    r[0,0] := idet*(x11*x22-x12*x21)
-    r[0,1] := idet*(x21*x02-x22*x01)
-    r[0,2] := idet*det2
-    r[1,0] := idet*(x12*x20-x10*x22)
-    r[1,1] := idet*(x22*x00-x20*x02)
-    r[1,2] := idet*det1
-    r[2,0] := idet*(x10*x21-x11*x20)
-    r[2,1] := idet*(x20*x01-x21*x00)
-    r[2,2] := idet*det0
-  else:
-    echo &"inverse n({nc})>3 not supported"
-    doAssert(false)
-
 #[
 #define set(i0,j0,i1,j1,i2,j2) \
     QLA_c_eq_c_times_c (det, a##i1##j1, a##i2##j2); \

@@ -4,16 +4,16 @@ import testutils
 
 qexInit()
 type
-  MS[N:static[int]] = MatrixArray[N,N,SComplexV]
-  MD[N:static[int]] = MatrixArray[N,N,DComplexV]
+  Cmplx[T] = ComplexType[T]
+  RM[N:static[int],T] = MatrixArray[N,N,T]
+  CM[N:static[int],T] = MatrixArray[N,N,Cmplx[T]]
 
-template chkzero(x: SomeFloat) =
+template chkzero(x: SomeFloat, n: SomeNumber): untyped =
   let e = epsilon(x)
-  check(x < 20*e)
+  check(x < n*e)
 
-proc chkeq(x,y: any) =
-  var mx = 0.0 * x[0,0].re
-  var md = 0.0 * x[0,0].re
+proc chkeq(x,y: any): auto =
+  var mx,md:type(x[0,0].re)
   for i in 0..<x.nrows:
     for j in 0..<x.ncols:
       let z = x - y
@@ -27,9 +27,9 @@ proc chkeq(x,y: any) =
   #echo md
   #echo mx
   echo s
-  chkzero(s)
+  chkzero(s, 20*x.nrows)
 
-proc rsqrtPH_test(x: any) =
+proc rsqrtPH_test(x: any): auto =
   let y = x.adj * x
   #echo y
   #let z = y * y
@@ -41,25 +41,31 @@ proc rsqrtPH_test(x: any) =
   o := 1
   chkeq(t, o)
 
-
 var rs: RngMilc6
-rs.seed(987654321, 1)
+rs.seed(13, 987654321)
 
 suite "Test matrix rsqrtPH":
-  template trsqrtPH(n: typed) =
-    var ms: MS[n]
-    var md: MD[n]
-    for i in 0..<simdLength(ms):
-      gaussian( masked(ms,1 shl i), rs )
-    test("n: " & $n & " single"):
-      rsqrtPH_test(ms)
-    for i in 0..<simdLength(md):
-      gaussian( masked(md,1 shl i), rs )
-    test("n: " & $n & " double"):
-      rsqrtPH_test(md)
-  trsqrtPH(1)
-  trsqrtPH(2)
-  trsqrtPH(3)
-  #trsqrtPH(4)
+  template trsqrtPH(T: typedesc) =
+    var m: T
+    for i in 0..<simdLength(m):
+      gaussian( masked(m,1 shl i), rs )
+    test("rsqrtPH " & $m.type):
+      subtest rsqrtPH_test(m)
+  template doTest(t:untyped) =
+    when declared(t):
+      trsqrtPH(RM[1,t])
+      trsqrtPH(RM[2,t])
+      trsqrtPH(RM[3,t])
+      trsqrtPH(RM[4,t])
+      trsqrtPH(CM[1,t])
+      trsqrtPH(CM[2,t])
+      trsqrtPH(CM[3,t])
+      trsqrtPH(CM[4,t])
+  doTest(float32)
+  doTest(float64)
+  doTest(SimdS4)
+  doTest(SimdD4)
+  doTest(SimdS8)
+  doTest(SimdD8)
 
 qexFinalize()

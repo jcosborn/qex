@@ -33,7 +33,7 @@ export spin
 
 #var destructors:seq[proc()]
 
-const nc {.intDefine.} = 3
+const nc {.intDefine.} = getDefaultNc()
 const ns = 4
 const nh = 2
 setType(Svec0, "SimdS" & $VLEN)

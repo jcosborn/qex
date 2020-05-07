@@ -261,13 +261,19 @@ template maskedX*(x: typed, msk: int): untyped =
   else:
     maskedObj(x, msk)
 template masked*(x: typed, msk: int): untyped =
-  bind maskedX
-  var tMasked = maskedX(x, msk)
-  tMasked
+  when x is SomeNumber:
+    x
+  else:
+    bind maskedX
+    var tMasked = maskedX(x, msk)
+    tMasked
 template varMasked*(x: typed, msk: int): untyped =
-  bind maskedX
-  var tVarMasked = maskedX(x, msk)
-  tVarMasked
+  when x is SomeNumber:
+    x
+  else:
+    bind maskedX
+    var tVarMasked = maskedX(x, msk)
+    tVarMasked
 template `[]`*(m: Masked): untyped = m.pobj[]
 macro `[]`*(m: Masked{nkObjConstr}): untyped = m[1][1]
 template getMask*(m: Masked): untyped = m.mask

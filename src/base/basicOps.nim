@@ -106,6 +106,8 @@ template nmadd*(r:var SomeNumber, x:SomeNumber2,
 template nmsub*(r:var SomeNumber, x:SomeNumber2,
                 y:SomeNumber3, z:SomeNumber4):untyped =
   r = cnvrt(r,-z) - (cnvrt(r,x) * cnvrt(r,y))
+template re*(x:SomeNumber): untyped = x
+template im*(x:SomeNumber): untyped = (type(x)(0))
 template conj*(r:var SomeNumber, x:SomeNumber2) = assign(r, x)
 template adj*(r:var SomeNumber, x:SomeNumber2) = assign(r, x)
 template trace*(x:SomeNumber):untyped = x
@@ -122,6 +124,7 @@ template simdLength*(x:SomeNumber):untyped = 1
 template simdSum*(x:SomeNumber):untyped = x
 template simdSum*(r:var SomeNumber; x:SomeNumber2):untyped =
  r = (type(r))(x)
+template simdMax*(x:SomeNumber):untyped = x
 template simdReduce*(x:SomeNumber):untyped = x
 template simdMaxReduce*(x:SomeNumber):untyped = x
 template perm1*(r:var SomeNumber; x:SomeNumber2):untyped =
@@ -168,6 +171,7 @@ template `+`*(x:SomeInteger; y:SomeFloat):auto = cnvrt(y,x) + y
 template `-`*(x:SomeFloat; y:SomeInteger):auto = x - cnvrt(x,y)
 template `-`*(x:SomeInteger; y:SomeFloat):auto = cnvrt(y,x) - y
 template `*`*(x:SomeInteger; y:SomeFloat):auto = cnvrt(y,x) * y
+template `/`*[T:SomeFloat](x:SomeInteger,y:T):auto = (T(x)) / y
 
 template setUnopP*(op,fun,t1,t2: untyped): untyped {.dirty.} =
   proc op*(x: t1): auto {.inline,noInit.} =

@@ -24,6 +24,15 @@ template `!~`*(x,y:typed):bool =
   bind `~`
   not(x~y)
 
+template subtest*(t: typed): untyped {.dirty.} =
+  let prsave = programResult
+  programResult = 0
+  t
+  if programResult != 0:
+    fail()
+  else:
+    programResult = prsave
+
 when isMainModule:
   suite "Test of testutils":
     test "~ and !~":

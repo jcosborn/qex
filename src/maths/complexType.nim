@@ -193,11 +193,11 @@ template inorm2*(r: any, x: ComplexProxy2): untyped =
 import simd
 
 overloadAsReal(Simd)
-template add*(r: AsComplex, x: Simd, y: AsComplex) =
+template add*(r: AsComplex, x: Simd, y: AsComplex2) =
   r := add(x,y)
-template sub*(r: AsComplex, x: Simd, y: AsComplex) =
+template sub*(r: AsComplex, x: Simd, y: AsComplex2) =
   r := sub(x,y)
-template mul*(r: AsComplex, x: Simd, y: AsComplex) =
+template mul*(r: AsComplex, x: Simd, y: AsComplex2) =
   r := mul(x,y)
 
 
