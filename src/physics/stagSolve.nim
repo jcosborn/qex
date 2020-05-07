@@ -188,7 +188,7 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams;
   sp.r2.init r2/b2
   sp.calls = 1
   sp.seconds = getElapsedTime()
-  sp.flops += float((s.g.len*4*72+24)*r.l.nEven)
+  sp.flops += float((s.g.len*4*72+24)*x.l.nEven)
   if sp0.verbosity>0:
     #let its = sp.iterations
     #let s = sp.seconds

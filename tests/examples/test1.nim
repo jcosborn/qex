@@ -21,25 +21,17 @@ proc test() =
       for i in 0..<lo.V:
         aa[i] = ((myRank*100+e)*10+i).float32
       assign(v1[e][0].re, aa)
-    threadSingle:
-      if myRank==0:
-        echo v1[0][0]
+    echo v1[0][0]
     v2 := m1 * v1
-    threadSingle:
-      if myRank==0:
-        echo v2[0][0]
+    echo v2[0][0]
     shift(v1, dir=3, len=1, v2)
-    threadSingle:
-      if myRank==0:
-        echo v1[0][0]
+    echo v1[0][0]
     v2 := m1 * v1.T0
-    threadSingle:
-      if myRank==0:
-        echo v2[0][0]
+    echo v2[0][0]
     var n1 = threadNum.float
     var n2 = 1.0
     threadSum(n1,n2)
-    threadSingle:
+    threadMaster:
       echo n1, " ", n2
       rankSum(n1,n2)
       echo n1, " ", n2
