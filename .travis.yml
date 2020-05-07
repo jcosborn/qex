@@ -33,6 +33,6 @@ script:
   - #sed -i 's/mpicc/gcc/' config.nims
   - make NIMFLAGS="--parallelBuild:2" tests
   - ./testscript.sh
-  - ./runtests.sh
+  - #./runtests.sh
   - make bench
   - bin/benchLinalg
