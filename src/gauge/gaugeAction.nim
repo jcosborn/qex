@@ -245,7 +245,7 @@ proc gaugeForce2*(f,g: array|seq): auto =
 
 proc actionA*(c: GaugeActionCoeffs, g: any): auto =
   ## Specialized gauge action for plaq + adjplaq
-  mixin mul, load1, createShiftBufs
+  mixin mul, load1, createShiftBufs, re
   tic()
   let lo = g[0].l
   let nd = lo.nDim
