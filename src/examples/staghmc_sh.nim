@@ -116,6 +116,7 @@ letParam:
   hfrsq2 = frsq[0].repeat hmasses2.len  # frsq for Hasenbusch masses 2
   hfrsq3 = frsq[0].repeat hmasses3.len  # frsq for Hasenbusch masses 3
   hfrsq4 = frsq[0].repeat hmasses4.len  # frsq for Hasenbusch masses 4
+  alwaysAccept:bool = 0
   revCheckFreq = savefreq
   pbpmass = mass
   pbpreps = repeat(1, pbpmass.len)
@@ -688,8 +689,8 @@ for n in inittraj+1..inittraj+trajs:
     dH = h1 - h0
     acc = exp(-dH)
     accr = R.uniform
-  if accr <= acc:  # accept
-    echo "ACCEPT:  dH: ",dH,"  exp(-dH): ",acc,"  r: ",accr
+  if accr <= acc or alwaysAccept:  # accept
+    echo "ACCEPT:  dH: ",dH,"  exp(-dH): ",acc,"  r: ",accr,(if alwaysAccept:" (ignored)" else:"")
     g.reunit
     g.smearRephase sg
     stag.pbp
