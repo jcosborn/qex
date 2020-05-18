@@ -1,6 +1,7 @@
 import base/wrapperTypes
 import maths/types
 import maths
+import simd/simdWrap
 
 makeWrapperType(Color):
   ## wrapper type for colored objects
@@ -120,6 +121,8 @@ template `*`*(x: Color, y: SomeNumber): untyped =
   asColor(x[] * y)
 template `*`*(x: SomeNumber, y: Color2): untyped =
   asColor(x * y[])
+template `*`*(x: Simd, y: Color2): untyped =
+  asColor(x * y[])
 template `*`*(x: AsReal, y: Color2): untyped =
   asColor(x * y[])
 template `*`*(x: AsImag, y: Color2): untyped =
@@ -175,6 +178,7 @@ template idot*(r: var any, x: Color2, y: Color3) = idot(r, x[], y[])
 template redot*(x: Color, y: Color2): untyped =
   redot(x[], y[])
 template trace*(x: Color): untyped = trace(x[])
+template simdSum*(x: Color): untyped = asColor(simdSum(x[]))
 template re*(x: Color): untyped = asColor(re(x[]))
 template im*(x: Color): untyped = asColor(im(x[]))
 template exp*(x: Color): untyped = asColor(exp(x[]))

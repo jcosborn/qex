@@ -524,6 +524,7 @@ proc trace*(x: Mat1): auto {.inline,noInit.} =
   trace(t, x)
   t
 
+# FIXME: make generic reduce
 
 #proc inorm2*(r:var any; x:Vec2) {.inline.} =
 #  mixin inorm2
@@ -660,6 +661,20 @@ proc simdSum*(x: Mat1): auto {.noInit.} =
     forO j, 0, x.nrows.pred:
       r[i,j] := simdSum(x[i,j])
   r
+
+#[
+proc simdSum*(r: var any; x: Mat2) {.inline.} =
+  mixin nrows, ncols, trace, iadd
+  assign(r, 0)
+  for i in 0..<r.nrows:
+    for j in 0..<r.ncols:
+      r[i,j] := simdSum(x[i,j])
+proc simdSum*(x: Mat1): auto {.inline,noInit.} =
+  var t{.noInit.}: MatrixArray[x.nrows,x.ncols,type(simdSum(x[0,0]))]
+  #static: echo "trace"
+  simdSum(t, x)
+  t
+]#
 
 when isMainModule:
   const nc = 3

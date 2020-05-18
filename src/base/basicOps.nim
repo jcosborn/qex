@@ -172,6 +172,7 @@ template `-`*(x:SomeFloat; y:SomeInteger):auto = x - cnvrt(x,y)
 template `-`*(x:SomeInteger; y:SomeFloat):auto = cnvrt(y,x) - y
 template `*`*(x:SomeInteger; y:SomeFloat):auto = cnvrt(y,x) * y
 template `/`*[T:SomeFloat](x:SomeInteger,y:T):auto = (T(x)) / y
+template `/`*[T:SomeFloat](x:T,y:SomeInteger):auto = x / (T(y))
 
 template setUnopP*(op,fun,t1,t2: untyped): untyped {.dirty.} =
   proc op*(x: t1): auto {.inline,noInit.} =

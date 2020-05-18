@@ -102,6 +102,34 @@ proc adjugate*(r: var Mat1, x: Mat2) =
 }
 ]#
 
+proc sylsolveN*(x: var Mat1, a0: Mat2, c0: Mat3) =
+  mixin simdMax
+  let nc = x.nrows
+
+  x := c0
+  var a = a0
+
+  let rstop = epsilon(x.norm2.simdMax)
+  let maxit = 20
+  var nit = 0
+  while true:
+    inc nit
+
+    var v = 3 - a*a
+    var w = a*x - x*a
+    var d = x*v
+    x := 0.5*(d-a*w)
+    a := 0.5*a*v
+
+    let r = c0-0.5*(a0*x+x*a0)
+    let rnorm = r.norm2.simdMax
+    #echo nit, " r2: ", rnorm
+    if nit>=maxit or rnorm<rstop:
+      if rnorm>rstop:
+        echo "WARNING sylsolveN failed to converge: ", nit, " r2: ", rnorm
+      break
+  x := 0.5*x
+
 proc sylsolve*(x: var Mat1, a: Mat2, c: Mat3) =
   ## solves A X + X A = C for X
   const nc = x.nrows
@@ -156,8 +184,7 @@ proc sylsolve*(x: var Mat1, a: Mat2, c: Mat3) =
         x[i,j] := c0*c[i,j] + c1*adcad[i,j] + c2*(aca[i,j]-adc[i,j]-cad[i,j]) -
                   c4*(ac[i,j]+ca[i,j])
   else:
-    echo &"sylsolve n({nc})>3 not supported"
-    doAssert(false)
+    sylsolveN(x, a, c)
 
 #[
 {
