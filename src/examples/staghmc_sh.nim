@@ -445,6 +445,8 @@ proc mdt(t: float) =
       for s in g[mu]:
         g[mu][s] := exp(t*p[mu][s])*g[mu][s]
   toc("mdt")
+  GC_fullCollect()
+  toc("GC")
 proc mdv(t: float) =
   tic()
   gc.forceA(g, f)
