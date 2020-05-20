@@ -142,6 +142,8 @@ proc mdt(t: float) =
       for s in g[mu]:
         g[mu][s] := exp(t*p[mu][s])*g[mu][s]
   toc("mdt")
+  GC_fullCollect()
+  toc("GC")
 proc mdv(t: float) =
   tic()
   gc.forceA(g, f)
@@ -159,6 +161,8 @@ proc mdvf(t: float) =
     for mu in 0..<f.len:
       p[mu] -= s*f[mu]
   toc("mdvf")
+  GC_fullCollect()
+  toc("GC")
 
 # For force gradient update
 #const useFG = true

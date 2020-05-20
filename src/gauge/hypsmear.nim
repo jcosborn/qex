@@ -6,6 +6,12 @@ import fat7l
 
 export PerfInfo
 
+const keepProj {.boolDefine.} = true
+when keepProj:
+  static: echo "hypsmear: keeping projected fields"
+else:
+  static: echo "hypsmear: NOT keeping projected fields"
+
 type HypCoefs* = object
   alpha1*: float
   alpha2*: float
@@ -28,7 +34,9 @@ proc symStaple(s: any, alp: float, g1: any, g2: any,
   threadBarrier()
   s += alp * ( g1 * s2.field * s1.field.adj )
   s += alp * sm.field
-  toc("symStaple")
+  let nc = g1[0].nrows
+  let siteFlops = float(nc*nc*((6*nc+2*(nc-1))*5+4*2))
+  toc("symStaple", flops=siteFlops*g1.l.nSites)
 
 proc symStapleDeriv(f1, f2: any;  # output
                     g1, g2: any; s1, s2: any;  # same as symStaple
@@ -84,16 +92,22 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
   let lo = gf[0].l
   proc newlcm: lcm = result.new(gf[0].l)
   var
-    l1 = newFieldArray2(lo,lcm,[4,4],mu!=nu)
-    l2 = newOneOf(l1)
-    l1x = newOneOf(l1)
-    l2x = newOneOf(l1)
+    l1x = newFieldArray2(lo,lcm,[4,4],mu!=nu)
+    l2x = newOneOf(l1x)
     flx = newFieldArray(lo,lcm,4)
     tm1: lcm
     sm1: array[4,Shifter[lcm,type(gf[0][0])]]
     s1: array[4,array[4,Shifter[lcm,type(gf[0][0])]]]
     nflop = 61632.0
     dtime = 0.0
+  when keepProj:
+    var
+      l1 = newOneOf(l1x)
+      l2 = newOneOf(l1x)
+  else:
+    var
+      lp1 = newlcm()
+      lp2 = newlcm()
 
   tm1 = newlcm()
   for mu in 0..<4:
@@ -119,7 +133,8 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
           l1x[mu,nu] := ma1 * gf[mu]
           symStaple(l1x[mu,nu], alp1, gf[nu], gf[mu],
                     s1[nu][mu], s1[mu][nu], tm1, sm1[nu])
-          l1[mu,nu].proj l1x[mu,nu]
+          when keepProj:
+            l1[mu,nu].proj l1x[mu,nu]
     toc("1")
 
     for mu in 0..<4:
@@ -129,22 +144,35 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
           for a in 0..<4:
             if a!=mu and a!=nu:
               let b = 1+2+3-mu-nu-a
-              discard s1[nu][mu] ^* l1[a,b]
-              discard s1[mu][a] ^* l1[mu,b]
+              when keepProj:
+                template lp1:untyped = l1[a,b]
+                template lp2:untyped = l1[mu,b]
+              else:
+                lp1.proj l1x[a,b]
+                lp2.proj l1x[mu,b]
+              discard s1[nu][mu] ^* lp1
+              discard s1[mu][a] ^* lp2
               threadBarrier()
-              symStaple(l2x[mu,nu], alp2, l1[a,b], l1[mu,b],
+              symStaple(l2x[mu,nu], alp2, lp1, lp2,
                         s1[nu][mu], s1[mu][a], tm1, sm1[a])
-          l2[mu,nu].proj l2x[mu,nu]
+          when keepProj:
+            l2[mu,nu].proj l2x[mu,nu]
     toc("2")
 
     for mu in 0..<4:
       flx[mu] := ma3 * gf[mu]
       for nu in 0..<4:
         if nu!=mu:
-          discard s1[nu][mu] ^* l2[nu,mu]
-          discard s1[mu][nu] ^* l2[mu,nu]
+          when keepProj:
+            template lp1:untyped = l2[nu,mu]
+            template lp2:untyped = l2[mu,nu]
+          else:
+            lp1.proj l2x[nu,mu]
+            lp2.proj l2x[mu,nu]
+          discard s1[nu][mu] ^* lp1
+          discard s1[mu][nu] ^* lp2
           threadBarrier()
-          symStaple(flx[mu], alp3, l2[nu,mu], l2[mu,nu],
+          symStaple(flx[mu], alp3, lp1, lp2,
                     s1[nu][mu], s1[mu][nu], tm1, sm1[nu])
       fl[mu].proj flx[mu]
   toc("threads end")
@@ -180,12 +208,18 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
       for mu in 0..<4:
         for nu in 0..<4:
           if nu!=mu:
-            discard s1[nu][mu] ^* l2[nu,mu]
-            discard s1[mu][nu] ^* l2[mu,nu]
+            when keepProj:
+              template lp1:untyped = l2[nu,mu]
+              template lp2:untyped = l2[mu,nu]
+            else:
+              lp1.proj l2x[nu,mu]
+              lp2.proj l2x[mu,nu]
+            discard s1[nu][mu] ^* lp1
+            discard s1[mu][nu] ^* lp2
             discard fs[nu] ^* fc[mu]
             threadBarrier()
             symStapleDeriv(fl2[nu,mu], fl2[mu,nu],
-                           l2[nu,mu], l2[mu,nu], s1[nu][mu], s1[mu][nu],
+                           lp1, lp2, s1[nu][mu], s1[mu][nu],
                            fc[mu], fs[nu], tm1, tm2, sm1[nu], sm1[mu])
       toc("1")
 
@@ -193,7 +227,10 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
       for mu in 0..<4:
         for nu in 0..<4:
           if nu!=mu:
-            fl2[mu,nu].projDeriv(l2[mu,nu], l2x[mu,nu], fl2[mu,nu])
+            when keepProj:
+              fl2[mu,nu].projDeriv(l2[mu,nu], l2x[mu,nu], fl2[mu,nu])
+            else:
+              fl2[mu,nu].projDeriv(l2x[mu,nu], fl2[mu,nu])
       # link (gf, l1) → l2x, (f, fl1) ← fl2
       for mu in 0..<4:
         for nu in 0..<4:
@@ -206,12 +243,18 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
             for a in 0..<4:
               if a!=mu and a!=nu:
                 let b = 1+2+3-mu-nu-a
-                discard s1[nu][mu] ^* l1[a,b]
-                discard s1[mu][a] ^* l1[mu,b]
+                when keepProj:
+                  template lp1:untyped = l1[a,b]
+                  template lp2:untyped = l1[mu,b]
+                else:
+                  lp1.proj l1x[a,b]
+                  lp2.proj l1x[mu,b]
+                discard s1[nu][mu] ^* lp1
+                discard s1[mu][a] ^* lp2
                 discard fs[a] ^* fl2[mu,nu]
                 threadBarrier()
                 symStapleDeriv(fl1[a,b], fl1[mu,b],
-                               l1[a,b], l1[mu,b], s1[nu][mu], s1[mu][a],
+                               lp1, lp2, s1[nu][mu], s1[mu][a],
                                fl2[mu,nu], fs[a], tm1, tm2, sm1[a], sm1[mu])
       toc("2")
 
@@ -219,7 +262,10 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
       for mu in 0..<4:
         for nu in 0..<4:
           if nu!=mu:
-            fl1[mu,nu].projDeriv(l1[mu,nu], l1x[mu,nu], fl1[mu,nu])
+            when keepProj:
+              fl1[mu,nu].projDeriv(l1[mu,nu], l1x[mu,nu], fl1[mu,nu])
+            else:
+              fl1[mu,nu].projDeriv(l1x[mu,nu], fl1[mu,nu])
             discard s1[mu][nu] ^* gf[mu]
       # link gf → l1, f ← fl1
       for mu in 0..<4:
