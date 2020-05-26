@@ -17,6 +17,8 @@ jobs:
         free
         cat /proc/cpuinfo
         hwloc-ls
+        gcc -v
+        mpicc -v
     - name: checkout Nim
       uses: actions/checkout@v2
       with:
