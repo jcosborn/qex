@@ -1,0 +1,66 @@
+name: test
+on: [push, pull_request]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        nim-branch: [version-1-2, devel]
+    name: nim-${{ matrix.nim-branch }}
+    runs-on: ubuntu-latest
+    steps:
+    - name: install packages
+      run: |
+        sudo apt-get install hwloc-nox mpich libmpich-dev
+    - name: system info
+      run: |
+        free
+        cat /proc/cpuinfo
+        hwloc-ls
+    - name: checkout Nim
+      uses: actions/checkout@v2
+      with:
+        repository: nim-lang/Nim
+        ref: ${{ matrix.nim-branch }}
+        path: Nim
+    - name: checkout Nim csources
+      uses: actions/checkout@v2
+      with:
+        repository: nim-lang/csources
+        path: Nim/csources
+    - name: set path to nim
+      run: echo "::add-path::${{ github.workspace }}/Nim/bin"
+    - name: build Nim csources
+      working-directory: Nim/csources
+      run: make -j $(nproc)
+    - name: build Nim & nimble
+      working-directory: Nim
+      run: |
+        nim c koch
+        ./koch boot -d:release -d:danger
+        ./koch nimble -d:release -d:danger
+    - name: checkout
+      uses: actions/checkout@v2
+      with:
+        path: qex
+    - name: install qmp & qio
+      working-directory: qex
+      run: ./bootstrap-travis
+    - name: configure
+      working-directory: qex
+      run: QMPDIR=qmp QIODIR=qio ./configure
+    - name: make tests
+      working-directory: qex
+      run: make tests
+    - name: testscript
+      working-directory: qex
+      run: ./testscript.sh
+    - name: runtests
+      working-directory: qex
+      run: ./runtests.sh
+    - name: make bench
+      working-directory: qex
+      run: make bench
+    - name: benchLinalg
+      working-directory: qex
+      run: bin/benchLinalg
