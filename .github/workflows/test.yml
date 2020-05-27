@@ -23,7 +23,7 @@ jobs:
     - name: set path to hwloc v2
       run: |
         echo "::add-path::${{ github.workspace }}/hwloc-v2/bin"
-        export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/hwloc-v2/lib"
+        echo "::set-env name=LD_LIBRARY_PATH::${{ github.workspace }}/hwloc-v2/lib"
     - name: system info
       run: |
         free
@@ -68,7 +68,11 @@ jobs:
       run: make tests
     - name: testscript
       working-directory: qex
-      run: ./testscript.sh
+      run: |
+        echo $PATH
+        echo $LD_LIBRARY_PATH
+        ls -l "$GITHUB_WORKSPACE/hwloc-v2/lib"
+        ./testscript.sh
     - name: runtests
       working-directory: qex
       run: ./runtests.sh
