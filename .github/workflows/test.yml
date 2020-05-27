@@ -11,7 +11,7 @@ jobs:
     steps:
     - name: install packages
       run: |
-        sudo apt-get install hwloc-nox mpich libmpich-dev
+        sudo apt-get install hwloc-nox libhwloc-dev mpich libmpich-dev
     - name: system info
       run: |
         free
