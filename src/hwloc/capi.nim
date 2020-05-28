@@ -111,7 +111,7 @@ proc hwloc_bitmap_copy*(dst: hwloc_bitmap_t; src: hwloc_const_bitmap_t): cint {.
 ##  or that would have been written (not including the ending \\0).
 ##
 
-proc hwloc_bitmap_snprintf(buf: cstring; buflen: csize_t; bitmap: hwloc_const_bitmap_t): cint {.
+proc hwloc_bitmap_snprintf*(buf: cstring; buflen: csize_t; bitmap: hwloc_const_bitmap_t): cint {.
     importc: "hwloc_bitmap_snprintf", dynlib: "libhwloc.so".}
 ## * \brief Stringify a bitmap into a newly allocated string.
 ##
@@ -123,7 +123,7 @@ proc hwloc_bitmap_asprintf*(strp: ptr cstring; bitmap: hwloc_const_bitmap_t): ci
 ## * \brief Parse a bitmap string and stores it in bitmap \p bitmap.
 ##
 
-proc hwloc_bitmap_sscanf(bitmap: hwloc_bitmap_t; string: cstring): cint {.
+proc hwloc_bitmap_sscanf*(bitmap: hwloc_bitmap_t; string: cstring): cint {.
     importc: "hwloc_bitmap_sscanf", dynlib: "libhwloc.so".}
 ## * \brief Stringify a bitmap in the list format.
 ##
@@ -219,18 +219,18 @@ proc hwloc_bitmap_from_ulongs*(bitmap: hwloc_bitmap_t; nr: cuint; masks: ptr cul
 ##
 ## * \brief Add index \p id in bitmap \p bitmap
 
-proc hwloc_bitmap_set(bitmap: hwloc_bitmap_t; id: cuint): cint {.
+proc hwloc_bitmap_set*(bitmap: hwloc_bitmap_t; id: cuint): cint {.
     importc: "hwloc_bitmap_set", dynlib: "libhwloc.so".}
 ## * \brief Add indexes from \p begin to \p end in bitmap \p bitmap.
 ##
 ##  If \p end is \c -1, the range is infinite.
 ##
 
-proc hwloc_bitmap_set_range(bitmap: hwloc_bitmap_t; begin: cuint; `end`: cint): cint {.
+proc hwloc_bitmap_set_range*(bitmap: hwloc_bitmap_t; begin: cuint; `end`: cint): cint {.
     importc: "hwloc_bitmap_set_range", dynlib: "libhwloc.so".}
 ## * \brief Replace \p i -th subset of bitmap \p bitmap with unsigned long \p mask
 
-proc hwloc_bitmap_set_ith_ulong(bitmap: hwloc_bitmap_t; i: cuint; mask: culong): cint {.
+proc hwloc_bitmap_set_ith_ulong*(bitmap: hwloc_bitmap_t; i: cuint; mask: culong): cint {.
     importc: "hwloc_bitmap_set_ith_ulong", dynlib: "libhwloc.so".}
 ## * \brief Remove index \p id from bitmap \p bitmap
 
@@ -263,7 +263,7 @@ proc hwloc_bitmap_clr_range*(bitmap: hwloc_bitmap_t; begin: cuint; `end`: cint):
 ##  should be applied to a copy (which may be obtained with hwloc_bitmap_dup()).
 ##
 
-proc hwloc_bitmap_singlify(bitmap: hwloc_bitmap_t): cint {.
+proc hwloc_bitmap_singlify*(bitmap: hwloc_bitmap_t): cint {.
     importc: "hwloc_bitmap_singlify", dynlib: "libhwloc.so".}
 ##
 ##  Consulting bitmaps.

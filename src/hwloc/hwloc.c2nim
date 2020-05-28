@@ -6,4 +6,4 @@
 #def __hwloc_attribute_pure
 #def __hwloc_restrict
 #def __hwloc_inline
-#private "hwloc_bitmap_s"
+#private "^hwloc_bitmap_s$"
