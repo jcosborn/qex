@@ -92,11 +92,12 @@ ifSuccess hwloc_topology_init(topology.addr):
     if myRank > 0:
       c.pushSend(0, policy.addr, sizeof policy)
       c.waitSends
-    for r in 0..<nRanks:
-      if r > 0:
-        c.pushRecv(r, policy.addr, sizeof policy)
-        c.waitRecvs
-      echo "rank ",r," membind policy: ",policy
+    else:
+      for r in 0..<nRanks:
+        if r > 0:
+          c.pushRecv(r, policy.addr, sizeof policy)
+          c.waitRecvs
+        echo "rank ",r," membind policy: ",policy
     var buffer = newStringOfCap buflen
     buffer.setlen buflen
     ifSuccess hwloc_bitmap_snprintf(buffer, buflen, set):
@@ -108,12 +109,13 @@ ifSuccess hwloc_topology_init(topology.addr):
         c.pushSend(0, ncur.addr, sizeof ncur)
         c.pushSend(0, ntot.addr, sizeof ntot)
         c.waitSends
-      for r in 0..<nRanks:
-        if r > 0:
-          c.pushRecv(r, buffer.cstring, buflen)
-          c.pushRecv(r, ncur.addr, sizeof ncur)
-          c.pushRecv(r, ntot.addr, sizeof ntot)
-          c.waitRecvs
-        echo "rank ",r," binds to numa node ",buffer," using ",ncur," of ",ntot
-        stdout.flushFile
+      else:
+        for r in 0..<nRanks:
+          if r > 0:
+            c.pushRecv(r, buffer.cstring, buflen)
+            c.pushRecv(r, ncur.addr, sizeof ncur)
+            c.pushRecv(r, ntot.addr, sizeof ntot)
+            c.waitRecvs
+          echo "rank ",r," binds to numa node ",buffer," using ",ncur," of ",ntot
+          stdout.flushFile
 qexFinalize()
