@@ -47,7 +47,7 @@ ifSuccess hwloc_topology_init(topology.addr):
               c.pushRecv(r, ncur.addr, sizeof ncur)
               c.pushRecv(r, ntot.addr, sizeof ntot)
               c.waitRecvs
-            echo "rank ",r," binds to cpuset ",buffer," using ",ncur," of ",ntot
+            echo "rank ",r," binds to cpuset ",buffer.cstring," using ",ncur," of ",ntot
 
     threads:
       var set = hwloc_bitmap_alloc()
@@ -71,18 +71,20 @@ ifSuccess hwloc_topology_init(topology.addr):
               c.pushSend(0, tid.addr, sizeof tid)
               c.waitSends
           else:
+            threadCritical:
+              echoRaw "rank ",myRank," thread ",tid," binds to cpuset ",buffer.cstring," using ",ncur
+              stdout.flushFile
+            threadBarrier()
             threadMaster:
-              for r in 0..<nRanks:
-                if r > 0:
-                  c.pushRecv(r, nth.addr, sizeof nth)
-                  c.waitRecvs
+              for r in 1..<nRanks:
+                c.pushRecv(r, nth.addr, sizeof nth)
+                c.waitRecvs
                 for t in 0..<nth:
-                  if r > 0:
-                    c.pushRecv(r, buffer.cstring, buflen)
-                    c.pushRecv(r, ncur.addr, sizeof ncur)
-                    c.pushRecv(r, tid.addr, sizeof tid)
-                    c.waitRecvs
-                  echoRaw "rank ",r," thread ",tid," binds to cpuset ",buffer," using ",ncur
+                  c.pushRecv(r, buffer.cstring, buflen)
+                  c.pushRecv(r, ncur.addr, sizeof ncur)
+                  c.pushRecv(r, tid.addr, sizeof tid)
+                  c.waitRecvs
+                  echoRaw "rank ",r," thread ",tid," binds to cpuset ",buffer.cstring," using ",ncur
                   stdout.flushFile
 
   let cset = hwloc_topology_get_topology_nodeset(topology)
@@ -116,6 +118,6 @@ ifSuccess hwloc_topology_init(topology.addr):
             c.pushRecv(r, ncur.addr, sizeof ncur)
             c.pushRecv(r, ntot.addr, sizeof ntot)
             c.waitRecvs
-          echo "rank ",r," binds to numa node ",buffer," using ",ncur," of ",ntot
+          echo "rank ",r," binds to numa node ",buffer.cstring," using ",ncur," of ",ntot
           stdout.flushFile
 qexFinalize()
