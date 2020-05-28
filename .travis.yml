@@ -3,8 +3,8 @@ language: c
 addons:
   apt:
     packages:
-    - openmpi-bin
-    - libopenmpi-dev
+    - mpich
+    - libmpich-dev
 
 notifications:
   email:
@@ -14,7 +14,17 @@ notifications:
     on_failure: always
 
 before_install:
+  - curl -LO https://download.open-mpi.org/release/hwloc/v2.2/hwloc-2.2.0.tar.bz2
+  - tar xf hwloc-2.2.0.tar.bz2
+  - cd hwloc*/          
+  - ./configure --prefix="$PWD/../hwloc-v2" --disable-opencl --disable-netloc --disable-cairo
+  - make -j $(nproc)
+  - make install        
+  - cd ..
+  - export PATH="$PWD/hwloc-v2/bin:$PATH"
+  - export LD_LIBRARY_PATH="$PWD/hwloc-v2/lib"
   - free
+  - hwloc-ls
   - cat /proc/cpuinfo
   - cd ..
   - #git clone -b master --depth 1 git://github.com/nim-lang/Nim
@@ -33,6 +43,6 @@ script:
   - #sed -i 's/mpicc/gcc/' config.nims
   - make NIMFLAGS="--parallelBuild:2" tests
   - ./testscript.sh
-  - #./runtests.sh
+  - ./runtests.sh
   - make bench
   - bin/benchLinalg
