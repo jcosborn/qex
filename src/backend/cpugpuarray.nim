@@ -78,7 +78,7 @@ proc initArrayObj*(r: var ArrayObj, n: int) =
     when Backend == "CUDA":
       r.unifiedMem = true
       if r.unifiedMem:
-        let err = cudaMallocManaged(cast[ptr pointer](addr p), n*sizeof(T))
+        let err = cudaMallocManaged(cast[ptr pointer](addr p), csize_t(n*sizeof(T)))
         # Somehow == and != doesn't work as expected here??!
         if err:
           if cast[cint](err) == cast[cint](cudaErrorNotSupported):
