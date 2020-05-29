@@ -84,23 +84,105 @@ template vectorType(vlen:static[int],t:typedesc):untyped =
     svlen = vlen div mvlen
   when svlen*mvlen != vlen:
     {.fatal:"Inner vector length " & $vlen & " not divisible by machine vector length " & $mvlen.}
-  type SV = ShortVector[svlen,VE]
+  when vlen==4 and E is float32:
+    type SV = ShortVectorFloat4
+  elif vlen==8 and E is float32:
+    type SV = ShortVectorFloat8
+  elif vlen==16 and E is float32:
+    type SV = ShortVectorFloat16
+  elif vlen==32 and E is float32:
+    type SV = ShortVectorFloat32
+  elif vlen==64 and E is float32:
+    type SV = ShortVectorFloat64
+  elif vlen==4 and E is float64:
+    type SV = ShortVectorDouble4
+  elif vlen==8 and E is float64:
+    type SV = ShortVectorDouble8
+  elif vlen==16 and E is float64:
+    type SV = ShortVectorDouble16
+  elif vlen==32 and E is float64:
+    type SV = ShortVectorDouble32
+  else:
+    {.fatal:"unimplemented vectorType for: " & $vlen & " " & $getTypeImpl(E).}
   vectorType(t,SV)
 
 type
-  ShortVector*[V:static[int],E] = object
-    a*:array[V,E]
+  #ShortVector*[V:static[int],E] = object
+  #  a*:array[V,E]
   ShortVectorIndex* = distinct int
   VectorizedObj[V,M:static[int],T] = object
     o:Coalesced[V,M,T]
     i:ShortVectorIndex
 
+const llbits = currentSourcePath()[0..^15] & "llbits.h"
+type
+  ShortVectorFloat1* {.importc, header:llbits.} = object
+    a:array[1,float32]
+  ShortVectorFloat2* {.importc, header:llbits.} = object
+    a:array[2,float32]
+  ShortVectorFloat4* {.importc, header:llbits.} = object
+    a:array[4,float32]
+  ShortVectorFloat8* {.importc, header:llbits.} = object
+    a:array[8,float32]
+  ShortVectorFloat16* {.importc, header:llbits.} = object
+    a:array[16,float32]
+  ShortVectorFloat32* {.importc, header:llbits.} = object
+    a:array[32,float32]
+  ShortVectorFloat64* {.importc, header:llbits.} = object
+    a:array[64,float32]
+  ShortVectorDouble1* {.importc, header:llbits.} = object
+    a:array[1,float64]
+  ShortVectorDouble2* {.importc, header:llbits.} = object
+    a:array[2,float64]
+  ShortVectorDouble4* {.importc, header:llbits.} = object
+    a:array[4,float64]
+  ShortVectorDouble8* {.importc, header:llbits.} = object
+    a:array[8,float64]
+  ShortVectorDouble16* {.importc, header:llbits.} = object
+    a:array[16,float64]
+  ShortVectorDouble32* {.importc, header:llbits.} = object
+    a:array[32,float64]
+  ShortVectorInt32t1* {.importc, header:llbits.} = object
+    a:array[1,int32]
+  ShortVectorInt32t2* {.importc, header:llbits.} = object
+    a:array[2,int32]
+  ShortVectorInt32t4* {.importc, header:llbits.} = object
+    a:array[4,int32]
+  ShortVectorInt32t8* {.importc, header:llbits.} = object
+    a:array[8,int32]
+  ShortVectorInt32t16* {.importc, header:llbits.} = object
+    a:array[16,int32]
+  ShortVectorInt32t32* {.importc, header:llbits.} = object
+    a:array[32,int32]
+  ShortVectorInt32t64* {.importc, header:llbits.} = object
+    a:array[64,int32]
+  ShortVectorInt64t1* {.importc, header:llbits.} = object
+    a:array[1,int]
+  ShortVectorInt64t2* {.importc, header:llbits.} = object
+    a:array[2,int]
+  ShortVectorInt64t4* {.importc, header:llbits.} = object
+    a:array[4,int]
+  ShortVectorInt64t8* {.importc, header:llbits.} = object
+    a:array[8,int]
+  ShortVectorInt64t16* {.importc, header:llbits.} = object
+    a:array[16,int]
+  ShortVectorInt64t32* {.importc, header:llbits.} = object
+    a:array[32,int]
+  ShortVectorType* = ShortVectorFloat1 | ShortVectorFloat2 | ShortVectorFloat4 |
+    ShortVectorFloat8 | ShortVectorFloat16 | ShortVectorFloat32 | ShortVectorFloat64 |
+    ShortVectorDouble1 | ShortVectorDouble2 | ShortVectorDouble4 |
+    ShortVectorDouble8 | ShortVectorDouble16 | ShortVectorDouble32 |
+    ShortVectorInt32t1 | ShortVectorInt32t2 | ShortVectorInt32t4 |
+    ShortVectorInt32t8 | ShortVectorInt32t16 | ShortVectorInt32t32 | ShortVectorInt32t64 |
+    ShortVectorInt64t1 | ShortVectorInt64t2 | ShortVectorInt64t4 |
+    ShortVectorInt64t8 | ShortVectorInt64t16 | ShortVectorInt64t32
+
 template `[]`*(x:Coalesced, ix:ShortVectorIndex):untyped = VectorizedObj[x.V,x.M,x.T](o:x,i:ix)
 template veclen*(x:Coalesced):untyped = x.n div x.V
 
-template `[]`*(x:ShortVector, i:int):untyped = x.a[i]
-template `[]=`*(x:var ShortVector, i:int, y:typed) = x.a[i] = y
-template len*(x:ShortVector):int = x.V
+template `[]`*(x:ShortVectorType, i:int):untyped = x.a[i]
+template `[]=`*(x:var ShortVectorType, i:int, y:typed) = x.a[i] = y
+template len*(x:ShortVectorType):int = x.a.len
 
 type RWA = ptr UncheckedArray[RegisterWord]
 
@@ -331,71 +413,71 @@ iterator vectorIndices*(x:Coalesced):ShortVectorIndex =
     yield ShortVectorIndex(i)
     inc i
 
-template `+`*(x:ShortVector, y:SomeNumber):untyped =
+template `+`*(x:ShortVectorType, y:SomeNumber):untyped =
   const V = x.len-1
   type tx = type(x)
   let
-    xx = x
-    yy = y
+    xx {.aligned.} = x
+    yy {.aligned.} = y
   var z {.noinit.}:tx
   simdfor:
     for i in 0..V: z[i] = xx[i] + yy
   z
-template `+`*(x,y:ShortVector):untyped =
+template `+`*(x,y:ShortVectorType):untyped =
   const V = x.len-1
   type tx = type(x)
   let
-    xx = x
-    yy = y
+    xx {.aligned.} = x
+    yy {.aligned.} = y
   var z {.noinit.}:tx
   simdfor:
     for i in 0..V: z[i] = xx[i] + yy[i]
   z
-template `-`*(x,y:ShortVector):untyped =
+template `-`*(x,y:ShortVectorType):untyped =
   const V = x.len-1
   type tx = type(x)
   let
-    xx = x
-    yy = y
-  var z {.noinit.}:tx
+    xx {.aligned.} = x
+    yy {.aligned.} = y
+  var z {.aligned, noinit.}:tx
   simdfor:
     for i in 0..V: z[i] = xx[i] - yy[i]
   z
-template `*`*(x,y:ShortVector):untyped =
+template `*`*(x,y:ShortVectorType):untyped =
   const V = x.len-1
   type tx = type(x)
   let
-    xx = x
-    yy = y
-  var z {.noinit.}:tx
+    xx {.aligned.} = x
+    yy {.aligned.} = y
+  var z {.aligned, noinit.}:tx
   simdfor:
     for i in 0..V: z[i] = xx[i] * yy[i]
   z
-template `+=`*(x:var ShortVector, y:ShortVector) =
+template `+=`*(x:var ShortVectorType, y:ShortVectorType) =
   const V = x.len-1
-  let yy = y
+  let yy {.aligned.} = y
   simdfor:
     for i in 0..V: x[i] += yy[i]
-template `:=`*(x:var ShortVector, y:ShortVector) =
+template `:=`*(x:var ShortVectorType, y:ShortVectorType) =
   const V = x.len-1
-  let yy = y
+  let yy {.aligned.} = y
   simdfor:
     for i in 0..V: x[i] = yy[i]
-template `:=`*(x:var ShortVector, y:SomeNumber) =
+template `:=`*(x:var ShortVectorType, y:SomeNumber) =
   const V = x.len-1
-  let yy = y
+  let yy {.aligned.} = y
   simdfor:
     for i in 0..V: x[i] := yy
-template `*=`*(x:var ShortVector, y:SomeNumber) =
+template `*=`*(x:var ShortVectorType, y:SomeNumber) =
   const V = x.len-1
-  let yy = y
+  let yy {.aligned.} = y
   simdfor:
     for i in 0..V: x[i] *= yy
-template norm2*(xx:ShortVector):untyped =
+template norm2*(xx:ShortVectorType):untyped =
   const V = xx.len-1
-  let x = xx
+  let x {.aligned.} = xx
   type N2 = type(xx[0].norm2)
-  var r {.noinit.}:N2
+  var r {.aligned, noinit.}:N2
   r = x[0].norm2
   when V>0:
     unrollfor:

@@ -70,7 +70,7 @@ template omp_target_memcpy_togpu*(dst: pointer, src: pointer; length: csize_t): 
 template omp_target_free*(device_ptr: pointer) =
   omp_target_free(device_ptr, omp_get_default_device())
 
-template gpuMalloc*(size csize_t):pointer = omp_target_alloc(size)
+template gpuMalloc*(size:csize_t):pointer = omp_target_alloc(size)
 template gpuFree*(device_ptr:pointer) = omp_target_free(device_ptr)
 template gpuMemCpyToCPU*(dst: pointer, src: pointer; length: csize_t): cint =
   omp_target_memcpy_tocpu(dst, src, length)
@@ -297,7 +297,7 @@ proc isIndex(n,i:NimNode):bool =
   if n.kind == nnkHiddenStdConv:
     result = n[1].eqident i
 macro simdForImpl(n:typed):untyped =
-  proc getIndexedPtrs(n,i:NimNode):seq[NimNode] =
+  proc getIndexedPtrs(n,i:NimNode):(NimNode,seq[NimNode]) =
     #echo "### getIndexedPtrs: ", i.repr
     #echo n.treerepr
     var ptrs = newseq[NimNode]()
@@ -313,17 +313,22 @@ macro simdForImpl(n:typed):untyped =
             return v
           else:
             return ptrs[m][0]
-    proc go(n:NimNode) =
+    proc go(n:NimNode):NimNode =
+      result = n.copyNimNode
       if n.kind in CallNodes and ($n[0] == "[]" or $n[0] == "[]="):
         if n.len > 2: # and n[2].isIndex i:
-          n[1] = n[1].get
+          result.add n[0].go
+          result.add n[1].get
+          for i in 2..<n.len: result.add n[i].go
+        else:
+          for c in n: result.add c.go
       elif n.kind == nnkBracketExpr:
-        #if n[1].isIndex i:
-          n[0] = n[0].get
-      for c in n:
-        c.go
-    n.go
-    ptrs
+        result.add n[0].get
+        for i in 1..<n.len: result.add n[i].go
+      else:
+        for c in n: result.add c.go
+    var nn = n.go
+    (nn, ptrs)
   template res(setup, i, lo, hi, body: untyped): untyped =
     block:
       var i {.codegendecl:"/* $# $# */",noinit.}: cint
@@ -341,7 +346,7 @@ macro simdForImpl(n:typed):untyped =
   #echo n.treerepr
   n.expectkind nnkForStmt
   #echo n[1][0].getimpl.treerepr
-  let ptrs = n[2].getIndexedPtrs(n[0])
+  let (nn,ptrs) = n[2].getIndexedPtrs(n[0])
   if ptrs.len == 0:
     echo "simdForImpl finds no pointers: ",n.treerepr
     quit 1
@@ -354,7 +359,7 @@ macro simdForImpl(n:typed):untyped =
         newNimNode(nnkPragma).add(
           newNimNode(nnkExprColonExpr).add(ident"codegenDecl", newLit"$# __restrict__ $#"))),
       newEmptyNode(), newcall(bindsym"toUArray", p[1]))
-  result = getast res(setup, n[0], n[1][1], n[1][2], n[2])
+  result = getast res(setup, n[0], n[1][1], n[1][2], nn)
   #echo result.treerepr
   let e = result[1][2]
   e.expectkind nnkPragma

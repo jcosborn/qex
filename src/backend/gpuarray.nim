@@ -52,7 +52,7 @@ proc free*(r: var GpuArrayObj) =
 
 proc initGpuArrayObj*(r: var GpuArrayObj, n: int) =
   type T = r.T
-  var p: ptr T = cast[ptr T](gpuMalloc(n*sizeof(T)))
+  var p: ptr T = cast[ptr T](gpuMalloc(csize_t(n*sizeof(T))))
   r.n = n
   r.p.initCoalesced(p, n)
   # echo "GpuArray init done."
@@ -158,7 +158,7 @@ template `+=`*(x: GpuArrayObj, y: GpuArrayObj) =
   mixin getThreadNum, getNumThreads
   let tid = getThreadNum()
   let nid = getNumThreads()
-  var i = tid
+  var i = tid.int
   #cprintf("%i/%i\n", i, x.n)
   while i<x.n:
     x[i] += y[i]

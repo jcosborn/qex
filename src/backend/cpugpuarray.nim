@@ -160,7 +160,7 @@ proc toGpu*(x: var ArrayObj) =
     else:
       if not x.lastOnGpu:
         if x.g.n==0: x.g.initGpuArrayObj(x.n)
-        let err = gpuMemCpyToGpu(x.g.p.p, x.p.p, x.n*sizeof(x.T))
+        let err = gpuMemCpyToGpu(x.g.p.p, x.p.p, csize_t(x.n*sizeof(x.T)))
         if err != 0:
           echo "gpuMemCpyToGpu: ", err
           quit cast[cint](err)
@@ -170,7 +170,7 @@ proc toCpu*(x: var ArrayObj) =
   when useGPU:
     if (not x.unifiedMem) and x.lastOnGpu:
       threadSingle:
-        let err = gpuMemCpyToCpu(x.p.p, x.g.p.p, x.n*sizeof(x.T))
+        let err = gpuMemCpyToCpu(x.p.p, x.g.p.p, csize_t(x.n*sizeof(x.T)))
         if err != 0:
           echo "gpuMemCpyToGpu: ", err
           quit cast[cint](err)
