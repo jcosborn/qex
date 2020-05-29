@@ -200,6 +200,7 @@ proc newOneOf*[N:static[int],V:static[int],T](fa:FieldArray[N,V,T]):FieldArray[N
 template isWrapper*(x: SomeField): untyped = false
 template `[]`*(x:Field; i:int):untyped = x.s[i]
 template `[]`*(x:Subsetted; i:int):untyped = x.field[i]
+template l*(x:Subsetted):untyped = x.field.l
 template `[]`*(x:SomeField; st:string):untyped =
   Subsetted[type(x),type(st)](field:x,subset:st)
 template `[]`*(x:SomeField; st:Subset):untyped =
@@ -274,6 +275,7 @@ macro indexFieldM*(x:FieldAddSub, sx:tuple, y:int):auto =
   #echo result.repr
 template indexField*(x:FieldAddSub, y:int):untyped = indexFieldM(x, x.S, y)
 template `[]`*(x:FieldAddSub, y:int):untyped = indexField(x, y)
+template l*(x:FieldAddSub):untyped = x.field[0].l
 macro indexFieldM*(x:FieldMul; tx:typedesc; y:int):auto =
   #echo x.treeRepr
   #echo tx.getType.treeRepr
@@ -293,8 +295,6 @@ macro indexFieldM*(x:FieldMul; tx:typedesc; y:int):auto =
 template indexField*[T](x: FieldMul[T], y: int): untyped =
   indexFieldM(x, x.T, y)
 template `[]`*(x:FieldMul, y:int):untyped = indexField(x, y)
-
-template l*(x:FieldAddSub):untyped = x.field[0].l
 
 template itemsI*(n0,n1:int):untyped =
   let n = n1 - n0
@@ -535,7 +535,7 @@ proc norm2P*(f:SomeField):auto =
   #toc("norm2 thread sum")
   #rankSum(result)
   #toc("norm2 rank sum")
-  threadRankSum(result)
+  f.l.threadRankSum(result)
   #echo result
   toc("norm2 thread rank sum")
 template norm2*(f:SomeAllField):untyped =
@@ -564,7 +564,7 @@ proc dotP*(f1:SomeField; f2:SomeField2):auto =
   toc("dot simd sum")
   #threadSum(result)
   #rankSum(result)
-  threadRankSum(result)
+  f1.l.threadRankSum(result)
   toc("dot thread rank sum")
 template dot*(f1:SomeAllField; f2:SomeAllField2):untyped =
   when declared(subsetObject):
@@ -595,7 +595,7 @@ proc redotP*(f1:SomeField; f2:SomeField2):auto =
   #toc("thread sum")
   #rankSum(result)
   #toc("rank sum")
-  threadRankSum(result)
+  f1.l.threadRankSum(result)
   toc("redot thread rank sum")
 template redot*(f1:SomeAllField; f2:SomeAllField2):untyped =
   when declared(subsetObject):
@@ -617,7 +617,7 @@ proc trace*(m:SomeField):auto =
   result = simdSum(tr)
   #threadSum(result)
   #rankSum(result)
-  threadRankSum(result)
+  m.l.threadRankSum(result)
 
 proc sumP*(f:SomeField):auto =
   mixin inc, simdSum, items
@@ -626,8 +626,9 @@ proc sumP*(f:SomeField):auto =
   for x in items(t):
     iadd(s, t[x])
   result = simdSum(s)
-  threadSum(result)
-  rankSum(result)
+  #threadSum(result)
+  #rankSum(result)
+  f.l.threadRankSum(result)
 template sum*(f:SomeAllField):untyped =
   when declared(subsetString):
     sumP(f[subsetString])

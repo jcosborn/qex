@@ -60,65 +60,22 @@ proc QMP_comm_broadcast*(comm: QMP_comm_t, buffer: pointer, nbytes: csize_t) {.q
 template QMP_comm_broadcast*(c: QMP_comm_t, b: pointer, n: int) =
   QMP_comm_broadcast(c, b, (csize_t)n)
 
-proc qmpSum*(v:var int) =
-  var t = v.float
-  QmpSumDouble(t.addr)
-  v = t.int
-
-template qmpSum*(v:float32):untyped = QmpSumFloat(v.addr)
-template qmpSum*(v:float64):untyped = QmpSumDouble(v.addr)
-template qmpSum*(v:ptr float32, n:int):untyped = QmpSumFloatArray(v,n.cint)
-template qmpSum*(v:ptr float64, n:int):untyped = QmpSumDoubleArray(v,n.cint)
-template qmpSum*(v:ptr array, n:int):untyped =
-  qmpSum(v[][0].addr, n*v[].len)
-template qmpSum*(v:ptr tuple, n:int):untyped =
-  qmpSum(v[][0].addr, n*(sizeOf(v) div sizeOf(v[0])))
-template qmpSum*(v:ptr object, n:int):untyped =
-  qmpSum(v[][].addr, n)
-#template qmpSum*(v: object) =
-#  qmpSum(asNumberPtr(v), numNumbers(v))
-#template qmpSum*(v:ptr typed, n:int):untyped =
-#  qmpSum(v[][].addr, n)
-#template QmpSum(v:array[int,int]):untyped =
-#  var tQmpSumDoubleArray(v)
-template qmpSum*[I,T](v:array[I,T]):untyped =
-  qmpSum(v[0].addr, v.len)
-#template qmpSum*(v:openArray[float64]):untyped =
-#  QmpSumDoubleArray(v[0].addr,v.len.cint)
-template qmpSum*[T](v:seq[T]):untyped =
-  qmpSum(v[0].addr, v.len)
-#template qmpSum*[I,T](v:seq[array[I,T]]):untyped =
-#  qmpSum(v[0][0].addr, v.len.cint*sizeOf(v[0]))
-#template qmpSum*(v:openArray[array]):untyped =
-#  qmpSum(v[0][0].addr, v.len.cint*sizeOf(v[0]))
-template qmpSum*(v:tuple):untyped =
-  qmpSum(v[0].addr, sizeOf(v) div sizeOf(v[0]))
-#template qmpSum*[T](v:T):untyped =
-#template qmpSum*(v:typed):untyped =
-#  qmpSum(v[])
-#template qmpSum*[T](v:T):untyped =
-#  qmpSum(v[])
-template qmpSum*(v: typed): untyped =
-  when numberType(v) is float64:
-    qmpSum(cast[ptr float64](addr v), sizeof(v) div sizeof(float64))
-  elif numberType(v) is float32:
-    qmpSum(cast[ptr float32](addr v), sizeof(v) div sizeof(float32))
-  else:
-    qmpSum(v[])
-
-template qmpMax*(v:float32):untyped = QmpMaxFloat(v.addr)
-template qmpMax*(v:float64):untyped = QmpMaxDouble(v.addr)
-template qmpMin*(v:float32):untyped = QmpMinFloat(v.addr)
-template qmpMin*(v:float64):untyped = QmpMinDouble(v.addr)
-
 proc QMP_declare_msgmem*(mem: pointer; nbytes: csize_t): QMP_msgmem_t {.
     importc: "QMP_declare_msgmem", header: "qmp.h".}
 proc QMP_declare_send_to*(m: QMP_msgmem_t; rem_node_rank: cint;
                           priority: cint): QMP_msghandle_t {.
     importc: "QMP_declare_send_to", header: "qmp.h".}
+proc QMP_comm_declare_send_to*(comm: QMP_comm_t; m: QMP_msgmem_t;
+                               rem_node_rank: cint; priority: cint):
+                                 QMP_msghandle_t {.
+    importc: "QMP_comm_declare_send_to", header: "qmp.h".}
 proc QMP_declare_receive_from*(m: QMP_msgmem_t; rem_node_rank: cint;
                                priority: cint): QMP_msghandle_t {.
     importc: "QMP_declare_receive_from", header: "qmp.h".}
+proc QMP_comm_declare_receive_from*(comm: QMP_comm_t; m: QMP_msgmem_t;
+                                    rem_node_rank: cint; priority: cint):
+                                      QMP_msghandle_t {.
+    importc: "QMP_comm_declare_receive_from", header: "qmp.h".}
 proc QMP_declare_send_recv_pairs*(msgh: ptr QMP_msghandle_t;
                                   num: cint): QMP_msghandle_t {.
     importc: "QMP_declare_send_recv_pairs", header: "qmp.h".}

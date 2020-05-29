@@ -78,8 +78,10 @@ proc partitionGeomF(lx,nx:var openArray[int]; x:openArray[int]; n,dist:int) =
     nx[k] *= f
     lx[k] = lx[k] div f
 
-proc newLayoutX*(lat: openArray[int]; V: static[int];
+proc newLayoutX*(comm: Comm; lat: openArray[int]; V: static[int];
                  rg0,ig0: openArray[int]): Layout[V] =
+  let nRanks = comm.size
+  let myRank = comm.rank
   result.new()
   let nd = lat.len
   var rg,ig,og,lg: seq[int]
@@ -160,6 +162,7 @@ proc newLayoutX*(lat: openArray[int]; V: static[int];
   result.nOddOuter = result.lq.nOddOuter.int
   result.nSitesOuter = result.lq.nSitesOuter.int
   result.nSitesInner = result.lq.nSitesInner.int
+  result.comm = comm
   result.nranks = nRanks
   result.myrank = myRank
   result.shifts.init
@@ -174,15 +177,25 @@ proc newLayoutX*(lat: openArray[int]; V: static[int];
     for d in 0..<nd: result.coords[d][i] = coords[d].int16
   result.vcoordTemp.newSeq(nd)
 template newLayout*(l:openArray[int]; n:static[int], rg,ig: seq[int]):untyped =
-  newLayoutX(l, n, rg, ig)
+  let comm = getDefaultComm()
+  newLayoutX(comm, l, n, rg, ig)
 template newLayout*(l:openArray[int]; n:static[int], rg: seq[int]):untyped =
-  newLayoutX(l, n, rg, [])
+  let comm = getDefaultComm()
+  newLayoutX(comm, l, n, rg, [])
 template newLayout*(l:openArray[int]; n:static[int]):untyped =
-  newLayoutX(l, n, [], [])
+  let comm = getDefaultComm()
+  newLayoutX(comm, l, n, [], [])
 template newLayout*(l:openArray[int]; rg: seq[int]):untyped =
-  newLayoutX(l, VLEN, rg, [])
+  let comm = getDefaultComm()
+  newLayoutX(comm, l, VLEN, rg, [])
 template newLayout*(l:openArray[int]):untyped =
-  newLayoutX(l, VLEN, [], [])
+  let comm = getDefaultComm()
+  newLayoutX(comm, l, VLEN, [], [])
+
+template newLayout*(c:Comm; l:openArray[int]):untyped =
+  newLayoutX(c, l, VLEN, [], [])
+template newLayout*(c:Comm; l:openArray[int]; n:static[int]):untyped =
+  newLayoutX(c, l, n, [], [])
 
 template `[]`*(l: Layout, i: int): untyped = l.physGeom[i]
 template `[]`*(l: Layout, i: BackwardsIndex): untyped = l.physGeom[i]
@@ -278,3 +291,6 @@ template `len`*(s:Subset):untyped = s.high-s.low
 template `lenOuter`*(s:Subset):untyped = s.highOuter-s.lowOuter
 
 template singleSites*(l: Layout): untyped = 0..<l.nSites
+
+template threadRankSum*(l: Layout, a: varargs[untyped]) =
+  l.comm.threadRankSum(a)

@@ -208,6 +208,39 @@ proc factor*(n: int): seq[int] =
     result.add k
     x = x div k
 
+macro rangeLow*(r: typedesc[range]):auto =
+  echo r.treerepr
+  echo r.getType.treerepr
+  error("rangeLow(typedesc)")
+  return r
+
+macro rangeLow*(r: range):auto =
+  #echo r.treerepr
+  #echo r.getType.treerepr
+  #echo r.getTypeImpl.treerepr
+  #return newCall(ident("low"),r.getTypeImpl[1])
+  let t = r.getTypeImpl
+  t.expectKind(nnkBracketExpr)
+  let t1 = t[1]
+  t1.expectKind(nnkInfix) # ..
+  return t1[1]
+
+#template low*(r: typedesc[range]):untyped = r
+
+#macro high*(r: typedesc[range]):auto =
+#  echo r.treerepr
+#  echo r.getType.treerepr
+#  return r
+
+macro rangeLen*(r: range):auto =
+  #echo r.treerepr
+  #echo r.getType.treerepr
+  let t = r.getTypeImpl
+  #echo t.treerepr
+  t.expectKind(nnkBracketExpr)
+  let t1 = t[1]
+  t1.expectKind(nnkInfix) # ..
+  return newCall(ident"-",newCall(ident"+",t1[2],newLit(1)),t1[1])
 
 when isMainModule:
   #[

@@ -109,6 +109,7 @@ type
     nOddOuter*: int
     nSitesOuter*: int
     nSitesInner*: int
+    comm*: Comm
     nranks*: int
     myrank*: int
     lq*: LayoutQ
