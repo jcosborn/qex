@@ -11,6 +11,7 @@ proc commsInitQmp* =
   #defaultComm = getComm()
 
 proc commsFinalize* =
+  GC_fullCollect()  # attempt to free any dangling message handles
   QMP_finalize_msg_passing()
 proc commsAbort*(status = -1) =
   QMP_abort(status.cint)
