@@ -103,8 +103,8 @@ template openmpDefs(body: untyped): untyped =
     let
       numThreads = omp_get_num_threads()
       threadNum = omp_get_thread_num()
-    template getThreadNum: untyped {.used.} = teamNum.csize_t * numThreads.csize_t + threadNum.csize_t
-    template getNumThreads: untyped {.used.} = numTeams.csize_t * numThreads.csize_t
+    template getThreadNum: untyped {.used.} = teamNum.int * numThreads.int + threadNum.int
+    template getNumThreads: untyped {.used.} = numTeams.int * numThreads.int
     {.emit:"#define nimZeroMem(b,len) memset((b),0,(len))".}
     inlineProcs:
       body

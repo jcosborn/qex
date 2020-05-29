@@ -158,7 +158,7 @@ template `+=`*(x: GpuArrayObj, y: GpuArrayObj) =
   mixin getThreadNum, getNumThreads
   let tid = getThreadNum()
   let nid = getNumThreads()
-  var i = tid.int
+  var i = tid
   #cprintf("%i/%i\n", i, x.n)
   while i<x.n:
     x[i] += y[i]
