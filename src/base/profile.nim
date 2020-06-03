@@ -36,33 +36,33 @@ type
   RTInfoObj = object
     nsec: int64
     flops: float
-    count: int
     overhead: int64
     childrenOverhead: int64
+    count: uint32
     tic, prev, curr: CodePoint
     children: RTInfoObjList
-  CodePoint = distinct int
+  CodePoint = distinct int32
   CodePointObj = object
     toDropTimer: bool
     name: string
     loc: II
   SString = static[string] | string
   List[T] = object  # No GCed type allowed
-    len,cap:int
+    len,cap:int32
     data:ptr UncheckedArray[T]
   RTInfoObjList = distinct List[RTInfoObj]
 
 var
-  rtiListLength:int = 0
-  rtiListLengthMax:int = 0
-template listChangeLen[T](n:int):untyped =
+  rtiListLength:int32 = 0
+  rtiListLengthMax:int32 = 0
+template listChangeLen[T](n:int32):untyped =
   when T is RTInfoObj:
     rtiListLength += n
     if n>0 and rtiListLength>rtiListLengthMax:
       rtiListLengthMax = rtiListLength
 
-proc newList[T](len = 0):List[T] {.noinit.} =
-  var cap = if len == 0: 0 else: 1
+proc newList[T](len:int32 = 0):List[T] {.noinit.} =
+  var cap = if len == 0: 0.int32 else: 1.int32
   while cap < len: cap *= 2
   result.len = len
   result.cap = cap
@@ -71,7 +71,7 @@ proc newList[T](len = 0):List[T] {.noinit.} =
     listChangeLen[T](cap)
   else:
     result.data = nil
-proc newListOfCap[T](cap:int):List[T] {.noinit.} =
+proc newListOfCap[T](cap:int32):List[T] {.noinit.} =
   result.len = 0
   result.cap = cap
   if cap > 0:
@@ -79,20 +79,20 @@ proc newListOfCap[T](cap:int):List[T] {.noinit.} =
     listChangeLen[T](cap)
   else:
     result.data = nil
-proc len[T](ls:List[T]):int = ls.len
-proc setLen[T](ls:var List[T], len:int) =
+proc len[T](ls:List[T]):int32 = ls.len
+proc setLen[T](ls:var List[T], len:int32) =
   if len > ls.cap:
     let cap0 = ls.cap
     var cap = cap0
     if cap0 == 0:
       cap = 1
       while cap < len: cap *= 2
-      ls.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap))
+      ls.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap.int))
     else:
       while cap < len: cap *= 2
-      ls.data = cast[ptr UncheckedArray[T]](realloc(ls.data, sizeof(T)*cap))
+      ls.data = cast[ptr UncheckedArray[T]](realloc(ls.data, sizeof(T)*cap.int))
     ls.cap = cap
-    listChangeLen[T](cap-cap0)
+    listChangeLen[T](int32(cap-cap0))
   ls.len = len
 proc free[T](ls:var List[T]) =
   if ls.cap > 0:
@@ -110,10 +110,10 @@ iterator items[T](ls:List[T]):T =
   for i in 0..<ls.len:
     yield ls[i]
 
-proc setLen(ls:var RTInfoObjList, len:int) {.borrow.}
+proc setLen(ls:var RTInfoObjList, len:int32) {.borrow.}
 proc free(ls:var RTInfoObjList) {.borrow.}
-template len(ls:RTInfoObjList):int = List[RTInfoObj](ls).len
-template `[]`(ls:RTInfoObjList, n:int):untyped = List[RTInfoObj](ls)[n]
+template len(ls:RTInfoObjList):int32 = List[RTInfoObj](ls).len
+template `[]`(ls:RTInfoObjList, n:int32):untyped = List[RTInfoObj](ls)[n]
 iterator mitems(ls:RTInfoObjList):var RTInfoObj =
   for i in 0..<ls.len:
     yield ls[i]
@@ -208,7 +208,7 @@ template combine(acc:var RTInfoObjList, x:var RTInfoObj):untyped =
       prev = x.prev
       curr = x.curr
     var children = x.children
-    var ci = -1
+    var ci:int32 = -1
     for i in 0..<acc.len:
       if identical(x,acc[i]):
         ci = i
@@ -251,7 +251,7 @@ proc record(tic:RTInfo, prev:RTInfo, curr:CodePoint, t:TicType, f:float):RTInfo 
     oh += rtiStack[i].childrenOverhead
 
   # Now for current RTInfo
-  let n = prev.int+1
+  let n = prev.int32+1
   rtiStack.setlen(n+1)
   rtiStack[n].nsec = nsec(t)
   rtiStack[n].flops = f
@@ -292,22 +292,23 @@ template ticI(n = -1; s:SString = ""): untyped =
       thisCode = CodePoint(-1)
   if threadNum==0:
     #echo "#### begin tic ",ii
-    let theTime = getTics()
-    when not cname:
-      for c in items(localCode):
-        if cpHeap[c.int].name == s:
-          thisCode = c
-          break
-    if thisCode.isNil:
-      thisCode = newCodePoint(ii, s)
+    if not timersFrozen():
+      let theTime = getTics()
       when not cname:
-        localCode.add thisCode
-    prevRTI = recordTic(thisCode)
-    if (not timersFrozen()) and toDropTimer(thisCode):
-      freezeTimers()
-      restartTimer = true
-    localTimer = getTics()
-    rtiStack[prevRTI.int].overhead = nsec(localTimer-theTime)
+        for c in items(localCode):
+          if cpHeap[c.int].name == s:
+            thisCode = c
+            break
+      if thisCode.isNil:
+        thisCode = newCodePoint(ii, s)
+        when not cname:
+          localCode.add thisCode
+      prevRTI = recordTic(thisCode)
+      if toDropTimer(thisCode):
+        freezeTimers()
+        restartTimer = true
+      localTimer = getTics()
+      rtiStack[prevRTI.int].overhead = nsec(localTimer-theTime)
     #echo "#### end tic ",ii
   let
     localTimerStart {.inject, used.} = localTimer
@@ -331,11 +332,11 @@ template tocI(f: SomeNumber; s:SString = ""; n = -1): untyped =
     #echo "==== begin toc ",s," ",ii
     #echo "     rtiStack: ",indent($rtiStack,5)
     #echo "     cpHeap: ",indent($cpHeap,5)
-    let theTime = getTics()
     if restartTimer:
       thawTimers()
       restartTimer = false
     if not timersFrozen():
+      let theTime = getTics()
       when not cname:
         for c in items(localCode):
           if cpHeap[c.int].name == s:
@@ -400,10 +401,10 @@ template aggregateTimers* =
   if threadNum==0:
     when declared(localTic):
       let
-        p = localTic.int+1
+        p = localTic.int32+1
         theTime = getTics()
     else:
-      let p = 0
+      let p:int32 = 0
     if p<rtiStack.len-2:
       var rs = RTInfoObjList(newListOfCap[RTInfoObj](defaultLocalRTICap))
       when declared(localTic):
@@ -422,8 +423,8 @@ template aggregateTimers* =
       if nl!=rtiStack.len-p:
         when declared(prevRTI):
           if prevRTI.int > p:  # It's fine if prevRTI.int==p.
-            let pr = prevRTI.int-p
-            if not(pr<nl and identical(rs[pr], rtiStack[prevRTI.int])):
+            let pr = prevRTI.int32-p
+            if not(pr<nl and identical(rs[pr], rtiStack[prevRTI.int32])):
               # Need to make sure prevRTI is still correct.
               # Unlike `record`, here we aggregate from local tic instead of prevRTI.
               # `combine` considers identical timers if they have the save tic/curr/prev,
@@ -446,10 +447,10 @@ type
   Tstr = tuple
     label: string
     stats: string
-template ppT(ts:RTInfoObjList, prefix = "-", total,overhead:int64 = 0, count = 0, initIx = 0, showAbove = 0.0, showDropped = true):seq[Tstr] =
+template ppT(ts:RTInfoObjList, prefix = "-", total,overhead:int64 = 0, count:uint32 = 0, initIx = 0, showAbove = 0.0, showDropped = true):seq[Tstr] =
   ppT(List[RTInfoObj](ts), prefix, total, overhead, count, initIx, showAbove, showDropped)
 proc ppT(ts:List[RTInfoObj], prefix = "-",
-    total,overhead:int64 = 0, count = 0, initIx = 0,
+    total,overhead:int64 = 0, count:uint32 = 0, initIx = 0,
     showAbove = 0.0, showDropped = true):seq[Tstr] =
   proc markMissing(p:bool,str:string):string =
     if p: "[" & str & "]"
@@ -479,8 +480,8 @@ proc ppT(ts:List[RTInfoObj], prefix = "-",
       pn = ts[j].prev.name
       st = ns div 1000
       ot = oh div 1000
-      sc = ns div nc
-      oc = oh div nc
+      sc = ns div nc.int64
+      oc = oh div nc.int64
       mf = nf*1e3 / ns.float
       small = total!=0 and ns.float/total.float<showAbove
       noexpand = drop or (small and ts[j].children.len>0)
@@ -508,8 +509,8 @@ proc ppT(ts:List[RTInfoObj], prefix = "-",
       ns = total-overhead-sub-subo
       st = ns div 1000
       ot = overhead div 1000
-      sc = ns div count
-      oc = overhead div count
+      sc = ns div count.int64
+      oc = overhead div count.int64
       cent = 1e2 * ns.float / total.float
       ohcent = 1e2 * overhead.float / total.float
     result = @[(prefix & "#me",
