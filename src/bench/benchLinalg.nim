@@ -197,6 +197,7 @@ qexInit()
 echo "rank ", myRank, "/", nRanks
 threads:
   echo "thread ", threadNum, "/", numThreads
+freezeTimers()
 #checkMem()
 test([4,4,4,4])
 #test([4,4,4,8])
@@ -217,4 +218,6 @@ test([16,16,16,16])
 #test([32,32,32,32])
 #test([32,32,32,64])
 #checkMem()
+#echoTimers()
+#echoTimersRaw()
 qexFinalize()
