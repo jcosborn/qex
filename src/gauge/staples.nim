@@ -108,21 +108,16 @@ proc makeStaples*[T](uu: openArray[T], s: any): auto =
   let nd = lo.nDim
   let nc = u[0][0].ncols
   let flops = lo.nSites.float*float(nd*(nd-1)*6*(4*nc-1)*nc*nc)
-  var stf: seq[seq[type(uu[0])]]
-  var stu: seq[seq[type(uu[0])]]
+  var
+    stf = newFieldArray2(lo,type(uu[0]),[nd,nd],mu!=nu)
+    stu = newFieldArray2(lo,type(uu[0]),[nd,nd],mu!=nu)
   var ss: seq[seq[ShiftB[type(uu[0][0])]]]
-  stf.newSeq(nd)
-  stu.newSeq(nd)
   ss.newSeq(nd)
   for mu in 0..<nd:
-    stf[mu].newSeq(nd)
-    stu[mu].newSeq(nd)
     ss[mu].newSeq(nd)
     for nu in 0..<nd:
       if mu!=nu:
-        stf[mu][nu].new(lo)
-        stu[mu][nu].new(lo)
-        ss[mu][nu].initShiftB(stu[mu][nu], nu, -1, "all")
+        ss[mu][nu].initShiftB(stu[mu,nu], nu, -1, "all")
   toc("makeStaples setup")
   threads:
     tic()
@@ -134,11 +129,11 @@ proc makeStaples*[T](uu: openArray[T], s: any): auto =
             localSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
             localSB(s[nu][mu], ir, assign(unu,it), u[nu][ix])
             mul(umunu, umu, unu.adj)
-            mul(stf[mu][nu][ir], u[nu][ir], umunu)
-            mul(stf[nu][mu][ir], u[mu][ir], umunu.adj)
+            mul(stf[mu,nu][ir], u[nu][ir], umunu)
+            mul(stf[nu,mu][ir], u[mu][ir], umunu.adj)
             mul(unumu, u[nu][ir].adj, u[mu][ir])
-            mul(stu[mu][nu][ir], unumu, unu)
-            mul(stu[nu][mu][ir], unumu.adj, umu)
+            mul(stu[mu,nu][ir], unumu, unu)
+            mul(stu[nu,mu][ir], unumu.adj, umu)
     toc("makeStaples local")
     var needBoundary = false
     for mu in 1..<nd:
@@ -154,11 +149,11 @@ proc makeStaples*[T](uu: openArray[T], s: any): auto =
               getSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
               getSB(s[nu][mu], ir, assign(unu,it), u[nu][ix])
               mul(unumu, u[nu][ir].adj, u[mu][ir])
-              mul(stu[mu][nu][ir], unumu, unu)
-              mul(stu[nu][mu][ir], unumu.adj, umu)
+              mul(stu[mu,nu][ir], unumu, unu)
+              mul(stu[nu,mu][ir], unumu.adj, umu)
         threadBarrier()
-        ss[mu][nu].startSB(stu[mu][nu][ix])
-        ss[nu][mu].startSB(stu[nu][mu][ix])
+        ss[mu][nu].startSB(stu[mu,nu][ix])
+        ss[nu][mu].startSB(stu[nu,mu][ix])
     toc("makeStaplesU boundary")
     if needBoundary:
       boundarySyncSB()
@@ -169,8 +164,8 @@ proc makeStaples*[T](uu: openArray[T], s: any): auto =
               getSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
               getSB(s[nu][mu], ir, assign(unu,it), u[nu][ix])
               mul(umunu, umu, unu.adj)
-              mul(stf[mu][nu][ir], u[nu][ir], umunu)
-              mul(stf[nu][mu][ir], u[mu][ir], umunu.adj)
+              mul(stf[mu,nu][ir], u[nu][ir], umunu)
+              mul(stf[nu,mu][ir], u[mu][ir], umunu.adj)
     toc("makeStaplesF boundary")
   toc("makeStaples threads", flops=flops)
   return (stf,stu,ss)

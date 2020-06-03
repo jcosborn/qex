@@ -85,8 +85,8 @@ template projDeriv(r: any, u, x: any, c: any) =
 # fl[mu] = P( (1-a3)*g[mu] + a3/6 sum{nu!=mu} SS(L2[nu][mu],L2[mu][nu]) )
 #proc smear*(coef: HypCoefs, gf: any, fl: any, ht: HypTemps,
 #            info: var PerfInfo) =
-proc smear*[G](coef: HypCoefs, gf: G, fl: G,
-            info: var PerfInfo):auto {.discardable.} =
+proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
+            info: var PerfInfo):auto =
   tic()
   type lcm = type(gf[0])
   let lo = gf[0].l
@@ -285,6 +285,14 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G,
 
   toc("end")
   smearedForce
+
+proc smearPriv[G](coef: HypCoefs, gf: G, fl: G, info: var PerfInfo) =
+  var f = coef.smearGetForce(gf, fl, info)
+  f = nil
+proc smear*[G](coef: HypCoefs, gf: G, fl: G, info: var PerfInfo) =
+  ## force Nim to collect temporaries
+  smearPriv(coef, gf, fl, info)
+  qexGC "after smear"
 
 #proc smear*(c: HypCoefs, gf: any, fl: any, info: var PerfInfo) =
 #  var t = newHypTemps(gf)

@@ -49,16 +49,16 @@ proc gaugeAction1*[T](uu: openarray[T]): auto =
       for mu in 1..<nd:
         for nu in 0..<mu:
           # plaq
-          let p1 = redot(u[mu][ir], stf[mu][nu][ir])
+          let p1 = redot(u[mu][ir], stf[mu,nu][ir])
           plaq += simdSum(p1)
           if isLocal(ss[mu][nu],ir) and isLocal(ss[nu][mu],ir):
             var bmu,bnu: type(load1(u[0][0]))
-            localSB(ss[mu][nu], ir, assign(bmu,it), stu[mu][nu][ix])
-            localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu][mu][ix])
+            localSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
+            localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
             # rect
-            let r1 = redot(bmu, stf[mu][nu][ir])
+            let r1 = redot(bmu, stf[mu,nu][ir])
             rect += simdSum(r1)
-            let r2 = redot(bnu, stf[nu][mu][ir])
+            let r2 = redot(bnu, stf[nu,mu][ir])
             rect += simdSum(r2)
     toc("gaugeAction local")
     for mu in 1..<nd:
@@ -70,12 +70,12 @@ proc gaugeAction1*[T](uu: openarray[T]): auto =
           for ir in lo:
             if not isLocal(ss[mu][nu],ir) or not isLocal(ss[nu][mu],ir):
               var bmu,bnu: type(load1(u[0][0]))
-              getSB(ss[mu][nu], ir, assign(bmu,it), stu[mu][nu][ix])
-              getSB(ss[nu][mu], ir, assign(bnu,it), stu[nu][mu][ix])
+              getSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
+              getSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
               # rect
-              let r1 = redot(bmu, stf[mu][nu][ir])
+              let r1 = redot(bmu, stf[mu,nu][ir])
               rect += simdSum(r1)
-              let r2 = redot(bnu, stf[nu][mu][ir])
+              let r2 = redot(bnu, stf[nu,mu][ir])
               rect += simdSum(r2)
     act[threadNum*3]   = plaq
     act[threadNum*3+1] = rect
@@ -120,15 +120,15 @@ proc gaugeForce*[T](uu: openArray[T]): auto =
       for mu in 1..<nd:
         for nu in 0..<mu:
           # plaq
-          f[mu][ir] += stf[mu][nu][ir]
-          f[nu][ir] += stf[nu][mu][ir]
+          f[mu][ir] += stf[mu,nu][ir]
+          f[nu][ir] += stf[nu,mu][ir]
           if isLocal(ss[mu][nu],ir):
             var bmu: type(load1(u[0][0]))
-            localSB(ss[mu][nu], ir, assign(bmu,it), stu[mu][nu][ix])
+            localSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
             f[mu][ir] += bmu
           if isLocal(ss[nu][mu],ir):
             var bnu: type(load1(u[0][0]))
-            localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu][mu][ix])
+            localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
             f[nu][ir] += bnu
     toc("gaugeForce local")
     for mu in 1..<nd:
@@ -141,11 +141,11 @@ proc gaugeForce*[T](uu: openArray[T]): auto =
           for ir in lo:
             if not isLocal(ss[mu][nu],ir):
               var bmu: type(load1(u[0][0]))
-              getSB(ss[mu][nu], ir, assign(bmu,it), stu[mu][nu][ix])
+              getSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
               f[mu][ir] += bmu
             if not isLocal(ss[nu][mu],ir):
               var bnu: type(load1(u[0][0]))
-              localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu][mu][ix])
+              localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
               f[nu][ir] += bnu
     toc("gaugeForce boundary")
   toc("gaugeForce threads")
@@ -332,18 +332,18 @@ proc forceA*(c: GaugeActionCoeffs, g,f: any) =
     for ir in g[0]:
       for mu in 1..<nd:
         for nu in 0..<mu:
-          let tmn = dot(stf[mu][nu][ir], g[mu][ir])
-          f[mu][ir] += (cp+ca*tmn) * stf[mu][nu][ir]
-          let tnm = dot(stf[nu][mu][ir], g[nu][ir])
-          f[nu][ir] += (cp+ca*tnm) * stf[nu][mu][ir]
+          let tmn = dot(stf[mu,nu][ir], g[mu][ir])
+          f[mu][ir] += (cp+ca*tmn) * stf[mu,nu][ir]
+          let tnm = dot(stf[nu,mu][ir], g[nu][ir])
+          f[nu][ir] += (cp+ca*tnm) * stf[nu,mu][ir]
           if isLocal(ss[mu][nu],ir):
             var bmu: type(load1(g[0][0]))
-            localSB(ss[mu][nu], ir, assign(bmu,it), stu[mu][nu][ix])
+            localSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
             let tmu = dot(bmu, g[mu][ir])
             f[mu][ir] += (cp+ca*tmu) * bmu
           if isLocal(ss[nu][mu],ir):
             var bnu: type(load1(g[0][0]))
-            localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu][mu][ix])
+            localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
             let tnu = dot(bnu, g[nu][ir])
             f[nu][ir] += (cp+ca*tnu) * bnu
     toc("gaugeForce local")
@@ -357,12 +357,12 @@ proc forceA*(c: GaugeActionCoeffs, g,f: any) =
           for ir in lo:
             if not isLocal(ss[mu][nu],ir):
               var bmu: type(load1(g[0][0]))
-              getSB(ss[mu][nu], ir, assign(bmu,it), stu[mu][nu][ix])
+              getSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
               let tmu = dot(bmu, g[mu][ir])
               f[mu][ir] += (cp+ca*tmu) * bmu
             if not isLocal(ss[nu][mu],ir):
               var bnu: type(load1(g[0][0]))
-              getSB(ss[nu][mu], ir, assign(bnu,it), stu[nu][mu][ix])
+              getSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
               let tnu = dot(bnu, g[nu][ir])
               f[nu][ir] += (cp+ca*tnu) * bnu
     #toc("gaugeForce boundary")
