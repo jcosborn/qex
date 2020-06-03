@@ -11,7 +11,9 @@ template nsec*(t:TicType):int64 = int64(t)
 template ticDiffSecs*(x,y: TicType): float = 1e-9 * float(x.int64 - y.int64)
 template `-`*(x,y: TicType): TicType = TicType(x.int64 - y.int64)
 
-var DropWasteTimerRatio* = 0.05  ## Drop children timers if the proportion of their overhead is larger than this.
+var
+  DropWasteTimerRatio* = 0.05  ## Drop children timers if the proportion of their overhead is larger than this.
+  VerboseTimer* = false  ## If true print out all the timers during execution.
 
 ##[
 
@@ -292,6 +294,7 @@ template ticI(n = -1; s:SString = ""): untyped =
       thisCode = CodePoint(-1)
   if threadNum==0:
     #echo "#### begin tic ",ii
+    if unlikely VerboseTimer: echo "tic ",s,ii
     if not timersFrozen():
       let theTime = getTics()
       when not cname:
@@ -332,6 +335,7 @@ template tocI(f: SomeNumber; s:SString = ""; n = -1): untyped =
     #echo "==== begin toc ",s," ",ii
     #echo "     rtiStack: ",indent($rtiStack,5)
     #echo "     cpHeap: ",indent($cpHeap,5)
+    if unlikely VerboseTimer: echo "toc ",s,ii
     if restartTimer:
       thawTimers()
       restartTimer = false
