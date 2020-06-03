@@ -20,9 +20,9 @@ type
     l*:Layout[V]
     elemSize*:int
   Field*[V:static[int],T] = ref FieldObj[V,T]
-  FieldArray*[N:static[int],V:static[int],T] = object  ## share a single alignedMem
+  FieldArray*[V:static[int],T] = object  ## share a single alignedMem
     shape*:seq[int]
-    arr:array[N,Field[V,T]]
+    arr:seq[Field[V,T]]
   Subsetted*[F,S] = object
     field*:F
     subset*:S
@@ -146,19 +146,21 @@ proc newFarrElem[V:static[int],T](f:var Field[V,T]; l:Layout[V]; s:alignedMem[T]
   f.s.data = cast[typeof(s.data)](cast[ByteAddress](s.data) + offset*l.nSitesOuter*s.stride)
   f.elemSize = sizeOf(T)
 
-proc newFieldArray*[V:static[int],T](l:Layout[V]; t:typedesc[Field[V,T]]; n: static[int]):FieldArray[n,V,T] =
+proc newFieldArray*[V:static[int],T](l:Layout[V]; t:typedesc[Field[V,T]]; n: int):FieldArray[V,T] {.noinit.} =
   result.shape = @[n]
+  result.arr = newseq[t](n)
   var s:typeof(result.arr[0].s)
   s.new(l.nSitesOuter*n)
   for i in 0..<n:
     newFarrElem(result.arr[i], l, s, i)
 
 template newFieldArray2*[V:static[int],T](l:Layout[V]; ty:typedesc[Field[V,T]];
-    ns: static[array[2,int]]; constraint: untyped):untyped =
-  const n = ns[0]
-  const m = ns[1]
-  var r:FieldArray[n*m,V,T]
+    ns: array[2,int]; constraint: untyped):untyped =
+  let n = ns[0]
+  let m = ns[1]
+  var r {.noinit.} :FieldArray[V,T]
   r.shape = @[n,m]
+  r.arr = newseq[ty](n*m)
   var t = 0
   for i in 0..<n:
     for j in 0..<m:
@@ -179,8 +181,9 @@ template newFieldArray2*[V:static[int],T](l:Layout[V]; ty:typedesc[Field[V,T]];
       inc k
   r
 
-proc newOneOf*[N:static[int],V:static[int],T](fa:FieldArray[N,V,T]):FieldArray[N,V,T] =
+proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] {.noinit.} =
   result.shape = fa.shape
+  result.arr = newseq[Field[V,T]](fa.arr.len)
   var s:typeof(fa.arr[0].s)
   let (l,n) = block:
     var n = -1
