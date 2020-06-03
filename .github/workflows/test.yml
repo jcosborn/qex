@@ -6,6 +6,7 @@ jobs:
     strategy:
       matrix:
         nim-branch: [version-1-2, devel]
+      fail-fast: false
     name: nim-${{ matrix.nim-branch }}
     runs-on: ubuntu-latest
     steps:
