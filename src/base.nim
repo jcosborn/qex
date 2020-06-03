@@ -17,6 +17,8 @@ export alignedMem
 #export profile
 import base/params
 export params
+import base/gc
+export gc
 
 when isMainModule:
   qexInit()
