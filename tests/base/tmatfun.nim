@@ -27,7 +27,7 @@ proc chkeq(x,y: any): auto =
   #echo md
   #echo mx
   echo s
-  chkzero(s, 20*x.nrows)
+  chkzero(s, 32*x.nrows)
 
 proc rsqrtPH_test(x: any): auto =
   let y = x.adj * x
