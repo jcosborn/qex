@@ -46,8 +46,8 @@ proc addTest(runscript:var seq[string], f, outdir:string) =
   if rj == "": rj = "$RUNJOB"
   let exe = outdir/name
   nimRun f, exe
-  let runscript = qexdir/"tests/extra"/name/"run"
-  if fileExists(runscript): rj = runscript
+  let runner = qexdir/"tests/extra"/name/"run"
+  if fileExists(runner): rj = runner
   runscript.add("echo Running: "&exe)
   runscript.add(rj&" "&exe&" || failed=\"$failed "&name&"\"")
 
