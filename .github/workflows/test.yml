@@ -7,8 +7,9 @@ jobs:
       matrix:
         nim-branch: [version-1-2, devel]
         fuel-compat: [0, 1]
+        debug-build: [false, true]
       fail-fast: false
-    name: nim-${{ matrix.nim-branch }}-FUELCompat:${{ matrix.fuel-compat }}
+    name: nim-${{ matrix.nim-branch }}-FUELCompat:${{ matrix.fuel-compat }}-debug:${{ matrix.debug-build }}
     runs-on: ubuntu-latest
     steps:
     - name: environment
@@ -73,19 +74,22 @@ jobs:
     - name: make tests
       working-directory: qex
       run: make tests
+      if: ! matrix.debug-build
+    - name: make debug tests
+      working-directory: qex
+      run: make debug tests
+      if: matrix.debug-build
     - name: testscript
       working-directory: qex
-      run: |
-        echo $PATH
-        echo $LD_LIBRARY_PATH
-        ls -l "$GITHUB_WORKSPACE/hwloc-v2/lib"
-        ./testscript.sh
+      run: ./testscript.sh
     - name: runtests
       working-directory: qex
       run: ./runtests.sh
     - name: make bench
       working-directory: qex
       run: make bench
+      if: ! matrix.debug-build
     - name: benchLinalg
       working-directory: qex
       run: bin/benchLinalg
+      if: ! matrix.debug-build
