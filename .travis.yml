@@ -3,6 +3,7 @@ language: c
 addons:
   apt:
     packages:
+    - numdiff
     - mpich
     - libmpich-dev
 

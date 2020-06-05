@@ -123,6 +123,7 @@ letParam:
   pbprsq = arsq
   maxits = 1000000
   useFG2:bool = 0
+  showTimers:bool = 1
   timerWasteRatio = 0.05
   timerEchoDropped:bool = 0
   timerExpandRatio = 0.05
@@ -297,7 +298,7 @@ proc fgload =
 
 proc smearRephase(g: any, sg: any):auto {.discardable.} =
   tic()
-  let smearedForce = coef.smear(g, sg, info)
+  let smearedForce = coef.smearGetForce(g, sg, info)
   toc("smear")
   threads:
     sg.setBC
@@ -680,7 +681,7 @@ for n in inittraj+1..inittraj+trajs:
       dsf[k] = newseq[float](fa1[k].len)
       for i in 0..<fa1[k].len:
         dsf[k][i] = fa1[k][i] - fa0[k][i]
-    echo "Reversed H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
+    qexLog "Reversed H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
     echo "Reversibility: dH: ",h1-h0,"  dSg: ",ga1-ga0,"  dSf: ",dsf,"  dT: ",t1-t0
     for i in 0..<g1.len:
       g[i] := g1[i]
@@ -731,5 +732,5 @@ for n in inittraj+1..inittraj+trajs:
 
 toc("hmc")
 
-echoTimers(timerExpandRatio, timerEchoDropped)
+if showTimers: echoTimers(timerExpandRatio, timerEchoDropped)
 qexfinalize()

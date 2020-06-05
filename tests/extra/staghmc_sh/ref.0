@@ -1,0 +1,158 @@
+gaugefile: 
+savefile: config
+savefreq: 10
+lat: 8 8 8 8
+beta: 6.0
+adjFac: -0.25
+tau: 1.0
+inittraj: 0
+trajs: 2
+seed: 987654321
+gintalg: 2MN,0.19
+gsteps: 18
+mass: 0.1
+hmasses0: 0.2 0.4
+hmasses1: 
+hmasses2: 
+hmasses3: 
+hmasses4: 
+fintalg: 4MN3F1GP,0.2962962962962963
+fsteps: 3
+hfsteps0: 3 3
+hfsteps1: 
+hfsteps2: 
+hfsteps3: 
+hfsteps4: 
+arsq: 9.999999999999999e-25
+frsq: 9.999999999999999e-25
+hfrsq0: 9.999999999999999e-25 9.999999999999999e-25
+hfrsq1: 
+hfrsq2: 
+hfrsq3: 
+hfrsq4: 
+alwaysAccept: 0
+revCheckFreq: 2
+pbpmass: 0.1
+pbpreps: 2
+pbprsq: 9.999999999999999e-25
+maxits: 1000000
+useFG2: 0
+timerWasteRatio: 0.05
+timerEchoDropped: 0
+timerExpandRatio: 0.05
+rank 0/2
+thread 0/2
+#physGeom:@[8, 8, 8, 8]
+#rankGeom:@[1, 1, 1, 2]
+#localGeom:@[8, 8, 8, 4]
+#innerGeom:@[1, 2, 2, 1]
+#outerGeom:@[8, 4, 4, 4]
+#innerGeom:@[1, 2, 2, 1]
+#outerGeom:@[8, 4, 4, 4]
+#innerCb: 0
+#innerCbDir: 0
+#newRNGField lo:
+#physGeom:@[8, 8, 8, 8]
+#rankGeom:@[1, 1, 1, 2]
+#localGeom:@[8, 8, 8, 4]
+#innerGeom:@[1, 1, 1, 1]
+#outerGeom:@[8, 8, 8, 4]
+#innerGeom:@[1, 1, 1, 1]
+#outerGeom:@[8, 8, 8, 4]
+#innerCb: 0
+#innerCbDir: 0
+smear = Hyp{
+  alpha1: 0.4
+  alpha2: 0.5
+  alpha3: 0.5
+}
+MEASplaq ss: 1.0  st: 1.0  tot: 1.0
+ParIntegrator(steps: 1, nonZeroStep: 1e-12, nonZeroStepWarn: 1e-15, scale: @[1.0, 1.0, 1.0, 1.0], list: @[
+  Omelyan2MN:dt^2{
+    (steps=18){
+      0: 0.19 * mdt
+      1: 0.5 * mdvAllfga[0]
+      2: 0.62 * mdt{0}
+      3: 0.5 * mdvAllfga[0]{1}
+      4: 0.19 * mdt{0}
+    }
+  },
+  Omelyan4MN3F1GP:dt^4{
+    (steps=3){
+      0: 0.125 * mdt
+      1: 0.2962962962962963 * mdvAllfga[1]
+      2: 0.375 * mdt{0}
+      3: 0.4074074074074074 * mdvAllfga[1]{1}
+      4: 0.005144032921810704 * mdvAllfga[1].VTV
+      5: 0.375 * mdt{0}
+      6: 0.2962962962962963 * mdvAllfga[1]{1}
+      7: 0.125 * mdt{0}
+    }
+  },
+  Omelyan4MN3F1GP:dt^4{
+    (steps=3){
+      0: 0.125 * mdt
+      1: 0.2962962962962963 * mdvAllfga[2]
+      2: 0.375 * mdt{0}
+      3: 0.4074074074074074 * mdvAllfga[2]{1}
+      4: 0.005144032921810704 * mdvAllfga[2].VTV
+      5: 0.375 * mdt{0}
+      6: 0.2962962962962963 * mdvAllfga[2]{1}
+      7: 0.125 * mdt{0}
+    }
+  },
+  Omelyan4MN3F1GP:dt^4{
+    (steps=3){
+      0: 0.125 * mdt
+      1: 0.2962962962962963 * mdvAllfga[3]
+      2: 0.375 * mdt{0}
+      3: 0.4074074074074074 * mdvAllfga[3]{1}
+      4: 0.005144032921810704 * mdvAllfga[3].VTV
+      5: 0.375 * mdt{0}
+      6: 0.2962962962962963 * mdvAllfga[3]{1}
+      7: 0.125 * mdt{0}
+    }
+  }],
+  shared: @[mdt])
+[0.150 s] Begin H: 18451.47947589929  Sg: 0.0  Sf: @[@[6115.074514620805, 6296.481015505035, 6143.045791623304]]  T: -103.1218458498552
+[3.337 s] End H: 18452.64279359589  Sg: 18431.57360855611  Sf: @[@[6127.428742650334, 6325.453215672831, 5587.471917645606]]  T: -18019.28469092899
+ACCEPT:  dH: 1.163317696602462  exp(-dH): 0.3124478522275143  r: 0.06697195768356323
+unitary deviation avg: 4.496055501880564e-16 max: 1.365960688947334e-15
+new unitary deviation avg: 2.308731297113673e-16 max: 8.055021795140639e-16
+stagSolve: 101  0.04018s  3.149Gf/s  5.321e-25
+MEASpbp mass 0.1 : 0.2117714665683549
+stagSolve: 101  0.04003s  3.162Gf/s  6.873e-25
+MEASpbp mass 0.1 : 0.211234484887779
+MEASplaq ss: 0.7798927061684001  st: 0.7803495769561876  tot: 0.7801211415622938
+MEASploop spatial: 0.1593085565961168 0.004142883358352041 temporal: 0.1806483723808761 0.003657953473352228
+Solver[pbp]: 2: 101:101  0.04011s  3.155Gf/s  6.097e-25:6.873e-25
+Solver[action]:
+  A m=0.1 2: 56:99  0.02332s  3.059Gf/s  4.271e-25:8.543e-25
+  A m=0.2 3: 36:82  0.01582s  2.953Gf/s  3.130e-25:9.391e-25
+  A m=0.4 3: 27:54  0.01221s  2.876Gf/s  3.044e-25:9.131e-25
+Solver[force]:
+  F m=0.1 12: 80:98  0.03281s  3.078Gf/s  7.257e-25:9.862e-25
+  F m=0.2 12: 69:82  0.02833s  3.102Gf/s  5.944e-25:9.778e-25
+  F m=0.4 12: 49:55  0.02063s  3.056Gf/s  5.505e-25:9.454e-25
+[3.461 s] traj 1 secs: 3.402171562
+[3.657 s] Begin H: 36739.46806257457  Sg: 18431.57360855611  Sf: @[@[6167.177355372508, 6207.772553312414, 6058.237942980893]]  T: -125.2933976473578
+[7.094 s] End H: 36740.43410254073  Sg: 29993.99458721639  Sf: @[@[6176.234483849725, 6221.867671160123, 5713.001444448795]]  T: -11364.6640841343
+[10.520 s] Reversed H: 36739.46806257457  Sg: 18431.57360855611  Sf: @[@[6167.177355372508, 6207.772553312412, 6058.237942980893]]  T: -125.2933976473578
+Reversibility: dH: 0.0  dSg: -3.637978807091713e-12  dSf: @[@[0.0, -1.818989403545856e-12, 0.0]]  dT: 0.0
+REJECT:  dH: 0.9660399661588599  exp(-dH): 0.38058719605542  r: 0.7282310724258423
+stagSolve: 101  0.04031s  3.140Gf/s  7.917e-25
+MEASpbp mass 0.1 : 0.2118970809638824
+stagSolve: 101  0.03999s  3.165Gf/s  7.526e-25
+MEASpbp mass 0.1 : 0.2101254523243145
+MEASplaq ss: 0.7798927061684001  st: 0.7803495769561876  tot: 0.7801211415622938
+MEASploop spatial: 0.1593085565961168 0.004142883358352041 temporal: 0.1806483723808761 0.003657953473352228
+Solver[pbp]: 2: 101:101  0.04015s  3.152Gf/s  7.722e-25:7.917e-25
+Solver[action]:
+  A m=0.1 3: 105:119  0.04176s  3.150Gf/s  9.794e-25:9.843e-25
+  A m=0.2 4: 84:94  0.03398s  3.122Gf/s  7.528e-25:8.108e-25
+  A m=0.4 4: 56:59  0.02293s  3.083Gf/s  6.018e-25:6.740e-25
+Solver[force]:
+  F m=0.1 24: 110:120  0.04412s  3.147Gf/s  7.860e-25:1.000e-24
+  F m=0.2 24: 89:94  0.03584s  3.144Gf/s  7.144e-25:9.604e-25
+  F m=0.4 24: 57:59  0.02354s  3.096Gf/s  6.313e-25:9.054e-25
+[10.607 s] traj 2 secs: 7.145766949

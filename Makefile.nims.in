@@ -3,7 +3,8 @@ import strUtils
 import osPaths
 
 let extraTests = [
-  "src/gauge/wflow.nim",
+  "gauge/wflow.nim",
+  "examples/staghmc_sh.nim",
 ]
 
 var script = ""
@@ -41,11 +42,15 @@ proc getInt(): int =
 proc nimRun(f: string, outfile="")
 proc addTest(runscript:var seq[string], f, outdir:string) =
   let name = f.splitFile.name
-  var rj = gorge("awk '/^#RUNCMD/{print(substr($0,9))}' "&f)
+  var rj = gorge("awk '$1==\"#RUNCMD\"{$1=\"\";print}' "&f)
   if rj == "": rj = "$RUNJOB"
-  nimRun f, outdir/name
-  runscript.add("echo Running: "&(outdir/name))
-  runscript.add(rj&" "&(outdir/name)&" || failed=\"$failed "&(outdir/name)&"\"")
+  let exe = outdir/name
+  nimRun f, exe
+  let runscript = qexdir/"tests/extra"/name/"run"
+  if fileExists(runscript): rj = runscript
+  runscript.add("echo Running: "&exe)
+  runscript.add(rj&" "&exe&" || failed=\"$failed "&name&"\"")
+
 
 var debug = false
 var run = false
@@ -84,10 +89,10 @@ buildTask tests, "build unit tests":
       if name[0]=='t' and ext==".nim":
         runscript.addTest(f, outdir)
   for f in extraTests:
-    let outdir = "extraTests"/splitPath(f).head
+    let outdir = "bin"
     if not existsDir(outdir):
       mkDir outdir
-    runscript.addTest(qexdir/f, outdir)
+    runscript.addTest(qexdir/"src"/f, outdir)
   #echo runscript.join("\n")
   runscript.add("$CLEANUPJOBS")
   runscript.add("if [ X != \"X$failed\" ];then echo Failed tests: $failed;exit 1;fi")
