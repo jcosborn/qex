@@ -87,6 +87,9 @@ template projDeriv(r: any, u, x: any, c: any) =
 #            info: var PerfInfo) =
 proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
             info: var PerfInfo):auto =
+  ## Note that the resulting proc, smearedForce, holds a reference to the input gauge gf.
+  ## The correctness of the algorithm depends on gf remaining the same.
+  ## On the contrary, any changes to the smeared gauge fl would have no effects to the force calculation.
   tic()
   type lcm = type(gf[0])
   let lo = gf[0].l

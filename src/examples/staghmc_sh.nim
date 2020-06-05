@@ -127,12 +127,16 @@ letParam:
   timerWasteRatio = 0.05
   timerEchoDropped:bool = 0
   timerExpandRatio = 0.05
+  verboseGCStats:bool = 0
+  verboseTimer:bool = 0
 
 echoParams()
 echo "rank ", myRank, "/", nRanks
 threads: echo "thread ", threadNum, "/", numThreads
 
 DropWasteTimerRatio = timerWasteRatio
+VerboseGCStats = verboseGCStats
+VerboseTimer = verboseTimer
 
 if mass.len > 5:
   qexError "Unimlemented for mass: ", mass
@@ -296,9 +300,10 @@ proc fgload =
     for mu in 0..<g.len:
       g[mu] := gg[mu]
 
-proc smearRephase(g: any, sg: any):auto {.discardable.} =
+proc smearRephase(g: any, sg: any):auto =
   tic()
   let smearedForce = coef.smearGetForce(g, sg, info)
+  qexGC "smeared force done"
   toc("smear")
   threads:
     sg.setBC
@@ -306,6 +311,17 @@ proc smearRephase(g: any, sg: any):auto {.discardable.} =
     sg.stagPhase
   toc("BC & Phase")
   smearedForce
+
+proc smearRephaseDiscardForce(g: any, sg: any) =
+  tic()
+  coef.smear(g, sg, info)
+  qexGC "smear done"
+  toc("smear w/o force")
+  threads:
+    sg.setBC
+    threadBarrier()
+    sg.stagPhase
+  toc("BC & Phase")
 
 template pnorm2(p2:float) =
   threads:
@@ -315,15 +331,18 @@ template pnorm2(p2:float) =
     threadMaster: p2 = p2t
 
 proc gaction(g:any, f2:seq[seq[float]], p2:float):auto =
+  tic()
   let
     ga = gc.actionA g
     fa = f2.mapit(0.5*it)
     t = 0.5*p2 - float(16*vol)
     h = ga + fa.mapit(sum it).sum + t
+  toc("gaction")
   (ga, fa, t, h)
 
 template faction(fa:seq[seq[float]]) =
   for k in 0..<fa.len:
+    tic("faction")
     for i in 0..<phi[k].len-1:
       threads:
         stag.D(ftmp, phi[k][i], hmasses[k][i])
@@ -347,6 +366,7 @@ template faction(fa:seq[seq[float]]) =
       for i in 0..<psi[k].len:
         var psi2 = psi[k][i].norm2
         threadMaster: fa[k][i] = psi2
+    toc("done")
 
 proc massIndex(i:int):(int,int) =
   var
@@ -381,10 +401,12 @@ proc smearedOneLinkForce(f: any, smearedForce: proc, g:any) =
     for mu in 0..<f.len:
       for i in f[mu].odd:
         f[mu][i] *= -1
+  qexGC "phase"
   toc("phase")
 
   # 2. smearing
   f.smearedForce f
+  qexGC "smear"
   toc("smear")
 
   # 3. Tₐ ReTr( Tₐ U F† )
@@ -394,6 +416,7 @@ proc smearedOneLinkForce(f: any, smearedForce: proc, g:any) =
         var s {.noinit.}: typeof(f[0][0])
         s := f[mu][i] * g[mu][i].adj
         projectTAH(f[mu][i], s)
+  qexGC "combine"
   toc("combine")
 
 proc fforce(stag: any, f: any, sf: proc, g: any, ix:openarray[int], ts:openarray[float]) =
@@ -413,6 +436,7 @@ proc fforce(stag: any, f: any, sf: proc, g: any, ix:openarray[int], ts:openarray
       tic()
       stag.solve(ftmp, phi[k][i], hmasses[k][i-1], spfh[k][i-1])
       toc("fsolve " & $hmasses[k][i-1])
+    qexGC "solve"
     toc("solve")
 
     for mu in 0..<f.len:
@@ -434,9 +458,12 @@ proc fforce(stag: any, f: any, sf: proc, g: any, ix:openarray[int], ts:openarray
             forO a, 0, n-1:
               forO b, 0, n-1:
                 f[mu][i][a,b] += s * ftmp[i][a] * t[mu].field[i][b].adj
+    qexGC "outer"
     toc("outer")
   toc("solves")
+  qexGC "before smearedOneLinkForce"
   f.smearedOneLinkForce(sf, g)
+  qexGC "smearedOneLinkForce done"
   toc("olf")
 
 proc mdt(t: float) =
@@ -446,11 +473,10 @@ proc mdt(t: float) =
       for s in g[mu]:
         g[mu][s] := exp(t*p[mu][s])*g[mu][s]
   toc("mdt")
-  GC_fullCollect()
-  toc("GC")
 proc mdv(t: float) =
   tic()
   gc.forceA(g, f)
+  qexGC "mdv forceA"
   threads:
     for mu in 0..<f.len:
       p[mu] -= t*f[mu]
@@ -459,6 +485,7 @@ proc mdv(t: float) =
 proc mdvf(ix:openarray[int], sf:proc, ts:openarray[float]) =
   tic()
   stag.fforce(f, sf, g, ix, ts)
+  qexGC "mdvf fforce"
   threads:
     for mu in 0..<f.len:
       p[mu] += f[mu]
@@ -468,6 +495,7 @@ proc mdvf(ix:openarray[int], sf:proc, ts:openarray[float]) =
 proc fgv(t: float) =
   tic()
   gc.forceA(gg, f)
+  qexGC "fgv forceA"
   threads:
     for mu in 0..<g.len:
       for s in g[mu]:
@@ -476,6 +504,7 @@ proc fgv(t: float) =
 proc fgvf(ix:openarray[int], sf:proc, ts:openarray[float]) =
   tic()
   stagg.fforce(f, sf, gg, ix, ts)
+  qexGC "fgvf fforce"
   threads:
     for mu in 0..<g.len:
       for s in g[mu]:
@@ -485,8 +514,9 @@ proc fgvf(ix:openarray[int], sf:proc, ts:openarray[float]) =
 # Combined update for sharing computations
 proc mdvAllfga(ts,gs:openarray[float]) =
   tic("mdvAllfga")
+  qexGC "begin mdvAllfg"
   var
-    sforce:typeof(g.smearRephase sg) = nil
+    sforceShared:typeof(g.smearRephase sg) = nil
     updateG = false
     updateGG = false
     updateF = newseq[int](0)
@@ -536,39 +566,101 @@ proc mdvAllfga(ts,gs:openarray[float]) =
     elif ts[i] != 0:
       updateF.add k
 
+  # Note that the smeared force proc retains a reference to the input
+  # gauge field.  In order to reuse the force proc, we need to use the
+  # correct gauge field that would remain the same.
+
+  if updateGG or updateFG.len > 0:
+    tic()
+    fgsave()
+    toc("FG save")
+    if updateFG.len > 0:  # fermions in FG
+      tic("FG prep")
+      qexGC "begin FG smear"
+      sforceShared = gg.smearRephase sgg
+      qexGC "end FG smear"
+      toc("FG smear rephase")
+      if updateF.len > 0:  # reuse in mdvf requires sg for stag
+        tic("FG copy smeared")
+        threads:
+          for mu in 0..<sg.len:
+            sg[mu] := sgg[mu]
+        toc("done")
+      toc("done")
+    toc("done")
+
+  # MD
+  if updateG:
+    tic("MD mdv")
+    mdv ts[0]
+    qexGC "MD mdv done"
+    toc("done")
+  if updateF.len > 0:
+    tic("MD mdvf")
+    if updateFG.len == 0:
+      tic()
+      qexGC "begin MD smear"
+      var sforcef = g.smearRephase sg
+      qexGC "end MD smear"
+      toc("MD smear rephase")
+      mdvf(updateF, sforcef, ts[1..^1])
+      sforcef = nil
+    else:
+      mdvf(updateF, sforceShared, ts[1..^1])
+    qexGC "MD mdvf done"
+    toc("done")
+
+  # FG
   if updateGG or updateFG.len > 0:
     tic("updateFG")
-    fgsave()
-    toc("save")
-    if updateFG.len > 0:  # requires fermion update
-      sforce = gg.smearRephase sgg  # FG update use the backup
-      toc("FG smear rephase")
     for o in 0..<approxOrder:
-      if updateGG: fgv ggs[o].g
-      if updateFG.len > 0: fgvf(updateFG, sforce, fgs[o].g)
+      tic()
+      if updateGG:
+        tic("fgv")
+        fgv ggs[o].g
+        qexGC "fgv done"
+        toc("done")
+      if updateFG.len > 0:
+        tic("fgvf")
+        qexGC "begin fgvf"
+        fgvf(updateFG, sforceShared, fgs[o].g)
+        if o+1 == approxOrder: sforceShared = nil
+        qexGC "fgvf done"
+        toc("done")
       toc("FG")
-      let sforceg = g.smearRephase sg
-      toc("FG smear rephase temp")
-      if updateGG: mdv ggs[o].t
-      if updateFG.len > 0: mdvf(updateFG, sforceg, fgs[o].t)
+      if updateGG:
+        tic("FG mdv")
+        mdv ggs[o].t
+        qexGC "FG mdv done"
+        toc("done")
+      if updateFG.len > 0:
+        tic("FG mdvf")
+        qexGC "begin FG mdvf smear"
+        var sforceg = g.smearRephase sg
+        toc("FG smear rephase temp")
+        mdvf(updateFG, sforceg, fgs[o].t)
+        sforceg = nil
+        qexGC "FG mdvf done"
+        toc("done")
       toc("FG MD")
       fgload()
       toc("load")
-  toc("FG")
+    toc("done")
+  qexGC "end mdvAllfg"
+  toc("done")
 
-  if updateG: mdv ts[0]
-  if updateF.len > 0:
-    if updateFG.len == 0:
-      sforce = g.smearRephase sg
-      toc("MD smear rephase")
-    else:  # smeared gg in sgg
-      threads:
-        for mu in 0..<sg.len:
-          sg[mu] := sgg[mu]
-    mdvf(updateF, sforce, ts[1..^1])
-  toc("MD")
-  GC_fullCollect()
-  toc("GC")
+proc checkSolvers =
+  checkStats("Solver[pbp]: ", pbpsp)
+  echo "Solver[action]:"
+  for k in 0..<spa.len:
+    checkStats("  A m=" & $mass[k] & " ", spa[k])
+    for i in 0..<spah[k].len:
+      checkStats("  A m=" & $hmasses[k][i] & " ", spah[k][i])
+  echo "Solver[force]:"
+  for k in 0..<spf.len:
+    checkStats("  F m=" & $mass[k] & " ", spf[k])
+    for i in 0..<spfh[k].len:
+      checkStats("  F m=" & $hmasses[k][i] & " ", spfh[k][i])
 
 let
   (V,T) = newIntegratorPair(mdvAllfga, mdt)
@@ -583,10 +675,13 @@ block:
       H.add fintalg(T = T, V = V[j], steps = hfsteps[k][i])
 
 if existsFile(gaugefile):
+  tic("load")
   if 0 != g.loadGauge gaugefile:
     qexError "failed to load gauge file: ", gaugefile
   qexLog "loaded gauge from file: ", gaugefile
+  toc("read")
   g.reunit
+  toc("reunit")
 else:
   #g.random r
   g.unit
@@ -609,7 +704,7 @@ for n in inittraj+1..inittraj+trajs:
   toc("p refresh, save g")
   p2.pnorm2
   toc("p norm2 1")
-  g.smearRephase sg
+  g.smearRephaseDiscardForce sg
   toc("smear & rephase 1")
   threads:
     for i in 0..<sg.len:
@@ -646,20 +741,24 @@ for n in inittraj+1..inittraj+trajs:
 
   H.evolve tau
   H.finish
+  qexGC "evolve done"
   toc("evolve")
 
   p2.pnorm2
   toc("p norm2 2")
-  g.smearRephase sg
+  g.smearRephaseDiscardForce sg
   toc("smear & rephase 2")
   f2.faction
   toc("fa solve 2")
   let (ga1,fa1,t1,h1) = g.gaction(f2,p2)
   toc("final gauge action")
   qexLog "End H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
+  qexGC "end evolve done"
   toc("end evolve")
 
   if revCheckFreq > 0 and n mod revCheckFreq == 0:
+    tic("reversibility")
+    qexGC "begin revCheck"
     var g1 = lo.newgauge
     var p1 = lo.newgauge
     threads:
@@ -669,9 +768,10 @@ for n in inittraj+1..inittraj+trajs:
         p[i] := -1*p[i]
     H.evolve tau
     H.finish
+    qexGC "rev evolve done"
     p2.pnorm2
     toc("p norm2 2")
-    g.smearRephase sg
+    g.smearRephaseDiscardForce sg
     toc("smear & rephase 2")
     f2.faction
     toc("fa solve 2")
@@ -686,7 +786,8 @@ for n in inittraj+1..inittraj+trajs:
     for i in 0..<g1.len:
       g[i] := g1[i]
       p[i] := p1[i]
-    toc("reversibility")
+    qexGC "revCheck done"
+    toc("done")
 
   let
     dH = h1 - h0
@@ -695,7 +796,7 @@ for n in inittraj+1..inittraj+trajs:
   if accr <= acc or alwaysAccept:  # accept
     echo "ACCEPT:  dH: ",dH,"  exp(-dH): ",acc,"  r: ",accr,(if alwaysAccept:" (ignored)" else:"")
     g.reunit
-    g.smearRephase sg
+    g.smearRephaseDiscardForce sg
     stag.pbp
   else:  # reject
     echo "REJECT:  dH: ",dH,"  exp(-dH): ",acc,"  r: ",accr
@@ -703,30 +804,24 @@ for n in inittraj+1..inittraj+trajs:
       for i in 0..<g.len:
         g[i] := g0[i]
     stag0.pbp
+  qexGC "traj done"
 
   g.mplaq
   g.ploop
+  qexGC "measure done"
   toc("measure")
 
   if savefreq > 0 and n mod savefreq == 0:
+    tic("save")
     let fn = savefile & &".{n:05}.lime"
     if 0 != g.saveGauge(fn):
       qexError "Failed to save gauge to file: ",fn
     qexLog "saved gauge to file: ",fn
-    toc("save")
+    toc("done")
 
-  checkStats("Solver[pbp]: ", pbpsp)
-  echo "Solver[action]:"
-  for k in 0..<spa.len:
-    checkStats("  A m=" & $mass[k] & " ", spa[k])
-    for i in 0..<spah[k].len:
-      checkStats("  A m=" & $hmasses[k][i] & " ", spah[k][i])
-  echo "Solver[force]:"
-  for k in 0..<spf.len:
-    checkStats("  F m=" & $mass[k] & " ", spf[k])
-    for i in 0..<spfh[k].len:
-      checkStats("  F m=" & $hmasses[k][i] & " ", spfh[k][i])
+  checkSolvers()
 
+  qexGC "traj all done"
   qexLog "traj ",n," secs: ",getElapsedTime()
   toc("traj end")
 
