@@ -101,6 +101,9 @@ when declared(qudaDir):
 when declared(chromaDir):
   putenv ~ ("CHROMADIR=" & chromaDir)
 
+if existsenv("FUELCompat") and getenv("FUELCompat")!="0":
+  d ~ "FUELCompat"
+
 threads ~ on
 tlsEmulation ~ off
 verbosity ~ verbosity

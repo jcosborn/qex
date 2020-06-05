@@ -9,6 +9,12 @@ declare -r mydir="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 declare -r outdir=tests/extra/staghmc_sh
 declare -ai res=()
 
+if [[ ${FUELCompat:-0} == 0 ]];then
+	declare -r comp=''
+else
+	declare -r comp='.FUELCompat'
+fi
+
 test(){
 	local -ir tid="$1"
 	case $tid in
@@ -30,10 +36,10 @@ test(){
 	*)
 		echo "No test #$tid"
 		false
-	esac |& tee "$outdir/out.$tid" || return
-	sed -nE '/^MEASplaq|^MEASpbp|(Begin|End|Reversed) H:/{s,^\[[^]]*\] *,,;p;}'  "$mydir/ref.$tid" > "$outdir/ref.$tid.check" || return
-	sed -nE '/^MEASplaq|^MEASpbp|(Begin|End|Reversed) H:/{s,^\[[^]]*\] *,,;p;}' "$outdir/out.$tid" > "$outdir/out.$tid.check" || return
-	numdiff -s ' \t\n][,' -r 1e-12 -V "$outdir"/{ref,out}.$tid.check
+	esac |& tee "$outdir/out$comp.$tid" || return
+	sed -nE '/^MEASplaq|^MEASpbp|(Begin|End|Reversed) H:/{s,^\[[^]]*\] *,,;p;}'  "$mydir/ref$comp.$tid" > "$outdir/ref$comp.$tid.check" || return
+	sed -nE '/^MEASplaq|^MEASpbp|(Begin|End|Reversed) H:/{s,^\[[^]]*\] *,,;p;}' "$outdir/out$comp.$tid" > "$outdir/out$comp.$tid.check" || return
+	numdiff -s ' \t\n][,' -r 1e-12 -V "$outdir"/{ref,out}$comp.$tid.check
 }
 
 ((${#tids[@]}!=0)) || tids=(0 1 2)

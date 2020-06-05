@@ -6,10 +6,13 @@ jobs:
     strategy:
       matrix:
         nim-branch: [version-1-2, devel]
+        fuel-compat: [0, 1]
       fail-fast: false
-    name: nim-${{ matrix.nim-branch }}
+    name: nim-${{ matrix.nim-branch }}-FUELCompat:${{ matrix.fuel-compat }}
     runs-on: ubuntu-latest
     steps:
+    - name: environment
+      run: echo "::set-env name=FUELCompat::${{ matrix.fuel-compat }}"
     - name: install packages
       run: |
         sudo apt-get install numdiff hwloc-nox libhwloc-dev mpich libmpich-dev
