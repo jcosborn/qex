@@ -39,7 +39,7 @@ when isMainModule:
       check(0~0)
       check(0!~1e-16)
       check(1~(1+1e-16))
-      check(1!~(1+1e-13))
+      check(1!~(1+1e-12))
     test "CT = 1e-3":
       CT = 1e-3
       check(0~0)
