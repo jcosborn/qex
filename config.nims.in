@@ -113,6 +113,8 @@ when not declared(debug):
   for i in 1..paramCount():
     if paramStr(i)=="-d:debug": debug = true
 if not debug:
+  d ~ "release"
+  d ~ "danger"
   obj_checks ~ off
   field_checks ~ off
   range_checks ~ off

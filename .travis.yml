@@ -35,8 +35,8 @@ before_install:
   - export PATH=$PWD/bin:$PATH
   - echo $PATH
   - nim -v
-  - cd ..
-  - cd qex
+  - cd ../qex
+  - nimble install -d
 
 script:
   - ./bootstrap-travis

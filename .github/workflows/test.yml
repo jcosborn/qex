@@ -58,6 +58,9 @@ jobs:
       uses: actions/checkout@v2
       with:
         path: qex
+    - name: install nimble dependencies
+      working-directory: qex
+      run: nimble install -d
     - name: install qmp & qio
       working-directory: qex
       run: ./bootstrap-travis
