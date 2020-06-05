@@ -60,7 +60,7 @@ jobs:
         path: qex
     - name: install nimble dependencies
       working-directory: qex
-      run: nimble install -d
+      run: nimble install -dy
     - name: install qmp & qio
       working-directory: qex
       run: ./bootstrap-travis

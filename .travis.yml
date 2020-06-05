@@ -36,7 +36,7 @@ before_install:
   - echo $PATH
   - nim -v
   - cd ../qex
-  - nimble install -d
+  - nimble install -dy
 
 script:
   - ./bootstrap-travis
