@@ -74,11 +74,11 @@ jobs:
     - name: make tests
       working-directory: qex
       run: make tests
-      if: ! matrix.debug-build
+      if: ${{ ! matrix.debug-build }}
     - name: make debug tests
       working-directory: qex
       run: make debug tests
-      if: matrix.debug-build
+      if: ${{ matrix.debug-build }}
     - name: testscript
       working-directory: qex
       run: ./testscript.sh
@@ -88,8 +88,8 @@ jobs:
     - name: make bench
       working-directory: qex
       run: make bench
-      if: ! matrix.debug-build
+      if: ${{ ! matrix.debug-build }}
     - name: benchLinalg
       working-directory: qex
       run: bin/benchLinalg
-      if: ! matrix.debug-build
+      if: ${{ ! matrix.debug-build }}
