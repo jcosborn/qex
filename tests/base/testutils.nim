@@ -1,7 +1,7 @@
 import unittest
 export unittest
 
-var CT* = 1e-14    ## Comparison Tolerance.
+var CT* = 1e-13    ## Comparison Tolerance.
 
 proc `~`*(x,y:float):bool =
   if x==0 or y==0: result = x==y
