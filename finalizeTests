@@ -1,4 +1,17 @@
 #!/usr/bin/env bash
+set -eu
+ulimit -c unlimited
+sudo sh -c 'echo %e.core.%p.%t > /proc/sys/kernel/core_pattern'
+
+declare -i k=0
+declare -i f=0
+while ! ls staghmc_sh.core.* &>/dev/null;do
+	if ! tests/extra/staghmc_sh/run bin/staghmc_sh;then
+		((++f))
+	fi
+	((++k))
+	echo ">>> FAILURE RATE: $f / $k <<<"
+done
 for core in staghmc_sh.core.*;do
 	[[ -s $core ]] || continue
 	echo "==================="
