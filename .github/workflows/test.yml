@@ -75,10 +75,20 @@ jobs:
       run: make tests
     - name: testscript
       working-directory: qex
-      run: ./testscript.sh
+      run: |
+        ulimit -c unlimited
+        cat /proc/sys/kernel/core_pattern
+        sudo sh -c 'echo %e.core.%p.%t > /proc/sys/kernel/core_pattern'
+        cat /proc/sys/kernel/core_pattern
+        CLEANUPJOBS=./finalizeTests ./testscript.sh
     - name: runtests
       working-directory: qex
-      run: ./runtests.sh
+      run: |
+        ulimit -c unlimited
+        cat /proc/sys/kernel/core_pattern
+        sudo sh -c 'echo %e.core.%p.%t > /proc/sys/kernel/core_pattern'
+        cat /proc/sys/kernel/core_pattern
+        CLEANUPJOBS=./finalizeTests ./runtests.sh
     - name: make bench
       working-directory: qex
       run: make bench

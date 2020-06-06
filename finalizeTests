@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+ulimit -a
+cat /proc/sys/kernel/core_pattern
+ls -l
+file *
+ls -l bin
+file bin/*
+ls -l /var/crash
+file /var/crash/*
+ls -l /var/lib/systemd/coredump
+file /var/lib/systemd/coredump/*
