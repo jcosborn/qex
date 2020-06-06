@@ -284,7 +284,7 @@ template ticI(n = -1; s:SString = ""): untyped =
     ii = instantiationInfo(n)
   var
     localTimer {.inject.}: TicType
-    prevRTI {.inject.}: RTInfo
+    prevRTI {.inject.} = RTInfo(-1)
     restartTimer {.inject.} = false
   when cname:
     var thisCode {.global.} = CodePoint(-1)
@@ -336,37 +336,38 @@ template tocI(f: SomeNumber; s:SString = ""; n = -1): untyped =
     #echo "     rtiStack: ",indent($rtiStack,5)
     #echo "     cpHeap: ",indent($cpHeap,5)
     if unlikely VerboseTimer: echo "toc ",s,ii
-    if restartTimer:
-      thawTimers()
-      restartTimer = false
-    if not timersFrozen():
-      let theTime = getTics()
-      when not cname:
-        for c in items(localCode):
-          if cpHeap[c.int].name == s:
-            thisCode = c
-            break
-      if thisCode.isNil:
-        thisCode = newCodePoint(ii, s)
+    if prevRTI.int32 >= 0:
+      if restartTimer:
+        thawTimers()
+        restartTimer = false
+      if not timersFrozen():
+        let theTime = getTics()
         when not cname:
-          localCode.add thisCode
-      let
-        ns = theTime-localTimer
-        thisRTI = record(localTic, prevRTI, thisCode, ns, float(f))
-      var oh = rtiStack[thisRTI.int].childrenOverhead
-      let c = rtiStack[thisRTI.int].children
-      for i in 0..<c.len:
-        if toDropTimer(c[i].prev):
-          oh -= c[i].childrenOverhead
-      if oh.float / ns.float > DropWasteTimerRatio:
-        # Signal stop if the overhead is too large.
-        dropTimer(prevRTI)
-      if toDropTimer(thisCode):
-        freezeTimers()
-        restartTimer = true
-      localTimer = getTics()
-      rtiStack[thisRTI.int].overhead = nsec(localTimer-theTime)
-      prevRTI = thisRTI
+          for c in items(localCode):
+            if cpHeap[c.int].name == s:
+              thisCode = c
+              break
+        if thisCode.isNil:
+          thisCode = newCodePoint(ii, s)
+          when not cname:
+            localCode.add thisCode
+        let
+          ns = theTime-localTimer
+          thisRTI = record(localTic, prevRTI, thisCode, ns, float(f))
+        var oh = rtiStack[thisRTI.int].childrenOverhead
+        let c = rtiStack[thisRTI.int].children
+        for i in 0..<c.len:
+          if toDropTimer(c[i].prev):
+            oh -= c[i].childrenOverhead
+        if oh.float / ns.float > DropWasteTimerRatio:
+          # Signal stop if the overhead is too large.
+          dropTimer(prevRTI)
+        if toDropTimer(thisCode):
+          freezeTimers()
+          restartTimer = true
+        localTimer = getTics()
+        rtiStack[thisRTI.int].overhead = nsec(localTimer-theTime)
+        prevRTI = thisRTI
     #echo "==== end toc ",s," ",ii
 
 template toc*(s:SString = ""; n = -1; flops:SomeNumber):untyped = tocI(flops, s, n-1)
@@ -391,18 +392,28 @@ proc reset(x:var RTInfoObj) =
 
 template resetTimers* =
   ## Reset timers in the local scope, starting from the local tic, and below.
-  if threadNum==0:
+  ## Do nothing if localTic is uninitialized, as is the case with frozenTimers.
+  when declared(localTic):
+    let go = localTic.int32 >= 0
+  else:
+    const go = true
+  if threadNum==0 and go:
     when declared(localTic):
-      let p = localTic.int
+      let p = localTic.int32
     else:
-      let p = 0
+      let p:int32 = 0
     for j in p..<len(rtiStack):
       reset rtiStack[j]
 
 template aggregateTimers* =
   ## Aggregate timers in the local scope, starting from the local tic, and below.
   ## It scrambles the local timer branches, and the direct children of the current timer.
-  if threadNum==0:
+  ## Do nothing if localTic is uninitialized, as is the case with frozenTimers.
+  when declared(localTic):
+    let go = localTic.int32 >= 0
+  else:
+    const go = true
+  if threadNum==0 and go:
     when declared(localTic):
       let
         p = localTic.int32+1
@@ -537,7 +548,7 @@ template echoTimers*(expandAbove = 0.0, expandDropped = true, aggregate = true):
   if threadNum==0:
     const width = 104
     when declared(localTic):
-      let p = localTic.int
+      let p = if localTic.int<0: 0 else: localTic.int
     else:
       let p = 0
     if aggregate: aggregateTimers()
