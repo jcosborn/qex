@@ -15,7 +15,7 @@ jobs:
       run: echo "::set-env name=FUELCompat::${{ matrix.fuel-compat }}"
     - name: install packages
       run: |
-        sudo apt-get install numdiff hwloc-nox libhwloc-dev mpich libmpich-dev
+        sudo apt-get install numdiff hwloc-nox libhwloc-dev mpich libmpich-dev gdb
     - name: install hwloc v2
       run: |
         curl -LO https://download.open-mpi.org/release/hwloc/v2.2/hwloc-2.2.0.tar.bz2

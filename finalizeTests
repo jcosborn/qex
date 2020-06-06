@@ -1,11 +1,26 @@
 #!/usr/bin/env bash
-ulimit -a
-cat /proc/sys/kernel/core_pattern
-ls -l
-file *
-ls -l bin
-file bin/*
-ls -l /var/crash
-file /var/crash/*
-ls -l /var/lib/systemd/coredump
-file /var/lib/systemd/coredump/*
+for core in staghmc_sh.core.*;do
+	[[ -s $core ]] || continue
+	echo "==================="
+	echo "$core"
+	echo "==================="
+	gdb --batch --quiet \
+		-ex "thread apply all bt full" \
+		-ex "info args" \
+		-ex "info locals" \
+		-ex "up" \
+		-ex "info args" \
+		-ex "info locals" \
+		-ex "up" \
+		-ex "info args" \
+		-ex "info locals" \
+		-ex "up" \
+		-ex "info args" \
+		-ex "info locals" \
+		-ex "up" \
+		-ex "info args" \
+		-ex "info locals" \
+		-ex "quit" \
+		./bin/staghmc_sh "$core"
+	echo .
+done
