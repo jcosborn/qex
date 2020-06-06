@@ -303,7 +303,6 @@ proc fgload =
 proc smearRephase(g: any, sg: any):auto =
   tic()
   let smearedForce = coef.smearGetForce(g, sg, info)
-  qexGC "smeared force done"
   toc("smear")
   threads:
     sg.setBC
@@ -401,7 +400,6 @@ proc smearedOneLinkForce(f: any, smearedForce: proc, g:any) =
     for mu in 0..<f.len:
       for i in f[mu].odd:
         f[mu][i] *= -1
-  qexGC "phase"
   toc("phase")
 
   # 2. smearing
@@ -458,12 +456,9 @@ proc fforce(stag: any, f: any, sf: proc, g: any, ix:openarray[int], ts:openarray
             forO a, 0, n-1:
               forO b, 0, n-1:
                 f[mu][i][a,b] += s * ftmp[i][a] * t[mu].field[i][b].adj
-    qexGC "outer"
     toc("outer")
   toc("solves")
-  qexGC "before smearedOneLinkForce"
   f.smearedOneLinkForce(sf, g)
-  qexGC "smearedOneLinkForce done"
   toc("olf")
 
 proc mdt(t: float) =
@@ -514,7 +509,6 @@ proc fgvf(ix:openarray[int], sf:proc, ts:openarray[float]) =
 # Combined update for sharing computations
 proc mdvAllfga(ts,gs:openarray[float]) =
   tic("mdvAllfga")
-  qexGC "begin mdvAllfg"
   var
     sforceShared:typeof(g.smearRephase sg) = nil
     updateG = false
@@ -576,9 +570,7 @@ proc mdvAllfga(ts,gs:openarray[float]) =
     toc("FG save")
     if updateFG.len > 0:  # fermions in FG
       tic("FG prep")
-      qexGC "begin FG smear"
       sforceShared = gg.smearRephase sgg
-      qexGC "end FG smear"
       toc("FG smear rephase")
       if updateF.len > 0:  # reuse in mdvf requires sg for stag
         tic("FG copy smeared")
@@ -593,21 +585,19 @@ proc mdvAllfga(ts,gs:openarray[float]) =
   if updateG:
     tic("MD mdv")
     mdv ts[0]
-    qexGC "MD mdv done"
     toc("done")
   if updateF.len > 0:
     tic("MD mdvf")
     if updateFG.len == 0:
       tic()
-      qexGC "begin MD smear"
       var sforcef = g.smearRephase sg
-      qexGC "end MD smear"
       toc("MD smear rephase")
       mdvf(updateF, sforcef, ts[1..^1])
       sforcef = nil
+      qexGC "MD mdvf w/smear done"
     else:
       mdvf(updateF, sforceShared, ts[1..^1])
-    qexGC "MD mdvf done"
+      qexGC "MD mdvf done"
     toc("done")
 
   # FG
@@ -618,11 +608,9 @@ proc mdvAllfga(ts,gs:openarray[float]) =
       if updateGG:
         tic("fgv")
         fgv ggs[o].g
-        qexGC "fgv done"
         toc("done")
       if updateFG.len > 0:
         tic("fgvf")
-        qexGC "begin fgvf"
         fgvf(updateFG, sforceShared, fgs[o].g)
         if o+1 == approxOrder: sforceShared = nil
         qexGC "fgvf done"
@@ -631,11 +619,9 @@ proc mdvAllfga(ts,gs:openarray[float]) =
       if updateGG:
         tic("FG mdv")
         mdv ggs[o].t
-        qexGC "FG mdv done"
         toc("done")
       if updateFG.len > 0:
         tic("FG mdvf")
-        qexGC "begin FG mdvf smear"
         var sforceg = g.smearRephase sg
         toc("FG smear rephase temp")
         mdvf(updateFG, sforceg, fgs[o].t)
@@ -646,7 +632,6 @@ proc mdvAllfga(ts,gs:openarray[float]) =
       fgload()
       toc("load")
     toc("done")
-  qexGC "end mdvAllfg"
   toc("done")
 
 proc checkSolvers =
@@ -694,6 +679,7 @@ toc("prep")
 
 for n in inittraj+1..inittraj+trajs:
   tic("traj")
+  qexGC "begin traj"
   var p2 = 0.0
   var f2 = newseq[seq[float]](phi.len)
   for k in 0..<phi.len: f2[k] = newseq[float](phi[k].len)
@@ -736,12 +722,12 @@ for n in inittraj+1..inittraj+trajs:
   f2.faction
   toc("fa solve 1")
   let (ga0,fa0,t0,h0) = g0.gaction(f2,p2)
+  qexGC "init action"
   toc("init gauge action")
   qexLog "Begin H: ",h0,"  Sg: ",ga0,"  Sf: ",fa0,"  T: ",t0
 
   H.evolve tau
   H.finish
-  qexGC "evolve done"
   toc("evolve")
 
   p2.pnorm2
@@ -751,14 +737,13 @@ for n in inittraj+1..inittraj+trajs:
   f2.faction
   toc("fa solve 2")
   let (ga1,fa1,t1,h1) = g.gaction(f2,p2)
+  qexGC "end action"
   toc("final gauge action")
   qexLog "End H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
-  qexGC "end evolve done"
   toc("end evolve")
 
   if revCheckFreq > 0 and n mod revCheckFreq == 0:
     tic("reversibility")
-    qexGC "begin revCheck"
     var g1 = lo.newgauge
     var p1 = lo.newgauge
     threads:
@@ -768,7 +753,6 @@ for n in inittraj+1..inittraj+trajs:
         p[i] := -1*p[i]
     H.evolve tau
     H.finish
-    qexGC "rev evolve done"
     p2.pnorm2
     toc("p norm2 2")
     g.smearRephaseDiscardForce sg
@@ -821,7 +805,6 @@ for n in inittraj+1..inittraj+trajs:
 
   checkSolvers()
 
-  qexGC "traj all done"
   qexLog "traj ",n," secs: ",getElapsedTime()
   toc("traj end")
 
