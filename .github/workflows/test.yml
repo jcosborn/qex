@@ -12,7 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: environment
-      run: echo "::set-env name=FUELCompat::${{ matrix.fuel-compat }}"
+      run: |
+        echo "::set-env name=FUELCompat::${{ matrix.fuel-compat }}"
+        sudo sh -c 'echo %e.core.%p.%t > /proc/sys/kernel/core_pattern'
     - name: install packages
       run: |
         sudo apt-get install numdiff hwloc-nox libhwloc-dev mpich libmpich-dev gdb
@@ -35,6 +37,7 @@ jobs:
         hwloc-ls
         gcc -v
         mpicc -v
+        cat /proc/sys/kernel/core_pattern
     - name: checkout Nim
       uses: actions/checkout@v2
       with:
@@ -77,17 +80,11 @@ jobs:
       working-directory: qex
       run: |
         ulimit -c unlimited
-        cat /proc/sys/kernel/core_pattern
-        sudo sh -c 'echo %e.core.%p.%t > /proc/sys/kernel/core_pattern'
-        cat /proc/sys/kernel/core_pattern
         CLEANUPJOBS=./finalizeTests ./testscript.sh
     - name: runtests
       working-directory: qex
       run: |
         ulimit -c unlimited
-        cat /proc/sys/kernel/core_pattern
-        sudo sh -c 'echo %e.core.%p.%t > /proc/sys/kernel/core_pattern'
-        cat /proc/sys/kernel/core_pattern
         CLEANUPJOBS=./finalizeTests ./runtests.sh
     - name: make bench
       working-directory: qex

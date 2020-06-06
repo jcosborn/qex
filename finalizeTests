@@ -1,39 +1,18 @@
 #!/usr/bin/env bash
 set -eu
-ulimit -c unlimited
-sudo sh -c 'echo %e.core.%p.%t > /proc/sys/kernel/core_pattern'
-
-declare -i k=0
-declare -i f=0
-while ! ls staghmc_sh.core.* &>/dev/null;do
-	if ! tests/extra/staghmc_sh/run bin/staghmc_sh;then
-		((++f))
-	fi
-	((++k))
-	echo ">>> FAILURE RATE: $f / $k <<<"
-done
-for core in staghmc_sh.core.*;do
+for core in *.core.*;do
 	[[ -s $core ]] || continue
 	echo "==================="
 	echo "$core"
+	exe=${core%.core.*}
+	exes=($(find . -type f -name $exe))
+	for exe in "${exes[@]}";do
+		[[ -s $exe ]] || continue
+		echo "$exe"
+		echo "==================="
+		gdb --batch --quiet \
+			-ex "thread apply all bt full" \
+			"$exe" "$core"
+	done
 	echo "==================="
-	gdb --batch --quiet \
-		-ex "thread apply all bt full" \
-		-ex "info args" \
-		-ex "info locals" \
-		-ex "up" \
-		-ex "info args" \
-		-ex "info locals" \
-		-ex "up" \
-		-ex "info args" \
-		-ex "info locals" \
-		-ex "up" \
-		-ex "info args" \
-		-ex "info locals" \
-		-ex "up" \
-		-ex "info args" \
-		-ex "info locals" \
-		-ex "quit" \
-		./bin/staghmc_sh "$core"
-	echo .
 done
