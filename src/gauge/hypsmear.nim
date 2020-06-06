@@ -289,13 +289,10 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
   toc("end")
   smearedForce
 
-proc smearPriv[G](coef: HypCoefs, gf: G, fl: G, info: var PerfInfo) =
-  var f = coef.smearGetForce(gf, fl, info)
-  f = nil
 proc smear*[G](coef: HypCoefs, gf: G, fl: G, info: var PerfInfo) =
-  ## force Nim to collect temporaries
-  smearPriv(coef, gf, fl, info)
-  qexGC "after smear"
+  ## Call GC_fullCollect() to release memory.
+  ## We cannot do it here as of Nim v1.2.
+  discard coef.smearGetForce(gf, fl, info)
 
 #proc smear*(c: HypCoefs, gf: any, fl: any, info: var PerfInfo) =
 #  var t = newHypTemps(gf)
