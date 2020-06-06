@@ -12,7 +12,7 @@ template ifSuccess(run,cont:untyped):untyped =
       cont
 
 qexInit()
-var c = getComm()
+var c = getDefaultComm()
 echo "rank ",myRank,"/",nRanks
 threads: echo "thread ",threadNum,"/",numThreads
 echo "hwloc compile-time API version: 0x", toHex(HWLOC_API_VERSION,8)
@@ -20,14 +20,22 @@ echo "hwloc run-time API version:     0x", toHex(hwloc_get_api_version().int,8)
 const buflen = 64
 var
   topology:hwloc_topology_t
-  obj:hwloc_obj_t
+  rootobj:hwloc_obj_t
   policy:hwloc_membind_policy_t
+
 ifSuccess hwloc_topology_init(topology.addr):
   defer: hwloc_topology_destroy(topology)
   ifSuccess hwloc_topology_load(topology):
     var set = hwloc_bitmap_alloc()
     defer: hwloc_bitmap_free(set)
-    let cset_cpu = hwloc_topology_get_topology_cpuset(topology)
+    #let cset_cpu = hwloc_topology_get_topology_cpuset(topology)
+    let topodepth = hwloc_topology_get_depth(topology)
+    echo "topology depth: ", topodepth
+    let n0 = hwloc_get_nbobjs_by_depth(topology, 0)
+    echo "nbobjs at depth 0: ", n0
+    rootobj = hwloc_get_obj_by_depth(topology, 0, 0)
+    let cset_cpu = hwloc_bitmap_dup(rootobj.cpuset);
+
     ifSuccess hwloc_get_cpubind(topology, set, HWLOC_CPUBIND_PROCESS.cint):
       var buffer = newStringOfCap buflen
       buffer.setlen buflen
@@ -87,7 +95,8 @@ ifSuccess hwloc_topology_init(topology.addr):
                   echoRaw "rank ",r," thread ",tid," binds to cpuset ",buffer.cstring," using ",ncur
                   stdout.flushFile
 
-  let cset = hwloc_topology_get_topology_nodeset(topology)
+  #let cset = hwloc_topology_get_topology_nodeset(topology)
+  let cset = rootobj.nodeset
   var set = hwloc_bitmap_alloc()
   defer: hwloc_bitmap_free(set)
   ifSuccess hwloc_get_membind(topology, set, policy.addr, HWLOC_MEMBIND_BYNODESET.cint):
@@ -120,4 +129,5 @@ ifSuccess hwloc_topology_init(topology.addr):
             c.waitRecvs
           echo "rank ",r," binds to numa node ",buffer.cstring," using ",ncur," of ",ntot
           stdout.flushFile
+
 qexFinalize()
