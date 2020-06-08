@@ -289,10 +289,16 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
   toc("end")
   smearedForce
 
-proc smear*[G](coef: HypCoefs, gf: G, fl: G, info: var PerfInfo) =
-  ## Call GC_fullCollect() to release memory.
-  ## We cannot do it here as of Nim v1.2.
+proc smearPriv[G](coef: HypCoefs, gf: G, fl: G, info: var PerfInfo) {.codegenDecl:
+    "__attribute__((noinline)) $# $#$#".} =
+  # Avoid inlining or other compiler optimizations
+  # in order to guarantee the change of the stack pointer,
+  # such that Nim's GC is able to collect the memory.
+  {.emit: "asm (\"\");".}
   discard coef.smearGetForce(gf, fl, info)
+proc smear*[G](coef: HypCoefs, gf: G, fl: G, info: var PerfInfo) =
+  coef.smearPriv(gf, fl, info)
+  qexGC()
 
 #proc smear*(c: HypCoefs, gf: any, fl: any, info: var PerfInfo) =
 #  var t = newHypTemps(gf)
