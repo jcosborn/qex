@@ -404,7 +404,6 @@ proc smearedOneLinkForce(f: any, smearedForce: proc, g:any) =
 
   # 2. smearing
   f.smearedForce f
-  qexGC "smear"
   toc("smear")
 
   # 3. Tₐ ReTr( Tₐ U F† )
@@ -634,6 +633,41 @@ proc mdvAllfga(ts,gs:openarray[float]) =
     toc("done")
   toc("done")
 
+proc revCheck(evo:any; h0,ga0,t0:float, fa0:seq[seq[float]]) =
+  tic("reversibility")
+  var
+    g1 = lo.newgauge
+    p1 = lo.newgauge
+    p2 = 0.0
+    f2 = newseq[seq[float]](phi.len)
+  for k in 0..<phi.len: f2[k] = newseq[float](phi[k].len)
+  threads:
+    for i in 0..<g1.len:
+      g1[i] := g[i]
+      p1[i] := p[i]
+      p[i] := -1*p[i]
+  evo.evolve tau
+  evo.finish
+  p2.pnorm2
+  toc("p norm2 2")
+  g.smearRephaseDiscardForce sg
+  toc("smear & rephase 2")
+  f2.faction
+  toc("fa solve 2")
+  let (ga1,fa1,t1,h1) = g.gaction(f2,p2)
+  var dsf = newseq[seq[float]](fa1.len)
+  for k in 0..<fa1.len:
+    dsf[k] = newseq[float](fa1[k].len)
+    for i in 0..<fa1[k].len:
+      dsf[k][i] = fa1[k][i] - fa0[k][i]
+  qexLog "Reversed H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
+  echo "Reversibility: dH: ",h1-h0,"  dSg: ",ga1-ga0,"  dSf: ",dsf,"  dT: ",t1-t0
+  for i in 0..<g1.len:
+    g[i] := g1[i]
+    p[i] := p1[i]
+  qexGC "revCheck done"
+  toc("done")
+
 proc checkSolvers =
   checkStats("Solver[pbp]: ", pbpsp)
   echo "Solver[action]:"
@@ -663,7 +697,7 @@ if existsFile(gaugefile):
   tic("load")
   if 0 != g.loadGauge gaugefile:
     qexError "failed to load gauge file: ", gaugefile
-  qexLog "loaded gauge from file: ", gaugefile
+  qexLog "loaded gauge from file: ", gaugefile," secs: ",getElapsedTime()
   toc("read")
   g.reunit
   toc("reunit")
@@ -679,7 +713,6 @@ toc("prep")
 
 for n in inittraj+1..inittraj+trajs:
   tic("traj")
-  qexGC "begin traj"
   var p2 = 0.0
   var f2 = newseq[seq[float]](phi.len)
   for k in 0..<phi.len: f2[k] = newseq[float](phi[k].len)
@@ -743,35 +776,7 @@ for n in inittraj+1..inittraj+trajs:
   toc("end evolve")
 
   if revCheckFreq > 0 and n mod revCheckFreq == 0:
-    tic("reversibility")
-    var g1 = lo.newgauge
-    var p1 = lo.newgauge
-    threads:
-      for i in 0..<g1.len:
-        g1[i] := g[i]
-        p1[i] := p[i]
-        p[i] := -1*p[i]
-    H.evolve tau
-    H.finish
-    p2.pnorm2
-    toc("p norm2 2")
-    g.smearRephaseDiscardForce sg
-    toc("smear & rephase 2")
-    f2.faction
-    toc("fa solve 2")
-    let (ga1,fa1,t1,h1) = g.gaction(f2,p2)
-    var dsf = newseq[seq[float]](fa1.len)
-    for k in 0..<fa1.len:
-      dsf[k] = newseq[float](fa1[k].len)
-      for i in 0..<fa1[k].len:
-        dsf[k][i] = fa1[k][i] - fa0[k][i]
-    qexLog "Reversed H: ",h1,"  Sg: ",ga1,"  Sf: ",fa1,"  T: ",t1
-    echo "Reversibility: dH: ",h1-h0,"  dSg: ",ga1-ga0,"  dSf: ",dsf,"  dT: ",t1-t0
-    for i in 0..<g1.len:
-      g[i] := g1[i]
-      p[i] := p1[i]
-    qexGC "revCheck done"
-    toc("done")
+    H.revCheck(h0,ga0,t0,fa0)
 
   let
     dH = h1 - h0
@@ -800,7 +805,7 @@ for n in inittraj+1..inittraj+trajs:
     let fn = savefile & &".{n:05}.lime"
     if 0 != g.saveGauge(fn):
       qexError "Failed to save gauge to file: ",fn
-    qexLog "saved gauge to file: ",fn
+    qexLog "saved gauge to file: ",fn," secs: ",getElapsedTime()
     toc("done")
 
   checkSolvers()
