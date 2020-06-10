@@ -295,8 +295,11 @@ proc smearPriv[G](coef: HypCoefs, gf: G, fl: G, info: var PerfInfo) {.codegenDec
   # in order to guarantee the change of the stack pointer,
   # such that Nim's GC is able to collect the memory.
   {.emit: "asm (\"\");".}
-  discard coef.smearGetForce(gf, fl, info)
+  var f = coef.smearGetForce(gf, fl, info)
+  f = nil
 proc smear*[G](coef: HypCoefs, gf: G, fl: G, info: var PerfInfo) =
+  ## Try our best to release memory here.
+  ## Sometimes it still requires a GC after this function returns.
   coef.smearPriv(gf, fl, info)
   qexGC()
 
