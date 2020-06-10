@@ -2,24 +2,27 @@
 # ./gcmem OUTPUT_FILE
 f="$1"
 awk '
+	BEGIN{M=1024**2};
 	/^# /{s=$2;for(i=3;i<=NF;++i)s=s"_"$i}
 	/^\[RAW\] used memory/{
 		if(r==0)
 			r=$4;
-		else
+		else{
 			r-=$4;
+			t=$4;
+		}
 	}
 	/^\[GC\] occupied memory/{
 		if(m==0)
 			m=$4;
 		else{
 			m-=$4;
-			printf("%-20s %10.3f %10.3f %10.3f\n",
-				s,r/1024**2,m/1024**2,$4/1024**2);
+			printf("%-20s %6.0f %6.0f %6.0f %6.0f\n",
+				s,r/M,m/M,t/M,$4/M);
 			m=0;
 			r=0;
 		}
 	}
 	' "$f" \
-	|sort -s -k 1,1 -k 2,2nr -k 3,3nr -k 4,4nr \
-	|uniq -c -w 42
+	|sort -k 1,1 -k 2,2nr -k 3,3nr -k 4,4nr -k 5,5nr \
+	|uniq -c -w 34
