@@ -15,10 +15,10 @@ method isMaster*(c: Comm): bool {.base.} = discard
 
 method barrier*(c: Comm) {.base.} = discard
 method broadcast*(c: Comm, p: pointer, bytes: int) {.base.} = discard
-method allReduce*(c: Comm, x: var float64) {.base.} = discard
 method allReduce*(c: Comm, x: ptr float32, n: int) {.base.} = discard
 method allReduce*(c: Comm, x: ptr float64, n: int) {.base.} = discard
 method allReduceXor*(c: Comm, x: var int) {.base.} = discard
+# max, min
 
 method nsends*(c: Comm): int {.base.} = discard
 method nrecvs*(c: Comm): int {.base.} = discard
@@ -29,6 +29,9 @@ method pushRecv*(c: Comm, rank: int, p: pointer, bytes: int) {.base.} =
 method waitSends*(c: Comm; i0,i1: int) {.base.} = discard
 method freeRecvs*(c: Comm; i0,i1: int) {.base.} = discard
 method waitRecvs*(c: Comm; i0,i1: int; free=true) {.base.} = discard
+# freeSends
+# declareSend, declareRecv, pair(nsends, nrecvs), start(nsends, nrecvs)
+# dup, split
 
 # convenience templates
 
@@ -39,34 +42,30 @@ template size*(c: Comm): int = commsize(c)
 
 template broadcast*(c: Comm, x: var SomeNumber) =
   c.broadcast(cast[pointer](addr x), sizeof(x))
-
 template broadcast*(c: Comm, x: var string) =
   var n = x.len
   c.broadcast(n)
   x.setLen(n)
   c.broadcast(cast[pointer](addr x[0]), n)
 
-template allReduce*(c: Comm, x: var SomeNumber) =
+template allReduce*(c: Comm, x: var float32) = c.allReduce(addr x, 1)
+template allReduce*(c: Comm, x: var float64) = c.allReduce(addr x, 1)
+template allReduce*(c: Comm, x: var SomeInteger) =
   var t = float(x)
-  c.allreduce(addr t)
+  c.allreduce(t)
   x = (type x)(t)
-
 template allReduce*(c: Comm, x: var UncheckedArray[float32], n: int) =
   c.allReduce(addr x[0], n.cint)
-
 template allReduce*(c: Comm, x: var UncheckedArray[float64], n: int) =
   c.allReduce(addr x[0], n.cint)
 
 template pushSend*(c: Comm, rank: int, xx: SomeNumber) =
   var x = xx
   pushSend(c, rank, &&x, sizeof(x))
-
 template pushSend*(c: Comm, rank: int, x: seq) =
   pushSend(c, rank, &&x[0], x.len*sizeof(x[0]))
-
 template waitSends*(c: Comm) =
   c.waitSends(0, c.nsends-1)
-
 template waitSends*(c: Comm, k: int) =
   let n = c.nsends
   let i0 = max(0, n-k)
@@ -74,14 +73,14 @@ template waitSends*(c: Comm, k: int) =
 
 template pushRecv*(c: Comm, rank: int, x: SomeNumber) =
   pushRecv(c, rank, &&x, sizeof(x))
-
 template pushRecv*(c: Comm, rank: int, x: seq) =
   pushRecv(c, rank, &&x[0], x.len*sizeof(x[0]))
-
 template freeRecvs*(c: Comm; k: int) =
+  ## frees last k receives
   let n = c.nrecvs
   let i0 = max(0, n-k)
   freeRecvs(c, i0, n-1)
+
 
 template waitRecv*(c: Comm, free=true) =
   let n = c.nrecvs - 1

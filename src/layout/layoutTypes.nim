@@ -66,17 +66,9 @@ type ShiftIndicesQ* = object
   nSendSites1*: cint
   sendSites*: ptr cArray[cint]
   vv*: cint
-  #offr*: cint
-  #lenr*: cint
-  #nthreads*: cint
   perm*: cint
   pack*: cint
   blend*: cint
-  #sqmpmem*: QMP_msgmem_t
-  #smsg*: QMP_msghandle_t
-  #rqmpmem*: QMP_msgmem_t
-  #rmsg*: QMP_msghandle_t
-  #pairmsg*: QMP_msghandle_t
 
 type ShiftIndices* = ref object
   sq*: ShiftIndicesQ
@@ -89,10 +81,10 @@ type ShiftIndices* = ref object
   pack*: int
   blend*: int
   nSitesInner*: int
+  comm*: Comm
 
 type
   ShiftKey = tuple[dir,len:int;sub:string]
-  #Layout[D:static[int]]* = ref object
   Layout*[V:static[int]] = ref object
     nDim*: int
     physGeom*:seq[int]
@@ -127,6 +119,5 @@ type
 proc makeShiftKey*(d,l:int;s:string):ShiftKey =
   ShiftKey((dir:d,len:l,sub:s))
 
-#  result.shifts = initTable[ShiftKey,ShiftIndices]()
 proc init*(x: var Table) =
   x = initTable[x.A,x.B]()

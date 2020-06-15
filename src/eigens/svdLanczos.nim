@@ -6,7 +6,6 @@ import times
 import strUtils
 import svbin
 
-template QMP_time() = epochTime()
 var verb: int
 
 proc getSvals*(e: dvec; a: dvec; b: dvec; n: int; nv: int) =

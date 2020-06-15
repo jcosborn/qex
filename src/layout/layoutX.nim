@@ -1,7 +1,6 @@
 import tables
 export tables
 import base
-import comms/qmp
 import qgather
 import layoutTypes
 export layoutTypes

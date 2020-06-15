@@ -1,5 +1,3 @@
-#const hdr = currentSourcePath()[0..^11] & "qlayout.h"
-#{. pragma: ql, header:hdr .}
 import layoutTypes
 import comms/qmp
 import base
@@ -28,23 +26,6 @@ type
   ShiftBuf* = ref ShiftBufObj
 
 import qshifts
-
-#[
-proc prepareShiftBufQ*(sb:ptr ShiftBufQ, si:ptr ShiftIndicesQ, esize:cint)
-  {.importc:"prepareShiftBuf",ql.}
-proc freeShiftBufQ*(sb:ptr ShiftBufQ)
-  {.importc:"freeShiftBuf", ql.}
-proc startRecvBufQ*(sb:ptr ShiftBufQ)
-  {.importc:"startRecvBuf", ql.}
-proc waitRecvBufQ*(sb:ptr ShiftBufQ)
-  {.importc:"waitRecvBuf", ql.}
-proc doneRecvBufQ*(sb:ptr ShiftBufQ)
-  {.importc:"doneRecvBuf", ql.}
-proc startSendBufQ*(sb:ptr ShiftBufQ)
-  {.importc:"startSendBuf", ql.}
-proc waitSendBufQ*(sb:ptr ShiftBufQ)
-  {.importc:"waitSendBuf", ql.}
-]#
 
 proc freeShiftBuf*(sb:ShiftBuf) =
   if sb.lbuf != nil:
@@ -109,6 +90,7 @@ proc makeShift*(l:var Layout; dir,len:int; sub:string="all") =
   si.pack = si.sq.pack
   si.blend = si.sq.blend
   si.nSitesInner = l.nSitesInner
+  si.comm = l.comm
 proc getShift*(l:var Layout; dir,len:int; sub:string="all"):ShiftIndices =
   let key = makeShiftKey(dir, len, sub)
   if not hasKey(l.shifts, key):
