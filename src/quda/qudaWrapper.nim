@@ -16,7 +16,7 @@ when not defined(cudaLibDir):
   {.fatal:"Must define cudaLibDir to use QUDA.".}
 const qudaDir {.strdefine.} = ""
 const cudaLibDir {.strdefine.} = ""
-const cudaLib = "-L" & cudaLibDir & " -lcudart -lcufft -Wl,-rpath," & cudaLibDir & " -L" & cudaLibDir & "/stubs -lcuda"
+const cudaLib = "-L" & cudaLibDir & " -lcudart -lcublas -lcufft -Wl,-rpath," & cudaLibDir & " -L" & cudaLibDir & "/stubs -lcuda"
 {.passC: "-I" & qudaDir & "/include".}
 
 const qmpDir {.strdefine.} = getEnv("QMPDIR")
