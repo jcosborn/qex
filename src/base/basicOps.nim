@@ -43,6 +43,7 @@ template numberType*[I,T](x:typedesc[array[I,T]]):untyped = numberType(type(T))
 #template numberType*(x:not typedesc):untyped = numberType(type(x))
 template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x
 template isWrapper*(x: SomeNumber): untyped = false
+template isWrapper*(x: typedesc[SomeNumber]): untyped = false
 
 template cnvrt(r,x):untyped = ((type(r))(x))
 template to*(x:any; t:typedesc[SomeNumber]):untyped =

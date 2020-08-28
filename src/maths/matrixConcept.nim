@@ -25,7 +25,8 @@ template createAsType2(t,c:untyped):untyped =
   mixin `[]`
   #makeWrapper(t, c)
   makeWrapperType(t)
-  template `[]`*(x:t; i:SomeInteger):untyped = x[][i]
+  template `[]`*(x: t; i: SomeInteger): untyped = x[][i]
+  template `[]`*(x: t; i: Scalar): untyped = c(x[][i])
   template `[]`*(x:t; i,j:SomeInteger):untyped =
     #echoType: x
     #ctrace()
@@ -52,14 +53,14 @@ template createAsType2(t,c:untyped):untyped =
 macro createAsType(t: untyped): untyped =
   newCall(bindsym("createAsType2"), ident("As" & t.repr), ident("as" & t.repr))
 
-createAsType(Scalar)
+#createAsType(Scalar)
 #createAsType(VarScalar)
 createAsType(Vector)
 #createAsType(VarVector)
 createAsType(Matrix)
 #createAsType(VarMatrix)
 
-declareScalar(AsScalar)
+#declareScalar(AsScalar)
 #declareScalar(AsVarScalar)
 declareVector(AsVector)
 #declareVector(AsVarVector)
@@ -67,15 +68,15 @@ declareMatrix(AsMatrix)
 #declareMatrix(AsVarMatrix)
 template deref(x:typed):untyped =
   #when type(x) is AsScalar|AsVarScalar:
-  when type(x) is AsScalar:
-    x[]
-  else:
+  #when type(x) is AsScalar:
+  #  x[]
+  #else:
     x
 
 type
-  VectorArrayObj*[I:static[int],T] = array[I,T]
-  #VectorArrayObj*[I:static[int],T] = object
-  #  vec*: array[I,T]
+  #VectorArrayObj*[I:static[int],T] = array[I,T]
+  VectorArrayObj*[I:static[int],T] = object
+    vec*: array[I,T]
   VectorArray*[I:static[int],T] = AsVector[VectorArrayObj[I,T]]
   #VectorArray*[I:static[int],T] = AsVector[array[I,T]]
   MatrixArrayObj*[I,J:static[int],T] = object
@@ -143,11 +144,11 @@ template isWrapper*(x: array): untyped = false
 #  #static: echo "asVarWrapper AsVector"
 #  asVar(asVector(y))
 
-#template `len`*(x:VectorArrayObj):untyped = x.I
-#template `[]`*(x:VectorArrayObj):untyped = x.vec
-#template `[]`*(x:VectorArrayObj; i:int):untyped = x.vec[i]
-#template `[]`*(x:var VectorArrayObj; i:int):untyped = x.vec[i]
-#template `[]=`*(x:VectorArrayObj; i:int, y:untyped):untyped = x.vec[i] = y
+template `len`*(x:VectorArrayObj):untyped = x.I
+template `[]`*(x:VectorArrayObj):untyped = x.vec
+template `[]`*(x:VectorArrayObj; i:int):untyped = x.vec[i]
+template `[]`*(x:var VectorArrayObj; i:int):untyped = x.vec[i]
+template `[]=`*(x:VectorArrayObj; i:int, y:untyped):untyped = x.vec[i] = y
 template asVectorArray*[N:static[int],T](x: array[N,T]): untyped =
   #static: echo "asVectorArray"
   #let x_asVectorArray = xx
@@ -167,6 +168,7 @@ template `len`*(x:MatrixArrayObj):untyped = x.I
 template nrows*(x:MatrixArrayObj):untyped = x.I
 template ncols*(x:MatrixArrayObj):untyped = x.J
 template `[]`*(x:MatrixArrayObj):untyped = x.mat
+template `[]`*(x:MatrixArrayObj; i:Scalar):untyped = indexed(x, i[])
 template `[]`*(x:MatrixArrayObj; i,j:int):untyped = x.mat[i][j]
 template `[]`*(x:var MatrixArrayObj; i,j:int):untyped = x.mat[i][j]
 template `[]=`*(x:MatrixArrayObj; i,j:int, y:untyped):untyped = x.mat[i][j] = y

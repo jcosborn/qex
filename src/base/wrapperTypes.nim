@@ -134,6 +134,7 @@ template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
     #debugType: x
     flattenCallArgs(derefXX, x)
   template isWrapper*(x: name): untyped = true
+  template isWrapper*(x: typedesc[name]): untyped = true
   template asWrapper*(x: name, y: typed): untyped =
     #static: echo "asWrapper Color"
     #dumpTree: y

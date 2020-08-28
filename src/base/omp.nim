@@ -24,7 +24,7 @@ else:
   #proc forceOmpOn() {.omp.}
   template ompPragma(p:string):untyped =
     #forceOmpOn()
-    {. emit:"#pragma omp " & p .}
+    {. emit:["#pragma omp ", p] .}
   template ompBlock*(p:string; body:untyped):untyped =
     {. emit:"#pragma omp " & p .}
     {. emit:"{ /* Inserted by ompBlock " & p & " */".}

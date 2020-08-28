@@ -6,6 +6,7 @@
 #import metaUtils
 import base/wrapperTypes
 import macros
+import typetraits
 
 template makeDeclare(s:untyped):untyped {.dirty.} =
   template `declare s`*(t:typedesc):untyped {.dirty.} =
@@ -15,7 +16,7 @@ template makeDeclare(s:untyped):untyped {.dirty.} =
       `declared s`(x)
     else:
       false
-makeDeclare(Scalar)
+#makeDeclare(Scalar)
 makeDeclare(Matrix)
 makeDeclare(Vector)
 makeDeclare(Real)
@@ -71,9 +72,12 @@ template redot*(x: AsVar, y: AsVar): untyped =
   mixin redot
   redot(x[], y[])
 
+makeWrapperType(Scalar)
+template `[]`*(x: Scalar; i: typed): untyped = x[]
+template `[]`*(x: Scalar; i,j: typed): untyped = x[]
 #[
 type
-  AsScalar*[T] = object
+  Scalar*[T] = object
     v*: T
 template asScalar*(x: typed): untyped =
   let xx = x
@@ -233,6 +237,46 @@ macro dump2(x: typed): auto =
   result = newEmptyNode()
   echo x.treerepr
 template numberType*(x: ToDouble): untyped =
+  dump2: x
+  numberType(x[])
+
+
+template sameWrapper*(x: typedesc, y: typedesc): untyped =
+  type(stripGenericParams(x)) is type(stripGenericParams(y))
+
+#  FIXME: should get a pointer
+template getAlias*(x: typed): untyped = x
+
+type
+  Indexed*[T,I] = object
+    indexedObj*: T
+    indexedIdx*: I
+
+template indexedX[T,I](x: T, i: I): untyped =
+  Indexed[T,I](indexedObj: x, indexedIdx: i)
+template indexed*[T,I](x: T, i: I): untyped =
+  when isWrapper(T):
+    when sameWrapper(type T, type I):
+      x[i[]]
+    else:
+      asWrapper(T, indexedX(getAlias x[], i))
+  else:
+    indexedX(getAlias x, i)
+
+template `[]`*(x:Indexed; i:SomeInteger):untyped = x[][i].toDouble
+template `[]`*(x:Indexed; i,j:SomeInteger):untyped = x[][j,i].toDouble
+template len*(x:Indexed):untyped = x[].len
+template nrows*(x:Indexed):untyped = x[].nrows
+template ncols*(x:Indexed):untyped = x[].ncols
+template declaredVector*(x:Indexed):untyped = isVector(x[])
+template declaredMatrix*(x:Indexed):untyped = isMatrix(x[])
+template re*(x:Indexed):untyped = toDouble(x[].re)
+template im*(x:Indexed):untyped = toDouble(x[].im)
+template simdType*(x: Indexed): untyped = simdType(x[])
+#macro dump2(x: typed): auto =
+#  result = newEmptyNode()
+#  echo x.treerepr
+template numberType*(x: Indexed): untyped =
   dump2: x
   numberType(x[])
 
