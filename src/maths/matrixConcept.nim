@@ -156,7 +156,8 @@ template asVectorArray*[N:static[int],T](x: array[N,T]): untyped =
   #static: echo "asVectorArray2"
   #asVector( VectorArrayObj[n_asVectorArray,
   #                         type(x_asVectorArray[0])](x_asVectorArray) )
-  asVector( VectorArrayObj[N,type(T)](x) )
+  #asVector( VectorArrayObj[N,type(T)](x) )
+  asVector( VectorArrayObj[N,type(T)](vec: x) )
   #let t1 = VectorArrayObj[n_asVectorArray,
   #                        type(x_asVectorArray[0])](vec: x_asVectorArray)
   #static: echo "asVectorArray1"

@@ -81,7 +81,8 @@ let stag = newStag(sg)
 
 proc smearRephase(g: any, sg: any):auto {.discardable.} =
   tic()
-  let smearedForce = coef.smear(g, sg, info)
+  #let smearedForce = coef.smear(g, sg, info)
+  let smearedForce = coef.smearGetForce(g, sg, info)
   toc("smear")
   threads:
     sg.setBC
