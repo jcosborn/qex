@@ -15,7 +15,7 @@ qexInit()
 var c = getDefaultComm()
 echo "rank ",myRank,"/",nRanks
 threads: echo "thread ",threadNum,"/",numThreads
-echo "hwloc compile-time API version: 0x", toHex(HWLOC_API_VERSION,8)
+echo "hwloc compile-time API version: 0x", toHex(HWLOC_API_VERSION.int,8)
 echo "hwloc run-time API version:     0x", toHex(hwloc_get_api_version().int,8)
 const buflen = 64
 var
