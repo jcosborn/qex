@@ -545,7 +545,7 @@ proc norm2P*(f:SomeField):auto =
   tic()
   mixin norm2, inorm2, simdSum, items, toDouble
   #var n2:type(norm2(f[0]))
-  var n2:type(toDouble(norm2(f[0])))
+  var n2:type(norm2(toDouble(f[0])))
   #echo n2
   #let t = f
   for x in items(f):

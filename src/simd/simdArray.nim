@@ -220,6 +220,9 @@ discard """
     op(x[][1], ra[], la[])
 """
 
+#type SimdArrayObj*[L,B] = object
+#    v*: array[L,B]
+
 
 # T = Simd{S,D}{L} = array[L,B]
 # B ~ array[N0,F]
@@ -231,6 +234,7 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   #type T* = distinct array[L,B]
   type T* = object
     v*: array[L,B]
+  #type T* = SimdArrayObj[L,B]
   template isWrapper*(x:typedesc[T]): bool = false
   template isWrapper*(x:T): bool = false
   template numberType*(x:typedesc[T]):untyped = F

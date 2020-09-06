@@ -11,30 +11,6 @@ export simdX86Ops
 import simd/simdWrap
 export simdWrap
 
-import simdArray
-
-template tryArray(T,TA,L,B,BB:untyped):untyped =
-  when (not declared(T)) and declared(B):
-    makeSimdArray(TA, L, BB)
-    type T* = Simd[TA]
-macro makeArray(P,N:untyped):auto =
-  let n = N.intVal
-  let t = ident("Simd" & $P & $n)
-  let ta = ident("Simd" & $P & $n & "Obj")
-  var m = n div 2
-  result = newStmtList()
-  while m>0:
-    let b = ident("Simd" & $P & $m)
-    let bb = newNimNode(nnkBracketExpr).add(b)
-    let l = n div m
-    result.add getAst(tryArray(t,ta,newLit(l),b,bb))
-    m = m div 2
-  #echo result.treerepr
-
-makeArray(D, 16)
-makeArray(D,  8)
-makeArray(D,  4)
-
 #when declared(SimdS4):
 #  proc toDouble*(x:SimdS4):SimdD4 {.inline,noInit.} =
 #    result = SimdD4(toDoubleA(x))

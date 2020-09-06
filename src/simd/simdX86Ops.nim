@@ -319,6 +319,34 @@ template simdMax*(r:var SomeNumber; x:m512d) = simdMaxReduce(r, x)
 # include perm, pack and blend
 include simdX86Ops1
 
+
+#### mixed precision
+
+import simdArray
+
+template tryArray(T,TA,L,B,BB:untyped):untyped =
+  when (not declared(T)) and declared(B):
+    makeSimdArray(TA, L, BB)
+    type T* = Simd[TA]
+macro makeArray(P,N:untyped):auto =
+  let n = N.intVal
+  let t = ident("Simd" & $P & $n)
+  let ta = ident("Simd" & $P & $n & "Obj")
+  var m = n div 2
+  result = newStmtList()
+  while m>0:
+    let b = ident("Simd" & $P & $m)
+    let bb = newNimNode(nnkBracketExpr).add(b)
+    let l = n div m
+    result.add getAst(tryArray(t,ta,newLit(l),b,bb))
+    m = m div 2
+  #echo result.treerepr
+
+makeArray(D, 16)
+makeArray(D,  8)
+makeArray(D,  4)
+
+
 when defined(SSE):
   when defined(AVX):
     proc toSingleImpl*(x: m256d): m128 {.inline,noInit.} =
@@ -326,14 +354,14 @@ when defined(SSE):
     proc toDoubleImpl*(x: m128): m256d {.inline,noInit.} =
       result = mm256_cvtps_pd(x)
   else:
-    proc toSingleImpl*(x: array[2,m128d]): m128 {.inline,noInit.} =
-      let t0 = mm128_cvtpd_ps(x[0])
-      let t1 = mm128_cvtpd_ps(x[1])
+    proc toSingleImpl*(x: SimdD4Obj): m128 {.inline,noInit.} =
+      let t0 = mm128_cvtpd_ps(x[][0])
+      let t1 = mm128_cvtpd_ps(x[][1])
       result = mm128_castps64_ps128(t0)
       result = mm128_insertf64_ps(result, t1, 1)
-    proc toDoubleImpl*(x: m128): array[2,m128d] {.inline,noInit.} =
-      result[0] = mm128_cvtps_pd(mm128_extractf128_ps(x,0))
-      result[1] = mm128_cvtps_pd(mm128_extractf128_ps(x,1))
+    proc toDoubleImpl*(x: m128): SimdD4Obj {.inline,noInit.} =
+      result[][0] = mm128_cvtps_pd(mm128_extractf128_ps(x,0))
+      result[][1] = mm128_cvtps_pd(mm128_extractf128_ps(x,1))
 
 when defined(AVX):
   when defined(AVX512):
@@ -342,28 +370,28 @@ when defined(AVX):
     proc toDoubleImpl*(x: m256): m512d {.inline,noInit.} =
       result = mm512_cvtps_pd(x)
   else:
-    proc toSingleImpl*(x: array[2,m256d]): m256 {.inline,noInit.} =
-      let t0 = mm256_cvtpd_ps(x[0])
-      let t1 = mm256_cvtpd_ps(x[1])
+    proc toSingleImpl*(x: SimdD8Obj): m256 {.inline,noInit.} =
+      let t0 = mm256_cvtpd_ps(x[][0])
+      let t1 = mm256_cvtpd_ps(x[][1])
       result = mm256_castps128_ps256(t0)
       result = mm256_insertf128_ps(result, t1, 1)
-    proc toDoubleImpl*(x: m256): array[2,m256d] {.inline,noInit.} =
-      result[0] = mm256_cvtps_pd(mm256_extractf128_ps(x,0))
-      result[1] = mm256_cvtps_pd(mm256_extractf128_ps(x,1))
+    proc toDoubleImpl*(x: m256): SimdD8Obj {.inline,noInit.} =
+      result[][0] = mm256_cvtps_pd(mm256_extractf128_ps(x,0))
+      result[][1] = mm256_cvtps_pd(mm256_extractf128_ps(x,1))
 
 when defined(AVX512):
-  proc toSingleImpl*(x: array[2,m512d]): m512 {.inline,noInit.} =
-    let t0 = mm512_cvtpd_ps(x[0])
-    let t1 = mm512_cvtpd_ps(x[1])
+  proc toSingleImpl*(x: SimdD16Obj): m512 {.inline,noInit.} =
+    let t0 = mm512_cvtpd_ps(x[][0])
+    let t1 = mm512_cvtpd_ps(x[][1])
     result = mm512_castps256_ps512(t0)
     result = mm512_insertf32x8_ps(result, t1, 1)
-  proc toDoubleImpl*(x:m512):array[2,m512d] {.inline,noInit.} =
+  proc toDoubleImpl*(x:m512):SimdD16Obj {.inline,noInit.} =
     #result[0] = mm512_cvtps_pd(mm512_castps512_ps256(x))
     #var y{.noInit.}: m512
     #perm8(y, x)
     #result[1] = mm512_cvtps_pd(mm512_castps512_ps256(y))
-    result[0] = mm512_cvtps_pd(mm512_extractf32x8_ps(x,0))
-    result[1] = mm512_cvtps_pd(mm256_extractf32x8_ps(x,1))
+    result[][0] = mm512_cvtps_pd(mm512_extractf32x8_ps(x,0))
+    result[][1] = mm512_cvtps_pd(mm256_extractf32x8_ps(x,1))
 
 when defined(SimdS4):
   proc mm_cvtph_ps(x:m128i):m128
