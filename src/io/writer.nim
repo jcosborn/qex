@@ -23,8 +23,13 @@ template getLayout(x: static[int]): untyped =
   ioLayout(Layout[x](nil))
 
 var writenodes = -1
+proc getNumWriteRanks*(): int = writenodes
+proc setNumWriteRanks*(n: int) =
+  writenodes = n
 proc ioWriteRank(node: cint): cint =
-  cint( writenodes * (node div writenodes) )
+  #cint( writenodes * (node div writenodes) )
+  let k = (writenodes*node) div nRanks
+  cint( (k*nRanks+writenodes-1) div writenodes )
 proc ioMasterRank(): cint = 0.cint
 
 proc open(wr: var Writer; ql: var QIO_Layout, md: string) =
@@ -39,7 +44,8 @@ proc open(wr: var Writer; ql: var QIO_Layout, md: string) =
   ql.this_node = wr.layout.myRank.cint
   ql.number_of_nodes = wr.layout.nRanks.cint
   if writenodes<=0:
-    writenodes = 1 + int( sqrt(ql.number_of_nodes.float) )
+    writenodes = int( sqrt(8*ql.number_of_nodes.float) )
+    writenodes = max(1,min(ql.number_of_nodes,writenodes))
 
   var fs: QIO_Filesystem
   fs.my_io_node = ioWriteRank

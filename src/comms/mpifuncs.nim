@@ -1,5 +1,6 @@
 # mpifuncs.nim
 # created with c2nim from mpifuncs.h
+import mpitypes
 
 type 
   MPI_Copy_function* = proc (a2: MPI_Comm; a3: cint; a4: pointer; a5: pointer; 

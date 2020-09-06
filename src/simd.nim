@@ -91,6 +91,12 @@ when declared(SimdD4):
   mapSimd(SimdD4, exp)
   mapSimd(SimdD4, ln)
 
+template makeBinaryMixed(S,D,op) =
+  template op*(x: S, y: D): untyped =
+    op(toDouble(x),y)
+  template op*(x: D, y: S): untyped =
+    op(x,toDouble(y))
+
 when declared(SimdS4) and declared(SimdD4):
   proc toSingle*(x: SimdD4): SimdS4 {.inline,noInit.} =
     for i in 0..<4:
@@ -104,6 +110,11 @@ when declared(SimdS4) and declared(SimdD4):
   #  r = toDouble(x)
   #converter promote*(x: SimdS4): SimdD4 {.inline,noInit.} =
   #  assign(result, x)
+  template assign*(x: SimdS4; y: SimdD4): untyped =
+    assign(x, toSingle(y))
+  makeBinaryMixed(SimdS4, SimdD4, `+`)
+  makeBinaryMixed(SimdS4, SimdD4, `-`)
+  makeBinaryMixed(SimdS4, SimdD4, `*`)
   proc inorm2*(r:var SimdD4; x:SimdS4) {.inline.} =
     let y = toDouble(x)
     inorm2(r, y)

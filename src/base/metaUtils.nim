@@ -1041,8 +1041,8 @@ template forStaticUnRollFor*(index,i0,i1,body:untyped):untyped =
     for index in a..b: body
 
 template forStatic*(index,i0,i1,body:untyped):untyped =
-  # forStaticUntyped(index,i0,i1,body)
-  forStaticUnRollFor(index,i0,i1,body)
+  forStaticUntyped(index,i0,i1,body)
+  #forStaticUnRollFor(index,i0,i1,body)
 
 template forOpt*(i,r0,r1,b:untyped):untyped =
   when compiles((const x=r0;const y=r1;x;y)):
@@ -1535,3 +1535,58 @@ macro debugType*(v: typed): untyped =
   echo "  ", t1.repr
   let t2 = v.getTypeImpl
   echo "  ", t2.repr
+
+
+#########  helpers for for makeAliases
+
+proc flattenStmtExpr(body: NimNode, stmts: var NimNode): NimNode =
+  if body.kind == nnkStmtListExpr:
+    let n = body.len
+    for i in 0..(n-2):
+      stmts.add body[i]
+    result = flattenStmtExpr(body[n-1], stmts)
+  else:
+    result = body
+
+proc removeTemplatesImpl(x: NimNode): NimNode =
+  result = copyNimNode x
+  for n in x:
+    if n.kind != nnkTemplateDef:
+      result.add removeTemplatesImpl n
+macro removeTemplates(x: typed): untyped =
+  result = removeTemplatesImpl x
+  #echo result.repr
+
+template makeAliasOfTmpl(x: untyped, y: untyped) =
+  template x: untyped {.gensym.} = y
+macro makeAliasOf*(ex: typed, name: untyped): untyped =
+  #echo ex.treerepr
+  if ex.kind == nnkStmtListExpr:
+    result = newNimNode nnkStmtList
+    let e = flattenStmtExpr(ex, result)
+    var td = getAst(makeAliasOfTmpl(name,e))
+    result.add td
+  else:
+    result  = getAst(makeAliasOfTmpl(name,ex))
+  #echo result.repr
+macro makeAliases*(body: untyped): untyped =
+  #echo body.treerepr
+  body.expectKind nnkStmtList
+  result = newNimNode nnkStmtList
+  for s in body:
+    if s.kind == nnkAsgn:
+      var td = newCall(bindsym"makeAliasOf", s[1], s[0])
+      result.add td
+    else:
+      result.add s
+  result = newCall(bindsym"removeTemplates", result)
+  #echo result.treeRepr
+
+macro indexTuple*(x: tuple, i: static[int]): untyped =
+  #echo x.treerepr
+  if x.kind == nnkTupleConstr:
+    result = x[i]
+  else:
+    result = newTree(nnkBracketExpr, x, newLit(i))
+  #echo result.treerepr
+

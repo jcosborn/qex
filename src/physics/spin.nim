@@ -24,11 +24,27 @@ type
 template asVarWrapper*(x: Spin, y: typed): untyped =
   asVar(asSpin(y))
 #makeDeref(Spin, x.T)
-template `[]`*(x: Spin, i: typed): untyped = x[][i]
+template `[]`*[T](x: Spin, i: T): untyped =
+  when T is Spin:
+    x[][i[]]
+  elif T.isWrapper:
+    #indexed(x, i)
+    var tSpinBracket = asSpin(x[][i])
+    tSpinBracket
+  else:
+    x[][i]
 template `[]`*(x: Spin, i,j: typed): untyped = x[][i,j]
-template `[]=`*(x: Spin, i,y: typed): untyped =
-  x[][i] = y
-template `[]=`*(x: Spin, i,j,y: typed): untyped =
+#template `[]=`*[T](x: Spin, i: T; y: typed) =
+proc `[]=`*[T](x: Spin, i: T; y: any) =
+  when T is Spin:
+    x[][i[]] = y
+  elif T.isWrapper:
+    #indexed(x, i)
+    var tSpinBracket = asSpin(x[][i])
+    tSpinBracket := y
+  else:
+    x[][i] = y
+template `[]=`*(x: Spin, i,j,y: typed) =
   x[][i,j] = y
 forwardFunc(Spin, len)
 forwardFunc(Spin, nrows)

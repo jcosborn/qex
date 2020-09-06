@@ -313,42 +313,75 @@ template simdMax*(r:var SomeNumber; x:m256d) = simdMaxReduce(r, x)
 template simdMax*(r:var SomeNumber; x:m512) = simdMaxReduce(r, x)
 template simdMax*(r:var SomeNumber; x:m512d) = simdMaxReduce(r, x)
 
+#template toSingleImpl*(x:m256d):m128 = mm256_cvtpd_ps(x)
+#template toDoubleImpl*(x:m128):m256d = mm256_cvtps_pd(x)
+
 # include perm, pack and blend
 include simdX86Ops1
 
+when defined(SSE):
+  when defined(AVX):
+    proc toSingleImpl*(x: m256d): m128 {.inline,noInit.} =
+      result = mm256_cvtpd_ps(x)
+    proc toDoubleImpl*(x: m128): m256d {.inline,noInit.} =
+      result = mm256_cvtps_pd(x)
+  else:
+    proc toSingleImpl*(x: array[2,m128d]): m128 {.inline,noInit.} =
+      let t0 = mm128_cvtpd_ps(x[0])
+      let t1 = mm128_cvtpd_ps(x[1])
+      result = mm128_castps64_ps128(t0)
+      result = mm128_insertf64_ps(result, t1, 1)
+    proc toDoubleImpl*(x: m128): array[2,m128d] {.inline,noInit.} =
+      result[0] = mm128_cvtps_pd(mm128_extractf128_ps(x,0))
+      result[1] = mm128_cvtps_pd(mm128_extractf128_ps(x,1))
+
 when defined(AVX):
   when defined(AVX512):
-    proc toDouble*(x: m256): m512d {.inline,noInit.} =
+    proc toSingleImpl*(x: m512d): m256 {.inline,noInit.} =
+      result = mm512_cvtpd_ps(x)
+    proc toDoubleImpl*(x: m256): m512d {.inline,noInit.} =
       result = mm512_cvtps_pd(x)
   else:
-    proc toDoubleA*(x: m256): array[2,m256d] {.inline,noInit.} =
+    proc toSingleImpl*(x: array[2,m256d]): m256 {.inline,noInit.} =
+      let t0 = mm256_cvtpd_ps(x[0])
+      let t1 = mm256_cvtpd_ps(x[1])
+      result = mm256_castps128_ps256(t0)
+      result = mm256_insertf128_ps(result, t1, 1)
+    proc toDoubleImpl*(x: m256): array[2,m256d] {.inline,noInit.} =
       result[0] = mm256_cvtps_pd(mm256_extractf128_ps(x,0))
       result[1] = mm256_cvtps_pd(mm256_extractf128_ps(x,1))
 
 when defined(AVX512):
-  proc toDoubleA*(x:m512):array[2,m512d] {.inline,noInit.} =
-    result[0] = mm512_cvtps_pd(mm512_castps512_ps256(x))
-    var y{.noInit.}: m512
-    perm8(y, x)
-    result[1] = mm512_cvtps_pd(mm512_castps512_ps256(y))
+  proc toSingleImpl*(x: array[2,m512d]): m512 {.inline,noInit.} =
+    let t0 = mm512_cvtpd_ps(x[0])
+    let t1 = mm512_cvtpd_ps(x[1])
+    result = mm512_castps256_ps512(t0)
+    result = mm512_insertf32x8_ps(result, t1, 1)
+  proc toDoubleImpl*(x:m512):array[2,m512d] {.inline,noInit.} =
+    #result[0] = mm512_cvtps_pd(mm512_castps512_ps256(x))
+    #var y{.noInit.}: m512
+    #perm8(y, x)
+    #result[1] = mm512_cvtps_pd(mm512_castps512_ps256(y))
+    result[0] = mm512_cvtps_pd(mm512_extractf32x8_ps(x,0))
+    result[1] = mm512_cvtps_pd(mm256_extractf32x8_ps(x,1))
 
 when defined(SimdS4):
   proc mm_cvtph_ps(x:m128i):m128
     {.importC:"_mm_cvtph_ps",header:"f16cintrin.h".}
   proc mm_cvtps_ph(x:m128,y:cint):m128i
     {.importC:"_mm_cvtps_ph",header:"f16cintrin.h".}
-  template toHalf(x:SimdS4):SimdH4 = SimdH4(mm_cvtps_ph(x))
-  template toSingle(x:SimdH4):SimdS4 = mm_cvtph_ps(x)
+  template toHalf*(x:SimdS4):SimdH4 = SimdH4(mm_cvtps_ph(x))
+  template toSingle*(x:SimdH4):SimdS4 = mm_cvtph_ps(x)
 when defined(SimdS8):
   proc mm256_cvtph_ps(x:m128i):m256
     {.importC:"_mm256_cvtph_ps",header:"f16cintrin.h".}
   proc mm256_cvtps_ph(x:m256,y:cint):m128i
     {.importC:"_mm256_cvtps_ph",header:"f16cintrin.h".}
-  template toHalf(x:SimdS8):SimdH8 = SimdH8(mm256_cvtps_ph(x,0))
-  template toSingle(x:SimdH8):SimdS8 = mm256_cvtph_ps(m128i(x))
+  template toHalf*(x:SimdS8):SimdH8 = SimdH8(mm256_cvtps_ph(x,0))
+  template toSingle*(x:SimdH8):SimdS8 = mm256_cvtph_ps(m128i(x))
 when defined(m512):
-  template toHalf(x:m512):SimdH16 = SimdH16(mm512_cvtps_ph(x,0))
-  template toSingle(x:SimdH16):m512 = mm512_cvtph_ps(m256i(x))
+  template toHalf*(x:m512):SimdH16 = SimdH16(mm512_cvtps_ph(x,0))
+  template toSingle*(x:SimdH16):m512 = mm512_cvtph_ps(m256i(x))
 
 
 when isMainModule:

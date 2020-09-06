@@ -45,9 +45,14 @@ template setLayout(x: Reader): untyped =
 template getLayout(x: static[int]): untyped =
   ioLayout(Layout[x](nil))
 
-var readnodes{.global.} = -1
+var readnodes = -1
+proc getNumReadRanks*(): int = readnodes
+proc setNumReadRanks*(n: int) =
+  readnodes = n
 proc ioReadRank(node: cint): cint =
-  cint( readnodes * (node div readnodes) )
+  #cint( readnodes * (node div readnodes) )
+  let k = (readnodes*node) div nRanks
+  cint( (k*nRanks+readnodes-1) div readnodes )
 proc ioMasterRank(): cint = 0.cint
 
 proc toString(qs:ptr QIO_String):string =
@@ -68,7 +73,8 @@ proc open(r:var Reader; ql:var QIO_Layout) =
   ql.this_node = r.layout.myRank.cint
   ql.number_of_nodes = r.layout.nRanks.cint
   if readnodes<=0:
-    readnodes = 1 + int( sqrt(ql.number_of_nodes.float) )
+    readnodes = int( sqrt(8*ql.number_of_nodes.float) )
+    readnodes = max(1,min(ql.number_of_nodes,readnodes))
 
   var fs:QIO_Filesystem
   fs.my_io_node = ioReadRank
@@ -89,7 +95,7 @@ proc open(r:var Reader; ql:var QIO_Layout) =
 
 template newReader*[V: static[int]](l: Layout[V]; fn: string): untyped =
   var rd: Reader[V]
-  if not existsFile(fn):
+  if not fileExists(fn):
     warn "file not found: ", fn
   else:
     proc ioNodeNumber2(x:ptr cint):cint =

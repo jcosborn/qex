@@ -43,6 +43,16 @@ template asWrapper*(x: ComplexProxy, y: typed): untyped =
 template asVarWrapper*(x: ComplexProxy, y: typed): untyped =
   asVar(newComplexProxy(y))
 
+template `[]`*[T](x: AsComplex, i: T): untyped =
+  when T is AsComplex:
+    x[][i[]]
+  elif T.isWrapper:
+    indexed(x, i)
+    #asVar(asComplex(x[][i]))
+  else:
+    x[][i]
+
+
 template re*(x: ComplexObj): untyped = x.reX
 macro re*(x: ComplexObj{nkObjConstr}): untyped =
   #echo x.treerepr

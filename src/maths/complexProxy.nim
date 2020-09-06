@@ -127,8 +127,8 @@ template `re=`*(x: ComplexProxy, y: typed) = x[].re = y
 template `im=`*(x: ComplexProxy, y: typed) = x[].im = y
 
 template setU*(r: ComplexProxy, x: typed, y: typed) =
-  r[].re := x
-  r[].im := y
+  r[].re = x
+  r[].im = y
 template set*(r: ComplexProxy, x: typed, y: typed) =
   flattenCallArgs(setU, r, x, y)
 

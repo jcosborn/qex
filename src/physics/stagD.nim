@@ -301,7 +301,7 @@ proc stagD2*(sd:StaggeredD; r:SomeField; g:openArray[Field2];
   #let ns = ns1 - ns0
   #tFor iri, 0, ns.pred:
   #  let ir = ns0 + iri
-    optimizeAst:
+    XoptimizeAst:
       var rir{.noInit.}:type(r[ir])
       rir := a*r[ir] + b*x[ir]
       for mu in 0..<nd:

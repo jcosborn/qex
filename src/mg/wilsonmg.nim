@@ -1,3 +1,6 @@
+import ../base/globals
+setForceInline(false)
+
 import base
 import layout
 import field

@@ -1,12 +1,38 @@
 import ../base/wrapperTypes
+import ../maths/types
+#import ../maths/complexNumbers
+#export complexNumbers
 
 makeWrapperType(Simd)
 type
   Simd2*[T] = Simd[T]
   Simd3*[T] = Simd[T]
 
-template `[]`*(x: Simd, i: typed): untyped = x[][i]
-template `[]=`*(x: Simd, i: typed, y: typed): untyped = x[][i] = y
+template `[]`*(x: Simd, i: typed): untyped =
+  when i is Simd:
+    #x[][i[]]
+    indexed(x, i[])
+  else:
+    x[][i]
+    #indexed(x, i)
+
+template doIndexed[T](x: T): untyped =
+  when T is Indexed:
+    x[]
+  else:
+    x
+
+template `[]=`*(x: Simd, i: typed, y: typed): untyped =
+  when i is Simd:
+    when y is Simd:
+      x[][i[]] = doIndexed(y[])
+    else:
+      x[][i[]] = y
+  else:
+    when y is Simd:
+      x[][i] = doIndexed(y[])
+    else:
+      x[][i] = y
 
 template attrib(att: untyped): untyped {.dirty.} =
   template att*[T](x: typedesc[Simd[T]]): untyped =
@@ -23,12 +49,19 @@ attrib(simdLength)
 
 # no return value
 template p2(f: untyped) {.dirty.} =
-  template f*(x: var Simd, y: Simd2) =
+  #template f*(x: var Simd, y: Simd2) =
+  template f*[T](x: var Simd[T], y: Simd2) =
     #static: echo "f Simd Simd"
     #static: echo "  ", x.type
     #static: echo "  ", y.type
     mixin f
-    f(x[], y[])
+    #f(x[], y[])
+    when numberType(T) is float64:
+      f(x[], y[].toDoubleImpl)
+    elif numberType(T) is float32:
+      f(x[], y[].toSingleImpl)
+    else:
+      f(x[], y[])
 
 template p2s(f: untyped) {.dirty.} =
   template f*(x: var Simd, y: SomeNumber) =
@@ -62,6 +95,7 @@ p2s(`-=`)
 p2s(`*=`)
 p2s(`/=`)
 p2s(iadd)
+p2s(isub)
 p2s(inorm2)
 p3(imadd)
 p3(imsub)
@@ -127,6 +161,8 @@ template norm2*[T](x: Simd[T]): untyped =
   mixin norm2
   when T is Masked:
     norm2(x[])
+  elif T is Indexed:
+    norm2(x[][])
   else:
     asSimd(norm2(x[]))
 
@@ -147,3 +183,7 @@ template `+=`*(x: SomeNumber, y: Simd) =
     x += y[0]
   else:
     x += y[]  # Masked
+
+template exp*(xx: Simd[Indexed]): untyped =
+  let x = xx
+  exp(x[][x.indexedIdx])

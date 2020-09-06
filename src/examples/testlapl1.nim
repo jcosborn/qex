@@ -138,7 +138,7 @@ proc setSpin(src: Field, v1: Field2, sp: int) =
   threads:
     for i in src.sites:
       let j = lomap1[i]
-      src{i}[sp] := v1[j]
+      src{i}[sp] = v1[j]
   toc("setSpin")
 
 proc getProp(dest: Field, src: Field2, cv: Field3, s: int) =

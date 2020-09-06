@@ -7,7 +7,6 @@ import layoutX
 #import times
 import macros
 #import qcdTypes
-#import qmp
 #import stdUtils
 import field
 export field
@@ -125,21 +124,27 @@ template localSB*(s: ShiftB; i: int; e1,e2: untyped) {.dirty.} =
         perm(it, s.si.perm, t_localSB)
         e1
 
-template localSB2*(ss:ShiftB; ii:int; e1x,e2x:untyped):untyped {.dirty.} =
-  bind subst
-  subst(s,ss,i,ii,e1,e1x,e2,e2x,k1,_):
-    block:
-      let k1 = s.si.sq.pidx[i]
-      var ix{.noInit.}: int
-      if k1 >= 0:
+template localSB2*(s: ShiftB; i: int; e1x,e2x: untyped) =
+  block:
+    #makeAliases:
+    #  s = ss
+    #  i = ii
+    let k1 = s.si.sq.pidx[i]
+    if k1 >= 0:
+      #let ix = k1
+      #template ix{.gensym}:untyped = k1
+      makeAliases:
         ix = k1
-        template it: untyped = e2
-        e1
-      elif k1 + 2 <= 0:
-        ix = -(k1 + 2)
-        var it{.noInit.}: type(e2)
-        perm(it, s.si.perm, e2)
-        e1
+        it = e2x
+      e1x
+    elif k1 + 2 <= 0:
+      let ix2 = -(k1 + 2)
+      makeAliases:
+        ix = ix2
+        e2 = e2x
+      var it{.noInit.}: type(e2)
+      perm(it, s.si.perm, e2)
+      e1x
 
 proc boundaryOffsetSB*(s:ShiftB) =
   var ti0 = threadDivideLow(s.subset.lowOuter, s.subset.highOuter)
@@ -424,7 +429,6 @@ proc boundary*(s:var Shift) =
   if si.nSendRanks > 0:
     if threadNum == 0:
       waitSendBuf(sb)
-  #QMP_barrier()
   threadBarrier()
   if threadNum == 0:
     freeShiftBuf(sb)

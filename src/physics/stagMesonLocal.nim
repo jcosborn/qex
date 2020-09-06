@@ -100,7 +100,7 @@ proc stagMesonsV*(v: any) =
 when isMainModule:
   import qex
   import physics/qcdTypes
-  import physics/stagD
+  import physics/stagSolve
   qexInit()
   var defaultGaugeFile = "l88.scidac"
   #var defaultLat = [4,4,4,4]

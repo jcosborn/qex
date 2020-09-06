@@ -17,12 +17,35 @@ template asVarWrapper*(x: Color, y: typed): untyped =
   #cy
   asVar(asColor(y))
 
-template `[]`*(x: Color, i: typed): untyped = x[][i]
+template `[]`*[T](x: Color, i: T): untyped =
+  when T is Color:
+    x[][i[]]
+  elif T.isWrapper:
+    #indexed(x, i)
+    var tColorBracket = asColor(x[][i])
+    tColorBracket
+  else:
+    x[][i]
 template `[]`*(x: Color, i,j: typed): untyped = x[][i,j]
-template `[]=`*(x: Color, i,y: typed): untyped =
-  x[][i] = y
+
+template `[]=`*[T](x: Color, i: T; y: typed) =
+  when T is Color:
+    x[][i[]] = y
+  elif T.isWrapper:
+    #indexed(x, i)
+    var tColorBracket = asColor(x[][i])
+    tColorBracket := y
+  else:
+    x[][i] = y
+#[
+template `[]=`*[T](x: Color, i:T, y: typed): untyped =
+  when T.isWrapper and T isnot Color:
+    x[][asScalar(i)] = y
+  else:
+    x[][i] = y
 template `[]=`*(x: Color, i,j,y: typed): untyped =
   x[][i,j] = y
+]#
 
 forwardFunc(Color, len)
 forwardFunc(Color, nrows)

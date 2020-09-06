@@ -67,7 +67,7 @@ template qmpMax*(v:float64):untyped = QmpMaxDouble(v.addr)
 template qmpMin*(v:float32):untyped = QmpMinFloat(v.addr)
 template qmpMin*(v:float64):untyped = QmpMinDouble(v.addr)
 
-import comms
+import commsTypes
 
 type
   CommQmp* = ref object of Comm

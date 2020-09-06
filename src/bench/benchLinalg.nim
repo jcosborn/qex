@@ -108,6 +108,7 @@ proc test(lat:any) =
   let vb = nc2*sf
   let mb = nc*vb
   let mvf = (2*nc2-1)*nc2
+  echo "Float type: ", $(v1.numberType)
   threads:
     m1 := 2
     v1 := 1

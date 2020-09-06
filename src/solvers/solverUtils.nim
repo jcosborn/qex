@@ -4,12 +4,18 @@ import physics/qcdTypes
 proc relResid*(r,x: any, a: float): float =
   mixin norm2, simdReduce
   var t: type(r[0].norm2)
+  var u: type(r[0].norm2)
   for e in r:
     let r2 = r[e].norm2
     let x2 = x[e].norm2
-    t += r2/(x2+a)
-  result = simdReduce(t)
-  threadRankSum(result)
+    let s = 1.0/(1.0+a*x2)
+    t += s*r2
+    u += s
+  var ts = simdSum(t)
+  var us = simdSum(u)
+  var rs = [ts,us]
+  threadRankSum(rs)
+  result = rs[0]/rs[1]
 
 proc relR*(p,r,x: any, a: float) =
   mixin norm2
@@ -36,8 +42,8 @@ proc relResidUpdate*(x: any, Ax1,Ax2: any, b: any, a: float):
     t[5] += dot(wAx2, b[e])
   var t2: array[6,DComplex]
   for i in 0..5:
-    t2[i].re = simdReduce(t[i].re)
-    t2[i].im = simdReduce(t[i].im)
+    t2[i].re = simdSum(t[i].re)
+    t2[i].im = simdSum(t[i].im)
   threadRankSum(cast[ptr array[12,float]](t2[0].addr)[])
   let d = t2[0]*t2[3] - t2[2]*t2[1]
   let di = 1.0/d

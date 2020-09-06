@@ -1,3 +1,5 @@
+import physics/wilsonD
+
 import os
 import times
 import strUtils
@@ -14,7 +16,6 @@ import solvers/solverUtils
 #import profile
 #import metaUtils
 import gauge/gaugeUtils
-import physics/wilsonD
 
 proc solveEoCg*(s: Wilson; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   var sp = sp0

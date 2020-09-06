@@ -261,6 +261,8 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   #when not(F is float32):
   when F is float64:
     template toDoubleImpl*(x: T): untyped = x
+  else:
+    template toSingleImpl*(x: T): untyped = x
   proc simdReduce*(r: var SomeNumber; x: T) {.inline.} =
     #mixin add
     var y = x[][0]

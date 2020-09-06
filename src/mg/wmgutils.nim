@@ -176,7 +176,7 @@ when isMainModule:
 
   fv := 0
   for i in 0..<nmgv1:
-    rv.mginsert(fv, i)
+    rv.wmgInsert(fv, i)
   pv := rv
 
   #fv.normalize
@@ -194,20 +194,20 @@ when isMainModule:
     echo "fv2: ", fv2.even.norm2
     fv -= fv2
     echo "fv:  ", fv.even.norm2
-    rv.mginsert(fv, i)
+    rv.wmginsert(fv, i)
     pv := rv
 
     cv := 0
     r.restrict(cv, fv)
-    cv.invsqrt(i)
+    cv.wmgInvsqrt(i)
     fv2 := 0
     p.prolong(fv2, cv)
     echo "fv2: ", fv2.even.norm2
-    rv.mginsert(fv2, i)
+    rv.wmgInsert(fv2, i)
     pv := rv
 
   for i in 0..<nmgv1:
-    mgextract(fv, rv, i)
+    wmgExtract(fv, rv, i)
     echo "fv even: ", fv.even.norm2
     cv := 0
     r.restrict(cv, fv)

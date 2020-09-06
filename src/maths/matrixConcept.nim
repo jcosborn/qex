@@ -25,7 +25,13 @@ template createAsType2(t,c:untyped):untyped =
   mixin `[]`
   #makeWrapper(t, c)
   makeWrapperType(t)
-  template `[]`*(x: t; i: SomeInteger): untyped = x[][i]
+  template `[]`*[T](x: t; i: T): untyped =
+    when T is t:
+      x[][i[]]
+    elif T.isWrapper:
+      indexed(x, i)
+    else:
+      x[][i]
   template `[]`*(x: t; i: Scalar): untyped = c(x[][i])
   template `[]`*(x:t; i,j:SomeInteger):untyped =
     #echoType: x
@@ -41,7 +47,14 @@ template createAsType2(t,c:untyped):untyped =
     #t2
   #template `[]`*(x: t; i,j: SomeInteger): untyped =
   #  x[][i,j]
-  template `[]=`*(x: t; i,j: SomeInteger; y: untyped): untyped =
+  template `[]=`*[T](x: t; i: T; y: typed) =
+    when T is t:
+      x[][i[]] = y
+    elif T.isWrapper:
+      indexed(x, i) = y
+    else:
+      x[][i] = y
+  template `[]=`*(x: t; i,j: SomeInteger; y: typed) =
     x[][i,j] = y
   template len*(x:t):untyped = getConst(x[].len)
   template nrows*(x:t):untyped = getConst(x[].nrows)
@@ -62,9 +75,9 @@ createAsType(Matrix)
 
 #declareScalar(AsScalar)
 #declareScalar(AsVarScalar)
-declareVector(AsVector)
+#declareVector(AsVector)
 #declareVector(AsVarVector)
-declareMatrix(AsMatrix)
+#declareMatrix(AsMatrix)
 #declareMatrix(AsVarMatrix)
 template deref(x:typed):untyped =
   #when type(x) is AsScalar|AsVarScalar:
@@ -226,6 +239,20 @@ template toSingle*[I,T](x: typedesc[VectorArrayObj[I,T]]): untyped =
   VectorArrayObj[I,toSingle(type(T))]
 template toSingle*[T](x: typedesc[AsVector[T]]): untyped =
   AsVector[toSingle(type(T))]
+
+template toDouble*[I,T](x: typedesc[VectorArrayObj[I,T]]): untyped =
+  mixin toDouble
+  VectorArrayObj[I,toDouble(type(T))]
+template toDouble*[T](x: typedesc[AsVector[T]]): untyped =
+  AsVector[toDouble(type(T))]
+
+template toDoubleImpl*(x: VectorArrayObj): untyped =
+  mixin toDoubleX
+  toDoubleX(toDerefPtr x)
+
+template toDoubleImpl*(x: MatrixArrayObj): untyped =
+  mixin toDoubleX
+  toDoubleX(toDerefPtr x)
 
 #template masked*(x: AsMatrix, msk: typed): untyped =
 #  static: echo "masked AsMatrix"

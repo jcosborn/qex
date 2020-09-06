@@ -31,7 +31,7 @@ when isMainModule:
 
   proc start(h: var HMC) =
     h.xSave = h.x
-    h.p = 2.0*random(1.0) - 1.0  # should really be Gaussian
+    h.p = 2.0*rand(1.0) - 1.0  # should really be Gaussian
     echo "x: ", h.x, "  p: ", h.p
 
   template startReverse(h: HMC) =
@@ -56,7 +56,7 @@ when isMainModule:
     h.x = h.xSave
 
   proc globalRand(h: HMC): float =
-    random(1.0)
+    rand(1.0)
 
   proc updateX(h: var HMC, e: float) =
     h.x += e * h.p

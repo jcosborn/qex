@@ -141,7 +141,7 @@ proc chopLat(gm: GatherMap, dest: Field, s,n: int) =
   threads:
     tfor i, 0..<lo.nsites:
       let k = lomap1[i]
-      dest1[k] := dest{i}
+      dest1[k] = dest{i}
   toc("chopLat copy")
   comm.gather(gm, sizeof(dest2[0]), &&dest2, &&dest1)
   toc("chopLat gather")
@@ -224,7 +224,7 @@ proc naiveContract() =
         for i in 0..<nv:
           for j in 0..<nv:
             prmb0.mat[i,j] = prmb[s0+i*nv+j]
-        kv.add(key,prmb0)
+        kv[key] = prmb0
     toc("kv add")
   toc("make table")
   if comm.rank==0:
@@ -260,7 +260,7 @@ proc setSpin(src: Field, v1: Field2, sp: int) =
   threads:
     for i in src.sites:
       let j = lomap1[i]
-      src{i}[sp] := v1[j]
+      src{i}[sp] = v1[j]
   toc("setSpin")
 
 proc getProp(dest: Field, src: Field2, cv: Field3, s: int) =

@@ -79,7 +79,7 @@ when isMainModule:
 
   proc start(m: var Met) =
     m.xSave = m.x
-    m.p = 2.0*random(1.0) - 1.0  # should really be Gaussian
+    m.p = 2.0*rand(1.0) - 1.0  # should really be Gaussian
     echo "start: x: ", m.x, "  p: ", m.p
 
   proc finish(m: var Met) =
@@ -91,7 +91,7 @@ when isMainModule:
     m.x = m.xSave
 
   proc globalRand(m: Met): float =
-    random(1.0)
+    rand(1.0)
 
   proc logWeight(m: Met): float =
     let x = m.x

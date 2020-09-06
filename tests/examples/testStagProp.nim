@@ -31,6 +31,8 @@ threads:
 #echo v1.norm2
 hc.smear(g, fl, ll)
 if myRank==0:
+  discard v1{0}
+  discard v1{0}[0]
   v1{0}[0] := 1
   #v1{2*1024}[0] := 1
 echo v1.norm2

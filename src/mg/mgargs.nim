@@ -120,8 +120,8 @@ when isMainModule:
   cv.new(loC)
 
   fv := 0
-  for i in 0..<nmgv1:
-    rv.mginsert(fv, i)
+  #for i in 0..<nmgv1:
+  #  rv.wmgInsert(fv, i)
   pv := rv
 
   #fv.normalize
@@ -139,7 +139,7 @@ when isMainModule:
     echo "fv2: ", fv2.even.norm2
     fv -= fv2
     echo "fv:  ", fv.even.norm2
-    rv.mginsert(fv, i)
+    #rv.mginsert(fv, i)
     pv := rv
 
     cv := 0
@@ -148,11 +148,11 @@ when isMainModule:
     fv2 := 0
     p.prolong(fv2, cv)
     echo "fv2: ", fv2.even.norm2
-    rv.mginsert(fv2, i)
+    #rv.mginsert(fv2, i)
     pv := rv
 
   for i in 0..<nmgv1:
-    mgextract(fv, rv, i)
+    #mgextract(fv, rv, i)
     echo "fv even: ", fv.even.norm2
     cv := 0
     r.restrict(cv, fv)

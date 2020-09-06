@@ -4,9 +4,9 @@ static:
 import ../base/globals
 setForceInline(false)
 #setForceInline(true)
-setStaticUnroll(false)
+#setStaticUnroll(false)
 #setStaticUnroll(true)
-setNoAlias(false)
+#setNoAlias(false)
 #setNoAlias(true)
 
 import os
@@ -52,7 +52,7 @@ template initWilsonDT*(l: var Layout; T: typedesc; ss: string): untyped =
 proc initWilsonD*(x: Field; sub: string): auto =
   result = initWilsonDT(x.l, type(spproj1p(x[0])), sub)
 
-template optimizeAstX(x: untyped): untyped = x
+template optimizeAstX(x: untyped): untyped = x #optimizeAst(x)
 # normalized to 2*D_w
 template wilsonDP*(sd: WilsonD; r: Field; g: openArray[Field2];
                    x: Field3; expFlops: int; exp: untyped) =

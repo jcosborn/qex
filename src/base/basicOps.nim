@@ -71,7 +71,7 @@ template assign*(r: SomeNumber, x: SomeNumber2) =
   r = cnvrt(r,x)
 
 template adj*(x: SomeNumber): untyped = x
-template inv*(x: SomeNumber): untyped = (type(x)(1))/x
+template inv*[T:SomeNumber](x: T): untyped = (T(1))/x
 
 template neg*(r:var SomeNumber, x:SomeNumber2):untyped =
   r = cnvrt(r,-x)
@@ -108,13 +108,19 @@ template nmsub*(r:var SomeNumber, x:SomeNumber2,
                 y:SomeNumber3, z:SomeNumber4):untyped =
   r = cnvrt(r,-z) - (cnvrt(r,x) * cnvrt(r,y))
 template re*(x:SomeNumber): untyped = x
-template im*(x:SomeNumber): untyped = (type(x)(0))
+template im*[T:SomeNumber](x:T): untyped = T(0)
 template conj*(r:var SomeNumber, x:SomeNumber2) = assign(r, x)
 template adj*(r:var SomeNumber, x:SomeNumber2) = assign(r, x)
 template trace*(x:SomeNumber):untyped = x
-template norm2*(r:var SomeNumber, x:SomeNumber2):untyped = mul(r, x, x)
-template norm2*(x:SomeNumber):untyped = x*x
-template inorm2*(r:var SomeNumber; x:SomeNumber2):untyped = imadd(r, x, x)
+template norm2*(r:var SomeNumber, x:SomeNumber2):untyped =
+  let tNorm2VNum = x
+  mul(r, tNorm2VNum, tNorm2VNum)
+template norm2*(x:SomeNumber):untyped =
+  let tNorm2Num = x
+  tNorm2Num * tNorm2Num
+template inorm2*(r:var SomeNumber; x:SomeNumber2):untyped =
+  let tInorm2Num = x
+  imadd(r, tInorm2Num, tInorm2Num)
 template dot*(x:SomeNumber; y:SomeNumber2):untyped = x*y
 template idot*(r:var SomeNumber; x:SomeNumber2;y:SomeNumber3):untyped =
   imadd(r,x,y)
@@ -123,8 +129,8 @@ template redotinc*(r:var SomeNumber; x:SomeNumber2; y:SomeNumber3):untyped =
   r += x*y
 template simdLength*(x:SomeNumber):untyped = 1
 template simdSum*(x:SomeNumber):untyped = x
-template simdSum*(r:var SomeNumber; x:SomeNumber2):untyped =
- r = (type(r))(x)
+template simdSum*[T:SomeNumber](r:var T; x:SomeNumber2):untyped =
+  r = T(x)
 template simdMax*(x:SomeNumber):untyped = x
 template simdReduce*(x:SomeNumber):untyped = x
 template simdMaxReduce*(x:SomeNumber):untyped = x

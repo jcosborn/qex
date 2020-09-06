@@ -28,6 +28,23 @@ template forwardFunc*(t: typedesc, f: untyped) {.dirty.} =
     mixin f
     f(x[])
 
+
+type
+  Deref[T] = distinct T
+template `[]`*[T](x: Deref[T]): untyped = (T(x))[]
+template toDerefPtr*[T](x: T): untyped =
+  when T is ptr or T is ref:
+    x
+  elif compiles(unsafeAddr x):
+    Deref[ptr T](unsafeAddr x)
+  else:
+    x
+template `[]`*(x: Deref, i: typed): untyped = x[][i]
+template `[]`*(x: Deref, i,j: typed): untyped = x[][i,j]
+forwardFunc(Deref, len)
+forwardFunc(Deref, nrows)
+forwardFunc(Deref, ncols)
+
 #type
 #  AsVar*[T] = object
 #    v*: T
@@ -208,8 +225,8 @@ type
 #      float64(x)
 #    else:
 #      toDoubleDefault(x)
-template toDoubleX*(x: typed): untyped =
-  ToDouble[type(x)](v: x)
+template toDoubleX*[T](x: T): untyped =
+  ToDouble[T](v: x)
 template toDouble*(x: typed): untyped =
   mixin toDouble, toDoubleImpl, isWrapper, asWrapper
   when isWrapper(x):
@@ -223,6 +240,9 @@ template toDouble*(x: typed): untyped =
     toDoubleImpl(x)
 #template `[]`*[T](x:ToDouble[T]):untyped = cast[T](x)
 makeDeref(ToDouble, x.T)
+#template `[]`*(x:ToDouble):untyped = x.v
+#template `[]=`*(x:t; y:any):untyped =
+#   x.v = y
 template `[]`*(x:ToDouble; i:SomeInteger):untyped = x[][i].toDouble
 template `[]`*(x:ToDouble; i,j:SomeInteger):untyped = x[][j,i].toDouble
 template len*(x:ToDouble):untyped = x[].len
@@ -245,41 +265,83 @@ template sameWrapper*(x: typedesc, y: typedesc): untyped =
   type(stripGenericParams(x)) is type(stripGenericParams(y))
 
 #  FIXME: should get a pointer
-template getAlias*(x: typed): untyped = x
+template getAlias*(x: typed): untyped =
+  when compiles(unsafeAddr(x)):
+    unsafeAddr(x)
+  else:
+    var tGetAlias = x
+    addr(tGetAlias)
 
 type
   Indexed*[T,I] = object
-    indexedObj*: T
+    indexedPtr*: T
     indexedIdx*: I
 
 template indexedX[T,I](x: T, i: I): untyped =
-  Indexed[T,I](indexedObj: x, indexedIdx: i)
+  Indexed[T,I](indexedPtr: x, indexedIdx: i)
 template indexed*[T,I](x: T, i: I): untyped =
   when isWrapper(T):
     when sameWrapper(type T, type I):
       x[i[]]
     else:
-      asWrapper(T, indexedX(getAlias x[], i))
+      var tIndexed = asWrapper(T, indexedX(getAlias x[], i))
+      tIndexed
   else:
-    indexedX(getAlias x, i)
+    var tIndexed = indexedX(getAlias x, i)
+    tIndexed
+template mindexed*[T,I](x: T, i: I): untyped =
+  when isWrapper(T):
+    when sameWrapper(type T, type I):
+      x[i[]]
+    else:
+      var tIndexed = asWrapper(T, indexedX(getAlias x[], i))
+      tIndexed
+  else:
+    var tIndexed = indexedX(getAlias x, i)
+    tIndexed
 
-template `[]`*(x:Indexed; i:SomeInteger):untyped = x[][i].toDouble
-template `[]`*(x:Indexed; i,j:SomeInteger):untyped = x[][j,i].toDouble
-template len*(x:Indexed):untyped = x[].len
-template nrows*(x:Indexed):untyped = x[].nrows
-template ncols*(x:Indexed):untyped = x[].ncols
-template declaredVector*(x:Indexed):untyped = isVector(x[])
-template declaredMatrix*(x:Indexed):untyped = isMatrix(x[])
-template re*(x:Indexed):untyped = toDouble(x[].re)
-template im*(x:Indexed):untyped = toDouble(x[].im)
-template simdType*(x: Indexed): untyped = simdType(x[])
-#macro dump2(x: typed): auto =
-#  result = newEmptyNode()
-#  echo x.treerepr
-template numberType*(x: Indexed): untyped =
-  dump2: x
-  numberType(x[])
+template obj(x:Indexed):untyped = x.indexedPtr[]
+template idx(x:Indexed):untyped = x.indexedIdx
+template `[]`*(x:Indexed):untyped =
+  let tIndexedBracket0 = x
+  obj(tIndexedBracket0)[idx(tIndexedBracket0)]
+template `[]`*(x:Indexed; i:SomeInteger):untyped =
+  let tIndexedBracket1 = x
+  obj(tIndexedBracket1)[i][idx(tIndexedBracket1)]
+template `[]`*(x:Indexed; i,j:SomeInteger):untyped =
+  let tIndexedBracket2 = x
+  obj(tIndexedBracket2)[i,j][idx(tIndexedBracket2)]
+template `[]=`*(x:Indexed; i:SomeInteger; y: typed) =
+  let tIndexedBracket1Eq = x
+  obj(tIndexedBracket1Eq)[i][idx(tIndexedBracket1Eq)] = y
+template `:=`*(x:Indexed, y: typed) =
+  let tIndexedColonEq = x
+  obj(tIndexedColonEq)[idx(tIndexedColonEq)] = y
+template assign*(x: SomeNumber, y: Indexed) =
+  x := y[]
 
+template len*(x:Indexed):untyped = obj(x).len
+template nrows*(x:Indexed):untyped = obj(x).nrows
+template ncols*(x:Indexed):untyped = obj(x).ncols
+#template declaredVector*(x:Indexed):untyped = isVector(x.obj)
+#template declaredMatrix*(x:Indexed):untyped = isMatrix(x.obj)
+template re*(x:Indexed):untyped =
+  let tIndexedRe = x
+  obj(tIndexedRe).re[idx(tIndexedRe)]
+template im*(x:Indexed):untyped =
+  let tIndexedIm = x
+  obj(tIndexedIm).im[idx(tIndexedIm)]
+template `re=`*(x: Indexed, y: typed): untyped =
+  let tIndexedReEq = x
+  obj(tIndexedReEq).re[idx(tIndexedReEq)] = y
+template `im=`*(x: Indexed, y: typed): untyped =
+  let tIndexedImEq = x
+  obj(tIndexedImEq).im[idx(tIndexedImEq)] = y
+template simdType*(x: Indexed): untyped = simdType(obj(x))
+template numberType*(x: Indexed): untyped = numberType(obj(x))
+template `*`*(x: Indexed, y: typed): untyped =
+  let tIndexedMul = x
+  obj(tIndexedMul)[idx(tIndexedMul)] * y
 
 # FIXME?: Masked, VarMasked
 type

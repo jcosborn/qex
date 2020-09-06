@@ -202,6 +202,9 @@ proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] {.noinit.} =
 
 template isWrapper*(x: SomeField): untyped = false
 template `[]`*(x:Field; i:int):untyped = x.s[i]
+#template `[]=`*(x:Field; i:int; y:typed) =
+proc `[]=`*(x:Field; i:int; y:any) =
+  x.s[i] := y
 template `[]`*(x:Subsetted; i:int):untyped = x.field[i]
 template l*(x:Subsetted):untyped = x.field.l
 template `[]`*(x:SomeField; st:string):untyped =
@@ -394,18 +397,36 @@ template fmask*(f: Field; i: int): untyped =
   when f.l.V == 1:
     f[i]
   else:
-    mixin varMasked
-    let e = i div f.l.V
-    let l = i mod f.l.V
-    let mask = 1 shl l
-    #let fe = f[e]  # workaround for Nim codegen bug
-    varMasked(f[e], mask)
+    #when true:
+    when false:
+      mixin varMasked
+      let e = i div f.l.V
+      let l = i mod f.l.V
+      let mask = 1 shl l
+      #let fe = f[e]  # workaround for Nim codegen bug
+      varMasked(f[e], mask)
+    else:
+      let e = i div f.l.V
+      let l = i mod f.l.V
+      #indexed(f[e], l)
+      #static: echo "fmask: type f[e]: ", $type(f[e])
+      f[e][asSimd(l)]
 
 template `{}`*(f: Field; i: int): untyped =
   fmask(f, i)
 
 template `{}`*(f: Subsetted; i: int): untyped =
   fmask(f.field, i)
+
+#template mindex*(f: Field; i: int): untyped =
+#  fmask(f, i)
+
+#[
+template `{}=`*(f: Field; i: int, y: typed): untyped =
+    let e = i div f.l.V
+    let l = i mod f.l.V
+    f[e][Simd[l]] = y
+]#
 
 #proc `$`*(x:Field):string =
 #  $(x[0])
@@ -528,7 +549,7 @@ proc norm2P*(f:SomeField):auto =
   #echo n2
   #let t = f
   for x in items(f):
-    inorm2(n2, f[x])
+    inorm2(n2, toDouble(f[x]))
   toc("norm2 local")
   #echoAll n2
   result = simdSum(n2)

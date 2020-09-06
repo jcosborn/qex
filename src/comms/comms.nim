@@ -1,5 +1,5 @@
-type
-  Comm* = ref object of RootObj
+import commsTypes
+export commsTypes
 
 var defaultComm*: Comm
 template getDefaultComm*(): Comm = defaultComm
