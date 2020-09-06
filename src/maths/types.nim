@@ -319,6 +319,15 @@ template `:=`*(x:Indexed, y: typed) =
   obj(tIndexedColonEq)[idx(tIndexedColonEq)] = y
 template assign*(x: SomeNumber, y: Indexed) =
   x := y[]
+template `+=`*(x:Indexed, y: typed) =
+  let tIndexedPlusEq = x
+  obj(tIndexedPlusEq)[idx(tIndexedPlusEq)] += y
+template `-=`*(x:Indexed, y: typed) =
+  let tIndexedMinusEq = x
+  obj(tIndexedMinusEq)[idx(tIndexedMinusEq)] -= y
+template `*=`*(x:Indexed, y: typed) =
+  let tIndexedStarEq = x
+  obj(tIndexedStarEq)[idx(tIndexedStarEq)] *= y
 
 template len*(x:Indexed):untyped = obj(x).len
 template nrows*(x:Indexed):untyped = obj(x).nrows
