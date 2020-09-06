@@ -302,6 +302,8 @@ template mindexed*[T,I](x: T, i: I): untyped =
 
 template obj(x:Indexed):untyped = x.indexedPtr[]
 template idx(x:Indexed):untyped = x.indexedIdx
+template `!`(x:Indexed):untyped = obj(x)[idx(x)]
+template `!=`(x:Indexed,y:typed):untyped = obj(x)[idx(x)] = y
 template `[]`*(x:Indexed):untyped =
   let tIndexedBracket0 = x
   obj(tIndexedBracket0)[idx(tIndexedBracket0)]
@@ -320,14 +322,14 @@ template `:=`*(x:Indexed, y: typed) =
 template assign*(x: SomeNumber, y: Indexed) =
   x := y[]
 template `+=`*(x:Indexed, y: typed) =
-  var tIndexedPlusEq = x
-  obj(tIndexedPlusEq)[idx(tIndexedPlusEq)] += y
+  let tIndexedPlusEq = x
+  tIndexedPlusEq != !tIndexedPlusEq * y
 template `-=`*(x:Indexed, y: typed) =
-  var tIndexedMinusEq = x
-  obj(tIndexedMinusEq)[idx(tIndexedMinusEq)] -= y
+  let tIndexedMinusEq = x
+  tIndexedMinusEq != !tIndexedMinusEq * y
 template `*=`*(x:Indexed, y: typed) =
-  var tIndexedStarEq = x
-  obj(tIndexedStarEq)[idx(tIndexedStarEq)] *= y
+  let tIndexedStarEq = x
+  tIndexedStarEq != !tIndexedStarEq * y
 
 template len*(x:Indexed):untyped = obj(x).len
 template nrows*(x:Indexed):untyped = obj(x).nrows

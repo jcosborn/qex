@@ -153,6 +153,7 @@ proc nimRun(f: string, outfile="") =
   try:
     exec s
   except:
+    echo "failed: ", s
     quit(-1)
 
 for t in buildTasks:
