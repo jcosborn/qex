@@ -94,15 +94,18 @@ if machine=="" and uname=="Darwin":
 
 # cray/modules
 if machine=="":
-  let mods = split(staticExec "module list -t 2>/dev/null", "\n")
+  let mods = split(staticExec "module list -t", "\n")
   if mods.len > 0: echo mods
   if mods.contains "craype-mic-knl":
     # assume cross-compiling for KNL
     machine = "knl"
     CC ~ "cc"
     CFLAGS_ALWAYS ~ "-Wall -std=gnu99 -march=knl -fno-strict-aliasing -ldl"
+    CFLAGS_SPEED ~ "-g -O2 -ffast-math"   # gcc bug with -O3
     LD ~ ( "$CC" % params )
     LDFLAGS ~ ( "$CFLAGS_ALWAYS" % params )
+    CPP ~ "CC"
+    CPPFLAGS_ALWAYS ~ "-std=gnu++11 -march=knl -fno-strict-aliasing -ldl -fpermissive"
     SIMD ~ "SSE,AVX,AVX512"
     VLEN ~ "16"
 

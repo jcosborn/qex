@@ -19,12 +19,14 @@ proc test(lat: seq[int]) =
   var rs = newRNGField(RngMilc6, lo, intParam("seed", 987654321).uint64)
   var r0 = lo.RealS()
   var r1 = lo.RealS()
-  var fn = "testqio.lat"
+  var fn = stringParam("fn", "testqio.lat")
   let bytes = v * sizeof(r0.numberType)
   byts.add bytes
   echo "data size: ", bytes.formatSize
 
-  for nio in 1..nRanks:
+  #for nio in 1..nRanks:
+  #for nio in countdown(nRanks,1):
+  for nio in nRanks..nRanks:
     echo "nio: ", nio
     var d = Dat(vol:v, bytes:bytes, nio:nio)
     threads:
@@ -71,7 +73,7 @@ proc run =
   qexInit()
   test(@[8,8,8,8])
   test(@[16,16,16,16])
-  test(@[24,24,24,24])
+  #test(@[24,24,24,24])
   test(@[32,32,32,32])
   test(@[48,48,48,48])
   test(@[64,64,64,64])

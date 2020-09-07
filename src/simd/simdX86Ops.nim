@@ -384,14 +384,14 @@ when defined(AVX512):
     let t0 = mm512_cvtpd_ps(x[][0])
     let t1 = mm512_cvtpd_ps(x[][1])
     result = mm512_castps256_ps512(t0)
-    result = mm512_insertf32x8_ps(result, t1, 1)
+    result = mm512_insertf32x8(result, t1, 1)
   proc toDoubleImpl*(x:m512):SimdD16Obj {.inline,noInit.} =
-    #result[0] = mm512_cvtps_pd(mm512_castps512_ps256(x))
-    #var y{.noInit.}: m512
-    #perm8(y, x)
-    #result[1] = mm512_cvtps_pd(mm512_castps512_ps256(y))
-    result[][0] = mm512_cvtps_pd(mm512_extractf32x8_ps(x,0))
-    result[][1] = mm512_cvtps_pd(mm256_extractf32x8_ps(x,1))
+    result[][0] = mm512_cvtps_pd(mm512_castps512_ps256(x))
+    var y{.noInit.}: m512
+    perm8(y, x)
+    result[][1] = mm512_cvtps_pd(mm512_castps512_ps256(y))
+    #result[][0] = mm512_cvtps_pd(mm512_extractf32x8_ps(x,0))
+    #result[][1] = mm512_cvtps_pd(mm512_extractf32x8_ps(x,1))
 
 when defined(SimdS4):
   proc mm_cvtph_ps(x:m128i):m128

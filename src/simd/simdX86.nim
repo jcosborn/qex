@@ -50,7 +50,7 @@ when declared(SimdS16):
     #let t = toDoubleA(x[])
     #result[0] = t[0]
     #result[1] = t[1]
-    result[] = toDoubleImpl(x[])
+    result[] := toDoubleImpl(x[])
   #proc inorm2*(r:var SimdD16; x:SimdS16) {.inline.} = inorm2(r, toDouble(x))
   #proc imadd*(r:var SimdD16; x,y:SimdS16) {.inline.} =
   #  var xx{.noInit.} = toDouble(x)
