@@ -83,6 +83,9 @@ proc QIO_string_create*: ptr QIO_String {.qio.}
 proc QIO_string_destroy*(qs: ptr QIO_String) {.qio.}
 proc QIO_string_set*(qs: ptr QIO_String; string: cstring) {.qio.}
 
+proc QIO_verbose*(level: cint): cint {.qio.}
+proc QIO_verbosity*: cint {.qio.}
+
 proc QIO_open_read*(xml_file: ptr QIO_String; filename: cstring;
                     layout: ptr QIO_Layout; fs: ptr QIO_Filesystem;
                     iflag: ptr QIO_Iflag): ptr QIO_Reader {.qio.}

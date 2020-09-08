@@ -35,6 +35,10 @@ type Reader*[V:static[int]] = ref object
   recordMd:string
   recordInfo:QIO_RecordInfo
   qr:ptr QIO_Reader
+  verb*: cint
+
+proc IOverb*(level: int) =
+  discard QIO_verbose(level.cint)
 
 proc ioLayout(x: Layout): Layout =
   var ioLayoutV{.global.}: Layout

@@ -71,6 +71,7 @@ proc test(lat: seq[int]) =
 
 proc run =
   qexInit()
+  IOverb(1)
   test(@[8,8,8,8])
   test(@[16,16,16,16])
   #test(@[24,24,24,24])
