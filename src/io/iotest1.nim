@@ -2,7 +2,7 @@ import ../comms/mpi
 import posix
 import times
 import os
-import strutils
+import strutils, strformat
 
 type TimerObj = tuple[s:string,d:float,n:int]
 var timer: float
@@ -39,7 +39,27 @@ if paramCount()>=3:
 nreaders = nwriters
 if paramCount()>=4:
   nreaders = parseInt(paramStr(4))
-var maxBlock = 16*1024*1024*1024
+var maxBlock = 1*1024*1024*1024
+
+proc lock(fd: cint, offset: int, length: int) =
+  var fl: Tflock
+  fl.l_type = cshort F_WRLCK
+  fl.l_whence = cshort SEEK_SET
+  fl.l_start = offset
+  fl.l_len = length
+  fl.l_pid = 0
+  if fcntl(fd, F_SETLK, addr fl) < 0:
+    echo &"warning: lock of fd({fd}) at {offset}({length}) failed\n"
+
+proc unlock(fd: cint, offset: int, length: int) =
+  var fl: Tflock
+  fl.l_type = cshort F_UNLCK
+  fl.l_whence = cshort SEEK_SET
+  fl.l_start = offset
+  fl.l_len = length
+  fl.l_pid = 0
+  if fcntl(fd, F_SETLK, addr fl) < 0:
+    echo &"warning: unlock of fd({fd}) at {offset}({length}) failed\n"
 
 proc testContig(n: int) =
   var wbuf = newSeq[cint](n)
@@ -86,8 +106,14 @@ proc testContig(n: int) =
         let we1 = min((b+1)*wMaxElems,n)
         let wen = (we1-we0)*sizeof(type(wbuf[0]))
         woffset = wen * (((b)*wn+i)*woffi1+woffi2)
+        #lock(wfd, woffset, wen)
         let woff2 = lseek(wfd, woffset, SEEK_SET)
+        if woff2 != woffset:
+          echo &"error woff2({woff2}) != woffset({woffset})"
         let wsize2 = write(wfd, wbuf[we0].voidaddr, wen)
+        if wsize2 != wen:
+          echo &"error wsize2({wsize2}) != wen({wen})"
+        #unlock(wfd, woffset, wen)
       discard MPI_barrier(comm)
   toc("write")
   discard close(wfd)
@@ -124,7 +150,8 @@ proc testContig(n: int) =
   var errors,errors2 = 0
   for i in 0..<n:
     if rbuf[i] != wbuf[i]:
-      #echo rank, ": ", i, ": rbuf: ", rbuf[i], " wbuf: ", wbuf[i]
+      if errors < 10:
+        echo rank, ": ", i, ": rbuf: ", rbuf[i], " wbuf: ", wbuf[i]
       inc errors
       #break
   discard MPI_Allreduce(errors.voidaddr, errors2.voidaddr,
@@ -163,11 +190,15 @@ while n<=nmax:
     deltas[i].n = 0
   testContig(n)
   testContig(n)
+  if rank==0:
+    echo &"Name       :    milliseconds"
   for i in 0..<deltas.len:
     if rank==0:
-      let sp = max(0, 11-deltas[i].s.len)
-      let t = formatFloat(deltas[i].d/deltas[i].n.float, ffDecimal, 9)
-      echo deltas[i].s, spaces(sp), ": ", align(t,15)
+      let ms = 1e3*deltas[i].d/deltas[i].n.float
+      #let sp = max(0, 11-deltas[i].s.len)
+      #let t = formatFloat(ms, ffDecimal, 3)
+      #echo deltas[i].s, spaces(sp), ": ", align(t,15)
+      echo &"{deltas[i].s:11s}: {ms:15.3f}"
   n *= 2
 
 discard MPI_Finalize()

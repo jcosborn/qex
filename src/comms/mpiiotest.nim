@@ -73,8 +73,8 @@ proc testContig(n: int) =
     info = MPI_INFO_NULL
   else:
     chkerr MPI_Info_create(info.addr)
-    #chkerr MPI_Info_set(info, "cb_nodes", $cbnodes)
-    chkerr MPI_Info_set(info, "bg_nodes_pset", $cbnodes)
+    chkerr MPI_Info_set(info, "cb_nodes", $cbnodes)
+    #chkerr MPI_Info_set(info, "bg_nodes_pset", $cbnodes)
     #showInfo(info)
 
   # MPI_File_open(comm, filename, MPI_MODE_RDONLY, info, &fh);
