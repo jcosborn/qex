@@ -11,6 +11,8 @@ type Writer*[V: static[int]] = ref object
   latsize*: seq[cint]
   status*: int
   fileName*: string
+  ioranks*: cint
+  iorank*: seq[cint]
   qw: ptr QIO_Writer
 
 proc ioLayout(x: Layout): Layout =
@@ -23,29 +25,47 @@ template getLayout(x: static[int]): untyped =
   ioLayout(Layout[x](nil))
 
 var writenodes = -1
+var wiorank: ptr seq[cint]
 proc getNumWriteRanks*(): int = writenodes
 proc setNumWriteRanks*(n: int) =
   writenodes = n
 proc ioWriteRank(node: cint): cint =
   #cint( writenodes * (node div writenodes) )
-  let k = (writenodes*node) div nRanks
-  cint( (k*nRanks+writenodes-1) div writenodes )
+  #let k = (writenodes*node) div nRanks
+  #cint( (k*nRanks+writenodes-1) div writenodes )
+  wiorank[][node]
 proc ioMasterRank(): cint = 0.cint
 
 proc open(wr: var Writer; ql: var QIO_Layout, md: string) =
   let nd = wr.layout.nDim.cint
   ql.latdim = nd
   wr.latsize.newSeq(nd)
+  var iogeom = newSeq[cint](nd)
   for i in 0..<nd:
     wr.latsize[i] = wr.layout.physGeom[i].cint
+    iogeom[i] = if 2*i<nd: 1.cint else: wr.layout.rankGeom[i].cint
   ql.latsize = wr.latsize[0].addr
   ql.volume = wr.layout.physVol.csize_t
   ql.sites_on_node = wr.layout.nSites.csize_t
   ql.this_node = wr.layout.myRank.cint
   ql.number_of_nodes = wr.layout.nRanks.cint
-  if writenodes<=0:
-    writenodes = int( sqrt(8*ql.number_of_nodes.float) )
-    writenodes = max(1,min(ql.number_of_nodes,writenodes))
+  wr.iorank = newSeq[cint](wr.layout.nranks)
+  var coords = newSeq[cint](nd)
+  for r in 0..<wr.layout.nranks:
+    wr.layout.coord(coords, r, 0)
+    for i in 0..<nd:
+      let t = (coords[i]*iogeom[i]) div wr.layout.physGeom[i]
+      coords[i] = (t*wr.layout.physGeom[i]).int32 div iogeom[i]
+    let ri = wr.layout.rankindex(coords)
+    wr.iorank[r] = ri.rank.int32
+  echo wr.iorank
+  wiorank = addr wr.iorank
+  echo "Write geom: ", iogeom
+  #if writenodes<=0:
+    #writenodes = int( sqrt(8*ql.number_of_nodes.float) )
+    #writenodes = max(1,min(ql.number_of_nodes,writenodes))
+    #let rg = wr.layout.rankGeom
+    #writenodes = rg[^1]
 
   var fs: QIO_Filesystem
   fs.my_io_node = ioWriteRank
@@ -129,6 +149,7 @@ proc getP[T](buf: cstring; index: csize_t; count: cint; arg: pointer) =
 proc write[T](wr: var Writer, v: var openArray[ptr T], lat: openArray[int],
               md="", ps="") =
   wr.setLayout
+  wiorank = addr wr.iorank
 
   var qioMd = QIO_string_create()
   QIO_string_set(qioMd, md)
