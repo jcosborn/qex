@@ -11,7 +11,6 @@ type Writer*[V: static[int]] = ref object
   latsize*: seq[cint]
   status*: int
   fileName*: string
-  ioranks*: cint
   iorank*: seq[cint]
   qw: ptr QIO_Writer
 
@@ -43,7 +42,8 @@ proc open(wr: var Writer; ql: var QIO_Layout, md: string) =
   var iogeom = newSeq[cint](nd)
   for i in 0..<nd:
     wr.latsize[i] = wr.layout.physGeom[i].cint
-    iogeom[i] = if 2*i<nd: 1.cint else: wr.layout.rankGeom[i].cint
+    #iogeom[i] = if 2*i<nd: 1.cint else: wr.layout.rankGeom[i].cint
+    iogeom[i] = if i==0: 1.cint else: wr.layout.rankGeom[i].cint
   ql.latsize = wr.latsize[0].addr
   ql.volume = wr.layout.physVol.csize_t
   ql.sites_on_node = wr.layout.nSites.csize_t
@@ -58,12 +58,12 @@ proc open(wr: var Writer; ql: var QIO_Layout, md: string) =
       coords[i] = (t*wr.layout.physGeom[i]).int32 div iogeom[i]
     let ri = wr.layout.rankindex(coords)
     wr.iorank[r] = ri.rank.int32
+  echo "Write geom: ", iogeom
   echo wr.iorank
   wiorank = addr wr.iorank
-  echo "Write geom: ", iogeom
-  #if writenodes<=0:
-    #writenodes = int( sqrt(8*ql.number_of_nodes.float) )
-    #writenodes = max(1,min(ql.number_of_nodes,writenodes))
+  if writenodes<=0:
+    writenodes = int( sqrt(8*ql.number_of_nodes.float) )
+    writenodes = max(1,min(ql.number_of_nodes,writenodes))
     #let rg = wr.layout.rankGeom
     #writenodes = rg[^1]
 
@@ -112,6 +112,7 @@ template newWriter*[V: static[int]](l: Layout[V]; fn,md: string): untyped =
 
 proc close*(wr: var Writer) =
   wr.setLayout
+  wiorank = addr wr.iorank
   wr.status = QIO_close_write(wr.qw)
 
 import typetraits
