@@ -8,25 +8,11 @@ import shiftX
 export shiftX
 
 import qlayout
-#[
-proc layoutSetupQ*(l:ptr LayoutQ) {.importC:"layoutSetup",ql.}
-proc layoutIndexQ*(l:ptr LayoutQ; li:ptr LayoutIndexQ, coords:ptr cint)
-  {.importC:"layoutIndex",ql.}
-proc layoutCoordQ*(l:ptr LayoutQ; coords:ptr cint, li:ptr LayoutIndexQ)
-  {.importC:"layoutCoord",ql.}
-]#
-
-#proc layoutCoord*(l:Layout; coords:var openArray[int]; rank,index:int) =
-#  var c = cast[ptr array[0,cint]](coords[0].addr)
-#  var liq = LayoutIndexQ((rank.cint,index.cint))
-#  layoutCoordQ(l.lq.addr, cast[ptr cint](c), liq.addr)
-#proc layoutIndexQ*(l:ptr LayoutQ; li:ptr LayoutIndexQ, coords:ptr cint)
-#  {.importC:"layoutIndex",ql.}
 
 # partition x into n blocks with geometry nx
 # dist=0: prefer to split already split direction
 # dist=1: split unsplit directions first
-proc partitionGeom(lx,nx:var openArray[int]; x:openArray[int]; n,dist:int) =
+proc partitionGeom[T](lx,nx:var openArray[T]; x:openArray[T]; n,dist:int) =
   for i,xi in x:
     nx[i] = 1
     lx[i] = x[i]
@@ -37,7 +23,7 @@ proc partitionGeom(lx,nx:var openArray[int]; x:openArray[int]; n,dist:int) =
       k.dec
       if k < 0:
         echo "not enough 2's in partitioned geom:"
-        for i in 0..<x.len: echo " ", x[i]
+        for i in 0..<x.len: echo " ", $x[i]
         echo " /", n
         quit(-1)
     for i in countdown(k-1,0):
@@ -53,7 +39,7 @@ proc partitionGeom(lx,nx:var openArray[int]; x:openArray[int]; n,dist:int) =
 # partition x into n blocks with geometry nx
 # dist=0: prefer to split already split direction
 # dist=1: split unsplit directions first
-proc partitionGeomF(lx,nx:var openArray[int]; x:openArray[int]; n,dist:int) =
+proc partitionGeomF[T](lx,nx:var openArray[T]; x:openArray[T]; n,dist:int) =
   for i,xi in x:
     nx[i] = 1
     lx[i] = xi
@@ -65,7 +51,7 @@ proc partitionGeomF(lx,nx:var openArray[int]; x:openArray[int]; n,dist:int) =
       dec k
       if k < 0:
         echo "not enough factors of ", f, " in partitioned geom:"
-        for i in 0..<x.len: echo " ", x[i]
+        for i in 0..<x.len: echo " ", $x[i]
         echo " /", n
         quit(-1)
     for i in countdown(k-1,0):
@@ -90,6 +76,7 @@ proc newLayoutX*(comm: Comm; lat: openArray[int]; V: static[int];
   if rg0.len == 0:
     rg = intSeqParam("rankgeom")
   else:
+    echo rg0
     rg.newSeq(nd)
     for i in 0..<nd:
       rg[i] = rg0[i]
@@ -146,7 +133,7 @@ proc newLayoutX*(comm: Comm; lat: openArray[int]; V: static[int];
   result.lq.innerGeom = ca(ig)
   #result.lq.outerGeom = ca(og)
   #result.lq.localGeom = ca(lg)
-  layoutSetupQ(result.lq.addr)
+  layoutSetupQ(result.lq)
   result.nDim = nd
   result.physGeom = @lat
   result.localGeom = lg
@@ -171,7 +158,8 @@ proc newLayoutX*(comm: Comm; lat: openArray[int]; V: static[int];
   let coa = cast[ptr cArray[cint]](addr(coords[0]))
   for i in 0..<result.nSites:
     var li = LayoutIndexQ((rank:myRank.cint,index:i.cint))
-    layoutCoordQ(result.lq.addr, coa, li.addr)
+    #layoutCoordQ(result.lq.addr, coa, li.addr)
+    layoutCoordQ(result.lq.addr, coords, li.addr)
     #echo coords[0]
     for d in 0..<nd: result.coords[d][i] = coords[d].int16
   result.vcoordTemp.newSeq(nd)
@@ -201,14 +189,13 @@ template `[]`*(l: Layout, i: BackwardsIndex): untyped = l.physGeom[i]
 
 proc rankIndex*(l:Layout, coords: ptr cArray[cint]):tuple[rank,index:int] =
   var li:LayoutIndexQ
-  layoutIndexQ(l.lq.addr, li.addr, coords)
+  layoutIndexQ(l.lq, li, coords)
   result = (rank:li.rank.int,index:li.index.int)
-proc rankIndex*(l:Layout, coords: ptr cint):tuple[rank,index:int] =
-  rankIndex(l, cast[ptr cArray[cint]](coords))
-proc rankIndex*(l: Layout, coords: openArray[cint]): tuple[rank,index:int] =
+proc rankIndex*(l: Layout, coords: var openArray[cint]): tuple[rank,index:int] =
   var li: LayoutIndexQ
-  layoutIndexQ(l.lq.addr, li.addr,
-               cast[ptr cArray[cint]](unsafeAddr(coords[0])))
+  #layoutIndexQ(l.lq.addr, li.addr,
+  #             cast[ptr cArray[cint]](unsafeAddr(coords[0])))
+  layoutIndexQ(l.lq, li, coords)
   result = (rank:li.rank.int, index:li.index.int)
 proc rankIndex*(l:Layout, coords:openArray[int]):tuple[rank,index:int] =
   when compiles((const n=coords.len;n)):
@@ -219,6 +206,10 @@ proc rankIndex*(l:Layout, coords:openArray[int]):tuple[rank,index:int] =
     var c = newSeq[cint](n)
   for i in 0..<n: c[i] = coords[i].cint
   result = l.rankIndex(c)
+proc rankIndex*(l:Layout, coords: ptr cint):tuple[rank,index:int] =
+  #rankIndex(l, cast[ptr cArray[cint]](coords))
+  var ca = cast[ptr cArray[cint]](coords)
+  rankIndex(l, toOpenArray(ca, 0, 0))
 #proc coord*(l:Layout, coord:openArray[cint], ri:tuple[rank,index:int]) =
 #  var li = LayoutIndexQ(rank:ri.rank.cint, index:ri.index.cint)
 #  layoutCoordQ(l.lq.addr, coord, li)
@@ -226,7 +217,9 @@ proc coord*(l: Layout, coord: var openArray[cint]; rank,index: int) =
   var li: LayoutIndexQ
   li.rank = rank.cint
   li.index = index.cint
-  layoutCoordQ(l.lq.addr, cast[ptr cArray[cint]](coord[0].addr), li.addr)
+  #layoutCoordQ(l.lq.addr, cast[ptr cArray[cint]](coord[0].addr), li.addr)
+  var ca = cast[ptr cArray[cint]](coord[0].addr)
+  layoutCoordQ(l.lq.addr, toOpenArray(ca,0,0), li.addr)
 proc coord*(l: Layout, crd: var any, ri: tuple[rank,index:int]) =
   coord(l, crd, ri.rank, ri.index)
 template coord*(l: Layout, crd: var typed, index: int) =
@@ -235,7 +228,9 @@ proc coord*(l: Layout, coord: ptr cint, ri: tuple[rank,index:cint]) =
   var li: LayoutIndexQ
   li.rank = ri.rank.cint
   li.index = ri.index.cint
-  layoutCoordQ(l.lq.addr, cast[ptr cArray[cint]](coord), li.addr)
+  var ca = cast[ptr cArray[cint]](coord)
+  #layoutCoordQ(l.lq.addr, cast[ptr cArray[cint]](coord), li.addr)
+  layoutCoordQ(l.lq.addr, toOpenArray(ca,0,0), li.addr)
 
 proc rankIndex*(lo: Layout, lex: int): tuple[rank,index:int] =
   let n = lo.nDim

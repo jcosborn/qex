@@ -185,8 +185,6 @@ proc makeGDFromShiftSubs*(gd: ptr GatherDescription; l: ptr LayoutQ;
                             importc.}
 ]#
 
-# #[
-
 type
   mapargs* = object
     l*: ptr LayoutQ
@@ -204,7 +202,8 @@ proc map*(sr: ptr cint; si: ptr cint; dr: cint; di: ptr cint; args: pointer) =
       sli: LayoutIndexQ
     dli.rank = dr
     dli.index = di[]
-    layoutCoordQ(l, cast[ptr cArray[cint]](x[0].addr), addr(dli))
+    #layoutCoordQ(l, cast[ptr cArray[cint]](x[0].addr), addr(dli))
+    layoutCoordQ(l, x, addr(dli))
     var y = newSeq[cint](nd)
     var p: cint = 0
     var k: cint = 0
@@ -216,7 +215,8 @@ proc map*(sr: ptr cint; si: ptr cint; dr: cint; di: ptr cint; args: pointer) =
       sr[] = -1
       si[] = -1
     else:
-      layoutIndexQ(l, addr(sli), cast[ptr cArray[cint]](y[0].addr))
+      #layoutIndexQ(l, addr(sli), cast[ptr cArray[cint]](y[0].addr))
+      layoutIndexQ(l[], sli, y)
       sr[] = sli.rank
       si[] = sli.index
   else:
@@ -250,9 +250,9 @@ template SUB2PAR*(s: typed): untyped =
 proc makeGDFromShiftSubs*(gd: ptr GatherDescription; l: ptr LayoutQ;
                           disps: openArray[ptr cArray[cint]];
                           subs: openArray[cstring]; ndisps: cint) =
-  var myRank: cint = l.myrank
-  var myndi: cint = l.nSites
-  var nndi: cint = ndisps * myndi
+  var myRank = l.myrank
+  var myndi = l.nSites
+  var nndi = ndisps * myndi
   var args: mapargs
   args.l = l
   var sidx: ptr cArray[cint] = cast[ptr cArray[cint]](alloc(nndi * sizeof(cint)))
@@ -261,16 +261,16 @@ proc makeGDFromShiftSubs*(gd: ptr GatherDescription; l: ptr LayoutQ;
   var nRecvDests: cint = 0
   var n: cint = 0
   while n < ndisps:
-    var n0: cint = n * myndi
+    var n0 = n * myndi
     args.disp = disps[n]
     args.parity = SUB2PAR(subs[n])
     ##pragma omp parallel for reduction(+:nRecvDests)
-    var di: cint = 0
+    var di = 0
     while di < myndi:
       var
         sr: cint
         si: cint
-        di0: cint = di
+        di0 = int32 di
       map(addr(sr), addr(si), myRank, addr(di0), addr(args))
       srank[n0 + di] = sr
       sidx[n0 + di] = si
@@ -278,7 +278,7 @@ proc makeGDFromShiftSubs*(gd: ptr GatherDescription; l: ptr LayoutQ;
       inc(di)
     inc(n)
   gd.myRank = myRank
-  gd.nIndices = nndi
+  gd.nIndices = int32 nndi
   gd.srcRanks = srank
   gd.srcIndices = sidx
   gd.nRecvDests = nRecvDests
@@ -293,25 +293,23 @@ proc makeGDFromShiftSubs*(gd: ptr GatherDescription; l: ptr LayoutQ;
   # find who to send to
   n=0
   while n < ndisps:
-    var n0: cint = n * myndi
-    var sp: cint = 0
-    var i: cint = 0
-    while i < nd:
-      inc(sp, abs(disps[n][i]))
+    var n0 = n * myndi
+    var sp = 0
+    for i in 0..<nd:
+      sp += abs(disps[n][i])
       dispi[i] = - disps[n][i]
-      inc(i)
     args.parity = SUB2PAR(subs[n])
     if (sp and 1) == 1 and args.parity >= 0:
       args.parity = 1 - args.parity
     #int tid = THREADNUM;
     #int nid = NUMTHREADS;
-    var tid: cint = 0
-    var nid: cint = 1
+    var tid = 0
+    var nid = 1
     var sendSrcIndicesT = newSeq[cint]()
     var sendDestRanksT = newSeq[cint]()
     var sendDestIndicesT = newSeq[cint]()
     ##pragma omp for
-    var di: cint = 0
+    var di = 0'i32
     while di < myndi:
       var
         dr: cint = myRank
@@ -322,31 +320,27 @@ proc makeGDFromShiftSubs*(gd: ptr GatherDescription; l: ptr LayoutQ;
         if tid == 0:
           sendSrcIndices.add di
           sendDestRanks.add sr
-          sendDestIndices.add n0+si
+          sendDestIndices.add int32(n0+si)
         else:
           sendSrcIndicesT.add di
           sendDestRanksT.add sr
-          sendDestIndicesT.add n0+si
+          sendDestIndicesT.add int32(n0+si)
       inc(di)
     tlen[tid] = sendSrcIndicesT.len.cint
     #TBARRIER;
     var i0: cint = cint sendSrcIndices.len
-    i=0
-    while i < tid:
+    for i in 0..<tid:
       inc(i0, tlen[i])
-      inc(i)
     if tid == nid-1:
       var ln = i0 + sendSrcIndicesT.len
       sendSrcIndices.setLen ln
       sendDestRanks.setLen ln
       sendDestIndices.setLen ln
     #TBARRIER;
-    i=0
-    while i < sendSrcIndicesT.len:
+    for i in 0..<sendSrcIndicesT.len:
       sendSrcIndices[i0 + i] = sendSrcIndicesT[i]
       sendDestRanks[i0 + i] = sendDestRanksT[i]
       sendDestIndices[i0 + i] = sendDestIndicesT[i]
-      inc(i)
     # end parallel
     inc(n)
   gd.nSendIndices = cint sendSrcIndices.len
@@ -367,32 +361,24 @@ proc makeGDFromShifts*(gd: ptr GatherDescription; l: ptr LayoutQ;
     inc(i)
   makeGDFromShiftSubs(gd, l, disps, subs, ndisps)
 
-# ]#
-
 proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
                          l: ptr LayoutQ; disp: openArray[ptr cArray[cint]];
                          subs: openArray[cstring]; ndisp: cint) =
-  var myRank: cint = l.myrank
-  var nd: cint = l.nDim
-  var vvol: cint = l.nSitesOuter
+  var myRank = l.myrank
+  var nd = l.nDim
+  var vvol = l.nSitesOuter
   var gi = cast[ptr GatherIndices](alloc(sizeof((GatherIndices))))
-  var n: cint = 0
-  while n < ndisp:
+  for n in 0..<ndisp:
     si[n].gi = gi
     si[n].disp = cast[type(si[n].disp)](alloc(nd*sizeof((cint))))
-    var i: cint = 0
-    while i < nd:
+    for i in 0..<nd:
       si[n].disp[i] = disp[n][i]
-      inc(i)
     si[n].pidx = cast[ptr cArray[cint]](alloc(vvol*sizeof((cint))))
     si[n].sidx = cast[ptr cArray[cint]](alloc(vvol*sizeof((cint))))
     si[n].sendSites = cast[ptr cArray[cint]](alloc(vvol*sizeof((cint))))
-    i=0
-    while i < vvol:
+    for i in 0..<vvol:
       si[n].pidx[i] = -1
       si[n].sidx[i] = -1
-      inc(i)
-    inc(n)
   #mapmargs args;
   #args.l = l;
   #args.disp = disp;
@@ -466,15 +452,15 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
   i=0
   while i < vvol * ndisp:
     #if(myrank==1){printf("%i\n", i);fflush(stdout);}
-    var dd: cint = i div l.nSitesOuter
-    var ix: cint = i mod l.nSitesOuter
-    var k0: cint = i * l.nSitesInner
-    var recv: cint = 0
-    var rbi: cint = 0
-    var ii: cint = 0
+    var dd = i div l.nSitesOuter
+    var ix = i mod l.nSitesOuter
+    var k0 = i * l.nSitesInner
+    var recv = 0
+    var rbi = 0
+    var ii = 0
     while ii < l.nSitesInner:
-      var k: cint = k0 + ii
-      var s: cint = gi.srcIndices[k]
+      var k = k0 + ii
+      var s = gi.srcIndices[k]
       if s == -1:
         recv = -1
         break
@@ -488,7 +474,7 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
     elif recv == 0:
       si[dd].pidx[ix] = gi.srcIndices[k0] div l.nSitesInner
       si[dd].sidx[ix] = gi.srcIndices[k0] div l.nSitesInner
-      var p: cint = gi.srcIndices[k0] mod l.nSitesInner
+      var p = gi.srcIndices[k0] mod l.nSitesInner
       if p != 0:
         perm = p
         #si->sidx[i] = -vvs-1;
@@ -498,7 +484,7 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
       rbi = - (rbi + 2)
       rbi = (2 * rbi) div l.nSitesInner
       if pack == 0: rbi = rbi div 2
-      si[dd].sidx[ix] = - rbi - 2
+      si[dd].sidx[ix] = int32(- rbi - 2)
       #nrsites++;
       inc(nrdests[dd])
     inc(i)
@@ -521,35 +507,30 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
     si[0].recvRankOffsets1 = gi.recvRankOffsets
     si[0].recvRankSizes[0] = nrsites
     si[0].recvRankOffsets[0] = 0
-  n=0
-  while n < ndisp:
+  for n in 0..<ndisp:
     si[n].nRecvDests = nrdests[n]
     if nrdests[n] > 0:
       si[n].recvDests = cast[ptr cArray[cint]](alloc(nrdests[n]*sizeof(cint)))
       si[n].recvLocalSrcs = cast[ptr cArray[cint]](alloc(nrdests[n]*sizeof(cint)))
       si[n].recvRemoteSrcs = cast[ptr cArray[cint]](alloc(nrdests[n]*sizeof(cint)))
-      var j: cint = 0
-      var i: cint = 0
-      while i < vvol:
+      var j = 0
+      for i in 0..<vvol:
         if si[n].sidx[i] < -1:
-          var k: cint = - (si[n].sidx[i] + 2)
-          si[n].recvDests[j] = i
+          var k = - (si[n].sidx[i] + 2)
+          si[n].recvDests[j] = int32 i
           si[n].recvRemoteSrcs[j] = k
           si[n].recvLocalSrcs[j] = 0
-          var i0: cint = 0
-          while i0 < l.nSitesInner:
-            var ii: cint = n * l.nSites + i * l.nSitesInner + i0
-            var gs: cint = gi.srcIndices[ii]
+          for i0 in 0..<l.nSitesInner:
+            var ii = n * l.nSites + i * l.nSitesInner + i0
+            var gs = gi.srcIndices[ii]
             if gs >= 0:
               si[n].recvLocalSrcs[j] = gs div l.nSitesInner
               break
-            inc(i0)
           inc(j)
           if j > nrdests[n]:
             echo "j($#)>nrdests[$#]($#)"%[$j,$n,$nrdests[n]]
             #fflush(stdout)
-        inc(i)
-    si[n].vv = vvol
+    si[n].vv = int32 vvol
     si[n].perm = perm
     si[n].pack = pack
     si[n].blend = pack
@@ -560,7 +541,6 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
     #si[n]->rqmpmem = NULL;
     #si[n]->pairmsg = NULL;
     #printf("%i nsend: %i  nrecv: %i\n", myrank, si[n]->nSendSites, si[n]->nRecvSites);
-    inc(n)
   #printf("disp:");
   #for(int i=0; i<nd; i++) printf(" %i", disp[i]);
   #printf("\n");

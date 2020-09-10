@@ -13,32 +13,33 @@ type
 # parity?
 type
   LayoutQ* = object
-    nDim*: cint
-    physGeom*: ptr cArray[cint]
-    rankGeom*: ptr cArray[cint]
-    innerGeom*: ptr cArray[cint]      #wrap
-    outerGeom*: ptr cArray[cint]      #wls
-    localGeom*: ptr cArray[cint]
-    physVol*: cint
-    nEven*: cint
-    nOdd*: cint
-    nSites*: cint
-    nEvenOuter*: cint
-    nOddOuter*: cint
-    nSitesOuter*: cint
-    nSitesInner*: cint
-    innerCb*: cint
-    innerCbDir*: cint
+    nDim*: int32
+    physGeom*: ptr cArray[int32]
+    rankGeom*: ptr cArray[int32]
+    innerGeom*: ptr cArray[int32]      #wrap
+    outerGeom*: ptr cArray[int32]      #wls
+    localGeom*: ptr cArray[int32]
+    physVol*: int
+    nEven*: int
+    nOdd*: int
+    nSites*: int
+    nEvenOuter*: int
+    nOddOuter*: int
+    nSitesOuter*: int
+    nSitesInner*: int32
+    innerCb*: int32
+    innerCbDir*: int32
     shifts*: ptr llist
-    nranks*: cint
-    myrank*: cint
-  LayoutIndexQ* = tuple[rank,index:cint]
+    nranks*: int32
+    myrank*: int32
+  LayoutIndexQ* = tuple[rank:int32,index:int32]
   SubsetQ* = object
-    begin*: cint
-    `end`*: cint
-    beginOuter*: cint
-    endOuter*: cint
+    begin*: int
+    `end`*: int
+    beginOuter*: int
+    endOuter*: int
 
+# FIXME: check int sizes
 type ShiftIndicesQ* = object
   gi*: ptr GatherIndices
   disp*: ptr cArray[cint]
