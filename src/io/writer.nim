@@ -4,7 +4,7 @@ import qio
 import strutils
 import macros
 import field
-import os
+import os, times
 
 type Writer*[V: static[int]] = ref object
   layout*: Layout[V]
@@ -42,8 +42,9 @@ proc open(wr: var Writer; ql: var QIO_Layout, md: string) =
   var iogeom = newSeq[cint](nd)
   for i in 0..<nd:
     wr.latsize[i] = wr.layout.physGeom[i].cint
-    #iogeom[i] = if 2*i<nd: 1.cint else: wr.layout.rankGeom[i].cint
-    iogeom[i] = if i==0: 1.cint else: wr.layout.rankGeom[i].cint
+    #iogeom[i] = wr.layout.rankGeom[i].cint
+    #iogeom[i] = if i==0: 1.cint else: wr.layout.rankGeom[i].cint
+    iogeom[i] = if 2*i<nd: 1.cint else: wr.layout.rankGeom[i].cint
   ql.latsize = wr.latsize[0].addr
   ql.volume = wr.layout.physVol.csize_t
   ql.sites_on_node = wr.layout.nSites.csize_t

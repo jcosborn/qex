@@ -10,17 +10,24 @@ type Dat = object
 var dat = newSeq[Dat]()
 var byts = newSeq[int]()
 
+proc numNumbers(x: Field): int =
+  (x.l.physVol div x.l.nSitesInner) * x[0].numNumbers
+
 proc test(lat: seq[int]) =
   let v = lat.foldl(a * b)
   let vpr = float(v) / float(nRanks)
   #echo "volume per rank: ", vpr
-  if vpr < 1024 or vpr > 16*1024*1024: return
+  #if vpr < 12*12*12*12 or vpr > 16*1024*1024: return
+  if vpr < 8*8*8*8 or vpr > 1024*1024: return
+  if vpr mod 256 != 0: return
   var lo = newLayout(lat)
   var rs = newRNGField(RngMilc6, lo, intParam("seed", 987654321).uint64)
-  var r0 = lo.RealS()
-  var r1 = lo.RealS()
+  #var r0 = lo.RealS()
+  #var r1 = lo.RealS()
+  var r0 = newSeqWith[type lo.ColorMatrixS](4, lo.ColorMatrixS)
+  var r1 = newSeqWith[type lo.ColorMatrixS](4, lo.ColorMatrixS)
   var fn = stringParam("fn", "testqio.lat")
-  let bytes = v * sizeof(r0.numberType)
+  let bytes = r0.len * r0[0].numNumbers * sizeof(r0[0][0].numberType)
   byts.add bytes
   echo "data size: ", bytes.formatSize
 
@@ -31,7 +38,7 @@ proc test(lat: seq[int]) =
     var d = Dat(vol:v, bytes:bytes, nio:nio)
     threads:
       r0.gaussian rs
-      r1 := 0
+      for i in 0..3: r1[i] := 0
 
     block:
       setNumWriteRanks(nio)
@@ -62,9 +69,11 @@ proc test(lat: seq[int]) =
       d.rsecs = t1 - t0
 
     dat.add d
-    let n0 = r0.norm2
-    r1 -= r0
-    let d2 = r1.norm2
+    var n0,d2 = 0.0
+    for i in 0..3:
+      n0 += r0[i].norm2
+      r1[i] -= r0[i]
+      d2 += r1[i].norm2
     echo "norm2: ", n0
     echo "diff2: ", d2
     doAssert(d2 == 0.0)
@@ -72,16 +81,29 @@ proc test(lat: seq[int]) =
 proc run =
   qexInit()
   IOverb(1)
-  test(@[8,8,8,8])
-  test(@[16,16,16,16])
+  #test(@[8,8,8,8])
+  test(@[8,8,8,16])
+  #test(@[12,12,12,12])
+  test(@[12,12,12,24])
+  #test(@[16,16,16,16])
+  test(@[16,16,16,32])
   #test(@[24,24,24,24])
-  test(@[32,32,32,32])
-  test(@[48,48,48,48])
-  test(@[64,64,64,64])
-  test(@[96,96,96,96])
-  test(@[128,128,128,128])
-  test(@[192,192,192,192])
-  test(@[256,256,256,256])
+  test(@[24,24,24,48])
+  #test(@[32,32,32,32])
+  test(@[32,32,32,64])
+  #test(@[48,48,48,48])
+  test(@[48,48,48,96])
+  #test(@[64,64,64,64])
+  test(@[64,64,64,128])
+  #test(@[96,96,96,96])
+  test(@[96,96,96,192])
+  #test(@[128,128,128,128])
+  test(@[128,128,128,256])
+  #test(@[192,192,192,192])
+  test(@[192,192,192,384])
+  #test(@[256,256,256,256])
+  test(@[256,256,256,512])
+  #test(@[384,384,384,384])
   var best = newSeq[string]()
   for b in byts:
     var wbmax,rbmax = 0.0
