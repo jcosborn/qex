@@ -1,4 +1,4 @@
-import qex
+import qex, comms/node
 import times, strformat, strutils, sequtils
 
 type Dat = object
@@ -15,11 +15,14 @@ proc numNumbers(x: Field): int =
 
 proc test(lat: seq[int]) =
   let v = lat.foldl(a * b)
+  let rpn = getRanksPerNode()
   let vpr = float(v) / float(nRanks)
-  #echo "volume per rank: ", vpr
+  let vpn = vpr * float(rpn)
   #if vpr < 12*12*12*12 or vpr > 16*1024*1024: return
-  if vpr < 8*8*8*8 or vpr > 1024*1024: return
+  if vpn < 8*8*8*8 or vpn > 64*1024*1024: return
   if vpr mod 256 != 0: return
+  echo "volume per rank: ", vpr
+  echo "volume per node: ", vpn
   var lo = newLayout(lat)
   var rs = newRNGField(RngMilc6, lo, intParam("seed", 987654321).uint64)
   #var r0 = lo.RealS()
