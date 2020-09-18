@@ -7,6 +7,7 @@ import field
 #import comms
 import os
 #import stdUtils
+import iocommon
 
 proc getFileLattice*(s:string):seq[int] =
   if not existsFile(s):
@@ -34,6 +35,9 @@ type Reader*[V:static[int]] = ref object
   recordInfoValid:bool
   recordMd:string
   recordInfo:QIO_RecordInfo
+  nioranklist*: seq[int32]
+  iogeom*: seq[int32]
+  iorank*: seq[int32]
   qr:ptr QIO_Reader
   verb*: cint
 
@@ -50,14 +54,13 @@ template getLayout(x: static[int]): untyped =
   ioLayout(Layout[x](nil))
 
 var readnodes = -1
+var riorank: ptr seq[int32]
 proc getNumReadRanks*(): int = readnodes
 proc setNumReadRanks*(n: int) =
   readnodes = n
 proc ioReadRank(node: cint): cint =
-  #cint( readnodes * (node div readnodes) )
-  let k = (readnodes*node) div nRanks
-  cint( (k*nRanks+readnodes-1) div readnodes )
-proc ioMasterRank(): cint = 0.cint
+  riorank[][node]
+proc ioMasterRank(): cint = 0
 
 proc toString(qs:ptr QIO_String):string =
   let n = qs.length.int - 2  # seems to have 2 byte padding
@@ -65,37 +68,46 @@ proc toString(qs:ptr QIO_String):string =
   for i in 0..<n:
     result[i] = qs.string[i]
 
-proc open(r:var Reader; ql:var QIO_Layout) =
-  let nd = r.layout.nDim.cint
+proc open(rd: var Reader; ql: var QIO_Layout) =
+  let nd = rd.layout.nDim.cint
   ql.latdim = nd
-  r.latsize.newSeq(nd)
+  rd.latsize.newSeq(nd)
   for i in 0..<nd:
-    r.latsize[i] = r.layout.physGeom[i].cint
-  ql.latsize = r.latsize[0].addr
-  ql.volume = r.layout.physVol.csize_t
-  ql.sites_on_node = r.layout.nSites.csize_t
-  ql.this_node = r.layout.myRank.cint
-  ql.number_of_nodes = r.layout.nRanks.cint
-  if readnodes<=0:
-    readnodes = int( sqrt(8*ql.number_of_nodes.float) )
-    readnodes = max(1,min(ql.number_of_nodes,readnodes))
+    rd.latsize[i] = rd.layout.physGeom[i].cint
+  ql.latsize = rd.latsize[0].addr
+  ql.volume = rd.layout.physVol.csize_t
+  ql.sites_on_node = rd.layout.nSites.csize_t
+  ql.this_node = rd.layout.myRank.cint
+  ql.number_of_nodes = rd.layout.nRanks.cint
 
-  var fs:QIO_Filesystem
+  rd.nioranklist = listNumIoRanks(rd.layout.rankGeom)
+  if readnodes<=0:
+    let n = rd.nioranklist.len
+    readnodes = rd.niorankList[n div 2]
+  var rdnodes = getClosestNumRanks(rd.nioranklist, int32 readnodes)
+  echo "Read num nodes: ", rdnodes
+  rd.iogeom = getIoGeom(rd.layout.rankGeom, rdnodes)
+  echo "Read geom: ", rd.iogeom
+  rd.iorank = getIoRanks(rd.layout, rd.iogeom)
+  echo "Read IO ranks: ", rd.iorank
+  riorank = addr rd.iorank
+
+  var fs: QIO_Filesystem
   fs.my_io_node = ioReadRank
   fs.master_io_node = ioMasterRank
 
-  var iflag:QIO_Iflag
+  var iflag: QIO_Iflag
   #iflag.serpar = QIO_SERIAL;
   iflag.serpar = QIO_PARALLEL
   #//iflag.volfmt = QIO_UNKNOWN;
   iflag.volfmt = QIO_SINGLEFILE
 
   var qioMd = QIO_string_create()
-  r.qr = QIO_open_read(qioMd, r.fileName, ql.addr, fs.addr, iflag.addr)
-  r.fileMetadata = toString(qioMd)
+  rd.qr = QIO_open_read(qioMd, rd.fileName, ql.addr, fs.addr, iflag.addr)
+  rd.fileMetadata = toString(qioMd)
   QIO_string_destroy(qioMd)
-  r.recordInfoValid = false
-  if r.qr==nil: r.status = -1
+  rd.recordInfoValid = false
+  if rd.qr==nil: rd.status = -1
 
 template newReader*[V: static[int]](l: Layout[V]; fn: string): untyped =
   var rd: Reader[V]
@@ -122,27 +134,31 @@ template newReader*[V: static[int]](l: Layout[V]; fn: string): untyped =
     open(rd, ql)
   rd
 
-proc close*(r:var Reader) =
-  r.setLayout()
-  r.status = QIO_close_read(r.qr)
+proc close*(rd: var Reader) =
+  rd.setLayout()
+  riorank = addr rd.iorank
+  rd.status = QIO_close_read(rd.qr)
 
-proc readRecordInfo(r:var Reader) =
-  r.setLayout()
+proc readRecordInfo(rd: var Reader) =
+  rd.setLayout()
+  riorank = addr rd.iorank
   var qioMd = QIO_string_create()
-  r.status = QIO_read_record_info(r.qr, r.recordInfo.addr, qioMd)
-  r.recordMd = toString(qioMd)
+  rd.status = QIO_read_record_info(rd.qr, rd.recordInfo.addr, qioMd)
+  rd.recordMd = toString(qioMd)
   QIO_string_destroy(qioMd);
-  r.recordInfoValid = true
+  rd.recordInfoValid = true
 
-proc nextRecord*(r:var Reader) =
-  r.setLayout()
-  r.status = QIO_next_record(r.qr)
-  r.recordInfoValid = false
+proc nextRecord*(rd: var Reader) =
+  rd.setLayout()
+  riorank = addr rd.iorank
+  rd.status = QIO_next_record(rd.qr)
+  rd.recordInfoValid = false
 
-proc recordMetadata*(r:var Reader):string =
-  r.setLayout()
-  if not r.recordInfoValid: r.readRecordInfo()
-  return r.recordMd
+proc recordMetadata*(rd: var Reader):string =
+  rd.setLayout()
+  riorank = addr rd.iorank
+  if not rd.recordInfoValid: rd.readRecordInfo()
+  return rd.recordMd
 
 template recGet(f,t:untyped):untyped =
   proc f*(r:var Reader):auto =
@@ -158,9 +174,9 @@ recGet(spins, int)
 recGet(typesize, int)
 recGet(datacount, int)
 
-proc getWordSize(r:var Reader):int =
+proc getWordSize(rd: var Reader):int =
   #var result = 0
-  let c = precision(r)
+  let c = precision(rd)
   case c:
     of "F": result = 4
     of "D": result = 8
@@ -193,37 +209,38 @@ proc putP[T](buf: cstring; index: csize_t, count: cint; arg: pointer) =
   for i in 0..<count:
     masked(dest[i][vi], vlm) := src[i]
 
-proc read[T](r:var Reader, v:var openArray[ptr T]) =
-  r.setLayout()
+proc read[T](rd: var Reader, v: var openArray[ptr T]) =
+  rd.setLayout()
+  riorank = addr rd.iorank
   var qioMd = QIO_string_create()
 
-  r.readRecordInfo()
-  let recWordSize = getWordSize(r)
-  var size = sizeOf(v[0][]) div r.layout.nSitesInner
+  rd.readRecordInfo()
+  let recWordSize = getWordSize(rd)
+  var size = sizeOf(v[0][]) div rd.layout.nSitesInner
   var vsize = size*v.len
   var wordSize = sizeOf(numberType(v[0][]))
   if wordSize==recWordSize:
-    r.status = QIO_read(r.qr, r.recordInfo.addr, qioMd, put[T], vsize.csize_t,
-                        wordSize.cint, v[0].addr)
+    rd.status = QIO_read(rd.qr, rd.recordInfo.addr, qioMd, put[T],
+                         vsize.csize_t, wordSize.cint, v[0].addr)
   else:
     vsize = (recWordSize*vsize) div wordSize
     wordSize = recWordSize
-    r.status = QIO_read(r.qr, r.recordInfo.addr, qioMd, putP[T], vsize.csize_t,
-                        wordSize.cint, v[0].addr)
+    rd.status = QIO_read(rd.qr, rd.recordInfo.addr, qioMd, putP[T],
+                         vsize.csize_t, wordSize.cint, v[0].addr)
 
-  r.recordMd = toString(qioMd)
+  rd.recordMd = toString(qioMd)
   QIO_string_destroy(qioMd);
-  r.recordInfoValid = true
+  rd.recordInfoValid = true
 
-proc read*[V:static[int],T](r:var Reader[V]; v:openArray[Field[V,T]]) =
+proc read*[V:static[int],T](rd: var Reader[V]; v: openArray[Field[V,T]]) =
   let nv = v.len
   var f = newSeq[type(v[0][0].addr)](nv)
   for i in 0..<nv: f[i] = v[i][0].addr
-  r.read(f)
+  rd.read(f)
 
-proc read*(r: var Reader; v: Field) =
+proc read*(rd: var Reader; v: Field) =
   var f = @[ v[0].addr ]
-  r.read(f)
+  rd.read(f)
 
 when isMainModule:
   qexInit()
@@ -232,7 +249,8 @@ when isMainModule:
   var lo = newLayout(lat)
   var g:array[4,type(lo.ColorMatrix())]
   for i in 0..<4: g[i] = lo.ColorMatrix()
-  var fn = "l88.scidac"
+  #var fn = "l88.scidac"
+  const fn = "testlat0.bin"
   if not fileExists(fn):
     echo "gauge file not found: ", fn
     qexExit()

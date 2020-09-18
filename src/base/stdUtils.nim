@@ -208,6 +208,13 @@ proc factor*(n: int): seq[int] =
     result.add k
     x = x div k
 
+proc getDivisors*[T](n: T): seq[T] =
+  result.newSeq(1)
+  result[0] = 1
+  for i in 2..n:
+    if n mod i == 0:
+      result.add i
+
 macro rangeLow*(r: typedesc[range]):auto =
   echo r.treerepr
   echo r.getType.treerepr

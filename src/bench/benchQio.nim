@@ -19,7 +19,7 @@ proc test(lat: seq[int]) =
   let vpr = float(v) / float(nRanks)
   let vpn = vpr * float(rpn)
   #if vpr < 12*12*12*12 or vpr > 16*1024*1024: return
-  if vpn < 8*8*8*8 or vpn > 64*1024*1024: return
+  if vpn < 8*8*8*8 or vpn > 8*1024*1024: return
   if vpr mod 256 != 0: return
   echo "volume per rank: ", vpr
   echo "volume per node: ", vpn
@@ -44,7 +44,7 @@ proc test(lat: seq[int]) =
       for i in 0..3: r1[i] := 0
 
     block:
-      setNumWriteRanks(nio)
+      #setNumWriteRanks(nio)
       var wr = lo.newWriter(fn, "test")
       var t0 = epochTime()
       wr.write(r0)
@@ -58,7 +58,7 @@ proc test(lat: seq[int]) =
       d.wsecs = t1 - t0
 
     block:
-      setNumReadRanks(nio)
+      #setNumReadRanks(nio)
       var rd = lo.newReader(fn)
       var t0 = epochTime()
       rd.read(r1)
