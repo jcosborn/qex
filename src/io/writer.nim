@@ -50,7 +50,8 @@ proc open(wr: var Writer; ql: var QIO_Layout, md: string) =
   wr.nioranklist = listNumIoRanks(wr.layout.rankGeom)
   if writenodes<=0:
     let n = wr.nioranklist.len
-    writenodes = wr.niorankList[n div 2]
+    let k = min(n-1, (n div 2)+1)
+    writenodes = wr.niorankList[k]
   var wrnodes = getClosestNumRanks(wr.nioranklist, int32 writenodes)
   echo "Write num nodes: ", wrnodes
   wr.iogeom = getIoGeom(wr.layout.rankGeom, wrnodes)

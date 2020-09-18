@@ -83,7 +83,8 @@ proc open(rd: var Reader; ql: var QIO_Layout) =
   rd.nioranklist = listNumIoRanks(rd.layout.rankGeom)
   if readnodes<=0:
     let n = rd.nioranklist.len
-    readnodes = rd.niorankList[n div 2]
+    let k = min(n-1, (n div 2)+1)
+    readnodes = rd.niorankList[k]
   var rdnodes = getClosestNumRanks(rd.nioranklist, int32 readnodes)
   echo "Read num nodes: ", rdnodes
   rd.iogeom = getIoGeom(rd.layout.rankGeom, rdnodes)

@@ -14,12 +14,12 @@ proc numNumbers(x: Field): int =
   (x.l.physVol div x.l.nSitesInner) * x[0].numNumbers
 
 proc test(lat: seq[int]) =
+  let vpnMax = floatParam("vpnMax", 8*1024*1024)
   let v = lat.foldl(a * b)
   let rpn = getRanksPerNode()
   let vpr = float(v) / float(nRanks)
   let vpn = vpr * float(rpn)
-  #if vpr < 12*12*12*12 or vpr > 16*1024*1024: return
-  if vpn < 8*8*8*8 or vpn > 8*1024*1024: return
+  if vpn < 8*8*8*8 or vpn > vpnMax: return
   if vpr mod 256 != 0: return
   echo "volume per rank: ", vpr
   echo "volume per node: ", vpn
