@@ -43,7 +43,7 @@ macro echoRank*(args:varargs[untyped]):auto =
   template f(x:untyped):untyped =
     if threadNum==0: x
   result.add getAst(f(call))
-macro echo0*(args: varargs[untyped]): auto =
+macro echo0*(args: varargs[untyped]): untyped =
   var call = newCall(bindSym"echoRaw")
   result = evalArgs(call, args)
   result.add(quote do:
@@ -51,28 +51,41 @@ macro echo0*(args: varargs[untyped]): auto =
       `call`
     )
   #echo result.repr
-macro makeEchos(n:static[int]):auto =
-  template ech(x,y: untyped): untyped =
-    template echo*: untyped =
+macro makeEchos(n:static[int]): untyped =
+  template ech(x,y: untyped) =
+    template echo* =
       when nimvm:
         x
       else:
         y
   result = newStmtList()
-  var er = newCall(bindSym"echoRaw")
-  var e0 = newCall(bindSym"echo0")
-  var ea = newSeq[NimNode](0)
   for i in 1..n:
-    let ai = ident("a" & $i)
-    er.add ai
-    e0.add ai
-    ea.add newNimNode(nnkIdentDefs).add(ai).add(ident"untyped").add(newEmptyNode())
+    var er = newCall(bindSym"echoRaw")
+    var e0 = newCall(bindSym"echo0")
+    var ea = newSeq[NimNode](0)
+    for j in 1..i:
+      let ai = ident("a" & $j)
+      er.add ai
+      e0.add ai
+      ea.add newNimNode(nnkIdentDefs).add(ai).add(ident"untyped").add(newEmptyNode())
     var t = getAst(ech(er,e0)).peelStmt
     #echo t.treerepr
     for j in 0..<i: t[3].add ea[j]
     result.add t
-  #echo result.repr
+  #echo result.treerepr
 makeEchos(64)
+#[
+template echo*(a1: untyped) =
+  when nimvm:
+    echoRaw(a1)
+  else:
+    echo0(a1)
+template echo*(a1,a2: untyped) =
+  when nimvm:
+    echoRaw(a1,a2)
+  else:
+    echo0(a1,a2)
+]#
 
 template sum*(c:Comm, v:var SomeNumber) = c.allReduce(v)
 template sum*(c:Comm, v:ptr float32, n:int) = c.allReduce(v,n)
