@@ -179,6 +179,96 @@ proc u1*(x: Field, r: RNGField) =
   for i in x.l.sites:
     x{i}.u1 r{i}
 
+proc vonMisesWithExp[D](rng:var RNG, lambda:D):auto =
+  ## sample x ~ exp(lambda*cos(x))
+  ## using exponential distribution for rejection sampling
+  ## exp(lambda*(b-a*x))
+  var
+    a {.noinit.}:D
+    b {.noinit.}:D
+    x {.noinit.}:D
+  if lambda>1.904538388056459:
+    # optimal in the limit of large lambda
+    a = 1.0/sqrt(lambda)
+    b = a*arcsin(a)+sqrt(1-a*a);
+  else:
+    # keep the line above cos(x), b-a*%pi > cos(%pi) = -1
+    a = 0.7246113537767085
+    b = 1.276433705732662
+  a *= lambda
+  while true:
+    let
+      r = (2.0*rng.uniform-1.0)*expm1(-PI*a)
+      u = rng.uniform
+      acc =
+        if r<0:
+          let y = log1p(r)
+          x = y/a
+          exp(lambda*(cos(x)-b)-y)
+        else:
+          let y = -log1p(-r)
+          x = y/a
+          exp(lambda*(cos(x)-b)+y)
+    if u < acc: return x
+
+proc vonMisesQOPQDP[D](rng:var RNG, g:D):auto =
+  ## from QOPQDP
+  const WENSLEY_CONST = 1.05110196582237  # a*asin(a)+sqrt(1-a*a),a:1/%pi
+  if g<0.01:  # simple accept/reject
+    let norm = exp( g )
+    while true:
+      let xr = rng.uniform
+      var theta = 2*xr - 1.0
+      theta *= PI
+      let f = exp( g * cos( theta ) )
+      let r = rng.uniform
+      if f > r*norm:
+        return theta
+  else:  # Wensley linear filter
+    let norm = exp( g*WENSLEY_CONST )
+    while true:
+      let xr = rng.uniform
+      var theta =
+        if xr<0.5:
+          ln( 1 + 2*( exp( g ) - 1 )*xr ) / g - 1;
+        else:
+          1 - ln( 1 + 2*( exp( g ) - 1 )*( 1 - xr ) ) / g;
+      theta *= PI;
+      let f = exp( g*( cos( theta ) + abs( theta )/PI ) ) / norm;
+      let r = rng.uniform
+      if f > r:
+        return theta
+
+proc vonMisesWithWrappedCauchy[D](rng:var RNG, k:D):auto =
+  ## Best, D., & Fisher, N. (1979).
+  ## Efficient Simulation of the von Mises Distribution.
+  ## Journal of the Royal Statistical Society.
+  ## Series C (Applied Statistics), 28(2), 152-157.
+  ## doi:10.2307/2346732
+  let
+    t = 1.0+sqrt(1.0+4.0*k*k)
+    p = (t-sqrt(2.0*t))/(2.0*k)
+    r = (1.0+p*p)/(2.0*p)
+  var f {.noinit.}:D
+  while true:
+    let
+      u1 = rng.uniform
+      z = cos(PI*u1)
+    f = (1.0+r*z)/(r+z)
+    let
+      c = k*(r-f)
+      u2 = rng.uniform
+    if c*(2.0-c)-u2>0 or ln(c/u2)+1.0-c>0:
+      break
+  let
+    u3 = rng.uniform
+    theta = arcCos(f)
+  if u3<0.5: return -theta
+  else: return theta
+
+proc vonMises*[D](rng:var RNG, lambda:D):auto =
+  vonMisesWithExp(rng,lambda)
+
 proc newRNGField*[R: RNG](lo: Layout, rng: typedesc[R],
                           s: uint64 = uint64(17^7)): Field[1,R] =
   ## The seed `s` is broadcasted from rank 0.

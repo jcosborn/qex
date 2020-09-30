@@ -5,6 +5,8 @@ export matrixConcept
 import maths/matrixFunctions
 export matrixFunctions
 
+proc log1p*(arg:float):float {.header:"<math.h>",importc.}
+proc expm1*(arg:float):float {.header:"<math.h>",importc.}
 
 #[
 import simd
