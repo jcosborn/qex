@@ -323,10 +323,10 @@ template assign*(x: SomeNumber, y: Indexed) =
   x := y[]
 template `+=`*(x:Indexed, y: typed) =
   let tIndexedPlusEq = x
-  tIndexedPlusEq != !tIndexedPlusEq * y
+  tIndexedPlusEq != !tIndexedPlusEq + y
 template `-=`*(x:Indexed, y: typed) =
   let tIndexedMinusEq = x
-  tIndexedMinusEq != !tIndexedMinusEq * y
+  tIndexedMinusEq != !tIndexedMinusEq - y
 template `*=`*(x:Indexed, y: typed) =
   let tIndexedStarEq = x
   tIndexedStarEq != !tIndexedStarEq * y
