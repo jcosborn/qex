@@ -109,8 +109,7 @@ proc gaugeForce*[T](uu: openArray[T]): auto =
   toc("gaugeForce startCornerShifts")
   var (stf,stu,ss) = makeStaples(uu, cs)
   toc("gaugeForce makeStaples")
-  var f:type(stf[0])
-  f.newSeq(nd)
+  var f = newSeq[type(stf[0])](nd)
   for i in 0..<f.len:
     f[i].new(lo)
     f[i] := 0
