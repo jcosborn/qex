@@ -313,6 +313,7 @@ proc projectUderiv*(r: var Mat1, u: Mat2, x: Mat3, chain: Mat4) =
   var y, z, t1, t2: Mat1
   y := x.adj * u
   inverse(z, y)
+  #echo "inverse: ", z
   #QLA_M_eq_M_times_M(d, c, &z);
   r := chain * z
   #QLA_M_eq_Ma_times_M(&t1, p, d);
@@ -329,6 +330,7 @@ proc projectUderiv*(r: var Mat1, u: Mat2, x: Mat3, chain: Mat4) =
 proc projectUderiv*(r: var Mat1, x: Mat2, c: Mat3) =
   var u {.noInit.}: type(r)
   projectU(u, x)
+  #echo u, x, c
   projectUderiv(r, u, x, c)
 
 proc projectSU*(r: var Mat1; x: Mat2) =
@@ -509,7 +511,7 @@ when isMainModule:
     echo " inverse err: ", err2
     check(err2, 5)
 
-    if N<4:
+    if N<5:
       projectU(m2, m1)
       let r1 = trace(m4.adj*m2).re
       let seps = sqrt(epsilon(simdSum(r1)))

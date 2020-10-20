@@ -36,83 +36,20 @@ proc adjugate*(r: var Mat1, x: Mat2) =
     echo &"adjugate n({nc})>3 not supported"
     doAssert(false)
 
-#[
-#define set(i0,j0,i1,j1,i2,j2) \
-    QLA_c_eq_c_times_c (det, a##i1##j1, a##i2##j2); \
-    QLA_c_meq_c_times_c(det, a##i1##j2, a##i2##j1); \
-    QLA_c_eq_c_times_c(QLA_elem_M(*x,i0,j0), det, idet);
-    set(0,0,1,1,2,2);
-    set(0,1,2,1,0,2);
-    QLA_c_eq_c_times_c(QLA_elem_M(*x,0,2), det0, idet);
-    set(1,0,1,2,2,0);
-    set(1,1,2,2,0,0);
-    QLA_c_eq_c_times_c(QLA_elem_M(*x,1,2), det1, idet);
-    set(2,0,1,0,2,1);
-    set(2,1,2,0,0,1);
-    QLA_c_eq_c_times_c(QLA_elem_M(*x,2,2), det2, idet);
-#undef set
-    return;
-  }
-
-  QLAN(ColorMatrix, c);
-  QLAN(ColorMatrix, d);
-  int row[NC];
-
-  // copy input, set identity output and row pivot
-  for(int i=0; i<NC; i++) {
-    for(int j=0; j<NC; j++) {
-      QLA_c_eq_c(QLA_elem_M(c,i,j), QLA_elem_M(*a,i,j));
-      QLA_c_eq_r(QLA_elem_M(d,i,j), 0);
-    }
-    QLA_c_eq_r(QLA_elem_M(d,i,i), 1);
-    row[i] = i;
-  }
-
-#define C(i,j) QLA_elem_M(c,row[i],j)
-#define D(i,j) QLA_elem_M(d,row[i],j)
-  for(int k=0; k<NC; k++) {
-    QLA_Complex s;
-    QLA_Real rmax = QLA_norm2_c(C(k,k));
-    int imax = k;
-    for(int i=k+1; i<NC; i++) {
-      QLA_Real r = QLA_norm2_c(C(i,k));
-      if(r>rmax) { rmax = r; imax = i; }
-    }
-    { int rk = row[k]; row[k] = row[imax]; row[imax] = rk; }
-    rmax = 1/rmax;
-    QLA_c_eq_r_times_ca(s, rmax, C(k,k));
-    QLA_c_eq_c(C(k,k), s);
-    for(int i=0; i<NC; i++) {
-      if(i==k) continue;
-      QLA_Complex t;
-      QLA_c_eq_c_times_c(t, s, C(i,k));
-      for(int j=k+1; j<NC; j++) {
-        QLA_c_meq_c_times_c(C(i,j), t, C(k,j));
-      }
-      for(int j=0; j<NC; j++) {
-        QLA_c_meq_c_times_c(D(i,j), t, D(k,j));
-      }
-    }
-  }
-  for(int i=0; i<NC; i++) {
-    for(int j=0; j<NC; j++) {
-      QLA_c_eq_c_times_c(QLA_elem_M(*x,i,j), C(i,i), D(i,j));
-    }
-  }
-}
-]#
-
 proc sylsolveN*(x: var Mat1, a0: Mat2, c0: Mat3) =
   mixin simdMax
   let nc = x.nrows
+  let a2 = a0.norm2
+  let ia = rsqrt(a2)
 
-  x := c0
-  var a = a0
+  x := (0.5*ia)*c0
+  var a = ia*a0
 
   let rstop = epsilon(x.norm2.simdMax)
   let maxit = 20
   var nit = 0
   while true:
+    #echo nit, ": ", x
     inc nit
 
     var v = 3 - a*a
@@ -121,14 +58,39 @@ proc sylsolveN*(x: var Mat1, a0: Mat2, c0: Mat3) =
     x := 0.5*(d-a*w)
     a := 0.5*a*v
 
-    let r = c0-0.5*(a0*x+x*a0)
+    let r = c0-(a0*x+x*a0)
     let rnorm = r.norm2.simdMax
     #echo nit, " r2: ", rnorm
     if nit>=maxit or rnorm<rstop:
       if rnorm>rstop:
         echo "WARNING sylsolveN failed to converge: ", nit, " r2: ", rnorm
       break
-  x := 0.5*x
+
+proc sylsolveN2*(x: var Mat1, a: Mat2, c: Mat3) =
+  mixin simdMax
+  let nc = x.nrows
+  let aa = a.adj
+  let t2 = a.norm2
+  let kappa = 0.5/t2
+
+  x := c
+  #x := kappa * (aa*c + c*aa)
+
+  let rstop = epsilon(x.norm2.simdMax)
+  let maxit = 50
+  var nit = 0
+  while true:
+    inc nit
+
+    let r = c - a*x - x*a
+    x += kappa * (aa*r + r*aa)
+
+    let rnorm = r.norm2.simdMax
+    echo nit, " r2: ", rnorm
+    if nit>=maxit or rnorm<rstop:
+      if rnorm>rstop:
+        echo "WARNING sylsolveN failed to converge: ", nit, " r2: ", rnorm
+      break
 
 proc sylsolve*(x: var Mat1, a: Mat2, c: Mat3) =
   ## solves A X + X A = C for X
@@ -157,7 +119,6 @@ proc sylsolve*(x: var Mat1, a: Mat2, c: Mat3) =
     x[1,0] := itr * (c10 + idet * (aic10*a11-aic11*a10))
     x[1,1] := itr * (c11 + idet * (aic11*a00-aic10*a01))
   elif nc==3:
-    # x = (C + |A| A^-1 C A^-1)/2Tr(A)
     var ad {.noInit.}: type(a)
     adjugate(ad, a)
     let t = a[0,0] + a[1,1] + a[2,2]
@@ -185,52 +146,4 @@ proc sylsolve*(x: var Mat1, a: Mat2, c: Mat3) =
                   c4*(ac[i,j]+ca[i,j])
   else:
     sylsolveN(x, a, c)
-
-#[
-{
-  //timebase_t tb3 = timer();
-  int nc1 = QLA_Nc;
-  int nc2 = nc1*nc1;
-  //printf("%i  %i\n", nc1, nc2);
-  QLA_N_ColorMatrix(nc2, A);
-  QLA_N_ColorVector(nc2, (*B)) = (QLA_N_ColorVector(nc2, (*))) c;
-  for(int i1=0; i1<nc1; i1++) {
-    for(int i2=0; i2<nc1; i2++) {
-      int i3 = nc1*i1 + i2;
-      for(int k=0; k<nc2; k++) {
-        QLA_c_eq_r(QLA_elem_M(A,i3,k), 0);
-      }
-      for(int k=0; k<nc1; k++) {
-        int j3 = nc1*k + i2;  // i1 i2 k i2
-        //QLA_c_peq_c(QLA_elem_M(A,i3,j3), QLA_elem_M(*a,i1,k));
-        QLA_c_peq_ca(QLA_elem_M(A,i3,j3), QLA_elem_M(*a,k,i1));
-        int jt = nc1*i1 + k;  // i1 i2 i1 k
-        //QLA_c_peq_c(QLA_elem_M(A,i3,jt), QLA_elem_M(*b,k,i2));
-        QLA_c_peq_ca(QLA_elem_M(A,i3,jt), QLA_elem_M(*b,i2,k));
-      }
-    }
-  }
-  //timebase_t tb4 = timer();
-  //QLA_N_ColorMatrix(nc2, Ai);
-#ifdef HAVE_NCN
-  QLA_N_ColorVector(nc2, (*X)) = (QLA_N_ColorVector(nc2, (*))) x;
-#if QOP_Precision == 'F'
-  //QLA_FN_M_eq_inverse_M(nc2, &Ai, &A);
-  //QLA_FN_V_eq_M_times_V(nc2, X, &Ai, B);
-  QLA_FN_V_eq_M_inverse_V(nc2, X, &A, B);
-#else
-  //QLA_DN_M_eq_inverse_M(nc2, &Ai, &A);
-  //QLA_DN_V_eq_M_times_V(nc2, X, &Ai, B);
-  QLA_DN_V_eq_M_inverse_V(nc2, X, &A, B);
-#endif
-#else
-  qerror0(1,"can't use unitary projection without Nc=N libraries\n");
-#endif
-  //timebase_t tb5 = timer();
-  //tb0 += tb5 - tb3;
-  //tb1 += tb4 - tb3;
-  //tb2 += tb5 - tb4;
-}
-]#
-
 
