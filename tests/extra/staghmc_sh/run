@@ -36,7 +36,7 @@ test(){
 	*)
 		echo "No test #$tid"
 		false
-	esac |& tee "$outdir/out$comp.$tid" || return
+	esac 2>&1 | tee "$outdir/out$comp.$tid" || return
 	sed -nE '/^MEASplaq|^MEASpbp|(Begin|End|Reversed) H:/{s,^\[[^]]*\] *,,;p;}'  "$mydir/ref$comp.$tid" > "$outdir/ref$comp.$tid.check" || return
 	sed -nE '/^MEASplaq|^MEASpbp|(Begin|End|Reversed) H:/{s,^\[[^]]*\] *,,;p;}' "$outdir/out$comp.$tid" > "$outdir/out$comp.$tid.check" || return
 	numdiff -s ' \t\n][,' -r 1e-12 -V "$outdir"/{ref,out}$comp.$tid.check
