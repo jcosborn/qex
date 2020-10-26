@@ -433,7 +433,7 @@ proc newHeatBath(lo:any):auto =
   r.subs[1].layoutSubset(lo,"o")
   r
 
-proc evolve(H:HeatBath, g:any, gc:any, r:any) =
+proc evolve(H:HeatBath, g:any, gc:any, r:any, sample = true, jump = true) =
   tic("heatbath")
   let
     lo = g.l
@@ -444,37 +444,39 @@ proc evolve(H:HeatBath, g:any, gc:any, r:any) =
     qexError "HeatBath only works with even-odd subsets for now."
   threads:
     tic("threads")
-    # sample
-    for j in 0..<H.subs.len:
-      let
-        s = H.subs[j]
-        so = H.subs[(j+1) mod 2]
-      sumEnergy(H.fr[s], H.fi[s], J, h, g, H.sf[j], H.sb[j])
-      threadBarrier()
-      for i in g[s].sites:
+    if sample:
+      # sample
+      for j in 0..<H.subs.len:
         let
-          yr = H.fr{i}[][]
-          yi = H.fi{i}[][]
-          lambda = beta*hypot(yi, yr)
-          phi = arctan2(yi, yr)
-        g{i} := expCosPlusCosN(r{i}, lambda, phi, sigma)
-    threadBarrier()
-    toc("sample")
-    # over relaxation: flip
-    for j in 0..<H.subs.len:
-      let
-        s = H.subs[j]
-        so = H.subs[(j+1) mod 2]
-      sumEnergy(H.fr[s], H.fi[s], J, h, g, H.sf[j], H.sb[j])
+          s = H.subs[j]
+          so = H.subs[(j+1) mod 2]
+        sumEnergy(H.fr[s], H.fi[s], J, h, g, H.sf[j], H.sb[j])
+        threadBarrier()
+        for i in g[s].sites:
+          let
+            yr = H.fr{i}[][]
+            yi = H.fi{i}[][]
+            lambda = beta*hypot(yi, yr)
+            phi = arctan2(yi, yr)
+          g{i} := expCosPlusCosN(r{i}, lambda, phi, sigma)
       threadBarrier()
-      for i in g[s].sites:
+      toc("sample")
+    if jump:
+      # over relaxation: flip
+      for j in 0..<H.subs.len:
         let
-          yr = H.fr{i}[][]
-          yi = H.fi{i}[][]
-          lambda = beta*hypot(yi, yr)
-          phi = arctan2(yi, yr)
-        g{i} := pickRootCosCosN(r{i}, g{i}[][], phi, sigma/lambda)
-    toc("flip")
+          s = H.subs[j]
+          so = H.subs[(j+1) mod 2]
+        sumEnergy(H.fr[s], H.fi[s], J, h, g, H.sf[j], H.sb[j])
+        threadBarrier()
+        for i in g[s].sites:
+          let
+            yr = H.fr{i}[][]
+            yi = H.fi{i}[][]
+            lambda = beta*hypot(yi, yr)
+            phi = arctan2(yi, yr)
+          g{i} := pickRootCosCosN(r{i}, g{i}[][], phi, sigma/lambda)
+      toc("flip")
   toc("end")
 
 proc magnet(g:any):auto =
@@ -494,15 +496,62 @@ proc magnet(g:any):auto =
       mr = v
       mi = u
   toc("done")
-  let vol = g.l.physVol.float
-  (mr/vol, mi/vol)
+  (mr, mi)
 
-proc showMeasure(g:any,label="") =
+type PhaseDiff[F,E] = object
+  cosd,sind:seq[float]
+  f: seq[Shifter[F,E]]
+
+proc newPhaseDiff(g:any):auto =
+  type
+    F = typeof(g)
+    E = typeof(g[0])
+  var r {.noinit.}: PhaseDiff[F,E]
+  let nd = g.l.nDim
+  r.cosd = newseq[float](nd)
+  r.sind = newseq[float](nd)
+  r.f = newseq[Shifter[F,E]](nd)
+  for i in 0..<nd:
+    r.f[i] = newShifter(g, i, 1)
+  r
+
+proc phaseDiff(del:var PhaseDiff,g:any):auto =
+  let
+    # del cannot be captured by nim in threads
+    f = del.f
+    cosd = cast[ptr UnCheckedArray[float]](del.cosd[0].addr)
+    sind = cast[ptr UnCheckedArray[float]](del.sind[0].addr)
+  threads:
+    for nu in 0..<g.l.nDim:
+      var d,t,s:typeof(g[0])
+      discard f[nu] ^* g
+      threadBarrier()
+      for i in g:
+        d := f[nu].field[i] - g[i]
+        t += cos(d)
+        s += sin(d)
+      var
+        v = t.simdSum
+        u = s.simdSum
+      v.threadRankSum
+      u.threadRankSum
+      threadSingle:
+        cosd[nu] = v
+        sind[nu] = u
+
+proc showMeasure[F,E](del:var PhaseDiff[F,E],g:F,label="") =
   let
     (mr,mi) = g.magnet
-    v = g.l.physVol.float
+    v = 1.0/g.l.physVol.float
     s = (mr*mr+mi*mi)*v
+  del.phaseDiff g
   echo label,"magnet: ",mr," ",mi," ",s
+  var diff = ""
+  for i in 0..<g.l.nDim:
+    diff &= "CosSinDel" & $i & ": " & $(del.cosd[i]*v) & " " & $(del.sind[i]*v) & "\t"
+  diff.setlen(diff.len-1)
+  echo label,diff
+
 
 qexinit()
 tic()
@@ -519,6 +568,9 @@ letParam:
   hn = 0.0
   sweeps = 10
   randomPick:bool = 0
+  sampleFreq = 1
+  jumpFreq = 1
+  measureFreq = 1
   seed:uint64 = int(1000*epochTime())
 
 echoParams()
@@ -568,16 +620,17 @@ let
   lo = lat.newLayout
   vol = lo.physVol
 
-var r = lo.newRNGField(RngMilc6, seed)
-
-var g = lo.Real
+var
+  r = lo.newRNGField(RngMilc6, seed)
+  g = lo.Real
+  del = newPhaseDiff g
 
 threads:
   for i in g.sites:
     let u = uniform r{i}
     g{i} := PI*(2.0*u-1.0)
 
-g.showMeasure "Initial: "
+del.showMeasure(g, "Initial: ")
 
 var H = lo.newHeatBath
 
@@ -587,10 +640,10 @@ for n in 1..sweeps:
   tic("sweep")
   echo "Begin sweep: ",n
 
-  H.evolve(g,gc,r)
+  H.evolve(g,gc,r,0==n mod sampleFreq,0==n mod jumpFreq)
   toc("evolve")
 
-  g.showMeasure
+  if 0==n mod measureFreq: del.showMeasure g
   toc("measure")
 
 toc("done")
