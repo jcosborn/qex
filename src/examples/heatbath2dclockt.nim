@@ -105,7 +105,7 @@ proc newHeatBath(lo:any):auto =
   r
 
 proc evolve(H:HeatBath, g:any, d:var seq[float], tdir:seq[bool], gc:any, r:any, R:var RngMilc6,
-    sample = true, twistSample = true, twistJump = true) =
+    sample = true, twistSample = true) =
   tic("heatbath")
   let
     lo = g.l
@@ -139,23 +139,11 @@ proc evolve(H:HeatBath, g:any, d:var seq[float], tdir:seq[bool], gc:any, r:any, 
     for mu in 0..<nd:
       if not tdir[mu]: continue
       let
-        yr = J*del.cosd[mu] + h
-        yi = J*del.sind[mu]
+        yr = del.cosd[mu]
+        yi = del.sind[mu]
         phi = arctan2(yi,yr)
-      d[mu] = vonMises(R, beta*hypot(yi,yr))+phi
+      d[mu] = vonMises(R, beta*J*hypot(yi,yr))+phi
     toc("twist sample")
-  if twistJump:
-    tic()
-    var del = H.del
-    del.phaseDiff(g,z,tdir)
-    for mu in 0..<nd:
-      if not tdir[mu]: continue
-      let
-        yr = J*del.cosd[mu] + h
-        yi = J*del.sind[mu]
-        phi = arctan2(yi,yr)
-      d[mu] = 2.0*phi-d[mu]
-    toc("twist flip")
   toc("end")
 
 proc magnet(g:any):auto =
@@ -220,7 +208,6 @@ letParam:
   sweeps = 10
   sampleFreq = 1
   twistSampleFreq = 1
-  twistJumpFreq = 1
   twistDirs:toSeqBool = @[1,0]
   twistAngle = @[0.0,0.0]
   measureFreq = 1
@@ -266,8 +253,7 @@ for n in 1..sweeps:
 
   H.evolve(g,d,twistDirs,gc,r,R,
     hitFreq(n,sampleFreq),
-    hitFreq(n,twistSampleFreq),
-    hitFreq(n,twistJumpFreq))
+    hitFreq(n,twistSampleFreq))
   toc("evolve")
   for mu in 0..<lo.nDim:
     if twistDirs[mu]:

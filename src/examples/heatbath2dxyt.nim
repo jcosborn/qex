@@ -117,10 +117,10 @@ proc evolve(H:HeatBath, g:any, d:var seq[float], tdir:seq[bool], gc:any, r:any, 
     for mu in 0..<nd:
       if not tdir[mu]: continue
       let
-        yr = J*del.cosd[mu] + h
-        yi = J*del.sind[mu]
+        yr = del.cosd[mu]
+        yi = del.sind[mu]
         phi = arctan2(yi,yr)
-      d[mu] = vonMises(R, beta*hypot(yi,yr))+phi
+      d[mu] = vonMises(R, beta*J*hypot(yi,yr))+phi
     toc("twist sample")
   if jump:
     tic("threads")
@@ -145,8 +145,8 @@ proc evolve(H:HeatBath, g:any, d:var seq[float], tdir:seq[bool], gc:any, r:any, 
     for mu in 0..<nd:
       if not tdir[mu]: continue
       let
-        yr = J*del.cosd[mu] + h
-        yi = J*del.sind[mu]
+        yr = del.cosd[mu]
+        yi = del.sind[mu]
         phi = arctan2(yi,yr)
       d[mu] = 2.0*phi-d[mu]
     toc("twist flip")
