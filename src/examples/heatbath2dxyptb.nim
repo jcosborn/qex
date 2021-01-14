@@ -41,9 +41,8 @@ type GlobalP = object
   n:int
   N,N2,N3:float
   sn,cn,pidn:float
-  randomPick:bool
 
-proc init(globalP:var GlobalP, N:float, randomPick:bool) =
+proc init(globalP:var GlobalP, N:float) =
   if N<=0:
     qexError "N = " & $N
   globalP.N = N
@@ -54,7 +53,6 @@ proc init(globalP:var GlobalP, N:float, randomPick:bool) =
   globalP.sn = if ck == 0: -1.0 else: 1.0
   globalP.cn = float(ck-globalP.n)
   globalP.pidn = PI/N
-  globalP.randomPick = randomPick
   if 2*globalP.n+3>NMax:
     let n = floor((NMax-3).float/2.0)
     qexError "N = " & $N & " exceeds maximum " & $n
@@ -395,21 +393,8 @@ proc pickRootCosCosN[D](rng:var RNG, x, phi, sigma:D): auto =
   elif n == 1:
     return ccn.xs[0]
   else:
-    if globalP.randomPick:
-      let r = int(floor(n * rng.uniform))
-      return ccn.xs[r]
-    else:  # Pick one with distance closest to π.
-      var
-        z = ccn.xs[0]
-        dz = abs(abs(z-x)-PI)
-      for i in 1..<n:
-        let
-          y = ccn.xs[i]
-          dy = abs(abs(y-x)-PI)
-        if dy<dz:
-          z = y
-          dz = dy
-      return z
+    let r = int(floor(n * rng.uniform))
+    return ccn.xs[r]
 
 type PhaseDiff[F,E] = object
   cosd,sind:seq[float]
@@ -619,7 +604,6 @@ letParam:
   N = 5.0
   hn = 0.0
   sweeps = 10
-  randomPick:bool = 0
   sampleFreq = 1
   jumpFreq = 1
   twistSampleFreq = 1
@@ -632,7 +616,7 @@ echoParams()
 echo "rank ", myRank, "/", nRanks
 threads: echo "thread ", threadNum, "/", numThreads
 
-globalP.init(N, randomPick)
+globalP.init(N)
 
 let
   gc = (beta:beta, J:J, h:h, hn:hn)
