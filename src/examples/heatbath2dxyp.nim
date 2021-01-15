@@ -394,6 +394,26 @@ proc pickRootCosCosN[D](rng:var RNG, x, phi, sigma:D): auto =
     let r = int(floor(n * rng.uniform))
     return ccn.xs[r]
 
+proc probZN(ss:var openarray[float], g:any, betah:float) =
+  let
+    n = globalP.n
+    pidn = globalP.pidn
+  var s:float
+  for k in 0..<n:
+    let d = 2.0*pidn*k
+    threads:
+      var t:typeof(g[0])
+      for i in g:
+        t += cos(g[i]+d)
+      var v = t.simdSum
+      v.threadRankSum
+      threadSingle: s = v
+    ss[k] = s
+  s = ss[0]
+  ss[0] = 1.0
+  for k in 1..<n:
+    ss[k] = exp(betah*(ss[k]-s))
+
 type HeatBath[F,E] = object
   fr,fi: F
   sf,sb: array[2,seq[Shifter[F,E]]]
@@ -418,7 +438,7 @@ proc newHeatBath(lo:any):auto =
   r.subs[1].layoutSubset(lo,"o")
   r
 
-proc evolve(H:HeatBath, g:any, gc:any, r:any, sample = true, jump = true) =
+proc evolve(H:HeatBath, g:any, gc:any, r:any, R:var RngMilc6, sample = true, jump = true, jumpZN = true) =
   tic("heatbath")
   let
     lo = g.l
@@ -462,6 +482,25 @@ proc evolve(H:HeatBath, g:any, gc:any, r:any, sample = true, jump = true) =
             phi = arctan2(yi, yr)
           g{i} := pickRootCosCosN(r{i}, g{i}[][], phi, sigma/lambda)
       toc("flip")
+  # end of the threads block above
+  if jumpZN:
+    let
+      n = globalP.n
+      pidn = globalP.pidn
+    var ss {.noinit.}:array[NMax,float]
+    ss.probZN(g, beta*h)
+    for k in 1..<n: ss[k] += ss[k-1]
+    # echo "# Cumulative Z[N] probability: ",ss
+    let u = ss[n-1] * R.uniform
+    var k = 0
+    while u>=ss[k]: inc k
+    if k>0:
+      # echo "# Flip to k = ",k
+      let d = 2.0*pidn*k
+      threads:
+        for i in g:
+          g[i] += d
+    toc("tryZN")
   toc("end")
 
 proc magnet(g:any):auto =
@@ -472,6 +511,27 @@ proc magnet(g:any):auto =
     for i in g:
       t += cos(g[i])
       s += sin(g[i])
+    var
+      v = t.simdSum
+      u = s.simdSum
+    v.threadRankSum
+    u.threadRankSum
+    threadSingle:
+      mr = v
+      mi = u
+  toc("done")
+  (mr, mi)
+
+proc magnet(g:any,k:int):auto =
+  tic("magnetK")
+  let d = 2.0*globalP.pidn*k
+  var mr,mi = 0.0
+  threads:
+    var t,s,x:typeof(g[0])
+    for i in g:
+      x = g[i]+d
+      t += cos(x)
+      s += sin(x)
     var
       v = t.simdSum
       u = s.simdSum
@@ -524,18 +584,36 @@ proc phaseDiff(del:var PhaseDiff,g:any):auto =
         cosd[nu] = v
         sind[nu] = u
 
-proc showMeasure[F,E](del:var PhaseDiff[F,E],g:F,label="") =
+proc showMeasure[F,E](del:var PhaseDiff[F,E],g:F,gc:any,label="") =
   let
+    (beta, J, h, hn) = gc
     (mr,mi) = g.magnet
     v = 1.0/g.l.physVol.float
     s = (mr*mr+mi*mi)*v
+  var
+    ps {.noinit.}: array[NMax, float]
+    mrzn = mr
+    mizn = mi
+    p:float = 1.0
+  ps.probZN(g, beta*h)
+  for k in 1..<globalP.n:
+    let (mrk,mik) = g.magnet k  # mrk²+mik² = mr²+mi²
+    # echo "# ",label,"magnet",k,": ",mrk," ",mik," prob: ",ps[k]
+    mrzn += mrk*ps[k]
+    mizn += mik*ps[k]
+    p += ps[k]
+  mrzn /= p
+  mizn /= p
   del.phaseDiff g
   echo label,"magnet: ",mr," ",mi," ",s
+  echo label,"magnetZN: ",mrzn," ",mizn
   var diff = ""
   for i in 0..<g.l.nDim:
     diff &= "CosSinDel" & $i & ": " & $(del.cosd[i]*v) & " " & $(del.sind[i]*v) & "\t"
   diff.setlen(diff.len-1)
   echo label,diff
+
+proc hitFreq(num, freq:int):bool = freq>0 and 0==num mod freq
 
 
 qexinit()
@@ -554,6 +632,7 @@ letParam:
   sweeps = 10
   sampleFreq = 1
   jumpFreq = 1
+  jumpZNFreq = 1
   measureFreq = 1
   seed:uint64 = int(1000*epochTime())
 
@@ -606,15 +685,17 @@ let
 
 var
   r = lo.newRNGField(RngMilc6, seed)
+  R:RngMilc6  # global RNG for global update
   g = lo.Real
   del = newPhaseDiff g
+R.seed(seed,987654321)
 
 threads:
   for i in g.sites:
     let u = uniform r{i}
     g{i} := PI*(2.0*u-1.0)
 
-del.showMeasure(g, "Initial: ")
+del.showMeasure(g, gc, "Initial: ")
 
 var H = lo.newHeatBath
 
@@ -624,10 +705,13 @@ for n in 1..sweeps:
   tic("sweep")
   echo "Begin sweep: ",n
 
-  H.evolve(g,gc,r,0==n mod sampleFreq,0==n mod jumpFreq)
+  H.evolve(g,gc,r,R,
+    hitFreq(n,sampleFreq),
+    hitFreq(n,jumpFreq),
+    hitFreq(n,jumpZNFreq))
   toc("evolve")
 
-  if 0==n mod measureFreq: del.showMeasure g
+  if hitFreq(n,measureFreq): del.showMeasure(g, gc)
   toc("measure")
 
 toc("done")
