@@ -13,7 +13,7 @@ jobs:
     steps:
     - name: environment
       run: |
-        echo "::set-env name=FUELCompat::${{ matrix.fuel-compat }}"
+        echo "FUELCompat=${{ matrix.fuel-compat }}" >> $GITHUB_ENV
         sudo sh -c 'echo %e.core.%p.%t > /proc/sys/kernel/core_pattern'
     - name: install packages
       run: |
@@ -28,8 +28,8 @@ jobs:
         make install
     - name: set path to hwloc v2
       run: |
-        echo "::add-path::${{ github.workspace }}/hwloc-v2/bin"
-        echo "::set-env name=LD_LIBRARY_PATH::${{ github.workspace }}/hwloc-v2/lib"
+        echo "${{ github.workspace }}/hwloc-v2/bin" >> $GITHUB_PATH
+        echo "LD_LIBRARY_PATH=${{ github.workspace }}/hwloc-v2/lib" >> $GITHUB_ENV
     - name: system info
       run: |
         free
@@ -50,7 +50,7 @@ jobs:
         repository: nim-lang/csources
         path: Nim/csources
     - name: set path to nim
-      run: echo "::add-path::${{ github.workspace }}/Nim/bin"
+      run: echo "${{ github.workspace }}/Nim/bin" >> $GITHUB_PATH
     - name: build Nim csources
       working-directory: Nim/csources
       run: make -j $(nproc)
