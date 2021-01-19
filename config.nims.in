@@ -60,7 +60,7 @@ template set(key: string, val: untyped) =
     when val.type is int:
       v = $val
   echo "setting: ", key, " <- \"", v, "\""
-  when getCommand()=="e":
+  when true: # fixes Nim 1.5.1 regression  #getCommand()=="e":
     if v=="":
       defargs.add "--" & key
     else:
