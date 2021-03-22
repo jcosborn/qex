@@ -1,0 +1,4 @@
+#mangle "INT_MIN" "low(cint)"
+#mangle "QudaMassNormalization" "QudaMassNormalizationT"
+#mangle "_h_" "h_"
+#mangle "_hp_" "hp_"
