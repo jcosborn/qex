@@ -1,5 +1,4 @@
-import quda
-import enum_quda
+import enum_quda, quda
 
 ## *
 ##  @file    quda_milc_interface.h
@@ -10,6 +9,9 @@ import enum_quda
 ##  interfacing between QUDA and the MILC software packed.
 ##
 
+when __COMPUTE_CAPABILITY__ >= 600:
+  const
+    USE_QUDA_MANAGED* = 1
 ## *
 ##  Parameters related to MILC site struct
 ##
@@ -30,8 +32,8 @@ type
 ##
 
 type
-  QudaInvertArgs_t* {.importc: "QudaInvertArgs_t",
-                     header: "quda_milc_interface.h", bycopy.} = object
+  QudaInvertArgs_t* {.importc: "QudaInvertArgs_t", header: "quda_milc_interface.h",
+                     bycopy.} = object
     max_iter* {.importc: "max_iter".}: cint ## * Maximum number of iterations
     evenodd* {.importc: "evenodd".}: QudaParity ## * Which parity are we working on ? (options are QUDA_EVEN_PARITY, QUDA_ODD_PARITY, QUDA_INVALID_PARITY
     mixed_precision* {.importc: "mixed_precision".}: cint ## * Whether to use mixed precision or not (1 - yes, 0 - no)
@@ -50,8 +52,7 @@ type
 ##
 
 type
-  QudaEigArgs_t* {.importc: "QudaEigArgs_t",
-                  header: "quda_milc_interface.h", bycopy.} = object
+  QudaEigArgs_t* {.importc: "QudaEigArgs_t", header: "quda_milc_interface.h", bycopy.} = object
     prec_ritz* {.importc: "prec_ritz".}: QudaPrecision
     nev* {.importc: "nev".}: cint
     max_search_dim* {.importc: "max_search_dim".}: cint
@@ -74,8 +75,7 @@ type
 ##
 
 type
-  QudaLayout_t* {.importc: "QudaLayout_t", header: "quda_milc_interface.h",
-                 bycopy.} = object
+  QudaLayout_t* {.importc: "QudaLayout_t", header: "quda_milc_interface.h", bycopy.} = object
     latsize* {.importc: "latsize".}: ptr cint ## * Local lattice dimensions
     machsize* {.importc: "machsize".}: ptr cint ## * Machine grid size
     device* {.importc: "device".}: cint ## * GPU device  number
@@ -86,8 +86,8 @@ type
 ##
 
 type
-  QudaInitArgs_t* {.importc: "QudaInitArgs_t",
-                   header: "quda_milc_interface.h", bycopy.} = object
+  QudaInitArgs_t* {.importc: "QudaInitArgs_t", header: "quda_milc_interface.h",
+                   bycopy.} = object
     verbosity* {.importc: "verbosity".}: QudaVerbosity ## * How verbose QUDA should be (QUDA_SILENT, QUDA_VERBOSE or QUDA_SUMMARIZE)
     layout* {.importc: "layout".}: QudaLayout_t ## * Layout for QUDA to use
 
@@ -98,8 +98,8 @@ type
 ##
 
 type
-  QudaHisqParams_t* {.importc: "QudaHisqParams_t",
-                     header: "quda_milc_interface.h", bycopy.} = object
+  QudaHisqParams_t* {.importc: "QudaHisqParams_t", header: "quda_milc_interface.h",
+                     bycopy.} = object
     reunit_allow_svd* {.importc: "reunit_allow_svd".}: cint ## * Allow SVD for reuniarization
     reunit_svd_only* {.importc: "reunit_svd_only".}: cint ## * Force use of SVD for reunitarization
     reunit_svd_abs_error* {.importc: "reunit_svd_abs_error".}: cdouble ## * Absolute error bound for SVD to apply
@@ -118,6 +118,14 @@ type
     use_pinned_memory* {.importc: "use_pinned_memory".}: cint ## * use page-locked memory in QUDA
 
 
+## *
+##  Optional: Set the MPI Comm Handle if it is not MPI_COMM_WORLD
+##
+##  @param input Pointer to an MPI_Comm handle, static cast as a void *
+##
+
+proc qudaSetMPICommHandle*(mycomm: pointer) {.importc: "qudaSetMPICommHandle",
+    header: "quda_milc_interface.h".}
 ## *
 ##  Initialize the QUDA context.
 ##
@@ -154,6 +162,21 @@ proc qudaAllocatePinned*(bytes: csize_t): pointer {.importc: "qudaAllocatePinned
 
 proc qudaFreePinned*(`ptr`: pointer) {.importc: "qudaFreePinned",
                                     header: "quda_milc_interface.h".}
+## *
+##  Allocate managed memory to reduce CPU-GPU transfers
+##  @param bytes The size of the requested allocation
+##  @return Pointer to allocated memory
+##
+
+proc qudaAllocateManaged*(bytes: csize_t): pointer {.importc: "qudaAllocateManaged",
+    header: "quda_milc_interface.h".}
+## *
+##  Free managed memory
+##  @param ptr Pointer to memory to be free
+##
+
+proc qudaFreeManaged*(`ptr`: pointer) {.importc: "qudaFreeManaged",
+                                     header: "quda_milc_interface.h".}
 ## *
 ##  Set the algorithms to use for HISQ fermion calculations, e.g.,
 ##  SVD parameters for reunitarization.
@@ -273,6 +296,69 @@ proc qudaInvert*(external_precision: cint; quda_precision: cint; mass: cdouble;
                 final_resid: ptr cdouble; final_rel_resid: ptr cdouble;
                 num_iters: ptr cint) {.importc: "qudaInvert",
                                     header: "quda_milc_interface.h".}
+## *
+##  Prepare a staggered/HISQ multigrid solve with given fat and
+##  long links. All fields passed are host (CPU) fields
+##  in MILC order. This function requires persistent gauge fields.
+##  This interface is experimental.
+##
+##  @param external_precision Precision of host fields passed to QUDA (2 - double, 1 - single)
+##  @param quda_precision Precision for QUDA to use (2 - double, 1 - single)
+##  @param mass Fermion mass parameter
+##  @param inv_args Struct setting some solver metadata; required for tadpole, naik coeff
+##  @param milc_fatlink Fat-link field on the host
+##  @param milc_longlink Long-link field on the host
+##  @param mg_param_file Path to an input text file describing the MG solve, to be documented on QUDA wiki
+##  @return Void pointer wrapping a pack of multigrid-related structures
+##
+
+proc qudaMultigridCreate*(external_precision: cint; quda_precision: cint;
+                         mass: cdouble; inv_args: QudaInvertArgs_t;
+                         milc_fatlink: pointer; milc_longlink: pointer;
+                         mg_param_file: cstring): pointer {.
+    importc: "qudaMultigridCreate", header: "quda_milc_interface.h".}
+## *
+##  Solve Ax=b for an improved staggered operator using MG.
+##  All fields are fields passed and returned are host (CPU)
+##  field in MILC order.  This function requires that persistent
+##  gauge and clover fields have been created prior. It also
+##  requires a multigrid parameter built from qudaSetupMultigrid
+##  This interface is experimental.
+##
+##  @param external_precision Precision of host fields passed to QUDA (2 - double, 1 - single)
+##  @param quda_precision Precision for QUDA to use (2 - double, 1 - single)
+##  @param mass Fermion mass parameter
+##  @param inv_args Struct setting some solver metadata
+##  @param target_residual Target residual
+##  @param target_relative_residual Target Fermilab residual
+##  @param milc_fatlink Fat-link field on the host
+##  @param milc_longlink Long-link field on the host
+##  @param mg_pack_ptr MG preconditioner structure created by qudaSetupMultigrid
+##  @param mg_rebuild_type whether to do a full (1) or thin (0) MG rebuild
+##  @param source Right-hand side source field
+##  @param solution Solution spinor field
+##  @param final_residual True residual
+##  @param final_relative_residual True Fermilab residual
+##  @param num_iters Number of iterations taken
+##
+
+proc qudaInvertMG*(external_precision: cint; quda_precision: cint; mass: cdouble;
+                  inv_args: QudaInvertArgs_t; target_residual: cdouble;
+                  target_fermilab_residual: cdouble; milc_fatlink: pointer;
+                  milc_longlink: pointer; mg_pack_ptr: pointer;
+                  mg_rebuild_type: cint; source: pointer; solution: pointer;
+                  final_residual: ptr cdouble;
+                  final_fermilab_residual: ptr cdouble; num_iters: ptr cint) {.
+    importc: "qudaInvertMG", header: "quda_milc_interface.h".}
+## *
+##  Clean up a staggered/HISQ multigrid object, freeing all internal
+##  fields and otherwise allocated memory.
+##
+##  @param mg_pack_ptr Void pointer mapping to the multigrid structure returned by qudaSetupMultigrid
+##
+
+proc qudaMultigridDestroy*(mg_pack_ptr: pointer) {.importc: "qudaMultigridDestroy",
+    header: "quda_milc_interface.h".}
 ## *
 ##  Solve Ax=b for an improved staggered operator with many right hand sides.
 ##  All fields are fields passed and returned are host (CPU) field in MILC order.
@@ -545,6 +631,7 @@ proc qudaCloverMultishiftInvert*(external_precision: cint; quda_precision: cint;
 ##  @param precision       The precision of the fields
 ##  @param num_terms The number of quark fields
 ##  @param num_naik_terms The number of naik contributions
+##  @param dt Integrating step size
 ##  @param coeff The coefficients multiplying the fermion fields in the outer product
 ##  @param quark_field The input fermion field.
 ##  @param level2_coeff    The coefficients for the second level of smearing in the quark action.
@@ -556,13 +643,13 @@ proc qudaCloverMultishiftInvert*(external_precision: cint; quda_precision: cint;
 ##
 
 proc qudaHisqForce*(precision: cint; num_terms: cint; num_naik_terms: cint;
-                   coeff: ptr ptr cdouble; quark_field: ptr pointer;
+                   dt: cdouble; coeff: ptr ptr cdouble; quark_field: ptr pointer;
                    level2_coeff: array[6, cdouble]; fat7_coeff: array[6, cdouble];
                    w_link: pointer; v_link: pointer; u_link: pointer;
                    milc_momentum: pointer) {.importc: "qudaHisqForce",
     header: "quda_milc_interface.h".}
 ## *
-##  Compute the gauge force and update the mometum field.  All fields
+##  Compute the gauge force and update the momentum field.  All fields
 ##  here are CPU fields in MILC order, and their precisions should
 ##  match.
 ##
@@ -578,6 +665,23 @@ proc qudaGaugeForce*(precision: cint; num_loop_types: cint;
                     arg: ptr QudaMILCSiteArg_t) {.importc: "qudaGaugeForce",
     header: "quda_milc_interface.h".}
 ## *
+##  Compute the gauge force and update the momentum field.  All fields
+##  here are CPU fields in MILC order, and their precisions should
+##  match.
+##
+##  @param precision The precision of the field (2 - double, 1 - single)
+##  @param num_loop_types 1, 2 or 3
+##  @param milc_loop_coeff Coefficients of the different loops in the Symanzik action
+##  @param eb3 The integration step size (for MILC this is dt*beta/3)
+##  @param arg Metadata for MILC's internal site struct array
+##  @param phase_in whether staggered phases are applied
+##
+
+proc qudaGaugeForcePhased*(precision: cint; num_loop_types: cint;
+                          milc_loop_coeff: array[3, cdouble]; eb3: cdouble;
+                          arg: ptr QudaMILCSiteArg_t; phase_in: cint) {.
+    importc: "qudaGaugeForcePhased", header: "quda_milc_interface.h".}
+## *
 ##  Evolve the gauge field by step size dt, using the momentum field
 ##  I.e., Evalulate U(t+dt) = e(dt pi) U(t).  All fields are CPU fields in MILC order.
 ##
@@ -589,17 +693,68 @@ proc qudaGaugeForce*(precision: cint; num_loop_types: cint;
 proc qudaUpdateU*(precision: cint; eps: cdouble; arg: ptr QudaMILCSiteArg_t) {.
     importc: "qudaUpdateU", header: "quda_milc_interface.h".}
 ## *
-##  Evaluate the momentum contribution to the Hybrid Monte Carlo
-##  action.  The momentum field is assumed to be in MILC order.  MILC
-##  convention is applied, subtracting 4.0 from each momentum matrix
-##  to increased stability.
+##  Evolve the gauge field by step size dt, using the momentum field
+##  I.e., Evalulate U(t+dt) = e(dt pi) U(t).  All fields are CPU fields in MILC order.
 ##
 ##  @param precision Precision of the field (2 - double, 1 - single)
-##  @param momentum The momentum field
+##  @param dt The integration step size step
+##  @param arg Metadata for MILC's internal site struct array
+##  @param phase_in whether staggered phases are applied
+##
+
+proc qudaUpdateUPhased*(precision: cint; eps: cdouble; arg: ptr QudaMILCSiteArg_t;
+                       phase_in: cint) {.importc: "qudaUpdateUPhased",
+                                       header: "quda_milc_interface.h".}
+## *
+##  Evolve the gauge field by step size dt, using the momentum field
+##  I.e., Evalulate U(t+dt) = e(dt pi) U(t).  All fields are CPU fields in MILC order.
+##
+##  @param precision Precision of the field (2 - double, 1 - single)
+##  @param dt The integration step size step
+##  @param arg Metadata for MILC's internal site struct array
+##  @param phase_in whether staggered phases are applied
+##  @param want_gaugepipe whether to enabled QUDA gaugepipe for HMC
+##
+
+proc qudaUpdateUPhasedPipeline*(precision: cint; eps: cdouble;
+                               arg: ptr QudaMILCSiteArg_t; phase_in: cint;
+                               want_gaugepipe: cint) {.
+    importc: "qudaUpdateUPhasedPipeline", header: "quda_milc_interface.h".}
+## *
+##  Download the momentum from MILC and place into QUDA's resident
+##  momentum field.  The source momentum field can either be as part
+##  of a MILC site struct (QUDA_MILC_SITE_GAUGE_ORDER) or as a
+##  separate field (QUDA_MILC_GAUGE_ORDER).
+##
+##  @param precision Precision of the field (2 - double, 1 - single)
+##  @param arg Metadata for MILC's internal site struct array
+##
+
+proc qudaMomLoad*(precision: cint; arg: ptr QudaMILCSiteArg_t) {.
+    importc: "qudaMomLoad", header: "quda_milc_interface.h".}
+## *
+##  Upload the momentum to MILC from QUDA's resident momentum field.
+##  The destination momentum field can either be as part of a MILC site
+##  struct (QUDA_MILC_SITE_GAUGE_ORDER) or as a separate field
+##  (QUDA_MILC_GAUGE_ORDER).
+##
+##  @param precision Precision of the field (2 - double, 1 - single)
+##  @param arg Metadata for MILC's internal site struct array
+##
+
+proc qudaMomSave*(precision: cint; arg: ptr QudaMILCSiteArg_t) {.
+    importc: "qudaMomSave", header: "quda_milc_interface.h".}
+## *
+##  Evaluate the momentum contribution to the Hybrid Monte Carlo
+##  action.  MILC convention is applied, subtracting 4.0 from each
+##  momentum matrix to increase stability.
+##
+##  @param precision Precision of the field (2 - double, 1 - single)
+##  @param arg Metadata for MILC's internal site struct array
 ##  @return momentum action
 ##
 
-proc qudaMomAction*(precision: cint; momentum: pointer): cdouble {.
+proc qudaMomAction*(precision: cint; arg: ptr QudaMILCSiteArg_t): cdouble {.
     importc: "qudaMomAction", header: "quda_milc_interface.h".}
 ## *
 ##  Apply the staggered phase factors to the gauge field.  If the
@@ -626,6 +781,19 @@ proc qudaRephase*(prec: cint; gauge: pointer; flag: cint; i_mu: cdouble) {.
 
 proc qudaUnitarizeSU3*(prec: cint; tol: cdouble; arg: ptr QudaMILCSiteArg_t) {.
     importc: "qudaUnitarizeSU3", header: "quda_milc_interface.h".}
+## *
+##  Project the input field on the SU(3) group.  If the target
+##  tolerance is not met, this routine will give a runtime error.
+##
+##  @param prec Precision of the gauge field
+##  @param tol The tolerance to which we iterate
+##  @param arg Metadata for MILC's internal site struct array
+##  @param phase_in whether staggered phases are applied
+##
+
+proc qudaUnitarizeSU3Phased*(prec: cint; tol: cdouble; arg: ptr QudaMILCSiteArg_t;
+                            phase_in: cint) {.importc: "qudaUnitarizeSU3Phased",
+    header: "quda_milc_interface.h".}
 ## *
 ##  Compute the clover force contributions in each dimension mu given
 ##  the array solution fields, and compute the resulting momentum
