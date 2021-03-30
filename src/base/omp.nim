@@ -26,11 +26,12 @@ else:
     #forceOmpOn()
     {. emit:["#pragma omp ", p] .}
   template ompBlock*(p:string; body:untyped):untyped =
-    {. emit:"#pragma omp " & p .}
-    {. emit:"{ /* Inserted by ompBlock " & p & " */".}
+    #{. emit:"#pragma omp " & p .}
+    #{. emit:"{ /* Inserted by ompBlock " & p & " */".}
+    {. emit:["#pragma omp ", p] .}
     block:
       body
-    {. emit:"} /* End ompBlock " & p & " */".}
+    #{. emit:"} /* End ompBlock " & p & " */".}
 
 template ompBarrier* = ompPragma("barrier")
 
