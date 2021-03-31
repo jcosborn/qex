@@ -20,6 +20,7 @@ const
   qioDir = "$HOME/lqcd/install/qio"
   ccType = "gcc"
   cc = "mpicc"
+  #cpp = "mpic++"
   cflagsAlways = "-Wall -std=gnu11 -march=native -ldl -fno-strict-aliasing"
   #cflagsAlways = "-w -std=c11 -qarch=pwr9 -qtune=pwr9"
   #cflagsAlways = "-Wall -std=gnu11 -march=native -ldl -Wa,-q"
@@ -33,7 +34,6 @@ const
   #cflagsDebug = "-g3 -O0"
   #cflagsSpeed = "-g -O3"
   #ompFlags = "-qsmp=omp"
-  ld = cc
   ldflags = "-Wall -std=gnu11 -march=native -ldl"
   #ldflags = cflagsAlways
   nimcache = "nimcache"

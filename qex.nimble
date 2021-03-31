@@ -67,19 +67,22 @@ proc setup =
   cc ~ ccType
   var
     qexcc = cc
-    qexld = ld
     qexCflagsAlways = cflagsAlways
+  when declared(cpp):
+    var qexcpp = cpp
   when declared(Backend):
     when Backend == "CUDA":
       putenv ~ ("CUDAARCH=" & cudaARCH)
       putenv ~ ("CUDANVCC=" & cudaNVCC)
       putenv ~ ("CUDACCBIN=" & cc)
       qexcc = qexDir & "/src/backend/util/ccwrapper"
-      qexld = qexcc
       qexCflagsAlways = "-x cu " & qexCflagsAlways
     def Backend
   exe ! qexcc
-  linkerexe ! qexld
+  linkerexe ! qexcc
+  when declared(cpp):
+    cpp.exe ! qexcpp
+    cpp.linkerexe ! qexcpp
   options.always ! qexCflagsAlways
   options.debug ! cflagsDebug
   options.speed ! cflagsSpeed
@@ -167,7 +170,11 @@ task make, "compile, link, and put executables in `bin'":
     "out".set("bin/"&name)
     if debug: setupDebug()
     else: setupRelease()
-    setCommand "c", target
+    when declared(cpp):
+      setCommand "cpp", target
+    else:
+      setCommand "c", target
+
 
 task targets, "List available targets":
   let ts = (extraSrcDir&qexDir).recTargets
