@@ -4,7 +4,15 @@ sed_inplace=sed -i
 #sed_inplace=sed -i ''
 QI=../../../quda/quda/include
 
-all:	enum_quda.nim quda_constants.nim quda_milc_interface.nim quda.nim
+all:\
+	enum_quda.nim\
+	quda.nim\
+	quda_constants.nim\
+	quda_milc_interface.nim\
+
+# doesn't work
+#	color_spinor_field.nim\
+#	host_utils.nim\
 
 .PHONY:	all
 
@@ -32,7 +40,7 @@ quda.nim:	quda.c2nim ${QI}/quda.h
 	sed '/#ifndef __CUDACC_RTC__/,/#endif/c\
 	typedef double double_complex[2];\
 	' ${QI}/quda.h >quda.h.tmp
-	${c2n} -o:quda.nim --header quda.c2nim quda.h.tmp
+	${c2n} -o:$@ --header quda.c2nim quda.h.tmp
 	${sed_inplace} -e '1i\
 	import enum_quda, quda_constants\
 	'\
@@ -40,3 +48,17 @@ quda.nim:	quda.c2nim ${QI}/quda.h
 		-e 's/quda\.h\.tmp/quda.h/g'\
 		quda.nim
 	rm quda.h.tmp
+
+host_utils.nim:	quda.c2nim ${QI}/../tests/utils/host_utils.h
+	sed 's,^\(extern [a-zA-Z0-9_]*\) & *\([a-zA-Z0-9_]*;\),\1 \2,' \
+		${QI}/../tests/utils/host_utils.h > host_utils.h.tmp
+	${c2n} -o:$@ --header quda.c2nim host_utils.h.tmp
+	${sed_inplace} -e '1i\
+	import quda, color_spinor_field\
+	'\
+		-e 's/host_utils\.h\.tmp/host_utils.h/g'\
+		host_utils.nim
+	rm host_utils.h.tmp
+
+color_spinor_field.nim:	quda.c2nim ${QI}/color_spinor_field.h
+	${c2n} -o:$@ --header $^
