@@ -11,6 +11,7 @@ template `&`*(x: ptr cArray): untyped = addr x[0]
 template ptrInt*(x:untyped):untyped = cast[ByteAddress](x)
 template addrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
 template unsafeAddrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
+template toHex*(x: ptr typed): untyped = toHex(cast[ByteAddress](x))
 
 proc newSeqU*[T](n: int): seq[T] =
   result = newSeqOfCap[T](n)
