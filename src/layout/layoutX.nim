@@ -225,12 +225,16 @@ proc coord*(l: Layout, crd: var any, ri: tuple[rank,index:int]) =
 template coord*(l: Layout, crd: var typed, index: int) =
   coord(l, crd, l.myrank, index)
 proc coord*(l: Layout, coord: ptr cint, ri: tuple[rank,index:cint]) =
-  var li: LayoutIndexQ
-  li.rank = ri.rank.cint
-  li.index = ri.index.cint
   var ca = cast[ptr cArray[cint]](coord)
-  #layoutCoordQ(l.lq.addr, cast[ptr cArray[cint]](coord), li.addr)
-  layoutCoordQ(l.lq.addr, toOpenArray(ca,0,l.nDim-1), li.addr)
+  if ri.rank == l.myrank:
+    for i in 0..<l.nDim:
+      ca[i] = l.coords[i][ri.index]
+  else:
+    var li: LayoutIndexQ
+    li.rank = ri.rank.cint
+    li.index = ri.index.cint
+    #layoutCoordQ(l.lq.addr, cast[ptr cArray[cint]](coord), li.addr)
+    layoutCoordQ(l.lq.addr, toOpenArray(ca,0,l.nDim-1), li.addr)
 
 proc rankIndex*(lo: Layout, lex: int): tuple[rank,index:int] =
   let n = lo.nDim
