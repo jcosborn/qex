@@ -119,12 +119,13 @@ proc get[T](buf: cstring; index: csize_t; count: cint; arg: pointer) =
   let src = cast[ptr srcT](arg)
   let vi = index div simdLength(T).csize_t
   let vl = int(index mod simdLength(T).csize_t)
-  let vlm = 1 shl vl
+  #let vlm = 1 shl vl
   #var s: ptr destT
   for i in 0..<count:
     #vcopy(dest[i], vl, src[i][vi])
-    let t = masked(src[i][vi], vlm)
-    dest[i] := t
+    #let t = masked(src[i][vi], vlm)
+    #dest[i] := t
+    dest[i] := indexed(src[i][vi], asSimd(vl))
 
 proc getP[T](buf: cstring; index: csize_t; count: cint; arg: pointer) =
   type destT = cArray[IOtypeP(T)]
@@ -134,11 +135,12 @@ proc getP[T](buf: cstring; index: csize_t; count: cint; arg: pointer) =
   let src = cast[ptr srcT](arg)
   let vi = index div simdLength(T).csize_t
   let vl = int(index mod simdLength(T).csize_t)
-  let vlm = 1 shl vl
+  #let vlm = 1 shl vl
   #var s: ptr destT
   for i in 0..<count:
     #vcopy(dest[i], vl, src[i][vi])
-    dest[i] := masked(src[i][vi], vlm)
+    #dest[i] := masked(src[i][vi], vlm)
+    dest[i] := indexed(src[i][vi], asSimd(vl))
 
 proc write[T](wr: var Writer, v: var openArray[ptr T], lat: openArray[int],
               md="", ps="") =

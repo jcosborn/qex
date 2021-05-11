@@ -51,7 +51,7 @@ template createAsType2(t,c:untyped):untyped =
     when T is t:
       x[][i[]] = y
     elif T.isWrapper:
-      indexed(x, i) = y
+      indexed(x, i) := y
     else:
       x[][i] = y
   template `[]=`*(x: t; i,j: SomeInteger; y: typed) =

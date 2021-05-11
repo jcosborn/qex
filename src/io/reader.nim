@@ -197,7 +197,7 @@ proc put[T](buf: cstring; index: csize_t, count: cint; arg: pointer) =
   #let vlm = 1 shl vl
   for i in 0..<count:
     #masked(dest[i][vi], vlm) := src[i]
-    mindexed(dest[i][vi], vl) := src[i]
+    mindexed(dest[i][vi], asSimd(vl)) := src[i]
 
 proc putP[T](buf: cstring; index: csize_t, count: cint; arg: pointer) =
   type srcT = cArray[IOtypeP(T)]
@@ -210,7 +210,7 @@ proc putP[T](buf: cstring; index: csize_t, count: cint; arg: pointer) =
   #let vlm = 1 shl vl
   for i in 0..<count:
     #masked(dest[i][vi], vlm) := src[i]
-    mindexed(dest[i][vi], vl) := src[i]
+    mindexed(dest[i][vi], asSimd(vl)) := src[i]
 
 proc read[T](rd: var Reader, v: var openArray[ptr T]) =
   rd.setLayout()
