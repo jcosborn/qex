@@ -281,24 +281,47 @@ template indexedX[T,I](x: T, i: I): untyped =
   Indexed[T,I](indexedPtr: x, indexedIdx: i)
 template indexed*[T,I](x: T, i: I): untyped =
   when isWrapper(T):
+    #static: echo "indexed isWrapper"
     when sameWrapper(type T, type I):
+      #static: echo "indexed sameWrapper"
       x[i[]]
     else:
+      #static: echo "indexed not sameWrapper"
       var tIndexed = asWrapper(T, indexedX(getAlias x[], i))
       tIndexed
   else:
+    #static: echo "indexed not isWrapper"
     var tIndexed = indexedX(getAlias x, i)
     tIndexed
 template mindexed*[T,I](x: T, i: I): untyped =
   when isWrapper(T):
+    #static: echo "mindexed isWrapper"
     when sameWrapper(type T, type I):
+      #static: echo "mindexed sameWrapper"
       x[i[]]
     else:
-      var tIndexed = asWrapper(T, indexedX(getAlias x[], i))
+      #static: echo "mindexed not sameWrapper"
+      #var tIndexed = asWrapper(T, indexedX(getAlias x[], i))
+      var tIndexed = asWrapper(T, indexed(x[], i))
       tIndexed
   else:
+    #static: echo "mindexed not isWrapper"
     var tIndexed = indexedX(getAlias x, i)
     tIndexed
+template optindexed*[T,I](x: T, i: I): untyped =
+  when isWrapper(T):
+    #static: echo "optindexed isWrapper"
+    when sameWrapper(type T, type I):
+      #static: echo "optindexed sameWrapper"
+      x[i[]]
+    else:
+      #static: echo "optindexed not sameWrapper"
+      #var tIndexed = asWrapper(T, indexedX(getAlias x[], i))
+      var tIndexed = asWrapper(T, indexed(x[], i))
+      tIndexed
+  else:
+    #static: echo "optindexed not isWrapper"
+    x[i]
 
 template obj(x:Indexed):untyped = x.indexedPtr[]
 template idx(x:Indexed):untyped = x.indexedIdx
@@ -312,13 +335,23 @@ template `[]`*(x:Indexed; i:SomeInteger):untyped =
   obj(tIndexedBracket1)[i][idx(tIndexedBracket1)]
 template `[]`*(x:Indexed; i,j:SomeInteger):untyped =
   let tIndexedBracket2 = x
-  obj(tIndexedBracket2)[i,j][idx(tIndexedBracket2)]
+  optIndexed(obj(tIndexedBracket2)[i,j], idx(tIndexedBracket2))
 template `[]=`*(x:Indexed; i:SomeInteger; y: typed) =
   let tIndexedBracket1Eq = x
   obj(tIndexedBracket1Eq)[i][idx(tIndexedBracket1Eq)] = y
+template `[]=`*(x:Indexed; i,j:SomeInteger; y: typed) =
+  let tIndexedBracket2Eq = x
+  optIndexed(obj(tIndexedBracket2Eq)[i,j], idx(tIndexedBracket2Eq)) := y
 template `:=`*(x:Indexed, y: typed) =
+  #echoRepr: x
+  #echoRepr: y
   let tIndexedColonEq = x
-  obj(tIndexedColonEq)[idx(tIndexedColonEq)] = y
+  when isWrapper(type(obj(tIndexedColonEq))):
+    mixin `:=`
+    var tIndexedColonEqWrap = mindexed(obj(tIndexedColonEq),idx(tIndexedColonEq))
+    tIndexedColonEqWrap := y
+  else:
+    obj(tIndexedColonEq)[idx(tIndexedColonEq)] = y
 template assign*(x: SomeNumber, y: Indexed) =
   x := y[]
 template `+=`*(x:Indexed, y: typed) =
