@@ -2,7 +2,15 @@ c2n=${HOME}/.nimble/bin/c2nim
 sed_inplace=sed -i
 # bsd sed needs an (empty string) argument to -i
 #sed_inplace=sed -i ''
-QI=../../../quda/quda/include
+#QI=../../../quda/quda/include
+#QI=../../../quda-git/include
+QI=../../../quda-git-gk/include
+
+test:\
+	enum_quda.nim.test\
+	quda.nim.test\
+	quda_constants.nim.test\
+	quda_milc_interface.nim.test
 
 all:\
 	enum_quda.nim\
@@ -16,37 +24,54 @@ all:\
 
 .PHONY:	all
 
-enum_quda.nim:	quda.c2nim ${QI}/enum_quda.h
-	sed -e 's/= *QUDA_INVALID_ENUM/= -2147483647/'\
+%.nim: %.nim.test
+	mv -i $@ $@.orig
+	mv $< $@
+
+enum_quda.nim.test: quda.c2nim ${QI}/enum_quda.h
+	cat $^ |sed -e 's/= *QUDA_INVALID_ENUM/= -2147483647/'\
 		-e '/[^a-zA-Z0-9_,;=]enum[^a-zA-Z0-9_,;=]/{:j;/[,;]/!{N;bj;};s/\([^a-zA-Z0-9_,;=]enum[^a-zA-Z0-9_,;=][^,;=]*\),/\1 = 0,/;}'\
-		${QI}/enum_quda.h >enum_quda.h.tmp
-	${c2n} -o:$@ --header quda.c2nim enum_quda.h.tmp
+		>enum_quda.h.tmp
+	${c2n} -o:$@ --header enum_quda.h.tmp
 	${sed_inplace} -e 's/enum_quda\.h\.tmp/enum_quda.h/g'\
 		-e 's/-2147483647/QUDA_INVALID_ENUM/g'\
 		-e '/^const$$/{:j;/\n$$/!{N;bj;};s/\([a-zA-Z0-9]\) =/\1\* =/g;}'\
-		enum_quda.nim
+		$@
 	rm enum_quda.h.tmp
 
-quda_constants.nim:	quda.c2nim ${QI}/quda_constants.h
-	${c2n} -o:$@ --header $^
+quda_constants.nim.test: quda.c2nim ${QI}/quda_constants.h
+	cat $^ >quda_constants.h
+	${c2n} -o:$@ --header quda_constants.h
+	rm quda_constants.h
 
-quda_milc_interface.nim: quda.c2nim ${QI}/quda_milc_interface.h
-	${c2n} -o:$@ --header $^
+quda_milc_interface.nim.test: quda.c2nim ${QI}/quda_milc_interface.h
+	cat $^ |sed '/#if __COMPUTE_CAPABILITY__/,/#endif/d' >quda_milc_interface.h
+	${c2n} -o:$@ --header quda_milc_interface.h
 	${sed_inplace} -e '1i\
 	import enum_quda, quda\
-	' quda_milc_interface.nim
+	' $@
+	echo >>$@
+	rm quda_milc_interface.h
 
-quda.nim:	quda.c2nim ${QI}/quda.h
-	sed '/#ifndef __CUDACC_RTC__/,/#endif/c\
-	typedef double double_complex[2];\
-	' ${QI}/quda.h >quda.h.tmp
-	${c2n} -o:$@ --header quda.c2nim quda.h.tmp
+quda.nim.test: quda.c2nim ${QI}/quda.h
+	cat $^ |sed -e 's/const int/ConstInt/g' \
+	-e '/#ifndef __CUDACC_RTC__/,/#endif/c\
+	#@\
+	type\
+	  ConstInt* {.importc:"const int".} = cint\
+	  double_complex* {.importc:"double _Complex".} = object\
+	converter toDoubleComplex*(x: array[2,float]): double_complex =\
+	  var r = cast[ptr array[2,float]](addr result)\
+	  r[] = x\
+	@#\
+	' >quda.h.tmp
+	${c2n} -o:$@ --header quda.h.tmp
 	${sed_inplace} -e '1i\
 	import enum_quda, quda_constants\
 	'\
 		-e '/^type$$/{:j;/\n$$/!{N;bj;};s/\(= *proc[^a-zA-Z0-9_\n]*[^}]*\)\n/\1 {.cdecl.}\n/g;}'\
 		-e 's/quda\.h\.tmp/quda.h/g'\
-		quda.nim
+		$@
 	rm quda.h.tmp
 
 host_utils.nim:	quda.c2nim ${QI}/../tests/utils/host_utils.h

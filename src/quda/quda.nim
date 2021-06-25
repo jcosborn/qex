@@ -10,8 +10,11 @@ import enum_quda, quda_constants
 ##
 
 type
-  double_complex* = array[2, cdouble]
-
+  ConstInt* {.importc:"const int".} = cint
+  double_complex* {.importc:"double _Complex".} = object
+converter toDoubleComplex*(x: array[2,float]): double_complex =
+  var r = cast[ptr array[2,float]](addr result)
+  r[] = x
 ## *
 ##  Parameters having to do with the gauge field or the
 ##  interpretation of the gauge field by various Dirac operators
@@ -607,7 +610,7 @@ proc setVerbosityQuda*(verbosity: QudaVerbosity; prefix: ptr char; outfile: ptr 
 ##
 
 type
-  QudaCommsMap* = proc (coords: ptr cint; fdata: pointer): cint {.cdecl.}
+  QudaCommsMap* = proc (coords: ptr ConstInt; fdata: pointer): cint {.cdecl.}
 
 ## *
 ##  @param mycomm User provided MPI communicator in place of MPI_COMM_WORLD
@@ -642,8 +645,9 @@ proc qudaSetCommHandle*(mycomm: pointer) {.importc: "qudaSetCommHandle",
 ##  @see QudaCommsMap
 ##
 
-proc initCommsGridQuda*(nDim: cint; dims: ptr cint; `func`: QudaCommsMap; fdata: pointer) {.
-    importc: "initCommsGridQuda", header: "quda.h".}
+proc initCommsGridQuda*(nDim: cint; dims: ptr ConstInt; `func`: QudaCommsMap;
+                       fdata: pointer) {.importc: "initCommsGridQuda",
+                                       header: "quda.h".}
 ## *
 ##  Initialize the library.  This is a low-level interface that is
 ##  called by initQuda.  Calling initQudaDevice requires that the
@@ -1280,11 +1284,10 @@ proc gaussGaugeQuda*(seed: culonglong; sigma: cdouble) {.importc: "gaussGaugeQud
 proc plaqQuda*(plaq: array[3, cdouble]) {.importc: "plaqQuda", header: "quda.h".}
 ## *
 ##  Performs a deep copy from the internal extendedGaugeResident field.
-##  @param Pointer to externalGaugeResident cudaGaugeField
-##  @param Location of gauge field
+##  @param Pointer to externally allocated GaugeField
 ##
 
-proc copyExtendedResidentGaugeQuda*(resident_gauge: pointer; loc: QudaFieldLocation) {.
+proc copyExtendedResidentGaugeQuda*(resident_gauge: pointer) {.
     importc: "copyExtendedResidentGaugeQuda", header: "quda.h".}
 ## *
 ##  Performs Wuppertal smearing on a given spinor using the gauge field
@@ -1362,8 +1365,8 @@ proc gaugeObservablesQuda*(param: ptr QudaGaugeObservableParam) {.
 ##
 
 proc contractQuda*(x: pointer; y: pointer; result: pointer; cType: QudaContractType;
-                  param: ptr QudaInvertParam; X: ptr cint) {.importc: "contractQuda",
-    header: "quda.h".}
+                  param: ptr QudaInvertParam; X: ptr ConstInt) {.
+    importc: "contractQuda", header: "quda.h".}
 ## *
 ##  @brief Gauge fixing with overrelaxation with support for single and multi GPU.
 ##  @param[in,out] gauge, gauge field to be fixed
@@ -1373,7 +1376,7 @@ proc contractQuda*(x: pointer; y: pointer; result: pointer; cType: QudaContractT
 ##  @param[in] relax_boost, gauge fixing parameter of the overrelaxation method, most common value is 1.5 or 1.7.
 ##  @param[in] tolerance, torelance value to stop the method, if this value is zero then the method stops when iteration reachs the maximum number of steps defined by Nsteps
 ##  @param[in] reunit_interval, reunitarize gauge field when iteration count is a multiple of this
-##  @param[in] stopWtheta, 0 for MILC criterium and 1 to use the theta value
+##  @param[in] stopWtheta, 0 for MILC criterion and 1 to use the theta value
 ##  @param[in] param The parameters of the external fields and the computation settings
 ##  @param[out] timeinfo
 ##
@@ -1394,7 +1397,7 @@ proc computeGaugeFixingOVRQuda*(gauge: pointer; gauge_dir: cuint; Nsteps: cuint;
 ##  @param[in] autotune, 1 to autotune the method, i.e., if the Fg inverts its tendency we decrease the alpha value
 ##  @param[in] tolerance, torelance value to stop the method, if this value is zero then the method stops when
 ##  iteration reachs the maximum number of steps defined by Nsteps
-##  @param[in] stopWtheta, 0 for MILC criterium and 1 to use the theta value
+##  @param[in] stopWtheta, 0 for MILC criterion and 1 to use the theta value
 ##  @param[in] param The parameters of the external fields and the computation settings
 ##  @param[out] timeinfo
 ##

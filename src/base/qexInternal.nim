@@ -47,6 +47,9 @@ proc qexInit* =
   #echo "rank " & $rank & "/" & $size
 
 proc qexFinalize* =
+  flushFile stdout
+  flushFile stderr
+  getComm().barrier
   for p in qexGlobalFinalizers.reversed: p()
   #echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
   #     getTotalMem())

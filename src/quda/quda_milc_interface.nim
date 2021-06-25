@@ -9,9 +9,6 @@ import enum_quda, quda
 ##  interfacing between QUDA and the MILC software packed.
 ##
 
-when __COMPUTE_CAPABILITY__ >= 600:
-  const
-    USE_QUDA_MANAGED* = 1
 ## *
 ##  Parameters related to MILC site struct
 ##
@@ -604,9 +601,6 @@ proc qudaFreeCloverField*() {.importc: "qudaFreeCloverField",
 ##  @param clover_coeff Clover coefficient
 ##  @param inv_args Struct setting some solver metadata
 ##  @param target_residual Array of target residuals per shift
-##  @param milc_link Ignored
-##  @param milc_clover Ignored
-##  @param milc_clover_inv Ignored
 ##  @param clover_coeff Clover coefficient
 ##  @param source Right-hand side source field
 ##  @param solutionArray Array of solution spinor fields
@@ -618,9 +612,8 @@ proc qudaCloverMultishiftInvert*(external_precision: cint; quda_precision: cint;
                                 num_offsets: cint; offset: ptr cdouble;
                                 kappa: cdouble; clover_coeff: cdouble;
                                 inv_args: QudaInvertArgs_t;
-                                target_residual: ptr cdouble; milc_link: pointer;
-                                milc_clover: pointer; milc_clover_inv: pointer;
-                                source: pointer; solutionArray: ptr pointer;
+                                target_residual: ptr cdouble; source: pointer;
+                                solutionArray: ptr pointer;
                                 final_residual: ptr cdouble; num_iters: ptr cint) {.
     importc: "qudaCloverMultishiftInvert", header: "quda_milc_interface.h".}
 ## *
@@ -913,7 +906,7 @@ proc qudaDestroyGaugeField*(gauge: pointer) {.importc: "qudaDestroyGaugeField",
 ##  @param[in] relax_boost, gauge fixing parameter of the overrelaxation method, most common value is 1.5 or 1.7.
 ##  @param[in] tolerance, torelance value to stop the method, if this value is zero then the method stops when iteration reachs the maximum number of steps defined by Nsteps
 ##  @param[in] reunit_interval, reunitarize gauge field when iteration count is a multiple of this
-##  @param[in] stopWtheta, 0 for MILC criterium and 1 to use the theta value
+##  @param[in] stopWtheta, 0 for MILC criterion and 1 to use the theta value
 ##  @param[in,out] milc_sitelink, MILC gauge field to be fixed
 ##
 
@@ -931,7 +924,7 @@ proc qudaGaugeFixingOVR*(precision: cint; gauge_dir: cuint; Nsteps: cint;
 ##  @param[in] alpha, gauge fixing parameter of the method, most common value is 0.08
 ##  @param[in] autotune, 1 to autotune the method, i.e., if the Fg inverts its tendency we decrease the alpha value
 ##  @param[in] tolerance, torelance value to stop the method, if this value is zero then the method stops when iteration reachs the maximum number of steps defined by Nsteps
-##  @param[in] stopWtheta, 0 for MILC criterium and 1 to use the theta value
+##  @param[in] stopWtheta, 0 for MILC criterion and 1 to use the theta value
 ##  @param[in,out] milc_sitelink, MILC gauge field to be fixed
 ##
 

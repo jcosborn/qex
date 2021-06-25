@@ -25,18 +25,21 @@ const qioDir {.strdefine.} = getEnv("QIODIR")
 when qioDir.len > 0:
   when qmpDir.len > 0:
     # Assume quda is built with QIO and QMP.
-    {.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib & " -L" & qioDir & "/lib -lqio -llime -L" & qmpDir & "/lib -lqmp".}
+    #{.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib & " -L" & qioDir & "/lib -lqio -llime -L" & qmpDir & "/lib -lqmp".}
+    {.passL: "-L" & qudaDir & "/lib -lquda -lstdc++ " & cudaLib & " -L" & qioDir & "/lib -lqio -llime -L" & qmpDir & "/lib -lqmp".}
   else:
     # Assume QUDA is built with QIO.
     {.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib & " -L" & qioDir & "/lib -lqio -llime".}
 else:
   {.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib.}
 
-proc cudaGetDeviceCount(n:ptr cint):cint {.importc,nodecl.}
-proc cudaGetDeviceCount*: int =
-  var c: cint
-  discard cudaGetDeviceCount(c.addr)
-  c.int
+{.passL: "-Wl,-rpath," & qudaDir & "/lib".}
+
+#proc cudaGetDeviceCount(n:ptr cint):cint {.importc,nodecl.}
+#proc cudaGetDeviceCount*: int =
+#  var c: cint
+#  discard cudaGetDeviceCount(c.addr)
+#  c.int
 
 type
   D4ColorMatrix = array[4, DColorMatrix]
@@ -54,10 +57,12 @@ var qudaParam: QudaParam    ## Global quda parameter.
 proc qudaInit* =
   ## Just to initialize the global parameter.
   ## Assumes single GPU per rank.
-  let n = max(1,cudaGetDeviceCount())
-  echo "cudaGetDeviceCount: ",n
+  #let n = max(1,cudaGetDeviceCount())
+  #echo "cudaGetDeviceCount: ",n
+  #let n = 1
   #qudaParam.initArg.layout.device = cint(myrank mod n)
-  qudaParam.initArg.layout.device = -1.cint
+  #qudaParam.initArg.layout.device = -1.cint
+  qudaParam.initArg.layout.device = 0.cint
   qudaParam.initArg.layout.latsize = qudaParam.physGeom[0].addr
   qudaParam.initArg.layout.machsize = qudaParam.rankGeom[0].addr
   #qudaParam.initArg.verbosity = QUDA_SUMMARIZE
@@ -66,6 +71,14 @@ proc qudaInit* =
 
 qexGlobalInitializers.add qudaInit
 qexGlobalFinalizers.add qudaFinalize
+
+var qudaLayout: Layout[1]
+
+proc setQudaLayout*(l: Layout) =
+  qudaLayout = l
+
+proc getQudaLayout*(): Layout[1] =
+  qudaLayout
 
 proc qudaSetup*(l: Layout, verbosity = QUDA_SILENT): Layout[1] =
   ## Actually initialize QUDA given the specific layout.
@@ -80,7 +93,7 @@ proc qudaSetup*(l: Layout, verbosity = QUDA_SILENT): Layout[1] =
     qudaParam.rankGeom[i].update l.rankGeom[i].cint
   if updated or (not qudaParam.initialized):
     if qudaParam.initialized: qudaFinalize()
-    proc qudaCommsMap(coords0: ptr cint; fdata: pointer): cint {.cdecl.} =
+    proc qudaCommsMap(coords0: ptr ConstInt; fdata: pointer): cint {.cdecl.} =
       let pl = cast[ptr type(l)](fdata)
       let coords = cast[ptr UncheckedArray[cint]](coords0)
       let r = pl[].rankFromRankCoords(coords)
@@ -95,6 +108,7 @@ proc qudaSetup*(l: Layout, verbosity = QUDA_SILENT): Layout[1] =
     #    forO mu, 0, 3:
     #      qudaParam.longlinkG[i][mu] := 0   # zero out for hacking asqtad to do naive
     qudaParam.initialized = true
+  setQudaLayout(qudaParam.layout)
   qudaParam.layout
 
 proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
