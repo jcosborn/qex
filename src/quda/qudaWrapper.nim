@@ -12,12 +12,14 @@ import os, times
 
 when not defined(qudaDir):
   {.fatal:"Must define qudaDir to use QUDA.".}
-when not defined(cudaLibDir):
-  {.fatal:"Must define cudaLibDir to use QUDA.".}
 const qudaDir {.strdefine.} = ""
-const cudaLibDir {.strdefine.} = ""
-const cudaLib = "-L" & cudaLibDir & " -lcudart -lcublas -lcufft -Wl,-rpath," & cudaLibDir & " -L" & cudaLibDir & "/stubs -lcuda"
 {.passC: "-I" & qudaDir & "/include".}
+
+when defined(cudaLibDir):
+  const cudaLibDir {.strdefine.} = ""
+  const cudaLib = "-L" & cudaLibDir & " -lcudart -lcublas -lcufft -Wl,-rpath," & cudaLibDir & " -L" & cudaLibDir & "/stubs -lcuda"
+else:
+  const cudaLib = ""
 
 const qmpDir {.strdefine.} = getEnv("QMPDIR")
 const qioDir {.strdefine.} = getEnv("QIODIR")
