@@ -123,26 +123,38 @@ when isMainModule:
   if myRank==0:
     v1{0}[0] := 1
     #v1{2*1024}[0] := 1
-  echo v1.norm2
+  echo "v1 norm2: ", v1.norm2
   var s = newStag(g)
-  var m = 0.001
+  var mass = floatParam("mass",0.001)
+  var rsq = floatParam("rsq",1e-8)
+  var backend = stringParam("backend","")
+  echoVars(mass,rsq,backend)
   threads:
     v2 := 0
     echo v2.norm2
     threadBarrier()
-    s.D(v2, v1, m)
+    s.D(v2, v1, mass)
     threadBarrier()
     #echoAll v2
     echo v2.norm2
   #echo v2
-  s.solve(v2, v1, m, 1e-8)
+  var sp = newSolverParams()
+  sp.r2req = rsq
+  case backend
+  of "qex":
+    sp.backend = sbQex
+  of "quda":
+    sp.backend = sbQuda
+  of "grid":
+    sp.backend = sbGrid
+  s.solve(v2, v1, mass, sp)
   resetTimers()
-  s.solve(v2, v1, m, 1e-8)
+  s.solve(v2, v1, mass, sp)
   threads:
     echo "v2: ", v2.norm2
     echo "v2.even: ", v2.even.norm2
     echo "v2.odd: ", v2.odd.norm2
-    s.D(r, v2, m)
+    s.D(r, v2, mass)
     threadBarrier()
     r := v1 - r
     threadBarrier()

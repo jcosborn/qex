@@ -289,6 +289,7 @@ template `len`*(s:Subset):untyped = s.high-s.low
 template `lenOuter`*(s:Subset):untyped = s.highOuter-s.lowOuter
 
 template singleSites*(l: Layout): untyped = 0..<l.nSites
+template singleSites*(s: Subset): untyped = s.low ..< s.high
 
 template threadRankSum*(l: Layout, a: varargs[untyped]) =
   l.comm.threadRankSum(a)

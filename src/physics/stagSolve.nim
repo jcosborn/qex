@@ -8,8 +8,9 @@ export stagD
 import solvers/bicgstab
 import solvers/gcr
 import maths
-when defined(qudaDir):
-  import quda/qudaWrapper
+import quda/qudaWrapper
+when defined(gridDir):
+  import grid/GridDefs
 
 proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   var sp = sp0
@@ -34,34 +35,15 @@ proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
     echo "op time: ", top
     echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
 
-proc solveEE*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams,
-              cpuonly = false) =
+proc solveEE*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   tic()
   var sp = sp0
   sp.resetStats()
   dec sp.verbosity
   threads:
     r := 0
-  ## When QUDA is available, we use QUDA unless `cpuonly` is true.
-  let useGpu = defined(qudaDir) and (not cpuonly)
-  #if useGpu:
-  var solver = (if useGpu: 0 else: 1)
-  #solver = 1
-  case solver
-  of 0:
-    when defined(qudaDir):
-      tic()
-      s.qudaSolveEE(r,x,m,sp)
-      toc("qudaSolveEE")
-      sp.calls = 1
-      sp.seconds = getElapsedTime()
-      let flopsquda = (s.g.len*4*72+60)*r.l.nEven*sp.iterations
-      sp.flops = flopsquda.float
-      if sp0.verbosity>0:
-        echo "solveEE(QUDA): ", sp.getStats
-    else:
-      echo "error: QUDA not available"
-  of 1:
+  case sp.backend
+  of sbQex:
     tic()
     proc op(a,b: Field) =
       tic()
@@ -81,7 +63,27 @@ proc solveEE*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams,
     sp.flops = flops.float
     if sp0.verbosity>0:
       echo "solveEE: ", sp.getStats
-  else:
+  of sbQuda:
+    tic()
+    s.qudaSolveEE(r,x,m,sp)
+    toc("qudaSolveEE")
+    sp.calls = 1
+    sp.seconds = getElapsedTime()
+    let flopsquda = (s.g.len*4*72+60)*r.l.nEven*sp.iterations
+    sp.flops = flopsquda.float
+    if sp0.verbosity>0:
+      echo "solveEE(QUDA): ", sp.getStats
+  of sbGrid:
+    tic()
+    s.qudaSolveEE(r,x,m,sp)
+    toc("qudaSolveEE")
+    sp.calls = 1
+    sp.seconds = getElapsedTime()
+    let flopsquda = (s.g.len*4*72+60)*r.l.nEven*sp.iterations
+    sp.flops = flopsquda.float
+    if sp0.verbosity>0:
+      echo "solveEE(QUDA): ", sp.getStats
+  else:  # remove?
     tic()
     proc op(a,b: Field) =
       tic()
@@ -112,8 +114,7 @@ proc solveEE*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams,
 
 # solveInner {init, run, free}
 
-proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams;
-            cpuonly = false) =
+proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
   tic()
   var c = newOneOf(b)
   var b2,r2 = 0.0
@@ -206,7 +207,9 @@ proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float;
   sp.verbosity = 1
   sp.subsetName = "even"
   sp.sloppySolve = sloppySolve
-  solve(s, r, x, m, sp, cpuonly)
+  if cpuonly:
+    sp.backend = sbQex
+  solve(s, r, x, m, sp)
 
 
 type S2oa*[T] = object

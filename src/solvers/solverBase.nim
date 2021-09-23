@@ -2,12 +2,15 @@ import base, layout, strformat, stats
 export stats
 
 type
+  SolverBackend* = enum
+    sbQex, sbQuda, sbGrid
   SloppyType* = enum
     SloppyNone, SloppySingle, SloppyHalf
   SolverParams* = object
     # inputs
     r2req*: float
     maxits*: int
+    backend*: SolverBackend
     sloppySolve*: SloppyType
     usePrevSoln*: bool
     verbosity*: int
@@ -44,6 +47,9 @@ proc resetStats*(sp: var SolverParams) =
 proc init*(sp: var SolverParams) =
   sp.r2req = 1e-6
   sp.maxits = 50000
+  sp.backend = sbQex
+  if defined(qudaDir): sp.backend = sbQuda
+  if defined(gridDir): sp.backend = sbGrid
   sp.sloppySolve = SloppyNone
   sp.usePrevSoln = false
   sp.verbosity = 1

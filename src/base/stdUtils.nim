@@ -250,6 +250,12 @@ macro rangeLen*(r: range):auto =
   t1.expectKind(nnkInfix) # ..
   return newCall(ident"-",newCall(ident"+",t1[2],newLit(1)),t1[1])
 
+macro echoVars*(vars:varargs[typed]):untyped =
+  result = newStmtList()
+  let e = ident "echo"
+  for v in vars:
+    result.add newCall(e, newLit($v & ": "), v)
+
 when isMainModule:
   #[
   proc test(n:int) =

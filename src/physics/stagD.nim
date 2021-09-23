@@ -408,10 +408,7 @@ proc stagD2eeN*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
       rir := (4.0*m2)*x[ir]
 ]#
 
-proc stagPhase*(g:openArray[Field]) =
-  const phases = [8,9,11,0]
-  #const phases = [0,1,3,7]
-  #const phases = [0,0,0,0]
+proc stagPhase*(g:openArray[Field], phases:openArray[int]) =
   let l = g[0].l
   for mu in 0..<4:
     tfor i, 0..<l.nSites:
@@ -421,6 +418,8 @@ proc stagPhase*(g:openArray[Field]) =
       if (s and 1)==1:
         g[mu]{i} *= -1
         #echoAll i, " ", gt[e][0,0]
+
+template stagPhase*(g:openArray[Field]) = stagPhase(g,[8,9,11,0])
 
 proc newStag*[G,T](g:openArray[G];v:T):auto =
   var l = g[0].l

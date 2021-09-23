@@ -46,19 +46,20 @@ proc qexInit* =
     echo "FUEL compatibility mode: ON"
   #echo "rank " & $rank & "/" & $size
 
-proc qexFinalize* =
+proc qexFinalize*(finalizeComms=true) =
   flushFile stdout
   flushFile stderr
+  GC_fullCollect()
   getComm().barrier
   for p in qexGlobalFinalizers.reversed: p()
   #echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
   #     getTotalMem())
   #echo GC_getStatistics()
-  #GC_fullCollect()
   #echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
   #     getTotalMem())
   #echo GC_getStatistics()
-  commsFinalize()
+  if finalizeComms:
+    commsFinalize()
   #when profileEqns:
   #echoTimers()
   qexLog "Total time (Init - Finalize): ",qexTime()," seconds."

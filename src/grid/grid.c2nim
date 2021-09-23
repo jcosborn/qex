@@ -1,0 +1,4 @@
+#def NAMESPACE_BEGIN(A) namespace A {
+#def NAMESPACE_END(A)   }
+#mangle "vector" "stdvector"
+

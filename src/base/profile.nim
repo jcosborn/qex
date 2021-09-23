@@ -8,6 +8,7 @@ export monotimes
 type TicType* = distinct int64
 template getTics*: TicType = TicType(getMonoTime().ticks)
 template nsec*(t:TicType):int64 = int64(t)
+template seconds*(t:TicType):float = 1e-9 * float(t)
 template ticDiffSecs*(x,y: TicType): float = 1e-9 * float(x.int64 - y.int64)
 template `-`*(x,y: TicType): TicType = TicType(x.int64 - y.int64)
 
