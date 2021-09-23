@@ -39,7 +39,9 @@ const
   QIO_ILDGNO* = 0
   QIO_ILDGLAT* = 1
 
+var QIO_CREAT*{.importc,qio.}: cint
 var QIO_TRUNC*{.importc,qio.}: cint
+var QIO_APPEND*{.importc,qio.}: cint
 
 type
   QIO_String* {.qio.} = object

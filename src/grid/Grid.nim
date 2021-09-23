@@ -1,8 +1,12 @@
-import grid/GridDefs
-export GridDefs
+when defined gridDir:
+  import grid/GridDefs
+  export GridDefs
 
-import grid/Init
-export Init
+  import grid/Init
+  export Init
 
-import grid/GridUtils
-export GridUtils
+  import grid/GridUtils
+  export GridUtils
+
+else:
+  discard
