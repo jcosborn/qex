@@ -7,7 +7,7 @@ import math
 import simd/simdWrap
 export simdWrap
 
-template msa(T,N,F: untyped) {.dirty.} =
+template msa(T,N,F: untyped) {.dirty,used.} =
   makeSimdArray(`T Obj`, N, F)
   type T* = Simd[`T Obj`]
 

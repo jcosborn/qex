@@ -8,7 +8,7 @@ import matinv
 export matinv
 import projUderiv
 
-proc determinantN*(a: any): auto =
+proc determinantN*(a: auto): auto =
   const nc = a.nrows
   var c {.noInit.}: type(a)
   var row: array[nc,int]
@@ -60,7 +60,7 @@ proc determinantN*(a: any): auto =
 
   r
 
-proc determinant*(x: any): auto =
+proc determinant*(x: auto): auto =
   assert(x.nrows == x.ncols)
   when x.nrows==1:
     result = x[0,0]
@@ -74,7 +74,7 @@ proc determinant*(x: any): auto =
   else:
     result = determinantN(x)
 
-proc eigs3(e0,e1,e2: var any; tr,p2,det: any) =
+proc eigs3(e0,e1,e2: var auto; tr,p2,det: auto) =
   mixin sin,cos,acos
   let tr3 = (1.0/3.0)*tr
   let p23 = (1.0/3.0)*p2
@@ -120,7 +120,7 @@ template rsqrtPHM2(r:typed; x:typed):untyped =
   let c0 = trsdet*c1
   r := c0 - c1*x
 
-proc rsqrtPHM3f(c0,c1,c2:var any; tr,p2,det:any) =
+proc rsqrtPHM3f(c0,c1,c2:var auto; tr,p2,det:auto) =
   #[
   mixin sin,cos,acos
   let tr3 = (1.0/3.0)*tr

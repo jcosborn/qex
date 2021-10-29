@@ -1,12 +1,12 @@
 import comms
 import rankScatter
-import strformat
+#import strformat
 import algorithm
 import base/profile
 
 template `&&`(x: char): untyped = cast[pointer](unsafeAddr(x))
 template `&&`(x: int32): untyped = cast[pointer](unsafeAddr(x))
-template `&&`(x: seq): untyped = cast[pointer](unsafeAddr(x[0]))
+#template `&&`(x: seq): untyped = cast[pointer](unsafeAddr(x[0]))
 
 type
   RecvList* = object

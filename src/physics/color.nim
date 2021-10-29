@@ -193,11 +193,11 @@ template projectTAH*(r: var Color, x: Color2) =
 template checkU*(x: Color):untyped = checkU(x[])
 template checkSU*(x: Color):untyped = checkSU(x[])
 template norm2*(x: Color): untyped = norm2(x[])
-template norm2*(r: var any, x: Color): untyped = norm2(r, x[])
-template inorm2*(r: var any, x: Color2) = inorm2(r, x[])
+template norm2*(r: var auto, x: Color): untyped = norm2(r, x[])
+template inorm2*(r: var auto, x: Color2) = inorm2(r, x[])
 template dot*(x: Color, y: Color2): untyped =
   dot(x[], y[])
-template idot*(r: var any, x: Color2, y: Color3) = idot(r, x[], y[])
+template idot*(r: var auto, x: Color2, y: Color3) = idot(r, x[], y[])
 template redot*(x: Color, y: Color2): untyped =
   redot(x[], y[])
 template trace*(x: Color): untyped = trace(x[])

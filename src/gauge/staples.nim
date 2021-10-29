@@ -32,7 +32,7 @@ proc startStapleShifts*[T](u: openArray[T]): auto =
             s[mu][nu][sig].startSB(u[mu][nu][ix])
   return s
 
-proc makeFwdStaples*[T](uu: openArray[T], s: any): auto =
+proc makeFwdStaples*[T](uu: openArray[T], s: auto): auto =
   mixin mul
   tic()
   let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
@@ -97,7 +97,7 @@ proc makeFwdStaples*[T](uu: openArray[T], s: any): auto =
   toc("makeStaples threads", flops=flops)
   return st
 
-proc makeStaples*[T](uu: openArray[T], s: any): auto =
+proc makeStaples*[T](uu: openArray[T], s: auto): auto =
   ## sft: fwd staples
   ## stu: bck staples, offset up
   ## ss: shifts for stu
@@ -183,7 +183,7 @@ when isMainModule:
   for mu in 0..<g.len: g[mu] := 1
   #g.random
 
-  proc test(g: any) =
+  proc test(g: auto) =
     var cs = startCornerShifts(g)
     var (stf,stu,ss) = makeStaples(g, cs)
 

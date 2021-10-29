@@ -69,12 +69,12 @@ template numberType*(x:Field):untyped = numberType(x[0])
 #    FieldUnop[FieldOps(`o`),type(`x`)](f1: `x`)
 template fieldUnop*(o: FieldOps, x: SomeField): untyped =
   FieldUnop[FieldOps(o),type(x)](f1: x)
-macro fieldAddSub*(sx:static[int],x:any):auto =
+macro fieldAddSub*(sx:static[int],x:auto):auto =
   result = quote do:
     FieldAddSub[(a:`sx`),tuple[a:type(`x`)]](field:(a:`x`))
   #echo result.repr
-macro fieldAddSub*(sx:static[int],x:any,
-                   sy:static[int],y:any):auto =
+macro fieldAddSub*(sx:static[int],x:auto,
+                   sy:static[int],y:auto):auto =
   result = quote do:
     FieldAddSub[(a:`sx`,b:`sy`),tuple[a:type(`x`),b:type(`y`)]](
       field:(a:`x`,b:`y`) )
@@ -203,7 +203,7 @@ proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] {.noinit.} =
 template isWrapper*(x: SomeField): untyped = false
 template `[]`*(x:Field; i:int):untyped = x.s[i]
 #template `[]=`*(x:Field; i:int; y:typed) =
-proc `[]=`*(x:Field; i:int; y:any) =
+proc `[]=`*(x:Field; i:int; y:auto) =
   x.s[i] := y
 template `[]`*(x:Subsetted; i:int):untyped = x.field[i]
 template l*(x:Subsetted):untyped = x.field.l
@@ -230,11 +230,11 @@ template `[]`*(x:FieldArray, i,j:int):untyped = x.arr[i*x.shape[1]+j]
 template even*(x:Field):untyped = x["even"]
 template odd*(x:Field):untyped = x["odd"]
 template all*(x:Field):untyped = x["all"]
-template `even=`*(x:Field; y:any):untyped = assign(x["even"], y)
-template `odd=`*(x:Field; y:any):untyped =
+template `even=`*(x:Field; y:auto):untyped = assign(x["even"], y)
+template `odd=`*(x:Field; y:auto):untyped =
   mixin assign
   assign(x["odd"], y)
-template `all=`*(x:Field; y:any):untyped = assign(x["all"], y)
+template `all=`*(x:Field; y:auto):untyped = assign(x["all"], y)
 template indexField*(x:notSomeField; y:int):untyped = x
 template indexField*(x:Field; y:int):untyped = x[y]
 template indexField*(x:Subsetted; y:int):untyped = x.field[y]
@@ -497,7 +497,7 @@ template makeOps(op,f,fM,s: untyped): untyped {.dirty.} =
   macro f*(x:Subsetted; y:SomeField2):auto = applyOp2(x,y,int.getType,s)
   macro fM*(x:Field; y:notSomeField; ty:typedesc):auto = applyOp1(x,y,s)
   macro fM*(x:Field; y:SomeField; ty:typedesc):auto = applyOp2(x,y,ty,s)
-  template f*(x:Field; y:any):untyped =
+  template f*(x:Field; y:auto):untyped =
     #when declaredInScope(subsetObject):
     when declared(subsetObject):
       #echo "subsetObj" & s
@@ -507,28 +507,28 @@ template makeOps(op,f,fM,s: untyped): untyped {.dirty.} =
       f(x[subsetString], y)
     else:
       #fM(x, y, y.type)
-      staticTraceBegin: `f FieldAny`
+      staticTraceBegin: `f FieldAuto`
       fM(x, y, int)
-      staticTraceEnd: `f FieldAny`
+      staticTraceEnd: `f FieldAuto`
   when profileEqns:
-    template op*(x:Field; y:any):untyped =
+    template op*(x:Field; y:auto):untyped =
       #static: exprInstInfo = instantiationInfo(-1)
       block:
         tic(-2)
         f(x, y)
         toc(asttostr(op), -2)
-    template op*(x:Subsetted; y:any):untyped =
+    template op*(x:Subsetted; y:auto):untyped =
       #static: exprInstInfo = instantiationInfo(-1)
       block:
         tic(-2)
         f(x, y)
         toc(asttostr(op), -2)
   else:
-    template op*(x:Field; y:any):untyped =
+    template op*(x:Field; y:auto):untyped =
       #static: exprInstInfo = instantiationInfo(1)
       f(x, y)
-    #template op*(x:var Field; y:any):untyped = f(x, y)
-    template op*(x:Subsetted; y:any):untyped =
+    #template op*(x:var Field; y:auto):untyped = f(x, y)
+    template op*(x:Subsetted; y:auto):untyped =
       #static: exprInstInfo = instantiationInfo(1)
       f(x, y)
 makeOps(`:=`, assign, assignM, "assign")

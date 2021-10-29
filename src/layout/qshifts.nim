@@ -1,7 +1,7 @@
 import qgather
 import layoutTypes, shiftX
 import comms/qmp
-import strutils, strformat
+import strutils #, strformat
 
 const
   PAIR = true
@@ -357,7 +357,7 @@ proc makeGDFromShifts*(gd: ptr GatherDescription; l: ptr LayoutQ;
   var i: cint = 0
   let s = "all"
   while i < ndisps:
-    subs[i] = s
+    subs[i] = cstring s
     inc(i)
   makeGDFromShiftSubs(gd, l, disps, subs, ndisps)
 

@@ -1,7 +1,7 @@
 import base
 import layout
-import gauge
-import strUtils
+#import gauge
+#import strUtils
 
 type PerfInfo* = object
   flops*: float
@@ -20,9 +20,9 @@ proc `$`*(c: Fat7lCoefs): string =
   result &= "sevenStaple: " & $c.sevenStaple & "\n"
   result &= "lepage:      " & $c.lepage & "\n"
 
-proc computeGenStaple(staple: any, mu,nu: int, link: any, coef: float,
-                      gauge: any, fl: any, ts0: any, ts1: any,
-                      tmat1: any, tmat2: any, ts2: any) =
+proc computeGenStaple(staple: auto, mu,nu: int, link: auto, coef: float,
+                      gauge: auto, fl: auto, ts0: auto, ts1: auto,
+                      tmat1: auto, tmat2: auto, ts2: auto) =
   ## Computes the staple:
   ##               mu
   ##            +-------+
@@ -67,8 +67,8 @@ proc computeGenStaple(staple: any, mu,nu: int, link: any, coef: float,
   #if(link!=gauge[mu]) QDP_discard_M(ts0);
   #QDP_discard_M(ts2);
 
-proc makeImpLinks*(info: var PerfInfo, fl: any, gf: any, coef: any,
-                   ll: any, gfLong: any, naik: any) =
+proc makeImpLinks*(info: var PerfInfo, fl: auto, gf: auto, coef: auto,
+                   ll: auto, gfLong: auto, naik: auto) =
   tic()
   type lcm = type(gf[0])
   proc QDP_create_M(): lcm = result.new(gf[0].l)
@@ -163,7 +163,7 @@ proc makeImpLinks*(info: var PerfInfo, fl: any, gf: any, coef: any,
   #info.final_flop = nflop*QDP_sites_on_node;
   #info.status = QOP_SUCCESS;
   toc()
-proc makeImpLinks*(info: var PerfInfo, fl: any, gf: any, coef: any) =
+proc makeImpLinks*(info: var PerfInfo, fl: auto, gf: auto, coef: auto) =
   makeImpLinks(info, fl, gf, coef, fl, gf, 0.0)
 
 when isMainModule:

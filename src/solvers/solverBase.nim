@@ -1,4 +1,5 @@
-import base, layout, strformat, stats
+#import base,
+import layout, strformat, stats
 export stats
 
 type

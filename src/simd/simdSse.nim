@@ -322,7 +322,7 @@ proc mm_crc32_u32*(crc: cuint; v: cuint): cuint {.importc: "_mm_crc32_u32",
     header: "immintrin.h".}
 proc mm_crc32_u64*(crc: uint64; v: uint64): uint64 {.importc: "_mm_crc32_u64", 
     header: "immintrin.h".}
-proc mm_crc32_u8*(crc: cuint; v: cuchar): cuint {.importc: "_mm_crc32_u8", 
+proc mm_crc32_u8*(crc: cuint; v: uint8): cuint {.importc: "_mm_crc32_u8", 
     header: "immintrin.h".}
 proc mm_cvt_pi2ps*(a: m128; b: m64): m128 {.importc: "_mm_cvt_pi2ps", 
     header: "immintrin.h".}

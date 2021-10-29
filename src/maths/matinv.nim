@@ -2,7 +2,7 @@ import base
 import complexNumbers
 import matrixConcept
 import types
-import strformat
+#import strformat
 
 # inverse(M,S,M) -> M=S/M
 # inverse(M,M,M) -> M=M/M

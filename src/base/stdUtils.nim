@@ -1,7 +1,7 @@
 import macros
 import parseutils
 import strUtils
-import metaUtils
+#import metaUtils
 
 type
   cArray*[T] = UncheckedArray[T]
@@ -51,7 +51,7 @@ proc `|`*(f: float, d: int): string =
 template `|-`*(x:SomeNumber, y: int): untyped =
   x | -y
 
-proc indexOf*[T](x: openArray[T], y: any): int =
+proc indexOf*[T](x: openArray[T], y: auto): int =
   let n = x.len
   while result<n and x[result]!=y: inc result
 
@@ -162,10 +162,11 @@ template ctrace* =
   const ii = instantiationInfo()
   echoImm "ctrace: ", ii
 
+#[
 template declareVla(v,t,n:untyped):untyped =
   type Vla{.gensym.} = distinct t
-  #var v{.noInit,codeGenDecl:"$# $#[" & n.astToStr & "]".}:Vla
-  #var v{.noInit,codeGenDecl:"$# $#[`n`]".}:Vla
+  #var v{.noInit,codeGenDecl:"$# $# [" & n.astToStr & "]".}:Vla
+  #var v{.noInit,codeGenDecl:"$# $# [`n`]".}:Vla
   var v{.noInit,noDecl.}:Vla
   {.emit:"`Vla` `v`[`n`];".}
   template len(x:Vla):untyped = n
@@ -173,6 +174,7 @@ template declareVla(v,t,n:untyped):untyped =
     (cast[ptr cArray[t]](unsafeAddr(x)))[][i]
   template `[]=`(x:var Vla; i,y:untyped):untyped =
     (cast[ptr cArray[t]](addr(x)))[][i] = y
+]#
 
 #[
 proc `$`*[T](x:openArray[T]):string =

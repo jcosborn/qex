@@ -19,6 +19,7 @@ template echoParams*() =
   for i in 0..<paramNames.len:
     echo paramNames[i], ": ", paramValues[i]
 
+template cnvnone(x:typed):untyped = x
 template makeTypeParam(name,typ,deflt,cnvrt: untyped): untyped {.dirty.} =
   proc name*(s: string, d=deflt): typ =
     result = d
@@ -32,7 +33,7 @@ template makeTypeParam(name,typ,deflt,cnvrt: untyped): untyped {.dirty.} =
 
 makeTypeParam(intParam, int, 0, parseInt)
 makeTypeParam(floatParam, float, 0.0, parseFloat)
-makeTypeParam(strParam, string, "", string)
+makeTypeParam(strParam, string, "", cnvnone)
 template stringParam*(x,y: untyped): untyped = strParam(x,y)
 
 proc intSeqParam*(s: string, d: seq[int] = @[]): seq[int] =

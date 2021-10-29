@@ -250,10 +250,10 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   template `[]=`*(x: T; y: typed) = x.v = y
   when B is SomeNumber:
     template `[]`*(x:T; i:SomeInteger):untyped = x[][i div N0]
-    template `[]=`*(x:T; i:SomeInteger; y:any) = x[][i div N0] := y
+    template `[]=`*(x:T; i:SomeInteger; y:auto) = x[][i div N0] := y
   else:
     template `[]`*(x:T; i:SomeInteger):untyped = x[][i div N0][i mod N0]
-    template `[]=`*(x:T; i:SomeInteger; y:any) = x[][i div N0][i mod N0] = y
+    template `[]=`*(x:T; i:SomeInteger; y:auto) = x[][i div N0][i mod N0] = y
   template load1*(x:T):untyped = x
   proc to*(x:SomeNumber; y:typedesc[T]):T {.inline,noInit.} =
     bind forStatic

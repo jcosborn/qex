@@ -6,6 +6,7 @@ proc commsInitQmp* =
   var prv = QMP_THREAD_FUNNELED
   #var prv = QMP_THREAD_SERIALIZED
   let err = QMP_init_msg_passing(argc.addr, argv.addr, prv, prv.addr)
+  discard err
   #myRank = int(QMP_get_node_number())
   #nRanks = int(QMP_get_number_of_nodes())
   #defaultComm = getComm()
@@ -100,8 +101,8 @@ method barrier*(c: CommQmp) =
 method broadcast*(c: CommQMP, p: pointer, bytes: int) =
   QMP_comm_broadcast(c.comm, p, bytes)
 
-method allReduce*(c: CommQmp, x: var float64) =
-  QMP_comm_sum_double(c.comm, addr x)
+#method allReduce*(c: CommQmp, x: var float64) =
+#  QMP_comm_sum_double(c.comm, addr x)
 
 method allReduce*(c: CommQmp, x: ptr float32, n: int) =
   QMP_comm_sum_float_array(c.comm, x, n.cint)
@@ -120,6 +121,7 @@ method pushSend*(c: CommQmp, rank: int, p: pointer, bytes: int) =
   let m = QMP_declare_msgmem(p, bytes.csize_t)
   let h = QMP_comm_declare_send_to(c.comm, m, rank.cint, 0.cint)
   let stat = QMP_start(h)
+  discard stat
   c.smem.add m
   c.smsg.add h
 
@@ -127,6 +129,7 @@ method pushRecv*(c: CommQmp, rank: int, p: pointer, bytes: int) =
   let m = QMP_declare_msgmem(p, bytes.csize_t)
   let h = QMP_comm_declare_receive_from(c.comm, m, rank.cint, 0.cint)
   let stat = QMP_start(h)
+  discard stat
   c.rmem.add m
   c.rmsg.add h
 

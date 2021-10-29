@@ -85,9 +85,9 @@ else:
     prn.multiplier = 100005'u32 + 8'u32 * index
     #prn.addend = 12345
     #prn.scale = 1.0 / float32(0x01000000)
-proc seedIndep*(prn: var RngMilc6; sed,index: any) {.inline.} =
+proc seedIndep*(prn: var RngMilc6; sed,index: auto) {.inline.} =
   seedX(prn, sed.uint32, index.uint32)
-proc seed*(prn: var RngMilc6; sed,index: any) {.inline.} =
+proc seed*(prn: var RngMilc6; sed,index: auto) {.inline.} =
   ## The seed `sed` is broadcasted from rank 0.
   ## For independent seeding, use `seedIndep`.
   var ss = sed
@@ -146,7 +146,7 @@ proc gaussian*(prn: var RngMilc6): float32 =
 
 import maths/types
 # Only needed for non-vectorized RNGs.
-template gaussian*(x: var any, r: MaskedObj[RngMilc6]) =
+template gaussian*(x: var auto, r: MaskedObj[RngMilc6]) =
   mixin gaussian
   gaussian(x, r[])
 

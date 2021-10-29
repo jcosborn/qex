@@ -242,7 +242,7 @@ proc gaugeForce2*(f,g: array|seq): auto =
   var c = GaugeActionCoeffs(plaq:1.0)
   gaugeForce2(f,g,c)
 
-proc actionA*(c: GaugeActionCoeffs, g: any): auto =
+proc actionA*(c: GaugeActionCoeffs, g: auto): auto =
   ## Specialized gauge action for plaq + adjplaq
   mixin mul, load1, createShiftBufs, re
   tic()
@@ -311,7 +311,7 @@ proc actionA*(c: GaugeActionCoeffs, g: any): auto =
   result = c.plaq*(a0-pl[0]) + c.adjplaq*(a0-pl[1])
   toc("plaq end", flops=lo.nSites.float*float(2*8*nc*nc*nc-1))
 
-proc forceA*(c: GaugeActionCoeffs, g,f: any) =
+proc forceA*(c: GaugeActionCoeffs, g,f: auto) =
   ## Specialized gauge force for plaq + adjplaq
   mixin load1, adj
   tic()
@@ -388,7 +388,7 @@ when isMainModule:
   #for mu in 0..<g.len: g[mu] := 1
   g.random
 
-  proc test(g:any) =
+  proc test(g:auto) =
     var pl = plaq(g)
     echo "plaq:"
     echo pl
@@ -409,7 +409,7 @@ when isMainModule:
   resetTimers()
   test(g)
 
-  proc updateX(g,p,eps:any) =
+  proc updateX(g,p,eps:auto) =
     mixin exp
     for mu in 0..<g.len:
       for e in g[mu]:
@@ -417,7 +417,7 @@ when isMainModule:
         g[mu][e] := t
       #echo "g[", mu, "]: ", g[mu].norm2
 
-  proc updateP(g,p,eps:any) =
+  proc updateP(g,p,eps:auto) =
     #let f = gaugeForce(g)
     var f = g[0].l.newGauge
     gaugeAction.gaugeForce2(f, g)

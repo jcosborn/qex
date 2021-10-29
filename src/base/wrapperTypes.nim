@@ -48,7 +48,7 @@ template makeDeref*(t,u:untyped):untyped {.dirty.} =
     else:
       #ctrace()
       (u)x
-  template `[]=`*(x:t; y:any):untyped =
+  template `[]=`*(x:t; y:auto):untyped =
     when compiles(unsafeAddr(x)):
       cast[ptr u](unsafeAddr(x))[] = y
     else:
@@ -60,10 +60,10 @@ template makeDeref*(t,u:untyped):untyped {.dirty.} =
   #  result = x[1][1]
   #template `[]`*(x: t): untyped = callBracket(normalizeAst(x))
   #template `[]`*(x: t): untyped = callBracket(x)
-  template `[]=`*(x:t; y:any):untyped =
+  template `[]=`*(x:t; y:auto):untyped =
     x.v = y
   template `[]`*(x:t):untyped = x.v
-  #template `[]=`*(x:t; y:any):untyped =
+  #template `[]=`*(x:t; y:auto):untyped =
   #  x.v[] = y
 
 #[

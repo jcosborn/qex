@@ -2,7 +2,7 @@ import math
 import comms
 
 template `&&`(x: char): untyped = cast[pointer](unsafeAddr(x))
-template `&&`(x: int): untyped = cast[pointer](unsafeAddr(x))
+#template `&&`(x: int): untyped = cast[pointer](unsafeAddr(x))
 
 type
   RankScatterDescriptor*[T] = object
@@ -18,7 +18,7 @@ type
     data*: pointer
   RankScatterMemSeq* = seq[RankScatterMem]
 
-proc exchange[T](desc: var seq[RankScatterDescriptor2[T]], comm: any,
+proc exchange[T](desc: var seq[RankScatterDescriptor2[T]], comm: auto,
                  rank,srank,rrank,nranks: int, bitwise=true) =
   template send(r,d) = comm.pushSend(r,d)
   template recv(r,d) = comm.pushRecv(r,d)
@@ -71,10 +71,10 @@ proc exchange[T](desc: var seq[RankScatterDescriptor2[T]], comm: any,
     rmsg.add newdesc
     shallowCopy desc, rmsg
 
-proc scatter*[T](desc0: RankScatterSeq[T], comm: any): RankScatterSeq[T] =
+proc scatter*[T](desc0: RankScatterSeq[T], comm: auto): RankScatterSeq[T] =
   let myrank = comm.commrank
   let nranks = comm.commsize
-  template `&`(x: var char): untyped = cast[pointer](addr x)
+  #template `&`(x: var char): untyped = cast[pointer](addr x)
 
   var desc = newSeq[RankScatterDescriptor2[T]](desc0.len)
   for i in 0..<desc0.len:

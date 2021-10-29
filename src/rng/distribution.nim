@@ -211,6 +211,7 @@ proc vonMisesWithExp[D](rng:var RNG, lambda:D):auto =
           exp(lambda*(cos(x)-b)+y)
     if u < acc: return x
 
+#[
 proc vonMisesQOPQDP[D](rng:var RNG, g:D):auto =
   ## from QOPQDP
   const WENSLEY_CONST = 1.05110196582237  # a*asin(a)+sqrt(1-a*a),a:1/%pi
@@ -238,7 +239,8 @@ proc vonMisesQOPQDP[D](rng:var RNG, g:D):auto =
       let r = rng.uniform
       if f > r:
         return theta
-
+]#
+#[
 proc vonMisesWithWrappedCauchy[D](rng:var RNG, k:D):auto =
   ## Best, D., & Fisher, N. (1979).
   ## Efficient Simulation of the von Mises Distribution.
@@ -265,6 +267,7 @@ proc vonMisesWithWrappedCauchy[D](rng:var RNG, k:D):auto =
     theta = arcCos(f)
   if u3<0.5: return -theta
   else: return theta
+]#
 
 proc vonMises*[D](rng:var RNG, lambda:D):auto =
   vonMisesWithExp(rng,lambda)

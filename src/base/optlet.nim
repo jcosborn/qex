@@ -66,9 +66,9 @@ proc replSyms(x: NimNode; os: OptState): NimNode =
   replSyms(x, os.sym, os.repl)
 proc replSSyms(os: OptState, x: NimNode): NimNode =
   replSyms(x, os.ssym, os.srepl)
-proc replAllSyms(x: NimNode; os: OptState): NimNode =
-  let y = replSyms(x, os.ssym, os.srepl)
-  replSyms(y, os.sym, os.repl)
+#proc replAllSyms(x: NimNode; os: OptState): NimNode =
+#  let y = replSyms(x, os.ssym, os.srepl)
+#  replSyms(y, os.sym, os.repl)
 
 
 proc optLetsR(x: NimNode; os: var OptState): NimNode

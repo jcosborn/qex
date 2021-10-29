@@ -79,12 +79,12 @@ createAsType(Matrix)
 #declareVector(AsVarVector)
 #declareMatrix(AsMatrix)
 #declareMatrix(AsVarMatrix)
-template deref(x:typed):untyped =
-  #when type(x) is AsScalar|AsVarScalar:
-  #when type(x) is AsScalar:
-  #  x[]
-  #else:
-    x
+#template deref(x:typed):untyped =
+#  #when type(x) is AsScalar|AsVarScalar:
+#  #when type(x) is AsScalar:
+#  #  x[]
+#  #else:
+#    x
 
 type
   #VectorArrayObj*[I:static[int],T] = array[I,T]
@@ -143,7 +143,7 @@ type
   #VarVec1* = var Vec1
   #VarMat1* = var Mat1
   #VarMV1* = AsVarMatrix | AsVarVector
-  #VarAny* = var any #| AsVarMatrix
+  #VarAuto* = var auto #| AsVarMatrix
   #AsVarVector*[T] = AsVar[AsVector[T]]
   #AsVarMatrix*[T] = AsVar[AsMatrix[T]]
 
@@ -348,9 +348,9 @@ proc `toString`*(x:Mat1):string =
       result.add "," & $(x[i,j])
     if i<x.nrows-1: result.add "\n"
 
-template makeLevel1P(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
-  proc f*(r:t1, x:t2) {.inline.} =
-    `f s1 s2`(r, deref(x))
+#template makeLevel1P(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
+#  proc f*(r:t1, x:t2) {.inline.} =
+#    `f s1 s2`(r, deref(x))
 template makeLevel1T(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
   template `f U`*(r: t1, x: t2): untyped =
     `f s1 s2`(r, x)
@@ -378,11 +378,11 @@ template makeLevel1(f,s1,t1,s2,t2:untyped):untyped =
 #  result = quote do:
 #    proc `f`*(r:`t1`; x:`t2`; y:`t3`) {.inline.} =
 #      `f123`(r, x, y)
-template func3(f,a,b,c: untyped): untyped = f(a,b,c)
-template makeLevel2P(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
-  proc f*(r:t1, x:t2, y:t3) {.inline.} =
-    #`f s1 s2 s3`(r, x, y)
-    func3(`f s1 s2 s3`, r, x, y)
+#template func3(f,a,b,c: untyped): untyped = f(a,b,c)
+#template makeLevel2P(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
+#  proc f*(r:t1, x:t2, y:t3) {.inline.} =
+#    #`f s1 s2 s3`(r, x, y)
+#    func3(`f s1 s2 s3`, r, x, y)
 template makeLevel2T(f,s1,t1,s2,t2,s3,t3: untyped): untyped {.dirty.} =
   template `f U`*(r: t1, x: t2, y: t3): untyped =
     `f s1 s2 s3`(r, x, y)
@@ -538,10 +538,10 @@ makeLevel2(imsub, M, var Mat1, M, Mat2, M, Mat3)
 #proc imsub*(r:AsVarVector; x:Mat2; y:Vec3) {.inline.} = imsubVMV(r, x, y)
 #proc imsub*(r:VarMat1; x:Mat2; y:Mat3) {.inline.} = imsubMMM(r, x, y)
 
-proc msub*(r:var Vec1; x:any; y:Vec2; z:Vec3) {.inline.} = msubVSVV(r,x,y,z)
+proc msub*(r:var Vec1; x:auto; y:Vec2; z:Vec3) {.inline.} = msubVSVV(r,x,y,z)
 
 #proc trace*(r:var Sca1; x:Mat2) {.inline.} =
-proc trace*(r: var any; x: Mat2) {.inline.} =
+proc trace*(r: var auto; x: Mat2) {.inline.} =
   mixin nrows, ncols, trace, iadd
   let n = min(x.nrows, x.ncols)
   assign(r, 0)
@@ -556,13 +556,13 @@ proc trace*(x: Mat1): auto {.inline,noInit.} =
 
 # FIXME: make generic reduce
 
-#proc inorm2*(r:var any; x:Vec2) {.inline.} =
+#proc inorm2*(r:var auto; x:Vec2) {.inline.} =
 #  mixin inorm2
 #  for i in 0..<x.len:
 #    #echo r
 #    inorm2(r, x[i])
 
-template inorm2*(r: var any; x: Vec2) =
+template inorm2*(r: var auto; x: Vec2) =
   mixin inorm2
   let xx = x
   for i in 0..<xx.len:
@@ -570,26 +570,26 @@ template inorm2*(r: var any; x: Vec2) =
     inorm2(r, xx[i])
 
 
-proc inorm2*(r:var any; x:Mat2) {.inline.} =
+proc inorm2*(r:var auto; x:Mat2) {.inline.} =
   mixin nrows, ncols, inorm2
   for i in 0..<x.nrows:
     for j in 0..<x.ncols:
       inorm2(r, x[i,j])
-proc norm2*(r:var any; x:Vec2) {.inline.} =
+proc norm2*(r:var auto; x:Vec2) {.inline.} =
   mixin norm2, iadd
   assign(r, 0)
   for i in 0..<x.len:
     var t{.noInit.}:type(r)
     norm2(t, x[i])
     iadd(r, t)
-#proc norm2*(r:var any; x: AsVarVector) {.inline.} =
+#proc norm2*(r:var auto; x: AsVarVector) {.inline.} =
 #  mixin norm2, iadd
 #  assign(r, 0)
 #  for i in 0..<x.len:
 #    var t{.noInit.}:type(r)
 #    norm2(t, x[i])
 #    iadd(r, t)
-proc norm2*(r:var any; x:Mat2) {.inline.} =
+proc norm2*(r:var auto; x:Mat2) {.inline.} =
   mixin nrows, ncols, norm2, iadd
   assign(r, 0)
   for i in 0..<x.nrows:
@@ -693,7 +693,7 @@ proc simdSum*(x: Mat1): auto {.noInit.} =
   r
 
 #[
-proc simdSum*(r: var any; x: Mat2) {.inline.} =
+proc simdSum*(r: var auto; x: Mat2) {.inline.} =
   mixin nrows, ncols, trace, iadd
   assign(r, 0)
   for i in 0..<r.nrows:

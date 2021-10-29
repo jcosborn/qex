@@ -26,7 +26,7 @@ proc newCgState*[T](x,b: T): CgState[T] =
   result.reset
 
 # solves: A x = b
-proc solve*(state: var CgState; op: any; sp: var SolverParams) =
+proc solve*(state: var CgState; op: auto; sp: var SolverParams) =
   mixin apply
   tic()
   let vrb = sp.verbosity
@@ -155,14 +155,14 @@ proc solve*(state: var CgState; op: any; sp: var SolverParams) =
   sp.finalIterations = state.iterations
   toc("cg final")
 
-proc solve*(state: var CgState; x: Field; b: Field2; op: any;
+proc solve*(state: var CgState; x: Field; b: Field2; op: auto;
             sp: var SolverParams) =
   state.x = x
   state.b = b
   state.reset
   state.solve(op, sp)
 
-proc cgSolve*(x: Field; b: Field2; op: any; sp: var SolverParams) =
+proc cgSolve*(x: Field; b: Field2; op: auto; sp: var SolverParams) =
   var cg = newCgState(x, b)
   cg.solve x, b, op, sp
 

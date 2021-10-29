@@ -2,7 +2,7 @@ import qex
 import testutils
 import sequtils
 
-proc linkTrace(g: any):auto =
+proc linkTrace(g: auto):auto =
   let n = g[0][0].ncols * g[0].l.physVol * g.len
   var lt: type(g[0].trace)
   threads:

@@ -10,7 +10,7 @@ export simd
 import macros
 #import metaUtils
 #import threading
-import strutils
+#import strutils
 #import globals
 #import comms
 import field
@@ -295,7 +295,7 @@ proc inorm2*(r:var SomeNumber; m:Masked[SDvec]) =
 #    prefetch(addr(x[][i]))
 
 #type PackTypes = SColorVectorV | SColorMatrixV | DColorVectorV | DColorMatrixV
-type PackTypes = any
+type PackTypes = auto
 #proc perm*[T](r:var T; prm:int; x:T) {.inline.} =
 template perm*[T](r0:var T; prm0:int; x0:T) =
   subst(n,_,rr,_,xx,_):
@@ -322,8 +322,8 @@ template perm2*[T](r: var T; prm: int; x: T) =
   let xx = cast[ptr array[n,simdType(xt)]](addr xt)
   forStatic i, 0, n-1:
     rr[i] = perm(xx[i], prm)
-#proc pack*(r:ptr any; l:ptr any; pck:int; x:PackTypes) {.inline.} =
-proc pack*(r:ptr any; l:ptr any; pck:int; x:any) {.inline.} =
+#proc pack*(r:ptr auto; l:ptr auto; pck:int; x:PackTypes) {.inline.} =
+proc pack*(r:ptr auto; l:ptr auto; pck:int; x:auto) {.inline.} =
   mixin simdLength
   if pck==0:
     #const n = x.nVectors
@@ -352,7 +352,7 @@ proc pack*(r:ptr any; l:ptr any; pck:int; x:any) {.inline.} =
     of -8: loop(packm8)
     else: discard
 #proc pack*(r:ptr char; pck:int; x:PackTypes) =
-proc pack*(r:ptr char; pck:int; x: any) =
+proc pack*(r:ptr char; pck:int; x: auto) =
   if pck==0:
     const n = x.nVectors
     let rr = cast[ptr array[n,simdType(r)]](r)
@@ -375,7 +375,7 @@ proc pack*(r:ptr char; pck:int; x: any) =
     of  8: loop(packp8)
     of -8: loop(packm8)
     else: discard
-proc blend*(r:var any; x:ptr char; b:ptr char; blnd:int) {.inline.} =
+proc blend*(r:var auto; x:ptr char; b:ptr char; blnd:int) {.inline.} =
   #const n = r.nVectors
   const n = r.numNumbers div r.simdLength
   const n2 = n div 2

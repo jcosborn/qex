@@ -1,5 +1,5 @@
 import os
-import macros
+#import macros
 
 when existsEnv("QMPDIR"):
   const qmpDir = getEnv("QMPDIR")

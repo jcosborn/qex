@@ -11,7 +11,7 @@ import macros
 import field
 export field
 #import future
-import strUtils
+#import strUtils
 #import metaUtils
 
 type ShiftB*[T] = object
@@ -48,12 +48,12 @@ template createGlobalShiftB*(v:untyped; x:SomeField;
   v.initShiftB(x, dir,len, sub)
   threadBarrier()
 
-proc createShiftBufs*(n:int; x:any; ln=1; sub="all"):auto =
+proc createShiftBufs*(n:int; x:auto; ln=1; sub="all"):auto =
   var s = newSeq[ShiftB[x[0].type]](n)
   for i in 0..<n:
     s[i].initShiftB(x, i, ln, sub)
   result = s
-proc createShiftBufs*(x:any; ln=1; sub="all"):auto =
+proc createShiftBufs*(x:auto; ln=1; sub="all"):auto =
   let n = x.l.nDim
   var s = newSeq[ShiftB[x[0].type]](n)
   for i in 0..<n:
@@ -317,7 +317,7 @@ proc init*[V:static[int],T](s:var Shift[V,T]; dest:Field[V,T];
     #echo myrank, ": rbuf: ", cast[int](sb.sq.rbuf)
 
 #template assign = discard
-#template assign(x:any) = discard
+#template assign(x:auto) = discard
 proc start*[V:static[int],T](s:var Shift[V,T]; src:Field[V,T]) =
   mixin assign, numberType
   template si:untyped = s.si
@@ -514,7 +514,7 @@ proc newShifters*[F](f: F, len: int, sub="all"): auto =
     r[mu].len = len
   r
 
-proc `^*`*(x: Transporter, y: any): auto =
+proc `^*`*(x: Transporter, y: auto): auto =
   mixin mul, load1, adj, `[]`
   var r = x.field
   threadBarrier()
@@ -565,7 +565,7 @@ when isMainModule:
   let (sub1,sub2) = ("all","all")
   #let sub2 = "even"
   #let sub1 = "odd"
-  proc lex(v,off: any) =
+  proc lex(v,off: auto) =
     for e in v.all:
       let lo = v.l
       let x = lo.vcoords(e)

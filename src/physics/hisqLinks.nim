@@ -1,4 +1,4 @@
-import gauge, gauge/fat7l, maths, physics/stagD, strUtils
+import gauge, gauge/fat7l, maths, strUtils
 
 type
   HisqCoefs* = object
@@ -29,7 +29,7 @@ proc `$`*(c: HisqCoefs): string =
   result.removeSuffix("  ")
   result &= "naik: " & $c.naik & "\n"
 
-proc smear*(c: HisqCoefs, g: any, fl,ll: any, t1,t2: any) =
+proc smear*(c: HisqCoefs, g: auto, fl,ll: auto, t1,t2: auto) =
   mixin projectU
   var info: PerfInfo
   makeImpLinks(info, t1, g, c.fat7first)
@@ -37,7 +37,7 @@ proc smear*(c: HisqCoefs, g: any, fl,ll: any, t1,t2: any) =
     for i in t2[mu]:
       projectU(t2[mu][i], t1[mu][i])
   makeImpLinks(info, fl, t2, c.fat7second, ll, t2, c.naik)
-proc smear*(c: HisqCoefs, g: any, fl,ll: any) =
+proc smear*(c: HisqCoefs, g: auto, fl,ll: auto) =
   var t1 = fl.newOneOf
   var t2 = fl.newOneOf
   c.smear(g, fl, ll, t1, t2)

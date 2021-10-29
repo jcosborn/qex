@@ -10,7 +10,7 @@ import os
 import iocommon
 
 proc getFileLattice*(s:string):seq[int] =
-  if not existsFile(s):
+  if not fileExists(s):
     warn "file not found: ", s
     return
   var ql:QIO_Layout
@@ -104,7 +104,7 @@ proc open(rd: var Reader; ql: var QIO_Layout) =
   iflag.volfmt = QIO_SINGLEFILE
 
   var qioMd = QIO_string_create()
-  rd.qr = QIO_open_read(qioMd, rd.fileName, ql.addr, fs.addr, iflag.addr)
+  rd.qr = QIO_open_read(qioMd, cstring rd.fileName, ql.addr, fs.addr, iflag.addr)
   rd.fileMetadata = toString(qioMd)
   QIO_string_destroy(qioMd)
   rd.recordInfoValid = false

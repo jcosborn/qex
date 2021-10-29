@@ -338,7 +338,7 @@ proc plaq3*[T](g: seq[T]): auto =
   toc("plaq3 threads")
   result = tr/(lo.physVol.float*0.5*float(nd*(nd-1)*nc))
 
-proc echoPlaq*(g: any) =
+proc echoPlaq*(g: auto) =
   var pl = plaq(g)
   let nt = g.len - 1
   let ns = pl.len - nt
@@ -473,7 +473,7 @@ proc wlineReduce(line:openarray[Link]):seq[Link] =
   toc("wlineReduce compute")
   lnew
 
-proc wline*(g:any, line:openarray[int]):auto =
+proc wline*(g:auto, line:openarray[int]):auto =
   ## Compute the trace of ordered product of gauge links, the Wilson Line.
   ## The line is given as a list of integers +/- 1..nd, where the sign
   ## denotes forward/backward and the number denotes the dimension.
@@ -565,7 +565,7 @@ proc projectU*(x:Field, y:Field) =
 proc projectU*[F:Field](x: openArray[F], y: openArray[F]) =
   for i in x.low..x.high: x[i].projectU y[i]
 
-template projectU*(x:any) = x.projectU x
+template projectU*(x:auto) = x.projectU x
 
 proc projectSU*(x:Field, y:Field) =
   for i in x: x[i].projectSU y[i]
@@ -573,7 +573,7 @@ proc projectSU*(x:Field, y:Field) =
 proc projectSU*[F:Field](x: openArray[F], y: openArray[F]) =
   for i in x.low..x.high: x[i].projectSU y[i]
 
-template projectSU*(x:any) = x.projectSU x
+template projectSU*(x:auto) = x.projectSU x
 
 proc projectTAH*(x:Field, y:Field) =
   for i in x: x[i].projectTAH y[i]
@@ -581,7 +581,7 @@ proc projectTAH*(x:Field, y:Field) =
 proc projectTAH*[F:Field](x: openArray[F], y: openArray[F]) =
   for i in x.low..x.high: x[i].projectTAH y[i]
 
-template projectTAH*(x:any) = x.projectTAH x
+template projectTAH*(x:auto) = x.projectTAH x
 
 proc randomU*(x: Field, r: var RNGField) =
   x.gaussian r
@@ -591,7 +591,7 @@ proc randomSU*(x: Field, r: var RNGField) =
   x.gaussian r
   x.projectSU
 
-proc randTah3(m: var any, s: var any) =
+proc randTah3(m: var auto, s: var auto) =
   let s2 = 0.70710678118654752440;  # sqrt(1/2)
   let s3 = 0.57735026918962576450;  # sqrt(1/3)
   let r3 = s2 * gaussian(s)

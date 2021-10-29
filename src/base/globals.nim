@@ -1,6 +1,6 @@
 import os
 import strUtils
-import stdUtils
+#import stdUtils
 import macros
 
 const profileEqnsInt {.intdefine.} = 1

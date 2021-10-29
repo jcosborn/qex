@@ -194,9 +194,9 @@ template mul*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
 template imsub*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
          untyped =  r -= x*y
 
-template norm2*(r: any, x: ComplexProxy2): untyped =
+template norm2*(r: auto, x: ComplexProxy2): untyped =
   r = x.norm2
-template inorm2*(r: any, x: ComplexProxy2): untyped =
+template inorm2*(r: auto, x: ComplexProxy2): untyped =
   r += x.norm2
 
 

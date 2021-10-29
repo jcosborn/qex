@@ -193,6 +193,7 @@ proc rebuild*(n:NimNode):NimNode =
 proc append(x,y:NimNode) =
   for c in y: x.add c
 
+#[
 proc inlineLets(n:NimNode):NimNode =
   proc get(n:NimNode):NimNode =
     result = newPar()
@@ -229,6 +230,7 @@ proc inlineLets(n:NimNode):NimNode =
         result.add c.rep(x,y)
   result = n.copy
   for x in get n: result = result.rep(x[0],x[1])
+]#
 
 proc regenSym(n:NimNode):NimNode =
   # Only regen nskVar and nskLet symbols.
@@ -959,6 +961,7 @@ macro forStaticX3(a0,b0: typed; index,body: untyped): untyped =
 template forStaticX2(a0,b0: typed; index,body: untyped): untyped =
   forStaticX3(getConst(a0), getConst(b0), index, body)
 
+#[
 macro forStaticX(slice: Slice[int]; index,body: untyped): untyped =
   #echo(index.repr)
   #echo(index.treeRepr)
@@ -973,6 +976,7 @@ macro forStaticX(slice: Slice[int]; index,body: untyped): untyped =
     #result.add(body.replace(index, newIntLitNode(i)))
     result.add(newBlockStmt(body.replace(index, newIntLitNode(i))))
   #echo(result.repr)
+]#
 
 macro forStaticU*(a0,b0: typed; fn: untyped): untyped =
   #echo a0.treerepr
@@ -1085,6 +1089,7 @@ template depthFirst3*(body:untyped; action:untyped):untyped {.dirty.} =
       recurse(c)
   recurse(body)
 
+#[
 macro addImportC(prefix=""; body:untyped):auto =
   #echo body.treeRepr
   let p = prefix.strVal
@@ -1119,6 +1124,7 @@ macro addArgTypes(t:varargs[untyped]; body:untyped):auto =
   depthFirst(body):
     if it.kind==nnkProcDef:
       for s in a: it[3].add s
+]#
 
 #nnkPostfix(nnkIdent(!"*"), nnkIdent(!"hello"))
 
@@ -1153,6 +1159,7 @@ macro normalizeAst*(a: typed): untyped =
   #echo "normalizeAst"
   #echo result.treerepr
 
+#[
 proc optimizeAstR(a: NimNode): NimNode =
   result = a
   case result.kind
@@ -1169,6 +1176,7 @@ proc optimizeAstR(a: NimNode): NimNode =
     else: discard
   else:
     discard
+]#
 
 #proc optStmtList(x: NimNode, sym: var seq[NimSym],
 #                 repl,stmts: var seq[NimNode]): NimNode =
@@ -1206,7 +1214,7 @@ proc optimizeObjConstr(x: NimNode; sym,repl: var seq[NimNode]): NimNode =
     result = sle
 ]#
 
-var reccount{.compiletime.} = 0
+#var reccount{.compiletime.} = 0
 proc inlineLetsR(x: NimNode, sym,repl,stmts: var seq[NimNode]): NimNode =
   #echo "new tree"
   #echo x.treeRepr
@@ -1389,6 +1397,7 @@ proc inlineLetsR(x: NimNode, sym,repl,stmts: var seq[NimNode]): NimNode =
     #if x.kind==nnkStrLit:
     #  result = newLit(x.strval)
 
+#[
 proc inlineLets(x: NimNode): NimNode =
   var sym = newSeq[NimNode](0)
   var repl = newSeq[NimNode](0)
@@ -1398,6 +1407,7 @@ proc inlineLets(x: NimNode): NimNode =
   for c in stmts:
     result.add c
   result.add r
+]#
 
 import optlet
 
@@ -1423,7 +1433,7 @@ template debugFlattenCallArgs*(b: bool) =
   #bind flattenArgDebug
   static: flattenArgDebug = b
 
-var flattenArgLetCount {.compileTime.} = 0
+#var flattenArgLetCount {.compileTime.} = 0
 proc flattenArgP(arg: NimNode): tuple[sl:NimNode,a:NimNode] =
   result.sl = newStmtList()
   if flattenArgDebug:
@@ -1542,7 +1552,7 @@ macro debugType*(v: typed): untyped =
   echo "  ", t2.repr
 
 
-#########  helpers for for makeAliases
+#########  helpers for makeAliases
 
 proc flattenStmtExpr(body: NimNode, stmts: var NimNode): NimNode =
   if body.kind == nnkStmtListExpr:

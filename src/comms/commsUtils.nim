@@ -2,7 +2,7 @@ import base/[threading,metaUtils,stdUtils]
 import times
 import os
 import macros
-import strUtils
+#import strUtils
 import comms/comms
 
 proc evalArgs*(call:var NimNode; args:NimNode):NimNode =

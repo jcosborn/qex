@@ -82,7 +82,7 @@ forwardFunc(AsVar, nVectors)
 forwardFunc(AsVar, simdType)
 forwardFunc(AsVar, simdLength)
 forwardFunc(AsVar, norm2)
-template norm2*(r: var any, x: AsVar): untyped =
+template norm2*(r: var auto, x: AsVar): untyped =
   mixin norm2
   norm2(r, x[])
 template redot*(x: AsVar, y: AsVar): untyped =
@@ -241,7 +241,7 @@ template toDouble*(x: typed): untyped =
 #template `[]`*[T](x:ToDouble[T]):untyped = cast[T](x)
 makeDeref(ToDouble, x.T)
 #template `[]`*(x:ToDouble):untyped = x.v
-#template `[]=`*(x:t; y:any):untyped =
+#template `[]=`*(x:t; y:auto):untyped =
 #   x.v = y
 template `[]`*(x:ToDouble; i:SomeInteger):untyped = x[][i].toDouble
 template `[]`*(x:ToDouble; i,j:SomeInteger):untyped = x[][j,i].toDouble
@@ -477,11 +477,11 @@ template im*(m: Masked): untyped =
   masked(tMaskedIm.pobj[].im, tMaskedIm.mask)
 #template assign*(m: Masked; x: SomeNumber): untyped =
 #  m.pobj[] = x
-template `re=`*(m: Masked; x: any): untyped =
+template `re=`*(m: Masked; x: auto): untyped =
   mixin re
   let tMaskedReEq = m
   assign(masked(tMaskedReEq.pobj[].re, tMaskedReEq.mask), x)
-template `im=`*(m: Masked; x: any): untyped =
+template `im=`*(m: Masked; x: auto): untyped =
   mixin im
   let tMaskedImEq = m
   assign(masked(tMaskedImEq.pobj[].im, tMaskedImEq.mask), x)

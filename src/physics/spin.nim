@@ -10,7 +10,7 @@ type
   #  v*: T
   Spin2*[T] = Spin[T]
   Spin3*[T] = Spin[T]
-  SpinMatrix[I,J:static[int],T] = Spin[MatrixArray[I,J,T]]
+  #SpinMatrix[I,J:static[int],T] = Spin[MatrixArray[I,J,T]]
 
 #template asSpin*(xx: typed): untyped =
 #  #staticTraceBegin: asSpin
@@ -35,7 +35,7 @@ template `[]`*[T](x: Spin, i: T): untyped =
     x[][i]
 template `[]`*(x: Spin, i,j: typed): untyped = x[][i,j]
 #template `[]=`*[T](x: Spin, i: T; y: typed) =
-proc `[]=`*[T](x: Spin, i: T; y: any) =
+proc `[]=`*[T](x: Spin, i: T; y: auto) =
   when T is Spin:
     x[][i[]] = y
   elif T.isWrapper:
@@ -158,7 +158,7 @@ template spinMatrix*[T](x,y:static[int], a: untyped): untyped =
     J:int = y
   type
     E = T
-    MA = MatrixArray[I,J,E]
+    #MA = MatrixArray[I,J,E]
     MAO = MatrixArrayObj[I,J,E]
   asSpin(asMatrix(MAO(mat: a)))
 #template spinMatrix*[I,J:static[int],T](a: untyped): untyped =
@@ -257,7 +257,7 @@ const
 template I(x: typed): untyped =
   newImag(1)*x
 
-proc spproj1p*(r: var any, x: any) =
+proc spproj1p*(r: var auto, x: auto) =
   ## r: HalfFermion
   ## x: DiracFermion
   #let nc = x[0].len
@@ -267,14 +267,14 @@ proc spproj1p*(r: var any, x: any) =
   r := spprojmat1p * x
 
 #[
-template spproj1p*(x: any): untyped = spprojmat1p * x
-template spproj2p*(x: any): untyped = spprojmat2p * x
-template spproj3p*(x: any): untyped = spprojmat3p * x
-template spproj4p*(x: any): untyped = spprojmat4p * x
-template spproj1m*(x: any): untyped = spprojmat1m * x
-template spproj2m*(x: any): untyped = spprojmat2m * x
-template spproj3m*(x: any): untyped = spprojmat3m * x
-template spproj4m*(x: any): untyped = spprojmat4m * x
+template spproj1p*(x: auto): untyped = spprojmat1p * x
+template spproj2p*(x: auto): untyped = spprojmat2p * x
+template spproj3p*(x: auto): untyped = spprojmat3p * x
+template spproj4p*(x: auto): untyped = spprojmat4p * x
+template spproj1m*(x: auto): untyped = spprojmat1m * x
+template spproj2m*(x: auto): untyped = spprojmat2m * x
+template spproj3m*(x: auto): untyped = spprojmat3m * x
+template spproj4m*(x: auto): untyped = spprojmat4m * x
 ]#
 
 #template spproj1pU*(x: Spin): untyped =
@@ -318,7 +318,7 @@ template spproj4m*(xx: Spin): untyped =
   let v = [ x[0]-x[2], x[1]-x[3] ]
   spinVector(2, v)
 
-proc sprecon1p*(r: var any, x: any) =
+proc sprecon1p*(r: var auto, x: auto) =
   ## r: DiracFermion
   ## x: HalfFermion
   let nc = x[0].len

@@ -46,7 +46,7 @@ template isWrapper*(x: SomeNumber): untyped = false
 template isWrapper*(x: typedesc[SomeNumber]): untyped = false
 
 template cnvrt(r,x):untyped = ((type(r))(x))
-template to*(x:any; t:typedesc[SomeNumber]):untyped =
+template to*(x:auto; t:typedesc[SomeNumber]):untyped =
   when x.type is t:
     x
   else:
@@ -54,7 +54,7 @@ template to*(x:any; t:typedesc[SomeNumber]):untyped =
     #assign(r, x)
     #r
     t(x)
-template to*(t:typedesc[SomeNumber]; x:any):untyped =
+template to*(t:typedesc[SomeNumber]; x:auto):untyped =
   when x.type is t:
     x
   else:

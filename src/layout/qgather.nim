@@ -80,7 +80,7 @@ proc mergeGatherDescriptions*(gd: ptr GatherDescription;
     inc(ni, gds[i].nIndices)
     inc(nsi, gds[i].nSendIndices)
     if gds[i].myRank != gds[0].myRank:
-      var myRank: cint = 0
+      #var myRank: cint = 0
       echo "ranks don\'t match: gds[$#].myRank($#)!=gds[0].myRank($#)"%
                   [$i, $gds[i].myRank, $gds[0].myRank]
       quit(-1)

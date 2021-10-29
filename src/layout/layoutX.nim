@@ -1,7 +1,7 @@
 import tables
 export tables
 import base
-import qgather
+#import qgather
 import layoutTypes
 export layoutTypes
 import shiftX
@@ -156,7 +156,7 @@ proc newLayoutX*(comm: Comm; lat: openArray[int]; V: static[int];
   result.coords.newSeq(nd)
   for i in 0..<nd: result.coords[i].newSeq(result.nSites)
   var coords = newSeq[cint](nd)
-  let coa = cast[ptr cArray[cint]](addr(coords[0]))
+  #let coa = cast[ptr cArray[cint]](addr(coords[0]))
   for i in 0..<result.nSites:
     var li = LayoutIndexQ((rank:myRank.cint,index:i.cint))
     #layoutCoordQ(result.lq.addr, coa, li.addr)
@@ -221,7 +221,7 @@ proc coord*(l: Layout, coord: var openArray[cint]; rank,index: int) =
   #layoutCoordQ(l.lq.addr, cast[ptr cArray[cint]](coord[0].addr), li.addr)
   var ca = cast[ptr cArray[cint]](coord[0].addr)
   layoutCoordQ(l.lq.addr, toOpenArray(ca,coord.low,coord.high), li.addr)
-proc coord*(l: Layout, crd: var any, ri: tuple[rank,index:int]) =
+proc coord*(l: Layout, crd: var auto, ri: tuple[rank,index:int]) =
   coord(l, crd, ri.rank, ri.index)
 template coord*(l: Layout, crd: var typed, index: int) =
   coord(l, crd, l.myrank, index)

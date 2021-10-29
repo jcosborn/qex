@@ -32,10 +32,20 @@ else:
     forN(i,r0,r1,b)
   #template forO*(i,r0,r1,b:untyped):untyped = cfor(i,r0,r1,b)
 
-template assignIadd(x,y:typed) = iadd(x,y)
-template negIadd(x,y:typed) = isub(x,y)
-template iaddIadd(x,y:typed) = iadd(x,y)
-template isubIadd(x,y:typed) = isub(x,y)
+macro fOpt(stmt: ForLoopStmt): untyped =
+  let expr = stmt[0]
+  let iter = stmt[1]
+  let a = iter[1]
+  let b = iter[2]
+  let body = stmt[2]
+  result = quote do:
+    forO `expr`, `a`, `b`:
+      `body`
+
+#template assignIadd(x,y:typed) = iadd(x,y)
+#template negIadd(x,y:typed) = isub(x,y)
+#template iaddIadd(x,y:typed) = iadd(x,y)
+#template isubIadd(x,y:typed) = isub(x,y)
 template makeMap1(op:untyped) =
   #[
   template `op SV`*(rr:typed; xx:typed):untyped =
@@ -110,31 +120,38 @@ template makeMap1(op:untyped) =
     #assert(r.nrows == r.ncols)
     #load(tx, x)
     let tx_opMS = x
-    forO i, 0, r.nrows.pred:
-      forO j, 0, r.ncols.pred:
+    #forO i, 0, r.nrows.pred:
+    for i in fOpt(0,r.nrows.pred):
+      #forO j, 0, r.ncols.pred:
+      for j in fOpt(0,r.ncols.pred):
         if i == j:
           op(r[i,j], tx_opMS)
         else:
           op(r[i,j], 0)
   template `op MV`*(rr:typed; xx:typed) =
-    subst(r,rr,x,xx,i,_,j,_):
+    #subst(r,rr,x,xx,i,_,j,_):
+    subst(r,rr,x,xx):
       assert(r.nrows == x.len)
       assert(r.ncols == x.len)
-      forO i, 0, r.nrows.pred:
-        forO j, 0, r.ncols.pred:
+      #forO i, 0, r.nrows.pred:
+      for i in fOpt(0,r.nrows.pred):
+        #forO j, 0, r.ncols.pred:
+        for j in fOpt(0,r.ncols.pred):
           if i == j:
             op(r[i,j], x[i])
           else:
             op(r[i,j], 0)
   template `op MM`*(rr:untyped; xx:untyped) =
-      mixin op
-    #optimizeAst:
-      subst(r,rr,x,xx,i,_,j,_):
-        assert(r.nrows == x.nrows)
-        assert(r.ncols == x.ncols)
-        forO i, 0, r.nrows.pred:
-          forO j, 0, r.ncols.pred:
-            op(r[i,j], x[i,j])
+    mixin op
+    #subst(r,rr,x,xx,i,_,j,_):
+    subst(r,rr,x,xx):
+      assert(r.nrows == x.nrows)
+      assert(r.ncols == x.ncols)
+      #forO i, 0, r.nrows.pred:
+      for i in fOpt(0,r.nrows.pred):
+        #forO j, 0, r.ncols.pred:
+        for j in fOpt(0,r.ncols.pred):
+          op(r[i,j], x[i,j])
 
 makeMap1(assign)
 makeMap1(neg)
