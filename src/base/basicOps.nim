@@ -182,6 +182,8 @@ template `*`*[T:SomeFloat](x:T; y:SomeInteger):auto = x * (T(y))
 template `/`*[T:SomeFloat](x:SomeInteger,y:T):auto = (T(x)) / y
 template `/`*[T:SomeFloat](x:T,y:SomeInteger):auto = x / (T(y))
 
+template `:=`*[T](x: SomeNumber; y: array[1,T]) = assign(x,y[0])
+
 template setUnopP*(op,fun,t1,t2: untyped): untyped {.dirty.} =
   proc op*(x: t1): auto {.inline,noInit.} =
     var r{.noInit.}: t2

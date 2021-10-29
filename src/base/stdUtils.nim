@@ -82,6 +82,12 @@ proc `/`*(x: SomeNumber, y: array): auto {.inline,noInit.} =
     r[i] = x / y[i]
   r
 
+proc `mod`*(x: array, y: SomeNumber): auto {.inline,noInit.} =
+  var r: array[x.len, type(x[0] mod y)]
+  for i in 0..<r.len:
+    r[i] = x[i] mod y
+  r
+
 #proc `+`*[A:array](x,y: A): A {.inline,noInit.} =
 #  for i in 0..<result.len:
 #    result[i] = x[i] + y[i]

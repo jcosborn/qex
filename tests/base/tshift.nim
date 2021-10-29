@@ -1,9 +1,64 @@
 import unittest
 import qex
-import simd/simdArray
+import simd,simd/simdArray
+
+# tests
+#  b f = 1
+#  f^n = fn
+#  f^L = 1
+#  bb ba fb fa = 1
+
+proc set(x: Field, offset: seq[int]) =
+  let lo = x.l
+  const vl = lo.V
+  let lat = lo.physGeom
+  let nd = lat.len
+  threads:
+    for e in x:
+      var t: array[vl,int]
+      for i in 0..<nd:
+        t = 1 + 10*t + ((offset[i] + lat[i] + lo.vcoords(i,e)) mod lat[i])
+      x[e] := t
+
+proc testf(x,y,z: auto, mu,d: int): float =
+  let f = newShifter(x, mu, d)
+  var offs = newSeq[int](x.l.nDim)
+  offs[mu] = d
+  z.set(offs)
+  var res = 0.0
+  threads:
+    y := f ^* x
+    let r = norm2(z-y)
+    threadMaster:
+      res = r
+  if res != 0.0:
+    echo "mu: ", mu, "  d: ", d, "  r: ", res
+    checkeq(y, z)
+  result = res
+
+proc testfb(x,y,z: auto, mu,d: int): float =
+  let f = newShifter(x, mu, d)
+  let b = newShifter(x, mu, -d)
+  var res = 0.0
+  threads:
+    y := f ^* x
+    z := b ^* y
+    let r = norm2(z-x)
+    threadMaster:
+      res = r
+  if res != 0.0:
+    echo "mu: ", mu, "  d: ", d, "  r: ", res
+    checkeq(x, z)
+    #for i in x.sites:
+    #  var xi,yi,zi: float
+    #  xi := x{i}
+    #  yi := y{i}
+    #  zi := z{i}
+    #  echoAll xi, " ", yi, " ", zi
+  result = res
 
 proc test2(Smd: typedesc, lat: array): float =
-  const vl = Smd.numNumbers
+  const vl = int Smd.numNumbers
   let nd = lat.len
   var lo = newLayout(lat, vl)
   type LatReal = Field[vl, Smd]
@@ -11,37 +66,62 @@ proc test2(Smd: typedesc, lat: array): float =
   x.new(lo)
   y.new(lo)
   z.new(lo)
-  for e in x:
-    var t: array[vl,int]
-    for i in 0..<nd:
-      t = 1 + 10*t + lo.vcoords(i,e)
-    x[e] := t
-  var res = 0.0
+  var offs = newSeq[int](nd)
+  x.set(offs)
   for mu in 0..<nd:
-    let dmax = lat[mu] - 1
-    for d in 1..<dmax:
-      let f = newShifter(x, mu, d)
-      let b = newShifter(x, mu, -d)
-      threads:
-        y := f ^* x
-        z := b ^* y
-        let r = norm2(z-x)
-        if r != 0.0:
-          echo "mu: ", mu, "  d: ", d, "  r: ", r
-          for i in x.sites:
-            var xi,yi,zi: float
-            xi := x{i}
-            yi := y{i}
-            zi := z{i}
-            echoAll xi, " ", yi, " ", zi
-        threadMaster:
-          res += r
-  result = res
+    var dmax = lat[mu]
+    if nRanks>1: dmax = lo.outerGeom[mu]
+    for d in 1..dmax:
+      #result += testfb(x,y,z, mu, d)
+      result += testf(x,y,z, mu, d)
 
 template test1(Smd: typedesc, lat: array) =
-  test "lattice: " & $lat:
+  test $Smd & " lattice: " & $lat:
     let r = test2(Smd, lat)
     check(r == 0.0)
+
+template testS1(Smd: typedesc) =
+  suite $Smd:
+    test1(Smd, [8])
+    test1(Smd, [9,8])
+    test1(Smd, [8,9])
+    test1(Smd, [7,8,9])
+    test1(Smd, [7,8,9,10])
+    test1(Smd, [7,8,9,10,11])
+
+template testS2(Smd: typedesc) =
+  suite $Smd:
+    test1(Smd, [16])
+    test1(Smd, [8,8])
+    test1(Smd, [9,16])
+    test1(Smd, [16,9])
+    test1(Smd, [8,8,8])
+    test1(Smd, [8,8,8,8])
+    test1(Smd, [8,8,8,8,8])
+
+template testS4(Smd: typedesc) =
+  suite $Smd:
+    test1(Smd, [8,16])
+    test1(Smd, [16,8])
+    test1(Smd, [8,8,8])
+    test1(Smd, [8,8,8,8])
+    test1(Smd, [8,8,8,8,8])
+
+template testS8(Smd: typedesc) =
+  suite $Smd:
+    test1(Smd, [8,8,16])
+    test1(Smd, [8,16,8])
+    test1(Smd, [16,8,8])
+    test1(Smd, [8,8,8,8])
+    test1(Smd, [8,8,8,8,8])
+
+template testS16(Smd: typedesc) =
+  suite $Smd:
+    test1(Smd, [8,8,8,16])
+    test1(Smd, [8,8,16,8])
+    test1(Smd, [8,16,8,8])
+    test1(Smd, [16,8,8,8])
+    test1(Smd, [8,8,8,8,8])
 
 qexInit()
 
@@ -49,37 +129,47 @@ template makeSimdArrayX(T,N,B: untyped) {.dirty.} =
   makeSimdArray(`T X`, N, B)
   type T = Simd[`T X`]
 
-makeSimdArrayX(SimdD1, 1, float64)
-suite "SimdD1":
-  test1(SimdD1, [8])
-  test1(SimdD1, [9,8])
-  test1(SimdD1, [8,9])
-  test1(SimdD1, [7,8,9])
-  test1(SimdD1, [7,8,9,10])
-  test1(SimdD1, [7,8,9,10,11])
+#testS1(float)
+makeSimdArrayX(SD1, 1, float)
+testS1(SD1)
+when declared(SimdD1):
+  testS1(SimdD1)
 
-makeSimdArrayX(SimdD2, 2, float64)
-makeSimdArrayX(SimdD4, 4, float64)
-makeSimdArrayX(SimdD8, 8, float64)
-if nRanks == 1:
-  suite "SimdD2":
-    test1(SimdD2, [16])
-    test1(SimdD2, [8,8])
-    test1(SimdD2, [8,8,8])
-    test1(SimdD2, [8,8,8,8])
-    test1(SimdD2, [8,8,8,8,8])
+#makeSimdArrayX(SS1, 1, float32)
+#testS1(SS1)
+when declared(SimdS1):
+  testS1(SimdS1)
 
-  #makeSimdArray(SimdD4, 4, float64)
-  #template isWrapper*(x: SimdD4): untyped = false
-  #template toDoubleImpl*(x: SimdD4): untyped = x
-  suite "SimdD4":
-    test1(SimdD4, [8,8])
+makeSimdArrayX(SD2, 2, float)
+testS2(SD2)
+when declared(SimdD2):
+  testS2(SimdD2)
 
-  #makeSimdArray(SimdD8, 8, float64)
-  #template isWrapper*(x: SimdD8): untyped = false
-  #template toDoubleImpl*(x: SimdD8): untyped = x
-  suite "SimdD8":
-    test1(SimdD8, [8,8,8])
-    test1(SimdD8, [8,8,8,8])
+#makeSimdArrayX(SS2, 2, float32)
+#testS2(SS2)
+when declared(SimdS2):
+  testS2(SimdS2)
+
+makeSimdArrayX(SD4, 4, float)
+testS4(SD4)
+when declared(SimdD4):
+  testS4(SimdD4)
+when declared(SimdS4):
+  testS4(SimdS4)
+
+makeSimdArrayX(SD8, 8, float)
+testS8(SD8)
+when declared(SimdD8):
+  testS8(SimdD8)
+when declared(SimdS8):
+  testS8(SimdS8)
+
+makeSimdArrayX(SD16, 16, float)
+testS16(SD16)
+when declared(SimdD16):
+  testS16(SimdD16)
+when declared(SimdS16):
+  testS16(SimdS16)
+
 
 qexFinalize()

@@ -39,8 +39,8 @@ proc replicate(g2,g1: openarray[Field]) =
 suite "Multi-Layout test":
   qexInit()
   const
-    lat1 = [4,4,4,4]
-    lat2 = [8,8,8,8]
+    lat1 = [8,8,8,8]
+    lat2 = [16,16,16,16]
   var
     lo1 = lat1.newLayout
     g1 = lo1.newGauge

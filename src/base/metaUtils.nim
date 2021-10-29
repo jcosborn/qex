@@ -396,6 +396,10 @@ proc cleanIterator(n:NimNode):NimNode =
             if t != r: result[i][^2] = newNimNode(nnkTypeOfExpr,n[i][j]).add n[i][j]
         result[i][^1] = fixDeclare result[i][^1]
       # echo result.repr
+    elif n.kind == nnkForStmt:  # need to refresh for loop variables
+      let oldsym = n[0]
+      let newsym = genSym(nskForVar, oldsym.strVal)
+      for c in n: result.add fixDeclare c.replace(oldsym,newsym)
     else:
       for c in n: result.add fixDeclare c
   result = fixDeclare result
@@ -574,7 +578,8 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
   # echo sl.repr
   # echo "^^^^^^"
   # result = sl
-  result = regenSym inlineLets sl
+  #result = regenSym inlineLets sl
+  result = regenSym sl
   # echo "<<<<<< inlineProcsY"
   # echo result.treerepr
 

@@ -2,7 +2,7 @@ import qex
 import physics/qcdTypes
 
 proc test() =
-  var lat = [4,4,4,4]
+  var lat = [8,8,8,8]
   var lo = newLayout(lat)
 
   var v1 = lo.ColorVector()

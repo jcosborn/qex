@@ -15,7 +15,7 @@ suite "Stress plaquette test":
   qexInit()
   const
     nd = 4
-    lat = [4,4,4,4]
+    lat = [8,8,8,8]
   var
     lo = lat.newLayout
     g = lo.newGauge

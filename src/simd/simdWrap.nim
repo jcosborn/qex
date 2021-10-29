@@ -47,6 +47,9 @@ attrib(numNumbers)
 attrib(simdType)
 attrib(simdLength)
 
+template noSimd*[T](x: typedesc[Simd[T]]): untyped =
+  numberType(type T)
+
 # no return value
 template p2(f: untyped) {.dirty.} =
   #template f*(x: var Simd, y: Simd2) =

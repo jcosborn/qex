@@ -139,6 +139,7 @@ proc newLayoutX*(comm: Comm; lat: openArray[int]; V: static[int];
   result.localGeom = lg
   result.rankGeom = rg
   result.innerGeom = ig
+  result.outerGeom = og
   result.temp = newSeq[int](nd)
   result.physVol = result.lq.physVol.int
   result.nEven = result.lq.nEven.int
