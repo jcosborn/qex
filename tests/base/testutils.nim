@@ -1,11 +1,16 @@
 import unittest
 export unittest
 
-var CT* = 1e-13    ## Comparison Tolerance.
+var AT* = -1.0   ## Absolute Tolerance
+var CT* = 1e-13  ## (relative) Comparison Tolerance
 
+# passes if relative or absolute tolerance passes
 proc `~`*(x,y:float):bool =
-  if x==0 or y==0: result = x==y
-  else: result = abs(x-y)/max(abs(x),abs(y)) < CT
+  if CT > 0:
+    if x==0 or y==0: result = x==y
+    else: result = abs(x-y)/max(abs(x),abs(y)) <= CT
+  if AT > 0:
+    result = result or (abs(x-y)<=AT)
   if not result: echo x," !~ ",y
 
 proc `~`*[T](x,y:openarray[T]):bool =

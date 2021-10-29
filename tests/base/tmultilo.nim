@@ -3,6 +3,8 @@ import testutils
 import sequtils
 import strformat
 
+AT = 1e-13
+
 proc linkTrace(g: any):auto =
   let n = g[0][0].ncols * g[0].l.physVol * g.len
   var lt: type(g[0].trace)
