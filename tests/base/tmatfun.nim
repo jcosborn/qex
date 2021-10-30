@@ -12,7 +12,7 @@ template chkzero(x: SomeFloat, n: SomeNumber): untyped =
   let e = epsilon(x)
   check(x < n*e)
 
-proc chkeq(x,y: any): auto =
+proc chkeq(x,y: auto): auto =
   var mx,md:type(x[0,0].re)
   for i in 0..<x.nrows:
     for j in 0..<x.ncols:
@@ -29,7 +29,7 @@ proc chkeq(x,y: any): auto =
   echo s
   chkzero(s, 256*x.nrows)
 
-proc rsqrtPH_test(x: any): auto =
+proc rsqrtPH_test(x: auto): auto =
   let y = x.adj * x
   #echo y
   #let z = y * y

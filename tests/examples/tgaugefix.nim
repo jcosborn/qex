@@ -13,7 +13,7 @@ var g2 = lo.newGauge()
 let lo1 = newLayout(lo.physGeom, 1)
 var rnd = newRNGField(RngMilc6, lo1)
 
-template getDiff(g,g2: any): float =
+template getDiff(g,g2: auto): float =
   var d = 0.0
   for i in 0..<g.len:
     d += norm2(g[i]-g2[i])
@@ -85,7 +85,7 @@ suite "Test Gauge Fixing":
       t1.randomSU rnd
       t1 += 50
       t1.projectSU
-    let p0 = g.plaq
+    #let p0 = g.plaq
     var gstop = 1e-7
     var orf = 1.8
     let tdirs = @[ @[0,1,2,3], @[0,1,2], @[3], @[1,2,3], @[0,2,3] ]

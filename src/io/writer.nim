@@ -75,7 +75,7 @@ proc open(wr: var Writer; ql: var QIO_Layout, md: string) =
   var qioMd = QIO_string_create()
   QIO_string_set(qioMd, md)
   wr.setLayout
-  wr.qw = QIO_open_write(qioMd, wr.filename, volfmt,ql.addr,fs.addr,oflag.addr)
+  wr.qw = QIO_open_write(qioMd, cstring wr.filename, volfmt,ql.addr,fs.addr,oflag.addr)
   QIO_string_destroy(qioMd)
 
   if wr.qw==nil: wr.status = -1
@@ -182,8 +182,8 @@ proc write[T](wr: var Writer, v: var openArray[ptr T], lat: openArray[int],
   if precs == precs0:
     var datatype = "QEX_" & type(v[0][]).IOtype.name
     var recInfo = QIO_create_record_info(QIO_FIELD, lower[0].addr,
-                                         upper[0].addr, nd.cint, datatype,
-                                         precs, nc, ns, size.cint, nv)
+                                         upper[0].addr, nd.cint, cstring datatype,
+                                         cstring precs, nc, ns, size.cint, nv)
     wr.status = QIO_write(wr.qw, recInfo, qioMd, get[T], vsize.csize_t,
                           wordSize.cint, v[0].addr)
     QIO_destroy_record_info(recInfo)
@@ -197,8 +197,8 @@ proc write[T](wr: var Writer, v: var openArray[ptr T], lat: openArray[int],
     size = vsize div v.len
     wordSize = recWordSize
     var recInfo = QIO_create_record_info(QIO_FIELD, lower[0].addr,
-                                         upper[0].addr, nd.cint, datatype,
-                                         precs, nc, ns, size.cint, nv)
+                                         upper[0].addr, nd.cint, cstring datatype,
+                                         cstring precs, nc, ns, size.cint, nv)
     wr.status = QIO_write(wr.qw, recInfo, qioMd, getP[T], vsize.csize_t,
                           wordSize.cint, v[0].addr)
     QIO_destroy_record_info(recInfo);

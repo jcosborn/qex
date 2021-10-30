@@ -39,7 +39,7 @@ ifSuccess hwloc_topology_init(topology.addr):
     ifSuccess hwloc_get_cpubind(topology, set, HWLOC_CPUBIND_PROCESS.cint):
       var buffer = newStringOfCap buflen
       buffer.setlen buflen
-      ifSuccess hwloc_bitmap_snprintf(buffer, buflen, set):
+      ifSuccess hwloc_bitmap_snprintf(cstring buffer, buflen, set):
         var
           ncur = hwloc_bitmap_weight(set)
           ntot = hwloc_bitmap_weight(cset_cpu)
@@ -63,7 +63,7 @@ ifSuccess hwloc_topology_init(topology.addr):
       var buffer = newStringOfCap buflen
       buffer.setlen buflen
       ifSuccess hwloc_get_cpubind(topology, set, HWLOC_CPUBIND_THREAD.cint):
-        ifSuccess hwloc_bitmap_snprintf(buffer, buflen, set):
+        ifSuccess hwloc_bitmap_snprintf(cstring buffer, buflen, set):
           var
             ncur = hwloc_bitmap_weight(set)
             nth = numThreads
@@ -111,7 +111,7 @@ ifSuccess hwloc_topology_init(topology.addr):
         echo "rank ",r," membind policy: ",policy
     var buffer = newStringOfCap buflen
     buffer.setlen buflen
-    ifSuccess hwloc_bitmap_snprintf(buffer, buflen, set):
+    ifSuccess hwloc_bitmap_snprintf(cstring buffer, buflen, set):
       var
         ncur = hwloc_bitmap_weight(set)
         ntot = hwloc_bitmap_weight(cset)

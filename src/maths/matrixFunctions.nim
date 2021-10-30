@@ -207,6 +207,7 @@ template rsqrtPHMN(r:typed; x:typed):untyped =
   let sds = 1/sqrt(ds)
   r := sds*s
 
+#[
 # Bini (https://arxiv.org/pdf/1703.02456.pdf)
 template rsqrtPHMN2(r:typed; x:typed):untyped =
   let xn = x.norm2
@@ -267,7 +268,7 @@ template rsqrtPHMN3(r:typed; x:typed):untyped =
   let sds = sqrt(dsi)
   r := sds*b
   #r := b
-
+]#
 
 template rsqrtPHM(r:typed; x:typed):untyped =
   mixin rsqrt, nrows

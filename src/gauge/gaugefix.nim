@@ -5,7 +5,7 @@ import gaugeUtils
 import maths
 import simd
 
-proc gaugeTransform*(gt: any, g: any, t: any) =
+proc gaugeTransform*(gt: auto, g: auto, t: auto) =
   tic()
   let n = g.len
   var sf = newSeq[Shifter[type(t),type(t[0])]](n)
@@ -19,7 +19,7 @@ proc gaugeTransform*(gt: any, g: any, t: any) =
       gt[mu] := t * (g[mu] * sf[mu].field.adj)
   toc("gt done")
 
-proc gtGradient(grad: Field, g: any, t: any, dirs: array|seq) =
+proc gtGradient(grad: Field, g: auto, t: auto, dirs: array|seq) =
   mixin imadd
   tic()
   let n = dirs.len
@@ -50,7 +50,8 @@ proc gtGradient(grad: Field, g: any, t: any, dirs: array|seq) =
   #grad[ir][].projectTAH(m[])
   toc("grad2 done")
 
-proc gtGradientX(grad: Field, gt: any, dirs: array|seq) =
+#[
+proc gtGradientX(grad: Field, gt: auto, dirs: array|seq) =
   tic()
   let n = dirs.len
   var sb = newSeq[Shifter[type(gt[0]),type(gt[0][0])]](n)
@@ -66,8 +67,9 @@ proc gtGradientX(grad: Field, gt: any, dirs: array|seq) =
         m += gt[dirs[k]][e] + sb[k].field[e].adj
       grad[e] := m
   toc("gradX done")
+]#
 
-proc gtGradient(grad: Field, gt: any, dirs: array|seq) =
+proc gtGradient(grad: Field, gt: auto, dirs: array|seq) =
   tic()
   let n = dirs.len
   var sb = newSeq[Shifter[type(gt[0]),type(gt[0][0])]](n)
@@ -84,7 +86,7 @@ proc gtGradient(grad: Field, gt: any, dirs: array|seq) =
       grad[e][].projectTAH(m[])
   toc("grad done")
 
-proc gtUpdate(t: any, a: any, s: float) =
+proc gtUpdate(t: auto, a: auto, s: float) =
   tic()
   threads:
     for e in t:
@@ -92,7 +94,7 @@ proc gtUpdate(t: any, a: any, s: float) =
       t[e] := exp(-s*a[e]) * m
   toc("gtUpdate done")
 
-proc gtUpdate(t: any, a: any, s: Field) =
+proc gtUpdate(t: auto, a: auto, s: Field) =
   tic()
   threads:
     for e in t:
@@ -100,12 +102,13 @@ proc gtUpdate(t: any, a: any, s: Field) =
       t[e] := exp(-s[e]*a[e]) * m
   toc("gtUpdateF done")
 
-proc gtDistance(t0: any, t: any): float =
+#[
+proc gtDistance(t0: auto, t: auto): float =
   let sf = 1.0/(t.l.physVol.float*t[0].nrows)
   let d = trace(t*t0.adj).re
   1.0 - sf*d
 
-proc gfLocalMetric(m: Field, g: any, dirs: array|seq) =
+proc gfLocalMetric(m: Field, g: auto, dirs: array|seq) =
   tic()
   let n = g.len
   var sb = newSeq[Shifter[type(g[0]),type(g[0][0])]](n)
@@ -121,8 +124,9 @@ proc gfLocalMetric(m: Field, g: any, dirs: array|seq) =
         t += trace(g[dirs[k]][e]).re + trace(sb[k].field[e]).re
       m[e] := t
   toc("LocalMetric done")
+]#
 
-proc linkTrace*(g: any, dirs: array|seq): float =
+proc linkTrace*(g: auto, dirs: array|seq): float =
   tic()
   let sf = 1.0/(dirs.len.float*g[0].l.physVol.float*g[0][0].nrows)
   result = 0.0
@@ -130,9 +134,9 @@ proc linkTrace*(g: any, dirs: array|seq): float =
     result += trace(g[d]).re
   toc("metric done")
   result *= sf
-template gfMetric(g: any, dirs: array|seq): float = linkTrace(g, dirs)
+template gfMetric(g: auto, dirs: array|seq): float = linkTrace(g, dirs)
 
-proc gfMetrics(gd: any, t: any, nd: int): auto =
+proc gfMetrics(gd: auto, t: auto, nd: int): auto =
   tic()
   let sf = 0.5/(nd.float*gd.l.physVol.float*gd[0].nrows)
   let sfg = 2.0 * sf * nd.float
@@ -163,7 +167,7 @@ proc gfMetrics(gd: any, t: any, nd: int): auto =
   result = (met: sf*met, gre: sfg*gre, gro: sfg*gro)
   toc("metric")
 
-proc gfMetric(gd: any, t: any, nd: int): float =
+proc gfMetric(gd: auto, t: auto, nd: int): float =
   tic()
   let sf = 0.5/(nd.float*gd.l.physVol.float*gd[0].nrows)
   var met = 0.0
@@ -177,14 +181,14 @@ proc gfMetric(gd: any, t: any, nd: int): float =
   result = sf * met
   toc("metric")
 
-proc gfMetric(g: any, t: any, dirs: array|seq): float =
+proc gfMetric(g: auto, t: auto, dirs: array|seq): float =
   tic()
   var gd = t.newOneOf
   gd.gtGradient(g, t, dirs)
   result = gfMetric(gd, t, dirs.len)
   toc("metric done")
 
-proc gfLineMin(g: any, gd: any, t,t0: any,
+proc gfLineMin(g: auto, gd: auto, t,t0: auto,
                dirs: array|seq, eps: var float, m0: float) =
   tic()
   t0 := t
@@ -212,7 +216,7 @@ proc gfLineMin(g: any, gd: any, t,t0: any,
   t := t0
   t.gtUpdate(gd, eps)
   t.projectSU
-  var m3 = gfMetric(g, t, dirs)
+  #var m3 = gfMetric(g, t, dirs)
   #echo "eps: ", eps, "  ", m3
   toc("gfLineMin")
 
@@ -226,7 +230,7 @@ proc moveFromZero[T](x: T, e: float): T =
   for i in 0..<x.numNumbers:
     result[i] = moveFromZero(x[i], e)
 
-proc overRelaxSu2(r: var any, x: any, i,j: int, o: float) =
+proc overRelaxSu2(r: var auto, x: auto, i,j: int, o: float) =
   mixin rsqrt
   var r0 =  x[i,i].re + x[j,j].re
   var r1 = -x[j,i].im - x[i,j].im
@@ -269,7 +273,7 @@ proc overRelaxSu2(r: var any, x: any, i,j: int, o: float) =
     r[i,l] := ti
     r[j,l] := tj
 
-proc relaxE(t: any, gd: Field2, g: any, dirs: array|seq, orf: float) =
+proc relaxE(t: auto, gd: Field2, g: auto, dirs: array|seq, orf: float) =
   tic()
   threads:
     for e in t.even:
@@ -282,7 +286,7 @@ proc relaxE(t: any, gd: Field2, g: any, dirs: array|seq, orf: float) =
       #t[e][].projectSU
   toc("relaxE")
 
-proc relaxO(t: any, gd: Field2, g: any, dirs: array|seq, orf: float) =
+proc relaxO(t: auto, gd: Field2, g: auto, dirs: array|seq, orf: float) =
   tic()
   threads:
     for e in t.odd:
@@ -295,7 +299,7 @@ proc relaxO(t: any, gd: Field2, g: any, dirs: array|seq, orf: float) =
       #t[e][].projectSU
   toc("relaxO")
 
-proc getGaugeFixTransform*(t: Field, g: any, dirs: seq[int],
+proc getGaugeFixTransform*(t: Field, g: auto, dirs: seq[int],
                            gstop=1e-5, orf=1.8, verb=0) =
   tic()
   var gd = t.newOneOf

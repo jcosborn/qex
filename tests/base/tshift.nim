@@ -72,8 +72,8 @@ proc test2(Smd: typedesc, lat: array): float =
     var dmax = lat[mu]
     if nRanks>1: dmax = lo.outerGeom[mu]
     for d in 1..dmax:
-      #result += testfb(x,y,z, mu, d)
       result += testf(x,y,z, mu, d)
+      result += testfb(x,y,z, mu, d)
 
 template test1(Smd: typedesc, lat: array) =
   test $Smd & " lattice: " & $lat:

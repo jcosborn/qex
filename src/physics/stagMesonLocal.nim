@@ -1,17 +1,17 @@
 import base
-import gauge
+#import gauge
 import os
 
 template corner(l, i):untyped =
   (l.coords[0][i].int and 1) + ((l.coords[1][i].int and 1) shl 1) +
    ((l.coords[2][i].int and 1) shl 2)
 
-template addCorner(l, s, i):untyped =
-  ((s + l.coords[0][i].int) and 1) +
-   ((((s shr 1) + l.coords[1][i].int) and 1) shl 1) +
-   ((((s shr 2) + l.coords[2][i].int) and 1) shl 2)
+#template addCorner(l, s, i):untyped =
+#  ((s + l.coords[0][i].int) and 1) +
+#   ((((s shr 1) + l.coords[1][i].int) and 1) shl 1) +
+#   ((((s shr 2) + l.coords[2][i].int) and 1) shl 2)
 
-proc stagMesons*(v: any) =
+proc stagMesons*(v: auto) =
   let l = v.l
   let nt = l.physGeom[3]
   var c = newSeq[array[8,float]](nt)
@@ -51,7 +51,7 @@ proc stagMesons*(v: any) =
       r += c[t][s]
     echo t, " ", r
 
-proc stagMesonsV*(v: any) =
+proc stagMesonsV*(v: auto) =
   mixin `:=`
   let l = v.l
   let nt = l.physGeom[3]

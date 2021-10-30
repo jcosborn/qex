@@ -83,6 +83,7 @@ proc solveEE*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
     sp.flops = flopsquda.float
     if sp0.verbosity>0:
       echo "solveEE(QUDA): ", sp.getStats
+  #[
   else:  # remove?
     tic()
     proc op(a,b: Field) =
@@ -108,6 +109,7 @@ proc solveEE*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
     sp.flops = flops.float
     if sp0.verbosity>0:
       echo "solveEE: ", sp.getStats
+  ]#
   sp.iterationsMax = sp.iterations
   sp.r2.push 0.0
   sp0.addStats(sp)
@@ -148,7 +150,7 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
   dec sp.verbosity
   sp.usePrevSoln = false
   while r2 > r2stop:
-    var d2e,d2o = 0.0
+    var d2e = 0.0
     threads:
       #s.eoReduce(t, x, m)
       s.Ddag(d, c, m)

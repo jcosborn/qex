@@ -1,4 +1,4 @@
-import macros
+#import macros
 proc baseImpl(b:NimNode; x:NimNode):NimNode =
   var n = x.len
   result = copyNimNode(x[0])

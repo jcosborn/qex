@@ -93,8 +93,8 @@ template sum*(c:Comm, v:ptr float64, n:int) = c.allReduce(v,n)
 #template sum*(c:Comm, v:ptr array, n:int) =
 #  c.allReduce(v[][0].addr, n*v[].len)
 template sum*[R,T](c:Comm, v:ptr array[R,T], n:int) =
-  treerep:
-    v[][rangeLow(R)]
+  #treerep:
+  #  v[][rangeLow(R)]
   c.allReduce(v[][rangeLow(R)].addr, n*rangeLen(R))
 #template qmpSum*(v:ptr tuple, n:int):untyped =
 #  qmpSum(v[][0].addr, n*(sizeOf(v) div sizeOf(v[0])))

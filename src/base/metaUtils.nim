@@ -904,7 +904,7 @@ macro subst*(x: varargs[untyped]): untyped =
       inc idNum
     result = result.replace(x[i], t)
   #echo result.treerepr
-  echo "subst: ", lineInfo(x[0])
+  #echo "subst: ", lineInfo(x[0])
   #result.dumpTyped(result)
 
 proc separateStmtListExpr(st: var NimNode, stex: NimNode): NimNode =
@@ -939,7 +939,7 @@ macro lets*(x:varargs[untyped]):auto =
     result = result.replace(x[i], t)
   result = newStmtList(prestmts, result)
   #echo result.repr
-  echo "lets: ", lineInfo(x[0])
+  #echo "lets: ", lineInfo(x[0])
   #result.dumpTyped(result)
 
 #macro forStaticX2(a,b:static[int]; index,body:untyped):untyped =

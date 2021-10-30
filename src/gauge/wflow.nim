@@ -63,7 +63,7 @@ when isMainModule:
   import qex, gauge, physics/qcdTypes
   import os
 
-  proc printPlaq(g: any) =
+  proc printPlaq(g: auto) =
     let
       p = g.plaq
       sp = 2.0*(p[0]+p[1]+p[2])

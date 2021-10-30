@@ -1,7 +1,7 @@
 import base
 import layout
 import gauge
-import strUtils
+#import strUtils
 import fat7l
 
 export PerfInfo
@@ -24,8 +24,8 @@ proc `$`*(c: HypCoefs): string =
   result &= "  alpha3: " & $c.alpha3 & "\n"
   result &= "}"
 
-proc symStaple(s: any, alp: float, g1: any, g2: any,
-               s1: any, s2: any, tm: any, sm: any) =
+proc symStaple(s: auto, alp: float, g1: auto, g2: auto,
+               s1: auto, s2: auto, tm: auto, sm: auto) =
   tic()
   mixin adj
   tm := g1.adj * g2 * s1.field
@@ -38,11 +38,11 @@ proc symStaple(s: any, alp: float, g1: any, g2: any,
   let siteFlops = float(nc*nc*((6*nc+2*(nc-1))*5+4*2))
   toc("symStaple", flops=siteFlops*g1.l.nSites)
 
-proc symStapleDeriv(f1, f2: any;  # output
-                    g1, g2: any; s1, s2: any;  # same as symStaple
-                    c: any, s: any;  # chain and shift
-                    tm1, tm2: any;  # temporary fields
-                    sm1, sm2: any;  # shifts
+proc symStapleDeriv(f1, f2: auto;  # output
+                    g1, g2: auto; s1, s2: auto;  # same as symStaple
+                    c: auto, s: auto;  # chain and shift
+                    tm1, tm2: auto;  # temporary fields
+                    sm1, sm2: auto;  # shifts
                    ) =
   tic()
   mixin adj
@@ -64,26 +64,26 @@ proc symStapleDeriv(f1, f2: any;  # output
   f1 += sm2.field
   toc("symStapleDeriv")
 
-template proj(x: any) =
+template proj(x: auto) =
   for e in x:
     x[e].projectU x[e]
 
-template proj(r: any, x: any) =
+template proj(r: auto, x: auto) =
   for e in r:
     r[e].projectU x[e]
 
-template projDeriv(r: any, x: any, c: any) =
+template projDeriv(r: auto, x: auto, c: auto) =
   for i in r:
     r[i].projectUDeriv(x[i], c[i])
 
-template projDeriv(r: any, u, x: any, c: any) =
+template projDeriv(r: auto, u, x: auto, c: auto) =
   for i in r:
     r[i].projectUDeriv(u[i], x[i], c[i])
 
 # L[mu][nu] = P( (1-a1)*g[mu] + 0.5*a1 SS(g[nu],g[mu]) )
 # L2[mu][nu] = P( (1-a2)*g[mu] + 0.25*a2 sum{a,b!=mu,nu} SS(L[a][b],L[mu][b]) )
 # fl[mu] = P( (1-a3)*g[mu] + a3/6 sum{nu!=mu} SS(L2[nu][mu],L2[mu][nu]) )
-#proc smear*(coef: HypCoefs, gf: any, fl: any, ht: HypTemps,
+#proc smear*(coef: HypCoefs, gf: auto, fl: auto, ht: HypTemps,
 #            info: var PerfInfo) =
 proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
             info: var PerfInfo):auto =
@@ -101,8 +101,8 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
     tm1: lcm
     sm1: array[4,Shifter[lcm,type(gf[0][0])]]
     s1: array[4,array[4,Shifter[lcm,type(gf[0][0])]]]
-    nflop = 61632.0
-    dtime = 0.0
+    #nflop = 61632.0
+    #dtime = 0.0
   when keepProj:
     var
       l1 = newOneOf(l1x)
@@ -303,16 +303,16 @@ proc smear*[G](coef: HypCoefs, gf: G, fl: G, info: var PerfInfo) =
   coef.smearPriv(gf, fl, info)
   qexGC()
 
-#proc smear*(c: HypCoefs, gf: any, fl: any, info: var PerfInfo) =
+#proc smear*(c: HypCoefs, gf: auto, fl: auto, info: var PerfInfo) =
 #  var t = newHypTemps(gf)
 #  smear(c, gf, fl, t, info)
 
-proc smear*(c: HypCoefs, g: any, fl: any) =
+proc smear*(c: HypCoefs, g: auto, fl: auto) =
   var info: PerfInfo
   c.smear(g, fl, info)
 
 # (d/dX') < C' F + F' C > /2
-proc deriv*(coef: HypCoefs, gf: any, fl: any, info: var PerfInfo) =
+proc deriv*(coef: HypCoefs, gf: auto, fl: auto, info: var PerfInfo) =
   tic()
   type lcm = type(gf[0])
   proc newlcm: lcm = result.new(gf[0].l)
@@ -375,7 +375,7 @@ proc deriv*(coef: HypCoefs, gf: any, fl: any, info: var PerfInfo) =
 
   toc()
 
-#proc deriv*(c: HypCoefs, g: any, fl: any) =
+#proc deriv*(c: HypCoefs, g: auto, fl: auto) =
 #  var info: PerfInfo
 #  c.deriv(g, fl, info)
 

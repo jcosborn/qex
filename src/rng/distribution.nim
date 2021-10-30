@@ -283,7 +283,7 @@ proc newRNGField*[R: RNG](lo: Layout, rng: typedesc[R],
   else:
     echo "#newRNGField lo:"
     r.new(lo.physGeom.newLayout(1, lo.rankGeom))
-  let t = r[0]  # Workaround Nim bug (Nim needs to see the type instantiated.)
+  #let t {.used.} = r[0]  # Workaround Nim bug (Nim needs to see the type instantiated.)
   threads:
     for j in lo.sites:
       var l = lo.coords[lo.nDim-1][j].int

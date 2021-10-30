@@ -82,7 +82,7 @@ letParam:
   savefile = "config"
   savefreq = 10
   lat =
-    if existsFile(gaugefile):
+    if fileExists(gaugefile):
       getFileLattice gaugefile
     else:
       if gaugefile.len > 0:
@@ -242,7 +242,7 @@ proc checkStats(label:string, sp:var SolverParams) =
     qexError "Max r2 larger than requested."
   sp.resetStats
 
-proc reunit(g:any) =
+proc reunit(g:auto) =
   tic()
   threads:
     let d = g.checkSU
@@ -254,7 +254,7 @@ proc reunit(g:any) =
     echo "new unitary deviation avg: ",dd.avg," max: ",dd.max
   toc("reunit")
 
-proc pbp(stag:any) =
+proc pbp(stag:auto) =
   tic()
   var ftmp2 = lo.ColorVector()
   for k in 0..<pbpmass.len:
@@ -269,7 +269,7 @@ proc pbp(stag:any) =
           echo "MEASpbp mass ",m," : ",m*pbp/vol.float
   toc("pbp")
 
-proc mplaq(g:any) =
+proc mplaq(g:auto) =
   tic()
   let
     pl = g.plaq
@@ -279,7 +279,7 @@ proc mplaq(g:any) =
   echo "MEASplaq ss: ",ps,"  st: ",pt,"  tot: ",0.5*(ps+pt)
   toc("plaq")
 
-proc ploop(g:any) =
+proc ploop(g:auto) =
   tic()
   let pg = g[0].l.physGeom
   var pl = newseq[typeof(g.wline @[1])](pg.len)
@@ -300,7 +300,7 @@ proc fgload =
     for mu in 0..<g.len:
       g[mu] := gg[mu]
 
-proc smearRephase(g: any, sg: any):auto =
+proc smearRephase(g: auto, sg: auto):auto =
   tic()
   let smearedForce = coef.smearGetForce(g, sg, info)
   toc("smear")
@@ -311,7 +311,7 @@ proc smearRephase(g: any, sg: any):auto =
   toc("BC & Phase")
   smearedForce
 
-proc smearRephaseDiscardForce(g: any, sg: any) =
+proc smearRephaseDiscardForce(g: auto, sg: auto) =
   tic()
   coef.smear(g, sg, info)
   qexGC "smear done"
@@ -329,7 +329,7 @@ template pnorm2(p2:float) =
       p2t += p[i].norm2
     threadMaster: p2 = p2t
 
-proc gaction(g:any, f2:seq[seq[float]], p2:float):auto =
+proc gaction(g:auto, f2:seq[seq[float]], p2:float):auto =
   tic()
   let
     ga = gc.actionA g
@@ -388,7 +388,7 @@ proc fscale(k,i:int, t:float):float =
   elif i < hmasses[k].len: 0.5*t*(hmasses[k][i].sq-hmasses[k][i-1].sq)/hmasses[k][i-1]
   else: 0.5*t/hmasses[k][i-1]
 
-proc smearedOneLinkForce(f: any, smearedForce: proc, g:any) =
+proc smearedOneLinkForce(f: auto, smearedForce: proc, g:auto) =
   tic("olf")
   # Reverse accumulation of the smearing derivatives
   # 1. correcting phase
@@ -416,7 +416,7 @@ proc smearedOneLinkForce(f: any, smearedForce: proc, g:any) =
   qexGC "combine"
   toc("combine")
 
-proc fforce(stag: any, f: any, sf: proc, g: any, ix:openarray[int], ts:openarray[float]) =
+proc fforce(stag: auto, f: auto, sf: proc, g: auto, ix:openarray[int], ts:openarray[float]) =
   tic("fforce")
   var t: array[4,Shifter[typeof(ftmp), typeof(ftmp[0])]]
   for mu in 0..<f.len:
@@ -633,7 +633,7 @@ proc mdvAllfga(ts,gs:openarray[float]) =
     toc("done")
   toc("done")
 
-proc revCheck(evo:any; h0,ga0,t0:float, fa0:seq[seq[float]]) =
+proc revCheck(evo:auto; h0,ga0,t0:float, fa0:seq[seq[float]]) =
   tic("reversibility")
   var
     g1 = lo.newgauge
@@ -693,7 +693,7 @@ block:
       inc j
       H.add fintalg(T = T, V = V[j], steps = hfsteps[k][i])
 
-if existsFile(gaugefile):
+if fileExists(gaugefile):
   tic("load")
   if 0 != g.loadGauge gaugefile:
     qexError "failed to load gauge file: ", gaugefile

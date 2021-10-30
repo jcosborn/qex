@@ -456,6 +456,7 @@ proc applyOp1(x,y:NimNode; op:string):auto =
       #echoAll isMatrix(`x`[e])
       `o`(tx[e], ty)
 
+#[
 var exprInstInfo {.compiletime.}: type(instantiationInfo())
 macro debugExpr(body: typed): untyped =
   #let ii = instantiationInfo(1)
@@ -469,6 +470,7 @@ macro debugExpr(body: typed): untyped =
   result.add body
   echo ii
   echo br
+]#
 
 #proc applyOp2(x,y:NimNode; ty:typedesc; op:string):auto =
 proc applyOp2(x,y:NimNode; ty:NimNode; op:string):auto =

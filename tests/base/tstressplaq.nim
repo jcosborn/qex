@@ -14,13 +14,13 @@ proc linkTrace(g: auto):auto =
 suite "Stress plaquette test":
   qexInit()
   const
-    nd = 4
+    #nd = 4
     lat = [8,8,8,8]
   var
     lo = lat.newLayout
     g = lo.newGauge
     rs = newRNGField(RngMilc6, lo, 987654321)
-    rsX: RngMilc6  # workaround Nim codegen bug
+    #rsX: RngMilc6  # workaround Nim codegen bug
 
   test "unit gauge":
     let

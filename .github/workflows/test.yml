@@ -5,7 +5,7 @@ jobs:
   build:
     strategy:
       matrix:
-        nim-branch: [version-1-4, devel]
+        nim-branch: [version-1-4, version-1-6, devel]
         fuel-compat: [0, 1]
       fail-fast: false
     name: nim-${{ matrix.nim-branch }}-FUELCompat:${{ matrix.fuel-compat }}

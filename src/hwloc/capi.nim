@@ -900,30 +900,30 @@ type
                 ##    It may change if intermediate Group objects are added.
     kind*: cuint               ## *< \brief Internally-used kind of group.
     subkind*: cuint            ## *< \brief Internally-used subkind to distinguish different levels of groups with same kind
-    dont_merge*: cuchar        ## *< \brief Flag preventing groups from being automatically merged with identical parent or children.
+    dont_merge*: uint8        ## *< \brief Flag preventing groups from being automatically merged with identical parent or children.
 
   hwloc_pcidev_attr_s* {.bycopy.} = object
     domain*: cushort
-    bus*: cuchar
-    dev*: cuchar
-    `func`*: cuchar
+    bus*: uint8
+    dev*: uint8
+    `func`*: uint8
     class_id*: cushort
     vendor_id*: cushort
     device_id*: cushort
     subvendor_id*: cushort
     subdevice_id*: cushort
-    revision*: cuchar
+    revision*: uint8
     linkspeed*: cfloat         ##  in GB/s
 
-  upstream_INNER_C_UNION* {.bycopy.} = object {.union.}
+  upstream_INNER_C_UNION* {.bycopy,union.} = object
     pci*: hwloc_pcidev_attr_s
 
   pci_INNER_C_STRUCT* {.bycopy.} = object
     domain*: cushort
-    secondary_bus*: cuchar
-    subordinate_bus*: cuchar
+    secondary_bus*: uint8
+    subordinate_bus*: uint8
 
-  downstream_INNER_C_UNION* {.bycopy.} = object {.union.}
+  downstream_INNER_C_UNION* {.bycopy,union.} = object
     pci*: pci_INNER_C_STRUCT
 
   hwloc_bridge_attr_s* {.bycopy.} = object
@@ -936,7 +936,7 @@ type
   hwloc_osdev_attr_s* {.bycopy.} = object
     `type`*: hwloc_obj_osdev_type_t
 
-  hwloc_obj_attr_u* {.bycopy.} = object {.union.}
+  hwloc_obj_attr_u* {.bycopy,union.} = object
     numanode*: hwloc_numanode_attr_s ## * \brief NUMA node-specific Object Attributes
     ## * \brief Cache-specific Object Attributes
     cache*: hwloc_cache_attr_s ## * \brief Group-specific Object Attributes
@@ -2479,12 +2479,12 @@ proc hwloc_topology_is_thissystem*(topology: hwloc_topology_t): cint {.
 
 type
   hwloc_topology_discovery_support* {.bycopy.} = object
-    pu*: cuchar                ## * \brief Detecting the number of PU objects is supported.
+    pu*: uint8                ## * \brief Detecting the number of PU objects is supported.
     ## * \brief Detecting the number of NUMA nodes is supported.
-    numa*: cuchar              ## * \brief Detecting the amount of memory in NUMA nodes is supported.
-    numa_memory*: cuchar       ## * \brief Detecting and identifying PU objects that are not available to the current process is supported.
-    disallowed_pu*: cuchar     ## * \brief Detecting and identifying NUMA nodes that are not available to the current process is supported.
-    disallowed_numa*: cuchar
+    numa*: uint8              ## * \brief Detecting the amount of memory in NUMA nodes is supported.
+    numa_memory*: uint8       ## * \brief Detecting and identifying PU objects that are not available to the current process is supported.
+    disallowed_pu*: uint8     ## * \brief Detecting and identifying NUMA nodes that are not available to the current process is supported.
+    disallowed_numa*: uint8
 
 
 ## * \brief Flags describing actual PU binding support for this topology.
@@ -2495,18 +2495,18 @@ type
 
 type
   hwloc_topology_cpubind_support* {.bycopy.} = object
-    set_thisproc_cpubind*: cuchar ## * Binding the whole current process is supported.
+    set_thisproc_cpubind*: uint8 ## * Binding the whole current process is supported.
     ## * Getting the binding of the whole current process is supported.
-    get_thisproc_cpubind*: cuchar ## * Binding a whole given process is supported.
-    set_proc_cpubind*: cuchar  ## * Getting the binding of a whole given process is supported.
-    get_proc_cpubind*: cuchar  ## * Binding the current thread only is supported.
-    set_thisthread_cpubind*: cuchar ## * Getting the binding of the current thread only is supported.
-    get_thisthread_cpubind*: cuchar ## * Binding a given thread only is supported.
-    set_thread_cpubind*: cuchar ## * Getting the binding of a given thread only is supported.
-    get_thread_cpubind*: cuchar ## * Getting the last processors where the whole current process ran is supported
-    get_thisproc_last_cpu_location*: cuchar ## * Getting the last processors where a whole process ran is supported
-    get_proc_last_cpu_location*: cuchar ## * Getting the last processors where the current thread ran is supported
-    get_thisthread_last_cpu_location*: cuchar
+    get_thisproc_cpubind*: uint8 ## * Binding a whole given process is supported.
+    set_proc_cpubind*: uint8  ## * Getting the binding of a whole given process is supported.
+    get_proc_cpubind*: uint8  ## * Binding the current thread only is supported.
+    set_thisthread_cpubind*: uint8 ## * Getting the binding of the current thread only is supported.
+    get_thisthread_cpubind*: uint8 ## * Binding a given thread only is supported.
+    set_thread_cpubind*: uint8 ## * Getting the binding of a given thread only is supported.
+    get_thread_cpubind*: uint8 ## * Getting the last processors where the whole current process ran is supported
+    get_thisproc_last_cpu_location*: uint8 ## * Getting the last processors where a whole process ran is supported
+    get_proc_last_cpu_location*: uint8 ## * Getting the last processors where the current thread ran is supported
+    get_thisthread_last_cpu_location*: uint8
 
 
 ## * \brief Flags describing actual memory binding support for this topology.
@@ -2517,22 +2517,22 @@ type
 
 type
   hwloc_topology_membind_support* {.bycopy.} = object
-    set_thisproc_membind*: cuchar ## * Binding the whole current process is supported.
+    set_thisproc_membind*: uint8 ## * Binding the whole current process is supported.
     ## * Getting the binding of the whole current process is supported.
-    get_thisproc_membind*: cuchar ## * Binding a whole given process is supported.
-    set_proc_membind*: cuchar  ## * Getting the binding of a whole given process is supported.
-    get_proc_membind*: cuchar  ## * Binding the current thread only is supported.
-    set_thisthread_membind*: cuchar ## * Getting the binding of the current thread only is supported.
-    get_thisthread_membind*: cuchar ## * Binding a given memory area is supported.
-    set_area_membind*: cuchar  ## * Getting the binding of a given memory area is supported.
-    get_area_membind*: cuchar  ## * Allocating a bound memory area is supported.
-    alloc_membind*: cuchar     ## * First-touch policy is supported.
-    firsttouch_membind*: cuchar ## * Bind policy is supported.
-    bind_membind*: cuchar      ## * Interleave policy is supported.
-    interleave_membind*: cuchar ## * Next-touch migration policy is supported.
-    nexttouch_membind*: cuchar ## * Migration flags is supported.
-    migrate_membind*: cuchar   ## * Getting the last NUMA nodes where a memory area was allocated is supported
-    get_area_memlocation*: cuchar
+    get_thisproc_membind*: uint8 ## * Binding a whole given process is supported.
+    set_proc_membind*: uint8  ## * Getting the binding of a whole given process is supported.
+    get_proc_membind*: uint8  ## * Binding the current thread only is supported.
+    set_thisthread_membind*: uint8 ## * Getting the binding of the current thread only is supported.
+    get_thisthread_membind*: uint8 ## * Binding a given memory area is supported.
+    set_area_membind*: uint8  ## * Getting the binding of a given memory area is supported.
+    get_area_membind*: uint8  ## * Allocating a bound memory area is supported.
+    alloc_membind*: uint8     ## * First-touch policy is supported.
+    firsttouch_membind*: uint8 ## * Bind policy is supported.
+    bind_membind*: uint8      ## * Interleave policy is supported.
+    interleave_membind*: uint8 ## * Next-touch migration policy is supported.
+    nexttouch_membind*: uint8 ## * Migration flags is supported.
+    migrate_membind*: uint8   ## * Getting the last NUMA nodes where a memory area was allocated is supported
+    get_area_memlocation*: uint8
 
 
 ## * \brief Set of flags describing actual support for this topology.

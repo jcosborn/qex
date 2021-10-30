@@ -28,6 +28,7 @@ suite "description for this stuff":
 
   test "out of bounds error is thrown on bad access":
     let v = @[1, 2, 3]  # you can do initialization here
+    discard v[2]
     #expect(IndexError):
     #  discard v[4]
 

@@ -1,6 +1,6 @@
 import base/metaUtils
 
-type T = array[3,float]
+type T {.used.} = array[3,float]
 echo "* Generic parameters"
 proc g[T;N:static[int]](x:array[N,T]) =
   var s = ""

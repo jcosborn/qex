@@ -5,7 +5,7 @@ qexInit()
 
 # Accept command line arguments and set up parameters
 let
-  source_type = strParam("source_type", "Z4") # Z4, Z2, U1, Gauss
+  #source_type = strParam("source_type", "Z4") # Z4, Z2, U1, Gauss
   dilute_type = strParam("dilute_type", "EO").parseDilution # EO, CORNER
 
 let

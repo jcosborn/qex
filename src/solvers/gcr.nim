@@ -113,7 +113,7 @@ proc getx*(gs: GcrState) =
 #         res_arg: ptr QOP_resid_arg_t; `out`: ptr Vector;
 #         `in`: ptr Vector; r: ptr Vector; subset: QDP_Subset): QOP_status_t =
 # solves: A x = b
-proc solve*(gs: var GcrState; opx: var any; sp: var SolverParams) =
+proc solve*(gs: var GcrState; opx: var auto; sp: var SolverParams) =
   mixin apply
   tic()
   let vrb = sp.verbosity

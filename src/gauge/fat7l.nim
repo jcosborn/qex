@@ -82,7 +82,7 @@ proc makeImpLinks*(info: var PerfInfo, fl: auto, gf: auto, coef: auto,
     ts1: array[4,Shifter[lcm,type(gf[0][0])]]
     ts2: array[4,Shifter[lcm,type(gf[0][0])]]
     nflop = 0.0
-    dtime = 0.0
+    #dtime = 0.0
     coef1 = coef.oneLink
     coef3 = coef.threeStaple
     coef5 = coef.fiveStaple

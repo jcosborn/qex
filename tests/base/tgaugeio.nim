@@ -6,7 +6,7 @@ suite "Test gauge IO":
   threads: echo "thread ",threadNum," / ",numThreads
   const fn = "tmplat.lime"
   var
-    (l,g,r) = setupLattice([8,8,8,8])
+    (l,g,_) = setupLattice([8,8,8,8])
     p = g.plaq
 
   test "save double precision (default)":

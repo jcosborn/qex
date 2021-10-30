@@ -350,9 +350,9 @@ proc start*[V:static[int],T](s:var Shift[V,T]; src:Field[V,T]) =
       startSendBuf(sb)
 
 proc local*(s:Shift) =
-  template l:untyped = s.dest.l
+  #template l:untyped = s.dest.l
   template si:untyped = s.si
-  template sb:untyped = s.sb
+  #template sb:untyped = s.sb
   tFor i, s.subset.lowOuter..<s.subset.highOuter:
     let k1 = si.sq.pidx[i]
     #echo i, " ", k1
@@ -366,7 +366,7 @@ proc local*(s:Shift) =
 
 proc boundary*(s:var Shift) =
   mixin blend
-  template l:untyped = s.dest.l
+  #template l:untyped = s.dest.l
   template si:untyped = s.si
   template sb:untyped = s.sb
   if si.nRecvDests > 0:

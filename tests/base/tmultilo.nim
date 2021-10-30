@@ -5,7 +5,7 @@ import strformat
 
 AT = 1e-12
 
-proc linkTrace(g: any):auto =
+proc linkTrace(g: auto):auto =
   let n = g[0][0].ncols * g[0].l.physVol * g.len
   var lt: type(g[0].trace)
   threads:
@@ -50,7 +50,7 @@ suite "Multi-Layout test":
     g2 = lo2.newGauge
     rs1 = newRNGField(RngMilc6, lo1, 987654321)
     #rs2 = newRNGField(RngMilc6, lo2, 987654321)
-    rsX: RngMilc6  # workaround Nim codegen bug
+    #rsX: RngMilc6  # workaround Nim codegen bug
 
   test "unit gauge":
     let

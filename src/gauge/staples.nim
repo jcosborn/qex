@@ -3,7 +3,7 @@ import layout
 import layout/shifts
 #import profile
 #import stdUtils
-import gaugeUtils
+#import gaugeUtils
 
 proc startCornerShifts*[T](u: openArray[T]): auto =
   var s:seq[seq[ShiftB[type(u[0][0])]]]

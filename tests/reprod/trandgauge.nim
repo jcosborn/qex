@@ -6,7 +6,7 @@ let
   lo = lat.newLayout
 var
   g = lo.newGauge
-  r = lo.newRNGField RngMilc6
+  #r = lo.newRNGField RngMilc6
 
 g.random
 
