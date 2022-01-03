@@ -69,7 +69,7 @@ suite "Test Gauge Fixing":
       echo dirs
       let l0 = g.linkTrace dirs
       threads: t := 1
-      getGaugeFixTransform(t, g1, dirs, gstop, orf)
+      getGaugeFixTransform(t, g1, dirs, gstop, orf, verb=0)
       g2.gaugeTransform(g1, t)
       let p2 = g2.plaq
       let l2 = g2.linkTrace dirs

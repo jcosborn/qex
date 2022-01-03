@@ -36,11 +36,14 @@ when isMainModule:
   proc comp(a: Field, b: Field) =
     var ax,bx: a[0].type.noSimd
     var crd: array[4,cint]
+    var ne = 0
     for i in a.l.singleSites:
       ax := a{i}
       bx := b{i}
       let d = norm2(ax-bx)
-      if d>1e-10:
+      if d>1e-10 and ne<10:
+        inc ne
+        #echo ne
         a.l.coord(crd,i)
         echo i, " ", crd, " ", d
         echo "  ", ax
@@ -66,6 +69,7 @@ when isMainModule:
     #var s = newStag3(g,g)
     var s = newStag3(fl, ll)
     var sp = initSolverParams()
+    sp.backend = sbQex
     sp.r2req = 1e-12
     sp.verbosity = 1
     var src = lo.ColorVector()
@@ -86,6 +90,9 @@ when isMainModule:
     var mass = floatParam("mass", 1.0)
     echo "mass: ", mass
     #s.solve(soln, src, mass, sp)
+    s.solveEE(soln, src, mass, sp)
+    threads:
+      soln := 0
     s.solveEE(soln, src, mass, sp)
     #src2 := 0
     #s.D(src2,src,mass)
@@ -140,10 +147,52 @@ when isMainModule:
     #echo soln[[0,0,1,0]]
     #echo soln2[lo.nEvenOuter]
 
+  proc testHisq(g: seq[Field]) =
+    let lo = g[0].l
+    var coef: HisqCoefs
+    g.setBC
+    g.stagPhase
+    coef.init()
+    var fl = lo.newGauge()
+    var ll = lo.newGauge()
+    coef.smear(g, fl, ll)
+    for i in 0..3: ll[i] := 0
+    #var s = newStag3(g,g)
+    var s = newStag3(fl, ll)
+    var sp = initSolverParams()
+    sp.backend = sbQex
+    sp.r2req = 1e-12
+    sp.verbosity = 1
+    var src = lo.ColorVector()
+    var src2 = lo.ColorVector()
+    var soln = lo.ColorVector()
+    var soln2 = lo.ColorVector()
+    threads:
+      src := 0
+      soln := 0
+      soln2 := 0
+    pointSource(src, [0,0,0,0], 0)
+    #pointSource(src, [0,0,0,2], 0)
+    #pointSource(src, [0,0,2,0], 0)
+    #pointSource(src, [0,0,0,1], 0)
+    #pointSource(src, [0,0,1,0], 0)
+    #pointSource(src, [0,1,0,0], 0)
+    #pointSource(src, [1,0,0,0], 0)
+    var mass = floatParam("mass", 1.0)
+    echo "mass: ", mass
+    #s.solve(soln, src, mass, sp)
+    s.solveEE(soln, src, mass, sp)
+    threads:
+      soln := 0
+    s.solveEE(soln, src, mass, sp)
+    #src2 := 0
+    #s.D(src2,src,mass)
+    #s.D(soln,src,mass)
 
   proc test() =
     defaultSetup()
     g.random
+    #testHisq(g)
 
     let latt_size = newCoordinate(lat)
     #let simd_layout = newCoordinate(lo.innerGeom)

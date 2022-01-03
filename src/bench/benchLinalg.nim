@@ -69,12 +69,12 @@ template bench(fps,bps,mm,eqn: untyped) {.dirty.} =
     let mb = int((nrep.float*bytes)/(1024.0*1024.0*dt))
     let mem = vmm/1024.0
     inc nbench
-    echo "bench: ",nbench| -6, "secs: ", dt|(6,3), "  mf: ", mf|7, "  mb: ", mb|7, "  mem: ", mem, "  nrep: ", nrep
+    echo "bench: ",nbench|(-6), "secs: ", dt|(6,3), "  mf: ", mf|7, "  mb: ", mb|7, "  mem: ", mem, "  nrep: ", nrep
     echo exp2string(eqn), "\n"
 template bench(fps,bps,eqn: untyped) =
   bench(fps,bps,0,eqn)
 
-proc test(lat:any) =
+proc test(lat:auto) =
   var lo = newLayout(lat)
   template newCV: untyped = lo.ColorVector()
   template newCM: untyped = lo.ColorMatrix()

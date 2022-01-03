@@ -13,10 +13,10 @@ template chkzero(x: SomeFloat, n: SomeNumber): untyped =
   check(x < n*e)
 
 proc chkeq(x,y: auto): auto =
+  let z = x - y
   var mx,md:type(x[0,0].re)
   for i in 0..<x.nrows:
     for j in 0..<x.ncols:
-      let z = x - y
       mx = max(mx, abs(x[i,j].re))
       mx = max(mx, abs(x[i,j].im))
       md = max(md, abs(z[i,j].re))
@@ -30,8 +30,15 @@ proc chkeq(x,y: auto): auto =
   chkzero(s, 256*x.nrows)
 
 proc rsqrtPH_test(x: auto): auto =
-  let y = x.adj * x
+  #echo x
+  #let y = x.adj * x
   #echo y
+  var xa: type x
+  xa := x.adj
+  let y = xa * x
+  #let xa = x.adj
+  #let y2 = xa * x
+  #echo y2
   #let z = y * y
   #let r = rsqrtPH(z)
   #let t = r * y
@@ -39,6 +46,9 @@ proc rsqrtPH_test(x: auto): auto =
   let t = r * y * r
   var o: type(t)
   o := 1
+  echo "x: ", x.norm2
+  echo "y: ", y.norm2
+  echo "t: ", t.norm2
   chkeq(t, o)
 
 var rs: RngMilc6
@@ -49,6 +59,8 @@ suite "Test matrix rsqrtPH":
     var m: T
     for i in 0..<simdLength(m):
       gaussian( masked(m,1 shl i), rs )
+      #gaussian( m[asSimd(i)], rs )
+      #m := 1
     test("rsqrtPH " & $m.type):
       subtest rsqrtPH_test(m)
   template doTest(t:untyped) =

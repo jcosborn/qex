@@ -31,22 +31,28 @@ proc gtGradient(grad: Field, g: auto, t: auto, dirs: array|seq) =
   toc("grad2 initShiftB")
   threads:
     for i in 0..<n:
-      startSB(sf[i], t[ix].adj)
+      #startSB(sf[i], t[ix].adj)  # gives wrong result
+      startSB(sf[i], t[ix])
     for i in 0..<n:
       let mu = dirs[i]
-      startSB(sb[i], g[mu][ix].adj*t[ix].adj)
-    for ir in grad:
+      #startSB(sb[i], g[mu][ix].adj*t[ix].adj)
+      startSB(sb[i], t[ix]*g[mu][ix])
+    for ir0 in grad:
       var m: type(grad[0])
       for i in 0..<n:
         let mu = dirs[i]
-        localSB(sf[i], ir, imadd(m, g[mu][ir], it), t[ix].adj)
-        localSB(sb[i], ir, iadd(m, it), g[mu][ix].adj*t[ix].adj)
-      assign(grad[ir], m)
+        #localSB(sf[i], ir0, imadd(m, g[mu][ir0], it), t[ix].adj)
+        localSB(sf[i], ir0, imadd(m, g[mu][ir0], it.adj), t[ix])
+        #localSB(sb[i], ir0, iadd(m, it), g[mu][ix].adj*t[ix].adj)
+        localSB(sb[i], ir0, iadd(m, it.adj), t[ix]*g[mu][ix])
+      assign(grad[ir0], m)
     for i in 0..<n:
       let mu = dirs[i]
-      boundarySB(sf[i], imadd(grad[ir], g[mu][ir], it))
+      #boundarySB(sf[i], imadd(grad[ir], g[mu][ir], it))
+      boundarySB(sf[i], imadd(grad[ir], g[mu][ir], it.adj))
     for i in 0..<n:
-      boundarySB(sb[i], iadd(grad[ir], it))
+      #boundarySB(sb[i], iadd(grad[ir], it))
+      boundarySB(sb[i], iadd(grad[ir], it.adj))
   #grad[ir][].projectTAH(m[])
   toc("grad2 done")
 
@@ -340,6 +346,8 @@ proc getGaugeFixTransform*(t: Field, g: auto, dirs: seq[int],
     else:
       t.projectSU
     toc("loop end")
+    #let tn = t.trace
+    #echo "t norm2: ", tn
   toc("main2")
 
 when isMainModule:

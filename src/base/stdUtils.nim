@@ -97,6 +97,8 @@ proc `:=`*[N,T1,T2](r: var array[N,T1], x: array[N,T2]) {.inline.} =
   const n = r.len
   for i in 0..<n:
     r[i] := x[i]
+template assign*[N,T1,T2](r: var array[N,T1], x: array[N,T2]) =
+  r := x
 
 proc `+`*[N,T1,T2](x: array[N,T1], y: array[N,T2]): auto {.inline,noInit.} =
   const n = x.len

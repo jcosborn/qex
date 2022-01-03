@@ -1,7 +1,7 @@
 import ospaths
 import io/qio
 
-#const gridDir {.strdefine.} = "/home/josborn/lqcd/install/grid-git"
+const gridDir {.strdefine.} = getEnv("HOME") & "/lqcd/install/grid"
 const gridInc = gridDir / "include"
 {.passC: "-I" & gridInc.}
 {.passL: "-L" & gridDir & "/lib -lGrid -lz".}

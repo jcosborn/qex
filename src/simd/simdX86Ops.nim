@@ -71,12 +71,12 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
     toSimd(x)
   proc to*(x:T; t:typedesc[array[N,F]]):array[N,F] {.inline,noInit.} =
     `P "_storeu_" S`(cast[ptr F](result.addr), x)
-  when F is float32:
-    template toSingleImpl*(x: T): untyped = x
-    template toSingle*(x: T): untyped = x
-  else:
-    template toDoubleImpl*(x: T): untyped = x
-    template toDouble*(x: T): untyped = x
+  #when F is float32:
+  #  template toSingleImpl*(x: T): untyped = x
+  #  template toSingle*(x: T): untyped = x
+  #else:
+  #  template toDoubleImpl*(x: T): untyped = x
+  #  template toDouble*(x: T): untyped = x
   #proc assign1*(r:var T; x:SomeNumber) {.inline.} =
   template assign1*(r: var T; x: SomeNumber) =
     r = `P "_set1_" S`(F(x))
@@ -313,15 +313,55 @@ template simdMax*(r:var SomeNumber; x:m256d) = simdMaxReduce(r, x)
 template simdMax*(r:var SomeNumber; x:m512) = simdMaxReduce(r, x)
 template simdMax*(r:var SomeNumber; x:m512d) = simdMaxReduce(r, x)
 
-#template toSingleImpl*(x:m256d):m128 = mm256_cvtpd_ps(x)
-#template toDoubleImpl*(x:m128):m256d = mm256_cvtps_pd(x)
-
 # include perm, pack and blend
 include simdX86Ops1
 
 
 #### mixed precision
 
+### Simd4
+proc assign*(r: var m128, x: m256d) {.inline.} =
+  r = mm256_cvtpd_ps(x)
+proc assign*(r: var m256d, x: m128) {.inline.} =
+  r = mm256_cvtps_pd(x)
+#proc assign*(r: var m128, x: array[2,m128d]) {.inline.} =
+#  let t0 = mm_cvtpd_ps(x[0])
+#  let t1 = mm_cvtpd_ps(x[1])
+#  r = mm_castps4_ps128(t0)
+#  r = mm_insertf64_ps(r, t1, 1)
+#proc assign*(r: var array[2,m128d], x: m128) {.inline.} =
+#  r[0] = mm_cvtps_pd(mm128_extractf128_ps(x,0))
+#  r[1] = mm_cvtps_pd(mm128_extractf128_ps(x,1))
+
+### Simd8
+proc assign*(r: var m256, x: m512d) {.inline.} =
+  r = mm512_cvtpd_ps(x)
+proc assign*(r: var m512d, x: m256) {.inline.} =
+  r = mm512_cvtps_pd(x)
+proc assign*(r: var m256, x: array[2,m256d]) {.inline.} =
+  let t0 = mm256_cvtpd_ps(x[0])
+  let t1 = mm256_cvtpd_ps(x[1])
+  r = mm256_castps128_ps256(t0)
+  r = mm256_insertf128_ps(r, t1, 1)
+proc assign*(r: var array[2,m256d], x: m256) {.inline.} =
+  r[0] = mm256_cvtps_pd(mm256_extractf128_ps(x,0))
+  r[1] = mm256_cvtps_pd(mm256_extractf128_ps(x,1))
+
+### Simd16
+proc assign*(r: var m512, x: array[2,m512d]) {.inline.} =
+  let t0 = mm512_cvtpd_ps(x[0])
+  let t1 = mm512_cvtpd_ps(x[1])
+  r = mm512_castps256_ps512(t0)
+  r = mm512_insertf32x8(r, t1, 1)
+proc assign*(r: var array[2,m512d], x:m512) {.inline.} =
+  r[0] = mm512_cvtps_pd(mm512_castps512_ps256(x))
+  var y {.noInit.}: m512
+  perm8(y, x)
+  r[1] = mm512_cvtps_pd(mm512_castps512_ps256(y))
+  #result[][0] = mm512_cvtps_pd(mm512_extractf32x8_ps(x,0))
+  #result[][1] = mm512_cvtps_pd(mm512_extractf32x8_ps(x,1))
+
+#[
 import simdArray
 
 template tryArray(T,TA,L,B,BB:untyped):untyped =
@@ -341,11 +381,11 @@ macro makeArray(P,N:untyped):auto =
     result.add getAst(tryArray(t,ta,newLit(l),b,bb))
     m = m div 2
   #echo result.treerepr
+  #echo result.repr
 
 makeArray(D, 16)
 makeArray(D,  8)
 makeArray(D,  4)
-
 
 when defined(SSE):
   when defined(AVX):
@@ -392,7 +432,9 @@ when defined(AVX512):
     result[][1] = mm512_cvtps_pd(mm512_castps512_ps256(y))
     #result[][0] = mm512_cvtps_pd(mm512_extractf32x8_ps(x,0))
     #result[][1] = mm512_cvtps_pd(mm512_extractf32x8_ps(x,1))
+]#
 
+### half precision
 when defined(SimdS4):
   proc mm_cvtph_ps(x:m128i):m128
     {.importC:"_mm_cvtph_ps",header:"f16cintrin.h".}
@@ -410,7 +452,6 @@ when defined(SimdS8):
 when defined(m512):
   template toHalf*(x:m512):SimdH16 = SimdH16(mm512_cvtps_ph(x,0))
   template toSingle*(x:SimdH16):m512 = mm512_cvtph_ps(m256i(x))
-
 
 when isMainModule:
   var x,y,z:m256d

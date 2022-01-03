@@ -25,13 +25,13 @@ export simdWrap
 #  perm2(y, x)
 #  result[1] = mm_cvtps_pd(y)
 
-when declared(SimdS4):
-  proc toDoubleImpl*(x: SimdS4): SimdD4 {.inline,noInit.} =
-    result[] := toDoubleImpl(x[])
+#when declared(SimdS4):
+#  proc toDoubleImpl*(x: SimdS4): SimdD4 {.inline,noInit.} =
+#    result[] := toDoubleImpl(x[])
 
-when declared(SimdS8):
-  proc toDoubleImpl*(x: SimdS8): SimdD8 {.inline,noInit.} =
-    result[] := toDoubleImpl(x[])
+#when declared(SimdS8):
+#  proc toDoubleImpl*(x: SimdS8): SimdD8 {.inline,noInit.} =
+#    result[] := toDoubleImpl(x[])
   #proc inorm2*(r:var SimdD8; x:SimdS8) {.inline.} =
   #  var xx{.noInit.} = toDoubleImpl(x[])
   #  inorm2(r[], xx)
@@ -44,13 +44,13 @@ when declared(SimdS8):
   #  let yd = toDouble(y)
   #  imsub(r, xd, yd)
 
-when declared(SimdS16):
-  proc toDoubleImpl*(x: SimdS16): SimdD16 {.inline,noInit.} =
+#when declared(SimdS16):
+#  proc toDoubleImpl*(x: SimdS16): SimdD16 {.inline,noInit.} =
     #for i in 0..15: result[i] = float64(x[i])
     #let t = toDoubleA(x[])
     #result[0] = t[0]
     #result[1] = t[1]
-    result[] := toDoubleImpl(x[])
+#    result[] := toDoubleImpl(x[])
   #proc inorm2*(r:var SimdD16; x:SimdS16) {.inline.} = inorm2(r, toDouble(x))
   #proc imadd*(r:var SimdD16; x,y:SimdS16) {.inline.} =
   #  var xx{.noInit.} = toDouble(x)

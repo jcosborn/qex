@@ -49,8 +49,16 @@ template gaussian*(r: AsVar, x: untyped) =
   var t = r[]
   gaussian(t, x)
 proc gaussian*(v: Field, r: RNGField) =
+  let nd = v.l.nDim
+  var c = newSeq[int32](nd)
   for i in v.l.sites:
-    gaussian(v{i}, r{i})
+    #when defined(RandCoordOrder) or not defined(RandRawOrder):
+    when defined(RandCoordOrder):
+      v.l.coord(c, i)
+      let j = r.l.rankIndex(c).index
+      gaussian(v{i}, r{j})
+    else:
+      gaussian(v{i}, r{i})
 proc gaussian*[T](a: openArray[T], r: RNGField) =
   for i in 0..<a.len:
     gaussian(a[i], r)
@@ -71,8 +79,15 @@ template uniform*(r: AsVar, x: untyped) =
   var t = r[]
   uniform(t, x)
 proc uniform*(v: Field, r: RNGField) =
+  let nd = v.l.nDim
+  var c = newSeq[int32](nd)
   for i in v.l.sites:
-    uniform(v{i}, r{i}[])
+    when defined(RandCoordOrder):
+      v.l.coord(c, i)
+      let j = r.l.rankIndex(c).index
+      uniform(v{i}, r{j}[])
+    else:
+      uniform(v{i}, r{i}[])
 
 proc z4*(x: var AsComplex, r: var RNG) =
   when defined(FUELCompat):
@@ -121,8 +136,15 @@ template z4*(r: AsVar, x: untyped) =
   var t = r[]
   z4(t, x)
 proc z4*(x: Field, r: RNGField) =
+  let nd = x.l.nDim
+  var c = newSeq[int32](nd)
   for i in x.l.sites:
-    x{i}.z4 r{i}
+    when defined(RandCoordOrder):
+      x.l.coord(c, i)
+      let j = r.l.rankIndex(c).index
+      x{i}.z4 r{j}
+    else:
+      x{i}.z4 r{i}
 
 proc z2*(x: var AsComplex, r: var RNG) =
   when defined(FUELCompat):
@@ -147,8 +169,15 @@ template z2*(r: AsVar, x: untyped) =
   var t = r[]
   z2(t, x)
 proc z2*(x: Field, r: RNGField) =
+  let nd = x.l.nDim
+  var c = newSeq[int32](nd)
   for i in x.l.sites:
-    x{i}.z2 r{i}
+    when defined(RandCoordOrder):
+      x.l.coord(c, i)
+      let j = r.l.rankIndex(c).index
+      x{i}.z2 r{j}
+    else:
+      x{i}.z2 r{i}
 
 proc u1*(x: var AsComplex, r: var RNG) =
   when defined(FUELCompat):
@@ -176,8 +205,15 @@ template u1*(r: AsVar, x: untyped) =
   var t = r[]
   u1(t, x)
 proc u1*(x: Field, r: RNGField) =
+  let nd = x.l.nDim
+  var c = newSeq[int32](nd)
   for i in x.l.sites:
-    x{i}.u1 r{i}
+    when defined(RandCoordOrder):
+      x.l.coord(c, i)
+      let j = r.l.rankIndex(c).index
+      x{i}.u1 r{j}
+    else:
+      x{i}.u1 r{i}
 
 proc vonMisesWithExp[D](rng:var RNG, lambda:D):auto =
   ## sample x ~ exp(lambda*cos(x))

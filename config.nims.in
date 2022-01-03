@@ -123,13 +123,13 @@ if not debug:
   range_checks ~ off
   bound_checks ~ off
   overflow_checks ~ off
-  nilchecks ~ off
+  #nilchecks ~ off
   assertions ~ off
   stacktrace ~ off
   linetrace ~ off
   debugger ~ off
   line_dir ~ off
-  dead_code_elim ~ on
+  #dead_code_elim ~ on
   panics ~ on
   opt ~ speed
 else:

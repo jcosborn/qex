@@ -221,8 +221,7 @@ discard """
 """
 
 #type SimdArrayObj*[L,B] = object
-#    v*: array[L,B]
-
+#  v*: array[L,B]
 
 # T = Simd{S,D}{L} = array[L,B]
 # B ~ array[N0,F]

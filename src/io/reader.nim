@@ -115,10 +115,10 @@ template newReader*[V: static[int]](l: Layout[V]; fn: string): untyped =
   if not fileExists(fn):
     warn "file not found: ", fn
   else:
-    proc ioNodeNumber2(x:ptr cint):cint =
-      rankIndex(getLayout(V), x).rank.cint
-    proc ioNodeIndex2(x:ptr cint):cint =
-      rankIndex(getLayout(V), x).index.cint
+    proc ioNodeNumber2(x:ptr ConstInt):cint =
+      rankIndex(getLayout(V), cast[ptr cint](x)).rank.cint
+    proc ioNodeIndex2(x:ptr ConstInt):cint =
+      rankIndex(getLayout(V), cast[ptr cint](x)).index.cint
     proc ioGetCoords2(x:ptr cint; node: cint; index: cint) =
       getLayout(V).coord(x, (node,index))
     proc ioNumSites2(node: cint):cint =
