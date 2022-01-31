@@ -81,9 +81,9 @@ proc open(wr: var Writer; ql: var QIO_Layout, md: string) =
   if wr.qw==nil: wr.status = -1
 
 template newWriter*[V: static[int]](l: Layout[V]; fn,md: string): untyped =
-  proc wioNodeNumber2(x: ptr cint):cint =
+  proc wioNodeNumber2(x: ptr ConstInt):cint =
     rankIndex(getLayout(V), x).rank.cint
-  proc wioNodeIndex2(x: ptr cint):cint =
+  proc wioNodeIndex2(x: ptr ConstInt):cint =
     rankIndex(getLayout(V), x).index.cint
   proc wioGetCoords2(x: ptr cint; node: cint; index: cint) =
     getLayout(V).coord(x, (node,index))

@@ -92,13 +92,33 @@ proc `mod`*(x: array, y: SomeNumber): auto {.inline,noInit.} =
 #  for i in 0..<result.len:
 #    result[i] = x[i] + y[i]
 
-proc `:=`*[N,T1,T2](r: var array[N,T1], x: array[N,T2]) {.inline.} =
-  mixin `:=`
-  const n = r.len
-  for i in 0..<n:
-    r[i] := x[i]
-template assign*[N,T1,T2](r: var array[N,T1], x: array[N,T2]) =
-  r := x
+proc assign*[N1,T1,N2,T2](r: var array[N1,T1], x: array[N2,T2]) {.inline.} =
+  mixin assign
+  const n1 = r.len
+  const n2 = x.len
+  when n1 == n2:
+    for i in 0..<n1:
+      assign(r[i], x[i])
+  elif n1 > n2:
+    const nr = n1 div n2
+    when nr*n2 != n1:
+      static:
+        echo "error: ':=' array sizes ", n1, " and ", n2
+        quit()
+    for i in 0..<n2:
+      var ri = cast[ptr array[nr,T1]](addr r[nr*i])
+      assign(ri[], x[i])
+
+template `:=`*[N1,T1,N2,T2](r: var array[N1,T1], x: array[N2,T2]) =
+  assign(r, x)
+
+#proc `:=`*[N,T1,T2](r: var array[N,T1], x: array[N,T2]) {.inline.} =
+#  mixin `:=`
+#  const n = r.len
+#  for i in 0..<n:
+#    r[i] := x[i]
+#template assign*[N,T1,T2](r: var array[N,T1], x: array[N,T2]) =
+#  r := x
 
 proc `+`*[N,T1,T2](x: array[N,T1], y: array[N,T2]): auto {.inline,noInit.} =
   const n = x.len

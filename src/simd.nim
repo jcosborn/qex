@@ -23,7 +23,8 @@ when defined(SSE) or defined(AVX) or defined(AVX512):
   import simd/simdX86
   export simdX86
 
-when VLEN>=16:
+#when VLEN>=16:
+when true:
   when not declared(SimdS16):
     when declared(SimdS8):
       msa(SimdS16, 2, SimdS8[])
@@ -47,7 +48,8 @@ when VLEN>=16:
   when not declared(SimdD16Obj):
     type SimdD16Obj* = `[]`(SimdD16)
 
-when VLEN>=8:
+#when VLEN>=8:
+when true:
   when not declared(SimdS8):
     when declared(SimdS4):
       msa(SimdS8, 2, SimdS4[])
@@ -67,7 +69,8 @@ when VLEN>=8:
   when not declared(SimdD8Obj):
     type SimdD8Obj* = `[]`(SimdD8)
 
-when VLEN>=4:
+#when VLEN>=4:
+when true:
   when not declared(SimdS4):
     when declared(SimdS2):
       msa(SimdS4, 2, SimdS2[])
@@ -83,7 +86,8 @@ when VLEN>=4:
   when not declared(SimdD4Obj):
     type SimdD4Obj* = `[]`(SimdD4)
 
-when VLEN>=2:
+#when VLEN>=2:
+when true:
   when not declared(SimdS2):
     msa(SimdS2, 2, float32)
   when not declared(SimdD2):
@@ -91,7 +95,8 @@ when VLEN>=2:
   when not declared(SimdD2Obj):
     type SimdD2Obj* = `[]`(SimdD2)
 
-when VLEN>=1:
+#when VLEN>=1:
+when true:
   msa(SimdS1, 1, float32)
   msa(SimdD1, 1, float64)
 
