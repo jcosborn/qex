@@ -100,7 +100,7 @@ template simdLength*[TR,TI](x: ComplexObj[TR,TI]): untyped =
 template simdLength*[T](x: ComplexProxy[T]): untyped = simdLength(T)
 template simdLength*[T](x: type ComplexProxy[T]): untyped = simdLength(T)
 template simdSum*(x: ComplexObj): untyped =
-  newComplex(simdSum(x.re),simdSum(x.im))
+  newComplexObj(simdSum(x.re),simdSum(x.im))
 template getNc*(x: ComplexProxy): untyped = 1
 template getNs*(x: ComplexProxy): untyped = 1
 
