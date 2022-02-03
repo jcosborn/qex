@@ -10,6 +10,8 @@ import os
 import strUtils, sequtils
 import maths, rng, physics/qcdTypes
 
+import std/[hashes, tables]
+
 #[
 type
   GroupKind* = enum
@@ -513,6 +515,425 @@ proc wline*(g:auto, line:openarray[int]):auto =
   result = r / float(vol*nc)
   toc("wline trace")
 
+type
+  Coord = object
+    x: seq[int]
+
+proc `$`(x:Coord):string =
+  return "Coord" & $x.x
+
+proc `+`(x,y:Coord):Coord =
+  let
+    nx = x.x.len
+    ny = y.x.len
+    n = max(nx,ny)
+    m = min(nx,ny)
+  result.x.newseq n
+  for i in 0..<m:
+    result.x[i] = x.x[i] + y.x[i]
+  if nx>ny:
+    for i in m..<n:
+      result.x[i] = x.x[i]
+  else:
+    for i in m..<n:
+      result.x[i] = y.x[i]
+
+proc `-`(x,y:Coord):Coord =
+  let
+    nx = x.x.len
+    ny = y.x.len
+    n = max(nx,ny)
+    m = min(nx,ny)
+  result.x.newseq n
+  for i in 0..<m:
+    result.x[i] = x.x[i] - y.x[i]
+  if nx>ny:
+    for i in m..<n:
+      result.x[i] = x.x[i]
+  else:
+    for i in m..<n:
+      result.x[i] = -y.x[i]
+
+proc `-`(x:Coord):Coord =
+  let
+    n = x.x.len
+  result.x.newseq n
+  for i in 0..<n:
+    result.x[i] = -x.x[i]
+
+proc `+=`(x:var Coord,y:Coord) =
+  let
+    nx = x.x.len
+    ny = y.x.len
+  if nx<ny:
+    x.x.setLen ny
+  for i in 0..<ny:
+    x.x[i] += y.x[i]
+
+proc `-=`(x:var Coord,y:Coord) =
+  let
+    nx = x.x.len
+    ny = y.x.len
+  if nx<ny:
+    x.x.setLen ny
+  for i in 0..<ny:
+    x.x[i] -= y.x[i]
+
+proc `[]`(x:Coord, i:SomeInteger):int =
+  if i>=x.x.len:
+    result = 0
+  else:
+    result = x.x[i]
+
+proc `[]`(x:var Coord, i:SomeInteger):var int =
+  if i>=x.x.len:
+    x.x.setLen(i+1)
+  return x.x[i]
+
+proc `[]=`(x:var Coord, i:SomeInteger, d:int) =
+  if i>=x.x.len:
+    x.x.setLen(i+1)
+  x.x[i] = d
+
+type
+  OrdPathKind = enum
+    opInt, opPair, opList, opAdj
+  OrdPath = ref object
+    case k: OrdPathKind
+    of opInt: d:int
+    of opPair: l,r:OrdPath
+    of opList: s:seq[OrdPath]
+    of opAdj: p:OrdPath
+  OrdPathTree = object
+    paths: seq[OrdPath]
+    segments: seq[OrdPath]
+  GaugeProd[F] = ref object
+    segments: Table[seq[int],F]
+proc `$`(path:OrdPath):string =
+  return
+    case path.k:
+    of opInt: "OrdPath(" & $path.d & ")"
+    of opPair: "OrdPath(l:" & $path.l & ", r:" & $path.r & ")"
+    of opList: "OrdPath(" & $path.s & ")"
+    of opAdj: "OrdPath(adjoint:" & $path.p & ")"
+
+proc adjoint(p:OrdPath):OrdPath =
+  case p.k:
+  of opInt:
+    return OrdPath(k:opInt, d: -p.d)
+  of opPair:
+    return OrdPath(k:opPair, l:p.r.adjoint, r:p.l.adjoint)
+  of opList:
+    var
+      l = p.s.len
+      l1 = l-1
+      n = newseq[OrdPath](l)
+    for i in 0..<l:
+      n[i] = p.s[l1-i].adjoint
+    return OrdPath(k:opList, s:n)
+  of opAdj:
+    return p.p
+
+proc `==`(a,b:OrdPath):bool =
+  if a.k==opInt and b.k==opInt:
+    return a.d == b.d
+  elif a.k==opPair and b.k==opPair:
+    return a.l == b.l and a.r == b.r
+  elif a.k==opList and b.k==opList:
+    return a.s == b.s
+  elif a.k==opInt and b.k==opList:
+    return b.s.len == 1 and a == b.s[0]
+  elif a.k==opList and b.k==opInt:
+    return a.s.len == 1 and a.s[0] == b
+  elif a.k==opAdj:
+    return a.p == b.adjoint
+  elif b.k==opAdj:
+    return a.adjoint == b.p
+  else:
+    return false
+
+proc hash(path:OrdPath):Hash =
+  return
+    case path.k:
+    of opInt: !$(opInt.hash !& path.d.hash)
+    of opPair: !$(opPair.hash !& path.l.hash !& path.r.hash)
+    of opList: !$(opList.hash !& path.s.hash)
+    of opAdj: !$(opAdj.hash !& path.p.hash)
+
+proc newOrdPath(path:openarray[int]):OrdPath =
+  let n = path.len
+  var op = OrdPath(k:opList, s:newseq[OrdPath](n))
+  for i in 0..<n:
+    let d = path[i]
+    if d==0:
+      qexError("newOrdPath: unable to parse path: ", path)
+    op.s[i] = OrdPath(k:opInt, d:d)
+  return op
+
+proc deltaX(path:OrdPath):Coord =
+  # return the Coord difference between the end of the path to the beginning.
+  case path.k:
+  of opInt:
+    let d = abs(path.d)-1
+    if path.d>0:
+      result[d] = 1
+    else:
+      result[d] = -1
+  of opPair:
+    result = path.l.deltaX + path.r.deltaX
+  of opList:
+    for l in path.s:
+      result += l.deltaX
+  of opAdj:
+    result = -path.p.deltaX
+
+proc position(path:OrdPath):Coord =
+  # return the Coord relative to the left most starting point.
+  case path.k:
+  of opInt:
+    if path.d<0:
+      result[-1-path.d] = -1
+  of opPair:
+    result = path.l.position
+  of opList:
+    if path.s.len>0:
+      result = path.s[0].position
+  of opAdj:
+    result = path.p.position - path.p.deltaX
+
+proc flatten(path:OrdPath):seq[int] =
+  case path.k:
+  of opInt:
+    return @[path.d]
+  of opPair:
+    var r = path.l.flatten
+    r.add path.r.flatten
+    return r
+  of opList:
+    var r = newseq[int]()
+    for l in path.s:
+      r.add l.flatten
+    return r
+  of opAdj:
+    return path.p.adjoint.flatten
+
+proc mostSharedPair(paths:openarray[OrdPath]):OrdPath =
+  ## Receives paths and search each element of OrdPath(k:opList).
+  ## Return an OrdPath(k:opPair) occured most frequently among all the paths.
+  ## If there are no pairs, return OrdPath(k:opList) with len 0.
+  var pc = initTable[OrdPath,int]()
+  var p,pa: OrdPath
+  var c: int
+  while true:
+    c = 0
+    for ps in paths:
+      if not (ps.k==opList and ps.s.len>1):
+        continue
+      var i = 0
+      while i<ps.s.len-1:  # FIXME test reversed
+        i.inc
+        let t = OrdPath(k:opPair, l:ps.s[i-1], r:ps.s[i])
+        if c==0:
+          let ta = t.adjoint
+          if t in pc or ta in pc:
+            continue
+          p = t
+          pa = ta
+          c = 1
+          i.inc
+        elif t==p or t==pa:
+          c.inc
+          i.inc
+    if c==0:
+      # no new pairs
+      break
+    else:
+      pc[p] = c
+  c = 0
+  for k,v in pc.pairs:
+    # If there are multiple paris with the max count,
+    # which one we return depends on implementation of Table.
+    if v>c:
+      c = v
+      p = k
+  if c==0:
+    return OrdPath(k:opList, s: @[])
+  else:
+    return p
+
+proc groupByPair(paths:openarray[OrdPath], pair:OrdPath):seq[OrdPath] =
+  ## Receives paths and group each element of OrdPath(k:opList) by the pair OrdPath(k:opPair).
+  let
+    apair = pair.adjoint
+    pairAdj = OrdPath(k:opAdj, p:pair)
+  var newpaths = newseq[OrdPath]()
+  for ps in paths:
+    if ps.k!=opList:
+      newpaths.add ps
+      continue
+    var
+      p = newseq[OrdPath]()
+      i = 0
+      n = ps.s.len
+    while i<n-1:
+      let t = OrdPath(k:opPair, l:ps.s[i], r:ps.s[i+1])
+      if t == pair:
+        p.add pair
+        # echo "groupByPair: add ",p[^1]
+        i.inc 2
+      elif t==apair:
+        p.add pairAdj
+        # echo "groupByPair: add ",p[^1]
+        i.inc 2
+      else:
+        p.add ps.s[i]
+        i.inc
+    if i==n-1:
+      p.add ps.s[i]
+    newpaths.add(
+      if p.len==1:
+        p[0]
+      else:
+        OrdPath(k:opList, s:p)
+    )
+  return newpaths
+
+proc optimalPairs(paths:openarray[OrdPath]):OrdPathTree =
+  tic()
+  var
+    pgroup = @paths
+    segments = newseq[OrdPath]()
+    p = pgroup.mostSharedPair
+  while p.k==opPair:
+    # echo "optimalPairs: add ",p
+    segments.add p
+    pgroup = pgroup.groupByPair p
+    p = pgroup.mostSharedPair
+  toc("optimalPairs")
+  return OrdPathTree(paths:pgroup, segments:segments)
+
+proc multishifts[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]) =
+  for mu,n in sh.pairs:
+    if n>0:
+      for i in 0..<n:
+        f := sb[mu] ^* f
+    elif n<0:
+      for i in 0..<(-n):
+        f := sf[mu] ^* f
+
+proc newGaugeProd(g:auto, ptree:OrdPathTree):auto =
+  tic()
+  type
+    F = typeof(g[0])
+    S = typeof(g[0][0])
+  let nd = g[0].l.nDim
+  var
+    sf = newseq[Shifter[F,S]](nd)
+    sb = newseq[Shifter[F,S]](nd)
+    gp = initTable[seq[int],F]()
+  for i in 0..<nd:
+    sf[i] = newShifter(g[0], i, 1)
+    sb[i] = newShifter(g[0], i, -1)
+  toc("init shifts")
+
+  proc fetch(s:OrdPath):auto =
+    case s.k:
+    of opInt:
+      if s.d>0:
+        return (g[s.d-1],false)
+      else:
+        return (g[-s.d-1],true)
+    of opPair:
+      return (gp[s.flatten],false)
+    of opList:
+      qexError("Internal logic error.")
+    of opAdj:
+      let (f,a) = fetch s.p
+      return (f, a xor true)
+
+  for s in ptree.segments:
+    if s.k==opPair:
+      let
+        (l,la) = fetch s.l
+        (r,ra) = fetch s.r
+        sh = (s.l.position - s.l.deltaX - s.r.position).x
+      # echo "newGaugeProd:\n","  l: ",la," ",s.l,"\n    ",s.l.position,"  ",s.l.deltaX,"\n  r: ",ra," ",s.r,"\n    ",s.r.position,"  ",s.r.deltaX,"\n  sh: ",sh
+      var needs = false
+      for x in sh:
+        if x!=0:
+          needs = true
+          break
+      var res = newOneOf(r)
+      if needs:
+        threads:
+          res := r
+          res.multishifts(sh, sf, sb)
+          if la and ra:
+            res := l.adj * res.adj
+          elif la:
+            res := l.adj * res
+          elif ra:
+            res := l * res.adj
+          else:
+            res := l * res
+      else:
+        threads:
+          if la and ra:
+            res := l.adj * r.adj
+          elif la:
+            res := l.adj * r
+          elif ra:
+            res := l * r.adj
+          else:
+            res := l * r
+      # echo "newGaugeProd: add ",s.flatten," ",res.trace/float(g[0].l.physVol*g[0][0].ncols)
+      gp[s.flatten] = res
+    else:
+      qexError("Internal logic error.")
+  toc("newGaugeProd")
+  return GaugeProd[F](segments: gp)
+
+proc gaugeProd[F](gp:GaugeProd[F], paths:openarray[OrdPath]):auto =
+  var r = newseq[F](paths.len)
+  for i,p in paths.pairs:
+    r[i] = gp.segments[p.flatten]
+  return r
+
+proc gaugeProd(g:auto, ptree:OrdPathTree):auto =
+  let gp = g.newGaugeProd ptree
+  return gp.gaugeProd(ptree.paths)
+
+proc wilsonLines*(g:auto, lines:openarray[seq[int]]):auto =
+  ## Compute the trace of ordered product of gauge links, the Wilson Line.
+  ## Each line is given as a list of integers +/- 1..nd, where the sign
+  ## denotes forward/backward and the number denotes the dimension.
+  tic()
+  let n = lines.len
+  var ps = newseq[OrdPath](n)
+  for i,p in lines.pairs:
+    ps[i] = p.newOrdPath
+  let ptree = ps.optimalPairs
+  toc("wilsonLines make tree")
+  let rs = g.gaugeProd ptree
+  toc("wilsonLines prod")
+  type R = typeof(trace(g[0]))
+  var
+    r: R
+    ts = newseq[R](n)
+  const nc = g[0][0].ncols
+  let
+    vol = g[0].l.physVol
+    fac = 1.0/float(vol*nc)
+  for i,s in rs.pairs:
+    threads:
+      r = s.trace
+    ts[i] := r*fac
+  toc("wilsonLines trace")
+  return ts
+
+# proc wline*(g:auto, line:openarray[int]):auto =
+#   return g.wilsonLines([@line])[0]
+
 template defaultSetup*:untyped {.dirty.} =
   bind paramCount, paramStr, isInteger, parseInt, fileExists, getFileLattice
   echo "rank ", myRank, "/", nRanks
@@ -737,6 +1158,14 @@ when isMainModule:
 
   echo @[wline(g, [1,2,-1,-2]), wline(g, [1,3,-1,-3]), wline(g, [2,3,-2,-3]),
     wline(g, [1,4,-1,-4]), wline(g, [2,4,-2,-4]), wline(g, [3,4,-3,-4])]
+  echo g.wilsonLines [
+    @[1,2,-1,-2],
+    @[1,3,-1,-3],
+    @[2,3,-2,-3],
+    @[1,4,-1,-4],
+    @[2,4,-2,-4],
+    @[3,4,-3,-4],
+  ]
 
   echoTimers()
   resetTimers()
