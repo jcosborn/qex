@@ -475,7 +475,7 @@ proc wlineReduce(line:openarray[Link]):seq[Link] =
   toc("wlineReduce compute")
   lnew
 
-proc wline*(g:auto, line:openarray[int]):auto =
+proc wline0*(g:auto, line:openarray[int]):auto =
   ## Compute the trace of ordered product of gauge links, the Wilson Line.
   ## The line is given as a list of integers +/- 1..nd, where the sign
   ## denotes forward/backward and the number denotes the dimension.
@@ -816,10 +816,14 @@ proc multishifts[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]) =
   for mu,n in sh.pairs:
     if n>0:
       for i in 0..<n:
-        f := sb[mu] ^* f
+        #f := sb[mu] ^* f
+        let t = sb[mu] ^* f
+        f := t
     elif n<0:
       for i in 0..<(-n):
-        f := sf[mu] ^* f
+        #f := sf[mu] ^* f
+        let t = sf[mu] ^* f
+        f := t
 
 proc newGaugeProd(g:auto, ptree:OrdPathTree):auto =
   tic()
@@ -931,8 +935,8 @@ proc wilsonLines*(g:auto, lines:openarray[seq[int]]):auto =
   toc("wilsonLines trace")
   return ts
 
-# proc wline*(g:auto, line:openarray[int]):auto =
-#   return g.wilsonLines([@line])[0]
+proc wline*(g:auto, line:openarray[int]):auto =
+  return g.wilsonLines([@line])[0]
 
 template defaultSetup*:untyped {.dirty.} =
   bind paramCount, paramStr, isInteger, parseInt, fileExists, getFileLattice
