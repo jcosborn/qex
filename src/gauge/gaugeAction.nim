@@ -22,9 +22,9 @@ type
 #  plaq: U[mu]^+ * sum_{nu!=mu} s[mu][nu] (6)
 #  rect: shift(s[mu][nu], nu) (12 shifts)
 #  pgm: shift(s[mu][nu], sig) (24 shifts)
-proc gaugeAction1*[T](uu: openarray[T]): auto =
+proc gaugeAction1*[T](c: GaugeActionCoeffs, uu: openarray[T]): auto =
   mixin mul, redot, load1
-  tic()
+  tic("gaugeAction1")
   let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
   let lo = u[0].l
   let nd = lo.nDim
@@ -67,6 +67,7 @@ proc gaugeAction1*[T](uu: openarray[T]): auto =
         boundaryWaitSB(ss[mu][nu]): needBoundary = true
         boundaryWaitSB(ss[nu][mu]): needBoundary = true
         if needBoundary:
+          boundarySyncSB()
           for ir in lo:
             if not isLocal(ss[mu][nu],ir) or not isLocal(ss[nu][mu],ir):
               var bmu,bnu: type(load1(u[0][0]))
@@ -94,8 +95,12 @@ proc gaugeAction1*[T](uu: openarray[T]): auto =
   #echo "plaq: ", a[0]
   #echo "rect: ", a[1]
   #echo "pgm: ", a[2]
-  result = (-1.0/nc.float) * a[0]
+  result = (-1.0/nc.float) * (c.plaq*a[0] + c.rect*a[1] + c.pgm*a[2])
   toc("gaugeAction end")
+
+proc gaugeAction1*[T](uu: openarray[T]): auto =
+  let gc = GaugeActionCoeffs(plaq:1.0)
+  return gc.gaugeAction1(uu)
 
 proc gaugeForce*[T](uu: openArray[T]): auto =
   mixin load1, adj
