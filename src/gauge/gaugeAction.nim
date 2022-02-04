@@ -144,15 +144,15 @@ proc gaugeForce*[T](uu: openArray[T]): auto =
               f[mu][ir] += bmu
             if not isLocal(ss[nu][mu],ir):
               var bnu: type(load1(u[0][0]))
-              localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
+              getSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
               f[nu][ir] += bnu
-    toc("gaugeForce boundary")
+    #toc("gaugeForce boundary")
   toc("gaugeForce threads")
   #toc("gaugeAction end")
   for mu in 0..<f.len:
     for e in f[mu]:
       mixin trace
-      let s = u[mu][e]*f[mu][e].adj
+      let s = (1.0/float(nc)) * u[mu][e]*f[mu][e].adj
       f[mu][e].projectTAH s
   toc("gaugeForce end")
   return f
@@ -389,25 +389,39 @@ when isMainModule:
   g.random
 
   proc test(g:auto) =
+    tic("test")
     var pl = plaq(g)
     echo "plaq:"
     echo pl
     echo pl.sum
     var gc = GaugeActionCoeffs(plaq:1.0)
     #var ga = gaugeAction(g)
+    toc("plaq")
     var ga = gaugeAction.gaugeAction1(g)
+    toc("ga1")
     var ga2 = gaugeAction.gaugeAction2(gc,g)
-    echo "ga: ", ga, "\t", ga2
+    toc("ga2")
+    var ga3 = gaugeAction.actionA(gc,g)
+    toc("aA")
+    echo "ga: ", ga, "\t", ga2, "\t", ga3
     var f = gaugeAction.gaugeForce(g)
+    toc("gf")
     var f2 = g[0].l.newGauge
+    var f3 = g[0].l.newGauge
     gaugeAction.gaugeForce2(f2,g)
+    toc("gf2")
+    gaugeAction.forceA(gc,g,f3)
+    toc("fA")
     for i in 0..<f.len:
-      echo "f[", i, "]: ", f[i].norm2, "\t", f2[i].norm2
+      echo "f[", i, "]: ", f[i].norm2, "\t", f2[i].norm2, "\t", f3[i].norm2
+    toc("done")
 
   test(g)
   echoTimers()
   resetTimers()
   test(g)
+  echoTimers()
+  resetTimers()
 
   proc updateX(g,p,eps:auto) =
     mixin exp
