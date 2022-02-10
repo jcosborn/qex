@@ -46,6 +46,7 @@ proc test(lat: any) =
   var lo = newLayout(lat)
   let nd = lo.nDim
   let np = (nd*(nd-1)) div 2
+  let dbw2 = DBW2 0.7796
   var g = newSeq[type(lo.ColorMatrix())](nd)
   var f = newSeq[type(lo.ColorMatrix())](nd)
   let nc = g[0][0].ncols
@@ -63,6 +64,18 @@ proc test(lat: any) =
 
   var ga = gaugeAction1(g)
   echo ga
+  var
+    ga1 = dbw2.gaugeAction1 g
+    ga2 = dbw2.gaugeAction2 g
+    ga3 = dbw2.gaugeAction3 g
+  echo ga1," ",ga2," ",ga3
+
+  dbw2.gaugeForce(g,f)
+  echo "gf: \t",  f[0].norm2, "\t",  f[1].norm2, "\t",  f[2].norm2, "\t",  f[3].norm2
+  dbw2.gaugeForce2(g,f)
+  echo "gf: \t",  f[0].norm2, "\t",  f[1].norm2, "\t",  f[2].norm2, "\t",  f[3].norm2
+  dbw2.gaugeForce3(g,f)
+  echo "gf: \t",  f[0].norm2, "\t",  f[1].norm2, "\t",  f[2].norm2, "\t",  f[3].norm2
 
   resetTimers()
 
@@ -74,11 +87,33 @@ proc test(lat: any) =
 
   bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
     var ga = gaugeAction1(g)
+  bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
+    var ga = gaugeAction2(g)
+  bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
+    var ga = gaugeAction3(g)
+
+  bench(np*(3*2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
+    var ga = dbw2.gaugeAction1(g)
+  bench(np*(3*2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
+    var ga = dbw2.gaugeAction2(g)
+  bench(np*(3*2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
+    var ga = dbw2.gaugeAction3(g)
 
   let eqmtm = nc*nc*(8*nc-2)
   let s2fb = 6*eqmtm
   bench(np*(s2fb+16*nc), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
+    gaugeForce(f, g)
+  bench(np*(s2fb+16*nc), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
     gaugeForce2(f, g)
+  bench(np*(s2fb+16*nc), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
+    gaugeForce3(f, g)
+
+  bench(np*(26*eqmtm+16*nc), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
+    dbw2.gaugeForce(g,f)
+  bench(np*(26*eqmtm+16*nc), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
+    dbw2.gaugeForce2(g,f)
+  bench(np*(26*eqmtm+16*nc), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
+    dbw2.gaugeForce3(g,f)
 
   var
     info: PerfInfo

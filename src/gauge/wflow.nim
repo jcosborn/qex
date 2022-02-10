@@ -31,21 +31,21 @@ template gaugeFlow*(g: array|seq, steps: int, eps: float, measure: untyped): unt
       for n in 1..steps:
         let t = n * eps
         let epsnc = eps * nc  # compensate force normalization
-        f.gaugeForce2 g
+        f.gaugeForce g
         threads:
           for mu in 0..<f.len:
             p[mu] := (-1.0/4.0)*epsnc*f[mu]
             for e in g[mu]:
               let t = exp(p[mu][e])*g[mu][e]
               g[mu][e] := t
-        f.gaugeForce2 g
+        f.gaugeForce g
         threads:
           for mu in 0..<f.len:
             p[mu] := (-8.0/9.0)*epsnc*f[mu] + (-17.0/9.0)*p[mu]
             for e in g[mu]:
               let t = exp(p[mu][e])*g[mu][e]
               g[mu][e] := t
-        f.gaugeForce2 g
+        f.gaugeForce g
         threads:
           for mu in 0..<f.len:
             p[mu] := (-3.0/4.0)*epsnc*f[mu] - p[mu]

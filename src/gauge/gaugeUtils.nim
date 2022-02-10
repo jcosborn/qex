@@ -607,8 +607,8 @@ type
   OrdPathTree = object
     paths: seq[OrdPath]
     segments: seq[OrdPath]
-  GaugeProd[F] = ref object
-    segments: Table[seq[int],F]
+    counts: seq[int]
+
 proc `$`(path:OrdPath):string =
   return
     case path.k:
@@ -717,10 +717,11 @@ proc flatten(path:OrdPath):seq[int] =
   of opAdj:
     return path.p.adjoint.flatten
 
-proc mostSharedPair(paths:openarray[OrdPath]):OrdPath =
+proc mostSharedPair(paths:openarray[OrdPath]):(OrdPath,int) =
   ## Receives paths and search each element of OrdPath(k:opList).
-  ## Return an OrdPath(k:opPair) occured most frequently among all the paths.
-  ## If there are no pairs, return OrdPath(k:opList) with len 0.
+  ## Return an OrdPath(k:opPair) occured most frequently among all the paths,
+  ## and its count.
+  ## If there are no pairs, return OrdPath(k:opList) with len 0, and 0.
   var pc = initTable[OrdPath,int]()
   var p,pa: OrdPath
   var c: int
@@ -757,9 +758,9 @@ proc mostSharedPair(paths:openarray[OrdPath]):OrdPath =
       c = v
       p = k
   if c==0:
-    return OrdPath(k:opList, s: @[])
+    return (OrdPath(k:opList, s: @[]), 0)
   else:
-    return p
+    return (p, c)
 
 proc groupByPair(paths:openarray[OrdPath], pair:OrdPath):seq[OrdPath] =
   ## Receives paths and group each element of OrdPath(k:opList) by the pair OrdPath(k:opPair).
@@ -803,14 +804,30 @@ proc optimalPairs(paths:openarray[OrdPath]):OrdPathTree =
   var
     pgroup = @paths
     segments = newseq[OrdPath]()
-    p = pgroup.mostSharedPair
+    counts = newseq[int]()
+    (p,c) = pgroup.mostSharedPair
   while p.k==opPair:
     # echo "optimalPairs: add ",p
     segments.add p
+    counts.add c
     pgroup = pgroup.groupByPair p
-    p = pgroup.mostSharedPair
+    (p,c) = pgroup.mostSharedPair
   toc("optimalPairs")
-  return OrdPathTree(paths:pgroup, segments:segments)
+  return OrdPathTree(paths:pgroup, segments:segments, counts:counts)
+
+proc optimalPairs(paths:openarray[seq[int]]):OrdPathTree =
+  let n = paths.len
+  var ps = newseq[OrdPath](n)
+  for i,p in paths.pairs:
+    ps[i] = p.newOrdPath
+  ps.optimalPairs
+
+proc singleshift[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]):auto =
+  for mu,n in sh.pairs:
+    if n>0:
+      return sb[mu] ^* f
+    elif n<0:
+      return sf[mu] ^* f
 
 proc multishifts[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]) =
   for mu,n in sh.pairs:
@@ -825,8 +842,18 @@ proc multishifts[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]) =
         let t = sf[mu] ^* f
         f := t
 
-proc newGaugeProd(g:auto, ptree:OrdPathTree):auto =
-  tic()
+proc lrmul(res:auto, l:auto, r:auto, la,ra:bool) =
+  if la and ra:
+    res := l.adj * r.adj
+  elif la:
+    res := l.adj * r
+  elif ra:
+    res := l * r.adj
+  else:
+    res := l * r
+
+proc gaugeProd(g:auto, ptree:OrdPathTree, origin=true):auto =
+  tic("gaugeProd")
   type
     F = typeof(g[0])
     S = typeof(g[0][0])
@@ -834,10 +861,26 @@ proc newGaugeProd(g:auto, ptree:OrdPathTree):auto =
   var
     sf = newseq[Shifter[F,S]](nd)
     sb = newseq[Shifter[F,S]](nd)
+    sl = newseq[seq[int]](ptree.segments.len)
     gp = initTable[seq[int],F]()
+    sfi = newseq[bool](nd)
+    sbi = newseq[bool](nd)
+  for i,s in ptree.segments.pairs:
+    if s.k==opPair:
+      let sh = (s.l.position - s.l.deltaX - s.r.position).x
+      sl[i] = sh
+      for mu,n in sh.pairs:
+        if n>0:
+          sbi[mu] = true
+        elif n<0:
+          sfi[mu] = true
+    else:
+      qexError("Internal logic error.")
   for i in 0..<nd:
-    sf[i] = newShifter(g[0], i, 1)
-    sb[i] = newShifter(g[0], i, -1)
+    if sfi[i]:
+      sf[i] = newShifter(g[0], i, 1)
+    if sbi[i]:
+      sb[i] = newShifter(g[0], i, -1)
   toc("init shifts")
 
   proc fetch(s:OrdPath):auto =
@@ -855,57 +898,73 @@ proc newGaugeProd(g:auto, ptree:OrdPathTree):auto =
       let (f,a) = fetch s.p
       return (f, a xor true)
 
-  for s in ptree.segments:
+  for i,s in ptree.segments.pairs:
     if s.k==opPair:
       let
         (l,la) = fetch s.l
         (r,ra) = fetch s.r
-        sh = (s.l.position - s.l.deltaX - s.r.position).x
-      # echo "newGaugeProd:\n","  l: ",la," ",s.l,"\n    ",s.l.position,"  ",s.l.deltaX,"\n  r: ",ra," ",s.r,"\n    ",s.r.position,"  ",s.r.deltaX,"\n  sh: ",sh
-      var needs = false
+        sh = sl[i]
+      # echo "gaugeProd:\n","  l: ",la," ",s.l,"\n    ",s.l.position,"  ",s.l.deltaX,"\n  r: ",ra," ",s.r,"\n    ",s.r.position,"  ",s.r.deltaX,"\n  sh: ",sh
+      var needs = 0
       for x in sh:
-        if x!=0:
-          needs = true
-          break
+        needs += abs(x)
       var res = newOneOf(r)
-      if needs:
+      if needs==0:
+        threads:
+          res.lrmul(l,r,la,ra)
+      elif needs==1:
+        threads:
+          let rt = r.singleshift(sh, sf, sb)
+          res.lrmul(l,rt,la,ra)
+      else:
         threads:
           res := r
           res.multishifts(sh, sf, sb)
-          if la and ra:
-            res := l.adj * res.adj
-          elif la:
-            res := l.adj * res
-          elif ra:
-            res := l * res.adj
-          else:
-            res := l * res
-      else:
-        threads:
-          if la and ra:
-            res := l.adj * r.adj
-          elif la:
-            res := l.adj * r
-          elif ra:
-            res := l * r.adj
-          else:
-            res := l * r
-      # echo "newGaugeProd: add ",s.flatten," ",res.trace/float(g[0].l.physVol*g[0][0].ncols)
+          res.lrmul(l,res,la,ra)
+      # echo "gaugeProd: add ",s.flatten," ",res.trace/float(g[0].l.physVol*g[0][0].ncols)
       gp[s.flatten] = res
     else:
       qexError("Internal logic error.")
-  toc("newGaugeProd")
-  return GaugeProd[F](segments: gp)
+  toc("gaugeProd prod")
+  let n = ptree.paths.len
+  result = newseq[F](n)
+  for i,p in ptree.paths.pairs:
+    if p.k==opAdj:
+      let t = gp[p.p.flatten]
+      result[i] = newOneOf t
+      result[i] := t.adj
+    else:
+      result[i] = gp[p.flatten]
+  if origin:
+    var
+      s = newseq[seq[int]](n)
+      fi = newseq[bool](nd)
+      bi = newseq[bool](nd)
+    for i,p in ptree.paths.pairs:
+      s[i] = (-p.position).x
+      for mu,l in s[i].pairs:
+        if l>0:
+          bi[mu] = true
+        elif l<0:
+          fi[mu] = true
+    for i in 0..<nd:
+      if fi[i] and not sfi[i]:
+        sf[i] = newShifter(g[0], i, 1)
+      if bi[i] and not sbi[i]:
+        sb[i] = newShifter(g[0], i, -1)
+    for i,p in ptree.paths.pairs:
+      var needs = 0
+      # echo "gaugeProd ",i," shifts ",s[i]," path ",p.flatten," ",$p
+      result[i].multishifts(s[i], sf, sb)
+  toc("done")
 
-proc gaugeProd[F](gp:GaugeProd[F], paths:openarray[OrdPath]):auto =
-  var r = newseq[F](paths.len)
-  for i,p in paths.pairs:
-    r[i] = gp.segments[p.flatten]
-  return r
-
-proc gaugeProd(g:auto, ptree:OrdPathTree):auto =
-  let gp = g.newGaugeProd ptree
-  return gp.gaugeProd(ptree.paths)
+proc gaugeProd*(g:auto, lines:openarray[seq[int]], origin=true):auto =
+  tic()
+  let n = lines.len
+  let ptree = lines.optimalPairs
+  toc("gaugeProd make tree")
+  result = g.gaugeProd(ptree, origin)
+  toc("done")
 
 proc wilsonLines*(g:auto, lines:openarray[seq[int]]):auto =
   ## Compute the trace of ordered product of gauge links, the Wilson Line.
@@ -913,12 +972,7 @@ proc wilsonLines*(g:auto, lines:openarray[seq[int]]):auto =
   ## denotes forward/backward and the number denotes the dimension.
   tic()
   let n = lines.len
-  var ps = newseq[OrdPath](n)
-  for i,p in lines.pairs:
-    ps[i] = p.newOrdPath
-  let ptree = ps.optimalPairs
-  toc("wilsonLines make tree")
-  let rs = g.gaugeProd ptree
+  let rs = g.gaugeProd(lines, false)
   toc("wilsonLines prod")
   type R = typeof(trace(g[0]))
   var
@@ -1160,8 +1214,6 @@ when isMainModule:
   echo pl.sum
   echo pl.mapIt(it*float(lo.nDim*(lo.nDim-1) div 2))
 
-  echo @[wline(g, [1,2,-1,-2]), wline(g, [1,3,-1,-3]), wline(g, [2,3,-2,-3]),
-    wline(g, [1,4,-1,-4]), wline(g, [2,4,-2,-4]), wline(g, [3,4,-3,-4])]
   echo g.wilsonLines [
     @[1,2,-1,-2],
     @[1,3,-1,-3],
@@ -1174,12 +1226,31 @@ when isMainModule:
   echoTimers()
   resetTimers()
 
-  echo @[wline(g, [2,-1,-2,1]), wline(g, [3,-1,-3,1]), wline(g, [3,-2,-3,2]),
-    wline(g, [4,-1,-4,1]), wline(g, [4,-2,-4,2]), wline(g, [4,-3,-4,3])]
-  echo @[wline(g, [-1,-2,1,2]), wline(g, [-1,-3,1,3]), wline(g, [-2,-3,2,3]),
-    wline(g, [-1,-4,1,4]), wline(g, [-2,-4,2,4]), wline(g, [-3,-4,3,4])]
-  echo @[wline(g, [-2,1,2,-1]), wline(g, [-3,1,3,-1]), wline(g, [-3,2,3,-2]),
-    wline(g, [-4,1,4,-1]), wline(g, [-4,2,4,-2]), wline(g, [-4,3,4,-3])]
+  let wl = g.wilsonLines [
+    @[2,-1,-2,1],
+    @[3,-1,-3,1],
+    @[3,-2,-3,2],
+    @[4,-1,-4,1],
+    @[4,-2,-4,2],
+    @[4,-3,-4,3],
+    @[-1,-2,1,2],
+    @[-1,-3,1,3],
+    @[-2,-3,2,3],
+    @[-1,-4,1,4],
+    @[-2,-4,2,4],
+    @[-3,-4,3,4],
+    @[-2,1,2,-1],
+    @[-3,1,3,-1],
+    @[-3,2,3,-2],
+    @[-4,1,4,-1],
+    @[-4,2,4,-2],
+    @[-4,3,4,-3],
+  ]
+  for i in 0..<3:
+    var r = newseq[typeof wl[0]]()
+    for j in 0..<6:
+      r.add wl[j+6*i]
+    echo r
 
   #[
   var st = lo.newGauge()
