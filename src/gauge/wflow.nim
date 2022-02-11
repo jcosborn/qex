@@ -21,43 +21,53 @@ Zi = eps Z(Wi)
 template gaugeFlow*(g: array|seq, steps: int, eps: float, measure: untyped): untyped =
   ## Wilson flow.
   ## The input gauge field will be modified.
-  ## `wflowT` and `wflowG` is injected for `measure`.
+  ## `wflowT` is injected for `measure`.
   proc flowProc {.gensym.} =
+    tic("flowProc")
     const nc = g[0][0].nrows.float
     var
       p = g[0].l.newGauge  # mom
       f = g[0].l.newGauge  # force
-    block:
-      for n in 1..steps:
-        let t = n * eps
-        let epsnc = eps * nc  # compensate force normalization
-        f.gaugeForce g
-        threads:
-          for mu in 0..<f.len:
-            p[mu] := (-1.0/4.0)*epsnc*f[mu]
-            for e in g[mu]:
-              let t = exp(p[mu][e])*g[mu][e]
-              g[mu][e] := t
-        f.gaugeForce g
-        threads:
-          for mu in 0..<f.len:
-            p[mu] := (-8.0/9.0)*epsnc*f[mu] + (-17.0/9.0)*p[mu]
-            for e in g[mu]:
-              let t = exp(p[mu][e])*g[mu][e]
-              g[mu][e] := t
-        f.gaugeForce g
-        threads:
-          for mu in 0..<f.len:
-            p[mu] := (-3.0/4.0)*epsnc*f[mu] - p[mu]
-            for e in g[mu]:
-              let t = exp(p[mu][e])*g[mu][e]
-              g[mu][e] := t
-        block:
-          let
-            wflowT {.inject.} = t
-            wflowG {.inject.} = g
-          measure
+      n = 1
+    while true:
+      let t = n * eps
+      let epsnc = eps * nc  # compensate force normalization
+      f.gaugeForce g
+      threads:
+        for mu in 0..<f.len:
+          for e in g[mu]:
+            var v {.noinit.}:type(load1(f[0][0]))
+            v := (-1.0/4.0)*epsnc*f[mu][e]
+            let t = exp(v)*g[mu][e]
+            p[mu][e] := v
+            g[mu][e] := t
+      f.gaugeForce g
+      threads:
+        for mu in 0..<f.len:
+          for e in g[mu]:
+            var v {.noinit.}:type(load1(f[0][0]))
+            v := (-8.0/9.0)*epsnc*f[mu][e] + (-17.0/9.0)*p[mu][e]
+            let t = exp(v)*g[mu][e]
+            p[mu][e] := v
+            g[mu][e] := t
+      f.gaugeForce g
+      threads:
+        for mu in 0..<f.len:
+          for e in g[mu]:
+            var v {.noinit.}:type(load1(f[0][0]))
+            v := (-3.0/4.0)*epsnc*f[mu][e] - p[mu][e]
+            let t = exp(v)*g[mu][e]
+            g[mu][e] := t
+      let wflowT {.inject.} = t
+      measure
+      inc n
+      if steps>0 and n>steps:
+        break
+    toc("end")
   flowProc()
+template gaugeFlow*(g: array|seq, eps: float, measure: untyped): untyped =
+  gaugeFlow(g, 0, eps):
+    measure
 
 when isMainModule:
   import qex, gauge, physics/qcdTypes
@@ -88,7 +98,7 @@ when isMainModule:
 
   g.gaugeFlow(6, 0.01):
     echo "WFLOW ",wflowT
-    wflowG.printPlaq
+    g.printPlaq
 
   when g[0][0].nrows == 1 or g[0][0].nrows == 3:
     if fn.len == 0:
