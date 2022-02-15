@@ -604,7 +604,7 @@ type
     of opPair: l,r:OrdPath
     of opList: s:seq[OrdPath]
     of opAdj: p:OrdPath
-  OrdPathTree = object
+  OrdPathTree* = ref object
     paths: seq[OrdPath]
     segments: seq[OrdPath]
     counts: seq[int]
@@ -800,6 +800,7 @@ proc groupByPair(paths:openarray[OrdPath], pair:OrdPath):seq[OrdPath] =
   return newpaths
 
 proc optimalPairs(paths:openarray[OrdPath]):OrdPathTree =
+  ## Runtime O(N^3) with N=paths.len
   tic()
   var
     pgroup = @paths
@@ -815,7 +816,8 @@ proc optimalPairs(paths:openarray[OrdPath]):OrdPathTree =
   toc("optimalPairs")
   return OrdPathTree(paths:pgroup, segments:segments, counts:counts)
 
-proc optimalPairs(paths:openarray[seq[int]]):OrdPathTree =
+proc optimalPairs*(paths:openarray[seq[int]]):OrdPathTree =
+  ## Runtime O(N^3) with N=paths.len
   let n = paths.len
   var ps = newseq[OrdPath](n)
   for i,p in paths.pairs:
@@ -843,16 +845,21 @@ proc multishifts[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]) =
         f := t
 
 proc lrmul(res:auto, l:auto, r:auto, la,ra:bool) =
+  tic("lrmul")
   if la and ra:
     res := l.adj * r.adj
+    toc("la ra")
   elif la:
     res := l.adj * r
+    toc("la")
   elif ra:
     res := l * r.adj
+    toc("ra")
   else:
     res := l * r
+    toc("direct")
 
-proc gaugeProd(g:auto, ptree:OrdPathTree, origin=true):auto =
+proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
   tic("gaugeProd")
   type
     F = typeof(g[0])
@@ -953,26 +960,18 @@ proc gaugeProd(g:auto, ptree:OrdPathTree, origin=true):auto =
       if bi[i] and not sbi[i]:
         sb[i] = newShifter(g[0], i, -1)
     for i,p in ptree.paths.pairs:
-      var needs = 0
       # echo "gaugeProd ",i," shifts ",s[i]," path ",p.flatten," ",$p
       result[i].multishifts(s[i], sf, sb)
-  toc("done")
-
-proc gaugeProd*(g:auto, lines:openarray[seq[int]], origin=true):auto =
-  tic()
-  let n = lines.len
-  let ptree = lines.optimalPairs
-  toc("gaugeProd make tree")
-  result = g.gaugeProd(ptree, origin)
   toc("done")
 
 proc wilsonLines*(g:auto, lines:openarray[seq[int]]):auto =
   ## Compute the trace of ordered product of gauge links, the Wilson Line.
   ## Each line is given as a list of integers +/- 1..nd, where the sign
   ## denotes forward/backward and the number denotes the dimension.
+  ## Note that the simplification has a runtime complexity of O(N^3) for N=lines.len.
   tic()
   let n = lines.len
-  let rs = g.gaugeProd(lines, false)
+  let rs = g.gaugeProd(lines.optimalPairs, false)
   toc("wilsonLines prod")
   type R = typeof(trace(g[0]))
   var
