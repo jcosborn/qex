@@ -12,6 +12,7 @@ suite "Test Wilson flow and topological charge":
   qexInit()
   echo "rank ",myRank," / ",nRanks
   threads: echo "thread ",threadNum," / ",numThreads
+  CT = 1e-11
 
   let
     seed = 17u64^13
