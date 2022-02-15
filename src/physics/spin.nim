@@ -118,6 +118,8 @@ template random*(x: var Spin) =
   gaussian(x[], r)
 template gaussian*(x: var Spin, r: var untyped) =
   gaussian(x[], r)
+template uniform*(x: var Spin, r: var untyped) =
+  uniform(x[], r)
 template z4*(x: var Spin, r: var untyped) =
   z4(x[], r)
 template z2*(x: var Spin, r: var untyped) =

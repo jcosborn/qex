@@ -85,9 +85,9 @@ proc uniform*(v: Field, r: RNGField) =
     when defined(RandCoordOrder):
       v.l.coord(c, i)
       let j = r.l.rankIndex(c).index
-      uniform(v{i}, r{j}[])
+      uniform(v{i}, r{j})
     else:
-      uniform(v{i}, r{i}[])
+      uniform(v{i}, r{i})
 
 proc z4*(x: var AsComplex, r: var RNG) =
   when defined(FUELCompat):
