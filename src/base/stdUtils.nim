@@ -169,6 +169,28 @@ proc product*[T](x: openArray[T]): T =
   result = T(1)
   for i in 0..<x.len: result *= x[i]
 
+template memoize*(xi,yi,zi:int, computeStmt:untyped):auto =
+  ## Simple nested seq based memoization for 3 int arguments.
+  let
+    x = xi
+    y = yi
+    z = zi
+  type T = typeof(computeStmt)
+  var cache {.global.} = newseq[seq[seq[T]]]()
+  if (let lmax=cache.len; x>=lmax):
+    cache.setlen(x+1)
+    for l in lmax..x:
+      cache[l] = newseq[seq[T]]()
+  if (let lmax=cache[x].len; y>=lmax):
+    cache[x].setlen(y+1)
+    for l in lmax..y:
+      cache[x][l] = newseq[T]()
+  if z>=cache[x][y].len:
+    cache[x][y].setlen(z+1)
+  if cache[x][y][z]==nil:
+    cache[x][y][z] = computeStmt
+  cache[x][y][z]
+
 macro echoImm*(s:varargs[typed]):auto =
   result = newEmptyNode()
   #echo s.treeRepr

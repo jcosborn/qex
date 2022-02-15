@@ -57,15 +57,18 @@ proc gaugeAction1*[T](c: GaugeActionCoeffs, uu: openarray[T]): auto =
           let p1 = redot(u[mu][ir], stf[mu,nu][ir])
           plaq += simdSum(p1)
           if c.rect!=0:
-            if isLocal(ss[mu][nu],ir) and isLocal(ss[nu][mu],ir):
-              var bmu,bnu: type(load1(u[0][0]))
+            if isLocal(ss[mu][nu],ir):
+              var bmu: type(load1(u[0][0]))
               localSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
+              # rect
+              let r = redot(bmu, stf[mu,nu][ir])
+              rect += simdSum(r)
+            if isLocal(ss[nu][mu],ir):
+              var bnu: type(load1(u[0][0]))
               localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
               # rect
-              let r1 = redot(bmu, stf[mu,nu][ir])
-              rect += simdSum(r1)
-              let r2 = redot(bnu, stf[nu,mu][ir])
-              rect += simdSum(r2)
+              let r = redot(bnu, stf[nu,mu][ir])
+              rect += simdSum(r)
     toc("gaugeAction local")
     if c.rect!=0:
       for mu in 1..<nd:
@@ -76,20 +79,23 @@ proc gaugeAction1*[T](c: GaugeActionCoeffs, uu: openarray[T]): auto =
           if needBoundary:
             boundarySyncSB()
             for ir in lo:
-              if not isLocal(ss[mu][nu],ir) or not isLocal(ss[nu][mu],ir):
-                var bmu,bnu: type(load1(u[0][0]))
+              if not isLocal(ss[mu][nu],ir):
+                var bmu: type(load1(u[0][0]))
                 getSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
+                # rect
+                let r = redot(bmu, stf[mu,nu][ir])
+                rect += simdSum(r)
+              if not isLocal(ss[nu][mu],ir):
+                var bnu: type(load1(u[0][0]))
                 getSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
                 # rect
-                let r1 = redot(bmu, stf[mu,nu][ir])
-                rect += simdSum(r1)
-                let r2 = redot(bnu, stf[nu,mu][ir])
-                rect += simdSum(r2)
+                let r = redot(bnu, stf[nu,mu][ir])
+                rect += simdSum(r)
     act[threadNum*3]   = plaq
     act[threadNum*3+1] = rect
     act[threadNum*3+2] = pgm
     if threadNum==0: nth = numThreads
-    toc("gaugeAction boundary")
+    # toc("gaugeAction boundary")
   toc("gaugeAction threads")
   var a = [0.0, 0.0, 0.0]
   for i in 0..<nth:
@@ -438,6 +444,34 @@ proc gaugeAction3*(g: array|seq): auto =
   var c = GaugeActionCoeffs(plaq:1.0)
   gaugeAction3(c, g)
 
+proc plaqRectPath_fun(c:GaugeActionCoeffs, mu,nu:int):auto =
+  let
+    mu = mu+1
+    nu = nu+1
+  var ls = newseq[seq[int]]()
+  if c.plaq!=0:
+    ls.add [ @[nu, mu, -nu], @[-nu, mu, nu]
+           , @[mu, nu, -mu], @[-mu, nu, mu]
+           ]
+  if c.rect!=0:
+    ls.add [ @[nu, nu, mu, -nu, -nu], @[-nu, -nu, mu, nu, nu]
+           , @[nu, mu, mu, -nu, -mu], @[-mu, nu, mu, mu, -nu]
+           , @[-nu, mu, mu, nu, -mu], @[-mu, -nu, mu, mu, nu]
+           , @[mu, mu, nu, -mu, -mu], @[-mu, -mu, nu, mu, mu]
+           , @[mu, nu, nu, -mu, -nu], @[-nu, mu, nu, nu, -mu]
+           , @[-mu, nu, nu, mu, -nu], @[-nu, -mu, nu, nu, mu]
+           ]
+  ls.optimalPairs
+
+proc plaqRectPath(c:GaugeActionCoeffs, mu,nu:int):auto =
+  var j = 0
+  if c.plaq!=0:
+    inc j
+  if c.rect!=0:
+    j += 2
+  memoize(j,mu,nu):
+    c.plaqRectPath_fun(mu,nu)
+
 proc gaugeForce3*(c: GaugeActionCoeffs, g,f: auto) =
   tic("gaugeForce3")
   const nc = g[0][0].nrows
@@ -449,24 +483,8 @@ proc gaugeForce3*(c: GaugeActionCoeffs, g,f: auto) =
       f[mu] := 0
   for mu in 1..<nd:
     for nu in 0..<mu:
-      var ls = newseq[seq[int]]()
-      block:
-        let
-          mu = mu+1
-          nu = nu+1
-        if c.plaq!=0:
-          ls.add [ @[nu, mu, -nu], @[-nu, mu, nu]
-                 , @[mu, nu, -mu], @[-mu, nu, mu]
-                 ]
-        if c.rect!=0:
-          ls.add [ @[nu, nu, mu, -nu, -nu], @[-nu, -nu, mu, nu, nu]
-                 , @[nu, mu, mu, -nu, -mu], @[-mu, nu, mu, mu, -nu]
-                 , @[-nu, mu, mu, nu, -mu], @[-mu, -nu, mu, mu, nu]
-                 , @[mu, mu, nu, -mu, -mu], @[-mu, -mu, nu, mu, mu]
-                 , @[mu, nu, nu, -mu, -nu], @[-nu, mu, nu, nu, -mu]
-                 , @[-mu, nu, nu, mu, -nu], @[-nu, -mu, nu, nu, mu]
-                 ]
-      let ws = g.gaugeProd ls
+      let ptree = c.plaqRectPath(mu,nu)
+      let ws = g.gaugeProd ptree
       threads:
         for ir in f[mu]:
           var pmu,rmu,pnu,rnu: type(load1(f[0][0]))
