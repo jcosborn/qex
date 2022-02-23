@@ -14,9 +14,36 @@ type
     pgm*: float
     adjplaq*: float
 
-proc DBW2*(beta:float, c1:float = -1.4088):GaugeActionCoeffs =
+const
+  C1Symanzik = -1.0/12.0  # tree-level
+  C1Iwasaki = -0.331
+  C1DBW2 = -1.4088
+
+# for DBW2
+#
+# Table III in https://journals.aps.org/prd/pdf/10.1103/PhysRevD.54.1050
+# beta11 7.986(13)  beta12 -0.9169(41)
+# gives c1 = 1/(8+7.986/-0.9169) = -1.4088813767670574
+# with standard error 0.08227016226543633 assuming no correlation
+#
+# https://journals.aps.org/prd/pdf/10.1103/PhysRevD.75.114501
+# uses c1 = -1.4069
+#
+# https://journals.aps.org/prd/pdf/10.1103/PhysRevD.90.074502
+# uses c1 = -1.4088
+#
+# The numbers are likely from truncations in the middle of the computation,
+# r = beta12/beta11 = -0.9169/7.986 = -0.11481342349110946
+# c1 = 1/(8+1/r) = 1/(8+1/-0.1148) = -1.4068627450980384
+# c1 = 1/(8+1/r) = 1/(8+1/-0.114813) = -1.408817610680277
+
+proc gaugeActRect*(beta:float, c1:float = C1Symanzik):GaugeActionCoeffs =
   result.plaq = (1.0-8.0*c1)*beta
   result.rect = c1*beta
+
+proc Symanzik*(beta:float, c1:float = C1Symanzik):auto = gaugeActRect(beta, c1)
+proc Iwasaki*(beta:float, c1:float = C1Iwasaki):auto = gaugeActRect(beta, c1)
+proc DBW2*(beta:float, c1:float = C1DBW2):auto = gaugeActRect(beta, c1)
 
 # plaq: 6 types
 # rect: 12 types
