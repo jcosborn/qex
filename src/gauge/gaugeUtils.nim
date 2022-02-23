@@ -612,10 +612,20 @@ type
 proc `$`(path:OrdPath):string =
   return
     case path.k:
-    of opInt: "OrdPath(" & $path.d & ")"
-    of opPair: "OrdPath(l:" & $path.l & ", r:" & $path.r & ")"
-    of opList: "OrdPath(" & $path.s & ")"
-    of opAdj: "OrdPath(adjoint:" & $path.p & ")"
+    of opInt: $path.d
+    of opPair: "(" & $path.l & " " & $path.r & ")"
+    of opList: $path.s
+    of opAdj: "Adj" & $path.p
+
+proc newOrdPath(path:openarray[int]):OrdPath =
+  let n = path.len
+  var op = OrdPath(k:opList, s:newseq[OrdPath](n))
+  for i in 0..<n:
+    let d = path[i]
+    if d==0:
+      qexError("newOrdPath: unable to parse path: ", path)
+    op.s[i] = OrdPath(k:opInt, d:d)
+  return op
 
 proc adjoint(p:OrdPath):OrdPath =
   case p.k:
@@ -634,41 +644,31 @@ proc adjoint(p:OrdPath):OrdPath =
   of opAdj:
     return p.p
 
-proc `==`(a,b:OrdPath):bool =
-  if a.k==opInt and b.k==opInt:
-    return a.d == b.d
-  elif a.k==opPair and b.k==opPair:
-    return a.l == b.l and a.r == b.r
-  elif a.k==opList and b.k==opList:
-    return a.s == b.s
-  elif a.k==opInt and b.k==opList:
-    return b.s.len == 1 and a == b.s[0]
-  elif a.k==opList and b.k==opInt:
-    return a.s.len == 1 and a.s[0] == b
-  elif a.k==opAdj:
-    return a.p == b.adjoint
-  elif b.k==opAdj:
-    return a.adjoint == b.p
+proc adjointOp(p:OrdPath):OrdPath =
+  ## Like adjoint(), but create new OrdPath(k:opAdj) if it's not already an opInt or opAdj.
+  case p.k:
+  of opInt:
+    return p.adjoint
+  of opAdj:
+    return p.p
   else:
-    return false
+    return OrdPath(k:opAdj, p:p)
 
-proc hash(path:OrdPath):Hash =
-  return
-    case path.k:
-    of opInt: !$(opInt.hash !& path.d.hash)
-    of opPair: !$(opPair.hash !& path.l.hash !& path.r.hash)
-    of opList: !$(opList.hash !& path.s.hash)
-    of opAdj: !$(opAdj.hash !& path.p.hash)
-
-proc newOrdPath(path:openarray[int]):OrdPath =
-  let n = path.len
-  var op = OrdPath(k:opList, s:newseq[OrdPath](n))
-  for i in 0..<n:
-    let d = path[i]
-    if d==0:
-      qexError("newOrdPath: unable to parse path: ", path)
-    op.s[i] = OrdPath(k:opInt, d:d)
-  return op
+proc flatten(path:OrdPath):seq[int] =
+  case path.k:
+  of opInt:
+    return @[path.d]
+  of opPair:
+    var r = path.l.flatten
+    r.add path.r.flatten
+    return r
+  of opList:
+    var r = newseq[int]()
+    for l in path.s:
+      r.add l.flatten
+    return r
+  of opAdj:
+    return path.p.adjoint.flatten
 
 proc deltaX(path:OrdPath):Coord =
   # return the Coord difference between the end of the path to the beginning.
@@ -701,21 +701,36 @@ proc position(path:OrdPath):Coord =
   of opAdj:
     result = path.p.position - path.p.deltaX
 
-proc flatten(path:OrdPath):seq[int] =
-  case path.k:
-  of opInt:
-    return @[path.d]
-  of opPair:
-    var r = path.l.flatten
-    r.add path.r.flatten
-    return r
-  of opList:
-    var r = newseq[int]()
-    for l in path.s:
-      r.add l.flatten
-    return r
-  of opAdj:
-    return path.p.adjoint.flatten
+proc `$`*(path:OrdPathTree):string =
+  result = "OrdPathTree:\n  paths:"
+  for p in path.paths:
+    result.add "\n    " & $p.flatten & " \t " & $p & " \t shift " & $p.position.x
+  result.add "\n  segments:"
+  for i in 0..<path.segments.len:
+    let
+      l = path.segments[i].l
+      r = path.segments[i].r
+    result.add "\n    " & $path.counts[i] & "  " & $l & " \t " & $r & " \t shift " & $(l.position - l.deltaX - r.position).x
+
+proc hash(path:OrdPath):Hash =
+  return
+    case path.k:
+    of opInt: !$(opInt.hash !& path.d.hash)
+    of opPair: !$(opPair.hash !& path.l.hash !& path.r.hash)
+    of opList: !$(opList.hash !& path.s.hash)
+    of opAdj: !$(opAdj.hash !& path.p.hash)
+
+proc `==`(x,y:OrdPath):bool =
+  # strictly follows hash(path:OrdPath)
+  return
+    if x.k != y.k:
+      false
+    else:
+      case x.k:
+      of opInt: x.d == y.d
+      of opPair: x.l == y.l and x.r == y.r
+      of opList: x.s == y.s
+      of opAdj: x.p == y.p
 
 proc mostSharedPair(paths:openarray[OrdPath]):(OrdPath,int) =
   ## Receives paths and search each element of OrdPath(k:opList).
@@ -724,9 +739,11 @@ proc mostSharedPair(paths:openarray[OrdPath]):(OrdPath,int) =
   ## If there are no pairs, return OrdPath(k:opList) with len 0, and 0.
   var pc = initTable[OrdPath,int]()
   var p,pa: OrdPath
-  var c: int
+  var fp,fpa: seq[int]
+  var c,ca: int
   while true:
     c = 0
+    ca = 0
     for ps in paths:
       if not (ps.k==opList and ps.s.len>1):
         continue
@@ -734,22 +751,33 @@ proc mostSharedPair(paths:openarray[OrdPath]):(OrdPath,int) =
       while i<ps.s.len-1:  # FIXME test reversed
         i.inc
         let t = OrdPath(k:opPair, l:ps.s[i-1], r:ps.s[i])
+        let ft = t.flatten
         if c==0:
-          let ta = t.adjoint
-          if t in pc or ta in pc:
-            continue
           p = t
-          pa = ta
+          pa = OrdPath(k:opPair, l:t.l.adjointOp, r:t.r.adjointOp)
+          if p in pc or pa in pc:
+            continue
+          fp = p.flatten()
+          fpa.newseq(fp.len)
+          for i in 0..<fp.len:
+            fpa[i] = -fp[fp.len-i-1]
           c = 1
           i.inc
-        elif t==p or t==pa:
+        elif ft == fp:
           c.inc
+          i.inc
+        elif ft == fpa:
+          ca.inc
           i.inc
     if c==0:
       # no new pairs
       break
     else:
-      pc[p] = c
+      let ct = c+ca
+      if c>=ca:
+        pc[p] = ct
+      else:
+        pc[pa] = ct
   c = 0
   for k,v in pc.pairs:
     # If there are multiple paris with the max count,
@@ -765,8 +793,11 @@ proc mostSharedPair(paths:openarray[OrdPath]):(OrdPath,int) =
 proc groupByPair(paths:openarray[OrdPath], pair:OrdPath):seq[OrdPath] =
   ## Receives paths and group each element of OrdPath(k:opList) by the pair OrdPath(k:opPair).
   let
-    apair = pair.adjoint
+    fp = pair.flatten
     pairAdj = OrdPath(k:opAdj, p:pair)
+  var afp = newseq[int](fp.len)
+  for i in 0..<fp.len:
+    afp[i] = -fp[fp.len-i-1]
   var newpaths = newseq[OrdPath]()
   for ps in paths:
     if ps.k!=opList:
@@ -777,12 +808,13 @@ proc groupByPair(paths:openarray[OrdPath], pair:OrdPath):seq[OrdPath] =
       i = 0
       n = ps.s.len
     while i<n-1:
-      let t = OrdPath(k:opPair, l:ps.s[i], r:ps.s[i+1])
-      if t == pair:
+      var t = ps.s[i].flatten
+      t.add ps.s[i+1].flatten
+      if t == fp:
         p.add pair
         # echo "groupByPair: add ",p[^1]
         i.inc 2
-      elif t==apair:
+      elif t==afp:
         p.add pairAdj
         # echo "groupByPair: add ",p[^1]
         i.inc 2
@@ -911,7 +943,7 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
         (l,la) = fetch s.l
         (r,ra) = fetch s.r
         sh = sl[i]
-      # echo "gaugeProd:\n","  l: ",la," ",s.l,"\n    ",s.l.position,"  ",s.l.deltaX,"\n  r: ",ra," ",s.r,"\n    ",s.r.position,"  ",s.r.deltaX,"\n  sh: ",sh
+      # echo "gaugeProd:\n","  l: ",la," ",s.l.flatten,"\n    ",s.l.position,"  ",s.l.deltaX,"\n  r: ",ra," ",s.r.flatten,"\n    ",s.r.position,"  ",s.r.deltaX,"\n  sh: ",sh
       var needs = 0
       for x in sh:
         needs += abs(x)
@@ -938,6 +970,7 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
   for i,p in ptree.paths.pairs:
     if p.k==opAdj:
       let t = gp[p.p.flatten]
+      # echo "gaugeProd result ",i," adj path ",p.flatten," ",$p
       result[i] = newOneOf t
       result[i] := t.adj
     else:
@@ -960,7 +993,7 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
       if bi[i] and not sbi[i]:
         sb[i] = newShifter(g[0], i, -1)
     for i,p in ptree.paths.pairs:
-      # echo "gaugeProd ",i," shifts ",s[i]," path ",p.flatten," ",$p
+      # echo "gaugeProd result ",i," shifts ",s[i]," path ",p.flatten," ",$p
       result[i].multishifts(s[i], sf, sb)
   toc("done")
 
