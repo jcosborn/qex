@@ -856,25 +856,30 @@ proc optimalPairs*(paths:openarray[seq[int]]):OrdPathTree =
     ps[i] = p.newOrdPath
   ps.optimalPairs
 
-proc singleshift[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]):auto =
+proc singleshift[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]):F =
+  # Result will be in one of the shift buffers.
+  result = f
   for mu,n in sh.pairs:
     if n>0:
-      return sb[mu] ^* f
+      result = sb[mu] ^* result
     elif n<0:
-      return sf[mu] ^* f
+      result = sf[mu] ^* result
 
-proc multishifts[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]) =
+proc multishifts[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]):F =
+  # f will be used as temporary and overwritten.
+  # Result will be in one of the shift buffers.
+  result = f
   for mu,n in sh.pairs:
     if n>0:
-      for i in 0..<n:
-        #f := sb[mu] ^* f
-        let t = sb[mu] ^* f
-        f := t
+      result = sb[mu] ^* result
+      for i in 1..<n:
+        f := result
+        result = sb[mu] ^* f
     elif n<0:
-      for i in 0..<(-n):
-        #f := sf[mu] ^* f
-        let t = sf[mu] ^* f
-        f := t
+      result = sf[mu] ^* result
+      for i in 1..<(-n):
+        f := result
+        result = sf[mu] ^* f
 
 proc lrmul(res:auto, l:auto, r:auto, la,ra:bool) =
   tic("lrmul")
@@ -946,7 +951,9 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
       # echo "gaugeProd:\n","  l: ",la," ",s.l.flatten,"\n    ",s.l.position,"  ",s.l.deltaX,"\n  r: ",ra," ",s.r.flatten,"\n    ",s.r.position,"  ",s.r.deltaX,"\n  sh: ",sh
       var needs = 0
       for x in sh:
-        needs += abs(x)
+        let ax = abs x
+        if needs < ax:
+          needs = ax
       var res = newOneOf(r)
       if needs==0:
         threads:
@@ -958,23 +965,24 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
       else:
         threads:
           res := r
-          res.multishifts(sh, sf, sb)
-          res.lrmul(l,res,la,ra)
+          let rt = res.multishifts(sh, sf, sb)
+          res.lrmul(l,rt,la,ra)
       # echo "gaugeProd: add ",s.flatten," ",res.trace/float(g[0].l.physVol*g[0][0].ncols)
       gp[s.flatten] = res
     else:
       qexError("Internal logic error.")
   toc("gaugeProd prod")
   let n = ptree.paths.len
-  result = newseq[F](n)
+  var res = newseq[F](n)
   for i,p in ptree.paths.pairs:
     if p.k==opAdj:
       let t = gp[p.p.flatten]
       # echo "gaugeProd result ",i," adj path ",p.flatten," ",$p
-      result[i] = newOneOf t
-      result[i] := t.adj
+      res[i] = newOneOf t
+      threads:
+        res[i] := t.adj
     else:
-      result[i] = gp[p.flatten]
+      res[i] = gp[p.flatten]
   if origin:
     var
       s = newseq[seq[int]](n)
@@ -992,9 +1000,16 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
         sf[i] = newShifter(g[0], i, 1)
       if bi[i] and not sbi[i]:
         sb[i] = newShifter(g[0], i, -1)
-    for i,p in ptree.paths.pairs:
-      # echo "gaugeProd result ",i," shifts ",s[i]," path ",p.flatten," ",$p
-      result[i].multishifts(s[i], sf, sb)
+    threads:
+      for i,p in ptree.paths.pairs:
+        # echo "gaugeProd result ",i," shifts ",s[i]," path ",p.flatten," ",$p
+        var needs = 0
+        for x in s[i]:
+          needs += abs x
+        if needs>0:
+          let t = res[i].multishifts(s[i], sf, sb)
+          res[i] := t
+  result = res
   toc("done")
 
 proc wilsonLines*(g:auto, lines:openarray[seq[int]]):auto =
