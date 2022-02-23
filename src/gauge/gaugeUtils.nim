@@ -955,18 +955,16 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
         if needs < ax:
           needs = ax
       var res = newOneOf(r)
-      if needs==0:
-        threads:
-          res.lrmul(l,r,la,ra)
-      elif needs==1:
-        threads:
-          let rt = r.singleshift(sh, sf, sb)
-          res.lrmul(l,rt,la,ra)
-      else:
-        threads:
-          res := r
-          let rt = res.multishifts(sh, sf, sb)
-          res.lrmul(l,rt,la,ra)
+      threads:
+        let rr =
+          if needs==0:
+            r
+          elif needs==1:
+            r.singleshift(sh, sf, sb)
+          else:
+            res := r
+            res.multishifts(sh, sf, sb)
+        res.lrmul(l,rr,la,ra)
       # echo "gaugeProd: add ",s.flatten," ",res.trace/float(g[0].l.physVol*g[0][0].ncols)
       gp[s.flatten] = res
     else:
@@ -974,11 +972,13 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
   toc("gaugeProd prod")
   let n = ptree.paths.len
   var res = newseq[F](n)
+  var resAlloc = newseq[bool](n)  # TODO: implement tracing ref counting
   for i,p in ptree.paths.pairs:
     if p.k==opAdj:
       let t = gp[p.p.flatten]
       # echo "gaugeProd result ",i," adj path ",p.flatten," ",$p
       res[i] = newOneOf t
+      resAlloc[i] = true
       threads:
         res[i] := t.adj
     else:
@@ -1000,14 +1000,25 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
         sf[i] = newShifter(g[0], i, 1)
       if bi[i] and not sbi[i]:
         sb[i] = newShifter(g[0], i, -1)
-    threads:
-      for i,p in ptree.paths.pairs:
-        # echo "gaugeProd result ",i," shifts ",s[i]," path ",p.flatten," ",$p
-        var needs = 0
-        for x in s[i]:
-          needs += abs x
-        if needs>0:
-          let t = res[i].multishifts(s[i], sf, sb)
+    for i,p in ptree.paths.pairs:
+      # echo "gaugeProd result ",i," shifts ",s[i]," path ",p.flatten," ",$p
+      var needs = 0
+      for x in s[i]:
+        let ax = abs x
+        if needs < ax:
+          needs = ax
+      if needs>0:
+        let r = res[i]
+        if not resAlloc[i]:
+          res[i] = newOneOf r
+          resAlloc[i] = true
+        threads:
+          let t =
+            if needs==1:
+              r.singleshift(s[i], sf, sb)
+            else:
+              res[i] := r
+              res[i].multishifts(s[i], sf, sb)
           res[i] := t
   result = res
   toc("done")
