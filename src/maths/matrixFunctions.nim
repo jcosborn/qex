@@ -6,6 +6,8 @@ import matrixConcept
 import types
 import matinv
 export matinv
+import matexp
+export matexp
 import projUderiv
 
 proc determinantN*(a: auto): auto =
@@ -405,6 +407,11 @@ proc exp*(m: Mat1): auto {.noInit.} =
   when m.nrows == 1:
     r := exp(m[0,0])
   else:
+    #r := expPoly12(m)
+    #r := expPade4(m)
+    #r := expPade8(m)
+    r := expPade9(m)
+    #[
     type ft = numberType(m)
     template term(n,x: typed): untyped =
       when x.type is nil.type: 1 + ft(n)*m
@@ -422,7 +429,9 @@ proc exp*(m: Mat1): auto {.noInit.} =
     let r3 = term(1.0/3.0, r4)
     let r2 = term(1.0/2.0, r3)
     r := 1 + m*r2
+    ]#
   r
+
 proc ln*(m: Mat1): auto {.noInit.} =
   var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
   when m.nrows == 1:

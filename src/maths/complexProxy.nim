@@ -83,6 +83,13 @@ proc `$`*(x: ComplexProxy): string =
   if t[0]!='-': result.add "+"
   result.add t
 
+proc `|`*(x: ComplexProxy, y: tuple): string =
+  result = x[].re | y
+  var t = (x[].im | y) & "I"
+  if t[0]!='-': result.add "+"
+  result.add t
+
+
 template newRealProxy*[T](x: T): untyped =
   RealProxy[type(T)](v: x)
 #template newRealProxy*(x: typed{call}): untyped =
@@ -257,6 +264,9 @@ template norm2ImagU(xr,xi: untyped): untyped =
   mixin norm2
   norm2(xi)
 unaryOverloadsR(`|`, norm2, norm2RealU, norm2ImagU)
+
+template abs*(x: ComplexProxy): untyped =
+  sqrt(norm2(x))
 
 
 #template inv*(x: RealProxy): untyped = newRealP(x[].inv)
@@ -481,6 +491,10 @@ template iBinaryOverloads(op,fn,impl: untyped) {.dirty.} =
   template op*(x: ComplexProxy, y: RealProxy2) =    fn(x,y)
   template op*(x: ComplexProxy, y: ImagProxy2) =    fn(x,y)
   template op*(x: ComplexProxy, y: ComplexProxy2) = fn(x,y)
+  template `fn U`*(x: ImagProxy, y: ImagProxy2) = assign(x, impl(x,y))
+  template fn*(x: ImagProxy, y: ImagProxy2) =
+    flattenCallArgs(`fn U`, x, y)
+  template op*(x: ImagProxy, y: ImagProxy2) =    fn(x,y)
 
 iBinaryOverloads(`+=`, iadd, add)
 iBinaryOverloads(`-=`, isub, sub)

@@ -163,7 +163,11 @@ template add*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
          untyped =  assign(r,x+y)
 template add*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
   r := x + y
+template add*(r: ComplexProxy, x: ComplexProxy2, y: SomeNumber): untyped =
+  r := x + y
 template add*(r: ComplexProxy, x: RealProxy, y: ComplexProxy3): untyped =
+  r := x + y
+template add*(r: ComplexProxy, x: ComplexProxy2, y: RealProxy): untyped =
   r := x + y
 
 template sub*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
@@ -191,6 +195,16 @@ template mul*(r: ComplexProxy, x: ImagProxy, y: ComplexProxy3): untyped =
   r := x * y
 template mul*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
          untyped =  assign(r,x*y)
+template mul*(r: SomeNumber, x: ImagProxy2, y: ImagProxy3): untyped =
+  r := x * y
+template mul*(r: ImagProxy, x: ImagProxy2, y: SomeNumber): untyped =
+  r := x * y
+
+template imadd*(r: SomeNumber, x: ImagProxy2, y: ImagProxy3):
+         untyped =  r -= x*y
+template imadd*(r: ImagProxy, x: ImagProxy2, y: SomeNumber):
+         untyped =  r -= x*y
+
 template imsub*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
          untyped =  r -= x*y
 
