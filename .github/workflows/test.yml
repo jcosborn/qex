@@ -9,7 +9,7 @@ jobs:
         fuel-compat: [0, 1]
       fail-fast: false
     name: nim-${{ matrix.nim-branch }}-FUELCompat:${{ matrix.fuel-compat }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
     - name: environment
       run: |
@@ -17,6 +17,7 @@ jobs:
         sudo sh -c 'echo %e.core.%p.%t > /proc/sys/kernel/core_pattern'
     - name: install packages
       run: |
+        sudo apt-get update
         sudo apt-get install numdiff hwloc-nox libhwloc-dev mpich libmpich-dev gdb
     - name: install hwloc v2
       run: |
