@@ -76,11 +76,11 @@ buildTask tests, "build unit tests":
   var runscript = @["#!/bin/sh","$SETUPJOBS","failed=''"]
   var dorun = run
   run = false
-  if not existsDir("tests"):
+  if not dirExists("tests"):
     mkDir("tests")
   for d in listDirs(qexdir/"tests"):
     let outdir = "tests"/splitPath(d)[1]
-    if not existsDir(outdir):
+    if not dirExists(outdir):
       mkDir(outdir)
     for f in listFiles(d):
       #echo f
@@ -90,7 +90,7 @@ buildTask tests, "build unit tests":
         runscript.addTest(f, outdir)
   for f in extraTests:
     let outdir = "bin"
-    if not existsDir(outdir):
+    if not dirExists(outdir):
       mkDir outdir
     runscript.addTest(qexdir/"src"/f, outdir)
   #echo runscript.join("\n")
