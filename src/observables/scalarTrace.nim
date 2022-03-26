@@ -32,7 +32,7 @@ letParam:
 
   # Intermediate definitions
   lat =
-    if existsFile(inlat):
+    if fileExists(inlat):
       getFileLattice inlat
     else:
       qexWarn "Nonexistent gauge file: ", inlat

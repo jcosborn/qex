@@ -156,7 +156,7 @@ when isMainModule:
   letParam:
     gaugefile = ""
     lat =
-      if existsFile(gaugefile):
+      if fileExists(gaugefile):
         getFileLattice gaugefile
       else:
         if gaugefile.len > 0:

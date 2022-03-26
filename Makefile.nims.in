@@ -133,7 +133,7 @@ if iarg>=args.len:
   echo "error: no build command given"
   help()
 
-when existsFile("config.nims"):
+when fileExists("config.nims"):
   include "config.nims"
 
 proc nimRun(f: string, outfile="") =
