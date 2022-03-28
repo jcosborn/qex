@@ -28,9 +28,10 @@ var
   qmpDir = ""
   qioDir = ""
   qudaDir = ""
-  cudaDir = ""
-  chromaDir = ""
+  cudaLibDir = ""
   primmeDir = ""
+  chromaDir = ""
+  gridDir = ""
 
   FUELCompat = false
 
@@ -78,21 +79,19 @@ proc getNimFlags*(): seq[string] =
   cpp.options.linker ! ldppflags
 
   #putenv ~ ("OMPFLAG=" & ompflags)
-  #putenv ~ ("QMPDIR=" & qmpdir)
-  #putenv ~ ("QIODIR=" & qiodir)
   if qmpDir != "":
     d ~ ("qmpDir:" & qmpDir)
   if qioDir != "":
     d ~ ("qioDir:" & qioDir)
-  #when declared(qudaDir):
   if qudaDir != "":
-    #putenv ~ ("QUDADIR=" & qudadir)
-    #putenv ~ ("CUDADIR=" & cudadir)
     d ~ ("qudaDir:" & qudaDir)
     d ~ ("cudaLibDir:" & cudaLibDir)
-  #when declared(chromaDir):
+  if primmeDir != "":
+    d ~ ("primmeDir:" & primmeDir)
   if chromaDir != "":
-    putenv ~ ("CHROMADIR=" & chromaDir)
+    d ~ ("chromaDir:" & chromaDir)
+  if gridDir != "":
+    d ~ ("gridDir:" & gridDir)
 
   if existsenv("FUELCompat") and getenv("FUELCompat")!="0":
     d ~ "FUELCompat"

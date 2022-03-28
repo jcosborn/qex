@@ -2,12 +2,16 @@ import osPaths, strUtils, strformat, tables, macros
 
 var args = initTable[string,string]()
 
-if existsEnv("QMPDIR"):
-  let k = "qmpdir"
-  args[k] = getEnv("QMPDIR")
-if existsEnv("QIODIR"):
-  let k = "qiodir"
-  args[k] = getEnv("QIODIR")
+proc fromEnv(key: string, env: string) =
+  if existsEnv(env):
+    args[key] = getEnv(env)
+
+fromEnv("qmpdir", "QMPDIR")
+fromEnv("qiodir", "QIODIR")
+fromEnv("qudadir", "QUDADIR")
+fromEnv("cudalibdir", "CUDALIBDIR")
+fromEnv("chromadir", "CHROMADIR")
+fromEnv("griddir", "GRIDDIR")
 
 for i in 2..paramCount():
   let p = paramStr(i)

@@ -1,11 +1,11 @@
 import ospaths
 import io/qio
 
-const gridDir {.strdefine.} = getEnv("HOME") & "/lqcd/install/grid"
+const gridDir {.strdefine.} = getHomeDir() & "/lqcd/install/grid"
 const gridInc = gridDir / "include"
 {.passC: "-I" & gridInc.}
 {.passL: "-L" & gridDir & "/lib -lGrid -lz".}
-{.passC: "-diag-disable=469".}
+#{.passC: "-diag-disable=469".}
 
 {.pragma: gh, header:"Grid/Grid.h".}
 

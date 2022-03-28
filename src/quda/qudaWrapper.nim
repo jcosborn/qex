@@ -6,6 +6,7 @@ when haveQuda():
   export qudaWrapperImpl
 
 else:  # put stubs here
+
   import base
   import layout
   import physics/stagD
