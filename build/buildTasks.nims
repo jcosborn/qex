@@ -213,11 +213,11 @@ proc buildTests() =
   var runscript = @["#!/bin/sh","$SETUPJOBS","failed=''"]
   var dorun = run
   run = false
-  if not existsDir("tests"):
+  if not dirExists("tests"):
     mkDir("tests")
   for d in listDirs(qexDir/"tests"):
     let outdir = "tests"/splitPath(d)[1]
-    if not existsDir(outdir):
+    if not dirExists(outdir):
       mkDir(outdir)
     for f in listFiles(d):
       #echo f
@@ -227,7 +227,7 @@ proc buildTests() =
         runscript.addTest(f, outdir)
   for f in extraTests:
     let outdir = bindir
-    if not existsDir(outdir):
+    if not dirExists(outdir):
       mkDir outdir
     runscript.addTest(qexDir/"src"/f, outdir)
   #echo runscript.join("\n")
@@ -239,62 +239,5 @@ proc buildTests() =
   if dorun:
     exec "./testscript.sh"
 
-buildTask tests, "build tests (TODO)":
-  #echo "tests"
+buildTask tests, "build tests":
   buildTests()
-
-
-
-
-
-#[
-
-let extraTests = [
-  "gauge/wflow.nim",
-  "examples/staghmc_sh.nim",
-]
-
-proc addTest(runscript:var seq[string], f, outdir:string) =
-  let name = f.splitFile.name
-  var rj = gorge("awk '$1==\"#RUNCMD\"{$1=\"\";print}' "&f)
-  if rj == "": rj = "$RUNJOB"
-  let exe = outdir/name
-  nimRun f, exe
-  let runner = qexdir/"tests/extra"/name/"run"
-  if fileExists(runner): rj = runner
-  runscript.add("echo Running: "&exe)
-  runscript.add(rj&" "&exe&" || failed=\"$failed "&name&"\"")
-
-
-buildTask tests, "build unit tests":
-  var runscript = @["#!/bin/sh","$SETUPJOBS","failed=''"]
-  var dorun = run
-  run = false
-  if not existsDir("tests"):
-    mkDir("tests")
-  for d in listDirs(qexdir/"tests"):
-    let outdir = "tests"/splitPath(d)[1]
-    if not existsDir(outdir):
-      mkDir(outdir)
-    for f in listFiles(d):
-      #echo f
-      let (dir, name, ext) = splitFile(f)
-      #echo dir, " ", name, " ", ext
-      if name[0]=='t' and ext==".nim":
-        runscript.addTest(f, outdir)
-  for f in extraTests:
-    let outdir = "bin"
-    if not existsDir(outdir):
-      mkDir outdir
-    runscript.addTest(qexdir/"src"/f, outdir)
-  #echo runscript.join("\n")
-  runscript.add("$CLEANUPJOBS")
-  runscript.add("if [ X != \"X$failed\" ];then echo Failed tests: $failed;exit 1;fi")
-  runscript.add("echo $0: All tests passed")
-  writeFile("testscript.sh", runscript.join("\n"))
-  exec("chmod 755 testscript.sh")
-  if dorun:
-    exec "./testscript.sh"
-
-
-]#
