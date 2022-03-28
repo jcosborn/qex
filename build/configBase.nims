@@ -80,6 +80,10 @@ proc getNimFlags*(): seq[string] =
   #putenv ~ ("OMPFLAG=" & ompflags)
   #putenv ~ ("QMPDIR=" & qmpdir)
   #putenv ~ ("QIODIR=" & qiodir)
+  if qmpDir != "":
+    d ~ ("qmpDir:" & qmpDir)
+  if qioDir != "":
+    d ~ ("qioDir:" & qioDir)
   #when declared(qudaDir):
   if qudaDir != "":
     #putenv ~ ("QUDADIR=" & qudadir)
