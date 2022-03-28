@@ -5,12 +5,11 @@
 #   make NIMFLAGS="--rangeChecks:on --assertions:on" <myprog>
 
 NIM = @@NIM
-#NIMFLAGS = "-d:defPrec:S"
-#NIMFLAGS =
+#NIMFLAGS = "-d:defPrec=S"
 
 runNim:
 	@echo "Passing build commands to Makefile.nims"
-	$(NIM) $(NIMFLAGS) Makefile.nims $(MAKECMDGOALS)
+	$(NIM) $(NIMFLAGS) qex/build/Makefile.nims $(MAKECMDGOALS)
 
 %: runNim
 	@ # do nothing silently
