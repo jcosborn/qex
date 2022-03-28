@@ -32,6 +32,7 @@ var usecpp = false
 var verbosity = -1
 var bindir = "bin"
 var srcPaths = @[".", "qex/src", "qex/tests"]  # use relative paths for convenience
+if getCurrentDir() == qexDir: srcPaths = @["."]
 
 proc findSrc(g: string): tuple[files:seq[string],dirs:seq[string]] =
   var fs = newSeq[string]()
