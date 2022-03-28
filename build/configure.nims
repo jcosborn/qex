@@ -18,9 +18,10 @@ proc makeSymLink(name,target: string) =
       echo err
       quit(1)
   if fileExists(name):
-    echo &"ERROR: file '{name}' exists"
-    echo "  please remove so a symlink can be created"
-    quit(1)
+    #echo &"ERROR: file '{name}' exists"
+    #echo "  please remove so a symlink can be created"
+    #quit(1)
+    echo &"WARNING: file '{name}' exists, skipping creation of symlink"
   if dirExists(name):
     echo &"ERROR: directory '{name}' exists"
     echo "  please remove so a symlink can be created"

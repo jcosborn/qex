@@ -2,6 +2,13 @@ import osPaths, strUtils, strformat, tables, macros
 
 var args = initTable[string,string]()
 
+if existsEnv("QMPDIR"):
+  let k = "qmpdir"
+  args[k] = getEnv("QMPDIR")
+if existsEnv("QIODIR"):
+  let k = "qiodir"
+  args[k] = getEnv("QIODIR")
+
 for i in 2..paramCount():
   let p = paramStr(i)
   let s = p.split(':')
