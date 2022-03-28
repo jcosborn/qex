@@ -3,14 +3,14 @@ buildVerbosity = 0
 
 ccType = "gcc"
 
-cc = "gcc"
+cc = "mpicc"
 cflagsAlways = ""
 cflagsDebug = "-g"
 cflagsSpeed = "-Ofast -march=native"
 ld = cc
 ldflags = cflagsAlways
 
-cpp = "g++"
+cpp = "mpicxx"
 cppflagsAlways = ""
 cppflagsDebug = "-g"
 cppflagsSpeed = "-Ofast -march=native"
