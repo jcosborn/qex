@@ -4,18 +4,18 @@ buildVerbosity = 0
 ccType = "gcc"
 
 cc = "mpicc"
-cflagsAlways = "-ldl"
+cflagsAlways = ""
 cflagsDebug = "-g"
 cflagsSpeed = "-Ofast -march=native"
 ld = cc
-ldflags = cflagsAlways
+ldflags = cflagsAlways & " -ldl"
 
 cpp = "mpicxx"
-cppflagsAlways = "-ldl"
+cppflagsAlways = ""
 cppflagsDebug = "-g"
 cppflagsSpeed = "-Ofast -march=native"
 ldpp = cpp
-ldppflags = cppflagsAlways
+ldppflags = cppflagsAlways & " -ldl"
 
 simd = ""
 vlen = "8"

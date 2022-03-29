@@ -10,8 +10,11 @@ export profile
 import algorithm, strutils
 
 var
-  qexGlobalInitializers* = newseq[proc()]()    ## Will be run in qexInit in forward order
-  qexGlobalFinalizers* = newseq[proc()]()    ## Will be run in qexFinalize in backward order
+  qexGlobalInitializers* = newseq[proc()]() ## Will be run in qexInit in forward order
+  qexGlobalFinalizers* = newseq[proc()]() ## Will be run in qexFinalize in backward order
+  qexGlobalPreInit* = newseq[proc()]() ## like qexGlobalInitializers but before QEX init
+  qexGlobalPostFinal* = newseq[proc()]() ## like qexGlobalFinalizers but after QEX fini
+  qexFinalizeComms = true
   qexStartTime: TicType
 
 proc qexTime*: float = ticDiffSecs(getTics(), qexStartTime)
@@ -39,6 +42,7 @@ template qexError*(s:varargs[string,`$`]) =
 
 proc qexInit* =
   qexStartTime = getTics()
+  for p in qexGlobalPreInit: p()
   threadsInit()
   commsInit()
   for p in qexGlobalInitializers: p()
@@ -46,7 +50,10 @@ proc qexInit* =
     echo "FUEL compatibility mode: ON"
   #echo "rank " & $rank & "/" & $size
 
-proc qexFinalize*(finalizeComms=true) =
+proc qexSetFinalizeComms*(val: bool) =
+  qexFinalizeComms = val
+
+proc qexFinalize*() =
   flushFile stdout
   flushFile stderr
   GC_fullCollect()
@@ -58,10 +65,11 @@ proc qexFinalize*(finalizeComms=true) =
   #echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
   #     getTotalMem())
   #echo GC_getStatistics()
-  if finalizeComms:
+  if qexFinalizeComms:
     commsFinalize()
   #when profileEqns:
   #echoTimers()
+  for p in qexGlobalPostFinal.reversed: p()
   qexLog "Total time (Init - Finalize): ",qexTime()," seconds."
 
 proc qexExit*(status = 0) =

@@ -1,9 +1,4 @@
-import grid/Grid
-
-proc Grid_init*() =
-  var argc {.importc: "cmdCount", global.}: cint
-  var argv {.importc: "cmdLine", global.}: cstringArray
-  Grid_init(argc.addr, argv.addr)
+import grid/gridImpl
 
 when isMainModule:
   import qex
@@ -65,7 +60,7 @@ when isMainModule:
     var fl = lo.newGauge()
     var ll = lo.newGauge()
     coef.smear(g, fl, ll)
-    for i in 0..3: ll[i] := 0
+    #for i in 0..3: ll[i] := 0
     #var s = newStag3(g,g)
     var s = newStag3(fl, ll)
     var sp = initSolverParams()
@@ -265,10 +260,11 @@ when isMainModule:
     """.}
   ]#
 
-  Grid_init()
-  qex_init()
+  #Grid_init()
+  qexInit()
+  #qexSetFinalizeComms(false)
   test()
   #testgrid()
   #echoTimers()
-  qex_finalize(false)
-  Grid_finalize()
+  qexFinalize()
+  #Grid_finalize()

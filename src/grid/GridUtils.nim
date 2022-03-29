@@ -1,6 +1,6 @@
 import qex
 import physics/qcdTypes
-import grid/Grid
+import grid/gridImpl
 
 proc `:=`*(r: var GridLatticeGaugeField, x0: openArray[Field]) =
   var x = cast[ptr UncheckedArray[type x0[0]]](unsafeaddr x0[0])
@@ -69,7 +69,7 @@ proc `:=`*(r0: var GridFermion[GridImprovedStaggeredFermionR], x: Field) =
       subset = lo.getSubset("even")
     else:
       subset = lo.getSubset("odd")
-  echo subset
+  #echo subset
   #threads:
   block:
     {.emit:"using namespace Grid;".}
@@ -105,7 +105,7 @@ proc `:=`*(r0: var Field, x0: var GridFermion[GridImprovedStaggeredFermionR]) =
       subset = lo.getSubset("even")
     else:
       subset = lo.getSubset("odd")
-  echo subset
+  #echo subset
   #threads:
   block:
     {.emit:"using namespace Grid;".}
