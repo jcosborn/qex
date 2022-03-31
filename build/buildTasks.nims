@@ -187,12 +187,16 @@ buildTask targets, "show available build targets":
   let f = getString()
   runTargets(f)
 
-buildTask clean, "remove contents of nimcache directory\n("&nimcache&")":
+
+proc runClean() =
+  echo "Cleaning nimcache directory: ", nimcache
   for f in nimcache.listFiles:
     #echo f
-    if f.endsWith(".o") or f.endsWith(".c") or f.endsWith(".cpp"):
-      rmFile f
+    #if f.endsWith(".o") or f.endsWith(".c") or f.endsWith(".cpp"):
+    rmFile f
 
+buildTask clean, "remove contents of nimcache directory\n("&nimcache&")":
+  runClean()
 
 let extraTests = [
   "gauge/wflow.nim",

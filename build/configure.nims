@@ -58,5 +58,5 @@ confFile("Makefile")
 #confFile("Makefile.nims")
 #copyFile("qex.nimble",qexDir/"qex.nimble")
 
-# create config.nims
+# create qexconfig.nims
 include "genconfig.nims"

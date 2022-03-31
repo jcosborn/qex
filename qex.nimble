@@ -1,7 +1,8 @@
-import macros
+import os, macros
 
 var nim = selfExe()
 var qexDir = thisDir()
+if dirExists(qexDir/"qex"): qexDir = qexDir/"qex"
 var nimArgs = newSeq[string]()
 echo "Nim: ", nim
 echo "QEX dir: ", qexDir
@@ -36,9 +37,15 @@ task make, "compile, link, and put executables in `bin' (TODO)":
   echo "make"
 
 task clean, "remove temporary build files (TODO)":
-  echo "clean"
-  #rmDir "nimcache"
-  #rmFile nimcache/"*.o"
+  runClean()
+
+task tests, "Build tests":
+  buildTests()
+
+task show, "Show Nim compile flags":
+  setNimFlags()
+  echo "Nim flags:"
+  echo join(nimFlags," ")
 
 task targets, "List available targets":
   const c = paramCount()

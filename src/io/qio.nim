@@ -52,7 +52,8 @@ type
     length*: csize_t
 
 type
-  ConstInt* {.importc:"const int".} = cint
+  #ConstInt* {.importc:"const int".} = cint
+  #ConstInt* = cConst[cint]
   QIO_Layout* {.qio.} = object
     node_number*: proc (coords: ptr ConstInt): cint {.nimcall.}
     node_index*: proc (coords: ptr ConstInt): cint {.nimcall.}

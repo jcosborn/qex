@@ -1,10 +1,5 @@
 ## QEX: Quantum EXpressions lattice field theory framework
 
-### Notice:
-
-This code is still undergoing major development, but should be ready for
-production use soon.
-
 ### Installation:
 
 First you need [Nim](https://nim-lang.org).
@@ -26,8 +21,9 @@ QUDADIR='/path/to/quda' CUDADIR='/path/to/cuda/lib' \
 ./configure
 ```
 
-This will create `Makefile`, `Makefile.nims`, `config.nims` in the build directory.
-Check the resulting `config.nims` and edit if necessary.
+This will create `Makefile` and `qexconfig.nims` in the build directory.
+It will also create symlinks `qex` and `qex.nimble`.
+Check the resulting `qexconfig.nims` and edit if necessary.
 
 The variables you may need to change are:
 
@@ -37,16 +33,16 @@ qmpdir, qiodir, qudadir: installation directories for respective codes
 cudadir: directory containing cuda runtime libraries
 cc: C compiler to use
 ccType: What compiler dialect the Nim code generator should use.
-         Common options are: gcc, clang, llvm_gcc, icl (Intel),
+         Common options are: gcc, clang, icl (Intel),
          ucc (generic unix cc).
          The full list of known compilers is at the bottom of this page:
          https://github.com/nim-lang/Nim/wiki/Consts-defined-by-the-compiler
 cflagsAlways: CFLAGS that are always used
-cflagsDebug: extra CFLAGS used for a debug build (make debug=1 ...)
+cflagsDebug: extra CFLAGS used for a debug build (make debug ...)
 cflagsSpeed: extra CFLAGS used for a release build (default)
 verbosity: Nim compiler verbosity
-simd: SIMD extensions supported (QPX,SSE,AVX,AVX512)
-vlen: Simd vector length to use
+simd: SIMD extensions supported (SSE,AVX,AVX512)
+vlen: Default SIMD vector length to use
 ```
 
 Try compiling a simple example:
