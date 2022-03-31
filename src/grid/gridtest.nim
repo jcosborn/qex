@@ -51,6 +51,88 @@ when isMainModule:
     echo "Grid plaq: ", gp
     echo " rel diff: ", abs(qp-gp)/qp
 
+  proc checkNaive(g: seq[Field], gg: GridLatticeGaugeField) =
+    let lo = g[0].l
+    g.setBC
+    g.stagPhase
+    var s = newStag(g)
+    var sp = initSolverParams()
+    sp.backend = sbQex
+    sp.r2req = 1e-12
+    sp.verbosity = 1
+    var src = lo.ColorVector()
+    var src2 = lo.ColorVector()
+    var soln = lo.ColorVector()
+    var soln2 = lo.ColorVector()
+    threads:
+      src := 0
+      soln := 0
+      soln2 := 0
+    pointSource(src, [0,0,0,0], 0)
+    #pointSource(src, [0,0,0,2], 0)
+    #pointSource(src, [0,0,2,0], 0)
+    #pointSource(src, [0,0,0,1], 0)
+    #pointSource(src, [0,0,1,0], 0)
+    #pointSource(src, [0,1,0,0], 0)
+    #pointSource(src, [1,0,0,0], 0)
+    var mass = floatParam("mass", 1.0)
+    echo "mass: ", mass
+    #s.solve(soln, src, mass, sp)
+    s.solveEE(soln, src, mass, sp)
+    threads:
+      soln := 0
+    s.solveEE(soln, src, mass, sp)
+    #src2 := 0
+    #s.D(src2,src,mass)
+    #s.D(soln,src,mass)
+
+    type ferm = GridNaiveStaggeredFermionR
+    let grid = cast[ptr GridCartesian](gg.Grid())
+    var gfl = grid[].gauge()
+    g.stagPhase([0,1,3,7])
+    gfl := g
+    g.stagPhase([0,1,3,7])
+    let rbgrid = newGridRedBlackCartesian(grid)
+    var gsrc = rbgrid.fermion(ferm)
+    var gsoln = rbgrid.fermion(ferm)
+    gsrc.even
+    gsoln.even
+    #src2 := 0
+    #s.D(src2,src,mass)
+    #s.Ddag(soln,src2,mass)
+    gsrc := src
+    #gsoln := soln
+    {.emit:"using namespace Grid;".}
+    {.emit:"gsoln = Zero();".}
+    {.emit:"using ImpStag = NaiveStaggeredFermionR;".}
+    {.emit:"using FermionField = ImpStag::FermionField;".}
+    #{.emit:"ImpStag Ds(gll,gfl,*grid,rbgrid,mass,1.,1.,1.);".}
+    {.emit:"ImpStag Ds(*grid,rbgrid,2.*mass,2.,1.);".}
+    {.emit:"Ds.ImportGauge(gfl);".}
+    #{.emit:"MdagMLinearOperator<ImprovedStaggeredFermionR,FermionField> HermOp(Ds);".}
+    {.emit:"SchurStaggeredOperator<ImpStag,FermionField> HermOp(Ds);".}
+    #{.emit:"HermOp.Op(gsrc,gsoln);".}
+    #{.emit:"Ds.M(gsrc,gsoln);".}
+    #{.emit:"gsrc = Zero();".}
+    #{.emit:"Ds.M(gsoln,gsrc);".}
+    {.emit:"ConjugateGradient<FermionField> CG(1e-6, 400, false);".}
+    let t0 = getTics()
+    {.emit:"CG(HermOp, gsrc, gsoln);".}
+    let t1 = getTics()
+    echo "Grid time: ", (t1-t0).seconds
+    #soln2 := gsrc
+    soln2 := gsoln
+    #soln2 *= 0.25
+    #soln.odd := 0
+    echo norm2(soln-soln2)
+    echo norm2(soln)
+    echo norm2(soln2)
+    comp(soln, soln2)
+    #echo soln[0]
+    #echo soln2[0]
+    #echo soln[[0,0,1,0]]
+    #echo soln2[lo.nEvenOuter]
+
   proc checkHisq(g: seq[Field], gg: GridLatticeGaugeField) =
     let lo = g[0].l
     var coef: HisqCoefs
@@ -201,7 +283,8 @@ when isMainModule:
     gg := g
 
     checkPlaq(g,gg)
-    checkHisq(g,gg)
+    checkNaive(g,gg)
+    #checkHisq(g,gg)
 
   #[
   {.emit:"/*INCLUDESECTION*/\n#include <Grid/Grid.h>".}

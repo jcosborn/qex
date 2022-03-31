@@ -29,6 +29,8 @@ type
   GridPeriodicGimplR* {.importcpp:"Grid::PeriodicGimplR",gh.} = object
   GridWilsonLoops*[T] {.importcpp:"Grid::WilsonLoops",gh.} = object
   GridFermion*[T] {.importcpp:"'0::FermionField",gh,byref.} = object
+  GridNaiveStaggeredFermionR* {.
+    importcpp:"Grid::NaiveStaggeredFermionR",gh.} = object
   GridImprovedStaggeredFermionR* {.
     importcpp:"Grid::ImprovedStaggeredFermionR",gh.} = object
 
