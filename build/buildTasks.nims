@@ -39,7 +39,7 @@ proc findSrc(g: string): tuple[files:seq[string],dirs:seq[string]] =
   var ds = newSeq[string]()
   let d = getCurrentDir()
   for p in srcPaths:
-    let f = staticExec &"cd {d}; ( find {p} -type f -ipath *{g}; find {p} -type f -ipath *{g}.nim ) |sort -u"
+    let f = staticExec &"cd {d}; ( find {p} -type f -ipath {p}*{g}; find {p} -type f -ipath {p}*{g}.nim ) |sort -u"
     if f != "":
       for t in f.splitLines:
         if t.endswith(".nim"):
@@ -180,7 +180,7 @@ proc runTargets(f: string) =
       for f in s.files:
         echo "    ", f
 
-buildTask targets, "show available build targets":
+buildTask targets, "show available build targets\ntargets:<name> will search for targets matching <name>\n(can include standard shell wildcards)":
   # targets
   # targets:foo
   # targets:foo*

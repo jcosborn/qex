@@ -33,6 +33,8 @@ var
   chromaDir = ""
   gridDir = ""
 
+  envs = newSeq[string]()
+
   FUELCompat = false
 
 
@@ -142,8 +144,10 @@ proc getNimFlags*(): seq[string] =
       else: discard
 
   putenv ~ ("VLEN=" & vlen)
-  #for e in envs:
-  #  putenv ~ e
+  for e in envs:
+    putenv ~ e
+    let t = e.split("=")
+    putenv(t[0],join(t[1..^1]))
   return defargs
 
 #  echo "Finished config file: ", thisDir(), "/config.nims"

@@ -1,6 +1,12 @@
 import osPaths, strUtils, strformat, tables, macros
 
 var args = initTable[string,string]()
+var envargs = newSeq[string]()
+proc setKey(k: string, v: string) =
+  if k == "env":
+    envargs.add v
+  else:
+    args[k] = v
 
 proc fromEnv(key: string, env: string) =
   if existsEnv(env):
@@ -19,12 +25,18 @@ for i in 2..paramCount():
   let k = nimIdentNormalize s[0]
   case s.len
   of 1:
-    args[k] = "true"
+    setKey(k, "true")
   of 2:
-    args[k] = s[1]
+    setKey(k, s[1])
   else:
-    args[k] = join(s[1..s.high],":")
+    setKey(k, join(s[1..s.high],":"))
   #echo p, " ", k, " ", args[k]
+
+#var envarg = envargs.join(" ")
+#if envarg != "":
+#  args["envs"]
+if envargs.len > 0:
+  args["envs"] = $envargs
 
 include "configBase.nims"
 include "configDefault.nims"
@@ -34,10 +46,12 @@ var c = newSeq[string](0)
 
 template kv(k: string, v: string): untyped =
   k & " = " & v
+template kv(k: string, v: string, p: int): untyped =
+  k & " = " & v
 template kv(k: string, v: string, p: string): untyped =
   k & " = \"" & v & "\""
-template kv(k: string, v: string, p: int): untyped =
-  k & " = " & $v
+template kv(k: string, v: string, p: seq[string]): untyped =
+  k & " = " & v
 
 # check if symbol was initialized from another symbol
 macro implSym(x: typed): untyped =

@@ -27,3 +27,5 @@ cudaLibDir = ""
 primmeDir = ""
 chromaDir = ""
 gridDir = ""
+
+envs = @[]
