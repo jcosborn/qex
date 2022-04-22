@@ -65,9 +65,7 @@ proc qexFinalize*(finalizeComms=true) =
   qexLog "Total time (Init - Finalize): ",qexTime()," seconds."
 
 proc qexExit*(status = 0) =
-  for p in qexGlobalFinalizers.reversed: p()
-  commsFinalize()
-  qexLog "Total time (Init - Finalize): ",qexTime()," seconds."
+  qexFinalize()
   quit(status)
 
 proc qexAbort*(status = -1) =
