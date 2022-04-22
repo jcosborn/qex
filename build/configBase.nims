@@ -38,7 +38,11 @@ var
   FUELCompat = false
 
 
-proc getNimFlags*(): seq[string] =
+type
+  flagsOpts* = object
+    debug*: bool
+
+proc getNimFlags*(fo: flagsOpts): seq[string] =
   var defargs = newSeq[string](0)
   # "set(key, val)" sets "key" to "val"
   template set(key: string, val: untyped) =
@@ -105,11 +109,7 @@ proc getNimFlags*(): seq[string] =
   warning[SmallLshouldNotBeUsed] ~ off
   embedsrc ~ ""
 
-  when not declared(debug):
-    var debug = false
-    for i in 1..paramCount():
-      if paramStr(i)=="-d:debug": debug = true
-  if not debug:
+  if not fo.debug:
     d ~ "release"
     d ~ "danger"
     #obj_checks ~ off

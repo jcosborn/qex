@@ -35,6 +35,11 @@ while iarg<args.len:
   if not found: break  # assume it is a build arg
   inc iarg
 
+if iarg == args.len:
+  for t in buildTasks:
+    if t.cmd == "help":
+      t.f()
+
 while iarg<args.len:
   currentArg = args[iarg]
   echo "Processing build arg: ", currentArg

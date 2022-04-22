@@ -31,29 +31,48 @@ requires "mdevolve >= 1.0.0"
 if primmeDir != "":
   requires "primme >= 3.0.0"
 
+proc getExtraArgs(task: string): seq[string] =
+  result.newSeq(0)
+  const c = paramCount()
+  var i = 1
+  while paramStr(i) != task: inc i
+  inc i
+  while i <= c:
+    result.add paramStr(i)
+    inc i
+
 # Tasks
 
-task make, "compile, link, and put executables in `bin' (TODO)":
-  echo "make"
+task make, "compile, link, and put executables in `bin'":
+  let ex = getExtraArgs("make")
+  for e in ex:
+    if e == "debug":
+      fo.debug = true
+    else:
+      let failed = tryBuildSource(e)
+      if failed:
+        echo "Error: invalid build arg: ", currentArg
+        quit(1)
 
-task clean, "remove temporary build files (TODO)":
+task clean, "remove temporary build files":
   runClean()
 
 task tests, "Build tests":
   buildTests()
 
 task show, "Show Nim compile flags":
+  let ex = getExtraArgs("show")
+  for e in ex:
+    if e == "debug": fo.debug = true
   setNimFlags()
   echo "Nim flags:"
   echo join(nimFlags," ")
 
 task targets, "List available targets":
-  const c = paramCount()
-  var i = 1
-  while paramStr(i) != "targets": inc i
+  let ex = getExtraArgs("targets")
   var f = ""
-  if i < c:
-    f = paramStr(i+1)
+  if ex.len > 0:
+    f = ex[0]
     echo "Searching for targets matching: ", f
   runTargets(f)
 
@@ -69,3 +88,4 @@ task help, "print out usage information":
   echo "Examples:"
   echo "  nimble make debug test0"
   echo "  nimble make example/testStagProp"
+

@@ -76,10 +76,11 @@ macro process(ls: static string): untyped =
   for l in ls.splitLines:
     #echo l
     let s = l.split('=')
-    if s.len == 1:
+    if s.len == 1 or s[0][0] == '#':
       result.add quote do:
         c.add `l`
     else:
+      echo l
       let k = s[0].strip
       let v = join(s[1..^1],"=").strip
       let p = parseExpr(k)

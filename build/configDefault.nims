@@ -1,6 +1,7 @@
 nimcache = getCurrentDir() / "nimcache"
 buildVerbosity = 0
 
+# type of compiler: gcc, clang
 ccType = "gcc"
 
 cc = "mpicc"
@@ -28,4 +29,6 @@ primmeDir = ""
 chromaDir = ""
 gridDir = ""
 
+# seq of extra environment variables to define during build
+#   e.g. @["OMPI_CXX=foo","BAR=1"]
 envs = @[]

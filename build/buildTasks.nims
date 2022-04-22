@@ -21,12 +21,12 @@ proc getString(): string =
   if t.len>=2: result = t[1]
   else: result = ""
 
+var fo: flagsOpts
 var nimFlags: seq[string] = @[]
 proc setNimFlags() =
   if nimFlags.len == 0:
-    nimFlags = getNimFlags()
+    nimFlags = getNimFlags(fo)
 
-var debug = false
 var run = false
 var usecpp = false
 var verbosity = -1
@@ -99,7 +99,7 @@ proc tryBuildSource(g: string): bool =
 # === Config Tasks ===
 
 configTask debug, "set debug build":
-  debug = true
+  fo.debug = true
 
 configTask run, "run executable after building":
   run = true
@@ -131,26 +131,25 @@ buildTask help, "show this help message":
   let s = '-'.repeat(70)
   echo s
   echo "QEX build script usage:"
-  echo "  make [config commands] [build command | Nim source]"
+  echo "  make [options] [command | target]"
   echo s
-  echo "config commands:"
+  echo "options:"
   echoCmds(configTasks)
   echo s
-  echo "build commands:"
+  echo "commands:"
   echoCmds(buildTasks)
   echo s
-  echo "Nim source:"
+  echo "target:"
   echo "  foo.nim  Search for 'foo.nim' in source paths"
   echo "           (including subdirectories, but not following links),"
   echo "           compile and put binary in 'bin' directory."
   echo "  foo      First search for 'foo.nim' and compile if found."
-  echo "           If foo.nim is not found, search for directory foo"
+  echo "           If 'foo.nim' is not found, search for directory 'foo'"
   echo "           and compile all *.nim files in it."
   #echo "           Specify part of path to resolve ambiguity."
   echo "  source paths:"
   for p in srcPaths:
     echo "    ", p
-  quit 0
 
 buildTask show, "show Nim compile flags":
   setNimFlags()
@@ -205,7 +204,7 @@ let extraTests = [
 
 proc addTest(runscript:var seq[string], f, outdir:string) =
   let name = f.splitFile.name
-  var rj = gorge("awk '$1==\"#RUNCMD\"{$1=\"\";print}' "&f)
+  var rj = gorge("awk '$1==\"#RUNCMD\"{$1=\"\";print}' "&f).strip
   if rj == "": rj = "$RUNJOB"
   let exe = outdir/name
   discard buildFile(f, exe)
@@ -215,7 +214,14 @@ proc addTest(runscript:var seq[string], f, outdir:string) =
   runscript.add(rj&" "&exe&" || failed=\"$failed "&name&"\"")
 
 proc buildTests() =
-  var runscript = @["#!/bin/sh","$SETUPJOBS","failed=''"]
+  var runscript = @["#!/bin/sh",
+                    "# Runs QEX tests and reports on failed tests",
+                    "# Environment variables that can affect this script:",
+                    "#   SETUPJOBS    commands to be run once at beginning of script",
+                    "#   CLEANUPJOBS  commands to be run once at end of script",
+                    "#   RUNJOB       command to launch test (can be multiple ranks)",
+                    "#   RUN1         command to launch test on 1 rank",
+                    "$SETUPJOBS","failed=''"]
   var dorun = run
   run = false
   if not dirExists("tests"):
@@ -244,5 +250,5 @@ proc buildTests() =
   if dorun:
     exec "./testscript.sh"
 
-buildTask tests, "build tests":
+buildTask tests, "build tests and create 'testscript.sh' test runner":
   buildTests()
