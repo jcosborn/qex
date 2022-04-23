@@ -64,7 +64,7 @@ template makeTypeParam(name,typ,deflt,cnvrt: untyped): untyped {.dirty.} =
 makeTypeParam(intParam, int, 0, parseInt)
 makeTypeParam(floatParam, float, 0.0, parseFloat)
 makeTypeParam(strParam, string, "", cnvnone)
-template stringParam*(x,y,c: untyped): untyped = strParam(x,y,c)
+template stringParam*(x,y: untyped, c=""): untyped = strParam(x,y,c)
 
 proc boolParam*(s: string, d = false, c=""): bool =
   result = d
