@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 dir=`dirname $0`
 
@@ -15,5 +15,5 @@ if [ "X$NIM" = "X" ]; then
 fi
 
 echo "Using Nim compiler: $NIM"
-echo "Runing: $NIM $dir/build/configure.nims" "$@"
+echo "Runing: $NIM $dir/build/configure.nims ${@@Q}"
 $NIM $dir/build/configure.nims "$@"

@@ -80,7 +80,7 @@ macro process(ls: static string): untyped =
       result.add quote do:
         c.add `l`
     else:
-      echo l
+      #echo l
       let k = s[0].strip
       let v = join(s[1..^1],"=").strip
       let p = parseExpr(k)
