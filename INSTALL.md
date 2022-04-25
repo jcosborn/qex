@@ -19,8 +19,11 @@ More options to `configure` are
 
 If the `nim` executable isn't found in your path, it will be installed
 as described [here](INSTALL.md#nim-installation).
-This will create `Makefile` and `qexconfig.nims` in the build directory.
-It will also create symlinks `qex` and `qex.nimble`.
+
+The `configure` command will create the files `Makefile` and `qexconfig.nims`
+in the current directory.
+It will also create the symlinks `qex` and `qex.nimble`.
+
 Check the resulting `qexconfig.nims` and edit if necessary.
 
 Try compiling a simple example:
@@ -37,8 +40,8 @@ bin/testStagProp
 
 ## Nim installation
 
-QEX requires the Nim compiler version 1.4 or greater
-(1.6.4 or greater recommended).
+QEX requires the Nim compiler version 1.4 or later
+(1.6.4 or later recommended).
 
 The `configure` script will search for the Nim executable in the following
 places in order (using the [findNim](build/findNim) script)
@@ -53,15 +56,16 @@ places in order (using the [findNim](build/findNim) script)
 If Nim is not found, it will be installed using the
 [installNim](build/installNim) script.
 
-You can install it yourself either by using the `installNim` script directly,
+You can install Nim yourself either by using the `installNim` script directly,
 or from the official instructions given
 [here](http://nim-lang.org/download.html).
 
 `installNim` defaults to downloading and building Nim into `$HOME/nim`
 with a symlink added to `$HOME/bin`.
 These can be overridden by setting the environment variables
-- `$NIMDIR` directory to place Nim source and build (default `$HOME/nim`)
-- `$BINDIR` directory to place symlinks (default `$HOME/bin`)
+- `NIMDIR` directory to place Nim source and build (default `$HOME/nim`)
+- `BINDIR` directory to place symlinks (default `$HOME/bin`)
+
 This will be necessary to set if on a system with a shared home directory
 across different host (build) architectures.
 
@@ -71,6 +75,7 @@ You can also specify a version, e.g. `installNim 1.6.4` for version 1.6.4, or
 
 You can also switch the symlinks between different (previously installed)
 versions of Nim with e.g. `installNim default 1.6.4` or `installNim default devel`.
+You should be able to check which version of Nim is default with `nim -v`.
 
 
 ## Required dependencies
@@ -78,22 +83,39 @@ versions of Nim with e.g. `installNim default 1.6.4` or `installNim default deve
 QMP and QIO are currently required and need to be installed separately.
 The [bootstrap-travis](bootstrap-travis) script can also be used to install them.
 
+The QMP and QIO directories can be set in `configure` with the environment variables
+`QMPDIR` and `QIODIR`.
+One can also specify them as arguments to `configure`
+(see [here](INSTALL.md#compiler-and-configuration-options) ).
+
 The other required dependencies can be installed by running
 `nimble install -dy`.
 [Nimble](https://github.com/nim-lang/nimble) is the Nim package manager
 which is used to install Nim dependencies.
+Nimble is also installed (with a symlink in `$BINDIR`) by the `installNim` script.
 The list of required packages that Nimble installs
 is in the [qex.nimble](qex.nimble) file.
 
 
 ## Optional dependencies
 
-Chroma
-Grid
-Primme
-QUDA
+For Chroma set
+- CHROMADIR
+
+For Grid set
+- GRIDDIR
+
+For QUDA set
+- QUDADIR
+- CUDALIBDIR
+
+For Primme set
+- ???
 
 ## Compiler and configuration options
+
+The available options and their default settings can be found in
+[build/configDefault.nims](build/configDefault.nims).
 
 
 ## Configuration files
@@ -118,32 +140,17 @@ simd: SIMD extensions supported (SSE,AVX,AVX512)
 vlen: Default SIMD vector length to use
 ```
 
-## Building using ``make``
+## Build guide
 
-## Building using ``nimble``
+Details on building applications can be found in [BUILD.md](BUILD.md).
 
-You can build under the source directory.  Modify the file
-`local.nims` to suit your system.
+The test suite can be built with `make tests`.
 
-If you wish to build in a separate directory, copy the file
-`local.nims` to your build directory, and modify it there.  Copy
-`qex.nimble` to your build directory.
+This creates a `testscript.sh` in the current directory which will
+run the tests.
+The comments in that file explain what environment variables can be set
+to run it with a parallel job launcher (i.e. mpirun).
 
-Run `nimble tasks` for available tasks, and `nimble help` for
-help building your executables.
-
-```
-To build nim files:
-  nimble make [debug] [FlagsToNim] [Name=Definition] Target [MoreTargets]
-
-`debug' will make debug build.
-`Target' can be any file name, optionally with partial directory names.
-The produced executables will be under `bin/'.
-
-Examples:
-  nimble make debug test0
-  nimble make example/testStagProp
-```
 
 ## Configuration examples
 

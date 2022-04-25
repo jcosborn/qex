@@ -25,7 +25,7 @@ srcDir        = "qex/src"
 
 # Dependencies
 
-requires "nim >= 1.0.2"
+requires "nim >= 1.4.0"
 requires "chebyshev >= 0.2.1"
 requires "mdevolve >= 1.0.0"
 if primmeDir != "":
