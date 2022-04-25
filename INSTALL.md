@@ -1,4 +1,4 @@
-## Quick guide
+## Quick installation guide
 
 Clone the github repo (devel branch recommended for now).
 
@@ -15,10 +15,10 @@ path/to/qex/configure
 ```
 
 More options to `configure` are
-[here](INSTALL.md#compiler-and-configuration-options).
+[below](INSTALL.md#compiler-and-configuration-options).
 
 If the `nim` executable isn't found in your path, it will be installed
-as described [here](INSTALL.md#nim-installation).
+as described [below](INSTALL.md#nim-installation).
 
 The `configure` command will create the files `Makefile` and `qexconfig.nims`
 in the current directory.
@@ -58,7 +58,7 @@ If Nim is not found, it will be installed using the
 
 You can install Nim yourself either by using the `installNim` script directly,
 or from the official instructions given
-[here](http://nim-lang.org/download.html).
+[on the Nim website](http://nim-lang.org/download.html).
 
 `installNim` defaults to downloading and building Nim into `$HOME/nim`
 with a symlink added to `$HOME/bin`.
@@ -86,7 +86,7 @@ The [bootstrap-travis](bootstrap-travis) script can also be used to install them
 The QMP and QIO directories can be set in `configure` with the environment variables
 `QMPDIR` and `QIODIR`.
 One can also specify them as arguments to `configure`
-(see [here](INSTALL.md#compiler-and-configuration-options) ).
+(see [below](INSTALL.md#compiler-and-configuration-options) ).
 
 The other required dependencies can be installed by running
 `nimble install -dy`.
@@ -94,8 +94,7 @@ The other required dependencies can be installed by running
 which is used to install Nim dependencies.
 Nimble is also installed (with a symlink in `$BINDIR`) by the `installNim` script.
 The list of required packages that Nimble installs
-is in the [qex.nimble](qex.nimble) file.
-
+is in the [qex.nimble](qex.nimble#L26) file.
 
 ## Optional dependencies
 
