@@ -1,3 +1,35 @@
+## Quick guide
+
+Clone github repo (devel branch recommended for now).
+
+Create a separate build directory (optional but recommended).
+
+From the build directory run the "configure" script found with the source.
+
+```
+QIODIR='/path/to/qio' QMPDIR='/path/to/qmp' \
+QUDADIR='/path/to/quda' CUDADIR='/path/to/cuda/lib' \
+path/to/qex/configure
+```
+
+This will create `Makefile` and `qexconfig.nims` in the build directory.
+It will also create symlinks `qex` and `qex.nimble`.
+Check the resulting `qexconfig.nims` and edit if necessary.
+
+Try compiling a simple example:
+```
+make testStagProp
+```
+The resulting binary will be in the directory `./bin`.
+
+Then run it
+```
+bin/testStagProp
+```
+
+
+## Nim installation
+
 First you need [Nim](https://nim-lang.org).
 
 You can install it either by using the script "installNim"
@@ -7,19 +39,21 @@ http://nim-lang.org/download.html
 You can also skip this now, and the configure script will install Nim
 using the "installNim" script if it can't find the "nim" executable.
 
-Create a separate build directory (optional but recommended).
 
-From the build directory run the "configure" script found with the source.
+## Required dependencies
 
-```
-QIODIR='/path/to/qio' QMPDIR='/path/to/qmp' \
-QUDADIR='/path/to/quda' CUDADIR='/path/to/cuda/lib' \
-./configure
-```
 
-This will create `Makefile` and `qexconfig.nims` in the build directory.
-It will also create symlinks `qex` and `qex.nimble`.
-Check the resulting `qexconfig.nims` and edit if necessary.
+## Optional dependencies
+
+Chroma
+Grid
+Primme
+QUDA
+
+## Compiler and configuration options
+
+
+## Configuration files
 
 The variables you may need to change are:
 
@@ -41,18 +75,9 @@ simd: SIMD extensions supported (SSE,AVX,AVX512)
 vlen: Default SIMD vector length to use
 ```
 
-Try compiling a simple example:
-```
-make testStagProp
-```
-The resulting binary will be in the directory `./bin`.
+## Building using ``make``
 
-Then run it
-```
-./bin/testStagProp
-```
-
-### Using nimble (new)
+## Building using ``nimble``
 
 You can build under the source directory.  Modify the file
 `local.nims` to suit your system.
@@ -75,4 +100,40 @@ The produced executables will be under `bin/'.
 Examples:
   nimble make debug test0
   nimble make example/testStagProp
+```
+
+## Configuration examples
+
+The configure command can be run from a build directory that is separate
+from the source directory, or from the source directory.
+
+``<configure>`` is the configure script, including path, in the QEX source directory.
+
+### AXV2 using mpicc/mpicxx set to use gcc
+
+```
+export QMPDIR="$HOME/lqcd/install/qmp"
+export QIODIR="$HOME/lqcd/install/qio"
+<configure> \
+  cc:"mpicc" \
+  cflagsspeed:"-Ofast -march=native -ffast-math" \
+  cpp:"mpicxx" \
+  cppflagsspeed:"-Ofast -march=native -ffast-math" \
+  simd:"SSE,AVX" vlen:"8"
+```
+
+### AXV2 using OpenMPI mpicc/mpicxx and specifying clang/clang++
+
+```
+export QMPDIR="$HOME/lqcd/install/qmp"
+export QIODIR="$HOME/lqcd/install/qio"
+<configure> \
+  cctype:"clang" \
+  cc:"mpicc" \
+  env:"OMPI_CC=clang" \
+  cflagsspeed:"-Ofast -march=native -ffast-math" \
+  cpp:"mpicxx" \
+  env:"OMPI_CXX=clang++" \
+  cppflagsspeed:"-Ofast -march=native -ffast-math" \
+  simd:"SSE,AVX" vlen:"8"
 ```
