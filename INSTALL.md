@@ -1,17 +1,24 @@
 ## Quick guide
 
-Clone github repo (devel branch recommended for now).
+Clone the github repo (devel branch recommended for now).
 
 Create a separate build directory (optional but recommended).
 
-From the build directory run the "configure" script found with the source.
+From the build directory run the `configure` script found with the source.
 
 ```
-QIODIR='/path/to/qio' QMPDIR='/path/to/qmp' \
-QUDADIR='/path/to/quda' CUDADIR='/path/to/cuda/lib' \
+QMPDIR='/path/to/qmp' \
+QIODIR='/path/to/qio' \
+QUDADIR='/path/to/quda' \
+CUDADIR='/path/to/cuda/lib' \
 path/to/qex/configure
 ```
 
+More options to `configure` are
+[here](INSTALL.md#compiler-and-configuration-options).
+
+If the `nim` executable isn't found in your path, it will be installed
+as described [here](INSTALL.md#nim-installation).
 This will create `Makefile` and `qexconfig.nims` in the build directory.
 It will also create symlinks `qex` and `qex.nimble`.
 Check the resulting `qexconfig.nims` and edit if necessary.
@@ -30,17 +37,53 @@ bin/testStagProp
 
 ## Nim installation
 
-First you need [Nim](https://nim-lang.org).
+QEX requires the Nim compiler version 1.4 or greater
+(1.6.4 or greater recommended).
 
-You can install it either by using the script "installNim"
-in this repo, or from the instructions given here:
-http://nim-lang.org/download.html
+The `configure` script will search for the Nim executable in the following
+places in order (using the [findNim](build/findNim) script)
+- `$PATH` (using `which nim`)
+- `$HOME/bin/nim`
+- `$HOME/bin/nim-[0-9]*`
+- `$HOME/bin/nim-*`
+- `$HOME/nim/Nim/bin/nim`
+- `$HOME/nim/Nim-[0-9]*/bin/nim`
+- `$HOME/nim/Nim-*/bin/nim`
 
-You can also skip this now, and the configure script will install Nim
-using the "installNim" script if it can't find the "nim" executable.
+If Nim is not found, it will be installed using the
+[installNim](build/installNim) script.
+
+You can install it yourself either by using the `installNim` script directly,
+or from the official instructions given
+[here](http://nim-lang.org/download.html).
+
+`installNim` defaults to downloading and building Nim into `$HOME/nim`
+with a symlink added to `$HOME/bin`.
+These can be overridden by setting the environment variables
+- `$NIMDIR` directory to place Nim source and build (default `$HOME/nim`)
+- `$BINDIR` directory to place symlinks (default `$HOME/bin`)
+This will be necessary to set if on a system with a shared home directory
+across different host (build) architectures.
+
+By default `installNim` installs the latest stable version of Nim.
+You can also specify a version, e.g. `installNim 1.6.4` for version 1.6.4, or
+`installNim devel` to install the current devel branch.
+
+You can also switch the symlinks between different (previously installed)
+versions of Nim with e.g. `installNim default 1.6.4` or `installNim default devel`.
 
 
 ## Required dependencies
+
+QMP and QIO are currently required and need to be installed separately.
+The [bootstrap-travis](bootstrap-travis) script can also be used to install them.
+
+The other required dependencies can be installed by running
+`nimble install -dy`.
+[Nimble](https://github.com/nim-lang/nimble) is the Nim package manager
+which is used to install Nim dependencies.
+The list of required packages that Nimble installs
+is in the [qex.nimble](qex.nimble) file.
 
 
 ## Optional dependencies
