@@ -7,18 +7,19 @@ Create a separate build directory (optional but recommended).
 From the build directory run the `configure` script found with the source.
 
 ```
-QMPDIR='/path/to/qmp' \
-QIODIR='/path/to/qio' \
-QUDADIR='/path/to/quda' \
-CUDADIR='/path/to/cuda/lib' \
-path/to/qex/configure
+NIM=/path/to/nim \
+path/to/qex/configure \
+  qmpdir:/path/to/qmp \
+  qiodir:/path/to/qio
 ```
 
-More options to `configure` are
+More options for `configure` are
 [below](INSTALL.md#compiler-and-configuration-options).
 
-If the `nim` executable isn't found in your path, it will be installed
-as described [below](INSTALL.md#nim-installation).
+If the `nim` executable isn't found in your path,
+or specified in the `NIM` environment variable,
+it will be installed as described
+[below](INSTALL.md#nim-installation).
 
 The `configure` command will create the files `Makefile` and `qexconfig.nims`
 in the current directory.
@@ -99,45 +100,66 @@ is in the [qex.nimble](qex.nimble#L26) file.
 ## Optional dependencies
 
 For Chroma set
-- CHROMADIR
+- chromaDir
 
 For Grid set
-- GRIDDIR
+- gridDir
 
 For QUDA set
-- QUDADIR
-- CUDALIBDIR
+- qudaDir
+- cudaLibDir
 
 For Primme set
-- ???
+- primmeDir
+
 
 ## Compiler and configuration options
 
-The available options and their default settings can be found in
-[build/configDefault.nims](build/configDefault.nims).
+Compiler, linker and other configuration options can be passed
+as arguments to `configure` like:
+```
+path/to/qex/configure \
+  qmpdir:/path/to/qmp \
+  qiodir:/path/to/qio \
+  cc:"mpicc" \
+  cflagsspeed:"-Ofast -march=skylake-avx512 -ffast-math" \
+  cpp:"mpicxx" \
+  cppflagsspeed:"-Ofast -march=skylake-avx512 -ffast-math"
+```
+
+Note that the option names are case insensitive
+(qmpdir and qmpDir both work fine).
+
+The options in the
+[default QEX configuration file](build/configDefault.nims)
+can be passed in this way, which will modify their values
+in the generated `qexconfig.nims' file in the build directory.
+
+Environment variables to be set during compile time
+(set in the `envs' variable in the
+[config file](build/configDefault.nims#L66) ),
+can be passed one at a time using `env:FOO=BAR'.
+See [Examples](#examples) below.
+The full set can also be passed as a Nim seqeunce using the
+syntax `envs:'@["FOO=BAR","FOO2=BAR2"]' '.
+Preserving the double quotes (with single quotes here, or backslashes)
+is important in this case.
+For the single arguments (`env:...') the double quotes will be added
+so are unnecessary.
+
+Details on the Nim compiler options can be found
+[here](https://nim-lang.org/docs/nimc.html).
 
 
 ## Configuration files
 
-The variables you may need to change are:
+The available options and their default settings can be found in
+[build/configDefault.nims](build/configDefault.nims).
 
-```
-qexdir: root directory containing QEX code (where this README.md is)
-qmpdir, qiodir, qudadir: installation directories for respective codes
-cudadir: directory containing cuda runtime libraries
-cc: C compiler to use
-ccType: What compiler dialect the Nim code generator should use.
-         Common options are: gcc, clang, icl (Intel),
-         ucc (generic unix cc).
-         The full list of known compilers is at the bottom of this page:
-         https://github.com/nim-lang/Nim/wiki/Consts-defined-by-the-compiler
-cflagsAlways: CFLAGS that are always used
-cflagsDebug: extra CFLAGS used for a debug build (make debug ...)
-cflagsSpeed: extra CFLAGS used for a release build (default)
-verbosity: Nim compiler verbosity
-simd: SIMD extensions supported (SSE,AVX,AVX512)
-vlen: Default SIMD vector length to use
-```
+This default configuration file will be copied to the build directory
+with the appropriate substitutions specified on the command line
+(or optionally environment variables).
+
 
 ## Build guide
 
@@ -161,9 +183,9 @@ from the source directory, or from the source directory.
 ### AXV2 using mpicc/mpicxx set to use gcc
 
 ```
-export QMPDIR="$HOME/lqcd/install/qmp"
-export QIODIR="$HOME/lqcd/install/qio"
 <configure> \
+  qmpdir:"$HOME/lqcd/install/qmp" \
+  qiodir:"$HOME/lqcd/install/qio" \
   cc:"mpicc" \
   cflagsspeed:"-Ofast -march=native -ffast-math" \
   cpp:"mpicxx" \
@@ -174,9 +196,9 @@ export QIODIR="$HOME/lqcd/install/qio"
 ### AXV2 using OpenMPI mpicc/mpicxx and specifying clang/clang++
 
 ```
-export QMPDIR="$HOME/lqcd/install/qmp"
-export QIODIR="$HOME/lqcd/install/qio"
 <configure> \
+  qmpdir:"$HOME/lqcd/install/qmp" \
+  qiodir:"$HOME/lqcd/install/qio" \
   cctype:"clang" \
   cc:"mpicc" \
   env:"OMPI_CC=clang" \

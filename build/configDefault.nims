@@ -1,10 +1,14 @@
+# QEX configuration file
+
 # location of temporary build files (generated C/C++ source, objects, etc.)
 nimcache = getCurrentDir() / "nimcache"
 
 # Nim compiler build verbosity (0-3, 1 is Nim default)
 buildVerbosity = 1
 
-# type of compiler, typically "gcc" or "clang"
+# type of compiler, used for Nim generated compile flags
+# typically "gcc" or "clang" will work fine for most modern compilers
+# https://github.com/nim-lang/Nim/wiki/Consts-defined-by-the-compiler
 ccType = "gcc"
 
 # default language backend, "cc" (C) or "cpp" (C++)
