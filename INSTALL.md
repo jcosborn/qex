@@ -133,18 +133,18 @@ Note that the option names are case insensitive
 The options in the
 [default QEX configuration file](build/configDefault.nims)
 can be passed in this way, which will modify their values
-in the generated `qexconfig.nims' file in the build directory.
+in the generated `qexconfig.nims` file in the build directory.
 
 Environment variables to be set during compile time
-(set in the `envs' variable in the
+(set in the `envs` variable in the
 [config file](build/configDefault.nims#L66) ),
-can be passed one at a time using `env:FOO=BAR'.
-See [Examples](#examples) below.
+can be passed one at a time using `env:FOO=BAR`.
+See the [examples](#configuration-examples) below.
 The full set can also be passed as a Nim seqeunce using the
-syntax `envs:'@["FOO=BAR","FOO2=BAR2"]' '.
+syntax `envs:'@["FOO=BAR","FOO2=BAR2"]'`.
 Preserving the double quotes (with single quotes here, or backslashes)
 is important in this case.
-For the single arguments (`env:...') the double quotes will be added
+For the single arguments (`env:...`) the double quotes will be added
 so are unnecessary.
 
 Details on the Nim compiler options can be found
