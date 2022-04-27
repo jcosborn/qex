@@ -1,78 +1,109 @@
-import qex, gauge, physics/qcdTypes
-import mdevolve
-import times, macros
+import qex, gauge, physics/qcdTypes, algorithms/integrator
+import math, os, sequtils, strformat, strutils, times
+
+type GaugeActType = enum ActWilson, ActAdjoint, ActRect, ActSymanzik, ActIwasaki, ActDBW2
+converter toGaugeActType(s:string):GaugeActType = parseEnum[GaugeActType](s)
+
+proc reunit(g:auto) =
+  tic()
+  threads:
+    let d = g.checkSU
+    threadBarrier()
+    echo "unitary deviation avg: ",d.avg," max: ",d.max
+    g.projectSU
+    threadBarrier()
+    let dd = g.checkSU
+    echo "new unitary deviation avg: ",dd.avg," max: ",dd.max
+  toc("reunit")
+
+proc mplaq(g:auto) =
+  tic()
+  let
+    pl = g.plaq
+    nl = pl.len div 2
+    ps = pl[0..<nl].sum * 2.0
+    pt = pl[nl..^1].sum * 2.0
+  echo "MEASplaq ss: ",ps,"  st: ",pt,"  tot: ",0.5*(ps+pt)
+  toc("plaq")
+
+proc ploop(g:auto) =
+  tic()
+  let pg = g[0].l.physGeom
+  var pl = newseq[typeof(g.wline @[1])](pg.len)
+  for i in 0..<pg.len:
+    pl[i] = g.wline repeat(i+1, pg[i])
+  let
+    pls = pl[0..^2].sum / float(pl.len-1)
+    plt = pl[^1]
+  echo "MEASploop spatial: ",pls.re," ",pls.im," temporal: ",plt.re," ",plt.im
+  toc("ploop")
 
 qexinit()
+tic()
+
+letParam:
+  gaugefile = ""
+  savefile = "config"
+  savefreq = 10
+  lat =
+    if fileExists(gaugefile):
+      getFileLattice gaugefile
+    else:
+      if gaugefile.len > 0:
+        qexWarn "Nonexistent gauge file: ", gaugefile
+      @[8,8,8,8]
+  gact:GaugeActType = "ActAdjoint"
+  beta = 6.0
+  adjFac = -0.25
+  rectFac = -1.4088
+  tau = 2.0
+  inittraj = 0
+  trajs = 10
+  seed:uint64 = int(1000*epochTime())
+  gintalg:IntegratorProc = "4MN5F2GP"
+  gsteps = 4
+  alwaysAccept:bool = 0
+  revCheckFreq = savefreq
+  useFG2:bool = 0
+  showTimers:bool = 1
+  timerWasteRatio = 0.05
+  timerEchoDropped:bool = 0
+  timerExpandRatio = 0.05
+  verboseGCStats:bool = 0
+  verboseTimer:bool = 0
+
+echoParams()
+echo "rank ", myRank, "/", nRanks
+threads: echo "thread ", threadNum, "/", numThreads
+
+DropWasteTimerRatio = timerWasteRatio
+VerboseGCStats = verboseGCStats
+VerboseTimer = verboseTimer
 
 let
-  lat = @[8,8,8,8]
-  #lat = @[8,8,8]
-  #lat = @[32,32]
-  #lat = @[1024,1024]
-  beta = floatParam("beta", 6.0)
-  adjFac = floatParam("adjFac", -0.25)
-  tau = floatParam("tau", 2.0)
-  steps = intParam("steps", 4)
-  trajs = intParam("trajs", 10)
-  seed = intParam("seed", int(1000*epochTime())).uint64
-
-macro echoparam(x: typed): untyped =
-  let n = x.repr
-  result = quote do:
-    echo `n`, ": ", `x`
-
-echoparam(beta)
-echoparam(adjFac)
-echoparam(tau)
-echoparam(steps)
-echoparam(trajs)
-echoparam(seed)
-
-let
-  gc = GaugeActionCoeffs(plaq: beta, adjplaq: beta*adjFac)
+  gc = case gact
+    of ActWilson: GaugeActionCoeffs(plaq: beta)
+    of ActAdjoint: GaugeActionCoeffs(plaq: beta, adjplaq: beta*adjFac)
+    of ActRect: gaugeActRect(beta, rectFac)
+    of ActSymanzik: Symanzik(beta)
+    of ActIwasaki: Iwasaki(beta)
+    of ActDBW2: DBW2(beta)
   lo = lat.newLayout
+  vol = lo.physVol
 
-var r = lo.newRNGField(RngMilc6, seed)
-var R:RngMilc6  # global RNG
+echo gc
+
+var r = lo.newRNGField(MRG32k3a, seed)
+var R:MRG32k3a  # global RNG
 R.seed(seed, 987654321)
 
-var g = lo.newgauge
-#g.random r
-g.unit
-
-echo g.plaq
-echo g.gaugeAction2 gc
-echo gc.actionA g
-
 var
+  g = lo.newgauge
   p = lo.newgauge
   f = lo.newgauge
   g0 = lo.newgauge
+  gg = lo.newgauge  # FG backup gauge
 
-proc mdt(t: float) =
-  threads:
-    for mu in 0..<g.len:
-      for s in g[mu]:
-        g[mu][s] := exp(t*p[mu][s])*g[mu][s]
-proc mdv(t: float) =
-  #f.gaugeforce2(g, gc)
-  gc.forceA(g, f)
-  threads:
-    for mu in 0..<f.len:
-      p[mu] -= t*f[mu]
-
-# For force gradient update
-#const useFG = true
-const useFG = false
-const useApproxFG2 = false
-proc fgv(t: float) =
-  #f.gaugeforce2(g, gc)
-  gc.forceA(g, f)
-  threads:
-    for mu in 0..<g.len:
-      for s in g[mu]:
-        g[mu][s] := exp((-t)*f[mu][s])*g[mu][s]
-var gg = lo.newgauge
 proc fgsave =
   threads:
     for mu in 0..<g.len:
@@ -81,141 +112,211 @@ proc fgload =
   threads:
     for mu in 0..<g.len:
       g[mu] := gg[mu]
-proc updatefga(ts,gs:openarray[float]) =
+
+template pnorm2(p2:float) =
+  threads:
+    var p2t = 0.0
+    for i in 0..<p.len:
+      p2t += p[i].norm2
+    threadMaster: p2 = p2t
+
+proc gaction(g:auto, p2:float):auto =
+  tic()
   let
-    t = ts[0]
-    g = gs[0]
-  if g != 0:
-    if t != 0:
-      # Approximate the force gradient update with a Taylor expansion.
-      let (tf,tg) = approximateFGcoeff(t,g)
-      fgsave()
-      fgv tg
-      mdv tf
-      fgload()
-    else:
-      quit("Force gradient without the force update.")
-  elif t != 0:
-    mdv t
+    ga = if gact==ActAdjoint: gc.actionA g else: gc.gaugeAction1 g
+    t = 0.5*p2 - float(16*vol)
+    h = ga + t
+  toc("gaction")
+  (ga, t, h)
+
+proc mdt(t: float) =
+  tic()
+  threads:
+    for mu in 0..<g.len:
+      for s in g[mu]:
+        g[mu][s] := exp(t*p[mu][s])*g[mu][s]
+  toc("mdt")
+proc mdv(t: float) =
+  tic()
+  if gact==ActAdjoint:
+    gc.forceA(g, f)
   else:
-    quit("No updates required.")
-proc updatefga2(ts,gs:openarray[float]) =
-  let
-    t = ts[0]
-    g = gs[0]
-  if g != 0:
-    if t != 0:
-      # Approximate the force gradient update with two Taylor expansions.
-      let (tf,tg) = approximateFGcoeff2(t,g)
-      fgsave()
-      fgv tg[0]
-      mdv tf[0]
-      fgload()
-      fgv tg[1]
-      mdv tf[1]
-      fgload()
-    else:
-      quit("Force gradient without the force update.")
-  elif t != 0:
-    mdv t
+    gc.gaugeForce(g, f)
+  qexGC "mdv forceA"
+  threads:
+    for mu in 0..<f.len:
+      p[mu] -= t*f[mu]
+  toc("mdv")
+# FG update g from backup, gg
+proc fgv(t: float) =
+  tic()
+  if gact==ActAdjoint:
+    gc.forceA(gg, f)
   else:
-    quit("No updates required.")
+    gc.gaugeForce(gg, f)
+  qexGC "fgv forceA"
+  threads:
+    for mu in 0..<g.len:
+      for s in g[mu]:
+        g[mu][s] := exp((-t)*f[mu][s])*g[mu][s]
+  toc("fgv")
+# Combined update for sharing computations
+proc mdvAllfga(ts,gs:openarray[float]) =
+  tic("mdvAllfga")
+  var
+    updateG = false
+    updateGG = false
+  let approxOrder = if useFG2: 2 else: 1
+  type GGstep = tuple[t,g:float]
+  var ggs: array[2,GGstep]
+
+  # gauge
+  if gs[0] != 0:
+    updateGG = true
+    if ts[0] == 0:
+      qexError "Force gradient without the force update."
+    if useFG2:
+      let (tf,tg) = approximateFGcoeff2(ts[0],gs[0])
+      for o in 0..1:
+        ggs[o] = (t:tf[o], g:tg[o])
+    else:
+      let (tf,tg) = approximateFGcoeff(ts[0],gs[0])
+      ggs[0] = (t:tf, g:tg)
+  elif ts[0] != 0:
+    updateG = true
+
+  if updateGG:
+    tic()
+    fgsave()
+    toc("FG save done")
+
+  # MD
+  if updateG:
+    tic("MD mdv")
+    mdv ts[0]
+    toc("done")
+
+  # FG
+  if updateGG:
+    tic("updateFG")
+    for o in 0..<approxOrder:
+      tic()
+      fgv ggs[o].g
+      toc("fgv")
+      mdv ggs[o].t
+      toc("FG mdv")
+      fgload()
+      toc("load")
+    toc("done")
+  toc("done")
+
+proc revCheck(evo:auto; h0,ga0,t0:float) =
+  tic("reversibility")
+  var
+    g1 = lo.newgauge
+    p1 = lo.newgauge
+    p2 = 0.0
+  threads:
+    for i in 0..<g1.len:
+      g1[i] := g[i]
+      p1[i] := p[i]
+      p[i] := -1*p[i]
+  evo.evolve tau
+  evo.finish
+  p2.pnorm2
+  toc("p norm2 2")
+  let (ga1,t1,h1) = g.gaction p2
+  qexLog "Reversed H: ",h1,"  Sg: ",ga1,"  T: ",t1
+  echo "Reversibility: dH: ",h1-h0,"  dSg: ",ga1-ga0,"  dT: ",t1-t0
+  for i in 0..<g1.len:
+    g[i] := g1[i]
+    p[i] := p1[i]
+  qexGC "revCheck done"
+  toc("done")
 
 let
-  # Omelyan's triple star integrators, see Omelyan et. al. (2003)
-  H =
-    when useFG:
-      let
-        (VG,T) =
-          if useApproxFG2: newIntegratorPair(updatefga2, mdt)
-          else: newIntegratorPair(updatefga, mdt)
-        V = VG[0]
-      # mkOmelyan4MN4F2GVG(steps = steps, V = V, T = T)
-      # mkOmelyan4MN4F2GV(steps = steps, V = V, T = T)
-      # mkOmelyan4MN5F1GV(steps = steps, V = V, T = T)
-      # mkOmelyan4MN5F1GP(steps = steps, V = V, T = T)
-      # mkOmelyan4MN5F2GV(steps = steps, V = V, T = T)
-      mkOmelyan4MN5F2GP(steps = steps, V = V, T = T)
-      # mkOmelyan6MN5F3GP(steps = steps, V = V, T = T)
-    else:
-      let (V,T) = newIntegratorPair(mdv, mdt)
-      mkOmelyan2MN(steps = steps, V = V, T = T)
-      # mkOmelyan4MN5FP(steps = steps, V = V, T = T)
-      # mkOmelyan4MN5FV(steps = steps, V = V, T = T)
-      #mkOmelyan6MN7FV(steps = steps, V = V, T = T)
+  (V,T) = newIntegratorPair(mdvAllfga, mdt)
+  H = gintalg(T = T, V = V[0], steps = gsteps)
 
-for n in 1..trajs:
+if fileExists(gaugefile):
+  tic("load")
+  if 0 != g.loadGauge gaugefile:
+    qexError "failed to load gauge file: ", gaugefile
+  qexLog "loaded gauge from file: ", gaugefile," secs: ",getElapsedTime()
+  toc("read")
+  g.reunit
+  toc("reunit")
+else:
+  #g.random r
+  g.unit
+
+g.mplaq
+
+echo H
+
+toc("prep")
+
+for n in inittraj+1..inittraj+trajs:
+  tic("traj")
   var p2 = 0.0
   threads:
     p.randomTAH r
-    var p2t = 0.0
-    for i in 0..<p.len:
-      p2t += p[i].norm2
+    for i in 0..<g.len:
       g0[i] := g[i]
-    threadMaster: p2 = p2t
-  let
-    #ga0 = g0.gaugeAction2 gc
-    ga0 = gc.actionA g0
-    t0 = 0.5*p2
-    h0 = ga0 + t0
-  echo "Begin H: ",h0,"  Sg: ",ga0,"  T: ",t0
+  toc("p refresh, save g")
+  p2.pnorm2
+  toc("p norm2 1")
+  let (ga0,t0,h0) = g0.gaction p2
+  qexGC "init action"
+  toc("init gauge action")
+  qexLog "Begin H: ",h0,"  Sg: ",ga0,"  T: ",t0
 
   H.evolve tau
   H.finish
+  toc("evolve")
 
-  threads:
-    var p2t = 0.0
-    for i in 0..<p.len:
-      p2t += p[i].norm2
-    threadMaster: p2 = p2t
-  let
-    #ga1 = g.gaugeAction2 gc
-    ga1 = gc.actionA g
-    t1 = 0.5*p2
-    h1 = ga1 + t1
-  echo "End H: ",h1,"  Sg: ",ga1,"  T: ",t1
+  p2.pnorm2
+  toc("p norm2 2")
+  let (ga1,t1,h1) = g.gaction p2
+  qexGC "end action"
+  toc("final gauge action")
+  qexLog "End H: ",h1,"  Sg: ",ga1,"  T: ",t1
+  toc("end evolve")
 
-  #when true:
-  when false:
-    block:
-      var g1 = lo.newgauge
-      var p1 = lo.newgauge
-      threads:
-        for i in 0..<g1.len:
-          g1[i] := g[i]
-          p1[i] := p[i]
-          p[i] := -1*p[i]
-      H.evolve tau
-      H.finish
-      threads:
-        var p2t = 0.0
-        for i in 0..<p.len:
-          p2t += p[i].norm2
-        threadMaster: p2 = p2t
-      let
-        ga1 = gc.actionA g
-        t1 = 0.5*p2
-        h1 = ga1 + t1
-      echo "Reversed H: ",h1,"  Sg: ",ga1,"  T: ",t1
-      echo "Reversibility: dH: ",h1-h0,"  dSg: ",ga1-ga0,"  dT: ",t1-t0
-      #echo p[0][0]
-      for i in 0..<g1.len:
-        g[i] := g1[i]
-        p[i] := p1[i]
+  if revCheckFreq > 0 and n mod revCheckFreq == 0:
+    H.revCheck(h0,ga0,t0)
 
   let
     dH = h1 - h0
     acc = exp(-dH)
     accr = R.uniform
-  if accr <= acc:  # accept
-    echo "ACCEPT:  dH: ",dH,"  exp(-dH): ",acc,"  r: ",accr
+  if accr <= acc or alwaysAccept:  # accept
+    echo "ACCEPT:  dH: ",dH,"  exp(-dH): ",acc,"  r: ",accr,(if alwaysAccept:" (ignored)" else:"")
+    g.reunit
   else:  # reject
     echo "REJECT:  dH: ",dH,"  exp(-dH): ",acc,"  r: ",accr
     threads:
       for i in 0..<g.len:
         g[i] := g0[i]
+  qexGC "traj done"
 
-  echo g.plaq
+  g.mplaq
+  g.ploop
+  qexGC "measure done"
+  toc("measure")
 
-echoTimers()
+  if savefreq > 0 and n mod savefreq == 0:
+    tic("save")
+    let fn = savefile & &".{n:05}.lime"
+    if 0 != g.saveGauge(fn):
+      qexError "Failed to save gauge to file: ",fn
+    qexLog "saved gauge to file: ",fn," secs: ",getElapsedTime()
+    toc("done")
+
+  qexLog "traj ",n," secs: ",getElapsedTime()
+  toc("traj end")
+
+toc("hmc")
+
+if showTimers: echoTimers(timerExpandRatio, timerEchoDropped)
 qexfinalize()
