@@ -25,7 +25,8 @@ The `configure` command will create the files `Makefile` and `qexconfig.nims`
 in the current directory.
 It will also create the symlinks `qex` and `qex.nimble`.
 
-Check the resulting `qexconfig.nims` and edit if necessary.
+Check the Nim executable path in `Makefile` and the
+resulting `qexconfig.nims`, and edit if necessary.
 
 Try compiling a simple example:
 ```
@@ -67,8 +68,8 @@ These can be overridden by setting the environment variables
 - `NIMDIR` directory to place Nim source and build (default `$HOME/nim`)
 - `BINDIR` directory to place symlinks (default `$HOME/bin`)
 
-This will be necessary to set if on a system with a shared home directory
-across different host (build) architectures.
+These will be necessary to set when on a system with a shared home directory
+across different host (build) architectures to keep separate copies of Nim.
 
 By default `installNim` installs the latest stable version of Nim.
 You can also specify a version, e.g. `installNim 1.6.4` for version 1.6.4, or
@@ -77,6 +78,8 @@ You can also specify a version, e.g. `installNim 1.6.4` for version 1.6.4, or
 You can also switch the symlinks between different (previously installed)
 versions of Nim with e.g. `installNim default 1.6.4` or `installNim default devel`.
 You should be able to check which version of Nim is default with `nim -v`.
+
+`installNim` with no options will also give a help message.
 
 
 ## Required dependencies
@@ -95,7 +98,7 @@ The other required dependencies can be installed by running
 which is used to install Nim dependencies.
 Nimble is also installed (with a symlink in `$BINDIR`) by the `installNim` script.
 The list of required packages that Nimble installs
-is in the [qex.nimble](qex.nimble#L26) file.
+is in the [qex.nimble](qex.nimble#L25) file.
 
 ## Optional dependencies
 
@@ -144,7 +147,7 @@ The full set can also be passed as a Nim seqeunce using the
 syntax `envs:'@["FOO=BAR","FOO2=BAR2"]'`.
 Preserving the double quotes (with single quotes here, or backslashes)
 is important in this case.
-For the single arguments (`env:...`) the double quotes will be added
+For the single arguments (`env:FOO=BAR`) the double quotes will be added
 so are unnecessary.
 
 Details on the Nim compiler options can be found
@@ -190,7 +193,7 @@ from the source directory, or from the source directory.
   cflagsspeed:"-Ofast -march=native -ffast-math" \
   cpp:"mpicxx" \
   cppflagsspeed:"-Ofast -march=native -ffast-math" \
-  simd:"SSE,AVX" vlen:"8"
+  simd:"SSE,AVX" vlen:8
 ```
 
 ### AXV2 using OpenMPI mpicc/mpicxx and specifying clang/clang++
@@ -206,5 +209,5 @@ from the source directory, or from the source directory.
   cpp:"mpicxx" \
   env:"OMPI_CXX=clang++" \
   cppflagsspeed:"-Ofast -march=native -ffast-math" \
-  simd:"SSE,AVX" vlen:"8"
+  simd:"SSE,AVX" vlen:8
 ```
