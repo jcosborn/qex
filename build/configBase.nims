@@ -2,9 +2,10 @@ import os, strUtils
 
 var
   nimcache = getCurrentDir() / "nimcache"
-  buildVerbosity = 0
+  buildVerbosity = 1
 
   ccType = "gcc"
+  ccDef = "cc"
 
   cc = "gcc"
   cflagsAlways = ""
@@ -23,10 +24,11 @@ var
 #  ompflags = ""
 
   simd = ""
-  vlen = "8"
+  vlen = 8
 
   qmpDir = ""
   qioDir = ""
+
   qudaDir = ""
   cudaLibDir = ""
   primmeDir = ""
@@ -34,13 +36,16 @@ var
   gridDir = ""
 
   envs = newSeq[string]()
+  nimargs = newSeq[string]()
 
+# not currently exposed
   FUELCompat = false
 
 
 type
   flagsOpts* = object
     debug*: bool
+proc newFlagsOpts*(): flagsOpts = discard
 
 proc getNimFlags*(fo: flagsOpts): seq[string] =
   var defargs = newSeq[string](0)
@@ -112,20 +117,7 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
   if not fo.debug:
     d ~ "release"
     d ~ "danger"
-    #obj_checks ~ off
-    #field_checks ~ off
-    #range_checks ~ off
-    #bound_checks ~ off
-    #overflow_checks ~ off
-    #nilchecks ~ off
-    #assertions ~ off
-    #stacktrace ~ off
-    #linetrace ~ off
-    #debugger ~ off
-    #line_dir ~ off
-    #dead_code_elim ~ on
-    #panics ~ on
-    opt ~ speed
+    #opt ~ speed
   else:
     echo "debug build"
 
@@ -143,11 +135,12 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
         d ~ AVX512
       else: discard
 
-  putenv ~ ("VLEN=" & vlen)
+  putenv ~ ("VLEN=" & $vlen)
   for e in envs:
     putenv ~ e
     let t = e.split("=")
     putenv(t[0],join(t[1..^1]))
+  defargs.add nimargs
   return defargs
 
 #  echo "Finished config file: ", thisDir(), "/config.nims"

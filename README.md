@@ -22,5 +22,7 @@ It currently supports
 
 Installation guide: [INSTALL.md](INSTALL.md)
 
+Build guide: [BUILD.md](BUILD.md)
+
 Further examples:
 - [tests/examples](tests/examples)

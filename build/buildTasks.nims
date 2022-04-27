@@ -2,17 +2,23 @@
 # requires variables 'nim', 'qexDir' and 'nimArgs' to be declared before including
 import strFormat
 
-var configTasks = newSeq[tuple[cmd:string,desc:string,f:proc(){.nimcall.}]](0)
+type
+  Task* = tuple[cmd:string,desc:string,f:proc(){.nimcall.}]
+template newTask(c,d: string, fn: typed): untyped = (cmd:c, desc:d, f:fn)
+proc emptyTask(): Task = result.cmd = ""
+
+var configTasks = newSeq[Task](0)
 template configTask(name: untyped; description: string; body: untyped) =
   proc `name CTask`*() = body
-  configTasks.add((cmd: astToStr(name), desc: description, f: `name CTask`))
+  configTasks.add newTask(astToStr(name), description, `name CTask`)
 
-var buildTasks = newSeq[tuple[cmd:string,desc:string,f:proc(){.nimcall.}]](0)
+var buildTasks = newSeq[Task](0)
 template buildTask(name: untyped; description: string; body: untyped) =
   proc `name BTask`*() = body
-  buildTasks.add((cmd: astToStr(name), desc: description, f: `name BTask`))
+  buildTasks.add newTask(astToStr(name), description, `name BTask`)
 
 var currentArg = ""  # set from parent files while iterating over arguments
+var remainingArgs: seq[string]
 proc getInt(): int =
   let t = split(currentArg,":")
   if t.len>=2: result = parseInt(t[1])
@@ -21,15 +27,18 @@ proc getString(): string =
   if t.len>=2: result = t[1]
   else: result = ""
 
-var fo: flagsOpts
+var fo = newFlagsOpts()
+var userNimFlags: seq[string] = @[]
+proc setUserNimFlags(x: seq[string]) =
+  userNimFlags = x
 var nimFlags: seq[string] = @[]
 proc setNimFlags() =
   if nimFlags.len == 0:
     nimFlags = getNimFlags(fo)
+    nimFlags.add userNimFlags
 
 var run = false
-var usecpp = false
-var verbosity = -1
+#var verbosity = -1
 var bindir = "bin"
 var srcPaths = @[".", "qex/src", "qex/tests"]  # use relative paths for convenience
 if getCurrentDir() == qexDir: srcPaths = @["."]
@@ -39,12 +48,13 @@ proc findSrc(g: string): tuple[files:seq[string],dirs:seq[string]] =
   var ds = newSeq[string]()
   let d = getCurrentDir()
   for p in srcPaths:
-    let f = staticExec &"cd {d}; ( find {p} -type f -ipath {p}*{g}; find {p} -type f -ipath {p}*{g}.nim ) |sort -u"
+    let c = &"cd {d}; ( find {p} -type f -ipath '{p}*{g}'; find {p} -type f -ipath '{p}*{g}.nim' ) |sort -u"
+    let f = staticExec c
     if f != "":
       for t in f.splitLines:
         if t.endswith(".nim"):
           fs.add t
-    let d = staticExec &"cd {d}; find {p} -type d -ipath *{g} |sort"
+    let d = staticExec &"cd {d}; find {p} -type d -ipath '*{g}' |sort"
     if d != "":
       ds.add d.splitLines
   result = (files:fs, dirs:ds)
@@ -62,7 +72,8 @@ proc buildFile(f: string, outfile=""): bool =
     if not dirExists(bindir):
       mkDir(bindir)
     name = bindir / name
-  let cc = if usecpp: "cpp" else: "c"
+  #let cc = if usecpp: "cpp" else: "c"
+  let cc = ccDef
   let s = nimcmd & " " & cc & " -o:" & name & " " & f
   echo "running: ", s
   try:
@@ -74,29 +85,39 @@ proc buildFile(f: string, outfile=""): bool =
 
 # return true if failed
 proc tryBuildSource(g: string): bool =
+  result = true
   let s = findSrc(g)
-  if s.dirs.len != 0:
-    if s.dirs.len > 1:
-      echo "  Error: multiple directories match:"
+  let n = s.dirs.len + s.files.len
+  if n > 1:
+    echo "  Error: multiple targets match:"
+    if s.dirs.len > 0:
+      echo "    Directories:"
       for d in s.dirs:
-        echo "    ", d
-      return true
-    #echo "  process dir: ", s.dirs[0]
+        echo "      ", d
+    if s.files.len > 0:
+      echo "    Files:"
+      for f in s.files:
+        echo "      ", f
+    return true
+  if s.dirs.len == 1:
+    echo "Processing directory: ", s.dirs[0]
     for f in listFiles(s.dirs[0]):
-      #echo "file: ", f
       if f.endsWith(".nim"):
+        echo "Building source: ", f
         discard buildFile(f)
     return false
-  if s.files.len != 0:
-    if s.files.len > 1:
-      echo "  Error: multiple files match:"
-      for f in s.files:
-        echo "    ", f
-      return true
+  if s.files.len == 1:
+    echo "Building source: ", s.files[0]
     return buildFile(s.files[0])
 
 
 # === Config Tasks ===
+
+configTask cc, "compile in C mode":
+  ccDef = "cc"
+
+configTask cpp, "compile in C++ mode":
+  ccDef = "cpp"
 
 configTask debug, "set debug build":
   fo.debug = true
@@ -104,16 +125,14 @@ configTask debug, "set debug build":
 configTask run, "run executable after building":
   run = true
 
-configTask cpp, "compile in cpp mode":
-  usecpp = true
-
-configTask verb, "set build verbosity to N (verb:N)":
-  verbosity = getInt()
+configTask verb, "set build verbosity to N (verb:N), N in 0,1,2,3":
+  buildVerbosity = getInt()
 
 
 # === Build Tasks ===
 
-proc echoCmds(tasklist: seq) =
+proc formatCmds(tasklist: seq): string =
+  var s = newSeq[string](0)
   var clen = 0
   for t in tasklist:
     clen = max(clen, t.cmd.len)
@@ -123,40 +142,64 @@ proc echoCmds(tasklist: seq) =
       if first:
         first = false
         let c = t.cmd & " ".repeat(clen-t.cmd.len)
-        echo &"  {c}  {l}"
+        s.add &"  {c}  {l.strip}"
       else:
-        echo " ".repeat(clen+4) & l
+        s.add " ".repeat(clen+4) & l.strip
+  s.join("\n")
 
-buildTask help, "show this help message":
-  let s = '-'.repeat(70)
-  echo s
+let sepHelp = '-'.repeat(72)
+
+let buildOptionsHelp = """
+build options:
+""" & formatCmds(configTasks)
+
+let nimOptionsHelp = """
+Nim options:
+  -<option>   Passes '-<option>' to Nim compiler
+              (may need to proceed with '--' so make doesn't parse it).
+  :-<option>  Passes '-<option>' to Nim compiler
+              (avoids issues with make trying to parse it).
+  :foo        Sets Nim define 'foo'
+              (equivalent to '-d:foo').
+  :foo=bar    Sets Nim define 'foo' to value 'bar'
+              (equivalent to '-d:foo=bar')."""
+
+var pathHelp = """
+path:
+  foo.nim  Search for file matching `*foo.nim' in source paths
+           (including subdirectories, but not following links)
+  foo      Search for both `*foo.nim' and `*foo',
+           if a directory matches compile all `*.nim' in it
+    Note:  only one match is allowed,
+           specify part of path to resolve ambiguity
+source paths:
+"""
+pathHelp &=  "  " & srcPaths.join("\n  ")
+
+buildTask help, "   Show this help message":
+  echo sepHelp
   echo "QEX build script usage:"
-  echo "  make [options] [command | target]"
-  echo s
-  echo "options:"
-  echoCmds(configTasks)
-  echo s
+  echo "  make [command] [build option | Nim option]... [path]..."
+  echo sepHelp
   echo "commands:"
-  echoCmds(buildTasks)
-  echo s
-  echo "target:"
-  echo "  foo.nim  Search for 'foo.nim' in source paths"
-  echo "           (including subdirectories, but not following links),"
-  echo "           compile and put binary in 'bin' directory."
-  echo "  foo      First search for 'foo.nim' and compile if found."
-  echo "           If 'foo.nim' is not found, search for directory 'foo'"
-  echo "           and compile all *.nim files in it."
-  #echo "           Specify part of path to resolve ambiguity."
-  echo "  source paths:"
-  for p in srcPaths:
-    echo "    ", p
+  echo formatCmds(buildTasks)
+  echo "           (command make is default and can be skipped)"
+  echo sepHelp
+  echo buildOptionsHelp
+  echo sepHelp
+  echo nimOptionsHelp
+  echo sepHelp
+  echo pathHelp
+  echo sepHelp
 
-buildTask show, "show Nim compile flags":
+buildTask show, "   Show Nim compile flags":
   setNimFlags()
+  echo "Nim compile command: ", ccDef
   echo "Nim flags:"
   echo join(nimFlags," ")
 
 proc runTargets(f: string) =
+  echo "Searching for targets matching: ", f
   if f == "":
     let d = getCurrentDir()
     for p in srcPaths:
@@ -179,23 +222,23 @@ proc runTargets(f: string) =
       for f in s.files:
         echo "    ", f
 
-buildTask targets, "show available build targets\ntargets:<name> will search for targets matching <name>\n(can include standard shell wildcards)":
-  # targets
-  # targets:foo
-  # targets:foo*
-  let f = getString()
+let targetsDesc = """Show available build targets
+               targets <name> will search for targets matching <name>
+               (can include standard shell wildcards)"""
+buildTask targets, targetsDesc:
+  var f = getString()
+  if f == "" and remainingArgs.len>0: f = remainingArgs[0]
   runTargets(f)
 
 
-proc runClean() =
+let cleanDesc = """  Remove contents of nimcache directory
+               ("""&nimcache&")"
+buildTask clean, cleanDesc:
   echo "Cleaning nimcache directory: ", nimcache
   for f in nimcache.listFiles:
     #echo f
     #if f.endsWith(".o") or f.endsWith(".c") or f.endsWith(".cpp"):
     rmFile f
-
-buildTask clean, "remove contents of nimcache directory\n("&nimcache&")":
-  runClean()
 
 let extraTests = [
   "gauge/wflow.nim",
@@ -250,5 +293,66 @@ proc buildTests() =
   if dorun:
     exec "./testscript.sh"
 
-buildTask tests, "build tests and create 'testscript.sh' test runner":
+let testsDesc = "  Build tests and create `testscript.sh' test runner"
+buildTask tests, testsDesc:
   buildTests()
+
+proc runMake(args: seq[string]) =
+  for a in args:
+    let failed = tryBuildSource(a)
+    if failed:
+      echo "Error: invalid source arg: ", a
+      quit(1)
+
+let makeDesc = """   Search for each [path]... as described below,
+               compile, link, and put executables in `bin'"""
+buildTask make, makeDesc:
+  runMake(remainingArgs)
+
+########
+
+# parses options and returns command args
+proc parseOpts(args: seq[string]): seq[string] =
+  result.newSeq(0)
+  var iarg = 0
+  while iarg<args.len:
+    currentArg = args[iarg]
+    var found = false
+    for t in configTasks:
+      #echo t.cmd
+      if currentArg.len>=t.cmd.len and currentArg[0..(t.cmd.len-1)] == t.cmd:
+        echo "Processing config arg: ", currentArg
+        found = true
+        t.f()
+    #if not found: break  # assume it is a build arg
+    if not found:  # assume it is a build arg
+      result.add args[iarg]
+    inc iarg
+  #while iarg<args.len:
+  #  result.add args[iarg]
+  #  inc iarg
+
+proc getTask(name: string): Task =
+  result = emptyTask()
+  for t in buildTasks:
+    if t.cmd == name:
+      result = t
+
+proc runTask(t: Task) =
+  echo "Processing build task: ", t.cmd
+  t.f()
+
+proc runTask(name: string) =
+  let t = getTask(name)
+  if t.cmd == name:
+    runTask(t)
+
+proc runTask(t: Task, args: seq[string]) =
+  echo "Processing build task: ", t.cmd
+  remainingArgs = args
+  t.f()
+
+proc runTask(name: string, args: seq[string]) =
+  let t = getTask(name)
+  if t.cmd == name:
+    runTask(t, args)

@@ -3,7 +3,6 @@ import os, macros
 var nim = selfExe()
 var qexDir = thisDir()
 if dirExists(qexDir/"qex"): qexDir = qexDir/"qex"
-var nimArgs = newSeq[string]()
 echo "Nim: ", nim
 echo "QEX dir: ", qexDir
 
@@ -31,6 +30,8 @@ requires "mdevolve >= 1.0.0"
 if primmeDir != "":
   requires "primme >= 3.0.0"
 
+# Helpers
+
 proc getExtraArgs(task: string): seq[string] =
   result.newSeq(0)
   const c = paramCount()
@@ -41,51 +42,75 @@ proc getExtraArgs(task: string): seq[string] =
     result.add paramStr(i)
     inc i
 
+var nimuserargs = newSeq[string](0)
+proc getNimUserArgs(args: seq[string]): seq[string] =
+  result.newSeq(0)
+  for a in args:
+    if a[0]=='-':
+      nimuserargs.add a
+    elif a[0]==':':
+      let t = a[1..^1]
+      if t[0]=='-':
+        nimuserargs.add t
+      else:
+        nimuserargs.add "-d:" & t
+    else:
+      if '=' in a:
+        nimuserargs.add "-d:" & a
+      else:
+        result.add a
+
 # Tasks
 
-task make, "compile, link, and put executables in `bin'":
-  let ex = getExtraArgs("make")
-  for e in ex:
-    if e == "debug":
-      fo.debug = true
-    else:
-      let failed = tryBuildSource(e)
-      if failed:
-        echo "Error: invalid build arg: ", currentArg
-        quit(1)
+task usage, "\n" & """
+----------------------------------------------------------------------
+QEX Nimble script usage:
+  nimble <command> [build option | Nim option]... [path]...
+----------------------------------------------------------------------
+Commands:""":
+  discard
 
-task clean, "remove temporary build files":
-  runClean()
+let tClean = getTask "clean"
+task clean, tClean.desc:
+  runTask tClean
 
-task tests, "Build tests":
-  buildTests()
-
-task show, "Show Nim compile flags":
+let tShow = getTask "show"
+task show, tShow.desc:
   let ex = getExtraArgs("show")
-  for e in ex:
-    if e == "debug": fo.debug = true
-  setNimFlags()
-  echo "Nim flags:"
-  echo join(nimFlags," ")
+  let optargs = getNimUserArgs(ex)
+  setUserNimFlags(nimuserargs)
+  let cmdargs = parseOpts(optargs)
+  runTask tShow
 
-task targets, "List available targets":
+let tTargets = getTask "targets"
+task targets, tTargets.desc:
   let ex = getExtraArgs("targets")
-  var f = ""
-  if ex.len > 0:
-    f = ex[0]
-    echo "Searching for targets matching: ", f
-  runTargets(f)
+  runTask tTargets, ex
 
-task help, "print out usage information":
-  echo "----------------------------------------------------------------------"
-  echo "To build nim files:"
-  echo "  nimble make [debug] [FlagsToNim] [Name=Definition] Target [MoreTargets]"
-  echo ""
-  echo "`debug' will make debug build."
-  echo "`Target' can be any file name, optionally with partial directory names."
-  echo "The produced executables will be under `bin/'."
-  echo ""
-  echo "Examples:"
-  echo "  nimble make debug test0"
-  echo "  nimble make example/testStagProp"
+let tTests = getTask "tests"
+task tests, tTests.desc:
+  let ex = getExtraArgs("tests")
+  let optargs = getNimUserArgs(ex)
+  setUserNimFlags(nimuserargs)
+  runTask tTests
 
+let tMake = getTask "make"
+task make, tMake.desc:
+  let ex = getExtraArgs("make")
+  let optargs = getNimUserArgs(ex)
+  setUserNimFlags(nimuserargs)
+  let cmdargs = parseOpts(optargs)
+  runMake(cmdargs)
+
+let helpText =
+  @[sepHelp,buildOptionsHelp,sepHelp,nimOptionsHelp,sepHelp,pathHelp,sepHelp].join("\n")
+
+let exampleHelp = """
+Examples:
+  nimble make debug puregaugehmc
+  nimble make bench/benchStagProp
+""" & sepHelp
+
+let tHelp = getTask "help"
+task help, tHelp.desc & "\n" & helpText & "\n" & exampleHelp:
+  discard

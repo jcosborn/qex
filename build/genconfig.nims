@@ -53,6 +53,15 @@ template kv(k: string, v: string, p: string): untyped =
 template kv(k: string, v: string, p: seq[string]): untyped =
   k & " = " & v
 
+template kvc(k: string, v: string, c: string): untyped =
+  k & " = " & v & c
+template kvc(k: string, v: string, p: int, c: string): untyped =
+  k & " = " & v & c
+template kvc(k: string, v: string, p: string, c: string): untyped =
+  k & " = \"" & v & "\"" & c
+template kvc(k: string, v: string, p: seq[string], c: string): untyped =
+  k & " = " & v & c
+
 # check if symbol was initialized from another symbol
 macro implSym(x: typed): untyped =
   let i = x.getImpl
@@ -71,6 +80,17 @@ template process1(k: string, def: string, p: typed, l: string): untyped =
     else:
       kv(k, $p, p)
 
+template process1(k: string, def: string, p: typed, l: string, c: string): untyped =
+  let n = k.nimIdentNormalize
+  if n in args:
+    #echo def
+    kvc(k, args[n], p, c)
+  else:
+    if p.implSym:
+      kvc(k, def, c)
+    else:
+      kvc(k, $p, p, c)
+
 macro process(ls: static string): untyped =
   result = newStmtList()
   for l in ls.splitLines:
@@ -81,11 +101,18 @@ macro process(ls: static string): untyped =
         c.add `l`
     else:
       #echo l
-      let k = s[0].strip
-      let v = join(s[1..^1],"=").strip
+      let k = s[0].strip  # key
+      let v0 = join(s[1..^1],"=").strip  # value (with possible comment)
+      let vs = v0.split('#')
+      let v = vs[0].strip  # value (without comment)
       let p = parseExpr(k)
-      result.add quote do:
-        c.add process1(`k`, `v`, `p`, `l`)
+      if vs.len == 1:
+        result.add quote do:
+          c.add process1(`k`, `v`, `p`, `l`)
+      else:
+        let cmt = "  # " & join(vs[1..^1],"#").strip  # comment
+        result.add quote do:
+          c.add process1(`k`, `v`, `p`, `l`, `cmt`)
 
 process(ls)
 
