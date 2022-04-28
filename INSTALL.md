@@ -26,7 +26,7 @@ in the current directory.
 It will also create the symlinks `qex` and `qex.nimble`.
 
 Check the Nim executable path in `Makefile` and the
-resulting `qexconfig.nims`, and edit if necessary.
+settings in `qexconfig.nims`, and edit if necessary.
 
 Try compiling a simple example:
 ```
@@ -140,12 +140,12 @@ in the generated `qexconfig.nims` file in the build directory.
 
 Environment variables to be set during compile time
 (set in the `envs` variable in the
-[config file](build/configDefault.nims#L66) ),
+[config file](build/configDefault.nims#L70) ),
 can be passed one at a time using `env:FOO=BAR`.
 See the [examples](#configuration-examples) below.
 The full set can also be passed as a Nim seqeunce using the
 syntax `envs:'@["FOO=BAR","FOO2=BAR2"]'`.
-Preserving the double quotes (with single quotes here, or backslashes)
+Preserving the double quotes (by using single quotes here, or backslashes)
 is important in this case.
 For the single arguments (`env:FOO=BAR`) the double quotes will be added
 so are unnecessary.
@@ -160,8 +160,8 @@ The available options and their default settings can be found in
 [build/configDefault.nims](build/configDefault.nims).
 
 This default configuration file will be copied to the build directory
-with the appropriate substitutions specified on the command line
-(or optionally environment variables).
+and renamed `qexconfig.nims`,
+with the appropriate substitutions specified on the command line.
 
 
 ## Build guide
@@ -181,7 +181,7 @@ to run it with a parallel job launcher (i.e. mpirun).
 The configure command can be run from a build directory that is separate
 from the source directory, or from the source directory.
 
-``<configure>`` is the configure script, including path, in the QEX source directory.
+`<configure>` is the configure script, including path, in the QEX source directory.
 
 ### AXV2 using mpicc/mpicxx set to use gcc
 
@@ -196,7 +196,7 @@ from the source directory, or from the source directory.
   simd:"SSE,AVX" vlen:8
 ```
 
-### AXV2 using OpenMPI mpicc/mpicxx and specifying clang/clang++
+### AXV512 using OpenMPI mpicc/mpicxx and specifying clang/clang++
 
 ```
 <configure> \
@@ -209,5 +209,5 @@ from the source directory, or from the source directory.
   cpp:"mpicxx" \
   env:"OMPI_CXX=clang++" \
   cppflagsspeed:"-Ofast -march=native -ffast-math" \
-  simd:"SSE,AVX" vlen:8
+  simd:"SSE,AVX,AVX512" vlen:16
 ```

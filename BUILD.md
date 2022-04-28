@@ -7,60 +7,100 @@ QEX applications can be built using either the standard
 The options and functionality are largely the same, with only a few minor
 differences.
 
-## Building executables
+### Building executables
 
 | Build Method | Command |
 |-|-|
-| Make   | make [options] <target> |
-| Nimble | nimble make [debug] [FlagsToNim] [Name=Definition] Target [MoreTargets] |
+| Make   | make [build option | Nim option]... [path]... |
+| Nimble | nimble make [build option | Nim option]... [path]... |
+
+Details on the build options are [below](#build-options).
+
+The `path` is the name of the target to be compiled.
+It can include wildcards and parts of the path.
+Targets are searched for matches within the current directory
+and the nim source (`src`) and tests directories.
+
+You can see a list of matching targets with the `targets` command, e.g.
+```
+make targets <path>
+```
+or
+```
+nimble targets <path>
+```
 
 
+## Full command syntax
 
-## Building using ``make``
+| Build Method | Command |
+|-|-|
+| Make   | make [command] [build option | Nim option]... [path]... |
+| Nimble | nimble <command> [build option | Nim option]... [path]... |
 
-### Quick guide
+The `command` is required for nimble, but optional for make (it will default
+to the `make` command below).
+
+### Commands
+
+| Command | Description |
+|-|-|
+| help    | Show help message |
+| show    | Show Nim compile flags |
+| targets | Show available build targets |
+            targets <name> will search for targets matching <name>
+            (can include standard shell wildcards) |
+| clean   | Remove contents of nimcache directory |
+| tests   | Build tests and create `testscript.sh' test runner |
+| make    | Search for each [path]... as described below,
+            compile, link, and put executables in `bin' |
+
+When using the `make` build method the `make` command is default and can be skipped.
+
+
+### Build options
+
+| Option | Description |
+|  cc    | compile in C mode |
+|  cpp   | compile in C++ mode |
+|  debug | set debug build |
+|  run   | run executable after building |
+|  verb  | set build verbosity to N (verb:N), N in 0,1,2,3 |
+
+
+### Nim options
+
+| Option | Description |
+| -<option>  | Passes '-<option>' to Nim compiler |
+| :-<option> | Passes '-<option>' to Nim compiler
+               (avoids issues with make/nimble trying to parse it). |
+| :foo       | Sets Nim define 'foo'
+               (equivalent to '-d:foo'). |
+| :foo=bar   | Sets Nim define 'foo' to value 'bar'
+               (equivalent to '-d:foo=bar'). |
+
+### Path
+
+
+| foo.nim  | Search for file matching `*foo.nim' in source paths
+             (including subdirectories, but not following links) |
+|  foo     | Search for both `*foo.nim' and `*foo',
+             if a directory matches compile all `*.nim' in it |
+
+Note:  only one match is allowed,
+       specify part of path to resolve ambiguity
+
+source paths: `.`, `qex/src`, `qex/tests`
+
+
+### Examples:
 
 ```
-make [options] <target>
+  make debug test0
+  make example/testStagProp
 ```
 
-| Options | Description |
-|---------|-------------|
-| debug | enable debug build (otherwise release) |
-| run | run executable after building |
-| verb:N | set build verbosity to integer N |
-
-Target can be the name of a Nim source file (ending with `.nim`)
-or a directory (in which case all Nim source in that directory are compiled).
-
-Targets are searched for recursively in the following directories
-- `.`
-- `qex/src`
-- `qex/tests`
-
-
-
-## Building using ``nimble``
-
-You can build under the source directory.  Modify the file
-`local.nims` to suit your system.
-
-If you wish to build in a separate directory, copy the file
-`local.nims` to your build directory, and modify it there.  Copy
-`qex.nimble` to your build directory.
-
-Run `nimble tasks` for available tasks, and `nimble help` for
-help building your executables.
-
 ```
-To build nim files:
-  nimble make [debug] [FlagsToNim] [Name=Definition] Target [MoreTargets]
-
-`debug' will make debug build.
-`Target' can be any file name, optionally with partial directory names.
-The produced executables will be under `bin/'.
-
-Examples:
   nimble make debug test0
   nimble make example/testStagProp
 ```
