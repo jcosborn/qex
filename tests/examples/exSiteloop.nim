@@ -1,5 +1,5 @@
 import qex
-import qcdTypes
+import physics/qcdTypes
 
 proc test =
   qexInit()

@@ -48,7 +48,7 @@ proc findSrc(g: string): tuple[files:seq[string],dirs:seq[string]] =
   var ds = newSeq[string]()
   let d = getCurrentDir()
   for p in srcPaths:
-    let c = &"cd {d}; ( find {p} -type f -ipath '{p}*{g}'; find {p} -type f -ipath '{p}*{g}.nim' ) |sort -u"
+    let c = &"cd {d}; ( find {p} -type f -ipath '*{g}'; find {p} -type f -ipath '*{g}.nim' ) |sort -u"
     let f = staticExec c
     if f != "":
       for t in f.splitLines:

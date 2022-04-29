@@ -147,17 +147,27 @@ template map*(xx: ComplexProxy; f: untyped): untyped =
   let x = xx[]
   newComplex(f(x.re),f(x.im))
 
-template toDoubleImpl*(xx: ComplexProxy): untyped =
+#template toDoubleImpl*(xx: ComplexProxy): untyped =
   #let x = xx
   #let tdiR = toDouble(x.re)
   #let tdiI = toDouble(x.im)
   #ComplexObj2[type(tdiR),type(tdiI)](reX: tdiR, imX: tdiI)
-  let x = xx[]
-  newComplex(toDouble(x.re),toDouble(x.im))
+  #let x = xx[]
+  #newComplex(toDouble(x.re),toDouble(x.im))
+  #mixin toDoubleX
+  #toDoubleX(toDerefPtr xx)
+
+template toSingleImpl*(xx: ComplexObj): untyped =
+  let x = xx
+  newComplexObj(toSingle(x.re),toSingle(x.im))
+  #mixin toSingleX
+  #toSingleX(toDerefPtr xx)
 
 template toDoubleImpl*(xx: ComplexObj): untyped =
   let x = xx
   newComplexObj(toDouble(x.re),toDouble(x.im))
+  #mixin toDoubleX
+  #toDoubleX(toDerefPtr xx)
 
 template add*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
          untyped =  assign(r,x+y)

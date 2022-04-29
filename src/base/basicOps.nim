@@ -36,11 +36,13 @@ template basicNumberDefines(T,N,F) {.dirty.} =
 basicNumberDefines(float32, 1, float32)
 basicNumberDefines(float64, 1, float64)
 
+template numberType*[T](x:ptr T):untyped = numberType(T)
 template numberType*[T](x:tuple[re,im:T]):untyped = numberType(T)
 template numberType*[T](x:typedesc[tuple[re,im:T]]):untyped = numberType(T)
 template numberType*[I,T](x:array[I,T]):untyped = numberType(type(T))
 template numberType*[I,T](x:typedesc[array[I,T]]):untyped = numberType(type(T))
 #template numberType*(x:not typedesc):untyped = numberType(type(x))
+template `[]`*[T](x:typedesc[ptr T]):untyped = T
 template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x
 template isWrapper*(x: SomeNumber): untyped = false
 template isWrapper*(x: typedesc[SomeNumber]): untyped = false

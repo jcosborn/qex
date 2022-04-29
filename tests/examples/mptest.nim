@@ -1,6 +1,5 @@
 import qex
-import qcdTypes
-import rng
+import physics/qcdTypes
 import math
 
 qexInit()
