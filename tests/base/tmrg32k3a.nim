@@ -21,6 +21,7 @@ suite "Test MRG32k3a":
     var lo = newLayout([8,8,8,16])
     var r = lo.newRNGField(MRG32k3a, seed)
     var d = lo.DiracFermion
+    if d.numberType is float32: CT = 1e-6
     d.uniform r
     check(d.norm2 ~ 65517.83893610391)
 

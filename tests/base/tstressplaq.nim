@@ -21,6 +21,9 @@ suite "Stress plaquette test":
     g = lo.newGauge
     rs = newRNGField(RngMilc6, lo, 987654321)
     #rsX: RngMilc6  # workaround Nim codegen bug
+  if g[0].numberType is float32:
+    CT = 1e-6
+    CT32 = 2e-5
 
   test "unit gauge":
     let

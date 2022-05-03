@@ -280,6 +280,10 @@ proc simdMaxReduce*(r:var SomeNumber; x:m128) {.inline.} =
   r = x[0]
   for i in 1..<4:
     if r < x[i]: r = (type(r))(x[i])
+proc simdMaxReduce*(r:var SomeNumber; x:m128d) {.inline.} =
+  r = x[0]
+  for i in 1..<2:
+    if r < x[i]: r = (type(r))(x[i])
 proc simdMaxReduce*(r:var SomeNumber; x:m256) {.inline.} =
   r = x[0]
   for i in 1..<8:
@@ -297,17 +301,20 @@ proc simdMaxReduce*(r:var SomeNumber; x:m512d) {.inline.} =
   for i in 1..<8:
     if r < x[i]: r = (type(r))(x[i])
 proc simdMaxReduce*(x:m128):float32 {.inline,noInit.} = simdMaxReduce(result, x)
+proc simdMaxReduce*(x:m128d):float64 {.inline,noInit.} = simdMaxReduce(result, x)
 proc simdMaxReduce*(x:m256):float32 {.inline,noInit.} = simdMaxReduce(result, x)
 proc simdMaxReduce*(x:m256d):float64 {.inline,noInit.} = simdMaxReduce(result, x)
 proc simdMaxReduce*(x:m512):float32 {.inline,noInit.} = simdMaxReduce(result, x)
 proc simdMaxReduce*(x:m512d):float64 {.inline,noInit.} = simdMaxReduce(result, x)
 
 template simdMax*(x:m128):untyped = simdMaxReduce(x)
+template simdMax*(x:m128d):untyped = simdMaxReduce(x)
 template simdMax*(x:m256):untyped = simdMaxReduce(x)
 template simdMax*(x:m256d):untyped = simdMaxReduce(x)
 template simdMax*(x:m512):untyped = simdMaxReduce(x)
 template simdMax*(x:m512d):untyped = simdMaxReduce(x)
 template simdMax*(r:var SomeNumber; x:m128) = simdMaxReduce(r, x)
+template simdMax*(r:var SomeNumber; x:m128d) = simdMaxReduce(r, x)
 template simdMax*(r:var SomeNumber; x:m256) = simdMaxReduce(r, x)
 template simdMax*(r:var SomeNumber; x:m256d) = simdMaxReduce(r, x)
 template simdMax*(r:var SomeNumber; x:m512) = simdMaxReduce(r, x)

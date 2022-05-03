@@ -20,6 +20,7 @@ var
   p = lo.newGauge
   r = lo.newRNGField(RngMilc6, seed)
   R:RngMilc6
+if p[0].numberType is float32: CT = 1e-9
 R.seed(seed, 987654321)
 
 p.randomTAH r

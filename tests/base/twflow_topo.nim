@@ -22,6 +22,7 @@ suite "Test Wilson flow and topological charge":
     g = lo.newGauge
     r = lo.newRNGField(MRG32k3a, seed)
   g.warm(0.4, r)
+  if g[0].numberType is float32: CT = 3e-3
 
   test "topo":
     const rl = [

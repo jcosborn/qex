@@ -5,6 +5,8 @@ import stdUtils
 import os, strutils, sequtils, std/monotimes
 export monotimes
 
+const noTicToc {.boolDefine.} = false
+
 type TicType* = distinct int64
 template getTics*: TicType = TicType(getMonoTime().ticks)
 template nsec*(t:TicType):int64 = int64(t)
@@ -278,7 +280,10 @@ proc recordTic(this:CodePoint):RTInfo =
   rtiStack[n].childrenOverhead = 0
   RTInfo(n)
 
-template ticI(n = -1; s:SString = ""): untyped =
+proc echoTic*(s: string, ii: II) =
+  echo "tic ",s,ii
+
+template ticI(n = -1; s:SString = "") =
   bind items
   const
     cname = compiles(static[string](s))
@@ -295,7 +300,7 @@ template ticI(n = -1; s:SString = ""): untyped =
       thisCode = CodePoint(-1)
   if threadNum==0:
     #echo "#### begin tic ",ii
-    if unlikely VerboseTimer: echo "tic ",s,ii
+    if unlikely VerboseTimer: echoTic(s,ii)
     if not timersFrozen():
       let theTime = getTics()
       when not cname:
@@ -318,10 +323,19 @@ template ticI(n = -1; s:SString = ""): untyped =
     localTimerStart {.inject, used.} = localTimer
     localTic {.inject, used.} = prevRTI
 
-template tic*(n = -1; s:SString = ""): untyped = ticI(n-1,s)
-template tic*(s:SString = ""): untyped = ticI(-2,s)
+when noTicToc:
+  template tic*() = discard
+  template tic*(n: int) = discard
+  template tic*(s: SString) = discard
+  template tic*(n: int; s: SString) = discard
+else:
+  template tic*(n = -1; s:SString = "") = ticI(n-1,s)
+  template tic*(s:SString = "") = ticI(-2,s)
 
-template tocI(f: SomeNumber; s:SString = ""; n = -1): untyped =
+proc echoToc*(s: string, ii: II) =
+  echo "toc ",s,ii
+
+template tocI(f: SomeNumber; s:SString = ""; n = -1) =
   bind items
   const
     cname = compiles(static[string](s))
@@ -336,7 +350,7 @@ template tocI(f: SomeNumber; s:SString = ""; n = -1): untyped =
     #echo "==== begin toc ",s," ",ii
     #echo "     rtiStack: ",indent($rtiStack,5)
     #echo "     cpHeap: ",indent($cpHeap,5)
-    if unlikely VerboseTimer: echo "toc ",s,ii
+    if unlikely VerboseTimer: echoToc(s,ii)
     if prevRTI.int32 >= 0:
       if restartTimer:
         thawTimers()
@@ -371,14 +385,25 @@ template tocI(f: SomeNumber; s:SString = ""; n = -1): untyped =
         prevRTI = thisRTI
     #echo "==== end toc ",s," ",ii
 
-template toc*(s:SString = ""; n = -1; flops:SomeNumber):untyped = tocI(flops, s, n-1)
-template toc*(n = -1; flops:SomeNumber):untyped = tocI(flops, "", n-1)
-template toc*(s:SString; n:int):untyped = tocI(0, s, n-1)
-template toc*(s:SString):untyped = tocI(0, s, -2)
-template toc*(n:int):untyped = tocI(0, "", n-1)
-template toc*():untyped = tocI(0, "", -2)
+when noTicToc:
+  template toc*() = discard
+  template toc*(n:int) = discard
+  template toc*(s:SString) = discard
+  template toc*(s:SString, n:int) = discard
+  template toc*(n:int, flops:SomeNumber) = discard
+  template toc*(s:SString = "", n = -1, flops:SomeNumber) = discard
+else:
+  template toc*(s:SString = ""; n = -1; flops:SomeNumber) = tocI(flops, s, n-1)
+  template toc*(n = -1; flops:SomeNumber) = tocI(flops, "", n-1)
+  template toc*(s:SString; n:int) = tocI(0, s, n-1)
+  template toc*(s:SString) = tocI(0, s, -2)
+  template toc*(n:int) = tocI(0, "", n-1)
+  template toc*() = tocI(0, "", -2)
 
-template getElapsedTime*: float = ticDiffSecs(getTics(), localTimerStart)
+when noTicToc:
+  template getElapsedTime*: float = 0.0
+else:
+  template getElapsedTime*: float = ticDiffSecs(getTics(), localTimerStart)
 
 proc reset(x:var RTInfoObj) =
   x.nsec = 0
@@ -543,7 +568,7 @@ proc totalOverhead(ts:List[RTInfoObj], initIx = 0):int64 =
   for j in initIx..<ts.len:
     result += ts[j].overhead + ts[j].childrenOverhead
 
-template echoTimers*(expandAbove = 0.0, expandDropped = true, aggregate = true):untyped =
+template echoTimers*(expandAbove = 0.0, expandDropped = true, aggregate = true) =
   ## Echo timers in the local scope, starting from the local tic, and below.
   ## Expand children timers if the proportion of the current work time is more than expandAbove.
   if threadNum==0:

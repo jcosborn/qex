@@ -494,7 +494,7 @@ template foldl*(f,n,op:untyped):untyped =
   r
 
 when isMainModule:
-  import rng
+  import rng, strutils
   proc runtest(v1,v2,sdAll,sdEven,sdOdd,s,m:any) =
     let g = s.g
     let lo = g[0].l

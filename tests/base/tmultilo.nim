@@ -51,6 +51,7 @@ suite "Multi-Layout test":
     rs1 = newRNGField(RngMilc6, lo1, 987654321)
     #rs2 = newRNGField(RngMilc6, lo2, 987654321)
     #rsX: RngMilc6  # workaround Nim codegen bug
+  if g1[0].numberType is float32: AT = 1e-8
 
   test "unit gauge":
     let

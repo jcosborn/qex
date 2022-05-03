@@ -150,6 +150,8 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
   dec sp.verbosity
   sp.usePrevSoln = false
   while r2 > r2stop:
+    sp.maxits = sp0.maxits - sp.iterations
+    if sp.maxits <= 0: break
     var d2e = 0.0
     threads:
       #s.eoReduce(t, x, m)
@@ -163,7 +165,7 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
         d2e = d2et
         #d2o = d2ot
     #echo "d2e: ", d2e, "  d2o: ", d2o
-    sp.r2req = sp0.r2req * b2 * m*m / d2e
+    sp.r2req = 0.99 * sp0.r2req * b2 * m*m / d2e
     toc("setup")
     s.solveEE(y, d, m, sp)
     toc("solveEE")

@@ -26,8 +26,8 @@ proc chkeq(x,y: auto): auto =
   let s = rs / type(rs)(r.simdLength * x.nrows * x.ncols)
   #echo md
   #echo mx
-  echo s
-  chkzero(s, 256*x.nrows)
+  #echo s
+  chkzero(s, 384*x.nrows)
 
 proc rsqrtPH_test(x: auto): auto =
   #echo x
@@ -36,6 +36,7 @@ proc rsqrtPH_test(x: auto): auto =
   var xa: type x
   xa := x.adj
   let y = xa * x
+  #let y = x.adj * x
   #let xa = x.adj
   #let y2 = xa * x
   #echo y2
@@ -46,20 +47,24 @@ proc rsqrtPH_test(x: auto): auto =
   let t = r * y * r
   var o: type(t)
   o := 1
-  echo "x: ", x.norm2
-  echo "y: ", y.norm2
-  echo "t: ", t.norm2
+  #echo "x: ", x.norm2
+  #echo "y: ", y.norm2
+  #echo "t: ", t.norm2
   chkeq(t, o)
 
 var rs: RngMilc6
 rs.seed(13, 987654321)
 
 suite "Test matrix rsqrtPH":
-  template trsqrtPH(T: typedesc) =
+  #template trsqrtPH(T: typedesc) =
+  proc trsqrtPH(T: typedesc) =
     var m: T
     for i in 0..<simdLength(m):
-      gaussian( masked(m,1 shl i), rs )
-      #gaussian( m[asSimd(i)], rs )
+      when type(m[0,0].re) is SomeFloat:
+        gaussian( m, rs )
+      else:
+        #gaussian( masked(m,1 shl i), rs )
+        gaussian( m[asSimd(i)], rs )
       #m := 1
     test("rsqrtPH " & $m.type):
       subtest rsqrtPH_test(m)
@@ -75,6 +80,10 @@ suite "Test matrix rsqrtPH":
       trsqrtPH(CM[4,t])
   doTest(float32)
   doTest(float64)
+  #doTest(SimdS1)
+  #doTest(SimdD1)
+  doTest(SimdS2)
+  doTest(SimdD2)
   doTest(SimdS4)
   doTest(SimdD4)
   doTest(SimdS8)

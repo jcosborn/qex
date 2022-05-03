@@ -51,9 +51,9 @@ var g = lo.newgauge
 #g.random r
 g.unit
 
-echo 6.0*g.plaq
-echo g.gaugeAction2 gc
-echo gc.actionA g
+echo "plaq: ", 6.0*g.plaq
+echo "gaugeAction2: ", g.gaugeAction2 gc
+echo "actionA: ", gc.actionA g
 
 var
   p = lo.newgauge
@@ -78,14 +78,14 @@ template rephase(g: typed) =
   threadBarrier()
   g.stagPhase
 
-proc olf(f: var any, v1: any, v2: any) =
+proc olf(f: var auto, v1: auto, v2: auto) =
   var t {.noInit.}: type(f)
   for i in 0..<v1.len:
     for j in 0..<v2.len:
       t[i,j] := v1[i] * v2[j].adj
   projectTAH(f, t)
 
-proc oneLinkForce(f: any, p: any, g: any) =
+proc oneLinkForce(f: auto, p: auto, g: auto) =
   let t = newTransporters(g, p, 1)
   for mu in 0..<g.len:
     discard t[mu] ^* p
@@ -95,7 +95,7 @@ proc oneLinkForce(f: any, p: any, g: any) =
     for i in f[mu].odd:
       f[mu][i] *= -1
 
-proc fforce(f: any) =
+proc fforce(f: auto) =
   tic()
   threads:
     g.rephase

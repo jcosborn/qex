@@ -226,15 +226,15 @@ proc gfLineMin(g: auto, gd: auto, t,t0: auto,
   #echo "eps: ", eps, "  ", m3
   toc("gfLineMin")
 
-proc moveFromZero(x: float, eps: float): float =
+proc moveFromZero(x: SomeFloat, eps: float): SomeFloat =
   result = x
   if abs(x)<eps:
     if x<0: result = -eps
     else: result = eps
 
-proc moveFromZero[T](x: T, e: float): T =
+proc moveFromZero[T](x: T, eps: float): T =
   for i in 0..<x.numNumbers:
-    result[i] = moveFromZero(x[i], e)
+    result[i] = moveFromZero(x[i], eps)
 
 proc overRelaxSu2(r: var auto, x: auto, i,j: int, o: float) =
   mixin rsqrt

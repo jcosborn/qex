@@ -296,9 +296,13 @@ template rsqrtPH*[T:Mat1](x: T): T =
 
 # x (x'x)^{-1/2}
 proc projectU*(r: var Mat1; x: Mat2) =
-  let t = x.adj * x
+  #let t = x.adj * x   # issues with gcc
+  let xa = x.adj
+  let t = xa * x
+  #echo "t: ", t
   var t2{.noInit.}: type(t)
   rsqrtPH(t2, t)
+  #echo "t2: ", t2
   mul(r, x, t2)
 
 # (d/dX') Tr(U'C+C'U) / 2 = (d/dX') Tr(X'CZ+C'XZ) / 2
@@ -339,11 +343,14 @@ proc projectUderiv*(r: var Mat1, x: Mat2, c: Mat3) =
 proc projectSU*(r: var Mat1; x: Mat2) =
   const nc = r.nrows
   var m{.noinit.}: type(r)
+  #echo "x: ", x
   m.projectU x
+  #echo "m: ", m
   var d = m.determinant    # already unitary: 1=|d
   let p = (1.0/float(-nc)) * atan2(d.im, d.re)
   d.re = cos p
   d.im = sin p
+  #echo "d: ", d
   r := d * m
 
 proc projectTAH*(r: var Mat1; x: Mat2) =
