@@ -27,6 +27,10 @@ template forwardFunc*(t: typedesc, f: untyped) {.dirty.} =
   template f*(x: t): untyped =
     mixin f
     f(x[])
+#template forwardFuncT*(t: typedesc, f: untyped) {.dirty.} =
+#  template f*[T](x: t[T]): untyped =
+#    mixin f
+#    f()
 
 
 type

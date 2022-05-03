@@ -210,6 +210,13 @@ template getNc*(x: AsMatrix): untyped = getNc(x[0,0])
 template getNs*(x: AsVector): untyped = getNs(x[0])
 template getNs*(x: AsMatrix): untyped = getNs(x[0,0])
 
+template simdLength*[T](x:typedesc[AsVector[T]]):untyped = simdLength(type(T))
+template simdLength*[I,T](x:typedesc[VectorArrayObj[I,T]]):untyped =
+  simdLength(type(T))
+template simdLength*[T](x:typedesc[AsMatrix[T]]):untyped = simdLength(type(T))
+template simdLength*[I,J,T](x:typedesc[MatrixArrayObj[I,J,T]]):untyped =
+  simdLength(type(T))
+
 template len*(x:MatrixRowObj):untyped = x.mat[].ncols
 template `[]`*(x:MatrixRowObj; i:int):untyped = x.mat[][x.rw,i]
 template `[]=`*(x:MatrixRowObj; i:int; y:untyped):untyped = x.mat[][x.rw,i] = y

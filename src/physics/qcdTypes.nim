@@ -97,28 +97,22 @@ type
   DLatticeHalfFermion* = Field[1,DHalfFermion]
   DLatticeHalfFermionV* = Field[VLEN,DHalfFermionV]
 
-#template `-`*(x: Adjointed[Dvec0]): untyped = -x[]
-#template `*`*(x: Adjointed[Dvec0], y: Dvec0): untyped = x[]*y
-#template `*`*(x: Dvec0, y: Adjointed[Dvec0]): untyped = x*y[]
-#template `:=`*(r: Adjointed, x: Adjointed) = r[] := x[]
-#template assign*(r: Adjointed, x: Adjointed) = r[] := x[]
-
-template simdLength*(x:typedesc[SColorMatrixV]):untyped =
-  mixin simdLength
-  simdLength(Svec0)
-template simdLength*(x:typedesc[SColorVectorV]):untyped = simdLength(Svec0)
+#template simdLength*(x:typedesc[SColorMatrixV]):untyped =
+#  mixin simdLength
+#  simdLength(Svec0)
+#template simdLength*(x:typedesc[SColorVectorV]):untyped = simdLength(Svec0)
 #template simdLength*(x:SColorVectorV):untyped = simdLength(Svec0)
 #template simdLength*(x:SColorMatrixV):untyped = simdLength(Svec0)
-template simdLength*(x:typedesc[DColorMatrixV]):untyped = simdLength(Dvec0)
-template simdLength*(x:typedesc[DColorVectorV]):untyped =
-  mixin simdLength
-  simdLength(Dvec0)
+#template simdLength*(x:typedesc[DColorMatrixV]):untyped = simdLength(Dvec0)
+#template simdLength*(x:typedesc[DColorVectorV]):untyped =
+#  mixin simdLength
+#  simdLength(Dvec0)
 #template simdLength*(x:DColorVectorV):untyped = simdLength(Dvec0)
 #template simdLength*(x:DColorMatrixV):untyped = simdLength(Dvec0)
-template simdLength*(x:AsComplex):untyped = simdLength(x.re)
+#template simdLength*(x:AsComplex):untyped = simdLength(x.re)
 #template simdLength*(x:Complex):untyped = simdLength(x.re)
-template simdLength*(x:AsMatrix):untyped = simdLength(x[0,0])
-template simdLength*(x:AsVector):untyped = simdLength(x[0])
+#template simdLength*(x:AsMatrix):untyped = simdLength(x[0,0])
+#template simdLength*(x:AsVector):untyped = simdLength(x[0])
 
 #template nVectors(x:SColorVectorV):untyped = 2*nc
 #template nVectors(x:SColorMatrixV):untyped = 2*nc*nc

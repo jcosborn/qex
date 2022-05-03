@@ -4,6 +4,19 @@ import stdUtils
 import metaUtils
 import strutils
 
+template has*[T](x: T, y: typedesc): bool =
+  mixin has
+  has(type T, y)
+
+template numberType*[T](x: T): untyped =
+  mixin numberType
+  numberType(type T)
+
+template simdLength*[T](x: T): untyped =
+  mixin numberType
+  simdLength(type T)
+
+
 #[
 macro makeCall(f: string, a: varargs[untyped]): untyped =
   result = newCall(ident(f.strVal))

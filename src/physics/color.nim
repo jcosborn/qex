@@ -1,4 +1,5 @@
 import base/wrapperTypes
+export wrapperTypes
 import maths/types
 import maths
 import simd/simdWrap
@@ -47,18 +48,54 @@ template `[]=`*(x: Color, i,j,y: typed): untyped =
   x[][i,j] = y
 ]#
 
-forwardFunc(Color, len)
-forwardFunc(Color, nrows)
-forwardFunc(Color, ncols)
-forwardFunc(Color, numberType)
-forwardFunc(Color, nVectors)
-forwardFunc(Color, simdType)
-forwardFunc(Color, simdLength)
-template numberType*[T](x: typedesc[Color[T]]): untyped = numberType(T)
-#template numNumbers*[T](x: typedesc[Color[T]]): untyped = numberType(T)
-template numNumbers*(x: Color): untyped = numNumbers(x[])
-template toSingle*[T](x: typedesc[Color[T]]): untyped =
-  Color[toSingle(type(T))]
+# forward from value to value
+template forwardVV(f: untyped) {.dirty.} =
+  template f*(x: Color): untyped =
+    mixin f
+    f(x[])
+# forward from value to type
+template forwardVT(f: untyped) {.dirty.} =
+  template f*[T](x: Color[T]): untyped =
+    mixin f
+    f(type T)
+# forward from type to type
+template forwardTT(f: untyped) {.dirty.} =
+  template f*[T](x: typedesc[Color[T]]): untyped =
+    mixin f
+    f(type T)
+# forward from type to type and wrap
+template forwardTTW(f: untyped) {.dirty.} =
+  template f*[T](x: typedesc[Color[T]]): untyped =
+    mixin f
+    Color[f(type T)]
+
+forwardVV(len)
+forwardVV(nrows)
+forwardVV(ncols)
+forwardVV(nVectors)
+forwardVV(simdType)
+#forwardVV(simdLength)
+forwardVV(getNs)
+forwardVV(numNumbers)
+
+forwardTT(len)
+forwardTT(nrows)
+forwardTT(ncols)
+forwardTT(nVectors)
+forwardTT(simdType)
+forwardTT(simdLength)
+forwardTT(getNs)
+forwardTT(numberType)
+
+forwardTTW(toSingle)
+forwardTTW(toDouble)
+
+template has*[T](x: typedesc[Color[T]], y: typedesc): bool =
+  mixin has
+  when T2 is Color:
+    true
+  else:
+    has(type T, y)
 
 template row*(x: Color, i: untyped): untyped =
   mixin row
@@ -66,10 +103,10 @@ template row*(x: Color, i: untyped): untyped =
 template setRow*(r: Color; x: Color2; i: untyped): untyped =
   setRow(r[], x[], i)
 
-template getNc*(x: Color): untyped =
-  when x[] is Mat1:
+template getNc*[T](x: Color[T]): untyped =
+  when T is Mat1:
     x[].nrows
-  elif x[] is Vec1:
+  elif T is Vec1:
     x[].len
   else:
     static:
@@ -78,8 +115,6 @@ template getNc*(x: Color): untyped =
       echo type(x).name
       qexExit 1
     0
-
-template getNs*(x: Color): untyped = getNs(x[])
 
 template binDDRet(fn,wr,T1,T2) =
   template fn*(x: T1, y: T2): untyped =
