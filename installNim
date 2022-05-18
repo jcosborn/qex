@@ -190,13 +190,14 @@ else
     esac
   fi
 fi
-cd csources && sh build.sh && cd ..
+#cd csources && sh build.sh && cd ..
 
-bin/nim c koch
-./koch boot -d:release
+#bin/nim c koch
+#./koch boot -d:release
 
-./koch tools
-./koch nimble
+#./koch tools
+#./koch nimble
+./build_all.sh
 
 if [ $ver = "stable" ]; then
   ver=`getVer nim`
