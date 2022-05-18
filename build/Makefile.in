@@ -1,0 +1,22 @@
+# Simple Makefile for QEX builds
+# Hands off build commands to the nimscript qex/build/Makefile.nims
+# This will then load config options from qexconfig.nims
+# Extra arguments to Nim can be provided in ARGS, e.g.
+#   make ARGS="--rangeChecks:on --assertions:on" <myprog>
+# or directly on the command line
+#   make -- --rangeChecks:on --assertions:on <myprog>
+# or
+#   make :--rangeChecks:on :--assertions:on <myprog>
+# run `make help` for more details and options
+
+NIM = @@NIM
+#ARGS = "-d:defPrec=S"
+
+runNim:
+	@echo "Passing build commands to qex/build/Makefile.nims"
+	$(NIM) qex/build/Makefile.nims $(ARGS) $(MAKECMDGOALS)
+
+%: runNim
+	@ # do nothing silently
+
+.PHONY: runNim

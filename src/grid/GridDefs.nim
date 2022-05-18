@@ -1,11 +1,16 @@
 import ospaths
 import io/qio
 
-const gridDir {.strdefine.} = getEnv("HOME") & "/lqcd/install/grid"
-const gridInc = gridDir / "include"
-{.passC: "-I" & gridInc.}
-{.passL: "-L" & gridDir & "/lib -lGrid -lz".}
-{.passC: "-diag-disable=469".}
+const gridDir {.strdefine.} = getHomeDir() & "/lqcd/install/grid"
+const gridPassC = "-I" & gridDir / "include"
+const gridPassL = "-L" & gridDir & "/lib -lGrid -lz"
+{.passC: gridPassC.}
+{.passL: gridPassL.}
+#{.passC: "-diag-disable=469".}
+static:
+  echo "Using Grid: ", gridDir
+  echo "Grid compile flags: ", gridPassC
+  echo "Grid link flags: ", gridPassL
 
 {.pragma: gh, header:"Grid/Grid.h".}
 
@@ -24,6 +29,8 @@ type
   GridPeriodicGimplR* {.importcpp:"Grid::PeriodicGimplR",gh.} = object
   GridWilsonLoops*[T] {.importcpp:"Grid::WilsonLoops",gh.} = object
   GridFermion*[T] {.importcpp:"'0::FermionField",gh,byref.} = object
+  GridNaiveStaggeredFermionR* {.
+    importcpp:"Grid::NaiveStaggeredFermionR",gh.} = object
   GridImprovedStaggeredFermionR* {.
     importcpp:"Grid::ImprovedStaggeredFermionR",gh.} = object
 

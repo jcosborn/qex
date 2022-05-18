@@ -13,6 +13,10 @@ template addrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
 template unsafeAddrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
 template toHex*(x: ptr typed): untyped = toHex(cast[ByteAddress](x))
 
+type
+  ConstInt* {.importc:"const int".} = object
+proc constCast*(x: ptr ConstInt): ptr cint {.importc:"(int *)",nodecl.}
+
 proc newSeqU*[T](n: int): seq[T] =
   result = newSeqOfCap[T](n)
   result.setLen(n)

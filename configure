@@ -1,16 +1,19 @@
-#!/bin/sh
+#!/bin/bash
 
 dir=`dirname $0`
-nim=`$dir/findNim`
-if [ "X`$nim`" = "X" ]; then
+
+if [ "X$NIM" = "X" ]; then
+  NIM=`$dir/build/findNim`
+fi
+if [ "X$NIM" = "X" ]; then
   #echo "Error: can't find Nim compiler 'nim'"
   #exit 1
   #echo "Installing Nim compiler 'nim'" 1>&2
   #dir=`dirname $0`
-  $dir/installNim stable
-  nim=`$dir/findNim`
+  $dir/build/installNim stable
+  NIM=`$dir/build/findNim`
 fi
 
-echo "Using Nim compiler: $nim"
-
-$nim $dir/configure.nims
+echo "Using Nim compiler: $NIM"
+echo "Runing: $NIM $dir/build/configure.nims ${@@Q}"
+$NIM $dir/build/configure.nims "$@"

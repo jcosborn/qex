@@ -9,8 +9,7 @@ import solvers/bicgstab
 import solvers/gcr
 import maths
 import quda/qudaWrapper
-when defined(gridDir):
-  import grid/GridDefs
+import grid/Grid
 
 proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   var sp = sp0
@@ -75,14 +74,14 @@ proc solveEE*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
       echo "solveEE(QUDA): ", sp.getStats
   of sbGrid:
     tic()
-    s.qudaSolveEE(r,x,m,sp)
-    toc("qudaSolveEE")
+    s.gridSolveEE(r,x,m,sp)
+    toc("gridSolveEE")
     sp.calls = 1
     sp.seconds = getElapsedTime()
-    let flopsquda = (s.g.len*4*72+60)*r.l.nEven*sp.iterations
-    sp.flops = flopsquda.float
+    let flops = (s.g.len*4*72+60)*r.l.nEven*sp.iterations
+    sp.flops = flops.float
     if sp0.verbosity>0:
-      echo "solveEE(QUDA): ", sp.getStats
+      echo "solveEE(Grid): ", sp.getStats
   #[
   else:  # remove?
     tic()

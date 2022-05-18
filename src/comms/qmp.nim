@@ -1,13 +1,17 @@
 import os
-#import macros
 
 when existsEnv("QMPDIR"):
-  const qmpDir = getEnv("QMPDIR")
+  const qmpDir {.strDefine.} = getEnv("QMPDIR")
 else:
-  const homeDir = getHomeDir()
-  const qmpDir = homeDir & "lqcd/install/qmp"
-{. passC: "-I" & qmpDir & "/include" .}
-{. passL: "-L" & qmpDir & "/lib -lqmp" .}
+  const qmpDir {.strDefine.} = getHomeDir() & "lqcd/install/qmp"
+const qmpPassC = "-I" & qmpDir & "/include"
+const qmpPassL* = "-L" & qmpDir & "/lib -lqmp"
+static:
+  echo "Using QMP: ", qmpDir
+  echo "QMP compile flags: ", qmpPassC
+  echo "QMP link flags: ", qmpPassL
+{. passC: qmpPassC .}
+{. passL: qmpPassL .}
 {. pragma: qmp, importc, header:"qmp.h" .}
 
 type QMP_status_t{.qmp.} = enum
