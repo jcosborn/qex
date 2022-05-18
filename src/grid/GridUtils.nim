@@ -1,6 +1,6 @@
 import qex
 import physics/qcdTypes
-import grid/Grid
+import grid/gridImpl
 
 proc `:=`*(r: var GridLatticeGaugeField, x0: openArray[Field]) =
   var x = cast[ptr UncheckedArray[type x0[0]]](unsafeaddr x0[0])
@@ -54,7 +54,7 @@ proc `:==`*(r: var GridFermion[GridImprovedStaggeredFermionR], x: Field) =
       #echo i, " ", l
   vectorizeFromLexOrdArray(scalardata, r)
 
-proc `:=`*(r0: var GridFermion[GridImprovedStaggeredFermionR], x: Field) =
+proc assignStag*(r0: var GridFermion, x: Field) =
   let r = addr r0
   let lo = x.l
   let nd = lo.nDim
@@ -69,7 +69,7 @@ proc `:=`*(r0: var GridFermion[GridImprovedStaggeredFermionR], x: Field) =
       subset = lo.getSubset("even")
     else:
       subset = lo.getSubset("odd")
-  echo subset
+  #echo subset
   #threads:
   block:
     {.emit:"using namespace Grid;".}
@@ -89,7 +89,12 @@ proc `:=`*(r0: var GridFermion[GridImprovedStaggeredFermionR], x: Field) =
       {.emit:["autoView(dst, ",r[],", CpuWrite);"].}
       {.emit:"pokeLocalSite(t, dst, c);".}
 
-proc `:=`*(r0: var Field, x0: var GridFermion[GridImprovedStaggeredFermionR]) =
+proc `:=`*(r0: var GridFermion[GridNaiveStaggeredFermionR], x: Field) =
+  assignStag(r0, x)
+proc `:=`*(r0: var GridFermion[GridImprovedStaggeredFermionR], x: Field) =
+  assignStag(r0, x)
+
+proc assignStag*(r0: var Field, x0: var GridFermion) =
   let r = addr r0
   let x = addr x0
   let lo = r0.l
@@ -105,7 +110,7 @@ proc `:=`*(r0: var Field, x0: var GridFermion[GridImprovedStaggeredFermionR]) =
       subset = lo.getSubset("even")
     else:
       subset = lo.getSubset("odd")
-  echo subset
+  #echo subset
   #threads:
   block:
     {.emit:"using namespace Grid;".}
@@ -123,3 +128,8 @@ proc `:=`*(r0: var Field, x0: var GridFermion[GridImprovedStaggeredFermionR]) =
         {.emit:"tr = t._internal._internal._internal[ic].real();".}
         {.emit:"ti = t._internal._internal._internal[ic].imag();".}
         r[]{i}[ic] := newComplex(tr,ti)
+
+proc `:=`*(r0: var Field, x0: var GridFermion[GridNaiveStaggeredFermionR]) =
+  assignStag(r0, x0)
+proc `:=`*(r0: var Field, x0: var GridFermion[GridImprovedStaggeredFermionR]) =
+  assignStag(r0, x0)

@@ -1,16 +1,19 @@
 import os
 import base/stdUtils
+import comms/qmp
 
-when existsEnv("QMPDIR"):
-  const qmpDir = getEnv("QMPDIR")
-else:
-  const qmpDir = getHomeDir() & "lqcd/install/qmp"
 when existsEnv("QIODIR"):
-  const qioDir = getEnv("QIODIR")
+  const qioDir {.strDefine.} = getEnv("QIODIR")
 else:
-  const qioDir = getHomeDir() & "lqcd/install/qio"
-{. passC: "-I" & qioDir & "/include" .}
-{. passL: "-L" & qioDir & "/lib -lqio -llime -L" & qmpDir & "/lib -lqmp" .}
+  const qioDir {.strDefine.} = getHomeDir() & "lqcd/install/qio"
+const qioPassC = "-I" & qioDir & "/include"
+const qioPassL* = "-L" & qioDir & "/lib -lqio -llime " & qmpPassL
+static:
+  echo "Using QIO: ", qioDir
+  echo "QIO compile flags: ", qioPassC
+  echo "QIO link flags: ", qioPassL
+{. passC: qioPassC .}
+{. passL: qioPassL .}
 {. pragma: qio, header: "qio.h" .}
 
 const
@@ -49,7 +52,8 @@ type
     length*: csize_t
 
 type
-  ConstInt* {.importc:"const int".} = cint
+  #ConstInt* {.importc:"const int".} = cint
+  #ConstInt* = cConst[cint]
   QIO_Layout* {.qio.} = object
     node_number*: proc (coords: ptr ConstInt): cint {.nimcall.}
     node_index*: proc (coords: ptr ConstInt): cint {.nimcall.}
@@ -117,7 +121,7 @@ proc QIO_open_write*(xml_file: ptr QIO_String; filename: cstring; volfmt: cint;
                      oflag: ptr QIO_Oflag): ptr QIO_Writer {.qio.}
 proc QIO_close_write*(`out`: ptr QIO_Writer): cint {.qio.}
 proc QIO_write*(wr:ptr QIO_Writer, record_info:ptr QIO_RecordInfo,
-    xml_record:ptr QIO_String, 
+    xml_record:ptr QIO_String,
     get:proc(buf:cstring, index:csize_t, count:cint, arg:pointer){.nimcall.},
     datum_size:csize_t, word_size:cint, arg:pointer):cint {.qio.}
 proc QIO_create_record_info*(recordtype:cint, lower:ptr cint,

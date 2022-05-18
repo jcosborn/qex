@@ -33,6 +33,19 @@ template forwardFunc*(t: typedesc, f: untyped) {.dirty.} =
 #    f()
 
 
+# indexing should return ref?
+# ???
+# template toSingleRaw*[T](x: T): untyped =
+#   ToSingle[T](v: noDeref(x))
+# template toSingle*(x: typed): untyped =
+#   mixin toSingle, toSingleImpl, isWrapper, asWrapper
+#   when isWrapper(x):
+#     asWrapper(x, toSingle(x[]))
+#   else:
+#     toSingleImpl(x)
+# template `[]`*(x: toSingle)
+
+
 type
   Deref[T] = distinct T
 template `[]`*[T](x: Deref[T]): untyped = (T(x))[]
@@ -48,6 +61,8 @@ template `[]`*(x: Deref, i,j: typed): untyped = x[][i,j]
 forwardFunc(Deref, len)
 forwardFunc(Deref, nrows)
 forwardFunc(Deref, ncols)
+forwardFunc(Deref, re)
+forwardFunc(Deref, im)
 
 #type
 #  AsVar*[T] = object
@@ -159,32 +174,19 @@ type
   #ToSingle*[T] = distinct T
   ToSingle*[T] = object
     v*:T
-template toSingleDefault*(xx: typed): untyped =
-  lets(x,xx):
-    when compiles(addr(x)):
-    #when compiles(unsafeAddr(x)):
-      #cast[ptr ToSingle[type(x)]](addr(x))[]
-      cast[ptr ToSingle[type(x)]](unsafeAddr(x))[]
-      #cast[ToSingle[type(x)]](x)
-    else:
-      #(ToSingle[type(x)])(x)
-      cast[ToSingle[type(x)]](x)
-      #cast[ToSingle[type(x)]]((var t=x; t.addr))
-template toSingle*(xx: not typedesc):untyped =
-  mixin isVector, isMatrix
-  lets(x,xx):
-    when compiles(toSingleImpl(x)):
-      toSingleImpl(x)
-    elif isComplex(x):
-      asComplex(toSingle(x[]))
-    elif isVector(x):
-      asVector(toSingle(x[]))
-    elif isMatrix(x):
-      asMatrix(toSingle(x[]))
-    elif x is SomeNumber:
-      float32(x)
-    else:
-      toSingleDefault(x)
+template toSingleX*[T](x: T): untyped =
+  ToSingle[T](v: x)
+template toSingle*(x: typed): untyped =
+  mixin toSingle, toSingleImpl, isWrapper, asWrapper
+  when isWrapper(x):
+    #static: echo "toSingle typed wrapper"
+    #dumpTree: x
+    asWrapper(x, toSingle(x[]))
+  else:
+    #static: echo "toSingle typed not wrapper"
+    #dumpTree: x
+    #(Masked[type(x)])(maskedObj(x,msk))
+    toSingleImpl(x)
 #template `[]`*[T](x:ToSingle[T]):untyped = cast[T](x)
 makeDeref(ToSingle, x.T)
 template `[]`*(x:ToSingle; i:SomeInteger):untyped = x[][i].toSingle
@@ -197,6 +199,7 @@ template declaredMatrix*(x:ToSingle):untyped = isMatrix(x[])
 template re*(x: ToSingle): untyped = toSingle(x[].re)
 template im*(x: ToSingle): untyped = toSingle(x[].im)
 template simdType*(x: ToSingle): untyped = simdType(x[])
+template numberType*(x: ToSingle): untyped = float32
 
 type
   #ToDouble*{.borrow: `.`.}[T] = distinct T
@@ -257,12 +260,12 @@ template declaredMatrix*(x:ToDouble):untyped = isMatrix(x[])
 template re*(x:ToDouble):untyped = toDouble(x[].re)
 template im*(x:ToDouble):untyped = toDouble(x[].im)
 template simdType*(x: ToDouble): untyped = simdType(x[])
-macro dump2(x: typed): auto =
-  result = newEmptyNode()
-  echo x.treerepr
-template numberType*(x: ToDouble): untyped =
-  dump2: x
-  numberType(x[])
+#macro dump2(x: typed): auto =
+#  result = newEmptyNode()
+#  echo x.treerepr
+template numberType*(x: ToDouble): untyped = float64
+  #dump2: x
+  #numberType(x[])
 
 
 template sameWrapper*(x: typedesc, y: typedesc): untyped =

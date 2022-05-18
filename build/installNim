@@ -15,9 +15,11 @@ usage() {
   echo " default stable|<version>|master|devel"
   echo "                            (set default version)"
   echo $s
-  echo "The default installation location is in '\$HOME/nim'."
+  echo "The installation location can be set with the environment variable"
+  echo "  NIMDIR (default '\$HOME/nim')"
   echo "This directory will be created if it does not already exist."
-  echo "It will also create symlinks in '\$HOME/bin' if that directory exists."
+  echo "It will also create symlinks from the directory sepcified in"
+  echo "  BINDIR (default '\$HOME/bin' if that directory exists)."
   echo $s
   exit
 }

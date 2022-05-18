@@ -1,12 +1,15 @@
-when defined gridDir:
-  import grid/GridDefs
-  export GridDefs
+template haveGrid*():bool = defined(gridDir)
 
-  import grid/Init
-  export Init
+when haveGrid():
 
-  import grid/GridUtils
-  export GridUtils
+  import grid/gridImpl
+  export gridImpl
 
-else:
-  discard
+else:  # put stubs here
+
+  import base
+  import layout
+  import physics/stagD
+
+  proc gridSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
+    qexError "Grid not compiled in (define gridDir)"
