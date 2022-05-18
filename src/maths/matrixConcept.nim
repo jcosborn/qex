@@ -239,17 +239,21 @@ template toSingle*[I,T](x: typedesc[VectorArrayObj[I,T]]): untyped =
   VectorArrayObj[I,toSingle(type(T))]
 template toSingle*[T](x: typedesc[AsVector[T]]): untyped =
   AsVector[toSingle(type(T))]
+template toSingleImpl*(x: VectorArrayObj): untyped =
+  mixin toSingleX
+  toSingleX(toDerefPtr x)
+template toSingleImpl*(x: MatrixArrayObj): untyped =
+  mixin toSingleX
+  toSingleX(toDerefPtr x)
 
 template toDouble*[I,T](x: typedesc[VectorArrayObj[I,T]]): untyped =
   mixin toDouble
   VectorArrayObj[I,toDouble(type(T))]
 template toDouble*[T](x: typedesc[AsVector[T]]): untyped =
   AsVector[toDouble(type(T))]
-
 template toDoubleImpl*(x: VectorArrayObj): untyped =
   mixin toDoubleX
   toDoubleX(toDerefPtr x)
-
 template toDoubleImpl*(x: MatrixArrayObj): untyped =
   mixin toDoubleX
   toDoubleX(toDerefPtr x)

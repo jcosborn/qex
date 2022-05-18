@@ -53,18 +53,18 @@ template noSimd*[T](x: typedesc[Simd[T]]): untyped =
 # no return value
 template p2(f: untyped) {.dirty.} =
   #template f*(x: var Simd, y: Simd2) =
-  template f*[T](x: var Simd[T], y: Simd2) =
+  template f*[T1,T2](x: var Simd[T1], y: Simd[T2]) =
     #static: echo "f Simd Simd"
     #static: echo "  ", x.type
     #static: echo "  ", y.type
     mixin f
     #f(x[], y[])
-    when numberType(T) is float64:
-      f(x[], y[].toDoubleImpl)
-    elif numberType(T) is float32:
+    when numberType(T1) is numberType(T2):
+      f(x[], doIndexed(y[]))
+    elif numberType(T1) is float32:
       f(x[], y[].toSingleImpl)
     else:
-      f(x[], y[])
+      f(x[], y[].toDoubleImpl)
 
 template p2s(f: untyped) {.dirty.} =
   template f*(x: var Simd, y: SomeNumber) =
@@ -115,9 +115,15 @@ template f1(f: untyped): untyped {.dirty.} =
     asSimd(f(x[]))
 
 template f2(f: untyped): untyped {.dirty.} =
-  template f*(x: Simd, y: Simd2): untyped =
+  template f*[T1,T2](x: Simd[T1], y: Simd[T2]): untyped =
     mixin f
-    asSimd(f(x[], y[]))
+    #static: echo numberType(T1), " ", numberType(T2)
+    when numberType(T1) is numberType(T2):
+      asSimd(f(x[], y[]))
+    elif numberType(T1) is float64:
+      asSimd(f(x[], y[].toDoubleImpl))
+    else:
+      asSimd(f(x[].toDoubleImpl, y[]))
 
 template f2s(f: untyped): untyped {.dirty.} =
   template f*(x: Simd, y: SomeNumber): untyped =
