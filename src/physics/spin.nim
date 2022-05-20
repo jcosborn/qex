@@ -260,6 +260,8 @@ const
 
 template I(x: typed): untyped =
   newImag(1)*x
+template mI(x: typed): untyped =
+  newImag(-1)*x
 
 proc spproj1p*(r: var auto, x: auto) =
   ## r: HalfFermion
@@ -290,7 +292,7 @@ template spproj4m*(x: auto): untyped = spprojmat4m * x
 #template spproj1p*(x: Spin): untyped =
 #  flattenCallArgs(spproj1pU, x)
 template spproj1p*(xx: Spin): untyped =
-  let x = xx[]
+  let x = toRef xx[]
   #let v = [ x[0]+I(x[3]), x[1]+I(x[2]) ]
   #spinVector(2, v)
   var v {.noInit.}: spinVector(2,evalType(x[0]))
@@ -311,7 +313,7 @@ template spproj4p*(xx: Spin): untyped =
   let v = [ x[0]+x[2], x[1]+x[3] ]
   spinVector(2, v)
 template spproj1m*(xx: Spin): untyped =
-  let x = xx[]
+  let x = toRef xx[]
   let v = [ x[0]-I(x[3]), x[1]-I(x[2]) ]
   spinVector(2, v)
 template spproj2m*(xx: Spin): untyped =
@@ -349,15 +351,15 @@ template sprecon4m*(x: Spin): untyped = spreconmat4m * x
 ]#
 
 template sprecon1p*(xx: Spin): untyped =
-  let x = xx[]
+  let x = toRef xx[]
   #let v = [ x[0], x[1], -I(x[1]), -I(x[0]) ]
   #spinVector(4, v)
   var v {.noInit.}: spinVector(4,evalType(x[0]))
   static: echo "sprecon1p: ", v.type
-  #v[0] = x[0]
-  #v[1] = x[1]
-  v[2] = -I(x[1])
-  #v[3] = -I(x[0])
+  v[0] = x[0]
+  v[1] = x[1]
+  v[2] = mI(x[1])
+  v[3] = mI(x[0])
   v
 template sprecon2p*(xx: Spin): untyped =
   let x = xx[]
@@ -372,11 +374,11 @@ template sprecon4p*(xx: Spin): untyped =
   let v = [ x[0], x[1], x[0], x[1] ]
   spinVector(4, v)
 template sprecon1m*(xx: Spin): untyped =
-  let x = xx[]
+  let x = toRef xx[]
   #let v = [ x[0], x[1], I(x[1]), I(x[0]) ]
   #spinVector(4, v)
-  type T = evalType(x[0])
-  var v {.noInit.}: spinVector(4,T)
+  #type T = evalType(x[0])
+  var v {.noInit.}: spinVector(4,evalType(x[0]))
   v[0] = x[0]
   v[1] = x[1]
   v[2] = I(x[1])
