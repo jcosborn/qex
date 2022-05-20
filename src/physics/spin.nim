@@ -25,7 +25,7 @@ template asVarWrapper*(x: Spin, y: typed): untyped =
   asVar(asSpin(y))
 #makeDeref(Spin, x.T)
 template `[]`*[T](x: Spin, i: T): untyped =
-  when T is Spin:
+  when T is Spin2:
     x[][i[]]
   elif T.isWrapper:
     #indexed(x, i)
@@ -35,8 +35,8 @@ template `[]`*[T](x: Spin, i: T): untyped =
     x[][i]
 template `[]`*(x: Spin, i,j: typed): untyped = x[][i,j]
 #template `[]=`*[T](x: Spin, i: T; y: typed) =
-proc `[]=`*[T](x: Spin, i: T; y: auto) =
-  when T is Spin:
+proc `[]=`*[T](x: var Spin, i: T; y: auto) =
+  when T is Spin2:
     x[][i[]] = y
   elif T.isWrapper:
     #indexed(x, i)
@@ -154,6 +154,8 @@ template spinVector*(x: static[int], a: untyped): untyped =
   #let t = asSpin(t1)
   #static: echo "spinVector2"
   #t
+template spinVector*[T](x: static[int], a: typedesc[T]): untyped =
+  asSpin(asVectorArray(x, type T))
 template spinMatrix*[T](x,y:static[int], a: untyped): untyped =
   const
     I:int = x
@@ -289,8 +291,13 @@ template spproj4m*(x: auto): untyped = spprojmat4m * x
 #  flattenCallArgs(spproj1pU, x)
 template spproj1p*(xx: Spin): untyped =
   let x = xx[]
-  let v = [ x[0]+I(x[3]), x[1]+I(x[2]) ]
-  spinVector(2, v)
+  #let v = [ x[0]+I(x[3]), x[1]+I(x[2]) ]
+  #spinVector(2, v)
+  var v {.noInit.}: spinVector(2,evalType(x[0]))
+  static: echo "spproj1p: ", v.type
+  v[0] = x[0]+I(x[3])
+  v[1] = x[1]+I(x[2])
+  v
 template spproj2p*(xx: Spin): untyped =
   let x = xx[]
   let v = [ x[0]-x[3], x[1]+x[2] ]
@@ -343,8 +350,15 @@ template sprecon4m*(x: Spin): untyped = spreconmat4m * x
 
 template sprecon1p*(xx: Spin): untyped =
   let x = xx[]
-  let v = [ x[0], x[1], -I(x[1]), -I(x[0]) ]
-  spinVector(4, v)
+  #let v = [ x[0], x[1], -I(x[1]), -I(x[0]) ]
+  #spinVector(4, v)
+  var v {.noInit.}: spinVector(4,evalType(x[0]))
+  static: echo "sprecon1p: ", v.type
+  #v[0] = x[0]
+  #v[1] = x[1]
+  v[2] = -I(x[1])
+  #v[3] = -I(x[0])
+  v
 template sprecon2p*(xx: Spin): untyped =
   let x = xx[]
   let v = [ x[0], x[1], x[1], -x[0] ]
@@ -359,8 +373,15 @@ template sprecon4p*(xx: Spin): untyped =
   spinVector(4, v)
 template sprecon1m*(xx: Spin): untyped =
   let x = xx[]
-  let v = [ x[0], x[1], I(x[1]), I(x[0]) ]
-  spinVector(4, v)
+  #let v = [ x[0], x[1], I(x[1]), I(x[0]) ]
+  #spinVector(4, v)
+  type T = evalType(x[0])
+  var v {.noInit.}: spinVector(4,T)
+  v[0] = x[0]
+  v[1] = x[1]
+  v[2] = I(x[1])
+  v[3] = I(x[0])
+  v
 template sprecon2m*(xx: Spin): untyped =
   let x = xx[]
   let v = [ x[0], x[1], -x[1], x[0] ]

@@ -73,6 +73,10 @@ createAsType(Vector)
 createAsType(Matrix)
 #createAsType(VarMatrix)
 
+template eval*[T](x: typedesc[AsVector[T]]): untyped = asVector(eval(type T))
+template eval*[T](x: typedesc[AsMatrix[T]]): untyped = asMatrix(eval(type T))
+
+
 #declareScalar(AsScalar)
 #declareScalar(AsVarScalar)
 #declareVector(AsVector)
@@ -159,9 +163,13 @@ template isWrapper*(x: array): untyped = false
 
 template `len`*(x:VectorArrayObj):untyped = x.I
 template `[]`*(x:VectorArrayObj):untyped = x.vec
-template `[]`*(x:VectorArrayObj; i:int):untyped = x.vec[i]
-template `[]`*(x:var VectorArrayObj; i:int):untyped = x.vec[i]
-template `[]=`*(x:VectorArrayObj; i:int, y:untyped):untyped = x.vec[i] = y
+template `[]`*(x:VectorArrayObj; i:int):untyped =
+  var vecIdx = toRef x.vec[i]
+  vecIdx
+#template `[]`*(x:var VectorArrayObj; i:int):untyped =
+#  toRef x.vec[i]
+template `[]=`*(x:VectorArrayObj; i:int, y:typed):untyped =
+  x.vec[i] := y
 template asVectorArray*[N:static[int],T](x: array[N,T]): untyped =
   #static: echo "asVectorArray"
   #let x_asVectorArray = xx
@@ -177,6 +185,8 @@ template asVectorArray*[N:static[int],T](x: array[N,T]): untyped =
   #let t = asVector(t1)
   #static: echo "asVectorArray2"
   #t
+template asVectorArray*[T](N:static[int], x: typedesc[T]): untyped =
+  asVector( VectorArrayObj[N,type(T)] )
 
 template `len`*(x:MatrixArrayObj):untyped = x.I
 template nrows*(x:MatrixArrayObj):untyped = x.I
@@ -185,7 +195,7 @@ template `[]`*(x:MatrixArrayObj):untyped = x.mat
 template `[]`*(x:MatrixArrayObj; i:Scalar):untyped = indexed(x, i[])
 template `[]`*(x:MatrixArrayObj; i,j:int):untyped = x.mat[i][j]
 template `[]`*(x:var MatrixArrayObj; i,j:int):untyped = x.mat[i][j]
-template `[]=`*(x:MatrixArrayObj; i,j:int, y:untyped):untyped = x.mat[i][j] = y
+template `[]=`*(x:MatrixArrayObj; i,j:int, y:typed):untyped = x.mat[i][j] = y
 template numberType*[T](x:AsVector[T]):untyped = numberType(type(T))
 template numberType*[T](x:AsMatrix[T]):untyped = numberType(type(T))
 template numberType*[T](x:typedesc[AsVector[T]]):untyped = numberType(type(T))
@@ -219,10 +229,13 @@ template simdLength*[I,J,T](x:typedesc[MatrixArrayObj[I,J,T]]):untyped =
 
 template len*(x:MatrixRowObj):untyped = x.mat[].ncols
 template `[]`*(x:MatrixRowObj; i:int):untyped = x.mat[][x.rw,i]
-template `[]=`*(x:MatrixRowObj; i:int; y:untyped):untyped = x.mat[][x.rw,i] = y
+template `[]=`*(x:MatrixRowObj; i:int; y:typed):untyped = x.mat[][x.rw,i] = y
 
 template isWrapper*(x: VectorArrayObj): untyped = false
 template isWrapper*(x: MatrixArrayObj): untyped = false
+
+template eval*[I,T](x: typedesc[VectorArrayObj[I,T]]): untyped =
+  VectorArrayObj[I,eval(type T)]
 
 #template isWrapper*(x: AsMatrix): untyped = true
 #template asWrapper*(x: AsMatrix, y: typed): untyped =
@@ -248,10 +261,10 @@ template toSingle*[T](x: typedesc[AsVector[T]]): untyped =
   AsVector[toSingle(type(T))]
 template toSingleImpl*(x: VectorArrayObj): untyped =
   mixin toSingleX
-  toSingleX(toDerefPtr x)
+  toSingleX(toRef x)
 template toSingleImpl*(x: MatrixArrayObj): untyped =
   mixin toSingleX
-  toSingleX(toDerefPtr x)
+  toSingleX(toRef x)
 
 template toDouble*[I,T](x: typedesc[VectorArrayObj[I,T]]): untyped =
   mixin toDouble
@@ -260,10 +273,10 @@ template toDouble*[T](x: typedesc[AsVector[T]]): untyped =
   AsVector[toDouble(type(T))]
 template toDoubleImpl*(x: VectorArrayObj): untyped =
   mixin toDoubleX
-  toDoubleX(toDerefPtr x)
+  toDoubleX(toRef x)
 template toDoubleImpl*(x: MatrixArrayObj): untyped =
   mixin toDoubleX
-  toDoubleX(toDerefPtr x)
+  toDoubleX(toRef x)
 
 #template masked*(x: AsMatrix, msk: typed): untyped =
 #  static: echo "masked AsMatrix"
@@ -289,19 +302,19 @@ template load1*(x: VectorArrayObj): untyped = x
 template load1*(xx: Vec1): untyped =
   mixin load1
   let x = xx
-  var r_load1V{.noInit.}: VectorArray[x.len,type(load1(x[0]))]
+  var r_load1V{.noInit.}: VectorArray[x.len,evalType(load1(x[0]))]
   assign(r_load1V, x)
   r_load1V
   #asVector(load1(x[]))
 template load1*(xx: AsVar[AsVector]):untyped =
   mixin load1
   lets(x,xx):
-    var r{.noInit.}:VectorArray[x.len,type(load1(x[0]))]
+    var r{.noInit.}:VectorArray[x.len,evalType(load1(x[0]))]
     assign(r, x)
     r
 template load1*(xx: Mat1): untyped =
   lets(x,xx):
-    var r_load1M{.noInit.}: MatrixArray[x.nrows,x.ncols,type(load1(x[0,0]))]
+    var r_load1M{.noInit.}: MatrixArray[x.nrows,x.ncols,evalType(load1(x[0,0]))]
     assign(r_load1M, x)
     r_load1M
 #template tmpvar1*(x:Vec1):untyped =
@@ -331,7 +344,7 @@ template setRow*(rr:var AsMatrix; xx:AsVector; ii:int): untyped =
 template column*(x:AsVector; i:int):untyped = x
 proc column*(x:AsMatrix; i:int):auto {.inline,noInit.} =
   const nr = x.nrows
-  var r{.noInit.}:VectorArray[nr,type(x[0,0])]
+  var r{.noInit.}:VectorArray[nr,evalType(x[0,0])]
   for j in 0..<nr:
     assign(r[j], x[j,i])
   r
@@ -434,7 +447,7 @@ makeMap1(neg)
 makeMap1(iadd)
 makeMap1(isub)
 
-setUnop(`-`,neg,Vec1,VectorArray[x.len,type(x[0])])
+setUnop(`-`,neg,Vec1,VectorArray[x.len,evalType(x[0])])
 
 #template assign*(x:Mat1; y:SomeNumber) =
 #  echo "test"
@@ -488,20 +501,20 @@ template makeMap2(op:untyped):untyped =
 makeMap2(add)
 makeMap2(sub)
 
-setBinop(`+`,add,Vec1,Sca2,VectorArray[x.len,type(x[0]+y)])
-setBinop(`-`,sub,Vec1,Sca2,VectorArray[x.len,type(x[0]-y)])
+setBinop(`+`,add,Vec1,Sca2,VectorArray[x.len,evalType(x[0]+y)])
+setBinop(`-`,sub,Vec1,Sca2,VectorArray[x.len,evalType(x[0]-y)])
 
-setBinop(`+`,add,Vec1,Vec2,VectorArray[x.len,type(x[0]+y[0])])
-setBinop(`-`,sub,Vec1,Vec2,VectorArray[x.len,type(x[0]-y[0])])
+setBinop(`+`,add,Vec1,Vec2,VectorArray[x.len,evalType(x[0]+y[0])])
+setBinop(`-`,sub,Vec1,Vec2,VectorArray[x.len,evalType(x[0]-y[0])])
 
-setBinop(`+`,add,Sca1,Mat2,MatrixArray[y.nrows,y.ncols,type(x+y[0,0])])
-setBinop(`-`,sub,Sca1,Mat2,MatrixArray[y.nrows,y.ncols,type(x-y[0,0])])
+setBinop(`+`,add,Sca1,Mat2,MatrixArray[y.nrows,y.ncols,evalType(x+y[0,0])])
+setBinop(`-`,sub,Sca1,Mat2,MatrixArray[y.nrows,y.ncols,evalType(x-y[0,0])])
 
-setBinop(`+`,add,Mat1,Sca2,MatrixArray[x.nrows,x.ncols,type(x[0,0]+y)])
-setBinop(`-`,sub,Mat1,Sca2,MatrixArray[x.nrows,x.ncols,type(x[0,0]-y)])
+setBinop(`+`,add,Mat1,Sca2,MatrixArray[x.nrows,x.ncols,evalType(x[0,0]+y)])
+setBinop(`-`,sub,Mat1,Sca2,MatrixArray[x.nrows,x.ncols,evalType(x[0,0]-y)])
 
-setBinop(`+`,add,Mat1,Mat2,MatrixArray[x.nrows,x.ncols,type(x[0,0]+y[0,0])])
-setBinop(`-`,sub,Mat1,Mat2,MatrixArray[x.nrows,x.ncols,type(x[0,0]-y[0,0])])
+setBinop(`+`,add,Mat1,Mat2,MatrixArray[x.nrows,x.ncols,evalType(x[0,0]+y[0,0])])
+setBinop(`-`,sub,Mat1,Mat2,MatrixArray[x.nrows,x.ncols,evalType(x[0,0]-y[0,0])])
 
 makeLevel2(mul, V, var Vec1, V, Vec2, S, Sca3)
 
@@ -519,18 +532,18 @@ makeLevel2(mul, M, var Mat1, M, Mat2, M, Mat3)
 #makeLevel2(op, M, Mat1, S, Sca2, V, Vec3)
 #makeLevel2(op, M, Mat1, V, Vec2, V, Vec3)
 #makeLevel2(op, M, Mat1, V, Vec2, M, Mat3)
-setBinop(mul,mul, Sca1,Vec2,VectorArray[getConst(y.len),type(x*y[0])])
+setBinop(mul,mul, Sca1,Vec2,VectorArray[getConst(y.len),evalType(x*y[0])])
 
-#setBinop(`*`,mul, Sca1,AsVector,VectorArray[y.len,type(x*y[0])])
-#setBinop(`*`,mul, float,Vec2,VectorArray[y.len,type(x*y[0])])
-#setBinop(`*`,mul, AsScalar,Vec2,VectorArray[y.len,type(x*y[0])])
-setBinop(`*`,mul, Sca1,Vec2,VectorArray[getConst(y.len),type(x*y[0])])
-setBinop(`*`,mul, Vec1,Sca2,VectorArray[x.len,type(x[0]*y)])
-setBinop(`*`,mul, Mat1,Vec2,VectorArray[x.nrows,type(x[0,0]*y[0])])
+#setBinop(`*`,mul, Sca1,AsVector,VectorArray[y.len,evalType(x*y[0])])
+#setBinop(`*`,mul, float,Vec2,VectorArray[y.len,evalType(x*y[0])])
+#setBinop(`*`,mul, AsScalar,Vec2,VectorArray[y.len,evalType(x*y[0])])
+setBinop(`*`,mul, Sca1,Vec2,VectorArray[getConst(y.len),evalType(x*y[0])])
+setBinop(`*`,mul, Vec1,Sca2,VectorArray[x.len,evalType(x[0]*y)])
+setBinop(`*`,mul, Mat1,Vec2,VectorArray[x.nrows,evalType(x[0,0]*y[0])])
 
-setBinop(`*`,mul, Sca1,Mat2,MatrixArray[y.nrows,y.ncols,type(x*y[0,0])])
-setBinop(`*`,mul, Mat1,Sca2,MatrixArray[x.nrows,x.ncols,type(x[0,0]*y)])
-setBinop(`*`,mul, Mat1,Mat2,MatrixArray[x.nrows,y.ncols,type(x[0,0]*y[0,0])])
+setBinop(`*`,mul, Sca1,Mat2,MatrixArray[y.nrows,y.ncols,evalType(x*y[0,0])])
+setBinop(`*`,mul, Mat1,Sca2,MatrixArray[x.nrows,x.ncols,evalType(x[0,0]*y)])
+setBinop(`*`,mul, Mat1,Mat2,MatrixArray[x.nrows,y.ncols,evalType(x[0,0]*y[0,0])])
 
 makeLevel2(imadd, V, var Vec1, S, Sca2, V, Vec3)
 #makeLevel2(imadd, V, AsVarVector, S, Sca2, V, Vec3)
@@ -563,7 +576,7 @@ proc trace*(r: var auto; x: Mat2) {.inline.} =
     let t = trace(x[i,i])
     iadd(r, t)
 proc trace*(x: Mat1): auto {.inline,noInit.} =
-  var t{.noInit.}: type(trace(x[0,0]))
+  var t{.noInit.}: evalType(trace(x[0,0]))
   #static: echo "trace"
   trace(t, x)
   t
@@ -593,14 +606,14 @@ proc norm2*(r:var auto; x:Vec2) {.inline.} =
   mixin norm2, iadd
   assign(r, 0)
   for i in 0..<x.len:
-    var t{.noInit.}:type(r)
+    var t{.noInit.}:evalType(r)
     norm2(t, x[i])
     iadd(r, t)
 #proc norm2*(r:var auto; x: AsVarVector) {.inline.} =
 #  mixin norm2, iadd
 #  assign(r, 0)
 #  for i in 0..<x.len:
-#    var t{.noInit.}:type(r)
+#    var t{.noInit.}:evalType(r)
 #    norm2(t, x[i])
 #    iadd(r, t)
 proc norm2*(r:var auto; x:Mat2) {.inline.} =
@@ -608,27 +621,27 @@ proc norm2*(r:var auto; x:Mat2) {.inline.} =
   assign(r, 0)
   for i in 0..<x.nrows:
     for j in 0..<x.ncols:
-      var t{.noInit.}:type(r)
+      var t{.noInit.}:evalType(r)
       norm2(t, x[i,j])
       iadd(r, t)
 proc norm2*(x:Vec1):auto {.inline,noInit.} =
-  var t{.noInit.}:type(norm2(x[0]))
+  var t{.noInit.}:evalType(norm2(x[0]))
   norm2(t, x)
   t
 #proc norm2*(x: AsVarVector): auto {.inline,noInit.} =
-#  var t{.noInit.}:type(norm2(x[0]))
+#  var t{.noInit.}:evalType(norm2(x[0]))
 #  norm2(t, x)
 #  t
 proc norm2*(x:Mat1):auto {.inline,noInit.} =
-  var t{.noInit.}:type(norm2(x[0,0]))
+  var t{.noInit.}:evalType(norm2(x[0,0]))
   norm2(t, x)
   t
 proc norm2X*(x:Vec1):auto {.inline,noInit.} =
-  var t{.noInit.}:type(norm2X(x[0]))
+  var t{.noInit.}:evalType(norm2X(x[0]))
   norm2(t, x)
   t
 proc norm2X*(x:Mat1):auto {.inline,noInit.} =
-  var t{.noInit.}:type(norm2X(x[0,0]))
+  var t{.noInit.}:evalType(norm2X(x[0,0]))
   norm2(t, x)
   t
 
@@ -643,7 +656,7 @@ template idot*(r: var Sca1; xx: Vec2; yy: Vec3) =
 template dot*(r: var Sca1; x: Vec2; y: Vec3) =
   r := 0
   idot(r, x, y)
-setBinop(dot, dot, Vec1, Vec2, type(dot(x[0],y[0])))
+setBinop(dot, dot, Vec1, Vec2, evalType(dot(x[0],y[0])))
 
 proc dot*(x: Mat2; y: Mat3): auto {.inline,noInit.} =
   result = dot(x[0,0],y[0,0])
@@ -678,8 +691,8 @@ proc dot*(x: Mat2; y: Mat3): auto {.inline,noInit.} =
 #        redotinc(tr, x[i,k], y[i,k])
 #    assign(r, tr)
 
-#setBinop(redot, redot, Vec1, Vec2, type(redot(x[0],y[0])))
-#setBinop(redot, redot, Mat1, Mat2, type(redot(x[0,0],y[0,0])))
+#setBinop(redot, redot, Vec1, Vec2, evalType(redot(x[0],y[0])))
+#setBinop(redot, redot, Mat1, Mat2, evalType(redot(x[0,0],y[0,0])))
 
 proc redot*(x:Vec2; y:Vec3): auto {.inline,noInit.} =
   result = redot(x[0],y[0])
@@ -695,12 +708,12 @@ proc redot*(x: Mat2; y: Mat3): auto {.inline,noInit.} =
       result += redot(x[i,j],y[i,j])
 
 proc simdSum*(x: Vec1): auto {.noInit.} =
-  var r{.noInit.}: VectorArray[x.len,type(simdSum(x[0]))]
+  var r{.noInit.}: VectorArray[x.len,evalType(simdSum(x[0]))]
   forO i, 0, x.len.pred:
     r[i] := simdSum(x[i])
   r
 proc simdSum*(x: Mat1): auto {.noInit.} =
-  var r{.noInit.}: MatrixArray[x.ncols,x.nrows,type(simdSum(x[0,0]))]
+  var r{.noInit.}: MatrixArray[x.ncols,x.nrows,evalType(simdSum(x[0,0]))]
   forO i, 0, x.ncols.pred:
     forO j, 0, x.nrows.pred:
       r[i,j] := simdSum(x[i,j])
@@ -714,7 +727,7 @@ proc simdSum*(r: var auto; x: Mat2) {.inline.} =
     for j in 0..<r.ncols:
       r[i,j] := simdSum(x[i,j])
 proc simdSum*(x: Mat1): auto {.inline,noInit.} =
-  var t{.noInit.}: MatrixArray[x.nrows,x.ncols,type(simdSum(x[0,0]))]
+  var t{.noInit.}: MatrixArray[x.nrows,x.ncols,evalType(simdSum(x[0,0]))]
   #static: echo "trace"
   simdSum(t, x)
   t

@@ -18,8 +18,10 @@ type
   ComplexT*[T] = ComplexTT[T,T]
   ComplexType*[T] = ComplexT[T]
 
+template complexObj*[TR,TI](x: typedesc[TR], y: typedesc[TI]): untyped =
+  ComplexObj[typeof(TR),typeof(TI)]
 template newComplexObj*[TR,TI](x: TR, y: TI): untyped =
-  ComplexObj[type(TR),type(TI)](reX: x, imX: y)
+  ComplexObj[typeof(TR),typeof(TI)](reX: x, imX: y)
 
 template newRealImpl*(x: typed): untyped = x
 template newImagImpl*(x: typed): untyped = newImagProxy(x)
@@ -136,9 +138,12 @@ template load1*(x: ImagProxy): untyped = x
 #  let er = eval(x.re)
 #  let ei = eval(x.im)
 #  ComplexObj2[type(er),type(ei)](reX: er, imX: ei)
-template eval*(xx: ComplexProxy): untyped =
-  let x = xx[]
-  newComplex(eval(x.re),eval(x.im))
+#template eval*(xx: ComplexProxy): untyped =
+#  let x = xx[]
+#  newComplex(eval(x.re),eval(x.im))
+template eval*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): untyped =
+  mixin eval
+  complexObj(eval(typeof TR), eval(typeof TI))
 
 template map*(xx: ComplexProxy; f: untyped): untyped =
   #let fr = f(x.re)

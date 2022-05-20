@@ -3,10 +3,31 @@ import ../maths/types
 #import ../maths/complexNumbers
 #export complexNumbers
 
-makeWrapperType(Simd)
+#makeWrapperType(Simd)
+makeWrapperF({wfDeref}, Simd)
 type
   Simd2*[T] = Simd[T]
   Simd3*[T] = Simd[T]
+
+template `[]`*[T](x: Simd[T]): untyped =
+  when T is (RefWrap|ptr):
+    derefXX(x)[]
+  else:
+    derefXX(x)
+#template `[]`*[T](x: typedesc[Simd[T]]): untyped =
+#  static: echo "x: ", x, " []: ", T.type
+#  when T is (RefWrap|ptr):
+#    T.type[]
+#  else:
+#    T.type
+template `[]`*[T](x: typedesc[Simd[T]]): untyped =
+    T.type
+template `[]`*[T](x: typedesc[Simd[RefWrap[T]]]): untyped =
+    T.type[]
+
+# assume these don't have any lazy evaluations
+template eval*[T](x: typedesc[Simd[T]]): untyped =
+  asSimd(typeof(T))
 
 template `[]`*(x: Simd, i: typed): untyped =
   when i is Simd:

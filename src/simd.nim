@@ -12,8 +12,11 @@ import base/stdUtils
 import simd/simdArray
 export simdArray
 
-template msa(T,N,F: untyped) {.dirty,used.} =
-  makeSimdArray(`T Obj`, N, F)
+#template msa(T,N,F: untyped) {.dirty,used.} =
+template msa(T: untyped, N: static[int], F: typedesc) {.dirty,used.} =
+  static: echo "msa: ", N, " ", F.type
+  #makeSimdArray(`T Obj`, N, F)
+  makeSimdArray(N, F, `T Obj`)
   type T* = Simd[`T Obj`]
   #template `T Array` = discard
   type `T Array`* = `T Obj`

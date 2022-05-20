@@ -223,16 +223,28 @@ discard """
 #type SimdArrayObj*[L,B] = object
 #  v*: array[L,B]
 
+template arrayType[T](N: typed, x: typedesc[T]): untyped =
+  type B {.gensym.} = T.type
+  #static: echo "arrayType: ", N, " ", B
+  array[N,B]
 # T = Simd{S,D}{L} = array[L,B]
 # B ~ array[N0,F]
-template makeSimdArray*(T:untyped;L,B:typed):untyped {.dirty.} =
-  makeSimdArray2(T, L, B, numberType(B), numNumbers(B), L*numNumbers(B))
-template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
-  bind map011, map021, map110, map120, map130
+#template makeSimdArray*(T:untyped;L:typed;B:typedesc):untyped {.dirty.} =
+template makeSimdArray*(L:typed;B:typedesc;T:untyped) {.dirty.} =
+  static: echo "makeSimdArray: ", L, " ", B.type
+  #makeSimdArray2(T, L, type B, numberType(B), numNumbers(B), L*numNumbers(B))
+  makeSimdArray2(L, B, numberType(B), numNumbers(B), L*numNumbers(B), T)
+#template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
+#template makeSimdArray2*(T:untyped;L:typed;BB,F:typedesc;N0,N:typed):untyped {.dirty.} =
+template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
+  static: echo "makeSimdArray2: ", L, " ", B
+  bind map011, map021, map110, map120, map130, arrayType
   bind makePerm, makePackP, makePackM, makeBlendP, makeBlendM
+  #type B {.gensym.} = typeof(BB)
   #type T* = distinct array[L,B]
   type T* = object
-    v*: array[L,B]
+    #v*: array[L,B.type]
+    v*: arrayType(L,B)
   #type T* = SimdArrayObj[L,B]
   template isWrapper*(x:typedesc[T]): bool = false
   template isWrapper*(x:T): bool = false

@@ -46,6 +46,7 @@ template `[]`*[T](x:typedesc[ptr T]):untyped = T
 template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x
 template isWrapper*(x: SomeNumber): untyped = false
 template isWrapper*(x: typedesc[SomeNumber]): untyped = false
+template eval*[T:SomeNumber](x: typedesc[T]): untyped = typeof(T)
 
 template cnvrt(r,x):untyped = ((type(r))(x))
 template to*(x:auto; t:typedesc[SomeNumber]):untyped =

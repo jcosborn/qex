@@ -27,11 +27,13 @@ template forwardFunc*(t: typedesc, f: untyped) {.dirty.} =
   template f*(x: t): untyped =
     mixin f
     f(x[])
-#template forwardFuncT*(t: typedesc, f: untyped) {.dirty.} =
-#  template f*[T](x: t[T]): untyped =
-#    mixin f
-#    f()
+template forwardFunc2*(t: typedesc, f: untyped) {.dirty.} =
+  template f*(x: t, y: typed): untyped =
+    mixin f
+    f(x[], y)
 
+
+template evalType*[T](x: T): untyped = eval(type T)
 
 # indexing should return ref?
 # ???
@@ -47,22 +49,50 @@ template forwardFunc*(t: typedesc, f: untyped) {.dirty.} =
 
 
 type
-  Deref[T] = distinct T
-template `[]`*[T](x: Deref[T]): untyped = (T(x))[]
-template toDerefPtr*[T](x: T): untyped =
-  when T is ptr or T is ref:
+  #RefWrap[T] = distinct T
+  RefWrap*[T] = object
+    fRef*: T
+#template `[]`*[T](x: RefWrap[T]): untyped = (T(x))[]
+template `[]`*[T](x: RefWrap[T]): untyped =
+  x.fRef[]
+template `[]=`*[T](x: RefWrap[T], y: typed) =
+  x.fRef[] = y
+template refWrap*[T](x: T): untyped =
+  #RefWrap[type T](x)
+  RefWrap[type T](fRef:x)
+template toRef*[T](x: T): untyped =
+  mixin isWrapper, asWrapper
+  when T is RefWrap:
     x
+  elif isWrapper(T):
+    asWrapper(T, toRef(x[]))
+  elif T is ptr or T is ref:
+    refWrap(x)
   elif compiles(unsafeAddr x):
-    Deref[ptr T](unsafeAddr x)
+    refWrap(unsafeAddr x)
   else:
     x
-template `[]`*(x: Deref, i: typed): untyped = x[][i]
-template `[]`*(x: Deref, i,j: typed): untyped = x[][i,j]
-forwardFunc(Deref, len)
-forwardFunc(Deref, nrows)
-forwardFunc(Deref, ncols)
-forwardFunc(Deref, re)
-forwardFunc(Deref, im)
+template isWrapper*(x: RefWrap): untyped = false
+template isWrapper*(x: typedesc[RefWrap]): untyped = false
+template `[]`*(x: RefWrap, i: typed): untyped = x[][i]
+template `[]`*(x: RefWrap, i,j: typed): untyped = x[][i,j]
+template eval*[T](x: typedesc[RefWrap[T]]): untyped = (type T)[]
+forwardFunc(RefWrap, len)
+forwardFunc(RefWrap, nrows)
+forwardFunc(RefWrap, ncols)
+forwardFunc(RefWrap, numberType)
+forwardFunc(RefWrap, re)
+forwardFunc(RefWrap, im)
+forwardFunc2(RefWrap, `re=`)
+forwardFunc2(RefWrap, `im=`)
+template assign*[T,U:SomeNumber](r: T, x: RefWrap[ptr U]) =
+  r := x[]
+template mul*[T,U:SomeNumber](x: RefWrap[ptr T], y: U): untyped =
+  x[] * y
+template mul*[T,U,V:SomeNumber](r: RefWrap[ptr T], x: U, y: V) =
+  r[] = x * y
+template imadd*[T,U,V:SomeNumber](r: RefWrap[ptr T], x: U, y: V) =
+  r[] += x * y
 
 #type
 #  AsVar*[T] = object
@@ -234,12 +264,12 @@ type
 #      toDoubleDefault(x)
 template toDoubleX*[T](x: T): untyped =
   ToDouble[T](v: x)
-template toDouble*(x: typed): untyped =
+template toDouble*[T](x: T): untyped =
   mixin toDouble, toDoubleImpl, isWrapper, asWrapper
   when isWrapper(x):
     #static: echo "toDouble typed wrapper"
     #dumpTree: x
-    asWrapper(x, toDouble(x[]))
+    asWrapper(T, toDouble(x[]))
   else:
     #static: echo "toDouble typed not wrapper"
     #dumpTree: x
@@ -266,7 +296,8 @@ template simdType*(x: ToDouble): untyped = simdType(x[])
 template numberType*(x: ToDouble): untyped = float64
   #dump2: x
   #numberType(x[])
-
+template toDoubleImpl*(x: RefWrap): untyped =
+  toDoubleX(x)
 
 template sameWrapper*(x: typedesc, y: typedesc): untyped =
   type(stripGenericParams(x)) is type(stripGenericParams(y))

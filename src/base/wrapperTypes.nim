@@ -16,6 +16,28 @@ template simdLength*[T](x: T): untyped =
   mixin numberType
   simdLength(type T)
 
+type
+  WrapperFlags* = enum
+    wfDeref,wfEval,wfIndex,  # set if type will provide own implementation
+    wfStorage,        # wrapper types
+    wfUnwrap,wfWrapApply,wfDollar, wfGet, wfTest
+  WFSet* = set[WrapperFlags]
+const wfNone* = WFSet({})
+type
+  Wrapper* = concept C
+    C.flags is WFSet
+  WrapperNone* = concept C
+    C.flags.card == 0
+  WrapperNotNone* = concept C
+    C.flags.card != 0
+  WrapperDeref* = concept C
+    wfDeref in C.flags
+  WrapperNotDeref* = concept C
+    wfDeref notin C.flags
+  WrapperStorage* = concept C
+    wfStorage in C.flags
+  WrapperNotStorage* = concept C
+    wfStorage notin C.flags
 
 #[
 macro makeCall(f: string, a: varargs[untyped]): untyped =
@@ -112,7 +134,7 @@ macro makeWrapper*(t,s: untyped): untyped =
   result = getAst(makeWrapper2(t,s,xid))
 ]#
 
-template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
+template makeWrapperTypeX(wf:WFSet, name,fName,asName,tasName: untyped) =
   type
     name*[T] = object # ## wrapper type
       fName*: T
@@ -121,7 +143,7 @@ template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
   #proc tasName*[T](x: T): name[T] {.inline,noInit.} =
   #  result.fName = x
   template asName*[T](x: T): untyped =
-    name[T](fName: x)
+    name[type T](fName: x)
     # ## wrap an object, x, as a $NAME type
     #lets(x,xx):
     #static: echo "asColor typed"
@@ -131,6 +153,8 @@ template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
     #name[type(tasName)](fName: tasName)
     #Color[type(x_asColor)](x_asColor)
     #Color(x_asColor)
+  template asName*[T](x: typedesc[T]): untyped =
+    name[type T]
   #  flattenCallArgs(tasName, x)
   #proc asName*[T](x: T): name[T] {.inline,noInit.} =
   #  result.fName = x
@@ -141,11 +165,12 @@ template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
   #template derefXX*(x: name): untyped =
   #  x.fName
   makeFieldGetter(name, derefXX, fName)
-  template `[]`*[T](x: typedesc[name[T]]): untyped = T
-  template `[]`*(x: name): untyped =
-    #static: echo "wrapper []"
-    #debugType: x
-    flattenCallArgs(derefXX, x)
+  when wfDeref notin wf:
+    template `[]`*[T](x: typedesc[name[T]]): untyped = T
+    template `[]`*(x: name): untyped =
+      #static: echo "wrapper []"
+      #debugType: x
+      flattenCallArgs(derefXX, x)
   template isWrapper*(x: name): untyped = true
   template isWrapper*(x: typedesc[name]): untyped = true
   template asWrapper*(x: name, y: typed): untyped =
@@ -153,14 +178,15 @@ template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
     #dumpTree: y
     asName(y)
 
-proc makeWrapperTypeP*(name: NimNode; docs: string): NimNode =
+proc makeWrapperTypeP*(name: NimNode; docs: string, wf: WFSet): NimNode =
   let Name = capitalizeAscii(name.repr)
   let aName = if Name[0..1]=="As": "a"&Name[1..^1]
               else: "as"&Name
   let fName = ident("f" & Name)
   let asName = ident(aName)
   let tasName = ident("t_" & aName)
-  result = getAst(makeWrapperTypeX(name,fName,asName,tasName))
+  let w = newLit(wf)
+  result = getAst(makeWrapperTypeX(w,name,fName,asName,tasName))
   #result = result.replaceComments(("$DOCS",docs),("$NAME",Name))
   #echo result.repr
 
@@ -170,8 +196,12 @@ macro makeWrapperType*(name,docs: untyped): untyped =
   var d: string
   when docs.type is string: d = docs
   else: d = $docs[0]
-  makeWrapperTypeP(name, d)
+  makeWrapperTypeP(name, d, wfNone)
 
 macro makeWrapperType*(name: untyped): untyped =
   let d = "wrapper type for " & $name & " objects"
-  makeWrapperTypeP(name, d)
+  makeWrapperTypeP(name, d, wfNone)
+
+macro makeWrapperF*(wf: static[WFSet], name: untyped): untyped =
+  let d = "wrapper type for " & $name & " objects"
+  makeWrapperTypeP(name, d, wf)

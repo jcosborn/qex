@@ -158,7 +158,11 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   binaryMixedVar(T, mul, mul)
   binaryMixedVar(T, divd, divd)
 
-  template iadd*(r: T; x:T) = add(r,r,x)
+  #template iadd*(r: T; x:T) = add(r,r,x)
+  template iadd*(r: T; x:T) =
+    let t = toRef r
+    #static: echo "iadd: ", $t.type
+    add(t[],t[],x)
   template isub*(r: T; x:T) = sub(r,r,x)
   template imul*(r: T; x:T) = mul(r,r,x)
   template idiv*(r: T; x:T) = divd(r,r,x)

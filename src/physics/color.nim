@@ -30,7 +30,7 @@ template `[]`*[T](x: Color, i: T): untyped =
 template `[]`*(x: Color, i,j: typed): untyped = x[][i,j]
 
 template `[]=`*[T](x: Color, i: T; y: typed) =
-  when T is Color:
+  when T is Color2:
     x[][i[]] = y
   elif T.isWrapper:
     #indexed(x, i)
@@ -90,9 +90,11 @@ forwardTT(numberType)
 forwardTTW(toSingle)
 forwardTTW(toDouble)
 
+template eval*[T](x: typedesc[Color[T]]): untyped = asColor(eval(type T))
+
 template has*[T](x: typedesc[Color[T]], y: typedesc): bool =
   mixin has
-  when T2 is Color:
+  when T2 is Color2:
     true
   else:
     has(type T, y)

@@ -43,6 +43,9 @@ macro `[]`*(x: ImagProxy{nkObjConstr}): auto =
   result = x[1][1]
   #echo result.treerepr
 
+template asComplexProxy*[T](x: T): untyped = ComplexProxy[type T](v: x)
+template asComplexProxy*[T](x: typedesc[T]): untyped = ComplexProxy[type T]
+
 template `[]`*(x: ComplexProxy): untyped = x.v
 macro `[]`*(x: ComplexProxy{nkObjConstr}): auto =
   #echo x.treerepr
@@ -71,6 +74,9 @@ template `[]=`*(x: ComplexProxy, y: typed): untyped =
   #  x.v = y
   #else:
     x.v := y
+
+template eval*[T](x: typedesc[ComplexProxy[T]]): untyped =
+  asComplexProxy(eval(type T))
 
 proc `$`*(x: RealProxy): string =
   result = $x[]
@@ -126,10 +132,10 @@ template im*(x: ImagProxy): untyped = x[]
 template re*(x: ComplexProxy): untyped = x[].re
 template im*(x: ComplexProxy): untyped = x[].im
 
-template `re=`*(x: RealProxy, y: untyped) = x[] = y
-template `im=`*(x: RealProxy, y: untyped) = discard
-template `re=`*(x: ImagProxy, y: untyped) = discard
-template `im=`*(x: ImagProxy, y: untyped) = x[] = y
+template `re=`*(x: RealProxy, y: typed) = x[] = y
+template `im=`*(x: RealProxy, y: typed) = discard
+template `re=`*(x: ImagProxy, y: typed) = discard
+template `im=`*(x: ImagProxy, y: typed) = x[] = y
 template `re=`*(x: ComplexProxy, y: typed) = x[].re = y
 template `im=`*(x: ComplexProxy, y: typed) = x[].im = y
 
