@@ -44,6 +44,8 @@ suite "Test Gauge Fixing":
       g2.random rnd
       t1.randomU rnd
       t2 := t1.adj
+    echo "t1: ", t1.norm2
+    echo "t2: ", t2.norm2
     let p0 = g.plaq
     g1.gaugeTransform(g, t1)
     let p1 = g1.plaq

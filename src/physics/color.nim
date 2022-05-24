@@ -217,14 +217,20 @@ template z2*(x: var Color, r: var untyped) =
   z2(x[], r)
 template u1*(x: var Color, r: var untyped) =
   u1(x[], r)
+template projectU*(r: var Color) =
+  projectU(r[])
 template projectU*(r: var Color, x: Color2) =
   projectU(r[], x[])
 template projectUderiv*(r: var Color, u: Color2, x: Color3, chain: Color4) =
   projectUderiv(r[], u[], x[], chain[])
 template projectUderiv*(r: var Color, x: Color3, chain: Color4) =
   projectUderiv(r[], x[], chain[])
+template projectSU*(r: var Color) =
+  projectSU(r[])
 template projectSU*(r: var Color, x: Color2) =
   projectSU(r[], x[])
+template projectTAH*(r: var Color) =
+  projectTAH(r[])
 template projectTAH*(r: var Color, x: Color2) =
   projectTAH(r[], x[])
 template checkU*(x: Color):untyped = checkU(x[])

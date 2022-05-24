@@ -299,11 +299,15 @@ proc projectU*(r: var Mat1; x: Mat2) =
   #let t = x.adj * x   # issues with gcc
   let xa = x.adj
   let t = xa * x
-  #echo "t: ", t
-  var t2{.noInit.}: type(t)
+  var t2{.noInit.}: evalType(t)
   rsqrtPH(t2, t)
-  #echo "t2: ", t2
   mul(r, x, t2)
+  #echo "t: ", t.norm2, "  t2: ", t2.norm2, "  r: ", r.norm2
+
+template projectU*(r: var Mat1) =
+  var t{.noInit.}: evalType(r)
+  t := r
+  r.projectSU t
 
 # (d/dX') Tr(U'C+C'U) / 2 = (d/dX') Tr(X'CZ+C'XZ) / 2
 # = CZ - (1/2) < Z (X'C + C'X) Z (dY/dX') >
@@ -353,12 +357,20 @@ proc projectSU*(r: var Mat1; x: Mat2) =
   #echo "d: ", d
   r := d * m
 
+template projectSU*(r: var Mat1) =
+  r.projectSU r
+
 proc projectTAH*(r: var Mat1; x: Mat2) =
   r := 0.5*(x-x.adj)
   const nc = x.nrows
   when nc > 1:
     let d = r.trace / nc.float
     r -= d
+
+template projectTAH*(r: var Mat1) =
+  var t{.noInit.}: evalType(r)
+  t := r
+  r.projectTAH t
 
 proc checkU*(x: Mat1): auto {.inline, noinit.} =
   ## Returns the sum of deviations of x^dag x and det(x) from unitarity.
