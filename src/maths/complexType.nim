@@ -39,11 +39,6 @@ template asReal*(x: typed): untyped = newRealProxy(x)
 template asImag*(x: typed): untyped = newImagProxy(x)
 
 template isWrapper*(x: ComplexObj): untyped = false
-template isWrapper*(x: ComplexProxy): untyped = true
-template asWrapper*(x: ComplexProxy, y: typed): untyped =
-  newComplexProxy(y)
-template asVarWrapper*(x: ComplexProxy, y: typed): untyped =
-  asVar(newComplexProxy(y))
 
 template `[]`*[T](x: AsComplex, i: T): untyped =
   when T is AsComplex:
@@ -94,6 +89,9 @@ template numNumbers*(x: ComplexProxy): untyped =
 template simdType*[T](x: ComplexProxy[T]): untyped = simdType(T)
 template simdType*[T](x: type ComplexProxy[T]): untyped = simdType(T)
 template simdType*[TR,TI](x: ComplexObj[TR,TI]): untyped =
+  mixin simdType
+  simdType(TR)
+template simdType*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): untyped =
   mixin simdType
   simdType(TR)
 template simdLength*[TR,TI](x: ComplexObj[TR,TI]): untyped =

@@ -113,6 +113,15 @@ template toDoubleImpl*(x: SomeField): untyped =
 template evalType*[V,T](x: FieldUnop[foToSingle,Field[V,T]]): untyped =
   mixin toSingle
   Field2[V,toSingle(type(T))]
+template evalType*[V:static[int],T](x: Field[V,T]): untyped =
+  Field[V,eval(type T)]
+template evalType*[V:static[int],T](x: FieldObj[V,T]): untyped =
+  FieldObj[V,eval(type T)]
+
+template eval*[V:static[int],T](x: typedesc[Field[V,T]]): untyped =
+  Field[V,eval(type T)]
+template eval*[V:static[int],T](x: typedesc[FieldObj[V,T]]): untyped =
+  FieldObj[V,eval(type T)]
 
 proc new*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) =
   # remember to change newFieldArray if the following changes
@@ -579,7 +588,7 @@ proc dotP*(f1:SomeField; f2:SomeField2):auto =
   tic()
   mixin dot, idot, simdSum, items, toDouble, eval
   #var d:type(dot(f1[0],f2[0]))
-  var d:type(eval(toDouble(dot(f1[0],f2[0]))))
+  var d: evalType(toDouble(dot(f1[0],f2[0])))
   let t1 = f1
   let t2 = f2
   for x in items(t1):

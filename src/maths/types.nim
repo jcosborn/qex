@@ -47,7 +47,6 @@ template evalType*[T](x: T): untyped = eval(type T)
 #     toSingleImpl(x)
 # template `[]`*(x: toSingle)
 
-
 type
   #RefWrap[T] = distinct T
   RefWrap*[T] = object
@@ -71,7 +70,9 @@ template toRef*[T](x: T): untyped =
   elif compiles(unsafeAddr x):
     refWrap(unsafeAddr x)
   else:
-    x
+    #x
+    var tToRef = x
+    refWrap(addr tToRef)
 template isWrapper*(x: RefWrap): untyped = false
 template isWrapper*(x: typedesc[RefWrap]): untyped = false
 template `[]`*(x: RefWrap, i: typed): untyped = x[][i]
@@ -81,18 +82,32 @@ forwardFunc(RefWrap, len)
 forwardFunc(RefWrap, nrows)
 forwardFunc(RefWrap, ncols)
 forwardFunc(RefWrap, numberType)
+forwardFunc(RefWrap, simdType)
 forwardFunc(RefWrap, re)
 forwardFunc(RefWrap, im)
 forwardFunc2(RefWrap, `re=`)
 forwardFunc2(RefWrap, `im=`)
-template assign*[T,U:SomeNumber](r: T, x: RefWrap[ptr U]) =
-  r := x[]
+template assign*[T;U:SomeNumber](r: T, x: RefWrap[ptr U]) =
+  assign(r, x[])
 template mul*[T,U:SomeNumber](x: RefWrap[ptr T], y: U): untyped =
-  x[] * y
+  mul(x[], y)
 template mul*[T,U,V:SomeNumber](r: RefWrap[ptr T], x: U, y: V) =
-  r[] = x * y
+  mul(r[], x, y)
+template mul*[X:SomeNumber,R,Y](r: R, x: RefWrap[ptr X], y: Y) =
+  mul(r, x[], y)
 template imadd*[T,U,V:SomeNumber](r: RefWrap[ptr T], x: U, y: V) =
-  r[] += x * y
+  imadd(r[], x, y)
+
+template getPtr*[T](x: T): untyped =
+  when T is RefWrap:
+    x
+  elif T is ptr or T is ref:
+    x
+  elif compiles(unsafeAddr x):
+    unsafeAddr x
+  else:
+    var tGetPtr = x
+    addr tGetPtr
 
 #type
 #  AsVar*[T] = object

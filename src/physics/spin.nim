@@ -53,6 +53,16 @@ forwardFunc(Spin, numberType)
 forwardFunc(Spin, nVectors)
 forwardFunc(Spin, simdType)
 forwardFunc(Spin, simdLength)
+
+template eval*[T](x: typedesc[Spin[T]]): typedesc = asSpin(eval(type T))
+
+template has*[T](x: typedesc[Spin[T]], y: typedesc): bool =
+  mixin has
+  when T2 is Spin2:
+    true
+  else:
+    has(type T, y)
+
 template row*(x: Spin, i: typed): untyped =
   mixin row
   asSpin(row(x[],i))

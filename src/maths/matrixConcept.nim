@@ -164,8 +164,9 @@ template isWrapper*(x: array): untyped = false
 template `len`*(x:VectorArrayObj):untyped = x.I
 template `[]`*(x:VectorArrayObj):untyped = x.vec
 template `[]`*(x:VectorArrayObj; i:int):untyped =
-  var vecIdx = toRef x.vec[i]
-  vecIdx
+  #var vecIdx = toRef x.vec[i]
+  #vecIdx
+  x.vec[i]
 #template `[]`*(x:var VectorArrayObj; i:int):untyped =
 #  toRef x.vec[i]
 template `[]=`*(x:VectorArrayObj; i:int, y:typed):untyped =
@@ -236,6 +237,8 @@ template isWrapper*(x: MatrixArrayObj): untyped = false
 
 template eval*[I,T](x: typedesc[VectorArrayObj[I,T]]): untyped =
   VectorArrayObj[I,eval(type T)]
+template eval*[I,J,T](x: typedesc[MatrixArrayObj[I,J,T]]): untyped =
+  MatrixArrayObj[I,J,eval(type T)]
 
 #template isWrapper*(x: AsMatrix): untyped = true
 #template asWrapper*(x: AsMatrix, y: typed): untyped =
@@ -335,12 +338,13 @@ template row*(x:AsMatrix; i:int):untyped =
 template setRow*(r:AsVector; x:AsVector; i:int):untyped =
   assign(r, x)
 #proc setRow*(r:var AsMatrix; x:AsVector; i:int) {.inline.} =
-template setRow*(rr:var AsMatrix; xx:AsVector; ii:int): untyped =
-  subst(r,rr,x,xx,i,ii,nc,_,j,_):
-    lets(xt,x,it,i):
-      const nc = getConst(r.ncols)
-      for j in 0..<nc:
-        assign(r[it,j], xt[j])
+template setRow*(r:AsMatrix; xx:AsVector; ii:int) =
+  block:
+    let xp = getPtr xx; template x:untyped = xp[]
+    let ip = getPtr ii; template i:untyped = ip[]
+    const nc = getConst(r.ncols)
+    for j in 0..<nc:
+      assign(r[i,j], x[j])
 template column*(x:AsVector; i:int):untyped = x
 proc column*(x:AsMatrix; i:int):auto {.inline,noInit.} =
   const nr = x.nrows
@@ -380,20 +384,6 @@ template makeLevel1T(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
     `f s1 s2`(r, x)
   template f*(r: t1, x: t2): untyped =
     flattenCallArgs(`f U`, r, x)
-  #[
-  template f*(rr:t1, xx:t2): untyped =
-    #dumpTree: `f s1 s2`
-    staticTraceBegin: `f s1 s2`
-    #echoTyped: rr
-    #echoTyped: xx
-    mixin `f s1 s2`
-    optimizeAst:
-      #subst(r,rr):
-      #lets(x,xx):
-      let x_makeLevel1T = xx
-      `f s1 s2`(rr, deref(x_makeLevel1T))
-    staticTraceEnd: `f s1 s2`
-  ]#
 template makeLevel1(f,s1,t1,s2,t2:untyped):untyped =
   makeLevel1T(f,s1,t1,s2,t2)
 
@@ -413,17 +403,6 @@ template makeLevel2T(f,s1,t1,s2,t2,s3,t3: untyped): untyped {.dirty.} =
   template f*(r: t1, x: t2, y: t3): untyped =
     #echoType: r
     flattenCallArgs(`f U`, r, x, y)
-  #[
-  template f*(rr:t1, xx:t2, yy:t3): untyped =
-    staticTraceBegin: `f s1 s2 s3`
-    optimizeAst:
-      #subst(r,rr,x,xx,y,yy):
-      #lets(xt,x,yt,y):
-      let x_makeLevel2T = xx
-      let y_makeLevel2T = yy
-      `f s1 s2 s3`(rr, x_makeLevel2T, y_makeLevel2T)
-    staticTraceEnd: `f s1 s2 s3`
-  ]#
 template makeLevel2(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
   makeLevel2T(f,s1,t1,s2,t2,s3,t3)
 
@@ -665,34 +644,6 @@ proc dot*(x: Mat2; y: Mat3): auto {.inline,noInit.} =
   forO i, 1, x.len.pred:
     forO j, 0, x.len.pred:
       result += dot(x[i,j],y[i,j])
-
-#proc iredot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
-#  subst(tr,_):
-#    assert(x.len == y.len)
-#    load2(tr, r)
-#    forO i, 0, x.len.pred:
-#      redotinc(tr, x[i], y[i])
-#    assign(r, tr)
-
-#proc redot*(r:var Sca1; x:Vec2; y:Vec3) {.inline.} =
-#  #mulSVV(r, x.adj, y)
-#  r := 0
-#  iredot(r, x, y)
-#proc redot*(rr:var Sca1; xx:Mat2; yy:Mat3) {.inline.} =
-#  subst(r,rr,x,xx,y,yy,tr,_,i,_,j,_,k,_):
-#    mixin mul, imadd, assign
-#    assert(x.nrows == y.nrows)
-#    assert(x.ncols == y.ncols)
-#    var tr = redot(x[0,0], y[0,0])
-#    forO j, 1, x.ncols.pred:
-#      redotinc(tr, x[0,j], y[0,j])
-#    forO i, 1, x.nrows.pred:
-#      forO k, 0, x.ncols.pred:
-#        redotinc(tr, x[i,k], y[i,k])
-#    assign(r, tr)
-
-#setBinop(redot, redot, Vec1, Vec2, evalType(redot(x[0],y[0])))
-#setBinop(redot, redot, Mat1, Mat2, evalType(redot(x[0,0],y[0,0])))
 
 proc redot*(x:Vec2; y:Vec3): auto {.inline,noInit.} =
   result = redot(x[0],y[0])

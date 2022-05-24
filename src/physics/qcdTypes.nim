@@ -289,8 +289,9 @@ proc inorm2*(r:var SomeNumber; m:Masked[SDvec]) =
 #    prefetch(addr(x[][i]))
 
 #type PackTypes = SColorVectorV | SColorMatrixV | DColorVectorV | DColorMatrixV
-type PackTypes = auto
+#type PackTypes = auto
 #proc perm*[T](r:var T; prm:int; x:T) {.inline.} =
+#[
 template perm*[T](r0:var T; prm0:int; x0:T) =
   subst(n,_,rr,_,xx,_):
     lets(r,r0,prm,prm0,x,x0):
@@ -309,6 +310,23 @@ template perm*[T](r0:var T; prm0:int; x0:T) =
       of 4: loop(perm4)
       of 8: loop(perm8)
       else: discard
+]#
+template perm*[T](r:T; prm:int; x0:T) =
+  block:
+    let xp = getPtr x0; template x:untyped = xp[]
+    const n = x.numNumbers div x.simdLength
+    let rr = cast[ptr array[n,simdType(r)]](addr r)
+    let xx = cast[ptr array[n,simdType(x)]](addr x)
+    template loop(f:untyped):untyped =
+      when compiles(f(rr[0], xx[0])):
+        forStatic i, 0, n-1: f(rr[i], xx[i])
+    case prm
+    of 0: loop(assign)
+    of 1: loop(perm1)
+    of 2: loop(perm2)
+    of 4: loop(perm4)
+    of 8: loop(perm8)
+    else: discard
 template perm2*[T](r: var T; prm: int; x: T) =
   const n = x.nVectors
   let rr = cast[ptr array[n,simdType(r)]](r.addr)

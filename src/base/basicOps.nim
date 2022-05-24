@@ -159,11 +159,11 @@ template load1*(x:SomeNumber):untyped = x
 
 template tmpvar*(r:untyped; x:untyped):untyped =
   mixin load1
-  var r{.noInit.}:type(load1(x))
+  var r{.noInit.}:evalType(load1(x))
 template load2*(r:untyped, x:untyped):untyped =
   mixin load1,assign
   #tmpvar(r, x)
-  var r{.noInit.}:type(load1(x))
+  var r{.noInit.}:evalType(load1(x))
   assign(r, x)
 template store*(r:var untyped, x:untyped):untyped =
   mixin assign

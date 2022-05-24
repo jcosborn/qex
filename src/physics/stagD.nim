@@ -35,7 +35,7 @@ template initStagDT*(l:var Layout; T:typedesc; ss:string):untyped =
   sd
 
 proc initStagD*(x:Field; sub:string):auto =
-  result = initStagDT(x.l, type(x[0]), sub)
+  result = initStagDT(x.l, evalType(x[0]), sub)
 
 template initStagD3T*(l:var Layout; T:typedesc; ss:string):untyped =
   var sd:StaggeredD[T]
@@ -51,7 +51,7 @@ template initStagD3T*(l:var Layout; T:typedesc; ss:string):untyped =
   sd
 
 proc initStagD3*(x:Field; sub:string):auto =
-  result = initStagD3T(x.l, type(x[0]), sub)
+  result = initStagD3T(x.l, evalType(x[0]), sub)
 
 proc trace*(stag: Staggered, mass: float): float =
   let v = stag.g[0][0].ncols * stag.g[0].l.physVol
@@ -107,7 +107,7 @@ template stagDPN*(sd:openArray[StaggeredD]; r:openArray[Field];
       let i = lr64*nr + (lrr mod nn)
       #let ir = ns0 + (iri div n)
       #let i = iri mod n
-      var rir{.inject,noInit.}:type(load1(r[i][ir]))
+      var rir{.inject,noInit.}:evalType(load1(r[i][ir]))
       exp
       for mu in 0..<g.len:
         #if mu<g.len-1:
@@ -146,7 +146,7 @@ template stagDMN*(sd:openArray[StaggeredD]; r:openArray[Field];
     for i in 0..<n:
       startSB(sd[i].sb[mu], g[mu][ix].adj*x[i][ix])
   toc("startShiftB")
-  var rir{.inject,noInit.}:seq[type(load1(r[0][0]))]
+  var rir{.inject,noInit.}:seq[evalType(load1(r[0][0]))]
   rir.newSeq(n)
   for ir{.inject.} in r[sd.subset]:
     exp
@@ -180,7 +180,7 @@ template stagDP*(sd:StaggeredD; r:Field; g:openArray[Field2];
   toc("startShiftB")
   optimizeAst:
     for ir in r[sd.subset]:
-      var rir{.inject,noInit.}:type(load1(r[ir]))
+      var rir{.inject,noInit.}:evalType(load1(r[ir]))
       exp
       for mu in 0..<g.len:
         localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), load1(x[ix]))
@@ -227,7 +227,7 @@ template stagDP2*(sd:StaggeredD; r:Field; g:openArray[Field2];
     for ic{.inject.} in 0..<n:
     #forStatic ic, 0, n.pred:
     #  block:
-        var rir{.inject,noInit.}:type(getVec(r[ir],0))
+        var rir{.inject,noInit.}:evalType(getVec(r[ir],0))
         for mu in 0..<g.len:
           localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), getVec(x[ix],ic))
         for mu in 0..<g.len:
@@ -257,7 +257,7 @@ template stagDM*(sd:StaggeredD; r:Field; g:openArray[Field2];
   for irr in r[sd.subset]:
     optimizeAst:
       let ir{.inject.} = irr
-      var rir{.inject,noInit.}:type(load1(r[ir]))
+      var rir{.inject,noInit.}:evalType(load1(r[ir]))
       exp
       for mu in 0..<g.len:
         localSB(sd.sf[mu], ir, imsub(rir, g[mu][ir], it), load1(x[ix]))
@@ -302,7 +302,7 @@ proc stagD2*(sd:StaggeredD; r:SomeField; g:openArray[Field2];
   #tFor iri, 0, ns.pred:
   #  let ir = ns0 + iri
     XoptimizeAst:
-      var rir{.noInit.}:type(r[ir])
+      var rir{.noInit.}:evalType(r[ir])
       rir := a*r[ir] + b*x[ir]
       for mu in 0..<nd:
         localSB(sf0[mu], ir, imadd(rir, g[mu][ir], it), x[ix])
@@ -369,7 +369,7 @@ proc stagDb*(sd:StaggeredD; r:Field; g:openArray[Field2];
 proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
                x:Field; m2:SomeNumber) =
   tic()
-  var t{.global.}:type(x)
+  var t{.global.}:evalType(x)
   if t==nil:
     threadBarrier()
     if threadNum==0:
@@ -424,7 +424,7 @@ template stagPhase*(g:openArray[Field]) = stagPhase(g,[8,9,11,0])
 proc newStag*[G,T](g:openArray[G];v:T):auto =
   var l = g[0].l
   template t:untyped =
-    type(v[0])
+    evalType(v[0])
   var r:Staggered[G,t]
   r.se = initStagDT(l, t, "even")
   r.so = initStagDT(l, t, "odd")
@@ -434,7 +434,7 @@ proc newStag*[G,T](g:openArray[G];v:T):auto =
 proc newStag*[G](g:openArray[G]):auto =
   var l = g[0].l
   template t:untyped =
-    type(l.ColorVector()[0])
+    evalType(l.ColorVector()[0])
     #SColorVectorV
   var r:Staggered[G,t]
   r.se = initStagDT(l, t, "even")
@@ -445,7 +445,7 @@ proc newStag*[G](g:openArray[G]):auto =
 proc newStag3*[G](g:openArray[G]):auto =
   var l = g[0].l
   template t:untyped =
-    type(l.ColorVector()[0])
+    evalType(l.ColorVector()[0])
   var r:Staggered[G,t]
   r.se = initStagD3T(l, t, "even")
   r.so = initStagD3T(l, t, "odd")
@@ -454,11 +454,11 @@ proc newStag3*[G](g:openArray[G]):auto =
 proc newStag3*[G](g,g3:openArray[G]):auto =
   var l = g[0].l
   template t:untyped =
-    type(l.ColorVector()[0])
+    evalType(l.ColorVector()[0])
   var r:Staggered[G,t]
   r.se = initStagD3T(l, t, "even")
   r.so = initStagD3T(l, t, "odd")
-  var gg = newSeq[type(g[0])](0)
+  var gg = newSeq[evalType(g[0])](0)
   for i in 0..<g.len:
     gg.add g[i]
     gg.add g3[i]
@@ -484,7 +484,7 @@ proc eoReconstruct*(s:Staggered; r,b:Field; m:SomeNumber) =
   r.odd += b/m
 
 template foldl*(f,n,op:untyped):untyped =
-  var r:type(f(0))
+  var r:evalType(f(0))
   r = f(0)
   for i in 1..<n:
     let

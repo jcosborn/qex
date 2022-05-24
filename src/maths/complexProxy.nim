@@ -43,8 +43,28 @@ macro `[]`*(x: ImagProxy{nkObjConstr}): auto =
   result = x[1][1]
   #echo result.treerepr
 
+template asRealProxy*[T](x: T): untyped = RealProxy[type T](v: x)
+template asRealProxy*[T](x: typedesc[T]): untyped = RealProxy[type T]
+template asImagProxy*[T](x: T): untyped = ImagProxy[type T](v: x)
+template asImagProxy*[T](x: typedesc[T]): untyped = ImagProxy[type T]
 template asComplexProxy*[T](x: T): untyped = ComplexProxy[type T](v: x)
 template asComplexProxy*[T](x: typedesc[T]): untyped = ComplexProxy[type T]
+
+template isWrapper*(x: RealProxy): untyped = true
+template asWrapper*(x: RealProxy, y: typed): untyped =
+  asRealProxy(y)
+template asVarWrapper*(x: RealProxy, y: typed): untyped =
+  asVar(asRealProxy(y))
+template isWrapper*(x: ImagProxy): untyped = true
+template asWrapper*(x: ImagProxy, y: typed): untyped =
+  asImagProxy(y)
+template asVarWrapper*(x: ImagProxy, y: typed): untyped =
+  asVar(asImagProxy(y))
+template isWrapper*(x: ComplexProxy): untyped = true
+template asWrapper*(x: ComplexProxy, y: typed): untyped =
+  asComplexProxy(y)
+template asVarWrapper*(x: ComplexProxy, y: typed): untyped =
+  asVar(asComplexProxy(y))
 
 template `[]`*(x: ComplexProxy): untyped = x.v
 macro `[]`*(x: ComplexProxy{nkObjConstr}): auto =
