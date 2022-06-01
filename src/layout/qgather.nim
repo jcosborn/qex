@@ -1,10 +1,3 @@
-#const hdr = currentSourcePath()[0..^12] & "qlayout.h"
-#{. pragma: ql, header:hdr .}
-#{. passC:"-I." .}
-#{. compile:"qlayout.c" .}
-#{. compile:"qshifts.c" .}
-#{. compile:"qgather.c" .}
-
 import base
 import strutils
 import algorithm
@@ -12,28 +5,32 @@ import algorithm
 type
   GatherDescription* = object
     myRank*: cint
-    nIndices*: cint
-    srcRanks*: ptr cArray[cint]
-    srcIndices*: ptr cArray[cint]
-    nRecvDests*: cint
-    nSendIndices*: cint
-    sendSrcIndices*: ptr cArray[cint]
-    sendDestRanks*: ptr cArray[cint]
-    sendDestIndices*: ptr cArray[cint]
+    nIndices*: cint  # number of site indices on this rank
+    # recv data (this rank is dest)
+    srcRanks*: ptr cArray[cint]    # source rank for each local site
+    srcIndices*: ptr cArray[cint]  # source index for each local site
+    nRecvDests*: cint  # number of sites to recv
+    # send data (this rank is src)
+    nSendIndices*: cint  # number of sites to send
+    sendSrcIndices*: ptr cArray[cint]  # local index of site to send
+    sendDestRanks*: ptr cArray[cint]   # corresponding dest rank
+    sendDestIndices*: ptr cArray[cint] # corresponding dest index
 
   GatherIndices* = object
     gd*: ptr GatherDescription
     myRank*: cint
     nIndices*: cint
-    srcIndices*: ptr cArray[cint]
-    nRecvRanks*: cint
-    recvRanks*: ptr cArray[cint]
-    recvRankSizes*: ptr cArray[cint]
-    recvRankOffsets*: ptr cArray[cint]
-    recvSize*: cint
-    nRecvDests*: cint
-    recvDestIndices*: ptr cArray[cint]
-    recvBufIndices*: ptr cArray[cint]
+    # recv data (this rank is dest)
+    srcIndices*: ptr cArray[cint]  # source index, with (-bi-2) for buffer index bi
+    nRecvRanks*: cint  # number of ranks to receive from
+    recvRanks*: ptr cArray[cint]  # list of ranks to receive from
+    recvRankSizes*: ptr cArray[cint]  # number of sites to recv from rank
+    recvRankOffsets*: ptr cArray[cint]  # sum of previous recv sites
+    recvSize*: cint  # total sites received
+    nRecvDests*: cint  # number of local sites that get remote data
+    recvDestIndices*: ptr cArray[cint]  # local indices getting remote data
+    recvBufIndices*: ptr cArray[cint]  # recv buffer index of remote data
+    # send data (this rank is src)
     nSendRanks*: cint
     sendRanks*: ptr cArray[cint]
     sendRankSizes*: ptr cArray[cint]
@@ -42,20 +39,19 @@ type
     nSendIndices*: cint
     sendIndices*: ptr cArray[cint]
 
-  GatherMap* = proc(srcRank: ptr cint; srcIdx: ptr cint; dstRank: cint;
-                    dstIdx: ptr cint; args: pointer)
+  GatherMap* = proc(srcRank: var cint; srcIdx: var cint;
+                    dstRank: cint; dstIdx: var cint; args: pointer)
 
-#proc makeGatherFromGD*(gi: ptr GatherIndices; gd: ptr GatherDescription) {.
-#  importc,header:hdr.}
-
-# map(&sr,&si,dr>=0,&di>=0) -> sr,si
-# map(&sr>=0,&si,dr>=0,&di0<0) ->
+# map(sr,si,dr>=0,di>=0) -> sr,si
+# map(sr>=0,si,dr>=0,di0<0) ->
 #   si>=0 then (sr,si)->(dr,di) and di>=-(di0+1) is smallest such di
 #   si<0 if sr doesn't send to dr
 # each dest site has zero or one source sites
 # each source site can have any number of dest sites
-# map(&sr,&si,&dr>=0,&di>=0,dn<0) -> sr,si
-# map(&sr>=0,&si>=0,&dr,&di,dn>=0) -> dr,di for dest number dn
+
+### map(sr,si,dr>=0,di>=0,dn<0) -> sr,si
+### map(sr>=0,si>=0,dr,di,dn>=0) -> dr,di for dest number dn
+
 # GatherDescription
 # pass in myRank, nIndices, srcRanks, srcIndices, 
 #  nSendIndices, sendSrcIndices, sendDestRanks, sendDestIndices (not sorted)
@@ -70,6 +66,7 @@ type
 # getSendInfo
 #  multi
 
+#[
 proc mergeGatherDescriptions*(gd: ptr GatherDescription;
                               gds: ptr cArray[GatherDescription]; n: cint) =
   var
@@ -119,6 +116,7 @@ proc mergeGatherDescriptions*(gd: ptr GatherDescription;
   gd.sendSrcIndices = ssi
   gd.sendDestRanks = sdr
   gd.sendDestIndices = sdi
+]#
 
 proc cyclicComp*(a: cint; b: cint; zero: cint): cint =
   var c: cint = abs(a) + abs(b) + 1
@@ -206,7 +204,7 @@ proc makeRecvInfo*(gi: ptr GatherIndices; gd: ptr GatherDescription) =
         #sd[nsd + 1] = gd.srcIndices[i]
         #sd[nsd + 2] = i
         #inc(nsd, 3)
-        sd[nsd] = (r, gd.srcIndices[i], i)
+        sd[nsd] = (r, gd.srcIndices[i], i)  # recv from rank, index, local index
         nsd += 1
       inc(i)
     #nsd = nsd div 3
@@ -240,8 +238,8 @@ proc makeRecvInfo*(gi: ptr GatherIndices; gd: ptr GatherDescription) =
         #var k3: cint = 3 * k
         #var sri: cint = sd[k3]
         #var sii: cint = sd[k3 + 1]
-        var sri = sd[k].a
-        var sii = sd[k].b
+        var sri = sd[k].a   # send rank
+        var sii = sd[k].b   # send index
         if sri != r0 or sii != i0:
           k0 = k
           r0 = sri
@@ -256,7 +254,7 @@ proc makeRecvInfo*(gi: ptr GatherIndices; gd: ptr GatherDescription) =
             rrc = 0
           inc(rrc)
         #sd[k3 + 1] = k0
-        sd[k].b = k0
+        sd[k].b = k0   # sd entry with same source (may be self)
         inc(i)
       #ARRAY_APPEND(int, recvRankCounts, rrc)
       recvRankCounts.add rrc
@@ -281,9 +279,9 @@ proc makeRecvInfo*(gi: ptr GatherIndices; gd: ptr GatherDescription) =
       #var i3: cint = 3 * i
       #var di: cint = sd[i3 + 2]
       #var fdi: cint = sd[i3 + 1]
-      var di = sd[i][2]
-      var fdi = sd[i][1]
-      var bi: cint = j
+      var di = sd[i][2]   # dest index
+      var fdi = sd[i][1]  # sd entry with same source
+      var bi: cint = j   # buffer index
       if fdi == i: inc(j)
       else:
         #bi = sd[3 * fdi + 1]
@@ -605,13 +603,13 @@ proc makeSendInfo*(gi: ptr GatherIndices; gd: ptr GatherDescription) =
     free(sendIndices)
   ]#
 
+#[
 proc makeGD*(gd: ptr GatherDescription; map: GatherMap; args: pointer;
              nSrcRanks: cint; nDstRanks: cint; myndi: cint; myRank: cint) =
   var sidx = cast[ptr carray[cint]](alloc(myndi * sizeof(cint)))
   var srank = cast[ptr carray[cint]](alloc(myndi * sizeof(cint)))
-  # find shift sources
-  var di: cint = 0
-  while di < myndi:
+  # find shift sources (sites being sent to this rank)
+  for di in 0..<myndi:
     var
       sr: cint
       si: cint
@@ -619,7 +617,6 @@ proc makeGD*(gd: ptr GatherDescription; map: GatherMap; args: pointer;
     map(addr(sr), addr(si), myRank, addr(di0), args)
     srank[di] = sr
     sidx[di] = si
-    inc(di)
   gd.myRank = myRank
   gd.nIndices = myndi
   gd.srcRanks = srank
@@ -631,8 +628,7 @@ proc makeGD*(gd: ptr GatherDescription; map: GatherMap; args: pointer;
   var sendDestRanks = newSeq[cint]()
   var sendDestIndices = newSeq[cint]()
   # find who to send to
-  var dr: cint = 0
-  while dr < nDstRanks:
+  for dr in 0..<nDstRanks:
     if dr == myRank: continue
     var
       sr: cint = myRank
@@ -648,7 +644,6 @@ proc makeGD*(gd: ptr GatherDescription; map: GatherMap; args: pointer;
       sendDestIndices.add di
       di = - di - 2
       map(addr(sr), addr(si), dr, addr(di), args)
-    inc(dr)
   gd.nSendIndices = cint sendSrcIndices.len
   template ARRAY_CLONE(x,y: typed) =
     x = cast[type(x)](alloc(y.len*sizeof(type(x[0]))))
@@ -659,6 +654,7 @@ proc makeGD*(gd: ptr GatherDescription; map: GatherMap; args: pointer;
   #free(sendSrcIndices)
   #free(sendDestRanks)
   #free(sendDestIndices)
+]#
 
 proc makeGathersFromGDs*(gi: ptr carray[ptr GatherIndices];
                          gd: ptr carray[ptr GatherDescription]; n: cint) =

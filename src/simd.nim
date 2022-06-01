@@ -14,7 +14,7 @@ export simdArray
 
 #template msa(T,N,F: untyped) {.dirty,used.} =
 template msa(T: untyped, N: static[int], F: typedesc) {.dirty,used.} =
-  static: echo "msa: ", N, " ", F.type
+  #static: echo "msa: ", N, " ", F.type
   makeSimdArray(`T Obj`, N, F)
   #makeSimdArray(N, F, `T Obj`)
   type T* = Simd[`T Obj`]

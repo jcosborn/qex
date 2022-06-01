@@ -178,31 +178,23 @@ proc freeShiftBufQ*(sb: ptr ShiftBufQ) =
 
 import qlayout, base
 
-#[
-proc makeGDFromShiftSubs*(gd: ptr GatherDescription; l: ptr LayoutQ;
-                          disps: ptr cArray[ptr cArray[cint]];
-                          subs: ptr cArray[cstring]; ndisps: cint) {.
-                            importc.}
-]#
-
 type
   mapargs* = object
     l*: ptr LayoutQ
     disp*: ptr cArray[cint]
     parity*: cint
 
-proc map*(sr: ptr cint; si: ptr cint; dr: cint; di: ptr cint; args: pointer) =
+proc map*(sr: var cint; si: var cint; dr: cint; di: var cint; args: pointer) =
   var ma: ptr mapargs = cast[ptr mapargs](args)
   var l: ptr LayoutQ = ma.l
   var nd: cint = l.nDim
-  if di[] >= 0:
+  if di >= 0:  #  (dr,di) -> (sr,si)
     var x = newSeq[cint](nd)
     var
       dli: LayoutIndexQ
       sli: LayoutIndexQ
     dli.rank = dr
-    dli.index = di[]
-    #layoutCoordQ(l, cast[ptr cArray[cint]](x[0].addr), addr(dli))
+    dli.index = di
     layoutCoordQ(l, x, addr(dli))
     var y = newSeq[cint](nd)
     var p: cint = 0
@@ -212,24 +204,23 @@ proc map*(sr: ptr cint; si: ptr cint; dr: cint; di: ptr cint; args: pointer) =
       y[k] = (x[k] - ma.disp[k] + l.physGeom[k]) mod l.physGeom[k]
       inc(k)
     if ma.parity >= 0 and (p and 1) != ma.parity:
-      sr[] = -1
-      si[] = -1
+      sr = -1
+      si = -1
     else:
-      #layoutIndexQ(l, addr(sli), cast[ptr cArray[cint]](y[0].addr))
       layoutIndexQ(l[], sli, y)
-      sr[] = sli.rank
-      si[] = sli.index
-  else:
+      sr = sli.rank
+      si = sli.index
+  else:  #  (dr,-di-1) -> (sr,si) increasing di0 until get sr
     # search for site after or including di0 from rank sr to dr
-    var di0: cint = - (di[] + 1)
+    var di0: cint = - (di + 1)
     while di0 < l.nSites:
       var sr0: cint
-      map(addr(sr0), si, dr, addr(di0), args)
-      if sr0 == sr[]:
-        di[] = di0
+      map(sr0, si, dr, di0, args)
+      if sr0 == sr:
+        di = di0
         return
       inc(di0)
-    si[] = -1
+    si = -1
 
 # nRecvRanks (remote ranks)
 # start recvs
@@ -271,7 +262,7 @@ proc makeGDFromShiftSubs*(gd: ptr GatherDescription; l: ptr LayoutQ;
         sr: cint
         si: cint
         di0 = int32 di
-      map(addr(sr), addr(si), myRank, addr(di0), addr(args))
+      map(sr, si, myRank, di0, addr args)
       srank[n0 + di] = sr
       sidx[n0 + di] = si
       if sr != myRank: inc(nRecvDests)
@@ -315,7 +306,7 @@ proc makeGDFromShiftSubs*(gd: ptr GatherDescription; l: ptr LayoutQ;
         dr: cint = myRank
         sr: cint
         si: cint
-      map(addr(sr), addr(si), dr, addr(di), addr(args))
+      map(sr, si, dr, di, addr args)
       if sr >= 0 and si >= 0 and sr != myRank:
         if tid == 0:
           sendSrcIndices.add di

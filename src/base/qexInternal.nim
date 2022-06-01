@@ -37,7 +37,7 @@ template qexError*(s:varargs[string,`$`]) =
     echo "  ", s.join
   flushFile stdout
   flushFile stderr
-  getComm().barrier
+  commsBarrier()
   qexAbort()
 
 proc qexInit* =
@@ -57,7 +57,7 @@ proc qexFinalize*() =
   flushFile stdout
   flushFile stderr
   GC_fullCollect()
-  getComm().barrier
+  getDefaultComm().barrier
   for p in qexGlobalFinalizers.reversed: p()
   #echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
   #     getTotalMem())

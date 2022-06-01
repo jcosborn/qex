@@ -21,7 +21,7 @@ proc replicateFrom*(f: Field, f2: Field2) =
     let ri = lo2.rankIndex(x2)
     rl.add RecvList(didx: i.int32, srank: ri.rank.int32, sidx: ri.index.int32)
 
-  let c = getComm()
+  let c = getDefaultComm()
   let gm = c.makeGatherMap(rl)
 
   template `&&`(x: Field): untyped = cast[pointer](unsafeAddr(x[0]))

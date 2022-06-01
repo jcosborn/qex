@@ -1,20 +1,26 @@
 import qmp
 
+var inited = false
+
 proc commsInitQmp* =
   var argc {.importc:"cmdCount", global.}:cint
   var argv {.importc:"cmdLine", global.}:ptr cstring
-  var prv = QMP_THREAD_FUNNELED
-  #var prv = QMP_THREAD_SERIALIZED
-  let err = QMP_init_msg_passing(argc.addr, argv.addr, prv, prv.addr)
-  discard err
-  #myRank = int(QMP_get_node_number())
-  #nRanks = int(QMP_get_number_of_nodes())
-  #defaultComm = getComm()
+  if not inited:
+    inited = true
+    var prv = QMP_THREAD_FUNNELED
+    #var prv = QMP_THREAD_SERIALIZED
+    let err = QMP_init_msg_passing(argc.addr, argv.addr, prv, prv.addr)
+    #discard err
+    #myRank = int(QMP_get_node_number())
+    #nRanks = int(QMP_get_number_of_nodes())
+    #defaultComm = getComm()
 
-proc commsFinalize* =
-  GC_fullCollect()  # attempt to free any dangling message handles
-  QMP_finalize_msg_passing()
-proc commsAbort*(status = -1) =
+proc commsFinalizeQmp* =
+  if inited:
+    GC_fullCollect()  # attempt to free any dangling message handles
+    QMP_finalize_msg_passing()
+
+proc commsAbortQmp*(status = -1) =
   QMP_abort(status.cint)
 
 proc qmpSum*(v:var int) =
@@ -68,6 +74,8 @@ template qmpMax*(v:float64):untyped = QmpMaxDouble(v.addr)
 template qmpMin*(v:float32):untyped = QmpMinFloat(v.addr)
 template qmpMin*(v:float64):untyped = QmpMinDouble(v.addr)
 
+# generic comms interface
+
 import commsTypes
 
 type
@@ -78,13 +86,16 @@ type
     rmem: seq[QMP_msgmem_t]
     rmsg: seq[QMP_msghandle_t]
 
-proc getComm*(): CommQmp =
+proc getCommQmp*(): CommQmp =
+  commsInitQmp()
   result.new
   result.comm = QMP_comm_get_default()
   result.smem.newSeq(0)
   result.smsg.newSeq(0)
   result.rmem.newSeq(0)
   result.rmsg.newSeq(0)
+
+method name*(c: CommQmp): string = "QMP"
 
 method commrank*(c: CommQmp): int =
   QMP_comm_get_node_number(c.comm).int
@@ -94,6 +105,8 @@ method commsize*(c: CommQmp): int =
 
 method isMaster*(c: CommQmp): bool =
   c.commrank == 0
+
+method abort*(c: CommQmp, status: int) = commsAbortQmp(status)
 
 method barrier*(c: CommQmp) =
   QMP_comm_barrier(c.comm)
@@ -180,3 +193,7 @@ method waitRecvs*(c: CommQmp; i0,i1: int; free=true) =
     let n = c.rmsg.len - (i1-i0+1)
     c.rmem.setLen(n)
     c.rmsg.setLen(n)
+
+
+
+
