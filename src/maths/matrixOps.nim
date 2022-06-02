@@ -2,6 +2,7 @@ import macros
 import base/globals
 import base/basicOps
 import base/metaUtils
+import std/decls
 #import globals
 #import basicOps
 #import matrixConcept
@@ -51,6 +52,7 @@ template makeMap1(op:untyped) =
     mixin op
     block:
       let xp = getPtr xx; template x:untyped = xp[]
+      #let x {.byaddr.} = xx
       #static: echo "opVS: ", x.type, " ", xx.type, " ", astToStr(xx)
       #forO i, 0, r.len.pred:
       for i in fOpt(0,r.len.pred):
@@ -64,6 +66,7 @@ template makeMap1(op:untyped) =
     mixin op
     block:
       let xp = getPtr xx; template x:untyped = xp[]
+      #let x {.byaddr.} = xx
       #static: echo "opVV: ", astToStr(op), " ", x.type, " ", xx.type, " ", astToStr(xx)
       assert(r.len == x.len)
       #forO i, 0, r.len.pred:
@@ -75,6 +78,7 @@ template makeMap1(op:untyped) =
     mixin op
     block:
       let xp = getPtr xx; template x:untyped = xp[]
+      #let x {.byaddr.} = xx
       #forO i, 0, r.nrows.pred:
       for i in fOpt(0,r.nrows.pred):
         #forO j, 0, r.ncols.pred:
@@ -87,6 +91,7 @@ template makeMap1(op:untyped) =
     mixin op
     block:
       let xp = getPtr xx; template x:untyped = xp[]
+      #let x {.byaddr.} = xx
       assert(r.nrows == x.len)
       assert(r.ncols == x.len)
       #forO i, 0, r.nrows.pred:
@@ -101,6 +106,7 @@ template makeMap1(op:untyped) =
     mixin op
     block:
       let xp = getPtr xx; template x:untyped = xp[]
+      #let x {.byaddr.} = xx
       assert(r.nrows == x.nrows)
       assert(r.ncols == x.ncols)
       #forO i, 0, r.nrows.pred:

@@ -5,6 +5,7 @@ export commsTypes
 
 var defaultComm*: Comm
 template getDefaultComm*(): Comm = defaultComm
+template getComm*(): Comm = getDefaultComm()  # temporary alias
 var myRank* = 0
 var nRanks* = 1
 
@@ -169,7 +170,7 @@ when isMainModule:
   #echoAll "rank ", myRank, "/", nRanks
   #printf("rank %i/%i\n", myRank, nRanks)
 
-  var c = getComm()
+  var c = getDefaultComm()
   let orank = 1-myRank
 
   c.barrier
