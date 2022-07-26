@@ -1605,3 +1605,37 @@ macro indexTuple*(x: tuple, i: static[int]): untyped =
     result = newTree(nnkBracketExpr, x, newLit(i))
   #echo result.treerepr
 
+####
+# modified from std/decls.nim:byaddr
+# doesn't work in every context
+macro byptr*(sect:untyped):untyped =
+  ## Allows a syntax for l-value references, being an exact analog to
+  ## `auto& a = ex;` in C++.
+  ##
+  ## Warning: This makes use of 2 experimental features, namely nullary
+  ## templates instantiated as symbols and variable macro pragmas.
+  ## For this reason, its behavior is not stable. The current implementation
+  ## allows redefinition, but this is not an intended consequence.
+  runnableExamples:
+    var s = @[10, 11, 12]
+    var a {.byptr.} = s[0]
+    a += 100
+    assert s == @[110, 11, 12]
+    assert a is int
+    var b {.byptr.}: int = s[0]
+    assert a.addr == b.addr
+  echo sect.repr
+  expectLen sect, 1
+  let def = sect[0]
+  let
+    lhs = def[0]
+    typ = def[1]
+    ex = def[2]
+    addrTyp = if typ.kind == nnkEmpty: typ else: newTree(nnkPtrTy, typ)
+  result = quote do:
+    #mixin toPtr
+    #let byptrTmp = toPtr(`ex`)
+    #template `lhs`: untyped = byptrTmp[]
+    let `lhs` = `ex`
+  result.copyLineInfo(def)
+  echo result.repr

@@ -33,7 +33,7 @@ template forwardFunc2*(t: typedesc, f: untyped) {.dirty.} =
     f(x[], y)
 
 
-template evalType*[T](x: T): untyped = eval(type T)
+template evalType*[T](x: T): typedesc = eval(type T)
 
 # indexing should return ref?
 # ???
@@ -46,6 +46,14 @@ template evalType*[T](x: T): untyped = eval(type T)
 #   else:
 #     toSingleImpl(x)
 # template `[]`*(x: toSingle)
+
+type
+  AsView*[T] = object
+    fAsView*: T
+template asView*[T](x: T): untyped =
+  AsView[type T](fAsView:x)
+template `[]`*[T](x: AsView[T]): untyped =
+  x.fAsView
 
 type
   #RefWrap[T] = distinct T
@@ -156,6 +164,29 @@ template redot*(x: AsVar, y: AsVar): untyped =
 makeWrapperType(Scalar)
 template `[]`*(x: Scalar; i: typed): untyped = x[]
 template `[]`*(x: Scalar; i,j: typed): untyped = x[]
+forwardFunc(Scalar, exp)
+forwardFunc(Scalar, ln)
+forwardFunc(Scalar, numberType)
+forwardFunc(Scalar, numNumbers)
+#template exp*(x: Scalar): untyped = exp(x[])
+#template ln*(x: Scalar): untyped = ln(x[])
+template `:=`*(x: Scalar, y: SomeNumber) =
+  mixin `:=`
+  x[] := y
+template `:=`*(x: SomeNumber, y: Scalar) =
+  mixin `:=`
+  x := y[]
+template assign*(x: Scalar, y: SomeNumber) =
+  mixin `:=`
+  x[] := y
+template assign*(x: SomeNumber, y: Scalar) =
+  mixin `:=`
+  x := y[]
+template `+=`*(x: SomeNumber, y: Scalar) =
+  mixin `+=`
+  x += y[]
+template `*`*(x: Scalar, y: SomeNumber): untyped = x[] * y
+template norm2*(x: Scalar): untyped = norm2(x[])
 #[
 type
   Scalar*[T] = object
@@ -382,33 +413,45 @@ template optIndexed*[T,I](x: T, i: I): untyped =
   #else:
   #  #static: echo "optindexed not isWrapper"
   #  x[i]
-template `[]`*(x:Indexed):untyped =
-  let tIndexedBracket0 = x
-  obj(tIndexedBracket0)[idx(tIndexedBracket0)]
-template `[]`*(x:Indexed; i:SomeInteger):untyped =
-  let tIndexedBracket1 = x
-  optIndexed(obj(tIndexedBracket1)[i], idx(tIndexedBracket1))
-template `[]`*(x:Indexed; i,j:SomeInteger):untyped =
-  let tIndexedBracket2 = x
-  optIndexed(obj(tIndexedBracket2)[i,j], idx(tIndexedBracket2))
-template `[]=`*(x:Indexed; i:SomeInteger; y: typed) =
-  let tIndexedBracket1Eq = x
-  optIndexed(obj(tIndexedBracket1Eq)[i], idx(tIndexedBracket1Eq)) := y
-template `[]=`*(x:Indexed; i,j:SomeInteger; y: typed) =
-  let tIndexedBracket2Eq = x
+template `[]`*(xx:Indexed):untyped =
+  mixin `[]`
+  #let tIndexedBracket0 = xx
+  let tIndexedBracket0 = getPtr xx; template x:untyped {.gensym.} = tIndexedBracket0[]
+  obj(x)[idx(x)]
+template `[]`*(xx:Indexed; i:SomeInteger):untyped =
+  #let tIndexedBracket1 = xx
+  let tIndexedBracket1 = getPtr xx; template x:untyped {.gensym.} = tIndexedBracket1[]
+  optIndexed(obj(x)[i], idx(x))
+template `[]`*(xx:Indexed; i,j:SomeInteger):untyped =
+  #let tIndexedBracket2 = xx
+  let tIndexedBracket2 = getPtr xx; template x:untyped {.gensym.} = tIndexedBracket2[]
+  optIndexed(obj(x)[i,j], idx(x))
+template `[]=`*(xx:Indexed; i:SomeInteger; y: typed) =
+  #let tIndexedBracket1Eq = xx
+  let tIndexedBracket1Eq = getPtr xx; template x:untyped{.gensym.} = tIndexedBracket1Eq[]
+  #optIndexed(obj(x)[i], idx(x)) := y
+  obj(x)[i][idx(x)] = y
+template `[]=`*(xx:Indexed; i,j:SomeInteger; y: typed) =
+  #let tIndexedBracket2Eq = x1
+  let tIndexedBracket2Eq = getPtr xx; template x:untyped{.gensym.} = tIndexedBracket2Eq[]
   #optIndexed(obj(tIndexedBracket2Eq)[i,j], idx(tIndexedBracket2Eq)) := y
-  obj(tIndexedBracket2Eq)[i,j][idx(tIndexedBracket2Eq)] = y
-template `:=`*(x:Indexed, y: typed) =
+  obj(x)[i,j][idx(x)] = y
+template `:=`*(xx:Indexed, y: typed) =
   #echoRepr: x
   #echoRepr: y
-  let tIndexedColonEq = x
+  #let tIndexedColonEq = xx
+  let tIndexedColonEq = getPtr xx; template x:untyped{.gensym.} = tIndexedColonEq[]
   #when isWrapper(type(obj(tIndexedColonEq))):
   #  mixin `:=`
   #  var tIndexedColonEqWrap = mindexed(obj(tIndexedColonEq),idx(tIndexedColonEq))
   #  tIndexedColonEqWrap := y
   #else:
-  obj(tIndexedColonEq)[idx(tIndexedColonEq)] = y
+  obj(x)[idx(x)] = y
+template `:=`*(x: SomeNumber, y: Indexed) =
+  mixin `:=`
+  x := y[]
 template assign*(x: SomeNumber, y: Indexed) =
+  mixin `:=`
   x := y[]
 template `+=`*(x:Indexed, y: typed) =
   let tIndexedPlusEq = x
@@ -420,9 +463,18 @@ template `*=`*(x:Indexed, y: typed) =
   let tIndexedStarEq = x
   tIndexedStarEq != !tIndexedStarEq * y
 
-template len*(x:Indexed):untyped = obj(x).len
+#forwardFunc(Indexed, len)
+#forwardFunc(Indexed, nrows)
+#forwardFunc(Indexed, ncols)
+forwardFunc(Indexed, numNumbers)
+forwardFunc(Indexed, exp)
+forwardFunc(Indexed, ln)
+forwardFunc(Indexed, norm2)
+template len*(x:Indexed):untyped = obj(x).len  # FIXME Simd types can use Indexed
 template nrows*(x:Indexed):untyped = obj(x).nrows
 template ncols*(x:Indexed):untyped = obj(x).ncols
+template simdType*(x: Indexed): untyped = simdType(obj(x))
+template numberType*(x: Indexed): untyped = numberType(obj(x))
 #template declaredVector*(x:Indexed):untyped = isVector(x.obj)
 #template declaredMatrix*(x:Indexed):untyped = isMatrix(x.obj)
 template re*(x:Indexed):untyped =
@@ -437,8 +489,6 @@ template `re=`*(x: Indexed, y: typed): untyped =
 template `im=`*(x: Indexed, y: typed): untyped =
   let tIndexedImEq = x
   obj(tIndexedImEq).im[idx(tIndexedImEq)] = y
-template simdType*(x: Indexed): untyped = simdType(obj(x))
-template numberType*(x: Indexed): untyped = numberType(obj(x))
 template `*`*(x: Indexed, y: typed): untyped =
   let tIndexedMul = x
   obj(tIndexedMul)[idx(tIndexedMul)] * y

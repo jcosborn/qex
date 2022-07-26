@@ -64,7 +64,8 @@ suite "Test matrix rsqrtPH":
         gaussian( m, rs )
       else:
         #gaussian( masked(m,1 shl i), rs )
-        gaussian( m[asSimd(i)], rs )
+        #gaussian( m[asSimd(i)], rs )
+        gaussian( m[asSimd(asView i)], rs )
       #m := 1
     test("rsqrtPH " & $m.type):
       subtest rsqrtPH_test(m)

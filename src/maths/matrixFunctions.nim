@@ -179,6 +179,7 @@ template rsqrtPHM3(r:typed; x:typed):untyped =
   r := c0 + c1*x + c2*x2
 
 template rsqrtPHMN(r:typed; x:typed):untyped =
+  mixin simdMax
   let xi = 1/x
   let xi2 = xi.norm2
   let xit = trace(xi).re

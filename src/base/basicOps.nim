@@ -13,6 +13,10 @@ import macros
 
 {.passL:"-lm".}
 
+template getOptimPragmas* =
+  {.pragma: alwaysInline, inline,
+    codegenDecl: "inline __attribute__((always_inline)) $# $#$#".}
+
 type
   SomeInteger2* = int|int8|int16|int32|int64
   SomeInteger3* = int|int8|int16|int32|int64
@@ -204,11 +208,13 @@ template setUnopT*(op,fun,t1,t2: untyped): untyped {.dirty.} =
     r_setUnopT
 
 template setBinopP*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
+  #template op*(x: typedesc[t1]; y: typedesc[t2]): typedesc = t3
   proc op*(x: t1; y: t2): auto {.inline,noInit.} =
     var r{.noInit.}: t3
     fun(r, x, y)
     r
 template setBinopT*(op,fun,t1,t2,t3: untyped) {.dirty.} =
+  #template op*(x: typedesc[t1]; y: typedesc[t2]): typedesc = t3
   template op*(x: t1; y: t2): untyped =
     #staticTraceBegin: op
     #echoUntyped: setBinopT op

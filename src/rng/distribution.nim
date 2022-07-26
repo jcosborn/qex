@@ -17,9 +17,12 @@ when defined(FUELCompat):
 proc gaussian*(x: var SomeNumber, r: var RNG) =
   mixin gaussian
   x = gaussian(r)
-proc gaussian*(x: var Simd, r: var RNG) =  # FIXME to set all lanes
+proc gaussian*(x: var Scalar, r: var RNG) =
   mixin gaussian
-  x[] := gaussian(r)
+  x := gaussian(r)
+#proc gaussian*(x: var Simd, r: var RNG) =  # FIXME to set all lanes
+#  mixin gaussian
+#  x[] := gaussian(r)
 proc gaussian*(x: var AsComplex, r: var RNG) =  # FIXME to set all lanes
   mixin gaussian
   when defined(FUELCompat):
@@ -41,6 +44,8 @@ proc gaussian*(x: var AsVector, r: var RNG) =
   forO i, 0, x.len-1:
     gaussian(x[i], r)
 proc gaussian*(x: var AsMatrix, r: var RNG) =
+  #static: echo $type(x)
+  #static: echo $type(x[0,0])
   forO i, 0, getConst(x.nrows-1):
     forO j, 0, getConst(x.ncols-1):
       gaussian(x[i,j], r)
@@ -56,9 +61,9 @@ proc gaussian*(v: Field, r: RNGField) =
     when defined(RandCoordOrder):
       v.l.coord(c, i)
       let j = r.l.rankIndex(c).index
-      gaussian(v{i}, r{j})
+      gaussian(v{asView i}, r{j})
     else:
-      gaussian(v{i}, r{i})
+      gaussian(v{asView i}, r{i})
 proc gaussian*[T](a: openArray[T], r: RNGField) =
   for i in 0..<a.len:
     gaussian(a[i], r)

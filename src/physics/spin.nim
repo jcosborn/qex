@@ -302,13 +302,18 @@ template spproj4m*(x: auto): untyped = spprojmat4m * x
 #template spproj1p*(x: Spin): untyped =
 #  flattenCallArgs(spproj1pU, x)
 template spproj1p*(xx: Spin): untyped =
-  let x = toRef xx[]
+  #let x = toRef xx[]
+  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
   #let v = [ x[0]+I(x[3]), x[1]+I(x[2]) ]
   #spinVector(2, v)
   var v {.noInit.}: spinVector(2,evalType(x[0]))
   static: echo "spproj1p: ", v.type
-  v[0] = x[0]+I(x[3])
-  v[1] = x[1]+I(x[2])
+  #v[0] = x[0]+I(x[3])
+  #v[1] = x[1]+I(x[2])
+  let t0 = I(x[3])
+  add(v[0], x[0], t0)
+  let t1 = I(x[2])
+  add(v[1], x[1], t1)
   v
 template spproj2p*(xx: Spin): untyped =
   let x = xx[]

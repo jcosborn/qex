@@ -3,6 +3,8 @@ import base/basicOps
 import complexProxy
 export complexProxy
 
+getOptimPragmas()
+
 type
   AsReal*[T] = RealProxy[T]
   AsImag*[T] = ImagProxy[T]
@@ -50,36 +52,27 @@ template `[]`*[T](x: AsComplex, i: T): untyped =
     x[][i]
 
 
-template re*(x: ComplexObj): untyped = x.reX
-macro re*(x: ComplexObj{nkObjConstr}): untyped =
-  #echo x.treerepr
-  result = x[1][1]
-  #echo result.treerepr
-template im*(x: ComplexObj): untyped = x.imX
-macro im*(x: ComplexObj{nkObjConstr}): untyped =
-  #echo x.treerepr
-  result = x[2][1]
-  #echo result.treerepr
+template re*(x: ComplexObj): auto = x.reX
+macro re*(x: ComplexObj{nkObjConstr}): auto = x[1][1]
 
-template `re=`*(x: var ComplexObj, y: typed): untyped =
-  #static: echo "co re="
-  #debugType: x
-  #debugType: y
+template im*(x: ComplexObj): auto = x.imX
+macro im*(x: ComplexObj{nkObjConstr}): auto = x[2][1]
+
+template `re=`*(x: ComplexObj, y: typed) =
   mixin assign
-  #debugCall:
   assign(x.reX, y)
-template `im=`*(x: ComplexObj, y: typed): untyped =
-  #x.imX := y
+template `im=`*(x: ComplexObj, y: typed) =
+  mixin assign
   assign(x.imX, y)
 
 overloadAsReal(SomeNumber)
 template I*(x: SomeNumber): untyped = newImag(x)
 
-template numberType*[T](x: ComplexProxy[T]): untyped = numberType(T)
-template numberType*[T](x: typedesc[ComplexProxy[T]]): untyped =
+template numberType*[T](x: ComplexProxy[T]): typedesc = numberType(T)
+template numberType*[T](x: typedesc[ComplexProxy[T]]): typedesc =
   mixin numberType
   numberType(T)
-template numberType*[T](x: ComplexObj[T,T]): untyped = numberType(T)
+template numberType*[T](x: ComplexObj[T,T]): typedesc = numberType(T)
 #template nVectors*[T](x: Complex[T,T]): untyped =
 #  mixin nVectors
 #  nVectors(T)
@@ -104,14 +97,16 @@ template simdSum*(x: ComplexObj): untyped =
 template getNc*(x: ComplexProxy): untyped = 1
 template getNs*(x: ComplexProxy): untyped = 1
 
-template toSingle*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): untyped =
+template toSingle*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): typedesc =
   ComplexObj[toSingle(type(TR)),toSingle(type(TI))]
-template toSingle*[T](x: typedesc[ComplexProxy[T]]): untyped =
+template toSingle*[T](x: typedesc[ComplexProxy[T]]): typedesc =
   ComplexProxy[toSingle(type(T))]
 
-template isComplex*(x: ComplexProxy): untyped = true
-template asComplex*(x: untyped): untyped = newComplexProxy(x)
-template asVarComplex*(x: untyped): untyped = newComplexProxy(x)
+template isComplex*(x: ComplexProxy): auto = true
+template asComplex*(x: typed): auto = newComplexProxy(x)
+template asVarComplex*(x: typed): auto = newComplexProxy(x)
+
+#[
 template imaddCRC*(r: untyped, x: untyped, y: untyped) =
   r.re += x * y.re
   r.im += x * y.im
@@ -124,106 +119,162 @@ template imaddCCR*(r: untyped, x: untyped, y: untyped) =
 template imaddCCI*(r: untyped, x: untyped, y: untyped) =
   r.re -= x.im * y
   r.im += x.re * y
-template imadd*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3) =
-  r += x*y
+]#
 
-template load1*(x: ComplexProxy): untyped = x
-template load1*(x: RealProxy): untyped = x
-template load1*(x: ImagProxy): untyped = x
-#template eval*(x: ComplexProxy): untyped = newComplexProxy(eval(x[]))
-#template eval*(x: ComplexObj): untyped =
-#  mixin eval
-#  let er = eval(x.re)
-#  let ei = eval(x.im)
-#  ComplexObj2[type(er),type(ei)](reX: er, imX: ei)
-#template eval*(xx: ComplexProxy): untyped =
-#  let x = xx[]
-#  newComplex(eval(x.re),eval(x.im))
-template eval*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): untyped =
+template load1*(x: ComplexProxy): auto = x
+template load1*(x: RealProxy): auto = x
+template load1*(x: ImagProxy): auto = x
+template eval*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): auto =
   mixin eval
   complexObj(eval(typeof TR), eval(typeof TI))
 
-template map*(xx: ComplexProxy; f: untyped): untyped =
-  #let fr = f(x.re)
-  #let fi = f(x.im)
-  #ComplexObj2[type(fr),type(fi)](reX: fr, imX: fi)
-  let x = xx[]
+template map*(xx: ComplexProxy; f: untyped): auto =
+  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
   newComplex(f(x.re),f(x.im))
 
-#template toDoubleImpl*(xx: ComplexProxy): untyped =
-  #let x = xx
-  #let tdiR = toDouble(x.re)
-  #let tdiI = toDouble(x.im)
-  #ComplexObj2[type(tdiR),type(tdiI)](reX: tdiR, imX: tdiI)
-  #let x = xx[]
-  #newComplex(toDouble(x.re),toDouble(x.im))
-  #mixin toDoubleX
-  #toDoubleX(toDerefPtr xx)
-
-template toSingleImpl*(xx: ComplexObj): untyped =
-  let x = xx
+template toSingleImpl*(xx: ComplexObj): auto =
+  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
   newComplexObj(toSingle(x.re),toSingle(x.im))
   #mixin toSingleX
   #toSingleX(toDerefPtr xx)
 
-template toDoubleImpl*(xx: ComplexObj): untyped =
-  let x = xx
+template toDoubleImpl*(xx: ComplexObj): auto =
+  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
   newComplexObj(toDouble(x.re),toDouble(x.im))
   #mixin toDoubleX
   #toDoubleX(toDerefPtr xx)
 
-template add*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
-         untyped =  assign(r,x+y)
-template add*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
+template add*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3) =
   r := x + y
-template add*(r: ComplexProxy, x: ComplexProxy2, y: SomeNumber): untyped =
+template add*(r: ComplexProxy, x: ComplexProxy2, y: SomeNumber) =
   r := x + y
-template add*(r: ComplexProxy, x: RealProxy, y: ComplexProxy3): untyped =
+template add*(r: ComplexProxy, x: RealProxy, y: ComplexProxy3) =
   r := x + y
-template add*(r: ComplexProxy, x: ComplexProxy2, y: RealProxy): untyped =
+template add*(r: ComplexProxy, x: ComplexProxy2, y: RealProxy) =
   r := x + y
+proc add*[R,X,Y:ComplexProxy](r: var R, x: X, y: Y) {.inline.} =
+#template add*[R,X,Y:ComplexProxy](rr: R, xx: X, yy: Y) =
+#  let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+#  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+#  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+  mixin add
+  add(r.re, x.re, y.re)
+  add(r.im, x.im, y.im)
 
-template sub*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
+template sub*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3) =
   r := x - y
-template sub*(r: ComplexProxy, x: RealProxy, y: ComplexProxy3): untyped =
+template sub*(r: ComplexProxy, x: RealProxy, y: ComplexProxy3) =
   r := x - y
-template sub*(r: ComplexProxy, x: ComplexProxy2, y: SomeNumber): untyped =
+template sub*(r: ComplexProxy, x: ComplexProxy2, y: SomeNumber) =
   r := x - y
-template sub*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3): untyped =
+template sub*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3) =
   r := x - y
 
-template neg*(r: ComplexProxy, x: ComplexProxy2): untyped =
+template neg*(r: ComplexProxy, x: ComplexProxy2) =
   r := neg(x)
-#template dot*(x: ComplexProxy, y: ComplexProxy2): untyped =
-#  trace( x.adj * y )
-template mulCCR*(r: ComplexProxy, y: ComplexProxy2, x: untyped):
-         untyped =  assign(r,x*y)
-template mul*(r: ComplexProxy, x: ComplexProxy2, y: SomeNumber): untyped =
+
+
+template mul*(r: SomeNumber, x: ImagProxy2, y: ImagProxy3) =
   r := x * y
-template mul*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3): untyped =
-  r := x * y
-template mul*(r: ComplexProxy, x: RealProxy, y: ComplexProxy3): untyped =
-  r := x * y
-template mul*(r: ComplexProxy, x: ImagProxy, y: ComplexProxy3): untyped =
-  r := x * y
-template mul*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
-         untyped =  assign(r,x*y)
-template mul*(r: SomeNumber, x: ImagProxy2, y: ImagProxy3): untyped =
-  r := x * y
-template mul*(r: ImagProxy, x: ImagProxy2, y: SomeNumber): untyped =
+template mul*(r: ImagProxy, x: ImagProxy2, y: SomeNumber) =
   r := x * y
 
-template imadd*(r: SomeNumber, x: ImagProxy2, y: ImagProxy3):
-         untyped =  r -= x*y
-template imadd*(r: ImagProxy, x: ImagProxy2, y: SomeNumber):
-         untyped =  r -= x*y
+template mul*[R,X:ComplexProxy;Y:SomeNumber](rr: R, xx: X, yy: Y) =
+  mixin mul
+  let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+  mul(r.re, x.re, y)
+  mul(r.im, x.im, y)
 
-template imsub*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
-         untyped =  r -= x*y
+proc mul*[R,Y:ComplexProxy;X:SomeNumber](r: var R, x: X, y: Y) {.alwaysInline.} =
+#template mul*[R,Y:ComplexProxy;X:SomeNumber](rr: R, xx: X, yy: Y) =
+#  let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+#  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+#  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+  mixin mul
+  mul(r.re, x, y.re)
+  mul(r.im, x, y.im)
 
-template norm2*(r: auto, x: ComplexProxy2): untyped =
+template mul*[R,X:ComplexProxy;Y:RealProxy](rr: R, xx: X, yy: Y) =
+  mixin mul
+  let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+  mul(r.re, x.re, y[])
+  mul(r.im, x.im, y[])
+
+template mul*[R,Y:ComplexProxy;X:RealProxy](rr: R, xx: X, yy: Y) =
+  mixin mul
+  let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+  mul(r.re, x[], y.re)
+  mul(r.im, x[], y.im)
+
+template mul*[R,X:ComplexProxy;Y:ImagProxy](rr: R, xx: X, yy: Y) =
+  mixin mul
+  let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+  mul(r.re, x.im, -y[])
+  mul(r.im, x.re,  y[])
+
+template mul*[R,Y:ComplexProxy;X:ImagProxy](rr: R, xx: X, yy: Y) =
+  mixin mul
+  let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+  mul(r.re, -x[], y.im)
+  mul(r.im,  x[], y.re)
+
+proc mul*[R,X,Y:ComplexProxy](r: var R, x: X, y: Y) {.alwaysInline.} =
+#template mul*[R,X,Y:ComplexProxy](r: R, xx: X, yy: Y) =
+#  #let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+#  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+#  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+  #mixin mul, imadd
+  #mul(  r, asReal(unsafeaddr x.re), y)
+  #imadd(r, asImag(unsafeaddr x.im), y)
+  r.re = x.re*y.re - x.im*y.im
+  r.im = x.re*y.im + x.im*y.re
+
+
+template imadd*(r: SomeNumber, x: ImagProxy2, y: ImagProxy3) =  r -= x*y
+template imadd*(r: ImagProxy, x: ImagProxy2, y: SomeNumber) =  r -= x*y
+
+proc imadd*[R,Y:ComplexProxy;X:RealProxy](r: var R, x: X, y: Y) {.alwaysInline.} =
+#template imadd*[R,Y:ComplexProxy;X:RealProxy](r: R, xx: X, yy: Y) =
+#  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+#  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+  mixin imsub, imadd
+  imadd(r.re, x[], y.re)
+  imadd(r.im, x[], y.im)
+
+proc imadd*[R,Y:ComplexProxy;X:ImagProxy](r: var R, x: X, y: Y) {.alwaysInline.} =
+#template imadd*[R,Y:ComplexProxy;X:ImagProxy](r: R, xx: X, yy: Y) =
+#  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+#  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+  mixin imsub, imadd
+  imsub(r.re, x[], y.im)
+  imadd(r.im, x[], y.re)
+
+proc imadd*[R,X,Y:ComplexProxy](r: var R, x: X, y: Y) {.alwaysInline.} =
+#template imadd*[R,X,Y:ComplexProxy](r: R, xx: X, yy: Y) =
+#  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+#  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+  #mixin imadd
+  #imadd(r, asReal(unsafeaddr x.re), y)
+  #imadd(r, asImag(unsafeaddr x.im), y)
+  r.re += x.re*y.re - x.im*y.im
+  r.im += x.re*y.im + x.im*y.re
+
+template imsub*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3) =  r -= x*y
+
+
+template norm2*(r: auto, x: ComplexProxy2) =
   r = x.norm2
-template inorm2*(r: auto, x: ComplexProxy2): untyped =
+template inorm2*(r: auto, x: ComplexProxy2) =
   r += x.norm2
 
 
@@ -239,14 +290,14 @@ template mul*(r: AsComplex, x: Simd, y: AsComplex2) =
 
 
 when isMainModule:
-  template pos(x: SomeNumber): untyped = x
-  template neg(x: SomeNumber): untyped = -x
-  template conj(x: SomeNumber): untyped = x
-  template adj(x: SomeNumber): untyped = x
-  template transpose(x: SomeNumber): untyped = x
-  template trace(x: SomeNumber): untyped = x
-  template norm2(x: SomeNumber): untyped = x*x
-  template inv[T: SomeNumber](x: T): untyped = ((T)1)/x
+  template pos(x: SomeNumber): auto = x
+  template neg(x: SomeNumber): auto = -x
+  template conj(x: SomeNumber): auto = x
+  template adj(x: SomeNumber): auto = x
+  template transpose(x: SomeNumber): auto = x
+  template trace(x: SomeNumber): auto = x
+  template norm2(x: SomeNumber): auto = x*x
+  template inv[T: SomeNumber](x: T): auto = ((T)1)/x
 
   proc testadd(a,b: float) =
     var z0 = newComplex(a,b)

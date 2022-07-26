@@ -427,6 +427,20 @@ template `{}`*(f: Field; i: int): untyped =
 template `{}`*(f: Subsetted; i: int): untyped =
   fmask(f.field, i)
 
+template fmask*(f: Field; i: AsView): untyped =
+  when f.l.V == 1:
+    f[i]
+  else:
+    let e = i[] div f.l.V
+    let l = i[] mod f.l.V
+    f[e][asSimd(asView(l))]
+
+template `{}`*(f: Field; i: AsView): untyped =
+  fmask(f, i)
+
+template `{}`*(f: Subsetted; i: AsView): untyped =
+  fmask(f.field, i)
+
 #template mindex*(f: Field; i: int): untyped =
 #  fmask(f, i)
 

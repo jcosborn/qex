@@ -59,6 +59,7 @@ template createAsType2(t,c:untyped):untyped =
   template len*(x:t):untyped = getConst(x[].len)
   template nrows*(x:t):untyped = getConst(x[].nrows)
   template ncols*(x:t):untyped = getConst(x[].ncols)
+  template len*(x:typedesc[t]):auto = getConst(x[].len)
   #template mvLevel*(x:t):untyped =
   #  mixin mvLevel
   #  mvLevel(x[])
@@ -162,6 +163,7 @@ template isWrapper*(x: array): untyped = false
 #  asVar(asVector(y))
 
 template `len`*(x:VectorArrayObj):untyped = x.I
+template `len`*[I:static[int],T](x:typedesc[VectorArrayObj[I,T]]):auto = I
 template `[]`*(x:VectorArrayObj):untyped = x.vec
 template `[]`*(x:VectorArrayObj; i:int):untyped =
   #var vecIdx = toRef x.vec[i]
@@ -380,10 +382,11 @@ proc `toString`*(x:Mat1):string =
 #  proc f*(r:t1, x:t2) {.inline.} =
 #    `f s1 s2`(r, deref(x))
 template makeLevel1T(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
-  template `f U`*(r: t1, x: t2): untyped =
-    `f s1 s2`(r, x)
+  #template `f U`*(r: t1, x: t2): untyped =
+  #  `f s1 s2`(r, x)
   template f*(r: t1, x: t2): untyped =
-    flattenCallArgs(`f U`, r, x)
+    #flattenCallArgs(`f U`, r, x)
+    `f s1 s2`(r, x)
 template makeLevel1(f,s1,t1,s2,t2:untyped):untyped =
   makeLevel1T(f,s1,t1,s2,t2)
 
@@ -516,6 +519,8 @@ setBinop(mul,mul, Sca1,Vec2,VectorArray[getConst(y.len),evalType(x*y[0])])
 #setBinop(`*`,mul, Sca1,AsVector,VectorArray[y.len,evalType(x*y[0])])
 #setBinop(`*`,mul, float,Vec2,VectorArray[y.len,evalType(x*y[0])])
 #setBinop(`*`,mul, AsScalar,Vec2,VectorArray[y.len,evalType(x*y[0])])
+#template `*`*[X:Sca1,Y:Vec](x: typedesc[X], y: typedesc[Y]): typedesc =
+#  VectorArray[len Y, X*indexed(Y,int)]
 setBinop(`*`,mul, Sca1,Vec2,VectorArray[getConst(y.len),evalType(x*y[0])])
 setBinop(`*`,mul, Vec1,Sca2,VectorArray[x.len,evalType(x[0]*y)])
 setBinop(`*`,mul, Mat1,Vec2,VectorArray[x.nrows,evalType(x[0,0]*y[0])])

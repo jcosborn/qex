@@ -1,3 +1,4 @@
+import base/basicOps
 import base/wrapperTypes
 export wrapperTypes
 import maths/types
@@ -121,11 +122,17 @@ template getNc*[T](x: Color[T]): untyped =
 template binDDRet(fn,wr,T1,T2) =
   template fn*(x: T1, y: T2): untyped =
     wr(fn(x[], y[]))
+  #template fn*(x: T1, y: T2): auto =
+  #  var tmp {.noInit.}: wr(evalType(fn(x[],y[]))
+  #  wr(fn(x[], y[]))
 
-binDDRet(`+`, asColor, Color, Color2)
+#binDDRet(`+`, asColor, Color, Color2)
 binDDRet(`-`, asColor, Color, Color2)
-binDDRet(`*`, asColor, Color, Color2)
+#binDDRet(`*`, asColor, Color, Color2)
 binDDRet(`/`, asColor, Color, Color2)
+
+setBinop(`+`, add, Color, Color2, asColor(evalType(x[]+y[])))
+setBinop(`*`, mul, Color, Color2, asColor(evalType(x[]*y[])))
 
 template load1*(x: Color): untyped = asColor(load1(x[]))
 template `-`*(x: Color): untyped = asColor(-(x[]))
@@ -179,20 +186,35 @@ template sub*(r: var Color, x: Color2, y: Color3) =
   sub(r[], x[], y[])
 template `*`*(x: Color, y: SomeNumber): untyped =
   asColor(x[] * y)
-template `*`*(x: SomeNumber, y: Color2): untyped =
-  asColor(x * y[])
+#template `*`*(x: SomeNumber, y: Color): auto =
+  #asColor(x * y[])
+template `*`*[X:SomeNumber,Y:Color](x: X, y: Y): auto =
+  #var tmp {.noInit.}: asColor(type(X)*type(Y)[])
+  var tmp {.noInit.}: asColor(evalType(x*y[]))
+  mul(tmp[], x, y[])
+  tmp
 template `*`*(x: Simd, y: Color2): untyped =
   asColor(x * y[])
-template `*`*(x: AsReal, y: Color2): untyped =
-  asColor(x * y[])
+#template `*`*(x: AsReal, y: Color2): untyped =
+#  asColor(x * y[])
+template `*`*[X:AsReal,Y:Color](x: X, y: Y): auto =
+  #var tmp {.noInit.}: asColor(type(X)*type(Y)[])
+  var tmp {.noInit.}: asColor(evalType(x*y[]))
+  mul(tmp[], x, y[])
+  tmp
 template `*`*(x: AsImag, y: Color2): untyped =
   asColor(x * y[])
 template `*`*(x: AsComplex, y: Color2): untyped =
   asColor(x * y[])
 template `*`*(x: Color, y: AsComplex): untyped =
   asColor(x[] * y)
-template mul*(x: SomeNumber, y: Color2): untyped =
-  asColor(`*`(x, y[]))
+#template mul*(x: SomeNumber, y: Color2): untyped =
+#  asColor(`*`(x, y[]))
+template mul*[X:SomeNumber,Y:Color](x: X, y: Y): auto =
+  #var tmp {.noInit.}: asColor(type(X)*type(Y)[])
+  var tmp {.noInit.}: asColor(evalType(x*y[]))
+  mul(tmp[], x, y[])
+  tmp
 template mul*(x: Color, y: Color2): untyped =
   asColor(`*`(x[], y[]))
 template mul*(r: var Color, x: Color2, y: Color3) =
