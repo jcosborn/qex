@@ -91,7 +91,8 @@ forwardTT(numberType)
 forwardTTW(toSingle)
 forwardTTW(toDouble)
 
-template eval*[T](x: typedesc[Color[T]]): typedesc = asColor(eval(type T))
+#template eval*[T](x: typedesc[Color[T]]): typedesc = asColor(eval(type T))
+template eval*[T:Color](x: typedesc[T]): typedesc = asColor(eval((type T)[]))
 
 template has*[T](x: typedesc[Color[T]], y: typedesc): bool =
   mixin has

@@ -380,9 +380,11 @@ template mulMSM*(r:typed; xx,yy:typed) =
         mul(r[i,j], x, y[i,j])
 
 proc mulVMV*(r: var auto; x,y: auto) {.alwaysInline.} =
+#proc mulVMV*(r: var auto; x,y: auto) =
 #template mulVMV*(r: typed; xx,yy: typed) =
-#  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
-#  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+  #let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+  #let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+  #static: echo "x: ", $type(x), " ", sizeof(x)
   mixin nrows, ncols, mul, imadd
   assert(x.nrows == r.len)
   assert(x.ncols == y.len)
@@ -408,11 +410,15 @@ template mulMMM*(r: typed; xx,yy: typed) =
     assert(x.nrows == r.nrows)
     assert(x.ncols == y.nrows)
     assert(r.ncols == y.ncols)
+    var t {.noInit.}: evalType(r)
     forO i, 0, r.nrows.pred:
       forO j, 0, r.ncols.pred:
-        mul(r[i,j], x[i,0], y[0,j])
+        #mul(r[i,j], x[i,0], y[0,j])
+        mul(t[i,j], x[i,0], y[0,j])
         forO k, 1, y.nrows.pred:
-          imadd(r[i,j], x[i,k], y[k,j])
+          #imadd(r[i,j], x[i,k], y[k,j])
+          imadd(t[i,j], x[i,k], y[k,j])
+    r := t
 
 template imaddSVV*(r:typed; xx,yy:typed) =
   mixin imadd, assign
@@ -439,9 +445,13 @@ template imaddVMV*(r: typed; xx,yy: typed) =
     let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
     assert(x.nrows == r.len)
     assert(x.ncols == y.len)
+    var t {.noinit.}: evalType(r)
+    t := r
     for j in fOpt(0,x.ncols.pred):
       for i in fOpt(0,x.nrows.pred):
-        imadd(r[i], x[i,j], y[j])
+        #imadd(r[i], x[i,j], y[j])
+        imadd(t[i], x[i,j], y[j])
+    r := t
 
 template imaddMMM*(r:typed; xx,yy:typed) =
   mixin nrows, ncols, imadd

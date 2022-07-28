@@ -20,7 +20,8 @@ type
   WrapperFlags* = enum
     wfDeref,wfEval,wfIndex,  # set if type will provide own implementation
     wfStorage,        # wrapper types
-    wfUnwrap,wfWrapApply,wfDollar, wfGet, wfTest
+    wfUnwrap,wfWrapApply,wfDollar, wfGet, wfTest,
+    wfPtr
   WFSet* = set[WrapperFlags]
 const wfNone* = WFSet({})
 type
@@ -134,16 +135,61 @@ macro makeWrapper*(t,s: untyped): untyped =
   result = getAst(makeWrapper2(t,s,xid))
 ]#
 
+template getPtr*[T](x: T): untyped =
+  when T is RefWrap:
+    x
+  elif T is ptr or T is ref:
+    x
+  elif compiles(unsafeAddr x):
+    unsafeAddr x
+  else:
+    var tGetPtr = x
+    addr tGetPtr
+
+template getPtr*[T](x: typedesc[T]): typedesc =
+  when T is RefWrap:
+    T
+  elif T is ptr or T is ref:
+    T
+  else:
+    ptr T
+
+template derefPtr*[T](x: T): untyped =
+  when T is ptr:
+    x[]
+  else:
+    x
+
+template derefPtr*[T](x: typedesc[T]): typedesc =
+  type T
+template derefPtr*[T](x: typedesc[ptr T]): typedesc =
+  type T
+
 template makeWrapperTypeX(wf:WFSet, name,fName,asName,tasName: untyped) =
-  type
-    name*[T] = object # ## wrapper type
-      fName*: T
+  #when wfPtr in wf:
+  when false:
+    type
+      name*[T] {.byref.} = object # ## wrapper type
+        fName*: ptr T
+  else:
+    type
+      name*[T] {.byref.} = object # ## wrapper type
+        fName*: T
   #template tasName*(x: typed): untyped =
   #  name[type(x)](fName: x)
   #proc tasName*[T](x: T): name[T] {.inline,noInit.} =
   #  result.fName = x
-  template asName*[T](x: T): untyped =
-    name[type T](fName: x)
+  #when wfPtr in wf:
+  when true:
+    template `asName Obj`*[T](x: T): untyped =
+      name[type T](fName: x)
+    template `asName View`*[T](x: T): untyped =
+      `asName Obj`(getPtr x)
+    template asName*[T](x: T): untyped =
+      `asName Obj`(x)
+  else:
+    template asName*[T](x: T): untyped =
+      name[type T](fName: x)
     # ## wrap an object, x, as a $NAME type
     #lets(x,xx):
     #static: echo "asColor typed"
@@ -153,8 +199,14 @@ template makeWrapperTypeX(wf:WFSet, name,fName,asName,tasName: untyped) =
     #name[type(tasName)](fName: tasName)
     #Color[type(x_asColor)](x_asColor)
     #Color(x_asColor)
-  template asName*[T](x: typedesc[T]): untyped =
+  #template asName*[T](x: typedesc[T]): untyped =
+  #  name[type T]
+  template `asName Obj`*[T](x: typedesc[T]): typedesc =
     name[type T]
+  template `asName View`*[T](x: typedesc[T]): typedesc =
+    `asName Obj`(getPtr type T)
+  template asName*[T](x: typedesc[T]): typedesc =
+    `asName Obj`(type T)
   #  flattenCallArgs(tasName, x)
   #proc asName*[T](x: T): name[T] {.inline,noInit.} =
   #  result.fName = x
@@ -166,11 +218,19 @@ template makeWrapperTypeX(wf:WFSet, name,fName,asName,tasName: untyped) =
   #  x.fName
   makeFieldGetter(name, derefXX, fName)
   when wfDeref notin wf:
-    template `[]`*[T](x: typedesc[name[T]]): untyped = T
-    template `[]`*(x: name): untyped =
-      #static: echo "wrapper []"
-      #debugType: x
-      flattenCallArgs(derefXX, x)
+    template `[]`*[T](x: typedesc[name[T]]): typedesc =
+      derefPtr(T)
+    #when wfPtr in wf:
+    when true:
+      template `[]`*(x: name): untyped =
+        #static: echo "wrapper []"
+        #debugType: x
+        derefPtr flattenCallArgs(derefXX, x)
+    else:
+      template `[]`*(x: name): untyped =
+        #static: echo "wrapper []"
+        #debugType: x
+        flattenCallArgs(derefXX, x)
   template isWrapper*(x: name): untyped = true
   template isWrapper*(x: typedesc[name]): untyped = true
   template asWrapper*(x: name, y: typed): untyped =

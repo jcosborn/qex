@@ -106,17 +106,6 @@ template mul*[X:SomeNumber,R,Y](r: R, x: RefWrap[ptr X], y: Y) =
 template imadd*[T,U,V:SomeNumber](r: RefWrap[ptr T], x: U, y: V) =
   imadd(r[], x, y)
 
-template getPtr*[T](x: T): untyped =
-  when T is RefWrap:
-    x
-  elif T is ptr or T is ref:
-    x
-  elif compiles(unsafeAddr x):
-    unsafeAddr x
-  else:
-    var tGetPtr = x
-    addr tGetPtr
-
 #type
 #  AsVar*[T] = object
 #    v*: T
@@ -213,7 +202,8 @@ forwardFunc(AsScalar, simdLength)
   #dumpTree: x
 #  let x_adjointed = x
 #  Adjointed[type(x_adjointed)](v: x_adjointed)
-makeWrapperType(Adjointed)
+#makeWrapperType(Adjointed)
+makeWrapperF({wfPtr}, Adjointed)
 template adj*(x: typed): untyped =
   mixin adj, isWrapper, asWrapper
   bind asAdjointed
@@ -227,7 +217,7 @@ template adj*(x: typed): untyped =
     #static: echo "adj typed not wrapper"
     #dumpTree: x
     #(Masked[type(x)])(maskedObj(x,msk))
-    asAdjointed(x)
+    asAdjointed(getPtr x)
 #template `[]`*[T](x:Adjointed[T]):untyped = cast[T](x)
 #makeDeref(Adjointed, x.T)
 template `[]`*(x:Adjointed; i:SomeInteger):untyped = x[][i].adj
