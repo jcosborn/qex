@@ -378,7 +378,7 @@ proc solveEO*(s: Wilson; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
     s.eoReconstruct(r, x, m)
   let t1 = epochTime()
   let secs = t1-t0
-  let flops = (2*2*s.g.len*(12+2*66+24)+2*60)*r.l.nEven*sp.finalIterations
+  let flops = (2*2*2*s.g.len*(12+2*66+24)+2*60)*r.l.nEven*sp.finalIterations
   sp0.finalIterations = sp.finalIterations
   sp0.seconds = secs
   echo "op time: ", top
