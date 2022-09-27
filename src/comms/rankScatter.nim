@@ -66,10 +66,12 @@ proc exchange[T](desc: var seq[RankScatterDescriptor2[T]], comm: auto,
 
   if rrank > rank:
     newdesc.add rmsg
-    shallowCopy desc, newdesc
+    #shallowCopy desc, newdesc
+    desc = newdesc
   else:
     rmsg.add newdesc
-    shallowCopy desc, rmsg
+    #shallowCopy desc, rmsg
+    desc = rmsg
 
 proc scatter*[T](desc0: RankScatterSeq[T], comm: auto): RankScatterSeq[T] =
   let myrank = comm.commrank
