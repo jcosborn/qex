@@ -114,6 +114,10 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
   warning[SmallLshouldNotBeUsed] ~ off
   embedsrc ~ ""
 
+  if (NimMajor, NimMinor) >= (1, 7):
+    deepcopy ~ on
+    exceptions ~ quirky
+
   if not fo.debug:
     d ~ "release"
     d ~ "danger"
