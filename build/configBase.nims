@@ -1,4 +1,4 @@
-import os, strUtils
+import os, strUtils, seqUtils
 
 var
   nimcache = getCurrentDir() / "nimcache"
@@ -112,7 +112,11 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
   verbosity ~ buildVerbosity
   nimcache ~ nimcache
   warning[SmallLshouldNotBeUsed] ~ off
+  styleCheck ~ usages
   embedsrc ~ ""
+  #exceptions ~ quirky
+  #if not nimargs.any(proc (x:string):bool = x.startswith("--mm:")):
+  gc ~ refc
 
   if not fo.debug:
     d ~ "release"

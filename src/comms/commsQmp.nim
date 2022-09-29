@@ -86,7 +86,7 @@ type
     rmem: seq[QMP_msgmem_t]
     rmsg: seq[QMP_msghandle_t]
 
-proc getCommQmp*(): CommQmp {.locks:0.} =  # locks:0 workaround for Nim devel
+proc getCommQmp*(): CommQmp =
   commsInitQmp()
   result.new
   result.comm = QMP_comm_get_default()
@@ -94,6 +94,9 @@ proc getCommQmp*(): CommQmp {.locks:0.} =  # locks:0 workaround for Nim devel
   result.smsg.newSeq(0)
   result.rmem.newSeq(0)
   result.rmsg.newSeq(0)
+
+proc getQmpComm*(): Comm =
+  result = getCommQmp()
 
 method name*(c: CommQmp): string = "QMP"
 

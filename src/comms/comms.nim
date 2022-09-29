@@ -128,7 +128,7 @@ import commsQmp
 export commsQmp
 
 var commsNames = newSeq[string](0)
-var commsInits = newSeq[proc():CommQmp{.nimcall,gcsafe,locks:0.}](0)
+var commsInits = newSeq[proc():Comm{.nimcall.}](0)
 var commsFinis = newSeq[proc(){.nimcall.}](0)
 proc commsGet(): seq[string] =
   commsNames
@@ -143,7 +143,7 @@ proc commsGet(ss: openArray[string]): Comm =
       return
 
 commsNames.add "QMP"
-commsInits.add getCommQmp #(proc ():CommQmp {.cdecl.})(getCommQmp)
+commsInits.add getQmpComm
 commsFinis.add commsFinalizeQmp
 
 import commsUtils

@@ -140,16 +140,12 @@ when isMainModule:
               0.0185899778070918,
               0.0180821938831715,
               0.01876842496122964]
-      const p0s = p0.sum
       let p = g.plaq
-      #let dp = zip(p,p0).mapIt(abs(it[0]-it[1]))
-      let dpr = zip(p,p0).mapIt(2*abs(it[0]-it[1])/(it[0]+it[1]))
-      #if abs(p.sum-p0s)/p0s > 1e-14:
-      if dpr.anyIt(it > 2e-14):
-        echo "Test failed."
+      let d = zip(p,p0).foldl(a + abs(b[0]-b[1]), 0.0) / sum(p0)
+      if d > 2e-14:
+        echo "Test failed, relative diff: ", d
         echo "Expected:\t",p0
         echo "Actual:\t",p
-        echo "Relative diff:\t",dpr
         qexExit -1
 
   qexFinalize()
