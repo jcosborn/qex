@@ -15,8 +15,9 @@ when not defined(qudaDir):
 const qudaDir {.strdefine.} = ""
 {.passC: "-I" & qudaDir & "/include".}
 
-when defined(cudaLibDir):
-  const cudaLibDir {.strdefine.} = ""
+const cudaLibDir {.strdefine.} = ""
+#when defined(cudaLibDir) and cudaLibDir != "":
+when cudaLibDir != "":
   const cudaLib = "-L" & cudaLibDir & " -lcudart -lcublas -lcufft -Wl,-rpath," & cudaLibDir & " -L" & cudaLibDir & "/stubs -lcuda"
 else:
   const cudaLib = ""
@@ -27,8 +28,8 @@ const qioDir {.strdefine.} = getEnv("QIODIR")
 when qioDir.len > 0:
   when qmpDir.len > 0:
     # Assume quda is built with QIO and QMP.
-    #{.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib & " -L" & qioDir & "/lib -lqio -llime -L" & qmpDir & "/lib -lqmp".}
-    {.passL: "-L" & qudaDir & "/lib -lquda -lstdc++ " & cudaLib & " -L" & qioDir & "/lib -lqio -llime -L" & qmpDir & "/lib -lqmp".}
+    {.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib & " -L" & qioDir & "/lib -lqio -llime -L" & qmpDir & "/lib -lqmp".}
+    #{.passL: "-L" & qudaDir & "/lib -lquda -lstdc++ " & cudaLib & " -L" & qioDir & "/lib -lqio -llime -L" & qmpDir & "/lib -lqmp".}
   else:
     # Assume QUDA is built with QIO.
     {.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib & " -L" & qioDir & "/lib -lqio -llime".}
@@ -206,8 +207,8 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
       let ri1 = lo1.rankIndex(cv)
       # assert(ri1.rank == r.l.myRank)
       forO a, 0, 2:
-        r{i}[a].re := r1[ri1.index][a].re
-        r{i}[a].im := r1[ri1.index][a].im
+        r{i}[a].re = r1[ri1.index][a].re
+        r{i}[a].im = r1[ri1.index][a].im
   toc("QUDA teardown")
 
 when isMainModule:
