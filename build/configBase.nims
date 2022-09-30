@@ -96,6 +96,7 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
     d ~ ("qioDir:" & qioDir)
   if qudaDir != "":
     d ~ ("qudaDir:" & qudaDir)
+  if cudaLibDir != "":
     d ~ ("cudaLibDir:" & cudaLibDir)
   if primmeDir != "":
     d ~ ("primmeDir:" & primmeDir)
