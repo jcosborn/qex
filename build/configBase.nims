@@ -31,6 +31,7 @@ var
 
   qudaDir = ""
   cudaLibDir = ""
+  nvhpcDir = ""
   primmeDir = ""
   chromaDir = ""
   gridDir = ""
@@ -96,7 +97,10 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
     d ~ ("qioDir:" & qioDir)
   if qudaDir != "":
     d ~ ("qudaDir:" & qudaDir)
+  if cudaLibDir != "":
     d ~ ("cudaLibDir:" & cudaLibDir)
+  if nvhpcDir != "":
+    d ~ ("nvhpcDir:" & nvhpcDir)
   if primmeDir != "":
     d ~ ("primmeDir:" & primmeDir)
   if chromaDir != "":

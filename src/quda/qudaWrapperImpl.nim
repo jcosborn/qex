@@ -16,27 +16,28 @@ const qudaDir {.strdefine.} = ""
 {.passC: "-I" & qudaDir & "/include".}
 
 const cudaLibDir {.strdefine.} = ""
-#when defined(cudaLibDir) and cudaLibDir != "":
 when cudaLibDir != "":
   const cudaLib = "-L" & cudaLibDir & " -lcudart -lcublas -lcufft -Wl,-rpath," & cudaLibDir & " -L" & cudaLibDir & "/stubs -lcuda"
-else:
-  const cudaLib = ""
+  {.passL: "-L" & qudaDir & "/lib -lquda -lstdc++ " & cudaLib .}
+  {.passL: "-Wl,-rpath," & qudaDir & "/lib".}
+
+const nvhpcDir {.strdefine.} = ""
+when nvhpcDir != "":
+  const cudaLib = "-L" & nvhpcDir & "/cuda/lib64 -L" & nvhpcDir & "/math_libs/lib64 -lcudart -lcublas -lcufft -Wl,-rpath," & cudaLibDir & " -L" & cudaLibDir & "/stubs -lcuda"
+  {.passL: "-L" & qudaDir & "/lib -lquda -lstdc++ " & cudaLib .}
+  {.passL: "-Wl,-rpath," & qudaDir & "/lib".}
+
+when cudaLibDir=="" and nvhpcDir=="":
+  {.passL: qudaDir & "/lib/libquda.a -lstdc++ ".}
 
 const qmpDir {.strdefine.} = getEnv("QMPDIR")
 const qioDir {.strdefine.} = getEnv("QIODIR")
 
 when qioDir.len > 0:
-  when qmpDir.len > 0:
-    # Assume quda is built with QIO and QMP.
-    {.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib & " -L" & qioDir & "/lib -lqio -llime -L" & qmpDir & "/lib -lqmp".}
-    #{.passL: "-L" & qudaDir & "/lib -lquda -lstdc++ " & cudaLib & " -L" & qioDir & "/lib -lqio -llime -L" & qmpDir & "/lib -lqmp".}
-  else:
-    # Assume QUDA is built with QIO.
-    {.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib & " -L" & qioDir & "/lib -lqio -llime".}
-else:
-  {.passL: qudaDir & "/lib/libquda.a -lstdc++ " & cudaLib.}
+  {.passL: "-L" & qioDir & "/lib -lqio -llime" .}
 
-{.passL: "-Wl,-rpath," & qudaDir & "/lib".}
+when qmpDir.len > 0:
+  {.passL: "-L" & qmpDir & "/lib -lqmp".}
 
 #proc cudaGetDeviceCount(n:ptr cint):cint {.importc,nodecl.}
 #proc cudaGetDeviceCount*: int =

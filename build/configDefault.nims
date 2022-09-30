@@ -61,6 +61,7 @@ qioDir = getHomeDir()/"lqcd/install/qio"
 # optional libraries
 qudaDir = ""
 cudaLibDir = ""
+nvhpcDir = ""
 primmeDir = ""
 chromaDir = ""
 gridDir = ""
