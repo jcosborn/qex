@@ -35,9 +35,12 @@ letParam:
       @[8,8,8,8]
   dt = 0.02
   tmax = 2.0
+  t2Emax = 0.45
+  tdt2Emax = 0.35
   fmunuloop = 5
   showTimers:bool = 0
 
+installHelpParam()
 echoParams()
 echo "rank ", myRank, "/", nRanks
 threads: echo "thread ", threadNum, "/", numThreads
@@ -77,7 +80,7 @@ g.gaugeFlow(dt):
   dt2E = (t2E-ot2E)/dt
   tdt2E = wflowT*dt2E
   echo "WFLOW ",wflowT," ",et," ",es," ",q," ",t2E," ",tdt2E
-  if (tmax>0 and wflowT>(tmax-0.5*dt)) or (wflowT>1 and t2E>0.45 and tdt2E>0.35):
+  if (tmax>0 and wflowT>tmax) or (t2Emax>0 and t2E>t2Emax) or (tdt2Emax>0 and tdt2E>tdt2Emax):
     break
 
 if showTimers: echoTimers()
