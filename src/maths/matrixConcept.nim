@@ -32,6 +32,13 @@ template createAsType2(t,c:untyped):untyped =
       indexed(x, i)
     else:
       x[][i]
+  template index*[X:t,T](x: typedesc[X]; i: typedesc[T]): typedesc =
+    when T is t:
+      index(X[], T[])
+    elif T.isWrapper:
+      c(index(X.type[], type T))
+    else:
+      index(X[], T)
   template `[]`*(x: t; i: Scalar): untyped = c(x[][i])
   template `[]`*(x:t; i,j:SomeInteger):untyped =
     #echoType: x
@@ -190,6 +197,13 @@ template asVectorArray*[N:static[int],T](x: array[N,T]): untyped =
   #t
 template asVectorArray*[T](N:static[int], x: typedesc[T]): untyped =
   asVector( VectorArrayObj[N,type(T)] )
+
+template index*[I,J:static[int],T,K](x: typedesc[MatrixArrayObj[I,J,T]];
+                                     k: typedesc[K]): typedesc =
+  when K.isWrapper:
+    MatrixArrayObj[I,J,index(type T, type K)]
+  else:
+    false # error
 
 template `len`*(x:MatrixArrayObj):untyped = x.I
 template nrows*(x:MatrixArrayObj):untyped = x.I

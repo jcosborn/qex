@@ -51,6 +51,13 @@ template `[]`*[T](x: AsComplex, i: T): untyped =
   else:
     x[][i]
 
+template index*[X:AsComplex,I](x: typedesc[X], i: typedesc[I]): typedesc =
+  when I is AsComplex:
+    index(X[], I[])
+  elif I.isWrapper:
+    asComplex(index(X.type[], I.type))
+  else:
+    index(X[], I)
 
 template re*(x: ComplexObj): auto = x.reX
 macro re*(x: ComplexObj{nkObjConstr}): auto = x[1][1]

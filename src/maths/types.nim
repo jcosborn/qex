@@ -8,6 +8,9 @@ import base/wrapperTypes
 import macros
 import typetraits
 
+template index*[N,T](x: typedesc[array[N,T]], i: typedesc): typedesc =
+  type(T)
+
 template makeDeclare(s:untyped):untyped {.dirty.} =
   template `declare s`*(t:typedesc):untyped {.dirty.} =
     template `declared s`*(y:t):untyped {.dirty.} = true
@@ -361,9 +364,11 @@ template indexed*[T,I](x: T, i: I): untyped =
       #static: echo "indexed sameWrapper"
       x[i[]]
     else:
-      #static: echo "indexed not sameWrapper"
+      mixin index
+      static: echo "indexed not sameWrapper ", $type(T), " ", $type(I)
       #var tIndexed = asWrapper(T, indexedX(getAlias x[], i))
-      var tIndexed = asWrapper(T, indexed(x[], i))
+      #var tIndexed = asWrapper(T, indexed(x[], i))
+      var tIndexed = asWrapper(index(type T,type I), indexed(x[], i))
       tIndexed
   else:
     #static: echo "indexed not isWrapper"
