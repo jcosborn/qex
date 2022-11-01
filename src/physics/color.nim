@@ -19,6 +19,14 @@ template asVarWrapper*(x: Color, y: typed): untyped =
   #cy
   asVar(asColor(y))
 
+template index*[T,I](x: typedesc[Color[T]], i: typedesc[I]): typedesc =
+  when I is Color:
+    index(T.type, I.type[])
+  elif I.isWrapper:
+    Color[index(T.type, I.type)]
+  else:
+    index(T.type, I.type)
+
 template `[]`*[T](x: Color, i: T): untyped =
   when T is Color:
     x[][i[]]

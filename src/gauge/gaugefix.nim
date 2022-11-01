@@ -236,7 +236,7 @@ proc moveFromZero[T](x: T, eps: float): T =
   static: echo "result: ", $type(result)
   static: echo "result[0]: ", $type(result[0])
   for i in 0..<x.numNumbers:
-    result[i] = moveFromZero(x[i], eps)
+    result[i] = moveFromZero(eval(x[i]), eps)
 
 proc overRelaxSu2(r: var auto, x: auto, i,j: int, o: float) =
   mixin rsqrt

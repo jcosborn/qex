@@ -227,6 +227,9 @@ else:
   template setBinop*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
     setBinopP(op, fun, t1, t2, t3)
 
+import numberWrap
+export numberWrap
+
 when isMainModule:
   var d1,d2:float
   var s1,s2:float32

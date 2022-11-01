@@ -21,6 +21,10 @@ type
   mmask32* {.importc: "__mmask32", imm.} = object
   mmask64* {.importc: "__mmask64", imm.} = object
 
+  SimdX86S = m64 | m128 | m256 | m512
+  SimdX86D = m128d | m256d | m512d
+  SimdX86 = SimdX86S | SimdX86D
+
 when defined(SSE):
   type
     SimdS4* = Simd[m128]
@@ -39,3 +43,5 @@ when defined(AVX512):
     SimdD8*  = Simd[m512d]
     SimdI16* = Simd[m512i]
     SimdH16* = Simd[m512h]
+
+template eval*(x: SimdX86): untyped = x

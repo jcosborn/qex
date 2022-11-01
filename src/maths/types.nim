@@ -358,6 +358,7 @@ type
 template indexedX[T,I](x: T, i: I): untyped =
   Indexed[T,I](indexedPtr: x, indexedIdx: i)
 template indexed*[T,I](x: T, i: I): untyped =
+  #static: echo "indexed: ", $T.type
   when isWrapper(T):
     #static: echo "indexed isWrapper"
     when sameWrapper(type T, type I):
@@ -457,6 +458,8 @@ template `-=`*(x:Indexed, y: typed) =
 template `*=`*(x:Indexed, y: typed) =
   let tIndexedStarEq = x
   tIndexedStarEq != !tIndexedStarEq * y
+#proc eval*(x: Indexed): auto {.inline.} =
+#  ojx
 
 #forwardFunc(Indexed, len)
 #forwardFunc(Indexed, nrows)

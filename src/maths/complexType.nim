@@ -51,6 +51,14 @@ template `[]`*[T](x: AsComplex, i: T): untyped =
   else:
     x[][i]
 
+template index*[TR,TI,I](x: typedesc[ComplexObj[TR,TI]], i: typedesc[I]): typedesc =
+  when I.isWrapper:
+    ComplexObj[index(TR.type,I.type),index(TI.type,I.type)]
+  else:
+    {.error.} #index(X[], I)
+
+template asComplex*(x: typedesc): typedesc = newComplexProxy(x)
+
 template index*[X:AsComplex,I](x: typedesc[X], i: typedesc[I]): typedesc =
   when I is AsComplex:
     index(X[], I[])

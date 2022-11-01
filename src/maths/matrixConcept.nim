@@ -198,6 +198,13 @@ template asVectorArray*[N:static[int],T](x: array[N,T]): untyped =
 template asVectorArray*[T](N:static[int], x: typedesc[T]): untyped =
   asVector( VectorArrayObj[N,type(T)] )
 
+template index*[I:static[int],T,K](x: typedesc[VectorArrayObj[I,T]];
+                                   k: typedesc[K]): typedesc =
+  when K.isWrapper:
+    VectorArrayObj[I,index(type T, type K)]
+  else:
+    false # error
+
 template index*[I,J:static[int],T,K](x: typedesc[MatrixArrayObj[I,J,T]];
                                      k: typedesc[K]): typedesc =
   when K.isWrapper:

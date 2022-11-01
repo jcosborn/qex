@@ -237,6 +237,8 @@ template makeWrapperTypeX(wf:WFSet, name,fName,asName,tasName: untyped) =
     #static: echo "asWrapper Color"
     #dumpTree: y
     asName(y)
+  template asWrapper*(x: typedesc[name], y: typed): untyped =
+    asName(y)
 
 proc makeWrapperTypeP*(name: NimNode; docs: string, wf: WFSet): NimNode =
   let Name = capitalizeAscii(name.repr)

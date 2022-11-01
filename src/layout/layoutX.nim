@@ -210,7 +210,7 @@ proc rankIndex*(l:Layout, coords:openArray[int]):tuple[rank,index:int] =
 proc rankIndex*(l:Layout, coords: ptr cint):tuple[rank,index:int] =
   #rankIndex(l, cast[ptr cArray[cint]](coords))
   var ca = cast[ptr cArray[cint]](coords)
-  rankIndex(l, toOpenArray(ca, 0, 0))
+  rankIndex(l, toOpenArray(ca, 0, l.nDim-1))
 #proc coord*(l:Layout, coord:openArray[cint], ri:tuple[rank,index:int]) =
 #  var li = LayoutIndexQ(rank:ri.rank.cint, index:ri.index.cint)
 #  layoutCoordQ(l.lq.addr, coord, li)

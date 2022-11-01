@@ -78,8 +78,16 @@ template asVarWrapper*(x: ImagProxy, y: typed): auto =
 template isWrapper*(x: ComplexProxy): auto = true
 template asWrapper*(x: ComplexProxy, y: typed): auto =
   asComplexProxy(y)
+template asWrapper*(x: typedesc[ComplexProxy], y: typed): auto =
+  asComplexProxy(y)
 template asVarWrapper*(x: ComplexProxy, y: typed): auto =
   asVar(asComplexProxy(y))
+
+template `[]`*[T](x: typedesc[ComplexProxy[T]]): typedesc =
+  when T is ptr:
+    T.type[]
+  else:
+    T.type
 
 template `[]`*[T](x: ComplexProxy[T]): auto =
   when T is ptr:
@@ -154,6 +162,8 @@ template newImagProxy*[T](x: T): untyped =
 #  ComplexProxy[type(T)](v: x)
 #template newComplexProxy*(x: typed): untyped =
 #  flattenCallArgs(newComplexProxyU, x)
+template newComplexProxy*[T](x: typedesc[T]): typedesc =
+  ComplexProxy[type(T)]
 template newComplexProxy*[T](x: T): untyped =
   ComplexProxy[type(T)](v: x)
 #template newComplexProxy*(x: typed{call}): untyped =

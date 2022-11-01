@@ -40,23 +40,32 @@ template eval*[T](x: typedesc[Simd[T]]): typedesc =
 template `[]`*(x: Simd, i: typed): untyped =
   when i is Simd:
     when i[] is AsView:
-      indexed(x, i[][])
+      #indexed(x, i[][])
+      var t = indexed(x, i[][])
+      t
     else:
-      x[][i[]]
+      #x[][i[]]
+      var t = indexed(x, i[])
+      t
   else:
     when i is AsView:
       indexed(x, i[])
     else:
-      x[][i]
+      #x[][i]
+      indexed(x, i)
+
+template index*[T,I](x: typedesc[Simd[T]], i: typedesc[I]): typedesc =
+  numberType(T)
 
 #template doIndexed[T](x: T): untyped =
 #  when T is Indexed:
 #    x[]
 #  else:
 #    x
-template doIndexed[T](x: T): untyped = x
-template doIndexed(x: Indexed): untyped = doIndexed x[]
-template doIndexed(x: Scalar): untyped = doIndexed x[]
+#template doIndexed[T](x: T): untyped = x
+#template doIndexed(x: Indexed): untyped = doIndexed x[]
+#template doIndexed(x: Scalar): untyped = doIndexed x[]
+template doIndexed[T](x: T): untyped = eval(x)
 
 template toPrec*(x: Simd, y: typedesc[float32]): untyped = toSingle(x)
 template toPrec*(x: Simd, y: typedesc[float64]): untyped = toDouble(x)

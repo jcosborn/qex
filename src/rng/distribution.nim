@@ -20,6 +20,9 @@ proc gaussian*(x: var SomeNumber, r: var RNG) =
 proc gaussian*(x: var Scalar, r: var RNG) =
   mixin gaussian
   x := gaussian(r)
+proc gaussian*(x: var AsNumber, r: var RNG) =
+  mixin gaussian
+  x := gaussian(r)
 #proc gaussian*(x: var Simd, r: var RNG) =  # FIXME to set all lanes
 #  mixin gaussian
 #  x[] := gaussian(r)
