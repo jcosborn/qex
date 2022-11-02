@@ -143,11 +143,14 @@ Environment variables to be set during compile time
 [config file](build/configDefault.nims#L70) ),
 can be passed one at a time using `env:FOO=BAR`.
 See the [examples](#configuration-examples) below.
-The full set can also be passed as a Nim seqeunce using the
-syntax `envs:'@["FOO=BAR","FOO2=BAR2"]'`.
-Preserving the double quotes (by using single quotes here, or backslashes)
-is important in this case.
-For the single arguments (`env:FOO=BAR`) the double quotes will be added
+The full set can also be passed as a Nim seqeunce of strings using the
+syntax `envs:'@["FOO=BAR","FOO2=BAR2","FOO3_WITH_SPACE_QUOTES=BAR3 \"IN QUOTES\""]'`.
+The third one defines an environment variable with name `FOO3_WITH_SPACE_QUOTES` and
+its content `BAR3 "IN QUOTES"`.
+The single quotes above prevent shell from interpreting the Nim expression,
+which uses double quotes to denote Nim strings.
+And the backslashes preserve the double quotes in Nim strings.
+For the single arguments (`env:FOO=BAR`) the double quotes will be added by Nim
 so are unnecessary.
 
 Details on the Nim compiler options can be found

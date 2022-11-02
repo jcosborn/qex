@@ -63,7 +63,7 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
       if v=="":
         defargs.add "--" & key
       else:
-        defargs.add "--" & key & ":\"" & v & "\""
+        defargs.add "--" & key & ":" & quoteShell v
     else:
       if key.len>=7 and key[0..6]!="warning":  # warnings don't seem to work here
         switch(key, v)
@@ -120,7 +120,8 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
   embedsrc ~ ""
   #exceptions ~ quirky
   #if not nimargs.any(proc (x:string):bool = x.startswith("--mm:")):
-  gc ~ refc
+  if (NimMajor, NimMinor) >= (1, 7):
+    mm ~ refc
 
   if not fo.debug:
     d ~ "release"

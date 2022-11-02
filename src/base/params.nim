@@ -43,11 +43,13 @@ proc paramHelp*(p:string = ""):string =
   result = "Usage:\n  " & getAppFileName()
   let i = paramNames.find(p)
   if i>=0:
-    result &= addComment(" -" & p & ":VALUE", paramComments[i])
+    result &= addComment(" -" & p & ":" & paramValues[i] & " (current value)", paramComments[i])
   else:
-    result &= " -OPTION:VALUE ...\nAvailable OPTIONs:"
+    result &= " -OPTION:VALUE ...\nAvailable OPTIONs and current VALUEs:"
+    let spc = "                "
     for i in 0..<paramNames.len:
-      result &= "\n    " & paramNames[i].addComment(paramComments[i])
+      let nm = paramNames[i]
+      result &= "\n    " & (nm & spc[min(spc.len-1,nm.len)..^1] & " : " & paramValues[i]).addComment(paramComments[i])
 
 template cnvnone(x:typed):untyped = x
 template makeTypeParam(name,typ,deflt,cnvrt: untyped): untyped {.dirty.} =
