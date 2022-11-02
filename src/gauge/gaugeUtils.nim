@@ -720,7 +720,7 @@ proc hash(path:OrdPath):Hash =
     of opList: !$(opList.hash !& path.s.hash)
     of opAdj: !$(opAdj.hash !& path.p.hash)
 
-proc `==`(x,y:OrdPath):bool =
+proc `==`(x,y:OrdPath):bool {.noSideEffect.} =
   # strictly follows hash(path:OrdPath)
   return
     if x.k != y.k:

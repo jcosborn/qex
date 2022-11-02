@@ -66,3 +66,4 @@ template liftBinaryInplace(fn: untyped) =
 liftBinaryInplace(`:=`)
 liftBinaryInplace(assign)
 liftBinaryInplace(`+=`)
+liftBinaryInplace(`*=`)
