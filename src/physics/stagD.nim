@@ -1,6 +1,4 @@
-import os
-import times
-#import strUtils
+import os, times, seqUtils
 
 import base
 import layout
@@ -483,6 +481,7 @@ proc eoReconstruct*(s:Staggered; r,b:Field; m:SomeNumber) =
   stagD(s.so, r, s.g, r, 0.0, -1.0/m)
   r.odd += b/m
 
+#[
 template foldl*(f,n,op:untyped):untyped =
   var r:type(f(0))
   r = f(0)
@@ -492,6 +491,7 @@ template foldl*(f,n,op:untyped):untyped =
       b {.inject.} = f(i)
     r = op
   r
+]#
 
 when isMainModule:
   import rng, strutils
