@@ -150,12 +150,10 @@ proc write[T](wr: var Writer, v: var openArray[ptr T], lat: openArray[int],
   var qioMd = QIO_string_create()
   QIO_string_set(qioMd, md)
 
-  #wr.writeRecordInfo()
-  #let recWordSize = getWordSize(r)
   var size = sizeOf(v[0][]) div wr.layout.nSitesInner
   var vsize = size*v.len
   var wordSize = sizeOf(numberType(v[0][]))
-  #echo "ws: ", wordSize, "  rws: ", recWordSize
+  #echo "size: ", size, "  vsize: ", vsize, "  wordsize: ", wordSize
 
   var precs0 = case wordSize:
     of 4: "F"

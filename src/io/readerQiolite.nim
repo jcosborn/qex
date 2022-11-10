@@ -117,10 +117,10 @@ proc read[T](rd: var Reader, v: openArray[ptr T]) =
   let nsites = rd.layout.nsites
   let objcount = r.datacount
   let datum_size = objcount * r.typesize
-  #echo datum_size, " ", objcount
+  #echo "datum_size: ", datum_size, "  objcount: ", objcount
   let nbytes = nsites * datum_size
   let ioprec = if rd.sr.record.precision=="F": 1 else: 2
-  let tprec = if numberType(T) is float32: 1 else: 2
+  let tprec = if sizeof(numberType(T)) == 4: 1 else: 2
   let ioelem = r.typesize / (4*ioprec)
   let telem = sizeof(IOtype(T)) / (4*tprec)
   #let telem = numNumbers IOtype(T)
