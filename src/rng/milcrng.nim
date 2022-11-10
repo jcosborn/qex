@@ -1,5 +1,7 @@
 import math
 import comms/qmp
+import maths/types
+import simd/simdWrap
 
 # RNG from MILC version 6
 # C language random number generator for parallel processors
@@ -16,6 +18,18 @@ type RngMilc6* = object
     gset: float
 
 template isWrapper*(x: RngMilc6): untyped = false
+template numberType*(x: RngMilc6): typedesc = uint32
+template numberType*(x: typedesc[RngMilc6]): typedesc = uint32
+template simdLength*(x: typedesc[RngMilc6]): untyped = 1
+template getNc*(x: RngMilc6): untyped = 0
+template getNs*(x: RngMilc6): untyped = 0
+template `:=`*(x: RngMilc6, y: RngMilc6) =
+  x = y
+template `:=`*(x: RngMilc6, y: Indexed) =
+  x := y[]
+template `[]`*(x: RngMilc6, y: Simd): untyped = x
+template `[]=`*(x: RngMilc6, y: Simd, z: typed) =
+  x := z
 
 #template `[]`*(x: RngMilc6): untyped = x
 
