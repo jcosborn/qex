@@ -57,8 +57,9 @@ template gaussian*(r: AsVar, x: untyped) =
   var t = r[]
   gaussian(t, x)
 proc gaussian*(v: Field, r: RNGField) =
-  let nd = v.l.nDim
-  var c = newSeq[int32](nd)
+  when defined(RandCoordOrder):
+    let nd = v.l.nDim
+    var c = newSeq[int32](nd)
   for i in v.l.sites:
     #when defined(RandCoordOrder) or not defined(RandRawOrder):
     when defined(RandCoordOrder):

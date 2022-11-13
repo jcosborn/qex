@@ -1,4 +1,4 @@
-import base/globals
+#import base/globals
 #import simdGcc
 #export simdGcc
 import base/metaUtils

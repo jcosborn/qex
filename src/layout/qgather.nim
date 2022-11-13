@@ -1,5 +1,5 @@
 import base
-import strutils
+#import strutils
 import algorithm
 
 type

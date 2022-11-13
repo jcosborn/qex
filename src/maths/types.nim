@@ -366,7 +366,7 @@ template indexed*[T,I](x: T, i: I): untyped =
       x[i[]]
     else:
       mixin index
-      static: echo "indexed not sameWrapper ", $type(T), " ", $type(I)
+      #static: echo "indexed not sameWrapper ", $type(T), " ", $type(I)
       #var tIndexed = asWrapper(T, indexedX(getAlias x[], i))
       #var tIndexed = asWrapper(T, indexed(x[], i))
       var tIndexed = asWrapper(index(type T,type I), indexed(x[], i))

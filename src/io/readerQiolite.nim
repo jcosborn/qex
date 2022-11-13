@@ -4,7 +4,6 @@ import strutils, strformat
 import macros
 import field
 import os
-import iocommon
 import scidacio
 
 var verb = 0
@@ -148,7 +147,7 @@ proc read[T](rd: var Reader, v: openArray[ptr T]) =
   for i in countup(0'i32, nsites.int32-1):
     rd.layout.coord(x, this_node, i)
     let j = hyperindex(x, sublattice, hypermin)
-    let tbuf = buf + j*datum_size.int
+    let tbuf = cast[cstring](buf + j*datum_size.int)
     if ioprec==tprec:
       put(tbuf, i, objcount, v)
     else:

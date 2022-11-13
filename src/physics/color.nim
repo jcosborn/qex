@@ -63,10 +63,10 @@ template forwardVV(f: untyped) {.dirty.} =
     mixin f
     f(x[])
 # forward from value to type
-template forwardVT(f: untyped) {.dirty.} =
-  template f*[T](x: Color[T]): untyped =
-    mixin f
-    f(type T)
+#template forwardVT(f: untyped) {.dirty.} =
+#  template f*[T](x: Color[T]): untyped =
+#    mixin f
+#    f(type T)
 # forward from type to type
 template forwardTT(f: untyped) {.dirty.} =
   template f*[T](x: typedesc[Color[T]]): untyped =

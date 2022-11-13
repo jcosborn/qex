@@ -81,8 +81,8 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   template assign1*(r: var T; x: SomeNumber) =
     r = `P "_set1_" S`(F(x))
   template assign*(r: var T; x: SomeNumber) = assign1(r, x)
-  template setX:untyped = `P "_setr_" S`()
-  template setF(x):untyped = F(x)
+  template setX:untyped {.gensym.} = `P "_setr_" S`()
+  template setF(x):untyped {.gensym.} = F(x)
   macro assign*(r:var T; x:varargs[SomeNumber]):auto =
     if x.len==1:
       result = newCall(ident"assign1", r, x[0])

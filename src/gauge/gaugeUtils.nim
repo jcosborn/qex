@@ -519,8 +519,10 @@ type
   Coord = object
     x: seq[int]
 
+#[
 proc `$`(x:Coord):string =
   return "Coord" & $x.x
+]#
 
 proc `+`(x,y:Coord):Coord =
   let
@@ -570,6 +572,7 @@ proc `+=`(x:var Coord,y:Coord) =
   for i in 0..<ny:
     x.x[i] += y.x[i]
 
+#[
 proc `-=`(x:var Coord,y:Coord) =
   let
     nx = x.x.len
@@ -578,6 +581,7 @@ proc `-=`(x:var Coord,y:Coord) =
     x.x.setLen ny
   for i in 0..<ny:
     x.x[i] -= y.x[i]
+]#
 
 proc `[]`(x:Coord, i:SomeInteger):int =
   if i>=x.x.len:

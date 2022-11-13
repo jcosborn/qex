@@ -3,7 +3,7 @@ import complexNumbers
 import matrixConcept
 import types
 import matinv
-import strformat, macros, algorithm
+import macros, algorithm
 
 ## polynomial power series exponential
 ## optimized for minimal number of matrix multiplies

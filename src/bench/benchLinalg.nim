@@ -31,6 +31,7 @@ macro exp2string(x:untyped):auto =
   let n = skipWhitespace(s)
   newlit s[n..^1]
 
+#[
 proc checkMem =
   echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
        getTotalMem())
@@ -39,6 +40,7 @@ proc checkMem =
   echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
        getTotalMem())
   echo GC_getStatistics()
+]#
 
 # fps: flops per site
 # bps: bytes moved (load+store) per site

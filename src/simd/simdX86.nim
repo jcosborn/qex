@@ -1,7 +1,7 @@
 #import macros
 #import ../metaUtils
 #import ../basicOps
-import base
+#import base
 import simdX86Types
 export simdX86Types
 

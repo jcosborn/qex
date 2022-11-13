@@ -1,4 +1,4 @@
-import os, times, seqUtils
+import os, times
 
 import base
 import layout
@@ -494,7 +494,7 @@ template foldl*(f,n,op:untyped):untyped =
 ]#
 
 when isMainModule:
-  import rng, strutils
+  import rng, strutils, seqUtils
   proc runtest(v1,v2,sdAll,sdEven,sdOdd,s,m:any) =
     let g = s.g
     let lo = g[0].l
