@@ -9,9 +9,67 @@ import types
 # solve(V,M,V) -> V=M\V
 # solve(M,M,M) -> M=M\M
 
+proc flv*[M,X:Mat1](m: var M, x: X): auto =
+  # returns (-1)^n det and (-1)^(n-1) det X^-1
+  const n = x.nrows
+  when n==1:
+    m := 1
+    result = - x[0,0]
+  elif n==2:
+    result = - trace(x)
+    m := x + result
+    result := -0.5 * m.adj.dot(x)
+  #[elif n==3:
+    result = - trace(x)
+    m := x + result
+    var t = x*m
+    result := -0.5 * trace(t)
+    m := t + result
+    result := (1.0/3.0) * m.adj.dot(x)
+  elif n==4:
+    result = - trace(x)
+    m := x + result
+    var t = x*m
+    result := -0.5 * trace(t)
+    m := t + result
+    t := x*m
+    result := (-1.0/3.0) * trace(t)
+    m := t + result
+    result := (-1.0/4.0) * m.adj.dot(x) ]#
+  else:
+    result = - trace(x)
+    m := x + result
+    for i in 2..<n:
+      var t = x*m
+      result := (-1.0/i.float) * trace(t)
+      m := t + result
+    result := (-1.0/n.float) * m.adj.dot(x)
+
 proc inverseN*(r: var Mat1, c: SomeNumber, x: Mat2) =
-  echo "inverseN not implemented"
-  doAssert(false)
+  let d = flv(r, x)
+  echo r
+  echo d
+  #let f = -c/d
+  #let t = x*r
+  #let a = trace(t)
+  #let b = t.norm2
+  #let f = c*adj(a)/b
+  #echo f
+  #let f = -1/d
+  #r *= f
+  #let t = r*(2 - x*r)
+  #r := c*t
+  var t = x*r
+  var a = (2/x.nrows)*trace(t)
+  var u = r*(a - t)
+  #t := x*u
+  #a := (2/x.nrows)*trace(t)
+  #r := u*(a - t)
+  #u := r
+  let f = c*x.nrows/u.adj.dot(x)
+  r := f*u
+  #let f = c*x.nrows/r.adj.dot(x)
+  #r *= f
 
 proc inverse*(r: var Mat1, c: SomeNumber, x: Mat2) =
   const nc = r.nrows
@@ -134,67 +192,30 @@ when isMainModule:
     let r0 = x
     let r = simdSum(r0)/simdLength(r0)
     echo "error/eps: ", r/epsilon(r)
-    doAssert(abs(r)<n*epsilon(r))
+    doAssert(abs(r)<2*n*epsilon(r))
   proc test(T: typedesc) =
-    var m1,m2,m3,m4: T
+    var m1,m2,m3: T
     let N = m1.nrows
     for i in 0..<N:
       for j in 0..<N:
         let fi = i.float
         let fj = j.float
-        m1[i,j].re := 0.5 + 0.7/(0.9+1.3*fi-fj)
-        m1[i,j].im := 0.1 + 0.3/(0.4+fi-1.1*fj)
+        var fd = fi - fj
+        if 2*fd>N.float: fd -= N.float
+        if -2*fd>N.float: fd += N.float
+        m1[i,j].re := 1.0 + fd*fd + 0.0*fd #0.1/(1000.0+fi+fj)
+        m1[i,j].im := 0.0*(1.0+fi-fj) + 0.0/(0.4+fi+1.1*fj)
     echo "test " & $N & " " & $T
-    #echo "m1: ", m1
-    inverse(m2, 1.5, m1)
+    echo "m1: ", m1
+    #inverse(m2, 1.5, m1)
+    inverseN(m2, 1.5, m1)
     #echo "m2: ", m2
     m3 := (1.0/1.5)*(m1*m2)
     #echo "m3: ", m3
     let err = sqrt((1-m3).norm2)/N
     echo "err: ", err
+    #echo "err: ", err, (if err.simdSum>10*epsilon(numberType(m1)):"  FAIL" else:"")
     check(err, 5)
-
-    #[
-    projectU(m2, m1)
-    m3 := m2.adj*m2
-    var err2 = sqrt((1-m3).norm2/(N*N))
-    echo " projectU err: ", err2
-    doAssert(simdSum(err2)<simdLength(err2)*N*eps*30)
-    #m2 := 0.1*(m2 - (trace(m2)/N))
-    let m2n = 1/(10*sqrt(m2.norm2))
-    m3 := exp(m2n*m2)
-    m4 := exp(-m2n*m2)
-    m2 := m3*m4
-    #echo "exp ",m2,"\n\t= ",m3
-    err2 = sqrt((1-m2).norm2/(N*N))
-    echo " exp err: ", err2
-    doAssert(simdSum(err2)<simdLength(err2)*N*eps*2)
-    inverse(m4, m1)
-    m3 := m1*m4
-    echo m3
-    err2 = sqrt((1-m3).norm2/(N*N))
-    echo " inverse err: ", err2
-    doAssert(simdSum(err2)<simdLength(err2)*N*eps*2)
-    projectU(m2, m1)
-    let r1 = trace(m4.adj*m2).re
-    m3 := m1 + 3*seps*m1*m1
-    #m3 := m1 + 1e-3'f32*m1*m1
-    projectU(m2, m3)
-    let r2 = trace(m4.adj*m2).re
-    projectUderiv(m2, m1, m4)
-    let dr = r2 - r1
-    let dm = trace((m3-m1).adj * m2).re
-    echo " r1: ", r1
-    echo " r2: ", r2
-    echo " dr: ", dr
-    echo " dm: ", dm
-    #echo "m1: ", m1
-    #echo "m3: ", m3
-    let dd = abs(dr - dm)
-    echo " dd: ", dd
-    doAssert(simdSum(dd)<simdLength(dd)*N*eps*40)
-    ]#
-
 
   type
     Cmplx[T] = ComplexType[T]
@@ -205,6 +226,12 @@ when isMainModule:
       test(CM[2,t])
       test(CM[3,t])
       test(CM[4,t])
+      test(CM[5,t])
+      test(CM[6,t])
+      #test(CM[7,t])
+      #test(CM[8,t])
+      #test(CM[9,t])
+      #test(CM[10,t])
   doTest(float32)
   doTest(float64)
   doTest(SimdS4)

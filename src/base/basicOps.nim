@@ -31,7 +31,9 @@ type
 var FLT_EPSILON*{.importC,header:"<float.h>".}:float32
 var DBL_EPSILON*{.importC,header:"<float.h>".}:float64
 template epsilon*(x:float32):untyped = FLT_EPSILON
+template epsilon*(x:typedesc[float32]):untyped = FLT_EPSILON
 template epsilon*(x:float64):untyped = DBL_EPSILON
+template epsilon*(x:typedesc[float64]):untyped = DBL_EPSILON
 template basicNumberDefines(T,N,F) {.dirty.} =
   template numberType*(x:T):untyped = F
   template numberType*(x:typedesc[T]):untyped = F
@@ -134,7 +136,7 @@ template idot*(r:var SomeNumber; x:SomeNumber2;y:SomeNumber3):untyped =
 template redot*(x:SomeNumber; y:SomeNumber2):untyped = x*y
 template redotinc*(r:var SomeNumber; x:SomeNumber2; y:SomeNumber3):untyped =
   r += x*y
-#template simdLength*(x:SomeNumber):untyped = 1
+template simdLength*(x:SomeNumber):untyped = 1
 template simdLength*(x:typedesc[SomeNumber]):untyped = 1
 template simdSum*(x:SomeNumber):untyped = x
 template simdSum*[T:SomeNumber](r:var T; x:SomeNumber2):untyped =
