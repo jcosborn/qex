@@ -36,7 +36,7 @@ proc flv*[M,X:Mat1](m: var M, x: X): auto =
     result := (-1.0/3.0) * trace(t)
     m := t + result
     result := (-1.0/4.0) * m.adj.dot(x) ]#
-  else:
+  else:  # (n-2) n^3 + n^2 muls
     result = - trace(x)
     m := x + result
     for i in 2..<n:
@@ -75,7 +75,7 @@ proc inverse*(r: var Mat1, c: SomeNumber, x: Mat2) =
   const nc = r.nrows
   when nc==1:
     r := c / x[0,0]
-  elif nc==2:
+  elif nc==2:  # 6 muls
     let x00 = x[0,0]
     let x01 = x[0,1]
     let x10 = x[1,0]
@@ -86,7 +86,7 @@ proc inverse*(r: var Mat1, c: SomeNumber, x: Mat2) =
     r[0,1] := -idet * x01
     r[1,0] := -idet * x10
     r[1,1] :=  idet * x00
-  elif nc==3:
+  elif nc==3:  # 30 muls
     let x00 = x[0,0]
     let x01 = x[0,1]
     let x02 = x[0,2]
@@ -110,7 +110,7 @@ proc inverse*(r: var Mat1, c: SomeNumber, x: Mat2) =
     r[2,0] := idet*(x10*x21-x11*x20)
     r[2,1] := idet*(x20*x01-x21*x00)
     r[2,2] := idet*det0
-  elif nc==4:
+  elif nc==4:  # 94 muls
     let x00 = x[0,0]
     let x01 = x[0,1]
     let x02 = x[0,2]

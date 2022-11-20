@@ -384,7 +384,7 @@ proc checkSU*(x: Mat1): auto {.inline, noinit.} =
   d += norm2(-1.0 + x.determinant)
   return d
 
-discard """
+#[
 template rsqrtM2(r:typed; x:typed):untyped =
   load(x00, x[0,0].re)
   load(x01, x[0,1])
@@ -420,7 +420,7 @@ template rsqrtM(r:typed; x:typed):untyped =
     echo "unimplemented"
     quit(1)
 proc rsqrt(r:var Mat1; x:Mat2) = rsqrt(r, x)
-"""
+]#
 
 proc exp*(m: Mat1): auto {.noInit.} =
   var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
