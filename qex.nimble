@@ -76,6 +76,10 @@ let tClean = getTask "clean"
 task clean, tClean.desc:
   runTask tClean
 
+let tDepends = getTask "depends"
+task depends, tDepends.desc:
+  runTask tDepends
+
 let tShow = getTask "show"
 task show, tShow.desc:
   let ex = getExtraArgs("show")

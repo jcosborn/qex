@@ -192,6 +192,9 @@ buildTask help, "   Show this help message":
   echo pathHelp
   echo sepHelp
 
+buildTask depends, "Install Nimble dependencies":
+  exec "nimble install -dy"
+
 buildTask show, "   Show Nim compile flags":
   setNimFlags()
   echo "Nim compile command: ", ccDef
