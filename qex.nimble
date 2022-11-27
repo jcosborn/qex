@@ -30,6 +30,8 @@ requires "mdevolve >= 1.0.0"
 if primmeDir != "":
   requires "primme >= 3.0.0"
 
+requires "https://github.com/usqcd-software/qiolite"
+
 # Helpers
 
 proc getExtraArgs(task: string): seq[string] =
@@ -73,6 +75,10 @@ Commands:""":
 let tClean = getTask "clean"
 task clean, tClean.desc:
   runTask tClean
+
+let tDepends = getTask "depends"
+task depends, tDepends.desc:
+  runTask tDepends
 
 let tShow = getTask "show"
 task show, tShow.desc:

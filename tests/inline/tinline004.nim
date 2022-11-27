@@ -7,21 +7,22 @@ proc redecl(x:var float, y:float) =
     x += y
     var y = y
     y += 1
-    echo x," ",y
+    #echo x," ",y
   x += 3
   let x = x
   var y = y
   y += x
-  echo x," ",y
+  #echo x," ",y
 block:
   echo "Without inlining:"
   var x = 1.0
   var y = 0.1
   x.redecl(y+0.01)
   echo x," ",y
-inlineProcs:
+block:
   echo "With inlining:"
-  var x = 1.0
-  var y = 0.1
-  x.redecl(y+0.01)
+  inlineProcs:
+    var x = 1.0
+    var y = 0.1
+    x.redecl(y+0.01)
   echo x," ",y
