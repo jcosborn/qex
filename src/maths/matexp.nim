@@ -456,6 +456,53 @@ when isMainModule:
 
   testr()
 
+  proc testi() =
+    var
+      #min = -5.0
+      #max = 5.0
+      min = -3.1416
+      max = 3.1416
+      n = 8
+      x: MatrixArray[1,1,ComplexType[float]]
+      v = newSeq[float](n)
+      e = newSeq[float](n)
+      p: ExpParam
+      valid: bool
+      nreps = 1000000
+    var s = "Kind  Ord"
+    for i in 0..<n:
+      let t = min + ((max-min)*i)/(n-1)
+      v[i] = t
+      s &= &"{t:12.4f}"
+    echo s
+    for kind in ExpKind:
+      p.kind = kind
+      for order in 3..12:
+        p.order = order
+        valid = false
+        var secs = 0.0
+        for i in 0..<n:
+          x[0,0] := asImag(v[i])
+          var y = p.exp(x)
+          if p.valid:
+            valid = true
+            let ye = exp(x[0,0])
+            #let re = sqrt((y[0,0]-ye).norm2/ye.norm2)
+            let re = sqrt((y[0,0]-ye).norm2)
+            e[i] = re
+            tic()
+            for rep in 1..nreps:
+              y += p.exp(x)
+            secs += getElapsedTime()
+
+        if valid:
+          var o = $p.kind & " " & p.order|2
+          for i in 0..<n:
+            o &= &"{e[i]:12.4e}"
+          echo o, "  ", ((secs*1e9)/(nreps*n))|3, " ns"
+
+  testi()
+
   proc testm() =
     #var x: MatrixArray[3,3,float]
     var x: MatrixArray[3,3,ComplexType[float]]
@@ -493,6 +540,7 @@ when isMainModule:
       let re7 = (y7[0,0]/ye-1)
       let re5s = (y5s[0,0]/ye-1)
       echo x[0,0]|(-10,3), re3|(-12,4), re5|(-12,4), re7|(-12,4), re5s|(-12,4)
+  #[
   proc testi() =
     var
       min = -1.0
@@ -514,6 +562,7 @@ when isMainModule:
       echo x[0,0]|(-12,4), re3|(-12,4), re5|(-12,4), re7|(-12,4), re5s|(-12,4)
   #testr()
   #testi()
+  ]#
 
   proc testderiv(T: typedesc) =
     var a,b,c: T
