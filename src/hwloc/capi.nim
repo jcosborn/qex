@@ -47,9 +47,13 @@
 ##  @{
 ##
 
+when hostOs == "macosx":
+  {.pragma: hwloc, dynlib:"libhwloc.dylib".}
+else:
+  {.pragma: hwloc, dynlib:"libhwloc.so".}
+
 type
   hwloc_bitmap_s {.bycopy.} = object
-
 
 ## * \brief
 ##  Set of bits represented as an opaque pointer to an internal bitmap.
@@ -75,29 +79,29 @@ type
 ##
 
 proc hwloc_bitmap_alloc*(): hwloc_bitmap_t {.importc: "hwloc_bitmap_alloc",
-    dynlib: "libhwloc.so".}
+    hwloc.}
 ## * \brief Allocate a new full bitmap.
 
 proc hwloc_bitmap_alloc_full*(): hwloc_bitmap_t {.
-    importc: "hwloc_bitmap_alloc_full", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_alloc_full", hwloc.}
 ## * \brief Free bitmap \p bitmap.
 ##
 ##  If \p bitmap is \c NULL, no operation is performed.
 ##
 
 proc hwloc_bitmap_free*(bitmap: hwloc_bitmap_t) {.importc: "hwloc_bitmap_free",
-    dynlib: "libhwloc.so".}
+    hwloc.}
 ## * \brief Duplicate bitmap \p bitmap by allocating a new bitmap and copying \p bitmap contents.
 ##
 ##  If \p bitmap is \c NULL, \c NULL is returned.
 ##
 
 proc hwloc_bitmap_dup*(bitmap: hwloc_const_bitmap_t): hwloc_bitmap_t {.
-    importc: "hwloc_bitmap_dup", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_dup", hwloc.}
 ## * \brief Copy the contents of bitmap \p src into the already allocated bitmap \p dst
 
 proc hwloc_bitmap_copy*(dst: hwloc_bitmap_t; src: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_copy", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_copy", hwloc.}
 ##
 ##  Bitmap/String Conversion
 ##
@@ -112,19 +116,19 @@ proc hwloc_bitmap_copy*(dst: hwloc_bitmap_t; src: hwloc_const_bitmap_t): cint {.
 ##
 
 proc hwloc_bitmap_snprintf*(buf: cstring; buflen: csize_t; bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_snprintf", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_snprintf", hwloc.}
 ## * \brief Stringify a bitmap into a newly allocated string.
 ##
 ##  \return -1 on error.
 ##
 
 proc hwloc_bitmap_asprintf*(strp: ptr cstring; bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_asprintf", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_asprintf", hwloc.}
 ## * \brief Parse a bitmap string and stores it in bitmap \p bitmap.
 ##
 
 proc hwloc_bitmap_sscanf*(bitmap: hwloc_bitmap_t; string: cstring): cint {.
-    importc: "hwloc_bitmap_sscanf", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_sscanf", hwloc.}
 ## * \brief Stringify a bitmap in the list format.
 ##
 ##  Lists are comma-separated indexes or ranges.
@@ -141,19 +145,19 @@ proc hwloc_bitmap_sscanf*(bitmap: hwloc_bitmap_t; string: cstring): cint {.
 
 proc hwloc_bitmap_list_snprintf*(buf: cstring; buflen: csize_t;
                                 bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_list_snprintf", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_list_snprintf", hwloc.}
 ## * \brief Stringify a bitmap into a newly allocated list string.
 ##
 ##  \return -1 on error.
 ##
 
 proc hwloc_bitmap_list_asprintf*(strp: ptr cstring; bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_list_asprintf", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_list_asprintf", hwloc.}
 ## * \brief Parse a list string and stores it in bitmap \p bitmap.
 ##
 
 proc hwloc_bitmap_list_sscanf*(bitmap: hwloc_bitmap_t; string: cstring): cint {.
-    importc: "hwloc_bitmap_list_sscanf", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_list_sscanf", hwloc.}
 ## * \brief Stringify a bitmap in the taskset-specific format.
 ##
 ##  The taskset command manipulates bitmap strings that contain a single
@@ -169,7 +173,7 @@ proc hwloc_bitmap_list_sscanf*(bitmap: hwloc_bitmap_t; string: cstring): cint {.
 
 proc hwloc_bitmap_taskset_snprintf*(buf: cstring; buflen: csize_t;
                                    bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_taskset_snprintf", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_taskset_snprintf", hwloc.}
 ## * \brief Stringify a bitmap into a newly allocated taskset-specific string.
 ##
 ##  \return -1 on error.
@@ -177,72 +181,72 @@ proc hwloc_bitmap_taskset_snprintf*(buf: cstring; buflen: csize_t;
 
 proc hwloc_bitmap_taskset_asprintf*(strp: ptr cstring;
                                    bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_taskset_asprintf", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_taskset_asprintf", hwloc.}
 ## * \brief Parse a taskset-specific bitmap string and stores it in bitmap \p bitmap.
 ##
 
 proc hwloc_bitmap_taskset_sscanf*(bitmap: hwloc_bitmap_t; string: cstring): cint {.
-    importc: "hwloc_bitmap_taskset_sscanf", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_taskset_sscanf", hwloc.}
 ##
 ##  Building bitmaps.
 ##
 ## * \brief Empty the bitmap \p bitmap
 
 proc hwloc_bitmap_zero*(bitmap: hwloc_bitmap_t) {.importc: "hwloc_bitmap_zero",
-    dynlib: "libhwloc.so".}
+    hwloc.}
 ## * \brief Fill bitmap \p bitmap with all possible indexes (even if those objects don't exist or are otherwise unavailable)
 
 proc hwloc_bitmap_fill*(bitmap: hwloc_bitmap_t) {.importc: "hwloc_bitmap_fill",
-    dynlib: "libhwloc.so".}
+    hwloc.}
 ## * \brief Empty the bitmap \p bitmap and add bit \p id
 
 proc hwloc_bitmap_only*(bitmap: hwloc_bitmap_t; id: cuint): cint {.
-    importc: "hwloc_bitmap_only", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_only", hwloc.}
 ## * \brief Fill the bitmap \p and clear the index \p id
 
 proc hwloc_bitmap_allbut*(bitmap: hwloc_bitmap_t; id: cuint): cint {.
-    importc: "hwloc_bitmap_allbut", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_allbut", hwloc.}
 ## * \brief Setup bitmap \p bitmap from unsigned long \p mask
 
 proc hwloc_bitmap_from_ulong*(bitmap: hwloc_bitmap_t; mask: culong): cint {.
-    importc: "hwloc_bitmap_from_ulong", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_from_ulong", hwloc.}
 ## * \brief Setup bitmap \p bitmap from unsigned long \p mask used as \p i -th subset
 
 proc hwloc_bitmap_from_ith_ulong*(bitmap: hwloc_bitmap_t; i: cuint; mask: culong): cint {.
-    importc: "hwloc_bitmap_from_ith_ulong", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_from_ith_ulong", hwloc.}
 ## * \brief Setup bitmap \p bitmap from unsigned longs \p masks used as first \p nr subsets
 
 proc hwloc_bitmap_from_ulongs*(bitmap: hwloc_bitmap_t; nr: cuint; masks: ptr culong): cint {.
-    importc: "hwloc_bitmap_from_ulongs", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_from_ulongs", hwloc.}
 ##
 ##  Modifying bitmaps.
 ##
 ## * \brief Add index \p id in bitmap \p bitmap
 
 proc hwloc_bitmap_set*(bitmap: hwloc_bitmap_t; id: cuint): cint {.
-    importc: "hwloc_bitmap_set", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_set", hwloc.}
 ## * \brief Add indexes from \p begin to \p end in bitmap \p bitmap.
 ##
 ##  If \p end is \c -1, the range is infinite.
 ##
 
 proc hwloc_bitmap_set_range*(bitmap: hwloc_bitmap_t; begin: cuint; `end`: cint): cint {.
-    importc: "hwloc_bitmap_set_range", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_set_range", hwloc.}
 ## * \brief Replace \p i -th subset of bitmap \p bitmap with unsigned long \p mask
 
 proc hwloc_bitmap_set_ith_ulong*(bitmap: hwloc_bitmap_t; i: cuint; mask: culong): cint {.
-    importc: "hwloc_bitmap_set_ith_ulong", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_set_ith_ulong", hwloc.}
 ## * \brief Remove index \p id from bitmap \p bitmap
 
 proc hwloc_bitmap_clr*(bitmap: hwloc_bitmap_t; id: cuint): cint {.
-    importc: "hwloc_bitmap_clr", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_clr", hwloc.}
 ## * \brief Remove indexes from \p begin to \p end in bitmap \p bitmap.
 ##
 ##  If \p end is \c -1, the range is infinite.
 ##
 
 proc hwloc_bitmap_clr_range*(bitmap: hwloc_bitmap_t; begin: cuint; `end`: cint): cint {.
-    importc: "hwloc_bitmap_clr_range", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_clr_range", hwloc.}
 ## * \brief Keep a single index among those set in bitmap \p bitmap
 ##
 ##  May be useful before binding so that the process does not
@@ -264,18 +268,18 @@ proc hwloc_bitmap_clr_range*(bitmap: hwloc_bitmap_t; begin: cuint; `end`: cint):
 ##
 
 proc hwloc_bitmap_singlify*(bitmap: hwloc_bitmap_t): cint {.
-    importc: "hwloc_bitmap_singlify", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_singlify", hwloc.}
 ##
 ##  Consulting bitmaps.
 ##
 ## * \brief Convert the beginning part of bitmap \p bitmap into unsigned long \p mask
 
 proc hwloc_bitmap_to_ulong*(bitmap: hwloc_const_bitmap_t): culong {.
-    importc: "hwloc_bitmap_to_ulong", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_to_ulong", hwloc.}
 ## * \brief Convert the \p i -th subset of bitmap \p bitmap into unsigned long mask
 
 proc hwloc_bitmap_to_ith_ulong*(bitmap: hwloc_const_bitmap_t; i: cuint): culong {.
-    importc: "hwloc_bitmap_to_ith_ulong", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_to_ith_ulong", hwloc.}
 ## * \brief Convert the first \p nr subsets of bitmap \p bitmap into the array of \p nr unsigned long \p masks
 ##
 ##  \p nr may be determined earlier with hwloc_bitmap_nr_ulongs().
@@ -285,7 +289,7 @@ proc hwloc_bitmap_to_ith_ulong*(bitmap: hwloc_const_bitmap_t; i: cuint): culong 
 
 proc hwloc_bitmap_to_ulongs*(bitmap: hwloc_const_bitmap_t; nr: cuint;
                             masks: ptr culong): cint {.
-    importc: "hwloc_bitmap_to_ulongs", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_to_ulongs", hwloc.}
 ## * \brief Return the number of unsigned longs required for storing bitmap \p bitmap entirely
 ##
 ##  This is the number of contiguous unsigned longs from the very first bit of the bitmap
@@ -301,21 +305,21 @@ proc hwloc_bitmap_to_ulongs*(bitmap: hwloc_const_bitmap_t; nr: cuint;
 ##
 
 proc hwloc_bitmap_nr_ulongs*(bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_nr_ulongs", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_nr_ulongs", hwloc.}
 ## * \brief Test whether index \p id is part of bitmap \p bitmap.
 ##
 ##  \return 1 if the bit at index \p id is set in bitmap \p bitmap, 0 otherwise.
 ##
 
 proc hwloc_bitmap_isset*(bitmap: hwloc_const_bitmap_t; id: cuint): cint {.
-    importc: "hwloc_bitmap_isset", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_isset", hwloc.}
 ## * \brief Test whether bitmap \p bitmap is empty
 ##
 ##  \return 1 if bitmap is empty, 0 otherwise.
 ##
 
 proc hwloc_bitmap_iszero*(bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_iszero", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_iszero", hwloc.}
 ## * \brief Test whether bitmap \p bitmap is completely full
 ##
 ##  \return 1 if bitmap is full, 0 otherwise.
@@ -324,14 +328,14 @@ proc hwloc_bitmap_iszero*(bitmap: hwloc_const_bitmap_t): cint {.
 ##
 
 proc hwloc_bitmap_isfull*(bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_isfull", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_isfull", hwloc.}
 ## * \brief Compute the first index (least significant bit) in bitmap \p bitmap
 ##
 ##  \return -1 if no index is set in \p bitmap.
 ##
 
 proc hwloc_bitmap_first*(bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_first", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_first", hwloc.}
 ## * \brief Compute the next index in bitmap \p bitmap which is after index \p prev
 ##
 ##  If \p prev is -1, the first index is returned.
@@ -340,14 +344,14 @@ proc hwloc_bitmap_first*(bitmap: hwloc_const_bitmap_t): cint {.
 ##
 
 proc hwloc_bitmap_next*(bitmap: hwloc_const_bitmap_t; prev: cint): cint {.
-    importc: "hwloc_bitmap_next", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_next", hwloc.}
 ## * \brief Compute the last index (most significant bit) in bitmap \p bitmap
 ##
 ##  \return -1 if no index is set in \p bitmap, or if \p bitmap is infinitely set.
 ##
 
 proc hwloc_bitmap_last*(bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_last", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_last", hwloc.}
 ## * \brief Compute the "weight" of bitmap \p bitmap (i.e., number of
 ##  indexes that are in the bitmap).
 ##
@@ -357,14 +361,14 @@ proc hwloc_bitmap_last*(bitmap: hwloc_const_bitmap_t): cint {.
 ##
 
 proc hwloc_bitmap_weight*(bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_weight", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_weight", hwloc.}
 ## * \brief Compute the first unset index (least significant bit) in bitmap \p bitmap
 ##
 ##  \return -1 if no index is unset in \p bitmap.
 ##
 
 proc hwloc_bitmap_first_unset*(bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_first_unset", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_first_unset", hwloc.}
 ## * \brief Compute the next unset index in bitmap \p bitmap which is after index \p prev
 ##
 ##  If \p prev is -1, the first unset index is returned.
@@ -373,14 +377,14 @@ proc hwloc_bitmap_first_unset*(bitmap: hwloc_const_bitmap_t): cint {.
 ##
 
 proc hwloc_bitmap_next_unset*(bitmap: hwloc_const_bitmap_t; prev: cint): cint {.
-    importc: "hwloc_bitmap_next_unset", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_next_unset", hwloc.}
 ## * \brief Compute the last unset index (most significant bit) in bitmap \p bitmap
 ##
 ##  \return -1 if no index is unset in \p bitmap, or if \p bitmap is infinitely set.
 ##
 
 proc hwloc_bitmap_last_unset*(bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_last_unset", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_last_unset", hwloc.}
 ## * \brief Loop macro iterating on bitmap \p bitmap
 ##
 ##  The loop must start with hwloc_bitmap_foreach_begin() and end
@@ -407,7 +411,7 @@ proc hwloc_bitmap_last_unset*(bitmap: hwloc_const_bitmap_t): cint {.
 
 proc hwloc_bitmap_or*(res: hwloc_bitmap_t; bitmap1: hwloc_const_bitmap_t;
                      bitmap2: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_or", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_or", hwloc.}
 ## * \brief And bitmaps \p bitmap1 and \p bitmap2 and store the result in bitmap \p res
 ##
 ##  \p res can be the same as \p bitmap1 or \p bitmap2
@@ -415,7 +419,7 @@ proc hwloc_bitmap_or*(res: hwloc_bitmap_t; bitmap1: hwloc_const_bitmap_t;
 
 proc hwloc_bitmap_and*(res: hwloc_bitmap_t; bitmap1: hwloc_const_bitmap_t;
                       bitmap2: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_and", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_and", hwloc.}
 ## * \brief And bitmap \p bitmap1 and the negation of \p bitmap2 and store the result in bitmap \p res
 ##
 ##  \p res can be the same as \p bitmap1 or \p bitmap2
@@ -423,7 +427,7 @@ proc hwloc_bitmap_and*(res: hwloc_bitmap_t; bitmap1: hwloc_const_bitmap_t;
 
 proc hwloc_bitmap_andnot*(res: hwloc_bitmap_t; bitmap1: hwloc_const_bitmap_t;
                          bitmap2: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_andnot", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_andnot", hwloc.}
 ## * \brief Xor bitmaps \p bitmap1 and \p bitmap2 and store the result in bitmap \p res
 ##
 ##  \p res can be the same as \p bitmap1 or \p bitmap2
@@ -431,14 +435,14 @@ proc hwloc_bitmap_andnot*(res: hwloc_bitmap_t; bitmap1: hwloc_const_bitmap_t;
 
 proc hwloc_bitmap_xor*(res: hwloc_bitmap_t; bitmap1: hwloc_const_bitmap_t;
                       bitmap2: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_xor", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_xor", hwloc.}
 ## * \brief Negate bitmap \p bitmap and store the result in bitmap \p res
 ##
 ##  \p res can be the same as \p bitmap
 ##
 
 proc hwloc_bitmap_not*(res: hwloc_bitmap_t; bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_not", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_not", hwloc.}
 ##
 ##  Comparing bitmaps.
 ##
@@ -449,7 +453,7 @@ proc hwloc_bitmap_not*(res: hwloc_bitmap_t; bitmap: hwloc_const_bitmap_t): cint 
 
 proc hwloc_bitmap_intersects*(bitmap1: hwloc_const_bitmap_t;
                              bitmap2: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_intersects", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_intersects", hwloc.}
 ## * \brief Test whether bitmap \p sub_bitmap is part of bitmap \p super_bitmap.
 ##
 ##  \return 1 if \p sub_bitmap is included in \p super_bitmap, 0 otherwise.
@@ -459,7 +463,7 @@ proc hwloc_bitmap_intersects*(bitmap1: hwloc_const_bitmap_t;
 
 proc hwloc_bitmap_isincluded*(sub_bitmap: hwloc_const_bitmap_t;
                              super_bitmap: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_isincluded", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_isincluded", hwloc.}
 ## * \brief Test whether bitmap \p bitmap1 is equal to bitmap \p bitmap2.
 ##
 ##  \return 1 if bitmaps are equal, 0 otherwise.
@@ -467,7 +471,7 @@ proc hwloc_bitmap_isincluded*(sub_bitmap: hwloc_const_bitmap_t;
 
 proc hwloc_bitmap_isequal*(bitmap1: hwloc_const_bitmap_t;
                           bitmap2: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_isequal", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_isequal", hwloc.}
 ## * \brief Compare bitmaps \p bitmap1 and \p bitmap2 using their lowest index.
 ##
 ##  A bitmap is considered smaller if its least significant bit is smaller.
@@ -488,7 +492,7 @@ proc hwloc_bitmap_isequal*(bitmap1: hwloc_const_bitmap_t;
 
 proc hwloc_bitmap_compare_first*(bitmap1: hwloc_const_bitmap_t;
                                 bitmap2: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_compare_first", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_compare_first", hwloc.}
 ## * \brief Compare bitmaps \p bitmap1 and \p bitmap2 in lexicographic order.
 ##
 ##  Lexicographic comparison of bitmaps, starting for their highest indexes.
@@ -509,7 +513,7 @@ proc hwloc_bitmap_compare_first*(bitmap1: hwloc_const_bitmap_t;
 
 proc hwloc_bitmap_compare*(bitmap1: hwloc_const_bitmap_t;
                           bitmap2: hwloc_const_bitmap_t): cint {.
-    importc: "hwloc_bitmap_compare", dynlib: "libhwloc.so".}
+    importc: "hwloc_bitmap_compare", hwloc.}
 ## * @}
 
 ##
@@ -595,7 +599,7 @@ const
 ##
 
 proc hwloc_get_api_version*(): cuint {.importc: "hwloc_get_api_version",
-                                    dynlib: "libhwloc.so".}
+                                    hwloc.}
 ## * \brief Current component and plugin ABI version (see hwloc/plugins.h)
 
 const
@@ -859,7 +863,7 @@ type
 ##
 
 proc hwloc_compare_types*(type1: hwloc_obj_type_t; type2: hwloc_obj_type_t): cint {.
-    importc: "hwloc_compare_types", dynlib: "libhwloc.so".}
+    importc: "hwloc_compare_types", hwloc.}
 type
   hwloc_compare_types_e* {.size: sizeof(cint).} = enum
     HWLOC_TYPE_UNORDERED = high(cint)
@@ -1177,7 +1181,7 @@ type
 ##
 
 proc hwloc_topology_init*(topologyp: ptr hwloc_topology_t): cint {.
-    importc: "hwloc_topology_init", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_init", hwloc.}
 ## * \brief Build the actual topology
 ##
 ##  Build the actual topology once initialized with hwloc_topology_init() and
@@ -1200,14 +1204,14 @@ proc hwloc_topology_init*(topologyp: ptr hwloc_topology_t): cint {.
 ##
 
 proc hwloc_topology_load*(topology: hwloc_topology_t): cint {.
-    importc: "hwloc_topology_load", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_load", hwloc.}
 ## * \brief Terminate and free a topology context
 ##
 ##  \param topology is the topology to be freed
 ##
 
 proc hwloc_topology_destroy*(topology: hwloc_topology_t) {.
-    importc: "hwloc_topology_destroy", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_destroy", hwloc.}
 ## * \brief Duplicate a topology.
 ##
 ##  The entire topology structure as well as its objects
@@ -1221,7 +1225,7 @@ proc hwloc_topology_destroy*(topology: hwloc_topology_t) {.
 
 proc hwloc_topology_dup*(newtopology: ptr hwloc_topology_t;
                         oldtopology: hwloc_topology_t): cint {.
-    importc: "hwloc_topology_dup", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_dup", hwloc.}
 ## * \brief Verify that the topology is compatible with the current hwloc library.
 ##
 ##  This is useful when using the same topology structure (in memory)
@@ -1241,7 +1245,7 @@ proc hwloc_topology_dup*(newtopology: ptr hwloc_topology_t;
 ##
 
 proc hwloc_topology_abi_check*(topology: hwloc_topology_t): cint {.
-    importc: "hwloc_topology_abi_check", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_abi_check", hwloc.}
 ## * \brief Run internal checks on a topology structure
 ##
 ##  The program aborts if an inconsistency is detected in the given topology.
@@ -1255,7 +1259,7 @@ proc hwloc_topology_abi_check*(topology: hwloc_topology_t): cint {.
 ##
 
 proc hwloc_topology_check*(topology: hwloc_topology_t) {.
-    importc: "hwloc_topology_check", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_check", hwloc.}
 ## * @}
 ## * \defgroup hwlocality_levels Object levels, depths and types
 ##  @{
@@ -1274,7 +1278,7 @@ proc hwloc_topology_check*(topology: hwloc_topology_t) {.
 ##
 
 proc hwloc_topology_get_depth*(topology: hwloc_topology_t): cint {.
-    importc: "hwloc_topology_get_depth", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_get_depth", hwloc.}
 ## * \brief Returns the depth of objects of type \p type.
 ##
 ##  If no object of this type is present on the underlying architecture, or if
@@ -1300,7 +1304,7 @@ proc hwloc_topology_get_depth*(topology: hwloc_topology_t): cint {.
 ##
 
 proc hwloc_get_type_depth*(topology: hwloc_topology_t; `type`: hwloc_obj_type_t): cint {.
-    importc: "hwloc_get_type_depth", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_type_depth", hwloc.}
 type
   hwloc_get_type_depth_e* {.size: sizeof(cint).} = enum
     HWLOC_TYPE_DEPTH_MEMCACHE = -8, HWLOC_TYPE_DEPTH_MISC = -7, ## *< \brief Virtual depth for Misc object. \hideinitializer
@@ -1333,7 +1337,7 @@ type
 ##
 
 proc hwloc_get_memory_parents_depth*(topology: hwloc_topology_t): cint {.
-    importc: "hwloc_get_memory_parents_depth", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_memory_parents_depth", hwloc.}
 ## * \brief Returns the depth of objects of type \p type or below
 ##
 ##  If no object of this type is present on the underlying architecture, the
@@ -1350,7 +1354,7 @@ proc hwloc_get_memory_parents_depth*(topology: hwloc_topology_t): cint {.
 
 proc hwloc_get_type_or_below_depth*(topology: hwloc_topology_t;
                                    `type`: hwloc_obj_type_t): cint {.
-    importc: "hwloc_get_type_or_below_depth", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_type_or_below_depth", hwloc.}
 ## * \brief Returns the depth of objects of type \p type or above
 ##
 ##  If no object of this type is present on the underlying architecture, the
@@ -1367,7 +1371,7 @@ proc hwloc_get_type_or_below_depth*(topology: hwloc_topology_t;
 
 proc hwloc_get_type_or_above_depth*(topology: hwloc_topology_t;
                                    `type`: hwloc_obj_type_t): cint {.
-    importc: "hwloc_get_type_or_above_depth", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_type_or_above_depth", hwloc.}
 ## * \brief Returns the type of objects at depth \p depth.
 ##
 ##  \p depth should between 0 and hwloc_topology_get_depth()-1.
@@ -1376,12 +1380,12 @@ proc hwloc_get_type_or_above_depth*(topology: hwloc_topology_t;
 ##
 
 proc hwloc_get_depth_type*(topology: hwloc_topology_t; depth: cint): hwloc_obj_type_t {.
-    importc: "hwloc_get_depth_type", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_depth_type", hwloc.}
 ## * \brief Returns the width of level at depth \p depth.
 ##
 
 proc hwloc_get_nbobjs_by_depth*(topology: hwloc_topology_t; depth: cint): cuint {.
-    importc: "hwloc_get_nbobjs_by_depth", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_nbobjs_by_depth", hwloc.}
 ## * \brief Returns the width of level type \p type
 ##
 ##  If no object for that type exists, 0 is returned.
@@ -1389,18 +1393,18 @@ proc hwloc_get_nbobjs_by_depth*(topology: hwloc_topology_t; depth: cint): cuint 
 ##
 
 proc hwloc_get_nbobjs_by_type*(topology: hwloc_topology_t; `type`: hwloc_obj_type_t): cint {.
-    importc: "hwloc_get_nbobjs_by_type", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_nbobjs_by_type", hwloc.}
 ## * \brief Returns the top-object of the topology-tree.
 ##
 ##  Its type is ::HWLOC_OBJ_MACHINE.
 ##
 
 proc hwloc_get_root_obj*(topology: hwloc_topology_t): hwloc_obj_t {.
-    importc: "hwloc_get_root_obj", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_root_obj", hwloc.}
 ## * \brief Returns the topology object at logical index \p idx from depth \p depth
 
 proc hwloc_get_obj_by_depth*(topology: hwloc_topology_t; depth: cint; idx: cuint): hwloc_obj_t {.
-    importc: "hwloc_get_obj_by_depth", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_obj_by_depth", hwloc.}
 ## * \brief Returns the topology object at logical index \p idx with type \p type
 ##
 ##  If no object for that type exists, \c NULL is returned.
@@ -1410,7 +1414,7 @@ proc hwloc_get_obj_by_depth*(topology: hwloc_topology_t; depth: cint; idx: cuint
 
 proc hwloc_get_obj_by_type*(topology: hwloc_topology_t; `type`: hwloc_obj_type_t;
                            idx: cuint): hwloc_obj_t {.
-    importc: "hwloc_get_obj_by_type", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_obj_by_type", hwloc.}
 ## * \brief Returns the next object at depth \p depth.
 ##
 ##  If \p prev is \c NULL, return the first object at depth \p depth.
@@ -1418,7 +1422,7 @@ proc hwloc_get_obj_by_type*(topology: hwloc_topology_t; `type`: hwloc_obj_type_t
 
 proc hwloc_get_next_obj_by_depth*(topology: hwloc_topology_t; depth: cint;
                                  prev: hwloc_obj_t): hwloc_obj_t {.
-    importc: "hwloc_get_next_obj_by_depth", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_next_obj_by_depth", hwloc.}
 ## * \brief Returns the next object of type \p type.
 ##
 ##  If \p prev is \c NULL, return the first object at type \p type.  If
@@ -1428,7 +1432,7 @@ proc hwloc_get_next_obj_by_depth*(topology: hwloc_topology_t; depth: cint;
 
 proc hwloc_get_next_obj_by_type*(topology: hwloc_topology_t;
                                 `type`: hwloc_obj_type_t; prev: hwloc_obj_t): hwloc_obj_t {.
-    importc: "hwloc_get_next_obj_by_type", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_next_obj_by_type", hwloc.}
 ## * @}
 ## * \defgroup hwlocality_object_strings Converting between Object Types and Attributes, and Strings
 ##  @{
@@ -1443,7 +1447,7 @@ proc hwloc_get_next_obj_by_type*(topology: hwloc_topology_t;
 ##
 
 proc hwloc_obj_type_string*(`type`: hwloc_obj_type_t): cstring {.
-    importc: "hwloc_obj_type_string", dynlib: "libhwloc.so".}
+    importc: "hwloc_obj_type_string", hwloc.}
 ## * \brief Stringify the type of a given topology object into a human-readable form.
 ##
 ##  Contrary to hwloc_obj_type_string(), this function includes object-specific
@@ -1464,7 +1468,7 @@ proc hwloc_obj_type_string*(`type`: hwloc_obj_type_t): cstring {.
 
 proc hwloc_obj_type_snprintf*(string: cstring; size: csize_t; obj: hwloc_obj_t;
                              verbose: cint): cint {.
-    importc: "hwloc_obj_type_snprintf", dynlib: "libhwloc.so".}
+    importc: "hwloc_obj_type_snprintf", hwloc.}
 ## * \brief Stringify the attributes of a given topology object into a human-readable form.
 ##
 ##  Attribute values are separated by \p separator.
@@ -1479,7 +1483,7 @@ proc hwloc_obj_type_snprintf*(string: cstring; size: csize_t; obj: hwloc_obj_t;
 
 proc hwloc_obj_attr_snprintf*(string: cstring; size: csize_t; obj: hwloc_obj_t;
                              separator: cstring; verbose: cint): cint {.
-    importc: "hwloc_obj_attr_snprintf", dynlib: "libhwloc.so".}
+    importc: "hwloc_obj_attr_snprintf", hwloc.}
 ## * \brief Return an object type and attributes from a type string.
 ##
 ##  Convert strings such as "Package" or "L1iCache" into the corresponding types.
@@ -1506,7 +1510,7 @@ proc hwloc_obj_attr_snprintf*(string: cstring; size: csize_t; obj: hwloc_obj_t;
 
 proc hwloc_type_sscanf*(string: cstring; typep: ptr hwloc_obj_type_t;
                        attrp: ptr hwloc_obj_attr_u; attrsize: csize_t): cint {.
-    importc: "hwloc_type_sscanf", dynlib: "libhwloc.so".}
+    importc: "hwloc_type_sscanf", hwloc.}
 ## * \brief Return an object type and its level depth from a type string.
 ##
 ##  Convert strings such as "Package" or "L1iCache" into the corresponding types
@@ -1531,7 +1535,7 @@ proc hwloc_type_sscanf*(string: cstring; typep: ptr hwloc_obj_type_t;
 
 proc hwloc_type_sscanf_as_depth*(string: cstring; typep: ptr hwloc_obj_type_t;
                                 topology: hwloc_topology_t; depthp: ptr cint): cint {.
-    importc: "hwloc_type_sscanf_as_depth", dynlib: "libhwloc.so".}
+    importc: "hwloc_type_sscanf_as_depth", hwloc.}
 ## * @}
 ## * \defgroup hwlocality_info_attr Consulting and Adding Key-Value Info Attributes
 ##
@@ -1545,7 +1549,7 @@ proc hwloc_type_sscanf_as_depth*(string: cstring; typep: ptr hwloc_obj_type_t;
 ##
 
 proc hwloc_obj_get_info_by_name*(obj: hwloc_obj_t; name: cstring): cstring {.
-    importc: "hwloc_obj_get_info_by_name", dynlib: "libhwloc.so".}
+    importc: "hwloc_obj_get_info_by_name", hwloc.}
 ## * \brief Add the given info name and value pair to the given object.
 ##
 ##  The info is appended to the existing info array even if another key
@@ -1564,7 +1568,7 @@ proc hwloc_obj_get_info_by_name*(obj: hwloc_obj_t; name: cstring): cstring {.
 ##
 
 proc hwloc_obj_add_info*(obj: hwloc_obj_t; name: cstring; value: cstring): cint {.
-    importc: "hwloc_obj_add_info", dynlib: "libhwloc.so".}
+    importc: "hwloc_obj_add_info", hwloc.}
 ## * @}
 ## * \defgroup hwlocality_cpubinding CPU binding
 ##
@@ -1692,7 +1696,7 @@ type
 
 proc hwloc_set_cpubind*(topology: hwloc_topology_t; set: hwloc_const_cpuset_t;
                        flags: cint): cint {.importc: "hwloc_set_cpubind",
-    dynlib: "libhwloc.so".}
+    hwloc.}
 ## * \brief Get current process or thread binding.
 ##
 ##  Writes into \p set the physical cpuset which the process or thread (according to \e
@@ -1700,7 +1704,7 @@ proc hwloc_set_cpubind*(topology: hwloc_topology_t; set: hwloc_const_cpuset_t;
 ##
 
 proc hwloc_get_cpubind*(topology: hwloc_topology_t; set: hwloc_cpuset_t; flags: cint): cint {.
-    importc: "hwloc_get_cpubind", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_cpubind", hwloc.}
 ## * \brief Bind a process \p pid on cpus given in physical bitmap \p set.
 ##
 ##  \note \p hwloc_pid_t is \p pid_t on Unix platforms,
@@ -1715,7 +1719,7 @@ proc hwloc_get_cpubind*(topology: hwloc_topology_t; set: hwloc_cpuset_t; flags: 
 
 proc hwloc_set_proc_cpubind*(topology: hwloc_topology_t; pid: hwloc_pid_t;
                             set: hwloc_const_cpuset_t; flags: cint): cint {.
-    importc: "hwloc_set_proc_cpubind", dynlib: "libhwloc.so".}
+    importc: "hwloc_set_proc_cpubind", hwloc.}
 ## * \brief Get the current physical binding of process \p pid.
 ##
 ##  \note \p hwloc_pid_t is \p pid_t on Unix platforms,
@@ -1730,7 +1734,7 @@ proc hwloc_set_proc_cpubind*(topology: hwloc_topology_t; pid: hwloc_pid_t;
 
 proc hwloc_get_proc_cpubind*(topology: hwloc_topology_t; pid: hwloc_pid_t;
                             set: hwloc_cpuset_t; flags: cint): cint {.
-    importc: "hwloc_get_proc_cpubind", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_proc_cpubind", hwloc.}
 ## * \brief Bind a thread \p thread on cpus given in physical bitmap \p set.
 ##
 ##  \note \p hwloc_thread_t is \p pthread_t on Unix platforms,
@@ -1741,7 +1745,7 @@ proc hwloc_get_proc_cpubind*(topology: hwloc_topology_t; pid: hwloc_pid_t;
 proc hwloc_set_thread_cpubind*(topology: hwloc_topology_t;
                               thread: hwloc_thread_t; set: hwloc_const_cpuset_t;
                               flags: cint): cint {.
-    importc: "hwloc_set_thread_cpubind", dynlib: "libhwloc.so".}
+    importc: "hwloc_set_thread_cpubind", hwloc.}
 ## * \brief Get the current physical binding of thread \p tid.
 ##
 ##  \note \p hwloc_thread_t is \p pthread_t on Unix platforms,
@@ -1752,7 +1756,7 @@ proc hwloc_set_thread_cpubind*(topology: hwloc_topology_t;
 proc hwloc_get_thread_cpubind*(topology: hwloc_topology_t;
                               thread: hwloc_thread_t; set: hwloc_cpuset_t;
                               flags: cint): cint {.
-    importc: "hwloc_get_thread_cpubind", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_thread_cpubind", hwloc.}
 ## * \brief Get the last physical CPU where the current process or thread ran.
 ##
 ##  The operating system may move some tasks from one processor
@@ -1769,7 +1773,7 @@ proc hwloc_get_thread_cpubind*(topology: hwloc_topology_t;
 
 proc hwloc_get_last_cpu_location*(topology: hwloc_topology_t; set: hwloc_cpuset_t;
                                  flags: cint): cint {.
-    importc: "hwloc_get_last_cpu_location", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_last_cpu_location", hwloc.}
 ## * \brief Get the last physical CPU where a process ran.
 ##
 ##  The operating system may move some tasks from one processor
@@ -1790,7 +1794,7 @@ proc hwloc_get_last_cpu_location*(topology: hwloc_topology_t; set: hwloc_cpuset_
 proc hwloc_get_proc_last_cpu_location*(topology: hwloc_topology_t;
                                       pid: hwloc_pid_t; set: hwloc_cpuset_t;
                                       flags: cint): cint {.
-    importc: "hwloc_get_proc_last_cpu_location", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_proc_last_cpu_location", hwloc.}
 ## * @}
 ## * \defgroup hwlocality_membinding Memory binding
 ##
@@ -1980,7 +1984,7 @@ type ## * \brief Set policy for all threads of the specified (possibly
 
 proc hwloc_set_membind*(topology: hwloc_topology_t; set: hwloc_const_bitmap_t;
                        policy: hwloc_membind_policy_t; flags: cint): cint {.
-    importc: "hwloc_set_membind", dynlib: "libhwloc.so".}
+    importc: "hwloc_set_membind", hwloc.}
 ## * \brief Query the default memory binding policy and physical locality of the
 ##  current process or thread.
 ##
@@ -2028,7 +2032,7 @@ proc hwloc_set_membind*(topology: hwloc_topology_t; set: hwloc_const_bitmap_t;
 
 proc hwloc_get_membind*(topology: hwloc_topology_t; set: hwloc_bitmap_t;
                        policy: ptr hwloc_membind_policy_t; flags: cint): cint {.
-    importc: "hwloc_get_membind", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_membind", hwloc.}
 ## * \brief Set the default memory binding policy of the specified
 ##  process to prefer the NUMA node(s) specified by \p set
 ##
@@ -2045,7 +2049,7 @@ proc hwloc_get_membind*(topology: hwloc_topology_t; set: hwloc_bitmap_t;
 proc hwloc_set_proc_membind*(topology: hwloc_topology_t; pid: hwloc_pid_t;
                             set: hwloc_const_bitmap_t;
                             policy: hwloc_membind_policy_t; flags: cint): cint {.
-    importc: "hwloc_set_proc_membind", dynlib: "libhwloc.so".}
+    importc: "hwloc_set_proc_membind", hwloc.}
 ## * \brief Query the default memory binding policy and physical locality of the
 ##  specified process.
 ##
@@ -2089,7 +2093,7 @@ proc hwloc_set_proc_membind*(topology: hwloc_topology_t; pid: hwloc_pid_t;
 proc hwloc_get_proc_membind*(topology: hwloc_topology_t; pid: hwloc_pid_t;
                             set: hwloc_bitmap_t;
                             policy: ptr hwloc_membind_policy_t; flags: cint): cint {.
-    importc: "hwloc_get_proc_membind", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_proc_membind", hwloc.}
 ## * \brief Bind the already-allocated memory identified by (addr, len)
 ##  to the NUMA node(s) specified by \p set.
 ##
@@ -2104,7 +2108,7 @@ proc hwloc_get_proc_membind*(topology: hwloc_topology_t; pid: hwloc_pid_t;
 proc hwloc_set_area_membind*(topology: hwloc_topology_t; `addr`: pointer; len: csize_t;
                             set: hwloc_const_bitmap_t;
                             policy: hwloc_membind_policy_t; flags: cint): cint {.
-    importc: "hwloc_set_area_membind", dynlib: "libhwloc.so".}
+    importc: "hwloc_set_area_membind", hwloc.}
 ## * \brief Query the CPUs near the physical NUMA node(s) and binding policy of
 ##  the memory identified by (\p addr, \p len ).
 ##
@@ -2136,7 +2140,7 @@ proc hwloc_set_area_membind*(topology: hwloc_topology_t; `addr`: pointer; len: c
 proc hwloc_get_area_membind*(topology: hwloc_topology_t; `addr`: pointer; len: csize_t;
                             set: hwloc_bitmap_t;
                             policy: ptr hwloc_membind_policy_t; flags: cint): cint {.
-    importc: "hwloc_get_area_membind", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_area_membind", hwloc.}
 ## * \brief Get the NUMA nodes where memory identified by (\p addr, \p len ) is physically allocated.
 ##
 ##  Fills \p set according to the NUMA nodes where the memory area pages
@@ -2159,7 +2163,7 @@ proc hwloc_get_area_membind*(topology: hwloc_topology_t; `addr`: pointer; len: c
 
 proc hwloc_get_area_memlocation*(topology: hwloc_topology_t; `addr`: pointer;
                                 len: csize_t; set: hwloc_bitmap_t; flags: cint): cint {.
-    importc: "hwloc_get_area_memlocation", dynlib: "libhwloc.so".}
+    importc: "hwloc_get_area_memlocation", hwloc.}
 ## * \brief Allocate some memory
 ##
 ##  This is equivalent to malloc(), except that it tries to allocate
@@ -2169,7 +2173,7 @@ proc hwloc_get_area_memlocation*(topology: hwloc_topology_t; `addr`: pointer;
 ##
 
 proc hwloc_alloc*(topology: hwloc_topology_t; len: csize_t): pointer {.
-    importc: "hwloc_alloc", dynlib: "libhwloc.so".}
+    importc: "hwloc_alloc", hwloc.}
 ## * \brief Allocate some memory on NUMA memory nodes specified by \p set
 ##
 ##  \return NULL with errno set to ENOSYS if the action is not supported
@@ -2188,7 +2192,7 @@ proc hwloc_alloc*(topology: hwloc_topology_t; len: csize_t): pointer {.
 proc hwloc_alloc_membind*(topology: hwloc_topology_t; len: csize_t;
                          set: hwloc_const_bitmap_t;
                          policy: hwloc_membind_policy_t; flags: cint): pointer {.
-    importc: "hwloc_alloc_membind", dynlib: "libhwloc.so".}
+    importc: "hwloc_alloc_membind", hwloc.}
 ## * \brief Allocate some memory on NUMA memory nodes specified by \p set
 ##
 ##  This is similar to hwloc_alloc_membind_nodeset() except that it is allowed to change
@@ -2202,13 +2206,13 @@ proc hwloc_alloc_membind*(topology: hwloc_topology_t; len: csize_t;
 proc hwloc_alloc_membind_policy*(topology: hwloc_topology_t; len: csize_t;
                                 set: hwloc_const_bitmap_t;
                                 policy: hwloc_membind_policy_t; flags: cint): pointer {.
-    importc: "hwloc_alloc_membind_policy", dynlib: "libhwloc.so".}
+    importc: "hwloc_alloc_membind_policy", hwloc.}
 ## * \brief Free memory that was previously allocated by hwloc_alloc()
 ##  or hwloc_alloc_membind().
 ##
 
 proc hwloc_free*(topology: hwloc_topology_t; `addr`: pointer; len: csize_t): cint {.
-    importc: "hwloc_free", dynlib: "libhwloc.so".}
+    importc: "hwloc_free", hwloc.}
 ## * @}
 ## * \defgroup hwlocality_setsource Changing the Source of Topology Discovery
 ##
@@ -2243,7 +2247,7 @@ proc hwloc_free*(topology: hwloc_topology_t; `addr`: pointer; len: csize_t): cin
 ##
 
 proc hwloc_topology_set_pid*(topology: hwloc_topology_t; pid: hwloc_pid_t): cint {.
-    importc: "hwloc_topology_set_pid", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_set_pid", hwloc.}
 ## * \brief Enable synthetic topology.
 ##
 ##  Gather topology information from the given \p description,
@@ -2274,7 +2278,7 @@ proc hwloc_topology_set_pid*(topology: hwloc_topology_t; pid: hwloc_pid_t): cint
 ##
 
 proc hwloc_topology_set_synthetic*(topology: hwloc_topology_t; description: cstring): cint {.
-    importc: "hwloc_topology_set_synthetic", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_set_synthetic", hwloc.}
 ## * \brief Enable XML-file based topology.
 ##
 ##  Gather topology information from the XML file given at \p xmlpath.
@@ -2303,7 +2307,7 @@ proc hwloc_topology_set_synthetic*(topology: hwloc_topology_t; description: cstr
 ##
 
 proc hwloc_topology_set_xml*(topology: hwloc_topology_t; xmlpath: cstring): cint {.
-    importc: "hwloc_topology_set_xml", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_set_xml", hwloc.}
 ## * \brief Enable XML based topology using a memory buffer (instead of
 ##  a file, as with hwloc_topology_set_xml()).
 ##
@@ -2333,7 +2337,7 @@ proc hwloc_topology_set_xml*(topology: hwloc_topology_t; xmlpath: cstring): cint
 
 proc hwloc_topology_set_xmlbuffer*(topology: hwloc_topology_t; buffer: cstring;
                                   size: cint): cint {.
-    importc: "hwloc_topology_set_xmlbuffer", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_set_xmlbuffer", hwloc.}
 ## * \brief Flags to be passed to hwloc_topology_set_components()
 ##
 
@@ -2361,7 +2365,7 @@ type
 
 proc hwloc_topology_set_components*(topology: hwloc_topology_t; flags: culong;
                                    name: cstring): cint {.
-    importc: "hwloc_topology_set_components", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_set_components", hwloc.}
 ## * @}
 ## * \defgroup hwlocality_configuration Topology Detection Configuration and Query
 ##
@@ -2455,7 +2459,7 @@ type
 ##
 
 proc hwloc_topology_set_flags*(topology: hwloc_topology_t; flags: culong): cint {.
-    importc: "hwloc_topology_set_flags", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_set_flags", hwloc.}
 ## * \brief Get OR'ed flags of a topology.
 ##
 ##  Get the OR'ed set of ::hwloc_topology_flags_e of a topology.
@@ -2464,7 +2468,7 @@ proc hwloc_topology_set_flags*(topology: hwloc_topology_t; flags: culong): cint 
 ##
 
 proc hwloc_topology_get_flags*(topology: hwloc_topology_t): culong {.
-    importc: "hwloc_topology_get_flags", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_get_flags", hwloc.}
 ## * \brief Does the topology context come from this system?
 ##
 ##  \return 1 if this topology context was built using the system
@@ -2474,7 +2478,7 @@ proc hwloc_topology_get_flags*(topology: hwloc_topology_t): culong {.
 ##
 
 proc hwloc_topology_is_thissystem*(topology: hwloc_topology_t): cint {.
-    importc: "hwloc_topology_is_thissystem", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_is_thissystem", hwloc.}
 ## * \brief Flags describing actual discovery support for this topology.
 
 type
@@ -2560,7 +2564,7 @@ type
 ##
 
 proc hwloc_topology_get_support*(topology: hwloc_topology_t): ptr hwloc_topology_support {.
-    importc: "hwloc_topology_get_support", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_get_support", hwloc.}
 ## * \brief Type filtering flags.
 ##
 ##  By default, most objects are kept (::HWLOC_TYPE_FILTER_KEEP_ALL).
@@ -2617,14 +2621,14 @@ type
 proc hwloc_topology_set_type_filter*(topology: hwloc_topology_t;
                                     `type`: hwloc_obj_type_t;
                                     filter: hwloc_type_filter_e): cint {.
-    importc: "hwloc_topology_set_type_filter", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_set_type_filter", hwloc.}
 ## * \brief Get the current filtering for the given object type.
 ##
 
 proc hwloc_topology_get_type_filter*(topology: hwloc_topology_t;
                                     `type`: hwloc_obj_type_t;
                                     filter: ptr hwloc_type_filter_e): cint {.
-    importc: "hwloc_topology_get_type_filter", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_get_type_filter", hwloc.}
 ## * \brief Set the filtering for all object types.
 ##
 ##  If some types do not support this filtering, they are silently ignored.
@@ -2632,7 +2636,7 @@ proc hwloc_topology_get_type_filter*(topology: hwloc_topology_t;
 
 proc hwloc_topology_set_all_types_filter*(topology: hwloc_topology_t;
     filter: hwloc_type_filter_e): cint {.importc: "hwloc_topology_set_all_types_filter",
-                                      dynlib: "libhwloc.so".}
+                                      hwloc.}
 ## * \brief Set the filtering for all CPU cache object types.
 ##
 ##  Memory-side caches are not involved since they are not CPU caches.
@@ -2640,7 +2644,7 @@ proc hwloc_topology_set_all_types_filter*(topology: hwloc_topology_t;
 
 proc hwloc_topology_set_cache_types_filter*(topology: hwloc_topology_t;
     filter: hwloc_type_filter_e): cint {.importc: "hwloc_topology_set_cache_types_filter",
-                                      dynlib: "libhwloc.so".}
+                                      hwloc.}
 ## * \brief Set the filtering for all CPU instruction cache object types.
 ##
 ##  Memory-side caches are not involved since they are not CPU caches.
@@ -2648,13 +2652,13 @@ proc hwloc_topology_set_cache_types_filter*(topology: hwloc_topology_t;
 
 proc hwloc_topology_set_icache_types_filter*(topology: hwloc_topology_t;
     filter: hwloc_type_filter_e): cint {.importc: "hwloc_topology_set_icache_types_filter",
-                                      dynlib: "libhwloc.so".}
+                                      hwloc.}
 ## * \brief Set the filtering for all I/O object types.
 ##
 
 proc hwloc_topology_set_io_types_filter*(topology: hwloc_topology_t;
                                         filter: hwloc_type_filter_e): cint {.
-    importc: "hwloc_topology_set_io_types_filter", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_set_io_types_filter", hwloc.}
 ## * \brief Set the topology-specific userdata pointer.
 ##
 ##  Each topology may store one application-given private data pointer.
@@ -2667,7 +2671,7 @@ proc hwloc_topology_set_io_types_filter*(topology: hwloc_topology_t;
 ##
 
 proc hwloc_topology_set_userdata*(topology: hwloc_topology_t; userdata: pointer) {.
-    importc: "hwloc_topology_set_userdata", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_set_userdata", hwloc.}
 ## * \brief Retrieve the topology-specific userdata pointer.
 ##
 ##  Retrieve the application-given private data pointer that was
@@ -2675,7 +2679,7 @@ proc hwloc_topology_set_userdata*(topology: hwloc_topology_t; userdata: pointer)
 ##
 
 proc hwloc_topology_get_userdata*(topology: hwloc_topology_t): pointer {.
-    importc: "hwloc_topology_get_userdata", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_get_userdata", hwloc.}
 ## * @}
 ## * \defgroup hwlocality_tinker Modifying a loaded Topology
 ##  @{
@@ -2734,7 +2738,7 @@ type
 
 proc hwloc_topology_restrict*(topology: hwloc_topology_t;
                              set: hwloc_const_bitmap_t; flags: culong): cint {.
-    importc: "hwloc_topology_restrict", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_restrict", hwloc.}
 ## * \brief Flags to be given to hwloc_topology_allow().
 
 type
@@ -2773,7 +2777,7 @@ type
 proc hwloc_topology_allow*(topology: hwloc_topology_t;
                           cpuset: hwloc_const_cpuset_t;
                           nodeset: hwloc_const_nodeset_t; flags: culong): cint {.
-    importc: "hwloc_topology_allow", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_allow", hwloc.}
 ## * \brief Add a MISC object as a leaf of the topology
 ##
 ##  A new MISC object will be created and inserted into the topology at the
@@ -2798,7 +2802,7 @@ proc hwloc_topology_allow*(topology: hwloc_topology_t;
 
 proc hwloc_topology_insert_misc_object*(topology: hwloc_topology_t;
                                        parent: hwloc_obj_t; name: cstring): hwloc_obj_t {.
-    importc: "hwloc_topology_insert_misc_object", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_insert_misc_object", hwloc.}
 ## * \brief Allocate a Group object to insert later with hwloc_topology_insert_group_object().
 ##
 ##  This function returns a new Group object.
@@ -2821,7 +2825,7 @@ proc hwloc_topology_insert_misc_object*(topology: hwloc_topology_t;
 ##
 
 proc hwloc_topology_alloc_group_object*(topology: hwloc_topology_t): hwloc_obj_t {.
-    importc: "hwloc_topology_alloc_group_object", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_alloc_group_object", hwloc.}
 ## * \brief Add more structure to the topology by adding an intermediate Group
 ##
 ##  The caller should first allocate a new Group object with hwloc_topology_alloc_group_object().
@@ -2861,7 +2865,7 @@ proc hwloc_topology_alloc_group_object*(topology: hwloc_topology_t): hwloc_obj_t
 
 proc hwloc_topology_insert_group_object*(topology: hwloc_topology_t;
                                         group: hwloc_obj_t): hwloc_obj_t {.
-    importc: "hwloc_topology_insert_group_object", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_insert_group_object", hwloc.}
 ## * \brief Setup object cpusets/nodesets by OR'ing another object's sets.
 ##
 ##  For each defined cpuset or nodeset in \p src, allocate the corresponding set
@@ -2873,7 +2877,7 @@ proc hwloc_topology_insert_group_object*(topology: hwloc_topology_t;
 ##
 
 proc hwloc_obj_add_other_obj_sets*(dst: hwloc_obj_t; src: hwloc_obj_t): cint {.
-    importc: "hwloc_obj_add_other_obj_sets", dynlib: "libhwloc.so".}
+    importc: "hwloc_obj_add_other_obj_sets", hwloc.}
 ## * @}
 
 ##  high-level helpers
@@ -2901,7 +2905,7 @@ proc hwloc_obj_add_other_obj_sets*(dst: hwloc_obj_t; src: hwloc_obj_t): cint {.
 ##
 
 proc hwloc_topology_get_complete_cpuset*(topology: hwloc_topology_t): hwloc_const_cpuset_t {.
-    importc: "hwloc_topology_get_complete_cpuset", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_get_complete_cpuset", hwloc.}
 ## * \brief Get topology CPU set
 ##
 ##  \return the CPU set of logical processors of the system for which hwloc
@@ -2915,7 +2919,7 @@ proc hwloc_topology_get_complete_cpuset*(topology: hwloc_topology_t): hwloc_cons
 ##
 
 proc hwloc_topology_get_topology_cpuset*(topology: hwloc_topology_t): hwloc_const_cpuset_t {.
-    importc: "hwloc_topology_get_topology_cpuset", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_get_topology_cpuset", hwloc.}
 ## * \brief Get allowed CPU set
 ##
 ##  \return the CPU set of allowed logical processors of the system.
@@ -2934,7 +2938,7 @@ proc hwloc_topology_get_topology_cpuset*(topology: hwloc_topology_t): hwloc_cons
 ##
 
 proc hwloc_topology_get_allowed_cpuset*(topology: hwloc_topology_t): hwloc_const_cpuset_t {.
-    importc: "hwloc_topology_get_allowed_cpuset", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_get_allowed_cpuset", hwloc.}
 ## * \brief Get complete node set
 ##
 ##  \return the complete node set of memory of the system.
@@ -2946,7 +2950,7 @@ proc hwloc_topology_get_allowed_cpuset*(topology: hwloc_topology_t): hwloc_const
 ##
 
 proc hwloc_topology_get_complete_nodeset*(topology: hwloc_topology_t): hwloc_const_nodeset_t {.
-    importc: "hwloc_topology_get_complete_nodeset", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_get_complete_nodeset", hwloc.}
 ## * \brief Get topology node set
 ##
 ##  \return the node set of memory of the system for which hwloc
@@ -2960,7 +2964,7 @@ proc hwloc_topology_get_complete_nodeset*(topology: hwloc_topology_t): hwloc_con
 ##
 
 proc hwloc_topology_get_topology_nodeset*(topology: hwloc_topology_t): hwloc_const_nodeset_t {.
-    importc: "hwloc_topology_get_topology_nodeset", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_get_topology_nodeset", hwloc.}
 ## * \brief Get allowed node set
 ##
 ##  \return the node set of allowed memory of the system.
@@ -2979,5 +2983,5 @@ proc hwloc_topology_get_topology_nodeset*(topology: hwloc_topology_t): hwloc_con
 ##
 
 proc hwloc_topology_get_allowed_nodeset*(topology: hwloc_topology_t): hwloc_const_nodeset_t {.
-    importc: "hwloc_topology_get_allowed_nodeset", dynlib: "libhwloc.so".}
+    importc: "hwloc_topology_get_allowed_nodeset", hwloc.}
 ## * @}

@@ -1,4 +1,4 @@
-import os, strUtils
+import os, strUtils, seqUtils
 
 var
   nimcache = getCurrentDir() / "nimcache"
@@ -31,6 +31,7 @@ var
 
   qudaDir = ""
   cudaLibDir = ""
+  nvhpcDir = ""
   primmeDir = ""
   chromaDir = ""
   gridDir = ""
@@ -62,7 +63,7 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
       if v=="":
         defargs.add "--" & key
       else:
-        defargs.add "--" & key & ":\"" & v & "\""
+        defargs.add "--" & key & ":" & quoteShell v
     else:
       if key.len>=7 and key[0..6]!="warning":  # warnings don't seem to work here
         switch(key, v)
@@ -96,7 +97,10 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
     d ~ ("qioDir:" & qioDir)
   if qudaDir != "":
     d ~ ("qudaDir:" & qudaDir)
+  if cudaLibDir != "":
     d ~ ("cudaLibDir:" & cudaLibDir)
+  if nvhpcDir != "":
+    d ~ ("nvhpcDir:" & nvhpcDir)
   if primmeDir != "":
     d ~ ("primmeDir:" & primmeDir)
   if chromaDir != "":
@@ -112,7 +116,12 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
   verbosity ~ buildVerbosity
   nimcache ~ nimcache
   warning[SmallLshouldNotBeUsed] ~ off
+  styleCheck ~ usages
   embedsrc ~ ""
+  #exceptions ~ quirky
+  #if not nimargs.any(proc (x:string):bool = x.startswith("--mm:")):
+  if (NimMajor, NimMinor) >= (1, 7):
+    mm ~ refc
 
   if not fo.debug:
     d ~ "release"

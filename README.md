@@ -1,5 +1,9 @@
 ## QEX: Quantum EXpressions lattice field theory framework
 
+# Description of QEX fork:
+Staggered hybrid Monte Carlo with Pauli-Villars bosons and nHYP smearing.
+
+# Description of QEX:
 QEX is a high-level framework for lattice field operations
 written in the language [Nim](https://nim-lang.org).
 

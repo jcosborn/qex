@@ -61,12 +61,13 @@ qioDir = getHomeDir()/"lqcd/install/qio"
 # optional libraries
 qudaDir = ""
 cudaLibDir = ""
+nvhpcDir = ""
 primmeDir = ""
 chromaDir = ""
 gridDir = ""
 
 # seq of extra environment variables to define during build
-#   e.g. @["OMPI_CXX=foo","BAR=1"]
+#   e.g. @["OMPI_CXX=foo","BAR=1","ENV_WITH_SPACE_QUOTES=SPACE \"WITH QUOTES\""]
 envs = @[]
 
 # seq of extra arguments for Nim during build
