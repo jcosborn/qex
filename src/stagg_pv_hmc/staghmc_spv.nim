@@ -240,7 +240,7 @@ var int_prms = {"Ns" : 0, "Nt" : 0, "num_pv" : 0,
                 "plaq_freq" : 0, "ploop_freq" : 0, "pbp_freq" : 0, 
                 "num_pbp_stoch_srcs" : 0, "approx_order" : 1,
                 "rev_check_freq" : 0, "check_solvers" : 0,
-                "f_munu_loop" : 0}.toTable
+                "f_munu_loop" : 0, "wflow_freq" : 0}.toTable
 
 # Define float parameters
 var flt_prms = {"tau" : 0.0, "beta" : 0.0, "adj_fac" : 0.0, "mass" : 0.0,
