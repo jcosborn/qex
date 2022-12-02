@@ -308,7 +308,7 @@ proc projectU*(r: var Mat1; x: Mat2) =
 template projectU*(r: var Mat1) =
   var t{.noInit.}: evalType(r)
   t := r
-  r.projectSU t
+  r.projectU t
 
 # (d/dX') Tr(U'C+C'U) / 2 = (d/dX') Tr(X'CZ+C'XZ) / 2
 # = CZ - (1/2) < Z (X'C + C'X) Z (dY/dX') >

@@ -68,12 +68,28 @@ template makeMap1(op:untyped) =
     #forO i, 0, r.len.pred:
     for i in fOpt(0,r.len.pred):
       op(r[i], x[i])
+  #[
   template `op MS`*(rr: typed; xx: typed) =
     mixin op
     block:
       let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
       let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
       #let x {.byptr.} = xx
+      #forO i, 0, r.nrows.pred:
+      for i in fOpt(0,r.nrows.pred):
+        #forO j, 0, r.ncols.pred:
+        for j in fOpt(0,r.ncols.pred):
+          if i == j:
+            op(r[i,j], x)
+          else:
+            op(r[i,j], 0)
+  ]#
+  proc `op MS`*(r: var auto; x: auto) {.alwaysInline.} =
+    mixin op
+    when astToStr(op) == "iadd" or astToStr(op) == "isub":
+      for i in fOpt(0,min(r.nrows.pred,r.ncols.pred)):
+        op(r[i,i], x)
+    else:
       #forO i, 0, r.nrows.pred:
       for i in fOpt(0,r.nrows.pred):
         #forO j, 0, r.ncols.pred:
@@ -98,6 +114,7 @@ template makeMap1(op:untyped) =
             op(r[i,j], x[i])
           else:
             op(r[i,j], 0)
+  #[
   template `op MM`*(rr:typed; xx:typed) =
     mixin op
     block:
@@ -111,6 +128,16 @@ template makeMap1(op:untyped) =
         #forO j, 0, r.ncols.pred:
         for j in fOpt(0,r.ncols.pred):
           op(r[i,j], x[i,j])
+  ]#
+  proc `op MM`*(r: var auto; x: auto) {.alwaysInline.} =
+    mixin op
+    assert(r.nrows == x.nrows)
+    assert(r.ncols == x.ncols)
+    #forO i, 0, r.nrows.pred:
+    for i in fOpt(0,r.nrows.pred):
+      #forO j, 0, r.ncols.pred:
+      for j in fOpt(0,r.ncols.pred):
+        op(r[i,j], x[i,j])
 
 makeMap1(assign)
 makeMap1(neg)
@@ -214,6 +241,7 @@ template makeMap2(op:untyped):untyped {.dirty.} =
             op(r[i,j], x[i], y[i])
           else:
             op(r[i,j], 0, 0)
+  #[
   template `op MMS`*(rr:typed; xx,yy:typed) =
     mixin op
     block:
@@ -231,6 +259,20 @@ template makeMap2(op:untyped):untyped {.dirty.} =
             op(r[i,j], x[i,j], y)
           else:
             op(r[i,j], x[i,j], 0)
+  ]#
+  proc `op MMS`*(r: var auto; x,y: auto) {.alwaysInline.} =
+    mixin op
+    assert(r.nrows == r.ncols)
+    assert(r.nrows == x.nrows)
+    assert(r.ncols == x.ncols)
+    #forO i, 0, r.nrows.pred:
+    for i in fOpt(0,r.nrows.pred):
+      #forO j, 0, r.ncols.pred:
+      for j in fOpt(0,r.ncols.pred):
+        if i == j:
+          op(r[i,j], x[i,j], y)
+        else:
+          op(r[i,j], x[i,j], 0)
   template `op MSM`*(rr:typed; xx,yy:typed) =
     mixin op
     block:
@@ -284,6 +326,7 @@ template makeMap2(op:untyped):untyped {.dirty.} =
             op(r[i,j], x[i], y[i,j])
           else:
             op(r[i,j], 0, y[i,j])
+  #[
   template `op MMM`*(rr:typed; xx,yy:typed) =
     mixin op
     block:
@@ -299,6 +342,18 @@ template makeMap2(op:untyped):untyped {.dirty.} =
         #forO j, 0, r.ncols.pred:
         for j in fOpt(0,r.ncols.pred):
           op(r[i,j], x[i,j], y[i,j])
+  ]#
+  proc `op MMM`*(r: var auto; x,y: auto) {.alwaysInline.} =
+    mixin op
+    assert(r.nrows == x.nrows)
+    assert(r.ncols == x.ncols)
+    assert(r.nrows == y.nrows)
+    assert(r.ncols == y.ncols)
+    #forO i, 0, r.nrows.pred:
+    for i in fOpt(0,r.nrows.pred):
+      #forO j, 0, r.ncols.pred:
+      for j in fOpt(0,r.ncols.pred):
+        op(r[i,j], x[i,j], y[i,j])
 
 makeMap2(add)
 makeMap2(sub)
@@ -344,7 +399,7 @@ template mulVVS*(r:typed; xx,yy:typed) =
     for i in fOpt(0,r.len.pred):
       mul(r[i], x[i], y)
 
-proc mulVSV*(r: var auto; x,y: auto) {.inline.} =
+proc mulVSV*(r: var auto; x,y: auto) {.alwaysInline.} =
 #template mulVSV*(r:typed; xx,yy:typed) =
 #  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
 #  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
@@ -367,6 +422,7 @@ template mulMMS*(r:typed; xx,yy:typed) =
       for j in fOpt(0,r.ncols.pred):
         mul(r[i,j], x[i,j], y)
 
+#[
 template mulMSM*(r:typed; xx,yy:typed) =
   mixin mul
   block:
@@ -379,6 +435,16 @@ template mulMSM*(r:typed; xx,yy:typed) =
       #forO j, 0, r.ncols.pred:
       for j in fOpt(0,r.ncols.pred):
         mul(r[i,j], x, y[i,j])
+]#
+proc mulMSM*(r: var auto; x,y: auto) {.alwaysInline.} =
+  mixin mul
+  assert(r.nrows == y.nrows)
+  assert(r.ncols == y.ncols)
+  #forO i, 0, r.nrows.pred:
+  for i in fOpt(0,r.nrows.pred):
+    #forO j, 0, r.ncols.pred:
+    for j in fOpt(0,r.ncols.pred):
+      mul(r[i,j], x, y[i,j])
 
 proc mulVMV*(r: var auto; x,y: auto) {.alwaysInline.} =
 #proc mulVMV*(r: var auto; x,y: auto) =
@@ -403,6 +469,7 @@ proc mulVMV*(r: var auto; x,y: auto) {.alwaysInline.} =
       for i in fOpt(0,x.nrows.pred):
         imadd(r[i], x[i,j], y[j])
 
+#[
 template mulMMM*(r: typed; xx,yy: typed) =
   mixin mul, imadd
   block:
@@ -420,6 +487,17 @@ template mulMMM*(r: typed; xx,yy: typed) =
           #imadd(r[i,j], x[i,k], y[k,j])
           imadd(t[i,j], x[i,k], y[k,j])
     r := t
+]#
+proc mulMMM*(r: var auto; x,y: auto) {.alwaysInline.} =
+  mixin mul, imadd
+  assert(x.nrows == r.nrows)
+  assert(x.ncols == y.nrows)
+  assert(r.ncols == y.ncols)
+  forO i, 0, r.nrows.pred:
+    forO j, 0, r.ncols.pred:
+      mul(r[i,j], x[i,0], y[0,j])
+      forO k, 1, y.nrows.pred:
+        imadd(r[i,j], x[i,k], y[k,j])
 
 template imaddSVV*(r:typed; xx,yy:typed) =
   mixin imadd, assign

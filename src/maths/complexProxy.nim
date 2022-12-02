@@ -1,5 +1,6 @@
 import macros
-import base/metaUtils
+import base/[basicOps,metaUtils]
+getOptimPragmas()
 
 type
   RealProxy*[T] = object
@@ -133,6 +134,7 @@ proc `$`*(x: RealProxy): string =
 proc `$`*(x: ImagProxy): string =
   result = $x[] & "I"
 proc `$`*(x: ComplexProxy): string =
+  mixin re, im
   #result = "(" & $x.reX & "," & $x.imX & ")"
   result = $x[].re
   var t = $x[].im & "I"
@@ -223,7 +225,7 @@ template assignU*(x: ComplexProxy, y: ComplexProxy2): untyped =
 #  #var ya {.noInit.}: T2
 #  #ya = yy
 #  assignU(x, ya)
-proc assign*[R,X:ComplexProxy](r: var R, x: X) {.inline.} =
+proc assign*[R,X:ComplexProxy](r: var R, x: X) {.alwaysInline.} =
 #template assign*[R,X:ComplexProxy](rr: R, xx: X) =
   #echoRepr: x
   #let assignCC = xx
@@ -333,18 +335,18 @@ template abs*(x: ComplexProxy): untyped =
 
 
 #template inv*(x: RealProxy): untyped = newRealP(x[].inv)
-proc inv*(x: RealProxy): auto {.inline,noInit.} =
+proc inv*(x: RealProxy): auto {.alwaysInline,noInit.} =
   mixin inv
   newRealP(x[].inv)
 template `/`*(x: RealProxy): untyped = inv(x)
 #template inv*(x: ImagProxy): untyped = newImagP(-x[].inv)
-proc inv*(x: ImagProxy): auto {.inline,noInit.} =
+proc inv*(x: ImagProxy): auto {.alwaysInline,noInit.} =
   mixin inv
   newImagP(-x[].inv)
 template `/`*(x: ImagProxy): untyped = inv(x)
 #template invComplexU(x: untyped): untyped = x.adj * x.norm2.inv
 #template inv*(x: ComplexProxy): untyped = safecall(invComplexU, x)
-proc inv*(x: ComplexProxy): auto {.inline,noInit.} =
+proc inv*(x: ComplexProxy): auto {.alwaysInline,noInit.} =
   mixin inv
   x.adj * x.norm2.inv
 template `/`*(x: ComplexProxy): untyped = inv(x)
