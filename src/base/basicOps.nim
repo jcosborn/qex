@@ -142,8 +142,10 @@ template simdSum*(x:SomeNumber):untyped = x
 template simdSum*[T:SomeNumber](r:var T; x:SomeNumber2):untyped =
   r = T(x)
 template simdMax*(x:SomeNumber):untyped = x
+template simdMin*(x:SomeNumber):untyped = x
 template simdReduce*(x:SomeNumber):untyped = x
 template simdMaxReduce*(x:SomeNumber):untyped = x
+template simdMinReduce*(x:SomeNumber):untyped = x
 template perm1*(r:var SomeNumber; x:SomeNumber2):untyped =
  r = (type(r))(x)
 template perm2*(r:var SomeNumber; x:SomeNumber2):untyped =
@@ -159,7 +161,9 @@ proc atan2*(x,y:float64):float64 {.importC:"atan2",header:"math.h".}
 proc atan2*(x,y:float32):float32 {.importC:"atan2f",header:"math.h".}
 template rsqrt*(r:var SomeNumber; x:SomeNumber) =
   r = cnvrt(r,1)/sqrt(cnvrt(r,x))
-template rsqrt*[T](x: T): untyped = 1/sqrt(x)
+template rsqrt*(x: SomeNumber): untyped = 1/sqrt(x)
+template select*(c: bool, a,b: typed): untyped =
+  if c: a else: b
 
 template load1*(x:SomeNumber):untyped = x
 

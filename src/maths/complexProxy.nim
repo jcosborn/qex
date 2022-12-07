@@ -1,4 +1,4 @@
-import macros
+import macros, math
 import base/[basicOps,metaUtils]
 getOptimPragmas()
 
@@ -255,10 +255,10 @@ template unaryOverloads(op,fn,implR,implI: untyped) {.dirty.} =
 
   template `fn U`*(x: ComplexProxy): untyped =
     newComplexP(implR(x.re,x.im), implI(x.re,x.im))
-  template fn*(x: ComplexProxy): untyped =
-    flattenCallArgs(`fn U`, x)
-  #proc fn*(x: ComplexProxy): auto {.inline,noInit.} =
-  #  newComplexP(implR(x.re,x.im), implI(x.re,x.im))
+  #template fn*(x: ComplexProxy): untyped =
+  #  flattenCallArgs(`fn U`, x)
+  proc fn*(x: ComplexProxy): auto {.alwaysInline,noInit.} =
+    newComplexP(implR(x.re,x.im), implI(x.re,x.im))
   #template fn*(xx: ComplexProxy): untyped =
   #  let x = xx
   #  newComplexP(implR(x.re,x.im), implI(x.re,x.im))
@@ -574,6 +574,12 @@ template iadd*[R,X:ComplexProxy](r: R, xx: X) =
   iadd(r.im, x.im)
 template `+=`*[R,X:ComplexProxy](r: R, x: X) = iadd(r,x)
 ]#
+
+proc sqrt*(x: ComplexProxy): auto =
+  let n = sqrt(x.norm2)
+  let r = sqrt(0.5*(n + x.re))
+  let i = select(x.im<0, -1, 1)*sqrt(0.5*(n - x.re))
+  newComplexP(r, i)
 
 # inorm2, redot, iredot, dot, idot
 # sqrt, rsqrt, exp, ...

@@ -273,6 +273,7 @@ template makeMap2(op:untyped):untyped {.dirty.} =
           op(r[i,j], x[i,j], y)
         else:
           op(r[i,j], x[i,j], 0)
+  #[
   template `op MSM`*(rr:typed; xx,yy:typed) =
     mixin op
     block:
@@ -290,6 +291,20 @@ template makeMap2(op:untyped):untyped {.dirty.} =
             op(r[i,j], x, y[i,j])
           else:
             op(r[i,j], 0, y[i,j])
+  ]#
+  proc `op MSM`*(r: var auto; x,y: auto) =
+    mixin op
+    assert(r.nrows == r.ncols)
+    assert(r.nrows == y.nrows)
+    assert(r.ncols == y.ncols)
+    #forO i, 0, r.nrows.pred:
+    for i in fOpt(0,r.nrows.pred):
+      #forO j, 0, r.ncols.pred:
+      for j in fOpt(0,r.ncols.pred):
+        if i == j:
+          op(r[i,j], x, y[i,j])
+        else:
+          op(r[i,j], 0, y[i,j])
   template `op MMV`*(rr:typed; xx,yy:typed) =
     mixin op
     block:
@@ -366,6 +381,7 @@ template imulVS*(r:typed; xx:typed) =
     for i in fOpt(0,r.len.pred):
       imul(r[i], x)
 
+#[
 template imulMS*(r: typed; xx: typed) =
   mixin imul
   block:
@@ -375,6 +391,14 @@ template imulMS*(r: typed; xx: typed) =
       #forO j, 0, r.ncols.pred:
       for j in fOpt(0,r.ncols.pred):
         imul(r[i,j], x)
+]#
+proc imulMS*(r: var auto; x: auto) {.alwaysInline.}=
+  mixin imul
+  #forO i, 0, r.nrows.pred:
+  for i in fOpt(0,r.nrows.pred):
+    #forO j, 0, r.ncols.pred:
+    for j in fOpt(0,r.ncols.pred):
+      imul(r[i,j], x)
 
 template mulSVV*(r:typed; xx,yy:typed) =
   mixin mul, imadd #, assign

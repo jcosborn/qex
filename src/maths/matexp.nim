@@ -1,5 +1,4 @@
 import base
-import complexNumbers
 import matrixConcept
 import types
 import matinv
@@ -89,6 +88,14 @@ proc expPoly4*(m: Mat1): auto {.noInit.} =
   r += 1
   r
 
+# m2 = m' m'
+# a = w m'
+# b = m' w
+# c = m' w m'
+# d = wm'+m'w
+# e = C4 d + C3 w
+# f = m2 e + e m2
+# r = C2 d + C3 c + f
 # w + C2(m'w+wm') + C3(m'm'w+m'wm'+wm'm') + C4(m'm'm'w+m'm'wm'+m'wm'm'+wm'm'm')
 proc expm1Poly4Deriv*(m: Mat1, w: Mat2): auto {.noInit.} =
   splitVars:
@@ -304,7 +311,7 @@ proc expm1Pade3Deriv*(m: Mat1, w: Mat2): auto {.noInit.} =
     var xe = 0.1*m2 + 1
     var xot = (1.0/120.0)*m2 + 0.5
   let xo = m.adj*xot
-  let n = xe + xo
+  #let n = xe + xo
   let d = xe - xo
   var di{.noInit.}: type(d)
   inverse(di, d)
@@ -359,12 +366,12 @@ proc expm1Pade4Deriv*(m: Mat1, w: Mat2): auto {.noInit.} =
     var xe = (1.0/1680.0)*m4 + (3.0/28.0)*m2 + 1
     var xot = (1.0/84.0)*m2 + 0.5
   let xo = m.adj*xot
-  let n = xe + xo
+  #let n = xe + xo
   let d = xe - xo
   var di{.noInit.}: type(d)
   inverse(di, d)
   let v = di*w*di
-  let mvm = m*v*m
+  let mvm = m.adj*v*m.adj
   let m2v = m2*v
   let vm2 = v*m2
   let m2vm2 = m2*vm2
@@ -658,7 +665,7 @@ proc expm1DerivNoScale*[R,M,W:Mat1](p: var ExpParam, r: var R, m: M, w: W) =
   of ekPade:
     case p.order
     of 3: r := expm1Pade3Deriv(m, w)
-    #of 4: r := expm1Pade4(m)
+    of 4: r := expm1Pade4Deriv(m, w)
     #of 5: r := expm1Pade5(m)
     #of 6: r := expm1Pade6(m)
     #of 7: r := expm1Pade7(m)
@@ -702,10 +709,17 @@ proc expDeriv*(p: var ExpParam, m: Mat1, w: Mat2): auto {.noInit.} =
   result = p.expm1Deriv(m, w)
 
 when isMainModule:
-  import os, strutils, strformat
+  import os, strutils, strformat, fenv
+  import complexNumbers
   var scale = 0
   if paramCount() > 0:
     scale = parseInt paramStr(1)
+  let f32max = float32.maximumPositiveValue
+  let l32max = ln(f32max)
+  echo "float32.max: ", f32max, " log: ", l32max
+  let f64max = float64.maximumPositiveValue
+  let l64max = ln(f64max)
+  echo "float64.max: ", f64max, " log: ", l64max
 
   proc setAH(a: var Mat1) =
     let N = a.nrows

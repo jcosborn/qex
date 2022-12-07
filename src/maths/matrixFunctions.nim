@@ -11,12 +11,14 @@ export matexp
 import projUderiv
 
 proc determinantN*(a: auto): auto =
+  mixin simdMin
   const nc = a.nrows
   var c {.noInit.}: type(a)
   var row: array[nc,int]
   var nswaps = 0
   var r: type(a[0,0])
   r := 1
+  template C(i,j): untyped = c[row[i],j]
 
   for i in 0..<nc:
     for j in 0..<nc:
@@ -26,36 +28,36 @@ proc determinantN*(a: auto): auto =
   for j in 0..<nc:
     if j>0:
       for i in j..<nc:
-        var t2 = c[i,j]
+        var t2 = C(i,j)
         for k in 0..<j:
-          t2 -= c[i,k] * c[k,j]
-        c[i,j] := t2
+          t2 -= C(i,k) * C(k,j)
+        C(i,j) := t2
 
-    var rmax = c[j,j].norm2
-    #[
+    var rmax = C(j,j).norm2
+    # #[
     var kmax = j
     for k in (j+1)..<nc:
-      var rn = c[k,j].norm2
-      if rn>rmax:
+      var rn = C(k,j).norm2
+      if rn.simdMin>rmax.simdMin:
         rmax = rn
         kmax = k
-    if rmax==0: # matrix is singular
+    if rmax.simdMin == 0: # matrix is singular
       r := 0
       return r
     if kmax != j:
       swap(row[j], row[kmax])
       inc nswaps
-    ]#
+    # ]#
 
-    r *= c[j,j]
+    r *= C(j,j)
 
     let ri = 1.0/rmax
-    var Cjji = ri * c[j,j]
+    var Cjji = ri * C(j,j).adj
     for i in (j+1)..<nc:
-      var t2 = c[j,i]
+      var t2 = C(j,i)
       for k in 0..<j:
-        t2 -= c[j,k] * c[k,i]
-      c[j,i] := t2 * Cjji
+        t2 -= C(j,k) * C(k,i)
+      C(j,i) := t2 * Cjji
 
   if (nswaps and 1) != 0:
     r := -r
@@ -67,8 +69,7 @@ proc determinant*(x: auto): auto =
   when x.nrows==1:
     result = x[0,0]
   elif x.nrows==2:
-    optimizeAst:
-      result = x[0,0]*x[1,1] - x[0,1]*x[1,0]
+    result = x[0,0]*x[1,1] - x[0,1]*x[1,0]
   elif x.nrows==3:
     result = (x[0,0]*x[1,1]-x[0,1]*x[1,0])*x[2,2] +
              (x[0,2]*x[1,0]-x[0,0]*x[1,2])*x[2,1] +
@@ -109,7 +110,7 @@ proc eigs3(e0,e1,e2: var auto; tr,p2,det: auto) =
   e1 = ll + sqs
   e2 = ll - sqs
 
-template rsqrtPHM2(r:typed; x:typed):untyped =
+template rsqrtPHM2(r:typed; x:typed) =
   let x00 = x[0,0].re
   let x11 = x[1,1].re
   let x01r = 0.5*(x[0,1].re+x[1,0].re)
@@ -169,7 +170,7 @@ proc rsqrtPHM3f(c0,c1,c2:var auto; tr,p2,det:auto) =
   c1 = -(tr*u+w)*di
   c2 = u*di
 
-template rsqrtPHM3(r:typed; x:typed):untyped =
+template rsqrtPHM3(r:typed; x:typed) =
   let tr = trace(x).re
   let x2 = x*x
   let p2 = trace(x2).re
@@ -178,7 +179,7 @@ template rsqrtPHM3(r:typed; x:typed):untyped =
   rsqrtPHM3f(c0, c1, c2, tr, p2, det)
   r := c0 + c1*x + c2*x2
 
-template rsqrtPHMN(r:typed; x:typed):untyped =
+template rsqrtPHMN(r:typed; x:typed) =
   mixin simdMax
   let xi = 1/x
   let xi2 = xi.norm2
@@ -212,7 +213,7 @@ template rsqrtPHMN(r:typed; x:typed):untyped =
 
 #[
 # Bini (https://arxiv.org/pdf/1703.02456.pdf)
-template rsqrtPHMN2(r:typed; x:typed):untyped =
+template rsqrtPHMN2(r:typed; x:typed) =
   let xn = x.norm2
   let ds = sqrt(xn)
   let dsi = 3/ds
@@ -243,7 +244,7 @@ template rsqrtPHMN2(r:typed; x:typed):untyped =
 
 # -0.5[B+((1-BBA)^3-1)/(BA)] = -0.5B[1-3+3BBA-BBBBAA] = 0.5B[2-3BBA+BBBBAA]
 # = 0.5B[1-BBA][2-BBA]
-template rsqrtPHMN3(r:typed; x:typed):untyped =
+template rsqrtPHMN3(r:typed; x:typed) =
   let xn = x.norm2
   let ds = sqrt(xn)
   let dsi = 1/ds
@@ -273,7 +274,7 @@ template rsqrtPHMN3(r:typed; x:typed):untyped =
   #r := b
 ]#
 
-template rsqrtPHM(r:typed; x:typed):untyped =
+template rsqrtPHM(r:typed; x:typed) =
   mixin rsqrt, nrows
   assert(r.nrows == x.nrows)
   assert(r.ncols == x.ncols)
@@ -385,7 +386,7 @@ proc checkSU*(x: Mat1): auto {.inline, noinit.} =
   return d
 
 #[
-template rsqrtM2(r:typed; x:typed):untyped =
+template rsqrtM2(r:typed; x:typed) =
   load(x00, x[0,0].re)
   load(x01, x[0,1])
   #load(x10, x[1,0])
@@ -406,7 +407,7 @@ template rsqrtM2(r:typed; x:typed):untyped =
   QLA_c_eq_c_times_r(QLA_elem_M(*r,1,0), a10, c1);
   QLA_c_eq_c_times_r_plus_r(QLA_elem_M(*r,1,1), a11, c1, c0);
 
-template rsqrtM(r:typed; x:typed):untyped =
+template rsqrtM(r:typed; x:typed) =
   assert(r.nrows == x.nrows)
   assert(r.ncols == x.ncols)
   assert(r.nrows == r.ncols)

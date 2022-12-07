@@ -324,6 +324,16 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
   proc simdMaxReduce*(x:T):F {.noinit,inline.} = simdMaxReduce(result, x)
   template simdMax*(r:var SomeNumber; x:T) = simdMaxReduce(r, x)
   template simdMax*(x:T):untyped = simdMaxReduce(x)
+  proc simdMinReduce*(r:var SomeNumber; x:T) {.inline.} =
+    mixin simdMinReduce
+    var y = x[][0]
+    forStatic i, 1, L-1:
+      let c = x[][i]
+      y = min(y, c)
+    r = (type(r))(simdMinReduce(y))
+  proc simdMinReduce*(x:T):F {.noinit,inline.} = simdMinReduce(result, x)
+  template simdMin*(r:var SomeNumber; x:T) = simdMinReduce(r, x)
+  template simdMin*(x:T):untyped = simdMinReduce(x)
   proc `-`*(x:T):T {.inline,noInit.} =
     forStatic i, 0, L-1:
       neg(result[][i], x[][i])
@@ -360,6 +370,7 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
   map110(T, L, rsqrt, rsqrt)
   map110(T, L, `+=`, iadd)
   map110(T, L, `-=`, isub)
+  map110(T, L, `*=`, imul)
 
   map120(T, L, add, add)
   map120(T, L, sub, sub)
