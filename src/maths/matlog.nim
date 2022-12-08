@@ -111,10 +111,12 @@ when isMainModule:
     let l = logm(m)
     var t = l
     projectTAH(t)
-    let e = p.exp(t)
-    let d = determinant(e)
-    let r = e.adj*e - 1
-    echo ">> ", (d-1).norm2.simdMax, " ", r.norm2.simdMax
+    for scale in 0..20:
+      p.scale = scale
+      let e = p.exp(t)
+      let d = determinant(e)
+      let r = e.adj*e - 1
+      echo ">> ", scale, " ", (d-1).norm2.simdMax, " ", r.norm2.simdMax
   testproj(CM[2,SimdD8])
   testproj(CM[3,SimdD8])
   testproj(CM[4,SimdD8])
