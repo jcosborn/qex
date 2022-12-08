@@ -11,7 +11,7 @@ export matexp
 import projUderiv
 
 proc determinantN*(a: auto): auto =
-  mixin simdMin
+  mixin simdMinReduce
   const nc = a.nrows
   var c {.noInit.}: type(a)
   var row: array[nc,int]
@@ -34,20 +34,18 @@ proc determinantN*(a: auto): auto =
         C(i,j) := t2
 
     var rmax = C(j,j).norm2
-    # #[
     var kmax = j
     for k in (j+1)..<nc:
       var rn = C(k,j).norm2
-      if rn.simdMin>rmax.simdMin:
+      if rn.simdMinReduce > rmax.simdMinReduce:
         rmax = rn
         kmax = k
-    if rmax.simdMin == 0: # matrix is singular
-      r := 0
-      return r
+    #if rmax.simdMin == 0: # some matrix is singular
+    #  r := 0  # FIXME need to only adjust rmax an continue
+    #  return r
     if kmax != j:
       swap(row[j], row[kmax])
       inc nswaps
-    # ]#
 
     r *= C(j,j)
 
