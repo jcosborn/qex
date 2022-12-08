@@ -232,15 +232,19 @@ template norm2*[T](x: Simd[T]): untyped =
 
 template trace*(x: Simd): untyped = x
 
-template simdSum*(x: Simd): untyped =
-  mixin simdSum
-  simdSum(x[])
-template simdMax*(x: Simd): untyped =
-  mixin simdMax
-  simdMax(x[])
-template simdMin*(x: Simd): untyped =
-  mixin simdMin
-  simdMin(x[])
+template simdReduce*(x: Simd): untyped =
+  mixin simdReduce
+  simdReduce(x[])
+template simdMaxReduce*(x: Simd): untyped =
+  mixin simdMaxReduce
+  simdMaxReduce(x[])
+template simdMinReduce*(x: Simd): untyped =
+  mixin simdMinReduce
+  simdMinReduce(x[])
+template simdSum*(x: Simd): untyped = simdReduce(x)
+template simdMax*(x: Simd): untyped = simdMaxReduce(x)
+template simdMin*(x: Simd): untyped = simdMinReduce(x)
+
 template re*(x: Simd): untyped = x
 template im*[T:Simd](x: T): untyped = 0.to(type(T))
 
