@@ -390,7 +390,17 @@ template mindexed*[T,I](x: T, i: I): untyped =
     #static: echo "mindexed not isWrapper"
     var tIndexed = indexedX(getAlias x, i)
     tIndexed
-template obj(x:Indexed):untyped = x.indexedPtr[]
+import strUtils
+template obj(x:Indexed):untyped =
+  #static: echo "obj: ", $type(x)
+  #static: echo $type(x.indexedPtr)
+  #static: echo $type(x.indexedPtr[])
+  #let y = x.indexedPtr[]
+  #static: echo $type(y)
+  #when ($type(x.indexedPtr)).startsWith("ptr Mat"):
+  #when compiles(x.indexedPtr[][]):
+  #  static: echo $type(x.indexedPtr[][])
+  x.indexedPtr[]
 template idx(x:Indexed):untyped = x.indexedIdx
 template `!`(x:Indexed):untyped = obj(x)[idx(x)]
 template `!=`(x:Indexed,y:typed):untyped = obj(x)[idx(x)] = y

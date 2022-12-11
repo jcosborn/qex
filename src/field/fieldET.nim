@@ -429,7 +429,7 @@ template `{}`*(f: Subsetted; i: int): untyped =
 
 template fmask*(f: Field; i: AsView): untyped =
   when f.l.V == 1:
-    f[i]
+    f[i[]]
   else:
     let e = i[] div f.l.V
     let l = i[] mod f.l.V

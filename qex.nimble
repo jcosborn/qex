@@ -30,7 +30,7 @@ requires "mdevolve >= 1.0.0"
 if primmeDir != "":
   requires "primme >= 3.0.0"
 
-requires "https://github.com/usqcd-software/qiolite"
+requires "https://github.com/usqcd-software/qiolite#head"
 
 # Helpers
 

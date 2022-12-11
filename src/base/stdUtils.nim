@@ -5,8 +5,8 @@ import strUtils
 
 type
   cArray*[T] = UncheckedArray[T]
-template `[]`*(x: cArray): untyped = addr x[0]
-template `&`*(x: ptr cArray): untyped = addr x[0]
+#template `[]`*(x: cArray): untyped = addr x[0]
+#template `&`*(x: ptr cArray): untyped = addr x[0]
 
 template ptrInt*(x:untyped):untyped = cast[ByteAddress](x)
 template addrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))

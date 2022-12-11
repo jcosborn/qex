@@ -176,7 +176,8 @@ template stagDP*(sd:StaggeredD; r:Field; g:openArray[Field2];
     optimizeAst:
       startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
   toc("startShiftB")
-  optimizeAst:
+  #optimizeAst:
+  block:
     for ir in r[sd.subset]:
       var rir{.inject,noInit.}:evalType(load1(r[ir]))
       exp

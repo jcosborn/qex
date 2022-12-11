@@ -108,9 +108,14 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
   template assign*(r: T; x:T) =
     r = x
   #proc assign*(r:var array[N,F]; x:T) {.alwaysInline.} =
-  #  assign(cast[ptr F](r.addr), x)
-  proc assign*(r:var array[N,F]; x:T) {.alwaysInline.} =
-    assign(r[0].addr, x)
+  #  assign(r[0].addr, x)
+  proc assign*(r:var array[N,SomeNumber]; x:T) {.alwaysInline.} =
+    when r[0] is F:
+      assign(r[0].addr, x)
+    else:
+      var t{.noInit.}:array[N,F]
+      assign(t, x)
+      for i in 0..<N: r[i] = F(t[i])
   proc assign*(m: Masked[T], x: SomeNumber) =
     #static: echo "a mask"
     var i = 0
@@ -123,7 +128,7 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
     #static: echo "end a mask"
   proc `[]`*(x:T; i:SomeInteger):F {.alwaysInline,noInit.} =
     toArray(x)[i]
-  proc `[]=`*(r:var T; i:SomeInteger; x:SomeNumber) {.alwaysInline,noInit.} =
+  proc `[]=`*(r:var T; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
     var a = toArray(r)
     a[i] = F(x)
     assign(r, a)
@@ -263,7 +268,7 @@ proc simdReduce*(r:var SomeNumber; x:m512d) {.alwaysInline.} =
   for i in 1..<8:
     r += x[i]
 proc simdReduce*(x:m128):float32 {.alwaysInline,noInit.} = simdReduce(result, x)
-proc simdReduce*(x:m128d):float32 {.alwaysInline,noInit.} = simdReduce(result, x)
+proc simdReduce*(x:m128d):float64 {.alwaysInline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m256):float32 {.alwaysInline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m256d):float64 {.alwaysInline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m512):float32 {.alwaysInline,noInit.} = simdReduce(result, x)

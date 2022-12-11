@@ -294,7 +294,7 @@ template rsqrtPH*[T:Mat1](x: T): T =
   rsqrtPH(r, x)
   r
 
-# x (x'x)^{-1/2}
+# x (x'x)^{-1/2}  #'
 proc projectU*(r: var Mat1; x: Mat2) =
   #let t = x.adj * x   # issues with gcc
   let xa = x.adj

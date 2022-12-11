@@ -90,7 +90,7 @@ proc put[T](buf: cstring; index: int, count: int; arg: openArray[ptr T]) =
   for i in 0..<count:
     #masked(dest[i][vi], vlm) := src[i]
     #mindexed(dest[i][vi], asSimd(vl)) := src[i]
-    dest[i][][vi][asSimd(vl)] = src[i]
+    dest[][i][][vi][asSimd(vl)] = src[][i]
 
 proc putP[T](buf: cstring; index: int, count: int; arg: openArray[ptr T]) =
   type srcT = cArray[IOtypeP(T)]
