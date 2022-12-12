@@ -20,7 +20,7 @@ type
   ComplexT*[T] = ComplexTT[T,T]
   ComplexType*[T] = ComplexT[T]
 
-template complexObj*[TR,TI](x: typedesc[TR], y: typedesc[TI]): untyped =
+template complexObj*[TR,TI](x: typedesc[TR], y: typedesc[TI]): typedesc =
   ComplexObj[typeof(TR),typeof(TI)]
 template newComplexObj*[TR,TI](x: TR, y: TI): untyped =
   ComplexObj[typeof(TR),typeof(TI)](reX: x, imX: y)
@@ -139,7 +139,7 @@ template imaddCCI*(r: untyped, x: untyped, y: untyped) =
 template load1*(x: ComplexProxy): auto = x
 template load1*(x: RealProxy): auto = x
 template load1*(x: ImagProxy): auto = x
-template eval*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): auto =
+template eval*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): typedesc =
   mixin eval
   complexObj(eval(typeof TR), eval(typeof TI))
 

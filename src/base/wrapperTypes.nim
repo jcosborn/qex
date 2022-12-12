@@ -202,11 +202,11 @@ template makeWrapperTypeX(wf:WFSet, name,fName,asName,tasName: untyped) =
   #template asName*[T](x: typedesc[T]): untyped =
   #  name[type T]
   template `asName Obj`*[T](x: typedesc[T]): typedesc =
-    name[type T]
+    name[typeof T]
   template `asName View`*[T](x: typedesc[T]): typedesc =
-    `asName Obj`(getPtr type T)
+    `asName Obj`(getPtr typeof T)
   template asName*[T](x: typedesc[T]): typedesc =
-    `asName Obj`(type T)
+    `asName Obj`(typeof T)
   #  flattenCallArgs(tasName, x)
   #proc asName*[T](x: T): name[T] {.inline,noInit.} =
   #  result.fName = x

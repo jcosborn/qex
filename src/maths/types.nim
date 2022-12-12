@@ -36,8 +36,6 @@ template forwardFunc2*(t: typedesc, f: untyped) {.dirty.} =
     f(x[], y)
 
 
-template evalType*[T](x: T): typedesc = eval(type T)
-
 # indexing should return ref?
 # ???
 # template toSingleRaw*[T](x: T): untyped =

@@ -32,6 +32,13 @@ type
 #     let yi = y.im
 #     newComplexP(xr*yr-xi*yi,xr*yi+xi*yr)
 
+template asRealProxy*[T](x: T): auto = RealProxy[typeof T](v: x)
+template asRealProxy*[T](x: typedesc[T]): typedesc = RealProxy[typeof T]
+template asImagProxy*[T](x: T): auto = ImagProxy[typeof T](v: x)
+template asImagProxy*[T](x: typedesc[T]): typedesc = ImagProxy[typeof T]
+template asComplexProxy*[T](x: T): auto = ComplexProxy[typeof T](v: x)
+template asComplexProxy*[T](x: typedesc[T]): typedesc = ComplexProxy[typeof T]
+
 template `[]`*[T](x: RealProxy[T]): auto =
   when T is ptr:
     x.v[]
@@ -58,13 +65,6 @@ macro `[]`*[T](x: ImagProxy[T]{nkObjConstr}): auto =
   else:
     result = x[1][1]
   #echo result.treerepr
-
-template asRealProxy*[T](x: T): auto = RealProxy[type T](v: x)
-template asRealProxy*[T](x: typedesc[T]): typedesc = RealProxy[type T]
-template asImagProxy*[T](x: T): auto = ImagProxy[type T](v: x)
-template asImagProxy*[T](x: typedesc[T]): typedesc = ImagProxy[type T]
-template asComplexProxy*[T](x: T): auto = ComplexProxy[type T](v: x)
-template asComplexProxy*[T](x: typedesc[T]): typedesc = ComplexProxy[type T]
 
 template isWrapper*(x: RealProxy): auto = true
 template asWrapper*(x: RealProxy, y: typed): auto =
@@ -127,7 +127,8 @@ template `[]=`*(x: ComplexProxy, y: typed) =
     x.v := y
 
 template eval*[T](x: typedesc[ComplexProxy[T]]): typedesc =
-  asComplexProxy(eval(type T))
+  mixin eval
+  asComplexProxy(eval typeof T)
 
 proc `$`*(x: RealProxy): string =
   result = $x[]
