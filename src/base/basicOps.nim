@@ -13,6 +13,11 @@ import macros
 
 {.passL:"-lm".}
 
+template getOptimPragmas* =
+  {.pragma: alwaysInline, inline,
+    codegenDecl: "inline __attribute__((always_inline)) $# $#$#".}
+getOptimPragmas()
+
 type
   SomeInteger2* = int|int8|int16|int32|int64
   SomeInteger3* = int|int8|int16|int32|int64
@@ -27,7 +32,9 @@ type
 var FLT_EPSILON*{.importC,header:"<float.h>".}:float32
 var DBL_EPSILON*{.importC,header:"<float.h>".}:float64
 template epsilon*(x:float32):untyped = FLT_EPSILON
+template epsilon*(x:typedesc[float32]):untyped = FLT_EPSILON
 template epsilon*(x:float64):untyped = DBL_EPSILON
+template epsilon*(x:typedesc[float64]):untyped = DBL_EPSILON
 template basicNumberDefines(T,N,F) {.dirty.} =
   template numberType*(x:T):untyped = F
   template numberType*(x:typedesc[T]):untyped = F
@@ -46,6 +53,10 @@ template `[]`*[T](x:typedesc[ptr T]):untyped = T
 template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x
 template isWrapper*(x: SomeNumber): untyped = false
 template isWrapper*(x: typedesc[SomeNumber]): untyped = false
+template eval*[T:SomeNumber](x: typedesc[T]): typedesc = typeof(T)
+template evalType*[T](x: T): typedesc =
+  mixin eval
+  eval(typeof T)
 
 template cnvrt(r,x):untyped = ((type(r))(x))
 template to*(x:auto; t:typedesc[SomeNumber]):untyped =
@@ -67,16 +78,25 @@ template toDoubleImpl*(x:SomeNumber):untyped =
   else:
     float64(x)
 
-template assign*(r: SomeNumber; x: ptr SomeNumber2) =
-  r = cnvrt(r,x[])
-template assign*(r: SomeNumber, x: SomeNumber2) =
-  r = cnvrt(r,x)
+template assign*[R,X:SomeNumber](r: R; x: ptr X) =
+  r = R(x[])
+template assign*[R,X:SomeNumber](r: R, x: X) =
+  r = R(x)
+template `:=`*[R,X:SomeNumber](r: R; x: X) =
+  r = R(x)
+template `:=`*[R,X:SomeNumber](r: R; x: ptr X) =
+  r = R(x[])
+#proc `+=`*[R,X:SomeNumber](r: var R; x: X) {.alwaysInline.} =
+#  r = r + R(x)
+#proc `-=`*[R,X:SomeNumber](r: var R; x: X) {.alwaysInline.} =
+#  r = r - R(x)
 
 template adj*(x: SomeNumber): untyped = x
+template transpose*(x: SomeNumber): untyped = x
 template inv*[T:SomeNumber](x: T): untyped = (T(1))/x
 
-template neg*(r:var SomeNumber, x:SomeNumber2):untyped =
-  r = cnvrt(r,-x)
+template neg*[R,X:SomeNumber](r: R, x: X) =
+  r := -x
 template iadd*(r:var SomeNumber, x:SomeNumber2):untyped =
   r += cnvrt(r,x)
 template isub*(r:var SomeNumber, x:SomeNumber2):untyped =
@@ -129,14 +149,17 @@ template idot*(r:var SomeNumber; x:SomeNumber2;y:SomeNumber3):untyped =
 template redot*(x:SomeNumber; y:SomeNumber2):untyped = x*y
 template redotinc*(r:var SomeNumber; x:SomeNumber2; y:SomeNumber3):untyped =
   r += x*y
-#template simdLength*(x:SomeNumber):untyped = 1
+template simdLength*(x:SomeNumber):untyped = 1
 template simdLength*(x:typedesc[SomeNumber]):untyped = 1
-template simdSum*(x:SomeNumber):untyped = x
-template simdSum*[T:SomeNumber](r:var T; x:SomeNumber2):untyped =
-  r = T(x)
-template simdMax*(x:SomeNumber):untyped = x
 template simdReduce*(x:SomeNumber):untyped = x
+template simdReduce*[T,X:SomeNumber](r:var T; x:X) =
+  r = T(x)
 template simdMaxReduce*(x:SomeNumber):untyped = x
+template simdMinReduce*(x:SomeNumber):untyped = x
+template simdSum*(x:SomeNumber):untyped = simdReduce(x)
+template simdSum*[T,X:SomeNumber](r:var T; x:X) = simdReduce(r,x)
+template simdMax*(x:SomeNumber):untyped = simdMaxReduce(x)
+template simdMin*(x:SomeNumber):untyped = simdMinReduce(x)
 template perm1*(r:var SomeNumber; x:SomeNumber2):untyped =
  r = (type(r))(x)
 template perm2*(r:var SomeNumber; x:SomeNumber2):untyped =
@@ -150,19 +173,21 @@ template perm8*(r:var SomeNumber; x:SomeNumber2):untyped =
 proc acos*(x:float64):float64 {.importC:"acos",header:"math.h".}
 proc atan2*(x,y:float64):float64 {.importC:"atan2",header:"math.h".}
 proc atan2*(x,y:float32):float32 {.importC:"atan2f",header:"math.h".}
-template rsqrt*(r:var SomeNumber; x:SomeNumber) =
-  r = cnvrt(r,1)/sqrt(cnvrt(r,x))
-template rsqrt*[T](x: T): untyped = 1/sqrt(x)
+template rsqrt*[R,X:SomeNumber](r:var R; x:X) =
+  r = R(1)/sqrt(R(x))
+template rsqrt*(x: SomeNumber): untyped = 1/sqrt(x)
+template select*(c: bool, a,b: typed): untyped =
+  if c: a else: b
 
 template load1*(x:SomeNumber):untyped = x
 
 template tmpvar*(r:untyped; x:untyped):untyped =
   mixin load1
-  var r{.noInit.}:type(load1(x))
+  var r{.noInit.}:evalType(load1(x))
 template load2*(r:untyped, x:untyped):untyped =
   mixin load1,assign
   #tmpvar(r, x)
-  var r{.noInit.}:type(load1(x))
+  var r{.noInit.}:evalType(load1(x))
   assign(r, x)
 template store*(r:var untyped, x:untyped):untyped =
   mixin assign
@@ -175,7 +200,6 @@ template load*(r:untyped, x:untyped):untyped =
   mixin load2
   load2(r, x)
 
-template `:=`*(x: SomeNumber; y: SomeNumber2) = assign(x,y)
 template `+`*(x:SomeFloat; y:SomeInteger):auto = x + cnvrt(x,y)
 template `+`*(x:SomeInteger; y:SomeFloat):auto = cnvrt(y,x) + y
 template `-`*(x:SomeFloat; y:SomeInteger):auto = x - cnvrt(x,y)
@@ -188,39 +212,28 @@ template `/`*[T:SomeFloat](x:T,y:SomeInteger):auto = x / (T(y))
 template `:=`*[T](x: SomeNumber; y: array[1,T]) = assign(x,y[0])
 
 template setUnopP*(op,fun,t1,t2: untyped): untyped {.dirty.} =
-  proc op*(x: t1): auto {.inline,noInit.} =
+  proc op*(x: t1): auto {.alwaysInline,noInit.} =
     var r{.noInit.}: t2
     fun(r, x)
     r
 template setUnopT*(op,fun,t1,t2: untyped): untyped {.dirty.} =
   template op*(x: t1): untyped =
-    #subst(xt,xx,r,_):
-    #  lets(x,xt):
-    #subst(r,_):
-    #  lets(x,xx):
-    var r_setUnopT{.noInit.}: t2
-    fun(r_setUnopT, x)
-    r_setUnopT
+    var rSetUnopT{.noInit.}: t2
+    fun(rSetUnopT, x)
+    rSetUnopT
 
 template setBinopP*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
-  proc op*(x: t1; y: t2): auto {.inline,noInit.} =
+  #template op*(x: typedesc[t1]; y: typedesc[t2]): typedesc = t3
+  proc op*(x: t1; y: t2): auto {.alwaysInline,noInit.} =
     var r{.noInit.}: t3
     fun(r, x, y)
     r
 template setBinopT*(op,fun,t1,t2,t3: untyped) {.dirty.} =
+  #template op*(x: typedesc[t1]; y: typedesc[t2]): typedesc = t3
   template op*(x: t1; y: t2): untyped =
-    #staticTraceBegin: op
-    #echoUntyped: setBinopT op
-    #echoType: xx
-    #echoType: yy
-    #echoUntyped: t3
-    #echoUntypedTree: t3
-    #let x = xx
-    #let y = yy
-    var r_setBinopT{.noInit.}: t3
-    fun(r_setBinopT, x, y)
-    #staticTraceEnd: op
-    r_setBinopT
+    var rSetBinopT{.noInit.}: t3
+    fun(rSetBinopT, x, y)
+    rSetBinopT
 
 when forceInline:
   template setUnop*(op,fun,t1,t2: untyped): untyped {.dirty.} =
@@ -232,6 +245,9 @@ else:
     setUnopP(op, fun, t1, t2)
   template setBinop*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
     setBinopP(op, fun, t1, t2, t3)
+
+import numberWrap
+export numberWrap
 
 when isMainModule:
   var d1,d2:float

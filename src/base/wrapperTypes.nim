@@ -131,6 +131,8 @@ template makeWrapperTypeX(name,fName,asName,tasName: untyped) =
     #name[type(tasName)](fName: tasName)
     #Color[type(x_asColor)](x_asColor)
     #Color(x_asColor)
+  template asName*[T](x: typedesc[T]): typedesc =
+    name[typeof T]
   #  flattenCallArgs(tasName, x)
   #proc asName*[T](x: T): name[T] {.inline,noInit.} =
   #  result.fName = x

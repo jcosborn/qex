@@ -73,6 +73,13 @@ createAsType(Vector)
 createAsType(Matrix)
 #createAsType(VarMatrix)
 
+template eval*[T](x: typedesc[AsVector[T]]): typedesc =
+  mixin eval
+  asVector(eval(typeof T))
+template eval*[T](x: typedesc[AsMatrix[T]]): typedesc =
+  mixin eval
+  asMatrix(eval(typeof T))
+
 #declareScalar(AsScalar)
 #declareScalar(AsVarScalar)
 #declareVector(AsVector)
@@ -186,17 +193,17 @@ template `[]`*(x:MatrixArrayObj; i:Scalar):untyped = indexed(x, i[])
 template `[]`*(x:MatrixArrayObj; i,j:int):untyped = x.mat[i][j]
 template `[]`*(x:var MatrixArrayObj; i,j:int):untyped = x.mat[i][j]
 template `[]=`*(x:MatrixArrayObj; i,j:int, y:untyped):untyped = x.mat[i][j] = y
-template numberType*[T](x:AsVector[T]):untyped = numberType(type(T))
-template numberType*[T](x:AsMatrix[T]):untyped = numberType(type(T))
-template numberType*[T](x:typedesc[AsVector[T]]):untyped = numberType(type(T))
-template numberType*[T](x:typedesc[AsMatrix[T]]):untyped = numberType(type(T))
-template numberType*[I,T](x:VectorArrayObj[I,T]):untyped =
+template numberType*[T](x:AsVector[T]):typedesc = numberType(type(T))
+template numberType*[T](x:AsMatrix[T]):typedesc = numberType(type(T))
+template numberType*[T](x:typedesc[AsVector[T]]):typedesc = numberType(type(T))
+template numberType*[T](x:typedesc[AsMatrix[T]]):typedesc = numberType(type(T))
+template numberType*[I,T](x:VectorArrayObj[I,T]):typedesc =
   numberType(type(T))
-template numberType*[I,T](x:typedesc[VectorArrayObj[I,T]]):untyped =
+template numberType*[I,T](x:typedesc[VectorArrayObj[I,T]]):typedesc =
   numberType(type(T))
-template numberType*[I,J,T](x:MatrixArrayObj[I,J,T]):untyped =
+template numberType*[I,J,T](x:MatrixArrayObj[I,J,T]):typedesc =
   numberType(type(T))
-template numberType*[I,J,T](x:typedesc[MatrixArrayObj[I,J,T]]):untyped =
+template numberType*[I,J,T](x:typedesc[MatrixArrayObj[I,J,T]]):typedesc =
   numberType(type(T))
 template numNumbers*(x:AsVector):untyped =
   mixin numNumbers
@@ -223,6 +230,13 @@ template `[]=`*(x:MatrixRowObj; i:int; y:untyped):untyped = x.mat[][x.rw,i] = y
 
 template isWrapper*(x: VectorArrayObj): untyped = false
 template isWrapper*(x: MatrixArrayObj): untyped = false
+
+template eval*[I,T](x: typedesc[VectorArrayObj[I,T]]): typedesc =
+  mixin eval
+  VectorArrayObj[I,eval(typeof T)]
+template eval*[I,J,T](x: typedesc[MatrixArrayObj[I,J,T]]): typedesc =
+  mixin eval
+  MatrixArrayObj[I,J,eval(typeof T)]
 
 #template isWrapper*(x: AsMatrix): untyped = true
 #template asWrapper*(x: AsMatrix, y: typed): untyped =
