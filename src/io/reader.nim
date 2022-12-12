@@ -1,5 +1,8 @@
-#import readerQio
-#export readerQio
+import os
 
-import readerQiolite
-export readerQiolite
+when defined(QioReader):
+  import readerQio
+  export readerQio
+else:
+  import readerQiolite
+  export readerQiolite
