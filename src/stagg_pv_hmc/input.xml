@@ -3,9 +3,9 @@
 <qex>
   <hmc><!-- Hybrid Monte Carlo parameters -->
     <tau>1.0</tau>
-    <g_steps>50</g_steps> <!--Gauge field steps -->
-    <f_steps>50</f_steps> <!--Fermion field steps -->
-    <pv_steps>50</pv_steps> <!--PV boson field steps -->
+    <g_steps>15</g_steps> <!--Gauge field steps -->
+    <f_steps>15</f_steps> <!--Fermion field steps -->
+    <pv_steps>15</pv_steps> <!--PV boson field steps -->
     <gauge_int_alg>2MN</gauge_int_alg> <!--Integration algorithm for gauge field -->
     <ferm_int_alg>2MN</ferm_int_alg> <!--Integration algorithm for fermion fields -->
     <pv_int_alg>2MN</pv_int_alg> <!--Integration algorithm for Pauli-Villars fields -->
@@ -23,8 +23,8 @@
   </rng>
   <action><!-- Action parameters -->
     <geom><!-- Specify geometry, Ns^3 X Nt -->
-      <Ns>32</Ns>
-      <Nt>32</Nt>
+      <Ns>8</Ns>
+      <Nt>8</Nt>
       <bc>aaaa</bc> <!-- Boundary conditions; e.g., pppa, aaaa, etc. -->
     </geom>
     <gauge><!-- Gauge action parameters (adjoint gauge action) -->
@@ -36,8 +36,8 @@
       <mass>0.0</mass>
     </ferm>
     <pv><!-- Action parameters for Pauli-Villars -->
-      <num_pv>16</num_pv> <!-- num_pv = 0, then no Pauli-Villars bosons -->
-      <mass_pv>0.75</mass_pv>
+      <num_pv>8</num_pv> <!-- num_pv = 0, then no Pauli-Villars bosons -->
+      <mass_pv>0.5</mass_pv>
     </pv>
   </action>
   <nhyp_smearing><!-- Parameters for nHYP smearing -->
