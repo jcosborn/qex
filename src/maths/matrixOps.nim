@@ -556,6 +556,7 @@ template imaddVMV*(r: typed; xx,yy: typed) =
         imadd(t[i], x[i,j], y[j])
     r := t
 
+#[
 template imaddMMM*(r:typed; xx,yy:typed) =
   mixin nrows, ncols, imadd
   block:
@@ -568,6 +569,16 @@ template imaddMMM*(r:typed; xx,yy:typed) =
       for j in fOpt(0,r.ncols.pred):
         for k in fOpt(0,x.ncols.pred):
           imadd(r[i,j], x[i,k], y[k,j])
+]#
+proc imaddMMM*(r: var auto; x,y: auto) {.alwaysInline.} =
+  mixin nrows, ncols, imadd
+  assert(r.nrows == x.nrows)
+  assert(r.ncols == y.ncols)
+  assert(x.ncols == y.nrows)
+  for i in fOpt(0,r.nrows.pred):
+    for j in fOpt(0,r.ncols.pred):
+      for k in fOpt(0,x.ncols.pred):
+        imadd(r[i,j], x[i,k], y[k,j])
 
 template imsubVSV*(r:typed; xx,yy:typed) =
   mixin imsub

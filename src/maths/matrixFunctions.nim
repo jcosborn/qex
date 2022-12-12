@@ -429,7 +429,12 @@ proc exp*(m: Mat1): auto {.noInit.} =
     #r := expPoly12(m)
     #r := expPade4(m)
     #r := expPade8(m)
-    r := expPade9(m)
+    #r := expPade9(m)
+    var p: ExpParam
+    p.scale = 20
+    p.kind = ekPoly
+    p.order = 4
+    r := p.exp(m)
     #[
     type ft = numberType(m)
     template term(n,x: typed): untyped =
