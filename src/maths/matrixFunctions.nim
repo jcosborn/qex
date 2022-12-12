@@ -50,7 +50,7 @@ proc determinantN*(a: auto): auto =
     r *= c[j,j]
 
     let ri = 1.0/rmax
-    var Cjji = ri * c[j,j]
+    var Cjji = ri * c[j,j].adj
     for i in (j+1)..<nc:
       var t2 = c[j,i]
       for k in 0..<j:

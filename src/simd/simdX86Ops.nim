@@ -258,7 +258,7 @@ proc simdReduce*(r:var SomeNumber; x:m512d) {.inline.} =
   for i in 1..<8:
     r += x[i]
 proc simdReduce*(x:m128):float32 {.inline,noInit.} = simdReduce(result, x)
-proc simdReduce*(x:m128d):float32 {.inline,noInit.} = simdReduce(result, x)
+proc simdReduce*(x:m128d):float64 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m256):float32 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m256d):float64 {.inline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m512):float32 {.inline,noInit.} = simdReduce(result, x)
