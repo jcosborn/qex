@@ -553,5 +553,3 @@ proc makeShiftQ*(si: ptr ShiftIndicesQ; l: ptr LayoutQ;
 proc makeShiftSubQ*(si: ptr ShiftIndicesQ; l: ptr LayoutQ;
                     disp: ptr cArray[cint]; sub: cstring) =
   makeShiftMultiSubQ([si], l, [disp], [sub], 1)
-
-

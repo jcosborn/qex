@@ -3,11 +3,6 @@ import base, field, layout, maths, maths/types, simd
 import comms/qmp
 import base/wrapperTypes
 
-#converter derefPtr*[T](x: ptr T): var T {.inline.} =
-#  static: echo "derefPtr: ", $type(x)
-#  static: echo $type(x[])
-#  x[]
-
 type
   RNG* = concept var r
     r.uniform
@@ -15,25 +10,18 @@ type
   RNGField* = concept r
     r[0] is RNG
 
-iterator pairs*(x: (Field,RNGField)): auto =
-  for i in x[0].sites:
-    yield (getPtr x[0]{i}, getPtr x[1][i])
-
-#template mapRngField*(fn: untyped, x: Field, r: RNGField) =
-template mapRngField*(fn: untyped, x: untyped, r: untyped) =
-  block:
-    when defined(RandCoordOrder) or not defined(RandRawOrder):
-      #when defined(RandCoordOrder):
-      let nd = x.l.nDim
-      var c = newSeq[int32](nd)
+when defined(RandCoordOrder) or not defined(RandRawOrder):
+  template mapRngField*(fn: untyped, x: untyped, r: untyped) =
+    let nd = x.l.nDim
+    var c = newSeq[int32](nd)
     for i in x.l.sites:
-      when defined(RandCoordOrder) or not defined(RandRawOrder):
-        #when defined(RandCoordOrder):
-        x.l.coord(c, i)
-        let j = r.l.rankIndex(c).index
-        fn(x{asView i}, r{j})
-      else:
-        fn(x{asView i}, r{i})
+      x.l.coord(c, i)
+      let j = r.l.rankIndex(c).index
+      fn(x{i}, r{j})
+else:
+  template mapRngField*(fn: untyped, x: untyped, r: untyped) =
+    for i in x.l.sites:
+      fn(x{i}, r{i})
 
 when defined(FUELCompat):
   # For maximal compatibility, see below.
@@ -83,22 +71,7 @@ template gaussian*(r: AsVar, x: untyped) =
   var t = r[]
   gaussian(t, x)
 proc gaussian*(v: Field, r: RNGField) =
-  #for vi,ri in (v,r): gaussian(vi,ri)
   mapRngField(gaussian, v, r)
-  #[
-  when defined(RandCoordOrder) or not defined(RandRawOrder):
-  #when defined(RandCoordOrder):
-    let nd = v.l.nDim
-    var c = newSeq[int32](nd)
-  for i in v.l.sites:
-    when defined(RandCoordOrder) or not defined(RandRawOrder):
-    #when defined(RandCoordOrder):
-      v.l.coord(c, i)
-      let j = r.l.rankIndex(c).index
-      gaussian(v{asView i}, r{j})
-    else:
-      gaussian(v{asView i}, r{i})
-  ]#
 proc gaussian*[T](a: openArray[T], r: RNGField) =
   for i in 0..<a.len:
     gaussian(a[i], r)
@@ -120,20 +93,6 @@ template uniform*(r: AsVar, x: untyped) =
   uniform(t, x)
 proc uniform*(v: Field, r: RNGField) =
   mapRngField(uniform, v, r)
-  #r.map(v, uniform)
-  #[
-  when defined(RandCoordOrder) or not defined(RandRawOrder):
-    let nd = v.l.nDim
-    var c = newSeq[int32](nd)
-  for i in v.l.sites:
-    when defined(RandCoordOrder) or not defined(RandRawOrder):
-    #when defined(RandCoordOrder):
-      v.l.coord(c, i)
-      let j = r.l.rankIndex(c).index
-      uniform(v{i}, r{j})
-    else:
-      uniform(v{i}, r{i})
-  ]#
 
 proc z4*(x: var AsComplex, r: var RNG) =
   when defined(FUELCompat):
@@ -183,20 +142,6 @@ template z4*(r: AsVar, x: untyped) =
   z4(t, x)
 proc z4*(x: Field, r: RNGField) =
   mapRngField(z4, x, r)
-  #r.map(x, z4)
-  #[
-  when defined(RandCoordOrder) or not defined(RandRawOrder):
-    let nd = x.l.nDim
-    var c = newSeq[int32](nd)
-  for i in x.l.sites:
-    when defined(RandCoordOrder) or not defined(RandRawOrder):
-    #when defined(RandCoordOrder):
-      x.l.coord(c, i)
-      let j = r.l.rankIndex(c).index
-      x{i}.z4 r{j}
-    else:
-      x{i}.z4 r{i}
-  ]#
 
 proc z2*(x: var AsComplex, r: var RNG) =
   when defined(FUELCompat):
@@ -222,20 +167,6 @@ template z2*(r: AsVar, x: untyped) =
   z2(t, x)
 proc z2*(x: Field, r: RNGField) =
   mapRngField(z2, x, r)
-  #r.map(x, z2)
-  #[
-  when defined(RandCoordOrder) or not defined(RandRawOrder):
-    let nd = x.l.nDim
-    var c = newSeq[int32](nd)
-  for i in x.l.sites:
-    when defined(RandCoordOrder) or not defined(RandRawOrder):
-    #when defined(RandCoordOrder):
-      x.l.coord(c, i)
-      let j = r.l.rankIndex(c).index
-      x{i}.z2 r{j}
-    else:
-      x{i}.z2 r{i}
-  ]#
 
 proc u1*(x: var AsComplex, r: var RNG) =
   when defined(FUELCompat):
@@ -264,20 +195,6 @@ template u1*(r: AsVar, x: untyped) =
   u1(t, x)
 proc u1*(x: Field, r: RNGField) =
   mapRngField(u1, x, r)
-  #r.map(x, u1)
-  #[
-  when defined(RandCoordOrder) or not defined(RandRawOrder):
-    let nd = x.l.nDim
-    var c = newSeq[int32](nd)
-  for i in x.l.sites:
-    when defined(RandCoordOrder) or not defined(RandRawOrder):
-    #when defined(RandCoordOrder):
-      x.l.coord(c, i)
-      let j = r.l.rankIndex(c).index
-      x{i}.u1 r{j}
-    else:
-      x{i}.u1 r{i}
-  ]#
 
 proc vonMisesWithExp[D](rng:var RNG, lambda:D):auto =
   ## sample x ~ exp(lambda*cos(x))

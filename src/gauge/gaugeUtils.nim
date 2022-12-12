@@ -1332,9 +1332,6 @@ proc randTah3(m: var auto, s: var auto) =
 
 proc randomTAH*(x: Field, r: RNGField) =
   when x[0].nrows == 3:
-    #for i in x.sites:
-    #  randTah3(x{i}, r[i])
-    #r.map(x, randTah3)
     mapRngField(randTah3, x, r)
   else:
     x.gaussian r

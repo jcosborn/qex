@@ -89,6 +89,7 @@ template `:=`*[R,X:SomeNumber](r: R; x: ptr X) =
 #  r = r - R(x)
 
 template adj*(x: SomeNumber): untyped = x
+template transpose*(x: SomeNumber): untyped = x
 template inv*[T:SomeNumber](x: T): untyped = (T(1))/x
 
 template neg*[R,X:SomeNumber](r: R, x: X) =

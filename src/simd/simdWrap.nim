@@ -47,7 +47,7 @@ template `[]`*(x: Simd, i: typed): untyped =
       #x[][i[]]
       var t = indexed(x, i[])
       t
-  else:
+  else:  # FIXME these should return var object too?
     when i is AsView:
       indexed(x, i[])
     else:
