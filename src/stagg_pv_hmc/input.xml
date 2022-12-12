@@ -1,41 +1,43 @@
 <?xml version="1.0"?>
+<!-- Credit to Oliver Witzel for formatting of XML file -->
 <qex>
   <hmc><!-- Hybrid Monte Carlo parameters -->
     <tau>1.0</tau>
-    <g_steps>15</g_steps> <!--Gauge field steps -->
-    <f_steps>15</f_steps> <!--Fermion field steps -->
-    <pv_steps>15</pv_steps> <!--PV boson field steps -->
+    <g_steps>50</g_steps> <!--Gauge field steps -->
+    <f_steps>50</f_steps> <!--Fermion field steps -->
+    <pv_steps>50</pv_steps> <!--PV boson field steps -->
     <gauge_int_alg>2MN</gauge_int_alg> <!--Integration algorithm for gauge field -->
     <ferm_int_alg>2MN</ferm_int_alg> <!--Integration algorithm for fermion fields -->
     <pv_int_alg>2MN</pv_int_alg> <!--Integration algorithm for Pauli-Villars fields -->
     <approx_order>1</approx_order> <!--Approximation order for force gradient (1 or 2) -->
-    <no_metropolis_until>0</no_metropolis_until> <!-- When to start Metropolis test -->
+    <no_metropolis_until>1</no_metropolis_until> <!-- When to start Metropolis test -->
   </hmc>
   <config_opts><!-- Options for gauge configs -->
+    <start_config>137</start_config> <!-- Starting config. is reunitarized -->
     <start>unit</start> <!-- Cold start = unit, hot start = rand -->
   </config_opts>
   <rng><!-- Random number seeds -->
-    <parallel_seed>987654322</parallel_seed> <!-- Seed for RNG fields -->
+    <parallel_seed>987654321</parallel_seed> <!-- Seed for RNG fields -->
     <serial_seed>987654321</serial_seed> <!-- Seed for global RNG (Metrop. step) -->
     <pbp_seed>987654321</pbp_seed> <!-- Seed for generating random sources for pbp -->
   </rng>
   <action><!-- Action parameters -->
     <geom><!-- Specify geometry, Ns^3 X Nt -->
-      <Ns>8</Ns>
-      <Nt>8</Nt>
+      <Ns>32</Ns>
+      <Nt>32</Nt>
       <bc>aaaa</bc> <!-- Boundary conditions; e.g., pppa, aaaa, etc. -->
     </geom>
     <gauge><!-- Gauge action parameters (adjoint gauge action) -->
-      <beta>11.0</beta>
+      <beta>9.2</beta>
       <adj_fac>-0.25</adj_fac>
     </gauge>
     <ferm><!-- Action parameters for fermions -->
       <Nf>2</Nf>
-      <mass>0</mass> <!-- If mass = 0, solves will only be on even-even component -->
+      <mass>0.0</mass>
     </ferm>
     <pv><!-- Action parameters for Pauli-Villars -->
-      <num_pv>8</num_pv> <!-- num_pv = 0, then no Pauli-Villars bosons -->
-      <mass_pv>0.5</mass_pv> <!-- Does not currently support massless PV fields -->
+      <num_pv>16</num_pv> <!-- num_pv = 0, then no Pauli-Villars bosons -->
+      <mass_pv>0.75</mass_pv>
     </pv>
   </action>
   <nhyp_smearing><!-- Parameters for nHYP smearing -->
@@ -46,7 +48,7 @@
   <solver><!-- Solver parameters for action, force and pbp -->
     <a_tol>1e-20</a_tol> <!-- Action solver tolerance -->
     <a_maxits>10000</a_maxits> <!-- Action solver maximum itns. -->
-    <f_tol>1e-13</f_tol> <!-- Force solver " " -->
+    <f_tol>1e-12</f_tol> <!-- Force solver " " -->
     <f_maxits>10000</f_maxits> <!-- Force solver " " -->
     <pbp_tol>1e-20</pbp_tol> <!-- pbp solver " " -->
     <pbp_maxits>10000</pbp_maxits> <!-- pbp solver " " -->
@@ -56,11 +58,11 @@
     <basic_meas> <!-- For basic measurement of observables -->
       <plaq_freq>1</plaq_freq> <!-- Plaquette; if zero, no measurement -->
       <ploop_freq>1</ploop_freq> <!-- Polyakov loop; if zero, no measurement -->
-      <pbp_freq>0</pbp_freq> <!-- Chiral condensate; if zero, no measurement -->
+      <pbp_freq>10</pbp_freq> <!-- Chiral condensate; if zero, no measurement -->
       <num_pbp_stoch_srcs>10</num_pbp_stoch_srcs> <!-- # stoch. srcs. for pbp; " " -->
     </basic_meas>
     <hmc_checks> <!-- For checks of HMC -->
-      <rev_check_freq>10</rev_check_freq> <!-- Frequency of reversibility check for integrator -->
+      <rev_check_freq>0</rev_check_freq> <!-- Frequency of reversibility check for integrator -->
       <timer_waste_ratio>0.05</timer_waste_ratio>
       <timer_expand_ratio>0.05</timer_expand_ratio>
       <timer_echo_dropped>false</timer_echo_dropped>
