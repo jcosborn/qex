@@ -110,9 +110,13 @@ template toSingleImpl*(x: SomeField): untyped =
 template toDoubleImpl*(x: SomeField): untyped =
   fieldUnop(foToDouble, x)
 
-template evalType*[V,T](x: FieldUnop[foToSingle,Field[V,T]]): untyped =
+template eval*[F:Field](x: typedesc[F]): typedesc =
+  Field[F.V,eval(type F.T)]
+template eval*[F:FieldObj](x: typedesc[F]): typedesc =
+  FieldObj[F.V,eval(type F.T)]
+template evalType*[F:Field](x: typedesc[FieldUnop[foToSingle,F]]): typedesc =
   mixin toSingle
-  Field2[V,toSingle(type(T))]
+  Field[F.V,eval(toSingle(type F.T))]
 
 proc new*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) =
   # remember to change newFieldArray if the following changes
@@ -547,7 +551,7 @@ proc norm2P*(f:SomeField):auto =
   tic()
   mixin norm2, inorm2, simdSum, items, toDouble
   #var n2:type(norm2(f[0]))
-  var n2:type(norm2(toDouble(f[0])))
+  var n2: evalType(norm2(toDouble(f[0])))
   #echo n2
   #let t = f
   for x in items(f):
@@ -579,7 +583,7 @@ proc dotP*(f1:SomeField; f2:SomeField2):auto =
   tic()
   mixin dot, idot, simdSum, items, toDouble, eval
   #var d:type(dot(f1[0],f2[0]))
-  var d:type(eval(toDouble(dot(f1[0],f2[0]))))
+  var d: evalType(toDouble(dot(f1[0],f2[0])))
   let t1 = f1
   let t2 = f2
   for x in items(t1):
@@ -606,7 +610,7 @@ proc redotP*(f1:SomeField; f2:SomeField2):auto =
   tic()
   mixin redot, iredot, simdSum, items, toDouble, eval
   #var d:type(redot(f1[0],f2[0]))
-  var d: type(eval(toDouble(redot(f1[0],f2[0]))))
+  var d: evalType(toDouble(redot(f1[0],f2[0])))
   let t1 = f1
   let t2 = f2
   for x in items(t1):
@@ -636,7 +640,7 @@ template redot*(f1:Subsetted; f2:SomeAllField2):untyped = redotP(f1, f2)
 
 proc trace*(m:SomeField):auto =
   mixin trace, simdSum
-  var tr:type(trace(m[0]))
+  var tr: evalType(trace(m[0]))
   for x in m:
     tr += m[x].trace
   #echo tr
@@ -647,7 +651,7 @@ proc trace*(m:SomeField):auto =
 
 proc sumP*(f:SomeField):auto =
   mixin inc, simdSum, items
-  var s:type(f[0])
+  var s: evalType(f[0])
   let t = f
   for x in items(t):
     iadd(s, t[x])

@@ -56,7 +56,7 @@ template isWrapper*(x: typedesc[SomeNumber]): untyped = false
 template eval*[T:SomeNumber](x: typedesc[T]): typedesc = typeof(T)
 template evalType*[T](x: T): typedesc =
   mixin eval
-  eval(typeof T)
+  eval typeof T
 
 template cnvrt(r,x):untyped = ((type(r))(x))
 template to*(x:auto; t:typedesc[SomeNumber]):untyped =
