@@ -1,3 +1,4 @@
+import base/basicOps
 import base/wrapperTypes
 export wrapperTypes
 import maths/types
@@ -18,6 +19,14 @@ template asVarWrapper*(x: Color, y: typed): untyped =
   #cy
   asVar(asColor(y))
 
+template index*[T,I](x: typedesc[Color[T]], i: typedesc[I]): typedesc =
+  when I is Color:
+    index(T.type, I.type[])
+  elif I.isWrapper:
+    Color[index(T.type, I.type)]
+  else:
+    index(T.type, I.type)
+
 template `[]`*[T](x: Color, i: T): untyped =
   when T is Color:
     x[][i[]]
@@ -30,7 +39,7 @@ template `[]`*[T](x: Color, i: T): untyped =
 template `[]`*(x: Color, i,j: typed): untyped = x[][i,j]
 
 template `[]=`*[T](x: Color, i: T; y: typed) =
-  when T is Color:
+  when T is Color2:
     x[][i[]] = y
   elif T.isWrapper:
     #indexed(x, i)
@@ -54,10 +63,10 @@ template forwardVV(f: untyped) {.dirty.} =
     mixin f
     f(x[])
 # forward from value to type
-template forwardVT(f: untyped) {.dirty.} =
-  template f*[T](x: Color[T]): untyped =
-    mixin f
-    f(type T)
+#template forwardVT(f: untyped) {.dirty.} =
+#  template f*[T](x: Color[T]): untyped =
+#    mixin f
+#    f(type T)
 # forward from type to type
 template forwardTT(f: untyped) {.dirty.} =
   template f*[T](x: typedesc[Color[T]]): untyped =
@@ -90,9 +99,12 @@ forwardTT(numberType)
 forwardTTW(toSingle)
 forwardTTW(toDouble)
 
+#template eval*[T](x: typedesc[Color[T]]): typedesc = asColor(eval(type T))
+template eval*[T:Color](x: typedesc[T]): typedesc = asColor(eval((type T)[]))
+
 template has*[T](x: typedesc[Color[T]], y: typedesc): bool =
   mixin has
-  when T2 is Color:
+  when T2 is Color2:
     true
   else:
     has(type T, y)
@@ -119,11 +131,17 @@ template getNc*[T](x: Color[T]): untyped =
 template binDDRet(fn,wr,T1,T2) =
   template fn*(x: T1, y: T2): untyped =
     wr(fn(x[], y[]))
+  #template fn*(x: T1, y: T2): auto =
+  #  var tmp {.noInit.}: wr(evalType(fn(x[],y[]))
+  #  wr(fn(x[], y[]))
 
-binDDRet(`+`, asColor, Color, Color2)
+#binDDRet(`+`, asColor, Color, Color2)
 binDDRet(`-`, asColor, Color, Color2)
-binDDRet(`*`, asColor, Color, Color2)
+#binDDRet(`*`, asColor, Color, Color2)
 binDDRet(`/`, asColor, Color, Color2)
+
+setBinop(`+`, add, Color, Color2, asColor(evalType(x[]+y[])))
+setBinop(`*`, mul, Color, Color2, asColor(evalType(x[]*y[])))
 
 template load1*(x: Color): untyped = asColor(load1(x[]))
 template `-`*(x: Color): untyped = asColor(-(x[]))
@@ -177,20 +195,35 @@ template sub*(r: var Color, x: Color2, y: Color3) =
   sub(r[], x[], y[])
 template `*`*(x: Color, y: SomeNumber): untyped =
   asColor(x[] * y)
-template `*`*(x: SomeNumber, y: Color2): untyped =
-  asColor(x * y[])
+#template `*`*(x: SomeNumber, y: Color): auto =
+  #asColor(x * y[])
+template `*`*[X:SomeNumber,Y:Color](x: X, y: Y): auto =
+  #var tmp {.noInit.}: asColor(type(X)*type(Y)[])
+  var tmp {.noInit.}: asColor(evalType(x*y[]))
+  mul(tmp[], x, y[])
+  tmp
 template `*`*(x: Simd, y: Color2): untyped =
   asColor(x * y[])
-template `*`*(x: AsReal, y: Color2): untyped =
-  asColor(x * y[])
+#template `*`*(x: AsReal, y: Color2): untyped =
+#  asColor(x * y[])
+template `*`*[X:AsReal,Y:Color](x: X, y: Y): auto =
+  #var tmp {.noInit.}: asColor(type(X)*type(Y)[])
+  var tmp {.noInit.}: asColor(evalType(x*y[]))
+  mul(tmp[], x, y[])
+  tmp
 template `*`*(x: AsImag, y: Color2): untyped =
   asColor(x * y[])
 template `*`*(x: AsComplex, y: Color2): untyped =
   asColor(x * y[])
 template `*`*(x: Color, y: AsComplex): untyped =
   asColor(x[] * y)
-template mul*(x: SomeNumber, y: Color2): untyped =
-  asColor(`*`(x, y[]))
+#template mul*(x: SomeNumber, y: Color2): untyped =
+#  asColor(`*`(x, y[]))
+template mul*[X:SomeNumber,Y:Color](x: X, y: Y): auto =
+  #var tmp {.noInit.}: asColor(type(X)*type(Y)[])
+  var tmp {.noInit.}: asColor(evalType(x*y[]))
+  mul(tmp[], x, y[])
+  tmp
 template mul*(x: Color, y: Color2): untyped =
   asColor(`*`(x[], y[]))
 template mul*(r: var Color, x: Color2, y: Color3) =
@@ -215,14 +248,20 @@ template z2*(x: var Color, r: var untyped) =
   z2(x[], r)
 template u1*(x: var Color, r: var untyped) =
   u1(x[], r)
+template projectU*(r: var Color) =
+  projectU(r[])
 template projectU*(r: var Color, x: Color2) =
   projectU(r[], x[])
 template projectUderiv*(r: var Color, u: Color2, x: Color3, chain: Color4) =
   projectUderiv(r[], u[], x[], chain[])
 template projectUderiv*(r: var Color, x: Color3, chain: Color4) =
   projectUderiv(r[], x[], chain[])
+template projectSU*(r: var Color) =
+  projectSU(r[])
 template projectSU*(r: var Color, x: Color2) =
   projectSU(r[], x[])
+template projectTAH*(r: var Color) =
+  projectTAH(r[])
 template projectTAH*(r: var Color, x: Color2) =
   projectTAH(r[], x[])
 template checkU*(x: Color):untyped = checkU(x[])

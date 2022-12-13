@@ -20,7 +20,7 @@ type ShiftB*[T] = object
   sb*: ShiftBuf
   size*: int
 
-template shiftBType*(x:SomeField):untyped = ShiftB[x[0].type]
+template shiftBType*(x:SomeField):untyped = ShiftB[evalType(x[0])]
 
 template initShiftB*(s:ShiftB; l:Layout; t:typedesc;
                      dir,len:int; sub="all"):untyped =
@@ -38,24 +38,24 @@ template initShiftB*(s:ShiftB; x:SomeField; dir,len:int; sub="all"):untyped =
     prepareShiftBuf(s.sb, s.si, s.size)
 
 template createShiftB*(x:SomeField; dir,len:int; sub="all"):untyped =
-  var s:ShiftB[x[0].type]
+  var s:ShiftB[evalType(x[0])]
   s.initShiftB(x, dir,len, sub)
   s
 
 template createGlobalShiftB*(v:untyped; x:SomeField;
                              dir,len:int; sub="all"):untyped =
-  var v{.global.}:ShiftB[x[0].type]
+  var v{.global.}:ShiftB[evalType(x[0])]
   v.initShiftB(x, dir,len, sub)
   threadBarrier()
 
 proc createShiftBufs*(n:int; x:auto; ln=1; sub="all"):auto =
-  var s = newSeq[ShiftB[x[0].type]](n)
+  var s = newSeq[ShiftB[evalType(x[0])]](n)
   for i in 0..<n:
     s[i].initShiftB(x, i, ln, sub)
   result = s
 proc createShiftBufs*(x:auto; ln=1; sub="all"):auto =
   let n = x.l.nDim
-  var s = newSeq[ShiftB[x[0].type]](n)
+  var s = newSeq[ShiftB[evalType(x[0])]](n)
   for i in 0..<n:
     s[i].initShiftB(x, i, ln, sub)
   result = s
@@ -112,17 +112,15 @@ template localSB*(s: ShiftB; i: int; e1,e2: untyped) {.dirty.} =
   block:
     let k_localSB = s.si.sq.pidx[i]
     if k_localSB >= 0:
-      optimizeAst:
-        let ix = k_localSB
-        let it = e2
-        e1
+      let ix = k_localSB
+      let it = e2
+      e1
     elif k_localSB + 2 <= 0:
       let ix = -(k_localSB + 2)
-      optimizeAst:
-        let t_localSB = e2
-        var it{.noInit.}: type(t_localSB)
-        perm(it, s.si.perm, t_localSB)
-        e1
+      let t_localSB = e2
+      var it{.noInit.}: evalType(t_localSB)
+      perm(it, s.si.perm, t_localSB)
+      e1
 
 template localSB2*(s: ShiftB; i: int; e1x,e2x: untyped) =
   block:
@@ -142,7 +140,7 @@ template localSB2*(s: ShiftB; i: int; e1x,e2x: untyped) =
       makeAliases:
         ix = ix2
         e2 = e2x
-      var it{.noInit.}: type(e2)
+      var it{.noInit.}: evalType(e2)
       perm(it, s.si.perm, e2)
       e1x
 
@@ -460,7 +458,7 @@ type
 #proc `link=`*(r,x: Transporter) = t.field
 
 proc newTransporter*(u: Field, f: Field2, dir,len: int, sub="all"): auto =
-  var t: Transporter[type(u),type(f),type(f[0])]
+  var t: Transporter[evalType(u),evalType(f),evalType(f[0])]
   t.link = u
   t.field = f.newOneOf
   #t.field := 0
@@ -475,7 +473,7 @@ proc clearLink*(t: var Transporter) =
   t.link = nil
 
 proc newTransporters*[U,F](u: openArray[U], f: F, len: int, sub="all"): auto =
-  var r: seq[Transporter[type(u[0]),F,type(f[0])]]
+  var r: seq[Transporter[evalType(u[0]),F,evalType(f[0])]]
   let nd = u.len
   r.newSeq(nd)
   for mu in 0..<nd:
@@ -495,7 +493,7 @@ proc clearLinks*(t: var openArray[Transporter]) =
     t[i].link = nil
 
 proc newShifter*[F](f: F, dir,len: int, sub="all"): auto =
-  var r: Shifter[F,type(f[0])]
+  var r: Shifter[F,evalType(f[0])]
   r.field = f.newOneOf
   #r.field := 0
   r.sb.initShiftB(f, dir, len, sub)
@@ -503,7 +501,7 @@ proc newShifter*[F](f: F, dir,len: int, sub="all"): auto =
   r
 
 proc newShifters*[F](f: F, len: int, sub="all"): auto =
-  var r: seq[Transporter[void,F,type(f[0])]]
+  var r: seq[Transporter[void,F,evalType(f[0])]]
   let nd = f.l.nDim
   r.newSeq(nd)
   for mu in 0..<nd:
@@ -623,7 +621,7 @@ when isMainModule:
       #    echo d2
       printf("d2: %g\n", d2)
 
-  type st = type(v1[0])
+  type st = evalType(v1[0])
   var
     sf*:array[4,ShiftB[st]]
     sb*:array[4,ShiftB[st]]
