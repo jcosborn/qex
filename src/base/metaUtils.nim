@@ -67,7 +67,8 @@ proc replaceNonDeclSym(b,s,r: NimNode, extra:NimNodeKind = nnkEmpty): NimNode =
   var ss = s.strVal
   # echo "replacing ",ss
   var
-    declSyms = newPar()
+    #declSyms = newPar()
+    declSyms = newNimNode(nnkTupleConstr)
     theSym = newEmptyNode()
   proc checkSym(n:NimNode) =
     if theSym == n: return
@@ -239,7 +240,8 @@ proc regenSym(n:NimNode):NimNode =
   # because cpp backend put variables on top level, although
   # the c backend works without this.
   proc get(n:NimNode,k:NimNodeKind):NimNode =
-    result = newPar()
+    #result = newPar()
+    result = newNimNode(nnkTupleConstr)
     if n.kind == k:
       for d in n:
         if d.kind != nnkIdentDefs or d.len<3:
@@ -289,7 +291,8 @@ proc matchGeneric(n,ty,g:NimNode):NimNode =
     # match instantiation type `ti`, with generic type `ty`
     # recursively find the chain of generic type variables
     # correponding to `g` in `ty`.
-    result = newPar()
+    #result = newPar()
+    result = newNimNode(nnkTupleConstr)
     var i = 0
     let tg = getGParams ti
     while i<ty.len:
@@ -321,11 +324,13 @@ proc matchGeneric(n,ty,g:NimNode):NimNode =
   echo "MG:G: ",g.lisprepr
 
 proc cleanIterator(n:NimNode):NimNode =
-  var fa = newPar()
+  #var fa = newPar()
+  var fa = newNimNode(nnkTupleConstr)
   proc replaceFastAsgn(n:NimNode):NimNode =
     if n.kind == nnkFastAsgn:
       let n0 = genSym(nskLet, n[0].strVal)
-      fa.add newPar(n[0],n[1],n0)
+      #fa.add newPar(n[0],n[1],n0)
+      fa.add newNimNode(nnkTupleConstr).add(n[0],n[1],n0)
       template asgn(x,y:untyped):untyped =
         let x = y
       let n1 = replaceFastAsgn n[1]
@@ -486,7 +491,8 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
         for c in n:
           if c.find s: return true
       return false
-    var gs = newPar()
+    #var gs = newPar()
+    var gs = newNimNode(nnkTupleConstr)
     if procImpl[5].kind == nnkBracket and procImpl[5].len>=2 and procImpl[5][1].kind == nnkGenericParams:
       let gp = procImpl[5][1]
       for c in gp:
@@ -1605,3 +1611,37 @@ macro indexTuple*(x: tuple, i: static[int]): untyped =
     result = newTree(nnkBracketExpr, x, newLit(i))
   #echo result.treerepr
 
+####
+# modified from std/decls.nim:byaddr
+# doesn't work in every context
+macro byptr*(sect:untyped):untyped =
+  ## Allows a syntax for l-value references, being an exact analog to
+  ## `auto& a = ex;` in C++.
+  ##
+  ## Warning: This makes use of 2 experimental features, namely nullary
+  ## templates instantiated as symbols and variable macro pragmas.
+  ## For this reason, its behavior is not stable. The current implementation
+  ## allows redefinition, but this is not an intended consequence.
+  runnableExamples:
+    var s = @[10, 11, 12]
+    var a {.byptr.} = s[0]
+    a += 100
+    assert s == @[110, 11, 12]
+    assert a is int
+    var b {.byptr.}: int = s[0]
+    assert a.addr == b.addr
+  echo sect.repr
+  expectLen sect, 1
+  let def = sect[0]
+  let
+    lhs = def[0]
+    typ = def[1]
+    ex = def[2]
+    addrTyp = if typ.kind == nnkEmpty: typ else: newTree(nnkPtrTy, typ)
+  result = quote do:
+    #mixin toPtr
+    #let byptrTmp = toPtr(`ex`)
+    #template `lhs`: untyped = byptrTmp[]
+    let `lhs` = `ex`
+  result.copyLineInfo(def)
+  echo result.repr

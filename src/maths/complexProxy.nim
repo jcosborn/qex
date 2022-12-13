@@ -31,6 +31,13 @@ type
 #     let yi = y.im
 #     newComplexP(xr*yr-xi*yi,xr*yi+xi*yr)
 
+template asRealProxy*[T](x: T): auto = RealProxy[type T](v: x)
+template asRealProxy*[T](x: typedesc[T]): typedesc = RealProxy[type T]
+template asImagProxy*[T](x: T): auto = ImagProxy[type T](v: x)
+template asImagProxy*[T](x: typedesc[T]): typedesc = ImagProxy[type T]
+template asComplexProxy*[T](x: T): auto = ComplexProxy[type T](v: x)
+template asComplexProxy*[T](x: typedesc[T]): typedesc = ComplexProxy[type T]
+
 template `[]`*(x: RealProxy): untyped = x.v
 macro `[]`*(x: RealProxy{nkObjConstr}): auto =
   #echo x.treerepr
@@ -55,22 +62,26 @@ macro `[]`*(x: ComplexProxy{nkStmtListExpr}): untyped =
     result.add x[i]
   result.add newCall(ident"[]", x[^1])
 
-template `[]=`*(x: RealProxy, y: typed): untyped =
+template `[]=`*(x: RealProxy, y: typed) =
   #when x.T is type(y):
   #  x.v = y
   #else:
   mixin `:=`
   x.v := y
-template `[]=`*(x: ImagProxy, y: typed): untyped =
+template `[]=`*(x: ImagProxy, y: typed) =
   #when x.T is type(y):
   #  x.v = y
   #else:
     x.v := y
-template `[]=`*(x: ComplexProxy, y: typed): untyped =
+template `[]=`*(x: ComplexProxy, y: typed) =
   #when x.T is type(y):
   #  x.v = y
   #else:
     x.v := y
+
+template eval*[T](x: typedesc[ComplexProxy[T]]): typedesc =
+  mixin eval
+  asComplexProxy(eval typeof T)
 
 proc `$`*(x: RealProxy): string =
   result = $x[]

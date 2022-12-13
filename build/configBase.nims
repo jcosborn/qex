@@ -116,7 +116,8 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
   verbosity ~ buildVerbosity
   nimcache ~ nimcache
   warning[SmallLshouldNotBeUsed] ~ off
-  styleCheck ~ usages
+  if (NimMajor, NimMinor) >= (1, 6):
+    styleCheck ~ usages
   embedsrc ~ ""
   #exceptions ~ quirky
   #if not nimargs.any(proc (x:string):bool = x.startswith("--mm:")):

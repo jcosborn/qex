@@ -8,6 +8,10 @@ type
   Simd2*[T] = Simd[T]
   Simd3*[T] = Simd[T]
 
+# assume these don't have any lazy evaluations   # FIXME could be toDouble, etc.
+template eval*[T](x: typedesc[Simd[T]]): typedesc =
+  asSimd(typeof(T))
+
 template `[]`*(x: Simd, i: typed): untyped =
   when i is Simd:
     #x[][i[]]

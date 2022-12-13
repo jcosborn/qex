@@ -218,7 +218,7 @@ proc optLetsR(x: NimNode, os: var OptState): NimNode =
     if canindex:
       result = o[idx][1]
     else:
-      if o.kind notin {nnkSym,nnkCall,nnkDotExpr,nnkBracketExpr,nnkHiddenDeref}:
+      if o.kind notin {nnkSym,nnkCall,nnkDotExpr,nnkBracketExpr,nnkDerefExpr,nnkHiddenDeref}:
         echo "Opt: DotExpr failed: ", o.kind, ".", x[1]
         echo "  ", o.repr
       result = x.copyNimNode

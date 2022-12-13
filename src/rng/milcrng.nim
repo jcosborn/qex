@@ -158,7 +158,6 @@ proc gaussian*(prn: var RngMilc6): float32 =
     r = sqrt(-2.0 * ln(v + TINY))
     result = r * cos(p)
 
-import maths/types
 # Only needed for non-vectorized RNGs.
 template gaussian*(x: var auto, r: MaskedObj[RngMilc6]) =
   mixin gaussian

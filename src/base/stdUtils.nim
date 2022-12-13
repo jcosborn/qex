@@ -5,8 +5,8 @@ import strUtils
 
 type
   cArray*[T] = UncheckedArray[T]
-template `[]`*(x: cArray): untyped = addr x[0]
-template `&`*(x: ptr cArray): untyped = addr x[0]
+#template `[]`*(x: cArray): untyped = addr x[0]
+#template `&`*(x: ptr cArray): untyped = addr x[0]
 
 template ptrInt*(x:untyped):untyped = cast[ByteAddress](x)
 template addrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
@@ -149,22 +149,6 @@ proc `+=`*[T](r: var openArray[T], x: openArray[T]) {.inline.} =
   let n = r.len
   for i in 0..<n:
     r[i] += x[i]
-
-#[
-template makeArrayOverloads(n:int):untyped =
-  proc `+`*[T](x,y:array[n,T]):array[n,T] {.inline.} =
-    for i in 0..<x.len:
-      result[i] = x[i] + y[i]
-  proc `*`*[T](x:array[n,T], y:int):array[n,T] {.inline.} =
-    for i in 0..<x.len:
-      result[i] = x[i] * T(y)
-  proc `:=`*[T1,T2](r:var array[n,T1]; x:array[n,T2]) =
-    for i in 0..<r.len:
-      r[i] = T1(x[i])
-makeArrayOverloads(4)
-makeArrayOverloads(8)
-makeArrayOverloads(16)
-]#
 
 #proc sum*[T](x: openArray[T]): T =
 #  for i in 0..<x.len: result += x[i]

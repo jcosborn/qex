@@ -1,17 +1,21 @@
 import commsTypes
 export commsTypes
 
+# globals
+
 var defaultComm*: Comm
 template getDefaultComm*(): Comm = defaultComm
-
+template getComm*(): Comm = getDefaultComm()  # temporary alias
 var myRank* = 0
 var nRanks* = 1
 
 # base methods
 
+method name*(c: Comm): string {.base.} = discard
 method commrank*(c: Comm): int {.base.} = discard
 method commsize*(c: Comm): int {.base.} = discard
 method isMaster*(c: Comm): bool {.base.} = discard
+method abort*(c: Comm, status: int) {.base.} = discard
 
 method barrier*(c: Comm) {.base.} = discard
 method broadcast*(c: Comm, p: pointer, bytes: int) {.base.} = discard
@@ -118,25 +122,55 @@ template waitAll*(c: Comm) =
 #method declareSend
 #method declareMultiple
 
+# Comm variants handling
+
 import commsQmp
 export commsQmp
+
+var commsNames = newSeq[string](0)
+var commsInits = newSeq[proc():Comm{.nimcall.}](0)
+var commsFinis = newSeq[proc(){.nimcall.}](0)
+proc commsGet(): seq[string] =
+  commsNames
+proc commsGet(s: string): Comm =
+  for i in 0..<commsNames.len:
+    if commsNames[i] == s:
+      return commsInits[i]()
+proc commsGet(ss: openArray[string]): Comm =
+  for s in ss:
+    result = commsGet(s)
+    if result != nil:
+      return
+
+commsNames.add "QMP"
+commsInits.add getQmpComm
+commsFinis.add commsFinalizeQmp
 
 import commsUtils
 export commsUtils
 
 proc commsInit*() =
-  commsInitQmp()
-  defaultComm = getComm()
+  defaultComm = commsGet(["MPI","QMP"])
   myRank = defaultComm.rank
   nRanks = defaultComm.size
+  echo "Using Comm: ", defaultComm.name
 
+proc commsFinalize*() =
+  for f in commsFinis:
+    f()
+
+proc commsAbort*(status = -1) =
+  defaultComm.abort(status)
+
+proc commsBarrier*() =
+  defaultComm.barrier()
 
 when isMainModule:
   commsInit()
   #echoAll "rank ", myRank, "/", nRanks
   #printf("rank %i/%i\n", myRank, nRanks)
 
-  var c = getComm()
+  var c = getDefaultComm()
   let orank = 1-myRank
 
   c.barrier
