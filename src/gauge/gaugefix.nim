@@ -233,8 +233,8 @@ proc moveFromZero(x: SomeFloat, eps: float): SomeFloat =
     else: result = eps
 
 proc moveFromZero[T](x: T, eps: float): T =
-  static: echo "result: ", $type(result)
-  static: echo "result[0]: ", $type(result[0])
+  #static: echo "result: ", $type(result)
+  #static: echo "result[0]: ", $type(result[0])
   for i in 0..<x.numNumbers:
     result[i] = moveFromZero(eval(x[i]), eps)
 
@@ -248,8 +248,8 @@ proc overRelaxSu2(r: var auto, x: auto, i,j: int, o: float) =
   #var n1 = r1*r1 + r2*r2 + r3*r3
   #var n2 = r0*r0 + n1
   #var n = sqrt(n2)
-  static: echo "r: ", $type(r)
-  static: echo "r0: ", $type(r0)
+  #static: echo "r: ", $type(r)
+  #static: echo "r0: ", $type(r0)
   var n = sqrt(r0*r0+r1*r1+r2*r2+r3*r3)
   r0 += n*(1-o)/o
   r0 = moveFromZero(r0, 1e-12)

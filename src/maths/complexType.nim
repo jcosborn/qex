@@ -39,7 +39,11 @@ template newImag*(x: typed): untyped = newImagImpl(x)
 template newComplex*(x,y: typed): untyped = newComplexImpl(x,y)
 template asReal*(x: typed): untyped = newRealProxy(x)
 template asImag*(x: typed): untyped = newImagProxy(x)
+template asComplex*(x: typed): auto = newComplexProxy(x)
+template asComplex*(x: typedesc): typedesc = newComplexProxy(x)
+template asVarComplex*(x: typed): auto = newComplexProxy(x)
 
+template isComplex*(x: ComplexProxy): auto = true
 template isWrapper*(x: ComplexObj): untyped = false
 
 template `[]`*[T](x: AsComplex, i: T): untyped =
@@ -56,8 +60,6 @@ template index*[TR,TI,I](x: typedesc[ComplexObj[TR,TI]], i: typedesc[I]): typede
     ComplexObj[index(TR.type,I.type),index(TI.type,I.type)]
   else:
     {.error.} #index(X[], I)
-
-template asComplex*(x: typedesc): typedesc = newComplexProxy(x)
 
 template index*[X:AsComplex,I](x: typedesc[X], i: typedesc[I]): typedesc =
   when I is AsComplex:
@@ -109,6 +111,7 @@ template simdLength*[T](x: ComplexProxy[T]): untyped = simdLength(T)
 template simdLength*[T](x: type ComplexProxy[T]): untyped = simdLength(T)
 template simdSum*(x: ComplexObj): untyped =
   newComplexObj(simdSum(x.re),simdSum(x.im))
+template simdSum*(x: ComplexProxy): untyped = asComplex(simdSum(x[]))
 template getNc*(x: ComplexProxy): untyped = 1
 template getNs*(x: ComplexProxy): untyped = 1
 
@@ -116,10 +119,6 @@ template toSingle*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): typedesc =
   ComplexObj[toSingle(type(TR)),toSingle(type(TI))]
 template toSingle*[T](x: typedesc[ComplexProxy[T]]): typedesc =
   ComplexProxy[toSingle(type(T))]
-
-template isComplex*(x: ComplexProxy): auto = true
-template asComplex*(x: typed): auto = newComplexProxy(x)
-template asVarComplex*(x: typed): auto = newComplexProxy(x)
 
 #[
 template imaddCRC*(r: untyped, x: untyped, y: untyped) =
