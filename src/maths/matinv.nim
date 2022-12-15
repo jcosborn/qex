@@ -47,8 +47,8 @@ proc flv*[M,X:Mat1](m: var M, x: X): auto =
 
 proc inverseN*(r: var Mat1, c: SomeNumber, x: Mat2) =
   let d = flv(r, x)
-  echo r
-  echo d
+  #echo r
+  #echo d
   #let f = -c/d
   #let t = x*r
   #let a = trace(t)
@@ -206,13 +206,13 @@ when isMainModule:
         m1[i,j].re := 1.0 + fd*fd + 0.0*fd #0.1/(1000.0+fi+fj)
         m1[i,j].im := 0.0*(1.0+fi-fj) + 0.0/(0.4+fi+1.1*fj)
     echo "test " & $N & " " & $T
-    echo "m1: ", m1
-    #inverse(m2, 1.5, m1)
-    inverseN(m2, 1.5, m1)
+    #echo "m1: ", m1
+    inverse(m2, 1.5, m1)
+    #inverseN(m2, 1.5, m1)
     #echo "m2: ", m2
     m3 := (1.0/1.5)*(m1*m2)
     #echo "m3: ", m3
-    let err = sqrt((1-m3).norm2)/N
+    let err = sqrt((1-m3).norm2.simdMax)/N
     echo "err: ", err
     #echo "err: ", err, (if err.simdSum>10*epsilon(numberType(m1)):"  FAIL" else:"")
     check(err, 5)
@@ -228,8 +228,8 @@ when isMainModule:
       test(CM[4,t])
       test(CM[5,t])
       test(CM[6,t])
-      #test(CM[7,t])
-      #test(CM[8,t])
+      test(CM[7,t])
+      test(CM[8,t])
       #test(CM[9,t])
       #test(CM[10,t])
   doTest(float32)
