@@ -2424,7 +2424,7 @@ for config in start_config..<end_config:
          acc = 0
 
       # Check to make sure above user-set Metropolis threshold
-      if config >= int_prms["no_metropolis_until"]:
+      if (config + 1) >= int_prms["no_metropolis_until"]:
          # Draw random number 
          accr = R.uniform
 
