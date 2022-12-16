@@ -1298,12 +1298,7 @@ proc projectTAH*[F:Field](x: openArray[F], y: openArray[F]) =
 
 proc randomU*(x: Field, r: var RNGField) =
   x.gaussian r
-  #threadBarrier()
-  #echo "x.gaus: ", x.norm2
-  #threadBarrier()
   x.projectU
-  #threadBarrier()
-  #echo "x.proj: ", x.norm2
 
 proc randomSU*(x: Field, r: var RNGField) =
   x.gaussian r
