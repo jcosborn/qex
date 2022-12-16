@@ -31,26 +31,30 @@ when defined(FUELCompat):
 proc gaussian*(x: var SomeNumber, r: var RNG) =
   mixin gaussian
   x = gaussian(r)
-proc gaussian*(x: var Scalar, r: var RNG) =
-  mixin gaussian
-  x := gaussian(r)
+#proc gaussian*(x: var Scalar, r: var RNG) =
+#  mixin gaussian
+#  #x := gaussian(r)
+#  gaussian(x[], r)
 proc gaussian*(x: var AsNumber, r: var RNG) =
   mixin gaussian
   x := gaussian(r)
 #proc gaussian*(x: var Simd, r: var RNG) =  # FIXME to set all lanes
 #  mixin gaussian
 #  x[] := gaussian(r)
-proc gaussian*(x: var AsComplex, r: var RNG) =  # FIXME to set all lanes
+proc gaussian*(x: var AsComplex, r: var RNG) =
   mixin gaussian
   when defined(FUELCompat):
     # This is how QLA does it for complex types (e.g. QLA_D3_V_veq_gaussian_S).
     # Technically which one in this call gets evaluated is undefined in C.
     # Let's hope if you use the same C compiler,
     # the evaluation order turns out to be the same.
+    when numNumbers(x.re) > 1:
+      static: echo "gaussian for type ", typeof(x), " not implemented"
+      {.error.}
     x.gaussian_call2(gaussian(r), gaussian(r))
   else:
-    x.re = gaussian(r)
-    x.im = gaussian(r)
+    gaussian(x.re, r)
+    gaussian(x.im, r)
 proc gaussian*[T:array](x: MaskedObj[T], r: var RNG) =
   for i in 0..<x.len:
     gaussian(x[i], r)
@@ -61,8 +65,6 @@ proc gaussian*(x: var AsVector, r: var RNG) =
   forO i, 0, x.len-1:
     gaussian(x[i], r)
 proc gaussian*(x: var AsMatrix, r: var RNG) =
-  #static: echo $type(x)
-  #static: echo $type(x[0,0])
   forO i, 0, getConst(x.nrows-1):
     forO j, 0, getConst(x.ncols-1):
       gaussian(x[i,j], r)
@@ -76,10 +78,13 @@ proc gaussian*[T](a: openArray[T], r: RNGField) =
   for i in 0..<a.len:
     gaussian(a[i], r)
 
+proc uniform*(x: var AsNumber, r: var RNG) =
+  mixin uniform
+  x := uniform(r)
 proc uniform*(x: var AsComplex, r: var RNG) =
   mixin uniform
-  x.re = uniform(r)
-  x.im = uniform(r)
+  uniform(x.re, r)
+  uniform(x.im, r)
 proc uniform*(x: var AsVector, r: var RNG) =
   forO i, 0, x.len-1:
     uniform(x[i], r)
@@ -95,6 +100,9 @@ proc uniform*(v: Field, r: RNGField) =
   mapRngField(uniform, v, r)
 
 proc z4*(x: var AsComplex, r: var RNG) =
+  when numNumbers(x.re) > 1:
+    static: echo "z4 for type ", typeof(x), " not implemented"
+    {.error.}
   when defined(FUELCompat):
     x.gaussian r
     var n,o {.noinit.}: float
@@ -144,6 +152,9 @@ proc z4*(x: Field, r: RNGField) =
   mapRngField(z4, x, r)
 
 proc z2*(x: var AsComplex, r: var RNG) =
+  when numNumbers(x.re) > 1:
+    static: echo "z2 for type ", typeof(x), " not implemented"
+    {.error.}
   when defined(FUELCompat):
     x.gaussian r
     var n {.noinit.}:float
@@ -169,6 +180,9 @@ proc z2*(x: Field, r: RNGField) =
   mapRngField(z2, x, r)
 
 proc u1*(x: var AsComplex, r: var RNG) =
+  when numNumbers(x.re) > 1:
+    static: echo "u1 for type ", typeof(x), " not implemented"
+    {.error.}
   when defined(FUELCompat):
     x.gaussian r
     let n = x.norm2
