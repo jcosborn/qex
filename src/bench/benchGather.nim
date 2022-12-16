@@ -32,7 +32,7 @@ for i in 0..<lo2.nSites:
   rl.add RecvList(didx: i.int32, srank: ri.rank.int32, sidx: ri.index.int32)
 toc("rl setup")
 
-let c = getComm()
+let c = getDefaultComm()
 let gm = c.makeGatherMap(rl)
 toc("makeGatherMap")
 
