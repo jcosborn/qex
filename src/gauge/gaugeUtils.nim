@@ -519,8 +519,10 @@ type
   Coord = object
     x: seq[int]
 
+#[
 proc `$`(x:Coord):string =
   return "Coord" & $x.x
+]#
 
 proc `+`(x,y:Coord):Coord =
   let
@@ -570,6 +572,7 @@ proc `+=`(x:var Coord,y:Coord) =
   for i in 0..<ny:
     x.x[i] += y.x[i]
 
+#[
 proc `-=`(x:var Coord,y:Coord) =
   let
     nx = x.x.len
@@ -578,6 +581,7 @@ proc `-=`(x:var Coord,y:Coord) =
     x.x.setLen ny
   for i in 0..<ny:
     x.x[i] -= y.x[i]
+]#
 
 proc `[]`(x:Coord, i:SomeInteger):int =
   if i>=x.x.len:
@@ -1262,29 +1266,35 @@ template defaultSetup*:untyped {.dirty.} =
     for i in 0..<lat.len:
       g[i] := 1
 
+proc projectU*(x:Field) =
+  for i in x: x[i].projectU
 proc projectU*(x:Field, y:Field) =
   for i in x: x[i].projectU y[i]
 
+proc projectU*[F:Field](x: openArray[F]) =
+  for i in x.low..x.high: x[i].projectU
 proc projectU*[F:Field](x: openArray[F], y: openArray[F]) =
   for i in x.low..x.high: x[i].projectU y[i]
 
-template projectU*(x:auto) = x.projectU x
-
+proc projectSU*(x:Field) =
+  for i in x: x[i].projectSU
 proc projectSU*(x:Field, y:Field) =
   for i in x: x[i].projectSU y[i]
 
+proc projectSU*[F:Field](x: openArray[F]) =
+  for i in x.low..x.high: x[i].projectSU
 proc projectSU*[F:Field](x: openArray[F], y: openArray[F]) =
   for i in x.low..x.high: x[i].projectSU y[i]
 
-template projectSU*(x:auto) = x.projectSU x
-
+proc projectTAH*(x:Field) =
+  for i in x: x[i].projectTAH
 proc projectTAH*(x:Field, y:Field) =
   for i in x: x[i].projectTAH y[i]
 
+proc projectTAH*[F:Field](x: openArray[F]) =
+  for i in x.low..x.high: x[i].projectTAH
 proc projectTAH*[F:Field](x: openArray[F], y: openArray[F]) =
   for i in x.low..x.high: x[i].projectTAH y[i]
-
-template projectTAH*(x:auto) = x.projectTAH x
 
 proc randomU*(x: Field, r: var RNGField) =
   x.gaussian r
@@ -1315,7 +1325,7 @@ proc randTah3(m: var auto, s: var auto) =
   m[1,2].set  r12, i12
   m[2,1].set -r12, i12
 
-proc randomTAH*(x: Field, r: var RNGField) =
+proc randomTAH*(x: Field, r: RNGField) =
   when x[0].nrows == 3:
     mapRngField(randTah3, x, r)
   else:

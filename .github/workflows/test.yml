@@ -40,13 +40,13 @@ jobs:
         mpicc -v
         cat /proc/sys/kernel/core_pattern
     - name: checkout Nim
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
       with:
         repository: nim-lang/Nim
         ref: ${{ matrix.nim-branch }}
         path: Nim
     - name: checkout Nim csources
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
       with:
         repository: nim-lang/csources_v1
         path: Nim/csources
@@ -62,7 +62,7 @@ jobs:
         ./koch boot -d:release -d:danger
         ./koch nimble -d:release -d:danger
     - name: checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
       with:
         path: qex
     - name: install nimble dependencies
