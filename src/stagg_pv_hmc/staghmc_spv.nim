@@ -308,11 +308,11 @@ threads: echo "# threads: ", numThreads
 
 proc ticc(): float = 
    # Return t0
-   result = getElapsedTime()
+   result = cpuTime()
 
 proc tocc(message: string, t0: float) =
    # Print timing
-   echo message, " ", getElapsedTime() - t0, "s"
+   echo message, " ", cpuTime() - t0, "s"
 
 #[ ~~~~ Functions for gauge measurements ~~~~ ]#
 
@@ -666,6 +666,7 @@ proc initialize_params_fields_and_rngs(): auto =
       R = read_rng_milc6(global_rng_file)
 
       #[ Take care of RNG field ]#
+      
       # Tell user what you're doing      
       echo "loading rng field: " & field_rng_file
 
@@ -720,6 +721,9 @@ proc initialize_params_fields_and_rngs(): auto =
 
          # Measure polyakov loop
          g.ploop
+      else:
+         # Tell user that you're exiting
+         "Could not read gauge config. Exiting.".quit()
    else:
       # Check kind of start that user wants
       if str_prms["start"] == "rand":
