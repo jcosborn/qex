@@ -308,11 +308,11 @@ threads: echo "# threads: ", numThreads
 
 proc ticc(): float = 
    # Return t0
-   result = cpuTime()
+   result = getElapsedTime()
 
 proc tocc(message: string, t0: float) =
    # Print timing
-   echo message, " ", cpuTime() - t0, "s"
+   echo message, " ", getElapsedTime() - t0, "s"
 
 #[ ~~~~ Functions for gauge measurements ~~~~ ]#
 
@@ -480,20 +480,21 @@ proc initialize_params_fields_and_rngs(): auto =
       case cm_opts.kind
          of cmdEnd: break # Exit of options
          of cmdShortOption, cmdLongOption, cmdArgument:
-            # Check if starting trajectory
+            # Check if starting config.
             if cm_opts.key == "start_config":
-               # Set ending trajectory
+
+               # Set ending config.
                start_config = parseInt(cm_opts.val)
 
-               # Print ending trajectory
+               # Print ending config.
                echo "start config: " & cm_opts.val
 
-            # Check if ending trajectory
+            # Check if ending config.
             if cm_opts.key == "end_config":
-               # Set ending trajectory
+               # Set ending config.
                end_config = parseInt(cm_opts.val)
 
-               # Print ending trajectory
+               # Print ending config.
                echo "end config: " & cm_opts.val
 
             # Check if save frequency
