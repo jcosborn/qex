@@ -327,6 +327,112 @@ proc EQ(gauge: auto, loop: int): auto =
    # Return Yang-Mills density and topology
    return (es, et, ss, st, q, pls, plt)
 
+#[ Helper proc. for formatting floats ]#
+proc format_float(num: float, precis: int): string =
+   # Return formatted string
+   result = num.formatFloat(ffDecimal, precis) & " "
+
+#[ Helper proc. for printout ]#
+proc print_info(dtau, tau, es, et, ss, st, q: float; pls, plt: auto; old_t2E: float): float =
+   #[ Take care of some preliminary computations ]#
+
+   let
+      #[ Plaquettes ]#
+
+      # Multiply spatial plaquette by 3
+      plaq_ss = 3.0 * ss
+
+      # Multiply tempoary plaquette by 3
+      plaq_st = 3.0 * st
+
+      # Average spatial and temporal plaquettes
+      plaq = (plaq_ss + plaq_st) / 2.0
+
+      # Calculate "check"
+      check = 12.0 * tau * tau * (3.0 - plaq)
+
+      #[ Clover operator ]#
+
+      # Calculate clover operator averaged over space/time directions
+      clov = es + et
+
+      # Calculate t^2 E(t)
+      t2E = tau * tau * clov
+
+      # Calculate t^2 E(t) for ss
+      t2E_ss = tau * tau * es
+
+      # Calculate t^2 E(t) for st
+      t2E_st = tau * tau * et
+
+      # Calculate derivative
+      der_t2E = (t2E - old_t2E) / dtau
+
+      #[ Polyakov loops ]#
+
+      # Get temporal Polyakov loop normalized by 3
+      poly_t = plt * 3.0 
+
+      # Get spatial Polyakov loop normalized by 3
+      poly_s = pls * 3.0
+
+   #[ Take care of extra details ]#
+
+   # Define default pricision
+   let def_pres = 13
+
+   #[ Print out appropriate information ]#
+
+   # Define string
+   var printout = "WFLOW "
+
+   # Add flow time
+   printout = printout & format_float(tau, 2)
+
+   # Add plaquette (normalized to 3)
+   printout = printout & format_float(plaq, def_pres)
+
+   # Add clover [E(t)]
+   printout = printout & format_float(clov, def_pres)
+
+   # Add t^2 E(t)
+   printout = printout & format_float(t2E, def_pres)
+
+   # Add d t^2 E(t) / dt
+   printout = printout & format_float(der_t2E, def_pres)
+
+   # Add "check"
+   printout = printout & format_float(check, def_pres)
+
+   # Add topology
+   printout = printout & format_float(q, def_pres)
+
+   # Add t^2 E(t) for ss
+   printout = printout & format_float(t2E_ss, def_pres)
+
+   # Add t^2 E(t) for st
+   printout = printout & format_float(t2E_st, def_pres)
+
+   # Add real part of Polyakov loop
+   printout = printout & format_float(poly_t.re, def_pres)
+
+   # Add imaginary part of Polyakov loop
+   printout = printout & format_float(poly_t.im, def_pres)
+
+   # Add imaginary part of Polyakov loop
+   printout = printout & format_float(poly_s.re, def_pres)
+
+   # Add imaginary part of Polyakov loop
+   printout = printout & format_float(poly_s.im, def_pres)
+
+   #[ Print information out and return t^2 E(t) ]#
+
+   # Print information out
+   echo printout
+
+   # Return t^2 E(t)
+   result = t2E
+
 #[ For flow and flow measurements ]#
 proc wflow(flowed_gauge: auto) =
    # Start timer
@@ -339,10 +445,7 @@ proc wflow(flowed_gauge: auto) =
    let (es, et, ss, st, q, pls, plt) = flowed_gauge.EQ int_prms["f_munu_loop"]
 
    # Define default string
-   var def_str = "WFLOW t, es, et, ss, st, q, pls, plt: "
-
-   # Print initial measurements
-   echo def_str, 0.0, " ", es, " ", et, " ", ss, " ", st, " ", q, " ", pls, " ", plt
+   var t2E = print_info(flt_prms["dt"], 0.0, es, et, ss, st, q, pls, plt, 0.0)
 
    # Start flow loop
    flowed_gauge.gaugeFlow(flt_prms["dt"]):
@@ -350,7 +453,7 @@ proc wflow(flowed_gauge: auto) =
       let (es, et, ss, st, q, pls, plt) = flowed_gauge.EQ int_prms["f_munu_loop"]
 
       # Print result of measurement
-      echo def_str, wflowT, " ", es, " ", et, " ", ss, " ", st, " ", q, " ", pls, " ", plt 
+      t2E = print_info(flt_prms["dt"], wflowT, es, et, ss, st, q, pls, plt, t2E)
 
       # Breaking condition
       if (flt_prms["t_max"] > 0) and (wflowT > flt_prms["t_max"]):

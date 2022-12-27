@@ -1043,6 +1043,9 @@ proc wflow(gauge: auto) =
    # Print timing to output file
    tocc("Wilson flow:", t0)
 
+   # Create spacing
+   echo "\n"
+
 #[ ~~~~ Define functions setting boundary conditions ~~~~ ]#
 
 #[ Set condition in specific bounary ]#
@@ -1218,7 +1221,7 @@ proc apply_massless_Ddag(s: Staggered; x,b: Field; option: string) =
 
          # Set even sites to zero
          x.even := 0
-      elif option == "pv_force":
+      elif option == "force":
          # Set even sites to phi
          x.even := b
 
@@ -1630,10 +1633,10 @@ proc fforce(s: auto, f: auto, sf: proc, g: auto,
          # Check if massless
          if masses[f_ind] == 0:
             # Apply D^{d} and fill odd entries appropriately
-            s.apply_massless_Ddag(psi[f_ind], psi[f_ind], "ferm_force")
+            s.apply_massless_Ddag(psi[f_ind], psi[f_ind], "force")
       else:
          # Apply D^{d} and fill odd entries appropriately
-         s.apply_massless_Ddag(psi[f_ind], phi[f_ind], "pv_force")
+         s.apply_massless_Ddag(psi[f_ind], phi[f_ind], "force")
 
       #[ Application of massless D and creation of outer product ]#
 
