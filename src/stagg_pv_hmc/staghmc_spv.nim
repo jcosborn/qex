@@ -16,6 +16,7 @@ import math # Basic mathematical operations
 import streams # For reading MILC6 global RNG file
 import std/monotimes # For some timing applications
 import gauge/wflow # For intermediate measurements
+import algorithms/integrator # For integrator options
 
 #[ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -54,9 +55,6 @@ Layout of program:
 
    The following lists the function of each section of the program.
 
-   ~ Define function for integration algorithm: Defines a function that
-     takes in a string to specify the HMC integrator
-   
    ~ Initialize info for whole file: Defines various variables that 
      control behavior of program; namely, those that are specified 
      in the input.xml file and as command line options
@@ -134,78 +132,6 @@ Layout of program:
      to specifications in XML file
 
    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ]#
-
-#[ ~~~~ Define function for integration algorithm ~~~~ ]#
-
-type IntProc = proc(T,V:Integrator; steps:int):Integrator
-converter toIntProc(s:string):IntProc =
-  template mkProc1(s:untyped):IntProc =
-    proc mkInt(T,V:Integrator; steps:int):Integrator {.gensym.} =
-      `mk s`(T = T, V = V, steps = steps)
-    mkInt
-  template mkProc2(s:untyped):IntProc =
-    proc mkInt(T,V:Integrator; steps:int):Integrator {.gensym.} =
-      `mk s`(T = T, V = V, steps = steps, ss[1].parseFloat)
-    mkInt
-  template mkProc3(s:untyped):IntProc =
-    proc mkInt(T,V:Integrator; steps:int):Integrator {.gensym.} =
-      `mk s`(T = T, V = V, steps = steps, ss[1].parseFloat, ss[2].parseFloat)
-    mkInt
-  template mkProc4(s:untyped):IntProc =
-    proc mkInt(T,V:Integrator; steps:int):Integrator {.gensym.} =
-      `mk s`(T = T, V = V, steps = steps, ss[1].parseFloat, ss[2].parseFloat, ss[3].parseFloat)
-    mkInt
-  template mkProc5(s:untyped):IntProc =
-    proc mkInt(T,V:Integrator; steps:int):Integrator {.gensym.} =
-      `mk s`(T = T, V = V, steps = steps, ss[1].parseFloat, ss[2].parseFloat, ss[3].parseFloat, ss[4].parseFloat)
-    mkInt
-  let ss = s.split(',')
-  # Omelyan's triple star integrators, see Omelyan et. al. (2003)
-  case ss[0]:
-  of "2MN":
-    if ss.len == 1: return mkProc1(Omelyan2MN)
-    else: return mkProc2(Omelyan2MN)
-  of "4MN5FP":
-    if ss.len == 1: return mkProc1(Omelyan4MN5FP)
-    elif ss.len == 2: return mkProc2(Omelyan4MN5FP)
-    elif ss.len == 3: return mkProc3(Omelyan4MN5FP)
-    elif ss.len == 4: return mkProc4(Omelyan4MN5FP)
-    elif ss.len == 5: return mkProc5(Omelyan4MN5FP)
-    else: return mkProc2(Omelyan4MN5FP)
-  of "4MN5FV":
-    if ss.len == 1: return mkProc1(Omelyan4MN5FV)
-    elif ss.len == 2: return mkProc2(Omelyan4MN5FV)
-    elif ss.len == 3: return mkProc3(Omelyan4MN5FV)
-    elif ss.len == 4: return mkProc4(Omelyan4MN5FV)
-    elif ss.len == 5: return mkProc5(Omelyan4MN5FV)
-    else: return mkProc2(Omelyan4MN5FV)
-  of "6MN7FV": return mkProc1(Omelyan6MN7FV)
-  of "4MN3F1GP":  # lambda = 0.2725431326761773  is  FUEL f3g a0=0.109
-    if ss.len == 1: return mkProc1(Omelyan4MN3F1GP)
-    else: return mkProc2(Omelyan4MN3F1GP)
-  of "4MN4F2GVG": return mkProc1(Omelyan4MN4F2GVG)
-  of "4MN4F2GV": return mkProc1(Omelyan4MN4F2GV)
-  of "4MN5F1GV": return mkProc1(Omelyan4MN5F1GV)
-  of "4MN5F1GP": return mkProc1(Omelyan4MN5F1GP)
-  of "4MN5F2GV": return mkProc1(Omelyan4MN5F2GV)
-  of "4MN5F2GP": return mkProc1(Omelyan4MN5F2GP)
-  of "6MN5F3GP": return mkProc1(Omelyan6MN5F3GP)
-  else:
-    qexError "Cannot parse integrator: '", s, "'\n",
-      """Available integrators (with default parameters):
-      2MN,0.1931833275037836
-      4MN5FP,0.2750081212332419,-0.1347950099106792,-0.08442961950707149,0.3549000571574260
-      4MN5FV,0.2539785108410595,-0.03230286765269967,0.08398315262876693,0.6822365335719091
-      6MN7FV
-      4MN3F1GP,0.2470939580390842
-      4MN4F2GVG
-      4MN4F2GV
-      4MN5F1GV
-      4MN5F1GP
-      4MN5F2GV
-      4MN5F2GP
-      6MN5F3GP"""
-
 
 #[ ~~~~ Initialize QEX ~~~~ ]#
 
@@ -814,7 +740,7 @@ proc initialize_params_fields_and_rngs(): auto =
              gg, sgg,                 # Backup gauge fields
              p, f,                    # Momentum and force
              r, r_pbp, R,             # Random number generators
-             phi, psi, ftmp, masses)  # Fermion fields/masses
+             phi, psi, masses)  # Fermion fields/masses
 
 proc save_gaugefield_and_rng(base_filename: string, gauge: auto, 
                              rng_global: auto, rng_field: auto) =
@@ -870,7 +796,7 @@ var (lo,               # Layout
      gg, sgg,          # Backup gauge fields
      p, f,             # Momentum and force
      r, r_pbp, R,      # Random number generators
-     phi, psi, ftmp,   # Fermion fields
+     phi, psi,         # Fermion fields
      masses) = initialize_params_fields_and_rngs()
 
 #[ ~~~~ Initialize gauge action and smearing ~~~~ ]#
@@ -1168,6 +1094,11 @@ proc solve_fermion(s: Staggered; x,b: Field; mass: float; sp0: var SolverParams)
 
       #[ Do solve and reconstruct ]#
 
+      # Start thread block
+      threads:
+         # Set x to zero
+         x := 0
+
       # Do solve of just even part
       s.solveEE(x, b, 0, sp)
 
@@ -1284,6 +1215,9 @@ proc generate_pseudoferms(s: Staggered) =
       threads:
          # Set odd sites to zero
          phi[mass_ind].odd := 0
+
+         # Set psi back to zero
+         psi[mass_ind] := 0
 
    # Print timing information
    tocc("Generate fermion/boson fields:", t0)
@@ -1730,7 +1664,7 @@ proc mdt(t: float) =
          for s in g[mu]:
             # Update gauge field
             g[mu][s] := exp(t*p[mu][s])*g[mu][s]
-  
+
    # Print timing information
    tocc("Gauge field update:", t0)
 
@@ -2151,13 +2085,13 @@ proc mdvAllfga(ts, gs: openarray[float]) =
 #[ Set up integrator ]#
 let
    # Define gauge integration algorithm
-   gauge_int_alg: IntProc = str_prms["gauge_int_alg"]
+   gauge_int_alg: IntegratorProc = str_prms["gauge_int_alg"]
 
    # Define fermion integration algorithm
-   ferm_int_alg: IntProc = str_prms["ferm_int_alg"]
+   ferm_int_alg: IntegratorProc = str_prms["ferm_int_alg"]
 
    # Define Pauli-Villars integration algorithm
-   pv_int_alg: IntProc = str_prms["pv_int_alg"]
+   pv_int_alg: IntegratorProc = str_prms["pv_int_alg"]
 
    # Create integration pair
    (V, T) = newIntegratorPair(mdvAllfga, mdt)
