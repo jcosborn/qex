@@ -1782,6 +1782,10 @@ proc fgvf(ix: openarray[int], sf: proc, ts: openarray[float]) =
 
 #[ Integration with shared update ]#
 proc mdvAllfga(ts, gs: openarray[float]) =
+   #[ WARNING! WARNING! WARNING! 
+      Force gradient not tested. Use with caution.
+   ]#
+
    #[ Initial setup ]#
    
    # Start timer

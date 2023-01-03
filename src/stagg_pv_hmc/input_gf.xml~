@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!-- Credit to Oliver Witzel for formatting of XML file -->
+<qex>
+  <action>
+    <geom>
+      <Ns></Ns>
+      <Ns></Ns>
+    </geom>
+  </action>
+  <flow_prms>
+    <dt>0.1</dt>
+    <t_max>8.0</t_max>
+    <f_munu_loop>5</f_munu_loop>
+    <wflow_freq>0</wflow_freq>
+  </flow_prms>
+</qex>
