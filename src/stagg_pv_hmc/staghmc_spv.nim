@@ -188,9 +188,8 @@ var seed_prms = {"parallel_seed" : intParam("seed", int(1000 * epochTime())).uin
 
 # Define string parameters
 var str_prms = {"bc" : "pppa", "start" : "hot", 
-                "gauge_int_alg" : "2MN", 
-                "ferm_int_alg" : "2MN",
-                "pv_int_alg" : "2MN"}.toTable
+                "gauge_int_alg" : "2MN", "ferm_int_alg" : "2MN",
+                "pv_int_alg" : "2MN", "rng_type" : "MRG32k3a"}.toTable
 
 # Define options
 var options = {"verbose_cg_stats" : false, "verbose_timer" : false,
@@ -330,7 +329,7 @@ proc ploop(g: auto) =
 
 #[ ~~~~ Functions for IO ~~~~ ]#
 
-#[ For reading RngMilc6 ]#
+#[ For reading RNG object ]#
 proc read_rng_milc6(filename: string): auto =
    # Get iniial time
    let t0 = ticc()
@@ -338,8 +337,13 @@ proc read_rng_milc6(filename: string): auto =
    # Tell user what you're doing
    echo "loading global rng file: " & filename
 
-   # Create RngMilc6 object
-   var rng: RngMilc6
+   # Initialize RNG
+   var rng: MRG32k3a
+
+   # Check type of rng
+   if str_prms["rng_type"] == "RngMilc6":
+      # Create RngMilc6 object
+      var rng: RngMilc6
 
    # Create new file stream
    var file = newFileStream(filename, fmRead)
@@ -356,7 +360,7 @@ proc read_rng_milc6(filename: string): auto =
    # Return rng
    result = rng
 
-#[ For reading RngMilc6 ]#
+#[ For reading RNG object ]#
 proc write_rng_milc6(filename: string, rng: auto) =
    # Get initial time
    let t0 = ticc()
@@ -369,7 +373,7 @@ proc write_rng_milc6(filename: string, rng: auto) =
 
    # Check if nil
    if not file.isNil:
-      # Write RngMilc6 object to file
+      # Write RNG object to file
       file.write rng
 
    # Flush
@@ -570,13 +574,24 @@ proc initialize_params_fields_and_rngs(): auto =
    let field_rng_file = io_path & def_fn & "_" & intToStr(start_config) & ".rng"
 
    # Define new RNG field for pbp
-   var r_pbp = lo.newRNGField(RngMilc6, seed_prms["pbp_seed"])   
+   var r_pbp = lo.newRNGField(MRG32k3a, seed_prms["pbp_seed"])
 
    # Define new RNG field for fermions
-   var r = lo.newRNGField(RngMilc6, seed_prms["parallel_seed"])
+   var r = lo.newRNGField(MRG32k3a, seed_prms["parallel_seed"])
 
    # Create global RNG for HMC
-   var R: RngMilc6
+   var R: MRG32k3a
+
+   # Check type of rng
+   if str_prms["rng_type"] == "RngMilc6":
+      # Define new RNG field for pbp
+      var r_pbp = lo.newRNGField(RngMilc6, seed_prms["pbp_seed"])   
+
+      # Define new RNG field for fermions
+      var r = lo.newRNGField(RngMilc6, seed_prms["parallel_seed"])
+
+      # Create global RNG for HMC
+      var R: RngMilc6
 
    # Seed RNG
    R.seed(seed_prms["serial_seed"], 987654321)

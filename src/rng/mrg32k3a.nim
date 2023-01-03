@@ -7,6 +7,8 @@ Operations Research, 47, 1 (1999), 159-164.
 
 import math
 import comms/comms
+import maths/types
+import simd/simdWrap
 
 type
   State = array[3,uint32]
@@ -76,6 +78,18 @@ when a2sq[76]!=[[1511326704u32, 3759209742u32, 1610795712u32], [4292754251u32, 1
   {.error:"a2sq[76] wrong!".}
 
 template isWrapper*(x: MRG32k3a): untyped = false
+template numberType*(x: MRG32k3a): typedesc = uint32
+template numberType*(x: typedesc[MRG32k3a]): typedesc = uint32
+template simdLength*(x: typedesc[MRG32k3a]): untyped = 1
+template getNc*(x: MRG32k3a): untyped = 0
+template getNs*(x: MRG32k3a): untyped = 0
+template `:=`*(x: MRG32k3a, y: MRG32k3a) =
+  x = y
+template `:=`*(x: MRG32k3a, y: Indexed) =
+  x := y[]
+template `[]`*(x: MRG32k3a, y: Simd): untyped = x
+template `[]=`*(x: MRG32k3a, y: Simd, z: typed) =
+  x := z
 
 proc `$`*(x:MRG32k3a):string =
   "MRG32k3a(" & $x.s1 & " " & $x.s2 & ")"

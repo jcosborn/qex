@@ -11,6 +11,7 @@ template IOtype*(x:typedesc[DComplexV]):untyped = DComplex
 template IOtype*(x:typedesc[SColorMatrixV]):untyped = SColorMatrix
 template IOtype*(x:typedesc[DColorMatrixV]):untyped = DColorMatrix
 template IOtype*(x:typedesc[RngMilc6]):untyped = RngMilc6
+template IOtype*(x:typedesc[MRG32k3a]):untyped = MRG32k3a
 
 # For IO with mis-matching types; see read[T]/write[T]
 template IOtypeP*(x:typedesc[SVec0]):untyped = float64
@@ -20,3 +21,4 @@ template IOtypeP*(x:typedesc[DComplexV]):untyped = SComplex
 template IOtypeP*(x:typedesc[SColorMatrixV]):untyped = DColorMatrix
 template IOtypeP*(x:typedesc[DColorMatrixV]):untyped = SColorMatrix
 template IOtypeP*(x:typedesc[RngMilc6]):untyped = RngMilc6
+template IOtypeP*(x:typedesc[MRG32k3a]):untyped = MRG32k3a
