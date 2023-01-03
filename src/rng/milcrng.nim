@@ -148,14 +148,15 @@ proc gaussian*(prn: var RngMilc6): float32 =
       result = prn.gset
   else:
     const
-      TINY = 9.999999999999999e-308
+      MAX = 0x01000000.float
+      SCALE1 = 1.0 / (MAX + 1.0)
     var
       v: cdouble
       p: cdouble
       r: cdouble
-    v = prn.uniform
+    v = SCALE1 * (prn.uniform * MAX + 1.0)
     p = prn.uniform * 2.0 * PI
-    r = sqrt(-2.0 * ln(v + TINY))
+    r = sqrt(-2.0 * ln(v))
     result = r * cos(p)
 
 # Only needed for non-vectorized RNGs.
