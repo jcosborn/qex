@@ -2,6 +2,7 @@ import macros
 import strUtils
 #import metaUtils
 import os
+#import qexInternal
 
 var paramNames = newSeq[string](0)
 var paramValues = newSeq[string](0)

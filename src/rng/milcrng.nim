@@ -31,8 +31,6 @@ template `[]`*(x: RngMilc6, y: Simd): untyped = x
 template `[]=`*(x: RngMilc6, y: Simd, z: typed) =
   x := z
 
-#template `[]`*(x: RngMilc6): untyped = x
-
 proc `$`*(x:RngMilc6):string =
   result = "RngMilc6 r:[ " & $x.r0
   result &= " " & $x.r1
@@ -50,7 +48,14 @@ const
   INDX2 = 8'u32
   ADDEND = 12345'u32
   MASK = 0x00FFFFFF'u32
+  NUMINTS = 0x01000000'u32
   SCALE = 1.0'f32 / 0x01000000.float32
+  SCALE1 = 1.0'f32 / MASK.float32
+
+#template maxInt*(x: RngMilc6): int = int(MASK)
+template maxInt*(x: typedesc[RngMilc6]): int = int(MASK)
+#template numInts*(x: RngMilc6): int = int(NUMINTS)
+template numInts*(x: typedesc[RngMilc6]): int = int(NUMINTS)
 
 when defined(FUELCompat):
   # Try to strictly follow QLA_seed_random.c
@@ -99,17 +104,17 @@ else:
     prn.multiplier = 100005'u32 + 8'u32 * index
     #prn.addend = 12345
     #prn.scale = 1.0 / float32(0x01000000)
-proc seedIndep*(prn: var RngMilc6; sed,index: auto) {.inline.} =
+proc seedIndep*(prn: var RngMilc6; sed,index: auto) =
   seedX(prn, sed.uint32, index.uint32)
-proc seed*(prn: var RngMilc6; sed,index: auto) {.inline.} =
+proc seed*(prn: var RngMilc6; sed,index: auto) =
   ## The seed `sed` is broadcasted from rank 0.
   ## For independent seeding, use `seedIndep`.
   var ss = sed
   QMP_broadcast(ss.addr, sizeof(ss).csize_t)
   seedIndep(prn, ss, index)
 
-proc uniform*(prn: var RngMilc6): float32 =
-  ## Return random number uniform on [0,1]
+proc next(prn: var RngMilc6): uint32 {.inline.} =
+  ## internal routine to return next value
   let t = (((prn.r5 shr 7) or (prn.r6 shl 17)) xor
       ((prn.r4 shr 1) or (prn.r5 shl 23))) and MASK
   prn.r6 = prn.r5
@@ -121,7 +126,21 @@ proc uniform*(prn: var RngMilc6): float32 =
   prn.r0 = t
   let s = prn.ic_state * prn.multiplier + ADDEND
   prn.icState = s
-  result = SCALE * (t xor ((s shr 8) and MASK)).float32
+  result = t xor ((s shr 8) and MASK)
+
+func skip*(prn: var RngMilc6, c = 1) =
+  for i in 1..c:
+    discard prn.next
+
+proc integer*(prn: var RngMilc6): int =
+  ## Return random integer from 0 to maxInt
+  result = int prn.next
+
+proc uniform*(prn: var RngMilc6): float32 =
+  ## Return random number uniform on [0,1)
+  ## The choice of including endpoints may vary among different RNGs
+  let i = prn.next
+  result = SCALE * float32(i)
 
 #var QLA_use_milc_gaussian* = false
 
@@ -147,15 +166,12 @@ proc gaussian*(prn: var RngMilc6): float32 =
       prn.iset = 1
       result = prn.gset
   else:
-    const
-      TINY = 9.999999999999999e-308
-    var
-      v: cdouble
-      p: cdouble
-      r: cdouble
-    v = prn.uniform
-    p = prn.uniform * 2.0 * PI
-    r = sqrt(-2.0 * ln(v + TINY))
+    const TINY = 9.999999999999999e-308
+    var v = float prn.uniform
+    #while v == 0.0:
+    #  v = prn.uniform
+    var p = prn.uniform * 2.0 * PI
+    var r = sqrt(-2.0 * ln(v+TINY))
     result = r * cos(p)
 
 # Only needed for non-vectorized RNGs.
@@ -164,12 +180,41 @@ template gaussian*(x: var auto, r: MaskedObj[RngMilc6]) =
   gaussian(x, r[])
 
 when isMainModule:
+  import qex
+  qexInit()
+
+  var sed = intParam("seed", 987654321)
+  var nu = intParam("nu", 10)
+  var ng = intParam("ng", 10)
+  installHelpParam()
   var s: RngMilc6
-  s.seed(1, 987654321)
+
   echo "uniform"
-  for i in 1..10:
-    echo i, "\t", s.uniform
-  s.seed(1, 0)
+  s.seed(1, sed)
+  if nu < 0:
+    var n = 0
+    while true:
+      let x = s.uniform
+      inc n
+      if x==0.0 or x==1.0:
+        echo n, " ", x
+        #break
+  else:
+    for i in 1..nu:
+      echo i, "\t", s.uniform
+
   echo "gaussian"
-  for i in 1..10:
-    echo i, "\t", s.gaussian
+  s.seed(1, sed)
+  if ng < 0:
+    var n = 0
+    while true:
+      let x = s.gaussian
+      inc n
+      if x==0.0 or abs(x)>=10.0:
+        echo n, " ", x
+        #break
+  else:
+    for i in 1..ng:
+      echo i, "\t", s.gaussian
+
+  qexFinalize()

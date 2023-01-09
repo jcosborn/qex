@@ -75,6 +75,11 @@ when a1sq[76]!=[[82758667u32, 1871391091u32, 4127413238u32], [3672831523u32, 691
 when a2sq[76]!=[[1511326704u32, 3759209742u32, 1610795712u32], [4292754251u32, 1511326704u32, 3889917532u32], [3859662829u32, 4292754251u32, 3708466080u32]]:
   {.error:"a2sq[76] wrong!".}
 
+#template maxInt*(x: MRG32k3a): int = int 4294967086
+template maxInt*(x: typedesc[MRG32k3a]): int = int 4294967086
+#template numInts*(x: MRG32k3a): int = 4294967087
+template numInts*(x: typedesc[MRG32k3a]): int = int 4294967087
+
 template isWrapper*(x: MRG32k3a): untyped = false
 
 proc `$`*(x:MRG32k3a):string =
@@ -110,16 +115,46 @@ proc seedX(prn:var MRG32k3a, seed,subsequence:uint64) =
     prn.s2[2] = defaultSEED
   prn.skip(subsequence, subsequenceBase)
 
-proc seedIndep*(prn: var MRG32k3a; sed,index: auto) {.inline.} =
+proc seedIndep*(prn: var MRG32k3a; sed,index: auto) =
   seedX(prn, sed.uint64, index.uint64)
-proc seed*(prn: var MRG32k3a; sed,index: auto) {.inline.} =
+proc seed*(prn: var MRG32k3a; sed,index: auto) =
   ## The seed `sed` is broadcasted from rank 0.
   ## For independent seeding, use `seedIndep`.
   var ss = sed
   defaultComm.broadcast(ss.addr, sizeof(ss))
   seedIndep(prn, ss, index)
 
-proc uniform*(prn:var MRG32k3a):float =
+proc next(prn: var MRG32k3a): float {.inline.} =
+  ## Return random integer uniform on [1,m1]
+  var p1,p2:float
+  p1 = a12 * prn.s1[1].float - a13n * prn.s1[0].float
+  p1 = p1 mod m1
+  if p1<0.0:
+    p1 += m1
+  prn.s1[0] = prn.s1[1]
+  prn.s1[1] = prn.s1[2]
+  prn.s1[2] = p1.uint32
+
+  p2 = a21 * prn.s2[2].float - a23n * prn.s2[0].float
+  p2 = p2 mod m2
+  if p2<0.0:
+    p2 += m2
+  prn.s2[0] = prn.s2[1]
+  prn.s2[1] = prn.s2[2]
+  prn.s2[2] = p2.uint32
+
+  if p1<=p2:
+    result = p1 - p2 + m1
+  else:
+    result = p1 - p2
+
+proc integer*(prn: var MRG32k3a): int =
+  ## Return random integer from 0 to maxInt
+  result = int(prn.next) - 1
+
+#[
+proc uniform*(prn:var MRG32k3a): float =
+  ## Return random number uniform on (0,1)
   var p1,p2:float
   p1 = a12 * prn.s1[1].float - a13n * prn.s1[0].float
   p1 = p1 mod m1
@@ -141,15 +176,18 @@ proc uniform*(prn:var MRG32k3a):float =
     result = (p1 - p2 + m1) * norm
   else:
     result = (p1 - p2) * norm
+]#
+proc uniform*(prn: var MRG32k3a): float =
+  ## Return random number uniform on (0,1)
+  result = norm * prn.next
 
 proc gaussian*(prn: var MRG32k3a): float =
   ## Gaussian normal deviate
   ## Probability distribution exp( -x*x/2 ), so < x^2 > = 1
-  const TINY = 9.999999999999999e-308
   var v,p,r: float
   v = prn.uniform
   p = prn.uniform * 2.0 * PI
-  r = sqrt(-2.0 * ln(v + TINY))
+  r = sqrt(-2.0 * ln(v))
   result = r * cos(p)
 
 import maths/types
