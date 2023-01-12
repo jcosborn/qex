@@ -134,6 +134,7 @@ proc seed*(prn: var MRG32k3a; sed,index: auto) {.inline.} =
   seedIndep(prn, ss, index)
 
 proc uniform*(prn:var MRG32k3a):float =
+  ## Uniform random numbers from 0 to 1, excluding 0 and 1.
   var p1,p2:float
   p1 = a12 * prn.s1[1].float - a13n * prn.s1[0].float
   p1 = p1 mod m1
@@ -160,10 +161,11 @@ proc gaussian*(prn: var MRG32k3a): float =
   ## Gaussian normal deviate
   ## Probability distribution exp( -x*x/2 ), so < x^2 > = 1
   const TINY = 9.999999999999999e-308
+  # uniform excludes 0 and 1
   var v,p,r: float
   v = prn.uniform
   p = prn.uniform * 2.0 * PI
-  r = sqrt(-2.0 * ln(v + TINY))
+  r = sqrt(-2.0 * ln(v))
   result = r * cos(p)
 
 import maths/types

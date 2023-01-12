@@ -1,7 +1,7 @@
-import rng/milcrng_spv # Modified for Pauli-Villars
+import rng/milcrng
 import rng/mrg32k3a
 import rng/distribution
 
-export milcrng_spv
+export milcrng
 export mrg32k3a
 export distribution

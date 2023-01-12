@@ -99,6 +99,8 @@ else:
     prn.multiplier = 100005'u32 + 8'u32 * index
     #prn.addend = 12345
     #prn.scale = 1.0 / float32(0x01000000)
+    #prn.iset = 1 # ~~~~~~~~~
+    #prn.gset = 0 # ~~~~~~~~~
 proc seedIndep*(prn: var RngMilc6; sed,index: auto) {.inline.} =
   seedX(prn, sed.uint32, index.uint32)
 proc seed*(prn: var RngMilc6; sed,index: auto) {.inline.} =
@@ -148,14 +150,15 @@ proc gaussian*(prn: var RngMilc6): float32 =
       result = prn.gset
   else:
     const
-      TINY = 9.999999999999999e-308
+      MAX = 0x01000000.float
+      SCALE1 = 1.0 / (MAX + 1.0)
     var
       v: cdouble
       p: cdouble
       r: cdouble
-    v = prn.uniform
+    v = SCALE1 * (prn.uniform * MAX + 1.0)
     p = prn.uniform * 2.0 * PI
-    r = sqrt(-2.0 * ln(v + TINY))
+    r = sqrt(-2.0 * ln(v))
     result = r * cos(p)
 
 # Only needed for non-vectorized RNGs.
