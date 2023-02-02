@@ -6,18 +6,6 @@ import sequtils # For simple seq operations
 
 #[ ~~~~ Various measurement functions ~~~~ ]#
 
-#[ For reunitarization ]#
-proc reunit*(g: auto) =
-   # Start thread block and reunitarize
-   threads:
-      let d = g.checkSU
-      threadBarrier()
-      echo "unitary deviation avg: ",d.avg," max: ",d.max
-      g.projectSU
-      threadBarrier()
-      let dd = g.checkSU
-      echo "new unitary deviation avg: ",dd.avg," max: ",dd.max
-
 #[ For measuring plaquette ]#
 proc mplaq*(g: auto) =
    # Calculate plaquette

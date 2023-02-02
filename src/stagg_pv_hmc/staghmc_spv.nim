@@ -13,6 +13,7 @@ import sequtils # For dealing with sequences
 import strutils # For manipulating strings
 import math # Basic mathematical operations
 import algorithms/integrator # For integrator options
+import options # For controlling field IO behavior
 
 #[ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -85,8 +86,8 @@ var R: GlobalRNG
 # Set rng type
 R = GlobalRNG(rng_type: str_prms["rng_type"])
 
-# Check if starting new ensemble
-if start_config == 0:
+# Check if starting new ensemble or resuming old ensemble
+if (start_config == 0) or (start_config == int_prms["start_config"]):
    # Seed RNG
    R.seed(seed_prms["serial_seed"])
 else:
@@ -135,7 +136,9 @@ if start_config == 0:
 else:
    # Otherwise, pick up gauge configuration and RNG field fork disk
    (r, g) = lo.read_fields(base_fn, str_prms["rng_type"],
-                           seed_prms["parallel_seed"])
+                           seed_prms["parallel_seed"],
+                           current_config = some(start_config),
+                           start_config = some(int_prms["start_config"]))
 
 # Initialize nHYP smearing parameters
 var
@@ -172,7 +175,7 @@ proc tocc(message: string, t0: float) =
 #[ ~~~~ Define functions setting boundary conditions ~~~~ ]#
 
 #[ Set boundary conditions ]#
-proc setBC_cust(gf: auto; bc: string) =
+proc setBC_cust(gf: openArray[Field]; bc: string) =
    # Cycle through BC
    for mu in 0..<gf.len:
       # Check if boundary is anti-periodic
@@ -1037,6 +1040,9 @@ for config in start_config..<end_config:
          if accr <= acc:
             # Tell user that new configuration has been accepted
             echo "ACCEPT: dH: ", dH,"  exp(-dH): ", acc,"  r: ", accr
+
+            # Reunitarize gauge field
+            g.reunit
          else:
             # Otherwise, tell user that trajectory rejected
             echo "REJECT:  dH: ", dH, " exp(-dH): ", acc, "  r: ",accr
@@ -1050,6 +1056,9 @@ for config in start_config..<end_config:
       else:
          # Tell user that new configuration has been accepted
          echo "ACCEPT (no metrop. test performed): dH: ", dH,"  exp(-dH): ",acc,"  r: ",accr
+
+         # Reunitarize gauge field
+         g.reunit
 
       #[ Save information ]#
 
@@ -1065,14 +1074,6 @@ for config in start_config..<end_config:
          R.write_rng(fn)
 
       #[ Do measurements ]#
-
-      # Check if trajectory was accepted again
-      if accr <= acc:
-         # Reunitarize gauge field
-         g.reunit
-
-         # Smear gauge field
-         g.smearRephaseDiscardForce sg   
 
       # Check if plaquette to be measured
       if (int_prms["plaq_freq"] > 0) and ((traj + 1) mod int_prms["plaq_freq"] == 0):

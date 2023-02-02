@@ -11,6 +11,7 @@ import system # For system-specific operations
 import times # Timing for generating seeds
 import os # For checking if files exist
 import staghmc_spv_rng # For certain RNG operations
+import options # For optional IO behavior with fields
 
 #[ ~~~~ Command line and XML inputs ~~~~ ]#
 
@@ -136,7 +137,7 @@ proc read_xml*(xml_file: string): auto =
       int_prms = {"Ns" : 0, "Nt" : 0, "num_pv": 0,
                   "Nf" : 0, "a_maxits" : 0, "f_maxits" : 0,
                   "g_steps" : 0, "f_steps" : 0, "pv_steps" : 0,
-                  "no_metropolis_until" : 0,
+                  "no_metropolis_until" : 0, "start_config" : 0,
                   "plaq_freq" : 0, "ploop_freq" : 0,
                   "rev_check_freq" : 0, "check_solvers" : 0}.toTable
 
@@ -221,6 +222,18 @@ proc read_xml*(xml_file: string): auto =
 
 #[ ~~~~ Gauge/RNG field initialization and IO ~~~~ ]#
 
+#[ For reunitarization ]#
+proc reunit*(g: auto) =
+   # Start thread block and reunitarize
+   threads:
+      let d = g.checkSU
+      threadBarrier()
+      echo "unitary deviation avg: ",d.avg," max: ",d.max
+      g.projectSU
+      threadBarrier()
+      let dd = g.checkSU
+      echo "new unitary deviation avg: ",dd.avg," max: ",dd.max
+
 #[ Initialize lattice layout ]#
 proc init_layout*(phys_geom, rank_geom: seq): auto =
    # Define lattice
@@ -250,7 +263,11 @@ proc init_fields*(lo: Layout; gauge_start, rng_type: string; seed: uint64): auto
    # Give gauge field particular start
    case gauge_start:
       of "cold": g.unit() # "Unit" start
-      of "hot": g.random(rng_field) # "Random" start
+      of "hot":
+         # Start thread block
+         threads:
+            # Fill gauge field with random numbers 
+            g.random(rng_field) # "Random" start
       of "read": discard # Do nothing
       else: quit("Unrecognized option for starting config. Exiting.")
 
@@ -260,7 +277,8 @@ proc init_fields*(lo: Layout; gauge_start, rng_type: string; seed: uint64): auto
    result = (rng_field, g)
 
 #[ For reading fields ]#
-proc read_fields*(lo: Layout; base_fn, rng_type: string; seed: uint64): auto =
+proc read_fields*(lo: Layout; base_fn, rng_type: string; seed: uint64;
+                  current_config, start_config = none(int)): auto =
    #[ Initiaize fields and variables ]#
 
    # Say what you're doing
@@ -283,6 +301,9 @@ proc read_fields*(lo: Layout; base_fn, rng_type: string; seed: uint64): auto =
    if fileExists(rng_fn):
       # Read file
       rng_field.read_rng(rng_fn)
+   elif (current_config.isSome and start_config.isSome) and (current_config == start_config):
+      # Tell user what you're doing
+      echo rng_fn & " does not exist." & " Creating new RNG field for just this config."
    else:
       # Exit program
       quit(rng_fn & " does not exist. Exiting.")
@@ -298,6 +319,14 @@ proc read_fields*(lo: Layout; base_fn, rng_type: string; seed: uint64): auto =
    else:
       # Exit program
       quit(gauge_fn & " does not exist. Exiting.")
+
+   # Check if gauge configuration needs to be reunitarized
+   if (current_config.isSome and start_config.isSome) and (current_config == start_config):
+      # Tell user what you're doing
+      echo "Reunitarizing just this gauge configuration."
+
+      # Reunitarize gauge field
+      g.reunit()
 
    #[ Return fields ]#
 
