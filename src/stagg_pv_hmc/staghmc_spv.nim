@@ -14,6 +14,7 @@ import strutils # For manipulating strings
 import math # Basic mathematical operations
 import algorithms/integrator # For integrator options
 import options # For controlling field IO behavior
+import streams # For reading/writing
 
 #[ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -91,7 +92,18 @@ if (start_config == 0) or (start_config == int_prms["start_config"]):
    # Seed RNG
    R.seed(seed_prms["serial_seed"])
 else:
-   # If not, read previous RNG file
+   #[
+   # Define filename
+   let fn = base_fn & ".global_rng"
+
+   # Create new file stream
+   var file = newFileStream(fn, fmRead)
+
+   # Read RNG
+   discard file.readData(R.addr, R.sizeof)
+   ]#
+ 
+   # Read RNG
    R.read_rng(base_fn)
 
 # Initialize CG
@@ -1070,7 +1082,21 @@ for config in start_config..<end_config:
          # Write gauge and RNG field
          fn.write_fields(r, g)
 
-         # Write global RNG
+         #[
+         # Define filename
+         let fn_glbl = base_fn & ".global_rng"
+
+         # Create new file stream
+         var file = newFileStream(fn_glbl, fmWrite)
+
+         # Write RNG
+         file.write R
+
+         # Flush
+         file.flush
+         ]#
+
+         # Write RNG
          R.write_rng(fn)
 
       #[ Do measurements ]#
