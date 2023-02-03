@@ -64,6 +64,9 @@ proc read_rng*(R: var GlobalRNG; base_fn: string) =
    # Create new file stream
    var file = newFileStream(fn, fmRead)
 
+   discard file.readData(R.addr, R.sizeof)
+
+   #[
    # Start case
    case R.rng_type:
       of "RngMilc6":
@@ -72,6 +75,7 @@ proc read_rng*(R: var GlobalRNG; base_fn: string) =
       of "MRG32k3a":
          # Read in MRG32k3a object
          discard file.readData(R.mrg32k3a.addr, R.mrg32k3a.sizeof)
+   ]#
 
 #[ Write method ]#
 proc write_rng*(R: var GlobalRNG; base_fn: string) =
@@ -81,11 +85,11 @@ proc write_rng*(R: var GlobalRNG; base_fn: string) =
    # Create new file stream
    var file = newFileStream(fn, fmWrite)
 
+   file.write R
+
+   #[
    # Check if nil
    if not file.isNil:
-      # Write RNG object to file
-      file.write R
-
       # Start case
       case R.rng_type:
          of "RngMilc6":
@@ -94,6 +98,7 @@ proc write_rng*(R: var GlobalRNG; base_fn: string) =
          of "MRG32k3a":
             # Write MRG32k3a object
             file.write R.mrg32k3a
+   ]#
 
    # Flush
    file.flush
