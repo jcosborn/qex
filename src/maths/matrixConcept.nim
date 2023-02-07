@@ -449,6 +449,7 @@ makeMap1(iadd)
 makeMap1(isub)
 
 setUnop(`-`,neg,Vec1,VectorArray[x.len,type(x[0])])
+setUnop(`-`,neg,Mat1,MatrixArray[x.len,x.len,type(x[0,0])])
 
 #template assign*(x:Mat1; y:SomeNumber) =
 #  echo "test"
