@@ -93,6 +93,7 @@ template p3s(f: untyped) {.dirty.} =
     f(x[], y[], z)
   p3(f)
 
+p2(neg)
 p2(rsqrt)
 p2(norm2)
 p2s(assign)
