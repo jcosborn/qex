@@ -2,8 +2,8 @@
 <qex>
   <action> <!-- Parameters for gauge field volume -->
     <geom>
-      <Ns>8</Ns>
-      <Nt>8</Nt>
+      <Ns>_Ns_</Ns>
+      <Nt>_Nt_</Nt>
     </geom>
   </action>
   <flow_prms> <!-- Guage flow parameters -->

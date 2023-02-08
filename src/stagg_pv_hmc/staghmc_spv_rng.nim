@@ -64,14 +64,22 @@ proc read_rng*(R: var GlobalRNG; base_fn: string) =
    # Create new file stream
    var file = newFileStream(fn, fmRead)
 
-   # Start case
-   case R.rng_type:
-      of "RngMilc6":
-         # Read in RngMilc6 object
-         discard file.readData(R.milc.addr, R.milc.sizeof)
-      of "MRG32k3a":
-         # Read in MRG32k3a object
-         discard file.readData(R.mrg32k3a.addr, R.mrg32k3a.sizeof)
+   # Check to make sure that file exists
+   if file == nil:
+      # Quit program
+      quit("Was not able to read " & fn & ". File does not exist. Exiting.")
+   else:
+      # Start case
+      case R.rng_type:
+         of "RngMilc6":
+            # Read in RngMilc6 object
+            discard file.readData(R.milc.addr, R.milc.sizeof)
+         of "MRG32k3a":
+            # Read in MRG32k3a object
+            discard file.readData(R.mrg32k3a.addr, R.mrg32k3a.sizeof)
+
+      # Tell user what you did
+      echo "Read " & fn & " with format " & R.rng_type
 
 #[ Write method ]#
 proc write_rng*(R: var GlobalRNG; base_fn: string) =
@@ -91,6 +99,12 @@ proc write_rng*(R: var GlobalRNG; base_fn: string) =
          of "MRG32k3a":
             # Write MRG32k3a object
             file.write R.mrg32k3a
+
+      # Tell user what your did
+      echo "Wrote " & fn & " with format " & R.rng_type
+   else:
+      # Tell user that there was an issue
+      quit("Was not able to write " & fn)
 
    # Flush
    file.flush
@@ -129,7 +143,7 @@ proc read_rng*(r: var ParallelRNG; rng_fn: string) =
          # Close reader
          reader.close()
       of "MRG32k3a":
-         # Create reader for RNG fiel
+         # Create reader for RNG field
          var reader = r.mrg32k3a.l.newReader(rng_fn)
 
          # Read RNG file and store in RNG field
