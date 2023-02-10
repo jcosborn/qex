@@ -25,19 +25,30 @@ template ndiffTemplate(derivative: untyped) {.dirty.} =
   var dx = dx
   var A: UpTri[ordMax, F]
   for i in 0..<ordMax:
-    A[0,i] = (f(x+dx) - f(x-dx)) / (2*dx)
+    A[0,i] = (f(x+dx) - f(x-dx)) * (0.5/dx)
     # echo "A[0,",i,"] = ",A[0,i]
     dx /= scale
     var b = s2
     for j in 1..i:
-      A[j,i] = (b*A[j-1,i] - A[j-1,i-1]) / (b - 1.0)
+      let ai = A[j-1,i]
+      let ai1 = A[j-1,i-1]
+      A[j,i] = (ai*b - ai1) * (1.0/(b - 1.0))
       # echo "A[",j,",",i,"] = ",A[j,i]
       b *= s2
   let a = A[ordMax-1,ordMax-1]
-  err = max(abs(a-A[ordMax-2,ordMax-1]), abs(a-A[ordMax-2,ordMax-2]))
+  let a1 = A[ordMax-2,ordMax-1]
+  let a2 = A[ordMax-2,ordMax-2]
+  let e1 = a-a1
+  let e2 = a-a2
+  when compiles(len(err)):
+    # array, try element wise max and abs
+    for i in 0..<err.len:
+      err[i] = max(abs(e1[i]), abs(e2[i]))
+  else:
+    err = max(abs(e1), abs(e2))
   r = a
 
-proc ndiff*[X,F](r: var F, err: var F, f: proc(x:X):F, x: X, dx: auto, scale:float =1.618, ordMax:static int=8) =
+proc ndiff*[X,F](r: var F, err: var F, f: proc(x:X):F, x: X, dx: auto, scale:float=2.0, ordMax:static int=8) =
   ## return r = f'(x), using polynomial approximation with points x+/-dx, with dx/=scale, upto ordMax
   ## err is the difference in the estimate of the current and the previous order.
   ndiffTemplate:
@@ -82,7 +93,6 @@ when isMainModule:
   ndiff2(r, e, exp, 10.0, 1.0, ordMax=8)
   echo "Numeric:  ", r, "  error: ",r-exp(10.0),"  estimated: ",e
 
-#[
   import simd
   var v, vr, ve: SimdD4
   v[0] = 1.0
@@ -93,7 +103,6 @@ when isMainModule:
   ndiff(vr, ve, f , v, 0.01)
   let vex = exp(v)
   let vd = sin(v)-v*v
-  let va = ex/d - ex*(cos(v)-2.0*v*v)/(d*d)
+  let va = vex/vd - vex*(cos(v)-2.0*v)/(vd*vd)
   echo "Analytic: ", va
   echo "Numeric:  ", vr, "  error: ",vr-va,"  estimated: ",ve
-]#
