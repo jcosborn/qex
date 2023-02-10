@@ -10,6 +10,14 @@ template getCT*(x: float32): untyped = CT32
 template getCT*(x: typedesc[float]): untyped = CT
 template getCT*(x: typedesc[float32]): untyped = CT32
 
+template withCT*(ct: float, ex:untyped):auto =
+  block:
+    let CTold = CT
+    CT = ct
+    defer:
+      CT = CTold
+    ex
+
 template withCT*(ct, ct32: float, ex:untyped):auto =
   block:
     let CTold = CT
