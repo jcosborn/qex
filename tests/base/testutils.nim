@@ -93,7 +93,7 @@ proc `~`*(x,y:Field):bool =
     yt = y.trace
     x2 = x.norm2
     y2 = y.norm2
-  result = not(isnan(xt) or isnan(yt) or isnan(x2) or isnan(y2))    # max may drop nan
+  result = not(isnan(xt.norm2) or isnan(yt.norm2) or isnan(x2) or isnan(y2))    # max may drop nan
   block:
     let c = xt~yt
     result = result and c
