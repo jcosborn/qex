@@ -388,7 +388,7 @@ template mulVSV*(r: typed; x,y: typed): untyped =
 template mulMMS*(rr:untyped; xx,yy:untyped):untyped =
   #subst(r,rr,x,xx,y,yy,tx,_,i,_,j,_):
   subst(r,rr,x,xx,y,yy,tx,_):
-    #mixin mul
+    mixin mul
     assert(r.nrows == x.nrows)
     assert(r.ncols == x.ncols)
     load(ty, y)
