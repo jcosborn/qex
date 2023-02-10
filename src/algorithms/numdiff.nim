@@ -1,17 +1,5 @@
 # Numerical derivatives
 
-type UpTri[N:static int,T] = object
-  d: array[(N*(N+1) div 2),T]
-
-func upTriIndex[N:static int](i,j:int): int =
-  # 0<=i<=j<N
-  # ((N+N+1-i)*i div 2) + j - i    # row major
-  ((1+j)*j div 2) + i    # col major
-
-proc `[]`[N,T](x: UpTri[N,T], i,j: int): T = x.d[upTriIndex[N](i,j)]
-proc `[]`[N,T](x: var UpTri[N,T], i,j: int): var T = x.d[upTriIndex[N](i,j)]
-proc `[]=`[N,T](x: var UpTri[N,T], i,j: int, y: T) = x.d[upTriIndex[N](i,j)] = y
-
 proc maxAbsElem(z: var auto, x: auto, y: auto) =
   when compiles(len(z)) and compiles(z[0]):
     # array, try element wise max and abs
@@ -38,24 +26,28 @@ template ndiffTemplate(derivative: untyped) {.dirty.} =
   ]#
   let s2 = scale*scale
   var dx = dx
-  var A: UpTri[ordMax, F]
+  var A: array[ordMax, F]
   for i in 0..<ordMax:
-    A[0,i] = derivative
-    # echo "A[0,",i,"] = ",A[0,i]
+    A[i] = derivative
+    # echo "A[0,",i,"] = ",A[i]
     dx /= scale
-    var b = s2
-    for j in 1..i:
-      var ai = A[j-1,i]
+  var b = s2
+  var c = 1.0/(b-1.0)
+  for j in countdown(ordMax-1,2):
+    for i in 0..<j:
+      var ai = A[i+1]
       ai *= b
-      let ai1 = A[j-1,i-1]
-      let c = 1.0/(b-1.0)
-      A[j,i] = (ai - ai1) * c
-      # echo "A[",j,",",i,"] = ",A[j,i]
-      b *= s2
-  let a = A[ordMax-1,ordMax-1]
-  let a1 = A[ordMax-2,ordMax-1]
-  let a2 = A[ordMax-2,ordMax-2]
-  maxAbsElem(err, a-a1, a-a2)
+      let ai1 = A[i]
+      A[i] = (ai - ai1) * c
+      # echo "A[",ordMax-j+1,",",i,"] = ",A[i]
+    b *= s2
+    c = 1.0/(b-1.0)
+  let a1 = A[1]
+  let a0 = A[0]
+  let a1b = a1*b
+  var a = a1b - a0
+  a *= c
+  maxAbsElem(err, a-a0, a-a1)
   r = a
 
 proc ndiff*[X,F](r: var F, err: var F, f: proc(x:X):F, x: X, dx: auto, scale:float=2.0, ordMax:static int=8) =
