@@ -159,6 +159,8 @@ p2s(`*=`)
 p2s(`/=`)
 p2s(iadd)
 p2s(isub)
+p2s(imul)
+p2s(idiv)
 p2s(inorm2)
 p3(imadd)
 p3(imsub)
@@ -270,3 +272,6 @@ template `+=`*(x: SomeNumber, y: Simd) =
 template exp*(xx: Simd[Indexed]): untyped =
   let x = xx
   exp(x[][x.indexedIdx])
+
+template dot*[X,Y:Simd](x: X, y: Y): auto =
+  x * y

@@ -433,6 +433,29 @@ proc mulVSV*(r: var auto; x,y: auto) {.alwaysInline.} =
   for i in fOpt(0,r.len.pred):
     mul(r[i], x, y[i])
 
+#[
+template mulVSV*(rr:typed; xx,yy:typed):untyped =
+  #subst(r,rr,x,xx,y,yy,tx,_,i,_):
+  subst(r,rr,x,xx,y,yy,i,_):
+    mixin load1, mul
+    assert(r.len == y.len)
+    #load(tx, x)
+    let txz = load1(x)
+    forO i, 0, r.len.pred:
+      mul(r[i], txz, y[i])
+template mulVSVU*(r: typed; x,y: typed): untyped =
+  mixin mul, `:=`
+  assert(r.len == y.len)
+  #forO i, 0, r.len.pred:
+  for i in fOpt(0,r.len.pred):
+    #mul(r[i], x, y[i])
+    r[i] := mul(x, y[i])
+template mulVSV*(r: typed; x,y: typed): untyped =
+  # prepMultipleAccess(x)
+  # prepLinearAccess(y)
+  flattenCallArgs(mulVSVU, r, x, y)
+]#
+
 template mulMMS*(r:typed; xx,yy:typed) =
   mixin mul
   block:

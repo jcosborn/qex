@@ -670,6 +670,7 @@ template dot*(r: var Sca1; x: Vec2; y: Vec3) =
 setBinop(dot, dot, Vec1, Vec2, evalType(dot(x[0],y[0])))
 
 proc dot*(x: Mat2; y: Mat3): auto {.inline,noInit.} =
+  mixin dot
   result = dot(x[0,0],y[0,0])
   forO j, 1, x.len.pred:
     result += dot(x[0,j],y[0,j])

@@ -10,14 +10,34 @@ template getCT*(x: float32): untyped = CT32
 template getCT*(x: typedesc[float]): untyped = CT
 template getCT*(x: typedesc[float32]): untyped = CT32
 
+template withCT*(ct: float, ex:untyped):auto =
+  block:
+    let CTold = CT
+    CT = ct
+    defer:
+      CT = CTold
+    ex
+
+template withCT*(ct, ct32: float, ex:untyped):auto =
+  block:
+    let CTold = CT
+    let CT32old = CT32
+    CT = ct
+    CT32 = ct32
+    defer:
+      CT = CTold
+      CT32 = CT32old
+    ex
+
 # passes if relative or absolute tolerance passes
 proc `~`*(x:SomeNumber, y:SomeNumber):bool =
   let ct = max(getCT(x),getCT(y))
+  result = not(isnan(x) or isnan(y))    # max may drop nan
   if ct > 0:
-    if x==0 or y==0: result = x==y
-    else: result = abs(x-y)/max(abs(x),abs(y)) <= ct
+    if x==0 or y==0: result = result and x==y
+    else: result = result and abs(x-y)/max(abs(x),abs(y)) <= ct
   if AT > 0:
-    result = result or (abs(x-y)<=AT)
+    result = result and (abs(x-y)<=AT)
   if not result: echo x," !~ ",y
 template `~`*(x,y:int):bool = `~`(float(x),float(y))
 template `~`*(x:int,y:float):bool = `~`(float(x),y)
@@ -29,15 +49,49 @@ proc `~`*(x:ComplexProxy,y:ComplexProxy2):bool =
     y2 = y.norm2
     d2 = norm2(x-y)
     ct = max(getCT(x.numberType),getCT(y.numberType))
+  result = not(isnan(x2) or isnan(y2))    # max may drop nan
   if ct > 0:
-    if x2==0 or y2==0: result = x==y
-    else: result = d2/max(x2,y2) <= ct*ct
+    if x2==0 or y2==0: result = result and x==y
+    else: result = result and d2/max(x2,y2) <= ct*ct
   if AT > 0:
-    result = result or d2<=AT*AT
-  if not result: echo x," !~ ",y
+    result = result and d2<=AT*AT
+  if not result:
+    echo x," !~ ",y
+    echo "norm err rel: ",sqrt(d2/max(x2,y2))," abs: ",sqrt(d2)
+
+proc `~`*(x:Vec1,y:Vec2):bool =
+  let
+    x2 = simdSum(x.norm2)/simdLength(x)
+    y2 = simdSum(y.norm2)/simdLength(y)
+    d2 = simdSum(norm2(x-y))/simdLength(x-y)
+    ct = max(getCT(x.numberType),getCT(y.numberType))
+  result = not(isnan(x2) or isnan(y2))    # max may drop nan
+  if ct > 0:
+    if x2==0 or y2==0: result = result and x==y
+    else: result = result and d2/max(x2,y2) <= ct*ct
+  if AT > 0:
+    result = result and d2<=AT*AT
+  if not result:
+    echo x," !~ ",y
+    echo "norm err rel: ",sqrt(d2/max(x2,y2))," abs: ",sqrt(d2)
+
+proc `~`*(x:Mat1,y:Mat2):bool =
+  let
+    x2 = simdSum(x.norm2)/simdLength(x)
+    y2 = simdSum(y.norm2)/simdLength(y)
+    d2 = simdSum(norm2(x-y))/simdLength(x-y)
+    ct = max(getCT(x.numberType),getCT(y.numberType))
+  result = not(isnan(x2) or isnan(y2))    # max may drop nan
+  if ct > 0:
+    if x2==0 or y2==0: result = result and x==y
+    else: result = result and d2/max(x2,y2) <= ct*ct
+  if AT > 0:
+    result = result and d2<=AT*AT
+  if not result:
+    echo x," !~ ",y
+    echo "norm err rel: ",sqrt(d2/max(x2,y2))," abs: ",sqrt(d2)
 
 proc `~`*(x,y:Field):bool =
-  result = true
   var
     x2,y2:float
     xt,yt:type(trace x)
@@ -47,6 +101,7 @@ proc `~`*(x,y:Field):bool =
     yt = y.trace
     x2 = x.norm2
     y2 = y.norm2
+  result = not(isnan(xt.norm2) or isnan(yt.norm2) or isnan(x2) or isnan(y2))    # max may drop nan
   block:
     let c = xt~yt
     result = result and c
@@ -78,7 +133,7 @@ proc `~`*(x,y:Field):bool =
         if not c:
           echo "trace of the field difference differs (CT)."
     if AT>0:
-      let c = result or (abs(t2) <= AT*AT and norm2(tt) <= AT*AT)
+      let c = abs(t2) <= AT*AT and norm2(tt) <= AT*AT
       result = result and c
       if not c:
         echo "norm2 of the field difference differs (AT)."
