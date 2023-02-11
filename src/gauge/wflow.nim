@@ -58,7 +58,7 @@ template gaugeFlow*(g: array|seq, steps: int, eps: float, measure: untyped): unt
             v := (-3.0/4.0)*epsnc*f[mu][e] - p[mu][e]
             let t = exp(v)*g[mu][e]
             g[mu][e] := t
-      let wflowT {.inject.} = t
+      let wflowT {.inject,used.} = t
       measure
       inc n
       if steps>0 and n>steps:

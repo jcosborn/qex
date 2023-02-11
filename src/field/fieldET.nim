@@ -147,7 +147,7 @@ proc newFarrElem[V:static[int],T](f:var Field[V,T]; l:Layout[V]; s:alignedMem[T]
   f.new()
   f.l = l
   f.s = s
-  f.s.data = cast[typeof(s.data)](cast[ByteAddress](s.data) + offset*l.nSitesOuter*s.stride)
+  f.s.data = cast[typeof(s.data)](cast[int](s.data) + offset*l.nSitesOuter*s.stride)
   f.elemSize = sizeOf(T)
 
 proc newFieldArray*[V:static[int],T](l:Layout[V]; t:typedesc[Field[V,T]]; n: int):FieldArray[V,T] {.noinit.} =

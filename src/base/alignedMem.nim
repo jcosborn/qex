@@ -52,6 +52,10 @@ proc setRawMemGcThreshold*(t: int) = rmGcThreshold = t
 
 proc freeRawMemRef*(rm: RawMemRef) =
   #echo "freeRawmemref"
+  #when defined(gcArc) or defined(gcOrc):
+  #  let t = unsafeAddr(rm[])
+  #  free(t[])
+  #else:
   free(rm[])
 proc newRawMemRef*(size: int): RawMemRef =
   #echo "newRawMemRef"
@@ -71,7 +75,7 @@ proc unsafeNewU*[T](a: var ref T, size: Natural) =
   {.emit: "#undef newObj".}
 
 proc ptrAlign[T](p:ptr T; a:int):ptr T =
-  let x = cast[ByteAddress](p)
+  let x = cast[int](p)
   let a1 = a - 1
   let y = x + (a1-((x+a1) mod a))
   #echo x, ":", y
@@ -110,7 +114,7 @@ template high*(s:alignedMem):untyped = s.len-1
 #  result = s.data[i]
 #template `[]`*[T](s:alignedMem[T], i:SomeInteger):untyped = s.data[i]
 template `[]`*[T](s: alignedMem[T], i:SomeInteger):untyped = s.data[i]
-template `[]=`*[T](s:var alignedMem[T], i:SomeInteger, v:untyped) =
+template `[]=`*[T](s:var alignedMem[T], i:SomeInteger, v:typed) =
   s.data[i] = v
 
 when isMainModule:
@@ -123,9 +127,9 @@ when isMainModule:
     stats()
     var x: alignedMem[float]
     newAlignedMem(x, 10)
-    let c0 = cast[ByteAddress](x.mem.data)
+    let c0 = cast[int](x.mem.data)
     echo c0, " ", toHex(c0,8)
-    let x0 = cast[ByteAddress](x[0].addr)
+    let x0 = cast[int](x[0].addr)
     echo x0, " ", toHex(x0,8)
     for i in x.low..x.high:
       x[i] = float(i)

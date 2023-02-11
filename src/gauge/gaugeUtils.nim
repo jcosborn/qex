@@ -865,9 +865,13 @@ proc singleshift[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]):F =
   result = f
   for mu,n in sh.pairs:
     if n>0:
-      result = sb[mu] ^* result
+      #result = sb[mu] ^* result
+      let t = sb[mu] ^* result
+      result = t
     elif n<0:
-      result = sf[mu] ^* result
+      #result = sf[mu] ^* result
+      let t = sf[mu] ^* result
+      result = t
 
 proc multishifts[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]):F =
   # f will be used as temporary and overwritten.

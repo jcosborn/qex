@@ -79,7 +79,8 @@ template `[]=`*(x: Simd, i: typed, y: typed): untyped =
   else:
     x[][stripSimdAsView i] = doIndexed(y)
 
-template attrib(att: untyped): untyped {.dirty.} =
+template attrib(att: untyped) {.dirty.} =
+  # FIXME: sometimes return typedesc, maybe auto?
   template att*[T](x: typedesc[Simd[T]]): untyped =
     mixin att
     att(T)
@@ -92,7 +93,7 @@ attrib(numNumbers)
 attrib(simdType)
 attrib(simdLength)
 
-template noSimd*[T](x: typedesc[Simd[T]]): untyped =
+template noSimd*[T](x: typedesc[Simd[T]]): typedesc =
   numberType(type T)
 
 # no return value
@@ -104,10 +105,11 @@ template p2(f: untyped) {.dirty.} =
     #static: echo "  ", y.type
     mixin f
     #f(x[], y[])
-    when numberType(T1) is numberType(T2):
-      f(x[], doIndexed(y[]))
-    else:
-      f(x[], y.toPrec(numberType(T1))[])
+    #when numberType(T1) is numberType(T2):
+    #  f(x[], doIndexed(y[]))
+    #else:
+    #  f(x[], y.toPrec(numberType(T1))[])
+    f(x[], y.toPrec(numberType(T1))[])
 
 template p2s(f: untyped) {.dirty.} =
   template f*(x: var Simd, y: SomeNumber) =
@@ -121,6 +123,7 @@ template p2s(f: untyped) {.dirty.} =
 template p3(f: untyped) {.dirty.} =
   template f*[T1,T2,T3](x: var Simd[T1], y: Simd[T2], z: Simd[T3]) =
     mixin f
+    #[
     when numberType(T1) is numberType(T2):
       when numberType(T1) is numberType(T3):
         f(x[], doIndexed(y[]), doIndexed(z[]))
@@ -131,14 +134,18 @@ template p3(f: untyped) {.dirty.} =
         f(x[], y.toPrec(numberType(T1))[], doIndexed(z[]))
       else:
         f(x[], y.toPrec(numberType(T1))[], z.toPrec(numberType(T1))[])
+    ]#
+    f(x[], y.toPrec(numberType(T1))[], z.toPrec(numberType(T1))[])
 
 template p3s(f: untyped) {.dirty.} =
-  template f*(x: var Simd, y: SomeNumber, z: Simd3) =
+  template f*[T1,T3](x: var Simd[T1], y: SomeNumber, z: Simd[T3]) =
     mixin f
-    f(x[], y, z[])
-  template f*(x: var Simd, y: Simd2, z: SomeNumber) =
+    #f(x[], y, z[])
+    f(x[], y, z.toPrec(numberType(T1))[])
+  template f*[T1,T2](x: var Simd[T1], y: Simd[T2], z: SomeNumber) =
     mixin f
-    f(x[], y[], z)
+    #f(x[], y[], z)
+    f(x[], y.toPrec(numberType(T1))[], z)
   p3(f)
 
 p2(neg)
