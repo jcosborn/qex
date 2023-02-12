@@ -38,24 +38,66 @@ template asImagProxy*[T](x: typedesc[T]): typedesc = ImagProxy[type T]
 template asComplexProxy*[T](x: T): auto = ComplexProxy[type T](v: x)
 template asComplexProxy*[T](x: typedesc[T]): typedesc = ComplexProxy[type T]
 
-template `[]`*(x: RealProxy): untyped = x.v
-macro `[]`*(x: RealProxy{nkObjConstr}): auto =
-  #echo x.treerepr
-  result = x[1][1]
-  #echo result.treerepr
+template `[]`*[T](x: RealProxy[T]): auto =
+  when T is ptr:
+    x.v[]
+  else:
+    x.v
 
-template `[]`*(x: ImagProxy): untyped = x.v
-macro `[]`*(x: ImagProxy{nkObjConstr}): auto =
-  #echo x.treerepr
-  result = x[1][1]
-  #echo result.treerepr
+macro `[]`*[T](x: RealProxy[T]{nkObjConstr}): auto =
+  when T is ptr:
+    result = newBracketExpr(x[1][1])
+  else:
+    result = x[1][1]
 
-template `[]`*(x: ComplexProxy): untyped = x.v
-macro `[]`*(x: ComplexProxy{nkObjConstr}): auto =
+template `[]`*[T](x: ImagProxy[T]): auto =
+  when T is ptr:
+    x.v[]
+  else:
+    x.v
+macro `[]`*[T](x: ImagProxy[T]{nkObjConstr}): auto =
+  when T is ptr:
+    result = newBracketExpr(x[1][1])
+  else:
+    result = x[1][1]
+
+template isWrapper*(x: RealProxy): auto = true
+template asWrapper*(x: RealProxy, y: typed): auto =
+  asRealProxy(y)
+template asVarWrapper*(x: RealProxy, y: typed): auto =
+  asVar(asRealProxy(y))
+template isWrapper*(x: ImagProxy): auto = true
+template asWrapper*(x: ImagProxy, y: typed): auto =
+  asImagProxy(y)
+template asVarWrapper*(x: ImagProxy, y: typed): auto =
+  asVar(asImagProxy(y))
+template isWrapper*(x: ComplexProxy): auto = true
+template asWrapper*(x: ComplexProxy, y: typed): auto =
+  asComplexProxy(y)
+template asWrapper*(x: typedesc[ComplexProxy], y: typed): auto =
+  asComplexProxy(y)
+template asVarWrapper*(x: ComplexProxy, y: typed): auto =
+  asVar(asComplexProxy(y))
+
+template `[]`*[T](x: typedesc[ComplexProxy[T]]): typedesc =
+  when T is ptr:
+    T.type[]
+  else:
+    T.type
+
+template `[]`*[T](x: ComplexProxy[T]): auto =
+  when T is ptr:
+    x.v[]
+  else:
+    x.v
+macro `[]`*[T](x: ComplexProxy[T]{nkObjConstr}): auto =
   #echo x.treerepr
-  result = x[1][1]
+  when T is ptr:
+    result = newBracketExpr(x[1][1])
+  else:
+    result = x[1][1]
   #echo result.treerepr
-macro `[]`*(x: ComplexProxy{nkStmtListExpr}): untyped =
+macro `[]`*[T](x: ComplexProxy[T]{nkStmtListExpr}): auto =
   #echo x.treerepr
   result = newNimNode(nnkStmtListExpr)
   for i in 0..(x.len-2):
@@ -88,6 +130,7 @@ proc `$`*(x: RealProxy): string =
 proc `$`*(x: ImagProxy): string =
   result = $x[] & "I"
 proc `$`*(x: ComplexProxy): string =
+  mixin re, im
   #result = "(" & $x.reX & "," & $x.imX & ")"
   result = $x[].re
   var t = $x[].im & "I"
@@ -117,6 +160,8 @@ template newImagProxy*[T](x: T): untyped =
 #  ComplexProxy[type(T)](v: x)
 #template newComplexProxy*(x: typed): untyped =
 #  flattenCallArgs(newComplexProxyU, x)
+template newComplexProxy*[T](x: typedesc[T]): typedesc =
+  ComplexProxy[type(T)]
 template newComplexProxy*[T](x: T): untyped =
   ComplexProxy[type(T)](v: x)
 #template newComplexProxy*(x: typed{call}): untyped =
@@ -137,10 +182,10 @@ template im*(x: ImagProxy): untyped = x[]
 template re*(x: ComplexProxy): untyped = x[].re
 template im*(x: ComplexProxy): untyped = x[].im
 
-template `re=`*(x: RealProxy, y: untyped) = x[] = y
-template `im=`*(x: RealProxy, y: untyped) = discard
-template `re=`*(x: ImagProxy, y: untyped) = discard
-template `im=`*(x: ImagProxy, y: untyped) = x[] = y
+template `re=`*(x: RealProxy, y: typed) = x[] = y
+template `im=`*(x: RealProxy, y: typed) = discard
+template `re=`*(x: ImagProxy, y: typed) = discard
+template `im=`*(x: ImagProxy, y: typed) = x[] = y
 template `re=`*(x: ComplexProxy, y: typed) = x[].re = y
 template `im=`*(x: ComplexProxy, y: typed) = x[].im = y
 

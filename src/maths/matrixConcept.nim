@@ -21,8 +21,8 @@ import simd/simdWrap
 # sqrt,rsqrt,exp,log,groupProject,groupCheck
 # mapX(f,x,r),mapXY(f,x,y,r)
 
-template createAsType2(t,c:untyped):untyped =
-  mixin `[]`
+template createAsType2(t,c:untyped) =
+  mixin `[]`, index
   #makeWrapper(t, c)
   makeWrapperType(t)
   template `[]`*[T](x: t; i: T): untyped =
@@ -32,6 +32,14 @@ template createAsType2(t,c:untyped):untyped =
       indexed(x, i)
     else:
       x[][i]
+  template index*[X:t,T](x: typedesc[X]; i: typedesc[T]): typedesc =
+    mixin index
+    when T is t:
+      index(X[], T[])
+    elif T.isWrapper:
+      c(index(X.type[], type T))
+    else:
+      index(X[], T)
   template `[]`*(x: t; i: Scalar): untyped = c(x[][i])
   template `[]`*(x:t; i,j:SomeInteger):untyped =
     #echoType: x
@@ -186,6 +194,22 @@ template asVectorArray*[N:static[int],T](x: array[N,T]): untyped =
   #let t = asVector(t1)
   #static: echo "asVectorArray2"
   #t
+template asVectorArray*[T](N:static[int], x: typedesc[T]): untyped =
+  asVector( VectorArrayObj[N,type(T)] )
+
+template index*[I:static[int],T,K](x: typedesc[VectorArrayObj[I,T]];
+                                   k: typedesc[K]): typedesc =
+  when K.isWrapper:
+    VectorArrayObj[I,index(type T, type K)]
+  else:
+    false # error
+
+template index*[I,J:static[int],T,K](x: typedesc[MatrixArrayObj[I,J,T]];
+                                     k: typedesc[K]): typedesc =
+  when K.isWrapper:
+    MatrixArrayObj[I,J,index(type T, type K)]
+  else:
+    false # error
 
 template `len`*(x:MatrixArrayObj):untyped = x.I
 template nrows*(x:MatrixArrayObj):untyped = x.I
@@ -264,10 +288,10 @@ template toSingle*[T](x: typedesc[AsVector[T]]): untyped =
   AsVector[toSingle(type(T))]
 template toSingleImpl*(x: VectorArrayObj): untyped =
   mixin toSingleX
-  toSingleX(toDerefPtr x)
+  toSingleX(toRef x)
 template toSingleImpl*(x: MatrixArrayObj): untyped =
   mixin toSingleX
-  toSingleX(toDerefPtr x)
+  toSingleX(toRef x)
 
 template toDouble*[I,T](x: typedesc[VectorArrayObj[I,T]]): untyped =
   mixin toDouble
@@ -276,10 +300,10 @@ template toDouble*[T](x: typedesc[AsVector[T]]): untyped =
   AsVector[toDouble(type(T))]
 template toDoubleImpl*(x: VectorArrayObj): untyped =
   mixin toDoubleX
-  toDoubleX(toDerefPtr x)
+  toDoubleX(toRef x)
 template toDoubleImpl*(x: MatrixArrayObj): untyped =
   mixin toDoubleX
-  toDoubleX(toDerefPtr x)
+  toDoubleX(toRef x)
 
 #template masked*(x: AsMatrix, msk: typed): untyped =
 #  static: echo "masked AsMatrix"
