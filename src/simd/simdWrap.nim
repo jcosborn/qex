@@ -75,9 +75,9 @@ template stripSimdAsView*(x: AsView): untyped = stripSimdAsView x[]
 template stripSimdAsView*(x: Simd): untyped = stripSimdAsView x[]
 template `[]=`*(x: Simd, i: typed, y: typed): untyped =
   when y is Simd:
-    x[][stripSimdAsView i] = doIndexed(y[])
+    x[][stripSimdAsView i] = eval(y[])
   else:
-    x[][stripSimdAsView i] = doIndexed(y)
+    x[][stripSimdAsView i] = eval(y)
 
 template attrib(att: untyped) {.dirty.} =
   # FIXME: sometimes return typedesc, maybe auto?

@@ -46,12 +46,10 @@ template `[]`*[T](x: RealProxy[T]): auto =
     x.v
 
 macro `[]`*[T](x: RealProxy[T]{nkObjConstr}): auto =
-  #echo x.treerepr
   when T is ptr:
     result = newBracketExpr(x[1][1])
   else:
     result = x[1][1]
-  #echo result.treerepr
 
 template `[]`*[T](x: ImagProxy[T]): auto =
   when T is ptr:
@@ -59,12 +57,10 @@ template `[]`*[T](x: ImagProxy[T]): auto =
   else:
     x.v
 macro `[]`*[T](x: ImagProxy[T]{nkObjConstr}): auto =
-  #echo x.treerepr
   when T is ptr:
     result = newBracketExpr(x[1][1])
   else:
     result = x[1][1]
-  #echo result.treerepr
 
 template isWrapper*(x: RealProxy): auto = true
 template asWrapper*(x: RealProxy, y: typed): auto =

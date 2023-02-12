@@ -21,8 +21,8 @@ import simd/simdWrap
 # sqrt,rsqrt,exp,log,groupProject,groupCheck
 # mapX(f,x,r),mapXY(f,x,y,r)
 
-template createAsType2(t,c:untyped):untyped =
-  mixin `[]`
+template createAsType2(t,c:untyped) =
+  mixin `[]`, index
   #makeWrapper(t, c)
   makeWrapperType(t)
   template `[]`*[T](x: t; i: T): untyped =
@@ -33,6 +33,7 @@ template createAsType2(t,c:untyped):untyped =
     else:
       x[][i]
   template index*[X:t,T](x: typedesc[X]; i: typedesc[T]): typedesc =
+    mixin index
     when T is t:
       index(X[], T[])
     elif T.isWrapper:

@@ -120,24 +120,10 @@ template toSingle*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): typedesc =
 template toSingle*[T](x: typedesc[ComplexProxy[T]]): typedesc =
   ComplexProxy[toSingle(type(T))]
 
-#[
-template imaddCRC*(r: untyped, x: untyped, y: untyped) =
-  r.re += x * y.re
-  r.im += x * y.im
-template imaddCIC*(r: untyped, x: untyped, y: untyped) =
-  r.re -= x * y.im
-  r.im += x * y.re
-template imaddCCR*(r: untyped, x: untyped, y: untyped) =
-  r.re += x.re * y
-  r.im += x.im * y
-template imaddCCI*(r: untyped, x: untyped, y: untyped) =
-  r.re -= x.im * y
-  r.im += x.re * y
-]#
-
 template load1*(x: ComplexProxy): auto = x
 template load1*(x: RealProxy): auto = x
 template load1*(x: ImagProxy): auto = x
+
 template eval*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): typedesc =
   mixin eval
   complexObj(eval(typeof TR), eval(typeof TI))
@@ -253,9 +239,8 @@ proc mul*[R,X,Y:ComplexProxy](r: var R, x: X, y: Y) {.alwaysInline.} =
   r.re = x.re*y.re - x.im*y.im
   r.im = x.re*y.im + x.im*y.re
 
-
 template imadd*(r: SomeNumber, x: ImagProxy2, y: ImagProxy3) =  r -= x*y
-template imadd*(r: ImagProxy, x: ImagProxy2, y: SomeNumber) =  r -= x*y
+template imadd*(r: ImagProxy, x: ImagProxy2, y: SomeNumber) =  r += x*y
 
 proc imadd*[R,Y:ComplexProxy;X:RealProxy](r: var R, x: X, y: Y) {.alwaysInline.} =
 #template imadd*[R,Y:ComplexProxy;X:RealProxy](r: R, xx: X, yy: Y) =
