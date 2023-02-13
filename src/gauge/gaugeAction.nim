@@ -60,7 +60,7 @@ proc gaugeAction1*[T](c: GaugeActionCoeffs, uu: openarray[T]): auto =
   let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
   let lo = u[0].l
   let nd = lo.nDim
-  let np = (nd*(nd-1)) div 2
+  #let np = (nd*(nd-1)) div 2
   let nc = u[0][0].ncols
   var cs = startCornerShifts(uu)
   toc("gaugeAction startCornerShifts")
