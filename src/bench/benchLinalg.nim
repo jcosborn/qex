@@ -31,6 +31,7 @@ macro exp2string(x:untyped):auto =
   let n = skipWhitespace(s)
   newlit s[n..^1]
 
+#[
 proc checkMem =
   echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
        getTotalMem())
@@ -39,6 +40,7 @@ proc checkMem =
   echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
        getTotalMem())
   echo GC_getStatistics()
+]#
 
 # fps: flops per site
 # bps: bytes moved (load+store) per site
@@ -125,8 +127,7 @@ proc test(lat:auto) =
 
   bench(mvf, mb+2*vb, mb+2*vb):
     for e in v2:
-      optimizeAst:
-        mulVMV(v2[e], m1[e], v1[e])
+      mulVMV(v2[e], m1[e], v1[e])
 
   bench(mvf, mb+2*vb, mb+2*vb):
     v2 := m1.adj * v1
@@ -150,9 +151,8 @@ proc test(lat:auto) =
 
   bench(nc*mvf, 3*mb, 3*mb):
     for e in m3:
-      optimizeAst:
-        mulMMM(m3[e], m1[e].adj, m2[e])
-        #mulMMM(m3[e], m1[e], m2[e])
+      mulMMM(m3[e], m1[e].adj, m2[e])
+      #mulMMM(m3[e], m1[e], m2[e])
 
   bench(nc*mvf, 3*mb, 3*mb):
     for e in m3:
