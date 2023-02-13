@@ -1,6 +1,7 @@
 import base/basicOps
-import ../base/wrapperTypes
-import ../maths/types
+import base/wrapperTypes
+import base/numberWrap
+import maths/types
 #import ../maths/complexNumbers
 #export complexNumbers
 
@@ -11,9 +12,10 @@ type
   Simd3*[T] = Simd[T]
 
 #template asSimd*(x: Indexed): untyped = x[]
-template asSimd*(x: Indexed): untyped =
+template asSimd*[T,I](x: Indexed[T,I]): untyped =
   #asReal(x)
-  asScalar(x)
+  #asScalar(x)
+  asWrapper(numberType T, x)
 
 template `[]`*[T](x: Simd[T]): untyped =
   when T is (RefWrap|ptr):
@@ -21,17 +23,10 @@ template `[]`*[T](x: Simd[T]): untyped =
   else:
     derefXX(x)
 template `[]`*[T](x: typedesc[Simd[T]]): typedesc =
-  #static: echo "x: ", x, " []: ", T.type
   when T is (RefWrap|ptr):
     T.type[]
   else:
     T.type
-#[
-template `[]`*[T](x: typedesc[Simd[T]]): untyped =
-    T.type
-template `[]`*[T](x: typedesc[Simd[RefWrap[T]]]): untyped =
-    T.type[]
-]#
 
 # assume these don't have any lazy evaluations   # FIXME could be toDouble, etc.
 template eval*[T](x: typedesc[Simd[T]]): typedesc =
@@ -57,14 +52,6 @@ template `[]`*(x: Simd, i: typed): untyped =
 template index*[T,I](x: typedesc[Simd[T]], i: typedesc[I]): typedesc =
   numberType(T)
 
-#template doIndexed[T](x: T): untyped =
-#  when T is Indexed:
-#    x[]
-#  else:
-#    x
-#template doIndexed[T](x: T): untyped = x
-#template doIndexed(x: Indexed): untyped = doIndexed x[]
-#template doIndexed(x: Scalar): untyped = doIndexed x[]
 template doIndexed[T](x: T): untyped = eval(x)
 
 template toPrec*(x: Simd, y: typedesc[float32]): untyped = toSingle(x)
@@ -98,54 +85,28 @@ template noSimd*[T](x: typedesc[Simd[T]]): typedesc =
 
 # no return value
 template p2(f: untyped) {.dirty.} =
-  #template f*(x: var Simd, y: Simd2) =
   template f*[T1,T2](x: var Simd[T1], y: Simd[T2]) =
-    #static: echo "f Simd Simd"
-    #static: echo "  ", x.type
-    #static: echo "  ", y.type
     mixin f
-    #f(x[], y[])
-    #when numberType(T1) is numberType(T2):
-    #  f(x[], doIndexed(y[]))
-    #else:
-    #  f(x[], y.toPrec(numberType(T1))[])
     f(x[], y.toPrec(numberType(T1))[])
 
 template p2s(f: untyped) {.dirty.} =
-  template f*(x: var Simd, y: SomeNumber) =
-    #static: echo "f Simd Somenumber"
-    #static: echo "  ", x.type
-    #static: echo "  ", y.type
+  template f*(x: var Simd, y: Number) =
     mixin f
-    f(x[], y)
+    f(x[], eval(y))
   p2(f)
 
 template p3(f: untyped) {.dirty.} =
   template f*[T1,T2,T3](x: var Simd[T1], y: Simd[T2], z: Simd[T3]) =
     mixin f
-    #[
-    when numberType(T1) is numberType(T2):
-      when numberType(T1) is numberType(T3):
-        f(x[], doIndexed(y[]), doIndexed(z[]))
-      else:
-        f(x[], doIndexed(y[]), z.toPrec(numberType(T1))[])
-    else:
-      when numberType(T1) is numberType(T3):
-        f(x[], y.toPrec(numberType(T1))[], doIndexed(z[]))
-      else:
-        f(x[], y.toPrec(numberType(T1))[], z.toPrec(numberType(T1))[])
-    ]#
     f(x[], y.toPrec(numberType(T1))[], z.toPrec(numberType(T1))[])
 
 template p3s(f: untyped) {.dirty.} =
-  template f*[T1,T3](x: var Simd[T1], y: SomeNumber, z: Simd[T3]) =
+  template f*[T1,T3](x: var Simd[T1], y: Number, z: Simd[T3]) =
     mixin f
-    #f(x[], y, z[])
-    f(x[], y, z.toPrec(numberType(T1))[])
-  template f*[T1,T2](x: var Simd[T1], y: Simd[T2], z: SomeNumber) =
+    f(x[], eval(y), z.toPrec(numberType(T1))[])
+  template f*[T1,T2](x: var Simd[T1], y: Simd[T2], z: Number) =
     mixin f
-    #f(x[], y[], z)
-    f(x[], y.toPrec(numberType(T1))[], z)
+    f(x[], y.toPrec(numberType(T1))[], eval(z))
   p3(f)
 
 p2(neg)
@@ -171,15 +132,14 @@ p3s(divd)
 
 
 # with return value
-template f1(f: untyped): untyped {.dirty.} =
-  template f*(x: Simd): untyped =
+template f1(f: untyped) {.dirty.} =
+  template f*(x: Simd): auto =
     mixin f
     asSimd(f(x[]))
 
-template f2(f: untyped): untyped {.dirty.} =
-  template f*[T1,T2](x: Simd[T1], y: Simd[T2]): untyped =
+template f2(f: untyped) {.dirty.} =
+  template f*[T1,T2](x: Simd[T1], y: Simd[T2]): auto =
     mixin f
-    #static: echo numberType(T1), " ", numberType(T2)
     when numberType(T1) is numberType(T2):
       asSimd(f(x[], y[]))
     elif numberType(T1) is float64:
@@ -187,11 +147,11 @@ template f2(f: untyped): untyped {.dirty.} =
     else:
       asSimd(f(x[].toDoubleImpl, y[]))
 
-template f2s(f: untyped): untyped {.dirty.} =
-  template f*(x: Simd, y: SomeNumber): untyped =
+template f2s(f: untyped) {.dirty.} =
+  template f*(x: Simd, y: SomeNumber): auto =
     mixin f
     asSimd(f(x[], y))
-  template f*(x: SomeNumber, y: Simd): untyped =
+  template f*(x: SomeNumber, y: Simd): auto =
     mixin f
     asSimd(f(x, y[]))
   f2(f)
@@ -208,7 +168,7 @@ f1(load1)
 f2(atan2)
 f2s(`+`)
 f2s(`-`)
-#f2s(`*`)
+f2s(`*`)
 f2s(`/`)
 f2s(add)
 f2s(sub)
@@ -216,9 +176,9 @@ f2s(mul)
 f2s(min)
 f2s(max)
 
-setBinop(`*`,mul,Simd,Simd2,asSimd(type(x[]*y[])))
-setBinop(`*`,mul,Simd,SomeNumber,asSimd(type(x[]*y)))
-setBinop(`*`,mul,SomeNumber,Simd2,asSimd(type(x*y[])))
+#setBinop(`*`,mul,Simd,Simd2,asSimd(type(x[]*y[])))
+#setBinop(`*`,mul,Simd,SomeNumber,asSimd(type(x[]*y)))
+#setBinop(`*`,mul,SomeNumber,Simd2,asSimd(type(x*y[])))
 
 # special cases
 
