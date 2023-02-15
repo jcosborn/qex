@@ -644,7 +644,8 @@ proc diffCrossProjectTAH*(r: var Mat1, Adx: Mat2, dp: Mat3) =
   r := dp * Adx
 
 proc diffExp*(r: var Mat1, adX: Mat2, order=13) =
-  ## return J(X) = (1-exp{-adX})/adX = Σ_{k=0}^\infty 1/(k+1)! (-adX)^k  upto k=order
+  ## return r_{ba} = - 2 ∂_{x_a} Tr[T^b exp(x_a T_a) exp(-x)] = J(-X)
+  ## where J(X) = (1-exp{-adX})/adX = Σ_{k=0}^\infty 1/(k+1)! (-adX)^k  upto k=order
   #[
     [exp{-X(t)} d/dt exp{X(t)}]_ij = [J(X) d/dt X(t)]_ij = T^a_ij J(X)^ab (-2) T^b_kl [d/dt X(t)]_lk
     J(X) = 1 + 1/2 (-adX) (1 + 1/3 (-adX) (1 + 1/4 (-adX) (1 + ...)))
@@ -663,19 +664,53 @@ proc diffExp*(r: var Mat1, adX: Mat2, order=13) =
         = ∫_0^1 ds Σ_{k=0} 1/k! (-1)^k s^k (adx)^k ∂_t x
         = Σ_{k=0} 1/(k+1)! (-1)^k (adx)^k ∂_t x
   ]#
-  r := 1.0 + (-1.0)/(order+1.0) * adX
+  r := 1.0 + 1.0/(order+1.0) * adX
   for i in countdown(order, 2):
-    r := 1.0 + (-1.0)/float(i) * (adX * r)
+    r := 1.0 + 1.0/float(i) * (adX * r)
 
-proc smearIndepLogDetJacobian*(F:var Mat1, X: Mat1, Y: Mat2, diffExpOrder=13): auto =
-  ## return T^b ∂_b tr[X Y† + Y X†], and log det(∂Z/∂X)
+proc smearIndepLogDetJacobian*(F:var Mat1, M: Mat1, diffExpOrder=13): auto =
+  ## return F = T^b ∂_b tr[X Y† + Y X†], and log det(∂Z/∂X)
+  ## with M = X Y†
   ## assuming X and Y are independent.
-  ## Z = exp(T^b ∂_b tr[X Y† + Y X†]) X,  for X in G, and ∂_b X = T_b X
-  let M = X * Y.adj
+  ## Only works with positive det(∂Z/∂X).
+  #[
+    Z = exp(ε T^b ∂_b tr[X Y† + Y X†]) X,  for X,Y in G, and ∂_b X = T_b X
+    M = ε X Y†,  M in G
+    Z = exp(F) X,  F in g
+    F = T^b ∂_b tr[M + M†]
+      = T^b tr[T^b M - M† T^b]
+      = T^b tr[T^b (M - M†)]
+    ∂_c Z = exp(F) T^c X + exp(F) J(F)[∂_c F] X
+          = exp(F) { T^c + exp(F) J(F)[∂_c F] } exp(-F) Z
+          = exp(adF)[T^c + J(F)[∂_c F]] Z
+          = exp(adF)[T^c + T^e J(F)^eb [∂_c F]^b] Z
+          = T^a { exp(adF)^ac + [exp(adF)J(F)]^ab [∂_c F]^b } Z
+          = T^a { exp(adF)^ac + [(exp(adF)-1)/adF]^ab [∂_c F]^b } Z
+          = T^a { exp(adF)^ac + J(-F)^ab [∂_c F]^b } Z
+    [∂_c F]^b = ∂_c ∂_b tr[M + M†]
+              = tr[T^b T^c M + M† T^c T^b]
+              = 1/2 tr[{T^b,T^c} (M + M†)] + 1/2 tr[[T^b,T^c] (M - M†)]
+              = 1/2 { d^bcd tr[T^d i (M + M†)] - 1/3 δ^bc tr[M + M†] + f^bcd tr[T^d (M - M†)] }
+              = 1/2 { d^bcd tr[T^d i (M + M†)] - 1/3 δ^bc tr[M + M†] + f^bcd F^d }
+              = 1/2 { d^bcd tr[T^d i (M + M†)] - 1/3 δ^bc tr[M + M†] - adF^bc }
+    -2 tr[(∂_c Z) Z† T^a]
+        = exp(adF)^ac + J(-F)^ab [∂_c F]^b
+        = exp(adF)^ac
+          + 1/2 [(exp(adF)-1)/adF]^ab {d^bcd tr[T^d i (M + M†)] - 1/3 δ^bc tr[M + M†]}
+          - 1/2 [(exp(adF)-1)]^ac
+        = 1/2 { [(exp(adF)+1)]^ac + [(exp(adF)-1)/adF]^ab {d^bcd tr[T^d i (M + M†)] - 1/3 δ^bc tr[M + M†]} }
+        = 1/2 { [(exp(adF)+1)]^ac + J(-F)^ab {d^bcd tr[T^d i (M + M†)] - 1/3 δ^bc tr[M + M†]} }
+    det(-2 tr[(∂_c Z) Z† T^a])
+        = det(exp(adF)^ac + J(-F)^ab [∂_c F]^b)
+        = det(δ^ac + J(F)^ab [∂_c F]^b)
+  ]#
   F.projectTAH(M)
-  var dadF = suad(F)
-  dadF.diffExp(dadF, order=diffExpOrder)
-  var j = diffprojectTAH(M,F)
+  F := -F
+  type A = evalType(suad(F))
+  var j,dadF:A
+  dadF.suad F
+  dadF.diffExp(-dadF, order=diffExpOrder)
+  j.diffProjectTAH(-M,F)
   j := 1.0 + dadF * j
   let D = ln(determinant(j))
   D
@@ -722,7 +757,7 @@ proc ndiffSUtoAlg*(r: var Mat1, err: var Mat2, f: proc, x: Mat3, dx:float=2.0, s
 proc ndiffAlgtoSU*(r: var Mat1, err: var Mat2, f: proc, x: Mat3, dx:float=0.1, scale:float=5.0, ordMax:static int=4) =
   ## for a function f: su(n) → SU(N)
   ## return the jacobian in the vector space of su(n) algebra
-  ## r_{ba} = - 2 ∂_{x_a} Tr[T^b f(x)† f(x_a T_a)]
+  ## r_{ba} = - 2 ∂_{x_a} Tr[T^b f(x_a T_a) f(x)†]
   ## using numerical differentiation, algarithms.numdiff.ndiff
   type T = evalType(x[0,0].re)
   type V = evalType(suToVec(x))
@@ -735,7 +770,29 @@ proc ndiffAlgtoSU*(r: var Mat1, err: var Mat2, f: proc, x: Mat3, dx:float=0.1, s
   let fx = f(x)
   for a in 0..<t.len:
     ndiff(dr, er,
-      proc (l:T):V {.noinit.} = result.suToVec(fx.adj * f(l*t[a]+x)),
+      proc (l:T):V {.noinit.} = result.suToVec(f(l*t[a]+x) * fx.adj),
+      z, d, scale=scale, ordMax=ordMax)
+    for b in 0..<t.len:
+      r[b,a] = dr[b]
+      err[b,a] = er[b]
+
+proc ndiffSUtoSU*(r: var Mat1, err: var Mat2, f: proc, x: Mat3, dx:float=0.1, scale:float=5.0, ordMax:static int=4) =
+  ## for a function f: SU(N) → SU(N)
+  ## return the jacobian in the vector space of su(n) algebra
+  ## r_{ba} = - 2 ∂_{l_a} Tr[T^b f(exp(l_a T_a) x) f(x)†]
+  ## using numerical differentiation, algarithms.numdiff.ndiff
+  type T = evalType(x[0,0].re)
+  type V = evalType(suToVec(x))
+  const nc = x.nrows
+  var z,d:T
+  var dr,er:V
+  z := 0.0
+  d := dx
+  const t = sugen(nc)
+  let fx = f(x)
+  for a in 0..<t.len:
+    ndiff(dr, er,
+      proc (l:T):V {.noinit.} = result.suToVec(f(exp(l*t[a])*x) * fx.adj),
       z, d, scale=scale, ordMax=ordMax)
     for b in 0..<t.len:
       r[b,a] = dr[b]
