@@ -10,7 +10,7 @@ import parseopt # For parsing command line arguments
 import tables # For organizing data
 import sequtils # For dealing with sequences
 import math # Basic mathematical operations
-import gauge/wflow # For intermediate measurements
+import flow # For intermediate measurements
 
 #[ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -44,11 +44,22 @@ var attrName = ""
 # Initialize attribute value
 var attrVal = ""
 
+# Define maximum flow times
+var max_flts = newseq[float](0)
+
+# Define dt's
+var dts = newseq[float](0)
+
 # Define integer parameters
 var int_prms = {"Ns" : 0, "Nt" : 0, "f_munu_loop" : 0}.toTable
 
 # Define float parameters
-var flt_prms = {"dt" : 0.1, "t_max" : 0.0}.toTable
+var flt_prms = {"t_max" : 0.0, "beta_w" : 1.0,
+                "beta_r" : 1.0, "c1" : 1.0, "beta_a" : 1.0,
+                "adj_plaq" : -0.25}.toTable
+
+# Define string parameters
+var str_prms = {"flow_act" : "Wilson"}.toTable
 
 # Initialize starting trajectory
 var start_config = 0
@@ -247,6 +258,15 @@ proc initialize_gauge_field_and_params(): auto =
                elif flt_prms.hasKey(attrName):
                   # Save parameter
                   flt_prms[attrName] = parseFloat(attrVal)
+               elif str_prms.hasKey(attrName):
+                  # Save parameter
+                  str_prms[attrName] = attrVal
+               elif attrName[0..3] == "time":
+                  # Add to list of times
+                  max_flts.add(parseFloat(attrVal))
+               elif attrName[0..1] == "dt":
+                  # Add to list of increments
+                  dts.add(parseFloat(attrVal))
 
                # Print variable
                echo attrName & ": " & attrVal
@@ -271,19 +291,56 @@ proc initialize_gauge_field_and_params(): auto =
    # Create new gauge
    var g = lo.newgauge
 
+   #[ Initialize gauge action coefficients ]#
+
+   # Initialize gauge action coefficients
+   var gc: GaugeActionCoeffs
+
+   # Start case for setting coefficeints
+   case str_prms["flow_act"]
+      of "Wilson": gc = GaugeActionCoeffs(plaq: flt_prms["beta_w"])
+      of "adj": gc = GaugeActionCoeffs(plaq: flt_prms["beta_a"], 
+                                       adjplaq: flt_prms["beta_a"] * flt_prms["adj_plaq"])
+      of "rect": gc = gaugeActRect(flt_prms["beta_r"], flt_prms["c1"])
+
+   #[ ~~~~ Print summary of information ~~~~ ]#
+
+   # Print header
+   echo "\n ~~~~ SUMMARY OF FLOW INFORMATION  ~~~~\n"
+
+   # Start case
+   case str_prms["flow_act"]:
+      of "Wilson":
+         # Print output
+         echo "Wilson flow w/ beta_w = ", flt_prms["beta_w"]
+      of "adj":
+         # Temporary definitions
+         let beta = flt_prms["beta_a"]
+         let adjplaq = flt_prms["adj_plaq"]
+
+         # Print output
+         echo "Adj. plaq. flow w/ beta_f = ", beta, " & beta_f/beta_a = ", adj_plaq
+      of "rect":
+         # Temporary definitions
+         let beta = flt_prms["beta_r"]
+         let c1 = flt_prms["c1"]
+
+         # Print output
+         echo "Rect. flow w/ beta_r = ", beta, " & c1 = ", c1
+
+   # Cycle through dt's
+   for dt_ind in 0..<max_flts.len:
+      # Print information
+      echo "dt = ", dts[dt_ind], " up to t/a^2 = ", max_flts[dt_ind]
+
    #[ ~~~~ Return gauge field ~~~~ ]#
    # Return result
-   result = g
-
-#[ ~~~~ Initialize gauge field ~~~~ ]#
-
-# Read in appropriate information and initialize gauge field
-var g = initialize_gauge_field_and_params()
+   result = (g, gc)
 
 #[ ~~~~ Functions for gauge field IO ~~~~ ]#
 
 #[ For reading in gauge flows ]#
-proc read_gauge_file(gaugefile: string) =
+proc read_gauge_file(gaugefile: string; g: auto) =
    # Check if gauge field file exists
    if fileExists(gaugefile):
       # Start timer
@@ -384,7 +441,7 @@ proc print_info(dtau, tau, es, et, ss, st, q: float; pls, plt: auto; old_t2E: fl
    #[ Print out appropriate information ]#
 
    # Define string
-   var printout = "WFLOW "
+   var printout = "FLOW "
 
    # Add flow time
    printout = printout & format_float(tau, 2)
@@ -434,39 +491,48 @@ proc print_info(dtau, tau, es, et, ss, st, q: float; pls, plt: auto; old_t2E: fl
    result = t2E
 
 #[ For flow and flow measurements ]#
-proc wflow(flowed_gauge: auto) =
-   # Start timer
-   tic()
+proc flow(gc: GaugeActionCoeffs; flowed_gauge: auto; dt_ind: int; t2E: float): float =
+   #[ Set things up ]#
 
-   # Get initial time
-   let t0 = ticc()
+   # Get dt
+   let dt = dts[dt_ind]
 
-   # Initialize measurements
-   let (es, et, ss, st, q, pls, plt) = flowed_gauge.EQ int_prms["f_munu_loop"]
+   # Get maximum flow time
+   let max_flt = max_flts[dt_ind]
 
-   # Define default string
-   var t2E = print_info(flt_prms["dt"], 0.0, es, et, ss, st, q, pls, plt, 0.0)
+   # Set last maximum flow time
+   var last_max_flt = 0.0
 
+   # Check flow time 
+   if dt_ind != 0:
+      # Reset last maximum flow time
+      last_max_flt = max_flts[dt_ind - 1]
+
+   # Set temprary t2E
+   var t2E_temp = t2E
+
+   #[ Do gauge flow ]#
+   
    # Start flow loop
-   flowed_gauge.gaugeFlow(flt_prms["dt"]):
+   gc.gaugeFlow(str_prms["flow_act"], flowed_gauge, last_max_flt, dt):
+      # Breaking condition
+      if (wflowT > max_flt) or ((flt_prms["t_max"] > 0) and (wflowT > flt_prms["t_max"])):
+         # Exit flow loop
+         break
+
       # Calculate measurement
       let (es, et, ss, st, q, pls, plt) = flowed_gauge.EQ int_prms["f_munu_loop"]
 
       # Print result of measurement
-      t2E = print_info(flt_prms["dt"], wflowT, es, et, ss, st, q, pls, plt, t2E)
+      t2E_temp = print_info(dt, wflowT, es, et, ss, st, q, pls, plt, t2E_temp)
 
-      # Breaking condition
-      if (flt_prms["t_max"] > 0) and (wflowT > flt_prms["t_max"]):
-         # Exit flow loop
-         break
-
-   # End timer
-   toc("Wflow")
-
-   # Print timing to output file
-   tocc("Wilson flow:", t0)
+   # Return t2E
+   result = t2E_temp
 
 #[ ~~~~ Perform gauge flow ~~~~ ]#
+
+# Read in appropriate information and initialize gauge field
+var (g, gc) = initialize_gauge_field_and_params()
 
 #[ Cycle through configurations ]#
 for config in start_config..<end_config + 1:
@@ -485,12 +551,20 @@ for config in start_config..<end_config + 1:
    let filename = fn & "_" & intToStr(config) & ".lat"
 
    # Load gauge field
-   read_gauge_file(filename)
+   filename.read_gauge_file(g)
 
    #[ Flow gauge field ]#
 
-   # Do Wilson flow
-   g.wflow()
+   # Initialize measurements
+   let (es, et, ss, st, q, pls, plt) = g.EQ int_prms["f_munu_loop"]
+
+   # Define default string
+   var t2E = print_info(dts[0], 0.0, es, et, ss, st, q, pls, plt, 0.0)
+
+   # Cycle through different incremenets
+   for dt_ind in 0..<max_flts.len:
+      # Do gauge flow
+      t2E = gc.flow(g, dt_ind, t2E)
 
    #[ Finalize this gauge flow ]#
 
