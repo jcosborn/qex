@@ -279,6 +279,38 @@ template stagDM*(sd:StaggeredD; r:Field; g:openArray[Field2];
   #threadBarrier()
   toc("boundaryB")
 
+# modified D: Df + Db
+template stagDFBX*(sd:StaggeredD; r:Field; g:openArray[Field2];
+                   x:Field3; expFlops:int; exp:untyped) =
+  tic()
+  for mu in 0..<g.len:
+    startSB(sd.sf[mu], x[ix])
+  toc("startShiftF")
+  for mu in 0..<g.len:
+    startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
+  toc("startShiftB")
+  block:
+    for ir in r[sd.subset]:
+      var rir{.inject,noInit.}:evalType(load1(r[ir]))
+      exp
+      for mu in 0..<g.len:
+        localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), load1(x[ix]))
+      for mu in 0..<g.len:
+        localSB(sd.sb[mu], ir, iadd(rir, it), g[mu][ix].adj*x[ix])
+      assign(r[ir], rir)
+  toc("local", flops=(expFlops+g.len*(72+66+6))*sd.subset.len)
+  for mu in 0..<g.len:
+    template f(ir,it: untyped): untyped =
+      imadd(r[ir], g[mu][ir], it)
+    boundarySB2(sd.sf[mu], f)
+  toc("boundaryF")
+  for mu in 0..<g.len:
+    template f(ir,it: untyped): untyped =
+      iadd(r[ir], it)
+    boundarySB2(sd.sb[mu], f)
+  #threadBarrier()
+  toc("boundaryB")
+
 # r = a*r + b*x + (2D)*x
 proc stagD2*(sd:StaggeredD; r:SomeField; g:openArray[Field2];
              x:Field3; a:SomeNumber; b:SomeNumber2) =
@@ -393,6 +425,31 @@ proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
   #for ir in r[sde.subset]:
   #  msubVSVV(r[ir], m2, x[ir], r[ir])
   #r[sde.sub] := 0.25*r
+
+# r = m2 - Deo * Doe
+# modified D: Df + Db
+proc stagD2eeFB*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
+                 x:Field; m2:SomeNumber) =
+  tic()
+  var t{.global.}:evalType(x)
+  if t==nil:
+    threadBarrier()
+    if threadNum==0:
+      t = newOneOf(x)
+    threadBarrier()
+  toc("stagD2ee init")
+  block:
+    stagDFBX(sdo, t, g, x, 0):
+      rir := 0
+  toc("stagD2ee DP")
+  threadBarrier()
+  t := -t
+  threadBarrier()
+  toc("stagD2ee barrier")
+  block:
+    stagDFBX(sde, r, g, t, 6):
+      rir := (4.0*m2)*x[ir]
+  toc("stagD2ee DM")
 
 #[
 # r = m2 - Deo * Doe
