@@ -6,7 +6,7 @@ AT = 1e-12
 
 proc linkTrace(g: auto):auto =
   let n = g[0][0].ncols * g[0].l.physVol * g.len
-  var lt: type(g[0].trace)
+  var lt: evalType(g[0].trace)
   threads:
     var t = g[0].trace
     for i in 1..<g.len: t += g[i].trace

@@ -164,6 +164,8 @@ proc gather*(c: Comm; gm: GatherMap; elemsize: int; dest,src: pointer) =
     c.pushRecv(gm.rmsginfo[i].rank, &&recvbuf[elemsize*gm.rmsginfo[i].start],
                elemsize*gm.rmsginfo[i].count)
   toc("gather: start recvs")
+  c.barrier
+  toc("gather: barrier")
 
   # fill send buffers and send
   let ssize = elemsize*gm.sidx.len
