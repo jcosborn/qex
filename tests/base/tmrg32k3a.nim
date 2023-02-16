@@ -1,8 +1,9 @@
 import qex
 import testutils
 
+qexInit()
+
 suite "Test MRG32k3a":
-  qexInit()
   echo "rank ", myRank, "/", nRanks
   threads: echo "thread ",threadNum," / ",numThreads
   let seed = 17u64^13
@@ -25,4 +26,4 @@ suite "Test MRG32k3a":
     d.uniform r
     check(d.norm2 ~ 65517.83893610391)
 
-  qexFinalize()
+qexFinalize()

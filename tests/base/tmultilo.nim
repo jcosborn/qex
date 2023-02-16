@@ -1,7 +1,6 @@
-import qex
 import testutils
-import sequtils
-import strformat
+import qex
+import sequtils, strformat
 
 AT = 1e-12
 
@@ -38,11 +37,12 @@ proc replicate(g2,g1: openarray[Field]) =
   #echo "g1[0][[0,0,0,0]]: ", g1[0][[0,0,0,0]]
   #echo "g2[0][[0,0,0,0]]: ", g2[0][[0,0,0,0]]
 
+qexInit()
+
 suite "Multi-Layout test":
-  qexInit()
-  const
-    lat1 = [8,8,8,8]
-    lat2 = [16,16,16,16]
+  let
+    lat1 = latticeFromLocalLattice([8,8,8,8], nRanks)
+    lat2 = latticeFromLocalLattice([16,16,16,16], nRanks)
   var
     lo1 = lat1.newLayout
     g1 = lo1.newGauge
@@ -83,4 +83,4 @@ suite "Multi-Layout test":
       check(l1.im~l2.im)
       check(p1~p2)
 
-  qexFinalize()
+qexFinalize()

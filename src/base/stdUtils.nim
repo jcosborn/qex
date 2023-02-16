@@ -1,7 +1,7 @@
 import macros
 import parseutils
 import strUtils
-#import metaUtils
+import algorithm
 
 type
   cArray*[T] = UncheckedArray[T]
@@ -255,6 +255,22 @@ proc getDivisors*[T](n: T): seq[T] =
   for i in 2..n:
     if n mod i == 0:
       result.add i
+
+# scale local lattice (ll) by nrank to get global lattice (gl)
+template latticeFromLocalLatticeImpl*(gl: var openArray, ll: openArray, nrank: int) =
+  var fs = factor(nrank)
+  reverse fs
+  let nd = ll.len
+  for i in 0..<nd: gl[i] = ll[i]
+  var k = nd - 1
+  for f in fs:
+    gl[k] *= f
+    k = (k+nd-1) mod nd
+
+proc latticeFromLocalLattice*[T:seq|array](ll: T, nrank: int): T =
+  when T is seq:
+    result.newSeq(ll.len)
+  latticeFromLocalLatticeImpl(result, ll, nrank)
 
 macro rangeLow*(r: typedesc[range]):auto =
   echo r.treerepr

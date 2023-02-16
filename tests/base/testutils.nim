@@ -1,6 +1,6 @@
+import qex
 import unittest
 export unittest
-import qex
 
 var AT* = -1.0   ## Absolute Tolerance
 var CT* = 1e-13  ## (relative) Comparison Tolerance for float
@@ -165,6 +165,42 @@ template subtest*(t: typed): untyped {.dirty.} =
     fail()
   else:
     programResult = prsave
+
+# custom test suite output formatter
+type
+  QexOutputFormatter* = ref object of OutputFormatter
+    isInSuite: bool
+    isInTest: bool
+
+method suiteStarted*(formatter: QexOutputFormatter, suiteName: string) =
+  {.gcsafe.}:
+    echo("\n[Suite] ", suiteName)
+  formatter.isInSuite = true
+
+method testStarted*(formatter: QexOutputFormatter, testName: string) =
+  formatter.isInTest = true
+
+method failureOccurred*(formatter: QexOutputFormatter,
+                        checkpoints: seq[string], stackTrace: string) =
+  if stackTrace.len > 0:
+    {.gcsafe.}:
+      echo stackTrace
+  let prefix = if formatter.isInSuite: "    " else: ""
+  for msg in items(checkpoints):
+    {.gcsafe.}:
+      echo prefix, msg
+
+method testEnded*(formatter: QexOutputFormatter, testResult: TestResult) =
+  formatter.isInTest = false
+  let prefix = if testResult.suiteName.len > 0: "  " else: ""
+  {.gcsafe.}:
+    echo(prefix, "[", $testResult.status, "] ", testResult.testName)
+
+method suiteEnded*(formatter: QexOutputFormatter) =
+  formatter.isInSuite = false
+
+resetOutputFormatters()
+addOutputFormatter(QexOutputFormatter())
 
 when isMainModule:
   suite "Test of testutils":

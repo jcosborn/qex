@@ -1,8 +1,9 @@
-import qex
 import testutils
+import qex
+
+qexInit()
 
 suite "Test ordered product":
-  qexInit()
   echo "rank ", myRank, "/", nRanks
   threads: echo "thread ",threadNum," / ",numThreads
   var
@@ -37,4 +38,4 @@ suite "Test ordered product":
       t := ps[2].adj*ps[4]
     check(ps[8]~t)
 
-  qexFinalize()
+qexFinalize()
