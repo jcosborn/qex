@@ -78,8 +78,9 @@ suite "Multi-Layout test":
       l2 = g2.linkTrace
       p1 = g1.plaq
       p2 = g2.plaq
-    check(l1.re~l2.re)
-    check(l1.im~l2.im)
-    check(p1~p2)
+    withCT(1e-12):
+      check(l1.re~l2.re)
+      check(l1.im~l2.im)
+      check(p1~p2)
 
   qexFinalize()

@@ -317,11 +317,14 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   map110(T, L, iadd, iadd)
   map110(T, L, isub, isub)
   map110(T, L, imul, imul)
+  map110(T, L, idiv, idiv)
   map110(T, L, norm2, norm2)
   map110(T, L, inorm2, inorm2)
   map110(T, L, rsqrt, rsqrt)
   map110(T, L, `+=`, iadd)
   map110(T, L, `-=`, isub)
+  map110(T, L, `*=`, imul)
+  map110(T, L, `/=`, idiv)
 
   map120(T, L, add, add)
   map120(T, L, sub, sub)
@@ -397,10 +400,12 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   template mul*(r:var T; x:SomeNumber; y:T) = mul(r, x.to(type(T)), y)
   template mul*(r:var T; x:T; y:SomeNumber) = mul(r, x, y.to(type(T)))
   template iadd*(r:var T; x:SomeNumber) = iadd(r, x.to(type(T)))
+  template isub*(r:var T; x:SomeNumber) = isub(r, x.to(type(T)))
   template imadd*(r:var T; x:SomeNumber; y:T) = imadd(r, x.to(type(T)), y)
   template imsub*(r:var T; x:SomeNumber; y:T) = imsub(r, x.to(type(T)), y)
   template divd*(r:var T; x:SomeNumber; y:T) = divd(r, x.to(type(T)), y)
   template imul*(r:var T; x:SomeNumber) = imul(r, x.to(type(T)))
+  template idiv*(r:var T; x:SomeNumber) = idiv(r, x.to(type(T)))
   template msub*(r:var T; x:SomeNumber; y,z:T) = msub(r, x.to(type(T)), y, z)
   template `:=`*(r:var T; x:array[N,SomeNumber]) = assign(r, x)
   template `+`*(x:SomeNumber; y:T):T = add(x.to(type(T)), y)
@@ -411,6 +416,10 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   template `*`*(x:T; y:SomeNumber):T = mul(x, y.to(type(T)))
   template `/`*(x:SomeNumber; y:T):T = divd(x.to(type(T)), y)
   template `/`*(x:T; y:SomeNumber):T = divd(x, y.to(type(T)))
+  template `+=`*(r:var T; x:SomeNumber) = iadd(r, x.to(type(T)))
+  template `-=`*(r:var T; x:SomeNumber) = isub(r, x.to(type(T)))
+  template `*=`*(r:var T; x:SomeNumber) = imul(r, x.to(type(T)))
+  template `/=`*(r:var T; x:SomeNumber) = idiv(r, x.to(type(T)))
 
   proc `$`*(x:T):string =
     result = "[" & $x[0]

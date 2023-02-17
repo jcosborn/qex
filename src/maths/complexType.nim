@@ -38,13 +38,10 @@ template newImag*(x: typed): untyped = newImagImpl(x)
 template newComplex*(x,y: typed): untyped = newComplexImpl(x,y)
 template asReal*(x: typed): untyped = newRealProxy(x)
 template asImag*(x: typed): untyped = newImagProxy(x)
+template asComplex*(x: typed): auto = newComplexProxy(x)
+template asComplex*(x: typedesc): typedesc = newComplexProxy(x)
 
 template isWrapper*(x: ComplexObj): untyped = false
-template isWrapper*(x: ComplexProxy): untyped = true
-template asWrapper*(x: ComplexProxy, y: typed): untyped =
-  newComplexProxy(y)
-template asVarWrapper*(x: ComplexProxy, y: typed): untyped =
-  asVar(newComplexProxy(y))
 
 template `[]`*[T](x: AsComplex, i: T): untyped =
   when T is AsComplex:
@@ -55,6 +52,19 @@ template `[]`*[T](x: AsComplex, i: T): untyped =
   else:
     x[][i]
 
+template index*[TR,TI,I](x: typedesc[ComplexObj[TR,TI]], i: typedesc[I]): typedesc =
+  when I.isWrapper:
+    ComplexObj[index(TR.type,I.type),index(TI.type,I.type)]
+  else:
+    {.error.} #index(X[], I)
+
+template index*[X:AsComplex,I](x: typedesc[X], i: typedesc[I]): typedesc =
+  when I is AsComplex:
+    index(X[], I[])
+  elif I.isWrapper:
+    asComplex(index(X.type[], I.type))
+  else:
+    index(X[], I)
 
 template re*(x: ComplexObj): untyped = x.reX
 macro re*(x: ComplexObj{nkObjConstr}): untyped =
@@ -111,24 +121,6 @@ template toSingle*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): untyped =
   ComplexObj[toSingle(type(TR)),toSingle(type(TI))]
 template toSingle*[T](x: typedesc[ComplexProxy[T]]): untyped =
   ComplexProxy[toSingle(type(T))]
-
-template isComplex*(x: ComplexProxy): untyped = true
-template asComplex*(x: untyped): untyped = newComplexProxy(x)
-template asVarComplex*(x: untyped): untyped = newComplexProxy(x)
-template imaddCRC*(r: untyped, x: untyped, y: untyped) =
-  r.re += x * y.re
-  r.im += x * y.im
-template imaddCIC*(r: untyped, x: untyped, y: untyped) =
-  r.re -= x * y.im
-  r.im += x * y.re
-template imaddCCR*(r: untyped, x: untyped, y: untyped) =
-  r.re += x.re * y
-  r.im += x.im * y
-template imaddCCI*(r: untyped, x: untyped, y: untyped) =
-  r.re -= x.im * y
-  r.im += x.re * y
-template imadd*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3) =
-  r += x*y
 
 template load1*(x: ComplexProxy): untyped = x
 template load1*(x: RealProxy): untyped = x
@@ -220,6 +212,20 @@ template imadd*(r: SomeNumber, x: ImagProxy2, y: ImagProxy3):
          untyped =  r -= x*y
 template imadd*(r: ImagProxy, x: ImagProxy2, y: SomeNumber):
          untyped =  r -= x*y
+template imadd*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3) =
+  r += x*y
+template imaddCRC*(r: typed, x: typed, y: typed) =
+  r.re += x * y.re
+  r.im += x * y.im
+template imaddCIC*(r: typed, x: typed, y: typed) =
+  r.re -= x * y.im
+  r.im += x * y.re
+template imaddCCR*(r: typed, x: typed, y: typed) =
+  r.re += x.re * y
+  r.im += x.im * y
+template imaddCCI*(r: typed, x: typed, y: typed) =
+  r.re -= x.im * y
+  r.im += x.re * y
 
 template imsub*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3):
          untyped =  r -= x*y

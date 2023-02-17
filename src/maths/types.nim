@@ -8,6 +8,9 @@ import base/wrapperTypes
 import macros
 import typetraits
 
+template index*[N,T](x: typedesc[array[N,T]], i: typedesc): typedesc =
+  type(T)
+
 template makeDeclare(s:untyped):untyped {.dirty.} =
   template `declare s`*(t:typedesc):untyped {.dirty.} =
     template `declared s`*(y:t):untyped {.dirty.} = true
@@ -27,10 +30,10 @@ template forwardFunc*(t: typedesc, f: untyped) {.dirty.} =
   template f*(x: t): untyped =
     mixin f
     f(x[])
-#template forwardFuncT*(t: typedesc, f: untyped) {.dirty.} =
-#  template f*[T](x: t[T]): untyped =
-#    mixin f
-#    f()
+template forwardFunc2*(t: typedesc, f: untyped) {.dirty.} =
+  template f*(x: t, y: typed): untyped =
+    mixin f
+    f(x[], y)
 
 
 # indexing should return ref?
@@ -45,24 +48,64 @@ template forwardFunc*(t: typedesc, f: untyped) {.dirty.} =
 #     toSingleImpl(x)
 # template `[]`*(x: toSingle)
 
+type
+  AsView*[T] = object
+    fAsView*: T
+template asView*[T](x: T): untyped =
+  AsView[type T](fAsView:x)
+template `[]`*[T](x: AsView[T]): untyped =
+  x.fAsView
 
 type
-  Deref[T] = distinct T
-template `[]`*[T](x: Deref[T]): untyped = (T(x))[]
-template toDerefPtr*[T](x: T): untyped =
-  when T is ptr or T is ref:
+  #RefWrap[T] = distinct T
+  RefWrap*[T] = object
+    fRef*: T
+#template `[]`*[T](x: RefWrap[T]): untyped = (T(x))[]
+template `[]`*[T](x: RefWrap[T]): untyped =
+  x.fRef[]
+template `[]=`*[T](x: RefWrap[T], y: typed) =
+  x.fRef[] = y
+template refWrap*[T](x: T): untyped =
+  #RefWrap[type T](x)
+  RefWrap[type T](fRef:x)
+template toRef*[T](x: T): untyped =
+  mixin isWrapper, asWrapper
+  when T is RefWrap:
     x
+  elif isWrapper(T):
+    asWrapper(T, toRef(x[]))
+  elif T is ptr or T is ref:
+    refWrap(x)
   elif compiles(unsafeAddr x):
-    Deref[ptr T](unsafeAddr x)
+    refWrap(unsafeAddr x)
   else:
-    x
-template `[]`*(x: Deref, i: typed): untyped = x[][i]
-template `[]`*(x: Deref, i,j: typed): untyped = x[][i,j]
-forwardFunc(Deref, len)
-forwardFunc(Deref, nrows)
-forwardFunc(Deref, ncols)
-forwardFunc(Deref, re)
-forwardFunc(Deref, im)
+    #x
+    var tToRef = x
+    refWrap(addr tToRef)
+template isWrapper*(x: RefWrap): untyped = false
+template isWrapper*(x: typedesc[RefWrap]): untyped = false
+template `[]`*(x: RefWrap, i: typed): untyped = x[][i]
+template `[]`*(x: RefWrap, i,j: typed): untyped = x[][i,j]
+template eval*[T](x: typedesc[RefWrap[T]]): untyped = (type T)[]
+forwardFunc(RefWrap, len)
+forwardFunc(RefWrap, nrows)
+forwardFunc(RefWrap, ncols)
+forwardFunc(RefWrap, numberType)
+forwardFunc(RefWrap, simdType)
+forwardFunc(RefWrap, re)
+forwardFunc(RefWrap, im)
+forwardFunc2(RefWrap, `re=`)
+forwardFunc2(RefWrap, `im=`)
+template assign*[T;U:SomeNumber](r: T, x: RefWrap[ptr U]) =
+  assign(r, x[])
+template mul*[T,U:SomeNumber](x: RefWrap[ptr T], y: U): untyped =
+  mul(x[], y)
+template mul*[T,U,V:SomeNumber](r: RefWrap[ptr T], x: U, y: V) =
+  mul(r[], x, y)
+template mul*[X:SomeNumber,R,Y](r: R, x: RefWrap[ptr X], y: Y) =
+  mul(r, x[], y)
+template imadd*[T,U,V:SomeNumber](r: RefWrap[ptr T], x: U, y: V) =
+  imadd(r[], x, y)
 
 #type
 #  AsVar*[T] = object
@@ -111,6 +154,29 @@ template redot*(x: AsVar, y: AsVar): untyped =
 makeWrapperType(Scalar)
 template `[]`*(x: Scalar; i: typed): untyped = x[]
 template `[]`*(x: Scalar; i,j: typed): untyped = x[]
+forwardFunc(Scalar, exp)
+forwardFunc(Scalar, ln)
+forwardFunc(Scalar, numberType)
+forwardFunc(Scalar, numNumbers)
+#template exp*(x: Scalar): untyped = exp(x[])
+#template ln*(x: Scalar): untyped = ln(x[])
+template `:=`*(x: Scalar, y: SomeNumber) =
+  mixin `:=`
+  x[] := y
+template `:=`*(x: SomeNumber, y: Scalar) =
+  mixin `:=`
+  x := y[]
+template assign*(x: Scalar, y: SomeNumber) =
+  mixin `:=`
+  x[] := y
+template assign*(x: SomeNumber, y: Scalar) =
+  mixin `:=`
+  x := y[]
+template `+=`*(x: SomeNumber, y: Scalar) =
+  mixin `+=`
+  x += y[]
+template `*`*(x: Scalar, y: SomeNumber): untyped = x[] * y
+template norm2*(x: Scalar): untyped = norm2(x[])
 #[
 type
   Scalar*[T] = object
@@ -137,7 +203,8 @@ forwardFunc(AsScalar, simdLength)
   #dumpTree: x
 #  let x_adjointed = x
 #  Adjointed[type(x_adjointed)](v: x_adjointed)
-makeWrapperType(Adjointed)
+#makeWrapperType(Adjointed)
+makeWrapperF({wfPtr}, Adjointed)
 template adj*(x: typed): untyped =
   mixin adj, isWrapper, asWrapper
   bind asAdjointed
@@ -151,7 +218,7 @@ template adj*(x: typed): untyped =
     #static: echo "adj typed not wrapper"
     #dumpTree: x
     #(Masked[type(x)])(maskedObj(x,msk))
-    asAdjointed(x)
+    asAdjointed(getPtr x)
 #template `[]`*[T](x:Adjointed[T]):untyped = cast[T](x)
 #makeDeref(Adjointed, x.T)
 template `[]`*(x:Adjointed; i:SomeInteger):untyped = x[][i].adj
@@ -234,12 +301,12 @@ type
 #      toDoubleDefault(x)
 template toDoubleX*[T](x: T): untyped =
   ToDouble[T](v: x)
-template toDouble*(x: typed): untyped =
+template toDouble*[T](x: T): untyped =
   mixin toDouble, toDoubleImpl, isWrapper, asWrapper
   when isWrapper(x):
     #static: echo "toDouble typed wrapper"
     #dumpTree: x
-    asWrapper(x, toDouble(x[]))
+    asWrapper(T, toDouble(x[]))
   else:
     #static: echo "toDouble typed not wrapper"
     #dumpTree: x
@@ -266,7 +333,8 @@ template simdType*(x: ToDouble): untyped = simdType(x[])
 template numberType*(x: ToDouble): untyped = float64
   #dump2: x
   #numberType(x[])
-
+template toDoubleImpl*(x: RefWrap): untyped =
+  toDoubleX(x)
 
 template sameWrapper*(x: typedesc, y: typedesc): untyped =
   type(stripGenericParams(x)) is type(stripGenericParams(y))
@@ -288,15 +356,18 @@ type
 template indexedX[T,I](x: T, i: I): untyped =
   Indexed[T,I](indexedPtr: x, indexedIdx: i)
 template indexed*[T,I](x: T, i: I): untyped =
+  #static: echo "indexed: ", $T.type
   when isWrapper(T):
     #static: echo "indexed isWrapper"
     when sameWrapper(type T, type I):
       #static: echo "indexed sameWrapper"
       x[i[]]
     else:
-      #static: echo "indexed not sameWrapper"
+      mixin index
+      #static: echo "indexed not sameWrapper ", $type(T), " ", $type(I)
       #var tIndexed = asWrapper(T, indexedX(getAlias x[], i))
-      var tIndexed = asWrapper(T, indexed(x[], i))
+      #var tIndexed = asWrapper(T, indexed(x[], i))
+      var tIndexed = asWrapper(index(type T,type I), indexed(x[], i))
       tIndexed
   else:
     #static: echo "indexed not isWrapper"
@@ -317,7 +388,17 @@ template mindexed*[T,I](x: T, i: I): untyped =
     #static: echo "mindexed not isWrapper"
     var tIndexed = indexedX(getAlias x, i)
     tIndexed
-template obj(x:Indexed):untyped = x.indexedPtr[]
+import strUtils
+template obj(x:Indexed):untyped =
+  #static: echo "obj: ", $type(x)
+  #static: echo $type(x.indexedPtr)
+  #static: echo $type(x.indexedPtr[])
+  #let y = x.indexedPtr[]
+  #static: echo $type(y)
+  #when ($type(x.indexedPtr)).startsWith("ptr Mat"):
+  #when compiles(x.indexedPtr[][]):
+  #  static: echo $type(x.indexedPtr[][])
+  x.indexedPtr[]
 template idx(x:Indexed):untyped = x.indexedIdx
 template `!`(x:Indexed):untyped = obj(x)[idx(x)]
 template `!=`(x:Indexed,y:typed):untyped = obj(x)[idx(x)] = y
@@ -336,33 +417,45 @@ template optIndexed*[T,I](x: T, i: I): untyped =
   #else:
   #  #static: echo "optindexed not isWrapper"
   #  x[i]
-template `[]`*(x:Indexed):untyped =
-  let tIndexedBracket0 = x
-  obj(tIndexedBracket0)[idx(tIndexedBracket0)]
-template `[]`*(x:Indexed; i:SomeInteger):untyped =
-  let tIndexedBracket1 = x
-  optIndexed(obj(tIndexedBracket1)[i], idx(tIndexedBracket1))
-template `[]`*(x:Indexed; i,j:SomeInteger):untyped =
-  let tIndexedBracket2 = x
-  optIndexed(obj(tIndexedBracket2)[i,j], idx(tIndexedBracket2))
-template `[]=`*(x:Indexed; i:SomeInteger; y: typed) =
-  let tIndexedBracket1Eq = x
-  optIndexed(obj(tIndexedBracket1Eq)[i], idx(tIndexedBracket1Eq)) := y
-template `[]=`*(x:Indexed; i,j:SomeInteger; y: typed) =
-  let tIndexedBracket2Eq = x
+template `[]`*(xx:Indexed):untyped =
+  mixin `[]`
+  #let tIndexedBracket0 = xx
+  let tIndexedBracket0 = getPtr xx; template x:untyped {.gensym.} = tIndexedBracket0[]
+  obj(x)[idx(x)]
+template `[]`*(xx:Indexed; i:SomeInteger):untyped =
+  #let tIndexedBracket1 = xx
+  let tIndexedBracket1 = getPtr xx; template x:untyped {.gensym.} = tIndexedBracket1[]
+  optIndexed(obj(x)[i], idx(x))
+template `[]`*(xx:Indexed; i,j:SomeInteger):untyped =
+  #let tIndexedBracket2 = xx
+  let tIndexedBracket2 = getPtr xx; template x:untyped {.gensym.} = tIndexedBracket2[]
+  optIndexed(obj(x)[i,j], idx(x))
+template `[]=`*(xx:Indexed; i:SomeInteger; y: typed) =
+  #let tIndexedBracket1Eq = xx
+  let tIndexedBracket1Eq = getPtr xx; template x:untyped{.gensym.} = tIndexedBracket1Eq[]
+  #optIndexed(obj(x)[i], idx(x)) := y
+  obj(x)[i][idx(x)] = y
+template `[]=`*(xx:Indexed; i,j:SomeInteger; y: typed) =
+  #let tIndexedBracket2Eq = x1
+  let tIndexedBracket2Eq = getPtr xx; template x:untyped{.gensym.} = tIndexedBracket2Eq[]
   #optIndexed(obj(tIndexedBracket2Eq)[i,j], idx(tIndexedBracket2Eq)) := y
-  obj(tIndexedBracket2Eq)[i,j][idx(tIndexedBracket2Eq)] = y
-template `:=`*(x:Indexed, y: typed) =
+  obj(x)[i,j][idx(x)] = y
+template `:=`*(xx:Indexed, y: typed) =
   #echoRepr: x
   #echoRepr: y
-  let tIndexedColonEq = x
+  #let tIndexedColonEq = xx
+  let tIndexedColonEq = getPtr xx; template x:untyped{.gensym.} = tIndexedColonEq[]
   #when isWrapper(type(obj(tIndexedColonEq))):
   #  mixin `:=`
   #  var tIndexedColonEqWrap = mindexed(obj(tIndexedColonEq),idx(tIndexedColonEq))
   #  tIndexedColonEqWrap := y
   #else:
-  obj(tIndexedColonEq)[idx(tIndexedColonEq)] = y
+  obj(x)[idx(x)] = y
+template `:=`*(x: SomeNumber, y: Indexed) =
+  mixin `:=`
+  x := y[]
 template assign*(x: SomeNumber, y: Indexed) =
+  mixin `:=`
   x := y[]
 template `+=`*(x:Indexed, y: typed) =
   let tIndexedPlusEq = x
@@ -373,10 +466,21 @@ template `-=`*(x:Indexed, y: typed) =
 template `*=`*(x:Indexed, y: typed) =
   let tIndexedStarEq = x
   tIndexedStarEq != !tIndexedStarEq * y
+#proc eval*(x: Indexed): auto {.inline.} =
+#  ojx
 
-template len*(x:Indexed):untyped = obj(x).len
+#forwardFunc(Indexed, len)
+#forwardFunc(Indexed, nrows)
+#forwardFunc(Indexed, ncols)
+forwardFunc(Indexed, numNumbers)
+forwardFunc(Indexed, exp)
+forwardFunc(Indexed, ln)
+forwardFunc(Indexed, norm2)
+template len*(x:Indexed):untyped = obj(x).len  # FIXME Simd types can use Indexed
 template nrows*(x:Indexed):untyped = obj(x).nrows
 template ncols*(x:Indexed):untyped = obj(x).ncols
+template simdType*(x: Indexed): untyped = simdType(obj(x))
+template numberType*(x: Indexed): untyped = numberType(obj(x))
 #template declaredVector*(x:Indexed):untyped = isVector(x.obj)
 #template declaredMatrix*(x:Indexed):untyped = isMatrix(x.obj)
 template re*(x:Indexed):untyped =
@@ -391,8 +495,6 @@ template `re=`*(x: Indexed, y: typed): untyped =
 template `im=`*(x: Indexed, y: typed): untyped =
   let tIndexedImEq = x
   obj(tIndexedImEq).im[idx(tIndexedImEq)] = y
-template simdType*(x: Indexed): untyped = simdType(obj(x))
-template numberType*(x: Indexed): untyped = numberType(obj(x))
 template `*`*(x: Indexed, y: typed): untyped =
   let tIndexedMul = x
   obj(tIndexedMul)[idx(tIndexedMul)] * y

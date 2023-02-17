@@ -20,23 +20,25 @@ template `[]`*(x: Simd, i: typed): untyped =
     x[][i]
     #indexed(x, i)
 
+template index*[T,I](x: typedesc[Simd[T]], i: typedesc[I]): typedesc =
+  numberType(T)
+
 template doIndexed[T](x: T): untyped =
   when T is Indexed:
     x[]
   else:
     x
 
+template stripSimdAsView*[T](x: T): untyped = x
+template stripSimdAsView*(x: AsView): untyped = stripSimdAsView x[]
+template stripSimdAsView*(x: Simd): untyped = stripSimdAsView x[]
 template `[]=`*(x: Simd, i: typed, y: typed): untyped =
-  when i is Simd:
-    when y is Simd:
-      x[][i[]] = doIndexed(y[])
-    else:
-      x[][i[]] = y
+  when y is Simd:
+    #x[][stripSimdAsView i] = doIndexed(y[])
+    x[][stripSimdAsView i] = eval(y[])
   else:
-    when y is Simd:
-      x[][i] = doIndexed(y[])
-    else:
-      x[][i] = y
+    #x[][stripSimdAsView i] = doIndexed(y)
+    x[][stripSimdAsView i] = eval(y)
 
 template attrib(att: untyped): untyped {.dirty.} =
   template att*[T](x: typedesc[Simd[T]]): untyped =
@@ -93,6 +95,7 @@ template p3s(f: untyped) {.dirty.} =
     f(x[], y[], z)
   p3(f)
 
+p2(neg)
 p2(rsqrt)
 p2(norm2)
 p2s(assign)
@@ -103,6 +106,8 @@ p2s(`*=`)
 p2s(`/=`)
 p2s(iadd)
 p2s(isub)
+p2s(imul)
+p2s(idiv)
 p2s(inorm2)
 p3(imadd)
 p3(imsub)

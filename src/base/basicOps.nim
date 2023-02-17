@@ -173,6 +173,8 @@ template perm8*(r:var SomeNumber; x:SomeNumber2):untyped =
 proc acos*(x:float64):float64 {.importC:"acos",header:"math.h".}
 proc atan2*(x,y:float64):float64 {.importC:"atan2",header:"math.h".}
 proc atan2*(x,y:float32):float32 {.importC:"atan2f",header:"math.h".}
+func exp2*(x: float64): float64 {.importc: "exp2", header: "<math.h>".}
+func ln1p*(x: float64): float64 {.importc: "log1p", header: "<math.h>".}
 template rsqrt*[R,X:SomeNumber](r:var R; x:X) =
   r = R(1)/sqrt(R(x))
 template rsqrt*(x: SomeNumber): untyped = 1/sqrt(x)

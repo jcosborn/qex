@@ -27,9 +27,9 @@ when defined(FUELCompat):
   proc gaussian_call2(x: var AsComplex, a,b:float) =
     x.re = a
     x.im = b
-proc gaussian*(x: var SomeNumber, r: var RNG) =
+proc gaussian*(x: var Number, r: var RNG) =
   mixin gaussian
-  x = gaussian(r)
+  x := gaussian(r)
 proc gaussian*(x: var Simd, r: var RNG) =  # FIXME to set all lanes
   mixin gaussian
   x[] := gaussian(r)
