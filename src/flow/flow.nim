@@ -20,7 +20,7 @@ Zi = eps Z(Wi)
 ]#
 
 template gaugeFlow*(gc: GaugeActionCoeffs; flow_act: string; g: array|seq, steps: int, 
-                    min_flt, eps: float; measure: untyped): untyped =
+                    eps: float; measure: untyped): untyped =
   ## Wilson flow.
   ## The input gauge field will be modified.
   ## `wflowT` is injected for `measure`.
@@ -32,7 +32,7 @@ template gaugeFlow*(gc: GaugeActionCoeffs; flow_act: string; g: array|seq, steps
       f = g[0].l.newGauge  # force
       n = 1
     while true:
-      let t = n * eps + min_flt
+      let t = n * eps
       let epsnc = eps * nc  # compensate force normalization
 
       # Start case for calculation of flowed force
@@ -89,8 +89,8 @@ template gaugeFlow*(gc: GaugeActionCoeffs; flow_act: string; g: array|seq, steps
     toc("end")
   flowProc()
 template gaugeFlow*(gc: GaugeActionCoeffs; flow_act: string; g: array|seq; 
-                    min_flt, eps: float; measure: untyped): untyped =
-  gc.gaugeFlow(flow_act, g, 0, min_flt, eps):
+                    eps: float; measure: untyped): untyped =
+  gc.gaugeFlow(flow_act, g, 0, eps):
     measure
 
 when isMainModule:

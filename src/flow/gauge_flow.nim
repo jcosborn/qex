@@ -514,17 +514,17 @@ proc flow(gc: GaugeActionCoeffs; flowed_gauge: auto; dt_ind: int; t2E: float): f
    #[ Do gauge flow ]#
    
    # Start flow loop
-   gc.gaugeFlow(str_prms["flow_act"], flowed_gauge, last_max_flt, dt):
-      # Breaking condition
-      if (wflowT > max_flt) or ((flt_prms["t_max"] > 0) and (wflowT > flt_prms["t_max"])):
-         # Exit flow loop
-         break
-
+   gc.gaugeFlow(str_prms["flow_act"], flowed_gauge, dt):
       # Calculate measurement
       let (es, et, ss, st, q, pls, plt) = flowed_gauge.EQ int_prms["f_munu_loop"]
 
       # Print result of measurement
-      t2E_temp = print_info(dt, wflowT, es, et, ss, st, q, pls, plt, t2E_temp)
+      t2E_temp = print_info(dt, wflowT + last_max_flt, es, et, ss, st, q, pls, plt, t2E_temp)
+
+      # Breaking condition
+      if (wflowT >= max_flt) or ((flt_prms["t_max"] > 0) and (wflowT >= flt_prms["t_max"])):
+         # Exit flow loop
+         break
 
    # Return t2E
    result = t2E_temp
