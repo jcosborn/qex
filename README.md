@@ -1,7 +1,7 @@
 # QEX: Quantum EXpressions lattice field theory framework
 
 ## Description of QEX fork:
-Staggered hybrid Monte Carlo with Pauli-Villars bosons and nHYP smearing. Source code can be found [here](https://github.com/ctpeterson/qex/tree/devel/src/stagg_pv_hmc). Code still under development. Caution is advised if used in current state.
+Staggered hybrid Monte Carlo with Pauli-Villars bosons and nHYP smearing. Source code can be found [here](https://github.com/ctpeterson/qex/tree/devel/src/stagg_pv_hmc).
 
 ## Description of QEX:
 QEX is a high-level framework for lattice field operations
