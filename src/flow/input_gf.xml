@@ -15,7 +15,7 @@
     <specific_params>
       <time1>5.0</time1>
       <time2>_tmax_</time2>
-      <dt1>0.01</dt1>
+      <dt1>0.02</dt1>
       <dt2>0.1</dt2>
     </specific_params>
   </flow_prms>
