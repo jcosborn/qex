@@ -343,22 +343,16 @@ proc initialize_gauge_field_and_params(): auto =
 proc read_gauge_file(gaugefile: string; g: auto) =
    # Check if gauge field file exists
    if fileExists(gaugefile):
-      # Start timer
-      tic("Loading gauge file")
-
       # Check if gauge file can be read
       if 0 != g.loadGauge gaugefile:
          # If not, throw qex error
-         qexError "failed to load gauge file: ", gaugefile
-
-      # Set output to qexLog
-      qexLog "loaded gauge from file: ", gaugefile," secs: ", getElapsedTime()
-
-      # End timer
-      toc("read")
+         quit("Error reading gauge file. Exiting.")
 
       # Reunitarize
       g.reunit
+   else:
+      # Tell user that gauge file does not exist and exit
+      quit(gaugefile & " does not exist. Exiting.")
 
 #[ ~~~~ Functions for gauge flow ~~~~ ]#
 
