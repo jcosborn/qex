@@ -205,6 +205,7 @@ proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] {.noinit.} =
     inc t
 
 template isWrapper*(x: SomeField): untyped = false
+template `[]`*[F:Field](x:typedesc[F]; i:int):typedesc = F.T
 template `[]`*(x:Field; i:int):untyped = x.s[i]
 #template `[]=`*(x:Field; i:int; y:typed) =
 proc `[]=`*(x:Field; i:int; y:auto) =

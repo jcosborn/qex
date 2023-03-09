@@ -188,6 +188,11 @@ template newLayout*(c:Comm; l:openArray[int]; n:static[int]):untyped =
 template `[]`*(l: Layout, i: int): untyped = l.physGeom[i]
 template `[]`*(l: Layout, i: BackwardsIndex): untyped = l.physGeom[i]
 
+proc localIndex*(l:Layout, coords: var openArray[SomeInteger]): int =
+  var li:LayoutIndexQ
+  layoutIndexQ(l.lq, li, coords)
+  result = li.index.int
+
 proc rankIndex*(l:Layout, coords: ptr cArray[cint]):tuple[rank,index:int] =
   var li:LayoutIndexQ
   layoutIndexQ(l.lq, li, coords)

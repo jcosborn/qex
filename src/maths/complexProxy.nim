@@ -121,6 +121,13 @@ template `[]=`*(x: ComplexProxy, y: typed) =
   #  x.v = y
   #else:
     x.v := y
+proc `[]=`*(x: var ComplexProxy, i: auto, y: ComplexProxy2) {.alwaysInline.} =
+  mixin re, im, `[]=`
+  when isWrapper i:
+    x.re[i] = y.re
+    x.im[i] = y.im
+  else:
+    {.error.}
 
 template eval*[T](x: typedesc[ComplexProxy[T]]): typedesc =
   mixin eval

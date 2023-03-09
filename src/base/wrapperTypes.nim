@@ -264,6 +264,6 @@ macro makeWrapperType*(name: untyped): untyped =
   let d = "wrapper type for " & $name & " objects"
   makeWrapperTypeP(name, d, wfNone)
 
-macro makeWrapperF*(wf: static[WFSet], name: untyped): untyped =
+macro makeWrapperF*(wf: static[WFSet], name: untyped): auto =
   let d = "wrapper type for " & $name & " objects"
   makeWrapperTypeP(name, d, wf)
