@@ -75,6 +75,10 @@ proc `*`*(x: SomeNumber, y: array): auto {.inline,noInit.} =
   for i in 0..<r.len:
     r[i] = x * y[i]
   r
+proc `*`*[T](x: seq[T], y: SomeNumber): seq[T] {.inline,noInit.} =
+  result.newSeq(x.len)
+  for i in 0..<result.len:
+    result[i] = x[i] * y
 proc `*`*[T](x: SomeNumber, y: seq[T]): seq[T] {.inline,noInit.} =
   result.newSeq(y.len)
   for i in 0..<result.len:
@@ -143,6 +147,22 @@ proc `*`*[N,T1,T2](x: array[N,T1], y: array[N,T2]): auto {.inline,noInit.} =
   var r: array[n, type(x[0]*y[0])]
   for i in 0..<n:
     r[i] = x[i] * y[i]
+  r
+
+proc `+`*[T1,T2](x: seq[T1], y: openArray[T2]): auto {.inline,noInit.} =
+  mixin evalType
+  let n = min(x.len, y.len)
+  var r = newSeq[evalType(x[0]+y[0])](n)
+  for i in 0..<n:
+    r[i] = x[i] + y[i]
+  r
+
+proc `-`*[T1,T2](x: seq[T1], y: openArray[T2]): auto {.inline,noInit.} =
+  mixin evalType
+  let n = min(x.len, y.len)
+  var r = newSeq[evalType(x[0]+y[0])](n)
+  for i in 0..<n:
+    r[i] = x[i] - y[i]
   r
 
 proc `+=`*[T](r: var openArray[T], x: openArray[T]) {.inline.} =

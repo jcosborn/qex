@@ -86,7 +86,10 @@ proc buildFile(f: string, outfile=""): bool =
 # return true if failed
 proc tryBuildSource(g: string): bool =
   result = true
-  let s = findSrc(g)
+  var s = findSrc(g)
+  if ("."/g) in s.files:
+    s.dirs = @[]
+    s.files = @["."/g]
   let n = s.dirs.len + s.files.len
   if n > 1:
     echo "  Error: multiple targets match:"
