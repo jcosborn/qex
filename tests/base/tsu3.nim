@@ -209,6 +209,50 @@ proc test(T: typedesc) =
       j.diffExp adx
       check(dr ~ j)
 
+    test "log det ∂/∂X [exp(F) X]":
+      let eps = 0.12
+      var X,Y:M
+      X := S0
+      Y := S1+S2
+      proc f(X:M):M {.noinit.} =
+        var r:M
+        r := eps * (X * Y.adj)
+        r.projectTAH r
+        r := -r
+        r := exp(r)*X
+        r
+      var dr,er:A
+      ndiffSUtoSU(dr, er, f, X)
+      var detj = determinant(dr)
+      var j,K,adF,dexpf:A
+      var m,F:M
+      # combined
+      m := eps * (X * Y.adj)
+      F.projectTAH(m)
+      F := -F
+      adF.suad(F)
+      let Ms = m + m.adj
+      let trMs = trace(Ms).re
+      const ii = newComplex(0, -0.5)
+      var v:V
+      v.suToVec(ii*Ms)
+      K.sudabc v
+      K += (-1.0/3.0)*trMs
+      dexpf.diffExp(adF)
+      j = 0.5*(exp(adF) + 1.0 + dexpf * K)
+      check(j ~ dr)
+      # alt
+      var df,ja:A
+      dF.diffProjectTAH(-m,F)
+      ja = exp(adF) + dexpf * dF
+      check(ja ~ dr)
+      # simplified detJ
+      var ff:M
+      var ldj:T
+      ldj = smearIndepLogDetJacobian(ff, m)
+      check(ff ~ F)
+      check(ldj ~ ln(detj))
+
 template doTest(t:untyped) =
   when declared(t):
     test(t)
