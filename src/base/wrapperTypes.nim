@@ -165,7 +165,8 @@ template derefPtr*[T](x: typedesc[T]): typedesc =
 template derefPtr*[T](x: typedesc[ptr T]): typedesc =
   type T
 
-template makeWrapperTypeX(wf:WFSet, name,fName,asName,tasName: untyped) =
+#template makeWrapperTypeX(wf:WFSet, name,fName,asName,tasName: untyped) =
+template makeWrapperTypeX(wf:typed, name,fName,asName,tasName: untyped) =
   #when wfPtr in wf:
   when false:
     type
