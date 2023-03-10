@@ -58,7 +58,7 @@ template eval*[T](x: typedesc[Spin[T]]): typedesc = asSpin(eval(type T))
 
 template has*[T](x: typedesc[Spin[T]], y: typedesc): bool =
   mixin has
-  when T2 is Spin2:
+  when y is Spin2:
     true
   else:
     has(type T, y)

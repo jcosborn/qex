@@ -80,6 +80,11 @@ template asWrapper*(x: typedesc[ComplexProxy], y: typed): auto =
 template asVarWrapper*(x: ComplexProxy, y: typed): auto =
   asVar(asComplexProxy(y))
 
+template has*[T:ComplexProxy](x: typedesc[T], y: typedesc): bool =
+  mixin has
+  when y is ComplexProxy: true
+  else: has(T.type[], y)
+
 template `[]`*[T](x: typedesc[ComplexProxy[T]]): typedesc =
   when T is ptr:
     T.type[]

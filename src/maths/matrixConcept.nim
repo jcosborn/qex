@@ -89,6 +89,15 @@ template eval*[T](x: typedesc[AsMatrix[T]]): typedesc =
   mixin eval
   asMatrix(eval(typeof T))
 
+template has*[T:AsVector](x: typedesc[T], y: typedesc): bool =
+  mixin has
+  when y is AsVector: true
+  else: has(T.type[], y)
+template has*[T:AsMatrix](x: typedesc[T], y: typedesc): bool =
+  mixin has
+  when y is AsMatrix: true
+  else: has(T.type[], y)
+
 #declareScalar(AsScalar)
 #declareScalar(AsVarScalar)
 #declareVector(AsVector)
@@ -269,14 +278,12 @@ template eval*[I,J,T](x: typedesc[MatrixArrayObj[I,J,T]]): typedesc =
   mixin eval
   MatrixArrayObj[I,J,eval(typeof T)]
 
-#template isWrapper*(x: AsMatrix): untyped = true
-#template asWrapper*(x: AsMatrix, y: typed): untyped =
-#  #static: echo "asWrapper AsMatrix"
-#  #dumpTree: y
-#  asMatrix(y)
-#template asVarWrapper*(x: AsMatrix, y: typed): untyped =
-#  #static: echo "asVarWrapper AsMatrix"
-#  asVar(asMatrix(y))
+template has*[I,T](x: typedesc[VectorArrayObj[I,T]], y: typedesc): bool =
+  mixin has
+  has(T.type, y)
+template has*[I,J,T](x: typedesc[MatrixArrayObj[I,J,T]], y: typedesc): bool =
+  mixin has
+  has(T.type, y)
 
 template isWrapper*(x: AsVar[AsMatrix]): untyped = true
 template asWrapper*(x: AsVar[AsMatrix], y: typed): untyped =

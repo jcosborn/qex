@@ -728,8 +728,8 @@ proc ndiffSUtoReal*(r: var Vec1, err: var Vec2, f: proc, x: Mat2, dx:float=2.0, 
   const t = sugen(nc)
   for a in 0..<t.len:
     ndiff(dr, er,
-      proc (l:T):T {.noinit.} = f(exp(l*t[a])*x),
-      z, d, scale=scale, ordMax=ordMax)
+          proc (l:T):T = f(exp(l*t[a])*x),
+          z, d, scale=scale, ordMax=ordMax)
     r[a] = dr
     err[a] = er
 

@@ -46,6 +46,10 @@ template asVarComplex*(x: typed): auto = newComplexProxy(x)
 template isComplex*(x: ComplexProxy): auto = true
 template isWrapper*(x: ComplexObj): untyped = false
 
+template has*[R,I](x: typedesc[ComplexObj[R,I]], y: typedesc): bool =
+  mixin has
+  has(R.type, y) or has(I.type, y)
+
 template `[]`*[T](x: AsComplex, i: T): untyped =
   when T is AsComplex:
     x[][i[]]

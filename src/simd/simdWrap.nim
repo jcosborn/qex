@@ -32,6 +32,10 @@ template `[]`*[T](x: typedesc[Simd[T]]): typedesc =
 template eval*[T](x: typedesc[Simd[T]]): typedesc =
   asSimd(typeof(T))
 
+template has*[T:Simd](x: typedesc[T], y: typedesc): bool =
+  when y is Simd: true
+  else: false  # assume no more wrapper types below
+
 template `[]`*(x: Simd, i: typed): untyped =
   when i is Simd:
     when i[] is AsView:

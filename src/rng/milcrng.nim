@@ -17,7 +17,8 @@ type RngMilc6* = object
     iset: int32
     gset: float
 
-template isWrapper*(x: RngMilc6): untyped = false
+template isWrapper*(x: RngMilc6): bool = false
+template isWrapper*(x: typedesc[RngMilc6]): bool = false
 template numberType*(x: RngMilc6): typedesc = uint32
 template numberType*(x: typedesc[RngMilc6]): typedesc = uint32
 template simdLength*(x: typedesc[RngMilc6]): untyped = 1

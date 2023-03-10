@@ -205,6 +205,15 @@ proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] {.noinit.} =
     inc t
 
 template isWrapper*(x: SomeField): untyped = false
+template has*[F:Field](x: typedesc[F], y: typedesc): bool =
+  mixin has, isWrapper
+  #static: echo $F.T.type
+  when y is Field: true
+  else:
+    when isWrapper(F.T):
+      has(F.T, y)
+    else: false
+
 template `[]`*[F:Field](x:typedesc[F]; i:int):typedesc = F.T
 template `[]`*(x:Field; i:int):untyped = x.s[i]
 #template `[]=`*(x:Field; i:int; y:typed) =
@@ -398,7 +407,15 @@ iterator items*(x:FieldMul):int {.inline.} =
 #import types
 #export types
 
-template fmask*(f: Field; i: int): untyped =
+template fmask*[F:Field](f: F; i: int): auto =
+  mixin has
+  when F.has(Simd):
+    let e = i div f.l.V
+    let l = i mod f.l.V
+    f[e][asSimd(l)]
+  else:
+    f[i]
+#[
   when f.l.V == 1:
     f[i]
   else:
@@ -416,6 +433,7 @@ template fmask*(f: Field; i: int): untyped =
       #indexed(f[e], l)
       #static: echo "fmask: type f[e]: ", $type(f[e])
       f[e][asSimd(l)]
+]#
 
 template `{}`*(f: Field; i: int): untyped =
   fmask(f, i)

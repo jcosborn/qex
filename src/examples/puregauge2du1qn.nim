@@ -765,7 +765,7 @@ echo "latsize = ",lat
 echo "volume = ",lo.physVol
 
 template getforce(f,g:untyped) =
-  f.gaugeforce2(g, gc)
+  gc.gaugeforce2(g, f)
   if gfix: f.maxTreeFix(0.0, gfixextra)
 
 var
