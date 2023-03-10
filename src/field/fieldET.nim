@@ -204,14 +204,16 @@ proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] {.noinit.} =
     newFarrElem(result.arr[i], l, s, t)
     inc t
 
+template getT[V:static[int],T](x: Field[V,T]): typedesc = T
+template getT[V:static[int],T](x: typedesc[Field[V,T]]): typedesc = T
 template isWrapper*(x: SomeField): untyped = false
 template has*[F:Field](x: typedesc[F], y: typedesc): bool =
   mixin has, isWrapper
   #static: echo $F.T.type
   when y is Field: true
   else:
-    when isWrapper(F.T):
-      has(F.T, y)
+    when isWrapper(getT F):
+      has(getT F, y)
     else: false
 
 template `[]`*[F:Field](x:typedesc[F]; i:int):typedesc = F.T
@@ -409,7 +411,7 @@ iterator items*(x:FieldMul):int {.inline.} =
 
 template fmask*[F:Field](f: F; i: int): auto =
   mixin has
-  when F.has(Simd):
+  when F.type.has(Simd):
     let e = i div f.l.V
     let l = i mod f.l.V
     f[e][asSimd(l)]

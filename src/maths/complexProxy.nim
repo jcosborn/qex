@@ -72,7 +72,8 @@ template asWrapper*(x: ImagProxy, y: typed): auto =
   asImagProxy(y)
 template asVarWrapper*(x: ImagProxy, y: typed): auto =
   asVar(asImagProxy(y))
-template isWrapper*(x: ComplexProxy): auto = true
+template isWrapper*(x: ComplexProxy): bool = true
+template isWrapper*(x: typedesc[ComplexProxy]): bool = true
 template asWrapper*(x: ComplexProxy, y: typed): auto =
   asComplexProxy(y)
 template asWrapper*(x: typedesc[ComplexProxy], y: typed): auto =
