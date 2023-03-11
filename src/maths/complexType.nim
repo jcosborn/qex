@@ -240,8 +240,13 @@ proc mul*[R,X,Y:ComplexProxy](r: var R, x: X, y: Y) {.alwaysInline.} =
   #mixin mul, imadd
   #mul(  r, asReal(unsafeaddr x.re), y)
   #imadd(r, asImag(unsafeaddr x.im), y)
-  r.re = x.re*y.re - x.im*y.im
-  r.im = x.re*y.im + x.im*y.re
+  #r.re = x.re*y.re - x.im*y.im
+  #r.im = x.re*y.im + x.im*y.re
+  mixin mul, imadd, imsub
+  mul(r.re, x.re, y.re)
+  mul(r.im, x.re, y.im)
+  imsub(r.re, x.im, y.im)
+  imadd(r.im, x.im, y.re)
 
 template imadd*(r: SomeNumber, x: ImagProxy2, y: ImagProxy3) =  r -= x*y
 template imadd*(r: ImagProxy, x: ImagProxy2, y: SomeNumber) =  r += x*y
@@ -269,8 +274,13 @@ proc imadd*[R,X,Y:ComplexProxy](r: var R, x: X, y: Y) {.alwaysInline.} =
   #mixin imadd
   #imadd(r, asReal(unsafeaddr x.re), y)
   #imadd(r, asImag(unsafeaddr x.im), y)
-  r.re += x.re*y.re - x.im*y.im
-  r.im += x.re*y.im + x.im*y.re
+  #r.re += x.re*y.re - x.im*y.im
+  #r.im += x.re*y.im + x.im*y.re
+  mixin imadd, imsub
+  imadd(r.re, x.re, y.re)
+  imadd(r.im, x.re, y.im)
+  imsub(r.re, x.im, y.im)
+  imadd(r.im, x.im, y.re)
 
 template imsub*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3) =  r -= x*y
 

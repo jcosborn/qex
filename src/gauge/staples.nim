@@ -126,7 +126,7 @@ proc makeStaples*[T](uu: openArray[T], s: auto): auto =
   toc("makeStaples setup")
   threads:
     tic()
-    var umu,unu,umunu,unumu: type(load1(u[0][0]))
+    var umu,unu,umunu,unumu {.noInit.}: evalType(u[0][0])
     for ir in lo:
       for mu in 1..<nd:
         for nu in 0..<mu:

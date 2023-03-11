@@ -252,8 +252,7 @@ template `:=`*(x: ComplexProxy, y: RealProxy2): untyped = assign(x,y)
 template `:=`*(x: ComplexProxy, y: ImagProxy2): untyped = assign(x,y)
 template `:=`*(x: ComplexProxy, y: ComplexProxy2): untyped = assign(x,y)
 
-# pos, neg, conj, adj, transpose, trace, norm2, inv
-
+# pos, neg, conj, adj, transpose, trace
 template unaryOverloads(op,fn,implR,implI: untyped) {.dirty.} =
   template fn*(x: RealProxy): untyped = newRealP(implR(x[],0))
   #proc fn*(x: RealProxy): auto {.inline,noInit.} = newRealP(implR(x[],0))
@@ -314,7 +313,7 @@ template traceImagU(xr,xi: untyped): untyped =
   trace(xi)
 unaryOverloads(`%`, trace, traceRealU, traceImagU)
 
-
+# norm2, abs
 template unaryOverloadsR(op,fn,implR,implI: untyped) {.dirty.} =
   template fn*(x: RealProxy): untyped = newRealP(implR(x[],0))
   #proc fn*(x: RealProxy): auto {.inline,noInit.} = newRealP(implR(x[],0))

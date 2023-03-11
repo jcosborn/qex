@@ -21,13 +21,13 @@ template map011(T,L,op1,op2:untyped):untyped {.dirty.} =
     for i in 0..<L:
       result[][i] = op2(x[][i])
 template map021(T,L,op1,op2:untyped):untyped {.dirty.} =
-  proc op1*(x,y:T):T {.inline,noInit.} =
+  proc op1*(x,y:T):T {.alwaysInline,noInit.} =
     bind forStatic
     #forStatic i, 0, L-1:
     for i in 0..<L:
       result[][i] = op2(x[][i], y[][i])
 template map021x(T1,T2,TR,L,op1,op2:untyped):untyped {.dirty.} =
-  proc op1*(x:T1,y:T2):TR {.inline,noInit.} =
+  proc op1*(x:T1,y:T2):TR {.alwaysInline,noInit.} =
     mixin `[]`
     #bind forStatic
     #forStatic i, 0, L-1:
@@ -42,26 +42,24 @@ template map021x(T1,T2,TR,L,op1,op2:untyped):untyped {.dirty.} =
 macro map110(T,L,op1,op2: untyped): untyped =
   #template tmpldef(f,r,xx,T,body: untyped) =
   #  template f*(r: T; xx: T) = body
-  template tmpldef(f,r,xx,T,body: untyped) =
+  template tmpldef(f,r,x,T,body: untyped) =
     getOptimPragmas()
-    proc f*(r: var T; xx: T) {.alwaysInline.} = body
+    proc f*(r: var T; x: T) {.alwaysInline.} = body
   let r = gensym(nskParam,"r")
-  let xx = gensym(nskParam,"xx")
-  let x = ident("x")
+  let x = gensym(nskParam,"x")
   var body = newStmtList()
-  body.add newLetStmt(x, xx)
   let n = L.intval.int
   for i in 0..<n:
     template bb(t: untyped): untyped =
       newCall(ident"[]",newCall(ident"[]",t),newLit(i))
     body.add newCall(op2, bb(r), bb(x))
-  result = getAst(tmpldef(op1,r,xx,T,body))
+  result = getAst(tmpldef(op1,r,x,T,body))
   #echo result.repr
 
 template map120(T,L,op1,op2:untyped):untyped {.dirty.} =
   getOptimPragmas()
   proc op1*(r:var T; x,y:T) {.alwaysInline,noInit.} =
-    bind forStatic
+    #bind forStatic
     #forStatic i, 0, L-1:
     for i in 0..<L:
       op2(r[][i], x[][i], y[][i])
@@ -263,6 +261,7 @@ template makeSimdArray*(T:untyped;L:typed;B:typedesc):untyped {.dirty.} =
 #template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
 #template makeSimdArray2*(T:untyped;L:typed;BB,F:typedesc;N0,N:typed):untyped {.dirty.} =
 template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
+  getOptimPragmas()
   #static: echo "makeSimdArray2: ", L, " ", $B
   bind map011, map021, map021x, map110, map120, map120x, map130, arrayType
   bind makePerm, makePackP, makePackM, makeBlendP, makeBlendM
@@ -271,6 +270,7 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
   type T* = object
     #v*: array[L,B.type]
     v*: arrayType(L,B)
+    #v* {.align(L*sizeof(B)).}: arrayType(L,B)
   #type T* = SimdArrayObj[L,B]
   template isWrapper*(x:typedesc[T]): bool = false
   template isWrapper*(x:T): bool = false
@@ -294,7 +294,7 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
     template `[]`*(x:T; i:SomeInteger):untyped = x[][i div N0][i mod N0]
     template `[]=`*(x:T; i:SomeInteger; y:auto) = x[][i div N0][i mod N0] = y
   template load1*(x:T):untyped = x
-  proc to*(x:SomeNumber; y:typedesc[T]):T {.inline,noInit.} =
+  proc to*(x:SomeNumber; y:typedesc[T]):T {.alwaysInline,noInit.} =
     bind forStatic
     forStatic i, 0, L-1:
       assign(result[][i], x)
@@ -390,8 +390,10 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
       r[][i] = xx[i]
   when N==1:
     template assign*(r: SomeNumber, x: T): untyped = r = x[0]
-  proc assign*(r: var T; x: SomeNumber) {.inline.} =
-    assign(r, x.to(T))
+  proc assign*(r: var T; x: SomeNumber) {.alwaysInline.} =
+    #assign(r, x.to(T))
+    forStatic i, 0, L-1:
+      assign(r[][i], x)
   template `:=`*(r: T, x: SomeNumber) = assign(r, x)
   proc assign*(r:var T; x:array[N,SomeNumber]) {.inline.} =
     when compiles(assign(r[][0], unsafeAddr(x[0]))):
