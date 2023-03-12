@@ -57,7 +57,7 @@ proc makeGatherMap*(c: Comm, rl: var seq[RecvList]): GatherMap =
 
   result.lidx.newSeq(0)
   result.ldest.newSeq(0)
-  var sidx = newSeq[int32](0)
+  var sidx = newSeqOfCap[int32](rl.len)
   result.rdest.newSeq(0)
   result.rmsginfo.newSeq(0)
   var mem = newSeq[RankScatterMem](0)
@@ -117,7 +117,7 @@ proc makeGatherMap*(c: Comm, sl: var seq[SendList]): GatherMap =
 
   result.lidx.newSeq(0)
   result.ldest.newSeq(0)
-  var didx = newSeq[int32](0)
+  var didx = newSeqOfCap[int32](sl.len)
   result.sidx.newSeq(0)
   result.smsginfo.newSeq(0)
   var mem = newSeq[RankScatterMem](0)
@@ -226,6 +226,9 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
     #echo "waitRecv: ", i
     c.waitRecv(i, free=false)
     #toc("gather: wait recv")
+    #for j in 0..<gm.rmsginfo[i].count:
+    #  let k = gm.rmsginfo[i].start + j
+    #  data.copy(gm.rdest[k], &&recvbuf[elemsize*k])
     threads:
       let i0 = gm.rmsginfo[i].start
       let i1 = gm.rmsginfo[i].start + gm.rmsginfo[i].count;
@@ -233,11 +236,8 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
       # make sure threads don't share inner sites
       let range = splitThreads(toOpenArray(gm.rdest,i0,i1-1),
                                data.vlen, numThreads, threadNum)
-      for i in range[0] ..< range[1]:
-        let k = i0 + i
-        #let k = gm.rmsginfo[i].start + j
-        #copyMem(&&destbuf[elemsize*gm.rdest[k]], &&recvbuf[elemsize*k], elemsize)
-        #copyElem(dest, gm.rdest[k], &&recvbuf[elemsize*k])
+      for j in range[0] ..< range[1]:
+        let k = i0 + j
         data.copy(gm.rdest[k], &&recvbuf[elemsize*k])
     #toc("gather: copy")
   toc("gather: wait recvs and copy")
