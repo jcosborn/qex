@@ -292,7 +292,8 @@ proc intSeqParamX*(s: string, d: seq[int], c: string, ii: tuple): seq[int] =
       if c.len > 0:
         result.add parseInt(c)
   addParam(s, join(result,","), c, ii)
-template intSeqParam*(s: string, d: seq[int] = @[], c = ""): seq[int] =
+#template intSeqParam*(s: string, d: seq[int] = @[], c = ""): seq[int] =
+template intSeqParam*(s: string, d = newSeq[int](), c = ""): seq[int] =
   addParamCT(s, d, c, instantiationInfo(fullPaths=true))
   intSeqParamX(s, d, c, instantiationInfo(fullPaths=true))
 
@@ -305,7 +306,8 @@ proc floatSeqParamX*(s: string, d: seq[float], c: string, ii: tuple): seq[float]
       if c.len > 0:
         result.add parseFloat(c)
   addParam(s, join(result,","), c, ii)
-template floatSeqParam*(s: string, d: seq[float] = @[], c = ""): seq[float] =
+#template floatSeqParam*(s: string, d: seq[float] = @[], c = ""): seq[float] =
+template floatSeqParam*(s: string, d = newSeq[float](), c = ""): seq[float] =
   addParamCT(s, d, c, instantiationInfo(fullPaths=true))
   floatSeqParamX(s, d, c, instantiationInfo(fullPaths=true))
 
