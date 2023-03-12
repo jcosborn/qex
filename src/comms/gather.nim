@@ -1,12 +1,26 @@
-import comms
-import rankScatter
-#import strformat
+import comms, rankScatter, base/profile, field
 import algorithm
-import base/profile
 
 template `&&`(x: char): untyped = cast[pointer](unsafeAddr(x))
 template `&&`(x: int32): untyped = cast[pointer](unsafeAddr(x))
-#template `&&`(x: seq): untyped = cast[pointer](unsafeAddr(x[0]))
+template `&&`(x: seq): untyped = cast[pointer](unsafeAddr(x[0]))
+
+proc adjust[T](i: int, x: openarray[T], b: int): int =
+  result = i
+  if i > 0:
+    let n = x.len
+    while result<n:
+      if x[result-1] div b != x[result] div b:
+        break
+      inc result
+
+proc splitThreads[T](x: openarray[T], b: int, nt,myt: int): tuple[a:int,b:int] =
+  let n = x.len
+  var i0 = (n*myt) div nt;
+  var i1 = (n*(myt+1)) div nt
+  i0 = adjust(i0, x, b)
+  i1 = adjust(i1, x, b)
+  result = (i0,i1)
 
 type
   RecvList* = object
@@ -21,7 +35,7 @@ type
     rank*: int32
     start*: int32
     count*: int32
-  GatherMap* = object
+  GatherMap* = ref object
     nsrc*: int
     ndest*: int
     sidx*: seq[int32]  # indices in src buffer to send (size nsend)
@@ -34,6 +48,7 @@ type
     recvbuf*: seq[char]
 
 proc makeGatherMap*(c: Comm, rl: var seq[RecvList]): GatherMap =
+  result.new
   let rank = c.commrank
   rl.sort do (x, y: RecvList) -> int:
     result = cmp(x.srank, y.srank)
@@ -74,23 +89,25 @@ proc makeGatherMap*(c: Comm, rl: var seq[RecvList]): GatherMap =
   #echoAll r
 
   let nsend = r.buf.len div sizeof(int32)
-  let sbuf = cast[ptr UncheckedArray[int32]](unsafeAddr r.buf[0])
-  result.sidx.newSeq(nsend)
-  for i in 0..<nsend:
-    result.sidx[i] = sbuf[i]
+  if nsend > 0:
+    let sbuf = cast[ptr UncheckedArray[int32]](unsafeAddr r.buf[0])
+    result.sidx.newSeq(nsend)
+    for i in 0..<nsend:
+      result.sidx[i] = sbuf[i]
 
-  result.smsginfo.newSeq(r.mem.len)
-  var st = 0
-  for i in 0..<r.mem.len:
-    let ln = r.mem[i].bytes div sizeof(int32)
-    result.smsginfo[i] = MsgInfo(rank: r.mem[i].rank.int32, start: st.int32,
-                                 count: ln.int32)
-    st += ln
+    result.smsginfo.newSeq(r.mem.len)
+    var st = 0
+    for i in 0..<r.mem.len:
+      let ln = r.mem[i].bytes div sizeof(int32)
+      result.smsginfo[i] = MsgInfo(rank: r.mem[i].rank.int32, start: st.int32,
+                                   count: ln.int32)
+      st += ln
 
   result.nsrc = nsend + result.lidx.len
   result.ndest = rl.len
 
 proc makeGatherMap*(c: Comm, sl: var seq[SendList]): GatherMap =
+  result.new
   let rank = c.commrank
   sl.sort do (x, y: SendList) -> int:
     result = cmp(x.drank, y.drank)
@@ -150,12 +167,16 @@ proc makeGatherMap*(c: Comm, sl: var seq[SendList]): GatherMap =
   result.ndest = nrecv + result.lidx.len
   #echoAll fmt"{rank}: {result.smsginfo}, {result.rmsginfo}"
 
-proc gather*(c: Comm; gm: GatherMap; elemsize: int; dest,src: pointer) =
-  tic()
-  let srcbuf = cast[ptr UncheckedArray[char]](src)
-  let destbuf = cast[ptr UncheckedArray[char]](dest)
 
+# TODO: startRecvs, startSends, doLocal, wait
+# dest: D, src: S
+# src.put(buf, i)
+# dest.get(i, buf)
+#proc gather*(c: Comm; gm: GatherMap; elemsize: int; dest,src: auto) =
+proc gather*(c: Comm; gm: GatherMap; data: auto) =
+  tic()
   # start recvs
+  let elemsize = data.elemsize
   let rsize = elemsize*gm.rdest.len
   #echo "rsize: ", rsize
   var recvbuf = newSeqUninitialized[int8](rsize)
@@ -178,7 +199,9 @@ proc gather*(c: Comm; gm: GatherMap; elemsize: int; dest,src: pointer) =
     threads:
       tfor j, 0..<gm.smsginfo[i].count:
         let k = gm.smsginfo[i].start + j
-        copyMem(&&sendbuf[elemsize*k], &&srcbuf[elemsize*gm.sidx[k]], elemsize)
+        #copyMem(&&sendbuf[elemsize*k], &&srcbuf[elemsize*gm.sidx[k]], elemsize)
+        #copyElem(&&sendbuf[elemsize*k], data.src, gm.sidx[k])
+        data.copy(&&sendbuf[elemsize*k], gm.sidx[k])
     #toc("gather: fill")
     c.pushSend(gm.smsginfo[i].rank,
                &&sendbuf[elemsize*gm.smsginfo[i].start],
@@ -188,8 +211,13 @@ proc gather*(c: Comm; gm: GatherMap; elemsize: int; dest,src: pointer) =
 
   # copy local sites
   threads:
-    tfor i, 0..<gm.ldest.len:
-      copyMem(&&destbuf[elemsize*gm.ldest[i]], &&srcbuf[elemsize*gm.lidx[i]], elemsize)
+    #tfor i, 0..<gm.ldest.len:
+    # make sure threads don't share inner sites
+    let range = splitThreads(gm.ldest, data.vlen, numThreads, threadNum)
+    for i in range[0] ..< range[1]:
+      #copyMem(&&destbuf[elemsize*gm.ldest[i]], &&srcbuf[elemsize*gm.lidx[i]], elemsize)
+      #copyElem(data.dest, gm.ldest[i], src, gm.lidx[i])
+      data.copy(gm.ldest[i], gm.lidx[i])
   toc("gather: copy local")
 
   # wait recvs and copy
@@ -199,9 +227,18 @@ proc gather*(c: Comm; gm: GatherMap; elemsize: int; dest,src: pointer) =
     c.waitRecv(i, free=false)
     #toc("gather: wait recv")
     threads:
-      tfor j, 0..<gm.rmsginfo[i].count:
-        let k = gm.rmsginfo[i].start + j
-        copyMem(&&destbuf[elemsize*gm.rdest[k]], &&recvbuf[elemsize*k], elemsize)
+      let i0 = gm.rmsginfo[i].start
+      let i1 = gm.rmsginfo[i].start + gm.rmsginfo[i].count;
+      #tfor k, i0 ..< i1:
+      # make sure threads don't share inner sites
+      let range = splitThreads(toOpenArray(gm.ldest,i0,i1-1),
+                               data.vlen, numThreads, threadNum)
+      for i in range[0] ..< range[1]:
+        let k = i0 + i
+        #let k = gm.rmsginfo[i].start + j
+        #copyMem(&&destbuf[elemsize*gm.rdest[k]], &&recvbuf[elemsize*k], elemsize)
+        #copyElem(dest, gm.rdest[k], &&recvbuf[elemsize*k])
+        data.copy(gm.rdest[k], &&recvbuf[elemsize*k])
     #toc("gather: copy")
   toc("gather: wait recvs and copy")
 
@@ -211,9 +248,55 @@ proc gather*(c: Comm; gm: GatherMap; elemsize: int; dest,src: pointer) =
   c.waitSends(gm.smsginfo.len)
   toc("gather: wait sends")
 
+type GatherPointer = object
+  src: ptr UncheckedArray[char]
+  dest: ptr UncheckedArray[char]
+  elemsize: int
+template vlen(gd: GatherPointer): int = 1
+template copy(gd: GatherPointer, d: pointer, s: SomeInteger) =
+  copyMem(d, cast[pointer](addr gd.src[gd.elemsize*s]), gd.elemsize)
+template copy(gd: GatherPointer, d: SomeInteger, s: pointer) =
+  copyMem(cast[pointer](addr gd.dest[gd.elemsize*d]), s, gd.elemsize)
+template copy(gd: GatherPointer, d: SomeInteger, s: SomeInteger) =
+  copyMem(cast[pointer](addr gd.dest[gd.elemsize*d]),
+          cast[pointer](addr gd.src[gd.elemsize*s]), gd.elemsize)
+proc gather*(c: Comm; gm: GatherMap; elemsize: int; d,s: pointer) =
+  let dest = cast[ptr UncheckedArray[char]](d)
+  let src = cast[ptr UncheckedArray[char]](s)
+  var gd = GatherPointer(src: src, dest: dest, elemsize: elemsize)
+  c.gather(gm, gd)
+
+type GatherField[F1,F2] = object
+  src: F1
+  dest: F2
+  elemsize: int
+  vlen: int
+template copy(gd: GatherField, d: pointer, s: SomeInteger) =
+  mixin evalType
+  #copyMem(d, cast[pointer](addr gd.src[gd.elemsize*s]), gd.elemsize)
+  type T = evalType(gd.src{s})
+  let p = cast[ptr T](d)
+  p[] := gd.src{s}
+template copy(gd: GatherField, d: SomeInteger, s: pointer) =
+  mixin evalType
+  #copyMem(cast[pointer](addr gd.dest[gd.elemsize*d]), s, gd.elemsize)
+  type T = evalType(gd.dest{d})
+  let p = cast[ptr T](s)
+  gd.dest{d} := p[]
+template copy(gd: GatherField, d: SomeInteger, s: SomeInteger) =
+  mixin evalType
+  #copyMem(cast[pointer](addr gd.dest[gd.elemsize*d]),
+  #        cast[pointer](addr gd.src[gd.elemsize*s]), gd.elemsize)
+  gd.dest{d} := gd.src{s}
+proc gather*[D,S:Field](c: Comm; gm: GatherMap; d: D, s: S) =
+  mixin evalType
+  type T = evalType(d{0})
+  var gd = GatherField[S,D](src: s, dest: d, elemsize: sizeof(T), vlen: max(D.V,S.V))
+  c.gather(gm, gd)
+
 proc gatherReversed*(c: Comm; gm: GatherMap; elemsize: int;
                      dest,src: pointer) =
-  var r: GatherMap
+  var r = GatherMap.new
   r.nsrc = gm.ndest
   r.ndest = gm.nsrc
   r.sidx = gm.rdest
@@ -227,31 +310,69 @@ proc gatherReversed*(c: Comm; gm: GatherMap; elemsize: int;
   c.gather(r, elemsize, dest, src)
 
 when isMainModule:
-  commsInit()
+  import strformat
+  import qex
+  qexInit()
+
   echo "rank: ", myRank, "/", nRanks
   let c = getComm()
   let nranks = c.commsize
   let rank = c.commrank
   echo &"commrank: {rank}/{nranks}"
 
-  var rl = newSeq[RecvList](0)
-  for i in 0..9:
-    let d = i.int32
-    let r = (i mod nranks).int32
-    let s = (i xor 1).int32
-    rl.add RecvList(didx: d, srank: r, sidx: s)
+  proc test1 =
+    let n = 20
+    var rl = newSeq[RecvList](0)
+    for i in 0..<n:
+      let d = i.int32
+      let r = (i mod nranks).int32
+      let s = (i xor 1).int32
+      rl.add RecvList(didx: d, srank: r, sidx: s)
 
-  let gm = c.makeGatherMap(rl)
-  #echoAll gm
+    let gm = c.makeGatherMap(rl)
+    #echoAll gm
 
-  var src1 = newSeq[int](10)
-  var dst1 = newSeq[int](10)
-  for i in 0..9:
-    src1[i] = i xor 1
-    dst1[i] = -1
+    var src1 = newSeq[int](n)
+    var dst1 = newSeq[int](n)
+    for i in 0..<n:
+      dst1[i] = -1
+      src1[i xor 1] = -1
+      if (i mod nranks) == rank:
+        src1[i xor 1] = i
 
-  c.gather(gm, sizeof(int), &&dst1, &&src1)
+    c.gather(gm, sizeof(int), &&dst1, &&src1)
 
-  echo dst1
+    echo dst1
+    for i in 0..<n:
+      if dst1[i] != i:
+        echoAll "Failed ", rank, " ", i, " : ", dst1[i]
 
-  commsFinalize()
+  test1()
+
+  proc test2 =
+    defaultSetup()
+    var seed = 987654321'u
+    var rng = newRngField(lo, MRG32k3a, seed)
+    var cv0 = lo.ColorVector()
+    var cv1 = lo.ColorVector()
+    var cv2 = lo.ColorVector()
+    cv0.gaussian rng
+    let nd = lo.nDim
+    var x = newSeq[int32](nd)
+    for d in 0..<lo.ndim:
+      var sl = newSeq[SendList](0)
+      for i in lo.sites:
+        lo.coord(x, i)
+        x[d] = int32 (x[d]+1) mod lo.physGeom[d]
+        let ri = lo.rankIndex(x)
+        sl.add SendList(sidx: int32 i, drank: int32 ri.rank, didx: int32 ri.index)
+      let gm = c.makeGatherMap(sl)
+      c.gather(gm, cv1, cv0)
+      let sh = newShifter(cv0, d, -1)
+      cv2 := sh ^* cv0
+      cv2 -= cv1
+      echo cv2.norm2
+
+  test2()
+
+  qexFinalize()
