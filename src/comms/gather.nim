@@ -195,7 +195,7 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
   toc("gather: alloc sendbuf")
   for i in 0..<gm.smsginfo.len:
     #tic()
-    #echoAll "pushSend: ", i
+    #echoAll "pushSend: ", i, " count ", gm.smsginfo[i].count
     threads:
       tfor j, 0..<gm.smsginfo[i].count:
         let k = gm.smsginfo[i].start + j
@@ -231,7 +231,7 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
       let i1 = gm.rmsginfo[i].start + gm.rmsginfo[i].count;
       #tfor k, i0 ..< i1:
       # make sure threads don't share inner sites
-      let range = splitThreads(toOpenArray(gm.ldest,i0,i1-1),
+      let range = splitThreads(toOpenArray(gm.rdest,i0,i1-1),
                                data.vlen, numThreads, threadNum)
       for i in range[0] ..< range[1]:
         let k = i0 + i
