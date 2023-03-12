@@ -11,26 +11,81 @@ import math
 import macros
 getOptimPragmas()
 
-template binaryMixed(T,op1,op2:untyped):untyped =
+# mask ops
+proc cvtu32_mask8*(a: cuint): mmask8 {.importc: "_cvtu32_mask8", header: "immintrin.h".}
+template int2mask*(T: typedesc, i: SomeInteger): mmask8 = cvtu32_mask8(uint32 i)
+template int2mask*(T: typedesc[m512], i: SomeInteger): mmask16 = cvtu32_mask16(uint32 i)
+
+proc `[]=`*(r:var m128; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
+  mixin toArray
+  var a = toArray(r)
+  a[i] := x
+  assign(r, a)
+proc `[]=`*(r:var m128d; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
+  mixin toArray
+  var a = toArray(r)
+  a[i] := x
+  assign(r, a)
+proc `[]=`*(r:var m256; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
+  mixin toArray
+  var a = toArray(r)
+  a[i] := x
+  assign(r, a)
+proc `[]=`*(r:var m256d; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
+  mixin toArray
+  var a = toArray(r)
+  a[i] := x
+  assign(r, a)
+#proc `[]=`*(r:var m256d; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
+#  var a {.noInit.}: m256d
+#  a := x
+#  let k = cvtu32_mask8(uint32 1 shl i)
+#  r = mm256_mask_blend_pd(k, r, a)
+#proc `[]=`*(r:var m256d; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
+#  var a = float x
+#  let k = cvtu32_mask8(uint32 1 shl i)
+#  r = mm256_mask_expandloadu_pd(r, k, addr a)
+proc `[]=`*(r:var m512; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
+  mixin toArray
+  var a = toArray(r)
+  a[i] := x
+  assign(r, a)
+#proc `[]=`*(r:var m512d; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
+#  mixin toArray
+#  var a = toArray(r)
+#  a[i] := x
+#  assign(r, a)
+proc `[]=`*(r:var m512d; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
+  var a {.noInit.}: m512d
+  a := x
+  let k = cvtu32_mask8(uint32 1 shl i)
+  r = mm512_mask_blend_pd(k, r, a)
+#proc `[]=`*(r:var m512d; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
+#  var a = float x
+#  let k = cvtu32_mask8(uint32 1 shl i)
+#  r = mm512_mask_expandloadu_pd(r, k, addr a)
+
+# helpers
+template binaryMixed(T,op1,op2:untyped) =
   template op1*(x:SomeNumber; y:T):T = op2(x.to(T),y)
   template op1*(x:T; y:SomeNumber):T = op2(x,y.to(T))
-template unaryMixedVar(T,op1,op2:untyped):untyped =
+template unaryMixedVar(T,op1,op2:untyped) =
   template op1*(r: T; x:SomeNumber) = op2(r,x.to(T))
-template binaryMixedVar(T,op1,op2:untyped):untyped =
+template binaryMixedVar(T,op1,op2:untyped) =
   template op1*(r: T; x:SomeNumber; y:T) = op2(r,x.to(T),y)
   template op1*(r: T; x:T; y:SomeNumber) = op2(r,x,y.to(T))
-template trinaryMixedVar(T,op1,op2:untyped):untyped =
+template trinaryMixedVar(T,op1,op2:untyped) =
   template op1*(r: T; x:SomeNumber; y:T; z:T) = op2(r,x.to(T),y,z)
   template op1*(r: T; x:T; y:SomeNumber; z:T) = op2(r,x,y.to(T),z)
   template op1*(r: T; x:T; y:T; z:SomeNumber) = op2(r,x,y,z.to(T))
-template map1(T,N,op:untyped):untyped {.dirty.} =
+template map1(T,N,op:untyped) {.dirty.} =
   proc op*(x:T):T {.alwaysInline,noInit.} =
     let t = x.toArray
     var r{.noInit.}:type(t)
     for i in 0..<N:
       r[i] = op(t[i])
     assign(result, r)
-template map2(T,N,op:untyped):untyped {.dirty.} =
+template map2(T,N,op:untyped) {.dirty.} =
   proc op*(x:T, y:T):T {.alwaysInline,noInit.} =
     let
       t = x.toArray
@@ -40,18 +95,18 @@ template map2(T,N,op:untyped):untyped {.dirty.} =
       r[i] = op(t[i], u[i])
     assign(result, r)
 
-template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
+template basicDefs(T,F,N,P,S:untyped) {.dirty.} =
   template isWrapper*(x:typedesc[T]): bool = false
   template isWrapper*(x:T): bool = false
-  template numberType*(x:typedesc[T]):untyped = F
-  template numberType*(x:T):untyped = F
-  template numNumbers*(x:typedesc[T]):untyped = N
-  template numNumbers*(x:T):untyped = N
-  template simdType*(x:typedesc[T]):untyped = T
-  template simdType*(x:T):untyped = T
-  template simdLength*(x:T):untyped = N
-  template simdLength*(x:typedesc[T]):untyped = N
-  template load1*(x:T):untyped = x
+  template numberType*(x:typedesc[T]):typedesc = F
+  template numberType*(x:T):typedesc = F
+  template numNumbers*(x:typedesc[T]):int = N
+  template numNumbers*(x:T):int = N
+  template simdType*(x:typedesc[T]):typedesc = T
+  template simdType*(x:T):typedesc = T
+  template simdLength*(x:T):int = N
+  template simdLength*(x:typedesc[T]):int = N
+  template load1*(x:T):auto = x
   proc assign*(r:ptr F; x:T) {.alwaysInline.} =
     `P "_storeu_" S`(r, x)
   proc assign*(r:var T; x:ptr SomeNumber) {.alwaysInline.} =
@@ -62,16 +117,16 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
       var t{.noInit.}:array[N,F]
       for i in 0..<N: t[i] = F(y[][i])
       assign(r, t)
-  template toSimd*(x:array[N,F]):untyped =
-    `P "_loadu_" S`(cast[ptr F](unsafeAddr(x)))
+  template toSimd*(x:array[N,F]):T =
+    `P "_loadu_" S`(unsafeAddr x[0])
   proc toArray*(x:T):array[N,F] {.alwaysInline,noInit.} =
-    `P "_storeu_" S`(cast[ptr F](result.addr), x)
-  template to*(x:SomeNumber; t:typedesc[T]):untyped =
+    `P "_storeu_" S`(addr result[0], x)
+  template to*(x:SomeNumber; t:typedesc[T]):T =
     `P "_set1_" S`(F(x))
-  template to*(x:array[N,F]; t:typedesc[T]):untyped =
+  template to*(x:array[N,F]; t:typedesc[T]):T =
     toSimd(x)
   proc to*(x:T; t:typedesc[array[N,F]]):array[N,F] {.alwaysInline,noInit.} =
-    `P "_storeu_" S`(cast[ptr F](result.addr), x)
+    `P "_storeu_" S`(addr result[0], x)
   #when F is float32:
   #  template toSingleImpl*(x: T): untyped = x
   #  template toSingle*(x: T): untyped = x
@@ -128,10 +183,15 @@ template basicDefs(T,F,N,P,S:untyped):untyped {.dirty.} =
     #static: echo "end a mask"
   proc `[]`*(x:T; i:SomeInteger):F {.alwaysInline,noInit.} =
     toArray(x)[i]
-  proc `[]=`*(r:var T; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
-    var a = toArray(r)
-    a[i] = F(x)
-    assign(r, a)
+  #proc `[]=`*(r:var T; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
+  #  var a = toArray(r)
+  #  a[i] = F(x)
+  #  assign(r, a)
+  #proc `[]=`*(r:var T; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
+  #  var a {.noInit.}: T
+  #  assign(a, x)
+  #  let k = T.int2mask(1 shl i)
+  #  r = `P "_mask_blend_" S`(k, r, a)
   proc `$`*(x:T):string =
     result = "[" & $x[0]
     for i in 1..<N:
@@ -484,9 +544,10 @@ when isMainModule:
   assign(s, a[0], a[1], a[2], a[3])
   echo s
 
-  var s8:SimdS8
+  var s8:m256
   assign(s8, [0,1,2,3,4,5,6,7])
-  var d8 = toDoubleA(s8)
+  var d8:m512d
+  assign(d8, s8)
   echo d8[0]
   echo d8[1]
 
@@ -501,9 +562,9 @@ when isMainModule:
   when declared(SimdS16):
     var s16:SimdS16
     assign(s16, [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16])
-    var h16 = toHalf(s16)
-    var t16 = toSingle(h16)
-    echo t16
+    #var h16 = toHalf(s16)
+    #var t16 = toSingle(h16)
+    #echo t16
 
   proc testm128 =
     echo "testing perms m128"
@@ -601,4 +662,35 @@ when isMainModule:
       echo perm(x0, 7)
       echo perm(x0, 8)
     testm512()
+
+    proc testInsert1(x: var m512, i: int, y: float32) =
+      x[i] = y
+    proc testInsert2(x: var m512, i: int, y: float32) =
+      var a {.noInit.}: array[16,float32]
+      a[i] = y
+      var z {.noInit.}: m512
+      assign(z, a)
+      let k = mm512_int2mask(int32 1 shl i)
+      x = mm512_mask_blend_ps(k, x, z)
+    proc testInsert3(x: var m512, i: int, y: float32) =
+      var a = y
+      let k = mm512_int2mask(int32 1 shl i)
+      x = mm512_mask_expandloadu_ps(x, k, addr a)
+    proc testInsert4(x: var m512, i: int, y: float32) =
+      var a {.noInit.}: m512
+      a := y
+      let k = mm512_int2mask(int32 1 shl i)
+      x = mm512_mask_blend_ps(k, x, a)
+    block:
+      var x: m512
+      assign(x, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+      for i in 0..<8:
+        testInsert1(x, 2*i, -1)
+      echo x
+    block:
+      var x: m512
+      assign(x, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+      for i in 0..<8:
+        testInsert4(x, 2*i, -1)
+      echo x
 

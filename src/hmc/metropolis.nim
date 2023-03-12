@@ -1,31 +1,62 @@
 import strUtils
-import math
+import math, strformat
 
 type
-  MetropolisRoot* = object {.inheritable.}
-    lwOld*: float    # log weight of starting configuration
-    lwNew*: float    # log weight of ending configuration
-    dlw*: float      # difference of log weights (lwOld-lwNew)
-    pAccept*: float  # acceptance probability
-    rnd*: float      # random value chosen for accept/reject
-    accepted*: bool  # true if accepted
-    nUpdates*: int   # number of updates so far
-    nAccepts*: int   # number of accepts so far
-    nRejects*: int   # number of rejects so far
-    accRatio*: float # acceptance ratio so far
+  MetropolisStats* = object
+    hOld*: float
+    hNew*: float
+    rnd*: float
+  MetropolisRootObj* {.inheritable.} = object
     verbosity*: int  # 0:quiet, 1:info
-# required methods:
+    stats*: seq[MetropolisStats]
+    hOld*: float
+    hNew*: float
+    rnd*: float
+    deltaH*: float
+    hReverse*: float
+    pAccept*: float
+    accepted*: bool
+    nUpdates*: int
+    nAccepts*: int
+    nRejects*: int
+    acceptRatio*: float
+    avgDeltaH*: float
+  MetropolisRoot* = ref MetropolisRootObj
+  MetropolisWrapper*[T] = ref object of MetropolisRootObj
+    state*: T
+# required routines:
 #   start, logWeight, generate, globalRand, accept, reject
-# optional: finish
 
-proc finish*(m: var MetropolisRoot) = discard
+# optional routines
+proc finish*[M:MetropolisRoot](m: var M) = discard
+proc checkReverse*[M:MetropolisRoot](m: var M): bool = false
+proc generateReverse*[M:MetropolisRoot](m: var M) = discard
+proc finishReverse*[M:MetropolisRoot](m: var M) = discard
 
-proc clear*(m: var MetropolisRoot) =
-  m.accepted = false
+
+proc clearStats*[M:MetropolisRoot](m: var M) =
+  m.stats.setLen(0)
   m.nUpdates = 0
   m.nAccepts = 0
   m.nRejects = 0
-  m.accRatio = 0
+  m.acceptRatio = 0
+  m.avgDeltaH = 0
+
+proc updateStats*[M:MetropolisRoot](m: var M) =
+  m.stats.add MetropolisStats(hOld:m.hOld,hNew:m.hNew,rnd:m.rnd)
+  let n = m.nUpdates.float
+  inc m.nUpdates
+  if m.accepted:
+    inc m.nAccepts
+  else:
+    inc m.nRejects
+  m.acceptRatio = m.nAccepts / m.nUpdates
+  m.avgDeltaH = (n*m.avgDeltaH + m.deltaH) / (n+1)
+
+proc init*[M:MetropolisRoot](m: var M) =
+  m.verbosity = 0
+  m.stats.newSeq(0)
+  m.clearStats
 
 proc update*[T:MetropolisRoot](m: var T) =
   mixin finish
@@ -34,33 +65,36 @@ proc update*[T:MetropolisRoot](m: var T) =
 
   m.start
 
-  m.lwOld = m.logWeight
+  m.hOld = m.getH
   m.generate
-  m.lwNew = m.logWeight
-  m.dlw = m.lwOld - m.lwNew
+  m.hNew = m.getH
+  m.deltaH = m.hNew - m.hOld
   if m.verbosity>0:
-    echo "ln(wOld): $1  ln(wNew): $2"%[m.lwOld.ff, m.lwNew.ff]
+    echo &"hOld: {m.hOld:.6f}  hNew: {m.hNew:.6f}"
 
   m.finish
 
+  if m.checkReverse:
+    m.generateReverse
+    m.hReverse = m.getH
+    m.finishReverse
+    # echo?
+
   m.rnd = m.globalRand
-  m.pAccept = exp(m.dlw)
-  inc m.nUpdates
+  m.pAccept = exp(-m.deltaH)
   if m.rnd <= m.pAccept:
     m.accepted = true
-    inc m.nAccepts
-    m.accRatio = m.nAccepts.float / m.nUpdates.float
+    m.updateStats
     if m.verbosity>0:
       echo "ACCEPT ln(pAccept): $1  pAccept: $2  rnd: $3"%
-        [m.dlw.ff, m.pAccept.ff, m.rnd.ff]
+        [m.deltaH.ff, m.pAccept.ff, m.rnd.ff]
     m.accept
   else:
     m.accepted = false
-    inc m.nRejects
-    m.accRatio = m.nAccepts.float / m.nUpdates.float
+    m.updateStats
     if m.verbosity>0:
       echo "REJECT ln(pAccept): $1  pAccept: $2  rnd: $3"%
-        [m.dlw.ff, m.pAccept.ff, m.rnd.ff]
+        [m.deltaH.ff, m.pAccept.ff, m.rnd.ff]
     m.reject
 
 
@@ -68,14 +102,16 @@ when isMainModule:
   import random
 
   type
-    Met = object of MetropolisRoot
+    Met = ref object of MetropolisRoot
       x: float
       xSave: float
       p: float
       nSteps: int
 
   proc init*(m: var Met) =
-    clear(MetropolisRoot(m))
+    m.new
+    var r = MetropolisRoot m
+    init(r)
 
   proc start(m: var Met) =
     m.xSave = m.x
@@ -93,7 +129,7 @@ when isMainModule:
   proc globalRand(m: Met): float =
     rand(1.0)
 
-  proc logWeight(m: Met): float =
+  proc getH(m: Met): float =
     let x = m.x
     let p = m.p
     1e10 + 0.5*p*p + x*x
@@ -122,7 +158,7 @@ when isMainModule:
 
   while m.nUpdates < 10:
     m.update
-    echo "nSteps: ", m.nSteps, "  accRatio: ", m.accRatio
+    echo "nSteps: ", m.nSteps, "  accRatio: ", m.acceptRatio
     if m.accepted:
       m.nSteps = max(2,m.nSteps-2)
     else:

@@ -23,17 +23,17 @@ proc replicate(g2,g1: openarray[Field]) =
     cm1 = lo1.ColorMatrix1()
     cm2 = lo2.ColorMatrix1()
   for mu in 0..<nd:
-    #echo fmt"g1[{mu}]: {g1[mu].norm2}"
+    echo &"g1[{mu}]: {g1[mu].norm2}"
     #for i in lo1.sites:
     #  cm1[i] := g1[mu]{i}
     cm1.remapLocalFrom g1[mu]
-    #echo fmt"{mu} cm1: {cm1.norm2}"
+    echo &"{mu} cm1: {cm1.norm2}"
     cm2.replicateFrom(cm1)
-    #echo fmt"{mu} cm2: {cm2.norm2}"
+    echo &"{mu} cm2: {cm2.norm2/16.0}"
     #for i in lo2.sites:
     #  g2[mu]{i} := cm2[i]
     g2[mu].remapLocalFrom cm2
-    #echo fmt"g2[{mu}]: {g2[mu].norm2}"
+    echo &"g2[{mu}]: {g2[mu].norm2/16.0}"
   #echo "g1[0][[0,0,0,0]]: ", g1[0][[0,0,0,0]]
   #echo "g2[0][[0,0,0,0]]: ", g2[0][[0,0,0,0]]
 
