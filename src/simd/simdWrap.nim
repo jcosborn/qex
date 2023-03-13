@@ -61,9 +61,6 @@ template doIndexed[T](x: T): untyped = eval(x)
 template toPrec*(x: Simd, y: typedesc[float32]): untyped = toSingle(x)
 template toPrec*(x: Simd, y: typedesc[float64]): untyped = toDouble(x)
 
-template toPrec*(x: Simd, y: typedesc[float32]): untyped = toSingle(x)
-template toPrec*(x: Simd, y: typedesc[float64]): untyped = toDouble(x)
-
 template stripSimdAsView*[T](x: T): untyped = x
 template stripSimdAsView*(x: AsView): untyped = stripSimdAsView x[]
 template stripSimdAsView*(x: Simd): untyped = stripSimdAsView x[]
