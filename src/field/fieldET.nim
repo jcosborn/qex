@@ -406,9 +406,6 @@ iterator items*(x:FieldMul):int {.inline.} =
 #iterator filter*(x:SomeField; s:string; pred:untyped):Mask {.inline.} =
   ###
 
-#import types
-#export types
-
 template fmask*[F:Field](f: F; i: int): auto =
   mixin has
   when F.type.has(Simd):
@@ -416,26 +413,8 @@ template fmask*[F:Field](f: F; i: int): auto =
     let l = i mod f.l.V
     f[e][asSimd(l)]
   else:
+    static: doAssert F.V == 1
     f[i]
-#[
-  when f.l.V == 1:
-    f[i]
-  else:
-    #when true:
-    when false:
-      mixin varMasked
-      let e = i div f.l.V
-      let l = i mod f.l.V
-      let mask = 1 shl l
-      #let fe = f[e]  # workaround for Nim codegen bug
-      varMasked(f[e], mask)
-    else:
-      let e = i div f.l.V
-      let l = i mod f.l.V
-      #indexed(f[e], l)
-      #static: echo "fmask: type f[e]: ", $type(f[e])
-      f[e][asSimd(l)]
-]#
 
 template `{}`*(f: Field; i: int): untyped =
   fmask(f, i)
@@ -444,12 +423,14 @@ template `{}`*(f: Subsetted; i: int): untyped =
   fmask(f.field, i)
 
 template fmask*(f: Field; i: AsView): untyped =
-  when f.l.V == 1:
-    f[i[]]
-  else:
-    let e = i[] div f.l.V
-    let l = i[] mod f.l.V
+  mixin has
+  when F.type.has(Simd):
+    let e = i div f.l.V
+    let l = i mod f.l.V
     f[e][asSimd(asView(l))]
+  else:
+    static: doAssert F.V == 1
+    f[i]
 
 template `{}`*(f: Field; i: AsView): untyped =
   fmask(f, i)
