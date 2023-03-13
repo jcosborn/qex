@@ -165,7 +165,8 @@ template derefPtr*[T](x: typedesc[T]): typedesc =
 template derefPtr*[T](x: typedesc[ptr T]): typedesc =
   type T
 
-template makeWrapperTypeX(wf:WFSet, name,fName,asName,tasName: untyped) =
+#template makeWrapperTypeX(wf:WFSet, name,fName,asName,tasName: untyped) =
+template makeWrapperTypeX(wf:typed, name,fName,asName,tasName: untyped) =
   #when wfPtr in wf:
   when false:
     type
@@ -264,6 +265,6 @@ macro makeWrapperType*(name: untyped): untyped =
   let d = "wrapper type for " & $name & " objects"
   makeWrapperTypeP(name, d, wfNone)
 
-macro makeWrapperF*(wf: static[WFSet], name: untyped): untyped =
+macro makeWrapperF*(wf: static[WFSet], name: untyped): auto =
   let d = "wrapper type for " & $name & " objects"
   makeWrapperTypeP(name, d, wf)

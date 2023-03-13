@@ -1,6 +1,5 @@
-import unittest
-import qex
-import simd,simd/simdArray
+import testutils
+import qex, simd, simd/simdArray
 
 # tests
 #  b f = 1
@@ -75,7 +74,8 @@ proc test2(Smd: typedesc, lat: array): float =
       result += testf(x,y,z, mu, d)
       result += testfb(x,y,z, mu, d)
 
-template test1(Smd: typedesc, lat: array) =
+template test1(Smd: typedesc, lat0: array) =
+  let lat = latticeFromLocalLattice(lat0, nRanks)
   test $Smd & " lattice: " & $lat:
     let r = test2(Smd, lat)
     check(r == 0.0)
