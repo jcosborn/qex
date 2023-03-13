@@ -166,8 +166,12 @@ method waitSends*(c: CommQmp; i0,i1: int) =
     c.smsg[k] = c.smsg[i]
   #toc("waitSends: copy")
   let n = c.smsg.len - (i1-i0+1)
-  c.smem.setLen(n)
-  c.smsg.setLen(n)
+  if c.smsg.len > 0:
+    c.smem.setLen(n)
+    c.smsg.setLen(n)
+  else:
+    c.smem.newSeq(n)
+    c.smsg.newSeq(n)
   #toc("waitSends: setLen")
 
 method freeRecvs*(c: CommQmp; i0,i1: int) =
@@ -179,8 +183,12 @@ method freeRecvs*(c: CommQmp; i0,i1: int) =
     c.rmem[k] = c.rmem[i]
     c.rmsg[k] = c.rmsg[i]
   let n = c.rmsg.len - (i1-i0+1)
-  c.rmem.setLen(n)
-  c.rmsg.setLen(n)
+  if c.rmsg.len > 0:
+    c.rmem.setLen(n)
+    c.rmsg.setLen(n)
+  else:
+    c.rmem.newSeq(n)
+    c.rmsg.newSeq(n)
 
 method waitRecvs*(c: CommQmp; i0,i1: int; free=true) =
   for i in i0..i1:
@@ -194,8 +202,12 @@ method waitRecvs*(c: CommQmp; i0,i1: int; free=true) =
       c.rmem[k] = c.rmem[i]
       c.rmsg[k] = c.rmsg[i]
     let n = c.rmsg.len - (i1-i0+1)
-    c.rmem.setLen(n)
-    c.rmsg.setLen(n)
+    if c.rmsg.len > 0:
+      c.rmem.setLen(n)
+      c.rmsg.setLen(n)
+    else:
+      c.rmem.newSeq(n)
+      c.rmsg.newSeq(n)
 
 
 

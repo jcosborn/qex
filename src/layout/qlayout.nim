@@ -78,31 +78,34 @@ proc lexr_x*[T](x: var openArray[T]; ll: SomeInteger;
     l = l div s[i]
 
 # x[0] is fastest
-proc lex_i*(x: ptr cArray[cint]; s: ptr cArray[cint];
-            d: ptr cArray[cint]; ndim: cint): cint =
-  var l: cint = 0
-  var i: cint = ndim - 1
-  while i >= 0:
-    var xx: cint = x[i]
+proc lex_i*[X,S:UncheckedArray[SomeInteger],N:SomeInteger](
+  x: ptr X, s: ptr S, d: ptr UncheckedArray[int32]; ndim: N): int =
+  var l = 0
+  #var i: cint = ndim - 1
+  #while i >= 0:
+  for i in countdown(ndim-1,0):
+    var xx = x[i]
     if not d.isNil: xx = xx div d[i]
     l = l * s[i] + (xx mod s[i])
-    dec(i)
+    #dec(i)
   return l
 
 # x[0] is slowest
-proc lexr_i*(x: ptr UncheckedArray[cint];
-             s: ptr UncheckedArray[cint];
-             d: ptr UncheckedArray[cint]; ndim: cint): cint =
-  var l: cint = 0
-  var i: cint = 0
-  while i < ndim:
-    var xx: cint = x[i]
+proc lexr_i*[X,S,D:UncheckedArray[SomeInteger],N:SomeInteger](
+  x: ptr X, s: ptr S, d: ptr D; ndim: N): int =
+  var l = 0
+  #var i = 0
+  #while i < ndim:
+  for i in 0..<ndim:
+    var xx = x[i]
     if not d.isNil: xx = xx div d[i]
     l = l * s[i] + (xx mod s[i])
-    inc(i)
+    #inc(i)
   return l
 
 template `&`[T](x: openArray[T]): untyped = cast[ptr cArray[T]](unsafeaddr x[0])
+
+#proc layoutLocalIndexQ*[T](l: LayoutQ; coords: var openArray[T]): int32 =
 
 proc layoutIndexQ*[T](l: LayoutQ; li: var LayoutIndexQ;
                       coords: var openArray[T]) =
@@ -124,8 +127,8 @@ proc layoutIndexQ*[T](l: LayoutQ; li: var LayoutIndexQ;
     inc(p, coords[i])
   var oi2 = oi div 2
   if (p and 1) != 0: oi2 = (oi + l.nSitesOuter).int32 div 2
-  li.rank = ri
-  li.index = oi2 * l.nSitesInner + ii
+  li.rank = int32 ri
+  li.index = int32 oi2 * l.nSitesInner + ii
 
 proc layoutCoordQ*[T](l: ptr LayoutQ; coords: var openArray[T];
                       li: ptr LayoutIndexQ) =

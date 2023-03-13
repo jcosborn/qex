@@ -1,7 +1,6 @@
 import ../base/wrapperTypes
 import ../maths/types
-#import ../maths/complexNumbers
-#export complexNumbers
+import base/numberWrap
 
 makeWrapperType(Simd)
 type
@@ -28,6 +27,9 @@ template doIndexed[T](x: T): untyped =
     x[]
   else:
     x
+
+template toPrec*(x: Simd, y: typedesc[float32]): untyped = toSingle(x)
+template toPrec*(x: Simd, y: typedesc[float64]): untyped = toDouble(x)
 
 template stripSimdAsView*[T](x: T): untyped = x
 template stripSimdAsView*(x: AsView): untyped = stripSimdAsView x[]
@@ -82,17 +84,17 @@ template p2s(f: untyped) {.dirty.} =
   p2(f)
 
 template p3(f: untyped) {.dirty.} =
-  template f*(x: var Simd, y: Simd2, z: Simd3) =
+  template f*[T1,T2,T3](x: var Simd[T1], y: Simd[T2], z: Simd[T3]) =
     mixin f
-    f(x[], y[], z[])
+    f(x[], y.toPrec(numberType(T1))[], z.toPrec(numberType(T1))[])
 
 template p3s(f: untyped) {.dirty.} =
-  template f*(x: var Simd, y: SomeNumber, z: Simd3) =
+  template f*[T1,T3](x: var Simd[T1], y: Number, z: Simd[T3]) =
     mixin f
-    f(x[], y, z[])
-  template f*(x: var Simd, y: Simd2, z: SomeNumber) =
+    f(x[], eval(y), z.toPrec(numberType(T1))[])
+  template f*[T1,T2](x: var Simd[T1], y: Simd[T2], z: Number) =
     mixin f
-    f(x[], y[], z)
+    f(x[], y.toPrec(numberType(T1))[], eval(z))
   p3(f)
 
 p2(neg)
@@ -109,8 +111,8 @@ p2s(isub)
 p2s(imul)
 p2s(idiv)
 p2s(inorm2)
-p3(imadd)
-p3(imsub)
+p3s(imadd)
+p3s(imsub)
 p3s(add)
 p3s(sub)
 p3s(mul)

@@ -58,7 +58,8 @@ proc qexFinalize*() =
   flushFile stderr
   GC_fullCollect()
   commsBarrier()
-  for p in qexGlobalFinalizers.reversed: p()
+  if qexGlobalFinalizers.len > 0:
+    for p in qexGlobalFinalizers.reversed: p()
   #echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
   #     getTotalMem())
   #echo GC_getStatistics()
@@ -69,7 +70,8 @@ proc qexFinalize*() =
     commsFinalize()
   #when profileEqns:
   #echoTimers()
-  for p in qexGlobalPostFinal.reversed: p()
+  if qexGlobalPostFinal.len > 0:
+    for p in qexGlobalPostFinal.reversed: p()
   qexLog "Total time (Init - Finalize): ",qexTime()," seconds."
 
 proc qexExit*(status = 0) =

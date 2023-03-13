@@ -49,7 +49,7 @@ template numberType*[T](x:typedesc[tuple[re,im:T]]):untyped = numberType(T)
 template numberType*[I,T](x:array[I,T]):untyped = numberType(type(T))
 template numberType*[I,T](x:typedesc[array[I,T]]):untyped = numberType(type(T))
 #template numberType*(x:not typedesc):untyped = numberType(type(x))
-template `[]`*[T](x:typedesc[ptr T]):untyped = T
+template `[]`*[T](x:typedesc[ptr T]):typedesc = T
 template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x
 template isWrapper*(x: SomeNumber): untyped = false
 template isWrapper*(x: typedesc[SomeNumber]): untyped = false
@@ -86,10 +86,22 @@ template `:=`*[R,X:SomeNumber](r: R; x: X) =
   r = R(x)
 template `:=`*[R,X:SomeNumber](r: R; x: ptr X) =
   r = R(x[])
-#proc `+=`*[R,X:SomeNumber](r: var R; x: X) {.alwaysInline.} =
-#  r = r + R(x)
-#proc `-=`*[R,X:SomeNumber](r: var R; x: X) {.alwaysInline.} =
-#  r = r - R(x)
+proc `+=`*(r: var float32; x: SomeNumber) {.alwaysInline.} =
+  r = r + float32(x)
+proc `-=`*(r: var float32; x: SomeNumber) {.alwaysInline.} =
+  r = r - float32(x)
+proc `+=`*(r: var float64; x: SomeNumber) {.alwaysInline.} =
+  r = r + float64(x)
+proc `-=`*(r: var float64; x: SomeNumber) {.alwaysInline.} =
+  r = r - float64(x)
+#proc `+=`*(r: var float32, x: SomeNumber) {.alwaysInline.} =
+#  {.emit:[r[], " += (float)", x, ";"].}
+#proc `-=`*(r: var float32, x: SomeNumber) {.alwaysInline.} =
+#  {.emit:[r[], " -= (float)", x, ";"].}
+#proc `+=`*(r: var float64, x: SomeNumber) {.alwaysInline.} =
+#  {.emit:[r[], " += (double)", x, ";"].}
+#proc `-=`*(r: var float64, x: SomeNumber) {.alwaysInline.} =
+#  {.emit:[r[], " -= (double)", x, ";"].}
 
 template adj*(x: SomeNumber): untyped = x
 template transpose*(x: SomeNumber): untyped = x
@@ -113,10 +125,10 @@ template mul*(r:var SomeNumber, x:SomeNumber2, y:SomeNumber3):untyped =
   r = cnvrt(r,x) * cnvrt(r,y)
 template divd*(r:var SomeNumber, x:SomeNumber2, y:SomeNumber3):untyped =
   r = cnvrt(r,x) / cnvrt(r,y)
-template imadd*(r:var SomeNumber, x:SomeNumber2, y:SomeNumber3):untyped =
-  r += cnvrt(r,x) * cnvrt(r,y)
-template imsub*(r:var SomeNumber, x:SomeNumber2, y:SomeNumber3):untyped =
-  r -= cnvrt(r,x) * cnvrt(r,y)
+proc imadd*[R,X,Y:SomeNumber](r: var R, x: X, y: Y) {.alwaysInline.} =
+  r = r + R(x) * R(y)
+proc imsub*[R,X,Y:SomeNumber](r: var R, x: X, y: Y) {.alwaysInline.} =
+  r = r - R(x) * R(y)
 template madd*(r:var SomeNumber, x:SomeNumber2,
                y:SomeNumber3, z:SomeNumber4):untyped =
   r = (cnvrt(r,x) * cnvrt(r,y)) + cnvrt(r,z)

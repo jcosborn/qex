@@ -1,7 +1,8 @@
 import macros
 import base/globals
 import base/basicOps
-import base/metaUtils
+import base/wrapperTypes
+#import base/metaUtils
 #import globals
 #import basicOps
 #import matrixConcept
@@ -47,92 +48,62 @@ macro fOpt(stmt: ForLoopStmt): untyped =
 #template iaddIadd(x,y:typed) = iadd(x,y)
 #template isubIadd(x,y:typed) = isub(x,y)
 template makeMap1(op:untyped) =
-  #[
-  template `op SV`*(rr:typed; xx:typed):untyped =
-    #subst(r,rr,x,xx,i,_):
-    makeAliases:
-      r = rr
-      x = xx
-    op(r, x[0])
-    forO i, 1, x.len.pred:
-      `op Iadd`(r, x[i])
-  template `op SM`*(rr:typed; xx:typed):untyped =
-    #subst(r,rr,x,xx,i,_):
-    makeAliases:
-      r = rr
-      x = xx
-    assert(x.nrows == x.ncols)
-    op(r, x[0,0])
-    forO i, 1, x.nrows.pred:
-      `op Iadd`(r, x[i,i])
-  ]#
-  template `op VS`*(r: typed; xx: typed) =
-    #subst(r,rr,x,xx,tx,_,i,_):
-    #load(tx, x)
-    #let tx_opVS = x
+  getOptimPragmas()
+  template `op VS`*(rr: typed; xx: typed) =
+    mixin op
     block:
-      #makeAliases:
-      #  r = rr
-      #  x = xx
-      #let r = rr
-      let x = xx
-      mixin op
+      let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+      let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+      #let x {.byptr.} = xx
+      #static: echo "opVS: ", x.type, " ", xx.type, " ", astToStr(xx)
       #forO i, 0, r.len.pred:
       for i in fOpt(0,r.len.pred):
         op(r[i], x)
+  proc `op VV`*(r: var auto; x: auto) {.alwaysInline.} =
+  #template `op VV`*(rr: typed; xx: typed) =
+  #  let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+  #  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+    mixin op
+    assert(r.len == x.len)
+    #forO i, 0, r.len.pred:
+    for i in fOpt(0,r.len.pred):
+      op(r[i], x[i])
   #[
-  template `op VV`*(r: typed; xx: typed): untyped =
+  template `op MS`*(rr: typed; xx: typed) =
     mixin op
-    #[
-    optimizeAst:
-      subst(r,rr,x,xx,i,_):
-        assert(r.len == x.len)
-        forO i, 0, r.len.pred:
-          op(r[i], x[i])
-    ]#
-    let x = xx
-    assert(r.len == x.len)
-    forO i, 0, r.len.pred:
-      op(r[i], x[i])
+    block:
+      let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+      let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+      #let x {.byptr.} = xx
+      #forO i, 0, r.nrows.pred:
+      for i in fOpt(0,r.nrows.pred):
+        #forO j, 0, r.ncols.pred:
+        for j in fOpt(0,r.ncols.pred):
+          if i == j:
+            op(r[i,j], x)
+          else:
+            op(r[i,j], 0)
   ]#
-#[
-  template `op VVU`*(r: typed; x: typed): untyped =
+  proc `op MS`*(r: var auto; x: auto) {.alwaysInline.} =
     mixin op
-    assert(r.len == x.len)
-    forO i, 0, r.len.pred:
-      op(r[i], x[i])
-  template `op VV`*(r: typed; x: typed): untyped =
-    flattenCallArgs(`op VVU`, r, x)
-]#
-  template `op VV`*(r: typed; xx: typed) =
-    #block:
-      #makeAliases:
-      #  r = rr
-      #  x = xx
-      #let r = rr
-      let x = xx
-      mixin op
-      assert(r.len == x.len)
-      #forO i, 0, r.len.pred:
-      for i in fOpt(0,r.len.pred):
-        op(r[i], x[i])
-  template `op MS`*(r: typed; x: typed) =
-    mixin op
-    #subst(r,rr,x,xx,tx,_,i,_,j,_):
-    #assert(r.nrows == r.ncols)
-    #load(tx, x)
-    let tx_opMS = x
-    #forO i, 0, r.nrows.pred:
-    for i in fOpt(0,r.nrows.pred):
-      #forO j, 0, r.ncols.pred:
-      for j in fOpt(0,r.ncols.pred):
-        if i == j:
-          op(r[i,j], tx_opMS)
-        else:
-          op(r[i,j], 0)
+    when astToStr(op) == "iadd" or astToStr(op) == "isub":
+      for i in fOpt(0,min(r.nrows.pred,r.ncols.pred)):
+        op(r[i,i], x)
+    else:
+      #forO i, 0, r.nrows.pred:
+      for i in fOpt(0,r.nrows.pred):
+        #forO j, 0, r.ncols.pred:
+        for j in fOpt(0,r.ncols.pred):
+          if i == j:
+            op(r[i,j], x)
+          else:
+            op(r[i,j], 0)
   template `op MV`*(rr:typed; xx:typed) =
-    #subst(r,rr,x,xx,i,_,j,_):
-    subst(r,rr,x,xx):
+    mixin op
+    block:
+      let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+      let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+      #let x {.byptr.} = xx
       assert(r.nrows == x.len)
       assert(r.ncols == x.len)
       #forO i, 0, r.nrows.pred:
@@ -143,10 +114,13 @@ template makeMap1(op:untyped) =
             op(r[i,j], x[i])
           else:
             op(r[i,j], 0)
-  template `op MM`*(rr:untyped; xx:untyped) =
+  #[
+  template `op MM`*(rr:typed; xx:typed) =
     mixin op
-    #subst(r,rr,x,xx,i,_,j,_):
-    subst(r,rr,x,xx):
+    block:
+      let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+      let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+      #let x {.byptr.} = xx
       assert(r.nrows == x.nrows)
       assert(r.ncols == x.ncols)
       #forO i, 0, r.nrows.pred:
@@ -154,6 +128,16 @@ template makeMap1(op:untyped) =
         #forO j, 0, r.ncols.pred:
         for j in fOpt(0,r.ncols.pred):
           op(r[i,j], x[i,j])
+  ]#
+  proc `op MM`*(r: var auto; x: auto) {.alwaysInline.} =
+    mixin op
+    assert(r.nrows == x.nrows)
+    assert(r.ncols == x.ncols)
+    #forO i, 0, r.nrows.pred:
+    for i in fOpt(0,r.nrows.pred):
+      #forO j, 0, r.ncols.pred:
+      for j in fOpt(0,r.ncols.pred):
+        op(r[i,j], x[i,j])
 
 makeMap1(assign)
 makeMap1(neg)
@@ -161,76 +145,91 @@ makeMap1(iadd)
 makeMap1(isub)
 
 template makeMap2(op:untyped):untyped {.dirty.} =
-  template `op VVS`*(rr:typed; xx,yy:typed):untyped =
-    #subst(r,rr,x,xx,y,yy,ty,_,i,_):
-    subst(r,rr,x,xx,y,yy,ty,_):
-      assert(r.len == x.len)
-      load(ty, y)
-      #forO i, 0, r.len.pred:
-      for i in fOpt(0,r.len.pred):
-        op(r[i], x[i], ty)
-  template `op VSV`*(rr:typed; xx,yy:typed):untyped =
-    #subst(r,rr,x,xx,y,yy,tx,_,i,_):
-    subst(r,rr,x,xx,y,yy,tx,_):
-      assert(r.len == y.len)
-      load(tx, x)
-      #forO i, 0, r.len.pred:
-      for i in fOpt(0,r.len.pred):
-        op(r[i], tx, y[i])
-  template `op VVV`*(r: typed; x,y: typed): untyped =
+  getOptimPragmas()
+  template `op VVS`*(rr:typed; xx,yy:typed) =
     mixin op
-    #subst(r,rr,x,xx,y,yy,i,_):
+    block:
+      let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+      let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+      let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+      assert(r.len == x.len)
+      #forO i, 0, r.len.pred:
+      for i in fOpt(0,r.len.pred):
+        op(r[i], x[i], y)
+  template `op VSV`*(rr:typed; xx,yy:typed) =
+    mixin op
+    block:
+      let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+      let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+      let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+      assert(r.len == y.len)
+      #forO i, 0, r.len.pred:
+      for i in fOpt(0,r.len.pred):
+        op(r[i], x, y[i])
+  proc `op VVV`*(r: var auto; x,y: auto) {.alwaysInline.} =
+  #template `op VVV`*(rr: typed; xx,yy: typed) =
+  #  let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+  #  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+  #  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+    mixin op
     assert(r.len == y.len)
     assert(r.len == x.len)
     #forO i, 0, r.len.pred:
     for i in fOpt(0,r.len.pred):
       op(r[i], x[i], y[i])
-  template `op MSS`*(rr:typed; xx,yy:typed):untyped =
-    #subst(r,rr,x,xx,y,yy,tx,_,ty,_,i,_,j,_):
-    subst(r,rr,x,xx,y,yy,tx,_,ty,_):
+  template `op MSS`*(rr:typed; xx,yy:typed) =
+    mixin op
+    block:
+      let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+      let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+      let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
       assert(r.nrows == r.ncols)
-      load(tx, x)
-      load(ty, y)
       #forO i, 0, r.nrows.pred:
       for i in fOpt(0,r.nrows.pred):
         #forO j, 0, r.ncols.pred:
         for j in fOpt(0,r.ncols.pred):
           if i == j:
-            op(r[i,j], tx, ty)
+            op(r[i,j], x, y)
           else:
             op(r[i,j], 0, 0)
-  #proc `op MVS`*(r:Vany; x,y:any) {.inline.} =
-  template `op MVS`*(rr:typed; xx,yy:typed):untyped =
-    #subst(r,rr,x,xx,y,yy,ty,_,i,_,j,_):
-    subst(r,rr,x,xx,y,yy,ty,_):
+  template `op MVS`*(rr:typed; xx,yy:typed) =
+    mixin op
+    block:
+      let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+      let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+      let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
       assert(r.nrows == x.len)
       assert(r.ncols == x.len)
-      load(ty, y)
       #forO i, 0, r.nrows.pred:
       for i in fOpt(0,r.nrows.pred):
         #forO j, 0, r.ncols.pred:
         for j in fOpt(0,r.ncols.pred):
           if i == j:
-            op(r[i,j], x[i], ty)
+            op(r[i,j], x[i], y)
           else:
             op(r[i,j], 0, 0)
-  template `op MSV`*(rr:typed; xx,yy:typed):untyped =
-    #subst(r,rr,x,xx,y,yy,tx,_,i,_,j,_):
-    subst(r,rr,x,xx,y,yy,tx,_):
+  template `op MSV`*(rr:typed; xx,yy:typed) =
+    mixin op
+    block:
+      let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+      let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+      let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
       assert(r.nrows == y.len)
       assert(r.ncols == y.len)
-      load(tx, x)
       #forO i, 0, r.nrows.pred:
       for i in fOpt(0,r.nrows.pred):
         #forO j, 0, r.ncols.pred:
         for j in fOpt(0,r.ncols.pred):
           if i == j:
-            op(r[i,j], tx, y[i])
+            op(r[i,j], x, y[i])
           else:
             op(r[i,j], 0, 0)
-  template `op MVV`*(rr:typed; xx,yy:typed):untyped =
-    #subst(r,rr,x,xx,y,yy,i,_,j,_):
-    subst(r,rr,x,xx,y,yy):
+  template `op MVV`*(rr:typed; xx,yy:typed) =
+    mixin op
+    block:
+      let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+      let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+      let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
       assert(r.nrows == x.len)
       assert(r.ncols == x.len)
       assert(x.len == y.len)
@@ -242,41 +241,76 @@ template makeMap2(op:untyped):untyped {.dirty.} =
             op(r[i,j], x[i], y[i])
           else:
             op(r[i,j], 0, 0)
-  template `op MMS`*(rr:typed; xx,yy:typed):untyped =
-    #subst(r,rr,x,xx,y,yy,ty,_,i,_,j,_):
-    subst(r,rr,x,xx,y,yy,ty,_):
-      mixin op
+  #[
+  template `op MMS`*(rr:typed; xx,yy:typed) =
+    mixin op
+    block:
+      let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+      let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+      let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
       assert(r.nrows == r.ncols)
       assert(r.nrows == x.nrows)
       assert(r.ncols == x.ncols)
-      load(ty, y)
       #forO i, 0, r.nrows.pred:
       for i in fOpt(0,r.nrows.pred):
         #forO j, 0, r.ncols.pred:
         for j in fOpt(0,r.ncols.pred):
           if i == j:
-            op(r[i,j], x[i,j], ty)
+            op(r[i,j], x[i,j], y)
           else:
             op(r[i,j], x[i,j], 0)
-  template `op MSM`*(rr:typed; xx,yy:typed):untyped =
+  ]#
+  proc `op MMS`*(r: var auto; x,y: auto) {.alwaysInline.} =
     mixin op
-    #subst(r,rr,x,xx,y,yy,tx,_,i,_,j,_):
-    subst(r,rr,x,xx,y,yy,tx,_):
+    assert(r.nrows == r.ncols)
+    assert(r.nrows == x.nrows)
+    assert(r.ncols == x.ncols)
+    #forO i, 0, r.nrows.pred:
+    for i in fOpt(0,r.nrows.pred):
+      #forO j, 0, r.ncols.pred:
+      for j in fOpt(0,r.ncols.pred):
+        if i == j:
+          op(r[i,j], x[i,j], y)
+        else:
+          op(r[i,j], x[i,j], 0)
+  #[
+  template `op MSM`*(rr:typed; xx,yy:typed) =
+    mixin op
+    block:
+      let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+      let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+      let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
       assert(r.nrows == r.ncols)
       assert(r.nrows == y.nrows)
       assert(r.ncols == y.ncols)
-      load(tx, x)
       #forO i, 0, r.nrows.pred:
       for i in fOpt(0,r.nrows.pred):
         #forO j, 0, r.ncols.pred:
         for j in fOpt(0,r.ncols.pred):
           if i == j:
-            op(r[i,j], tx, y[i,j])
+            op(r[i,j], x, y[i,j])
           else:
             op(r[i,j], 0, y[i,j])
-  template `op MMV`*(rr:typed; xx,yy:typed):untyped =
-    #subst(r,rr,x,xx,y,yy,i,_,j,_):
-    subst(r,rr,x,xx,y,yy):
+  ]#
+  proc `op MSM`*(r: var auto; x,y: auto) =
+    mixin op
+    assert(r.nrows == r.ncols)
+    assert(r.nrows == y.nrows)
+    assert(r.ncols == y.ncols)
+    #forO i, 0, r.nrows.pred:
+    for i in fOpt(0,r.nrows.pred):
+      #forO j, 0, r.ncols.pred:
+      for j in fOpt(0,r.ncols.pred):
+        if i == j:
+          op(r[i,j], x, y[i,j])
+        else:
+          op(r[i,j], 0, y[i,j])
+  template `op MMV`*(rr:typed; xx,yy:typed) =
+    mixin op
+    block:
+      let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+      let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+      let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
       assert(r.nrows == r.ncols)
       assert(r.nrows == x.nrows)
       assert(r.ncols == x.ncols)
@@ -289,9 +323,12 @@ template makeMap2(op:untyped):untyped {.dirty.} =
             op(r[i,j], x[i,j], y[i])
           else:
             op(r[i,j], x[i,j], 0)
-  template `op MVM`*(rr:typed; xx,yy:typed):untyped =
-    #subst(r,rr,x,xx,y,yy,i,_,j,_):
-    subst(r,rr,x,xx,y,yy):
+  template `op MVM`*(rr:typed; xx,yy:typed) =
+    mixin op
+    block:
+      let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+      let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+      let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
       assert(r.nrows == r.ncols)
       assert(r.nrows == x.len)
       assert(r.nrows == y.nrows)
@@ -304,10 +341,13 @@ template makeMap2(op:untyped):untyped {.dirty.} =
             op(r[i,j], x[i], y[i,j])
           else:
             op(r[i,j], 0, y[i,j])
-  template `op MMM`*(rr:typed; xx,yy:typed):untyped =
+  #[
+  template `op MMM`*(rr:typed; xx,yy:typed) =
     mixin op
-    #subst(r,rr,x,xx,y,yy,i,_,j,_):
-    subst(r,rr,x,xx,y,yy):
+    block:
+      let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+      let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+      let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
       assert(r.nrows == x.nrows)
       assert(r.ncols == x.ncols)
       assert(r.nrows == y.nrows)
@@ -317,50 +357,81 @@ template makeMap2(op:untyped):untyped {.dirty.} =
         #forO j, 0, r.ncols.pred:
         for j in fOpt(0,r.ncols.pred):
           op(r[i,j], x[i,j], y[i,j])
+  ]#
+  proc `op MMM`*(r: var auto; x,y: auto) {.alwaysInline.} =
+    mixin op
+    assert(r.nrows == x.nrows)
+    assert(r.ncols == x.ncols)
+    assert(r.nrows == y.nrows)
+    assert(r.ncols == y.ncols)
+    #forO i, 0, r.nrows.pred:
+    for i in fOpt(0,r.nrows.pred):
+      #forO j, 0, r.ncols.pred:
+      for j in fOpt(0,r.ncols.pred):
+        op(r[i,j], x[i,j], y[i,j])
 
 makeMap2(add)
 makeMap2(sub)
 
-template imulVS*(rr:untyped; xx:untyped):untyped =
+template imulVS*(r:typed; xx:typed) =
   mixin imul
-  #subst(r,rr,x,xx,i,_,tx,_):
-  subst(r,rr,x,xx,tx,_):
-    load(tx, x)
+  block:
+    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
     #forO i, 0, r.len.pred:
     for i in fOpt(0,r.len.pred):
-      imul(r[i], tx)
+      imul(r[i], x)
 
-template imulMS*(r: typed; x: typed): untyped =
+#[
+template imulMS*(r: typed; xx: typed) =
   mixin imul
-  #subst(r,rr,x,xx,i,_,j,_,tx,_):
-  #load(tx, x)
-  let tx = x
+  block:
+    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+    #forO i, 0, r.nrows.pred:
+    for i in fOpt(0,r.nrows.pred):
+      #forO j, 0, r.ncols.pred:
+      for j in fOpt(0,r.ncols.pred):
+        imul(r[i,j], x)
+]#
+proc imulMS*(r: var auto; x: auto) {.alwaysInline.}=
+  mixin imul
   #forO i, 0, r.nrows.pred:
   for i in fOpt(0,r.nrows.pred):
     #forO j, 0, r.ncols.pred:
     for j in fOpt(0,r.ncols.pred):
-      imul(r[i,j], tx)
+      imul(r[i,j], x)
 
-template mulSVV*(rr:typed; xx,yy:typed):untyped =
-  #subst(r,rr,x,xx,y,yy,tr,_,i,_):
-  subst(r,rr,x,xx,y,yy,tr,_):
-    mixin mul, imadd, assign
+template mulSVV*(r:typed; xx,yy:typed) =
+  mixin mul, imadd #, assign
+  block:
+    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+    let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
     assert(x.len == y.len)
-    tmpvar(tr, r)
-    mul(tr, x[0], y[0])
+    #tmpvar(tr, r)
+    mul(r, x[0], y[0])
     #forO i, 1, x.len.pred:
     for i in fOpt(1,x.len.pred):
-      imadd(tr, x[i], y[i])
-    assign(r, tr)
+      imadd(r, x[i], y[i])
+    #assign(r, tr)
 
-template mulVVS*(r:typed; x,y:typed):untyped =
+template mulVVS*(r:typed; xx,yy:typed) =
   mixin mul
-  assert(r.len == x.len)
-  #load(ty, y)
-  let ty = y
+  block:
+    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+    let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+    assert(r.len == x.len)
+    #forO i, 0, r.len.pred:
+    for i in fOpt(0,r.len.pred):
+      mul(r[i], x[i], y)
+
+proc mulVSV*(r: var auto; x,y: auto) {.alwaysInline.} =
+#template mulVSV*(r:typed; xx,yy:typed) =
+#  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+#  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+  mixin mul
+  assert(r.len == y[].len)
   #forO i, 0, r.len.pred:
   for i in fOpt(0,r.len.pred):
-    mul(r[i], x[i], ty)
+    mul(r[i], x, y[i])
 
 #[
 template mulVSV*(rr:typed; xx,yy:typed):untyped =
@@ -372,7 +443,6 @@ template mulVSV*(rr:typed; xx,yy:typed):untyped =
     let txz = load1(x)
     forO i, 0, r.len.pred:
       mul(r[i], txz, y[i])
-]#
 template mulVSVU*(r: typed; x,y: typed): untyped =
   mixin mul, `:=`
   assert(r.len == y.len)
@@ -384,333 +454,195 @@ template mulVSV*(r: typed; x,y: typed): untyped =
   # prepMultipleAccess(x)
   # prepLinearAccess(y)
   flattenCallArgs(mulVSVU, r, x, y)
+]#
 
-template mulMMS*(rr:untyped; xx,yy:untyped):untyped =
-  #subst(r,rr,x,xx,y,yy,tx,_,i,_,j,_):
-  subst(r,rr,x,xx,y,yy,tx,_):
-    mixin mul
+template mulMMS*(r:typed; xx,yy:typed) =
+  mixin mul
+  block:
+    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+    let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
     assert(r.nrows == x.nrows)
     assert(r.ncols == x.ncols)
-    load(ty, y)
     #forO i, 0, r.nrows.pred:
     for i in fOpt(0,r.nrows.pred):
       #forO j, 0, r.ncols.pred:
       for j in fOpt(0,r.ncols.pred):
-        mul(r[i,j], x[i,j], ty)
+        mul(r[i,j], x[i,j], y)
 
-template mulMSM*(rr:typed; xx,yy:typed):untyped =
+#[
+template mulMSM*(r:typed; xx,yy:typed) =
   mixin mul
-  #subst(r,rr,x,xx,y,yy,tx,_,i,_,j,_):
-  subst(r,rr,x,xx,y,yy,tx,_):
+  block:
+    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+    let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
     assert(r.nrows == y.nrows)
     assert(r.ncols == y.ncols)
-    load(tx, x)
     #forO i, 0, r.nrows.pred:
     for i in fOpt(0,r.nrows.pred):
       #forO j, 0, r.ncols.pred:
       for j in fOpt(0,r.ncols.pred):
-        mul(r[i,j], tx, y[i,j])
+        mul(r[i,j], x, y[i,j])
+]#
+proc mulMSM*(r: var auto; x,y: auto) {.alwaysInline.} =
+  mixin mul
+  assert(r.nrows == y.nrows)
+  assert(r.ncols == y.ncols)
+  #forO i, 0, r.nrows.pred:
+  for i in fOpt(0,r.nrows.pred):
+    #forO j, 0, r.ncols.pred:
+    for j in fOpt(0,r.ncols.pred):
+      mul(r[i,j], x, y[i,j])
 
-#[
-template mulVMV*(rr: typed; xx,yy: typed): untyped =
-  #[
-  subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_,ty0r,_,ty0i,_,tyjr,_,tyji,_):
-    mixin nrows, ncols, mul, imadd, assign, load1
-    assert(x.nrows == r.len)
-    assert(x.ncols == y.len)
-    #when true:
-    when false:
-      tmpvar(tr, r)
-      #var tr{.noInit.}:array[r.len,type(load1(r[0]))]
-      load(ty0r, y[0].re)
-      forO i, 0, x.nrows.pred:
-        mulCCR(tr[i], x[i,0], ty0r)
-      load(ty0i, y[0].im)
-      forO i, 0, x.nrows.pred:
-        imaddCCI(tr[i], x[i,0], ty0i)
-      forO j, 1, x.ncols.pred:
-        load(tyjr, y[j].re)
-        forO i, 0, x.nrows.pred:
-          imaddCCR(tr[i], x[i,j], tyjr)
-        load(tyji, y[j].im)
-        forO i, 0, x.nrows.pred:
-          imaddCCI(tr[i], x[i,j], tyji)
-      assign(r, tr)
-      #forO i, 0, r.len.pred: assign(r[i], tr[i])
-    else:
-      tmpvar(tr, r)
-      block:
-        load(ty, y[0])
-        forO i, 0, x.nrows.pred:
-          mul(tr[i], x[i,0], ty)
-      forO j, 1, x.ncols.pred:
-        load(ty, y[j])
-        forO i, 0, x.nrows.pred:
-          imadd(tr[i], x[i,j], ty)
-      assign(r, tr)
-  ]#
-  mixin nrows, ncols, mul, imadd, assign, load1
-  template r: untyped = rr
-  let x = xx
-  let y = yy
+proc mulVMV*(r: var auto; x,y: auto) {.alwaysInline.} =
+#proc mulVMV*(r: var auto; x,y: auto) =
+#template mulVMV*(r: typed; xx,yy: typed) =
+  #let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+  #let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+  #static: echo "x: ", $type(x), " ", sizeof(x)
+  mixin nrows, ncols, mul, imadd
   assert(x.nrows == r.len)
   assert(x.ncols == y.len)
-  #tmpvar(tr_mulVMV, r)
-  var tr_mulVMV{.noInit.}: type(load1(r))
-  block:
-    #let ty_mulVMV = y[0]
-    let ty_mulVMV = load1(y[0])
-    forO i, 0, x.nrows.pred:
-      mul(tr_mulVMV[i], x[i,0], ty_mulVMV)
-  forO j, 1, x.ncols.pred:
-    #let ty_mulVMV = y[j]
-    let ty_mulVMV = load1(y[j])
-    forO i, 0, x.nrows.pred:
-      imadd(tr_mulVMV[i], x[i,j], ty_mulVMV)
-  assign(r, tr_mulVMV)
-]#
-#[
-template mulVMVU*(r: typed; x,y: typed): untyped =
-  mixin nrows, ncols, mul, imadd, assign, load1
-  assert(x.nrows == r.len)
-  assert(x.ncols == y.len)
-  block:
-    #let ty_mulVMV = y[0]
-    let ty_mulVMV = load1(y[0])
-    forO i, 0, x.nrows.pred:
-      mul(r[i], x[i,0], ty_mulVMV)
-  forO j, 1, x.ncols.pred:
-    #let ty_mulVMV = y[j]
-    let ty_mulVMV = load1(y[j])
-    forO i, 0, x.nrows.pred:
-      imadd(r[i], x[i,j], ty_mulVMV)
-]#
-template mulVMVU*(r: typed; x,y: typed): untyped =
-  mixin nrows, ncols, mul, imadd, assign, `:=`
-  assert(x.nrows == r.len)
-  assert(x.ncols == y.len)
-  #forO i, 0, x.nrows.pred:
-  for i in fOpt(0,x.nrows.pred):
-    var t_mulVMVU{.noInit.}: type(x[i,0]*y[0])
-    t_mulVMVU := x[i,0] * y[0]
-    #forO j, 1, x.ncols.pred:
+  when false:
+    #forO i, 0, x.nrows.pred:
+    for i in fOpt(0,x.nrows.pred):
+      mul(r[i], x[i,0], y[0])
+      #forO j, 1, x.ncols.pred:
+      for j in fOpt(1,x.ncols.pred):
+        imadd(r[i], x[i,j], y[j])
+  else:
+    for i in fOpt(0,x.nrows.pred):
+      mul(r[i], x[i,0], y[0])
     for j in fOpt(1,x.ncols.pred):
-      imadd(t_mulVMVU, x[i,j], y[j])
-    r[i] := t_mulVMVU
-template mulVMV*(r: typed; x,y: typed): untyped =
-  flattenCallArgs(mulVMVU, r, x, y)
+      for i in fOpt(0,x.nrows.pred):
+        imadd(r[i], x[i,j], y[j])
 
-template mulMMMx*(rr: typed; xx,yy: typed): untyped =
-  # #[
-  subst(r,rr,x,xx,y,yy,tr,_,i,_,j,_,k,_,txi0r,_,txi0i,_,txikr,_,txiki,_):
-    mixin nrows, ncols, mul, imadd, assign, load1
-    assert(r.nrows == x.nrows)
-    assert(r.ncols == y.ncols)
+#[
+template mulMMM*(r: typed; xx,yy: typed) =
+  mixin mul, imadd
+  block:
+    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+    let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+    assert(x.nrows == r.nrows)
     assert(x.ncols == y.nrows)
-    var tr{.noInit.}:VectorArray[r.ncols,type(x[0,0]*y[0,0])]
+    assert(r.ncols == y.ncols)
+    var t {.noInit.}: evalType(r)
     forO i, 0, r.nrows.pred:
-      load(txi0r, x[i,0].re)
       forO j, 0, r.ncols.pred:
-        mulCRC(tr[j], txi0r, y[0,j])
-      load(txi0i, x[i,0].im)
-      forO j, 0, r.ncols.pred:
-        imaddCIC(tr[j], txi0i, y[0,j])
-      forO k, 1, x.ncols.pred:
-        load(txikr, x[i,k].re)
-        forO j, 0, r.ncols.pred:
-          imaddCRC(tr[j], txikr, y[k,j])
-        load(txiki, x[i,k].im)
-        forO j, 0, r.ncols.pred:
-          imaddCIC(tr[j], txiki, y[k,j])
-      forO j, 0, r.ncols.pred:
-        assign(r[i,j], tr[j])
-  # ]#
-
-template mulMMM*(r: typed; x,y: typed): untyped =
-  #XoptimizeAst:
-    #subst(x,xx,y,yy,tr,_,i,_,j,_,k,_,txi0r,_,txi0i,_,txikr,_,txiki,_):
-      assert(x.nrows == r.nrows)
-      assert(x.ncols == y.nrows)
-      assert(r.ncols == y.ncols)
-      mixin mul, imadd
-      forO i, 0, r.nrows.pred:
-        var tr{.noInit.}:VectorArray[r.ncols,type(x[0,0]*y[0,0])]
-        #load(txi0, x[i,0])
-        let txi0 = x[i,0]
-        forO j, 0, r.ncols.pred:
-          mul(tr[j], txi0, y[0,j])
-        #forO k, 1, x.ncols.pred:
+        #mul(r[i,j], x[i,0], y[0,j])
+        mul(t[i,j], x[i,0], y[0,j])
         forO k, 1, y.nrows.pred:
-          #load(txik, x[i,k])
-          let txik = x[i,k]
-          forO j, 0, r.ncols.pred:
-            imadd(tr[j], txik, y[k,j])
-        forO j, 0, r.ncols.pred:
-          #echoRepr: r
-          assign(r[i,j], tr[j])
-
-
-template imaddSVV*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tr,_,i,_):
-    mixin imadd, assign
-    assert(x.len == y.len)
-    load(tr, r)
-    forO i, 0, x.len.pred:
-      imadd(tr, x[i], y[i])
-    assign(r, tr)
-
-#[
-template imaddVSV*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tr,_,i,_):
-    mixin imadd, assign
-    assert(r.len == y.len)
-    load(tr, r)
-    forO i, 0, r.len.pred:
-      imadd(tr[i], x, y[i])
-    assign(r, tr)
+          #imadd(r[i,j], x[i,k], y[k,j])
+          imadd(t[i,j], x[i,k], y[k,j])
+    r := t
 ]#
-template imaddVSV*(r: typed; xx,yy: typed): untyped =
-  mixin imadd, assign
-  let x = xx
-  let y = yy
-  assert(r.len == y.len)
-  load(tr, r)
-  forO i, 0, r.len.pred:
-    imadd(tr[i], x, y[i])
-  assign(r, tr)
+proc mulMMM*(r: var auto; x,y: auto) {.alwaysInline.} =
+  mixin mul, imadd
+  assert(x.nrows == r.nrows)
+  assert(x.ncols == y.nrows)
+  assert(r.ncols == y.ncols)
+  forO i, 0, r.nrows.pred:
+    forO j, 0, r.ncols.pred:
+      mul(r[i,j], x[i,0], y[0,j])
+      forO k, 1, y.nrows.pred:
+        imadd(r[i,j], x[i,k], y[k,j])
 
-#[
-template imaddVMV*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_,tyjr,_,tyji,_):
-    mixin nrows, ncols, mul, imadd, assign, load1
+template imaddSVV*(r:typed; xx,yy:typed) =
+  mixin imadd, assign
+  block:
+    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+    let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+    assert(x.len == y.len)
+    forO i, 0, x.len.pred:
+      imadd(r, x[i], y[i])
+
+template imaddVSV*(r: typed; xx,yy: typed) =
+  mixin imadd
+  block:
+    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+    let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+    assert(r.len == y.len)
+    forO i, 0, r.len.pred:
+      imadd(r[i], x, y[i])
+
+template imaddVMV*(r: typed; xx,yy: typed) =
+  mixin nrows, ncols, imadd
+  block:
+    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+    let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
     assert(x.nrows == r.len)
     assert(x.ncols == y.len)
-    when true:
-    #when false:
-      load(tr, r)
-      #var tr{.noInit.}:array[r.len,type(load1(r[0]))]
-      #forO i, 0, r.len.pred: assign(tr[i], r[i])
-      forO j, 0, x.ncols.pred:
-        load(tyjr, y[j].re)
-        forO i, 0, x.nrows.pred:
-          imaddCCR(tr[i], x[i,j], tyjr)
-        load(tyji, y[j].im)
-        forO i, 0, x.nrows.pred:
-          imaddCCI(tr[i], x[i,j], tyji)
-      assign(r, tr)
-      #forO i, 0, r.len.pred: assign(r[i], tr[i])
-    else:
-      load(tr, r)
-      forO j, 0, x.ncols.pred:
-        load(tyr, asReal(y[j].re))
-        forO i, 0, x.nrows.pred:
-          imadd(tr[i], x[i,j], tyr)
-        load(tyi, asImag(y[j].im))
-        forO i, 0, x.nrows.pred:
-          imadd(tr[i], x[i,j], tyi)
-      assign(r, tr)
-]#
-template imaddVMVU*(r: typed; x,y: typed): untyped =
-  mixin nrows, ncols, imadd, `:=`
-  assert(x.nrows == r.len)
-  assert(x.ncols == y.len)
-  forO i, 0, x.nrows.pred:
-    #var t = x[i,0] * y[0]
-    #forO j, 1, x.ncols.pred:
-    #  imadd(t, x[i,j], y[j])
-    #r[i] += t
-    var t = r[i]
-    forO j, 0, x.ncols.pred:
-      imadd(t, x[i,j], y[j])
-    r[i] := t
-template imaddVMV*(r: typed; x,y: typed): untyped =
-  flattenCallArgs(imaddVMVU, r, x, y)
+    var t {.noinit.}: evalType(r)
+    t := r
+    for j in fOpt(0,x.ncols.pred):
+      for i in fOpt(0,x.nrows.pred):
+        #imadd(r[i], x[i,j], y[j])
+        imadd(t[i], x[i,j], y[j])
+    r := t
 
-template imaddMMM*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_,k,_,tyjr,_,tyji,_):
-    mixin nrows, ncols, mul, imadd, assign, load1
+#[
+template imaddMMM*(r:typed; xx,yy:typed) =
+  mixin nrows, ncols, imadd
+  block:
+    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+    let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
     assert(r.nrows == x.nrows)
     assert(r.ncols == y.ncols)
     assert(x.ncols == y.nrows)
-    #when true:
-    when false:
-      load(tr, r)
-      forO i, 0, r.nrows.pred:
-        forO k, 0, x.ncols.pred:
-          load(txikr, x[i,k].re)
-          forO j, 0, r.ncols.pred:
-            imaddCRC(tr[i,j], txikr, y[k,j])
-          load(txiki, x[i,k].im)
-          forO j, 0, r.ncols.pred:
-            imaddCIC(tr[i,j], txiki, y[k,j])
-      assign(r, tr)
-    else:
-      forO i, 0, r.nrows.pred:
-        var tr{.noInit.}:VectorArray[r.ncols,type(x[0,0]*y[0,0])]
-        forO j, 0, r.ncols.pred:
-          assign(tr[j], r[i,j])
-        forO k, 0, x.ncols.pred:
-          load(txikr, x[i,k].re)
-          forO j, 0, r.ncols.pred:
-            imaddCRC(tr[j], txikr, y[k,j])
-          load(txiki, x[i,k].im)
-          forO j, 0, r.ncols.pred:
-            imaddCIC(tr[j], txiki, y[k,j])
-        forO j, 0, r.ncols.pred:
-          assign(r[i,j], tr[j])
+    for i in fOpt(0,r.nrows.pred):
+      for j in fOpt(0,r.ncols.pred):
+        for k in fOpt(0,x.ncols.pred):
+          imadd(r[i,j], x[i,k], y[k,j])
+]#
+proc imaddMMM*(r: var auto; x,y: auto) {.alwaysInline.} =
+  mixin nrows, ncols, imadd
+  assert(r.nrows == x.nrows)
+  assert(r.ncols == y.ncols)
+  assert(x.ncols == y.nrows)
+  for i in fOpt(0,r.nrows.pred):
+    for j in fOpt(0,r.ncols.pred):
+      for k in fOpt(0,x.ncols.pred):
+        imadd(r[i,j], x[i,k], y[k,j])
 
-template imsubVSV*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tx,_,i,_):
-    mixin imsub
+template imsubVSV*(r:typed; xx,yy:typed) =
+  mixin imsub
+  block:
+    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+    let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
     assert(r.len == y.len)
-    load(tx, x)
-    forO i, 0, r.len.pred:
+    for i in fOpt(0,r.len.pred):
       imsub(r[i], x, y[i])
 
-template imsubVMV*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_):
-    mixin imsub
+template imsubVMV*(r:typed; xx,yy:typed) =
+  mixin imsub
+  block:
+    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+    let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
     assert(x.nrows == r.len)
     assert(x.ncols == y.len)
-    when true:
-      load(tr, r)
-      forO j, 0, x.ncols.pred:
-        load(ty, y[j])
-        forO i, 0, x.nrows.pred:
-          imsub(tr[i], x[i,j], ty)
-      assign(r, tr)
-    else:
-      load(tr, r)
-      forO j, 0, x.ncols.pred:
-        load(tyr, asReal(y[j].re))
-        forO i, 0, x.nrows.pred:
-          imsub(tr[i], x[i,j], tyr)
-        load(tyi, asImag(y[j].im))
-        forO i, 0, x.nrows.pred:
-          imsub(tr[i], x[i,j], tyi)
-      assign(r, tr)
+    for j in fOpt(0,x.ncols.pred):
+      for i in fOpt(0,x.nrows.pred):
+        imsub(r[i], x[i,j], y[j])
 
-template imsubMMM*(rr:typed; xx,yy:typed):untyped =
-  subst(r,rr,x,xx,y,yy,tr,_,ty,_,i,_,j,_,k,_,txikr,_,txiki,_):
-    mixin nrows, ncols, imsubCRC, imsubCIC, assign, load1
+template imsubMMM*(r:typed; xx,yy:typed) =
+  mixin nrows, ncols, imsub
+  block:
+    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+    let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
     assert(r.nrows == x.nrows)
     assert(r.ncols == y.ncols)
     assert(x.ncols == y.nrows)
-    load(tr, r)
-    forO i, 0, r.nrows.pred:
-      forO k, 0, x.ncols.pred:
-        load(txikr, x[i,k].re)
-        forO j, 0, r.ncols.pred:
-          imsubCRC(tr[i,j], txikr, y[k,j])
-        load(txiki, x[i,k].im)
-        forO j, 0, r.ncols.pred:
-          imsubCIC(tr[i,j], txiki, y[k,j])
-    assign(r, tr)
+    for i in fOpt(0,r.nrows.pred):
+      for j in fOpt(0,r.ncols.pred):
+        for k in fOpt(0,x.ncols.pred):
+          imsub(r[i,j], x[i,k], y[k,j])
 
-template msubVSVV*(rr:typed; xx,yy,zz:typed):untyped =
-  subst(r,rr,x,xx,y,yy,z,zz,i,_):
-    mixin msub
+template msubVSVV*(r:typed; xx,yy,zz:typed) =
+  mixin msub
+  block:
+    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+    let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
+    let zp = getPtr zz; template z:untyped {.gensym.} = zp[]
     assert(r.len == y.len)
     assert(r.len == z.len)
-    forO i, 0, r.len.pred:
+    for i in fOpt(0,r.len.pred):
       msub(r[i], x, y[i], z[i])

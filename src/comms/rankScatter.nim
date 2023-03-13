@@ -130,7 +130,7 @@ proc scatter*(mem: RankScatterMemSeq, c: Comm): tuple[buf:seq[char],mem:RankScat
       c.pushRecv(b[i].rank, &&result.buf[rpos], b[i].data)
     result.mem[i].rank = b[i].rank
     result.mem[i].bytes = b[i].data
-    result.mem[i].data = &&result.buf[rpos]
+    result.mem[i].data = &&result.buf[rpos] # ok since buf seems to not get copied on return
     rpos += b[i].data
 
   # start sends

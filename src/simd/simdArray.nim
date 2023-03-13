@@ -5,17 +5,33 @@ import maths/types
 export types
 #import ../basicOps
 
+#getOptimPragmas()
+#{.pragma: alwaysInline, codegenDecl: "inline __attribute__((always_inline)) $# $#$#".}
+
+template `[]`*(x: SomeNumber): untyped = x
+template `[]`*(x: SomeNumber, i: typed): untyped = x
+
 # map (var param) (param) (return)
 
 template map011(T,L,op1,op2:untyped):untyped {.dirty.} =
-  proc op1*(x:T):T {.inline,noInit.} =
+  getOptimPragmas()
+  proc op1*(x:T):T {.alwaysInline,noInit.} =
     bind forStatic
-    forStatic i, 0, L-1:
+    #forStatic i, 0, L-1:
+    for i in 0..<L:
       result[][i] = op2(x[][i])
 template map021(T,L,op1,op2:untyped):untyped {.dirty.} =
-  proc op1*(x,y:T):T {.inline,noInit.} =
+  proc op1*(x,y:T):T {.alwaysInline,noInit.} =
     bind forStatic
-    forStatic i, 0, L-1:
+    #forStatic i, 0, L-1:
+    for i in 0..<L:
+      result[][i] = op2(x[][i], y[][i])
+template map021x(T1,T2,TR,L,op1,op2:untyped):untyped {.dirty.} =
+  proc op1*(x:T1,y:T2):TR {.alwaysInline,noInit.} =
+    mixin `[]`
+    #bind forStatic
+    #forStatic i, 0, L-1:
+    for i in 0..<L:
       result[][i] = op2(x[][i], y[][i])
 #template map110(T,L,op1,op2:untyped):untyped {.dirty.} =
 #  proc op1*(r:var T; x:T) {.inline.} =
@@ -26,30 +42,38 @@ template map021(T,L,op1,op2:untyped):untyped {.dirty.} =
 macro map110(T,L,op1,op2: untyped): untyped =
   #template tmpldef(f,r,xx,T,body: untyped) =
   #  template f*(r: T; xx: T) = body
-  template tmpldef(f,r,xx,T,body: untyped) =
-    proc f*(r: var T; xx: T) {.inline.} = body
+  template tmpldef(f,r,x,T,body: untyped) =
+    getOptimPragmas()
+    proc f*(r: var T; x: T) {.alwaysInline.} = body
   let r = gensym(nskParam,"r")
-  let xx = gensym(nskParam,"xx")
-  let x = ident("x")
+  let x = gensym(nskParam,"x")
   var body = newStmtList()
-  body.add newLetStmt(x, xx)
   let n = L.intval.int
   for i in 0..<n:
     template bb(t: untyped): untyped =
       newCall(ident"[]",newCall(ident"[]",t),newLit(i))
     body.add newCall(op2, bb(r), bb(x))
-  result = getAst(tmpldef(op1,r,xx,T,body))
+  result = getAst(tmpldef(op1,r,x,T,body))
   #echo result.repr
 
 template map120(T,L,op1,op2:untyped):untyped {.dirty.} =
-  proc op1*(r:var T; x,y:T) {.inline.} =
-    bind forStatic
-    forStatic i, 0, L-1:
+  getOptimPragmas()
+  proc op1*(r:var T; x,y:T) {.alwaysInline,noInit.} =
+    #bind forStatic
+    #forStatic i, 0, L-1:
+    for i in 0..<L:
+      op2(r[][i], x[][i], y[][i])
+template map120x(T1,T2,TR,L,op1,op2:untyped):untyped {.dirty.} =
+  proc op1*(r:var TR; x: T1, y: T2) {.inline,noInit.} =
+    #bind forStatic
+    #forStatic i, 0, L-1:
+    for i in 0..<L:
       op2(r[][i], x[][i], y[][i])
 template map130(T,L,op1,op2:untyped):untyped {.dirty.} =
-  proc op1*(r:var T; x,y,z:T) {.inline.} =
+  proc op1*(r:var T; x,y,z:T) {.inline,noInit.} =
     bind forStatic
-    forStatic i, 0, L-1:
+    #forStatic i, 0, L-1:
+    for i in 0..<L:
       op2(r[][i], x[][i], y[][i], z[][i])
 template makePermX(F,P,T,L,N0) {.dirty.} =
   when N0>P:
@@ -223,27 +247,43 @@ discard """
 #type SimdArrayObj*[L,B] = object
 #  v*: array[L,B]
 
+template arrayType[T](N: typed, x: typedesc[T]): untyped =
+  type B {.gensym.} = T.type
+  #static: echo "arrayType: ", N, " ", B
+  array[N,B]
 # T = Simd{S,D}{L} = array[L,B]
 # B ~ array[N0,F]
-template makeSimdArray*(T:untyped;L,B:typed):untyped {.dirty.} =
-  makeSimdArray2(T, L, B, numberType(B), numNumbers(B), L*numNumbers(B))
-template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
-  bind map011, map021, map110, map120, map130
+template makeSimdArray*(T:untyped;L:typed;B:typedesc):untyped {.dirty.} =
+#template makeSimdArray*(L:typed;B:typedesc;T:untyped) {.dirty.} =
+  #static: echo "makeSimdArray: ", L, " ", $B.type
+  #makeSimdArray2(T, L, type B, numberType(B), numNumbers(B), L*numNumbers(B))
+  makeSimdArray2(L, B, numberType(B), numNumbers(B), L*numNumbers(B), T)
+#template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
+#template makeSimdArray2*(T:untyped;L:typed;BB,F:typedesc;N0,N:typed):untyped {.dirty.} =
+template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
+  getOptimPragmas()
+  #static: echo "makeSimdArray2: ", L, " ", $B
+  bind map011, map021, map021x, map110, map120, map120x, map130, arrayType
   bind makePerm, makePackP, makePackM, makeBlendP, makeBlendM
+  #type B {.gensym.} = typeof(BB)
   #type T* = distinct array[L,B]
   type T* = object
-    v*: array[L,B]
+    #v*: array[L,B.type]
+    v*: arrayType(L,B)
+    #v* {.align(L*sizeof(B)).}: arrayType(L,B)
   #type T* = SimdArrayObj[L,B]
   template isWrapper*(x:typedesc[T]): bool = false
   template isWrapper*(x:T): bool = false
-  template numberType*(x:typedesc[T]):untyped = F
-  template numberType*(x:T):untyped = F
+  template numberType*(x:typedesc[T]):typedesc = F
+  template numberType*(x:T):typedesc = F
   template numNumbers*(x:typedesc[T]):untyped = N
   template numNumbers*(x:T):untyped = N
-  template simdType*(x:typedesc[T]):untyped = T
-  template simdType*(x:T):untyped = T
+  template simdType*(x:typedesc[T]):typedesc = T
+  template simdType*(x:T):typedesc = T
   template simdLength*(x:T):untyped = N
   template simdLength*(x:typedesc[T]):untyped = N
+  template eval*(x:T): untyped = x
+  template eval*(x:typedesc[T]): typedesc = T
   #template `[]`*(x:T):untyped = (array[L,B])(x)
   template `[]`*(x:T):untyped = x.v
   template `[]=`*(x: T; y: typed) = x.v = y
@@ -254,9 +294,8 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
     template `[]`*(x:T; i:SomeInteger):untyped = x[][i div N0][i mod N0]
     template `[]=`*(x:T; i:SomeInteger; y:auto) = x[][i div N0][i mod N0] = y
   template load1*(x:T):untyped = x
-  proc to*(x:SomeNumber; y:typedesc[T]):T {.inline,noInit.} =
+  proc to*(x:SomeNumber; y:typedesc[T]):T {.alwaysInline,noInit.} =
     bind forStatic
-    #subst(i,_):
     forStatic i, 0, L-1:
       assign(result[][i], x)
   #echoAst: F
@@ -278,7 +317,6 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   proc simdMaxReduce*(r:var SomeNumber; x:T) {.inline.} =
     mixin simdMaxReduce
     var y = x[][0]
-    #subst(i,_):
     forStatic i, 1, L-1:
       let c = x[][i]
       y = max(y, c)
@@ -286,6 +324,16 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   proc simdMaxReduce*(x:T):F {.noinit,inline.} = simdMaxReduce(result, x)
   template simdMax*(r:var SomeNumber; x:T) = simdMaxReduce(r, x)
   template simdMax*(x:T):untyped = simdMaxReduce(x)
+  proc simdMinReduce*(r:var SomeNumber; x:T) {.inline.} =
+    mixin simdMinReduce
+    var y = x[][0]
+    forStatic i, 1, L-1:
+      let c = x[][i]
+      y = min(y, c)
+    r = (type(r))(simdMinReduce(y))
+  proc simdMinReduce*(x:T):F {.noinit,inline.} = simdMinReduce(result, x)
+  template simdMin*(r:var SomeNumber; x:T) = simdMinReduce(r, x)
+  template simdMin*(x:T):untyped = simdMinReduce(x)
   proc `-`*(x:T):T {.inline,noInit.} =
     forStatic i, 0, L-1:
       neg(result[][i], x[][i])
@@ -335,35 +383,17 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
 
   map130(T, L, msub, msub)
 
-  #template `assign`*(rr: T; x: T): untyped =
-  #  #echotype: rr
-  #  #echotype: x
-  #  #echo rr
-  #  #echo rr[][0]
-  #  let xx = x
-  #  subst(r,rr):
-  #    forStatic i, 0, L-1:
-  #      assign(r[][i], xx[][i])
-  #proc `:=`*(r: var T; x: T) {.inline.} =
-  #  forStatic i, 0, L-1:
-  #    r[][i] = x[][i]
-  template `:=`*(r: var T; x: T): untyped = assign(r, x)
-  #template `:=`*(r: T; x: T) =
-  #  let xx = x
-  #  forStatic i, 0, L-1:
-  #    r[][i] = xx[][i]
+  template `:=`*(r: T; x: T): untyped = assign(r, x)
   template `:=`*(r: T; x: array[L,B]) =
     let xx = x
     forStatic i, 0, L-1:
       r[][i] = xx[i]
   when N==1:
     template assign*(r: SomeNumber, x: T): untyped = r = x[0]
-  #proc assign*(r:var T; x:SomeNumber) {.inline,neverInit.} =
-  proc assign*(r: var T; x: SomeNumber) {.inline.} =
-    #{.emit:"#define memset(a,b,c)".}
-    assign(r, x.to(T))
-    #assign(r[][0], x)
-    #assign(r[][1], r[][0])
+  proc assign*(r: var T; x: SomeNumber) {.alwaysInline.} =
+    #assign(r, x.to(T))
+    forStatic i, 0, L-1:
+      assign(r[][i], x)
   template `:=`*(r: T, x: SomeNumber) = assign(r, x)
   proc assign*(r:var T; x:array[N,SomeNumber]) {.inline.} =
     when compiles(assign(r[][0], unsafeAddr(x[0]))):
@@ -375,15 +405,12 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
         assign(r[][i], unsafeAddr(y[i*N0]))
   proc assign*(r:var array[N,SomeNumber], x:T) {.inline.} =
     bind forStatic
-    #subst(i,_):
     when B is SomeNumber:
       forStatic i, 0, L-1:
         r[i] = x[][i]
     else:
       forStatic i, 0, L-1:
         assign(addr(r[i*N0]), x[][i])
-  #proc assign*(r: var T; x: array[N0,B]) {.inline.} =
-  #  r[]
   proc assign*(m: Masked[T], x: SomeNumber) =
     #static: echo "a mask"
     var i = 0
@@ -395,9 +422,11 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
       i.inc
     #static: echo "end a mask"
   template add*(r:var T; x:SomeNumber; y:T) = add(r, x.to(type(T)), y)
+  template add*(r:var T; x:T; y:SomeNumber) = add(r, x, y.to(type(T)))
   template sub*(r:var T; x:SomeNumber; y:T) = sub(r, x.to(type(T)), y)
   template sub*(r:var T; x:T; y:SomeNumber) = sub(r, x, y.to(type(T)))
   template mul*(r:var T; x:SomeNumber; y:T) = mul(r, x.to(type(T)), y)
+  #map120x(SomeNumber,T,T,L,mul,mul)
   template mul*(r:var T; x:T; y:SomeNumber) = mul(r, x, y.to(type(T)))
   template iadd*(r:var T; x:SomeNumber) = iadd(r, x.to(type(T)))
   template isub*(r:var T; x:SomeNumber) = isub(r, x.to(type(T)))
@@ -413,6 +442,7 @@ template makeSimdArray2*(T:untyped;L,B,F,N0,N:typed):untyped {.dirty.} =
   template `-`*(x:SomeNumber; y:T):T = sub(x.to(type(T)), y)
   template `-`*(x:T; y:SomeNumber):T = sub(x, y.to(type(T)))
   template `*`*(x:SomeNumber; y:T):T = mul(x.to(type(T)), y)
+  #map021x(SomeNumber,T,T,L,`*`,`*`)
   template `*`*(x:T; y:SomeNumber):T = mul(x, y.to(type(T)))
   template `/`*(x:SomeNumber; y:T):T = divd(x.to(type(T)), y)
   template `/`*(x:T; y:SomeNumber):T = divd(x, y.to(type(T)))

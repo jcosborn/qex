@@ -5,7 +5,8 @@ import layout/shifts
 #import stdUtils
 #import gaugeUtils
 
-proc startCornerShifts*[T](u: openArray[T]): auto =
+proc startCornerShifts*[T](u0: openArray[T]): auto =
+  var u = @u0
   var s:seq[seq[ShiftB[type(u[0][0])]]]
   let nd = u.len
   s.newSeq(nd)
@@ -14,7 +15,11 @@ proc startCornerShifts*[T](u: openArray[T]): auto =
     for nu in 0..<nd:
       if mu!=nu:
         s[mu][nu].initShiftB(u[mu], nu, 1, "all")
-        s[mu][nu].startSB(u[mu][ix])
+  threads:
+    for mu in 0..<nd:
+      for nu in 0..<nd:
+        if mu!=nu:
+          s[mu][nu].startSB(u[mu][ix])
   return s
 
 proc startStapleShifts*[T](u: openArray[T]): auto =
@@ -121,7 +126,7 @@ proc makeStaples*[T](uu: openArray[T], s: auto): auto =
   toc("makeStaples setup")
   threads:
     tic()
-    var umu,unu,umunu,unumu: type(load1(u[0][0]))
+    var umu,unu,umunu,unumu {.noInit.}: evalType(u[0][0])
     for ir in lo:
       for mu in 1..<nd:
         for nu in 0..<mu:
@@ -174,20 +179,25 @@ proc makeStaples*[T](uu: openArray[T], s: auto): auto =
 when isMainModule:
   import qex
   import physics/qcdTypes
-  #import matrixFunctions
+
   qexInit()
   #var defaultGaugeFile = "l88.scidac"
   #let defaultLat = @[2,2,2,2]
   let defaultLat = @[8,8,8,8]
   defaultSetup()
-  for mu in 0..<g.len: g[mu] := 1
+  g.unit
   #g.random
 
   proc test(g: auto) =
+    tic("test")
     var cs = startCornerShifts(g)
+    toc("startCornerShifts")
     var (stf,stu,ss) = makeStaples(g, cs)
+    toc("makeStaples")
 
   test(g)
-  echoTimers()
   resetTimers()
   test(g)
+  echoTimers()
+
+  qexFinalize()
