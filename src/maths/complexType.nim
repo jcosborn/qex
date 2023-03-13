@@ -156,7 +156,7 @@ template add*(r: ComplexProxy, x: RealProxy, y: ComplexProxy3) =
   r := x + y
 template add*(r: ComplexProxy, x: ComplexProxy2, y: RealProxy) =
   r := x + y
-proc add*[R,X,Y:ComplexProxy](r: var R, x: X, y: Y) {.inline.} =
+proc add*[R,X,Y:ComplexProxy](r: var R, x: X, y: Y) {.alwaysInline.} =
 #template add*[R,X,Y:ComplexProxy](rr: R, xx: X, yy: Y) =
 #  let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
 #  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
@@ -282,7 +282,13 @@ proc imadd*[R,X,Y:ComplexProxy](r: var R, x: X, y: Y) {.alwaysInline.} =
   imsub(r.re, x.im, y.im)
   imadd(r.im, x.im, y.re)
 
-template imsub*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3) =  r -= x*y
+#template imsub*(r: ComplexProxy, x: ComplexProxy2, y: ComplexProxy3) =  r -= x*y
+proc imsub*[R,X,Y:ComplexProxy](r: var R, x: X, y: Y) {.alwaysInline.} =
+  mixin imadd, imsub
+  imsub(r.re, x.re, y.re)
+  imsub(r.im, x.re, y.im)
+  imadd(r.re, x.im, y.im)
+  imsub(r.im, x.im, y.re)
 
 
 template norm2*(r: auto, x: ComplexProxy2) =
