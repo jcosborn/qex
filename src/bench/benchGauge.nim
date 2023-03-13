@@ -40,7 +40,7 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
   echo "(", exp2string(eqn), ") secs: ", dt|(5,3), "  sec/n: ", dtn|(5,3),
       "  mf: ", mf.int, "  mb: ", mb.int
 
-proc test(lat: any) =
+proc test(lat: auto) =
   #var scale = 1
   #var lat = lat0*scale
   var lo = newLayout(lat)

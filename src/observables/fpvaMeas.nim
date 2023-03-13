@@ -27,7 +27,7 @@ proc symShift(r:Field; g:Field2; x:Field; dir:int) =
     boundarySB(sb, r[ir] += it)
     echo "symShift: ", r.norm2
 
-proc stagLocalMesons(v1,v2:any, t0=0):auto =
+proc stagLocalMesons(v1,v2:auto, t0=0):auto =
   let l = v1.l
   let nt = l.physGeom[3]
   var c = newSeq[array[8,float]](nt)
@@ -60,7 +60,7 @@ proc stagLocalMesons(v1,v2:any, t0=0):auto =
   rankSum(c)
   result = c
 
-proc sft(c:var any, b:int) =
+proc sft(c:var auto, b:int) =
   for t in 0..<c.len:
     for s in 0..<8:
       if (s and b)==0:
@@ -69,7 +69,7 @@ proc sft(c:var any, b:int) =
         c[t][s] = c0 + c1
         c[t][s+b] = c0 - c1
 
-proc printLocalMesons(c:var any, f=1.0) =
+proc printLocalMesons(c:var auto, f=1.0) =
   sft(c, 1)
   sft(c, 2)
   sft(c, 4)

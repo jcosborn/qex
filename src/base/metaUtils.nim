@@ -1635,9 +1635,9 @@ macro byptr*(sect:untyped):untyped =
   let def = sect[0]
   let
     lhs = def[0]
-    typ = def[1]
+    #typ = def[1]
     ex = def[2]
-    addrTyp = if typ.kind == nnkEmpty: typ else: newTree(nnkPtrTy, typ)
+    #addrTyp = if typ.kind == nnkEmpty: typ else: newTree(nnkPtrTy, typ)
   result = quote do:
     #mixin toPtr
     #let byptrTmp = toPtr(`ex`)
