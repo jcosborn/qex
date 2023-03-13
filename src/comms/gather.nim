@@ -4,6 +4,10 @@ import algorithm
 template `&&`(x: char): untyped = cast[pointer](unsafeAddr(x))
 template `&&`(x: int32): untyped = cast[pointer](unsafeAddr(x))
 template `&&`(x: seq): untyped = cast[pointer](unsafeAddr(x[0]))
+template newSeqOfCap[T](x: var seq[T], n: int) =
+  x = newSeqOfCap[T](n)
+template newSeqUninitialized[T](x: var seq[T], n: int) =
+  x = newSeqUninitialized[T](n)
 
 proc adjust[T](i: int, x: openarray[T], b: int): int =
   result = i
@@ -91,16 +95,16 @@ proc makeGatherMap*(c: Comm, rl: var seq[RecvList]): GatherMap =
   let nsend = r.buf.len div sizeof(int32)
   if nsend > 0:
     let sbuf = cast[ptr UncheckedArray[int32]](unsafeAddr r.buf[0])
-    result.sidx.newSeq(nsend)
+    result.sidx.newSeqUninitialized(nsend)
     for i in 0..<nsend:
       result.sidx[i] = sbuf[i]
 
-    result.smsginfo.newSeq(r.mem.len)
+    result.smsginfo.newSeqOfCap(r.mem.len)
     var st = 0
     for i in 0..<r.mem.len:
       let ln = r.mem[i].bytes div sizeof(int32)
-      result.smsginfo[i] = MsgInfo(rank: r.mem[i].rank.int32, start: st.int32,
-                                   count: ln.int32)
+      result.smsginfo.add MsgInfo(rank: r.mem[i].rank.int32, start: st.int32,
+                                  count: ln.int32)
       st += ln
 
   result.nsrc = nsend + result.lidx.len
@@ -151,28 +155,23 @@ proc makeGatherMap*(c: Comm, sl: var seq[SendList]): GatherMap =
   let nrecv = r.buf.len div sizeof(int32)
   if nrecv>0:
     let rbuf = cast[ptr UncheckedArray[int32]](unsafeAddr r.buf[0])
-    result.rdest.newSeq(nrecv)
+    result.rdest.newSeqUninitialized(nrecv)
     for i in 0..<nrecv:
       result.rdest[i] = rbuf[i]
 
-  result.rmsginfo.newSeq(r.mem.len)
+  result.rmsginfo.newSeqOfCap(r.mem.len)
   var st = 0
   for i in 0..<r.mem.len:
     let ln = r.mem[i].bytes div sizeof(int32)
-    result.rmsginfo[i] = MsgInfo(rank: r.mem[i].rank.int32, start: st.int32,
-                                 count: ln.int32)
+    result.rmsginfo.add MsgInfo(rank: r.mem[i].rank.int32, start: st.int32,
+                                count: ln.int32)
     st += ln
 
   result.nsrc = sl.len
   result.ndest = nrecv + result.lidx.len
   #echoAll fmt"{rank}: {result.smsginfo}, {result.rmsginfo}"
 
-
 # TODO: startRecvs, startSends, doLocal, wait
-# dest: D, src: S
-# src.put(buf, i)
-# dest.get(i, buf)
-#proc gather*(c: Comm; gm: GatherMap; elemsize: int; dest,src: auto) =
 proc gather*(c: Comm; gm: GatherMap; data: auto) =
   tic()
   # start recvs
@@ -185,7 +184,7 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
     c.pushRecv(gm.rmsginfo[i].rank, &&recvbuf[elemsize*gm.rmsginfo[i].start],
                elemsize*gm.rmsginfo[i].count)
   toc("gather: start recvs")
-  c.barrier
+  c.barrier  # make sure recvs posted before sends start
   toc("gather: barrier")
 
   # fill send buffers and send
@@ -199,8 +198,6 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
     threads:
       tfor j, 0..<gm.smsginfo[i].count:
         let k = gm.smsginfo[i].start + j
-        #copyMem(&&sendbuf[elemsize*k], &&srcbuf[elemsize*gm.sidx[k]], elemsize)
-        #copyElem(&&sendbuf[elemsize*k], data.src, gm.sidx[k])
         data.copy(&&sendbuf[elemsize*k], gm.sidx[k])
     #toc("gather: fill")
     c.pushSend(gm.smsginfo[i].rank,
@@ -215,8 +212,6 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
     # make sure threads don't share inner sites
     let range = splitThreads(gm.ldest, data.vlen, numThreads, threadNum)
     for i in range[0] ..< range[1]:
-      #copyMem(&&destbuf[elemsize*gm.ldest[i]], &&srcbuf[elemsize*gm.lidx[i]], elemsize)
-      #copyElem(data.dest, gm.ldest[i], src, gm.lidx[i])
       data.copy(gm.ldest[i], gm.lidx[i])
   toc("gather: copy local")
 
@@ -266,32 +261,28 @@ proc gather*(c: Comm; gm: GatherMap; elemsize: int; d,s: pointer) =
   var gd = GatherPointer(src: src, dest: dest, elemsize: elemsize)
   c.gather(gm, gd)
 
-type GatherField[F1,F2] = object
-  src: F1
-  dest: F2
+type GatherField[S,D] = object
+  src: S
+  dest: D
   elemsize: int
   vlen: int
 template copy(gd: GatherField, d: pointer, s: SomeInteger) =
   mixin evalType
-  #copyMem(d, cast[pointer](addr gd.src[gd.elemsize*s]), gd.elemsize)
   type T = evalType(gd.src{s})
   let p = cast[ptr T](d)
   p[] := gd.src{s}
 template copy(gd: GatherField, d: SomeInteger, s: pointer) =
   mixin evalType
-  #copyMem(cast[pointer](addr gd.dest[gd.elemsize*d]), s, gd.elemsize)
   type T = evalType(gd.dest{d})
   let p = cast[ptr T](s)
   gd.dest{d} := p[]
 template copy(gd: GatherField, d: SomeInteger, s: SomeInteger) =
   mixin evalType
-  #copyMem(cast[pointer](addr gd.dest[gd.elemsize*d]),
-  #        cast[pointer](addr gd.src[gd.elemsize*s]), gd.elemsize)
   gd.dest{d} := gd.src{s}
 proc gather*[D,S:Field](c: Comm; gm: GatherMap; d: D, s: S) =
   mixin evalType
   type T = evalType(d{0})
-  var gd = GatherField[S,D](src: s, dest: d, elemsize: sizeof(T), vlen: max(D.V,S.V))
+  var gd = GatherField[S,D](src:s,dest:d,elemsize:sizeof(T),vlen:max(D.V,S.V))
   c.gather(gm, gd)
 
 proc gatherReversed*(c: Comm; gm: GatherMap; elemsize: int;
