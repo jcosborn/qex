@@ -53,6 +53,7 @@ template `[]`*[T](x:typedesc[ptr T]):typedesc = T
 template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x
 template isWrapper*(x: SomeNumber): untyped = false
 template isWrapper*(x: typedesc[SomeNumber]): untyped = false
+template has*[T:SomeNumber](x: typedesc[T], y: typedesc): bool = T is y
 template eval*[T:SomeNumber](x: typedesc[T]): typedesc = typeof(T)
 template evalType*[T](x: T): typedesc =
   mixin eval
