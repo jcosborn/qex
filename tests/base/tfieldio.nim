@@ -1,6 +1,10 @@
 import qex
 import testutils
 
+#TODO
+# add rng
+# add multi record
+
 qexInit()
 
 suite "Test field IO":
@@ -19,6 +23,7 @@ suite "Test field IO":
     fm = l.ColorMatrix
     fh = l.HalfFermion
     fd = l.DiracFermion
+    c = getDefaultComm()
 
   proc save(f: var auto) =
     f.gaussian rng
@@ -26,12 +31,18 @@ suite "Test field IO":
     check(w.status==0)
     w.write(f, recordmd)
     check(w.status==0)
+    w.close
+    check(w.status==0)
+    c.barrier
 
   proc load(f: auto) =
     var f2 = f.newOneOf
     var r = l.newReader(fn)
     check(r.status==0)
     r.read(f2)
+    check(r.status==0)
+    r.close
+    check(r.status==0)
     f2 -= f
     let n2 = f2.norm2
     check(n2==0)
