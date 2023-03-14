@@ -28,7 +28,7 @@ template `[]`*[T](x: typedesc[Simd[T]]): typedesc =
   else:
     T.type
 
-# assume these don't have any lazy evaluations   # FIXME could be toDouble, etc.
+# assume these don't have any lazy evaluations  # FIXME could be toDouble, etc.
 template eval*[T](x: typedesc[Simd[T]]): typedesc =
   asSimd(typeof(T))
 
