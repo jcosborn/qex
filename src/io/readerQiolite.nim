@@ -29,6 +29,7 @@ type Reader*[V:static[int]] = ref object
   #iorank*: seq[int32]
   verb*: int
   sr*: ScidacReader
+  atNextRecord*: bool
 
 proc IOverb*(level: int) =
   verb = level
@@ -46,12 +47,14 @@ proc newReader*[V: static[int]](l: Layout[V]; fn: string): Reader[V] =
   result.fileMetadata = sr.fileMd
   result.verb = verb
   result.sr = sr
+  result.atNextRecord = true
 
 proc close*(rd: var Reader) =
   rd.sr.close
 
 proc nextRecord*(rd: var Reader) =
   rd.sr.nextRecord
+  rd.atNextRecord = true
 
 proc recordMetadata*(rd: var Reader): string =
   rd.sr.recordMd
@@ -112,6 +115,7 @@ template `+`(x: ptr char, i: SomeInteger): untyped =
 
 proc read[T](rd: var Reader, v: openArray[ptr T]) =
   let t0 = getMonoTime()
+  if not rd.atNextRecord: rd.nextRecord
   template r: untyped = rd.sr.record
   let nsites = rd.layout.nsites
   let objcount = r.datacount
@@ -155,6 +159,7 @@ proc read[T](rd: var Reader, v: openArray[ptr T]) =
   dealloc(buf)
   let t3 = getMonoTime()
   rd.sr.finishReadBinary
+  rd.atNextRecord = false
   let t4 = getMonoTime()
   if verb > 0:
     echo &"read seconds layout: {t1-t0} read: {t2-t1} put: {t3-t2} finish: {t4-t3}"
