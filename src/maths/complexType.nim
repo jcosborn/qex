@@ -120,9 +120,28 @@ template getNc*(x: ComplexProxy): untyped = 1
 template getNs*(x: ComplexProxy): untyped = 1
 
 template toSingle*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): typedesc =
+  mixin toSingle
   ComplexObj[toSingle(type(TR)),toSingle(type(TI))]
 template toSingle*[T](x: typedesc[ComplexProxy[T]]): typedesc =
+  mixin toSingle
   ComplexProxy[toSingle(type(T))]
+template toSingleImpl*(xx: ComplexObj): auto =
+  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+  newComplexObj(toSingle(x.re),toSingle(x.im))
+  #mixin toSingleX
+  #toSingleX(toDerefPtr xx)
+
+template toDouble*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): typedesc =
+  mixin toDouble
+  ComplexObj[toDouble(type(TR)),toDouble(type(TI))]
+template toDouble*[T](x: typedesc[ComplexProxy[T]]): typedesc =
+  mixin toDouble
+  ComplexProxy[toDouble(type(T))]
+template toDoubleImpl*(xx: ComplexObj): auto =
+  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+  newComplexObj(toDouble(x.re),toDouble(x.im))
+  #mixin toDoubleX
+  #toDoubleX(toDerefPtr xx)
 
 template load1*(x: ComplexProxy): auto = x
 template load1*(x: RealProxy): auto = x
@@ -135,18 +154,6 @@ template eval*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): typedesc =
 template map*(xx: ComplexProxy; f: untyped): auto =
   let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
   newComplex(f(x.re),f(x.im))
-
-template toSingleImpl*(xx: ComplexObj): auto =
-  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
-  newComplexObj(toSingle(x.re),toSingle(x.im))
-  #mixin toSingleX
-  #toSingleX(toDerefPtr xx)
-
-template toDoubleImpl*(xx: ComplexObj): auto =
-  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
-  newComplexObj(toDouble(x.re),toDouble(x.im))
-  #mixin toDoubleX
-  #toDoubleX(toDerefPtr xx)
 
 template add*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3) =
   r := x + y

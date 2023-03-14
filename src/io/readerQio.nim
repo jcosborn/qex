@@ -191,26 +191,28 @@ proc put[T](buf: cstring; index: csize_t, count: cint; arg: pointer) =
   type destT1 = cArray[T]
   type destT = cArray[ptr destT1]
   let src = cast[ptr srcT](buf)
-  let dest = cast[ptr destT](arg)
+  var dest = cast[ptr destT](arg)
   let vi = index div simdLength(T).csize_t
   let vl = int(index mod simdLength(T).csize_t)
   #let vlm = 1 shl vl
   for i in 0..<count:
     #masked(dest[i][vi], vlm) := src[i]
-    mindexed(dest[i][vi], asSimd(vl)) := src[i]
+    #mindexed(dest[i][vi], asSimd(vl)) := src[i]
+    dest[i][vi][asSimd(vl)] = src[i]
 
 proc putP[T](buf: cstring; index: csize_t, count: cint; arg: pointer) =
   type srcT = cArray[IOtypeP(T)]
   type destT1 = cArray[T]
   type destT = cArray[ptr destT1]
   let src = cast[ptr srcT](buf)
-  let dest = cast[ptr destT](arg)
+  var dest = cast[ptr destT](arg)
   let vi = index div simdLength(T).csize_t
   let vl = int(index mod simdLength(T).csize_t)
   #let vlm = 1 shl vl
   for i in 0..<count:
     #masked(dest[i][vi], vlm) := src[i]
-    mindexed(dest[i][vi], asSimd(vl)) := src[i]
+    #mindexed(dest[i][vi], asSimd(vl)) := src[i]
+    dest[i][vi][asSimd(vl)] = src[i]
 
 proc read[T](rd: var Reader, v: var openArray[ptr T]) =
   rd.setLayout()

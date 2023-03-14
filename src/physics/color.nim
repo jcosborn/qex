@@ -59,7 +59,7 @@ template `[]=`*(x: Color, i,j,y: typed): untyped =
 
 # forward from value to value
 template forwardVV(f: untyped) {.dirty.} =
-  template f*(x: Color): untyped =
+  template f*(x: Color): auto =
     mixin f
     f(x[])
 # forward from value to type
@@ -69,12 +69,12 @@ template forwardVV(f: untyped) {.dirty.} =
 #    f(type T)
 # forward from type to type
 template forwardTT(f: untyped) {.dirty.} =
-  template f*[T](x: typedesc[Color[T]]): untyped =
+  template f*[T](x: typedesc[Color[T]]): auto =
     mixin f
     f(type T)
 # forward from type to type and wrap
 template forwardTTW(f: untyped) {.dirty.} =
-  template f*[T](x: typedesc[Color[T]]): untyped =
+  template f*[T](x: typedesc[Color[T]]): auto =
     mixin f
     Color[f(type T)]
 

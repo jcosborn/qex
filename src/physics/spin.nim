@@ -23,7 +23,15 @@ type
 #  asSpin(y)
 template asVarWrapper*(x: Spin, y: typed): untyped =
   asVar(asSpin(y))
-#makeDeref(Spin, x.T)
+
+template index*[T,I](x: typedesc[Spin[T]], i: typedesc[I]): typedesc =
+  when I is Spin:
+    index(T.type, I.type[])
+  elif I.isWrapper:
+    Spin[index(T.type, I.type)]
+  else:
+    index(T.type, I.type)
+
 template `[]`*[T](x: Spin, i: T): untyped =
   when T is Spin:
     x[][i[]]
@@ -46,18 +54,66 @@ proc `[]=`*[T](x: Spin, i: T; y: auto) =
     x[][i] = y
 template `[]=`*(x: Spin, i,j,y: typed) =
   x[][i,j] = y
+
+# forward from type to type
+template forwardTT(f: untyped) {.dirty.} =
+  template f*[T](x: typedesc[Spin[T]]): auto =
+    mixin f
+    f(type T)
+# forward from type to type and wrap
+template forwardTTW(f: untyped) {.dirty.} =
+  template f*[T](x: typedesc[Spin[T]]): auto =
+    mixin f
+    Spin[f(type T)]
+
 forwardFunc(Spin, len)
 forwardFunc(Spin, nrows)
 forwardFunc(Spin, ncols)
+forwardFunc(Spin, getNc)
 forwardFunc(Spin, numberType)
 forwardFunc(Spin, nVectors)
 forwardFunc(Spin, simdType)
 forwardFunc(Spin, simdLength)
+
+forwardTT(len)
+forwardTT(nrows)
+forwardTT(ncols)
+forwardTT(nVectors)
+forwardTT(simdType)
+forwardTT(simdLength)
+forwardTT(getNc)
+forwardTT(numberType)
+
+forwardTTW(toSingle)
+forwardTTW(toDouble)
+
+template eval*[T](x: typedesc[Spin[T]]): typedesc = asSpin(eval(type T))
+
+template has*[T](x: typedesc[Spin[T]], y: typedesc): bool =
+  mixin has
+  when y is Spin2:
+    true
+  else:
+    has(type T, y)
+
 template row*(x: Spin, i: typed): untyped =
   mixin row
   asSpin(row(x[],i))
 template setRow*(r: Spin; x: Spin2; i: int): untyped =
   setRow(r[], x[], i)
+
+template getNs*[T](x: Spin[T]): auto =
+  when T is Mat1:
+    x[].nrows
+  elif T is Vec1:
+    x[].len
+  else:
+    static:
+      echo "error: unknown Nc"
+      echo x.repr
+      echo type(x).name
+      qexExit 1
+    0
 
 template binDDRet(fn,wr,T1,T2) =
   template fn*(x: T1, y: T2): untyped =

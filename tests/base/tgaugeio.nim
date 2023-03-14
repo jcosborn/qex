@@ -7,33 +7,43 @@ suite "Test gauge IO":
   threads: echo "thread ",threadNum," / ",numThreads
   const fn = "tmplat.lime"
   var
-    (l,g,_) = setupLattice([8,8,8,8])
+    lat = latticeFromLocalLattice([8,8,8,8], nRanks)
+    (l,g,_) = setupLattice(lat)
     p = g.plaq
+    gt = g.newGaugeS
+    gs = gt.newGauge
+    ps = gs.plaq
+  echo "plaq64: ", p
+  echo "plaq32: ", ps
 
   test "save double precision (default)":
-    if 0 != g.saveGauge(fn):
-      echo "Error: failed to save gauge to ",fn
-      qexExit 1
+    let err = g.saveGauge(fn)
+    check(err == 0)
+
+  test "load double precision":
     var gg = l.newGauge
-    if 0 != gg.loadGauge(fn):
-      echo "Error: failed to load gauge from ",fn
-      qexExit 1
-    #threads: gg.projectSU
-    #CT = 1E-10    # Larger error would result from projectSU due to random gauge.
+    let err = gg.loadGauge(fn)
+    check(err == 0)
     var pp = gg.plaq
-    check(p ~ pp)
+    check(p == pp)
+    for i in 0..<g.len:
+      gg[i] -= g[i]
+      let n2 = gg[i].norm2
+      check(n2 == 0)
 
   test "save single precision":
-    if 0 != g.saveGauge(fn,"F"):
-      echo "Error: failed to save gauge to ",fn
-      qexExit 1
+    let err = g.saveGauge(fn,"F")
+    check(err == 0)
+
+  test "load single precision":
     var gg = l.newGauge
-    if 0 != gg.loadGauge(fn):
-      echo "Error: failed to load gauge from ",fn
-      qexExit 1
-    #threads: gg.projectSU
+    let err = gg.loadGauge(fn)
+    check(err == 0)
     var pp = gg.plaq
-    CT = 1E-5
-    check(p ~ pp)
+    check(ps == pp)
+    for i in 0..<g.len:
+      gg[i] -= gs[i]
+      let n2 = gg[i].norm2
+      check(n2 == 0)
 
 qexFinalize()

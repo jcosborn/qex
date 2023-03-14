@@ -42,6 +42,8 @@ template basicNumberDefines(T,N,F) {.dirty.} =
   template numNumbers*(x:typedesc[T]):untyped = N
 basicNumberDefines(float32, 1, float32)
 basicNumberDefines(float64, 1, float64)
+template toSingle*(x: typedesc[float64]): typedesc = float32
+template toDouble*(x: typedesc[float32]): typedesc = float64
 
 template numberType*[T](x:ptr T):untyped = numberType(T)
 template numberType*[T](x:tuple[re,im:T]):untyped = numberType(T)
