@@ -19,6 +19,7 @@ type RngMilc6* = object
 
 template isWrapper*(x: RngMilc6): bool = false
 template isWrapper*(x: typedesc[RngMilc6]): bool = false
+template has*(x: typedesc[RngMilc6], y: typedesc): bool = y is RngMilc6
 template numberType*(x: RngMilc6): typedesc = uint32
 template numberType*(x: typedesc[RngMilc6]): typedesc = uint32
 template simdLength*(x: typedesc[RngMilc6]): untyped = 1

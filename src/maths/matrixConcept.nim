@@ -318,6 +318,11 @@ template toDouble*[T](x: typedesc[AsVector[T]]): untyped =
 template toDoubleImpl*(x: VectorArrayObj): untyped =
   mixin toDoubleX
   toDoubleX(toRef x)
+template toDouble*[I,J,T](x: typedesc[MatrixArrayObj[I,J,T]]): typedesc =
+  mixin toDouble
+  MatrixArrayObj[I,J,toDouble(type(T))]
+template toDouble*[T](x: typedesc[AsMatrix[T]]): typedesc =
+  AsMatrix[toDouble(type(T))]
 template toDoubleImpl*(x: MatrixArrayObj): untyped =
   mixin toDoubleX
   toDoubleX(toRef x)

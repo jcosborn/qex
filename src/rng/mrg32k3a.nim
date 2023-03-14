@@ -82,6 +82,7 @@ template numInts*(x: typedesc[MRG32k3a]): int = int 4294967087
 
 template isWrapper*(x: MRG32k3a): bool = false
 template isWrapper*(x: typedesc[MRG32k3a]): bool = false
+template has*(x: typedesc[MRG32k3a], y: typedesc): bool = y is MRG32k3a
 
 proc `$`*(x:MRG32k3a):string =
   "MRG32k3a(" & $x.s1 & " " & $x.s2 & ")"
