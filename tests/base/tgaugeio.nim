@@ -1,20 +1,21 @@
-import qex
 import testutils
+import qex, os
 
 qexInit()
 
+threads: echo "thread ",threadNum," / ",numThreads
+const fn = "tmplat.lime"
+var
+  lat = latticeFromLocalLattice([8,8,8,8], nRanks)
+  (l,g,_) = setupLattice(lat)
+  p = g.plaq
+  gt = g.newGaugeS
+  gs = gt.newGauge
+  ps = gs.plaq
+echo "plaq64: ", p
+echo "plaq32: ", ps
+
 suite "Test gauge IO":
-  threads: echo "thread ",threadNum," / ",numThreads
-  const fn = "tmplat.lime"
-  var
-    lat = latticeFromLocalLattice([8,8,8,8], nRanks)
-    (l,g,_) = setupLattice(lat)
-    p = g.plaq
-    gt = g.newGaugeS
-    gs = gt.newGauge
-    ps = gs.plaq
-  echo "plaq64: ", p
-  echo "plaq32: ", ps
 
   test "save double precision (default)":
     let err = g.saveGauge(fn)
@@ -46,4 +47,5 @@ suite "Test gauge IO":
       let n2 = gg[i].norm2
       check(n2 == 0)
 
+removeFile fn
 qexFinalize()
