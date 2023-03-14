@@ -130,9 +130,11 @@ letParam:
   verboseGCStats:bool = 0
   verboseTimer:bool = 0
 
+installStandardParams()
 echoParams()
 echo "rank ", myRank, "/", nRanks
 threads: echo "thread ", threadNum, "/", numThreads
+processHelpParam()
 
 DropWasteTimerRatio = timerWasteRatio
 VerboseGCStats = verboseGCStats
@@ -816,4 +818,6 @@ for n in inittraj+1..inittraj+trajs:
 toc("hmc")
 
 if showTimers: echoTimers(timerExpandRatio, timerEchoDropped)
+processSaveParams()
+writeParamFile()
 qexfinalize()
