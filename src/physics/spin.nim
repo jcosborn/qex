@@ -71,6 +71,7 @@ forwardFunc(Spin, nrows)
 forwardFunc(Spin, ncols)
 forwardFunc(Spin, getNc)
 forwardFunc(Spin, numberType)
+forwardFunc(Spin, numNumbers)
 forwardFunc(Spin, nVectors)
 forwardFunc(Spin, simdType)
 forwardFunc(Spin, simdLength)
@@ -125,10 +126,10 @@ binDDRet(`-`, asSpin, Spin, Spin2)
 binDDRet(`*`, asSpin, Spin, Spin2)
 binDDRet(`/`, asSpin, Spin, Spin2)
 
-template numberType*[T](x: typedesc[Spin[T]]): untyped = numberType(type(T))
-#template numNuumbers*[T](x: typedesc[Spin[T]]): untyped = numberType(T)
-template numNumbers*(x: Spin): untyped = numNumbers(x[])
-template toSingle*[T](x: typedesc[Spin[T]]): untyped = Spin[toSingle(type(T))]
+#template numberType*[T](x: typedesc[Spin[T]]): untyped = numberType(type(T))
+#template numNumbers*[T](x: typedesc[Spin[T]]): untyped = numberType(T)
+#template numNumbers*(x: Spin): untyped = numNumbers(x[])
+#template toSingle*[T](x: typedesc[Spin[T]]): untyped = Spin[toSingle(type(T))]
 template load1*(x: Spin): untyped = asSpin(load1(x[]))
 template assign*(r: var Spin, x: SomeNumber) =
   assign(r[], x)
