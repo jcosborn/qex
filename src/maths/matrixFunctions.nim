@@ -107,6 +107,7 @@ proc eigs3(e0,e1,e2: var auto; tr,p2,det: auto) =
   e0 = tr3 - 2*sqc
   e1 = ll + sqs
   e2 = ll - sqs
+  # ~27 flops
 
 template rsqrtPHM2(r:typed; x:typed) =
   let x00 = x[0,0].re
@@ -167,6 +168,7 @@ proc rsqrtPHM3f(c0,c1,c2:var auto; tr,p2,det:auto) =
   c0 = (w*u*u+l0*sl0*(l1+l2)+l1*sl1*(l0+l2)+l2*sl2*(l0+l1))*di
   c1 = -(tr*u+w)*di
   c2 = u*di
+  # flops: eigs3(27) + 33 = 60
 
 template rsqrtPHM3(r:typed; x:typed) =
   let tr = trace(x).re
@@ -176,6 +178,7 @@ template rsqrtPHM3(r:typed; x:typed) =
   var c0,c1,c2:type(tr)
   rsqrtPHM3f(c0, c1, c2, tr, p2, det)
   r := c0 + c1*x + c2*x2
+  # 2*tr(2) + mm(66) + det(64) + f(60) + 56 = 250
 
 template rsqrtPHMN(r:typed; x:typed) =
   mixin simdMax
@@ -294,7 +297,7 @@ template rsqrtPH*[T:Mat1](x: T): T =
   rsqrtPH(r, x)
   r
 
-# x (x'x)^{-1/2}  #'
+# x (x'x)^{-1/2}  '
 proc projectU*(r: var Mat1; x: Mat2) =
   #let t = x.adj * x   # issues with gcc
   let xa = x.adj
@@ -303,6 +306,8 @@ proc projectU*(r: var Mat1; x: Mat2) =
   rsqrtPH(t2, t)
   mul(r, x, t2)
   #echo "t: ", t.norm2, "  t2: ", t2.norm2, "  r: ", r.norm2
+template projectUflops*(nc: int): int =
+  nc*nc*(2*(6*nc+2*(nc-1))) + 250  # only for nc=3
 
 template projectU*(r: var Mat1) =
   var t{.noInit.}: evalType(r)

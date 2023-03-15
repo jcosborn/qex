@@ -1,12 +1,9 @@
-import base
-import layout
-import gauge
-#import strUtils
-import fat7l
+import base, layout, gauge, fat7l
 
 export PerfInfo
 
 const keepProj {.boolDefine.} = true
+#const keepProj {.boolDefine.} = false
 when keepProj:
   static: echo "hypsmear: keeping projected fields"
 else:
@@ -33,7 +30,7 @@ proc symStaple(s: auto, alp: float, g1: auto, g2: auto,
   s += alp * ( g1 * s2.field * s1.field.adj )
   s += alp * sm.field
   let nc = g1[0].nrows
-  let siteFlops = float(nc*nc*((6*nc+2*(nc-1))*5+4*2))
+  let siteFlops = float(nc*nc*(4*(6*nc+2*(nc-1))+4*2))
   toc("symStaple", flops=siteFlops*g1.l.nSites)
 
 proc symStapleDeriv(f1, f2: auto;  # output
@@ -376,8 +373,6 @@ proc deriv*(coef: HypCoefs, gf: auto, fl: auto, info: var PerfInfo) =
 
 when isMainModule:
   import qex
-  import physics/qcdTypes
-  import gauge
   qexInit()
   #var defaultGaugeFile = "l88.scidac"
   let defaultLat = @[8,8,8,8]

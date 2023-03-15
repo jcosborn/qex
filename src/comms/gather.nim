@@ -173,7 +173,7 @@ proc makeGatherMap*(c: Comm, sl: var seq[SendList]): GatherMap =
 
 # TODO: startRecvs, startSends, doLocal, wait
 proc gather*(c: Comm; gm: GatherMap; data: auto) =
-  tic()
+  tic("gather")
   # start recvs
   let elemsize = data.elemsize
   let rsize = elemsize*gm.rdest.len
@@ -183,16 +183,18 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
     #echoAll "pushRecv: ", i, "  ", gm.rmsginfo[i].rank
     c.pushRecv(gm.rmsginfo[i].rank, &&recvbuf[elemsize*gm.rmsginfo[i].start],
                elemsize*gm.rmsginfo[i].count)
-  toc("gather: start recvs")
+  toc("start recvs")
   c.barrier  # make sure recvs posted before sends start
-  toc("gather: barrier")
+  toc("barrier")
 
   # fill send buffers and send
   let ssize = elemsize*gm.sidx.len
   #echo "ssize: ", ssize
   var sendbuf = newSeqUninitialized[int8](ssize)
-  toc("gather: alloc sendbuf")
+  #toc("alloc sendbuf")
+  var bytes = 0
   for i in 0..<gm.smsginfo.len:
+    bytes += gm.smsginfo[i].count * elemsize
     #tic()
     #echoAll "pushSend: ", i, " count ", gm.smsginfo[i].count
     threads:
@@ -204,19 +206,39 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
                &&sendbuf[elemsize*gm.smsginfo[i].start],
                elemsize*gm.smsginfo[i].count)
     #toc("gather: send")
-  toc("gather: fill and send")
+  toc("fill and send", flops=bytes)
 
   # copy local sites
   threads:
     #tfor i, 0..<gm.ldest.len:
     # make sure threads don't share inner sites
     let range = splitThreads(gm.ldest, data.vlen, numThreads, threadNum)
-    for i in range[0] ..< range[1]:
-      data.copy(gm.ldest[i], gm.lidx[i])
-  toc("gather: copy local")
+    when true:
+      for i in range[0] ..< range[1]:
+        data.copy(gm.ldest[i], gm.lidx[i])
+    else:
+      var desti: array[16,int]
+      var idx: array[16,int]
+      var ni = 0
+      var vs0 = gm.ldest[range[0]] div data.vlen
+      for i in range[0] ..< range[1]:
+        let vs = gm.ldest[i] div data.vlen
+        let vi = gm.ldest[i] mod data.vlen
+        if vs != vs0:
+          data.copy(vs0, desti, idx, ni)
+          ni = 0
+          vs0 = vs
+        desti[ni] = vi
+        idx[ni] = gm.lidx[i]
+        inc ni
+      if ni>0: data.copy(vs0, desti, idx, ni)
+  bytes = gm.ldest.len * elemsize
+  toc("copy local", flops=bytes)
 
   # wait recvs and copy
+  bytes = 0
   for i in 0..<gm.rmsginfo.len:
+    bytes += gm.rmsginfo[i].count * elemsize
     #tic()
     #echo "waitRecv: ", i
     c.waitRecv(i, free=false)
@@ -235,13 +257,13 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
         let k = i0 + j
         data.copy(gm.rdest[k], &&recvbuf[elemsize*k])
     #toc("gather: copy")
-  toc("gather: wait recvs and copy")
+  toc("wait recvs and copy", flops=bytes)
 
   # free recvs and wait sends
   c.freeRecvs(gm.rmsginfo.len)
-  toc("gather: free recvs")
+  toc("free recvs")
   c.waitSends(gm.smsginfo.len)
-  toc("gather: wait sends")
+  toc("wait sends")
 
 type GatherPointer = object
   src: ptr UncheckedArray[char]

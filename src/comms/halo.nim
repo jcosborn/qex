@@ -1,6 +1,5 @@
-import qex
-import base/hyper
-import comms/gather
+import qex, base/hyper, comms/gather
+getOptimPragmas()
 
 type
   HaloLayout*[L] = ref object
@@ -23,7 +22,7 @@ type
     halo*: alignedMem[T]   # FIXME: free
     nOut*: int  # sites in outer lattice
     nExt*: int  # sites in extended outer lattice
-  GatherHalo[F,T] = object
+  GatherHalo*[F,T] = object
     src: F
     dest: ptr UncheckedArray[T]
     elemsize: int
@@ -140,6 +139,12 @@ proc makeHaloMap*[L](hl: HaloLayout[L], c: Comm, offsets: seq[seq[int32]]): Halo
   toc("RecvList")
   result.gather = c.makeGatherMap(rl)
   toc("makeGatherMap")
+proc makeHaloMap*[L,N](hl: HaloLayout[L], c: Comm, offsets: seq[array[N,SomeInteger]]): HaloMap[L] =
+  var o = newSeq[seq[int32]](offsets.len)
+  for i in 0..<offsets.len:
+    let t = offsets[i]
+    o[i] = @t
+  makeHaloMap(hl, c, o)
 
 # T is vectorized type
 proc makeHalo*[L,F,T](hm: HaloMap[L], f: F, t: typedesc[T]): Halo[L,F,T] =
@@ -158,12 +163,12 @@ proc makeHalo*[L,F,T](hm: HaloMap[L], f: F, t: typedesc[T]): Halo[L,F,T] =
 template makeHalo*[L,F](hm: HaloMap[L], f: F): auto =
   makeHalo(hm, f, eval(F.type[0]))
 
-template copy[F,T](gh: GatherHalo[F,T], d: pointer, s: SomeInteger) =
+template copy*[F,T](gh: GatherHalo[F,T], d: pointer, s: SomeInteger) =
   type E = eval(index(type T, type asSimd(0)))
   let p = cast[ptr E](d)
   #echo "ptr ", s
   p[] := gh.src{s}
-template copy[F,T](gh: GatherHalo[F,T], d: SomeInteger, s: pointer) =
+template copy*[F,T](gh: GatherHalo[F,T], d: SomeInteger, s: pointer) =
   type E = eval(index(type T,type asSimd(0)))
   let p = cast[ptr E](s)
   let o = d div gh.vlen
@@ -172,7 +177,7 @@ template copy[F,T](gh: GatherHalo[F,T], d: SomeInteger, s: pointer) =
   gh.dest[o][asSimd(i)] = p[]
   #let t = p[]
   #gh.dest[o][asSimd(i)] = t
-template copy[F,T](gh: GatherHalo[F,T], d: SomeInteger, s: SomeInteger) =
+template copy*[F,T](gh: GatherHalo[F,T], d: SomeInteger, s: SomeInteger) =
   let o = d div gh.vlen
   let i = d mod gh.vlen
   #echo o, " ", i, " ", s
@@ -184,6 +189,15 @@ template copy[F,T](gh: GatherHalo[F,T], d: SomeInteger, s: SomeInteger) =
   #var t {.noInit.}: E
   #t := gh.src{s}
   #gh.dest[o][asSimd(i)] = t
+template copy*[F,T](gh: GatherHalo[F,T], dv: SomeInteger, di: array,
+                    s: array, n: SomeInteger) =
+  echo n, " ", dv, " ", di, " ", s
+  #for i in 0..<n:
+  #  gh.dest[dv][asSimd(di[i])] = gh.src{s[i]}
+  let t = gh.dest[dv]
+  for i in 0..<n:
+    t[asSimd(di[i])] = gh.src{s[i]}
+  gh.dest[dv] = t
 
 proc update*[L,F,T](h: Halo[L,F,T], c: Comm) =
   tic("Halo update")
@@ -196,12 +210,38 @@ proc update*[L,F,T](h: Halo[L,F,T], c: Comm) =
   c.gather(h.map.gather, gh)
   toc("gather")
 
+#[
 proc `[]`*(h: Halo, i: SomeInteger): auto {.inline,noInit.} =
   let k = i - h.nOut
   if k < 0:
     h.field[i]
   else:
     h.halo[k]
+
+proc `[]`*(h: var Halo, i: SomeInteger): var auto {.inline.} =
+  var t {.noInit.}: ptr type(h.field[i])
+  let k = i - h.nOut
+  if k < 0:
+    t = addr h.field[i]
+  else:
+    t = addr h.halo[k]
+  t[]
+]#
+template `[]`*(h: Halo, i: SomeInteger): auto =
+  var t {.noInit.}: ptr type(h.field[i])
+  let k = i - h.nOut
+  if k < 0:
+    t = addr h.field[i]
+  else:
+    t = addr h.halo[k]
+  t[]
+
+proc `[]=`*(h: Halo, i: SomeInteger, x: auto) {.alwaysInline.} =
+  let k = i - h.nOut
+  if k < 0:
+    h.field[i] = x
+  else:
+    h.halo[k] := x
 
 proc neighbor*(h: Halo, i: SomeInteger, mu: SomeInteger, fb: SomeInteger): int32 =
   if fb > 0:

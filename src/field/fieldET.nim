@@ -10,6 +10,7 @@ import macros
 #import profile
 import maths
 import maths/types
+getOptimPragmas()
 
 type FieldOps* = enum
   foNeg, foAdd, foSub, foMul, foDiv, foAdj, foToSingle, foToDouble
@@ -219,7 +220,7 @@ template has*[F:Field](x: typedesc[F], y: typedesc): bool =
 template `[]`*[F:Field](x:typedesc[F]; i:int):typedesc = F.T
 template `[]`*(x:Field; i:int):untyped = x.s[i]
 #template `[]=`*(x:Field; i:int; y:typed) =
-proc `[]=`*(x:Field; i:int; y:auto) =
+proc `[]=`*(x:Field; i:int; y:auto) {.alwaysInline.} =
   x.s[i] := y
 template `[]`*(x:Subsetted; i:int):untyped = x.field[i]
 template l*(x:Subsetted):untyped = x.field.l
