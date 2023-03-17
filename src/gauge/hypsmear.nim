@@ -176,6 +176,7 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
   toc("threads end")
 
   proc smearedForce(f,chain:G) =
+    bind projDeriv
     tic("smearedF")
     # fₓₚₜ ← chainₘₖₕ d/dUₓₚₜ^*[Vₘₖₕ(U)^*] + chainₘₕₖ^* d/dUₓₚₜ^*[Vₘₕₖ(U)]
     var

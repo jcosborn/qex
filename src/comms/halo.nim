@@ -6,29 +6,47 @@ type
     lo*: L  # layout
     outerExt*: seq[int32]  # extended outer lattice size
     offset*: seq[int32]  # offset of outer lattice in extended outer
-    lex*: seq[int32]  # lex index in outerExt for sites in index order
+    lex*: seq[int32]  # outerExt lex index of extended sites
     index*: seq[int32]  # index of extended site for given lex index
-    neighborFwd*: seq[seq[int32]]  # fwd neighbor lists for extended outer lattice
-    neighborBck*: seq[seq[int32]]  # bck neighbor lists for extended outer lattice
+    neighborFwd*: seq[seq[int32]]  # fwd neighbor for extended outer lattice
+    neighborBck*: seq[seq[int32]]  # bck neighbor for extended outer lattice
+    nOut*: int  # sites in outer lattice
+    nExt*: int  # sites in extended outer lattice
+  Halo*[L,F,T] = ref object
+    layout*: HaloLayout[L]
+    field*: F
+    halo*: alignedMem[T]
     nOut*: int  # sites in outer lattice
     nExt*: int  # sites in extended outer lattice
   HaloMap*[L] = ref object
     layout*: HaloLayout[L]
     offsets*: seq[seq[int32]]  # offsets of outer sites needed
     gather*: GatherMap  # gather map to fetch needed halo sites
-  Halo*[L,F,T] = ref object
-    map*: HaloMap[L]
-    field*: F
-    halo*: alignedMem[T]   # FIXME: free
-    nOut*: int  # sites in outer lattice
-    nExt*: int  # sites in extended outer lattice
-  GatherHalo*[F,T] = object
+  GatherHalo*[F,T;Rev:static bool] = object
     src: F
     dest: ptr UncheckedArray[T]
     elemsize: int
     vlen: int
 
-proc inside[T,U,V](x: openArray[T], lo: openArray[U], hi: openArray[V]): bool =
+proc norm2*(h: Halo): auto =
+  var s = h.halo[0].norm2
+  for i in 1..<h.halo.len:
+    s += h.halo[i].norm2
+  var t = s.simdReduce
+  h.field.l.threadRankSum(t)
+  t += h.field.norm2
+  t
+
+proc sum*(h: Halo): auto =
+  var s = h.halo[0]
+  for i in 1..<h.halo.len:
+    s += h.halo[i]
+  var t = s.simdSum
+  h.field.l.threadRankSum(t)
+  t += h.field.sum
+  t
+
+proc inside[T,U,V:openArray[auto]](x: T, lo: U, hi: V): bool {.inline.} =
   result = true
   for i in 0..<x.len:
     if x[i] < lo[i] or x[i] >= hi[i]:
@@ -40,8 +58,7 @@ proc init[T](s: var seq[T], x: openArray[SomeNumber]) =
   for i in 0..<x.len: s[i] = T x[i]
 
 # TODO: order halo by layers
-proc makeHaloLayout*[L:Layout](lo: L, fwdOffset,bckOffset: openarray[SomeInteger]):
-                    HaloLayout[L] =
+proc makeHaloLayout*[L:Layout](lo: L, fwdOffset,bckOffset: openarray[SomeInteger]): HaloLayout[L] =
   tic("makeHaloLayout")
   let outerHigh = lo.outerGeom + bckOffset
   let outerExt = outerHigh + fwdOffset
@@ -94,11 +111,6 @@ proc makeHaloLayout*[L:Layout](lo: L, fwdOffset,bckOffset: openarray[SomeInteger
         result.neighborFwd[mu][ii] = -1
       x[mu] -= 1
   toc("neighbors")
-  #echo result.nOut, " ", result.nExt
-  #echo result.outerExt, " ", result.offset
-  #for d in 0..<nd:
-  #  echo result.neighborFwd[d]
-  #  echo result.neighborBck[d]
 
 proc makeHaloMap*[L](hl: HaloLayout[L], c: Comm, offsets: seq[seq[int32]]): HaloMap[L] =
   tic("makeHaloMap")
@@ -147,48 +159,48 @@ proc makeHaloMap*[L,N](hl: HaloLayout[L], c: Comm, offsets: seq[array[N,SomeInte
   makeHaloMap(hl, c, o)
 
 # T is vectorized type
-proc makeHalo*[L,F,T](hm: HaloMap[L], f: F, t: typedesc[T]): Halo[L,F,T] =
+proc makeHalo*[L,F,T](hl: HaloLayout[L], f: F, t: typedesc[T]): Halo[L,F,T] =
   result.new
-  result.map = hm
+  result.layout = hl
   result.field = f
-  result.nOut = hm.layout.nOut
-  result.nExt = hm.layout.nExt
+  result.nOut = hl.nOut
+  result.nExt = hl.nExt
   let nhalo = result.nExt - result.nOut
-  #echo "nhalo: ", nhalo
-  #echo $type(result.halo)
   result.halo.newU(nhalo)
-  #for i in 0..<nhalo:
-  #  result.halo[i] := -1
 
-template makeHalo*[L,F](hm: HaloMap[L], f: F): auto =
-  makeHalo(hm, f, eval(F.type[0]))
+template makeHalo*[L,F](hl: HaloLayout[L], f: F): auto =
+  makeHalo(hl, f, eval(F.type[0]))
 
-template copy*[F,T](gh: GatherHalo[F,T], d: pointer, s: SomeInteger) =
+template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], d: pointer, s: SomeInteger) =
   type E = eval(index(type T, type asSimd(0)))
   let p = cast[ptr E](d)
-  #echo "ptr ", s
-  p[] := gh.src{s}
-template copy*[F,T](gh: GatherHalo[F,T], d: SomeInteger, s: pointer) =
+  when Rev:
+    let o = s div gh.vlen
+    let i = s mod gh.vlen
+    p[] := gh.dest[o][asSimd(i)]
+  else:
+    p[] := gh.src{s}
+template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], d: SomeInteger, s: pointer) =
   type E = eval(index(type T,type asSimd(0)))
   let p = cast[ptr E](s)
-  let o = d div gh.vlen
-  let i = d mod gh.vlen
-  #echo d, " ptr"
-  gh.dest[o][asSimd(i)] = p[]
-  #let t = p[]
-  #gh.dest[o][asSimd(i)] = t
-template copy*[F,T](gh: GatherHalo[F,T], d: SomeInteger, s: SomeInteger) =
-  let o = d div gh.vlen
-  let i = d mod gh.vlen
-  #echo o, " ", i, " ", s
-  #echo $type(gh.dest[o])
-  #echo gh.dest[o]
-  #let xyz = eval gh.dest[o][asSimd(i)]
-  gh.dest[o][asSimd(i)] = gh.src{s}
-  #type E = eval(index(type T,type asSimd(0)))
-  #var t {.noInit.}: E
-  #t := gh.src{s}
-  #gh.dest[o][asSimd(i)] = t
+  when Rev:
+    threadCritical:
+      gh.src{d} += p[]
+  else:
+    let o = d div gh.vlen
+    let i = d mod gh.vlen
+    gh.dest[o][asSimd(i)] = p[]
+template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], d: SomeInteger, s: SomeInteger) =
+  when Rev:
+    let o = s div gh.vlen
+    let i = s mod gh.vlen
+    threadCritical:
+      gh.src{d} += gh.dest[o][asSimd(i)]
+  else:
+    let o = d div gh.vlen
+    let i = d mod gh.vlen
+    gh.dest[o][asSimd(i)] = gh.src{s}
+#[
 template copy*[F,T](gh: GatherHalo[F,T], dv: SomeInteger, di: array,
                     s: array, n: SomeInteger) =
   echo n, " ", dv, " ", di, " ", s
@@ -198,16 +210,29 @@ template copy*[F,T](gh: GatherHalo[F,T], dv: SomeInteger, di: array,
   for i in 0..<n:
     t[asSimd(di[i])] = gh.src{s[i]}
   gh.dest[dv] = t
+]#
 
-proc update*[L,F,T](h: Halo[L,F,T], c: Comm) =
+proc update*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
   tic("Halo update")
   let elemSize = sizeof(T) div L.V
-  var gh: GatherHalo[F,T]
+  var gh: GatherHalo[F,T,false]
   gh.src = h.field
   gh.dest = cast[ptr UncheckedArray[T]](unsafeAddr h.halo[0])
   gh.elemsize = elemSize
   gh.vlen = L.V
-  c.gather(h.map.gather, gh)
+  c.gather(hm.gather, gh)
+  toc("gather")
+
+proc updateRev*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
+  tic("Halo update")
+  let elemSize = sizeof(T) div L.V
+  var gh: GatherHalo[F,T,true]
+  gh.src = h.field
+  gh.dest = cast[ptr UncheckedArray[T]](unsafeAddr h.halo[0])
+  gh.elemsize = elemSize
+  gh.vlen = L.V
+  let g = hm.gather.reverse
+  c.gather(g, gh)
   toc("gather")
 
 #[
@@ -226,7 +251,6 @@ proc `[]`*(h: var Halo, i: SomeInteger): var auto {.inline.} =
   else:
     t = addr h.halo[k]
   t[]
-]#
 template `[]`*(h: Halo, i: SomeInteger): auto =
   var t {.noInit.}: ptr type(h.field[i])
   let k = i - h.nOut
@@ -235,6 +259,12 @@ template `[]`*(h: Halo, i: SomeInteger): auto =
   else:
     t = addr h.halo[k]
   t[]
+]#
+
+proc indexPtr*[L,F,T](h: Halo[L,F,T], i: SomeInteger): ptr T {.alwaysInline.} =
+  let k = i - h.nOut
+  result = if k<0: addr h.field[i] else: addr h.halo[k]
+template `[]`*(h: Halo, i: SomeInteger): auto = indexPtr(h,i)[]
 
 proc `[]=`*(h: Halo, i: SomeInteger, x: auto) {.alwaysInline.} =
   let k = i - h.nOut
@@ -285,13 +315,13 @@ when isMainModule:
         offsets.add t
       hm[mu] = hl.makeHaloMap(comm, offsets)
     toc "makeHaloMap"
-    type H = type makeHalo(hm[0], g[0])
+    type H = type makeHalo(hl, g[0])
     var h = newSeq[H](nd)
     for d in 0..<nd:
-      h[d] = makeHalo(hm[d], g[d])
+      h[d] = makeHalo(hl, g[d])
     toc "makeHalo"
     for d in 0..<nd:
-      h[d].update comm
+      h[d].update hm[d], comm
     toc "update"
     type PT = evalType(g[0][0][0,0].re)
     var pl = newSeq[float](6)
@@ -348,13 +378,13 @@ when isMainModule:
       hm[mu] = hl.makeHaloMap(comm, offsets)
       #echo offsets
     toc "makeHaloMap"
-    type H = type makeHalo(hm[0], g[0])
+    type H = type makeHalo(hl, g[0])
     var h = newSeq[H](nd)
     for mu in 0..<nd:
-      h[mu] = makeHalo(hm[mu], g[mu])
+      h[mu] = makeHalo(hl, g[mu])
     toc "makeHalo"
     for mu in 0..<nd:
-      h[mu].update comm
+      h[mu].update hm[mu], comm
     toc "update"
     var cp = 1.0/3.0
     threads:

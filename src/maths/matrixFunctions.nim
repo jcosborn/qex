@@ -297,22 +297,26 @@ template rsqrtPH*[T:Mat1](x: T): T =
   rsqrtPH(r, x)
   r
 
-# x (x'x)^{-1/2}  '
-proc projectU*(r: var Mat1; x: Mat2) =
+proc projectUrsqrt(r: var Mat1; x: Mat2, eps = 1e-20) =
   #let t = x.adj * x   # issues with gcc
   let xa = x.adj
-  let t = xa * x
-  var t2{.noInit.}: evalType(t)
-  rsqrtPH(t2, t)
+  var t = xa * x
+  t += eps
+  rsqrtPH(r, t)
+
+# x (x'x)^{-1/2}
+proc projectU*(r: var Mat1; x: Mat2, eps = 1e-20) =
+  var t2{.noInit.}: evalType(x)
+  projectUrsqrt(t2, x)
   mul(r, x, t2)
   #echo "t: ", t.norm2, "  t2: ", t2.norm2, "  r: ", r.norm2
 template projectUflops*(nc: int): int =
   nc*nc*(2*(6*nc+2*(nc-1))) + 250  # only for nc=3
 
-template projectU*(r: var Mat1) =
+template projectU*(r: var Mat1, eps = 1e-20) =
   var t{.noInit.}: evalType(r)
   t := r
-  r.projectU t
+  r.projectU t, eps
 
 # (d/dX') Tr(U'C+C'U) / 2 = (d/dX') Tr(X'CZ+C'XZ) / 2
 # = CZ - (1/2) < Z (X'C + C'X) Z (dY/dX') >
@@ -321,14 +325,16 @@ template projectU*(r: var Mat1) =
 # S Y + Y S = U' C Z = Z X' C Z
 # cz-xz^3(x'c+c'x)/2
 # CH: 4528 flops
-proc projectUderiv*(r: var Mat1, u: Mat2, x: Mat3, chain: Mat4) =
+proc projectUderiv*(r: var Mat1, u: Mat2, x: Mat3, chain: Mat4, eps = 1e-20) =
   # U = X (X'X)^{-1/2} = (XX')^{-1/2} X
   # Y = sqrt(X'X)
   # Z = (X'X)^{-1/2}
   # F = C Z - z (Cd U + Ud C) z (dY/dX)
   var y, z, t1, t2: Mat1
-  y := x.adj * u
-  inverse(z, y)
+  #y := x.adj * u
+  #inverse(z, y)
+  projectUrsqrt(z, x)
+  inverse(y, z)
   #echo "inverse: ", z
   #QLA_M_eq_M_times_M(d, c, &z);
   r := chain * z

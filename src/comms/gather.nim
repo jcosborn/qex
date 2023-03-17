@@ -171,6 +171,19 @@ proc makeGatherMap*(c: Comm, sl: var seq[SendList]): GatherMap =
   result.ndest = nrecv + result.lidx.len
   #echoAll fmt"{rank}: {result.smsginfo}, {result.rmsginfo}"
 
+proc reverse*(gm: GatherMap): GatherMap =
+  result.new
+  result.nsrc = gm.ndest
+  result.ndest = gm.nsrc
+  result.sidx = gm.rdest
+  result.rdest = gm.sidx
+  result.smsginfo = gm.rmsginfo
+  result.rmsginfo = gm.smsginfo
+  result.lidx = gm.ldest
+  result.ldest = gm.lidx
+  result.sendbuf = gm.recvbuf
+  result.recvbuf = gm.sendbuf
+
 # TODO: startRecvs, startSends, doLocal, wait
 proc gather*(c: Comm; gm: GatherMap; data: auto) =
   tic("gather")
