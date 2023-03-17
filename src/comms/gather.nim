@@ -58,6 +58,8 @@ proc makeGatherMap*(c: Comm, rl: var seq[RecvList]): GatherMap =
     result = cmp(x.srank, y.srank)
     if result == 0:
       result = cmp(x.didx, y.didx)
+      if result == 0:
+        result = cmp(x.sidx, y.sidx)
 
   result.lidx.newSeq(0)
   result.ldest.newSeq(0)
@@ -117,6 +119,8 @@ proc makeGatherMap*(c: Comm, sl: var seq[SendList]): GatherMap =
     result = cmp(x.drank, y.drank)
     if result == 0:
       result = cmp(x.didx, y.didx)
+      if result == 0:
+        result = cmp(x.sidx, y.sidx)
   #echoAll fmt"{rank}: {sl.len}"
 
   result.lidx.newSeq(0)

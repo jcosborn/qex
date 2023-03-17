@@ -22,6 +22,7 @@ type
     layout*: HaloLayout[L]
     offsets*: seq[seq[int32]]  # offsets of outer sites needed
     gather*: GatherMap  # gather map to fetch needed halo sites
+    gatherRev*: GatherMap  # gather map to send halo sites back
   GatherHalo*[F,T;Rev:static bool] = object
     src: F
     dest: ptr UncheckedArray[T]
@@ -121,6 +122,7 @@ proc makeHaloMap*[L](hl: HaloLayout[L], c: Comm, offsets: seq[seq[int32]]): Halo
   let nd = hl.lo.nDim
   var x = newSeq[int32](nd)
   var rl = newSeq[RecvList](0)
+  var sl = newSeq[SendList](0)
   let vlen = L.V
   var vecOffset = newSeq[seq[int32]](vlen)
   for k in 0 ..< vlen:
@@ -148,8 +150,10 @@ proc makeHaloMap*[L](hl: HaloLayout[L], c: Comm, offsets: seq[seq[int32]]): Halo
         let ri = hl.lo.rankIndex(y)
         let didx = vlen*(i-hl.nOut)+k
         rl.add RecvList(didx: int32 didx, srank: int32 ri.rank, sidx: int32 ri.index)
+        sl.add SendList(sidx: int32 didx, drank: int32 ri.rank, didx: int32 ri.index)
   toc("RecvList")
   result.gather = c.makeGatherMap(rl)
+  result.gatherRev = c.makeGatherMap(sl)
   toc("makeGatherMap")
 proc makeHaloMap*[L,N](hl: HaloLayout[L], c: Comm, offsets: seq[array[N,SomeInteger]]): HaloMap[L] =
   var o = newSeq[seq[int32]](offsets.len)
@@ -184,8 +188,8 @@ template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], d: SomeInteger, s: 
   type E = eval(index(type T,type asSimd(0)))
   let p = cast[ptr E](s)
   when Rev:
-    threadCritical:
-      gh.src{d} += p[]
+    #threadCritical:
+    gh.src{d} += p[]
   else:
     let o = d div gh.vlen
     let i = d mod gh.vlen
@@ -194,8 +198,8 @@ template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], d: SomeInteger, s: 
   when Rev:
     let o = s div gh.vlen
     let i = s mod gh.vlen
-    threadCritical:
-      gh.src{d} += gh.dest[o][asSimd(i)]
+    #threadCritical:
+    gh.src{d} += gh.dest[o][asSimd(i)]
   else:
     let o = d div gh.vlen
     let i = d mod gh.vlen
@@ -231,8 +235,8 @@ proc updateRev*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
   gh.dest = cast[ptr UncheckedArray[T]](unsafeAddr h.halo[0])
   gh.elemsize = elemSize
   gh.vlen = L.V
-  let g = hm.gather.reverse
-  c.gather(g, gh)
+  #let g = hm.gather.reverse
+  c.gather(hm.gatherRev, gh)
   toc("gather")
 
 #[
