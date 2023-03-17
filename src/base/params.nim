@@ -1,4 +1,6 @@
-import macros, os, strUtils, tables, algorithm, seqUtils, comms/commsUtils
+import macros, os, strUtils, tables, algorithm, seqUtils
+# Note: may get imported before 'echo' is redefined
+#       uses of 'echo' should be in a template with 'mixin echo'
 
 # TODO
 # include CT in saveParams RT
@@ -35,6 +37,7 @@ proc getParamValue(s: string): string =
   params[s].value
 
 proc loadParams(fn: string) =
+  mixin echo
   echo "Loading params from file: ", fn
   for l in fn.lines:
     #echo l
@@ -202,6 +205,7 @@ proc fmtParams(x: seq[ParamObj], thisfile: string): string =
     result &= format paramList
 
 proc saveParams(x: seq[ParamObj], fn: string, loc: string, thisfile: string) =
+  mixin echo
   var o = "# QEX compile-time generated parameter file\n"
   o &= "# generated from: " & loc & "\n"
   o &= "# use -" & loadParamsCommand & ":<filename> to read in\n"
@@ -222,16 +226,21 @@ proc addComment(s,c:string):string =
       m = min(s.len, spc.len-8)
     result &= spc[m..^1] & c
 
-proc echoParams*(warnUnknown=false) =
+proc echoParamsX*(warnUnknown=false):string =
+  result = "Params:\n"
   for i in 0..<paramInfo.len:
     let t = paramInfo[i]
-    echo addComment(t.name & ": " & t.value, t.comment)
+    result &= "  " & addComment(t.name & ": " & t.value, t.comment) & "\n"
   for p in params.keys:
     let i = paramInfoCTRT.find p
     if i < 0:
       let j = paramInfo.find p
       if j < 0:
-        echo "Unknown argument: '", p, "'"
+        result &= " Unknown argument: '" & $p & "'\n"
+  result.removeSuffix '\n'
+template echoParams*(warnUnknown=false) =
+  mixin echo
+  echo echoParamsX(warnUnknown)
 
 proc paramHelp*(p:string = ""):string =
   result = "Usage:\n  " & getAppFileName()
@@ -347,6 +356,7 @@ var helpValue = false
 template installHelpParam*(p: static string = "h", index= -2) =
   helpValue = boolParam(p, false, "Print the help message", index)
 template processHelpParam*() =
+  mixin echo
   if helpValue:
     echo paramHelp()
     qexExit()
