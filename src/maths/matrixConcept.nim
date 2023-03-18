@@ -20,6 +20,7 @@ import simd/simdWrap
 # norm2,det,lu,qr,svd,eig
 # sqrt,rsqrt,exp,log,groupProject,groupCheck
 # mapX(f,x,r),mapXY(f,x,y,r)
+getOptimPragmas()
 
 template createAsType2(t,c:untyped) =
   mixin `[]`, index
@@ -597,14 +598,14 @@ makeLevel2(imsub, M, var Mat1, M, Mat2, M, Mat3)
 proc msub*(r:var Vec1; x:auto; y:Vec2; z:Vec3) {.inline.} = msubVSVV(r,x,y,z)
 
 #proc trace*(r:var Sca1; x:Mat2) {.inline.} =
-proc trace*(r: var auto; x: Mat2) {.inline.} =
+proc trace*(r: var auto; x: Mat2) {.alwaysInline.} =
   mixin nrows, ncols, trace, iadd
   let n = min(x.nrows, x.ncols)
   assign(r, 0)
   for i in 0..<n:
     let t = trace(x[i,i])
     iadd(r, t)
-proc trace*(x: Mat1): auto {.inline,noInit.} =
+proc trace*(x: Mat1): auto {.alwaysInline,noInit.} =
   var t{.noInit.}: evalType(trace(x[0,0]))
   #static: echo "trace"
   trace(t, x)

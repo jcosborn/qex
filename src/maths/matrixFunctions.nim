@@ -9,6 +9,7 @@ export matinv
 import matexp
 export matexp
 import projUderiv
+getOptimPragmas()
 
 proc determinantN*(a: auto): auto =
   mixin simdMinReduce
@@ -62,7 +63,7 @@ proc determinantN*(a: auto): auto =
 
   r
 
-proc determinant*(x: auto): auto =
+proc determinant*(x: auto): auto {.alwaysInline.} =
   assert(x.nrows == x.ncols)
   when x.nrows==1:
     result = x[0,0]
@@ -122,7 +123,7 @@ template rsqrtPHM2(r:typed; x:typed) =
   let c0 = trsdet*c1
   r := c0 - c1*x
 
-proc rsqrtPHM3f(c0,c1,c2:var auto; tr,p2,det:auto) =
+proc rsqrtPHM3f(c0,c1,c2:var auto; tr,p2,det:auto) {.alwaysInline.} =
   #[
   mixin sin,cos,acos
   let tr3 = (1.0/3.0)*tr
@@ -297,12 +298,12 @@ template rsqrtPH*[T:Mat1](x: T): T =
   rsqrtPH(r, x)
   r
 
-proc projectUrsqrt(r: var Mat1; x: Mat2, eps = 1e-20) =
+proc projectUrsqrt(r: var Mat1; x: Mat2, eps = 1e-20) {.alwaysInline.} =
   #let t = x.adj * x   # issues with gcc
   let xa = x.adj
   var t = xa * x
   t += eps
-  rsqrtPH(r, t)
+  rsqrtPHM(r, t)
 
 # x (x'x)^{-1/2}
 proc projectU*(r: var Mat1; x: Mat2, eps = 1e-20) =

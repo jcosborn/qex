@@ -3,8 +3,9 @@ import complexNumbers
 import matrixConcept
 import types
 import strformat
+getOptimPragmas()
 
-proc adjugate*(r: var Mat1, x: Mat2) =
+proc adjugate*(r: var Mat1, x: Mat2) {.alwaysInline.} =
   const nc = r.nrows
   when nc==1:
     r := 1

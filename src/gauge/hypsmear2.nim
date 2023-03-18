@@ -108,7 +108,8 @@ template symstaplep(s: var auto, a: float, x,y: auto, i,fnu,fmu,bnu,fmubnu: Some
   symstaple(s, a, x,y, i,fnu,fmu,bnu,fmubnu, true)
 
 proc symderiv(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu: SomeInteger,
-              p: static bool = false) =
+              p: static bool = false): int =
+  mixin projectUflops
   when p:
     template prj(m: auto): auto = proj(m)
   else:
@@ -120,6 +121,7 @@ proc symderiv(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu: SomeInteger,
     s += cx[i] * yfnu * xfmu.adj
     s += xi * cy[fnu] * xfmu.adj
     s += xi * yfnu * cx[fmu].adj
+    result += 3*projectUflops(3) + 3*(18+2*3*66)
   if bnu>=0 and fmubnu>=0:
     let xbnu = prj x[bnu]
     let ybnu = prj y[bnu]
@@ -127,8 +129,58 @@ proc symderiv(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu: SomeInteger,
     s += cx[bnu].adj * ybnu * xfmubnu
     s += xbnu.adj * cy[bnu] * xfmubnu
     s += xbnu.adj * ybnu * cx[fmubnu]
-template symderivp(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu: SomeInteger) =
+    result += 3*projectUflops(3) + 3*(18+2*3*66)
+template symderivp(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu: SomeInteger): int =
   symderiv(s, x,y,cx,cy, i,fnu,fmu,bnu,fmubnu, true)
+
+proc symderiv3(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu,nOut: SomeInteger): int =
+  mixin projectUflops
+  template prj(m: auto): auto = proj(m)
+  if fnu>=0 and fmu>=0:
+    let xi = prj x[i]
+    let yfnu = prj y[fnu]
+    let xfmu = prj x[fmu]
+    result += 3*projectUflops(3)
+    if i<nOut:
+      s += cx[i] * yfnu * xfmu.adj
+      result += 18+2*3*66
+    if fnu<nOut:
+      s += xi * cy[fnu] * xfmu.adj
+      result += 18+2*3*66
+    if fmu<nOUt:
+      s += xi * yfnu * cx[fmu].adj
+      result += 18+2*3*66
+  if bnu>=0 and fmubnu>=0:
+    let xbnu = prj x[bnu]
+    let ybnu = prj y[bnu]
+    result += 2*projectUflops(3)
+    if bnu<nOut:
+      let xfmubnu = prj x[fmubnu]
+      s += cx[bnu].adj * ybnu * xfmubnu
+      s += xbnu.adj * cy[bnu] * xfmubnu
+      result += projectUflops(3) + 2*(18+2*3*66)
+    if fmubnu<nOut:
+      s += xbnu.adj * ybnu * cx[fmubnu]
+      result += 18+2*3*66
+
+proc symderiv2(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu: SomeInteger): int =
+  template prj(m: auto): auto = proj(m)
+  if fnu>=0 and fmu>=0:
+    let xi = prj x[i]
+    let yfnu = prj y[fnu]
+    let xfmu = prj x[fmu]
+    s += cx[i] * yfnu * xfmu.adj
+    s += xi * cy[fnu] * xfmu.adj
+    s += xi * yfnu * cx[fmu].adj
+    inc result, 3
+  if bnu>=0 and fmubnu>=0:
+    let xbnu = prj x[bnu]
+    let ybnu = prj y[bnu]
+    let xfmubnu = prj x[fmubnu]
+    s += cx[bnu].adj * ybnu * xfmubnu
+    s += xbnu.adj * cy[bnu] * xfmubnu
+    s += xbnu.adj * ybnu * cx[fmubnu]
+    inc result, 3
 
 #[
 # x: side links, y: middle links
@@ -308,11 +360,6 @@ proc force*[L,F,T,G,C](ht: HypTemps[L,F,T], coef: HypCoefs, f: G, chain: C) =
   let nOut = hl.nOut
   threads:
     let nc = gf[0][0].nrows
-    let staplesFlops = float((4*(6*nc+2*(nc-1))+4*2)*nc*nc*V)
-    # FIXME: not correct
-    let siteFlops3 = 6*staplesFlops+float((2*nc*nc+6*projectUflops(nc))*V)
-    let siteFlops2 = 6*staplesFlops+float((2*nc*nc+6*projectUflops(nc))*V)
-    let siteFlops1 = 6*staplesFlops+float(2*nc*nc*V)
     var flops = 0.0
     for mu in 0..<4:
       for i in lo:
@@ -336,11 +383,12 @@ proc force*[L,F,T,G,C](ht: HypTemps[L,F,T], coef: HypCoefs, f: G, chain: C) =
           let fnu = hl.neighborFwd[nu][i]
           let bnu = hl.neighborBck[nu][i]
           let fmubnu = if fmu<0: -1 else: hl.neighborBck[nu][fmu]
-          symderivp(hl2[mu][nu][i], h2x[nu][mu],h2x[mu][nu],hfc[nu],hfc[mu], i,fnu,fmu,bnu,fmubnu)
-          hl2[mu][nu][i].projDeriv(h2x[mu][nu][i], hl2[mu][nu][i])
-          hf[mu][i] += ma2 * hl2[mu][nu][i]
-          hl2[mu][nu][i] *= alp2
-          flops += siteFlops3
+          let flp = symderiv3(hl2[mu][nu][i], h2x[nu][mu],h2x[mu][nu],hfc[nu],hfc[mu], i,fnu,fmu,bnu,fmubnu,nOut)
+          if flp > 0:
+            hl2[mu][nu][i].projDeriv(h2x[mu][nu][i], hl2[mu][nu][i])
+            hf[mu][i] += ma2 * hl2[mu][nu][i]
+            hl2[mu][nu][i] *= alp2
+            flops += V*(flp+54+2*projectUflops(nc)) # guess for projDeriv
     flops.threadSum
     toc "3", flops=flops
     flops = 0
@@ -350,6 +398,7 @@ proc force*[L,F,T,G,C](ht: HypTemps[L,F,T], coef: HypCoefs, f: G, chain: C) =
           if nu==mu: continue
           hl1[mu][nu][i] = 0
         let fmu = hl.neighborFwd[mu][i]
+        var flp = 0
         for nu in 0..<4:
           if nu == mu: continue
           for a in 0..<4:
@@ -358,13 +407,12 @@ proc force*[L,F,T,G,C](ht: HypTemps[L,F,T], coef: HypCoefs, f: G, chain: C) =
             let fa = hl.neighborFwd[a][i]
             let ba = hl.neighborBck[a][i]
             let fmuba = if fmu<0: -1 else: hl.neighborBck[a][fmu]
-            symderivp(hl1[mu][b][i], h1x[a][b],h1x[mu][b],hl2[a][nu],hl2[mu][nu], i,fa,fmu,ba,fmuba)
-            flops += siteFlops2
-        for nu in 0..<4:
-          if nu == mu: continue
-          hl1[mu][nu][i].projDeriv(h1x[mu][nu][i], hl1[mu][nu][i])
-          hf[mu][i] += ma1 * hl1[mu][nu][i]
-          hl1[mu][nu][i] *= alp1
+            flp += symderivp(hl1[mu][nu][i], h1x[a][nu],h1x[mu][nu],hl2[a][b],hl2[mu][b], i,fa,fmu,ba,fmuba)
+          if flp > 0:
+            hl1[mu][nu][i].projDeriv(h1x[mu][nu][i], hl1[mu][nu][i])
+            hf[mu][i] += ma1 * hl1[mu][nu][i]
+            hl1[mu][nu][i] *= alp1
+            flops += V*(flp+54+2*projectUflops(nc)) # guess for projDeriv
     flops.threadSum
     toc "2", flops=flops
     flops = 0
@@ -376,8 +424,8 @@ proc force*[L,F,T,G,C](ht: HypTemps[L,F,T], coef: HypCoefs, f: G, chain: C) =
           let fnu = hl.neighborFwd[nu][i]
           let bnu = hl.neighborBck[nu][i]
           let fmubnu = if fmu<0: -1 else: hl.neighborBck[nu][fmu]
-          symderiv(hf[mu][i], hgf[nu],hgf[mu],hl1[nu][mu],hl1[mu][nu], i,fnu,fmu,bnu,fmubnu)
-          flops += siteFlops1
+          let flp = symderiv(hf[mu][i], hgf[nu],hgf[mu],hl1[nu][mu],hl1[mu][nu], i,fnu,fmu,bnu,fmubnu)
+          flops += V*flp
     flops.threadSum
     toc "1", flops=flops
   for mu in 0..<4:
