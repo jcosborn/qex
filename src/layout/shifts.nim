@@ -512,11 +512,9 @@ proc newShifters*[F](f: F, len: int, sub="all"): auto =
     r[mu].len = len
   r
 
-proc `^*`*(x: Transporter, y: auto): auto =
-  tic("^*")
+template transporterApply*(x: Transporter, y: auto): auto =
   mixin mul, load1, adj, `[]`
   var r = x.field
-  threadBarrier()
   when compiles(x.link):
     if x.len >= 0:
       startSB(x.sb, y[ix])
@@ -530,7 +528,7 @@ proc `^*`*(x: Transporter, y: auto): auto =
       boundarySB(x.sb, assign(r[ir], it))
   else:
     if x.len >= 0:
-      toc("Shifter fwd")
+      tic("Shifter fwd")
       startSB(x.sb, y[ix])
       toc("startSB")
       for ir in x.sb.subset:
@@ -548,9 +546,22 @@ proc `^*`*(x: Transporter, y: auto): auto =
       toc("localSB")
       boundarySB(x.sb, assign(r[ir], it))
       toc("boundarySB")
-  threadBarrier()
-  toc("end")
   r
+proc `^*`*(x: Transporter, y: auto): auto =
+  tic("^*")
+  block:
+    tic()
+    threadBarrier()
+    toc "barrier"
+    result = transporterApply(x, y)
+    toc "apply"
+    threadBarrier()
+    toc "barrier"
+  toc("end")
+proc `^*!`*(x: Transporter, y: auto): auto =
+  tic("^*!")
+  result = transporterApply(x, y)
+  toc("end")
 #template `()`*(x: Transporter, y: untyped): untyped = x ^* y
 
 when isMainModule:
