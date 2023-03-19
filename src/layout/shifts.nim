@@ -13,6 +13,7 @@ export field
 #import future
 #import strUtils
 #import metaUtils
+getOptimPragmas()
 
 type ShiftB*[T] = object
   subset*: Subset
@@ -512,7 +513,8 @@ proc newShifters*[F](f: F, len: int, sub="all"): auto =
     r[mu].len = len
   r
 
-template transporterApply*(x: Transporter, y: auto): auto =
+#template transporterApply*(x: Transporter, y: auto): auto =
+proc transporterApply*(x: Transporter, y: auto): auto {.alwaysInline.} =
   mixin mul, load1, adj, `[]`
   var r = x.field
   when compiles(x.link):
@@ -538,7 +540,7 @@ template transporterApply*(x: Transporter, y: auto): auto =
       boundarySB(x.sb, assign(r[ir], it))
       toc("boundarySB")
     else:
-      toc("Shifter bck")
+      tic("Shifter bck")
       startSB(x.sb, y[ix])
       toc("startSB")
       for ir in x.sb.subset:
@@ -549,19 +551,16 @@ template transporterApply*(x: Transporter, y: auto): auto =
   r
 proc `^*`*(x: Transporter, y: auto): auto =
   tic("^*")
-  block:
-    tic()
-    threadBarrier()
-    toc "barrier"
-    result = transporterApply(x, y)
-    toc "apply"
-    threadBarrier()
-    toc "barrier"
-  toc("end")
+  threadBarrier()
+  toc "barrier"
+  result = transporterApply(x, y)
+  toc "apply"
+  threadBarrier()
+  toc "barrier"
 proc `^*!`*(x: Transporter, y: auto): auto =
   tic("^*!")
   result = transporterApply(x, y)
-  toc("end")
+  toc("apply")
 #template `()`*(x: Transporter, y: untyped): untyped = x ^* y
 
 when isMainModule:

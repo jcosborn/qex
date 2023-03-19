@@ -458,7 +458,7 @@ when isMainModule:
 
   proc testSmear =
     resetTimers()
-    toc "start"
+    tic "start"
     coef.smear(g, fl, info)
     toc "smear"
     coef.smear2(g, fl2, info)
@@ -473,18 +473,30 @@ when isMainModule:
     var f2 = lo.newGauge()
     var c = lo.newGauge()
     c.gaussian rng
+    block:
+      let fn = coef.smearGetForce(g, fl, info)
+      fn(f, c)
     resetTimers()
-    toc "start"
-    let fn = coef.smearGetForce(g, fl, info)
-    toc "smear"
-    fn(f, c)
-    toc "force"
-    let ht = newHypTemps(g)
-    toc "newHypTemps"
-    ht.smear(coef, fl2)
-    toc "HTsmear"
-    ht.force(coef, f2, c)
-    toc "HTforce"
+    block:
+      tic()
+      let fn = coef.smearGetForce(g, fl, info)
+      toc "smear"
+      fn(f, c)
+      toc "force"
+    block:
+      tic()
+      let ht = newHypTemps(g)
+      toc "newHypTemps"
+      freezeTimers()
+      ht.smear(coef, fl2)
+      ht.force(coef, f2, c)
+      thawTimers()
+      block:
+        tic()
+        ht.smear(coef, fl2)
+        toc "HTsmear"
+        ht.force(coef, f2, c)
+        toc "HTforce"
     echoTimers()
     echo fl.plaq
     echo fl2.plaq
