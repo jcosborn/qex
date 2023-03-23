@@ -44,7 +44,8 @@ template asComplex*(x: typedesc): typedesc = newComplexProxy(x)
 template asVarComplex*(x: typed): auto = newComplexProxy(x)
 
 template isComplex*(x: ComplexProxy): auto = true
-template isWrapper*(x: ComplexObj): untyped = false
+template isWrapper*(x: ComplexObj): bool = false
+template isWrapper*(x: typedesc[ComplexObj]): bool = false
 
 template has*[R,I](x: typedesc[ComplexObj[R,I]], y: typedesc): bool =
   mixin has

@@ -3,13 +3,367 @@ import base
 import base/metaUtils
 import maths/types
 export types
-#import ../basicOps
-
-#getOptimPragmas()
-#{.pragma: alwaysInline, codegenDecl: "inline __attribute__((always_inline)) $# $#$#".}
+#import base/basicOps
+getOptimPragmas()
 
 template `[]`*(x: SomeNumber): untyped = x
 template `[]`*(x: SomeNumber, i: typed): untyped = x
+
+type
+  SimdArrayObj*[N:static int,T] = object
+    v*: array[N,T]
+    #v* {.align(L*sizeof(B)).}: arrayType(L,B)
+  #SimdArray*[N:static int,T] = Simd[SimdArrayObj[N,T]]
+type NumberType[T] = numberType(T)
+
+template liftX(f,R,v: untyped) {.dirty.} =
+  template f*[N:static int,T](x: SimdArrayObj[N,T]): R = v
+  template f*[N:static int,T](x: typedesc[SimdArrayObj[N,T]]): R = v
+template liftT(f: untyped) {.dirty.} =
+  template f*[N:static int,T](x: SimdArrayObj[N,T]): typedesc =
+    mixin f
+    f(type T)
+  template f*[N:static int,T](x: typedesc[SimdArrayObj[N,T]]): typedesc =
+    mixin f
+    f(type T)
+template liftV(f,v: untyped) {.dirty.} =
+  template f*[N:static int,T](x: SimdArrayObj[N,T]): auto = v
+  template f*[N:static int,T](x: typedesc[SimdArrayObj[N,T]]): auto = v
+
+liftT(numberType)
+liftV(isWrapper, false)
+liftV(simdLength, N*simdLength(T))
+liftV(numNumbers, N*numNumbers(T))
+template simdType*[T:SimdArrayObj](x:T):typedesc = T
+template simdType*[T:SimdArrayObj](x:typedesc[T]):typedesc = T
+
+proc to*[T:SimdArrayObj](x: SomeNumber; y: typedesc[T]): T {.alwaysInline,noInit.} =
+  forStatic i, 0, y.N-1:
+    assign(result[][i], x)
+
+template toSingleImpl*[N:static int,T](x: SimdArrayObj[N,T]): auto =
+  when numberType(T) is float32: x
+  else: {.error.}
+template toDoubleImpl*[N:static int,T](x: SimdArrayObj[N,T]): auto =
+  when numberType(T) is float64: x
+  else:
+    type D = simdObjType(N, toDouble(T))
+    var r {.noInit.}: D
+    assign(r, x)
+
+template `[]`*(x: SimdArrayObj): auto = x.v
+proc `[]`*[N:static int,T](x: SimdArrayObj[N,T], i: SomeInteger):
+        NumberType[T] {.alwaysInline.} =
+  when T is SomeNumber:
+    result = x[][i]
+  else:
+    let N0 = numNumbers(T)
+    let j = i div N0
+    let k = i mod N0
+    result = x[][j][k]
+proc `[]=`*[N:static int,T](r: var SimdArrayObj[N,T], i: SomeInteger, x: auto)
+ {.alwaysInline.} =
+  when T is SomeNumber:
+    r[][i] = T(x)
+  else:
+    let N0 = numNumbers(T)
+    let j = i div N0
+    let k = i mod N0
+    r[][j][k] = x
+
+proc assign*[N:static int,T:SomeNumber](r: var SimdArrayObj; x: array[N,T]) {.alwaysInline.} =
+  when N != r.numNumbers: {.error.}
+  const N0 = numNumbers(r.T)
+  for i in 0 ..< r.N:
+    assign(r[][i], unsafeAddr x[i*N0])
+
+proc assign*[N:static int,T:SomeNumber](r: var array[N,T], x: SimdArrayObj) {.alwaysInline.} =
+  when N != x.numNumbers: {.error.}
+  const N0 = numNumbers(x.T)
+  for i in 0 .. x.N-1:
+    assign(addr r[i*N0], x[][i])
+
+# no return value
+template p2(f: untyped) {.dirty.} =
+  proc f*[S:SimdArrayObj](r: var S, x: S) {.alwaysInline.} =
+    mixin f
+    for i in 0..<S.N:
+      f(r[][i], x[][i])
+template p2s(f: untyped) {.dirty.} =
+  proc f*[S:SimdArrayObj](r: var S, x: Number) {.alwaysInline.} =
+    mixin f
+    let t = eval(x)
+    for i in 0..<S.N:
+      f(r[][i], t)
+  p2(f)
+template p3(f: untyped) {.dirty.} =
+  proc f*[S:SimdArrayObj](r: var S, x,y: S) {.alwaysInline.} =
+    mixin f
+    for i in 0..<S.N:
+      f(r[][i], x[][i], y[][i])
+template p3s(f: untyped) {.dirty.} =
+  proc f*[S:SimdArrayObj](r: var S, x: S, y: Number) {.alwaysInline.} =
+    mixin f
+    let t = eval(y)
+    for i in 0..<S.N:
+      f(r[][i], x[][i], t)
+  proc f*[S:SimdArrayObj](r: var S, x: Number, y: S) {.alwaysInline.} =
+    mixin f
+    let t = eval(x)
+    for i in 0..<S.N:
+      f(r[][i], t, y[][i])
+  p3(f)
+
+p2(neg)
+p2(rsqrt)
+p2(norm2)
+p2s(assign)
+p2s(`:=`)
+p2s(`+=`)
+p2s(`-=`)
+p2s(`*=`)
+p2s(`/=`)
+p2s(iadd)
+p2s(isub)
+p2s(imul)
+p2s(idiv)
+p2s(inorm2)
+p3s(imadd)
+p3s(imsub)
+p3s(add)
+p3s(sub)
+p3s(mul)
+p3s(divd)
+
+# with return value
+template f1(f: untyped) {.dirty.} =
+  proc f*[S:SimdArrayObj](x: S): S {.noInit,alwaysInline.} =
+    mixin f
+    for i in 0..<S.N:
+      result[][i] = f(x[][i])
+template f2(f: untyped) {.dirty.} =
+  proc f*[N:static int,T](x,y: SimdArrayObj[N,T]):
+        SimdArrayObj[N,T] {.noInit,alwaysInline.} =
+    mixin f
+    for i in 0..<N:
+      result[][i] = f(x[][i], y[][i])
+template f2s(f: untyped) {.dirty.} =
+  proc f*[S:SimdArrayObj](x: S, y: Number): S {.noInit,alwaysInline.} =
+    mixin f
+    let t = eval(y)
+    for i in 0..<S.N:
+      result[][i] = f(x[][i], t)
+  proc f*[S:SimdArrayObj](x: Number, y: S): S {.noInit,alwaysInline.} =
+    mixin f
+    let t = eval(x)
+    for i in 0..<S.N:
+      result[][i] = f(t, y[][i])
+  f2(f)
+
+f1(`-`)
+f1(abs)
+f1(norm2)
+f1(inv)
+f1(sqrt)
+f1(rsqrt)
+f1(sin)
+f1(cos)
+f1(acos)
+f1(load1)
+f2(atan2)
+f2s(`+`)
+f2s(`-`)
+f2s(`*`)
+f2s(`/`)
+f2s(add)
+f2s(sub)
+f2s(mul)
+f2s(min)
+f2s(max)
+
+
+proc simdReduce*(r: var SomeNumber; x: SimdArrayObj) {.alwaysInline.} =
+  mixin simdReduce
+  var y = x[][0]
+  forStatic i, 1, x.N-1:
+    iadd(y, x[][i])
+  r = (type(r))(simdReduce(y))
+proc simdReduce*[N:static int,T](x: SimdArrayObj[N,T]):
+               NumberType[T] {.noInit,alwaysInline.} =
+  simdReduce(result, x)
+template simdSum*(r: var SomeNumber; x: SimdArrayObj) = simdReduce(r, x)
+template simdSum*(x: SimdArrayObj): auto = simdReduce(x)
+proc simdMaxReduce*(r: var SomeNumber; x: SimdArrayObj) {.alwaysInline.} =
+  mixin simdMaxReduce
+  var y = x[][0]
+  forStatic i, 1, x.N-1:
+    y = max(y, x[][i])
+  r = (type(r))(simdMaxReduce(y))
+proc simdMaxReduce*[N:static int,T](x: SimdArrayObj[N,T]):
+               NumberType[T] {.noInit,alwaysInline.} =
+  simdMaxReduce(result, x)
+template simdMax*(r: var SomeNumber; x: SimdArrayObj) = simdMaxReduce(r, x)
+template simdMax*(x: SimdArrayObj): auto = simdMaxReduce(x)
+proc simdMinReduce*(r: var SomeNumber; x: SimdArrayObj) {.alwaysInline.} =
+  mixin simdMinReduce
+  var y = x[][0]
+  forStatic i, 1, x.N-1:
+    y = max(y, x[][i])
+  r = (type(r))(simdMinReduce(y))
+proc simdMinReduce*[N:static int,T](x: SimdArrayObj[N,T]):
+               NumberType[T] {.noInit,alwaysInline.} =
+  simdMinReduce(result, x)
+template simdMin*(r: var SomeNumber; x: SimdArrayObj) = simdMinReduce(r, x)
+template simdMin*(x: SimdArrayObj): auto = simdMinReduce(x)
+
+proc perm*[T:SimdArrayObj](r: var T; x: T, p: int) {.alwaysInline.} =
+  mixin perm, assign
+  const L = x.N
+  const N0 = numNumbers(x.T)
+  if N0 > p:
+    when N0 > 1:
+      forStatic i, 0, L-1:
+        perm(r[][i], x[][i], p)
+  else:
+    let b = (p div N0) and (L-1)
+    forStatic i, 0, L-1:
+      assign(r[][i], x[][i xor b])
+template perm1*[T:SimdArrayObj](r: var T; x: T) = perm(r, x, 1)
+template perm2*[T:SimdArrayObj](r: var T; x: T) = perm(r, x, 2)
+template perm4*[T:SimdArrayObj](r: var T; x: T) = perm(r, x, 4)
+template perm8*[T:SimdArrayObj](r: var T; x: T) = perm(r, x, 8)
+
+template assign[R,X:SomeNumber](r: array[1,R], x: X) = assign(r[0], x)
+template assign[R,X:SomeNumber](r: R, x: array[1,X]) = assign(r, x[0])
+proc packp*(r: var openArray[SomeNumber], x: SimdArrayObj,
+            l: var openarray[SomeNumber], p: int) {.inline.} =
+  mixin packp, assign
+  const L = x.N
+  const N0 = numNumbers(x.T)
+  #static: echo N0
+  if N0 > p:
+    when N0 > 1:
+      const N02 = N0 div 2
+      let ra = cast[ptr array[L,array[N02,type(r[0])]]](r[0].addr)
+      let la = cast[ptr array[L,array[N02,type(l[0])]]](l[0].addr)
+      forStatic i, 0, L-1:
+        packp(ra[][i], x[][i], la[][i], p)
+  else:
+    const L2 = L div 2
+    let ra = cast[ptr array[L2,array[N0,type(r[0])]]](r[0].addr)
+    let la = cast[ptr array[L2,array[N0,type(l[0])]]](l[0].addr)
+    let b = (p div N0) and (L-1)
+    var ir,il = 0
+    forStatic i, 0, L-1:
+      if (i and b) == 0:
+        assign(la[][il], x[][i])
+        inc il
+      else:
+        assign(ra[][ir], x[][i])
+        inc ir
+  #echo r, l
+template packp1*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+  when numNumbers(x) > 1:
+    packp(r, x, l, 1)
+template packp2*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+  when numNumbers(x) > 2:
+    packp(r, x, l, 2)
+template packp4*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+  when numNumbers(x) > 4:
+    packp(r, x, l, 4)
+template packp8*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+  when numNumbers(x) > 8:
+    packp(r, x, l, 8)
+
+proc packm*(r: var openArray[SomeNumber], x: SimdArrayObj,
+            l: var openarray[SomeNumber], p: int) {.inline.} =
+  mixin packm
+  const L = x.N
+  const N0 = numNumbers(x.T)
+  if N0 > p:
+    when N0 > 1:
+      const N02 = N0 div 2
+      let ra = cast[ptr array[L,array[N02,type(r[0])]]](r[0].addr)
+      let la = cast[ptr array[L,array[N02,type(l[0])]]](l[0].addr)
+      forStatic i, 0, L-1:
+        packm(ra[][i], x[][i], la[][i], p)
+  else:
+    const L2 = L div 2
+    let ra = cast[ptr array[L2,array[N0,type(r[0])]]](r[0].addr)
+    let la = cast[ptr array[L2,array[N0,type(l[0])]]](l[0].addr)
+    let b = (p div N0) and (L-1)
+    var ir,il = 0
+    forStatic i, 0, L-1:
+      if (i and b) == 0:
+        assign(ra[][ir], x[][i])
+        inc ir
+      else:
+        assign(la[][il], x[][i])
+        inc il
+template packm1*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+  when numNumbers(x) > 1:
+    packm(r, x, l, 1)
+template packm2*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+  when numNumbers(x) > 2:
+    packm(r, x, l, 2)
+template packm4*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+  when numNumbers(x) > 4:
+    packm(r, x, l, 4)
+template packm8*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+  when numNumbers(x) > 8:
+    packm(r, x, l, 8)
+
+proc blendp*(x: var SimdArrayObj; r: openArray[SomeNumber];
+             l: openArray[SomeNumber], p: int) {.inline.} =
+  mixin blendp
+  const L = x.N
+  const N0 = numNumbers(x.T)
+  if N0 > p:
+    when N0 > 1:
+      const N02 = N0 div 2
+      let ra = cast[ptr array[L,array[N02,type(r[0])]]](unsafeAddr(r[0]))
+      let la = cast[ptr array[L,array[N02,type(l[0])]]](unsafeAddr(l[0]))
+      forStatic i, 0, L-1:
+        blendp(x[][i], ra[][i], la[][i], p)
+  else:
+    const L2 = L div 2
+    let ra = cast[ptr array[L2,array[N0,type(r[0])]]](unsafeAddr(r[0]))
+    let la = cast[ptr array[L2,array[N0,type(l[0])]]](unsafeAddr(l[0]))
+    let b = (p div N0) and (L-1)
+    var ir,il = 0
+    forStatic i, 0, L-1:
+      if (i and b) == 0:
+        assign(x[][i], la[][il])
+        inc il
+      else:
+        assign(x[][i], ra[][ir])
+        inc ir
+template blendp1*(x: var SimdArrayObj; r: openArray[SomeNumber];
+                  l: openArray[SomeNumber]) =
+  when numNumbers(x) > 1:
+    blendp(x, r, l, 1)
+template blendp2*(x: var SimdArrayObj; r: openArray[SomeNumber];
+                  l: openArray[SomeNumber]) =
+  when numNumbers(x) > 2:
+    blendp(x, r, l, 2)
+template blendp4*(x: var SimdArrayObj; r: openArray[SomeNumber];
+                  l: openArray[SomeNumber]) =
+  when numNumbers(x) > 4:
+    blendp(x, r, l, 4)
+template blendp8*(x: var SimdArrayObj; r: openArray[SomeNumber];
+                  l: openArray[SomeNumber]) =
+  when numNumbers(x) > 8:
+    blendp(x, r, l, 8)
+
+template blendm1*(x: var SimdArrayObj; r: openArray[SomeNumber];
+                  l: openArray[SomeNumber]) = blendp1(x, l, r)
+template blendm2*(x: var SimdArrayObj; r: openArray[SomeNumber];
+                  l: openArray[SomeNumber]) = blendp2(x, l, r)
+template blendm4*(x: var SimdArrayObj; r: openArray[SomeNumber];
+                  l: openArray[SomeNumber]) = blendp4(x, l, r)
+template blendm8*(x: var SimdArrayObj; r: openArray[SomeNumber];
+                  l: openArray[SomeNumber]) = blendp8(x, l, r)
+
 
 # map (var param) (param) (return)
 
@@ -244,9 +598,6 @@ discard """
     op(x[][1], ra[], la[])
 """
 
-#type SimdArrayObj*[L,B] = object
-#  v*: array[L,B]
-
 template arrayType[T](N: typed, x: typedesc[T]): untyped =
   type B {.gensym.} = T.type
   #static: echo "arrayType: ", N, " ", B
@@ -301,10 +652,19 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
   #echoAst: F
   #static: echo F.treerepr
   #when not(F is float32):
-  when F is float64:
-    template toDoubleImpl*(x: T): untyped = x
-  else:
-    template toSingleImpl*(x: T): untyped = x
+  #when F is float64:
+  #  template toDoubleImpl*(x: T): untyped = x
+  #else:
+  #  template toSingleImpl*(x: T): untyped = x
+  #when F is float32:
+  #  template toSingleImpl*(x: T): untyped = x
+  #template toDoubleImpl*(x: T): auto =
+  #  mixin simdObjType, assign
+  #  when F is float64: x
+  #  else:
+  #    type D = simdObjType(N, float64)
+  #    var r {.noInit.}: D
+  #    assign(r, x)
   proc simdReduce*(r: var SomeNumber; x: T) {.inline.} =
     #mixin add
     var y = x[][0]
@@ -411,6 +771,9 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
     else:
       forStatic i, 0, L-1:
         assign(addr(r[i*N0]), x[][i])
+  proc assign*(r: var SimdArrayObj, x: T) {.inline.} =
+    for i in 0..<N:
+      r[i] = x[i]
   proc assign*(m: Masked[T], x: SomeNumber) =
     #static: echo "a mask"
     var i = 0

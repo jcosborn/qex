@@ -293,20 +293,22 @@ template permX*[T](r:T; prm:int; x0:T) =
     of 4: loop(perm4)
     of 8: loop(perm8)
     else: discard
+template loopPerm(f:untyped) {.dirty.} =
+  #when compiles(f(r[][0], x[][0])):
+  forStatic i, 0, n-1: f(r[][i], x[][i])
 proc perm*[T](r0: var T; prm: int; x0: T) {.alwaysInline.} =
+  mixin assign, perm1, perm2, perm4, perm8
   const n = x0.numNumbers div x0.simdLength
   let r = cast[ptr array[n,simdType(r0)]](addr r0)
   let x = cast[ptr array[n,simdType(x0)]](unsafeaddr x0)
-  template loop(f:untyped) =
-    when compiles(f(r[][0], x[][0])):
-      forStatic i, 0, n-1: f(r[][i], x[][i])
   case prm
-  of 0: loop(assign)
-  of 1: loop(perm1)
-  of 2: loop(perm2)
-  of 4: loop(perm4)
-  of 8: loop(perm8)
+  of 0: loopPerm(assign)
+  of 1: loopPerm(perm1)
+  of 2: loopPerm(perm2)
+  of 4: loopPerm(perm4)
+  of 8: loopPerm(perm8)
   else: discard
+  #echo "perm: ", prm, " ", r0
 template perm2*[T](r: var T; prm: int; x: T) =
   const n = x.nVectors
   let rr = cast[ptr array[n,simdType(r)]](r.addr)
@@ -314,9 +316,11 @@ template perm2*[T](r: var T; prm: int; x: T) =
   let xx = cast[ptr array[n,simdType(xt)]](addr xt)
   forStatic i, 0, n-1:
     rr[i] = perm(xx[i], prm)
+template loopPack(f:untyped) {.dirty.} =
+  forStatic i, 0, n.pred: f(rr[i], xx[i], ll[i])
 #proc pack*(r:ptr auto; l:ptr auto; pck:int; x:PackTypes) {.inline.} =
 proc pack*(r:ptr auto; l:ptr auto; pck:int; x:auto) {.inline.} =
-  mixin simdLength
+  mixin simdLength, packp1
   if pck==0:
     #const n = x.nVectors
     const n = x.numNumbers div x.simdLength
@@ -325,24 +329,24 @@ proc pack*(r:ptr auto; l:ptr auto; pck:int; x:auto) {.inline.} =
     for i in 0..<n:
       assign(rr[i], xx[i])
   else:
-    #const n = x.nVectors
-    const n = x.numNumbers div x.simdLength
-    const vl2 = x.simdLength div 2
-    let rr = cast[ptr array[n,array[vl2,type(r[])]]](r)
-    let ll = cast[ptr array[n,array[vl2,type(l[])]]](l)
-    let xx = cast[ptr array[n,simdType(x)]](unsafeAddr(x))
-    template loop(f:untyped):untyped =
-      forStatic i, 0, n.pred: f(rr[i], xx[i], ll[i])
-    case pck
-    of  1: loop(packp1)
-    of -1: loop(packm1)
-    of  2: loop(packp2)
-    of -2: loop(packm2)
-    of  4: loop(packp4)
-    of -4: loop(packm4)
-    of  8: loop(packp8)
-    of -8: loop(packm8)
-    else: discard
+    when x.simdLength > 1:
+      #const n = x.nVectors
+      const n = x.numNumbers div x.simdLength
+      const vl2 = x.simdLength div 2
+      let rr = cast[ptr array[n,array[vl2,type(r[])]]](r)
+      let ll = cast[ptr array[n,array[vl2,type(l[])]]](l)
+      let xx = cast[ptr array[n,simdType(x)]](unsafeAddr(x))
+      case pck
+      of  1: loopPack(packp1)
+      of -1: loopPack(packm1)
+      of  2: loopPack(packp2)
+      of -2: loopPack(packm2)
+      of  4: loopPack(packp4)
+      of -4: loopPack(packm4)
+      of  8: loopPack(packp8)
+      of -8: loopPack(packm8)
+      else: discard
+  #echo "pack: ", pck, " ", r[], " ", l[]
 #proc pack*(r:ptr char; pck:int; x:PackTypes) =
 proc pack*(r:ptr char; pck:int; x: auto) =
   if pck==0:
@@ -372,21 +376,22 @@ proc blend*(r:var auto; x:ptr char; b:ptr char; blnd:int) {.inline.} =
   const n = r.numNumbers div r.simdLength
   #const n2 = n div 2
   const stride = r.simdLength div 2
-  var rr = cast[ptr array[n,simdType(r)]](r.addr)
-  let xx = cast[ptr array[n,array[stride,numberType(r)]]](x)
-  let bb = cast[ptr array[n,array[stride,numberType(r)]]](b)
-  template loop(f:untyped):untyped =
-    forStatic i, 0, n.pred: f(rr[i], xx[i], bb[i])
-  case blnd
-  of  1: loop(blendp1)
-  of -1: loop(blendm1)
-  of  2: loop(blendp2)
-  of -2: loop(blendm2)
-  of  4: loop(blendp4)
-  of -4: loop(blendm4)
-  of  8: loop(blendp8)
-  of -8: loop(blendm8)
-  else: discard
+  when stride > 0:
+    var rr = cast[ptr array[n,simdType(r)]](r.addr)
+    let xx = cast[ptr array[n,array[stride,numberType(r)]]](x)
+    let bb = cast[ptr array[n,array[stride,numberType(r)]]](b)
+    template loop(f:untyped):untyped =
+      forStatic i, 0, n.pred: `blend f`(rr[i], xx[i], bb[i])
+    case blnd
+    of  1: loop(p1)
+    of -1: loop(m1)
+    of  2: loop(p2)
+    of -2: loop(m2)
+    of  4: loop(p4)
+    of -4: loop(m4)
+    of  8: loop(p8)
+    of -8: loop(m8)
+    else: discard
 
 macro makeConstructors(x: untyped): untyped =
   template mp(f,r,rslt: untyped) =

@@ -56,7 +56,7 @@ template `[]`*(x: Simd, i: typed): untyped =
 template index*[T,I](x: typedesc[Simd[T]], i: typedesc[I]): typedesc =
   numberType(T)
 
-template doIndexed[T](x: T): untyped = eval(x)
+#template doIndexed[T](x: T): untyped = eval(x)
 
 template toPrec*(x: Simd, y: typedesc[float32]): untyped = toSingle(x)
 template toPrec*(x: Simd, y: typedesc[float64]): untyped = toDouble(x)
@@ -70,19 +70,28 @@ template `[]=`*(x: Simd, i: typed, y: typed): untyped =
   else:
     x[][stripSimdAsView i] = eval(y)
 
+template attribT(att: untyped) {.dirty.} =
+  template att*[T](x: typedesc[Simd[T]]): typedesc =
+    mixin att
+    att(type T)
+  template att*[T](x: Simd[T]): typedesc =
+    mixin att
+    att(type T)
 template attrib(att: untyped) {.dirty.} =
   # FIXME: sometimes return typedesc, maybe auto?
-  template att*[T](x: typedesc[Simd[T]]): untyped =
+  template att*[T](x: typedesc[Simd[T]]): auto =
     mixin att
-    att(T)
-  template att*[T](x: Simd[T]): untyped =
+    att(type T)
+  template att*[T](x: Simd[T]): auto =
     mixin att
-    att(T)
+    att(type T)
 
-attrib(numberType)
+attribT(numberType)
+attribT(simdType)
 attrib(numNumbers)
-attrib(simdType)
 attrib(simdLength)
+#template simdType*[T:Simd](x:typedesc[T]):typedesc = T
+#template simdType*[T:Simd](x:T):typedesc = T
 
 template noSimd*[T](x: typedesc[Simd[T]]): typedesc =
   numberType(type T)

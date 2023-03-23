@@ -459,8 +459,8 @@ proc evolve(H:HeatBath, g:any, gc:any, r:any, R:var RngMilc6, sample = true, jum
         threadBarrier()
         for i in g[s].sites:
           let
-            yr = H.fr{i}[][]
-            yi = H.fi{i}[][]
+            yr = eval H.fr{i}
+            yi = eval H.fi{i}
             lambda = beta*hypot(yi, yr)
             phi = arctan2(yi, yr)
           g{i} := expCosPlusCosN(r{i}, lambda, phi, sigma)
@@ -476,11 +476,11 @@ proc evolve(H:HeatBath, g:any, gc:any, r:any, R:var RngMilc6, sample = true, jum
         threadBarrier()
         for i in g[s].sites:
           let
-            yr = H.fr{i}[][]
-            yi = H.fi{i}[][]
+            yr = eval H.fr{i}
+            yi = eval H.fi{i}
             lambda = beta*hypot(yi, yr)
             phi = arctan2(yi, yr)
-          g{i} := pickRootCosCosN(r{i}, g{i}[][], phi, sigma/lambda)
+          g{i} := pickRootCosCosN(r{i}, eval g{i}, phi, sigma/lambda)
       toc("flip")
   # end of the threads block above
   if jumpZN:

@@ -270,7 +270,9 @@ template `[]`*(x:MatrixRowObj; i:int):untyped = x.mat[][x.rw,i]
 template `[]=`*(x:MatrixRowObj; i:int; y:typed):untyped = x.mat[][x.rw,i] = y
 
 template isWrapper*(x: VectorArrayObj): untyped = false
+template isWrapper*(x: typedesc[VectorArrayObj]): untyped = false
 template isWrapper*(x: MatrixArrayObj): untyped = false
+template isWrapper*(x: typedesc[MatrixArrayObj]): untyped = false
 
 template eval*[I,T](x: typedesc[VectorArrayObj[I,T]]): typedesc =
   mixin eval
@@ -446,11 +448,13 @@ template makeLevel1(f,s1,t1,s2,t2:untyped):untyped =
 #    #`f s1 s2 s3`(r, x, y)
 #    func3(`f s1 s2 s3`, r, x, y)
 template makeLevel2T(f,s1,t1,s2,t2,s3,t3: untyped): untyped {.dirty.} =
-  template `f U`*(r: t1, x: t2, y: t3): untyped =
-    `f s1 s2 s3`(r, x, y)
+  #template `f U`*(r: t1, x: t2, y: t3): untyped =
+  #  `f s1 s2 s3`(r, x, y)
   template f*(r: t1, x: t2, y: t3): untyped =
     #echoType: r
-    flattenCallArgs(`f U`, r, x, y)
+    #flattenCallArgs(`f U`, r, x, y)
+    #`f U`(r, x, y)
+    `f s1 s2 s3`(r, x, y)
 template makeLevel2(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
   makeLevel2T(f,s1,t1,s2,t2,s3,t3)
 

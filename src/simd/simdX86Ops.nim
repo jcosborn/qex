@@ -366,6 +366,55 @@ template simdMin*(x: SimdX86): untyped = simdMinReduce(x)
 # include perm, pack and blend
 include simdX86Ops1
 
+proc perm*[T:SimdX86](r: var T, x: T, p: int) {.alwaysInline.} =
+  if p==1: perm1(r, x); return
+  when x.numNumbers > 2:
+    if p==2: perm2(r, x); return
+  when x.numNumbers > 4:
+    if p==4: perm4(r, x); return
+  when x.numNumbers > 8:
+    if p==8: perm8(r, x); return
+
+
+proc packp*(r: var openArray[SomeNumber]; x: SimdX86;
+            l: var openArray[SomeNumber], p: int) {.alwaysInline.} =
+  if p==1: packp1(r, x, l); return
+  when x.numNumbers > 2:
+    if p==2: packp2(r, x, l); return
+  when x.numNumbers > 4:
+    if p==4: packp4(r, x, l); return
+  when x.numNumbers > 8:
+    if p==8: packp8(r, x, l); return
+
+proc packm*(r: var openArray[SomeNumber]; x: SimdX86;
+            l: var openArray[SomeNumber], p: int) {.alwaysInline.} =
+  if p==1: packm1(r, x, l); return
+  when x.numNumbers > 2:
+    if p==2: packm2(r, x, l); return
+  when x.numNumbers > 4:
+    if p==4: packm4(r, x, l); return
+  when x.numNumbers > 8:
+    if p==8: packm8(r, x, l); return
+
+proc blendp*(x: var SimdX86; r: openArray[SomeNumber];
+             l: openArray[SomeNumber], p: int) {.alwaysInline.} =
+  if p==1: blendp1(x, r, l); return
+  when x.numNumbers > 2:
+    if p==2: blendp2(x, r, l); return
+  when x.numNumbers > 4:
+    if p==4: blendp4(x, r, l); return
+  when x.numNumbers > 8:
+    if p==8: blendp8(x, r, l); return
+
+proc blendm*(x: var SimdX86; r: openArray[SomeNumber];
+             l: openArray[SomeNumber], p: int) {.alwaysInline.} =
+  if p==1: blendm1(x, r, l); return
+  when x.numNumbers > 2:
+    if p==2: blendm2(x, r, l); return
+  when x.numNumbers > 4:
+    if p==4: blendm4(x, r, l); return
+  when x.numNumbers > 8:
+    if p==8: blendm8(x, r, l); return
 
 #### mixed precision
 

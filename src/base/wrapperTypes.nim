@@ -226,7 +226,8 @@ template makeWrapperTypeX(wf:typed, name,fName,asName,tasName: untyped) =
       template `[]`*(x: name): untyped =
         #static: echo "wrapper []"
         #debugType: x
-        derefPtr flattenCallArgs(derefXX, x)
+        #derefPtr flattenCallArgs(derefXX, x)
+        derefPtr derefXX(x)
     else:
       template `[]`*(x: name): untyped =
         #static: echo "wrapper []"
@@ -238,8 +239,11 @@ template makeWrapperTypeX(wf:typed, name,fName,asName,tasName: untyped) =
     #static: echo "asWrapper Color"
     #dumpTree: y
     asName(y)
-  template asWrapper*(x: typedesc[name], y: typed): untyped =
+  template asWrapper*[T](x: typedesc[name], y: T): auto =
     asName(y)
+    #var asWrapperTmp {.noInit.}: asName(type T)
+    #asWrapperTmp.fName = y
+    #asWrapperTmp
 
 proc makeWrapperTypeP*(name: NimNode; docs: string, wf: WFSet): NimNode =
   let Name = capitalizeAscii(name.repr)
