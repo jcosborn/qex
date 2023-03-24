@@ -256,9 +256,9 @@ proc smear*[L,F,T,G](ht: HypTemps[L,F,T], coef: HypCoefs, fl: G) =
     # h1x[mu][nu] mu,nu,-nu,mu-nu
     tfor i, 0..<nhalo:
       for mu in 0..<4:
-        for nu in 0..<4:
-          if nu == mu: continue
-          h1x[mu][nu][i] = 0
+        #for nu in 0..<4:
+        #  if nu == mu: continue
+        #  h1x[mu][nu][i] = 0
         let fmu = hl.neighborFwd[mu][i]
         if fmu<0: continue
         for nu in 0..<4:
@@ -280,9 +280,9 @@ proc smear*[L,F,T,G](ht: HypTemps[L,F,T], coef: HypCoefs, fl: G) =
     # h2x[mu][nu]: h1x[a][b]: 0,mu,-a,mu-a  h1x[mu][b]: a,-a
     tfor i, 0..<nhalo:
       for mu in 0..<4:
-        for nu in 0..<4:
-          if nu == mu: continue
-          h2x[mu][nu][i] = 0
+        #for nu in 0..<4:
+        #  if nu == mu: continue
+        #  h2x[mu][nu][i] = 0
         let fmu = hl.neighborFwd[mu][i]
         if fmu<0: continue
         for nu in 0..<4:
@@ -396,12 +396,10 @@ proc force*[L,F,T,G,C](ht: HypTemps[L,F,T], coef: HypCoefs, f: G, chain: C) =
     flops = 0
     tfor i, 0..<nhalo:
       for mu in 0..<4:
-        for nu in 0..<4:
-          if nu==mu: continue
-          hl2[mu][nu][i] = 0
         let fmu = hl.neighborFwd[mu][i]
         for nu in 0..<4:
           if nu==mu: continue
+          hl2[mu][nu][i] = 0
           let fnu = hl.neighborFwd[nu][i]
           let bnu = hl.neighborBck[nu][i]
           let fmubnu = if fmu<0: -1 else: hl.neighborBck[nu][fmu]
@@ -417,13 +415,13 @@ proc force*[L,F,T,G,C](ht: HypTemps[L,F,T], coef: HypCoefs, f: G, chain: C) =
     flops = 0
     tfor i, 0..<nhalo:
       for mu in 0..<4:
-        for nu in 0..<4:
-          if nu==mu: continue
-          hl1[mu][nu][i] = 0
         let fmu = hl.neighborFwd[mu][i]
         var flp = 0
         for nu in 0..<4:
           if nu == mu: continue
+          hl1[mu][nu][i] = 0
+          #var t {.noInit.}: evalType(hl1[mu][nu][i])
+          #t := 0
           for a in 0..<4:
             if a == mu or a == nu: continue
             let b = 1+2+3-mu-nu-a
@@ -432,10 +430,14 @@ proc force*[L,F,T,G,C](ht: HypTemps[L,F,T], coef: HypCoefs, f: G, chain: C) =
             let fmuba = if fmu<0: -1 else: hl.neighborBck[a][fmu]
             #flp += symderivp(hl1[mu][nu][i], h1x[a][nu],h1x[mu][nu],hl2[a][b],hl2[mu][b], i,fa,fmu,ba,fmuba)
             flp += symderiv(hl1[mu][nu][i], h1[a][nu],h1[mu][nu],hl2[a][b],hl2[mu][b], i,fa,fmu,ba,fmuba)
+            #flp += symderiv(t, h1[a][nu],h1[mu][nu],hl2[a][b],hl2[mu][b], i,fa,fmu,ba,fmuba)
           if flp > 0:
             hl1[mu][nu][i].projDeriv(h1x[mu][nu][i], hl1[mu][nu][i])
             hf[mu][i] += ma1 * hl1[mu][nu][i]
             hl1[mu][nu][i] *= alp1
+            #t.projDeriv(h1x[mu][nu][i], t)
+            #hf[mu][i] += ma1 * t
+            #hl1[mu][nu][i] = alp1 * t
             flops += V*(flp+54+2*projectUflops(nc)) # guess for projDeriv
     flops.threadSum
     toc "2", flops=flops
@@ -526,6 +528,17 @@ when isMainModule:
     echo fl2.plaq
     echo f.plaq
     echo f2.plaq
+    var d = fl[0].newOneOf
+    var d2fl = newSeq[float](fl.len)
+    var d2f = newSeq[float](f.len)
+    for mu in 0..<fl.len:
+      d := fl2[mu] - fl[mu]
+      d2fl[mu] = sqrt(d.norm2/fl[mu].norm2)
+      d := f2[mu] - f[mu]
+      d2f[mu] = sqrt(d.norm2/f[mu].norm2)
+    echo "error smear: ", d2fl
+    echo "error force: ", d2f
+
   testForce()
 
   qexFinalize()
