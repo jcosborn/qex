@@ -17,10 +17,14 @@ type
     hm: HaloMap[L]
     l1x: FieldArray[L.V,T]
     l2x: FieldArray[L.V,T]
+    l1: FieldArray[L.V,T]
+    l2: FieldArray[L.V,T]
     flx: FieldArray[L.V,T]
     hgf: array[4,Halo[L,F,T]]
     h1x: array[4,array[4,Halo[L,F,T]]]
     h2x: array[4,array[4,Halo[L,F,T]]]
+    h1: array[4,array[4,Halo[L,F,T]]]
+    h2: array[4,array[4,Halo[L,F,T]]]
     info: PerfInfo
 
 template proj(x,y: auto) = x.projectU y
@@ -39,6 +43,8 @@ proc init*[L,F,T,G](ht: var HypTemps[L,F,T], gf: G, comm: Comm) =
   toc "makeHaloLayout"
   ht.l1x = newFieldArray2(lo,F,[4,4],mu!=nu)
   ht.l2x = newFieldArray2(lo,F,[4,4],mu!=nu)
+  ht.l1 = newFieldArray2(lo,F,[4,4],mu!=nu)
+  ht.l2 = newFieldArray2(lo,F,[4,4],mu!=nu)
   ht.flx = newFieldArray(lo,F,4)
   for mu in 0..<4:
     ht.gf[mu] = gf[mu]
@@ -47,6 +53,8 @@ proc init*[L,F,T,G](ht: var HypTemps[L,F,T], gf: G, comm: Comm) =
       if nu == mu: continue
       ht.h1x[mu][nu] = makeHalo(ht.hl, ht.l1x[mu,nu])
       ht.h2x[mu][nu] = makeHalo(ht.hl, ht.l2x[mu,nu])
+      ht.h1[mu][nu] = makeHalo(ht.hl, ht.l1[mu,nu])
+      ht.h2[mu][nu] = makeHalo(ht.hl, ht.l2[mu,nu])
   toc "makeHalo"
   const hmtype = 0
   when hmtype == 0:
@@ -133,9 +141,13 @@ proc symderiv(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu: SomeInteger,
 template symderivp(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu: SomeInteger): int =
   symderiv(s, x,y,cx,cy, i,fnu,fmu,bnu,fmubnu, true)
 
-proc symderiv3(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu,nOut: SomeInteger): int =
+proc symderiv3(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu,nOut: SomeInteger,
+               p: static bool = false): int =
   mixin projectUflops
-  template prj(m: auto): auto = proj(m)
+  when p:
+    template prj(m: auto): auto = proj(m)
+  else:
+    template prj(m: auto): auto = m
   if fnu>=0 and fmu>=0:
     let xi = prj x[i]
     let yfnu = prj y[fnu]
@@ -162,6 +174,8 @@ proc symderiv3(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu,nOut: SomeInte
     if fmubnu<nOut:
       s += xbnu.adj * ybnu * cx[fmubnu]
       result += 18+2*3*66
+template symderiv3p(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu,nOut: SomeInteger): int =
+  symderiv3(s, x,y,cx,cy, i,fnu,fmu,bnu,fmubnu,nOut, true)
 
 proc symderiv2(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu: SomeInteger): int =
   template prj(m: auto): auto = proj(m)
@@ -222,6 +236,8 @@ proc smear*[L,F,T,G](ht: HypTemps[L,F,T], coef: HypCoefs, fl: G) =
     hgf = ht.hgf
     h1x = ht.h1x
     h2x = ht.h2x
+    h1 = ht.h1
+    h2 = ht.h2
   let
     alp1 = coef.alpha1 / 2.0
     alp2 = coef.alpha2 / 4.0
@@ -255,6 +271,7 @@ proc smear*[L,F,T,G](ht: HypTemps[L,F,T], coef: HypCoefs, fl: G) =
           if fmubnu<0: continue
           h1x[mu][nu][i] = ma1 * hgf[mu][i]
           symstaple(h1x[mu][nu][i], alp1, hgf[nu],hgf[mu], i,fnu,fmu,bnu,fmubnu)
+          h1[mu][nu][i].proj h1x[mu][nu][i]
           flops += siteFlops1
     #threadBarrier()
     flops.threadSum
@@ -280,7 +297,9 @@ proc smear*[L,F,T,G](ht: HypTemps[L,F,T], coef: HypCoefs, fl: G) =
             if ba<0: continue
             let fmuba = hl.neighborBck[a][fmu]
             if fmuba<0: continue
-            symstaplep(h2x[mu][nu][i], alp2, h1x[a][b],h1x[mu][b], i,fa,fmu,ba,fmuba)
+            #symstaplep(h2x[mu][nu][i], alp2, h1x[a][b],h1x[mu][b], i,fa,fmu,ba,fmuba)
+            symstaple(h2x[mu][nu][i], alp2, h1[a][b],h1[mu][b], i,fa,fmu,ba,fmuba)
+          h2[mu][nu][i].proj h2x[mu][nu][i]
           flops += siteFlops2
     #threadBarrier()
     flops.threadSum
@@ -296,7 +315,8 @@ proc smear*[L,F,T,G](ht: HypTemps[L,F,T], coef: HypCoefs, fl: G) =
           let fnu = hl.neighborFwd[nu][i]
           let bnu = hl.neighborBck[nu][i]
           let fmubnu = hl.neighborBck[nu][fmu]
-          symstaplep(flx[mu][i], alp3, h2x[nu][mu],h2x[mu][nu], i,fnu,fmu,bnu,fmubnu)
+          #symstaplep(flx[mu][i], alp3, h2x[nu][mu],h2x[mu][nu], i,fnu,fmu,bnu,fmubnu)
+          symstaple(flx[mu][i], alp3, h2[nu][mu],h2[mu][nu], i,fnu,fmu,bnu,fmubnu)
         fl[mu][i].proj flx[mu][i]
         flops += siteFlops3
     #threadBarrier()
@@ -335,6 +355,8 @@ proc force*[L,F,T,G,C](ht: HypTemps[L,F,T], coef: HypCoefs, f: G, chain: C) =
     hgf = ht.hgf
     h1x = ht.h1x
     h2x = ht.h2x
+    h1 = ht.h1
+    h2 = ht.h2
     fc = newFieldArray(lo,F,4)
     fl1 = newFieldArray2(lo,F,[4,4],mu!=nu)
     fl2 = newFieldArray2(lo,F,[4,4],mu!=nu)
@@ -383,7 +405,8 @@ proc force*[L,F,T,G,C](ht: HypTemps[L,F,T], coef: HypCoefs, f: G, chain: C) =
           let fnu = hl.neighborFwd[nu][i]
           let bnu = hl.neighborBck[nu][i]
           let fmubnu = if fmu<0: -1 else: hl.neighborBck[nu][fmu]
-          let flp = symderiv3(hl2[mu][nu][i], h2x[nu][mu],h2x[mu][nu],hfc[nu],hfc[mu], i,fnu,fmu,bnu,fmubnu,nOut)
+          #let flp = symderiv3p(hl2[mu][nu][i], h2x[nu][mu],h2x[mu][nu],hfc[nu],hfc[mu], i,fnu,fmu,bnu,fmubnu,nOut)
+          let flp = symderiv3(hl2[mu][nu][i], h2[nu][mu],h2[mu][nu],hfc[nu],hfc[mu], i,fnu,fmu,bnu,fmubnu,nOut)
           if flp > 0:
             hl2[mu][nu][i].projDeriv(h2x[mu][nu][i], hl2[mu][nu][i])
             hf[mu][i] += ma2 * hl2[mu][nu][i]
@@ -407,7 +430,8 @@ proc force*[L,F,T,G,C](ht: HypTemps[L,F,T], coef: HypCoefs, f: G, chain: C) =
             let fa = hl.neighborFwd[a][i]
             let ba = hl.neighborBck[a][i]
             let fmuba = if fmu<0: -1 else: hl.neighborBck[a][fmu]
-            flp += symderivp(hl1[mu][nu][i], h1x[a][nu],h1x[mu][nu],hl2[a][b],hl2[mu][b], i,fa,fmu,ba,fmuba)
+            #flp += symderivp(hl1[mu][nu][i], h1x[a][nu],h1x[mu][nu],hl2[a][b],hl2[mu][b], i,fa,fmu,ba,fmuba)
+            flp += symderiv(hl1[mu][nu][i], h1[a][nu],h1[mu][nu],hl2[a][b],hl2[mu][b], i,fa,fmu,ba,fmuba)
           if flp > 0:
             hl1[mu][nu][i].projDeriv(h1x[mu][nu][i], hl1[mu][nu][i])
             hf[mu][i] += ma1 * hl1[mu][nu][i]
