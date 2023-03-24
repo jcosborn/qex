@@ -36,31 +36,41 @@ template epsilon*(x:typedesc[float32]):untyped = FLT_EPSILON
 template epsilon*(x:float64):untyped = DBL_EPSILON
 template epsilon*(x:typedesc[float64]):untyped = DBL_EPSILON
 template basicNumberDefines(T,N,F) {.dirty.} =
-  template numberType*(x:T):untyped = F
-  template numberType*(x:typedesc[T]):untyped = F
-  template numNumbers*(x:T):untyped = N
-  template numNumbers*(x:typedesc[T]):untyped = N
+  template numberType*(x:T):typedesc = F
+  template numberType*(x:typedesc[T]):typedesc = F
+  template numNumbers*(x:T):auto = N
+  template numNumbers*(x:typedesc[T]):auto = N
 basicNumberDefines(float32, 1, float32)
 basicNumberDefines(float64, 1, float64)
 template toSingle*(x: typedesc[float64]): typedesc = float32
 template toDouble*(x: typedesc[float32]): typedesc = float64
 
-template numberType*[T](x:ptr T):untyped = numberType(T)
-template numberType*[T](x:tuple[re,im:T]):untyped = numberType(T)
-template numberType*[T](x:typedesc[tuple[re,im:T]]):untyped = numberType(T)
-template numberType*[I,T](x:array[I,T]):untyped = numberType(type(T))
-template numberType*[I,T](x:typedesc[array[I,T]]):untyped = numberType(type(T))
+template numberType*[T](x:ptr T):typedesc = numberType(T)
+template numberType*[T](x:tuple[re,im:T]):typedesc = numberType(T)
+template numberType*[T](x:typedesc[tuple[re,im:T]]):typedesc = numberType(T)
+template numberType*[I,T](x:array[I,T]):typedesc = numberType(type(T))
+template numberType*[I,T](x:typedesc[array[I,T]]):typedesc = numberType(type(T))
 #template numberType*(x:not typedesc):untyped = numberType(type(x))
 template `[]`*[T](x:typedesc[ptr T]):typedesc = T
 template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x
-template isWrapper*(x: SomeNumber): untyped = false
-template isWrapper*(x: typedesc[SomeNumber]): untyped = false
+template isWrapper*(x: SomeNumber): bool = false
+template isWrapper*(x: typedesc[SomeNumber]): bool = false
 template has*[T:SomeNumber](x: typedesc[T], y: typedesc): bool = T is y
 template eval*[T:SomeNumber](x: typedesc[T]): typedesc = typeof(T)
 template evalType*[T](x: T): typedesc =
   mixin eval
   eval typeof T
 
+#proc fpclassify*(x: cfloat): cint {.importc:"fpclassifyf",header:"<math.h>".}
+#proc fpclassify*(x: cdouble): cint {.importc:"fpclassify",header:"<math.h>".}
+#proc cIsNan*(x: cfloat): cint {.importc:"isnanf", header:"<math.h>".}
+#proc cIsNan*(x: cdouble): cint {.importc:"isnan", header:"<math.h>".}
+#template isNan*(x: float32): bool = (x.classify == fcNan)
+#template isNan*(x: float64): bool = (x.classify == fcNan)
+#template isNanx*(x: float32): bool = (x.cIsNan != 0)
+#template isNanx*(x: float64): bool = (x.cIsNan != 0)
+proc isNan*(x: float32): bool {.inline.} = not(x>0.0 or x<1.0)
+proc isNan*(x: float64): bool {.inline.} = not(x>0.0 or x<1.0)
 template cnvrt(r,x):untyped = ((type(r))(x))
 template to*(x:auto; t:typedesc[SomeNumber]):untyped =
   when x.type is t:
@@ -81,10 +91,12 @@ template toDoubleImpl*(x:SomeNumber):untyped =
   else:
     float64(x)
 
-template assign*[R,X:SomeNumber](r: R; x: ptr X) =
-  r = R(x[])
 template assign*[R,X:SomeNumber](r: R, x: X) =
   r = R(x)
+template assign*[R,X:SomeNumber](r: R; x: ptr X) =
+  r = R(x[])
+template assign*[R,X:SomeNumber](r: ptr R; x: X) =
+  r[] = R(x)
 template `:=`*[R,X:SomeNumber](r: R; x: X) =
   r = R(x)
 template `:=`*[R,X:SomeNumber](r: R; x: ptr X) =
@@ -190,6 +202,8 @@ proc atan2*(x,y:float64):float64 {.importC:"atan2",header:"math.h".}
 proc atan2*(x,y:float32):float32 {.importC:"atan2f",header:"math.h".}
 func exp2*(x: float64): float64 {.importc: "exp2", header: "<math.h>".}
 func ln1p*(x: float64): float64 {.importc: "log1p", header: "<math.h>".}
+proc log1p*(arg:float):float {.header:"<math.h>",importc.}
+proc expm1*(arg:float):float {.header:"<math.h>",importc.}
 template rsqrt*[R,X:SomeNumber](r:var R; x:X) =
   r = R(1)/sqrt(R(x))
 template rsqrt*(x: SomeNumber): untyped = 1/sqrt(x)
@@ -228,18 +242,18 @@ template `/`*[T:SomeFloat](x:T,y:SomeInteger):auto = x / (T(y))
 
 template `:=`*[T](x: SomeNumber; y: array[1,T]) = assign(x,y[0])
 
-template setUnopP*(op,fun,t1,t2: untyped): untyped {.dirty.} =
+template setUnopP*(op,fun,t1,t2: untyped) {.dirty.} =
   proc op*(x: t1): auto {.alwaysInline,noInit.} =
     var r{.noInit.}: t2
     fun(r, x)
     r
-template setUnopT*(op,fun,t1,t2: untyped): untyped {.dirty.} =
+template setUnopT*(op,fun,t1,t2: untyped) {.dirty.} =
   template op*(x: t1): untyped =
     var rSetUnopT{.noInit.}: t2
     fun(rSetUnopT, x)
     rSetUnopT
 
-template setBinopP*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
+template setBinopP*(op,fun,t1,t2,t3: untyped) {.dirty.} =
   #template op*(x: typedesc[t1]; y: typedesc[t2]): typedesc = t3
   proc op*(x: t1; y: t2): auto {.alwaysInline,noInit.} =
     var r{.noInit.}: t3
@@ -247,20 +261,20 @@ template setBinopP*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
     r
 template setBinopT*(op,fun,t1,t2,t3: untyped) {.dirty.} =
   #template op*(x: typedesc[t1]; y: typedesc[t2]): typedesc = t3
-  template op*(x: t1; y: t2): untyped =
+  template op*(x: t1; y: t2): auto =
     var rSetBinopT{.noInit.}: t3
     fun(rSetBinopT, x, y)
     rSetBinopT
 
 when forceInline:
-  template setUnop*(op,fun,t1,t2: untyped): untyped {.dirty.} =
+  template setUnop*(op,fun,t1,t2: untyped) {.dirty.} =
     setUnopT(op, fun, t1, t2)
-  template setBinop*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
+  template setBinop*(op,fun,t1,t2,t3: untyped) {.dirty.} =
     setBinopT(op, fun, t1, t2, t3)
 else:
-  template setUnop*(op,fun,t1,t2: untyped): untyped {.dirty.} =
+  template setUnop*(op,fun,t1,t2: untyped) {.dirty.} =
     setUnopP(op, fun, t1, t2)
-  template setBinop*(op,fun,t1,t2,t3: untyped): untyped {.dirty.} =
+  template setBinop*(op,fun,t1,t2,t3: untyped) {.dirty.} =
     setBinopP(op, fun, t1, t2, t3)
 
 import numberWrap

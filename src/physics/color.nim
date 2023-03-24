@@ -36,9 +36,16 @@ template `[]`*[T](x: Color, i: T): untyped =
     tColorBracket
   else:
     x[][i]
-template `[]`*(x: Color, i,j: typed): untyped = x[][i,j]
+template `[]`*(x: Color, i,j: SomeInteger): auto = x[][i,j]
 
-template `[]=`*[T](x: Color, i: T; y: typed) =
+#[
+template `[]=`*[T](x: Color, i:T, y: typed): untyped =
+  when T.isWrapper and T isnot Color:
+    x[][asScalar(i)] = y
+  else:
+    x[][i] = y
+]#
+template `[]=`*[T](x: Color, i: T; y: auto) =
   when T is Color2:
     x[][i[]] = y
   elif T.isWrapper:
@@ -47,15 +54,8 @@ template `[]=`*[T](x: Color, i: T; y: typed) =
     tColorBracket := y
   else:
     x[][i] = y
-#[
-template `[]=`*[T](x: Color, i:T, y: typed): untyped =
-  when T.isWrapper and T isnot Color:
-    x[][asScalar(i)] = y
-  else:
-    x[][i] = y
-template `[]=`*(x: Color, i,j,y: typed): untyped =
+template `[]=`*(x: Color, i,j: SomeInteger, y: auto) =
   x[][i,j] = y
-]#
 
 # forward from value to value
 template forwardVV(f: untyped) {.dirty.} =
@@ -196,8 +196,10 @@ template `*`*(x: Color, y: SomeNumber): untyped =
 #template `*`*(x: SomeNumber, y: Color): auto =
   #asColor(x * y[])
 template `*`*[X:SomeNumber,Y:Color](x: X, y: Y): auto =
+  #static: echo "SomeNumber * Color"
   #var tmp {.noInit.}: asColor(type(X)*type(Y)[])
   var tmp {.noInit.}: asColor(evalType(x*y[]))
+  #static: echo $type(tmp)
   mul(tmp[], x, y[])
   tmp
 template `*`*(x: Simd, y: Color2): untyped =

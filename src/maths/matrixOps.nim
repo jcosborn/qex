@@ -167,10 +167,6 @@ template makeMap2(op:untyped):untyped {.dirty.} =
       for i in fOpt(0,r.len.pred):
         op(r[i], x, y[i])
   proc `op VVV`*(r: var auto; x,y: auto) {.alwaysInline.} =
-  #template `op VVV`*(rr: typed; xx,yy: typed) =
-  #  let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
-  #  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
-  #  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
     mixin op
     assert(r.len == y.len)
     assert(r.len == x.len)
@@ -292,7 +288,7 @@ template makeMap2(op:untyped):untyped {.dirty.} =
           else:
             op(r[i,j], 0, y[i,j])
   ]#
-  proc `op MSM`*(r: var auto; x,y: auto) =
+  proc `op MSM`*(r: var auto; x,y: auto) {.alwaysInline.} =
     mixin op
     assert(r.nrows == r.ncols)
     assert(r.nrows == y.nrows)
@@ -424,9 +420,6 @@ template mulVVS*(r:typed; xx,yy:typed) =
       mul(r[i], x[i], y)
 
 proc mulVSV*(r: var auto; x,y: auto) {.alwaysInline.} =
-#template mulVSV*(r:typed; xx,yy:typed) =
-#  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
-#  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
   mixin mul
   assert(r.len == y[].len)
   #forO i, 0, r.len.pred:
@@ -494,21 +487,20 @@ proc mulMSM*(r: var auto; x,y: auto) {.alwaysInline.} =
       mul(r[i,j], x, y[i,j])
 
 proc mulVMV*(r: var auto; x,y: auto) {.alwaysInline.} =
-#proc mulVMV*(r: var auto; x,y: auto) =
-#template mulVMV*(r: typed; xx,yy: typed) =
-  #let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
-  #let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
-  #static: echo "x: ", $type(x), " ", sizeof(x)
   mixin nrows, ncols, mul, imadd
   assert(x.nrows == r.len)
   assert(x.ncols == y.len)
-  when false:
-    #forO i, 0, x.nrows.pred:
-    for i in fOpt(0,x.nrows.pred):
-      mul(r[i], x[i,0], y[0])
-      #forO j, 1, x.ncols.pred:
-      for j in fOpt(1,x.ncols.pred):
-        imadd(r[i], x[i,j], y[j])
+  when true:
+    forO i, 0, x.nrows.pred:
+    #for i in fOpt(0,x.nrows.pred):
+      #mul(r[i], x[i,0], y[0])
+      var t {.noInit.}: evalType(r[i])
+      mul(t, x[i,0], y[0])
+      forO j, 1, x.ncols.pred:
+      #for j in fOpt(1,x.ncols.pred):
+        #imadd(r[i], x[i,j], y[j])
+        imadd(t, x[i,j], y[j])
+      r[i] := t
   else:
     for i in fOpt(0,x.nrows.pred):
       mul(r[i], x[i,0], y[0])
@@ -542,9 +534,11 @@ proc mulMMM*(r: var auto; x,y: auto) {.alwaysInline.} =
   assert(r.ncols == y.ncols)
   forO i, 0, r.nrows.pred:
     forO j, 0, r.ncols.pred:
-      mul(r[i,j], x[i,0], y[0,j])
+      var t {.noInit.}: evalType(r[i,j])
+      mul(t, x[i,0], y[0,j])
       forO k, 1, y.nrows.pred:
-        imadd(r[i,j], x[i,k], y[k,j])
+        imadd(t, x[i,k], y[k,j])
+      r[i,j] = t
 
 template imaddSVV*(r:typed; xx,yy:typed) =
   mixin imadd, assign
@@ -564,20 +558,17 @@ template imaddVSV*(r: typed; xx,yy: typed) =
     forO i, 0, r.len.pred:
       imadd(r[i], x, y[i])
 
-template imaddVMV*(r: typed; xx,yy: typed) =
+#template imaddVMV*(r: typed; xx,yy: typed) =
+proc imaddVMV*(r: var auto; x,y: auto) {.alwaysInline.} =
   mixin nrows, ncols, imadd
-  block:
-    let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
-    let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
-    assert(x.nrows == r.len)
-    assert(x.ncols == y.len)
-    var t {.noinit.}: evalType(r)
-    t := r
+  assert(x.nrows == r.len)
+  assert(x.ncols == y.len)
+  for i in fOpt(0,x.nrows.pred):
+    var t {.noinit.}: evalType(r[i])
+    t := r[i]
     for j in fOpt(0,x.ncols.pred):
-      for i in fOpt(0,x.nrows.pred):
-        #imadd(r[i], x[i,j], y[j])
-        imadd(t[i], x[i,j], y[j])
-    r := t
+      imadd(t, x[i,j], y[j])
+    r[i] := t
 
 #[
 template imaddMMM*(r:typed; xx,yy:typed) =
@@ -600,8 +591,12 @@ proc imaddMMM*(r: var auto; x,y: auto) {.alwaysInline.} =
   assert(x.ncols == y.nrows)
   for i in fOpt(0,r.nrows.pred):
     for j in fOpt(0,r.ncols.pred):
+      var t {.noInit.}: evalType(r[i,j])
+      t := r[i,j]
       for k in fOpt(0,x.ncols.pred):
-        imadd(r[i,j], x[i,k], y[k,j])
+        #imadd(r[i,j], x[i,k], y[k,j])
+        imadd(t, x[i,k], y[k,j])
+      r[i,j] = t
 
 template imsubVSV*(r:typed; xx,yy:typed) =
   mixin imsub
