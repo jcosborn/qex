@@ -76,7 +76,7 @@ proc determinant*(x: auto): auto {.alwaysInline.} =
   else:
     result = determinantN(x)
 
-proc eigs3(e0,e1,e2: var auto; tr,p2,det: auto) =
+proc eigs3(e0,e1,e2: var auto; tr,p2,det: auto) {.alwaysInline.} =
   mixin sin,cos,acos
   let tr3 = (1.0/3.0)*tr
   let p23 = (1.0/3.0)*p2
@@ -306,7 +306,7 @@ proc projectUrsqrt(r: var Mat1; x: Mat2, eps = 1e-20) {.alwaysInline.} =
   rsqrtPHM(r, t)
 
 # x (x'x)^{-1/2}
-proc projectU*(r: var Mat1; x: Mat2, eps = 1e-20) =
+proc projectU*(r: var Mat1; x: Mat2, eps = 1e-20) {.inline.} =
   var t2{.noInit.}: evalType(x)
   projectUrsqrt(t2, x)
   mul(r, x, t2)

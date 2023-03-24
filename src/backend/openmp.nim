@@ -106,8 +106,8 @@ template openmpDefs(body: untyped): untyped =
     template getThreadNum: untyped {.used.} = teamNum.int * numThreads.int + threadNum.int
     template getNumThreads: untyped {.used.} = numTeams.int * numThreads.int
     {.emit:["#define nimZeroMem(b,len) memset((b),0,(len))"].}
-    inlineProcs:
-      body
+    #inlineProcs:
+    body
     {.emit:["#undef nimZeroMem"].}
 
 proc prepareVars(n:NimNode):seq[NimNode] =
@@ -134,7 +134,7 @@ proc prepareVars(n:NimNode):seq[NimNode] =
     for i in 0..<n.len:
       #echo "### ",n[i].lisprepr
       case n[i].kind
-      of {nnkVarSection,nnkLetSection}:
+      of {nnkVarSection,nnkLetSection,nnkConstSection}:
         for cc in n[i]:
           for c in 0..cc.len-2:
             ignoreStack[^1].add cc[c]
@@ -150,6 +150,7 @@ proc prepareVars(n:NimNode):seq[NimNode] =
           if newid:
             ignoreStack[0].add n[i][0]
       of {nnkSym, nnkIdent}:
+        if n.kind == nnkForStmt and i == 0: ignoreStack[^1].add n[0]
         if n.kind == nnkDotExpr and i > 0: continue
         var ignore = false
         for cc in ignoreStack:
@@ -262,7 +263,7 @@ macro onGpu*(body: untyped): untyped =
     cpuFinalize = genCpuFinalize v
     isDevicePtrs = declarePtrString v
   result = getast(target(cpuPrepare, gpuPrepare, cpuFinalize, isDevicePtrs, body))
-  #echo result.repr
+  echo result.repr
 
 # XXX fix the following
 template onGpu*(totalNumThreads, body: untyped): untyped = onGpu(body)
