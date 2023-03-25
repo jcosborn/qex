@@ -169,14 +169,14 @@ template stagDP*(sd:StaggeredD; r:Field; g:openArray[Field2];
                  x:Field3; expFlops:int; exp:untyped) =
   tic()
   for mu in 0..<g.len:
-    optimizeAst:
+    XoptimizeAst:
       startSB(sd.sf[mu], x[ix])
   toc("startShiftF")
   for mu in 0..<g.len:
-    optimizeAst:
+    XoptimizeAst:
       startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
   toc("startShiftB")
-  optimizeAst:
+  XoptimizeAst:
     for ir in r[sd.subset]:
       var rir{.inject,noInit.}:type(load1(r[ir]))
       exp
@@ -189,14 +189,14 @@ template stagDP*(sd:StaggeredD; r:Field; g:openArray[Field2];
   for mu in 0..<g.len:
     template f(ir,it: untyped): untyped =
       imadd(r[ir], g[mu][ir], it)
-    optimizeAst:
+    XoptimizeAst:
       #boundarySB(sd.sf[mu], imadd(r[ir], g[mu][ir], it))
       boundarySB2(sd.sf[mu], f)
   toc("boundaryF")
   for mu in 0..<g.len:
     template f(ir,it: untyped): untyped =
       isub(r[ir], it)
-    optimizeAst:
+    XoptimizeAst:
       #boundarySB(sd.sb[mu], isub(r[ir], it))
       boundarySB2(sd.sb[mu], f)
   #threadBarrier()
@@ -245,15 +245,15 @@ template stagDM*(sd:StaggeredD; r:Field; g:openArray[Field2];
                  x:Field3; expFlops:int; exp:untyped) =
   tic()
   for mu in 0..<g.len:
-    optimizeAst:
+    XoptimizeAst:
       startSB(sd.sf[mu], x[ix])
   toc("startShiftF")
   for mu in 0..<g.len:
-    optimizeAst:
+    XoptimizeAst:
       startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
   toc("startShiftB")
   for irr in r[sd.subset]:
-    optimizeAst:
+    XoptimizeAst:
       let ir{.inject.} = irr
       var rir{.inject,noInit.}:type(load1(r[ir]))
       exp
@@ -265,14 +265,14 @@ template stagDM*(sd:StaggeredD; r:Field; g:openArray[Field2];
   for mu in 0..<g.len:
     template f(ir2,it: untyped): untyped =
       imsub(r[ir2], g[mu][ir2], it)
-    optimizeAst:
+    XoptimizeAst:
       #boundarySB(sd.sf[mu], imsub(r[ir], g[mu][ir], it))
       boundarySB2(sd.sf[mu], f)
   toc("boundaryF")
   for mu in 0..<g.len:
     template f(ir2,it: untyped): untyped =
       iadd(r[ir2], it)
-    optimizeAst:
+    XoptimizeAst:
       #boundarySB(sd.sb[mu], iadd(r[ir], it))
       boundarySB2(sd.sb[mu], f)
   #threadBarrier()

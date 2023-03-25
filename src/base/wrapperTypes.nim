@@ -227,6 +227,7 @@ template makeWrapperTypeX(wf:typed, name,fName,asName,tasName: untyped) =
         #static: echo "wrapper []"
         #debugType: x
         derefPtr flattenCallArgs(derefXX, x)
+        #derefPtr derefXX(x)
     else:
       template `[]`*(x: name): untyped =
         #static: echo "wrapper []"
