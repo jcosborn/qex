@@ -110,6 +110,25 @@ template openmpDefs(body: untyped): untyped =
     body
     {.emit:["#undef nimZeroMem"].}
 
+template pforImpl(i,a,b,body) =
+  let d = 1+b-a
+  let tid = getThreadNum()
+  let nid = getNumThreads()
+  let pi0 = a + (d*tid) div nid
+  let pi1 = a + (d*(tid+1)) div nid
+  for i in pi0 ..< pi1:
+    body
+macro pfor*(loop: ForLoopStmt) =
+  #echo loop.treerepr
+  let a = loop[1][1]
+  let b = loop[1][2]
+  result = getAst(pforImpl(loop[0],a,b,loop[2]))
+  #echo result.repr
+  #result = newTree(nnkForStmt)
+  #result.add loop[0]
+  #result.add loop[1]
+  #result.add loop[2]
+
 proc prepareVars(n:NimNode):seq[NimNode] =
   # get a list of vars and new symbols to replace them, using let binding for now XXX
   #     <- [(id, varsym, letptrsym), ...]
@@ -263,7 +282,7 @@ macro onGpu*(body: untyped): untyped =
     cpuFinalize = genCpuFinalize v
     isDevicePtrs = declarePtrString v
   result = getast(target(cpuPrepare, gpuPrepare, cpuFinalize, isDevicePtrs, body))
-  echo result.repr
+  #echo result.repr
 
 # XXX fix the following
 template onGpu*(totalNumThreads, body: untyped): untyped = onGpu(body)
