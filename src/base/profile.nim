@@ -1,9 +1,9 @@
 import threading
 export threading
-import comms/comms
-import stdUtils
+import comms/comms, stdUtils, base/basicOps
 import os, strutils, sequtils, std/monotimes
 export monotimes
+getOptimPragmas()
 
 const noTicToc {.boolDefine.} = false
 
@@ -60,7 +60,7 @@ type
 var
   rtiListLength:int32 = 0
   rtiListLengthMax:int32 = 0
-template listChangeLen[T](n:int32):untyped =
+template listChangeLen[T](n:int32) =
   when T is RTInfoObj:
     rtiListLength += n
     if n>0 and rtiListLength>rtiListLengthMax:
@@ -201,7 +201,7 @@ template identical(x,y:RTInfoObj):bool =
   x.tic == y.tic and x.prev == y.prev and x.curr == y.curr
 
 proc combineList(acc:var RTInfoObjList, xs:RTInfoObjList)  # forward declaration
-template combine(acc:var RTInfoObjList, x:var RTInfoObj):untyped =
+template combine(acc:var RTInfoObjList, x:var RTInfoObj) =
   if isnottic(x):
     let
       nsec = x.nsec
@@ -283,6 +283,31 @@ proc recordTic(this:CodePoint):RTInfo =
 proc echoTic*(s: string, ii: II) =
   echo "tic ",s,ii
 
+proc ticSet(localTimer:var TicType, prevRTI:var RTInfo, restartTimer:var bool,
+            thisCode:var CodePoint, s:string,ii:II, localCodePtr:auto) {.alwaysInline.} =
+  #echo "#### begin tic ",ii
+  if unlikely VerboseTimer: echoTic(s,ii)
+  if not timersFrozen():
+    let theTime = getTics()
+    when localCodePtr isnot bool:
+      for c in items(localCodePtr[]):
+        if cpHeap[c.int].name == s:
+          thisCode = c
+          break
+    if thisCode.isNil:
+      thisCode = newCodePoint(ii, s)
+      when localCodePtr isnot bool:
+        localCodePtr[].add thisCode
+    prevRTI = recordTic(thisCode)
+    if toDropTimer(thisCode):
+      freezeTimers()
+      restartTimer = true
+    localTimer = getTics()
+    rtiStack[prevRTI.int].overhead = nsec(localTimer-theTime)
+  else:
+    localTimer = getTics()
+  #echo "#### end tic ",ii
+
 template ticI(n = -1; s:SString = "") =
   bind items
   const
@@ -299,26 +324,32 @@ template ticI(n = -1; s:SString = "") =
       localCode {.global.} = newList[CodePoint]()
       thisCode = CodePoint(-1)
   if threadNum==0:
-    #echo "#### begin tic ",ii
-    if unlikely VerboseTimer: echoTic(s,ii)
-    if not timersFrozen():
-      let theTime = getTics()
-      when not cname:
-        for c in items(localCode):
-          if cpHeap[c.int].name == s:
-            thisCode = c
-            break
-      if thisCode.isNil:
-        thisCode = newCodePoint(ii, s)
+    when false:
+      #echo "#### begin tic ",ii
+      if unlikely VerboseTimer: echoTic(s,ii)
+      if not timersFrozen():
+        let theTime = getTics()
         when not cname:
-          localCode.add thisCode
-      prevRTI = recordTic(thisCode)
-      if toDropTimer(thisCode):
-        freezeTimers()
-        restartTimer = true
-      localTimer = getTics()
-      rtiStack[prevRTI.int].overhead = nsec(localTimer-theTime)
-    #echo "#### end tic ",ii
+          for c in items(localCode):
+            if cpHeap[c.int].name == s:
+              thisCode = c
+              break
+        if thisCode.isNil:
+          thisCode = newCodePoint(ii, s)
+          when not cname:
+            localCode.add thisCode
+        prevRTI = recordTic(thisCode)
+        if toDropTimer(thisCode):
+          freezeTimers()
+          restartTimer = true
+        localTimer = getTics()
+        rtiStack[prevRTI.int].overhead = nsec(localTimer-theTime)
+      #echo "#### end tic ",ii
+    else:
+      when cname:
+        ticSet(localTimer,prevRTI,restartTimer,thisCode,s,ii,false)
+      else:
+        ticSet(localTimer,prevRTI,restartTimer,thisCode,s,ii,addr localCode)
   let
     localTimerStart {.inject, used.} = localTimer
     localTic {.inject, used.} = prevRTI
@@ -335,6 +366,52 @@ else:
 proc echoToc*(s: string, ii: II) =
   echo "toc ",s,ii
 
+proc tocSet(localTimer:var TicType, prevRTI:var RTInfo, restartTimer:var bool,
+            thisCode:var CodePoint, f:SomeNUmber, s:string, ii:II,
+            localTic:RTInfo, localCodePtr:auto) {.alwaysInline.} =
+  #echo "==== begin toc ",s," ",ii
+  #echo "     rtiStack: ",indent($rtiStack,5)
+  #echo "     cpHeap: ",indent($cpHeap,5)
+  if unlikely VerboseTimer: echoToc(s,ii)
+  if prevRTI.int32 >= 0:
+    if restartTimer:
+      thawTimers()
+      restartTimer = false
+    if not timersFrozen():
+      let theTime = getTics()
+      when localCodePtr isnot bool:
+        for c in items(localCodePtr[]):
+          if cpHeap[c.int].name == s:
+            thisCode = c
+            break
+      if thisCode.isNil:
+        thisCode = newCodePoint(ii, s)
+        when localCodePtr isnot bool:
+          localCodePtr[].add thisCode
+      let
+        ns = theTime-localTimer
+        thisRTI = record(localTic, prevRTI, thisCode, ns, float(f))
+      var oh = rtiStack[thisRTI.int].childrenOverhead
+      let c = rtiStack[thisRTI.int].children
+      for i in 0..<c.len:
+        if toDropTimer(c[i].prev):
+          oh -= c[i].childrenOverhead
+      if oh.float / ns.float > DropWasteTimerRatio:
+        #if ii.filename != "cg.nim":
+        #  echo "drop timer: ", oh.float, "/", ns.float, "=", oh.float / ns.float
+        #  echo "  ", prevRTI.int, " ", thisRTI.int, " ", ii, " ", s
+        # Signal stop if the overhead is too large.
+        dropTimer(prevRTI)
+      if toDropTimer(thisCode):
+        freezeTimers()
+        restartTimer = true
+      localTimer = getTics()
+      rtiStack[thisRTI.int].overhead = nsec(localTimer-theTime)
+      prevRTI = thisRTI
+    else:
+      localTimer = getTics()
+  #echo "==== end toc ",s," ",ii
+
 template tocI(f: SomeNumber; s:SString = ""; n = -1) =
   bind items
   const
@@ -347,43 +424,49 @@ template tocI(f: SomeNumber; s:SString = ""; n = -1) =
       localCode {.global.} = newList[CodePoint]()
       thisCode = CodePoint(-1)
   if threadNum==0:
-    #echo "==== begin toc ",s," ",ii
-    #echo "     rtiStack: ",indent($rtiStack,5)
-    #echo "     cpHeap: ",indent($cpHeap,5)
-    if unlikely VerboseTimer: echoToc(s,ii)
-    if prevRTI.int32 >= 0:
-      if restartTimer:
-        thawTimers()
-        restartTimer = false
-      if not timersFrozen():
-        let theTime = getTics()
-        when not cname:
-          for c in items(localCode):
-            if cpHeap[c.int].name == s:
-              thisCode = c
-              break
-        if thisCode.isNil:
-          thisCode = newCodePoint(ii, s)
+    when false:
+      #echo "==== begin toc ",s," ",ii
+      #echo "     rtiStack: ",indent($rtiStack,5)
+      #echo "     cpHeap: ",indent($cpHeap,5)
+      if unlikely VerboseTimer: echoToc(s,ii)
+      if prevRTI.int32 >= 0:
+        if restartTimer:
+          thawTimers()
+          restartTimer = false
+        if not timersFrozen():
+          let theTime = getTics()
           when not cname:
-            localCode.add thisCode
-        let
-          ns = theTime-localTimer
-          thisRTI = record(localTic, prevRTI, thisCode, ns, float(f))
-        var oh = rtiStack[thisRTI.int].childrenOverhead
-        let c = rtiStack[thisRTI.int].children
-        for i in 0..<c.len:
-          if toDropTimer(c[i].prev):
-            oh -= c[i].childrenOverhead
-        if oh.float / ns.float > DropWasteTimerRatio:
-          # Signal stop if the overhead is too large.
-          dropTimer(prevRTI)
-        if toDropTimer(thisCode):
-          freezeTimers()
-          restartTimer = true
-        localTimer = getTics()
-        rtiStack[thisRTI.int].overhead = nsec(localTimer-theTime)
-        prevRTI = thisRTI
-    #echo "==== end toc ",s," ",ii
+            for c in items(localCode):
+              if cpHeap[c.int].name == s:
+                thisCode = c
+                break
+          if thisCode.isNil:
+            thisCode = newCodePoint(ii, s)
+            when not cname:
+              localCode.add thisCode
+          let
+            ns = theTime-localTimer
+            thisRTI = record(localTic, prevRTI, thisCode, ns, float(f))
+          var oh = rtiStack[thisRTI.int].childrenOverhead
+          let c = rtiStack[thisRTI.int].children
+          for i in 0..<c.len:
+            if toDropTimer(c[i].prev):
+              oh -= c[i].childrenOverhead
+          if oh.float / ns.float > DropWasteTimerRatio:
+            # Signal stop if the overhead is too large.
+            dropTimer(prevRTI)
+          if toDropTimer(thisCode):
+            freezeTimers()
+            restartTimer = true
+          localTimer = getTics()
+          rtiStack[thisRTI.int].overhead = nsec(localTimer-theTime)
+          prevRTI = thisRTI
+      #echo "==== end toc ",s," ",ii
+    else:
+      when cname:
+        tocSet(localTimer,prevRTI,restartTimer,thisCode,f,s,ii,localTic,false)
+      else:
+        tocSet(localTimer,prevRTI,restartTimer,thisCode,f,s,ii,localTic,addr localCode)
 
 when noTicToc:
   template toc*() = discard
