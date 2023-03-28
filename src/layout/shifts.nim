@@ -114,13 +114,18 @@ template localSB*(s: ShiftB; i: int; e1,e2: untyped) {.dirty.} =
     let k_localSB = s.si.sq.pidx[i]
     if k_localSB >= 0:
       let ix = k_localSB
-      let it = e2
+      #let it = e2
+      #let itx = unsafeAddr e2
+      #template it:auto = itx[]
+      template it:auto = e2
       e1
     elif k_localSB + 2 <= 0:
       let ix = -(k_localSB + 2)
-      let t_localSB = e2
-      var it{.noInit.}: evalType(t_localSB)
-      perm(it, s.si.perm, t_localSB)
+      #let t_localSB = e2
+      #var it{.noInit.}: evalType(t_localSB)
+      var it{.noInit.}: evalType(e2)
+      #perm(it, s.si.perm, t_localSB)
+      perm(it, s.si.perm, e2)
       e1
 
 template localSB2*(s: ShiftB; i: int; e1x,e2x: untyped) =

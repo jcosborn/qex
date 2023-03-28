@@ -229,15 +229,14 @@ template basicDefs(T,F,N,P,S:untyped) {.dirty.} =
   #  let t = toRef r
   #  #static: echo "iadd: ", $t.type
   #  add(t[],t[],x)
-  proc iadd*(r: var T; x:T) {.alwaysInline.} =
-    add(r,r,x)
-  template isub*(r: T; x:T) = sub(r,r,x)
-  template imul*(r: T; x:T) = mul(r,r,x)
-  template idiv*(r: T; x:T) = divd(r,r,x)
-  template imadd*(r: T; x,y: T) = iadd(r,mul(x,y))
-  template imsub*(r: T; x,y:T) = isub(r,mul(x,y))
-  template madd*(r: T; x,y,z:T) = add(r,mul(x,y),z)
-  template msub*(r: T; x,y,z:T) = sub(r,mul(x,y),z)
+  proc iadd*(r: var T; x:T) {.alwaysInline.} = add(r,r,x)
+  proc isub*(r: T; x:T) {.alwaysInline.} = sub(r,r,x)
+  proc imul*(r: T; x:T) {.alwaysInline.} = mul(r,r,x)
+  proc idiv*(r: T; x:T) {.alwaysInline.} = divd(r,r,x)
+  proc imadd*(r: T; x,y: T) {.alwaysInline.} = iadd(r,mul(x,y))
+  proc imsub*(r: T; x,y:T) {.alwaysInline.} = isub(r,mul(x,y))
+  proc madd*(r: T; x,y,z:T) {.alwaysInline.} = add(r,mul(x,y),z)
+  proc msub*(r: T; x,y,z:T) {.alwaysInline.} = sub(r,mul(x,y),z)
 
   unaryMixedVar(T, iadd, iadd)
   unaryMixedVar(T, isub, isub)
@@ -336,7 +335,7 @@ proc simdReduce*(x:m256d):float64 {.alwaysInline,noInit.} = simdReduce(result, x
 proc simdReduce*(x:m512):float32 {.alwaysInline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m512d):float64 {.alwaysInline,noInit.} = simdReduce(result, x)
 
-template simdSum*(x: SimdX86): untyped = simdReduce(x)
+template simdSum*(x: SimdX86): auto = simdReduce(x)
 template simdSum*(r:var SomeNumber; x: SimdX86) = simdReduce(r, x)
 
 
@@ -350,7 +349,7 @@ proc simdMaxReduce*(x: SimdX86): auto {.alwaysInline,noInit.} =
   simdMaxReduce(r, x)
   r
 template simdMax*(r: var SomeNumber; x: SimdX86) = simdMaxReduce(r, x)
-template simdMax*(x: SimdX86): untyped = simdMaxReduce(x)
+template simdMax*(x: SimdX86): auto = simdMaxReduce(x)
 
 proc simdMinReduce*(r: var SomeNumber; x: SimdX86) {.alwaysInline.} =
   r = x[0]
@@ -362,7 +361,7 @@ proc simdMinReduce*(x: SimdX86): auto {.alwaysInline,noInit.} =
   simdMinReduce(r, x)
   r
 template simdMin*(r: var SomeNumber; x: SimdX86) = simdMinReduce(r, x)
-template simdMin*(x: SimdX86): untyped = simdMinReduce(x)
+template simdMin*(x: SimdX86): auto = simdMinReduce(x)
 
 
 # include perm, pack and blend

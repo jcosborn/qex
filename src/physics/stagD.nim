@@ -169,11 +169,11 @@ template stagDP*(sd:StaggeredD; r:Field; g:openArray[Field2];
                  x:Field3; expFlops:int; exp:untyped) =
   tic()
   for mu in 0..<g.len:
-    optimizeAst:
+    XoptimizeAst:
       startSB(sd.sf[mu], x[ix])
   toc("startShiftF")
   for mu in 0..<g.len:
-    optimizeAst:
+    XoptimizeAst:
       startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
   toc("startShiftB")
   #optimizeAst:
@@ -182,7 +182,8 @@ template stagDP*(sd:StaggeredD; r:Field; g:openArray[Field2];
       var rir{.inject,noInit.}:evalType(load1(r[ir]))
       exp
       for mu in 0..<g.len:
-        localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), load1(x[ix]))
+        #localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), load1(x[ix]))
+        localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), x[ix])
       for mu in 0..<g.len:
         localSB(sd.sb[mu], ir, isub(rir, it), g[mu][ix].adj*x[ix])
       assign(r[ir], rir)
@@ -190,14 +191,14 @@ template stagDP*(sd:StaggeredD; r:Field; g:openArray[Field2];
   for mu in 0..<g.len:
     template f(ir,it: untyped): untyped =
       imadd(r[ir], g[mu][ir], it)
-    optimizeAst:
+    XoptimizeAst:
       #boundarySB(sd.sf[mu], imadd(r[ir], g[mu][ir], it))
       boundarySB2(sd.sf[mu], f)
   toc("boundaryF")
   for mu in 0..<g.len:
     template f(ir,it: untyped): untyped =
       isub(r[ir], it)
-    optimizeAst:
+    XoptimizeAst:
       #boundarySB(sd.sb[mu], isub(r[ir], it))
       boundarySB2(sd.sb[mu], f)
   #threadBarrier()
