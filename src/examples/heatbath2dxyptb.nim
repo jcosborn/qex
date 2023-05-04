@@ -407,12 +407,12 @@ proc phaseDiffB(del:var PhaseDiff,g:any):auto =
     cosd = cast[ptr UnCheckedArray[float]](del.cosd[0].addr)
     sind = cast[ptr UnCheckedArray[float]](del.sind[0].addr)
   threads:
-    var d,t,s:typeof(g{0}[][])
+    var d,t,s: evalType(g{0})
     discard f[twistDir] ^* g
     threadBarrier()
     for i in g.sites:
       if i.isTwistBoundaryOf g:
-        d = f[twistDir].field{i}[][] - g{i}[][]
+        d = f[twistDir].field{i} - g{i}
         t += cos(d)
         s += sin(d)
     t.threadRankSum
@@ -503,8 +503,8 @@ proc evolve(H:HeatBath, g,b:any, bb:any, d:var float, gc:any, r:any, R:var RngMi
         threadBarrier()
         for i in g[s].sites:
           let
-            yr = H.fr{i}[][]
-            yi = H.fi{i}[][]
+            yr = eval H.fr{i}
+            yi = eval H.fi{i}
             lambda = beta*hypot(yi, yr)
             phi = arctan2(yi, yr)
           g{i} := expCosPlusCosN(r{i}, lambda, phi, sigma)
@@ -533,11 +533,11 @@ proc evolve(H:HeatBath, g,b:any, bb:any, d:var float, gc:any, r:any, R:var RngMi
         threadBarrier()
         for i in g[s].sites:
           let
-            yr = H.fr{i}[][]
-            yi = H.fi{i}[][]
+            yr = eval H.fr{i}
+            yi = eval H.fi{i}
             lambda = beta*hypot(yi, yr)
             phi = arctan2(yi, yr)
-          g{i} := pickRootCosCosN(r{i}, g{i}[][], phi, sigma/lambda)
+          g{i} := pickRootCosCosN(r{i}, eval g{i}, phi, sigma/lambda)
     toc("flip")
   if twistJump:
     tic()

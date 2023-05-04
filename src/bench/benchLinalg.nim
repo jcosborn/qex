@@ -77,6 +77,8 @@ template bench(fps,bps,eqn: untyped) =
   bench(fps,bps,0,eqn)
 
 proc test(lat:auto) =
+  let maxl = intParam("maxl",16)
+  if lat[0] > maxl: return
   var lo = newLayout(lat)
   template newCV: untyped = lo.ColorVector()
   template newCM: untyped = lo.ColorMatrix()
@@ -199,6 +201,7 @@ echo "rank ", myRank, "/", nRanks
 threads:
   echo "thread ", threadNum, "/", numThreads
 freezeTimers()
+
 #checkMem()
 test([4,4,4,4])
 #test([4,4,4,8])
@@ -212,12 +215,14 @@ test([12,12,12,12])
 #test([16,16,16,8])
 test([16,16,16,16])
 #test([16,16,16,32])
+test([20,20,20,20])
 #test([24,24,24,12])
-#test([24,24,24,24])
+test([24,24,24,24])
 #test([24,24,24,48])
 #test([32,32,32,16])
-#test([32,32,32,32])
+test([32,32,32,32])
 #test([32,32,32,64])
+
 #checkMem()
 #echoTimers()
 #echoTimersRaw()

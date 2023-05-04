@@ -116,6 +116,10 @@ template high*(s:alignedMem):untyped = s.len-1
 template `[]`*[T](s: alignedMem[T], i:SomeInteger):untyped = s.data[i]
 template `[]=`*[T](s:var alignedMem[T], i:SomeInteger, v:typed) =
   s.data[i] = v
+proc `:=`*(r: alignedMem, x: auto) =
+  for i in 0..<r.len:
+    r[i] := x
+
 
 when isMainModule:
   template stats =

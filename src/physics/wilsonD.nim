@@ -126,19 +126,18 @@ template wilsonDM*(sd: WilsonD; r: Field; g: openArray[Field2];
   static:
     echo " startShiftB: ", staticExec("date")
   toc("startShiftB")
-  optimizeAstX:
-    for ir{.inject.} in r[sd.subset]:
-      var rir{.inject,noInit.}: type(load1(r[ir]))
-      exp
-      localSB(sd.sf[0], ir, rir-=sprecon1m(g[0][ir]*it), spproj1m(x[ix]))
-      localSB(sd.sf[1], ir, rir-=sprecon2m(g[1][ir]*it), spproj2m(x[ix]))
-      localSB(sd.sf[2], ir, rir-=sprecon3m(g[2][ir]*it), spproj3m(x[ix]))
-      localSB(sd.sf[3], ir, rir-=sprecon4m(g[3][ir]*it), spproj4m(x[ix]))
-      localSB(sd.sb[0], ir, rir-=sprecon1p(it), g[0][ix].adj*spproj1p(x[ix]))
-      localSB(sd.sb[1], ir, rir-=sprecon2p(it), g[1][ix].adj*spproj2p(x[ix]))
-      localSB(sd.sb[2], ir, rir-=sprecon3p(it), g[2][ix].adj*spproj3p(x[ix]))
-      localSB(sd.sb[3], ir, rir-=sprecon4p(it), g[3][ix].adj*spproj4p(x[ix]))
-      assign(r[ir], rir)
+  for ir{.inject.} in r[sd.subset]:
+    var rir{.inject,noInit.}: evalType(load1(r[ir]))
+    exp
+    localSB(sd.sf[0], ir, rir-=sprecon1m(g[0][ir]*it), spproj1m(x[ix]))
+    localSB(sd.sf[1], ir, rir-=sprecon2m(g[1][ir]*it), spproj2m(x[ix]))
+    localSB(sd.sf[2], ir, rir-=sprecon3m(g[2][ir]*it), spproj3m(x[ix]))
+    localSB(sd.sf[3], ir, rir-=sprecon4m(g[3][ir]*it), spproj4m(x[ix]))
+    localSB(sd.sb[0], ir, rir-=sprecon1p(it), g[0][ix].adj*spproj1p(x[ix]))
+    localSB(sd.sb[1], ir, rir-=sprecon2p(it), g[1][ix].adj*spproj2p(x[ix]))
+    localSB(sd.sb[2], ir, rir-=sprecon3p(it), g[2][ix].adj*spproj3p(x[ix]))
+    localSB(sd.sb[3], ir, rir-=sprecon4p(it), g[3][ix].adj*spproj4p(x[ix]))
+    assign(r[ir], rir)
   static:
     echo " local: ", staticExec("date")
   toc("local", flops=(expFlops+2*g.len*(12+2*66+24))*sd.subset.len)
@@ -379,7 +378,7 @@ proc solveEO*(s: Wilson; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
     s.eoReconstruct(r, x, m)
   let t1 = epochTime()
   let secs = t1-t0
-  let flops = (2*2*s.g.len*(12+2*66+24)+2*60)*r.l.nEven*sp.finalIterations
+  let flops = (2*2*2*s.g.len*(12+2*66+24)+2*60)*r.l.nEven*sp.finalIterations
   sp0.finalIterations = sp.finalIterations
   sp0.seconds = secs
   echo "op time: ", top

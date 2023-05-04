@@ -46,7 +46,9 @@ threads:
   s.D(v2, v1, m)
   threadBarrier()
   #echoAll v2
-  echo v2.norm2
+  let t = v2.norm2
+  echo t
+  doAssert(not t.isNan)
 #echo v2
 s.solve(v2, v1, m, 1e-8)
 resetTimers()

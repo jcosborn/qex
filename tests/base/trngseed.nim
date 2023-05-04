@@ -1,22 +1,25 @@
-import qex, comms/qmp
+import qex
 import testutils
 import strutils
 
-proc echoRankS(xs: varargs[string,`$`]) =
+proc echoRankS(c: Comm, xs: varargs[string,`$`]) =
   for i in 0..<nRanks:
-    QMP_barrier()
+    c.barrier
     if myRank == i:
       echoRank xs.join
-  QMP_barrier()
+  c.barrier
 
 qexInit()
+var c = getDefaultComm()
 echo "rank ",myRank," / ",nRanks
 echo "thread ",threadNum," / ",numThreads
 let seed:uint64 = 7_005_003_002_001_000_000u64 + myRank.uint64
-echoRankS "seed: ",seed
+c.echoRankS "seed: ",seed
 
 var
-  lo = newLayout([8,8,8,8])
+  lat = [8,8,8,8]
+  #lat = latticeFromLocalLattice([8,8,8,8], nRanks)
+  lo = newLayout(lat)
   p = lo.newGauge
   r = lo.newRNGField(RngMilc6, seed)
   R:RngMilc6
@@ -33,32 +36,16 @@ threads:
 echo "p2: ",p2
 
 var u = R.uniform
-echoRankS "urand: ",u
+c.echoRankS "urand: ",u
 
 var us = newseq[typeof u](nRanks)
 
-if nRanks > 1:
-  var
-    uh:QMP_msghandle_t
-    um:QMP_msgmem_t
-    mm = newseq[QMP_msgmem_t](nRanks-1)
-  if myRank == 0:
-    var mh = newseq[QMP_msghandle_t](nRanks-1)
-    for i in 1..<nRanks:
-      mm[i-1] = QMP_declare_msgmem(us[i].addr, sizeof(u).csize_t)
-      mh[i-1] = QMP_declare_receive_from(mm[i-1], i.cint, 0)
-    uh = QMP_declare_multiple(mh[0].addr, cint(nRanks-1))
-  else:
-    um = QMP_declare_msgmem(u.addr, sizeof(u).csize_t)
-    uh = QMP_declare_send_to(um, 0, 0)
-  discard QMP_start(uh)
-  discard QMP_wait(uh)
-  QMP_free_msghandle(uh)
-  if myRank == 0:
-    for i in 0..<nRanks-1:
-      QMP_free_msgmem(mm[i])
-  else:
-    QMP_free_msgmem(um)
+if myRank == 0:
+  for i in 1..<nRanks:
+    c.pushRecv i, us[i]
+else:
+  c.pushSend 0, u
+c.waitAll
 
 if myRank == 0:
   us[0] = u

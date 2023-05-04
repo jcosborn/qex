@@ -81,3 +81,15 @@ liftBinaryInplace(`:=`)
 liftBinaryInplace(assign)
 liftBinaryInplace(`+=`)
 liftBinaryInplace(`*=`)
+
+template f3(fn: untyped) =
+  template fn*[R,X:SomeNumber,Y:AsNumber](r: R, x: X, y: Y) =
+    mixin fn
+    fn(r, x, eval(y))
+  template fn*[R,Y:SomeNumber,X:AsNumber](r: R, x: X, y: Y) =
+    mixin fn
+    fn(r, eval(x), y)
+
+f3(mul)
+f3(imadd)
+f3(imsub)

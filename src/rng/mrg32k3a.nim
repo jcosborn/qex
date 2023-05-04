@@ -77,6 +77,7 @@ when a1sq[76]!=[[82758667u32, 1871391091u32, 4127413238u32], [3672831523u32, 691
 when a2sq[76]!=[[1511326704u32, 3759209742u32, 1610795712u32], [4292754251u32, 1511326704u32, 3889917532u32], [3859662829u32, 4292754251u32, 3708466080u32]]:
   {.error:"a2sq[76] wrong!".}
 
+<<<<<<< HEAD
 template isWrapper*(x: MRG32k3a): untyped = false
 template numberType*(x: MRG32k3a): typedesc = uint32
 template numberType*(x: typedesc[MRG32k3a]): typedesc = uint32
@@ -90,6 +91,16 @@ template `:=`*(x: MRG32k3a, y: Indexed) =
 template `[]`*(x: MRG32k3a, y: Simd): untyped = x
 template `[]=`*(x: MRG32k3a, y: Simd, z: typed) =
   x := z
+=======
+#template maxInt*(x: MRG32k3a): int = int 4294967086
+template maxInt*(x: typedesc[MRG32k3a]): int = int 4294967086
+#template numInts*(x: MRG32k3a): int = 4294967087
+template numInts*(x: typedesc[MRG32k3a]): int = int 4294967087
+
+template isWrapper*(x: MRG32k3a): bool = false
+template isWrapper*(x: typedesc[MRG32k3a]): bool = false
+template has*(x: typedesc[MRG32k3a], y: typedesc): bool = y is MRG32k3a
+>>>>>>> upstream/devel
 
 proc `$`*(x:MRG32k3a):string =
   "MRG32k3a(" & $x.s1 & " " & $x.s2 & ")"
@@ -124,17 +135,82 @@ proc seedX(prn:var MRG32k3a, seed,subsequence:uint64) =
     prn.s2[2] = defaultSEED
   prn.skip(subsequence, subsequenceBase)
 
-proc seedIndep*(prn: var MRG32k3a; sed,index: auto) {.inline.} =
+proc seedIndep*(prn: var MRG32k3a; sed,index: auto) =
   seedX(prn, sed.uint64, index.uint64)
-proc seed*(prn: var MRG32k3a; sed,index: auto) {.inline.} =
+proc seed*(prn: var MRG32k3a; sed,index: auto) =
   ## The seed `sed` is broadcasted from rank 0.
   ## For independent seeding, use `seedIndep`.
   var ss = sed
   defaultComm.broadcast(ss.addr, sizeof(ss))
   seedIndep(prn, ss, index)
 
+<<<<<<< HEAD
 proc uniform*(prn:var MRG32k3a):float =
   ## Uniform random numbers from 0 to 1, excluding 0 and 1.
+=======
+proc next0(prn: var MRG32k3a): float {.inline.} =
+  ## Return random integer uniform on [1,m1]
+  var p1,p2:float
+  p1 = a12 * prn.s1[1].float - a13n * prn.s1[0].float
+  p1 = p1 mod m1
+  if p1<0.0:
+    p1 += m1
+  prn.s1[0] = prn.s1[1]
+  prn.s1[1] = prn.s1[2]
+  prn.s1[2] = p1.uint32
+
+  p2 = a21 * prn.s2[2].float - a23n * prn.s2[0].float
+  p2 = p2 mod m2
+  if p2<0.0:
+    p2 += m2
+  prn.s2[0] = prn.s2[1]
+  prn.s2[1] = prn.s2[2]
+  prn.s2[2] = p2.uint32
+
+  if p1<=p2:
+    result = p1 - p2 + m1
+  else:
+    result = p1 - p2
+
+proc next(prn: var MRG32k3a): int {.inline.} =
+  ## Return random integer uniform on [1,m1]
+  const
+    a12i = int a12
+    a13ni = int a13n
+    a21i = int a21
+    a23ni = int a23n
+    m1i = int m1
+    m2i = int m2
+  var p1,p2: int
+  p1 = a12i * prn.s1[1].int - a13ni * prn.s1[0].int
+  p1 = p1 mod m1i
+  if p1<0:
+    p1 += m1i
+  prn.s1[0] = prn.s1[1]
+  prn.s1[1] = prn.s1[2]
+  prn.s1[2] = p1.uint32
+
+  p2 = a21i * prn.s2[2].int - a23ni * prn.s2[0].int
+  p2 = p2 mod m2i
+  if p2<0:
+    p2 += m2i
+  prn.s2[0] = prn.s2[1]
+  prn.s2[1] = prn.s2[2]
+  prn.s2[2] = p2.uint32
+
+  if p1<=p2:
+    result = p1 - p2 + m1i
+  else:
+    result = p1 - p2
+
+proc integer*(prn: var MRG32k3a): int =
+  ## Return random integer from 0 to maxInt
+  result = int(prn.next) - 1
+
+#[
+proc uniform*(prn:var MRG32k3a): float =
+  ## Return random number uniform on (0,1)
+>>>>>>> upstream/devel
   var p1,p2:float
   p1 = a12 * prn.s1[1].float - a13n * prn.s1[0].float
   p1 = p1 mod m1
@@ -156,12 +232,19 @@ proc uniform*(prn:var MRG32k3a):float =
     result = (p1 - p2 + m1) * norm
   else:
     result = (p1 - p2) * norm
+]#
+proc uniform*(prn: var MRG32k3a): float =
+  ## Return random number uniform on (0,1)
+  result = norm * prn.next.float
 
 proc gaussian*(prn: var MRG32k3a): float =
   ## Gaussian normal deviate
   ## Probability distribution exp( -x*x/2 ), so < x^2 > = 1
+<<<<<<< HEAD
   const TINY = 9.999999999999999e-308
   # uniform excludes 0 and 1
+=======
+>>>>>>> upstream/devel
   var v,p,r: float
   v = prn.uniform
   p = prn.uniform * 2.0 * PI

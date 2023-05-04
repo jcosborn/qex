@@ -293,14 +293,19 @@ template asVarWrapper*(x: AsVar[AsMatrix], y: typed): untyped =
   #static: echo "asVarWrapper AsVarMatrix"
   asVar(asMatrix(v: y))
 
-template toSingle*[I,T](x: typedesc[VectorArrayObj[I,T]]): untyped =
+template toSingle*[I,T](x: typedesc[VectorArrayObj[I,T]]): typedesc =
   mixin toSingle
   VectorArrayObj[I,toSingle(type(T))]
-template toSingle*[T](x: typedesc[AsVector[T]]): untyped =
+template toSingle*[T](x: typedesc[AsVector[T]]): typedesc =
   AsVector[toSingle(type(T))]
 template toSingleImpl*(x: VectorArrayObj): untyped =
   mixin toSingleX
   toSingleX(toRef x)
+template toSingle*[I,J,T](x: typedesc[MatrixArrayObj[I,J,T]]): typedesc =
+  mixin toSingle
+  MatrixArrayObj[I,J,toSingle(type(T))]
+template toSingle*[T](x: typedesc[AsMatrix[T]]): typedesc =
+  AsMatrix[toSingle(type(T))]
 template toSingleImpl*(x: MatrixArrayObj): untyped =
   mixin toSingleX
   toSingleX(toRef x)
@@ -313,6 +318,11 @@ template toDouble*[T](x: typedesc[AsVector[T]]): untyped =
 template toDoubleImpl*(x: VectorArrayObj): untyped =
   mixin toDoubleX
   toDoubleX(toRef x)
+template toDouble*[I,J,T](x: typedesc[MatrixArrayObj[I,J,T]]): typedesc =
+  mixin toDouble
+  MatrixArrayObj[I,J,toDouble(type(T))]
+template toDouble*[T](x: typedesc[AsMatrix[T]]): typedesc =
+  AsMatrix[toDouble(type(T))]
 template toDoubleImpl*(x: MatrixArrayObj): untyped =
   mixin toDoubleX
   toDoubleX(toRef x)
