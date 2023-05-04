@@ -1,6 +1,7 @@
 #RUNCMD $RUN1
 
-import unittest
+#import unittest
+import testutils
 #import streams
 addOutputFormatter(newConsoleOutputFormatter(PRINT_FAILURES))
 #let strm = newFileStream("ut.out", fmWrite)

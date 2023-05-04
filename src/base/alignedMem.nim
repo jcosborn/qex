@@ -52,6 +52,10 @@ proc setRawMemGcThreshold*(t: int) = rmGcThreshold = t
 
 proc freeRawMemRef*(rm: RawMemRef) =
   #echo "freeRawmemref"
+  #when defined(gcArc) or defined(gcOrc):
+  #  let t = unsafeAddr(rm[])
+  #  free(t[])
+  #else:
   free(rm[])
 proc newRawMemRef*(size: int): RawMemRef =
   #echo "newRawMemRef"

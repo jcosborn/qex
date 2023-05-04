@@ -120,7 +120,7 @@ proc mdt(t:float) =
         let etpg = exp(t*p[i][e])*g[i][e]
         g[i][e] := etpg
 proc mdv(t:float) =
-  f.gaugeforce2(g, gc)
+  gc.gaugeforce2(g, f)
   if gfix: f.maxTreeFix 0.0
   threads:
     for i in 0..<f.len:
@@ -133,7 +133,7 @@ const useFG = true
 const useApproxFG2 = false
 when useFG:
   proc fgv(t:float) =
-    f.gaugeforce2(g, gc)
+    gc.gaugeforce2(g, f)
     if gfix: f.maxTreeFix 0.0
     threads:
       for i in 0..<g.len:

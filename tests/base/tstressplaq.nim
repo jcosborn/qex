@@ -11,8 +11,9 @@ proc linkTrace(g: auto):auto =
     threadSingle: lt := t/n.float
   return lt
 
+qexInit()
+
 suite "Stress plaquette test":
-  qexInit()
   const
     #nd = 4
     lat = [8,8,8,8]
@@ -71,4 +72,4 @@ suite "Stress plaquette test":
         let i = ri.index
         g[0]{i} := 1
 
-  qexFinalize()
+qexFinalize()

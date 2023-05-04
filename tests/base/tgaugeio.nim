@@ -1,8 +1,9 @@
 import qex
 import testutils
 
+qexInit()
+
 suite "Test gauge IO":
-  qexInit()
   threads: echo "thread ",threadNum," / ",numThreads
   const fn = "tmplat.lime"
   var
@@ -35,4 +36,4 @@ suite "Test gauge IO":
     CT = 1E-5
     check(p ~ pp)
 
-  qexFinalize()
+qexFinalize()

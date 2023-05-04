@@ -89,6 +89,15 @@ template eval*[T](x: typedesc[AsMatrix[T]]): typedesc =
   mixin eval
   asMatrix(eval(typeof T))
 
+template has*[T:AsVector](x: typedesc[T], y: typedesc): bool =
+  mixin has
+  when y is AsVector: true
+  else: has(T.type[], y)
+template has*[T:AsMatrix](x: typedesc[T], y: typedesc): bool =
+  mixin has
+  when y is AsMatrix: true
+  else: has(T.type[], y)
+
 #declareScalar(AsScalar)
 #declareScalar(AsVarScalar)
 #declareVector(AsVector)
@@ -176,9 +185,14 @@ template isWrapper*(x: array): untyped = false
 template `len`*(x:VectorArrayObj):untyped = x.I
 template `len`*[I:static[int],T](x:typedesc[VectorArrayObj[I,T]]):auto = I
 template `[]`*(x:VectorArrayObj):untyped = x.vec
-template `[]`*(x:VectorArrayObj; i:int):untyped = x.vec[i]
-template `[]`*(x:var VectorArrayObj; i:int):untyped = x.vec[i]
-template `[]=`*(x:VectorArrayObj; i:int, y:untyped):untyped = x.vec[i] = y
+template `[]`*(x:VectorArrayObj; i:int):untyped =
+  #var vecIdx = toRef x.vec[i]
+  #vecIdx
+  x.vec[i]
+#template `[]`*(x:var VectorArrayObj; i:int):untyped =
+#  toRef x.vec[i]
+template `[]=`*(x:VectorArrayObj; i:int, y:typed):untyped =
+  x.vec[i] := y
 template asVectorArray*[N:static[int],T](x: array[N,T]): untyped =
   #static: echo "asVectorArray"
   #let x_asVectorArray = xx
@@ -264,14 +278,12 @@ template eval*[I,J,T](x: typedesc[MatrixArrayObj[I,J,T]]): typedesc =
   mixin eval
   MatrixArrayObj[I,J,eval(typeof T)]
 
-#template isWrapper*(x: AsMatrix): untyped = true
-#template asWrapper*(x: AsMatrix, y: typed): untyped =
-#  #static: echo "asWrapper AsMatrix"
-#  #dumpTree: y
-#  asMatrix(y)
-#template asVarWrapper*(x: AsMatrix, y: typed): untyped =
-#  #static: echo "asVarWrapper AsMatrix"
-#  asVar(asMatrix(y))
+template has*[I,T](x: typedesc[VectorArrayObj[I,T]], y: typedesc): bool =
+  mixin has
+  has(T.type, y)
+template has*[I,J,T](x: typedesc[MatrixArrayObj[I,J,T]], y: typedesc): bool =
+  mixin has
+  has(T.type, y)
 
 template isWrapper*(x: AsVar[AsMatrix]): untyped = true
 template asWrapper*(x: AsVar[AsMatrix], y: typed): untyped =
@@ -362,12 +374,13 @@ template row*(x:AsMatrix; i:int):untyped =
 template setRow*(r:AsVector; x:AsVector; i:int):untyped =
   assign(r, x)
 #proc setRow*(r:var AsMatrix; x:AsVector; i:int) {.inline.} =
-template setRow*(rr:var AsMatrix; xx:AsVector; ii:int): untyped =
-  subst(r,rr,x,xx,i,ii,nc,_,j,_):
-    lets(xt,x,it,i):
-      const nc = getConst(r.ncols)
-      for j in 0..<nc:
-        assign(r[it,j], xt[j])
+template setRow*(r:AsMatrix; xx:AsVector; ii:int) =
+  block:
+    let xp = getPtr xx; template x:untyped = xp[]
+    let ip = getPtr ii; template i:untyped = ip[]
+    const nc = getConst(r.ncols)
+    for j in 0..<nc:
+      assign(r[i,j], x[j])
 template column*(x:AsVector; i:int):untyped = x
 proc column*(x:AsMatrix; i:int):auto {.inline,noInit.} =
   const nr = x.nrows
@@ -403,10 +416,11 @@ proc `toString`*(x:Mat1):string =
 #  proc f*(r:t1, x:t2) {.inline.} =
 #    `f s1 s2`(r, deref(x))
 template makeLevel1T(f,s1,t1,s2,t2:untyped):untyped {.dirty.} =
-  template `f U`*(r: t1, x: t2): untyped =
-    `f s1 s2`(r, x)
+  #template `f U`*(r: t1, x: t2): untyped =
+  #  `f s1 s2`(r, x)
   template f*(r: t1, x: t2): untyped =
-    flattenCallArgs(`f U`, r, x)
+    #flattenCallArgs(`f U`, r, x)
+    `f s1 s2`(r, x)
 template makeLevel1(f,s1,t1,s2,t2:untyped):untyped =
   makeLevel1T(f,s1,t1,s2,t2)
 
@@ -540,6 +554,8 @@ setBinop(mul,mul, Sca1,Vec2,VectorArray[getConst(y.len),evalType(x*y[0])])
 #setBinop(`*`,mul, Sca1,AsVector,VectorArray[y.len,evalType(x*y[0])])
 #setBinop(`*`,mul, float,Vec2,VectorArray[y.len,evalType(x*y[0])])
 #setBinop(`*`,mul, AsScalar,Vec2,VectorArray[y.len,evalType(x*y[0])])
+#template `*`*[X:Sca1,Y:Vec](x: typedesc[X], y: typedesc[Y]): typedesc =
+#  VectorArray[len Y, X*indexed(Y,int)]
 setBinop(`*`,mul, Sca1,Vec2,VectorArray[getConst(y.len),evalType(x*y[0])])
 setBinop(`*`,mul, Vec1,Sca2,VectorArray[x.len,evalType(x[0]*y)])
 setBinop(`*`,mul, Mat1,Vec2,VectorArray[x.nrows,evalType(x[0,0]*y[0])])
@@ -662,6 +678,7 @@ template dot*(r: var Sca1; x: Vec2; y: Vec3) =
 setBinop(dot, dot, Vec1, Vec2, evalType(dot(x[0],y[0])))
 
 proc dot*(x: Mat2; y: Mat3): auto {.inline,noInit.} =
+  mixin dot
   result = dot(x[0,0],y[0,0])
   forO j, 1, x.len.pred:
     result += dot(x[0,j],y[0,j])

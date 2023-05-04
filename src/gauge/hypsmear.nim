@@ -29,9 +29,7 @@ proc symStaple(s: auto, alp: float, g1: auto, g2: auto,
   tic()
   mixin adj
   tm := g1.adj * g2 * s1.field
-  threadBarrier()
   discard sm ^* tm
-  threadBarrier()
   s += alp * ( g1 * s2.field * s1.field.adj )
   s += alp * sm.field
   let nc = g1[0].nrows
@@ -53,10 +51,8 @@ proc symStapleDeriv(f1, f2: auto;  # output
   tm1 := g1.adj * c * s1.field  # ∩†2  s2
   tm2 := g2.adj * g1 * s.field  # ∪†1  s1
   tm2 += c.adj * g1 * s2.field  # ∩3   s1
-  threadBarrier()
   discard sm1 ^* tm1
   discard sm2 ^* tm2
-  threadBarrier()
   f1 += g2 * s1.field * s.field.adj  # ∪1   g1
   f1 += c * s1.field * s2.field.adj  # ∩†3  g1
   f2 += g1 * s.field * s1.field.adj  # ∪†2  g2
@@ -118,7 +114,11 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
     for nu in 0..<4:
       if nu!=mu:
         s1[mu][nu] = newShifter(gf[mu], nu, 1)
-        discard s1[mu][nu] ^* gf[mu]
+  threads:
+    for mu in 0..<4:
+      for nu in 0..<4:
+        if nu!=mu:
+          discard s1[mu][nu] ^* gf[mu]
 
   let
     alp1 = coef.alpha1 / 2.0
@@ -155,7 +155,6 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
                 lp2.proj l1x[mu,b]
               discard s1[nu][mu] ^* lp1
               discard s1[mu][a] ^* lp2
-              threadBarrier()
               symStaple(l2x[mu,nu], alp2, lp1, lp2,
                         s1[nu][mu], s1[mu][a], tm1, sm1[a])
           when keepProj:
@@ -174,7 +173,6 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
             lp2.proj l2x[mu,nu]
           discard s1[nu][mu] ^* lp1
           discard s1[mu][nu] ^* lp2
-          threadBarrier()
           symStaple(flx[mu], alp3, lp1, lp2,
                     s1[nu][mu], s1[mu][nu], tm1, sm1[nu])
       fl[mu].proj flx[mu]
@@ -220,7 +218,6 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
             discard s1[nu][mu] ^* lp1
             discard s1[mu][nu] ^* lp2
             discard fs[nu] ^* fc[mu]
-            threadBarrier()
             symStapleDeriv(fl2[nu,mu], fl2[mu,nu],
                            lp1, lp2, s1[nu][mu], s1[mu][nu],
                            fc[mu], fs[nu], tm1, tm2, sm1[nu], sm1[mu])
@@ -255,7 +252,6 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
                 discard s1[nu][mu] ^* lp1
                 discard s1[mu][a] ^* lp2
                 discard fs[a] ^* fl2[mu,nu]
-                threadBarrier()
                 symStapleDeriv(fl1[a,b], fl1[mu,b],
                                lp1, lp2, s1[nu][mu], s1[mu][a],
                                fl2[mu,nu], fs[a], tm1, tm2, sm1[a], sm1[mu])
@@ -280,7 +276,6 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
         for nu in 0..<4:
           if nu!=mu:
             discard fs[nu] ^* fl1[mu,nu]
-            threadBarrier()
             symStapleDeriv(f[nu], f[mu],
                            gf[nu], gf[mu], s1[nu][mu], s1[mu][nu],
                            fl1[mu,nu], fs[nu], tm1, tm2, sm1[nu], sm1[mu])
@@ -399,6 +394,8 @@ when isMainModule:
   echo coef
 
   var fl = lo.newGauge()
+  coef.smear(g, fl, info)
+  resetTimers()
 
   template disp(g: typed) =
     let p = g.plaq
@@ -410,7 +407,9 @@ when isMainModule:
     echo trace(g[0])
 
   disp g
+  tic("main")
   coef.smear(g, fl, info)
+  toc("smear")
   disp fl
   #echo pow(1.0,4)/6.0
   #echo pow(1.0+6.0,4)/6.0
@@ -418,4 +417,5 @@ when isMainModule:
   #echo pow(1.0+6.0+6.0*4.0+6.0*4.0*2.0,4)/6.0
   #echo pow(1.0+6.0+6.0*4.0+6.0*4.0*2.0+6.0,4)/6.0
 
+  echoTimers()
   qexFinalize()

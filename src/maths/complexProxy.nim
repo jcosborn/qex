@@ -1,5 +1,6 @@
-import macros
-import base/metaUtils
+import macros, math
+import base/[basicOps,metaUtils]
+getOptimPragmas()
 
 type
   RealProxy*[T] = object
@@ -31,12 +32,12 @@ type
 #     let yi = y.im
 #     newComplexP(xr*yr-xi*yi,xr*yi+xi*yr)
 
-template asRealProxy*[T](x: T): auto = RealProxy[type T](v: x)
-template asRealProxy*[T](x: typedesc[T]): typedesc = RealProxy[type T]
-template asImagProxy*[T](x: T): auto = ImagProxy[type T](v: x)
-template asImagProxy*[T](x: typedesc[T]): typedesc = ImagProxy[type T]
-template asComplexProxy*[T](x: T): auto = ComplexProxy[type T](v: x)
-template asComplexProxy*[T](x: typedesc[T]): typedesc = ComplexProxy[type T]
+template asRealProxy*[T](x: T): auto = RealProxy[typeof T](v: x)
+template asRealProxy*[T](x: typedesc[T]): typedesc = RealProxy[typeof T]
+template asImagProxy*[T](x: T): auto = ImagProxy[typeof T](v: x)
+template asImagProxy*[T](x: typedesc[T]): typedesc = ImagProxy[typeof T]
+template asComplexProxy*[T](x: T): auto = ComplexProxy[typeof T](v: x)
+template asComplexProxy*[T](x: typedesc[T]): typedesc = ComplexProxy[typeof T]
 
 template `[]`*[T](x: RealProxy[T]): auto =
   when T is ptr:
@@ -71,13 +72,19 @@ template asWrapper*(x: ImagProxy, y: typed): auto =
   asImagProxy(y)
 template asVarWrapper*(x: ImagProxy, y: typed): auto =
   asVar(asImagProxy(y))
-template isWrapper*(x: ComplexProxy): auto = true
+template isWrapper*(x: ComplexProxy): bool = true
+template isWrapper*(x: typedesc[ComplexProxy]): bool = true
 template asWrapper*(x: ComplexProxy, y: typed): auto =
   asComplexProxy(y)
 template asWrapper*(x: typedesc[ComplexProxy], y: typed): auto =
   asComplexProxy(y)
 template asVarWrapper*(x: ComplexProxy, y: typed): auto =
   asVar(asComplexProxy(y))
+
+template has*[T:ComplexProxy](x: typedesc[T], y: typedesc): bool =
+  mixin has
+  when y is ComplexProxy: true
+  else: has(T.type[], y)
 
 template `[]`*[T](x: typedesc[ComplexProxy[T]]): typedesc =
   when T is ptr:
@@ -120,6 +127,13 @@ template `[]=`*(x: ComplexProxy, y: typed) =
   #  x.v = y
   #else:
     x.v := y
+proc `[]=`*(x: var ComplexProxy, i: auto, y: ComplexProxy2) {.alwaysInline.} =
+  mixin re, im, `[]=`
+  when isWrapper i:
+    x.re[i] = y.re
+    x.im[i] = y.im
+  else:
+    {.error.}
 
 template eval*[T](x: typedesc[ComplexProxy[T]]): typedesc =
   mixin eval
@@ -221,11 +235,16 @@ template assignU*(x: ComplexProxy, y: ComplexProxy2): untyped =
 #  #var ya {.noInit.}: T2
 #  #ya = yy
 #  assignU(x, ya)
-template assign*(x: ComplexProxy, y: ComplexProxy2): untyped =
+proc assign*[R,X:ComplexProxy](r: var R, x: X) {.alwaysInline.} =
+#template assign*[R,X:ComplexProxy](rr: R, xx: X) =
   #echoRepr: x
-  let assignCC = y
+  #let assignCC = xx
   #assignU(x, yy)
-  flattenCallArgs(assignU, x, assignCC)
+  #flattenCallArgs(assignU, r, assignCC)
+  #let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
+  #let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+  r.re = x.re
+  r.im = x.im
 
 template `:=`*(x: RealProxy, y: RealProxy2): untyped = assign(x,y)
 template `:=`*(x: ImagProxy, y: ImagProxy2): untyped = assign(x,y)
@@ -233,8 +252,7 @@ template `:=`*(x: ComplexProxy, y: RealProxy2): untyped = assign(x,y)
 template `:=`*(x: ComplexProxy, y: ImagProxy2): untyped = assign(x,y)
 template `:=`*(x: ComplexProxy, y: ComplexProxy2): untyped = assign(x,y)
 
-# pos, neg, conj, adj, transpose, trace, norm2, inv
-
+# pos, neg, conj, adj, transpose, trace
 template unaryOverloads(op,fn,implR,implI: untyped) {.dirty.} =
   template fn*(x: RealProxy): untyped = newRealP(implR(x[],0))
   #proc fn*(x: RealProxy): auto {.inline,noInit.} = newRealP(implR(x[],0))
@@ -246,10 +264,10 @@ template unaryOverloads(op,fn,implR,implI: untyped) {.dirty.} =
 
   template `fn U`*(x: ComplexProxy): untyped =
     newComplexP(implR(x.re,x.im), implI(x.re,x.im))
-  template fn*(x: ComplexProxy): untyped =
-    flattenCallArgs(`fn U`, x)
-  #proc fn*(x: ComplexProxy): auto {.inline,noInit.} =
-  #  newComplexP(implR(x.re,x.im), implI(x.re,x.im))
+  #template fn*(x: ComplexProxy): untyped =
+  #  flattenCallArgs(`fn U`, x)
+  proc fn*(x: ComplexProxy): auto {.alwaysInline,noInit.} =
+    newComplexP(implR(x.re,x.im), implI(x.re,x.im))
   #template fn*(xx: ComplexProxy): untyped =
   #  let x = xx
   #  newComplexP(implR(x.re,x.im), implI(x.re,x.im))
@@ -295,7 +313,7 @@ template traceImagU(xr,xi: untyped): untyped =
   trace(xi)
 unaryOverloads(`%`, trace, traceRealU, traceImagU)
 
-
+# norm2, abs
 template unaryOverloadsR(op,fn,implR,implI: untyped) {.dirty.} =
   template fn*(x: RealProxy): untyped = newRealP(implR(x[],0))
   #proc fn*(x: RealProxy): auto {.inline,noInit.} = newRealP(implR(x[],0))
@@ -326,18 +344,18 @@ template abs*(x: ComplexProxy): untyped =
 
 
 #template inv*(x: RealProxy): untyped = newRealP(x[].inv)
-proc inv*(x: RealProxy): auto {.inline,noInit.} =
+proc inv*(x: RealProxy): auto {.alwaysInline,noInit.} =
   mixin inv
   newRealP(x[].inv)
 template `/`*(x: RealProxy): untyped = inv(x)
 #template inv*(x: ImagProxy): untyped = newImagP(-x[].inv)
-proc inv*(x: ImagProxy): auto {.inline,noInit.} =
+proc inv*(x: ImagProxy): auto {.alwaysInline,noInit.} =
   mixin inv
   newImagP(-x[].inv)
 template `/`*(x: ImagProxy): untyped = inv(x)
 #template invComplexU(x: untyped): untyped = x.adj * x.norm2.inv
 #template inv*(x: ComplexProxy): untyped = safecall(invComplexU, x)
-proc inv*(x: ComplexProxy): auto {.inline,noInit.} =
+proc inv*(x: ComplexProxy): auto {.alwaysInline,noInit.} =
   mixin inv
   x.adj * x.norm2.inv
 template `/`*(x: ComplexProxy): untyped = inv(x)
@@ -447,6 +465,7 @@ template binaryOverloadsMul(op,fn: untyped) {.dirty.} =
   template op*(x: RealProxy, y: ComplexProxy2): untyped = fn(x,y)
 
   template `fn CRU`*(x: ComplexProxy, yy: RealProxy2): untyped =
+    mixin op
     let y = yy[]
     newComplexP(op(x.re,y), op(x.im,y))
   template fn*(x: ComplexProxy, y: RealProxy2): untyped =
@@ -556,6 +575,20 @@ iBinaryOverloads(`+=`, iadd, add)
 iBinaryOverloads(`-=`, isub, sub)
 iBinaryOverloads(`*=`, imul, mul)
 iBinaryOverloads(`/=`, idivd, divd)
+
+#[
+template iadd*[R,X:ComplexProxy](r: R, xx: X) =
+  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+  iadd(r.re, x.re)
+  iadd(r.im, x.im)
+template `+=`*[R,X:ComplexProxy](r: R, x: X) = iadd(r,x)
+]#
+
+proc sqrt*(x: ComplexProxy): auto =
+  let n = sqrt(x.norm2)
+  let r = sqrt(0.5*(n + x.re))
+  let i = select(x.im<0, -1, 1)*sqrt(0.5*(n - x.re))
+  newComplexP(r, i)
 
 # inorm2, redot, iredot, dot, idot
 # sqrt, rsqrt, exp, ...

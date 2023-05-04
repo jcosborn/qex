@@ -102,12 +102,10 @@ forwardTTW(toDouble)
 #template eval*[T](x: typedesc[Color[T]]): typedesc = asColor(eval(type T))
 template eval*[T:Color](x: typedesc[T]): typedesc = asColor(eval((type T)[]))
 
-template has*[T](x: typedesc[Color[T]], y: typedesc): bool =
+template has*[T:Color](x: typedesc[T], y: typedesc): bool =
   mixin has
-  when T2 is Color2:
-    true
-  else:
-    has(type T, y)
+  when y is Color: true
+  else: has(T.type[], y)
 
 template row*(x: Color, i: untyped): untyped =
   mixin row

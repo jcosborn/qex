@@ -4,6 +4,7 @@
 #import complexConcept
 #import matrixConcept
 #import metaUtils
+import base/basicOps
 import base/wrapperTypes
 import macros
 import typetraits
@@ -468,6 +469,12 @@ template `*=`*(x:Indexed, y: typed) =
   tIndexedStarEq != !tIndexedStarEq * y
 #proc eval*(x: Indexed): auto {.inline.} =
 #  ojx
+template eval*[T,I](x: typedesc[Indexed[T,I]]): typedesc =
+  mixin index, `[]`
+  when T is ptr:
+    index((type T)[], type I)
+  else:
+    index(type T, type I)
 
 #forwardFunc(Indexed, len)
 #forwardFunc(Indexed, nrows)

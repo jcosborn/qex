@@ -8,8 +8,9 @@ proc EQ(g:auto,loop:int):auto =
     q = f.topoQ
   return [es,et,q]
 
+qexInit()
+
 suite "Test Wilson flow and topological charge":
-  qexInit()
   echo "rank ",myRank," / ",nRanks
   threads: echo "thread ",threadNum," / ",numThreads
   CT = 1e-11
@@ -61,4 +62,4 @@ suite "Test Wilson flow and topological charge":
     for loop in [1,3,4,5]:
       check(g.EQ(loop) ~ rl[loop])
 
-  qexFinalize()
+qexFinalize()

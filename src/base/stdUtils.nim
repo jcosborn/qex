@@ -1,7 +1,7 @@
 import macros
 import parseutils
 import strUtils
-#import metaUtils
+import algorithm
 
 type
   cArray*[T] = UncheckedArray[T]
@@ -75,6 +75,10 @@ proc `*`*(x: SomeNumber, y: array): auto {.inline,noInit.} =
   for i in 0..<r.len:
     r[i] = x * y[i]
   r
+proc `*`*[T](x: seq[T], y: SomeNumber): seq[T] {.inline,noInit.} =
+  result.newSeq(x.len)
+  for i in 0..<result.len:
+    result[i] = x[i] * y
 proc `*`*[T](x: SomeNumber, y: seq[T]): seq[T] {.inline,noInit.} =
   result.newSeq(y.len)
   for i in 0..<result.len:
@@ -143,6 +147,22 @@ proc `*`*[N,T1,T2](x: array[N,T1], y: array[N,T2]): auto {.inline,noInit.} =
   var r: array[n, type(x[0]*y[0])]
   for i in 0..<n:
     r[i] = x[i] * y[i]
+  r
+
+proc `+`*[T1,T2](x: seq[T1], y: openArray[T2]): auto {.inline,noInit.} =
+  mixin evalType
+  let n = min(x.len, y.len)
+  var r = newSeq[evalType(x[0]+y[0])](n)
+  for i in 0..<n:
+    r[i] = x[i] + y[i]
+  r
+
+proc `-`*[T1,T2](x: seq[T1], y: openArray[T2]): auto {.inline,noInit.} =
+  mixin evalType
+  let n = min(x.len, y.len)
+  var r = newSeq[evalType(x[0]+y[0])](n)
+  for i in 0..<n:
+    r[i] = x[i] - y[i]
   r
 
 proc `+=`*[T](r: var openArray[T], x: openArray[T]) {.inline.} =
@@ -255,6 +275,22 @@ proc getDivisors*[T](n: T): seq[T] =
   for i in 2..n:
     if n mod i == 0:
       result.add i
+
+# scale local lattice (ll) by nrank to get global lattice (gl)
+template latticeFromLocalLatticeImpl*(gl: var openArray, ll: openArray, nrank: int) =
+  var fs = factor(nrank)
+  reverse fs
+  let nd = ll.len
+  for i in 0..<nd: gl[i] = ll[i]
+  var k = nd - 1
+  for f in fs:
+    gl[k] *= f
+    k = (k+nd-1) mod nd
+
+proc latticeFromLocalLattice*[T:seq|array](ll: T, nrank: int): T =
+  when T is seq:
+    result.newSeq(ll.len)
+  latticeFromLocalLatticeImpl(result, ll, nrank)
 
 macro rangeLow*(r: typedesc[range]):auto =
   echo r.treerepr

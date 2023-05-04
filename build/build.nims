@@ -1,5 +1,7 @@
 import os, strUtils
 
+echo "Command line params: ", commandLineParams()
+
 var nim = paramStr(0)
 var nimuserargs = newSeq[string](0)
 var script = ""

@@ -1,13 +1,12 @@
-import qex
 import testutils
-import sequtils
-import strformat
+import qex
+import sequtils, strformat
 
 AT = 1e-12
 
 proc linkTrace(g: auto):auto =
   let n = g[0][0].ncols * g[0].l.physVol * g.len
-  var lt: type(g[0].trace)
+  var lt: evalType(g[0].trace)
   threads:
     var t = g[0].trace
     for i in 1..<g.len: t += g[i].trace
@@ -24,25 +23,26 @@ proc replicate(g2,g1: openarray[Field]) =
     cm1 = lo1.ColorMatrix1()
     cm2 = lo2.ColorMatrix1()
   for mu in 0..<nd:
-    #echo fmt"g1[{mu}]: {g1[mu].norm2}"
+    echo &"g1[{mu}]: {g1[mu].norm2}"
     #for i in lo1.sites:
     #  cm1[i] := g1[mu]{i}
     cm1.remapLocalFrom g1[mu]
-    #echo fmt"{mu} cm1: {cm1.norm2}"
+    echo &"{mu} cm1: {cm1.norm2}"
     cm2.replicateFrom(cm1)
-    #echo fmt"{mu} cm2: {cm2.norm2}"
+    echo &"{mu} cm2: {cm2.norm2/16.0}"
     #for i in lo2.sites:
     #  g2[mu]{i} := cm2[i]
     g2[mu].remapLocalFrom cm2
-    #echo fmt"g2[{mu}]: {g2[mu].norm2}"
+    echo &"g2[{mu}]: {g2[mu].norm2/16.0}"
   #echo "g1[0][[0,0,0,0]]: ", g1[0][[0,0,0,0]]
   #echo "g2[0][[0,0,0,0]]: ", g2[0][[0,0,0,0]]
 
+qexInit()
+
 suite "Multi-Layout test":
-  qexInit()
-  const
-    lat1 = [8,8,8,8]
-    lat2 = [16,16,16,16]
+  let
+    lat1 = latticeFromLocalLattice([8,8,8,8], nRanks)
+    lat2 = latticeFromLocalLattice([16,16,16,16], nRanks)
   var
     lo1 = lat1.newLayout
     g1 = lo1.newGauge
@@ -83,4 +83,4 @@ suite "Multi-Layout test":
       check(l1.im~l2.im)
       check(p1~p2)
 
-  qexFinalize()
+qexFinalize()

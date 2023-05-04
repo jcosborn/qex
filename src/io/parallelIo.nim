@@ -42,12 +42,12 @@ proc swapEndian64*(p: pointer, bytes: int) =
 
 proc posixOpenWrite*(fn: string): cint =
   let flags = O_WRONLY
-  let mode = 0o666
+  let mode = Mode 0o666
   open(fn, flags, mode)
 
 proc posixCreate*(fn: string, size=0): cint =
   let flags = O_CREAT or O_WRONLY
-  let mode = 0o666
+  let mode = Mode 0o666
   let fd = open(fn, flags, mode)
   discard ftruncate(fd, size)
   fd
