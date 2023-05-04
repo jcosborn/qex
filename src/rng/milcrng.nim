@@ -106,13 +106,7 @@ else:
     prn.multiplier = 100005'u32 + 8'u32 * index
     #prn.addend = 12345
     #prn.scale = 1.0 / float32(0x01000000)
-<<<<<<< HEAD
-    #prn.iset = 1 # ~~~~~~~~~
-    #prn.gset = 0 # ~~~~~~~~~
-proc seedIndep*(prn: var RngMilc6; sed,index: auto) {.inline.} =
-=======
 proc seedIndep*(prn: var RngMilc6; sed,index: auto) =
->>>>>>> upstream/devel
   seedX(prn, sed.uint32, index.uint32)
 proc seed*(prn: var RngMilc6; sed,index: auto) =
   ## The seed `sed` is broadcasted from rank 0.
@@ -174,25 +168,12 @@ proc gaussian*(prn: var RngMilc6): float32 =
       prn.iset = 1
       result = prn.gset
   else:
-<<<<<<< HEAD
-    const
-      MAX = 0x01000000.float
-      SCALE1 = 1.0 / (MAX + 1.0)
-    var
-      v: cdouble
-      p: cdouble
-      r: cdouble
-    v = SCALE1 * (prn.uniform * MAX + 1.0)
-    p = prn.uniform * 2.0 * PI
-    r = sqrt(-2.0 * ln(v))
-=======
     const TINY = 9.999999999999999e-308
     var v = float prn.uniform
     #while v == 0.0:
     #  v = prn.uniform
     var p = prn.uniform * 2.0 * PI
     var r = sqrt(-2.0 * ln(v+TINY))
->>>>>>> upstream/devel
     result = r * cos(p)
 
 # Only needed for non-vectorized RNGs.

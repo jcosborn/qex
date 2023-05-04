@@ -7,8 +7,6 @@ Operations Research, 47, 1 (1999), 159-164.
 
 import math
 import comms/comms
-import maths/types
-import simd/simdWrap
 
 type
   State = array[3,uint32]
@@ -77,21 +75,6 @@ when a1sq[76]!=[[82758667u32, 1871391091u32, 4127413238u32], [3672831523u32, 691
 when a2sq[76]!=[[1511326704u32, 3759209742u32, 1610795712u32], [4292754251u32, 1511326704u32, 3889917532u32], [3859662829u32, 4292754251u32, 3708466080u32]]:
   {.error:"a2sq[76] wrong!".}
 
-<<<<<<< HEAD
-template isWrapper*(x: MRG32k3a): untyped = false
-template numberType*(x: MRG32k3a): typedesc = uint32
-template numberType*(x: typedesc[MRG32k3a]): typedesc = uint32
-template simdLength*(x: typedesc[MRG32k3a]): untyped = 1
-template getNc*(x: MRG32k3a): untyped = 0
-template getNs*(x: MRG32k3a): untyped = 0
-template `:=`*(x: MRG32k3a, y: MRG32k3a) =
-  x = y
-template `:=`*(x: MRG32k3a, y: Indexed) =
-  x := y[]
-template `[]`*(x: MRG32k3a, y: Simd): untyped = x
-template `[]=`*(x: MRG32k3a, y: Simd, z: typed) =
-  x := z
-=======
 #template maxInt*(x: MRG32k3a): int = int 4294967086
 template maxInt*(x: typedesc[MRG32k3a]): int = int 4294967086
 #template numInts*(x: MRG32k3a): int = 4294967087
@@ -100,7 +83,6 @@ template numInts*(x: typedesc[MRG32k3a]): int = int 4294967087
 template isWrapper*(x: MRG32k3a): bool = false
 template isWrapper*(x: typedesc[MRG32k3a]): bool = false
 template has*(x: typedesc[MRG32k3a], y: typedesc): bool = y is MRG32k3a
->>>>>>> upstream/devel
 
 proc `$`*(x:MRG32k3a):string =
   "MRG32k3a(" & $x.s1 & " " & $x.s2 & ")"
@@ -144,10 +126,6 @@ proc seed*(prn: var MRG32k3a; sed,index: auto) =
   defaultComm.broadcast(ss.addr, sizeof(ss))
   seedIndep(prn, ss, index)
 
-<<<<<<< HEAD
-proc uniform*(prn:var MRG32k3a):float =
-  ## Uniform random numbers from 0 to 1, excluding 0 and 1.
-=======
 proc next0(prn: var MRG32k3a): float {.inline.} =
   ## Return random integer uniform on [1,m1]
   var p1,p2:float
@@ -210,7 +188,6 @@ proc integer*(prn: var MRG32k3a): int =
 #[
 proc uniform*(prn:var MRG32k3a): float =
   ## Return random number uniform on (0,1)
->>>>>>> upstream/devel
   var p1,p2:float
   p1 = a12 * prn.s1[1].float - a13n * prn.s1[0].float
   p1 = p1 mod m1
@@ -240,11 +217,6 @@ proc uniform*(prn: var MRG32k3a): float =
 proc gaussian*(prn: var MRG32k3a): float =
   ## Gaussian normal deviate
   ## Probability distribution exp( -x*x/2 ), so < x^2 > = 1
-<<<<<<< HEAD
-  const TINY = 9.999999999999999e-308
-  # uniform excludes 0 and 1
-=======
->>>>>>> upstream/devel
   var v,p,r: float
   v = prn.uniform
   p = prn.uniform * 2.0 * PI
