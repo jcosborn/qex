@@ -142,15 +142,15 @@ proc read_rng*(r: var ParallelRNG; rng_fn: string) =
 
          # Close reader
          reader.close()
-      of "MRG32k3a":
-         # Create reader for RNG field
-         var reader = r.mrg32k3a.l.newReader(rng_fn)
+#      of "MRG32k3a":
+#         # Create reader for RNG field
+#         var reader = r.mrg32k3a.l.newReader(rng_fn)
 
-         # Read RNG file and store in RNG field
-         reader.read(r.mrg32k3a)
+#         # Read RNG file and store in RNG field
+#         reader.read(r.mrg32k3a)
 
-         # Close reader
-         reader.close()
+#         # Close reader
+#         reader.close()
 
 #[ For writing RNG ]#
 proc write_rng*(r: ParallelRNG; rng_fn: string) = 
@@ -165,12 +165,12 @@ proc write_rng*(r: ParallelRNG; rng_fn: string) =
 
          # Close writer
          writer.close()
-      of "MRG32k3a":
-         # Create writer
-         var writer = r.mrg32k3a.l.newWriter(rng_fn, fileMd)
+#      of "MRG32k3a":
+#         # Create writer
+#         var writer = r.mrg32k3a.l.newWriter(rng_fn, fileMd)
 
-         # Write RNG field
-         writer.write(r.mrg32k3a, recordMd)
+#         # Write RNG field
+#         writer.write(r.mrg32k3a, recordMd)
 
-         # Close writer
-         writer.close()
+#         # Close writer
+#         writer.close()
