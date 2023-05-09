@@ -3,6 +3,8 @@
 ## Description of QEX fork:
 Staggered hybrid Monte Carlo with Pauli-Villars bosons and nHYP smearing. Source code can be found [here](https://github.com/ctpeterson/qex/tree/devel/src/stagg_pv_hmc).
 
+I have also added an XY model cluster code that can be found [here](https://github.com/ctpeterson/qex/tree/devel/src/xy_cluster_mc).
+
 ## Description of QEX:
 QEX is a high-level framework for lattice field operations
 written in the language [Nim](https://nim-lang.org).
