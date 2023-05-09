@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!-- Credit to Oliver Witzel for formatting of XML file -->
+<qex>
+  <config_opts><!-- Options for gauge configs -->
+    <start_config>0</start_config> <!-- Option for starting configuration -->
+    <start>hot</start> <!-- Cold start = unit, hot start = rand -->
+  </config_opts>
+  <rng><!-- Random number seeds -->
+    <rng_type>RngMilc6</rng_type> <!-- RNG type: MRG32k3a or RngMilc6 -->
+    <serial_seed>987654321</serial_seed> <!-- Seed for global RNG (Metrop. step) -->
+  </rng>
+  <action><!-- Action parameters -->
+    <geom><!-- Specify geometry, Nx X Ny -->
+      <Nx>32</Nx>
+      <Ny>32</Ny>
+    </geom>
+    <prms><!-- Action parameters -->
+      <J>1.0</J>
+    </prms>
+    </action>
+  <other>
+    <meas_freq>10</meas_freq>
+  </other>
+</qex>
