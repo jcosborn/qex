@@ -19,6 +19,9 @@
     </prms>
     </action>
   <other>
-    <meas_freq>10</meas_freq>
+    <meas_freq>1</meas_freq>
+    <gf_freq>0</gf_freq>
+    <gf_eps>0.01</gf_eps>
+    <max_flt>0.0</max_flt>
   </other>
 </qex>

@@ -130,10 +130,10 @@ proc read_xml*(xml_file: string): auto =
       # Integer parameters
       int_prms = {"Nx" : 0, "Ny" : 0, "num_pv": 0,
                   "no_metropolis_until" : 0, "start_config" : 0,
-                  "meas_freq" : 0, "start_config" : 0}.toTable
+                  "meas_freq" : 0, "start_config" : 0, "gf_freq" : 0}.toTable
 
       # Float parameters
-      flt_prms = {"J" : 0.0}.toTable
+      flt_prms = {"J" : 0.0, "gf_eps" : 0.01, "max_flt" : 0.0}.toTable
 
       # Seed parameters
       seed_prms = {"serial_seed" : intParam("seed", int(1000 * epochTime())).uint64}.toTable
