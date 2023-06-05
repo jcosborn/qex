@@ -37,7 +37,7 @@ proc read_cmd*(): auto =
       xml_file = "input.xml"
 
       # MPI rank geometry
-      rank_geom = @[1, 1, 1, 1]
+      rank_geom = newseq[int](0)
 
       # Structure for all file names
       def_fn = "checkpoint"
@@ -111,7 +111,7 @@ proc read_cmd*(): auto =
                # Cycle through entries in rank geometry
                for ind in 0..<gm_str_splt.len:
                   # Fill rank geometry string
-                  rank_geom[ind] = parseInt(gm_str_splt[ind])
+                  rank_geom.add parseInt(gm_str_splt[ind])
 
             # Check if user wants a different filename
             if cm_opts.key == "filename":
@@ -136,13 +136,16 @@ proc read_xml*(xml_file: string): auto =
       # Integer parameters
       int_prms = {"Ns" : 0, "Nt" : 0, "num_pv": 0,
                   "Nf" : 0, "a_maxits" : 0, "f_maxits" : 0,
-                  "g_steps" : 0, "f_steps" : 0, "pv_steps" : 0,
+                  "g_steps" : 0, "sg_steps": 0, "f_steps" : 0, "pv_steps" : 0,
                   "no_metropolis_until" : 0, "start_config" : 0,
                   "plaq_freq" : 0, "ploop_freq" : 0,
-                  "rev_check_freq" : 0, "check_solvers" : 0}.toTable
+                  "rev_check_freq" : 0, "check_solvers" : 0, "sg_opt": 0,
+                  "num_Ns" : 3, "num_Nt" : 1}.toTable
 
       # Float parameters
-      flt_prms = {"beta" : 0.0, "adj_fac" : 0.0, "mass" : 0.0, "tau" : 0.0,
+      flt_prms = {"beta" : 1.0, "adj_fac" : -1.0/4.0, "mass" : 0.0, 
+                  "c1" : -1.0/12.0, "tau" : 0.0, "sm_adj_fac" : -1.0/4.0,
+                  "sm_c1": -1.0/12.0, "sm_beta": 1.0,
                   "alpha_1" : 0.0, "alpha_2" : 0.0, "alpha_3" : 0.0,
                   "mass_pv" : 0.0, "a_tol" : 0.0, "f_tol" : 0.0}.toTable
 
@@ -153,7 +156,11 @@ proc read_xml*(xml_file: string): auto =
       # String parameters
       str_prms = {"bc" : "pppa", "start" : "unit",
                   "gauge_int_alg" : "2MN", "ferm_int_alg" : "2MN",
-                  "pv_int_alg" : "2MN", "rng_type" : "RngMilc6"}.toTable
+                  "pv_int_alg" : "2MN", "smeared_gauge_int_alg": "2MN",
+                  "rng_type" : "RngMilc6",
+                  "gauge_act": "adjoint",
+                  "smeared_gauge_act": "Wilson",
+                  "gauge_smearing": "nhyp", "matter_smearing": "nhyp"}.toTable
 
       # Initialize XML attribute name
       attrName = ""

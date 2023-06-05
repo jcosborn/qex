@@ -2,7 +2,6 @@
 
 import qex # QEX
 import staghmc_spv_modules # For custom functions
-import gauge # Gauge field
 import gauge/hypsmear # Import nHYP smearing
 import physics/[qcdTypes, stagSolve] # Staggered fermions
 import mdevolve # MD evolution
@@ -24,6 +23,12 @@ Description:
 
    Hybrid Monte Carlo with staggered fermions and staggered Pauli
    -Villars bosons with nHYP smearing.
+
+   See also the notes at the bottom of <>/src/stagg_pv_hmc/input_hmc.xml
+
+   WARNING: HMC with different steps for each field and/or the use of 
+   different integration algorithms for each field has not been tested
+   extensively. Use with caution.
 
 Credits:
 
@@ -92,29 +97,170 @@ if (start_config == 0) or (start_config == int_prms["start_config"]):
    # Seed RNG
    R.seed(seed_prms["serial_seed"])
 else:
-   #[
-   # Define filename
-   let fn = base_fn & ".global_rng"
-
-   # Create new file stream
-   var file = newFileStream(fn, fmRead)
-
-   # Read RNG
-   discard file.readData(R.addr, R.sizeof)
-   ]#
- 
    # Read RNG
    R.read_rng(base_fn)
 
 # Initialize CG
 var (spa, spf) = init_cg(flt_prms, int_prms)
 
-#[ ~~~~ Set fields up ~~~~ ]#
+#[ ~~~~ Set lattice up ~~~~ ]#
+
+# Initialize lattice geometry
+var
+   # Lattice geometry
+   lat_geom = newseq[int](0)
+
+   # Number of directions
+   nd = int_prms["num_Ns"] + int_prms["num_Nt"]
+
+# Cycle through spatial directions
+for N in 0..<nd:
+   # Check if spatial directions
+   if N < int_prms["num_Ns"]:
+      # Add spatial extent
+      lat_geom.add int_prms["Ns"]
+   else:
+      # Add temporal extent
+      lat_geom.add int_prms["Nt"]
 
 # Initialize lattice layout
-var lo = init_layout(@[int_prms["Ns"], int_prms["Ns"],
-                       int_prms["Ns"], int_prms["Nt"]],
-                     rank_geom)
+var lo = init_layout(lat_geom, rank_geom)
+
+# Calculate physical volume
+let vol = lo.physVol
+
+#[ ~~~~ Set gauge fields up ~~~~ ]#
+
+# Define types for abstraction of gauge action and smearing
+type 
+   # Gauge action object
+   GaugeAction* = object
+     # String specifying the action ("Wilson", "rect" or "adjoint")
+     action*: string
+
+     # Object for gauge action coefficients
+     gc: GaugeActionCoeffs
+
+   # Gauge smearing object (only nHYP for now)
+   GaugeSmearing* = object
+      # String specifying the smearing
+      smearing*: string
+
+      # Info
+      info*: PerfInfo
+
+      # Smearing coefficients for nhyp smearing
+      hypcoeffs*: typeof(HypCoefs(alpha1: flt_prms["alpha_1"],
+                                  alpha2: flt_prms["alpha_2"],
+                                  alpha3: flt_prms["alpha_3"]))
+
+# Gauge action constructor
+proc newGaugeAction(act: string; bt: float; c1, adj = 0.0): GaugeAction =
+   # Get new gauge action object
+   var ga: GaugeAction
+
+   # Set gauge action
+   ga.action = act
+
+   # Start case
+   case ga.action:
+      of "Wilson":
+         # Tell user what the action is
+         echo "\nUsing Wilson gauge action with beta = " & $bt
+
+         # Set beta for Wilson
+         ga.gc = GaugeActionCoeffs(plaq: bt)
+      of "rect":
+         # Define out string
+         var out_str = "Using rectangle action with beta, c1 = " & $bt
+         out_str = out_str & ", " & $c1
+
+         # Tell user what the action is
+         echo out_str
+
+         # Set beta and ct
+         ga.gc = gaugeActRect(bt, c1)
+      of "adjoint": 
+         # Define out string
+         var out_str = "\nUsing rectangle action with beta_F, beta_A/beta_F = "
+         out_str = out_str & $bt & ", " & $adj
+
+         # Tell user what the action is
+         echo out_str
+
+         # Set parameters for adjoint-plaquette action
+         ga.gc = GaugeActionCoeffs(plaq: bt, adjplaq: bt * adj)
+      else: quit(ga.action & " is not a valid action. Quitting.")
+
+   # Return gauge action
+   result = ga
+
+# Gauge action method
+proc gaction(act: GaugeAction; g: auto): float =
+   # Start case
+   case act.action:
+      of "Wilson", "rect": result = act.gc.gaugeAction1(g)
+      of "adjoint": result = act.gc.actionA(g)
+
+# Gauge force method
+proc gforce(act: GaugeAction; g, f: auto) =
+   # Start case
+   case act.action:
+      of "Wilson", "rect": act.gc.gaugeForceCust(g, f)
+      of "adjoint": act.gc.forceACust(g, f)
+      else: quit("Invalid action. Quitting.")
+
+   # Project traceless/anti-Hermitian component
+   f.projTAH(g, adj = "adj")
+
+# Overloaded gauge force method for including smearing
+proc gforce*(act: GaugeAction; g, f: auto; smear_force: proc) =
+   # Start case
+   case act.action:
+      of "Wilson", "rect": act.gc.gaugeForceCust(g, f)
+      of "adjoint": act.gc.forceACust(g, f)
+      else: quit("Invalid action. Quitting.")
+
+   # Smear force
+   f.smear_force(f)
+
+   # Project to traceless/anti-Hermitian component
+   f.projTAH(g, adj = "adj")
+
+# Gauge smearing method constructor
+proc newGaugeSmearing(smear: string): GaugeSmearing =
+   # Create gauge smearing object
+   var gs: GaugeSmearing
+
+   # Set smearing
+   gs.smearing = smear
+
+   # Check smearing and set appropriate coefficients
+   case gs.smearing:
+      of "nhyp":
+         # Define out string
+         var out_str = "\nSmeared links will use nHYP-smearing with "
+         out_str = out_str & "alpha1, alpha2, alpha3 = "
+         out_str = out_str & $flt_prms["alpha_1"] & ", "
+         out_str = out_str & $flt_prms["alpha_2"] & ", "
+         out_str = out_str & $flt_prms["alpha_3"] & ", "
+
+         # Tell user what type of smearing will be used
+         echo out_str
+
+         # Set coefficients 
+         gs.hypcoeffs = HypCoefs(alpha1: flt_prms["alpha_1"],
+                                 alpha2: flt_prms["alpha_2"],
+                                 alpha3: flt_prms["alpha_3"])
+      of "none":
+         # Tell user that no smearing will be performed
+         echo "No smearing will be performed"
+      else:
+         # Exit and tell user what went wrong
+         quit(gs.smearing & " not valid or not currently supported. Quitting.")
+
+   # Return gauge smearing object
+   result = gs
 
 # Initialize fields
 var
@@ -122,7 +268,7 @@ var
    r: ParallelRNG
 
    # Gauge field
-   g: type(lo.newgauge)
+   g = lo.newgauge
 
    # Backup copy of gauge field
    g0 = lo.newgauge
@@ -136,9 +282,21 @@ var
    # Force f
    f = lo.newgauge
 
-# Set up adjoint gauge action coefficients
-let gc = GaugeActionCoeffs(plaq: flt_prms["beta"],
-                           adjplaq: flt_prms["beta"] * flt_prms["adj_fac"])
+   # Gauge action object
+   g_act: GaugeAction
+
+   # Smeared gauge action object
+   sg_act: GaugeAction
+
+# Create gauge action object
+g_act = newGaugeAction(str_prms["gauge_act"], flt_prms["beta"],
+                       c1 = flt_prms["c1"], adj = flt_prms["adj_fac"])
+
+# See if smeared gauge action to be added
+if int_prms["sg_opt"] == 1:
+   # Create new smeared gauge action object
+   sg_act = newGaugeAction(str_prms["smeared_gauge_act"], flt_prms["sm_beta"],
+                           c1 = flt_prms["sm_c1"], adj = flt_prms["sm_adj_fac"])
 
 # Check if starting w/ first configuration
 if start_config == 0:
@@ -154,25 +312,44 @@ else:
 
 # Initialize nHYP smearing parameters
 var
-   # Get info
-   info: PerfInfo
+   # Set smearing for gauge sector
+   gsmear = newGaugeSmearing(str_prms["gauge_smearing"])
 
-   # Get nHYP coefficients
-   coef = HypCoefs(alpha1: flt_prms["alpha_1"],
-                   alpha2: flt_prms["alpha_2"],
-                   alpha3: flt_prms["alpha_3"])
+   # Initialize smearing for matter sector
+   msmear: GaugeSmearing
 
-# Initialize fermion fields
+# Check if gauge and fermion smearing are same
+if gsmear.smearing == str_prms["matter_smearing"]:
+   # Set fermion smearing as gauge smearing
+   msmear = gsmear
+else:
+   # Otherwise, set separate matter smearing
+   msmear = newGaugeSmearing(str_prms["matter_smearing"])
+
+#[ ~~~~ Set matter fields up ~~~~ ]#
+
+# Initialize matter fields
 var (psi, phi) = lo.init_matter_fields(int_prms)
 
 # Set masses
 let masses = @[flt_prms["mass"], flt_prms["mass_pv"]]
 
-# Initialize stag for operations involving smeared stag op
-let stag = newStag(sg)
+# Initialize stag for operations involving staggered Dirac operator
+var stag: Staggered[qcdTypes.DLatticeColorMatrixV, qcdTypes.DColorVectorV]
 
-# Calculate physical volume
-let vol = lo.physVol
+# Check type of smearing to be done on matter fields
+if msmear.smearing == "none":
+   # Set staggered Dirac operator in terms of unsmeared gauge links
+   stag = newStag(g)
+
+   # Give user info
+   echo "Staggered Dirac op. to use unsmeared gauge links"
+else:
+   # Otherwise, " " smeared gauge links
+   stag = newStag(sg)
+
+   # Give user info
+   echo "Staggered Dirac op. to use smeared gauge links"
 
 #[ ~~~~ Functions for extra timing ~~~~ ]#
 
@@ -183,6 +360,30 @@ proc ticc(): float =
 proc tocc(message: string, t0: float) =
    # Print timing
    echo message, " ", cpuTime() - t0
+
+#[ ~~~~ Generic functions ~~~~ ]#
+
+#[ For rephasing ]#
+proc rephase(sgf: auto) =
+   # Start timer
+   let t0 = ticc()
+
+   # Start thread block
+   threads:
+      # Set thread barrier
+      threadBarrier()
+
+      # Set boundary conditions
+      sgf.setBC_cust(str_prms["bc"])
+
+      # Create thread barrier
+      threadBarrier()
+
+      # Set staggered phases
+      sgf.stagPhase
+
+   # End timer
+   tocc("Rephase:", t0)
 
 #[ ~~~~ Define functions setting boundary conditions ~~~~ ]#
 
@@ -354,34 +555,20 @@ proc generate_pseudoferms(s: Staggered) =
 
 #[ ~~~~ Define functions for action calculation ~~~~ ]#
 
-#[ For calculating gauge action ]#
-proc gaction(gf: auto; f2: seq; p2: float): auto =
-   # Set variables
-   var
-      # Set gauge action
-      ga = gc.actionA(gf)
-
-      # Set fermion action
-      fa = sum(f2)
-
-      # Get momentum from gauge field
-      t = 0.5*p2 - float(16*vol)
-
-   # Set hamiltonian
-   let h = ga + fa + t
-
-   # Return variables
-   result = (ga, fa, t, h)
-
 #[ Calculate action ]#
-proc calc_action(s: Staggered; gf, p: auto): auto =
+proc calc_action(s: Staggered; gf, sgf, p: auto; act: string): auto =
    #[ Initial timing info ]#
 
    # Get initial time
    let t0 = ticc()
 
-   #[ Calculate momenta ]#
-   
+   #[ Take care of momentum part of the action ]#
+
+   # Check if initial action
+   if act == "h0":
+      # Generate momenta and save initial gauge field
+      generate_momenta(p, gf)
+
    # Initialize p2 to be zero
    var p2 = 0.0
 
@@ -398,8 +585,55 @@ proc calc_action(s: Staggered; gf, p: auto): auto =
       # Set p2 to p2t in master thread
       threadMaster: p2 = p2_c
 
-   #[ Take care of fermion part of the action ]#
+   #[ Take care of gauge part of the action ]#
+
+   # Set variables
+   var
+      # Initialize contribution from smeared gauge links
+      sga = 0.0
+
+      # Calculate contribution from unsmeared gauge links
+      ga = g_act.gaction(gf)
+
+      # Get momentum from gauge field
+      t = 0.5*p2 - float(16*vol)
+
+   # Check smearing
+   if gsmear.smearing != "none":
+      # Smear gauge field
+      gsmear.hypcoeffs.smear(gf, sgf, gsmear.info)
+
+      # Print timing
+      tocc("Smear gauge field for gauge sector", t0)
+
+   # Check if smeared gauge action to be calculated as well
+   if int_prms["sg_opt"] == 1:
+      # Pure gauge action with smeared links
+      sga = sg_act.gaction(sgf)
+
+   #[ Take care of fermion/boson part of the action ]#
    
+   # Check if matter fields to be smeared
+   if (msmear.smearing != "none"):
+      # Check is smearing needs to be done *separately*
+      if (msmear.smearing != gsmear.smearing):
+         # Smear matter fields with separate smearing
+         msmear.hypcoeffs.smear(gf, sgf, msmear.info)
+
+         # Print timing
+         tocc("Smear gauge field for matter sector", t0)
+
+      # Rephase smeared gauge field for fermion/boson sector
+      sgf.rephase()
+   else:
+      # Temporarily rephase unsmeared gauge field
+      gf.rephase()
+
+   # Check if calculation initial action
+   if act == "h0":
+      # Generate pseudofermions
+      stag.generate_pseudoferms()
+
    # Initialize fermion action
    var f2 = newSeq[float](phi.len)
 
@@ -436,10 +670,18 @@ proc calc_action(s: Staggered; gf, p: auto): auto =
          # Increment f2
          threadMaster: f2[fld_ind] = 0.5 * psi2
 
-   #[ Calculate gauge action and put everything together ]#
+   # Check if no smearing was applied for matter fields
+   if (msmear.smearing == "none"):
+      # Set phases back
+      gf.rephase()
 
-   # Calculate gauge action and return whole action
-   let (ga, fa, t, h) = gf.gaction(f2, p2)
+   #[ Put everything together ]#
+
+   # Set total fermion contribution
+   var fa = sum(f2)
+
+   # Add fermion contribution to full action
+   let h = ga + sga + fa + t
 
    #[ End timing information ]#
    
@@ -447,57 +689,10 @@ proc calc_action(s: Staggered; gf, p: auto): auto =
    tocc("Calculate action:", t0)
 
    # Return results for gauge action
-   result = (ga, fa, f2, t, h)
+   result = (ga, sga, fa, f2, t, h)
 
 #[ ~~~~ Define functions for force calculation ~~~~ ]#
-
-#[ For smearing force ]#
-proc smearRephase(gf, sgf: auto): proc =
-   # Get initial time
-   let t0 = ticc()
-
-   # Get smeared force
-   let smearedForce = coef.smearGetForce(gf, sgf, info)
-
-   # Start thread block
-   threads:
-      # Set boundary conditions
-      sgf.setBC_cust(str_prms["bc"])
-
-      # Create thread barrier 
-      threadBarrier()
-
-      # Set staggered phases
-      sgf.stagPhase
    
-   # Print timing information
-   tocc("Smear gauge and prepare smeared force:", t0)
-
-   # Return force proc
-   result = smearedForce
-
-#[ For smearing gauge field ]#
-proc smearRephaseDiscardForce(gf, sgf: auto) =
-   # Get initial time
-   let t0 = ticc()
-
-   # Smear gauge field
-   coef.smear(gf, sgf, info)
-
-   # Start thread block
-   threads:
-      # Set boundary conditions
-      sgf.setBC_cust(str_prms["bc"])
-
-      # Set thread barrier
-      threadBarrier()
-
-      # Set staggered phases
-      sgf.stagPhase
-
-   # Get timing information
-   tocc("Smear fields:", t0)
-
 #[ Rescaling for different fields ]#
 proc rescale(index: int, t: float): float =
    # Get value of s
@@ -524,20 +719,11 @@ proc smeared_one_link_force(f: auto; gf: auto; smeared_force: proc) =
    # Get initial time
    let t0 = ticc()
 
+   # Rephase
+   f.rephase()
+
    # Start thread block
    threads:
-      # Set boundary conditions
-      f.setBC_cust(str_prms["bc"])
-
-      # Set thread barrier
-      threadBarrier()
-
-      # Staggered phases
-      f.stagPhase()
-
-      # Set thread barrier
-      threadBarrier()
-
       # Cycle through directions
       for mu in 0..<f.len:
          # Cycle through odd lattice sites
@@ -548,30 +734,16 @@ proc smeared_one_link_force(f: auto; gf: auto; smeared_force: proc) =
    # Print timing information
    tocc("Rephase force/set BC's:", t0)
 
-   #[ Smear force ]#
+   # Check if matter fields to be smeared
+   if (msmear.smearing != "none"):
+      # Smear force
+      f.smeared_force(f)
 
-   # Smear
-   f.smeared_force(f)
+      # Print timing information
+      tocc("Smeared matter force", t0)
 
-   # Print timing information
-   tocc("Smear fermion/boson force:", t0)
-
-   #[ Multiply by link and project to traceless/anti-Hermitian component ]#
-
-   # Start thread block
-   threads:
-      # Cycle through direction
-      for mu in 0..<f.len:
-         # Cycle through lattice sites
-         for i in f[mu]:
-            # Create useful variable for product
-            var s {.noinit.}: typeof(f[0][0])
-
-            # Calculate product with gauge field link
-            s := f[mu][i] * gf[mu][i].adj
-
-            # Project to traceless/anti-Hermitian component
-            projectTAH(f[mu][i], s)
+   # Project to traceless/anti-Hermitian component
+   f.projTAH(gf)
 
    # Print timing information
    tocc("Multiply force by gauge link and project TA:", t0)
@@ -708,41 +880,59 @@ proc mdt(t: float) =
    # Print timing information
    tocc("Gauge field update:", t0)
 
-#[ Momentum update from gauge sector ]#
+#[ Generic momentum update proc ]#
 proc mdv(t: float) =
-   # Get initial time
-   let t0 = ticc()
-
-   # Get gauge force
-   gc.forceA(g, f)
-
    # Start thread block
    threads:
-      # Cycle through directions     
+      # Cycle through directions
       for mu in 0..<f.len:
          # Update momenta
          p[mu] -= t*f[mu]
 
-   # Print timing information
-   tocc("Gauge field momentum update from gauge sector:", t0)
+#[ Momentum update from gauge sector ]#
+proc mdvg(ix: openarray[int]; ts: openarray[float]; smeared_force: proc) =
+   #[ Momentum update from unsmeared links ]#
+   # Initial time
+   var t0 = 0.0
+
+   # Check if momentum to recieve update from unsmeared links
+   if (0 in ix):
+      # Get t0
+      t0 = ticc()
+
+      # Calculate force from unsmeared links
+      g_act.gforce(g, f)
+
+      # Do momentum update
+      mdv(ts[0])
+
+      # Print time
+      tocc("Gauge field momentum update from unsmeared gauge sector:", t0)
+
+   # Check if momentum to recieve update from smeared links
+   if (1 in ix):
+      # Get t0
+      t0 = ticc()
+
+      # Calcualte force from smeared links
+      sg_act.gforce(sg, f, smeared_force)
+
+      # Do momntum update
+      mdv(ts[1])
+
+      # Print timing
+      tocc("Gauge field momentum update from smeared gauge sector:", t0)
 
 #[ Momentum update w/ fermions/bosons ]#
-proc mdvf(ix: openarray[int], ts: openarray[float], smeared_force: proc) =
+proc mdvf(ix: openarray[int]; ts: openarray[float]; smeared_force: proc) =
    # Get initial time
    let t0 = ticc()
 
    # Calculate force
    stag.fforce(f, g, smeared_force, ix, ts)
 
-   # Update user
-   qexGC "mdvf fforce"
-
-   # Start thread block
-   threads:
-      # Cycle through directions
-      for mu in 0..<f.len:
-         # Update momenta
-         p[mu] -= f[mu]
+   # Update momentum
+   mdv(1.0)
 
    # Print timing information
    tocc("Gauge field momentum update from fermion/boson sector:", t0)
@@ -757,22 +947,30 @@ proc mdvAllfga(ts: openarray[float]) =
    # First, define variables
    var
       # Option for updating gauge
-      updateG = false
+      updateG = newseq[int](0)
 
       # Option for updating fermions
       updateF = newseq[int](0)
 
+      # Number of gauge field
+      Ng = int_prms["sg_opt"] + 1
+
+      # Smeared force proc
+      smeared_force: typeof(gsmear.hypcoeffs.smearGetForce(g, sg, gsmear.info)) = nil
+
    #[ Determine what fields are to be updated ]#   
 
-   # Check if gauge field to be updated
-   if ts[0] != 0:
-      # Otherwise, just update gauge
-      updateG = true
+   # Cycle through gauge fields
+   for k in 0..<Ng:
+      # Check if gauge field to be updated
+      if ts[k] != 0:
+         # Otherwise, just update gauge
+         updateG.add k
    
    # Check if pseudofermion/boson fields to be updated
-   for k in 0..<ts.len - 1:
+   for k in 0..<ts.len - Ng:
       # Define convenient index
-      let i = k + 1
+      let i = k + Ng
 
       # Check if field to be updated
       if ts[i] != 0:
@@ -781,20 +979,49 @@ proc mdvAllfga(ts: openarray[float]) =
 
    #[ Do molecular dynamics ]#
 
-   # Check if gauge field to be updated
-   if updateG:
-      # Update gauge sector
-      mdv(ts[0])
+   # Check if smearing needs to be done
+   if (gsmear.smearing != "none") or (msmear.smearing != "none"):
+      # Check if to calculated smeared force
+      if (updateF.len > 0) or (1 in updateG):
+         # Get smeared force
+         smeared_force = gsmear.hypcoeffs.smearGetForce(g, sg, gsmear.info)
 
-   # Check if fermions to updated
+      # Print timing
+      tocc("Smear gauge field & prepare force proc.", t0)
+
+   # Check if gauge field to be updated
+   if updateG.len > 0:
+      # Update gauge sector
+      mdvg(updateG, ts[0..Ng], smeared_force)
+
+   # Check if momentum from matter to updated
    if updateF.len > 0:
-      # Create smeared sforce proc
-      var smeared_force = g.smearRephase(sg)
+      # Check if matter fields to be smeared
+      if (msmear.smearing != "none"):
+         # Rephase smeared gauge field
+         sg.rephase()
+
+         # Print timing information
+         tocc("Rephase smeared links:", t0)
+      else:
+         # Rephase unsmeared gauge field
+         g.rephase()
+
+         # Print timing information
+         tocc("Reaphse unsmeared links:", t0)
 
       # Update fermion sector
-      mdvf(updateF, ts[1..^1], smeared_force)
+      mdvf(updateF, ts[Ng..^1], smeared_force)
 
-      # Set sforce proc to nil
+      # Check if no smearing was applied to matter
+      if msmear.smearing == "none":
+         # Set phase of gauge field back
+         g.rephase()
+
+         # Print timing information
+         tocc("Rephase unsmeared links:", t0)
+
+      # Set smeared force to nil
       smeared_force = nil
 
    #[ Print timing information ]#
@@ -806,6 +1033,9 @@ proc mdvAllfga(ts: openarray[float]) =
 let
    # Define gauge integration algorithm
    gauge_int_alg: IntegratorProc = str_prms["gauge_int_alg"]
+
+   # Define smeared gauge field integration algorithm
+   sgauge_int_alg: IntegratorProc = str_prms["smeared_gauge_int_alg"]
 
    # Define fermion integration algorithm
    ferm_int_alg: IntegratorProc = str_prms["ferm_int_alg"]
@@ -819,11 +1049,16 @@ let
    # Set integrator for gauge
    H = newParallelEvolution gauge_int_alg(T = T, V = V[0], steps = int_prms["g_steps"])
 block:
+   # Check if smeared gauge field to be added
+   if int_prms["sg_opt"] == 1:
+      # Add smeared gauge fields
+      H.add sgauge_int_alg(T = T, V = V[1], steps = int_prms["sg_steps"])
+ 
    # Add fermions to be updated
-   H.add ferm_int_alg(T = T, V = V[1], steps = int_prms["f_steps"])
+   H.add ferm_int_alg(T = T, V = V[int_prms["sg_opt"] + 1], steps = int_prms["f_steps"])
 
-   # Check if PV bosons to be updated
-   H.add pv_int_alg(T = T, V = V[2], steps = int_prms["pv_steps"])
+   # Add PV fields to be updated
+   H.add pv_int_alg(T = T, V = V[int_prms["sg_opt"] + 2], steps = int_prms["pv_steps"])
 
 #[ ~~~~ Define functions for checks of HMC ~~~~ ]#
 
@@ -853,8 +1088,8 @@ proc checkSolvers(traj: int) =
          checkStats("Solver " & intToStr(fld_ind) & " [force]: ", spf[fld_ind])
 
 #[ Reversibility check ]#
-proc rev_check(evol: auto; h0, ga0, T0, fa0: float; 
-               h1, ga1, t1, fa1: float; f20, f21: seq) =
+proc rev_check(evol: auto; h0, ga0, sga0, T0, fa0: float; 
+               h1, ga1, sga1, t1, fa1: float; f20, f21: seq) =
    #[ Define/fill temporary variables ]#
  
    # Get initial time
@@ -894,11 +1129,8 @@ proc rev_check(evol: auto; h0, ga0, T0, fa0: float;
 
    #[ Smear and calculate action ]#
 
-   # Now resmear gauge field
-   g.smearRephaseDiscardForce sg
-
    # Calculate action after evolution
-   let (gar, far, f2r, tr, hr) = stag.calc_action(g, p)
+   let (gar, sgar, far, f2r, tr, hr) = stag.calc_action(g, sg, p, "hr")
 
    # Create new sequence for change in ferm. from rev
    var df2r = newseq[float](f2r.len)
@@ -917,13 +1149,13 @@ proc rev_check(evol: auto; h0, ga0, T0, fa0: float;
    #[ Show results ]#
    
    # Print information about reversed H
-   echo "Reversed H: ", hr, " Sg: ", gar, ", Sf: ", far, ", far (indiv.): ", f2r, ", T: ", tr
+   echo "Reversed H: ", hr, " Sg: ", gar, ", Ssg: ", sgar, ", Sf: ", far, ", far (indiv.): ", f2r, ", T: ", tr
 
    # Print change in Hamiltonian from before and after reversed traj.
-   echo "dH: ",hr-h1, " dSg: ",gar-ga1, " dSf: ",far-fa1, ", dSf (indiv.) ",df2r, " dT ",tr-t1
+   echo "dH: ",hr-h1, " dSg: ",gar-ga1, " dSsg: ", sgar-sga1, " dSf: ",far-fa1, ", dSf (indiv.) ",df2r, " dT ",tr-t1
 
    # Print changes from initial Hamiltonian
-   echo "dH0: ",hr-h0," dSg0: ",gar-ga0," dSf0: ",far-fa0,", dSf0 (indiv.) ",df20," dT0 ",tr-T0
+   echo "dH0: ",hr-h0," dSg0: ",gar-ga0, "dSsg0: ", sgar-sga0," dSf0: ",far-fa0,", dSf0 (indiv.) ",df20," dT0 ",tr-T0
 
    #[ Restore state and print timing ]#
 
@@ -970,28 +1202,13 @@ for config in start_config..<end_config:
       # Tell user what trajectory that you're on
       echo "\n~~~~ Trajectory #: " & intToStr(config) & " " & rat_str & " ~~~~\n"
 
-      #[ Generate field momenta and save ]#
-
-      # Generate random momenta and save initial gauge field
-      generate_momenta(p, g)
-
-      #[ Smear fields and save ]#
-
-      # Now smear and rephase
-      g.smearRephaseDiscardForce sg
-
-      #[ Generate pseudofermion/boson fields ]#
-
-      # Generate pseudofermion/boson fields
-      stag.generate_pseudoferms()
-
       #[ Calculate initial action ]#
 
       # Calculate action
-      let (ga0, fa0, f20, t0, h0) = stag.calc_action(g, p)
+      let (ga0, sga0, fa0, f20, t0, h0) = stag.calc_action(g, sg, p, "h0")
 
       # Print information about initial action out
-      echo "Beginning H: ", h0, " Sg: ", ga0, ", Sf: ", fa0, ", Sf (indiv.): ", f20, ", T: ", t0
+      echo "Beginning H: ", h0, " Sg: ", ga0, ", Ssg: ", sga0, ", Sf: ", fa0, ", Sf (indiv.): ", f20, ", T: ", t0
 
       #[ Do trajectory ]#
 
@@ -1001,15 +1218,10 @@ for config in start_config..<end_config:
       # Finish Evolution
       H.finish
 
-      #[ Smear gauge field again ]#
-   
-      # Now resmear gauge field
-      g.smearRephaseDiscardForce sg
-
       #[ Calculate final action ]#
 
       # Calculate action
-      let (ga1, fa1, f21, t1, h1) = stag.calc_action(g, p)
+      let (ga1, sga1, fa1, f21, t1, h1) = stag.calc_action(g, sg, p, "h1")
 
       # Create array for getting individual changes in fermion/boson action
       var df2 = newseq[float](f21.len)
@@ -1020,17 +1232,17 @@ for config in start_config..<end_config:
          df2[ind] = f21[ind] - f20[ind]
 
       # Print information about final action out
-      echo "Ending H: ", h1, " Sg: ", ga1, ", Sf: ", fa1, ", Sf (indiv.): ", f21, ", T: ", t1
+      echo "Ending H: ", h1, " Sg: ", ga1, ", Ssg: ", sga1, ", Sf: ", fa1, ", Sf (indiv.): ", f21, ", T: ", t1
 
       # Print information about change
-      echo "dg, d(t + g), df2, df2 (indiv.): ",ga1-ga0, ", ",t1-t0+ga1-ga0, ", ",fa1-fa0, ", ",df2
+      echo "dg, dsg, d(t + g), df2, df2 (indiv.): ",ga1-ga0, ", ", sga1-sga0, ", ",t1-t0+ga1-ga0, ", ",fa1-fa0, ", ",df2
 
       #[ Checks ]#
 
       # Check if reversibility to be checked
       if (int_prms["rev_check_freq"] > 0) and (traj mod int_prms["rev_check_freq"] == 0):
          # Do reversibility check
-         H.rev_check(h0, ga0, t0, fa0, h1, ga1, t1, fa1, f20, f21)
+         H.rev_check(h0, ga0, sga0, t0, fa0, h1, ga1, sga1, t1, fa1, f20, f21)
 
       #[ Metropolis step ]#
    
@@ -1081,20 +1293,6 @@ for config in start_config..<end_config:
    
          # Write gauge and RNG field
          fn.write_fields(r, g)
-
-         #[
-         # Define filename
-         let fn_glbl = base_fn & ".global_rng"
-
-         # Create new file stream
-         var file = newFileStream(fn_glbl, fmWrite)
-
-         # Write RNG
-         file.write R
-
-         # Flush
-         file.flush
-         ]#
 
          # Write RNG
          R.write_rng(fn)

@@ -1,0 +1,150 @@
+<?xml version="1.0"?>
+<!-- 
++++ Input file for HMC simulations performed by staghmc_spv +++
+
+Author: Curtis Taylor Peterson
+
+~ See notes at bottom of this file for more information
+~ Credit to Oliver Witzel for formatting of XML file
+~ Credit to David Schaich for developing his modified MILC code, which 
+  was used extensively to test this code (see notes at the bottom of this file)
+~ Credit to James Osborn and Xiaoyong Jin for their endless help and support in 
+  writing the code that became the basis of this code (<>/src/examples/staghmc_sh.nim),
+  writing this beautiful lattice codebase (QEX), and for their unending help/support
+  with writing this code
+-->
+<qex>
+  <hmc><!-- Hybrid Monte Carlo parameters -->
+    <tau>_tau_</tau>
+    <g_steps>_gs_</g_steps> <!--Gauge field steps -->
+    <sg_steps>_sgs_</sg_steps> <!-- Steps for gauge field with smeared links -->
+    <f_steps>_fs_</f_steps> <!--Fermion field steps -->
+    <pv_steps>_pvs_</pv_steps> <!--PV boson field steps -->
+    <gauge_int_alg>2MN</gauge_int_alg> <!--Integration algorithm for gauge field -->
+    <smeared_gauge_int_alg>2MN</smeared_gauge_int_alg> <!-- " " smeared gauge field-->
+    <ferm_int_alg>2MN</ferm_int_alg> <!-- " " fermion fields -->
+    <pv_int_alg>2MN</pv_int_alg> <!--" " Pauli-Villars fields -->
+    <no_metropolis_until>1</no_metropolis_until> <!-- When to start Metropolis test -->
+  </hmc>
+  <config_opts><!-- Options for gauge configs -->
+    <start_config>_sc_</start_config> <!-- Starting config. is reunitarized -->
+    <start>cold</start> <!-- Cold start = unit, hot start = rand -->
+  </config_opts>
+  <rng><!-- Random number seeds -->
+    <rng_type>RngMilc6</rng_type> <!-- RNG type: MRG32k3a or RngMilc6 -->
+    <parallel_seed>987654321</parallel_seed> <!-- Seed for RNG fields -->
+    <serial_seed>987654321</serial_seed> <!-- Seed for global RNG (Metrop. step) -->
+  </rng>
+  <action><!-- Action parameters -->
+    <geom><!-- Specify geometry, Ns^3 X Nt -->
+      <Ns>_ni_</Ns> <!-- Three spatial directions-->
+      <Nt>_nt_</Nt> <!-- Time direction -->
+      <num_Ns>_nNs_</num_Ns> <!-- Number of spatial directions -->
+      <num_Nt>_nNt_</num_Nt> <!-- Number of temporal directions -->
+      <bc>aaaa</bc> <!-- Ferm. boundary conditions; e.g., pppa, aaaa, etc. -->
+    </geom>
+    <gauge><!-- Gauge action parameters -->
+      <gauge_act>_ga_</gauge_act> <!-- "Wilson", "rect", or "adjoint" -->
+      <beta>_beta_</beta> <!-- Bare gauge coupling -->
+      <adjoint> <!-- Adjoint-plaquette gauge action parameters -->
+         <adj_fac>_adj_</adj_fac>
+      </adjoint>
+      <rect> <!-- Rectangle gauge action parameters -->
+         <c1>_c1_</c1>
+      </rect>
+    </gauge>
+    <smeared_gauge> <!-- Normal gauge action, but with nHYP-smeared links -->
+       <sg_opt>_sgo_</sg_opt> <!-- Integer: include smeared gauge fields (1) or not (0) -->
+       <smeared_gauge_act>_sga_</smeared_gauge_act> <!-- Same options as unsmeared -->
+       <sm_beta>_smbeta_</sm_beta> <!-- Bare gauge coupling for smeared field -->
+       <adjoint> <!-- Adjoint-plaquette gauge action parameters -->
+         <sm_adj_fac>_smadj_</sm_adj_fac>
+       </adjoint>
+       <rect> <!-- Rectangle gauge action parameters -->
+         <sm_c1>_smc1_</sm_c1>
+       </rect>
+    </smeared_gauge>
+    <ferm><!-- Fermion action parameters -->
+      <Nf>_Nf_</Nf>
+      <mass>_mass_</mass>
+    </ferm>
+    <pv><!-- Pauli-Villars action parameters -->
+      <num_pv>_npv_</num_pv> <!-- num_pv = 0, then no Pauli-Villars bosons -->
+      <mass_pv>_mpv_</mass_pv>
+    </pv>
+  </action>
+  <smearing> <!-- Parameters for smearing -->
+    <gauge_smearing>nhyp</gauge_smearing> <!-- Smrng for gauge sector: "nhyp" or "none" -->
+    <matter_smearing>nhyp</matter_smearing> <!-- Smrng for fermion sector: " " -->
+    <nhyp_smearing><!-- Parameters for nHYP smearing -->
+      <alpha_1>0.4</alpha_1>
+      <alpha_2>0.5</alpha_2>
+      <alpha_3>0.5</alpha_3>
+    </nhyp_smearing>
+  </smearing>
+  <solver><!-- Solver parameters for action, force and pbp -->
+    <a_tol>1e-20</a_tol> <!-- Action solver tolerance -->
+    <a_maxits>10000</a_maxits> <!-- Action solver maximum itns. -->
+    <f_tol>1e-12</f_tol> <!-- Force solver " " -->
+    <f_maxits>10000</f_maxits> <!-- Force solver " " -->
+    <check_solvers>1</check_solvers> <!-- Frequency of checking solvers -->
+  </solver>
+  <extra><!-- Extra optional parameters -->
+    <basic_meas> <!-- For basic measurement of observables -->
+      <plaq_freq>1</plaq_freq> <!-- Plaquette; if zero, no measurement -->
+      <ploop_freq>1</ploop_freq> <!-- Polyakov loop; if zero, no measurement -->
+    </basic_meas>
+    <hmc_checks> <!-- For checks of HMC -->
+      <rev_check_freq>0</rev_check_freq> <!-- Frequency of rev. check for integrator -->
+    </hmc_checks>
+  </extra>
+</qex>
+
+<!--
+Notes
+~~~~~
+
++++ General +++
+~ Running instructions outlined in description at the top of
+  <>/src/stagg_pv_hmc/staghmc_spv.nim
+~ WARNING: HMC with different steps for each field and/or the use of
+  different integration algorithms foreach field has not beentested
+  extensively. Use with caution.
+
++++ HMC parameters +++
+
+~ IMPORTANT: Trajectory length differs by 1/sqrt(2) from David Schaich's* 
+  modified MILC code and therefore any codes that it derives from or
+  derive from it
+~ For Omelyan integrators with different "lambda", simply put in, e.g., 
+  "2MN,<value_of_lambda>".
+  ~ Default "2MN" has lambda = 0.1931833275037836
+~ Also supported, but NOT TESTED, are higher-order Omelyan integrators (e.g., 4MN, 6MN)
+  and various position/momentum updated configurations (<>GP, <>GV)
+  ~ For more information, see <>/src/algorithms/integrator.nim
+  ~ "force gradient" updates not supported. See <>/src/examples/staghmc_sh.nim 
+    if you want to modify this code to support force gradient updates
+
++++ Gauge action +++
+
++ Rectangle actions
+~ c1 = -1.0/12.0 ~ -0.083... ~~~> tree-level Symanzik
+~ c1 ~ -1.4069 or -1.4088 ~~~> DBW2
+~ c1 ~ -0.331 ~~~> Iwasaki
+~ Details of DBW2: https://journals.aps.org/prd/pdf/10.1103/PhysRevD.54.1050,
+  https://journals.aps.org/prd/pdf/10.1103/PhysRevD.75.114501,
+  https://journals.aps.org/prd/pdf/10.1103/PhysRevD.54.1050
+~ See comments in <>/src/gauge/gaugeAction.nim for more details
+
++ Adjoint-plaquette action
+~ adj_fac = -0.25 standard choice for many BSM applications
+
++++ Smearing +++
+
+~ alpha1, alpha2, alpha3 = 0.4, 0.5, 0.5 standard choice for many BSM applications
+~ alpha1 switched with alpha3 in David Schaich's* modified MILC code; 
+  that is, alpha1, alpha2, alpha3 = 0.5, 0.5, 0.4 in David's code
+
+* https://github.com/daschaich/KS_nHYP_FA - David Schaich's modified MILC code 
+  ~ Used extensively to test this code
+-->
