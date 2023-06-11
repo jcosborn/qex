@@ -214,11 +214,11 @@ proc gforce(act: GaugeAction; g, f: auto) =
    f.projTAH(g, adj = "adj")
 
 # Overloaded gauge force method for including smearing
-proc gforce*(act: GaugeAction; g, f: auto; smear_force: proc) =
+proc gforce*(act: GaugeAction; g, sg, f: auto; smear_force: proc) =
    # Start case
    case act.action:
-      of "Wilson", "rect": act.gc.gaugeForceCust(g, f)
-      of "adjoint": act.gc.forceACust(g, f)
+      of "Wilson", "rect": act.gc.gaugeForceCust(sg, f)
+      of "adjoint": act.gc.forceACust(sg, f)
       else: quit("Invalid action. Quitting.")
 
    # Smear force
@@ -740,7 +740,13 @@ proc smeared_one_link_force(f: auto; gf: auto; smeared_force: proc) =
       f.smeared_force(f)
 
       # Print timing information
-      tocc("Smeared matter force", t0)
+      tocc("Smeared matter force:", t0)
+   elif (msmear.smearing == "none"):
+      # Rephase gauge field
+      gf.rephase()
+
+      # Print timing information
+      tocc("Restore gauge field phase:", t0)
 
    # Project to traceless/anti-Hermitian component
    f.projTAH(gf)
@@ -915,7 +921,7 @@ proc mdvg(ix: openarray[int]; ts: openarray[float]; smeared_force: proc) =
       t0 = ticc()
 
       # Calcualte force from smeared links
-      sg_act.gforce(sg, f, smeared_force)
+      sg_act.gforce(g, sg, f, smeared_force)
 
       # Do momntum update
       mdv(ts[1])
@@ -1004,7 +1010,7 @@ proc mdvAllfga(ts: openarray[float]) =
          # Print timing information
          tocc("Rephase smeared links:", t0)
       else:
-         # Rephase unsmeared gauge field
+         # Rephase unsmeared gauge field (restored in force proc)
          g.rephase()
 
          # Print timing information
@@ -1012,14 +1018,6 @@ proc mdvAllfga(ts: openarray[float]) =
 
       # Update fermion sector
       mdvf(updateF, ts[Ng..^1], smeared_force)
-
-      # Check if no smearing was applied to matter
-      if msmear.smearing == "none":
-         # Set phase of gauge field back
-         g.rephase()
-
-         # Print timing information
-         tocc("Rephase unsmeared links:", t0)
 
       # Set smeared force to nil
       smeared_force = nil
@@ -1057,8 +1055,10 @@ block:
    # Add fermions to be updated
    H.add ferm_int_alg(T = T, V = V[int_prms["sg_opt"] + 1], steps = int_prms["f_steps"])
 
-   # Add PV fields to be updated
-   H.add pv_int_alg(T = T, V = V[int_prms["sg_opt"] + 2], steps = int_prms["pv_steps"])
+   # Check if PV fields to be added to MD evolution
+   if int_prms["num_pv"] > 0:
+      # Add PV fields to be updated
+      H.add pv_int_alg(T = T, V = V[int_prms["sg_opt"] + 2], steps = int_prms["pv_steps"])
 
 #[ ~~~~ Define functions for checks of HMC ~~~~ ]#
 
