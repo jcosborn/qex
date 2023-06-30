@@ -1304,6 +1304,11 @@ for config in start_config..<end_config:
          # Measure plaquette
          g.mplaq
 
+         # Check if user also wants a verbose output
+         if str_prms["plaq_verbose"] == "true":
+            # Calculate and print individual plaquette components
+            g.s4_gauge()
+
       # Check if Polyakov loop to be measured
       if (int_prms["ploop_freq"] > 0) and ((traj + 1) mod int_prms["ploop_freq"] == 0):
          # Measure polyakov loop

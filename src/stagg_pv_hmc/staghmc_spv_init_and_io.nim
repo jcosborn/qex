@@ -160,7 +160,8 @@ proc read_xml*(xml_file: string): auto =
                   "rng_type" : "RngMilc6",
                   "gauge_act": "adjoint",
                   "smeared_gauge_act": "Wilson",
-                  "gauge_smearing": "nhyp", "matter_smearing": "nhyp"}.toTable
+                  "gauge_smearing": "nhyp", "matter_smearing": "nhyp",
+                  "plaq_verbose": "true"}.toTable
 
       # Initialize XML attribute name
       attrName = ""

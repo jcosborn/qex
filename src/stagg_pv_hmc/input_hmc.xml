@@ -91,7 +91,10 @@ Author: Curtis Taylor Peterson
   </solver>
   <extra><!-- Extra optional parameters -->
     <basic_meas> <!-- For basic measurement of observables -->
-      <plaq_freq>1</plaq_freq> <!-- Plaquette; if zero, no measurement -->
+      <plaq>
+        <plaq_freq>1</plaq_freq> <!-- Plaquette; if zero, no measurement -->
+        <plaq_verbose>true</plaq_verbose>
+      </plaq>
       <ploop_freq>1</ploop_freq> <!-- Polyakov loop; if zero, no measurement -->
     </basic_meas>
     <hmc_checks> <!-- For checks of HMC -->
