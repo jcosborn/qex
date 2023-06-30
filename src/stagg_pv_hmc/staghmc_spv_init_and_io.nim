@@ -15,8 +15,45 @@ import options # For optional IO behavior with fields
 
 #[ ~~~~ Command line and XML inputs ~~~~ ]#
 
+proc print_banner() =
+   # Create banner
+   let banner = """
+                                .oooooo.      oooooooooooo ooooooo  ooooo                                
+                               d8P'  `Y8b     `888'     `8  `8888    d8'                                 
+                              888      888     888            Y888..8P                                   
+                              888      888     888oooo8        `8888'                                    
+                              888      888     888    "       .8PY888.                                   
+                              `88b    d88b     888       o   d8'  `888b                                  
+                               `Y8bood8P'Ybd' o888ooooood8 o888o  o88888o                                
+                                                                                                         
+                                                                                                         
+                                                                                                         
+ .oooooo..o     .                                            ooooo   ooooo ooo        ooooo   .oooooo.   
+d8P'    `Y8   .o8                                            `888'   `888' `88.       .888'  d8P'  `Y8b  
+Y88bo.      .o888oo  .oooo.    .oooooooo  .oooooooo           888     888   888b     d'888  888          
+ `"Y8888o.    888   `P  )88b  888' `88b  888' `88b            888ooooo888   8 Y88. .P  888  888          
+     `"Y88b   888    .oP"888  888   888  888   888            888     888   8  `888'   888  888          
+oo     .d8P   888 . d8(  888  `88bod8P'  `88bod8P'  .o.       888     888   8    Y     888  `88b    ooo  
+8""88888P'    "888" `Y888""8o `8oooooo.  `8oooooo.  Y8P      o888o   o888o o8o        o888o  `Y8bood8P'  
+                              d"     YD  d"     YD                                                       
+                              "Y88888P'  "Y88888P'                                                       
+                
+Quantum EXpressions (QEX) authors: James Osborn & Xiao-Yong Jin
+QEX Staggered HMC authors: James Osborn, Xiao-Yong Jin, Curtis Taylor Peterson, Anna Hasenfratz
+QEX GitHub: https://github.com/jcosborn/qex
+QEX Staggered HMC GitHub: https://github.com/ctpeterson/qex_staghmc 
+   """
+
+   # Print banner out
+   echo banner
+
 #[ Read command line inputs ]#
 proc read_cmd*(): auto =
+   #[ Print banner ]#
+
+   # Print banner at top of output
+   print_banner()
+
    #[ Initialize variables ]#
 
    # Set variables
