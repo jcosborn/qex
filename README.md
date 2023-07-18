@@ -1,11 +1,15 @@
 # QEX: Quantum EXpressions lattice field theory framework
 
 ## Description of QEX fork:
-Staggered hybrid Monte Carlo with Pauli-Villars bosons and nHYP smearing. Source code can be found [here](https://github.com/ctpeterson/qex/tree/devel/src/stagg_pv_hmc).
+Modular code for fast deployment of Hybrid Monte Carlo (HMC) with many options for simulating with/without nHYP smeared (or unsmeared) staggered fermions and Pauli-Villars (PV) bosons. Most options (gauge action, boundary conditions, nHYP smearing parameters, and much more) are provided in an XML file, such that the action being simulated can be quickly/easily modified without needing to modify the source code and/or recompile. Source code can be found [here](https://github.com/ctpeterson/qex/tree/devel/src/stagg_pv_hmc). See [input_hmc.xml](https://github.com/ctpeterson/qex_staghmc/blob/devel/src/stagg_pv_hmc/input_hmc.xml) for a complete list of tunable parameters for the gauge-fermion-PV action, HMC specifications, etc. 
 
-My custom gauge flow code can be found [here](https://github.com/ctpeterson/qex/tree/devel/src/flow). I am currently working on added a flow for O(N) models.
+For deployment, make sure that you 1.) follow the installation instructions given in the base QEX respository and 2.) install [MDevolve](https://github.com/jxy/MDevolve) using Nimble. Once you've done this, simply run "make staghmc_spv" in your build directory and you're done. If you're confused because the whole process seemed far too easy, I assure you that it really was that easy and encourage you to thank James Osborn and Xiao-Yong Jin for the time & effort that they've put into QEX. Instructions for running the code can be found at the top of [staghmc_spv.nim](https://github.com/ctpeterson/qex_staghmc/blob/devel/src/stagg_pv_hmc/staghmc_spv.nim).
 
-I have also added an XY model cluster code that can be found [here](https://github.com/ctpeterson/qex/tree/devel/src/xy_cluster_mc).
+This fork of QEX also ships with a modular gauge flow code, allowing for Wilson, adjoint-plaquette, and any variation of rectangular action for the flow. The gauge flow code can be found [here](https://github.com/ctpeterson/qex/tree/devel/src/flow).
+
+There is also an XY model code with Wolff cluster updates that can be found [here](https://github.com/ctpeterson/qex/tree/devel/src/xy_cluster_mc). The XY model simulation code also comes with options for performing U(1) gradient flow with the XY model action as the flow action, which is equivalent to a gradient flow of the XY model action with an explicit constraint that preserves the unit norm of the spins on the lattice. 
+
+For the U(1) gradient flow of the XY model action, I use [Arraymancer](https://mratsim.github.io/Arraymancer/index.html) for vectorization. The latter gradient flow code is not as efficient as the gauge flow code that is native to QEX, and it would be desireable to have a version of the U(1) gradient flow code that is build within the QEX framework. One option is simply to compile the [gauge flow code](https://github.com/ctpeterson/qex/tree/devel/src/flow) in this repository with --nc=1 and to modify the action to be the XY model action; this may come in a future version of this repository, but it is unlikely.
 
 ## Description of QEX:
 QEX is a high-level framework for lattice field operations
