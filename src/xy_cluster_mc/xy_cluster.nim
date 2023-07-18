@@ -66,7 +66,7 @@ var R: RngMilc6
 R.seed(seed_prms["serial_seed"], 987654321)
 
 # Check if starting off of old configuration
-if (int_prms["start_config"] == 0) and (start_config == 0):
+if (int_prms["start_config"] == 0) or (start_config == 0):
   # Check start
   if str_prms["start"] == "hot":
     # Cycle through lattice sites
@@ -82,14 +82,30 @@ else:
   # Define filename
   let in_fn = lat_fn & intToStr(int_prms["start_config"]) & ".lat"
 
-  # Create reader
-  var reader = g.l.newReader(in_fn)
+  # Create file
+  var file = newFileStream(in_fn, fmRead)
 
-  # Read new spin field in
-  reader.read(g)
+  # Check if able to read
+  if file == nil:
+     # Quit program
+     quit("Was not able to read " & in_fn & ". Exiting.")
+  else:
+     # Cycle through sites
+     for site in 0..<lo.nSites:
+        # Temporary variable
+        var site_val: typeof(g{site}[][])
+
+        # Read new spin field in
+        discard file.readData(site_val.addr, site_val.sizeof)
+
+        # Save to g
+        g{site} := site_val
 
   # Close reader
-  reader.close()
+  file.close()
+
+  # Tell user what you did
+  echo "Read " & in_fn
 
 #[ Define procs for Monte Carlo & measurements ]#
 
@@ -421,6 +437,32 @@ let
 # Print out initial values
 echo "initial H, Mx, My, M^2: ", energi, " ", magi[0], " ", magi[1], " ", tmagi, "\n"
 
+#[ Thermalization ]#
+# Check if user wants to do burn in
+if int_prms["n_therm"] > 0:
+   # Tell user what you're doing
+   echo "Doing initial thm. sweeps with " & intToStr(int_prms["n_therm"]) & " steps"
+
+   # Cycle through thermalization steps
+   for thm_step in 0..<int_prms["n_therm"]:
+      # Run MC
+      let size = evolve_cluster()
+
+   # Make initial measurements after thermalization
+   let
+      # Get magnetization
+      magit = g.meas_mag()
+
+      # Get squared mag
+      tmagit = magi[0]*magi[0] + magi[1]*magi[1]
+
+      # Get energy
+      energit = g.meas_energ()
+
+   # Print post-thermalization measurements
+   echo "thm: H, Mx, My, M^2: ", energit, " ", magit[0], " ", magit[1], " ", tmagit, "\n"
+
+#[ Production Monte Carlo ]#
 # Cycle through configurations
 for config in 1..<nconfig + 1:
    #[ Do cluster update ]#
@@ -460,7 +502,7 @@ for config in 1..<nconfig + 1:
          echo "H, Mx, My, M^2, <size>: ",energ," ",mag[0]," ",mag[1]," ",tmag," ",avg_size
 
    # Check if gradient flow to be performed
-   if (int_prms["gf_freq"] > 0):
+   if (int_prms["gf_freq"] > 0) and (config > int_prms["start_gf_meas"]):
       # Check if gauge flow to be performed
       if (0 == config mod int_prms["gf_freq"]):
          #[ Do flow ]#
@@ -480,8 +522,10 @@ for config in 1..<nconfig + 1:
 
           # Make sure the configuration is going to be able to be saved
           if not file.isNil:
-             # Save spin field
-             file.write g
+             # Cycle through lattice sites
+             for site in 0..<lo.nSites:
+                # Save spin field
+                file.write g{site}[][]
 
              # Tell user what you did
              echo "Wrote " & fn
