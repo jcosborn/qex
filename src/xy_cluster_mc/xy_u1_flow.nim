@@ -117,9 +117,6 @@ let
   # Lattice dimensions
   lat = @[int_prms["Nx"], int_prms["Ny"]]
 
-  # Number of configurations
-  nconfig = end_config - start_config
-
   # Set default lattice name
   lat_fn = io_path & def_fn & "."
 
@@ -332,7 +329,7 @@ proc gflow() =
 #[ Do gradient flow ]#
 
 # Cycle through configurations
-for config in 1..<nconfig + 1:
+for config in start_config..<end_config + 1:
    #[ Load configuration ]#
    
    # Define file name
