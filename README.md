@@ -5,7 +5,7 @@ Modular code for fast deployment of Hybrid Monte Carlo (HMC) with many options f
 
 For deployment, make sure that you 1.) follow the installation instructions given in the base QEX respository and 2.) install [MDevolve](https://github.com/jxy/MDevolve) using Nimble. Once you've done this, simply run "make staghmc_spv" in your build directory and you're done. If you're confused because the whole process seemed far too easy, I assure you that it really was that easy and encourage you to thank James Osborn and Xiao-Yong Jin for the time & effort that they've put into QEX. Instructions for running the code can be found at the top of [staghmc_spv.nim](https://github.com/ctpeterson/qex_staghmc/blob/devel/src/stagg_pv_hmc/staghmc_spv.nim).
 
-This fork of QEX also ships with a modular gauge flow code, allowing for Wilson, Adjoint-Plaquette, and any variation of rectangular action for the flow. The gauge flow code can be found [here](https://github.com/ctpeterson/qex/tree/devel/src/flow).
+This fork of QEX also ships with a modular gauge flow code, allowing for Wilson, adjoint-plaquette, and any variation of rectangular action for the flow. The gauge flow code can be found [here](https://github.com/ctpeterson/qex/tree/devel/src/flow).
 
 There is also an XY model code with Wolff cluster updates that can be found [here](https://github.com/ctpeterson/qex/tree/devel/src/xy_cluster_mc). The XY model simulation code also comes with options for performing U(1) gradient flow with the XY model action as the flow action, which is equivalent to a gradient flow of the XY model action with an explicit constraint that preserves the unit norm of the spins on the lattice. 
 
