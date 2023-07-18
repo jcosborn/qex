@@ -120,7 +120,9 @@ proc init_parallel_rng*(r: var ParallelRNG; lo: Layout;
    # Start case
    case r.rng_type:
       of "RngMilc6": r.milc = lo.newRNGField(RngMilc6, seed)
-      of "MRG32k3a": r.mrg32k3a = lo.newRNGField(MRG32k3a, seed)
+      of "MRG32k3a": #r.mrg32k3a = lo.newRNGField(MRG32k3a, seed)
+         # Warn user and quit
+         quit("MRG32k3a w/ I/O no longer supported for RNG fields. Workaround in progress.")
 
 #[ For random sample ]#
 proc random*(g: auto, r: var ParallelRNG) =
@@ -142,7 +144,9 @@ proc read_rng*(r: var ParallelRNG; rng_fn: string) =
 
          # Close reader
          reader.close()
-#      of "MRG32k3a":
+      of "MRG32k3a":
+          # Give user temporary warning
+          quit("MRG32k3a no longer supported for RNG fields. Workaround in progress.")
 #         # Create reader for RNG field
 #         var reader = r.mrg32k3a.l.newReader(rng_fn)
 
@@ -165,7 +169,10 @@ proc write_rng*(r: ParallelRNG; rng_fn: string) =
 
          # Close writer
          writer.close()
-#      of "MRG32k3a":
+      of "MRG32k3a":
+          # Tell user that MRG32k3a not currently supported
+          quit("MRG32k3a no longer supported for RNG fields. Workaround in progress.")
+
 #         # Create writer
 #         var writer = r.mrg32k3a.l.newWriter(rng_fn, fileMd)
 
