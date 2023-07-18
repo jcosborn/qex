@@ -9,7 +9,7 @@ This fork of QEX also ships with a modular gauge flow code, allowing for Wilson,
 
 There is also an XY model code with Wolff cluster updates that can be found [here](https://github.com/ctpeterson/qex/tree/devel/src/xy_cluster_mc). The XY model simulation code also comes with options for performing U(1) gradient flow with the XY model action as the flow action, which is equivalent to a gradient flow of the XY model action with an explicit constraint that preserves the unit norm of the spins on the lattice. 
 
-For the U(1) gradient flow of the XY model action, I use [Arraymancer](https://mratsim.github.io/Arraymancer/index.html) for vectorization. The latter gradient flow code is not as efficient as the gauge flow code that is native to QEX, and it would be desireable to have a version of the U(1) gradient flow code that is build within the QEX framework.
+For the U(1) gradient flow of the XY model action, I use [Arraymancer](https://mratsim.github.io/Arraymancer/index.html) for vectorization. The latter gradient flow code is not as efficient as the gauge flow code that is native to QEX, and it would be desireable to have a version of the U(1) gradient flow code that is build within the QEX framework. One option is simply to compile the [gauge flow code](https://github.com/ctpeterson/qex/tree/devel/src/flow) in this repository with --nc=1 and to modify the action to be the XY model action; this may come in a future version of this repository, but it is unlikely.
 
 ## Description of QEX:
 QEX is a high-level framework for lattice field operations
