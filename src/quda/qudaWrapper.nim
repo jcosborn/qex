@@ -14,3 +14,5 @@ else:  # put stubs here
   proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
     qexError "QUDA not compiled in (define qudaDir)"
 
+  proc qudaGaugeForce*(c: GaugeActionCoeffs, g: openArray, f: openArray) =
+    qexError "QUDA not compiled in (define qudaDir)"

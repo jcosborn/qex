@@ -51,6 +51,16 @@ template initStagD3T*(l:var Layout; T:typedesc; ss:string):untyped =
 proc initStagD3*(x:Field; sub:string):auto =
   result = initStagD3T(x.l, evalType(x[0]), sub)
 
+proc rephase*(s: Staggered) =
+  s.g.setBC
+  threadBarrier()
+  s.g.stagPhase
+
+proc rephase*(s: Staggered, g: auto) =
+  g.setBC
+  threadBarrier()
+  g.stagPhase
+
 proc trace*(stag: Staggered, mass: float): float =
   let v = stag.g[0][0].ncols * stag.g[0].l.physVol
   result = mass*v.float
@@ -369,10 +379,10 @@ proc stagDN*(sd:openArray[StaggeredD]; r:openArray[Field]; g:openArray[Field2];
     rir := m*x[i][ir]
   #r[sd.subset] := (0.5*sc)*r
 
-# r = m*x + sc*D*x
+# r = a*r + m*x + sc*D*x
 proc stagD*(sd:StaggeredD; r:Field; g:openArray[Field2];
-            x:Field; m:SomeNumber; sc:SomeNumber=1.0) =
-  stagD2(sd, r, g, x, 0, m/(0.5*sc))
+            x:Field; m:SomeNumber; sc:SomeNumber=1.0, a:SomeNumber=0.0) =
+  stagD2(sd, r, g, x, a/(0.5*sc), m/(0.5*sc))
   r[sd.subset] := (0.5*sc)*r
   #stagDP2(sd, r, g, x, 6):
   #  #for i in 0..<n:
@@ -528,6 +538,9 @@ proc D*(s:Staggered; r,x:Field; m:SomeNumber) =
 proc Ddag*(s:Staggered; r,x:Field; m:SomeNumber) =
   stagD(s.se, r, s.g, x, m, -1)
   stagD(s.so, r, s.g, x, m, -1)
+proc peqDdag*(s:Staggered; r,x:Field; m:SomeNumber) =
+  stagD(s.se, r, s.g, x, m, -1, 1)
+  stagD(s.so, r, s.g, x, m, -1, 1)
 proc eoReduce*(s:Staggered; r,b:Field; m:SomeNumber) =
   # r.even = (D^+ b).even
   #dump: "b.even.norm2"
@@ -539,6 +552,84 @@ proc eoReconstruct*(s:Staggered; r,b:Field; m:SomeNumber) =
   # r.odd = (b.odd - Doe r.even)/m
   stagD(s.so, r, s.g, r, 0.0, -1.0/m)
   r.odd += b/m
+
+# (d/dg) redot[ (2D)*x, c ]
+proc stagD2deriv*(s:Staggered; g:openArray[Field]; c:Field2; x:Field3) =
+  template sef:untyped = s.se.sf
+  template sof:untyped = s.so.sf
+  let nd = g.len
+  tic()
+  for mu in 0..<nd:
+    startSB(sef[mu], x[ix])
+  for mu in 0..<nd:
+    startSB(sof[mu], x[ix])
+  toc("startShiftF")
+  for ir in g[0][s.se.subset]:
+    for mu in 0..<nd:
+      var gmu = g[mu]
+      localSB(sef[mu], ir, peqOuter(gmu[ir][], c[ir][], it[]), x[ix])
+  for ir in g[0][s.so.subset]:
+    for mu in 0..<nd:
+      var gmu = g[mu]
+      localSB(sof[mu], ir, peqOuter(gmu[ir][], c[ir][], it[]), x[ix])
+  toc("local")
+  for mu in 0..<nd:
+    var gmu = g[mu]
+    template f(ir,it: untyped): untyped =
+      peqOuter(gmu[ir][], c[ir][], it[])
+    boundarySB2(sef[mu], f)
+    boundarySB2(sof[mu], f)
+  toc("boundaryF")
+  threadBarrier()
+  for mu in 0..<nd:
+    startSB(sef[mu], c[ix])
+  for mu in 0..<nd:
+    startSB(sof[mu], c[ix])
+  toc("startShiftF")
+  for ir in g[0][s.se.subset]:
+    for mu in 0..<nd:
+      localSB(sef[mu], ir, meqOuter(g[mu][ir], x[ir], it), c[ix])
+  for ir in g[0][s.so.subset]:
+    for mu in 0..<nd:
+      localSB(sof[mu], ir, meqOuter(g[mu][ir], x[ir], it), c[ix])
+  toc("local")
+  for mu in 0..<nd:
+    template f(ir,it: untyped): untyped =
+      meqOuter(g[mu][ir], x[ir], it)
+    boundarySB2(sef[mu], f)
+    boundarySB2(sof[mu], f)
+  toc("boundaryF")
+
+proc stagDeriv*(s:Staggered; f:openArray[Field]; x:Field2) =
+  template sef:untyped = s.se.sf
+  template sof:untyped = s.so.sf
+  let nd = f.len
+  tic()
+  for mu in 0..<nd:
+    startSB(sef[mu], x[ix])
+  for mu in 0..<nd:
+    startSB(sof[mu], x[ix])
+  toc("startShiftF")
+  for ir in f[0][s.se.subset]:
+    for mu in 0..<nd:
+      var gmu = f[mu]
+      localSB(sef[mu], ir, peqOuter(gmu[ir][], x[ir][], it[]), x[ix])
+  for ir in f[0][s.so.subset]:
+    for mu in 0..<nd:
+      var gmu = f[mu]
+      localSB(sof[mu], ir, meqOuter(gmu[ir][], x[ir][], it[]), x[ix])
+  toc("local")
+  for mu in 0..<nd:
+    var gmu = f[mu]
+    template fp(ir,it: untyped): untyped =
+      peqOuter(gmu[ir][], x[ir][], it[])
+    boundarySB2(sef[mu], fp)
+    template fm(ir,it: untyped): untyped =
+      meqOuter(gmu[ir][], x[ir][], it[])
+    boundarySB2(sof[mu], fm)
+  toc("boundaryF")
+  threadBarrier()
+  s.rephase f
 
 #[
 template foldl*(f,n,op:untyped):untyped =

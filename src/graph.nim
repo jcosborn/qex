@@ -16,7 +16,10 @@ type
     of false:
       discard
   GraphTag = enum
-    gtConst, gtRun, gtDF, gtGrad
+    gtConst,  ## constant node
+    gtRun,  ## forward value is valid
+    gtGrad,  ## gradient is valid
+    gtDF
   GraphTags = set[GraphTag]
   GraphValueRef = ref object of RootObj
   GraphValue[T] = ref object of GraphValueRef
@@ -69,12 +72,31 @@ proc newConst[T](x:T, s="$C"):GraphNode[T] =
   GraphNode[T](tag: {gtConst}, val:GraphValue[T](v:x), str:s & "|" & $x & "|",
     initGrad: (proc(g:Graph) = g.grad = GraphValue[T](v:1.T)))
 
-proc eval(g:Graph) =
-  if g.isop and gtRun notin g.tag:
-    g.tag.incl gtRun
+proc wasUpdated*(g:Graph) =
+  g.tag.excl gtRun
+
+proc isValid*(g:Graph):bool =
+  result = true
+  if g.isop:
     for x in g.args:
-      x.eval
-    g.run(g)
+      result &= x.isValid
+    if result == false:
+      g.excl gtRun
+  else:
+    result = gtRun in g.tag
+
+proc eval*(g:Graph) =
+  if g.isop:
+    if gtRun in g.tags:
+      if not g.isValid:
+        eval g
+    else:
+      g.tag.incl gtRun
+      for x in g.args:
+        x.eval
+      g.run(g)
+  else:
+    g.tag.incl gtRun
 
 proc clearGrad(g:Graph) =
   g.grad = nil

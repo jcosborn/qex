@@ -1,5 +1,5 @@
 import strUtils
-import math, strformat
+import math, strformat, stats
 
 type
   MetropolisStats* = object
@@ -14,6 +14,7 @@ type
     rnd*: float
     deltaH*: float
     hReverse*: float
+    expmDeltaH*: float
     pAccept*: float
     accepted*: bool
     nUpdates*: int
@@ -21,6 +22,9 @@ type
     nRejects*: int
     acceptRatio*: float
     avgDeltaH*: float
+    avgDeltaH2*: float
+    avgPAccept*: float
+    pAcceptStats*: RunningStat
   MetropolisRoot* = ref MetropolisRootObj
   MetropolisWrapper*[T] = ref object of MetropolisRootObj
     state*: T
@@ -41,6 +45,9 @@ proc clearStats*[M:MetropolisRoot](m: var M) =
   m.nRejects = 0
   m.acceptRatio = 0
   m.avgDeltaH = 0
+  m.avgDeltaH2 = 0
+  m.avgPAccept = 0
+  clear m.pAcceptStats
 
 proc updateStats*[M:MetropolisRoot](m: var M) =
   m.stats.add MetropolisStats(hOld:m.hOld,hNew:m.hNew,rnd:m.rnd)
@@ -52,6 +59,9 @@ proc updateStats*[M:MetropolisRoot](m: var M) =
     inc m.nRejects
   m.acceptRatio = m.nAccepts / m.nUpdates
   m.avgDeltaH = (n*m.avgDeltaH + m.deltaH) / (n+1)
+  m.avgDeltaH2 = (n*m.avgDeltaH2 + m.deltaH*m.deltaH) / (n+1)
+  m.avgPAccept = (n*m.avgPAccept + m.pAccept) / (n+1)
+  m.pAcceptStats.push m.pAccept
 
 proc init*[M:MetropolisRoot](m: var M) =
   m.verbosity = 0
@@ -81,19 +91,20 @@ proc update*[T:MetropolisRoot](m: var T) =
     # echo?
 
   m.rnd = m.globalRand
-  m.pAccept = exp(-m.deltaH)
+  m.expmDeltaH = exp(-m.deltaH)
+  m.pAccept = min(1.0, m.expmDeltaH)
   if m.rnd <= m.pAccept:
     m.accepted = true
     m.updateStats
     if m.verbosity>0:
-      echo "ACCEPT ln(pAccept): $1  pAccept: $2  rnd: $3"%
+      echo "ACCEPT deltaH: $1  pAccept: $2  rnd: $3"%
         [m.deltaH.ff, m.pAccept.ff, m.rnd.ff]
     m.accept
   else:
     m.accepted = false
     m.updateStats
     if m.verbosity>0:
-      echo "REJECT ln(pAccept): $1  pAccept: $2  rnd: $3"%
+      echo "REJECT deltaH: $1  pAccept: $2  rnd: $3"%
         [m.deltaH.ff, m.pAccept.ff, m.rnd.ff]
     m.reject
 

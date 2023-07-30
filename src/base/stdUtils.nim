@@ -100,6 +100,15 @@ proc `mod`*(x: array, y: SomeNumber): auto {.inline,noInit.} =
 #  for i in 0..<result.len:
 #    result[i] = x[i] + y[i]
 
+proc assign*[N,T](r: var array[N,T], x: SomeNumber) {.inline.} =
+  mixin assign
+  const n = r.len
+  for i in 0..<n:
+    assign(r[i], x)
+
+template `:=`*[N,T](r: var array[N,T], x: SomeNumber) =
+  assign(r, x)
+
 proc assign*[N1,T1,N2,T2](r: var array[N1,T1], x: array[N2,T2]) {.inline.} =
   mixin assign
   const n1 = r.len

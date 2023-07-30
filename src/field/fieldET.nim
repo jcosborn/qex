@@ -205,6 +205,7 @@ proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] {.noinit.} =
     newFarrElem(result.arr[i], l, s, t)
     inc t
 
+template dataPtr*[V:static[int],T](x: Field[V,T]): auto = x.s.data
 template getT[V:static[int],T](x: Field[V,T]): typedesc = T
 template getT[V:static[int],T](x: typedesc[Field[V,T]]): typedesc = T
 template isWrapper*(x: SomeField): untyped = false
@@ -596,6 +597,13 @@ template norm2*(f:SomeAllField):untyped =
   else:
     norm2P(f)
 template norm2*(f:Subsetted):untyped = norm2P(f)
+
+proc norm2subtract*(x: Field, y: float): float =
+  var s: evalType(norm2(toDouble(x[0])))
+  for i in x:
+    s += x[i].toDouble.norm2 - y
+  result = s.simdReduce
+  x.l.threadRankSum(result)
 
 proc dotP*(f1:SomeField; f2:SomeField2):auto =
   tic()

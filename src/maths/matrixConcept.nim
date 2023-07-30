@@ -714,6 +714,15 @@ proc redot*(x: Mat2; y: Mat3): auto {.inline,noInit.} =
     forO j, 0, x.len.pred:
       result += redot(x[i,j],y[i,j])
 
+proc peqOuter*(r: var Mat1; x: Vec2; y: Vec3) {.alwaysInline.} =
+  forO i, 0, r.nrows-1:
+    forO j, 0, r.ncols-1:
+      r[i,j] += x[i] * y[j].adj
+proc meqOuter*(r: var Mat1; x: Vec2; y: Vec3) {.alwaysInline.} =
+  forO i, 0, r.nrows-1:
+    forO j, 0, r.ncols-1:
+      r[i,j] -= x[i] * y[j].adj
+
 proc simdSum*(x: Vec1): auto {.noInit.} =
   var r{.noInit.}: VectorArray[x.len,evalType(simdSum(x[0]))]
   forO i, 0, x.len.pred:

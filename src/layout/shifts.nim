@@ -174,14 +174,14 @@ proc boundaryOffsetSB*(s:ShiftB) =
   s.sb.sq.lenr[threadNum] = cint(i1)
   s.sb.sq.nthreads[threadNum] = numThreads.cint
 
-template boundaryWaitSB*(s:ShiftB, e:untyped):untyped =
+template boundaryWaitSB*(s:ShiftB, e:untyped) =
   if s.si.nRecvDests > 0:
     e
     if s.si.nRecvRanks > 0:
       if threadNum == 0:
         waitRecvBuf(s.sb)
 
-template boundarySyncSB*():untyped =
+template boundarySyncSB*() =
   twait0()
 
 template boundaryGetSB*(ss:ShiftB; irr:untyped; e:untyped):untyped =
