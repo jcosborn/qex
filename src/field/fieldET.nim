@@ -465,9 +465,21 @@ proc `$`*(x:Field):string =
     result.add $(x{i})
     if i<l.nSites-1: result.add "\n"
 
-template indexField(x:Shifted, y:int):untyped = 0
-proc applyOp1(x,y:NimNode; op:string):auto =
+template indexField(x:Shifted, y:int):auto = 0
+template applyOp1Impl(x,y,o: untyped) =
+  let tx = x
+  let ty = y
+  #echoImm `x`[0] is VMconcept1
+  #echoImm t isnot VMconcept2
+  for e in tx:
+    mixin o
+    #mixin isMatrix
+    #echoAll isMatrix(`x`[e])
+    o(tx[e], ty)
+proc applyOp1(x,y:NimNode; op:string):NimNode =
   let o = ident(op)
+  result = getAst(applyOp1Impl(x,y,o))
+  #[
   result = quote do:
     let tx = `x`
     let ty = `y`
@@ -478,6 +490,7 @@ proc applyOp1(x,y:NimNode; op:string):auto =
       #mixin isMatrix
       #echoAll isMatrix(`x`[e])
       `o`(tx[e], ty)
+  ]#
 
 #[
 var exprInstInfo {.compiletime.}: type(instantiationInfo())
@@ -496,7 +509,7 @@ macro debugExpr(body: typed): untyped =
 ]#
 
 #proc applyOp2(x,y:NimNode; ty:typedesc; op:string):auto =
-proc applyOp2(x,y:NimNode; ty:NimNode; op:string):auto =
+proc applyOp2(x,y:NimNode; ty:NimNode; op:string):NimNode =
   #echo ty.getType.treeRepr
   #echo ty.getType.getImpl.treeRepr
   let o = ident(op)
@@ -517,12 +530,12 @@ proc applyOp2(x,y:NimNode; ty:NimNode; op:string):auto =
           `o`(xx[e], indexField(yy, e))
           staticTraceEnd: `o Field2`
   #echo result.treerepr
-template makeOps(op,f,fM,s: untyped): untyped {.dirty.} =
+template makeOps(op,f,fM,s: untyped) {.dirty.} =
   macro f*(x:Subsetted; y:notSomeField2):auto = applyOp1(x,y,s)
   macro f*(x:Subsetted; y:SomeField2):auto = applyOp2(x,y,int.getType,s)
   macro fM*(x:Field; y:notSomeField; ty:typedesc):auto = applyOp1(x,y,s)
   macro fM*(x:Field; y:SomeField; ty:typedesc):auto = applyOp2(x,y,ty,s)
-  template f*(x:Field; y:auto):untyped =
+  template f*(x:Field; y:auto) =
     #when declaredInScope(subsetObject):
     when declared(subsetObject):
       #echo "subsetObj" & s
@@ -587,7 +600,7 @@ proc norm2P*(f:SomeField):auto =
   f.l.threadRankSum(result)
   #echo result
   toc("norm2 thread rank sum")
-template norm2*(f:SomeAllField):untyped =
+template norm2*(f:SomeAllField):auto =
   when declared(subsetObject):
     #echo "subsetObj" & s
     norm2P(f[subsetObject])
@@ -596,7 +609,7 @@ template norm2*(f:SomeAllField):untyped =
     norm2P(f[subsetString])
   else:
     norm2P(f)
-template norm2*(f:Subsetted):untyped = norm2P(f)
+template norm2*(f:Subsetted):auto = norm2P(f)
 
 proc norm2subtract*(x: Field, y: float): float =
   var s: evalType(norm2(toDouble(x[0])))

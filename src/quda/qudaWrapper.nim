@@ -10,6 +10,7 @@ else:  # put stubs here
   import base
   import layout
   import physics/stagD
+  import gauge
 
   proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
     qexError "QUDA not compiled in (define qudaDir)"

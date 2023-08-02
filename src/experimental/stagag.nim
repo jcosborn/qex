@@ -48,6 +48,8 @@ var
   pt2 = floatParam("t2", 0)
   pg2 = floatParam("g2", 0)
   pf2 = floatParam("f2", 0)
+  pgf2 = floatParam("gf2", 0)
+  pff2 = floatParam("ff2", 0)
 
 macro echoparam(x: auto): auto =
   let n = x.repr
@@ -93,6 +95,8 @@ echoparam(pff1, ff1)
 echoparam(pt2, t2)
 echoparam(pg2, g2)
 echoparam(pf2, f2)
+echoparam(pgf2, gf2)
+echoparam(pff2, ff2)
 
 let
   gc = GaugeActionCoeffs(plaq: beta, adjplaq: 0)
@@ -497,19 +501,29 @@ proc setupMDabacaba =
 # Order 6
 
 proc setupMDacabacabaca =
-  let t0 = vtau * pushParam(0.1097059723948682)
-  let g0 = vtau * pushParam(0.2693315848935301)
-  let f0 = if nf==0: g0 else: vtau * pushParam(0.2693315848935301)
-  let g0f = vtau*vtau*pushParam(0.006417488)
-  let f0f = if nf==0: g0f else: vtau*vtau*pushParam(0.006417488)
-  let t1 = vtau * pushParam(0.4140632267310831)
-  let g1 = vtau * pushParam(1.131980348651556)
-  let f1 = if nf==0: g1 else: vtau * pushParam(1.131980348651556)
+  if pt0 == 0: pt0 = 0.1097059723948682
+  if pg0 == 0: pg0 = 0.2693315848935301
+  if pf0 == 0: pf0 = 0.2693315848935301
+  if pgf0 == 0: pgf0 = 0.0008642161339706166*(2.0/pg0)
+  if pff0 == 0: pff0 = 0.0008642161339706166*(2.0/pf0)
+  if pt1 == 0: pt1 = 0.4140632267310831
+  if pg1 == 0: pg1 = 1.131980348651556
+  if pf1 == 0: pf1 = 1.131980348651556
+  if pgf2 == 0: pgf2 = -0.01324638643416052*(2.0/(1-2*(pg0+pg1)))
+  if pff2 == 0: pff2 = -0.01324638643416052*(2.0/(1-2*(pf0+pf1)))
+  let t0 = vtau * pushParam(pt0)
+  let g0 = vtau * pushParam(pg0)
+  let f0 = if nf==0: g0 else: vtau * pushParam(pf0)
+  let g0f = vtau*vtau*pushParam(pgf0)
+  let f0f = if nf==0: g0f else: vtau*vtau*pushParam(pff0)
+  let t1 = vtau * pushParam(pt1)
+  let g1 = vtau * pushParam(pg1)
+  let f1 = if nf==0: g1 else: vtau * pushParam(pf1)
   let t2 = 0.5 * vtau - t0 - t1
   let g2 = vtau - 2*g0 - 2*g1
   let f2 = vtau - 2*f0 - 2*f1
-  let g2f = vtau*vtau*pushParam(0.014696784)
-  let f2f = if nf==0: g2f else: vtau*vtau*pushParam(0.014696784)
+  let g2f = vtau*vtau*pushParam(pgf2)
+  let f2f = if nf==0: g2f else: vtau*vtau*pushParam(pff2)
   addT(t0)
   addGF(g0, g0f)
   addFF(f0, f0f)
