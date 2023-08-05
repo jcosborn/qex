@@ -159,7 +159,8 @@ proc test(lat:auto) =
   bench(nc*mvf, 3*mb, 3*mb):
     for e in m3:
       var vt{.noInit.}:type(v2[e])
-      forStatic i, 0, nc.pred:
+      #forStatic i, 0, nc.pred:
+      for i in 0..<nc:
         mul(vt, m1[e], row(m2[e],i))
         setRow(m3[e], vt, i)
 
