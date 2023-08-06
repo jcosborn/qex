@@ -447,7 +447,7 @@ proc `$`*(x:Field):string =
     if i<l.nSites-1: result.add "\n"
 
 template indexField(x:Shifted, y:int):untyped = 0
-proc applyOp1(x,y:NimNode; op:string):auto =
+proc applyOp1x(x,y:NimNode; op:string):auto =
   let o = ident(op)
   result = quote do:
     let tx = `x`
@@ -459,6 +459,19 @@ proc applyOp1(x,y:NimNode; op:string):auto =
       #mixin isMatrix
       #echoAll isMatrix(`x`[e])
       `o`(tx[e], ty)
+template applyOp1Impl(x,y,o:untyped) =
+  let tx = `x`
+  let ty = `y`
+  #echoImm `x`[0] is VMconcept1
+  #echoImm t isnot VMconcept2
+  for e in tx:
+    mixin `o`
+    #mixin isMatrix
+    #echoAll isMatrix(`x`[e])
+    `o`(tx[e], ty)
+proc applyOp1(x,y:NimNode; op:string):auto =
+  let o = ident(op)
+  result = getAst(applyOp1Impl(x,y,o))
 
 #[
 var exprInstInfo {.compiletime.}: type(instantiationInfo())
@@ -477,7 +490,7 @@ macro debugExpr(body: typed): untyped =
 ]#
 
 #proc applyOp2(x,y:NimNode; ty:typedesc; op:string):auto =
-proc applyOp2(x,y:NimNode; ty:NimNode; op:string):auto =
+proc applyOp2(x,y:NimNode; op:string):auto =
   #echo ty.getType.treeRepr
   #echo ty.getType.getImpl.treeRepr
   let o = ident(op)
@@ -498,11 +511,29 @@ proc applyOp2(x,y:NimNode; ty:NimNode; op:string):auto =
           `o`(xx[e], indexField(yy, e))
           staticTraceEnd: `o Field2`
   #echo result.treerepr
-template makeOps(op,f,fM,s: untyped): untyped {.dirty.} =
-  macro f*(x:Subsetted; y:notSomeField2):auto = applyOp1(x,y,s)
-  macro f*(x:Subsetted; y:SomeField2):auto = applyOp2(x,y,int.getType,s)
-  macro fM*(x:Field; y:notSomeField; ty:typedesc):auto = applyOp1(x,y,s)
-  macro fM*(x:Field; y:SomeField; ty:typedesc):auto = applyOp2(x,y,ty,s)
+#macro id(op:static string):auto =
+#  result = newIdentNode(op)
+#macro id(op:string):auto =
+#  result = newIdentNode(op.strVal)
+#template makeOps2(o,f,fM: untyped) {.dirty.} =
+#  proc f*(x:Subsetted; y:notSomeField2) =
+#    for e in x:
+#      mixin o
+#      o(tx[e], ty)
+template makeOps(op,f,fM,s: untyped) {.dirty.} =
+  #makeOps2(id(s),f,fM)
+  #macro f*(x:Subsetted; y:notSomeField2):auto = applyOp1(x,y,s)
+  proc f*(x:Subsetted; y:notSomeField2) =
+    for e in x:
+      mixin f
+      f(x[e], y)
+  macro f*(x:Subsetted; y:SomeField2):auto = applyOp2(x,y,s)
+  #macro fM*(x:Field; y:notSomeField; ty:typedesc):auto = applyOp1(x,y,s)
+  proc fM*(x:Field; y:notSomeField) =
+    for e in x:
+      mixin f
+      f(x[e], y)
+  macro fM*(x:Field; y:SomeField):auto = applyOp2(x,y,s)
   template f*(x:Field; y:auto):untyped =
     #when declaredInScope(subsetObject):
     when declared(subsetObject):
@@ -514,7 +545,7 @@ template makeOps(op,f,fM,s: untyped): untyped {.dirty.} =
     else:
       #fM(x, y, y.type)
       staticTraceBegin: `f FieldAuto`
-      fM(x, y, int)
+      fM(x, y)
       staticTraceEnd: `f FieldAuto`
   when profileEqns:
     template op*(x:Field; y:auto):untyped =

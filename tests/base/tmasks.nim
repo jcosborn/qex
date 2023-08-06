@@ -24,15 +24,18 @@ var
 
 suite "test random source and masked assignment":
   test "random z4 source norm2":
+    var n = 0.0
     threads:
       eta.z4 r
-      var n = eta.norm2
+      var n2 = eta.norm2
       threadMaster:
-        check(n ~ float(3*lat[0]*lat[1]*lat[2]*lat[3]))
+        n = n2
+    check(n ~ float(3*lat[0]*lat[1]*lat[2]*lat[3]))
 
   test "dilution and masked assignment":
     for t in 0..<nt:
       for dl in dilution(dilute_type):
+        var n = 0.0
         threads:
           tmps := 0
           threadBarrier()
@@ -43,8 +46,9 @@ suite "test random source and masked assignment":
               #  tmps{i}[c].re := eta{i}[c].re
               #  tmps{i}[c].im := eta{i}[c].im
           threadBarrier()
-          var n = tmps.norm2
+          var n2 = tmps.norm2
           threadMaster:
-            check(n ~ float(3*lat[0]*lat[1]*lat[2])/2)
+            n = n2
+        check(n ~ float(3*lat[0]*lat[1]*lat[2])/2)
 
 qexFinalize()
