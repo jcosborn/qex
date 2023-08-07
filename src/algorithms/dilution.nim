@@ -7,12 +7,20 @@ type
     case kind*: DilutionKind
     of dkEvenOdd: eo*: range[0..1]
     of dkCorners3D: c3d*: range[0..7]
+template high(dk: DilutionKind): int =
+  case dk
+  of dkEvenOdd: 1
+  of dkCorners3D: 7
+template newDilution(dk: DilutionKind, i: int): Dilution =
+  case dk
+  of dkEvenOdd: Dilution(kind: dkEvenOdd, eo: i)
+  of dkCorners3D: Dilution(kind: dkCorners3D, c3d: i)
 proc `$`*(x: Dilution): string =
   case x.kind
   of dkEvenOdd: "EvenOdd " & $x.eo
   of dkCorners3D: "Corners3D " & $x.c3d
 
-template sitesI(l: Layout, d: Dilution): untyped =
+template sitesI(l: Layout, d: Dilution): auto =
   case d.kind
   of dkEvenOdd:
     # Assuming even-odd layout
@@ -37,13 +45,15 @@ iterator sites*(l: Layout, d: Dilution): int = l.sitesI d
 iterator sites*(f: Field, d: Dilution): int = f.l.sitesI d
 
 iterator dilution*(dl:DilutionKind): Dilution =
-  case dl
-  of dkEvenOdd:
-    yield Dilution(kind:dkEvenOdd, eo:0)
-    yield Dilution(kind:dkEvenOdd, eo:1)
-  of dkCorners3D:
-    for i in 0..7:
-      yield Dilution(kind:dkCorners3D, c3d:i)
+  #case dl
+  #of dkEvenOdd:
+  #  for i in 0..1:
+  #    yield Dilution(kind:dkEvenOdd, eo:i)
+  #of dkCorners3D:
+  #  for i in 0..7:
+  #    yield Dilution(kind:dkCorners3D, c3d:i)
+  for i in 0..high(dl):
+    yield newDilution(dl, i)
 
 proc parseDilution*(dl:string): DilutionKind =
   case dl

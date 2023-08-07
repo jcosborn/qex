@@ -509,7 +509,7 @@ macro debugExpr(body: typed): untyped =
 ]#
 
 #proc applyOp2(x,y:NimNode; ty:typedesc; op:string):auto =
-proc applyOp2(x,y:NimNode; ty:NimNode; op:string):NimNode =
+proc applyOp2(x,y:NimNode; op:string):NimNode =
   #echo ty.getType.treeRepr
   #echo ty.getType.getImpl.treeRepr
   let o = ident(op)
@@ -532,9 +532,9 @@ proc applyOp2(x,y:NimNode; ty:NimNode; op:string):NimNode =
   #echo result.treerepr
 template makeOps(op,f,fM,s: untyped) {.dirty.} =
   macro f*(x:Subsetted; y:notSomeField2):auto = applyOp1(x,y,s)
-  macro f*(x:Subsetted; y:SomeField2):auto = applyOp2(x,y,int.getType,s)
-  macro fM*(x:Field; y:notSomeField; ty:typedesc):auto = applyOp1(x,y,s)
-  macro fM*(x:Field; y:SomeField; ty:typedesc):auto = applyOp2(x,y,ty,s)
+  macro f*(x:Subsetted; y:SomeField2):auto = applyOp2(x,y,s)
+  macro fM*(x:Field; y:notSomeField):auto = applyOp1(x,y,s)
+  macro fM*(x:Field; y:SomeField):auto = applyOp2(x,y,s)
   template f*(x:Field; y:auto) =
     #when declaredInScope(subsetObject):
     when declared(subsetObject):
@@ -546,7 +546,7 @@ template makeOps(op,f,fM,s: untyped) {.dirty.} =
     else:
       #fM(x, y, y.type)
       staticTraceBegin: `f FieldAuto`
-      fM(x, y, int)
+      fM(x, y)
       staticTraceEnd: `f FieldAuto`
   when profileEqns:
     template op*(x:Field; y:auto):untyped =

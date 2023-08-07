@@ -91,6 +91,8 @@ proc replaceNonDeclSym(b,s,r: NimNode, extra:NimNodeKind = nnkEmpty): NimNode =
     case n.kind:
     of nnkSym:
       if n.eqIdent ss: checkSym n
+    of nnkIdent:
+      if n.eqIdent ss: checkSym n
     of nnkIdentDefs, nnkConstDef:
       for i in 0..<n.len-2:
         if n[i].eqIdent ss: declSyms.add n[i]
@@ -447,9 +449,10 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
       (sym,typ) = getParam(fp, i)
       t = genSym(nskLet, $sym)
       c = genSym(nskConst, $sym)
-    template letX(x,y: untyped): untyped =
+    #echo "sym: ", sym.repr, "  typ: ", typ.repr, "  typ.kind: ", typ.kind
+    template letX(x,y: untyped) =
       let x = y
-    template constX(x,y: untyped): untyped =
+    template constX(x,y: untyped) =
       const x = y
     # let p = if call[i].kind in {nnkHiddenAddr,nnkHiddenDeref}: call[i][0] else: call[i]
     let p = call[i]
@@ -473,6 +476,11 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
     elif typ.kind == nnkVarTy:
       pre.add getAst(letX(t, newNimNode(nnkAddr,p).add p))
       body = body.replaceNonDeclSym(sym, newNimNode(nnkDerefExpr,p).add(t), nnkHiddenDeref)
+    elif typ.kind == nnkSym and typ.repr == "typedesc":
+      #echo "repl: ", $sym, " -> ", $p
+      #echo body.lisprepr
+      body = body.replaceNonDeclSym(sym, p)
+      #echo body.repr
     else:
       pre.add getAst(letX(t, p))
       body = body.replaceNonDeclSym(sym, t)
