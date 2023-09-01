@@ -23,163 +23,46 @@ proc mplaq*(g: auto) =
    # Print information about plaquette
    echo "MEASplaq ss: ",ps,"  st: ",pt,"  tot: ",0.5*(ps+pt)
 
-#[ Custom loop structure for going through lattice ]#
-
-# Define custom object to represent lattice sites
-type
-   # Lattice sites object
-   LatSites* = object
-      # Lower bound on sites loop
-      low: int
-
-      # Upper bound on sites loop
-      high: int
-
-      # Physical geometry of lattice
-      lat: seq[int]
-
-      # Lattice coordinate
-      coord: seq[int]
-
-#[ Not used in any code, but kept for potential later use
-# LatSites object constructor
-proc AllLatSites(n_sites: int, lat: seq[int]): LatSites =
-   # Return LatSites object
-   result = LatSites(low: 0, high: n_sites, lat: lat)
-
-# Iterator to go through lattice sites
-iterator items(range: LatSites): int =
-   # Create variable for site
-   var site = range.low
-
-   # Go through sites
-   while site < range.high:
-      # Pass lattice site on
-      yield site
-
-      # Increment site
-      inc site
-
-# Iterator to go over lattice sites & coordinates
-iterator pairs(range: LatSites): tuple[site: int, coord: seq[int]] =
-   # Cycle through lattice sites
-   for site in range:
-      # Grab cartesian coordinate
-      range.coord.lexCoord(site, range.lat)
-
-      # Return site and its cartesian coordinate
-      yield (site, range.coord)
-]#
-
-#[ For printing plaquette information out ]#
-proc print_plaq[T](plqs: seq[T]) =
-   # Define strings for output
-   let plq_str = @["MEASEvenplaq: ", "MEASOddplaq: "]
-
-   # Cycle through plaquettes
-   for ind in 0..<plqs.len:
-      # Define string
-      var output = plq_str[ind]
-
-      # Cycle through components
-      for comp in plqs[ind]:
-         # Add to string
-         output = output & $comp & " "
-
-      # Print result of plaquette
-      echo output
-
-#[ For measuring gauge S4 order parameter - modified from <>/src/gaugeUtils.nim]#
-proc s4_gauge*[T](g: seq[T]) = 
-   #[ Calculates plaquette and "S4" order parameter from arXiv:1111.2317 and 
-      laid out more explicitly in https://github.com/daschaich/KS_nHYP_FA ]#
+#[ For measuring gauge S4 order parameter ]#
+proc s4_gauge*(g: auto) = 
+  #[ Calculates "S4" (pure gauge) order parameter from arXiv:1111.2317 
+     Written by Xiaoyong Jin ]#
    
-   #[ Set things up ]#
+  let
+    lo = g[0].l
+    nd = lo.nDim
+    nc = g[0][0].ncols
+  var
+    pl = lo.Real()
+    peo = newseq[array[2,float]](nd)
+    t = newTransporters(g, g[0], 1)
+  threads:
+    var peot = newseq[array[2,float]](nd)
+    for mu in 1..<nd:
+      for nu in 0..<mu:
+        discard t[mu]^*g[nu]
+        discard t[nu]^*g[mu]
+        threadBarrier()
+        for i in g[mu]:
+          pl[i] := redot(t[mu].field[i], t[nu].field[i])
+        threadBarrier()
+        for site in pl.sites:
+          let ps = pl{site}
+          peot[mu][lo.coords[mu][site] mod 2] += ps
+          peot[nu][lo.coords[nu][site] mod 2] += ps
+        threadBarrier()
+    peot.threadRankSum
+    threadSingle:
+      for dir in 0..<nd:
+        peo[dir][0] += peot[dir][0]
+        peo[dir][1] += peot[dir][1]
+  let n = 1.0 / (lo.physVol.float*0.5*float((nd-1)*nc))
+  for dir in 0..<nd:
+    peo[dir][0] *= n
+    peo[dir][1] *= n
 
-   # Get appropriate procs
-   mixin adj, newTransporters
-
-   # Define immutable variables to be used for calculation
-   let
-      # Lattice layout
-      lo = g[0].l
-
-      # Set nd
-      nd = lo.nDim 
-
-      # Set nc
-      nc = g[0][0].ncols
-
-      # Calculate normalization
-      norm = 4.0 / float(lo.physVol*(nd-1)*nd*nc)
-
-   # Define mutable variables to be used for calculation
-   var
-      # Plaquette
-      pl = lo.ColorMatrix()
-
-      # Trace on plaquette on all lattice sites
-      tr = lo.Complex()
-
-      # Plaquettes on even sites
-      plaq_e = newseq[float](lo.nDim)
-
-      # Plaquettes on odd sites
-      plaq_o = newseq[float](lo.nDim)
-
-      # Shifters
-      t = newTransporters(g, g[0], 1)
-
-      # Create lat sites object
-      sites = LatSites(low: 0, high: lo.nSites, lat: lo.physGeom, 
-                       coord: newseq[int](lo.physGeom.len))
-
-   #[ Calculate S4 order parameter ]#
-
-   # Start thread block
-   threads:
-      # Cycle through mu < nu
-      for mu in 1..<nd:
-         for nu in 0..<mu:
-            # Temporarily store plaquette and shift by n_mu
-            pl := (t[mu]^*g[nu]) * (t[nu]^*g[mu]).adj
-
-            # Lay down thread barrier
-            threadBarrier()
-
-            # Cycle plaquette lattice sites
-            for site in pl:
-               # Calculate trace
-               tr[site] := trace(pl[site])
-
-            # Lay down another thread barrier
-            threadBarrier()
-
-            # Cycle through lattice sites again
-            for site in tr.sites:
-               # Get cartesian coordinate
-               sites.coord.lexCoord(site, sites.lat)
-
-               # Cycle through directions
-               for dir in 0..<sites.lat.len:
-                  # Check if even sites to be increments
-                  if ((mu == dir) or (nu == dir)) and (sites.coord[dir] mod 2 == 0):
-                     # Increment plaquette on even n_mu, n_nu sites
-                     plaq_e[dir] += tr{site}.re
-                  elif (mu == dir) or (nu == dir):
-                     # Increment plaquette on odd n_mu, n_nu sites
-                     plaq_o[dir] += tr{site}.re
-
-            # Lay down last thread barrier
-            threadBarrier()
-
-   # Cycle through directions
-   for dir in 0..<sites.lat.len:
-      # Normalize plaquettes
-      plaq_e[dir] *= norm; plaq_o[dir] *= norm;
-
-   # Print output
-   print_plaq(@[plaq_e, plaq_o])
+  for dir in 0..<nd:
+   echo "MEASplaq ", dir, "-dir even/odd: ", peo[dir][0], " ", peo[dir][1]
 
 #[ For measuring polyakov loop ]#
 proc ploop*(g: auto) =
