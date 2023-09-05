@@ -95,6 +95,7 @@ template numberType*[T](x: typedesc[ComplexProxy[T]]): typedesc =
   mixin numberType
   numberType(T)
 template numberType*[T](x: ComplexObj[T,T]): typedesc = numberType(T)
+template numberType*[T](x: typedesc[ComplexObj[T,T]]): typedesc = numberType(T)
 #template nVectors*[T](x: Complex[T,T]): untyped =
 #  mixin nVectors
 #  nVectors(T)
