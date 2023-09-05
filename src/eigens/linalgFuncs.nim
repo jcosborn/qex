@@ -31,7 +31,8 @@ template dvec_alloc*(x: var dvec, n: int) =
   x.isSub = false
 proc newDvec*(n: int): dvec =
   result.dvec_alloc(n)
-template `&`*(x: dvec): untyped = cast[ptr carray[float]](addr x[0])
+template `&`*(x: dvec): auto = cast[ptr carray[float]](addr x[0])
+template `&`*(x: ptr carray[float]): auto = addr x[][0]
 template vec_size(x: dvec): int = x.len
 template `[]`*(x: dvec, i: int): untyped = x.dat[i]
 template `[]=`*(x: dvec, i: int, y: untyped): untyped = x.dat[i] = y
@@ -147,6 +148,7 @@ proc zewrk*(n: int): ptr zheevTmp =
     w.rwork = cast[ptr cdouble](alloc(3*n*sizeof(cdouble)))
   return addr(w)
 
+template `&`(x: zmat): auto = cast[ptr float](addr(x.dat[0]))
 proc zeigs*(m: ptr float64; d: ptr float64; n: int) =
   var info: fint
   var t = zewrk(n)
@@ -154,6 +156,8 @@ proc zeigs*(m: ptr float64; d: ptr float64; n: int) =
   var an = addr nn
   var mm = cast[ptr dcomplex](m)
   zheev("V", "L", an, mm, an, d, t.work, addr(t.lwork), t.rwork, addr(info))
+
+proc zeigs*(m: zmat; d: dvec; n: int) = zeigs(&m, & &d, n)
 
 type
   zgeev_tmp* = object
@@ -520,17 +524,24 @@ when isMainModule:
   ]#
 
   proc testSvdbd(n: int) =
-    var v = newSeq[float](n)
-    var d = newSeq[float](n)
-    var e = newSeq[float](n)
+    #var v = newSeq[float](n)
+    #var d = newSeq[float](n)
+    #var e = newSeq[float](n)
+    var v = newDvec(n)
+    var d = newDvec(n)
+    var e = newDvec(n)
     template `&`(x: seq): untyped = cast[ptr carray[float]](addr x[0])
     for i in 0..<n:
       d[i] = (i+1).float
       e[i] = -(i+1).float
-    svdbi(&v, &d, &e, n)
-    svdbi(&v, &d, &e, n)
+    template svdb(ev,a,b,k:auto) = svdbi(&ev,&a,&b,k)
+    #template svdb(ev,a,b,k:auto) = svdbi1(&ev,a,b,k)
+    #template svdb(ev,a,b,k:auto) = svdbi(&ev,a,b,k,k)
+    #template svdb(ev,a,b,k:auto) = dsvdbi2(a,b,k)
+    svdb(v, d, e, n)
+    svdb(v, d, e, n)
     let t0 = epochTime()
-    svdbi(&v, &d, &e, n)
+    svdb(v, d, e, n)
     let t1 = epochTime()
     #for i in 0..<n:
     #  echo i, ": ", v[i]

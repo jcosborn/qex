@@ -165,12 +165,12 @@ proc svdBi4*(e: any; m: dmat; ma: dmat; a: any; b: any; k: int;
           getu(a, b, v[i], va[i])
           var rsq = checksv(v[i], va[i], a, b, ev)
           #echo i, ": ", e[i], "  ", rsq
-          if ig > 0:
+          if ig > -1:
             #printf0("svdvec %3i %3i %5i %13g %13g %13g %13g\x0A",
             #        i, ib, ig, ev, x, rsq, dvec_get(tg, i0))
             echo "svdvec $# $# $# $# $# $# $#" %
               [$i, $ib, $ig, $ev, $x, $rsq, $tg[i0]]
-          if ig > 10 or rsq < rsqstop:
+          if ig >= k-1 or rsq < rsqstop:
             if ig == 0 and x < dotstop: ib = i
             break
           if ig == 0:
