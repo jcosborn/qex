@@ -160,10 +160,8 @@ template derefPtr*[T](x: T): untyped =
   else:
     x
 
-template derefPtr*[T](x: typedesc[T]): typedesc =
-  type T
-template derefPtr*[T](x: typedesc[ptr T]): typedesc =
-  type T
+template derefPtr*[T](x: typedesc[T]): typedesc = T
+template derefPtr*[T](x: typedesc[ptr T]): typedesc = T
 
 #template makeWrapperTypeX(wf:WFSet, name,fName,asName,tasName: untyped) =
 template makeWrapperTypeX(wf:typed, name,fName,asName,tasName: untyped) =
