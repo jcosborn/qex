@@ -301,7 +301,8 @@ template stagDFBX*(sd:StaggeredD; r:Field; g:openArray[Field2];
     startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
   toc("startShiftB")
   block:
-    for ir in r[sd.subset]:
+    for irr in r[sd.subset]:
+      var ir{.inject.} = irr
       var rir{.inject,noInit.}:evalType(load1(r[ir]))
       exp
       for mu in 0..<g.len:
@@ -311,13 +312,13 @@ template stagDFBX*(sd:StaggeredD; r:Field; g:openArray[Field2];
       assign(r[ir], rir)
   toc("local", flops=(expFlops+g.len*(72+66+6))*sd.subset.len)
   for mu in 0..<g.len:
-    template f(ir,it: untyped): untyped =
-      imadd(r[ir], g[mu][ir], it)
+    template f(ir2,it: untyped): untyped =
+      imadd(r[ir2], g[mu][ir2], it)
     boundarySB2(sd.sf[mu], f)
   toc("boundaryF")
   for mu in 0..<g.len:
-    template f(ir,it: untyped): untyped =
-      iadd(r[ir], it)
+    template f(ir2,it: untyped): untyped =
+      iadd(r[ir2], it)
     boundarySB2(sd.sb[mu], f)
   #threadBarrier()
   toc("boundaryB")
@@ -437,7 +438,7 @@ proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
   #  msubVSVV(r[ir], m2, x[ir], r[ir])
   #r[sde.sub] := 0.25*r
 
-# r = m2 - Deo * Doe
+# r = m2 + Deo * Doe
 # modified D: Df + Db
 proc stagD2eeFB*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
                  x:Field; m2:SomeNumber) =
@@ -454,7 +455,7 @@ proc stagD2eeFB*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
       rir := 0
   toc("stagD2ee DP")
   threadBarrier()
-  t := -t
+  #t := -t
   threadBarrier()
   toc("stagD2ee barrier")
   block:

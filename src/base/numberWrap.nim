@@ -40,6 +40,7 @@ liftUnary(numNumbers)
 liftUnary(exp)
 liftUnary(ln)
 liftUnary(norm2)
+liftUnary(trace)
 
 template liftBinary(fn: untyped) =
   template fn*(x: AsNumber, y: SomeNumber): auto =

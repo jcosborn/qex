@@ -269,10 +269,10 @@ template len*(x:MatrixRowObj):untyped = x.mat[].ncols
 template `[]`*(x:MatrixRowObj; i:int):untyped = x.mat[][x.rw,i]
 template `[]=`*(x:MatrixRowObj; i:int; y:typed):untyped = x.mat[][x.rw,i] = y
 
-template isWrapper*(x: VectorArrayObj): untyped = false
-template isWrapper*(x: typedesc[VectorArrayObj]): untyped = false
-template isWrapper*(x: MatrixArrayObj): untyped = false
-template isWrapper*(x: typedesc[MatrixArrayObj]): untyped = false
+template isWrapper*(x: VectorArrayObj): bool = false
+template isWrapper*(x: type VectorArrayObj): bool = false
+template isWrapper*(x: MatrixArrayObj): bool = false
+template isWrapper*(x: type MatrixArrayObj): bool = false
 
 template eval*[I,T](x: typedesc[VectorArrayObj[I,T]]): typedesc =
   mixin eval

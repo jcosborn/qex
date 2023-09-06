@@ -174,6 +174,11 @@ proc `-`*[T1,T2](x: seq[T1], y: openArray[T2]): auto {.inline,noInit.} =
     r[i] = x[i] - y[i]
   r
 
+proc `:=`*[T](r: var openArray[T], x: openArray[T]) {.inline.} =
+  let n = r.len
+  for i in 0..<n:
+    r[i] := x[i]
+
 proc `+=`*[T](r: var openArray[T], x: openArray[T]) {.inline.} =
   let n = r.len
   for i in 0..<n:
