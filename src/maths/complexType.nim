@@ -96,12 +96,19 @@ template numberType*[T](x: typedesc[ComplexProxy[T]]): typedesc =
   numberType(T)
 template numberType*[T](x: ComplexObj[T,T]): typedesc = numberType(T)
 template numberType*[T](x: type ComplexObj[T,T]): typedesc = numberType(T)
-template numNumbers*[T](x: ComplexProxy[T]): auto =
-  mixin numNumbers
-  numNumbers(T)
+
 template numNumbers*[TR,TI](x: ComplexObj[TR,TI]): auto =
   mixin numNumbers
   numNumbers(TR)+numNumbers(TI)
+template numNumbers*[TR,TI](x: type ComplexObj[TR,TI]): auto =
+  mixin numNumbers
+  numNumbers(TR)+numNumbers(TI)
+template numNumbers*[T](x: ComplexProxy[T]): auto =
+  mixin numNumbers
+  numNumbers(T)
+template numNumbers*[T](x: type ComplexProxy[T]): auto =
+  mixin numNumbers
+  numNumbers(T)
 
 template simdType*[T](x: ComplexObj[T,T]): typedesc =
   mixin simdType
