@@ -147,7 +147,7 @@ proc newFarrElem[V:static[int],T](f:var Field[V,T]; l:Layout[V]; s:alignedMem[T]
   f.new()
   f.l = l
   f.s = s
-  f.s.data = cast[typeof(s.data)](cast[ByteAddress](s.data) + offset*l.nSitesOuter*s.stride)
+  f.s.data = cast[typeof(s.data)](cast[int](s.data) + offset*l.nSitesOuter*s.stride)
   f.elemSize = sizeOf(T)
 
 proc newFieldArray*[V:static[int],T](l:Layout[V]; t:typedesc[Field[V,T]]; n: int):FieldArray[V,T] {.noinit.} =
@@ -204,7 +204,21 @@ proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] {.noinit.} =
     newFarrElem(result.arr[i], l, s, t)
     inc t
 
-template isWrapper*(x: SomeField): untyped = false
+template dataPtr*[V:static[int],T](x: Field[V,T]): auto = x.s.data
+template isWrapper*(x: SomeField): bool = false
+template isWrapper*(x: typedesc[SomeField]): bool = false
+template getT[V:static[int],T](x: Field[V,T]): typedesc = T
+template getT[V:static[int],T](x: typedesc[Field[V,T]]): typedesc = T
+template has*[F:Field](x: typedesc[F], y: typedesc): bool =
+  mixin has, isWrapper
+  #static: echo $F.T.type
+  when y is Field: true
+  else:
+    when isWrapper(getT F):
+      has(getT F, y)
+    else: false
+
+template `[]`*[F:Field](x:typedesc[F]; i:int):typedesc = F.T
 template `[]`*(x:Field; i:int):untyped = x.s[i]
 #template `[]=`*(x:Field; i:int; y:typed) =
 proc `[]=`*(x:Field; i:int; y:auto) =

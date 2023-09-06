@@ -206,13 +206,13 @@ forwardFunc(AsScalar, simdLength)
 #  Adjointed[type(x_adjointed)](v: x_adjointed)
 #makeWrapperType(Adjointed)
 makeWrapperF({wfPtr}, Adjointed)
-template adj*(x: typed): untyped =
+template adj*[T](x: T): auto =
   mixin adj, isWrapper, asWrapper
   bind asAdjointed
-  when isWrapper(x):
+  when isWrapper(type T):
     #static: echo "adj typed wrapper"
     #dumpTree: x
-    asWrapper(x, adj(x[]))
+    asWrapper(type T, adj(x[]))
   elif compiles(adjImpl(x)):
     adjImpl(x)
   else:
