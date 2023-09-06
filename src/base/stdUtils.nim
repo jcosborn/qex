@@ -307,10 +307,19 @@ proc latticeFromLocalLattice*[T:seq|array](ll: T, nrank: int): T =
   latticeFromLocalLatticeImpl(result, ll, nrank)
 
 macro rangeLow*(r: typedesc[range]):auto =
-  echo r.treerepr
-  echo r.getType.treerepr
-  error("rangeLow(typedesc)")
-  return r
+  #echo r.treerepr
+  #echo r.getType.treerepr
+  #echo r.getTypeImpl.treerepr
+  #echo r.getTypeInst.treerepr
+  #error("rangeLow(typedesc)")
+  #return r
+  let t = r.getTypeImpl
+  t.expectKind(nnkBracketExpr)
+  let t1 = t[1]
+  t1.expectKind(nnkBracketExpr)
+  let t11 = t1[1]
+  t11.expectKind(nnkInfix) # ..
+  return t11[1]
 
 macro rangeLow*(r: range):auto =
   #echo r.treerepr
@@ -329,6 +338,18 @@ macro rangeLow*(r: range):auto =
 #  echo r.treerepr
 #  echo r.getType.treerepr
 #  return r
+
+macro rangeLen*(r: typedesc[range]):auto =
+  #echo r.treerepr
+  #echo r.getType.treerepr
+  let t = r.getTypeImpl
+  #echo t.treerepr
+  t.expectKind(nnkBracketExpr)
+  let t1 = t[1]
+  t1.expectKind(nnkBracketExpr)
+  let t11 = t1[1]
+  t11.expectKind(nnkInfix) # ..
+  return newCall(ident"-",newCall(ident"+",t11[2],newLit(1)),t11[1])
 
 macro rangeLen*(r: range):auto =
   #echo r.treerepr
