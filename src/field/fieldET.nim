@@ -206,10 +206,10 @@ proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] {.noinit.} =
     inc t
 
 template dataPtr*[V:static[int],T](x: Field[V,T]): auto = x.s.data
+template isWrapper*(x: SomeField): bool = false
+template isWrapper*(x: typedesc[SomeField]): bool = false
 template getT[V:static[int],T](x: Field[V,T]): typedesc = T
 template getT[V:static[int],T](x: typedesc[Field[V,T]]): typedesc = T
-template isWrapper*(x: SomeField): untyped = false
-template isWrapper*(x: typedesc[SomeField]): untyped = false
 template has*[F:Field](x: typedesc[F], y: typedesc): bool =
   mixin has, isWrapper
   #static: echo $F.T.type
