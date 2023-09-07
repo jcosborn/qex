@@ -9,6 +9,7 @@ export matinv
 import matexp
 export matexp
 import projUderiv
+getOptimPragmas()
 
 proc determinantN*(a: auto): auto =
   mixin simdMinReduce
@@ -62,7 +63,7 @@ proc determinantN*(a: auto): auto =
 
   r
 
-proc determinant*(x: auto): auto =
+proc determinant*(x: auto): auto {.alwaysInline.} =
   assert(x.nrows == x.ncols)
   when x.nrows==1:
     result = x[0,0]
@@ -75,7 +76,7 @@ proc determinant*(x: auto): auto =
   else:
     result = determinantN(x)
 
-proc eigs3(e0,e1,e2: var auto; tr,p2,det: auto) =
+proc eigs3(e0,e1,e2: var auto; tr,p2,det: auto) {.alwaysInline.} =
   mixin sin,cos,acos
   let tr3 = (1.0/3.0)*tr
   let p23 = (1.0/3.0)*p2
@@ -107,6 +108,7 @@ proc eigs3(e0,e1,e2: var auto; tr,p2,det: auto) =
   e0 = tr3 - 2*sqc
   e1 = ll + sqs
   e2 = ll - sqs
+  # ~27 flops
 
 template rsqrtPHM2(r:typed; x:typed) =
   let x00 = x[0,0].re
@@ -121,7 +123,7 @@ template rsqrtPHM2(r:typed; x:typed) =
   let c0 = trsdet*c1
   r := c0 - c1*x
 
-proc rsqrtPHM3f(c0,c1,c2:var auto; tr,p2,det:auto) =
+proc rsqrtPHM3f(c0,c1,c2:var auto; tr,p2,det:auto) {.alwaysInline.} =
   #[
   mixin sin,cos,acos
   let tr3 = (1.0/3.0)*tr
@@ -167,6 +169,7 @@ proc rsqrtPHM3f(c0,c1,c2:var auto; tr,p2,det:auto) =
   c0 = (w*u*u+l0*sl0*(l1+l2)+l1*sl1*(l0+l2)+l2*sl2*(l0+l1))*di
   c1 = -(tr*u+w)*di
   c2 = u*di
+  # flops: eigs3(27) + 33 = 60
 
 template rsqrtPHM3(r:typed; x:typed) =
   let tr = trace(x).re
@@ -176,6 +179,7 @@ template rsqrtPHM3(r:typed; x:typed) =
   var c0,c1,c2:type(tr)
   rsqrtPHM3f(c0, c1, c2, tr, p2, det)
   r := c0 + c1*x + c2*x2
+  # 2*tr(2) + mm(66) + det(64) + f(60) + 56 = 250
 
 template rsqrtPHMN(r:typed; x:typed) =
   mixin simdMax
@@ -294,20 +298,26 @@ template rsqrtPH*[T:Mat1](x: T): T =
   rsqrtPH(r, x)
   r
 
-# x (x'x)^{-1/2}  #'
-proc projectU*(r: var Mat1; x: Mat2) =
+proc projectUrsqrt(r: var Mat1; x: Mat2, eps = 1e-20) {.alwaysInline.} =
   #let t = x.adj * x   # issues with gcc
   let xa = x.adj
-  let t = xa * x
-  var t2{.noInit.}: evalType(t)
-  rsqrtPH(t2, t)
+  var t = xa * x
+  t += eps
+  rsqrtPHM(r, t)
+
+# x (x'x)^{-1/2}
+proc projectU*(r: var Mat1; x: Mat2, eps = 1e-20) {.inline.} =
+  var t2{.noInit.}: evalType(x)
+  projectUrsqrt(t2, x)
   mul(r, x, t2)
   #echo "t: ", t.norm2, "  t2: ", t2.norm2, "  r: ", r.norm2
+template projectUflops*(nc: int): int =
+  nc*nc*(2*(6*nc+2*(nc-1))) + 250  # only for nc=3
 
-template projectU*(r: var Mat1) =
+template projectU*(r: var Mat1, eps = 1e-20) =
   var t{.noInit.}: evalType(r)
   t := r
-  r.projectU t
+  r.projectU t, eps
 
 # (d/dX') Tr(U'C+C'U) / 2 = (d/dX') Tr(X'CZ+C'XZ) / 2
 # = CZ - (1/2) < Z (X'C + C'X) Z (dY/dX') >
@@ -316,14 +326,16 @@ template projectU*(r: var Mat1) =
 # S Y + Y S = U' C Z = Z X' C Z
 # cz-xz^3(x'c+c'x)/2
 # CH: 4528 flops
-proc projectUderiv*(r: var Mat1, u: Mat2, x: Mat3, chain: Mat4) =
+proc projectUderiv*(r: var Mat1, u: Mat2, x: Mat3, chain: Mat4, eps = 1e-20) =
   # U = X (X'X)^{-1/2} = (XX')^{-1/2} X
   # Y = sqrt(X'X)
   # Z = (X'X)^{-1/2}
   # F = C Z - z (Cd U + Ud C) z (dY/dX)
   var y, z, t1, t2: Mat1
-  y := x.adj * u
-  inverse(z, y)
+  #y := x.adj * u
+  #inverse(z, y)
+  projectUrsqrt(z, x)
+  inverse(y, z)
   #echo "inverse: ", z
   #QLA_M_eq_M_times_M(d, c, &z);
   r := chain * z
