@@ -613,7 +613,7 @@ proc norm2P*(f:SomeField):auto =
   f.l.threadRankSum(result)
   #echo result
   toc("norm2 thread rank sum")
-template norm2*(f:SomeAllField):untyped =
+template norm2*(f:SomeAllField):auto =
   when declared(subsetObject):
     #echo "subsetObj" & s
     norm2P(f[subsetObject])
@@ -622,7 +622,14 @@ template norm2*(f:SomeAllField):untyped =
     norm2P(f[subsetString])
   else:
     norm2P(f)
-template norm2*(f:Subsetted):untyped = norm2P(f)
+template norm2*(f:Subsetted):auto = norm2P(f)
+
+proc norm2subtract*(x: Field, y: float): float =
+  var s: evalType(norm2(toDouble(x[0])))
+  for i in x:
+    s += x[i].toDouble.norm2 - y
+  result = s.simdReduce
+  x.l.threadRankSum(result)
 
 proc dotP*(f1:SomeField; f2:SomeField2):auto =
   tic()
