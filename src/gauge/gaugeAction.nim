@@ -14,6 +14,10 @@ type
     pgm*: float
     adjplaq*: float
 
+proc `*`*(x: float, y: GaugeActionCoeffs): GaugeActionCoeffs =
+  for r, v in fields(result, y):
+    r = x * v
+
 const
   C1Symanzik = -1.0/12.0  # tree-level
   C1Iwasaki = -0.331
@@ -400,6 +404,70 @@ proc gaugeAction2*(g: array|seq): auto =
   var c = GaugeActionCoeffs(plaq:1.0)
   gaugeAction2(c, g)
 
+proc gaugeDeriv2*(c: GaugeActionCoeffs, g,f: array|seq) =
+  mixin adj
+  tic("gaugeDeriv2")
+  let lo = g[0].l
+  let nd = lo.nDim
+  const nc = g[0][0].nrows
+  let cp = - c.plaq / float(nc)
+  let cr = - c.rect / float(nc)
+  let t = newTransporters(g, g[0], 1)
+  let t2 = newTransporters(g, g[0], 1)
+  let tg = newTransporters(g, g[0], 1)
+  let td = newTransporters(g, g[0], -1)
+  let td2 = newTransporters(g, g[0], -1)
+  toc("gaugeForce2 setup")
+  threads:
+    for mu in 0..<nd:
+      #let mu = (mux + 1) mod nd
+      #f[mu] := 0
+      for nu in 0..<nd:
+        if nu==mu: continue
+        discard t[nu] ^* g[mu]
+        shiftExpr(t[mu].sb, f[mu][ir] += cp * t[nu].field[ir]*adj(it), g[nu][ix])
+        f[mu] += cp * td[nu] ^* t[mu] ^* g[nu]
+        if cr != 0:
+          discard t2[nu] ^* t[nu] ^* g[mu]
+          discard tg[nu] ^* g[nu]
+          shiftExpr(t[mu].sb, f[mu][ir] += cr * t2[nu].field[ir]*adj(it), tg[nu].field[ix])
+          f[mu] += cr * td2[nu] ^* td[nu] ^* tg[mu] ^* t[nu] ^* g[nu]
+          f[mu] += cr * td2[mu] ^* td[nu] ^* tg[mu] ^* t[mu] ^* g[nu]
+          discard td[nu] ^* tg[mu] ^* t[mu] ^* g[nu]
+          shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[nu].field[ir]*adj(it), g[mu][ix])
+          discard td[mu] ^* t[nu] ^* tg[mu] ^* g[mu]
+          shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[mu].field[ir]*adj(it), g[nu][ix])
+          shiftExpr(t2[mu].sb, f[mu][ir] += cr * t[nu].field[ir]*adj(it), t[mu].field[ix])
+  toc("end")
+
+proc gaugeDerivDeriv2*(c: GaugeActionCoeffs, g,h,f: array|seq) =
+  mixin adj
+  tic("gaugeDeriv2")
+  let lo = g[0].l
+  let nd = lo.nDim
+  const nc = g[0][0].nrows
+  let cp = - c.plaq / float(nc)
+  let cr = - c.rect / float(nc)
+  let t = newTransporters(g, g[0], 1)
+  let td = newTransporters(g, g[0], -1)
+  let th = newTransporters(h, g[0], 1)
+  let thd = newTransporters(h, g[0], -1)
+  toc("gaugeForce2 setup")
+  threads:
+    for mu in 0..<nd:
+      for nu in 0..<nd:
+        if nu==mu: continue
+        discard t[nu] ^* g[mu]
+        shiftExpr(t[mu].sb, f[mu][ir] += cp * t[nu].field[ir]*adj(it), h[nu][ix])
+        discard t[nu] ^* h[mu]
+        shiftExpr(t[mu].sb, f[mu][ir] += cp * t[nu].field[ir]*adj(it), g[nu][ix])
+        discard th[nu] ^* g[mu]
+        shiftExpr(t[mu].sb, f[mu][ir] += cp * th[nu].field[ir]*adj(it), g[nu][ix])
+        f[mu] += cp * td[nu] ^* t[mu] ^* h[nu]
+        f[mu] += cp * td[nu] ^* th[mu] ^* g[nu]
+        f[mu] += cp * thd[nu] ^* t[mu] ^* g[nu]
+  toc("end")
+
 proc gaugeForce2*(c: GaugeActionCoeffs, g,f: array|seq) =
   mixin adj,projectTAH
   tic("gaugeForce2")
@@ -694,6 +762,10 @@ when isMainModule:
     echo "plaq:"
     echo pl
     echo pl.sum
+    var f = newOneOf g
+    var f2 = newOneOf g
+    var f3 = newOneOf g
+    var fa = newOneOf g
     var gc = GaugeActionCoeffs(plaq:1.0)
     #var ga = gaugeAction(g)
     toc("plaq")
@@ -705,18 +777,15 @@ when isMainModule:
     toc("ga3")
     var gaA = gaugeAction.actionA(gc,g)
     toc("aA")
-    echo "ga: ", ga, "\t", ga2, "\t", ga3, "\t", gaA
-    var f = gaugeAction.gaugeForce(g)
+    gaugeAction.gaugeForce(gc,g,f)
     toc("gf")
-    var f2 = newOneOf g
-    var f3 = newOneOf g
-    var fa = newOneOf g
-    gaugeAction.gaugeForce2(f2,g)
+    gaugeAction.gaugeForce2(gc,g,f2)
     toc("gf2")
-    gaugeAction.gaugeForce3(f3,g)
+    gaugeAction.gaugeForce3(gc,g,f3)
     toc("gf3")
     gaugeAction.forceA(gc,g,fa)
     toc("fA")
+    echo "ga: ", ga, "\t", ga2, "\t", ga3, "\t", gaA
     for i in 0..<f.len:
       echo "f[", i, "]: ", f[i].norm2, "\t", f2[i].norm2, "\t", f3[i].norm2, "\t", fa[i].norm2
     toc("end")
@@ -736,6 +805,7 @@ when isMainModule:
     var f = newOneOf g
     var f2 = newOneOf g
     var f3 = newOneOf g
+    var fA = newOneOf g
     toc("init f")
     gaugeAction.gaugeForce(gc,g,f)
     toc("gf")
@@ -743,6 +813,8 @@ when isMainModule:
     toc("gf2")
     gaugeAction.gaugeForce3(gc,g,f3)
     toc("gf3")
+    gaugeAction.forceA(gc,g,fA)
+    toc("gfA")
     echo "gf: \t",  f[0].norm2, "\t",  f[1].norm2, "\t",  f[2].norm2, "\t",  f[3].norm2
     echo "gf2:\t", f2[0].norm2, "\t", f2[1].norm2, "\t", f2[2].norm2, "\t", f2[3].norm2
     echo "gf3:\t", f3[0].norm2, "\t", f3[1].norm2, "\t", f3[2].norm2, "\t", f3[3].norm2
@@ -866,5 +938,5 @@ when isMainModule:
   if abs(dev)>1e-13:
     qexError "Large deviation."
 
-  # echoTimers()
+  echoTimers()
   qexFinalize()

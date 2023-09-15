@@ -177,6 +177,10 @@ template imadd*(r: var Color, x: AsComplex, y: Color3) =
   imadd(r[], x, y[])
 template imsub*(r: var Color, x: Color2, y: Color3) =
   imsub(r[], x[], y[])
+template peqOuter*(r: var Color, x: Color2, y: Color3) =
+  peqOuter(r[], x[], y[])
+template meqOuter*(r: var Color, x: Color2, y: Color3) =
+  meqOuter(r[], x[], y[])
 template `+`*(r: Color, x: SomeNumber): untyped =
   asColor(r[] + x)
 template `+`*(r: SomeNumber, x: Color): untyped =

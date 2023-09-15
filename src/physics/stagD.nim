@@ -1,4 +1,4 @@
-import os, times, seqUtils
+import os, times
 
 import base
 import layout
@@ -33,7 +33,7 @@ template initStagDT*(l:var Layout; T:typedesc; ss:string):untyped =
   sd
 
 proc initStagD*(x:Field; sub:string):auto =
-  result = initStagDT(x.l, type(x[0]), sub)
+  result = initStagDT(x.l, evalType(x[0]), sub)
 
 template initStagD3T*(l:var Layout; T:typedesc; ss:string):untyped =
   var sd:StaggeredD[T]
@@ -49,7 +49,17 @@ template initStagD3T*(l:var Layout; T:typedesc; ss:string):untyped =
   sd
 
 proc initStagD3*(x:Field; sub:string):auto =
-  result = initStagD3T(x.l, type(x[0]), sub)
+  result = initStagD3T(x.l, evalType(x[0]), sub)
+
+proc rephase*(s: Staggered) =
+  s.g.setBC
+  threadBarrier()
+  s.g.stagPhase
+
+proc rephase*(s: Staggered, g: auto) =
+  g.setBC
+  threadBarrier()
+  g.stagPhase
 
 proc trace*(stag: Staggered, mass: float): float =
   let v = stag.g[0][0].ncols * stag.g[0].l.physVol
@@ -105,7 +115,7 @@ template stagDPN*(sd:openArray[StaggeredD]; r:openArray[Field];
       let i = lr64*nr + (lrr mod nn)
       #let ir = ns0 + (iri div n)
       #let i = iri mod n
-      var rir{.inject,noInit.}:type(load1(r[i][ir]))
+      var rir{.inject,noInit.}:evalType(load1(r[i][ir]))
       exp
       for mu in 0..<g.len:
         #if mu<g.len-1:
@@ -144,7 +154,7 @@ template stagDMN*(sd:openArray[StaggeredD]; r:openArray[Field];
     for i in 0..<n:
       startSB(sd[i].sb[mu], g[mu][ix].adj*x[i][ix])
   toc("startShiftB")
-  var rir{.inject,noInit.}:seq[type(load1(r[0][0]))]
+  var rir{.inject,noInit.}:seq[evalType(load1(r[0][0]))]
   rir.newSeq(n)
   for ir{.inject.} in r[sd.subset]:
     exp
@@ -176,12 +186,14 @@ template stagDP*(sd:StaggeredD; r:Field; g:openArray[Field2];
     XoptimizeAst:
       startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
   toc("startShiftB")
-  XoptimizeAst:
+  #optimizeAst:
+  block:
     for ir in r[sd.subset]:
-      var rir{.inject,noInit.}:type(load1(r[ir]))
+      var rir{.inject,noInit.}:evalType(load1(r[ir]))
       exp
       for mu in 0..<g.len:
-        localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), load1(x[ix]))
+        #localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), load1(x[ix]))
+        localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), x[ix])
       for mu in 0..<g.len:
         localSB(sd.sb[mu], ir, isub(rir, it), g[mu][ix].adj*x[ix])
       assign(r[ir], rir)
@@ -225,7 +237,7 @@ template stagDP2*(sd:StaggeredD; r:Field; g:openArray[Field2];
     for ic{.inject.} in 0..<n:
     #forStatic ic, 0, n.pred:
     #  block:
-        var rir{.inject,noInit.}:type(getVec(r[ir],0))
+        var rir{.inject,noInit.}:evalType(getVec(r[ir],0))
         for mu in 0..<g.len:
           localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), getVec(x[ix],ic))
         for mu in 0..<g.len:
@@ -255,7 +267,7 @@ template stagDM*(sd:StaggeredD; r:Field; g:openArray[Field2];
   for irr in r[sd.subset]:
     XoptimizeAst:
       let ir{.inject.} = irr
-      var rir{.inject,noInit.}:type(load1(r[ir]))
+      var rir{.inject,noInit.}:evalType(load1(r[ir]))
       exp
       for mu in 0..<g.len:
         localSB(sd.sf[mu], ir, imsub(rir, g[mu][ir], it), load1(x[ix]))
@@ -275,6 +287,39 @@ template stagDM*(sd:StaggeredD; r:Field; g:openArray[Field2];
     XoptimizeAst:
       #boundarySB(sd.sb[mu], iadd(r[ir], it))
       boundarySB2(sd.sb[mu], f)
+  #threadBarrier()
+  toc("boundaryB")
+
+# modified D: Df + Db
+template stagDFBX*(sd:StaggeredD; r:Field; g:openArray[Field2];
+                   x:Field3; expFlops:int; exp:untyped) =
+  tic()
+  for mu in 0..<g.len:
+    startSB(sd.sf[mu], x[ix])
+  toc("startShiftF")
+  for mu in 0..<g.len:
+    startSB(sd.sb[mu], g[mu][ix].adj*x[ix])
+  toc("startShiftB")
+  block:
+    for irr in r[sd.subset]:
+      var ir{.inject.} = irr
+      var rir{.inject,noInit.}:evalType(load1(r[ir]))
+      exp
+      for mu in 0..<g.len:
+        localSB(sd.sf[mu], ir, imadd(rir, g[mu][ir], it), load1(x[ix]))
+      for mu in 0..<g.len:
+        localSB(sd.sb[mu], ir, iadd(rir, it), g[mu][ix].adj*x[ix])
+      assign(r[ir], rir)
+  toc("local", flops=(expFlops+g.len*(72+66+6))*sd.subset.len)
+  for mu in 0..<g.len:
+    template f(ir2,it: untyped): untyped =
+      imadd(r[ir2], g[mu][ir2], it)
+    boundarySB2(sd.sf[mu], f)
+  toc("boundaryF")
+  for mu in 0..<g.len:
+    template f(ir2,it: untyped): untyped =
+      iadd(r[ir2], it)
+    boundarySB2(sd.sb[mu], f)
   #threadBarrier()
   toc("boundaryB")
 
@@ -300,7 +345,7 @@ proc stagD2*(sd:StaggeredD; r:SomeField; g:openArray[Field2];
   #tFor iri, 0, ns.pred:
   #  let ir = ns0 + iri
     XoptimizeAst:
-      var rir{.noInit.}:type(r[ir])
+      var rir{.noInit.}:evalType(r[ir])
       rir := a*r[ir] + b*x[ir]
       for mu in 0..<nd:
         localSB(sf0[mu], ir, imadd(rir, g[mu][ir], it), x[ix])
@@ -335,10 +380,10 @@ proc stagDN*(sd:openArray[StaggeredD]; r:openArray[Field]; g:openArray[Field2];
     rir := m*x[i][ir]
   #r[sd.subset] := (0.5*sc)*r
 
-# r = m*x + sc*D*x
+# r = a*r + m*x + sc*D*x
 proc stagD*(sd:StaggeredD; r:Field; g:openArray[Field2];
-            x:Field; m:SomeNumber; sc:SomeNumber=1.0) =
-  stagD2(sd, r, g, x, 0, m/(0.5*sc))
+            x:Field; m:SomeNumber; sc:SomeNumber=1.0, a:SomeNumber=0.0) =
+  stagD2(sd, r, g, x, a/(0.5*sc), m/(0.5*sc))
   r[sd.subset] := (0.5*sc)*r
   #stagDP2(sd, r, g, x, 6):
   #  #for i in 0..<n:
@@ -367,7 +412,7 @@ proc stagDb*(sd:StaggeredD; r:Field; g:openArray[Field2];
 proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
                x:Field; m2:SomeNumber) =
   tic()
-  var t{.global.}:type(x)
+  var t{.global.}:evalType(x)
   if t==nil:
     threadBarrier()
     if threadNum==0:
@@ -392,6 +437,31 @@ proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
   #for ir in r[sde.subset]:
   #  msubVSVV(r[ir], m2, x[ir], r[ir])
   #r[sde.sub] := 0.25*r
+
+# r = m2 + Deo * Doe
+# modified D: Df + Db
+proc stagD2eeFB*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
+                 x:Field; m2:SomeNumber) =
+  tic()
+  var t{.global.}:evalType(x)
+  if t==nil:
+    threadBarrier()
+    if threadNum==0:
+      t = newOneOf(x)
+    threadBarrier()
+  toc("stagD2ee init")
+  block:
+    stagDFBX(sdo, t, g, x, 0):
+      rir := 0
+  toc("stagD2ee DP")
+  threadBarrier()
+  #t := -t
+  threadBarrier()
+  toc("stagD2ee barrier")
+  block:
+    stagDFBX(sde, r, g, t, 6):
+      rir := (4.0*m2)*x[ir]
+  toc("stagD2ee DM")
 
 #[
 # r = m2 - Deo * Doe
@@ -422,7 +492,7 @@ template stagPhase*(g:openArray[Field]) = stagPhase(g,[8,9,11,0])
 proc newStag*[G,T](g:openArray[G];v:T):auto =
   var l = g[0].l
   template t:untyped =
-    type(v[0])
+    evalType(v[0])
   var r:Staggered[G,t]
   r.se = initStagDT(l, t, "even")
   r.so = initStagDT(l, t, "odd")
@@ -432,7 +502,7 @@ proc newStag*[G,T](g:openArray[G];v:T):auto =
 proc newStag*[G](g:openArray[G]):auto =
   var l = g[0].l
   template t:untyped =
-    type(l.ColorVector()[0])
+    evalType(l.ColorVector()[0])
     #SColorVectorV
   var r:Staggered[G,t]
   r.se = initStagDT(l, t, "even")
@@ -443,7 +513,7 @@ proc newStag*[G](g:openArray[G]):auto =
 proc newStag3*[G](g:openArray[G]):auto =
   var l = g[0].l
   template t:untyped =
-    type(l.ColorVector()[0])
+    evalType(l.ColorVector()[0])
   var r:Staggered[G,t]
   r.se = initStagD3T(l, t, "even")
   r.so = initStagD3T(l, t, "odd")
@@ -452,11 +522,11 @@ proc newStag3*[G](g:openArray[G]):auto =
 proc newStag3*[G](g,g3:openArray[G]):auto =
   var l = g[0].l
   template t:untyped =
-    type(l.ColorVector()[0])
+    evalType(l.ColorVector()[0])
   var r:Staggered[G,t]
   r.se = initStagD3T(l, t, "even")
   r.so = initStagD3T(l, t, "odd")
-  var gg = newSeq[type(g[0])](0)
+  var gg = newSeq[evalType(g[0])](0)
   for i in 0..<g.len:
     gg.add g[i]
     gg.add g3[i]
@@ -469,6 +539,9 @@ proc D*(s:Staggered; r,x:Field; m:SomeNumber) =
 proc Ddag*(s:Staggered; r,x:Field; m:SomeNumber) =
   stagD(s.se, r, s.g, x, m, -1)
   stagD(s.so, r, s.g, x, m, -1)
+proc peqDdag*(s:Staggered; r,x:Field; m:SomeNumber) =
+  stagD(s.se, r, s.g, x, m, -1, 1)
+  stagD(s.so, r, s.g, x, m, -1, 1)
 proc eoReduce*(s:Staggered; r,b:Field; m:SomeNumber) =
   # r.even = (D^+ b).even
   #dump: "b.even.norm2"
@@ -481,9 +554,87 @@ proc eoReconstruct*(s:Staggered; r,b:Field; m:SomeNumber) =
   stagD(s.so, r, s.g, r, 0.0, -1.0/m)
   r.odd += b/m
 
+# (d/dg) redot[ (2D)*x, c ]
+proc stagD2deriv*(s:Staggered; g:openArray[Field]; c:Field2; x:Field3) =
+  template sef:untyped = s.se.sf
+  template sof:untyped = s.so.sf
+  let nd = g.len
+  tic()
+  for mu in 0..<nd:
+    startSB(sef[mu], x[ix])
+  for mu in 0..<nd:
+    startSB(sof[mu], x[ix])
+  toc("startShiftF")
+  for ir in g[0][s.se.subset]:
+    for mu in 0..<nd:
+      var gmu = g[mu]
+      localSB(sef[mu], ir, peqOuter(gmu[ir][], c[ir][], it[]), x[ix])
+  for ir in g[0][s.so.subset]:
+    for mu in 0..<nd:
+      var gmu = g[mu]
+      localSB(sof[mu], ir, peqOuter(gmu[ir][], c[ir][], it[]), x[ix])
+  toc("local")
+  for mu in 0..<nd:
+    var gmu = g[mu]
+    template f(ir,it: untyped): untyped =
+      peqOuter(gmu[ir][], c[ir][], it[])
+    boundarySB2(sef[mu], f)
+    boundarySB2(sof[mu], f)
+  toc("boundaryF")
+  threadBarrier()
+  for mu in 0..<nd:
+    startSB(sef[mu], c[ix])
+  for mu in 0..<nd:
+    startSB(sof[mu], c[ix])
+  toc("startShiftF")
+  for ir in g[0][s.se.subset]:
+    for mu in 0..<nd:
+      localSB(sef[mu], ir, meqOuter(g[mu][ir], x[ir], it), c[ix])
+  for ir in g[0][s.so.subset]:
+    for mu in 0..<nd:
+      localSB(sof[mu], ir, meqOuter(g[mu][ir], x[ir], it), c[ix])
+  toc("local")
+  for mu in 0..<nd:
+    template f(ir,it: untyped): untyped =
+      meqOuter(g[mu][ir], x[ir], it)
+    boundarySB2(sef[mu], f)
+    boundarySB2(sof[mu], f)
+  toc("boundaryF")
+
+proc stagDeriv*(s:Staggered; f:openArray[Field]; x:Field2) =
+  template sef:untyped = s.se.sf
+  template sof:untyped = s.so.sf
+  let nd = f.len
+  tic()
+  for mu in 0..<nd:
+    startSB(sef[mu], x[ix])
+  for mu in 0..<nd:
+    startSB(sof[mu], x[ix])
+  toc("startShiftF")
+  for ir in f[0][s.se.subset]:
+    for mu in 0..<nd:
+      var gmu = f[mu]
+      localSB(sef[mu], ir, peqOuter(gmu[ir][], x[ir][], it[]), x[ix])
+  for ir in f[0][s.so.subset]:
+    for mu in 0..<nd:
+      var gmu = f[mu]
+      localSB(sof[mu], ir, meqOuter(gmu[ir][], x[ir][], it[]), x[ix])
+  toc("local")
+  for mu in 0..<nd:
+    var gmu = f[mu]
+    template fp(ir,it: untyped): untyped =
+      peqOuter(gmu[ir][], x[ir][], it[])
+    boundarySB2(sef[mu], fp)
+    template fm(ir,it: untyped): untyped =
+      meqOuter(gmu[ir][], x[ir][], it[])
+    boundarySB2(sof[mu], fm)
+  toc("boundaryF")
+  threadBarrier()
+  s.rephase f
+
 #[
 template foldl*(f,n,op:untyped):untyped =
-  var r:type(f(0))
+  var r:evalType(f(0))
   r = f(0)
   for i in 1..<n:
     let
@@ -494,7 +645,7 @@ template foldl*(f,n,op:untyped):untyped =
 ]#
 
 when isMainModule:
-  import rng, strutils
+  import rng, strutils, seqUtils
   proc runtest(v1,v2,sdAll,sdEven,sdOdd,s,m:any) =
     let g = s.g
     let lo = g[0].l

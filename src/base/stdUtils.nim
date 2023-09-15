@@ -100,6 +100,15 @@ proc `mod`*(x: array, y: SomeNumber): auto {.inline,noInit.} =
 #  for i in 0..<result.len:
 #    result[i] = x[i] + y[i]
 
+proc assign*[N,T](r: var array[N,T], x: SomeNumber) {.inline.} =
+  mixin assign
+  const n = r.len
+  for i in 0..<n:
+    assign(r[i], x)
+
+template `:=`*[N,T](r: var array[N,T], x: SomeNumber) =
+  assign(r, x)
+
 proc assign*[N1,T1,N2,T2](r: var array[N1,T1], x: array[N2,T2]) {.inline.} =
   mixin assign
   const n1 = r.len
@@ -164,6 +173,11 @@ proc `-`*[T1,T2](x: seq[T1], y: openArray[T2]): auto {.inline,noInit.} =
   for i in 0..<n:
     r[i] = x[i] - y[i]
   r
+
+proc `:=`*[T](r: var openArray[T], x: openArray[T]) {.inline.} =
+  let n = r.len
+  for i in 0..<n:
+    r[i] := x[i]
 
 proc `+=`*[T](r: var openArray[T], x: openArray[T]) {.inline.} =
   let n = r.len
@@ -293,10 +307,19 @@ proc latticeFromLocalLattice*[T:seq|array](ll: T, nrank: int): T =
   latticeFromLocalLatticeImpl(result, ll, nrank)
 
 macro rangeLow*(r: typedesc[range]):auto =
-  echo r.treerepr
-  echo r.getType.treerepr
-  error("rangeLow(typedesc)")
-  return r
+  #echo r.treerepr
+  #echo r.getType.treerepr
+  #echo r.getTypeImpl.treerepr
+  #echo r.getTypeInst.treerepr
+  #error("rangeLow(typedesc)")
+  #return r
+  let t = r.getTypeImpl
+  t.expectKind(nnkBracketExpr)
+  let t1 = t[1]
+  t1.expectKind(nnkBracketExpr)
+  let t11 = t1[1]
+  t11.expectKind(nnkInfix) # ..
+  return t11[1]
 
 macro rangeLow*(r: range):auto =
   #echo r.treerepr
@@ -315,6 +338,18 @@ macro rangeLow*(r: range):auto =
 #  echo r.treerepr
 #  echo r.getType.treerepr
 #  return r
+
+macro rangeLen*(r: typedesc[range]):auto =
+  #echo r.treerepr
+  #echo r.getType.treerepr
+  let t = r.getTypeImpl
+  #echo t.treerepr
+  t.expectKind(nnkBracketExpr)
+  let t1 = t[1]
+  t1.expectKind(nnkBracketExpr)
+  let t11 = t1[1]
+  t11.expectKind(nnkInfix) # ..
+  return newCall(ident"-",newCall(ident"+",t11[2],newLit(1)),t11[1])
 
 macro rangeLen*(r: range):auto =
   #echo r.treerepr

@@ -147,7 +147,7 @@ proc newFarrElem[V:static[int],T](f:var Field[V,T]; l:Layout[V]; s:alignedMem[T]
   f.new()
   f.l = l
   f.s = s
-  f.s.data = cast[typeof(s.data)](cast[ByteAddress](s.data) + offset*l.nSitesOuter*s.stride)
+  f.s.data = cast[typeof(s.data)](cast[int](s.data) + offset*l.nSitesOuter*s.stride)
   f.elemSize = sizeOf(T)
 
 proc newFieldArray*[V:static[int],T](l:Layout[V]; t:typedesc[Field[V,T]]; n: int):FieldArray[V,T] {.noinit.} =
@@ -204,7 +204,21 @@ proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] {.noinit.} =
     newFarrElem(result.arr[i], l, s, t)
     inc t
 
-template isWrapper*(x: SomeField): untyped = false
+template dataPtr*[V:static[int],T](x: Field[V,T]): auto = x.s.data
+template isWrapper*(x: SomeField): bool = false
+template isWrapper*(x: typedesc[SomeField]): bool = false
+template getT[V:static[int],T](x: Field[V,T]): typedesc = T
+template getT[V:static[int],T](x: typedesc[Field[V,T]]): typedesc = T
+template has*[F:Field](x: typedesc[F], y: typedesc): bool =
+  mixin has, isWrapper
+  #static: echo $F.T.type
+  when y is Field: true
+  else:
+    when isWrapper(getT F):
+      has(getT F, y)
+    else: false
+
+template `[]`*[F:Field](x:typedesc[F]; i:int):typedesc = F.T
 template `[]`*(x:Field; i:int):untyped = x.s[i]
 #template `[]=`*(x:Field; i:int; y:typed) =
 proc `[]=`*(x:Field; i:int; y:auto) =
@@ -599,7 +613,7 @@ proc norm2P*(f:SomeField):auto =
   f.l.threadRankSum(result)
   #echo result
   toc("norm2 thread rank sum")
-template norm2*(f:SomeAllField):untyped =
+template norm2*(f:SomeAllField):auto =
   when declared(subsetObject):
     #echo "subsetObj" & s
     norm2P(f[subsetObject])
@@ -608,7 +622,14 @@ template norm2*(f:SomeAllField):untyped =
     norm2P(f[subsetString])
   else:
     norm2P(f)
-template norm2*(f:Subsetted):untyped = norm2P(f)
+template norm2*(f:Subsetted):auto = norm2P(f)
+
+proc norm2subtract*(x: Field, y: float): float =
+  var s: evalType(norm2(toDouble(x[0])))
+  for i in x:
+    s += x[i].toDouble.norm2 - y
+  result = s.simdReduce
+  x.l.threadRankSum(result)
 
 proc dotP*(f1:SomeField; f2:SomeField2):auto =
   tic()

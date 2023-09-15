@@ -62,7 +62,7 @@ template test(action:untyped, deriv:untyped):auto =
   for n in 0..<5:
     p.randomTAH r
     var d,e:float
-    ndiff(d, e, proc(x:float):float=action(addnoise(x, p, g, gg)), 0, 0.95)
+    ndiff(d, e, proc(x:float):float=action(addnoise(x, p, g, gg)), 0, 1.0)
     var pf = 0.0
     for mu in 0..<p.len:
       pf += redot(p[mu], f[mu])

@@ -88,37 +88,54 @@ template `im=`*(x: ComplexObj, y: typed) =
   assign(x.imX, y)
 
 overloadAsReal(SomeNumber)
-template I*(x: SomeNumber): untyped = newImag(x)
+template I*(x: SomeNumber): auto = newImag(x)
 
 template numberType*[T](x: ComplexProxy[T]): typedesc = numberType(T)
 template numberType*[T](x: typedesc[ComplexProxy[T]]): typedesc =
   mixin numberType
   numberType(T)
 template numberType*[T](x: ComplexObj[T,T]): typedesc = numberType(T)
-#template nVectors*[T](x: Complex[T,T]): untyped =
-#  mixin nVectors
-#  nVectors(T)
-template numNumbers*(x: ComplexProxy): untyped =
+template numberType*[T](x: type ComplexObj[T,T]): typedesc = numberType(T)
+
+template numNumbers*[TR,TI](x: ComplexObj[TR,TI]): auto =
   mixin numNumbers
-  2*numNumbers(x.re)
-template simdType*[T](x: ComplexProxy[T]): untyped = simdType(T)
-template simdType*[T](x: type ComplexProxy[T]): untyped = simdType(T)
-template simdType*[TR,TI](x: ComplexObj[TR,TI]): untyped =
+  numNumbers(TR)+numNumbers(TI)
+template numNumbers*[TR,TI](x: type ComplexObj[TR,TI]): auto =
+  mixin numNumbers
+  numNumbers(TR)+numNumbers(TI)
+template numNumbers*[T](x: ComplexProxy[T]): auto =
+  mixin numNumbers
+  numNumbers(T)
+template numNumbers*[T](x: type ComplexProxy[T]): auto =
+  mixin numNumbers
+  numNumbers(T)
+
+template simdType*[T](x: ComplexObj[T,T]): typedesc =
   mixin simdType
-  simdType(TR)
-template simdType*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): untyped =
+  simdType(T)
+template simdType*[T](x: type ComplexObj[T,T]): typedesc =
   mixin simdType
-  simdType(TR)
-template simdLength*[TR,TI](x: ComplexObj[TR,TI]): untyped =
+  simdType(T)
+template simdType*[T](x: ComplexProxy[T]): typedesc = simdType(T)
+template simdType*[T](x: type ComplexProxy[T]): typedesc = simdType(T)
+
+template simdLength*[T](x: ComplexObj[T,T]): auto =
   mixin simdLength
-  simdLength(TR)
-template simdLength*[T](x: ComplexProxy[T]): untyped = simdLength(T)
-template simdLength*[T](x: type ComplexProxy[T]): untyped = simdLength(T)
-template simdSum*(x: ComplexObj): untyped =
+  simdLength(T)
+template simdLength*[T](x: type ComplexObj[T,T]): auto =
+  mixin simdLength
+  simdLength(T)
+template simdLength*[T](x: ComplexProxy[T]): auto = simdLength(T)
+template simdLength*[T](x: type ComplexProxy[T]): auto = simdLength(T)
+
+#template simdSum*(x: ComplexObj): auto =
+#  newComplexObj(simdSum(x.re),simdSum(x.im))
+proc simdSum*(x: ComplexObj): auto {.alwaysInline.} =
   newComplexObj(simdSum(x.re),simdSum(x.im))
-template simdSum*(x: ComplexProxy): untyped = asComplex(simdSum(x[]))
-template getNc*(x: ComplexProxy): untyped = 1
-template getNs*(x: ComplexProxy): untyped = 1
+template simdSum*(x: ComplexProxy): auto = asComplex(simdSum(x[]))
+
+template getNc*(x: ComplexProxy): auto = 1
+template getNs*(x: ComplexProxy): auto = 1
 
 template toSingle*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): typedesc =
   mixin toSingle
