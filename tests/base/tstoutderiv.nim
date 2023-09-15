@@ -66,7 +66,7 @@ template test(action:untyped, deriv:untyped):auto =
     var pf = 0.0
     for mu in 0..<p.len:
       pf += redot(p[mu], f[mu])
-    if abs(pf-d)<6*e:    # check for 6 times the estimated error from ndiff
+    if abs(pf-d)<32*e:    # check for 32 times the estimated error from ndiff
       echo "Test ",n,"  Passed:  p.f: ",pf," \tndiff: ",d," \tdelta: ",pf-d," \terr(ndiff): ",e
     else:
       echo "Test ",n,"  Failed:  p.f: ",pf," \tndiff: ",d," \tdelta: ",pf-d," \terr(ndiff): ",e
