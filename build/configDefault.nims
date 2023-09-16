@@ -23,8 +23,8 @@ ccDef = "cc"
 # ld            C linker executable (typically same as C compiler)
 # ldflags       C linker flags
 cc = "mpicc"
-cflagsAlways = ""
-cflagsDebug = "-g"
+cflagsAlways = "-g"
+cflagsDebug = ""
 cflagsSpeed = "-Ofast -march=native"
 ld = cc
 ldflags = cflagsAlways & " -ldl"
@@ -37,8 +37,8 @@ ldflags = cflagsAlways & " -ldl"
 # ldpp            C++ linker executable (typically same as C++ compiler)
 # ldppflags       C++ linker flags
 cpp = "mpicxx"
-cppflagsAlways = ""
-cppflagsDebug = "-g"
+cppflagsAlways = "-g"
+cppflagsDebug = ""
 cppflagsSpeed = "-Ofast -march=native"
 ldpp = cpp
 ldppflags = cppflagsAlways & " -ldl"
