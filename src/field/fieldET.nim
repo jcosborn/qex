@@ -378,7 +378,9 @@ iterator sites*(s:Subset):int {.inline.} =
 #  let n = x.l.nSitesOuter
 #  itemsI(0, n)
 iterator items*(x:Field):int {.inline.} =
-  let n = x.l.nSitesOuter
+  #let n = x.l.nSitesOuter
+  let l = x.l
+  let n = l.nSitesOuter
   #echo "n: ", n
   itemsI(0, n)
 iterator items*(x:Subsetted):int {.inline.} =

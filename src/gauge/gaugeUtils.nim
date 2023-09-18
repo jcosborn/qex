@@ -356,6 +356,17 @@ proc echoPlaq*(g: auto) =
   for i in ns..<pl.len: pt += pl[i]
   echo "plaqS: ", 2*ps, "  plaqT: ", 2*pt, "  plaq: ", ps+pt
 
+proc contractProjectTAH*[T](g:openArray[T], f:openArray[T]) =
+  ## f will be overwritten
+  let nd = g.len
+  let u = cast[ptr cArray[T]](unsafeAddr(g[0]))
+  let o = cast[ptr cArray[T]](unsafeAddr(f[0]))
+  threads:
+    for mu in 0..<nd:
+      for e in o[mu]:
+        let s = u[mu][e]*o[mu][e].adj
+        o[mu][e].projectTAH s
+
 type
   Link[F:ref] = object
     field:F

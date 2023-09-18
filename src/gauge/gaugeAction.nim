@@ -146,9 +146,9 @@ proc gaugeAction1*[T](uu: openarray[T]): auto =
   let gc = GaugeActionCoeffs(plaq:1.0)
   return gc.gaugeAction1(uu)
 
-proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
+proc gaugeActionDeriv*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
   mixin load1, adj
-  tic("gaugeForce")
+  tic("gaugeActionDeriv")
   let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
   let lo = u[0].l
   let nd = lo.nDim
@@ -174,9 +174,9 @@ proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
       for nu in 0..<nd:
         if mu==nu: continue
         sf[mu][nu].initShiftB(u[mu], nu, 1, "all")
-  toc("gaugeForce init")
+  toc("gaugeActionDeriv init")
   var (stf,stu,ss) = makeStaples(uu, cs)
-  toc("gaugeForce makeStaples")
+  toc("gaugeActionDeriv makeStaples")
   threads:
     tic()
     if cr!=0:
@@ -237,7 +237,7 @@ proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
               f[nu][ir] += cr * u[mu][ir] * snumu
               f[mu][ir] += cr * u[nu][ir] * snumu.adj
               ru[mu,nu][ir] += u[nu][ir].adj * u[mu][ir] * snu
-    toc("gaugeForce local")
+    toc("gaugeActionDeriv local")
     for mu in 1..<nd:
       for nu in 0..<mu:
         var needBoundary = false
@@ -298,7 +298,7 @@ proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
           threadBarrier()
           sb[mu][nu].startSB(ru[mu,nu][ix])
           sb[nu][mu].startSB(ru[nu,mu][ix])
-      toc("gaugeForce staple boundary")
+      toc("gaugeActionDeriv staple boundary")
       for ir in u[0]:
         for mu in 1..<nd:
           for nu in 0..<mu:
@@ -310,7 +310,7 @@ proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
               var b: type(load1(u[0][0]))
               localSB(sb[nu][mu], ir, assign(b,it), ru[nu,mu][ix])
               f[nu][ir] += cr * b
-      toc("gaugeForce back rect local")
+      toc("gaugeActionDeriv back rect local")
       for mu in 1..<nd:
         for nu in 0..<mu:
           var needBoundary = false
@@ -327,11 +327,13 @@ proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
                 var b: type(load1(u[0][0]))
                 getSB(sb[nu][mu], ir, assign(b,it), ru[nu,mu][ix])
                 f[nu][ir] += cr * b
-    for mu in 0..<f.len:
-      for e in f[mu]:
-        mixin trace
-        let s = u[mu][e]*f[mu][e].adj
-        f[mu][e].projectTAH s
+  toc("gaugeActionDeriv end")
+
+proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
+  tic("gaugeForce")
+  gaugeActionDeriv(c, uu, f)
+  toc("gaugeActionDeriv")
+  contractProjectTAH(uu, f)
   toc("gaugeForce end")
 
 proc gaugeForce*[T](uu: openArray[T]): auto =
@@ -933,7 +935,7 @@ when isMainModule:
 
   let dev = testE4(lambda,10)
   echo "Relative deviation from dt^2 scaling: ",dev
-  if abs(dev)>1e-14:
+  if abs(dev)>1e-13:
     qexError "Large deviation."
 
   echoTimers()

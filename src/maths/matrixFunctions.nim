@@ -468,6 +468,18 @@ proc exp*(m: Mat1): auto {.noInit.} =
     ]#
   r
 
+proc expDeriv*(m: Mat1, c:Mat2): auto {.noInit.} =
+  var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
+  when m.nrows == 1:
+    r := exp(m[0,0]) * c[0,0]
+  else:
+    var p: ExpParam
+    p.scale = 20
+    p.kind = ekPoly
+    p.order = 4
+    r := p.expDeriv(m, c)
+  r
+
 proc ln*(m: Mat1): auto {.noInit.} =
   var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
   when m.nrows == 1:

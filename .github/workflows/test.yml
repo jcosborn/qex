@@ -10,7 +10,7 @@ jobs:
         fuel-compat: [0, 1]
       fail-fast: false
     name: nim-${{ matrix.nim-branch }}-FUELCompat:${{ matrix.fuel-compat }}
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
     - name: environment
       run: |

@@ -13,6 +13,9 @@ macro BASE4(x:varargs[untyped]):auto = baseImpl(newLit(4), x)
 
 # m128 operations
 
+proc perm2*(x:m128):m128 {.alwaysInline.} =
+  mm_shuffle_ps(x, x, BASE4(1,0,3,2).cuint)
+
 proc perm1*(r:var m128; x:m128) {.alwaysInline.} =
   r = mm_shuffle_ps(x, x, BASE4(2,3,0,1).cuint)
 proc perm2*(r:var m128; x:m128) {.alwaysInline.} =
