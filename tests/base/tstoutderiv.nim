@@ -42,12 +42,14 @@ var
 # F'(U) = -2 T_a F'_a(U) = -2 T_a d/dw_a F(exp(w_b T_b) U) |_{w_a=0}
 # Tr(F'(U) T_a) = d/dw_a F(exp(w_b T_b) U) |_{w_a=0}
 
-proc addnoise[G](x:float, p:G, g:G, ng:G):auto =
-  for mu in 0..<g.len:
-    for e in g[mu]:
-      let t = x*p[mu][e]
-      ng[mu][e] := exp(t)*g[mu][e]
-  ng
+proc addnoise[G](x:float, p:G, g:G, ng:G) =
+  qexGC()
+  threads:
+    for mu in 0..<g.len:
+      for e in g[mu]:
+        let t = x*p[mu][e]
+        ng[mu][e] := exp(t)*g[mu][e]
+  qexGC()
 
 # Test by computing the derivative of F(exp(t*p)g), dF/dt at t=0
 # d/dt F(exp(t*p)g) |_{t=0} = d/dt F(exp(t*p_b T_b)g) |_{t=0}
@@ -66,7 +68,10 @@ template test(action:untyped, deriv:untyped):auto =
       var d,e:float
       proc testAct(x:float):float =
         tic("testAct")
-        result = action(addnoise(x, p, g, gg))
+        qexGC()
+        addnoise(x, p, g, gg)
+        result = action(gg)
+        qexGC()
         toc("done")
       ndiff(d, e, testAct, 0, 1.0)
       var pf = 0.0
@@ -161,7 +166,7 @@ proc smeared2Force(g:auto, f:auto) =
 
 fail += test(smeared2Action, smeared2Force)
 
-# echoTimers()
+echoTimers()
 
 if fail==0:
   qexFinalize()
