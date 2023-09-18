@@ -56,6 +56,7 @@ proc addnoise[G](x:float, p:G, g:G, ng:G):auto =
 #   = Tr(p F'(g))
 template test(action:untyped, deriv:untyped):auto =
   proc testImpl():auto {.gensym.} =
+    tic("test")
     var fail = 0
     echo "### Testing ",astToStr(action)," ",astToStr(deriv)
     deriv(g, f)
@@ -63,7 +64,11 @@ template test(action:untyped, deriv:untyped):auto =
     for n in 0..<5:
       p.randomTAH r
       var d,e:float
-      ndiff(d, e, proc(x:float):float=action(addnoise(x, p, g, gg)), 0, 1.0)
+      proc testAct(x:float):float =
+        tic("testAct")
+        result = action(addnoise(x, p, g, gg))
+        toc("done")
+      ndiff(d, e, testAct, 0, 1.0)
       var pf = 0.0
       for mu in 0..<p.len:
         pf += redot(p[mu], f[mu])
@@ -72,6 +77,7 @@ template test(action:untyped, deriv:untyped):auto =
       else:
         echo "Test ",n,"  Failed:  p.f: ",pf," \tndiff: ",d," \tdelta: ",pf-d," \terr(ndiff): ",e
         inc fail
+    toc("done")
     fail
   qexGC()
   testImpl()
