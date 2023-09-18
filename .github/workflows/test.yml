@@ -5,6 +5,7 @@ on:
     branches:
       - 'devel'
       - 'master'
+      - 'ci-test'
 
 jobs:
   build:
