@@ -55,23 +55,26 @@ proc addnoise[G](x:float, p:G, g:G, ng:G):auto =
 #   = p_a Tr(T_a F'(g))
 #   = Tr(p F'(g))
 template test(action:untyped, deriv:untyped):auto =
-  echo "### Testing ",astToStr(action)," ",astToStr(deriv)
-  deriv(g, f)
-  let gg = lo.newGauge
-  var fail = 0
-  for n in 0..<5:
-    p.randomTAH r
-    var d,e:float
-    ndiff(d, e, proc(x:float):float=action(addnoise(x, p, g, gg)), 0, 1.0)
-    var pf = 0.0
-    for mu in 0..<p.len:
-      pf += redot(p[mu], f[mu])
-    if abs(pf-d)<32*e:    # check for 32 times the estimated error from ndiff
-      echo "Test ",n,"  Passed:  p.f: ",pf," \tndiff: ",d," \tdelta: ",pf-d," \terr(ndiff): ",e
-    else:
-      echo "Test ",n,"  Failed:  p.f: ",pf," \tndiff: ",d," \tdelta: ",pf-d," \terr(ndiff): ",e
-      inc fail
-  fail
+  proc testImpl():auto {.gensym.} =
+    var fail = 0
+    echo "### Testing ",astToStr(action)," ",astToStr(deriv)
+    deriv(g, f)
+    let gg = lo.newGauge
+    for n in 0..<5:
+      p.randomTAH r
+      var d,e:float
+      ndiff(d, e, proc(x:float):float=action(addnoise(x, p, g, gg)), 0, 1.0)
+      var pf = 0.0
+      for mu in 0..<p.len:
+        pf += redot(p[mu], f[mu])
+      if abs(pf-d)<32*e:    # check for 32 times the estimated error from ndiff
+        echo "Test ",n,"  Passed:  p.f: ",pf," \tndiff: ",d," \tdelta: ",pf-d," \terr(ndiff): ",e
+      else:
+        echo "Test ",n,"  Failed:  p.f: ",pf," \tndiff: ",d," \tdelta: ",pf-d," \terr(ndiff): ",e
+        inc fail
+    fail
+  qexGC()
+  testImpl()
 
 var fail = test(gc.gaugeAction1, gc.gaugeForce)
 
