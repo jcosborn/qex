@@ -1,19 +1,14 @@
 import qex
-import os
 
 qexInit()
 
-let
-  fn = if paramCount() > 0: paramStr 1 else: ""
-  lat = if fn.len == 0: @[8,8,8,8] else: fn.getFileLattice
-  lo = lat.newLayout
-var g = lo.newGauge
-if fn.len == 0:
+proc testgauge(lat:seq[int]):seq[DLatticeColorMatrixV] =
+  qexGC()
+  let lo = lat.newLayout
+  let g = lo.newGauge
   g.random
-elif 0 != g.loadGauge fn:
-  echo "ERROR: couldn't load gauge file: ",fn
-  qexFinalize()
-  quit(-1)
+  qexGC()
+  g
 
 proc testfp(g:seq[DLatticeColorMatrixV]):float =
   let gc = GaugeActionCoeffs(plaq:6.0)
@@ -27,9 +22,10 @@ proc runfp(f:proc, arg:auto):auto =
 proc testfun(g:auto):auto =
   runfp(testfp, g)
 
-proc test(g:auto):auto =
+proc test(lat:auto):auto =
   var fail = 0
   qexGC()
+  let g = runfp(testgauge,lat)
   let act = testfun(g)
   qexGC()
   for n in 0..<1024:
@@ -43,7 +39,12 @@ proc test(g:auto):auto =
     qexGC()
   fail
 
-if test(g) > 0:
+var fail = 0
+fail += test(@[8,8,8,8])
+fail += test(@[8,8,8,12])
+fail += test(@[8,8,8,16])
+
+if fail > 0:
   qexAbort()
 else:
   qexFinalize()
