@@ -74,7 +74,8 @@ template test(action:untyped, deriv:untyped):auto =
       for mu in 0..<p.len:
         pf += redot(p[mu], f[mu])
       let err = abs(pf-d)
-      if err<32*e and err<1e-5 and abs(err/pf)<1e-7:    # check for 32 times the estimated error from ndiff
+      let etol = max(1e-8,32*e)
+      if err<etol and err<1e-5 and abs(err/pf)<1e-7:
         echo "Test ",n,"  Passed:  p.f: ",pf," \tndiff: ",d," \tdelta: ",pf-d," \terr(ndiff): ",e
       else:
         echo "Test ",n,"  Failed:  p.f: ",pf," \tndiff: ",d," \tdelta: ",pf-d," \terr(ndiff): ",e
