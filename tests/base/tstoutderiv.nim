@@ -16,27 +16,21 @@ let
   lat = if fn.len == 0: @[8,8,8,8] else: fn.getFileLattice
   lo = lat.newLayout
 var g = lo.newGauge
+var ss = lo.newStoutSmear(0.1)
 if fn.len == 0:
   g.random
+  for n in 0..<50:
+    ss.smear(g, g)
 elif 0 != g.loadGauge fn:
   echo "ERROR: couldn't load gauge file: ",fn
   qexFinalize()
   quit(-1)
-g.printPlaq
+# g.printPlaq
 
 let gc = GaugeActionCoeffs(plaq:6.0)
-var ss = lo.newStoutSmear(0.1)
+# echo "S(g): ",gc.gaugeAction1(g)
 
-for n in 0..<10:
-  ss.smear(g, g)
-
-g.printPlaq
-echo "S(g): ",gc.gaugeAction1(g)
-
-var
-  f = lo.newGauge
-  p = lo.newGauge
-  r = lo.newRNGField(MRG32k3a, 4321)
+var r = lo.newRNGField(MRG32k3a, 4321)
 
 # SU(3) derivative convention, with Tr(T_a T_b) = -1/2
 # F'(U) = -2 T_a F'_a(U) = -2 T_a d/dw_a F(exp(w_b T_b) U) |_{w_a=0}
@@ -61,8 +55,10 @@ template test(action:untyped, deriv:untyped):auto =
     tic("test")
     var fail = 0
     echo "### Testing ",astToStr(action)," ",astToStr(deriv)
-    deriv(g, f)
     let gg = lo.newGauge
+    let f = lo.newGauge
+    let p = lo.newGauge
+    deriv(g, f)
     for n in 0..<5:
       p.randomTAH r
       var d,e:float
