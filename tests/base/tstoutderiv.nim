@@ -19,16 +19,16 @@ var g = lo.newGauge
 var ss = lo.newStoutSmear(0.1)
 if fn.len == 0:
   g.random
-  for n in 0..<50:
+  for n in 0..<10:
     ss.smear(g, g)
 elif 0 != g.loadGauge fn:
   echo "ERROR: couldn't load gauge file: ",fn
   qexFinalize()
   quit(-1)
-# g.printPlaq
+g.printPlaq
 
 let gc = GaugeActionCoeffs(plaq:6.0)
-# echo "S(g): ",gc.gaugeAction1(g)
+echo "S(g): ",gc.gaugeAction1(g)
 
 var r = lo.newRNGField(MRG32k3a, 4321)
 
