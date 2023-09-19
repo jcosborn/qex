@@ -24,7 +24,7 @@ jobs:
     - name: install packages
       run: |
         sudo apt-get update
-        sudo apt-get install numdiff hwloc-nox libhwloc-dev openmpi libopenmpi-dev gdb
+        sudo apt-get install numdiff hwloc-nox libhwloc-dev openmpi-bin libopenmpi-dev gdb
     - name: install hwloc v2
       run: |
         curl -LO https://download.open-mpi.org/release/hwloc/v2.2/hwloc-2.2.0.tar.bz2
