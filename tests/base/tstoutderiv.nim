@@ -164,7 +164,35 @@ proc smeared2Force(g:auto, f:auto) =
 
 fail += test(smeared2Action, smeared2Force)
 
-echoTimers()
+var s3 = lo.newStoutSmear(0.12)
+
+proc smeared3Action(g:auto):auto =
+  var sg = lo.newGauge
+  var s2g = lo.newGauge
+  var s3g = lo.newGauge
+  ss.smear(g, sg)
+  s2.smear(sg, s2g)
+  s3.smear(s2g, s3g)
+  gc.gaugeAction1(s3g)
+proc smeared3Force(g:auto, f:auto) =
+  var sg = lo.newGauge
+  var ds = lo.newGauge
+  var s2g = lo.newGauge
+  var s3g = lo.newGauge
+  var f2 = lo.newGauge
+  var f3 = lo.newGauge
+  ss.smear(g, sg)
+  s2.smear(sg, s2g)
+  s3.smear(s2g, s3g)
+  gc.gaugeActionDeriv(s3g, ds)
+  s3.smearDeriv(f3, ds)
+  s2.smearDeriv(f2, f3)
+  ss.smearDeriv(f, f2)
+  contractProjectTAH(g, f)
+
+fail += test(smeared3Action, smeared3Force)
+
+# echoTimers()
 
 if fail==0:
   qexFinalize()
