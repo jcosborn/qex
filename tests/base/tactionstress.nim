@@ -32,10 +32,10 @@ proc test(lat:auto):auto =
     qexGC()
     let a = testfun(g)
     if abs(a-act)/abs(act) > 1e-8:
-      echo "Wrong result: ",a," expecting: ",act
+      echo n," WRONG result: ",a," expecting: ",act
       inc fail
     if (n+1) mod 128 == 0:
-      echo n," / 1024 failed ",fail
+      echo (n+1)," / 1024 failed ",fail
     qexGC()
   fail
 

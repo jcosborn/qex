@@ -101,27 +101,26 @@ proc gaugeAction1*[T](c: GaugeActionCoeffs, uu: openarray[T]): auto =
               let r = redot(bnu, stf[nu,mu][ir])
               rect += simdSum(r)
     toc("gaugeAction local")
-    if c.rect!=0:
-      for mu in 1..<nd:
-        for nu in 0..<mu:
-          var needBoundary = false
-          boundaryWaitSB(ss[mu][nu]): needBoundary = true
-          boundaryWaitSB(ss[nu][mu]): needBoundary = true
-          if needBoundary:
-            boundarySyncSB()
-            for ir in lo:
-              if not isLocal(ss[mu][nu],ir):
-                var bmu: type(load1(u[0][0]))
-                getSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
-                # rect
-                let r = redot(bmu, stf[mu,nu][ir])
-                rect += simdSum(r)
-              if not isLocal(ss[nu][mu],ir):
-                var bnu: type(load1(u[0][0]))
-                getSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
-                # rect
-                let r = redot(bnu, stf[nu,mu][ir])
-                rect += simdSum(r)
+    for mu in 1..<nd:
+      for nu in 0..<mu:
+        var needBoundary = false
+        boundaryWaitSB(ss[mu][nu]): needBoundary = true
+        boundaryWaitSB(ss[nu][mu]): needBoundary = true
+        if c.rect!=0 and needBoundary:
+          boundarySyncSB()
+          for ir in lo:
+            if not isLocal(ss[mu][nu],ir):
+              var bmu: type(load1(u[0][0]))
+              getSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
+              # rect
+              let r = redot(bmu, stf[mu,nu][ir])
+              rect += simdSum(r)
+            if not isLocal(ss[nu][mu],ir):
+              var bnu: type(load1(u[0][0]))
+              getSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
+              # rect
+              let r = redot(bnu, stf[nu,mu][ir])
+              rect += simdSum(r)
     act[threadNum*3]   = plaq
     act[threadNum*3+1] = rect
     act[threadNum*3+2] = pgm
