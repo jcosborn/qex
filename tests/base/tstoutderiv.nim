@@ -16,8 +16,11 @@ let
   lat = if fn.len == 0: @[8,8,8,8] else: fn.getFileLattice
   lo = lat.newLayout
 var g = lo.newGauge
+var ss = lo.newStoutSmear(0.1)
 if fn.len == 0:
   g.random
+  for n in 0..<10:
+    ss.smear(g, g)
 elif 0 != g.loadGauge fn:
   echo "ERROR: couldn't load gauge file: ",fn
   qexFinalize()
@@ -25,29 +28,22 @@ elif 0 != g.loadGauge fn:
 g.printPlaq
 
 let gc = GaugeActionCoeffs(plaq:6.0)
-var ss = lo.newStoutSmear(0.1)
-
-for n in 0..<10:
-  ss.smear(g, g)
-
-g.printPlaq
 echo "S(g): ",gc.gaugeAction1(g)
 
-var
-  f = lo.newGauge
-  p = lo.newGauge
-  r = lo.newRNGField(MRG32k3a, 4321)
+var r = lo.newRNGField(MRG32k3a, 4321)
 
 # SU(3) derivative convention, with Tr(T_a T_b) = -1/2
 # F'(U) = -2 T_a F'_a(U) = -2 T_a d/dw_a F(exp(w_b T_b) U) |_{w_a=0}
 # Tr(F'(U) T_a) = d/dw_a F(exp(w_b T_b) U) |_{w_a=0}
 
-proc addnoise[G](x:float, p:G, g:G, ng:G):auto =
-  for mu in 0..<g.len:
-    for e in g[mu]:
-      let t = x*p[mu][e]
-      ng[mu][e] := exp(t)*g[mu][e]
-  ng
+proc addnoise[G](x:float, p:G, g:G, ng:G) =
+  qexGC()
+  threads:
+    for mu in 0..<g.len:
+      for e in g[mu]:
+        let t = x*p[mu][e]
+        ng[mu][e] := exp(t)*g[mu][e]
+  qexGC()
 
 # Test by computing the derivative of F(exp(t*p)g), dF/dt at t=0
 # d/dt F(exp(t*p)g) |_{t=0} = d/dt F(exp(t*p_b T_b)g) |_{t=0}
@@ -59,20 +55,27 @@ template test(action:untyped, deriv:untyped):auto =
     tic("test")
     var fail = 0
     echo "### Testing ",astToStr(action)," ",astToStr(deriv)
-    deriv(g, f)
     let gg = lo.newGauge
+    let f = lo.newGauge
+    let p = lo.newGauge
+    deriv(g, f)
     for n in 0..<5:
       p.randomTAH r
       var d,e:float
       proc testAct(x:float):float =
         tic("testAct")
-        result = action(addnoise(x, p, g, gg))
+        qexGC()
+        addnoise(x, p, g, gg)
+        result = action(gg)
+        qexGC()
         toc("done")
       ndiff(d, e, testAct, 0, 1.0)
       var pf = 0.0
       for mu in 0..<p.len:
         pf += redot(p[mu], f[mu])
-      if abs(pf-d)<32*e:    # check for 32 times the estimated error from ndiff
+      let err = abs(pf-d)
+      let etol = max(1e-8,32*e)
+      if err<etol and err<1e-5 and abs(err/pf)<1e-7:
         echo "Test ",n,"  Passed:  p.f: ",pf," \tndiff: ",d," \tdelta: ",pf-d," \terr(ndiff): ",e
       else:
         echo "Test ",n,"  Failed:  p.f: ",pf," \tndiff: ",d," \tdelta: ",pf-d," \terr(ndiff): ",e
@@ -160,6 +163,34 @@ proc smeared2Force(g:auto, f:auto) =
   contractProjectTAH(g, f)
 
 fail += test(smeared2Action, smeared2Force)
+
+var s3 = lo.newStoutSmear(0.12)
+
+proc smeared3Action(g:auto):auto =
+  var sg = lo.newGauge
+  var s2g = lo.newGauge
+  var s3g = lo.newGauge
+  ss.smear(g, sg)
+  s2.smear(sg, s2g)
+  s3.smear(s2g, s3g)
+  gc.gaugeAction1(s3g)
+proc smeared3Force(g:auto, f:auto) =
+  var sg = lo.newGauge
+  var ds = lo.newGauge
+  var s2g = lo.newGauge
+  var s3g = lo.newGauge
+  var f2 = lo.newGauge
+  var f3 = lo.newGauge
+  ss.smear(g, sg)
+  s2.smear(sg, s2g)
+  s3.smear(s2g, s3g)
+  gc.gaugeActionDeriv(s3g, ds)
+  s3.smearDeriv(f3, ds)
+  s2.smearDeriv(f2, f3)
+  ss.smearDeriv(f, f2)
+  contractProjectTAH(g, f)
+
+fail += test(smeared3Action, smeared3Force)
 
 # echoTimers()
 

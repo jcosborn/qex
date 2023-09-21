@@ -6,10 +6,11 @@ jobs:
   build:
     strategy:
       matrix:
+        mpi-impl: [openmpi, mpich]
         nim-branch: [version-1-6, version-2-0, devel]
         fuel-compat: [0, 1]
       fail-fast: false
-    name: nim-${{ matrix.nim-branch }}-FUELCompat:${{ matrix.fuel-compat }}
+    name: nim-${{ matrix.nim-branch }}-${{ matrix.mpi-impl }}-FUELCompat:${{ matrix.fuel-compat }}
     runs-on: ubuntu-22.04
     steps:
     - name: environment
@@ -19,7 +20,9 @@ jobs:
     - name: install packages
       run: |
         sudo apt-get update
-        sudo apt-get install numdiff hwloc-nox libhwloc-dev mpich libmpich-dev gdb
+        sudo apt-get install numdiff hwloc-nox libhwloc-dev gdb
+        if test ${{ matrix.mpi-impl }} = openmpi; then sudo apt-get install openmpi-bin libopenmpi-dev; fi
+        if test ${{ matrix.mpi-impl }} = mpich; then sudo apt-get install mpich libmpich-dev; fi
     - name: install hwloc v2
       run: |
         curl -LO https://download.open-mpi.org/release/hwloc/v2.2/hwloc-2.2.0.tar.bz2
