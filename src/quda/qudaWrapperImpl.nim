@@ -6,6 +6,7 @@ import enum_quda
 import layout
 import physics/qcdTypes
 import physics/stagD
+import gauge/gaugeAction
 #import solvers/cg
 
 import os, times
@@ -16,8 +17,13 @@ const qudaDir {.strdefine.} = ""
 {.passC: "-I" & qudaDir & "/include".}
 
 const cudaLibDir {.strdefine.} = ""
+const cudaMathLibDir {.strdefine.} = ""
 when cudaLibDir != "":
-  const cudaLib = "-L" & cudaLibDir & " -lcudart -lcublas -lcufft -Wl,-rpath," & cudaLibDir & " -L" & cudaLibDir & "/stubs -lcuda"
+  const cudaLib0 = "-L" & cudaLibDir & " -Wl,-rpath," & cudaLibDir
+  const cudaLib1 =
+    when cudaMathLibDir == "": cudaLib0
+    else: cudaLib0 & " -L" & cudaMathLibDir & " -Wl,-rpath," & cudaMathLibDir
+  const cudaLib = cudaLib1 & " -lcudart -lcublas -lcufft -L" & cudaLibDir & "/stubs -lcuda"
   {.passL: "-L" & qudaDir & "/lib -lquda -lstdc++ " & cudaLib .}
   {.passL: "-Wl,-rpath," & qudaDir & "/lib".}
 
@@ -48,6 +54,8 @@ when qmpDir.len > 0:
 type
   D4ColorMatrix = array[4, DColorMatrix]
   D4LatticeColorMatrix = Field[1, D4ColorMatrix]
+  D4Mom = array[4, array[10, float]]
+  D4LatticeMom = Field[1, D4Mom]
   QudaParam = object
     ## For the global quda parameter.
     initialized: bool
@@ -115,6 +123,43 @@ proc qudaSetup*(l: Layout, verbosity = QUDA_SILENT): Layout[1] =
   setQudaLayout(qudaParam.layout)
   qudaParam.layout
 
+proc setGaugeParam(gauge_param: var QudaGaugeParam) =
+  gauge_param.location = QUDA_CPU_FIELD_LOCATION
+  #gauge_param.type = QUDA_GENERAL_LINKS
+  gauge_param.type = QUDA_SU3_LINKS
+  gauge_param.gauge_order = QUDA_MILC_GAUGE_ORDER
+  gauge_param.t_boundary = QUDA_PERIODIC_T
+  for i in 0..3: gauge_param.X[i] = cint qudaLayout.localGeom[i]
+  var cpu_prec = QUDA_DOUBLE_PRECISION
+  gauge_param.cpu_prec = cpu_prec
+  #var cuda_prec = QUDA_DOUBLE_PRECISION
+  var cuda_prec = QUDA_SINGLE_PRECISION
+  gauge_param.cuda_prec = cuda_prec
+  gauge_param.cuda_prec_sloppy = cuda_prec
+  gauge_param.cuda_prec_precondition = cuda_prec
+  gauge_param.cuda_prec_eigensolver = cuda_prec
+  #var link_recon = QUDA_RECONSTRUCT_NO
+  var link_recon = QUDA_RECONSTRUCT_12
+  gauge_param.reconstruct = link_recon
+  gauge_param.reconstruct_sloppy = link_recon
+  gauge_param.reconstruct_precondition = link_recon
+  gauge_param.reconstruct_eigensolver = link_recon
+  gauge_param.reconstruct_refinement_sloppy = link_recon
+  #gauge_param.scale = 1.0
+  gauge_param.scale = 0.0
+  gauge_param.anisotropy = 1.0
+  gauge_param.tadpole_coeff = 1.0
+  gauge_param.ga_pad = 0
+  gauge_param.site_ga_pad = 0
+  gauge_param.mom_ga_pad = 0
+  gauge_param.llfat_ga_pad = 0
+  gauge_param.gauge_fix = QUDA_GAUGE_FIXED_NO
+  gauge_param.use_resident_mom = 0
+  gauge_param.make_resident_mom = 0
+  gauge_param.return_result_mom = 1
+  gauge_param.overwrite_mom = 0
+  #gauge_param.struct_size = sizeof(gauge_param)
+
 proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
   tic()
   let lo1 = r.l.qudaSetup
@@ -137,10 +182,10 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
     rres:cdouble = 0.0
     rrelRes:cdouble = 0.0
     iters:cint = 1
-    fatlink: pointer = g1.s.data
-    longlink: pointer = g3.s.data
-    srcGpu: pointer = t1.s.data
-    destGpu: pointer = r1.s.data
+    fatlink: pointer = g1.dataPtr
+    longlink: pointer = g3.dataPtr
+    srcGpu: pointer = t1.dataPtr
+    destGpu: pointer = r1.dataPtr
   invargs.maxIter = sp.maxits.cint
   invargs.evenodd = QUDA_EVEN_PARITY
   invargs.mixedPrecision = case sp.sloppySolve:
@@ -211,6 +256,93 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
         r{i}[a].re = r1[ri1.index][a].re
         r{i}[a].im = r1[ri1.index][a].im
   toc("QUDA teardown")
+
+#  Compute the gauge force and update the mometum field
+#
+#  @param mom The momentum field to be updated
+#  @param sitelink The gauge field from which we compute the force
+#  @param input_path_buf[dim][num_paths][path_length]
+#  @param path_length One less that the number of links in a loop (e.g., 3 for a staple)
+#  @param loop_coeff Coefficients of the different loops in the Symanzik action
+#  @param num_paths How many contributions from path_length different "staples"
+#  @param max_length The maximum number of non-zero of links in any path in the action
+#  @param dt The integration step size (for MILC this is dt*beta/3)
+#  @param param The parameters of the external fields and the computation settings
+#proc computeGaugeForceQuda*(mom: pointer; sitelink: pointer;
+#                           input_path_buf: ptr ptr ptr cint; path_length: ptr cint;
+#                           loop_coeff: ptr cdouble; num_paths: cint;
+#                           max_length: cint; dt: cdouble;
+#                           qudaGaugeParam: ptr QudaGaugeParam): cint {.
+proc qudaGaugeForce*[G,F](c: GaugeActionCoeffs, g0: openArray[G], f0: openArray[F]) =
+  tic()
+  let g = cast[ptr UncheckedArray[G]](unsafeAddr(g0[0]))
+  let f = cast[ptr UncheckedArray[F]](unsafeAddr(f0[0]))
+  let lo = g[0].l
+  let lo1 = lo.qudaSetup
+  toc("QUDA one time setup")
+  var
+    g1: D4LatticeColorMatrix
+    #f1: D4LatticeColorMatrix
+    f1: D4LatticeMom
+  g1.new lo1
+  f1.new lo1
+  toc("QUDA alloc")
+  var
+    mom = pointer f1.dataPtr
+    sitelink = pointer g1.dataPtr
+    input_path_buf: array[4, ptr ptr cint]
+    input_path_buf2: array[4, array[6, ptr cint]]
+    path_length = [3.cint, 3, 3, 3, 3, 3]
+    cp = c.plaq / 3.0
+    loop_coeff = [cp, cp, cp, cp, cp, cp]
+    num_paths = cint 6
+    max_length = cint 3
+    dt = cdouble 1
+    qudaGaugeParam = newQudaGaugeParam()
+    plaq_path: array[4,array[6,array[3,cint]]]
+    plaq_path2 = [[[1, 7, 6], [6, 7, 1], [2, 7, 5], [5, 7, 2], [3, 7, 4], [4, 7, 3]],
+                  [[2, 6, 5], [5, 6, 2], [3, 6, 4], [4, 6, 3], [0, 6, 7], [7, 6, 0]],
+                  [[3, 5, 4], [4, 5, 3], [0, 5, 7], [7, 5, 0], [1, 5, 6], [6, 5, 1]],
+                  [[0, 4, 7], [7, 4, 0], [1, 4, 6], [6, 4, 1], [2, 4, 5], [5, 4, 2]]]
+  for mu in 0..3:
+    input_path_buf[mu] = addr input_path_buf2[mu][0]
+    for i in 0..<num_paths:
+      input_path_buf2[mu][i] = addr plaq_path[mu][i][0]
+      for j in 0..2:
+        plaq_path[mu][i][j] = cint plaq_path2[mu][i][j]
+  setGaugeParam qudaGaugeParam
+  threads:
+    for i in lo.sites:
+      var cv: array[4,cint]
+      lo.coord(cv,(lo.myRank,i))
+      let ri1 = lo1.rankIndex(cv)
+      # assert(ri1.rank == r.l.myRank)
+      for mu in 0..3:
+        g1[ri1.index][mu] := g[mu]{i}
+        #f1[ri1.index][mu] := 0
+  discard computeGaugeForceQuda(mom, sitelink, addr input_path_buf[0],
+                                addr path_length[0], addr loop_coeff[0], num_paths,
+                                max_length, dt, addr qudaGaugeParam)
+  #let s2 = 0.70710678118654752440;  # sqrt(1/2)
+  #let s3 = 0.57735026918962576450;  # sqrt(1/3)
+  threads:
+    for i in lo.sites:
+      var cv: array[4,cint]
+      lo.coord(cv,(lo.myRank,i))
+      let ri1 = lo1.rankIndex(cv)
+      # assert(ri1.rank == r.l.myRank)
+      for mu in 0..3:
+        #f[mu]{i} := f1[ri1.index][mu]
+        let t = getPtr f1[ri1.index][mu]
+        f[mu]{i}[0,1].set -t[0], -t[1]
+        f[mu]{i}[1,0].set  t[0], -t[1]
+        f[mu]{i}[0,2].set -t[2], -t[3]
+        f[mu]{i}[2,0].set  t[2], -t[3]
+        f[mu]{i}[1,2].set -t[4], -t[5]
+        f[mu]{i}[2,1].set  t[4], -t[5]
+        f[mu]{i}[0,0].set     0, -t[6]
+        f[mu]{i}[1,1].set     0, -t[7]
+        f[mu]{i}[2,2].set     0, -t[8]
 
 when isMainModule:
   import qex

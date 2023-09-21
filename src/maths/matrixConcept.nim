@@ -20,6 +20,7 @@ import simd/simdWrap
 # norm2,det,lu,qr,svd,eig
 # sqrt,rsqrt,exp,log,groupProject,groupCheck
 # mapX(f,x,r),mapXY(f,x,y,r)
+getOptimPragmas()
 
 template createAsType2(t,c:untyped) =
   mixin `[]`, index
@@ -268,8 +269,10 @@ template len*(x:MatrixRowObj):untyped = x.mat[].ncols
 template `[]`*(x:MatrixRowObj; i:int):untyped = x.mat[][x.rw,i]
 template `[]=`*(x:MatrixRowObj; i:int; y:typed):untyped = x.mat[][x.rw,i] = y
 
-template isWrapper*(x: VectorArrayObj): untyped = false
-template isWrapper*(x: MatrixArrayObj): untyped = false
+template isWrapper*(x: VectorArrayObj): bool = false
+template isWrapper*(x: type VectorArrayObj): bool = false
+template isWrapper*(x: MatrixArrayObj): bool = false
+template isWrapper*(x: type MatrixArrayObj): bool = false
 
 template eval*[I,T](x: typedesc[VectorArrayObj[I,T]]): typedesc =
   mixin eval
@@ -445,11 +448,13 @@ template makeLevel1(f,s1,t1,s2,t2:untyped):untyped =
 #    #`f s1 s2 s3`(r, x, y)
 #    func3(`f s1 s2 s3`, r, x, y)
 template makeLevel2T(f,s1,t1,s2,t2,s3,t3: untyped): untyped {.dirty.} =
-  template `f U`*(r: t1, x: t2, y: t3): untyped =
-    `f s1 s2 s3`(r, x, y)
+  #template `f U`*(r: t1, x: t2, y: t3): untyped =
+  #  `f s1 s2 s3`(r, x, y)
   template f*(r: t1, x: t2, y: t3): untyped =
     #echoType: r
-    flattenCallArgs(`f U`, r, x, y)
+    #flattenCallArgs(`f U`, r, x, y)
+    #`f U`(r, x, y)
+    `f s1 s2 s3`(r, x, y)
 template makeLevel2(f,s1,t1,s2,t2,s3,t3:untyped):untyped {.dirty.} =
   makeLevel2T(f,s1,t1,s2,t2,s3,t3)
 
@@ -597,14 +602,14 @@ makeLevel2(imsub, M, var Mat1, M, Mat2, M, Mat3)
 proc msub*(r:var Vec1; x:auto; y:Vec2; z:Vec3) {.inline.} = msubVSVV(r,x,y,z)
 
 #proc trace*(r:var Sca1; x:Mat2) {.inline.} =
-proc trace*(r: var auto; x: Mat2) {.inline.} =
+proc trace*(r: var auto; x: Mat2) {.alwaysInline.} =
   mixin nrows, ncols, trace, iadd
   let n = min(x.nrows, x.ncols)
   assign(r, 0)
   for i in 0..<n:
     let t = trace(x[i,i])
     iadd(r, t)
-proc trace*(x: Mat1): auto {.inline,noInit.} =
+proc trace*(x: Mat1): auto {.alwaysInline,noInit.} =
   var t{.noInit.}: evalType(trace(x[0,0]))
   #static: echo "trace"
   trace(t, x)
@@ -708,6 +713,15 @@ proc redot*(x: Mat2; y: Mat3): auto {.inline,noInit.} =
   forO i, 1, x.len.pred:
     forO j, 0, x.len.pred:
       result += redot(x[i,j],y[i,j])
+
+proc peqOuter*(r: var Mat1; x: Vec2; y: Vec3) {.alwaysInline.} =
+  forO i, 0, r.nrows-1:
+    forO j, 0, r.ncols-1:
+      r[i,j] += x[i] * y[j].adj
+proc meqOuter*(r: var Mat1; x: Vec2; y: Vec3) {.alwaysInline.} =
+  forO i, 0, r.nrows-1:
+    forO j, 0, r.ncols-1:
+      r[i,j] -= x[i] * y[j].adj
 
 proc simdSum*(x: Vec1): auto {.noInit.} =
   var r{.noInit.}: VectorArray[x.len,evalType(simdSum(x[0]))]

@@ -51,6 +51,10 @@ template broadcast*(c: Comm, x: var string) =
   c.broadcast(n)
   x.setLen(n)
   c.broadcast(cast[pointer](addr x[0]), n)
+template broadcast*[T:SomeNumber](c: Comm, x: T): T =
+  var tmp = x
+  c.broadcast(tmp)
+  tmp
 
 template allReduce*(c: Comm, x: var float32) = c.allReduce(addr x, 1)
 template allReduce*(c: Comm, x: var float64) = c.allReduce(addr x, 1)

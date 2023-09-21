@@ -379,9 +379,12 @@ proc assign*(r: var m256d, x: m128) {.alwaysInline.} =
 #  let t1 = mm_cvtpd_ps(x[1])
 #  r = mm_castps4_ps128(t0)
 #  r = mm_insertf64_ps(r, t1, 1)
-#proc assign*(r: var array[2,m128d], x: m128) {.alwaysInline.} =
-#  r[0] = mm_cvtps_pd(mm128_extractf128_ps(x,0))
-#  r[1] = mm_cvtps_pd(mm128_extractf128_ps(x,1))
+proc assign*(r: var array[2,m128d], x: m128) {.alwaysInline.} =
+  #r[0] = mm_cvtps_pd(mm128_extractf128_ps(x,0))
+  #r[1] = mm_cvtps_pd(mm128_extractf128_ps(x,1))
+  let xhi = perm2(x)
+  r[0] = mm_cvtps_pd(x)
+  r[1] = mm_cvtps_pd(xhi)
 
 ### Simd8
 proc assign*(r: var m256, x: m512d) {.alwaysInline.} =

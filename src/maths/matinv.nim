@@ -3,6 +3,7 @@ import complexNumbers
 import matrixConcept
 import types
 #import strformat
+getOptimPragmas()
 
 # inverse(M,S,M) -> M=S/M
 # inverse(M,M,M) -> M=M/M
@@ -71,7 +72,7 @@ proc inverseN*(r: var Mat1, c: SomeNumber, x: Mat2) =
   #let f = c*x.nrows/r.adj.dot(x)
   #r *= f
 
-proc inverse*(r: var Mat1, c: SomeNumber, x: Mat2) =
+proc inverse*(r: var Mat1, c: SomeNumber, x: Mat2) {.alwaysInline.} =
   const nc = r.nrows
   when nc==1:
     r := c / x[0,0]

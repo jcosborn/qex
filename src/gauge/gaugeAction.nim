@@ -14,6 +14,10 @@ type
     pgm*: float
     adjplaq*: float
 
+proc `*`*(x: float, y: GaugeActionCoeffs): GaugeActionCoeffs =
+  for r, v in fields(result, y):
+    r = x * v
+
 const
   C1Symanzik = -1.0/12.0  # tree-level
   C1Iwasaki = -0.331
@@ -97,27 +101,26 @@ proc gaugeAction1*[T](c: GaugeActionCoeffs, uu: openarray[T]): auto =
               let r = redot(bnu, stf[nu,mu][ir])
               rect += simdSum(r)
     toc("gaugeAction local")
-    if c.rect!=0:
-      for mu in 1..<nd:
-        for nu in 0..<mu:
-          var needBoundary = false
-          boundaryWaitSB(ss[mu][nu]): needBoundary = true
-          boundaryWaitSB(ss[nu][mu]): needBoundary = true
-          if needBoundary:
-            boundarySyncSB()
-            for ir in lo:
-              if not isLocal(ss[mu][nu],ir):
-                var bmu: type(load1(u[0][0]))
-                getSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
-                # rect
-                let r = redot(bmu, stf[mu,nu][ir])
-                rect += simdSum(r)
-              if not isLocal(ss[nu][mu],ir):
-                var bnu: type(load1(u[0][0]))
-                getSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
-                # rect
-                let r = redot(bnu, stf[nu,mu][ir])
-                rect += simdSum(r)
+    for mu in 1..<nd:
+      for nu in 0..<mu:
+        var needBoundary = false
+        boundaryWaitSB(ss[mu][nu]): needBoundary = true
+        boundaryWaitSB(ss[nu][mu]): needBoundary = true
+        if c.rect!=0 and needBoundary:
+          boundarySyncSB()
+          for ir in lo:
+            if not isLocal(ss[mu][nu],ir):
+              var bmu: type(load1(u[0][0]))
+              getSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
+              # rect
+              let r = redot(bmu, stf[mu,nu][ir])
+              rect += simdSum(r)
+            if not isLocal(ss[nu][mu],ir):
+              var bnu: type(load1(u[0][0]))
+              getSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
+              # rect
+              let r = redot(bnu, stf[nu,mu][ir])
+              rect += simdSum(r)
     act[threadNum*3]   = plaq
     act[threadNum*3+1] = rect
     act[threadNum*3+2] = pgm
@@ -142,9 +145,9 @@ proc gaugeAction1*[T](uu: openarray[T]): auto =
   let gc = GaugeActionCoeffs(plaq:1.0)
   return gc.gaugeAction1(uu)
 
-proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
+proc gaugeActionDeriv*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
   mixin load1, adj
-  tic("gaugeForce")
+  tic("gaugeActionDeriv")
   let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
   let lo = u[0].l
   let nd = lo.nDim
@@ -170,9 +173,9 @@ proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
       for nu in 0..<nd:
         if mu==nu: continue
         sf[mu][nu].initShiftB(u[mu], nu, 1, "all")
-  toc("gaugeForce init")
+  toc("gaugeActionDeriv init")
   var (stf,stu,ss) = makeStaples(uu, cs)
-  toc("gaugeForce makeStaples")
+  toc("gaugeActionDeriv makeStaples")
   threads:
     tic()
     if cr!=0:
@@ -233,7 +236,7 @@ proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
               f[nu][ir] += cr * u[mu][ir] * snumu
               f[mu][ir] += cr * u[nu][ir] * snumu.adj
               ru[mu,nu][ir] += u[nu][ir].adj * u[mu][ir] * snu
-    toc("gaugeForce local")
+    toc("gaugeActionDeriv local")
     for mu in 1..<nd:
       for nu in 0..<mu:
         var needBoundary = false
@@ -294,7 +297,7 @@ proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
           threadBarrier()
           sb[mu][nu].startSB(ru[mu,nu][ix])
           sb[nu][mu].startSB(ru[nu,mu][ix])
-      toc("gaugeForce staple boundary")
+      toc("gaugeActionDeriv staple boundary")
       for ir in u[0]:
         for mu in 1..<nd:
           for nu in 0..<mu:
@@ -306,7 +309,7 @@ proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
               var b: type(load1(u[0][0]))
               localSB(sb[nu][mu], ir, assign(b,it), ru[nu,mu][ix])
               f[nu][ir] += cr * b
-      toc("gaugeForce back rect local")
+      toc("gaugeActionDeriv back rect local")
       for mu in 1..<nd:
         for nu in 0..<mu:
           var needBoundary = false
@@ -323,11 +326,13 @@ proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
                 var b: type(load1(u[0][0]))
                 getSB(sb[nu][mu], ir, assign(b,it), ru[nu,mu][ix])
                 f[nu][ir] += cr * b
-    for mu in 0..<f.len:
-      for e in f[mu]:
-        mixin trace
-        let s = u[mu][e]*f[mu][e].adj
-        f[mu][e].projectTAH s
+  toc("gaugeActionDeriv end")
+
+proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
+  tic("gaugeForce")
+  gaugeActionDeriv(c, uu, f)
+  toc("gaugeActionDeriv")
+  contractProjectTAH(uu, f)
   toc("gaugeForce end")
 
 proc gaugeForce*[T](uu: openArray[T]): auto =
@@ -397,6 +402,70 @@ template gaugeAction2*(g: array|seq, c: GaugeActionCoeffs): untyped =
 proc gaugeAction2*(g: array|seq): auto =
   var c = GaugeActionCoeffs(plaq:1.0)
   gaugeAction2(c, g)
+
+proc gaugeDeriv2*(c: GaugeActionCoeffs, g,f: array|seq) =
+  mixin adj
+  tic("gaugeDeriv2")
+  let lo = g[0].l
+  let nd = lo.nDim
+  const nc = g[0][0].nrows
+  let cp = - c.plaq / float(nc)
+  let cr = - c.rect / float(nc)
+  let t = newTransporters(g, g[0], 1)
+  let t2 = newTransporters(g, g[0], 1)
+  let tg = newTransporters(g, g[0], 1)
+  let td = newTransporters(g, g[0], -1)
+  let td2 = newTransporters(g, g[0], -1)
+  toc("gaugeForce2 setup")
+  threads:
+    for mu in 0..<nd:
+      #let mu = (mux + 1) mod nd
+      #f[mu] := 0
+      for nu in 0..<nd:
+        if nu==mu: continue
+        discard t[nu] ^* g[mu]
+        shiftExpr(t[mu].sb, f[mu][ir] += cp * t[nu].field[ir]*adj(it), g[nu][ix])
+        f[mu] += cp * td[nu] ^* t[mu] ^* g[nu]
+        if cr != 0:
+          discard t2[nu] ^* t[nu] ^* g[mu]
+          discard tg[nu] ^* g[nu]
+          shiftExpr(t[mu].sb, f[mu][ir] += cr * t2[nu].field[ir]*adj(it), tg[nu].field[ix])
+          f[mu] += cr * td2[nu] ^* td[nu] ^* tg[mu] ^* t[nu] ^* g[nu]
+          f[mu] += cr * td2[mu] ^* td[nu] ^* tg[mu] ^* t[mu] ^* g[nu]
+          discard td[nu] ^* tg[mu] ^* t[mu] ^* g[nu]
+          shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[nu].field[ir]*adj(it), g[mu][ix])
+          discard td[mu] ^* t[nu] ^* tg[mu] ^* g[mu]
+          shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[mu].field[ir]*adj(it), g[nu][ix])
+          shiftExpr(t2[mu].sb, f[mu][ir] += cr * t[nu].field[ir]*adj(it), t[mu].field[ix])
+  toc("end")
+
+proc gaugeDerivDeriv2*(c: GaugeActionCoeffs, g,h,f: array|seq) =
+  mixin adj
+  tic("gaugeDeriv2")
+  let lo = g[0].l
+  let nd = lo.nDim
+  const nc = g[0][0].nrows
+  let cp = - c.plaq / float(nc)
+  let cr = - c.rect / float(nc)
+  let t = newTransporters(g, g[0], 1)
+  let td = newTransporters(g, g[0], -1)
+  let th = newTransporters(h, g[0], 1)
+  let thd = newTransporters(h, g[0], -1)
+  toc("gaugeForce2 setup")
+  threads:
+    for mu in 0..<nd:
+      for nu in 0..<nd:
+        if nu==mu: continue
+        discard t[nu] ^* g[mu]
+        shiftExpr(t[mu].sb, f[mu][ir] += cp * t[nu].field[ir]*adj(it), h[nu][ix])
+        discard t[nu] ^* h[mu]
+        shiftExpr(t[mu].sb, f[mu][ir] += cp * t[nu].field[ir]*adj(it), g[nu][ix])
+        discard th[nu] ^* g[mu]
+        shiftExpr(t[mu].sb, f[mu][ir] += cp * th[nu].field[ir]*adj(it), g[nu][ix])
+        f[mu] += cp * td[nu] ^* t[mu] ^* h[nu]
+        f[mu] += cp * td[nu] ^* th[mu] ^* g[nu]
+        f[mu] += cp * thd[nu] ^* t[mu] ^* g[nu]
+  toc("end")
 
 proc gaugeForce2*(c: GaugeActionCoeffs, g,f: array|seq) =
   mixin adj,projectTAH
@@ -692,6 +761,10 @@ when isMainModule:
     echo "plaq:"
     echo pl
     echo pl.sum
+    var f = newOneOf g
+    var f2 = newOneOf g
+    var f3 = newOneOf g
+    var fa = newOneOf g
     var gc = GaugeActionCoeffs(plaq:1.0)
     #var ga = gaugeAction(g)
     toc("plaq")
@@ -703,18 +776,15 @@ when isMainModule:
     toc("ga3")
     var gaA = gaugeAction.actionA(gc,g)
     toc("aA")
-    echo "ga: ", ga, "\t", ga2, "\t", ga3, "\t", gaA
-    var f = gaugeAction.gaugeForce(g)
+    gaugeAction.gaugeForce(gc,g,f)
     toc("gf")
-    var f2 = newOneOf g
-    var f3 = newOneOf g
-    var fa = newOneOf g
-    gaugeAction.gaugeForce2(f2,g)
+    gaugeAction.gaugeForce2(gc,g,f2)
     toc("gf2")
-    gaugeAction.gaugeForce3(f3,g)
+    gaugeAction.gaugeForce3(gc,g,f3)
     toc("gf3")
     gaugeAction.forceA(gc,g,fa)
     toc("fA")
+    echo "ga: ", ga, "\t", ga2, "\t", ga3, "\t", gaA
     for i in 0..<f.len:
       echo "f[", i, "]: ", f[i].norm2, "\t", f2[i].norm2, "\t", f3[i].norm2, "\t", fa[i].norm2
     toc("end")
@@ -734,6 +804,7 @@ when isMainModule:
     var f = newOneOf g
     var f2 = newOneOf g
     var f3 = newOneOf g
+    var fA = newOneOf g
     toc("init f")
     gaugeAction.gaugeForce(gc,g,f)
     toc("gf")
@@ -741,6 +812,8 @@ when isMainModule:
     toc("gf2")
     gaugeAction.gaugeForce3(gc,g,f3)
     toc("gf3")
+    gaugeAction.forceA(gc,g,fA)
+    toc("gfA")
     echo "gf: \t",  f[0].norm2, "\t",  f[1].norm2, "\t",  f[2].norm2, "\t",  f[3].norm2
     echo "gf2:\t", f2[0].norm2, "\t", f2[1].norm2, "\t", f2[2].norm2, "\t", f2[3].norm2
     echo "gf3:\t", f3[0].norm2, "\t", f3[1].norm2, "\t", f3[2].norm2, "\t", f3[3].norm2
@@ -861,8 +934,8 @@ when isMainModule:
 
   let dev = testE4(lambda,10)
   echo "Relative deviation from dt^2 scaling: ",dev
-  if abs(dev)>1e-14:
+  if abs(dev)>1e-13:
     qexError "Large deviation."
 
-  # echoTimers()
+  echoTimers()
   qexFinalize()
