@@ -739,11 +739,11 @@ proc gaugeADeriv*(c: GaugeActionCoeffs, g,f: auto, accumulate=false) =
     #toc("gaugeADeriv boundary")
   toc("gaugeADeriv threads")
 
-proc forceA*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
+proc forceA*(c: GaugeActionCoeffs, g,f: auto) =
   tic("forceA")
-  gaugeADeriv(c, uu, f)
+  gaugeADeriv(c, g, f)
   toc("gaugeADeriv")
-  contractProjectTAH(uu, f)
+  contractProjectTAH(g, f)
   toc("forceA end")
 
 when isMainModule:
