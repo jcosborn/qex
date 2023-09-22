@@ -145,7 +145,9 @@ proc gaugeAction1*[T](uu: openarray[T]): auto =
   let gc = GaugeActionCoeffs(plaq:1.0)
   return gc.gaugeAction1(uu)
 
-proc gaugeActionDeriv*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
+proc gaugeActionDeriv*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq, accumulate=false) =
+  ## if accumulate, the derivatives will add to f.
+  ## if not, f is set to 0 first.
   mixin load1, adj
   tic("gaugeActionDeriv")
   let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
@@ -184,7 +186,8 @@ proc gaugeActionDeriv*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) 
           sf[mu][nu].startSB(stf[mu,nu][ix])
           sf[nu][mu].startSB(stf[nu,mu][ix])
     for mu in 0..<nd:
-      f[mu] := 0
+      if not accumulate:
+        f[mu] := 0
       if cr!=0:
         for nu in 0..<nd:
           if mu!=nu:
@@ -677,21 +680,24 @@ proc actionA*(c: GaugeActionCoeffs, g: auto): auto =
   result = c.plaq*(a0-pl[0]) + c.adjplaq*(a0-pl[1])
   toc("plaq end", flops=lo.nSites.float*float(2*8*nc*nc*nc-1))
 
-proc forceA*(c: GaugeActionCoeffs, g,f: auto) =
+proc gaugeADeriv*(c: GaugeActionCoeffs, g,f: auto, accumulate=false) =
   ## Specialized gauge force for plaq + adjplaq
+  ## if accumulate, the derivatives will add to f.
+  ## if not, f is set to 0 first.
   mixin load1, adj
-  tic("forceA")
+  tic("gaugeADeriv")
   let lo = g[0].l
   let nd = lo.nDim
   let nc = g[0][0].ncols
   let cp = c.plaq / float(nc)
   let ca = 2.0 * c.adjplaq / float(nc*nc)
   var cs = startCornerShifts(g)
-  toc("gaugeForce startCornerShifts")
+  toc("gaugeADeriv startCornerShifts")
   var (stf,stu,ss) = makeStaples(g, cs)
-  toc("gaugeForce makeStaples")
-  for i in 0..<nd:
-    f[i] := 0
+  toc("gaugeADeriv makeStaples")
+  if not accumulate:
+    for i in 0..<nd:
+      f[i] := 0
   threads:
     tic()
     for ir in g[0]:
@@ -711,7 +717,7 @@ proc forceA*(c: GaugeActionCoeffs, g,f: auto) =
             localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
             let tnu = dot(bnu, g[nu][ir])
             f[nu][ir] += (cp+ca*tnu) * bnu
-    toc("gaugeForce local")
+    toc("gaugeADeriv local")
     for mu in 1..<nd:
       for nu in 0..<mu:
         var needBoundary = false
@@ -730,15 +736,15 @@ proc forceA*(c: GaugeActionCoeffs, g,f: auto) =
               getSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
               let tnu = dot(bnu, g[nu][ir])
               f[nu][ir] += (cp+ca*tnu) * bnu
-    #toc("gaugeForce boundary")
-  toc("gaugeForce threads")
-  #toc("gaugeAction end")
-  for mu in 0..<f.len:
-    for e in f[mu]:
-      mixin trace
-      let s = g[mu][e]*f[mu][e].adj
-      f[mu][e].projectTAH s
-  toc("gaugeForce end")
+    #toc("gaugeADeriv boundary")
+  toc("gaugeADeriv threads")
+
+proc forceA*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
+  tic("forceA")
+  gaugeADeriv(c, uu, f)
+  toc("gaugeADeriv")
+  contractProjectTAH(uu, f)
+  toc("forceA end")
 
 when isMainModule:
   import qex
