@@ -13,8 +13,9 @@ proc newStoutSmear*(l:Layout, alpha:float):auto =
   StoutSmear[G](alpha:alpha, f:l.newGauge, expaf:l.newGauge, ds:l.newGauge, cg:l.newGauge)
 
 proc smear*[G](ss:var StoutSmear, gf:G, fl:G) =
+  const nc = gf[0][0].nrows.float
   let
-    alpha = -ss.alpha  # negative from gaugeForce
+    alpha = -ss.alpha*nc  # negative from gaugeForce, and nc compensate force normalization
     f = ss.f
     expaf = ss.expaf
     ds = ss.ds
@@ -94,8 +95,9 @@ proc smearDeriv*[G](ss:var StoutSmear, deriv:G, chain:G) =
   ## deriv: derivative out
   ## chain: back propagated derivative in
   ## chain and deriv much be distinct fields
+  const nc = chain[0][0].nrows.float
   let
-    alpha = -ss.alpha  # negative from gaugeForce
+    alpha = -ss.alpha*nc  # negative from gaugeForce, and nc compensate force normalization
     gf = ss.gf
     f = ss.f
     expaf = ss.expaf
