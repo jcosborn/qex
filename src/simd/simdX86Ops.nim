@@ -225,17 +225,18 @@ template basicDefs(T,F,N,P,S:untyped) {.dirty.} =
   binaryMixedVar(T, divd, divd)
 
   #template iadd*(r: T; x:T) = add(r,r,x)
-  template iadd*(r: T; x:T) =
-    let t = toRef r
-    #static: echo "iadd: ", $t.type
-    add(t[],t[],x)
-  template isub*(r: T; x:T) = sub(r,r,x)
-  template imul*(r: T; x:T) = mul(r,r,x)
-  template idiv*(r: T; x:T) = divd(r,r,x)
-  template imadd*(r: T; x,y: T) = iadd(r,mul(x,y))
-  template imsub*(r: T; x,y:T) = isub(r,mul(x,y))
-  template madd*(r: T; x,y,z:T) = add(r,mul(x,y),z)
-  template msub*(r: T; x,y,z:T) = sub(r,mul(x,y),z)
+  #template iadd*(r: T; x:T) =
+  #  let t = toRef r
+  #  #static: echo "iadd: ", $t.type
+  #  add(t[],t[],x)
+  proc iadd*(r: var T; x:T) {.alwaysInline.} = add(r,r,x)
+  proc isub*(r: var T; x:T) {.alwaysInline.} = sub(r,r,x)
+  proc imul*(r: var T; x:T) {.alwaysInline.} = mul(r,r,x)
+  proc idiv*(r: var T; x:T) {.alwaysInline.} = divd(r,r,x)
+  proc imadd*(r: var T; x,y: T) {.alwaysInline.} = iadd(r,mul(x,y))
+  proc imsub*(r: var T; x,y:T) {.alwaysInline.} = isub(r,mul(x,y))
+  proc madd*(r: var T; x,y,z:T) {.alwaysInline.} = add(r,mul(x,y),z)
+  proc msub*(r: var T; x,y,z:T) {.alwaysInline.} = sub(r,mul(x,y),z)
 
   unaryMixedVar(T, iadd, iadd)
   unaryMixedVar(T, isub, isub)
@@ -334,7 +335,7 @@ proc simdReduce*(x:m256d):float64 {.alwaysInline,noInit.} = simdReduce(result, x
 proc simdReduce*(x:m512):float32 {.alwaysInline,noInit.} = simdReduce(result, x)
 proc simdReduce*(x:m512d):float64 {.alwaysInline,noInit.} = simdReduce(result, x)
 
-template simdSum*(x: SimdX86): untyped = simdReduce(x)
+template simdSum*(x: SimdX86): auto = simdReduce(x)
 template simdSum*(r:var SomeNumber; x: SimdX86) = simdReduce(r, x)
 
 
@@ -348,7 +349,7 @@ proc simdMaxReduce*(x: SimdX86): auto {.alwaysInline,noInit.} =
   simdMaxReduce(r, x)
   r
 template simdMax*(r: var SomeNumber; x: SimdX86) = simdMaxReduce(r, x)
-template simdMax*(x: SimdX86): untyped = simdMaxReduce(x)
+template simdMax*(x: SimdX86): auto = simdMaxReduce(x)
 
 proc simdMinReduce*(r: var SomeNumber; x: SimdX86) {.alwaysInline.} =
   r = x[0]
@@ -360,12 +361,61 @@ proc simdMinReduce*(x: SimdX86): auto {.alwaysInline,noInit.} =
   simdMinReduce(r, x)
   r
 template simdMin*(r: var SomeNumber; x: SimdX86) = simdMinReduce(r, x)
-template simdMin*(x: SimdX86): untyped = simdMinReduce(x)
+template simdMin*(x: SimdX86): auto = simdMinReduce(x)
 
 
 # include perm, pack and blend
 include simdX86Ops1
 
+proc perm*[T:SimdX86](r: var T, x: T, p: int) {.alwaysInline.} =
+  if p==1: perm1(r, x); return
+  when x.numNumbers > 2:
+    if p==2: perm2(r, x); return
+  when x.numNumbers > 4:
+    if p==4: perm4(r, x); return
+  when x.numNumbers > 8:
+    if p==8: perm8(r, x); return
+
+
+proc packp*(r: var openArray[SomeNumber]; x: SimdX86;
+            l: var openArray[SomeNumber], p: int) {.alwaysInline.} =
+  if p==1: packp1(r, x, l); return
+  when x.numNumbers > 2:
+    if p==2: packp2(r, x, l); return
+  when x.numNumbers > 4:
+    if p==4: packp4(r, x, l); return
+  when x.numNumbers > 8:
+    if p==8: packp8(r, x, l); return
+
+proc packm*(r: var openArray[SomeNumber]; x: SimdX86;
+            l: var openArray[SomeNumber], p: int) {.alwaysInline.} =
+  if p==1: packm1(r, x, l); return
+  when x.numNumbers > 2:
+    if p==2: packm2(r, x, l); return
+  when x.numNumbers > 4:
+    if p==4: packm4(r, x, l); return
+  when x.numNumbers > 8:
+    if p==8: packm8(r, x, l); return
+
+proc blendp*(x: var SimdX86; r: openArray[SomeNumber];
+             l: openArray[SomeNumber], p: int) {.alwaysInline.} =
+  if p==1: blendp1(x, r, l); return
+  when x.numNumbers > 2:
+    if p==2: blendp2(x, r, l); return
+  when x.numNumbers > 4:
+    if p==4: blendp4(x, r, l); return
+  when x.numNumbers > 8:
+    if p==8: blendp8(x, r, l); return
+
+proc blendm*(x: var SimdX86; r: openArray[SomeNumber];
+             l: openArray[SomeNumber], p: int) {.alwaysInline.} =
+  if p==1: blendm1(x, r, l); return
+  when x.numNumbers > 2:
+    if p==2: blendm2(x, r, l); return
+  when x.numNumbers > 4:
+    if p==4: blendm4(x, r, l); return
+  when x.numNumbers > 8:
+    if p==8: blendm8(x, r, l); return
 
 #### mixed precision
 

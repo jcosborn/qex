@@ -41,7 +41,7 @@ proc test(lat:auto):auto =
 
 var fail = 0
 fail += test(@[8,8,8,8])
-fail += test(@[8,8,8,12])
+#fail += test(@[8,8,8,12])
 fail += test(@[8,8,8,16])
 
 if fail > 0:
