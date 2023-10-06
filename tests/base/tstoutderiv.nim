@@ -88,8 +88,9 @@ template test(action:untyped, deriv:untyped):auto =
 var fail = test(gc.gaugeAction1, gc.gaugeForce)
 
 proc smearTest0[G](ss:var StoutSmear, gf:G, fl:G) =
+  const nc = gf[0][0].nrows.float
   let
-    alpha = -ss.alpha  # negative from gaugeForce
+    alpha = -ss.alpha*nc  # negative from gaugeForce, and nc compensate force normalization
     f = ss.f
     ds = ss.ds
   ss.gf = gf
@@ -104,8 +105,9 @@ proc smearTest0[G](ss:var StoutSmear, gf:G, fl:G) =
         fl[mu][e] := exp(alpha*t)
 
 proc smearTest0Deriv[G](ss:StoutSmear, deriv:G, chain:G) =
+  const nc = chain[0][0].nrows.float
   let
-    alpha = -ss.alpha  # negative from gaugeForce
+    alpha = -ss.alpha*nc  # negative from gaugeForce, and nc compensate force normalization
     f = ss.f
 
   threads:
