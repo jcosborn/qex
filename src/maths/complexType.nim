@@ -133,6 +133,8 @@ template simdLength*[T](x: type ComplexProxy[T]): auto = simdLength(T)
 proc simdSum*(x: ComplexObj): auto {.alwaysInline.} =
   newComplexObj(simdSum(x.re),simdSum(x.im))
 template simdSum*(x: ComplexProxy): auto = asComplex(simdSum(x[]))
+template simdReduce*(x: ComplexObj): auto = simdSum(x)
+template simdReduce*(x: ComplexProxy): auto = simdSum(x)
 
 template getNc*(x: ComplexProxy): auto = 1
 template getNs*(x: ComplexProxy): auto = 1
