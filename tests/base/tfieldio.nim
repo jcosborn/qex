@@ -44,6 +44,7 @@ proc save(f: var Field) =
 proc reader(): auto =
   result = l.newReader(fn)
   check(result.status==0)
+  check(result.fileMetadata==filemd)
 
 proc finish(r: var Reader) =
   r.close
@@ -54,6 +55,7 @@ proc load(r: var Reader, f: Field) =
   var f2 = f.newOneOf
   r.read(f2)
   check(r.status==0)
+  check(r.recordMetadata==recordmd)
   f2 -= f
   let n2 = f2.norm2
   check(n2==0)

@@ -2,10 +2,10 @@ import base
 import layout
 import qio
 #import strutils
-import macros
 import field
 import os, times
 import iocommon
+import qioInternal
 
 type Writer*[V: static[int]] = ref object
   layout*: Layout[V]
@@ -69,7 +69,8 @@ proc open(wr: var Writer; ql: var QIO_Layout, md: string) =
   #oflag.serpar = QIO_SERIAL;
   oflag.serpar = QIO_PARALLEL
   oflag.mode = QIO_TRUNC
-  oflag.ildgstyle = QIO_ILDGLAT
+  #oflag.ildgstyle = QIO_ILDGLAT
+  oflag.ildgstyle = QIO_ILDGNO
   #oflag.ildgLFN = NULL
 
   var qioMd = QIO_string_create()
@@ -107,9 +108,6 @@ proc close*(wr: var Writer) =
   wr.setLayout
   wiorank = addr wr.iorank
   wr.status = QIO_close_write(wr.qw)
-
-import typetraits
-import qioInternal
 
 proc get[T](buf: cstring; index: csize_t; count: cint; arg: pointer) =
   type destT = cArray[IOtype(T)]
@@ -178,7 +176,8 @@ proc write[T](wr: var Writer, v: var openArray[ptr T], lat: openArray[int],
     upper[i] = lat[i].cint
 
   if precs == precs0:
-    var datatype = "QEX_" & type(v[0][]).IOtype.name
+    #var datatype = "QEX_" & type(v[0][]).IOtype.name
+    var datatype = type(v[0][]).IOtype.IOname
     var recInfo = QIO_create_record_info(QIO_FIELD, lower[0].addr,
                                          upper[0].addr, nd.cint, cstring datatype,
                                          cstring precs, nc, ns, size.cint, nv)
@@ -186,7 +185,8 @@ proc write[T](wr: var Writer, v: var openArray[ptr T], lat: openArray[int],
                           wordSize.cint, v[0].addr)
     QIO_destroy_record_info(recInfo)
   else:
-    var datatype = "QEX_" & type(v[0][]).IOtypeP.name
+    #var datatype = "QEX_" & type(v[0][]).IOtypeP.name
+    var datatype = type(v[0][]).IOtypeP.IOname
     var recWordSize = case precs:
       of "F": 4
       of "D": 8

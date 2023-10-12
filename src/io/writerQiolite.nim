@@ -1,10 +1,10 @@
 import base
 import layout
 import strutils, strformat
-import macros
 import field
 import os
 import scidacio
+import qioInternal
 
 var verb = 0
 
@@ -62,9 +62,6 @@ proc hyperindex(x: seq[cint]; subl,offs: seq[int]): int =
   let n = x.len
   for i in countdown(n-1,0):
     result = result*subl[i] + (x[i]-offs[i])
-
-import typetraits
-import qioInternal
 
 proc get[T](buf: cstring; index: int; count: int; arg: openArray[ptr T]) =
   type destT = cArray[IOtype(T)]
@@ -133,10 +130,12 @@ proc write[T](wr: var Writer, v: var openArray[ptr T], lat: openArray[int],
   wr.sw.record.datacount = objcount
   wr.sw.record.typesize = iotypebytes
   if ioprec==tprec:
-    var datatype = "QDP_" & type(v[0][]).IOtype.name
+    #var datatype = "QDP_" & type(v[0][]).IOtype.name
+    var datatype = type(v[0][]).IOtype.IOname
     wr.sw.record.datatype = datatype
   else:
-    var datatype = "QDP_" & type(v[0][]).IOtypeP.name
+    #var datatype = "QDP_" & type(v[0][]).IOtypeP.name
+    var datatype = type(v[0][]).IOtypeP.IOname
     wr.sw.record.datatype = datatype
   var buf = create(char, iobytes)
 
