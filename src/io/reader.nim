@@ -1,10 +1,8 @@
-import os
-
 when defined(QioReader) or not defined(QioliteReader):
-  static: echo "using QIO reader"
+  static: echo "Using QIO reader"
   import readerQio
   export readerQio
 else:
-  static: echo "using Qiolite reader"
+  static: echo "Using Qiolite reader"
   import readerQiolite
   export readerQiolite

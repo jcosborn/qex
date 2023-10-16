@@ -305,17 +305,17 @@ type GatherField[S,D] = object
   dest: D
   elemsize: int
   vlen: int
-template copy(gd: GatherField, d: pointer, s: SomeInteger) =
+template copy(gd: GatherField, d: pointer, s: SomeInteger) {.used.} =
   mixin evalType
   type T = evalType(gd.src{s})
   let p = cast[ptr T](d)
   p[] := gd.src{s}
-template copy(gd: GatherField, d: SomeInteger, s: pointer) =
+template copy(gd: GatherField, d: SomeInteger, s: pointer) {.used.} =
   mixin evalType
   type T = evalType(gd.dest{d})
   let p = cast[ptr T](s)
   gd.dest{d} := p[]
-template copy(gd: GatherField, d: SomeInteger, s: SomeInteger) =
+template copy(gd: GatherField, d: SomeInteger, s: SomeInteger) {.used.} =
   mixin evalType
   gd.dest{d} := gd.src{s}
 proc gather*[D,S:Field](c: Comm; gm: GatherMap; d: D, s: S) =

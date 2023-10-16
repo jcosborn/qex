@@ -10,6 +10,7 @@ proc commsInitQmp* =
     var prv = QMP_THREAD_FUNNELED
     #var prv = QMP_THREAD_SERIALIZED
     let err = QMP_init_msg_passing(argc.addr, argv.addr, prv, prv.addr)
+    doAssert(err == QMP_SUCCESS)
     #discard err
     #myRank = int(QMP_get_node_number())
     #nRanks = int(QMP_get_number_of_nodes())

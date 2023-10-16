@@ -90,6 +90,7 @@ template p2s(f: untyped) {.dirty.} =
 template p3(f: untyped) {.dirty.} =
   template f*[T1,T2,T3](x: var Simd[T1], y: Simd[T2], z: Simd[T3]) =
     mixin f
+    #static: echo $type(y.toPrec(numberType(T1)))
     f(x[], y.toPrec(numberType(T1))[], z.toPrec(numberType(T1))[])
 
 template p3s(f: untyped) {.dirty.} =
