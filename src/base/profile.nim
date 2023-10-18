@@ -571,11 +571,11 @@ type
   Tstr = tuple
     label: string
     stats: string
-template ppT(ts:RTInfoObjList, prefix = "-", total,overhead:int64 = 0, count:uint32 = 0, initIx = 0, showAbove = 0.0, showDropped = true):seq[Tstr] =
+template ppT(ts: RTInfoObjList, prefix = "-", total = 0'i64, overhead = 0'i64,
+            count = 0'u32, initIx = 0, showAbove = 0.0, showDropped = true): seq[Tstr] =
   ppT(List[RTInfoObj](ts), prefix, total, overhead, count, initIx, showAbove, showDropped)
-proc ppT(ts:List[RTInfoObj], prefix = "-",
-    total,overhead:int64 = 0, count:uint32 = 0, initIx = 0,
-    showAbove = 0.0, showDropped = true):seq[Tstr] =
+proc ppT(ts: List[RTInfoObj], prefix = "-", total = 0'i64, overhead = 0'i64,
+        count = 0'u32, initIx = 0, showAbove = 0.0, showDropped = true): seq[Tstr] =
   proc markMissing(p:bool,str:string):string =
     if p: "[" & str & "]"
     else: str

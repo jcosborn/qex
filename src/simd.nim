@@ -193,6 +193,8 @@ template makeBinaryMixed(S,D,op) =
 
 when declared(SimdS1):
   template eval*(x: SimdS1): untyped = x
+  template toSingle*(x: typedesc[SimdS1Obj]): typedesc = SimdS1Obj
+  template toDouble*(x: typedesc[SimdS1Obj]): typedesc = SimdD1Obj
   template toSingleImpl*(x: SimdS1Obj): untyped = x
   template toDoubleImpl*(x: SimdS1Obj): untyped = convert(x, SimdD1Obj)
   mapSimd(SimdS1, exp)
@@ -200,6 +202,8 @@ when declared(SimdS1):
 
 when declared(SimdD1):
   template eval*(x: SimdD1): untyped = x
+  template toSingle*(x: typedesc[SimdD1Obj]): typedesc = SimdS1Obj
+  template toDouble*(x: typedesc[SimdD1Obj]): typedesc = SimdD1Obj
   template toSingleImpl*(x: SimdD1Obj): untyped = convert(x, SimdS1Obj)
   template toDoubleImpl*(x: SimdD1Obj): untyped = x
   mapSimd(SimdD1, exp)
@@ -207,6 +211,8 @@ when declared(SimdD1):
 
 when declared(SimdS2):
   template eval*(x: SimdS2): untyped = x
+  template toSingle*(x: typedesc[SimdS2Obj]): typedesc = SimdS2Obj
+  template toDouble*(x: typedesc[SimdS2Obj]): typedesc = SimdD2Obj
   template toSingleImpl*(x: SimdS2Obj): untyped = x
   template toDoubleImpl*(x: SimdS2Obj): untyped = convert(x, SimdD2Obj)
   mapSimd(SimdS2, exp)
@@ -214,6 +220,8 @@ when declared(SimdS2):
 
 when declared(SimdD2):
   template eval*(x: SimdD2): untyped = x
+  template toSingle*(x: typedesc[SimdD2Obj]): typedesc = SimdS2Obj
+  template toDouble*(x: typedesc[SimdD2Obj]): typedesc = SimdD2Obj
   template toSingleImpl*(x: SimdD2Obj): untyped = convert(x, SimdS2Obj)
   template toDoubleImpl*(x: SimdD2Obj): untyped = x
   mapSimd(SimdD2, exp)

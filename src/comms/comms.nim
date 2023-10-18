@@ -134,13 +134,13 @@ export commsQmp
 var commsNames = newSeq[string](0)
 var commsInits = newSeq[proc():Comm{.nimcall.}](0)
 var commsFinis = newSeq[proc(){.nimcall.}](0)
-proc commsGet(): seq[string] =
+proc commsGet*(): seq[string] =
   commsNames
-proc commsGet(s: string): Comm =
+proc commsGet*(s: string): Comm =
   for i in 0..<commsNames.len:
     if commsNames[i] == s:
       return commsInits[i]()
-proc commsGet(ss: openArray[string]): Comm =
+proc commsGet*(ss: openArray[string]): Comm =
   for s in ss:
     result = commsGet(s)
     if result != nil:

@@ -77,7 +77,7 @@ type
     alg: NormalAlgorithm
 func `$`*(d: NormalDistribution): string =
   result = $d.type & system.`$`(d)
-func normalDistribution(mean = 0.0, stddev = 1.0, alg = naBoxMuller):
+func normalDistribution*(mean = 0.0, stddev = 1.0, alg = naBoxMuller):
      NormalDistribution =
   result.mean = mean
   result.stddev = stddev

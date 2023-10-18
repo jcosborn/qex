@@ -126,6 +126,7 @@ proc seed*(prn: var MRG32k3a; sed,index: auto) =
   defaultComm.broadcast(ss.addr, sizeof(ss))
   seedIndep(prn, ss, index)
 
+#[
 proc next0(prn: var MRG32k3a): float {.inline.} =
   ## Return random integer uniform on [1,m1]
   var p1,p2:float
@@ -149,6 +150,7 @@ proc next0(prn: var MRG32k3a): float {.inline.} =
     result = p1 - p2 + m1
   else:
     result = p1 - p2
+]#
 
 proc next(prn: var MRG32k3a): int {.inline.} =
   ## Return random integer uniform on [1,m1]

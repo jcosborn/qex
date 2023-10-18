@@ -14,8 +14,9 @@ static:
 {. passL: qmpPassL .}
 {. pragma: qmp, importc, header:"qmp.h" .}
 
-type QMP_status_t{.qmp.} = enum
-  test
+type QMP_status_t*{.qmp.} = object
+var QMP_SUCCESS*{.qmp.}:QMP_status_t
+
 type QMP_thread_level_t*{.qmp.} = enum
   QMP_THREAD_SINGLE,
   QMP_THREAD_FUNNELED,

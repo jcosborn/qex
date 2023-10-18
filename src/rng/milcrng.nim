@@ -52,7 +52,7 @@ const
   MASK = 0x00FFFFFF'u32
   NUMINTS = 0x01000000'u32
   SCALE = 1.0'f32 / 0x01000000.float32
-  SCALE1 = 1.0'f32 / MASK.float32
+  #SCALE1 = 1.0'f32 / MASK.float32
 
 #template maxInt*(x: RngMilc6): int = int(MASK)
 template maxInt*(x: typedesc[RngMilc6]): int = int(MASK)
