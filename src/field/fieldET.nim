@@ -463,6 +463,7 @@ proc `$`*(x:Field):string =
     if i<l.nSites-1: result.add "\n"
 
 template indexField(x:Shifted, y:int):untyped = 0
+#[
 proc applyOp1x(x,y:NimNode; op:string):auto =
   let o = ident(op)
   result = quote do:
@@ -488,6 +489,7 @@ template applyOp1Impl(x,y,o:untyped) =
 proc applyOp1(x,y:NimNode; op:string):auto =
   let o = ident(op)
   result = getAst(applyOp1Impl(x,y,o))
+]#
 
 #[
 var exprInstInfo {.compiletime.}: type(instantiationInfo())

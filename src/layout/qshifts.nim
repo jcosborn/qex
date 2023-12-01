@@ -8,16 +8,16 @@ const
   MAXTHREADS = 512
 
 proc aalloc(n: SomeInteger): pointer =
-  let a = 64
-  let b = a + sizeof(ByteAddress)
-  let x = cast[ByteAddress](alloc(n+b))
+  let a = 64'u
+  let b = a + sizeof(uint).uint
+  let x = cast[uint](alloc(n.uint+b))
   let y = a * ((x+b) div a)
-  let z = cast[ptr ByteAddress](y - sizeof(ByteAddress))
+  let z = cast[ptr uint](y - sizeof(uint).uint)
   z[] = x
   cast[pointer](y)
 
 proc afree(y: pointer) =
-  let z = cast[ptr pointer](cast[ByteAddress](y) - sizeof(ByteAddress))
+  let z = cast[ptr pointer](cast[uint](y) - sizeof(uint).uint)
   dealloc(z[])
 
 proc prepareShiftBufsQ*(sb: openArray[ptr ShiftBufQ];

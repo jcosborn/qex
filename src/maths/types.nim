@@ -389,7 +389,6 @@ template mindexed*[T,I](x: T, i: I): untyped =
     #static: echo "mindexed not isWrapper"
     var tIndexed = indexedX(getAlias x, i)
     tIndexed
-import strUtils
 template obj(x:Indexed):untyped =
   #static: echo "obj: ", $type(x)
   #static: echo $type(x.indexedPtr)

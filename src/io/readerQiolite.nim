@@ -200,8 +200,7 @@ when isMainModule:
   var lo = newLayout(lat)
   var g:array[4,type(lo.ColorMatrix())]
   for i in 0..<4: g[i] = lo.ColorMatrix()
-  #var fn = "l88.scidac"
-  const fn = "testlat0.bin"
+  var fn = stringParam("fn", "testlat0.bin")
   if not fileExists(fn):
     echo "gauge file not found: ", fn
     qexExit()
@@ -209,22 +208,32 @@ when isMainModule:
   echo rd.fileMetadata
   echo rd.recordMetadata
   echo rd.recordDate
-  echo rd.datatype
-  echo rd.precision
-  echo rd.colors
-  echo rd.spins
-  echo rd.typesize
-  echo rd.datacount
+  #echo rd.datatype
+  #echo rd.precision
+  #echo rd.colors
+  #echo rd.spins
+  #echo rd.typesize
+  #echo rd.datacount
   rd.read(g)
   #rd.nextRecord()
   #echo rd.status
   #echo rd.recordMetadata
   rd.close()
-  var tr:type(g[0][0][0,0])
+  var unit0: evalType(g[0][0].norm2)
+  var tr0: evalType(g[0][0][0,0])
+  let nc = g[0][0].ncols
   for i in 0..<4:
-    for x in g[i].all:
-      for c in 0..<g[i][0].ncols:
+    for x in g[i]:
+      let t = g[i][x].adj * g[i][x] - 1
+      unit0 += t.norm2
+      for c in 0..<nc:
         #echo g[i][x][c,c]
-        tr += g[i][x][c,c]
-  echo tr
+        tr0 += g[i][x][c,c]
+  let s = 1.0/(nc * lo.nDim * lo.physVol)
+  var unit = simdReduce unit0
+  rankSum unit
+  echo "unitary error: ", s*unit
+  var tr = simdReduce tr0
+  rankSum tr
+  echo "normalized trace: ", s*tr
   qexFinalize()

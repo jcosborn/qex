@@ -33,6 +33,61 @@ proc smear*[G](ss:var StoutSmear, gf:G, fl:G) =
         expaf[mu][e] := t
         fl[mu][e] := t*gf[mu][e]
 
+proc inverse*[G](ss:var StoutSmear, gf:G, fl:G, rdf2req=1e-24, maxIter=1000, verbose=false):auto =
+  ## perform backward smear, fl:input, gf:output, gf and fl must be distinct
+  ## return the number of iterations and relative force norm2
+  ## note: the resulting ss does not have the necessary fields for smearDeriv
+  ## This uses the fixed point iteration from eq. 5.6 and 5.7 in Trivializing Maps, the Wilson Flow and the HMC Algorithm, Luscher, 2010
+  ## However, since we update the gauge links all at once, the bound |ε|<⅛ (eq. 5.5) is only a necessary condition.
+  ## The iteration may diverge even if |ε|<⅛, depending on the gauge links.
+  const nc = gf[0][0].nrows.float
+  let
+    alpha = ss.alpha*nc  # backward cancels negative from gaugeForce, and nc compensate force normalization
+    f = ss.f
+    ds = ss.ds
+  ss.gf = gf
+
+  threads:
+    for mu in 0..<gf.len:
+      gf[mu] := fl[mu]
+      f[mu] := 0
+
+  var iter = 0
+  var rdf2:float
+  var df2o = -1.0
+  while iter<maxIter:
+    inc iter
+    gaugeActionDeriv(GaugeActionCoeffs(plaq:1.0), gf, ds)
+    threads:
+      var df2 = 0.0
+      var f2 = 0.0
+      for mu in 0..<f.len:
+        for e in ds[mu]:
+          let s = gf[mu][e]*ds[mu][e].adj
+          var t{.noinit.}: evalType(ds[mu][e])
+          t.projectTAH s
+          df2 += norm2(t-f[mu][e]).simdSum
+          f2 += t.norm2.simdSum
+          f[mu][e] := t
+          t := exp(alpha*t)
+          gf[mu][e] := t*fl[mu][e]
+      threadBarrier()
+      threadRankSum df2
+      threadRankSum f2
+      threadMaster:
+        rdf2 = df2/f2
+        if verbose:
+          echo iter," ",df2," ",f2," ",rdf2
+        if df2o>=0 and df2o<df2:
+          # this signals the iterative solver is diverging
+          qexWarn "df^2 increased: iter ",iter," current ",df2," previous ",df2o
+        df2o = df2
+    if verbose:
+      gf.echoPlaq
+    if rdf2<rdf2req:
+      break
+  return (iter:iter, rdf2:rdf2)
+
 # backpropagation
 # z = f(g(h(x)))
 # dz/dx_i = df/dg_j dg_j/dh_k dh_k/dx_i
@@ -118,3 +173,110 @@ proc smearDeriv*[G](ss:var StoutSmear, deriv:G, chain:G) =
     for mu in 0..<deriv.len:
       for e in deriv[mu]:
         deriv[mu][e] += expaf[mu][e].adj*chain[mu][e]
+
+when isMainModule:
+  import qex
+  import os
+
+  proc reunit(g:auto) =
+    tic()
+    threads:
+      let d = g.checkSU
+      threadBarrier()
+      echo "unitary deviation avg: ",d.avg," max: ",d.max
+      g.projectSU
+      threadBarrier()
+      let dd = g.checkSU
+      echo "new unitary deviation avg: ",dd.avg," max: ",dd.max
+    toc("reunit")
+
+  proc mplaq(g:auto, label="") =
+    tic()
+    let
+      pl = g.plaq
+      nl = pl.len div 2
+      ps = pl[0..<nl].sum * 2.0
+      pt = pl[nl..^1].sum * 2.0
+    echo "MEASplaq ",label," ss: ",ps,"  st: ",pt,"  tot: ",0.5*(ps+pt)
+    toc("plaq")
+
+  qexinit()
+  tic()
+  letParam:
+    gaugefile = ""
+    savefile =
+      if gaugefile.len > 0:
+        gaugefile & ".smear.lime"
+      else:
+        "config.smear.lime"
+    lat =
+      if fileExists(gaugefile):
+        getFileLattice gaugefile
+      else:
+        if gaugefile.len > 0:
+          qexWarn "Nonexistent gauge file: ", gaugefile
+        @[8,8,8,8]
+    steps = @[0.1]    # a list of smearing steps
+    backward:bool = 0    # inverse flow, from the last to the first in steps
+    maxiter = 1000
+    r2req = 1e-24
+    verbose:bool = 0
+    reunitarize:bool = 1
+    showTimers:bool = 0
+    timerWasteRatio = 0.05
+    timerEchoDropped:bool = 0
+    timerExpandRatio = 0.05
+    verboseGCStats:bool = 0
+    verboseTimer:bool = 0
+
+  echoParams()
+  echo "rank ", myRank, "/", nRanks
+  threads: echo "thread ", threadNum, "/", numThreads
+
+  DropWasteTimerRatio = timerWasteRatio
+  VerboseGCStats = verboseGCStats
+  VerboseTimer = verboseTimer
+
+  let lo = lat.newLayout
+  var gf = lo.newGauge
+  if fileExists(gaugefile):
+    tic("load")
+    if 0 != gf.loadGauge gaugefile:
+      qexError "failed to load gauge file: ", gaugefile
+    qexLog "loaded gauge from file: ", gaugefile," secs: ",getElapsedTime()
+    toc("read")
+    if reunitarize:
+      gf.reunit
+    toc("reunit")
+  else:
+    gf.random
+  gf.mplaq
+
+  if backward:
+    var fg = lo.newGauge
+    for i in countdown(len(steps)-1, 0):
+      var ss = lo.newStoutSmear(steps[i])
+      let (iter, r2) = ss.inverse(fg, gf, maxIter=maxiter, rdf2req=r2req, verbose=verbose)
+      if iter>=maxIter:
+        qexWarn "maximum iteration count reached"
+      qexLog "inverse ",i," t ",steps[i]," iter ",iter," r2 ",r2
+      for mu in 0..<fg.len:
+        let f = fg[mu]
+        fg[mu] = gf[mu]    # use = to copy ref only
+        gf[mu] = f
+      gf.mplaq $i
+  else:
+    for i in 0..<len(steps):
+      var ss = lo.newStoutSmear(steps[i])
+      ss.smear(gf, gf)
+      gf.mplaq $i
+
+  block:
+    tic("save")
+    if 0 != gf.saveGauge(savefile):
+      qexError "Failed to save gauge to file: ",savefile
+    qexLog "saved gauge to file: ",savefile," secs: ",getElapsedTime()
+    toc("done")
+
+  toc("done")
+  qexFinalize()

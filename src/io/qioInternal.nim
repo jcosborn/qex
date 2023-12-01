@@ -2,6 +2,7 @@ import physics/qcdTypes
 export qcdTypes
 import rng
 export rng
+import typetraits
 
 # For IO with matching types; see read[T]/write[T]
 #template IOtype*(x:typedesc[SVec0]):untyped = float32
@@ -32,3 +33,20 @@ template IOtypeP*[T](x:typedesc[T]):typedesc =
     eval(toSingle(IOtype(type T)))
   else:
     T
+
+template IOnameDefault*[T](x:typedesc[T]):string =
+  "QDP_" & T.name
+template IOname*[T](x:typedesc[T]):string =
+  T.IOnameDefault
+#template IOname*[N:static int](x:typedesc[Color[MatrixArray[N,N,float]]]):string =
+#  "QDP_F" & $N & "_ColorMatrix"
+#template IOname*[N:static int](x:typedesc[Color[MatrixArray[N,N,DComplex]]]):string =
+#  "QDP_D" & $N & "_ColorMatrix"
+template IOname*[N:static int,T](x:typedesc[Color[MatrixArray[N,N,T]]]):string =
+  when T is SComplex:
+    "QDP_F" & $N & "_ColorMatrix"
+  elif T is DComplex:
+    "QDP_D" & $N & "_ColorMatrix"
+  else:
+    IOnameDefault T
+>>>>>>> upstream/devel
