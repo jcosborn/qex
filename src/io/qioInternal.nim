@@ -49,4 +49,3 @@ template IOname*[N:static int,T](x:typedesc[Color[MatrixArray[N,N,T]]]):string =
     "QDP_D" & $N & "_ColorMatrix"
   else:
     IOnameDefault T
->>>>>>> upstream/devel
