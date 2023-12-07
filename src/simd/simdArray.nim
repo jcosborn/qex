@@ -756,7 +756,7 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
     forStatic i, 0, L-1:
       assign(r[][i], x)
   template `:=`*(r: T, x: SomeNumber) = assign(r, x)
-  proc assign*(r:var T; x:array[N,SomeNumber]) {.inline.} =
+  proc assign*(r:var T; x:array[N,SomeNumber]) {.alwaysInline.} =
     when compiles(assign(r[][0], unsafeAddr(x[0]))):
       forStatic i, 0, L-1:
         assign(r[][i], unsafeAddr(x[i*N0]))
@@ -764,7 +764,7 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
       var y = x
       forStatic i, 0, L-1:
         assign(r[][i], unsafeAddr(y[i*N0]))
-  proc assign*(r:var array[N,SomeNumber], x:T) {.inline.} =
+  proc assign*(r:var array[N,SomeNumber], x:T) {.alwaysInline.} =
     bind forStatic
     when B is SomeNumber:
       forStatic i, 0, L-1:
@@ -772,10 +772,10 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
     else:
       forStatic i, 0, L-1:
         assign(addr(r[i*N0]), x[][i])
-  proc assign*(r: var SimdArrayObj, x: T) {.inline.} =
+  proc assign*(r: var SimdArrayObj, x: T) {.alwaysInline.} =
     for i in 0..<N:
       r[i] = x[i]
-  proc assign*(m: Masked[T], x: SomeNumber) =
+  proc assign*(m: Masked[T], x: SomeNumber) {.inline.} =
     #static: echo "a mask"
     var i = 0
     var b = m.mask
