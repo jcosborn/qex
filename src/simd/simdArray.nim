@@ -49,7 +49,8 @@ template toDoubleImpl*[N:static int,T](x: SimdArrayObj[N,T]): auto =
   else:
     type D = simdObjType(N, toDouble(T))
     var r {.noInit.}: D
-    assign(r, x)
+    assign(r, x[])
+    r
 
 template `[]`*(x: SimdArrayObj): auto = x.v
 proc `[]`*[N:static int,T](x: SimdArrayObj[N,T], i: SomeInteger):

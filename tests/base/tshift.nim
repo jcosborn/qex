@@ -157,6 +157,9 @@ makeSimdArrayX(SD4, 4, float)
 testS4(SD4)
 when declared(SimdD4):
   testS4(SimdD4)
+
+makeSimdArrayX(SS4, 4, float32)
+testS4(SS4)
 when declared(SimdS4):
   testS4(SimdS4)
 
@@ -164,6 +167,9 @@ makeSimdArrayX(SD8, 8, float)
 testS8(SD8)
 when declared(SimdD8):
   testS8(SimdD8)
+
+makeSimdArrayX(SS8, 8, float32)
+testS8(SS8)
 when declared(SimdS8):
   testS8(SimdS8)
 
@@ -171,6 +177,9 @@ makeSimdArrayX(SD16, 16, float)
 testS16(SD16)
 when declared(SimdD16):
   testS16(SimdD16)
+
+makeSimdArrayX(SS16, 16, float32)
+testS16(SS16)
 when declared(SimdS16):
   testS16(SimdS16)
 

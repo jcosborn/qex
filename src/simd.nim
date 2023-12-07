@@ -18,7 +18,7 @@ template msa(T: untyped, N: static[int], F: typedesc) {.dirty,used.} =
   #makeSimdArray(N, F, `T Obj`)
   #template `T Array` = discard
   #makeSimdArray(`T Obj`, N, F)
-  type `T Obj` = SimdArrayObj[N,F]
+  type `T Obj`* = SimdArrayObj[N,F]
   type T* = Simd[`T Obj`]
   type `T Array`* = `T Obj`
   #static: echo "made type", $T
@@ -332,7 +332,7 @@ template assignX*(x: var Simd, y: Simd2) =
   assign(x[], y[])
 
 macro simdObjType*(N: static int, T: typedesc): auto =
-  echo T.repr
+  #echo T.repr
   let p = if T.repr == "float32": "S" else: "D"
   result = ident("Simd" & p & $N & "Obj")
   #echo result
