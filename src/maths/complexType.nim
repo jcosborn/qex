@@ -157,11 +157,13 @@ template toDouble*[TR,TI](x: typedesc[ComplexObj[TR,TI]]): typedesc =
 template toDouble*[T](x: typedesc[ComplexProxy[T]]): typedesc =
   mixin toDouble
   ComplexProxy[toDouble(type(T))]
-template toDoubleImpl*(xx: ComplexObj): auto =
-  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+#template toDoubleImpl*(xx: ComplexObj): auto =
+#  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
+#  newComplexObj(toDouble(x.re),toDouble(x.im))
+#  #mixin toDoubleX
+#  #toDoubleX(toDerefPtr xx)
+proc toDoubleImpl*(x: ComplexObj): auto {.alwaysInline,noInit.} =
   newComplexObj(toDouble(x.re),toDouble(x.im))
-  #mixin toDoubleX
-  #toDoubleX(toDerefPtr xx)
 
 template load1*(x: ComplexProxy): auto = x
 template load1*(x: RealProxy): auto = x

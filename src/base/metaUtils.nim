@@ -481,6 +481,8 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
       #echo body.lisprepr
       body = body.replaceNonDeclSym(sym, p)
       #echo body.repr
+    elif typ.kind == nnkBracketExpr and typ[0].repr == "typedesc":
+      body = body.replaceNonDeclSym(sym, p)
     else:
       pre.add getAst(letX(t, p))
       body = body.replaceNonDeclSym(sym, t)

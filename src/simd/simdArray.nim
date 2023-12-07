@@ -652,6 +652,7 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
   #echoAst: F
   #static: echo F.treerepr
   #when not(F is float32):
+  # should be handled in simd.nim now
   #when F is float64:
   #  template toDoubleImpl*(x: T): untyped = x
   #else:

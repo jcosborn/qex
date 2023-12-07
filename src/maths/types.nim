@@ -8,6 +8,7 @@ import base/basicOps
 import base/wrapperTypes
 import macros
 import typetraits
+getOptimPragmas()
 
 template index*[N,T](x: typedesc[array[N,T]], i: typedesc): typedesc =
   type(T)
@@ -417,10 +418,15 @@ template optIndexed*[T,I](x: T, i: I): untyped =
   #else:
   #  #static: echo "optindexed not isWrapper"
   #  x[i]
-template `[]`*(xx:Indexed):untyped =
+#template `[]`*(xx:Indexed):untyped =
+#  mixin `[]`
+#  #let tIndexedBracket0 = xx
+#  let tIndexedBracket0 = getPtr xx; template x:untyped {.gensym.} = tIndexedBracket0[]
+#  obj(x)[idx(x)]
+proc `[]`*(x: Indexed): auto {.alwaysInline,noInit.} =
   mixin `[]`
   #let tIndexedBracket0 = xx
-  let tIndexedBracket0 = getPtr xx; template x:untyped {.gensym.} = tIndexedBracket0[]
+  #let tIndexedBracket0 = getPtr xx; template x:untyped {.gensym.} = tIndexedBracket0[]
   obj(x)[idx(x)]
 template `[]`*(xx:Indexed; i:SomeInteger):untyped =
   #let tIndexedBracket1 = xx
