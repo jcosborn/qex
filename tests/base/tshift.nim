@@ -128,6 +128,7 @@ qexInit()
 template makeSimdArrayX(T,N,B: untyped) {.dirty.} =
   makeSimdArray(`T X`, N, B)
   type T = Simd[`T X`]
+  template toDoubleImpl(x: `T X`): untyped = x  # always already double
 
 #testS1(float)
 makeSimdArrayX(SD1, 1, float)
