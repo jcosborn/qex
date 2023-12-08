@@ -59,7 +59,7 @@ let
 var
   lo = lat.newLayout
   g = lo.newGauge
-  r = newRNGField(RngMilc6, lo, seed)
+  #r = newRNGField(RngMilc6, lo, seed)
   R: RngMilc6  # global RNG
   nc = g[0][0].nrows
 R.seed(seed, 987654321)
@@ -79,7 +79,7 @@ qexLog "Finished loading conifguration."
 var spatv = 1
 for i in 0..<lat.len-1: spatv *= lat[i]
 
-proc printPlaq(g: any) =
+proc printPlaq(g: auto) =
   let
     p = g.plaq
     sp = 2.0*(p[0]+p[1]+p[2])
@@ -101,7 +101,7 @@ g.printPlaq
 
 qexLog "Finished re-unitarization."
 
-proc smear(sg,g:any) =
+proc smear(sg,g: auto) =
   var
     info: PerfInfo
     coef = HypCoefs(alpha1:0.4, alpha2:0.5, alpha3:0.5)

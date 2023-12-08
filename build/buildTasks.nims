@@ -159,7 +159,7 @@ build options:
 let nimOptionsHelp = """
 Nim options:
   -<option>   Passes '-<option>' to Nim compiler
-              (may need to proceed with '--' so make doesn't parse it).
+              (may need to precede with '--' so make doesn't parse it).
   :-<option>  Passes '-<option>' to Nim compiler
               (avoids issues with make trying to parse it).
   :foo        Sets Nim define 'foo'
