@@ -203,11 +203,14 @@ template `im=`*(x: ImagProxy, y: typed) = x[] = y
 template `re=`*(x: ComplexProxy, y: typed) = x[].re = y
 template `im=`*(x: ComplexProxy, y: typed) = x[].im = y
 
-template setU*(r: ComplexProxy, x: typed, y: typed) =
-  r[].re = x
-  r[].im = y
-template set*(r: ComplexProxy, x: typed, y: typed) =
-  flattenCallArgs(setU, r, x, y)
+#template setU*(r: ComplexProxy, x: typed, y: typed) =
+#  r[].re = x
+#  r[].im = y
+#template set*(r: ComplexProxy, x: typed, y: typed) =
+#  flattenCallArgs(setU, r, x, y)
+proc set*(r: var ComplexProxy, x: auto, y: auto) {.alwaysInline.} =
+  r.re = x
+  r.im = y
 
 template assign*(x: RealProxy, y: RealProxy2): untyped =
   x[] = y[]

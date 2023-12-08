@@ -365,7 +365,7 @@ proc gaugeAction2*(c: GaugeActionCoeffs, g: array|seq): auto =
   threads:
     tic()
     toc("gaugeAction2 zero")
-    var ip = 0
+    #var ip = 0
     for mu in 1..<nd:
       for nu in 0..<mu:
         tic()
