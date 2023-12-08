@@ -47,7 +47,7 @@ template toSingleImpl*[N:static int,T](x: SimdArrayObj[N,T]): auto =
 template toDoubleImpl*[N:static int,T](x: SimdArrayObj[N,T]): auto =
   when numberType(T) is float64: x
   else:
-    type D = simdObjType(N, toDouble(T))
+    type D = simdObjType(N, toDouble(type(T)))
     var r {.noInit.}: D
     assign(r, x[])
     r
