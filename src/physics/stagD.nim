@@ -73,6 +73,10 @@ proc norm2*(stag: Staggered, mass: float): float =
   result = mass*mass*v.float + 0.5*s
 
 
+# stagDdirs
+# sd, r, g, x, scales, expFlops, exp
+# r = scales[mu]D_mu 
+
 template stagDPN*(sd:openArray[StaggeredD]; r:openArray[Field];
                   g:openArray[Field2]; x:openArray[Field3];
                   expFlops:int; exp:untyped) {.dirty.} =

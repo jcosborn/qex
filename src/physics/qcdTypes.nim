@@ -294,14 +294,16 @@ template permX*[T](r:T; prm:int; x0:T) =
     of 8: loop(perm8)
     else: discard
 proc perm*[T](r0: var T; prm: int; x0: T) {.alwaysInline.} =
+  #mixin assign, perm1, perm2, perm4, perm8
   const n = x0.numNumbers div x0.simdLength
-  let r = cast[ptr array[n,simdType(r0)]](addr r0)
+  var r = cast[ptr array[n,simdType(r0)]](addr r0)
   let x = cast[ptr array[n,simdType(x0)]](unsafeaddr x0)
   template loop(f:untyped) =
+    #mixin assign, perm1, perm2, perm4, perm8
     when compiles(f(r[][0], x[][0])):
       forStatic i, 0, n-1: f(r[][i], x[][i])
   case prm
-  of 0: loop(assign)
+  #of 0: loop(assign)  # doesn't work
   of 1: loop(perm1)
   of 2: loop(perm2)
   of 4: loop(perm4)
