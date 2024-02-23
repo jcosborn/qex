@@ -145,6 +145,12 @@ proc test(lat:auto) =
     for e in v2:
       v2[e] += m1[e] * row(m2[e],0)
 
+  bench(mvf, mb+2*vb, mb+2*vb):
+    for e in v2:
+      var t {.noInit.}: evalType(v1[e])
+      perm(t, 1, v1[e])
+      v2[e] := m1[e] * t
+
   bench(nc*mvf, 3*mb, 3*mb):
     m3 := m1 * m2
 

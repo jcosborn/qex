@@ -1,7 +1,7 @@
-import math
+#import math
 import linalgFuncs
 
-proc netri(d: any, e: any, x: float): int =
+proc netri(d: auto, e: auto, x: float): int =
   let n = d.len
   let eps = 1e-20
   var s0 = -x
@@ -35,7 +35,7 @@ proc netri(d: any, e: any, x: float): int =
       s = s/t
       t = 1.0
 
-proc fz*(d: any, e: any, x0,x1: float, n: int): auto =
+proc fz*(d: auto, e: auto, x0,x1: float, n: int): auto =
   template f(x: float): int = netri(d, e, x)
   var xm = x0
   var ym = f(xm)
@@ -66,7 +66,7 @@ proc fz*(d: any, e: any, x0,x1: float, n: int): auto =
     #echo "xm: ", xm, "  xp: ", xp, "  yn: ", yn
   (0.5*(xm+xp), xp0)
 
-proc svbinX*(sv: var any, d: any, e: any, ioff,nmn,nmx: int,
+proc svbinX*(sv: var auto, d: auto, e: auto, ioff,nmn,nmx: int,
              x0: float, y0: int, x1: float, y1: int): int =
   if nmn>=y1: return
   if nmn<y0:
@@ -86,7 +86,7 @@ proc svbinX*(sv: var any, d: any, e: any, ioff,nmn,nmx: int,
     nd1 = svbinX(sv, d, e, ioff+nd0, nmn+nd0, nmx, xn, yn, x1, y1)
   result = nd0 + nd1
 
-proc svbin*(sv: var any, d: any, e: any, off,imin,imax: int) =
+proc svbin*(sv: var auto, d: auto, e: auto, off,imin,imax: int) =
   ## find the smallest singular values of a bidiagonal matrix
   let n = d.len
   let ns = imax - imin + 1
@@ -107,7 +107,7 @@ proc svbin*(sv: var any, d: any, e: any, off,imin,imax: int) =
     x0 = x1
     x1 = x0 + 1.0
 
-template `&`(x: seq[float]): untyped = cast[ptr carray[float]](addr x[0])
+#template `&`(x: seq[float]): untyped = cast[ptr carray[float]](addr x[0])
 
 when isMainModule:
   import times

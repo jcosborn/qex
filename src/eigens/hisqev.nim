@@ -35,7 +35,7 @@ proc sort[T](t: var seq[EigTable[T]], a=0, bb= -1) =
         jmin = j
     if jmin!=i: swap(t[i], t[jmin])
 
-proc sett[T](t: var EigTable[T], op: any) =
+proc sett[T](t: var EigTable[T], op: auto) =
   mixin `:=`
   t.vn = t.v.even.norm2
   if t.vn==0:
@@ -58,7 +58,7 @@ proc sett[T](t: var EigTable[T], op: any) =
   t.converged = false
   t.locked = false
 
-proc maketable[T,U](t: var seq[EigTable[T]], v: var seq[U], op: any) =
+proc maketable[T,U](t: var seq[EigTable[T]], v: var seq[U], op: auto) =
   for i in 0..<v.len:
     let tv = t[i].v
     t[i].v = v[i]
@@ -67,7 +67,7 @@ proc maketable[T,U](t: var seq[EigTable[T]], v: var seq[U], op: any) =
     #echo i, "  ", t[i].sv
   sort(t)
 
-proc setterr(t: var EigTable, op: any) =
+proc setterr(t: var EigTable, op: auto) =
   mixin `:=`
   let Dv = op.newVector
   op.apply(Dv.odd, t.v.even)
@@ -78,16 +78,16 @@ proc setterr(t: var EigTable, op: any) =
   let r2 = Dv.even.norm2/t.vn
   t.err = abs(t.sv - sqrt(abs(t.sv*t.sv-sqrt(r2))))
 
-proc geterr(v: var seq[EigTable], op: any) =
+proc geterr(v: var seq[EigTable], op: auto) =
   for i in 0..<v.len:
     setterr(v[i], op)
 
 # x = x - (<y.x>/<y.y>) y
-proc projectOutV(x: any, y: EigTable) =
+proc projectOutV(x: auto, y: EigTable) =
   let c = y.v.even.dot(x)/y.vn
   x.even -= c*y.v
 
-proc projectLocked(t: any, v: any) =
+proc projectLocked(t: auto, v: auto) =
   for i in 0..<t.len:
     if not t[i].locked: break
     for j in 0..<v.len:
@@ -97,7 +97,7 @@ proc projectOut(x,y: EigTable) =
   let c = y.v.even.dot(x.v)/y.vn
   x.v.even -= c*y.v
 
-proc ortho1(t: var any; imn,imx: int, op: var LinOp) =
+proc ortho1(t: var auto; imn,imx: int, op: var LinOp) =
   threads(t):
     for j in 0..<imn:
       for i in imn..imx:
@@ -111,7 +111,7 @@ proc ortho1(t: var any; imn,imx: int, op: var LinOp) =
         t[i].projectOut(t[j])
       sett(t[i], op)
 
-proc ortho2(t: var any; imn,imx: int, op: LinOp) =
+proc ortho2(t: var auto; imn,imx: int, op: LinOp) =
   for i in imn..imx:
     var i0 = i
     for j in (i+1)..imx:
@@ -130,7 +130,7 @@ proc ortho2(t: var any; imn,imx: int, op: LinOp) =
         sett(t[j], op)
 
 # proc orthonormalize(v, vg, "even")
-proc rayleighRitz2(t: var any, a,b: int) =
+proc rayleighRitz2(t: var auto, a,b: int) =
   mixin dot
   let n = b-a+1
   let n2 = n*n
@@ -159,7 +159,7 @@ proc rayleighRitz2(t: var any, a,b: int) =
     #echo t[i].vn
     t[a+i].sv = sqrt(ev[i])
 
-proc rayleighRitz(t: var any, a,b: int, op: any) =
+proc rayleighRitz(t: var auto, a,b: int, op: auto) =
   mixin adj
   tic()
   mixin dot, simdSum, rankSum, `:=`
@@ -261,7 +261,7 @@ proc sortdown(t: var seq[EigTable], n0,n: int): int =
   imin
 template sortdown(t: var seq[EigTable], n: int): int = sortdown(t, 0, n)
 
-proc merge2(t1: var seq[EigTable], t2: seq[EigTable], rrbs: int, op: any) =
+proc merge2(t1: var seq[EigTable], t2: seq[EigTable], rrbs: int, op: auto) =
   for i in range(t2.len):
     t1.add t2[i]
 
@@ -286,7 +286,7 @@ proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
             ng,nmx,rrbs: int, op: var LinOp) =
   tic()
   var nt = vt1.len + vt2.len
-  var ngd = min(ng,nt)
+  #var ngd = min(ng,nt)
   var nmax = min(nmx,nt)
   var t = newSeq[type(vt1[0])](nt)
   var i1,i2: int
@@ -318,7 +318,7 @@ proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
   while rrMin < ng:
     tic()
     rrMax = rrMin + rrLen - 1
-    var rrMinNext = (rrMin + rrMax + 1) div 2
+    #var rrMinNext = (rrMin + rrMax + 1) div 2
     if rrMax >= nt: rrMax = nt-1
 
     echo "rrMin: ", rrMin, "  rrMax: ", rrMax
@@ -362,7 +362,7 @@ proc merget(vt1: var seq[EigTable]; vt2: var seq[EigTable];
   for i in 0..<vt1.len: vt1[i] = t[i]
   toc("merge end")
 
-proc svd(op: any, src: any, v: var any, sits: int, emin,emax: float): int =
+proc svd(op: auto, src: auto, v: var auto, sits: int, emin,emax: float): int =
   let n = v.len
   var sv = newSeq[float](n)
   var qv = newSeq[type(v[0].even)](n)
@@ -403,7 +403,7 @@ proc initOpts*(eo: var EigOpts) =
 ## op: operator object
 ## opts: options onject
 ## vv: seq of vectors
-proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
+proc hisqev*(op: var LinOp, opts: auto, vv: auto): auto =
   let ng = opts.nev
   let nvt = opts.nvecs
   let relerr = opts.relerr
@@ -542,7 +542,7 @@ proc hisqev*(op: var LinOp, opts: any, vv: any): auto =
   echo "total time = $1 seconds"%[t1|-6]
   vt1
 
-proc hisqev*(op: var LinOp, opts: any): auto =
+proc hisqev*(op: var LinOp, opts: auto): auto =
   var v = newSeq[type(op.newVector)](0)
   result = hisqev(op, opts, v)
 
@@ -591,7 +591,7 @@ when isMainModule:
     r: type(rs)
     lo: type(lo)
   var op = MyOp(r:rs,s:s,lo:lo)
-  template rand(op: MyOp, v: any) =
+  template rand(op: MyOp, v: auto) =
     gaussian(v, op.r)
   template newVector(op: MyOp): untyped =
     op.lo.ColorVector()
@@ -643,11 +643,11 @@ when isMainModule:
   if myRank==0:
     src{0}[0] := 1
 
-  proc getResid(r: any, d,s: any) =
+  proc getResid(r: auto, d,s: auto) =
     apply(op, r.odd, d.even)
     applyAdj(op, t.even, r.odd)
     r.even := s - 4.0*(t + m2*d)
-  proc rsolve(dt: any, sc: any, m: float, sp: var SolverParams) =
+  proc rsolve(dt: auto, sc: auto, m: float, sp: var SolverParams) =
     getResid(t2, dt, sc)
     let s1 = sc.even.norm2
     let s2 = t2.even.norm2
@@ -703,7 +703,7 @@ when isMainModule:
 
   #[
   var tv = op.newVector
-  proc unc(vs: any) =
+  proc unc(vs: auto) =
     let n = vs.len
     var vt = newSeq[EigTable[type(vs[0])]](n)
     for i in 0..<n:

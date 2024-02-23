@@ -24,11 +24,13 @@ else:
   #proc forceOmpOn() {.omp.}
   template ompPragma(p:string):untyped =
     #forceOmpOn()
-    {. emit:["#pragma omp ", p] .}
+    #{. emit:["#pragma omp ", p] .}
+    {. emit:["_Pragma(\"omp ", p, "\");"] .}
   template ompBlock*(p:string; body:untyped):untyped =
     #{. emit:"#pragma omp " & p .}
     #{. emit:"{ /* Inserted by ompBlock " & p & " */".}
-    {. emit:["#pragma omp ", p] .}
+    #{. emit:["#pragma omp ", p] .}
+    ompPragma(p)
     block:
       body
     #{. emit:"} /* End ompBlock " & p & " */".}

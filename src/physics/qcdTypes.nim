@@ -299,7 +299,7 @@ template loopPerm(f:untyped) {.dirty.} =
 proc perm*[T](r0: var T; prm: int; x0: T) {.alwaysInline.} =
   mixin assign, perm1, perm2, perm4, perm8
   const n = x0.numNumbers div x0.simdLength
-  let r = cast[ptr array[n,simdType(r0)]](addr r0)
+  var r = cast[ptr array[n,simdType(r0)]](addr r0)
   let x = cast[ptr array[n,simdType(x0)]](unsafeaddr x0)
   case prm
   of 0: loopPerm(assign)
