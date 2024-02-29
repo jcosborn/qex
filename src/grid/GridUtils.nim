@@ -80,7 +80,7 @@ proc assignStag*(r0: var GridFermion, x: Field) =
       #echo i
       for j in 0..<nd:
         var l = lo.coords[j][i].cint - c0[j]
-        {.emit:"c[j] = l;".}
+        {.emit:["c[j] = ",l,";"].}
       for ic in cint(0)..2:
         var tr,ti: float
         tr := x{i}[ic].re
@@ -120,9 +120,9 @@ proc assignStag*(r0: var Field, x0: var GridFermion) =
     for i in subset.singleSites:
       for j in 0..<nd:
         var l = lo.coords[j][i].cint - c0[j]
-        {.emit:"c[j] = l;".}
+        {.emit:["c[j] = ",l,";"].}
       {.emit:["autoView(dst, ",x[],", CpuRead);"].}
-      {.emit:"peekLocalSite(t, dst, c);".}
+      {.emit:["peekLocalSite(",t,", dst, c);"].}
       for ic in 0..2:
         var tr,ti: float
         {.emit:"tr = t._internal._internal._internal[ic].real();".}

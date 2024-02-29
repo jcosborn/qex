@@ -1,4 +1,4 @@
-import enum_quda, quda
+import enum_quda
 
 ## *
 ##  @file    quda_milc_interface.h

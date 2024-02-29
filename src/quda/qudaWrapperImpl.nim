@@ -160,7 +160,8 @@ proc setGaugeParam(gauge_param: var QudaGaugeParam) =
   gauge_param.overwrite_mom = 0
   #gauge_param.struct_size = sizeof(gauge_param)
 
-proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
+proc qudaSolveXX*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams;
+                  parEven = true) =
   tic()
   let lo1 = r.l.qudaSetup
   toc("QUDA one time setup")
@@ -187,7 +188,7 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
     srcGpu: pointer = t1.dataPtr
     destGpu: pointer = r1.dataPtr
   invargs.maxIter = sp.maxits.cint
-  invargs.evenodd = QUDA_EVEN_PARITY
+  invargs.evenodd = (if parEven: QUDA_EVEN_PARITY else: QUDA_ODD_PARITY)
   invargs.mixedPrecision = case sp.sloppySolve:
     of SloppyNone: 0
     of SloppySingle: 1
@@ -256,6 +257,12 @@ proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
         r{i}[a].re = r1[ri1.index][a].re
         r{i}[a].im = r1[ri1.index][a].im
   toc("QUDA teardown")
+
+proc qudaSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
+  qudaSolveXX(s, r, t, m, sp, parEven=true)
+
+proc qudaSolveOO*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
+  qudaSolveXX(s, r, t, m, sp, parEven=false)
 
 #  Compute the gauge force and update the mometum field
 #

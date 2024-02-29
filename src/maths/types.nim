@@ -428,10 +428,16 @@ proc `[]`*(x: Indexed): auto {.alwaysInline,noInit.} =
   #let tIndexedBracket0 = xx
   #let tIndexedBracket0 = getPtr xx; template x:untyped {.gensym.} = tIndexedBracket0[]
   obj(x)[idx(x)]
-template `[]`*(xx:Indexed; i:SomeInteger):untyped =
-  #let tIndexedBracket1 = xx
-  let tIndexedBracket1 = getPtr xx; template x:untyped {.gensym.} = tIndexedBracket1[]
-  optIndexed(obj(x)[i], idx(x))
+#template `[]`*(xx:Indexed; i:SomeInteger):untyped =
+#  #let tIndexedBracket1 = xx
+#  let tIndexedBracket1 = getPtr xx; template x:untyped {.gensym.} = tIndexedBracket1[]
+#  optIndexed(obj(x)[i], idx(x))
+proc `[]`*(x: Indexed; i: SomeInteger, r: var auto) {.alwaysInline.} =
+  r = optIndexed(obj(x)[i], idx(x))
+template `[]`*(x: Indexed; i: SomeInteger): auto =
+  var r {.noInit.}: typeof(optIndexed(obj(x)[i], idx(x)))
+  x[i, r]
+  r
 #template `[]`*(xx:Indexed; i,j:SomeInteger):untyped =
 #  #let tIndexedBracket2 = xx
 #  let tIndexedBracket2 = getPtr xx; template x:auto {.gensym.} = tIndexedBracket2[]

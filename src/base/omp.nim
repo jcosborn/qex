@@ -1,6 +1,7 @@
 import os
 
 when defined(noOpenmp):
+  static: echo "OpenMP disabled"
   template omp_set_num_threads*(x: cint) = discard
   template omp_get_num_threads*(): cint = 1
   template omp_get_max_threads*(): cint = 1
@@ -10,6 +11,7 @@ when defined(noOpenmp):
     block:
       body
 else:
+  static: echo "Using OpenMP"
   when existsEnv("OMPFLAG"):
     const ompFlag = getEnv("OMPFLAG")
   else:
@@ -25,7 +27,7 @@ else:
   template ompPragma(p:string):untyped =
     #forceOmpOn()
     #{. emit:["#pragma omp ", p] .}
-    {. emit:["_Pragma(\"omp ", p, "\");"] .}
+    {. emit:["_Pragma(\"omp ", p, "\")"] .}
   template ompBlock*(p:string; body:untyped):untyped =
     #{. emit:"#pragma omp " & p .}
     #{. emit:"{ /* Inserted by ompBlock " & p & " */".}

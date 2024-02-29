@@ -30,7 +30,7 @@ test(){
 	;;
 	2)
 		$RUNJOB "$exe" -tau:1 -gsteps:8 -fsteps:4,1 -hfsteps0:2,8 -trajs:2 -revCheckFreq:2 -seed:987654321 \
-			-mass:0.1,0.05 -hmasses0:0.2,0.4 -arsq:1e-24 -frsq:1e-24,1e-24 -pbpmass:0.1 -pbpreps:2 -pbprsq:1e-12 \
+			-mass:0.1,0.05 -hmasses0:0.2,0.4 -arsq:1e-24 -frsq:1e-24,1e-24 -pbpmass:0.1 -pbpreps:2 -pbprsq:1e-24 \
 			-showTimers:0 -gintalg:4MN3F1GP,0.2962962962962963 -fintalg:4MN3F1GP,0.2962962962962963 \
 	;;
 	*)

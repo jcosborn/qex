@@ -18,7 +18,7 @@ Zi = eps Z(Wi)
 
 ]#
 
-template gaugeFlow*(g: array|seq, steps: int, eps: float, measure: untyped): untyped =
+template gaugeFlow*(g: array|seq, steps: int, eps: float, measure: untyped) =
   ## Wilson flow.
   ## The input gauge field will be modified.
   ## `wflowT` is injected for `measure`.
@@ -65,7 +65,7 @@ template gaugeFlow*(g: array|seq, steps: int, eps: float, measure: untyped): unt
         break
     toc("end")
   flowProc()
-template gaugeFlow*(g: array|seq, eps: float, measure: untyped): untyped =
+template gaugeFlow*(g: array|seq, eps: float, measure: untyped) =
   gaugeFlow(g, 0, eps):
     measure
 
