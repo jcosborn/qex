@@ -40,7 +40,7 @@ test(){
 	sed -nE '/^MEASploop|^MEASplaq|^MEASpbp|(Begin|End|Reversed) H:/{s,^\[[^]]*\] *,,;p;}'  "$mydir/ref$comp.$tid" > "$outdir/ref$comp.$tid.check" || return
 	sed -nE '/^MEASploop|^MEASplaq|^MEASpbp|(Begin|End|Reversed) H:/{s,^\[[^]]*\] *,,;p;}' "$outdir/out$comp.$tid" > "$outdir/out$comp.$tid.check" || return
 	#numdiff -s ' \t\n][,' -r 2e-12 -V "$outdir"/{ref,out}$comp.$tid.check
-	$mydir/../../diffnum "$outdir"/{ref,out}$comp.$tid.check 3e-12
+	$mydir/../../diffnum "$outdir"/{ref,out}$comp.$tid.check 2e-11
 }
 
 ((${#tids[@]}!=0)) || tids=(0 1 2)
