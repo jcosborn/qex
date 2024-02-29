@@ -1,5 +1,5 @@
-import ospaths
-import io/qio
+import os
+#import io/qio
 
 const gridDir {.strdefine.} = getHomeDir() & "/lqcd/install/grid"
 const gridPassC = "-I" & gridDir / "include"
@@ -30,9 +30,9 @@ type
   GridWilsonLoops*[T] {.importcpp:"Grid::WilsonLoops",gh.} = object
   GridFermion*[T] {.importcpp:"'0::FermionField",gh,byref.} = object
   GridNaiveStaggeredFermionR* {.
-    importcpp:"Grid::NaiveStaggeredFermionR",gh.} = object
+    importcpp:"Grid::NaiveStaggeredFermionD",gh.} = object
   GridImprovedStaggeredFermionR* {.
-    importcpp:"Grid::ImprovedStaggeredFermionR",gh.} = object
+    importcpp:"Grid::ImprovedStaggeredFermionD",gh.} = object
 
 type
   GridParity* = enum
@@ -51,7 +51,7 @@ proc newStdVector*[R,T](a,b: ptr T): stdvector[R] {.
   constructor,importcpp:"'0(#,#)".}
 
 template `+`*[T](a: ptr T, n: int): untyped =
-  cast[ptr T](cast[ByteAddress](a) + n*sizeof(T))
+  cast[ptr T](cast[int](a) + n*sizeof(T))
 
 proc newStdVector*[T](a: openArray[T]): stdvector[T] =
   let a0 = unsafeaddr a[0]
@@ -108,7 +108,7 @@ template vector_obj*[T:GridFermion](x: T): untyped =
 template scalar_obj*[T:GridFermion](x: T): untyped =
   GridScalarObject[T]
 
-proc vectorizeFromLexOrdArray*[T](x: stdVector[T], r: any) {.
+proc vectorizeFromLexOrdArray*[T](x: stdVector[T], r: auto) {.
   importc,gh.}
 proc vectorizeFromLexOrdArray*[T](x: stdVector[T], r: GridLatticeGaugeField) {.
   importcpp:"vectorizeFromLexOrdArray(#,#)",gh.}
@@ -130,11 +130,11 @@ proc checkerboard*(x: ptr GridFermion): int =
   var r = 0
   #{.emit:"auto t = x->Checkerboard();".}
   #{.emit:"if(t==Grid::Odd){r=1;}".}
-  {.emit:"r = x->Checkerboard();".}
+  {.emit:[r," = ",x,"->Checkerboard();"].}
   r
 
 proc checkerboard*(x: ptr GridFermion, y: GridParity) =
-  {.emit:"x->Checkerboard() = y;".}
+  {.emit:[x,"->Checkerboard() = ",y,";"].}
 template checkerboard*(x: var GridFermion, y: GridParity) =
   checkerboard(addr x, y)
 template even*(x: var GridFermion) = x.checkerboard(gpEven)

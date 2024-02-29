@@ -13,3 +13,6 @@ else:  # put stubs here
 
   proc gridSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
     qexError "Grid not compiled in (define gridDir)"
+
+  proc gridSolveOO*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
+    qexError "Grid not compiled in (define gridDir)"

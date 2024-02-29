@@ -413,7 +413,7 @@ proc stagDb*(sd:StaggeredD; r:Field; g:openArray[Field2];
   #  rir := m*getVec(x[ir], ic)
 
 # r = m2 - Deo * Doe
-proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
+proc stagD2xx*(sdx,sdy:StaggeredD; r:Field; g:openArray[Field2];
                x:Field; m2:SomeNumber) =
   tic()
   var t{.global.}:evalType(x)
@@ -424,23 +424,31 @@ proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
     threadBarrier()
   #threadBarrier()
   #stagD(sdo, t, g, x, 0.0)
-  toc("stagD2ee init")
+  toc("stagD2xx init")
   block:
-    stagDP(sdo, t, g, x, 0):
+    stagDP(sdy, t, g, x, 0):
       rir := 0
-  toc("stagD2ee DP")
+  toc("stagD2xx DP")
   threadBarrier()
-  toc("stagD2ee barrier")
+  toc("stagD2xx barrier")
   #stagD(sde, r, g, t, 0.0)
   block:
-    stagDM(sde, r, g, t, 6):
+    stagDM(sdx, r, g, t, 6):
       rir := (4.0*m2)*x[ir]
-  toc("stagD2ee DM")
+  toc("stagD2xx DM")
   #threadBarrier()
   #r[sde.sub] := m2*x - r
   #for ir in r[sde.subset]:
   #  msubVSVV(r[ir], m2, x[ir], r[ir])
   #r[sde.sub] := 0.25*r
+
+proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
+               x:Field; m2:SomeNumber) =
+  stagD2xx(sde, sdo, r, g, x, m2)
+
+proc stagD2oo*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
+               x:Field; m2:SomeNumber) =
+  stagD2xx(sdo, sde, r, g, x, m2)
 
 # r = m2 + Deo * Doe
 # modified D: Df + Db
