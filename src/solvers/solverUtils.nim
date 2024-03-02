@@ -5,10 +5,11 @@ proc relResid*(r,x: any, a: float): float =
   mixin norm2, simdReduce
   var t: type(r[0].norm2)
   var u: type(r[0].norm2)
+  let an = a * x.l.physVol.float / (x.norm2 + float.epsilon)
   for e in r:
     let r2 = r[e].norm2
     let x2 = x[e].norm2
-    let s = 1.0/(1.0+a*x2)
+    let s = 1.0/(1.0+an*x2)
     t += s*r2
     u += s
   var ts = simdSum(t)

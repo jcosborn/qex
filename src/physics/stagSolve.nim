@@ -252,13 +252,13 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
   sp.calls = 1
   sp.seconds = getElapsedTime()
   sp.flops += float((s.g.len*4*72+24)*x.l.nEven) # ???
-  #if sp0.verbosity>0:
+  if sp0.verbosity>0:
     #let its = sp.iterations
     #let s = sp.seconds
     #let f = sp.flops
     #let gf = 1e-9*f/s
     #echo "op time: ", top
-    #echo "stagSolve: ", sp.getStats
+    echo "stagSolve: ", sp.getStats
   sp0.addStats(sp)
 
 proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float;
