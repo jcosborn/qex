@@ -595,9 +595,11 @@ template `+=`*[R,X:ComplexProxy](r: R, x: X) = iadd(r,x)
 ]#
 
 proc sqrt*(x: ComplexProxy): auto =
+  mixin copySign
   let n = sqrt(x.norm2)
   let r = sqrt(0.5*(n + x.re))
-  let i = select(x.im<0, -1, 1)*sqrt(0.5*(n - x.re))
+  #let i = select(x.im<0, -1, 1)*sqrt(0.5*(n - x.re))
+  let i = copySign(sqrt(0.5*(n - x.re)), x.im)
   newComplexP(r, i)
 
 # inorm2, redot, iredot, dot, idot

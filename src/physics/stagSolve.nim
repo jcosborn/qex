@@ -68,7 +68,10 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
     let flops = (s.g.len*4*72+60)*r.l.nEven*sp.iterations
     sp.flops = flops.float
     if sp0.verbosity>0:
-      echo "solveXX(QEX): ", sp.getStats
+      if parEven:
+        echo "solveEE(QEX): ", sp.getStats
+      else:
+        echo "solveOO(QEX): ", sp.getStats
   of sbQuda:
     tic()
     if parEven:
