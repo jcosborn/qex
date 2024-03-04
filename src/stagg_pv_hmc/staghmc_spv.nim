@@ -834,7 +834,7 @@ proc fforce(s: Staggered; f: auto; gf: auto;
          discard t[mu] ^* psi
 
       # Create variable for convenience
-      let n = psi[0].len
+      const n = psi[0].len
 
       # Calculate outer product for Dslash
       # Start thread block
