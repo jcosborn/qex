@@ -7,27 +7,34 @@ export solverBase
 type
   CgState*[T] = object
     r,Ap,b: T
-    p,x: T
-    b2,r2,r2old,r2stop: float
+    p,x,z: T
+    b2,r2,r2old,r2stop,rz,rzold: float
     iterations: int
+    precon: bool
 
 proc reset*(cgs: var CgState) =
   cgs.b2 = -1
   cgs.iterations = 0
   cgs.r2old = 1.0
+  cgs.rzold = 1.0
   cgs.r2stop = 0.0
 
-proc newCgState*[T](x,b: T): CgState[T] =
-  result.r = newOneOf(b)
-  result.Ap = newOneOf(b)
+proc newCgState*[T](x,b: T; precon=false): CgState[T] =
+  result.r = newOneOf b
+  result.Ap = newOneOf b
   result.b = b
-  result.p = newOneOf(x)
+  result.p = newOneOf x
   result.x = x
+  result.precon = precon
+  if precon:
+    result.z = newOneof b
+  else:
+    result.z = result.r
   result.reset
 
 # solves: A x = b
 proc solve*(state: var CgState; op: auto; sp: var SolverParams) =
-  mixin apply
+  mixin apply, applyPrecon
   tic()
   let vrb = sp.verbosity
   template verb(n:int; body:untyped):untyped =
@@ -41,15 +48,25 @@ proc solve*(state: var CgState; op: auto; sp: var SolverParams) =
       onNoSync(sub):
         body
 
+  const precon = compiles(op.applyPrecon(state.z, state.r))
+  if precon != state.precon:
+    state.precon = precon
+    if precon:
+      state.z = newOneOf state.r
+    else:
+      state.z = state.r
+
   let
     r = state.r
     p = state.p
     Ap = state.Ap
     x = state.x
     b = state.b
+    z = state.z
   var
     b2 = state.b2
     r2 = state.r2
+    rz = state.rz
 
   if b2<0:  # first call
     mythreads:
@@ -61,14 +78,17 @@ proc solve*(state: var CgState; op: auto; sp: var SolverParams) =
       mythreads:
         x := 0
         r := 0
+        if precon:
+          z := 0
       r2 = 0.0
+      rz = 0.0
     else:
       threads:
         op.apply(Ap, x)
         subset:
           r := b - Ap
-          p := 0
           r2 = r.norm2
+          p := 0
           verb(3):
             echo("p2: ", p.norm2)
             echo("r2: ", r2)
@@ -78,22 +98,31 @@ proc solve*(state: var CgState; op: auto; sp: var SolverParams) =
   let maxits = sp.maxits
   var itn0 = state.iterations
   var r2o0 = state.r2old
+  var rzo0 = state.rzold
 
   toc("cg setup")
   if r2 > r2stop:
     threads:
       var itn = itn0
       var r2o = r2o0
+      var rzo = rzo0
       verb(1):
         #echo(-1, " ", r2)
         echo(itn, " ", r2/b2)
 
       while itn<maxits and r2>r2stop:
         tic()
-        let beta = r2/r2o
+        when precon:
+          op.applyPrecon(z, r)
+          subset:
+            rz = r.redot z
+        else:
+          rz = r2
+        let beta = rz/rzo
         r2o = r2
+        rzo = rz
         subset:
-          p := r + beta*p
+          p := z + beta*p
         toc("p update", flops=2*numNumbers(r[0])*sub.lenOuter)
         verb(3):
           echo "beta: ", beta
@@ -103,7 +132,7 @@ proc solve*(state: var CgState; op: auto; sp: var SolverParams) =
         subset:
           let pAp = p.redot(Ap)
           toc("pAp", flops=2*numNumbers(p[0])*sub.lenOuter)
-          let alpha = r2/pAp
+          let alpha = rz/pAp
           x += alpha*p
           toc("x", flops=2*numNumbers(p[0])*sub.lenOuter)
           r -= alpha*Ap
@@ -132,6 +161,7 @@ proc solve*(state: var CgState; op: auto; sp: var SolverParams) =
       if threadNum==0:
         itn0 = itn
         r2o0 = r2o
+        rzo0 = rzo
       #var fr2: float
       #op.apply(Ap, x)
       #subset:
@@ -144,6 +174,8 @@ proc solve*(state: var CgState; op: auto; sp: var SolverParams) =
   state.iterations = itn0
   state.r2old = r2o0
   state.r2 = r2
+  state.rzold = rzo0
+  state.rz = rz
   verb(1):
     echo state.iterations, " acc r2:", r2/b2
     #threads:
@@ -178,12 +210,25 @@ when isMainModule:
   var v1 = lo.ColorVector()
   var v2 = lo.ColorVector()
   var v3 = lo.ColorVector()
+
   type opArgs = object
     m: type(m)
   var oa = opArgs(m: m)
   proc apply*(oa: opArgs; r: type(v1); x: type(v1)) =
     r := oa.m*x
     #mul(r, m, x)
+  type opArgsP = object
+    m: type(m)
+  var oap = opArgsP(m: m)
+  proc apply*(oa: opArgsP; r: type(v1); x: type(v1)) =
+    r := oa.m*x
+    #mul(r, m, x)
+  proc applyPrecon*(oa: opArgsP; r: type(v1); x: type(v1)) =
+      for e in r:
+        let t = sqrt(1.0 / m[e][0,0])
+        r[e] := t * x[e]
+      #mul(r, m, x)
+
   var sp:SolverParams
   sp.r2req = 1e-20
   sp.maxits = 200
@@ -231,4 +276,13 @@ when isMainModule:
     sp.maxits += 10
     cg.solve(oa, sp)
     let c = cg.x.norm2
-    echo cg.iterations, ": ", c
+    echo cg.iterations, ": ", c, " ", cg.r2
+
+  v2 := 0
+  cg.reset
+  sp.maxits = 0
+  while cg.r2 > cg.r2stop:
+    sp.maxits += 10
+    cg.solve(oap, sp)
+    let c = cg.x.norm2
+    echo cg.iterations, ": ", c, " ", cg.r2

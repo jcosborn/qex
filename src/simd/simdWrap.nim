@@ -180,6 +180,7 @@ f1(cos)
 f1(acos)
 f1(load1)
 f2(atan2)
+f2(copySign)
 f2s(`+`)
 f2s(`-`)
 f2s(`*`)
@@ -189,6 +190,9 @@ f2s(sub)
 f2s(mul)
 f2s(min)
 f2s(max)
+f2s(`==`)
+f2s(`<`)
+#f2s('>')
 
 #setBinop(`*`,mul,Simd,Simd2,asSimd(type(x[]*y[])))
 #setBinop(`*`,mul,Simd,SomeNumber,asSimd(type(x[]*y)))
@@ -249,3 +253,7 @@ template exp*(xx: Simd[Indexed]): untyped =
 
 template dot*[X,Y:Simd](x: X, y: Y): auto =
   x * y
+
+#template select*(x: Simd[T], y,z: SomeNumber): untyped =
+#  mixin f
+#  asSimd(f(x[], y))

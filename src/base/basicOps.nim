@@ -101,6 +101,8 @@ template `:=`*[R,X:SomeNumber](r: R; x: X) =
   r = R(x)
 template `:=`*[R,X:SomeNumber](r: R; x: ptr X) =
   r = R(x[])
+template `:=`*[R:SomeNumber](r: R; x: bool) =
+  r = R(if x: 1 else: 0)
 proc `+=`*(r: var float32; x: SomeNumber) {.alwaysInline.} =
   r = r + float32(x)
 proc `-=`*(r: var float32; x: SomeNumber) {.alwaysInline.} =

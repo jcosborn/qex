@@ -380,7 +380,7 @@ template map021(T,L,op1,op2:untyped):untyped {.dirty.} =
     bind forStatic
     #forStatic i, 0, L-1:
     for i in 0..<L:
-      result[][i] = op2(x[][i], y[][i])
+      result[][i] := op2(x[][i], y[][i])
 template map021x(T1,T2,TR,L,op1,op2:untyped):untyped {.dirty.} =
   proc op1*(x:T1,y:T2):TR {.alwaysInline,noInit.} =
     mixin `[]`
@@ -721,6 +721,8 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
   map021(T, L, `-`, `-`)
   map021(T, L, `*`, `*`)
   map021(T, L, `/`, `/`)
+  #map021(T, L, `<`, `<`)
+  map021(T, L, copySign, copySign)
 
   map110(T, L, assign, assign)
   map110(T, L, neg, neg)
@@ -811,6 +813,7 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
   template `*`*(x:T; y:SomeNumber):T = mul(x, y.to(type(T)))
   template `/`*(x:SomeNumber; y:T):T = divd(x.to(type(T)), y)
   template `/`*(x:T; y:SomeNumber):T = divd(x, y.to(type(T)))
+  template `<`*(x:T; y:SomeNumber):T = `<`(x, y.to(type(T)))
   template `+=`*(r:var T; x:SomeNumber) = iadd(r, x.to(type(T)))
   template `-=`*(r:var T; x:SomeNumber) = isub(r, x.to(type(T)))
   template `*=`*(r:var T; x:SomeNumber) = imul(r, x.to(type(T)))
