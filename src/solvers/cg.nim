@@ -6,8 +6,8 @@ export solverBase
 
 type
   CgState*[T] = object
-    r,Ap,b: T
-    p,x,z: T
+    r*,Ap,b*: T
+    p,x*,z: T
     b2,r2,r2old,r2stop,rz,rzold: float
     iterations: int
     precon: bool

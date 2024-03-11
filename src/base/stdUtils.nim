@@ -184,6 +184,12 @@ proc `+=`*[T](r: var openArray[T], x: openArray[T]) {.inline.} =
   for i in 0..<n:
     r[i] += x[i]
 
+proc `-`*[T](x: seq[T]): seq[T] {.inline.} =
+  let n = x.len
+  result.newSeq(n)
+  for i in 0..<n:
+    result[i] = -x[i]
+
 #proc sum*[T](x: openArray[T]): T =
 #  for i in 0..<x.len: result += x[i]
 

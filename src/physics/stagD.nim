@@ -51,6 +51,24 @@ template initStagD3T*(l:var Layout; T:typedesc; ss:string):untyped =
 proc initStagD3*(x:Field; sub:string):auto =
   result = initStagD3T(x.l, evalType(x[0]), sub)
 
+proc subdirs*(s: Staggered, dirs: seq[int]): Staggered =
+  result.se.sf.newSeq(0)
+  result.se.sb.newSeq(0)
+  result.se.sub = s.se.sub
+  result.se.subset = s.se.subset
+  result.so.sb.newSeq(0)
+  result.so.sf.newSeq(0)
+  result.so.sub = s.so.sub
+  result.so.subset = s.so.subset
+  result.g.newSeq(0)
+  for i in 0..<dirs.len:
+    let d = dirs[i]
+    result.se.sf.add s.se.sf[d]
+    result.se.sb.add s.se.sb[d]
+    result.so.sf.add s.so.sf[d]
+    result.so.sb.add s.so.sb[d]
+    result.g.add s.g[d]
+
 proc rephase*(s: Staggered) =
   s.g.setBC
   threadBarrier()

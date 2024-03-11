@@ -11,6 +11,8 @@ import maths
 import quda/qudaWrapper
 import grid/Grid
 
+var precon = false
+
 proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   var sp = sp0
   sp.subset.layoutSubset(r.l, sp.subsetName)
@@ -55,12 +57,16 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
         stagD2oo(s.se, s.so, a, s.g, b, m*m)
         toc("stagD2oo")
       #threadBarrier()
-    var oa = (apply: op)
     var cg = newCgState(r, x)
     if parEven:
       sp.subset.layoutSubset(r.l, "even")
     else:
       sp.subset.layoutSubset(r.l, "odd")
+    #if precon:
+      #var oap = (apply: op, applyPrecon: oppre)
+      #cg.solve(oap, sp)
+    #else:
+    var oa = (apply: op)
     cg.solve(oa, sp)
     toc("cg.solve")
     sp.calls = 1
@@ -332,8 +338,15 @@ when isMainModule:
   var r = lo.ColorVector()
   var rs = newRNGField(RngMilc6, lo, intParam("seed", 987654321).uint64)
 
+  if fn == "":
+    var warm = floatParam("warm", 0.15)
+    threads:
+      #g.random rs
+      g.warm warm, rs
+  let plaq = g.plaq
+  echo "plaq: ", plaq.sum, " ", plaq
+
   threads:
-    g.random rs
     g.setBC
     g.stagPhase
     #v1 := 0
@@ -362,6 +375,14 @@ when isMainModule:
     threads:
       r := v1 - v2
       echo "err2: ", r.norm2
+    threads:
+      v1 := 0
+    resetTimers()
+    precon = true
+    s.solve(v1, v3, m, sp)
+    threads:
+      r := v1 - v2
+      echo "err2: ", r.norm2
 
   block:
     v1 := 0
@@ -371,7 +392,7 @@ when isMainModule:
     echo "even point"
     test()
     echo sp.getStats()
-
+#[
   block:
     v1 := 0
     let p = lo.rankIndex([0,0,0,1])
@@ -386,7 +407,7 @@ when isMainModule:
     echo "random"
     test()
     echo sp.getStats()
-
+]#
   if intParam("timers", 0)!=0:
     echoTimers()
 

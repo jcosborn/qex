@@ -60,6 +60,8 @@ type
   notSomeField2* = concept x
     x isnot SomeField2
 
+template elemType*(x:Field):typedesc = evalType(x[0])
+template elemType*[V:static[int],T](x:typedesc[Field[V,T]]):typedesc = evalType(T)
 template numberType*(x:Field):untyped = numberType(x[0])
 
 #template fieldUnop*(o: static[FieldOps], x: SomeField): auto =
@@ -218,7 +220,8 @@ template has*[F:Field](x: typedesc[F], y: typedesc): bool =
       has(getT F, y)
     else: false
 
-template `[]`*[F:Field](x:typedesc[F]; i:int):typedesc = F.T
+#template `[]`*[F:Field](x:typedesc[F]; i:int):typedesc = F.T
+template index*[F:Field](x:typedesc[F]; i:typedesc[int]):typedesc = F.T
 template `[]`*(x:Field; i:int):untyped = x.s[i]
 #template `[]=`*(x:Field; i:int; y:typed) =
 proc `[]=`*(x:Field; i:int; y:auto) =
