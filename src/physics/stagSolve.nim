@@ -66,7 +66,7 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
       #var oap = (apply: op, applyPrecon: oppre)
       #cg.solve(oap, sp)
     #else:
-    var oa = (apply: op)
+    var oa = (apply: op, precon: cpNone)
     cg.solve(oa, sp)
     toc("cg.solve")
     sp.calls = 1
@@ -81,6 +81,7 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
   of sbQuda:
     tic()
     if parEven:
+      #echo x.even.norm2, " ", sp.r2req
       s.qudaSolveEE(r,x,m,sp)
       toc("qudaSolveEE")
     else:
@@ -178,6 +179,7 @@ proc solveReconL(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
   toc("setup")
   s.solveEE(x, d, m, sp)
   toc("solveEE")
+  #echo "solveReconL ", d2e, "  ", sp.r2req
   threads:
     x.even *= 4
     threadBarrier()
@@ -247,6 +249,7 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
       s.D(r, x, m)
       threadBarrier()
       r := b - r
+      threadBarrier()
       let
         r2et = r.even.norm2
         r2ot = r.odd.norm2
@@ -255,7 +258,7 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
         r2o = r2ot
     r2 = r2e + r2o
     if sp.verbosity>0:
-      echo "stagSolve r2: ", r2/b2
+      echo "stagSolve r2/b2: ", r2/b2
 
   sp.r2.init r2/b2
   sp.calls = 1

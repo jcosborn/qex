@@ -582,6 +582,7 @@ proc eoReduce*(s:Staggered; r,b:Field; m:SomeNumber) =
 proc eoReconstruct*(s:Staggered; r,b:Field; m:SomeNumber) =
   # r.odd = (b.odd - Doe r.even)/m
   stagD(s.so, r, s.g, r, 0.0, -1.0/m)
+  threadBarrier()
   r.odd += b/m
 
 # (d/dg) redot[ (2D)*x, c ]
