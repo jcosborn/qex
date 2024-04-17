@@ -56,9 +56,9 @@ proc testfb(x,y,z: auto, mu,d: int): float =
     #  echoAll xi, " ", yi, " ", zi
   result = res
 
-proc test2(Smd: typedesc, lat: array): float =
+proc test2[N,T](Smd: typedesc, lat: array[N,T]): float =
   const vl = int Smd.numNumbers
-  let nd = lat.len
+  const nd = lat.len
   var lo = newLayout(lat, vl)
   type LatReal = Field[vl, Smd]
   var x,y,z: LatReal
