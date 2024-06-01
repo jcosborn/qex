@@ -50,16 +50,16 @@ type
     sntVisited, sntAssigned, sntNeedUpdate, sntNeedGradient, sntFixedGradient
     # sntReusable, ...
   SymNodeTags = set[SymNodeTag]
-  SymNodeValue = ref object of RootObj  ## Represent unallocated symbolic value
-  SymNodeValueConcrete = ref object of SymNodeValue  ## For any concrete values
+  SymNodeValue* = ref object of RootObj  ## Represent unallocated symbolic value
+  SymNodeValueConcrete* = ref object of SymNodeValue  ## For any concrete values
   SymNodeGradient = object
     ## for a particular variable v
     dependent: SymNode  ## a variable v that depends on this node, x
     gradient: SymNode  ## dv/dx
-  SymNode = ref object
+  SymNode* = ref object
     # This object can be cyclic, because gradients refer to ancestor nodes
-    value: SymNodeValue
-    inputs: seq[SymNode]
+    value*: SymNodeValue
+    inputs*: seq[SymNode]
     forward: proc(z: SymNode)  ## runs the actual compute
     arg: SymNodeValue  ## extra argument forward/backward uses
     runCount: int
@@ -72,34 +72,34 @@ type
   SymNodeError = object of Defect
   SymNodeValueError = object of Defect
 
-template raiseError(msg: string) =
+template raiseError*(msg: string) =
   raise newException(SymNodeError, msg)
 
-template raiseValueError(msg: string) =
+template raiseValueError*(msg: string) =
   raise newException(SymNodeValueError, msg)
 
-template raiseErrorBaseMethod(msg: string) =
+template raiseErrorBaseMethod*(msg: string) =
   raise newException(
     SymNodeError,
     "Base method invoked: " & msg &
       "\nMake sure to pass `--multimethods:on` and check there is a custom method for each derived type.")
 
-method `$`(v: SymNodeValue): string {.base.} = "SymNodeValue"
+method `$`*(v: SymNodeValue): string {.base.} = "SymNodeValue"
 
-func `$`(z: SymNode): string =
+func `$`*(z: SymNode): string =
   z.name & "#" & $z.id
 
-func nodeRepr(z: SymNode): string
-func treeRepr(z: SymNode): string
+func nodeRepr*(z: SymNode): string
+func treeRepr*(z: SymNode): string
 
-method copySymNodeValue(v: SymNodeValue): SymNodeValue {.base.} =
+method copySymNodeValue*(v: SymNodeValue): SymNodeValue {.base.} =
   ## nothing to copy
   v
 
-method copySymNodeValue(v: SymNodeValueConcrete): SymNodeValueConcrete =
+method copySymNodeValue*(v: SymNodeValueConcrete): SymNodeValueConcrete =
   raiseValueError("Custom method required for concrete value: " & $v)
 
-proc newSymNode(
+proc newSymNode*(
     value = SymNodeValue(),
     inputs: seq[SymNode] = @[],
     forward: proc(z: SymNode) = nil,
@@ -116,13 +116,13 @@ proc newSymNode(
     allocateValue: allocateValue, backward: backward, gradients: gradients, name: name, tag: tag, id: id)
   id.inc
 
-proc copySymNode(z: SymNode): SymNode =
+proc copySymNode*(z: SymNode): SymNode =
   newSymNode(value = z.value.copySymNodeValue, inputs = z.inputs, forward = z.forward,
     arg = if z.arg != nil: z.arg.copySymNodeValue else: nil, runCount = z.runCount,
     allocateValue = z.allocateValue, backward = z.backward, gradients = z.gradients,
     name = z.name, tag = z.tag)
 
-proc assignSymNode(z: SymNode, x: SymNode) =
+proc assignSymNode*(z: SymNode, x: SymNode) =
   z.value = x.value.copySymNodeValue
   z.inputs = x.inputs
   z.forward = x.forward
@@ -135,7 +135,7 @@ proc assignSymNode(z: SymNode, x: SymNode) =
   z.name = x.name
   z.tag = x.tag
 
-proc gradientDependentOrNil(z: SymNode, dep: SymNode): SymNode =
+proc gradientDependentOrNil*(z: SymNode, dep: SymNode): SymNode =
   ## May return nil if not exists.
   for g in z.gradients:
     if dep == g.dependent:
@@ -151,7 +151,7 @@ proc gradientDependentAssign(z: SymNode, dep: SymNode, grad: SymNode) =
       return
   z.gradients.add SymNodeGradient(dependent: dep, gradient: grad)
 
-proc assign(z: SymNode, v: SymNodeValueConcrete) =
+proc assign*(z: SymNode, v: SymNodeValueConcrete) =
   z.value = v
   z.tag.incl sntAssigned
 
@@ -159,54 +159,54 @@ proc assign(z: SymNode, v: SymNodeValueConcrete) =
 # generic symbol support
 #
 
-proc newSym(s: string): SymNode =
+proc newSym*(s: string): SymNode =
   newSymNode(name = s)
 
-method identSymNodeValue(z: SymNodeValue, x: SymNodeValue) {.base.} =
+method identSymNodeValue*(z: SymNodeValue, x: SymNodeValue) {.base.} =
   raiseErrorBaseMethod("args:\n  " & z.repr & "\n  " & x.repr)
 
-method identAllocateSymNodeValue(z: SymNode, x: SymNodeValue) {.base.} =
+method identAllocateSymNodeValue*(z: SymNode, x: SymNodeValue) {.base.} =
   raiseErrorBaseMethod("args:\n  " & z.nodeRepr & "\n  " & x.repr)
 
-method iaddSymNodeValue(z: SymNodeValue, x: SymNodeValue, y: SymNodeValue) {.base.} =
+method iaddSymNodeValue*(z: SymNodeValue, x: SymNodeValue, y: SymNodeValue) {.base.} =
   raiseErrorBaseMethod("args:\n  " & z.repr & "\n  " & x.repr & "\n  " & y.repr)
 
-method iaddAllocateSymNodeValue(z: SymNode, x: SymNodeValue, y: SymNodeValue) {.base.} =
+method iaddAllocateSymNodeValue*(z: SymNode, x: SymNodeValue, y: SymNodeValue) {.base.} =
   raiseErrorBaseMethod("args:\n  " & z.nodeRepr & "\n  " & x.repr & "\n  " & y.repr)
 
 #
 # float support
 #
 
-type SymNodeValueFloat = ref object of SymNodeValueConcrete
-  floatValue: float
+type SymNodeValueFloat* = ref object of SymNodeValueConcrete
+  floatValue*: float
 
-method `$`(v: SymNodeValueFloat): string = $v.floatValue
+method `$`*(v: SymNodeValueFloat): string = $v.floatValue
 
-proc assign(z: SymNode, v: float) =
+proc assign*(z: SymNode, v: float) =
   z.assign SymNodeValueFloat(floatValue: v)
 
-method copySymNodeValue(v: SymNodeValueFloat): SymNodeValueFloat =
+method copySymNodeValue*(v: SymNodeValueFloat): SymNodeValueFloat =
   SymNodeValueFloat(floatValue: v.floatValue)
 
-method identSymNodeValue(z: SymNodeValueFloat, x: SymNodeValueFloat) =
+method identSymNodeValue*(z: SymNodeValueFloat, x: SymNodeValueFloat) =
   z.floatValue = x.floatValue
 
-method identAllocateSymNodeValue(z: SymNode, x: SymNodeValueFloat) =
+method identAllocateSymNodeValue*(z: SymNode, x: SymNodeValueFloat) =
   z.value = SymNodeValueFloat()
 
-method iaddSymNodeValue(z: SymNodeValueFloat, x: SymNodeValueFloat, y: SymNodeValueFloat) =
+method iaddSymNodeValue*(z: SymNodeValueFloat, x: SymNodeValueFloat, y: SymNodeValueFloat) =
   z.floatValue = x.floatValue + y.floatValue
 
-method iaddAllocateSymNodeValue(z: SymNode, x: SymNodeValueFloat, y: SymNodeValueFloat) =
+method iaddAllocateSymNodeValue*(z: SymNode, x: SymNodeValueFloat, y: SymNodeValueFloat) =
   z.value = SymNodeValueFloat()
 
 #
 # minimum algebra for the nodes
 #
 
-proc ident(x:SymNode): SymNode
-proc add(x: SymNode, y: SymNode): SymNode
+proc ident*(x:SymNode): SymNode
+proc add*(x: SymNode, y: SymNode): SymNode
 
 proc identForward(z: SymNode) =
   identSymNodeValue(z.value, z.inputs[0].value)
@@ -215,13 +215,15 @@ proc identAllocate(z: SymNode) =
   identAllocateSymNodeValue(z, z.inputs[0].value)
 
 proc identBackward(z: SymNode, i: int, dep: SymNode): SymNode =
+  if i != 0:
+    raiseError("ident has 1 operand, got i = " & $i)
   let g = z.gradientDependentOrNil dep
   if g == nil:
     return newSymNode(value = SymNodeValueFloat(floatValue: 1.0), name = "One[ident]")
   else:
     return g.ident
 
-proc ident(x:SymNode): SymNode =
+proc ident*(x:SymNode): SymNode =
   newSymNode(
     inputs = @[x],
     forward = identForward,
@@ -236,13 +238,15 @@ proc addAllocate(z: SymNode) =
   iaddAllocateSymNodeValue(z, z.inputs[0].value, z.inputs[1].value)
 
 proc addBackward(z: SymNode, i: int, dep: SymNode): SymNode =
+  if i != 0 and i != 1:
+    raiseError("add has 2 operands, got i = " & $i)
   let g = z.gradientDependentOrNil dep
   if g == nil:
     return newSymNode(value = SymNodeValueFloat(floatValue: 1.0), name = "One[add]")
   else:
     return g.ident
 
-proc add(x: SymNode, y: SymNode): SymNode =
+proc add*(x: SymNode, y: SymNode): SymNode =
   newSymNode(
     inputs = @[x, y],
     forward = addForward,
@@ -271,9 +275,13 @@ proc allocateRec(z: SymNode) =
         raiseError("undefined allocateValue for node: " & z.nodeRepr)
       z.allocateValue z
 
-proc allocate(z: SymNode) =
+proc allocate*(z: SymNode) =
   z.allocateRec
   z.tagClearRec sntVisited
+
+proc tagUpdate*(z: SymNode) =
+  ## call this for newly created inner nodes in *Backward
+  z.tag.incl sntNeedUpdate
 
 proc tagUpdateRec(z: SymNode) =
   if sntVisited in z.tag:
@@ -305,7 +313,7 @@ proc evalRec(z: SymNode) =
       raiseError("inputs.len: " & $z.inputs.len & ", but no forward function defined for:\n" & z.nodeRepr)
     z.tag.excl sntNeedUpdate
 
-proc eval(z: SymNode) =
+proc eval*(z: SymNode) =
   z.tagUpdateRec
   z.tagClearRec sntVisited
   z.evalRec
@@ -361,7 +369,7 @@ proc gradientRec(z: SymNode, dep: SymNode) =
           input.tag.incl sntFixedGradient
         input.gradientRec dep
 
-proc gradient(dep: SymNode, x: SymNode): SymNode =
+proc gradient*(dep: SymNode, x: SymNode): SymNode =
   if sntNeedGradient notin x.tag:
     x.tag.incl sntNeedGradient
   dep.tagUpdateNeedGradientRec
@@ -371,6 +379,10 @@ proc gradient(dep: SymNode, x: SymNode): SymNode =
   dep.tagClearRec sntNeedGradient
   dep.tagClearRec sntFixedGradient
   x.gradientDependentOrNil dep
+
+proc optimize*(output: seq[SymNode], variables: seq[SymNode]) =
+  # TODO
+  discard
 
 proc sharedNodesRec(shared: var seq[SymNode], z: SymNode) =
   if sntVisited in z.tag:
@@ -390,7 +402,7 @@ proc sharedNodesRec(shared: var seq[SymNode], z: SymNode) =
 # to string
 #
 
-func nodeRepr(z: SymNode): string =
+func nodeRepr*(z: SymNode): string =
   result = $z & $z.tag & ": " & $z.value & ", run: " & $z.runCount
   if z.arg != nil:
     result &= ", arg: " & $z.arg
@@ -424,7 +436,7 @@ func toStringRec(z: SymNode, pre: string, shared: seq[SymNode]): string =
     for i in z.inputs:
       result &= "\n" & i.toStringRec(pre & "  ", shared)
 
-func treeRepr(z: SymNode): string =
+func treeRepr*(z: SymNode): string =
   var shared = newseq[SymNode]()
   shared.sharedNodesRec z
   z.tagClearRec sntVisited
