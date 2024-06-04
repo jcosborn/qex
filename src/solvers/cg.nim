@@ -21,6 +21,7 @@ type
 proc reset*(cgs: var CgState) =
   cgs.b2 = -1
   cgs.iterations = 0
+  cgs.r2 = 1.0
   cgs.r2old = 1.0
   cgs.rzold = 1.0
   cgs.r2stop = 0.0
