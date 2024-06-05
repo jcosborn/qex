@@ -25,7 +25,7 @@ template map021(T,L,op1,op2:untyped):untyped {.dirty.} =
     bind forStatic
     #forStatic i, 0, L-1:
     for i in 0..<L:
-      result[][i] = op2(x[][i], y[][i])
+      result[][i] := op2(x[][i], y[][i])
 template map021x(T1,T2,TR,L,op1,op2:untyped):untyped {.dirty.} =
   proc op1*(x:T1,y:T2):TR {.alwaysInline,noInit.} =
     mixin `[]`
@@ -301,10 +301,11 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
   #echoAst: F
   #static: echo F.treerepr
   #when not(F is float32):
-  when F is float64:
-    template toDoubleImpl*(x: T): untyped = x
-  else:
-    template toSingleImpl*(x: T): untyped = x
+  # should be handled in simd.nim now
+  #when F is float64:
+  #  template toDoubleImpl*(x: T): untyped = x
+  #else:
+  #  template toSingleImpl*(x: T): untyped = x
   proc simdReduce*(r: var SomeNumber; x: T) {.inline.} =
     #mixin add
     var y = x[][0]
@@ -359,6 +360,8 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
   map021(T, L, `-`, `-`)
   map021(T, L, `*`, `*`)
   map021(T, L, `/`, `/`)
+  #map021(T, L, `<`, `<`)
+  map021(T, L, copySign, copySign)
 
   map110(T, L, assign, assign)
   map110(T, L, neg, neg)
@@ -433,6 +436,9 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
   template imadd*(r:var T; x:SomeNumber; y:T) = imadd(r, x.to(type(T)), y)
   template imsub*(r:var T; x:SomeNumber; y:T) = imsub(r, x.to(type(T)), y)
   template divd*(r:var T; x:SomeNumber; y:T) = divd(r, x.to(type(T)), y)
+  template imadd*(r:var T; x:T; y:SomeNumber) = imadd(r, x, y.to(type(T)))
+  template imsub*(r:var T; x:T; y:SomeNumber) = imsub(r, x, y.to(type(T)))
+  template divd*(r:var T; x:T; y:SomeNumber) = divd(r, x, y.to(type(T)))
   template imul*(r:var T; x:SomeNumber) = imul(r, x.to(type(T)))
   template idiv*(r:var T; x:SomeNumber) = idiv(r, x.to(type(T)))
   template msub*(r:var T; x:SomeNumber; y,z:T) = msub(r, x.to(type(T)), y, z)
@@ -446,6 +452,7 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
   template `*`*(x:T; y:SomeNumber):T = mul(x, y.to(type(T)))
   template `/`*(x:SomeNumber; y:T):T = divd(x.to(type(T)), y)
   template `/`*(x:T; y:SomeNumber):T = divd(x, y.to(type(T)))
+  template `<`*(x:T; y:SomeNumber):T = `<`(x, y.to(type(T)))
   template `+=`*(r:var T; x:SomeNumber) = iadd(r, x.to(type(T)))
   template `-=`*(r:var T; x:SomeNumber) = isub(r, x.to(type(T)))
   template `*=`*(r:var T; x:SomeNumber) = imul(r, x.to(type(T)))

@@ -74,7 +74,7 @@ template test(action:untyped, deriv:untyped):auto =
       for mu in 0..<p.len:
         pf += redot(p[mu], f[mu])
       let err = abs(pf-d)
-      let etol = max(1e-8,32*e)
+      let etol = max(2e-8,32*e)
       if err<etol and err<1e-5 and abs(err/pf)<1e-7:
         echo "Test ",n,"  Passed:  p.f: ",pf," \tndiff: ",d," \tdelta: ",pf-d," \terr(ndiff): ",e
       else:

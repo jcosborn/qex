@@ -59,19 +59,19 @@ proc indexOf*[T](x: openArray[T], y: auto): int =
   let n = x.len
   while result<n and x[result]!=y: inc result
 
-proc `+`*(x: SomeNumber, y: array): auto {.inline,noInit.} =
-  var r: array[y.len, type(x+y[0])]
+proc `+`*[N,T](x: SomeNumber, y: array[N,T]): auto {.inline,noInit.} =
+  var r: array[N, type(x+y[0])]
   for i in 0..<r.len:
     r[i] = x + y[i]
   r
 
-proc `*`*(x: array, y: SomeNumber): auto {.inline,noInit.} =
-  var r: array[x.len, type(x[0]*y)]
+proc `*`*[N,T](x: array[N,T], y: SomeNumber): auto {.inline,noInit.} =
+  var r: array[N, type(x[0]*y)]
   for i in 0..<r.len:
     r[i] = x[i] * y
   r
-proc `*`*(x: SomeNumber, y: array): auto {.inline,noInit.} =
-  var r: array[y.len, type(x*y[0])]
+proc `*`*[N,T](x: SomeNumber, y: array[N,T]): auto {.inline,noInit.} =
+  var r: array[N, type(x*y[0])]
   for i in 0..<r.len:
     r[i] = x * y[i]
   r
@@ -84,14 +84,14 @@ proc `*`*[T](x: SomeNumber, y: seq[T]): seq[T] {.inline,noInit.} =
   for i in 0..<result.len:
     result[i] = x * y[i]
 
-proc `/`*(x: SomeNumber, y: array): auto {.inline,noInit.} =
-  var r: array[y.len, type(x/y[0])]
+proc `/`*[N,T](x: SomeNumber, y: array[N,T]): auto {.inline,noInit.} =
+  var r: array[N, type(x/y[0])]
   for i in 0..<r.len:
     r[i] = x / y[i]
   r
 
-proc `mod`*(x: array, y: SomeNumber): auto {.inline,noInit.} =
-  var r: array[x.len, type(x[0] mod y)]
+proc `mod`*[N,T](x: array[N,T], y: SomeNumber): auto {.inline,noInit.} =
+  var r: array[N, type(x[0] mod y)]
   for i in 0..<r.len:
     r[i] = x[i] mod y
   r
@@ -183,6 +183,12 @@ proc `+=`*[T](r: var openArray[T], x: openArray[T]) {.inline.} =
   let n = r.len
   for i in 0..<n:
     r[i] += x[i]
+
+proc `-`*[T](x: seq[T]): seq[T] {.inline.} =
+  let n = x.len
+  result.newSeq(n)
+  for i in 0..<n:
+    result[i] = -x[i]
 
 #proc sum*[T](x: openArray[T]): T =
 #  for i in 0..<x.len: result += x[i]

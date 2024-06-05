@@ -160,6 +160,7 @@ f1(cos)
 f1(acos)
 f1(load1)
 f2(atan2)
+f2(copySign)
 f2s(`+`)
 f2s(`-`)
 f2s(`*`)
@@ -169,6 +170,9 @@ f2s(sub)
 f2s(mul)
 f2s(min)
 f2s(max)
+f2s(`==`)
+f2s(`<`)
+#f2s('>')
 
 
 # special cases
@@ -223,3 +227,7 @@ template `+=`*(x: SomeNumber, y: Simd) =
 template exp*(xx: Simd[Indexed]): untyped =
   let x = xx
   exp(x[][x.indexedIdx])
+
+#template select*(x: Simd[T], y,z: SomeNumber): untyped =
+#  mixin f
+#  asSimd(f(x[], y))

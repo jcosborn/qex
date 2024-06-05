@@ -1,10 +1,10 @@
 import base
 import math
-import lapack
+#import lapack
 import linalgFuncs
 import times
 import strUtils
-import svbin
+#import svbin
 
 var verb: int
 
@@ -37,6 +37,7 @@ proc getSvals2*(e: dvec; a: dvec; b: dvec; n: int, nv: int) =
   #  echo sv[i], " : ", e[i], " : ", sv[i]-e[i]
 
 proc svd_bi3*(ev: dvec; m: dmat; ma: dmat; a: dvec; b: dvec) =
+  echo "begin svd_bi3"
   var n = mat_nrows(m)
   var k = mat_ncols(m)
   var d = cast[ptr carray[float64]](alloc(n*sizeof(float64)))
@@ -60,11 +61,12 @@ proc svd_bi3*(ev: dvec; m: dmat; ma: dmat; a: dvec; b: dvec) =
     #echo()
     template pv(i: int): untyped = "sv[$1] $2 "%[$i, ev[i]|(14,12)]
     echo pv(0), pv(1), pv(k-1), pv(n-1)
+  echo "end svd_bi3"
 
 
 # A V = U B, Ad U = V Bd, B = [[a0,b0,0,...][0,a1,b1,0,...]...]
-proc getBidiagLanczos*(linop: any; src: any; d: var any; e: var any;
-                       qv: any; dv: any; qu: any; du: any;
+proc getBidiagLanczos*(linop: auto; src: auto; d: var auto; e: var auto;
+                       qv: auto; dv: auto; qu: auto; du: auto;
                        kmx: int; lverb: int) =
   ## (out) d: diagonal
   ## (out) e: super-diagonal
@@ -151,8 +153,8 @@ proc getBidiagLanczos*(linop: any; src: any; d: var any; e: var any;
     echo "svdLanczos bidiag: $1 secs"%[dtime1|-6]
 
 # A V = U B, Ad U = V Bd, B = [[a0,b0,0,...][0,a1,b1,0,...]...]
-proc runBidiagLanczos*(linop: any; src: any; d: any; e: any;
-                       dv: any; qv: any; du: any; qu: any;
+proc runBidiagLanczos*(linop: auto; src: auto; d: auto; e: auto;
+                       dv: auto; qv: auto; du: auto; qu: auto;
                        kmx: int; lverb: int) =
   ## (out) d: diagonal
   ## (out) e: super-diagonal
@@ -231,7 +233,7 @@ proc runBidiagLanczos*(linop: any; src: any; d: any; e: any;
 
 
 # A V = U B, Ad U = V Bd, B = [[a0,b0,0,...][0,a1,b1,0,...]...]
-proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
+proc svdLanczos*(linop: auto; src: auto; sv: var auto; qv: auto; qva: auto;
                  rsq: float; kmx: int; emin,emax: float, lverb: int): int =
   mixin `:=`
   verb = lverb
@@ -345,8 +347,10 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
     ur: dmat
     #vr2: dmat
     #ur2: dmat
-  var nv0 = max(nv,nva)
-  var nva0 = max(1,nva)
+  #var nv0 = max(nv,nva)
+  var nv0 = kmax
+  #var nva0 = max(1,nva)
+  var nva0 = nv0
   dmat_alloc(vr, kmax, nv0)
   #dmat_alloc(ur, kmax, nv0)
   dmat_alloc(ur, kmax, nva0)
@@ -354,7 +358,8 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
   #dmat_alloc(ur2, kmax, nva)
   #svd_bi3(ev, vr, ur, a, b)
   #var nvout = nv
-  var nvout = svdBi4(ev, vr, ur, a, b, kmax, nv0, nv0, emin, emax)
+  var nvout = svdBi3(ev, vr, ur, a, b, kmax, nv0, nv0, emin, emax)
+  #var nvout = svdBi4(ev, vr, ur, a, b, kmax, nv0, nv0, emin, emax)
   nv = min(nv,nvout)
   nva = min(nva,nvout)
   #var s2 = 0.0
@@ -375,11 +380,13 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
       qv[i] := 0
     for i in 0..<qva.len:
       qva[i] := 0
+  #echo "set zero"
   var btax = sqrt(src.norm2)
   v := src * (1.0/btax)
   p := v
   u := 0
   nothreads:
+  #if false:
     var bta = 1.0
     var kk = 0
     while true:
@@ -422,9 +429,9 @@ proc svdLanczos*(linop: any; src: any; sv: var any; qv: any; qva: any;
 
 when isMainModule:
   import qex
-  import qcdTypes
-  import gaugeUtils
-  import stagD
+  import physics/qcdTypes
+  import gauge/gaugeUtils
+  import physics/stagD
   import rng
 
   qexInit()
@@ -453,16 +460,16 @@ when isMainModule:
     r: type(r)
     lo: type(lo)
   var op = MyOp(s:s,r:r,lo:lo)
-  proc gaussian(x: C1, r: var any) =
-    x.re = gaussian(r)
-    x.im = gaussian(r)
-  proc gaussian(x: Vec1, r: var any) =
-    for i in 0..<x.len:
-      gaussian(x[i], r)
+  #proc gaussian(x: Complex, r: var auto) =
+  #  x.re = gaussian(r)
+  #  x.im = gaussian(r)
+  #proc gaussian(x: Vec1, r: var auto) =
+  #  for i in 0..<x.len:
+  #    gaussian(x[i], r)
   proc gaussian(v: SomeField, r: SomeField2) =
     for i in v.sites:
       gaussian(v{i}, r[i])
-  template rand(op: MyOp, v: any) =
+  template rand(op: MyOp, v: auto) =
     gaussian(v, op.r)
   template newVector(op: MyOp): untyped =
     op.lo.ColorVector()
@@ -485,8 +492,10 @@ when isMainModule:
     qva[i] = op.newLeftVec()
   var rsq = 0.0
   var kmax = 100
+  var emin = 0.0
+  var emax = 99.0
   var lverb = 3
-  var k = svdLanczos(op, src, sv, qv, qva, rsq, kmax, lverb)
+  var k = svdLanczos(op, src, sv, qv, qva, rsq, kmax, emin, emax, lverb)
 
   op.apply(src, qv[0])
   echo "sv: ", sv[0], "  ave: ", qva[0].dot(src.field)

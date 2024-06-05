@@ -33,21 +33,21 @@ proc newDvec*(n: int): dvec =
   result.dvec_alloc(n)
 template `&`*(x: dvec): auto = cast[ptr carray[float]](addr x[0])
 template `&`*(x: ptr carray[float]): auto = addr x[][0]
-template vec_size(x: dvec): int = x.len
+#template vec_size(x: dvec): int = x.len
 template `[]`*(x: dvec, i: int): untyped = x.dat[i]
 template `[]=`*(x: dvec, i: int, y: untyped): untyped = x.dat[i] = y
 template dvec_get*(x: dvec, i: int): float64 = x[i]
 template dvec_set*(x: dvec, i: int, y: float64) = x[i] = y
-template dsubvec(x: dvec, y: dvec, i,n: int) =
-  x.new
-  x.dat = cast[type(x.dat)](addr(y[i]))
-  x.`len` = n
-  x.stride = 1
-  x.isSub = true
-template v_eq_zero(x: dvec) =
-  for i in 0..<x.len: x[i] = 0.0
-template v_eq_v(x,y: dvec) =
-  for i in 0..<x.len: x[i] = y[i]
+#template dsubvec(x: dvec, y: dvec, i,n: int) =
+#  x.new
+#  x.dat = cast[type(x.dat)](addr(y[i]))
+#  x.`len` = n
+#  x.stride = 1
+#  x.isSub = true
+#template v_eq_zero(x: dvec) =
+#  for i in 0..<x.len: x[i] = 0.0
+#template v_eq_v(x,y: dvec) =
+#  for i in 0..<x.len: x[i] = y[i]
 template norm2_v(x: dvec): float =
   var r = 0.0
   for i in 0..<x.len: r += x[i]*x[i]
@@ -56,12 +56,12 @@ template dot*(x,y: dvec): float =
   var r = 0.0
   for i in 0..<x.len: r += x[i]*y[i]
   r
-template v_eq_r_times_v(x: dvec, r: float, y: dvec) =
-  for i in 0..<x.len: x[i] = r*y[i]
+#template v_eq_r_times_v(x: dvec, r: float, y: dvec) =
+#  for i in 0..<x.len: x[i] = r*y[i]
 template v_peq_r_times_v(x: dvec, r: float, y: dvec) =
   for i in 0..<x.len: x[i] += r*y[i]
-template v_meq_r_times_v(x: dvec, r: float, y: dvec) =
-  for i in 0..<x.len: x[i] -= r*y[i]
+#template v_meq_r_times_v(x: dvec, r: float, y: dvec) =
+#  for i in 0..<x.len: x[i] -= r*y[i]
 template daxpy*(a: float, x: dvec, y: dvec) = v_peq_r_times_v(y, a, x)
 proc normalize*(x: dvec) =
   let n2 = norm2_v(x)
@@ -81,6 +81,7 @@ template dmat_alloc*(x: dmat, nr,nc: int) =
   x.isSub = false
 proc newDmat*(nr,nc: int): dmat =
   result.dmat_alloc(nr, nc)
+#template `&`(x: dmat): auto = cast[ptr float](addr(x.dat[0]))
 
 proc zmat_free(x: zmat) =
   if not x.isSub:
@@ -100,10 +101,10 @@ proc newZmat*(nr,nc: int): zmat =
 template mat_nrows*(x: dmat): int = x.nrows
 template mat_ncols*(x: dmat): int = x.ncols
 template `[]`*(x: dmat|zmat, i,j: int): untyped = x.dat[i+j*x.nrows]
-template `[]=`*(x: dmat|zmat, i,j: int, y: untyped): untyped =
+template `[]=`*(x: dmat|zmat, i,j: int, y: untyped) =
   x.dat[i+j*x.nrows] = y
 template dmat_get*(x: dmat, i,j: int): float64 = x[i,j]
-template dmat_set(x: dmat, i,j: int, y: float64) = x[i,j] = y
+#template dmat_set(x: dmat, i,j: int, y: float64) = x[i,j] = y
 template norm2*(x: dmat): float =
   var r = 0.0
   for i in 0..<x.nrows:
@@ -215,8 +216,8 @@ proc zgeigsv*(m: ptr zmat; d: ptr zvec; vl: ptr zmat; vr: ptr zmat; n: cint) =
 # A x = lambda B x
 proc zeigsgv*(a: ptr float64; b: ptr float64; e: ptr float64; n: int) =
   var itype = 1.fint
-  var jobz = "V"
-  var uplo = "L"
+  var jobz = cstring "V"
+  var uplo = cstring "L"
   var nn = fint(n)
   var an = addr nn
   #var aa = cast[ptr dcomplex](a)
@@ -285,8 +286,8 @@ proc svdbi*(ev: ptr carray[float64], a: ptr carray[float64],
 
 proc svdbi*(ev: ptr carray[float64], a: ptr carray[float64],
             b: ptr carray[float64], n,nv: int) =
-  var rnge = "I"
-  var order = "E"
+  var rnge = cstring "I"
+  var order = cstring "E"
   var nn = fint(2*n)
   var vl = 0.0
   var vu = 9e99
@@ -327,7 +328,7 @@ proc svdbi*(ev: ptr carray[float64], a: ptr carray[float64],
 
 proc svdBidiag1*(d: ptr carray[float64], e: ptr carray[float64],
                  v: ptr carray[float64], u: ptr carray[float64], n,k: int) =
-  let uplo = "U"
+  let uplo = cstring "U"
   var nn = fint(n)
   var an = addr nn
   #var nv = ffint(k)
@@ -366,8 +367,8 @@ proc svdBidiag1*(d: ptr carray[float64], e: ptr carray[float64],
 
 proc svdBidiag*(d: ptr carray[float64], e: ptr carray[float64],
                 v: ptr carray[float64], u: ptr carray[float64], n,k: int) =
-  let uplo = "U"
-  let compq = "I"
+  let uplo = cstring "U"
+  let compq = cstring "I"
   var nn = fint(n)
   var work = cast[ptr float64](alloc((3*n*n+4*n)*sizeof(float64)))
   var iwork = cast[ptr fint](alloc(2*8*n*sizeof(fint)))
@@ -401,9 +402,9 @@ proc svdBidiag*(d: ptr carray[float64], e: ptr carray[float64],
 proc svdBidiag3*(d: ptr carray[float64], e: ptr carray[float64],
                  v: ptr carray[float64], u: ptr carray[float64], n,k: int) =
   let nv = fint(max(k,1))
-  let uplo = "U"
-  let jobz = if k>0: "V" else: "N"
-  let rnge = if k>0: "I" else: "A"
+  let uplo = cstring "U"
+  let jobz = cstring(if k>0: "V" else: "N")
+  let rnge = cstring(if k>0: "I" else: "A")
   var nn = fint(n)
   var vl = 0.0
   var vu = 1e99
@@ -437,7 +438,7 @@ proc svdBidiag3*(d: ptr carray[float64], e: ptr carray[float64],
   if not u.isNil:
     for i in 0..<k:
       #let ii = 2*n*(k-1-i)
-      let ii = 2*n*i
+      let ii = 2*n*(k-1-i)
       for j in 0..<n:
         u[i*n+j] = z[ii+j]
         v[i*n+j] = z[ii+n+j]
@@ -452,6 +453,25 @@ proc svdBidiag3*(d: ptr carray[float64], e: ptr carray[float64],
   #echo cast[int](iwork)
   dealloc iwork
   #echo "here2"
+
+## svd of bidiagonal matrix
+## ev: singular values
+## m: A ma = e m
+## k: number of singular values wanted
+proc svdBi3*(ev: auto; m: dmat; ma: dmat; a: auto; b: auto; k: int;
+             nx: int; nax: int; emin: float64; emax: float64): int =
+  let n = a.len;
+  var d = cast[ptr carray[float64]](alloc(n*sizeof(float64)))
+  var e = cast[ptr carray[float64]](alloc(n*sizeof(float64)))
+  for i in 0..<n:
+    d[i] = a[i]
+    if i<n-1: e[i] = b[i]
+  svdBidiag3(d, e, m.dat, ma.dat, n, k)
+  for i in 0..<k:
+    ev[i] = d[i]
+  dealloc(d)
+  dealloc(e)
+  result = k
 
 proc dsvdbi2*(a: dvec, b: dvec, n: int) =
   var d = cast[ptr carray[float64]](alloc(n*sizeof(float64)))

@@ -12,7 +12,7 @@ const
   recordmd = "test recordmd"
 var
   lat = latticeFromLocalLattice([8,8,8,8], nRanks)
-  (l,g,_) = setupLattice(lat)
+  (l,_,_) = setupLattice(lat)
   rng = l.newRNGField(RngMilc6, 987654321)
   fr = l.Real
   fc = l.Complex
@@ -20,7 +20,7 @@ var
   fm = l.ColorMatrix
   fh = l.HalfFermion
   fd = l.DiracFermion
-  c = getDefaultComm()
+  #c = getDefaultComm()
 
 proc writer(): auto =
   result = l.newWriter(fn, filemd)

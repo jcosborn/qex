@@ -1,5 +1,5 @@
 import qex, gauge/stoutsmear
-import os, sequtils
+import os
 
 proc printPlaq(g: auto) =
   let

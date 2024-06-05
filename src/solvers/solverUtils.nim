@@ -1,23 +1,32 @@
 import base
 import physics/qcdTypes
 
-proc relResid*(r,x: any, a: float): float =
+# av = a V xp2 / x2
+# Sum_s (1+av)rs2/(1+av*xs2/x2)
+# a=0 -> r2
+# a->infty -> x2 Sum_s rs2/xs2
+proc relResid*(r,x: auto, a: float): float =
   mixin norm2, simdReduce
   var t: type(r[0].norm2)
-  var u: type(r[0].norm2)
+  #var u: type(r[0].norm2)
+  let av = a * x.l.physVol.float
+  let ax = av / (x.norm2 + float.epsilon)
   for e in r:
     let r2 = r[e].norm2
     let x2 = x[e].norm2
-    let s = 1.0/(1.0+a*x2)
+    let s = (1.0+av)/(1.0+ax*x2)
     t += s*r2
-    u += s
+    #u += s
   var ts = simdSum(t)
-  var us = simdSum(u)
-  var rs = [ts,us]
-  threadRankSum(rs)
-  result = rs[0]/rs[1]
+  #var us = simdSum(u)
+  #var rs = [ts,us]
+  #threadRankSum(rs)
+  #result = x.l.physVol.float * rs[0]/rs[1]
+  #result = rs[0]
+  threadRankSum(ts)
+  result = ts
 
-proc relR*(p,r,x: any, a: float) =
+proc relR*(p,r,x: auto, a: float) =
   mixin norm2
   for e in p:
     #let w = asReal(1.0/(a+x[e].norm2))
@@ -27,7 +36,7 @@ proc relR*(p,r,x: any, a: float) =
     #let w = asReal(a+x[e].norm2)
     p[e] := w * r[e]
 
-proc relResidUpdate*(x: any, Ax1,Ax2: any, b: any, a: float):
+proc relResidUpdate*(x: auto, Ax1,Ax2: auto, b: auto, a: float):
   array[2,DComplex] =
   var t: array[6,type(dot(Ax1[0],Ax1[0]))]
   for e in x:
@@ -51,14 +60,7 @@ proc relResidUpdate*(x: any, Ax1,Ax2: any, b: any, a: float):
   result[1] = di*(t2[0]*t2[5] - t2[2]*t2[4])
 
 
-when isMainModule:
-  import qex
-  import physics/qcdTypes
-  qexInit()
-  echo "rank ", myRank, "/", nRanks
-  #var lat = [8,8,8,8]
-  var lat = [4,4,4,4]
-  var lo = newLayout(lat)
+#[  old test
   var m = lo.ColorMatrix()
   var v1 = lo.ColorVector()
   var v2 = lo.ColorVector()
@@ -134,3 +136,81 @@ when isMainModule:
     echo "r2: ", r2
     #echo "r2: ", r2, "   tr2: ", tr2
     echo "rel: ", relResid(r,v2,ra)
+]#
+
+when isMainModule:
+  import qex, physics/stagSolve, observables/sources
+  qexInit()
+  var defaultLat = @[8,8,8,8]
+  #var defaultLat = @[12,12,12,12]
+  defaultSetup()
+  var v1 = lo.ColorVector()
+  var v2 = lo.ColorVector()
+  var v3 = lo.ColorVector()
+  var r = lo.ColorVector()
+  var rs = newRNGField(RngMilc6, lo, intParam("seed", 987654321).uint64)
+  threads:
+    g.random rs
+    g.setBC
+    g.stagPhase
+    v1.gaussian rs
+  echo v1.norm2
+  var s = newStag(g)
+  var m = floatParam("m", 0.01)
+  var sp = newSolverParams()
+  sp.verbosity = intParam("verb", 2)
+  sp.subset.layoutSubset(lo, "all")
+  sp.maxits = int(1e9/lo.physVol.float)
+  sp.r2req = floatParam("rsq", 1e-12)
+
+  proc test =
+    v2 := 0
+    s.solve(v2, v1, m, sp)
+    threads:
+      s.D(v3, v2, m)
+      v1 := 0
+    resetTimers()
+    s.solve(v1, v3, m, sp)
+    echo "x2:      ", norm2slice(v1, 3)
+    echo "x2 even: ", norm2slice(v1.even, 3)
+    echo "x2 odd:  ", norm2slice(v1.odd, 3)
+    threads:
+      r := v1 - v2
+      let e2 = r.norm2
+      s.D(r, v1, m)
+      threadBarrier()
+      r := v3 - r
+      let r2 = r.norm2
+      echo "r2:    ", r2
+      let rr0 = relResid(r, v1, 0)
+      echo "rr(0): ", rr0
+      var a = 1
+      for i in 0..16:
+        let rra = relResid(r, v1, float a)
+        echo "rr(10^",i,"): ", rra
+        a *= 10
+      echo "err2:  ", e2
+    echo "r2:      ", norm2slice(r, 3)
+    echo "r2 even: ", norm2slice(r.even, 3)
+    echo "r2 odd:  ", norm2slice(r.odd, 3)
+    s.Ddag(v3, r, m)
+    r := v3
+    echo "Dr2:      ", norm2slice(r, 3)
+    echo "Dr2 even: ", norm2slice(r.even, 3)
+    echo "Dr2 odd:  ", norm2slice(r.odd, 3)
+    r := v1 - v2
+    echo "e2:      ", norm2slice(r, 3)
+    echo "e2 even: ", norm2slice(r.even, 3)
+    echo "e2 odd:  ", norm2slice(r.odd, 3)
+
+
+  block:
+    v1 := 0
+    let p = lo.rankIndex([0,0,0,0])
+    if myRank==p.rank:
+      v1{p.index}[0] := 1
+    echo "even point"
+    test()
+    echo sp.getStats()
+
+  qexFinalize()

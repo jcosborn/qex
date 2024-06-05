@@ -167,6 +167,8 @@ template iadd*(r: var Color, x: AsComplex) =
   iadd(r[], x)
 template iadd*(r: var Color, x: Color2) =
   iadd(r[], x[])
+template isub*(r: var Color, x: SomeNumber) =
+  isub(r[], x)
 template isub*(r: var Color, x: Color2) =
   isub(r[], x[])
 template imul*(r: var Color, x: SomeNumber) =

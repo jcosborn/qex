@@ -1,5 +1,5 @@
-import base
-getOptimPragmas()
+#import base
+#getOptimPragmas()
 
 proc baseImpl(b:NimNode; x:NimNode):NimNode =
   var n = x.len

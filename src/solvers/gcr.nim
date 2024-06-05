@@ -53,17 +53,21 @@ template `[]`(gs: GcrState, i: int): untyped = gs.vecs[i]
 #template level(gs: GcrState, i: int): untyped = gs[i].level
 
 proc combine*(gs: var GcrState, n: int) =
-  var c = gs[n-1].alpha / gs[n].alpha
-  gs[n].Avec += c * gs[n-1].Avec
-  swap(gs[n-1].Avec, gs[n].Avec)
-  gs[n-1].Avn = gs[n].Avn + c.norm2 * gs[n-1].Avn
-  c += gs[n].beta[n-1]
-  gs[n].vec += c * gs[n-1].vec
-  swap(gs[n-1].vec, gs[n].vec)
-  gs[n-1].alpha = gs[n].alpha
+  let gsp = addr gs
+  var c = gsp[][n-1].alpha / gsp[][n].alpha
+  var d = c + gsp[][n].beta[n-1]
+  threads:
+  #block:
+    var c = gsp[][n-1].alpha / gsp[][n].alpha
+    gsp[][n].Avec += c * gsp[][n-1].Avec
+    gsp[][n-1].Avn = gsp[][n].Avn + c.norm2 * gsp[][n-1].Avn
+    gsp[][n].vec += d * gsp[][n-1].vec
+  gsp[][n-1].alpha = gsp[][n].alpha
   for i in 0..<n:
-    gs[n].beta[i] += c * gs[n-1].beta[i]
-    gs[n-1].beta[i] = gs[n].beta[i]
+    gsp[][n].beta[i] += d * gsp[][n-1].beta[i]
+    gsp[][n-1].beta[i] = gsp[][n].beta[i]
+  swap(gsp[][n-1].Avec, gsp[][n].Avec)
+  swap(gsp[][n-1].vec, gsp[][n].vec)
 
 proc addvec*(gs: var GcrState) =
   var nv = gs.nv
@@ -91,11 +95,13 @@ proc addvec*(gs: var GcrState) =
 
 proc orth*(gs: var GcrState) =
   var n = gs.nv - 1
-  for i in 0 ..< n:
-    let d = dot(gs[i].Avec, gs[n].Avec)
-    let z = d/(-gs[i].Avn)
-    gs[n].beta[i] = z
-    gs[n].Avec += z * gs[i].Avec
+  let gsp = addr gs
+  threads:
+    for i in 0 ..< n:
+      let d = dot(gsp[][i].Avec, gsp[][n].Avec)
+      let z = d/(-gsp[][i].Avn)
+      gsp[][n].beta[i] = z
+      gsp[][n].Avec += z * gsp[][i].Avec
 
 proc getx*(gs: GcrState) =
   let nv = gs.nv
@@ -189,27 +195,33 @@ proc solve*(gs: var GcrState; opx: var auto; sp: var SolverParams) =
   #gs.r2 = rsq
   verb(1): echo("[GCR] Starting iterations")
   while rsq > rsqstop and total_iterations < max_iterations:
+    tic()
     inc(iteration)
     inc(total_iterations)
     #echo "begin addvec"
     gs.addvec
+    toc("addvec")
     #echo "end addvec"
     let nv = gs.nv - 1
     if nv == 1:
-      gs[0].vec := gs[0].alpha * gs[0].vec
-      op.apply(gs[0].Avec, gs[0].vec)
-      gs[0].Avn = gs[0].Avec.norm2
-      op.apply(Ap, x)
-      r := b - Ap
-      let ctmp = dot(gs[0].Avec, r)
-      gs[0].alpha = ctmp / gs[0].Avn
-      r -= gs[0].alpha * gs[0].Avec
-      rsq = r.norm2
-      verb(2):
-        echo iteration, "  rsq: ", gs.r2, " -> ", rsq
-      gs.r2 = rsq
-    op.preconditioner(gs[nv].vec, gs)
-    op.apply(gs[nv].Avec, gs[nv].vec)
+      let gsp = addr gs
+      threads:
+        gsp[][0].vec := gsp[][0].alpha * gsp[][0].vec
+        op.apply(gsp[][0].Avec, gsp[][0].vec)
+        gsp[][0].Avn = gsp[][0].Avec.norm2
+        op.apply(Ap, x)
+        r := b - Ap
+        let ctmp = dot(gsp[][0].Avec, r)
+        gsp[][0].alpha = ctmp / gsp[][0].Avn
+        r -= gsp[][0].alpha * gsp[][0].Avec
+        rsq = r.norm2
+        verb(2):
+          echo iteration, "  rsq: ", gsp[].r2, " -> ", rsq
+        gsp[].r2 = rsq
+    let gsp = addr gs
+    threads:
+      op.preconditioner(gsp[][nv].vec, gsp[])
+      op.apply(gsp[][nv].Avec, gsp[][nv].vec)
     gs.orth
     gs[nv].Avn = gs[nv].Avec.norm2
     let ctmp = dot(gs[nv].Avec, r)
@@ -239,10 +251,13 @@ proc solve*(gs: var GcrState; opx: var auto; sp: var SolverParams) =
   #     rsq, relnorm2)
   gs.getx()
   #gs.fini()
-  opx = op
-  #res_arg.final_rsq = rsq div insq
-  #res_arg.final_rel = relnorm2
-  sp.finalIterations = iteration
+  #opx = op
+  sp.calls += 1
+  sp.iterations += iteration
+  sp.iterationsMax = max(sp.iterationsMax, iteration)
+  sp.seconds += getElapsedTime()
+  sp.flops += 0
+  sp.r2.push gs.r2
   verb(1):
     echo "GCR: its: ", iteration, "  rsq: ", rsq
   #return QOP_SUCCESS

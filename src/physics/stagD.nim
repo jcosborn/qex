@@ -51,6 +51,24 @@ template initStagD3T*(l:var Layout; T:typedesc; ss:string):untyped =
 proc initStagD3*(x:Field; sub:string):auto =
   result = initStagD3T(x.l, evalType(x[0]), sub)
 
+proc subdirs*(s: Staggered, dirs: seq[int]): Staggered =
+  result.se.sf.newSeq(0)
+  result.se.sb.newSeq(0)
+  result.se.sub = s.se.sub
+  result.se.subset = s.se.subset
+  result.so.sb.newSeq(0)
+  result.so.sf.newSeq(0)
+  result.so.sub = s.so.sub
+  result.so.subset = s.so.subset
+  result.g.newSeq(0)
+  for i in 0..<dirs.len:
+    let d = dirs[i]
+    result.se.sf.add s.se.sf[d]
+    result.se.sb.add s.se.sb[d]
+    result.so.sf.add s.so.sf[d]
+    result.so.sb.add s.so.sb[d]
+    result.g.add s.g[d]
+
 proc rephase*(s: Staggered) =
   s.g.setBC
   threadBarrier()
@@ -72,6 +90,10 @@ proc norm2*(stag: Staggered, mass: float): float =
   let v = stag.g[0][0].ncols * stag.g[0].l.physVol
   result = mass*mass*v.float + 0.5*s
 
+
+# stagDdirs
+# sd, r, g, x, scales, expFlops, exp
+# r = scales[mu]D_mu 
 
 template stagDPN*(sd:openArray[StaggeredD]; r:openArray[Field];
                   g:openArray[Field2]; x:openArray[Field3];
@@ -409,7 +431,7 @@ proc stagDb*(sd:StaggeredD; r:Field; g:openArray[Field2];
   #  rir := m*getVec(x[ir], ic)
 
 # r = m2 - Deo * Doe
-proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
+proc stagD2xx*(sdx,sdy:StaggeredD; r:Field; g:openArray[Field2];
                x:Field; m2:SomeNumber) =
   tic()
   var t{.global.}:evalType(x)
@@ -420,23 +442,31 @@ proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
     threadBarrier()
   #threadBarrier()
   #stagD(sdo, t, g, x, 0.0)
-  toc("stagD2ee init")
+  toc("stagD2xx init")
   block:
-    stagDP(sdo, t, g, x, 0):
+    stagDP(sdy, t, g, x, 0):
       rir := 0
-  toc("stagD2ee DP")
+  toc("stagD2xx DP")
   threadBarrier()
-  toc("stagD2ee barrier")
+  toc("stagD2xx barrier")
   #stagD(sde, r, g, t, 0.0)
   block:
-    stagDM(sde, r, g, t, 6):
+    stagDM(sdx, r, g, t, 6):
       rir := (4.0*m2)*x[ir]
-  toc("stagD2ee DM")
+  toc("stagD2xx DM")
   #threadBarrier()
   #r[sde.sub] := m2*x - r
   #for ir in r[sde.subset]:
   #  msubVSVV(r[ir], m2, x[ir], r[ir])
   #r[sde.sub] := 0.25*r
+
+proc stagD2ee*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
+               x:Field; m2:SomeNumber) =
+  stagD2xx(sde, sdo, r, g, x, m2)
+
+proc stagD2oo*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
+               x:Field; m2:SomeNumber) =
+  stagD2xx(sdo, sde, r, g, x, m2)
 
 # r = m2 + Deo * Doe
 # modified D: Df + Db
@@ -552,6 +582,7 @@ proc eoReduce*(s:Staggered; r,b:Field; m:SomeNumber) =
 proc eoReconstruct*(s:Staggered; r,b:Field; m:SomeNumber) =
   # r.odd = (b.odd - Doe r.even)/m
   stagD(s.so, r, s.g, r, 0.0, -1.0/m)
+  threadBarrier()
   r.odd += b/m
 
 # (d/dg) redot[ (2D)*x, c ]

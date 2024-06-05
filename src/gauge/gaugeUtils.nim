@@ -920,6 +920,7 @@ proc lrmul(res:auto, l:auto, r:auto, la,ra:bool) =
 
 proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
   tic("gaugeProd")
+  GC_fullCollect() # need to free space since we might allocate many fields
   type
     F = typeof(g[0])
     S = typeof(g[0][0])

@@ -8,7 +8,7 @@ import eigens/linalgFuncs
 # B  v = u ev
 # Bd u = v ev
 
-proc checksv(v: dvec, u: dvec, a: any, b: any, ev: float): float =
+proc checksv(v: dvec, u: dvec, a: auto, b: auto, ev: float): float =
   let n = v.len
   for i in 0..<n:
     var x0 = ev*v[i]
@@ -28,7 +28,7 @@ proc dvsort(tg: dvec, itg: var seq[int]) =
   proc sortdv(x,y: int): int = cmp(tg[x], tg[y])
   itg.sort(sortdv)
 
-proc getTwistFac*(a: any; b: any; ev: float64;
+proc getTwistFac*(a: auto; b: auto; ev: float64;
                   tl: dvec; tu: dvec; tg: dvec): int =
   var
     ai: float64
@@ -92,7 +92,7 @@ proc twistSolve*(tl: dvec; tu: dvec; v: dvec; k: int) =
   for i in 0..<n:
     v[i] = s * v[i]
 
-proc getu*(a: any; b: any; v: dvec; u: dvec) =
+proc getu*(a: auto; b: auto; v: dvec; u: dvec) =
   var
     t = 0.0
     s = 0.0
@@ -112,7 +112,7 @@ proc getu*(a: any; b: any; v: dvec; u: dvec) =
 ## e: singular values
 ## m: A ma = e m
 ## k: number of singular values wanted
-proc svdBi4*(e: any; m: dmat; ma: dmat; a: any; b: any; k: int;
+proc svdBi4*(e: auto; m: dmat; ma: dmat; a: auto; b: auto; k: int;
              nx: int; nax: int; emin: float64; emax: float64): int =
   #svdbi(&e, &a, &b, k)
 
@@ -165,11 +165,11 @@ proc svdBi4*(e: any; m: dmat; ma: dmat; a: any; b: any; k: int;
           getu(a, b, v[i], va[i])
           var rsq = checksv(v[i], va[i], a, b, ev)
           #echo i, ": ", e[i], "  ", rsq
-          if ig > -1:
+          #if ig > -1:
             #printf0("svdvec %3i %3i %5i %13g %13g %13g %13g\x0A",
             #        i, ib, ig, ev, x, rsq, dvec_get(tg, i0))
-            echo "svdvec $# $# $# $# $# $# $#" %
-              [$i, $ib, $ig, $ev, $x, $rsq, $tg[i0]]
+          # echo "svdvec $# $# $# $# $# $# $#" %
+          #    [$i, $ib, $ig, $ev, $x, $rsq, $tg[i0]]
           if ig >= k-1 or rsq < rsqstop:
             if ig == 0 and x < dotstop: ib = i
             break
@@ -177,6 +177,7 @@ proc svdBi4*(e: any; m: dmat; ma: dmat; a: any; b: any; k: int;
             dvsort(tg, itg)
           inc ig
           i0 = itg[ig]
+          if i0 >= k: echo("i0>=k: ", i0, "  ", k)
           twistSolve(tl, tu, v[i], i0)
           getu(a, b, v[i], va[i])
   return nn
@@ -233,7 +234,8 @@ when isMainModule:
     d[n-1] = (n).float
 
     let t0 = epochTime()
-    var nn = svdBi4(s, v, u, d, e, n, n, n, 0.0, 9999999.0)
+    var nn = svdBi3(s, v, u, d, e, n, n, n, 0.0, 9999999.0)
+    #var nn = svdBi4(s, v, u, d, e, n, n, n, 0.0, 9999999.0)
     let t1 = epochTime()
     #for j in 0..<nr:
     #    v[i+nr*j]
@@ -261,6 +263,36 @@ when isMainModule:
 
     let t0 = epochTime()
     svdBidiag(&d, &e, &v, &u, n, n)
+    #svdBidiag1(&d, &e, &v, &u, n, n)
+    #svdBidiag3(&d, &e, &v, &u, n, n)
+    let t1 = epochTime()
+    #for j in 0..<nr:
+    #    v[i+nr*j]
+    echo d[0], "  ", d[n-1]
+    echoCol(v,0)
+    echoCol(v,1)
+    echoCol(v,2)
+    echoCol(v,3)
+    echo n, " time: ", t1-t0
+    v
+
+  proc testSvdbdv3(n: int): auto =
+    var s = newDvec(n)
+    var d = newDvec(n)
+    var e = newDvec(n-1)
+    var v = newDmat(n, n)
+    var u = newDmat(n, n)
+    template `&`(x: dvec): untyped = cast[ptr carray[float]](addr x[0])
+    template `&`(x: dmat): untyped = cast[ptr carray[float]](addr x[0,0])
+    for i in 0..(n-2):
+      d[i] = (i+1).float
+      e[i] = -(i+1).float
+    d[n-1] = (n).float
+
+    let t0 = epochTime()
+    #svdBidiag(&d, &e, &v, &u, n, n)
+    #svdBidiag1(&d, &e, &v, &u, n, n)
+    svdBidiag3(&d, &e, &v, &u, n, n)
     let t1 = epochTime()
     #for j in 0..<nr:
     #    v[i+nr*j]
@@ -277,7 +309,8 @@ when isMainModule:
     #testSvdbdv(n)
     #testSvdbdv2(n)
     let v1 = testSvdbdv(n)
-    let v2 = testSvdbdv2(n)
+    #let v1 = testSvdbdv2(n)
+    let v2 = testSvdbdv3(n)
     var s2 = 0.0
     for i in 0..<v1.nrows:
       for j in 0..<v1.ncols:

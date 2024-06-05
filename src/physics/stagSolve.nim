@@ -11,6 +11,8 @@ import maths
 import quda/qudaWrapper
 import grid/Grid
 
+var precon = false
+
 proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   var sp = sp0
   sp.subset.layoutSubset(r.l, sp.subsetName)
@@ -34,7 +36,8 @@ proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
     echo "op time: ", top
     echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
 
-proc solveEE*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
+proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
+              parEven = true) =
   tic()
   var sp = sp0
   sp.resetStats()
@@ -47,13 +50,23 @@ proc solveEE*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
     proc op(a,b: Field) =
       tic()
       threadBarrier()
-      stagD2ee(s.se, s.so, a, s.g, b, m*m)
+      if parEven:
+        stagD2ee(s.se, s.so, a, s.g, b, m*m)
+        toc("stagD2ee")
+      else:
+        stagD2oo(s.se, s.so, a, s.g, b, m*m)
+        toc("stagD2oo")
       #threadBarrier()
-      toc("stagD2ee")
-    var oa = (apply: op)
     var cg = newCgState(r, x)
-    sp.subset.layoutSubset(r.l, sp.subsetName)
-    if sp.subsetName=="all": sp.subset.layoutSubset(r.l, "even")
+    if parEven:
+      sp.subset.layoutSubset(r.l, "even")
+    else:
+      sp.subset.layoutSubset(r.l, "odd")
+    #if precon:
+      #var oap = (apply: op, applyPrecon: oppre)
+      #cg.solve(oap, sp)
+    #else:
+    var oa = (apply: op, precon: cpNone)
     cg.solve(oa, sp)
     toc("cg.solve")
     sp.calls = 1
@@ -61,88 +74,163 @@ proc solveEE*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
     let flops = (s.g.len*4*72+60)*r.l.nEven*sp.iterations
     sp.flops = flops.float
     if sp0.verbosity>0:
-      echo "solveEE: ", sp.getStats
+      if parEven:
+        echo "solveEE(QEX): ", sp.getStats
+      else:
+        echo "solveOO(QEX): ", sp.getStats
   of sbQuda:
     tic()
-    s.qudaSolveEE(r,x,m,sp)
-    toc("qudaSolveEE")
+    if parEven:
+      #echo x.even.norm2, " ", sp.r2req
+      s.qudaSolveEE(r,x,m,sp)
+      toc("qudaSolveEE")
+    else:
+      s.qudaSolveOO(r,x,m,sp)
+      toc("qudaSolveOO")
     sp.calls = 1
     sp.seconds = getElapsedTime()
     let flopsquda = (s.g.len*4*72+60)*r.l.nEven*sp.iterations
     sp.flops = flopsquda.float
     if sp0.verbosity>0:
-      echo "solveEE(QUDA): ", sp.getStats
+      echo "solveXX(QUDA): ", sp.getStats
   of sbGrid:
     tic()
-    s.gridSolveEE(r,x,m,sp)
-    toc("gridSolveEE")
+    if parEven:
+      s.gridSolveEE(r,x,m,sp)
+      toc("gridSolveEE")
+    else:
+      s.gridSolveOO(r,x,m,sp)
+      toc("gridSolveOO")
     sp.calls = 1
     sp.seconds = getElapsedTime()
     let flops = (s.g.len*4*72+60)*r.l.nEven*sp.iterations
     sp.flops = flops.float
     if sp0.verbosity>0:
-      echo "solveEE(Grid): ", sp.getStats
-  #[
-  else:  # remove?
-    tic()
-    proc op(a,b: Field) =
-      tic()
-      threadBarrier()
-      s.D(a, b, m*m)
-      threadBarrier()
-      a.odd += (1-m*m)*b
-      toc("stagDee2")
-    #var oa = (apply: op)
-    #var cg = newCgState(r, x)
-    sp.subsetName = "all"
-    sp.subset.layoutSubset(r.l, sp.subsetName)
-    x.odd := 0
-    #cg.solve(oa, sp)
-    bicgstabSolve(r, x, op, sp)
-    toc("bicg.solve")
-    r.even := 0.25*r
-    r.odd := 0
-    sp.calls = 1
-    sp.seconds = getElapsedTime()
-    let flops = (s.g.len*4*72+60)*r.l.nEven*sp.iterations
-    sp.flops = flops.float
-    if sp0.verbosity>0:
-      echo "solveEE: ", sp.getStats
-  ]#
+      echo "solveXX(Grid): ", sp.getStats
   sp.iterationsMax = sp.iterations
   sp.r2.push 0.0
   sp0.addStats(sp)
 
+proc solveEE*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
+  solveXX(s, r, x, m, sp0, parEven=true)
+
+proc solveOO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
+  solveXX(s, r, x, m, sp0, parEven=false)
+
+# right-preconditioned
+proc solveReconR(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
+                 b2e,b2o: float) =
+  tic()
+  let b2 = b2e + b2o
+  let r2stop = sp.r2req * b2
+  let r2stop2 = 0.5 * r2stop
+  var r2stope = (if b2o <= r2stop2: r2stop-b2o else: r2stop2)
+  if b2e > r2stope:
+    var y = newOneOf(x)
+    threads:
+      y := 0
+    sp.r2req = r2stope / b2e
+    toc("setup")
+    s.solveEE(y, b, m, sp)
+    toc("solveEE")
+    threads:
+      y.even *= 4
+      threadBarrier()
+      s.Ddag(x, y, m)
+    toc("reconstruct")
+    return
+  var r2stopo = (if b2e <= r2stop2: r2stop-b2e else: r2stop2)
+  if b2o > r2stopo:
+    var y = newOneOf(x)
+    threads:
+      y := 0
+    sp.r2req = r2stopo / b2o
+    toc("setup")
+    s.solveOO(y, b, m, sp)
+    toc("solveOO")
+    threads:
+      y.odd *= 4
+      threadBarrier()
+      s.Ddag(x, y, m)
+    toc("reconstruct")
+    return
+
+# left-preconditioned with odd reconstruction
+proc solveReconL(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
+                 b2e,b2o: float) =
+  tic()
+  #if b2e == 0.0 or b2o == 0.0:
+  #solveR(s, y, r, m, sp, r2e, r2o)
+  var d = newOneOf(b)
+  var d2e = 0.0
+  threads:
+    #s.eoReduce(t, x, m)
+    s.Ddag(d, b, m)
+    x := 0
+    threadBarrier()
+    let
+      d2et = d.even.norm2
+      #d2ot = d.odd.norm2
+    threadMaster:
+      d2e = d2et
+      #d2o = d2ot
+  #echo "d2e: ", d2e, "  d2o: ", d2o
+  sp.r2req = 0.99 * sp.r2req * (b2e+b2o) * m*m / d2e
+  toc("setup")
+  s.solveEE(x, d, m, sp)
+  toc("solveEE")
+  #echo "solveReconL ", d2e, "  ", sp.r2req
+  threads:
+    x.even *= 4
+    threadBarrier()
+    s.eoReconstruct(x, b, m)
+    threadBarrier()
+  toc("reconstruct")
+
 # solveInner {init, run, free}
+proc solveInner(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
+                b2e,b2o: float) =
+  let b2 = b2e + b2o
+  let r2stop = sp.r2req * b2
+  let r2stop2 = 0.5 * r2stop
+  var r2stope = (if b2o <= r2stop2: r2stop-b2o else: r2stop2)
+  var r2stopo = (if b2e <= r2stop2: r2stop-b2e else: r2stop2)
+  if b2e <= r2stope or b2o <= r2stopo or m == 0.0:
+    solveReconR(s, x, b, m, sp, b2e, b2o)
+  else:
+    solveReconL(s, x, b, m, sp, b2e, b2o)
+    #solveReconR(s, x, b, m, sp, b2e, b2o)
 
 proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
   tic()
-  var c = newOneOf(b)
-  var b2,r2 = 0.0
+  var b2,r2e,r2o,r2 = 0.0
+  threads:
+    let
+      b2t = b.norm2
+    threadMaster:
+      b2 = b2t
+  let r2stop = sp0.r2req * b2
+  var r = newOneOf(b)
   if sp0.usePrevSoln:
     threads:
-      s.D(c, x, m)
+      s.D(r, x, m)
       threadBarrier()
-      c := b - c
-      let
-        b2t = b.norm2
-        c2t = c.norm2
-      threadMaster:
-        b2 = b2t
-        r2 = c2t
+      r := b - r
   else:
     threads:
       x := 0
-      c := b
-      let
-        b2t = b.norm2
-      threadMaster:
-        b2 = b2t
-        r2 = b2t
-  var r2stop = sp0.r2req * b2
+      r := b
+  threads:
+    let
+      r2et = r.even.norm2
+      r2ot = r.odd.norm2
+    threadMaster:
+      r2e = r2et
+      r2o = r2ot
+  r2 = r2e + r2o
   if sp0.verbosity>1:
     echo &"stagSolve b2: {b2:.6g}  r2: {r2/b2:.6g}  r2stop: {r2stop:.6g}"
-  var d = newOneOf(b)
+
   var y = newOneOf(x)
   var sp = sp0
   sp.resetStats()
@@ -151,48 +239,31 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
   while r2 > r2stop:
     sp.maxits = sp0.maxits - sp.iterations
     if sp.maxits <= 0: break
-    var d2e = 0.0
+    sp.r2req = r2stop / r2;
+
+    solveInner(s, y, r, m, sp, r2e, r2o)
+
     threads:
-      #s.eoReduce(t, x, m)
-      s.Ddag(d, c, m)
-      y := 0
-      threadBarrier()
-      let
-        d2et = d.even.norm2
-        #d2ot = d.odd.norm2
-      threadMaster:
-        d2e = d2et
-        #d2o = d2ot
-    #echo "d2e: ", d2e, "  d2o: ", d2o
-    sp.r2req = 0.99 * sp0.r2req * b2 * m*m / d2e
-    toc("setup")
-    s.solveEE(y, d, m, sp)
-    toc("solveEE")
-    threads:
-      y.even := 4*y
-      threadBarrier()
-      s.eoReconstruct(y, c, m)
-      threadBarrier()
       x += y
       threadBarrier()
-      s.D(c, x, m)
+      s.D(r, x, m)
       threadBarrier()
-      c := b - c
+      r := b - r
+      threadBarrier()
       let
-        c2t = c.norm2
+        r2et = r.even.norm2
+        r2ot = r.odd.norm2
       threadMaster:
-        r2 = c2t
-    toc("reconstruct")
+        r2e = r2et
+        r2o = r2ot
+    r2 = r2e + r2o
     if sp.verbosity>0:
-      echo "stagSolve r2: ", r2/b2
+      echo "stagSolve r2/b2: ", r2/b2
 
-  #echo "r2: ", r2
-  #sp.r2sum = r2/b2
-  #sp.r2max = r2/b2
   sp.r2.init r2/b2
   sp.calls = 1
   sp.seconds = getElapsedTime()
-  sp.flops += float((s.g.len*4*72+24)*x.l.nEven)
+  sp.flops += float((s.g.len*4*72+24)*x.l.nEven) # ???
   if sp0.verbosity>0:
     #let its = sp.iterations
     #let s = sp.seconds
@@ -270,8 +341,15 @@ when isMainModule:
   var r = lo.ColorVector()
   var rs = newRNGField(RngMilc6, lo, intParam("seed", 987654321).uint64)
 
+  if fn == "":
+    var warm = floatParam("warm", 0.15)
+    threads:
+      #g.random rs
+      g.warm warm, rs
+  let plaq = g.plaq
+  echo "plaq: ", plaq.sum, " ", plaq
+
   threads:
-    g.random rs
     g.setBC
     g.stagPhase
     #v1 := 0
@@ -300,6 +378,14 @@ when isMainModule:
     threads:
       r := v1 - v2
       echo "err2: ", r.norm2
+    threads:
+      v1 := 0
+    resetTimers()
+    precon = true
+    s.solve(v1, v3, m, sp)
+    threads:
+      r := v1 - v2
+      echo "err2: ", r.norm2
 
   block:
     v1 := 0
@@ -309,7 +395,7 @@ when isMainModule:
     echo "even point"
     test()
     echo sp.getStats()
-
+#[
   block:
     v1 := 0
     let p = lo.rankIndex([0,0,0,1])
@@ -324,6 +410,8 @@ when isMainModule:
     echo "random"
     test()
     echo sp.getStats()
-
+]#
   if intParam("timers", 0)!=0:
     echoTimers()
+
+  qexFinalize()

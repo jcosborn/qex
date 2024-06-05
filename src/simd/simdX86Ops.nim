@@ -135,6 +135,7 @@ template basicDefs(T,F,N,P,S:untyped) {.dirty.} =
   template assign1*(r: var T; x: SomeNumber) =
     r = `P "_set1_" S`(F(x))
   template assign*(r: var T; x: SomeNumber) = assign1(r, x)
+  template assign*(r: var T; x: bool) = assign1(r, (if x: 1 else: 0))
   macro assign*(r:var T; x:varargs[SomeNumber]):auto =
     template setX:auto {.gensym.} = `P "_setr_" S`()
     template setF(x):auto {.gensym.} = F(x)
@@ -158,7 +159,7 @@ template basicDefs(T,F,N,P,S:untyped) {.dirty.} =
   #proc assign*(r:var T; x:T) {.alwaysInline.} =
   #  r = x
   #template `=`*(r: var T; x: T) = {.emit: [r, " = ", x].}
-  template assign*(r: T; x:T) =
+  template assign*(r: T; x: T) =
     r = x
   #proc assign*(r:var array[N,F]; x:T) {.alwaysInline.} =
   #  assign(r[0].addr, x)
@@ -205,11 +206,23 @@ template basicDefs(T,F,N,P,S:untyped) {.dirty.} =
   template neg*(x:T):T = sub(`P "_setzero_" S`(), x)
   #template inv*(x:T):T = `P "_rcp_" S`(x)
   template inv*(x:T):T = divd(1.0,x)
+  template `and`*(x,y:T):T = `P "_and_" S`(x,y)
+  template andnot*(x,y:T):T = `P "_andnot_" S`(x,y)
+  template `or`*(x,y:T):T = `P "_or_" S`(x,y)
+  #template `==`*(x,y:T):auto = `P "_cmp_" S "_mask"`(x,y,MM_CMPINT_EQ)
+  #template `<`*(x,y:T):auto = `P "_cmp_" S "_mask"`(x,y,MM_CMPLT_EQ)
+  #template `<`*(x,y:T):auto = `P "_cmp_" S "_mask"`(x,y,MM_CMPLT_EQ)
+  #template `<`*(x,y:T):auto = `P "_cmp_" S`(x,y,CMP_LT_OS)
 
   binaryMixed(T, add, add)
   binaryMixed(T, sub, sub)
   binaryMixed(T, mul, mul)
   binaryMixed(T, divd, divd)
+  binaryMixed(T, `and`, `and`)
+  binaryMixed(T, andnot, andnot)
+  binaryMixed(T, `or`, `or`)
+  binaryMixed(T, `==`, `==`)
+  binaryMixed(T, `<`, `<`)
 
   template neg*(r:var T; x:T) = r = neg(x)
   template add*(r: T; x,y:T) = r = add(x,y)
@@ -263,6 +276,7 @@ template basicDefs(T,F,N,P,S:untyped) {.dirty.} =
   template `/=`*(r: T, x:T) = idiv(r,x)
 
   unaryMixedVar(T, `:=`, assign)
+  template `:=`*(r: T; x:bool) = assign(r,x)
   template `:=`*(r: T; x:openArray[SomeNumber]) = assign(r,x)
   unaryMixedVar(T, `+=`, iadd)
   unaryMixedVar(T, `-=`, isub)
@@ -293,6 +307,8 @@ basicDefs(m256d, float64,  4, mm256, pd)
 basicDefs(m512,  float32, 16, mm512, ps)
 basicDefs(m512d, float64,  8, mm512, pd)
 
+proc copySign*[T:SimdX86](to,frm: T): T {.alwaysInline.} =
+  result = `or`(`and`(frm, -0.0), andnot(to, -0.0))
 
 proc simdReduce*(r:var SomeNumber; x:m128) {.alwaysInline.} =
   let y = mm_hadd_ps(x, x)

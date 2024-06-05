@@ -82,11 +82,11 @@ proc addStats*(sp0: var SolverParams, sp1: SolverParams) =
   sp0.r2 += sp1.r2
 
 proc getStats*(sp: SolverParams, typ0= -1): string =
-  let c = sp.calls
+  let c = max(1,sp.calls)
   let its = sp.iterations
   let ic = its div c
   let im = sp.iterationsMax
-  let s = sp.seconds
+  let s = max(1e-12, sp.seconds)
   let sc = s/c.float
   let f = sp.flops
   let gf = 1e-9*f/s

@@ -45,3 +45,6 @@ when defined(AVX512):
     SimdH16* = Simd[m512h]
 
 template eval*(x: SimdX86): untyped = x
+
+#var CMP_EQ_OS {.importc: "_CMP_EQ_OS", imm.} = cint
+var CMP_LT_OS* {.importc: "_CMP_LT_OS", imm.}: cint

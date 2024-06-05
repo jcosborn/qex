@@ -37,7 +37,7 @@ template IOtypeP*[T](x:typedesc[T]):typedesc =
 template IOnameDefault*[T](x:typedesc[T]):string =
   "QDP_" & T.name
 template IOname*[T](x:typedesc[T]):string =
-  T.IOnameDefault
+  IOnameDefault type T
 #template IOname*[N:static int](x:typedesc[Color[MatrixArray[N,N,float]]]):string =
 #  "QDP_F" & $N & "_ColorMatrix"
 #template IOname*[N:static int](x:typedesc[Color[MatrixArray[N,N,DComplex]]]):string =
@@ -48,4 +48,4 @@ template IOname*[N:static int,T](x:typedesc[Color[MatrixArray[N,N,T]]]):string =
   elif T is DComplex:
     "QDP_D" & $N & "_ColorMatrix"
   else:
-    IOnameDefault T
+    IOnameDefault type T

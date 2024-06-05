@@ -10,7 +10,7 @@ when isMainModule:
   qexInit()
 
   var b = true
-  var x = 1
+  #var x = 1
 
   letParam:
     bf = false
@@ -42,6 +42,13 @@ when isMainModule:
 
   defaultSetup()
   paramTest()
+
+  echo bf, bt, bs, bx
+  echo i0, i1, ix
+  echo f0, f1, fx
+  echo s0, s1, sx
+  echo ia0, ia1, iax
+  echo fa0, fa1, fax
 
   processSaveParams()
   writeParamFile()

@@ -56,6 +56,6 @@ for c in range(nl):
     print(lines1[c])
     print(lines2[c])
     for e,rd in zip(errf,rdf):
-      print(" ", e, s1[e], s2[e], rd)
+      print(" ", e, s1[e], s2[e], rd, rel)
 
 if err==True: exit(1)

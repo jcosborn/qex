@@ -203,11 +203,14 @@ template `im=`*(x: ImagProxy, y: typed) = x[] = y
 template `re=`*(x: ComplexProxy, y: typed) = x[].re = y
 template `im=`*(x: ComplexProxy, y: typed) = x[].im = y
 
-template setU*(r: ComplexProxy, x: typed, y: typed) =
-  r[].re = x
-  r[].im = y
-template set*(r: ComplexProxy, x: typed, y: typed) =
-  flattenCallArgs(setU, r, x, y)
+#template setU*(r: ComplexProxy, x: typed, y: typed) =
+#  r[].re = x
+#  r[].im = y
+#template set*(r: ComplexProxy, x: typed, y: typed) =
+#  flattenCallArgs(setU, r, x, y)
+proc set*(r: var ComplexProxy, x: auto, y: auto) {.alwaysInline.} =
+  r.re = x
+  r.im = y
 
 template assign*(x: RealProxy, y: RealProxy2): untyped =
   x[] = y[]
@@ -216,11 +219,14 @@ template assign*(x: ImagProxy, y: ImagProxy2): untyped =
 template assignU*(x: ComplexProxy, y: RealProxy2): untyped =
   x[].re = y[]
   x[].im = 0
-template assign*(x: ComplexProxy, y: RealProxy2): untyped =
-  #echoRepr: x
-  let assignCR = y
-  #assignU(x, yy)
-  flattenCallArgs(assignU, x, assignCR)
+#template assign*(x: ComplexProxy, y: RealProxy2): untyped =
+#  #echoRepr: x
+#  let assignCR = y
+#  #assignU(x, yy)
+#  flattenCallArgs(assignU, x, assignCR)
+proc assign*(x: var ComplexProxy, y: RealProxy2) {.alwaysInline.} =
+  x.re = y[]
+  x.im = 0
 template assign*(x: ComplexProxy, y: ImagProxy2): untyped =
   x[].re = 0
   x[].im = y[]
@@ -289,13 +295,13 @@ template conjImagU(xr,xi: untyped): untyped =
   -conj(xi)
 unaryOverloads(`~`, conj, conjRealU, conjImagU)
 
-#template adjRealU(xr,xi: untyped): untyped =
-#  mixin adj
-#  adj(xr)
-#template adjImagU(xr,xi: untyped): untyped =
-#  mixin adj
-#  -adj(xi)
-#unaryOverloads(`@`, adj, adjRealU, adjImagU)
+template adjRealU(xr,xi: untyped): untyped =
+  mixin adj
+  adj(xr)
+template adjImagU(xr,xi: untyped): untyped =
+  mixin adj
+  -adj(xi)
+unaryOverloads(`@`, adj, adjRealU, adjImagU)
 
 template transposeRealU(xr,xi: untyped): untyped =
   mixin transpose
@@ -325,10 +331,10 @@ template unaryOverloadsR(op,fn,implR,implI: untyped) {.dirty.} =
 
   template `fn U`*(x: ComplexProxy): untyped =
     newRealP(implR(x.re,x.im)+implI(x.re,x.im))
-  template fn*(x: ComplexProxy): untyped =
-    flattenCallArgs(`fn U`, x)
-  #proc fn*(x: ComplexProxy): auto {.inline,noInit.} =
-  #  newRealP(implR(x.re,x.im)+implI(x.re,x.im))
+  #template fn*(x: ComplexProxy): untyped =
+  #  flattenCallArgs(`fn U`, x)
+  proc fn*(x: ComplexProxy): auto {.alwaysinline,noInit.} =
+    newRealP(implR(x.re,x.im)+implI(x.re,x.im))
   template op*(x: ComplexProxy): untyped = fn(x)
 
 template norm2RealU(xr,xi: untyped): untyped =
@@ -356,7 +362,7 @@ template `/`*(x: ImagProxy): untyped = inv(x)
 #template invComplexU(x: untyped): untyped = x.adj * x.norm2.inv
 #template inv*(x: ComplexProxy): untyped = safecall(invComplexU, x)
 proc inv*(x: ComplexProxy): auto {.alwaysInline,noInit.} =
-  mixin inv
+  mixin adj, inv
   x.adj * x.norm2.inv
 template `/`*(x: ComplexProxy): untyped = inv(x)
 
@@ -556,13 +562,17 @@ binaryOverloadsF(`/`, divd, divdComplexU)
 # iadd, isub, imul, idivd
 
 template iBinaryOverloads(op,fn,impl: untyped) {.dirty.} =
-  template `fn U`*(x: ComplexProxy, y: RealProxy2) = assign(x, impl(x,y))
-  template fn*(x: ComplexProxy, y: RealProxy2) =
-    flattenCallArgs(`fn U`, x, y)
+  #template `fn U`*(x: ComplexProxy, y: RealProxy2) = assign(x, impl(x,y))
+  #template fn*(x: ComplexProxy, y: RealProxy2) =
+  #  flattenCallArgs(`fn U`, x, y)
+  proc fn*(x: var ComplexProxy, y: RealProxy2) {.alwaysInline.} =
+    assign(x, impl(x,y))
   template fn*(x: ComplexProxy, y: ImagProxy2) =    assign(x, impl(x,y))
-  template `fn U`*(x: ComplexProxy, y: ComplexProxy2) = assign(x, impl(x,y))
-  template fn*(x: ComplexProxy, y: ComplexProxy2) =
-    flattenCallArgs(`fn U`, x, y)
+  #template `fn U`*(x: ComplexProxy, y: ComplexProxy2) = assign(x, impl(x,y))
+  #template fn*(x: ComplexProxy, y: ComplexProxy2) =
+  #  flattenCallArgs(`fn U`, x, y)
+  proc fn*(x: var ComplexProxy, y: ComplexProxy2) {.alwaysInline.} =
+    assign(x, impl(x,y))
   template op*(x: ComplexProxy, y: RealProxy2) =    fn(x,y)
   template op*(x: ComplexProxy, y: ImagProxy2) =    fn(x,y)
   template op*(x: ComplexProxy, y: ComplexProxy2) = fn(x,y)
@@ -585,9 +595,11 @@ template `+=`*[R,X:ComplexProxy](r: R, x: X) = iadd(r,x)
 ]#
 
 proc sqrt*(x: ComplexProxy): auto =
+  mixin copySign
   let n = sqrt(x.norm2)
   let r = sqrt(0.5*(n + x.re))
-  let i = select(x.im<0, -1, 1)*sqrt(0.5*(n - x.re))
+  #let i = select(x.im<0, -1, 1)*sqrt(0.5*(n - x.re))
+  let i = copySign(sqrt(0.5*(n - x.re)), x.im)
   newComplexP(r, i)
 
 # inorm2, redot, iredot, dot, idot
