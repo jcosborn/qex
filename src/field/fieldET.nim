@@ -418,7 +418,10 @@ iterator items*(x:FieldMul):int {.inline.} =
 
 template fmask*(f: Field; i: int): untyped =
   when f.l.V == 1:
-    f[i]
+    when has(type(f),Simd):
+      f[i][asSimd(0)]
+    else:
+      f[i]
   else:
     #when true:
     when false:
