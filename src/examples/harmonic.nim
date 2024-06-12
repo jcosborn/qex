@@ -22,6 +22,10 @@ var
   globalRng: MRG32k3a  # global RNG
 globalRng.seed(seed, 987654321)
 
+echo "ntraj: ", ntraj
+echo "nsteps: ", nsteps
+echo "tau: ", tau
+
 proc refreshMomentum(p: auto) =
   threads:
     p.gaussian rng
@@ -70,6 +74,7 @@ proc printObservables(x: auto) =
 threads:
   x := 0
 
+var ds2 = 0.0
 for traj in 1..ntraj:
   refreshMomentum(p)
   threads:
@@ -79,6 +84,7 @@ for traj in 1..ntraj:
   evolve(p, x)
   let s1 = action(p, x)
   let ds = s1 - s0
+  ds2 += ds*ds
   let pacc = exp(-ds)
   let r = globalRng.uniform
   if r <= pacc: # accept
@@ -93,4 +99,5 @@ for traj in 1..ntraj:
   printObservables(x)
 
 echo "Acceptance ratio: ", nAccept/ntraj
+echo "ds2: ", ds2/ntraj
 qexFinalize()
