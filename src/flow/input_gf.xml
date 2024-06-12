@@ -1,0 +1,66 @@
+<?xml version="1.0"?>
+<qex>
+  <action> <!-- Flow action specifications -->
+    <flow_act>_act_</flow_act> <!-- Flow action -->
+    <geom>
+      <Ns>_Ns_</Ns> <!-- Spatial length -->
+      <Nt>_Nt_</Nt> <!-- Temporal length -->
+    </geom>
+  </action>
+  <flow_prms> <!-- Guage flow specifications -->
+    <global_params>
+      <t_max>_tmax_</t_max> <!-- Maximum flow time -->
+      <f_munu_loop>1</f_munu_loop> <!-- Number of flow time loops -->
+    </global_params>
+    <specific_params>
+      <time1>5.0</time1>
+      <time2>_tmax_</time2>
+      <dt1>0.02</dt1>
+      <dt2>0.1</dt2>
+    </specific_params>
+  </flow_prms>
+  <action_params> <!-- Specific parameters for each supported flow action -->
+    <Wilson>
+      <beta_w>_betaw_</beta_w> <!-- bare gauge coupling -->
+    </Wilson>
+    <Rect>
+      <beta_r>_betar_</beta_r> <!-- bare gauge coupling -->
+      <c1>_c1_</c1> <!-- Plaq = (1 - 8*c1)*beta, Rect = c1*beta -->
+    </Rect>
+    <Adj>
+      <beta_a>_betaa_</beta_a> <!-- bare gauge coupling -->
+      <adj_plaq>_adjplaq_</adj_plaq> <!-- beta_F/beta_adj -->
+    </Adj>
+  </action_params>
+</qex>
+
+<!--
+
+Notes from QEX developers (in gaugeAction.nim)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Coefficients for particular rectangle actions:
+
+Symanzik: c1 = -1.0/12.0 (tree-level)
+Iwasaki: c1 = -0.331
+DW2: -1.4088
+
+- For DBW2:
+
+Table III in https://journals.aps.org/prd/pdf/10.1103/PhysRevD.54.1050
+beta11 7.986(13)  beta12 -0.9169(41)
+gives c1 = 1/(8+7.986/-0.9169) = -1.4088813767670574
+with standard error 0.08227016226543633 assuming no correlation
+
+https://journals.aps.org/prd/pdf/10.1103/PhysRevD.75.114501
+uses c1 = -1.4069
+
+https://journals.aps.org/prd/pdf/10.1103/PhysRevD.90.074502
+uses c1 = -1.4088
+
+The numbers are likely from truncations in the middle of the computation,
+r = beta12/beta11 = -0.9169/7.986 = -0.11481342349110946
+c1 = 1/(8+1/r) = 1/(8+1/-0.1148) = -1.4068627450980384
+c1 = 1/(8+1/r) = 1/(8+1/-0.114813) = -1.408817610680277
+
+-->

@@ -11,7 +11,6 @@ import typetraits
 #template IOtype*(x:typedesc[DComplexV]):untyped = DComplex
 #template IOtype*(x:typedesc[SColorMatrixV]):untyped = SColorMatrix
 #template IOtype*(x:typedesc[DColorMatrixV]):untyped = DColorMatrix
-#template IOtype*(x:typedesc[RngMilc6]):untyped = RngMilc6
 template IOtype*[T](x:typedesc[T]):typedesc =
   mixin has, index
   when T.has Simd:
@@ -26,7 +25,6 @@ template IOtype*[T](x:typedesc[T]):typedesc =
 #template IOtypeP*(x:typedesc[DComplexV]):untyped = SComplex
 #template IOtypeP*(x:typedesc[SColorMatrixV]):untyped = DColorMatrix
 #template IOtypeP*(x:typedesc[DColorMatrixV]):untyped = SColorMatrix
-#template IOtypeP*(x:typedesc[RngMilc6]):untyped = RngMilc6
 template IOtypeP*[T](x:typedesc[T]):typedesc =
   mixin numberType, toDouble, toSingle
   when T.numberType is float32:
