@@ -123,6 +123,25 @@ proc mulgrad1(c: float, r: var float, y: float) =
 proc mulgrad2(c: float, x: float, r: var float) =
   r += x * c
 
+proc mul[F:Field](r: F, x: float, y: F) =
+  threads:
+    r := x * y
+proc mulgrad1[F:Field](c: F, r: var float, y: F) =
+  var rr = 0.0
+  threads:
+    var l: typeof(redot(y[0][], c[0][]))
+    for s in c:
+      l += redot(y[s][], c[s][])
+    var m = simdReduce l
+    threadRankSum m
+    threadSingle:
+      rr = m
+  r += rr
+proc mulgrad2[F:Field](c: F, x: float, r: F) =
+  threads:
+    for s in c:
+      r[s][] += x * c[s][]
+
 proc mul[G:GaugeF](r: G, x: float, y: G) =
   threads:
     for mu in 0..<r.len:
@@ -406,6 +425,7 @@ proc agradDbck[I,O](op: AgOp[I,O]) {.nimcall.} =
   when g is AgVar:
     if g.doGrad:
       #g.grad += rephase [outer(c shift x') - outer(x shift c')]
+      for mu in 0..<g.grad.len: g.grad[mu] *= 2.0
       s.rephase g.grad
       s.stagD2deriv(g.grad, r.grad, x.maybeObj)
       s.rephase g.grad
@@ -508,6 +528,7 @@ proc agradSolve(c: var AgTape, s,g,r,x,m,p: auto) =
   var op = newAgOp((s,g,x,m,p), r, agradSolvefwd, agradSolvebck)
   c.add op
 template agradSolve*(s: Staggered, g,r,x,m,p: auto) =
+  ## g: gauge, r: result, x: src, m: mass, p: solve params
   r.ctx.agradSolve(s, g, r, x, m, addr p)
 
 when isMainModule:
@@ -644,8 +665,8 @@ when isMainModule:
     echo "    ", (nv.obj-n0)/eps
     v1 -= eps * c
 
-  #testAgradD()
+  testAgradD()
   #testAgradSolve()
-  testAgradStagDeriv()
+  #testAgradStagDeriv()
 
   qexFinalize()
