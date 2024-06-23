@@ -15,6 +15,7 @@ let
   tau = floatParam("tau", 0.04)
   fixtau = (intParam("fixtau",0) != 0)
   fixparams = (intParam("fixparams",0) != 0)
+  fixhmasses = (intParam("fixhmasses",0) != 0)
   md = stringParam("md", "aba")
   upit = intParam("upit", 1)
   anneal = floatParam("anneal", 0.99)
@@ -114,12 +115,17 @@ var
   p = lo.newgauge
   f = lo.newgauge
   g0 = lo.newgauge
-  phi = newseq[typeof(lo.ColorVector())](1+hmasses.len)
-  psi = newseq[typeof(lo.ColorVector())](1+hmasses.len)
+  eta = newseq[typeof(lo.ColorVector())](1+hmasses.len) # random gaussian
+  phi = newseq[typeof(lo.ColorVector())](1+hmasses.len) # pseudofermion
+  psi = newseq[typeof(lo.ColorVector())](1+hmasses.len) # intermediate
+  ptmp = newseq[typeof(lo.ColorVector())](hmasses.len) # intermediate
   ftmp = lo.ColorVector()
 for i in 0..<phi.len:
+  eta[i] = lo.ColorVector()
   phi[i] = lo.ColorVector()
   psi[i] = lo.ColorVector()
+for i in 0..<ptmp.len:
+  ptmp[i] = lo.ColorVector()
 type
   Gauge = typeof(g)
   GaugeV = AgVar[Gauge]
@@ -253,6 +259,7 @@ proc addT(veps: FloatV) =
   pushGauge()
   mul(gaugevs[^1], gaugevs[^2], gaugevs[^3])
 
+var gfList = newSeq[int](0)
 proc addGf(g: GaugeV) =
   if nf == 0: nff += 1
   pushMom()
@@ -261,6 +268,7 @@ proc addGf(g: GaugeV) =
   mulna(momvs[^1], g, momvs[^2])
   pushMom()
   projtah(momvs[^1], momvs[^2])
+  gfList.add momvs.len-1
 
 proc addGx(veps: FloatV, p,g: GaugeV) =
   addGf(g)
@@ -1082,11 +1090,20 @@ proc setupMD52p =
   addG(g0)
 ]#
 
+proc updatePseudo =
+  tape.setTrack 3
+  tape.run
+  tape.setTrack 0
+
 proc update =
   tape.run
   for mu in 0..<g.len:
     g[mu] := gauges[^1][mu]
     p[mu] := moms[^1][mu]
+
+proc updateAll =
+  updatePseudo()
+  update()
 
 var
   p2xv = tape.newFloatV
@@ -1097,13 +1114,17 @@ var
   dphi = newSeq[type ftmp](hmasses.len)
   dphiv = newSeq[type tape.newAgVar(dphi[0])](hmasses.len)
   psiv = newSeq[type tape.newAgVar(psi[0])](1+hmasses.len)
+  phiv = newSeq[type tape.newAgVar(phi[0])](1+hmasses.len)
+  ptmpv = newSeq[type tape.newAgVar(ptmp[0])](hmasses.len)
   faxv = newSeq[type tape.newFloatV](1+hmasses.len)
   fav = newSeq[type tape.newFloatV](1+hmasses.len)
 for i in 0..<dphi.len:
   dphi[i] = ftmp.newOneOf
   dphiv[i] = tape.newAgVar(dphi[i])
+  ptmpv[i] = tape.newAgVar(ptmp[i])
 for i in 0..<psiv.len:
   psiv[i] = tape.newAgVar(psi[i])
+  phiv[i] = tape.newAgVar(phi[i])
   faxv[i] = tape.newFloatV()
   fav[i] = tape.newFloatV()
 proc addAction(p: GaugeV, g: GaugeV) =
@@ -1141,11 +1162,24 @@ proc addAction(p: GaugeV, g: GaugeV) =
       #mul(fav[^1], 0.5, faxv[^1])
     add(hv, hgv, fav[^1])
 
+proc addPseudo(g: GaugeV) =
+  for i in 0..<hmasses.len:
+    if i == 0:
+      stag.agradD(g, ptmpv[i], eta[i], mass)
+    else:
+      stag.agradD(g, ptmpv[i], eta[i], vhmasses[i-1])
+    stag.agradSolve(g, phiv[i], ptmpv[i], vhmasses[i], spa)
+    maskEven phiv[i]
+  stag.agradD(g, phiv[^1], eta[^1], vhmasses[^1])
+  maskEven phiv[^1]
+
 proc setupAction =
   tape.addTrack
   addAction(momvs[0], gaugevs[0])
   tape.addTrack
   addAction(momvs[^1], gaugevs[^1])
+  tape.addTrack
+  addPseudo(gaugevs[0])
   tape.setTrack 0
   #echo tape
 
@@ -1175,25 +1209,14 @@ proc start*(m: var Met) =
     for i in 0..<g.len:
       g0[i] := g[i]
     p.randomTAH r
+    threadBarrier()
     for i in 0..<p.len:
       p0[i] := p[i]
   if nf != 0:
     threads:
-      stag.rephase
-    for i in 0..<phi.len:
-      threads:
-        psi[i].gaussian r
-        threadBarrier()
-        if i != phi.len-1:
-          stag.D(ftmp, psi[i], masses(i))
-        else:
-          stag.D(phi[i], psi[i], masses(i))
-      if i != phi.len-1:
-        stag.solve(phi[i], ftmp, masses(i+1), spa)
-      threads:
-        phi[i].odd := 0
-    threads:
-      stag.rephase
+      for i in 0..<eta.len:
+        eta[i].gaussian r
+    updatePseudo()
   toc("init p, phi")
 
 proc getH*(m: Met): float =
@@ -1209,7 +1232,7 @@ proc getH*(m: Met): float =
   if nf != 0:
     threads:
       stag.rephase
-    for i in 0..<phi.len-1:
+    for i in 0..<(phi.len-1):
       threads:
         stag.D(ftmp, phi[i], masses(i+1))
         #ftmp := phi[i]
@@ -1343,7 +1366,8 @@ proc getCost(m: Met): seq[float] =
     #costg = costg/nff
     #costg = nff*costg*(cost*cost)  # extra - to make it minimize
     if fixtau and i==0: costg = 0
-    if fixparams and i>0: costg = 0
+    if fixhmasses and i>0 and i<=hmasses.len: costg = 0
+    if fixparams and i>hmasses.len: costg = 0
     #if i > 0:
     #  costg = (m.hOld-m.hNew)*params[i].grad
     result.add costg
@@ -1503,6 +1527,7 @@ block:
     src.wallSource(0, v)
   #echo src.norm2slice(3)
 
+var gfStats: RunningStat
 proc measure =
   #threads:
   #  g.rephase
@@ -1521,7 +1546,12 @@ proc measure =
   #for i in 0..<nt2:
   #  let k = nt2 - 1 - i
   #  echo i, " ", picorr[k].mean, " ", picorr[k].standardDeviationS
-  discard
+  #discard
+  let sf = 1.0/(lat.len.float*lo.physVol.float*8.0)  # 8 SU3 generators
+  for i in 0..<gfList.len:
+    let f2 = momvs[gfList[i]].obj.norm2
+    gfStats.push sqrt(sf*f2)
+  echo "RMS gauge force: ", gfStats.mean, "  max norm2: ", gfStats.max
 
 case md
 of "aba": setupMDaba()

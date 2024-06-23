@@ -8,6 +8,8 @@ type
   #GaugeFV* = AgVar[GaugeF]
   GaugeF*[V:static int,T] = seq[Field[V,T]]
   GaugeFV*[V:static int,T] = AgVar[GaugeF[V,T]]
+  FieldV*[V:static int,T] = AgVar[Field[V,T]]
+
 template newFloatV*(c: AgTape, x = 0.0): auto =
   var t = FloatV.new()
   t.doGrad = true
@@ -355,6 +357,23 @@ proc projtah(c: var AgTape, r: AgVar, x: auto) =
   c.add op
 template projtah*(r: AgVar, x: auto) =
   r.ctx.projtah(r, x)
+
+proc maskEvenFwd[I,O](op: AgOp[I,O]) {.nimcall.} =
+  let r = op.outputs.obj
+  let g = op.outputs.grad
+  threads:
+    r.odd := 0
+    g := 0
+proc maskEvenBck[I,O](op: AgOp[I,O]) {.nimcall.} =
+  #let g = op.inputs.grad
+  let g = op.outputs.grad
+  threads:
+    g.odd := 0
+proc maskEven[F:FieldV](c: var AgTape, r: F) =
+  var op = newAgOp(0, r, maskEvenFwd, maskEvenBck)
+  c.add op
+template maskEven*[F:FieldV](r: F) =
+  r.ctx.maskEven(r)
 
 proc xpayfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
   let r = op.outputs.obj
