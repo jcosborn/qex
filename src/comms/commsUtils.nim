@@ -342,8 +342,8 @@ macro rankMax*(a:varargs[untyped]):auto =
         qmpMax(`a0`)
   else:
     error("rankMax not imlemented for multiple arguments.")
-    result = newCall(ident("rankMaxN"))
-    for v in a: result.add v
+    #result = newCall(ident("rankMaxN"))
+    #for v in a: result.add v
 
 template threadRankMax1*(a:untyped):untyped =
   var ta{.global.}:type(a)
