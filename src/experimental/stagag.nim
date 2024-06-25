@@ -1,5 +1,5 @@
 import qex, gauge, physics/[qcdTypes,stagSolve]
-import times, macros, algorithm
+import times, macros, algorithm, sequtils
 import hmc/metropolis
 import observables/sources
 import quda/qudaWrapper
@@ -118,14 +118,11 @@ var
   eta = newseq[typeof(lo.ColorVector())](1+hmasses.len) # random gaussian
   phi = newseq[typeof(lo.ColorVector())](1+hmasses.len) # pseudofermion
   psi = newseq[typeof(lo.ColorVector())](1+hmasses.len) # intermediate
-  ptmp = newseq[typeof(lo.ColorVector())](hmasses.len) # intermediate
   ftmp = lo.ColorVector()
 for i in 0..<phi.len:
   eta[i] = lo.ColorVector()
   phi[i] = lo.ColorVector()
   psi[i] = lo.ColorVector()
-for i in 0..<ptmp.len:
-  ptmp[i] = lo.ColorVector()
 type
   Gauge = typeof(g)
   GaugeV = AgVar[Gauge]
@@ -177,6 +174,39 @@ proc norm2subtract*(x: seq, y: float): float =
   for i in 0..<x.len:
     result += x[i].norm2subtract(y)
 
+proc rmsStats*(f: Field, scale = 1.0): RunningStat =
+  let presult = addr result
+  threads:
+    let ne = f[0].numNumbers / f[0].simdLength
+    var s: RunningStat
+    for e in f:
+      let t = scale*sqrt(f[e].norm2/ne)
+      for i in 0..<simdLength(t):
+        s.push t[i]
+    if threadNum == 0:
+      presult[] += s
+    for i in 1..<numThreads:
+      threadBarrier()
+      if threadNum == i:
+        presult[] += s
+  var c = getDefaultComm()
+  var offset = 1
+  while offset < c.size:
+    let other = c.rank xor offset
+    if other < c.rank:
+      c.pushSend(other, result)
+      c.waitSend()
+    elif other < c.size:
+      var t {.noInit.}: RunningStat
+      c.pushRecv(other, t)
+      c.waitRecv()
+      result += t
+    offset *= 2
+
+proc rmsStats*(f: seq, scale = 1.0): RunningStat =
+  for i in 0..<f.len:
+    result += rmsStats(f[i], scale)
+
 var
   gauges = newSeq[Gauge](0)
   moms = newSeq[Gauge](0)
@@ -205,9 +235,11 @@ momvs.add tape.newGaugeV(p0)
 #let vtau = params[0]
 let vtau = pushParam(tau)
 #vtau.doGrad = false
-var nff = 0
+var nff = newSeq[int](1+hmasses.len)
 var vhmasses = newSeq[type pushParam(0.0)](hmasses.len)
 for i in 0..<vhmasses.len: vhmasses[i] = pushParam(hmasses[i])
+var phiv = newSeq[type tape.newAgVar(phi[0])](phi.len)
+for i in 0..<phi.len: phiv[i] = tape.newAgVar(phi[i])
 
 proc pushTemp =
   ptemps.add tape.newFloatV
@@ -259,21 +291,23 @@ proc addT(veps: FloatV) =
   pushGauge()
   mul(gaugevs[^1], gaugevs[^2], gaugevs[^3])
 
-var gfList = newSeq[int](0)
 proc addGf(g: GaugeV) =
-  if nf == 0: nff += 1
+  if nf == 0: nff[0] += 1
   pushMom()
   gc.gderiv(momvs[^1], g)
   pushMom()
   mulna(momvs[^1], g, momvs[^2])
   pushMom()
   projtah(momvs[^1], momvs[^2])
-  gfList.add momvs.len-1
 
+var gfList = newSeq[int](0)
+var gfeList = newSeq[FloatV](0)
 proc addGx(veps: FloatV, p,g: GaugeV) =
   addGf(g)
   pushMom()
   xpay(momvs[^1], p, veps, momvs[^2])
+  gfList.add momvs.len-2
+  gfeList.add veps
 
 proc addG(veps: FloatV) =
   addGx(veps, momvs[^1], gaugevs[^1])
@@ -292,17 +326,19 @@ proc addFf(g: GaugeV, i = 0) =
   pushCvec()
   let cv = cvecvs[^1]
   if i == 0:
-    stag.agradSolve(g, cv, phi[i], mass, spf)
+    stag.agradSolve(g, cv, phiv[i], mass, spf)
   else:
-    stag.agradSolve(g, cv, phi[i], vhmasses[i-1], spf)
+    stag.agradSolve(g, cv, phiv[i], vhmasses[i-1], spf)
   pushMom()
   stag.agradStagDeriv(momvs[^1], cv)
   pushMom()
   mulna(momvs[^1], g, momvs[^2])
   pushMom()
   projtah(momvs[^1], momvs[^2])
-  nff += 1
+  nff[i] += 1
 
+var ffList = newSeqWith(1+hmasses.len, newSeq[int](0))
+var ffeList = newSeqWith(1+hmasses.len, newSeq[FloatV](0))
 proc addFx(veps: FloatV, p0,g: GaugeV) =
   var p = p0
   if nf == 0: return
@@ -322,6 +358,8 @@ proc addFx(veps: FloatV, p0,g: GaugeV) =
         va = -0.5*veps*(vhmasses[i]*vhmasses[i]/vhmasses[i-1]-vhmasses[i-1])
     xpay(momvs[^1], p, va, momvs[^2])
     p = momvs[^1]
+    ffList[i].add momvs.len-2
+    ffeList[i].add va
 
 proc addF(veps: FloatV) =
   if nf == 0: return
@@ -1106,71 +1144,60 @@ proc updateAll =
   update()
 
 var
-  p2xv = tape.newFloatV
-  p2v = tape.newFloatV
-  gav = tape.newFloatV
-  hgv = tape.newFloatV
-  hv = tape.newFloatV
-  dphi = newSeq[type ftmp](hmasses.len)
-  dphiv = newSeq[type tape.newAgVar(dphi[0])](hmasses.len)
-  psiv = newSeq[type tape.newAgVar(psi[0])](1+hmasses.len)
-  phiv = newSeq[type tape.newAgVar(phi[0])](1+hmasses.len)
-  ptmpv = newSeq[type tape.newAgVar(ptmp[0])](hmasses.len)
-  faxv = newSeq[type tape.newFloatV](1+hmasses.len)
-  fav = newSeq[type tape.newFloatV](1+hmasses.len)
-for i in 0..<dphi.len:
-  dphi[i] = ftmp.newOneOf
-  dphiv[i] = tape.newAgVar(dphi[i])
-  ptmpv[i] = tape.newAgVar(ptmp[i])
-for i in 0..<psiv.len:
-  psiv[i] = tape.newAgVar(psi[i])
-  phiv[i] = tape.newAgVar(phi[i])
-  faxv[i] = tape.newFloatV()
-  fav[i] = tape.newFloatV()
+  p2v = newSeq[type tape.newFloatV](0)
+  gav = newSeq[type tape.newFloatV](0)
+  fav = newSeq[type tape.newFloatV](0)
+  hv = newSeq[type tape.newFloatV](0)
 proc addAction(p: GaugeV, g: GaugeV) =
-  norm2subtract(p2xv, p, 8.0)
-  mul(p2v, 0.5, p2xv)
-  gaction(gc, gav, g)
+  pushTemp()
+  norm2subtract(ptemps[^1], p, 8.0)
+  pushTemp()
+  mul(ptemps[^1], 0.5, ptemps[^2])
+  p2v.add ptemps[^1]
+  pushTemp()
+  gaction(gc, ptemps[^1], g)
+  gav.add ptemps[^1]
   if nf == 0:
-    #add(hv, p2v, gav)
-    add(hgv, p2v, gav)
-    hv = hgv
+    hv.add p2v[^1] + gav[^1]
   else:
-    add(hgv, p2v, gav)
+    pushTemp()
+    let fasum = ptemps[^1]
+    fasum := 0
     for i in 0..<phi.len-1:
-      stag.agradD(g, dphiv[i], phi[i], vhmasses[i])
-      #mul(dphiv[i], 1.0, phi[i])
+      pushCvec()
+      stag.agradD(g, cvecvs[^1], phiv[i], vhmasses[i])
+      pushCvec()
       if i == 0:
-        stag.agradSolve(g, psiv[i], dphiv[i], mass, spa)
+        stag.agradSolve(g, cvecvs[^1], cvecvs[^2], mass, spa)
       else:
-        stag.agradSolve(g, psiv[i], dphiv[i], vhmasses[i-1], spa)
-      norm2subtract(faxv[i], psiv[i], 3.0)
+        stag.agradSolve(g, cvecvs[^1], cvecvs[^2], vhmasses[i-1], spa)
+      pushTemp()
+      norm2subtract(ptemps[^1], cvecvs[^1], 3.0)
+      fasum += ptemps[^1]
+    pushCvec()
     if phi.len == 1:
-      stag.agradSolve(g, psiv[^1], phi[^1], mass, spa)
+      stag.agradSolve(g, cvecvs[^1], phiv[^1], mass, spa)
     else:
-      stag.agradSolve(g, psiv[^1], phi[^1], vhmasses[^1], spa)
-    norm2subtract(faxv[^1], psiv[^1], 3.0)
-    for i in 0..<(faxv.len-1):
-      if i == 0:
-        add(fav[0], faxv[0], faxv[1])
-      else:
-        add(fav[i], fav[i-1], faxv[i+1])
-    if fav.len == 1:
-      mul(fav[0], 0.5, faxv[0])
-    else:
-      mul(fav[^1], 0.5, fav[^2])
-      #mul(fav[^1], 0.5, faxv[^1])
-    add(hv, hgv, fav[^1])
+      stag.agradSolve(g, cvecvs[^1], phiv[^1], vhmasses[^1], spa)
+    pushTemp()
+    norm2subtract(ptemps[^1], cvecvs[^1], 3.0)
+    fasum += ptemps[^1]
+    fav.add 0.5*fasum
+    hv.add p2v[^1] + gav[^1] + fav[^1]
 
 proc addPseudo(g: GaugeV) =
   for i in 0..<hmasses.len:
+    pushCvec()
     if i == 0:
-      stag.agradD(g, ptmpv[i], eta[i], mass)
+      stag.agradD(g, cvecvs[^1], eta[i], mass)
     else:
-      stag.agradD(g, ptmpv[i], eta[i], vhmasses[i-1])
-    stag.agradSolve(g, phiv[i], ptmpv[i], vhmasses[i], spa)
+      stag.agradD(g, cvecvs[^1], eta[i], vhmasses[i-1])
+    stag.agradSolve(g, phiv[i], cvecvs[^1], vhmasses[i], spa)
     maskEven phiv[i]
-  stag.agradD(g, phiv[^1], eta[^1], vhmasses[^1])
+  if vhmasses.len == 0:
+    stag.agradD(g, phiv[^1], eta[^1], mass)
+  else:
+    stag.agradD(g, phiv[^1], eta[^1], vhmasses[^1])
   maskEven phiv[^1]
 
 proc setupAction =
@@ -1257,13 +1284,13 @@ proc getH*(m: Met): float =
     echo &"Begin H: {h0}  T: {t0}  Sg: {ga0}  Sf: {fa0}"
     tape.setTrack 1
     tape.run
-    echo &"      H: {hv.obj}  T: {p2v.obj}  Sg: {gav.obj}  Sf: {fav[^1].obj}"
+    echo &"      H: {hv[0].obj}  T: {p2v[0].obj}  Sg: {gav[0].obj}  Sf: {fav[0].obj}"
     tape.setTrack 0
   else:
     echo &"End H: {h0}  T: {t0}  Sg: {ga0}  Sf: {fa0}"
     tape.setTrack 2
     tape.run
-    echo &"    H: {hv.obj}  T: {p2v.obj}  Sg: {gav.obj}  Sf: {fav[^1].obj}"
+    echo &"    H: {hv[1].obj}  T: {p2v[1].obj}  Sg: {gav[1].obj}  Sf: {fav[1].obj}"
     tape.setTrack 0
 
 # w = sum_i w_i
@@ -1336,9 +1363,19 @@ proc getCost1(m: Met): seq[float] =
     result.add nff*costg
 ]#
 
+proc forceCost: float =
+  result = nff[0].float
+  for i in 0..<vhmasses.len:
+    result += nff[i+1].float * (mass/vhmasses[i].obj)
+
+proc forceCostGrad(k: int): float =
+  let i = k - 1
+  if i>=0 and i<vhmasses.len:
+    result = -nff[i+1].float*mass/(vhmasses[i].obj*vhmasses[i].obj)
+
 proc getCost0(m: Met): float =
   let ct = nsteps * vtau.obj
-  nff/(ct * ct * m.avgPAccept)
+  forceCost()/(ct * ct * m.avgPAccept)
   #nff/(ct * ct * pacc.mean)
 
 proc getCost(m: Met): seq[float] =
@@ -1347,7 +1384,8 @@ proc getCost(m: Met): seq[float] =
   let pm = m.pAccept
   let ct = nsteps * vtau.obj
   #result.add (ct*ct*pm)/nff
-  result.add nff/(ct*ct*pm)
+  let fc = forceCost()
+  result.add fc/(ct*ct*pm)
   #var cost = 1.0/()
   #result.add nff*cost
   for i in 0..<params.len:
@@ -1358,12 +1396,12 @@ proc getCost(m: Met): seq[float] =
       pg = - m.pAccept * params[i].grad
     paccg[i].push pg
     #pg = paccg[i].mean
-    var costg = (if i==0: 2.0*ct*pm else: 0.0)
+    var costg = (if i==0: 2.0*nsteps*ct*pm else: 0.0)
     costg = costg + ct * ct * pg
     let d = m.hNew - m.hOld
-    let alp = alpha
-    costg += alp*d*(d*pg + 2*(pm-1)*params[i].grad)
-    #costg = costg/nff
+    #let alp = alpha
+    #costg += alp*d*(d*pg + 2*(pm-1)*params[i].grad)
+    costg = costg/fc - (ct*ct*pm/(fc*fc))*forceCostGrad(i)
     #costg = nff*costg*(cost*cost)  # extra - to make it minimize
     if fixtau and i==0: costg = 0
     if fixhmasses and i>0 and i<=hmasses.len: costg = 0
@@ -1377,16 +1415,24 @@ proc checkGrad(m: Met) =
   gx := g
   #let tg = vtau.grad
   #let f0 = vtau.obj * exp(m.hOld-m.hNew)
+  #let h0 = m.hOld
   let eps = 1e-6
   var gs = newSeq[float](0)
   for i in 0..<params.len: gs.add params[i].grad
   for i in 0..<params.len:
     let t = params[i].obj
     params[i].obj += eps
+    updatePseudo()
+    threads:
+      for mu in 0..<g.len:
+        g[mu] := g0[mu]
+        p[mu] := p0[mu]
+    let h0 = m.getH
     update()
-    let h = m.getH
+    let h1 = m.getH
+    let dh = h1-h0
     echo "params[",i,"] grad: ", gs[i]
-    echo "params[",i,"] diff: ", (h-m.hNew)/eps
+    echo "params[",i,"] diff: ", (dh-m.deltaH)/eps
     params[i].obj = t
   #update()
   g := gx
@@ -1396,14 +1442,18 @@ proc checkGrad(m: Met) =
 var cgstat = newSeq[DecayStat](0)
 
 proc getGrad(m: Met) =
-  hv.grad = 1.0
-  #fav.grad = 1.0
+  hv[0].grad = -1.0
+  hv[1].grad = 1.0
+  tape.setTrack 1
+  tape.grad
   tape.setTrack 2
   tape.grad
   tape.setTrack 0
   #gc.gaugeDeriv2(gaugevs[^1].obj, gaugevs[^1].grad)
   #for mu in 0..<g.len:
   #  momvs[^1].grad[mu] := momvs[^1].obj[mu]
+  tape.grad
+  tape.setTrack 3
   tape.grad
   if checkg:
     checkGrad(m)
@@ -1528,6 +1578,13 @@ block:
   #echo src.norm2slice(3)
 
 var gfStats: RunningStat
+var ffStats = newSeq[RunningStat](1+hmasses.len)
+
+proc resetMeasure =
+  gfStats.clear
+  for i in 0..<ffStats.len:
+    ffStats[i].clear
+
 proc measure =
   #threads:
   #  g.rephase
@@ -1549,9 +1606,18 @@ proc measure =
   #discard
   let sf = 1.0/(lat.len.float*lo.physVol.float*8.0)  # 8 SU3 generators
   for i in 0..<gfList.len:
-    let f2 = momvs[gfList[i]].obj.norm2
-    gfStats.push sqrt(sf*f2)
-  echo "RMS gauge force: ", gfStats.mean, "  max norm2: ", gfStats.max
+    #let f2 = momvs[gfList[i]].obj.norm2
+    #gfStats.push gfeList[i].obj*sqrt(sf*f2)
+    let gfs = momvs[gfList[i]].obj.rmsStats gfeList[i].obj
+    gfStats += gfs
+  echo &"RMS gforce: {gfStats.mean:8.6f}  max {gfStats.max:8.6f}  std {gfStats.standardDeviationS:8.6f}"
+  for i in 0..<ffList.len:
+    for j in 0..<ffList[i].len:
+      #let f2 = momvs[ffList[i][j]].obj.norm2
+      #ffStats[i].push abs(ffeList[i][j].obj)*sqrt(sf*f2)
+      let ffs = momvs[ffList[i][j]].obj.rmsStats abs(ffeList[i][j].obj)
+      ffStats[i] += ffs
+    echo &"RMS fforce {i}: {ffStats[i].mean:8.6f}  max {ffStats[i].max:8.6f}  std {ffStats[i].standardDeviationS:8.6f}"
 
 case md
 of "aba": setupMDaba()
@@ -1593,6 +1659,7 @@ else:
 
 setupAction()
 echo "nFF: ", nff
+echo "initial force cost: ", forceCost()
 
 if nwarm > 0:
   echo "Starting warmups"
@@ -1617,12 +1684,12 @@ block:
     tic()
     m.update
     getGrad(m)
+    let tup = getElapsedTime()
+    measure()
     if upit > 0:
       if n mod upit == 0:
         updateParams(sqrt(float upit)*lrate)
         lrate *= anneal
-    let tup = getElapsedTime()
-    measure()
     let ttot = getElapsedTime()
     echo "End trajectory update: ", tup, "  measure: ", ttot-tup, "  total: ", ttot
   let et = getElapsedTime()
@@ -1631,6 +1698,7 @@ block:
   #let at = gutime + gftime + fftime
   #echo &"gu: {gutime}  gf: {gftime}  ff: {fftime}  ot: {et-at}  tt: {et}"
 
+resetMeasure()
 if trajs > 0:
   m.clearStats
   pacc.clear
@@ -1645,7 +1713,9 @@ if trajs > 0:
     #echo "cost: ", nff/(vtau.obj*vtau.obj*m.avgPAccept)
     echo "cost: ", getCost0(m)
     let tup = getElapsedTime()
-    echo "End inference: ", tup
+    measure()
+    let ttot = getElapsedTime()
+    echo "End inference update: ", tup, "  measure: ", ttot-tup, "  total: ", ttot
   let et = getElapsedTime()
   toc()
   echo "Inference time: ", et

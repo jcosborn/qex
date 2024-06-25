@@ -53,6 +53,26 @@ proc peqmul[G:GaugeF](r: G, x: float, y: G) =
       for s in r[mu]:
         r[mu][s] += x * y[mu][s]
 
+proc assigngrad(c: float, r: var float) =
+  r += c
+proc assignfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
+  #mixin peq
+  op.outputs.obj := op.inputs.maybeObj
+  when op.inputs is AgVar:
+    zero op.inputs.grad
+proc assignbck[I,O](op: AgOp[I,O]) {.nimcall.} =
+  #mixin peq
+  when op.inputs is AgVar:
+    if op.inputs.doGrad:
+      assigngrad(op.outputs.grad, op.inputs.grad)
+proc assign(c: var AgTape, r: AgVar, x: auto) =
+  var op = newAgOp(x, r, assignfwd, assignbck)
+  c.add op
+template assign*(r: AgVar, x: auto) =
+  r.ctx.assign(r, x)
+template `:=`*(r: AgVar, x: auto) =
+  r.ctx.assign(r, x)
+
 proc addgrad1(c: float, r: var float, y: float) =
   r += c
 proc addgrad2(c: float, x: float, r: var float) =
@@ -228,6 +248,26 @@ proc divd(c: var AgTape, r: AgVar, x: auto, y: auto) =
   c.add op
 template divd*(r: AgVar, x: auto, y: auto) =
   r.ctx.divd(r, x, y)
+
+proc peqgrad(c: float, r: var float) =
+  r += c
+proc peqfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
+  #mixin peq
+  op.outputs.obj += op.inputs.maybeObj
+  when op.inputs is AgVar:
+    zero op.inputs.grad
+proc peqbck[I,O](op: AgOp[I,O]) {.nimcall.} =
+  #mixin peq
+  when op.inputs is AgVar:
+    if op.inputs.doGrad:
+      peqgrad(op.outputs.grad, op.inputs.grad)
+proc peq(c: var AgTape, r: AgVar, x: auto) =
+  var op = newAgOp(x, r, peqfwd, peqbck)
+  c.add op
+template peq*(r: AgVar, x: auto) =
+  r.ctx.peq(r, x)
+template `+=`*(r: AgVar, x: auto) =
+  r.ctx.peq(r, x)
 
 proc mulna[G:GaugeF](r: G, x: G, y: G) =
   threads:

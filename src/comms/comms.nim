@@ -70,8 +70,13 @@ template allReduce*(c: Comm, x: var UncheckedArray[float64], n: int) =
 template pushSend*(c: Comm, rank: int, xx: SomeNumber) =
   var x = xx
   pushSend(c, rank, &&x, sizeof(x))
+template pushSend*(c: Comm, rank: int, x: object) =
+  pushSend(c, rank, &&x, sizeof(x))
 template pushSend*(c: Comm, rank: int, x: seq) =
   pushSend(c, rank, &&x[0], x.len*sizeof(x[0]))
+template waitSend*(c: Comm) =
+  let n = c.nsends - 1
+  c.waitSends(n, n)
 template waitSends*(c: Comm) =
   c.waitSends(0, c.nsends-1)
 template waitSends*(c: Comm, k: int) =
@@ -80,6 +85,8 @@ template waitSends*(c: Comm, k: int) =
   waitSends(c, i0, n-1)
 
 template pushRecv*(c: Comm, rank: int, x: SomeNumber) =
+  pushRecv(c, rank, &&x, sizeof(x))
+template pushRecv*(c: Comm, rank: int, x: object) =
   pushRecv(c, rank, &&x, sizeof(x))
 template pushRecv*(c: Comm, rank: int, x: seq) =
   pushRecv(c, rank, &&x[0], x.len*sizeof(x[0]))
