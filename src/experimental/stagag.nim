@@ -1394,7 +1394,7 @@ proc getCost(m: Met): seq[float] =
     # grad (p = min(1,exp(ho-hn))) -> 0 or - p grad(hn)
     var pg = 0.0
     if m.hNew > m.hOld:
-      pg = - m.pAccept * params[i].grad
+      pg = - pm * params[i].grad
     paccg[i].push pg
     #pg = paccg[i].mean
     var costg = (if i==0: 2.0*nsteps*ct*pm else: 0.0)
@@ -1404,6 +1404,9 @@ proc getCost(m: Met): seq[float] =
     #costg += alp*d*(d*pg + 2*(pm-1)*params[i].grad)
     costg = costg/fc - (ct*ct*pm/(fc*fc))*forceCostGrad(i)
     #costg = nff*costg*(cost*cost)  # extra - to make it minimize
+    if i==0:
+      if m.deltaH > 10:
+        costg = -0.1
     if fixtau and i==0: costg = 0
     if fixhmasses and i>0 and i<=hmasses.len: costg = 0
     if fixparams and i>hmasses.len: costg = 0
