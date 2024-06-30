@@ -37,6 +37,7 @@ let
   outfn = stringParam("outfn", "")
 var
   lrate = floatParam("lrate", 0.001)
+  lrateh = floatParam("lrateh", lrate)
   pt0 = floatParam("t0", 0)
   pg0 = floatParam("g0", 0)
   pf0 = floatParam("f0", 0)
@@ -70,6 +71,7 @@ echoparam(fixhmasses)
 echoparam(md)
 echoparam(upit)
 echoparam(lrate)
+echoparam(lrateh)
 echoparam(anneal)
 echoparam(alpha)
 echoparam(checkg)
@@ -1475,7 +1477,7 @@ proc getGrad(m: Met) =
     #echo "costg: ", cgstat[i].mean, " ", cst[i+1]
     echo &"costg: {m/v:8.6f} {m:10.6f} {cst[i+1]}"
 
-proc updateParams(rate: float) =
+proc updateParams(ratefac: float) =
   let eps = 1e-8
   let n = cgstat.len
   #var s = 0.0
@@ -1492,6 +1494,9 @@ proc updateParams(rate: float) =
   echo "Params: ", p
   #s = rate*sqrt(n/s)
   for i in 0..<n:
+    var rate = ratefac * lrate
+    if i>0 and i<=hmasses.len:
+      rate = ratefac * lrateh
     #let m = cgstat[i].mean
     #let d = s*g[i]
     let d = rate*g[i]
@@ -1692,8 +1697,9 @@ block:
     measure()
     if upit > 0:
       if n mod upit == 0:
-        updateParams(sqrt(float upit)*lrate)
+        updateParams(sqrt(float upit))
         lrate *= anneal
+        lrateh *= anneal
     let ttot = getElapsedTime()
     echo "End trajectory update: ", tup, "  measure: ", ttot-tup, "  total: ", ttot
   let et = getElapsedTime()
