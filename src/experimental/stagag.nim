@@ -53,6 +53,16 @@ var
   pf2 = floatParam("f2", 0)
   pgf2 = floatParam("gf2", 0)
   pff2 = floatParam("ff2", 0)
+  pt3 = floatParam("t3", 0)
+  pg3 = floatParam("g3", 0)
+  pf3 = floatParam("f3", 0)
+  pgf3 = floatParam("gf3", 0)
+  pff3 = floatParam("ff3", 0)
+  pt4 = floatParam("t4", 0)
+  pg4 = floatParam("g4", 0)
+  pf4 = floatParam("f4", 0)
+  pgf4 = floatParam("gf4", 0)
+  pff4 = floatParam("ff4", 0)
 
 macro echoparam(x: auto): auto =
   let n = x.repr
@@ -444,6 +454,56 @@ proc setupMDababa =
     addF(f0)
     addT(t1)
     addF(f0)
+    addG(g0)
+  addT(t0)
+
+proc setupMDg10f2 =
+  if pt0 == 0: pt0 = 0.075
+  if pt1 == 0: pt1 = 0.07
+  if pt2 == 0: pt2 = 0.06
+  if pt3 == 0: pt3 = 0.1
+  if pt4 == 0: pt4 = 0.1
+  if pg0 == 0: pg0 = 0.095
+  if pg1 == 0: pg1 = 0.095
+  if pg2 == 0: pg2 = 0.09
+  if pg3 == 0: pg3 = 0.09
+  #let eps = vtau / nsteps
+  let t0 = vtau * pushParam(pt0)
+  let t02 = 2 * t0
+  let t1 = vtau * pushParam(pt1)
+  let t2 = vtau * pushParam(pt2)
+  let t3 = vtau * pushParam(pt3)
+  let t4 = vtau * pushParam(pt4)
+  let t5 = vtau - t02 - 2 * (t1 + t2 + t3 + t4)
+  let g0 = vtau * pushParam(pg0)
+  let g1 = vtau * pushParam(pg1)
+  let g2 = vtau * pushParam(pg2)
+  let g3 = vtau * pushParam(pg3)
+  let g4 = 0.5 * vtau - (g0 + g1 + g2 + g3)
+  let f0 = 0.5 * vtau
+  addT(t0)
+  for i in 0..<nsteps:
+    if i!=0: addT(t02)
+    addG(g0)
+    addT(t1)
+    addG(g1)
+    addT(t2)
+    addG(g2)
+    addF(f0)
+    addT(t3)
+    addG(g3)
+    addT(t4)
+    addG(g4)
+    addT(t5)
+    addG(g4)
+    addT(t4)
+    addG(g3)
+    addT(t3)
+    addF(f0)
+    addG(g2)
+    addT(t2)
+    addG(g1)
+    addT(t1)
     addG(g0)
   addT(t0)
 
@@ -1639,6 +1699,7 @@ of "abababa": setupMDabababa()
 of "abacaba": setupMDabacaba()
 of "ababababa": setupMDababababa()
 of "acabacabaca": setupMDacabacabaca()
+of "g10f2": setupMDg10f2()
 else:
   echo "unknown MD string: ", md
   qexAbort()
