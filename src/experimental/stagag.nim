@@ -457,6 +457,36 @@ proc setupMDababa =
     addG(g0)
   addT(t0)
 
+#proc setupMDagabagabaga =
+proc setupMDg5f2 =
+  if pt0 == 0: pt0 = 0.1
+  if pt1 == 0: pt1 = 0.1
+  if pg0 == 0: pg0 = 0.1
+  if pg1 == 0: pg1 = 0.2
+  let t0 = vtau * pushParam(pt0)
+  let t02 = 2 * t0
+  let t1 = vtau * pushParam(pt1)
+  let t2 = 0.5*vtau - t0 - t1
+  let g0 = vtau * pushParam(pg0)
+  let g1 = vtau * pushParam(pg1)
+  let g2 = vtau - 2*( g0 + g1 )
+  let f0 = 0.5*vtau
+  addT(t0)
+  for i in 0..<nsteps:
+    if i!=0: addT(t02)
+    addG(g0)
+    addT(t1)
+    addG(g1)
+    addF(f0)
+    addT(t2)
+    addG(g2)
+    addT(t2)
+    addF(f0)
+    addG(g1)
+    addT(t1)
+    addG(g0)
+  addT(t0)
+
 proc setupMDg10f2 =
   if pt0 == 0: pt0 = 0.075
   if pt1 == 0: pt1 = 0.07
@@ -1699,6 +1729,7 @@ of "abababa": setupMDabababa()
 of "abacaba": setupMDabacaba()
 of "ababababa": setupMDababababa()
 of "acabacabaca": setupMDacabacabaca()
+of "g5f2": setupMDg5f2()
 of "g10f2": setupMDg10f2()
 else:
   echo "unknown MD string: ", md
