@@ -532,6 +532,48 @@ proc setupMDg5f23 =
     addG(g0)
   addT(t0)
 
+proc setupMDg6f24 =
+  if pt0 == 0: pt0 = 0.1
+  if pt1 == 0: pt1 = 0.11
+  if pt2 == 0: pt2 = 0.13
+  if pg0 == 0: pg0 = 0.12
+  if pg1 == 0: pg1 = 0.22
+  if pf0 == 0: pf0 = 0.22
+  let t0 = vtau * pushParam(pt0)
+  let t02 = 2 * t0
+  let t1 = vtau * pushParam(pt1)
+  let t2 = vtau * pushParam(pt2)
+  let t3 = vtau - 2*(t0 + t1 + t2)
+  let g0 = vtau * pushParam(pg0)
+  let g1 = vtau * pushParam(pg1)
+  let g2 = 0.5*vtau - g0 - g1
+  let f00 = vtau * pushParam(pf0)
+  let f01 = 0.5*vtau - f00
+  let f10 = 0.5*vtau
+  let i0 = hmasses.len
+  let i1 = hmasses.len - 1
+  addT(t0)
+  for i in 0..<nsteps:
+    if i!=0: addT(t02)
+    addG(g0)
+    addF(f00, i0)
+    addT(t1)
+    addG(g1)
+    addF(f10, 0, i1)
+    addT(t2)
+    addG(g2)
+    addF(f01, i0)
+    addT(t3)
+    addF(f01, i0)
+    addG(g2)
+    addT(t2)
+    addF(f10, 0, i1)
+    addG(g1)
+    addT(t1)
+    addF(f00, i0)
+    addG(g0)
+  addT(t0)
+
 proc setupMDg10f2 =
   if pt0 == 0: pt0 = 0.075
   if pt1 == 0: pt1 = 0.07
@@ -1797,6 +1839,7 @@ of "ababababa": setupMDababababa()
 of "acabacabaca": setupMDacabacabaca()
 of "g5f2": setupMDg5f2()
 of "g5f23": setupMDg5f23()
+of "g6f24": setupMDg6f24()
 of "g10f2": setupMDg10f2()
 else:
   echo "unknown MD string: ", md
