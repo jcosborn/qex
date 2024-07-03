@@ -1684,6 +1684,11 @@ proc resetMeasure =
   for i in 0..<ffStats.len:
     ffStats[i].clear
 
+proc avgabs(x: seq[FloatV]): float =
+  for i in 0..<x.len:
+    result += abs(x[i].obj)
+  result /= x.len.float
+
 proc fstats(s: RunningStat): string =
   let f2 = sqrt(s.variance)
   let f4 = f2*sqrt(sqrt((s.kurtosis+3.0)))
@@ -1714,7 +1719,8 @@ proc measure =
     #let f2 = momvs[gfList[i]].obj.norm2
     #gfStats.push gfeList[i].obj*sqrt(sf*f2)
     #let gfs = momvs[gfList[i]].obj.rmsStats gfeList[i].obj
-    let t = momvs[gfList[i]].obj.rmsStats (1.5/gfList.len)  # 1.5=sqrt(18/8)
+    #let t = momvs[gfList[i]].obj.rmsStats (1.5/gfList.len)  # 1.5=sqrt(18/8)
+    let t = momvs[gfList[i]].obj.rmsStats (1.5*gfeList.avgabs)  # 1.5=sqrt(18/8)
     gfs += t
   echo "GF: ", fstats(gfs)
   gfStats += gfs
@@ -1724,7 +1730,8 @@ proc measure =
       #let f2 = momvs[ffList[i][j]].obj.norm2
       #ffStats[i].push abs(ffeList[i][j].obj)*sqrt(sf*f2)
       #let ffs = momvs[ffList[i][j]].obj.rmsStats abs(ffeList[i][j].obj)
-      let t = momvs[ffList[i][j]].obj.rmsStats (1.5/ffList[i].len)  # 1.5=sqrt(18/8)
+      #let t = momvs[ffList[i][j]].obj.rmsStats (1.5/ffList[i].len)  # 1.5=sqrt(18/8)
+      let t = momvs[ffList[i][j]].obj.rmsStats (1.5*ffeList[i].avgabs)  # 1.5=sqrt(18/8)
       ffs += t
     echo "FF", i, ": ", fstats(ffs)
     ffStats[i] += ffs
