@@ -5,7 +5,11 @@ import observables/sources
 import quda/qudaWrapper
 import hmc/agradOps
 
-qexinit()
+qexInit()
+echo "rank ", myRank, "/", nRanks
+threads:
+  echo "thread ", threadNum, "/", numThreads
+
 proc `:=`*(r: var seq, x: seq) =
   for i in 0..<r.len: r[i] := x[i]
 
@@ -621,6 +625,73 @@ proc setupMDg10f2 =
     addT(t2)
     addG(g1)
     addT(t1)
+    addG(g0)
+  addT(t0)
+
+proc setupMDg10f28 =
+  if pt0 == 0: pt0 = 0.075
+  if pt1 == 0: pt1 = 0.07
+  if pt2 == 0: pt2 = 0.06
+  if pt3 == 0: pt3 = 0.09
+  if pt4 == 0: pt4 = 0.09
+  if pg0 == 0: pg0 = 0.095
+  if pg1 == 0: pg1 = 0.095
+  if pg2 == 0: pg2 = 0.09
+  if pg3 == 0: pg3 = 0.09
+  if pf0 == 0: pf0 = 0.11
+  if pf1 == 0: pf1 = 0.11
+  if pf2 == 0: pf2 = 0.16
+  #let eps = vtau / nsteps
+  let t0 = vtau * pushParam(pt0)
+  let t02 = 2 * t0
+  let t1 = vtau * pushParam(pt1)
+  let t2 = vtau * pushParam(pt2)
+  let t3 = vtau * pushParam(pt3)
+  let t4 = vtau * pushParam(pt4)
+  let t5 = vtau - t02 - 2 * (t1 + t2 + t3 + t4)
+  let g0 = vtau * pushParam(pg0)
+  let g1 = vtau * pushParam(pg1)
+  let g2 = vtau * pushParam(pg2)
+  let g3 = vtau * pushParam(pg3)
+  let g4 = 0.5 * vtau - (g0 + g1 + g2 + g3)
+  let f00 = vtau * pushParam(pf0)
+  let f01 = vtau * pushParam(pf1)
+  let f02 = vtau * pushParam(pf2)
+  let f03 = 0.5*vtau - f00 - f01 - f02
+  let f10 = 0.5*vtau
+  let i0 = hmasses.len
+  let i1 = hmasses.len - 1
+  addT(t0)
+  for i in 0..<nsteps:
+    if i!=0: addT(t02)
+    addG(g0)
+    addF(f00, i0)
+    addT(t1)
+    addG(g1)
+    addF(f01, i0)
+    addT(t2)
+    addG(g2)
+    addF(f10, 0, i1)
+    addT(t3)
+    addG(g3)
+    addF(f02, i0)
+    addT(t4)
+    addG(g4)
+    addF(f03, i0)
+    addT(t5)
+    addF(f03, i0)
+    addG(g4)
+    addT(t4)
+    addF(f02, i0)
+    addG(g3)
+    addT(t3)
+    addF(f10, 0, i1)
+    addG(g2)
+    addT(t2)
+    addF(f01, i0)
+    addG(g1)
+    addT(t1)
+    addF(f00, i0)
     addG(g0)
   addT(t0)
 
@@ -1841,6 +1912,7 @@ of "g5f2": setupMDg5f2()
 of "g5f23": setupMDg5f23()
 of "g6f24": setupMDg6f24()
 of "g10f2": setupMDg10f2()
+of "g10f28": setupMDg10f28()
 else:
   echo "unknown MD string: ", md
   qexAbort()
@@ -1937,4 +2009,4 @@ if outfn != "":
   let err = g.saveGauge outfn
 
 #echoTimers()
-qexfinalize()
+qexFinalize()
