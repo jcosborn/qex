@@ -354,6 +354,20 @@ proc addFf(g: GaugeV, i = 0) =
   projtah(momvs[^1], momvs[^2])
   nff[i] += 1
 
+proc massFactor0(veps: FloatV, i: int): FloatV =
+  if i == 0:
+    result = (-0.5/mass) * veps
+  else:
+    result = -0.5 * (veps/vhmasses[i-1])
+
+proc massFactor(veps: FloatV, i: int): FloatV =
+  result = massFactor0(veps, i)
+  if i < hmasses.len: # last term is just inverse (no ratio)
+    if i == 0:
+      result = result * (vhmasses[0]*vhmasses[0]-mass*mass)
+    else:
+      result = result * (vhmasses[i]*vhmasses[i]-vhmasses[i-1]*vhmasses[i-1])
+
 var ffList = newSeqWith(1+hmasses.len, newSeq[int](0))
 var ffeList = newSeqWith(1+hmasses.len, newSeq[FloatV](0))
 proc addFx(veps: FloatV; p0,g: GaugeV; i0,i1: int) =
@@ -362,17 +376,7 @@ proc addFx(veps: FloatV; p0,g: GaugeV; i0,i1: int) =
   for i in i0..i1:
     addFf(g, i)
     pushMom()
-    var va: FloatV
-    if i == hmasses.len: # last term is just inverse (no ratio)
-      if i == 0:
-        va = (-0.5/mass) * veps
-      else:
-        va = -0.5 * (veps/vhmasses[i-1])
-    else:
-      if i == 0:
-        va = (-0.5/mass) * veps * (vhmasses[0]*vhmasses[0]-mass*mass)
-      else:
-        va = -0.5*veps*(vhmasses[i]*vhmasses[i]/vhmasses[i-1]-vhmasses[i-1])
+    let va = massFactor(veps, i)
     xpay(momvs[^1], p, va, momvs[^2])
     p = momvs[^1]
     ffList[i].add momvs.len-2
@@ -390,16 +394,21 @@ proc addF(veps: FloatV; i0,i1: int) =
   if nf == 0: return
   addFx(veps, momvs[^1], gaugevs[^1], i0, i1)
 
-proc addFF(va, vb: FloatV) =
+proc addFF(va, vb: FloatV; i0,i1: int) =
   if nf == 0: return
-  let p = momvs[^1]
-  addFf(gaugevs[^1])
-  pushMom()
-  let vbx = (-0.5/mass) * vb
-  exp(momvs[^1], vbx, momvs[^2])
-  pushMom()
-  mul(momvs[^1], momvs[^2], gaugevs[^1])
-  addFx(va, p, momvs[^1], 0, hmasses.len)
+  var p = momvs[^1]
+  let g = gaugevs[^1]
+  for i in i0..i1:
+    addFf(g, i)
+    pushMom()
+    let vbx = massFactor(vb, i)
+    exp(momvs[^1], vbx, momvs[^2])
+    pushMom()
+    mul(momvs[^1], momvs[^2], gaugevs[^1])
+    addFx(va, p, momvs[^1], i, i)
+    p = momvs[^1]
+
+template addFF(va, vb: FloatV) = addFF(va, vb, 0, hmasses.len)
 
 proc setupMDx =
   pushTemp()
