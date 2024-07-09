@@ -168,12 +168,19 @@ var spa = initSolverParams()
 spa.r2req = arsq
 spa.maxits = 10000
 #spa.backend = sbQex
-var spf = initSolverParams()
-#spf.subsetName = "even"
-spf.r2req = frsq
-spf.maxits = 10000
-spf.verbosity = 0
-#spf.backend = sbQex
+var spf = newSeq[type spa](hmasses.len+1)  # fermion force forward
+var spfb = newSeq[type spa](hmasses.len+1)  # fermion force backward
+for i in 0..<spf.len:
+  spf[i] = initSolverParams()
+  spf[i].r2req = frsq
+  spf[i].maxits = 10000
+  spf[i].verbosity = 0
+  #spf.backend = sbQex
+  spfb[i] = initSolverParams()
+  spfb[i].r2req = frsq
+  spfb[i].maxits = 10000
+  spfb[i].verbosity = 0
+  #spf.backend = sbQex
 
 proc norm2*(x: seq): float =
   for i in 0..<x.len:
@@ -343,9 +350,9 @@ proc addFf(g: GaugeV, i = 0) =
   pushCvec()
   let cv = cvecvs[^1]
   if i == 0:
-    stag.agradSolve(g, cv, phiv[i], mass, spf)
+    stag.agradSolve(g, cv, phiv[i], mass, spf[i], spfb[i])
   else:
-    stag.agradSolve(g, cv, phiv[i], vhmasses[i-1], spf)
+    stag.agradSolve(g, cv, phiv[i], vhmasses[i-1], spf[i], spfb[i])
   pushMom()
   stag.agradStagDeriv(momvs[^1], cv)
   pushMom()
@@ -1968,6 +1975,9 @@ alwaysAccept = false
 #gutime = 0.0
 #gftime = 0.0
 #fftime = 0.0
+for i in 0..<spf.len:
+  spf[i].resetStats
+  spfb[i].resetStats
 block:
   tic()
   for n in 1..ntrain:
@@ -1977,6 +1987,8 @@ block:
     m.update
     getGrad(m)
     let tup = getElapsedTime()
+    for i in 0..<spf.len:
+      echo &"FFits{i}: ", spf[i].getAveStats
     measure()
     if upit > 0:
       if n mod upit == 0:
@@ -1992,6 +2004,9 @@ block:
   #echo &"gu: {gutime}  gf: {gftime}  ff: {fftime}  ot: {et-at}  tt: {et}"
 
 resetMeasure()
+for i in 0..<spf.len:
+  spf[i].resetStats
+  spfb[i].resetStats
 if trajs > 0:
   m.clearStats
   pacc.clear
@@ -2006,6 +2021,8 @@ if trajs > 0:
     #echo "cost: ", nff/(vtau.obj*vtau.obj*m.avgPAccept)
     echo "cost: ", getCost0(m)
     let tup = getElapsedTime()
+    for i in 0..<spf.len:
+      echo &"FFits{i}: ", spf[i].getAveStats
     measure()
     let ttot = getElapsedTime()
     echo "End inference update: ", tup, "  measure: ", ttot-tup, "  total: ", ttot

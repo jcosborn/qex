@@ -558,7 +558,7 @@ proc agradSolvebck[I,O](op: AgOp[I,O]) {.nimcall.} =
   let g = op.inputs[1]
   let x = op.inputs[2]
   let m = op.inputs[3]
-  let p = op.inputs[4]
+  let p = op.inputs[5]
   let r = op.outputs
   var c = r.grad.newOneOf
   r.grad.odd *= -1
@@ -583,12 +583,15 @@ proc agradSolvebck[I,O](op: AgOp[I,O]) {.nimcall.} =
   when m is AgVar:
     if m.doGrad:
       m.grad += redot(r.obj, c)
-proc agradSolve(c: var AgTape, s,g,r,x,m,p: auto) =
-  var op = newAgOp((s,g,x,m,p), r, agradSolvefwd, agradSolvebck)
+proc agradSolve(c: var AgTape, s,g,r,x,m,pf,pb: auto) =
+  var op = newAgOp((s,g,x,m,pf,pb), r, agradSolvefwd, agradSolvebck)
   c.add op
+template agradSolve*(s: Staggered, g,r,x,m,pf,pb: auto) =
+  ## g: gauge, r: result, x: src, m: mass, p: solve params
+  r.ctx.agradSolve(s, g, r, x, m, addr pf, addr pb)
 template agradSolve*(s: Staggered, g,r,x,m,p: auto) =
   ## g: gauge, r: result, x: src, m: mass, p: solve params
-  r.ctx.agradSolve(s, g, r, x, m, addr p)
+  r.ctx.agradSolve(s, g, r, x, m, addr p, addr p)
 
 when isMainModule:
   import qex, physics/stagSolve
