@@ -829,6 +829,7 @@ proc setupMDabacaba =
   if pgf1 == 0: pgf1 = 0.006938106540706989*(2.0/(1-2*pg0))
   if pff1 == 0: pff1 = 0.006938106540706989*(2.0/(1-2*pf0))
   let t0 = vtau * pushParam(pt0)
+  let t02 = 2 * t0
   let g0 = vtau * pushParam(pg0)
   let f0 = if nf==0: g0 else: vtau * pushParam(pf0)
   let t1 = 0.5 * vtau - t0
@@ -837,14 +838,16 @@ proc setupMDabacaba =
   let gf1 = vtau*vtau*pushParam(pgf1)
   let ff1 = if nf==0: gf1 else: vtau*vtau*pushParam(pff1)
   addT(t0)
-  addG(g0)
-  addF(f0)
-  addT(t1)
-  addGF(g1, gf1)
-  addFF(f1, ff1)
-  addT(t1)
-  addF(f0)
-  addG(g0)
+  for i in 0..<nsteps:
+    if i!=0: addT(t02)
+    addG(g0)
+    addF(f0)
+    addT(t1)
+    addGF(g1, gf1)
+    addFF(f1, ff1)
+    addT(t1)
+    addF(f0)
+    addG(g0)
   addT(t0)
 
 # Order 6
