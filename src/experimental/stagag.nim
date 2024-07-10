@@ -417,17 +417,16 @@ proc addFF(va, vb: FloatV; i0,i1: int) =
 
 template addFF(va, vb: FloatV) = addFF(va, vb, 0, hmasses.len)
 
-proc addGFF(va, vb: FloatV; i0,i1: int) =
-  if nf == 0: return
+proc addGFF(vag, vbg, vaf, vbf: FloatV; i0,i1: int) =
   var p = momvs[^1]
   let g = gaugevs[^1]
   addGf(g)
   pushMom()
   var s = momvs[^1]
-  mul(s, vb, momvs[^2])
+  mul(s, vbg, momvs[^2])
   for i in i0..i1:
     addFf(g, i)
-    let vbx = massFactor(vb, i)
+    let vbx = massFactor(vbf, i)
     pushMom()
     xpay(momvs[^1], s, vbx, momvs[^2])
     s = momvs[^1]
@@ -436,10 +435,11 @@ proc addGFF(va, vb: FloatV; i0,i1: int) =
   pushMom()
   mul(momvs[^1], momvs[^2], g)
   s = momvs[^1]
-  addGx(va, p, s)
-  addFx(va, momvs[^1], s, i0, i1)
+  addGx(vag, p, s)
+  addFx(vaf, momvs[^1], s, i0, i1)
 
-template addGFF(va, vb: FloatV) = addGFF(va, vb, 0, hmasses.len)
+template addGFF(vag, vbg, vaf, vbf: FloatV) = addGFF(vag, vbg, vaf, vbf, 0, hmasses.len)
+template addGFF(va, vb: FloatV) = addGFF(va, vb, va, vb, 0, hmasses.len)
 
 proc setupMDx =
   pushTemp()
@@ -849,29 +849,29 @@ proc setupMDbacab =
 proc setupMDabacaba =
   if pt0 == 0: pt0 = 0.08935804763220157
   if pg0 == 0: pg0 = 0.2470939580390842
-  #if pf0 == 0: pf0 = 0.2470939580390842
+  if pf0 == 0: pf0 = 0.2470939580390842
   if pgf1 == 0: pgf1 = 0.006938106540706989*(2.0/(1-2*pg0))
-  #if pff1 == 0: pff1 = 0.006938106540706989*(2.0/(1-2*pf0))
+  if pff1 == 0: pff1 = 0.006938106540706989*(2.0/(1-2*pf0))
   let t0 = vtau * pushParam(pt0)
   let t02 = 2 * t0
   let g0 = vtau * pushParam(pg0)
-  #let f0 = if nf==0: g0 else: vtau * pushParam(pf0)
+  let f0 = if nf==0: g0 else: vtau * pushParam(pf0)
   let t1 = 0.5 * vtau - t0
   let g1 = vtau - 2 * g0
-  #let f1 = vtau - 2 * f0
+  let f1 = vtau - 2 * f0
   let gf1 = vtau*vtau*pushParam(pgf1)
-  #let ff1 = if nf==0: gf1 else: vtau*vtau*pushParam(pff1)
+  let ff1 = if nf==0: gf1 else: vtau*vtau*pushParam(pff1)
   addT(t0)
   for i in 0..<nsteps:
     if i!=0: addT(t02)
     addG(g0)
-    addF(g0)
+    addF(f0)
     addT(t1)
     #addGF(g1, gf1)
     #addFF(f1, ff1)
-    addGFF(g1, gf1)
+    addGFF(g1, gf1, f1, ff1)
     addT(t1)
-    addF(g0)
+    addF(f0)
     addG(g0)
   addT(t0)
 
