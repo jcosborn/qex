@@ -307,7 +307,7 @@ var ep: ExpParam
 ep.scale = 20
 ep.kind = ekPoly
 ep.order = 4
-proc expfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
+proc expvfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
   mixin exp
   let g = op.outputs.obj
   let a = op.inputs[0].obj
@@ -319,7 +319,7 @@ proc expfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
       for s in g[mu]:
         g[mu][s][] := ep.exp(a*p[mu][s][])
         pg[mu][s] := 0
-proc expbck[I,O](op: AgOp[I,O]) {.nimcall.} =
+proc expvbck[I,O](op: AgOp[I,O]) {.nimcall.} =
   mixin `+=`
   if op.inputs[0].doGrad or op.inputs[1].doGrad:
     #let g = op.outputs.obj
@@ -344,10 +344,38 @@ proc expbck[I,O](op: AgOp[I,O]) {.nimcall.} =
         ag += agls
     op.inputs[0].grad = ag
 proc exp*[G:GaugeFV](c: var AgTape, g: G, a: FloatV, p: G) =
-  var op = newAgOp((a,p), g, expfwd, expbck)
+  var op = newAgOp((a,p), g, expvfwd, expvbck)
   c.add op
 template exp*[G:GaugeFV](g: G, a: FloatV, p: G) =
   g.ctx.exp(g, a, p)
+
+proc expfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
+  mixin exp
+  let g = op.outputs.obj
+  let p = op.inputs.obj
+  let pg = op.inputs.grad
+  threads:
+    for mu in 0..<g.len:
+      for s in g[mu]:
+        g[mu][s][] := ep.exp(p[mu][s][])
+        pg[mu][s] := 0
+proc expbck[I,O](op: AgOp[I,O]) {.nimcall.} =
+  mixin `+=`
+  if op.inputs.doGrad:
+    #let g = op.outputs.obj
+    let gg = op.outputs.grad
+    let p = op.inputs.obj
+    let pg = op.inputs.grad
+    threads:
+      for mu in 0..<gg.len:
+        for s in gg[mu]:
+          let d = ep.expDeriv(p[mu][s][], gg[mu][s][])
+          pg[mu][s][] += d
+proc exp*[G:GaugeFV](c: var AgTape, g: G, p: G) =
+  var op = newAgOp(p, g, expfwd, expbck)
+  c.add op
+template exp*[G:GaugeFV](g: G, p: G) =
+  g.ctx.exp(g, p)
 
 proc gactionfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
   op.outputs.obj = actionA(op.inputs[0], op.inputs[1].obj)
