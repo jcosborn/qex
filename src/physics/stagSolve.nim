@@ -36,6 +36,23 @@ proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
     echo "op time: ", top
     echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
 
+# multimass (trivial version with multiple single mass calls for now)
+proc solveEO*(s: Staggered; r: seq[Field]; x: Field; m: seq[float];
+              sp: seq[SolverParams]) =
+  let n = m.len
+  doAssert(r.len == n)
+  doAssert(sp.len == n)
+  for i in 0..<n:
+    solveEO(s, r[i], x, m[i], sp[i])
+
+proc solveEO*(s: Staggered; r: seq[Field]; x: Field; m: seq[float];
+              sp: var SolverParams) =
+  let n = m.len
+  doAssert(r.len == n)
+  doAssert(sp.len == n)
+  for i in 0..<n:
+    solveEO(s, r[i], x, m[i], sp)
+
 proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
               parEven = true) =
   tic()
@@ -272,6 +289,23 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
     #echo "op time: ", top
     echo "stagSolve: ", sp.getStats
   sp0.addStats(sp)
+
+# multimass (trivial version with multiple single mass calls for now)
+proc solve*(s: Staggered; r: seq[Field]; x: Field; m: seq[float];
+            sp: seq[SolverParams]) =
+  let n = m.len
+  doAssert(r.len == n)
+  doAssert(sp.len == n)
+  for i in 0..<n:
+    solve(s, r[i], x, m[i], sp[i])
+
+proc solve*(s: Staggered; r: seq[Field]; x: Field; m: seq[float];
+            sp: var SolverParams) =
+  let n = m.len
+  doAssert(r.len == n)
+  doAssert(sp.len == n)
+  for i in 0..<n:
+    solve(s, r[i], x, m[i], sp)
 
 proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float;
             cpuonly = false; sloppySolve = SloppyNone) =
