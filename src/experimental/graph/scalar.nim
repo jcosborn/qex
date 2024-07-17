@@ -2,29 +2,29 @@ import core
 
 type
   Gscalar* {.final.} = ref object of Gvalue
-    sval*: float
+    ## Wrap a float as the graph value
+    ## `getfloat=` changes the float value, useful during the graph construction
+    ## `update` calls `getfloat=` and use `updated` to signal re-evaluation of the graph after graph construction
+    sval: float
 
 proc getfloat*(x: Gvalue): float = Gscalar(x).sval
+
+proc `getfloat=`*(x: Gvalue, y: float) =
+  let xs = Gscalar(x)
+  xs.sval = y
+
+proc update*(x: Gvalue, y: float) =
+  x.getfloat = y
+  x.updated
 
 converter toGvalue*(x: float): Gvalue =
   result = Gscalar(sval: x)
   result.updated
 
-method copyGvalue*(x: Gscalar): Gvalue =
-  result = Gscalar()
-  result.assignGvalue x
-
-method assignGvalue*(z: Gscalar, x: Gscalar) =
-  procCall assignGvalue(Gvalue(z), Gvalue(x))
-  z.sval = x.sval
+method newOneOf*(x: Gscalar): Gvalue = Gscalar()
+method valCopy*(z: Gscalar, x: Gscalar) = z.sval = x.sval
 
 method `$`*(x: Gscalar): string = $x.sval
-
-method `:=`*(x: Gvalue, y: float) {.base.} = raiseErrorBaseMethod($x & " := " & $y)
-
-method `:=`*(x: Gscalar, y: float) =
-  x.sval = y
-  x.updated
 
 proc negsf(v: Gvalue) =
   let x = Gscalar(v.inputs[0])
@@ -150,8 +150,8 @@ when isMainModule:
   let b = 3.7
   let c = 1.3
 
-  x := a
-  y := b
+  x.update a
+  y.update b
   echo z.treeRepr
   echo dzdy.treeRepr
   z.eval
@@ -166,7 +166,7 @@ when isMainModule:
   doAssert almostEqual(z.getfloat, f(a,b))
   doAssert almostEqual(dzdy.getfloat, dfdb(a,b))
 
-  y := c
+  y.update c
   z.eval
   dzdy.eval
   echo "z = ",z
