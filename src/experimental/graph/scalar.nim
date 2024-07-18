@@ -182,7 +182,6 @@ method cond*(c: Gvalue, x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseM
 proc `>`*(x, y: Gvalue): Gvalue = not(x < y)
 proc `>=`*(x, y: Gvalue): Gvalue = x > y or equal(x,y)
 proc `<=`*(x, y: Gvalue): Gvalue = x < y or equal(x,y)
-proc `!=`*(x, y: Gvalue): Gvalue = not equal(x,y)
 proc `xor`*(x, y: Gvalue): Gvalue = not equal(not(x), not(y))  # uses `not` to convert to 0/1
 
 proc notsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
