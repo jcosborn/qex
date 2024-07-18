@@ -33,8 +33,6 @@ suite "scalar basic":
   test "n":
     let z = -x
     let dx = z.grad x
-    z.eval
-    dx.eval
     z :~ -a
     dx :~ -1.0
 
@@ -42,9 +40,6 @@ suite "scalar basic":
     let z = x+y
     let dx = z.grad x
     let dy = z.grad y
-    z.eval
-    dx.eval
-    dy.eval
     z :~ a+b
     dx :~ 1.0
     dy :~ 1.0
@@ -53,9 +48,6 @@ suite "scalar basic":
     let z = x*y
     let dx = z.grad x
     let dy = z.grad y
-    z.eval
-    dx.eval
-    dy.eval
     z :~ a*b
     dx :~ b
     dy :~ a
@@ -64,9 +56,6 @@ suite "scalar basic":
     let z = x-y
     let dx = z.grad x
     let dy = z.grad y
-    z.eval
-    dx.eval
-    dy.eval
     z :~ a-b
     dx :~ 1.0
     dy :~ -1.0
@@ -75,28 +64,37 @@ suite "scalar basic":
     let z = x/y
     let dx = z.grad x
     let dy = z.grad y
-    z.eval
-    dx.eval
-    dy.eval
     z :~ a/b
     dx :~ 1.0/b
     dy :~ -a/(b*b)
 
+  test "exp":
+    let z = exp(x)
+    let dx = z.grad x
+    let ddx = dx.grad x
+    let dddx = ddx.grad x
+    let e = exp(a)
+    z :~ e
+    dx :~ e
+    ddx :~ e
+    dddx :~ e
+
   test "nm":
     let z = (-x)*x
     let dx = z.grad x
-    z.eval
-    dx.eval
     z :~ -a*a
     dx :~ -2.0*a
+
+  test "nm exp":
+    let z = (-exp(x))*exp(x)
+    let dx = z.grad x
+    z :~ -exp(2.0*a)
+    dx :~ -2.0*exp(2.0*a)
 
   test "am":
     let z = (x+y)*x
     let dx = z.grad x
     let dy = z.grad y
-    z.eval
-    dx.eval
-    dy.eval
     z :~ (a+b)*a
     dx :~ 2.0*a+b
     dy :~ a
@@ -106,8 +104,6 @@ suite "scalar basic":
     let v = w+y
     let z = v*v
     let dy = z.grad y
-    z.eval
-    dy.eval
     z :~ (a+b)*(a+b)
     dy :~ 2.0*(a+b)
 
@@ -116,8 +112,6 @@ suite "scalar basic":
     let v = w+y
     let z = v*v/w
     let dy = z.grad y
-    z.eval
-    dy.eval
     z :~ (a+b)*(a+b)/a
     dy :~ 2.0*(a+b)/a
 
@@ -126,8 +120,6 @@ suite "scalar basic":
     let v = w+y
     let z = v*(-v)/w
     let dy = z.grad y
-    z.eval
-    dy.eval
     z :~ (a+b)*(-a-b)/a
     dy :~ -2.0*(a+b)/a
 
@@ -136,8 +128,6 @@ suite "scalar basic":
     let v = w+y
     let z = v*(-v)/w
     let dy = z.grad y
-    z.eval
-    dy.eval
     z :~ (a+b-2.0)*(2.0-a-b)/(a-2.0)
     dy :~ -2.0*(a+b-2.0)/(a-2.0)
 
@@ -158,9 +148,6 @@ suite "scalar d2":
     let z = v*(-v)/w
     let dy = z.grad y
     let dxy = dy.grad x
-    z.eval
-    dy.eval
-    dxy.eval
     z :~ (a+b-2.0)*(2.0-a-b)/(a-2.0)
     dy :~ -2.0*(a+b-2.0)/(a-2.0)
     dxy :~ 2.0*b/((a-2.0)*(a-2.0))
@@ -171,22 +158,14 @@ suite "scalar d2":
     let z = v*(-v)/w
     let dy = z.grad y
     let dxy = dy.grad x
-    z.eval
-    dy.eval
-    dxy.eval
     z :~ (a+b-2.0)*(2.0-a-b)/(a-2.0)
     dy :~ -2.0*(a+b-2.0)/(a-2.0)
     dxy :~ 2.0*b/((a-2.0)*(a-2.0))
     y.update c
-    dy.eval
     dy :~ -2.0*(a+c-2.0)/(a-2.0)
     x.update d
-    dxy.eval
     dxy :~ 2.0*c/((d-2.0)*(d-2.0))
     y.update a
-    z.eval
-    dy.eval
-    dxy.eval
     z :~ (d+a-2.0)*(2.0-d-a)/(d-2.0)
     dy :~ -2.0*(d+a-2.0)/(d-2.0)
     dxy :~ 2.0*a/((d-2.0)*(d-2.0))
@@ -198,16 +177,85 @@ suite "scalar d2":
     let dy = z.grad y
     let u = z+0.1*dy
     let dx = (u*u).grad x
-    z.eval
-    dx.eval
     z :~ (a+b-2.0)*(2.0-a-b)/(a-2.0)
     dx :~ -2.0*(b+a-2.0)*(5.0*b+5.0*a-9.0)*(5.0*b*b+b-5.0*a*a+20.0*a-20.0)/(25.0*(a-2.0)*(a-2.0)*(a-2.0))
     y.update c
-    dx.eval
     dx :~ -2.0*(c+a-2.0)*(5.0*c+5.0*a-9.0)*(5.0*c*c+c-5.0*a*a+20.0*a-20.0)/(25.0*(a-2.0)*(a-2.0)*(a-2.0))
     x.update d
     y.update a
-    dx.eval
-    u.eval
     u :~ (d+a-2.0)*(2.0-d-a)/(d-2.0) - 0.1*2.0*(d+a-2.0)/(d-2.0)
     dx :~ -2.0*(a+d-2.0)*(5.0*a+5.0*d-9.0)*(5.0*a*a+a-5.0*d*d+20.0*d-20.0)/(25.0*(d-2.0)*(d-2.0)*(d-2.0))
+
+suite "bool and cond":
+  setup:
+    let a = 0.5 * (sqrt(5.0) - 1.0)
+    let b = sqrt(2.0) - 1.0
+    let c = 2.0 * a - 1.0
+    let d = a + 3.0 * b - 1.0
+    let x = toGvalue a
+    let y = toGvalue b
+
+  test "condi":
+    let k = toGvalue 0
+    let z = cond(k, x, y)
+    let dx = z.grad x
+    let dy = z.grad y
+    z :~ b
+    dx :~ 0.0
+    dy :~ 1.0
+    k.update 1
+    z :~ a
+    dx :~ 1.0
+    dy :~ 0.0
+
+  test "conds":
+    let k = toGvalue 1.0
+    let z = cond(k, x, y)
+    let dx = z.grad x
+    let dy = z.grad y
+    z :~ a
+    dx :~ 1.0
+    dy :~ 0.0
+    k.update 0.0
+    z :~ b
+    dx :~ 0.0
+    dy :~ 1.0
+
+  test "condi 2":
+    let k = toGvalue 0
+    let z = cond(k, x, y)
+    let z2 = z*z
+    let dx = z2.grad x
+    let dy = z2.grad y
+    z2 :~ b*b
+    dx :~ 0.0
+    dy :~ 2.0*b
+    k.update 1
+    y.update c
+    z2 :~ a*a
+    dx :~ 2.0*a
+    dy :~ 0.0
+    k.update 0
+    z2 :~ c*c
+    dx :~ 0.0
+    dy :~ 2.0*c
+
+  test "conds 2":
+    let k = toGvalue 1.0
+    let z = cond(k, x, y)
+    let z2 = z*z
+    let dx = z2.grad x
+    let dy = z2.grad y
+    z2 :~ a*a
+    dx :~ 2.0*a
+    dy :~ 0.0
+    k.update 0.0
+    x.update d
+    z2 :~ b*b
+    dx :~ 0.0
+    dy :~ 2.0*b
+    k.update 1.0
+    x.update c
+    z2 :~ c*c
+    dx :~ 2.0*c
+    dy :~ 0.0

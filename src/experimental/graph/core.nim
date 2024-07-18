@@ -5,7 +5,6 @@
 
 TODO
 
-- if
 - function/lambda
 
 ]#
@@ -73,7 +72,7 @@ proc nodeRepr*(x: Gvalue): string =
   if f != nil:
     result &= " " & $f & "@0X" & strip(toHex(cast[int](f)), trailing = false, chars = {'0'})
 
-method newOneOf*(x: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("newOneOf(" & $x & ")")
+method newOneOf*(x: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("newOneOf(" & $x & ")")  ## Be sure to zero init fields
 method valCopy*(z: Gvalue, x: Gvalue) {.base.} = raiseErrorBaseMethod("valCopy(" & $z & "," & $x & ")")
 
 proc assignGvalue(z: Gvalue, x: Gvalue) =
@@ -145,6 +144,7 @@ method `+`*(x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("`+`("
 method `*`*(x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("`*`(" & $x & ", " & $y & ")")
 method `-`*(x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("`-`(" & $x & ", " & $y & ")")
 method `/`*(x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("`/`(" & $x & ", " & $y & ")")
+method exp*(x: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("exp(" & $x & ")")
 
 proc updated*(x: Gvalue) =
   var epoch {.global.} = 0

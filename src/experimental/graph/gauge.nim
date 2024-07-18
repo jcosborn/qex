@@ -20,7 +20,12 @@ proc toGvalue*(x: Gauge): Ggauge =
   result = Ggauge(gval: x)
   result.updated
 
-method newOneOf*(x: Ggauge): Gvalue = Ggauge(gval: x.gval.newOneOf)
+method newOneOf*(x: Ggauge): Gvalue =
+  let g = x.gval.newOneOf
+  threads:
+    for f in g:
+      f := 0.0
+  Ggauge(gval: g)
 method valCopy*(z: Ggauge, x: Ggauge) =
   let u = z.gval
   let v = x.gval
@@ -38,7 +43,6 @@ method retr*(x: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("retr(" & $x & "
 method adj*(x: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("adj(" & $x & ")")
 method norm2*(x: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("norm2(" & $x & ")")
 method redot*(x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("redot(" & $x & "," & $y & ")")
-method exp*(x: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("exp(" & $x & ")")
 method expDeriv*(b: Gvalue, x: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("expDeriv(" & $b & "," & $x & ")")
 method projTAH*(x: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("projTAH(" & $x & ")")
 
@@ -133,7 +137,7 @@ proc neggb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
 
 let negg = newGfunc(forward = neggf, backward = neggb, name = "-g")
 
-method `-`(x: Ggauge): Gvalue = Ggauge(gval: x.gval.newOneOf, inputs: @[Gvalue(x)], gfunc: negg)
+method `-`*(x: Ggauge): Gvalue = Ggauge(gval: x.gval.newOneOf, inputs: @[Gvalue(x)], gfunc: negg)
 
 proc addsgb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   if zb == nil:
@@ -156,7 +160,7 @@ proc addsgf(v: Gvalue) =
 
 let addsg = newGfunc(forward = addsgf, backward = addsgb, name = "s+g")
 
-method `+`(x: Gscalar, y: Ggauge): Gvalue = Ggauge(gval: y.gval.newOneOf, inputs: @[Gvalue(x), y], gfunc: addsg)
+method `+`*(x: Gscalar, y: Ggauge): Gvalue = Ggauge(gval: y.gval.newOneOf, inputs: @[Gvalue(x), y], gfunc: addsg)
 
 proc addggb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   if zb == nil:
@@ -174,7 +178,7 @@ proc addggf(v: Gvalue) =
 
 let addgg = newGfunc(forward = addggf, backward = addggb, name = "g+g")
 
-method `+`(x: Ggauge, y: Ggauge): Gvalue = Ggauge(gval: x.gval.newOneOf, inputs: @[Gvalue(x), y], gfunc: addgg)
+method `+`*(x: Ggauge, y: Ggauge): Gvalue = Ggauge(gval: x.gval.newOneOf, inputs: @[Gvalue(x), y], gfunc: addgg)
 
 proc mulsgb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   if zb == nil:
@@ -197,7 +201,7 @@ proc mulsgf(v: Gvalue) =
 
 let mulsg = newGfunc(forward = mulsgf, backward = mulsgb, name = "s*g")
 
-method `*`(x: Gscalar, y: Ggauge): Gvalue = Ggauge(gval: y.gval.newOneOf, inputs: @[Gvalue(x), y], gfunc: mulsg)
+method `*`*(x: Gscalar, y: Ggauge): Gvalue = Ggauge(gval: y.gval.newOneOf, inputs: @[Gvalue(x), y], gfunc: mulsg)
 
 proc mulggb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   if zb == nil:
@@ -220,7 +224,7 @@ proc mulggf(v: Gvalue) =
 
 let mulgg = newGfunc(forward = mulggf, backward = mulggb, name = "g*g")
 
-method `*`(x: Ggauge, y: Ggauge): Gvalue = Ggauge(gval: x.gval.newOneOf, inputs: @[Gvalue(x), y], gfunc: mulgg)
+method `*`*(x: Ggauge, y: Ggauge): Gvalue = Ggauge(gval: x.gval.newOneOf, inputs: @[Gvalue(x), y], gfunc: mulgg)
 
 proc redotggb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   case i
@@ -249,7 +253,7 @@ proc redotggf(v: Gvalue) =
 
 let redotgg = newGfunc(forward = redotggf, backward = redotggb, name = "redotgg")
 
-method redot(x: Ggauge, y: Ggauge): Gvalue = Gscalar(inputs: @[Gvalue(x), y], gfunc: redotgg)
+method redot*(x: Ggauge, y: Ggauge): Gvalue = Gscalar(inputs: @[Gvalue(x), y], gfunc: redotgg)
 
 proc subgsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   if zb == nil:
@@ -272,7 +276,7 @@ proc subgsf(v: Gvalue) =
 
 let subgs = newGfunc(forward = subgsf, backward = subgsb, name = "g-s")
 
-method `-`(x: Ggauge, y: Gscalar): Gvalue = Ggauge(gval: x.gval.newOneOf, inputs: @[Gvalue(x), y], gfunc: subgs)
+method `-`*(x: Ggauge, y: Gscalar): Gvalue = Ggauge(gval: x.gval.newOneOf, inputs: @[Gvalue(x), y], gfunc: subgs)
 
 proc subggb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   if zb == nil:
@@ -295,7 +299,7 @@ proc subggf(v: Gvalue) =
 
 let subgg = newGfunc(forward = subggf, backward = subggb, name = "g-g")
 
-method `-`(x: Ggauge, y: Ggauge): Gvalue = Ggauge(gval: x.gval.newOneOf, inputs: @[Gvalue(x), y], gfunc: subgg)
+method `-`*(x: Ggauge, y: Ggauge): Gvalue = Ggauge(gval: x.gval.newOneOf, inputs: @[Gvalue(x), y], gfunc: subgg)
 
 proc expgb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   if zb == nil:
@@ -531,7 +535,7 @@ proc redotccf(v: Gvalue) =
 
 let redotcc = newGfunc(forward = redotccf, backward = redotccb, name = "redotcc")
 
-method redot(x: Gactcoeff, y: Gactcoeff): Gvalue = Gscalar(inputs: @[Gvalue(x), y], gfunc: redotcc)
+method redot*(x: Gactcoeff, y: Gactcoeff): Gvalue = Gscalar(inputs: @[Gvalue(x), y], gfunc: redotcc)
 
 const
   C1Symanzik = -1.0/12.0  # tree-level

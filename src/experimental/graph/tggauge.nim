@@ -237,18 +237,31 @@ suite "gauge fused":
     let rf = contractProjTAH(gg, gu)
     let rg = projTAH(gg * gu.adj)
     norm2(rf - rg) :< 1e-26
+    let srf = rf.norm2
+    let srg = rg.norm2
+    norm2(grad(srf, gg) - grad(srg, gg)) :< 1e-26
+    norm2(grad(srf, gu) - grad(srg, gu)) :< 1e-26
     ckgradm2(contractProjTAH, gg, gu, gp, gq, gm)
 
   test "axexp":
     let rf = axexp(x, gm)
     let rg = exp(x*gm)
     norm2(rf - rg) :< 1e-26
+    let srf = retr(rf * gu)
+    let srg = retr(rg * gu)
+    grad(srf, x) :~ grad(srg, x)
+    norm2(grad(srf, gm) - grad(srg, gm)) :< 1e-26
     ckgradm2(axexp, x, gm, y, 0.05*gq, gp)
 
   test "axexpmuly":
     let rf = axexpmuly(x, gm, gg)
     let rg = exp(x*gm)*gg
     norm2(rf - rg) :< 1e-26
+    let srf = retr(rf * gu)
+    let srg = retr(rg * gu)
+    grad(srf, x) :~ grad(srg, x)
+    norm2(grad(srf, gm) - grad(srg, gm)) :< 1e-26
+    norm2(grad(srf, gg) - grad(srg, gg)) :< 1e-26
     ckgradm3(axexpmuly, x, gm, gu, y, 0.05*gq, gg, gp)
 
 suite "gauge action":

@@ -1,29 +1,8 @@
 import core, scalar
 
 type
-  Gint* {.final.} = ref object of Gvalue
-    ival: int
   Gmulti* {.final.} = ref object of Gvalue
     mval: seq[Gvalue]
-
-proc getint*(x: Gvalue): int = Gint(x).ival
-
-proc `getint=`*(x: Gvalue, y: int) =
-  let xs = Gint(x)
-  xs.ival = y
-
-proc update*(x: Gvalue, y: int) =
-  x.getint = y
-  x.updated
-
-converter toGvalue*(x: int): Gvalue =
-  result = Gint(ival: x)
-  result.updated
-
-method newOneOf*(x: Gint): Gvalue = Gint()
-method valCopy*(z: Gint, x: Gint) = z.ival = x.ival
-
-method `$`*(x: Gint): string = $x.ival
 
 proc getmulti*(x: Gvalue): seq[Gvalue] = Gmulti(x).mval
 
@@ -58,7 +37,7 @@ method updateAt*(x: Gvalue, i: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorB
 proc getAtmb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   case i
   of 0:
-    return z.inputs[0].updateAt(i, zb)
+    return z.inputs[0].newOneOf.updateAt(i, zb)
   else:
     raiseValueError("i must be 0, got: " & $i)
 
@@ -70,14 +49,14 @@ proc getAtmf(v: Gvalue) =
 let getAtm = newGfunc(forward = getAtmf, backward = getAtmb, name = "getAtm")
 
 method `[]`*(x: Gmulti, i: Gint): Gvalue =
-  result = newOneOf x.mval[i.ival]
+  result = newOneOf x.mval[i.getint]
   result.inputs = @[Gvalue(x), i]
   result.gfunc = getAtm
 
 proc updateAtmb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   case i
   of 0:
-    return zb.updateAt(i, 0.0)  # TODO: need a zero method
+    return zb.updateAt(i, zb.inputs[0].newOneOf)
   of 2:
     return zb[i]
   else:
