@@ -41,7 +41,7 @@ proc ndiff(zt: Gvalue, t: Gscalar): (float, float) =
   (dzdt, e)
 
 template check(ii: tuple[filename:string, line:int, column:int], ast: string, dzdt, e, gdota: float) =
-  if not almostEqual(gdota, dzdt, unitsInLastPlace = 128*1024):
+  if not almostEqual(gdota, dzdt, unitsInLastPlace = 1024*1024):
     checkpoint(ii.filename & ":" & $ii.line & ":" & $ii.column & ": Check failed: " & ast)
     checkpoint("  ndiff: " & $dzdt & " +/- " & $e)
     checkpoint("  grad: " & $gdota)

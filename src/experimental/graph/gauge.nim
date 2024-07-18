@@ -15,6 +15,13 @@ type Ggauge* {.final.} = ref object of Gvalue
 
 proc getgauge*(x: Gvalue): Gauge = Ggauge(x).gval
 
+proc update*(x: Gvalue, g: Gauge) =
+  let u = x.getgauge
+  threads:
+    for mu in 0..<u.len:
+      u[mu] := g[mu]
+  x.updated
+
 proc toGvalue*(x: Gauge): Ggauge =
   # proc instead of converter to avoid converting seq
   result = Ggauge(gval: x)
