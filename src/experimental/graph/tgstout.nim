@@ -6,7 +6,7 @@ qexInit()
 letParam:
   lat = @[12,12,12,24]
   dt = 0.1
-  eps = 0.01
+  eps = 0.004
   nstep = 3
   beta = 5.4
   seed:uint = 1234567891
@@ -50,7 +50,7 @@ proc act(t: float): float =
   gc.gaugeAction1 u
 
 var ndt, err: float
-ndiff(ndt, err, act, dt, eps, ordMax=4)
+ndiff(ndt, err, act, dt, eps, ordMax=3)
 echo "numdiff smear dS/dt: ",ndt," +/- ",err
 
 proc stout(g, t: Gvalue, n: int): Gvalue =
@@ -91,8 +91,8 @@ echo "rel dS: ",rds
 echo "rel graph dS/dt: ",rgdt
 echo "rel ndiff dS/dt: ",rndt
 
-doassert rds < 1e-10
-doassert rgdt < 1e-10
-doassert rndt < 1e-10
+doassert rds < 1e-11
+doassert rgdt < 1e-11
+doassert rndt < 1e-11
 
 qexFinalize()

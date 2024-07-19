@@ -40,7 +40,9 @@ method valCopy*(z: Ggauge, x: Ggauge) =
     for mu in 0..<u.len:
       u[mu] := v[mu]
 
-method `$`*(x: Ggauge): string = "Gauge"
+method `$`*(x: Ggauge): string =
+  let v = x.gval[0][0][0,0]
+  "Gauge (" & $v.re[0] & ", " & $v.im[0] & ")"
 
 #
 # basic ops
@@ -486,6 +488,14 @@ type Gactcoeff* {.final.} = ref object of Gvalue
 
 proc getactcoeff*(x: Gvalue): GaugeActionCoeffs = Gactcoeff(x).cval
 
+proc `getactcoeff=`*(x: Gvalue, c: GaugeActionCoeffs) =
+  let gc = Gactcoeff(x)
+  gc.cval = c
+
+proc update*(x: Gvalue, c: GaugeActionCoeffs) =
+  x.getactcoeff = c
+  x.updated
+
 converter toGvalue*(x: GaugeActionCoeffs): Gvalue =
   result = Gactcoeff(cval: x)
   result.updated
@@ -655,6 +665,9 @@ proc gaugeActionDeriv2f(v: Gvalue) =
   let g = Ggauge(v.inputs[2])
   let z = Ggauge(v)
   if gc.adjplaq == 0:
+    threads:
+      for mu in 0..<z.gval.len:
+        z.gval[mu] := 0.0
     gc.gaugeDerivDeriv2(g.gval, b.gval, z.gval)
   elif gc.rect == 0 and gc.pgm == 0:
     raiseValueError("unimplemented")

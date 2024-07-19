@@ -41,7 +41,7 @@ proc ndiff(zt: Gvalue, t: Gscalar): (float, float) =
   (dzdt, e)
 
 template check(ii: tuple[filename:string, line:int, column:int], ast: string, dzdt, e, gdota: float) =
-  if not almostEqual(gdota, dzdt, unitsInLastPlace = 1024*1024):
+  if not almostEqual(gdota, dzdt, unitsInLastPlace = 512*1024):
     checkpoint(ii.filename & ":" & $ii.line & ":" & $ii.column & ": Check failed: " & ast)
     checkpoint("  ndiff: " & $dzdt & " +/- " & $e)
     checkpoint("  grad: " & $gdota)
@@ -289,12 +289,28 @@ suite "gauge action":
     let c = actWilson(beta)
     proc act(x: Gvalue): Gvalue = gaugeAction(c, x)
     proc force(x: Gvalue): Gvalue = gaugeForce(c, x)
-    ckforce(act, force, gg, 4.0*gm)
+    ckforce(act, force, gg, 10.0*gm)
 
   test "wilson force gradient":
     let beta = 5.4
     let c = actWilson(beta)
     proc force(x: Gvalue): Gvalue = gaugeForce(c, x)
     ckgradm(force, gg, gu, gm)
+
+  test "wilson force gradient recomp":
+    let beta = 5.4
+    let c = actWilson(beta)
+    let a = gaugeAction(c, gg)
+    let f2 = gaugeForce(c, gg).norm2
+    let df2 = grad(f2, gg).norm2
+    let rs1 = [a.eval.getfloat, f2.eval.getfloat, df2.eval.getfloat]
+    c.updated
+    gg.updated
+    let rs2 = [a.eval.getfloat, f2.eval.getfloat, df2.eval.getfloat]
+    c.updated
+    gg.updated
+    let rs3 = [a.eval.getfloat, f2.eval.getfloat, df2.eval.getfloat]
+    check rs1 == rs2
+    check rs1 == rs3
 
 qexFinalize()
