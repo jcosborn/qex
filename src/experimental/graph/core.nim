@@ -75,6 +75,10 @@ proc nodeRepr*(x: Gvalue): string =
 method newOneOf*(x: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("newOneOf(" & $x & ")")  ## Be sure to zero init fields
 method valCopy*(z: Gvalue, x: Gvalue) {.base.} = raiseErrorBaseMethod("valCopy(" & $z & "," & $x & ")")
 
+method isTrue*(x: Gvalue): bool {.base.} = raiseErrorBaseMethod("isTrue(" & $x & ")")
+method update*(x: Gvalue, y: int) {.base.} = raiseErrorBaseMethod("update(" & $x & "," & $y & ")")
+method update*(x: Gvalue, y: float) {.base.} = raiseErrorBaseMethod("update(" & $x & "," & $y & ")")
+
 proc assignGvalue(z: Gvalue, x: Gvalue) =
   z.tag = x.tag
   z.inputs = x.inputs
@@ -146,6 +150,51 @@ method `-`*(x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("`-`("
 method `/`*(x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("`/`(" & $x & ", " & $y & ")")
 method exp*(x: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("exp(" & $x & ")")
 
+proc cond*(c: Gvalue, x: Gvalue, y: Gvalue): Gvalue
+
+proc condb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
+  case i
+  of 0:
+    let r = z.inputs[0].newOneOf
+    r.update 0
+    return r
+  of 1:
+    if zb == nil:
+      # the output must be a scalar, otherwise crash later
+      let r1 = z.inputs[1].newOneOf
+      let r0 = z.inputs[1].newOneOf
+      r1.update 1
+      r0.update 0
+      return cond(z.inputs[0], r1, r0)
+    else:
+      return cond(z.inputs[0], zb, zb.newOneOf)
+  of 2:
+    if zb == nil:
+      # the output must be a scalar, otherwise crash later
+      let r0 = z.inputs[2].newOneOf
+      let r1 = z.inputs[2].newOneOf
+      r0.update 0
+      r1.update 1
+      return cond(z.inputs[0], r0, r1)
+    else:
+      return cond(z.inputs[0], zb.newOneOf, zb)
+  else:
+    raiseValueError("i must be 0 or 1, got: " & $i)
+
+proc condf(v: Gvalue) =
+  if v.inputs[0].isTrue:
+    v.valCopy v.inputs[1]
+  else:
+    v.valCopy v.inputs[2]
+
+let gcond = newGfunc(forward = condf, backward = condb, name = "cond")
+
+proc cond*(c: Gvalue, x: Gvalue, y: Gvalue): Gvalue =
+  ## Assume the result is the same type as y, otherwise it'll throw exception later in forward valCopy.
+  result = y.newOneOf
+  result.inputs = @[c, x, y]
+  result.gfunc = gcond
+
 proc updated*(x: Gvalue) =
   var epoch {.global.} = 0
   inc epoch
@@ -157,10 +206,23 @@ proc eval*(v: Gvalue): Gvalue {.discardable.} =
       return
     x.tag.incl gtVisited
     var maxep = 0
-    for i in x.inputs:
-      i.r
-      if maxep < i.epoch:
-        maxep = i.epoch
+    if x.gfunc == gcond:
+      x.inputs[0].r
+      if maxep < x.inputs[0].epoch:
+        maxep = x.inputs[0].epoch
+      if x.inputs[0].isTrue:
+        x.inputs[1].r
+        if maxep < x.inputs[1].epoch:
+          maxep = x.inputs[1].epoch
+      else:
+        x.inputs[2].r
+        if maxep < x.inputs[2].epoch:
+          maxep = x.inputs[2].epoch
+    else:
+      for i in x.inputs:
+        i.r
+        if maxep < i.epoch:
+          maxep = i.epoch
     if x.epoch < maxep:
       let f = x.gfunc
       if graphDebug:

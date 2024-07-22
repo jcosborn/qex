@@ -16,7 +16,7 @@ proc `getfloat=`*(x: Gvalue, y: float) =
   let xs = Gscalar(x)
   xs.sval = y
 
-proc update*(x: Gvalue, y: float) =
+method update*(x: Gscalar, y: float) =
   x.getfloat = y
   x.updated
 
@@ -29,13 +29,23 @@ method valCopy*(z: Gscalar, x: Gscalar) = z.sval = x.sval
 
 method `$`*(x: Gscalar): string = $x.sval
 
+method isTrue*(x: Gscalar): bool = x.sval != 0.0
+
+proc `getfloat=`*(x: Gvalue, y: int) =
+  let xs = Gscalar(x)
+  xs.sval = float(y)
+
+method update*(x: Gscalar, y: int) =
+  x.getfloat = y
+  x.updated
+
 proc getint*(x: Gvalue): int = Gint(x).ival
 
 proc `getint=`*(x: Gvalue, y: int) =
   let xs = Gint(x)
   xs.ival = y
 
-proc update*(x: Gvalue, y: int) =
+method update*(x: Gint, y: int) =
   x.getint = y
   x.updated
 
@@ -47,6 +57,8 @@ method newOneOf*(x: Gint): Gvalue = Gint()
 method valCopy*(z: Gint, x: Gint) = z.ival = x.ival
 
 method `$`*(x: Gint): string = $x.ival
+
+method isTrue*(x: Gint): bool = x.ival != 0
 
 proc negsf(v: Gvalue) =
   let x = Gscalar(v.inputs[0])
@@ -171,68 +183,24 @@ let exps = newGfunc(forward = expsf, backward = expsb, name = "exps")
 
 method exp*(x: Gscalar): Gvalue = Gscalar(inputs: @[Gvalue(x)], gfunc: exps)
 
-method `not`*(x: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("not(" & $x & ")")
-method `and`*(x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("and(" & $x & ", " & $y & ")")
-method `or`*(x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("or(" & $x & ", " & $y & ")")
 method `<`*(x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("`<`(" & $x & ", " & $y & ")")
 method equal*(x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("equal(" & $x & ", " & $y & ")")
 
-method cond*(c: Gvalue, x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("cond(" & $c & "," & $x & ", " & $y & ")")
+proc newFalse(x: Gvalue): Gvalue =
+  result = x.newOneOf
+  result.update 0
+proc newTrue(x: Gvalue): Gvalue =
+  result = x.newOneOf
+  result.update 1
+
+proc `not`*(x: Gvalue): Gvalue = cond(x, x.newFalse, x.newTrue)
+proc `and`*(x: Gvalue, y: Gvalue): Gvalue = cond(x, y, y.newFalse)  ## return type follows the second operand, as does cond
+proc `or`*(x: Gvalue, y: Gvalue): Gvalue = cond(x, y.newTrue, y)  ## return type follows the second operand, as does cond
+proc `xor`*(x: Gvalue, y: Gvalue): Gvalue = cond(x, not(y), y)  ## return type follows the second operand, as does cond
 
 proc `>`*(x, y: Gvalue): Gvalue = not(x < y)
 proc `>=`*(x, y: Gvalue): Gvalue = x > y or equal(x,y)
 proc `<=`*(x, y: Gvalue): Gvalue = x < y or equal(x,y)
-proc `xor`*(x, y: Gvalue): Gvalue = not equal(not(x), not(y))  # uses `not` to convert to 0/1
-
-proc notsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  case i
-  of 0:
-    return toGvalue(0.0)
-  else:
-    raiseValueError("i must be 0, got: " & $i)
-
-proc notsf(v: Gvalue) =
-  let x = Gscalar(v.inputs[0])
-  let z = Gscalar(v)
-  z.sval = if x.sval == 0.0: 1.0 else: 0.0
-
-let nots = newGfunc(forward = notsf, backward = notsb, name = "nots")
-
-method `not`*(x: Gscalar): Gvalue = Gscalar(inputs: @[Gvalue(x)], gfunc: nots)
-
-proc andsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  case i
-  of 0, 1:
-    return toGvalue(0.0)
-  else:
-    raiseValueError("i must be 0 or 1, got: " & $i)
-
-proc andsf(v: Gvalue) =
-  let x = Gscalar(v.inputs[0])
-  let y = Gscalar(v.inputs[1])
-  let z = Gscalar(v)
-  z.sval = if x.sval == 0.0 or y.sval == 0.0: 0.0 else: 1.0
-
-let ands = newGfunc(forward = andsf, backward = andsb, name = "ands")
-
-method `and`*(x: Gscalar, y: Gscalar): Gvalue = Gscalar(inputs: @[Gvalue(x), y], gfunc: ands)
-
-proc orsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  case i
-  of 0, 1:
-    return toGvalue(0.0)
-  else:
-    raiseValueError("i must be 0 or 1, got: " & $i)
-
-proc orsf(v: Gvalue) =
-  let x = Gscalar(v.inputs[0])
-  let y = Gscalar(v.inputs[1])
-  let z = Gscalar(v)
-  z.sval = if x.sval == 0.0 and y.sval == 0.0: 0.0 else: 1.0
-
-let ors = newGfunc(forward = orsf, backward = orsb, name = "ors")
-
-method `or`*(x: Gscalar, y: Gscalar): Gvalue = Gscalar(inputs: @[Gvalue(x), y], gfunc: ors)
 
 proc ltsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   case i
@@ -268,89 +236,6 @@ let equals = newGfunc(forward = equalsf, backward = equalsb, name = "equals")
 
 method equal*(x: Gscalar, y: Gscalar): Gvalue = Gscalar(inputs: @[Gvalue(x), y], gfunc: equals)
 
-proc condsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  case i
-  of 0:
-    return toGvalue(0.0)
-  of 1:
-    if zb == nil:
-      # the output must be a scalar, otherwise crash later
-      return cond(z.inputs[0], toGvalue(1.0), toGvalue(0.0))
-    else:
-      return cond(z.inputs[0], zb, zb.newOneOf)
-  of 2:
-    if zb == nil:
-      # the output must be a scalar, otherwise crash later
-      return cond(z.inputs[0], toGvalue(0.0), toGvalue(1.0))
-    else:
-      return cond(z.inputs[0], zb.newOneOf, zb)
-  else:
-    raiseValueError("i must be 0 or 1, got: " & $i)
-
-proc condsf(v: Gvalue) =
-  let c = Gscalar(v.inputs[0])
-  if c.sval == 0.0:
-    v.valCopy v.inputs[2]
-  else:
-    v.valCopy v.inputs[1]
-
-let conds = newGfunc(forward = condsf, backward = condsb, name = "conds")
-
-method cond*(c: Gscalar, x: Gvalue, y: Gvalue): Gvalue =
-  result = x.newOneOf
-  result.inputs = @[Gvalue(c), x, y]
-  result.gfunc = conds
-
-proc notib(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  case i
-  of 0:
-    return toGvalue(0)
-  else:
-    raiseValueError("i must be 0, got: " & $i)
-
-proc notif(v: Gvalue) =
-  let x = Gint(v.inputs[0])
-  let z = Gint(v)
-  z.ival = if x.ival == 0: 1 else: 0
-
-let noti = newGfunc(forward = notif, backward = notib, name = "noti")
-
-method `not`*(x: Gint): Gvalue = Gint(inputs: @[Gvalue(x)], gfunc: noti)
-
-proc andib(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  case i
-  of 0, 1:
-    return toGvalue(0)
-  else:
-    raiseValueError("i must be 0 or 1, got: " & $i)
-
-proc andif(v: Gvalue) =
-  let x = Gint(v.inputs[0])
-  let y = Gint(v.inputs[1])
-  let z = Gint(v)
-  z.ival = if x.ival == 0 or y.ival == 0: 0 else: 1
-
-let andi = newGfunc(forward = andif, backward = andib, name = "andi")
-
-method `and`*(x: Gint, y: Gint): Gvalue = Gint(inputs: @[Gvalue(x), y], gfunc: andi)
-
-proc orib(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  case i
-  of 0, 1:
-    return toGvalue(0)
-  else:
-    raiseValueError("i must be 0 or 1, got: " & $i)
-
-proc orif(v: Gvalue) =
-  let x = Gint(v.inputs[0])
-  let y = Gint(v.inputs[1])
-  let z = Gint(v)
-  z.ival = if x.ival == 0 and y.ival == 0: 0 else: 1
-
-let ori = newGfunc(forward = orif, backward = orib, name = "ori")
-
-method `or`*(x: Gint, y: Gint): Gvalue = Gint(inputs: @[Gvalue(x), y], gfunc: ori)
-
 proc ltib(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   case i
   of 0, 1:
@@ -384,39 +269,6 @@ proc equalif(v: Gvalue) =
 let equali = newGfunc(forward = equalif, backward = equalib, name = "equali")
 
 method equal*(x: Gint, y: Gint): Gvalue = Gint(inputs: @[Gvalue(x), y], gfunc: equali)
-
-proc condib(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  case i
-  of 0:
-    return toGvalue(0)
-  of 1:
-    if zb == nil:
-      # the output must be a scalar, otherwise crash later
-      return cond(z.inputs[0], toGvalue(1.0), toGvalue(0.0))
-    else:
-      return cond(z.inputs[0], zb, zb.newOneOf)
-  of 2:
-    if zb == nil:
-      # the output must be a scalar, otherwise crash later
-      return cond(z.inputs[0], toGvalue(0.0), toGvalue(1.0))
-    else:
-      return cond(z.inputs[0], zb.newOneOf, zb)
-  else:
-    raiseValueError("i must be 0 or 1, got: " & $i)
-
-proc condif(v: Gvalue) =
-  let c = Gint(v.inputs[0])
-  if c.ival == 0:
-    v.valCopy v.inputs[2]
-  else:
-    v.valCopy v.inputs[1]
-
-let condi = newGfunc(forward = condif, backward = condib, name = "condi")
-
-method cond*(c: Gint, x: Gvalue, y: Gvalue): Gvalue =
-  result = x.newOneOf
-  result.inputs = @[Gvalue(c), x, y]
-  result.gfunc = condi
 
 when isMainModule:
   import math

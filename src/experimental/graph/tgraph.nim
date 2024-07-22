@@ -11,8 +11,18 @@ template checkeq(ii: tuple[filename:string, line:int, column:int], sa: string, a
     checkpoint("  " & sb & ": " & $b)
     fail()
 
+template checkeq(ii: tuple[filename:string, line:int, column:int], sa: string, a: int, sb: string, b: int) =
+  if a != b:
+    checkpoint(ii.filename & ":" & $ii.line & ":" & $ii.column & ": Check failed: " & sa & " :~ " & sb)
+    checkpoint("  " & sa & ": " & $a)
+    checkpoint("  " & sb & ": " & $b)
+    fail()
+
 template `:~`(a:Gvalue, b:float) =
   checkeq(instantiationInfo(), astToStr a, a.eval.getfloat, astToStr b, b)
+
+template `:~`(a:Gvalue, b:int) =
+  checkeq(instantiationInfo(), astToStr a, a.eval.getint, astToStr b, b)
 
 suite "scalar basic":
   # run once before
@@ -195,6 +205,50 @@ suite "bool and cond":
     let x = toGvalue a
     let y = toGvalue b
 
+  test "not":
+    let f = toGvalue 0
+    not(f) :~ 1
+    not(not f) :~ 0
+    let t = toGvalue 1.0
+    not(t) :~ 0.0
+    not(not t) :~ 1.0
+
+  test "and":
+    let fi = toGvalue 0
+    let ti = toGvalue 1
+    let t = toGvalue 1.0
+    let f = toGvalue 0.0
+    fi and t :~ 0.0
+    t and fi :~ 0
+    ti and t :~ 1.0
+    t and ti :~ 1
+    f and fi :~ 0
+    fi and f :~ 0.0
+
+  test "or":
+    let fi = toGvalue 0
+    let ti = toGvalue 1
+    let t = toGvalue 1.0
+    let f = toGvalue 0.0
+    fi or t :~ 1.0
+    t or fi :~ 1
+    ti or t :~ 1.0
+    t or ti :~ 1
+    f or fi :~ 0
+    fi or f :~ 0.0
+
+  test "xor":
+    let fi = toGvalue 0
+    let ti = toGvalue 1
+    let t = toGvalue 1.0
+    let f = toGvalue 0.0
+    fi xor t :~ 1.0
+    t xor fi :~ 1
+    ti xor t :~ 0.0
+    t xor ti :~ 0
+    f xor fi :~ 0
+    fi xor f :~ 0.0
+
   test "condi":
     let k = toGvalue 0
     let z = cond(k, x, y)
@@ -259,3 +313,19 @@ suite "bool and cond":
     z2 :~ c*c
     dx :~ 2.0*c
     dy :~ 0.0
+
+  test "cond eval shortcut":
+    let t = toGvalue 2.0
+    let f = toGvalue 0.0
+    let t2 = t*t
+    let t3 = t*t*t
+    check t2.getfloat == 0.0  # should be zero before eval
+    check t3.getfloat == 0.0  # ditto
+    var tt = cond(t, t2, t3)
+    tt :~ 4.0
+    check t2.getfloat == 4.0
+    check t3.getfloat == 0.0  # should remain zero after eval
+    tt = cond(f, t3, t2)
+    tt :~ 4.0
+    check t2.getfloat == 4.0
+    check t3.getfloat == 0.0  # should remain zero after eval
