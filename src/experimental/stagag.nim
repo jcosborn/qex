@@ -875,6 +875,41 @@ proc setupMDabacaba =
     addG(g0)
   addT(t0)
 
+proc setupMDacacaca =
+  if pt0 == 0: pt0 = 0.116438749543126
+  if pg0 == 0: pg0 = 0.283216992495952
+  if pf0 == 0: pf0 = 0.283216992495952
+  if pgf0 == 0: pgf0 = 0.001247201195115*(2.0/pg0)
+  if pff0 == 0: pff0 = 0.001247201195115*(2.0/pf0)
+  if pgf1 == 0: pgf1 = 0.002974030329635*(2.0/(1-2*pg0))
+  if pff1 == 0: pff1 = 0.002974030329635*(2.0/(1-2*pf0))
+  let t0 = vtau * pushParam(pt0)
+  let t02 = 2 * t0
+  let g0 = vtau * pushParam(pg0)
+  let f0 = if nf==0: g0 else: vtau * pushParam(pf0)
+  let t1 = 0.5 * vtau - t0
+  let g1 = vtau - 2 * g0
+  let f1 = vtau - 2 * f0
+  let gf0 = vtau*vtau*pushParam(pgf0)
+  let ff0 = if nf==0: gf0 else: vtau*vtau*pushParam(pff0)
+  let gf1 = vtau*vtau*pushParam(pgf1)
+  let ff1 = if nf==0: gf1 else: vtau*vtau*pushParam(pff1)
+  addT(t0)
+  for i in 0..<nsteps:
+    if i!=0: addT(t02)
+    #addG(g0)
+    #addF(f0)
+    addGFF(g0, gf0, f0, ff0)
+    addT(t1)
+    #addGF(g1, gf1)
+    #addFF(f1, ff1)
+    addGFF(g1, gf1, f1, ff1)
+    addT(t1)
+    addGFF(g0, gf0, f0, ff0)
+    #addF(f0)
+    #addG(g0)
+  addT(t0)
+
 # Order 6
 
 proc setupMDacabacabaca =
@@ -1950,6 +1985,7 @@ of "babab": setupMDbabab()
 of "bacab": setupMDbacab()
 of "abababa": setupMDabababa()
 of "abacaba": setupMDabacaba()
+of "acacaca": setupMDacacaca()
 of "ababababa": setupMDababababa()
 of "acabacabaca": setupMDacabacabaca()
 of "g5f2": setupMDg5f2()
