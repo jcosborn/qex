@@ -233,6 +233,26 @@ suite "gauge fused":
     let x {.used.} = toGvalue a
     let y {.used.} = toGvalue b
 
+  test "adjmul":
+    let rf = gg.adjmul gu
+    let rg = gg.adj * gu
+    norm2(rf - rg) :< 1e-26
+    let srf = rf.norm2
+    let srg = rg.norm2
+    norm2(grad(srf, gg) - grad(srg, gg)) :< 1e-25
+    norm2(grad(srf, gu) - grad(srg, gu)) :< 1e-25
+    ckgradm2(adjmul, gg, gu, gp, gq, gm)
+
+  test "muladj":
+    let rf = gg.muladj gu
+    let rg = gg * gu.adj
+    norm2(rf - rg) :< 1e-26
+    let srf = rf.norm2
+    let srg = rg.norm2
+    norm2(grad(srf, gg) - grad(srg, gg)) :< 1e-25
+    norm2(grad(srf, gu) - grad(srg, gu)) :< 1e-25
+    ckgradm2(muladj, gg, gu, gp, gq, gm)
+
   test "contractProjTAH":
     let rf = contractProjTAH(gg, gu)
     let rg = projTAH(gg * gu.adj)

@@ -29,7 +29,7 @@ method valCopy*(z: Gscalar, x: Gscalar) = z.sval = x.sval
 
 method `$`*(x: Gscalar): string = $x.sval
 
-method isTrue*(x: Gscalar): bool = x.sval != 0.0
+method isZero*(x: Gscalar): bool = x.sval == 0.0
 
 proc `getfloat=`*(x: Gvalue, y: int) =
   let xs = Gscalar(x)
@@ -58,7 +58,7 @@ method valCopy*(z: Gint, x: Gint) = z.ival = x.ival
 
 method `$`*(x: Gint): string = $x.ival
 
-method isTrue*(x: Gint): bool = x.ival != 0
+method isZero*(x: Gint): bool = x.ival == 0
 
 proc negsf(v: Gvalue) =
   let x = Gscalar(v.inputs[0])
