@@ -2098,5 +2098,6 @@ if outfn != "":
   echo "Saving gauge field to file: ", outfn
   let err = g.saveGauge outfn
 
-#echoTimers()
+if intParam("prof",0) != 0:
+  echoTimers()
 qexFinalize()

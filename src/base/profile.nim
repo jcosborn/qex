@@ -72,7 +72,7 @@ proc newList[T](len:int32 = 0):List[T] {.noinit.} =
   result.len = len
   result.cap = cap
   if cap > 0:
-    result.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap))
+    result.data = cast[ptr UncheckedArray[T]](allocShared(sizeof(T)*cap))
     listChangeLen[T](cap)
   else:
     result.data = nil
@@ -80,7 +80,7 @@ proc newListOfCap[T](cap:int32):List[T] {.noinit.} =
   result.len = 0
   result.cap = cap
   if cap > 0:
-    result.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap))
+    result.data = cast[ptr UncheckedArray[T]](allocShared(sizeof(T)*cap))
     listChangeLen[T](cap)
   else:
     result.data = nil
@@ -92,16 +92,16 @@ proc setLen[T](ls:var List[T], len:int32) =
     if cap0 == 0:
       cap = 1
       while cap < len: cap *= 2
-      ls.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap.int))
+      ls.data = cast[ptr UncheckedArray[T]](allocShared(sizeof(T)*cap.int))
     else:
       while cap < len: cap *= 2
-      ls.data = cast[ptr UncheckedArray[T]](realloc(ls.data, sizeof(T)*cap.int))
+      ls.data = cast[ptr UncheckedArray[T]](reallocShared(ls.data, sizeof(T)*cap.int))
     ls.cap = cap
     listChangeLen[T](int32(cap-cap0))
   ls.len = len
 proc free[T](ls:var List[T]) =
   if ls.cap > 0:
-    dealloc(ls.data)
+    deallocShared(ls.data)
   listChangeLen[T](-ls.cap)
   ls.len = 0
   ls.cap = 0
