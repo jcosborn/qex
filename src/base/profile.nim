@@ -121,7 +121,8 @@ iterator items[T](ls:List[T]):T =
 
 proc setLen(ls:var RTInfoObjList, len:int32) {.borrow.}
 proc free(ls:var RTInfoObjList) {.borrow.}
-proc add(ls:var RTInfoObjList, x:RTInfoObj) {.borrow.}
+#proc add(ls:var RTInfoObjList, x:RTInfoObj) {.borrow.}
+proc add(ls:var RTInfoObjList, x:RTInfoObj) = add(List[RTInfoObj](ls), x)
 template len(ls:RTInfoObjList):int32 = List[RTInfoObj](ls).len
 template `[]`(ls:RTInfoObjList, n:int32):untyped = List[RTInfoObj](ls)[n]
 iterator mitems(ls:RTInfoObjList):var RTInfoObj =
@@ -747,7 +748,7 @@ proc makeHotspotTable(lrti: List[RTInfoObj]): tuple[ns:int64,oh:int64] =
       l0 = ri.prev.loc.line
       f = splitFile(ri.curr.loc.filename)[1]
       l = ri.curr.loc.line
-      loc = f0 & "(" & $l0 & "-" & (if f==f0:"" else:f) & $l & ") " & getName(addr ri)
+      loc = f0 & "(" & $l0 & "-" & (if f==f0:"" else:f) & $l & ") " & getName(unsafeAddr ri)
       coh = ri.childrenOverhead
       soh = ri.overhead
       nsec = ri.nsec
