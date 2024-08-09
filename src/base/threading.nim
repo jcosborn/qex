@@ -56,6 +56,7 @@ template emitStackTrace: untyped =
 
 template threads*(body:untyped):untyped =
   checkInit()
+  doAssert(numThreads==1)
   let tidOld = threadNum
   let nidOld = numThreads
   let tlOld = threadLocals

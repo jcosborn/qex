@@ -1,11 +1,9 @@
-import qex
+import ../mcmcTypes
+
 import gauge
 
 import strutils
 import json
-
-import abstractFields
-import typeUtilities
 
 const
   BetaAOverBetaF = -1.0/4.0
@@ -17,64 +15,70 @@ converter toGaugeActionType(s: string):
   GaugeActionType = parseEnum[GaugeActionType](s)
 
 proc checkJSON(info: JsonNode): JsonNode = 
-  result = checkMonteCarloAlgorithm(info)
+  result = parseJson("{}")
+  for key, keyVal in info: result[key] = keyVal
   if not result.hasKey("adjoint-ratio"):
     result["adjoint-ratio"] = %* BetaAOverBetaF
   if not result.hasKey("rectangle-coefficient"):
     result["rectangle-coefficient"] = %* C1Symanzik
   if not result.hasKey("action"): result["action"] = %* "Wilson"
   if not result.hasKey("beta"): qexError "beta not specified for gauge field"
+  result["field-type"] = %* "gauge"
 
-proc newGaugeField[S,T,U](
-    l: Layout;
+proc newGaugeField(
+    self: var LatticeField;
     action: GaugeActionType;
-    beta, adjRat, rectCoeff: float;
-    algorithm: MonteCarloType;
-    s: typedesc[S];
-    t: typedesc[T];
-    u: typedesc[U];
-  ): AbstractField[S,T,U] =
-
-  # Standard stuff that is necessary for all abstract fields
-  result = AbstractField[S,T,U](field: GaugeField, algorithm: algorithm)
+    beta, adjRat, rectCoeff: float
+  ) =
+  # Create new stream
+  var stream = newMCStream("new gauge field")
   
   # Initialization specific to gauge fields
-  result.gaugeAction = action
-  result.gaugeActionCoefficients = case result.gaugeAction
+  self.gaugeAction = action
+  self.gaugeActionCoefficients = case self.gaugeAction
     of Wilson: GaugeActionCoeffs(plaq: beta)
     of Adjoint: GaugeActionCoeffs(plaq: beta, adjplaq: beta*adjRat)
     of Rectangle: gaugeActRect(beta, rectCoeff)
     else: # Annoying Nim 2.0 compiler workaround
-      if result.gaugeAction == Symanzik: gaugeActRect(beta, C1Symanzik)
-      elif result.gaugeAction == Iwasaki: gaugeActRect(beta, C1Iwasaki)
+      if self.gaugeAction == Symanzik: gaugeActRect(beta, C1Symanzik)
+      elif self.gaugeAction == Iwasaki: gaugeActRect(beta, C1Iwasaki)
       else: gaugeActRect(beta, C1DBW2)
 
-  result.u = l.newGauge()
+  stream.add "  action = " & $(action)
+  stream.add "  beta = " & $(beta)
+  case self.gaugeAction:
+    of Adjoint: stream.add "  beta_a/beta_f = " & $(adjRat)
+    of Rectangle: stream.add "  c1 = " & $(rectCoeff)
+    else: discard
+  stream.finishStream
 
 proc newGaugeField*(l: Layout; gaugeInformation: JsonNode): auto =
-  
-  # Check JSON keys
   let info = checkJSON(gaugeInformation)
-
-  # Create new gauge field
-  result = l.newGaugeField(
+  result = l.newLatticeField(info)
+  result.u = l.newGauge()
+  result.newGaugeField(
     toGaugeActionType(info["action"].getStr()),
     info["beta"].getFloat(),
     info["adjoint-ratio"].getFloat(),
     info["rectangle-coefficient"].getFloat(),
-    toMonteCarloType(info["monte-carlo-algorithm"].getStr()),
-    l.typeS, l.typeT, l.typeU
   )
-  
-  # Set abstract field information
-  result.newAbstractField(info)
 
-proc gaugeAction*(self: AbstractField): float =
+proc gaugeAction*(self: LatticeField; u: auto): float =
+  result = case self.gaugeAction
+    of Adjoint: self.gaugeActionCoefficients.actionA(u)
+    else: self.gaugeActionCoefficients.gaugeAction1(u)
+
+proc gaugeForce*[S](self: LatticeField; u,f: seq[S]) =
+  case self.gaugeAction:
+    of Adjoint: self.gaugeActionCoefficients.forceA(u,f)
+    else: self.gaugeActionCoefficients.gaugeForce(u,f)
+
+proc gaugeAction*(self: LatticeField): float =
   result = case self.gaugeAction
     of Adjoint: self.gaugeActionCoefficients.actionA(self.u)
     else: self.gaugeActionCoefficients.gaugeAction1(self.u)
 
-proc gaugeForce*[S](self: AbstractField; f: seq[S]) =
+proc gaugeForce*[S](self: LatticeField; f: seq[S]) =
   case self.gaugeAction:
     of Adjoint: self.gaugeActionCoefficients.forceA(self.u, f)
     else: self.gaugeActionCoefficients.gaugeForce(self.u, f)
@@ -94,7 +98,7 @@ if isMainModule:
       "beta": 6.0,
       "steps": 10,
       "integrator": "MN2",
-      "monte-carlo-algorithm": "hamiltonian-monte-carlo"
+      "monte-carlo-algorithm": "hmc"
     }
 
     case action:
@@ -105,7 +109,6 @@ if isMainModule:
     var gauge = lo.newGaugeField(params)
 
     unit(u)
-    gauge.dtau = @[1.0]
     gauge.gaugeForce(f)
     var f2: float
     threads:

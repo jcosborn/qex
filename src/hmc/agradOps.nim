@@ -8,6 +8,8 @@ type
   #GaugeFV* = AgVar[GaugeF]
   GaugeF*[V:static int,T] = seq[Field[V,T]]
   GaugeFV*[V:static int,T] = AgVar[GaugeF[V,T]]
+  FieldV*[V:static int,T] = AgVar[Field[V,T]]
+
 template newFloatV*(c: AgTape, x = 0.0): auto =
   var t = FloatV.new()
   t.doGrad = true
@@ -50,6 +52,26 @@ proc peqmul[G:GaugeF](r: G, x: float, y: G) =
     for mu in 0..<r.len:
       for s in r[mu]:
         r[mu][s] += x * y[mu][s]
+
+proc assigngrad(c: float, r: var float) =
+  r += c
+proc assignfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
+  #mixin peq
+  op.outputs.obj := op.inputs.maybeObj
+  when op.inputs is AgVar:
+    zero op.inputs.grad
+proc assignbck[I,O](op: AgOp[I,O]) {.nimcall.} =
+  #mixin peq
+  when op.inputs is AgVar:
+    if op.inputs.doGrad:
+      assigngrad(op.outputs.grad, op.inputs.grad)
+proc assign(c: var AgTape, r: AgVar, x: auto) =
+  var op = newAgOp(x, r, assignfwd, assignbck)
+  c.add op
+template assign*(r: AgVar, x: auto) =
+  r.ctx.assign(r, x)
+template `:=`*(r: AgVar, x: auto) =
+  r.ctx.assign(r, x)
 
 proc addgrad1(c: float, r: var float, y: float) =
   r += c
@@ -122,6 +144,25 @@ proc mulgrad1(c: float, r: var float, y: float) =
   r += c * y
 proc mulgrad2(c: float, x: float, r: var float) =
   r += x * c
+
+proc mul[F:Field](r: F, x: float, y: F) =
+  threads:
+    r := x * y
+proc mulgrad1[F:Field](c: F, r: var float, y: F) =
+  var rr = 0.0
+  threads:
+    var l: typeof(redot(y[0][], c[0][]))
+    for s in c:
+      l += redot(y[s][], c[s][])
+    var m = simdReduce l
+    threadRankSum m
+    threadSingle:
+      rr = m
+  r += rr
+proc mulgrad2[F:Field](c: F, x: float, r: F) =
+  threads:
+    for s in c:
+      r[s][] += x * c[s][]
 
 proc mul[G:GaugeF](r: G, x: float, y: G) =
   threads:
@@ -208,6 +249,26 @@ proc divd(c: var AgTape, r: AgVar, x: auto, y: auto) =
 template divd*(r: AgVar, x: auto, y: auto) =
   r.ctx.divd(r, x, y)
 
+proc peqgrad(c: float, r: var float) =
+  r += c
+proc peqfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
+  #mixin peq
+  op.outputs.obj += op.inputs.maybeObj
+  when op.inputs is AgVar:
+    zero op.inputs.grad
+proc peqbck[I,O](op: AgOp[I,O]) {.nimcall.} =
+  #mixin peq
+  when op.inputs is AgVar:
+    if op.inputs.doGrad:
+      peqgrad(op.outputs.grad, op.inputs.grad)
+proc peq(c: var AgTape, r: AgVar, x: auto) =
+  var op = newAgOp(x, r, peqfwd, peqbck)
+  c.add op
+template peq*(r: AgVar, x: auto) =
+  r.ctx.peq(r, x)
+template `+=`*(r: AgVar, x: auto) =
+  r.ctx.peq(r, x)
+
 proc mulna[G:GaugeF](r: G, x: G, y: G) =
   threads:
     for mu in 0..<r.len:
@@ -246,7 +307,7 @@ var ep: ExpParam
 ep.scale = 20
 ep.kind = ekPoly
 ep.order = 4
-proc expfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
+proc expvfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
   mixin exp
   let g = op.outputs.obj
   let a = op.inputs[0].obj
@@ -258,7 +319,7 @@ proc expfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
       for s in g[mu]:
         g[mu][s][] := ep.exp(a*p[mu][s][])
         pg[mu][s] := 0
-proc expbck[I,O](op: AgOp[I,O]) {.nimcall.} =
+proc expvbck[I,O](op: AgOp[I,O]) {.nimcall.} =
   mixin `+=`
   if op.inputs[0].doGrad or op.inputs[1].doGrad:
     #let g = op.outputs.obj
@@ -283,10 +344,38 @@ proc expbck[I,O](op: AgOp[I,O]) {.nimcall.} =
         ag += agls
     op.inputs[0].grad = ag
 proc exp*[G:GaugeFV](c: var AgTape, g: G, a: FloatV, p: G) =
-  var op = newAgOp((a,p), g, expfwd, expbck)
+  var op = newAgOp((a,p), g, expvfwd, expvbck)
   c.add op
 template exp*[G:GaugeFV](g: G, a: FloatV, p: G) =
   g.ctx.exp(g, a, p)
+
+proc expfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
+  mixin exp
+  let g = op.outputs.obj
+  let p = op.inputs.obj
+  let pg = op.inputs.grad
+  threads:
+    for mu in 0..<g.len:
+      for s in g[mu]:
+        g[mu][s][] := ep.exp(p[mu][s][])
+        pg[mu][s] := 0
+proc expbck[I,O](op: AgOp[I,O]) {.nimcall.} =
+  mixin `+=`
+  if op.inputs.doGrad:
+    #let g = op.outputs.obj
+    let gg = op.outputs.grad
+    let p = op.inputs.obj
+    let pg = op.inputs.grad
+    threads:
+      for mu in 0..<gg.len:
+        for s in gg[mu]:
+          let d = ep.expDeriv(p[mu][s][], gg[mu][s][])
+          pg[mu][s][] += d
+proc exp*[G:GaugeFV](c: var AgTape, g: G, p: G) =
+  var op = newAgOp(p, g, expfwd, expbck)
+  c.add op
+template exp*[G:GaugeFV](g: G, p: G) =
+  g.ctx.exp(g, p)
 
 proc gactionfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
   op.outputs.obj = actionA(op.inputs[0], op.inputs[1].obj)
@@ -336,6 +425,23 @@ proc projtah(c: var AgTape, r: AgVar, x: auto) =
   c.add op
 template projtah*(r: AgVar, x: auto) =
   r.ctx.projtah(r, x)
+
+proc maskEvenFwd[I,O](op: AgOp[I,O]) {.nimcall.} =
+  let r = op.outputs.obj
+  let g = op.outputs.grad
+  threads:
+    r.odd := 0
+    g := 0
+proc maskEvenBck[I,O](op: AgOp[I,O]) {.nimcall.} =
+  #let g = op.inputs.grad
+  let g = op.outputs.grad
+  threads:
+    g.odd := 0
+proc maskEven[F:FieldV](c: var AgTape, r: F) =
+  var op = newAgOp(0, r, maskEvenFwd, maskEvenBck)
+  c.add op
+template maskEven*[F:FieldV](r: F) =
+  r.ctx.maskEven(r)
 
 proc xpayfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
   let r = op.outputs.obj
@@ -406,6 +512,7 @@ proc agradDbck[I,O](op: AgOp[I,O]) {.nimcall.} =
   when g is AgVar:
     if g.doGrad:
       #g.grad += rephase [outer(c shift x') - outer(x shift c')]
+      for mu in 0..<g.grad.len: g.grad[mu] *= 2.0
       s.rephase g.grad
       s.stagD2deriv(g.grad, r.grad, x.maybeObj)
       s.rephase g.grad
@@ -479,7 +586,7 @@ proc agradSolvebck[I,O](op: AgOp[I,O]) {.nimcall.} =
   let g = op.inputs[1]
   let x = op.inputs[2]
   let m = op.inputs[3]
-  let p = op.inputs[4]
+  let p = op.inputs[5]
   let r = op.outputs
   var c = r.grad.newOneOf
   r.grad.odd *= -1
@@ -504,11 +611,15 @@ proc agradSolvebck[I,O](op: AgOp[I,O]) {.nimcall.} =
   when m is AgVar:
     if m.doGrad:
       m.grad += redot(r.obj, c)
-proc agradSolve(c: var AgTape, s,g,r,x,m,p: auto) =
-  var op = newAgOp((s,g,x,m,p), r, agradSolvefwd, agradSolvebck)
+proc agradSolve(c: var AgTape, s,g,r,x,m,pf,pb: auto) =
+  var op = newAgOp((s,g,x,m,pf,pb), r, agradSolvefwd, agradSolvebck)
   c.add op
+template agradSolve*(s: Staggered, g,r,x,m,pf,pb: auto) =
+  ## g: gauge, r: result, x: src, m: mass, p: solve params
+  r.ctx.agradSolve(s, g, r, x, m, addr pf, addr pb)
 template agradSolve*(s: Staggered, g,r,x,m,p: auto) =
-  r.ctx.agradSolve(s, g, r, x, m, addr p)
+  ## g: gauge, r: result, x: src, m: mass, p: solve params
+  r.ctx.agradSolve(s, g, r, x, m, addr p, addr p)
 
 when isMainModule:
   import qex, physics/stagSolve
@@ -644,8 +755,8 @@ when isMainModule:
     echo "    ", (nv.obj-n0)/eps
     v1 -= eps * c
 
-  #testAgradD()
+  testAgradD()
   #testAgradSolve()
-  testAgradStagDeriv()
+  #testAgradStagDeriv()
 
   qexFinalize()

@@ -72,7 +72,7 @@ proc newList[T](len:int32 = 0):List[T] {.noinit.} =
   result.len = len
   result.cap = cap
   if cap > 0:
-    result.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap))
+    result.data = cast[ptr UncheckedArray[T]](allocShared(sizeof(T)*cap))
     listChangeLen[T](cap)
   else:
     result.data = nil
@@ -80,7 +80,7 @@ proc newListOfCap[T](cap:int32):List[T] {.noinit.} =
   result.len = 0
   result.cap = cap
   if cap > 0:
-    result.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap))
+    result.data = cast[ptr UncheckedArray[T]](allocShared(sizeof(T)*cap))
     listChangeLen[T](cap)
   else:
     result.data = nil
@@ -92,16 +92,16 @@ proc setLen[T](ls:var List[T], len:int32) =
     if cap0 == 0:
       cap = 1
       while cap < len: cap *= 2
-      ls.data = cast[ptr UncheckedArray[T]](alloc(sizeof(T)*cap.int))
+      ls.data = cast[ptr UncheckedArray[T]](allocShared(sizeof(T)*cap.int))
     else:
       while cap < len: cap *= 2
-      ls.data = cast[ptr UncheckedArray[T]](realloc(ls.data, sizeof(T)*cap.int))
+      ls.data = cast[ptr UncheckedArray[T]](reallocShared(ls.data, sizeof(T)*cap.int))
     ls.cap = cap
     listChangeLen[T](int32(cap-cap0))
   ls.len = len
 proc free[T](ls:var List[T]) =
   if ls.cap > 0:
-    dealloc(ls.data)
+    deallocShared(ls.data)
   listChangeLen[T](-ls.cap)
   ls.len = 0
   ls.cap = 0
@@ -171,7 +171,8 @@ const
 
 var
   rtiStack = newListOfCap[RTInfoObj](defaultRTICap)
-  cpHeap = newSeqOfCap[CodePointObj](defaultRTICap)
+  #cpHeap = newSeqOfCap[CodePointObj](defaultRTICap)
+  cpHeap = newListOfCap[CodePointObj](defaultRTICap)
   frozenTimers = false
 
 proc timersFrozen*:bool = frozenTimers
@@ -355,10 +356,12 @@ template ticI(n = -1; s:SString = "") =
     localTic {.inject, used.} = prevRTI
 
 when noTicToc:
-  template tic*() = discard
-  template tic*(n: int) = discard
-  template tic*(s: SString) = discard
-  template tic*(n: int; s: SString) = discard
+  template tic0 =
+    var localTimerStart {.inject,used.} = getTics()
+  template tic*() = tic0
+  template tic*(n: int) = tic0
+  template tic*(s: SString) = tic0
+  template tic*(n: int; s: SString) = tic0
 else:
   template tic*(n = -1; s:SString = "") = ticI(n-1,s)
   template tic*(s:SString = "") = ticI(-2,s)
@@ -483,10 +486,10 @@ else:
   template toc*(n:int) = tocI(0, "", n-1)
   template toc*() = tocI(0, "", -2)
 
-when noTicToc:
-  template getElapsedTime*: float = 0.0
-else:
-  template getElapsedTime*: float = ticDiffSecs(getTics(), localTimerStart)
+#when noTicToc:
+#  template getElapsedTime*: float = 0.0
+#else:
+template getElapsedTime*: float = ticDiffSecs(getTics(), localTimerStart)
 
 proc reset(x:var RTInfoObj) =
   x.nsec = 0
