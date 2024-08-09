@@ -1,7 +1,7 @@
 import threading
 export threading
 import comms/comms, stdUtils, base/basicOps
-import os, strutils, sequtils, std/monotimes
+import os, strutils, sequtils, std/monotimes, std/tables, std/algorithm, strformat
 export monotimes
 getOptimPragmas()
 
@@ -49,6 +49,10 @@ type
   CodePoint = distinct int32
   CodePointObj = object
     toDropTimer: bool
+    #nsec: int64
+    #overhead: int64
+    count: uint32
+    dropcount: uint32
     name: string
     loc: II
   SString = static[string] | string
@@ -117,6 +121,7 @@ iterator items[T](ls:List[T]):T =
 
 proc setLen(ls:var RTInfoObjList, len:int32) {.borrow.}
 proc free(ls:var RTInfoObjList) {.borrow.}
+proc add(ls:var RTInfoObjList, x:RTInfoObj) {.borrow.}
 template len(ls:RTInfoObjList):int32 = List[RTInfoObj](ls).len
 template `[]`(ls:RTInfoObjList, n:int32):untyped = List[RTInfoObj](ls)[n]
 iterator mitems(ls:RTInfoObjList):var RTInfoObj =
@@ -183,20 +188,49 @@ proc newCodePoint(ii:II, s:SString = ""):CodePoint =
   let n = cpHeap.len
   cpHeap.setlen(n+1)
   cpHeap[n].toDropTimer = false
+  cpHeap[n].count = 0
+  cpHeap[n].dropcount = 0
   cpHeap[n].name = s
   cpHeap[n].loc = ii
   CodePoint(n)
 
 template name(x:CodePoint):string = cpHeap[x.int].name
 template loc(x:CodePoint):II = cpHeap[x.int].loc
+template count(x:CodePoint):uint32 = cpHeap[x.int].count
+template dropcount(x:CodePoint):uint32 = cpHeap[x.int].dropcount
 template toDropTimer(x:CodePoint):bool = cpHeap[x.int].toDropTimer
+template dropTimer(x:CodePoint) =
+  toDropTimer(x) = true
+  #echo "dropTimer: ", cpHeap[x.int].loc, " ", cpHeap[x.int].name
 
 template overhead(x:RTInfoObj):untyped = x.overhead
 template childrenOverhead(x:RTInfoObj):untyped = x.childrenOverhead
 template istic(x:RTInfoObj):bool = x.prev.isNil
 template isnottic(x:RTInfoObj):bool = not x.prev.isNil
+template toDropTimer(x:RTInfoObj):bool = toDropTimer(x.curr)
+template dropTimer(x:RTInfoObj) = dropTimer(x.curr)
+proc dropTimerRecursive(x:RTInfoObj) =
+  #echo "dropTimerRecursive: ", x.prev.loc, " ", x.curr.loc, " ", x.curr.name
+  dropTimer(x)
+  for i in 0..<x.children.len:
+    dropTimer(x.children[i].tic)
+    dropTimer(x.children[i].prev)
+    dropTimer(x.children[i].curr)
+    dropTimerRecursive(x.children[i])
+proc dropTimerChildren(x:RTInfoObj) =
+  #echo "dropTimerRecursive: ", x.prev.loc, " ", x.curr.loc, " ", x.curr.name
+  #dropTimer(x)
+  for i in 0..<x.children.len:
+    #dropTimer(x.children[i].tic)
+    #echo "dropTimer: ", x.children[i].tic.name, " ", x.children[i].curr.name, " ", x.children[i].curr.loc
+    dropTimer(x.children[i].prev)
+    #dropTimer(x.children[i].curr)
+    dropTimerChildren(x.children[i])
 
-template dropTimer(x:RTInfo):untyped = toDropTimer(rtiStack[x.int].curr) = true
+template toDropTimer(x:RTInfo):bool = toDropTimer(rtiStack[x.int])
+template dropTimer(x:RTInfo) = dropTimer(rtiStack[x.int])
+#template dropTimerRecursive(x:RTInfo) = dropTimerRecursive(rtiStack[x.int])
+template dropTimerChildren(x:RTInfo) = dropTimerChildren(rtiStack[x.int])
 
 template identical(x,y:RTInfoObj):bool =
   x.tic == y.tic and x.prev == y.prev and x.curr == y.curr
@@ -399,12 +433,19 @@ proc tocSet(localTimer:var TicType, prevRTI:var RTInfo, restartTimer:var bool,
       for i in 0..<c.len:
         if toDropTimer(c[i].prev):
           oh -= c[i].childrenOverhead
-      if oh.float / ns.float > DropWasteTimerRatio:
-        #if ii.filename != "cg.nim":
+      inc thisCode.count
+      if oh.float > ns.float*DropWasteTimerRatio:
+      #if not toDropTimer(prevRTI) and oh.float > ns.float*DropWasteTimerRatio:
+        inc thisCode.dropcount
+        #if ii.filename != "scg.nim":
         #  echo "drop timer: ", oh.float, "/", ns.float, "=", oh.float / ns.float
         #  echo "  ", prevRTI.int, " ", thisRTI.int, " ", ii, " ", s
         # Signal stop if the overhead is too large.
-        dropTimer(prevRTI)
+        if thisCode.dropcount > 10 and thisCode.dropcount*10 > thisCode.count:
+          #echo "dropTimer: ", rtiStack[thisRTI.int].tic.name, " ", thisCode.name, " ", thisCode.loc
+          dropTimer(prevRTI)
+          dropTimerChildren(thisRTI)
+          #dropTimer(thisCode)
       if toDropTimer(thisCode):
         freezeTimers()
         restartTimer = true
@@ -574,14 +615,14 @@ type
   Tstr = tuple
     label: string
     stats: string
+func markMissing(p:bool,str:string):string =
+  if p: "[" & str & "]"
+  else: str
 template ppT(ts: RTInfoObjList, prefix = "-", total = 0'i64, overhead = 0'i64,
             count = 0'u32, initIx = 0, showAbove = 0.0, showDropped = true): seq[Tstr] =
   ppT(List[RTInfoObj](ts), prefix, total, overhead, count, initIx, showAbove, showDropped)
 proc ppT(ts: List[RTInfoObj], prefix = "-", total = 0'i64, overhead = 0'i64,
         count = 0'u32, initIx = 0, showAbove = 0.0, showDropped = true): seq[Tstr] =
-  proc markMissing(p:bool,str:string):string =
-    if p: "[" & str & "]"
-    else: str
   var
     sub:int64 = 0
     subo:int64 = 0
@@ -685,6 +726,110 @@ proc echoTimersRaw* =
   if threadNum==0:
     echo cpHeap
     echo rtiStack
+
+proc getName(t: ptr RTInfoObj): string =
+  let tn = t.tic.name
+  let pn = t.prev.name
+  let name = (if tn=="":"" else:tn&":") & (if pn=="":"" else:pn&"-") & t.curr.name
+  if t.prev.toDropTimer:
+    result = "{" & name & "}"
+  else: result = name
+
+var hs = initTable[string,RTInfoObj]()
+proc makeHotspotTable(lrti: List[RTInfoObj]): tuple[ns:int64,oh:int64] =
+  var nstot = int64 0
+  var ohtot = int64 0
+  for ri in lrti:
+    let nc = ri.count
+    if ri.istic or nc==0: continue
+    let
+      f0 = splitFile(ri.prev.loc.filename)[1]
+      l0 = ri.prev.loc.line
+      f = splitFile(ri.curr.loc.filename)[1]
+      l = ri.curr.loc.line
+      loc = f0 & "(" & $l0 & "-" & (if f==f0:"" else:f) & $l & ") " & getName(addr ri)
+      coh = ri.childrenOverhead
+      soh = ri.overhead
+      nsec = ri.nsec
+      ns = nsec - coh
+      oh = soh + coh
+    nstot += ns
+    ohtot += oh
+    hs.withValue(loc, t): # t is found value for loc
+      t.nsec += ri.nsec
+      t.flops += ri.flops
+      t.overhead += ri.overhead
+      t.childrenOverhead += ri.childrenOverhead
+      t.count += ri.count
+      for i in 0..<ri.children.len:
+        var j = 0
+        while j < t.children.len:
+          if ri.children[i].curr.loc != t.children[int32 j].curr.loc: inc j; continue
+          if ri.children[i].tic.name != t.children[int32 j].tic.name: inc j; continue
+          break
+        if j < t.children.len:
+          t.children[int32 j].nsec += ri.children[i].nsec
+          t.children[int32 j].overhead += ri.children[i].overhead
+        else:
+          t.children.add ri.children[i]
+    do: # loc not found
+      hs[loc] = ri
+    #let tot = makeHotSpotTable(List[RTInfoObj](ri.children))
+  return (nstot, ohtot)
+
+proc echoHotspots* =
+  let tot = makeHotspotTable(rtiStack)
+  #let nstot = tot.ns
+  let ohtot = tot.oh
+  let nloc = 24
+  var skeys = newSeq[tuple[ns:int64,loc:string]]()
+  var maxcount = 0
+  var nstot = 0.0
+  for k,v in hs:
+    if v.children.len>0:
+      let ins = v.nsec - v.childrenOverhead
+      skeys.add (ns: ins, loc: "incl" & k)
+    #if v.children.len>0:
+    var sns = v.nsec
+    if v.children.len==0: sns -= v.childrenOverhead
+    for i in 0..<v.children.len:
+      sns -= v.children[i].nsec + v.children[i].overhead
+    skeys.add (ns: sns, loc: "self" & k)
+    maxcount = max(maxcount, int v.count)
+    nstot += sns
+  skeys.sort(system.cmp, Sortorder.Descending)
+  let countdigits = max(5, 1 + int log10(float maxcount))
+  echo "Profile time: ", (1e-9*nstot)|(0,6), " overhead: ", (1e-9*ohtot)|(0,6), " total: ", (1e-9*(nstot+ohtot))|(0,6)
+  echo "% time  % self count   Mf/s  #child  location                name  (#child: I=inclusive, S=self)"
+  var tsns = 0.0
+  for nk in skeys:
+    let incl = nk.loc.startsWith("incl")
+    let key = nk.loc[4..^1]
+    hs.withValue(key, t):
+      let
+        pct = 100.0 * nk.ns / nstot
+        count = t.count|countdigits
+        #coh = t.childrenOverhead
+        #soh = t.overhead
+        #oh = soh + coh
+        #ohpct = 100.0 * oh / nstot
+        mfs = 1000.0 * t.flops / nk.ns.float
+        mf = (if t.flops>0.0: mfs.int|7 else: "       ")
+        nc = (if t.children.len>0: t.children.len|4 else: "    ")
+        f0 = splitFile(t.prev.loc.filename)[1]
+        l0 = t.prev.loc.line
+        f = splitFile(t.curr.loc.filename)[1]
+        l = t.curr.loc.line
+        loc = f0 & "(" & $l0 & "-" & (if f==f0:"" else:f) & $l & ")"
+        lc = loc|(-nloc,'.')
+        nm = getName(t)
+      #echo &"{pct:6.3f} {ohpct:6.3f} {count} {mf} {nc} {lc} {nm}"
+      if incl:
+        echo &"{pct:6.3f}         {count} {mf} {nc} I {lc} {nm}"
+      else:
+        tsns += nk.ns
+        let tsnspct = 100.0 * tsns / nstot
+        echo &"{pct:6.3f} {tsnspct:7.3f} {count} {mf} {nc} S {lc} {nm}"
 
 when isMainModule:
   import os

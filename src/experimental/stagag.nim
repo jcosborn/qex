@@ -1464,10 +1464,12 @@ proc updatePseudo =
   tape.setTrack 0
 
 proc update =
+  tic("update")
   tape.run
   for mu in 0..<g.len:
     g[mu] := gauges[^1][mu]
     p[mu] := moms[^1][mu]
+  toc("end update")
 
 proc updateAll =
   updatePseudo()
@@ -1560,7 +1562,7 @@ template masses(bi: BackwardsIndex): float =
   else: vhmasses[i-1].obj
 
 proc start*(m: var Met) =
-  tic()
+  tic("start")
   m.state = 0
   threads:
     for i in 0..<g.len:
@@ -1577,7 +1579,7 @@ proc start*(m: var Met) =
   toc("init p, phi")
 
 proc getH*(m: Met): float =
-  tic()
+  tic("getH")
   var p2 = 0.0
   threads:
     var p2t = 0.0
@@ -1608,7 +1610,6 @@ proc getH*(m: Met): float =
     #h0 = t0 + ga0
     h0 = t0 + ga0 + fa0
   result = h0
-  toc("end getH")
   if m.state == 0:
     inc m.state
     echo &"Begin H: {h0}  T: {t0}  Sg: {ga0}  Sf: {fa0}"
@@ -1622,6 +1623,7 @@ proc getH*(m: Met): float =
     tape.run
     echo &"    H: {hv[1].obj}  T: {p2v[1].obj}  Sg: {gav[1].obj}  Sf: {fav[1].obj}"
     tape.setTrack 0
+  toc("end getH")
 
 # w = sum_i w_i
 # sum = sum_i w_i x_i
@@ -2024,14 +2026,17 @@ setupAction()
 echo "nFF: ", nff
 echo "initial force cost: ", forceCost()
 
-if nwarm > 0:
-  echo "Starting warmups"
-  #setupMDx()
-  alwaysAccept = warmmd
-  for n in 1..nwarm:
-    m.update
-  m.clearStats
-  pacc.clear
+block:
+  tic("warmup")
+  if nwarm > 0:
+    echo "Starting warmups"
+    #setupMDx()
+    alwaysAccept = warmmd
+    for n in 1..nwarm:
+      m.update
+    m.clearStats
+    pacc.clear
+  toc("end warmup")
 
 echo "Starting HMC"
 #setupMD5()
@@ -2043,11 +2048,11 @@ for i in 0..<spf.len:
   spf[i].resetStats
   spfb[i].resetStats
 block:
-  tic()
+  tic("training")
   for n in 1..ntrain:
     echo "Starting trajectory: ", n
     echoParams()
-    tic()
+    tic("train step")
     m.update
     getGrad(m)
     let tup = getElapsedTime()
@@ -2062,7 +2067,7 @@ block:
     let ttot = getElapsedTime()
     echo "End trajectory update: ", tup, "  measure: ", ttot-tup, "  total: ", ttot
   let et = getElapsedTime()
-  toc()
+  toc("end training")
   echo "HMC time: ", et
   #let at = gutime + gftime + fftime
   #echo &"gu: {gutime}  gf: {gftime}  ff: {fftime}  ot: {et-at}  tt: {et}"
@@ -2074,7 +2079,7 @@ for i in 0..<spf.len:
 if trajs > 0:
   m.clearStats
   pacc.clear
-  tic()
+  tic("inference")
   for n in 1..trajs:
     echo "Starting inference: ", n
     echoParams()
@@ -2091,13 +2096,15 @@ if trajs > 0:
     let ttot = getElapsedTime()
     echo "End inference update: ", tup, "  measure: ", ttot-tup, "  total: ", ttot
   let et = getElapsedTime()
-  toc()
+  toc("end inference")
   echo "Inference time: ", et
 
 if outfn != "":
   echo "Saving gauge field to file: ", outfn
   let err = g.saveGauge outfn
 
-if intParam("prof",0) != 0:
-  echoTimers()
+case intParam("prof",0)
+of 1: echoTimers()
+of 2: echoHotspots()
+else: discard
 qexFinalize()

@@ -162,26 +162,26 @@ template t0waitX* =
     for b in 1..<numThreads:
       let p{.volatile.} = threadLocals.share[b].counter.addr
       while true:
+        fence()
         if p[] >= tbar0: break
   else:
     inc threadLocals.share[threadNum].counter
-    #fence()
-  fence()
-template t0wait* = threadBarrier()
+    fence()
+template t0wait* = t0waitO()
 
 template twait0O* = threadBarrier()
 template twait0X* =
   if threadNum==0:
     inc threadLocals.share[0].counter
-    #fence()
+    fence()
   else:
     inc threadLocals.share[threadNum].counter
     let tbar0 = threadLocals.share[threadNum].counter
     let p{.volatile.} = threadLocals.share[0].counter.addr
     while true:
+      fence()
       if p[] >= tbar0: break
-  fence()
-template twait0* = threadBarrier()
+template twait0* = twait0O()
 
 template threadBarrier* =
   #t0waitX

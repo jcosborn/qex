@@ -3,7 +3,7 @@ import strutils
 type Crc32* = uint32
 const InitCrc32* = Crc32(not 0'u32)
 const crc32PolyLow = Crc32(0xedb88320)
-const crc32Poly = uint64(0x100000000) + uint64(crc32PolyLow)
+#const crc32Poly = uint64(0x100000000) + uint64(crc32PolyLow)
 
 proc createCrcTable(): array[0..255, Crc32] =
   for i in 0..255:
@@ -48,6 +48,7 @@ proc polyMul(x0: uint32, y0: uint64): uint64 =
     y = y shl 1
     x = x shr 1
 
+#[
 proc polyRem(x0: uint64, y0: uint64): uint32 =
   var x = x0
   var y = y0
@@ -67,6 +68,7 @@ proc polyRem(x0: uint64, y0: uint64): uint32 =
   echo (x0 xor polyMul(q, y0)).toHex
   echo x.toHex
   result = x.uint32
+]#
 
 proc mulRem(r1,r2: Crc32): Crc32 =
   var t = polyMul(r1, r2) shl 1
@@ -75,12 +77,14 @@ proc mulRem(r1,r2: Crc32): Crc32 =
     t = t shr 8
   result = result xor Crc32(t)
 
+#[
 proc zeroPadCrc32X(crc: Crc32, n: int): Crc32 =
   var fac = Crc32(0x80000000)
   for i in 0..<n:
     fac = updateCrc32(fac, '\0')
   #echo "fac: ", fac.toHex
   result = mulRem(fac, crc)
+]#
 
 proc zeroPadCrc32*(crc: Crc32, n: int): Crc32 =
   var fac = Crc32(0x80000000)

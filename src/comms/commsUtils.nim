@@ -249,13 +249,18 @@ template threadRankSum1*[T](comm: Comm, a: T) =
   var ta{.global.}: type(a)
   #var ta2{.global.}:array[512,type(a)]
   if threadNum==0:
+    tic("threadRankSum1")
     t0wait()
+    toc("t0wait")
     for i in 1..<numThreads:
       a += cast[ptr type(a)](threadLocals.share[i].p)[]
       #a += ta2[threadNum]
+    toc("sum")
     rankSum(comm,a)
+    toc("rankSum")
     ta = a
     twait0()
+    toc("twait0")
   else:
     threadLocals.share[threadNum].p = a.addr
     #ta2[threadNum] = a

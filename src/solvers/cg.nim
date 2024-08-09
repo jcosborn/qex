@@ -54,7 +54,7 @@ proc newCgState*[T](x,b: T): CgState[T] =
 # solves: A x = b
 proc solve*(state: var CgState; op: auto; sp: var SolverParams) =
   mixin apply, applyPrecon
-  tic()
+  tic("solve")
   let vrb = sp.verbosity
   template verb(n:int; body:untyped) =
     if vrb>=n: body
@@ -172,7 +172,7 @@ proc solve*(state: var CgState; op: auto; sp: var SolverParams) =
         echo("CG iteration: ", itn, "  r2/b2: ", r2/b2)
 
       while itn<maxits and r2>r2stop:
-        tic()
+        tic("cg loop")
         if itn == 0 or precon != cpLeftRight:
           preconL(z, r)  # z = L r  or  z = R r for RightNonHerm
         else:
@@ -195,6 +195,7 @@ proc solve*(state: var CgState; op: auto; sp: var SolverParams) =
         verb(3):
           echo "beta: ", beta
         preconR(p, q)  # p = R q
+        toc("preconR")
         inc itn
         op.apply(Ap, p)
         toc("Ap")

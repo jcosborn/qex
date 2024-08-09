@@ -199,7 +199,7 @@ template stagDMN*(sd:openArray[StaggeredD]; r:openArray[Field];
 
 template stagDP*(sd:StaggeredD; r:Field; g:openArray[Field2];
                  x:Field3; expFlops:int; exp:untyped) =
-  tic()
+  tic("stagDP")
   for mu in 0..<g.len:
     XoptimizeAst:
       startSB(sd.sf[mu], x[ix])
@@ -277,7 +277,7 @@ template stagDP2*(sd:StaggeredD; r:Field; g:openArray[Field2];
   ]#
 template stagDM*(sd:StaggeredD; r:Field; g:openArray[Field2];
                  x:Field3; expFlops:int; exp:untyped) =
-  tic()
+  tic("stagDM")
   for mu in 0..<g.len:
     XoptimizeAst:
       startSB(sd.sf[mu], x[ix])
@@ -433,7 +433,7 @@ proc stagDb*(sd:StaggeredD; r:Field; g:openArray[Field2];
 # r = m2 - Deo * Doe
 proc stagD2xx*(sdx,sdy:StaggeredD; r:Field; g:openArray[Field2];
                x:Field; m2:SomeNumber) =
-  tic()
+  tic("stagD2xx")
   var t{.global.}:evalType(x)
   if t==nil:
     threadBarrier()
@@ -442,18 +442,18 @@ proc stagD2xx*(sdx,sdy:StaggeredD; r:Field; g:openArray[Field2];
     threadBarrier()
   #threadBarrier()
   #stagD(sdo, t, g, x, 0.0)
-  toc("stagD2xx init")
+  #toc("init")
   block:
     stagDP(sdy, t, g, x, 0):
       rir := 0
-  toc("stagD2xx DP")
+  toc("stagDP")
   threadBarrier()
-  toc("stagD2xx barrier")
+  #toc("barrier")
   #stagD(sde, r, g, t, 0.0)
   block:
     stagDM(sdx, r, g, t, 6):
       rir := (4.0*m2)*x[ir]
-  toc("stagD2xx DM")
+  toc("stagDM")
   #threadBarrier()
   #r[sde.sub] := m2*x - r
   #for ir in r[sde.subset]:

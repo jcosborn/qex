@@ -603,7 +603,7 @@ proc mul*(r:Field; x:Field2; y:Field3) =
     mul(r[e], x[e], y[e])
 
 proc norm2P*(f:SomeField):auto =
-  tic()
+  tic("norm2P[" & $type(f) & "]")
   mixin norm2, inorm2, simdSum, items, toDouble
   #var n2:type(norm2(f[0]))
   var n2: evalType(norm2(toDouble(f[0])))
@@ -611,10 +611,10 @@ proc norm2P*(f:SomeField):auto =
   #let t = f
   for x in items(f):
     inorm2(n2, toDouble(f[x]))
-  toc("norm2 local")
+  toc("local")
   #echoAll n2
   result = simdSum(n2)
-  toc("norm2 simd sum")
+  toc("simdSum")
   #echoAll myRank, ",", threadNum, ": ", result
   #threadSum(result)
   #toc("norm2 thread sum")
@@ -622,7 +622,7 @@ proc norm2P*(f:SomeField):auto =
   #toc("norm2 rank sum")
   f.l.threadRankSum(result)
   #echo result
-  toc("norm2 thread rank sum")
+  toc("threadRankSum")
 template norm2*(f:SomeAllField):auto =
   when declared(subsetObject):
     #echo "subsetObj" & s
@@ -702,7 +702,7 @@ template dot*(f1:SomeAllField; f2:SomeAllField2):untyped =
 template dot*(f1:Subsetted; f2:SomeAllField2):untyped = dotP(f1, f2)
 
 proc redotP*(f1:SomeField; f2:SomeField2):auto =
-  tic()
+  tic("redotP[" & $f1.type & "," & $f2.type & "]")
   mixin redot, iredot, simdSum, items, toDouble, eval
   #var d:type(redot(f1[0],f2[0]))
   var d: evalType(toDouble(redot(f1[0],f2[0])))
@@ -711,9 +711,9 @@ proc redotP*(f1:SomeField; f2:SomeField2):auto =
   for x in items(t1):
     #iredot(d, t1[x], t2[x])
     d += redot(t1[x], t2[x])
-  toc("redot local")
+  toc("local")
   result = simdSum(d)
-  toc("redot simd sum")
+  toc("simdSum")
   #threadBarrier()
   #toc("thread barrier")
   #threadSum(result)
@@ -721,7 +721,7 @@ proc redotP*(f1:SomeField; f2:SomeField2):auto =
   #rankSum(result)
   #toc("rank sum")
   f1.l.threadRankSum(result)
-  toc("redot thread rank sum")
+  toc("threadRankSum")
 template redot*(f1:SomeAllField; f2:SomeAllField2):untyped =
   when declared(subsetObject):
     #echo "subsetObj redot"
