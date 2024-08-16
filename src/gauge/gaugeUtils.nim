@@ -12,23 +12,39 @@ import maths, rng, physics/qcdTypes
 
 import std/[hashes, tables]
 
-#[
 type
   GroupKind* = enum
-    gkU, gkSU, gkHerm, gkAntiHerm  # traceless, real/complex
-  Gauge*[T] = object
-    u*: seq[T]
-    n*: int
+    gkU, gkAntiHerm,
+    gkSU, gkTracelessAntiHerm,
+    gkO, gkRealAntiSym,
+    gkSO, gkTracelessRealAntiSym,
+    gkSp,
+    gkHerm, gkTracelessHerm,
+    gkRealSym, gkTracelessRealSym
+  GaugeBase* {.inheritable.} = object
     group*: GroupKind
-]#
+    n*: int
+  GaugeObj*[T] = object of GaugeBase
+    u*: seq[T]
+  Gauge*[T] = ref GaugeObj[T]
 
+proc default*(g: Gauge) =
+  let nd = g.u.len
+  threads:
+    if g.group in {gkU, gkSU, gkO, gkSO}:
+      for i in 0..<nd:
+        g.u[i] := 1
+    else:
+      for i in 0..<nd:
+        g.u[i] := 0
 
-proc newGauge*(l: Layout): auto =
+proc newGaugeSeq*(l: Layout): auto =
   let nd = l.nDim
   result = newSeq[type(l.ColorMatrix())](nd)
   for i in 0..<nd:
     result[i] = l.ColorMatrix()
     result[i] := 1
+template newGauge*(l: Layout): auto = newGaugeSeq(l)
 
 proc newGauge*[T](g: seq[T]): auto =
   let nd = g.len
@@ -36,6 +52,18 @@ proc newGauge*[T](g: seq[T]): auto =
   for i in 0..<nd:
     result[i] = g[0].l.ColorMatrix()
     result[i] := g[i]
+
+proc newGauge*(l: Layout, gk: GroupKind, n: static[int] = getDefaultNc()): auto =
+  type LCM = type l.ColorMatrix(n)
+  type GaugeT = Gauge[LCM]
+  let nd = l.nDim
+  result = new GaugeT
+  result.n = n
+  result.group = gk
+  result.u.newSeq(nd)
+  for i in 0..<nd:
+    result.u[i].new(l)
+  result.default
 
 proc newGaugeS*(l: Layout): auto =
   let nd = l.nDim
@@ -252,6 +280,8 @@ proc plaq*[T](uu: openArray[T]): auto =
     toc("plaq sum")
   result = pl
   toc("plaq end", flops=lo.nSites.float*float(np*(2*8*nc*nc*nc-1)))
+
+template plaq*(g: Gauge): auto = plaq(g.u)
 
 discard """
 # s[mu] = a_mu s[mu] + f_mu_nu Unu Vmu Unu^+ + b_mu_nu Unu^+ Vmu Unu
@@ -497,7 +527,7 @@ proc wline0*(g:auto, line:openarray[int]):auto =
   ## Compute the trace of ordered product of gauge links, the Wilson Line.
   ## The line is given as a list of integers +/- 1..nd, where the sign
   ## denotes forward/backward and the number denotes the dimension.
-  tic()
+  tic("wline0")
   # echo line
   type L = Link[typeof(g[0])]
   const nc = g[0][0].ncols
@@ -1475,7 +1505,7 @@ when isMainModule:
     @[3,4,-3,-4],
   ]
 
-  echoTimers()
+  #echoTimers()
   resetTimers()
 
   let wl = g.wilsonLines [
@@ -1516,5 +1546,12 @@ when isMainModule:
     echo st[i].norm2
   ]#
 
-  echoTimers()
+  var u1 = lo.newGauge(gkU, 1)
+  echo plaq(u1)
+  var su2 = lo.newGauge(gkSU, 2)
+  echo plaq(su2)
+  var su3 = lo.newGauge(gkSU, 3)
+  echo plaq(su3)
+
+  #echoTimers()
   qexFinalize()

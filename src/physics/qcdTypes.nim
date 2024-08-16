@@ -50,6 +50,7 @@ type
   SColorVectorV* = Color[VectorArray[nc,SComplexV]]
   SColorMatrix* = Color[MatrixArray[nc,nc,SComplex]]
   SColorMatrixV* = Color[MatrixArray[nc,nc,SComplexV]]
+
   SLatticeReal* = Field[1,float32]
   #SLatticeRealG*[V:static[int]] = Field[V,Svec0]
   SLatticeRealV* = Field[VLEN,Svec0]
@@ -59,6 +60,7 @@ type
   SLatticeColorVectorV* = Field[VLEN,SColorVectorV]
   SLatticeColorMatrix* = Field[1,SColorMatrix]
   SLatticeColorMatrixV* = Field[VLEN,SColorMatrixV]
+
   #DComplex* = AsComplex[tuple[re,im:float64]]
   #DComplexV* = AsComplex[tuple[re,im:Dvec0]]
   DComplex* = ComplexType[float64]
@@ -69,6 +71,9 @@ type
   DColorVectorV* = Color[VectorArray[nc,DComplexV]]
   DColorMatrix* = Color[MatrixArray[nc,nc,DComplex]]
   DColorMatrixV* = Color[MatrixArray[nc,nc,DComplexV]]
+
+  ColorMatrixN*[n:static[int],T] = Color[MatrixArray[n,n,T]]
+
   DLatticeReal* = Field[1,float64]
   DLatticeRealV* = Field[VLEN,Dvec0]
   DLatticeComplex* = Field[1,DComplex]
@@ -389,6 +394,17 @@ proc blend*(r:var auto; x:ptr char; b:ptr char; blnd:int) {.inline.} =
   of  8: loop(blendp8)
   of -8: loop(blendm8)
   else: discard
+
+template newDComplexV*[V:static[int]](l: Layout[V]): auto =
+  ComplexType[`SimdD V`]()
+
+proc newField*[V:static[int]](l: Layout[V], T:typedesc): Field[V,T] =
+  result.new(l)
+
+proc ColorMatrix*(l: Layout, n: static[int]): auto =
+  type C = type(l.newDComplexV)
+  type CM = ColorMatrixN[n,C]
+  result = l.newField(CM)
 
 macro makeConstructors(x: untyped): untyped =
   template mp(f,r,rslt: untyped) =
