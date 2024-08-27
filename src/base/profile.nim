@@ -36,7 +36,7 @@ tic() injects symbols:
 ]##
 
 type
-  II = typeof(instantiationInfo())
+  II = ptr typeof(instantiationInfo())
   RTInfo = distinct int
   RTInfoObj = object
     nsec: int64
@@ -53,13 +53,15 @@ type
     #overhead: int64
     count: uint32
     dropcount: uint32
-    name: string
+    name: CStr
     loc: II
   SString = static[string] | string
   List[T] = object  # No GCed type allowed
     len,cap:int32
     data:ptr UncheckedArray[T]
   RTInfoObjList = distinct List[RTInfoObj]
+  CStr = object
+    p, s: int32
 
 var
   rtiListLength:int32 = 0
@@ -132,6 +134,51 @@ iterator mitems(ls:RTInfoObjList):var RTInfoObj =
 func isNil(x:RTInfo):bool = x.int<0
 func isNil(x:CodePoint):bool = x.int<0
 
+const defaultCStrPoolCap {.intDefine.} = 512
+type CStrAtom = array[16,char]
+var cstrpool = newListOfCap[CStrAtom](defaultCStrPoolCap)
+
+proc len(s:CStr):int = int(s.s)
+proc newCStr(t:string):CStr =
+  const a = int32(sizeof(CStrAtom))
+  let p = cstrpool.len
+  let s = int32(t.len)
+  let n = (s+a-1) div a
+  cstrpool.setlen(p+n)
+  var k = 0
+  var j = 0
+  for i in 0..<s:
+    cstrpool[p+k][j] = t[i]
+    inc j
+    if j == a:
+      j = 0
+      inc k
+  CStr(p:p, s:s)
+proc equal(s:CStr, t:string):bool =
+  let len = s.s
+  if len != t.len:
+    return false
+  var k = 0
+  var j = 0
+  for i in 0..<len:
+    if t[i] != cstrpool[s.p+k][j]:
+      return false
+    inc j
+    if j == sizeof(CStrAtom):
+      j = 0
+      inc k
+  return true
+proc `$`(s:CStr):string =
+  result = newString(s.s)
+  var k = 0
+  var j = 0
+  for i in 0..<s.s:
+    result[i] = cstrpool[s.p+k][j]
+    inc j
+    if j == sizeof(CStrAtom):
+      j = 0
+      inc k
+
 func `$`(x:II):string =
   x.filename & ":" & $x.line & ":" & $x.column
 
@@ -162,7 +209,7 @@ func `$`(x:List[RTInfoObj]):string =
     result &= "   " & $i & ":" & $x[i] & "\n"
   result[^1] = ']'
 
-func `$`(x:seq[CodePointObj]):string =
+proc `$`(x:seq[CodePointObj]):string =
   result = "CodePointObj[\n"
   for i in 0..<x.len:
     result &= "   " & $i & ":" & $x[i] & "\n"
@@ -191,11 +238,11 @@ proc newCodePoint(ii:II, s:SString = ""):CodePoint =
   cpHeap[n].toDropTimer = false
   cpHeap[n].count = 0
   cpHeap[n].dropcount = 0
-  cpHeap[n].name = s
+  cpHeap[n].name = newCStr(s)
   cpHeap[n].loc = ii
   CodePoint(n)
 
-template name(x:CodePoint):string = cpHeap[x.int].name
+template name(x:CodePoint):CStr = cpHeap[x.int].name
 template loc(x:CodePoint):II = cpHeap[x.int].loc
 template count(x:CodePoint):uint32 = cpHeap[x.int].count
 template dropcount(x:CodePoint):uint32 = cpHeap[x.int].dropcount
@@ -320,14 +367,14 @@ proc echoTic*(s: string, ii: II) =
   echo "tic ",s,ii
 
 proc ticSet(localTimer:var TicType, prevRTI:var RTInfo, restartTimer:var bool,
-            thisCode:var CodePoint, s:string,ii:II, localCodePtr:auto) {.alwaysInline.} =
+            thisCode:var CodePoint, s:SString,ii:II, localCodePtr:auto) {.alwaysInline.} =
   #echo "#### begin tic ",ii
   if unlikely VerboseTimer: echoTic(s,ii)
   if not timersFrozen():
     let theTime = getTics()
     when localCodePtr isnot bool:
       for c in items(localCodePtr[]):
-        if cpHeap[c.int].name == s:
+        if cpHeap[c.int].name.equal(s):
           thisCode = c
           break
     if thisCode.isNil:
@@ -348,7 +395,7 @@ template ticI(n = -1; s:SString = "") =
   bind items
   const
     cname = compiles(static[string](s))
-    ii = instantiationInfo(n)
+  var ii {.global.} = instantiationInfo(n)
   var
     localTimer {.inject.}: TicType
     prevRTI {.inject.} = RTInfo(-1)
@@ -367,11 +414,11 @@ template ticI(n = -1; s:SString = "") =
         let theTime = getTics()
         when not cname:
           for c in items(localCode):
-            if cpHeap[c.int].name == s:
+            if cpHeap[c.int].name.equal(s):
               thisCode = c
               break
         if thisCode.isNil:
-          thisCode = newCodePoint(ii, s)
+          thisCode = newCodePoint(ii.addr, s)
           when not cname:
             localCode.add thisCode
         prevRTI = recordTic(thisCode)
@@ -383,9 +430,9 @@ template ticI(n = -1; s:SString = "") =
       #echo "#### end tic ",ii
     else:
       when cname:
-        ticSet(localTimer,prevRTI,restartTimer,thisCode,s,ii,false)
+        ticSet(localTimer,prevRTI,restartTimer,thisCode,s,ii.addr,false)
       else:
-        ticSet(localTimer,prevRTI,restartTimer,thisCode,s,ii,addr localCode)
+        ticSet(localTimer,prevRTI,restartTimer,thisCode,s,ii.addr,addr localCode)
   let
     localTimerStart {.inject, used.} = localTimer
     localTic {.inject, used.} = prevRTI
@@ -405,7 +452,7 @@ proc echoToc*(s: string, ii: II) =
   echo "toc ",s,ii
 
 proc tocSet(localTimer:var TicType, prevRTI:var RTInfo, restartTimer:var bool,
-            thisCode:var CodePoint, f:SomeNUmber, s:string, ii:II,
+            thisCode:var CodePoint, f:SomeNUmber, s:SString, ii:II,
             localTic:RTInfo, localCodePtr:auto) {.alwaysInline.} =
   #echo "==== begin toc ",s," ",ii
   #echo "     rtiStack: ",indent($rtiStack,5)
@@ -419,7 +466,7 @@ proc tocSet(localTimer:var TicType, prevRTI:var RTInfo, restartTimer:var bool,
       let theTime = getTics()
       when localCodePtr isnot bool:
         for c in items(localCodePtr[]):
-          if cpHeap[c.int].name == s:
+          if cpHeap[c.int].name.equal(s):
             thisCode = c
             break
       if thisCode.isNil:
@@ -461,7 +508,7 @@ template tocI(f: SomeNumber; s:SString = ""; n = -1) =
   bind items
   const
     cname = compiles(static[string](s))
-    ii = instantiationInfo(n)
+  var ii {.global.} = instantiationInfo(n)
   when cname:
     var thisCode {.global.} = CodePoint(-1)
   else:
@@ -482,11 +529,11 @@ template tocI(f: SomeNumber; s:SString = ""; n = -1) =
           let theTime = getTics()
           when not cname:
             for c in items(localCode):
-              if cpHeap[c.int].name == s:
+              if cpHeap[c.int].name.equal(s):
                 thisCode = c
                 break
           if thisCode.isNil:
-            thisCode = newCodePoint(ii, s)
+            thisCode = newCodePoint(ii.addr, s)
             when not cname:
               localCode.add thisCode
           let
@@ -509,9 +556,9 @@ template tocI(f: SomeNumber; s:SString = ""; n = -1) =
       #echo "==== end toc ",s," ",ii
     else:
       when cname:
-        tocSet(localTimer,prevRTI,restartTimer,thisCode,f,s,ii,localTic,false)
+        tocSet(localTimer,prevRTI,restartTimer,thisCode,f,s,ii.addr,localTic,false)
       else:
-        tocSet(localTimer,prevRTI,restartTimer,thisCode,f,s,ii,localTic,addr localCode)
+        tocSet(localTimer,prevRTI,restartTimer,thisCode,f,s,ii.addr,localTic,addr localCode)
 
 when noTicToc:
   template toc*() = discard
@@ -655,7 +702,7 @@ proc ppT(ts: List[RTInfoObj], prefix = "-", total = 0'i64, overhead = 0'i64,
       small = total!=0 and ns.float/total.float<showAbove
       noexpand = drop or (small and ts[j].children.len>0)
       loc = pre & markMissing(noexpand, f0 & "(" & $l0 & "-" & (if f==f0:"" else:f) & $l & ")")
-      nm = pre & markMissing(noexpand, (if tn=="":"" else:tn&":") & (if pn=="":"" else:pn&"-") & ts[j].curr.name)
+      nm = pre & markMissing(noexpand, (if tn.len==0:"" else: $tn & ":") & (if pn.len==0:"" else: $pn & "-") & $ts[j].curr.name)
     if total!=0:
       let
         cent = 1e2 * ns.float / total.float
@@ -715,7 +762,7 @@ template echoTimers*(expandAbove = 0.0, expandDropped = true, aggregate = true) 
       if n<s.len: n = s.len
     inc n
     let notshowing = if expandAbove>0.0: ", not expanding contributions less than " & $(1e2*expandAbove) & " %" else:""
-    echo "Timer total ",(tt.float*1e-6)|(0,-3)," ms, overhead ",(oh.float*1e-6)|(0,-3)," ms ~ ",(1e2*oh.float/tt.float)|(0,-1)," %, memory ",rtiListLength*sizeof(RTInfoObj)," B, max ",rtiListLengthMax*sizeof(RTInfoObj)," B",notshowing
+    echo "Timer total ",(tt.float*1e-6)|(0,-3)," ms, overhead ",(oh.float*1e-6)|(0,-3)," ms ~ ",(1e2*oh.float/tt.float)|(0,-1)," %, runtime info ",rtiListLength*sizeof(RTInfoObj)," B, max ",rtiListLengthMax*sizeof(RTInfoObj)," B, string ",cstrpool.len*sizeof(cstrpool[0])," B",notshowing
     echo '='.repeat(width)
     echo "file(lines)"|(-n), "%"|6, "OH%"|6, "microsecs"|12, "OH"|8, "count"|9, "ns/count"|14, "OH/c"|8, "mf"|8, " label"
     echo '='.repeat(width)
@@ -731,7 +778,7 @@ proc echoTimersRaw* =
 proc getName(t: ptr RTInfoObj): string =
   let tn = t.tic.name
   let pn = t.prev.name
-  let name = (if tn=="":"" else:tn&":") & (if pn=="":"" else:pn&"-") & t.curr.name
+  let name = (if tn.len==0:"" else: $tn & ":") & (if pn.len==0:"" else: $pn & "-") & $t.curr.name
   if t.prev.toDropTimer:
     result = "{" & name & "}"
   else: result = name
