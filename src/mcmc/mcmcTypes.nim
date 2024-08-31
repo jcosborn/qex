@@ -10,10 +10,15 @@ import options
 import utilities/stream
 
 export qex
-
 export json
-
 export stream
+
+const banner = """
+Quantum EXpressions (QEX) authors: James Osborn & Xiao-Yong Jin
+QEX HMC authors: James Osborn, Xiao-Yong Jin, Curtis Taylor Peterson, Anna Hasenfratz
+QEX GitHub: https://github.com/jcosborn/qex
+QEX HMC GitHub: https://github.com/ctpeterson/qex
+"""
 
 let 
   Large64* = 1.0/epsilon(float)
@@ -38,7 +43,7 @@ type
     Om4MN5FP,
     CustomIntegrator,
     UpdaterIntegrator
-  GaugeStart = enum 
+  GaugeStart* = enum 
     UnitGauge, 
     RandomGauge,
     ReadGauge
@@ -909,6 +914,9 @@ template newLatticeFieldTheory*(
     info: JsonNode;
     construction: untyped
   ): auto =
+  echo banner
+  echo "# ranks: ", nRanks
+  threads: echo "# threads: ", numThreads
   block:
     var fieldTheory {.inject.} = newLatticeFieldTheory(info)
     construction

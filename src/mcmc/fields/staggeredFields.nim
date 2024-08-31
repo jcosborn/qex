@@ -315,7 +315,6 @@ proc solveDdag[T](
   for idx in 0..<nbeta.len: nbeta[idx] = beta[idx] - mass
   solve(D.stag, phis, psi, nbeta, sp0)
 
-
 proc outer(f: auto; psi: auto; shifter: auto; dtau: float) =
     let n = psi[0].len
     threads:

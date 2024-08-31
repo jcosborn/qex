@@ -7,6 +7,7 @@ import stagD
 export stagD
 import solvers/bicgstab
 import solvers/gcr
+import solvers/cgm
 import maths
 import quda/qudaWrapper
 import grid/Grid
@@ -290,22 +291,246 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
     echo "stagSolve: ", sp.getStats
   sp0.addStats(sp)
 
-# multimass (trivial version with multiple single mass calls for now)
-proc solve*(s: Staggered; r: seq[Field]; x: Field; m: seq[float];
-            sp: seq[SolverParams]) =
-  let n = m.len
-  doAssert(r.len == n)
-  doAssert(sp.len == n)
-  for i in 0..<n:
-    solve(s, r[i], x, m[i], sp[i])
+proc solveXX*(
+    s: Staggered;
+    xs: seq[Field];
+    bs: seq[Field];
+    ms: seq[float];
+    sp0: var SolverParams;
+    subset: string = "even";
+    precon: CgPrecon = cpNone
+  ) = 
+  tic()
 
-proc solve*(s: Staggered; r: seq[Field]; x: Field; m: seq[float];
-            sp: var SolverParams) =
+  var 
+    sp = sp0
+    cgm = case bs.len > 1
+      of true: newCgmState(xs,bs,ms,precon=precon)
+      of false: newCgmState(xs,bs[0],ms,precon=precon)
+    mass = ms[0]
+
+  sp.resetStats()
+  dec sp.verbosity
+  case sp.backend:
+    of sbQEX:
+      proc op(a,b:Field;shift:float=0.0) =
+        tic()
+        threadBarrier()
+        case subset:
+          of "even": stagD2ee(s.se, s.so, a, s.g, b, mass*mass+shift)
+          of "odd": stagD2oo(s.se, s.so, a, s.g, b, mass*mass+shift)
+          else: discard
+        toc("stagD2XX")
+      for m in 0..<xs.len: 
+        case subset:
+          of "even","odd": sp.subset.layoutSubset(xs[m].l,subset)
+          else: qexError subset & " not a valid choice for subset"
+      cgm.solve((apply:op,precon:precon),sp)
+      toc("cg.solve")
+      sp.calls = 1
+      sp.seconds = getElapsedTime()
+      sp.flops = float((s.g.len*4*72+60)*bs[0].l.nEven*sp.iterations) # correct
+      if sp0.verbosity > 0:
+        case subset:
+          of "even": echo "solveEE(QEX): ", sp.getStats
+          of "odd": echo "solveOO(QEX): ", sp.getStats
+          else: discard
+    of sbQuda: discard # Needs to be added!
+    of sbGrid: discard # Needs to be added!
+
+  sp.iterationsMax = sp.iterations
+  sp.r2.push 0.0
+  sp0.addStats(sp)
+
+proc solveXX*(
+    s: Staggered;
+    xs: seq[Field];
+    b: Field;
+    ms: seq[float];
+    sp0: var SolverParams;
+    subset: string = "even";
+    precon: CgPrecon = cpNone
+  ) = s.solveXX(xs,@[b],ms,sp0,subset=subset,precon=precon)
+
+proc solve*(
+    s: Staggered; 
+    xs: seq[Field]; 
+    b: Field; 
+    ms: seq[SomeNumber];
+    sp0: var SolverParams;
+    precon: CgPrecon = cpNone 
+  ) = 
+  doAssert(ms.len == xs.len)
+  tic()
+
+  var 
+    subset: string
+    nmass = xs.len
+    b2,r2,b2e,b2o: float
+    r2stop,r2stop2: float
+    r2stope,r2stopo: float
+    shifts = newSeq[float](ms.len)
+    r = newOneOf(b)
+    sp = sp0
+    ys = newSeq[type(b)](ms.len)
+
+  # Helper templates, not important
+  template forMass(body:untyped) =
+    for k in 0..<nmass: 
+      let m {.inject.} = k
+      body
+  template mass: untyped = ms[0]
+  template x: untyped = xs[0]
+  template y: untyped = ys[0]
+
+  # Initial setup
+  threads:
+    var (b2t,b2et,b2ot) = (b.norm2,b.even.norm2,b.odd.norm2)
+    r := b
+    forMass: xs[m] := 0.0
+    threadBarrier()
+    threadMaster: (b2,b2e,b2o) = (b2t,b2et,b2ot)
+  r2 = b2e + b2o
+  r2stop = sp0.r2req * b2
+  sp.resetStats()
+  #dec sp.verbosity
+  sp.usePrevSoln = false
+  if sp0.verbosity>1:
+    echo &"stagSolve b2: {b2:.6g}  r2: {r2/b2:.6g}  r2stop: {r2stop:.6g}"
+  for m in 0..<ms.len: 
+    shifts[m] = case m == 0
+      of true: ms[m]
+      of false: 4.0*(ms[m]*ms[m]-mass*mass)
+    ys[m] = newOneOf(xs[m])
+
+  # Full solve
+  while r2 > r2stop:
+    # Set up r^2 for solve
+    sp.maxits = sp0.maxits - sp.iterations
+    if sp.maxits <= 0: break
+    sp.r2req = r2stop
+    r2stop2 = 0.5 * sp.r2req
+    r2stope = (if b2o <= r2stop2: sp.r2req-b2o else: r2stop2)
+    r2stopo = (if b2e <= r2stop2: sp.r2req-b2e else: r2stop2)
+
+    # Solve
+    tic()
+    case (b2e <= r2stope or b2o <= r2stopo or mass == 0.0):
+      of true:
+        var xt = newOneOf(b)
+        if b2e > r2stope: (sp.r2req,subset) = (r2stope/b2e,"even")
+        elif b2o > r2stopo: (sp.r2req,subset) = (r2stopo/b2o,"odd")
+        case mass == 0.0:
+          of true:
+            case subset:
+              of "even":
+                var bs = newSeq[type(ys[0])]()
+                forMass: bs.add newOneOf(b)
+                threads:
+                  forMass: 
+                    case m == 0:
+                      of true: bs[m] = b
+                      of false: s.Ddag(bs[m],b,ms[m])
+                s.solveXX(ys,bs,shifts,sp,subset=subset)
+              of "odd": s.solveXX(ys[0],b,shifts[0],sp,parEven=false)
+              else: discard
+          of false: s.solveXX(ys,r,shifts,sp,subset=subset)
+        toc("solveXX")
+        threads:
+          case mass == 0.0:
+            of true:
+              case subset:
+                of "even":
+                  forMass:
+                    ys[m].even *= 4
+                    threadBarrier()
+                    if m != 0: s.eoReconstruct(ys[m],b,ms[m])
+                of "odd": ys[0].odd *= 4
+                else: discard
+              threadBarrier()
+              s.Ddag(xt,ys[0],ms[0])
+              threadBarrier()
+              ys[0] := xt
+            of false:
+              forMass:
+                case subset:
+                  of "even": ys[m].even *= 4
+                  of "odd": ys[m].odd *= 4
+                  else: discard
+              forMass: 
+                threadBarrier()
+                s.Ddag(xt,ys[m],ms[m])
+                threadBarrier()
+                ys[m] := xt
+      of false:
+        var 
+          bs = newSeq[type(ys[0])]()
+          d2e: float
+        for m in 0..<xs.len: 
+          bs.add newOneOf(b)
+          xs[m] := 0.0
+        threads:
+          var d2et: float
+          forMass: s.Ddag(bs[m],b,ms[m])
+          threadBarrier()
+          d2et = bs[0].even.norm2
+          threadBarrier()
+          threadMaster: d2e = d2et
+        sp.r2req *= 0.99*r2*ms[0]*ms[0]/d2e/b2
+        s.solveXX(ys,bs,shifts,sp,subset="even")
+        toc("solveEE")
+        threads:
+          forMass: 
+            ys[m].even *= 4
+            threadBarrier()
+            s.eoReconstruct(ys[m],b,ms[m])
+          threadBarrier()
+    toc("reconstruct")
+
+    # Calculate/update r^2
+    threads:
+      var r2et,r2ot: float
+      case mass == 0.0:
+        of true: 
+          case subset:
+            of "even":
+              forMass: xs[m] += ys[m]
+            of "odd": xs[0] += ys[0]
+        of false:
+          forMass: xs[m] += ys[m]
+      threadBarrier()
+      s.D(r,x,mass)
+      threadBarrier()
+      r := b - r
+      threadBarrier()
+      (r2et,r2ot) = (r.even.norm2,r.odd.norm2)
+      threadMaster: (b2e,b2o) = (r2et,r2ot)
+    r2 = b2e + b2o
+    if sp.verbosity > 0: echo "stagSolve r2/b2: ", r2/b2
+    
+    #if mass == 0.0: qexError "quit"
+
+  # Finish up
+  sp.r2.init r2/b2
+  sp.calls = 1
+  sp.seconds = getElapsedTime()
+  sp.flops += float((s.g.len*4*72+24)*xs[0].l.nEven) # ???
+  if sp0.verbosity > 0: echo "stagSolve: ", sp.getStats
+  sp0.addStats(sp)
+
+# trivial multi-mass
+proc solve*(
+    s: Staggered; 
+    r: seq[Field]; 
+    x: Field; 
+    m: seq[float];
+    sp: var seq[SolverParams]
+  ) =
   let n = m.len
   doAssert(r.len == n)
   doAssert(sp.len == n)
-  for i in 0..<n:
-    solve(s, r[i], x, m[i], sp)
+  for i in 0..<n: 
+    s.solve(r[i], x, m[i], sp[i])
 
 proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float;
             cpuonly = false; sloppySolve = SloppyNone) =
@@ -429,7 +654,86 @@ when isMainModule:
     echo "even point"
     test()
     echo sp.getStats()
-#[
+
+  if intParam("timers", 0)!=0:
+    echoTimers()
+
+  var
+    nmass = 10
+    vs1 = newSeq[type(r)](nmass)
+    vs2 = newSeq[type(r)](nmass)
+    ms = newSeq[float](nmass)
+    spm = newSolverParams()
+    spms = newSeq[type(spm)](nmass)
+  for m in 0..<nmass:
+    vs1[m] = newOneOf(v1)
+    vs2[m] = newOneOf(v1)
+    ms[m] = sqrt(m.float+2.0)
+    spms[m] = newSolverParams()
+    spms[m].verbosity = intParam("verb", 1)
+    spms[m].subset.layoutSubset(lo, "all")
+    spms[m].maxits = int(1e9/lo.physVol.float)
+    spms[m].r2req = floatParam("rsq", 1e-20)
+  threads: 
+    v1.gaussian(rs)
+    threadBarrier()
+    #v1.odd := 0.0
+  spm.verbosity = intParam("verb", 1)
+  spm.subset.layoutSubset(lo, "all")
+  spm.maxits = int(1e9/lo.physVol.float)
+  spm.r2req = floatParam("rsq", 1e-20)
+
+  # Test multi-shift
+  echo "----------------"
+  echo "Multi-shift test 1"
+  s.solve(vs1,v1,ms,spms) # Fake multi-mass
+  echo "----------------"
+  s.solve(vs2,v1,ms,spm) # Real multi-mass
+  threads:
+    for m in 0..<nmass:
+      var opt = "|v1|^2/|v2|^2/|v2-v1|^2 (" & $(m) & "): "
+      echo opt,vs1[m].norm2,"/",vs2[m].norm2,"/",(vs1[m]-vs2[m]).norm2
+  
+  # Test multi-shift
+  echo "----------------"
+  echo "Multi-shift test 2"
+  var ms2 = newSeq[float](ms.len)
+  for m in 0..<ms.len: ms2[m] = m.float
+  s.solve(vs1,v1,ms2,spms) # Fake multi-mass
+  echo "----------------"
+  s.solve(vs2,v1,ms2,spm) # Real multi-mass
+  threads:
+    for m in 0..<nmass:
+      var opt = "|v1|^2/|v2|^2/|v2-v1|^2 (" & $(m) & "): "
+      echo opt,vs1[m].norm2,"/",vs2[m].norm2,"/",(vs1[m]-vs2[m]).norm2
+
+  # Test multi-shift
+  echo "----------------"
+  echo "Multi-shift test 3"
+  threads: v1.odd := 0.0
+  s.solve(vs1,v1,ms,spms) # Fake multi-mass
+  echo "----------------"
+  s.solve(vs2,v1,ms,spm) # Real multi-mass
+  threads:
+    for m in 0..<nmass:
+      var opt = "|v1|^2/|v2|^2/|v2-v1|^2 (" & $(m) & "): "
+      echo opt,vs1[m].norm2,"/",vs2[m].norm2,"/",(vs1[m]-vs2[m]).norm2
+  
+  
+  #[
+  |v1|^2/|v2|^2/|v2-v1|^2 (0): 3287.809101368401/3287.8091013684/4.636632042314934e-29
+  |v1|^2/|v2|^2/|v2-v1|^2 (1): 2568.359110086491/2568.35911008649/1.997428927380363e-17
+  |v1|^2/|v2|^2/|v2-v1|^2 (2): 2113.786729854334/2113.786729854335/1.660906734996757e-18
+  |v1|^2/|v2|^2/|v2-v1|^2 (3): 1798.469522116721/1798.469522116721/6.849969771177056e-19
+  |v1|^2/|v2|^2/|v2-v1|^2 (4): 1566.181314095443/1566.181314095443/9.742787966902989e-19
+  |v1|^2/|v2|^2/|v2-v1|^2 (5): 1387.633907370448/1387.633907370448/3.716383908778867e-18
+  |v1|^2/|v2|^2/|v2-v1|^2 (6): 1245.965086368947/1245.965086368947/3.299488749235974e-19
+  |v1|^2/|v2|^2/|v2-v1|^2 (7): 1130.743035492873/1130.743035492874/4.261994464214376e-18
+  |v1|^2/|v2|^2/|v2-v1|^2 (8): 1035.152505708646/1035.152505708646/6.896753008674151e-19
+  |v1|^2/|v2|^2/|v2-v1|^2 (9): 954.5456441870685/954.5456441870681/1.293292156285996e-19
+  ]#
+
+  #[
   block:
     v1 := 0
     let p = lo.rankIndex([0,0,0,1])
@@ -444,8 +748,6 @@ when isMainModule:
     echo "random"
     test()
     echo sp.getStats()
-]#
-  if intParam("timers", 0)!=0:
-    echoTimers()
+  ]#
 
   qexFinalize()

@@ -26,17 +26,13 @@ template runHamiltonianMonteCarlo*(
     measurements: untyped 
   ) =
 
-  proc hamiltonian: float {.gensym.} =
+  proc hamiltonian: float {.inject.} =
     result = self.p.kineticAction
     for action in self.actions: 
       result += action.getAction
 
-  proc trajectory {.gensym.} =
-    self.actions.trajectory(
-      self.u[], self.f, self.p, 
-      type(self.actions[0]), 
-      trajectoryLength
-    )
+  proc runMolecularDynamics(tau:float) {.inject.} =
+    self.actions.trajectory(self.u[],self.f,self.p,type(self.actions[0]),tau)
 
   proc metropolis(hi,hf: float): bool {.gensym.} =
     result = false
@@ -74,7 +70,7 @@ template runHamiltonianMonteCarlo*(
     hi = hamiltonian()
 
     # Evolve
-    trajectory()
+    runMolecularDynamics(trajectoryLength)
 
     # Smear gauge fields
     for action in self.actions: action.smearGauge
@@ -83,10 +79,10 @@ template runHamiltonianMonteCarlo*(
     hf = hamiltonian()
 
     # Metropolis
-    let accepted {.inject.} = metropolis(hi,hf)
+    let accepted {.inject,used.} = metropolis(hi,hf)
 
     # Let user make their own measurements
-    let sample {.inject,used.} = smp
+    let trajectory {.inject,used.} = smp
     measurements
   
 if isMainModule:
@@ -162,7 +158,7 @@ if isMainModule:
   #      subAction.addStaggeredBoson(subBosonField2Info) # Nested
 
   hmc.runHamiltonianMonteCarlo(nsteps,tau): #nsteps,tau):
-    echo sample, " ", accepted, " ", hf-hi, " ", hi, " ", hf
+    echo trajectory, " ", accepted, " ", hf-hi, " ", hi, " ", hf
     plaquette(u)
     polyakov(u)
 

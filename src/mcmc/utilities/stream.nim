@@ -5,13 +5,10 @@ type
 
 proc newMCStream*(name: string; start: bool = false): MCStream = 
   result = MCStream(name: name)
-  case start:
-    of true: echo "<begin: " & result.name & ">"
-    of false: result.output = "<begin: " & result.name & ">\n"
+  discard #echo "<begin: " & result.name & ">"
 
 proc add*(self: var MCStream; text: string) =
-  self.output = self.output & text & "\n"
+  discard #echo self.output & text
 
 proc finishStream*(self: var MCStream) =
-  self.output = self.output & "<end: " & self.name & ">"
-  echo self.output
+  discard #echo self.output & "<end: " & self.name & ">"
