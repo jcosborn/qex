@@ -989,3 +989,4 @@ when isMainModule:
   toc("end")
   echoTimers()
   echoTimersRaw()
+  echoHotspots()

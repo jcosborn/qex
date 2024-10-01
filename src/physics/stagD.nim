@@ -446,14 +446,14 @@ proc stagD2xx*(sdx,sdy:StaggeredD; r:Field; g:openArray[Field2];
   block:
     stagDP(sdy, t, g, x, 0):
       rir := 0
-  toc("stagDP")
+  toc("stagDP", flops=(g.len*(72+66+6))*sdy.subset.len)
   threadBarrier()
   #toc("barrier")
   #stagD(sde, r, g, t, 0.0)
   block:
     stagDM(sdx, r, g, t, 6):
       rir := (4.0*m2)*x[ir]
-  toc("stagDM")
+  toc("stagDM", flops=(6+g.len*(72+66+6))*sdx.subset.len)
   #threadBarrier()
   #r[sde.sub] := m2*x - r
   #for ir in r[sde.subset]:
