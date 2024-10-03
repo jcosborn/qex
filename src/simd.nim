@@ -36,7 +36,7 @@ when true:
       msa(SimdS16, 16, float32)
   when not declared(SimdD16):
     when declared(SimdD8):
-      msa(SimdD16, 2, SimdD8[])
+      msa(SimdD16, 2, `[]`SimdD8)
     elif declared(SimdD4):
       msa(SimdD16, 4, SimdD4[])
     elif declared(SimdD2):

@@ -47,6 +47,7 @@ macro echo0*(args: varargs[untyped]): untyped =
   var call = newCall(bindSym"echoRaw")
   result = evalArgs(call, args)
   result.add(quote do:
+    bind myRank
     if myRank==0 and threadNum==0:
       `call`
     )
