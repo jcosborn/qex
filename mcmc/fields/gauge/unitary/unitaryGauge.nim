@@ -35,26 +35,27 @@ SOFTWARE.
 -- END LEGAL --
 ]#
 
-import ../gaugeFields
+import ../gaugeDefinitions
+import json
 
 type
-  SpecialUnitaryGauge*[N:static[int]] = ref object of LatticeField
-    ## SpecialUnitaryGauge object:
+  SpecialUnitaryGauge*[L,N:static[int]] = ref object of LatticeField[L]
+    ## SpecialUnitaryGauge object
     ## Attributes:
     ##   u: gauge field (mcmc/fields/latticeFields.nim)
-    ##   actionPolicy: named gauge action (mcmc/fields/gauge/gaugeFields.nim)
+    ##   actionPolicy: named gauge action (mcmc/fields/gauge/gaugeDefinitions.nim)
     ##   actionParams: gauge action coefficients (src/gauge/gaugeAction.nim)
-    u*: seq[DComplexMatrixV[N:static[int]]] 
+    u*: seq[DComplexMatrixV[N]] 
     actionPolicy: GaugeActionPolicy 
     actionParams: GaugeActionCoeffs 
 
 # Main "SpecialUnitaryGauge" constructor
-proc newSpecialUnitaryGauge(
-    l: Layout; 
+proc newSpecialUnitaryGauge[L:static[int]](
+    l: Layout[L]; 
     info: JsonNode;
     n: static[int];
   ): auto =
-  ## Creates new "SpecialUnitaryGauge" object
+  ## SpecialUnitaryGauge object constructor
   ## Inputs:
   ##   l: lattice layout (src/layout/)
   ##   info: JsonNode (species information about U1 or SU(N) gauge field)
@@ -62,29 +63,40 @@ proc newSpecialUnitaryGauge(
   ## Output:
   ##   result: SpecialUnitaryGauge object
   
-  # Throw error if action or bare gauge coupling not specified; 
-  # otherwise, save temporarily
+  var 
+    actionPolicy: GaugeActionPolicy
+    beta: float
+
   if not info.hasKey("action"): qexError GaugeError1
+  case info["action"].getStr():
+    of "wilson","Wilson": actionPolicy = Wilson
+    of "rectangle","Rectangle": actionPolicy = Rectangle
+    of "adjoint","Adjoint": actionPolicy = Adjoint
+    of "symanzik","Symanzik": actionPolicy = Symanzik
+    of "luescher-weiss","Luescher-Weiss": actionPolicy = Symanzik
+    of "luscher-weiss", "Luscher-Weiss": actionPolicy = Symanzik
+    of "iwasaki","Iwasaki": actionPolicy = Iwasaki
+    of "doubly-blocked-wilson","doubly-blocked-Wilson","Doubly-Blocked-Wilson":
+      actionPolicy = DoublyBlockedWilson
+    of "dbw","dbw2": actionPolicy =  DoublyBlockedWilson
+    else: 
+      echo GaugeError3
+      throwError info["action"].getStr() & " not a valid action"
+
   if not info.hasKey("beta"): qexError GaugeError2
-  let
-    actionPolicy = toGaugeGroupPolicy(info["action"].getStr())
-    beta = info["beta"].getFloat()
+  beta = info["beta"].getFloat()
 
   # Instantiate "SpecialUnitaryGauge" object & its gauge field
-  result = SpecialUnitaryGauge[n](actionPolicy: actionPolicy)
-  result.newLatticeField(l,info)
+  result = SpecialUnitaryGauge[L,n](actionPolicy: actionPolicy, info: info)
+  new(result.l); result.l[] = l;
   result.u = result.l[].newComplexGaugeLinks(n)
 
   # Set action coefficients
   case result.actionPolicy:
     of Wilson: result.actionParams = GaugeActionCoeffs(plaq: beta)
-    of Symanzik: result.actionParams = gaugeActRect(beta, C1Symanzik)
-    of Iwasaki: result.actionParams = gaugeActRect(beta, C1Iwasaki)
-    of DoublyBlockedWilson: 
-      result.actionParams = gaugeActRect(beta, C1DoublyBlockedWilson)
     of Rectangle: 
       if not info.hasKey("rectangle-coefficient"): echo GaugeWarning1
-      let rectFac = info.hasKey("rectangle-coefficient")
+      let rectFac = case info.hasKey("rectangle-coefficient")
         of true: info["rectangle-coefficient"].getFloat()
         of false: C1Symanzik
       result.actionParams = gaugeActRect(beta, rectFac)
@@ -94,6 +106,13 @@ proc newSpecialUnitaryGauge(
         of true: info["adjoint-ratio"].getFloat()
         of false: BetaAOverBetaF
       result.actionParams = GaugeActionCoeffs(plaq: beta, adjplaq: beta*adjFac)
+    else: # Nim compiler workaround
+      if result.actionPolicy == Symanzik: 
+        result.actionParams = gaugeActRect(beta, C1Symanzik)
+      elif result.actionPolicy == Iwasaki:
+        result.actionParams = gaugeActRect(beta, C1Iwasaki)
+      elif result.actionPolicy == DoublyBlockedWilson:
+        result.actionParams = gaugeActRect(beta, C1DoublyBlockedWilson)
 
 proc newU1Gauge*(l: Layout; info: JsonNode): auto = 
   ## Instantiates U1 gauge field
@@ -160,3 +179,35 @@ proc force*[S](self: SpecialUnitaryGauge; f: seq[S]) =
   case self.actionPolicy:
     of Adjoint: self.actionParams.forceA(self.u,f)
     else: self.actionParams.gaugeForce(self.u,f)
+  
+if isMainModule:
+  qexInit()
+
+  # Create lattice
+  var
+    lat = @[8,8,8,8]
+    lo = newLayout(lat)
+
+  # Instantiate gauge field objects
+  var
+    info = %* {
+      "action": "Wilson",
+      "beta": 7.0
+    }
+    su2 = lo.newSU2Gauge(info)
+    su3 = lo.newSU3Gauge(info)
+    su2f = lo.newComplexGaugeLinks(2)
+    su3f = lo.newComplexGaugeLinks(3)
+
+  # Set u to unit gauge
+  su2.u.unit
+  su3.u.unit
+
+  # Echo unit gauge action
+  echo su2.action, " ", su3.action
+
+  # Calculate unit gauge force
+  su2.force(su2f)
+  su3.force(su3f)
+
+  qexFinalize()

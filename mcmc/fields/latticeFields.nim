@@ -43,20 +43,20 @@ import layout
 import json
 
 type
-  DComplexMatrixV[N:static[int]] = Field[VLEN,Color[MatrixArray[N,N,DComplexV]]]
-  DComplexOneIdxRep[N:static[int]] = Color[VectorArray[N,DComplexV]]
-  DComplexBosonOneIdxV[N:static[int]] = Field[VLEN,DComplexOneIdxRep[N]]
-  DComplexSpinOneIdx[M,N:static[int]] = Spin[VectorArray[M,DComplexOneIdxRep[N]]]
-  DComplexFermionOneIdxV[M,N:static[int]] = Field[VLEN,DComplexSpinOneIdx[M,N]]
+  DComplexMatrixV*[N:static[int]] = Field[VLEN,Color[MatrixArray[N,N,DComplexV]]]
+  DComplexOneIdxRep*[N:static[int]] = Color[VectorArray[N,DComplexV]]
+  DComplexBosonOneIdxV*[N:static[int]] = Field[VLEN,DComplexOneIdxRep[N]]
+  DComplexSpinOneIdx*[M,N:static[int]] = Spin[VectorArray[M,DComplexOneIdxRep[N]]]
+  DComplexFermionOneIdxV*[M,N:static[int]] = Field[VLEN,DComplexSpinOneIdx[M,N]]
 
 type
-  LatticeField*[L:static[int]] = object
+  LatticeField*[L:static[int]] {.inheritable.} = object
     ## Lattice field object
     ## Attributes:
     ##   l: reference to lattice layout
     ##   info: JSON data type containing lattice field info
-    l: ref Layout[L]
-    info: JsonNode
+    l*: ref Layout[L]
+    info*: JsonNode
 
 proc newComplexGaugeLinks*(l: Layout; n: static[int]): auto =
   ## Creates gauge link field Umu(x) ϵ Mat(nxn,C)
@@ -87,15 +87,27 @@ proc newComplexFermionOneIdxRep*(l: Layout; m,n: static[int]): auto =
   ##   result: fermion field (DComplexFermionOneIdxV)
   result = DComplexFermionOneIdxV[m,n].new(l)
 
-proc newLatticeField*(self: LatticeField; l: Layout; info: JsonNode) =
-  ## Create new lattice field object containing lattice layout and 
-  ## information about field that is used by other objects
+proc `:=`*[N:static[int]](v,u: seq[DComplexMatrixV[N]]) =
+  ## Saves "u" field into "mu" field, both of type DComplexMatrixV
   ## Inputs:
-  ##   self: LatticeField object
-  ##   l: lattice layout (src/layout)
-  ##   info: JSON info specifying field attributes
-  self.info = info
-  self.l[] = l
+  ##   u: Input gauge field
+  ##   v: Gauge field to hold "u" values
+  threads:
+    for mu in 0..<u.len: v[mu] := u[mu] 
+
+proc norm2*[N:static[int]](u: seq[DComplexMatrixV[N]]): float =
+  ## Calculate norm of link-like field
+  ## Inputs:
+  ##   u: Input link field
+  ## Outputs:
+  ##   result: sum_mu(|u[mu]|^2)
+  var u2: float
+  threads:
+    var tu2 = 0.0
+    for mu in 0..<u.len: tu2 += u[mu].norm2
+    threadBarrier()
+    threadMaster: u2 = tu2
+  result = u2
 
 if isMainModule:
   qexInit()

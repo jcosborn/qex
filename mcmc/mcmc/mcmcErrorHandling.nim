@@ -3,10 +3,10 @@ Author: Curtis Taylor Peterson
 
 Contact: curtistaylorpetersonwork@gmail.com
 
-Source file: mcmc/fields/fermion/diracOperator.nim
+Source file: mcmc/mcmc/mcmcErrorHandling.nim
 
 Description: 
-  Defines data type and constructor for generic Dirac operator
+  Defines generic data and procs for handling errors
 
 -- BEGIN LEGAL --
 
@@ -36,17 +36,15 @@ SOFTWARE.
 ]#
 
 import qex
-import ./smearing/linkSmearing
 
-export linkSmearing
+proc throwError*(error: string) =
+  var err = ""
+  err.add "|------------------------- QEX error -------------------------|\n"
+  err.add "    " & error & "\n"
+  err.add "  |------------------------- QEX error -------------------------|\n"
+  qexError err
 
-#[
-  Idea: instantiates link smearing based on actual gauge
-  field object (not the fields)
-]#
-
-type
-  DiracOperator*[S] = ref object
-    smearing*: seq[LinkSmearing[S]]
-    smeared*: seq[bool]
-    boundaryConditions*: seq[string]
+proc throwWarning*(warning: string) =
+  echo "  |------------------------- QEX warning -------------------------|"
+  echo "    " & warning
+  echo "  |------------------------- QEX warning -------------------------|"

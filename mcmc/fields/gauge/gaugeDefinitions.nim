@@ -3,7 +3,7 @@ Author: Curtis Taylor Peterson
 
 Contact: curtistaylorpetersonwork@gmail.com
 
-Source file: mcmc/fields/gauge/gaugeFields.nim
+Source file: mcmc/fields/gauge/gaugeDefinitions.nim
 
 Description: 
   Defines basic objects/types for gauge fields.
@@ -38,10 +38,12 @@ SOFTWARE.
 import qex
 import gauge
 import ../latticeFields
+import ../../mcmc/mcmcErrorHandling
 
 export qex
 export gauge
 export latticeFields
+export mcmcErrorHandling
 
 const
   BetaAOverBetaF* = -1.0/4.0
@@ -50,20 +52,13 @@ const
   C1DoublyBlockedWilson* = -1.4088
 
 type
-  GaugeActionPolicy = enum 
+  GaugeActionPolicy* = enum 
     Wilson, 
     Adjoint, 
     Rectangle, 
     Symanzik, 
     Iwasaki, 
     DoublyBlockedWilson
-  GaugeGroupPolicy = enum
-    Unitary1,
-    SpecialUnitary2,
-    SpecialUnitary3,
-    SpecialUnitary4,
-    Symplectic1,
-    Symplectic2
 
 const
   GaugeError1* = """
@@ -72,24 +67,84 @@ const
     JSON input for gauge field as "action": "<option>" with...
   
     <option> = 
-    Wilson, 
-    Adjoint, 
-    Rectangle, 
-    Symanzik, 
-    DoublyBlockedWilson
+    wilson,
+    Wilson,
+    rectangle,
+    Rectangle,
+    adjoint,
+    Adjoint,
+    symanzik,
+    Symanzik,
+    luescher-weiss,
+    Luescher-Weiss,
+    luscher-weiss,
+    Luscher-Weiss,
+    iwasaki,
+    Iwasaki,
+    doubly-blocked-wilson,
+    doubly-blocked-Wilson,
+    Doubly-Blocked-Wilson,
+    dbw,
+    dbw2
 
-    If you specify "Rectangle" or "Adjoint", specify in JSON 
-    input "rectangle-coefficient": <rectangle-coefficient>
-    or "adjoint-ratio": <adjoint-ratio>, respectively;
-    otherwise, "rectangle-coefficient" will default to 
-    Symanzik ("rectangle-coefficient" = -1/12) or Adjoint 
-    ("adjoint-ratio" = -1/4). 
+                          - rectangle -
+    If you specify "rectangle" or "Rectangle", you must provide 
+    the rectangle coefficient in JSON input as 
+    "rectangle-coefficient": <rectangle-coefficient>. Otherwise,
+    rectangle with default to "symanzik", "Symanzik", 
+    "luescher-weiss", "Luescher-Weiss", "luscher-weiss", 
+    "Luscher-Weiss" value of -1/12. 
+    
+                        - adjoint-plaquette -
+    If you specify "adjoint" or "Adjoint", you must provide 
+    beta_F/beta_A (beta_F = beta) as 
+    "adjoint-ratio": <adjoint-ratio>. Otherwise, beta_F/beta_A 
+    will default to -1/4. 
   |------------------------- QEX error -------------------------|
   """
   GaugeError2* = """
   |------------------------- QEX error -------------------------|
     Bare gauge coupling (beta) not specified for gauge 
     field(s). Specify in JSON input as "beta": <beta>.
+  |------------------------- QEX error -------------------------|
+  """
+  GaugeError3* = """
+  |------------------------- QEX error -------------------------|
+    Invalid choice for gauge action. Possible choices are:
+
+    wilson,
+    Wilson,
+    rectangle,
+    Rectangle,
+    adjoint,
+    Adjoint,
+    symanzik,
+    Symanzik,
+    luescher-weiss,
+    Luescher-Weiss,
+    luscher-weiss,
+    Luscher-Weiss,
+    iwasaki,
+    Iwasaki,
+    doubly-blocked-wilson,
+    doubly-blocked-Wilson,
+    Doubly-Blocked-Wilson,
+    dbw,
+    dbw2
+
+                          - rectangle -
+    If you specify "rectangle" or "Rectangle", you must provide 
+    the rectangle coefficient in JSON input as 
+    "rectangle-coefficient": <rectangle-coefficient>. Otherwise,
+    rectangle with default to "symanzik", "Symanzik", 
+    "luescher-weiss", "Luescher-Weiss", "luscher-weiss", 
+    "Luscher-Weiss" value of -1/12. 
+    
+                        - adjoint-plaquette -
+    If you specify "adjoint" or "Adjoint", you must provide 
+    beta_F/beta_A (beta_F = beta) as 
+    "adjoint-ratio": <adjoint-ratio>. Otherwise, beta_F/beta_A 
+    will default to -1/4. 
   |------------------------- QEX error -------------------------|
   """
 
@@ -111,3 +166,10 @@ const
     "adjoint-ratio": <adjoint-ratio> in JSON input.
   |------------------------ QEX warning ------------------------|
   """
+
+if isMainModule:
+  echo GaugeError1
+  echo GaugeError2
+  echo GaugeError3
+  echo GaugeWarning1
+  echo GaugeWarning2
