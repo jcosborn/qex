@@ -13,7 +13,7 @@ if len(sys.argv)>2:
 rel = 1e-12
 if len(sys.argv)>3:
   rel = float(sys.argv[3])
-spchars = " \t[\],"
+spchars = " \t[\\],"
 if len(sys.argv)>4:
   spchars = sys.argv[4]
 #print(fn1, fn2, rel, repr(spchars))

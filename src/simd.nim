@@ -31,20 +31,20 @@ when defined(SSE) or defined(AVX) or defined(AVX512):
 when true:
   when not declared(SimdS16):
     when declared(SimdS8):
-      msa(SimdS16, 2, SimdS8[])
+      msa(SimdS16, 2, `[]`(SimdS8))
     elif declared(SimdS4):
-      msa(SimdS16, 4, SimdS4[])
+      msa(SimdS16, 4, `[]`(SimdS4))
     elif declared(SimdS2):
-      msa(SimdS16, 8, SimdS2[])
+      msa(SimdS16, 8, `[]`(SimdS2))
     else:
       msa(SimdS16, 16, float32)
   when not declared(SimdD16):
     when declared(SimdD8):
-      msa(SimdD16, 2, SimdD8[])
+      msa(SimdD16, 2, `[]`(SimdD8))
     elif declared(SimdD4):
-      msa(SimdD16, 4, SimdD4[])
+      msa(SimdD16, 4, `[]`(SimdD4))
     elif declared(SimdD2):
-      msa(SimdD16, 8, SimdD2[])
+      msa(SimdD16, 8, `[]`(SimdD2))
     else:
       msa(SimdD16, 16, float64)
   when not declared(SimdS16Obj):
@@ -56,16 +56,16 @@ when true:
 when true:
   when not declared(SimdS8):
     when declared(SimdS4):
-      msa(SimdS8, 2, SimdS4[])
+      msa(SimdS8, 2, `[]`(SimdS4))
     elif declared(SimdS2):
-      msa(SimdS8, 4, SimdS2[])
+      msa(SimdS8, 4, `[]`(SimdS2))
     else:
       msa(SimdS8, 8, float32)
   when not declared(SimdD8):
     when declared(SimdD4):
-      msa(SimdD8, 2, SimdD4[])
+      msa(SimdD8, 2, `[]`(SimdD4))
     elif declared(SimdD2):
-      msa(SimdD8, 4, SimdD2[])
+      msa(SimdD8, 4, `[]`(SimdD2))
     else:
       msa(SimdD8, 8, float64)
   when not declared(SimdS8Obj):
@@ -77,12 +77,12 @@ when true:
 when true:
   when not declared(SimdS4):
     when declared(SimdS2):
-      msa(SimdS4, 2, SimdS2[])
+      msa(SimdS4, 2, `[]`(SimdS2))
     else:
       msa(SimdS4, 4, float32)
   when not declared(SimdD4):
     when declared(SimdD2):
-      msa(SimdD4, 2, SimdD2[])
+      msa(SimdD4, 2, `[]`(SimdD2))
     else:
       msa(SimdD4, 4, float64)
   when not declared(SimdS4Obj):

@@ -295,13 +295,13 @@ template conjImagU(xr,xi: untyped): untyped =
   -conj(xi)
 unaryOverloads(`~`, conj, conjRealU, conjImagU)
 
-#template adjRealU(xr,xi: untyped): untyped =
-#  mixin adj
-#  adj(xr)
-#template adjImagU(xr,xi: untyped): untyped =
-#  mixin adj
-#  -adj(xi)
-#unaryOverloads(`@`, adj, adjRealU, adjImagU)
+template adjRealU(xr,xi: untyped): untyped =
+  mixin adj
+  adj(xr)
+template adjImagU(xr,xi: untyped): untyped =
+  mixin adj
+  -adj(xi)
+unaryOverloads(`@`, adj, adjRealU, adjImagU)
 
 template transposeRealU(xr,xi: untyped): untyped =
   mixin transpose
@@ -362,7 +362,7 @@ template `/`*(x: ImagProxy): untyped = inv(x)
 #template invComplexU(x: untyped): untyped = x.adj * x.norm2.inv
 #template inv*(x: ComplexProxy): untyped = safecall(invComplexU, x)
 proc inv*(x: ComplexProxy): auto {.alwaysInline,noInit.} =
-  mixin inv
+  mixin adj, inv
   x.adj * x.norm2.inv
 template `/`*(x: ComplexProxy): untyped = inv(x)
 

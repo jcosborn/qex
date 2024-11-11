@@ -263,16 +263,28 @@ proc packp*(r: var openArray[SomeNumber], x: SimdArrayObj,
         assign(ra[][ir], x[][i])
         inc ir
   #echo r, l
-template packp1*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#template packp1*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#  when numNumbers(x) > 1:
+#    packp(r, x, l, 1)
+template packp1*(r: var openArray[SomeNumber], x: SimdArrayObj, l: var openArray[SomeNumber]) =
   when numNumbers(x) > 1:
     packp(r, x, l, 1)
-template packp2*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#template packp2*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#  when numNumbers(x) > 2:
+#    packp(r, x, l, 2)
+template packp2*(r: var openArray[SomeNumber], x: SimdArrayObj, l: var openArray[SomeNumber]) =
   when numNumbers(x) > 2:
     packp(r, x, l, 2)
-template packp4*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#template packp4*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#  when numNumbers(x) > 4:
+#    packp(r, x, l, 4)
+template packp4*(r: var openArray[SomeNumber], x: SimdArrayObj, l: var openArray[SomeNumber]) =
   when numNumbers(x) > 4:
     packp(r, x, l, 4)
-template packp8*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#template packp8*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#  when numNumbers(x) > 8:
+#    packp(r, x, l, 8)
+template packp8*(r: var openArray[SomeNumber], x: SimdArrayObj, l: var openArray[SomeNumber]) =
   when numNumbers(x) > 8:
     packp(r, x, l, 8)
 
@@ -301,16 +313,28 @@ proc packm*(r: var openArray[SomeNumber], x: SimdArrayObj,
       else:
         assign(la[][il], x[][i])
         inc il
-template packm1*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#template packm1*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#  when numNumbers(x) > 1:
+#    packm(r, x, l, 1)
+template packm1*(r: var openArray[SomeNumber], x: SimdArrayObj, l: var openArray[SomeNumber]) =
   when numNumbers(x) > 1:
     packm(r, x, l, 1)
-template packm2*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#template packm2*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#  when numNumbers(x) > 2:
+#    packm(r, x, l, 2)
+template packm2*(r: var openArray[SomeNumber], x: SimdArrayObj, l: var openArray[SomeNumber]) =
   when numNumbers(x) > 2:
     packm(r, x, l, 2)
-template packm4*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#template packm4*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#  when numNumbers(x) > 4:
+#    packm(r, x, l, 4)
+template packm4*(r: var openArray[SomeNumber], x: SimdArrayObj, l: var openArray[SomeNumber]) =
   when numNumbers(x) > 4:
     packm(r, x, l, 4)
-template packm8*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#template packm8*[R,L:openArray[SomeNumber]](r: var R, x: SimdArrayObj, l: var L) =
+#  when numNumbers(x) > 8:
+#    packm(r, x, l, 8)
+template packm8*(r: var openArray[SomeNumber], x: SimdArrayObj, l: var openArray[SomeNumber]) =
   when numNumbers(x) > 8:
     packm(r, x, l, 8)
 
@@ -800,6 +824,9 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
   template imadd*(r:var T; x:SomeNumber; y:T) = imadd(r, x.to(type(T)), y)
   template imsub*(r:var T; x:SomeNumber; y:T) = imsub(r, x.to(type(T)), y)
   template divd*(r:var T; x:SomeNumber; y:T) = divd(r, x.to(type(T)), y)
+  template imadd*(r:var T; x:T; y:SomeNumber) = imadd(r, x, y.to(type(T)))
+  template imsub*(r:var T; x:T; y:SomeNumber) = imsub(r, x, y.to(type(T)))
+  template divd*(r:var T; x:T; y:SomeNumber) = divd(r, x, y.to(type(T)))
   template imul*(r:var T; x:SomeNumber) = imul(r, x.to(type(T)))
   template idiv*(r:var T; x:SomeNumber) = idiv(r, x.to(type(T)))
   template msub*(r:var T; x:SomeNumber; y,z:T) = msub(r, x.to(type(T)), y, z)

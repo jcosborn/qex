@@ -11,6 +11,8 @@ import maths
 import quda/qudaWrapper
 import grid/Grid
 
+#var precon = false
+
 proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   var sp = sp0
   sp.subset.layoutSubset(r.l, sp.subsetName)
@@ -34,9 +36,26 @@ proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
     echo "op time: ", top
     echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
 
+# multimass (trivial version with multiple single mass calls for now)
+proc solveEO*(s: Staggered; r: seq[Field]; x: Field; m: seq[float];
+              sp: seq[SolverParams]) =
+  let n = m.len
+  doAssert(r.len == n)
+  doAssert(sp.len == n)
+  for i in 0..<n:
+    solveEO(s, r[i], x, m[i], sp[i])
+
+proc solveEO*(s: Staggered; r: seq[Field]; x: Field; m: seq[float];
+              sp: var SolverParams) =
+  let n = m.len
+  doAssert(r.len == n)
+  doAssert(sp.len == n)
+  for i in 0..<n:
+    solveEO(s, r[i], x, m[i], sp)
+
 proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
               parEven = true) =
-  tic()
+  tic("solveXX")
   var sp = sp0
   sp.resetStats()
   dec sp.verbosity
@@ -44,9 +63,9 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
     r := 0
   case sp.backend
   of sbQex:
-    tic()
+    tic("sbQex")
     proc op(a,b: Field) =
-      tic()
+      tic("solveXX>sbQex>op")
       threadBarrier()
       if parEven:
         stagD2ee(s.se, s.so, a, s.g, b, m*m)
@@ -55,12 +74,16 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
         stagD2oo(s.se, s.so, a, s.g, b, m*m)
         toc("stagD2oo")
       #threadBarrier()
-    var oa = (apply: op)
     var cg = newCgState(r, x)
     if parEven:
       sp.subset.layoutSubset(r.l, "even")
     else:
       sp.subset.layoutSubset(r.l, "odd")
+    #if precon:
+      #var oap = (apply: op, applyPrecon: oppre)
+      #cg.solve(oap, sp)
+    #else:
+    var oa = (apply: op, precon: cpNone)
     cg.solve(oa, sp)
     toc("cg.solve")
     sp.calls = 1
@@ -72,9 +95,11 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
         echo "solveEE(QEX): ", sp.getStats
       else:
         echo "solveOO(QEX): ", sp.getStats
+    toc("end sbQex")
   of sbQuda:
-    tic()
+    tic("sbQuda")
     if parEven:
+      #echo x.even.norm2, " ", sp.r2req
       s.qudaSolveEE(r,x,m,sp)
       toc("qudaSolveEE")
     else:
@@ -87,7 +112,7 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
     if sp0.verbosity>0:
       echo "solveXX(QUDA): ", sp.getStats
   of sbGrid:
-    tic()
+    tic("sbQuda")
     if parEven:
       s.gridSolveEE(r,x,m,sp)
       toc("gridSolveEE")
@@ -103,6 +128,7 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
   sp.iterationsMax = sp.iterations
   sp.r2.push 0.0
   sp0.addStats(sp)
+  toc("end solveXX")
 
 proc solveEE*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   solveXX(s, r, x, m, sp0, parEven=true)
@@ -113,7 +139,7 @@ proc solveOO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
 # right-preconditioned
 proc solveReconR(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
                  b2e,b2o: float) =
-  tic()
+  tic("solveReconR")
   let b2 = b2e + b2o
   let r2stop = sp.r2req * b2
   let r2stop2 = 0.5 * r2stop
@@ -151,7 +177,7 @@ proc solveReconR(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
 # left-preconditioned with odd reconstruction
 proc solveReconL(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
                  b2e,b2o: float) =
-  tic()
+  tic("solveReconL")
   #if b2e == 0.0 or b2o == 0.0:
   #solveR(s, y, r, m, sp, r2e, r2o)
   var d = newOneOf(b)
@@ -172,6 +198,7 @@ proc solveReconL(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
   toc("setup")
   s.solveEE(x, d, m, sp)
   toc("solveEE")
+  #echo "solveReconL ", d2e, "  ", sp.r2req
   threads:
     x.even *= 4
     threadBarrier()
@@ -241,6 +268,7 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
       s.D(r, x, m)
       threadBarrier()
       r := b - r
+      threadBarrier()
       let
         r2et = r.even.norm2
         r2ot = r.odd.norm2
@@ -249,7 +277,7 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
         r2o = r2ot
     r2 = r2e + r2o
     if sp.verbosity>0:
-      echo "stagSolve r2: ", r2/b2
+      echo "stagSolve r2/b2: ", r2/b2
 
   sp.r2.init r2/b2
   sp.calls = 1
@@ -263,6 +291,23 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
     #echo "op time: ", top
     echo "stagSolve: ", sp.getStats
   sp0.addStats(sp)
+
+# multimass (trivial version with multiple single mass calls for now)
+proc solve*(s: Staggered; r: seq[Field]; x: Field; m: seq[float];
+            sp: seq[SolverParams]) =
+  let n = m.len
+  doAssert(r.len == n)
+  doAssert(sp.len == n)
+  for i in 0..<n:
+    solve(s, r[i], x, m[i], sp[i])
+
+proc solve*(s: Staggered; r: seq[Field]; x: Field; m: seq[float];
+            sp: var SolverParams) =
+  let n = m.len
+  doAssert(r.len == n)
+  doAssert(sp.len == n)
+  for i in 0..<n:
+    solve(s, r[i], x, m[i], sp)
 
 proc solve*(s:Staggered; r,x:Field; m:SomeNumber; res:float;
             cpuonly = false; sloppySolve = SloppyNone) =
@@ -332,8 +377,15 @@ when isMainModule:
   var r = lo.ColorVector()
   var rs = newRNGField(RngMilc6, lo, intParam("seed", 987654321).uint64)
 
+  if fn == "":
+    var warm = floatParam("warm", 0.15)
+    threads:
+      #g.random rs
+      g.warm warm, rs
+  let plaq = g.plaq
+  echo "plaq: ", plaq.sum, " ", plaq
+
   threads:
-    g.random rs
     g.setBC
     g.stagPhase
     #v1 := 0
@@ -362,6 +414,14 @@ when isMainModule:
     threads:
       r := v1 - v2
       echo "err2: ", r.norm2
+    threads:
+      v1 := 0
+    resetTimers()
+    #precon = true
+    s.solve(v1, v3, m, sp)
+    threads:
+      r := v1 - v2
+      echo "err2: ", r.norm2
 
   block:
     v1 := 0
@@ -371,7 +431,7 @@ when isMainModule:
     echo "even point"
     test()
     echo sp.getStats()
-
+#[
   block:
     v1 := 0
     let p = lo.rankIndex([0,0,0,1])
@@ -386,7 +446,7 @@ when isMainModule:
     echo "random"
     test()
     echo sp.getStats()
-
+]#
   if intParam("timers", 0)!=0:
     echoTimers()
 

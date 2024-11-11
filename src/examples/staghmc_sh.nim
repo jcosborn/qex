@@ -241,7 +241,7 @@ for k in 0..<mass.len:
 proc checkStats(label:string, sp:var SolverParams) =
   echo label,sp.getAveStats
   if sp.r2.max > sp.r2req:
-    qexError "Max r2 larger than requested."
+    qexError &"Max r2 ({sp.r2.max}) larger than requested ({sp.r2req})"
   sp.resetStats
 
 proc reunit(g:auto) =

@@ -61,6 +61,8 @@ type
   notSomeField2* = concept x
     x isnot SomeField2
 
+template elemType*(x:Field):typedesc = evalType(x[0])
+template elemType*[V:static[int],T](x:typedesc[Field[V,T]]):typedesc = evalType(T)
 template numberType*(x:Field):untyped = numberType(x[0])
 
 #template fieldUnop*(o: static[FieldOps], x: SomeField): auto =
@@ -219,7 +221,8 @@ template has*[F:Field](x: typedesc[F], y: typedesc): bool =
       has(getT F, y)
     else: false
 
-template `[]`*[F:Field](x:typedesc[F]; i:int):typedesc = F.T
+#template `[]`*[F:Field](x:typedesc[F]; i:int):typedesc = F.T
+template index*[F:Field](x:typedesc[F]; i:typedesc[int]):typedesc = F.T
 template `[]`*(x:Field; i:int):untyped = x.s[i]
 #template `[]=`*(x:Field; i:int; y:typed) =
 proc `[]=`*(x:Field; i:int; y:auto) {.alwaysInline.} =
@@ -582,7 +585,7 @@ proc mul*(r:Field; x:Field2; y:Field3) =
     mul(r[e], x[e], y[e])
 
 proc norm2P*(f:SomeField):auto =
-  tic()
+  tic("norm2P[" & $type(f) & "]")
   mixin norm2, inorm2, simdSum, items, toDouble
   #var n2:type(norm2(f[0]))
   var n2: evalType(norm2(toDouble(f[0])))
@@ -590,10 +593,10 @@ proc norm2P*(f:SomeField):auto =
   #let t = f
   for x in items(f):
     inorm2(n2, toDouble(f[x]))
-  toc("norm2 local")
+  toc("local")
   #echoAll n2
   result = simdSum(n2)
-  toc("norm2 simd sum")
+  toc("simdSum")
   #echoAll myRank, ",", threadNum, ": ", result
   #threadSum(result)
   #toc("norm2 thread sum")
@@ -601,7 +604,7 @@ proc norm2P*(f:SomeField):auto =
   #toc("norm2 rank sum")
   f.l.threadRankSum(result)
   #echo result
-  toc("norm2 thread rank sum")
+  toc("threadRankSum")
 template norm2*(f:SomeAllField):auto =
   when declared(subsetObject):
     #echo "subsetObj" & s
@@ -619,6 +622,39 @@ proc norm2subtract*(x: Field, y: float): float =
     s += x[i].toDouble.norm2 - y
   result = s.simdReduce
   x.l.threadRankSum(result)
+
+proc norm2diffP*(f,g:SomeField):auto =
+  tic()
+  mixin norm2, inorm2, simdSum, items, toDouble
+  #var n2:type(norm2(f[0]))
+  var n2: evalType(norm2(toDouble(f[0])))
+  #echo n2
+  #let t = f
+  for x in items(f):
+    let t = toDouble(f[x]) - toDouble(g[x])
+    inorm2(n2, t)
+  toc("norm2 local")
+  #echoAll n2
+  result = simdSum(n2)
+  toc("norm2 simd sum")
+  #echoAll myRank, ",", threadNum, ": ", result
+  #threadSum(result)
+  #toc("norm2 thread sum")
+  #rankSum(result)
+  #toc("norm2 rank sum")
+  f.l.threadRankSum(result)
+  #echo result
+  toc("norm2 thread rank sum")
+template norm2diff*(f,g:SomeAllField):auto =
+  when declared(subsetObject):
+    #echo "subsetObj" & s
+    norm2diffP(f[subsetObject], g[subsetObject])
+  elif declared(subsetString):
+    #echo "subset norm2"
+    norm2diffP(f[subsetString], g[subsetString])
+  else:
+    norm2diffP(f, g)
+template norm2diff*(f,g:Subsetted):auto = norm2diffP(f,g)
 
 proc dotP*(f1:SomeField; f2:SomeField2):auto =
   tic()
@@ -648,7 +684,7 @@ template dot*(f1:SomeAllField; f2:SomeAllField2):untyped =
 template dot*(f1:Subsetted; f2:SomeAllField2):untyped = dotP(f1, f2)
 
 proc redotP*(f1:SomeField; f2:SomeField2):auto =
-  tic()
+  tic("redotP[" & $f1.type & "," & $f2.type & "]")
   mixin redot, iredot, simdSum, items, toDouble, eval
   #var d:type(redot(f1[0],f2[0]))
   var d: evalType(toDouble(redot(f1[0],f2[0])))
@@ -657,9 +693,9 @@ proc redotP*(f1:SomeField; f2:SomeField2):auto =
   for x in items(t1):
     #iredot(d, t1[x], t2[x])
     d += redot(t1[x], t2[x])
-  toc("redot local")
+  toc("local")
   result = simdSum(d)
-  toc("redot simd sum")
+  toc("simdSum")
   #threadBarrier()
   #toc("thread barrier")
   #threadSum(result)
@@ -667,7 +703,7 @@ proc redotP*(f1:SomeField; f2:SomeField2):auto =
   #rankSum(result)
   #toc("rank sum")
   f1.l.threadRankSum(result)
-  toc("redot thread rank sum")
+  toc("threadRankSum")
 template redot*(f1:SomeAllField; f2:SomeAllField2):untyped =
   when declared(subsetObject):
     #echo "subsetObj redot"

@@ -47,6 +47,7 @@ macro echo0*(args: varargs[untyped]): untyped =
   var call = newCall(bindSym"echoRaw")
   result = evalArgs(call, args)
   result.add(quote do:
+    bind myRank
     if myRank==0 and threadNum==0:
       `call`
     )
@@ -179,16 +180,18 @@ macro rankSumN*(comm:Comm, a:varargs[typed]):auto =
         i0 = i
         break
   if i0<0:
+    let b = newNimNode(nnkBracket)
     var s = newNimNode(nnkStmtList)
     let t = ident("t")
     for i in 0..<a.len:
+      b.add a[i]
       let ai = a[i]
       let x = quote do:
         `ai` = `t`[`i`]
       s.add x
     result = quote do:
       if threadNum==0:
-        var `t` = `a`
+        var `t` = `b`
         `comm`.sum(`t`)
         `s`
   else:
@@ -249,13 +252,18 @@ template threadRankSum1*[T](comm: Comm, a: T) =
   var ta{.global.}: type(a)
   #var ta2{.global.}:array[512,type(a)]
   if threadNum==0:
+    tic("threadRankSum1")
     t0wait()
+    toc("t0wait")
     for i in 1..<numThreads:
       a += cast[ptr type(a)](threadLocals.share[i].p)[]
       #a += ta2[threadNum]
+    toc("sum")
     rankSum(comm,a)
+    toc("rankSum")
     ta = a
     twait0()
+    toc("twait0")
   else:
     threadLocals.share[threadNum].p = a.addr
     #ta2[threadNum] = a
@@ -342,8 +350,8 @@ macro rankMax*(a:varargs[untyped]):auto =
         qmpMax(`a0`)
   else:
     error("rankMax not imlemented for multiple arguments.")
-    result = newCall(ident("rankMaxN"))
-    for v in a: result.add v
+    #result = newCall(ident("rankMaxN"))
+    #for v in a: result.add v
 
 template threadRankMax1*(a:untyped):untyped =
   var ta{.global.}:type(a)

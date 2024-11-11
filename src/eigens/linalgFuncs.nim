@@ -101,7 +101,7 @@ proc newZmat*(nr,nc: int): zmat =
 template mat_nrows*(x: dmat): int = x.nrows
 template mat_ncols*(x: dmat): int = x.ncols
 template `[]`*(x: dmat|zmat, i,j: int): untyped = x.dat[i+j*x.nrows]
-template `[]=`*(x: dmat|zmat, i,j: int, y: untyped): untyped =
+template `[]=`*(x: dmat|zmat, i,j: int, y: untyped) =
   x.dat[i+j*x.nrows] = y
 template dmat_get*(x: dmat, i,j: int): float64 = x[i,j]
 #template dmat_set(x: dmat, i,j: int, y: float64) = x[i,j] = y

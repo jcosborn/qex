@@ -1,14 +1,14 @@
 import posix
 import ../comms/comms
-import strformat
+#import strformat
 import ../comms/gather
 import layout
 import endians, crc32
 
-template `&`(x: char): untyped = cast[ptr UncheckedArray[char]](unsafeAddr(x))
-template `&`[T](x: seq[T]): untyped =
-  cast[ptr UncheckedArray[T]](unsafeAddr(x[0]))
-template `&&`(x: char): untyped = cast[pointer](unsafeAddr(x))
+#template `&`(x: char): untyped = cast[ptr UncheckedArray[char]](unsafeAddr(x))
+#template `&`[T](x: seq[T]): untyped =
+#  cast[ptr UncheckedArray[T]](unsafeAddr(x[0]))
+#template `&&`(x: char): untyped = cast[pointer](unsafeAddr(x))
 template `&&`(x: seq): untyped = cast[pointer](unsafeAddr(x[0]))
 template `&&`(x: SomeNumber): untyped = cast[pointer](unsafeAddr(x))
 

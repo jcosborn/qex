@@ -34,7 +34,8 @@ when nvhpcDir != "":
   {.passL: "-Wl,-rpath," & qudaDir & "/lib".}
 
 when cudaLibDir=="" and nvhpcDir=="":
-  {.passL: qudaDir & "/lib/libquda.a -lstdc++ ".}
+  {.passL: "-L" & qudaDir & "/lib -lquda -lstdc++ ".}
+  {.passL: "-Wl,-rpath," & qudaDir & "/lib".}
 
 const qmpDir {.strdefine.} = getEnv("QMPDIR")
 const qioDir {.strdefine.} = getEnv("QIODIR")
