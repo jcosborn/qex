@@ -1,6 +1,7 @@
 import base/basicOps
 import base/wrapperTypes
 export wrapperTypes
+import base/view
 import maths/types
 import maths
 import simd/simdWrap
@@ -12,12 +13,17 @@ type
   Color2*[T] = Color[T]
   Color3*[T] = Color[T]
   Color4*[T] = Color[T]
+  ColorView*[T] = Color[View[T]]
+template colorView*[T](x: typedesc[T]): typedesc = ColorView[T]
+template colorView*[T](x: var T): auto = asColor(view(x))
 
 template asVarWrapper*(x: Color, y: typed): untyped =
   #static: echo "asVarWrapper Color"
   #var cy = asColor(y)
   #cy
   asVar(asColor(y))
+
+template toView*(x: Color): auto = colorView(x[])
 
 template index*[T,I](x: typedesc[Color[T]], i: typedesc[I]): typedesc =
   when I is Color:
@@ -145,6 +151,8 @@ template load1*(x: Color): untyped = asColor(load1(x[]))
 template `-`*(x: Color): untyped = asColor(-(x[]))
 template assign*(r: var Color, x: SomeNumber) =
   assign(r[], x)
+template assign*(r: ColorView, x: SomeNumber) =
+  assign(r[][], x)
 template assign*(r: var Color, x: AsComplex) =
   assign(r[], x)
 template assign*(r: var Color, x: Color2) =
