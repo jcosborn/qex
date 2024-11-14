@@ -44,10 +44,30 @@ template IOname*[T](x:typedesc[T]):string =
 #  "QDP_F" & $N & "_ColorMatrix"
 #template IOname*[N:static int](x:typedesc[Color[MatrixArray[N,N,DComplex]]]):string =
 #  "QDP_D" & $N & "_ColorMatrix"
-template IOname*[N:static int,T](x:typedesc[Color[MatrixArray[N,N,T]]]):string =
-  when T is SComplex:
-    "QDP_F" & $N & "_ColorMatrix"
-  elif T is DComplex:
-    "QDP_D" & $N & "_ColorMatrix"
+# template IOname*[N:static int,T](x:typedesc[Color[MatrixArray[N,N,T]]]):string =
+#   static: echo $x.type
+#   when T is SComplex:
+#     "QDP_F" & $N & "_ColorMatrix"
+#   elif T is DComplex:
+#     "QDP_D" & $N & "_ColorMatrix"
+#   else:
+#     IOnameDefault type T
+# #template IOname*(x:typedesc[Color[AsMatrix]]):string =
+#  static: echo $x.type
+#  when x.index(int,int) is SComplex:
+#    "QDP_F" & $x.Nc & "_ColorMatrix"
+#  elif x.index(int,int) is DComplex:
+#    "QDP_D" & $x.Nc & "_ColorMatrix"
+#  else:
+#    IOnameDefault x
+template IOname*[T](x:typedesc[Color[T]]):string =
+  mixin Nc
+  when T is AsMatrix:
+    when x.index(int,int) is SComplex:
+      "QDP_F" & $x.getNc & "_ColorMatrix"
+    elif x.index(int,int) is DComplex:
+      "QDP_D" & $x.getNc & "_ColorMatrix"
+    else:
+      IOnameDefault x
   else:
-    IOnameDefault type T
+    IOnameDefault x

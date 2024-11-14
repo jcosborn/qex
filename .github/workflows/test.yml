@@ -5,13 +5,14 @@ on:
     branches:
       - 'devel'
       - 'master'
+      - 'tensorwrap'
 
 jobs:
   build:
     strategy:
       matrix:
         mpi-impl: [openmpi, mpich]
-        nim-branch: [version-1-6, version-2-0, devel]
+        nim-branch: [version-2-0, version-2-2, devel]
         fuel-compat: [0, 1]
       fail-fast: false
     name: nim-${{ matrix.nim-branch }}-${{ matrix.mpi-impl }}-FUELCompat:${{ matrix.fuel-compat }}

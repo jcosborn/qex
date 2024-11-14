@@ -41,6 +41,9 @@ template createAsType2(t,c:untyped) =
       c(index(X.type[], type T))
     else:
       index(X[], T)
+  template index*[X:t](x: typedesc[X]; i,j: typedesc[int]): typedesc =
+    mixin index
+    index(X[], int, int)
   template `[]`*(x: t; i: Scalar): untyped = c(x[][i])
   template `[]`*(x:t; i,j:SomeInteger):untyped =
     #echoType: x
@@ -65,10 +68,12 @@ template createAsType2(t,c:untyped) =
       x[][i] = y
   template `[]=`*(x: t; i,j: SomeInteger; y: typed) =
     x[][i,j] = y
-  template len*(x:t):untyped = getConst(x[].len)
-  template nrows*(x:t):untyped = getConst(x[].nrows)
-  template ncols*(x:t):untyped = getConst(x[].ncols)
-  template len*(x:typedesc[t]):auto = getConst(x[].len)
+  template len*(x:t):int = getConst(x[].len)
+  template nrows*(x:t):int = getConst(x[].nrows)
+  template ncols*(x:t):int = getConst(x[].ncols)
+  template len*(x:typedesc[t]):int = getConst(x[].len)
+  template nrows*(x:typedesc[t]):int = getConst(x[].nrows)
+  template ncols*(x:typedesc[t]):int = getConst(x[].ncols)
   #template mvLevel*(x:t):untyped =
   #  mixin mvLevel
   #  mvLevel(x[])
@@ -98,6 +103,9 @@ template has*[T:AsMatrix](x: typedesc[T], y: typedesc): bool =
   mixin has
   when y is AsMatrix: true
   else: has(T.type[], y)
+
+template `*`*(x: typedesc[AsMatrix], y: typedesc[AsVector]): typedesc =
+  asVector(eval(x[]) * eval(y[]))
 
 #declareScalar(AsScalar)
 #declareScalar(AsVarScalar)
@@ -226,7 +234,12 @@ template index*[I,J:static[int],T,K](x: typedesc[MatrixArrayObj[I,J,T]];
   else:
     false # error
 
+template index*[I,J:static[int],T](x: typedesc[MatrixArrayObj[I,J,T]];
+                                   k,l: typedesc[int]): typedesc =
+  T
+
 template `len`*(x:MatrixArrayObj):untyped = x.I
+template nrows*(x:typedesc[MatrixArrayObj]):int = x.I
 template nrows*(x:MatrixArrayObj):untyped = x.I
 template ncols*(x:MatrixArrayObj):untyped = x.J
 template `[]`*(x:MatrixArrayObj):untyped = x.mat
@@ -407,6 +420,10 @@ proc setColumn*(r:var AsMatrix; x:AsVector; i:int) {.inline.} =
   const nr = r.nrows
   for j in 0..<nr:
     assign(r[j,i], x[j])
+
+template `*`*[R,C:static[int],T1,T2](x: typedesc[MatrixArrayObj[R,C,T1]],
+                                     y: typedesc[VectorArrayObj[C,T2]]): typedesc =
+  VectorArray[R,eval(T1)*eval(T2)]
 
 import matrixOps
 export matrixOps
