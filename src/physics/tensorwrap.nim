@@ -59,7 +59,7 @@ template `[]`*[K,T,I](x: TensorObj[K,T], i: I): auto =
   elif I.isWrapper:
     #indexed(x, i)
     var tTensorObjBracket = tensorObj(K, x[][i])
-    tTensorObjBracket
+    tTensorObjBracket  # need to return var type
   else:
     x[][i]
 
@@ -67,6 +67,8 @@ template `[]=`*[K,T,I](x: SomeTensor[K,T], i: I, y: auto) =
   mixin `:=`
   when I is SomeTensor[K,auto]:
     x[][i[]] = y
+  elif y is SomeTensor[K,auto]:
+    x[][i] = y[]
   else:
     x[][i] = y
 
