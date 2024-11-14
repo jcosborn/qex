@@ -37,10 +37,11 @@ template asWrapper*[K,T](x: SomeTensor[K,T], y: auto): auto =
 template eval*[K,T](x: typedesc[TensorObj[K,T]]): typedesc =
   tensorObj(K,eval(T))
 
-template has*[K,T,Y](x: typedesc[SomeTensor[K,T]], y: typedesc[Y]): bool =
+template has*[K,T](x: typedesc[SomeTensor[K,T]], y: typedesc): bool =
+#template has*[K,T;Y:typedesc](x: typedesc[SomeTensor[K,T]], y: Y): bool =
   mixin has
-  when Y is SomeTensor[K,auto]: true
-  else: has(T[], Y)
+  when y is SomeTensor[K,auto]: true
+  else: has(T[], y)
 
 template index*[K,T,I](x: typedesc[TensorObj[K,T]], i: typedesc[I]): typedesc =
   when I is SomeTensor[K,auto]:
@@ -213,24 +214,19 @@ setBinAssignTT(add)
 setBinAssignTT(sub)
 
 setBinAssignTT(mul)
+setBinAssignTX(mul, SomeNumber)
 setBinAssignXT(mul, SomeNumber)
+setBinAssignTX(mul, AsComplex)
+setBinAssignXT(mul, AsComplex)
 
 setBinAssignTT(imadd)
+setBinAssignTX(imadd, AsComplex)
 setBinAssignXT(imadd, AsComplex)
 
 setBinAssignTT(imsub)
 
-#[
-template mul*(r: var SomeTensor, x: SomeTensor2, y: SomeNumber) =
-  mul(r[], x[], y)
-template mul*(r: var SomeTensor, x: AsComplex, y: SomeTensor3) =
-  mul(r[], x, y[])
-template peqOuter*(r: var SomeTensor, x: SomeTensor2, y: SomeTensor3) =
-  peqOuter(r[], x[], y[])
-template meqOuter*(r: var SomeTensor, x: SomeTensor2, y: SomeTensor3) =
-  meqOuter(r[], x[], y[])
-]#
-
+setBinAssignTT(peqOuter)
+setBinAssignTT(meqOuter)
 
 #** Binary functions
 
@@ -304,9 +300,9 @@ template mul*(x: SomeTensor, y: SomeTensor2): auto =
   asSomeTensor(`*`(x[], y[]))
 template mul*(x: AsComplex, y: SomeTensor2): auto =
   asSomeTensor(mul(x, y[]))
-template random*(x: var SomeTensor) =
-  gaussian(x[], r)
 ]#
+
+#template random*(x: var SomeTensor) = gaussian(x[], r)
 setUnaryAssignX(gaussian, auto)
 setUnaryAssignX(uniform, auto)
 setUnaryAssignX(z2, auto)
