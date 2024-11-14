@@ -448,21 +448,21 @@ proc solve2*(s:Wilson; r,x:Field; m:SomeNumber; res2:float) =
     threadBarrier()
     r := t
 
-template foldl(f,n,op:untyped):untyped =
-  var r:type(f(0))
-  r = f(0)
-  for i in 1..<n:
-    let
-      a {.inject.} = r
-      b {.inject.} = f(i)
-    r = op
-  r
-
 static:
   echo "Finished wilsonD: ", staticExec("date")
 
 when isMainModule:
   import rng
+  template foldl(f,n,op:untyped):untyped =
+    var r:type(f(0))
+    r = f(0)
+    for i in 1..<n:
+      let
+        a {.inject.} = r
+        b {.inject.} = f(i)
+      r = op
+    r
+
   proc runtest(v1,v2,sdAll,sdEven,sdOdd,s,m:any) =
     let g = s.g
     let lo = g[0].l

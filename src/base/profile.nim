@@ -822,7 +822,7 @@ proc makeHotspotTable(lrti: List[RTInfoObj]): tuple[ns:int64,oh:int64] =
           t.children.add ri.children[i]
     do: # loc not found
       hs[loc] = ri
-    let tot = makeHotSpotTable(List[RTInfoObj](ri.children))
+    #let tot = makeHotSpotTable(List[RTInfoObj](ri.children))
   return (nstot, ohtot)
 
 proc echoHotspots* =

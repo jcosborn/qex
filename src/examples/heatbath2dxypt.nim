@@ -653,7 +653,7 @@ if twistAngle.len != twistDirs.len:
 let
   gc = (beta:beta, J:J, h:h, hn:hn)
   lo = lat.newLayout
-  vol = lo.physVol
+  #vol = lo.physVol
 
 var
   r = lo.newRNGField(RngMilc6, seed)

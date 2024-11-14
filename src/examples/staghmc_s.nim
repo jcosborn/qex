@@ -79,7 +79,7 @@ echo "smear = ",coef
 var sg = lo.newGauge
 let stag = newStag(sg)
 
-proc smearRephase(g: any, sg: any):auto {.discardable.} =
+proc smearRephase(g: auto, sg: auto):auto {.discardable.} =
   tic()
   #let smearedForce = coef.smear(g, sg, info)
   let smearedForce = coef.smearGetForce(g, sg, info)
@@ -91,7 +91,7 @@ proc smearRephase(g: any, sg: any):auto {.discardable.} =
   toc("BC & Phase")
   smearedForce
 
-proc smearedOneLinkForce(f: any, smearedForce: proc, p: any, g:any) =
+proc smearedOneLinkForce(f: auto, smearedForce: proc, p: auto, g:auto) =
   # reverse accumulation of the derivative
   # 1. Dslash
   var t: array[4,Shifter[typeof(p), typeof(p[0])]]
@@ -127,7 +127,7 @@ proc smearedOneLinkForce(f: any, smearedForce: proc, p: any, g:any) =
         s := f[mu][i] * g[mu][i].adj
         projectTAH(f[mu][i], s)
 
-proc fforce(f: any) =
+proc fforce(f: auto) =
   tic()
   let smearedForce = g.smearRephase sg
   toc("fforce smear rephase")
