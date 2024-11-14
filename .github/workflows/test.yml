@@ -2,10 +2,9 @@ name: test
 on:
   pull_request:
   push:
-    branches:
-      - 'devel'
-      - 'master'
-      - 'tensorwrap'
+#    branches:
+#      - 'devel'
+#      - 'master'
 
 jobs:
   build:

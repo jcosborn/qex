@@ -22,6 +22,54 @@ proc startCornerShifts*[T](u0: openArray[T]): auto =
           s[mu][nu].startSB(u[mu][ix])
   return s
 
+proc startPlaqShifts*[T](u0: openArray[T]): auto =
+  var u = @u0
+  var sf:seq[seq[ShiftB[type(u[0][0])]]]
+  var sb:seq[seq[ShiftB[type(u[0][0])]]]
+  let nd = u.len
+  sf.newSeq(nd)
+  sb.newSeq(nd)
+  for mu in 0..<nd:
+    sf[mu].newSeq(nd)
+    sb[mu].newSeq(nd)
+    for nu in 0..<nd:
+      sb[mu][nu].initShiftB(u[mu], nu, -1, "all")
+      if mu!=nu:
+        sf[mu][nu].initShiftB(u[mu], nu, 1, "all")
+  threads:
+    for mu in 0..<nd:
+      sb[mu][mu].startSB(u[mu][ix])
+    for mu in 0..<nd:
+      for nu in 0..<nd:
+        if mu!=nu:
+          sf[mu][nu].startSB(u[mu][ix])
+          sb[mu][nu].startSB(u[mu][ix])
+  return (sf,sb)
+
+proc finishPlaqShifts*[T](u0,b0: openArray[T], sf,sb: seq): auto =
+  var u = @u0
+  var b = @b0
+  var sc:seq[seq[ShiftB[type(u[0][0])]]]
+  let nd = u.len
+  sc.newSeq(nd)
+  for mu in 0..<nd:
+    sc[mu].newSeq(nd)
+    for nu in 0..<nd:
+      if mu!=nu:
+        sc[mu][nu].initShiftB(u[mu], nu, 1, "all")
+  threads:
+    for mu in 0..<nd:
+      for ir in b[mu]:
+        localSB(sb[mu][mu], ir, assign(b[mu][ir], it), u[mu][ix])
+    for mu in 0..<nd:
+      boundarySB(sb[mu][mu], assign(b[mu][ir], it))
+    threadBarrier()
+    for mu in 0..<nd:
+      for nu in 0..<nd:
+        if mu!=nu:
+          sc[mu][nu].startSB(b[mu][ix])
+  return (sc)
+
 proc startStapleShifts*[T](u: openArray[T]): auto =
   var s:seq[seq[seq[ShiftB[type(u[0][0][0])]]]]
   let nd = u.len

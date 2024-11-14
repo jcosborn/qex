@@ -18,8 +18,11 @@ var v1 = lo.ColorVector()
 var v2 = lo.ColorVector()
 var r = lo.ColorVector()
 var rs = newRNGField(RngMilc6, lo, intParam("seed", 987654321).uint64)
+let warm0 = 0.29 + 500.0/lo.physVol.float
+var warm = floatParam("warm", warm0)
 threads:
-  g.random rs
+  #g.random rs
+  g.warm warm, rs
   g.setBC
   g.stagPhase
   v1 := 0
@@ -67,6 +70,7 @@ for i in 0..3:
   g3[2*i] = g[i]
   g3[2*i+1] = lo.ColorMatrix()
   g3[2*i+1].randomSU rs
+  g3[2*i+1] *= 0.1
 var s3 = newStag3(g3)
 #s3.D(v2, v1, m)
 s3.solve(v2, v1, mass, sp)
