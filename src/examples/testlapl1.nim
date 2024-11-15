@@ -5,7 +5,7 @@ import io/timesliceIo
 import physics/wilsonD
 import physics/wilsonSolve
 import contract
-import xmlparser, xmltree, strutils, sequtils, endians, times
+import xmlparser, xmltree, strutils, sequtils, times
 template `&&`(x: int32): untyped = cast[pointer](unsafeAddr(x))
 template `&&`(x: Field): untyped = cast[pointer](unsafeAddr(x[0]))
 
