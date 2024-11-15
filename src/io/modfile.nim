@@ -1,5 +1,5 @@
 import parallelIo
-import endians, tables, strutils
+import tables
 
 proc modReadString(pr: var ParallelReader): string =
   var bytes = pr.readBigInt32()
@@ -28,7 +28,7 @@ proc modReadHeader*(pr: var ParallelReader): ModFileHeader =
   result.magic = pr.modReadString()
   result.version = pr.readBigInt32()
   result.userdata = pr.modReadString()
-  var dum = pr.readBigInt64()
+  discard pr.readBigInt64()
   result.mapstart = pr.readBigInt64().int
   #echo result
 
@@ -59,17 +59,17 @@ proc modReadMap*(pr: var ParallelReader, mdstart: int): ModFileMap =
   #echo num
   for i in 0..<num:
     let k = pr.modReadString()
-    var dum = pr.readBigInt64()
+    discard pr.readBigInt64()
     let v = pr.readBigInt64().int
     #echo k.toHex()
     #echo i, ": ", v
-    result.add(k, v)
+    result[k] = v
   pr.endLocalChecksum()
   let cks = pr.readBigInt32().uint32
   #echo "cksum: ", cks, "  ", pr.crc32
   doAssert(cks == pr.crc32)
 
-proc getPos*(m: ModFileMap, x: any): int =
+proc getPos*(m: ModFileMap, x: auto): int =
   let l = sizeof(x)
   var s = newString(l)
   copyMem(s[0].addr, unsafeAddr(x), l)

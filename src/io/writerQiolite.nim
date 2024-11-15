@@ -1,6 +1,6 @@
 import base
 import layout
-import strutils, strformat
+import strformat
 import field
 import os
 import scidacio
@@ -87,7 +87,7 @@ proc getP[T](buf: cstring; index: int; count: int; arg: openArray[ptr T]) =
 
 template `&`[T](x: seq[T]): untyped = cast[ptr T](unsafeaddr x[0])
 template `+`(x: ptr char, i: SomeInteger): untyped =
-  cast[ptr char](cast[ByteAddress](x) + ByteAddress(i))
+  cast[ptr char](cast[uint](x) + uint(i))
 
 proc write[T](wr: var Writer, v: var openArray[ptr T], lat: openArray[int],
               md="", ps="") =

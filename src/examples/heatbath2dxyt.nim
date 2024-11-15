@@ -2,7 +2,7 @@ import qex
 import gauge, physics/qcdTypes
 import os, strutils, times
 
-proc sumEnergy(fr,fi:any, J, h:any, g:any, p:seq[float], sf,sb:any) =
+proc sumEnergy(fr,fi:auto, J, h:auto, g:auto, p:seq[float], sf,sb:auto) =
   fr := 0
   fi := 0
   for nu in 0..<g.l.nDim:
@@ -26,7 +26,7 @@ type PhaseDiff[F,E] = object
   cosd,sind:seq[float]
   f: seq[Shifter[F,E]]
 
-proc phaseDiff(del:var PhaseDiff,g:any,p:seq[float],tdir:seq[bool]):auto =
+proc phaseDiff(del:var PhaseDiff,g:auto,p:seq[float],tdir:seq[bool]):auto =
   let
     # del cannot be captured by nim in threads
     f = del.f
@@ -57,7 +57,7 @@ type HeatBath[F,E] = object
   subs: array[2,Subset]
   del: PhaseDiff[F,E]
 
-proc newHeatBath(lo:any):auto =
+proc newHeatBath(lo:auto):auto =
   let
     nd = lo.nDim
     fr = lo.Real
@@ -82,7 +82,7 @@ proc newHeatBath(lo:any):auto =
     r.del.f[i] = newShifter(fr, i, 1)
   r
 
-proc evolve(H:HeatBath, g:any, d:var seq[float], tdir:seq[bool], gc:any, r:any, R:var RngMilc6,
+proc evolve(H:HeatBath, g:auto, d:var seq[float], tdir:seq[bool], gc:auto, r:auto, R:var RngMilc6,
     sample = true, twistSample = true, jump = true, twistJump = true) =
   tic("heatbath")
   let
@@ -152,7 +152,7 @@ proc evolve(H:HeatBath, g:any, d:var seq[float], tdir:seq[bool], gc:any, r:any, 
     toc("twist flip")
   toc("end")
 
-proc magnet(g:any):auto =
+proc magnet(g:auto):auto =
   tic("magnet")
   var mr,mi = 0.0
   threads:

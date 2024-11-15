@@ -4,15 +4,15 @@ import os, strutils, times
 
 const twistDir = 0
 
-proc isTwistBoundaryOf(i:int, b:any):bool = b.l.coords[twistDir][i] == 0
+proc isTwistBoundaryOf(i:int, b:auto):bool = b.l.coords[twistDir][i] == 0
 
-proc updateBoundary(b:any, d:any) =
+proc updateBoundary(b:auto, d:auto) =
   threads:
     for i in b.sites:
       if i.isTwistBoundaryOf b:
         b{i} := d
 
-proc sumEnergy(fr,fi:any, J, h:any, g,b:any, bb,sf,sb:any) =
+proc sumEnergy(fr,fi:auto, J, h:auto, g,b:auto, bb,sf,sb:auto) =
   fr := 0
   fi := 0
   for nu in 0..<g.l.nDim:
@@ -400,7 +400,7 @@ type PhaseDiff[F,E] = object
   cosd,sind:seq[float]
   f: seq[Shifter[F,E]]
 
-proc phaseDiffB(del:var PhaseDiff,g:any):auto =
+proc phaseDiffB(del:var PhaseDiff,g:auto):auto =
   let
     # del cannot be captured by nim in threads
     f = del.f
@@ -421,7 +421,7 @@ proc phaseDiffB(del:var PhaseDiff,g:any):auto =
       cosd[twistDir] = t
       sind[twistDir] = s
 
-proc phaseDiff(del:var PhaseDiff,g,b:any):auto =
+proc phaseDiff(del:var PhaseDiff,g,b:auto):auto =
   let
     # del cannot be captured by nim in threads
     f = del.f
@@ -453,7 +453,7 @@ type HeatBath[F,E] = object
   subs: array[2,Subset]
   del: PhaseDiff[F,E]
 
-proc newHeatBath(lo:any):auto =
+proc newHeatBath(lo:auto):auto =
   let
     nd = lo.nDim
     fr = lo.Real
@@ -478,7 +478,7 @@ proc newHeatBath(lo:any):auto =
     r.del.f[i] = newShifter(fr, i, 1)
   r
 
-proc evolve(H:HeatBath, g,b:any, bb:any, d:var float, gc:any, r:any, R:var RngMilc6,
+proc evolve(H:HeatBath, g,b:auto, bb:auto, d:var float, gc:auto, r:auto, R:var RngMilc6,
     sample = true, twistSample = true, jump = true, twistJump = true) =
   tic("heatbath")
   let
@@ -552,7 +552,7 @@ proc evolve(H:HeatBath, g,b:any, bb:any, d:var float, gc:any, r:any, R:var RngMi
     toc("twist flip")
   toc("end")
 
-proc magnet(g:any):auto =
+proc magnet(g:auto):auto =
   tic("magnet")
   var mr,mi = 0.0
   threads:
