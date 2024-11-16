@@ -18,7 +18,10 @@ template msa(T: untyped, N: static[int], F: typedesc) {.dirty,used.} =
   #makeSimdArray(N, F, `T Obj`)
   #template `T Array` = discard
   #makeSimdArray(`T Obj`, N, F)
-  type `T Obj`* = SimdArrayObj[N,F]
+  when declared SimdArrayObj:
+    type `T Obj`* = SimdArrayObj[N,F]
+  else:
+    makeSimdArray(`T Obj`, N, F)
   type T* = Simd[`T Obj`]
   type `T Array`* = `T Obj`
   #static: echo "made type", $T
@@ -339,6 +342,9 @@ macro simdObjType*(N: static int, T: typedesc): auto =
 
 type
   SimdObjType*[N:static int, T] = simdObjType(N,T)
+
+when not declared SimdArrayObj:
+  type SimdArrayObj*[N:static int,T] = SimdObjType[N,T]
 
 #[
 template toDoubleImpl*(x: T): auto =
