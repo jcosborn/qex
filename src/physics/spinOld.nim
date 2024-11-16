@@ -33,7 +33,7 @@ template index*[T,I](x: typedesc[Spin[T]], i: typedesc[I]): typedesc =
     index(T.type, I.type)
 
 template `[]`*[T](x: Spin, i: T): untyped =
-  when T is Spin:
+  when T is Spin2:
     x[][i[]]
   elif T.isWrapper:
     #indexed(x, i)
@@ -43,8 +43,8 @@ template `[]`*[T](x: Spin, i: T): untyped =
     x[][i]
 template `[]`*(x: Spin, i,j: typed): untyped = x[][i,j]
 #template `[]=`*[T](x: Spin, i: T; y: typed) =
-proc `[]=`*[T](x: Spin, i: T; y: auto) =
-  when T is Spin:
+proc `[]=`*[T](x: var Spin, i: T; y: auto) =
+  when T is Spin2:
     x[][i[]] = y
   elif T.isWrapper:
     #indexed(x, i)
@@ -211,6 +211,8 @@ template spinVector*(x: static[int], a: untyped): untyped =
   #let t = asSpin(t1)
   #static: echo "spinVector2"
   #t
+template spinVector*[T](x: static[int], a: typedesc[T]): untyped =
+  asSpin(asVectorArray(x, type T))
 template spinMatrix*[T](x,y:static[int], a: untyped): untyped =
   const
     I:int = x
@@ -315,6 +317,8 @@ const
 
 template I(x: typed): untyped =
   newImag(1)*x
+template mI(x: typed): untyped =
+  newImag(-1)*x
 
 proc spproj1p*(r: var auto, x: auto) =
   ## r: HalfFermion
