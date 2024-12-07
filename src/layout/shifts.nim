@@ -519,7 +519,8 @@ proc newShifters*[F](f: F, len: int, sub="all"): auto =
   r
 
 #template transporterApply*(x: Transporter, y: auto): auto =
-proc transporterApply*(x: Transporter, y: auto): auto {.alwaysInline.} =
+#proc transporterApply*(x: Transporter, y: auto): auto {.alwaysInline.} =
+proc transporterApply*(x: Transporter, y: auto): auto =
   mixin mul, load1, adj, `[]`
   var r = x.field
   when compiles(x.link):

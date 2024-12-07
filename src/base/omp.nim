@@ -28,6 +28,11 @@ else:
     #forceOmpOn()
     #{. emit:["#pragma omp ", p] .}
     {. emit:["_Pragma(\"omp ", p, "\")"] .}
+  template ompPragma(p:string,body:typed) =
+    {. push stackTrace:off, lineTrace:off, line_dir:off .}
+    {. emit:["_Pragma(\"omp ", p, "\")"] .}
+    body
+    {. pop .}
   template ompBlock*(p:string; body:untyped) =
     #{. emit:"#pragma omp " & p .}
     #{. emit:"{ /* Inserted by ompBlock " & p & " */".}
@@ -38,6 +43,12 @@ else:
     #{. emit:"} /* End ompBlock " & p & " */".}
 
 template ompBarrier* = ompPragma("barrier")
+template ompFlush* = ompPragma("flush")
+template ompFlushAcquire* = ompPragma("flush acquire")
+template ompFlushRelease* = ompPragma("flush release")
+template ompFlushSeqCst* = ompPragma("flush seq_cst")
+template ompAtomicRead*(body) = ompPragma("atomic read acquire", body)
+template ompAtomicWrite*(body) = ompPragma("atomic write release", body)
 
 template ompParallel*(body:untyped) =
   ompBlock("parallel"):

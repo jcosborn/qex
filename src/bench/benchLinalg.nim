@@ -45,6 +45,7 @@ proc checkMem =
 # fps: flops per site
 # bps: bytes moved (load+store) per site
 # mm: memory footprint (bytes) per site
+var minNrep = int.high
 template bench(fps,bps,mm,eqn: untyped) {.dirty.} =
   block:
     let vol = lo.nSites.float
@@ -73,12 +74,19 @@ template bench(fps,bps,mm,eqn: untyped) {.dirty.} =
     inc nbench
     echo "bench: ",nbench|(-6), "secs: ", dt|(6,3), "  mf: ", mf|7, "  mb: ", mb|7, "  mem: ", mem, "  nrep: ", nrep
     echo exp2string(eqn), "\n"
+    minNrep = min(minNrep, nrep)
 template bench(fps,bps,eqn: untyped) =
   bench(fps,bps,0,eqn)
 
 proc test(lat:auto) =
-  let maxl = intParam("maxl",16)
-  if lat[0] > maxl: return
+  let minl = intParam("minl",0)
+  if lat[0] < minl: return
+  let maxl = intParam("maxl",0)
+  if maxl>0:
+    if lat[0] > maxl: return
+  else:
+    if minNrep == 1: return
+  minNrep = int.high
   var lo = newLayout(lat)
   template newCV: untyped = lo.ColorVector()
   template newCM: untyped = lo.ColorMatrix()

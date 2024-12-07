@@ -2,7 +2,7 @@ import qex
 import gauge, physics/qcdTypes
 import os, strutils, times
 
-proc sumEnergy(fr,fi:any, J, h:any, g:any, sf,sb:any) =
+proc sumEnergy(fr,fi:auto, J, h:auto, g:auto, sf,sb:auto) =
   fr := 0
   fi := 0
   for nu in 0..<g.l.nDim:
@@ -21,7 +21,7 @@ type HeatBath[F,E] = object
   sf,sb: array[2,seq[Shifter[F,E]]]
   subs: array[2,Subset]
 
-proc newHeatBath(lo:any):auto =
+proc newHeatBath(lo:auto):auto =
   let
     fr = lo.Real
     fi = lo.Real
@@ -40,7 +40,7 @@ proc newHeatBath(lo:any):auto =
   r.subs[1].layoutSubset(lo,"o")
   r
 
-proc evolve(H:HeatBath, g:any, gc:any, r:any, sample = true, jump = true) =
+proc evolve(H:HeatBath, g:auto, gc:auto, r:auto, sample = true, jump = true) =
   tic("heatbath")
   let
     lo = g.l
@@ -83,7 +83,7 @@ proc evolve(H:HeatBath, g:any, gc:any, r:any, sample = true, jump = true) =
       toc("flip")
   toc("end")
 
-proc magnet(g:any):auto =
+proc magnet(g:auto):auto =
   tic("magnet")
   var mr,mi = 0.0
   threads:
@@ -106,7 +106,7 @@ type PhaseDiff[F,E] = object
   cosd,sind:seq[float]
   f: seq[Shifter[F,E]]
 
-proc newPhaseDiff(g:any):auto =
+proc newPhaseDiff(g:auto):auto =
   type
     F = typeof(g)
     E = typeof(g[0])
@@ -119,7 +119,7 @@ proc newPhaseDiff(g:any):auto =
     r.f[i] = newShifter(g, i, 1)
   r
 
-proc phaseDiff(del:var PhaseDiff,g:any):auto =
+proc phaseDiff(del:var PhaseDiff,g:auto):auto =
   let
     # del cannot be captured by nim in threads
     f = del.f

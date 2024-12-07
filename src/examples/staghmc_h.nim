@@ -80,7 +80,7 @@ template pnorm2(p2:float) =
     threadMaster: p2 = p2t
     g.rephase
 
-proc gaction(g:any, f2:seq[float], p2:float):auto =
+proc gaction(g:auto, f2:seq[float], p2:float):auto =
   let
     ga = gc.actionA g
     fa = f2.mapit(0.5*it)
@@ -100,14 +100,14 @@ template faction(fa:seq[float]) =
       threadMaster: fa[i] = psi2
     g.rephase
 
-proc olf(f: var any, v1: any, v2: any) =
+proc olf(f: var auto, v1: auto, v2: auto) =
   var t {.noInit.}: type(f)
   for i in 0..<v1.len:
     for j in 0..<v2.len:
       t[i,j] := v1[i] * v2[j].adj
   projectTAH(f, t)
 
-proc oneLinkForce(f: any, p: any, g: any) =
+proc oneLinkForce(f: auto, p: auto, g: auto) =
   let t = newTransporters(g, p, 1)
   for mu in 0..<g.len:
     discard t[mu] ^* p
@@ -117,7 +117,7 @@ proc oneLinkForce(f: any, p: any, g: any) =
     for i in f[mu].odd:
       f[mu][i] *= -1
 
-proc fforce(f: any, i: int) =
+proc fforce(f: auto, i: int) =
   tic()
   threads:
     g.rephase

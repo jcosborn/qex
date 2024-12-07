@@ -2,7 +2,7 @@
 #import simdGcc
 #export simdGcc
 import base/metaUtils
-import math
+import math, macros
 
 import simd/simdWrap
 export simdWrap
@@ -12,10 +12,17 @@ import base/stdUtils
 import simd/simdArray
 export simdArray
 
-template msa(T,N,F: untyped) {.dirty,used.} =
-  makeSimdArray(`T Obj`, N, F)
-  type T* = Simd[`T Obj`]
+#template msa(T,N,F: untyped) {.dirty,used.} =
+template msa(T: untyped, N: static[int], F: typedesc) {.dirty,used.} =
+  #static: echo "msa: ", N, " ", F.type
+  #makeSimdArray(N, F, `T Obj`)
   #template `T Array` = discard
+  #makeSimdArray(`T Obj`, N, F)
+  when declared SimdArrayObj:
+    type `T Obj`* = SimdArrayObj[N,F]
+  else:
+    makeSimdArray(`T Obj`, N, F)
+  type T* = Simd[`T Obj`]
   type `T Array`* = `T Obj`
   #static: echo "made type", $T
 
@@ -27,20 +34,20 @@ when defined(SSE) or defined(AVX) or defined(AVX512):
 when true:
   when not declared(SimdS16):
     when declared(SimdS8):
-      msa(SimdS16, 2, SimdS8[])
+      msa(SimdS16, 2, `[]`(SimdS8))
     elif declared(SimdS4):
-      msa(SimdS16, 4, SimdS4[])
+      msa(SimdS16, 4, `[]`(SimdS4))
     elif declared(SimdS2):
-      msa(SimdS16, 8, SimdS2[])
+      msa(SimdS16, 8, `[]`(SimdS2))
     else:
       msa(SimdS16, 16, float32)
   when not declared(SimdD16):
     when declared(SimdD8):
-      msa(SimdD16, 2, `[]`SimdD8)
+      msa(SimdD16, 2, `[]`(SimdD8))
     elif declared(SimdD4):
-      msa(SimdD16, 4, SimdD4[])
+      msa(SimdD16, 4, `[]`(SimdD4))
     elif declared(SimdD2):
-      msa(SimdD16, 8, SimdD2[])
+      msa(SimdD16, 8, `[]`(SimdD2))
     else:
       msa(SimdD16, 16, float64)
   when not declared(SimdS16Obj):
@@ -52,16 +59,16 @@ when true:
 when true:
   when not declared(SimdS8):
     when declared(SimdS4):
-      msa(SimdS8, 2, SimdS4[])
+      msa(SimdS8, 2, `[]`(SimdS4))
     elif declared(SimdS2):
-      msa(SimdS8, 4, SimdS2[])
+      msa(SimdS8, 4, `[]`(SimdS2))
     else:
       msa(SimdS8, 8, float32)
   when not declared(SimdD8):
     when declared(SimdD4):
-      msa(SimdD8, 2, SimdD4[])
+      msa(SimdD8, 2, `[]`(SimdD4))
     elif declared(SimdD2):
-      msa(SimdD8, 4, SimdD2[])
+      msa(SimdD8, 4, `[]`(SimdD2))
     else:
       msa(SimdD8, 8, float64)
   when not declared(SimdS8Obj):
@@ -73,12 +80,12 @@ when true:
 when true:
   when not declared(SimdS4):
     when declared(SimdS2):
-      msa(SimdS4, 2, SimdS2[])
+      msa(SimdS4, 2, `[]`(SimdS2))
     else:
       msa(SimdS4, 4, float32)
   when not declared(SimdD4):
     when declared(SimdD2):
-      msa(SimdD4, 2, SimdD2[])
+      msa(SimdD4, 2, `[]`(SimdD2))
     else:
       msa(SimdD4, 4, float64)
   when not declared(SimdS4Obj):
@@ -92,6 +99,8 @@ when true:
     msa(SimdS2, 2, float32)
   when not declared(SimdD2):
     msa(SimdD2, 2, float64)
+  when not declared(SimdS2Obj):
+    type SimdS2Obj* = `[]`(SimdS2)
   when not declared(SimdD2Obj):
     type SimdD2Obj* = `[]`(SimdD2)
 
@@ -99,6 +108,10 @@ when true:
 when true:
   msa(SimdS1, 1, float32)
   msa(SimdD1, 1, float64)
+  when not declared(SimdS1Obj):
+    type SimdS1Obj* = `[]`(SimdS1)
+  when not declared(SimdD1Obj):
+    type SimdD1Obj* = `[]`(SimdD1)
 
 
 ## mixed precision assignment
@@ -321,4 +334,24 @@ template assignX*(x: var Simd, y: Simd2) =
   debugType: y
   assign(x[], y[])
 
+macro simdObjType*(N: static int, T: typedesc): auto =
+  #echo T.repr
+  let p = if T.repr == "float32": "S" else: "D"
+  result = ident("Simd" & p & $N & "Obj")
+  #echo result
 
+type
+  SimdObjType*[N:static int, T] = simdObjType(N,T)
+
+when not declared SimdArrayObj:
+  type SimdArrayObj*[N:static int,T] = SimdObjType[N,T]
+
+#[
+template toDoubleImpl*(x: T): auto =
+  mixin simdObjType, assign
+  when F is float64: x
+  else:
+    type D = simdObjType(N, float64)
+    var r {.noInit.}: D
+    assign(r, x)
+]#

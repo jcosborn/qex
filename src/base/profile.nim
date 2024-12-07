@@ -1,11 +1,27 @@
 import threading
 export threading
-import comms/comms, stdUtils, base/basicOps
+import comms/commsEcho, stdUtils, base/[basicOps,params]
 import os, strutils, sequtils, std/monotimes, std/tables, std/algorithm, strformat
 export monotimes
 getOptimPragmas()
 
 const noTicToc {.boolDefine.} = false
+
+type PerfInfo* = object
+  count*: int
+  flops*: float
+  secs*: float
+template clear*(pi: var PerfInfo) =
+  pi.count = 0
+  pi.flops = 0.0
+  pi.secs = 0.0
+template `+=`*(r: var PerfInfo, x: PerfInfo) =
+  r.count += x.count
+  r.flops += x.flops
+  r.secs += x.secs
+proc `$`*(pi: PerfInfo): string =
+  result = system.`$`(pi)
+  result &= &" {1e-9*pi.flops/pi.secs:.2f} Gflops"
 
 type TicType* = distinct int64
 template getTics*: TicType = TicType(getMonoTime().ticks)
@@ -15,12 +31,13 @@ template ticDiffSecs*(x,y: TicType): float = 1e-9 * float(x.int64 - y.int64)
 template `-`*(x,y: TicType): TicType = TicType(x.int64 - y.int64)
 
 var
-  DropWasteTimerRatio* = 0.05  ## Drop children timers if the proportion of their overhead is larger than this.
+  ## Drop children timers if the proportion of their overhead is larger than this.
+  DropWasteTimerRatio* = floatParam("dropRatio", 0.05)
   VerboseTimer* = false  ## If true print out all the timers during execution.
 
 ##[
 
-Each Tic starts a local timer.  Each Toc records the time difference
+Each tic() starts a local timer.  Each toc() records the time difference
 of the current time with the one in the local timer visible in the
 scope, and then update the timer with the current time.
 
@@ -516,49 +533,10 @@ template tocI(f: SomeNumber; s:SString = ""; n = -1) =
       localCode {.global.} = newList[CodePoint]()
       thisCode = CodePoint(-1)
   if threadNum==0:
-    when false:
-      #echo "==== begin toc ",s," ",ii
-      #echo "     rtiStack: ",indent($rtiStack,5)
-      #echo "     cpHeap: ",indent($cpHeap,5)
-      if unlikely VerboseTimer: echoToc(s,ii)
-      if prevRTI.int32 >= 0:
-        if restartTimer:
-          thawTimers()
-          restartTimer = false
-        if not timersFrozen():
-          let theTime = getTics()
-          when not cname:
-            for c in items(localCode):
-              if cpHeap[c.int].name.equal(s):
-                thisCode = c
-                break
-          if thisCode.isNil:
-            thisCode = newCodePoint(ii.addr, s)
-            when not cname:
-              localCode.add thisCode
-          let
-            ns = theTime-localTimer
-            thisRTI = record(localTic, prevRTI, thisCode, ns, float(f))
-          var oh = rtiStack[thisRTI.int].childrenOverhead
-          let c = rtiStack[thisRTI.int].children
-          for i in 0..<c.len:
-            if toDropTimer(c[i].prev):
-              oh -= c[i].childrenOverhead
-          if oh.float / ns.float > DropWasteTimerRatio:
-            # Signal stop if the overhead is too large.
-            dropTimer(prevRTI)
-          if toDropTimer(thisCode):
-            freezeTimers()
-            restartTimer = true
-          localTimer = getTics()
-          rtiStack[thisRTI.int].overhead = nsec(localTimer-theTime)
-          prevRTI = thisRTI
-      #echo "==== end toc ",s," ",ii
+    when cname:
+      tocSet(localTimer,prevRTI,restartTimer,thisCode,f,s,ii.addr,localTic,false)
     else:
-      when cname:
-        tocSet(localTimer,prevRTI,restartTimer,thisCode,f,s,ii.addr,localTic,false)
-      else:
-        tocSet(localTimer,prevRTI,restartTimer,thisCode,f,s,ii.addr,localTic,addr localCode)
+      tocSet(localTimer,prevRTI,restartTimer,thisCode,f,s,ii.addr,localTic,addr localCode)
 
 when noTicToc:
   template toc*() = discard
@@ -826,6 +804,7 @@ proc makeHotspotTable(lrti: List[RTInfoObj]): tuple[ns:int64,oh:int64] =
   return (nstot, ohtot)
 
 proc echoHotspots* =
+  hs.clear
   let tot = makeHotspotTable(rtiStack)
   #let nstot = tot.ns
   let ohtot = tot.oh
@@ -878,6 +857,12 @@ proc echoHotspots* =
         tsns += nk.ns
         let tsnspct = 100.0 * tsns / nstot
         echo &"{pct:6.3f} {tsnspct:7.3f} {count} {mf} {nc} S {lc} {nm}"
+
+proc echoProf*(def = 0) =
+  case intParam("prof",def)
+  of 1: echoHotspots()
+  of 2: echoTimers()
+  else: discard
 
 when isMainModule:
   import os

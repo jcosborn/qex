@@ -1,6 +1,6 @@
 import qex
 import io / [parallelIo, timesliceIo, modfile]
-import xmlparser, xmltree, strutils, sequtils, endians, times
+import xmltree, strutils, times
 
 template TAG(x: untyped): untyped = xmltree.`<>`(x)
 template TXT(x: untyped): untyped = xmltree.newText(x)

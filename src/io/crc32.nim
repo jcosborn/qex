@@ -1,4 +1,4 @@
-import strutils
+#import strutils
 
 type Crc32* = uint32
 const InitCrc32* = Crc32(not 0'u32)

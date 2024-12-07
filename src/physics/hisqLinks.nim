@@ -32,11 +32,11 @@ proc `$`*(c: HisqCoefs): string =
 proc smear*(c: HisqCoefs, g: auto, fl,ll: auto, t1,t2: auto) =
   mixin projectU
   var info: PerfInfo
-  makeImpLinks(info, t1, g, c.fat7first)
+  makeImpLinks(t1, g, c.fat7first, info)
   for mu in 0..<4:
     for i in t2[mu]:
       projectU(t2[mu][i], t1[mu][i])
-  makeImpLinks(info, fl, t2, c.fat7second, ll, t2, c.naik)
+  makeImpLinks(fl, t2, c.fat7second, ll, t2, c.naik, info)
 proc smear*(c: HisqCoefs, g: auto, fl,ll: auto) =
   var t1 = fl.newOneOf
   var t2 = fl.newOneOf

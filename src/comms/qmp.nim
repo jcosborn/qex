@@ -5,7 +5,7 @@ when existsEnv("QMPDIR"):
 else:
   const qmpDir {.strDefine.} = getHomeDir() & "lqcd/install/qmp"
 const qmpPassC = "-I" & qmpDir & "/include"
-const qmpPassL* = "-L" & qmpDir & "/lib -lqmp -Wl,-rpath=" & qmpDir & "/lib"
+const qmpPassL* = "-L" & qmpDir & "/lib -lqmp -Wl,-rpath," & qmpDir & "/lib"
 static:
   echo "Using QMP: ", qmpDir
   echo "QMP compile flags: ", qmpPassC

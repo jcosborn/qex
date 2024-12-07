@@ -242,14 +242,21 @@ proc coord*(l: Layout, coord: ptr cint, ri: tuple[rank,index:cint]) =
     #layoutCoordQ(l.lq.addr, cast[ptr cArray[cint]](coord), li.addr)
     layoutCoordQ(l.lq.addr, toOpenArray(ca,0,l.nDim-1), li.addr)
 
+# from physical index to local rank and index
 proc rankIndex*(lo: Layout, lex: int): tuple[rank,index:int] =
   let n = lo.nDim
-  var c = newSeq[cint](n)
   var k = lex
   for i in 0..<n:
-    c[i] = (k mod lo.physGeom[i]).cint
+    lo.temp[i] = (k mod lo.physGeom[i]).cint
     k = k div lo.physGeom[i]
-  rankIndex(lo, c)
+  rankIndex(lo, lo.temp)
+
+proc physIndex*(lo: Layout, rank,index: int): int =
+  lo.coord(lo.temp, rank, index)
+  let n = lo.nDim
+  result = 0
+  for i in countdown(n-1,0):
+    result = (result*lo.physGeom[i]) + lo.temp[i]
 
 proc rankFromRankCoords*(l: Layout, coords: ptr cArray): int =
   for i in 0..<l.nDim:
