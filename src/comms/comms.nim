@@ -1,14 +1,6 @@
 import commsTypes
 export commsTypes
 
-# globals
-
-var defaultComm*: Comm
-template getDefaultComm*(): Comm = defaultComm
-template getComm*(): Comm = getDefaultComm()  # temporary alias
-var myRank* = 0
-var nRanks* = 1
-
 # base methods
 
 method name*(c: Comm): string {.base.} = discard
@@ -157,6 +149,8 @@ commsNames.add "QMP"
 commsInits.add getQmpComm
 commsFinis.add commsFinalizeQmp
 
+import commsEcho
+export commsEcho
 import commsUtils
 export commsUtils
 

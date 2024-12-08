@@ -2103,8 +2103,5 @@ if outfn != "":
   echo "Saving gauge field to file: ", outfn
   let err = g.saveGauge outfn
 
-case intParam("prof",0)
-of 1: echoTimers()
-of 2: echoHotspots()
-else: discard
+echoProf()
 qexFinalize()

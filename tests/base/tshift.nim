@@ -126,18 +126,20 @@ template testS16(Smd: typedesc) =
 qexInit()
 
 template makeSimdArrayX(T,N,B: untyped) {.dirty.} =
-  makeSimdArray(`T X`, N, B)
-  type T = Simd[`T X`]
-  template toDoubleImpl(x: `T X`): untyped = x  # always already double
+  #makeSimdArray(`T X`, N, B)
+  #type T = Simd[`T X`]
+  #template toDoubleImpl(x: `T X`): untyped = x  # always already double
+  type T = Simd[SimdArrayObj[N,B]]
 
 #testS1(float)
+
 makeSimdArrayX(SD1, 1, float)
 testS1(SD1)
 when declared(SimdD1):
   testS1(SimdD1)
 
-#makeSimdArrayX(SS1, 1, float32)
-#testS1(SS1)
+makeSimdArrayX(SS1, 1, float32)
+testS1(SS1)
 when declared(SimdS1):
   testS1(SimdS1)
 
@@ -146,8 +148,8 @@ testS2(SD2)
 when declared(SimdD2):
   testS2(SimdD2)
 
-#makeSimdArrayX(SS2, 2, float32)
-#testS2(SS2)
+makeSimdArrayX(SS2, 2, float32)
+testS2(SS2)
 when declared(SimdS2):
   testS2(SimdS2)
 
@@ -155,6 +157,9 @@ makeSimdArrayX(SD4, 4, float)
 testS4(SD4)
 when declared(SimdD4):
   testS4(SimdD4)
+
+makeSimdArrayX(SS4, 4, float32)
+testS4(SS4)
 when declared(SimdS4):
   testS4(SimdS4)
 
@@ -162,6 +167,9 @@ makeSimdArrayX(SD8, 8, float)
 testS8(SD8)
 when declared(SimdD8):
   testS8(SimdD8)
+
+makeSimdArrayX(SS8, 8, float32)
+testS8(SS8)
 when declared(SimdS8):
   testS8(SimdS8)
 
@@ -169,8 +177,10 @@ makeSimdArrayX(SD16, 16, float)
 testS16(SD16)
 when declared(SimdD16):
   testS16(SimdD16)
+
+makeSimdArrayX(SS16, 16, float32)
+testS16(SS16)
 when declared(SimdS16):
   testS16(SimdS16)
-
 
 qexFinalize()

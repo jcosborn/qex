@@ -54,9 +54,11 @@ const
   SCALE = 1.0'f32 / 0x01000000.float32
   #SCALE1 = 1.0'f32 / MASK.float32
 
-#template maxInt*(x: RngMilc6): int = int(MASK)
+template maxInt*(x: RngMilc6): int = int(MASK)
 template maxInt*(x: typedesc[RngMilc6]): int = int(MASK)
-#template numInts*(x: RngMilc6): int = int(NUMINTS)
+template high*(x: RngMilc6): uint = uint(MASK)
+template high*(x: typedesc[RngMilc6]): uint = uint(MASK)
+template numInts*(x: RngMilc6): int = int(NUMINTS)
 template numInts*(x: typedesc[RngMilc6]): int = int(NUMINTS)
 
 when defined(FUELCompat):
@@ -115,7 +117,7 @@ proc seed*(prn: var RngMilc6; sed,index: auto) =
   QMP_broadcast(ss.addr, sizeof(ss).csize_t)
   seedIndep(prn, ss, index)
 
-proc next(prn: var RngMilc6): uint32 {.inline.} =
+proc nextI(prn: var RngMilc6): uint32 {.inline.} =
   ## internal routine to return next value
   let t = (((prn.r5 shr 7) or (prn.r6 shl 17)) xor
       ((prn.r4 shr 1) or (prn.r5 shl 23))) and MASK
@@ -132,16 +134,20 @@ proc next(prn: var RngMilc6): uint32 {.inline.} =
 
 func skip*(prn: var RngMilc6, c = 1) =
   for i in 1..c:
-    discard prn.next
+    discard prn.nextI
 
 proc integer*(prn: var RngMilc6): int =
   ## Return random integer from 0 to maxInt
-  result = int prn.next
+  result = int prn.nextI
+
+proc next*(prn: var RngMilc6): uint =
+  ## Return random integer from 0 to maxInt
+  result = uint prn.nextI
 
 proc uniform*(prn: var RngMilc6): float32 =
   ## Return random number uniform on [0,1)
   ## The choice of including endpoints may vary among different RNGs
-  let i = prn.next
+  let i = prn.nextI
   result = SCALE * float32(i)
 
 #var QLA_use_milc_gaussian* = false

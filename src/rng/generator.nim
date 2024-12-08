@@ -1,3 +1,5 @@
+import field
+
 type
   RandomGeneratorBase* {.inheritable,pure.} = object
     count: int
@@ -49,6 +51,10 @@ func next*(e: var Milc6Generator): uint =
 func skip*(e: var Milc6Generator, c = 1) =
   e.incCount(c)
   e.state.skip(c)
+
+func seed*(x: Field[1, Milc6Generator]; sed: auto) =
+  for e in x:
+    x[e].seed(sed)
 
 ########################## MRG32k3a #############################
 import mrg32k3a

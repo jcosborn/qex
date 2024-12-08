@@ -17,22 +17,22 @@ template int2mask*(T: typedesc[m512], i: SomeInteger): mmask16 = cvtu32_mask16(u
 proc `[]=`*(r:var m128; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
   mixin toArray
   var a = toArray(r)
-  a[i] := x
+  a[i] = float32 x
   assign(r, a)
 proc `[]=`*(r:var m128d; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
   mixin toArray
   var a = toArray(r)
-  a[i] := x
+  a[i] = float x
   assign(r, a)
 proc `[]=`*(r:var m256; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
   mixin toArray
   var a = toArray(r)
-  a[i] := x
+  a[i] = float32 x
   assign(r, a)
 proc `[]=`*(r:var m256d; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
   mixin toArray
   var a = toArray(r)
-  a[i] := x
+  a[i] = float x
   assign(r, a)
 #proc `[]=`*(r:var m256d; i:SomeInteger; x:SomeNumber) {.alwaysInline.} =
 #  var a {.noInit.}: m256d

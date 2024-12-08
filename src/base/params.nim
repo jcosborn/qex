@@ -1,14 +1,12 @@
 import macros, os, strUtils, tables, algorithm, seqUtils
-# Note: may get imported before 'echo' is redefined
-#       uses of 'echo' should be in a template with 'mixin echo'
 
 # TODO
 # include CT in saveParams RT
-# include CT in help
 # check used
 # only write from rank 0
 # only read from rank 0
 # add way to represent empty seq/string (versus unset/unknown)
+# sort paramHelp output by file and option name
 
 type
   ParamListT = object  # used to store set parameters from cmd line or file
@@ -28,7 +26,8 @@ var loadParamsCommand {.compileTime.} = "loadParams"  # normally not changed
 var params: Table[string,ParamListT]  # store params during setup
 # param info generated at compile time, as setParam commands are compiled
 var paramInfoCT {.compileTime.} = newSeq[ParamObj](0)
-var paramInfoCTRT = newSeq[ParamObj](0)  # conversion of paramInfoCT to RT variable
+#var paramInfoCTRT = newSeq[ParamObj](0)  # conversion of paramInfoCT to RT variable
+var paramInfoCTRT: seq[ParamObj]  # conversion of paramInfoCT to RT variable
 # param info generated at run time, as setParam commands executed (using set values)
 var paramInfo = newSeq[ParamObj](0)
 
@@ -218,13 +217,16 @@ proc saveParams(x: seq[ParamObj], fn: string, loc: string, thisfile: string) =
 proc addParam(s,r: string, c: string = "", ii: IiType) =
   paramInfo.set(s, r, c, ii.filename, ii.line)
 
-proc addComment(s,c:string):string =
+let spcName = "                "
+let spcValue = "                                   #"
+let spcLoc = "                                            ## "
+proc addComment(s,c,spc:string):string =
   result = s
   if c.len>0:
     let
-      spc = "                                 ## "
       m = min(s.len, spc.len-8)
     result &= spc[m..^1] & c
+proc addComment(s,c:string):string = addComment(s,c,spcValue)
 
 proc echoParamsX*(warnUnknown=false):string =
   result = "Params:\n"
@@ -243,6 +245,8 @@ template echoParams*(warnUnknown=false) =
   echo echoParamsX(warnUnknown)
 
 proc paramHelp*(p:string = ""):string =
+  #echo paramInfo
+  #echo paramInfoCTRT
   result = "Usage:\n  " & getAppFileName()
   var t: ParamObj
   var i = paramInfo.find p
@@ -256,10 +260,21 @@ proc paramHelp*(p:string = ""):string =
     result &= addComment(" -" & p & ":" & t.value & " (current value)", t.comment)
   else:
     result &= " -OPTION:VALUE ...\nAvailable OPTIONs and current VALUEs:"
-    let spc = "                "
-    for t in paramInfo:
+    template p(t) =
       let nm = t.name
-      result &= "\n    " & (nm & spc[min(spc.len-1,nm.len)..^1] & " : " & t.value).addComment(t.comment)
+      var s = nm & spcName[min(spcName.len-1,nm.len)..^1] & " : " & t.value
+      let f = t.file.splitfile[1]
+      let c = f & "," & $t.line
+      s = s.addComment(c,spcValue)
+      s = s.addComment(t.comment,spcLoc)
+      result &= "\n  " & s
+    var paramnames = newSeq[string](0)
+    for t in paramInfo:
+      paramnames.add t.name
+      p(t)
+    for t in paramInfoCTRT:
+      if t.name notin paramnames:  # FIXME: should check location too
+        p(t)
 
 template cnvnone(x:typed):untyped = x
 template makeTypeParam(name,typ,deflt,cnvrt: untyped): untyped {.dirty.} =
@@ -375,15 +390,15 @@ template processSaveParams*(index = -1) =
     let ii = instantiationInfo(index, fullPaths=true)
     saveParams(paramInfo, saveValue, ii.filename & ":" & $ii.line, ii.filename)
 
+var makeParamInfoCTRT: proc()
 template processMakeParamInfoCTRT* =
-  proc makeParamInfoCTRT() {.inject.}
-  makeParamInfoCTRT()
+  if not isNil makeParamInfoCTRT: makeParamInfoCTRT()
 
 template installStandardParams*(idx= -3) =
   installSaveParams(index=idx)
   installLoadParams(index=idx)
   installHelpParam(index=idx)
-  processMakeParamInfoCTRT()
+  #processMakeParamInfoCTRT()
 
 # write param file at compile time
 macro writeParamFileX*(filename: static string, ii: static IiType) =
@@ -405,10 +420,14 @@ macro makeParamInfoCTRTX*(): auto =
     let l = newLit t.line
     result.add quote do:
       paramInfoCTRT.add ParamObj(name:`n`,value:`v`,comment:`c`,file:`f`,line:`l`)
+template finalizeParams* =
+  proc makeParamInfoCTRTImpl(): bool =
+    makeParamInfoCTRTX()
+    true
+  #makeParamInfoCTRT = makeParamInfoCTRTImpl
+  let dum {.global.} = makeParamInfoCTRTImpl()
 template writeParamFile*(filename: static string = "") =
   writeParamFileX(filename, instantiationInfo(fullPaths=true))
-  proc makeParamInfoCTRT() {.inject.} =
-    makeParamInfoCTRTX()
 
 template assertParam*(p:auto, f:auto) =
   if not f p:
@@ -439,8 +458,10 @@ template CLIset*(p:typed, n:untyped, prefix = "") =
     discard
 
 when isMainModule:
-  import qex, paramtest
+  import qex
   qexInit()
+  installHelpParam("h")
+  processHelpParam()
 
   letParam:
     bf = false
@@ -462,11 +483,15 @@ when isMainModule:
     fa1 = @[1.0,1,1,1]
     fax = if true: @[2.0,2,2,2] else: @[3.0,3,3,3]
 
-  installHelpParam("h")
   echoParams()
 
   defaultSetup()
+  proc paramTest* =
+    var i = intParam("i", 0, "Test intParam")
+    var f = floatParam("f", 0.0, "Test floatParam")
+    echo i, f
   paramTest()
 
   writeParamFile("")
   qexFinalize()
+  finalizeParams()

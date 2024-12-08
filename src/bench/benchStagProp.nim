@@ -9,6 +9,8 @@ import os
 import rng
 
 qexInit()
+installHelpParam()
+processHelpParam()
 #var defaultLat = [4,4,4,4]
 #var defaultLat = [8,8,8,8]
 var defaultLat = @[8,8,8,8]
@@ -63,7 +65,7 @@ threads:
   threadBarrier()
   echo r.norm2
 #echo v2
-echoTimers()
+echoProf()
 
 var g3:array[8,type(g[0])]
 for i in 0..3:
@@ -71,11 +73,14 @@ for i in 0..3:
   g3[2*i+1] = lo.ColorMatrix()
   g3[2*i+1].randomSU rs
   g3[2*i+1] *= 0.1
+for i in 0..<g3.len:
+  echo &"g3[{i}]2: {g3[i].norm2}"
 var s3 = newStag3(g3)
 #s3.D(v2, v1, m)
 s3.solve(v2, v1, mass, sp)
 resetTimers()
 s3.solve(v2, v1, mass, sp)
-echoTimers()
+echoProf()
 
 qexFinalize()
+finalizeParams()

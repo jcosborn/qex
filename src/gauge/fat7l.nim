@@ -1,10 +1,6 @@
 import base
 import layout
-#import gauge
-#import strUtils
-
-type PerfInfo* = object
-  flops*: float
+export PerfInfo
 
 type Fat7lCoefs* = object
   oneLink*: float
@@ -12,6 +8,11 @@ type Fat7lCoefs* = object
   fiveStaple*: float
   sevenStaple*: float
   lepage*: float
+
+#type Fat7lState*[I,O] = object
+#  coefs*: Fat7lCoefs
+#  in*: I
+#  out*: O
 
 proc `$`*(c: Fat7lCoefs): string =
   result  = "oneLink:     " & $c.oneLink & "\n"
@@ -67,9 +68,10 @@ proc computeGenStaple(staple: auto, mu,nu: int, link: auto, coef: float,
   #if(link!=gauge[mu]) QDP_discard_M(ts0);
   #QDP_discard_M(ts2);
 
-proc makeImpLinks*(info: var PerfInfo, fl: auto, gf: auto, coef: auto,
-                   ll: auto, gfLong: auto, naik: auto) =
-  tic()
+proc makeImpLinks*(fl: auto, gf: auto, coef: auto,
+                   ll: auto, gfLong: auto, naik: auto,
+                   info: var PerfInfo) =
+  tic("makeImpLinks")
   type lcm = type(gf[0])
   proc QDP_create_M(): lcm = result.new(gf[0].l)
   var
@@ -109,62 +111,55 @@ proc makeImpLinks*(info: var PerfInfo, fl: auto, gf: auto, coef: auto,
         for nu in 0..<4:
           if dir!=nu:
             tsg[dir][nu] = newShifter(gf[dir], nu, 1)
-            discard tsg[dir][nu] ^* gf[dir]
+      threads:
+        for dir in 0..<4:
+          for nu in 0..<4:
+            if dir!=nu:
+              discard tsg[dir][nu] ^*! gf[dir]
 
-  for dir in 0..<4:
-    #QDP_M_eq_r_times_M(fl[dir], &coef1, gf[dir], QDP_all);
-    fl[dir] := coef1 * gf[dir]
-    if have3:
-      for nu in 0..<4:
-        if nu!=dir:
-          compute_gen_staple(staple, dir, nu, gf[dir], coef3, gf, fl,
-                             tsg[dir][nu], tsg[nu][dir], t1, t2, ts2[nu])
-          if coefL!=0.0:
-            compute_gen_staple(false, dir, nu, staple, coefL, gf, fl,
-                               tsl[nu], tsg[nu][dir], t1, t2, ts2[nu])
-          if coef5!=0.0 or coef7!=0.0:
-            for rho in 0..<4:
-              if (rho!=dir) and (rho!=nu):
-                compute_gen_staple(tempmat1, dir, rho, staple, coef5, gf, fl,
-                                   tsl[rho], tsg[rho][dir], t1, t2, ts2[rho])
-                if coef7!=0.0:
-                  for sig in 0..<4:
-                    if (sig!=dir) and (sig!=nu) and (sig!=rho):
-                      compute_gen_staple(false, dir, sig, tempmat1,coef7,gf,fl,
-                                         ts1[sig],tsg[sig][dir],t1,t2,ts2[sig])
-
-  # long links
-  if naik!=0.0:
+  toc("main loop")
+  threads:
     for dir in 0..<4:
-      #QDP_M_eq_sM(staple, gfLong[dir], QDP_neighbor[dir], QDP_forward,QDP_all)
-      #QDP_M_eq_M_times_M(tempmat1, gfLong[dir], staple, QDP_all)
-      #QDP_M_eq_sM(staple, tempmat1, QDP_neighbor[dir], QDP_forward, QDP_all)
-      #QDP_M_eq_M_times_M(ll[dir], gfLong[dir], staple, QDP_all)
-      #QDP_M_eq_r_times_M(ll[dir], &naik, ll[dir], QDP_all)
-      discard tsl[dir] ^* gfLong[dir]
-      discard ts1[dir] ^* (gfLong[dir] * tsl[dir].field)
-      ll[dir] := naik * (gfLong[dir] * ts1[dir].field)
-
-  #[
-  if have3 or naik!=0.0:
-    QDP_destroy_M(staple);
-    QDP_destroy_M(tempmat1);
-    if have3:
-      QDP_destroy_M(t1);
-      QDP_destroy_M(t2);
-      for dir in 0..<4:
-        QDP_destroy_M(tsl[dir]);
-        QDP_destroy_M(ts1[dir]);
-        QDP_destroy_M(ts2[dir]);
+      #QDP_M_eq_r_times_M(fl[dir], &coef1, gf[dir], QDP_all);
+      fl[dir] := coef1 * gf[dir]
+      if have3:
         for nu in 0..<4:
-          if(tsg[dir][nu]!=nil) QDP_destroy_M(tsg[dir][nu])
-  ]#
-  #info.final_sec = dtime;
-  #info.final_flop = nflop*QDP_sites_on_node;
-  #info.status = QOP_SUCCESS;
-  toc()
-proc makeImpLinks*(info: var PerfInfo, fl: auto, gf: auto, coef: auto) =
-  makeImpLinks(info, fl, gf, coef, fl, gf, 0.0)
+          if nu!=dir:
+            compute_gen_staple(staple, dir, nu, gf[dir], coef3, gf, fl,
+                               tsg[dir][nu], tsg[nu][dir], t1, t2, ts2[nu])
+            if coefL!=0.0:
+              compute_gen_staple(false, dir, nu, staple, coefL, gf, fl,
+                                 tsl[nu], tsg[nu][dir], t1, t2, ts2[nu])
+            if coef5!=0.0 or coef7!=0.0:
+              for rho in 0..<4:
+                if (rho!=dir) and (rho!=nu):
+                  compute_gen_staple(tempmat1, dir, rho, staple, coef5, gf, fl,
+                                     tsl[rho], tsg[rho][dir], t1, t2, ts2[rho])
+                  if coef7!=0.0:
+                    for sig in 0..<4:
+                      if (sig!=dir) and (sig!=nu) and (sig!=rho):
+                        compute_gen_staple(false, dir, sig, tempmat1,coef7,gf,fl,
+                                           ts1[sig],tsg[sig][dir],t1,t2,ts2[sig])
+
+    # long links
+    if naik!=0.0:
+      for dir in 0..<4:
+        #QDP_M_eq_sM(staple, gfLong[dir], QDP_neighbor[dir], QDP_forward,QDP_all)
+        #QDP_M_eq_M_times_M(tempmat1, gfLong[dir], staple, QDP_all)
+        #QDP_M_eq_sM(staple, tempmat1, QDP_neighbor[dir], QDP_forward, QDP_all)
+        #QDP_M_eq_M_times_M(ll[dir], gfLong[dir], staple, QDP_all)
+        #QDP_M_eq_r_times_M(ll[dir], &naik, ll[dir], QDP_all)
+        discard tsl[dir] ^* gfLong[dir]
+        discard ts1[dir] ^* (gfLong[dir] * tsl[dir].field)
+        ll[dir] := naik * (gfLong[dir] * ts1[dir].field)
+
+  toc("end")
+  inc info.count
+  info.flops += nflop * gf[0].l.localGeom.prod
+  info.secs += getElapsedTime()
+
+proc makeImpLinks*(fl: auto, gf: auto, coef: auto, info: var PerfInfo) =
+  makeImpLinks(fl, gf, coef, fl, gf, 0.0, info)
 
 when isMainModule:
   import qex
@@ -191,8 +186,8 @@ when isMainModule:
   var g3 = g
 
   echo g.plaq
-  makeImpLinks(info, fl, g, coef)
-  makeImpLinks(info, fl, g, coef, ll, g3, naik)
+  makeImpLinks(fl, g, coef, info)
+  makeImpLinks(fl, g, coef, ll, g3, naik, info)
   echo fl.plaq
   echo ll.plaq
   echo pow(1.0,4)/6.0

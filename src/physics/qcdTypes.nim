@@ -416,7 +416,6 @@ macro makeConstructors(x: untyped): untyped =
   result = newStmtList()
   result.add getAst mp(ident(f&"S"), ident("S"&r&"V"), ident"result")
   result.add getAst mp(ident(f&"D"), ident("D"&r&"V"), ident"result")
-  const defPrec {.strdefine.} = "D"
   result.add getAst mp(ident(f), ident(defPrec&r&"V"), ident"result")
   # non-Simd versions
   result.add getAst mp(ident(f&"S1"), ident("S"&r), ident"result")
