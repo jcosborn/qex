@@ -328,10 +328,29 @@ proc fat7lDeriv(deriv: auto, gauge: auto, mid: auto, coef: Fat7lCoefs,
   perf.flops += nflops * gauge[0].l.localGeom.prod
   perf.secs += getElapsedTime()
 
-proc fat7lDeriv(deriv: auto, gauge: auto, mid: auto, coef: Fat7lCoefs,
-                perf: var PerfInfo) =
-  fat7lDeriv(deriv, gauge, mid, coef, deriv, gauge, mid, 0.0, perf)
+proc fat7lDeriv*(
+    mid: auto, 
+    deriv: auto, 
+    gauge: auto, 
+    coef: Fat7lCoefs,
+    llderiv: auto, 
+    llgauge: auto, 
+    naik: float,
+    perf: var PerfInfo
+  ) =
+  var (fx,fxl) = (newOneOf(deriv),newOneOf(llderiv))
+  fat7lderiv(fx,gauge,deriv,coef,fxl,llgauge,llderiv,naik,perf)
+  threads:
+    for mu in 0..<mid.len:
+      for s in mid[mu]: mid[mu][s] := fx[mu][s] + fxl[mu][s]
 
+proc fat7lDeriv*(
+    mid: auto, 
+    deriv: auto, 
+    gauge: auto, 
+    coef: Fat7lCoefs,
+    perf: var PerfInfo
+  ) = fat7lderiv(mid,gauge,deriv,coef,mid,gauge,deriv,0.0,perf)
 
 when isMainModule:
   import qex, physics/qcdTypes
@@ -366,6 +385,7 @@ when isMainModule:
     g2[mu] := g[mu] + dg[mu]
     fd[mu] := 0
 
+  #[
   echo g.plaq
   echo g2.plaq
   makeImpLinks(fl, g, coef, info)
@@ -386,6 +406,7 @@ when isMainModule:
     #echo fd[mu].norm2
     dfl[mu] -= fd[mu]
     echo dfl[mu].norm2
+  ]#
 
   for mu in 0..<dg.len:
     fd[mu] := 0
