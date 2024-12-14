@@ -1,5 +1,5 @@
-import spinOld
-export spinOld
+#import spinOld
+#export spinOld
 
-#import spinTensor
-#export spinTensor
+import spinTensor
+export spinTensor

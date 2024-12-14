@@ -8,6 +8,7 @@ type
   Color3*[T] = Color[T]
   Color4*[T] = Color[T]
 
+proc has*(t: typedesc[ColorType], x: typedesc): bool = x is ColorType
 #[
 template getNc*[K,T](x: SomeTensor[K,T]): int =
   when K is ColorType:

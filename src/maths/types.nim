@@ -267,7 +267,7 @@ template declaredVector*(x:ToSingle):untyped = isVector(x[])
 template declaredMatrix*(x:ToSingle):untyped = isMatrix(x[])
 template re*(x: ToSingle): untyped = toSingle(x[].re)
 template im*(x: ToSingle): untyped = toSingle(x[].im)
-template simdType*(x: ToSingle): untyped = simdType(x[])
+#template simdType*(x: ToSingle): untyped = simdType(x[])
 template numberType*(x: ToSingle): untyped = float32
 
 type
@@ -328,7 +328,7 @@ template declaredVector*(x:ToDouble):untyped = isVector(x[])
 template declaredMatrix*(x:ToDouble):untyped = isMatrix(x[])
 template re*(x:ToDouble):untyped = toDouble(x[].re)
 template im*(x:ToDouble):untyped = toDouble(x[].im)
-template simdType*(x: ToDouble): untyped = simdType(x[])
+#template simdType*(x: ToDouble): untyped = simdType(x[])
 #macro dump2(x: typed): auto =
 #  result = newEmptyNode()
 #  echo x.treerepr
@@ -505,7 +505,7 @@ forwardFunc(Indexed, norm2)
 template len*(x:Indexed):untyped = obj(x).len  # FIXME Simd types can use Indexed
 template nrows*(x:Indexed):untyped = obj(x).nrows
 template ncols*(x:Indexed):untyped = obj(x).ncols
-template simdType*(x: Indexed): untyped = simdType(obj(x))
+#template simdType*(x: Indexed): untyped = simdType(obj(x))
 template numberType*(x: Indexed): untyped = numberType(obj(x))
 #template declaredVector*(x:Indexed):untyped = isVector(x.obj)
 #template declaredMatrix*(x:Indexed):untyped = isMatrix(x.obj)

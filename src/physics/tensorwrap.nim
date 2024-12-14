@@ -17,6 +17,8 @@ template tensorObj*[K,T](k: typedesc[K], t: typedesc[T]): typedesc =
   TensorObj[K,T]
 template tensorObj*[K,T](k: typedesc[K], x: T): auto =
   TensorObj[K,T](obj: x)
+#proc tensorObj*[K,T](k: typedesc[K], x: T): TensorObj[K,getPtr(T)] =
+#  result.obj = getPtr x
 
 template kind*[K,T](x: typedesc[SomeTensor[K,T]]): typedesc = K
 template kind*[K,T](x: SomeTensor[K,T]): typedesc = K
@@ -64,14 +66,29 @@ template `[]`*[K,T,I](x: TensorObj[K,T], i: I): auto =
   else:
     x[][i]
 
-template `[]=`*[K,T,I](x: SomeTensor[K,T], i: I, y: auto) =
+template `[]=`*[K,T,I,Y](x: SomeTensor[K,T], i: I, y: Y) =
+  static: echo "TensorWrap []= KT, I, auto ", $x.type, " ", $I.type, " ", $y.type
   mixin `:=`
-  when I is SomeTensor[K,auto]:
-    x[][i[]] = y
-  elif y is SomeTensor[K,auto]:
+  #when I is SomeTensor2[K,auto]:
+  when I is SomeTensor2:
+    when I.kind is K:
+      x[][i[]] = y
+      return
+  #elif y is SomeTensor2[K,auto]:
+  #elif Y is SomeTensor2 and Y.K is K:
+  when Y is SomeTensor2 and Y.K is K:
     x[][i] = y[]
   else:
     x[][i] = y
+
+#[
+template `[]=`*[K,T,I](x: SomeTensor[K,T], i: I, y: auto) =
+  static: echo "TensorWrap []= KT, I, auto ", $x.type, " ", $I.type, " ", $y.type
+  x[][i] = y
+
+template `[]=`*[K,T,I,Y](x: SomeTensor[K,T], i: I, y: SomeTensor2[K,Y]) =
+  x[][i] = y[]
+]#
 
 template `[]`*[K,T,I](x: TensorObj[K,T], i,j: I): auto =
   x[][i,j]
@@ -229,16 +246,16 @@ template setBinopTT(f, g) {.dirty.} =
     when X.kind is Y.kind:
       tensorObj(X.kind, f(X[],Y[]))
     elif X.kind.has Y.kind:
-      f(X[], Y)
+      tensorObj(X.kind, f(X[], Y))
     else:  # assume Y.kind has X.kind
-      f(X, Y[])
+      tensorObj(Y.kind, f(X, Y[]))
   template f*[X:SomeTensor,Y:SomeTensor2](x: X, y: Y): auto =
     when X.kind is Y.kind:
       tensorObj(X.kind, f(x[],y[]))
     elif X.kind.has Y.kind:
-      f(x[], y)
+      tensorObj(X.kind, f(x[], y))
     else:  # assume Y.kind has X.kind
-      f(x, y[])
+      tensorObj(Y.kind, f(x, y[]))
   #template f*(x: SomeTensor, y: SomeTensor2): auto =
   #  var r {.noInit.}: f(x.type, y.type)
   #  g(r, x, y)
