@@ -7,10 +7,38 @@ type StoutSmear*[G] = object
   gf*,f*,expaf*,ds*,cg*:G
   # add other temporaries
 
+#[ vvv YOU COULD IMPLEMENT THIS IN A MORE MEMORY-EFFICIENT WAY
+type StoutLinks*[U] = object
+  nstout*: int
+  stout*: seq[StoutSmear[U]]
+  su*: seq[U]
+  sf*: seq[U]
+]#
+
 proc newStoutSmear*(l:Layout, alpha:float):auto =
   # we only save a reference in gf, so no allocation to gf here.
   type G = type(l.newGauge)
   StoutSmear[G](alpha:alpha, f:l.newGauge, expaf:l.newGauge, ds:l.newGauge, cg:l.newGauge)
+
+#[
+proc newStoutLinks[S](
+    l: Layout,
+    nstout: int,
+    rho: float,
+    s: typedesc[S]
+  ): StoutLinks[S] =
+  result = StoutLinks[S](nstout: nstout)
+  result.stout = newSeq[StoutSmear[seq[S]]]()
+  result.su = newSeq[seq[S]]()
+  result.sf = newSeq[seq[S]]()
+  for idx in 0..<result.nstout+1:
+    if idx != result.nstout: result.stout.add l.newStoutSmear(rho)
+    result.su.add l.newGauge()
+    result.sf.add l.newGauge()
+
+proc newStoutLinks*(l: Layout, nstout: int, rho: float,): auto = 
+  l.newStoutLinks(nstout,rho,type(l.newGauge()[0]))
+]#
 
 proc smear*[G](ss:var StoutSmear, gf:G, fl:G) =
   const nc = gf[0][0].nrows.float
@@ -32,6 +60,13 @@ proc smear*[G](ss:var StoutSmear, gf:G, fl:G) =
         t := exp(alpha*t)
         expaf[mu][e] := t
         fl[mu][e] := t*gf[mu][e]
+
+#[
+proc smear*(self: var StoutLinks; u: auto) =
+  self.su[0].setGauge(u)
+  for idx in 0..<self.nstout:
+    self.stout[idx].smear(self.su[idx],self.su[idx+1])
+]#
 
 proc inverse*[G](ss:var StoutSmear, gf:G, fl:G, rdf2req=1e-24, maxIter=1000, verbose=false):auto =
   ## perform backward smear, fl:input, gf:output, gf and fl must be distinct
@@ -173,6 +208,17 @@ proc smearDeriv*[G](ss:var StoutSmear, deriv:G, chain:G) =
     for mu in 0..<deriv.len:
       for e in deriv[mu]:
         deriv[mu][e] += expaf[mu][e].adj*chain[mu][e]
+
+#[
+proc smearGetForce*[T](self: var StoutLinks; u: T): proc(deriv: var T; mid: T) =
+  self.smear(u)
+  proc smearedForce(deriv: var T; mid: T) =
+    for idx in countdown(self.nstout,0):
+    let xdi = self.nstout - idx
+    if xdi == 0: self.su[^1].gaugeForceDeriv(deriv,)
+    if xdi == self.nstout: self.stout[idx].smearDeriv(f,self.sf[1])
+    else: self.stout[idx].smearDeriv(self.sf[idx],self.sf[idx+1])
+]#
 
 when isMainModule:
   import qex

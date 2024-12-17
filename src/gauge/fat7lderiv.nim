@@ -329,23 +329,7 @@ proc fat7lDeriv*(deriv: auto, gauge: auto, mid: auto, coef: Fat7lCoefs,
   perf.flops += nflops * gauge[0].l.localGeom.prod
   perf.secs += getElapsedTime()
 
-proc fat7lDeriv*(
-    mid: auto,
-    deriv: auto,
-    gauge: auto,
-    coef: Fat7lCoefs,
-    llderiv: auto,
-    llgauge: auto,
-    naik: float,
-    perf: var PerfInfo
-  ) =
-  var (fx,fxl) = (newOneOf(deriv),newOneOf(llderiv))
-  fat7lderiv(fx,gauge,deriv,coef,fxl,llgauge,llderiv,naik,perf)
-  threads:
-    for mu in 0..<mid.len:
-      for s in mid[mu]: mid[mu][s] := fx[mu][s] + fxl[mu][s]
-
-proc fat7lDeriv*(deriv: auto, gauge: auto, mid: auto, coef: Fat7lCoefs,
+proc fat7lDeriv(deriv: auto, gauge: auto, mid: auto, coef: Fat7lCoefs,
                 perf: var PerfInfo) =
   fat7lDeriv(deriv, gauge, mid, coef, deriv, gauge, mid, 0.0, perf)
 
@@ -449,10 +433,43 @@ when isMainModule:
   coef.lepage = 0.0
   checkS("not Lepage", 60)
   coef.lepage = 1.0
-  checkS("all", 90)
+  var naik = 1.0
 
+  var fl = lo.newGauge()
+  var fl2 = lo.newGauge()
+  var ll = lo.newGauge()
+  var ll2 = lo.newGauge()
+  var dfl = lo.newGauge()
+  var g2 = lo.newGauge()
+  var dg = lo.newGauge()
+  var fd = lo.newGauge()
+  var ld = lo.newGauge()
+  for mu in 0..<dg.len:
+    dg[mu] := 0.00001 * g[mu]
+    g2[mu] := g[mu] + dg[mu]
+    fd[mu] := 0
 
-#[
+  echo g.plaq
+  echo g2.plaq
+  makeImpLinks(fl, g, coef, info)
+  info.clear
+  resetTimers()
+  makeImpLinks(fl, g, coef, info)
+  echo info
+  makeImpLinks(fl2, g2, coef, info)
+  echo info
+  echo fl.plaq
+  echo fl2.plaq
+
+  fat7lderiv(fd, g, dg, coef, info)
+  echo info
+  for mu in 0..3:
+    dfl[mu] := fl2[mu] - fl[mu]
+    #echo dfl[mu].norm2
+    #echo fd[mu].norm2
+    dfl[mu] -= fd[mu]
+    echo dfl[mu].norm2
+
   for mu in 0..<dg.len:
     fd[mu] := 0
     ld[mu] := 0

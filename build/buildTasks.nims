@@ -40,7 +40,7 @@ proc setNimFlags() =
 var run = false
 #var verbosity = -1
 var bindir = "bin"
-var srcPaths = @[".", "qex/src", "qex/tests"]  # use relative paths for convenience
+var srcPaths = @[".", "qex/src", "qex/tests", "qex/mcmc"]  # use relative paths for convenience
 if getCurrentDir() == qexDir: srcPaths = @["."]
 
 proc findSrc(g: string): tuple[files:seq[string],dirs:seq[string]] =
