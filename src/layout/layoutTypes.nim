@@ -65,11 +65,14 @@ type ShiftIndicesQ* = object
   sendRankOffsets1*: ptr cArray[cint]
   nSendSites*: cint
   nSendSites1*: cint
-  sendSites*: ptr cArray[cint]
+  #sendSites*: ptr cArray[cint]
+  sendSites*: seq[int32]
   vv*: cint
   perm*: cint
   pack*: cint
   blend*: cint
+  packmasks*: array[2,int]
+  packbits*: array[2,int]
 
 type ShiftIndices* = ref object
   sq*: ShiftIndicesQ

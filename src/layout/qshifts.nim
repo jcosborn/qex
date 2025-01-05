@@ -358,7 +358,7 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
   var myRank = l.myrank
   var nd = l.nDim
   var vvol = l.nSitesOuter
-  var gi = cast[ptr GatherIndices](alloc(sizeof((GatherIndices))))
+  var gi = cast[ptr GatherIndices](alloc(sizeof(GatherIndices)))
   for n in 0..<ndisp:
     si[n].gi = gi
     si[n].disp = cast[type(si[n].disp)](alloc(nd*sizeof((cint))))
@@ -366,7 +366,7 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
       si[n].disp[i] = disp[n][i]
     si[n].pidx = cast[ptr cArray[cint]](alloc(vvol*sizeof((cint))))
     si[n].sidx = cast[ptr cArray[cint]](alloc(vvol*sizeof((cint))))
-    si[n].sendSites = cast[ptr cArray[cint]](alloc(vvol*sizeof((cint))))
+    #si[n].sendSites = cast[ptr cArray[cint]](alloc(vvol*sizeof((cint))))
     for i in 0..<vvol:
       si[n].pidx[i] = -1
       si[n].sidx[i] = -1
@@ -387,9 +387,12 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
     vvs: cint = 0
     perm: cint = 0
     pack: cint = 0
-  #TRACE_ALL;
+    packs = [0,0]
+    packbits = [0,0]
+    #sendSites = newSeq[int32]()
+  si[si0].sendSites.newSeq(0)
+  # calculate pack, vvs (nSendSites), sendSites
   if gi.nSendIndices > 0:
-    #if(myrank==1){printf("nss: %i\n", gi->nSendIndices);fflush(stdout);}
     pack = gi.sendIndices[0] mod l.nSitesInner
     if pack == 0:
       var i: cint = 1
@@ -397,31 +400,52 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
           (gi.sendIndices[i] == gi.sendIndices[0] + i):
         inc(i)
       pack = - (i mod l.nSitesInner)
-    var ssi0: cint = -1
-    var i: cint = 0
-    while i < gi.nSendIndices:
-      var ss: cint = gi.sendIndices[i]
-      var ssi: cint = ss div l.nSitesInner
-      if ssi != ssi0:
-        si[si0].sendSites[vvs] = ssi
-        inc(vvs)
-        ssi0 = ssi
+    var ssi0 = gi.sendIndices[0] div l.nSitesInner
+    var pck = 0
+    var pckbits = 0
+    for i in 0..<gi.nSendIndices:
+      let ss = gi.sendIndices[i]
+      var ssi = ss div l.nSitesInner
+      let pckn = 1 shl (ss mod l.nSitesInner)
+      pck += pckn
+      inc pckbits
+      let ssi1 = if i+1<gi.nSendIndices: gi.sendIndices[i+1] div l.nSitesInner else: -1
+      #if i>0 and (ssi != ssi0 or i==gi.nSendIndices-1):
+      if ssi1!=ssi0:
+        ssi0 = ssi1
+        #si[si0].sendSites[vvs] = ssi
+        inc vvs
         if vvs > vvol:
           echo "vvs(",vvs,")>vvol(",vvol,")"
           if myRank == 0:
-            var i: cint = 0
-            while i < gi.nSendIndices:
+            for i in 0..<gi.nSendIndices:
               echo i, "\t", gi.sendIndices[i]
-              inc(i)
           #fflush(stdout)
           QMP_barrier()
           quit(1)
-      inc(i)
-  var i: cint = 0
-  while i < ndisp:
+        if packs[0]<=0:
+          packs[0] = pck
+          packbits[0] = pckbits
+        elif packs[0]==pck: discard
+        elif packs[1]<=0:
+          packs[1] = pck
+          packbits[1] = pckbits
+          ssi = -(1+ssi)
+        elif packs[1]==pck:
+          ssi = -(1+ssi)
+        else:
+          echo "error: more than 2 packs: ", packs, "  ", pck
+          QMP_barrier()
+          quit(1)
+        si[si0].sendSites.add ssi
+        pck = 0
+        pckbits = 0
+    echo "packs: ", packs, "  ", packbits
+  si[si0].packmasks = packs
+  si[si0].packbits = packbits
+  for i in 0..<ndisp:
     si[i].nSendRanks = 0
     si[i].nSendSites1 = 0
-    inc(i)
   si[si0].nSendRanks = gi.nSendRanks
   si[si0].nSendSites = vvs
   si[si0].nSendSites1 = gi.nSendIndices
@@ -436,20 +460,15 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
   var
     nrsites: cint = 0
     nrdests = newSeq[cint](ndisp)
-  i=0
-  while i < ndisp:
+  for i in 0..<ndisp:
     nrdests[i] = 0
-    inc(i)
-  i=0
-  while i < vvol * ndisp:
-    #if(myrank==1){printf("%i\n", i);fflush(stdout);}
+  for i in 0 ..< vvol * ndisp:
     var dd = i div l.nSitesOuter
     var ix = i mod l.nSitesOuter
     var k0 = i * l.nSitesInner
     var recv = 0
     var rbi = 0
-    var ii = 0
-    while ii < l.nSitesInner:
+    for ii in 0 ..< l.nSitesInner:
       var k = k0 + ii
       var s = gi.srcIndices[k]
       if s == -1:
@@ -458,7 +477,6 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
       if s < 0:
         inc(recv)
         if rbi == 0: rbi = s
-      inc(ii)
     if recv < 0:
       si[dd].pidx[ix] = -1
       si[dd].sidx[ix] = -1
@@ -478,15 +496,11 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
       si[dd].sidx[ix] = int32(- rbi - 2)
       #nrsites++;
       inc(nrdests[dd])
-    inc(i)
-  #TRACE_ALL;
   nrsites = gi.recvSize div l.nSitesInner
   if pack != 0: nrsites = nrsites * 2
-  i=0
-  while i < ndisp:
+  for i in 0..<ndisp:
     si[i].nRecvRanks = 0
     si[i].nRecvSites1 = 0
-    inc(i)
   si[0].nRecvRanks = gi.nRecvRanks
   si[0].nRecvSites = nrsites
   si[0].nRecvSites1 = gi.recvSize
@@ -520,22 +534,10 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
           inc(j)
           if j > nrdests[n]:
             echo "j($#)>nrdests[$#]($#)"%[$j,$n,$nrdests[n]]
-            #fflush(stdout)
     si[n].vv = int32 vvol
     si[n].perm = perm
     si[n].pack = pack
     si[n].blend = pack
-    #si[n]->offr = 0;
-    #si[n]->lenr = 0;
-    #si[n]->nthreads = 0;
-    #si[n]->sqmpmem = NULL;
-    #si[n]->rqmpmem = NULL;
-    #si[n]->pairmsg = NULL;
-    #printf("%i nsend: %i  nrecv: %i\n", myrank, si[n]->nSendSites, si[n]->nRecvSites);
-  #printf("disp:");
-  #for(int i=0; i<nd; i++) printf(" %i", disp[i]);
-  #printf("\n");
-  #printf("  perm: %i\n", perm);
 
 proc makeShiftMultiQ*(si: openArray[ptr ShiftIndicesQ]; l: ptr LayoutQ;
                       disp: openArray[ptr cArray[cint]]; ndisp: cint) =

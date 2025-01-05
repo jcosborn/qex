@@ -93,7 +93,8 @@ proc makeShift*(l:var Layout; dir,len:int; sub:string="all") =
   si.nSitesInner = l.nSitesInner
   si.comm = l.comm
 proc getShift*(l:var Layout; dir,len:int; sub:string="all"):ShiftIndices =
-  if nRanks>1 and len>l.outerGeom[dir]: # current limitation
+  #if nRanks>1 and len>l.outerGeom[dir]: # current limitation
+  if l.rankGeom[dir]>1 and l.innerGeom[dir]>1 and len>l.outerGeom[dir]:
     qexError(&"unsupported shift dir: {dir}  len: {len}  ranks: {nRanks} og: {l.outerGeom}")
   let key = makeShiftKey(dir, len, sub)
   if not hasKey(l.shifts, key):
