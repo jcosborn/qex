@@ -71,7 +71,8 @@ proc test2[N,T](Smd: typedesc, lat: array[N,T]): float =
     var dmax = lat[mu]
     #if nRanks>1: dmax = lo.outerGeom[mu]
     #if lo.rankGeom[mu]>1 and lo.innerGeom[mu]>1: dmax = lo.outerGeom[mu]
-    if lo.rankGeom[mu]>1: dmax = lo.outerGeom[mu]
+    #if lo.rankGeom[mu]>1: dmax = lo.outerGeom[mu]
+    if lo.rankGeom[mu]>1: dmax = lo.localGeom[mu]
     for d in 1..dmax:
       result += testf(x,y,z, mu, d)
       result += testfb(x,y,z, mu, d)

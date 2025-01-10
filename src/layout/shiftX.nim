@@ -5,10 +5,12 @@ import strformat
 
 type
   ShiftBufQ* = object
-    sqmpmem*: QMP_msgmem_t
-    smsg*: QMP_msghandle_t
-    rqmpmem*: QMP_msgmem_t
-    rmsg*: QMP_msghandle_t
+    nsend*: int32
+    nrecv*: int32
+    sqmpmem*: ptr cArray[QMP_msgmem_t]
+    smsg*: ptr cArray[QMP_msghandle_t]
+    rqmpmem*: ptr cArray[QMP_msgmem_t]
+    rmsg*: ptr cArray[QMP_msghandle_t]
     pairmsg*: QMP_msghandle_t
     sbuf*: ptr cArray[char]
     rbuf*: ptr cArray[char]
@@ -94,8 +96,9 @@ proc makeShift*(l:var Layout; dir,len:int; sub:string="all") =
   si.comm = l.comm
 proc getShift*(l:var Layout; dir,len:int; sub:string="all"):ShiftIndices =
   #if nRanks>1 and len>l.outerGeom[dir]: # current limitation
-  if l.rankGeom[dir]>1 and l.innerGeom[dir]>1 and len>l.outerGeom[dir]:
-    qexError(&"unsupported shift dir: {dir}  len: {len}  ranks: {nRanks} og: {l.outerGeom}")
+  #if l.rankGeom[dir]>1 and l.innerGeom[dir]>1 and len>l.outerGeom[dir]:
+  if len>l.localGeom[dir]:
+    qexError(&"unsupported shift dir: {dir}  len: {len}  ranks: {nRanks} og: {l.localGeom}")
   let key = makeShiftKey(dir, len, sub)
   if not hasKey(l.shifts, key):
     makeShift(l, dir, len, sub)

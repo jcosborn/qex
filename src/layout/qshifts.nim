@@ -1,7 +1,7 @@
-import qgather
-import layoutTypes, shiftX
+import qgather, layoutTypes, shiftX, base
 import comms/qmp
-import strutils #, strformat
+import strutils, strformat
+import bitops
 
 const
   PAIR = true
@@ -10,7 +10,7 @@ const
 proc aalloc(n: SomeInteger): pointer =
   let a = 64'u
   let b = a + sizeof(uint).uint
-  let x = cast[uint](alloc(n.uint+b))
+  let x = cast[uint](allocShared(n.uint+b))
   let y = a * ((x+b) div a)
   let z = cast[ptr uint](y - sizeof(uint).uint)
   z[] = x
@@ -18,79 +18,78 @@ proc aalloc(n: SomeInteger): pointer =
 
 proc afree(y: pointer) =
   let z = cast[ptr pointer](cast[uint](y) - sizeof(uint).uint)
-  dealloc(z[])
+  deallocShared(z[])
 
 proc prepareShiftBufsQ*(sb: openArray[ptr ShiftBufQ];
                         si: openArray[ptr ShiftIndicesQ];
                         n: cint; esize: cint) =
   var
-    sbs: cint = 0
-    rbs: cint = 0
-  var i: cint = 0
-  while i < n:
-    inc(sbs, esize * si[i].nSendSites1)
-    inc(rbs, esize * si[i].nRecvSites1)
-    inc(i)
-  i=0
-  while i < n:
-    sb[i].sbufSize = sbs
-    sb[i].rbufSize = rbs
-    sb[i].smsg.clear
-    sb[i].rmsg.clear
+    sbs = 0
+    rbs = 0
+  for i in 0..<n:
+    sbs += esize * si[i].nSendSites1
+    rbs += esize * si[i].nRecvSites1
+  for i in 0..<n:
+    sb[i].sbufSize = int32 sbs
+    sb[i].rbufSize = int32 rbs
+    #sb[i].smsg.clear
+    #sb[i].rmsg.clear
     #echo &"sb[{i}].rmsg.isEmpty: {sb[i].rmsg.isEmpty}"
     sb[i].first = 0
-    sb[i].offr = cast[type(sb[i].offr)](alloc(MAXTHREADS * sizeof(cint)))
-    sb[i].lenr = cast[type(sb[i].lenr)](alloc(MAXTHREADS * sizeof(cint)))
-    sb[i].nthreads = cast[type(sb[i].nthreads)](alloc(MAXTHREADS*sizeof(cint)))
-    var j: cint = 0
-    while j < MAXTHREADS:
+    sb[i].offr = cast[type(sb[i].offr)](allocShared(MAXTHREADS * sizeof(cint)))
+    sb[i].lenr = cast[type(sb[i].lenr)](allocShared(MAXTHREADS * sizeof(cint)))
+    sb[i].nthreads = cast[type(sb[i].nthreads)](allocShared(MAXTHREADS*sizeof(cint)))
+    for j in 0..<MAXTHREADS:
       sb[i].nthreads[j] = 0
-      inc(j)
-    inc(i)
   sb[0].first = 1
   if sbs > 0:
-    var sbuf: pointer = aalloc(sbs)
+    var sbuf = aalloc(sbs)
     #printf("sbuf: %p\n", sbuf);
-    var i: cint = 0
-    while i < n:
+    for i in 0..<n:
       sb[i].sbuf = cast[type(sb[i].sbuf)](sbuf)
+      sb[i].nsend = si[i].nSendRanks
       if si[i].nSendRanks > 0:
-        sb[i].sqmpmem = QMP_declare_msgmem(sbuf, sbs.csize_t)
-        sb[i].smsg = QMP_declare_send_to(sb[i].sqmpmem, si[i].sendRanks[0], 0)
-        #echo &"->{si[i].sendRanks[0]}: {sbs}"
-      inc(i)
+        sb[i].sqmpmem = cast[ptr cArray[QMP_msgmem_t]](allocShared(si[i].nSendRanks*sizeof(QMP_msgmem_t)))
+        sb[i].smsg = cast[ptr cArray[QMP_msghandle_t]](allocShared(si[i].nSendRanks*sizeof(QMP_msghandle_t)))
+        for j in 0..<si[i].nSendRanks:
+          let sbo = cast[pointer](cast[int](sbuf)+esize*si[i].sendRankOffsets1[j])
+          sb[i].sqmpmem[][j] = QMP_declare_msgmem(sbo, csize_t esize*si[i].sendRankSizes1[j])
+          sb[i].smsg[][j] = QMP_declare_send_to(sb[i].sqmpmem[][j], si[i].sendRanks[j], 0)
+          #echo &"->{si[i].sendRanks[0]}: {sbs}"
   if rbs > 0:
-    var rbuf: pointer = aalloc(rbs)
-    var i: cint = 0
-    while i < n:
+    var rbuf = aalloc(rbs)
+    for i in 0..<n:
       sb[i].rbuf = cast[type(sb[i].rbuf)](rbuf)
+      sb[i].nrecv = si[i].nRecvRanks
       if si[i].nRecvRanks > 0:
-        sb[i].rqmpmem = QMP_declare_msgmem(rbuf, rbs.csize_t)
-        sb[i].rmsg = QMP_declare_receive_from(sb[i].rqmpmem,
-                                              si[i].recvRanks[0], 0)
+        sb[i].rqmpmem = cast[ptr cArray[QMP_msgmem_t]](allocShared(si[i].nRecvRanks*sizeof(QMP_msgmem_t)))
+        sb[i].rmsg = cast[ptr cArray[QMP_msghandle_t]](allocShared(si[i].nRecvRanks*sizeof(QMP_msghandle_t)))
+        for j in 0..<si[i].nRecvRanks:
+          let rbo = cast[pointer](cast[int](rbuf)+esize*si[i].recvRankOffsets1[j])
+          sb[i].rqmpmem[][j] = QMP_declare_msgmem(rbo, csize_t esize*si[i].recvRankSizes1[j])
+          sb[i].rmsg[][j] = QMP_declare_receive_from(sb[i].rqmpmem[][j], si[i].recvRanks[j], 0)
         #echo &"<-{si[i].recvRanks[0]}: {rbs}"
         #echo &"sb[{i}].rmsg.isEmpty: {sb[i].rmsg.isEmpty}"
-      inc(i)
   when PAIR:
-    var p = newSeq[QMP_msghandle_t](2*n)
-    var nn: cint = 0
-    i=0
-    while i < n:
-      if not isEmpty sb[i].rmsg:
-        p[nn] = sb[i].rmsg
-        inc(nn)
-      if not isEmpty sb[i].smsg:
-        p[nn] = sb[i].smsg
-        inc(nn)
-      inc(i)
+    var nmsg = 0
+    for i in 0..<n:
+      nmsg += si[i].nSendRanks
+      nmsg += si[i].nRecvRanks
+    var p = newSeq[QMP_msghandle_t](nmsg)
+    var nn = cint 0
+    for i in 0..<n:
+      for j in 0..<si[i].nRecvRanks:
+        p[nn] = sb[i].rmsg[][j]
+        inc nn
+      for j in 0..<si[i].nSendRanks:
+        p[nn] = sb[i].smsg[][j]
+        inc nn
     var pairmsg: QMP_msghandle_t
     if nn > 0:
       pairmsg = QMP_declare_send_recv_pairs(p[0].addr, nn)
-    i=0
-    while i < n:
+    for i in 0..<n:
       sb[i].pairmsg = pairmsg
       #printf("pair[%i]: %p\t%p\t%p\n",i,sb[i]->rmsg,sb[i]->smsg,sb[i]->pairmsg);
-      inc(i)
     #fflush(stdout);
 
 proc prepareShiftBufQ*(sb: ptr ShiftBufQ; si: ptr ShiftIndicesQ; esize: cint) =
@@ -104,25 +103,26 @@ proc startSendBufQ*(sb: ptr ShiftBufQ) =
       #echo "QMP_start"
       discard QMP_start(sb.pairmsg)
   else:
-    if not isEmpty sb.smsg:
-      discard QMP_start(sb.smsg)
+    for i in 0..<sb.nsend:
+      discard QMP_start(sb.smsg[][i])
 
 proc startRecvBufQ*(sb: ptr ShiftBufQ) =
   when not PAIR:
-    if not isNil sb.rmsg:
-      discard QMP_start(sb.rmsg)
+    for i in 0..<sb.nrecv:
+      discard QMP_start(sb.rmsg[][i])
 
 proc waitSendBufQ*(sb: ptr ShiftBufQ) =
   when not PAIR:
-    if not isNil sb.smsg:
-      discard QMP_wait(sb.smsg)
+    for i in 0..<sb.nsend:
+      discard QMP_wait(sb.smsg[][i])
 
 proc waitRecvBufQ*(sb: ptr ShiftBufQ) =
   when PAIR:
     if not isEmpty sb.pairmsg:
       discard QMP_wait(sb.pairmsg)
   else:
-    if not isEmpty sb.rmsg: QMP_wait(sb.rmsg)
+    for i in 0..<sb.nrecv:
+      QMP_wait(sb.rmsg[][i])
   #printf("recv: %g\n",*(float *)(sb->rbuf));
 
 proc doneRecvBufQ*(sb: ptr ShiftBufQ) =
@@ -132,46 +132,40 @@ proc doneRecvBufQ*(sb: ptr ShiftBufQ) =
 
 proc freeShiftBufsQ*(sb: openArray[ptr ShiftBufQ]) =
   let n = sb.len
-  var i: cint = 0
-  while i < n:
-    dealloc(sb[i].offr)
-    dealloc(sb[i].lenr)
-    dealloc(sb[i].nthreads)
-    inc(i)
+  for i in 0..<n:
+    deallocShared(sb[i].offr)
+    deallocShared(sb[i].lenr)
+    deallocShared(sb[i].nthreads)
+  #FIXME: free all messages
   when PAIR:
-    i=0
-    while i < n:
+    for i in 0..<n:
       if sb[i].first!=0 and not isEmpty sb[i].pairmsg:
         QMP_free_msghandle(sb[i].pairmsg)
       sb[i].pairmsg.clear
-      if not isEmpty sb[i].smsg:
-        sb[i].smsg.clear
-        QMP_free_msgmem(sb[i].sqmpmem)
-        sb[i].sqmpmem = nil
-      if not isEmpty sb[i].rmsg:
-        sb[i].rmsg.clear
-        QMP_free_msgmem(sb[i].rqmpmem)
-        sb[i].rqmpmem = nil
-      inc(i)
+      #if not isEmpty sb[i].smsg:
+      #  sb[i].smsg.clear
+      #  QMP_free_msgmem(sb[i].sqmpmem)
+      #  sb[i].sqmpmem = nil
+      #if not isEmpty sb[i].rmsg:
+      #  sb[i].rmsg.clear
+      #  QMP_free_msgmem(sb[i].rqmpmem)
+      #  sb[i].rqmpmem = nil
   else:
-    var i: cint = 0
-    while i < n:
-      if sb[i].smsg:
-        QMP_free_msghandle(sb[i].smsg)
-        sb[i].smsg = nil
-        QMP_free_msgmem(sb[i].sqmpmem)
-        sb[i].sqmpmem = nil
-      if sb[i].rmsg:
-        QMP_free_msghandle(sb[i].rmsg)
-        sb[i].rmsg = nil
-        QMP_free_msgmem(sb[i].rqmpmem)
-        sb[i].rqmpmem = nil
-      inc(i)
-  i=0
-  while i < n:
+    for i in 0..<n:
+      discard
+      #if sb[i].smsg:
+      #  QMP_free_msghandle(sb[i].smsg)
+      #  sb[i].smsg = nil
+      #  QMP_free_msgmem(sb[i].sqmpmem)
+      #  sb[i].sqmpmem = nil
+      #if sb[i].rmsg:
+      #  QMP_free_msghandle(sb[i].rmsg)
+      #  sb[i].rmsg = nil
+      #  QMP_free_msgmem(sb[i].rqmpmem)
+      #  sb[i].rqmpmem = nil
+  for i in 0..<n:
     if sb[i].first!=0 and sb[i].sbufSize > 0: afree(sb[i].sbuf)
     if sb[i].first!=0 and sb[i].rbufSize > 0: afree(sb[i].rbuf)
-    inc(i)
 
 proc freeShiftBufQ*(sb: ptr ShiftBufQ) =
   freeShiftBufsQ([sb])
@@ -246,8 +240,8 @@ proc makeGDFromShiftSubs*(gd: ptr GatherDescription; l: ptr LayoutQ;
   var nndi = ndisps * myndi
   var args: mapargs
   args.l = l
-  var sidx: ptr cArray[cint] = cast[ptr cArray[cint]](alloc(nndi * sizeof(cint)))
-  var srank: ptr cArray[cint] = cast[ptr cArray[cint]](alloc(nndi * sizeof(cint)))
+  var sidx: ptr cArray[cint] = cast[ptr cArray[cint]](allocShared(nndi * sizeof(cint)))
+  var srank: ptr cArray[cint] = cast[ptr cArray[cint]](allocShared(nndi * sizeof(cint)))
   # find shift sources
   var nRecvDests: cint = 0
   var n: cint = 0
@@ -336,7 +330,7 @@ proc makeGDFromShiftSubs*(gd: ptr GatherDescription; l: ptr LayoutQ;
     inc(n)
   gd.nSendIndices = cint sendSrcIndices.len
   template ARRAY_CLONE(x,y: typed) =
-    x = cast[type(x)](alloc(y.len*sizeof(type(x[0]))))
+    x = cast[type(x)](allocShared(y.len*sizeof(type(x[0]))))
     for i in 0..<y.len: x[i] = y[i]
   ARRAY_CLONE(gd.sendSrcIndices, sendSrcIndices)
   ARRAY_CLONE(gd.sendDestRanks, sendDestRanks)
@@ -358,15 +352,15 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
   var myRank = l.myrank
   var nd = l.nDim
   var vvol = l.nSitesOuter
-  var gi = cast[ptr GatherIndices](alloc(sizeof(GatherIndices)))
+  var gi = cast[ptr GatherIndices](allocShared(sizeof(GatherIndices)))
   for n in 0..<ndisp:
     si[n].gi = gi
-    si[n].disp = cast[type(si[n].disp)](alloc(nd*sizeof((cint))))
+    si[n].disp = cast[type(si[n].disp)](allocShared(nd*sizeof((cint))))
     for i in 0..<nd:
       si[n].disp[i] = disp[n][i]
-    si[n].pidx = cast[ptr cArray[cint]](alloc(vvol*sizeof((cint))))
-    si[n].sidx = cast[ptr cArray[cint]](alloc(vvol*sizeof((cint))))
-    #si[n].sendSites = cast[ptr cArray[cint]](alloc(vvol*sizeof((cint))))
+    si[n].pidx = cast[ptr cArray[cint]](allocShared(vvol*sizeof((cint))))
+    si[n].sidx = cast[ptr cArray[cint]](allocShared(vvol*sizeof((cint))))
+    #si[n].sendSites = cast[ptr cArray[cint]](allocShared(vvol*sizeof((cint))))
     for i in 0..<vvol:
       si[n].pidx[i] = -1
       si[n].sidx[i] = -1
@@ -375,24 +369,24 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
   #args.disp = disp;
   #args.ndisp = ndisp;
   #makeGather(gi, mapm, &args,l->nranks,l->nranks,l->nSites*ndisp,l->myrank);
-  var gd = cast[ptr GatherDescription](alloc(sizeof((GatherDescription))))
+  var gd = cast[ptr GatherDescription](allocShared(sizeof((GatherDescription))))
   makeGDFromShiftSubs(gd, l, disp, subs, ndisp)
   #makeGDFromShiftSubs(gd, l,
   #                    cast[ptr carray[ptr carray[cint]]](disp[0].unsafeaddr),
   #                    cast[ptr carray[cstring]](subs[0].unsafeaddr), ndisp)
   makeGatherFromGD(gi, gd)
-  #int si0 = 0;
-  var si0: cint = ndisp-1
+  var si0 = ndisp-1  # si index for send structures
   var
-    vvs: cint = 0
     perm: cint = 0
     pack: cint = 0
-    packs = [0,0]
-    packbits = [0,0]
-    #sendSites = newSeq[int32]()
+    packs = [0,0,0,0]
+    packbits = [0,0,0,0]
+    lsrcloc = newSeq[int32](l.nSites)
   si[si0].sendSites.newSeq(0)
-  # calculate pack, vvs (nSendSites), sendSites
+  si[si0].sbufcount.newSeq(0)
+  si[si0].lbufcount.newSeq(0)
   if gi.nSendIndices > 0:
+    for i in 0..<lsrcloc.len: lsrcloc[i] = -1
     pack = gi.sendIndices[0] mod l.nSitesInner
     if pack == 0:
       var i: cint = 1
@@ -403,60 +397,66 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
     var ssi0 = gi.sendIndices[0] div l.nSitesInner
     var pck = 0
     var pckbits = 0
+    var scount = 0
+    var lcount = 0
     for i in 0..<gi.nSendIndices:
       let ss = gi.sendIndices[i]
-      var ssi = ss div l.nSitesInner
-      let pckn = 1 shl (ss mod l.nSitesInner)
+      let ssi = ss div l.nSitesInner
+      let ssv = ss mod l.nSitesInner
+      let pckn = 1 shl ssv
       pck += pckn
       inc pckbits
       let ssi1 = if i+1<gi.nSendIndices: gi.sendIndices[i+1] div l.nSitesInner else: -1
-      #if i>0 and (ssi != ssi0 or i==gi.nSendIndices-1):
       if ssi1!=ssi0:
         ssi0 = ssi1
-        #si[si0].sendSites[vvs] = ssi
-        inc vvs
-        if vvs > vvol:
-          echo "vvs(",vvs,")>vvol(",vvol,")"
-          if myRank == 0:
-            for i in 0..<gi.nSendIndices:
-              echo i, "\t", gi.sendIndices[i]
-          #fflush(stdout)
-          QMP_barrier()
-          quit(1)
-        if packs[0]<=0:
-          packs[0] = pck
-          packbits[0] = pckbits
-        elif packs[0]==pck: discard
-        elif packs[1]<=0:
-          packs[1] = pck
-          packbits[1] = pckbits
-          ssi = -(1+ssi)
-        elif packs[1]==pck:
-          ssi = -(1+ssi)
-        else:
-          echo "error: more than 2 packs: ", packs, "  ", pck
-          QMP_barrier()
-          quit(1)
-        si[si0].sendSites.add ssi
+        var imask = 0
+        while true:
+          if imask >= packs.len:
+            echo "pck ", pck, " not in packs ", packs
+            qexError()
+          if pck == packs[imask]: break
+          if packs[imask] == 0:
+            packs[imask] = pck
+            packbits[imask] = pckbits
+            break
+          inc imask
+        si[si0].sendSites.add SendSite(maskidx:uint32 imask, site:uint32 ssi)
+        si[si0].sbufcount.add int32 scount
+        si[si0].lbufcount.add int32 lcount
+        scount += pckbits
+        #lcount += l.nSitesInner - pckbits
+        for iv in 0..<l.nSitesInner:
+          if not pck.testBit(iv):
+            let locidx = ssi*l.nSitesInner + iv
+            lsrcloc[locidx] = int32 lcount
+            inc lcount
         pck = 0
         pckbits = 0
-    echo "packs: ", packs, "  ", packbits
+    #echo "packs: ", packs, "  ", packbits
   si[si0].packmasks = packs
   si[si0].packbits = packbits
   for i in 0..<ndisp:
     si[i].nSendRanks = 0
+    si[i].nSendSites = 0
     si[i].nSendSites1 = 0
   si[si0].nSendRanks = gi.nSendRanks
-  si[si0].nSendSites = vvs
+  si[si0].nSendSites = si[si0].sendSites.len
   si[si0].nSendSites1 = gi.nSendIndices
   if gi.nSendRanks > 0:
     si[si0].sendRanks = gi.sendRanks
-    si[si0].sendRankSizes = cast[ptr cArray[cint]](alloc(si[si0].nSendRanks*sizeof(cint)))
+    #si[si0].sendRankSizes = cast[ptr cArray[int]](allocShared(gi.nSendRanks*sizeof(int)))
     si[si0].sendRankSizes1 = gi.sendRankSizes
-    si[si0].sendRankOffsets = cast[ptr cArray[cint]](alloc(si[si0].nSendRanks*sizeof(cint)))
+    #si[si0].sendRankOffsets = cast[ptr cArray[cint]](allocShared(gi.nSendRanks*sizeof(cint)))
     si[si0].sendRankOffsets1 = gi.sendRankOffsets
-    si[si0].sendRankSizes[0] = vvs
-    si[si0].sendRankOffsets[0] = 0
+    #si[si0].sendRankSizes[0] = si[si0].sendSites.len
+    #si[si0].sendRankOffsets[0] = 0
+    #if gi.sendRankSizes[0] != gi.nSendIndices:
+    #  echo &"gi.sendRankSizes[0] {gi.sendRankSizes[0]} != gi.nSendIndices {gi.nSendIndices}"
+    #  qexError()
+    #if gi.sendRankOffsets[0] != 0:
+    #  echo &"gi.sendRankOffsets[0] {gi.sendRankOffsets[0]} != 0"
+    #  qexError()
+
   var
     nrsites: cint = 0
     nrdests = newSeq[cint](ndisp)
@@ -486,9 +486,7 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
       var p = gi.srcIndices[k0] mod l.nSitesInner
       if p != 0:
         perm = p
-        #si->sidx[i] = -vvs-1;
         si[dd].pidx[ix] = - (si[dd].pidx[ix]) - 2
-        #vvs++;
     else:
       rbi = - (rbi + 2)
       rbi = (2 * rbi) div l.nSitesInner
@@ -502,22 +500,28 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
     si[i].nRecvRanks = 0
     si[i].nRecvSites1 = 0
   si[0].nRecvRanks = gi.nRecvRanks
-  si[0].nRecvSites = nrsites
+  #si[0].nRecvSites = nrsites
   si[0].nRecvSites1 = gi.recvSize
   if gi.nRecvRanks > 0:
     si[0].recvRanks = gi.recvRanks
-    si[0].recvRankSizes = cast[ptr cArray[cint]](alloc(si[0].nRecvRanks*sizeof(cint)))
+    #si[0].recvRankSizes = cast[ptr cArray[cint]](allocShared(si[0].nRecvRanks*sizeof(cint)))
     si[0].recvRankSizes1 = gi.recvRankSizes
-    si[0].recvRankOffsets = cast[ptr cArray[cint]](alloc(si[0].nRecvRanks * sizeof(cint)))
+    #si[0].recvRankOffsets = cast[ptr cArray[cint]](allocShared(si[0].nRecvRanks * sizeof(cint)))
     si[0].recvRankOffsets1 = gi.recvRankOffsets
-    si[0].recvRankSizes[0] = nrsites
-    si[0].recvRankOffsets[0] = 0
+    #si[0].recvRankSizes[0] = nrsites
+    #si[0].recvRankOffsets[0] = 0
+    #if gi.recvRankSizes[0] != gi.recvSize:
+    #  echo &"gi.recvRankSizes[0] {gi.recvRankSizes[0]} != gi.recvSize {gi.recvSize}"
+    #  qexError()
+    #if gi.recvRankOffsets[0] != 0:
+    #  echo &"gi.recvRankOffsets[0] {gi.recvRankOffsets[0]} != 0"
+    #  qexError()
   for n in 0..<ndisp:
     si[n].nRecvDests = nrdests[n]
     if nrdests[n] > 0:
-      si[n].recvDests = cast[ptr cArray[cint]](alloc(nrdests[n]*sizeof(cint)))
-      si[n].recvLocalSrcs = cast[ptr cArray[cint]](alloc(nrdests[n]*sizeof(cint)))
-      si[n].recvRemoteSrcs = cast[ptr cArray[cint]](alloc(nrdests[n]*sizeof(cint)))
+      si[n].recvDests = cast[ptr cArray[cint]](allocShared(nrdests[n]*sizeof(cint)))
+      si[n].recvLocalSrcs = cast[ptr cArray[cint]](allocShared(nrdests[n]*sizeof(cint)))
+      si[n].recvRemoteSrcs = cast[ptr cArray[cint]](allocShared(nrdests[n]*sizeof(cint)))
       var j = 0
       for i in 0..<vvol:
         if si[n].sidx[i] < -1:
@@ -538,6 +542,98 @@ proc makeShiftMultiSubQ*(si: openArray[ptr ShiftIndicesQ];
     si[n].perm = perm
     si[n].pack = pack
     si[n].blend = pack
+  #[
+  var rboffs = newSeq[int]()
+  for i in 0..<gi.nRecvDests:
+  var rbo = -1
+  var rbc = 0
+  for i in 0..<gi.nRecvDests:
+    let rdi = gi.recvDestIndices[i]
+    let rdiv = rdi div l.nSitesInner
+    let rdiv1 = if i+1<gi.nRecvDests: recvDestIndices[i+1] else: -1
+    if rbo < 0: rbo = gi.recvBufIndices[i]
+    if rdiv1 != rdiv:
+      let n = rdiv div l.nSitesOuter
+      let ix = rdiv mod l.nSitesOuter
+      rboffs[n].add rbo
+      si[n].lbufOffset.add si[si0].lbufcount[rbc]
+      inc rbc
+      si[n].rbufOffset.add rbo
+      rbo = -1
+  ]#
+  var ridx = newSeqOfCap[int32](l.nSitesInner)
+  var lidx = newSeqOfCap[int32](l.nSitesInner)
+  for n in 0..<ndisp:
+    si[n].recvIndex.newSeq(vvol)
+    var nrecv = 0
+    si[n].recvmasks = [-1,-1]
+    for io in 0..<vvol:
+      ridx.setLen(0)
+      lidx.setLen(0)
+      var rmask = 0
+      var rbit = 1
+      var rbits = 0
+      var k0 = (n*vvol+io) * l.nSitesInner
+      for ii in 0 ..< l.nSitesInner:
+        var k = k0 + ii
+        var s = gi.srcIndices[k]
+        if s == -1:
+          rbits = -1
+          break
+        if s < 0:
+          let rb = -2 - s
+          ridx.add rb
+          rmask += rbit
+          inc rbits
+        else:
+          lidx.add lsrcloc[s]
+        rbit *= 2
+      if rbits < 0:
+        discard
+      elif rbits == 0:
+        discard
+      else:
+        for k in 0..<ridx.len:
+          if ridx[k] != ridx[0] + k:
+            echo ridx
+            qexError("recv buf indices not contiguous")
+        for k in 0..<lidx.len:
+          if lidx[k] != lidx[0] + k:
+            echo lidx
+            qexError("local buf indices not contiguous")
+        #si[n].recvDests[nrecv] = int32 s
+        if si[n].recvDests[nrecv] != io:
+          echo &"si[n].recvDests[nrecv] {si[n].recvDests[nrecv]} != io {io}"
+          qexError()
+        si[n].recvRemoteSrcs[nrecv] = ridx[0]
+        #if si[n].recvRemoteSrcs[nrecv] != ridx[0]:
+        #  echo &"si[n].recvRemoteSrcs[nrecv] {si[n].recvRemoteSrcs[nrecv]} != ridx[0] {ridx[0]}"
+        #  qexError()
+        if lidx.len>0:
+          si[n].recvLocalSrcs[nrecv] = lidx[0]
+        #  if si[n].recvLocalSrcs[nrecv] != lidx[0]:
+        #    echo &"si[n].recvLocalSrcs[nrecv] {si[n].recvLocalSrcs[nrecv]} != lidx[0] {lidx[0]}"
+        #    qexError()
+        #if (rmask and si[n].packmasks[0]) != 0:
+        #  echo &"rmask {rmask} and si[n].packmasks[0] {si[n].packmasks[0]} != 0"
+        #  qexError()
+        var imask = 0
+        while true:
+          if imask >= si[n].recvmasks.len:
+            echo &"si[n].recvmasks[{imask}] {si[n].recvmasks[imask]} != rmask {rmask}"
+            qexError()
+          if rmask == si[n].recvmasks[imask]: break
+          if si[n].recvmasks[imask] < 0:
+            si[n].recvmasks[imask] = rmask
+            si[n].recvbits[imask] = rbits
+            break
+          inc imask
+        #if (-2-si[n].sidx[io]) != nrecv: # reuse sidx for now, replace later
+        #  echo &"-2-si[n].sidx[io] {-2-si[n].sidx[io]} != nrecv {nrecv}"
+        #  qexError()
+        #si[n].sidx[io] = int32 -2 - nrecv
+        si[n].recvIndex[io] = RecvIdx(maskidx: uint32 imask, idx: uint32 nrecv)
+        inc nrecv
 
 proc makeShiftMultiQ*(si: openArray[ptr ShiftIndicesQ]; l: ptr LayoutQ;
                       disp: openArray[ptr cArray[cint]]; ndisp: cint) =

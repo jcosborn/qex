@@ -9,23 +9,6 @@ template newSeqOfCap[T](x: var seq[T], n: int) =
 template newSeqUninitialized[T](x: var seq[T], n: int) =
   x = newSeqUninitialized[T](n)
 
-proc adjust[T](i: int, x: openarray[T], b: int): int =
-  result = i
-  if i > 0:
-    let n = x.len
-    while result<n:
-      if x[result-1] div b != x[result] div b:
-        break
-      inc result
-
-proc splitThreads[T](x: openarray[T], b: int, nt,myt: int): tuple[a:int,b:int] =
-  let n = x.len
-  var i0 = (n*myt) div nt;
-  var i1 = (n*(myt+1)) div nt
-  i0 = adjust(i0, x, b)
-  i1 = adjust(i1, x, b)
-  result = (i0,i1)
-
 type
   RecvList* = object
     didx*: int32  # destination index on this rank

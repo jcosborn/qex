@@ -39,6 +39,14 @@ type
     beginOuter*: int
     endOuter*: int
 
+type
+  SendSite* = object
+    maskidx* {.bitsize:2.}: uint32
+    site* {.bitsize:30.}: uint32
+  RecvIdx* = object
+    maskidx* {.bitsize:1.}: uint32
+    idx* {.bitsize:31.}: uint32
+
 # FIXME: check int sizes
 type ShiftIndicesQ* = object
   gi*: ptr GatherIndices
@@ -59,20 +67,26 @@ type ShiftIndicesQ* = object
   recvRemoteSrcs*: ptr cArray[cint]
   nSendRanks*: cint
   sendRanks*: ptr cArray[cint]
-  sendRankSizes*: ptr cArray[cint]
+  sendRankSizes*: ptr cArray[int]
   sendRankSizes1*: ptr cArray[cint]
   sendRankOffsets*: ptr cArray[cint]
   sendRankOffsets1*: ptr cArray[cint]
-  nSendSites*: cint
+  nSendSites*: int
   nSendSites1*: cint
   #sendSites*: ptr cArray[cint]
-  sendSites*: seq[int32]
+  #sendSites*: seq[int32]
+  sendSites*: seq[SendSite]
+  recvIndex*: seq[RecvIdx]
   vv*: cint
   perm*: cint
   pack*: cint
   blend*: cint
-  packmasks*: array[2,int]
-  packbits*: array[2,int]
+  packmasks*: array[4,int]   # bit mask for indices in innerGeom to send
+  packbits*: array[4,int]    # number of bits in packmasks
+  sbufcount*: seq[int32]        # index offset in send buffer for sendSite
+  lbufcount*: seq[int32]        # index offset in local buffer for sendSite
+  recvmasks*: array[2,int]   # bit mask for indices in innerGeom that are received
+  recvbits*: array[2,int]    # number of bits in recvmasks
 
 type ShiftIndices* = ref object
   sq*: ShiftIndicesQ
@@ -80,7 +94,8 @@ type ShiftIndices* = ref object
   nRecvDests*: int
   nSendRanks*: int
   nSendSites*: int
-  sendSites*: seq[int32]
+  #sendSites*: seq[int32]
+  sendSites*: seq[SendSite]
   perm*: int
   pack*: int
   blend*: int

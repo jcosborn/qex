@@ -178,6 +178,23 @@ macro tFor*(index: untyped; slice: Slice; body: untyped): untyped =
     i1 = slice[2]
   result = tForX(index, i0, i1, body)
 
+proc adjust[T](i: int, x: openarray[T], b: int): int =
+  result = i
+  if i > 0:
+    let n = x.len
+    while result<n:
+      if x[result-1] div b != x[result] div b:
+        break
+      inc result
+
+proc splitThreads*[T](x: openarray[T], b: int, nt,myt: int): tuple[a:int,b:int] =
+  let n = x.len
+  var i0 = (n*myt) div nt;
+  var i1 = (n*(myt+1)) div nt
+  i0 = adjust(i0, x, b)
+  i1 = adjust(i1, x, b)
+  result = (i0,i1)
+
 discard """
 iterator `.|`*[S, T](a: S, b: T): T {.inline.} =
   mixin threadNum
