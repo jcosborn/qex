@@ -102,6 +102,7 @@ template startSB*(sb0: ShiftB; e: untyped) =
   if sb0.si.nSendRanks > 0:
     type F = numberType(sb0.T)
     let nv = sizeof(sb0.T) div sb0.size
+    #let maskall = (1 shl nv) - 1
     let ne = sb0.size div sizeof(F)
     let b = cast[ptr cArray[F]](sb0.sb.sq.sbuf)
     let l = cast[ptr cArray[F]](sb0.sb.lbuf)
@@ -109,18 +110,25 @@ template startSB*(sb0: ShiftB; e: untyped) =
       let sx = sb0.si.sendSites[i]
       var pack = sb0.si.sq.packmasks[sx.maskidx]
       var ix{.inject.} = int sx.site
-      #let ev = cast[ptr cArray[F]](e[ix])
-      let ev = cast[ptr cArray[F]](addr e)
-      var bi = ne * sb0.si.sq.sbufcount[i]
-      var li = ne * sb0.si.sq.lbufcount[i]
-      for j in 0..<ne:
-        for k in 0..<nv:
-          if pack.testBit(k):
-            b[][bi] = ev[][j*nv+k]
-            inc bi
-          else:
-            l[][li] = ev[][j*nv+k]
-            inc li
+      #if pack == maskall:
+      if false:
+        let ev = addr e
+        let bi = ne * sb0.si.sq.sbufcount[i]
+        let bb = cast[type(ev)](addr b[][bi])
+        bb[] := ev[]
+      else:
+        #let ev = cast[ptr cArray[F]](e[ix])
+        let ev = cast[ptr cArray[F]](addr e)
+        var bi = ne * sb0.si.sq.sbufcount[i]
+        var li = ne * sb0.si.sq.lbufcount[i]
+        for j in 0..<ne:
+          for k in 0..<nv:
+            if pack.testBit(k):
+              b[][bi] = ev[][j*nv+k]
+              inc bi
+            else:
+              l[][li] = ev[][j*nv+k]
+              inc li
     t0wait()
     if threadNum == 0:
       #echoRank "send: ", cast[ptr float32](sb0.sb.sq.sbuf)[]
