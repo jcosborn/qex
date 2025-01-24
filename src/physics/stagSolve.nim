@@ -64,7 +64,7 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
   case sp.backend
   of sbQex:
     tic("sbQex")
-    proc op(a,b: Field) =
+    proc opSolveXX(a,b: Field) =
       tic("solveXX>sbQex>op")
       threadBarrier()
       if parEven:
@@ -83,7 +83,7 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
       #var oap = (apply: op, applyPrecon: oppre)
       #cg.solve(oap, sp)
     #else:
-    var oa = (apply: op, precon: cpNone)
+    var oa = (apply: opSolveXX, precon: cpNone)
     cg.solve(oa, sp)
     toc("cg.solve")
     sp.calls = 1

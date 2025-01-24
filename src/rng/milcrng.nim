@@ -117,7 +117,7 @@ proc seed*(prn: var RngMilc6; sed,index: auto) =
   QMP_broadcast(ss.addr, sizeof(ss).csize_t)
   seedIndep(prn, ss, index)
 
-proc nextI(prn: var RngMilc6): uint32 {.inline.} =
+func nextI(prn: var RngMilc6): uint32 {.inline.} =
   ## internal routine to return next value
   let t = (((prn.r5 shr 7) or (prn.r6 shl 17)) xor
       ((prn.r4 shr 1) or (prn.r5 shl 23))) and MASK
@@ -131,6 +131,9 @@ proc nextI(prn: var RngMilc6): uint32 {.inline.} =
   let s = prn.ic_state * prn.multiplier + ADDEND
   prn.icState = s
   result = t xor ((s shr 8) and MASK)
+#func nextI(prn: var RngMilc6): uint32 {.inline.} =
+#  while result == 0:
+#    result = nextI0(prn)
 
 func skip*(prn: var RngMilc6, c = 1) =
   for i in 1..c:

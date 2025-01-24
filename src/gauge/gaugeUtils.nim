@@ -1381,6 +1381,12 @@ proc randomTAH*(x: Field, r: RNGField) =
     x.gaussian r
     x.projectTAH
 
+proc warmSU*(x: Field, s: float, r: var RNGField) =
+  x.randomTAH r
+  for i in x:
+    let t = s * x[i]
+    x[i] = exp(t)
+
 proc checkU*[F:Field](x: openArray[F]): tuple[avg,max:float] {.noinit.} =
   var a,b:float
   for mu in x.low..x.high:
@@ -1429,9 +1435,10 @@ proc warm*[F:Field](g: openArray[F], s: float, r: var RNGField) =
       g[mu] := (1-s) + s*g[mu]
       g[mu].projectU
     else:
-      g[mu].gaussian r
-      g[mu] := (1-s) + s*g[mu]
-      g[mu].projectSU
+      #g[mu].gaussian r
+      #g[mu] := (1-s) + s*g[mu]
+      #g[mu].projectSU
+      g[mu].warmSU s, r
 
 proc random*(g: array or seq) =
   var r = newRNGField(RngMilc6, g[0].l)

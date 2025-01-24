@@ -1,7 +1,7 @@
 # A bit of a lazy Hasenbusch "upgrade" to hisqhmc.nim
 import qex
 import mdevolve
-import times,macros,json,parseopt
+import times,macros,json,parseopt,sequtils
 import strformat,strutils,streams,os
 import gauge
 import layout
@@ -10,13 +10,8 @@ import algorithms/[integrator]
 import physics/[qcdTypes,stagSolve]
 
 export integrator
-
-const 
-  ReversibilityCheck {.booldefine.} = false
-  ReadInputs {.booldefine.} = false
-  WriteGauge {.booldefine.} = false
-  ReadRNG {.booldefine.} = false
-  WriteRNG {.booldefine.} = false
+export mdevolve
+export stagSolve
 
 const banner = """
 |---------------------------------------------------------------|
@@ -38,12 +33,12 @@ const
   recordMd = "<?xml version=\"1.0\"?>\n<note>RNG field</note>\n"
 
 const
-  ActionCGTol = 1e-20
-  ForceCGTol = 1e-12
-  ActionMaxCGIter = 10000
-  ForceMaxCGIter = 10000
-  ActionCGVerbosity = 1
-  ForceCGVerbosity = 1
+  ActionCGTol* = 1e-20
+  ForceCGTol* = 1e-12
+  ActionMaxCGIter* = 10000
+  ForceMaxCGIter* = 10000
+  ActionCGVerbosity* = 1
+  ForceCGVerbosity* = 1
 
 # Eqn. (A2) of arXiv:1004.0342; u0 = 1.0
 const
@@ -53,7 +48,7 @@ const
 let 
   # Read from file if ReadInputs = true
   defaultInputs = %* {
-    "lattice-geometry": [8,8,8,8],
+    "lattice-geometry": [8,8,8,16],
     "hmc": {
       "trajectory-length": 1.0,
       "serial-rng": "milc",
@@ -64,19 +59,19 @@ let
     },
     "action": {
       "beta": 12.0,
-      "mass": 0.1,
-      "hasenbusch-mass": 0.6,
+      "mass": 0.001,
+      "hasenbusch-mass": 0.2,
       "lepage": 0.0,
       "naik": 1.0,
       "boundary-conditions": "pppa"
     },
     "gauge": {
       "integrator": "2MN",
-      "steps": 15
+      "steps": 6
     },
     "fermion": {
       "integrator": "2MN",
-      "steps": 15
+      "steps": 2
     }
   }
 
@@ -98,10 +93,11 @@ type
   HisqHMCRoot[U] {.inheritable.} = object of RootObj
     tau: float
     hi,hf: float
-    trajs: int
+    baseFilename: string
+    trajs,traj0: int
     integrator: ParIntegrator
-    srng: SerialRNG
-    prng: ParallelRNG
+    srng*: SerialRNG
+    prng*: ParallelRNG
     p,f: seq[U]
   HisqHMC*[U,F,F0] = ref object of HisqHmcRoot[U]
     beta,mass,hmass: float
@@ -122,7 +118,7 @@ template FF(lo: Layout): untyped =
 template FF0(lo: Layout): untyped = 
   type(lo.ColorVector()[0])
 
-proc reunit(g: auto) =
+proc reunit*(g: auto) =
   tic()
   threads:
     let d = g.checkSU
@@ -223,19 +219,22 @@ proc newParallelRNG(lo: Layout; info: JsonNode): auto =
 proc readGauge(u: auto; fn: string) =
   if fileExists(fn):
     if 0 != u.loadGauge(fn): qexError "unable to read " & fn
-    else: reunit(u)
+    else: discard
+
+proc readGauge*(self: var HisqHMC; fn: string) = self.u.readGauge(fn)
+
+proc writeGauge[T](u: T; fn: string) =
+  if 0 != u.saveGauge(fn): qexError "unable to write " & fn
+
+proc writeGauge*(self: var HisqHMC; fn: string) = self.u.writeGauge(fn)
 
 proc getIntSeq(input: JsonNode): seq[int] = 
   result = newSeq[int]()
   for elem in input.getElems(): result.add elem.getInt()
 
-proc readParallelRNG(self: var HisqHMC; cmd: JsonNode) =
-  let tag = "parallel-rng-filename"
-  if cmd.hasKey(tag): self.prng.readRNG(cmd[tag].getStr())
+proc readSerialRNG*(self: var HisqHMC; fn: string) = self.srng.readRNG(fn)
 
-proc readSerialRNG(self: var HisqHMC; cmd: JsonNode) =
-  let tag = "serial-rng-filename"
-  if cmd.hasKey(tag): self.srng.readRNG(cmd[tag].getStr())
+proc readParallelRNG*(self: var HisqHMC; fn: string) = self.prng.readRNG(fn)
 
 proc setIntegrator(info: JsonNode; field: string): IntegratorProc =
   result = toIntegratorProc(info[field]["integrator"].getStr())
@@ -261,14 +260,15 @@ proc `$`*(self: HisqHMC): string =
 template newHisqHMC*(build: untyped): auto =
   let 
     cmd = readCMD()
-    info = case cmd.hasKey("json-path")
-      of true: readJSON(cmd["json-path"].getStr())
+    info = case cmd.hasKey("json")
+      of true: readJSON(cmd["json"].getStr())
       of false: defaultInputs
     lo = newLayout(info["lattice-geometry"].getIntSeq())
     fermionSteps {.inject.} = info["fermion"]["steps"].getInt()
     gaugeSteps {.inject.} = info["gauge"]["steps"].getInt()
     fermionIntegrator {.inject.} = info.setIntegrator("fermion")
     gaugeIntegrator {.inject.} = info.setIntegrator("gauge")
+    start {.inject.} = info["hmc"]["gauge-start"].getStr()
   var 
     integrator {.inject.}: ParIntegrator
     hisq {.inject.} = HisqHMC[lo.UU,lo.FF,lo.FF0]()
@@ -277,6 +277,7 @@ template newHisqHMC*(build: untyped): auto =
   (
     hisq.tau,
     hisq.trajs,
+    hisq.traj0,
     hisq.srng,
     hisq.prng,
     hisq.p,
@@ -284,13 +285,12 @@ template newHisqHMC*(build: untyped): auto =
   ) = (
     info["hmc"]["trajectory-length"].getFloat(),
     (if cmd.hasKey("ntraj"): cmd["ntraj"].getInt() else: 1),
+    (if cmd.hasKey("start"): cmd["start"].getInt() else: 0),
     newSerialRNG(info),
     lo.newParallelRNG(info),
     lo.newGauge(),
     lo.newGauge()
   )
-  hisq.readParallelRNG(cmd)
-  hisq.readSerialRNG(cmd)
 
   # Prepare HISQ
   let beta = info["action"]["beta"].getFloat()
@@ -330,15 +330,16 @@ template newHisqHMC*(build: untyped): auto =
     lo.ColorVector(),
     lo.ColorVector()
   )
-  case info["hmc"]["gauge-start"].getStr():
+  case start:
     of "cold","frozen","symmetric": hisq.u.unit()
     of "hot","random": 
       hisq.prng.random(hisq.u) 
       hisq.u.reunit()
-    else: hisq.u.readGauge(cmd["gauge-filename"].getStr())
+    else: discard
   hisq.stag = newStag3(hisq.su,hisq.sul)
 
   # Execute user commands and return result
+  template u: untyped {.inject.} = hisq.u
   build
   hisq.integrator = integrator
   hisq
@@ -350,7 +351,7 @@ proc uniform*(self: var SerialRNG): float32 =
     of MILC: result = self.milc.uniform()
     of MRG: result = self.mrg.uniform()
 
-proc readRNG*(self: var SerialRNG; fn: string) =
+proc readRNG(self: var SerialRNG; fn: string) =
   var file = newFileStream(fn, fmRead)
   if file.isNil: qexError "Was not able to read ", fn,  ". Exiting."
   else:
@@ -358,7 +359,7 @@ proc readRNG*(self: var SerialRNG; fn: string) =
       of MILC: discard file.readData(self.milc.addr, self.milc.sizeof)
       of MRG: discard file.readData(self.mrg.addr, self.mrg.sizeof)
 
-proc writeRNG*(self: var SerialRNG; fn: string) =
+proc writeRNG(self: var SerialRNG; fn: string) =
   var file = newFileStream(fn, fmWrite)
   if file.isNil: qexError "Unable to write to ", fn,  ". Exiting."
   else:
@@ -366,6 +367,8 @@ proc writeRNG*(self: var SerialRNG; fn: string) =
       of MILC: file.write self.milc
       of MRG: file.write self.mrg
   file.flush
+
+proc writeSerialRNG*(self: var HisqHMC; fn: string) = self.srng.writeRNG(fn)
 
 proc random*(self: var ParallelRNG; u: auto) =
   case self.generator:
@@ -377,7 +380,7 @@ proc warm*(self: var ParallelRNG; u: auto) =
     of MILC: warm(u, 0.5, self.milc)
     of MRG: warm(u, 0.5, self.mrg)
 
-proc readRNG*(self: var ParallelRNG; filename: string) =
+proc readRNG(self: var ParallelRNG; filename: string) =
   case self.generator:
     of MILC:
       var reader = self.milc.l.newReader(filename)
@@ -385,13 +388,15 @@ proc readRNG*(self: var ParallelRNG; filename: string) =
       reader.close()
     of MRG: qexError "MRG32k3a not currently supported for IO"
 
-proc writeRNG*(self: var ParallelRNG; filename: string) =
+proc writeRNG(self: var ParallelRNG; filename: string) =
   case self.generator:
     of MILC:
       var writer = self.milc.l.newWriter(filename, fileMd)
       writer.write(self.milc, recordMd)
       writer.close()
     of MRG: qexError "MRG32k3a not currently supported for IO"
+
+proc writeParallelRNG*(self: var HisqHMC; fn: string) = self.prng.writeRNG(fn)
 
 proc randomTAHGaussian(lu: auto; pRNG: auto) =
   threads:
@@ -513,14 +518,19 @@ proc evolve*(self: var HisqHMC) =
   self.integrator.evolve(self.tau)
   self.integrator.finish
 
-proc `^***`[S,T](shifter: var S; field: T): auto {.discardable.} = 
-  # Temporary fix to conflict between parallel layout & multiple shifts
-  for idx in 0..<3: 
-    case idx:
-      of 0: discard shifter ^* field
-      of 1: discard shifter ^* shifter.field
-      of 2: result = shifter ^* shifter.field
-      else: discard
+# Temporary fix to conflict between parallel layout & multiple shifts
+proc `^***`[T](shifter: auto; field: T): auto {.discardable.} = 
+  const n = field[0].len
+  var temp = field.newOneOf
+
+  proc replace() =
+    threads:
+      for s in field:
+        forO i, 0, n-1: temp[s][i] := shifter.field[s][i]
+
+  discard shifter ^* field
+  replace(); discard shifter ^* temp;
+  replace(); shifter ^* temp;
 
 proc fermionForce[S,T](
     f: auto; 
@@ -550,6 +560,10 @@ proc fermionForce[S,T](
     ht3[mu] = newShifter(hp,mu,3)
     discard t3[mu] ^* p
     discard ht3[mu] ^* hp
+    #t3[mu] = newShifter(p,mu,1)
+    #ht3[mu] = newShifter(hp,mu,1)
+    #discard t3[mu] ^*** p
+    #discard ht3[mu] ^*** hp
 
   # 1. Dslash
   const n = p[0].len
@@ -589,16 +603,32 @@ proc fermionForce[S,T](
 
 proc sq(input: float): float = input*input
 
+proc forceSolve[T](
+    stag: auto; 
+    psi: auto; 
+    phi: T; 
+    mass: float; 
+    sp: var SolverParams
+  ) =
+  var varphi = phi.l.ColorVector()
+  stag.solveEE(varphi,phi,mass,sp)
+  threads:
+    varphi.even := 4.0*varphi
+    threadBarrier()
+    stagD2(stag.so,psi,stag.g,varphi,0,0)
+    threadBarrier()
+    psi.even := varphi
+
 proc fermionForce*(self: var HisqHMC) =
   var 
     psi = self.u[0].l.ColorVector()
     hpsi = self.u[0].l.ColorVector()
   let 
     smearedForce = self.params.smearRephase(self.u,self.su,self.sul)
-    ffac = 1.0/self.hmass
-    hfac = (self.hmass-self.mass)/self.mass
-  self.stag.solve(psi,self.phi,self.hmass,self.spf)
-  self.stag.solve(hpsi,self.hphi,self.mass,self.spf)
+    ffac = 0.25
+    hfac = 0.25*(self.hmass.sq-self.mass.sq)
+  self.stag.forceSolve(psi,self.phi,self.hmass,self.spf)
+  self.stag.forceSolve(hpsi,self.hphi,self.mass,self.spf)
   self.f.fermionForce(smearedForce,psi,hpsi,self.u,ffac,hfac)
 
 proc gaugeForce*(self: var HisqHMC) = self.gc.gaugeForce(self.u,self.f)
@@ -653,7 +683,7 @@ proc finish*(self: var HisqHMC): bool {.discardable.} =
   self.finish: result = accepted
 
 template sample*(self: var HisqHMC; work: untyped) =
-  for traj in 0..<hmc.trajs: 
+  for traj in hmc.traj0..<hmc.trajs+hmc.traj0: 
     let trajectory {.inject.} = traj
     work
 
@@ -668,10 +698,19 @@ proc fermionForceCheck*(self: var HisqHMC; eps: float): float =
   result = eps*contract(self.p,self.f)
 
 if isMainModule:
+  # This is an example of the kind of program
+  # that one could write using this code as a module
   qexInit()
   echo banner
 
-  # Proc for calculate plaquette
+  let 
+    saveFreq = 5
+    measPlaq = true
+    measPoly = true
+    measCond = true
+    baseFilename = "checkpoint"
+
+  # Proc for calculating plaquette
   proc plaquette[T](u: T) =
     let
       pl = u.plaq
@@ -681,6 +720,34 @@ if isMainModule:
       ptot = 0.5*(ps+pt)
     echo "MEASplaq ss: ",ps,"  st: ",pt,"  tot: ",ptot
   
+  # Proc for calculating Polyakov loop
+  proc polyakov[T](u: T) =
+    let pg = u[0].l.physGeom
+    var pl = newseq[typeof(u.wline @[1])](pg.len)
+    for i in 0..<pg.len:
+      pl[i] = u.wline repeat(i+1, pg[i])
+    let
+      pls = pl[0..^2].sum / float(pl.len-1)
+      plt = pl[^1]
+    echo "MEASploop spatial: ",pls.re," ",pls.im," temporal: ",plt.re," ",plt.im
+  
+  # Proc for measuring chiral condensate
+  proc condensate(hmc: auto) =
+    var
+      pbpsp: SolverParams
+      tmpa = hmc.stag.g[0].l.ColorVector()
+      tmpb = hmc.stag.g[0].l.ColorVector()
+    let 
+      mass = hmc.mass
+      vol = hmc.stag.g[0].l.physVol.float
+    pbpsp.r2req = ActionCGTol
+    pbpsp.maxits = ActionMaxCGIter
+    threads: tmpa.u1(hmc.prng.milc)
+    hmc.stag.solve(tmpb,tmpa,mass,pbpsp)
+    threads:
+      let pbp = tmpb.norm2
+      threadMaster: echo "MEASpbp mass ",mass," : ",mass*pbp/vol
+
   # Construct HMC object
   var hmc = newHisqHMC:
     # Gauge link update
@@ -688,7 +755,7 @@ if isMainModule:
 
     # Momentum update
     proc mdvAll(dtau: openarray[float]) =
-      let (dtauG,dtauF) = (dtau[0],-0.5*dtau[1])
+      let (dtauG,dtauF) = (dtau[0],dtau[1])
       if (dtauG != 0.0): hisq.updateMomentumGauge(dtauG)
       if (dtauF != 0.0): hisq.updateMomentumFermion(dtauF)
 
@@ -701,6 +768,16 @@ if isMainModule:
       fermionIntegrator(steps = fermionSteps, V = Vf, T = T)
     )
 
+    # Read information from disk
+    if start == "read":
+      let fn = baseFilename & "_" & $(hisq.traj0)
+      hisq.readGauge(fn & ".lat")
+      hisq.readSerialRNG(fn & ".serialRNG")
+      hisq.readParallelRNG(fn & ".parallelRNG")
+      u.plaquette
+      u.polyakov
+      u.reunit
+
   # Do HMC
   echo $(hmc)
   hmc.sample:
@@ -711,6 +788,13 @@ if isMainModule:
       case accepted:
         of true: echo "ACC: ", output
         of false: echo "REJ: ", output
-      u.plaquette
+      if measPlaq: u.plaquette
+      if measPoly: u.polyakov
+      if measCond: hmc.condensate
+      if (saveFreq > 0) and (((trajectory + 1) mod saveFreq) == 0):
+        let fn = baseFilename & "_" & $(trajectory + 1)
+        hmc.writeGauge(fn & ".lat")
+        hmc.writeSerialRNG(fn & ".serialRNG")
+        hmc.writeParallelRNG(fn & ".parallelRNG")
 
   qexFinalize()
