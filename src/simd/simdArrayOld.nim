@@ -348,6 +348,7 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
   map011(T, L, sin, sin)
   map011(T, L, cos, cos)
   map011(T, L, acos, acos)
+  map011(T, L, tanh, tanh)
 
   map021(T, L, atan2, atan2)
   map021(T, L, min, min)
