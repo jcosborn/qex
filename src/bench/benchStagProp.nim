@@ -60,11 +60,11 @@ threads:
 var sp = initSolverParams()
 sp.maxits = 10
 s.solve(v2, v1, mass, sp)
-sp.maxits = comm.broadcast int(1.0+(0.1*sp.iterations*maxtime)/sp.seconds)
+sp.maxits = comm.broadcast int(10.0+(0.1*sp.iterations*maxtime)/sp.seconds)
 #echo "maxits: ", sp.maxits
 sp.resetStats
 s.solve(v2, v1, mass, sp)
-sp.maxits = comm.broadcast int(1.0+(sp.iterations*maxtime)/sp.seconds)
+sp.maxits = comm.broadcast int(10.0+(sp.iterations*maxtime)/sp.seconds)
 #echo "maxits: ", sp.maxits
 sp.resetStats
 resetTimers()
@@ -94,11 +94,11 @@ var s3 = newStag3(g3)
 sp.resetStats
 sp.maxits = 10
 s3.solve(v2, v1, mass, sp)
-sp.maxits = comm.broadcast int(1.0+(0.1*sp.iterations*maxtime)/sp.seconds)
+sp.maxits = comm.broadcast int(10.0+(0.1*sp.iterations*maxtime)/sp.seconds)
 #echo "maxits: ", sp.maxits
 sp.resetStats
 s3.solve(v2, v1, mass, sp)
-sp.maxits = comm.broadcast int(1.0+(sp.iterations*maxtime)/sp.seconds)
+sp.maxits = comm.broadcast int(10.0+(sp.iterations*maxtime)/sp.seconds)
 #echo "maxits: ", sp.maxits
 sp.resetStats
 resetTimers()
