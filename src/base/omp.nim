@@ -13,9 +13,9 @@ when defined(noOpenmp):
 else:
   static: echo "Using OpenMP"
   when existsEnv("OMPFLAG"):
-    const ompFlag = getEnv("OMPFLAG")
+    const ompFlag {.strDefine.} = getEnv("OMPFLAG")
   else:
-    const ompFlag = "-fopenmp"
+    const ompFlag {.strDefine.} = "-fopenmp"
   {. passC: ompFlag .}
   {. passL: ompFlag .}
   {. pragma: omp, header:"omp.h" .}
