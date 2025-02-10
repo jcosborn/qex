@@ -11,8 +11,8 @@ jobs:
     strategy:
       matrix:
         mpi-impl: [openmpi, mpich]
-        #nim-branch: [version-2-0, version-2-2, devel]
-        nim-branch: [v2.0.12, v2.2.0]
+        nim-branch: [version-2-0, version-2-2, devel]
+        #nim-branch: [v2.0.14, v2.2.2]
         fuel-compat: [0, 1]
       fail-fast: false
     name: nim-${{ matrix.nim-branch }}-${{ matrix.mpi-impl }}-FUELCompat:${{ matrix.fuel-compat }}
