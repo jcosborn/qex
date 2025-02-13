@@ -40,8 +40,8 @@ proc symStapleDeriv*(f1, f2: auto;  # output
   tm2 := g2.adj * g1 * s.field  # ∪†1  s1
   tm2 += c.adj * g1 * s2.field  # ∩3   s1
   threadBarrier()
-  discard sm1 ^* tm1
-  discard sm2 ^* tm2
+  discard sm1 ^*! tm1
+  discard sm2 ^*! tm2
   threadBarrier()
   f1 += g2 * s1.field * s.field.adj  # ∪1   g1
   f1 += c * s1.field * s2.field.adj  # ∩†3  g1
