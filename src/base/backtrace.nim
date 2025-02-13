@@ -8,7 +8,7 @@ proc backtrace_symbols(buffer: ptr pointer, size: cint): ptr UncheckedArray[cstr
 
 proc print_trace =
   #void *array[10];
-  const nmax = 10
+  const nmax = 20
   var arr: array[nmax, pointer]
   #char **strings;
 
@@ -22,6 +22,7 @@ proc print_trace =
 
 proc sigtrace(sig: cint) {.noconv.} =
   print_trace()
+  quit()
 
 proc setTrace* =
   c_signal(SIGSEGV, sigtrace)

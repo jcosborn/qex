@@ -9,7 +9,11 @@ export shiftX
 
 import qlayout
 
-# partition x into n blocks with geometry nx
+var noSplitInnerList = newSeq[int](0)
+proc noSplitInnerDim*(d: int) =
+  noSplitInnerList.add d
+
+# partition x into n blocks with geometry nx, only works with powers of 2
 # dist=0: prefer to split already split direction
 # dist=1: split unsplit directions first
 proc partitionGeom[T](lx,nx:var openArray[T]; x:openArray[T]; n,dist:int) =
@@ -19,7 +23,7 @@ proc partitionGeom[T](lx,nx:var openArray[T]; x:openArray[T]; n,dist:int) =
   var ww = n
   while ww > 1:
     var k = x.len-1
-    while (lx[k] and 1) > 0:
+    while (lx[k] and 1) > 0 or (k in noSplitInnerList):
       k.dec
       if k < 0:
         echo "not enough 2's in partitioned geom:"
@@ -27,7 +31,7 @@ proc partitionGeom[T](lx,nx:var openArray[T]; x:openArray[T]; n,dist:int) =
         echo " /", n
         quit(-1)
     for i in countdown(k-1,0):
-      if (lx[i] and 1) == 0:
+      if (lx[i] and 1) == 0 and (k notin noSplitInnerList):
         if dist == 0:
           if lx[i]>lx[k] or (lx[i]==lx[k] and nx[i]>nx[k]): k = i
         else:
@@ -242,14 +246,21 @@ proc coord*(l: Layout, coord: ptr cint, ri: tuple[rank,index:cint]) =
     #layoutCoordQ(l.lq.addr, cast[ptr cArray[cint]](coord), li.addr)
     layoutCoordQ(l.lq.addr, toOpenArray(ca,0,l.nDim-1), li.addr)
 
+# from physical index to local rank and index
 proc rankIndex*(lo: Layout, lex: int): tuple[rank,index:int] =
   let n = lo.nDim
-  var c = newSeq[cint](n)
   var k = lex
   for i in 0..<n:
-    c[i] = (k mod lo.physGeom[i]).cint
+    lo.temp[i] = (k mod lo.physGeom[i]).cint
     k = k div lo.physGeom[i]
-  rankIndex(lo, c)
+  rankIndex(lo, lo.temp)
+
+proc physIndex*(lo: Layout, rank,index: int): int =
+  lo.coord(lo.temp, rank, index)
+  let n = lo.nDim
+  result = 0
+  for i in countdown(n-1,0):
+    result = (result*lo.physGeom[i]) + lo.temp[i]
 
 proc rankFromRankCoords*(l: Layout, coords: ptr cArray): int =
   for i in 0..<l.nDim:
@@ -291,6 +302,36 @@ proc paritySubset*(s: var Subset; l: Layout; par: int) =
     s.layoutSubset(l, "e")
   else:
     s.layoutSubset(l, "o")
+proc timesliceSubsetsRange*(l: Layout, i0,i1: int): seq[Subset] =
+  # find timeslice subsets within a range of outer sites [i0,i1] inclusive
+  doAssert(l.innerGeom[^1] == 1)
+  let nt = l.physGeom[^1]
+  result.newSeq(nt)
+  var x = newSeq[int32](l.nDim)
+  for i in 0..<nt:
+    result[i].lowOuter = l.nSites
+    result[i].highOuter = 0
+  for i in i0..i1:
+    let k = i * l.V
+    let t = l.coords[^1][k]
+    result[t].lowOuter = min(result[t].lowOuter, i)
+    result[t].highOuter = max(result[t].highOuter, i)
+  for i in 0..<nt:
+    var a = result[i].lowOuter
+    var b = result[i].highOuter
+    if a <= b:
+      inc b
+    else:
+      a = 0
+      b = 0
+    result[i].lowOuter = a
+    result[i].highOuter = b
+    result[i].low = a * l.V
+    result[i].high = b * l.V
+proc timesliceSubsets*(l: Layout): array[2,seq[Subset]] =
+  result[0] = l.timesliceSubsetsRange(0, l.nEvenOuter-1)
+  result[1] = l.timesliceSubsetsRange(l.nEvenOuter, l.nSitesOuter-1)
+
 template `len`*(s:Subset):untyped = s.high-s.low
 template `lenOuter`*(s:Subset):untyped = s.highOuter-s.lowOuter
 

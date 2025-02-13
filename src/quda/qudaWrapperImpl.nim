@@ -111,7 +111,8 @@ proc qudaSetup*(l: Layout, verbosity = QUDA_SILENT): Layout[1] =
       let coords = cast[ptr UncheckedArray[cint]](coords0)
       let r = pl[].rankFromRankCoords(coords)
       r.cint
-    initCommsGridQuda(qudaParam.rankGeom.len.cint, qudaParam.rankGeom[0].addr,
+    initCommsGridQuda(qudaParam.rankGeom.len.cint,
+                      cast[ptr ConstInt](qudaParam.rankGeom[0].addr),
                       qudaCommsMap, unsafeAddr(l))
     qudaInit(qudaParam.initArg)
     qudaParam.layout = l.physGeom.newLayout 1

@@ -1,4 +1,5 @@
 #!/bin/bash
+pwd="$PWD"
 
 usage() {
   s="------------------------------------------------------------------------"
@@ -9,7 +10,7 @@ usage() {
   echo "options:"
   echo " -h          (this help message)"
   echo " stable      (install latest stable version)"
-  echo " <version>   (install named version, e.g. 0.16.0)"
+  echo " <version>   (install named version, e.g. 2.2.0)"
   #echo " master      (install master branch tracking version)"
   echo " devel       (install devel branch tracking version)"
   echo " default stable|<version>|master|devel"
@@ -112,7 +113,7 @@ install() {
 }
 
 realpath2() {
-  [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
+  [[ $1 = /* ]] && echo "$1" || echo "$pwd/${1#./}"
 }
 
 installAll() {
@@ -163,35 +164,39 @@ if [ $branch = "master" -o $branch = "devel" ]; then
   git pull
 fi
 
-if [ -e csources ]; then
-  cd csources
-  git pull
-  cd ..
-else
-  if [ $branch = "master" -o $branch = "devel" ]; then
-    git clone --depth 1 https://github.com/nim-lang/csources
-  else
-    cb="v1"
-    case $ver in
-      0.9.*|0.10.*|0.11.*|0.12.*) cb="v0.9.4";;
-      0.13.*|0.14.*|0.15.0) cb="v0.13.0";;
-      0.15.*) cb="v0.15.2";;
-      0.16.*) cb="v0.16.0";;
-      0.17.*) cb="v0.17.0";;
-      0.18.*) cb="v0.18.0";;
-      0.19.*) cb="v0.19.0";;
-      0.*|1.0.*|1.1.*|1.2.*|1.3.*|1.4.*) cb="v0.20.0";;
-    esac
-    echo "Installing csources '$cb'"
-    case $cb in
-      v1)
-	git clone --depth 1 https://github.com/nim-lang/csources_v1
-	ln -s csources_v1 csources;;
-      *)
-	git clone -b $cb --depth 1 https://github.com/nim-lang/csources;;
-    esac
-  fi
-fi
+#if [ -e csources ]; then
+#  cd csources
+#  git pull
+#  cd ..
+#else
+#  if [ $branch = "master" -o $branch = "devel" ]; then
+#    git clone --depth 1 https://github.com/nim-lang/csources
+#  else
+#    cb="v2"
+#    case $ver in
+#      0.9.*|0.10.*|0.11.*|0.12.*) cb="v0.9.4";;
+#      0.13.*|0.14.*|0.15.0) cb="v0.13.0";;
+#      0.15.*) cb="v0.15.2";;
+#      0.16.*) cb="v0.16.0";;
+#      0.17.*) cb="v0.17.0";;
+#      0.18.*) cb="v0.18.0";;
+#      0.19.*) cb="v0.19.0";;
+#      0.*|1.0.*|1.1.*|1.2.*|1.3.*|1.4.*) cb="v0.20.0";;
+#      1.5.*|1.6.*) cb="v1";;
+#    esac
+#    echo "Installing csources '$cb'"
+#    case $cb in
+#      v2)
+#	git clone --depth 1 https://github.com/nim-lang/csources_v2
+#	ln -s csources_v2 csources;;
+#      v1)
+#	git clone --depth 1 https://github.com/nim-lang/csources_v1
+#	ln -s csources_v1 csources;;
+#      *)
+#	git clone -b $cb --depth 1 https://github.com/nim-lang/csources;;
+#    esac
+#  fi
+#fi
 #cd csources && sh build.sh && cd ..
 
 #bin/nim c koch
@@ -199,7 +204,8 @@ fi
 
 #./koch tools
 #./koch nimble
-./build_all.sh
+echo "Running build_all.sh"
+./build_all.sh 2>&1 |tee build.log
 
 if [ $ver = "stable" ]; then
   ver=`getVer nim`

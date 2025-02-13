@@ -69,7 +69,7 @@ func generate*[T:RandomGenerator](d: UniformRealOpenOpen, g: var T): float =
 ########################## normal #####################################
 
 type
-  NormalAlgorithm = enum
+  NormalAlgorithm* = enum
     naBoxMuller, naPolar, naCDF
   NormalDistribution* = object
     mean: float
