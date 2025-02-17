@@ -16,7 +16,7 @@ proc symStaple*(s: auto, alp: float, g1: auto, g2: auto,
   s += alp * ( g1 * s2.field * s1.field.adj )
   s += alp * sm.field
   let nc = g1[0].nrows
-  let siteFlops = float(nc*nc*((6*nc+2*(nc-1))*5+4*2))
+  let siteFlops = float((4*(6*nc+2*(nc-1))+2*4)*nc*nc)
   toc("symStaple", flops=siteFlops*g1.l.nSites)
 
 proc symStapleDeriv*(f1, f2: auto;  # output
@@ -39,8 +39,10 @@ proc symStapleDeriv*(f1, f2: auto;  # output
   tm1 := g1.adj * c * s1.field  # ∩†2  s2
   tm2 := g2.adj * g1 * s.field  # ∪†1  s1
   tm2 += c.adj * g1 * s2.field  # ∩3   s1
-  discard sm1 ^* tm1
-  discard sm2 ^* tm2
+  threadBarrier()
+  discard sm1 ^*! tm1
+  discard sm2 ^*! tm2
+  threadBarrier()
   f1 += g2 * s1.field * s.field.adj  # ∪1   g1
   f1 += c * s1.field * s2.field.adj  # ∩†3  g1
   f2 += g1 * s.field * s1.field.adj  # ∪†2  g2

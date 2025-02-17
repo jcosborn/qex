@@ -1,10 +1,4 @@
-import base
-import layout
-import gauge
-#import strUtils
-import fat7l
-import smearutil
-
+import base, layout, gauge, fat7l, smearutil
 export PerfInfo
 
 const keepProj {.boolDefine.} = true
@@ -83,7 +77,7 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
     for mu in 0..<4:
       for nu in 0..<4:
         if nu!=mu:
-          discard s1[mu][nu] ^* gf[mu]
+          discard s1[mu][nu] ^*! gf[mu]
 
   let
     alp1 = coef.alpha1 / 2.0
@@ -118,8 +112,10 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
               else:
                 lp1.proj l1x[a,b]
                 lp2.proj l1x[mu,b]
-              discard s1[nu][mu] ^* lp1
-              discard s1[mu][a] ^* lp2
+              threadBarrier()
+              discard s1[nu][mu] ^*! lp1
+              discard s1[mu][a] ^*! lp2
+              threadBarrier()
               symStaple(l2x[mu,nu], alp2, lp1, lp2,
                         s1[nu][mu], s1[mu][a], tm1, sm1[a])
           when keepProj:
@@ -136,8 +132,10 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
           else:
             lp1.proj l2x[nu,mu]
             lp2.proj l2x[mu,nu]
-          discard s1[nu][mu] ^* lp1
-          discard s1[mu][nu] ^* lp2
+          threadBarrier()
+          discard s1[nu][mu] ^*! lp1
+          discard s1[mu][nu] ^*! lp2
+          threadBarrier()
           symStaple(flx[mu], alp3, lp1, lp2,
                     s1[nu][mu], s1[mu][nu], tm1, sm1[nu])
       fl[mu].proj flx[mu]
@@ -180,9 +178,11 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
             else:
               lp1.proj l2x[nu,mu]
               lp2.proj l2x[mu,nu]
-            discard s1[nu][mu] ^* lp1
-            discard s1[mu][nu] ^* lp2
-            discard fs[nu] ^* fc[mu]
+            threadBarrier()
+            discard s1[nu][mu] ^*! lp1
+            discard s1[mu][nu] ^*! lp2
+            discard fs[nu] ^*! fc[mu]
+            threadBarrier()
             symStapleDeriv(fl2[nu,mu], fl2[mu,nu],
                            lp1, lp2, s1[nu][mu], s1[mu][nu],
                            fc[mu], fs[nu], tm1, tm2, sm1[nu], sm1[mu])
@@ -214,9 +214,11 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
                 else:
                   lp1.proj l1x[a,b]
                   lp2.proj l1x[mu,b]
-                discard s1[nu][mu] ^* lp1
-                discard s1[mu][a] ^* lp2
-                discard fs[a] ^* fl2[mu,nu]
+                threadBarrier()
+                discard s1[nu][mu] ^*! lp1
+                discard s1[mu][a] ^*! lp2
+                discard fs[a] ^*! fl2[mu,nu]
+                threadBarrier()
                 symStapleDeriv(fl1[a,b], fl1[mu,b],
                                lp1, lp2, s1[nu][mu], s1[mu][a],
                                fl2[mu,nu], fs[a], tm1, tm2, sm1[a], sm1[mu])
@@ -230,7 +232,7 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
               fl1[mu,nu].projDeriv(l1[mu,nu], l1x[mu,nu], fl1[mu,nu])
             else:
               fl1[mu,nu].projDeriv(l1x[mu,nu], fl1[mu,nu])
-            discard s1[mu][nu] ^* gf[mu]
+            discard s1[mu][nu] ^*! gf[mu]
       # link gf → l1, f ← fl1
       for mu in 0..<4:
         for nu in 0..<4:
@@ -341,8 +343,6 @@ proc deriv*(coef: HypCoefs, gf: auto, fl: auto, info: var PerfInfo) =
 
 when isMainModule:
   import qex
-  import physics/qcdTypes
-  import gauge
   qexInit()
   #var defaultGaugeFile = "l88.scidac"
   let defaultLat = @[8,8,8,8]
