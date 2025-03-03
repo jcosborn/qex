@@ -269,7 +269,19 @@ template newHisqHMC*(build: untyped): auto =
     info = case cmd.hasKey("json")
       of true: readJSON(cmd["json"].getStr())
       of false: defaultInputs
-    lo = newLayout(info["lattice-geometry"].getIntSeq())
+    latLayout = info["lattice-geometry"].getIntSeq()
+    lo = case info.hasKey("rank-geometry")
+       of true:
+         case info.hasKey("simd-geometry"):
+           of true:
+             newLayout(
+               latLayout,
+               VLEN,
+               info["rank-geometry"].getIntSeq(),
+               info["simd-geometry"].getIntSeq()
+             )
+           of false: newLayout(latLayout,info["rank-geometry"].getIntSeq())
+       of false: newLayout(latLayout)
     fermionSteps {.inject.} = info["fermion"]["steps"].getInt()
     gaugeSteps {.inject.} = info["gauge"]["steps"].getInt()
     fermionIntegrator {.inject.} = info.setIntegrator("fermion")
@@ -792,12 +804,10 @@ if isMainModule:
     let 
       (VAll,T) = newIntegratorPair(mdvAll,mdt)
       (V,Vf) = (VAll[0],VAll[1])
-    #[
-    integrator = newParallelEvolution(
-      gaugeIntegrator(steps = gaugeSteps, V = V, T = T),
-      fermionIntegrator(steps = fermionSteps, V = Vf, T = T)
-    )
-    ]#
+    #integrator = newParallelEvolution(
+    #  gaugeIntegrator(steps = gaugeSteps, V = V, T = T),
+    #  fermionIntegrator(steps = fermionSteps, V = Vf, T = T)
+    #)
 
     # Read information from disk
     if start == "read":
