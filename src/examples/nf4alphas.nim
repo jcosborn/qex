@@ -82,7 +82,6 @@ var hmc = newHisqHMC:
   # Momentum update
   proc mdvAll(dtau: openarray[float]) =
     let (dtauG,dtauF) = (dtau[0],dtau[1])
-    echo dtau
     if (dtauG != 0.0): hisq.updateMomentumGauge(dtauG)
     if (dtauF != 0.0): hisq.updateMomentumFermion(dtauF)
 
