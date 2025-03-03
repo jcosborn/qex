@@ -99,7 +99,7 @@ type
     hi,hf: float
     baseFilename: string
     trajs,traj0: int
-    integrator: ParIntegrator
+    integrator: Integrator
     srng*: SerialRNG
     prng*: ParallelRNG
     p,f: seq[U]
@@ -276,7 +276,7 @@ template newHisqHMC*(build: untyped): auto =
     gaugeIntegrator {.inject.} = info.setIntegrator("gauge")
     start {.inject.} = info["hmc"]["gauge-start"].getStr()
   var 
-    integrator {.inject.}: ParIntegrator
+    integrator {.inject.}: Integrator
     hisq {.inject.} = HisqHMC[lo.UU,lo.FF,lo.FF0]()
 
   # Prepare HMC
@@ -792,10 +792,12 @@ if isMainModule:
     let 
       (VAll,T) = newIntegratorPair(mdvAll,mdt)
       (V,Vf) = (VAll[0],VAll[1])
+    #[
     integrator = newParallelEvolution(
       gaugeIntegrator(steps = gaugeSteps, V = V, T = T),
       fermionIntegrator(steps = fermionSteps, V = Vf, T = T)
     )
+    ]#
 
     # Read information from disk
     if start == "read":
