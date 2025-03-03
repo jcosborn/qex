@@ -82,17 +82,16 @@ var hmc = newHisqHMC:
   # Momentum update
   proc mdvAll(dtau: openarray[float]) =
     let (dtauG,dtauF) = (dtau[0],dtau[1])
+    echo dtau
     if (dtauG != 0.0): hisq.updateMomentumGauge(dtauG)
     if (dtauF != 0.0): hisq.updateMomentumFermion(dtauF)
 
-  # Construct integrator according to mdEvolve scheme
+  # Construct nested integrator
   let 
-    (VAll,T) = newIntegratorPair(mdvAll,mdt)
-    (V,Vf) = (VAll[0],VAll[1])
-  integrator = newParallelEvolution(
-    gaugeIntegrator(steps = gaugeSteps, V = V, T = T),
-    fermionIntegrator(steps = fermionSteps, V = Vf, T = T)
-  )
+    (V,T) = newIntegratorPair(mdvAll,mdt)
+    VG = gaugeIntegrator(steps = gaugeSteps, V = V[0], T = T)
+    VF = V[1]
+  integrator = fermionIntegrator(steps = fermionSteps, V = VF, T = VG)
 
   # Read information from disk
   if start == "read":
