@@ -344,6 +344,7 @@ template map1(T,N,op: untyped): untyped {.dirty.} =
 map1(SimdSD4, 4, sin)
 map1(SimdSD4, 4, cos)
 map1(SimdSD4, 4, acos)
+map1(SimdSD4, 4, tanh)
 
 template map2(T,N,op: untyped): untyped {.dirty.} =
   proc op*(x: T, y: T): T {.inline,noInit.} =
