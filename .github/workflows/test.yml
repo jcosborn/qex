@@ -93,7 +93,7 @@ jobs:
         CLEANUPJOBS=./finalizeTests ./runtests.sh
     - name: make bench
       working-directory: qex
-      run: make bench
+      run: make /bench
     - name: benchLinalg
       working-directory: qex
       run: bin/benchLinalg
