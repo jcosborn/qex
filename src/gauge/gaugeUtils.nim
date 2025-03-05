@@ -368,7 +368,10 @@ proc plaq3*[T](g: seq[T]): auto =
     for mu in 1..<nd:
       for nu in 0..<mu:
         tic()
-        m += (t[mu]^*g[nu]) * (t[nu]^*g[mu]).adj
+        #m += (t[mu]^*g[nu]) * (t[nu]^*g[mu]).adj
+        discard t[mu]^*g[nu]
+        discard t[nu]^*g[mu]
+        m += t[mu].field * t[nu].field.adj
         #echo mu, " ", nu, " ", trace(m)/nc
         toc("plaq3 mul")
     toc("plaq3 work")

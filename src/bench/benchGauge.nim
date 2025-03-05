@@ -2,18 +2,19 @@ import qex
 import physics/qcdTypes
 import gauge
 import parseUtils
-import times
+#import times
 import macros
 import gauge/hypsmear
+import commonBench
 
 proc checkMem =
-  echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
-       getTotalMem())
-  echo GC_getStatistics()
+  #echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
+  #     getTotalMem())
+  #echo GC_getStatistics()
   GC_fullCollect()
-  echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
-       getTotalMem())
-  echo GC_getStatistics()
+  #echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
+  #     getTotalMem())
+  #echo GC_getStatistics()
 macro exp2string(x:untyped):auto =
   var s = repr symToIdent x
   let n = skipWhitespace(s)
@@ -22,6 +23,7 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
   let vol = lo.nSites.float
   let flops = vol * fps.float
   let bytes = vol * bps.float
+#[
   let nrep = 1 + int(1e8/flops)
   #echo nrep
   var t0 = epochTime()
@@ -34,6 +36,10 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
     toc(exp2string(eqn))
   var t1 = epochTime()
   let dt = t1 - t0
+]#
+  let br = benchSingle:
+    eqn
+  let (nrep,dt) = (br.reps,br.secs)
   let dtn = dt / nrep.float
   let mf = (nrep.float*flops)/(1e6*dt)
   let mb = (nrep.float*bytes)/(1e6*dt)
@@ -43,7 +49,8 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
 proc test(lat: auto) =
   #var scale = 1
   #var lat = lat0*scale
-  var lo = newLayout(lat)
+  #var lo = newLayout(lat)
+  var lo = (try: newLayout(lat) except: return)
   let nd = lo.nDim
   let np = (nd*(nd-1)) div 2
   let dbw2 = DBW2 0.7796
@@ -80,10 +87,11 @@ proc test(lat: auto) =
   resetTimers()
 
   bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
-    var pl2 = plaq2(g)
-
-  bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
     var pl = plaq(g)
+  bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
+    var pl2 = plaq2(g)
+  bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
+    var pl3 = plaq3(g)
 
   bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
     var ga = gaugeAction1(g)
@@ -122,7 +130,7 @@ proc test(lat: auto) =
   bench(61632, 61632):  # numbers not correct
     coef.smear(g, sg, info)
 
-  echoTimers()
+  echoProf()
   resetTimers()
 
 qexInit()

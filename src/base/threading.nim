@@ -372,7 +372,34 @@ template threadSum01*(a: auto) = threadSum01A(a)
 #template threadSum01*(a: auto) = threadSum01T(a)
 template threadSum0*(a: auto) = threadSum01(a)
 
-# threadMax0 FIXME
+template threadMax01A*[T](a: T) =
+  ## max value with result on thread 0, atomic version
+  if threadNum==0:
+    tic("threadMax01A")
+    inc threadLocals.share[0].counter
+    let tbar0 = threadLocals.share[0].counter
+    for b in 1..<numThreads:
+      let pc = threadLocals.share[b].counter.addr
+      while true:
+        var t {.noInit.}: type(pc[])
+        ompAtomicRead: t = pc[]
+        if t >= tbar0: break
+      var p{.noInit.}: pointer
+      threadAtomicRead:
+        p = threadLocals.share[b].p
+      a = max(a, cast[ptr T](p)[])
+    toc("max")
+    twait0()
+    toc("twait0")
+  else:
+    threadAtomicWrite:
+      threadLocals.share[threadNum].p = a.addr
+    let t = threadLocals.share[threadNum].counter + 1
+    threadAtomicWrite:
+      threadLocals.share[threadNum].counter = t
+    twait0()
+template threadMax01*(a: auto) = threadMax01A(a)
+template threadMax0*(a: auto) = threadMax01(a)
 
 template threadBroadcast1A*[T](a: T) =
   if threadNum==0:
@@ -459,6 +486,10 @@ macro threadSum2*(a:varargs[untyped]):auto =
     `a0`
   result.add(m)
   #echo result.treeRepr
+
+template threadMax*(a: auto) =
+  threadMax0(a)
+  threadBroadcast(a)
 
 type ThreadSingle*[T] = distinct T
 template `[]`*[T](x: ThreadSingle[T]): auto = T(x)
