@@ -2,7 +2,7 @@
 
 ## Description of QEX fork:
 
-This is my personal fork of the Quantum EXpressions lattice field theory framework. I use it both for production running of project that I am currently involved in and for testing new ideas out. 
+This is my personal fork of the Quantum EXpressions lattice field theory framework. I use it both for production running of project that I am currently involved in and for testing new ideas out, as I no longer support it. Nonetheless, it should run efficiently; see the instructions below for a description of how to get it running. 
 
 - The code under [src/stagg_pv_hmc](https://github.com/ctpeterson/qex/tree/devel/src/stagg_pv_hmc) was used for a determination of the Nf = 8 and 12 beta-function. It contains both software for Hamiltonian Monte Carlo and gradient flow. It is outdated and I don't recommend using it for production running.
 
