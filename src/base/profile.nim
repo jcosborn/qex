@@ -20,7 +20,8 @@ template `+=`*(r: var PerfInfo, x: PerfInfo) =
   r.flops += x.flops
   r.secs += x.secs
 proc `$`*(pi: PerfInfo): string =
-  result = system.`$`(pi)
+  #result = system.`$`(pi)
+  result = &"PerfInfo(count: {pi.count} flops: {pi.flops.round.int:d} secs: {pi.secs:.9f})"
   result &= &" {1e-9*pi.flops/pi.secs:.2f} Gflops"
 
 type TicType* = distinct int64
