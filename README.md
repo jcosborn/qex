@@ -2,9 +2,9 @@
 
 ## Description of QEX fork:
 
-This is my personal fork of the Quantum EXpressions lattice field theory framework. I use it both for production running of project that I am currently involved in and for testing new ideas out, as I no longer support it. Nonetheless, it should run efficiently; see the instructions below for a description of how to get it running. 
+This is my personal fork of the Quantum EXpressions lattice field theory framework. I use it both for production running of project that I am currently involved in and for testing new ideas out.
 
-- The code under [src/stagg_pv_hmc](https://github.com/ctpeterson/qex/tree/devel/src/stagg_pv_hmc) was used for a determination of the Nf = 8 and 12 beta-function. It contains both software for Hamiltonian Monte Carlo and gradient flow. It is outdated and I don't recommend using it for production running.
+- The code under [src/stagg_pv_hmc](https://github.com/ctpeterson/qex/tree/devel/src/stagg_pv_hmc) was used for a determination of the Nf = 8 and 12 beta-function. It contains both software for Hamiltonian Monte Carlo and gradient flow. It is outdated and I don't recommend using it for production running, as I no longer support it. Nonetheless, it should run efficiently; see the instructions below for a description of how to get it running. 
 
 - The code under [src/mcmc](https://github.com/ctpeterson/qex/tree/devel/src/mcmc) was my attempt to build a comprehensive, yet simple to use, software suite for running Hamiltonian Monte Carlo simulations of staggered fermions. See [src/examples/fxpvyhmc.nim](https://github.com/ctpeterson/qex/blob/devel/src/examples/fxpvyhmc.nim) for an example of how it can be used. It deploys both unsmeared and nHYP-smeared staggered fermions with or without rooting; however, the unsmeared parts of the code are not tested. If you'd like to use this for production, please contact me via email so that I can help you check to make sure it is running that way it should for your specific purpose, particularly with respect to the integrators, which must be run with specific constraints to ensure their reliability. My contact information is below. The multi-shift solver was written by me and can be found at [src/solvers/cgm.nim](https://github.com/ctpeterson/qex/blob/devel/src/examples/fxpvyhmc.nim). I'd like to return to refactoring this code one day.
 
