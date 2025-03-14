@@ -163,7 +163,7 @@ template gradientFlow*(u: auto; info: JsonNode; body: untyped) =
     for (dt,maxFlt) in zip(dts,maxFlts):
       gc.gradientFlow(v,dt):
         tau = flowTime + lastMaxFlt
-        tau > maxFlt: break
+        if tau > maxFlt: break
         measurements = v.flowMeasurements(loops,tau)
         body
       lastMaxFlt = maxFlt
