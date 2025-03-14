@@ -169,7 +169,7 @@ proc newSerialRNG*(generator: string; seed: int): SerialRng =
 
 #[ For construction of HisqHMC object ]#
 
-proc readJSON(fn: string): JsonNode = fn.parseFile
+proc readJSON*(fn: string): JsonNode = fn.parseFile
 
 proc readCMD*: JsonNode = 
   var cmd = initOptParser()
@@ -221,7 +221,7 @@ proc newParallelRNG(lo: Layout; info: JsonNode): auto =
     info["hmc"]["parallel-seed"].getInt()
   )
 
-proc readGauge(u: auto; fn: string) =
+proc readGauge*(u: auto; fn: string) =
   if fileExists(fn):
     if 0 != u.loadGauge(fn): qexError "unable to read " & fn
     else: discard
@@ -234,7 +234,7 @@ proc writeGauge[T](u: T; fn: string) =
 
 proc writeGauge*(self: var HisqHMC; fn: string) = self.u.writeGauge(fn)
 
-proc getIntSeq(input: JsonNode): seq[int] = 
+proc getIntSeq*(input: JsonNode): seq[int] = 
   result = newSeq[int]()
   for elem in input.getElems(): result.add elem.getInt()
 

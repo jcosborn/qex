@@ -1,0 +1,32 @@
+{
+  "lattice-geometry": [16,16,16,32],
+  "hmc": {
+    "trajectory-length": 1.0,
+    "serial-rng": "milc",
+    "parallel-rng": "milc",
+    "serial-seed": 123456789,
+    "parallel-seed": 123456789,
+    "gauge-start": "read"
+  },
+  "action": {
+    "beta": 20.0,
+    "mass": 0.0,
+    "hasenbusch-mass": 0.2,
+    "lepage": 0.0,
+    "naik": 1.0,
+    "boundary-conditions": "pppa"
+  },
+  "gauge": {
+    "integrator": "2MN",
+    "steps": 3
+  },
+  "fermion": {
+    "integrator": "2MN",
+    "steps": 11
+  },
+  "checkpoint": {"frequency": 10},
+  "measurements": {
+    "plaquette": {},
+    "polyakov": {}
+  }
+}
