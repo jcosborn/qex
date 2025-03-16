@@ -69,18 +69,26 @@ template numberType*(x:Field):untyped = numberType(x[0])
 #macro fieldUnop*(o: static[FieldOps], x: SomeField): auto =
 #  result = quote do:
 #    FieldUnop[FieldOps(`o`),type(`x`)](f1: `x`)
-template fieldUnop*(o: FieldOps, x: SomeField): untyped =
-  FieldUnop[FieldOps(o),type(x)](f1: x)
-macro fieldAddSub*(sx:static[int],x:auto):auto =
+#template fieldUnop*(o: FieldOps, x: SomeField): auto =
+#  FieldUnop[FieldOps(o),type(x)](f1: x)
+template fieldUnop*[X:SomeField](o: static FieldOps, x: X): auto =
+  FieldUnop[o,X](f1: x)
+#proc fieldUnop*[X:SomeField](o: static FieldOps, x: X): auto =
+#  FieldUnop[o,X](f1: x)
+macro fieldAddSub*(sx:static int,x:auto):auto =
   result = quote do:
     FieldAddSub[(a:`sx`),tuple[a:type(`x`)]](field:(a:`x`))
   #echo result.repr
-macro fieldAddSub*(sx:static[int],x:auto,
-                   sy:static[int],y:auto):auto =
-  result = quote do:
-    FieldAddSub[(a:`sx`,b:`sy`),tuple[a:type(`x`),b:type(`y`)]](
-      field:(a:`x`,b:`y`) )
-  #echo result.repr
+#macro fieldAddSub*(sx:static[int],x:auto,
+#                   sy:static[int],y:auto):auto =
+#  result = quote do:
+#    FieldAddSub[(a:`sx`,b:`sy`),tuple[a:type(`x`),b:type(`y`)]](
+#      field:(a:`x`,b:`y`) )
+#  #echo result.repr
+template fieldAddSub*[X,Y](sx:static[int],x:X,sy:static[int],y:Y):auto =
+  FieldAddSub[(a:sx,b:sy),tuple[a:X,b:Y]](field:(a:x,b:y))
+#proc fieldAddSub*[X,Y](sx:static int,x:X,sy:static int,y:Y):auto =
+#  FieldAddSub[(a:sx,b:sy),tuple[a:X,b:Y]](field:(a:x,b:y))
 macro fieldMul*(x:SomeField,y:SomeField2):auto =
   result = quote do:
     FieldMul[tuple[a:type(`x`),b:type(`y`)]](field:(a:`x`,b:`y`))
@@ -107,9 +115,9 @@ macro fieldShift*(x:SomeField, d,l:int):auto =
   #echo result.repr
 template adjImpl*(x: SomeField): untyped =
   fieldUnop(foAdj, x)
-template toSingleImpl*(x: SomeField): untyped =
+template toSingleImpl*(x: SomeField): auto =
   fieldUnop(foToSingle, x)
-template toDoubleImpl*(x: SomeField): untyped =
+template toDoubleImpl*(x: SomeField): auto =
   fieldUnop(foToDouble, x)
 
 template eval*[F:Field](x: typedesc[F]): typedesc =
