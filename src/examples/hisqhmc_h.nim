@@ -817,7 +817,7 @@ if isMainModule:
       hisq.readParallelRNG(fn & ".parallelRNG")
       u.plaquette
       u.polyakov
-      u.reunit
+      #u.reunit # configs already reunitarized before save
 
   # Do HMC
   echo $(hmc)
