@@ -103,7 +103,7 @@ type
     srng*: SerialRNG
     prng*: ParallelRNG
     p,f: seq[U]
-  HisqHMC*[U,F,F0] = ref object of HisqHmcRoot[U]
+  HisqHMC*[U,F,F0] = ref object of HisqHMCRoot[U]
     beta,mass,hmass: float
     bcs: string
     u,u0: seq[U]
@@ -114,11 +114,11 @@ type
     params: HisqCoefs
     spa,spf: SolverParams
     perf: PerfInfo
-    jsonInfo: JsonNode
+    jsonInfo*: JsonNode
 
-template UU(lo: Layout): untyped = 
+template UU(lo: Layout): untyped =
   type(lo.ColorMatrix())
-template FF(lo: Layout): untyped = 
+template FF(lo: Layout): untyped =
   type(lo.ColorVector())
 template FF0(lo: Layout): untyped = 
   type(lo.ColorVector()[0])
@@ -707,11 +707,18 @@ template finish*(self: var HisqHMC; input: untyped) =
   # Get information accessible to user
   var 
     info {.inject.} = (dH:0.0,expdH:0.0,rnd:0.0)
+    metropolis = true
     accepted {.inject.}: bool
   info.dH = self.hf - self.hi
   info.expdH = exp(-info.dH)
-  info.rnd = self.srng.uniform
-  accepted = info.rnd <= info.expdH
+  if self.jsonInfo["hmc"].hasKey("metropolis"):
+    metropolis = self.jsonInfo["hmc"]["metropolis"].getBool()
+  if metropolis:
+    info.rnd = self.srng.uniform
+    accepted = info.rnd <= info.expdH
+  else:
+    info.rnd = 0
+    accepted = true
   template u: untyped {.inject.} = self.u
 
   # Do metropolis & have user do what they will
