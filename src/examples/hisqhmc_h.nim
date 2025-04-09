@@ -76,6 +76,26 @@ let
     "fermion": {
       "integrator": "2MN",
       "steps": 10
+    },
+    "measurements": {
+      "plaquette": {},
+      "polyakov": {},
+      "chiral-condensate": {"sources": 10},
+      "gradient-flow": {
+        "C0p0": {
+          "action": "Wilson",
+          "time-increments": [0.02,0.1],
+          "maximum-flow-times": [0.04,0.14],
+          "path": "./"
+        },
+        "C0p083": {
+          "action": "Rectangle",
+          "cr": 0.083,
+          "time-increments": [0.02,0.1],
+          "maximum-flow-times": [0.04,0.14],
+          "path": "./"
+        }
+      }
     }
   }
 

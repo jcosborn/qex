@@ -1,9 +1,12 @@
 import qex
 import examples/[hisqhmc_h]
+import gaugeflowutils
 import sequtils,parseutils,strutils
 import parseopt,json
 
-const banner = """
+const 
+  logStyle = "KS_nHYP_FA"
+  banner = """
 |---------------------------------------------------------------|
  Quantum EXpressions (QEX)
 
@@ -26,7 +29,9 @@ threads: echo "thread ", threadNum, "/", numThreads
 
 let
   prompt = readCMD()
-  baseFilename = prompt["ensemble"].getStr()
+  baseFilename = case prompt.hasKey("ensemble"):
+    of true: prompt["ensemble"].getStr()
+    of false: "test"
 
 # Proc for calculating plaquette
 proc plaquette[T](u: T) =
@@ -74,6 +79,17 @@ proc condensate(hmc: auto) =
       pbptoto += pbpo/float(nsources)
   echo "MEASpbp (avg) mass: ",mass," pbpe: ",pbptote," pbpo: ",pbptoto
 
+# Gradient flow
+proc flow[T](hmc: auto; u: T; traj: int) =
+  var js = hmc.jsonInfo["measurements"]["gradient-flow"]
+  for flow in js.keys(): 
+    let path = case js[flow].hasKey("path")
+      of true: js[flow]["path"].getStr()
+      of false: "./"
+    js[flow]["filename"] = %* (path & flow & "_" & $traj & ".log")
+  u.gradientFlow(js): 
+    f.write(measurements.formatMeasurements(style = logStyle) & "\n")
+
 # Construct HMC object
 var hmc = newHisqHMC:
   # Gauge link update
@@ -117,6 +133,7 @@ hmc.sample:
       if hmc.jsonInfo["measurements"].hasKey("plaquette"): u.plaquette
       if hmc.jsonInfo["measurements"].hasKey("polyakov"): u.polyakov
       if hmc.jsonInfo["measurements"].hasKey("chiral-condensate"): hmc.condensate
+      if hmc.jsonInfo["measurements"].hasKey("gradient-flow"): hmc.flow(u,trajectory)
     if hmc.jsonInfo.hasKey("checkpoint"):
       let saveFreq = hmc.jsonInfo["checkpoint"]["frequency"].getInt()
       if (saveFreq > 0) and (((trajectory + 1) mod saveFreq) == 0):
