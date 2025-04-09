@@ -81,14 +81,24 @@ proc condensate(hmc: auto) =
 
 # Gradient flow
 proc flow[T](hmc: auto; u: T; traj: int) =
-  var js = hmc.jsonInfo["measurements"]["gradient-flow"]
-  for flow in js.keys(): 
-    let path = case js[flow].hasKey("path")
-      of true: js[flow]["path"].getStr()
-      of false: "./"
-    js[flow]["filename"] = %* (path & flow & "_" & $traj & ".log")
-  u.gradientFlow(js): 
-    f.write(measurements.formatMeasurements(style = logStyle) & "\n")
+  let ijs = hmc.jsonInfo["measurements"]["gradient-flow"]
+  var
+    js = parseJSON("{}")
+    runFlow = false
+  for flow in ijs.keys():
+    let frequency = case ijs[flow].hasKey("frequency")
+      of true: ijs[flow]["frequency"].getInt()
+      of false: 1
+    if (((traj + 1) mod frequency) == 0):
+      let path = case ijs[flow].hasKey("path")
+        of true: ijs[flow]["path"].getStr()
+        of false: "./"
+      runFlow = true
+      js[flow] = ijs[flow]
+      js[flow]["filename"] = %* (flow & "_" & $(traj+1) & ".log")
+  if runFlow:
+    u.gradientFlow(js): 
+      f.write(measurements.formatMeasurements(style = logStyle) & "\n")
 
 # Construct HMC object
 var hmc = newHisqHMC:
