@@ -26,6 +26,7 @@ type
     #r2sum*: float
     #r2max*: float
     r2*: RunningStat
+# ?split into SolverRequest, SolverFlags(?), SolverPerf?
 
 template finalIterations*(sp: SolverParams): untyped = sp.iterations
 template `finalIterations=`*(sp: var SolverParams, x: int): untyped =
