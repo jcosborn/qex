@@ -31,6 +31,7 @@
   "measurements": {
     "plaquette": {},
     "polyakov": {},
+    "chiral-condensate": {"sources": 10},
     "gradient-flow": {
       "symanzik": {
         "action": "Rectangle",
