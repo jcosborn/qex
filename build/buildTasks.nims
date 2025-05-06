@@ -260,7 +260,7 @@ proc addTest(runscript:var seq[string], f, outdir:string) =
   let runner = qexDir/"tests/extra"/name/"run"
   if fileExists(runner): rj = runner
   runscript.add("echo Running: "&exe)
-  runscript.add(rj&" "&exe&" || failed=\"$failed "&name&"\"")
+  runscript.add(rj&" ./"&exe&" || failed=\"$failed "&name&"\"")  # use " ./"&exe for /usr/bin/env
 
 proc buildTests() =
   var runscript = @["#!/bin/sh",
