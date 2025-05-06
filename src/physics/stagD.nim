@@ -509,7 +509,7 @@ proc stagD2eeN*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
 proc stagPhase*(g:openArray[Field], phases:openArray[int]) =
   let l = g[0].l
   for mu in 0..<4:
-    tfor i, 0..<l.nSites:
+    for i in l.sites:
       var s = 0
       for k in 0..<4:
         s += (phases[mu] shr k) and l.coords[k][i].int
