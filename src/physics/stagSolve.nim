@@ -83,6 +83,35 @@ proc stagSolveCgls*(s: Staggered; r,x: Field; m: SomeNumber; sp: var SolverParam
     var oa = (apply: opSolveXXAdj, applyAdj: opSolveXX)
     cgls.solve(oa, sp)
 
+proc solveXXQex*(s: Staggered; r,x: Field; m: SomeNumber; sp: var SolverParams;
+                 parEven = true) =
+  when true:
+    proc opSolveXX(a,b: Field) =
+      tic("solveXX>sbQex>op")
+      threadBarrier()
+      if parEven:
+        stagD2ee(s.se, s.so, a, s.g, b, m*m)
+        toc("stagD2ee")
+      else:
+        stagD2oo(s.se, s.so, a, s.g, b, m*m)
+        toc("stagD2oo")
+      #threadBarrier()
+    var cg = newCgState(r, x)
+    if parEven:
+      sp.subset.layoutSubset(r.l, "even")
+    else:
+      sp.subset.layoutSubset(r.l, "odd")
+    #if precon:
+      #var oap = (apply: op, applyPrecon: oppre)
+      #cg.solve(oap, sp)
+    #else:
+    var oa = (apply: opSolveXX, precon: cpNone)
+    cg.solve(oa, sp)
+    #toc("cg.solve")
+  else:
+    stagSolveCgls(s, r, x, m, sp)
+    #toc("cgls.solve")
+
 proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
               parEven = true) =
   tic("solveXX")
@@ -94,32 +123,19 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
   case sp.backend
   of sbQex:
     tic("sbQex")
-    when true:
-      proc opSolveXX(a,b: Field) =
-        tic("solveXX>sbQex>op")
-        threadBarrier()
-        if parEven:
-          stagD2ee(s.se, s.so, a, s.g, b, m*m)
-          toc("stagD2ee")
-        else:
-          stagD2oo(s.se, s.so, a, s.g, b, m*m)
-          toc("stagD2oo")
-        #threadBarrier()
-      var cg = newCgState(r, x)
-      if parEven:
-        sp.subset.layoutSubset(r.l, "even")
-      else:
-        sp.subset.layoutSubset(r.l, "odd")
-      #if precon:
-        #var oap = (apply: op, applyPrecon: oppre)
-        #cg.solve(oap, sp)
-      #else:
-      var oa = (apply: opSolveXX, precon: cpNone)
-      cg.solve(oa, sp)
-      toc("cg.solve")
+    if sp0.sloppySolve == SloppyNone:
+      solveXXQex(s, r, x, m, sp, parEven)
     else:
-      stagSolveCgls(s, r, x, m, sp)
-      toc("cgls.solve")
+      var ss = toSingle(s)
+      var rs = toSingle(type r).new(r.l)
+      var xs = toSingle(type x).new(x.l)
+      threads:
+        rs := 0
+        xs := x
+      solveXXQex(ss, rs, xs, m, sp, parEven)
+      threads:
+        r := rs
+    toc("solveXXQex")
     sp.calls = 1
     sp.seconds = getElapsedTime()
     let flops = (s.g.len*4*72+60)*r.l.nEven*sp.iterations
@@ -353,13 +369,13 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
     echo &"stagSolve b2: {b2:.6g}  r2: {r2/b2:.6g}  r2stop: {r2stop:.6g}"
 
   var y = newOneOf(x)
-  var ys: toSingle(type y)
-  var rs: toSingle(type r)
-  var ss: toSingle(type s)
-  if sp0.sloppySolve != SloppyNone:
-    ys.new(y.l)
-    rs.new(r.l)
-    ss = toSingle(s)
+  #var ys: toSingle(type y)
+  #var rs: toSingle(type r)
+  #var ss: toSingle(type s)
+  #if sp0.sloppySolve != SloppyNone:
+  #  ys.new(y.l)
+  #  rs.new(r.l)
+  #  ss = toSingle(s)
   var sp = sp0
   sp.resetStats()
   dec sp.verbosity
@@ -369,14 +385,14 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
     if sp.maxits <= 0: break
     sp.r2req = r2stop / r2;
 
-    if sp0.sloppySolve != SloppyNone:
-      threads:
-        rs := r
-      solveInner(ss, ys, rs, m, sp, r2e, r2o)
-      threads:
-        y := ys
-    else:
-      solveInner(s, y, r, m, sp, r2e, r2o)
+    #if sp0.sloppySolve != SloppyNone:
+    #  threads:
+    #    rs := r
+    #  solveInner(ss, ys, rs, m, sp, r2e, r2o)
+    #  threads:
+    #    y := ys
+    #else:
+    solveInner(s, y, r, m, sp, r2e, r2o)
 
     threads:
       x += y
