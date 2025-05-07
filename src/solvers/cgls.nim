@@ -32,8 +32,6 @@ proc newCglsState*[T1,T2](x,b1: T1; b2: T2): CglsState[T1,T2] =
   result.shift = 0.0
   result.reset
 
-template verb(n: int; body: auto) {.dirty.} =
-  if sp.verbosity>=n: body
 #[
 template subset(body: auto) {.dirty.} =
   onNoSync(sp.subset):
@@ -49,9 +47,6 @@ proc setup*(cs0: var CglsState, op: auto) =
   threads:
     cs.b1sq = cs.b1.norm2
     cs.b2sq = cs.b2.norm2
-  verb(1):
-    echo("b1 norm2: ", cs.b1sq)
-    echo("b2 norm2: ", cs.b2sq)
 
   threads:
     cs.x := 0
@@ -92,9 +87,14 @@ proc setup*(cs0: var CglsState, op: auto) =
 proc solve*(state: var CglsState; op: auto; sp: var SolverParams) =
   mixin apply
   tic()
+  template verb(n: int; body: auto) =
+    if sp.verbosity>=n: body
 
   if state.b1sq<0:  # first call
     state.setup(op)
+  verb(1):
+    echo("CGLS b1 norm2: ", state.b1sq)
+    echo("CGLS b2 norm2: ", state.b2sq)
 
   var
     r1 = state.r1
@@ -144,10 +144,10 @@ proc solve*(state: var CglsState; op: auto; sp: var SolverParams) =
       threadBarrier()
       op.applyAdj(r1, r2)
       threadBarrier()
-      if b1sq > 0.0:
-        r1 += b1
       if shift != 0.0:
         r1 -= shift * x
+      if b1sq > 0.0:
+        r1 += b1
 
       let r1sq0 = r1.norm2
       if threadNum==0:

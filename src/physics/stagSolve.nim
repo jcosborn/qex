@@ -85,7 +85,8 @@ proc stagSolveCgls*(s: Staggered; r,x: Field; m: SomeNumber; sp: var SolverParam
 
 proc solveXXQex*(s: Staggered; r,x: Field; m: SomeNumber; sp: var SolverParams;
                  parEven = true) =
-  when true:
+  #when true:
+  if not boolParam("cgls"):
     proc opSolveXX(a,b: Field) =
       tic("solveXX>sbQex>op")
       threadBarrier()
@@ -109,7 +110,7 @@ proc solveXXQex*(s: Staggered; r,x: Field; m: SomeNumber; sp: var SolverParams;
     cg.solve(oa, sp)
     #toc("cg.solve")
   else:
-    stagSolveCgls(s, r, x, m, sp)
+    stagSolveCgls(s, r, x, m, sp, parEven)
     #toc("cgls.solve")
 
 proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
@@ -126,6 +127,8 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
     if sp0.sloppySolve == SloppyNone:
       solveXXQex(s, r, x, m, sp, parEven)
     else:
+      let r2save = sp.r2req
+      sp.r2req = max(r2save, 1e-12)
       var ss = toSingle(s)
       var rs = toSingle(type r).new(r.l)
       var xs = toSingle(type x).new(x.l)
@@ -135,6 +138,7 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
       solveXXQex(ss, rs, xs, m, sp, parEven)
       threads:
         r := rs
+      sp.r2req = r2save
     toc("solveXXQex")
     sp.calls = 1
     sp.seconds = getElapsedTime()
@@ -262,6 +266,7 @@ proc solveReconR(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
   let r2stop = sp.r2req * b2
   let r2stop2 = 0.5 * r2stop
   var r2stope = (if b2o <= r2stop2: r2stop-b2o else: r2stop2)
+  #echo "b2e: ", b2e, "  r2stope: ", r2stope
   if b2e > r2stope:
     var y = newOneOf(x)
     threads:
@@ -277,6 +282,7 @@ proc solveReconR(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
     toc("reconstruct")
     return
   var r2stopo = (if b2e <= r2stop2: r2stop-b2e else: r2stop2)
+  #echo "b2o: ", b2o, "  r2stopo: ", r2stopo
   if b2o > r2stopo:
     var y = newOneOf(x)
     threads:
@@ -366,7 +372,7 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
       r2o = r2ot
   r2 = r2e + r2o
   if sp0.verbosity>1:
-    echo &"stagSolve b2: {b2:.6g}  r2: {r2/b2:.6g}  r2stop: {r2stop:.6g}"
+    echo &"stagSolve b2: {b2:.6g}  r2/b2: {r2/b2:.6g}  r2stop: {r2stop:.6g}"
 
   var y = newOneOf(x)
   #var ys: toSingle(type y)
@@ -631,10 +637,10 @@ when isMainModule:
   #if myRank==0:
   #  v1{0}[0] := 1
   #  #v1{2*1024}[0] := 1
-  echo v1.norm2
+  echo "v1 norm2: ", v1.norm2
 
   var s = newStag(g)
-  var m = floatParam("m", 0.01)
+  var mass = floatParam("m", 0.01)
   var sp = newSolverParams()
   sp.verbosity = intParam("verb", 2)
   sp.subset.layoutSubset(lo, "all")
@@ -643,12 +649,12 @@ when isMainModule:
 
   proc test =
     v2 := 0
-    s.solve(v2, v1, m, sp)
+    s.solve(v2, v1, mass, sp)
     threads:
-      s.D(v3, v2, m)
+      s.D(v3, v2, mass)
       v1 := 0
     resetTimers()
-    s.solve(v1, v3, m, sp)
+    s.solve(v1, v3, mass, sp)
     threads:
       r := v1 - v2
       echo "err2: ", r.norm2
@@ -656,7 +662,7 @@ when isMainModule:
       v1 := 0
     resetTimers()
     #precon = true
-    s.solve(v1, v3, m, sp)
+    s.solve(v1, v3, mass, sp)
     threads:
       r := v1 - v2
       echo "err2: ", r.norm2
