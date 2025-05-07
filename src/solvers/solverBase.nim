@@ -1,5 +1,5 @@
 #import base,
-import layout, strformat, stats
+import layout, strformat, stats, base/params
 export stats
 
 type
@@ -52,7 +52,7 @@ proc init*(sp: var SolverParams) =
   sp.backend = sbQex
   if defined(qudaDir): sp.backend = sbQuda
   if defined(gridDir): sp.backend = sbGrid
-  sp.sloppySolve = SloppyNone
+  sp.sloppySolve = intParam("sloppy", 2).SloppyType
   sp.usePrevSoln = false
   sp.verbosity = 1
   sp.subsetName = "all"

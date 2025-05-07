@@ -115,7 +115,10 @@ macro fieldShift*(x:SomeField, d,l:int):auto =
   #echo result.repr
 template adjImpl*(x: SomeField): untyped =
   fieldUnop(foAdj, x)
+template toSingleImpl*[F:Field](x: typedesc[F]): typedesc =
+  Field[F.V,toSingle(F.T)]
 template toSingleImpl*(x: SomeField): auto =
+  #static: echo $x.type
   fieldUnop(foToSingle, x)
 template toDoubleImpl*(x: SomeField): auto =
   fieldUnop(foToDouble, x)
@@ -124,9 +127,9 @@ template eval*[F:Field](x: typedesc[F]): typedesc =
   Field[F.V,eval(type F.T)]
 template eval*[F:FieldObj](x: typedesc[F]): typedesc =
   FieldObj[F.V,eval(type F.T)]
-template evalType*[F:Field](x: typedesc[FieldUnop[foToSingle,F]]): typedesc =
+template eval*[F:Field](x: typedesc[FieldUnop[foToSingle,F]]): typedesc =
   mixin toSingle
-  Field[F.V,eval(toSingle(type F.T))]
+  Field[F.V,toSingle(eval(type F.T))]
 
 proc new*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) =
   # remember to change newFieldArray if the following changes
@@ -149,6 +152,11 @@ template l*(x: FieldUnop): untyped = x.f1.l
 proc newOneOf*(x: FieldUnop): auto =
   var r: evalType(x)
   r.new(x.l)
+  r
+proc newOneOf*(x: Subsetted): auto =
+  var r: type(x)
+  r.field.new(x.field.l)
+  r.subset = x.subset
   r
 template new*(x: typedesc[Field], l: Layout): untyped =
   newField(l, x.T)
@@ -372,18 +380,19 @@ iterator items*(l:Layout):int {.inline.} =
   itemsI(0, n)
 iterator sites*(l:Layout):int {.inline.} =
   let n = l.nSites
-  itemsI(0, n, VLEN)
+  itemsI(0, n, l.V)
 iterator sites*(f:Field):int {.inline.} =
   let n = f.l.nSites
-  itemsI(0, n, VLEN)
+  itemsI(0, n, f.l.V)
 iterator items*(s:Subset):int {.inline.} =
   let n0 = s.lowOuter
   let n1 = s.highOuter
   itemsI(n0, n1)
 iterator sites*(s:Subset):int {.inline.} =
+  let v = s.high div s.highOuter
   let n0 = s.low
   let n1 = s.high
-  itemsI(n0, n1, VLEN)
+  itemsI(n0, n1, v)
 #iterator all*(x:Field):int {.inline.} =
 #  let n = x.l.nSitesOuter
 #  itemsI(0, n)
@@ -410,7 +419,7 @@ iterator sites*(x: Subsetted): int {.inline.} =
   let n0 = s.low
   let n1 = s.high
   #echo "n0: ", n0, " n1: ", n1
-  itemsI(n0, n1, VLEN)
+  itemsI(n0, n1, x.field.l.V)
 iterator items*(x:FieldAddSub):int {.inline.} =
   let n = x.field[0].l.nSitesOuter
   itemsI(0, n)
@@ -812,6 +821,16 @@ template onNoSync*(s:Subset; body:untyped):untyped =
 
 #template assign*(x:var Field; y:Shifted):untyped =
 #  shift(x, y.dir, y.len, y.field)
+
+template isWrapper*(x: seq[Field]): bool = false
+proc toSingleImpl*[F:Field](x: seq[F]): auto =
+  mixin toSingle
+  let n = x.len
+  var r = newSeq[toSingle(F)](n)
+  for i in 0..<n:
+    r[i].new(x[0].l)
+    r[i] := x[i]
+  r
 
 when isMainModule:
   import qex

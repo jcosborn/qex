@@ -32,6 +32,7 @@ template doIndexed[T](x: T): untyped =
   else:
     x
 
+template toSingleImpl*(x: typedesc[Simd]): typedesc = Simd[toSingle(x[])]
 template toPrec*(x: Simd, y: typedesc[float32]): untyped = toSingle(x)
 template toPrec*(x: Simd, y: typedesc[float64]): untyped = toDouble(x)
 

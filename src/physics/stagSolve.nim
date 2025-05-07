@@ -5,9 +5,9 @@ import layout
 import field
 import stagD
 export stagD
-import solvers/bicgstab
-import solvers/gcr
-import solvers/cgm
+#import solvers/bicgstab
+import solvers/[solverBase,cg,cgm,cgls,gcr]
+export solverBase
 import maths
 import quda/qudaWrapper
 import grid/Grid
@@ -54,6 +54,35 @@ proc solveEO*(s: Staggered; r: seq[Field]; x: Field; m: seq[float];
   for i in 0..<n:
     solveEO(s, r[i], x, m[i], sp)
 
+proc stagSolveCgls*(s: Staggered; r,x: Field; m: SomeNumber; sp: var SolverParams;
+                    parEven = true) =
+  type Even = type(r.even)
+  type Odd = type(r.odd)
+  proc opSolveXX(a: Odd, b: Even) =
+    tic("solveXX>sbQex>op")
+    threadBarrier()
+    stagD1(s.so, a.field, s.g, b.field)
+    toc("stagD1")
+    #threadBarrier()
+  proc opSolveXXAdj(a: Even, b: Odd) =
+    tic("solveXX>sbQex>op")
+    threadBarrier()
+    stagD1x(s.se, a.field, s.g, b.field)
+    toc("stagD1")
+    #threadBarrier()
+  if parEven:
+    # assumes r.odd == 0
+    var cgls = newCglsState(r.even, x.even, r.odd)
+    cgls.shift = 4.0*m*m
+    var oa = (apply: opSolveXX, applyAdj: opSolveXXAdj)
+    cgls.solve(oa, sp)
+  else:
+    # assumes r.even == 0
+    var cgls = newCglsState(r.odd, x.odd, r.even)
+    cgls.shift = 4.0*m*m
+    var oa = (apply: opSolveXXAdj, applyAdj: opSolveXX)
+    cgls.solve(oa, sp)
+
 proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
               parEven = true) =
   tic("solveXX")
@@ -65,28 +94,32 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
   case sp.backend
   of sbQex:
     tic("sbQex")
-    proc opSolveXX(a,b: Field) =
-      tic("solveXX>sbQex>op")
-      threadBarrier()
+    when true:
+      proc opSolveXX(a,b: Field) =
+        tic("solveXX>sbQex>op")
+        threadBarrier()
+        if parEven:
+          stagD2ee(s.se, s.so, a, s.g, b, m*m)
+          toc("stagD2ee")
+        else:
+          stagD2oo(s.se, s.so, a, s.g, b, m*m)
+          toc("stagD2oo")
+        #threadBarrier()
+      var cg = newCgState(r, x)
       if parEven:
-        stagD2ee(s.se, s.so, a, s.g, b, m*m)
-        toc("stagD2ee")
+        sp.subset.layoutSubset(r.l, "even")
       else:
-        stagD2oo(s.se, s.so, a, s.g, b, m*m)
-        toc("stagD2oo")
-      #threadBarrier()
-    var cg = newCgState(r, x)
-    if parEven:
-      sp.subset.layoutSubset(r.l, "even")
+        sp.subset.layoutSubset(r.l, "odd")
+      #if precon:
+        #var oap = (apply: op, applyPrecon: oppre)
+        #cg.solve(oap, sp)
+      #else:
+      var oa = (apply: opSolveXX, precon: cpNone)
+      cg.solve(oa, sp)
+      toc("cg.solve")
     else:
-      sp.subset.layoutSubset(r.l, "odd")
-    #if precon:
-      #var oap = (apply: op, applyPrecon: oppre)
-      #cg.solve(oap, sp)
-    #else:
-    var oa = (apply: opSolveXX, precon: cpNone)
-    cg.solve(oa, sp)
-    toc("cg.solve")
+      stagSolveCgls(s, r, x, m, sp)
+      toc("cgls.solve")
     sp.calls = 1
     sp.seconds = getElapsedTime()
     let flops = (s.g.len*4*72+60)*r.l.nEven*sp.iterations
@@ -320,6 +353,13 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
     echo &"stagSolve b2: {b2:.6g}  r2: {r2/b2:.6g}  r2stop: {r2stop:.6g}"
 
   var y = newOneOf(x)
+  var ys: toSingle(type y)
+  var rs: toSingle(type r)
+  var ss: toSingle(type s)
+  if sp0.sloppySolve != SloppyNone:
+    ys.new(y.l)
+    rs.new(r.l)
+    ss = toSingle(s)
   var sp = sp0
   sp.resetStats()
   dec sp.verbosity
@@ -329,7 +369,14 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
     if sp.maxits <= 0: break
     sp.r2req = r2stop / r2;
 
-    solveInner(s, y, r, m, sp, r2e, r2o)
+    if sp0.sloppySolve != SloppyNone:
+      threads:
+        rs := r
+      solveInner(ss, ys, rs, m, sp, r2e, r2o)
+      threads:
+        y := ys
+    else:
+      solveInner(s, y, r, m, sp, r2e, r2o)
 
     threads:
       x += y
@@ -642,7 +689,7 @@ when isMainModule:
     spms[m].subset.layoutSubset(lo, "all")
     spms[m].maxits = int(1e9/lo.physVol.float)
     spms[m].r2req = floatParam("rsq", 1e-20)
-  threads: 
+  threads:
     v1.gaussian(rs)
     threadBarrier()
     #v1.odd := 0.0
@@ -661,7 +708,7 @@ when isMainModule:
     for m in 0..<nmass:
       var opt = "|v1|^2/|v2|^2/|v2-v1|^2 (" & $(m) & "): "
       echo opt,vs1[m].norm2,"/",vs2[m].norm2,"/",(vs1[m]-vs2[m]).norm2
-  
+
   # Test multi-shift
   echo "----------------"
   echo "Multi-shift test 2"

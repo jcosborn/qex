@@ -10,6 +10,7 @@ else:  # put stubs here
   import base
   import layout
   import physics/stagD
+  import solvers/solverBase
 
   proc gridSolveEE*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams) =
     qexError "Grid not compiled in (define gridDir)"

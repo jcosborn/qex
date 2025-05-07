@@ -23,28 +23,33 @@ type ShiftB*[T] = object
 
 template shiftBType*(x:SomeField):untyped = ShiftB[evalType(x[0])]
 
-template initShiftB*(s:ShiftB; l:Layout; t:typedesc;
-                     dir,len:int; sub="all"):untyped =
+template initShiftB*(s:ShiftB; l:Layout; t:typedesc; dir,len:int; sub="all") =
   if threadNum==0:
     s.subset.layoutSubset(l, sub)
     s.si = l.getShift(dir, len, sub)
     s.size = sizeOf(t) div l.nSitesInner
     prepareShiftBuf(s.sb, s.si, s.size)
-template initShiftB*(s:ShiftB; x:SomeField; dir,len:int; sub="all"):untyped =
+template initShiftB*(s:ShiftB; x:SomeField; dir,len:int; sub="all") =
   if threadNum==0:
     #template l:untyped = x.l
     s.subset.layoutSubset(x.l, sub)
     s.si = x.l.getShift(dir, len, sub)
     s.size = sizeOf(x[0]) div x.l.nSitesInner
     prepareShiftBuf(s.sb, s.si, s.size)
+template initShiftB*[R,S](r:ShiftB[R]; s:ShiftB[S]) =
+  if threadNum==0:
+    r.subset = s.subset
+    r.si = s.si
+    r.size = (s.size*sizeOf(R)) div sizeOf(S)
+    prepareShiftBuf(r.sb, r.si, r.size)
 
-template createShiftB*(x:SomeField; dir,len:int; sub="all"):untyped =
+template createShiftB*(x:SomeField; dir,len:int; sub="all"): auto =
   var s:ShiftB[evalType(x[0])]
   s.initShiftB(x, dir,len, sub)
   s
 
 template createGlobalShiftB*(v:untyped; x:SomeField;
-                             dir,len:int; sub="all"):untyped =
+                             dir,len:int; sub="all") =
   var v{.global.}:ShiftB[evalType(x[0])]
   v.initShiftB(x, dir,len, sub)
   threadBarrier()
