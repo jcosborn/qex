@@ -1,0 +1,60 @@
+{
+    "hmc": {
+        "lattice-geometry": [4,4,4,4],
+        "mpi-geometry": [1,1,1,1],
+        "monte-carlo-algorithm": "hmc",
+        "trajectory-length": 1.0,
+        "serial-random-number-seed": 987654321,
+        "parallel-random-number-seed": 987654321,
+        "serial-random-number-generator": "milc",
+        "parallel-random-number-generator": "milc",
+        "start": "cold"
+    },
+    "action": {
+        "smearing": "nhyp",
+        "smearing-coefficients": [0.4,0.5,0.5],
+        "boundary-conditions": "pppa"
+    },
+    "gauge": {
+        "group": "su",
+        "action": "Adjoint",
+        "adjoint-ratio": -0.25,
+        "beta": 11.1,
+        "steps": 20,
+        "integrator": "2MN"
+    },
+    "staggered-fermions": {
+        "mass": 0.0,
+        "steps": 30,
+        "integrator": "2MN",
+        "species": 0
+    },
+    "rooted-staggered-fermions": {
+	    "nf": 2,
+        "mass": 0.0,
+        "steps": 30,
+        "integrator": "2MN",
+        "species": 0
+    },
+    "staggered-pauli-villars": {
+        "mass": 0.75,
+        "steps": 20,
+        "integrator": "2MN",
+        "species": 16
+    },
+    "flow": {
+        "C0p0": {
+            "action": "Wilson",
+            "path": "./flow/",
+            "time-increments": [0.02,0.1],
+            "maximum-flow-times": [5.0,10.0]
+        },
+        "C0p125": {
+            "action": "Rectangle",
+            "cr": 0.125,
+            "path": "./flow/",
+            "time-increments": [0.02,0.1],
+            "maximum-flow-times": [5.0,10.0]
+        }
+    }
+}

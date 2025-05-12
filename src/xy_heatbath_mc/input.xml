@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!-- Credit to Oliver Witzel for formatting of XML file -->
+<qex>
+  <mc><!-- Monte Carlo parameters -->
+    <jump_freq>1</jump_freq>
+    <sample_freq>1</sample_freq>
+  </mc>
+  <action><!-- Action parameters -->
+    <Nx>140</Nx>
+    <Ny>140</Ny>
+    <J>1.12</J>
+  </action>
+  <rng><!-- Random number seeds -->
+    <serial_seed>987655924</serial_seed> <!-- Seed for global RNG -->
+  </rng>
+</qex>

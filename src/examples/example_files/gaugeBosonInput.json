@@ -1,0 +1,31 @@
+{
+    "hmc": {
+        "lattice-geometry": [8,8,8,8],
+        "mpi-geometry": [1,1,1,1],
+        "monte-carlo-algorithm": "hmc",
+        "trajectory-length": 1.0,
+        "serial-random-number-seed": 987654321,
+        "parallel-random-number-seed": 987654321,
+        "serial-random-number-generator": "milc",
+        "parallel-random-number-generator": "milc",
+        "start": "cold"
+    },
+    "action": {
+        "smearing": "nhyp",
+        "smearing-coefficients": [0.4,0.5,0.5],
+        "boundary-conditions": "aaaa"
+    },
+    "gauge": {
+        "group": "su",
+        "action": "Wilson",
+        "beta": 9.0,
+        "steps": 10,
+        "integrator": "2MN"
+    },
+    "pv": {
+        "mass": 0.75,
+        "steps": 10,
+        "integrator": "2MN",
+        "number-staggered-pv-fields": 8
+    }
+}
