@@ -1,16 +1,14 @@
 import qex
 import gauge
 import gauge/[fat7l,fat7lderiv]
-import strformat
 
 export hisqLinks
 
-proc `$$`(info: PerfInfo): string =
-  let
-    cnt = info.count
-    scs = info.secs
-    gfps = 1e-9*info.flops/info.secs
-  result = &"{cnt}  {scs:.4g}s  {gfps:.4g}Gf/s"
+proc uadj[T](u: T): T =
+  var t = newOneOf(u)
+  threads:
+    for mu in 0..<t.len: t[mu] := adj(u[mu])
+  result = t
 
 proc asqtadDeriv[T](
     deriv: auto, 
@@ -31,7 +29,12 @@ proc fat7Deriv[T](
     gauge,mid: T,
     coef: Fat7lCoefs,
     perf: var PerfInfo
-  ) = deriv.fat7lDeriv(gauge,mid,coef,perf)
+  ) = 
+  #var t = newOneOf(mid)
+  #threads:
+  #  for mu in 0..<t.len: t[mu] := adj(mid[mu])
+  #deriv.fat7lDeriv(gauge,t,coef,perf)
+  deriv.fat7lDeriv(gauge,mid,coef,perf)
 
 proc projectU[T](v: auto; u: T) =
   threads:
@@ -41,7 +44,9 @@ proc projectU[T](v: auto; u: T) =
 proc projectUDeriv[T](dvdu: auto; v,u: T; chain: T) =
   threads:
     for mu in 0..<chain.len:
-      for s in chain[mu]: dvdu[mu][s].projectUderiv(v[mu][s],u[mu][s],chain[mu][s])
+      for s in chain[mu]: 
+        #dvdu[mu][s].projectUderiv(v[mu][s],u[mu][s],adj(chain[mu][s]))
+        dvdu[mu][s].projectUderiv(v[mu][s],u[mu][s],chain[mu][s])
 
 proc newHISQ*(lepage: float = 0.0; naik: float = 1.0): HisqCoefs =
   result = HisqCoefs(naik: -naik/24.0)
@@ -69,17 +74,19 @@ proc smearGetForce*[T](
   v.makeImpLinks(u,fat7l1,info) # First fat7
   w.projectU(v) # Unitary projection
   makeImpLinks(su,w,fat7l2,sul,w,naik,info) # Second fat7
+  #makeImpLinks(su,u,fat7l2,sul,u,naik,info) # Second fat7
 
   # Chain rule - retains a reference to u,su,sul
   proc smearedForce(dsdu: var T; dsdsu,dsdsul: T) =
     var t = newOneOf(dsdu)
+    #dsdu.asqtadDeriv(u,dsdsu,fat7l2,u,dsdsul,naik,info) # Second fat7
     t.asqtadDeriv(w,dsdsu,fat7l2,w,dsdsul,naik,info) # Second fat7
     t.projectUDeriv(w,v,t) # Unitary projection
     dsdu.fat7Deriv(u,t,fat7l1,info) # First fat7
-    if displayPerformance: echo "smear force: " & $$(info)
+    if displayPerformance: echo $(info)
   
   # Display performance (if requested) and return
-  if displayPerformance: echo "smear links: " & $$(info)
+  if displayPerformance: echo $(info)
   return smearedForce
 
 when isMainModule:
