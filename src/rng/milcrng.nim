@@ -155,7 +155,7 @@ proc uniform*(prn: var RngMilc6): float32 =
 
 #var QLA_use_milc_gaussian* = false
 
-proc gaussian*(prn: var RngMilc6): float32 =
+proc gaussian*(prn: var RngMilc6): float64 =
   ## Gaussian normal deviate
   ## Probability distribution exp( -x*x/2 ), so < x^2 > = 1
   #if QLA_use_milc_gaussian:
@@ -173,6 +173,8 @@ proc gaussian*(prn: var RngMilc6): float32 =
       var fac = sqrt(-2.0 * ln(rsq) / rsq )
       prn.gset = v1 * fac
       result = v2 * fac
+      #echo "grand = ", v2
+      #echo "FAC = ", fac
     else:
       prn.iset = 1
       result = prn.gset
