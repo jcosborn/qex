@@ -24,13 +24,13 @@ template sitesI(l: Layout, d: Dilution): auto =
   case d.kind
   of dkEvenOdd:
     # Assuming even-odd layout
-    if d.eo == 0: itemsI(0, l.nEven)
-    else: itemsI(l.nEven, l.nSites)
+    if d.eo == 0: itemsI(0, l.nEven, l.V)
+    else: itemsI(l.nEven, l.nSites, l.V)
   of dkCorners3D:
     let
-      n = l.nSites
-      a = (threadNum*n) div numThreads
-      b = (threadNum*n+n) div numThreads
+      n = l.nSitesOuter
+      a = l.V * ((threadNum*n) div numThreads)
+      b = l.V * ((threadNum*n+n) div numThreads)
       c = d.c3d
     var i = a
     while i < b:

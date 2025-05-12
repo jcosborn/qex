@@ -45,7 +45,7 @@ proc test(lat: seq[int]) =
 
     block:
       #setNumWriteRanks(nio)
-      var wr = lo.newWriter(fn, "test")
+      var wr = lo.newWriter(fn)
       var t0 = epochTime()
       wr.write(r0)
       var t1 = epochTime()

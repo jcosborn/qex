@@ -245,8 +245,12 @@ type
     v*:T
 template toSingleX*[T](x: T): untyped =
   ToSingle[T](v: x)
+template toSingle*(x: typedesc): typedesc =
+  #static: echo "toSingle typedesc"
+  toSingleImpl(x)
 template toSingle*(x: typed): untyped =
   mixin toSingle, toSingleImpl, isWrapper, asWrapper
+  #static: echo "toSingle typed"
   when isWrapper(x):
     #static: echo "toSingle typed wrapper"
     #dumpTree: x

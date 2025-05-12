@@ -123,7 +123,7 @@ proc saveGauge*[T](g:openArray[T]; fn:string; prec=""; filemd=defFileMd;
 
 proc setBC*(g: openArray[Field]) =
   let gt = g[3]
-  tfor i, 0..<gt.l.nSites:
+  for i in gt.l.sites:
     #let e = i div gt.l.nSitesInner
     if gt.l.coords[3][i] == gt.l.physGeom[3]-1:
       gt{i} *= -1

@@ -44,18 +44,18 @@ echo "g.norm2: ", g.norm2
 if myRank==0:
   v1{0}[0] := 1
   #v1{2*1024}[0] := 1
-echo v1.norm2
+echo "v1.norm2: ", v1.norm2
 #var gs = lo.newGaugeS
 #for i in 0..<gs.len: gs[i] := g[i]
 var s = newStag(g)
 threads:
   v2 := 0
-  echo v2.norm2
+  #echo v2.norm2
   threadBarrier()
   s.D(v2, v1, mass)
   threadBarrier()
   #echoAll v2
-  echo v2.norm2
+  echo "v2.norm2: ", v2.norm2
 #echo v2
 var sp = initSolverParams()
 sp.maxits = 10

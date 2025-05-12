@@ -311,7 +311,7 @@ when isMainModule:
     m.even := 1
     m.odd := 10
     threadBarrier()
-    tfor i, 0, lo.nSites-1:
+    for i in lo.sites:
       m{i} := i+1
       #m{i} := sqrt(sqrt(i+0.01))
     threadBarrier()

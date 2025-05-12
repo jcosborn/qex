@@ -6,6 +6,7 @@ import enum_quda
 import layout
 import physics/qcdTypes
 import physics/stagD
+import solvers/solverBase
 import gauge/gaugeAction
 #import solvers/cg
 
