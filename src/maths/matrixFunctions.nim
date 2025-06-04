@@ -76,6 +76,151 @@ proc determinant*(x: auto): auto {.alwaysInline.} =
   else:
     result = determinantN(x)
 
+proc norm(x: Vec1): auto {.inline.} = sqrt(x.norm2)
+
+proc sgn[T](x: T): T {.inline.} = x/abs(x)
+
+template reflector(x: var Vec1; e: Vec2; k: int): untyped =
+  ## Brief: Householder reflector
+  for l in 0..<k: x[l] := 0.0
+  x += (x[k].sgn*x.norm)*e
+  x *= 1.0/x.norm
+
+template householder(a: var Mat1; id: Mat2; x: Vec1; n,k: int): untyped =
+  ## Brief: Householder projector
+  for i in 0..<n:
+    for j in 0..<n:
+      a[i,j] := id[i,j]
+      if (i >= k) and (j >= k): a[i,j] -= 2.0*x[i]*x[j].adj
+
+template wilkinson[T](a: Mat1; b: var Mat3; s,xa,xb: var T; n: int): untyped =
+  ## Brief: Wilkinson shift 
+  b[0,0] := a[n-2,n-2]
+  b[0,1] := a[n-2,n-1]
+  b[1,0] := a[n-1,n-2]
+  b[1,1] := a[n-1,n-1]
+  b := b.adj*b
+  xa := 0.5*(b[0,0]-b[1,1])
+  if xa.re != 0.0:
+    xb := b[0,1].adj*b[0,1]
+    s := xa.sgn
+    xa := abs(xa)
+    s := b[1,1] - s*xb/(xa + sqrt(xa*xa + xb))
+  else: s := b[1,1] - abs(b[0,1])
+  xa := a[0,0].norm2 - s
+  xb := a[0,0]*a[0,1].adj
+
+template givens[T](h: var Mat1; c,s: var T; xa,xb: T; k: int): untyped =
+  ## Brief: right complex Givens rotation
+  c := xa
+  s := xb
+  if s.re == 0.0: (c := 1.0; s := 0.0;)
+  elif c.re == 0.0: (c := 0.0; s := 1.0;)
+  else: (s := sqrt(c.adj*c + s.adj*s); c := xa/s; s := xb/s)
+  h := 1 
+  h[k,k] := c
+  h[k,k+1] := s
+  h[k+1,k] := -s.adj
+  h[k+1,k+1] := c.adj
+
+template svd[T](a: Mat3; eps: T; maxiter: int; proj: bool; work: untyped): untyped =
+  ## Brief: SVD-based unitary projection (Golub-Kahan-Reinsch)
+  ## 
+  ## Author: Curtis Taylor Peterson
+  ## 
+  ## Details:
+  ##   Once "a" has been reduced to bidiagonal form via Householder
+  ##   transformations, SVD is performed with the implicit QR algorithm
+  ##   using Wilkinson shifts and Givens rotations (Golub-Reinsch)
+  ## 
+  ## Fun Fact:
+  ##   According to legend, Gene Golub's license plate had on it "Prof SVD"
+  ##   (photographed by P.M. Kroonenberg of Leiden University)
+  ## 
+  ## References:
+  ##   - Golub, G., Kahan, W., Calculating the Singular Values and Pseudo-Inverse
+  ##     of a Matrix, J. SIAM Numer. Anal. Ser. B, Vol. 2, No. 2
+  ##   - Golub, G., Reinsch, C., Singular Value Decomposition and Least Squares 
+  ##     Solution, Numer. Math. 14, 403-420 (1970)
+  ##   - Hager, W. W., Bidiagonalization and Diagonalization, Comput. Math. 
+  ##     Applic. Vol. 14, No. 7, pp. 561-572, 1987
+  ## 
+  ## Parameters:
+  ##   a       [Mat2]: matrix to be unitarily projected
+  ##   eps     [float64]: implicit QR tolerance
+  ##   maxiter [int64]: maximum number of implicit QR iterations
+  let n {.inject.} = a.ncols
+  var
+    iter {.inject.} = 0
+    success {.noinit.}: bool
+    u,v,q,unitary {.inject,noinit.}: evalType(a)
+    h,id {.noinit.}: evalType(a)
+    b {.noinit.}: MatrixArray[2,2,type(a[0,0])]
+    x,e {.noinit.}: evalType(a.column(0))
+    c,s,xa,xb {.noinit.}: type(a[0,0])
+  
+  # Householder reduction
+  q := a
+  id := 1
+  for k in 0..<n-1:
+    # left transformation
+    e := id.column(k)
+    x := q.column(k)
+    x.reflector(e,k)
+    h.householder(id,x,n,k)
+    q := h*q
+    if proj: (if k == 0: u := h else: u := u*h)
+
+    # right transformation
+    if k < n-2:
+      e := id.row(k+1)
+      x := (q.adj).column(k)
+      x.reflector(e,k+1)
+      h.householder(id,x,n,k+1)
+      q := q*h
+      if proj: (if k == 0: v := h else: v := h*v)
+
+  # shifted implicit QR algorithm (bidiagonal)
+  while true:
+    # check if converged; break if so
+    success = true
+    if iter == maxiter-1: 
+      qexError "SVD did not converge after " & $maxiter & " iterations"
+    for k in 0..<n-1:
+      if abs(q[k,k+1]) > eps*(abs(q[k,k])+abs(q[k+1,k+1])): 
+        success = false 
+        break
+    if success: break
+
+    # Wilkinson shift & Givens rotations
+    q.wilkinson(b,s,xa,xb,n)
+    for k in 0..<n-1:
+      # right transformation
+      if (k > 0) and (k < n-1):
+        xa := q[k-1,k]
+        xb := q[k-1,k+1]
+      h.givens(c,s,xa,xb,k)
+      q := q*h.adj
+      if proj: v := v*h.adj
+
+      # left transformation
+      xa := q[k,k].adj
+      xb := q[k+1,k].adj
+      h.givens(c,s,xa,xb,k)
+      q := h*q
+      if proj: u := u*h.adj
+
+    # increment iteration
+    iter.inc
+
+  # finalize
+  if proj: unitary := u*v.adj
+  work
+
+proc eigsSVD*(eigs: var Vec1; a: Mat2; eps = 1e-16; maxiter = 10000) {.inline.} =
+  a.svd(eps, maxiter, false):
+    for k in 0..<n: eigs[k] := q[k,k]*q[k,k]
+
 proc eigs3(e0,e1,e2: var auto; tr,p2,det: auto) {.alwaysInline.} =
   mixin sin,cos,acos
   let tr3 = (1.0/3.0)*tr
@@ -318,6 +463,21 @@ template projectU*(r: var Mat1, eps = 1e-20) =
   var t{.noInit.}: evalType(r)
   t := r
   r.projectU t, eps
+
+proc projectUSVD*(ua: var Mat1; a: Mat2; eps = 1e-16; maxiter = 10000) {.inline.} =
+  a.svd(eps, maxiter, true):
+    ua := unitary
+
+proc projectUSVD*(
+    ua: var Mat1; 
+    eigs: var Vec1;
+    a: Mat2; 
+    eps = 1e-16; 
+    maxiter = 10000
+  ) {.inline.} =
+  a.svd(eps, maxiter, true):
+    ua := unitary
+    for k in 0..<n: eigs[k] := q[k,k]*q[k,k]
 
 # (d/dX') Tr(U'C+C'U) / 2 = (d/dX') Tr(X'CZ+C'XZ) / 2
 # = CZ - (1/2) < Z (X'C + C'X) Z (dY/dX') >
@@ -590,7 +750,13 @@ when isMainModule:
       echo " projectUderiv err: ", dd
       #doAssert(simdSum(dd)<simdLength(dd)*N*eps*40)
       check(dd, 20*N)
-
+      if N > 1:
+        m1.svd(1e-16,10000,true):
+          var svderr,projerr: type(m1[0,0])
+          #svderr = trace(u*q*v.adj - m1).re
+          #projerr = trace(m2 - unitary).re
+          echo " SVD err: ", svderr
+          echo " SVD/Cayley-Hamilton diff: ", projerr
 
   type
     Cmplx[T] = ComplexType[T]
