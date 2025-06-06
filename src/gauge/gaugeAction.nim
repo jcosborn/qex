@@ -503,6 +503,7 @@ proc gaugeForce2*(c: GaugeActionCoeffs, g,f: array|seq) =
           shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[nu].field[ir]*adj(it), g[mu][ix])
           discard td[mu] ^* t[nu] ^* tg[mu] ^* g[mu]
           shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[mu].field[ir]*adj(it), g[nu][ix])
+          threadBarrier()
           shiftExpr(t2[mu].sb, f[mu][ir] += cr * t[nu].field[ir]*adj(it), t[mu].field[ix])
     for mu in 0..<nd:
       for e in f[mu]:
@@ -943,5 +944,6 @@ when isMainModule:
   if abs(dev)>1e-13:
     qexError "Large deviation."
 
-  echoTimers()
+  #echoTimers()
+  echoProf()
   qexFinalize()

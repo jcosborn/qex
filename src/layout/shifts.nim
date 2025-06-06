@@ -21,7 +21,7 @@ type ShiftB*[T] = object
   sb*: ShiftBuf
   size*: int
 
-template shiftBType*(x:SomeField):untyped = ShiftB[evalType(x[0])]
+template shiftBType*(x:SomeField): typedesc = ShiftB[evalType(x[0])]
 
 template initShiftB*(s:ShiftB; l:Layout; t:typedesc; dir,len:int; sub="all") =
   if threadNum==0:
@@ -68,6 +68,10 @@ proc createShiftBufs*(x:auto; ln=1; sub="all"):auto =
 
 #proc init*(s:var ShiftB; ;
 #           dir,len:int; sub="all") =
+
+proc free*(sb: ShiftB) =
+  sb.si = nil
+  sb.sb = nil
 
 template startSB*(sb0: ShiftB; e: untyped) =
   mixin assign, `[]`, numberType

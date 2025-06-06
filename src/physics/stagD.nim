@@ -18,6 +18,10 @@ type StaggeredD*[T] = object
   sub*:string
   subset*:Subset
 template isWrapper*(s: StaggeredD): bool = false
+proc free*(s: var StaggeredD) =
+  s.sf.setLen(0)
+  s.sb.setLen(0)
+  s.sub = ""
 
 template initStagDT*(l:var Layout; T:typedesc; ss:string): auto =
   var sd:StaggeredD[T]
@@ -65,6 +69,10 @@ type Staggered*[G,T] = object
   se*,so*:StaggeredD[T]
   g*:seq[G]
 template isWrapper*(s: Staggered): bool = false
+proc free*(s: var Staggered) =
+  free(s.se)
+  free(s.so)
+  s.g.setLen(0)
 
 template toSingleImpl*[G,T](s: typedesc[Staggered[G,T]]): typedesc =
   Staggered[toSingle(G),toSingle(T)]

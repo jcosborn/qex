@@ -14,6 +14,14 @@ import grid/Grid
 
 #var precon = false
 
+proc stagSingle(s: Staggered, init=false, free=false): auto =
+  var ss {.global.}: toSingle(type s)
+  if init:
+    ss = toSingle(s)
+  if free:
+    free(ss)
+  return ss
+
 proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
   var sp = sp0
   sp.subset.layoutSubset(r.l, sp.subsetName)
@@ -129,7 +137,8 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
     else:
       let r2save = sp.r2req
       sp.r2req = max(r2save, 1e-12)
-      var ss = toSingle(s)
+      #var ss = toSingle(s)
+      var ss = stagSingle(s)
       var rs = toSingle(type r).new(r.l)
       var xs = toSingle(type x).new(x.l)
       threads:
@@ -382,6 +391,8 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
   #  ys.new(y.l)
   #  rs.new(r.l)
   #  ss = toSingle(s)
+  if sp0.backend == sbQex and sp0.sloppySolve != SloppyNone:
+    discard stagSingle(s, init=true)
   var sp = sp0
   sp.resetStats()
   dec sp.verbosity
@@ -417,6 +428,8 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
     if sp.verbosity>0:
       echo "stagSolve r2/b2: ", r2/b2
 
+  if sp0.backend == sbQex and sp0.sloppySolve != SloppyNone:
+    discard stagSingle(s, free=true)
   sp.r2.init r2/b2
   sp.calls = 1
   sp.seconds = getElapsedTime()
