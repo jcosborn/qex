@@ -65,5 +65,6 @@ echo "f2: ", f2n3
 let fn = fn1 - f2n + f2n3
 echo "f: ", fn
 
-echoTimers()
+#echoTimers()
+echoProf()
 qexFinalize()
