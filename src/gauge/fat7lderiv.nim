@@ -123,7 +123,7 @@ proc fat7lDeriv*(deriv: auto, gauge: auto, mid: auto, coef: Fat7lCoefs,
                 llderiv: auto, llgauge: auto, llmid: auto, naik: float,
                 perf: var PerfInfo) =
   tic("fat7lDeriv")
-  var nflops = ThreadSingle[int](0)
+  var nflops = newThreadSingle(0)
   let coefL = coef.lepage
   let coef1 = coef.oneLink - 6*coefL
   let coef3 = coef.threeStaple

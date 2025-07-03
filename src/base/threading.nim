@@ -492,15 +492,18 @@ template threadMax*(a: auto) =
   threadBroadcast(a)
 
 type ThreadSingle*[T] = distinct T
-template `[]`*[T](x: ThreadSingle[T]): auto = T(x)
-template `[]=`*[T](x: ThreadSingle[T], y: auto): auto =
-  T(x) = y
-template `=`*(x: var ThreadSingle, y: auto) =
+template newThreadSingle*[T](x: T): auto = ThreadSingle[T](x)
+template `[]`*[T](x: ThreadSingle[T]): auto = T(x)  ## raw access to value
+template `[]=`*[T](x: ThreadSingle[T], y: auto): auto =  ## raw assignment (from any thread)
+  x = ThreadSingle(y)
+template `:=`*(x: var ThreadSingle, y: auto) =
+  let ty = y
   threadSingle:
-    x[] = y
+    x[] = ty
 template `+=`*(x: var ThreadSingle, y: auto) =
+  let ty = y
   threadSingle:
-    x[] += y
+    x[] += ty
 converter fromThreadSingle*[T](x: ThreadSingle[T]): T = T(x)
 
 when isMainModule:
@@ -532,3 +535,30 @@ when isMainModule:
       threadSum(f)
     t1 = epochTime()
     echo "threadSum(float) time: ", int(1e9*(t1-t0)/nrep.float), " ns"
+
+  block:
+    # ThreadSingle tests
+    #var i = 1
+    #var x = 1.0
+    var i = newThreadSingle(0)
+    var x = newThreadSingle(0.0)
+    i[] = 1
+    x[] = 1.0
+    doAssert(i == 1)
+    doAssert(x == 1.0)
+    threads:
+      i := 2
+      x := 2.0
+      i += 1
+      x += 1.0
+    doAssert(i == 3)
+    doAssert(x == 3.0)
+    var nt = 0
+    i[] = 1
+    x[] = 1.0
+    threads:
+      nt := numThreads
+      i := (var ti = 1; threadSum(ti); ti)
+      x += (var tx = 1.0; threadSum(tx); tx)
+    doAssert(i == nt)
+    doAssert(x == nt+1.0)
