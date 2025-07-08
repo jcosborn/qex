@@ -25,11 +25,12 @@ import layout
 import gauge/[hisqsmear]
 import algorithms/[integrator]
 import physics/[qcdTypes,stagSolve]
+import maths/[matproject]
 
 import mdevolve
 
 import times,macros,json,parseopt,sequtils
-import strformat,strutils,streams,os
+import strformat,strutils,streams,os,math
 
 export integrator
 export mdevolve
@@ -90,7 +91,10 @@ let
       "mass": 0.005, # degenerate fermion mass
       "hasenbusch-mass": 0.6, # Hasnebusch mass
       "lepage": 0.0, # lepage for fat7 (<asqtad fat7> = 2-<fat7 lepage>)
-      "naik": 1.0 # naik for fat7 (<asqtad naik> = 1.0)
+      "naik": 1.0, # naik for fat7 (<asqtad naik> = 1.0)
+      "unitary-projection": { # post-fat7 unitary projection
+        "method": "newton" # proj method: cayley-hamilton, newton, halley
+      }
     },
     "gauge": {
       "integrator": "2MN", # outer fermion integrator (2nd-order Omelyan)
@@ -226,10 +230,32 @@ proc newSolverParams(info: JsonNode; af: string): auto =
       of false: (if af == "action": ActionCGVerbosity else: ForceCGVerbosity)
   return newSolverParams(r2,maxits,verbosity)
 
-proc newHISQ(info: JsonNode): auto = 
+proc newHISQ[T](u: seq[T]; info: JsonNode): auto = 
+  var 
+    projection: ProjectionMethod
+    eps = epsilon(u[0][0][].norm2.simdSum)
+    maxiters = 100
+  case info["action"].hasKey("unitary-projection"):
+    of true:
+      if info["action"]["unitary-projection"].hasKey("method"):
+        projection = case info["action"]["unitary-projection"]["method"].getStr()
+          of "cayley-hamilton": CayleyHamilton
+          of "newton": Newton
+          of "halley": Halley
+          else: 
+            qexError("Invalid choice for reunitarization method")
+            Newton
+      if info["action"]["unitary-projection"].hasKey("eps"):
+        eps = info["action"]["unitary-projection"]["eps"].getFloat()
+      if info["action"]["unitary-projection"].hasKey("maxiters"):
+        maxiters = info["action"]["unitary-projection"]["maxiters"].getInt()
+    of false: projection = Newton
   return newHISQ(
     info["action"]["lepage"].getFloat(),
-    info["action"]["naik"].getFloat()
+    info["action"]["naik"].getFloat(),
+    reunitMethod = projection,
+    reunitEps = eps,
+    reunitMaxiters = maxiters
   )
 
 proc newSerialRNG(info: JsonNode): auto =
@@ -366,7 +392,7 @@ template newHisqHMC*(build: untyped): auto =
     info["action"]["mass"].getFloat(),
     info["action"]["hasenbusch-mass"].getFloat(),
     "pppa",
-    newHISQ(info),
+    hisq.p.newHISQ(info),
     newSolverParams(info,"action"),
     newSolverParams(info,"force"),
     GaugeActionCoeffs(plaq: beta*Cp, rect: beta*Cr)
