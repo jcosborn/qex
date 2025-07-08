@@ -7,15 +7,16 @@
 ## Author: Curtis Taylor Peterson
 
 import base
+import types
 import complexNumbers
 import maths/[matrixConcept, matrixFunctions]
 import maths/[matinv, projUderiv]
-import simd
+import physics/[color]
 
 getOptimPragmas()
 
 type
-  ProjectionMethod = enum
+  ProjectionMethod* = enum
     CayleyHamilton,
     GoloubKahanReinsch, # not yet in devel branch
     Newton,
@@ -23,12 +24,12 @@ type
     Exponential # only SU
 
 type
-  UnitaryProjection = object
+  UnitaryProjection* = object
     policy: ProjectionMethod
     eps: float
     maxiters: int
 
-proc newUnitaryProjection(
+proc newUnitaryProjection*(
     policy: ProjectionMethod = CayleyHamilton, 
     eps: float = 1e-16, 
     maxiters: int = 100
@@ -118,12 +119,12 @@ proc projectUHalley(u: var Mat1; maxiters: int) =
   ## Parameters:
   ##   u        [MatrixArray[N,N,T]]: matrix to be projected & output of projection
   ##   maxiters [int]: Number of Halley method iterations
+  mixin simdMax
   var 
     iter = 0
     r {.noinit.}: u.numberType
     udu, ta, tb {.noinit.}: evalType(u)
   let estop = (5*u.nrows*epsilon(u.numberType))^2
-
   while true:
     if iter > maxiters: break
     udu := u.adj*u
@@ -135,7 +136,7 @@ proc projectUHalley(u: var Mat1; maxiters: int) =
     u := u*ta*tb
     iter.inc
 
-proc projectSUExponential(x: var Mat1; a: Mat1; maxiters: int) =
+proc projectSUExponential(x: var Mat1; a: Mat2; maxiters: int) =
   ## Brief: Polar-decomposition-based special unitary projection (exponential)
   ## Author: James C. Osborn
   ## 
@@ -170,7 +171,15 @@ proc projectSUExponential(x: var Mat1; a: Mat1; maxiters: int) =
     if it >= maxiters: break
   echo "projectSU_exp it: ", it
 
-proc projectU(self: UnitaryProjection, v: var Mat1; u: Mat1) =
+proc projectU*(self: UnitaryProjection, v: var Mat1) =
+  case self.policy:
+    of CayleyHamilton: v.projectU()
+    of GoloubKahanReinsch: discard
+    of Newton: v.projectUNewton(self.maxiters)
+    of Halley: v.projectUHalley(self.maxiters)
+    of Exponential: discard
+
+proc projectU*(self: UnitaryProjection, v: var Mat1; u: Mat2) =
   ## Brief: Performs unitary projection
   ## Author: Curtis Taylor Peterson
   ## 
@@ -179,12 +188,12 @@ proc projectU(self: UnitaryProjection, v: var Mat1; u: Mat1) =
   ##   v     [MatrixArray[N,N,T]]: output of projection
   ##   u     [MatrixArray[N,N,T]]: matrix to be projected
   v := u
-  case self.policy:
-    of CayleyHamilton: v.projectU()
-    of GoloubKahanReinsch: discard
-    of Newton: v.projectUNewton(self.maxiters)
-    of Halley: v.projectUHalley(self.maxiters)
-    of Exponential: discard
+  self.projectU(v)
+
+template projectU*(self: UnitaryProjection, r: var Color) = self.projectU(r[])
+
+template projectU*(self: UnitaryProjection, r: var Color, x: Color2) =
+  self.projectU(r[], x[])
 
 proc projectUderivGeneral(r: var Mat1, u: Mat2, x: Mat3, chain: Mat4) =
   ## Brief: derivative of unitary projection
@@ -205,7 +214,7 @@ proc projectUderivGeneral(r: var Mat1, u: Mat2, x: Mat3, chain: Mat4) =
   t1 := t2 + t2.adj
   r -= x*t1
 
-proc projectUderiv(
+proc projectUderiv*(
     self: UnitaryProjection, 
     v: var Mat1, 
     u: Mat2, 
@@ -221,8 +230,6 @@ proc projectUderiv(
   ##   u     [MatrixArray[N,N,T]]: unitary projection of x
   ##   x     [MatrixArray[N,N,T]]: matrix that has been unitarily projected
   ##   chain [MatrixArray[N,N,T]]: backprop accumulation
-  var chain: typeOf(x)
-  chain := 1
   case self.policy:
     of CayleyHamilton: v.projectUderiv(u, x, chain)
     of GoloubKahanReinsch: discard
@@ -230,36 +237,36 @@ proc projectUderiv(
     of Halley: v.projectUderivGeneral(u, x, chain)
     of Exponential: discard
 
-proc projectUderiv(
+proc projectUderiv*(
     self: UnitaryProjection, 
     v: var Mat1, 
     x: Mat3, 
     chain: Mat4
   ) =
-  ## Brief: derivative of unitary projection
-  ## Author: Curtis Taylor Peterson
-  ## 
-  ## Parameters:
-  ##   self  [UnitaryProjection]: unitary projection object
-  ##   v     [MatrixArray[N,N,T]]: result of projection derivative
-  ##   x     [MatrixArray[N,N,T]]: matrix that has been unitarily projected
-  ##   chain [MatrixArray[N,N,T]]: backprop accumulation
   var u {.noinit.}: typeOf(v)
   self.projectU(u, x)
   self.projectUderiv(v, u, x, chain)
 
-proc projectUderiv(self: UnitaryProjection, v: var Mat1, x: Mat2) =
-  ## Brief: derivative of unitary projection
-  ## Author: Curtis Taylor Peterson
-  ## 
-  ## Parameters:
-  ##   self  [UnitaryProjection]: unitary projection object
-  ##   v     [MatrixArray[N,N,T]]: result of projection derivative
-  ##   x     [MatrixArray[N,N,T]]: matrix that has been unitarily projected
+proc projectUderiv*(self: UnitaryProjection, v: var Mat1, x: Mat2) =
   var u, chain {.noinit.}: typeOf(v)
   self.projectU(u, x)
   chain := 1
   self.projectUderiv(v, u, x, chain)
+
+template projectUderiv*(
+    self: UnitaryProjection, 
+    r: var Color, 
+    u: Color2, 
+    x: Color3, 
+    chain: Color4
+  ) = self.projectUderiv(r[], u[], x[], chain[])
+
+template projectUderiv*(
+    self: UnitaryProjection, 
+    r: var Color, 
+    x: Color3, 
+    chain: Color4
+  ) = self.projectUderiv(r[], x[], chain[])
 
 when isMainModule:
   # observation: Newton/Halley methods usually less expensive and more 
@@ -267,6 +274,7 @@ when isMainModule:
   # be far less expensive than Goloub-Kahan-Reinsch (which is not SIMD-
   # friendly anyway)
 
+  import simd
   import macros
   import times
 

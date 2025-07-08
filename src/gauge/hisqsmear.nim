@@ -1,14 +1,10 @@
 import qex
 import gauge
 import gauge/[fat7l,fat7lderiv]
+import physics/[hisqLinks]
+import maths/[matproject]
 
 export hisqLinks
-
-proc uadj[T](u: T): T =
-  var t = newOneOf(u)
-  threads:
-    for mu in 0..<t.len: t[mu] := adj(u[mu])
-  result = t
 
 proc asqtadDeriv[T](
     deriv: auto, 
@@ -29,29 +25,30 @@ proc fat7Deriv[T](
     gauge,mid: T,
     coef: Fat7lCoefs,
     perf: var PerfInfo
-  ) = 
-  #var t = newOneOf(mid)
-  #threads:
-  #  for mu in 0..<t.len: t[mu] := adj(mid[mu])
-  #deriv.fat7lDeriv(gauge,t,coef,perf)
-  deriv.fat7lDeriv(gauge,mid,coef,perf)
+  ) = deriv.fat7lDeriv(gauge,mid,coef,perf)
 
-proc projectU[T](v: auto; u: T) =
+proc project[T](self: UnitaryProjection, v: auto; u: T) =
   threads:
-    for mu in 0..<u.len: 
-      for s in u[mu]: v[mu][s].projectU(u[mu][s])
+    for mu in 0..<u.len:
+      for s in u[mu]: self.projectU(v[mu][s], u[mu][s])
 
-proc projectUDeriv[T](dvdu: auto; v,u: T; chain: T) =
+proc projectDeriv[T](self: UnitaryProjection, dvdu: auto; v,u: T; chain: T) =
   threads:
     for mu in 0..<chain.len:
-      for s in chain[mu]: 
-        #dvdu[mu][s].projectUderiv(v[mu][s],u[mu][s],adj(chain[mu][s]))
-        dvdu[mu][s].projectUderiv(v[mu][s],u[mu][s],chain[mu][s])
+      for s in chain[mu]:
+        self.projectUderiv(dvdu[mu][s], v[mu][s], u[mu][s], chain[mu][s])
 
-proc newHISQ*(lepage: float = 0.0; naik: float = 1.0): HisqCoefs =
+proc newHISQ*(
+    lepage: float = 0.0; 
+    naik: float = 1.0,
+    reunitMethod: ProjectionMethod = CayleyHamilton,
+    reunitEps: float = 1e-16,
+    reunitMaxiters: int = 10
+  ): HisqCoefs =
   result = HisqCoefs(naik: -naik/24.0)
   result.fat7first.setHisqFat7(lepage,0.0)
   result.fat7second.setHisqFat7(2.0-lepage,naik)
+  result.projection = newUnitaryProjection(reunitMethod, reunitEps, reunitMaxiters)
 
 proc smearGetForce*[T](
     self: HisqCoefs; 
@@ -59,7 +56,7 @@ proc smearGetForce*[T](
     su,sul: T;
     displayPerformance: bool = false
   ): proc(dsdu: var T; dsdsu,dsdsul: T) =
-  mixin projectU,projectUderiv
+  mixin project, projectDeriv
   let
     lo = u[0].l
     fat7l1 = self.fat7first
@@ -72,16 +69,14 @@ proc smearGetForce*[T](
   
   # Smear
   v.makeImpLinks(u,fat7l1,info) # First fat7
-  w.projectU(v) # Unitary projection
+  self.projection.project(w,v) # Unitary projection
   makeImpLinks(su,w,fat7l2,sul,w,naik,info) # Second fat7
-  #makeImpLinks(su,u,fat7l2,sul,u,naik,info) # Second fat7
 
   # Chain rule - retains a reference to u,su,sul
   proc smearedForce(dsdu: var T; dsdsu,dsdsul: T) =
     var t = newOneOf(dsdu)
-    #dsdu.asqtadDeriv(u,dsdsu,fat7l2,u,dsdsul,naik,info) # Second fat7
     t.asqtadDeriv(w,dsdsu,fat7l2,w,dsdsul,naik,info) # Second fat7
-    t.projectUDeriv(w,v,t) # Unitary projection
+    self.projection.projectDeriv(t,w,v,t) # Unitary projection
     dsdu.fat7Deriv(u,t,fat7l1,info) # First fat7
     if displayPerformance: echo $(info)
   
@@ -109,13 +104,9 @@ when isMainModule:
     chl = lo.newGauge()
     gc = GaugeActionCoeffs(plaq:1.0)
     eps = floatParam("eps", 1e-6)
-    #warm = floatParam("warm", 1e-5)
     hisq = newHISQ()
 
-  #g.unit
-  #g.gaussian r
   g.random r
-  #g.warm warm, r
   g.stagPhase
   dg.gaussian r
   ch.gaussian r
@@ -135,12 +126,6 @@ when isMainModule:
       echo &"> ERROR rel error |{r}| > {tol*eps}"
 
   proc checkG =
-    #echo "Checking GaugeDeriv"
-    #for mu in 0..<fd.len:
-    #  fd[mu] := 0
-    #let a = gc.gaugeAction2(g)
-    #let a2 = gc.gaugeAction2(g2)
-    #gc.gaugeDeriv2(g, fd)
     echo "Checking redot deriv"
     var a, a2 = 0.0
     for mu in 0..<fd.len:
@@ -162,10 +147,6 @@ when isMainModule:
       fd[mu] := 0
       fc[mu] := ch[mu]
       lc[mu] := chl[mu]
-    #gc.gaugeDeriv2(fl, fc)
-    #gc.gaugeDeriv2(ll, lc)
-    #let a = gc.gaugeAction2(fl) + gc.gaugeAction2(ll)
-    #let a2 = gc.gaugeAction2(fl2) + gc.gaugeAction2(ll2)
     f(fd, fc, lc)
     f2(fd, fc, lc)  # combine forces for better accuracy
     check(2.0*(a2-a), tol)  # 2.0 due to combined forces

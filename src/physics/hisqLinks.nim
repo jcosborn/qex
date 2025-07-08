@@ -1,10 +1,11 @@
-import gauge, gauge/fat7l, maths, strUtils
+import gauge, gauge/fat7l, maths/[matproject], strUtils
 
 type
   HisqCoefs* = object
     fat7first*: Fat7lCoefs
     fat7second*: Fat7lCoefs
     naik*: float
+    projection*: UnitaryProjection
 
 proc setHisqFat7*(c: var Fat7lCoefs, f7lf,naik: float) =
   c.oneLink = (1.0+3.0*f7lf+naik)/8.0
@@ -13,12 +14,18 @@ proc setHisqFat7*(c: var Fat7lCoefs, f7lf,naik: float) =
   c.sevenStaple = -1.0/384.0
   c.lepage = -f7lf/16.0
 
-proc init*(c: var HisqCoefs) =
+proc init*(
+    c: var HisqCoefs, 
+    policy: ProjectionMethod = CayleyHamilton,
+    eps: float = 1e-16,
+    maxiters: int = 10
+  ) =
   var f7lf = 0.0
   var naik = 1.0
   c.fat7first.setHisqFat7(f7lf, 0.0)
   c.fat7second.setHisqFat7(2.0-f7lf, naik)
   c.naik = -naik/24.0
+  c.projection = newUnitaryProjection(policy, eps, maxiters)
 
 proc `$`*(c: HisqCoefs): string =
   let f1 = $c.fat7first
@@ -37,6 +44,7 @@ proc smear*(c: HisqCoefs, g: auto, fl,ll: auto, t1,t2: auto) =
     for i in t2[mu]:
       projectU(t2[mu][i], t1[mu][i])
   makeImpLinks(fl, t2, c.fat7second, ll, t2, c.naik, info)
+
 proc smear*(c: HisqCoefs, g: auto, fl,ll: auto) =
   var t1 = fl.newOneOf
   var t2 = fl.newOneOf
