@@ -78,10 +78,13 @@ proc smearGetForce*[T](
     t.asqtadDeriv(w,dsdsu,fat7l2,w,dsdsul,naik,info) # Second fat7
     self.projection.projectDeriv(t,w,v,t) # Unitary projection
     dsdu.fat7Deriv(u,t,fat7l1,info) # First fat7
-    if displayPerformance: echo $(info)
+    if displayPerformance: 
+      echo &"forceSmear: {info.secs:.5f}s {1e-9*info.flops/info.secs:.3f}Gf/s"
   
   # Display performance (if requested) and return
-  if displayPerformance: echo $(info)
+  if displayPerformance: 
+    echo &"linkSmear: {info.secs:.5f}s {1e-9*info.flops/info.secs:.3f}Gf/s"
+  info.clear
   return smearedForce
 
 when isMainModule:
