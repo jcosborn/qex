@@ -1,0 +1,43 @@
+Date: 07/09/2025
+Author: Curtis Taylor Peterson
+
+Test performed on a single core and a single thread. MILC code in this QEX fork 
+is under src/alphas/milc/ks_imp_dyn. Original test code can be found in Curtis 
+Taylor Peterson's personal fork of MILC.
+
+Original code: https://github.com/ctpeterson/milc/tree/develop/ks_imp_dyn_qex_style
+
+Please refer to ks_imp_dyn.in under src/alphas/tests to see input parameters. They
+should match exactly the input parameters that are default to alphashmc.nim when
+run in regression mode. Below are some comparisons.
+
+test                      QEX                        MILC
+----                      ---                        ----
+time (s)                  47.23                      147.93
+Hi momentum               35.27838406118099          35.278384061180674
+Hi gauge                  2.182787284255e-11         0.0000000000000000
+Hi fermion                24323.01973916897          24323.019739166433
+Hf momentum               -15322.46658815106         -15322.46659479541
+Hf gauge                  15275.75454479901          15275.754544798330
+Hf fermion                24405.0148059888           24405.014807977681 
+dH                        0.0046394                  0.004634753.......
+spatial plaquette         0.9512306418022376         0.9512306418033685
+temporal plaquette        0.9512676243921663         0.9512676243916064
+Re polaykov loop          0.8127022285408888         0.8127023.........
+Im polyakov loop          -0.000391633190088         -0.000391633......
+chiral condensate         0.0088035082639296         0.0088035082634411
+
+test                      relative difference
+----                      -------------------
+Hi momentum               8.8620500075133e-15
+Hi gauge                  |-----------------|
+Hi fermion                1.0424985284453e-13
+Hf momentum               4.3363460455097e-10
+Hf gauge                  4.4534758327719e-14
+Hf fermion                -8.149470063866e-11
+dH                        |-----------------|
+spatial plaquette         -1.188852758926e-12
+temporal plaquette        5.8856777731350e-13
+Re polaykov loop          |-----------------|
+Im polyakov loop          |-----------------|
+chiral condensate         5.5489226674230e-11

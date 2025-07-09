@@ -1,0 +1,43 @@
+# Makefile for testing code by comparing test output with sample output
+# For ks_imp_dyn
+
+#------------------------------------------------------------
+# Examples:
+
+#    make -f Make_test check
+# or, for a specific project or projects
+#    make -f Make_test "PROJS=su3_rmd" check
+
+# Edit the Makefile for the appropriate architecture and the file
+# ../Make_test_template to select the appropriate LAUNCH.
+
+# Results are in the files out.test.diff.*
+#------------------------------------------------------------
+
+# For comparing test output with sample output
+
+PROJS = \
+  su3_rmd \
+  su3_rmd_eos \
+  su3_rmd_susc \
+  su3_rmd_mu_eos \
+  su3_spectrum \
+  su3_hybrids \
+  su3_hmc_eo_symzk1_p4 \
+  su3_rmd_dblstore_gath13_fewsums \
+  su3_rmd_plaq_fat7naik \
+  su3_rmd1 \
+  su3_spectrum1 \
+  su3_hybrids1 \
+  su3_rmd_plaq_fat7naik1 \
+  su3_rmd_naive
+
+PRECLIST = 1 2
+
+PATTERNS = WARMUPS RUNNING
+
+include ../Make_test_template
+
+check: test
+
+clean: test_clean

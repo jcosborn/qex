@@ -1,0 +1,334 @@
+#  Kogut-Susskind fermions with improved actions
+#  MIMD version 7
+#
+#  Generic make-include file for ks_imp_dyn
+#  Use -DONEMASS to build for a single degenerate quark mass
+#  Otherwise the build assumes two quark masses.
+#
+#  This template file defines rules and macros common to all architectures
+#  It is intended to be an include file for other Makefiles.
+#  Don't use it by itself!
+#
+#	"make su3_rmd" used the refreshed molecular dynamics algorithm
+#		for the Symanzik 1 loop gauge action and Asqtad quark action
+#	"make su3_rmd1" Same, but for one degenerate quark mass
+#
+#       See examples below for naming and building targets for
+#               other actions
+
+MYINCLUDEDIR = .
+INCLUDEDIR = ../include
+#Where the complex and su3 libraries are
+LIBDIR = ../libraries
+
+GLOBAL_HEADERS = ${INCLUDEDIR} ../libraries/include
+
+INLINE_HEADERS = \
+  ../sse/include/ \
+  ../sse2/include/ \
+  ../libraries/include/
+
+MY_HEADERS = \
+  lattice.h \
+  params.h \
+  defines.h \
+  gauge_action.h \
+  ks_imp_includes.h \
+  quark_action.h
+
+HEADERS = ${GLOBAL_HEADERS} ${MY_HEADERS} ${INLINE_HEADERS} ${SCIDAC_HEADERS}
+
+MY_OBJECTS= \
+  control.o \
+  gauge_info.o \
+  setup.o \
+  update_h.o \
+  update_u.o
+
+# Objects depending on architecture and software package 
+LAYOUT = layout_hyper_prime.o # Choices possible here
+
+ADD_OBJECTS = ${MACHINE_DEP_IO} ${COMMPKG} ploop3.o show_generic_ks_md_opts.o
+
+# Generic QOP objects
+ifeq ($(strip ${HAVEQOP}),true)
+  ADD_OBJECTS += ${GENERICQOP}
+endif
+
+OBJECTS = \
+ ${MY_OBJECTS} \
+ ${GAUGE_OBJECTS} \
+ ${LAYOUT} \
+ ${STANDARD_OBJECTS} \
+ ${ADD_OBJECTS} \
+ ${EXTRA_OBJECTS}
+
+#Libraries for complex numbers and su3 functions
+P = $(strip ${PRECISION})
+QCDLIB = ${LIBDIR}/su3.${P}.a ${LIBDIR}/complex.${P}.a 
+
+LIBRARIES = ${QCDLIB} ${SCIDAC_LIBRARIES} ${QUDA_LIBRARIES}
+
+# Default rule for C compilation
+.c.o: ; ${CC} -c ${CFLAGS}  $*.c 
+
+# To force a full remake when changing targets
+LASTMAKE = .lastmake.${MAKEFILE}.${P}.${MYTARGET}
+
+${LASTMAKE}:
+	-/bin/rm -f .lastmake.* quark_action.h gauge_action.h
+	${MAKE} -f ${MAKEFILE} clean
+	touch ${LASTMAKE}
+
+ALL_MAKES = \
+   Make_template \
+   ${MAKEFILE} \
+   ../Make_template_combos \
+   ../Make_template_scidac \
+   ../generic/Make_template \
+   ../generic_ks/Make_template \
+   ../generic_wilson/Make_template
+
+# To force a remake when changing any make file, header, or target
+${OBJECTS} : ${LASTMAKE} ${HEADERS} ${ALL_MAKES}
+
+# Directories where we store the improved action headers
+QUARKIMP = ../generic_ks/imp_actions
+GAUGEIMP = ../generic/imp_actions
+
+quark_action.h: ${QUARKIMP}/${QUARK}
+	/bin/cp ${QUARKIMP}/${QUARK} quark_action.h
+
+gauge_action.h: ${GAUGEIMP}/${GAUGE}
+	/bin/cp ${GAUGEIMP}/${GAUGE} gauge_action.h
+
+
+########################################################
+# Optional DEFINES for targets
+
+# -DFN          identifies fat-Naik-like actions with only next and 3rd
+#               next neighbor linkage
+
+# -DONEMASS     only one fermion species (formerly ks_imp_dyn1)
+# 
+
+# -DDM_DU0      (for EOS) calculate quantities involving the deriv of
+#               action wrto u0
+
+# -DCHEM_POT    compute quantities needed for quark number susceptibility
+
+# -DD_CHEM_POT  compute quantities needed for nonzero chemical potential
+
+
+##### Targets: 
+
+su3_rmd::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DFN -UKS_MULTICG" \
+	"GAUGE = symanzik_1loop_action.h" \
+	"QUARK = asqtad_action.h" \
+	"EXTRA_OBJECTS= ${FN_OBJECTS} ${ASQ_FORCE} ${GAUGE_FORCE} update.o"
+
+su3_rmd1::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DFN  -DONEMASS -UKS_MULTICG" \
+	"GAUGE = symanzik_1loop_action.h" \
+	"QUARK = asqtad_action.h" \
+	"EXTRA_OBJECTS= ${FN_OBJECTS} ${ASQ_FORCE} ${GAUGE_FORCE} update_onemass.o"
+
+su3_rmd_eos::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DFN  -DDM_DU0 -UKS_MULTICG -DTR_MM_INV" \
+	"GAUGE = symanzik_1loop_action.h" \
+	"QUARK = asqtad_action.h" \
+	"EXTRA_OBJECTS= ${FN_OBJECTS} ${ASQ_FORCE} ${GAUGE_FORCE} update.o"
+
+su3_rmd_eos1::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DFN  -DDM_DU0 -DONEMASS -UKS_MULTICG" \
+	"GAUGE = symanzik_1loop_action.h" \
+	"QUARK = asqtad_action.h" \
+	"EXTRA_OBJECTS= ${FN_OBJECTS} ${ASQ_FORCE} ${GAUGE_FORCE} \
+	update_onemass.o"
+
+su3_rmd_susc::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DFN  -DCHEM_POT -UKS_MULTICG -DTR_MM_INV" \
+	"GAUGE = symanzik_1loop_action.h" \
+	"QUARK = asqtad_action.h" \
+	"EXTRA_OBJECTS= ${FN_OBJECTS} ${ASQ_FORCE} ${GAUGE_FORCE} update.o"
+
+su3_rmd_mu_eos::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DFN -DDM_DU0 -DD_CHEM_POT -UKS_MULTICG -DTR_MM_INV" \
+	"GAUGE = symanzik_1loop_action.h" \
+	"QUARK = asqtad_action.h" \
+	"EXTRA_OBJECTS=  ${FN_OBJECTS} ${ASQ_FORCE} ${GAUGE_FORCE} \
+	update.o mu_fast.o"
+
+su3_rmd_dblstore_gath13_fewsums::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DFN  -DDBLSTORE_FN -DD_FN_GATHER13 -DFEWSUMS \
+	-UKS_MULTICG" \
+	"GAUGE = symanzik_1loop_action.h" \
+	"QUARK = asqtad_action.h" \
+	"EXTRA_OBJECTS= ${FN_OBJECTS} ${ASQ_FORCE} ${GAUGE_FORCE} \
+	update.o"
+
+su3_hmc::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DFN  -UKS_MULTICG \
+	-DPHI_ALGORITHM -DHMC_ALGORITHM" \
+	"GAUGE = symanzik_1loop_action.h" \
+	"QUARK = asqtad_action.h" \
+	"EXTRA_OBJECTS= ${FN_OBJECTS} ${ASQ_FORCE} ${GAUGE_FORCE} \
+	d_action.o update.o"
+
+su3_hmc1::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DFN  -DONEMASS -UKS_MULTICG \
+	-DPHI_ALGORITHM -DHMC_ALGORITHM" \
+	"GAUGE = symanzik_1loop_action.h" \
+	"QUARK = asqtad_action.h" \
+	"EXTRA_OBJECTS= ${FN_OBJECTS} ${ASQ_FORCE} ${GAUGE_FORCE} \
+	d_action.o update_onemass.o"
+
+su3_rmd_naive::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DONEMASS -DFN -UKS_MULTICG -UKS_MULTIFF -UD_FN_GATHER13" \
+	"GAUGE = plaquette_action.h" \
+	"QUARK = onelink_action.h" \
+	"EXTRA_OBJECTS= ${FN_OBJECTS} ${GAUGE_FORCE} \
+	${ASQ_FORCE} update_onemass.o"
+
+# No QOP support for p4, so we use pure MILC routines only and
+# undefine the macros HAVE_QOP and HAVE_QDP
+# Fails to compile -- needs fixing -CD
+
+su3_hmc_eo_symzk1_p4::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DEO -DPHI_ALGORITHM -DHMC_ALGORITHM \
+	-UKS_MULTICG -UKS_MULTIFF -UHAVE_QOP -UHAVE_QDP" \
+	"GAUGE = symanzik_1loop_action.h" \
+	"QUARK = p4_action.h" \
+	"EXTRA_OBJECTS= ${EO_OBJECTS} ${EO_FORCE} ${GAUGE_FORCE_MILC} d_congrad5_two_src.o \
+	 d_action.o update.o"
+
+# The following stanzas illustrate how to create targets for alternative
+# choices of quark and gauge actions
+
+su3_rmd_eo_symzk1_fat7tad::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DEO -UKS_MULTICG" \
+	"GAUGE = symanzik_1loop_action.h" \
+	"QUARK = fat7tad_action.h" \
+	"EXTRA_OBJECTS= ${EO_OBJECTS} ${GAUGE_FORCE} \
+	update.o"
+
+su3_rmd_plaq_fat7naik::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DFN -UKS_MULTICG -UKS_MULTIFF" \
+	"GAUGE = plaquette_action.h" \
+	"QUARK = fat7naik_action.h" \
+	"EXTRA_OBJECTS= ${FN_OBJECTS} ${ASQ_FORCE} ${GAUGE_FORCE} \
+	update.o"
+
+su3_rmd_plaq_fat7naik1::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DFN  -DONEMASS -UKS_MULTICG -UKS_MULTIFF" \
+	"GAUGE = plaquette_action.h" \
+	"QUARK = fat7naik_action.h" \
+	"EXTRA_OBJECTS= ${FN_OBJECTS} ${ASQ_FORCE} ${GAUGE_FORCE} \
+	update_onemass.o"
+
+su3_rmd_symzk1_naik::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DFN -UKS_MULTICG" \
+	"GAUGE = symanzik_1loop_action.h" \
+	"QUARK = naik_action.h" \
+	"EXTRA_OBJECTS= ${FN_OBJECTS} ${ASQ_FORCE} ${GAUGE_FORCE} update.o"
+
+su3_rmd_eo_symzk1_p4::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" \
+	"DEFINES= -DEO -UKS_MULTICG -UKS_MULTIFF -UHAVE_QOP -UHAVE_QDP" \
+	"GAUGE = symanzik_1loop_action.h" \
+	"QUARK = p4_action.h" \
+	"EXTRA_OBJECTS= ${EO_OBJECTS} ${EO_FORCE} ${GAUGE_FORCE} update.o"
+
+######################################################################
+# HISQ targets - always with the quark-loop correction
+
+# Other HISQ optsions
+# 	-DHISQ_REUNIT_SVD_ONLY
+
+HISQ_OPTIONS = "DEFINES= -DFN -UKS_MULTICG -DINT_OMELYAN_3G1F \
+	-DHISQ_REUNIT_ALLOW_SVD \
+	-DHISQ_REUNIT_SVD_REL_ERROR=1e-8 \
+	-DHISQ_REUNIT_SVD_ABS_ERROR=1e-8 \
+        -DHISQ_FF_MULTI_WRAPPER \
+	-DHISQ_FORCE_FILTER=5.0e-5" \
+	"GAUGE = symanzik_1loop_hisq_action.h" \
+	"QUARK = hisq/hisq_u3_action.h" \
+	"EXTRA_OBJECTS= ${HISQ_OBJECTS} ${HISQ_FORCE} \
+	${GAUGE_FORCE}"
+
+su3_rmd_hisq::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" ${HISQ_OPTIONS} \
+	"EXTRA_OBJECTS += update.o"
+
+# The next one does asqtad in the guise of HISQ. The result should match su3_rmd above
+su3_rmd_hisq_debug::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" "DEFINES= -DFN -UKS_MULTICG \
+	-DHISQ_REUNIT_ALLOW_SVD -DHISQ_REUNIT_SVD_REL_ERROR=1e-8 \
+	-DHISQ_REUNIT_SVD_ABS_ERROR=1e-8 -DHISQ_FF_MULTI_WRAPPER \
+	-DHISQ_FORCE_FILTER=5.0e-5" \
+	"EXTRA_OBJECTS= ${HISQ_OBJECTS} ${HISQ_FORCE} \
+	${GAUGE_FORCE}" \
+	"QUARK = hisq/asqtad_action.h" \
+	"GAUGE = symanzik_1loop_action.h" \
+	"EXTRA_OBJECTS += update.o"
+
+su3_rmd1_hisq::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" ${HISQ_OPTIONS} \
+	"DEFINES += -DONEMASS" \
+	"EXTRA_OBJECTS += update_onemass.o"
+
+su3_hmc_hisq::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" ${HISQ_OPTIONS} \
+	"DEFINES += -DPHI_ALGORITH -DHMC_ALGORITHM" \
+	"EXTRA_OBJECTS += d_action.o update.o"
+
+su3_hmc1_hisq_pppa::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" ${HISQ_OPTIONS} \
+	"DEFINES += -DONEMASS -DPHI_ALGORITHM -DHMC_ALGORITHM -DHASENBUSCH" \
+	"EXTRA_OBJECTS += reunitarize_ks.o d_action.o update_onemass.o"
+
+qex_test::
+	${MAKE} -f ${MAKEFILE} target "MYTARGET= $@" ${HISQ_OPTIONS} \
+	"DEFINES += -DONEMASS -DPHI_ALGORITHM -DHMC_ALGORITHM -DHASENBUSCH -DQEX_TEST" \
+	"EXTRA_OBJECTS += reunitarize_ks.o d_action.o update_onemass.o"
+
+clean:
+	-/bin/rm -f *.o
+
+# Rules for generic routines
+include ../generic/Make_template
+
+# Rules for generic_ks routines
+include ../generic_ks/Make_template
+
+# Rules for generic_wilson routines
+include ../generic_wilson/Make_template
+
+libmake:
+	@echo Building libraries with ${MAKELIBRARIES}
+	cd ${LIBDIR} ;\
+	${MAKE} -f ${MAKELIBRARIES} "APP_CC=${CC}" "PRECISION=${PRECISION}" all
+
+localmake: ${OBJECTS} ${LIBRARIES}
+	${LD} -o ${MYTARGET} ${LDFLAGS} \
+	${OBJECTS} ${QCDLIB} ${ILIB} -lm
+	touch localmake
+
+target: libmake localmake 
+

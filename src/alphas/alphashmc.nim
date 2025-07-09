@@ -1,6 +1,4 @@
-import qex
-import examples/[hisqhmc_h]
-import gaugeflowutils
+import alphas
 import sequtils,parseutils,strutils
 import parseopt,json
 
@@ -68,7 +66,7 @@ proc condensate(hmc: auto) =
   pbpsp.r2req = ActionCGTol
   pbpsp.maxits = ActionMaxCGIter
   for source in 0..<nsources:
-    threads: tmpa.gaussian(hmc.prng.milc)
+    threads: tmpa.agaussian(hmc.prng.milc)
     hmc.stag.solve(tmpb,tmpa,mass,pbpsp)
     threads:
       let 

@@ -1,0 +1,14 @@
+# For generating sample ouptut from trusted code
+# For ks_imp_dyn1
+
+# Example: 
+#    make -f Make_sample "ARCH=vanilla" samples
+
+PROJS = \
+  su3_rmd_symzk1_asqtad \
+  su3_rmd_plaq_fat7naik \
+  su3_hmc_eo_symzk1_p4 \
+  su3_rmd_spectrum_symzk1_asqtad
+
+include ../Make_sample_template
+

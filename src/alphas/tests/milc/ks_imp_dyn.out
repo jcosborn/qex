@@ -1,0 +1,1022 @@
+SU3 with improved KS action
+Microcanonical simulation with refreshing
+Hybrid Monte Carlo algorithm
+PHI algorithm
+MIMD version cf09-dirty
+Machine = MPI (portable), with 1 nodes
+Host(0) = pop-os
+Username = curtyp
+Options selected...
+Generic double precision
+C_GLOBAL_INLINE
+DBLSTORE_FN
+D_FN_GATHER13
+FEWSUMS
+KS_MULTIFF=FNMAT
+VECLENGTH=4
+using "3G1F" nested Omelyan integrator
+HISQ_REUNIT_ALLOW_SVD
+HISQ_REUNIT_SVD_REL_ERROR = 1e-08
+HISQ_REUNIT_SVD_ABS_ERROR = 1e-08
+HISQ_FORCE_FILTER = 5e-05
+HISQ_FF_MULTI_WRAPPER is ON
+type 0 for no prompts, 1 for prompts, or 2 for proofreading
+nflavors 4
+nx 8
+ny 8
+nz 8
+nt 16
+iseed 123456789
+LAYOUT = Hypercubes, options = hyper_prime,
+automatic hyper_prime layout
+ON EACH NODE (RANK) 8 x 8 x 8 x 16
+Mallocing 21.5 MBytes per node for lattice
+Made lattice
+Made nn gathers
+Made 3nn gathers
+Finished setup
+
+
+warms 0
+trajecs 1
+traj_between_meas 1
+beta 7.5
+mass 0.005
+hasenbusch_mass 0.6
+u0 1
+microcanonical_time_step 0.01
+steps_per_trajectory 10
+max_cg_iterations_action 300
+max_cg_restarts_action 5
+error_per_site_action 1e-10
+max_cg_iterations_force 300
+max_cg_restarts_force 5
+error_per_site_force 1e-06
+error_for_propagator 1e-06
+npbp_reps 1
+prec_pbp 2
+fresh 
+forget 
+unit gauge configuration loaded
+CHECK PLAQ: 3.0000000000000000e+00 3.0000000000000000e+00
+CHECK NERSC LINKTR: 1.0000000000000000e+00 CKSUM: 0
+Reunitarized for double precision. Max deviation 0.00e+00 changed to 0.00e+00
+Time to check unitarity = 3.231049e-03
+"Fat 7 (level 1)"
+path coefficients: npath  path_coeff
+                    0      1.250000e-01
+                    1      -6.250000e-02
+                    2      1.562500e-02
+                    3      -2.604167e-03
+Unitarization method = UNITARIZE_ANALYTIC
+Unitarization group = U(3)
+"Fat7 + 2xLepage"
+path coefficients: npath  path_coeff
+                    0      1.000000e+00
+                    1      -4.166667e-02
+                    2      -6.250000e-02
+                    3      1.562500e-02
+                    4      -2.604167e-03
+                    5      -1.250000e-01
+"1-link + Naik"
+path coefficients: npath  path_coeff
+                    0      1.250000e-01
+                    1      -4.166667e-02
+MAKING PATH TABLES
+Combined fattening and long-link calculation time: 0.089280
+Symanzik 1x1 + 1x2 + 1x1x1 action with HISQ quark loops
+gauge_action: total_dyn_flavors = 4
+loop coefficients: nloop rep loop_coeff  multiplicity
+                    0 0      1.000000e+00     6
+                    1 0      -5.000000e-02     12
+                    2 0      -0.000000e+00     16
+WARMUPS COMPLETED
+NORM AFTER GRAND: 24465.341463
+NORM AFTER D: 61800.706218
+CONGRAD5: time = 2.789402e-02 (fn D) masses = 1 iters = 28 mflops = 9.760849e+03
+ OK converged final_rsq= 1e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 28
+CONGRAD5: time = 2.545714e-02 (fn D) masses = 1 iters = 28 mflops = 1.069520e+04
+ OK converged final_rsq= 1e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 28
+NORM AFTER SOLVE: 2593.998434
+NORM AFTER GRAND: 24670.560939
+NORM AFTER D: 35279.900853
+ACTION Ddag: 30615.572785
+CONGRAD5: time = 2.568412e-02 (fn D) masses = 1 iters = 33 mflops = 1.249367e+04
+ OK converged final_rsq= 7.1e-22 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 33
+CONGRAD5: time = 2.357411e-02 (fn D) masses = 1 iters = 33 mflops = 1.361191e+04
+ OK converged final_rsq= 5.3e-22 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 33
+CONGRAD5: time = 2.023792e-02 (fn D) masses = 1 iters = 28 mflops = 1.345342e+04
+ OK converged final_rsq= 1.1e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 28
+CONGRAD5: time = 1.215935e-05 (fn D) masses = 1 iters = 0 mflops = 0.000000e+00
+ OK converged final_rsq= 0 (cf 1e-20) rel = 0 (cf 0) restarts = 0 iters= 0
+FIRST SOLVE: 12129.367985
+SECOND SOLVE: 12193.651754
+PLAQUETTE ACTION: -3.686400e+05
+ACTION: g,h,f = 0.00000000000000000  35.27838406118067383  24323.01973916643328266  24358.29812322761426913
+DG = 0.00000000000000000, DH = 35.27838406118067383, DF = 24323.01973916643328266, D = 24358.29812322761426913
+GFTIME:   time = 1.218960e-01 (Symanzik1) mflops = 1.028261e+04
+GFTIME:   time = 1.246309e-01 (Symanzik1) mflops = 1.005696e+04
+GFTIME:   time = 1.255329e-01 (Symanzik1) mflops = 9.984706e+03
+GFTIME:   time = 1.241639e-01 (Symanzik1) mflops = 1.009479e+04
+GFTIME:   time = 1.234159e-01 (Symanzik1) mflops = 1.015597e+04
+GFTIME:   time = 1.238210e-01 (Symanzik1) mflops = 1.012275e+04
+GFTIME:   time = 1.241341e-01 (Symanzik1) mflops = 1.009722e+04
+GFTIME:   time = 1.240871e-01 (Symanzik1) mflops = 1.010104e+04
+GFTIME:   time = 1.246061e-01 (Symanzik1) mflops = 1.005897e+04
+GFTIME:   time = 1.240370e-01 (Symanzik1) mflops = 1.010512e+04
+GFTIME:   time = 1.241281e-01 (Symanzik1) mflops = 1.009770e+04
+GFTIME:   time = 1.237190e-01 (Symanzik1) mflops = 1.013110e+04
+GFTIME:   time = 1.242230e-01 (Symanzik1) mflops = 1.008999e+04
+GFTIME:   time = 1.243451e-01 (Symanzik1) mflops = 1.008008e+04
+GFTIME:   time = 1.242430e-01 (Symanzik1) mflops = 1.008836e+04
+GFTIME:   time = 1.239562e-01 (Symanzik1) mflops = 1.011171e+04
+GFTIME:   time = 1.273711e-01 (Symanzik1) mflops = 9.840608e+03
+GFTIME:   time = 1.238301e-01 (Symanzik1) mflops = 1.012201e+04
+GFTIME:   time = 1.235170e-01 (Symanzik1) mflops = 1.014766e+04
+GFTIME:   time = 1.240821e-01 (Symanzik1) mflops = 1.010145e+04
+Combined fattening and long-link calculation time: 0.045687
+FLTIME: time = 1.040890e-01 (HISQ MILC D) mflops = 1.008593e+04
+CONGRAD5: time = 2.593589e-02 (fn D) masses = 1 iters = 36 mflops = 1.349715e+04
+ OK converged final_rsq= 4.7e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 36
+CONGRAD5: time = 1.016808e-02 (fn D) masses = 1 iters = 14 mflops = 1.338844e+04
+ OK converged final_rsq= 4.3e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 14
+Combined fattening and long-link calculation time: 0.046817
+FLTIME: time = 1.046631e-01 (HISQ MILC D) mflops = 1.003061e+04
+FFTIME:  time = 2.817114e+00 (HISQ MILC D) terms = 2 flops/site = 2132435 mflops = 6.200996e+03
+GFTIME:   time = 1.264451e-01 (Symanzik1) mflops = 9.912675e+03
+GFTIME:   time = 1.256008e-01 (Symanzik1) mflops = 9.979304e+03
+GFTIME:   time = 1.262188e-01 (Symanzik1) mflops = 9.930445e+03
+GFTIME:   time = 1.314628e-01 (Symanzik1) mflops = 9.534322e+03
+GFTIME:   time = 1.315989e-01 (Symanzik1) mflops = 9.524459e+03
+GFTIME:   time = 1.256630e-01 (Symanzik1) mflops = 9.974363e+03
+GFTIME:   time = 1.261830e-01 (Symanzik1) mflops = 9.933259e+03
+GFTIME:   time = 1.270900e-01 (Symanzik1) mflops = 9.862373e+03
+GFTIME:   time = 1.265600e-01 (Symanzik1) mflops = 9.903674e+03
+GFTIME:   time = 1.252351e-01 (Symanzik1) mflops = 1.000845e+04
+GFTIME:   time = 1.258771e-01 (Symanzik1) mflops = 9.957398e+03
+GFTIME:   time = 1.256549e-01 (Symanzik1) mflops = 9.975006e+03
+GFTIME:   time = 1.259069e-01 (Symanzik1) mflops = 9.955041e+03
+GFTIME:   time = 1.253181e-01 (Symanzik1) mflops = 1.000182e+04
+GFTIME:   time = 1.251671e-01 (Symanzik1) mflops = 1.001388e+04
+GFTIME:   time = 1.247070e-01 (Symanzik1) mflops = 1.005083e+04
+GFTIME:   time = 1.258872e-01 (Symanzik1) mflops = 9.956606e+03
+GFTIME:   time = 1.261568e-01 (Symanzik1) mflops = 9.935324e+03
+GFTIME:   time = 1.253409e-01 (Symanzik1) mflops = 9.999995e+03
+GFTIME:   time = 1.250539e-01 (Symanzik1) mflops = 1.002295e+04
+Combined fattening and long-link calculation time: 0.046244
+FLTIME: time = 1.053641e-01 (HISQ MILC D) mflops = 9.964059e+03
+CONGRAD5: time = 1.605892e-02 (fn D) masses = 1 iters = 21 mflops = 1.271580e+04
+ OK converged final_rsq= 9.9e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 21
+CONGRAD5: time = 1.125383e-02 (fn D) masses = 1 iters = 15 mflops = 1.296079e+04
+ OK converged final_rsq= 8e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 15
+Combined fattening and long-link calculation time: 0.046831
+FLTIME: time = 1.047180e-01 (HISQ MILC D) mflops = 1.002554e+04
+FFTIME:  time = 2.802184e+00 (HISQ MILC D) terms = 2 flops/site = 2132437 mflops = 6.234042e+03
+GFTIME:   time = 1.269929e-01 (Symanzik1) mflops = 9.869909e+03
+GFTIME:   time = 1.325769e-01 (Symanzik1) mflops = 9.454199e+03
+GFTIME:   time = 1.261380e-01 (Symanzik1) mflops = 9.936808e+03
+GFTIME:   time = 1.264660e-01 (Symanzik1) mflops = 9.911031e+03
+GFTIME:   time = 1.245351e-01 (Symanzik1) mflops = 1.006470e+04
+GFTIME:   time = 1.244380e-01 (Symanzik1) mflops = 1.007255e+04
+GFTIME:   time = 1.244409e-01 (Symanzik1) mflops = 1.007232e+04
+GFTIME:   time = 1.240990e-01 (Symanzik1) mflops = 1.010007e+04
+GFTIME:   time = 1.241591e-01 (Symanzik1) mflops = 1.009518e+04
+GFTIME:   time = 1.242020e-01 (Symanzik1) mflops = 1.009169e+04
+GFTIME:   time = 1.239729e-01 (Symanzik1) mflops = 1.011035e+04
+GFTIME:   time = 1.237681e-01 (Symanzik1) mflops = 1.012708e+04
+GFTIME:   time = 1.238880e-01 (Symanzik1) mflops = 1.011727e+04
+GFTIME:   time = 1.241610e-01 (Symanzik1) mflops = 1.009503e+04
+GFTIME:   time = 1.246052e-01 (Symanzik1) mflops = 1.005904e+04
+GFTIME:   time = 1.243210e-01 (Symanzik1) mflops = 1.008204e+04
+GFTIME:   time = 1.245801e-01 (Symanzik1) mflops = 1.006106e+04
+GFTIME:   time = 1.235449e-01 (Symanzik1) mflops = 1.014537e+04
+GFTIME:   time = 1.237140e-01 (Symanzik1) mflops = 1.013151e+04
+GFTIME:   time = 1.240721e-01 (Symanzik1) mflops = 1.010226e+04
+GFTIME:   time = 1.256728e-01 (Symanzik1) mflops = 9.973587e+03
+GFTIME:   time = 1.249640e-01 (Symanzik1) mflops = 1.003016e+04
+GFTIME:   time = 1.239390e-01 (Symanzik1) mflops = 1.011311e+04
+GFTIME:   time = 1.240880e-01 (Symanzik1) mflops = 1.010096e+04
+GFTIME:   time = 1.255019e-01 (Symanzik1) mflops = 9.987172e+03
+GFTIME:   time = 1.243579e-01 (Symanzik1) mflops = 1.007904e+04
+GFTIME:   time = 1.246738e-01 (Symanzik1) mflops = 1.005350e+04
+GFTIME:   time = 1.246941e-01 (Symanzik1) mflops = 1.005187e+04
+GFTIME:   time = 1.246550e-01 (Symanzik1) mflops = 1.005502e+04
+GFTIME:   time = 1.243498e-01 (Symanzik1) mflops = 1.007970e+04
+GFTIME:   time = 1.242831e-01 (Symanzik1) mflops = 1.008511e+04
+GFTIME:   time = 1.250720e-01 (Symanzik1) mflops = 1.002150e+04
+GFTIME:   time = 1.246841e-01 (Symanzik1) mflops = 1.005268e+04
+GFTIME:   time = 1.243188e-01 (Symanzik1) mflops = 1.008221e+04
+GFTIME:   time = 1.238871e-01 (Symanzik1) mflops = 1.011735e+04
+GFTIME:   time = 1.233358e-01 (Symanzik1) mflops = 1.016257e+04
+GFTIME:   time = 1.253159e-01 (Symanzik1) mflops = 1.000199e+04
+GFTIME:   time = 1.244388e-01 (Symanzik1) mflops = 1.007249e+04
+GFTIME:   time = 1.245520e-01 (Symanzik1) mflops = 1.006334e+04
+GFTIME:   time = 1.255159e-01 (Symanzik1) mflops = 9.986053e+03
+Combined fattening and long-link calculation time: 0.045690
+FLTIME: time = 1.057291e-01 (HISQ MILC D) mflops = 9.929659e+03
+CONGRAD5: time = 1.620102e-02 (fn D) masses = 1 iters = 21 mflops = 1.260427e+04
+ OK converged final_rsq= 5.5e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 21
+CONGRAD5: time = 1.120901e-02 (fn D) masses = 1 iters = 15 mflops = 1.301262e+04
+ OK converged final_rsq= 3.4e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 15
+Combined fattening and long-link calculation time: 0.046721
+FLTIME: time = 1.059251e-01 (HISQ MILC D) mflops = 9.911287e+03
+FFTIME:  time = 2.799417e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 6.240204e+03
+GFTIME:   time = 1.243420e-01 (Symanzik1) mflops = 1.008034e+04
+GFTIME:   time = 1.246829e-01 (Symanzik1) mflops = 1.005277e+04
+GFTIME:   time = 1.243970e-01 (Symanzik1) mflops = 1.007587e+04
+GFTIME:   time = 1.246281e-01 (Symanzik1) mflops = 1.005719e+04
+GFTIME:   time = 1.247680e-01 (Symanzik1) mflops = 1.004591e+04
+GFTIME:   time = 1.244349e-01 (Symanzik1) mflops = 1.007280e+04
+GFTIME:   time = 1.247380e-01 (Symanzik1) mflops = 1.004833e+04
+GFTIME:   time = 1.245301e-01 (Symanzik1) mflops = 1.006511e+04
+GFTIME:   time = 1.244712e-01 (Symanzik1) mflops = 1.006987e+04
+GFTIME:   time = 1.246459e-01 (Symanzik1) mflops = 1.005575e+04
+GFTIME:   time = 1.257579e-01 (Symanzik1) mflops = 9.966837e+03
+GFTIME:   time = 1.248810e-01 (Symanzik1) mflops = 1.003682e+04
+GFTIME:   time = 1.249089e-01 (Symanzik1) mflops = 1.003458e+04
+GFTIME:   time = 1.251190e-01 (Symanzik1) mflops = 1.001774e+04
+GFTIME:   time = 1.244509e-01 (Symanzik1) mflops = 1.007151e+04
+GFTIME:   time = 1.247911e-01 (Symanzik1) mflops = 1.004405e+04
+GFTIME:   time = 1.249361e-01 (Symanzik1) mflops = 1.003240e+04
+GFTIME:   time = 1.247060e-01 (Symanzik1) mflops = 1.005091e+04
+GFTIME:   time = 1.248500e-01 (Symanzik1) mflops = 1.003931e+04
+GFTIME:   time = 1.245470e-01 (Symanzik1) mflops = 1.006374e+04
+Combined fattening and long-link calculation time: 0.046045
+FLTIME: time = 1.053262e-01 (HISQ MILC D) mflops = 9.967645e+03
+CONGRAD5: time = 2.096486e-02 (fn D) masses = 1 iters = 27 mflops = 1.252312e+04
+ OK converged final_rsq= 9e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 27
+CONGRAD5: time = 1.137710e-02 (fn D) masses = 1 iters = 15 mflops = 1.282037e+04
+ OK converged final_rsq= 9.4e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 15
+Combined fattening and long-link calculation time: 0.045948
+FLTIME: time = 1.049950e-01 (HISQ MILC D) mflops = 9.999084e+03
+FFTIME:  time = 2.788127e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 6.265472e+03
+GFTIME:   time = 1.256101e-01 (Symanzik1) mflops = 9.978566e+03
+GFTIME:   time = 1.257069e-01 (Symanzik1) mflops = 9.970882e+03
+GFTIME:   time = 1.253469e-01 (Symanzik1) mflops = 9.999520e+03
+GFTIME:   time = 1.251199e-01 (Symanzik1) mflops = 1.001766e+04
+GFTIME:   time = 1.251090e-01 (Symanzik1) mflops = 1.001854e+04
+GFTIME:   time = 1.246600e-01 (Symanzik1) mflops = 1.005462e+04
+GFTIME:   time = 1.250999e-01 (Symanzik1) mflops = 1.001926e+04
+GFTIME:   time = 1.256471e-01 (Symanzik1) mflops = 9.975631e+03
+GFTIME:   time = 1.261780e-01 (Symanzik1) mflops = 9.933653e+03
+GFTIME:   time = 1.253538e-01 (Symanzik1) mflops = 9.998968e+03
+GFTIME:   time = 1.248479e-01 (Symanzik1) mflops = 1.003949e+04
+GFTIME:   time = 1.252160e-01 (Symanzik1) mflops = 1.000997e+04
+GFTIME:   time = 1.271288e-01 (Symanzik1) mflops = 9.859358e+03
+GFTIME:   time = 1.263752e-01 (Symanzik1) mflops = 9.918155e+03
+GFTIME:   time = 1.254890e-01 (Symanzik1) mflops = 9.988197e+03
+GFTIME:   time = 1.282339e-01 (Symanzik1) mflops = 9.774394e+03
+GFTIME:   time = 1.256571e-01 (Symanzik1) mflops = 9.974836e+03
+GFTIME:   time = 1.252301e-01 (Symanzik1) mflops = 1.000885e+04
+GFTIME:   time = 1.249938e-01 (Symanzik1) mflops = 1.002777e+04
+GFTIME:   time = 1.258821e-01 (Symanzik1) mflops = 9.957002e+03
+GFTIME:   time = 1.259670e-01 (Symanzik1) mflops = 9.950293e+03
+GFTIME:   time = 1.257119e-01 (Symanzik1) mflops = 9.970485e+03
+GFTIME:   time = 1.253219e-01 (Symanzik1) mflops = 1.000152e+04
+GFTIME:   time = 1.252701e-01 (Symanzik1) mflops = 1.000565e+04
+GFTIME:   time = 1.248870e-01 (Symanzik1) mflops = 1.003634e+04
+GFTIME:   time = 1.252849e-01 (Symanzik1) mflops = 1.000447e+04
+GFTIME:   time = 1.259840e-01 (Symanzik1) mflops = 9.948956e+03
+GFTIME:   time = 1.263602e-01 (Symanzik1) mflops = 9.919334e+03
+GFTIME:   time = 1.257319e-01 (Symanzik1) mflops = 9.968897e+03
+GFTIME:   time = 1.254520e-01 (Symanzik1) mflops = 9.991139e+03
+GFTIME:   time = 1.305099e-01 (Symanzik1) mflops = 9.603940e+03
+GFTIME:   time = 1.254709e-01 (Symanzik1) mflops = 9.989639e+03
+GFTIME:   time = 1.251519e-01 (Symanzik1) mflops = 1.001510e+04
+GFTIME:   time = 1.257689e-01 (Symanzik1) mflops = 9.965967e+03
+GFTIME:   time = 1.259601e-01 (Symanzik1) mflops = 9.950839e+03
+GFTIME:   time = 1.257510e-01 (Symanzik1) mflops = 9.967385e+03
+GFTIME:   time = 1.255701e-01 (Symanzik1) mflops = 9.981749e+03
+GFTIME:   time = 1.253479e-01 (Symanzik1) mflops = 9.999443e+03
+GFTIME:   time = 1.259222e-01 (Symanzik1) mflops = 9.953834e+03
+GFTIME:   time = 1.256840e-01 (Symanzik1) mflops = 9.972698e+03
+Combined fattening and long-link calculation time: 0.046610
+FLTIME: time = 1.056709e-01 (HISQ MILC D) mflops = 9.935126e+03
+CONGRAD5: time = 2.053905e-02 (fn D) masses = 1 iters = 27 mflops = 1.278275e+04
+ OK converged final_rsq= 4.4e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 27
+CONGRAD5: time = 1.128697e-02 (fn D) masses = 1 iters = 15 mflops = 1.292273e+04
+ OK converged final_rsq= 4e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 15
+Combined fattening and long-link calculation time: 0.046924
+FLTIME: time = 1.051960e-01 (HISQ MILC D) mflops = 9.979980e+03
+FFTIME:  time = 2.795125e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 6.249786e+03
+GFTIME:   time = 1.412899e-01 (Symanzik1) mflops = 8.871181e+03
+GFTIME:   time = 1.426659e-01 (Symanzik1) mflops = 8.785625e+03
+GFTIME:   time = 1.299889e-01 (Symanzik1) mflops = 9.642429e+03
+GFTIME:   time = 1.262920e-01 (Symanzik1) mflops = 9.924689e+03
+GFTIME:   time = 1.258230e-01 (Symanzik1) mflops = 9.961681e+03
+GFTIME:   time = 1.255262e-01 (Symanzik1) mflops = 9.985237e+03
+GFTIME:   time = 1.259000e-01 (Symanzik1) mflops = 9.955588e+03
+GFTIME:   time = 1.253691e-01 (Symanzik1) mflops = 9.997751e+03
+GFTIME:   time = 1.257839e-01 (Symanzik1) mflops = 9.964777e+03
+GFTIME:   time = 1.264529e-01 (Symanzik1) mflops = 9.912058e+03
+GFTIME:   time = 1.268451e-01 (Symanzik1) mflops = 9.881411e+03
+GFTIME:   time = 1.271729e-01 (Symanzik1) mflops = 9.855939e+03
+GFTIME:   time = 1.457381e-01 (Symanzik1) mflops = 8.600418e+03
+GFTIME:   time = 1.354799e-01 (Symanzik1) mflops = 9.251620e+03
+GFTIME:   time = 1.404052e-01 (Symanzik1) mflops = 8.927084e+03
+GFTIME:   time = 1.386349e-01 (Symanzik1) mflops = 9.041075e+03
+GFTIME:   time = 1.288290e-01 (Symanzik1) mflops = 9.729244e+03
+GFTIME:   time = 1.294100e-01 (Symanzik1) mflops = 9.685561e+03
+GFTIME:   time = 1.507261e-01 (Symanzik1) mflops = 8.315806e+03
+GFTIME:   time = 1.553199e-01 (Symanzik1) mflops = 8.069852e+03
+Combined fattening and long-link calculation time: 0.048403
+FLTIME: time = 1.158922e-01 (HISQ MILC D) mflops = 9.058886e+03
+CONGRAD5: time = 2.328014e-02 (fn D) masses = 1 iters = 28 mflops = 1.169534e+04
+ OK converged final_rsq= 7.4e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 28
+CONGRAD5: time = 1.553798e-02 (fn D) masses = 1 iters = 16 mflops = 1.001304e+04
+ OK converged final_rsq= 2.4e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 16
+Combined fattening and long-link calculation time: 0.053991
+FLTIME: time = 1.235740e-01 (HISQ MILC D) mflops = 8.495750e+03
+FFTIME:  time = 3.009735e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 5.804143e+03
+GFTIME:   time = 1.439152e-01 (Symanzik1) mflops = 8.709358e+03
+GFTIME:   time = 1.451540e-01 (Symanzik1) mflops = 8.635027e+03
+GFTIME:   time = 1.349380e-01 (Symanzik1) mflops = 9.288775e+03
+GFTIME:   time = 1.280999e-01 (Symanzik1) mflops = 9.784618e+03
+GFTIME:   time = 1.444130e-01 (Symanzik1) mflops = 8.679335e+03
+GFTIME:   time = 1.500380e-01 (Symanzik1) mflops = 8.353942e+03
+GFTIME:   time = 1.295900e-01 (Symanzik1) mflops = 9.672108e+03
+GFTIME:   time = 1.288819e-01 (Symanzik1) mflops = 9.725248e+03
+GFTIME:   time = 1.277409e-01 (Symanzik1) mflops = 9.812121e+03
+GFTIME:   time = 1.288681e-01 (Symanzik1) mflops = 9.726292e+03
+GFTIME:   time = 1.277690e-01 (Symanzik1) mflops = 9.809960e+03
+GFTIME:   time = 1.267660e-01 (Symanzik1) mflops = 9.887581e+03
+GFTIME:   time = 1.299460e-01 (Symanzik1) mflops = 9.645613e+03
+GFTIME:   time = 1.259921e-01 (Symanzik1) mflops = 9.948316e+03
+GFTIME:   time = 1.329479e-01 (Symanzik1) mflops = 9.427818e+03
+GFTIME:   time = 1.259820e-01 (Symanzik1) mflops = 9.949106e+03
+GFTIME:   time = 1.322241e-01 (Symanzik1) mflops = 9.479429e+03
+GFTIME:   time = 1.258092e-01 (Symanzik1) mflops = 9.962776e+03
+GFTIME:   time = 1.251140e-01 (Symanzik1) mflops = 1.001814e+04
+GFTIME:   time = 1.259520e-01 (Symanzik1) mflops = 9.951479e+03
+GFTIME:   time = 1.260312e-01 (Symanzik1) mflops = 9.945229e+03
+GFTIME:   time = 1.254890e-01 (Symanzik1) mflops = 9.988197e+03
+GFTIME:   time = 1.253541e-01 (Symanzik1) mflops = 9.998949e+03
+GFTIME:   time = 1.256289e-01 (Symanzik1) mflops = 9.977070e+03
+GFTIME:   time = 1.257489e-01 (Symanzik1) mflops = 9.967555e+03
+GFTIME:   time = 1.258671e-01 (Symanzik1) mflops = 9.958190e+03
+GFTIME:   time = 1.252580e-01 (Symanzik1) mflops = 1.000662e+04
+GFTIME:   time = 1.252332e-01 (Symanzik1) mflops = 1.000860e+04
+GFTIME:   time = 1.248980e-01 (Symanzik1) mflops = 1.003546e+04
+GFTIME:   time = 1.262872e-01 (Symanzik1) mflops = 9.925064e+03
+GFTIME:   time = 1.253250e-01 (Symanzik1) mflops = 1.000127e+04
+GFTIME:   time = 1.254280e-01 (Symanzik1) mflops = 9.993057e+03
+GFTIME:   time = 1.261091e-01 (Symanzik1) mflops = 9.939081e+03
+GFTIME:   time = 1.255190e-01 (Symanzik1) mflops = 9.985806e+03
+GFTIME:   time = 1.250081e-01 (Symanzik1) mflops = 1.002662e+04
+GFTIME:   time = 1.256301e-01 (Symanzik1) mflops = 9.976975e+03
+GFTIME:   time = 1.252651e-01 (Symanzik1) mflops = 1.000605e+04
+GFTIME:   time = 1.255841e-01 (Symanzik1) mflops = 9.980631e+03
+GFTIME:   time = 1.259389e-01 (Symanzik1) mflops = 9.952515e+03
+GFTIME:   time = 1.249330e-01 (Symanzik1) mflops = 1.003265e+04
+Combined fattening and long-link calculation time: 0.048978
+FLTIME: time = 1.089120e-01 (HISQ MILC D) mflops = 9.639471e+03
+CONGRAD5: time = 2.065206e-02 (fn D) masses = 1 iters = 27 mflops = 1.271280e+04
+ OK converged final_rsq= 7.1e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 27
+CONGRAD5: time = 1.160812e-02 (fn D) masses = 1 iters = 15 mflops = 1.256521e+04
+ OK converged final_rsq= 4.6e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 15
+Combined fattening and long-link calculation time: 0.048783
+FLTIME: time = 1.115670e-01 (HISQ MILC D) mflops = 9.410074e+03
+FFTIME:  time = 3.025144e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 5.774579e+03
+GFTIME:   time = 1.444759e-01 (Symanzik1) mflops = 8.675554e+03
+GFTIME:   time = 1.448720e-01 (Symanzik1) mflops = 8.651839e+03
+GFTIME:   time = 1.453459e-01 (Symanzik1) mflops = 8.623625e+03
+GFTIME:   time = 1.420550e-01 (Symanzik1) mflops = 8.823403e+03
+GFTIME:   time = 1.435409e-01 (Symanzik1) mflops = 8.732070e+03
+GFTIME:   time = 1.437891e-01 (Symanzik1) mflops = 8.716997e+03
+GFTIME:   time = 1.264172e-01 (Symanzik1) mflops = 9.914863e+03
+GFTIME:   time = 1.338441e-01 (Symanzik1) mflops = 9.364689e+03
+GFTIME:   time = 1.272810e-01 (Symanzik1) mflops = 9.847575e+03
+GFTIME:   time = 1.259160e-01 (Symanzik1) mflops = 9.954325e+03
+GFTIME:   time = 1.258740e-01 (Symanzik1) mflops = 9.957643e+03
+GFTIME:   time = 1.329832e-01 (Symanzik1) mflops = 9.425316e+03
+GFTIME:   time = 1.255939e-01 (Symanzik1) mflops = 9.979854e+03
+GFTIME:   time = 1.251180e-01 (Symanzik1) mflops = 1.001781e+04
+GFTIME:   time = 1.251352e-01 (Symanzik1) mflops = 1.001644e+04
+GFTIME:   time = 1.326830e-01 (Symanzik1) mflops = 9.446639e+03
+GFTIME:   time = 1.258240e-01 (Symanzik1) mflops = 9.961605e+03
+GFTIME:   time = 1.257422e-01 (Symanzik1) mflops = 9.968084e+03
+GFTIME:   time = 1.308751e-01 (Symanzik1) mflops = 9.577136e+03
+GFTIME:   time = 1.279371e-01 (Symanzik1) mflops = 9.797072e+03
+Combined fattening and long-link calculation time: 0.045151
+FLTIME: time = 1.047940e-01 (HISQ MILC D) mflops = 1.001826e+04
+CONGRAD5: time = 2.185011e-02 (fn D) masses = 1 iters = 29 mflops = 1.290580e+04
+ OK converged final_rsq= 5.4e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 29
+CONGRAD5: time = 1.202393e-02 (fn D) masses = 1 iters = 16 mflops = 1.293941e+04
+ OK converged final_rsq= 2.5e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 16
+Combined fattening and long-link calculation time: 0.046209
+FLTIME: time = 1.045649e-01 (HISQ MILC D) mflops = 1.004021e+04
+FFTIME:  time = 2.864171e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 6.099123e+03
+GFTIME:   time = 1.267130e-01 (Symanzik1) mflops = 9.891711e+03
+GFTIME:   time = 1.355028e-01 (Symanzik1) mflops = 9.250057e+03
+GFTIME:   time = 1.269970e-01 (Symanzik1) mflops = 9.869594e+03
+GFTIME:   time = 1.260910e-01 (Symanzik1) mflops = 9.940509e+03
+GFTIME:   time = 1.260991e-01 (Symanzik1) mflops = 9.939870e+03
+GFTIME:   time = 1.336250e-01 (Symanzik1) mflops = 9.380045e+03
+GFTIME:   time = 1.261709e-01 (Symanzik1) mflops = 9.934216e+03
+GFTIME:   time = 1.262610e-01 (Symanzik1) mflops = 9.927126e+03
+GFTIME:   time = 1.312392e-01 (Symanzik1) mflops = 9.550569e+03
+GFTIME:   time = 1.279898e-01 (Symanzik1) mflops = 9.793039e+03
+GFTIME:   time = 1.266921e-01 (Symanzik1) mflops = 9.893349e+03
+GFTIME:   time = 1.271360e-01 (Symanzik1) mflops = 9.858804e+03
+GFTIME:   time = 1.341879e-01 (Symanzik1) mflops = 9.340696e+03
+GFTIME:   time = 1.266360e-01 (Symanzik1) mflops = 9.897726e+03
+GFTIME:   time = 1.261859e-01 (Symanzik1) mflops = 9.933034e+03
+GFTIME:   time = 1.261909e-01 (Symanzik1) mflops = 9.932640e+03
+GFTIME:   time = 1.329939e-01 (Symanzik1) mflops = 9.424556e+03
+GFTIME:   time = 1.273692e-01 (Symanzik1) mflops = 9.840755e+03
+GFTIME:   time = 1.266220e-01 (Symanzik1) mflops = 9.898826e+03
+GFTIME:   time = 1.347728e-01 (Symanzik1) mflops = 9.300163e+03
+GFTIME:   time = 1.272399e-01 (Symanzik1) mflops = 9.850749e+03
+GFTIME:   time = 1.262388e-01 (Symanzik1) mflops = 9.928869e+03
+GFTIME:   time = 1.267490e-01 (Symanzik1) mflops = 9.888902e+03
+GFTIME:   time = 1.345730e-01 (Symanzik1) mflops = 9.313970e+03
+GFTIME:   time = 1.263289e-01 (Symanzik1) mflops = 9.921786e+03
+GFTIME:   time = 1.261530e-01 (Symanzik1) mflops = 9.935625e+03
+GFTIME:   time = 1.298101e-01 (Symanzik1) mflops = 9.655711e+03
+GFTIME:   time = 1.317871e-01 (Symanzik1) mflops = 9.510864e+03
+GFTIME:   time = 1.266329e-01 (Symanzik1) mflops = 9.897969e+03
+GFTIME:   time = 1.265080e-01 (Symanzik1) mflops = 9.907743e+03
+GFTIME:   time = 1.336401e-01 (Symanzik1) mflops = 9.378991e+03
+GFTIME:   time = 1.257250e-01 (Symanzik1) mflops = 9.969445e+03
+GFTIME:   time = 1.264451e-01 (Symanzik1) mflops = 9.912675e+03
+GFTIME:   time = 1.269140e-01 (Symanzik1) mflops = 9.876046e+03
+GFTIME:   time = 1.338179e-01 (Symanzik1) mflops = 9.366525e+03
+GFTIME:   time = 1.262500e-01 (Symanzik1) mflops = 9.927988e+03
+GFTIME:   time = 1.258862e-01 (Symanzik1) mflops = 9.956681e+03
+GFTIME:   time = 1.287069e-01 (Symanzik1) mflops = 9.738471e+03
+GFTIME:   time = 1.288409e-01 (Symanzik1) mflops = 9.728344e+03
+GFTIME:   time = 1.270459e-01 (Symanzik1) mflops = 9.865797e+03
+Combined fattening and long-link calculation time: 0.046352
+FLTIME: time = 1.054730e-01 (HISQ MILC D) mflops = 9.953766e+03
+CONGRAD5: time = 2.089596e-02 (fn D) masses = 1 iters = 28 mflops = 1.302976e+04
+ OK converged final_rsq= 5.8e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 28
+CONGRAD5: time = 1.114702e-02 (fn D) masses = 1 iters = 15 mflops = 1.308498e+04
+ OK converged final_rsq= 5.2e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 15
+Combined fattening and long-link calculation time: 0.051997
+FLTIME: time = 1.104460e-01 (HISQ MILC D) mflops = 9.505588e+03
+FFTIME:  time = 2.835191e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 6.161466e+03
+GFTIME:   time = 1.304519e-01 (Symanzik1) mflops = 9.608205e+03
+GFTIME:   time = 1.276970e-01 (Symanzik1) mflops = 9.815492e+03
+GFTIME:   time = 1.257219e-01 (Symanzik1) mflops = 9.969691e+03
+GFTIME:   time = 1.244850e-01 (Symanzik1) mflops = 1.006875e+04
+GFTIME:   time = 1.326160e-01 (Symanzik1) mflops = 9.451411e+03
+GFTIME:   time = 1.251860e-01 (Symanzik1) mflops = 1.001237e+04
+GFTIME:   time = 1.255670e-01 (Symanzik1) mflops = 9.981995e+03
+GFTIME:   time = 1.263430e-01 (Symanzik1) mflops = 9.920681e+03
+GFTIME:   time = 1.338122e-01 (Symanzik1) mflops = 9.366925e+03
+GFTIME:   time = 1.250761e-01 (Symanzik1) mflops = 1.002117e+04
+GFTIME:   time = 1.263750e-01 (Symanzik1) mflops = 9.918173e+03
+GFTIME:   time = 1.297410e-01 (Symanzik1) mflops = 9.660857e+03
+GFTIME:   time = 1.302140e-01 (Symanzik1) mflops = 9.625762e+03
+GFTIME:   time = 1.253521e-01 (Symanzik1) mflops = 9.999101e+03
+GFTIME:   time = 1.253331e-01 (Symanzik1) mflops = 1.000062e+04
+GFTIME:   time = 1.330521e-01 (Symanzik1) mflops = 9.420435e+03
+GFTIME:   time = 1.256411e-01 (Symanzik1) mflops = 9.976104e+03
+GFTIME:   time = 1.251352e-01 (Symanzik1) mflops = 1.001644e+04
+GFTIME:   time = 1.256270e-01 (Symanzik1) mflops = 9.977221e+03
+GFTIME:   time = 1.321959e-01 (Symanzik1) mflops = 9.481446e+03
+Combined fattening and long-link calculation time: 0.045050
+FLTIME: time = 1.044409e-01 (HISQ MILC D) mflops = 1.005213e+04
+CONGRAD5: time = 2.190614e-02 (fn D) masses = 1 iters = 29 mflops = 1.287279e+04
+ OK converged final_rsq= 7.6e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 29
+CONGRAD5: time = 1.189303e-02 (fn D) masses = 1 iters = 16 mflops = 1.308181e+04
+ OK converged final_rsq= 2.6e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 16
+Combined fattening and long-link calculation time: 0.045673
+FLTIME: time = 1.091421e-01 (HISQ MILC D) mflops = 9.619151e+03
+FFTIME:  time = 2.851070e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 6.127149e+03
+GFTIME:   time = 1.252880e-01 (Symanzik1) mflops = 1.000422e+04
+GFTIME:   time = 1.263340e-01 (Symanzik1) mflops = 9.921393e+03
+GFTIME:   time = 1.297550e-01 (Symanzik1) mflops = 9.659809e+03
+GFTIME:   time = 1.307352e-01 (Symanzik1) mflops = 9.587389e+03
+GFTIME:   time = 1.735821e-01 (Symanzik1) mflops = 7.220842e+03
+GFTIME:   time = 1.327500e-01 (Symanzik1) mflops = 9.441872e+03
+GFTIME:   time = 1.257141e-01 (Symanzik1) mflops = 9.970315e+03
+GFTIME:   time = 1.258759e-01 (Symanzik1) mflops = 9.957492e+03
+GFTIME:   time = 1.346412e-01 (Symanzik1) mflops = 9.309253e+03
+GFTIME:   time = 1.276829e-01 (Symanzik1) mflops = 9.816573e+03
+GFTIME:   time = 1.247020e-01 (Symanzik1) mflops = 1.005123e+04
+GFTIME:   time = 1.259799e-01 (Symanzik1) mflops = 9.949276e+03
+GFTIME:   time = 1.331921e-01 (Symanzik1) mflops = 9.410537e+03
+GFTIME:   time = 1.257558e-01 (Symanzik1) mflops = 9.967007e+03
+GFTIME:   time = 1.258898e-01 (Symanzik1) mflops = 9.956398e+03
+GFTIME:   time = 1.269360e-01 (Symanzik1) mflops = 9.874340e+03
+GFTIME:   time = 1.338580e-01 (Symanzik1) mflops = 9.363722e+03
+GFTIME:   time = 1.253719e-01 (Symanzik1) mflops = 9.997523e+03
+GFTIME:   time = 1.251469e-01 (Symanzik1) mflops = 1.001550e+04
+GFTIME:   time = 1.312931e-01 (Symanzik1) mflops = 9.546649e+03
+GFTIME:   time = 1.260900e-01 (Symanzik1) mflops = 9.940584e+03
+GFTIME:   time = 1.258490e-01 (Symanzik1) mflops = 9.959624e+03
+GFTIME:   time = 1.258869e-01 (Symanzik1) mflops = 9.956625e+03
+GFTIME:   time = 1.332650e-01 (Symanzik1) mflops = 9.405385e+03
+GFTIME:   time = 1.259940e-01 (Symanzik1) mflops = 9.948165e+03
+GFTIME:   time = 1.250901e-01 (Symanzik1) mflops = 1.002005e+04
+GFTIME:   time = 1.245990e-01 (Symanzik1) mflops = 1.005954e+04
+GFTIME:   time = 1.334598e-01 (Symanzik1) mflops = 9.391657e+03
+GFTIME:   time = 1.265090e-01 (Symanzik1) mflops = 9.907669e+03
+GFTIME:   time = 1.257892e-01 (Symanzik1) mflops = 9.964362e+03
+GFTIME:   time = 1.313460e-01 (Symanzik1) mflops = 9.542802e+03
+GFTIME:   time = 1.251819e-01 (Symanzik1) mflops = 1.001270e+04
+GFTIME:   time = 1.254649e-01 (Symanzik1) mflops = 9.990114e+03
+GFTIME:   time = 1.257641e-01 (Symanzik1) mflops = 9.966345e+03
+GFTIME:   time = 1.324122e-01 (Symanzik1) mflops = 9.465962e+03
+GFTIME:   time = 1.254189e-01 (Symanzik1) mflops = 9.993779e+03
+GFTIME:   time = 1.254902e-01 (Symanzik1) mflops = 9.988102e+03
+GFTIME:   time = 1.265919e-01 (Symanzik1) mflops = 9.901175e+03
+GFTIME:   time = 1.306460e-01 (Symanzik1) mflops = 9.593932e+03
+GFTIME:   time = 1.255410e-01 (Symanzik1) mflops = 9.984061e+03
+Combined fattening and long-link calculation time: 0.046589
+FLTIME: time = 1.065409e-01 (HISQ MILC D) mflops = 9.853998e+03
+CONGRAD5: time = 2.129102e-02 (fn D) masses = 1 iters = 28 mflops = 1.278799e+04
+ OK converged final_rsq= 8.2e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 28
+CONGRAD5: time = 1.132798e-02 (fn D) masses = 1 iters = 15 mflops = 1.287595e+04
+ OK converged final_rsq= 5.6e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 15
+Combined fattening and long-link calculation time: 0.052019
+FLTIME: time = 1.115460e-01 (HISQ MILC D) mflops = 9.411844e+03
+FFTIME:  time = 2.849746e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 6.129996e+03
+GFTIME:   time = 1.302271e-01 (Symanzik1) mflops = 9.624793e+03
+GFTIME:   time = 1.267259e-01 (Symanzik1) mflops = 9.890706e+03
+GFTIME:   time = 1.245401e-01 (Symanzik1) mflops = 1.006430e+04
+GFTIME:   time = 1.251080e-01 (Symanzik1) mflops = 1.001861e+04
+GFTIME:   time = 1.334610e-01 (Symanzik1) mflops = 9.391573e+03
+GFTIME:   time = 1.264100e-01 (Symanzik1) mflops = 9.915424e+03
+GFTIME:   time = 1.242211e-01 (Symanzik1) mflops = 1.009014e+04
+GFTIME:   time = 1.251130e-01 (Symanzik1) mflops = 1.001821e+04
+GFTIME:   time = 1.328621e-01 (Symanzik1) mflops = 9.433908e+03
+GFTIME:   time = 1.255422e-01 (Symanzik1) mflops = 9.983967e+03
+GFTIME:   time = 1.248190e-01 (Symanzik1) mflops = 1.004181e+04
+GFTIME:   time = 1.315939e-01 (Symanzik1) mflops = 9.524821e+03
+GFTIME:   time = 1.265302e-01 (Symanzik1) mflops = 9.906007e+03
+GFTIME:   time = 1.250830e-01 (Symanzik1) mflops = 1.002062e+04
+GFTIME:   time = 1.248171e-01 (Symanzik1) mflops = 1.004196e+04
+GFTIME:   time = 1.332600e-01 (Symanzik1) mflops = 9.405738e+03
+GFTIME:   time = 1.244941e-01 (Symanzik1) mflops = 1.006802e+04
+GFTIME:   time = 1.250339e-01 (Symanzik1) mflops = 1.002456e+04
+GFTIME:   time = 1.252019e-01 (Symanzik1) mflops = 1.001110e+04
+GFTIME:   time = 1.334560e-01 (Symanzik1) mflops = 9.391926e+03
+Combined fattening and long-link calculation time: 0.046950
+FLTIME: time = 1.065669e-01 (HISQ MILC D) mflops = 9.851595e+03
+CONGRAD5: time = 2.261090e-02 (fn D) masses = 1 iters = 30 mflops = 1.290161e+04
+ OK converged final_rsq= 4.9e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 30
+CONGRAD5: time = 1.204991e-02 (fn D) masses = 1 iters = 16 mflops = 1.291150e+04
+ OK converged final_rsq= 2.6e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 16
+Combined fattening and long-link calculation time: 0.045699
+FLTIME: time = 1.047540e-01 (HISQ MILC D) mflops = 1.002209e+04
+FFTIME:  time = 2.872849e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 6.080700e+03
+GFTIME:   time = 1.252792e-01 (Symanzik1) mflops = 1.000492e+04
+GFTIME:   time = 1.306000e-01 (Symanzik1) mflops = 9.597312e+03
+GFTIME:   time = 1.262910e-01 (Symanzik1) mflops = 9.924764e+03
+GFTIME:   time = 1.255591e-01 (Symanzik1) mflops = 9.982621e+03
+GFTIME:   time = 1.251302e-01 (Symanzik1) mflops = 1.001684e+04
+GFTIME:   time = 1.340539e-01 (Symanzik1) mflops = 9.350033e+03
+GFTIME:   time = 1.260040e-01 (Symanzik1) mflops = 9.947374e+03
+GFTIME:   time = 1.254830e-01 (Symanzik1) mflops = 9.988671e+03
+GFTIME:   time = 1.247151e-01 (Symanzik1) mflops = 1.005018e+04
+GFTIME:   time = 1.321440e-01 (Symanzik1) mflops = 9.485175e+03
+GFTIME:   time = 1.256289e-01 (Symanzik1) mflops = 9.977070e+03
+GFTIME:   time = 1.256201e-01 (Symanzik1) mflops = 9.977770e+03
+GFTIME:   time = 1.305261e-01 (Symanzik1) mflops = 9.602747e+03
+GFTIME:   time = 1.270850e-01 (Symanzik1) mflops = 9.862762e+03
+GFTIME:   time = 1.254311e-01 (Symanzik1) mflops = 9.992810e+03
+GFTIME:   time = 1.253080e-01 (Symanzik1) mflops = 1.000262e+04
+GFTIME:   time = 1.343801e-01 (Symanzik1) mflops = 9.327339e+03
+GFTIME:   time = 1.256139e-01 (Symanzik1) mflops = 9.978263e+03
+GFTIME:   time = 1.254280e-01 (Symanzik1) mflops = 9.993057e+03
+GFTIME:   time = 1.262860e-01 (Symanzik1) mflops = 9.925158e+03
+GFTIME:   time = 1.337700e-01 (Symanzik1) mflops = 9.369880e+03
+GFTIME:   time = 1.251590e-01 (Symanzik1) mflops = 1.001453e+04
+GFTIME:   time = 1.251280e-01 (Symanzik1) mflops = 1.001701e+04
+GFTIME:   time = 1.320651e-01 (Symanzik1) mflops = 9.490843e+03
+GFTIME:   time = 1.254852e-01 (Symanzik1) mflops = 9.988500e+03
+GFTIME:   time = 1.257699e-01 (Symanzik1) mflops = 9.965892e+03
+GFTIME:   time = 1.250908e-01 (Symanzik1) mflops = 1.001999e+04
+GFTIME:   time = 1.354780e-01 (Symanzik1) mflops = 9.251750e+03
+GFTIME:   time = 1.262660e-01 (Symanzik1) mflops = 9.926732e+03
+GFTIME:   time = 1.256440e-01 (Symanzik1) mflops = 9.975877e+03
+GFTIME:   time = 1.251411e-01 (Symanzik1) mflops = 1.001596e+04
+GFTIME:   time = 1.299319e-01 (Symanzik1) mflops = 9.646657e+03
+GFTIME:   time = 1.260390e-01 (Symanzik1) mflops = 9.944608e+03
+GFTIME:   time = 1.252930e-01 (Symanzik1) mflops = 1.000382e+04
+GFTIME:   time = 1.328981e-01 (Symanzik1) mflops = 9.431353e+03
+GFTIME:   time = 1.258700e-01 (Symanzik1) mflops = 9.957964e+03
+GFTIME:   time = 1.254451e-01 (Symanzik1) mflops = 9.991690e+03
+GFTIME:   time = 1.273971e-01 (Symanzik1) mflops = 9.838600e+03
+GFTIME:   time = 1.345658e-01 (Symanzik1) mflops = 9.314465e+03
+GFTIME:   time = 1.266711e-01 (Symanzik1) mflops = 9.894988e+03
+Combined fattening and long-link calculation time: 0.046810
+FLTIME: time = 1.083951e-01 (HISQ MILC D) mflops = 9.685437e+03
+CONGRAD5: time = 2.202797e-02 (fn D) masses = 1 iters = 29 mflops = 1.280160e+04
+ OK converged final_rsq= 4.6e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 29
+CONGRAD5: time = 1.130104e-02 (fn D) masses = 1 iters = 15 mflops = 1.290665e+04
+ OK converged final_rsq= 6e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 15
+Combined fattening and long-link calculation time: 0.046855
+FLTIME: time = 1.073489e-01 (HISQ MILC D) mflops = 9.779828e+03
+FFTIME:  time = 2.840185e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 6.150632e+03
+GFTIME:   time = 1.259751e-01 (Symanzik1) mflops = 9.949652e+03
+GFTIME:   time = 1.324470e-01 (Symanzik1) mflops = 9.463474e+03
+GFTIME:   time = 1.255660e-01 (Symanzik1) mflops = 9.982071e+03
+GFTIME:   time = 1.243660e-01 (Symanzik1) mflops = 1.007838e+04
+GFTIME:   time = 1.303301e-01 (Symanzik1) mflops = 9.617187e+03
+GFTIME:   time = 1.269429e-01 (Symanzik1) mflops = 9.873802e+03
+GFTIME:   time = 1.248109e-01 (Symanzik1) mflops = 1.004246e+04
+GFTIME:   time = 1.254880e-01 (Symanzik1) mflops = 9.988273e+03
+GFTIME:   time = 1.318910e-01 (Symanzik1) mflops = 9.503368e+03
+GFTIME:   time = 1.262388e-01 (Symanzik1) mflops = 9.928869e+03
+GFTIME:   time = 1.251981e-01 (Symanzik1) mflops = 1.001140e+04
+GFTIME:   time = 1.255012e-01 (Symanzik1) mflops = 9.987229e+03
+GFTIME:   time = 1.320980e-01 (Symanzik1) mflops = 9.488479e+03
+GFTIME:   time = 1.254969e-01 (Symanzik1) mflops = 9.987570e+03
+GFTIME:   time = 1.254790e-01 (Symanzik1) mflops = 9.988994e+03
+GFTIME:   time = 1.302280e-01 (Symanzik1) mflops = 9.624722e+03
+GFTIME:   time = 1.290030e-01 (Symanzik1) mflops = 9.716117e+03
+GFTIME:   time = 1.258550e-01 (Symanzik1) mflops = 9.959152e+03
+GFTIME:   time = 1.251051e-01 (Symanzik1) mflops = 1.001884e+04
+GFTIME:   time = 1.317661e-01 (Symanzik1) mflops = 9.512378e+03
+Combined fattening and long-link calculation time: 0.047672
+FLTIME: time = 1.069901e-01 (HISQ MILC D) mflops = 9.812627e+03
+CONGRAD5: time = 2.267718e-02 (fn D) masses = 1 iters = 30 mflops = 1.286390e+04
+ OK converged final_rsq= 6.8e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 30
+CONGRAD5: time = 1.194882e-02 (fn D) masses = 1 iters = 16 mflops = 1.302073e+04
+ OK converged final_rsq= 2.7e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 16
+Combined fattening and long-link calculation time: 0.046993
+FLTIME: time = 1.074789e-01 (HISQ MILC D) mflops = 9.768004e+03
+FFTIME:  time = 2.874553e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 6.077095e+03
+GFTIME:   time = 1.251321e-01 (Symanzik1) mflops = 1.001669e+04
+GFTIME:   time = 1.263618e-01 (Symanzik1) mflops = 9.919203e+03
+GFTIME:   time = 1.327379e-01 (Symanzik1) mflops = 9.442736e+03
+GFTIME:   time = 1.252480e-01 (Symanzik1) mflops = 1.000742e+04
+GFTIME:   time = 1.249149e-01 (Symanzik1) mflops = 1.003410e+04
+GFTIME:   time = 1.312819e-01 (Symanzik1) mflops = 9.547464e+03
+GFTIME:   time = 1.274149e-01 (Symanzik1) mflops = 9.837220e+03
+GFTIME:   time = 1.256881e-01 (Symanzik1) mflops = 9.972376e+03
+GFTIME:   time = 1.252089e-01 (Symanzik1) mflops = 1.001054e+04
+GFTIME:   time = 1.334622e-01 (Symanzik1) mflops = 9.391490e+03
+GFTIME:   time = 1.254342e-01 (Symanzik1) mflops = 9.992563e+03
+GFTIME:   time = 1.251850e-01 (Symanzik1) mflops = 1.001245e+04
+GFTIME:   time = 1.254680e-01 (Symanzik1) mflops = 9.989867e+03
+GFTIME:   time = 1.330171e-01 (Symanzik1) mflops = 9.422917e+03
+GFTIME:   time = 1.259930e-01 (Symanzik1) mflops = 9.948240e+03
+GFTIME:   time = 1.255720e-01 (Symanzik1) mflops = 9.981597e+03
+GFTIME:   time = 1.319821e-01 (Symanzik1) mflops = 9.496810e+03
+GFTIME:   time = 1.256621e-01 (Symanzik1) mflops = 9.974438e+03
+GFTIME:   time = 1.255760e-01 (Symanzik1) mflops = 9.981275e+03
+GFTIME:   time = 1.260431e-01 (Symanzik1) mflops = 9.944289e+03
+GFTIME:   time = 1.329808e-01 (Symanzik1) mflops = 9.425485e+03
+GFTIME:   time = 1.256759e-01 (Symanzik1) mflops = 9.973341e+03
+GFTIME:   time = 1.254141e-01 (Symanzik1) mflops = 9.994159e+03
+GFTIME:   time = 1.263230e-01 (Symanzik1) mflops = 9.922254e+03
+GFTIME:   time = 1.295071e-01 (Symanzik1) mflops = 9.678304e+03
+GFTIME:   time = 1.254890e-01 (Symanzik1) mflops = 9.988197e+03
+GFTIME:   time = 1.249568e-01 (Symanzik1) mflops = 1.003073e+04
+GFTIME:   time = 1.332409e-01 (Symanzik1) mflops = 9.407085e+03
+GFTIME:   time = 1.252041e-01 (Symanzik1) mflops = 1.001093e+04
+GFTIME:   time = 1.256859e-01 (Symanzik1) mflops = 9.972546e+03
+GFTIME:   time = 1.253350e-01 (Symanzik1) mflops = 1.000047e+04
+GFTIME:   time = 1.337790e-01 (Symanzik1) mflops = 9.369246e+03
+GFTIME:   time = 1.258719e-01 (Symanzik1) mflops = 9.957813e+03
+GFTIME:   time = 1.261330e-01 (Symanzik1) mflops = 9.937202e+03
+GFTIME:   time = 1.276252e-01 (Symanzik1) mflops = 9.821011e+03
+GFTIME:   time = 1.299710e-01 (Symanzik1) mflops = 9.643755e+03
+GFTIME:   time = 1.259041e-01 (Symanzik1) mflops = 9.955267e+03
+GFTIME:   time = 1.258070e-01 (Symanzik1) mflops = 9.962946e+03
+GFTIME:   time = 1.341920e-01 (Symanzik1) mflops = 9.340414e+03
+GFTIME:   time = 1.259940e-01 (Symanzik1) mflops = 9.948165e+03
+Combined fattening and long-link calculation time: 0.048062
+FLTIME: time = 1.102591e-01 (HISQ MILC D) mflops = 9.521703e+03
+CONGRAD5: time = 2.201200e-02 (fn D) masses = 1 iters = 29 mflops = 1.281089e+04
+ OK converged final_rsq= 6.1e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 29
+CONGRAD5: time = 1.133394e-02 (fn D) masses = 1 iters = 15 mflops = 1.286918e+04
+ OK converged final_rsq= 6.2e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 15
+Combined fattening and long-link calculation time: 0.046739
+FLTIME: time = 1.063251e-01 (HISQ MILC D) mflops = 9.873995e+03
+FFTIME:  time = 2.881246e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 6.062978e+03
+GFTIME:   time = 1.243801e-01 (Symanzik1) mflops = 1.007724e+04
+GFTIME:   time = 1.328330e-01 (Symanzik1) mflops = 9.435974e+03
+GFTIME:   time = 1.249809e-01 (Symanzik1) mflops = 1.002880e+04
+GFTIME:   time = 1.260409e-01 (Symanzik1) mflops = 9.944458e+03
+GFTIME:   time = 1.323469e-01 (Symanzik1) mflops = 9.470634e+03
+GFTIME:   time = 1.273060e-01 (Symanzik1) mflops = 9.845639e+03
+GFTIME:   time = 1.345360e-01 (Symanzik1) mflops = 9.316529e+03
+GFTIME:   time = 1.269679e-01 (Symanzik1) mflops = 9.871855e+03
+GFTIME:   time = 1.259851e-01 (Symanzik1) mflops = 9.948862e+03
+GFTIME:   time = 1.250708e-01 (Symanzik1) mflops = 1.002159e+04
+GFTIME:   time = 1.323891e-01 (Symanzik1) mflops = 9.467615e+03
+GFTIME:   time = 1.261950e-01 (Symanzik1) mflops = 9.932321e+03
+GFTIME:   time = 1.251030e-01 (Symanzik1) mflops = 1.001901e+04
+GFTIME:   time = 1.258640e-01 (Symanzik1) mflops = 9.958435e+03
+GFTIME:   time = 1.295950e-01 (Symanzik1) mflops = 9.671734e+03
+GFTIME:   time = 1.275370e-01 (Symanzik1) mflops = 9.827804e+03
+GFTIME:   time = 1.248651e-01 (Symanzik1) mflops = 1.003811e+04
+GFTIME:   time = 1.333699e-01 (Symanzik1) mflops = 9.397987e+03
+GFTIME:   time = 1.248219e-01 (Symanzik1) mflops = 1.004158e+04
+GFTIME:   time = 1.262832e-01 (Symanzik1) mflops = 9.925383e+03
+Combined fattening and long-link calculation time: 0.046243
+FLTIME: time = 1.073301e-01 (HISQ MILC D) mflops = 9.781544e+03
+CONGRAD5: time = 2.265000e-02 (fn D) masses = 1 iters = 30 mflops = 1.287934e+04
+ OK converged final_rsq= 8.9e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 30
+CONGRAD5: time = 1.181793e-02 (fn D) masses = 1 iters = 16 mflops = 1.316495e+04
+ OK converged final_rsq= 2.8e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 16
+Combined fattening and long-link calculation time: 0.047401
+FLTIME: time = 1.136489e-01 (HISQ MILC D) mflops = 9.237696e+03
+FFTIME:  time = 2.977733e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 5.866521e+03
+GFTIME:   time = 1.439672e-01 (Symanzik1) mflops = 8.706214e+03
+GFTIME:   time = 1.475160e-01 (Symanzik1) mflops = 8.496764e+03
+GFTIME:   time = 1.496429e-01 (Symanzik1) mflops = 8.375996e+03
+GFTIME:   time = 1.310980e-01 (Symanzik1) mflops = 9.560851e+03
+GFTIME:   time = 1.264520e-01 (Symanzik1) mflops = 9.912133e+03
+GFTIME:   time = 1.329310e-01 (Symanzik1) mflops = 9.429018e+03
+GFTIME:   time = 1.468179e-01 (Symanzik1) mflops = 8.537165e+03
+GFTIME:   time = 1.659100e-01 (Symanzik1) mflops = 7.554751e+03
+GFTIME:   time = 1.426349e-01 (Symanzik1) mflops = 8.787534e+03
+GFTIME:   time = 1.265531e-01 (Symanzik1) mflops = 9.904216e+03
+GFTIME:   time = 1.452010e-01 (Symanzik1) mflops = 8.632234e+03
+GFTIME:   time = 1.563070e-01 (Symanzik1) mflops = 8.018892e+03
+GFTIME:   time = 1.431890e-01 (Symanzik1) mflops = 8.753530e+03
+GFTIME:   time = 1.310940e-01 (Symanzik1) mflops = 9.561147e+03
+GFTIME:   time = 1.267600e-01 (Symanzik1) mflops = 9.888046e+03
+GFTIME:   time = 1.273680e-01 (Symanzik1) mflops = 9.840847e+03
+GFTIME:   time = 1.264241e-01 (Symanzik1) mflops = 9.914320e+03
+GFTIME:   time = 1.307888e-01 (Symanzik1) mflops = 9.583456e+03
+GFTIME:   time = 1.408620e-01 (Symanzik1) mflops = 8.898133e+03
+GFTIME:   time = 1.511371e-01 (Symanzik1) mflops = 8.293190e+03
+GFTIME:   time = 1.564162e-01 (Symanzik1) mflops = 8.013294e+03
+GFTIME:   time = 1.524439e-01 (Symanzik1) mflops = 8.222099e+03
+GFTIME:   time = 1.469700e-01 (Symanzik1) mflops = 8.528329e+03
+GFTIME:   time = 1.469550e-01 (Symanzik1) mflops = 8.529200e+03
+GFTIME:   time = 1.421411e-01 (Symanzik1) mflops = 8.818060e+03
+GFTIME:   time = 1.294360e-01 (Symanzik1) mflops = 9.683617e+03
+GFTIME:   time = 1.343880e-01 (Symanzik1) mflops = 9.326793e+03
+GFTIME:   time = 1.348560e-01 (Symanzik1) mflops = 9.294424e+03
+GFTIME:   time = 1.286340e-01 (Symanzik1) mflops = 9.743995e+03
+GFTIME:   time = 1.291871e-01 (Symanzik1) mflops = 9.702274e+03
+GFTIME:   time = 1.308331e-01 (Symanzik1) mflops = 9.580208e+03
+GFTIME:   time = 1.326311e-01 (Symanzik1) mflops = 9.450341e+03
+GFTIME:   time = 1.277111e-01 (Symanzik1) mflops = 9.814411e+03
+GFTIME:   time = 1.278691e-01 (Symanzik1) mflops = 9.802278e+03
+GFTIME:   time = 1.281400e-01 (Symanzik1) mflops = 9.781560e+03
+GFTIME:   time = 1.279700e-01 (Symanzik1) mflops = 9.794553e+03
+GFTIME:   time = 1.275110e-01 (Symanzik1) mflops = 9.829807e+03
+GFTIME:   time = 1.277471e-01 (Symanzik1) mflops = 9.811645e+03
+GFTIME:   time = 1.334860e-01 (Symanzik1) mflops = 9.389812e+03
+GFTIME:   time = 1.281910e-01 (Symanzik1) mflops = 9.777666e+03
+Combined fattening and long-link calculation time: 0.046523
+FLTIME: time = 1.072149e-01 (HISQ MILC D) mflops = 9.792050e+03
+CONGRAD5: time = 2.215505e-02 (fn D) masses = 1 iters = 29 mflops = 1.272817e+04
+ OK converged final_rsq= 8.1e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 29
+CONGRAD5: time = 1.141310e-02 (fn D) masses = 1 iters = 15 mflops = 1.277993e+04
+ OK converged final_rsq= 6.5e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 15
+Combined fattening and long-link calculation time: 0.046555
+FLTIME: time = 1.056759e-01 (HISQ MILC D) mflops = 9.934655e+03
+FFTIME:  time = 2.921747e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 5.978934e+03
+GFTIME:   time = 1.468780e-01 (Symanzik1) mflops = 8.533672e+03
+GFTIME:   time = 1.416991e-01 (Symanzik1) mflops = 8.845568e+03
+GFTIME:   time = 1.372731e-01 (Symanzik1) mflops = 9.130769e+03
+GFTIME:   time = 1.289339e-01 (Symanzik1) mflops = 9.721328e+03
+GFTIME:   time = 1.276920e-01 (Symanzik1) mflops = 9.815877e+03
+GFTIME:   time = 1.386261e-01 (Symanzik1) mflops = 9.041651e+03
+GFTIME:   time = 1.554599e-01 (Symanzik1) mflops = 8.062587e+03
+GFTIME:   time = 1.499410e-01 (Symanzik1) mflops = 8.359348e+03
+GFTIME:   time = 1.393979e-01 (Symanzik1) mflops = 8.991593e+03
+GFTIME:   time = 1.293020e-01 (Symanzik1) mflops = 9.693652e+03
+GFTIME:   time = 1.274490e-01 (Symanzik1) mflops = 9.834588e+03
+GFTIME:   time = 1.292939e-01 (Symanzik1) mflops = 9.694259e+03
+GFTIME:   time = 1.412389e-01 (Symanzik1) mflops = 8.874386e+03
+GFTIME:   time = 1.291931e-01 (Symanzik1) mflops = 9.701827e+03
+GFTIME:   time = 1.289761e-01 (Symanzik1) mflops = 9.718147e+03
+GFTIME:   time = 1.365640e-01 (Symanzik1) mflops = 9.178177e+03
+GFTIME:   time = 1.337411e-01 (Symanzik1) mflops = 9.371901e+03
+GFTIME:   time = 1.294470e-01 (Symanzik1) mflops = 9.682796e+03
+GFTIME:   time = 1.291680e-01 (Symanzik1) mflops = 9.703707e+03
+GFTIME:   time = 1.419911e-01 (Symanzik1) mflops = 8.827373e+03
+Combined fattening and long-link calculation time: 0.056531
+FLTIME: time = 1.293540e-01 (HISQ MILC D) mflops = 8.116131e+03
+CONGRAD5: time = 2.911401e-02 (fn D) masses = 1 iters = 31 mflops = 1.035381e+04
+ OK converged final_rsq= 3.9e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 31
+CONGRAD5: time = 2.137804e-02 (fn D) masses = 1 iters = 16 mflops = 7.277677e+03
+ OK converged final_rsq= 2.8e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 16
+Combined fattening and long-link calculation time: 0.057790
+FLTIME: time = 1.650190e-01 (HISQ MILC D) mflops = 6.362017e+03
+FFTIME:  time = 2.936737e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 5.948415e+03
+GFTIME:   time = 1.347179e-01 (Symanzik1) mflops = 9.303948e+03
+GFTIME:   time = 1.272919e-01 (Symanzik1) mflops = 9.846727e+03
+GFTIME:   time = 1.263070e-01 (Symanzik1) mflops = 9.923509e+03
+GFTIME:   time = 1.273730e-01 (Symanzik1) mflops = 9.840460e+03
+GFTIME:   time = 1.357050e-01 (Symanzik1) mflops = 9.236276e+03
+GFTIME:   time = 1.312580e-01 (Symanzik1) mflops = 9.549198e+03
+GFTIME:   time = 1.312599e-01 (Symanzik1) mflops = 9.549059e+03
+GFTIME:   time = 1.373949e-01 (Symanzik1) mflops = 9.122673e+03
+GFTIME:   time = 1.298201e-01 (Symanzik1) mflops = 9.654966e+03
+GFTIME:   time = 1.318090e-01 (Symanzik1) mflops = 9.509281e+03
+GFTIME:   time = 1.264141e-01 (Symanzik1) mflops = 9.915106e+03
+GFTIME:   time = 1.420619e-01 (Symanzik1) mflops = 8.822973e+03
+GFTIME:   time = 1.308732e-01 (Symanzik1) mflops = 9.577276e+03
+GFTIME:   time = 1.268108e-01 (Symanzik1) mflops = 9.884086e+03
+GFTIME:   time = 1.331899e-01 (Symanzik1) mflops = 9.410688e+03
+GFTIME:   time = 1.284859e-01 (Symanzik1) mflops = 9.755223e+03
+GFTIME:   time = 1.569090e-01 (Symanzik1) mflops = 7.988126e+03
+GFTIME:   time = 1.462920e-01 (Symanzik1) mflops = 8.567858e+03
+GFTIME:   time = 1.377351e-01 (Symanzik1) mflops = 9.100139e+03
+GFTIME:   time = 1.364200e-01 (Symanzik1) mflops = 9.187866e+03
+GFTIME:   time = 1.346669e-01 (Symanzik1) mflops = 9.307473e+03
+GFTIME:   time = 1.357191e-01 (Symanzik1) mflops = 9.235319e+03
+GFTIME:   time = 1.281180e-01 (Symanzik1) mflops = 9.783234e+03
+GFTIME:   time = 1.292431e-01 (Symanzik1) mflops = 9.698068e+03
+GFTIME:   time = 1.345880e-01 (Symanzik1) mflops = 9.312931e+03
+GFTIME:   time = 1.316500e-01 (Symanzik1) mflops = 9.520768e+03
+GFTIME:   time = 1.272140e-01 (Symanzik1) mflops = 9.852762e+03
+GFTIME:   time = 1.286650e-01 (Symanzik1) mflops = 9.741647e+03
+GFTIME:   time = 1.347771e-01 (Symanzik1) mflops = 9.299867e+03
+GFTIME:   time = 1.286120e-01 (Symanzik1) mflops = 9.745656e+03
+GFTIME:   time = 1.277399e-01 (Symanzik1) mflops = 9.812194e+03
+GFTIME:   time = 1.284180e-01 (Symanzik1) mflops = 9.760385e+03
+GFTIME:   time = 1.343350e-01 (Symanzik1) mflops = 9.330468e+03
+GFTIME:   time = 1.288500e-01 (Symanzik1) mflops = 9.727660e+03
+GFTIME:   time = 1.272819e-01 (Symanzik1) mflops = 9.847502e+03
+GFTIME:   time = 1.338880e-01 (Symanzik1) mflops = 9.361621e+03
+GFTIME:   time = 1.278341e-01 (Symanzik1) mflops = 9.804966e+03
+GFTIME:   time = 1.286199e-01 (Symanzik1) mflops = 9.745060e+03
+GFTIME:   time = 1.267071e-01 (Symanzik1) mflops = 9.892176e+03
+GFTIME:   time = 1.359859e-01 (Symanzik1) mflops = 9.217200e+03
+Combined fattening and long-link calculation time: 0.047930
+FLTIME: time = 1.103909e-01 (HISQ MILC D) mflops = 9.510330e+03
+CONGRAD5: time = 2.267408e-02 (fn D) masses = 1 iters = 30 mflops = 1.286566e+04
+ OK converged final_rsq= 4.9e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 30
+CONGRAD5: time = 1.146293e-02 (fn D) masses = 1 iters = 15 mflops = 1.272437e+04
+ OK converged final_rsq= 6.7e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 15
+Combined fattening and long-link calculation time: 0.046870
+FLTIME: time = 1.075799e-01 (HISQ MILC D) mflops = 9.758826e+03
+FFTIME:  time = 2.990087e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 5.842282e+03
+GFTIME:   time = 1.334841e-01 (Symanzik1) mflops = 9.389946e+03
+GFTIME:   time = 1.296380e-01 (Symanzik1) mflops = 9.668532e+03
+GFTIME:   time = 1.349919e-01 (Symanzik1) mflops = 9.285068e+03
+GFTIME:   time = 1.431620e-01 (Symanzik1) mflops = 8.755177e+03
+GFTIME:   time = 1.310511e-01 (Symanzik1) mflops = 9.564278e+03
+GFTIME:   time = 1.281712e-01 (Symanzik1) mflops = 9.779176e+03
+GFTIME:   time = 1.522360e-01 (Symanzik1) mflops = 8.233328e+03
+GFTIME:   time = 1.529729e-01 (Symanzik1) mflops = 8.193664e+03
+GFTIME:   time = 1.426940e-01 (Symanzik1) mflops = 8.783893e+03
+GFTIME:   time = 1.282539e-01 (Symanzik1) mflops = 9.772868e+03
+GFTIME:   time = 1.277850e-01 (Symanzik1) mflops = 9.808734e+03
+GFTIME:   time = 1.407990e-01 (Symanzik1) mflops = 8.902111e+03
+GFTIME:   time = 1.642771e-01 (Symanzik1) mflops = 7.629846e+03
+GFTIME:   time = 1.386101e-01 (Symanzik1) mflops = 9.042693e+03
+GFTIME:   time = 1.293080e-01 (Symanzik1) mflops = 9.693205e+03
+GFTIME:   time = 1.322479e-01 (Symanzik1) mflops = 9.477720e+03
+GFTIME:   time = 1.403360e-01 (Symanzik1) mflops = 8.931482e+03
+GFTIME:   time = 1.294081e-01 (Symanzik1) mflops = 9.685704e+03
+GFTIME:   time = 1.276228e-01 (Symanzik1) mflops = 9.821195e+03
+GFTIME:   time = 1.289999e-01 (Symanzik1) mflops = 9.716351e+03
+Combined fattening and long-link calculation time: 0.046552
+FLTIME: time = 1.085460e-01 (HISQ MILC D) mflops = 9.671971e+03
+CONGRAD5: time = 2.395201e-02 (fn D) masses = 1 iters = 31 mflops = 1.258521e+04
+ OK converged final_rsq= 4.8e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 31
+CONGRAD5: time = 1.203609e-02 (fn D) masses = 1 iters = 16 mflops = 1.292633e+04
+ OK converged final_rsq= 2.9e-13 (cf 1e-12) rel = 1 (cf 0) restarts = 1 iters= 16
+Combined fattening and long-link calculation time: 0.047102
+FLTIME: time = 1.073740e-01 (HISQ MILC D) mflops = 9.777548e+03
+FFTIME:  time = 2.871666e+00 (HISQ MILC D) terms = 2 flops/site = 2132438 mflops = 6.083205e+03
+GFTIME:   time = 1.565249e-01 (Symanzik1) mflops = 8.007728e+03
+GFTIME:   time = 1.375890e-01 (Symanzik1) mflops = 9.109805e+03
+GFTIME:   time = 1.283050e-01 (Symanzik1) mflops = 9.768982e+03
+GFTIME:   time = 1.348009e-01 (Symanzik1) mflops = 9.298222e+03
+GFTIME:   time = 1.505890e-01 (Symanzik1) mflops = 8.323376e+03
+GFTIME:   time = 1.506710e-01 (Symanzik1) mflops = 8.318845e+03
+GFTIME:   time = 1.329300e-01 (Symanzik1) mflops = 9.429086e+03
+GFTIME:   time = 1.389580e-01 (Symanzik1) mflops = 9.020056e+03
+GFTIME:   time = 1.356919e-01 (Symanzik1) mflops = 9.237168e+03
+GFTIME:   time = 1.443551e-01 (Symanzik1) mflops = 8.682818e+03
+GFTIME:   time = 1.298008e-01 (Symanzik1) mflops = 9.656403e+03
+GFTIME:   time = 1.309321e-01 (Symanzik1) mflops = 9.572968e+03
+GFTIME:   time = 1.298041e-01 (Symanzik1) mflops = 9.656154e+03
+GFTIME:   time = 1.302850e-01 (Symanzik1) mflops = 9.620513e+03
+GFTIME:   time = 1.293790e-01 (Symanzik1) mflops = 9.687882e+03
+GFTIME:   time = 1.346672e-01 (Symanzik1) mflops = 9.307457e+03
+GFTIME:   time = 1.363111e-01 (Symanzik1) mflops = 9.195210e+03
+GFTIME:   time = 1.485291e-01 (Symanzik1) mflops = 8.438812e+03
+GFTIME:   time = 1.459520e-01 (Symanzik1) mflops = 8.587816e+03
+GFTIME:   time = 1.458030e-01 (Symanzik1) mflops = 8.596593e+03
+Combined fattening and long-link calculation time: 0.057036
+FLTIME: time = 1.255569e-01 (HISQ MILC D) mflops = 8.361576e+03
+ACTION Ddag: 30468.898715
+CONGRAD5: time = 6.056190e-02 (fn D) masses = 1 iters = 81 mflops = 1.300548e+04
+ OK converged final_rsq= 8e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 81
+CONGRAD5: time = 4.008222e-02 (fn D) masses = 1 iters = 55 mflops = 1.334294e+04
+ OK converged final_rsq= 5.9e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 55
+CONGRAD5: time = 2.076411e-02 (fn D) masses = 1 iters = 28 mflops = 1.311249e+04
+ OK converged final_rsq= 3.7e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 28
+CONGRAD5: time = 1.287460e-05 (fn D) masses = 1 iters = 0 mflops = 0.000000e+00
+ OK converged final_rsq= 0 (cf 1e-20) rel = 0 (cf 0) restarts = 0 iters= 0
+FIRST SOLVE: 12141.534447
+SECOND SOLVE: 12263.480361
+PLAQUETTE ACTION: -3.506685e+05
+ACTION: g,h,f = 15275.75454479833024379  -15322.46659479541449400  24405.01480797768090270  24358.30275798059665249
+DG = 15275.75454479833024379, DH = -15357.74497885659548047, DF = 81.99506881124762003, D = 0.00463475298238336
+ACCEPT: delta S = 4.634753e-03
+NORM2: 24552.97201943346226471 
+CONGRAD5: time = 5.738616e-02 (fn D) masses = 1 iters = 80 mflops = 1.355575e+04
+ OK converged final_rsq= 9.2e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+CONGRAD5: time = 5.692315e-02 (fn D) masses = 1 iters = 80 mflops = 1.366601e+04
+ OK converged final_rsq= 7.8e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+PBP: mass 5.000000e-03 0.00880820794490846 
+NORM2: 24556.76290213628817583 
+CONGRAD5: time = 5.663204e-02 (fn D) masses = 1 iters = 80 mflops = 1.373626e+04
+ OK converged final_rsq= 7.8e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+CONGRAD5: time = 6.165910e-02 (fn D) masses = 1 iters = 80 mflops = 1.261634e+04
+ OK converged final_rsq= 8.4e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+PBP: mass 5.000000e-03 0.00886864362400919 
+NORM2: 24589.35051629754161695 
+CONGRAD5: time = 5.927992e-02 (fn D) masses = 1 iters = 80 mflops = 1.312270e+04
+ OK converged final_rsq= 7.3e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+CONGRAD5: time = 5.898619e-02 (fn D) masses = 1 iters = 80 mflops = 1.318804e+04
+ OK converged final_rsq= 8.4e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+PBP: mass 5.000000e-03 0.00899915842496626 
+NORM2: 24737.55120766395339160 
+CONGRAD5: time = 5.868602e-02 (fn D) masses = 1 iters = 80 mflops = 1.325550e+04
+ OK converged final_rsq= 7.8e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+CONGRAD5: time = 5.868316e-02 (fn D) masses = 1 iters = 80 mflops = 1.325614e+04
+ OK converged final_rsq= 8.6e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+PBP: mass 5.000000e-03 0.00891717954283132 
+NORM2: 24722.94199769166516489 
+CONGRAD5: time = 5.787206e-02 (fn D) masses = 1 iters = 80 mflops = 1.344193e+04
+ OK converged final_rsq= 8.4e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+CONGRAD5: time = 5.729795e-02 (fn D) masses = 1 iters = 80 mflops = 1.357662e+04
+ OK converged final_rsq= 8.4e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+PBP: mass 5.000000e-03 0.00883789608438878 
+NORM2: 24332.68310912232482224 
+CONGRAD5: time = 5.722308e-02 (fn D) masses = 1 iters = 80 mflops = 1.359438e+04
+ OK converged final_rsq= 7.5e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+CONGRAD5: time = 5.695295e-02 (fn D) masses = 1 iters = 80 mflops = 1.365886e+04
+ OK converged final_rsq= 8.5e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+PBP: mass 5.000000e-03 0.00849516424311318 
+NORM2: 24520.69374684984359192 
+CONGRAD5: time = 5.914307e-02 (fn D) masses = 1 iters = 80 mflops = 1.315306e+04
+ OK converged final_rsq= 8.6e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+CONGRAD5: time = 5.869889e-02 (fn D) masses = 1 iters = 80 mflops = 1.325259e+04
+ OK converged final_rsq= 7.7e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+PBP: mass 5.000000e-03 0.00880993361503543 
+NORM2: 24800.57062253263575258 
+CONGRAD5: time = 5.894589e-02 (fn D) masses = 1 iters = 80 mflops = 1.319706e+04
+ OK converged final_rsq= 8.9e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+CONGRAD5: time = 5.926514e-02 (fn D) masses = 1 iters = 80 mflops = 1.312597e+04
+ OK converged final_rsq= 6.3e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+PBP: mass 5.000000e-03 0.00871631764930037 
+NORM2: 24144.33325142812464037 
+CONGRAD5: time = 5.794501e-02 (fn D) masses = 1 iters = 80 mflops = 1.342501e+04
+ OK converged final_rsq= 7.8e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+CONGRAD5: time = 5.752182e-02 (fn D) masses = 1 iters = 80 mflops = 1.352378e+04
+ OK converged final_rsq= 8.3e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+PBP: mass 5.000000e-03 0.00880736777786776 
+NORM2: 24709.25161825859686360 
+CONGRAD5: time = 5.882406e-02 (fn D) masses = 1 iters = 80 mflops = 1.322439e+04
+ OK converged final_rsq= 9e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+CONGRAD5: time = 5.872011e-02 (fn D) masses = 1 iters = 80 mflops = 1.324780e+04
+ OK converged final_rsq= 8.5e-21 (cf 1e-20) rel = 1 (cf 0) restarts = 1 iters= 80
+PBP: mass 5.000000e-03 0.00877521372799012 
+PBP (avg): mass 5.000000e-03 0.00880350826344109 
+PLAQ:	2.8536919254101054	2.8538028731748191
+P_LOOP:	2.438107e+00	-1.174899e-03
+G_LOOP:  0  0  4   	2.8538265996464114e+00	( 0 1 7 6  )
+G_LOOP:  0  1  4   	2.8528005113800563e+00	( 0 2 7 5  )
+G_LOOP:  0  2  4   	2.8533191059607894e+00	( 0 3 7 4  )
+G_LOOP:  0  3  4   	2.8544486652038490e+00	( 1 2 6 5  )
+G_LOOP:  0  4  4   	2.8544824119816030e+00	( 1 3 6 4  )
+G_LOOP:  0  5  4   	2.8536071015820634e+00	( 2 3 5 4  )
+G_LOOP:  1  0  6   	2.7790089252813615e+00	( 0 0 1 7 7 6  )
+G_LOOP:  1  1  6   	2.7800768691557081e+00	( 0 0 2 7 7 5  )
+G_LOOP:  1  2  6   	2.7790496759296288e+00	( 0 0 3 7 7 4  )
+G_LOOP:  1  3  6   	2.7801481087896258e+00	( 1 1 0 6 6 7  )
+G_LOOP:  1  4  6   	2.7827751263899203e+00	( 1 1 2 6 6 5  )
+G_LOOP:  1  5  6   	2.7810827355817485e+00	( 1 1 3 6 6 4  )
+G_LOOP:  1  6  6   	2.7791289374127124e+00	( 2 2 0 5 5 7  )
+G_LOOP:  1  7  6   	2.7809918830057549e+00	( 2 2 1 5 5 6  )
+G_LOOP:  1  8  6   	2.7788118014761629e+00	( 2 2 3 5 5 4  )
+G_LOOP:  1  9  6   	2.7819262115217112e+00	( 3 3 0 4 4 7  )
+G_LOOP:  1  10  6   	2.7817505133175975e+00	( 3 3 1 4 4 6  )
+G_LOOP:  1  11  6   	2.7826661748884538e+00	( 3 3 2 4 4 5  )
+G_LOOP:  2  0  6   	2.7801596871168046e+00	( 0 1 2 7 6 5  )
+G_LOOP:  2  1  6   	2.7799369294052738e+00	( 0 1 5 7 6 2  )
+G_LOOP:  2  2  6   	2.7826936977832291e+00	( 0 6 2 7 1 5  )
+G_LOOP:  2  3  6   	2.7818577402271418e+00	( 0 6 5 7 1 2  )
+G_LOOP:  2  4  6   	2.7829147855844156e+00	( 0 1 3 7 6 4  )
+G_LOOP:  2  5  6   	2.7796952757433280e+00	( 0 1 4 7 6 3  )
+G_LOOP:  2  6  6   	2.7828565620467289e+00	( 0 6 3 7 1 4  )
+G_LOOP:  2  7  6   	2.7803754624078243e+00	( 0 6 4 7 1 3  )
+G_LOOP:  2  8  6   	2.7808054545111793e+00	( 0 2 3 7 5 4  )
+G_LOOP:  2  9  6   	2.7806623667303558e+00	( 0 2 4 7 5 3  )
+G_LOOP:  2  10  6   	2.7812941645909177e+00	( 0 5 3 7 2 4  )
+G_LOOP:  2  11  6   	2.7797431386462401e+00	( 0 5 4 7 2 3  )
+G_LOOP:  2  12  6   	2.7819877727413802e+00	( 1 2 3 6 5 4  )
+G_LOOP:  2  13  6   	2.7816635991057299e+00	( 1 2 4 6 5 3  )
+G_LOOP:  2  14  6   	2.7817089928789778e+00	( 1 5 3 6 2 4  )
+G_LOOP:  2  15  6   	2.7816169221464166e+00	( 1 5 4 6 2 3  )
+GACTION: 7.458865e-01
+RUNNING COMPLETED
+average cg iters for step= 2.790000e+02
+Time = 1.479286e+02 seconds
+total_iters = 2791
+hisq_svd_counter = 0
+hisq_force_filter_counter = 0
+
+
+get_i(0): EOF on input.
+exit: Wed Jul  9 17:05:17 2025
+
