@@ -1,4 +1,4 @@
-## QEX: Quantum EXpressions lattice field theory framework
+## MILC+QEX
 
 This is a fork of the Quantum EXpressions ([QEX](https://github.com/jcosborn/qex)) 
 lattice field theory framework that contains open-source 
