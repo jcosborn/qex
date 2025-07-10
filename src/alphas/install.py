@@ -7,7 +7,7 @@ import os
 
 MDEVOLVE = 'https://github.com/jxy/MDevolve'
 
-NIMV = 'nim-2.2.4'
+NIMV = 'nim-2.2.2'
 NIMP = '-linux_x64'
 NIM = 'https://nim-lang.org/download/' + NIMV + NIMP + '.tar.xz'
 
@@ -42,10 +42,11 @@ wget = lambda url: os.system('wget ' + url)
 clone = lambda url: os.system('git clone ' + url)
 tarx = lambda file: os.system('tar -xvf ' + file + '.tar.xz')
 targ = lambda file: os.system('tar -xvf ' + file + '.tar.gz')
-export = lambda name, path: os.system('export ' + name + '=' + path)
+#export = lambda name, path: (os.environ[name] = path)
+#system('export '+name+'='+path)
 
 install_qop_qio = lambda qex: os.system(dest(qex, 'bootstrap-travis'))
-nimble_install = lambda: os.system('nimble install')
+nimble_install = lambda nimble, nim: os.system(nimble + ' install --nim=' + nim)
 
 system = lambda cmd: os.system(cmd)
 
@@ -58,9 +59,10 @@ def install_nim(nim: str):
 def install_mdevolve(mdevolve: str, nimexec: str, nimbleexec: str):
     if not isdir('./', 'MDevolve'): clone(MDEVOLVE)
     cd('./', 'MDevolve')
-    nimble_install()
+    nimble_install(nimbleexec, nimexec)
 
-def configure(qex: str, qmp: str, qio: str):
+def configure(qex: str, qmp: str, qio: str, nim: str):
+    os.environ['NIM'] = nim
     system(' '.join([
         dest(qex,'configure'),
         'qmpdir:' + qmp,
@@ -94,25 +96,22 @@ if __name__ == '__main__':
     build = dest(path, 'build')
     bin = dest(path, 'bin')
 
-    mdevolve = dest(deps, 'mdevolve')
-    nim = dest(deps, NIMV)
-    nimpath = dest(nim, 'bin')
-    nimexec = dest(nimpath, 'nim')
-    nimbleexec = dest(nimpath, 'nimble')
-
-    export('nim', nimexec)
-    export('nimble', nimbleexec)
-
     cd(path, 'deps')
     install_qop_qio(qex)
     qmp = dest(deps, 'qmp')
     qio = dest(deps, 'qio')
 
+    nim = dest(deps, NIMV)
     install_nim(nim)
+    nimpath = dest(nim, 'bin')
+    nimexec = dest(nimpath, 'nim')
+    nimbleexec = dest(nimpath, 'nimble')
+
+    mdevolve = dest(deps, 'mdevolve')
     install_mdevolve(mdevolve, nimexec, nimbleexec)
 
     cd(path, 'build')
-    configure(qex, qmp, qio)
+    configure(qex, qmp, qio, nimexec)
 
     install_hmc(build, bin)
     if compile_gradient_flow: install_gradient_flow(build, bin)
@@ -120,9 +119,3 @@ if __name__ == '__main__':
     if run_hmc_regression_test: hmc_regress()
 
     # Final printout reminding folks how to use both binary files
-    
-
-
-    
-
-    
