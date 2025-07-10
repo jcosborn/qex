@@ -12,7 +12,7 @@ gauge action (one-loop HISQ action with tadpole coefficient $\boldsymbol{u_{0}=1
 coefficients are set such that $\boldsymbol{\beta \equiv 10/g_{0}^2}$ (MILC convention).
 Directory also contains software for Yang-Mills gradient flow with arbitrary rectangle
 actions. Please see `README.md` under
-[src/alphas](https://github.com/milc-qcd/qex/tree/devel/src/alphas) for more details.
+[src/alphas](https://github.com/milc-qcd/qex/tree/devel/src/alphas) for details.
 
 ### Quantum EXpressions
 QEX is a high-level framework for lattice field operations
