@@ -1,4 +1,4 @@
-## MILC+QEX
+## MIMD Lattice Collaboration ([MILC](https://github.com/milc-qcd)) + Quantum EXpressions ([QEX](https://github.com/jcosborn/qex))
 
 This is a fork of the Quantum EXpressions ([QEX](https://github.com/jcosborn/qex)) 
 lattice field theory framework that contains open-source 
@@ -14,7 +14,7 @@ Directory also contains software for Yang-Mills gradient flow with arbitrary rec
 actions. Please see `README.md` under
 [src/alphas](https://github.com/milc-qcd/qex/tree/devel/src/alphas) for details.
 
-### Quantum EXpressions
+## QEX: [Quantum EXpressions](https://github.com/jcosborn/qex) lattice field theory framework
 QEX is a high-level framework for lattice field operations
 written in the language [Nim](https://nim-lang.org).
 
