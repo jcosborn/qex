@@ -1,5 +1,20 @@
 ## QEX: Quantum EXpressions lattice field theory framework
 
+This is a fork of the Quantum EXpressions ([QEX](https://github.com/jcosborn/qex)) 
+lattice field theory framework that contains open-source 
+[MILC](https://github.com/milc-qcd) collaboration code. 
+
+* [src/alphas](https://github.com/milc-qcd/qex/tree/devel/src/alphas):
+Highly improved staggered quark (HISQ) Hamiltonian (hybrid) Monte Carlo (HMC)
+with $\boldsymbol{N_{\mathrm{f}}=4}$ degenerate "quark" flavors. HMC implements
+Hasenbusch preconditioning and utilizes a tree-level Symanzik (Luescher-Weiss)
+gauge action (one-loop HISQ action with tadpole coefficient $\boldsymbol{u_{0}=1}$);
+coefficients are set such that $\boldsymbol{\beta \equiv 10/g_{0}^2}$ (MILC convention).
+Directory also contains software for Yang-Mills gradient flow with arbitrary rectangle
+actions. Please see `README.md` under
+[src/alphas](https://github.com/milc-qcd/qex/tree/devel/src/alphas) for more details.
+
+### Quantum EXpressions
 QEX is a high-level framework for lattice field operations
 written in the language [Nim](https://nim-lang.org).
 
