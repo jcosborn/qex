@@ -44,7 +44,7 @@ export stagSolve
 export alphasrng
 
 const banner = """
-|---------------------------------------------------------------|
+\n|---------------------------------------------------------------|
  Quantum EXpressions (QEX)
 
  QEX authors: James Osborn & Xiao-Yong Jin
@@ -157,9 +157,10 @@ type
     gc: GaugeActionCoeffs
     stag: Staggered[U,F0]
     params: HisqCoefs
-    spa,spf: SolverParams
+    spa*,spf*: SolverParams
     perf: PerfInfo
     jsonInfo*: JsonNode
+    cmd*: JsonNode
 
 template UU(lo: Layout): untyped =
   type(lo.ColorMatrix())
@@ -308,12 +309,59 @@ proc `$`*(self: HisqHMC): string =
       beta: self.beta,
       mass: self.mass,
       hasenbusch_mass: self.hmass,
-      cp: Cp,
-      cr: Cr
+      plaquette_coefficient: Cp,
+      rectangle_coefficient: Cr
     )
+  result = "\n"
+  if self.cmd.hasKey("ensemble"): 
+    result &= "base ensemble name: " & self.cmd["ensemble"].getStr() & "\n"
+  else: result &= "base ensemble name: n/a \n"
+  if self.cmd.hasKey("start"): 
+    result &= "starting configuration: " & $self.cmd["start"].getInt() & "\n"
+  else: result &= "starting configuration: 0 \n"
+  if self.cmd.hasKey("ntraj"): 
+    result &= "number of trajectories: " & $self.cmd["ntraj"].getInt() & "\n"
+  else: result &= "number of trajectories: 1 \n"
+  result &= "\n" 
+  result &= "JSON input: " & $self.jsonInfo & "\n"
+  result &= "\n"
   for tag,val in params.fieldPairs: 
-    result = result & tag.replace("_"," ") & ": " & $(val) & "\n"
-  result = result & $(self.params)
+    result &= tag.replace("_"," ") & ": " & $(val) & "\n"
+    if tag.replace("_"," ") == "serial RNG":
+      let seed = self.jsonInfo["hmc"]["serial-seed"].getStr()
+      result &= "serial seed: " & $seed & "\n"
+    if tag.replace("_"," ") == "parallel RNG":
+      let seed = self.jsonInfo["hmc"]["parallel-seed"].getStr()
+      result &= "parallel seed: " & $seed & "\n"
+    if tag.replace("_"," ") == "number of trajectories":
+      let 
+        outerInteg = self.jsonInfo["fermion"]["integrator"].getStr()
+        innerInteg = self.jsonInfo["gauge"]["integrator"].getStr()
+        outerSteps = $self.jsonInfo["fermion"]["steps"].getInt()
+        innerSteps = $self.jsonInfo["gauge"]["steps"].getInt()
+        start = self.jsonInfo["hmc"]["gauge-start"].getStr()
+      result &= "outer (fermion/Hasenbusch) integrator: " & outerInteg & "\n"
+      result &= "outer (fermion/Hasenbusch) steps: " & outerSteps & "\n"
+      result &= "inner (gauge) integrator: " & innerInteg & "\n"
+      result &= "inner (gauge) steps per outer (fermion/Hasenbusch) gauge update: " 
+      result &= innerSteps & "\n"
+      result &= "gauge start: " & start & "\n"
+  if self.jsonInfo["action"].hasKey("unitary-projection"):
+    if self.jsonInfo["action"]["unitary-projection"].hasKey("method"):
+      let proj = self.jsonInfo["action"]["unitary-projection"]["method"].getStr()
+      result &= "unitary projection method: " & proj & "\n"
+  result &= "minimum squared residual (action CG solver): " & $self.spa.r2req & "\n"
+  result &= "maximum iterations (action CG solver): " & $self.spa.maxits & "\n"
+  result &= "minimum squared residual (force CG solver): " & $self.spf.r2req & "\n"
+  result &= "maximum iterations (force CG solver): " & $self.spf.maxits & "\n"
+  if self.jsonInfo.hasKey("measurements"):
+    if self.jsonInfo["measurements"].hasKey("sources"):
+      let sources = self.jsonInfo["measurements"]["sources"].getStr()
+      result &= "chiral condensate sources: " & sources & "\n"
+  result &= $(self.params)
+  result &= "\n"
+  result &= $(self.integrator)
+  result &= "\n"
 
 template newHisqHMC*(build: untyped): auto =
   ## Brief: HISQ HMC constructor template
@@ -436,6 +484,7 @@ template newHisqHMC*(build: untyped): auto =
   build
   hisq.integrator = integrator
   hisq.jsonInfo = info
+  hisq.cmd = cmd
   hisq
 
 #[ Serial and parallel RNG methods ]#

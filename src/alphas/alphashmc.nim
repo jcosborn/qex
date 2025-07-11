@@ -5,7 +5,7 @@ import parseopt,json
 const 
   logStyle = "KS_nHYP_FA"
   banner = """
-|---------------------------------------------------------------|
+\n|---------------------------------------------------------------|
  Quantum EXpressions (QEX)
 
  QEX authors: James Osborn & Xiao-Yong Jin
@@ -131,17 +131,21 @@ var hmc = newHisqHMC:
 echo $(hmc)
 hmc.sample:
   hmc.prepare()
+  echo ""
   hmc.evolve()
+  echo ""
   hmc.finish:
     let output = $(info.dH) & " exp(dH): " & $(info.expdH) & " rand: " & $(info.rnd)
     case accepted:
       of true: echo "ACC: ", output
       of false: echo "REJ: ", output
     if hmc.jsonInfo.hasKey("measurements"):
+      echo ""
       if hmc.jsonInfo["measurements"].hasKey("plaquette"): u.plaquette
       if hmc.jsonInfo["measurements"].hasKey("polyakov"): u.polyakov
       if hmc.jsonInfo["measurements"].hasKey("chiral-condensate"): hmc.condensate
       if hmc.jsonInfo["measurements"].hasKey("gradient-flow"): hmc.flow(u,trajectory)
+      echo ""
     if hmc.jsonInfo.hasKey("checkpoint"):
       let saveFreq = hmc.jsonInfo["checkpoint"]["frequency"].getInt()
       if (saveFreq > 0) and (((trajectory + 1) mod saveFreq) == 0):
