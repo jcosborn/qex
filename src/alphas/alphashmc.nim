@@ -5,7 +5,7 @@ import parseopt,json
 const 
   logStyle = "KS_nHYP_FA"
   banner = """
-\n|---------------------------------------------------------------|
+|---------------------------------------------------------------|
  Quantum EXpressions (QEX)
 
  QEX authors: James Osborn & Xiao-Yong Jin

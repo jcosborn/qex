@@ -143,9 +143,6 @@ proc randomTAH*(x: Field, r: MILCRNGField) =
     agaussian(x,r)
     x.projectTAH
 
-proc randomTAH*[F:Field](g: openArray[F], r: var MILCRNGField) =
-  for mu in g.low..g.high: randomTAH(g[mu], r)
-
 proc randomU*(x: Field, r: var MILCRNGField) =
   agaussian(x,r)
   x.projectU

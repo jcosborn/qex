@@ -30,7 +30,7 @@ import algorithms/[integrator]
 import physics/[qcdTypes,stagSolve]
 import maths/[matproject]
 
-import extra/[alphasrng]
+import extra/[alphasrng, alphasgauge]
 
 import mdevolve
 
@@ -44,7 +44,7 @@ export stagSolve
 export alphasrng
 
 const banner = """
-\n|---------------------------------------------------------------|
+|---------------------------------------------------------------|
  Quantum EXpressions (QEX)
 
  QEX authors: James Osborn & Xiao-Yong Jin
@@ -147,7 +147,6 @@ type
     prng: ParallelRNG
     p,f: seq[U]
   HisqHMC*[U,F,F0] = ref object of HisqHMCRoot[U]
-    boxSize: float
     beta,mass,hmass: float
     bcs: string
     u,u0: seq[U]
@@ -449,7 +448,7 @@ template newHisqHMC*(build: untyped): auto =
     newSolverParams(info,"force"),
     GaugeActionCoeffs(plaq: beta*Cp, rect: beta*Cr)
   )
-
+  
   # Prepare fields
   (
     hisq.u,
@@ -476,8 +475,7 @@ template newHisqHMC*(build: untyped): auto =
       hisq.prng.random(hisq.u) 
       hisq.u.reunit()
     else: discard
-  hisq.stag = newStag3(hisq.su,hisq.sul)
-  hisq.boxSize = float(hisq.su[0].l.physVol)
+  hisq.stag = newStag3(hisq.su, hisq.sul)
 
   # Execute user commands and return result
   template u: untyped {.inject.} = hisq.u
@@ -566,7 +564,7 @@ proc pnorm2[T](p: T): float =
   var p2: float
   threads:
     var p2t = 0.0
-    for mu in 0..<p.len: p2t += p[mu].norm2
+    for mu in 0..<p.len: p2t += p[mu].pnorm2
     threadBarrier()
     threadMaster: p2 = p2t
   return p2
@@ -574,13 +572,9 @@ proc pnorm2[T](p: T): float =
 proc zeroFermion(phi: auto) =
   threads: phi := 0
 
-proc kineticAction*(self: HisqHMC): float = 
-  return 0.5*self.p.pnorm2 - 16.0*self.boxSize
+proc kineticAction*(self: HisqHMC): float = 0.5*self.p.pnorm2
 
-proc gaugeAction*(self: HisqHMC): float =
-  let beta = self.beta/10.0
-  result = self.gc.gaugeAction1(self.u)
-  result += 54.0*beta*self.boxSize
+proc gaugeAction*(self: HisqHMC): float = self.gc.gaugeActionOneLoopHISQ(self.u)
 
 proc fermionAction*(self: HisqHMC): float =
   var 
@@ -808,8 +802,7 @@ proc updateMomentum[T](p: auto; f: T) =
 proc updateMomentum*(self: var HisqHMC; dtau: float) =
   self.p.updateMomentum(self.f,dtau)
 
-proc updateMomentum*(self: var HisqHMC) =
-  self.p.updateMomentum(self.f)
+proc updateMomentum*(self: var HisqHMC) = self.p.updateMomentum(self.f)
 
 proc updateMomentumFermion*(self: var HisqHMC; dtau: float) =
   self.fermionForce(dtau)
