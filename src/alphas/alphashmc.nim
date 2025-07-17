@@ -72,9 +72,11 @@ proc condensate(hmc: auto) =
       let 
         pbpe = 0.5*mass*tmpb.even.norm2/vol
         pbpo = 0.5*mass*tmpb.odd.norm2/vol
+      threadBarrier()
       threadMaster: echo "MEASpbp (",source,") mass: ",mass," pbpe: ",pbpe," pbpo: ",pbpo
       pbptote += pbpe/float(nsources)
       pbptoto += pbpo/float(nsources)
+      threadBarrier()
   echo "MEASpbp (avg) mass: ",mass," pbpe: ",pbptote," pbpo: ",pbptoto
 
 # Gradient flow
