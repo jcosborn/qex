@@ -1,0 +1,206 @@
+Using Comm: QMP
+|---------------------------------------------------------------|
+ Quantum EXpressions (QEX)
+
+ QEX authors: James Osborn & Xiao-Yong Jin
+ HISQ HMC authors: 
+   - Curtis Taylor Peterson [C.T.P.] (Michigan State University)
+   - James Osborn (Argonne National Laboratory)
+   - Xiao-Yong Jin (Argonne National Laboratory) 
+ QEX GitHub: https://github.com/jcosborn/qex
+ C.T.P. email: curtistaylorpetersonwork@gmail.com
+ cite: Proceedings of Science (PoS) LATTICE2016 (2017) 271
+|---------------------------------------------------------------|
+
+rank 0/1
+thread 0/16
+#physGeom:@[8, 8, 8, 16]
+#rankGeom:@[1, 1, 1, 1]
+#localGeom:@[8, 8, 8, 16]
+#innerGeom:@[1, 2, 2, 2]
+#outerGeom:@[8, 4, 4, 8]
+#innerGeom:@[1, 2, 2, 2]
+#outerGeom:@[8, 4, 4, 8]
+#innerCb: 0
+#innerCbDir: 0
+#newRNGField lo:
+[1, 1, 1, 1]
+#physGeom:@[8, 8, 8, 16]
+#rankGeom:@[1, 1, 1, 1]
+#localGeom:@[8, 8, 8, 16]
+#innerGeom:@[1, 1, 1, 1]
+#outerGeom:@[8, 8, 8, 16]
+#innerGeom:@[1, 1, 1, 1]
+#outerGeom:@[8, 8, 8, 16]
+#innerCb: 0
+#innerCbDir: 0
+
+base ensemble name: n/a 
+starting configuration: 0 
+number of trajectories: 1 
+
+JSON input: {"lattice-geometry":[8,8,8,16],"hmc":{"trajectory-length":0.1,"serial-rng":"milc","parallel-rng":"milc","serial-seed":123456789,"parallel-seed":123456789,"gauge-start":"cold"},"action":{"beta":7.5,"mass":0.005,"hasenbusch-mass":0.6,"lepage":0.0,"naik":1.0,"unitary-projection":{"method":"cayley-hamilton"}},"gauge":{"integrator":"2MN","steps":10},"fermion":{"integrator":"2MN","steps":10},"measurements":{"plaquette":{},"polyakov":{},"chiral-condensate":{"sources":10}}}
+
+trajectory length: 0.1
+number of trajectories: 1
+outer (fermion/Hasenbusch) integrator: 2MN
+outer (fermion/Hasenbusch) steps: 10
+inner (gauge) integrator: 2MN
+inner (gauge) steps per outer (fermion/Hasenbusch) gauge update: 10
+gauge start: cold
+serial RNG: MILC
+serial seed: 
+parallel RNG: MILC
+parallel seed: 
+beta: 7.5
+mass: 0.005
+hasenbusch mass: 0.6
+plaquette coefficient: 1.0
+rectangle coefficient: -0.05
+unitary projection method: cayley-hamilton
+minimum squared residual (action CG solver): 1e-20
+maximum iterations (action CG solver): 10000
+minimum squared residual (force CG solver): 1e-12
+maximum iterations (force CG solver): 10000
+fat7first:
+  oneLink:     0.125
+  threeStaple: -0.0625
+  fiveStaple:  0.015625
+  sevenStaple: -0.0026041666666666665
+  lepage:      -0.0
+fat7second:
+  oneLink:     1.0
+  threeStaple: -0.0625
+  fiveStaple:  0.015625
+  sevenStaple: -0.0026041666666666665
+  lepage:      -0.125
+naik: -0.041666666666666664
+
+Omelyan2MN:dt^2{
+  (steps=10){
+    0: 0.1931833275037836 * Omelyan2MN:dt^2{
+        (steps=10){
+          0: 0.1931833275037836 * mdt
+          1: 0.5 * mdvAll[0]
+          2: 0.6136333449924328 * mdt{0}
+          3: 0.5 * mdvAll[0]{1}
+          4: 0.1931833275037836 * mdt{0}
+        }
+      }
+    1: 0.5 * mdvAll[1]
+    2: 0.6136333449924328 * Omelyan2MN{0}
+    3: 0.5 * mdvAll[1]{1}
+    4: 0.1931833275037836 * Omelyan2MN{0}
+  }
+}
+
+linkSmear: 0.83212s 1.213Gf/s
+stagSolve: 26  0.5660s  0.4617Gf/s  3.298e-21
+stagSolve: 26  0.1122s  2.329Gf/s  1.131e-21
+stagSolve: 34  0.01558s  21.74Gf/s  2.590e-21
+kinetic: 35.27838406119676 gauge: 0.0 fermion: 24323.01973917125 
+
+linkSmear: 2.28041s 0.443Gf/s
+stagSolve: 19  0.1787s  1.083Gf/s  0.02160
+stagSolve: 32  0.01476s  21.64Gf/s  0.02934
+forceSmear: 0.25147s 8.599Gf/s
+linkSmear: 0.40858s 2.471Gf/s
+stagSolve: 19  0.01101s  17.58Gf/s  0.02160
+stagSolve: 34  0.01092s  31.02Gf/s  0.02934
+forceSmear: 0.46649s 4.635Gf/s
+linkSmear: 0.10324s 9.781Gf/s
+stagSolve: 19  0.08232s  2.351Gf/s  0.02161
+stagSolve: 34  0.02111s  16.05Gf/s  0.02934
+forceSmear: 0.19150s 11.291Gf/s
+linkSmear: 2.11204s 0.478Gf/s
+stagSolve: 19  0.6190s  0.3126Gf/s  0.02161
+stagSolve: 34  0.06721s  5.041Gf/s  0.02934
+forceSmear: 0.42881s 5.043Gf/s
+linkSmear: 0.76816s 1.315Gf/s
+stagSolve: 19  0.004949s  39.10Gf/s  0.02161
+stagSolve: 34  0.006373s  53.15Gf/s  0.02935
+forceSmear: 0.07234s 29.892Gf/s
+linkSmear: 0.04600s 21.953Gf/s
+stagSolve: 19  0.01334s  14.51Gf/s  0.02162
+stagSolve: 39  0.01468s  26.38Gf/s  0.02935
+forceSmear: 0.29663s 7.290Gf/s
+linkSmear: 2.20361s 0.458Gf/s
+stagSolve: 19  0.1355s  1.428Gf/s  0.02162
+stagSolve: 39  0.01715s  22.57Gf/s  0.02936
+forceSmear: 0.90122s 2.399Gf/s
+linkSmear: 0.07024s 14.377Gf/s
+stagSolve: 19  0.01228s  15.76Gf/s  0.02163
+stagSolve: 40  0.01484s  26.74Gf/s  0.02937
+forceSmear: 0.28534s 7.578Gf/s
+linkSmear: 0.15417s 6.550Gf/s
+stagSolve: 20  0.009406s  21.60Gf/s  0.02163
+stagSolve: 40  0.01952s  20.33Gf/s  0.02937
+forceSmear: 0.49000s 4.413Gf/s
+linkSmear: 0.15244s 6.624Gf/s
+stagSolve: 21  0.008576s  24.82Gf/s  0.02164
+stagSolve: 41  0.01824s  22.29Gf/s  0.02939
+forceSmear: 0.52417s 4.125Gf/s
+linkSmear: 0.05017s 20.127Gf/s
+stagSolve: 21  0.01292s  16.47Gf/s  0.02164
+stagSolve: 41  0.01218s  33.37Gf/s  0.02939
+forceSmear: 0.24007s 9.007Gf/s
+linkSmear: 0.16613s 6.078Gf/s
+stagSolve: 21  0.01494s  14.25Gf/s  0.02165
+stagSolve: 41  0.01496s  27.17Gf/s  0.02941
+forceSmear: 0.24533s 8.814Gf/s
+linkSmear: 0.05620s 17.967Gf/s
+stagSolve: 21  0.008570s  24.84Gf/s  0.02166
+stagSolve: 41  0.01521s  26.72Gf/s  0.02942
+forceSmear: 0.50925s 4.246Gf/s
+linkSmear: 0.05286s 19.104Gf/s
+stagSolve: 21  0.01260s  16.90Gf/s  0.02167
+stagSolve: 42  0.01409s  29.55Gf/s  0.02944
+forceSmear: 0.16924s 12.777Gf/s
+linkSmear: 0.05126s 19.699Gf/s
+stagSolve: 21  0.01367s  15.57Gf/s  0.02167
+stagSolve: 42  0.01460s  28.51Gf/s  0.02945
+forceSmear: 0.30390s 7.115Gf/s
+linkSmear: 1.99364s 0.507Gf/s
+stagSolve: 21  0.4614s  0.4614Gf/s  0.02168
+stagSolve: 42  0.8164s  0.5098Gf/s  0.02947
+forceSmear: 0.18632s 11.605Gf/s
+linkSmear: 1.45465s 0.694Gf/s
+stagSolve: 21  0.08512s  2.501Gf/s  0.02169
+stagSolve: 42  0.01522s  27.36Gf/s  0.02948
+forceSmear: 0.29542s 7.319Gf/s
+linkSmear: 0.62011s 1.628Gf/s
+stagSolve: 21  0.008712s  24.43Gf/s  0.02170
+stagSolve: 43  0.02229s  19.10Gf/s  0.02950
+forceSmear: 2.27779s 0.949Gf/s
+linkSmear: 0.02420s 41.720Gf/s
+stagSolve: 21  0.005247s  40.57Gf/s  0.02171
+stagSolve: 43  0.007862s  54.17Gf/s  0.02951
+forceSmear: 0.07390s 29.262Gf/s
+linkSmear: 0.07216s 13.995Gf/s
+stagSolve: 22  0.005464s  40.73Gf/s  0.02172
+stagSolve: 44  0.008042s  54.16Gf/s  0.02954
+forceSmear: 0.07253s 29.814Gf/s
+
+linkSmear: 0.06571s 15.367Gf/s
+stagSolve: 36  0.5125s  0.6987Gf/s  3.307e-21
+stagSolve: 86  0.07733s  10.89Gf/s  1.567e-21
+kinetic: -15322.466588151046 gauge: 15275.7545447983 fermion: 24405.014805988758 
+unitary deviation avg: 1.3237112756016766e-15 max: 4.269189297584201e-15
+new unitary deviation avg: 2.6269642697950747e-16 max: 8.895806573726554e-16
+ACC: 0.004639403567125555 exp(dH): 0.9953713418417518 rand: 0.3787543773651123
+
+MEASplaq ss: 0.9512306418022363  st: 0.9512676243921663  tot: 0.9512491330972013
+MEASploop spatial: 0.9017168576498602 0.00029740710759828924 temporal: 0.8127022285408891 -0.00039163319008871935
+MEASpbp (0) mass: 0.005 pbpe: 0.004454859182051088 pbpo: 0.004353348761958882
+MEASpbp (1) mass: 0.005 pbpe: 0.004449533403594286 pbpo: 0.004419110221554182
+MEASpbp (2) mass: 0.005 pbpe: 0.0046543528375696756 pbpo: 0.004344805587446183
+MEASpbp (3) mass: 0.005 pbpe: 0.0044818387963836024 pbpo: 0.004435340747334101
+MEASpbp (4) mass: 0.005 pbpe: 0.004402502224260201 pbpo: 0.00443539386232892
+MEASpbp (5) mass: 0.005 pbpe: 0.0042358201339493294 pbpo: 0.004259344109545802
+MEASpbp (6) mass: 0.005 pbpe: 0.0044344485482210195 pbpo: 0.004375485066366803
+MEASpbp (7) mass: 0.005 pbpe: 0.004325959189134303 pbpo: 0.004390358460227112
+MEASpbp (8) mass: 0.005 pbpe: 0.004489442363894397 pbpo: 0.004317925415018564
+MEASpbp (9) mass: 0.005 pbpe: 0.004299624815662566 pbpo: 0.0044755889127947625
+MEASpbp (avg) mass: 0.005 pbpe: 0.01949758033443749 pbpo: 0.019268844123022745
+
+[91.254 s] Total time (Init - Finalize): 91.25377655300001 seconds.

@@ -101,7 +101,7 @@ let
       "lepage": 0.0, # lepage for fat7 (<asqtad fat7> = 2-<fat7 lepage>)
       "naik": 1.0, # naik for fat7 (<asqtad naik> = 1.0)
       "unitary-projection": { # post-fat7 unitary projection
-        "method": "newton", # proj method: cayley-hamilton, newton, halley
+        "method": "cayley-hamilton", # proj method: cayley-hamilton, newton, halley
         #"eps": 1e-16, # terminating criterion - if needed but not provided, guessed
         #"maxiters": 100 # max iter criterion - if needed but not provided, guessed
       }
@@ -253,7 +253,7 @@ proc newHISQ[T](u: seq[T]; info: JsonNode): auto =
         eps = info["action"]["unitary-projection"]["eps"].getFloat()
       if info["action"]["unitary-projection"].hasKey("maxiters"):
         maxiters = info["action"]["unitary-projection"]["maxiters"].getInt()
-    of false: projection = Newton
+    of false: projection = CayleyHamilton
   return newHISQ(
     info["action"]["lepage"].getFloat(),
     info["action"]["naik"].getFloat(),
@@ -349,6 +349,7 @@ proc `$`*(self: HisqHMC): string =
     if self.jsonInfo["action"]["unitary-projection"].hasKey("method"):
       let proj = self.jsonInfo["action"]["unitary-projection"]["method"].getStr()
       result &= "unitary projection method: " & proj & "\n"
+  else: result &= "unitary projection method: newton\n"
   result &= "minimum squared residual (action CG solver): " & $self.spa.r2req & "\n"
   result &= "maximum iterations (action CG solver): " & $self.spa.maxits & "\n"
   result &= "minimum squared residual (force CG solver): " & $self.spf.r2req & "\n"
