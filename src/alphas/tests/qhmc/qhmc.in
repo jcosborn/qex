@@ -1,0 +1,24 @@
+nflavors 4
+
+nx 8
+nt 16
+beta 7.5
+u0 1.0
+mass 0.005
+hasenbusch_mass 0.6
+
+error_per_site_action 1e-10
+error_per_site_force 1e-6
+max_cg_iterations 10000
+
+iseed 123456789
+trajecs 1
+tau 0.1
+gsteps 10
+fsteps 10
+hsteps 10
+
+pbp_reps 0
+
+fresh
+forget
