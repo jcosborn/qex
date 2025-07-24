@@ -291,9 +291,13 @@ proc getIntSeq*(input: JsonNode): seq[int] =
   result = newSeq[int]()
   for elem in input.getElems(): result.add elem.getInt()
 
-proc readSerialRNG*(self: var HisqHMC; fn: string) = self.srng.readRNG(fn)
+proc readSerialRNG*(self: var HisqHMC; fn: string) = 
+  self.srng.readRNG(fn)
+  echo "read serial RNG file: " & fn
 
-proc readParallelRNG*(self: var HisqHMC; fn: string) = self.prng.readRNG(fn)
+proc readParallelRNG*(self: var HisqHMC; fn: string) = 
+  self.prng.readRNG(fn)
+  echo "read parallel RNG file: " & fn
 
 proc setIntegrator(info: JsonNode; field: string): IntegratorProc =
   result = toIntegratorProc(info[field]["integrator"].getStr())
@@ -514,8 +518,8 @@ proc readRNG(self: var ParallelRNG; filename: string) =
   reader.close()
 
 proc writeRNG(self: var ParallelRNG; filename: string) =
-  var writer = self.milc.l.newWriter(filename,fileMd)
-  writer.write(self.milc,recordMd)
+  var writer = self.milc.l.newWriter(filename, fileMd)
+  writer.write(self.milc, recordMd)
   writer.close()
 
 proc writeParallelRNG*(self: var HisqHMC; fn: string) = self.prng.writeRNG(fn)
