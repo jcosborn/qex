@@ -1,29 +1,12 @@
 import alphas
-import sequtils,parseutils,strutils
-import parseopt,json
-
-const 
-  logStyle = "KS_nHYP_FA"
-  banner = """
-|---------------------------------------------------------------|
- Quantum EXpressions (QEX)
-
- QEX authors: James Osborn & Xiao-Yong Jin
- HISQ HMC authors: 
-   - Curtis Taylor Peterson [C.T.P.] (Michigan State University)
-   - James Osborn (Argonne National Laboratory)
-   - Xiao-Yong Jin (Argonne National Laboratory) 
- QEX GitHub: https://github.com/jcosborn/qex
- C.T.P. email: curtistaylorpetersonwork@gmail.com
- cite: Proceedings of Science (PoS) LATTICE2016 (2017) 271
-|---------------------------------------------------------------|
-"""
+import sequtils, parseutils, strutils
+import parseopt, json
 
 qexInit()
 
-echo banner
-echo "rank ", myRank, "/", nRanks
-threads: echo "thread ", threadNum, "/", numThreads
+printGitHubInformation()
+printAlphasInformationBanner()
+printParallelInformation()
 
 let
   prompt = readCMD()
@@ -57,8 +40,6 @@ proc condensate(hmc: auto) =
     pbpsp: SolverParams
     tmpa = hmc.stag.g[0].l.ColorVector()
     tmpb = hmc.stag.g[0].l.ColorVector()
-    pbptote = 0.0
-    pbptoto = 0.0
   let 
     mass = hmc.mass
     vol = hmc.stag.g[0].l.physVol.float
@@ -74,12 +55,9 @@ proc condensate(hmc: auto) =
         pbpo = 0.5*mass*tmpb.odd.norm2/vol
       threadBarrier()
       threadMaster: echo "MEASpbp (",source,") mass: ",mass," pbpe: ",pbpe," pbpo: ",pbpo
-      pbptote += pbpe/float(nsources)
-      pbptoto += pbpo/float(nsources)
-      threadBarrier()
-  echo "MEASpbp (avg) mass: ",mass," pbpe: ",pbptote," pbpo: ",pbptoto
 
 # Gradient flow
+#[
 proc flow[T](hmc: auto; u: T; traj: int) =
   let ijs = hmc.jsonInfo["measurements"]["gradient-flow"]
   var
@@ -99,6 +77,7 @@ proc flow[T](hmc: auto; u: T; traj: int) =
   if runFlow:
     u.gradientFlow(js): 
       f.write(measurements.formatMeasurements(style = logStyle) & "\n")
+]#
 
 # Construct HMC object
 var hmc = newHisqHMC:
@@ -146,7 +125,7 @@ hmc.sample:
       if hmc.jsonInfo["measurements"].hasKey("plaquette"): u.plaquette
       if hmc.jsonInfo["measurements"].hasKey("polyakov"): u.polyakov
       if hmc.jsonInfo["measurements"].hasKey("chiral-condensate"): hmc.condensate
-      if hmc.jsonInfo["measurements"].hasKey("gradient-flow"): hmc.flow(u,trajectory)
+      #if hmc.jsonInfo["measurements"].hasKey("gradient-flow"): hmc.flow(u,trajectory)
       echo ""
     if hmc.jsonInfo.hasKey("checkpoint"):
       let saveFreq = hmc.jsonInfo["checkpoint"]["frequency"].getInt()

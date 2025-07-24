@@ -25,17 +25,17 @@ import qex
 import base
 import layout
 import gauge
-import gauge/[hisqsmear,gaugeUtils]
+import gauge/[hisqsmear, gaugeUtils]
 import algorithms/[integrator]
-import physics/[qcdTypes,stagSolve]
+import physics/[qcdTypes, stagSolve]
 import maths/[matproject]
 
 import extra/[alphasrng, alphasgauge]
 
 import mdevolve
 
-import times,macros,json,parseopt,sequtils
-import strformat,strutils,streams,os,math
+import times, macros, json, parseopt, sequtils
+import strformat, strutils, streams, os, osproc, math
 
 export qex
 export integrator
@@ -72,6 +72,10 @@ const
   ActionCGVerbosity* = 1
   ForceCGVerbosity* = 1
   SmearingVerbosity* = 1
+
+let
+  defUnitProj = CayleyHamilton
+  defUnitProjStr = "cayley-hamilton"
 
 # Eqn. (A2) of arXiv:1004.0342; u0 = 1.0
 const
@@ -161,12 +165,35 @@ type
     jsonInfo*: JsonNode
     cmd*: JsonNode
 
+#[ Compile-time execution/helpers/procedures ]#
+
+# compile-time extraction of GitHub repository information
+let 
+  (commit, _) = execCmdEx("git rev-parse HEAD")
+  gitCommit = commit.strip()
+
+# helpers for type inference
 template UU(lo: Layout): untyped =
   type(lo.ColorMatrix())
 template FF(lo: Layout): untyped =
   type(lo.ColorVector())
 template FF0(lo: Layout): untyped = 
   type(lo.ColorVector()[0])
+
+#[ Extras ]#
+
+proc printGitHubInformation* =
+  echo ""
+  echo "GitHub commit: " & gitCommit
+  echo ""
+
+proc printAlphasInformationBanner* = 
+  echo banner
+
+proc printParallelInformation* =
+  echo "rank ", myRank, "/", nRanks
+  threads: echo "thread ", threadNum, "/", numThreads
+  echo ""
 
 proc reunit*(g: auto) =
   tic()
@@ -248,12 +275,12 @@ proc newHISQ[T](u: seq[T]; info: JsonNode): auto =
           of "halley": Halley
           else: 
             qexError("Invalid choice for reunitarization method")
-            Newton
+            defUnitProj
       if info["action"]["unitary-projection"].hasKey("eps"):
         eps = info["action"]["unitary-projection"]["eps"].getFloat()
       if info["action"]["unitary-projection"].hasKey("maxiters"):
         maxiters = info["action"]["unitary-projection"]["maxiters"].getInt()
-    of false: projection = CayleyHamilton
+    of false: projection = defUnitProj
   return newHISQ(
     info["action"]["lepage"].getFloat(),
     info["action"]["naik"].getFloat(),
@@ -353,7 +380,7 @@ proc `$`*(self: HisqHMC): string =
     if self.jsonInfo["action"]["unitary-projection"].hasKey("method"):
       let proj = self.jsonInfo["action"]["unitary-projection"]["method"].getStr()
       result &= "unitary projection method: " & proj & "\n"
-  else: result &= "unitary projection method: newton\n"
+  else: result &= "unitary projection method: " & defUnitProjStr & "\n"
   result &= "minimum squared residual (action CG solver): " & $self.spa.r2req & "\n"
   result &= "maximum iterations (action CG solver): " & $self.spa.maxits & "\n"
   result &= "minimum squared residual (force CG solver): " & $self.spf.r2req & "\n"

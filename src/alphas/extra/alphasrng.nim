@@ -37,10 +37,10 @@ proc newRNGField*[R: MILCRNG](lo: Layout, rng: typedesc[R], s: uint64 = uint64(1
     r.new(lo.physGeom.newLayout(1, lo.rankGeom))
   threads:
     # "defined(RandCoordOrder) or not defined(RandRawOrder)" = true by default
-    for j in lo.sites:
-      var l = lo.coords[lo.nDim-1][j].int
-      for i in countdown(lo.nDim-2, 0):
-        l = l * lo.physGeom[i].int + lo.coords[i][j].int
+    for j in r.l.sites:
+      var l = r.l.coords[r.l.nDim-1][j].int
+      for i in countdown(r.l.nDim-2, 0):
+        l = l * r.l.physGeom[i].int + r.l.coords[i][j].int
       seedIndep(r[j], ss, l)
   return r
 
@@ -90,6 +90,7 @@ proc agaussian*(x: var AsNumber, r: var MILCRNG) =
   mixin agaussian
   x := agaussian(r)
 
+proc gaussian_call2(x: var AsComplex, a,b:float) = (x.re, x.im) = (a, b)
 proc agaussian*(x: var AsComplex, r: var MILCRNG) =
   mixin agaussian
   # This is how QLA does it for complex types (e.g. QLA_D3_V_veq_gaussian_S).
@@ -99,9 +100,7 @@ proc agaussian*(x: var AsComplex, r: var MILCRNG) =
   when numNumbers(x.re) > 1:
     static: echo "agaussian for type ", typeof(x), " not implemented"
     {.error.}
-  let a = agaussian(r)
-  let b = agaussian(r)
-  (x.re, x.im) = (a, b)
+  x.gaussian_call2(agaussian(r), agaussian(r))
 
 proc agaussian*[T:array](x: MaskedObj[T], r: var MILCRNG) =
   for i in 0..<x.len: agaussian(x[i], r)
