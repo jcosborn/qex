@@ -26,11 +26,7 @@ type
   MILCRNGField* = concept r
     r[0] is MILCRNG
 
-proc newRNGField*[R: MILCRNG](
-    lo: Layout, 
-    rng: typedesc[R],
-    s: uint64 = uint64(17^7)
-  ): Field[1,R] =
+proc newRNGField*[R: MILCRNG](lo: Layout, rng: typedesc[R], s: uint64 = uint64(17^7)): Field[1,R] =
   ## The seed `s` is broadcasted from rank 0.
   var ss = s
   QMP_broadcast(ss.addr, sizeof(ss).csize_t)
@@ -40,7 +36,7 @@ proc newRNGField*[R: MILCRNG](
     echo "#newRNGField lo:"
     r.new(lo.physGeom.newLayout(1, lo.rankGeom))
   threads:
-    # appropriate?
+    # "defined(RandCoordOrder) or not defined(RandRawOrder)" = true by default
     for j in lo.sites:
       var l = lo.coords[lo.nDim-1][j].int
       for i in countdown(lo.nDim-2, 0):
@@ -48,44 +44,52 @@ proc newRNGField*[R: MILCRNG](
       seedIndep(r[j], ss, l)
   return r
 
-proc newRNGField*[R: MILCRNG](
-    rng: typedesc[R], 
-    lo: Layout,
-    s: uint64 = uint64(17^7)
-  ): Field[1,R] = lo.newRNGField(rng, s)
+proc newRNGField*[R: MILCRNG](rng: typedesc[R], lo: Layout, s: uint64 = uint64(17^7)): Field[1,R] =
+  return lo.newRNGField(rng, s)
 
-# appropriate?
+# "defined(RandCoordOrder) or not defined(RandRawOrder)" = true by default
 template mapRngField*(fn: untyped, x: untyped, r: untyped) = 
-  for i in x.l.sites: fn(x{i}, r{i})
+  let nd = x.l.nDim
+  var c = newSeq[int32](nd)
+  for i in x.l.sites:
+    x.l.coord(c, i)
+    let j = r.l.rankIndex(c).index
+    fn(x{i}, r{j})
 
 proc uniform*(x: var AsNumber, r: var MILCRNG) =
   mixin uniform
   x := uniform(r)
+
 proc uniform*(x: var AsComplex, r: var MILCRNG) =
   mixin uniform
   uniform(x.re, r)
   uniform(x.im, r)
+
 proc uniform*(x: var AsVector, r: var MILCRNG) =
   forO i, 0, x.len-1: uniform(x[i], r)
+
 proc uniform*(x: var AsMatrix, r: var MILCRNG) =
   forO i, 0, x.nrows-1:
     forO j, 0, x.ncols-1: uniform(x[i,j], r)
+
 template uniform*(r: AsVar, x: untyped) =
   mixin uniform
   var t = r[]
   uniform(t, x)
+
 proc uniform*(v: Field, r: MILCRNGField) = mapRngField(uniform, v, r)
+
 template uniform*(x: var Color, r: var untyped) =
   uniform(x[], r)
 
 proc agaussian*(x: var SomeNumber, r: var MILCRNG) =
   mixin agaussian
   x = agaussian(r)
+
 proc agaussian*(x: var AsNumber, r: var MILCRNG) =
   mixin agaussian
   x := agaussian(r)
 
-proc gaussian_call2(x: var AsComplex, a,b:float) = (x.re, x.im) = (a, b)
 proc agaussian*(x: var AsComplex, r: var MILCRNG) =
   mixin agaussian
   # This is how QLA does it for complex types (e.g. QLA_D3_V_veq_gaussian_S).
@@ -95,24 +99,33 @@ proc agaussian*(x: var AsComplex, r: var MILCRNG) =
   when numNumbers(x.re) > 1:
     static: echo "agaussian for type ", typeof(x), " not implemented"
     {.error.}
-  x.gaussian_call2(agaussian(r), agaussian(r))
+  let a = agaussian(r)
+  let b = agaussian(r)
+  (x.re, x.im) = (a, b)
 
 proc agaussian*[T:array](x: MaskedObj[T], r: var MILCRNG) =
   for i in 0..<x.len: agaussian(x[i], r)
+
 proc agaussian*(x: var array, r: var MILCRNG) =
   for i in 0..<x.len: agaussian(x[i], r)
+
 proc agaussian*(x: var AsVector, r: var MILCRNG) =
   forO i, 0, x.len-1: agaussian(x[i], r)
+
 proc agaussian*(x: var AsMatrix, r: var MILCRNG) =
   forO i, 0, getConst(x.nrows-1):
     forO j, 0, getConst(x.ncols-1): agaussian(x[i,j], r)
+
 template agaussian*(r: AsVar, x: untyped) =
   mixin agaussian
   var t = r[]
   agaussian(t, x)
+
 proc agaussian*(v: Field, r: MILCRNGField) = mapRngField(agaussian, v, r)
+
 proc agaussian*[T](a: openArray[T], r: MILCRNGField) =
   for i in 0..<a.len: agaussian(a[i], r)
+
 template agaussian*(x: Color, r: untyped) =
   agaussian(x[], r)
 
