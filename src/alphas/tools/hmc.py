@@ -132,11 +132,11 @@ def appendCG(state: bool, line: list[str]) -> None:
     else: hCGIters.append(iters); hGFLOP.append(gflops)
 
 def appendSmear(state: bool, smear: str, line: list[str]) -> None:
-    gflops = float(line[4].replace('Gf/s',''))
+    gflops = float(line[2].replace('Gf/s',''))
     if state:
         match smear:
-            case 'links:': flGFLOP.append(gflops)
-            case 'force:': ffGFLOP.append(gflops)
+            case 'link': flGFLOP.append(gflops)
+            case 'force': ffGFLOP.append(gflops)
             case _: pass
 
 def appendAccept(acc: bool, line: list[str]) -> None:
@@ -182,7 +182,8 @@ def extract_monte_carlo(line: list[str]) -> None:
             if measureForceState:
                 appendCG(measureFermionCGState,line)
                 measureFermionCGState = not measureFermionCGState
-        case 'smear': appendSmear(measureForceState,line[1],line)
+        case 'linkSmear': appendSmear(measureForceState,'link',line)
+        case 'forceSmear': appendSmear(measureForceState,'force',line)
         case 'ACC': appendAccept(1,line)
         case 'REJ': appendAccept(0,line)
         case _: pass
@@ -202,22 +203,26 @@ def extract_content(filename: str) -> None:
                 extract_monte_carlo(split_line)
 
 # Summarize Monte Carlo information
-def expectation_value(tag: str, data: list[float]) -> str:
-    (mean,svar,tau) = (
-        stat.mean(data),
-        stat.variance(data),
-        autocorrelation_time(data)
-    )
-    return '<'+tag+'> = '+str(mean)+'+/-'+str(math.sqrt(tau*svar/len(data)))
-
+def expectation_value(tag: str, data: list[float], prob = None) -> str:
+    if ((tag != 'dH') and (tag != 'dH^2') and (tag != 'exp(-dH)')):
+        (mean, svar, tau) = (stat.mean(data), stat.variance(data), autocorrelation_time(data))
+        return '<'+tag+'> = '+str(mean)+'+/-'+str(math.sqrt(tau*svar/len(data)))
+    elif ((tag == 'dH') or (tag == 'dH^2') or (tag == 'exp(-dH)')):
+        Z = sum(prob)
+        mean = sum(d*p for d, p in zip(data, prob)) / Z
+        svar = sum((d - mean)*(d - mean)*p for d, p
+                   in zip(data, prob)) / Z
+        tau = autocorrelation_time(data)
+        return '<'+tag+'> = '+str(mean)+'+/-'+str(math.sqrt(tau*svar))
+        
 def summarize() -> None:
     print('\n' + 50 * '-.')
     print('configurations:',timing['configs'])
     for tag,state in header.items(): print(tag+':',state)
     print(50 * '-.')
-    for tag,data in measurements.items(): print(expectation_value(tag,data))
+    for tag, data in measurements.items(): print(expectation_value(tag, data, measurements['exp(-dH)']))
     print(50 * '-.')
-    for tag,data in monte_carlo.items(): print(tag + ' =',stat.mean(data))
+    for tag, data in monte_carlo.items(): print(tag + ' =',stat.mean(data))
     print('acceptance rate =',sum(acceptance)/len(acceptance))
     try: print('average time [s] =',stat.mean(timing['time']))
     except stat.StatisticsError: print('average time [s] = <not enough files>')
@@ -293,4 +298,6 @@ if __name__ == "__main__":
             update_progress(idx/len(files))
     timing['cut'] = cut
     summarize()
-    if save == 'True': write_data()
+    if save == 'True':
+        if not os.path.isdir(rpath+'/hmc/'): os.mkdir(rpath+'/hmc/')
+        write_data()
