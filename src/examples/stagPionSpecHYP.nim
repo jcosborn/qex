@@ -202,13 +202,13 @@ when isMainModule:
   let 
     mesons = buildMesonOps()
     pions = [
-      mesons[0],  # I ⊗ I         (P = +σ) I     π_I
+      mesons[0],  # I ⊗ I         (P = +σ) I     π_05
       mesons[1],  # γ_5 ⊗ ξ_5     (P = -σ) II    π_5
       mesons[6],  # γ_5 ⊗ ξ_μ ξ_5 (P = +σ) VII   π_i5
-      mesons[7],  # I ⊗ ξ_μ       (P = -σ) VIII  π_0i
-      mesons[12], # I ⊗ ξ_μ ξ_ν   (P = -σ) XIII  π_ij
+      mesons[7],  # I ⊗ ξ_μ       (P = -σ) VIII  π_ij
+      mesons[12], # I ⊗ ξ_μ ξ_ν   (P = -σ) XIII  π_0i
       mesons[13], # γ_5 ⊗ ξ_μ     (P = -σ) XIV   π_i
-      mesons[16], # I ⊗ ξ_0 ξ_5   (P = -σ) XVII  π_05
+      mesons[16], # I ⊗ ξ_0 ξ_5   (P = -σ) XVII  π_I
       mesons[17], # γ_5 ⊗ ξ_0     (P = +σ) XVIII π_0
     ]
 
@@ -260,13 +260,13 @@ when isMainModule:
   if corrFile != "__NOOUTPUT__":
     let 
       corrJSON = %* {
-        "pi_I":  corrs[0],
+        "pi_05": corrs[0],
         "pi_5":  corrs[1],
         "pi_i5": corrs[2],
-        "pi_0i": corrs[3],
-        "pi_ij": corrs[4],
+        "pi_ij": corrs[3],
+        "pi_0i": corrs[4],
         "pi_i":  corrs[5],
-        "pi_05": corrs[6],
+        "pi_I":  corrs[6],
         "pi_0":  corrs[7]
       }
       corrStr = pretty(corrJSON)
