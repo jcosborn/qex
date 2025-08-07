@@ -185,9 +185,9 @@ when isMainModule:
   var sgl = lo.newGauge()
   g.rephase()
   if smearGauge:
-    tic "nHYP gauge smearing"
-    discard hisq.smearGetForce(g, sg, sgl)
-    qexLog "nHYP gauge smearing done. Time: ", getElapsedTime()
+    tic "HISQ gauge smearing"
+    discard hisq.smearGetForce(g, sg, sgl, displayPerformance = true)
+    qexLog "HISQ gauge smearing done. Time: ", getElapsedTime()
 
   # instantiate staggered Dirac operator
   let stag = newStag3(sg, sgl)
