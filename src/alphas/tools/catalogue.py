@@ -222,6 +222,7 @@ def catalogue(volume: str, coupling: str, mass: str) -> None:
     # read in information about ensemble
     with open(path + ensemble + '.json', 'r') as in_file:
         info = json.loads(re.sub(r'(?<=:)\s*0(\d+)', r'"\g<0>"', in_file.read()))
+        for key, value in info.items(): data[key] = value
         
     # save data in json format to disk
     dpath = '/'.join([CPATH, 'hmc', ''])
