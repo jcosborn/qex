@@ -143,7 +143,7 @@ def simple_measurements(data: dict[str, any], line: list[str]) -> bool:
             data['Re[temporal Polyakov loop]'].append(float(line[5]))
             data['Im[temporal Polyakov loop]'].append(float(line[6]))
             return True
-        case 'ACC', 'REJ':
+        case 'ACC' | 'REJ':
             dH = float(line[1].replace(',', ''))
             data['dH'].append(dH)
             data['acceptance'].append(1 if tag == 'ACC' else 0)
