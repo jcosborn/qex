@@ -2,6 +2,7 @@ import typing
 import matplotlib as _mpl
 import seaborn as _sns
 import gvar as _gvar
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 _plt = _mpl.pyplot
 
@@ -32,6 +33,7 @@ class Plot(object):
         self._ax = self._fig.add_subplot(gridspec[0,0])
 
         if grid:
+            self._ax.set_axisbelow(True)
             self._ax.grid(
                 which = 'minor',
                 color = mnrgridclr,
@@ -44,6 +46,10 @@ class Plot(object):
                 linewidth = mjrgridlw
             )
             self._ax.minorticks_on()
+            self._mnrgridclr = mnrgridclr
+            self._mnrgridlw = mnrgridlw
+            self._mjrgridclr = mjrgridclr
+            self._mjrgridlw = mjrgridlw
             
         self._xticklblfs = xticklblfs
         self._yticklblfs = yticklblfs
@@ -84,6 +90,46 @@ class Plot(object):
         alpha = alpha,
         **kwargs
     )
+
+    def attach_histogram(
+        self,
+        data: any,
+        bins: int,
+        location: str = "right",
+        size: str = "20%",
+        pad: float = 0.0,
+        axis: any = None,
+        share: str = "y",
+        histargs: dict[str, any] = {},
+        grid: bool = True,
+        **kwargs
+    ):
+        ax = axis if axis is not None else self.axis
+        self._histogram_divider = make_axes_locatable(ax)
+        if share == "x": histargs['sharex'] = ax
+        elif share == "y": histargs['sharey'] = ax
+        self._hist_ax = self._histogram_divider.append_axes(
+            location,
+            size = size,
+            pad = pad,
+            **histargs
+        )
+        self._hist_ax.set_axisbelow(True)
+        if grid:
+            self._hist_ax.grid(
+                which = 'minor',
+                color = self._mnrgridclr,
+                linestyle = ':',
+                linewidth = self._mnrgridlw
+            )
+            self._hist_ax.grid(
+                which = 'major',
+                color = self._mjrgridclr,
+                linewidth = self._mjrgridlw
+            )
+            self._hist_ax.minorticks_on()
+        self._hist_ax.hist(data, bins, **kwargs)
+        return self._hist_ax
 
     def text(
             self,
@@ -211,9 +257,24 @@ class Plot(object):
 
         self._ax.set_axisbelow(True)
 
+        if hasattr(self, '_hist_ax'):
+            _plt.setp(self._hist_ax.get_xticklabels(), fontsize = self._xticklblfs)
+            _plt.setp(self._hist_ax.get_yticklabels(), fontsize = self._yticklblfs)
+
+            self._hist_ax.xaxis.offsetText.set_fontsize(self._xoffsetfs)
+            self._hist_ax.yaxis.offsetText.set_fontsize(self._yoffsetfs)
+
+            self._hist_ax.set_axisbelow(True)
+
+
     def set_title(self, title: str, **kwargs):
         if 'fontsize' not in kwargs: kwargs['fontsize'] = self._titlefs
         self._ax.set_title(title,**kwargs)
+    
+    def set_histogram_title(self, title: str, **kwargs):
+        if 'fontsize' not in kwargs: kwargs['fontsize'] = self._titlefs
+        self._hist_ax.set_title(title,**kwargs)
+    
 
     def modify_axis(self, axis: str, ticks, labels, **kwargs):
         if axis == 'x': self._ax.set_xticks(ticks,labels,**kwargs)

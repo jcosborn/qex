@@ -3,6 +3,7 @@ import json
 import datetime
 import statistics as stat
 
+import scipy
 import numpy as np
 import streamlit as st
 import pyerrors as pe
@@ -126,24 +127,35 @@ ENSVOL = {
 ### helper procedures ###
 
 def weighted(data, expdh):
-    try:
-        Z = sum(expdh)
-        m = sum(data*expdh)/Z
-        e = np.sqrt(sum(expdh*(data - m)**2.)/Z)
-        return gv.gvar(m, e)
-    except ValueError:
-        tdata = list(data)
-        texpdh = list(expdh)
-        if len(tdata) > len(texpdh):
-            while len(tdata) != len(texpdh): del tdata[-1]
-        elif len(data) < len(expdh):
-            while len(tdata) != len(texpdh): del texpdh[-1]
-        tdata = np.array(tdata)
-        texpdh = np.array(texpdh)
-        Z = sum(texpdh)
-        m = sum(tdata*texpdh)/Z
-        e = np.sqrt(sum(texpdh*(tdata - m)**2.)/Z)
-        return gv.gvar(m, e)
+    obs = pe.Obs([data], ['dummy'])
+    obs.gamma_method()
+    #return (
+    #    gv.gvar(obs.e_tauint['dummy'], obs.e_dtauint['dummy']), 
+    #    gv.gvar(obs.value, obs.dvalue)
+    #)
+    gvobs = gv.dataset.avg_data(data)
+    return (data, gv.gvar(obs.value, obs.dvalue))
+    #obs = pe.Obs([data], ['dummy'])
+    #obs.gamma_method()
+    #tau = obs.e_tauint['dummy']
+    #try:
+    #    p = [1 for v in expdh]
+    #    p = np.array(p)/sum(p)
+    #    m = sum(data*p)
+    #    e = np.sqrt(tau*sum((data - m)*(data - m)*p))
+    #    return (data*expdh, gv.gvar(m, e))
+    #except ValueError:
+    #    (tdata, texpdh) = (list(data), list(expdh))
+    #    if len(tdata) > len(texpdh):
+    #        while len(tdata) != len(texpdh): del tdata[-1]
+    #    elif len(data) < len(expdh):
+    #        while len(tdata) != len(texpdh): del texpdh[-1]
+    #    (tdata, texpdh) = (np.array(tdata), np.array(texpdh))
+    #    tp = [1 for v in texpdh]
+    #    tp = np.array(tp)/sum(tp)
+    #    m = sum(tdata*tp)
+    #    e = np.sqrt(tau*sum((tdata - m)*(tdata - m)*tp))
+    #    return (tdata*texpdh, gv.gvar(m, e))
 
 def proper(data):
     obs = pe.Obs([data], ['dummy'])
@@ -247,30 +259,52 @@ if os.path.exists('../data/' + fn):
 
     cfgs = [*range(len(data['dH']))]
 
+    splaq = np.array(data['spatial plaquette'])
+    tplaq = np.array(data['temporal plaquette'])
+
     # fcn(dH)
     dH = np.array(data['dH'])
     dH2 = dH*dH
     expdH = np.exp(-dH)
+    pred_acc_rate = int(round(scipy.special.erfc(np.sqrt(np.mean(dH2)/8.))*100.))
 
     # cg iterations
     hcg = data['average CG iterations (hasenbusch)']
     fcg = data['average CG iterations (fermion)']
 
-    def plot_hmc_observable(h, meas, lbl):
+    def plot_hmc_observable(h, meas, lbl, bins = None, range = None):
         cfg_cut = [cfg for idx, cfg in enumerate(cfgs) if not data['cut'][idx]] 
         meas_cut = [m for idx, m in enumerate(meas) if not data['cut'][idx]]
+        if bins is None: bins = len(meas_cut)
+
+        # plot data before cut
         h.scatter(
             [cfg for idx, cfg in enumerate(cfgs) if data['cut'][idx]], 
             [m for idx, m in enumerate(meas) if data['cut'][idx]], 
             **{'facecolor': 'none', 'edgecolor': 'grey', 'alpha': 0.1}
         )
+        
+        # create vertical line indicating location of cut
         h.axis.axvline(min(cfg_cut), color = 'k')
+
+        # create horizontal line indicating mean and error
+        expdh_cut = [m for idx, m in enumerate(expdH) if not data['cut'][idx]]
+        (meas_cut, expdh_cut) = (np.array(meas_cut), np.array(expdh_cut))
+        #(w, exp) = weighted(meas_cut, expdh_cut)
+        (tau, exp) = proper(meas_cut)
+        x = [min(cfg_cut), max(cfg_cut) - 1]
+        y = [exp, exp]
+        h.fill_between(x, y, color = 'magenta', alpha = 0.1)
+        h.axis.axhline(exp.mean, color = 'magenta', alpha = 0.5)
+
+        # plot data after cut
         try:
             h.scatter(
                 cfg_cut, meas_cut, 
                 **{'facecolor': 'none', 'edgecolor': 'grey', 'alpha': 0.5}
             )
         except ValueError:
+            # correct for mismatch in configuration count
             if len(cfg_cut) > len(meas_cut):
                 while len(cfg_cut) != len(meas_cut): del cfg_cut[-1]
             elif len(cfg_cut) < len(meas_cut):
@@ -282,13 +316,33 @@ if os.path.exists('../data/' + fn):
                 cfg_cut, meas_cut, 
                 **{'facecolor': 'none', 'edgecolor': 'grey', 'alpha': 0.5}
             )
-        expdh_cut = [m for idx, m in enumerate(expdH) if not data['cut'][idx]]
-        exp = weighted(np.array(meas_cut), np.array(expdh_cut))
-        x = [min(cfg_cut), max(cfg_cut) - 1]
-        y = [exp, exp]
-        h.fill_between(x, y, color = 'magenta', alpha = 0.1)
-        h.axis.axhline(exp.mean, color = 'magenta', alpha = 0.5)
-        h.set_title('$\\overline{' + lbl + '} =' + str(exp) + '$') 
+
+        # attach two histograms to side
+        histargs = {
+            'orientation': 'horizontal', 
+            'color': 'magenta', 
+            'alpha': 0.4,
+            'edgecolor': 'magenta',
+            'linewidth': 1.2
+        }
+        if range is not None: histargs['range'] = range
+        ax_hist = h.attach_histogram(meas_cut, bins, **histargs)
+        ax_hist.tick_params(axis = 'y', labelleft = False)
+        #histargs['color'] = 'grey'
+        #histargs['edgecolor'] = 'grey'
+        #ax_hist.hist(meas_cut, bins, **histargs)
+        ax_hist.tick_params(
+            top = True, 
+            labeltop = True, 
+            bottom = True, 
+            labelbottom = False
+        )
+        h.set_histogram_title('$\\mathrm{count}$')
+
+        # extra
+        ttl = '$\\overline{' + lbl + '} =' + str(exp) + '$, '
+        ttl += '$\\tau = ' + str(tau) + '$'
+        h.set_title(ttl) 
     
     # information
     st.markdown("""
@@ -296,7 +350,10 @@ if os.path.exists('../data/' + fn):
     """)
 
     # cumulative acceptance rate
-    dhp = plot.Plot()
+    st.markdown("""
+    ### Acceptance
+    """)
+    dhp = plot.Plot(h = 2.25)
     allacc = [1 for idx, _ in enumerate(data['acceptance']) if not data['cut'][idx]]
     accs = [m for idx, m in enumerate(data['acceptance']) if not data['cut'][idx]]
     cfg_cut = [cfg for idx, cfg in enumerate(cfgs) if not data['cut'][idx]] 
@@ -315,22 +372,43 @@ if os.path.exists('../data/' + fn):
         ylabel = '$\mathrm{cumulative \\ acc \\ rate}$'
     )
     dhp.axis.axhline(cum_acc_rate[-1], color = 'magenta', alpha = 0.5)
-    st.pyplot(fig = dhp.handle)
+    st.pyplot(
+        fig = dhp.handle,
+        clear_figure = True    
+    )
+    st.markdown("""
+    Cumulative acceptance rate is indicated by grey curve. Last value of cumulative
+    acceptance rate is quoted as the acceptance rate. From Creutz's equality (see 
+    below), one has for the predicted acceptance rate (on large volumes)
+    """)
+    st.latex("""
+    P \\approx \mathrm{erfc}\\bigg[\\frac{1}{8}\\Big\\langle \mathrm{d}\mathcal{H}^2 \\Big\\rangle^{1/2} \\bigg]
+    """)
+    st.markdown(f"yielding $P \\approx {pred_acc_rate}\%$ for the present simulation.")
 
     # dH
-    dhp = plot.Plot()
-    plot_hmc_observable(dhp, dH, '\mathrm{d}\mathcal{H}')
+    dhp = plot.Plot(h = 2.25)
+    plot_hmc_observable(
+        dhp, dH, '\mathrm{d}\mathcal{H}', 
+        bins = int(round(0.005*len(dH))), 
+        range = (-1., 1.)
+    )
     dhp.decorate(
         xlim = [0, len(cfgs) - 1],
         ylim = [-1., 1.],
         xlabel = '$\mathrm{configuration}$',
         ylabel = '$\mathrm{d}\mathcal{H}$'
     )
+    dhp.axis.axhline(0.0, color = 'k', alpha = 0.25)
     st.pyplot(fig = dhp.handle)
 
     # dH^2
-    dhp = plot.Plot()
-    plot_hmc_observable(dhp, dH2, '\mathrm{d}\mathcal{H}^2')
+    dhp = plot.Plot(h = 2.25)
+    plot_hmc_observable(
+        dhp, dH2, '\mathrm{d}\mathcal{H}^2',
+        bins = int(round(0.005*len(dH2))), 
+        range = (0., 2.)
+    )
     dhp.decorate(
         xlim = [0, len(cfgs) - 1],
         ylim = [-0.1, 2.0],
@@ -340,25 +418,59 @@ if os.path.exists('../data/' + fn):
     st.pyplot(fig = dhp.handle)
 
     # exp(-dH)
-    dhp = plot.Plot()
-    plot_hmc_observable(dhp, expdH, '\exp(-\mathrm{d}\mathcal{H})')
+    dhp = plot.Plot(h = 2.25)
+    plot_hmc_observable(
+        dhp, expdH, '\exp(-\mathrm{d}\mathcal{H})',
+        bins = int(round(0.005*len(expdH))), 
+        range = (0., 2.)
+    )
     dhp.decorate(
         xlim = [0, len(cfgs) - 1],
         ylim = [0.0, 2.0],
         xlabel = '$\mathrm{configuration}$',
         ylabel = '$\exp(-\mathrm{d}\mathcal{H})$'
     )
+    dhp.axis.axhline(1.0, color = 'k', alpha = 0.25)
     st.pyplot(fig = dhp.handle)
+    st.markdown("""
+    The change in the Hamiltonian $\mathrm{d}\mathcal{H}$ at the end of
+    each trajectory. In the infinite-statistics limit,
+    """)
+    st.latex("\langle \mathrm{d}\mathcal{H} \\rangle = 0")
+    st.markdown("and")
+    st.latex("\langle \exp(-\mathrm{d}\mathcal{H}) \\rangle = 1")
+    st.markdown("""
+    (sometimes referred to as Creutz's equality). One should of course have that the
+    observed expectations $\overline{\mathrm{d}\mathcal{H}}$ and 
+    $\overline{\exp(-\mathrm{d}\mathcal{H})}$ fluctuate about their
+    repective expectations in the infinite-statistics limit.
+    """)
 
     # average CG per trajectory (fermion)
+    st.markdown("""
+    ### Long-range thermalization and autocorrelation
+    """)
     hcg_lbl = 'avg \\ CG \\ itns \\ per \\ traj'
-    dhp = plot.Plot()
-    plot_hmc_observable(dhp, fcg, '\\mathrm{' + hcg_lbl + '}')
+    dhp = plot.Plot(h = 3.375)
+    plot_hmc_observable(
+        dhp, fcg, '\\mathrm{' + hcg_lbl + '}',
+        bins = int(round(0.005*len(fcg))),
+        range = (0., max(fcg))
+    )
     dhp.decorate(
+        xlim = [0, len(cfgs) - 1],
+        ylim = [0., 2.0*np.mean(fcg)],
         xlabel = '$\mathrm{configuration}$',
         ylabel = '$\\mathrm{' + hcg_lbl + ' \\ (fermion)}$'
     )
     st.pyplot(fig = dhp.handle)
+    st.markdown("""
+    The average number of conjugate gradient iterations per trajectory is
+    correlated with the chiral condensate, as it is directly related to the
+    condition number of the Dirac operator. As a fermionic HMC observable, 
+    it is useful for measuring long-distance thermalization and autocorrelations.
+    Coloring is same as previous figures.
+    """)
 
     # information
     st.markdown("""
@@ -391,8 +503,6 @@ if os.path.exists('../data/' + fn):
         ttl += '$\\tau = ' + str(tau) + '$'
         h.set_title(ttl)
 
-    splaq = np.array(data['spatial plaquette'])
-    tplaq = np.array(data['temporal plaquette'])
     plaq = 0.5*(splaq + tplaq)
 
     srpoly = np.array(data['Re[spatial Polyakov loop]'])
@@ -411,30 +521,10 @@ if os.path.exists('../data/' + fn):
     plot_observable(dhp, plaq, '\mathrm{plaquette}')
     dhp.decorate(
         xlim = [0, len(cfgs) - 1],
-        ylim = [0., 1.],
+        ylim = [0.5, 0.9],
         xlabel = '$\mathrm{configuration}$',
         ylabel = '$\mathrm{plaquette}$'
     )
     st.pyplot(fig = dhp.handle)
-
-    # Polyakov loop
-    dhp = plot.Plot()
-    dhp.scatter(
-        rpoly, ipoly, **{'facecolor': 'none', 'edgecolor': 'grey', 'alpha': 0.5}
-    )
-    (tau, exp) = proper(poly)
-    ttl = '$\\overline{|\\mathrm{Polyakov}|} =' + str(exp) + '$, '
-    ttl += '$\\tau = ' + str(tau) + '$'
-    dhp.set_title(ttl)
-    dhp.decorate(
-        xlim = [-0.25, 0.25],
-        ylim = [-0.25, 0.25],
-        xlabel = '$\Re\mathrm{Polyakov}$',
-        ylabel = '$\Im\mathrm{Polyakov}$'
-    )
-    st.pyplot(fig = dhp.handle)
-
-    # scatter plot of Polyakov loop in argand plane
-
 
 else: st.image("ensemble_not_found.png")   
