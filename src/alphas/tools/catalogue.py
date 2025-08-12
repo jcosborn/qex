@@ -19,6 +19,7 @@ READCG = False
 READPBP = False
 HASENBUSCH = True
 START_NEW_TRAJECTORY = True
+MEASPLAQ = False
 
 COUPLING_CONVERT = {
     '200': '20.0',
@@ -130,14 +131,19 @@ def finished(content: list[str]) -> bool:
     return ' s] Total time (Init - Finalize): ' in ''.join(content)
     
 def simple_measurements(data: dict[str, any], line: list[str]) -> bool:
+    global MEASPLAQ
     if not line: return False
     tag = line[0].replace(':', '')
     match tag:
         case 'MEASplaq':
+            if not MEASPLAQ:
+                MEASPLAQ = not MEASPLAQ
+                return True
             data['spatial plaquette'].append(float(line[2]))
             data['temporal plaquette'].append(float(line[4]))
             return True
         case 'MEASploop':
+            if not MEASPLAQ: return True
             data['Re[spatial Polyakov loop]'].append(float(line[2]))
             data['Im[spatial Polyakov loop]'].append(float(line[3]))
             data['Re[temporal Polyakov loop]'].append(float(line[5]))
@@ -176,7 +182,7 @@ def complicated_measurements(data: dict[str, any], line: list[str]) -> None:
     
 
 def catalogue(volume: str, coupling: str, mass: str) -> None:
-    global START_NEW_TRAJECTORY
+    global MEASPLAQ, START_NEW_TRAJECTORY
     
     # path information
     ensemble = ''.join([FLAVOR, vol(volume), 'b', coupling, 'm', mass, '_', SMEAR_BC])
@@ -212,6 +218,7 @@ def catalogue(volume: str, coupling: str, mass: str) -> None:
                 if 'kinetic:' in line:
                     if not START_NEW_TRAJECTORY: data['cut'].append(0 if configuration(log) > cut else 1)
                     START_NEW_TRAJECTORY = not START_NEW_TRAJECTORY
+            MEASPLAQ = False
     data['running'] = ''.join([FLAVOR, vol(volume), 'b', coupling]) in subprocess.run(
         ['squeue', '--format="%.18i %.9P %.30j %.8u %.8T %.10M %.9l %.6D %R"', '--me'],
         capture_output = True,
@@ -230,6 +237,17 @@ def catalogue(volume: str, coupling: str, mass: str) -> None:
     with open(dpath + ensemble + '-info.json', 'w+') as out_file:
         json.dump(data, out_file, indent = 4)
 
+    # quick fix to occasional mismatches in size
+    if len(data['spatial plaquette']) != len(data[FCGKEY]):
+        if len(data['spatial plaquette']) > len(data[FCGKEY]):
+            while len(data['spatial plaquette']) != len(data[FCGKEY]):
+                del data['spatial plaquette'][-1]
+                del data['temporal plaquette'][-1]
+                del data['Re[spatial Polyakov loop]'][-1]
+                del data['Re[temporal Polyakov loop]'][-1]
+                del data['Im[spatial Polyakov loop]'][-1]
+                del data['Im[temporal Polyakov loop]'][-1]
+                
     # tell user that you've done your job
     print('saved hmc info:', dpath + ensemble + '-info.json')
  
