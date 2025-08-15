@@ -1125,7 +1125,7 @@
     ],
     "chiral condensate": [],
     "average CG iterations (fermion)": [
-        1101.3396226415093,
+        1074.622641509434,
         1110.5263157894738,
         1110.5263157894738,
         1173.8947368421052,
@@ -1732,7 +1732,7 @@
         0,
         0
     ],
-    "running": true,
+    "running": false,
     "lattice-geometry": [
         32,
         32,

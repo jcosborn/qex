@@ -2302,7 +2302,7 @@
         0,
         0
     ],
-    "running": false,
+    "running": true,
     "lattice-geometry": [
         32,
         32,
