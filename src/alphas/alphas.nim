@@ -324,6 +324,10 @@ proc getIntSeq*(input: JsonNode): seq[int] =
   result = newSeq[int]()
   for elem in input.getElems(): result.add elem.getInt()
 
+proc getFloatSeq*(input: JsonNode): seq[float] = 
+  result = newSeq[float]()
+  for elem in input.getElems(): result.add elem.getFloat()
+
 proc readSerialRNG*(self: var HisqHMC; fn: string) = 
   self.srng.readRNG(fn)
   echo "read serial RNG file: " & fn

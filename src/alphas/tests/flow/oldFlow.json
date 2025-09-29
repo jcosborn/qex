@@ -1,0 +1,15 @@
+{
+  "wilson": {
+    "action": "Wilson",
+    "time-increments": [0.02,0.1],
+    "maximum-flow-times": [5.0,8.0],
+    "path": "./"
+  },
+  "symanzik": {
+    "action": "Rectangle",
+    "cr": -0.0833333333333333333,
+    "time-increments": [0.02,0.1],
+    "maximum-flow-times": [5.0,8.0],
+    "path": "./"
+  }
+}

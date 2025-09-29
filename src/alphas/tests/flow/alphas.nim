@@ -1,0 +1,1 @@
+/home/curtyp/Software/milc-qcd/qex/src/alphas/alphas.nim
