@@ -149,10 +149,9 @@ template ioBlock(flow: var GradientFlow; filename: string; body: untyped): untyp
   body
   if not flow.logFile.isNil: flow.logFile.close()
 
-template gradient[U](flow: var GradientFlow; f: var seq[U]) =
-  let nd = flow.u[0].l.nDim
+template gradient[U](flow: var GradientFlow; f: var seq[U]; u: seq[U]) =
+  let nd = u[0].l.nDim
   let ft = f.newOneOf()
-  var u = flow.u
   flow.gc.gaugeForce(u, f)
   case flow.kind:
     of ZeuthenFlow: # arXiv:1411.6706; Eqn. (6.2)
@@ -164,6 +163,8 @@ template gradient[U](flow: var GradientFlow; f: var seq[U]) =
         sb = flow.lap.sb
       let ft = f.newOneOf()
       threads:
+        ft := f
+        threadBarrier()
         for mu in 0..<nd:
           f[mu] += coeff*(sf[mu]^*ft[mu] + sb[mu]^*ft[mu] - 2.0*ft[mu])
     else: discard
@@ -173,18 +174,17 @@ proc isIn(meas: MeasurementKind, ms: seq[MeasurementKind]): bool =
     if meas == m: return true
   return false
 
-template measurements[U,U0](flow: var GradientFlow[U,U0]): untyped =
+template measurements[U,U0](flow: var GradientFlow[U,U0]; u: seq[U]): untyped =
   let prec = 18
   let 
-    nc = flow.u[0][0].nrows
-    nd = flow.u[0].l.nDim
-    physVol = flow.u[0].l.physVol
+    nc = u[0][0].nrows
+    nd = u[0].l.nDim
+    physVol = u[0].l.physVol
   let meas = flow.meas
   var output = newSeq[string]()
   var 
     fmunu: seq[seq[U]]
     es, et: U
-  var u = flow.u
   if Clover.isIn(meas) or Topology.isIn(meas): fmunu = u.fmunu(1)
   output.add "FLOW " & flow.flowTime.formatFloat(ffDecimal, 3)
   for meas in flow.meas:
@@ -222,18 +222,16 @@ template measurements[U,U0](flow: var GradientFlow[U,U0]): untyped =
       of Topology: output.add fmunu.topoQ().formatFloat(ffDecimal, prec)
   flow.logFile.write(output.join(" ") & "\n")
 
-proc gradientFlow[U,U0](flow: var GradientFlow[U,U0]; steps: int; eps: float) =
-  #[ 
-    Gradient flow
-    Originally written by James Osborn & Xiaoyong Jin.
-    d/dt Vt = Z(Vt) Vt
-    Runge-Kutta:
-    W0 <- Vt
-    W1 <- exp(1/4 Z0) W0
-    W2 <- exp(8/9 Z1 - 17/36 Z0) W1
-    V(t+eps) <- exp(3/4 Z2 - 8/9 Z1 + 17/36 Z0) W2
-    where Zi = eps Z(Wi)
-  ]#
+template gradientFlow[U,U0](flow: var GradientFlow[U,U0]; steps: int; eps: float) = 
+  ## Gradient flow
+  ## Originally written by James Osborn & Xiaoyong Jin.
+  ## d/dt Vt = Z(Vt) Vt
+  ## Runge-Kutta:
+  ## W0 <- Vt
+  ## W1 <- exp(1/4 Z0) W0
+  ## W2 <- exp(8/9 Z1 - 17/36 Z0) W1
+  ## V(t+eps) <- exp(3/4 Z2 - 8/9 Z1 + 17/36 Z0) W2
+  ## where Zi = eps Z(Wi)
   let 
     nc = flow.u[0][0].nrows.float
     nd = flow.u[0].l.nDim
@@ -242,11 +240,12 @@ proc gradientFlow[U,U0](flow: var GradientFlow[U,U0]; steps: int; eps: float) =
     p = flow.u[0].l.newGauge  # mom
     f = flow.u[0].l.newGauge  # force
   var n = 0
-  var u = flow.u
+  var u = flow.u.newOneOf()
   
   # gradient flow evolution and measurements
+  threads: u := flow.u
   while true: # arXiv:1006.4518
-    flow.gradient(f)
+    flow.gradient(f, u)
     threads:
       for mu in 0..<f.len:
         for e in u[mu]:
@@ -255,7 +254,7 @@ proc gradientFlow[U,U0](flow: var GradientFlow[U,U0]; steps: int; eps: float) =
           let t = exp(v)*u[mu][e]
           p[mu][e] := v
           u[mu][e] := t
-    flow.gradient(f)
+    flow.gradient(f, u)
     threads:
       for mu in 0..<f.len:
         for e in u[mu]:
@@ -264,7 +263,7 @@ proc gradientFlow[U,U0](flow: var GradientFlow[U,U0]; steps: int; eps: float) =
           let t = exp(v)*u[mu][e]
           p[mu][e] := v
           u[mu][e] := t
-    flow.gradient(f)
+    flow.gradient(f, u)
     threads:
       for mu in 0..<f.len:
         for e in u[mu]:
@@ -275,8 +274,10 @@ proc gradientFlow[U,U0](flow: var GradientFlow[U,U0]; steps: int; eps: float) =
     inc n
     flow.step += 1
     flow.flowTime += eps
-    flow.measurements()
-    if n > (steps - 1): break
+    flow.measurements(u)
+    if n > (steps - 1): 
+      threads: flow.u := u
+      break
 
 when isMainModule:
   echo banner
@@ -350,7 +351,7 @@ when isMainModule:
       qexError "number of step sizes must match number of transition flow times"
     flowObject.ioBlock(outputFilename):
       threads: flowObject.u := u
-      flowObject.measurements() # t/a^2 = 0.0 measurement
+      flowObject.measurements(u) # t/a^2 = 0.0 measurement
       for transition in 0..<transitions:
         let 
           eps = stepSizes[transition]

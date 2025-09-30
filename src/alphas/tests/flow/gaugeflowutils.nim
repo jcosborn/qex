@@ -148,9 +148,9 @@ template gradientFlow*(u: auto; info: JsonNode; body: untyped) =
       let (dtau,tmax) = flowTimeInfo
       gc.gradientFlow(v,dtau):
         tau = flowTime + lastMaxFlt
-        if tau > tmax: break
         measurements = v.flowMeasurements(loops,tau)
         body
+        if tau + dtau > tmax: break
       lastMaxFlt = tmax
     f.close()
 
