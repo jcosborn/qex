@@ -1,15 +1,20 @@
 {
-  "C0p0": {
-    "action": "Wilson",
-    "time-increments": [0.02,0.1],
-    "maximum-flow-times": [0.04,0.14],
-    "path": "./"
-  },
-  "C0p083": {
-    "action": "Rectangle",
-    "cr": 0.083,
-    "time-increments": [0.02,0.1],
-    "maximum-flow-times": [0.04,0.14],
-    "path": "./"
+  "lattice-geometry": [8, 8, 8, 16],
+  "flows": {
+    "wilson": {
+      "step-sizes": [0.02, 0.1],
+      "step-size-transition-flow-times": [5.0, 8.0],
+      "measurements": ["plaquette", "rectangle", "clover", "topology", "polyakov"]
+    }, 
+    "symanzik": {
+      "step-sizes": [0.02, 0.1],
+      "step-size-transition-flow-times": [5.0, 8.0],
+      "measurements": ["plaquette", "rectangle", "clover", "topology", "polyakov"]
+    },
+    "zeuthen": {
+      "step-sizes": [0.02, 0.1],
+      "step-size-transition-flow-times": [5.0, 8.0],
+      "measurements": ["plaquette", "rectangle", "clover", "topology", "polyakov"]
+    }
   }
 }
