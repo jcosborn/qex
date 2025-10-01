@@ -161,7 +161,7 @@ template gradient[U](flow: var GradientFlow; f: var seq[U]; u: seq[U]) =
       var
         sf = flow.lap.sf
         sb = flow.lap.sb
-      let ft = f.newOneOf()
+      var ft = f.newOneOf()
       threads:
         ft := f
         threadBarrier()
@@ -220,7 +220,9 @@ template measurements[U,U0](flow: var GradientFlow[U,U0]; u: seq[U]): untyped =
         output.add plt.re().formatFloat(ffDecimal, prec)
         output.add plt.im().formatFloat(ffDecimal, prec)
       of Topology: output.add fmunu.topoQ().formatFloat(ffDecimal, prec)
-  flow.logFile.write(output.join(" ") & "\n")
+  let outputStr = output.join(" ") & "\n"
+  flow.logFile.write(outputStr)
+  echo outputStr.replace("FLOW", $flow.kind)
 
 template gradientFlow[U,U0](flow: var GradientFlow[U,U0]; steps: int; eps: float) = 
   ## Gradient flow
@@ -294,7 +296,7 @@ when isMainModule:
   # command line information
   let 
     cmd = readCMD()
-    flowInfo = case cmd.hasKey("flow-json")
+    flowInfo = case cmd.hasKey("json")
       of true: readJSON(cmd["json"].getStr())
       of false:
         echo "using default lattice parameters"
