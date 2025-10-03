@@ -345,7 +345,7 @@ when isMainModule:
       stepSizes = flow.val["step-sizes"].getFloatSeq()
       maxFlowTimes = flow.val["step-size-transition-flow-times"].getFloatSeq()
       transitions = maxFlowTimes.len
-    let outputFilename = outputDir & flow.key & "_" & cfg & ".log"
+    let outputFilename = outputDir & flow.key & "_" & $cfg & ".log"
     var flowObject = u.newGradientFlow(flowKind, meas = measKinds)
 
     # run flow for specified step sizes

@@ -141,8 +141,7 @@ def appendSmear(state: bool, smear: str, line: list[str]) -> None:
 
 def appendAccept(acc: bool, line: list[str]) -> None:
     acceptance.append(acc)
-    if acc: dH = float(line[1].replace(',',''))
-    else: dH = 0.0
+    dH = float(line[1].replace(',',''))
     measurements['dH'].append(dH)
     measurements['dH^2'].append(dH*dH)
     measurements['exp(-dH)'].append(math.exp(-dH))
