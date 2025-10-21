@@ -2,7 +2,7 @@
 #import simdGcc
 #export simdGcc
 import base/metaUtils
-import math
+import math, macros
 
 import simd/simdWrap
 export simdWrap
@@ -12,10 +12,17 @@ import base/stdUtils
 import simd/simdArray
 export simdArray
 
-template msa(T,N,F: untyped) {.dirty,used.} =
-  makeSimdArray(`T Obj`, N, F)
-  type T* = Simd[`T Obj`]
+#template msa(T,N,F: untyped) {.dirty,used.} =
+template msa(T: untyped, N: static[int], F: typedesc) {.dirty,used.} =
+  #static: echo "msa: ", N, " ", F.type
+  #makeSimdArray(N, F, `T Obj`)
   #template `T Array` = discard
+  #makeSimdArray(`T Obj`, N, F)
+  when declared SimdArrayObj:
+    type `T Obj`* = SimdArrayObj[N,F]
+  else:
+    makeSimdArray(`T Obj`, N, F)
+  type T* = Simd[`T Obj`]
   type `T Array`* = `T Obj`
   #static: echo "made type", $T
 
@@ -27,20 +34,20 @@ when defined(SSE) or defined(AVX) or defined(AVX512):
 when true:
   when not declared(SimdS16):
     when declared(SimdS8):
-      msa(SimdS16, 2, SimdS8[])
+      msa(SimdS16, 2, `[]`(SimdS8))
     elif declared(SimdS4):
-      msa(SimdS16, 4, SimdS4[])
+      msa(SimdS16, 4, `[]`(SimdS4))
     elif declared(SimdS2):
-      msa(SimdS16, 8, SimdS2[])
+      msa(SimdS16, 8, `[]`(SimdS2))
     else:
       msa(SimdS16, 16, float32)
   when not declared(SimdD16):
     when declared(SimdD8):
-      msa(SimdD16, 2, SimdD8[])
+      msa(SimdD16, 2, `[]`(SimdD8))
     elif declared(SimdD4):
-      msa(SimdD16, 4, SimdD4[])
+      msa(SimdD16, 4, `[]`(SimdD4))
     elif declared(SimdD2):
-      msa(SimdD16, 8, SimdD2[])
+      msa(SimdD16, 8, `[]`(SimdD2))
     else:
       msa(SimdD16, 16, float64)
   when not declared(SimdS16Obj):
@@ -52,16 +59,16 @@ when true:
 when true:
   when not declared(SimdS8):
     when declared(SimdS4):
-      msa(SimdS8, 2, SimdS4[])
+      msa(SimdS8, 2, `[]`(SimdS4))
     elif declared(SimdS2):
-      msa(SimdS8, 4, SimdS2[])
+      msa(SimdS8, 4, `[]`(SimdS2))
     else:
       msa(SimdS8, 8, float32)
   when not declared(SimdD8):
     when declared(SimdD4):
-      msa(SimdD8, 2, SimdD4[])
+      msa(SimdD8, 2, `[]`(SimdD4))
     elif declared(SimdD2):
-      msa(SimdD8, 4, SimdD2[])
+      msa(SimdD8, 4, `[]`(SimdD2))
     else:
       msa(SimdD8, 8, float64)
   when not declared(SimdS8Obj):
@@ -73,12 +80,12 @@ when true:
 when true:
   when not declared(SimdS4):
     when declared(SimdS2):
-      msa(SimdS4, 2, SimdS2[])
+      msa(SimdS4, 2, `[]`(SimdS2))
     else:
       msa(SimdS4, 4, float32)
   when not declared(SimdD4):
     when declared(SimdD2):
-      msa(SimdD4, 2, SimdD2[])
+      msa(SimdD4, 2, `[]`(SimdD2))
     else:
       msa(SimdD4, 4, float64)
   when not declared(SimdS4Obj):
@@ -92,6 +99,8 @@ when true:
     msa(SimdS2, 2, float32)
   when not declared(SimdD2):
     msa(SimdD2, 2, float64)
+  when not declared(SimdS2Obj):
+    type SimdS2Obj* = `[]`(SimdS2)
   when not declared(SimdD2Obj):
     type SimdD2Obj* = `[]`(SimdD2)
 
@@ -99,6 +108,10 @@ when true:
 when true:
   msa(SimdS1, 1, float32)
   msa(SimdD1, 1, float64)
+  when not declared(SimdS1Obj):
+    type SimdS1Obj* = `[]`(SimdS1)
+  when not declared(SimdD1Obj):
+    type SimdD1Obj* = `[]`(SimdD1)
 
 
 ## mixed precision assignment
@@ -183,8 +196,8 @@ template makeBinaryMixed(S,D,op) =
 
 when declared(SimdS1):
   template eval*(x: SimdS1): untyped = x
-  template toSingle*(x: typedesc[SimdS1Obj]): typedesc = SimdS1Obj
-  template toDouble*(x: typedesc[SimdS1Obj]): typedesc = SimdD1Obj
+  template toSingleImpl*(x: typedesc[SimdS1Obj]): typedesc = SimdS1Obj
+  template toDoubleImpl*(x: typedesc[SimdS1Obj]): typedesc = SimdD1Obj
   template toSingleImpl*(x: SimdS1Obj): untyped = x
   template toDoubleImpl*(x: SimdS1Obj): untyped = convert(x, SimdD1Obj)
   mapSimd(SimdS1, exp)
@@ -192,8 +205,8 @@ when declared(SimdS1):
 
 when declared(SimdD1):
   template eval*(x: SimdD1): untyped = x
-  template toSingle*(x: typedesc[SimdD1Obj]): typedesc = SimdS1Obj
-  template toDouble*(x: typedesc[SimdD1Obj]): typedesc = SimdD1Obj
+  template toSingleImpl*(x: typedesc[SimdD1Obj]): typedesc = SimdS1Obj
+  template toDoubleImpl*(x: typedesc[SimdD1Obj]): typedesc = SimdD1Obj
   template toSingleImpl*(x: SimdD1Obj): untyped = convert(x, SimdS1Obj)
   template toDoubleImpl*(x: SimdD1Obj): untyped = x
   mapSimd(SimdD1, exp)
@@ -201,8 +214,8 @@ when declared(SimdD1):
 
 when declared(SimdS2):
   template eval*(x: SimdS2): untyped = x
-  template toSingle*(x: typedesc[SimdS2Obj]): typedesc = SimdS2Obj
-  template toDouble*(x: typedesc[SimdS2Obj]): typedesc = SimdD2Obj
+  template toSingleImpl*(x: typedesc[SimdS2Obj]): typedesc = SimdS2Obj
+  template toDoubleImpl*(x: typedesc[SimdS2Obj]): typedesc = SimdD2Obj
   template toSingleImpl*(x: SimdS2Obj): untyped = x
   template toDoubleImpl*(x: SimdS2Obj): untyped = convert(x, SimdD2Obj)
   mapSimd(SimdS2, exp)
@@ -210,8 +223,8 @@ when declared(SimdS2):
 
 when declared(SimdD2):
   template eval*(x: SimdD2): untyped = x
-  template toSingle*(x: typedesc[SimdD2Obj]): typedesc = SimdS2Obj
-  template toDouble*(x: typedesc[SimdD2Obj]): typedesc = SimdD2Obj
+  template toSingleImpl*(x: typedesc[SimdD2Obj]): typedesc = SimdS2Obj
+  template toDoubleImpl*(x: typedesc[SimdD2Obj]): typedesc = SimdD2Obj
   template toSingleImpl*(x: SimdD2Obj): untyped = convert(x, SimdS2Obj)
   template toDoubleImpl*(x: SimdD2Obj): untyped = x
   mapSimd(SimdD2, exp)
@@ -219,6 +232,8 @@ when declared(SimdD2):
 
 when declared(SimdS4):
   template eval*(x: SimdS4): untyped = x
+  template toSingleImpl*(x: typedesc[SimdS4Obj]): typedesc = SimdS4Obj
+  template toDoubleImpl*(x: typedesc[SimdS4Obj]): typedesc = SimdD4Obj
   template toSingleImpl*(x: SimdS4Obj): untyped = x
   template toDoubleImpl*(x: SimdS4Obj): untyped = convert(x, SimdD4Obj)
   mapSimd(SimdS4, exp)
@@ -228,6 +243,8 @@ when declared(SimdD4):
   #template assign*(r: array[4,float32], x: SimdD4): untyped =
   #  assign(r, toSingle(x))
   template eval*(x: SimdD4): untyped = x
+  template toSingleImpl*(x: typedesc[SimdD4Obj]): typedesc = SimdS4Obj
+  template toDoubleImpl*(x: typedesc[SimdD4Obj]): typedesc = SimdD4Obj
   template toSingleImpl*(x: SimdD4Obj): untyped = convert(x, SimdS4Obj)
   template toDoubleImpl*(x: SimdD4Obj): untyped = x
   #template min*(x: SomeNumber, y: SimdD4): untyped = min(x.to(SimdD4), y)
@@ -258,6 +275,8 @@ when declared(SimdS4) and declared(SimdD4):
     inorm2(r, y)
 
 when declared(SimdS8):
+  template toSingleImpl*(x: typedesc[SimdS8Obj]): typedesc = SimdS8Obj
+  template toDoubleImpl*(x: typedesc[SimdS8Obj]): typedesc = SimdD8Obj
   template toSingleImpl*(x: SimdS8Obj): untyped = x
   template toDoubleImpl*(x: SimdS8Obj): untyped = convert(x, SimdD8Obj)
   mapSimd(SimdS8, exp)
@@ -265,6 +284,8 @@ when declared(SimdS8):
 
 when declared(SimdD8):
   template eval*(x: SimdD8): untyped = x
+  template toSingleImpl*(x: typedesc[SimdD8Obj]): typedesc = SimdS8Obj
+  template toDoubleImpl*(x: typedesc[SimdD8Obj]): typedesc = SimdD8Obj
   template toSingleImpl*(x: SimdD8Obj): untyped = convert(x, SimdS8Obj)
   template toDoubleImpl*(x: SimdD8Obj): untyped = x
   mapSimd(SimdD8, exp)
@@ -297,6 +318,9 @@ when declared(SimdD8) and declared(SimdS8):
 
 
 when declared(SimdS16):
+  template eval*(x: SimdS16): auto = x
+  template toSingleImpl*(x: typedesc[SimdS16Obj]): typedesc = SimdS16Obj
+  template toDoubleImpl*(x: typedesc[SimdS16Obj]): typedesc = SimdD16Obj
   template toSingleImpl*(x: SimdS16Obj): untyped = x
   template toDoubleImpl*(x: SimdS16Obj): untyped = convert(x, SimdD16Obj)
   mapSimd(SimdS16, exp)
@@ -304,6 +328,8 @@ when declared(SimdS16):
 
 when declared(SimdD16):
   template eval*(x: SimdD16): auto = x
+  template toSingleImpl*(x: typedesc[SimdD16Obj]): typedesc = SimdS16Obj
+  template toDoubleImpl*(x: typedesc[SimdD16Obj]): typedesc = SimdD16Obj
   template toSingleImpl*(x: SimdD16Obj): untyped = convert(x, SimdS16Obj)
   template toDoubleImpl*(x: SimdD16Obj): untyped = x
   mapSimd(SimdD16, exp)
@@ -321,4 +347,27 @@ template assignX*(x: var Simd, y: Simd2) =
   debugType: y
   assign(x[], y[])
 
+macro simdObjType*(N: static int, T: typedesc): auto =
+  #echo T.repr
+  let p = if T.repr == "float32": "S" else: "D"
+  result = ident("Simd" & p & $N & "Obj")
+  #echo result
 
+type
+  SimdObjType*[N:static int, T] = simdObjType(N,T)
+
+when not declared SimdArrayObj:
+  type SimdArrayObj*[N:static int,T] = SimdObjType[N,T]
+
+template toSingleImpl*[N:static int, T](x: typedesc[SimdObjType[N,T]]): typedesc =
+  SimdObjType[N,toSingle(T)]
+
+#[
+template toDoubleImpl*(x: T): auto =
+  mixin simdObjType, assign
+  when F is float64: x
+  else:
+    type D = simdObjType(N, float64)
+    var r {.noInit.}: D
+    assign(r, x)
+]#
