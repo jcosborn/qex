@@ -32,12 +32,15 @@ var userNimFlags: seq[string] = @[]
 proc setUserNimFlags(x: seq[string]) =
   userNimFlags = x
 var nimFlags: seq[string] = @[]
+var nimCmdArgs = ""
 proc setNimFlags() =
   if nimFlags.len == 0:
     nimFlags = getNimFlags(fo)
     nimFlags.add userNimFlags
+  nimCmdArgs = join(nimArgs," ") & " " & join(nimFlags," ")
 
 var run = false
+var runArgs = ""
 #var verbosity = -1
 var bindir = "bin"
 var srcPaths = @[".", "qex/src", "qex/tests"]  # use relative paths for convenience
@@ -64,7 +67,7 @@ proc buildFile(f: string, outfile=""): bool =
   setNimFlags()
   var tool = ""
   #tool = "valgrind "
-  var nimcmd = tool & nim & " " & join(nimArgs," ") & " " & join(nimFlags," ")
+  var nimcmd = tool & nim & " " & nimCmdArgs
   if run: nimcmd &= " -r "
   var (dir, name, ext) = splitFile(f)
   if outfile!="": name = outfile
@@ -74,7 +77,7 @@ proc buildFile(f: string, outfile=""): bool =
     name = bindir / name
   #let cc = if usecpp: "cpp" else: "c"
   let cc = ccDef
-  let s = nimcmd & " " & cc & " -o:" & name & " " & f
+  let s = nimcmd & " " & cc & " -o:" & name & " " & f & runArgs
   echo "running: ", s
   try:
     exec s
@@ -314,6 +317,28 @@ let makeDesc = """   Search for each [path]... as described below,
                compile, link, and put executables in `bin'"""
 buildTask make, makeDesc:
   runMake(remainingArgs)
+
+buildTask doc, "build inline docs":
+  run = false
+  let ccDefSave = ccDef
+  ccDef = "doc --project --index:on --outdir:htmldocs"
+  let file = "qex/src/qex.nim"
+  #nim doc --project --index:on --git.url:<url> --git.commit:<tag> --outdir:htmldocs <main_filename>.nim
+  #runArgs = " --project --index:on --outdir:htmldocs "
+  discard buildFile(file, "htmldocs")
+
+buildTask nbook, "build nimibook docs":
+  setNimFlags()
+  cd("qex/nbook")
+  #let d = getCurrentDir()
+  #nbook = d & "/qex/nbook/nbook.nim"
+  #let nbook = d & "/nbook.nim"
+  let nbook = "nbook.nim"
+  run = true
+  runArgs = " init"
+  discard buildFile(nbook)
+  runArgs = " build -d:nimibParallelBuild=false " & nimCmdArgs
+  discard buildFile(nbook)
 
 ########
 
