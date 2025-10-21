@@ -6,6 +6,7 @@ import enum_quda
 import layout
 import physics/qcdTypes
 import physics/stagD
+import solvers/solverBase
 import gauge/gaugeAction
 #import solvers/cg
 
@@ -34,7 +35,8 @@ when nvhpcDir != "":
   {.passL: "-Wl,-rpath," & qudaDir & "/lib".}
 
 when cudaLibDir=="" and nvhpcDir=="":
-  {.passL: qudaDir & "/lib/libquda.a -lstdc++ ".}
+  {.passL: "-L" & qudaDir & "/lib -lquda -lstdc++ ".}
+  {.passL: "-Wl,-rpath," & qudaDir & "/lib".}
 
 const qmpDir {.strdefine.} = getEnv("QMPDIR")
 const qioDir {.strdefine.} = getEnv("QIODIR")
@@ -110,7 +112,8 @@ proc qudaSetup*(l: Layout, verbosity = QUDA_SILENT): Layout[1] =
       let coords = cast[ptr UncheckedArray[cint]](coords0)
       let r = pl[].rankFromRankCoords(coords)
       r.cint
-    initCommsGridQuda(qudaParam.rankGeom.len.cint, qudaParam.rankGeom[0].addr,
+    initCommsGridQuda(qudaParam.rankGeom.len.cint,
+                      cast[ptr quda.ConstInt](qudaParam.rankGeom[0].addr),
                       qudaCommsMap, unsafeAddr(l))
     qudaInit(qudaParam.initArg)
     qudaParam.layout = l.physGeom.newLayout 1
