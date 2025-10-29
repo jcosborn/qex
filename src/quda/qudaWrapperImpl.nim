@@ -116,7 +116,7 @@ proc qudaSetup*(l: Layout, verbosity = QUDA_SILENT): Layout[1] =
                       cast[ptr quda.ConstInt](qudaParam.rankGeom[0].addr),
                       qudaCommsMap, unsafeAddr(l))
     qudaInit(qudaParam.initArg)
-    qudaParam.layout = l.physGeom.newLayout 1
+    qudaParam.layout = l.physGeom.newLayout(1, l.rankGeom)
     #qudaParam.longlinkG.new qudaParam.layout
     #threads:
     #  for i in qudaParam.longlinkG:
