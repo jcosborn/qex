@@ -801,9 +801,7 @@ public:
         dxdu[mu] += w.stapleDerivative(snu, dxdw[nu], mu, nu);
         dxdu[mu] += w.stapleDerivative(dsnu, mu, nu);
         dxdu[mu] += w.staple(cnu, mu, nu);
-      )
-      dxdu[mu] = adj(dxdu[mu]);
-    )
+    ) )
 
     // naik (won't execute if naik == 0.0)
     // move this outside of this method?
@@ -817,11 +815,11 @@ public:
           sj = w.Cshift(adj(si)*sj*w.link(mu), mu, BACKWARD);
           snu += sj;
         }
-        dxdu[mu] += naik*snu;
+        dxdu[mu] += naik*adj(snu);
     ) )
 
     // extract from padded layout and return
-    dXdU = adj(cell.Extract(toGauge(dxdu)));
+    dXdU = cell.Extract(toGauge(dxdu));
   }
 
   void smearDerivative(

@@ -212,10 +212,6 @@ proc smearGetForce*[T](
     su.toQEX(gsu)
     sul.toQEX(gsul)
 
-    for mu in 0..<su.len:
-      echo "short link: ", mu, " ", simdSum(trace(su[mu]))
-      echo "long link: ", mu, " ", simdSum(trace(sul[mu]))
-
   proc smearedForce(dsdu: var T; dsdsu, dsdsul: T) =
     let
       lat = lo.physGeom
