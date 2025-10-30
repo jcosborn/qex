@@ -1,7 +1,8 @@
 #!/usr/bin/python3
 
+# ... I wrote this before I knew pathlib existed. Oh well...
 import argparse
-import typing
+import subprocess
 import sys
 import os
 
@@ -10,6 +11,7 @@ MDEVOLVE = 'https://github.com/jxy/MDevolve'
 NIMV = 'nim-2.2.2'
 NIMP = '-linux_x64'
 NIM = 'https://nim-lang.org/download/' + NIMV + NIMP + '.tar.xz'
+GRID = 'https://github.com/paboyle/Grid'
 
 def dest(path, dir) -> str: return '/'.join([path, dir])
 
@@ -23,6 +25,19 @@ def args() -> argparse.Namespace:
     p.add_argument('-p', '--prefix', required = True, help = 'desired install path')
     p.add_argument('-q', '--qex', required = True, help = 'path to QEX')
     p.add_argument(
+        '--grid-backend',
+        help = 'compile with Grid [https://github.com/paboyle/Grid] backend',
+        type = bool,
+        default = False
+    )
+    p.add_argument(
+        '--system',
+        help = 'target system for Grid compilation',
+        type = str,
+        choices = ['local', 'Perlmutter'],
+        default = 'local'
+    )
+    p.add_argument(
         '--compile_gradient_flow', 
         help = 'compile gradient flow', 
         type = bool,
@@ -34,6 +49,12 @@ def args() -> argparse.Namespace:
         type = bool,
         default = False
     )
+    p.add_argument(
+        '--build-cpus',
+        help = 'number of CPUs to use for building (make -j<n>)',
+        type = str,
+        default = '4'
+    )
     return p.parse_args()
 
 mkdir = lambda path, dir: os.mkdir(dest(path, dir))
@@ -42,8 +63,9 @@ wget = lambda url: os.system('wget ' + url)
 clone = lambda url: os.system('git clone ' + url)
 tarx = lambda file: os.system('tar -xvf ' + file + '.tar.xz')
 targ = lambda file: os.system('tar -xvf ' + file + '.tar.gz')
-#export = lambda name, path: (os.environ[name] = path)
-#system('export '+name+'='+path)
+
+def subsystem(cmd: str) -> str:
+    return subprocess.check_output(cmd, shell = True).decode('utf-8').strip()
 
 install_qop_qio = lambda qex: os.system(dest(qex, 'bootstrap-travis'))
 nimble_install = lambda nimble, nim: os.system(nimble + ' install --nim=' + nim)
@@ -57,25 +79,68 @@ def install_nim(nim: str):
     tarx(nim + NIMP)
 
 def install_mdevolve(mdevolve: str, nimexec: str, nimbleexec: str):
-    if not isdir('./', 'MDevolve'): clone(MDEVOLVE)
-    cd('./', 'MDevolve')
+    if not isdir(deps, 'MDevolve'): clone(MDEVOLVE)
+    cd(deps, 'MDevolve')
     nimble_install(nimbleexec, nimexec)
 
-def configure(qex: str, qmp: str, qio: str, nim: str):
+def install_grid(deps: str, machine: str, build_cpus: str) -> str:
+    cd(deps, '')
+    if not isdir(deps, 'Grid'): clone(GRID)
+    cd(deps, 'Grid')
+
+    # bootstrap (ensures that Eigen is also installed)
+    system('./bootstrap.sh')
+    if not isdir(deps, 'Grid/build'): mkdir(deps, 'Grid/build')
+    cd(deps, 'Grid/build')
+
+    # configure
+    grid = dest(dest(deps, 'Grid'), 'build')
+    config = '--prefix=' + grid + ' '
+    if machine == 'local':
+        config += '--enable-simd=AVX '
+        config += '--enable-comms=mpi-auto '
+        config += '--disable-fermion-reps '
+        config += '--disable-gparity '
+    system('../configure ' + config)
+
+    # make & make install (make distributed over "build_cpus" CPUs)
+    system('make -j' + build_cpus)
+    system('make install -j' + build_cpus)
+
+    # return path
+    return grid
+
+def configure(qex: str, qmp: str, qio: str, grid: str, nim: str, grid_backend: bool):
     os.environ['NIM'] = nim
-    system(' '.join([
-        dest(qex,'configure'),
-        'qmpdir:' + qmp,
-        'qiodir:' + qio
-    ]))
+    if grid_backend:
+        grid_config = grid + '/grid-config'
+        include = dest(grid, 'include')
+        flags = '-I' + include + ' ' 
+        flags += subsystem(grid_config + ' --cxxflags') + ' '
+        ld = subsystem(grid_config + ' --ldflags') + ' '
+        libs = subsystem(grid_config + ' --libs') + ' '
+        libs += ' -L' + dest(grid, 'lib') + ' -lGrid' + ' '
+        system(' '.join([
+            dest(qex, 'configure'),
+            'qmpdir:' + qmp,
+            'qiodir:' + qio,
+            'griddir:' + grid,
+            'cppflagsAlways:' + '"' + flags + ld + libs + '"'
+        ]))
+    else:
+        system(' '.join([
+            dest(qex, 'configure'),
+            'qmpdir:' + qmp,
+            'qiodir:' + qio
+        ]))
 
 def install_hmc(build: str, bin: str):
-    system('make alphashmc')
+    system('make cpp alphashmc')
     dustbin = dest(dest(build, 'bin'), 'alphashmc')
     symlink(dustbin, bin)
 
 def install_gradient_flow(build: str, bin: str): 
-    system('make alphasflow')
+    system('make cpp alphasflow')
     dustbin = dest(dest(build, 'bin'), 'alphasflow')
     symlink(dustbin, bin)
 
@@ -87,6 +152,7 @@ if __name__ == '__main__':
     qex = args.qex
     compile_gradient_flow = args.compile_gradient_flow
     run_hmc_regression_test = args.run_hmc_regression_test
+    grid_backend = args.grid_backend
 
     if not isdir(path, 'build'): mkdir(path, 'build')
     if not isdir(path, 'deps'): mkdir(path, 'deps')
@@ -110,8 +176,11 @@ if __name__ == '__main__':
     mdevolve = dest(deps, 'mdevolve')
     install_mdevolve(mdevolve, nimexec, nimbleexec)
 
+    if grid_backend: grid = install_grid(deps, args.system, args.build_cpus)
+    else: grid = ''
+
     cd(path, 'build')
-    configure(qex, qmp, qio, nimexec)
+    configure(qex, qmp, qio, grid, nimexec, grid_backend)
 
     install_hmc(build, bin)
     if compile_gradient_flow: install_gradient_flow(build, bin)
@@ -119,3 +188,4 @@ if __name__ == '__main__':
     if run_hmc_regression_test: hmc_regress()
 
     # Final printout reminding folks how to use both binary files
+

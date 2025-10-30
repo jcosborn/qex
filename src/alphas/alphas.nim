@@ -29,8 +29,8 @@ import gauge/[gaugeUtils]
 import algorithms/[integrator]
 import physics/[qcdTypes, stagSolve]
 
-import extra/[alphasproject, alphassmear]
-import extra/[alphasrng, alphasgauge]
+import alphashisq
+import extra/[alphasproject, alphasrng, alphasgauge]
 
 import mdevolve
 
@@ -244,11 +244,12 @@ proc readCMD*: JsonNode =
           except ValueError: result[cmd.key] = %* cmd.val
       of cmdEnd: break
 
-proc newSolverParams(r2req: float; maxits,verbosity: int): auto = 
+proc newSolverParams(r2req: float; maxits, verbosity: int): auto = 
   result = initSolverParams()
   result.r2req = r2req
   result.maxits = maxits
   result.verbosity = verbosity
+  gridBackend: result.backend = sbGrid
 
 proc newSolverParams(info: JsonNode; af: string): auto =
   let
@@ -261,7 +262,7 @@ proc newSolverParams(info: JsonNode; af: string): auto =
     verbosity = case info["fermion"].hasKey("solver-verbosity-" & af)
       of true: info["fermion"]["solver-verbosity-" & af].getInt()
       of false: (if af == "action": ActionCGVerbosity else: ForceCGVerbosity)
-  return newSolverParams(r2,maxits,verbosity)
+  return newSolverParams(r2, maxits, verbosity)
 
 proc newHISQ[T](u: seq[T]; info: JsonNode): auto = 
   var 
@@ -597,19 +598,18 @@ proc smearRephase(
       of 1: true
       else: true
   threads: g.rephase
-  let sf = hisq.smearGetForce(
+  result = hisq.smearGetForce(
     g, sg, sgl,
     displayPerformance = displayPerformance,
     regulate = regulate
   )
   threads: g.rephase
-  return sf
 
 proc smear*(self: var HisqHMC) = 
-  discard self.params.smearRephase(self.u,self.su,self.sul)
+  discard self.params.smearRephase(self.u, self.su, self.sul)
 
 proc smearGetForce*(self: var HisqHMC): auto =
-  return self.params.smearRephase(self.u,self.su,self.sul)
+  return self.params.smearRephase(self.u, self.su, self.sul)
 
 #[ Hamiltonian calculation methods ]#
 

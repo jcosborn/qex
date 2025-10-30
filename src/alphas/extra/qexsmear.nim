@@ -6,6 +6,7 @@ import gauge/[fat7l, fat7lderiv]
 import alphaslinks, alphasproject
 
 export alphaslinks
+export alphasproject
 
 proc asqtadDeriv[T](
     deriv: auto, 
@@ -44,22 +45,6 @@ proc projectDeriv[T](
     for mu in 0..<chain.len:
       for s in chain[mu]:
         self.projectUderiv(dvdu[mu][s], v[mu][s], u[mu][s], chain[mu][s], regulate)
-
-proc newHISQ*(
-    lepage: float = 0.0; 
-    naik: float = 1.0,
-    reunitMethod: ProjectionMethod = CayleyHamilton,
-    reunitEps: float = 1e-16,
-    reunitMaxiters: int = 10,
-    delta: float = 1e-5
-  ): HisqCoefs =
-  result = HisqCoefs(naik: -naik/24.0)
-  result.fat7first.setHisqFat7(lepage,0.0)
-  result.fat7second.setHisqFat7(2.0-lepage,naik)
-  result.projection = newUnitaryProjection(reunitMethod, reunitEps, reunitMaxiters)
-  case reunitMethod:
-    of CayleyHamilton: result.projection.delta = delta
-    else: discard
 
 proc smearGetForce*[T](
     self: HisqCoefs; 
