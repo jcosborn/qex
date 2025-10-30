@@ -277,7 +277,7 @@ proc overRelaxSu2(r: var auto, x: auto, i,j: int, o: float) =
   var nn = rsqrt(r0*r0 + r1*r1 + r2*r2 + r3*r3)
   let u00 = newComplex(nn*r0, nn*r3)
   let u01 = newComplex(nn*r2, nn*r1)
-  for l in 0..2:
+  for l in 0..<r.ncols:
     let ti = u00*r[i,l] + u01*r[j,l]
     let tj = u00.adj*r[j,l] - u01.adj*r[i,l]
     r[i,l] := ti
@@ -285,27 +285,25 @@ proc overRelaxSu2(r: var auto, x: auto, i,j: int, o: float) =
 
 proc relaxE(t: auto, gd: Field2, g: auto, dirs: array|seq, orf: float) =
   tic()
+  let nc = t[0][].nrows
   threads:
     for e in t.even:
-      var m0 = t[e][] * gd[e][]
-      overRelaxSu2(t[e][], m0, 0,1, orf)
-      var m1 = t[e][] * gd[e][]
-      overRelaxSu2(t[e][], m1, 1,2, orf)
-      var m2 = t[e][] * gd[e][]
-      overRelaxSu2(t[e][], m2, 0,2, orf)
+      for jc in 1..<nc:
+        for ic in 0..<jc:
+          var m0 = t[e][] * gd[e][]
+          overRelaxSu2(t[e][], m0, ic, jc, orf)
       #t[e][].projectSU
   toc("relaxE")
 
 proc relaxO(t: auto, gd: Field2, g: auto, dirs: array|seq, orf: float) =
   tic()
+  let nc = t[0][].nrows
   threads:
     for e in t.odd:
-      var m0 = t[e][] * gd[e][]
-      overRelaxSu2(t[e][], m0, 0,1, orf)
-      var m1 = t[e][] * gd[e][]
-      overRelaxSu2(t[e][], m1, 1,2, orf)
-      var m2 = t[e][] * gd[e][]
-      overRelaxSu2(t[e][], m2, 0,2, orf)
+      for jc in 1..<nc:
+        for ic in 0..<jc:
+          var m0 = t[e][] * gd[e][]
+          overRelaxSu2(t[e][], m0, ic, jc, orf)
       #t[e][].projectSU
   toc("relaxO")
 
@@ -359,67 +357,74 @@ when isMainModule:
   qexInit()
   let defaultLat = @[8,8,8,8]
   defaultSetup()
-  var t = lo.ColorMatrix()
-  var t0 = lo.ColorMatrix()
-  var t1 = lo.ColorMatrix()
-  var ml = lo.Real()
-  var m1 = lo.Real()
-  var m2 = lo.Real()
-  var gt = lo.newGauge()
-  var gd = lo.ColorMatrix()
-  var gd2 = lo.ColorMatrix()
-  if fn == "":
-    g.random
-    t := g[0]
-    gt.unit
-    g.gaugeTransform(gt, t)
-  t := 1
-  var eps = floatParam("eps", 0.1)
-  var nh = intParam("nh", 100)
-  var gstop = floatParam("gstop", 1e-6)
-  var orf = floatParam("orf", 1.5)
-  var outfn = stringParam("o", "")
 
-  echo "gradient^2 stopping condition (gstop): ", gstop
-  echo "overrelaxation factor (orf): ", orf
-  if outfn == "":
-    echo "not saving result, no output file specified (o)"
-  else:
-    echo "output file (o): ", outfn
+  proc test(Nc: static int) =
+    var t = lo.ColorMatrix(Nc)
+    var t0 = lo.ColorMatrix(Nc)
+    var t1 = lo.ColorMatrix(Nc)
+    var ml = lo.Real()
+    var m1 = lo.Real()
+    var m2 = lo.Real()
+    var g = lo.newGauge(Nc)
+    var gt = lo.newGauge(Nc)
+    var gd = lo.ColorMatrix(Nc)
+    var gd2 = lo.ColorMatrix(Nc)
+    if fn == "":
+      g.random
+      t := g[0]
+      gt.unit
+      g.gaugeTransform(gt, t)
+    t := 1
+    var eps = floatParam("eps", 0.1)
+    var nh = intParam("nh", 100)
+    var gstop = floatParam("gstop", 1e-6)
+    var orf = floatParam("orf", 1.5)
+    var outfn = stringParam("o", "")
 
-  template disp(g: typed, dirs: typed) =
-    echo g.gfMetric(dirs)
+    echo "gradient^2 stopping condition (gstop): ", gstop
+    echo "overrelaxation factor (orf): ", orf
+    if outfn == "":
+      echo "not saving result, no output file specified (o)"
+    else:
+      echo "output file (o): ", outfn
 
-  template pdisp(g: typed, dirs: typed) =
-    let p = g.plaq
-    let sp = 2.0*(p[0]+p[1]+p[2])
-    let tp = 2.0*(p[3]+p[4]+p[5])
-    echo "plaqs: ", p
-    echo sp
-    echo tp
-    disp(g, dirs)
+    template disp(g: typed, dirs: typed) =
+      echo g.gfMetric(dirs)
 
-  let sf = 1.0/(g[0].l.physVol.float*g[0][0].nrows.float)
-  #var dirs = newSeq[int]()
-  #for dr in 0..2:
-  #  dirs.add dr
-  let dirs = @[0,1,2]
-  var its = 0
-  var polish = 0
-  tic()
-  block:
-    var gdsq = 2*gstop
-    pdisp(g, dirs)
-    gt.gaugeTransform(g, t)
-    pdisp(gt, dirs)
-    var met = gfMetric(gt, dirs)
-    toc("main1")
-    getGaugeFixTransform(t, g, dirs, gstop, orf)
-    toc("main2")
+    template pdisp(g: typed, dirs: typed) =
+      let p = g.plaq
+      let sp = 2.0*(p[0]+p[1]+p[2])
+      let tp = 2.0*(p[3]+p[4]+p[5])
+      echo "plaqs: ", p
+      echo sp
+      echo tp
+      disp(g, dirs)
 
-    gt.gaugeTransform(g, t)
-    pdisp(gt, dirs)
+    let sf = 1.0/(g[0].l.physVol.float*g[0][0].nrows.float)
+    #var dirs = newSeq[int]()
+    #for dr in 0..2:
+    #  dirs.add dr
+    let dirs = @[0,1,2]
+    var its = 0
+    var polish = 0
+    tic()
+    block:
+      var gdsq = 2*gstop
+      pdisp(g, dirs)
+      gt.gaugeTransform(g, t)
+      pdisp(gt, dirs)
+      var met = gfMetric(gt, dirs)
+      toc("main1")
+      getGaugeFixTransform(t, g, dirs, gstop, orf)
+      toc("main2")
 
-  toc("main3")
+      gt.gaugeTransform(g, t)
+      pdisp(gt, dirs)
+    toc("main3")
+
+  test(3)
+  test(2)
+  test(4)
+
   echoTimers()
   qexFinalize()

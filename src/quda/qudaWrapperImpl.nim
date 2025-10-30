@@ -107,16 +107,16 @@ proc qudaSetup*(l: Layout, verbosity = QUDA_SILENT): Layout[1] =
     qudaParam.rankGeom[i].update l.rankGeom[i].cint
   if updated or (not qudaParam.initialized):
     if qudaParam.initialized: qudaFinalize()
-    proc qudaCommsMap(coords0: ptr ConstInt; fdata: pointer): cint {.cdecl.} =
+    proc qudaCommsMap(coords0: ptr quda.ConstInt; fdata: pointer): cint {.cdecl.} =
       let pl = cast[ptr type(l)](fdata)
       let coords = cast[ptr UncheckedArray[cint]](coords0)
       let r = pl[].rankFromRankCoords(coords)
       r.cint
     initCommsGridQuda(qudaParam.rankGeom.len.cint,
-                      cast[ptr ConstInt](qudaParam.rankGeom[0].addr),
+                      cast[ptr quda.ConstInt](qudaParam.rankGeom[0].addr),
                       qudaCommsMap, unsafeAddr(l))
     qudaInit(qudaParam.initArg)
-    qudaParam.layout = l.physGeom.newLayout 1
+    qudaParam.layout = l.physGeom.newLayout(1, l.rankGeom)
     #qudaParam.longlinkG.new qudaParam.layout
     #threads:
     #  for i in qudaParam.longlinkG:

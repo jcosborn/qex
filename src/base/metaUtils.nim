@@ -1640,7 +1640,7 @@ macro byptr*(sect:untyped):untyped =
     assert a is int
     var b {.byptr.}: int = s[0]
     assert a.addr == b.addr
-  echo sect.repr
+  echo sect.treerepr
   expectLen sect, 1
   let def = sect[0]
   let
@@ -1648,10 +1648,17 @@ macro byptr*(sect:untyped):untyped =
     #typ = def[1]
     ex = def[2]
     #addrTyp = if typ.kind == nnkEmpty: typ else: newTree(nnkPtrTy, typ)
-  result = quote do:
-    #mixin toPtr
-    #let byptrTmp = toPtr(`ex`)
-    #template `lhs`: untyped = byptrTmp[]
-    let `lhs` = `ex`
+  if def.kind == nnkLetSection:
+    result = quote do:
+      #mixin toPtr
+      #let byptrTmp = toPtr(`ex`)
+      #template `lhs`: untyped = byptrTmp[]
+      let `lhs` = `ex`
+  else:
+    result = quote do:
+      #mixin toPtr
+      #let byptrTmp = toPtr(`ex`)
+      #template `lhs`: untyped = byptrTmp[]
+      var `lhs` = `ex`
   result.copyLineInfo(def)
   echo result.repr

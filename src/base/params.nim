@@ -120,6 +120,10 @@ macro defString(x: int): auto =
   result = if x.kind == nnkIntLit: newLit x.repr else: newLit"#0"
 macro defString(x: static int): auto =
   result = newLit $x
+macro defString(x: uint): auto =
+  result = if x.kind == nnkIntLit: newLit x.repr else: newLit"#0u"
+macro defString(x: static uint): auto =
+  result = newLit $x
 macro defString(x: float): auto =
   #echo "float param: ", x.treerepr
   result = if x.kind == nnkFloatLit: newLit x.repr else: newLit"#0.0"
@@ -290,6 +294,7 @@ template makeTypeParam(name,typ,deflt,cnvrt: untyped): untyped {.dirty.} =
     `name X`(s, d, c, instantiationInfo(index, fullPaths=true))
 
 makeTypeParam(intParam, int, 0, parseInt)
+makeTypeParam(uintParam, uint, 0u, parseUInt)
 makeTypeParam(floatParam, float, 0.0, parseFloat)
 makeTypeParam(strParam, string, "", cnvnone)
 template stringParam*(x,y: untyped, c="", index= -1): untyped = strParam(x,y,c,index)
@@ -337,6 +342,7 @@ template floatSeqParam*(s: string, d = newSeq[float](), c = ""): seq[float] =
 
 template setParam*(s:string, d:string, c:string=""):string = strParam(s,d,c)
 template setParam*(s:string, d:int, c:string=""):int = intParam(s,d,c)
+template setParam*(s:string, d:uint, c:string=""):uint = uintParam(s,d,c)
 template setParam*(s:string, d:float, c:string=""):float = floatParam(s,d,c)
 template setParam*(s:string, d:bool, c:string=""):bool = boolParam(s,d,c)
 template setParam*(s:string, d:seq[int], c:string=""):seq[int] = intSeqParam(s,d,c)
