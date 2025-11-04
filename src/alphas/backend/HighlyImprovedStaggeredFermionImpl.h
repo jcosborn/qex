@@ -789,10 +789,6 @@ public:
     GaugeLinkField snu(grid), si(grid), sj(grid);
     GaugeLinkField dsnu(grid), dsi(grid);
 
-    HISQLOOP0(
-      std::cout << "CHAIN" << sum(trace(cell.Extract(dxdw[mu]))) << std::endl;
-    )
-
     HISQLOOP0( // fat7 + lepage (lepage won't execute if lepage == 0.0)
       dxdu[mu] = (c0 - 6.0*lepage)*dxdw[mu];
       HISQLOOP1(
@@ -820,12 +816,6 @@ public:
     ) )
     dXdU = cell.Extract(toGauge(dxdu));
 
-    /*
-    HISQLOOP0(
-      std::cout << "BEFORE NAIK" << sum(trace(toLink(dXdU, mu))) << std::endl;
-    )
-    */
-
     // WRITE THIS BACK UP W/O ANY COMMUNICATION
     HISQNAIK( // naik (won't execute if naik == 0.0)
       PeriodicTransporters<Gimpl> w(longCell, W);
@@ -834,12 +824,6 @@ public:
       HISQLOOP0(dxdu[mu] = naik*adj(w[mu].elongationDerivative(dxdwww[mu])))
       dXdU += longCell.Extract(toGauge(dxdu));
     )
-
-    /*
-    HISQLOOP0(
-      std::cout << "AFTER NAIK" << sum(trace(toLink(dXdU, mu))) << std::endl;
-    )
-    */
   }
 
   void smearDerivative(

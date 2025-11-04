@@ -216,15 +216,6 @@ proc smearGetForce*[T](
     gdsdsu.toGrid(dsdsu)
     gdsdsul.toGrid(dsdsul)
 
-    let nd = len(lat)
-    {.emit: """
-    using namespace Grid;
-    for (int mu = 0; mu < `nd`; mu++) {
-      auto tmp = PeekIndex<LorentzIndex>(`gdsdsu`, `mu`);
-      std::cout << "Grid: " << `mu` << " " << sum(trace(tmp)) << std::endl;
-    }
-    """.}
-
     hisq.smearDerivative(gt, gdsdsu, gdsdsul, gw, f7l2, lpl2, naik)
     hisq.projectionDerivative(gt, gt, gw, gv)
     hisq.smearDerivative(gdsdu, gt, gu, f7l1, lpl1)

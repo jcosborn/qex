@@ -637,9 +637,9 @@ proc fermionAction*(self: HisqHMC): float =
     fact: float
   self.psi.zeroFermion()
   self.hpsi.zeroFermion()
-  threads: self.stag.D(hpsit,self.hphi,-self.hmass)
-  self.stag.solve(self.psi,self.phi,-self.hmass,self.spa)
-  self.stag.solve(self.hpsi,hpsit,-self.mass,self.spa)
+  threads: self.stag.D(hpsit, self.hphi, -self.hmass)
+  self.stag.solve(self.psi, self.phi, -self.hmass, self.spa)
+  self.stag.solve(self.hpsi, hpsit, -self.mass, self.spa)
   threads:
     let factt = self.psi.norm2() + self.hpsi.norm2()
     threadBarrier()
@@ -660,16 +660,16 @@ proc hamiltonian(self: HisqHMC): float =
 
 proc pseudofermion(
     stag: auto; 
-    phi,hphi: auto;
-    psi,hpsi: auto; 
-    mass,hmass: float;
+    phi, hphi: auto;
+    psi, hpsi: auto; 
+    mass, hmass: float;
     spa: var SolverParams
   ) =
   var hphit = psi.l.ColorVector()
   threads:
-    stag.D(phi,psi,-hmass)
-    stag.D(hphit,hpsi,-mass)
-  stag.solve(hphi,hphit,-hmass,spa)
+    stag.D(phi, psi, -hmass)
+    stag.D(hphit, hpsi, -mass)
+  stag.solve(hphi, hphit, -hmass, spa)
   threads:
     phi.odd := 0
     hphi.odd := 0
@@ -680,10 +680,7 @@ proc fermionHeatbath*(self: var HisqHMC) =
   self.prng.randomComplexGaussian(self.hpsi)
   self.prng.randomComplexGaussian(self.psi)
   self.stag.pseudofermion(
-    self.phi, self.hphi,
-    self.psi, self.hpsi,
-    self.mass, self.hmass,
-    self.spa
+    self.phi, self.hphi, self.psi, self.hpsi, self.mass, self.hmass, self.spa
   )
 
 proc prepare*(self: var HisqHMC) =
@@ -760,8 +757,11 @@ proc fermionForce[S,T](
         f1[mu][i] *= -1
         f3[mu][i] *= -1
 
+  for mu in 0..<f.len:
+    echo mu, " ", simdSum(trace(f1[mu])), " ", simdSum(trace(f3[mu]))
+
   # 3. smearing
-  ff.smearedForce(f1,f3)
+  ff.smearedForce(f1, f3)
 
   # 4. Tₐ ReTr( Tₐ U F† )
   threads:
@@ -785,7 +785,7 @@ proc forceSolve[T](
   var
     varphi = newOneOf(psi)
     r = newOneOf(phi)
-    r2,b2: float
+    r2, b2: float
     sp = sp0
 
   # Prepare solver parameters
@@ -799,11 +799,13 @@ proc forceSolve[T](
     threadMaster: b2 = b2t
 
   # Get solution
-  stag.solveEE(varphi,phi,mass,sp)
+  stag.solveEE(varphi, phi, mass, sp)
   threads:
     # Get residual
     var r2t: float
-    stag.D(r,varphi,mass)
+    stagD2ee(stag.se, stag.so, r, stag.g, varphi, mass*mass)
+    threadBarrier()
+    r := r - phi
     threadBarrier()
     r2t = r.norm2
     threadBarrier()
@@ -812,7 +814,7 @@ proc forceSolve[T](
     # Get solution for force
     varphi.even := 4.0*varphi
     threadBarrier()
-    stagD2(stag.so,psi,stag.g,varphi,0,0)
+    stagD2(stag.so, psi, stag.g, varphi, 0, 0)
     threadBarrier()
     psi.even := varphi
 
@@ -828,12 +830,11 @@ proc fermionForce*(self: var HisqHMC; dtau: float) =
   let smearedForce = self.params.smearRephase(
     self.u, self.su, self.sul, regulate = true
   )
-  let
-    ffac = 0.25*dtau
-    hfac = ffac*(self.hmass.sq-self.mass.sq)
-  self.stag.forceSolve(self.psi,self.phi,self.hmass,self.spf)
-  self.stag.forceSolve(self.hpsi,self.hphi,self.mass,self.spf)
-  self.f.fermionForce(smearedForce,self.psi,self.hpsi,self.u,ffac,hfac)
+  let ffac = 0.25*dtau
+  let hfac = ffac*(self.hmass.sq-self.mass.sq)
+  self.stag.forceSolve(self.psi, self.phi, self.hmass, self.spf)
+  self.stag.forceSolve(self.hpsi, self.hphi, self.mass, self.spf)
+  self.f.fermionForce(smearedForce, self.psi, self.hpsi, self.u, ffac, hfac)
 
 proc gaugeForce*(self: var HisqHMC) = self.gc.gaugeForce(self.u,self.f)
 
