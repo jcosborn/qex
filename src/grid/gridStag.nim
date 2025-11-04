@@ -46,8 +46,8 @@ proc gridSolveXX*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams;
     s.g.stagPhase([0,1,3,7])
     {.emit:["using Stag = ",GridNaiveStaggeredFermionR,";"].}
     {.emit:"using FermionField = Stag::FermionField;".}
-    {.emit:["Stag Ds(grid,rbgrid,2.*",mass,",2.,1.);"].}
-    {.emit:"Ds.ImportGauge(gfl);".}
+    {.emit:["Stag Ds(",grid,",",rbgrid,",2.*",mass,",2.,1.);"].}
+    {.emit:["Ds.ImportGauge(",gfl,");"].}
     {.emit:"SchurStaggeredOperator<Stag,FermionField> HermOp(Ds);".}
     {.emit:["ConjugateGradient<FermionField> CG(",res,", ",maxit,", false);"].}
     {.emit:["CG(HermOp, ",gsrc,", ",gsoln,");"].}
@@ -72,11 +72,11 @@ proc gridSolveXX*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams;
     gll := @[s.g[1],s.g[3],s.g[5],s.g[7]]
     {.emit:["using ImpStag = ",GridImprovedStaggeredFermionR,";"].}
     {.emit:"using FermionField = ImpStag::FermionField;".}
-    {.emit:"ImpStag Ds(grid,rbgrid,2.*mass,2.,2.,1.);".}
-    {.emit:"Ds.ImportGaugeSimple(gll,gfl);".}
+    {.emit:["ImpStag Ds(",grid,",",rbgrid,",2.*",mass,",2.,2.,1.);"].}
+    {.emit:["Ds.ImportGaugeSimple(",gll,",",gfl,");"].}
     {.emit:"SchurStaggeredOperator<ImpStag,FermionField> HermOp(Ds);".}
-    {.emit:"ConjugateGradient<FermionField> CG(res, maxit, false);".}
-    {.emit:["CG(HermOp, ",gsrc,", ",gsoln,");"].}
+    {.emit:["ConjugateGradient<FermionField> CG(",res,",",maxit,",false);"].}
+    {.emit:["CG(HermOp,",gsrc,",",gsoln,");"].}
     {.emit:[sp,".iterations = CG.IterationsToComplete;"].}
     var rr = r
     rr := gsoln
