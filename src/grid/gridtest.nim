@@ -104,7 +104,7 @@ when isMainModule:
     #gsoln := soln
     {.emit:"using namespace Grid;".}
     {.emit:"gsoln = Zero();".}
-    {.emit:"using ImpStag = NaiveStaggeredFermionR;".}
+    {.emit:"using ImpStag = `ferm`;".}
     {.emit:"using FermionField = ImpStag::FermionField;".}
     #{.emit:"ImpStag Ds(gll,gfl,*grid,rbgrid,mass,1.,1.,1.);".}
     {.emit:"ImpStag Ds(*grid,rbgrid,2.*mass,2.,1.);".}
@@ -195,7 +195,7 @@ when isMainModule:
     #gsoln := soln
     {.emit:"using namespace Grid;".}
     {.emit:"gsoln = Zero();".}
-    {.emit:"using ImpStag = ImprovedStaggeredFermionR;".}
+    {.emit:"using ImpStag = `ferm`;".}
     {.emit:"using FermionField = ImpStag::FermionField;".}
     #{.emit:"ImpStag Ds(gll,gfl,*grid,rbgrid,mass,1.,1.,1.);".}
     {.emit:"ImpStag Ds(*grid,rbgrid,2.*mass,2.,2.,1.);".}
