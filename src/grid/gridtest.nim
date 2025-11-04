@@ -284,7 +284,7 @@ when isMainModule:
 
     checkPlaq(g,gg)
     checkNaive(g,gg)
-    #checkHisq(g,gg)
+    checkHisq(g,gg)
 
   #[
   {.emit:"/*INCLUDESECTION*/\n#include <Grid/Grid.h>".}
