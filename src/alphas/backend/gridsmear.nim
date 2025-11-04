@@ -20,22 +20,17 @@ const GIMPL = "Grid::PeriodicGimplR"
 # some Grid/C++ types
 
 type vector*[T] {.importcpp: "std::vector<'*0>", header:"<vector>".} = object
-type GridRealD {.importcpp: "Grid::RealD", grid.} = object
 
 type GridHISQ {.importcpp: HISQIMPL & "<" & GIMPL & ">", hisq.} = object
 
-template `+`[T](a: ptr T, n: int): untyped =
-  cast[ptr T](cast[int](a) + n*sizeof(T))
 proc newVector*[T](x,y: ptr T): vector[T] 
   {.importcpp: "std::vector<'*0>(#, #)", constructor.}
 proc toVector*[T](x: openArray[T]): vector[T] =
   let x0 = unsafeAddr x[0]
   return newVector(x0, x0 + x.len)
 
-proc toGridRealD[T](x: T): GridRealD {.importcpp: "Grid::RealD(#)", grid.}
-
-proc newGridHISQ(grid: ptr GridCartesian): GridHISQ 
-  {.importcpp: HISQIMPL & "<" & GIMPL & ">(#)", constructor, hisq.}
+proc newGridHISQ(grid: ptr GridCartesian, calcStagPhases: bool = false): GridHISQ 
+  {.importcpp: HISQIMPL & "<" & GIMPL & ">(#, #)", constructor, hisq.}
 
 # Helper Grid procedures
 
@@ -84,51 +79,43 @@ proc toGrid(r: var GridLatticeGaugeField, x0: openArray[Field]) = r := x0
 
 # Grid HISQ method wrappers
 
+proc rephase(self: GridHISQ; X: GridLatticeGaugeField; W: GridLatticeGaugeField) 
+  {.importcpp: "#.rephase(#, #)", hisq.}
+
+proc smear(
+  self: GridHISQ;
+  X: GridLatticeGaugeField; 
+  WWW: GridLatticeGaugeField;
+  W: GridLatticeGaugeField; 
+  coeffs: vector[float]; 
+  lepage, naik: float
+) {.importcpp: "#.smear(#, #, #, #, #, #)", hisq.}
+
 proc smear(
   self: GridHISQ;
   X: GridLatticeGaugeField; 
   W: GridLatticeGaugeField; 
-  coeffs: openArray[float]; 
+  coeffs: vector[float]; 
   lepage: float
-) =
-  let
-    l1 = cdouble(coeffs[0])
-    l3 = cdouble(coeffs[1])
-    l5 = cdouble(coeffs[2])
-    l7 = cdouble(coeffs[3])
-    lp = cdouble(lepage)
-  {.emit: "`self`.smear(*`X`, *`W`, {`l1`, `l3`, `l5`, `l7`}, `lp`);".} 
+) {.importcpp: "#.smear(#, #, #, #)", hisq.}
 
 proc project(
   self: GridHISQ;
-  W: GridLatticeGaugeField; 
-  X: GridLatticeGaugeField   
-) {.importcpp: "#.project(#, #)", hisq.}
-
-proc elongate(
-  self: GridHISQ;
-  WWW: GridLatticeGaugeField; 
-  W: GridLatticeGaugeField; 
-  naik: float = 1.0
-) =
-  let nk = cdouble(naik)
-  {.emit: "`self`.elongate(*`WWW`, *`W`, `nk`);".}
+  V: GridLatticeGaugeField; 
+  U: GridLatticeGaugeField;
+  derivativeCutoff: float;
+  backupSVD: bool;
+  svdTolerance: float
+) {.importcpp: "#.project(#, #, #, #, #)", hisq.}
 
 proc smearDerivative(
   self: GridHISQ;
   dXdU: GridLatticeGaugeField; 
   dXdW: GridLatticeGaugeField; 
   W: GridLatticeGaugeField; 
-  coeffs: openArray[float]; 
+  coeffs: vector[float]; 
   lepage: float
-) =
-  let
-    l1 = cdouble(coeffs[0])
-    l3 = cdouble(coeffs[1])
-    l5 = cdouble(coeffs[2])
-    l7 = cdouble(coeffs[3])
-    lp = cdouble(lepage)
-  {.emit: "`self`.smearDerivative(*`dXdU`, *`dXdW`, *`W`, {`l1`, `l3`, `l5`, `l7`}, `lp`);".}
+) {.importcpp: "#.smearDerivative(#, #, #, #, #)", hisq.} 
 
 proc smearDerivative(
   self: GridHISQ;
@@ -136,25 +123,17 @@ proc smearDerivative(
   dXdW: GridLatticeGaugeField;
   dXdWWW: GridLatticeGaugeField;
   W: GridLatticeGaugeField; 
-  coeffs: openArray[float];
-  lepage: float;
-  naik: float = 1.0
-) =
-  let
-    l1 = cdouble(coeffs[0])
-    l3 = cdouble(coeffs[1])
-    l5 = cdouble(coeffs[2])
-    l7 = cdouble(coeffs[3])
-    lp = cdouble(lepage)
-    nk = cdouble(naik)
-  {.emit: "`self`.smearDerivative(*`dXdU`, *`dXdW`, *`dXdWWW`, *`W`, {`l1`, `l3`, `l5`, `l7`}, `lp`, `nk`);".}
+  coeffs: vector[float];
+  lepage, naik: float;
+) {.importcpp: "#.smearDerivative(#, #, #, #, #, #, #)", hisq.} 
 
 proc projectionDerivative(
   self: GridHISQ;
   dVdU: GridLatticeGaugeField; 
   dZdV: GridLatticeGaugeField; 
+  V: GridLatticeGaugeField;
   U: GridLatticeGaugeField
-) {.importcpp: "#.projectionDerivative(#, #, #)", hisq.}
+) {.importcpp: "#.projectionDerivative(#, #, #, #)", hisq.}
 
 proc smearGetForce*[T](
   self: alphaslinks.HisqCoefs; 
@@ -169,21 +148,21 @@ proc smearGetForce*[T](
       self.fat7first.threeStaple,
       self.fat7first.fiveStaple,
       self.fat7first.sevenStaple
-    ]
+    ].toVector()
     f7l2 = @[
       self.fat7second.oneLink,
       self.fat7second.threeStaple,
       self.fat7second.fiveStaple,
       self.fat7second.sevenStaple
-    ]
+    ].toVector()
     lpl1 = self.fat7first.lepage
     lpl2 = self.fat7second.lepage
     naik = self.naik
   var lo = u[0].l
-  var
+  var 
     v = lo.newGauge()
     w = lo.newGauge()
-  
+
   block:
     let
       lat = lo.physGeom
@@ -194,8 +173,8 @@ proc smearGetForce*[T](
     var hisq = newGridHISQ(addr grid)
     var
       gu = grid.gauge()
-      gv = grid.gauge()
       gw = grid.gauge()
+      gv = grid.gauge()
     var
       gsu = grid.gauge()
       gsul = grid.gauge()
@@ -203,9 +182,10 @@ proc smearGetForce*[T](
     gu.toGrid(u)
 
     hisq.smear(gv, gu, f7l1, lpl1)
-    hisq.project(gw, gv)
-    hisq.smear(gsu, gw, f7l2, lpl2)
-    hisq.elongate(gsul, gw, naik)
+    case regulate: # ensure that regulation only done for force action
+      of true: hisq.project(gw, gv, 5e-5, true, 1e-8)
+      of false: hisq.project(gw, gv, 1e-20, true, 1e-8)
+    hisq.smear(gsu, gsul, gw, f7l2, lpl2, naik)
 
     v.toQEX(gv)
     w.toQEX(gw)
@@ -236,8 +216,17 @@ proc smearGetForce*[T](
     gdsdsu.toGrid(dsdsu)
     gdsdsul.toGrid(dsdsul)
 
+    let nd = len(lat)
+    {.emit: """
+    using namespace Grid;
+    for (int mu = 0; mu < `nd`; mu++) {
+      auto tmp = PeekIndex<LorentzIndex>(`gdsdsu`, `mu`);
+      std::cout << "Grid: " << `mu` << " " << sum(trace(tmp)) << std::endl;
+    }
+    """.}
+
     hisq.smearDerivative(gt, gdsdsu, gdsdsul, gw, f7l2, lpl2, naik)
-    hisq.projectionDerivative(gt, gt, gv)
+    hisq.projectionDerivative(gt, gt, gw, gv)
     hisq.smearDerivative(gdsdu, gt, gu, f7l1, lpl1)
 
     dsdu.toQEX(gdsdu)

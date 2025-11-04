@@ -1,32 +1,3 @@
-/*************************************************************************************
-
-Grid physics library, www.github.com/paboyle/Grid
-
-Source file: ./lib/qcd/utils/UnitaryProjection.h
-
-Copyright (C) 2015
-
-Author: Curtis Taylor Peterson <curtistaylorpetersonwork@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-
-See the full license in the file "LICENSE" in the top level distribution
-directory
-*************************************************************************************/
-/*  END LEGAL */
-
 /**
  * @file UnitaryProjection.h
  * @brief Defines object representing unitary projection
@@ -82,14 +53,7 @@ public:
   UnitaryProjection(
     RealD cutoff = SMALL, 
     bool backupSVD = false,
-    RealD svdtol = 5e-5
-  ): cutoff(cutoff), svdtol(svdtol), backupSVD(backupSVD) 
-  { assert(Nc == 3 && "unitary projection only supported for Nc = 3 for now"); }
-
-  UnitaryProjection(
-    bool backupSVD = false,
-    RealD svdtol = 5e-5,
-    RealD cutoff = SMALL
+    RealD svdtol = 1e-8
   ): cutoff(cutoff), svdtol(svdtol), backupSVD(backupSVD) 
   { assert(Nc == 3 && "unitary projection only supported for Nc = 3 for now"); }
 
@@ -162,21 +126,21 @@ private:
   }
 
   LatticeComplex _absmin(const LatticeComplex& x, const LatticeComplex& y) { 
-    auto xr = toReal(x);
-    auto yr = toReal(y);
+    LatticeReal xr = toReal(x);
+    LatticeReal yr = toReal(y);
     xr = abs(xr);
     return where(xr <= yr, x, y); 
   }
 
   LatticeComplex _absmax(const LatticeComplex& x, const LatticeComplex& y) { 
-    auto xr = toReal(x);
-    auto yr = toReal(y);
+    LatticeReal xr = toReal(x);
+    LatticeReal yr = toReal(y);
     xr = abs(xr);
     return where(xr >= yr, x, y); 
   }
 
   void _bound(LatticeComplex& x) {
-    auto xr = toReal(x);
+    LatticeReal xr = toReal(x);
     x = where(xr < cutoff, x + cutoff, x);
   }
 
@@ -259,30 +223,44 @@ private:
     v = u*(f0*unity + f1*q + f2*q2);
 
     // Jacobi-based singular value decomposition: fallback for ill-conditioned links
-    if (backupSVD) {
+    // conditions for falling back on SVD: https://doi.org/10.1103/PhysRevD.75.054502
+    if (backupSVD) {{
       autoView(detA_v, detA, CpuRead);
       autoView(detB_v, detB, CpuRead);
       autoView(u_v, u, CpuRead);
+      autoView(e0_v, e0, CpuRead);
+      autoView(e1_v, e1, CpuRead);
+      autoView(e2_v, e2, CpuRead);
       autoView(v_v, v, CpuWrite);
       thread_for(n, grid->lSites(), { // TODO: mask
+        bool detDiffTooLarge, e0TooSmall, e1TooSmall, e2TooSmall;
         Coordinate lcoor;
         GridScalar localDetA, localDetB;
+        GridScalar locale0, locale1, locale2;
 
         grid->LocalIndexToLocalCoor(n, lcoor);
         peekLocalSite(localDetA, detA_v, lcoor);
         peekLocalSite(localDetB, detB_v, lcoor);
+        peekLocalSite(locale0, e0_v, lcoor);
+        peekLocalSite(locale1, e1_v, lcoor);
+        peekLocalSite(locale2, e2_v, lcoor);
 
-        if (abs(localDetA - localDetB) > svdtol) {
+        detDiffTooLarge = abs(localDetA - localDetB) > svdtol;
+        e0TooSmall = abs(locale0) < svdtol;
+        e1TooSmall = abs(locale1) < svdtol;
+        e2TooSmall = abs(locale2) < svdtol;
+
+        if (detDiffTooLarge or e0TooSmall or e1TooSmall or e2TooSmall) {
           GridScalarMatrix gu;
           EigenScalarMatrix eu, ev = EigenScalarMatrix::Zero();
           
-          pokeLocalSite(gu, u_v, lcoor);
+          peekLocalSite(gu, u_v, lcoor);
           EigenSVD svd(toEigen(gu), Eigen::ComputeFullU | Eigen::ComputeFullV);
           ev = svd.matrixU() * svd.matrixV().adjoint();
           pokeLocalSite(toGrid(ev), v_v, lcoor);
         }
       });
-    }
+    }}
   }
 
   void _derivativeU3(

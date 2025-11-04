@@ -71,6 +71,8 @@ const
   ActionCGVerbosity* = 1
   ForceCGVerbosity* = 1
   SmearingVerbosity* = 1
+
+const # ignored in Grid build; set to 1e-8 internally
   DefaultForceCutoff* = 1e-20
 
 let
