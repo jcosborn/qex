@@ -24,7 +24,7 @@ proc `:=`*(r: var GridLatticeGaugeField, x0: openArray[Field]) =
             var tr,ti: float
             tr := x[mu]{i}[ic,jc].re
             ti := x[mu]{i}[ic,jc].im
-            {.emit:[scalardata,"[l]._internal[mu]._internal._internal[ic][jc] = Grid::Complex(tr,ti);"].}
+            {.emit:[scalardata,"[",l,"]._internal[",mu,"]._internal._internal[",ic,"][",jc,"] = Grid::Complex(",tr,",",ti,");"].}
       #echo i, " ", l
   vectorizeFromLexOrdArray(scalardata, r)
 
@@ -80,14 +80,14 @@ proc assignStag*(r0: var GridFermion, x: Field) =
       #echo i
       for j in 0..<nd:
         var l = lo.coords[j][i].cint - c0[j]
-        {.emit:["c[j] = ",l,";"].}
+        {.emit:["c[",j,"] = ",l,";"].}
       for ic in cint(0)..2:
         var tr,ti: float
         tr := x{i}[ic].re
         ti := x{i}[ic].im
-        {.emit:[t,"._internal._internal._internal[ic] = Grid::Complex(tr,ti);"].}
+        {.emit:[t,"._internal._internal._internal[",ic,"] = Grid::Complex(",tr,",",ti,");"].}
       {.emit:["autoView(dst, ",r[],", CpuWrite);"].}
-      {.emit:"pokeLocalSite(t, dst, c);".}
+      {.emit:["pokeLocalSite(",t,",dst, c);"].}
 
 proc `:=`*(r0: var GridFermion[GridNaiveStaggeredFermionR], x: Field) =
   assignStag(r0, x)
@@ -120,13 +120,13 @@ proc assignStag*(r0: var Field, x0: var GridFermion) =
     for i in subset.singleSites:
       for j in 0..<nd:
         var l = lo.coords[j][i].cint - c0[j]
-        {.emit:["c[j] = ",l,";"].}
+        {.emit:["c[",j,"] = ",l,";"].}
       {.emit:["autoView(dst, ",x[],", CpuRead);"].}
       {.emit:["peekLocalSite(",t,", dst, c);"].}
       for ic in 0..2:
         var tr,ti: float
-        {.emit:"tr = t._internal._internal._internal[ic].real();".}
-        {.emit:"ti = t._internal._internal._internal[ic].imag();".}
+        {.emit:[tr," = ",t,"._internal._internal._internal[",ic,"].real();"].}
+        {.emit:[ti," = ",t,"._internal._internal._internal[",ic,"].imag();"].}
         r[]{i}[ic] := newComplex(tr,ti)
 
 proc `:=`*(r0: var Field, x0: var GridFermion[GridNaiveStaggeredFermionR]) =

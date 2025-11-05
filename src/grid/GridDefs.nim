@@ -3,14 +3,20 @@ import os
 
 const gridDir {.strdefine.} = getHomeDir() & "/lqcd/install/grid"
 const gridPassC = "-I" & gridDir / "include"
-const gridPassL = "-L" & gridDir & "/lib -lGrid -lz"
+#const gridPassL = "-L" & gridDir & "/lib -lGrid -lz"
+const gridLdFlags = staticExec(gridDir/"bin"/"grid-config --ldflags")
+const gridLibs = staticExec(gridDir/"bin"/"grid-config --libs")
 {.passC: gridPassC.}
-{.passL: gridPassL.}
+#{.passL: gridPassL.}
+{.passL: gridLdFlags.}
+{.passL: gridLibs.}
 #{.passC: "-diag-disable=469".}
 static:
   echo "Using Grid: ", gridDir
   echo "Grid compile flags: ", gridPassC
-  echo "Grid link flags: ", gridPassL
+  #echo "Grid link flags: ", gridPassL
+  echo "Grid ldflags: ", gridLdFlags
+  echo "Grid libs: ", gridLibs
 
 {.pragma: gh, header:"Grid/Grid.h".}
 
