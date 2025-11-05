@@ -41,9 +41,35 @@
 #define QCD_UTILS_HISQ_IMPL_H 
 
 #include <Grid/Grid.h>
+#include "PeriodicTransporters.h"
 #include "UnitaryProjection.h"
 
 NAMESPACE_BEGIN(Grid);
+
+//
+// macros
+//
+
+// loop excluding no indices
+#define HISQLOOP0(exec) for (int mu = 0; mu < Nd; ++mu) {exec;} \
+
+// loop excluding one index
+#define HISQLOOP1(exec) for (int nu = 0; nu < Nd; ++nu) \
+  {if (nu == mu) {continue;} else exec;}                \
+
+// loop excluding two indices
+#define HISQLOOP2(exec) for (int i = 0; i < Nd; ++i)   \
+  {if ((i == mu) or (i == nu)) {continue;} else exec;} \
+
+// loop excluding three indices
+#define HISQLOOP3(exec) for (int j = 0; j < Nd; ++j)               \
+  {if ((j == mu) or (j == nu) or (j == i)) {continue;} else exec;} \
+
+// encapsulates conditional execution of Lepage calculations for cleanliness
+#define HISQLEPAGE(exec) if (ctx.lepage != 0.0) { exec; } \
+
+// encapsulates conditional execution of Naik calculations for cleanliness
+#define HISQNAIK(exec) if (ctx.naik != 0.0) { exec; } \
 
 //
 // useful consts
@@ -63,411 +89,103 @@ const int // asqtad
   ASQL3 = F7L3,
   ASQL5 = F7L5,
   ASQL7 = F7L7; 
+const bool BACKUPSVD = true; // use backup SVD in unitary projection when applicable
+const int // unitary projection parameters
+  REUNITCUTOFF = 1e-20,           // base-level cutoff on eigenvalues
+  REUNITDERIVATIVECUTOFF = 5e-5,  // base-level cutoff on eigenvalues for derivative
+  BACKUPSVDTOLERANCE = 1e-8;      // tolerance for triggering backup SVD
 
 //
-// macros
+// convenient data structures
 //
-
-// shorten call to get stencil entry in declaration
-#define NEW_STENCIL_ENTRY(se, st, mu, n)              \
-  GeneralStencilEntry const *se = st.GetEntry(mu, n); \
-
-// shorten call to set stencil entry
-#define SET_STENCIL_ENTRY(se, st, mu, n) se = st.GetEntry(mu, n); \
-
-// shorten call to coalesced read in function
-#define HISQREAD(u, se)                                         \
-  coalescedReadGeneralPermute(u[se->_offset], se->_permute, Nd) \
-
-// shorten call to coalesced write
-#define HISQWRITE(wu, u) coalescedWrite(wu, u) \
-
-// loop excluding no indices
-#define HISQLOOP0(exec) for (int mu = 0; mu < Nd; ++mu) {exec;} \
-
-// loop excluding one index
-#define HISQLOOP1(exec) for (int nu = 0; nu < Nd; ++nu) \
-  {if (nu == mu) {continue;} else exec;}                \
-
-// loop excluding two indices
-#define HISQLOOP2(exec) for (int i = 0; i < Nd; ++i)   \
-  {if ((i == mu) or (i == nu)) {continue;} else exec;} \
-
-// loop excluding three indices
-#define HISQLOOP3(exec) for (int j = 0; j < Nd; ++j)               \
-  {if ((j == mu) or (j == nu) or (j == i)) {continue;} else exec;} \
-
-// encapsulates conditional execution of Lepage calculations for cleanliness
-#define HISQLEPAGE(exec) if (lepage != 0.0) { exec; } \
-
-// encapsulates conditional execution of Naik calculations for cleanliness
-#define HISQNAIK(exec) if (naik != 0.0) { exec; } \
-
-//
-// staggered implementation parameters
-//
-
+`
 struct StagImplParams {
   Coordinate dirichlet; // Blocksize of dirichlet BCs
   int  partialDirichlet;
   AcceleratorVector<Complex,Nd> boundary_phases;
   StagImplParams()
-  {partialDirichlet = 0; dirichlet.resize(0); boundary_phases.resize(Nd,1.0);};
+  { partialDirichlet = 0; dirichlet.resize(0); boundary_phases.resize(Nd, 1.0); };
   StagImplParams(std::vector<Complex> phi): boundary_phases(phi)
-  {partialDirichlet = 0; dirichlet.resize(0);};
+  { partialDirichlet = 0; dirichlet.resize(0); };
 };
 
-//
-// periodic transporter
-//
+struct HISFContext {
+  /**
+   * @brief Context for highly improved staggered fermion smearing and projection
+   * @author Curtis Taylor Peterson
+   * @details
+   * Context structure for passing parameters to HISF smearing and projection methods.
+   */
+  // fat7 smearing parameters
+  RealD c0, c1, c2, c3;
 
-enum HEADING {FORWARD = 0, BACKWARD = Nd};
+  // asqtad parameters
+  RealD lepage;
+  RealD naik;
 
-template <class Gimpl>
-class PeriodicTransporter: public Gimpl
-{
-/**
- * @brief Object representing *periodic* gauge transporter
- * @author Curtis Taylor Peterson
- * @details
- * This is just about the most naive way that one could implement a class that
- * uses the padded cell to represent a gauge transporter. Many optimizations are
- * possible, so take this as the minimal example that must be improved upon. The
- * advantage of this over regular covariant shifts in Grid (for periodic gauge
- * fields) is this defines operations that do nothing more than read/write to a
- * buffer. Not having to create temporaries lends to a massive speedup.
- */
-public: INHERIT_GIMPL_TYPES(Gimpl)
+  // unitary projection parameters
+  bool backupSVD;
+  RealD svdTolerance;
+  RealD eigenvalueCutoff;
 
-private:
-  int depth;
-  int mu;
-  std::unique_ptr<GaugeLinkField> _ubuf;
-  std::unique_ptr<GaugeLinkField> _vbuf;
-  std::shared_ptr<GeneralLocalStencil> _sbuf;
-
-public:
-  PeriodicTransporter(){}
-
-  PeriodicTransporter(
-    std::shared_ptr<GeneralLocalStencil> stencil, 
-    const GaugeLinkField& U, 
-    int mu,
-    int depth
-  ): _sbuf(stencil), mu(mu), depth(depth) {
-    _vbuf = std::make_unique<GaugeLinkField>(GaugeLinkField(U.Grid()));
-    _ubuf = std::make_unique<GaugeLinkField>(U);
-  }
-
-public:
-  /** @brief application of gauge transporter to operand field */
-  inline const GaugeLinkField CovShift(const GaugeLinkField& v, HEADING heading) {
-    {
-      GeneralLocalStencilView sbuf_v = (*_sbuf).View(AcceleratorRead);
-      autoView(v_v, v, AcceleratorRead);
-      autoView(ubuf_v, (*_ubuf), AcceleratorRead);
-      autoView(vbuf_v, (*_vbuf), AcceleratorWrite);
-      auto forward = [&](int n) {
-        NEW_STENCIL_ENTRY(se, sbuf_v, mu, n);
-        HISQWRITE(vbuf_v[n], ubuf_v[n]*HISQREAD(v_v, se));
-      };
-      auto backward = [&](int n) {
-        NEW_STENCIL_ENTRY(se, sbuf_v, mu + BACKWARD, n);
-        HISQWRITE(vbuf_v[n], adj(HISQREAD(ubuf_v, se))*HISQREAD(v_v, se));
-      };
-      if (heading == FORWARD)
-      { accelerator_for(n, v_v.size(), Simd::Nsimd(), forward(n);); }
-      else accelerator_for(n, v_v.size(), Simd::Nsimd(), backward(n););
-    }
-    return (*_vbuf);
-  }
-
-  /** @brief application of shift operation to operand field */
-  inline const GaugeLinkField Cshift(const GaugeLinkField& v, HEADING heading) {
-    {
-      GeneralLocalStencilView sbuf_v = (*_sbuf).View(AcceleratorRead);
-      autoView(v_v, v, AcceleratorRead);
-      autoView(vbuf_v, (*_vbuf), AcceleratorWrite);
-      accelerator_for(n, v_v.size(), Simd::Nsimd(), {
-        NEW_STENCIL_ENTRY(se, sbuf_v, mu + heading, n); 
-        HISQWRITE(vbuf_v[n], HISQREAD(v_v, se));
-      });
-    }
-    return (*_vbuf);
-  }
-
-  /** @brief link elongation of link buffer */
-  inline const GaugeLinkField elongate() {
-    {
-      GeneralLocalStencilView sbuf_v = (*_sbuf).View(AcceleratorRead);
-      autoView(ubuf_v, (*_ubuf), AcceleratorRead);
-      autoView(vbuf_v, (*_vbuf), AcceleratorWrite);
-      accelerator_for(n, ubuf_v.size(), Simd::Nsimd(), {
-        auto u = ubuf_v[n];
-        for (int d = 0; d < depth; ++d) {
-          NEW_STENCIL_ENTRY(se, sbuf_v, mu + d*Nd, n); 
-          u = u*HISQREAD(ubuf_v, se);
-        }
-        HISQWRITE(vbuf_v[n], u);
-      });
-    }
-    return (*_vbuf);
-  }
-
-  /** @brief derivative of link buffer elongation */
-  inline const GaugeLinkField elongationDerivative(const GaugeLinkField& dsdwww) {
-    assert(depth == 2 && "elongation derivative only implemented for Naik");
-    {
-      GeneralLocalStencilView sbuf_v = (*_sbuf).View(AcceleratorRead);
-      autoView(dsdwww_v, dsdwww, AcceleratorRead);
-      autoView(ubuf_v, (*_ubuf), AcceleratorRead);
-      autoView(vbuf_v, (*_vbuf), AcceleratorWrite);
-      accelerator_for(n, ubuf_v.size(), Simd::Nsimd(), {
-        NEW_STENCIL_ENTRY(se1p, sbuf_v, mu, n);             // +1
-        NEW_STENCIL_ENTRY(se1m, sbuf_v, mu + 2*Nd, n);      // -1
-        NEW_STENCIL_ENTRY(se2p, sbuf_v, mu + Nd, n);        // +2
-        NEW_STENCIL_ENTRY(se2m, sbuf_v, mu + Nd + 2*Nd, n); // -2
-        HISQWRITE(
-          vbuf_v[n],
-          HISQREAD(ubuf_v, se1p)*HISQREAD(ubuf_v, se2p)*dsdwww_v[n] + \
-          HISQREAD(ubuf_v, se1p)*HISQREAD(dsdwww_v, se1m)*HISQREAD(ubuf_v, se1m) + \
-          HISQREAD(dsdwww_v, se2m)*HISQREAD(ubuf_v, se2m)*HISQREAD(ubuf_v, se1m)
-        );
-      });
-    }
-    return (*_vbuf);
-  }
-
-public:
-  /** @brief return copy of input buffer */
-  inline const GaugeLinkField link() {return (*_ubuf);}
-
-  /** @brief return copy of output buffer */
-  inline const GaugeLinkField field() {return (*_vbuf);}
-
-  /** @brief return copy of general local stencil */
-  inline const GeneralLocalStencil stencil() {return (*_sbuf);}
-
-public:
-  /** @brief for modifying "v" buffer */
-  inline void set_vbuf(const GaugeLinkField& v) 
-  { _vbuf.reset(); _vbuf = std::make_unique<GaugeLinkField>(v); }
-
-  /** @brief for modifying "w" buffer */
-  inline void set_wbuf(const GaugeLinkField& w) 
-  { _ubuf.reset(); _ubuf = std::make_unique<GaugeLinkField>(w); }
-};
-
-//
-// periodic transporter container
-//
-
-template <class Gimpl>
-class PeriodicTransporters: public Gimpl
-{
-/**
- * @brief PeriodicTransporter container
- * @author Curtis Taylor Peterson
- * @details
- * Naive container for saving and indexing a collection of PeriodicTransporters. 
- * Note of caution: all periodic gauge transporters use the same buffer for the 
- * stencil and the outputs.
- */
-
-public: INHERIT_GIMPL_TYPES(Gimpl)
-
-private:
-  typedef PeriodicTransporter<Gimpl> Transporter;
-
-private:
-  std::unique_ptr<GaugeLinkField> _vbuf;
-  std::shared_ptr<GeneralLocalStencil> _sbuf;
-  Transporter _t[Nd];
-
-private:
-  GaugeLinkField toLink(const GaugeField& U, int mu)
-  { return PeekIndex<LorentzIndex>(U, mu); }
-
-public:
-  PeriodicTransporters(PaddedCell& pcell, const GaugeField& Uin) {
-    int depth = pcell.depth;
-    auto U = pcell.ExchangePeriodic(Uin);
-    auto* grid = U.Grid();
-    std::vector<Coordinate> shifts(2*depth*Nd, 0);
-
-    for (int mu = 0; mu < Nd; ++mu) { 
-      for (int d = 0; d < depth; ++d) { // THIS IS WRONG: MAP LEXIOGRAPHICALLY
-        shifts[mu + d*Nd][mu] = d + 1; 
-        shifts[mu + d*Nd + depth*Nd][mu] = -(d + 1); 
-    } }
-
-    _sbuf = std::make_shared<GeneralLocalStencil>(GeneralLocalStencil(grid, shifts));
-    _vbuf = std::make_unique<GaugeLinkField>(GaugeLinkField(grid));
-
-    for (int mu = 0; mu < Nd; ++mu) { 
-      _t[mu] = Transporter(_sbuf, toLink(U, mu), mu, depth); 
-    }
-  }
-
-public:
-  /** @brief cartesian shift (only periodic) */
-  inline GaugeLinkField Cshift(const GaugeLinkField& u, int mu, HEADING heading) 
-  { return _t[mu].Cshift(u, heading); }
-
-public:
-  /** @brief calculate symmetric staple: without mu pre-shift */
-  inline const GaugeLinkField staple(
-    const GaugeLinkField& v, // mu link
-    const GaugeLinkField& u, // nu link
-    int mu, 
-    int nu
-  ) {
-    /**
-     * @brief Calculates "symmetric" staple (i.e., staple + its reflection)
-     * @author Curtis Taylor Peterson
-     * @details
-     * Calculates closed/symmetric staple with orientation
-     *         ---🠢
-     *         🠡   🠣
-     * ν       x---x
-     * 🠡       🠣   🠡
-     * -🠢 μ    ---🠢 
-     * where leftmost "x" is at "n" and rightmost "x" is
-     * at n + μ. As such "v = Umu" and ""
-     */ 
-    auto* grid = v.Grid();
-    GaugeLinkField us(grid), ls(grid);
-    
-    us = Zero();
-    ls = Zero();
-    { // scope: calculate staple
-      GeneralLocalStencilView sbuf_v = (*_sbuf).View(AcceleratorRead);
-
-      { // scope: calculate upper staple and unshifted lower staple
-        autoView(u_v, u, AcceleratorRead);
-        autoView(v_v, v, AcceleratorRead);
-        autoView(us_v, us, AcceleratorWrite);
-        autoView(ls_v, ls, AcceleratorWrite);
-        accelerator_for(n, us_v.size(), Simd::Nsimd(), {
-          NEW_STENCIL_ENTRY(se_mu, sbuf_v, mu, n);
-          NEW_STENCIL_ENTRY(se_nu, sbuf_v, nu, n);
-          auto su_v = HISQREAD(u_v, se_mu);
-          HISQWRITE(us_v[n], u_v[n]*HISQREAD(v_v, se_nu)*adj(su_v));
-          HISQWRITE(ls_v[n], adj(u_v[n])*v_v[n]*su_v);
-        });
-      }
-
-      { // scope: add upper staple to downward-shifted lower staple 
-        autoView(us_v, us, AcceleratorRead);
-        autoView(ls_v, ls, AcceleratorRead);
-        autoView(vbuf_v, (*_vbuf), AcceleratorWrite);
-        accelerator_for(n, us_v.size(), Simd::Nsimd(), {
-          NEW_STENCIL_ENTRY(se, sbuf_v, nu + BACKWARD, n);
-          HISQWRITE(vbuf_v[n], us_v[n] + HISQREAD(ls_v, se));
-        });
-      } 
-    }
-    return (*_vbuf);
-  }
-
-  /** @brief calculate symmetric staple: without mu pre-shift */
-  inline const GaugeLinkField staple(const GaugeLinkField& v, int mu, int nu) 
-  { return staple(v, link(nu), mu, nu); }
-
-  /** @brief calculate symmetric staple using buffer fields: without mu pre-shift **/
-  inline const GaugeLinkField staple(int mu, int nu) 
-  { return staple(link(mu), link(nu), mu, nu); }
-
-public:
-  inline const GaugeLinkField stapleDerivative(
-    const GaugeLinkField& v, // mu link
-    const GaugeLinkField& u, // nu link
-    const GaugeLinkField& c, // chain
-    int mu,
-    int nu
-  ) {
-    /**
-     * @brief Calculates nu-ordiented derivative of symmetric staple
-     * @author Curtis Taylor Peterson
-     * @details
-     * Calculates nu-oriented derivative of closed/symmetric staple. See diagram in
-     * symmetric staple method for orientation of symmetric staple. Derivative "D"
-     * of just nu links (what this method calculates) is
-     *            ----🠢      ----🠢 
-     *            ⮾    🠣     🠡   ⮾ 
-     * ν     D =  x----x  +  x----x
-     * 🠡          ⮾    🠡     🠣   ⮾
-     * -🠢 μ       ----🠢      ----🠢 
-     *             [1a]       [1b] 
-     * where replacement of "🠣" or "🠡" with ⮾ indicates replacement of link with 
-     * contribution from chain rule (i.e., action of derivative).
-     */
-    auto* grid = v.Grid();
-    GaugeLinkField uds(grid), lds(grid);
-
-    uds = Zero();
-    lds = Zero();
-    { // scope: calculate staple derivative
-      GeneralLocalStencilView sbuf_v = (*_sbuf).View(AcceleratorRead);
-
-      { // scope: upper contribution and unshifted lower contribution
-        autoView(v_v, v, AcceleratorRead);
-        autoView(u_v, u, AcceleratorRead);
-        autoView(c_v, c, AcceleratorRead);
-        autoView(lds_v, lds, AcceleratorWrite);
-        autoView(uds_v, uds, AcceleratorWrite);
-        accelerator_for(n, lds_v.size(), Simd::Nsimd(), {
-          NEW_STENCIL_ENTRY(se_mu, sbuf_v, mu, n);
-          NEW_STENCIL_ENTRY(se_nu, sbuf_v, nu, n);
-          auto su_v = HISQREAD(u_v, se_mu);
-          auto sc_v = HISQREAD(c_v, se_mu);
-          auto sv_v = HISQREAD(v_v, se_nu);
-          HISQWRITE(uds_v[n], c_v[n]*sv_v*adj(su_v) + u_v[n]*sv_v*adj(sc_v));
-          HISQWRITE(lds_v[n], adj(c_v[n])*v_v[n]*su_v + adj(u_v[n])*v_v[n]*sc_v);
-        });
-      }
-
-      { // scope: shift lower contribution and to result
-        autoView(lds_v, lds, AcceleratorRead);
-        autoView(uds_v, uds, AcceleratorRead);
-        autoView(vbuf_v, (*_vbuf), AcceleratorWrite);
-        accelerator_for(n, lds_v.size(), Simd::Nsimd(), {
-          NEW_STENCIL_ENTRY(se, sbuf_v, nu + BACKWARD, n);
-          HISQWRITE(vbuf_v[n], uds_v[n] + HISQREAD(lds_v, se));
-        });
-      }
-    }
-    return (*_vbuf);
-  }
-
-  /** @brief nu-oriented symmetric staple derivative w/o passing of middle link */
-  inline const GaugeLinkField stapleDerivative(
-    const GaugeLinkField& v,
-    const GaugeLinkField& c,
-    int mu,
-    int nu
-  ) { return stapleDerivative(link(mu), v, c, mu, nu); }
-
-  /** @brief nu-oriented symmetric staple derivative w/o explicit middle/side links */
-  inline const GaugeLinkField stapleDerivative(const GaugeLinkField& c, int mu, int nu) 
-  { return stapleDerivative(link(mu), link(nu), c, mu, nu); }
-
-public:
-  /** @brief index transporters -- mutable */
-  inline Transporter &operator[](int mu) {return _t[mu];}
-
-  /** @brief index transporters -- not mutable */
-  inline const Transporter &operator[](int mu) const {return _t[mu];}
-
-public:
-  /** @brief return copy of input buffer */
-  inline const GaugeLinkField link(int mu) {return _t[mu].link();}
-
-  /** @brief return copy of output buffer */
-  inline const GaugeLinkField field(int mu) {return _t[mu].field();}
-
-  /** @brief return copy of general local stencil */
-  inline const GeneralLocalStencil stencil(int mu) {return _t[mu].stencil();}
+  HISFContext(
+    RealD c0, 
+    RealD c1, 
+    RealD c2, 
+    RealD c3,
+    RealD lepage, 
+    RealD naik,
+    bool backupSVD,
+    RealD svdTolerance,
+    RealD eigenvalueCutoff
+  ):
+    c0(c0), 
+    c1(c1), 
+    c2(c2), 
+    c3(c3),
+    lepage(lepage), 
+    naik(naik),
+    backupSVD(backupSVD),
+    svdTolerance(svdTolerance),
+    eigenvalueCutoff(eigenvalueCutoff) { };
+  
+  HISFContext(
+    RealD c0, 
+    RealD c1, 
+    RealD c2, 
+    RealD c3,
+    RealD lepage, 
+    RealD naik,
+  ):
+    c0(c0), 
+    c1(c1), 
+    c2(c2), 
+    c3(c3),
+    lepage(lepage), 
+    naik(naik),
+    backupSVD(false),
+    svdTolerance(1e-8),
+    eigenvalueCutoff(1e-20) { };
+  
+    HISFContext(
+    RealD c0, 
+    RealD c1, 
+    RealD c2, 
+    RealD c3
+  ):
+    c0(c0), 
+    c1(c1), 
+    c2(c2), 
+    c3(c3) { };
+  
+  HISFContext(
+    bool backupSVD,
+    RealD svdTolerance,
+    RealD eigenvalueCutoff
+  ):
+    backupSVD(backupSVD),
+    svdTolerance(svdTolerance),
+    eigenvalueCutoff(eigenvalueCutoff) { };
 };
 
 //
@@ -476,6 +194,16 @@ public:
 
 template <class Gimpl>
 class HighlyImprovedStaggeredFermionImpl: Gimpl {
+/**
+ * @brief Highly improved staggered fermion implementation in Grid
+ * @author Curtis Taylor Peterson
+ * @details
+ * Highly improved staggered fermion (HISF/HISQ) implementation in Grid. Exposes 
+ * methods for FNAL/MILC and non-FNAL/MILC implementations of Highly Improved Staggered
+ * Fermions. This class boasts an implementation of HISQ that is low in communication 
+ * overhead whilst retaining a low memory footprint by Grid's PaddedCell and 
+ * GeneralLocalStencil through the PeriodicTransporters class.
+ */
   
 public: INHERIT_GIMPL_TYPES(Gimpl);
 
@@ -494,41 +222,44 @@ public:
   StagImplParams params;
   StaggeredPhases stagPhases;
 
+private:
+  void init(
+    GridCartesian* grid,
+    PaddedCell& cell, 
+    PaddedCell& longCell, 
+    bool calculateStaggeredPhases
+  ) {
+    assert(Nc == 3 && "HISQ only suppored for SU(3)");
+    assert(Nd == 4 && "HISQ only supported for 4 dimensions");
+
+    if (calculateStaggeredPhases) getStaggeredPhases(grid, stagPhases);
+
+    this->grid = (GridBase*)cell.grids.back();
+    this->longGrid = (GridBase*)longCell.grids.back();
+  }
+
 public:
   HighlyImprovedStaggeredFermionImpl(
     GridCartesian* grid, 
-    const StagImplParams &params,
+    const StagImplParams params,
     bool calculateStaggeredPhases = true
   ):
     cell(1, grid), 
     longCell(2, grid),
     stagPhases(Nd, grid), 
-    params(params) {
-    assert(Nc == 3 && "HISQ only suppored for SU(3)");
-    assert(Nd == 4 && "HISQ only supported for 4 dimensions");
-
-    this->grid = (GridBase*)cell.grids.back();
-    this->longGrid = (GridBase*)longCell.grids.back();
-
-    if (calculateStaggeredPhases) getStaggeredPhases(grid, stagPhases);
-  }
+    params(params)
+  { init(grid, cell, longCell, calculateStaggeredPhases); }
 
   HighlyImprovedStaggeredFermionImpl(
-    GridCartesian* grid, 
+    GridCartesian* grid,
     bool calculateStaggeredPhases = true
   ):
     cell(1, grid), 
     longCell(2, grid),
     stagPhases(Nd, grid), 
-    params(StagImplParams({1, 1, 1, -1})) {
-    assert(Nc == 3 && "HISQ only suppored for SU(3)");
-    assert(Nd == 4 && "HISQ only supported for 4 dimensions");
+    params(StagImplParams({1, 1, 1, -1}))
+  { init(grid, cell, longCell, calculateStaggeredPhases); }
 
-    this->grid = (GridBase*)cell.grids.back();
-    this->longGrid = (GridBase*)longCell.grids.back();
-
-    if (calculateStaggeredPhases) getStaggeredPhases(grid, stagPhases);
-  }
 
 private:
   void getStaggeredPhases(GridBase* grid, StaggeredPhases& Phases) {
@@ -589,11 +320,11 @@ private:
 
   // break up memory layout of gauge field into std::vector of gauge link fields
   inline const GaugeLorentzField toLorentz(const GaugeField& U) 
-  { GaugeLorentzField u(Nd, grid); HISQLOOP0(u[mu] = toLink(U, mu);) return u; }
+  { GaugeLorentzField u(Nd, grid); HISQLOOP0(u[mu] = toLink(U, mu)) return u; }
 
   // aggregate std::vector of gauge link fields into layout of gauge field
   inline const GaugeField toGauge(GaugeLorentzField& u) 
-  { GaugeField U(grid); HISQLOOP0(insertLink(U, u[mu], mu);) return U; }
+  { GaugeField U(grid); HISQLOOP0(insertLink(U, u[mu], mu)) return U; }
 
 public:
   /** @brief rephases gauge links with staggered and Dirichlet boundary phases */
@@ -604,10 +335,8 @@ public:
   void smear(
     GaugeField& X,
     GaugeField& WWW,
-    const GaugeField& W, 
-    std::vector<RealD> coeffs,
-    RealD lepage = 0.0,
-    RealD naik = 0.0
+    const GaugeField& W,
+    const HISFContext ctx
   ) {
     /**
      * @brief "Effective 3-link" fat7/asqtad + Lepage (optional) smear
@@ -651,49 +380,61 @@ public:
      * * Follana, E. et al.: https://doi.org/10.1103/PhysRevD.75.054502
      */
 
-    RealD c0 = coeffs[0], c1 = coeffs[1], c2 = coeffs[2], c3 = coeffs[3];
     PeriodicTransporters<Gimpl> w(cell, W);
     GaugeLorentzField x(Nd, grid);
-    GaugeLinkField s3(grid), s5(grid); 
+    GaugeLinkField s3(grid), s5(grid);
     
     HISQLOOP0(
-      x[mu] = (c0 - 6.0*lepage)*w.link(mu);
+      x[mu] = (ctx.c0 - 6.0*ctx.lepage)*w.link(mu);
       HISQLOOP1(
         s3 = w.staple(w.link(mu), mu, nu);
-        x[mu] += c1*s3; 
-        HISQLEPAGE(x[mu] += lepage*w.staple(s3, mu, nu))
+        x[mu] += ctw.c1*s3; 
+        HISQLEPAGE(x[mu] += ctx.lepage*w.staple(s3, mu, nu))
         HISQLOOP2(
           s5 = w.staple(s3, mu, i);
-          x[mu] += c2*s5;
-          HISQLOOP3(x[mu] += c3*w.staple(s5, mu, j))
+          x[mu] += ctx.c2*s5;
+          HISQLOOP3(x[mu] += ctx.c3*w.staple(s5, mu, j))
     ) ) )
 
     // WRITE THIS BACK UP W/O ANY COMMUNICATION
     HISQNAIK(
       PeriodicTransporters<Gimpl> w(longCell, W);
       HISQLOOP0(insertLink(WWW, longCell.Extract(w[mu].elongate()), mu)) 
-      WWW *= naik;
+      WWW *= ctx.naik;
     )
     X = cell.Extract(toGauge(x));
   }
 
-  void smear(
-    GaugeField& X,
-    const GaugeField& W, 
-    std::vector<RealD> coeffs,
-    RealD lepage = 0.0
-  ) { smear(X, X, W, coeffs, lepage, 0.0); }
+  void smear(GaugeField& X, GaugeField& WWW, const GaugeField& W) {
+    HISFContext asqtadCtx(ASQL1, ASQL3, ASQL5, ASQL7, LEPAGE, NAIK); 
+    smear(X, WWW, W, asqtadCtx); 
+  }
 
-  void project(
-    GaugeField& V, 
-    const GaugeField& U,
-    const RealD derivativeCutoff,
-    const bool backupSVD,
-    const RealD svdTolerance
-  ) { // no default arguments provided for safety reasons
-    UnitaryProjection<Gimpl> projection(derivativeCutoff, backupSVD, svdTolerance);
+  void smear(GaugeField& X, const GaugeField& W, const HISFContext ctx) 
+  { smear(X, X, W, ctx); }
+
+  void smear(GaugeField& X, const GaugeField& W) { 
+    HISFContext fat7Ctx(F7L1, F7L3, F7L5, F7L7, 0.0, 0.0);  
+    smear(X, X, W, fat7Ctx); 
+  }
+
+  void project(GaugeField& V, const GaugeField& U, const HISFContext ctx) { 
+    UnitaryProjection<Gimpl> projection(
+      ctx.eigenvalueCutoff, 
+      ctx.backupSVD, 
+      ctx.svdTolerance
+    );
     projection.project(V, U);
-  } 
+  }
+
+  void project(GaugeField& V, const GaugeField& U, bool forDerivative = false) {
+    UnitaryProjection<Gimpl> projection(
+      forDerivative ? REUNITDERIVATIVECUTOFF : REUNITCUTOFF, 
+      BACKUPSVD, 
+      BACKUPSVDTOLERANCE
+    );
+    projection.project(V, U);
+  }
 
 public:
   void smearDerivative(
@@ -701,9 +442,7 @@ public:
     const GaugeField &dXdW,
     const GaugeField &dXdWWW,
     const GaugeField &W,
-    std::vector<RealD> coeffs,
-    RealD lepage = 0.0,
-    RealD naik = 0.0
+    const HISFContext ctx
   ) {
     /**
      * @brief "Effective 3-link" fat7/asqtad + Lepage (optional) smear
@@ -778,10 +517,6 @@ public:
      * * Follana, E. et al.: https://doi.org/10.1103/PhysRevD.75.054502
      */
 
-    // TODO:
-    // - use periodic ExchangePeriodic for both main HISQ loop & Naik???
-
-    RealD c0 = coeffs[0], c1 = coeffs[1], c2 = coeffs[2], c3 = coeffs[3];
     PeriodicTransporters<Gimpl> w(cell, W);
     GaugeLorentzField dxdw = toLorentz(cell.ExchangePeriodic(dXdW));
     GaugeLorentzField dxdu(Nd, grid);
@@ -790,24 +525,24 @@ public:
     GaugeLinkField dsnu(grid), dsi(grid);
 
     HISQLOOP0( // fat7 + lepage (lepage won't execute if lepage == 0.0)
-      dxdu[mu] = (c0 - 6.0*lepage)*dxdw[mu];
+      dxdu[mu] = (ctx.c0 - 6.0*ctx.lepage)*dxdw[mu];
       HISQLOOP1(
-        snu = c1*w.link(nu);
-        cnu = c1*dxdw[mu];
+        snu = ctx.c1*w.link(nu);
+        cnu = ctx.c1*dxdw[mu];
         HISQLEPAGE(
-          snu += lepage*w.staple(w.link(nu), nu, mu);
-          cnu += lepage*w.staple(dxdw[mu], mu, nu);
-          dsnu = lepage*w.staple(dxdw[nu], nu, mu);
+          snu += ctx.lepage*w.staple(w.link(nu), nu, mu);
+          cnu += ctx.lepage*w.staple(dxdw[mu], mu, nu);
+          dsnu = ctx.lepage*w.staple(dxdw[nu], nu, mu);
         )
         if (lepage == 0.0) dsnu = Zero();
         HISQLOOP2(
           dsi = w.staple(dxdw[nu], nu, i);
           HISQLOOP3(
-            sj = c3*w.staple(nu, j);
-            dsnu += c2*dsi + c3*w.staple(dsi, nu, j);
-            cnu += w.staple(c2*dxdw[mu] + c3*w.staple(dxdw[mu], mu, j), mu, i);
+            sj = ctx.c3*w.staple(nu, j);
+            dsnu += ctx.c2*dsi + ctx.c3*w.staple(dsi, nu, j);
+            cnu += w.staple(ctx.c2*dxdw[mu] + ctx.c3*w.staple(dxdw[mu], mu, j), mu, i);
           )
-          snu += w.staple(c2*w.link(nu) + sj, nu, i);
+          snu += w.staple(ctx.c2*w.link(nu) + sj, nu, i);
           dxdu[mu] += w.stapleDerivative(sj, dsi, mu, nu);
         )
         dxdu[mu] += w.stapleDerivative(snu, dxdw[nu], mu, nu);
@@ -821,7 +556,7 @@ public:
       PeriodicTransporters<Gimpl> w(longCell, W);
       GaugeLorentzField dxdwww = toLorentz(cell.ExchangePeriodic(adj(dXdWWW)));
       GaugeLorentzField dxdu(Nd, longGrid);
-      HISQLOOP0(dxdu[mu] = naik*adj(w[mu].elongationDerivative(dxdwww[mu])))
+      HISQLOOP0(dxdu[mu] = ctx.naik*adj(w[mu].elongationDerivative(dxdwww[mu])))
       dXdU += longCell.Extract(toGauge(dxdu));
     )
   }
@@ -829,21 +564,42 @@ public:
   void smearDerivative(
     GaugeField& dXdU,
     const GaugeField& dXdW,
+    const GaugeField& dXdWWW,
+    const GaugeField& W
+  ) { 
+    HISFContext asqtadCtx(ASQL1, ASQL3, ASQL5, ASQL7, LEPAGE, NAIK); 
+    smearDerivative(dXdU, dXdW, dXdWWW, W, asqtadCtx); 
+  }
+
+  void smearDerivative(
+    GaugeField& dXdU,
+    const GaugeField& dXdW,
     const GaugeField& W,
-    std::vector<RealD> coeffs,
-    RealD lepage = 0.0
-  ) { smearDerivative(dXdU, dXdW, dXdW, W, coeffs, lepage, 0.0); }
+    const HISFContext ctx
+  ) { smearDerivative(dXdU, dXdW, dXdW, W, ctx); }
+
+  void smearDerivative(GaugeField& dXdU, const GaugeField& dXdW, const GaugeField& W) { 
+    HISFContext fat7Ctx(F7L1, F7L3, F7L5, F7L7, 0.0, 0.0);  
+    smearDerivative(dXdU, dXdW, W, fat7Ctx);
+  }
 
   void projectionDerivative(
     GaugeField& dVdU, 
     const GaugeField& dZdV, 
     const GaugeField& U,
-    const RealD derivativeCutoff = 5e-5,
-    const bool backupSVD = true,
-    const RealD svdTolerance = 1e-8
-  ) { // default arguments safe here because used for force where they apply
-    UnitaryProjection<Gimpl> projection(derivativeCutoff, backupSVD, svdTolerance);
+    const HISFContext ctx
+  ) {
+    UnitaryProjection<Gimpl> projection(
+      ctx.eigenvalueCutoff, 
+      ctx.backupSVD, 
+      ctx.svdTolerance
+    );
     projection.derivative(dVdU, dZdV, U); 
+  }
+
+  void projectionDerivative(GaugeField& dVdU, const GaugeField& dZdV, const GaugeField& U) {
+    UnitaryProjection<Gimpl> projection(1e-20, false, 1e-8);
+    projection.derivative(dVdU, dZdV, U);
   }
 
   void projectionDerivative(
@@ -852,17 +608,13 @@ public:
     const GaugeField& V,
     const GaugeField& U
   ) { // projection constructor inputs don't matter because no projection performed
-    UnitaryProjection<Gimpl> projection(5e-5, true, 1e-8);
+    UnitaryProjection<Gimpl> projection(1e-20, true, 1e-8);
     projection.derivative(dVdU, dZdV, V, U); 
   }
 
 };
 
-// undefine macros
-#undef NEW_STENCIL_ENTRY
-#undef SET_STENCIL_ENTRY
-#undef HISQREAD
-#undef HISQWRITE
+// undefine macros to prevent conflicts
 #undef HISQLOOP0
 #undef HISQLOOP1
 #undef HISQLOOP2

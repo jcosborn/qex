@@ -29,7 +29,7 @@ proc toVector*[T](x: openArray[T]): vector[T] =
   let x0 = unsafeAddr x[0]
   return newVector(x0, x0 + x.len)
 
-proc newGridHISQ(grid: ptr GridCartesian, calcStagPhases: bool = false): GridHISQ 
+proc newGridHISQ(grid: ptr GridCartesian, calcStagPhases: bool = true): GridHISQ 
   {.importcpp: HISQIMPL & "<" & GIMPL & ">(#, #)", constructor, hisq.}
 
 # Helper Grid procedures
@@ -160,6 +160,7 @@ proc smearGetForce*[T](
     naik = self.naik
   var lo = u[0].l
   var 
+    g = lo.newGauge()
     v = lo.newGauge()
     w = lo.newGauge()
 
@@ -180,13 +181,17 @@ proc smearGetForce*[T](
       gsul = grid.gauge()
 
     gu.toGrid(u)
+    hisq.rephase(gu, gu)
 
+    # smear
     hisq.smear(gv, gu, f7l1, lpl1)
     case regulate: # ensure that regulation only done for force action
       of true: hisq.project(gw, gv, 5e-5, true, 1e-8)
       of false: hisq.project(gw, gv, 1e-20, true, 1e-8)
     hisq.smear(gsu, gsul, gw, f7l2, lpl2, naik)
 
+    # save results
+    g.toQEX(gu)
     v.toQEX(gv)
     w.toQEX(gw)
     su.toQEX(gsu)
@@ -210,7 +215,7 @@ proc smearGetForce*[T](
       gdsdsul = grid.gauge()
     var gt = grid.gauge()
 
-    gu.toGrid(u)
+    gu.toGrid(g)
     gv.toGrid(v)
     gw.toGrid(w)
     gdsdsu.toGrid(dsdsu)
@@ -221,6 +226,8 @@ proc smearGetForce*[T](
     hisq.smearDerivative(gdsdu, gt, gu, f7l1, lpl1)
 
     dsdu.toQEX(gdsdu)
+
+    qexError "intentional exit"
 
   return smearedForce
 

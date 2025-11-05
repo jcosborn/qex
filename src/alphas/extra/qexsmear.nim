@@ -46,6 +46,13 @@ proc projectDeriv[T](
       for s in chain[mu]:
         self.projectUderiv(dvdu[mu][s], v[mu][s], u[mu][s], chain[mu][s], regulate)
 
+template rephase(g: auto) =
+  threadBarrier()
+  g.setBC
+  threadBarrier()
+  g.stagPhase
+  threadBarrier()
+
 proc smearGetForce*[T](
     self: HisqCoefs; 
     u: T; 
@@ -60,12 +67,19 @@ proc smearGetForce*[T](
     fat7l2 = self.fat7second
     naik = self.naik
   var
+    g = newOneOf(u)
     v = newOneOf(u)
     w = newOneOf(u)
     info: PerfInfo
   
+  # retain copy of u link, but rephased
+  threads: 
+    g := u
+    threadBarrier()
+    g.rephase
+
   # Smear
-  v.makeImpLinks(u,fat7l1,info) # First fat7
+  v.makeImpLinks(g,fat7l1,info) # First fat7
   self.projection.project(w, v, regulate = regulate) # Unitary projection
   makeImpLinks(su,w,fat7l2,sul,w,naik,info) # Second fat7
 
@@ -74,7 +88,7 @@ proc smearGetForce*[T](
     var t = newOneOf(dsdu)
     t.asqtadDeriv(w,dsdsu,fat7l2,w,dsdsul,naik,info) # Second fat7
     self.projection.projectDeriv(t, w, v, t, regulate = regulate)
-    dsdu.fat7Deriv(u,t,fat7l1,info) # First fat7
+    dsdu.fat7Deriv(g,t,fat7l1,info) # First fat7
     if displayPerformance: 
       echo &"forceSmear: {info.secs:.5f}s {1e-9*info.flops/info.secs:.3f}Gf/s"
   

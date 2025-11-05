@@ -599,13 +599,9 @@ proc smearRephase(
       of 0: false
       of 1: true
       else: true
-  threads: g.rephase
-  result = hisq.smearGetForce(
-    g, sg, sgl,
-    displayPerformance = displayPerformance,
-    regulate = regulate
+  return hisq.smearGetForce(
+    g, sg, sgl, displayPerformance = displayPerformance, regulate = regulate
   )
-  threads: g.rephase
 
 proc smear*(self: var HisqHMC) = 
   discard self.params.smearRephase(self.u, self.su, self.sul)
