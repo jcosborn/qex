@@ -606,7 +606,7 @@ func sugen*(nc:static int):auto {.noinit,inline.} =
     static: error"sugen unimplemented for n!=3"
 
 proc diffProjectTAH*(r:var Mat1, m: Mat2, p: Mat3) =
-  ## r_{ac} = ∂_c p^a = ∂_c projectTAH(m)^a = - tr[T^a (T^c M + M† T^c)]
+  ## r_{ac} = ∂_c p^a = ∂_c projectTAH(m)^a = - tr[T^a (T^c M + M† T^c)] = -2 ReTr[T^a T^c M]
   #[
     P^a = -2 tr[T^a {- T^d tr[T^d (M - M†)]}]
         = - tr[T^a (M - M†)]
@@ -625,8 +625,8 @@ proc diffProjectTAH*(r:var Mat1, m: Mat2, p: Mat3) =
   let trMs = trace(t).re/(2.0*nc)
   t *= ii
   let v = suToVec(t)
-  r.sudabc(v)
   t := (-0.5) * p
+  r.sudabc(v)
   # r += suad(t) + trMs    # FIXME: error in matrixOps.nim:/op MMS/+/op.* 0/
   r += trMs
   r += suad(t)
@@ -634,8 +634,13 @@ proc diffProjectTAH*(r:var Mat1, m: Mat2, p: Mat3) =
 proc diffCrossProjectTAH*(r: var Mat1, Adx: Mat2, dp: Mat3) =
   ## R^ac = ∇_c p^a = ∇_c projectTAH(X Y)^a = - ∇_c ∂_a tr[X Y + Y† X†], where M = X Y
   ## The derivatives ∂ is on X and ∇ is on Y.
+  ## Note that for M = X Y†
+  ## we would have - ∇_c ∂_a tr[X Y† + Y X†] = tr[T^c T^a X Y† + T^a T^c Y X†],
+  ## or tr[T^a (M T^c + T^c M†)] = tr[T^c (T^a M + M† T^a)] = 2 ReTr[T^c T^a M]
+  ## which would be the same as diffProjectTAH with a negative sign and swap M for M†,
+  ## or transposed diffProjectTAH with a negative sign.
   ## Adx = SU3Ad(x)
-  ## dp = diffprojectTAH(m, p)
+  ## dp = diffProjectTAH(m, p)
   #[
     ∇_c P^a = - 2 ReTr[T^a X T^c Y]
             = - tr[T^a (X T^c X† X Y + Y† X† X T^c X†)]
@@ -668,52 +673,243 @@ proc diffExp*(r: var Mat1, adX: Mat2, order=13) =
   for i in countdown(order, 2):
     r := 1.0 + 1.0/float(i) * (adX * r)
 
-proc smearIndepLogDetJacobian*(F:var Mat1, M: Mat1, diffExpOrder=13): auto =
-  ## return F = T^b ∂_b tr[X Y† + Y X†], and log det(∂Z/∂X)
+#[
+  F = projectTAH(X (Y V W†)†)
+    = projectTAH(X W V† Y†)
+    = projectTAH(M)
+    = - T^b tr[T^b (M - M†)]
+  M = X W V† Y†
+  Z = exp(F) X
+  exp(adF) J(F) = J(-F)
+  ∂_X^c Z = exp(F) T^c X + exp(F) J(F)[∂_X^c F] X
+          = exp(F) (T^c + J(F)[∂_X^c F]) exp(-F) Z
+          = exp(adF)[T^c + J(F)[∂_X^c F]] Z
+          = exp(adF)[T^c + T^e J(F)^eb [∂_X^c F]^b] Z
+          = T^a { exp(adF)^ac + J(-F)^ab [∂_X^c F]^b } Z
+  ∂_Y^c Z = exp(F) J(F)[∂_Y^c F] X
+          = exp(F) J(F)[∂_Y^c F] exp(-F) Z
+          = exp(adF)[J(F)[∂_Y^c F]] Z
+          = exp(adF)[T^e J(F)^eb [∂_Y^c F]^b] Z
+          = T^a J(-F)^ab [∂_Y^c F]^b Z
+  ∂_V^c Z = T^a J(-F)^ab [∂_V^c F]^b Z
+  ∂_W^c Z = T^a J(-F)^ab [∂_W^c F]^b Z
+  ∂_X^c F = - T^b tr[T^b (T^c M + M† T^c)]
+  ∂_Y^c F =   T^b tr[T^b (T^c M† + M T^c)]
+  ∂_V^c F =   T^b tr[T^b (X W V† T^c Y† + Y T^c V W† X†)]
+          =   T^b tr[T^b (T^d M† + M T^d)] AdY^dc
+  ∂_W^c F = - T^b tr[T^b (Y V W† T^c X† + X T^c W V† Y†)]
+          = - T^b tr[T^b (T^d M + M† T^d)] AdX^dc
+]#
+
+proc diffExpProjectTAHMul*(J,JF,dF,adF: var Mat1, F:var Mat2, M: Mat3, diffExpOrder=13) =
+  ## return F = projectTAH(X Y†) = - T^b ∂_b tr[X Y† + Y X†], and
+  ## the simplified J = δ^ac + J(F)^ab [∂_c F]^b
+  ## Note it only has the same determinant as the actual J = exp(adF)^ac + J(-F)^ab [∂_c F]^b.
   ## with M = X Y†
   ## assuming X and Y are independent.
   ## Only works with positive det(∂Z/∂X).
+  ## Derivative target: base Jacobian is with respect to the updating link (∂ on X inside M).
   #[
-    Z = exp(ε T^b ∂_b tr[X Y† + Y X†]) X,  for X,Y in G, and ∂_b X = T_b X
-    M = ε X Y†,  M in G
+    Z = exp(- T^b ∂_b tr[X Y† + Y X†]) X,  for X,Y in G, and ∂_b X = T_b X
+    M = X Y†,  M in G
     Z = exp(F) X,  F in g
-    F = T^b ∂_b tr[M + M†]
-      = T^b tr[T^b M - M† T^b]
-      = T^b tr[T^b (M - M†)]
+    F = - T^b ∂_b tr[M + M†]
+      = - T^b tr[T^b M - M† T^b]
+      = - T^b tr[T^b (M - M†)]
     ∂_c Z = exp(F) T^c X + exp(F) J(F)[∂_c F] X
-          = exp(F) { T^c + exp(F) J(F)[∂_c F] } exp(-F) Z
+          = exp(F) { T^c + J(F)[∂_c F] } exp(-F) Z
           = exp(adF)[T^c + J(F)[∂_c F]] Z
           = exp(adF)[T^c + T^e J(F)^eb [∂_c F]^b] Z
           = T^a { exp(adF)^ac + [exp(adF)J(F)]^ab [∂_c F]^b } Z
           = T^a { exp(adF)^ac + [(exp(adF)-1)/adF]^ab [∂_c F]^b } Z
           = T^a { exp(adF)^ac + J(-F)^ab [∂_c F]^b } Z
-    [∂_c F]^b = ∂_c ∂_b tr[M + M†]
-              = tr[T^b T^c M + M† T^c T^b]
-              = 1/2 tr[{T^b,T^c} (M + M†)] + 1/2 tr[[T^b,T^c] (M - M†)]
-              = 1/2 { d^bcd tr[T^d i (M + M†)] - 1/3 δ^bc tr[M + M†] + f^bcd tr[T^d (M - M†)] }
-              = 1/2 { d^bcd tr[T^d i (M + M†)] - 1/3 δ^bc tr[M + M†] + f^bcd F^d }
-              = 1/2 { d^bcd tr[T^d i (M + M†)] - 1/3 δ^bc tr[M + M†] - adF^bc }
+    [∂_c F]^b = - ∂_c ∂_b tr[M + M†]
+              = - tr[T^b T^c M + M† T^c T^b]
+              = - 1/2 tr[{T^b,T^c} (M + M†)] - 1/2 tr[[T^b,T^c] (M - M†)]
+              = - 1/2 { d^bcd tr[T^d i (M + M†)] - 1/N δ^bc tr[M + M†] + f^bcd tr[T^d (M - M†)] }
+              = - 1/2 { d^bcd tr[T^d i (M + M†)] - 1/N δ^bc tr[M + M†] - f^bcd F^d }
+              = - 1/2 { d^bcd tr[T^d i (M + M†)] - 1/N δ^bc tr[M + M†] + adF^bc }
     -2 tr[(∂_c Z) Z† T^a]
         = exp(adF)^ac + J(-F)^ab [∂_c F]^b
         = exp(adF)^ac
-          + 1/2 [(exp(adF)-1)/adF]^ab {d^bcd tr[T^d i (M + M†)] - 1/3 δ^bc tr[M + M†]}
+          - 1/2 [(exp(adF)-1)/adF]^ab {d^bcd tr[T^d i (M + M†)] - 1/N δ^bc tr[M + M†]}
           - 1/2 [(exp(adF)-1)]^ac
-        = 1/2 { [(exp(adF)+1)]^ac + [(exp(adF)-1)/adF]^ab {d^bcd tr[T^d i (M + M†)] - 1/3 δ^bc tr[M + M†]} }
-        = 1/2 { [(exp(adF)+1)]^ac + J(-F)^ab {d^bcd tr[T^d i (M + M†)] - 1/3 δ^bc tr[M + M†]} }
+        = 1/2 { [(exp(adF)+1)]^ac - [(exp(adF)-1)/adF]^ab {d^bcd tr[T^d i (M + M†)] - 1/N δ^bc tr[M + M†]} }
+        = 1/2 { [(exp(adF)+1)]^ac - J(-F)^ab {d^bcd tr[T^d i (M + M†)] - 1/N δ^bc tr[M + M†]} }
     det(-2 tr[(∂_c Z) Z† T^a])
         = det(exp(adF)^ac + J(-F)^ab [∂_c F]^b)
         = det(δ^ac + J(F)^ab [∂_c F]^b)
   ]#
   F.projectTAH(M)
-  F := -F
-  type A = evalType(suad(F))
-  var j,dadF:A
-  dadF.suad F
-  dadF.diffExp(-dadF, order=diffExpOrder)
-  j.diffProjectTAH(-M,F)
-  j := 1.0 + dadF * j
-  let D = ln(determinant(j))
-  D
+  dF.diffProjectTAH(M,F)
+  adF.suad F
+  JF.diffExp(-adF, order=diffExpOrder)
+  J := 1.0 + JF * dF
+
+proc buildJAndInvFromM*(invJ, J, JF, dF, adF: var Mat1, F: var Mat2, M: Mat3, diffExpOrder=13) =
+  ## Shared helper: from M, build F = projectTAH(M), adF, JF = J(F),
+  ## determinant-equivalent Jacobian J = I + JF·dF, and invJ = J^{-1}.
+  J.diffExpProjectTAHMul(JF, dF, adF, F, M, diffExpOrder=diffExpOrder)
+  invJ.inverse J
+
+proc buildDirectionalTerms*(d2F: var Mat1, dFd: var Vec1, TM: Mat2) =
+  ## Shared helper: given a directional variation TM, build
+  ##   - d2F = diffProjectTAH(TM, projectTAH(TM))
+  ##   - dFd = suToVec(projectTAH(TM))
+  var pTM: evalType(TM)
+  pTM.projectTAH TM
+  d2F.diffProjectTAH(TM, pTM)
+  let vVec = suToVec(pTM)
+  dFd := vVec
+
+proc accumulateGrad*(invJ, JF, dFbase, adF: Mat1, d2F: Mat2, dFd: Vec1, halfOrder: int): auto {.noinit.} =
+  ## Shared helper: assemble one directional component of ∇ ln det J
+  ## using dadF = sufabc(dFd) and dJF via diffDiffExp(-adF, dadF).
+  var dadF, dJF: evalType(invJ)
+  dadF.sufabc(dFd)
+  dJF.diffDiffExp(-adF, dadF, halfOrder=halfOrder)
+  result = trace(invJ * (dJF * dFbase + JF * d2F))
+
+proc diffDiffExp*(r: var Mat1, adX: Mat2, dadX: Mat3, halfOrder=6) =
+  #[
+    Note: in our conventiton, diffExp(adX) = J(-X)
+    dadX^ce = ∇_d adX^ce = ∇_d (- f^ceg X^g) = - f^ceg [∇_d X^g], for a fixed d
+    ∇_d J(-X)^ab
+        = Σ_{k=0} 1/(k+1)! ∇_d [(adX)^k]^ab
+        = Σ_{k=1} 1/(k+1)! Σ_{j=0}^{k-1} [adX^j]^ac (∇_d adX^ce) [adX^(k-j-1)]^eb
+        = Σ_{k=1} 1/(k+1)! Σ_{j=0}^{k-1} [adX^j]^ac (- f^cea [∇_d X^a]) [adX^(k-j-1)]^eb
+        = Σ_{k=0} 1/(k+2)! Σ_{j=0}^k [adX^j]^ac f^ceg [∇_d X^g] [adX^(k-j)]^eb
+        = 1/2 ( dadX
+          + 1/3 ( adX dadX + dadX adX
+          + 1/4 ( adX^2 dadX + adX dadX adX + dadX adX^2
+          + 1/5 ( adX^3 dadX + adX^2 dadX adX + adX dadX adX^2 + dadX adX^3
+          + 1/6 ( adX^4 dadX + adX^3 dadX adX + adX^2 dadX adX^2 + adX dadX adX^3 + dadX adX^4
+          + 1/7 ( adX^5 dadX + adX^4 dadX adX + adX^3 dadX adX^2 + adX^2 dadX adX^3 + adX dadX adX^4 + dadX adX^5 + ... ))))))
+        = 1/2 ( {dadX, 1/2 + 1/3 adX (1 + 1/4 adX (1 + 1/5 adX (1 + 1/6 adX (1 + 1/7 adX (1 + ...)))))}
+          + 1/3 1/4 adX ( {dadX, 1/2 + 1/5 adX (1 + 1/6 adX (1 + 1/7 adX (1 + ...)))}
+          + 1/5 1/6 adX ( {dadX, 1/2 + 1/7 adX (1 + ... )} + ... ) adX ) adX )
+        = 1/2 ( {dadX, f(2)} + 1/(3*4) adX ( {dadX, f(4)} + 1/(5*6) adX ( {dadX, f(6)} + ... ) adX ) adX )
+        = 1/2 g(2)
+    where
+    f(n) = 1/2 + Σ_{k=1} 1/(k+n)! (-1)^k adX^k
+         = 1/2 + (-1/(n+1)) adX (1 + (-1/(n+2)) adX (1/2 + f(n+2)))
+    g(n) = {dadX, f(n)} + 1/((n+1)(n+2)) adX g(n+2) adX
+  ]#
+  var fn: evalType(adX)
+  var order = 2.0*halfOrder.float
+  fn := 0.5
+  r := 1.0
+  while order>3.0:
+    let a = 1.0/(order-1.0)
+    let b = 1.0/order
+    let ab = a*b
+    fn += 0.5
+    fn := adX * fn
+    fn *= b
+    fn += 1.0
+    fn := adX * fn
+    fn *= a
+    fn += 0.5
+    r := r * adX
+    r := adX * r
+    r *= ab
+    r += (dadX * fn) + (fn * dadX)
+    order -= 2.0
+  r *= 0.5
+
+proc diffLnDetDiffExpProjectTAHMul*(r: var Vec1, M: Mat1, halfOrder=6, diffExpOrder=13) =
+  #[
+    ∇_d ln det {δ^ac + J(F)^ab [∂_c F^b]}    # ∇ can act on different links, ∂ only on the updating link
+        = m^{-1}^ca {[∇_d J(F)^ab] [∂_c F^b] + J(F)^ab [∇_d ∂_c F^b]}
+    where
+        m^ac = δ^ac + J(F)^ab [∂_c F^b]
+    This is for ∇ = ∂.
+    ∇_d ∂_c F^b = ∇_d tr[T^b T^c X Y + Y† X† T^c T^b]
+                = tr[T^b T^c T^d X Y - Y† X† T^d T^c T^b]
+                = tr[T^b (T^c T^d X Y - Y† X† T^d T^c)]  # identify M^d = T^d X Y
+                = tr[T^b (T^c M^d + M^d† T^c)]  # diffProjectTAH*(r:var Mat1, m: Mat2, p: Mat3) =
+                                                # r_{ac} = - tr[T^a (T^c M + M† T^c)]
+    ∇_d adF^ce = ∇_d (- f^ceg F^g) = - f^ceg [∇_d F^g]
+  ]#
+  ## Derivative target: same-link gradient (∇ = ∂) acting on M.
+  type T = evalType(M[0,0].re)
+  const nc = M.nrows
+  const dim = nc*nc-1
+  const t = sugen(nc)
+  type A = MatrixArray[dim, dim, T]
+  type V = VectorArray[dim, T]
+  var F,TM,pTM: evalType(M)
+  var AdX,J,invJ,adF,JF,dF,d2F,dadF,dJF {.noinit.}: A
+  var dFd {.noinit.}: V
+  buildJAndInvFromM(invJ, J, JF, dF, adF, F, M, diffExpOrder=diffExpOrder)
+  for d in 0..<dim:
+    TM := t[d] * M
+    buildDirectionalTerms(d2F, dFd, TM)
+    # For same-link, ∇F equals the d-th column of dF (override dFd)
+    for g in 0..<dim:
+      dFd[g] = dF[g,d]
+    r[d] = accumulateGrad(invJ, JF, dF, adF, d2F, dFd, halfOrder)
+
+proc diffCrossGeneralLnDetDiffExpProjectTAHMul*(r: var Vec1, L: Mat1, Y: Mat2, R: Mat3, adjoint: static bool, halfOrder=6, diffExpOrder=13) =
+  ## Unified cross-link gradient for ln det {I + J(F)[∂F]} with M = L · Y^σ · R.
+  ## adjoint=false: σ=+1,  M = L · Y · R,  δM = L · (T^d Y) · R
+  ## adjoint=true:  σ=−1,  M = L · Y† · R, δM = − (L · Y†) · T^d · R
+  ## Derivative target: gradient with respect to the Y factor (or Y† when adjoint=true).
+  type T = evalType(L[0,0].re)
+  const nc = L.nrows
+  const dim = nc*nc-1
+  const t = sugen(nc)
+  type A = MatrixArray[dim, dim, T]
+  type V = VectorArray[dim, T]
+  var M,F,TM: evalType(L)
+  when adjoint:
+    M := L * Y.adj * R
+  else:
+    M := L * Y * R
+  var J,invJ,adF,JF,dF,d2F {.noinit.}: A
+  var dFd {.noinit.}: V
+  buildJAndInvFromM(invJ, J, JF, dF, adF, F, M, diffExpOrder=diffExpOrder)
+  let dFbase = dF
+  for d in 0..<dim:
+    when adjoint:
+      TM := - (L * Y.adj * t[d] * R)
+    else:
+      TM := L * t[d] * Y * R
+    buildDirectionalTerms(d2F, dFd, TM)
+    r[d] = accumulateGrad(invJ, JF, dFbase, adF, d2F, dFd, halfOrder)
+
+proc diffCrossLnDetDiffExpProjectTAHMul*(r: var Vec1, X: Mat1, Y: Mat2, halfOrder=6, diffExpOrder=13) =
+  #[
+    ∇_d ln det {δ^ac + J(F)^ab [∂_c F^b]}    # ∇ can act on different links, ∂ only on the updating link
+        = m^{-1}^ca {[∇_d J(F)^ab] [∂_c F^b] + J(F)^ab [∇_d ∂_c F^b]}
+    where
+        m^ac = δ^ac + J(F)^ab [∂_c F^b]
+    This is for ∇ ≠ ∂, assuming ∇_d = ∇_Y^d and ∂_c = ∂_X^c, M = X Y
+    ∇_d adF^ce = ∇_d (- f^ceg F^g) = - f^ceg [∇_d F^g]
+    ∇_d F^g = ∇_d tr[T^g X Y - Y† X† T^g]
+            = tr[T^g X T^d Y + Y† T^d X† T^g]
+            = tr[T^g X T^d X† X Y + Y† X† X T^d X† T^g]
+            = tr[T^g (T^f X Y + Y† X† T^f)] Ad(X)^fd
+    ∇_d ∂_c F^b = ∇_d tr[T^b T^c X Y + Y† X† T^c T^b]
+                = tr[T^b T^c X T^d Y - Y† T^d X† T^c T^b]
+  ]#
+  ## Derivative target: cross-link gradient with respect to Y (second factor in M = X · Y);
+  ## base Jacobian is with respect to X (updating link).
+  type T = evalType(X[0,0].re)
+  const nc = X.nrows
+  const dim = nc*nc-1
+  const t = sugen(nc)
+  type A = MatrixArray[dim, dim, T]
+  type V = VectorArray[dim, T]
+  var I: evalType(X)
+  I := 1.0
+  diffCrossGeneralLnDetDiffExpProjectTAHMul(r, X, Y, I, adjoint=false, halfOrder=halfOrder, diffExpOrder=diffExpOrder)
+
+# Cross-link for M = L · Y† · R, variation wrt Y (adjoint on middle factor)
+proc diffCrossAdjLnDetDiffExpProjectTAHMul*(r: var Vec1, LYadj: Mat1, R: Mat2, halfOrder=6, diffExpOrder=13) =
+  var I: evalType(LYadj)
+  I := 1.0
+  diffCrossGeneralLnDetDiffExpProjectTAHMul(r, LYadj, I, R, adjoint=true, halfOrder=halfOrder, diffExpOrder=diffExpOrder)
 
 proc ndiffSUtoReal*(r: var Vec1, err: var Vec2, f: proc, x: Mat2, dx:float=2.0, scale:float=5.0, ordMax:static int=4) =
   ## for a function f: SU(N) → Real
