@@ -209,7 +209,7 @@ proc test(T: typedesc) =
       j.diffExp adx
       check(dr ~ j)
 
-    test "log det ∂/∂X [exp(F) X]":
+    test "log det ∂_X [exp(ProjectTAH(X Y†)) X]":
       let eps = 0.12
       var X,Y:M
       X := S0
@@ -218,18 +218,25 @@ proc test(T: typedesc) =
         var r:M
         r := eps * (X * Y.adj)
         r.projectTAH r
-        r := -r
         r := exp(r)*X
         r
       var dr,er:A
       ndiffSUtoSU(dr, er, f, X)
-      var detj = determinant(dr)
+      let detj = determinant(dr)
       var j,K,adF,dexpf:A
       var m,F:M
       # combined
+      #[
+        -2 tr[(∂_c Z) Z† T^a]
+            = exp(adF)^ac + J(-F)^ab [∂_c F]^b
+            = exp(adF)^ac
+              - 1/2 [(exp(adF)-1)/adF]^ab {d^bcd tr[T^d i (M + M†)] - 1/N δ^bc tr[M + M†]}
+              - 1/2 [(exp(adF)-1)]^ac
+            = 1/2 { [(exp(adF)+1)]^ac - [(exp(adF)-1)/adF]^ab {d^bcd tr[T^d i (M + M†)] - 1/N δ^bc tr[M + M†]} }
+            = 1/2 { [(exp(adF)+1)]^ac - J(-F)^ab {d^bcd tr[T^d i (M + M†)] - 1/N δ^bc tr[M + M†]} }
+      ]#
       m := eps * (X * Y.adj)
       F.projectTAH(m)
-      F := -F
       adF.suad(F)
       let Ms = m + m.adj
       let trMs = trace(Ms).re
@@ -239,19 +246,176 @@ proc test(T: typedesc) =
       K.sudabc v
       K += (-1.0/3.0)*trMs
       dexpf.diffExp(adF)
-      j = 0.5*(exp(adF) + 1.0 + dexpf * K)
+      j = 0.5*(exp(adF) + 1.0 - dexpf * K)
       check(j ~ dr)
       # alt
       var df,ja:A
-      dF.diffProjectTAH(-m,F)
+      dF.diffProjectTAH(m,F)
       ja = exp(adF) + dexpf * dF
       check(ja ~ dr)
       # simplified detJ
       var ff:M
-      var ldj:T
-      ldj = smearIndepLogDetJacobian(ff, m)
+      var jj,aF,jF,dd:A
+      jj.diffExpProjectTAHMul(jF, dd, aF, ff, m)
       check(ff ~ F)
-      check(ldj ~ ln(detj))
+      check(dd ~ dF)
+      check(aF ~ adF)
+      dexpf.diffExp(-adF)
+      check(jF ~ dexpf)
+      check(determinant(jj) ~ detj)
+
+    test "∂_X log det ∂_X [exp(ProjectTAH(X Y†)) X]":
+      let eps = 0.12
+      var X,Y:M
+      X := S0
+      Y := S1+S2
+      proc ff(X:M):T =
+        proc f(X:M):M {.noinit.} =
+          var r:M
+          r := eps * (X * Y.adj)
+          r.projectTAH r
+          r := exp(r)*X
+          r
+        var dr,er:A
+        ndiffSUtoSU(dr, er, f, X, dx=1.0)
+        ln(determinant(dr))
+      var vd,ve:V
+      ndiffSUtoReal(vd, ve, ff, X)
+      var r:V
+      let m = eps * (X * Y.adj)
+      r.diffLnDetDiffExpProjectTAHMul(m)
+      withCT 1e-11:
+        check(r ~ vd)
+
+    test "∂_Y log det ∂_X [exp(ProjectTAH(X Y)) X]":
+      # let eps = 0.12
+      let eps = 1.0    # 0.01
+      var X,Y:M
+      # X := 1.0    # this makes it correct ?!
+      # X := S0
+      # Y := S1
+      # JXY WAS HERE: debug, let's work out explicitly with T⁰
+      X := exp(su3gen[0])
+      Y := exp(su3gen[0])
+      proc ff(Y:M):T =
+        proc f(X:M):M {.noinit.} =
+          var r:M
+          r := eps * (X * Y)
+          r.projectTAH r
+          r := exp(r)*X
+          r
+        var dr,er:A
+        ndiffSUtoSU(dr, er, f, X, dx=1.0)
+        ln(determinant(dr))
+      var vd,ve:V
+      ndiffSUtoReal(vd, ve, ff, Y)
+      var r:V
+      let mx = X
+      let my = eps * Y
+      r.diffCrossLnDetDiffExpProjectTAHMul(mx, my, halfOrder=32)
+      withCT 1e-9:
+        check(r ~ vd)
+
+    test "∂_Y log det ∂_X [exp(ProjectTAH(X Y Z)) X]":
+      let eps = 0.12
+      var X,Y,Z:M
+      X := S0
+      Y := S1
+      Z := S2
+      proc ff(Y:M):T =
+        proc f(X:M):M {.noinit.} =
+          var r:M
+          r := eps * (X * Y * Z)
+          r.projectTAH r
+          r := exp(r)*X
+          r
+        var dr,er:A
+        ndiffSUtoSU(dr, er, f, X, dx=1.0)
+        ln(determinant(dr))
+      var vd,ve:V
+      ndiffSUtoReal(vd, ve, ff, Y)
+      var r:V
+      let mx = eps * X
+      let my = Y * Z
+      r.diffCrossLnDetDiffExpProjectTAHMul(mx, my)
+      withCT 1e-11:
+        check(r ~ vd)
+
+    test "∂_Y log det ∂_X [exp(ProjectTAH(X (Z Y)†)) X]":
+      let eps = 0.12
+      var X,Y,Z:M
+      X := S0
+      Y := S1
+      Z := S2
+      proc ff(Y:M):T =
+        proc f(X:M):M {.noinit.} =
+          var r:M
+          r := eps * (X * (Z * Y).adj)
+          r.projectTAH r
+          r := exp(r)*X
+          r
+        var dr,er:A
+        ndiffSUtoSU(dr, er, f, X, dx=1.0)
+        ln(determinant(dr))
+      var vd,ve:V
+      ndiffSUtoReal(vd, ve, ff, Y)
+      var r:V
+      let mx = eps * (X * Y.adj)
+      let my = Z.adj
+      r.diffCrossAdjLnDetDiffExpProjectTAHMul(mx, my)
+      withCT 1e-11:
+        check(r ~ vd)
+
+    test "∂_Y log det ∂_X [exp(ProjectTAH((X Y) Z)) X] (cross on middle)":
+      let eps = 0.23
+      var X,Y,Z:M
+      X := S0
+      Y := S1
+      Z := S2
+      proc ff(Y:M):T =
+        proc f(X:M):M {.noinit.} =
+          var r:M
+          r := eps * ((X * Y) * Z)
+          r.projectTAH r
+          r := exp(r)*X
+          r
+        var dr,er:A
+        ndiffSUtoSU(dr, er, f, X, dx=1.0)
+        ln(determinant(dr))
+      var vd,ve:V
+      ndiffSUtoReal(vd, ve, ff, Y)
+      var r:V
+      let mx = eps * X
+      let my = Y * Z
+      r.diffCrossLnDetDiffExpProjectTAHMul(mx, my, halfOrder=32)
+      withCT 1e-11:
+        check(r ~ vd)
+
+    test "∂_Z log det ∂_X [exp(ProjectTAH(X (Y Z))) X] (cross on right)":
+      let eps = 0.07
+      var X,Y,Z:M
+      X := S0
+      Y := S1
+      Z := S2
+      proc ff(Z:M):T =
+        proc f(X:M):M {.noinit.} =
+          var r:M
+          r := eps * (X * (Y * Z))
+          r.projectTAH r
+          r := exp(r)*X
+          r
+        var dr,er:A
+        ndiffSUtoSU(dr, er, f, X, dx=1.0)
+        ln(determinant(dr))
+      var vd,ve:V
+      ndiffSUtoReal(vd, ve, ff, Z)
+      var r:V
+      # Factor M = X (Y Z) as (X Y) · Z so the cross routine applies to the right factor
+      let mx = eps * (X * Y)
+      let my = Z
+      r.diffCrossLnDetDiffExpProjectTAHMul(mx, my, halfOrder=32)
+      withCT 1e-11:
+        check(r ~ vd)
 
 template doTest(t:untyped) =
   when declared(t):
