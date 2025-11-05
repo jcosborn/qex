@@ -92,7 +92,7 @@ const int // asqtad
 const bool BACKUPSVD = true; // use backup SVD in unitary projection when applicable
 const int // unitary projection parameters
   REUNITCUTOFF = 1e-20,           // base-level cutoff on eigenvalues
-  REUNITDERIVATIVECUTOFF = 5e-5,  // base-level cutoff on eigenvalues for derivative
+  REUNITDERIVCUTOFF = 5e-5,  // base-level cutoff on eigenvalues for derivative
   BACKUPSVDTOLERANCE = 1e-8;      // tolerance for triggering backup SVD
 
 //
@@ -102,7 +102,7 @@ const int // unitary projection parameters
 struct StagImplParams {
   Coordinate dirichlet; // Blocksize of dirichlet BCs
   int  partialDirichlet;
-  AcceleratorVector<Complex,Nd> boundary_phases;
+  AcceleratorVector<Complex, Nd> boundary_phases;
   StagImplParams()
   { partialDirichlet = 0; dirichlet.resize(0); boundary_phases.resize(Nd, 1.0); };
   StagImplParams(std::vector<Complex> phi): boundary_phases(phi)
@@ -126,7 +126,7 @@ struct HISFContext {
   // unitary projection parameters
   bool backupSVD;
   RealD svdTolerance;
-  RealD eigenvalueCutoff;
+  RealD eigenCutoff;
 
   HISFContext(
     RealD c0, 
@@ -137,7 +137,7 @@ struct HISFContext {
     RealD naik,
     bool backupSVD,
     RealD svdTolerance,
-    RealD eigenvalueCutoff
+    RealD eigenCutoff
   ):
     c0(c0), 
     c1(c1), 
@@ -147,7 +147,7 @@ struct HISFContext {
     naik(naik),
     backupSVD(backupSVD),
     svdTolerance(svdTolerance),
-    eigenvalueCutoff(eigenvalueCutoff) { };
+    eigenCutoff(eigenCutoff) { };
   
   HISFContext(
     RealD c0, 
@@ -165,7 +165,7 @@ struct HISFContext {
     naik(naik),
     backupSVD(false),
     svdTolerance(1e-8),
-    eigenvalueCutoff(1e-20) { };
+    eigenCutoff(1e-20) { };
   
     HISFContext(
     RealD c0, 
@@ -181,11 +181,11 @@ struct HISFContext {
   HISFContext(
     bool backupSVD,
     RealD svdTolerance,
-    RealD eigenvalueCutoff
+    RealD eigenCutoff
   ):
     backupSVD(backupSVD),
     svdTolerance(svdTolerance),
-    eigenvalueCutoff(eigenvalueCutoff) { };
+    eigenCutoff(eigenCutoff) { };
 };
 
 //
@@ -232,10 +232,10 @@ private:
     assert(Nc == 3 && "HISQ only suppored for SU(3)");
     assert(Nd == 4 && "HISQ only supported for 4 dimensions");
 
-    if (calculateStaggeredPhases) getStaggeredPhases(grid, stagPhases);
-
     this->grid = (GridBase*)cell.grids.back();
     this->longGrid = (GridBase*)longCell.grids.back();
+
+    if (calculateStaggeredPhases) calculateStaggeredPhases(stagPhases);
   }
 
 public:
@@ -262,12 +262,12 @@ public:
 
 
 private:
-  void getStaggeredPhases(GridBase* grid, StaggeredPhases& Phases) {
+  void calculateStaggeredPhases(StaggeredPhases& phases) {
     /**
      * @brief HISQ gauge configuration constructor
      * @author Curtis Taylor Peterson, Peter Boyle
      * @details
-     * Staggered phases follow the "MILC convention", which treats the fourth 
+     * Staggered phi follow the "MILC convention", which treats the fourth 
      * direction as the "time" coordinate:
      * (2a) eta_0 = (-1)^{x3}       <---| 
      * (2b) eta_1 = (-1)^{x3+x0}        | convention in
@@ -283,9 +283,10 @@ private:
      * Dirichlet boundary conditions are imposed by "rephasing" the links 
      * on the boundary, with "1" for periodic and "-1" for anti-periodic.
      */
+    GridBase *grid = phases[0].Grid();
     Lattice<iScalar<vInteger>> x(grid), y(grid), t(grid);
     Lattice<iScalar<vInteger>> tx(grid), txy(grid), xyzt(grid), coor(grid);
-    ComplexField phases(grid);
+    ComplexField phi(grid);
 
     LatticeCoordinate(x, 0);
     LatticeCoordinate(y, 1);
@@ -294,18 +295,18 @@ private:
     txy = tx + y;
 
     for (int mu = 0; mu < Nd; mu++) { 
-      // for boundary phases
+      // for boundary phi
       int N = grid->GlobalDimensions()[mu] - 1;
       auto bpha = params.boundary_phases[mu];
       GridScalar dirichlet(real(bpha), imag(bpha));
 
       // staggered phases x boundary phases
       LatticeCoordinate(coor, mu);
-      phases = 1.0;
-      if (mu == 0){phases = where(mod(t, 2) == (Integer)0,   phases, -phases);}
-      if (mu == 1){phases = where(mod(tx, 2) == (Integer)0,  phases, -phases);}
-      if (mu == 2){phases = where(mod(txy, 2) == (Integer)0, phases, -phases);}
-      Phases[mu] = where(coor == (Integer)N, dirichlet*phases, phases);
+      phi = 1.0;
+      if (mu == 0){phi = where(mod(t, 2) == (Integer)0,   phi, -phi);}
+      if (mu == 1){phi = where(mod(tx, 2) == (Integer)0,  phi, -phi);}
+      if (mu == 2){phi = where(mod(txy, 2) == (Integer)0, phi, -phi);}
+      phases[mu] = where(coor == (Integer)N, dirichlet*phi, phi);
     }
   }
 
@@ -358,8 +359,8 @@ public:
      * (3) Sνj(n) := Sj(Sν;n),
      * and
      * (4) Sνij(n) := Si(Sνj;n).
-     * Then an Asqtad link Vμ(n) in four dimensions can be expressed as a 
-     * composition of sums
+     * Then an fat7 link Vμ(n) in four dimensions can be expressed as a composition 
+     * of sums
      * (5) Vμ(n) = c0 Uμ(n)            [5a]
      *     + ∑_{ν≠μ}(c1 Sν(n)          [5b]
      *     + ∑_{i≠μ,ν}[c2 Sνi(n)       [5c]
@@ -384,16 +385,16 @@ public:
     GaugeLorentzField x(Nd, grid);
     GaugeLinkField s3(grid), s5(grid);
     
-    HISQLOOP0(
+    HISQLOOP0(                                               // Eqn 5a
       x[mu] = (ctx.c0 - 6.0*ctx.lepage)*w.link(mu);
-      HISQLOOP1(
+      HISQLOOP1(                                             // Eqn 5b
         s3 = w.staple(w.link(mu), mu, nu);
-        x[mu] += ctw.c1*s3; 
-        HISQLEPAGE(x[mu] += ctx.lepage*w.staple(s3, mu, nu))
-        HISQLOOP2(
+        x[mu] += ctx.c1*s3; 
+        HISQLEPAGE(x[mu] += ctx.lepage*w.staple(s3, mu, nu)) // Eqn 6
+        HISQLOOP2(                                           // Eqn 5c
           s5 = w.staple(s3, mu, i);
           x[mu] += ctx.c2*s5;
-          HISQLOOP3(x[mu] += ctx.c3*w.staple(s5, mu, j))
+          HISQLOOP3(x[mu] += ctx.c3*w.staple(s5, mu, j))     // Eqn 5d
     ) ) )
 
     // WRITE THIS BACK UP W/O ANY COMMUNICATION
@@ -419,20 +420,13 @@ public:
   }
 
   void project(GaugeField& V, const GaugeField& U, const HISFContext ctx) { 
-    UnitaryProjection<Gimpl> projection(
-      ctx.eigenvalueCutoff, 
-      ctx.backupSVD, 
-      ctx.svdTolerance
-    );
+    UnitaryProjection<Gimpl> projection(ctx.eigenCutoff, ctx.backupSVD, ctx.svdTolerance);
     projection.project(V, U);
   }
 
   void project(GaugeField& V, const GaugeField& U, bool forDerivative = false) {
-    UnitaryProjection<Gimpl> projection(
-      forDerivative ? REUNITDERIVATIVECUTOFF : REUNITCUTOFF, 
-      BACKUPSVD, 
-      BACKUPSVDTOLERANCE
-    );
+    bool cutoff = forDerivative ? REUNITDERIVCUTOFF : REUNITCUTOFF;
+    UnitaryProjection<Gimpl> projection(cutoff, BACKUPSVD, BACKUPSVDTOLERANCE);
     projection.project(V, U);
   }
 
@@ -485,12 +479,12 @@ public:
      * the derivative on the left and top link by "rotating" the perspective in 
      * Fig. 1, such that the link that the derivative ∂/∂Uμ(n) hits lies on the 
      * x-axis where the contribution from ∂S/∂Vδ was. We then get
-     *                 Uμ(n)
-     * ν      🠠----   ---🠢 
-     * 🠡      ⮾   🠡 + 🠡   🠣 (Fig 2)
-     * -🠢 μ   ---🠢    -⮾-
-     *        Uμ(n)
-     *        [3a]     [3b]
+     * (3)            Uμ(n)
+     *        🠠----   ---🠢 
+     * ν      ⮾   🠡 + 🠡   🠣 (Fig 2)
+     * 🠡      ----🠢    -⮾-
+     * -🠢 μ   Uμ(n)
+     *         [3a]    [3b]
      * where an "⮾" indicates a replacement with the chain rule; only when the 
      * center link is hit is the chain rule and the derivative aligned along 
      * the same direction. Additionally, notice that the orientation of the staples
@@ -502,10 +496,7 @@ public:
      * by returning the adjoint of the full derivative. The full contribution from the 
      * 3-link staples follows by repeating this procedure for the adjoint, reflection, 
      * and adjoint of the reflection. The 5- and 7-link staples can be constructed 
-     * from the 3-link staples in a similar manner. I'll close off by noting that 
-     * this way of visualizing the Wirtinger derivative works generally; in fact,
-     * it's an incredibly useful tool for quickly reasoning about the structure of
-     * any Hamiltonian (hybrid) Monte Carlo force. 
+     * from the 3-link staples in a similar manner.
      * 
      * As the derivative is quite complicated, some of this may seem a bit vague.
      * Please feel free to contact Curtis Peterson (see email above) for any 
@@ -531,8 +522,8 @@ public:
         cnu = ctx.c1*dxdw[mu];
         HISQLEPAGE(
           snu += ctx.lepage*w.staple(w.link(nu), nu, mu);
-          cnu += ctx.lepage*w.staple(dxdw[mu], mu, nu);
           dsnu = ctx.lepage*w.staple(dxdw[nu], nu, mu);
+          cnu += ctx.lepage*w.staple(dxdw[mu], mu, nu);
         )
         if (lepage == 0.0) dsnu = Zero();
         HISQLOOP2(
@@ -545,9 +536,9 @@ public:
           snu += w.staple(ctx.c2*w.link(nu) + sj, nu, i);
           dxdu[mu] += w.stapleDerivative(sj, dsi, mu, nu);
         )
-        dxdu[mu] += w.stapleDerivative(snu, dxdw[nu], mu, nu);
-        dxdu[mu] += w.stapleDerivative(dsnu, mu, nu);
-        dxdu[mu] += w.staple(cnu, mu, nu);
+        dxdu[mu] += w.stapleDerivative(snu, dxdw[nu], mu, nu); // Eqn 3a
+        dxdu[mu] += w.stapleDerivative(dsnu, mu, nu);          // Eqn 3a
+        dxdu[mu] += w.staple(cnu, mu, nu);                     // Eqn 3b
     ) )
     dXdU = cell.Extract(toGauge(dxdu));
 
@@ -589,16 +580,12 @@ public:
     const GaugeField& U,
     const HISFContext ctx
   ) {
-    UnitaryProjection<Gimpl> projection(
-      ctx.eigenvalueCutoff, 
-      ctx.backupSVD, 
-      ctx.svdTolerance
-    );
+    UnitaryProjection<Gimpl> projection(ctx.eigenCutoff, ctx.backupSVD, ctx.svdTolerance);
     projection.derivative(dVdU, dZdV, U); 
   }
 
   void projectionDerivative(GaugeField& dVdU, const GaugeField& dZdV, const GaugeField& U) {
-    UnitaryProjection<Gimpl> projection(1e-20, false, 1e-8);
+    UnitaryProjection<Gimpl> projection(REUNITDERIVCUTOFF, BACKUPSVD, BACKUPSVDTOLERANCE);
     projection.derivative(dVdU, dZdV, U);
   }
 
