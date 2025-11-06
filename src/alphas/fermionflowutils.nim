@@ -3,6 +3,26 @@ import gauge
 import gauge/[gaugeUtils]
 import json,sequtils,strutils
 
+type
+  Laplacian[U,F,F0] = object
+    sf, sb: seq[Transporter[U,F,F0]]
+
+proc newtrans[U,F](u: openArray[U], f: F): auto =
+  # type F0 = evalType(f[0])
+  result = Laplacian[evalType(u[0]),F,evalType(f[0])](
+    sf: u.newTransporters(f, 1),
+    sb: u.newTransporters(f, -1)
+  )
+
+proc newLaplacian4D[U,F](lap: var auto,u: U, f: F): auto =
+  lap.sf.setlinks(u)
+  lap.sb.setlinks(u)
+  var r = newOneOf(f)
+  r := lap.sf[0]^*f + lap.sb[0]^*f + lap.sf[1]^*f + lap.sb[1]^*f + lap.sf[2]^*f + lap.sb[2]^*f + lap.sf[3]^*f + lap.sb[3]^*f - 8.0*f
+  return r
+
+# proc newLaplacian4D[U](u: U): auto =
+#   type U0 = evalType(u[0][0])
 
 proc get*(info:JsonNode;key:string): seq[float] = 
   result = newSeq[float]()
@@ -69,7 +89,7 @@ proc flowMeasurements(u: auto; loop: int; tau: float): JsonNode =
   (t2Ees,t2Eet) = (tau*tau*es,tau*tau*et)
   result = %* {
     "flow-time": tau,
-    "plaquette":0.5*ss+0.5*st,
+    "plaquette":0.5*ss+0.5*st,#(1-Puv)
     "clover":es+et,
     "t2E-plaquette":t2Ess+t2Est,
     "t2E-clover":t2Ees+t2Eet,
@@ -131,7 +151,8 @@ template fermionFlow(
     const nci = g[0][0].nrows
     const ncorners = phi0[0].len
     const nmasses = phi0[0][0].len
-    let lo = u[0].l
+    let lo = g[0].l
+    var lap = newtrans(g,phi0[0][0][0])
     var
       p = g[0].l.newGauge  # mom
       f = g[0].l.newGauge  # force
@@ -147,17 +168,26 @@ template fermionFlow(
           d0p0[color][corner][mass] = lo.ColorVector()
           d1p1[color][corner][mass] = lo.ColorVector()
           phi1[color][corner][mass] = lo.ColorVector()
-    echo "first step"
     while true:
-      let t = n * eps
+      #***************************************************
+      # echo "\n\n"
+      # echo "phi0 color 0", " site 0 ", phi0[0][0][0][0], "\n"
+      #***************************************************
+      echo "first step"
+      g.echoPlaq
+      let tau = n * eps
       let epsnc = eps * nc  # compensate force normalization
       gc.gaugeForce(g,f)
       for color in 0..<nci:
         for corner in 0..<ncorners:
           for mass in 0..<nmasses:
-            d0p0[color][corner][mass] := eps*laplace4D(g,phi0[color][corner][mass]) #Delta0
+            d0p0[color][corner][mass] := eps*newLaplacian4D(lap,g,phi0[color][corner][mass]) #Delta0
             threads:
-              phi1[color][corner][mass] := phi0[color][corner][mass] + 0.25*d0p0[color][corner][mass] #
+              phi1[color][corner][mass] := phi0[color][corner][mass] + 0.25*d0p0[color][corner][mass]
+      #***************************************************
+      # echo "\n\n"
+      # echo "phi1 color 0 ", " site 0 ", phi1[0][0][0][0], "\n"
+      #***************************************************
       threads:
         for mu in 0..<f.len:
           for e in g[mu]:
@@ -170,7 +200,7 @@ template fermionFlow(
       for color in 0..<nci:
         for corner in 0..<ncorners:
           for mass in 0..<nmasses:
-            d1p1[color][corner][mass] := eps*laplace4D(g,phi1[color][corner][mass]) #Delta1
+            d1p1[color][corner][mass] := eps*newLaplacian4D(lap,g,phi1[color][corner][mass]) #Delta1
       # #phi2 = phi0 + 8.0/9.0*d1p1 - 2.0/9.0*d0p0
       echo "second step"
       gc.gaugeForce(g,f) # f is now -dS/dU at U = W1
@@ -182,16 +212,23 @@ template fermionFlow(
             let t = exp(v)*g[mu][e] # exp(8/9 Z1 - 17/36 Z0) W1
             p[mu][e] := v # 8/9 Z1 - 17/36 Z0
             g[mu][e] := t # W2
-      # d2p2 = epsnc*laplace4D[g,phi2] #Delta2
-      # threads:
+      # # d2p2 = epsnc*laplace4D[g,phi2] #Delta2
+      # # threads:
       for color in 0..<nci:
         for corner in 0..<ncorners:
           for mass in 0..<nmasses:
+            # if color == 0:
+            #   echo "phi0 color " , color, " site 0 ", phi0[0][0][0][0]
             var phi2 = newOneOf(phi0[color][corner][mass])
             phi2 := phi0[color][corner][mass] + 8.0/9.0*d1p1[color][corner][mass] - 2.0/9.0*d0p0[color][corner][mass]
-            phi0[color][corner][mass] := phi1[color][corner][mass] + 3.0/4.0 * eps*laplace4D(g,phi2) #3.0/4.0 * d2p2
+            phi0[color][corner][mass] := phi1[color][corner][mass] + 3.0/4.0 * eps*newLaplacian4D(lap,g,phi2) #3.0/4.0 * d2p2
+            # if color == 0:
+              # echo "\n"
+              # echo "phi2 color " , color, " site 0 ", phi2[0]
+              # echo "after the update in the flow:"
+              # echo "phi0 color " , color, " site 0 ", phi0[0][0][0][0]
       echo "third step"
-      gc.gaugeForce(g,f)
+      gc.gaugeForce(g,f)# f is now -dS/dU at U = W2
       threads:
         for mu in 0..<f.len:
           for e in g[mu]:
@@ -199,7 +236,7 @@ template fermionFlow(
             v := (-3.0/4.0)*epsnc*f[mu][e] - p[mu][e] #3/4 Z2 - 8/9 Z1 + 17/36 Z0
             let t = exp(v)*g[mu][e] # exp(3/4 Z2 - 8/9 Z1 + 17/36 Z0) W2
             g[mu][e] := t # V(t+eps)
-      let wflowT {.inject.} = t
+      let wflowT {.inject.} = tau
       measure
       inc n
       if steps>0 and n>steps: break
@@ -248,8 +285,8 @@ template fermionFlow*(u: auto; phi: auto; info: JsonNode; body: untyped) =
       let (dtau,tmax) = flowTimeInfo
       gc.fermionFlow(v,phi,dtau):
         tau = flowTime + lastMaxFlt
-        if tau > tmax: break
         measurements = v.flowMeasurements(loops,tau)
         body
+        if tau >= tmax: break
       lastMaxFlt = tmax
     f.close()

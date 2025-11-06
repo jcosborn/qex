@@ -25,7 +25,7 @@ const
   DefaultConjugateGradientVerbosty = 1
 
 const Corners = 8
-const Masses = 2
+const Masses = 1
 
 # const
 #   mass = [0.01, 0.02, 0.03]
@@ -83,14 +83,12 @@ var
     of false:
       qexError "json file for lattice information not specified"
       parseJson("{}")
-  #[
   #08/11/2025: contractInfo not used yet 
   contractInfo = case cmd.hasKey("contract-json") 
     of true: readJSON(cmd["contract-json"].getStr())
     of false:
       echo "json file for contract information not specified"
       parseJson("{}")
-  ]#
   cfg = case cmd.hasKey("configuration")
     of true: $cmd["configuration"].getInt()
     of false:
@@ -127,7 +125,7 @@ let corrFile = case cmd.hasKey("output")
 echo "corrFile: ", corrFile
 #read configuration
 echo "Start leading configuration. "
-u.readGauge(filename & "." & cfg & ".ildg")
+u.readGauge(filename & "_" & cfg & ".lat")
 # u.random
 echo "Loading complete. "
 #initialize stagSolve
@@ -142,7 +140,7 @@ let
     # nhyp smearing parameters
   smearGauge: bool = true
   # nhyp = HypCoefs(alpha1: 0.4, alpha2: 0.5, alpha3: 0.5)
-  hisq = newHisq() 
+  hisq = newHisq(0.0,1.0) 
     # source time
   srcT = 0
     # time extent
@@ -157,21 +155,23 @@ threads:
   block:
     let d = u.checkSU
     echo "new unitary deviation avg: ", d.avg, "  max: ", d.max
-# u.echoPlaq
+u.echoPlaq
 # Coulomb gauge fix
 if fixGauge:
   tic "Coulomb gauge fixing"
   var tmat = lo.ColorMatrix()
   threads: tmat := 1
-  getGaugeFixTransform(tmat, u, @[0,1,2], gfstop, gforf, verb=0)
+  getGaugeFixTransform(tmat, u, @[0,1,2], gfstop, gforf, verb=0) #@[012] for coulomb gague, [0123] for landau gauge
   var fg = lo.newGauge
   fg.gaugeTransform(u, tmat)
   threads: u := fg
   qexLog "Coulomb gauge fixing done. Time: ", getElapsedTime()
+  qexLog "Saving smeared gauge field"
+  # discard u.saveGauge(filename & "_gaugefixed." & cfg & ".ildg")
 # smear and rephase
-u.rephase()
 var su = lo.newGauge()
 var sul = lo.newGauge()
+u.rephase() #phase in
 if smearGauge:
   tic "HISQ gauge smearing"
   discard hisq.smearGetForce(u, su, sul)
@@ -190,34 +190,52 @@ sp.maxits = maxits
 let 
   mesonOps = buildMesonOps()
   mesons = [
-    # mesonOps[0],  # γ_0 γ_5 ⊗ γ_0 γ_5 (P = +σ) I     π_05  <--+ 
+    mesonOps[0],  # γ_0 γ_5 ⊗ γ_0 γ_5 (P = +σ) I     π_05  <--+ 
       mesonOps[1],  # γ_5 ⊗ ξ_5         (P = -σ) II    π_5      |
-      # mesonOps[6],  # γ_5 ⊗ ξ_μ ξ_5     (P = +σ) VII   π_i5     |
+      mesonOps[6],  # γ_5 ⊗ ξ_μ ξ_5     (P = +σ) VII   π_i5     |
       mesonOps[7],  # γ_0 γ_5 ⊗ ξ_μ ξ_ν (P = -σ) VIII  π_ij     | scalar &
-      # mesonOps[12], # γ_0 γ_5 ⊗ ξ_μ     (P = -σ) XIII  π_0i     | pseudoscalar
-      # mesonOps[13], # γ_5 ⊗ ξ_μ         (P = -σ) XIV   π_i      |
-      # mesonOps[16], # γ_0 γ_5 ⊗ I       (P = -σ) XVI   π_I      |
-      # mesonOps[17], # γ_5 ⊗ ξ_0         (P = +σ) XVII  π_0   <--+
-      # mesonOps[2],  # γ_0 γ_k ⊗ ξ_0 ξ_μ (P = +σ) XIII  ρ_0i  <--+
-      # mesonOps[3],  # γ_μ ⊗ ξ_μ         (P = -σ) XIV   ρ_i      |
-      # mesonOps[4],  # γ_μ ⊗ I           (P = +σ) XV    ρ_I      |
-      # mesonOps[5],  # γ_0 γ_μ ⊗ ξ_0     (P = +σ) VI    ρ_0      |
-      # mesonOps[8],  # γ_0 γ_μ ⊗ ξ_μ ξ_5 (P = +σ) XIV   ρ_i5     |
-      # mesonOps[9],  # γ_μ ⊗ ξ_μ ξ_ν     (P = +σ) X     ρ_ij     | vector &
-      # mesonOps[10], # γ_0 γ_μ ⊗ ξ_0 ξ_5 (P = -σ) XI    ρ_05     | pseudovector
-      # mesonOps[11], # γ_0 γ_μ ⊗ ξ_5     (P = -σ) XII   ρ_5      |
-      # mesonOps[14], # γ_μ ⊗ ξ_μ         (P = -σ) XIV   ρ_i*     |
-      # mesonOps[15], # γ_0 γ_k ⊗ ξ_0 ξ_μ (P = -σ) XIII  ρ_0i*    |
-      # mesonOps[18], # γ_0 γ_μ ⊗ ξ_μ ξ_5 (P = -σ) XVIII ρ_i5*    |
-      # mesonOps[19], # γ_μ ⊗ ξ_μ ξ_ν     (P = +σ) XX    ρ_ij* <--+
+      mesonOps[12], # γ_0 γ_5 ⊗ ξ_μ     (P = -σ) XIII  π_0i     | pseudoscalar
+      mesonOps[13], # γ_5 ⊗ ξ_μ         (P = -σ) XIV   π_i      |
+      mesonOps[16], # γ_0 γ_5 ⊗ I       (P = -σ) XVI   π_I      |
+      mesonOps[17], # γ_5 ⊗ ξ_0         (P = +σ) XVII  π_0   <--+
+      mesonOps[2],  # γ_0 γ_k ⊗ ξ_0 ξ_μ (P = +σ) XIII  ρ_0i  <--+
+      mesonOps[3],  # γ_μ ⊗ ξ_μ         (P = -σ) XIV   ρ_i      |
+      mesonOps[4],  # γ_μ ⊗ I           (P = +σ) XV    ρ_I      |
+      mesonOps[5],  # γ_0 γ_μ ⊗ ξ_0     (P = +σ) VI    ρ_0      |
+      mesonOps[8],  # γ_0 γ_μ ⊗ ξ_μ ξ_5 (P = +σ) XIV   ρ_i5     |
+      mesonOps[9],  # γ_μ ⊗ ξ_μ ξ_ν     (P = +σ) X     ρ_ij     | vector &
+      mesonOps[10], # γ_0 γ_μ ⊗ ξ_0 ξ_5 (P = -σ) XI    ρ_05     | pseudovector
+      mesonOps[11], # γ_0 γ_μ ⊗ ξ_5     (P = -σ) XII   ρ_5      |
+      mesonOps[14], # γ_μ ⊗ ξ_μ         (P = -σ) XIV   ρ_i*     |
+      mesonOps[15], # γ_0 γ_k ⊗ ξ_0 ξ_μ (P = -σ) XIII  ρ_0i*    |
+      mesonOps[18], # γ_0 γ_μ ⊗ ξ_μ ξ_5 (P = -σ) XVIII ρ_i5*    |
+      mesonOps[19], # γ_μ ⊗ ξ_μ ξ_ν     (P = +σ) XX    ρ_ij* <--+
     ]
   
   massname = [
-    "ll", "ss", #"cc",# "ls", "lc", "sc", "sl"
+    "ll",# "ss", #"cc",# "ls", "lc", "sc", "sl"
   ]
   mesonname = [
-    "g5g5", 
-    "g0g5gigj",
+    "pi_05", 
+    "pi_5",
+    "pi_i5",
+    "pi_ij",
+    "pi_0i",
+    "pi_i",
+    "pi_I",
+    "pi_0",
+    "rho_0i",
+    "rho_i",
+    "rho_I",
+    "rho_0",
+    "rho_i5",
+    "rho_ij",
+    "rho_05",
+    "rho_5",
+    "rho_i*",
+    "rho_0i*",
+    "rho_i5*",
+    "rho_ij*",
   ]
 # initialize propagators and correlators
 const colors = u[0][0].nrows
@@ -246,10 +264,13 @@ for color in 0..<colors:
           (cc[1][i] and 1) == py(corner) and
           (cc[2][i] and 1) == pz(corner):
           src{i}[color] := 1.0
+          # echo cc[0][i], ",", cc[1][i], ",", cc[2][i], ",", cc[3][i]
     # invert color source to get propagator
     for massIdx in 0..<Masses:
       threads: props[color][corner][massIdx] := 0
       stag.solve(props[color][corner][massIdx], src, mass[massIdx], sp)
+
+u.rephase() #phase out
 # echo "Saving the correlatos at tau=0.00"
 qexLog "HISQ propagators done. Time: ", getElapsedTime()
 var corrJSON = %* {}
@@ -261,9 +282,11 @@ if corrFile != "__NOOUTPUT__":
     for pionIdx in 0..<mesons.len:
       for termIdx, term in mesons[pionIdx]:
         for forward in 0..<Corners:
+          # echo "forward ", forward, "term.delta ", term.delta
           let 
             backward = shiftIdx(forward, term.delta)
             base = [px(forward), py(forward), pz(forward), srcT]
+          # echo "forward ", forward, " backward ", backward
           var tmp = lo.ColorVector()
   
               # Build shifted + rephased copy of `props[backward]`.
@@ -289,6 +312,12 @@ u.fermionFlow(props,flowInfo):
   f.write(measurements.formatMeasurements(style = logStyle) & "\n")
   if abs(tau.round(1) - tau) < 1e-10: # if tau is 0.1, 0.2 ...
     if corrFile != "__NOOUTPUT__":
+      echo "clearing corrs cache"
+      threads:
+        for propindex in 0..<mprops.len:
+          for pionIdx in 0..<mesons.len: 
+            for t in 0..<nt:
+              corrs[propindex][pionIdx][t] := 0
       echo "Measuring the propagators at tau= ", tau
       let tauStr = formatFloat(tau, ffDecimal, 2)
       corrJSON[tauStr] = %* {}
