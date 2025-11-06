@@ -16,6 +16,7 @@ Author: Curtis Taylor Peterson
 <qex>
   <hmc><!-- Hybrid Monte Carlo parameters -->
     <tau>_tau_</tau>
+    <multirate_scheme>_scheme_</multirate_scheme> <!-- integrator composition: nested or concatenated -->
     <g_steps>_gs_</g_steps> <!--Gauge field steps -->
     <sg_steps>_sgs_</sg_steps> <!-- Steps for gauge field with smeared links -->
     <f_steps>_fs_</f_steps> <!--Fermion field steps -->
@@ -64,9 +65,11 @@ Author: Curtis Taylor Peterson
          <sm_c1>_smc1_</sm_c1>
        </rect>
     </smeared_gauge>
-    <ferm><!-- Fermion action parameters -->
+    <ferm> <!-- Fermion action parameters -->
       <Nf>_Nf_</Nf>
       <mass>_mass_</mass>
+      <preconditioner>_precond_</preconditioner> <!-- preconditioner: none or hasenbusch -->
+      <mass_h>_mh_</mass_h> <!-- first Hasenbusch mass -->
     </ferm>
     <pv><!-- Pauli-Villars action parameters -->
       <num_pv>_npv_</num_pv> <!-- num_pv = 0, then no Pauli-Villars bosons -->

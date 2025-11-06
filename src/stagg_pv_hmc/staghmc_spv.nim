@@ -84,6 +84,12 @@ let (int_prms, flt_prms, seed_prms, str_prms) = read_xml(xml_file)
 # Define base filename
 var base_fn = io_path & def_fn & "_" & intToStr(start_config)
 
+# Set Hasenbusch mass: Nov 6, 2025
+var hmass: float
+if str_prms["preconditioner"] == "hasenbusch": 
+   hmass = flt_prms["mass_h"]
+   echo "Using Hasenbusch preconditioning with Hasenbusch mass = ", hmass
+
 #[ ~~~~ Setup global RNG and CG ~~~~ ]#
 
 # Create RNG object (custom, not native to QEX)
@@ -329,7 +335,7 @@ else:
 #[ ~~~~ Set matter fields up ~~~~ ]#
 
 # Initialize matter fields
-var (psi, phi) = lo.init_matter_fields(int_prms)
+var (psi, hpsi, phi, hphi) = lo.init_matter_fields(int_prms)
 
 # Set masses
 let masses = @[flt_prms["mass"], flt_prms["mass_pv"]]
@@ -401,6 +407,62 @@ proc setBC_cust(gf: openArray[Field]; bc: string) =
                gf[mu]{i} *= -1.0
 
 #[ ~~~~ Define functions for staggered operations ~~~~ ]#
+
+#[ Reworked fermion solve: only executes when using Hasenbusch ]#
+proc solve_fermion_reworked[T](
+    stag: auto; 
+    psi: auto; 
+    phi: T; 
+    mass: float; 
+    sp0: var SolverParams
+  ) =
+  # Code taken directly from: 
+  # https://github.com/milc-qcd/qex/blob/devel/src/alphas/alphas.nim
+  # Added Nov 6, 2025
+  tic()
+  var
+    varphi = newOneOf(psi)
+    r = newOneOf(phi)
+    r2, b2: float
+    sp = sp0
+
+  # Prepare solver parameters
+  sp.resetStats()
+  dec sp.verbosity
+  sp.usePrevSoln = false
+  threads:
+    psi := 0
+    let b2t = phi.norm2
+    threadBarrier()
+    threadMaster: b2 = b2t
+
+  # Get solution
+  stag.solveEE(varphi, phi, mass, sp)
+  threads:
+    # Get residual
+    var r2t: float
+    stagD2ee(stag.se, stag.so, r, stag.g, varphi, mass*mass)
+    threadBarrier()
+    r := r - phi
+    threadBarrier()
+    r2t = r.norm2
+    threadBarrier()
+    threadMaster: r2 = r2t
+
+    # Get solution for force
+    varphi.even := 4.0*varphi
+    threadBarrier()
+    stagD2(stag.so, psi, stag.g, varphi, 0, 0)
+    threadBarrier()
+    psi.even := varphi
+
+  # Get information about solve
+  sp.r2.init r2/b2
+  sp.calls = 1
+  sp.seconds = getElapsedTime()
+  sp.flops += float((stag.g.len*4*72+24)*psi.l.nEven) # ???
+  if sp0.verbosity>0: echo "stagSolve: ", sp.getStats
+  sp0.addStats(sp)
 
 #[ Fermion solve ]#
 proc solve_fermion(s: Staggered; x, b: auto; 
@@ -524,6 +586,7 @@ proc generate_pseudoferms(s: Staggered) =
 
    # Cycle through fermion fields
    for fld_ind in 0..<phi.len:
+      let doHasenbusch = (str_prms["preconditioner"] == "hasenbusch") and (fld_ind < int_prms["Nf"])
       # Start case  (work around)
       case r.rng_type:
          of "RngMilc6":
@@ -531,16 +594,29 @@ proc generate_pseudoferms(s: Staggered) =
             threads:
                # Sample
                psi.gaussian(r.milc)
+            if doHasenbusch: # Hasenbusch: Nov 6, 2025
+               threads: hpsi.gaussian(r.milc) 
          of "MRG32k3a":
             # Start thread block
             threads:
                # Sample
                psi.gaussian(r.mrg32k3a)
+            if doHasenbusch: # Hasenbusch: Nov 6, 2025
+               threads: hpsi.gaussian(r.mrg32k3a) 
 
       # Check if regular fermion field
       if fld_ind < int_prms["Nf"]:
-         # Apply staggered Dirac operator (D^{d})
-         s.Ddag(phi[fld_ind], psi, masses[0])
+         case str_prms["preconditioner"]: # added Nov 6, 2025
+            of "none": 
+               # Apply staggered Dirac operator (D^{d})
+               s.Ddag(phi[fld_ind], psi, masses[0])
+            of "hasenbusch": # Hasenbuch: Nov 6, 2025
+               var hphit = newOneOf(hphi[fld_ind])
+               s.Ddag(phi[fld_ind], psi, hmass)
+               s.Ddag(hphit, hpsi, masses[0])
+               s.solve(hphi[fld_ind], hphit, -masses[1], spa[fld_ind])
+            of "regress": s.Ddag(phi[fld_ind], psi, masses[0])
+            else: qexError "Invalid option for pseudofermion preconditioner"
       else:
          # Apply inverted staggered Dirac operator
          s.solve(phi[fld_ind], psi, masses[1], spa[fld_ind])
@@ -549,6 +625,9 @@ proc generate_pseudoferms(s: Staggered) =
       threads:
          # Set odd sites to zero
          phi[fld_ind].odd := 0
+      if doHasenbusch: # Hasenbusch: Nov 6, 2025
+         threads: hphi[fld_ind].odd := 0
+
 
    # Print timing information
    tocc("Generate fermion/boson fields:", t0)
@@ -646,13 +725,23 @@ proc calc_action(s: Staggered; gf, sgf, p: auto; act: string): auto =
 
       # Check if regular fermion
       if fld_ind < int_prms["Nf"]:
-         # Do fermion solve
-         s.solve_fermion(psi, phi[fld_ind], -masses[0], spa[fld_ind])
+         case str_prms["preconditioner"]: # added Nov 6, 2025
+            of "none":
+               # Do fermion solve
+               s.solve_fermion(psi, phi[fld_ind], -masses[0], spa[fld_ind])
 
-         # Check if massless
-         if masses[0] == 0:
-            # Apply D^{d} and fill odd entries appropriately
-            s.apply_massless_Ddag(psi, psi, "action")
+               # Check if massless
+               if masses[0] == 0:
+                  # Apply D^{d} and fill odd entries appropriately
+                  s.apply_massless_Ddag(psi, psi, "action")
+            of "hasenbusch":
+               threads: hpsi := 0
+               var hpsit = newOneOf(hpsi)
+               threads: s.Ddag(hpsit, hphi[fld_ind], hmass)
+               s.solve(psi, phi[fld_ind], -hmass, spa[fld_ind])
+               s.solve(hpsi, hpsit, -masses[0], spa[fld_ind])
+            of "regress": s.solve(psi, phi[fld_ind], -masses[0], spa[fld_ind])
+            else: qexError "Invalid option for action fermion preconditioner"
       else:
          # Create thread block
          threads:
@@ -669,6 +758,19 @@ proc calc_action(s: Staggered; gf, sgf, p: auto; act: string): auto =
 
          # Increment f2
          threadMaster: f2[fld_ind] = 0.5 * psi2
+      
+      # Added Nov 6, 2025
+      if (str_prms["preconditioner"] == "hasenbusch") and (fld_ind < int_prms["Nf"]):
+         # Start thread block
+         threads:
+            # Increment f2 (reuses psi from HMC trajectory)
+            let hpsi2 = hpsi.norm2()
+
+            # Prevent race condition
+            threadBarrier()
+
+            # Increment f2
+            threadMaster: f2[fld_ind] += 0.5 * hpsi2
 
    # Check if no smearing was applied for matter fields
    if (msmear.smearing == "none"):
@@ -779,6 +881,7 @@ proc fforce(s: Staggered; f: auto; gf: auto;
 
       # Initialize scale (for proper normalization on force)
       scale = 0.0
+      hscale = 0.0 # for hasenbusch, Nov 6, 2025
 
       # Define update sequence (to tell the updater what fields to include)
       update_seq = newseq[int](0)
@@ -809,16 +912,28 @@ proc fforce(s: Staggered; f: auto; gf: auto;
 
       # Check if regular fermion (place where things can go wrong)
       if f_ind < int_prms["Nf"]:
-         # Do solve
-         s.solve_fermion(psi, phi[f_ind], masses[0], spf[f_ind])
- 
-         # Check if massless
-         if masses[0] == 0:
-            # Apply D^{d} and fill odd entries appropriately
-            s.apply_massless_Ddag(psi, psi, "force")
+         case str_prms["preconditioner"]: # added Nov 6, 2025
+            of "none": # legacy, untouched
+               # Do solve
+               s.solve_fermion(psi, phi[f_ind], masses[0], spf[f_ind])
+      
+               # Check if massless
+               if masses[0] == 0:
+                  # Apply D^{d} and fill odd entries appropriately
+                  s.apply_massless_Ddag(psi, psi, "force")
 
-         # Set scale
-         scale = rescale(f_ind, ts[0])
+               # Set scale
+               scale = rescale(f_ind, ts[0])
+            of "hasenbusch": # Hasenbusch added Nov 6, 2025
+               proc sq(x: float): float = x*x
+               s.solve_fermion_reworked(psi, phi[f_ind], hmass, spf[f_ind])
+               s.solve_fermion_reworked(hpsi, hphi[f_ind], masses[0], spf[f_ind])
+               scale = 0.25*ts[0]
+               hscale = scale*(sq(hmass) - sq(masses[0]))
+            of "regress": 
+               s.solve_fermion_reworked(psi, phi[f_ind], masses[0], spf[f_ind])
+               scale = 0.25*ts[0]
+            else: qexError "Invalid option for pseudofermion preconditioner"
       else:
          # Apply D^{d} and fill odd entries appropriately
          s.apply_massless_Ddag(psi, phi[f_ind], "force")
@@ -852,6 +967,18 @@ proc fforce(s: Staggered; f: auto; gf: auto;
                         # Either initialize outer product or append to it
                         of 0: f[mu][i][a, b] := scale * psi[i][a] * t[mu].field[i][b].adj
                         else: f[mu][i][a, b] += scale * psi[i][a] * t[mu].field[i][b].adj
+      
+      # added Nov 6, 2025
+      if (str_prms["preconditioner"] == "hasenbusch") and (f_ind < int_prms["Nf"]):
+         var ht: array[4, Shifter[typeof(hpsi), typeof(hpsi[0])]]
+         for mu in 0..<f.len: ht[mu] = newShifter(hpsi, mu, 1)
+         for mu in 0..<f.len: discard ht[mu] ^* hpsi
+         threads:
+            for mu in 0..<f.len:
+               for i in f[mu]:
+                  forO a, 0, n-1:
+                     forO b, 0, n-1:
+                        f[mu][i][a, b] += hscale * hpsi[i][a] * ht[mu].field[i][b].adj
 
       # Append force index
       frc_ind = frc_ind + 1
@@ -1027,8 +1154,15 @@ proc mdvAllfga(ts: openarray[float]) =
    # Print timing information
    tocc("Integrator update: ", t0)
 
+# Added Nov 6, 2025
+proc mdvAllfgaN(ts: openarray[float]) =
+   var nts = newSeq[float](ts.len)
+   for i in 0..<ts.len: nts[i] = ts[i]
+   nts.add nts[1]
+   mdvAllfga(nts)
+
 #[ Set up integrator ]#
-let
+var
    # Define gauge integration algorithm
    gauge_int_alg: IntegratorProc = str_prms["gauge_int_alg"]
 
@@ -1038,27 +1172,40 @@ let
    # Define fermion integration algorithm
    ferm_int_alg: IntegratorProc = str_prms["ferm_int_alg"]
 
-   # Define Pauli-Villars integration algorithm
-   pv_int_alg: IntegratorProc = str_prms["pv_int_alg"]
-
    # Create integration pair
    (V, T) = newIntegratorPair(mdvAllfga, mdt)
+   (NV, NT) = newIntegratorPair(mdvAllfgaN, mdt)
+
+   # Full integrator
+   H: ParIntegrator
+   I: Integrator
+
+# Changed: Nov 6, 2025; "concatenated" branch should introduce no differences
+if str_prms["multirate_scheme"] == "concatenated":
+   var
+      # Define Pauli-Villars integration algorithm
+      pv_int_alg: IntegratorProc = str_prms["pv_int_alg"]
 
    # Set integrator for gauge
    H = newParallelEvolution gauge_int_alg(T = T, V = V[0], steps = int_prms["g_steps"])
-block:
-   # Check if smeared gauge field to be added
-   if int_prms["sg_opt"] == 1:
-      # Add smeared gauge fields
-      H.add sgauge_int_alg(T = T, V = V[1], steps = int_prms["sg_steps"])
+   block:
+      # Check if smeared gauge field to be added
+      if int_prms["sg_opt"] == 1:
+         # Add smeared gauge fields
+         H.add sgauge_int_alg(T = T, V = V[1], steps = int_prms["sg_steps"])
  
-   # Add fermions to be updated
-   H.add ferm_int_alg(T = T, V = V[int_prms["sg_opt"] + 1], steps = int_prms["f_steps"])
+      # Add fermions to be updated
+      H.add ferm_int_alg(T = T, V = V[int_prms["sg_opt"] + 1], steps = int_prms["f_steps"])
 
-   # Check if PV fields to be added to MD evolution
-   if int_prms["num_pv"] > 0:
-      # Add PV fields to be updated
-      H.add pv_int_alg(T = T, V = V[int_prms["sg_opt"] + 2], steps = int_prms["pv_steps"])
+      # Check if PV fields to be added to MD evolution
+      if int_prms["num_pv"] > 0:
+         # Add PV fields to be updated
+         H.add pv_int_alg(T = T, V = V[int_prms["sg_opt"] + 2], steps = int_prms["pv_steps"])
+elif str_prms["multirate_scheme"] == "nested":
+   let VG = gauge_int_alg(T = NT, V = NV[0], steps = int_prms["g_steps"])
+   I = ferm_int_alg(T = VG, V = NV[1], steps = int_prms["f_steps"])
+
+else: qexError "Invalid choice for multirate scheme"
 
 #[ ~~~~ Define functions for checks of HMC ~~~~ ]#
 
@@ -1180,8 +1327,12 @@ proc rev_check(evol: auto; h0, ga0, sga0, T0, fa0: float;
 # Create separator
 echo "\n~~~~ Integrator information ~~~~\n"
 
-# Print information about gauge field evolution
-echo H
+# Changed Nov 6, 2025
+if str_prms["multirate_scheme"] == "concatenated":
+   # Print information about gauge field evolution
+   echo H
+elif str_prms["multirate_scheme"] == "nested":
+   echo I
 
 #[ Cycle through configurations ]#
 for config in start_config..<end_config:
@@ -1212,11 +1363,16 @@ for config in start_config..<end_config:
 
       #[ Do trajectory ]#
 
-      # Evolve gauge field
-      H.evolve flt_prms["tau"]
+      # Changed Nov 6, 2025
+      if str_prms["multirate_scheme"] == "concatenated":
+         # Evolve gauge field
+         H.evolve flt_prms["tau"]
 
-      # Finish Evolution
-      H.finish
+         # Finish Evolution
+         H.finish
+      else:
+         I.evolve flt_prms["tau"]
+         I.finish
 
       #[ Calculate final action ]#
 
@@ -1241,8 +1397,12 @@ for config in start_config..<end_config:
 
       # Check if reversibility to be checked
       if (int_prms["rev_check_freq"] > 0) and (traj mod int_prms["rev_check_freq"] == 0):
-         # Do reversibility check
-         H.rev_check(h0, ga0, sga0, t0, fa0, h1, ga1, sga1, t1, fa1, f20, f21)
+         # Changed Nov 6, 2025
+         if str_prms["multirate_scheme"] == "concatenated":
+            # Do reversibility check
+            H.rev_check(h0, ga0, sga0, t0, fa0, h1, ga1, sga1, t1, fa1, f20, f21)
+         elif str_prms["multirate_scheme"] == "nested":
+            I.rev_check(h0, ga0, sga0, t0, fa0, h1, ga1, sga1, t1, fa1, f20, f21)
 
       #[ Metropolis step ]#
    

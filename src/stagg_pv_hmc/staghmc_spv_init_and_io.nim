@@ -184,7 +184,8 @@ proc read_xml*(xml_file: string): auto =
                   "c1" : -1.0/12.0, "tau" : 0.0, "sm_adj_fac" : -1.0/4.0,
                   "sm_c1": -1.0/12.0, "sm_beta": 1.0,
                   "alpha_1" : 0.0, "alpha_2" : 0.0, "alpha_3" : 0.0,
-                  "mass_pv" : 0.0, "a_tol" : 0.0, "f_tol" : 0.0}.toTable
+                  "mass_pv" : 0.0, "a_tol" : 0.0, "f_tol" : 0.0,
+                  "mass_h": 0.0}.toTable
 
       # Seed parameters
       seed_prms = {"parallel_seed" : intParam("seed", int(1000 * epochTime())).uint64,
@@ -198,7 +199,8 @@ proc read_xml*(xml_file: string): auto =
                   "gauge_act": "adjoint",
                   "smeared_gauge_act": "Wilson",
                   "gauge_smearing": "nhyp", "matter_smearing": "nhyp",
-                  "plaq_verbose": "true"}.toTable
+                  "plaq_verbose": "true", "preconditioner": "none",
+                  "multirate_scheme": "concatenated"}.toTable
 
       # Initialize XML attribute name
       attrName = ""
@@ -409,6 +411,9 @@ proc write_fields*(base_fn: string; rng_field: ParallelRNG; gf: auto) =
 
 #[ Initialize pseudofermion and boson fields ]#
 proc init_matter_fields*(lo: Layout, int_prms: Table[string, int]): auto =
+   # Change Nov 6, 2025: Hasenbusch fields added; storage created whether or not 
+   # Hasenbusch used 
+
    #[ Initialize matter fields ]#
 
    # Initialize number of fields
@@ -416,22 +421,25 @@ proc init_matter_fields*(lo: Layout, int_prms: Table[string, int]): auto =
 
    # Initialize fermion field for temporary computations
    var psi = lo.ColorVector()
+   var hpsi = lo.ColorVector()
 
    # Initialize fermion type
    type clr_vec_type = typeof(psi)
 
    # Define generic "phi" fields (held constant in mol. dynmcs.)
    var phi = newseq[clr_vec_type](n_fields)
+   var hphi = newseq[clr_vec_type](int_prms["Nf"])
 
    # Cycle through field types
    for fld_ind in 0..<n_fields:
       # Initialize color vector
       phi[fld_ind] = lo.ColorVector()
+   for fld_ind in 0..<int_prms["Nf"]: hphi[fld_ind] = lo.ColorVector()
 
    #[ Return fields ]#
 
    # Return fields as tuple
-   result = (psi, phi)
+   result = (psi, hpsi, phi, hphi)
 
 #[ ~~~~ Initialize CG ~~~~ ]#
 
