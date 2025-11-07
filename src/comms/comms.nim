@@ -1,14 +1,6 @@
 import commsTypes
 export commsTypes
 
-# globals
-
-var defaultComm*: Comm
-template getDefaultComm*(): Comm = defaultComm
-template getComm*(): Comm = getDefaultComm()  # temporary alias
-var myRank* = 0
-var nRanks* = 1
-
 # base methods
 
 method name*(c: Comm): string {.base.} = discard
@@ -21,8 +13,9 @@ method barrier*(c: Comm) {.base.} = discard
 method broadcast*(c: Comm, p: pointer, bytes: int) {.base.} = discard
 method allReduce*(c: Comm, x: ptr float32, n: int) {.base.} = discard
 method allReduce*(c: Comm, x: ptr float64, n: int) {.base.} = discard
+method allReduceMax*(c: Comm, x: var float64) {.base.} = discard
+method allReduceMin*(c: Comm, x: var float64) {.base.} = discard
 method allReduceXor*(c: Comm, x: var int) {.base.} = discard
-# max, min
 
 method nsends*(c: Comm): int {.base.} = discard
 method nrecvs*(c: Comm): int {.base.} = discard
@@ -66,6 +59,9 @@ template allReduce*(c: Comm, x: var UncheckedArray[float32], n: int) =
   c.allReduce(addr x[0], n.cint)
 template allReduce*(c: Comm, x: var UncheckedArray[float64], n: int) =
   c.allReduce(addr x[0], n.cint)
+
+template max*(c: Comm, x: var float64) = c.allReduceMax(x)
+template min*(c: Comm, x: var float64) = c.allReduceMin(x)
 
 template pushSend*(c: Comm, rank: int, xx: SomeNumber) =
   var x = xx
@@ -157,6 +153,8 @@ commsNames.add "QMP"
 commsInits.add getQmpComm
 commsFinis.add commsFinalizeQmp
 
+import commsEcho
+export commsEcho
 import commsUtils
 export commsUtils
 

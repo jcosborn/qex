@@ -8,10 +8,11 @@ type
 #template `[]`*(x: cArray): untyped = addr x[0]
 #template `&`*(x: ptr cArray): untyped = addr x[0]
 
-template ptrInt*(x:untyped):untyped = cast[ByteAddress](x)
-template addrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
-template unsafeAddrInt*(x:untyped):untyped = cast[ByteAddress](addr(x))
-template toHex*(x: ptr typed): untyped = toHex(cast[ByteAddress](x))
+template ptrInt*(x: auto): auto = cast[uint](x)
+template addrInt*(x: auto): auto = cast[uint](addr(x))
+template unsafeAddrInt*(x: auto): auto = cast[uint](addr(x))
+template toHex*(x: ptr auto): auto = toHex(cast[uint](x))
+template toHex*(x: pointer): auto = toHex(cast[uint](x))
 
 type
   ConstInt* {.importc:"const int".} = object
@@ -31,7 +32,7 @@ proc isInteger*(s: string):bool =
   var t:int
   parseInt(s, t) == s.len
 
-template `$&`*(x: untyped): string =
+template `$&`*(x: auto): string =
   toHex(unsafeAddrInt(x))
 
 proc `|`*(s: string, d: tuple[w:int,c:char]): string =
@@ -52,8 +53,15 @@ proc `|`*(f: SomeFloat, d: tuple[w,p: int]): string =
     formatFloat(f, ffDefault, d.p) | d.w
 proc `|`*(f: float, d: int): string =
   f | (d,d)
-template `|-`*(x:SomeNumber, y: int): untyped =
+template `|-`*(x:SomeNumber, y: int): auto =
   x | -y
+
+proc values*(e: typedesc[enum]): string =
+  result = ""
+  var sep = ""
+  for v in e:
+    result &= sep & $v
+    sep = " "
 
 proc indexOf*[T](x: openArray[T], y: auto): int =
   let n = x.len

@@ -5,7 +5,7 @@ when existsEnv("QMPDIR"):
 else:
   const qmpDir {.strDefine.} = getHomeDir() & "lqcd/install/qmp"
 const qmpPassC = "-I" & qmpDir & "/include"
-const qmpPassL* = "-L" & qmpDir & "/lib -lqmp"
+const qmpPassL* = "-L" & qmpDir & "/lib -lqmp -Wl,-rpath," & qmpDir & "/lib"
 static:
   echo "Using QMP: ", qmpDir
   echo "QMP compile flags: ", qmpPassC
@@ -53,8 +53,10 @@ proc QMP_comm_sum_float_array*(comm: QMP_comm_t, value:ptr cfloat, length:cint) 
 proc QMP_comm_sum_double_array*(comm: QMP_comm_t, value:ptr cdouble, length:cint) {.qmp.}
 proc QMP_max_float*(value:ptr cfloat) {.qmp.}
 proc QMP_max_double*(value:ptr cdouble) {.qmp.}
+proc QMP_comm_max_double*(comm: QMP_comm_t, value: ptr cdouble) {.qmp.}
 proc QMP_min_float*(value:ptr cfloat) {.qmp.}
 proc QMP_min_double*(value:ptr cdouble) {.qmp.}
+proc QMP_comm_min_double*(comm: QMP_comm_t, value: ptr cdouble) {.qmp.}
 proc QMP_comm_xor_ulong*(comm: QMP_comm_t, value: ptr culong) {.qmp.}
 proc QMP_comm_get_default*(): QMP_comm_t {.qmp.}
 proc QMP_comm_get_number_of_nodes*(comm: QMP_comm_t):cint {.qmp.}

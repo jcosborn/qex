@@ -16,11 +16,33 @@ proc getStep[A](self: A): seq[float] =
   result = newSeq[float]() 
   for sAction in self.subActions:
     if sAction.running: result.add sAction.absCumSum/sAction.absScale
+    #echo sAction.absCumSum/sAction.absScale
+
+proc getSmallestStep[A](self: A): float = 
+  result = Large64
+  for action in self:
+    let absdts = action.getStep
+    for absdt in absdts:
+      if absdt <= result: result = absdt
+
+proc getCurrentSpaceSteps[A](self: A): seq[float] =
+  result = newSeq[float]()
+  for sAction in self.subActions: result.add sAction.vdtau
+
+proc getNextStep[A](self: A, minabsdt,scale: float): float =
+  result = 0.0
+  for sAction in self.subActions:
+    case sAction.running:
+      of true: 
+        let abscdt = sAction.absCumSum/sAction.absScale
+        if abs(minabsdt - abscdt) <= Small64: result = sAction.cumSum*scale
+        else: discard
+      of false: discard
 
 proc setStep[A](self: A; minabsdt, scale: float): float =
   result = 0.0
   for sAction in self.subActions:
-    case (sAction.running): #and (not sAction.cycleCompleted):
+    case sAction.running: #and (not sAction.cycleCompleted):
       of true:
         let abscdt = sAction.absCumSum/sAction.absScale
         if abs(minabsdt - abscdt) <= Small64: # Mod for force-grad.?
@@ -29,7 +51,7 @@ proc setStep[A](self: A; minabsdt, scale: float): float =
           sAction.spaceStep = sAction.timeStep + 1
 
           sAction.vdtau = sAction.updates[sAction.spaceStep].dtau*scale
-          result = abscdt*scale
+          result = sAction.cumSum*scale #abscdt*scale <<<<<<<<<<<< changed 09/24/2024
           if not sAction.solo: sAction.includeInStep = true
 
           sAction.iStep += 1
@@ -42,10 +64,59 @@ proc setStep[A](self: A; minabsdt, scale: float): float =
         else: sAction.vdtau = 0.0
       of false: sAction.vdtau = 0.0
 
+proc combineSpaceSteps[A](self: A; minabsdt, scale: float) =
+  let currentSteps = self.getCurrentSpaceSteps
+  for idx,sAction in self.subActions:
+    sAction.vdtau = currentSteps[idx]
+    case sAction.running:
+      of true:
+        let abscdt = sAction.absCumSum/sAction.absScale
+        if abs(minabsdt - abscdt) <= Small64: # Mod for force-grad.?
+          let nMD = sAction.updates.len div 2
+          sAction.timeStep = 2*(sAction.iStep).mod(nMD)
+          sAction.spaceStep = sAction.timeStep + 1
+
+          sAction.vdtau += sAction.updates[sAction.spaceStep].dtau*scale
+          if not sAction.solo: sAction.includeInStep = true
+
+          sAction.iStep += 1
+          sAction.timeStep = 2*(sAction.iStep).mod(nMD)
+          sAction.spaceStep = sAction.timeStep + 1
+          
+          sAction.cumSum += sAction.updates[sAction.timeStep].dtau
+          sAction.absCumSum += abs(sAction.updates[sAction.timeStep].dtau)
+          if sAction.iStep == sAction.steps*nMD: sAction.running = false
+        else: discard
+      of false: discard
+
+proc setPreviousSteps(
+    currentTime,dtau: float; 
+    nRunning: int; 
+    updateSpace: bool
+  ): auto =
+  var pdtau,pTime: float
+  if nRunning != 0:
+    pdtau = case updateSpace
+      of true: 0.0
+      of false: dtau
+  else: pdtau = 0.0
+  pTime = currentTime
+  result = (pdtau,pTime)
+
+proc checkSpaceUpdate[A](self: A): bool = 
+  result = false
+  for action in self:
+    for sAction in action.subActions:
+      if abs(sAction.vdtau) > Small64: result = true
+
 proc getNumRunning[A](self: A): int = 
   result = 0
   for sAction in self.subActions:
     if sAction.running: result += 1
+
+proc getTotalNumRunning[A](self: A): int =
+  result = 0
+  for action in self: result += action.getNumRunning
 
 proc smearGaugeForce(self: var Smearing) =
   if not self.smeared:
@@ -61,8 +132,9 @@ template smearGaugeForce(self: LatticeSubAction): untyped =
   self.smear[].smearGaugeForce
 
 proc rephaseForce(f: auto) =
-  f.stagPhase
   threads:
+    f.stagPhase
+    threadBarrier()
     for mu in 0..<f.len:
       for s in f[mu].odd: f[mu][s] *= -1
 
@@ -111,6 +183,7 @@ proc getGaugeForce[A](self: A; f: auto; p: auto) =
   proc search(f: auto; self: LatticeSubAction) =
     case self.pField.field:
       of GaugeField: 
+        #echo "gauge field dtau: ", self.vdtau
         if abs(self.vdtau) > Small64:
           gaugeForce(self.pField, f)
           gaugeUpdated = true
@@ -118,7 +191,6 @@ proc getGaugeForce[A](self: A; f: auto; p: auto) =
       else: discard
   for sAction in self.subActions: f.search(sAction)
   if gaugeUpdated: p.updateMomentum(f,dtau)
-
 
 proc getStaggeredMatterForce(f: auto; self: LatticeSubAction): bool = 
   result = false
@@ -149,7 +221,16 @@ proc getMatterForce(
       of PureGauge: discard
       of GaugeMatter,PureMatter:
         for sAction in action.subActions:
-          if abs(sAction.vdtau) > Small64: update = true
+          if abs(sAction.vdtau) > Small64: 
+            update = case sAction.pField.field
+              of StaggeredMatterField,WilsonMatterField: true
+              else: false
+          #[
+          case sAction.pField.field: ################################
+            of StaggeredMatterField,WilsonMatterField: 
+              echo "matter dtau: ", sAction.pField.staggeredAction, "/", sAction.vdtau
+            else: discard
+          ]#
         if update: f.zero
 
         for sAction in action.subActions:
@@ -164,6 +245,15 @@ proc getMatterForce(
           action.smearForce(f)
           f.projectTrclssAntiHrm(u)
           p.updateMomentum(f)
+
+proc kineticAction*(p: auto): float =
+  var p2: float
+  threads:
+    var p2r = 0.0
+    for mu in 0..<p.len: p2r += p[mu].norm2
+    threadBarrier()
+    threadMaster: p2 = p2r
+  result = 0.5*p2 - 16.0*p[0].l.physVol
 
 proc getMatterForce(
     actions: seq[LatticeSubAction]; 
@@ -205,6 +295,8 @@ proc getMatterForce(
     f.projectTrclssAntiHrm(u)
     p.updateMomentum(f)
 
+#var its = 0
+
 proc mdStep[A](
     actions: seq[A]; 
     dtau: float; 
@@ -216,23 +308,30 @@ proc mdStep[A](
     nested = false
     hasMatter = false
 
+  #echo "-------------------"
+  #echo its
+  #echo "P2 (1): ", p.kineticAction
+
   # Gauge field update
   for action in actions:
     for sAction in action.subActions:
       if not sAction.solo: nested = true
-  case nested:
-    of true: 
-      var subActions = newSeq[type(actions[0].subActions[0])]()
-      for action in actions:
-        for sAction in action.subActions:
-          if not sAction.solo:
-            if sAction.includeInStep: 
-              subActions.add sAction
-              sAction.includeInStep = false
-      case subActions.len > 0:
-        of true: subActions.trajectory(u,f,p,type(subActions[0]),dtau)
+  case abs(dtau) > Small64:
+    of true:
+      case nested:
+        of true: # Nested update, if any action is nested
+          var subActions = newSeq[type(actions[0].subActions[0])]()
+          for action in actions:
+            for sAction in action.subActions:
+              if not sAction.solo:
+                if sAction.includeInStep: 
+                  subActions.add sAction
+                  sAction.includeInStep = false
+          case subActions.len > 0:
+            of true: subActions.trajectory(u,f,p,type(subActions[0]),dtau)
+            of false: u.updateGauge(p,dtau)
         of false: u.updateGauge(p,dtau)
-    of false: u.updateGauge(p,dtau)
+    of false: discard
 
   # Momentum update
   for action in actions:
@@ -248,6 +347,10 @@ proc mdStep[A](
       of PureMatter: discard
   if hasMatter: actions.getMatterForce(u,f,p)
 
+  #its += 1
+  #if its == 1000: qexError "quitting"
+  #echo "P2 (2): ", p.kineticAction
+
   #[
   var ts = @[dtau]
   for action in actions:
@@ -255,7 +358,6 @@ proc mdStep[A](
       ts.add sAction.vdtau
   echo ts
   ]#
-
 
 template trajectory*[A](
     actions: seq[A]; 
@@ -266,39 +368,36 @@ template trajectory*[A](
     scale: float
   ): untyped =
   var 
-    step = 0
-    nRunning = 0
-
-    minabsdt = Large64
-
-    pTime = 0.0
-    cTime = 0.0
-
-    pdtau = 0.0
-    dtau = 0.0
-    
-    updateSpace = false
+    (step,nRunning) = (0,0)
+    (pTime,cTime,ncTime) = (0.0,0.0,0.0)
+    (pdtau,dtau) = (0.0,0.0)
+    minabsdt,nminabsdt: float
+    updateSpace: bool
 
   while true:
-    minabsdt = Large64
-    nRunning = 0
-    updateSpace = false
-
-    for action in actions:
-      let absdts = action.getStep
-      for absdt in absdts:
-        if absdt <= minabsdt: minabsdt = absdt
-    for action in actions: cTime = action.setStep(minabsdt, scale)
+    # Get gauge step & current force steps
+    minabsdt = actions.getSmallestStep
+    for action in actions: cTime = action.setStep(minabsdt,scale)
     dtau = cTime - pTime + pdtau
 
-    for action in actions: nRunning += action.getNumRunning
+    # get # of fields running, whether mom. should be updated, & prep next step
+    (nRunning,updateSpace) = (actions.getTotalNumRunning,actions.checkSpaceUpdate)
+    (pdtau,pTime) = setPreviousSteps(cTime,dtau,nRunning,updateSpace)
+    
+    # Combine various steps, if possible
+    while true:
+      nminabsdt = actions.getSmallestStep
+      for action in actions: ncTime = action.getNextStep(nminabsdt,scale)
+      if abs(ncTime - pTime + pdtau) < Small64:
+        for action in actions: action.combineSpaceSteps(nminabsdt,scale)
+        (nRunning,updateSpace) = (actions.getTotalNumRunning,actions.checkSpaceUpdate)
+        (pdtau,pTime) = setPreviousSteps(ncTime,dtau,nRunning,updateSpace)
+      else: break
 
-    for action in actions:
-      for sAction in action.subActions:
-        if abs(sAction.vdtau) > Small64: updateSpace = true
-
+    # Run molecular dynamics update
     if (updateSpace) or (nRunning == 0): actions.mdStep(dtau,u,f,p)
 
+    # Final tasks for this update
     if nRunning == 0:
       for action in actions:
         for sAction in action.subActions:
@@ -309,8 +408,3 @@ template trajectory*[A](
           sAction.cumSum = sAction.updates[0].dtau
           sAction.absCumSum = abs(sAction.cumSum)
       break
-    else:
-      pdtau = case updateSpace
-        of true: 0.0
-        of false: dtau
-      pTime = cTime

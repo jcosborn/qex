@@ -15,5 +15,6 @@ if [ "X$NIM" = "X" ]; then
 fi
 
 echo "Using Nim compiler: $NIM"
-echo "Runing: $NIM $dir/build/configure.nims ${@@Q}"
+echo "Runing: $NIM $dir/build/configure.nims $@"
+#echo "Runing: $NIM $dir/build/configure.nims ${@@Q}"
 $NIM $dir/build/configure.nims "$@"

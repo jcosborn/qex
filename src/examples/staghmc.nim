@@ -134,9 +134,9 @@ proc mdvf(t: float) =
       p[mu] -= s*f[mu]
   toc("mdvf")
 
-proc mdvf2(t: float) =
-  mdv(t)
-  mdvf(t)
+#proc mdvf2(t: float) =
+#  mdv(t)
+#  mdvf(t)
 
 # For force gradient update
 #const useFG = true
@@ -175,7 +175,7 @@ proc mdvAll(t: openarray[float]) =
   # For now, just do it separately.
   if t[0] != 0: mdv t[0]
   if t[1] != 0: mdvf t[1]
-proc mdvAllfga(ts,gs:openarray[float]) =
+proc mdvAllfga(ts,gs:openarray[float]) {.used.} =
   # TODO: actually share computation.
   # For now, just do it separately.
   let

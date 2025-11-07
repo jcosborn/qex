@@ -111,7 +111,7 @@ proc putP[T](buf: cstring; index: int, count: int; arg: openArray[ptr T]) =
 
 template `&`[T](x: seq[T]): untyped = cast[ptr T](unsafeaddr x[0])
 template `+`(x: ptr char, i: SomeInteger): untyped =
-  cast[ptr char](cast[ByteAddress](x) + ByteAddress(i))
+  cast[ptr char](cast[uint](x) + uint(i))
 
 proc read[T](rd: var Reader, v: openArray[ptr T]) =
   let t0 = getMonoTime()

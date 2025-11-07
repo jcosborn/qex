@@ -256,6 +256,7 @@ template setUnopT*(op,fun,t1,t2: untyped) {.dirty.} =
     rSetUnopT
 
 template setBinopP*(op,fun,t1,t2,t3: untyped) {.dirty.} =
+  getOptimPragmas()
   #template op*(x: typedesc[t1]; y: typedesc[t2]): typedesc = t3
   proc op*(x: t1; y: t2): auto {.alwaysInline,noInit.} =
     var r{.noInit.}: t3

@@ -352,7 +352,7 @@ proc stagD2eeN*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
 
 proc setBC*(g:openArray[Field]) =
   let gt = g[3]
-  tfor i, 0..<gt.l.nSites:
+  for i in gt.l.sites:
     #let e = i div gt.l.nSitesInner
     if gt.l.coords[3][i] == gt.l.physGeom[3]-1:
       gt{i} *= -1
@@ -362,7 +362,7 @@ proc stagPhase*(g:openArray[Field]) =
   const phases = [8,9,11,0]
   let l = g[0].l
   for mu in 0..<4:
-    tfor i, 0..<l.nSites:
+    for i in l.sites:
       var s = 0
       for k in 0..<4:
         s += (phases[mu] shr k) and l.coords[k][i].int

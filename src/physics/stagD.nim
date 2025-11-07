@@ -5,8 +5,8 @@ import layout
 import field
 import qcdTypes
 #import stdUtils
-import solvers/cg
-export cg
+#import solvers/cg
+#export cg
 #import types
 #import profile
 #import metaUtils
@@ -17,11 +17,9 @@ type StaggeredD*[T] = object
   sb*:seq[ShiftB[T]]
   sub*:string
   subset*:Subset
-type Staggered*[G,T] = object
-  se*,so*:StaggeredD[T]
-  g*:seq[G]
+template isWrapper*(s: StaggeredD): bool = false
 
-template initStagDT*(l:var Layout; T:typedesc; ss:string):untyped =
+template initStagDT*(l:var Layout; T:typedesc; ss:string): auto =
   var sd:StaggeredD[T]
   sd.sf.newSeq(4)
   sd.sb.newSeq(4)
@@ -50,6 +48,34 @@ template initStagD3T*(l:var Layout; T:typedesc; ss:string):untyped =
 
 proc initStagD3*(x:Field; sub:string):auto =
   result = initStagD3T(x.l, evalType(x[0]), sub)
+
+template toSingleImpl*[T](s: StaggeredD[T]): auto =
+  var r {.noInit.}: StaggeredD[toSingle(eval(T))]
+  let n = s.sf.len
+  r.sf.newSeq(n)
+  r.sb.newSeq(n)
+  r.sub = s.sub
+  r.subset = s.subset
+  for i in 0..<n:
+    initShiftB(r.sf[i], s.sf[i])
+    initShiftB(r.sb[i], s.sb[i])
+  r
+
+type Staggered*[G,T] = object
+  se*,so*:StaggeredD[T]
+  g*:seq[G]
+template isWrapper*(s: Staggered): bool = false
+
+template toSingleImpl*[G,T](s: typedesc[Staggered[G,T]]): typedesc =
+  Staggered[toSingle(G),toSingle(T)]
+#template toSingleImpl*[G,T](s: Staggered[G,T]):
+#         Staggered[toSingle(eval(type G)),toSingle(eval(T))] =
+template toSingleImpl*[G,T](s: Staggered[G,T]): auto =
+  var r {.noInit.}: Staggered[toSingle(eval(G)),toSingle(eval(T))]
+  r.se = toSingleImpl(s.se)
+  r.so = toSingleImpl(s.so)
+  r.g = s.g.toSingle
+  r
 
 proc subdirs*(s: Staggered, dirs: seq[int]): Staggered =
   result.se.sf.newSeq(0)
@@ -199,7 +225,7 @@ template stagDMN*(sd:openArray[StaggeredD]; r:openArray[Field];
 
 template stagDP*(sd:StaggeredD; r:Field; g:openArray[Field2];
                  x:Field3; expFlops:int; exp:untyped) =
-  tic()
+  tic("stagDP")
   for mu in 0..<g.len:
     XoptimizeAst:
       startSB(sd.sf[mu], x[ix])
@@ -277,7 +303,7 @@ template stagDP2*(sd:StaggeredD; r:Field; g:openArray[Field2];
   ]#
 template stagDM*(sd:StaggeredD; r:Field; g:openArray[Field2];
                  x:Field3; expFlops:int; exp:untyped) =
-  tic()
+  tic("stagDM")
   for mu in 0..<g.len:
     XoptimizeAst:
       startSB(sd.sf[mu], x[ix])
@@ -411,14 +437,12 @@ proc stagD*(sd:StaggeredD; r:Field; g:openArray[Field2];
   #  #for i in 0..<n:
   #  rir := m*getVec(x[ir], ic)
 
-proc stagD1*(sd:StaggeredD; r:Field; g:openArray[Field2];
-             x:Field; m:SomeNumber) =
-  stagDP(sd, r, g, x, 6):
+proc stagD1*(sd:StaggeredD; r:Field; g:openArray[Field2]; x:Field) =
+  stagDP(sd, r, g, x, 0):
     rir := 0
 
-proc stagD1x*(sd:StaggeredD; r:Field; g:openArray[Field2];
-              x:Field; m:SomeNumber) =
-  stagDM(sd, r, g, x, 6):
+proc stagD1x*(sd:StaggeredD; r:Field; g:openArray[Field2]; x:Field) =
+  stagDM(sd, r, g, x, 0):
     rir := 0
 
 # r = m*x + sc*D*x
@@ -433,7 +457,7 @@ proc stagDb*(sd:StaggeredD; r:Field; g:openArray[Field2];
 # r = m2 - Deo * Doe
 proc stagD2xx*(sdx,sdy:StaggeredD; r:Field; g:openArray[Field2];
                x:Field; m2:SomeNumber) =
-  tic()
+  tic("stagD2xx")
   var t{.global.}:evalType(x)
   if t==nil:
     threadBarrier()
@@ -442,18 +466,18 @@ proc stagD2xx*(sdx,sdy:StaggeredD; r:Field; g:openArray[Field2];
     threadBarrier()
   #threadBarrier()
   #stagD(sdo, t, g, x, 0.0)
-  toc("stagD2xx init")
+  #toc("init")
   block:
     stagDP(sdy, t, g, x, 0):
       rir := 0
-  toc("stagD2xx DP")
+  toc("stagDP", flops=(g.len*(72+66+6))*sdy.subset.len)
   threadBarrier()
-  toc("stagD2xx barrier")
+  #toc("barrier")
   #stagD(sde, r, g, t, 0.0)
   block:
     stagDM(sdx, r, g, t, 6):
       rir := (4.0*m2)*x[ir]
-  toc("stagD2xx DM")
+  toc("stagDM", flops=(6+g.len*(72+66+6))*sdx.subset.len)
   #threadBarrier()
   #r[sde.sub] := m2*x - r
   #for ir in r[sde.subset]:
@@ -509,7 +533,7 @@ proc stagD2eeN*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
 proc stagPhase*(g:openArray[Field], phases:openArray[int]) =
   let l = g[0].l
   for mu in 0..<4:
-    tfor i, 0..<l.nSites:
+    for i in l.sites:
       var s = 0
       for k in 0..<4:
         s += (phases[mu] shr k) and l.coords[k][i].int

@@ -81,11 +81,9 @@ proc getAction(self: LatticeSubAction): float =
     of DummyField: discard
   result = self.currentAction
   if not self.solo:
-    for sAction in self.subActions: 
-      result += sAction.getAction
+    for sAction in self.subActions: result += sAction.getAction
 
 proc getAction*(self: LatticeAction): float =
   result = 0.0
-  for sAction in self.subActions: 
-    result += sAction.getAction
+  for sAction in self.subActions: result += sAction.getAction
   self.resetRephase

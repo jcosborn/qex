@@ -19,10 +19,12 @@ var
 
 proc qexTime*: float = ticDiffSecs(getTics(), qexStartTime)
 
+template qexLogT*(t:float, s:varargs[string,`$`]) =
+  echo "[", formatFloat(t,ffDecimal,3), " s] ", s.join
+
 template qexLog*(s:varargs[string,`$`]) =
   let t = qexTime()
-  if s.len > 0:
-    echo "[", formatFloat(t,ffDecimal,3), " s] ", s.join
+  qexLogT(t,s)
 
 template qexWarn*(s:varargs[string,`$`]) =
   let ii = instantiationInfo()

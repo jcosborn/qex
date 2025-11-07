@@ -564,6 +564,10 @@ type
     order*: int
     scale*: int
     valid*: bool
+proc newExpParam*: ExpParam =
+  result.kind = ekPoly
+  result.order = 4
+  result.scale = 20
 
 proc expm1NoScale*[R,M:Mat1](p: var ExpParam, r: var R, m: M) =
   p.valid = true
@@ -942,3 +946,42 @@ when isMainModule:
   testDeriv(CM[1,float])
   testDeriv(CM[2,float])
   testDeriv(CM[3,float])
+
+  # example from https://blogs.mathworks.com/cleve/2012/07/23/a-balancing-act-for-the-matrix-exponential
+  proc getm3: MatrixArray[3,3,float] =
+    let
+      a = 2e10
+      b = 4e8/6
+      c = 200/3
+      d = 3.0
+      e = 1e-8
+    result[0,1] = e
+    result[1,0] = -(a+b)
+    result[1,1] = -d
+    result[1,2] = a
+    result[2,0] = c
+    result[2,2] = -c
+  proc getm3exp: MatrixArray[3,3,float] =
+    result[0,0] = 0.446849468283175
+    result[0,1] = 1.54044157383952e-09
+    result[0,2] = 0.462811453558774
+    result[1,0] = -5743067.77947947
+    result[1,1] = -0.0152830038686819
+    result[1,2] = -4526542.71278401
+    result[2,0] = 0.447722977849494
+    result[2,1] = 1.54270484519591e-09
+    result[2,2] = 0.463480648837651
+
+  proc testgetm3 =
+    let a = getm3()
+    let ae = getm3exp()
+    var p = newExpParam()
+    p.scale = 60
+    p.order = 12
+    let b = p.exp(a)
+    let d = b-ae
+    echo a
+    echo b
+    echo sqrt(d.norm2/ae.norm2)
+  testgetm3()
+

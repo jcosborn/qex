@@ -1,4 +1,5 @@
 import enum_quda, quda_constants
+import base/stdUtils
 
 ## *
 ##  @file  quda.h
@@ -10,7 +11,7 @@ import enum_quda, quda_constants
 ##
 
 type
-  ConstInt* {.importc:"const int".} = cint
+  #ConstInt* {.importc:"const int".} = cint
   double_complex* {.importc:"double _Complex".} = object
 converter toDoubleComplex*(x: array[2,float]): double_complex =
   var r = cast[ptr array[2,float]](addr result)

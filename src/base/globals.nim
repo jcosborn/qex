@@ -44,3 +44,13 @@ macro setDefaultNc*(n: static[int]): untyped =
   result = newEmptyNode()
 macro getDefaultNc*(): untyped =
   return newLit(defaultNc)
+
+template getDefPrecStr:string =
+  const defPrec {.strdefine.} = "D"
+  defPrec
+
+var defPrec* {.compiletime.} = getDefPrecStr()
+macro setDefaultSingle* =
+  defPrec = "S"
+  echo "Default precision: ", defPrec
+static: echo "Default precision: ", defPrec

@@ -1,5 +1,5 @@
 #import base,
-import layout, strformat, stats
+import layout, strformat, stats, base/params
 export stats
 
 type
@@ -26,6 +26,7 @@ type
     #r2sum*: float
     #r2max*: float
     r2*: RunningStat
+# ?split into SolverRequest, SolverFlags(?), SolverPerf?
 
 template finalIterations*(sp: SolverParams): untyped = sp.iterations
 template `finalIterations=`*(sp: var SolverParams, x: int): untyped =
@@ -51,7 +52,7 @@ proc init*(sp: var SolverParams) =
   sp.backend = sbQex
   if defined(qudaDir): sp.backend = sbQuda
   if defined(gridDir): sp.backend = sbGrid
-  sp.sloppySolve = SloppyNone
+  sp.sloppySolve = intParam("sloppySolve", 0).SloppyType
   sp.usePrevSoln = false
   sp.verbosity = 1
   sp.subsetName = "all"
