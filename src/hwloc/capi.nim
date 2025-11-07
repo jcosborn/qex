@@ -48,9 +48,10 @@
 ##
 
 when hostOs == "macosx":
-  {.pragma: hwloc, dynlib:"libhwloc.dylib".}
+  const hwloclib {.strDefine.} = "libhwloc.dylib"
 else:
-  {.pragma: hwloc, dynlib:"libhwloc.so".}
+  const hwloclib {.strDefine.} = "libhwloc.so"
+{.pragma: hwloc, dynlib:hwloclib.}
 
 type
   hwloc_bitmap_s {.bycopy.} = object

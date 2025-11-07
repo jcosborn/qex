@@ -69,18 +69,26 @@ template numberType*(x:Field):untyped = numberType(x[0])
 #macro fieldUnop*(o: static[FieldOps], x: SomeField): auto =
 #  result = quote do:
 #    FieldUnop[FieldOps(`o`),type(`x`)](f1: `x`)
-template fieldUnop*(o: FieldOps, x: SomeField): untyped =
-  FieldUnop[FieldOps(o),type(x)](f1: x)
-macro fieldAddSub*(sx:static[int],x:auto):auto =
+#template fieldUnop*(o: FieldOps, x: SomeField): auto =
+#  FieldUnop[FieldOps(o),type(x)](f1: x)
+template fieldUnop*[X:SomeField](o: static FieldOps, x: X): auto =
+  FieldUnop[o,X](f1: x)
+#proc fieldUnop*[X:SomeField](o: static FieldOps, x: X): auto =
+#  FieldUnop[o,X](f1: x)
+macro fieldAddSub*(sx:static int,x:auto):auto =
   result = quote do:
     FieldAddSub[(a:`sx`),tuple[a:type(`x`)]](field:(a:`x`))
   #echo result.repr
-macro fieldAddSub*(sx:static[int],x:auto,
-                   sy:static[int],y:auto):auto =
-  result = quote do:
-    FieldAddSub[(a:`sx`,b:`sy`),tuple[a:type(`x`),b:type(`y`)]](
-      field:(a:`x`,b:`y`) )
-  #echo result.repr
+#macro fieldAddSub*(sx:static[int],x:auto,
+#                   sy:static[int],y:auto):auto =
+#  result = quote do:
+#    FieldAddSub[(a:`sx`,b:`sy`),tuple[a:type(`x`),b:type(`y`)]](
+#      field:(a:`x`,b:`y`) )
+#  #echo result.repr
+template fieldAddSub*[X,Y](sx:static[int],x:X,sy:static[int],y:Y):auto =
+  FieldAddSub[(a:sx,b:sy),tuple[a:X,b:Y]](field:(a:x,b:y))
+#proc fieldAddSub*[X,Y](sx:static int,x:X,sy:static int,y:Y):auto =
+#  FieldAddSub[(a:sx,b:sy),tuple[a:X,b:Y]](field:(a:x,b:y))
 macro fieldMul*(x:SomeField,y:SomeField2):auto =
   result = quote do:
     FieldMul[tuple[a:type(`x`),b:type(`y`)]](field:(a:`x`,b:`y`))
@@ -107,18 +115,21 @@ macro fieldShift*(x:SomeField, d,l:int):auto =
   #echo result.repr
 template adjImpl*(x: SomeField): untyped =
   fieldUnop(foAdj, x)
-template toSingleImpl*(x: SomeField): untyped =
+template toSingleImpl*[F:Field](x: typedesc[F]): typedesc =
+  Field[F.V,toSingle(F.T)]
+template toSingleImpl*(x: SomeField): auto =
+  #static: echo $x.type
   fieldUnop(foToSingle, x)
-template toDoubleImpl*(x: SomeField): untyped =
+template toDoubleImpl*(x: SomeField): auto =
   fieldUnop(foToDouble, x)
 
 template eval*[F:Field](x: typedesc[F]): typedesc =
   Field[F.V,eval(type F.T)]
 template eval*[F:FieldObj](x: typedesc[F]): typedesc =
   FieldObj[F.V,eval(type F.T)]
-template evalType*[F:Field](x: typedesc[FieldUnop[foToSingle,F]]): typedesc =
+template eval*[F:Field](x: typedesc[FieldUnop[foToSingle,F]]): typedesc =
   mixin toSingle
-  Field[F.V,eval(toSingle(type F.T))]
+  Field[F.V,toSingle(eval(type F.T))]
 
 proc new*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) =
   # remember to change newFieldArray if the following changes
@@ -141,6 +152,11 @@ template l*(x: FieldUnop): untyped = x.f1.l
 proc newOneOf*(x: FieldUnop): auto =
   var r: evalType(x)
   r.new(x.l)
+  r
+proc newOneOf*(x: Subsetted): auto =
+  var r: type(x)
+  r.field.new(x.field.l)
+  r.subset = x.subset
   r
 template new*(x: typedesc[Field], l: Layout): untyped =
   newField(l, x.T)
@@ -364,18 +380,19 @@ iterator items*(l:Layout):int {.inline.} =
   itemsI(0, n)
 iterator sites*(l:Layout):int {.inline.} =
   let n = l.nSites
-  itemsI(0, n, VLEN)
+  itemsI(0, n, l.V)
 iterator sites*(f:Field):int {.inline.} =
   let n = f.l.nSites
-  itemsI(0, n, VLEN)
+  itemsI(0, n, f.l.V)
 iterator items*(s:Subset):int {.inline.} =
   let n0 = s.lowOuter
   let n1 = s.highOuter
   itemsI(n0, n1)
 iterator sites*(s:Subset):int {.inline.} =
+  let v = s.high div s.highOuter
   let n0 = s.low
   let n1 = s.high
-  itemsI(n0, n1, VLEN)
+  itemsI(n0, n1, v)
 #iterator all*(x:Field):int {.inline.} =
 #  let n = x.l.nSitesOuter
 #  itemsI(0, n)
@@ -402,7 +419,7 @@ iterator sites*(x: Subsetted): int {.inline.} =
   let n0 = s.low
   let n1 = s.high
   #echo "n0: ", n0, " n1: ", n1
-  itemsI(n0, n1, VLEN)
+  itemsI(n0, n1, x.field.l.V)
 iterator items*(x:FieldAddSub):int {.inline.} =
   let n = x.field[0].l.nSitesOuter
   itemsI(0, n)
@@ -603,7 +620,7 @@ proc mul*(r:Field; x:Field2; y:Field3) =
     mul(r[e], x[e], y[e])
 
 proc norm2P*(f:SomeField):auto =
-  tic()
+  tic("norm2P[" & $type(f) & "]")
   mixin norm2, inorm2, simdSum, items, toDouble
   #var n2:type(norm2(f[0]))
   var n2: evalType(norm2(toDouble(f[0])))
@@ -611,10 +628,10 @@ proc norm2P*(f:SomeField):auto =
   #let t = f
   for x in items(f):
     inorm2(n2, toDouble(f[x]))
-  toc("norm2 local")
+  toc("local")
   #echoAll n2
   result = simdSum(n2)
-  toc("norm2 simd sum")
+  toc("simdSum")
   #echoAll myRank, ",", threadNum, ": ", result
   #threadSum(result)
   #toc("norm2 thread sum")
@@ -622,7 +639,7 @@ proc norm2P*(f:SomeField):auto =
   #toc("norm2 rank sum")
   f.l.threadRankSum(result)
   #echo result
-  toc("norm2 thread rank sum")
+  toc("threadRankSum")
 template norm2*(f:SomeAllField):auto =
   when declared(subsetObject):
     #echo "subsetObj" & s
@@ -702,7 +719,7 @@ template dot*(f1:SomeAllField; f2:SomeAllField2):untyped =
 template dot*(f1:Subsetted; f2:SomeAllField2):untyped = dotP(f1, f2)
 
 proc redotP*(f1:SomeField; f2:SomeField2):auto =
-  tic()
+  tic("redotP[" & $f1.type & "," & $f2.type & "]")
   mixin redot, iredot, simdSum, items, toDouble, eval
   #var d:type(redot(f1[0],f2[0]))
   var d: evalType(toDouble(redot(f1[0],f2[0])))
@@ -711,9 +728,9 @@ proc redotP*(f1:SomeField; f2:SomeField2):auto =
   for x in items(t1):
     #iredot(d, t1[x], t2[x])
     d += redot(t1[x], t2[x])
-  toc("redot local")
+  toc("local")
   result = simdSum(d)
-  toc("redot simd sum")
+  toc("simdSum")
   #threadBarrier()
   #toc("thread barrier")
   #threadSum(result)
@@ -721,7 +738,7 @@ proc redotP*(f1:SomeField; f2:SomeField2):auto =
   #rankSum(result)
   #toc("rank sum")
   f1.l.threadRankSum(result)
-  toc("redot thread rank sum")
+  toc("threadRankSum")
 template redot*(f1:SomeAllField; f2:SomeAllField2):untyped =
   when declared(subsetObject):
     #echo "subsetObj redot"
@@ -804,6 +821,16 @@ template onNoSync*(s:Subset; body:untyped):untyped =
 
 #template assign*(x:var Field; y:Shifted):untyped =
 #  shift(x, y.dir, y.len, y.field)
+
+template isWrapper*(x: seq[Field]): bool = false
+proc toSingleImpl*[F:Field](x: seq[F]): auto =
+  mixin toSingle
+  let n = x.len
+  var r = newSeq[toSingle(F)](n)
+  for i in 0..<n:
+    r[i].new(x[0].l)
+    r[i] := x[i]
+  r
 
 when isMainModule:
   import qex

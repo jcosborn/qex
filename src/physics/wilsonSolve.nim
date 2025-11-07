@@ -2,7 +2,7 @@ import physics/wilsonD
 
 import os
 import times
-import strUtils
+#import strutils
 import base
 import layout
 import field
@@ -11,7 +11,7 @@ import qcdTypes
 import solvers/cg
 export cg
 import solvers/bicgstab
-import solvers/solverUtils
+#import solvers/solverUtils
 #import types
 #import profile
 #import metaUtils

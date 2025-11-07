@@ -29,10 +29,10 @@ proc qmpSum*(v:var int) =
   QmpSumDouble(t.addr)
   v = t.int
 
-template qmpSum*(v:float32):untyped = QmpSumFloat(v.addr)
-template qmpSum*(v:float64):untyped = QmpSumDouble(v.addr)
-template qmpSum*(v:ptr float32, n:int):untyped = QmpSumFloatArray(v,n.cint)
-template qmpSum*(v:ptr float64, n:int):untyped = QmpSumDoubleArray(v,n.cint)
+template qmpSum*(v:float32) = QmpSumFloat(v.addr)
+template qmpSum*(v:float64) = QmpSumDouble(v.addr)
+template qmpSum*(v:ptr float32, n:int) = QmpSumFloatArray(v,n.cint)
+template qmpSum*(v:ptr float64, n:int) = QmpSumDoubleArray(v,n.cint)
 #template qmpSum*(v:ptr array, n:int):untyped =
 #  qmpSum(v[][0].addr, n*v[].len)
 #template qmpSum*(v:ptr tuple, n:int):untyped =
@@ -45,24 +45,24 @@ template qmpSum*(v:ptr float64, n:int):untyped = QmpSumDoubleArray(v,n.cint)
 #  qmpSum(v[][].addr, n)
 #template QmpSum(v:array[int,int]):untyped =
 #  var tQmpSumDoubleArray(v)
-template qmpSum*[I,T](v:array[I,T]):untyped =
+template qmpSum*[I,T](v:array[I,T]) =
   qmpSum(v[0].addr, v.len)
 #template qmpSum*(v:openArray[float64]):untyped =
 #  QmpSumDoubleArray(v[0].addr,v.len.cint)
-template qmpSum*[T](v:seq[T]):untyped =
+template qmpSum*[T](v:seq[T]) =
   qmpSum(v[0].addr, v.len)
 #template qmpSum*[I,T](v:seq[array[I,T]]):untyped =
 #  qmpSum(v[0][0].addr, v.len.cint*sizeOf(v[0]))
 #template qmpSum*(v:openArray[array]):untyped =
 #  qmpSum(v[0][0].addr, v.len.cint*sizeOf(v[0]))
-template qmpSum*(v:tuple):untyped =
+template qmpSum*(v:tuple) =
   qmpSum(v[0].addr, sizeOf(v) div sizeOf(v[0]))
 #template qmpSum*[T](v:T):untyped =
 #template qmpSum*(v:typed):untyped =
 #  qmpSum(v[])
 #template qmpSum*[T](v:T):untyped =
 #  qmpSum(v[])
-template qmpSum*(v: typed): untyped =
+template qmpSum*(v: typed) =
   when numberType(v) is float64:
     qmpSum(cast[ptr float64](addr v), sizeof(v) div sizeof(float64))
   elif numberType(v) is float32:
@@ -70,10 +70,10 @@ template qmpSum*(v: typed): untyped =
   else:
     qmpSum(v[])
 
-template qmpMax*(v:float32):untyped = QmpMaxFloat(v.addr)
-template qmpMax*(v:float64):untyped = QmpMaxDouble(v.addr)
-template qmpMin*(v:float32):untyped = QmpMinFloat(v.addr)
-template qmpMin*(v:float64):untyped = QmpMinDouble(v.addr)
+template qmpMax*(v:float32) = QmpMaxFloat(v.addr)
+template qmpMax*(v:float64) = QmpMaxDouble(v.addr)
+template qmpMin*(v:float32) = QmpMinFloat(v.addr)
+template qmpMin*(v:float64) = QmpMinDouble(v.addr)
 
 # generic comms interface
 
@@ -126,6 +126,12 @@ method allReduce*(c: CommQmp, x: ptr float32, n: int) =
 
 method allReduce*(c: CommQmp, x: ptr float64, n: int) =
   QMP_comm_sum_double_array(c.comm, x, n.cint)
+
+method allReduceMax*(c: CommQmp, x: var float64) =
+  QMP_comm_max_double(c.comm, addr x)
+
+method allReduceMin*(c: CommQmp, x: var float64) =
+  QMP_comm_min_double(c.comm, addr x)
 
 method allReduceXor*(c: CommQmp, x: var int) =
   var t = cast[ptr culong](addr x)

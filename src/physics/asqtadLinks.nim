@@ -26,7 +26,7 @@ proc `$`*(c: AsqtadCoefs): string =
 
 proc smear*(c: AsqtadCoefs, g: any, fl,ll: any) =
   var info: PerfInfo
-  makeImpLinks(info, fl, g, c.fat7, ll, g, c.naik)
+  makeImpLinks(fl, g, c.fat7, ll, g, c.naik, info)
 
 when isMainModule:
   import qex

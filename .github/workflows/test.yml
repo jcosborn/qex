@@ -2,16 +2,17 @@ name: test
 on:
   pull_request:
   push:
-    branches:
-      - 'devel'
-      - 'master'
+#    branches:
+#      - 'devel'
+#      - 'master'
 
 jobs:
   build:
     strategy:
       matrix:
         mpi-impl: [openmpi, mpich]
-        nim-branch: [version-1-6, version-2-0, devel]
+        nim-branch: [version-2-0, version-2-2, devel]
+        #nim-branch: [v2.0.14, v2.2.2]
         fuel-compat: [0, 1]
       fail-fast: false
     name: nim-${{ matrix.nim-branch }}-${{ matrix.mpi-impl }}-FUELCompat:${{ matrix.fuel-compat }}
@@ -48,21 +49,22 @@ jobs:
         mpicc -v
         cat /proc/sys/kernel/core_pattern
     - name: checkout Nim
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         repository: nim-lang/Nim
         ref: ${{ matrix.nim-branch }}
         path: Nim
-    - name: set path to nim
-      run: echo "${{ github.workspace }}/Nim/bin" >> $GITHUB_PATH
     - name: build Nim & nimble
       working-directory: Nim
       run: |
-        . ci/funs.sh
-        nimBuildCsourcesIfNeeded
-        ./bin/nim c --noNimblePath --skipUserCfg --skipParentCfg --hints:off koch
-        ./koch boot -d:release -d:danger --skipUserCfg --skipParentCfg --hints:off
-        ./koch nimble -d:release -d:danger --skipUserCfg --skipParentCfg --hints:off
+        #. ci/funs.sh
+        #nimBuildCsourcesIfNeeded
+        #./bin/nim c --noNimblePath --skipUserCfg --skipParentCfg --hints:off koch
+        #./koch boot -d:release -d:danger --skipUserCfg --skipParentCfg --hints:off
+        #./koch nimble -d:release -d:danger --skipUserCfg --skipParentCfg --hints:off
+        ./build_all.sh
+    - name: set path to nim
+      run: echo "${{ github.workspace }}/Nim/bin" >> $GITHUB_PATH
     - name: checkout
       uses: actions/checkout@v3
       with:
@@ -91,7 +93,7 @@ jobs:
         CLEANUPJOBS=./finalizeTests ./runtests.sh
     - name: make bench
       working-directory: qex
-      run: make bench
+      run: make /bench
     - name: benchLinalg
       working-directory: qex
       run: bin/benchLinalg

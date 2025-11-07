@@ -2,7 +2,7 @@ import qex
 import gauge, physics/qcdTypes
 import os, strutils, times
 
-proc sumStaples(f:any, g:any, mu:int, sg:any, ftmp:any, sftmp:any) =
+proc sumStaples(f:auto, g:auto, mu:int, sg:auto, ftmp:auto, sftmp:auto) =
   f := 0
   for nu in 0..<g.len:
     if mu==nu: continue
@@ -23,7 +23,7 @@ type HeatBath[F,E] = object
   sftmp: array[2,seq[Shifter[F,E]]]
   subs: array[2,Subset]
 
-proc newHeatBath(lo:any):auto =
+proc newHeatBath(lo:auto):auto =
   type F = typeof(lo.ColorMatrix())
   var f = lo.ColorMatrix()
   type E = type(f[0])
@@ -40,7 +40,7 @@ proc newHeatBath(lo:any):auto =
   r.subs[1].layoutSubset(lo,"o")
   r
 
-proc evolve(h:HeatBath, g:array or seq, gc:GaugeActionCoeffs, r:any) =
+proc evolve(h:HeatBath, g:array or seq, gc:GaugeActionCoeffs, r:auto) =
   tic("heatbath")
   const nc = g[0][0].nrows
   let
@@ -103,7 +103,7 @@ proc evolve(h:HeatBath, g:array or seq, gc:GaugeActionCoeffs, r:any) =
 
 proc topo2DU1(g:array or seq):float =
   tic()
-  const nc = g[0][0].nrows
+  #const nc = g[0][0].nrows
   let
     lo = g[0].l
     nd = lo.nDim
@@ -143,7 +143,7 @@ threads: echo "thread ", threadNum, "/", numThreads
 let
   gc = GaugeActionCoeffs(plaq: beta)
   lo = lat.newLayout
-  vol = lo.physVol
+  #vol = lo.physVol
 
 var r = lo.newRNGField(RngMilc6, seed)
 

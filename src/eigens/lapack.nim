@@ -3,7 +3,8 @@ const lapackLib {.strdefine.} = "-llapack -lblas"
 #const lapackLib {.strdefine.} = "/usr/lib/lapack/liblapack.a -lblas -lgfortran"
 #const lapackLib {.strdefine.} = "-L/usr/lib/lapack -llapack"
 {.passL: lapackLib.}
-{.pragma: lapack, header: hdr.}
+#{.pragma: lapack, header: hdr.}
+{.pragma: lapack.}
 
 type
   fint* = cint
@@ -102,3 +103,17 @@ proc dbdsvdx*(uplo: cstring, jobz: cstring, range: cstring, n: ptr fint,
 proc dlasq1*(n: ptr fint; d: ptr float64; e: ptr float64;
              work: ptr float64; info: ptr fint) {.lapack, importc: "dlasq1_".}
 
+
+when isMainModule:
+  template toPtrInt32(x: int): ptr int32 =
+    var t = x.int32
+    addr t
+  template toPtrScomplex(x: int): ptr scomplex =
+    var t = scomplex(re: x.float32, im: 0'f32)
+    addr t
+  template `&`(x: int): untyped = toPtrInt32(x)
+  template `&&`(x: int): untyped = toPtrScomplex(x)
+  var c,a,b: ptr scomplex
+  var cr,cc,bc: int
+
+  cgemm("C","N", &cc,&cr,&bc, &&1, b,&bc, a,&bc, &&0, c,&cc)

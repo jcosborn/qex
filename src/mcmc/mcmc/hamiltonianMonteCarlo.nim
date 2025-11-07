@@ -10,15 +10,6 @@ import math
 
 export latticeAction
 
-proc kineticAction(p: auto): float =
-  var p2: float
-  threads:
-    var p2r = 0.0
-    for mu in 0..<p.len: p2r += p[mu].norm2
-    threadBarrier()
-    threadMaster: p2 = p2r
-  result = 0.5*p2 - 16.0*p[0].l.physVol
-
 template runHamiltonianMonteCarlo*(
     self: var LatticeFieldTheory; 
     samples: int;
@@ -28,8 +19,7 @@ template runHamiltonianMonteCarlo*(
 
   proc hamiltonian: float {.inject.} =
     result = self.p.kineticAction
-    for action in self.actions: 
-      result += action.getAction
+    for action in self.actions: result += action.getAction
 
   proc runMolecularDynamics(tau:float) {.inject.} =
     self.actions.trajectory(self.u[],self.f,self.p,type(self.actions[0]),tau)
@@ -60,10 +50,8 @@ template runHamiltonianMonteCarlo*(
     # Smear gauge fields
     for action in self.actions: action.smearGauge
 
-    # Momentum heatbath
+    # Momentum/fermion heatbath
     self.pRNG.randomTAHGaussian(self.p)
-
-    # Fermion heatbath
     for action in self.actions: action.fermionHeatbath
 
     # Get Hi
@@ -71,6 +59,8 @@ template runHamiltonianMonteCarlo*(
 
     # Evolve
     runMolecularDynamics(trajectoryLength)
+
+    #echo "---" #############################################################
 
     # Smear gauge fields
     for action in self.actions: action.smearGauge

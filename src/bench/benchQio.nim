@@ -27,8 +27,8 @@ proc test(lat: seq[int]) =
   var rs = newRNGField(RngMilc6, lo, intParam("seed", 987654321).uint64)
   #var r0 = lo.RealS()
   #var r1 = lo.RealS()
-  var r0 = newSeqWith[type lo.ColorMatrixS](4, lo.ColorMatrixS)
-  var r1 = newSeqWith[type lo.ColorMatrixS](4, lo.ColorMatrixS)
+  var r0 = newSeqWith(4, lo.ColorMatrixS)
+  var r1 = newSeqWith(4, lo.ColorMatrixS)
   var fn = stringParam("fn", "testqio.lat")
   let bytes = r0.len * r0[0].numNumbers * sizeof(r0[0][0].numberType)
   byts.add bytes
@@ -45,7 +45,7 @@ proc test(lat: seq[int]) =
 
     block:
       #setNumWriteRanks(nio)
-      var wr = lo.newWriter(fn, "test")
+      var wr = lo.newWriter(fn)
       var t0 = epochTime()
       wr.write(r0)
       var t1 = epochTime()

@@ -32,6 +32,7 @@ template doIndexed[T](x: T): untyped =
   else:
     x
 
+template toSingleImpl*(x: typedesc[Simd]): typedesc = Simd[toSingle(x[])]
 template toPrec*(x: Simd, y: typedesc[float32]): untyped = toSingle(x)
 template toPrec*(x: Simd, y: typedesc[float64]): untyped = toDouble(x)
 
@@ -158,6 +159,7 @@ f1(rsqrt)
 f1(sin)
 f1(cos)
 f1(acos)
+f1(tanh)
 f1(load1)
 f2(atan2)
 f2(copySign)

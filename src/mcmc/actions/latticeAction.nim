@@ -121,7 +121,7 @@ template addGaugeField*[A](
     construction: untyped
   ) = 
   block:
-    var subAction {.inject.} = self.newLatticeSubAction(gaugeInfo, true)
+    var subAction {.inject.} = self.newLatticeSubAction(gaugeInfo, false)
     subAction.pField = self.l[].newGaugeField(gaugeInfo)
     construction
     self.subActions.add subAction

@@ -112,10 +112,10 @@ type
   Layout2*[V:static[int]] = Layout[V]
   Layout3*[V:static[int]] = Layout[V]
   Subset* = object
-    low*: int
-    high*: int
-    lowOuter*: int
-    highOuter*: int
+    low*: int   # lower site in subset
+    high*: int  # one more than upper site
+    lowOuter*: int  # lower outer index
+    highOuter*: int # one more than upper outer index
 
 proc makeShiftKey*(d,l:int;s:string):ShiftKey =
   ShiftKey((dir:d,len:l,sub:s))

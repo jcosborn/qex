@@ -5,13 +5,17 @@ import io
 import json
 import strutils
 
-proc plaquette*(g: auto) =
+proc calculatePlaquette*(g: auto): auto =
   let
     pl = g.plaq
     nl = pl.len div 2
     ps = pl[0..<nl].sum * 2.0
     pt = pl[nl..^1].sum * 2.0
-  echo "MEASplaq ss: ",ps,"  st: ",pt,"  tot: ",0.5*(ps+pt)
+  result = (ps,pt,0.5*(ps+pt))
+
+proc plaquette*(g: auto) =
+  let (ps,pt,ptot) = g.calculatePlaquette
+  echo "MEASplaq ss: ",ps,"  st: ",pt,"  tot: ",ptot
 
 proc polyakov*(g: auto) =
   let pg = g[0].l.physGeom
@@ -33,10 +37,22 @@ proc reunit*(g: auto) =
     let dd = g.checkSU
     echo "new unitary deviation avg: ",dd.avg," max: ",dd.max
 
+proc norm2*(p: auto): float =
+  var p2: float
+  threads:
+    var p2r = 0.0
+    for mu in 0..<p.len: p2r += p[mu].norm2
+    threadBarrier()
+    threadMaster: p2 = p2r
+  result = p2
+
 proc updateGauge*(u: auto, p: auto; dtau: float) =
+  #echo dtau
+  #echo "U (1): ", u.calculatePlaquette
   threads:
     for mu in 0..<u.len:
       for s in u[mu]: u[mu][s] := exp(dtau*p[mu][s])*u[mu][s]
+  #echo "U (2): ", u.calculatePlaquette
 
 proc setGauge*(u: auto; v: auto) =
   threads:
@@ -50,7 +66,7 @@ template gradientFlow(
     eps: float; 
     measure: untyped
   ): untyped =
-  #[ Gradient flow w/ Wilson, rectangle, or adjoint-plaquette action
+  #[ Gradient flow w/ Wilson or rectangle action
      Originally written by James Osborn & Xiaoyong Jin.
      d/dt Vt = Z(Vt) Vt
      Runge-Kutta:
@@ -110,7 +126,7 @@ template gradientFlow(
     eps: float; 
     measure: untyped
   ): untyped = 
-  gc.gradientFlow(g,0,eps): 
+  gc.gradientFlow(g,0,eps):
     let flowTime {.inject.} = wflowT
     measure
 
@@ -161,8 +177,6 @@ template gradientFlow*(u: auto; info: JsonNode; body: untyped) =
     f {.inject,used.}: File
     tau {.inject.}: float
     measurements {.inject.}: JsonNode
-  threads: v := u
-  v.reunit
   for flow,flowInfo in info:
     let
       loops = case info[flow].hasKey("loops")
@@ -181,6 +195,8 @@ template gradientFlow*(u: auto; info: JsonNode; body: untyped) =
       dts = info[flow].get("time-increments")
       maxFlts = info[flow].get("maximum-flow-times")
     var lastMaxFlt = 0.0
+    threads: v := u
+    v.reunit
     f = fn.open(fmWrite)
     for (dt,maxFlt) in zip(dts,maxFlts):
       gc.gradientFlow(v,dt):

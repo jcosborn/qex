@@ -62,7 +62,7 @@ hmc.runHamiltonianMonteCarlo(ntraj,tau):
   if flow:
     if (trajectory+1) mod flowInterval == 0:
       for flowName in flowInfo.keys(): 
-        let filename = flowName & "_" & $(trajectory+1) & ".log"
+        let filename = flowName & "_" & $(cfg+trajectory+1) & ".log"
         flowInfo[flowName].setFilename(filename)
       u.gradientFlow(flowInfo):
         let output = measurements.formatMeasurements(style="KS_nHYP_FA")

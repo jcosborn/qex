@@ -77,6 +77,8 @@ when a2sq[76]!=[[1511326704u32, 3759209742u32, 1610795712u32], [4292754251u32, 1
 
 #template maxInt*(x: MRG32k3a): int = int 4294967086
 template maxInt*(x: typedesc[MRG32k3a]): int = int 4294967086
+template high*(x: typedesc[MRG32k3a]): uint = uint 4294967086
+template high*(x: MRG32k3a): uint = uint 4294967086
 #template numInts*(x: MRG32k3a): int = 4294967087
 template numInts*(x: typedesc[MRG32k3a]): int = int 4294967087
 
@@ -152,7 +154,7 @@ proc next0(prn: var MRG32k3a): float {.inline.} =
     result = p1 - p2
 ]#
 
-proc next(prn: var MRG32k3a): int {.inline.} =
+proc nextI(prn: var MRG32k3a): int {.inline.} =
   ## Return random integer uniform on [1,m1]
   const
     a12i = int a12
@@ -185,7 +187,11 @@ proc next(prn: var MRG32k3a): int {.inline.} =
 
 proc integer*(prn: var MRG32k3a): int =
   ## Return random integer from 0 to maxInt
-  result = int(prn.next) - 1
+  result = int(prn.nextI) - 1
+
+proc next*(prn: var MRG32k3a): uint =
+  ## Return random integer from 0 to maxInt
+  result = uint(prn.nextI - 1)
 
 #[
 proc uniform*(prn:var MRG32k3a): float =
@@ -214,7 +220,7 @@ proc uniform*(prn:var MRG32k3a): float =
 ]#
 proc uniform*(prn: var MRG32k3a): float =
   ## Return random number uniform on (0,1)
-  result = norm * prn.next.float
+  result = norm * prn.nextI.float
 
 proc gaussian*(prn: var MRG32k3a): float =
   ## Gaussian normal deviate

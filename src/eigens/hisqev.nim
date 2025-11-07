@@ -560,6 +560,9 @@ when isMainModule:
   #var defaultLat = [16,16,16,16]
   defaultSetup()
   var rs = newRNGField(RngMilc6, lo, 987654321)
+  if fn == "":
+    var warm = floatParam("warm", 0.0)
+    g.warm warm, rs
 
   when false:  # HISQ
     threads:
@@ -653,8 +656,9 @@ when isMainModule:
     let s2 = t2.even.norm2
     let r2req = sp.r2req
     sp.r2req = r2req * (s1/s2)
+    sp.resetStats
     t := 0
-    s.solveEO(t, t2, m, sp)
+    s.solveEE(t, t2, m, sp)
     dt += t
     sp.r2req = r2req
 
@@ -663,7 +667,7 @@ when isMainModule:
   sp.r2req = 1e-16
 
   d1 := 0
-  s.solveEO(d1, src, m, sp)
+  s.solveEE(d1, src, m, sp)
   getResid(r, d1, src)
   echo "r1: ", r.even.norm2
 

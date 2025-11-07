@@ -428,12 +428,12 @@ template binaryOverloadsAddSub(op,fn: untyped) {.dirty.} =
   #  newComplexP(x.re, op(x.im,y[]))
   template op*(x: ComplexProxy, y: ImagProxy2): untyped = fn(x,y)
 
-  template `fn U`*(x: ComplexProxy, y: ComplexProxy2): untyped =
-    newComplexP(op(x.re,y.re), op(x.im,y.im))
-  template fn*(x: ComplexProxy, y: ComplexProxy2): untyped =
-    flattenCallArgs(`fn U`, x, y)
-  #proc fn*(x: ComplexProxy, y: ComplexProxy2): auto {.inline,noInit.} =
+  #template `fn U`*(x: ComplexProxy, y: ComplexProxy2): untyped =
   #  newComplexP(op(x.re,y.re), op(x.im,y.im))
+  #template fn*(x: ComplexProxy, y: ComplexProxy2): untyped =
+  #  flattenCallArgs(`fn U`, x, y)
+  proc fn*(x: ComplexProxy, y: ComplexProxy2): auto {.alwaysInline,noInit.} =
+    newComplexP(op(x.re,y.re), op(x.im,y.im))
   #template fn*(xx: ComplexProxy, yy: ComplexProxy2): untyped =
   #  let x = xx
   #  let y = yy
