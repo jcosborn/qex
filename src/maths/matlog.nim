@@ -27,7 +27,7 @@ proc log1p*(a: Mat1): auto {.noInit.} =
     let wf = w*f
     let r = 1 - wf
     let rn = r.norm2.simdMax
-    echo it, " ", rn, " ", (x*a-a*x).norm2.simdMax, "   ", sqrt(an*(ex*ex).norm2).simdMax
+    # echo it, " ", rn, " ", (x*a-a*x).norm2.simdMax, "   ", sqrt(an*(ex*ex).norm2).simdMax
     if rn < estop or it > maxit: break
     if rn < 1e-66:
       x -= r

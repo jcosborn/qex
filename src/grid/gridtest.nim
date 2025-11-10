@@ -103,12 +103,12 @@ when isMainModule:
     gsrc := src
     #gsoln := soln
     {.emit:"using namespace Grid;".}
-    {.emit:"gsoln = Zero();".}
+    {.emit:"`gsoln` = Zero();".}
     {.emit:"using ImpStag = `ferm`;".}
     {.emit:"using FermionField = ImpStag::FermionField;".}
     #{.emit:"ImpStag Ds(gll,gfl,*grid,rbgrid,mass,1.,1.,1.);".}
-    {.emit:"ImpStag Ds(*grid,rbgrid,2.*mass,2.,1.);".}
-    {.emit:"Ds.ImportGauge(gfl);".}
+    {.emit:"ImpStag Ds(*`grid`,`rbgrid`,2.*`mass`,2.,1.);".}
+    {.emit:"Ds.ImportGauge(`gfl`);".}
     #{.emit:"MdagMLinearOperator<ImprovedStaggeredFermionR,FermionField> HermOp(Ds);".}
     {.emit:"SchurStaggeredOperator<ImpStag,FermionField> HermOp(Ds);".}
     #{.emit:"HermOp.Op(gsrc,gsoln);".}
@@ -117,7 +117,7 @@ when isMainModule:
     #{.emit:"Ds.M(gsoln,gsrc);".}
     {.emit:"ConjugateGradient<FermionField> CG(1e-6, 400, false);".}
     let t0 = getTics()
-    {.emit:"CG(HermOp, gsrc, gsoln);".}
+    {.emit:"CG(HermOp, `gsrc`, `gsoln`);".}
     let t1 = getTics()
     echo "Grid time: ", (t1-t0).seconds
     #soln2 := gsrc
@@ -194,12 +194,12 @@ when isMainModule:
     gsrc := src
     #gsoln := soln
     {.emit:"using namespace Grid;".}
-    {.emit:"gsoln = Zero();".}
+    {.emit:"`gsoln` = Zero();".}
     {.emit:"using ImpStag = `ferm`;".}
     {.emit:"using FermionField = ImpStag::FermionField;".}
     #{.emit:"ImpStag Ds(gll,gfl,*grid,rbgrid,mass,1.,1.,1.);".}
-    {.emit:"ImpStag Ds(*grid,rbgrid,2.*mass,2.,2.,1.);".}
-    {.emit:"Ds.ImportGaugeSimple(gll,gfl);".}
+    {.emit:"ImpStag Ds(*`grid`,`rbgrid`,2.*`mass`,2.,2.,1.);".}
+    {.emit:"Ds.ImportGaugeSimple(`gll`,`gfl`);".}
     #{.emit:"MdagMLinearOperator<ImprovedStaggeredFermionR,FermionField> HermOp(Ds);".}
     {.emit:"SchurStaggeredOperator<ImpStag,FermionField> HermOp(Ds);".}
     #{.emit:"HermOp.Op(gsrc,gsoln);".}
@@ -208,7 +208,7 @@ when isMainModule:
     #{.emit:"Ds.M(gsoln,gsrc);".}
     {.emit:"ConjugateGradient<FermionField> CG(1e-6, 400, false);".}
     let t0 = getTics()
-    {.emit:"CG(HermOp, gsrc, gsoln);".}
+    {.emit:"CG(HermOp, `gsrc`, `gsoln`);".}
     let t1 = getTics()
     echo "Grid time: ", (t1-t0).seconds
     #soln2 := gsrc
