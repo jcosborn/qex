@@ -5,13 +5,7 @@
  * @details
  * This header file is meant to act as an interface for both Grid and the 
  * MILC codebase to utilize the "highly improved staggered quark" action
- * within Grid. The interface itself is composed of three core component
- * classes:
- * 
- * * PeriodicTransporter: Optimized gauge transport with PaddedCell
- * 
- * * PeriodicTransporters: Container of GaugeTransporter objects for 
- *   multi-directional gauge transport
+ * within Grid. The interface itself is composed of a single core component class
  * 
  * * HighlyImprovedStaggeredFermionImpl: Class providing support for highly
  *   improved staggered fermions in Grid. Exposes methods for fat7/asqtad 
@@ -71,26 +65,29 @@ NAMESPACE_BEGIN(Grid);
 // encapsulates conditional execution of Naik calculations for cleanliness
 #define HISQNAIK(exec) if (ctx.naik != 0.0) { exec; } \
 
+// better notation for ternary expression
+#define when(cond, valTrue, valFalse) ((cond) ? (valTrue) : (valFalse)) \
+
 //
 // useful consts
 //
 
 // usual 4D HISQ coefficients: defined for convenience
-const int // Lepage & Naik
+const double // Lepage & Naik
   LEPAGE = -1.0/8.0,
   NAIK = -1.0/24.0;
-const int // fat-7
+const double // fat-7
   F7L1 = -LEPAGE,
-  F7L3 = 0.25*F7L1,
-  F7L5 = 0.25*F7L3,
-  F7L7 = -0.125*NAIK;
-const int // asqtad
+  F7L3 = -0.5*F7L1,
+  F7L5 = -0.25*F7L3,
+  F7L7 = 0.0625*NAIK;
+const double // asqtad
   ASQL1 = -8.0*LEPAGE,
   ASQL3 = F7L3,
   ASQL5 = F7L5,
   ASQL7 = F7L7; 
 const bool BACKUPSVD = true; // use backup SVD in unitary projection when applicable
-const int // unitary projection parameters
+const double // unitary projection parameters
   REUNITCUTOFF = 1e-20,           // base-level cutoff on eigenvalues
   REUNITDERIVCUTOFF = 5e-5,  // base-level cutoff on eigenvalues for derivative
   BACKUPSVDTOLERANCE = 1e-8;      // tolerance for triggering backup SVD
@@ -98,7 +95,7 @@ const int // unitary projection parameters
 //
 // convenient data structures
 //
-`
+
 struct StagImplParams {
   Coordinate dirichlet; // Blocksize of dirichlet BCs
   int  partialDirichlet;
@@ -149,43 +146,14 @@ struct HISFContext {
     svdTolerance(svdTolerance),
     eigenCutoff(eigenCutoff) { };
   
-  HISFContext(
-    RealD c0, 
-    RealD c1, 
-    RealD c2, 
-    RealD c3,
-    RealD lepage, 
-    RealD naik,
-  ):
-    c0(c0), 
-    c1(c1), 
-    c2(c2), 
-    c3(c3),
-    lepage(lepage), 
-    naik(naik),
-    backupSVD(false),
-    svdTolerance(1e-8),
-    eigenCutoff(1e-20) { };
+  HISFContext(RealD c0, RealD c1, RealD c2, RealD c3, RealD lepage, RealD naik):
+    c0(c0), c1(c1), c2(c2), c3(c3), lepage(lepage), naik(naik) { };
   
-    HISFContext(
-    RealD c0, 
-    RealD c1, 
-    RealD c2, 
-    RealD c3
-  ):
-    c0(c0), 
-    c1(c1), 
-    c2(c2), 
-    c3(c3) { };
+  HISFContext(RealD c0, RealD c1, RealD c2, RealD c3): 
+    c0(c0), c1(c1), c2(c2), c3(c3), lepage(0.0), naik(0.0) { };
   
-  HISFContext(
-    bool backupSVD,
-    RealD svdTolerance,
-    RealD eigenCutoff
-  ):
-    backupSVD(backupSVD),
-    svdTolerance(svdTolerance),
-    eigenCutoff(eigenCutoff) { };
+  HISFContext(bool backupSVD, RealD svdTolerance, RealD eigenCutoff):
+    backupSVD(backupSVD), svdTolerance(svdTolerance), eigenCutoff(eigenCutoff) { };
 };
 
 //
@@ -235,7 +203,7 @@ private:
     this->grid = (GridBase*)cell.grids.back();
     this->longGrid = (GridBase*)longCell.grids.back();
 
-    if (calculateStaggeredPhases) calculateStaggeredPhases(stagPhases);
+    if (calculateStaggeredPhases) calcStagPhases(stagPhases);
   }
 
 public:
@@ -262,7 +230,7 @@ public:
 
 
 private:
-  void calculateStaggeredPhases(StaggeredPhases& phases) {
+  void calcStagPhases(StaggeredPhases& phases) {
     /**
      * @brief HISQ gauge configuration constructor
      * @author Curtis Taylor Peterson, Peter Boyle
@@ -380,7 +348,7 @@ public:
      * * QOPQDP [SciDAC]: https://github.com/usqcd-software/qopqdp
      * * Follana, E. et al.: https://doi.org/10.1103/PhysRevD.75.054502
      */
-
+    //PeriodicTransporters<Gimpl> w(when(ctx.naik == 0.0, cell, longCell), W);
     PeriodicTransporters<Gimpl> w(cell, W);
     GaugeLorentzField x(Nd, grid);
     GaugeLinkField s3(grid), s5(grid);
@@ -396,14 +364,12 @@ public:
           x[mu] += ctx.c2*s5;
           HISQLOOP3(x[mu] += ctx.c3*w.staple(s5, mu, j))     // Eqn 5d
     ) ) )
+    X = w.toTightGrid(toGauge(x));
 
-    // WRITE THIS BACK UP W/O ANY COMMUNICATION
     HISQNAIK(
-      PeriodicTransporters<Gimpl> w(longCell, W);
-      HISQLOOP0(insertLink(WWW, longCell.Extract(w[mu].elongate()), mu)) 
-      WWW *= ctx.naik;
+      HISQLOOP0(x[mu] = w[mu].CovShift(w[mu].CovShift(w.link(mu), FORWARD), FORWARD))
+      WWW = ctx.naik*w.toTightGrid(toGauge(x));
     )
-    X = cell.Extract(toGauge(x));
   }
 
   void smear(GaugeField& X, GaugeField& WWW, const GaugeField& W) {
@@ -415,27 +381,34 @@ public:
   { smear(X, X, W, ctx); }
 
   void smear(GaugeField& X, const GaugeField& W) { 
-    HISFContext fat7Ctx(F7L1, F7L3, F7L5, F7L7, 0.0, 0.0);  
+    HISFContext fat7Ctx(F7L1, F7L3, F7L5, F7L7);  
     smear(X, X, W, fat7Ctx); 
   }
 
   void project(GaugeField& V, const GaugeField& U, const HISFContext ctx) { 
-    UnitaryProjection<Gimpl> projection(ctx.eigenCutoff, ctx.backupSVD, ctx.svdTolerance);
+    UnitaryProjection<Gimpl> projection(
+      ctx.eigenCutoff, 
+      ctx.backupSVD, 
+      ctx.svdTolerance
+    );
     projection.project(V, U);
   }
 
   void project(GaugeField& V, const GaugeField& U, bool forDerivative = false) {
-    bool cutoff = forDerivative ? REUNITDERIVCUTOFF : REUNITCUTOFF;
-    UnitaryProjection<Gimpl> projection(cutoff, BACKUPSVD, BACKUPSVDTOLERANCE);
+    UnitaryProjection<Gimpl> projection(
+      when(forDerivative, REUNITDERIVCUTOFF, REUNITCUTOFF), 
+      BACKUPSVD, 
+      BACKUPSVDTOLERANCE
+    );
     projection.project(V, U);
   }
 
 public:
   void smearDerivative(
-    GaugeField &dXdU,
-    const GaugeField &dXdW,
-    const GaugeField &dXdWWW,
-    const GaugeField &W,
+    GaugeField& dXdU,
+    const GaugeField& dXdW,
+    const GaugeField& dXdWWW,
+    const GaugeField& W,
     const HISFContext ctx
   ) {
     /**
@@ -471,7 +444,7 @@ public:
      * -🠢 μ   ....
      * The forward derivative of Sν(n) with respect to Uμ(n) will receive 
      * contributions from the leftmost link and the top link. To understand what
-     * I'm going here, we need to consider these contributions "from the perspective
+     * we're doing here, we need to consider these contributions "from the perspective
      * of the force". In other words, before we take the derivative, we think of the 
      * the contribution from the chain rule ∂S/∂Vδ as completing a plaquette 
      * (just with the like ∂S/∂Vδ pointing in the "wrong" direction); in Fig. 1, this 
@@ -507,9 +480,8 @@ public:
      * * QOPQDP [SciDAC]: https://github.com/usqcd-software/qopqdp
      * * Follana, E. et al.: https://doi.org/10.1103/PhysRevD.75.054502
      */
-
     PeriodicTransporters<Gimpl> w(cell, W);
-    GaugeLorentzField dxdw = toLorentz(cell.ExchangePeriodic(dXdW));
+    GaugeLorentzField dxdw = toLorentz(w.toPaddedGrid(dXdW));
     GaugeLorentzField dxdu(Nd, grid);
     GaugeLinkField cnu(grid), ci(grid);
     GaugeLinkField snu(grid), si(grid), sj(grid);
@@ -519,13 +491,13 @@ public:
       dxdu[mu] = (ctx.c0 - 6.0*ctx.lepage)*dxdw[mu];
       HISQLOOP1(
         snu = ctx.c1*w.link(nu);
+        dsnu = Zero();
         cnu = ctx.c1*dxdw[mu];
         HISQLEPAGE(
           snu += ctx.lepage*w.staple(w.link(nu), nu, mu);
-          dsnu = ctx.lepage*w.staple(dxdw[nu], nu, mu);
+          dsnu += ctx.lepage*w.staple(dxdw[nu], nu, mu);
           cnu += ctx.lepage*w.staple(dxdw[mu], mu, nu);
         )
-        if (lepage == 0.0) dsnu = Zero();
         HISQLOOP2(
           dsi = w.staple(dxdw[nu], nu, i);
           HISQLOOP3(
@@ -540,16 +512,20 @@ public:
         dxdu[mu] += w.stapleDerivative(dsnu, mu, nu);          // Eqn 3a
         dxdu[mu] += w.staple(cnu, mu, nu);                     // Eqn 3b
     ) )
-    dXdU = cell.Extract(toGauge(dxdu));
 
-    // WRITE THIS BACK UP W/O ANY COMMUNICATION
-    HISQNAIK( // naik (won't execute if naik == 0.0)
-      PeriodicTransporters<Gimpl> w(longCell, W);
-      GaugeLorentzField dxdwww = toLorentz(cell.ExchangePeriodic(adj(dXdWWW)));
-      GaugeLorentzField dxdu(Nd, longGrid);
-      HISQLOOP0(dxdu[mu] = ctx.naik*adj(w[mu].elongationDerivative(dxdwww[mu])))
-      dXdU += longCell.Extract(toGauge(dxdu));
-    )
+    HISQNAIK(
+      GaugeLorentzField dxdwww = toLorentz(w.toPaddedGrid(dXdWWW));
+      HISQLOOP0(
+        si = w.Cshift(w.link(mu), mu, FORWARD);
+        sj = si*w.Cshift(si, mu, FORWARD)*adj(dxdwww[mu]);
+        snu = sj;
+        for (int term = 0; term < 2; ++term) {
+          sj = w.Cshift(adj(si)*sj*w.link(mu), mu, BACKWARD);
+          snu += sj;
+        }
+        dxdu[mu] += ctx.naik*adj(snu);
+    ) )
+    dXdU = adj(w.toTightGrid(toGauge(dxdu)));
   }
 
   void smearDerivative(
@@ -570,7 +546,7 @@ public:
   ) { smearDerivative(dXdU, dXdW, dXdW, W, ctx); }
 
   void smearDerivative(GaugeField& dXdU, const GaugeField& dXdW, const GaugeField& W) { 
-    HISFContext fat7Ctx(F7L1, F7L3, F7L5, F7L7, 0.0, 0.0);  
+    HISFContext fat7Ctx(F7L1, F7L3, F7L5, F7L7);  
     smearDerivative(dXdU, dXdW, W, fat7Ctx);
   }
 
@@ -580,12 +556,20 @@ public:
     const GaugeField& U,
     const HISFContext ctx
   ) {
-    UnitaryProjection<Gimpl> projection(ctx.eigenCutoff, ctx.backupSVD, ctx.svdTolerance);
+    UnitaryProjection<Gimpl> projection(
+      ctx.eigenCutoff, 
+      ctx.backupSVD, 
+      ctx.svdTolerance
+    );
     projection.derivative(dVdU, dZdV, U); 
   }
 
   void projectionDerivative(GaugeField& dVdU, const GaugeField& dZdV, const GaugeField& U) {
-    UnitaryProjection<Gimpl> projection(REUNITDERIVCUTOFF, BACKUPSVD, BACKUPSVDTOLERANCE);
+    UnitaryProjection<Gimpl> projection(
+      REUNITDERIVCUTOFF, 
+      BACKUPSVD, 
+      BACKUPSVDTOLERANCE
+    );
     projection.derivative(dVdU, dZdV, U);
   }
 

@@ -86,46 +86,36 @@ proc smear(
   self: GridHISQ;
   X: GridLatticeGaugeField; 
   WWW: GridLatticeGaugeField;
-  W: GridLatticeGaugeField; 
-  coeffs: vector[float]; 
-  lepage, naik: float
-) {.importcpp: "#.smear(#, #, #, #, #, #)", hisq.}
+  W: GridLatticeGaugeField
+) {.importcpp: "#.smear(#, #, #)", hisq.}
 
 proc smear(
   self: GridHISQ;
   X: GridLatticeGaugeField; 
-  W: GridLatticeGaugeField; 
-  coeffs: vector[float]; 
-  lepage: float
-) {.importcpp: "#.smear(#, #, #, #)", hisq.}
+  W: GridLatticeGaugeField
+) {.importcpp: "#.smear(#, #)", hisq.}
 
 proc project(
   self: GridHISQ;
   V: GridLatticeGaugeField; 
   U: GridLatticeGaugeField;
-  derivativeCutoff: float;
-  backupSVD: bool;
-  svdTolerance: float
-) {.importcpp: "#.project(#, #, #, #, #)", hisq.}
+  forDerivative: bool
+) {.importcpp: "#.project(#, #, #)", hisq.}
 
 proc smearDerivative(
   self: GridHISQ;
   dXdU: GridLatticeGaugeField; 
   dXdW: GridLatticeGaugeField; 
-  W: GridLatticeGaugeField; 
-  coeffs: vector[float]; 
-  lepage: float
-) {.importcpp: "#.smearDerivative(#, #, #, #, #)", hisq.} 
+  W: GridLatticeGaugeField
+) {.importcpp: "#.smearDerivative(#, #, #)", hisq.} 
 
 proc smearDerivative(
   self: GridHISQ;
   dXdU: GridLatticeGaugeField; 
   dXdW: GridLatticeGaugeField;
   dXdWWW: GridLatticeGaugeField;
-  W: GridLatticeGaugeField; 
-  coeffs: vector[float];
-  lepage, naik: float;
-) {.importcpp: "#.smearDerivative(#, #, #, #, #, #, #)", hisq.} 
+  W: GridLatticeGaugeField
+) {.importcpp: "#.smearDerivative(#, #, #, #)", hisq.} 
 
 proc projectionDerivative(
   self: GridHISQ;
@@ -142,22 +132,6 @@ proc smearGetForce*[T](
   displayPerformance: bool = false,
   regulate: bool = false
 ): proc(dsdu: var T; dsdsu, dsdsul: T) =
-  let
-    f7l1 = @[
-      self.fat7first.oneLink,
-      self.fat7first.threeStaple,
-      self.fat7first.fiveStaple,
-      self.fat7first.sevenStaple
-    ].toVector()
-    f7l2 = @[
-      self.fat7second.oneLink,
-      self.fat7second.threeStaple,
-      self.fat7second.fiveStaple,
-      self.fat7second.sevenStaple
-    ].toVector()
-    lpl1 = self.fat7first.lepage
-    lpl2 = self.fat7second.lepage
-    naik = self.naik
   var lo = u[0].l
   var 
     g = lo.newGauge()
@@ -176,19 +150,17 @@ proc smearGetForce*[T](
       gu = grid.gauge()
       gw = grid.gauge()
       gv = grid.gauge()
-    var
-      gsu = grid.gauge()
-      gsul = grid.gauge()
+    var gsu = grid.gauge()
+    var gsul = grid.gauge()
 
+    # load inputs & rephase
     gu.toGrid(u)
     hisq.rephase(gu, gu)
 
     # smear
-    hisq.smear(gv, gu, f7l1, lpl1)
-    case regulate: # ensure that regulation only done for force action
-      of true: hisq.project(gw, gv, 5e-5, true, 1e-8)
-      of false: hisq.project(gw, gv, 1e-20, true, 1e-8)
-    hisq.smear(gsu, gsul, gw, f7l2, lpl2, naik)
+    hisq.smear(gv, gu)
+    hisq.project(gw, gv, regulate)
+    hisq.smear(gsu, gsul, gw)
 
     # save results
     g.toQEX(gu)
@@ -197,7 +169,7 @@ proc smearGetForce*[T](
     su.toQEX(gsu)
     sul.toQEX(gsul)
 
-  proc smearedForce(dsdu: var T; dsdsu, dsdsul: T) =
+  return proc(dsdu: var T; dsdsu, dsdsul: T) =
     let
       lat = lo.physGeom
       latSize = newCoordinate(lat)
@@ -221,15 +193,11 @@ proc smearGetForce*[T](
     gdsdsu.toGrid(dsdsu)
     gdsdsul.toGrid(dsdsul)
 
-    hisq.smearDerivative(gt, gdsdsu, gdsdsul, gw, f7l2, lpl2, naik)
+    hisq.smearDerivative(gt, gdsdsu, gdsdsul, gw)
     hisq.projectionDerivative(gt, gt, gw, gv)
-    hisq.smearDerivative(gdsdu, gt, gu, f7l1, lpl1)
+    hisq.smearDerivative(gdsdu, gt, gu)
 
     dsdu.toQEX(gdsdu)
-
-    qexError "intentional exit"
-
-  return smearedForce
 
 when isMainModule:
   qexInit()

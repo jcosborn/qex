@@ -349,3 +349,106 @@ public:
 NAMESPACE_END(Grid);
 
 #endif // QCD_UTILS_UNITARYPROJECTION_H
+
+/*
+private:
+  void _CayleyHamiltonU3(
+    GaugeLinkField& v,
+    const GaugeLinkField& u,
+    const GaugeLinkField& q,
+    const GaugeLinkField& q2,
+    const LatticeComplex& eig0,
+    const LatticeComplex& eig1,
+    const LatticeComplex& eig2
+  ) {
+    GridBase* grid = u.Grid();
+    GaugeLinkField unity(grid);
+    LatticeComplex e0(grid), e1(grid), e2(grid);
+    LatticeComplex f0(grid), f1(grid), f2(grid);
+    LatticeComplex unit(grid);
+
+    // Cayley-Hamilton: "u, v, w" coefficients [Eqn. C6 of PRD(75)054502]
+    f0 = sqrt(eig0), f1 = sqrt(eig1), f2 = sqrt(eig2);
+    e0 = f0 + f1 + f2;
+    e1 = f0*f1;
+    e2 = e1*f2;
+    e1 += f0*f2 + f1*f2;
+
+    // Cayley-Hamilton: "f0, f1, f2" coefficients [Eqn. C7 of PRD(75)054502]
+    f2 = e2*(e0*e1 - e2);
+    f2 = unit/f2;
+    f1 = e0*e0;
+    f0 = e0*e1*e1 - e2*(f1 + e1);
+    f0 *= f2;
+    f1 = e0*(2.0*e1 - f1) - e2;
+    f1 *= f2;
+    f2 *= e0;
+
+    // final projection
+    v = u*(f0*unity + f1*q + f2*q2);
+  }
+
+  void _JacobiU3(
+    GaugeLinkField& v,
+    const GaugeLinkField& u,
+    const GaugeLinkField& q,
+    const LatticeComplex& e0,
+    const LatticeComplex& e1,
+    const LatticeComplex& e2
+  ) {
+    // Jacobi-based singular value decomposition: fallback for ill-conditioned links
+    // conditions for falling back on SVD: https://doi.org/10.1103/PhysRevD.75.054502
+    GridBase* grid = u.Grid();
+    LatticeComplex detA = Determinant(q), detB = e0*e1*e2;
+
+    {
+      autoView(detA_v, detA, CpuRead);
+      autoView(detB_v, detB, CpuRead);
+      autoView(u_v, u, CpuRead);
+      autoView(e0_v, e0, CpuRead);
+      autoView(e1_v, e1, CpuRead);
+      autoView(e2_v, e2, CpuRead);
+      autoView(v_v, v, CpuWrite);
+
+      thread_for(n, grid->lSites(), { // TODO: mask
+        Coordinate lcoor;
+        GridScalar localDetA, localDetB;
+
+        grid->LocalIndexToLocalCoor(n, lcoor);
+        peekLocalSite(localDetA, detA_v, lcoor);
+        peekLocalSite(localDetB, detB_v, lcoor);
+
+        if (abs(localDetA - localDetB) > svdtol) {
+          GridScalarMatrix gu;
+          EigenScalarMatrix eu, ev = EigenScalarMatrix::Zero();
+          
+          peekLocalSite(gu, u_v, lcoor);
+          EigenSVD svd(toEigen(gu), Eigen::ComputeFullU | Eigen::ComputeFullV);
+          ev = svd.matrixU() * svd.matrixV().adjoint();
+          pokeLocalSite(toGrid(ev), v_v, lcoor);
+        }
+      });
+    }
+  }
+
+  void _projectU3(GaugeLinkField& v, const GaugeLinkField& u) {
+    #
+    # * @brief U(3) unitary projection via Cayley-Hamilton or SVD
+    # * @author Curtis Taylor Peterson
+    # * @details
+    # * This method implements a U(3) projection of a general complex 3x3 matrix 
+    # * using Cayley-Hamilton or the Jacobi singular value decomposition implemented
+    # * by Eigen. For details about the Cayley-Hamilton approach, see the references
+    # * provided above; namely the OG paper by Hasenfratz et al and later work by the 
+    # * MILC collaboration. Please note that this method is modelled after the approach
+    # * taken in Quantum EXpressions by James Osborn and Xiao-Yong Jin.
+    # 
+    GridBase* grid = u.Grid();
+    GaugeLinkField unity(grid), q(grid), q2(grid);
+    LatticeComplex e0(grid), e1(grid), e2(grid);
+
+    _eigs3(e0, e1, e2, q, q2, u);
+    _CayleyHamiltonU3(v, u, q, q2, e0, e1, e2);
+    if (backupSVD) { _JacobiU3(v, u, q, e0, e1, e2); }
+  }
+*/

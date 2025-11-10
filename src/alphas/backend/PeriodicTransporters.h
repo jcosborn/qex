@@ -17,6 +17,9 @@ NAMESPACE_BEGIN(Grid);
 // macros
 //
 
+// make scope more explicit
+#define ACCELERATOR_SCOPE(exec) { exec; } \
+
 // shorten call to get stencil entry in declaration
 #define NEW_STENCIL_ENTRY(se, st, mu, n)              \
   GeneralStencilEntry const *se = st.GetEntry(mu, n); \
@@ -25,11 +28,11 @@ NAMESPACE_BEGIN(Grid);
 #define SET_STENCIL_ENTRY(se, st, mu, n) se = st.GetEntry(mu, n); \
 
 // shorten call to coalesced read in function
-#define HISQREAD(u, se)                                         \
+#define ACCREAD(u, se)                                         \
   coalescedReadGeneralPermute(u[se->_offset], se->_permute, Nd) \
 
 // shorten call to coalesced write
-#define HISQWRITE(wu, u) coalescedWrite(wu, u) \
+#define ACCWRITE(wu, u) coalescedWrite(wu, u) \
 
 //
 // convenient data structures
@@ -79,44 +82,47 @@ public:
 
 public:
   /** @brief application of gauge transporter to operand field */
-  inline const GaugeLinkField CovShift(const GaugeLinkField& v, TransportHeading heading) {
-    {
+  inline const GaugeLinkField CovShift(
+    const GaugeLinkField& v, 
+    TransportHeading heading
+  ) {
+    ACCELERATOR_SCOPE(
       GeneralLocalStencilView sbuf_v = (*_sbuf).View(AcceleratorRead);
       autoView(v_v, v, AcceleratorRead);
       autoView(ubuf_v, (*_ubuf), AcceleratorRead);
       autoView(vbuf_v, (*_vbuf), AcceleratorWrite);
       auto forward = [&](int n) {
         NEW_STENCIL_ENTRY(se, sbuf_v, mu, n);
-        HISQWRITE(vbuf_v[n], ubuf_v[n]*HISQREAD(v_v, se));
+        ACCWRITE(vbuf_v[n], ubuf_v[n]*ACCREAD(v_v, se));
       };
       auto backward = [&](int n) {
         NEW_STENCIL_ENTRY(se, sbuf_v, mu + BACKWARD, n);
-        HISQWRITE(vbuf_v[n], adj(HISQREAD(ubuf_v, se))*HISQREAD(v_v, se));
+        ACCWRITE(vbuf_v[n], adj(ACCREAD(ubuf_v, se))*ACCREAD(v_v, se));
       };
       if (heading == FORWARD)
       { accelerator_for(n, v_v.size(), Simd::Nsimd(), forward(n);); }
       else accelerator_for(n, v_v.size(), Simd::Nsimd(), backward(n););
-    }
+    )
     return (*_vbuf);
   }
 
   /** @brief application of shift operation to operand field */
   inline const GaugeLinkField Cshift(const GaugeLinkField& v, TransportHeading heading) {
-    {
+    ACCELERATOR_SCOPE(
       GeneralLocalStencilView sbuf_v = (*_sbuf).View(AcceleratorRead);
       autoView(v_v, v, AcceleratorRead);
       autoView(vbuf_v, (*_vbuf), AcceleratorWrite);
       accelerator_for(n, v_v.size(), Simd::Nsimd(), {
         NEW_STENCIL_ENTRY(se, sbuf_v, mu + heading, n); 
-        HISQWRITE(vbuf_v[n], HISQREAD(v_v, se));
+        ACCWRITE(vbuf_v[n], ACCREAD(v_v, se));
       });
-    }
+    )
     return (*_vbuf);
   }
 
   /** @brief link elongation of link buffer */
   inline const GaugeLinkField elongate() {
-    {
+    ACCELERATOR_SCOPE(
       GeneralLocalStencilView sbuf_v = (*_sbuf).View(AcceleratorRead);
       autoView(ubuf_v, (*_ubuf), AcceleratorRead);
       autoView(vbuf_v, (*_vbuf), AcceleratorWrite);
@@ -124,18 +130,18 @@ public:
         auto u = ubuf_v[n];
         for (int d = 0; d < depth; ++d) {
           NEW_STENCIL_ENTRY(se, sbuf_v, mu + d*Nd, n); 
-          u = u*HISQREAD(ubuf_v, se);
+          u = u*ACCREAD(ubuf_v, se);
         }
-        HISQWRITE(vbuf_v[n], u);
+        ACCWRITE(vbuf_v[n], u);
       });
-    }
+    )
     return (*_vbuf);
   }
 
   /** @brief derivative of link buffer elongation */
   inline const GaugeLinkField elongationDerivative(const GaugeLinkField& dsdwww) {
     assert(depth == 2 && "elongation derivative only implemented for Naik");
-    {
+    ACCELERATOR_SCOPE(
       GeneralLocalStencilView sbuf_v = (*_sbuf).View(AcceleratorRead);
       autoView(dsdwww_v, dsdwww, AcceleratorRead);
       autoView(ubuf_v, (*_ubuf), AcceleratorRead);
@@ -145,14 +151,14 @@ public:
         NEW_STENCIL_ENTRY(se1m, sbuf_v, mu + 2*Nd, n);      // -1
         NEW_STENCIL_ENTRY(se2p, sbuf_v, mu + Nd, n);        // +2
         NEW_STENCIL_ENTRY(se2m, sbuf_v, mu + Nd + 2*Nd, n); // -2
-        HISQWRITE(
+        ACCWRITE(
           vbuf_v[n],
-          HISQREAD(ubuf_v, se1p)*HISQREAD(ubuf_v, se2p)*dsdwww_v[n] + \
-          HISQREAD(ubuf_v, se1p)*HISQREAD(dsdwww_v, se1m)*HISQREAD(ubuf_v, se1m) + \
-          HISQREAD(dsdwww_v, se2m)*HISQREAD(ubuf_v, se2m)*HISQREAD(ubuf_v, se1m)
+          ACCREAD(ubuf_v, se1p)*ACCREAD(ubuf_v, se2p)*dsdwww_v[n] + \
+          ACCREAD(ubuf_v, se1p)*ACCREAD(dsdwww_v, se1m)*ACCREAD(ubuf_v, se1m) + \
+          ACCREAD(dsdwww_v, se2m)*ACCREAD(ubuf_v, se2m)*ACCREAD(ubuf_v, se1m)
         );
       });
-    }
+    )
     return (*_vbuf);
   }
 
@@ -198,6 +204,7 @@ private:
   typedef PeriodicTransporter<Gimpl> Transporter;
 
 private:
+  std::unique_ptr<PaddedCell> _pcell;
   std::unique_ptr<GaugeLinkField> _vbuf;
   std::shared_ptr<GeneralLocalStencil> _sbuf;
   Transporter _t[Nd];
@@ -208,13 +215,15 @@ private:
 
 public:
   PeriodicTransporters(PaddedCell& pcell, const GaugeField& Uin) {
-    int depth = pcell.depth;
-    auto U = pcell.ExchangePeriodic(Uin);
+    _pcell = std::make_unique<PaddedCell>(pcell);
+
+    int depth = _pcell->depth;
+    auto U = _pcell->ExchangePeriodic(Uin);
     auto* grid = U.Grid();
     std::vector<Coordinate> shifts(2*depth*Nd, 0);
 
     for (int mu = 0; mu < Nd; ++mu) { 
-      for (int d = 0; d < depth; ++d) { // THIS IS WRONG: MAP LEXIOGRAPHICALLY
+      for (int d = 0; d < depth; ++d) {
         shifts[mu + d*Nd][mu] = d + 1; 
         shifts[mu + d*Nd + depth*Nd][mu] = -(d + 1); 
     } }
@@ -222,10 +231,19 @@ public:
     _sbuf = std::make_shared<GeneralLocalStencil>(GeneralLocalStencil(grid, shifts));
     _vbuf = std::make_unique<GaugeLinkField>(GaugeLinkField(grid));
 
-    for (int mu = 0; mu < Nd; ++mu) { 
-      _t[mu] = Transporter(_sbuf, toLink(U, mu), mu, depth); 
-    }
+    for (int mu = 0; mu < Nd; ++mu) 
+      _t[mu] = Transporter(_sbuf, toLink(U, mu), mu, depth);
   }
+
+
+public:
+  /** @brief wrapped halo exchange */
+  inline const GaugeField toPaddedGrid(const GaugeField& U) 
+  { return _pcell->ExchangePeriodic(U); }
+
+  /** @brief wrapped extraction from padding */
+  inline const GaugeField toTightGrid(const GaugeField& U) 
+  { return _pcell->Extract(U); }
 
 public:
   /** @brief cartesian shift (only periodic) */
@@ -258,10 +276,9 @@ public:
     
     us = Zero();
     ls = Zero();
-    { // scope: calculate staple
+    ACCELERATOR_SCOPE( // scope: calculate staple
       GeneralLocalStencilView sbuf_v = (*_sbuf).View(AcceleratorRead);
-
-      { // scope: calculate upper staple and unshifted lower staple
+      ACCELERATOR_SCOPE( // calculate upper staple and unshifted lower staple
         autoView(u_v, u, AcceleratorRead);
         autoView(v_v, v, AcceleratorRead);
         autoView(us_v, us, AcceleratorWrite);
@@ -269,22 +286,21 @@ public:
         accelerator_for(n, us_v.size(), Simd::Nsimd(), {
           NEW_STENCIL_ENTRY(se_mu, sbuf_v, mu, n);
           NEW_STENCIL_ENTRY(se_nu, sbuf_v, nu, n);
-          auto su_v = HISQREAD(u_v, se_mu);
-          HISQWRITE(us_v[n], u_v[n]*HISQREAD(v_v, se_nu)*adj(su_v));
-          HISQWRITE(ls_v[n], adj(u_v[n])*v_v[n]*su_v);
+          auto su_v = ACCREAD(u_v, se_mu);
+          ACCWRITE(us_v[n], u_v[n]*ACCREAD(v_v, se_nu)*adj(su_v));
+          ACCWRITE(ls_v[n], adj(u_v[n])*v_v[n]*su_v);
         });
-      }
-
-      { // scope: add upper staple to downward-shifted lower staple 
+      )
+      ACCELERATOR_SCOPE( // add upper staple to downward-shifted lower staple 
         autoView(us_v, us, AcceleratorRead);
         autoView(ls_v, ls, AcceleratorRead);
         autoView(vbuf_v, (*_vbuf), AcceleratorWrite);
         accelerator_for(n, us_v.size(), Simd::Nsimd(), {
           NEW_STENCIL_ENTRY(se, sbuf_v, nu + BACKWARD, n);
-          HISQWRITE(vbuf_v[n], us_v[n] + HISQREAD(ls_v, se));
+          ACCWRITE(vbuf_v[n], us_v[n] + ACCREAD(ls_v, se));
         });
-      } 
-    }
+      ) 
+    )
     return (*_vbuf);
   }
 
@@ -325,10 +341,9 @@ public:
 
     uds = Zero();
     lds = Zero();
-    { // scope: calculate staple derivative
+    ACCELERATOR_SCOPE( // calculate staple derivative
       GeneralLocalStencilView sbuf_v = (*_sbuf).View(AcceleratorRead);
-
-      { // scope: upper contribution and unshifted lower contribution
+      ACCELERATOR_SCOPE( // upper contribution and unshifted lower contribution
         autoView(v_v, v, AcceleratorRead);
         autoView(u_v, u, AcceleratorRead);
         autoView(c_v, c, AcceleratorRead);
@@ -337,24 +352,23 @@ public:
         accelerator_for(n, lds_v.size(), Simd::Nsimd(), {
           NEW_STENCIL_ENTRY(se_mu, sbuf_v, mu, n);
           NEW_STENCIL_ENTRY(se_nu, sbuf_v, nu, n);
-          auto su_v = HISQREAD(u_v, se_mu);
-          auto sc_v = HISQREAD(c_v, se_mu);
-          auto sv_v = HISQREAD(v_v, se_nu);
-          HISQWRITE(uds_v[n], c_v[n]*sv_v*adj(su_v) + u_v[n]*sv_v*adj(sc_v));
-          HISQWRITE(lds_v[n], adj(c_v[n])*v_v[n]*su_v + adj(u_v[n])*v_v[n]*sc_v);
+          auto su_v = ACCREAD(u_v, se_mu);
+          auto sc_v = ACCREAD(c_v, se_mu);
+          auto sv_v = ACCREAD(v_v, se_nu);
+          ACCWRITE(uds_v[n], c_v[n]*sv_v*adj(su_v) + u_v[n]*sv_v*adj(sc_v));
+          ACCWRITE(lds_v[n], adj(c_v[n])*v_v[n]*su_v + adj(u_v[n])*v_v[n]*sc_v);
         });
-      }
-
-      { // scope: shift lower contribution and to result
+      )
+      ACCELERATOR_SCOPE( // shift lower contribution and to result
         autoView(lds_v, lds, AcceleratorRead);
         autoView(uds_v, uds, AcceleratorRead);
         autoView(vbuf_v, (*_vbuf), AcceleratorWrite);
         accelerator_for(n, lds_v.size(), Simd::Nsimd(), {
           NEW_STENCIL_ENTRY(se, sbuf_v, nu + BACKWARD, n);
-          HISQWRITE(vbuf_v[n], uds_v[n] + HISQREAD(lds_v, se));
+          ACCWRITE(vbuf_v[n], uds_v[n] + ACCREAD(lds_v, se));
         });
-      }
-    }
+      )
+    )
     return (*_vbuf);
   }
 
@@ -369,6 +383,13 @@ public:
   /** @brief nu-oriented symmetric staple derivative w/o explicit middle/side links */
   inline const GaugeLinkField stapleDerivative(const GaugeLinkField& c, int mu, int nu) 
   { return stapleDerivative(link(mu), link(nu), c, mu, nu); }
+
+public:
+  /** @brief calculation of long link */
+  inline const GaugeLinkField elongate(int mu, int length) {
+    assert(Nd == 4 && "link elongation only implemented in 4D");
+    return _t[mu].CovShift(_t[mu].CovShift(link(mu), FORWARD), FORWARD);
+  }
 
 public:
   /** @brief index transporters -- mutable */
@@ -389,10 +410,11 @@ public:
 };
 
 // undefine macros to prevent conflicts
+#undef ACCELERATOR_SCOPE
 #undef NEW_STENCIL_ENTRY
 #undef SET_STENCIL_ENTRY
-#undef HISQREAD
-#undef HISQWRITE
+#undef ACCREAD
+#undef ACCWRITE
 
 NAMESPACE_END(Grid);
 
