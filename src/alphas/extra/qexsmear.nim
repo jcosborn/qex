@@ -87,6 +87,8 @@ proc smearGetForce*[T](
   proc smearedForce(dsdu: var T; dsdsu,dsdsul: T) =
     var t = newOneOf(dsdu)
     t.asqtadDeriv(w,dsdsu,fat7l2,w,dsdsul,naik,info) # Second fat7
+    for mu in 0..<t.len:
+      echo mu, " ", simdSum(trace(t[mu]))
     self.projection.projectDeriv(t, w, v, t, regulate = regulate)
     dsdu.fat7Deriv(g,t,fat7l1,info) # First fat7
     if displayPerformance: 

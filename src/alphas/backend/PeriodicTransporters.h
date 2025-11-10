@@ -245,6 +245,10 @@ public:
   inline const GaugeField toTightGrid(const GaugeField& U) 
   { return _pcell->Extract(U); }
 
+  /** @brief wrapped extraction from padding */
+  inline const GaugeLinkField toTightGrid(const GaugeLinkField& U) 
+  { return _pcell->Extract(U); }
+
 public:
   /** @brief cartesian shift (only periodic) */
   inline GaugeLinkField Cshift(const GaugeLinkField& u, int mu, TransportHeading heading) 

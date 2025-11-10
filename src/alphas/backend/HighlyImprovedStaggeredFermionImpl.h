@@ -513,8 +513,9 @@ public:
         dxdu[mu] += w.staple(cnu, mu, nu);                     // Eqn 3b
     ) )
 
+    HISQLOOP0(dxdu[mu] = adj(dxdu[mu])) // correct for orientation of staples
     HISQNAIK(
-      GaugeLorentzField dxdwww = toLorentz(w.toPaddedGrid(dXdWWW));
+      GaugeLorentzField dxdwww = toLorentz(cell.Exchange(dXdWWW));
       HISQLOOP0(
         si = w.Cshift(w.link(mu), mu, FORWARD);
         sj = si*w.Cshift(si, mu, FORWARD)*adj(dxdwww[mu]);
@@ -523,9 +524,9 @@ public:
           sj = w.Cshift(adj(si)*sj*w.link(mu), mu, BACKWARD);
           snu += sj;
         }
-        dxdu[mu] += ctx.naik*adj(snu);
+        dxdu[mu] += ctx.naik*snu;
     ) )
-    dXdU = adj(w.toTightGrid(toGauge(dxdu)));
+    dXdU = w.toTightGrid(toGauge(dxdu));
   }
 
   void smearDerivative(

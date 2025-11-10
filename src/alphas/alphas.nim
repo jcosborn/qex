@@ -753,9 +753,6 @@ proc fermionForce[S,T](
         f1[mu][i] *= -1
         f3[mu][i] *= -1
 
-  for mu in 0..<f.len:
-    echo mu, " ", simdSum(trace(f1[mu])), " ", simdSum(trace(f3[mu]))
-
   # 3. smearing
   ff.smearedForce(f1, f3)
 
