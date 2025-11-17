@@ -1,14 +1,17 @@
 when defined(gridDir):
-  import backend/[gridsmear]
-  import extra/[alphasproject]
+  import extra/[gridsmear, gridgauge]
   export gridsmear
-  export alphasproject
+  export gridgauge
 else:
-  import extra/[qexsmear]
+  import extra/[qexsmear, qexgauge]
   export qexsmear
+  export qexgauge
 
 template gridBackend*(work: untyped): untyped = 
   when defined(gridDir): work
+
+template qexBackend*(work: untyped): untyped = 
+  when not defined(gridDir): work
 
 proc newHISQ*(
     lepage: float = 0.0; 

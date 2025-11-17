@@ -8,11 +8,13 @@
 import qex
 import grid/[Grid]
 import alphaslinks
+import alphasproject
 
 export alphaslinks
+export alphasproject
 
 {.pragma: grid, header: "<Grid/Grid.h>".}
-{.pragma: hisq, header: "HighlyImprovedStaggeredFermionImpl.h".}
+{.pragma: hisq, header: "<Grid/qcd/utils/HighlyImprovedStaggeredFermionImpl.h>".}
 
 const HISQIMPL = "Grid::HighlyImprovedStaggeredFermionImpl"
 const GIMPL = "Grid::PeriodicGimplR"
@@ -37,6 +39,9 @@ proc newGridHISQ(grid: ptr GridCartesian, calcStagPhases: bool = true): GridHISQ
 proc checkerboard(x: ptr GridLatticeGaugeField): int 
   {.importcpp: "#->Checkerboard()", grid.}
 
+#{.emit:["SchurRedBlackStaggeredSolve<FermionField> SchurSolver(CG);"].}
+#{.emit:["SchurSolver(Ds,",gsrc,",",gsoln,");"].}
+
 proc toQEX(r0: seq[Field], x0: GridLatticeGaugeField) =
   type GridScalarObject = GridLatticeGaugeField.scalarObj
   let 
@@ -59,14 +64,17 @@ proc toQEX(r0: seq[Field], x0: GridLatticeGaugeField) =
 
   threads:
     {.emit: "using namespace Grid;".}
-    var t: GridScalarObject
     {.emit: "Coordinate c(`nd`);".}
     {.emit: ["autoView(dst, ", x[], ", CpuRead);"].}
+    
+    var t: GridScalarObject
+    
     for s in subset.singleSites:
-      for mu in 0..<nd: 
-        let smu = lo.coords[mu][s].cint - c0[mu]
-        {.emit: "c[`mu`] = `smu`;".}
+      # set coordinate
+      for mu in 0..<nd: {.emit: ["c[", mu, "] = ", lo.coords[mu][s].cint - c0[mu], ";"].}
       {.emit: "peekLocalSite(`t`, dst, c);".}
+
+      # set link values
       for mu in 0..<nd:
         for a in 0..<nc:
           for b in 0..<nc:
@@ -125,6 +133,8 @@ proc projectionDerivative(
   U: GridLatticeGaugeField
 ) {.importcpp: "#.projectionDerivative(#, #, #, #)", hisq.}
 
+# primary smearing and force derivative procedure
+
 proc smearGetForce*[T](
   self: alphaslinks.HisqCoefs; 
   u: T; 
@@ -139,17 +149,23 @@ proc smearGetForce*[T](
     w = lo.newGauge()
 
   block:
+    # grid prep
     let
       lat = lo.physGeom
       latSize = newCoordinate(lat)
+    let
       simdLayout = GridDefaultSimd(len(lat), Nsimd(GridVComplex))
       mpiLayout = newCoordinate(lo.rankGeom)
     let grid = latSize.newGridCartesian(simdLayout, mpiLayout)
     var hisq = newGridHISQ(addr grid)
+
+    # force
     var
       gu = grid.gauge()
       gw = grid.gauge()
       gv = grid.gauge()
+
+    # output
     var gsu = grid.gauge()
     var gsul = grid.gauge()
 
@@ -162,41 +178,68 @@ proc smearGetForce*[T](
     hisq.project(gw, gv, regulate)
     hisq.smear(gsu, gsul, gw)
 
-    # save results
+    # save for force
     g.toQEX(gu)
     v.toQEX(gv)
     w.toQEX(gw)
+
+    # I am almost certain the bug is in toQEX
+    #[
+    for mu in 0..<lo.nDim:
+      {.emit: "using namespace Grid;".}
+      {.emit: "std::cout << \"RESULT OF SMEAR: \" << `mu` << \" \" << sum(trace(PeekIndex<LorentzIndex>(`gu`, `mu`))) << std::endl;".}
+      echo "RESULT OF SMEAR: ", mu, " ", simdSum(trace(g[mu]))
+      echo ""
+      {.emit: "std::cout << \"RESULT OF SMEAR: \" << `mu` << \" \" << sum(trace(PeekIndex<LorentzIndex>(`gv`, `mu`))) << std::endl;".}
+      echo "RESULT OF SMEAR: ", mu, " ", simdSum(trace(v[mu]))
+      echo ""
+      {.emit: "std::cout << \"RESULT OF SMEAR: \" << `mu` << \" \" << sum(trace(PeekIndex<LorentzIndex>(`gw`, `mu`))) << std::endl;".}
+      echo "RESULT OF SMEAR: ", mu, " ", simdSum(trace(w[mu]))
+    ]#
+
+    # save output
     su.toQEX(gsu)
     sul.toQEX(gsul)
 
   return proc(dsdu: var T; dsdsu, dsdsul: T) =
+    # grid prep
     let
       lat = lo.physGeom
       latSize = newCoordinate(lat)
+    let
       simdLayout = GridDefaultSimd(len(lat), Nsimd(GridVComplex))
       mpiLayout = newCoordinate(lo.rankGeom)
     let grid = latSize.newGridCartesian(simdLayout, mpiLayout)
     var hisq = newGridHISQ(addr grid)
+
+    # various smearing levels
     var
       gu = grid.gauge()
       gv = grid.gauge()
       gw = grid.gauge()
+
+    # chain rule
     var 
       gdsdu = grid.gauge()
       gdsdsu = grid.gauge()
       gdsdsul = grid.gauge()
+    
+     # temporary
     var gt = grid.gauge()
 
+    # convert to Grid layout
     gu.toGrid(g)
     gv.toGrid(v)
     gw.toGrid(w)
     gdsdsu.toGrid(dsdsu)
     gdsdsul.toGrid(dsdsul)
 
+    # derivative
     hisq.smearDerivative(gt, gdsdsu, gdsdsul, gw)
     hisq.projectionDerivative(gt, gt, gw, gv)
     hisq.smearDerivative(gdsdu, gt, gu)
 
+    # save result
     dsdu.toQEX(gdsdu)
 
 when isMainModule:

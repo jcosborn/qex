@@ -30,7 +30,7 @@ import algorithms/[integrator]
 import physics/[qcdTypes, stagSolve]
 
 import alphashisq
-import extra/[alphasproject, alphasrng, alphasgauge]
+import extra/[alphasproject, alphasrng, alphasnorm]
 
 import mdevolve
 

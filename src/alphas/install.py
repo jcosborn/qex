@@ -11,7 +11,7 @@ MDEVOLVE = 'https://github.com/jxy/MDevolve'
 NIMV = 'nim-2.2.2'
 NIMP = '-linux_x64'
 NIM = 'https://nim-lang.org/download/' + NIMV + NIMP + '.tar.xz'
-GRID = 'https://github.com/paboyle/Grid'
+GRID = 'https://github.com/ctpeterson/Grid-HISQ.git'
 
 def dest(path, dir) -> str: return '/'.join([path, dir])
 
@@ -63,6 +63,7 @@ wget = lambda url: os.system('wget ' + url)
 clone = lambda url: os.system('git clone ' + url)
 tarx = lambda file: os.system('tar -xvf ' + file + '.tar.xz')
 targ = lambda file: os.system('tar -xvf ' + file + '.tar.gz')
+mv = lambda source, dest: os.system('mv ' + source + ' ' + dest)
 
 def subsystem(cmd: str) -> str:
     return subprocess.check_output(cmd, shell = True).decode('utf-8').strip()
@@ -85,7 +86,9 @@ def install_mdevolve(mdevolve: str, nimexec: str, nimbleexec: str):
 
 def install_grid(deps: str, machine: str, build_cpus: str) -> str:
     cd(deps, '')
-    if not isdir(deps, 'Grid'): clone(GRID)
+    if not isdir(deps, 'Grid'): 
+        clone(GRID)
+        mv(deps + '/Grid-HISQ', deps + '/Grid')
     cd(deps, 'Grid')
 
     # bootstrap (ensures that Eigen is also installed)
