@@ -12,6 +12,7 @@ NIMV = 'nim-2.2.2'
 NIMP = '-linux_x64'
 NIM = 'https://nim-lang.org/download/' + NIMV + NIMP + '.tar.xz'
 GRID = 'https://github.com/ctpeterson/Grid-HISQ.git'
+SPACK = 'https://github.com/spack/spack.git'
 
 def dest(path, dir) -> str: return '/'.join([path, dir])
 
@@ -34,7 +35,7 @@ def args() -> argparse.Namespace:
         '--system',
         help = 'target system for Grid compilation',
         type = str,
-        choices = ['local', 'Perlmutter'],
+        choices = ['local', 'lq1', 'perlmutter'],
         default = 'local'
     )
     p.add_argument(
@@ -57,6 +58,7 @@ def args() -> argparse.Namespace:
     )
     return p.parse_args()
 
+run = lambda cmd: os.system(cmd)
 mkdir = lambda path, dir: os.mkdir(dest(path, dir))
 cd = lambda path, dir: os.chdir(dest(path, dir))
 wget = lambda url: os.system('wget ' + url)
@@ -94,16 +96,36 @@ def install_grid(deps: str, machine: str, build_cpus: str) -> str:
     # bootstrap (ensures that Eigen is also installed)
     system('./bootstrap.sh')
     if not isdir(deps, 'Grid/build'): mkdir(deps, 'Grid/build')
-    cd(deps, 'Grid/build')
 
+    # install spack for getting Grid dependencies
+    clone(SPACK)
+    spack = dest(deps, dest('Grid', 'spack'))
+    setup_env = dest(spack, 'share/spack/setup-env.sh')
+    run('chmod u+x ' + setup_env)
+    run(setup_env)
+
+    # install FFTW w/ Spack... takes a while
+    run(spack + '/bin/spack install -v -j ' + build_cpus + ' fftw')
+    fftw = subsystem(
+        "echo `" + spack + "/bin/spack find --paths fftw | grep ^fftw | awk '{print $2}'`"
+    )
+    
     # configure
+    cd(deps, 'Grid/build')
     grid = dest(dest(deps, 'Grid'), 'build')
     config = '--prefix=' + grid + ' '
+    config += '--with-fftw=' + fftw + ' '
     if machine == 'local':
+        config += '--enable-simd=GEN '
+        config += '--enable-comms=mpi-auto '
+    elif machine == 'lq1':
+        #config += '--enable-simd=AVX512 '
         config += '--enable-simd=AVX '
         config += '--enable-comms=mpi-auto '
-        config += '--disable-fermion-reps '
-        config += '--disable-gparity '
+        #config += '--enable-shm=shmget '
+        #config += '--enable-shmpath=/dev/hugepages '
+    config += '--disable-fermion-reps '
+    config += '--disable-gparity '
     system('../configure ' + config)
 
     # make & make install (make distributed over "build_cpus" CPUs)
