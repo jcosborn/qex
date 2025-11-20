@@ -14,6 +14,12 @@ proc newOneLoopGaugeAction(
 ): OneLoopGaugeAction 
   {.importcpp: ONELOOPACTION & "(#, #, #, #, #)", constructor, gauge.}
 
+template newOneLoopGaugeAction*(
+  gc: GaugeActionCoeffs; 
+  grid: ptr GridCartesian
+): untyped =
+  newOneLoopGaugeAction(grid, gc.plaq, gc.plaq, gc.rect, gc.pgm)
+
 proc S(action: OneLoopGaugeAction; u: GridLatticeGaugeField): cdouble 
   {.importcpp: "#.S(#)", gauge.}
 
@@ -30,7 +36,7 @@ proc gaugeActionOneLoopHISQ*[U](gc: GaugeActionCoeffs; u: openArray[U]): cdouble
 
   # get grid link and action object
   var g = grid.gauge()
-  let action = gc.newOneLoopGaugeAction(addr grid, gc.plaq, gc.plaq, gc.rect, gc.pgm)
+  let action = gc.newOneLoopGaugeAction(addr grid)
 
   # do action calculation and return
   g := u
