@@ -268,7 +268,7 @@ proc solve*(state: var CgState; op: auto; sp: var SolverParams) =
     #  subset:
     #    fr2 = (b - Ap).norm2
     #  echo "   ", fr2/b2
-  sp.finalIterations = state.iterations
+  sp.iterations = state.iterations
   toc("cg final")
 
 proc solve*(state: var CgState; x: Field; b: Field2; op: auto;

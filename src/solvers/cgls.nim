@@ -183,7 +183,7 @@ proc solve*(state: var CglsState; op: auto; sp: var SolverParams) =
     #  subset:
     #    fr2 = (b - Ap).norm2
     #  echo "   ", fr2/b2
-  sp.finalIterations = state.iterations
+  sp.iterations = state.iterations
   toc("cgls final")
 
 proc solve*(state: var CglsState; x: Field; b: Field2; op: auto;

@@ -243,6 +243,6 @@ proc solve*[V,T](
   state.xs = xs
   state.ps = ps
   state.iterations = itn0
-  sp.finalIterations = state.iterations
+  sp.iterations = state.iterations
 
 if isMainModule: echo "!!! NO TEST: Run stagSolve for test !!!"
