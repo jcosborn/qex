@@ -1,7 +1,9 @@
 when defined(gridDir):
-  import extra/[gridsmear, gridgauge]
+  import extra/[gridsmear]#, gridgauge]
   export gridsmear
-  export gridgauge
+  #export gridgauge
+  import extra/[qexgauge]
+  export qexgauge
 else:
   import extra/[qexsmear, qexgauge]
   export qexsmear

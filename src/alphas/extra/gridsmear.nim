@@ -10,6 +10,8 @@ import grid/[Grid]
 import alphaslinks
 import alphasproject
 
+import gauge/[gaugeAction] # for debugging
+
 export alphaslinks
 export alphasproject
 
@@ -183,8 +185,11 @@ proc smearGetForce*[T](
     v.toQEX(gv)
     w.toQEX(gw)
 
-    # I am almost certain the bug is in toQEX
-    #[
+    # save output
+    su.toQEX(gsu)
+    sul.toQEX(gsul)
+
+    #[]
     for mu in 0..<lo.nDim:
       {.emit: "using namespace Grid;".}
       {.emit: "std::cout << \"RESULT OF SMEAR: \" << `mu` << \" \" << sum(trace(PeekIndex<LorentzIndex>(`gu`, `mu`))) << std::endl;".}
@@ -195,11 +200,28 @@ proc smearGetForce*[T](
       echo ""
       {.emit: "std::cout << \"RESULT OF SMEAR: \" << `mu` << \" \" << sum(trace(PeekIndex<LorentzIndex>(`gw`, `mu`))) << std::endl;".}
       echo "RESULT OF SMEAR: ", mu, " ", simdSum(trace(w[mu]))
+      echo ""
+      {.emit: "std::cout << \"RESULT OF SMEAR: \" << `mu` << \" \" << sum(trace(PeekIndex<LorentzIndex>(`gsu`, `mu`))) << std::endl;".}
+      echo "RESULT OF SMEAR: ", mu, " ", simdSum(trace(su[mu]))
+      echo ""
+      {.emit: "std::cout << \"RESULT OF SMEAR: \" << `mu` << \" \" << sum(trace(PeekIndex<LorentzIndex>(`gsul`, `mu`))) << std::endl;".}
+      echo "RESULT OF SMEAR: ", mu, " ", simdSum(trace(sul[mu]))
+      echo ""
     ]#
 
-    # save output
-    su.toQEX(gsu)
-    sul.toQEX(gsul)
+    #[
+    var gc = GaugeActionCoeffs(plaq: 1.0, rect: 1.0)
+    echo "action from smeared link: ", gc.gaugeAction2(su)
+    for mu in 0..<lo.nDim:
+      {.emit: "using namespace Grid;".}
+      {.emit: "std::cout << \"trace sum from smeared link (Grid): \" << `mu` << \" \" << sum(trace(PeekIndex<LorentzIndex>(`gsu`, `mu`))) << std::endl;".}
+      echo "trace sum from smeared link (QEX): ", simdSum(trace(su[mu]))
+    echo "action from long link: ", gc.gaugeAction2(sul)
+    for mu in 0..<lo.nDim:
+      {.emit: "using namespace Grid;".}
+      {.emit: "std::cout << \"trace sum from long link (Grid): \" << `mu` << \" \" << sum(trace(PeekIndex<LorentzIndex>(`gsul`, `mu`))) << std::endl;".}
+      echo "trace sum from long link (QEX): ", simdSum(trace(sul[mu]))
+  ]#
 
   return proc(dsdu: var T; dsdsu, dsdsul: T) =
     # grid prep
