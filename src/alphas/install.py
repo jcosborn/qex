@@ -119,11 +119,10 @@ def install_grid(deps: str, machine: str, build_cpus: str) -> str:
         config += '--enable-simd=GEN '
         config += '--enable-comms=mpi-auto '
     elif machine == 'lq1':
-        #config += '--enable-simd=AVX512 '
-        config += '--enable-simd=AVX '
+        config += '--enable-simd=AVX512 '
         config += '--enable-comms=mpi-auto '
-        #config += '--enable-shm=shmget '
-        #config += '--enable-shmpath=/dev/hugepages '
+        config += '--enable-shm=shmget '
+        config += '--enable-shmpath=/dev/hugepages '
     config += '--disable-fermion-reps '
     config += '--disable-gparity '
     system('../configure ' + config)
