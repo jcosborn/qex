@@ -12,6 +12,7 @@ import times # Timing for generating seeds
 import os # For checking if files exist
 import staghmc_spv_rng # For certain RNG operations
 import options # For optional IO behavior with fields
+import physics/[stagSolve]
 
 #[ ~~~~ Command line and XML inputs ~~~~ ]#
 
