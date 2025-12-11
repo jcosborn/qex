@@ -88,8 +88,8 @@ let
   ## Brief: default inputs -- overriden if path to JSON provided (see newHISQHMC)
   defaultInputs = %* {
     "lattice-geometry": [8,8,8,16], # lattice geometry
-    #"rank-geometry": [1,1,2,2], # MPI rank geometry -- if not specified, guessed
-    #"simd-geometry": [2,2,1,2], # SIMD (local) geometry -- if not specified, guessed
+    #"rank-geometry": [2,2,1,1], # MPI rank geometry -- if not specified, guessed
+    #"simd-geometry": [1,1,2,4], # SIMD (local) geometry -- if not specified, guessed
     "hmc": {
       "trajectory-length": 0.1, # HMC trajectory length
       "serial-rng": "milc", # RNG for Metropolis

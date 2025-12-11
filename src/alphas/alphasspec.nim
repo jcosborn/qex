@@ -172,7 +172,7 @@ when isMainModule:
 
     var tmat = lo.ColorMatrix()
     threads: tmat := 1
-    getGaugeFixTransform(tmat, g, @[0,1,2], gfstop, gforf, verb=0)
+    getGaugeFixTransform(tmat, g, @[0, 1, 2], gfstop, gforf, verb = 0)
 
     var fg = lo.newGauge
     fg.gaugeTransform(g, tmat)
@@ -207,10 +207,10 @@ when isMainModule:
       mesonOps[1],  # γ_5 ⊗ ξ_5         (P = -σ) II    π_5      |
       mesonOps[6],  # γ_5 ⊗ ξ_μ ξ_5     (P = +σ) VII   π_i5     |
       mesonOps[7],  # γ_0 γ_5 ⊗ ξ_μ ξ_ν (P = -σ) VIII  π_ij     | scalar &
-      mesonOps[12], # γ_0 γ_5 ⊗ ξ_μ     (P = -σ) XIII  π_i0     | pseudoscalar
-      mesonOps[13], # γ_5 ⊗ ξ_μ         (P = -σ) XIV   π_i      |
-      mesonOps[16], # γ_0 γ_5 ⊗ I       (P = -σ) XVI   π_I      |
-      mesonOps[17], # γ_5 ⊗ ξ_0         (P = +σ) XVII  π_0   <--+
+      mesonOps[12], # γ_0 γ_5 ⊗ ξ_μ     (P = -σ) XIII  π_i      | pseudoscalar
+      mesonOps[13], # γ_5 ⊗ ξ_μ         (P = -σ) XIV   π_i0     |
+      mesonOps[16], # γ_0 γ_5 ⊗ I       (P = -σ) XVI   π_0      |
+      mesonOps[17], # γ_5 ⊗ ξ_0         (P = +σ) XVII  π_I   <--+
       mesonOps[2],  # γ_0 γ_k ⊗ ξ_0 ξ_μ (P = +σ) XIII  ρ_0i  <--+
       mesonOps[3],  # γ_μ ⊗ ξ_μ         (P = -σ) XIV   ρ_i      |
       mesonOps[4],  # γ_μ ⊗ I           (P = +σ) XV    ρ_I      |
@@ -277,10 +277,10 @@ when isMainModule:
         "pi_5":  corrs[1],
         "pi_i5": corrs[2],
         "pi_ij": corrs[3],
-        "pi_i0": corrs[4],
-        "pi_i":  corrs[5],
-        "pi_I":  corrs[6],
-        "pi_0":  corrs[7],
+        "pi_i":  corrs[4],
+        "pi_i0": corrs[5],
+        "pi_0":  corrs[6],
+        "pi_I":  corrs[7],
         "rho_i0":  corrs[8],
         "rho_i":   corrs[9],
         "rho_I":   corrs[10],
