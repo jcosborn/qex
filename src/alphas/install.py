@@ -35,7 +35,7 @@ def args() -> argparse.Namespace:
         '--system',
         help = 'target system for Grid compilation',
         type = str,
-        choices = ['local', 'lq1', 'perlmutter'],
+        choices = ['local', 'lq1', 'jlab24s', 'perlmutter'],
         default = 'local'
     )
     p.add_argument(
@@ -116,10 +116,15 @@ def install_grid(deps: str, machine: str, build_cpus: str) -> str:
     config = '--prefix=' + grid + ' '
     config += '--with-fftw=' + fftw + ' '
     if machine == 'local':
-        config += '--enable-simd=GEN '
+        config += '--enable-simd=AVX '
         config += '--enable-comms=mpi-auto '
     elif machine == 'lq1':
-        config += '--enable-simd=AVX512 '
+        config += '--enable-simd=AVX '
+        config += '--enable-comms=mpi-auto '
+        config += '--enable-shm=shmget '
+        config += '--enable-shmpath=/dev/hugepages '
+    elif machine == 'jlab24s':
+        config += '--enable-simd=AVX '
         config += '--enable-comms=mpi-auto '
         config += '--enable-shm=shmget '
         config += '--enable-shmpath=/dev/hugepages '
