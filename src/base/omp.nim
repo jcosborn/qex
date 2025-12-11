@@ -52,8 +52,9 @@ template ompAtomicWrite*(body) = ompPragma("atomic write release", body)
 
 template ompParallel*(body:untyped) =
   ompBlock("parallel"):
-    if(omp_get_thread_num()!=0):
-      setupForeignThreadGc()
+    when(declared(setupForeignThreadGc)):
+      if(omp_get_thread_num()!=0):
+        setupForeignThreadGc()
     body
 template ompMaster*(body:untyped) = ompBlock("master", body)
 template ompSingle*(body:untyped) = ompBlock("single", body)
