@@ -69,7 +69,7 @@ proc init*[M:MetropolisRoot](m: var M) =
   m.clearStats
 
 proc update*[T:MetropolisRoot](m: var T) =
-  mixin finish
+  mixin finish, checkReverse, generateReverse, finishReverse
   template ff(x: float): string =
     formatFloat(x, ffDecimal, precision=6)
 
@@ -86,7 +86,7 @@ proc update*[T:MetropolisRoot](m: var T) =
 
   if m.checkReverse:
     m.generateReverse
-    m.hReverse = m.getH
+    #m.hReverse = m.getH
     m.finishReverse
     # echo?
 
