@@ -90,6 +90,9 @@ let
     "lattice-geometry": [8,8,8,16], # lattice geometry
     #"rank-geometry": [2,2,1,1], # MPI rank geometry -- if not specified, guessed
     #"simd-geometry": [1,1,2,4], # SIMD (local) geometry -- if not specified, guessed
+    "reversibility-check": {
+      "frequency": 1 # frequency of reversibility checks (0 to disable)
+    },
     "hmc": {
       "trajectory-length": 0.1, # HMC trajectory length
       "serial-rng": "milc", # RNG for Metropolis
@@ -642,7 +645,7 @@ proc fermionAction*(self: HisqHMC): float =
     threadMaster: fact = factt
   return 0.5*fact 
 
-proc hamiltonian(self: HisqHMC): float =
+proc hamiltonian*(self: HisqHMC): float =
   var h = (kinetic: 0.0, gauge: 0.0, fermion: 0.0)
   h.kinetic = self.kineticAction()
   h.gauge = self.gaugeAction()
@@ -698,6 +701,31 @@ proc revert(self: var HisqHMC) = set(self.u,self.u0)
 proc evolve*(self: var HisqHMC) = 
   self.integrator.evolve(self.tau)
   self.integrator.finish
+
+proc flip*(p1, p0: auto) =
+  threads:
+    for mu in 0..<p0.len: p1[mu] := -p0[mu]
+
+proc restore*(p0, p1: auto; u0, u1: auto) =
+  threads:
+    for mu in 0..<p0.len: 
+      p0[mu] := p1[mu]
+      u0[mu] := u1[mu]
+
+proc reverse*(self: var HisqHMC): float = 
+  var u2 = self.u[0].l.newGauge()
+  var p2 = self.u[0].l.newGauge()
+
+  restore(p2, self.p, u2, self.u)
+  flip(self.p, p2)
+
+  self.integrator.evolve(self.tau)
+  self.integrator.finish
+
+  self.smear()
+  result = self.hamiltonian()
+
+  restore(self.p, p2, self.u, u2)
 
 proc fermionForce[S,T](
     f: auto; 
