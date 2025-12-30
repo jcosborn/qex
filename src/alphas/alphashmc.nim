@@ -93,7 +93,7 @@ hmc.sample:
   echo ""
   hmc.evolve()
   echo ""
-  hmc.finish:
+  hmc.finish(trajectory):
     let output = $(info.dH) & " exp(dH): " & $(info.expdH) & " rand: " & $(info.rnd)
     case accepted:
       of true: echo "ACC: ", output
@@ -111,11 +111,5 @@ hmc.sample:
         hmc.writeGauge(fn & ".lat")
         hmc.writeSerialRNG(fn & ".serialRNG")
         hmc.writeParallelRNG(fn & ".parallelRNG")
-    if hmc.jsonInfo.hasKey("reversibility-check"):
-      let revFreq = hmc.jsonInfo["reversibility-check"]["frequency"].getInt()
-      if (revFreq > 0) and (((trajectory + 1) mod revFreq) == 0):
-        let hr = hmc.reverse()
-        echo "Reversed dH: ", hr - hmc.hf
-        echo "(Reversed h - initial h)/(initial h): ", (hr - hmc.hi) / hmc.hi
 
 qexFinalize()

@@ -716,11 +716,15 @@ proc reverse*(self: var HisqHMC): float =
   var u2 = self.u[0].l.newGauge()
   var p2 = self.u[0].l.newGauge()
 
+  echo ""
+
   restore(p2, self.p, u2, self.u)
   flip(self.p, p2)
 
   self.integrator.evolve(self.tau)
   self.integrator.finish
+
+  echo ""
 
   self.smear()
   result = self.hamiltonian()
@@ -893,7 +897,7 @@ proc updateMomentumGauge*(self: var HisqHMC; dtau: float) =
 
 #[ Hamiltonian Monte Carlo methods ]#
 
-template finish*(self: var HisqHMC; input: untyped) =
+template finish*(self: var HisqHMC; trajectory: int; input: untyped) =
   # Smear & calculate final Hamiltonian
   self.smear()
   self.hf = self.hamiltonian()
@@ -915,6 +919,23 @@ template finish*(self: var HisqHMC; input: untyped) =
     accepted = true
   template u: untyped {.inject.} = self.u
 
+  # reversibility check
+  if self.jsonInfo.hasKey("reversibility-check"):
+    let revFreq = self.jsonInfo["reversibility-check"]["frequency"].getInt()
+    if (revFreq > 0) and (((trajectory + 1) mod revFreq) == 0):
+      echo ""
+      echo "begin reversibility check"
+      
+      let hr = self.reverse()
+      
+      echo ""
+      echo "Reversed dH: ", hr - self.hf
+      echo "(Reversed h - initial h)/(initial h): ", (hr - self.hi) / self.hi
+    
+      echo ""
+      echo "end reversibility check"
+      echo ""
+
   # Do metropolis & have user do what they will
   case accepted:
     of true: reunit(self.u)
@@ -929,15 +950,65 @@ template sample*(self: var HisqHMC; work: untyped) =
     let trajectory {.inject.} = traj
     work
 
-proc fermionForceCheck*(self: var HisqHMC; eps: float): float =
-  proc contract[T](p,f: T): float =
-    var dS: float
-    threads:
-      var dSt = 0.0
-      for mu in 0..<p.len: dSt = dSt - reTrMul(p[mu],f[mu])
-      threadMaster: dS = dSt
-    result = dS
-  result = eps*contract(self.p,self.f)
+#[ fermion force check ]#
+
+proc reTrMul(x,y:auto):auto =
+  var d: type(eval(toDouble(redot(x[0],y[0]))))
+  for ir in x:
+    d += redot(x[ir].adj, y[ir])
+  result = simdSum(d)
+  x.l.threadRankSum(result)
+
+proc rescale(f: auto; scale: float) =
+  threads:
+    for mu in 0..<f.len:
+      for i in f[mu]: f[mu][i] *= scale
+
+proc forceFermion(self: var HisqHMC; dtau: float): auto =
+  self.fermionForce(dtau)
+  return self.f
+
+proc forceGauge(self: var HisqHMC; dtau: float): auto =
+  self.gaugeForce()
+  rescale(self.f, dtau)
+  return self.f
+
+proc contract[T](p,f: T): float =
+  var dS: float
+  threads:
+    var dSt = 0.0
+    for mu in 0..<p.len: dSt = dSt - reTrMul(p[mu],f[mu])
+    threadMaster: dS = dSt
+  result = dS
+
+proc forceCheck*(self: var HisqHMC; dtau: float) =
+  var si, sf: float
+  var ds1, ds2: float
+  var f = self.f.newOneOf()
+
+  self.momentumHeatbath()
+
+  self.smear()
+  si = self.gaugeAction() + self.fermionAction()
+  
+  self.updateGauge(dtau)
+  
+  f := self.forceFermion(dtau)
+  f += self.forceGauge(dtau)
+
+  self.updateGauge(dtau)
+
+  self.smear()
+  sf = self.gaugeAction() + self.fermionAction()
+
+  ds1 = sf - si
+  ds2 = 4.0*dtau*contract(self.p, f)
+
+  echo "Fermion force check:"
+  echo "dS from actions: ", ds1
+  echo "dS from forces: ", ds2
+
+#[ example program ]#
 
 if isMainModule:
   ## This is an example of the kind of program that one could write 
@@ -1004,7 +1075,7 @@ if isMainModule:
   hmc.sample:
     hmc.prepare()
     hmc.evolve()
-    hmc.finish:
+    hmc.finish(trajectory):
       let output = $(info.dH) & " exp(dH): " & $(info.expdH) & " rand: " & $(info.rnd)
       case accepted:
         of true: echo "ACC: ", output
