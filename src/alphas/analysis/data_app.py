@@ -263,6 +263,7 @@ if os.path.exists('../data/' + fn):
 
     # fcn(dH)
     dH = np.array(data['dH'])
+    #dH = np.array([dh if data['acceptance'][c] else 0.0 for c,dh in enumerate(data['dH'])])
     dH2 = dH*dH
     expdH = np.exp(-dH)
     pred_acc_rate = int(round(scipy.special.erfc(np.sqrt(np.mean(dH2)/8.))*100.))
@@ -389,7 +390,7 @@ if os.path.exists('../data/' + fn):
     dhp = plot.Plot(h = 2.25)
     plot_hmc_observable(
         dhp, dH, '\mathrm{d}\mathcal{H}', 
-        bins = int(round(0.005*len(dH))), 
+        bins = int(round(0.0025*len(dH))), 
         range = (-1., 1.)
     )
     dhp.decorate(
@@ -405,7 +406,7 @@ if os.path.exists('../data/' + fn):
     dhp = plot.Plot(h = 2.25)
     plot_hmc_observable(
         dhp, dH2, '\mathrm{d}\mathcal{H}^2',
-        bins = int(round(0.005*len(dH2))), 
+        bins = int(round(0.0025*len(dH2))), 
         range = (0., 2.)
     )
     dhp.decorate(
@@ -420,7 +421,7 @@ if os.path.exists('../data/' + fn):
     dhp = plot.Plot(h = 2.25)
     plot_hmc_observable(
         dhp, expdH, '\exp(-\mathrm{d}\mathcal{H})',
-        bins = int(round(0.005*len(expdH))), 
+        bins = int(round(0.0025*len(expdH))), 
         range = (0., 2.)
     )
     dhp.decorate(
@@ -432,19 +433,147 @@ if os.path.exists('../data/' + fn):
     dhp.axis.axhline(1.0, color = 'k', alpha = 0.25)
     st.pyplot(fig = dhp.handle)
     st.markdown("""
-    The change in the Hamiltonian $\mathrm{d}\mathcal{H}$ at the end of
-    each trajectory. In the infinite-statistics limit,
+    In the infinite-statistics limit,
     """)
-    st.latex("\langle \mathrm{d}\mathcal{H} \\rangle = 0")
-    st.markdown("and")
-    st.latex("\langle \exp(-\mathrm{d}\mathcal{H}) \\rangle = 1")
+    st.latex("\langle \exp(-\mathrm{d}\mathcal{H}) \\rangle = 1,")
     st.markdown("""
-    (sometimes referred to as Creutz's equality). One should of course have that the
-    observed expectations $\overline{\mathrm{d}\mathcal{H}}$ and 
-    $\overline{\exp(-\mathrm{d}\mathcal{H})}$ fluctuate about their
-    repective expectations in the infinite-statistics limit.
+    sometimes referred to as Creutz's equality.
     """)
 
+    # action change
+    dhp = plot.Plot(h = 2.25)
+    ds = np.array(data['kinetic-action-change']) + np.array(data['gauge-action-change']) + \
+         np.array(data['fermion-action-change'])
+    dsd = [m for idx, m in enumerate(ds) if not data['cut'][idx]]
+    plot_hmc_observable(
+        dhp,
+        ds*expdH,
+        '\mathrm{d}\mathcal{S}\exp (-\mathrm{d}\mathcal{H})',
+        bins = int(round(0.0025*len(expdH))), 
+        range = (min(dsd), max(dsd))
+    )
+    dhp.decorate(
+        xlim = [0, len(cfgs) - 1],
+        ylim = [min(dsd), max(dsd)],
+        xlabel = '$\mathrm{configuration}$',
+        ylabel = '$\mathrm{d}\mathcal{S}\exp (-\mathrm{d}\mathcal{H})$'
+    )
+    #dhp.axis.axhline(1.0, color = 'k', alpha = 0.25)
+    st.pyplot(fig = dhp.handle)
+    st.markdown("""
+    The change in the action weighted by the Boltzmann factor should be Gaussian
+    """)
+
+    st.markdown("### Kinetic action information")
+    
+    # kinetic action 
+    dhp = plot.Plot(h = 2.25)
+    plot_hmc_observable(
+        dhp, data['kinetic-action'], 'P^2',
+        bins = int(round(0.0025*len(expdH))), 
+        #range = (0., 2.)
+    )
+    dhp.decorate(
+        xlim = [0, len(cfgs) - 1],
+        #ylim = [0.0, 2.0],
+        xlabel = '$\mathrm{configuration}$',
+        ylabel = '$P^2$'
+    )
+    dhp.axis.axhline(1.0, color = 'k', alpha = 0.25)
+    st.pyplot(fig = dhp.handle)
+
+    # kinetic action change
+    dsk = np.array(data['kinetic-action-change'])
+    dhp = plot.Plot(h = 2.25)
+    plot_hmc_observable(
+        dhp, dsk*expdH, '\mathrm{d}P^2',
+        bins = int(round(0.0025*len(expdH))), 
+        #range = (-2., 2.)
+    )
+    dhp.decorate(
+        xlim = [0, len(cfgs) - 1],
+        #ylim = [-2.0, 2.0],
+        xlabel = '$\mathrm{configuration}$',
+        ylabel = '$\mathrm{d}P^2$'
+    )
+    dhp.axis.axhline(1.0, color = 'k', alpha = 0.25)
+    st.pyplot(fig = dhp.handle)
+
+    st.markdown("### Gauge action information")
+    
+    # gauge action
+    dhp = plot.Plot(h = 2.25)
+    plot_hmc_observable(
+        dhp, data['gauge-action'], '\mathcal{S}_{\mathrm{g}}',
+        bins = int(round(0.0025*len(expdH))), 
+        #range = (0., 2.)
+    )
+    dhp.decorate(
+        xlim = [0, len(cfgs) - 1],
+        #ylim = [0.0, 2.0],
+        xlabel = '$\mathrm{configuration}$',
+        ylabel = '$\mathcal{S}_{\mathrm{g}}$'
+    )
+    #dhp.axis.axhline(1.0, color = 'k', alpha = 0.25)
+    st.pyplot(fig = dhp.handle)
+
+    # gauge action change
+    dhp = plot.Plot(h = 2.25)
+    dsg = [m for idx, m in enumerate(data['gauge-action-change']) if not data['cut'][idx]]
+    plot_hmc_observable(
+        dhp,
+        np.array(data['gauge-action-change'])*expdH,
+        '\mathrm{d}\mathcal{S}_{\mathrm{g}}\exp (-\mathrm{d}\mathcal{H})',
+        bins = int(round(0.0025*len(expdH))), 
+        range = (min(dsg), max(dsg))
+    )
+    dhp.decorate(
+        xlim = [0, len(cfgs) - 1],
+        ylim = [min(dsg), max(dsg)],
+        xlabel = '$\mathrm{configuration}$',
+        ylabel = '$\mathrm{d}\mathcal{S}_{\mathrm{g}}\exp (-\mathrm{d}\mathcal{H})$'
+    )
+    #dhp.axis.axhline(1.0, color = 'k', alpha = 0.25)
+    st.pyplot(fig = dhp.handle)
+
+    st.markdown("### Fermion action information")
+    
+    # fermion action
+    dhp = plot.Plot(h = 2.25)
+    sf = np.array(data['fermion-action'])
+    plot_hmc_observable(
+        dhp, sf, '\mathcal{S}_{\mathrm{f}}',
+        bins = int(round(0.0025*len(expdH))), 
+        #range = (0., 2.)
+    )
+    dhp.decorate(
+        xlim = [0, len(cfgs) - 1],
+        #ylim = [0.0, 2.0],
+        xlabel = '$\mathrm{configuration}$',
+        ylabel = '$\mathcal{S}_{\mathrm{f}}$'
+    )
+    #dhp.axis.axhline(1.0, color = 'k', alpha = 0.25)
+    st.pyplot(fig = dhp.handle)
+
+    # fermion action change
+    dhp = plot.Plot(h = 2.25)
+    dsf = [m for idx, m in enumerate(data['fermion-action-change']) if not data['cut'][idx]]
+    plot_hmc_observable(
+        dhp,
+        np.array(data['fermion-action-change'])*expdH,
+        '\mathrm{d}\mathcal{S}_{\mathrm{f}}\exp (-\mathrm{d}\mathcal{H})',
+        bins = int(round(0.0025*len(expdH))), 
+        range = (min(dsf), max(dsf))
+    )
+    dhp.decorate(
+        xlim = [0, len(cfgs) - 1],
+        ylim = [min(dsf), max(dsf)],
+        xlabel = '$\mathrm{configuration}$',
+        ylabel = '$\mathrm{d}\mathcal{S}_{\mathrm{f}}\exp (-\mathrm{d}\mathcal{H})$'
+    )
+    #dhp.axis.axhline(1.0, color = 'k', alpha = 0.25)
+    st.pyplot(fig = dhp.handle)
+    
     # average CG per trajectory (fermion)
     st.markdown("""
     ### Long-range thermalization and autocorrelation

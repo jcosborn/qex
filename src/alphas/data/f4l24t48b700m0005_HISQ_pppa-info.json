@@ -1,5 +1,11 @@
 {
     "dH": [],
+    "kinetic-action": [],
+    "gauge-action": [],
+    "fermion-action": [],
+    "kinetic-action-change": [],
+    "gauge-action-change": [],
+    "fermion-action-change": [],
     "spatial plaquette": [],
     "temporal plaquette": [],
     "Re[spatial Polyakov loop]": [],
