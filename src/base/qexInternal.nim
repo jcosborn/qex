@@ -42,6 +42,16 @@ template qexError*(s:varargs[string,`$`]) =
   commsBarrier()
   qexAbort()
 
+template qexFatal*(s:varargs[string,`$`]) =
+  let ii = instantiationInfo()
+  echoAll "Fatal rank ", myRank, "  ", ii.filename, ":", ii.line, ":"
+  if s.len > 0:
+    echoAll "  ", s.join
+  flushFile stdout
+  flushFile stderr
+  #commsBarrier()
+  qexAbort()
+
 proc qexInit* =
   qexStartTime = getTics()
   for p in qexGlobalPreInit: p()

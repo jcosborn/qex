@@ -201,7 +201,9 @@ when declared(SimdS1):
   template toSingleImpl*(x: SimdS1Obj): untyped = x
   template toDoubleImpl*(x: SimdS1Obj): untyped = convert(x, SimdD1Obj)
   mapSimd(SimdS1, exp)
+  mapSimd(SimdS1, expm1)
   mapSimd(SimdS1, ln)
+  mapSimd(SimdS1, ln1p)
 
 when declared(SimdD1):
   template eval*(x: SimdD1): untyped = x
@@ -210,7 +212,9 @@ when declared(SimdD1):
   template toSingleImpl*(x: SimdD1Obj): untyped = convert(x, SimdS1Obj)
   template toDoubleImpl*(x: SimdD1Obj): untyped = x
   mapSimd(SimdD1, exp)
+  mapSimd(SimdD1, expm1)
   mapSimd(SimdD1, ln)
+  mapSimd(SimdD1, ln1p)
 
 when declared(SimdS2):
   template eval*(x: SimdS2): untyped = x
@@ -219,7 +223,9 @@ when declared(SimdS2):
   template toSingleImpl*(x: SimdS2Obj): untyped = x
   template toDoubleImpl*(x: SimdS2Obj): untyped = convert(x, SimdD2Obj)
   mapSimd(SimdS2, exp)
+  mapSimd(SimdS2, expm1)
   mapSimd(SimdS2, ln)
+  mapSimd(SimdS2, ln1p)
 
 when declared(SimdD2):
   template eval*(x: SimdD2): untyped = x
@@ -228,7 +234,9 @@ when declared(SimdD2):
   template toSingleImpl*(x: SimdD2Obj): untyped = convert(x, SimdS2Obj)
   template toDoubleImpl*(x: SimdD2Obj): untyped = x
   mapSimd(SimdD2, exp)
+  mapSimd(SimdD2, expm1)
   mapSimd(SimdD2, ln)
+  mapSimd(SimdD2, ln1p)
 
 when declared(SimdS4):
   template eval*(x: SimdS4): untyped = x
@@ -237,7 +245,9 @@ when declared(SimdS4):
   template toSingleImpl*(x: SimdS4Obj): untyped = x
   template toDoubleImpl*(x: SimdS4Obj): untyped = convert(x, SimdD4Obj)
   mapSimd(SimdS4, exp)
+  mapSimd(SimdS4, expm1)
   mapSimd(SimdS4, ln)
+  mapSimd(SimdS4, ln1p)
 
 when declared(SimdD4):
   #template assign*(r: array[4,float32], x: SimdD4): untyped =
@@ -250,7 +260,9 @@ when declared(SimdD4):
   #template min*(x: SomeNumber, y: SimdD4): untyped = min(x.to(SimdD4), y)
   #template max*(x: SomeNumber, y: SimdD4): untyped = max(x.to(SimdD4), y)
   mapSimd(SimdD4, exp)
+  mapSimd(SimdD4, expm1)
   mapSimd(SimdD4, ln)
+  mapSimd(SimdD4, ln1p)
 
 when declared(SimdS4) and declared(SimdD4):
   #proc toSingle*(x: SimdD4): SimdS4 {.inline,noInit.} =
@@ -280,7 +292,9 @@ when declared(SimdS8):
   template toSingleImpl*(x: SimdS8Obj): untyped = x
   template toDoubleImpl*(x: SimdS8Obj): untyped = convert(x, SimdD8Obj)
   mapSimd(SimdS8, exp)
+  mapSimd(SimdS8, expm1)
   mapSimd(SimdS8, ln)
+  mapSimd(SimdS8, ln1p)
 
 when declared(SimdD8):
   template eval*(x: SimdD8): untyped = x
@@ -289,7 +303,9 @@ when declared(SimdD8):
   template toSingleImpl*(x: SimdD8Obj): untyped = convert(x, SimdS8Obj)
   template toDoubleImpl*(x: SimdD8Obj): untyped = x
   mapSimd(SimdD8, exp)
+  mapSimd(SimdD8, expm1)
   mapSimd(SimdD8, ln)
+  mapSimd(SimdD8, ln1p)
 
 when declared(SimdD8) and declared(SimdS8):
   #template toDouble*(x: SimdD8): untyped = x
@@ -324,7 +340,9 @@ when declared(SimdS16):
   template toSingleImpl*(x: SimdS16Obj): untyped = x
   template toDoubleImpl*(x: SimdS16Obj): untyped = convert(x, SimdD16Obj)
   mapSimd(SimdS16, exp)
+  mapSimd(SimdS16, expm1)
   mapSimd(SimdS16, ln)
+  mapSimd(SimdS16, ln1p)
 
 when declared(SimdD16):
   template eval*(x: SimdD16): auto = x
@@ -333,7 +351,9 @@ when declared(SimdD16):
   template toSingleImpl*(x: SimdD16Obj): untyped = convert(x, SimdS16Obj)
   template toDoubleImpl*(x: SimdD16Obj): untyped = x
   mapSimd(SimdD16, exp)
+  mapSimd(SimdD16, expm1)
   mapSimd(SimdD16, ln)
+  mapSimd(SimdD16, ln1p)
 
 template assignX*(x: var Simd, y: SomeNumber) =
   static: echo "assignX Simd SomeNumber"

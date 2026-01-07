@@ -126,13 +126,13 @@ p3s(divd)
 
 
 # with return value
-template f1(f: untyped): untyped {.dirty.} =
-  template f*(x: Simd): untyped =
+template f1(f: untyped) {.dirty.} =
+  template f*(x: Simd): auto =
     mixin f
     asSimd(f(x[]))
 
-template f2(f: untyped): untyped {.dirty.} =
-  template f*[T1,T2](x: Simd[T1], y: Simd[T2]): untyped =
+template f2(f: untyped) {.dirty.} =
+  template f*[T1,T2](x: Simd[T1], y: Simd[T2]): auto =
     mixin f
     #static: echo numberType(T1), " ", numberType(T2)
     when numberType(T1) is numberType(T2):
@@ -142,11 +142,11 @@ template f2(f: untyped): untyped {.dirty.} =
     else:
       asSimd(f(x[].toDoubleImpl, y[]))
 
-template f2s(f: untyped): untyped {.dirty.} =
-  template f*(x: Simd, y: SomeNumber): untyped =
+template f2s(f: untyped) {.dirty.} =
+  template f*(x: Simd, y: SomeNumber): auto =
     mixin f
     asSimd(f(x[], y))
-  template f*(x: SomeNumber, y: Simd): untyped =
+  template f*(x: SomeNumber, y: Simd): auto =
     mixin f
     asSimd(f(x, y[]))
   f2(f)
@@ -226,9 +226,15 @@ template `+=`*(x: SomeNumber, y: Simd) =
   else:
     x += y[]  # Masked
 
-template exp*(xx: Simd[Indexed]): untyped =
-  let x = xx
-  exp(x[][x.indexedIdx])
+template f1i(f: untyped) {.dirty.} =
+  template f*(xx: Simd[Indexed]): auto =
+    let x = xx
+    f(x[][x.indexedIdx])
+
+f1i(exp)
+f1i(expm1)
+f1i(ln)
+f1i(ln1p)
 
 #template select*(x: Simd[T], y,z: SomeNumber): untyped =
 #  mixin f

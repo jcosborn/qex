@@ -2,26 +2,10 @@ import qex
 import physics/stagSolve
 import grid/gridImpl
 
-#[
-template getGrid(g: Field): untyped =
-  let lo = g.l
-  let latt_size = newCoordinate(lo.physGeom)
-  #let simd_layout = newCoordinate(lo.innerGeom)
-  #let simd_layout = GridDefaultSimd(lo.nDim, GridVComplex.Nsimd);
-  let simd_layout = GridDefaultSimd(lo.nDim, Nsimd(GridVComplex));
-  let mpi_layout = newCoordinate(lo.rankGeom)
-  let grid = newGridCartesian(latt_size,simd_layout,mpi_layout)
-]#
-
 proc gridSolveXX*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams;
                   parEven = true) =
-  let lo = r.l
-  let latt_size = newCoordinate(lo.physGeom)
-  #let simd_layout = newCoordinate(lo.innerGeom)
-  #let simd_layout = GridDefaultSimd(lo.nDim, GridVComplex.Nsimd);
-  let simd_layout = GridDefaultSimd(lo.nDim, Nsimd(GridVComplex));
-  let mpi_layout = newCoordinate(lo.rankGeom)
-  let grid = newGridCartesian(latt_size,simd_layout,mpi_layout)
+  let pgrid = getGridPtr(r)
+  template grid:auto = pgrid[]
   let rbgrid = newGridRedBlackCartesian(grid)
   var mass = m
   var res = sqrt sp.r2req

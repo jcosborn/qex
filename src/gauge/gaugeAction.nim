@@ -745,6 +745,7 @@ proc forceA*(c: GaugeActionCoeffs, g,f: auto) =
   gaugeADeriv(c, g, f)
   toc("gaugeADeriv")
   contractProjectTAH(g, f)
+  #contractProjectTAH(f, g)
   toc("forceA end")
 
 when isMainModule:
