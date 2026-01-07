@@ -81,6 +81,13 @@ proc newCoordinate*(s: seq[int]): Coordinate =
   let v = newStdVector(cint,s)
   newCoordinate(v)
 
+proc `[]`*(c: Coordinate, i: SomeInteger): cint {.
+  importcpp:"#[#]".}
+
+proc `:=`*(s: var seq, c: Coordinate) =
+  for i in 0..<s.len:
+    s[i] = c[i]
+
 proc GridDefaultSimd*(ndim,nsimd: int): Coordinate {.
   importc:"Grid::GridDefaultSimd",gh.}
 
@@ -100,6 +107,7 @@ template gauge*(x: GridCartesian): untyped =
   newGridLatticeGaugeField(unsafeaddr x)
 
 proc lSites*(x: ptr GridBase): cint {.importcpp,gh.}
+proc RankIndexToGlobalCoor*(g: GridBase, rank,oixd,iidx: SomeInteger; coord: Coordinate) {.importcpp.}
 
 proc Grid*(x: GridLatticeGaugeField): ptr GridBase {.importcpp.}
 proc Grid*(x: GridFermion): ptr GridBase {.importcpp.}

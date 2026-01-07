@@ -2,6 +2,25 @@ import qex
 import physics/qcdTypes
 import grid/gridImpl
 
+template getGridPtr*(g: Field): auto =
+  let lo = g.l
+  let latt_size = newCoordinate(lo.physGeom)
+  let simd_layout = GridDefaultSimd(lo.nDim, Nsimd(GridVComplex))
+  let mpi_layout = newCoordinate(lo.rankGeom)
+  let grid = newGridCartesian(latt_size,simd_layout,mpi_layout)
+  var coor = newSeq[cint](lo.nDim)
+  {.emit:"Grid::Coordinate gcoor(4);".}
+  {.emit:[grid,".RankIndexToGlobalCoor(",lo.myrank,", 0, 0, gcoor);"].}
+  template gcoor(i: int): cint =
+    var r: cint
+    {.emit:[r,"=gcoor[",i,"];"].}
+    r
+  for i in 0..3: coor[i] = gcoor(i)
+  let ri = lo.rankIndex(coor)
+  if ri.rank != lo.myrank:
+    qexFatal "Grid rank and QEX rank disagree"
+  unsafeAddr grid
+
 proc `:=`*(r: var GridLatticeGaugeField, x0: openArray[Field]) =
   var x = cast[ptr UncheckedArray[type x0[0]]](unsafeaddr x0[0])
   let lo = x[0].l

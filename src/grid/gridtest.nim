@@ -45,6 +45,7 @@ when isMainModule:
         echo "  ", bx
 
   proc checkPlaq(g: seq[Field], gg: GridLatticeGaugeField) =
+    echo "checkPlaq..."
     let qp = g.plaq.sum
     let gp = GridWilsonLoops[GridPeriodicGimplR].avgPlaquette(gg)
     echo "QEX plaq:  ", qp
@@ -52,6 +53,7 @@ when isMainModule:
     echo " rel diff: ", abs(qp-gp)/qp
 
   proc checkNaive(g: seq[Field], gg: GridLatticeGaugeField) =
+    echo "checkNaive..."
     let lo = g[0].l
     g.setBC
     g.stagPhase
@@ -124,9 +126,9 @@ when isMainModule:
     soln2 := gsoln
     #soln2 *= 0.25
     #soln.odd := 0
-    echo norm2(soln-soln2)
-    echo norm2(soln)
-    echo norm2(soln2)
+    echo "QEX norm2:  ", norm2(soln)
+    echo "Grid norm2: ", norm2(soln2)
+    echo "diff norm2: ", norm2(soln-soln2)
     comp(soln, soln2)
     #echo soln[0]
     #echo soln2[0]
@@ -134,6 +136,7 @@ when isMainModule:
     #echo soln2[lo.nEvenOuter]
 
   proc checkHisq(g: seq[Field], gg: GridLatticeGaugeField) =
+    echo "checkHisq..."
     let lo = g[0].l
     var coef: HisqCoefs
     g.setBC
@@ -215,9 +218,9 @@ when isMainModule:
     soln2 := gsoln
     #soln2 *= 0.25
     #soln.odd := 0
-    echo norm2(soln-soln2)
-    echo norm2(soln)
-    echo norm2(soln2)
+    echo "QEX norm2:  ", norm2(soln)
+    echo "Grid norm2: ", norm2(soln2)
+    echo "diff norm2: ", norm2(soln-soln2)
     comp(soln, soln2)
     #echo soln[0]
     #echo soln2[0]
@@ -271,14 +274,9 @@ when isMainModule:
     g.random
     #testHisq(g)
 
-    let latt_size = newCoordinate(lat)
-    #let simd_layout = newCoordinate(lo.innerGeom)
-    let simd_layout = GridDefaultSimd(lat.len, GridVComplex.Nsimd);
-    let mpi_layout = newCoordinate(lo.rankGeom)
-    let grid = newGridCartesian(latt_size,simd_layout,mpi_layout)
-    #let rbgrid = newGridRedBlackCartesian(grid)
+    let grid = getGridPtr(g[0])
 
-    var gg = grid.gauge()
+    var gg = grid[].gauge()
     #GridSU[3].ColdConfiguration(gg)
     gg := g
 
