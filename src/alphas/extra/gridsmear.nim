@@ -149,6 +149,7 @@ proc smearGetForce*[T](
     g = lo.newGauge()
     v = lo.newGauge()
     w = lo.newGauge()
+  var info: PerfInfo
 
   block:
     # grid prep
@@ -173,12 +174,19 @@ proc smearGetForce*[T](
 
     # load inputs & rephase
     gu.toGrid(u)
+    tic("link-smear")
     hisq.rephase(gu, gu)
 
     # smear
     hisq.smear(gv, gu)
     hisq.project(gw, gv, regulate)
     hisq.smear(gsu, gsul, gw)
+    info.secs = getElapsedTime()
+
+    # performance (just secs)
+    if displayPerformance: 
+      echo &"linkSmear: {info.secs:.5f}s"
+    info.clear()
 
     # save for force
     g.toQEX(gu)
@@ -257,9 +265,16 @@ proc smearGetForce*[T](
     gdsdsul.toGrid(dsdsul)
 
     # derivative
+    tic("force-smear")
     hisq.smearDerivative(gt, gdsdsu, gdsdsul, gw)
     hisq.projectionDerivative(gt, gt, gw, gv)
     hisq.smearDerivative(gdsdu, gt, gu)
+    info.secs = getElapsedTime()
+
+    # performance (just secs)
+    if displayPerformance: 
+      echo &"forceSmear: {info.secs:.5f}s"
+    info.clear()
 
     # save result
     dsdu.toQEX(gdsdu)

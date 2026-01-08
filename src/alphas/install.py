@@ -105,29 +105,27 @@ def install_grid(deps: str, machine: str, build_cpus: str) -> str:
     run(setup_env)
 
     # install FFTW w/ Spack... takes a while
-    run(spack + '/bin/spack install -v -j ' + build_cpus + ' fftw')
-    fftw = subsystem(
-        "echo `" + spack + "/bin/spack find --paths fftw | grep ^fftw | awk '{print $2}'`"
-    )
+    #run(spack + '/bin/spack install -v -j ' + build_cpus + ' fftw')
+    #fftw = subsystem(
+    #    "echo `" + spack + "/bin/spack find --paths fftw | grep ^fftw | awk '{print $2}'`"
+    #)
     
     # configure
     cd(deps, 'Grid/build')
     grid = dest(dest(deps, 'Grid'), 'build')
     config = '--prefix=' + grid + ' '
-    config += '--with-fftw=' + fftw + ' '
+    #config += '--with-fftw=' + fftw + ' '
     if machine == 'local':
         config += '--enable-simd=AVX '
         config += '--enable-comms=mpi-auto '
     elif machine == 'lq1':
         config += '--enable-simd=AVX '
         config += '--enable-comms=mpi-auto '
-        config += '--enable-shm=shmget '
-        config += '--enable-shmpath=/dev/hugepages '
+        config += '--enable-shm=none '
     elif machine == 'jlab24s':
         config += '--enable-simd=AVX '
         config += '--enable-comms=mpi-auto '
-        config += '--enable-shm=shmget '
-        config += '--enable-shmpath=/dev/hugepages '
+        config += '--enable-shm=none '
     config += '--disable-fermion-reps '
     config += '--disable-gparity '
     system('../configure ' + config)
