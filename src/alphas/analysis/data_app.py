@@ -262,12 +262,17 @@ if os.path.exists('../data/' + fn):
     tplaq = np.array(data['temporal plaquette'])
 
     # fcn(dH)
-    dH = np.array(data['dH'])
+    dH = np.array(data['dH']) #np.array([d for idx,d in enumerate(data['dH']) if not data['cut'][idx]])
+    dH_cut = [d for idx,d in enumerate(data['dH']) if not data['cut'][idx]]
     #dH = np.array([dh if data['acceptance'][c] else 0.0 for c,dh in enumerate(data['dH'])])
     dH2 = dH*dH
     expdH = np.exp(-dH)
-    pred_acc_rate = int(round(scipy.special.erfc(np.sqrt(np.mean(dH2)/8.))*100.))
-
+    expdH_cut = [d for idx,d in enumerate(expdH) if not data['cut'][idx]]
+    dH2_cut = [d for idx,d in enumerate(dH2) if not data['cut'][idx]]
+    pred_acc_rate = int(round(scipy.special.erfc(np.sqrt(np.mean(dH2_cut)/8.))*100.))
+    acc_rate = [min(1.0, expdh) for expdh in expdH_cut]
+    avg_acc_rate = int(round(np.mean(acc_rate)*100.))
+    
     # cg iterations
     hcg = data['average CG iterations (hasenbusch)']
     fcg = data['average CG iterations (fermion)']
@@ -384,7 +389,11 @@ if os.path.exists('../data/' + fn):
     st.latex("""
     P \\approx \mathrm{erfc}\\bigg[\\frac{1}{8}\\Big\\langle \mathrm{d}\mathcal{H}^2 \\Big\\rangle^{1/2} \\bigg]
     """)
-    st.markdown(f"yielding $P \\approx {pred_acc_rate}\%$ for the present simulation.")
+    st.markdown(f"yielding $P \\approx {pred_acc_rate}\%$ for the present simulation. We also have for the average acceptance rate")
+    st.latex("""
+    P = \langle \mathrm{min}(1, \exp(-\mathrm{d}\mathcal{H})) \\rangle,
+    """)
+    st.markdown(f"yielding $P \\approx {avg_acc_rate}\%$")
 
     # dH
     dhp = plot.Plot(h = 2.25)
