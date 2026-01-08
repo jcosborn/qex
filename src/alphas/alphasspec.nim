@@ -209,19 +209,19 @@ when isMainModule:
       mesonOps[7],  # γ_0 γ_5 ⊗ ξ_μ ξ_ν (P = -σ) VIII  π_ij     | scalar &
       mesonOps[12], # γ_0 γ_5 ⊗ ξ_μ     (P = -σ) XIII  π_i      | pseudoscalar
       mesonOps[13], # γ_5 ⊗ ξ_μ         (P = -σ) XIV   π_i0     |
-      mesonOps[16], # γ_0 γ_5 ⊗ I       (P = -σ) XVI   π_0      |
-      mesonOps[17], # γ_5 ⊗ ξ_0         (P = +σ) XVII  π_I   <--+
-      mesonOps[2],  # γ_0 γ_k ⊗ ξ_0 ξ_μ (P = +σ) XIII  ρ_0i  <--+
-      mesonOps[3],  # γ_μ ⊗ ξ_μ         (P = -σ) XIV   ρ_i      |
-      mesonOps[4],  # γ_μ ⊗ I           (P = +σ) XV    ρ_I      |
+      mesonOps[16], # γ_0 γ_5 ⊗ I       (P = -σ) XVII  π_I      |
+      mesonOps[17], # γ_5 ⊗ ξ_0         (P = +σ) XVIII π_0   <--+
+      mesonOps[2],  # γ_0 γ_k ⊗ ξ_0 ξ_μ (P = +σ) III   ρ_0i  <--+
+      mesonOps[3],  # γ_μ ⊗ ξ_μ         (P = -σ) IV    ρ_i      |
+      mesonOps[4],  # γ_μ ⊗ I           (P = +σ) V     ρ_I      |
       mesonOps[5],  # γ_0 γ_μ ⊗ ξ_0     (P = +σ) VI    ρ_0      |
-      mesonOps[8],  # γ_0 γ_μ ⊗ ξ_μ ξ_5 (P = +σ) XIV   ρ_i5     |
+      mesonOps[8],  # γ_0 γ_μ ⊗ ξ_μ ξ_5 (P = +σ) IX    ρ_i5     |
       mesonOps[9],  # γ_μ ⊗ ξ_μ ξ_ν     (P = +σ) X     ρ_ij     | vector &
       mesonOps[10], # γ_0 γ_μ ⊗ ξ_0 ξ_5 (P = -σ) XI    ρ_05     | pseudovector
       mesonOps[11], # γ_0 γ_μ ⊗ ξ_5     (P = -σ) XII   ρ_5      |
-      mesonOps[14], # γ_μ ⊗ ξ_μ         (P = -σ) XIV   ρ_i*     |
-      mesonOps[15], # γ_0 γ_k ⊗ ξ_0 ξ_μ (P = -σ) XIII  ρ_0i*    |
-      mesonOps[18], # γ_0 γ_μ ⊗ ξ_μ ξ_5 (P = -σ) XVIII ρ_i5*    |
+      mesonOps[14], # γ_μ ⊗ ξ_μ         (P = -σ) XV    ρ_i*     |
+      mesonOps[15], # γ_0 γ_k ⊗ ξ_0 ξ_μ (P = -σ) XVI   ρ_0i*    |
+      mesonOps[18], # γ_0 γ_μ ⊗ ξ_μ ξ_5 (P = -σ) XIX   ρ_i5*    |
       mesonOps[19], # γ_μ ⊗ ξ_μ ξ_ν     (P = +σ) XX    ρ_ij* <--+
     ]
 
@@ -279,8 +279,8 @@ when isMainModule:
         "pi_ij": corrs[3],
         "pi_i":  corrs[4],
         "pi_i0": corrs[5],
-        "pi_0":  corrs[6],
-        "pi_I":  corrs[7],
+        "pi_I":  corrs[6], # <--+ YES, these are correctly switched
+        "pi_0":  corrs[7], # <--|
         "rho_i0":  corrs[8],
         "rho_i":   corrs[9],
         "rho_I":   corrs[10],
