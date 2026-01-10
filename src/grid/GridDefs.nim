@@ -74,10 +74,7 @@ proc Nsimd*(t: typedesc[GridVComplex]): int {.importcpp:"Grid::vComplex::Nsimd()
 proc newCoordinate*(v: stdvector[cint]): Coordinate {.
   constructor,importcpp:"Grid::Coordinate(#)".}
 
-proc newCoordinate*(v: seq[cint]): Coordinate {.
-  constructor,importcpp:"Grid::Coordinate(#)".}
-
-proc newCoordinate*(s: seq[int]): Coordinate =
+proc newCoordinate*(s: seq): Coordinate =
   let v = newStdVector(cint,s)
   newCoordinate(v)
 

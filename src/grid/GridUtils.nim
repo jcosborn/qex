@@ -9,14 +9,11 @@ template getGridPtr*(g: Field): auto =
   let mpi_layout = newCoordinate(lo.rankGeom)
   let grid = newGridCartesian(latt_size,simd_layout,mpi_layout)
   var coor = newSeq[cint](lo.nDim)
-  {.emit:"Grid::Coordinate gcoor(4);".}
-  {.emit:[grid,".RankIndexToGlobalCoor(",lo.myrank,", 0, 0, gcoor);"].}
-  template gcoor(i: int): cint =
-    var r: cint
-    {.emit:[r,"=gcoor[",i,"];"].}
-    r
-  for i in 0..3: coor[i] = gcoor(i)
+  var gcoor = newCoordinate(coor)
+  grid.RankIndexToGlobalCoor(lo.myrank, 0, 0, gcoor)
+  coor := gcoor
   let ri = lo.rankIndex(coor)
+  #echoAll lo.myrank, ": ", coor
   if ri.rank != lo.myrank:
     qexFatal "Grid rank and QEX rank disagree"
   unsafeAddr grid
