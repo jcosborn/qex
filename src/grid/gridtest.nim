@@ -44,6 +44,19 @@ when isMainModule:
         echo "  ", ax
         echo "  ", bx
 
+  proc unitPlaq(grid: ptr GridCartesian) =
+    echo "unitPlaq..."
+    var gg = grid[].gauge()
+    GridSU[3].ColdConfiguration(gg)
+    let gp = GridWilsonLoops[GridPeriodicGimplR].avgPlaquette(gg)
+    echo "Grid plaq: ", gp
+    #{.emit:["Grid::LatticeGaugeField Umu(",g,");"].}
+    #{.emit:"""
+    #Grid::SU<Grid::Nc>::ColdConfiguration(Umu);
+    #auto gp = Grid::WilsonLoops<Grid::PeriodicGimplR>::avgPlaquette(Umu);
+    #std::cout<<gp<<std::endl;
+    #""".}
+
   proc checkPlaq(g: seq[Field], gg: GridLatticeGaugeField) =
     echo "checkPlaq..."
     let qp = g.plaq.sum
@@ -277,9 +290,9 @@ when isMainModule:
     let grid = getGridPtr(g[0])
 
     var gg = grid[].gauge()
-    #GridSU[3].ColdConfiguration(gg)
     gg := g
 
+    unitPlaq(grid)
     checkPlaq(g,gg)
     checkNaive(g,gg)
     checkHisq(g,gg)
