@@ -1,19 +1,19 @@
-import os
+import os, strutils, sequtils
 #import io/qio
 
 const gridDir {.strdefine.} = getHomeDir() & "/lqcd/install/grid"
 const gridPassC = "-I" & gridDir / "include"
 const gridLdFlags = staticExec(gridDir/"bin"/"grid-config --ldflags")
+  .splitWhitespace.filterIt(startsWith(it,"-L")).join  # only get -L paths
 const gridLibs = staticExec(gridDir/"bin"/"grid-config --libs")
 {.passC: gridPassC.}
 {.passL: gridLdFlags.}
 {.passL: gridLibs.}
 #{.passC: "-diag-disable=469".}
-{.passC: "-fno-strict-aliasing".}
+{.passC: "-fno-strict-aliasing".}  # Grid may give incorrect results without this
 static:
   echo "Using Grid: ", gridDir
   echo "Grid compile flags: ", gridPassC
-  #echo "Grid link flags: ", gridPassL
   echo "Grid ldflags: ", gridLdFlags
   echo "Grid libs: ", gridLibs
 
