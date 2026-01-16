@@ -102,6 +102,11 @@ proc newGridLatticeGaugeField*(x: ptr GridCartesian):
 template gauge*(x: GridCartesian): untyped =
   newGridLatticeGaugeField(unsafeaddr x)
 
+proc ThisRank*(x: GridBase): int =
+  var r = 0
+  {.emit:[r," = ",x,"->ThisRank();"].}
+  r
+
 proc lSites*(x: ptr GridBase): cint {.importcpp,gh.}
 proc RankIndexToGlobalCoor*(g: GridBase, rank,oixd,iidx: SomeInteger; coord: Coordinate) {.importcpp.}
 
