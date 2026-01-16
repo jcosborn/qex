@@ -4,7 +4,7 @@ import os, strutils, sequtils
 const gridDir {.strdefine.} = getHomeDir() & "/lqcd/install/grid"
 const gridPassC = "-I" & gridDir / "include"
 const gridLdFlags = staticExec(gridDir/"bin"/"grid-config --ldflags")
-  .splitWhitespace.filterIt(startsWith(it,"-L")).join  # only get -L paths
+  .splitWhitespace.filterIt(startsWith(it,"-L")).join(" ")  # only get -L paths
 const gridLibs = staticExec(gridDir/"bin"/"grid-config --libs")
 {.passC: gridPassC.}
 {.passL: gridLdFlags.}
