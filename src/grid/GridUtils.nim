@@ -8,13 +8,13 @@ template getGridPtr*(g: Field): auto =
   let simd_layout = GridDefaultSimd(lo.nDim, Nsimd(GridVComplex))
   let mpi_layout = newCoordinate(lo.rankGeom)
   let grid = newGridCartesian(latt_size,simd_layout,mpi_layout)
-  #var coor = newSeq[cint](lo.nDim)
-  #var gcoor = newCoordinate(coor)
-  #grid.RankIndexToGlobalCoor(lo.myrank, 0, 0, gcoor)
-  #coor := gcoor
-  #let ri = lo.rankIndex(coor)
+  var coor = newSeq[cint](lo.nDim)
+  var gcoor = newCoordinate(coor)
+  grid.RankIndexToGlobalCoor(grid.ThisRank, 0, 0, gcoor)
+  coor := gcoor
+  let ri = lo.rankIndex(coor)
   #echoAll lo.myrank, ": ThisRank=",grid.ThisRank, ": ", coor
-  if grid.ThisRank != lo.myrank:
+  if ri.rank != lo.myrank:
     qexFatal "Grid rank and QEX rank disagree"
   unsafeAddr grid
 
