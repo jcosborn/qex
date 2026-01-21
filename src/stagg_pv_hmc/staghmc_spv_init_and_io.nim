@@ -2,6 +2,7 @@
 
 import qex # Import qex
 import gauge/gaugeUtils # For handling gauge fields
+import physics/[stagSolve] # CG initialization
 import layout # For initializing lattice layout
 import rng # For handing RNG
 import parseopt # For parsing command line arguments
@@ -12,7 +13,6 @@ import times # Timing for generating seeds
 import os # For checking if files exist
 import staghmc_spv_rng # For certain RNG operations
 import options # For optional IO behavior with fields
-import physics/[stagSolve]
 
 #[ ~~~~ Command line and XML inputs ~~~~ ]#
 

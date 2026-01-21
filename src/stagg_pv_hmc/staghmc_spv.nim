@@ -614,7 +614,8 @@ proc generate_pseudoferms(s: Staggered) =
                var hphit = newOneOf(hphi[fld_ind])
                s.Ddag(phi[fld_ind], psi, hmass)
                s.Ddag(hphit, hpsi, masses[0])
-               s.solve(hphi[fld_ind], hphit, -masses[1], spa[fld_ind])
+               #s.solve(hphi[fld_ind], hphit, -masses[1], spa[fld_ind]) Jan 21, 2026 bug
+               s.solve(hphi[fld_ind], hphit, -hmass, spa[fld_ind])
             of "regress": s.Ddag(phi[fld_ind], psi, masses[0])
             else: qexError "Invalid option for pseudofermion preconditioner"
       else:
