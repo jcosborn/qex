@@ -385,15 +385,16 @@ proc gaugeAction2*(c: GaugeActionCoeffs, g: array|seq): auto =
             var ts1 = redot(t[mu]^*t[nu]^*g[sg], t[sg]^*t[nu]^*g[mu])
             var ts2 = redot(t[mu]^*t[sg]^*g[nu], t[nu]^*t[sg]^*g[mu])
             var ts3 = redot(t[nu]^*t[mu]^*g[sg], t[sg]^*t[mu]^*g[nu])
-            var ts4 = redot(t[nu]^*t[sg]^*g[mu], t[mu]^*t[sg]^*g[nu])
-            var ts5 = redot(t[sg]^*t[mu]^*g[nu], t[nu]^*t[mu]^*g[sg])
-            var ts6 = redot(t[sg]^*t[nu]^*g[mu], t[mu]^*t[nu]^*g[sg])
+            #var ts4 = redot(t[nu]^*t[sg]^*g[mu], t[mu]^*t[sg]^*g[nu])
+            #var ts5 = redot(t[sg]^*t[mu]^*g[nu], t[nu]^*t[mu]^*g[sg])
+            #var ts6 = redot(t[sg]^*t[nu]^*g[mu], t[mu]^*t[nu]^*g[sg])
             #var ts7 = redot(td[sg]^*t[mu]^*td[nu]^*g[sg], td[nu]^*g[mu])
             #var ts8 = redot(td[sg]^*t[nu]^*td[mu]^*g[sg], td[mu]^*g[nu])
             var ts7 = redot(t[mu]^*td[nu]^*g[sg], t[sg]^*td[nu]^*g[mu])
-            var ts8 = redot(t[mu]^*td[sg]^*g[nu], t[nu]^*td[sg]^*g[mu])
+            #var ts8 = redot(t[mu]^*td[sg]^*g[nu], t[nu]^*td[sg]^*g[mu])
             if threadNum==0:
-              pg += ts1 + ts2 + ts3 + ts4 + ts5 + ts6 + ts7 + ts8
+              #pg += ts1 + ts2 + ts3 + ts4 + ts5 + ts6 + ts7 + ts8
+              pg += ts1 + ts2 + ts3 + ts7
           toc("gaugeAction2 pg")
     toc("gaugeAction2 work")
   toc("gaugeAction2 threads")
