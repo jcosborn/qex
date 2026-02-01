@@ -3,54 +3,32 @@
 import base, layout, maths, gaugeAction, symanzik1loopAction
 export PerfInfo
 
-converter toField[T,U](x: Shifter[T,U]): T = x.field
+template PEQM(NC:int):int = (2 * NC * NC)              # M += M
+template EQMTM(NC:int):int = (NC * NC * (8 * NC - 2))  # M = M * M
+template PEQMTM(NC:int):int = (NC * NC * (8 * NC))     # M += M * M
 
 const
-  NMTMP* = 6
-  NFTMP* = 4
-  NBTMP* = 2
+  NMTMP = 6
+  NFTMP = 4
+  NBTMP = 2
 
 type
   TmpStruct[T,U] = object
-    #mtmp*: ptr ptr QDP_ColorMatrix
     mtmp: array[NMTMP, T]
-    #ftmp0*: ptr ptr QDP_ColorMatrix
     ftmp0: array[NFTMP, T]
-    #ftmp*: array[NFTMP, ptr ptr QDP_ColorMatrix]
     ftmp: array[NFTMP, array[4,Shifter[T,U]]]
-    #btmp0*: ptr ptr QDP_ColorMatrix
     btmp0: array[NBTMP, T]
-    #btmp*: array[NBTMP, ptr ptr QDP_ColorMatrix]
     btmp: array[NBTMP, array[4,Shifter[T,U]]]
-    #lat*: ptr QDP_Lattice
-    #sub*: QDP_Subset
-    #nc*: cint
-    #nd*: cint
-
-#const
-#  PEQM* = (2 * NC * NC)
-#  EQMTM* = (NC * NC * (8 * NC - 2))
-#  PEQMTM* = (NC * NC * (8 * NC))
 
 proc set_temps(t: var TmpStruct, lo: Layout) =
-  #var i: cint = 0
-  #while i < NMTMP:
   for i in 0..<NMTMP:
     t.mtmp[i].new(lo)
-  #var i: cint = 0
-  #while i < NFTMP:
   for i in 0..<NFTMP:
     t.ftmp0[i].new(lo)
-    #var j: cint = 0
-    #while j < t.nd:
     for j in 0..<4:
       t.ftmp[i][j] = newShifter(t.ftmp0[i], j, 1)
-  #var i: cint = 0
-  #while i < NBTMP:
   for i in 0..<NBTMP:
     t.btmp0[i].new(lo)
-    #var j: cint = 0
-    #while j < t.nd:
     for j in 0..<4:
       t.btmp[i][j] = newShifter(t.btmp0[i], j, -1)
 
@@ -93,15 +71,11 @@ proc staples(stap: auto; top0: auto; bot: auto; left: auto; right0: auto;
   discard backnu ^* back
   #QDP_M_eq_M_times_M(lefttopnu, left, topnu, t.sub)
   lefttopnu := left * topnu.field
-  #QDP_discard_M(topnu)
   #QDP_M_peq_M_times_Ma(stap, lefttopnu, rightmu, t.sub)
   stap += lefttopnu * rightmu.field.adj
-  #QDP_discard_M(rightmu)
   #QDP_M_peq_M(stap, backnu, t.sub)
   stap += backnu.field
-  #QDP_discard_M(backnu)
-  #const
-  #  STAPLES_FLOPS = (3 * EQMTM + PEQMTM + PEQM)
+template STAPLES_FLOPS(NC:int):int = (3 * EQMTM(NC) + PEQMTM(NC) + PEQM(NC))
 
 proc staple2fb(outmuf: auto; outmub: auto; outnuf: auto; outnub: auto;
                Umu0: auto; Unu0: auto; mu: int; nu: int; t: TmpStruct) =
@@ -144,16 +118,11 @@ proc staple2fb(outmuf: auto; outmub: auto; outnuf: auto; outnub: auto;
   outmuf := UnuUmufnu * Unufmu.field.adj
   #QDP_M_eq_M_times_Ma(outnuf, UmuUnufmu, Umufnu, t.sub)
   outnuf := UmuUnufmu * Umufnu.field.adj
-  #QDP_discard_M(Umufnu)
-  #QDP_discard_M(Unufmu)
   #QDP_M_eq_M(outmub, backmubnu, t.sub)
   outmub := backmubnu.field
-  #QDP_discard_M(backmubnu)
   #QDP_M_eq_M(outnub, backnubmu, t.sub)
   outnub := backnubmu.field
-  #QDP_discard_M(backnubmu)
-  #const
-  #  STAPLE2FB_FLOPS = (6 * EQMTM)
+template STAPLE2FB_FLOPS(NC:int):int = (6 * EQMTM(NC))
 
 proc stapler(outmu: auto; outnu: auto; Umu0: auto; Unu0: auto; Fmu0: auto;
              Fnu0: auto; Bmu: auto; Bnu: auto; mu: int; nu: int; t: TmpStruct) =
@@ -238,17 +207,10 @@ proc stapler(outmu: auto; outnu: auto; Umu0: auto; Unu0: auto; Fmu0: auto;
   outnu += BmuUnufmu * Umufnu.field.adj
   #QDP_M_peq_M(outnu, backnubmu, t.sub)
   outnu += backnubmu.field
-  #QDP_discard_M(Umufnu)
-  #QDP_discard_M(Unufmu)
-  #QDP_discard_M(Fmufnu)
-  #QDP_discard_M(Fnufmu)
-  #QDP_discard_M(backmubnu)
-  #QDP_discard_M(backnubmu)
-  #const
-  #  STAPLER_FLOPS = (6 * EQMTM + 8 * PEQMTM + 2 * PEQM)
+template STAPLER_FLOPS(NC:int):int = (6 * EQMTM(NC) + 8 * PEQMTM(NC) + 2 * PEQM(NC))
 
-proc staplep*(outmu: auto; outnu: auto; Umu0: auto; Unu0: auto; Xmu0: auto; Xnu0: auto;
-              nx: int; mu: int; nu: int; t: TmpStruct) =
+proc staplep(outmu: auto; outnu: auto; Umu0: auto; Unu0: auto; Xmu0: auto; Xnu0: auto;
+             nx: int; mu: int; nu: int; t: TmpStruct) =
   let
     XXnumu = t.mtmp[0]
     XXmunu = t.mtmp[1]
@@ -288,8 +250,6 @@ proc staplep*(outmu: auto; outnu: auto; Umu0: auto; Unu0: auto; Xmu0: auto; Xnu0
   XdXnumu := 0
   #QDP_M_eq_zero(XdXmunu, t.sub)
   XdXmunu := 0
-  #var i: cint = 0
-  #while i < nx:
   for i in 0..<nx:
     #QDP_M_eq_M(Xnu, Xnu0[i], t.sub)
     Xnu := Xnu0[i]
@@ -311,8 +271,6 @@ proc staplep*(outmu: auto; outnu: auto; Umu0: auto; Unu0: auto; Xmu0: auto; Xnu0
     XXdnumu += Xnufmu.field * Xmufnu.field.adj
     #QDP_M_peq_M_times_Ma(XXdmunu, Xmufnu, Xnufmu, t.sub)
     XXdmunu += Xmufnu.field * Xnufmu.field.adj
-    #QDP_discard_M(Xmufnu)
-    #QDP_discard_M(Xnufmu)
   #QDP_M_eq_M(Unu, Unu0, t.sub)
   Unu := Unu0
   #QDP_M_eq_sM(Unufmu, Unu, QDP_neighbor[mu], QDP_forward, t.sub)
@@ -345,15 +303,11 @@ proc staplep*(outmu: auto; outnu: auto; Umu0: auto; Unu0: auto; Xmu0: auto; Xnu0
   outnu += XXmunu * Umufnu.field.adj
   #QDP_M_peq_M(outnu, backnubmu, t.sub)
   outnu += backnubmu.field
-  #QDP_discard_M(Umufnu)
-  #QDP_discard_M(Unufmu)
-  #QDP_discard_M(backmubnu)
-  #QDP_discard_M(backnubmu)
-  #template STAPLEP_FLOPS(n: untyped): untyped =
-  #  (2 * EQMTM + (6 * n + 6) * PEQMTM + 2 * PEQM)
+template STAPLEP_FLOPS(NC,n:int):int =
+  (2 * EQMTM(NC) + (6 * n + 6) * PEQMTM(NC) + 2 * PEQM(NC))
 
-proc staplep2*(outmu: auto; Unu0: auto; Xmu0: auto; Xnu0: auto;
-               nx: int; mu: int; nu: int; t: TmpStruct) =
+proc staplep2(outmu: auto; Unu0: auto; Xmu0: auto; Xnu0: auto;
+              nx: int; mu: int; nu: int; t: TmpStruct) =
   let
     XXnumu = t.mtmp[0]
     XXmunu = t.mtmp[1]
@@ -371,8 +325,6 @@ proc staplep2*(outmu: auto; Unu0: auto; Xmu0: auto; Xnu0: auto;
   ##  fmu += Unubnu+ * Xmubnu * Xnufmubnu
   ##  fmu += Xnu * Xmufnu * Unufmu+
   ##  fmu += Xnubnu+ * Xmubnu * Unufmubnu
-  #var i: cint = 0
-  #while i < nx:
   for i in 0..<nx:
     #QDP_M_eq_M(Xnu, Xnu0[i], t.sub)
     Xnu := Xnu0[i]
@@ -400,9 +352,6 @@ proc staplep2*(outmu: auto; Unu0: auto; Xmu0: auto; Xnu0: auto;
       XXmunu += Xmu * Xnufmu.field
       #QDP_M_peq_M_times_Ma(XXdmunu, Xmufnu, Xnufmu, t.sub)
       XXdmunu += Xmufnu.field * Xnufmu.field.adj
-    #QDP_discard_M(Xmufnu)
-    #QDP_discard_M(Xnufmu)
-    #inc(i)
   #QDP_M_eq_M(Unu, Unu0, t.sub)
   Unu := Unu0
   #QDP_M_eq_sM(Unufmu, Unu, QDP_neighbor[mu], QDP_forward, t.sub)
@@ -419,14 +368,11 @@ proc staplep2*(outmu: auto; Unu0: auto; Xmu0: auto; Xnu0: auto;
   outmu += XXnumu * Unufmu.field.adj
   #QDP_M_peq_M(outmu, backmubnu, t.sub)
   outmu += backmubnu.field
-  #QDP_discard_M(Unufmu)
-  #QDP_discard_M(backmubnu)
-  #template STAPLEP2_FLOPS(n: untyped): untyped =
-  #  (5 * EQMTM + (4 * (n - 1) + 3) * PEQMTM + PEQM)
+template STAPLEP2_FLOPS(NC,n:int):int =
+  (5 * EQMTM(NC) + (4 * (n - 1) + 3) * PEQMTM(NC) + PEQM(NC))
 
-proc symanzik1loopDeriv*(coeffs: GaugeActionCoeffs;
-                         links: auto; deriv: auto;
-                         eps: float; info: var PerfInfo;) =
+proc symanzik1loopDeriv*(coeffs: GaugeActionCoeffs; links: auto;
+                         deriv: auto; info: var PerfInfo) =
   tic("symanzik1loopDeriv")
   template G(x: untyped): untyped = links[x]
   type
@@ -439,19 +385,14 @@ proc symanzik1loopDeriv*(coeffs: GaugeActionCoeffs;
     nc = links[0][0].getNc
     lo = links[0].l
     #nd = lat.nDim
-    fac = - eps / nc
+    fac = -1.0 / nc
     plaq = fac * coeffs.plaq
     rect = fac * coeffs.rect
     pgm = fac * coeffs.pgm
     adpl = 2 * (fac/nc) * coeffs.adjplaq
   var
-    #dtime: cdouble = QOP_time()
     nflops = newThreadSingle(0)
     t: TmpStruct[GF,GM]
-  #t.nc = QOP_Nc
-  #t.nd = nd
-  #t.sub = sub
-  #t.lat = lat
   set_temps(t, lo)
   toc("set_temps")
   var
@@ -460,23 +401,16 @@ proc symanzik1loopDeriv*(coeffs: GaugeActionCoeffs;
     stplb: array[nd, array[nd, GF]]
     tmat: array[nd, GF]
     tc = lo.Complex
-  #var mu: cint = 0
-  #while mu < nd:
   for mu in 0..<nd:
-    tforce[mu].new(lo)
+    #tforce[mu].new(lo)
+    tforce[mu] = deriv[mu]
   threads:
     for mu in 0..<nd:
       tforce[mu] := 0
   if rect != 0.0 or pgm != 0.0:
-    #var mu: cint = 0
-    #while mu < nd:
     for mu in 0..<nd:
       tmat[mu].new(lo)
-  #var mu: cint = 1
-  #while mu < nd:
-  for mu in 0..<nd:
-    #var nu: cint = 0
-    #while nu < mu:
+  for mu in 1..<nd:
     for nu in 0..<mu:
       stplf[mu][nu].new(lo)
       stplb[mu][nu].new(lo)
@@ -485,12 +419,10 @@ proc symanzik1loopDeriv*(coeffs: GaugeActionCoeffs;
   toc("setup")
   threads:
     for mu in 0..<nd:
-      #var nu: cint = 0
-      #while nu < mu:
       for nu in 0..<mu:
         staple2fb(stplf[mu][nu], stplb[mu][nu], stplf[nu][mu], stplb[nu][mu],
                   G(mu), G(nu), mu, nu, t)
-        #nflops += STAPLE2FB_FLOPS
+        nflops += STAPLE2FB_FLOPS(nc)
         if adpl != 0.0:
           #var z: QLA_Complex
           #QLA_c_eq_r(z, plaq div adpl)
@@ -522,8 +454,7 @@ proc symanzik1loopDeriv*(coeffs: GaugeActionCoeffs;
             tc[e] := plaq + adpl*dot(stplb[nu][mu][e], G(nu)[e])
           #QDP_M_peq_C_times_M(tforce[nu], tc, stplb[nu][mu], sub)
           tforce[nu] += tc * stplb[nu][mu]
-          #QDP_destroy_C(tc)
-          #nflops += 4 * (16 * NC * NC + 2)
+          nflops += 4 * (16 * nc * nc + 2)
         elif plaq != 0.0:
           #QDP_M_peq_r_times_M(tforce[mu], addr(plaq), stplf[mu][nu], sub)
           tforce[mu] += plaq * stplf[mu][nu]
@@ -533,47 +464,29 @@ proc symanzik1loopDeriv*(coeffs: GaugeActionCoeffs;
           tforce[nu] += plaq * stplf[nu][mu]
           #QDP_M_peq_r_times_M(tforce[nu], addr(plaq), stplb[nu][mu], sub)
           tforce[nu] += plaq * stplb[nu][mu]
-          #nflops += 4 * 4 * NC * NC
+          nflops += 4 * 4 * nc * nc
     toc("plaq & adjplaq")
     if rect != 0.0:
-      #var mu: cint = 0
-      #while mu < nd:
       for mu in 0..<nd:
         #QDP_M_eq_zero(tmat[mu], sub)
         tmat[mu] := 0
-        #inc(mu)
-      #var mu: cint = 1
-      #while mu < nd:
       for mu in 1..<nd:
-        #var nu: cint = 0
-        #while nu < mu:
         for nu in 0..<mu:
           stapler(tmat[mu], tmat[nu], G(mu), G(nu), stplf[mu][nu], stplf[nu][mu],
                   stplb[mu][nu], stplb[nu][mu], mu, nu, t)
-          #nflops += STAPLER_FLOPS
-          #inc(nu)
-        #inc(mu)
-      #var mu: cint = 0
-      #while mu < nd:
+          nflops += STAPLER_FLOPS(nc)
       for mu in 0..<nd:
         #QDP_M_peq_r_times_M(tforce[mu], addr(rect), tmat[mu], sub)
         tforce[mu] += rect * tmat[mu]
-        #inc(mu)
-      #nflops += nd * 4 * NC * NC
+      nflops += nd * 4 * nc * nc
     toc("rect")
     if pgm != 0.0:
       if nd != 4:
-        #var mu: cint = 0
-        #while mu < nd:
         for mu in 0..<nd:
           #QDP_M_eq_zero(tmat[0], sub)
           tmat[0] := 0
-          #var nu: cint = 0
-          #while nu < nd:
           for nu in 0..<nd:
             if nu == mu: continue
-            #var rho = nu + 1
-            #while rho < nd:
             for rho in (nu+1)..<nd:
               if rho == mu or rho == nu: continue
               staples(tmat[0], stplf[mu][rho], stplf[mu][rho], stplf[nu][rho], G(nu),
@@ -584,22 +497,17 @@ proc symanzik1loopDeriv*(coeffs: GaugeActionCoeffs;
                       mu, nu, t)
               staples(tmat[0], stplb[mu][rho], stplb[mu][rho], G(nu), stplb[nu][rho],
                       mu, nu, t)
-              #nflops += 4 * STAPLES_FLOPS
+              nflops += 4 * STAPLES_FLOPS(nc)
           #QDP_M_peq_r_times_M(tforce[mu], addr(pgm), tmat[0], sub)
           tforce[mu] += pgm * tmat[0]
-          #nflops += 4 * NC * NC
+          nflops += 4 * nc * nc
       else:
         ##  nd == 4
-        #var mu: cint = 0
-        #while mu < 4:
         for mu in 0..<4:
           #QDP_M_eq_zero(tmat[mu], sub)
           tmat[mu] := 0
         var
-          mu: int
-          nu: int
-          rho: int
-        var
+          mu,nu,rho: int
           Xmu: array[4, GF]
           Xnu: array[4, GF]
         mu = 0
@@ -613,7 +521,7 @@ proc symanzik1loopDeriv*(coeffs: GaugeActionCoeffs;
         Xnu[2] = stplb[nu][2]
         Xnu[3] = stplb[nu][3]
         staplep(tmat[mu], tmat[nu], G(mu), G(nu), Xmu, Xnu, 4, mu, nu, t)
-        #nflops += STAPLEP_FLOPS(4)
+        nflops += STAPLEP_FLOPS(nc,4)
         mu = 2
         nu = 3
         Xmu[0] = stplf[mu][0]
@@ -625,7 +533,7 @@ proc symanzik1loopDeriv*(coeffs: GaugeActionCoeffs;
         Xnu[2] = stplb[nu][0]
         Xnu[3] = stplb[nu][1]
         staplep(tmat[mu], tmat[nu], G(mu), G(nu), Xmu, Xnu, 4, mu, nu, t)
-        #nflops += STAPLEP_FLOPS(4)
+        nflops += STAPLEP_FLOPS(nc,4)
         mu = 0
         nu = 2
         rho = 3
@@ -658,45 +566,19 @@ proc symanzik1loopDeriv*(coeffs: GaugeActionCoeffs;
         Xnu[0] = stplf[nu][rho]
         Xnu[1] = stplb[nu][rho]
         staplep2(tmat[mu], G(nu), Xmu, Xnu, 2, mu, nu, t)
-        #nflops += 4 * STAPLEP2_FLOPS(2)
-        #var mu: cint = 0
-        #while mu < 4:
+        nflops += 4 * STAPLEP2_FLOPS(nc,2)
         for mu in 0..<4:
           #QDP_M_peq_r_times_M(tforce[mu], addr(pgm), tmat[mu], sub)
           tforce[mu] += pgm * tmat[mu]
-        #nflops += 4 * 4 * NC * NC
+        nflops += 4 * 4 * nc * nc
       ##  nd!=4
     toc("pgm")
-    #var mu: cint = 0
-    #while mu < nd:
-    for mu in 0..<nd:
-      #QDP_M_peq_M(deriv[mu], tforce[mu], sub)
-      deriv[mu] += tforce[mu]
-      #inc(mu)
-    #nflops += nd * PEQM
-  #if rect or pgm:
-  #  var mu: cint = 0
-  #  while mu < nd:
-  #    QDP_destroy_M(tmat[mu])
-  #    inc(mu)
-  #var mu: cint = 0
-  #while mu < nd:
-  #  QDP_destroy_M(tforce[mu])
-  #  var nu: cint = 0
-  #  while nu < nd:
-  #    if nu == mu:
-  #      inc(nu)
-  #      inc(mu)
-  #      continue
-  #    QDP_destroy_M(stplf[mu][nu])
-  #    QDP_destroy_M(stplb[mu][nu])
-  #    inc(nu)
-  #  inc(mu)
-  free_temps(t)
-  ## double nflop = 96720 - 4*(24+18);
-  #info.final_sec = QOP_time() - dtime
-  #info.final_flop = nflops * QDP_sites_on_node
-  #info.status = QOP_SUCCESS
+  #free_temps(t)
+  #double nflop = 96720 - 4*(24+18);
+  info.count.inc
+  info.flops += nflops * lo.nSites
+  info.secs += getElapsedTime()
+  toc("end")
 
 #[
 proc QOP_symanzik_1loop_gauge_force_qdp*(info: ptr QOP_info_t;
@@ -815,16 +697,13 @@ when isMainModule:
 
   proc checkS(tol: float) =
     echo "Checking ", gc
-    for mu in 0..<fd.len:
-      fd[mu] := 0
-    var a = gc.symanzik1loopAction(g, info)
+    gc.symanzik1loopDeriv(g, fd, info)  # warmup
+    let a = gc.symanzik1loopAction(gb, info)
+    let a2 = gc.symanzik1loopAction(gf, info)
     info.clear
     resetTimers()
-    a = gc.symanzik1loopAction(gb, info)
+    gc.symanzik1loopDeriv(g, fd, info)
     echo "  ", info
-    let a2 = gc.symanzik1loopAction(gf, info)
-    echo "  ", info
-    gc.symanzik1loopDeriv(g, fd, 1, info)
     check(a2.space+a2.time-a.space-a.time, tol)
 
   template docheck(pl,rc,pg,ad:float) =

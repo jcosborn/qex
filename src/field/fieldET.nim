@@ -137,9 +137,18 @@ proc new*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) =
   x.s.new(l.nSitesOuter)
   #fence()
   x.elemSize = sizeOf(T)
+proc newU*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) =
+  # remember to change newFieldArray if the following changes
+  x.l = l
+  x.s.newU(l.nSitesOuter)
+  #fence()
+  x.elemSize = sizeOf(T)
 proc new*[V:static[int],T](x:var Field[V,T]; l:Layout[V]) =
   x.new()
   new(x[], l)
+proc newU*[V:static[int],T](x:var Field[V,T]; l:Layout[V]) =
+  x.new()
+  newU(x[], l)
 proc new*[V:static[int],T](x:var FieldObj[V,T]; y:Field) = x.new(y.l)
 proc new*[V:static[int],T](x:var Field[V,T]; y:Field) = x.new(y.l)
 proc newField*[V:static[int],T](l:Layout[V]; t:typedesc[T]):Field[V,T] =
@@ -147,6 +156,10 @@ proc newField*[V:static[int],T](l:Layout[V]; t:typedesc[T]):Field[V,T] =
 proc newOneOf*(x: Field): auto =
   var r: type(x)
   r.new(x.l)
+  r
+proc newOneOfU*(x: Field): auto =
+  var r: type(x)
+  r.newU(x.l)
   r
 template l*(x: FieldUnop): untyped = x.f1.l
 proc newOneOf*(x: FieldUnop): auto =

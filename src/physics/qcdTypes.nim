@@ -410,7 +410,8 @@ macro makeConstructors(x: untyped): untyped =
   template mp(f,r,rslt: untyped) =
     proc f*(l: Layout): r =
       # ## create `r`
-      new(rslt, l)
+      #new(rslt, l)
+      newU(rslt, l)
   let f = $x
   let r = "Lattice" & f
   result = newStmtList()

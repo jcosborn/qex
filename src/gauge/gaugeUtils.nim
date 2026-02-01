@@ -220,7 +220,7 @@ proc staples*[T,F,B](ss,uu,vv:openArray[T];ff:openArray[F];bb:openArray[B]) =
 
 proc plaq*[T](uu: openArray[T]): auto =
   mixin mul, load1, createShiftBufs
-  tic()
+  tic("plaq")
   template getIp(mu,nu: int): int = ((mu*(mu-1)) div 2) + nu
   let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
   let lo = u[0].l
@@ -233,9 +233,9 @@ proc plaq*[T](uu: openArray[T]): auto =
   for i in 0..<nd-1: sf[nd-1][i] = sf[i][i]
   let np = (nd*(nd-1)) div 2
   var pl = newSeq[float64](np)
-  toc("plaq setup")
+  toc("setup")
   threads:
-    tic()
+    tic("plaq threads")
     #var plt = newSeq[float64](np)
     var plt: array[6,float64]
     var umunu,unumu: type(load1(u[0][0]))
@@ -243,7 +243,7 @@ proc plaq*[T](uu: openArray[T]): auto =
       for nu in 0..<nd:
         if mu != nu:
           startSB(sf[mu][nu], u[mu][ix])
-    toc("plaq start shifts")
+    toc("start shifts")
     for ir in u[0]:
       for mu in 1..<nd:
         for nu in 0..<mu:
@@ -253,13 +253,13 @@ proc plaq*[T](uu: openArray[T]): auto =
             let ip = getIp(mu,nu)
             let dt = redot(umunu,unumu)
             plt[ip] += simdSum(dt)
-    toc("plaq local")
+    toc("local")
     var needBoundary = false
     for mu in 0..<nd:
       for nu in 0..<nd:
         if mu != nu:
           boundaryWaitSB(sf[mu][nu]): needBoundary = true
-    toc("plaq wait")
+    toc("wait")
     if needBoundary:
       boundarySyncSB()
       for ir in u[0]:
@@ -279,15 +279,15 @@ proc plaq*[T](uu: openArray[T]): auto =
               let ip = getIp(mu,nu)
               let dt = redot(umunu,unumu)
               plt[ip] += simdSum(dt)
-    toc("plaq boundary")
+    toc("boundary")
     threadSum(plt)
     if threadNum == 0:
       for i in 0..<pl.len:
         pl[i] = plt[i]/(lo.physVol.float*float(np*nc))
       rankSum(pl)
-    toc("plaq sum")
+    toc("sum")
   result = pl
-  toc("plaq end", flops=lo.nSites.float*float(np*(2*8*nc*nc*nc-1)))
+  toc("end", flops=lo.nSites.float*float(np*(2*8*nc*nc*nc-1)))
 
 template plaq*(g: Gauge): auto = plaq(g.u)
 
@@ -324,7 +324,7 @@ proc staples*[T,A,F,B](staples,uu,vv:openArray[T]; aa:openArray[A];
 
 proc plaq2*[T](gg:openArray[T]):auto =
   mixin adj
-  tic()
+  tic("plaq2")
   let g = cast[ptr cArray[T]](unsafeAddr(gg[0]))
   let lo = g[0].l
   let nd = lo.nDim
@@ -335,57 +335,61 @@ proc plaq2*[T](gg:openArray[T]):auto =
   var s1 = lo.ColorMatrix()
   #var t1 = lo.ColorMatrix()
   var tr:type(trace(m))
-  toc("plaq2 setup")
+  toc("setup")
   threads:
-    #tic()
+    tic("plaq2 threads")
     m := 0
-    #toc("plaq2 zero")
+    toc("zero")
     for mu in 1..<nd:
       for nu in 0..<mu:
-        #tic()
+        tic("plaq2 loop")
+        #toc("before shift1")
         shift(s0, mu,1, g[nu])
-        #toc("plaq2 shift1")
+        toc("shift1")
         shift(s1, nu,1, g[mu])
-        #toc("plaq2 shift2")
+        toc("shift2")
         #echo "s0: ", trace(s0)
         #echo "s1: ", trace(s1)
         m += (g[mu]*s0) * (g[nu]*s1).adj
         #m += (g[mu]*s0) * (g[nu]*s1)
         #echo mu, " ", nu, " ", trace(m)/nc
-        #toc("plaq2 mul")
-    #toc("plaq2 work")
+        toc("mul")
+    toc("work")
     tr = trace(m)
-    #toc("plaq2 trace")
-  toc("plaq2 threads")
+    toc("trace")
+  toc("end")
   result = tr/(lo.physVol.float*0.5*float(nd*(nd-1)*nc))
 
 proc plaq3*[T](g: seq[T]): auto =
   mixin adj, newTransporters
-  tic()
+  tic("plaq3")
   let lo = g[0].l
   let nd = lo.nDim
   let nc = g[0][0].ncols
   let t = newTransporters(g, g[0], 1)
   var m = lo.ColorMatrix()
   var tr: type(trace(m))
-  toc("plaq3 setup")
+  toc("setup")
   threads:
-    tic()
+    tic("plaq3 threads")
     m := 0
-    toc("plaq3 zero")
+    toc("zero")
     for mu in 1..<nd:
       for nu in 0..<mu:
-        tic()
+        tic("plaq3 loop")
         #m += (t[mu]^*g[nu]) * (t[nu]^*g[mu]).adj
-        discard t[mu]^*g[nu]
-        discard t[nu]^*g[mu]
+        discard t[mu]^*!g[nu]
+        toc("transport1")
+        discard t[nu]^*!g[mu]
+        threadBarrier()
+        toc("transport2")
         m += t[mu].field * t[nu].field.adj
         #echo mu, " ", nu, " ", trace(m)/nc
-        toc("plaq3 mul")
-    toc("plaq3 work")
+        toc("mul")
+    toc("work")
     tr = trace(m)
-    toc("plaq3 trace")
-  toc("plaq3 threads")
+    toc("trace")
+  toc("end")
   result = tr/(lo.physVol.float*0.5*float(nd*(nd-1)*nc))
 
 proc echoPlaq*(g: auto) =

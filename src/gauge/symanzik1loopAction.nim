@@ -43,20 +43,13 @@ proc symanzik1loopAction*[T](coeffs: GaugeActionCoeffs;
     nflops = newThreadSingle(0)
     U = newSeq[GF](nd)
     Uf = newSeq2d[Shft](nd,nd)
-  #var mu: cint = 0
-  #while mu < nd:
   for mu in 0..<nd:
     U[mu] = links[mu]
-    #var nu: cint = 0
-    #while nu < nd:
     for nu in 0..<nd:
-      #if nu == mu: continue
-      #Uf[mu,nu] = links[0].newOneOf
-      #QDP_M_eq_sM(Uf[mu][nu], U[mu], neighbor[nu], QDP_forward, sub)
       if nu != mu:
+        #Uf[mu,nu] = links[0].newOneOf
+        #QDP_M_eq_sM(Uf[mu][nu], U[mu], neighbor[nu], QDP_forward, sub)
         Uf[mu,nu] = newShifter(U[mu], nu, 1)
-      #inc(nu)
-    #inc(mu)
   threads:
     for mu in 0..<nd:
       for nu in 0..<nd:
@@ -73,11 +66,7 @@ proc symanzik1loopAction*[T](coeffs: GaugeActionCoeffs;
     bstpl0 = newSeq2d[GF](nd,nd)
     bstpl = newSeq2d[Shft](nd,nd)
     tc = lo.Complex
-  #var mu: cint = 1
-  #while mu < nd:
   for mu in 1..<nd:
-    #var nu: cint = 0
-    #while nu < mu:
     for nu in 0..<mu:
       if pgm != 0.0:
         UUf[mu,nu] = links[0].newOneOf
@@ -242,68 +231,30 @@ proc symanzik1loopAction*[T](coeffs: GaugeActionCoeffs;
       nflops += 2 * EQMTM + 3 * PEQMTM + 4 * nc * nc
 
     if pgm != 0.0:
-      ##  FIXME: only works for nd=4
+      #  FIXME: only works for nd=4
       if nd != 4:
         qexError("symanzik1loopAction with parallelogram only works for nDim == 4")
       combinefb(pgms, 0, 1, 2)
       combineb(pgms, 0, 2, 1)
       combineb(pgms, 1, 2, 0)
-      ##  rest
-      ## combinefb(pgmt,0,3,1);
-      ## combinefb(pgmt,0,3,2);
+      #  rest
+      # combinefb(pgmt,0,3,1);
+      # combinefb(pgmt,0,3,2);
       combinefb2(pgmt, 0, 3, 1, 2)
       combineb(pgmt, 0, 1, 3)
       combineb(pgmt, 0, 2, 3)
       combinefb(pgmt, 1, 2, 3)
-      ## combineb(pgmt,1,3,0);
-      ## combineb(pgmt,1,3,2);
+      # combineb(pgmt,1,3,0);
+      # combineb(pgmt,1,3,2);
       combineb2(pgmt, 1, 3, 0, 2)
-      ## combineb(pgmt,2,3,0);
-      ## combineb(pgmt,2,3,1);
+      # combineb(pgmt,2,3,0);
+      # combineb(pgmt,2,3,1);
       combineb2(pgmt, 2, 3, 0, 1)
 
     threadSingle:
       acts = plaq * plaqs + rect * rects + pgm * pgms + adpl * adpls
       actt = plaq * plaqt + rect * rectt + pgm * pgmt + adpl * adplt
 
-#[
-  var mu: cint = 0
-  while mu < nd:
-    var nu: cint = 0
-    while nu < nd:
-      if nu == mu:
-        inc(nu)
-        inc(mu)
-        continue
-      QDP_destroy_M(Uf[mu,nu])
-      inc(nu)
-    inc(mu)
-  if pgm:
-    var mu: cint = 0
-    while mu < nd:
-      var nu: cint = 0
-      while nu < nd:
-        if nu == mu:
-          inc(nu)
-          inc(mu)
-          continue
-        QDP_destroy_M(UUf[mu,nu])
-        QDP_destroy_M(fstpl[mu,nu])
-        QDP_destroy_M(bstpl0[mu,nu])
-        QDP_destroy_M(bstpl[mu,nu])
-        inc(nu)
-      inc(mu)
-  else:
-    QDP_destroy_M(UUf[1,0])
-    QDP_destroy_M(UUf[0,1])
-    if rect:
-      QDP_destroy_M(fstpl[1,0])
-      QDP_destroy_M(fstpl[0,1])
-      QDP_destroy_M(bstpl0[1,0])
-      QDP_destroy_M(bstpl0[0,1])
-      QDP_destroy_M(bstpl[1,0])
-      QDP_destroy_M(bstpl[0,1])
- ]#
   let act0 = lo.physVol*(coeffs.plaq + 2*coeffs.rect + coeffs.adjplaq)
   let act1 = lo.physVol*(4*coeffs.pgm)
   result.space = 0.5*(nd-1)*(nd-2)*act0 + act1 - acts
