@@ -287,7 +287,7 @@ proc plaq*[T](uu: openArray[T]): auto =
       rankSum(pl)
     toc("sum")
   result = pl
-  toc("end", flops=lo.nSites.float*float(np*(2*8*nc*nc*nc-1)))
+  toc("end", flops=lo.nSites.float*float(np*(fplaq(nc)+1)))
 
 template plaq*(g: Gauge): auto = plaq(g.u)
 
@@ -329,6 +329,7 @@ proc plaq2*[T](gg:openArray[T]):auto =
   let lo = g[0].l
   let nd = lo.nDim
   let nc = g[0][0].ncols
+  #let np = (nd*(nd-1)) div 2
   var m = lo.ColorMatrix()
   var s0 = lo.ColorMatrix()
   #var t0 = lo.ColorMatrix()
@@ -353,7 +354,7 @@ proc plaq2*[T](gg:openArray[T]):auto =
         m += (g[mu]*s0) * (g[nu]*s1).adj
         #m += (g[mu]*s0) * (g[nu]*s1)
         #echo mu, " ", nu, " ", trace(m)/nc
-        toc("mul")
+        toc("mul", flops=lo.nSites.float*float(3*fcmmul(nc)+fcmadd(nc)))
     toc("work")
     tr = trace(m)
     toc("trace")
@@ -379,13 +380,13 @@ proc plaq3*[T](g: seq[T]): auto =
         tic("plaq3 loop")
         #m += (t[mu]^*g[nu]) * (t[nu]^*g[mu]).adj
         discard t[mu]^*!g[nu]
-        toc("transport1")
+        toc("transport1", flops=lo.nSites.float*float(fcmmul(nc)))
         discard t[nu]^*!g[mu]
         threadBarrier()
-        toc("transport2")
+        toc("transport2", flops=lo.nSites.float*float(fcmmul(nc)))
         m += t[mu].field * t[nu].field.adj
         #echo mu, " ", nu, " ", trace(m)/nc
-        toc("mul")
+        toc("mul", flops=lo.nSites.float*float(fcmmul(nc)+fcmadd(nc)))
     toc("work")
     tr = trace(m)
     toc("trace")

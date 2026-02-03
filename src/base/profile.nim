@@ -857,7 +857,8 @@ proc echoHotspots* =
       else:
         tsns += nk.ns
         let tsnspct = 100.0 * tsns / nstot
-        echo &"{pct:6.3f} {tsnspct:7.3f} {count} {mf} {nc} S {lc} {nm}"
+        #echo &"{pct:6.3f} {tsnspct:7.3f} {count} {mf} {nc} S {lc} {nm}"
+        echo &"{pct:6.3f} {tsnspct:7.3f} {count}         {nc} S {lc} {nm}"
 
 proc echoProf*(def = 0) =
   case intParam("prof",def)

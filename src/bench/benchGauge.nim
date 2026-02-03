@@ -6,6 +6,7 @@ import parseUtils
 import macros
 import gauge/hypsmear
 import commonBench
+import base/flopcount
 
 proc checkMem =
   #echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
@@ -37,6 +38,9 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
   var t1 = epochTime()
   let dt = t1 - t0
 ]#
+  block:
+    eqn
+  resetTimers()
   let br = benchSingle:
     eqn
   let (nrep,dt) = (br.reps,br.secs)
@@ -45,6 +49,7 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
   let mb = (nrep.float*bytes)/(1e6*dt)
   echo "(", exp2string(eqn), ") secs: ", dt|(5,3), "  sec/n: ", dtn|(5,3),
       "  mf: ", mf.int, "  mb: ", mb.int
+  echoProf()
 
 proc test(lat: auto) =
   #var scale = 1
@@ -86,12 +91,16 @@ proc test(lat: auto) =
 
   resetTimers()
 
-  bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
-    var pl = plaq(g)
-  bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
-    var pl2 = plaq2(g)
-  bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
-    var pl3 = plaq3(g)
+  block:
+    let flop = np*(fplaq(nc)+1)
+    #let mem = nd*2*nc*nc*sizeof(numberType(g[0][0]))
+    let mem = nd*sizeof(g[0][0]) div g[0][0][0,0].re.numNumbers
+    bench(flop, mem):
+      var pl = plaq(g)
+    bench(flop, mem):
+      var pl2 = plaq2(g)
+    bench(flop, mem):
+      var pl3 = plaq3(g)
 
   bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
     var ga = gaugeAction1(g)
