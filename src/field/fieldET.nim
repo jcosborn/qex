@@ -134,7 +134,7 @@ template eval*[F:Field](x: typedesc[FieldUnop[foToSingle,F]]): typedesc =
 proc new*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) =
   # remember to change newFieldArray if the following changes
   x.l = l
-  x.s.new(l.nSitesOuter)
+  x.s.newU(l.nSitesOuter)
   #fence()
   x.elemSize = sizeOf(T)
 proc newU*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) =
@@ -145,7 +145,7 @@ proc newU*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) =
   x.elemSize = sizeOf(T)
 proc new*[V:static[int],T](x:var Field[V,T]; l:Layout[V]) =
   x.new()
-  new(x[], l)
+  newU(x[], l)
 proc newU*[V:static[int],T](x:var Field[V,T]; l:Layout[V]) =
   x.new()
   newU(x[], l)
@@ -164,11 +164,11 @@ proc newOneOfU*(x: Field): auto =
 template l*(x: FieldUnop): untyped = x.f1.l
 proc newOneOf*(x: FieldUnop): auto =
   var r: evalType(x)
-  r.new(x.l)
+  r.newU(x.l)
   r
 proc newOneOf*(x: Subsetted): auto =
   var r: type(x)
-  r.field.new(x.field.l)
+  r.field.newU(x.field.l)
   r.subset = x.subset
   r
 template new*(x: typedesc[Field], l: Layout): untyped =
@@ -185,7 +185,7 @@ proc newFieldArray*[V:static[int],T](l:Layout[V]; t:typedesc[Field[V,T]]; n: int
   result.shape = @[n]
   result.arr = newseq[t](n)
   var s:typeof(result.arr[0].s)
-  s.new(l.nSitesOuter*n)
+  s.newU(l.nSitesOuter*n)
   for i in 0..<n:
     newFarrElem(result.arr[i], l, s, i)
 
@@ -203,7 +203,7 @@ template newFieldArray2*[V:static[int],T](l:Layout[V]; ty:typedesc[Field[V,T]];
       let nu {.inject.} = j
       if constraint: inc t
   var s:typeof(r.arr[0].s)
-  s.new(l.nSitesOuter*t)
+  s.newU(l.nSitesOuter*t)
   var k = 0
   t = 0
   for i in 0..<n:
@@ -228,7 +228,7 @@ proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] {.noinit.} =
         break
     if n < 0: return
     (fa.arr[n].l, fa.arr[n].s.len)
-  s.new(n)
+  s.newU(n)
   var t = 0
   for i in 0..<fa.arr.len:
     if fa.arr[i] == nil: continue

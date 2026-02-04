@@ -9,6 +9,7 @@ import times
 import os
 import strUtils, sequtils
 import maths, rng, physics/qcdTypes
+import base/flopcount
 
 import std/[hashes, tables]
 
@@ -1577,11 +1578,11 @@ when isMainModule:
     echo st[i].norm2
   ]#
 
-  var u1 = lo.newGauge(gkU, 1)
+  var u1 = lo.newGauge(GroupKind.gkU, 1)
   echo plaq(u1)
-  var su2 = lo.newGauge(gkSU, 2)
+  var su2 = lo.newGauge(GroupKind.gkSU, 2)
   echo plaq(su2)
-  var su3 = lo.newGauge(gkSU, 3)
+  var su3 = lo.newGauge(GroupKind.gkSU, 3)
   echo plaq(su3)
 
   #echoTimers()
