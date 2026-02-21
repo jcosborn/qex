@@ -3,6 +3,9 @@ import base/metaUtils
 import base/omp
 
 {.pragma: omp, header:"omp.h".}
+{.passC:"-fcf-protection=none -no-pie -fno-stack-protector" .}
+{.passL:"-fcf-protection=none -no-pie -fno-stack-protector" .}
+
 template mkMemoryPragma*:untyped =
   {.pragma: restrict, codegenDecl: "$# __restrict__ $#".}
   {.pragma: aligned, codegenDecl: "$# $# __attribute__((aligned))".}
@@ -34,7 +37,7 @@ proc alignatImpl(n:NimNode, byte:int): NimNode =
     for c in n:
       result.add c.alignatImpl byte
 macro alignat*(byte:static[int], n:untyped): untyped =
-  if byte notin {1,2,4,8,16,32,64,128,256}:
+  if byte notin [1,2,4,8,16,32,64,128,256]:
     error("macro alignat: unsupported alignment: " & $byte, n)
   #echo "alignatImpl ", byte
   #echo n.treerepr
@@ -61,11 +64,11 @@ proc omp_get_initial_device*: cint {.omp.}
 proc omp_get_num_teams*: cint {.omp.}
 proc omp_get_team_num*: cint {.omp.}
 
-template omp_target_alloc*(size: int): pointer =
+template omp_target_alloc*(size: SomeNumber): pointer =
   omp_target_alloc(csize_t size, omp_get_default_device())
 template omp_target_memcpy_tocpu*(dst: pointer, src: pointer; length: csize_t): cint =
   omp_target_memcpy(dst, src, length, 0, 0, omp_get_initial_device(), omp_get_default_device())
-template omp_target_memcpy_togpu*(dst: pointer, src: pointer; length: int): cint =
+template omp_target_memcpy_togpu*(dst: pointer, src: pointer; length: csize_t): cint =
   omp_target_memcpy(dst, src, csize_t length, 0, 0, omp_get_default_device(), omp_get_initial_device())
 template omp_target_free*(device_ptr: pointer) =
   omp_target_free(device_ptr, omp_get_default_device())
@@ -130,7 +133,8 @@ proc prepareVars(n:NimNode):seq[NimNode] =
         nnkWhileStmt, nnkForStmt} + RoutineNodes:
       # New lexical scope
       newscope = true
-      ignoreStack.add newPar()
+      #ignoreStack.add newPar()
+      ignoreStack.add newNimNode(nnkTupleConstr)
     for i in 0..<n.len:
       #echo "### ",n[i].lisprepr
       case n[i].kind
@@ -176,7 +180,8 @@ proc prepareVars(n:NimNode):seq[NimNode] =
             let np = gensym(nsklet, "gpu_ptr_" & $n[i])
             ignoreStack[0].add nv
             ignoreStack[0].add np
-            openvars.add newpar(n[i], nv, np)
+            #openvars.add newpar(n[i], nv, np)
+            openvars.add newNimNode(nnkTupleConstr).add(n[i], nv, np)
             n[i] = newcall("gpuVarPtr",nv,np)
       else:
         discard
@@ -199,6 +204,7 @@ proc genCpuPrepare(n:seq[NimNode]):NimNode =
       var v{.noinit.}:OffloadDummy[typeof(x)]
   result = newstmtlist()
   for c in n:
+    #echo c.treerepr
     result.add getast r(c[0],c[1],c[2])
 proc genGpuPrepare(n:seq[NimNode]):NimNode =
   template r(x,v,p:untyped):untyped =
@@ -214,31 +220,55 @@ proc genCpuFinalize(n:seq[NimNode]):NimNode =
   result = newstmtlist()
   for c in n:
     result.add getast r(c[0],c[1],c[2])
-proc declarePtrString(n:seq[NimNode]):NimNode =
-  template res(ptrlist:untyped):untyped =
-    const s = ptrlist
-    when s.len == 0: "" else: "is_device_ptr(" & s[0..^2] & ")"
-  template varname(x, xp:untyped):untyped =
-    mixin offloadPtr
-    when compiles(offloadPtr(x)): xp&"," else: ""
-  var ps = newlit""
+#proc declarePtrString(n:seq[NimNode]):NimNode =
+#  template res(ptrlist:untyped):untyped =
+#    const s = ptrlist
+#    when s.len == 0: "" else: "is_device_ptr(" & s[0..^2] & ")"
+#  template varname(x, xp:untyped):untyped =
+#    mixin offloadPtr
+#    when compiles(offloadPtr(x)): xp&"," else: ""
+#  var ps = newlit""
+#  for c in n:
+#    ps = infix(getast varname(c[0], $c[2]), "&", ps)
+#  result = getast res(ps)
+proc declarePtrTuple(n:seq[NimNode]):NimNode =
+  mixin offloadPtr
+  var ps = newNimNode(nnkTupleConstr)
+  ps.add newLit"is_device_ptr("
   for c in n:
-    ps = infix(getast varname(c[0], $c[2]), "&", ps)
-  result = getast res(ps)
+    when compiles(offloadPtr(c[0])):
+      ps.add c[2]
+  if ps.len == 1:
+    result = newNimNode(nnkTupleConstr)
+  else:
+    ps.add newLit")"
+    result = ps
+  #echo result.treerepr
 
-macro isDevicePtr(x: typed): untyped =
-  let n = $x
-  result = newLit(" is_device_ptr("&n&")")
+#macro isDevicePtr(x: typed): untyped =
+#  let n = $x
+#  result = newLit(" is_device_ptr("&n&")")
 
-macro useDevicePtr(x: typed): untyped =
-  let n = $x
-  let p = newLit("#pragma omp target data use_device_ptr("&n&")")
-  result = quote do:
-    {.emit: `p`.}
+#macro useDevicePtr(x: auto): auto =
+  #echo x.treerepr
+  #let n = x.strVal
+  #echo "useDevicePtr: ", n
+  #let p = newLit("#pragma omp target data use_device_ptr("&n&")")
+#  result = quote do:
+#    {.emit: ["#pragma omp target data use_device_ptr(",`x`,")"].}
 
-macro mapto(x: typed): untyped =
-  let n = $x
-  result = newLit(" map(to:"&n&")")
+#macro getrepr(x: untyped): auto =
+#  echo x.treerepr
+#  result = x
+
+template useDevicePtr(x: auto) =
+  #getrepr:
+  {.emit: ["#pragma omp target data use_device_ptr(",x,")"].}
+
+#macro mapto(x: typed): untyped =
+#  let n = $x
+#  result = newLit(" map(to:"&n&")")
+#macro mapto(x: typed): untyped =
 
 macro onGpu*(body: untyped): untyped =
   # the architecture for cpugpuarray requires us replace body before it gets expanded, so we require untyped.
@@ -248,8 +278,8 @@ macro onGpu*(body: untyped): untyped =
     {.push stacktrace: off.}
     proc gpuProc {.gensym.} =
       cpuPrepare  # a let section declare and save device pointers
-      const isDevicePtrList = devicePtrDeclare  # is_device_ptr(ptrList) in string
-      ompBlock("target teams " & isDevicePtrList):
+      #const isDevicePtrList = devicePtrDeclare  # is_device_ptr(ptrList) in string
+      ompBlock2("target teams ", devicePtrDeclare):
         openmpDefs:
           gpuPrepare
           body
@@ -260,7 +290,7 @@ macro onGpu*(body: untyped): untyped =
     cpuPrepare = genCpuPrepare v
     gpuPrepare = genGpuPrepare v
     cpuFinalize = genCpuFinalize v
-    isDevicePtrs = declarePtrString v
+    isDevicePtrs = declarePtrTuple v
   result = getast(target(cpuPrepare, gpuPrepare, cpuFinalize, isDevicePtrs, body))
   #echo result.repr
 
@@ -306,10 +336,10 @@ proc identStr(n:NimNode):string =
   result = n.repr
   for i in 0..<result.len:
     if result[i] in {'.','[',']',':'}: result[i] = '_'
-proc isIndex(n,i:NimNode):bool =
-  result = n.eqident i
-  if n.kind == nnkHiddenStdConv:
-    result = n[1].eqident i
+#proc isIndex(n,i:NimNode):bool =
+#  result = n.eqident i
+#  if n.kind == nnkHiddenStdConv:
+#    result = n[1].eqident i
 macro simdForImpl(n:typed):untyped =
   proc getIndexedPtrs(n,i:NimNode):(NimNode,seq[NimNode]) =
     #echo "### getIndexedPtrs: ", i.repr
@@ -323,7 +353,8 @@ macro simdForImpl(n:typed):untyped =
               break
           if m < 0:
             let v = gensym(nskVar, n.cleanAst.identStr)
-            ptrs.add newPar(v, n)
+            #ptrs.add newPar(v, n)
+            ptrs.add newNimNode(nnkTupleConstr).add(v, n)
             return v
           else:
             return ptrs[m][0]
@@ -437,20 +468,19 @@ when isMainModule:
     useDevicePtr(y)
     discard omp_target_memcpy_togpu(y, addr x, sizeof(float32))
     #ompBlock("target teams"&isDevicePtr(x)):
-    ompBlock("target teams"&mapto(x)):
+    #ompBlock("target teams"&mapto(x)):
+    ompBlock2("target teams", " map(to:", x, ")"):
       {.emit:"#pragma omp parallel".}
       {.emit:"for(int ii=0; ii<1; ii++)".}
       block:
         x = 1.0
 
-    macro dump(n:typed):typed =
-      echo n.repr
-      n
-    #[
-    dump:
-      onGpu:
-        let i = getThreadNum()
-        if i < n:
-          c[i] = a[i] + b[i]
-    ]#
+    #macro dump(n:auto):auto =
+    #  echo n.repr
+    #  n
+    onGpu:
+      let i = getThreadNum()
+      if i < n:
+        c[i] = a[i] + b[i]
+
   test()

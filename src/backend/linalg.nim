@@ -4,10 +4,10 @@ type SomeNumber2* = SomeNumber
 template `:=`*(x: var SomeNumber, y: SomeNumber2) =
   type tx = type(x)
   x = (tx)(y)
-template `+=`*(x: var SomeNumber, y: SomeNumber2) =
-  bind `+=`    # So the following += doesn't call this template again.
-  type tx = type(x)
-  x += (tx)(y)
+#template `+=`*(x: var SomeNumber, y: SomeNumber2) =
+#  bind `+=`    # So the following += doesn't call this template again.
+#  type tx = type(x)
+#  x += (tx)(y)
 
 type
   Complex*[T] = object
@@ -63,7 +63,8 @@ template `*`*[T](x,y: Complex[T]): untyped =
     xx = x
     yy = y
   type tx = type(xx)
-  var r {.noInit.}: tx #Complex[x.T] #Complex[type(x.re*y.re)]
+  #var r {.noInit.}: tx #Complex[x.T] #Complex[type(x.re*y.re)]
+  var r: tx #Complex[x.T] #Complex[type(x.re*y.re)]
   r.re := xx.re*yy.re - xx.im*yy.im
   r.im := xx.re*yy.im + xx.im*yy.re
   r
@@ -110,7 +111,8 @@ template `+`*[N:static[int],T](x,y: Colmat[N,T]): untyped =
 template `*`*[N:static[int],T](x,y: Colmat[N,T]): untyped =
   let xx = x
   let yy = y
-  var r {.noInit.}: Colmat[N,type(x.d[0][0].re)]
+  #var r {.noInit.}: Colmat[N,type(x.d[0][0].re)]
+  var r: Colmat[N,type(x.d[0][0].re)]
   forstatic i, 0, N-1:
     forstatic j, 0, N-1:
       r.d[i][j] := xx.d[i][0] * yy.d[0][j]

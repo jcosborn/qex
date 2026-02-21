@@ -29,7 +29,7 @@ import macros
 mkMemoryPragma()
 
 const CPUVLEN* {.intdefine.} = 0 ## CPU SIMD vector length in bits.  Zero lets compiler auto-vectorize.
-const SupportedCPUVLENs = {128,256,512}
+const SupportedCPUVLENs = [128,256,512]
 const oneByte = 8
 macro defsimd:auto =
   var s,d:NimNode

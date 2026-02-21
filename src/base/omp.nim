@@ -1,4 +1,4 @@
-import os
+import os, macros
 
 when defined(noOpenmp):
   static: echo "OpenMP disabled"
@@ -41,6 +41,38 @@ else:
     block:
       body
     #{. emit:"} /* End ompBlock " & p & " */".}
+
+  macro ompPragma2*(p: varargs[untyped]): auto =
+    var b = newNimNode(nnkBracket)
+    b.add newLit "_Pragma(\"omp "
+    for i in 0..<p.len:
+      if p[i].kind == nnkTupleConstr:
+        for j in 0..<p[i].len:
+          b.add p[i][j]
+      else:
+        b.add p[i]
+    b.add newLit "\")"
+    #echo p.treerepr
+    result = quote do:
+      {. emit:`b` .}
+  #template ompBlock2*(p: varargs[untyped]) =
+  #  ompPragma2(p[0..^2])
+  #  block:
+  #    p[^1]
+  macro ompBlock2*(p: varargs[untyped]): auto =
+    {. push stackTrace:off, lineTrace:off, line_dir:off .}
+    #echo p.treerepr
+    let body = p[^1]
+    var p2 = newNimNode(nnkCall).add bindSym"ompPragma2"
+    for i in 0..(p.len-2):
+      p2.add p[i]
+    #echo body.treerepr
+    result = quote do:
+      `p2`
+      block:
+        `body`
+    #echo result.treerepr
+    {. pop .}
 
 template ompBarrier* = ompPragma("barrier")
 template ompFlush* = ompPragma("flush")

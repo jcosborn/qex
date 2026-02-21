@@ -109,10 +109,11 @@ proc newCoalesced*[T](V,M:static[int], p:ptr T, n:int):auto {.noinit.} =
 template `[]`*(x:Coalesced, ix:int):untyped = CoalescedObj[x.V,x.M,x.T](o:x, i:ix)
 template len*(x:Coalesced):untyped = x.n
 
-template fromCoalesced*(x:CoalescedObj):untyped =
+template fromCoalesced*(x:CoalescedObj): auto =
   const N = getSize(x.T) div (x.M*sizeof(RegisterWord))
   type A = ptr Uncheckedarray[MemoryWord(x.M)]
-  var r {.noinit.}: x.T
+  #var r {.noinit.}: x.T
+  var r: x.T
   let offset = (x.i div x.V)*N*x.V + x.i mod x.V
   unrollfor:
     for j in 0..N-1: cast[A](r.addr)[j] = cast[A](x.o.p)[offset + j*x.V]
@@ -145,8 +146,8 @@ template `:=`*[V,M:static[int],X,Y](x:CoalescedObj[V,M,X], y:Y) =
 
 proc `*`*[VX,MX,VY,MY:static[int],X,Y](x:CoalescedObj[VX,MX,X], y:CoalescedObj[VY,MY,Y]):auto {.noinit,inline.} =
   let
-    tx {.noinit.} = fromCoalesced(x)
-    ty {.noinit.} = fromCoalesced(y)
+    tx = fromCoalesced(x)
+    ty = fromCoalesced(y)
   mixin `*`
   tx * ty
 
