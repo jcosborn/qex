@@ -292,7 +292,7 @@ macro onGpu*(body: untyped): untyped =
     cpuFinalize = genCpuFinalize v
     isDevicePtrs = declarePtrTuple v
   result = getast(target(cpuPrepare, gpuPrepare, cpuFinalize, isDevicePtrs, body))
-  #echo result.repr
+  echo result.repr
 
 # XXX fix the following
 template onGpu*(totalNumThreads, body: untyped): untyped = onGpu(body)
@@ -317,12 +317,20 @@ template onGpu*(nn: untyped, body: untyped): untyped = onGpu(nn, 64, body)
 template onGpu*(body: untyped): untyped = onGpu(512*64, 64, body)
 ]#
 
-template offloadUseVar*(x:SomeNumber):bool = true
-template offloadUsePtr*(x:SomeNumber):bool = false
+#template offloadUseVar*(x:SomeNumber):bool = true
+#template offloadUsePtr*(x:SomeNumber):bool = false
 template rungpuPrepareOffload*(x:SomeNumber):bool = false
-template runcpuFinalizeOffload*(x:SomeNumber):bool = false
-template gpuVarPtr*(v:SomeNumber,p:untyped):untyped = v
+#template runcpuFinalizeOffload*(x:SomeNumber):bool = false
+#template gpuVarPtr*(v:SomeNumber,p:untyped):untyped = v
 template offloadVar*(x:SomeNumber,p:untyped):untyped = x
+
+template runcpuFinalizeOffload*(x:SomeNumber):bool = true
+template offloadUseVar*(x:SomeNumber):bool = false
+template offloadUsePtr*(x:SomeNumber):bool = true
+template gpuVarPtr*(v:untyped,p:ptr SomeNumber):untyped = p[]
+template offloadPtr*(x:SomeNumber):untyped = unsafeAddr x
+template cpuFinalizeOffload*(x:SomeNumber,v,p:untyped) =
+  x = p[]
 
 template toUArray(a:untyped):untyped = cast[ptr UncheckedArray[typeof(a[0])]](a[0].unsafeaddr)
 proc cleanAst(n:NimNode):NimNode =

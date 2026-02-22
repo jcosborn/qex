@@ -63,6 +63,8 @@ template checkInit* =
     #echo format("error: $#($#): threads not initialized",fn,ln)
     #quit(-1)
 
+template threadBarrierO* = ompBarrier
+
 macro emitStackTraceX(x: typed): untyped =
   template est(x) =
     {.emit: "// instantiationInfo: " & x.}
@@ -140,7 +142,6 @@ template nothreads*(body: untyped): untyped =
 
 
 template getMaxThreads*() = ompGetMaxThreads()
-template threadBarrierO* = ompBarrier
 template threadMaster*(x:untyped) = ompMaster(x)
 template threadSingle*(x:untyped) = ompSingle(x)
 template threadCritical*(x:untyped) = ompCritical(x)

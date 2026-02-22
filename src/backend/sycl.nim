@@ -1,10 +1,12 @@
 import macros
 
-{.pragma: syclh,header:"<CL/sycl.hpp>".}
+{.pragma: syclh,header:"<sycl/sycl.hpp>".}
+{.passC: "-fsycl".}
+{.passL: "-fsycl".}
 
 type
-  DefaultSelector* {.importcpp:"sycl::default_selector", syclh.} = object
-  HostSelector* {.importcpp:"sycl::host_selector", syclh.} = object
+  #DefaultSelector* {.importcpp:"sycl::default_selector_v", syclh.} = object
+  #HostSelector* {.importcpp:"sycl::host_selector_v", syclh.} = object
   Context* {.importcpp:"sycl::context", syclh.} = object
   Device* {.importcpp:"sycl::device", syclh.} = object
   Queue* {.importcpp:"sycl::queue", syclh.} = object
@@ -12,7 +14,7 @@ type
   AmRead {.importcpp:"sycl::access::mode::read", syclh.} = object
   AmWrite {.importcpp:"sycl::access::mode::write", syclh.} = object
   AmReadWrite {.importcpp:"sycl::access::mode::read_write", syclh.} = object
-  TgHost {.importcpp:"sycl::access::target::host_buffer", syclh.} = object
+  #TgHost {.importcpp:"sycl::access::target::host_buffer", syclh.} = object
   TgGlobal {.importcpp:"sycl::access::target::global_buffer", syclh.} = object
   SyclAccessor*[T;N:static[int];M;A] {.
     importcpp:"sycl::accessor", syclh.} = object
@@ -37,11 +39,18 @@ type
   Accessor*[T;N:static[int];M;G] = ref object
     acc: SyclAccessor[T,N,M,G]
 
-proc newDefaultSelector*(): DefaultSelector {.importcpp:"default_selector()", syclh.}
-proc newHostSelector*(): HostSelector {.importcpp:"host_selector()", syclh.}
+#proc newDefaultSelector*(): DefaultSelector {.importcpp:"default_selector_v", syclh.}
+#proc newHostSelector*(): HostSelector {.importcpp:"host_selector()", syclh.}
+#var
+#  defaultSelector*{.importcpp:"default_selector_v", syclh.}
+#  hostSelector*{.importcpp:"host_selector_v", syclh.}
 
-proc selectDevice*(x: DefaultSelector): Device {.importcpp:"#.select_device()".}
-proc selectDevice*(x: HostSelector): Device {.importcpp:"#.select_device()".}
+#proc selectDevice*(x: DefaultSelector): Device {.importcpp:"#.select_device()".}
+#proc selectDevice*(x: HostSelector): Device {.importcpp:"#.select_device()".}
+#proc selectDevice*(x: object): Device {.importcpp:"#.select_device()".}
+#proc device*(x: object): Device {.importcpp:"'0(#)", constructor, syclh.}
+proc defaultDevice*():Device {.importcpp:"'0{sycl::default_selector_v}", constructor, syclh.}
+proc hostDevice*():Device {.importcpp:"'0{sycl::host_selector_v}", constructor, syclh.}
 
 type cppstring {.importcpp:"std::string",header:"string".} = object
 proc `len`*(x: cppstring): cint {.importcpp:"length".}
@@ -152,21 +161,21 @@ proc getPointer*[T;N:static[int];M](
 
 template submit0*(q: Queue, body: typed) =
   proc qs(qq: Queue) {.gensym.} =
-    {.emit:[qq,".submit([&](cl::sycl::handler &cgh){"].}
+    {.emit:[qq,".submit([&](sycl::handler &cgh){"].}
     body
     {.emit:"});".}
   qs(q)
 
 template submit*(q: Queue, body: typed) =
   block:
-    {.emit:[q,".submit([&](cl::sycl::handler &cgh){"].}
+    {.emit:[q,".submit([&](sycl::handler &cgh){"].}
     body
     {.emit:["});"].}
 
 template setupSycl* =
   {.pragma: id1, importcpp:"it",nodecl,header:"",noinit,codegendecl:"".}
   {.pragma: item1, importcpp:"it",nodecl,header:"",noinit,codegendecl:"".}
-setupSycl()
+#setupSycl()
 #macro id1*(x: untyped): untyped =
   #echo "test"
   #echo x.kind
@@ -208,11 +217,11 @@ macro sumX*(x: typed, et: typedesc): untyped =
 template sum*[T](x: SyclAccessor[T,1,AmReadWrite,TgGlobal]): untyped =
   sumX(x, type(T))
 
-macro val(x: typed): untyped =
-  #echo x.repr
-  let v = x.getImpl[2][1][1]
-  echo v.treerepr
-  result = v
+#macro val(x: typed): untyped =
+#  #echo x.repr
+#  let v = x.getImpl[2][1][1]
+#  echo v.treerepr
+#  result = v
 macro nm(x: typed): untyped =
   let v = x.getImpl[2][1][1]
   let i = v.intVal
@@ -287,21 +296,21 @@ proc `[]`*[T;G](x: SyclAccessor[T,1,AmWrite,G], i: int): var T {.
 proc `[]`*[T;G](x: SyclAccessor[T,1,AmWrite,G], i: Id1): var T {.
   importcpp:"#[#]", syclh.}
 
-proc `[]=`*[T;G](x: SyclAccessor[T,1,AmRead,G], i: int, y: any) {.
+proc `[]=`*[T;G](x: SyclAccessor[T,1,AmRead,G], i: int, y: auto) {.
   error:"illegal use of []= on read-only accessor".}
-proc `[]=`*[T;G](x: SyclAccessor[T,1,AmRead,G], i: Id1, y: any) {.
+proc `[]=`*[T;G](x: SyclAccessor[T,1,AmRead,G], i: Id1, y: auto) {.
   error:"illegal use of []= on read-only accessor".}
 
-proc `[]=`*[T;G](x: SyclAccessor[T,1,AmWrite,G], i: int, y: any) {.
+proc `[]=`*[T;G](x: SyclAccessor[T,1,AmWrite,G], i: int, y: auto) {.
   importcpp:"#[#]=#", syclh.}
-proc `[]=`*[T;G](x: SyclAccessor[T,1,AmWrite,G], i: Id1, y: any) {.
+proc `[]=`*[T;G](x: SyclAccessor[T,1,AmWrite,G], i: Id1, y: auto) {.
   importcpp:"#[#]=#", syclh.}
 
 proc `[]`*[T](x: SyclHostAccessor[T,1,AmRead], i: int): T {.
   importcpp:"#[#]", syclh.}
 proc `[]`*[T](x: SyclHostAccessor[T,1,AmWrite], i: int): T {.
   importcpp:"#[#]", syclh.}
-proc `[]=`*[T](x: SyclHostAccessor[T,1,AmWrite], i: int, y: any) {.
+proc `[]=`*[T](x: SyclHostAccessor[T,1,AmWrite], i: int, y: auto) {.
   importcpp:"#[#]=#", syclh.}
 
 when isMainModule:

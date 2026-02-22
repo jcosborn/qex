@@ -148,7 +148,7 @@ template getInst*(p: untyped): untyped =
   procInst(p)
     #var t =
     #t
-macro `>>`*(px: tuple, y: any): auto =
+macro `>>`*(px: tuple, y: auto): auto =
   #echo "begin >>:"
   #echo px.treerepr
   #echo "kernel type:"
@@ -199,7 +199,7 @@ template onGpu*(nn,tpb: untyped, body: untyped): untyped =
     type ByCopy[T] {.bycopy.} = object
       d: T
     proc kern(xx: ByCopy[type(v)]) {.cudaGlobal.} =
-      template deref(k: int): untyped = xx.d[k]
+      template deref(k: int): untyped = xx.d[k][]
       substVars(body, deref)
     let ni = nn.int32
     let threadsPerBlock = tpb.int32
@@ -209,6 +209,9 @@ template onGpu*(nn,tpb: untyped, body: untyped): untyped =
     discard cudaDeviceSynchronize()
 template onGpu*(nn: untyped, body: untyped): untyped = onGpu(nn, 64, body)
 template onGpu*(body: untyped): untyped = onGpu(512*64, 64, body)
+
+template getGpuPtr*(x: SomeNumber): untyped = unsafeAddr x
+
 
 when isMainModule:
   type FltArr = UncheckedArray[float32]

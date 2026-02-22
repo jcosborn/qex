@@ -1,8 +1,10 @@
 import macros
 import base/metaUtils
 import sycl
-setupSycl()
+#setupSycl()
 
+let dev = defaultDevice()
+let q = dev.queue
 
 proc alignatImpl(n:NimNode, byte:int): NimNode =
   result = n.copyNimNode
@@ -21,7 +23,7 @@ proc alignatImpl(n:NimNode, byte:int): NimNode =
     for c in n:
       result.add c.alignatImpl byte
 macro alignat*(byte:static[int], n:untyped): untyped =
-  if byte notin {1,2,4,8,16,32,64,128,256}:
+  if byte notin [1,2,4,8,16,32,64,128,256]:
     error("macro alignat: unsupported alignment: " & $byte, n)
   #echo "alignatImpl ", byte
   #echo n.treerepr
@@ -79,9 +81,10 @@ template dataAddr*(x: typed): pointer =
   #else: x
 
 template openmpDefs(body: untyped): untyped =
+  setupSycl()
   var item {.item1.}: Item1
-  template getThreadNum: untyped = item[]
-  template getNumThreads: untyped = item.getRange
+  template getThreadNum: untyped {.used.} = item[]
+  template getNumThreads: untyped {.used.} = item.getRange
   {.emit:["#define nimZeroMem(b,len) memset((b),0,(len))"].}
   #inlineProcs:
   body
@@ -107,7 +110,8 @@ proc prepareVars(n:NimNode):seq[NimNode] =
         nnkWhileStmt, nnkForStmt} + RoutineNodes:
       # New lexical scope
       newscope = true
-      ignoreStack.add newPar()
+      #ignoreStack.add newPar()
+      ignoreStack.add newNimNode(nnkTupleConstr)
     if n.kind == nnkForStmt:
       ignoreStack[^1].add n[0]
     for i in 0..<n.len:
@@ -155,7 +159,8 @@ proc prepareVars(n:NimNode):seq[NimNode] =
             let np = gensym(nsklet, "gpu_ptr_" & $n[i])
             ignoreStack[0].add nv
             ignoreStack[0].add np
-            openvars.add newpar(n[i], nv, np)
+            #openvars.add newpar(n[i], nv, np)
+            openvars.add newNimNode(nnkTupleConstr).add(n[i], nv, np)
             n[i] = newcall("gpuVarPtr",nv,np)
       else:
         discard
@@ -179,7 +184,7 @@ proc genCpuPrepare(n:seq[NimNode]):NimNode =
   result = newstmtlist()
   for c in n:
     result.add getast r(c[0],c[1],c[2])
-  echo result.repr
+  #echo result.repr
 proc genGpuPrepare(n:seq[NimNode]):NimNode =
   template r(x,v,p:untyped):untyped =
     mixin gpuPrepareOffload, rungpuPrepareOffload
@@ -206,9 +211,9 @@ proc declarePtrString(n:seq[NimNode]):NimNode =
     ps = infix(getast varname(c[0], $c[2]), "&", ps)
   result = getast res(ps)
 
-macro onGpu*(q: Queue, body: untyped): untyped =
+macro onGpu*(q: Queue, body: untyped): auto =
   # the architecture for cpugpuarray requires us replace body before it gets expanded, so we require untyped.
-  template target(cpuPrepare, gpuPrepare, cpuFinalize, devicePtrDeclare, body: untyped): untyped =
+  template target(q, cpuPrepare, gpuPrepare, cpuFinalize, devicePtrDeclare, body: untyped): untyped =
     mixin hasGpuPtr, requireGpuMem
     {.push checks: off.}
     {.push stacktrace: off.}
@@ -222,6 +227,7 @@ macro onGpu*(q: Queue, body: untyped): untyped =
           openmpDefs:
             #gpuPrepare
             body
+      q.wait
       cpuFinalize
     gpuProc()
   let
@@ -230,19 +236,28 @@ macro onGpu*(q: Queue, body: untyped): untyped =
     gpuPrepare = genGpuPrepare v
     cpuFinalize = genCpuFinalize v
     isDevicePtrs = declarePtrString v
-  result = getast(target(cpuPrepare, gpuPrepare, cpuFinalize, isDevicePtrs, body))
+  result = getast(target(q, cpuPrepare, gpuPrepare, cpuFinalize, isDevicePtrs, body))
   #echo result.repr
 
 # XXX fix the following
-template onGpu*(totalNumThreads, body: untyped): untyped = onGpu(body)
-template onGpu*(totalNumThreads, numThreadsPerTeam, body: untyped): untyped = onGpu(body)
+template onGpu*(body: untyped) = onGpu(q, body)
+#template onGpu*(totalNumThreads, body: untyped): untyped = onGpu(body)
+#template onGpu*(totalNumThreads, numThreadsPerTeam, body: untyped): untyped = onGpu(body)
 
-template offloadUseVar*(x:SomeNumber):bool = true
-template offloadUsePtr*(x:SomeNumber):bool = false
+#template offloadUseVar*(x:SomeNumber):bool = true
+#template offloadUsePtr*(x:SomeNumber):bool = false
 template rungpuPrepareOffload*(x:SomeNumber):bool = false
-template runcpuFinalizeOffload*(x:SomeNumber):bool = false
-template gpuVarPtr*(v:SomeNumber,p:untyped):untyped = v
+#template runcpuFinalizeOffload*(x:SomeNumber):bool = false
+#template gpuVarPtr*(v:SomeNumber,p:untyped):untyped = v
 template offloadVar*(x:SomeNumber,p:untyped):untyped = x
+
+template runcpuFinalizeOffload*(x:SomeNumber):bool = true
+template offloadUseVar*(x:SomeNumber):bool = false
+template offloadUsePtr*(x:SomeNumber):bool = true
+template gpuVarPtr*(v:untyped,p:ptr SomeNumber):untyped = p[]
+template offloadPtr*(x:SomeNumber):untyped = unsafeAddr x
+template cpuFinalizeOffload*(x:SomeNumber,v,p:untyped) =
+  x = p[]
 
 template toUArray(a:untyped):untyped = cast[ptr UncheckedArray[typeof(a[0])]](a[0].unsafeaddr)
 proc cleanAst(n:NimNode):NimNode =
@@ -256,10 +271,10 @@ proc identStr(n:NimNode):string =
   result = n.repr
   for i in 0..<result.len:
     if result[i] in {'.','[',']',':'}: result[i] = '_'
-proc isIndex(n,i:NimNode):bool =
-  result = n.eqident i
-  if n.kind == nnkHiddenStdConv:
-    result = n[1].eqident i
+#proc isIndex(n,i:NimNode):bool =
+#  result = n.eqident i
+#  if n.kind == nnkHiddenStdConv:
+#    result = n[1].eqident i
 macro simdForImpl(n:typed):untyped =
   proc getIndexedPtrs(n,i:NimNode):(NimNode,seq[NimNode]) =
     #echo "### getIndexedPtrs: ", i.repr
@@ -273,7 +288,8 @@ macro simdForImpl(n:typed):untyped =
               break
           if m < 0:
             let v = gensym(nskVar, n.cleanAst.identStr)
-            ptrs.add newPar(v, n)
+            #ptrs.add newPar(v, n)
+            ptrs.add newNimNode(nnkTupleConstr).add(v, n)
             return v
           else:
             return ptrs[m][0]

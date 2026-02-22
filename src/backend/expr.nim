@@ -97,7 +97,7 @@ macro substVars*(x: untyped, a: untyped): auto =
   var v = newSeq[NimNode](0)
   let e = getVars(v, x, a)
   result = e
-  #echo result.treerepr
+  echo result.treerepr
 
 when isMainModule:
   template test(x) =
