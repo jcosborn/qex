@@ -39,7 +39,7 @@ proc getVars*(v: var seq[NimNode], x,a: NimNode): NimNode =
       let i = vars.addIfNewSym(it)
       if i>=0:
         let ii = newLit(i)
-        return newCall(a,ii)
+        return newCall(a,it,ii)
     of nnkCallKinds: r0 = 1
     of nnkDotExpr: r1 = 0
     of {nnkVarSection,nnkLetSection}:
@@ -68,7 +68,7 @@ macro packVarsStmt*(x: untyped, f: untyped): auto =
   #echo x.treerepr
   var v = newSeq[NimNode](0)
   let a = ident("foo")
-  let e = getVars(v, x, a)
+  discard getVars(v, x, a)
   var p = newStmtList()
   for vs in v:
     p.add newCall(f,vs)
@@ -79,8 +79,8 @@ macro packVars*(x: untyped, f: untyped): auto =
   #echo x.treerepr
   var v = newSeq[NimNode](0)
   let a = ident("foo")
-  let e = getVars(v, x, a)
-  var p = newPar()
+  discard getVars(v, x, a)
+  var p = newNimNode(nnkTupleConstr)
   if v.len==0:
     p.add newNimNode(nnkExprColonExpr).add(ident("Field0"),newLit(1))
   elif v.len==1:
@@ -98,6 +98,90 @@ macro substVars*(x: untyped, a: untyped): auto =
   let e = getVars(v, x, a)
   result = e
   echo result.treerepr
+
+proc prepareVars*(n:NimNode, deref:proc): seq[NimNode] =
+  # get a list of vars and new symbols to replace them, using let binding for now XXX
+  #     <- [(id, varsym, letptrsym), ...]
+  # the symbols in n are changed
+  #echo "### prepareVars: ",n.treerepr
+  var ignoreStack = newseq[NimNode]()
+  var openvars = newseq[NimNode]()
+  proc go(n:NimNode) =
+    # ign is a stack for ignoring lexical bindings: [(outer,...), (inner,...), ...]
+    #echo "go get: ",n.repr
+    #block:
+    #  var ignstr = ""
+    #  for c in ignoreStack: ignstr &= ("\n" & c.repr)
+    #  echo "ign has: ",ignstr
+    var newscope = false
+    if n.kind in {nnkBlockStmt, nnkBlockExpr, nnkIfExpr, nnkElifExpr, nnkElseExpr,
+        nnkIfStmt, nnkElifBranch, nnkElse, nnkCaseStmt, nnkOfBranch,
+        nnkWhileStmt, nnkForStmt} + RoutineNodes:
+      # New lexical scope
+      newscope = true
+      #ignoreStack.add newPar()
+      ignoreStack.add newNimNode(nnkTupleConstr)
+    for i in 0..<n.len:
+      #echo "### ",n[i].lisprepr
+      case n[i].kind
+      of {nnkVarSection,nnkLetSection}:
+        for cc in n[i]:
+          for c in 0..cc.len-2:
+            ignoreStack[^1].add cc[c]
+      of nnkOpenSymChoice:
+        if n.kind in Callnodes: continue
+      of Callnodes:
+        if n[i][0].kind in {nnkSym, nnkIdent}:
+          var newid = true
+          for c in ignoreStack[0]:
+            if c == n[i][0]:
+              newid = false
+              break
+          if newid:
+            ignoreStack[0].add n[i][0]
+      of {nnkSym, nnkIdent}:
+        if n.kind == nnkDotExpr and i > 0: continue
+        var ignore = false
+        for cc in ignoreStack:
+          for c in cc:
+            if c.eqIdent n[i]:
+              ignore = true
+              break
+          if ignore: break
+        if not ignore:
+          var newvar = true
+          for c in openvars:
+            if c[0].eqIdent n[i]:
+              #n[i] = newcall("gpuVarPtr",c[1],c[2])
+              n[i] = deref(c[0],c[1],c[2])
+              newvar = false
+              break
+          #echo "EXPR: ",n.lisprepr
+          #echo "ID:   ",n[i].repr,"  newvar: ",newvar.repr
+          #var rs = ""
+          #for c in openvars:
+          #  rs &= "  " & c.repr
+          #echo "RES:  ",rs
+          if newvar:
+            let nv = gensym(nskvar, "gpu_" & $n[i])
+            #let np = gensym(nsklet, "gpu_ptr_" & $n[i])
+            ignoreStack[0].add nv
+            #ignoreStack[0].add np
+            #openvars.add newpar(n[i], nv, np)
+            let k = newLit openvars.len
+            openvars.add newNimNode(nnkTupleConstr).add(n[i], nv, k)
+            #n[i] = newcall("gpuVarPtr",nv,np)
+            #n[i] = newcall("getGpu",n[i],nv)
+            n[i] = deref(n[i],nv,k)
+        continue
+      else:
+        discard
+      n[i].go
+    if newscope: ignoreStack.setLen(ignoreStack.len-1)
+  #ignoreStack.add newPar(ident"gpuVarPtr")
+  ignoreStack.add newNimNode(nnkTupleConstr)
+  n.go
+  openvars
 
 when isMainModule:
   template test(x) =

@@ -1,6 +1,7 @@
 import macros
 import base/metaUtils
 import base/omp
+import backend/expr
 
 {.pragma: omp, header:"omp.h".}
 {.passC:"-fcf-protection=none -no-pie -fno-stack-protector" .}
@@ -73,12 +74,12 @@ template omp_target_memcpy_togpu*(dst: pointer, src: pointer; length: csize_t): 
 template omp_target_free*(device_ptr: pointer) =
   omp_target_free(device_ptr, omp_get_default_device())
 
-template gpuMalloc*(size:csize_t):pointer = omp_target_alloc(size)
+template gpuMalloc*(size:SomeInteger):pointer = omp_target_alloc(size)
 template gpuFree*(device_ptr:pointer) = omp_target_free(device_ptr)
-template gpuMemCpyToCPU*(dst: pointer, src: pointer; length: csize_t): cint =
-  omp_target_memcpy_tocpu(dst, src, length)
-template gpuMemCpyToGPU*(dst: pointer, src: pointer; length: csize_t): cint =
-  omp_target_memcpy_togpu(dst, src, length)
+proc gpuMemCpyToCPU*(dst: pointer, src: pointer; length: SomeInteger): cint {.discardable.} =
+  omp_target_memcpy_tocpu(dst, src, csize_t length)
+proc gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger): cint {.discardable.} =
+  omp_target_memcpy_togpu(dst, src, csize_t length)
 
 template toPointer*(x: typed): pointer =
   #dumpType: x
@@ -113,6 +114,7 @@ template openmpDefs(body: untyped): untyped =
       body
     {.emit:["#undef nimZeroMem"].}
 
+#[
 proc prepareVars(n:NimNode):seq[NimNode] =
   # get a list of vars and new symbols to replace them, using let binding for now XXX
   #     <- [(id, varsym, letptrsym), ...]
@@ -166,7 +168,8 @@ proc prepareVars(n:NimNode):seq[NimNode] =
           var newvar = true
           for c in openvars:
             if c[0].eqIdent n[i]:
-              n[i] = newcall("gpuVarPtr",c[1],c[2])
+              #n[i] = newcall("gpuVarPtr",c[1],c[2])
+              n[i] = newcall("getGpu",c[0],c[1])
               newvar = false
               break
           #echo "EXPR: ",n.lisprepr
@@ -182,7 +185,9 @@ proc prepareVars(n:NimNode):seq[NimNode] =
             ignoreStack[0].add np
             #openvars.add newpar(n[i], nv, np)
             openvars.add newNimNode(nnkTupleConstr).add(n[i], nv, np)
-            n[i] = newcall("gpuVarPtr",nv,np)
+            #n[i] = newcall("gpuVarPtr",nv,np)
+            n[i] = newcall("getGpu",n[i],nv)
+        continue
       else:
         discard
       n[i].go
@@ -190,8 +195,11 @@ proc prepareVars(n:NimNode):seq[NimNode] =
   ignoreStack.add newPar(ident"gpuVarPtr")
   n.go
   openvars
-type OffloadDummy*[T] = object
+]#
+
+#type OffloadDummy*[T] = object
 proc genCpuPrepare(n:seq[NimNode]):NimNode =
+  #[
   template r(x,v,p:untyped):untyped =
     mixin offloadUsePtr, offloadUseVar, offloadPtr, offloadVar
     when offloadUsePtr(x):
@@ -202,10 +210,16 @@ proc genCpuPrepare(n:seq[NimNode]):NimNode =
       var v = offloadVar(x,p)
     else:
       var v{.noinit.}:OffloadDummy[typeof(x)]
+  ]#
+  template r(x,v:untyped):untyped =
+    #mixin toGpu
+    var v = toGpu(x)
   result = newstmtlist()
   for c in n:
     #echo c.treerepr
-    result.add getast r(c[0],c[1],c[2])
+    #result.add getast r(c[0],c[1],c[2])
+    result.add getast r(c[0],c[1])
+#[
 proc genGpuPrepare(n:seq[NimNode]):NimNode =
   template r(x,v,p:untyped):untyped =
     mixin gpuPrepareOffload, rungpuPrepareOffload
@@ -213,13 +227,19 @@ proc genGpuPrepare(n:seq[NimNode]):NimNode =
   result = newstmtlist()
   for c in n:
     result.add getast r(c[0],c[1],c[2])
+]#
 proc genCpuFinalize(n:seq[NimNode]):NimNode =
+  #[
   template r(x,v,p:untyped):untyped =
     mixin cpuFinalizeOffload, runcpuFinalizeOffload
     when runcpuFinalizeOffload(x): cpuFinalizeOffload(x,v,p)
+  ]#
+  template r(x,v:untyped):untyped =
+    #mixin fromGpu
+    fromGpu(x,v)
   result = newstmtlist()
   for c in n:
-    result.add getast r(c[0],c[1],c[2])
+    result.add getast r(c[0],c[1])
 #proc declarePtrString(n:seq[NimNode]):NimNode =
 #  template res(ptrlist:untyped):untyped =
 #    const s = ptrlist
@@ -270,28 +290,25 @@ template useDevicePtr(x: auto) =
 #  result = newLit(" map(to:"&n&")")
 #macro mapto(x: typed): untyped =
 
-macro onGpu*(body: untyped): untyped =
-  # the architecture for cpugpuarray requires us replace body before it gets expanded, so we require untyped.
-  template target(cpuPrepare, gpuPrepare, cpuFinalize, devicePtrDeclare, body: untyped): untyped =
-    mixin hasGpuPtr, requireGpuMem
+macro onGpu*(body: untyped): auto =
+  proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
+  template target(cpuPrepare, cpuFinalize, devicePtrDeclare, body: untyped) =
+    mixin toGpu, getGpu, fromGpu
     {.push checks: off.}
     {.push stacktrace: off.}
     proc gpuProc {.gensym.} =
       cpuPrepare  # a let section declare and save device pointers
-      #const isDevicePtrList = devicePtrDeclare  # is_device_ptr(ptrList) in string
       ompBlock2("target teams ", devicePtrDeclare):
         openmpDefs:
-          gpuPrepare
           body
       cpuFinalize
     gpuProc()
   let
-    v = prepareVars(body)  # gather gpu pointers in symbols, body is changed accordingly
+    v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
-    gpuPrepare = genGpuPrepare v
     cpuFinalize = genCpuFinalize v
     isDevicePtrs = declarePtrTuple v
-  result = getast(target(cpuPrepare, gpuPrepare, cpuFinalize, isDevicePtrs, body))
+  result = getast(target(cpuPrepare, cpuFinalize, isDevicePtrs, body))
   echo result.repr
 
 # XXX fix the following
@@ -317,13 +334,18 @@ template onGpu*(nn: untyped, body: untyped): untyped = onGpu(nn, 64, body)
 template onGpu*(body: untyped): untyped = onGpu(512*64, 64, body)
 ]#
 
+#[
 #template offloadUseVar*(x:SomeNumber):bool = true
 #template offloadUsePtr*(x:SomeNumber):bool = false
 template rungpuPrepareOffload*(x:SomeNumber):bool = false
 #template runcpuFinalizeOffload*(x:SomeNumber):bool = false
 #template gpuVarPtr*(v:SomeNumber,p:untyped):untyped = v
 template offloadVar*(x:SomeNumber,p:untyped):untyped = x
+]#
 
+#[
+template offloadVar*(x:SomeNumber,p:untyped):untyped = x
+template rungpuPrepareOffload*(x:SomeNumber):bool = false
 template runcpuFinalizeOffload*(x:SomeNumber):bool = true
 template offloadUseVar*(x:SomeNumber):bool = false
 template offloadUsePtr*(x:SomeNumber):bool = true
@@ -331,6 +353,29 @@ template gpuVarPtr*(v:untyped,p:ptr SomeNumber):untyped = p[]
 template offloadPtr*(x:SomeNumber):untyped = unsafeAddr x
 template cpuFinalizeOffload*(x:SomeNumber,v,p:untyped) =
   x = p[]
+]#
+
+#[
+template offloadUsePtr*(x:SomeNumber):bool = compiles(x=x)
+template offloadPtr*(x:SomeNumber):untyped = unsafeAddr x
+template offloadUseVar*(x:SomeNumber):bool = not offloadUsePtr(x)
+template offloadVar*(x:SomeNumber,p:untyped):auto = x
+template rungpuPrepareOffload*(x:SomeNumber):bool = false
+template runcpuFinalizeOffload*(x:SomeNumber):bool = offloadUsePtr(x)
+template gpuVarPtr*(v:OffloadDummy,p:ptr SomeNumber):auto = p[]
+template gpuVarPtr*(v:SomeNumber,p:pointer):auto = v
+template cpuFinalizeOffload*(x:SomeNumber,v,p:untyped) =
+  x = p[]
+]#
+
+#[
+template toGpu*(x:SomeNumber):auto = x
+template toGpu*(x:var SomeNumber):auto = unsafeAddr x
+template getGpu*(x:SomeNumber, g:SomeNumber):auto = g
+template getGpu*(x:SomeNumber, g:ptr SomeNumber):auto = g[]
+template fromGpu*(x:SomeNumber, g:SomeNumber) = discard
+template fromGpu*(x:var SomeNumber, g:ptr SomeNumber) = (x = g[])
+]#
 
 template toUArray(a:untyped):untyped = cast[ptr UncheckedArray[typeof(a[0])]](a[0].unsafeaddr)
 proc cleanAst(n:NimNode):NimNode =

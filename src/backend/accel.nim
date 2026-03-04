@@ -1,7 +1,7 @@
-#const Backend {.strdefine.} = "OpenMP"
+const Backend {.strdefine.} = "OpenMP"
 #const Backend {.strdefine.} = "CUDA"
 #const Backend {.strdefine.} = "SYCL"
-const Backend {.strdefine.} = "CPU"
+#const Backend {.strdefine.} = "CPU"
 
 when Backend == "OpenMP":
   #const useGPU = true
@@ -20,6 +20,20 @@ else:
   #const useGPU = false
   import cpu
   export cpu
+
+proc printf*(frmt: cstring): cint {.
+  importc: "printf", header: "<stdio.h>", varargs, discardable.}
+
+proc gpuMalloc*[T](x: var ptr T) =
+  let n = sizeof(T)
+  x = cast[ptr T](gpuMalloc(n))
+
+template toGpu*(x:SomeNumber):auto = x
+template toGpu*(x:var SomeNumber):auto = unsafeAddr x
+template getGpu*(x:SomeNumber, g:SomeNumber):auto = g
+template getGpu*(x:SomeNumber, g:ptr SomeNumber):auto = g[]
+template fromGpu*(x:SomeNumber, g:SomeNumber) = discard
+template fromGpu*(x:var SomeNumber, g:ptr SomeNumber) = (x = g[])
 
 #when useGPU:
 #  import expr
@@ -41,6 +55,8 @@ when isMainModule:
     #threads:
     onGpu:
       x = 2.0
+      #if getThreadNum()==0:
+      #  printf("test\n")
     echo "x: ", x
 
   test1()

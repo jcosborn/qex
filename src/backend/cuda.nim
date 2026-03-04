@@ -47,7 +47,7 @@ proc cudaGetErrorStringX*(error: cudaError_t): ptr char
   {.importC:"cudaGetErrorString",header:"cuda_runtime.h".}
 proc cudaGetErrorString*(error: cudaError_t): cstring =
   var s {.codegendecl:"const $# $#".} = cudaGetErrorStringX(error)
-  result = s
+  result = cast[cstring](s)
 proc `$`*(error: cudaError_t): string =
   let s = cudaGetErrorString(error)
   result = $s
@@ -57,7 +57,7 @@ converter toBool*(e: cudaError_t): bool =
 proc cudaMalloc*(p:ptr pointer, size: csize_t): cudaError_t
   {.importC,header:"cuda_runtime.h".}
 template cudaMalloc*(p:pointer, size: csize_t): cudaError_t =
-  cudaMalloc((ptr pointer)(p.addr), size)
+  cudaMalloc(p.addr, size)
 proc cudaFree*(p: pointer): cudaError_t
   {.importC,header:"cuda_runtime.h".}
 proc cudaMallocManaged*(p: ptr pointer, size: csize_t): cudaError_t
@@ -71,9 +71,9 @@ template cudaMemcpy*(dst,src: typed, count: csize_t,
   let psrc = toPointer(src)
   cudaMemcpyX(pdst, psrc, count, kind)
 
-template gpuMalloc*(size: csize_t):pointer =
+template gpuMalloc*(size: SomeInteger):pointer =
   var p:pointer
-  let err = cudaMalloc(p, size)
+  let err = cudaMalloc(p, csize_t size)
   if err:
     echo err
     p = cast[pointer](0)
@@ -83,16 +83,16 @@ template gpuFree*(p:pointer) =
   if err:
     echo err
     quit cast[cint](err)
-template gpuMemCpyToGpu*(dst,src: pointer, count: csize_t):cint =
-  let err = cudaMemcpy(dst,src,count,cudaMemcpyHostToDevice)
+#proc gpuMemCpyToGpu*(dst,src: pointer, count: SomeInteger):cint {.discardable.} =
+proc gpuMemCpyToGpu*(dst,src: pointer, count: SomeInteger) =
+  let err = cudaMemcpy(dst,src,csize_t count,cudaMemcpyHostToDevice)
   if err:
     echo err
-  cast[cint](err)
-template gpuMemCpyToCpu*(dst,src: pointer, count: csize_t):cint =
-  let err = cudaMemcpy(dst,src,count,cudaMemcpyDeviceToHost)
+#proc gpuMemCpyToCpu*(dst,src: pointer, count: SomeInteger):cint {.discardable.} =
+proc gpuMemCpyToCpu*(dst,src: pointer, count: SomeInteger) =
+  let err = cudaMemcpy(dst,src,csize_t count,cudaMemcpyDeviceToHost)
   if err:
     echo err
-  cast[cint](err)
 
 proc cudaLaunchKernel(p:pointer, gd,bd: CudaDim3, args: ptr pointer):
   cudaError_t {.importC,header:"cuda_runtime.h".}
@@ -193,13 +193,15 @@ proc cudaproc(s:string, p:NimNode):NimNode =
   #echo result.treerepr
 macro cudaGlobal*(p: untyped): untyped = cudaproc("__global__",p)
 
+#[
 template onGpu*(nn,tpb: untyped, body: untyped): untyped =
   block:
-    var v = packVars(body, getGpuPtr)
+    var v = packVars(body, toGpu)
     type ByCopy[T] {.bycopy.} = object
       d: T
     proc kern(xx: ByCopy[type(v)]) {.cudaGlobal.} =
-      template deref(k: int): untyped = xx.d[k][]
+      #template deref(k: int): untyped = xx.d[k][]
+      template deref(x: auto, k: int): untyped = getGpu(x, xx.d[k])
       substVars(body, deref)
     let ni = nn.int32
     let threadsPerBlock = tpb.int32
@@ -207,11 +209,55 @@ template onGpu*(nn,tpb: untyped, body: untyped): untyped =
     #echo "launching kernel"
     cudaLaunch(kern, blocksPerGrid, threadsPerBlock, v)
     discard cudaDeviceSynchronize()
+]#
+
+proc genCpuPrepare(n:seq[NimNode]):NimNode =
+  result = newNimNode(nnkTupleConstr)
+  for c in n:
+    result.add newCall(ident"toGpu", c[0])
+
+proc genCpuFinalize(n:seq[NimNode], a: NimNode):NimNode =
+  template r(a,x,i:untyped):untyped =
+    fromGpu(x,a[i])
+  result = newstmtlist()
+  for c in n:
+    result.add getast r(a,c[0],c[2])
+
+
+macro onGpu*(nn0,tpb0: untyped, body: untyped): auto =
+  template target(nn, tpb, v, arg, cpuPrepare, cpuFinalize, body: untyped) =
+    mixin toGpu, getGpu, fromGpu
+    block:
+      var v = cpuPrepare  # kernel argument tuple
+      type ByCopy[T] {.bycopy.} = object
+        d: T
+      proc kern(arg: ByCopy[type(v)]) {.cudaGlobal.} =
+        {.push checks: off.}
+        {.push stacktrace: off.}
+        body
+      let ni = nn.int32
+      let threadsPerBlock = tpb.int32
+      let blocksPerGrid = (ni+threadsPerBlock-1) div threadsPerBlock
+      #echo "launching kernel"
+      cudaLaunch(kern, blocksPerGrid, threadsPerBlock, v)
+      discard cudaDeviceSynchronize()
+      cpuFinalize
+  let
+    varg = gensym(nskVar, "varg")
+    arg = gensym(nskParam, "arg")
+  proc deref(x,g,i:NimNode):auto =
+    newCall("getGpu",x,
+            newNimNode(nnkBracketExpr).add(
+              newNimNode(nnkDotExpr).add(arg,ident"d"), i))
+  let
+    v = prepareVars(body,deref)  # gather gpu pointers in symbols, body is changed accordingly
+    cpuPrepare = genCpuPrepare v
+    cpuFinalize = genCpuFinalize(v, varg)
+  result = getast(target(nn0, tpb0, varg, arg, cpuPrepare, cpuFinalize, body))
+  echo result.repr
+
 template onGpu*(nn: untyped, body: untyped): untyped = onGpu(nn, 64, body)
 template onGpu*(body: untyped): untyped = onGpu(512*64, 64, body)
-
-template getGpuPtr*(x: SomeNumber): untyped = unsafeAddr x
-
 
 when isMainModule:
   type FltArr = UncheckedArray[float32]

@@ -13,6 +13,10 @@ import base/threading
 #proc free[T](b: Buffer[T]) =
 #  free b.data
 
-template onGpu*(x:untyped) = threads: x
-template onGpu*(n,x:untyped) = threads: x
-template onGpu*(n,t,x:untyped) = threads: x
+template onGpu*(x:untyped) =
+  threads:
+    template getThreadNum():auto=threadNum
+    x
+template onGpu*(n,x:untyped) = onGpu(x)
+template onGpu*(n,t,x:untyped) = onGpu(x)
+
