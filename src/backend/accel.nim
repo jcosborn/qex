@@ -16,7 +16,9 @@ elif Backend == "SYCL":
   import syclbe
   export syclbe
 else:
-  {.warning: "Backend unknown, use CPU only.".}
+  when Backend != "CPU":
+    static: echo "Backend: ", Backend
+    {.warning: "Backend unknown, using CPU only.".}
   #const useGPU = false
   import cpu
   export cpu

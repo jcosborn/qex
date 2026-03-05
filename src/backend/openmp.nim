@@ -96,7 +96,7 @@ template dataAddr*(x: typed): pointer =
   #else: x
 
 #template openmpDefs(body: untyped): untyped {.dirty.} =
-template openmpDefs(body: untyped): untyped =
+template openmpDefs(body: untyped) =
   # XXX check if GC matters
   #bind omp_get_num_teams, omp_get_team_num, omp_get_num_threads, omp_get_thread_num
   #bind ompBlock, inlineProcs

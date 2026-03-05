@@ -15,7 +15,8 @@ import base/threading
 
 template onGpu*(x:untyped) =
   threads:
-    template getThreadNum():auto=threadNum
+    template getThreadNum():auto = threadNum
+    template getNumThreads():auto = numThreads
     x
 template onGpu*(n,x:untyped) = onGpu(x)
 template onGpu*(n,t,x:untyped) = onGpu(x)

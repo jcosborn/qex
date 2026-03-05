@@ -118,6 +118,12 @@ proc newAccessor*[T;N:static[int];M;A](
   result.new(freeAccessor[T,N,M,A])
   result.acc = newSyclAccessor[T,N,M,A](b.buf)
 
+proc mallocDevice*(num_bytes: int, q: Queue):
+    pointer {.importcpp:"sycl::malloc_device(@)".}
+
+proc freeDevice*(p: pointer, q: Queue)
+    {.importcpp:"sycl::free(@)".}
+
 
 proc mallocShared*(num_bytes: int, dev: Device, ctxt: Context):
                  pointer {.importcpp:"sycl::malloc_shared".}
@@ -127,6 +133,10 @@ proc mallocShared*(num_bytes: int, q: Queue):
                  pointer {.importcpp:"sycl::malloc_shared(@)".}
 proc mallocShared*(T: typedesc, count: int, q: Queue): ptr UncheckedArray[T] {.
   importcpp:"sycl::malloc_shared<'1>(##,#)".}
+
+proc memcpy*(q: Queue, dest,src: pointer, count: SomeInteger)
+  {.importcpp:"#.memcpy(@)".}
+
 
 proc syclPlus*[T](t: typedesc[T]): SyclPlus[T] {.
   importcpp:"'0()", syclh, constructor.}
