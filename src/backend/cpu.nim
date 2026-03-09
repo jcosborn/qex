@@ -2,24 +2,7 @@ import base/threading
 import backend/expr
 import macros
 
-#type
-#  Buffer*[T] = object
-#    data: ptr UncheckedArray[T]
-#    n: int
-
-#proc init[T](b: Buffer[T], n: int) =
-#  let p = allocShared(n*sizeof(T))
-#  b.data = cast[type b.data](p)
-#  b.n = n
-
-#proc free[T](b: Buffer[T]) =
-#  free b.data
-
-#template onGpu*(x:untyped) =
-#  threads:
-#    template getThreadNum():auto = threadNum
-#    template getNumThreads():auto = numThreads
-#    x
+const dumpKernels {.intdefine.} = 0
 
 template gpuMalloc*(size:SomeInteger):pointer = alloc(size)
 template gpuFree*(device_ptr:pointer) = dealloc(device_ptr)
@@ -28,9 +11,8 @@ proc gpuMemCpyToCPU*(dst: pointer, src: pointer; length: SomeInteger) =
 proc gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger) =
   copymem(dst, src, length)
 
-template getNumThreads*:auto = numThreads
-template getThreadNum*:auto = threadNum
-
+template gpuNumThreads*:auto = numThreads
+template gpuThreadNum*:auto = threadNum
 
 proc genCpuPrepare(n:seq[NimNode]):NimNode =
   mixin toGpu
@@ -47,6 +29,11 @@ proc genCpuFinalize(n:seq[NimNode]):NimNode =
   for c in n:
     result.add getast r(c[0],c[1])
 
+macro echoTyped(body: auto): auto =
+  echo body.repr
+  #echo body.treerepr
+  result = body
+
 macro onGpu*(body: untyped): auto =
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   template target(cpuPrepare, cpuFinalize, body: untyped) =
@@ -62,8 +49,10 @@ macro onGpu*(body: untyped): auto =
     cpuPrepare = genCpuPrepare v
     cpuFinalize = genCpuFinalize v
   result = getast(target(cpuPrepare, cpuFinalize, body))
-  echo result.repr
+  if dumpKernels == 1:
+    echo result.repr
+  elif dumpKernels > 1:
+    result = newCall(bindsym"echoTyped", result)
 
-template onGpu*(n,x:untyped) = onGpu(x)
-template onGpu*(n,t,x:untyped) = onGpu(x)
-
+#template onGpu*(n,x:untyped) = onGpu(x)
+#template onGpu*(n,t,x:untyped) = onGpu(x)

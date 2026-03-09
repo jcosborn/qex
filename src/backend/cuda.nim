@@ -12,8 +12,6 @@ macro procInst*(p: typed): auto =
   #echo "begin procInst:"
   #echo p.treerepr
   result = p[0]
-macro makeCall*(p: proc, x: tuple): NimNode =
-  result = newCall(p).addChildrenFrom(x)
 
 type
   CudaDim3* {.importc:"dim3",header:"cuda_runtime.h".} = object
@@ -125,9 +123,9 @@ var gridDim*{.importC,header:"cuda_runtime.h".}: CudaDim3
 var blockDim*{.importC,header:"cuda_runtime.h".}: CudaDim3
 var blockIdx*{.importC,header:"cuda_runtime.h".}: CudaDim3
 var threadIdx*{.importC,header:"cuda_runtime.h".}: CudaDim3
-template getThreadNum*: untyped {.used.} =
+template gpuThreadNum*: auto =
   blockDim.x * blockIdx.x + threadIdx.x
-template getNumThreads*: untyped {.used.} =
+template gpuNumThreads*: auto =
   gridDim.x * blockDim.x
 
 template cudaDefs(body: untyped): untyped {.dirty.} =
@@ -217,24 +215,6 @@ proc cudaproc(s:string, p:NimNode):NimNode =
   #echo result.treerepr
 macro cudaGlobal*(p: untyped): untyped = cudaproc("__global__",p)
 
-#[
-template onGpu*(nn,tpb: untyped, body: untyped): untyped =
-  block:
-    var v = packVars(body, toGpu)
-    type ByCopy[T] {.bycopy.} = object
-      d: T
-    proc kern(xx: ByCopy[type(v)]) {.cudaGlobal.} =
-      #template deref(k: int): untyped = xx.d[k][]
-      template deref(x: auto, k: int): untyped = getGpu(x, xx.d[k])
-      substVars(body, deref)
-    let ni = nn.int32
-    let threadsPerBlock = tpb.int32
-    let blocksPerGrid = (ni+threadsPerBlock-1) div threadsPerBlock
-    #echo "launching kernel"
-    cudaLaunch(kern, blocksPerGrid, threadsPerBlock, v)
-    discard cudaDeviceSynchronize()
-]#
-
 proc genCpuPrepare(n:seq[NimNode]):NimNode =
   result = newNimNode(nnkTupleConstr)
   for c in n:
@@ -246,7 +226,6 @@ proc genCpuFinalize(n:seq[NimNode], a: NimNode):NimNode =
   result = newstmtlist()
   for c in n:
     result.add getast r(a,c[0],c[2])
-
 
 macro onGpu*(nn0,tpb0: untyped, body: untyped): auto =
   template target(nn, tpb, v, arg, cpuPrepare, cpuFinalize, body: untyped) =

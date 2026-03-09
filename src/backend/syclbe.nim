@@ -15,11 +15,11 @@ template gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger) =
   memcpy(q, dst, src, length)
   q.wait
 
-template getThreadNum*: auto =
+template gpuThreadNum*: auto =
   let item = getNdItem1()
   item[]
 
-template getNumThreads*: auto =
+template gpuNumThreads*: auto =
   let item = getNdItem1()
   item.getRange
 

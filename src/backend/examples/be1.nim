@@ -8,3 +8,4 @@ block:
   onGpu:
     x = y * z
   echo "x: ", x
+  doAssert x == 6.0

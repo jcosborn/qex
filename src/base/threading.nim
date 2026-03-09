@@ -67,7 +67,8 @@ template threadBarrierO* = ompBarrier
 
 macro emitStackTraceX(x: typed): untyped =
   template est(x) =
-    {.emit: "// instantiationInfo: " & x.}
+    #{.emit: "// instantiationInfo: " & x.}
+    {.emit: ["// instantiationInfo: ", $x].}
   let ii = x.repr.replace("\n","")
   result = getAst(est(ii))
 

@@ -95,12 +95,12 @@ template dataAddr*(x: typed): pointer =
   else: pointer(unsafeAddr(x))
   #else: x
 
-template getThreadNum*: untyped {.used.} =
+template gpuThreadNum*: untyped =
   let teamNum = omp_get_team_num()
   let numThreads = omp_get_num_threads()
   let threadNum = omp_get_thread_num()
   teamNum.int * numThreads.int + threadNum.int
-template getNumThreads*: untyped {.used.} =
+template gpuNumThreads*: untyped =
   let numTeams = omp_get_num_teams()
   let numThreads = omp_get_num_threads()
   numTeams.int * numThreads.int
