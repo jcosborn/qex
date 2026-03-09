@@ -1,5 +1,5 @@
 import macros
-import base/metaUtils
+#import base/metaUtils
 import backend/expr
 import sycl
 
@@ -15,11 +15,19 @@ template gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger) =
   memcpy(q, dst, src, length)
   q.wait
 
+template getThreadNum*: auto =
+  let item = getNdItem1()
+  item[]
+
+template getNumThreads*: auto =
+  let item = getNdItem1()
+  item.getRange
+
 template syclDefs(body: untyped) =
   setupSycl()
-  var item {.item1.}: Item1
-  template getThreadNum: auto {.used.} = item[]
-  template getNumThreads: auto {.used.} = item.getRange
+  #var item {.item1.}: Item1
+  #template getThreadNum: auto {.used.} = item[]
+  #template getNumThreads: auto {.used.} = item.getRange
   {.emit:["#define nimZeroMem(b,len) memset((b),0,(len))"].}
   #inlineProcs:
   body

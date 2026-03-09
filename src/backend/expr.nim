@@ -139,6 +139,13 @@ proc prepareVars*(n:NimNode, deref:proc): seq[NimNode] =
               break
           if newid:
             ignoreStack[0].add n[i][0]
+      of nnkForStmt:
+        #echo n[i].treerepr
+        ignoreStack[^1].add n[i][0]
+      of nnkWhenStmt:
+        #echo n[i].treerepr
+        if n[i][0][0].kind in {nnkIdent,nnkSym}:
+          ignoreStack[^1].add n[i][0][0]
       of {nnkSym, nnkIdent}:
         if n.kind == nnkDotExpr and i > 0: continue
         var ignore = false

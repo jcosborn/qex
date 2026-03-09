@@ -2,6 +2,9 @@ import macros
 import base/metaUtils
 import expr
 
+#{.passC:"--with-arch=sm_86".}
+#{.passL:"--with-arch=sm_86".}
+
 proc addChildrenFrom*(dst,src: NimNode): NimNode =
   for c in src: dst.add(c)
   result = dst
@@ -106,26 +109,47 @@ proc cudaDeviceSynchronize*(): cudaError_t
 #proc fprintf*(stream:ptr FILE,fmt:cstring):cint {.importc,varargs,header:"<stdio.h>".}
 #proc malloc*(size: csize_t):pointer {.importc,header:"<stdlib.h>".}
 
+#template getGridDim*: untyped {.used.} =
+#  var gridDim{.global,importC,noDecl.}: CudaDim3
+#  gridDim
+#template getBlockIdx*: untyped {.used.} =
+#  var blockIdx{.global,importC,noDecl.}: CudaDim3
+#  blockIdx
+#template getBlockDim*: untyped {.used.} =
+#  var blockDim{.global,importC,noDecl.}: CudaDim3
+#  blockDim
+#template getThreadIdx*: untyped {.used.} =
+#  var threadIdx{.global,importC,noDecl.}: CudaDim3
+#  threadIdx
+var gridDim*{.importC,header:"cuda_runtime.h".}: CudaDim3
+var blockDim*{.importC,header:"cuda_runtime.h".}: CudaDim3
+var blockIdx*{.importC,header:"cuda_runtime.h".}: CudaDim3
+var threadIdx*{.importC,header:"cuda_runtime.h".}: CudaDim3
+template getThreadNum*: untyped {.used.} =
+  blockDim.x * blockIdx.x + threadIdx.x
+template getNumThreads*: untyped {.used.} =
+  gridDim.x * blockDim.x
+
 template cudaDefs(body: untyped): untyped {.dirty.} =
-  var gridDim{.global,importC,noDecl.}: CudaDim3
-  var blockIdx{.global,importC,noDecl.}: CudaDim3
-  var blockDim{.global,importC,noDecl.}: CudaDim3
-  var threadIdx{.global,importC,noDecl.}: CudaDim3
-  template getGridDim: untyped {.used.} = gridDim
-  template getBlockIdx: untyped {.used.} = blockIdx
-  template getBlockDim: untyped {.used.} = blockDim
-  template getThreadIdx: untyped {.used.} = threadIdx
-  template getThreadNum: untyped {.used.} = blockDim.x * blockIdx.x + threadIdx.x
-  template getNumThreads: untyped {.used.} = gridDim.x * blockDim.x
+  #var gridDim{.global,importC,noDecl.}: CudaDim3
+  #var blockIdx{.global,importC,noDecl.}: CudaDim3
+  #var blockDim{.global,importC,noDecl.}: CudaDim3
+  #var threadIdx{.global,importC,noDecl.}: CudaDim3
+  #template getGridDim: untyped {.used.} = gridDim
+  #template getBlockIdx: untyped {.used.} = blockIdx
+  #template getBlockDim: untyped {.used.} = blockDim
+  #template getThreadIdx: untyped {.used.} = threadIdx
+  #template getThreadNum: untyped {.used.} = blockDim.x * blockIdx.x + threadIdx.x
+  #template getNumThreads: untyped {.used.} = gridDim.x * blockDim.x
   bind inlineProcs
-  {.emit:"#define nimZeroMem(b,len) memset((b),0,(len))".}
+  #{.emit:"#define nimZeroMem(b,len) memset((b),0,(len))".}
   inlineProcs:
     body
-  {.emit:"#undef nimZeroMem".}
+  #{.emit:"#undef nimZeroMem".}
 
-template cudaLaunch*(p: proc; blocksPerGrid,threadsPerBlock: SomeInteger;
+template cudaLaunch*(p: proc {.cdecl.}; blocksPerGrid,threadsPerBlock: SomeInteger;
                      arg: varargs[pointer,dataAddr]) =
-  var pp: proc = p
+  var pp = pointer p
   var gridDim, blockDim: CudaDim3
   gridDim.x = blocksPerGrid
   gridDim.y = 1
@@ -231,7 +255,7 @@ macro onGpu*(nn0,tpb0: untyped, body: untyped): auto =
       var v = cpuPrepare  # kernel argument tuple
       type ByCopy[T] {.bycopy.} = object
         d: T
-      proc kern(arg: ByCopy[type(v)]) {.cudaGlobal.} =
+      proc kern(arg: ByCopy[type(v)]) {.cdecl,cudaGlobal.} =
         {.push checks: off.}
         {.push stacktrace: off.}
         body

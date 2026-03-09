@@ -25,6 +25,7 @@ type
   Id1* {.importcpp:"sycl::id<1>", syclh.} = object
   Item1* {.importcpp:"sycl::item<1>", syclh.} = object
   Nd1* {.importcpp:"sycl::nd_item<1>", syclh.} = object
+  WorkGroup1* {.importcpp:"sycl::work_group<1>", syclh.} = object
   SyclPlus*[T] {.importcpp:"std::plus", syclh.} = object
   #SyclReduction*[T,R] {.importcpp:"sycl::intel::reduction", syclh.} = object
   #SyclRed*[N:static[int]] = object
@@ -75,6 +76,9 @@ proc preferredVectorWidthFloat*(x: Device): uint32 {.
 
 proc wait*(q: Queue) {.importcpp:"#.wait()".}
 proc device*(q: Queue): Device {.importcpp:"#.get_device()".}
+
+proc getNdItem1*(): Nd1 {.importcpp:"sycl::ext::oneapi::this_work_item::get_nd_item<1>()".}
+proc getWorkGroup1*(): WorkGroup1 {.importcpp:"sycl::ext::oneapi::this_work_item::get_work_group<1>()".}
 
 #proc newSyclBuffer*[T](): SyclBuffer[T,0] {.noinit,
 #  importcpp:"'0()", constructor, syclh.}
@@ -196,7 +200,9 @@ template setupSycl* =
 
 proc `[]`*(x: Id1): cint {.importcpp:"#[0]".}
 proc `[]`*(x: Item1): cint {.importcpp:"#[0]".}
+proc `[]`*(x: Nd1): cint {.importcpp:"#.get_global_id(0)".}
 proc getRange*(x: Item1): cint {.importcpp:"#.get_range(0)".}
+proc getRange*(x: Nd1): cint {.importcpp:"#.get_global_range(0)".}
 
 template parallelFor*(n: int, body: typed) =
   {.emit:["cgh.parallel_for<class syclkern>(sycl::range<1>{",n.uint,"},[=](sycl::item<1> it)"].}

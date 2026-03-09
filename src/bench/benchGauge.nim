@@ -41,9 +41,11 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
   block:
     eqn
   resetTimers()
-  let br = benchSingle:
-    eqn
-  let (nrep,dt) = (br.reps,br.secs)
+  var b = newBench()
+  b.benchSingle:
+    for rep in 1..b.nrep:
+      eqn
+  let (nrep,dt) = (b.br.reps,b.br.secs)
   let dtn = dt / nrep.float
   let mf = (nrep.float*flops)/(1e6*dt)
   let mb = (nrep.float*bytes)/(1e6*dt)
@@ -96,7 +98,8 @@ proc test(lat: auto) =
     #let mem = nd*2*nc*nc*sizeof(numberType(g[0][0]))
     let mem = nd*sizeof(g[0][0]) div g[0][0][0,0].re.numNumbers
     bench(flop, mem):
-      var pl = plaq(g)
+      #var pl = plaq(g)
+      discard plaq(g)
     bench(flop, mem):
       var pl2 = plaq2(g)
     bench(flop, mem):

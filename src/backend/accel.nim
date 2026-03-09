@@ -4,22 +4,23 @@ const Backend {.strdefine.} = "OpenMP"
 #const Backend {.strdefine.} = "CPU"
 
 when Backend == "OpenMP":
-  #const useGPU = true
+  const useGPU* = true
   import openmp
   export openmp
 elif Backend == "CUDA":
-  #const useGPU = true
+  const useGPU* = true
   import cuda
   export cuda
 elif Backend == "SYCL":
-  #const useGPU = true
+  const useGPU* = true
+  #const useGPU* = false
   import syclbe
   export syclbe
 else:
   when Backend != "CPU":
     static: echo "Backend: ", Backend
     {.warning: "Backend unknown, using CPU only.".}
-  #const useGPU = false
+  const useGPU* = false
   import cpu
   export cpu
 
@@ -36,6 +37,21 @@ template getGpu*(x:SomeNumber, g:SomeNumber):auto = g
 template getGpu*(x:SomeNumber, g:ptr SomeNumber):auto = g[]
 template fromGpu*(x:SomeNumber, g:SomeNumber) = discard
 template fromGpu*(x:var SomeNumber, g:ptr SomeNumber) = (x = g[])
+
+iterator gpuRange*(n: int): int =
+  when useGPU:
+    let s = getNumThreads()
+    var i = getThreadNum()
+    while i < n:
+      yield i
+      i += s
+  else:
+    let s = getNumThreads()
+    let id = getThreadNum()
+    let i0 = (n*id) div s
+    let i1 = (n*(id+1)) div s
+    for i in i0 .. i1:
+      yield i
 
 #when useGPU:
 #  import expr
