@@ -201,7 +201,6 @@ if fileExists(gaugefile):
   g.reunit
   toc("reunit")
 else:
-  #g.random r
   g.unit
 
 g.echoPlaq

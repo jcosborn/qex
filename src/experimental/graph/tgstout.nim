@@ -66,15 +66,12 @@ let
   s = gc.gaugeAction gs
   ddt = s.grad gdt
 
-# echo ddt.treeRepr
-
 gs.eval.getgauge.echoPlaq
 let sgg = s.eval.getfloat
 echo "graph S: ",sgg
 
 let gddt = ddt.eval.getfloat
 echo "graph dS/dt: ",gddt
-# echo ddt.treeRepr
 
 proc gact(t: float): float =
   gdt.update t

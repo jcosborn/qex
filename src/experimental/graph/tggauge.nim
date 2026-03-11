@@ -28,9 +28,8 @@ template `:<`(a:Gvalue, b:float) =
     checkpoint("  " & sb & ": " & $b)
     fail()
 
-# basic test: y <- f(x), or z = y B† = f(x) B†, with x = x + t A
-# d/dt z = d/dt f(x+tA) B†
-# d/dt z = (d/dt y) (d/dy z)† = (d/dt x) (d/dx z)† = (d/dx z) A†
+# Directional-derivative check:
+# z(t) = f(x + t A) B†, so d/dt z should match redot(dz/dx, A).
 
 proc ndiff(zt: Gvalue, t: Gscalar): (float, float) =
   proc z(v:float):float =

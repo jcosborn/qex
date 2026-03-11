@@ -25,16 +25,11 @@ template `:~`(a:Gvalue, b:int) =
   checkeq(instantiationInfo(), astToStr a, a.eval.getint, astToStr b, b)
 
 suite "scalar basic":
-  # run once before
   setup:
-    # before each test
     let a = 0.5 * (sqrt(5.0) - 1.0)
     let b = sqrt(2.0) - 1.0
     let x = toGvalue(a)
     let y = toGvalue(b)
-  #teardown:
-    # after each test
-  # run once after
 
   test "assign":
     x :~ a
@@ -314,18 +309,144 @@ suite "bool and cond":
     dx :~ 2.0*c
     dy :~ 0.0
 
+  test "cond gradients stay live across selector flips":
+    let xLive = toGvalue 2.0
+    let yLive = toGvalue 3.0
+    let kLive = toGvalue 0
+    let zLive = cond(kLive, xLive, yLive)
+    let dxLive = zLive.grad xLive
+    let dyLive = zLive.grad yLive
+
+    zLive :~ 3.0
+    dxLive :~ 0.0
+    dyLive :~ 1.0
+
+    kLive.update 1
+    zLive :~ 2.0
+    dxLive :~ 1.0
+    dyLive :~ 0.0
+
   test "cond eval shortcut":
     let t = toGvalue 2.0
     let f = toGvalue 0.0
     let t2 = t*t
     let t3 = t*t*t
-    check t2.getfloat == 0.0  # should be zero before eval
-    check t3.getfloat == 0.0  # ditto
+    check t2.getfloat == 0.0
+    check t3.getfloat == 0.0
     var tt = cond(t, t2, t3)
     tt :~ 4.0
     check t2.getfloat == 4.0
-    check t3.getfloat == 0.0  # should remain zero after eval
+    check t3.getfloat == 0.0
     tt = cond(f, t3, t2)
     tt :~ 4.0
     check t2.getfloat == 4.0
-    check t3.getfloat == 0.0  # should remain zero after eval
+    check t3.getfloat == 0.0
+
+  test "cond grad build does not eval value or derivative graphs":
+    let x2 = toGvalue 2.0
+    let cnd = equal(x2 - 1.0, 0.0)
+    let t2 = exp(x2)
+    let f2 = x2 * x2 * x2
+    let z = cond(cnd, t2, f2)
+
+    let condRuns0 = cnd.gfunc.runCount
+    let subRuns0 = cnd.inputs[0].gfunc.runCount
+    let expRuns0 = t2.gfunc.runCount
+    let mulRuns0 = f2.gfunc.runCount
+
+    let dzdx = z.grad x2
+    discard dzdx.grad x2
+
+    check cnd.gfunc.runCount == condRuns0
+    check cnd.inputs[0].gfunc.runCount == subRuns0
+    check t2.gfunc.runCount == expRuns0
+    check f2.gfunc.runCount == mulRuns0
+
+  test "cond eval short-circuits value and gradient graphs":
+    block:
+      let x2 = toGvalue 2.0
+      let cnd = equal(x2 - 1.0, 0.0)
+      let t2 = exp(x2)
+      let f2 = x2 * x2 * x2
+      let z = cond(cnd, t2, f2)
+      let condRuns0 = cnd.gfunc.runCount
+      let subRuns0 = cnd.inputs[0].gfunc.runCount
+      let expRuns0 = t2.gfunc.runCount
+      let mulRuns0 = f2.gfunc.runCount
+
+      z :~ 8.0
+
+      check cnd.gfunc.runCount > condRuns0
+      check cnd.inputs[0].gfunc.runCount > subRuns0
+      check t2.gfunc.runCount == expRuns0
+      check f2.gfunc.runCount > mulRuns0
+
+    block:
+      let x2 = toGvalue 2.0
+      let cnd = equal(x2 - 1.0, 0.0)
+      let t2 = exp(x2)
+      let f2 = x2 * x2 * x2
+      let z = cond(cnd, t2, f2)
+      let dzdx = z.grad x2
+      let condRuns0 = cnd.gfunc.runCount
+      let subRuns0 = cnd.inputs[0].gfunc.runCount
+      let expRuns0 = t2.gfunc.runCount
+      let mulRuns0 = f2.gfunc.runCount
+
+      dzdx :~ 12.0
+
+      check cnd.gfunc.runCount > condRuns0
+      check cnd.inputs[0].gfunc.runCount > subRuns0
+      check t2.gfunc.runCount == expRuns0
+      check f2.gfunc.runCount > mulRuns0
+
+    block:
+      let x2 = toGvalue 1.0
+      let cnd = equal(x2 - 1.0, 0.0)
+      let t2 = exp(x2)
+      let f2 = x2 * x2 * x2
+      let z = cond(cnd, t2, f2)
+      let condRuns0 = cnd.gfunc.runCount
+      let subRuns0 = cnd.inputs[0].gfunc.runCount
+      let expRuns0 = t2.gfunc.runCount
+      let mulRuns0 = f2.gfunc.runCount
+
+      z :~ exp(1.0)
+
+      check cnd.gfunc.runCount > condRuns0
+      check cnd.inputs[0].gfunc.runCount > subRuns0
+      check t2.gfunc.runCount > expRuns0
+      check f2.gfunc.runCount == mulRuns0
+
+    block:
+      let x2 = toGvalue 1.0
+      let cnd = equal(x2 - 1.0, 0.0)
+      let t2 = exp(x2)
+      let f2 = x2 * x2 * x2
+      let z = cond(cnd, t2, f2)
+      let dzdx = z.grad x2
+      let condRuns0 = cnd.gfunc.runCount
+      let subRuns0 = cnd.inputs[0].gfunc.runCount
+      let expRuns0 = t2.gfunc.runCount
+      let mulRuns0 = f2.gfunc.runCount
+
+      dzdx :~ exp(1.0)
+
+      check cnd.gfunc.runCount > condRuns0
+      check cnd.inputs[0].gfunc.runCount > subRuns0
+      check t2.gfunc.runCount > expRuns0
+      check f2.gfunc.runCount == mulRuns0
+
+  test "higher-order grad through cond":
+    let x3 = toGvalue 2.0
+    let c3 = equal(x3 - 1.0, 0.0)
+    let z3 = cond(c3, x3 * x3, x3 * x3 * x3)
+    let dzdx3 = z3.grad x3
+    let d2zdx23 = dzdx3.grad x3
+
+    dzdx3 :~ 12.0
+    d2zdx23 :~ 12.0
+
+    x3.update 1.0
+    dzdx3 :~ 2.0
+    d2zdx23 :~ 2.0

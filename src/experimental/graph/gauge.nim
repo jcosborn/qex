@@ -1,7 +1,7 @@
 #[
 
 - Allocate the field when constructing the graph.
-- Call updated after changing the field in the graph after construction.
+- Call `updated` after mutating a field after graph construction.
 
 ]#
 
@@ -11,7 +11,7 @@ import layout, ../../gauge, physics/qcdTypes
 type Gauge = seq[DLatticeColorMatrixV]
 
 type Ggauge* {.final.} = ref object of Gvalue
-  isZero: bool = false  ## specialized for zero fields, unrelated to actual gval
+  isZero: bool = false  ## specialized zero marker, unrelated to the stored field value
   gval: Gauge
 
 proc getgauge*(x: Gvalue): Gauge = Ggauge(x).gval
@@ -26,7 +26,7 @@ proc update*(x: Gvalue, g: Gauge, isZero = false) =
   x.updated
 
 proc toGvalue*(x: Gauge, isZero = false): Ggauge =
-  # proc instead of converter to avoid converting seq
+  # Use a proc instead of a converter so seq values are not converted implicitly.
   result = Ggauge(isZero: isZero, gval: x)
   result.updated
 
@@ -66,9 +66,7 @@ method axexpmuly*(a: Gvalue, x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseError
 
 method redot*(x: Gscalar, y: Gscalar): Gvalue = x*y
 
-#
-# basic ops
-#
+# Section: Basic Ops
 
 proc retrgb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   let g = z.inputs[0].getgauge.newOneOf

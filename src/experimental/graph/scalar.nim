@@ -3,9 +3,9 @@ from math import exp
 
 type
   Gscalar* {.final.} = ref object of Gvalue
-    ## Wrap a float as the graph value
-    ## `getfloat=` changes the float value, useful during the graph construction
-    ## `update` calls `getfloat=` and use `updated` to signal re-evaluation of the graph after graph construction
+    ## Scalar float graph value.
+    ## `getfloat=` mutates the stored value directly.
+    ## `update` mutates the value and marks dependent graphs stale.
     sval: float
   Gint* {.final.} = ref object of Gvalue
     ival: int
@@ -143,9 +143,7 @@ proc divsf(v: Gvalue) =
   z.sval = x.sval / y.sval
 
 proc divsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  # s = f(g(x))
-  # ds = df/dg dg/dx dx
-  # dz = dx/y - x/y^2 dy
+  # d(x / y) = dx / y - x * dy / y^2
   case i
   of 0:
     if zb == nil:
@@ -316,7 +314,7 @@ when isMainModule:
   doAssert almostEqual(z.getfloat, f(a,c))
   doAssert almostEqual(dzdy.getfloat, dfdb(a,c))
 
-  # may need to change the following after we implement optimization passes
+  # These counts assume the current graph shape and may change if common graph rewrites are added.
   doAssert gsneg.runCount == 4
   doAssert gsadd.runCount == 4
   doAssert gsmul.runCount == 6
