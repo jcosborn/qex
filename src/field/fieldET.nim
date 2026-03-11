@@ -20,8 +20,8 @@ type
     l*:Layout[V]
     elemSize*:int
   Field*[V:static[int],T] = ref FieldObj[V,T]
-  FieldArray*[V:static[int],T] = object  ## share a single alignedMem
-    shape*:seq[int]
+  FieldArray*[N:static[int],V:static[int],T] = object  ## share a single alignedMem
+    shape*:array[N,int]
     arr:seq[Field[V,T]]
   Subsetted*[F,S] = object
     field*:F
@@ -181,8 +181,8 @@ proc newFarrElem[V:static[int],T](f:var Field[V,T]; l:Layout[V]; s:alignedMem[T]
   f.s.data = cast[typeof(s.data)](cast[int](s.data) + offset*l.nSitesOuter*s.stride)
   f.elemSize = sizeOf(T)
 
-proc newFieldArray*[V:static[int],T](l:Layout[V]; t:typedesc[Field[V,T]]; n: int):FieldArray[V,T] {.noinit.} =
-  result.shape = @[n]
+proc newFieldArray*[V:static[int],T](l:Layout[V]; t:typedesc[Field[V,T]]; n: int):FieldArray[1,V,T] {.noinit.} =
+  result.shape[0] = n
   result.arr = newseq[t](n)
   var s:typeof(result.arr[0].s)
   s.newU(l.nSitesOuter*n)
@@ -193,8 +193,9 @@ template newFieldArray2*[V:static[int],T](l:Layout[V]; ty:typedesc[Field[V,T]];
     ns: array[2,int]; constraint: untyped):untyped =
   let n = ns[0]
   let m = ns[1]
-  var r {.noinit.} :FieldArray[V,T]
-  r.shape = @[n,m]
+  var r {.noinit.} :FieldArray[2,V,T]
+  r.shape[0] = n
+  r.shape[1] = m
   r.arr = newseq[ty](n*m)
   var t = 0
   for i in 0..<n:
@@ -216,7 +217,7 @@ template newFieldArray2*[V:static[int],T](l:Layout[V]; ty:typedesc[Field[V,T]];
       inc k
   r
 
-proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] {.noinit.} =
+proc newOneOf*[N:static[int],V:static[int],T](fa:FieldArray[N,V,T]):FieldArray[N,V,T] {.noinit.} =
   result.shape = fa.shape
   result.arr = newseq[Field[V,T]](fa.arr.len)
   var s:typeof(fa.arr[0].s)
@@ -234,6 +235,28 @@ proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] {.noinit.} =
     if fa.arr[i] == nil: continue
     newFarrElem(result.arr[i], l, s, t)
     inc t
+
+proc copyFieldArray*[N:static[int],V:static[int],T](
+    dst: FieldArray[N,V,T];
+    src: FieldArray[N,V,T]
+  ) =
+  doAssert dst.arr.len == src.arr.len, "FieldArray size mismatch"
+  doAssert dst.shape == src.shape, "FieldArray shape mismatch"
+  for i in 0..<src.arr.len:
+    doAssert (src.arr[i] == nil) == (dst.arr[i] == nil),
+      "FieldArray nil pattern mismatch"
+    if src.arr[i] == nil:
+      continue
+    when compiles(assignM(dst.arr[i], src.arr[i])):
+      assignM(dst.arr[i], src.arr[i])
+    else:
+      dst.arr[i] := src.arr[i]
+
+template `:=`*[N:static[int],V:static[int],T](
+    dst: FieldArray[N,V,T];
+    src: FieldArray[N,V,T]
+  ) =
+  copyFieldArray(dst, src)
 
 template dataPtr*[V:static[int],T](x: Field[V,T]): auto = x.s.data
 template isWrapper*(x: SomeField): bool = false

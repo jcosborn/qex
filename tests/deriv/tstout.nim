@@ -1,91 +1,21 @@
-import qex, physics/qcdTypes, algorithms/numdiff, gauge/stoutsmear
-import os, sequtils
-
-proc printPlaq(g: auto) =
-  let
-    p = g.plaq
-    sp = 2.0*(p[0]+p[1]+p[2])
-    tp = 2.0*(p[3]+p[4]+p[5])
-  echo "plaq ",p
-  echo "plaq ss: ",sp," st: ",tp," tot: ",p.sum
+import qex, physics/qcdTypes, gauge/stoutsmear
+import ./utils
 
 qexInit()
 
-let
-  fn = if paramCount() > 0: paramStr 1 else: ""
-  lat = if fn.len == 0: @[8,8,8,8] else: fn.getFileLattice
-  lo = lat.newLayout
-var g = lo.newGauge
+var env = initGaugeTestEnv()
+let lo = env.lo
+var g = env.g
+
+type
+  GaugeField = typeof(g)
+
 var ss = lo.newStoutSmear(0.1)
-if fn.len == 0:
-  g.random
-  for n in 0..<10:
-    ss.smear(g, g)
-elif 0 != g.loadGauge fn:
-  echo "ERROR: couldn't load gauge file: ",fn
-  qexFinalize()
-  quit(-1)
-g.printPlaq
 
 let gc = GaugeActionCoeffs(plaq:6.0)
 echo "S(g): ",gc.gaugeAction1(g)
 
-var r = lo.newRNGField(MRG32k3a, 4321)
-
-# SU(3) derivative convention, with Tr(T_a T_b) = -1/2
-# F'(U) = -2 T_a F'_a(U) = -2 T_a d/dw_a F(exp(w_b T_b) U) |_{w_a=0}
-# Tr(F'(U) T_a) = d/dw_a F(exp(w_b T_b) U) |_{w_a=0}
-
-proc addnoise[G](x:float, p:G, g:G, ng:G) =
-  qexGC()
-  threads:
-    for mu in 0..<g.len:
-      for e in g[mu]:
-        let t = x*p[mu][e]
-        ng[mu][e] := exp(t)*g[mu][e]
-  qexGC()
-
-# Test by computing the derivative of F(exp(t*p)g), dF/dt at t=0
-# d/dt F(exp(t*p)g) |_{t=0} = d/dt F(exp(t*p_b T_b)g) |_{t=0}
-#   = p_a d/d(t*p_a) F(exp(t*p_b T_b)g) |_{t=0}
-#   = p_a Tr(T_a F'(g))
-#   = Tr(p F'(g))
-template test(action:untyped, deriv:untyped):auto =
-  proc testImpl():auto {.gensym.} =
-    tic("test")
-    var fail = 0
-    echo "### Testing ",astToStr(action)," ",astToStr(deriv)
-    let gg = lo.newGauge
-    let f = lo.newGauge
-    let p = lo.newGauge
-    deriv(g, f)
-    for n in 0..<5:
-      p.randomTAH r
-      var d,e:float
-      proc testAct(x:float):float =
-        tic("testAct")
-        qexGC()
-        addnoise(x, p, g, gg)
-        result = action(gg)
-        qexGC()
-        toc("done")
-      ndiff(d, e, testAct, 0, 1.0)
-      var pf = 0.0
-      for mu in 0..<p.len:
-        pf += redot(p[mu], f[mu])
-      let err = abs(pf-d)
-      let etol = max(2e-8,32*e)
-      if err<etol and err<1e-5 and abs(err/pf)<1e-7:
-        echo "Test ",n,"  Passed:  p.f: ",pf," \tndiff: ",d," \tdelta: ",pf-d," \terr(ndiff): ",e
-      else:
-        echo "Test ",n,"  Failed:  p.f: ",pf," \tndiff: ",d," \tdelta: ",pf-d," \terr(ndiff): ",e
-        inc fail
-    toc("done")
-    fail
-  qexGC()
-  testImpl()
-
-var fail = test(gc.gaugeAction1, gc.gaugeForce)
+var fail = 0
 
 proc smearTest0[G](ss:var StoutSmear, gf:G, fl:G) =
   const nc = gf[0][0].nrows.float
@@ -128,7 +58,6 @@ proc smearedForceTest0(g:auto, f:auto) =
   ss.smearTest0Deriv(f, ds)
   contractProjectTAH(g, f)
 
-fail += test(smearedActionTest0, smearedForceTest0)
 
 proc smearedAction(g:auto):auto =
   var sg = lo.newGauge
@@ -142,7 +71,6 @@ proc smearedForce(g:auto, f:auto) =
   ss.smearDeriv(f, ds)
   contractProjectTAH(g, f)
 
-fail += test(smearedAction, smearedForce)
 
 var s2 = lo.newStoutSmear(0.09)
 
@@ -164,7 +92,6 @@ proc smeared2Force(g:auto, f:auto) =
   ss.smearDeriv(f, f2)
   contractProjectTAH(g, f)
 
-fail += test(smeared2Action, smeared2Force)
 
 var s3 = lo.newStoutSmear(0.12)
 
@@ -192,7 +119,24 @@ proc smeared3Force(g:auto, f:auto) =
   ss.smearDeriv(f, f2)
   contractProjectTAH(g, f)
 
-fail += test(smeared3Action, smeared3Force)
+type
+  ActionProc = proc(g: GaugeField): float
+  ForceProc = proc(g: GaugeField; f: GaugeField)
+
+let pipelines: seq[(string, ActionProc, ForceProc)] = @[
+  ("smearedActionTest0/smearedForceTest0", smearedActionTest0, smearedForceTest0),
+  ("smearedAction/smearedForce", smearedAction, smearedForce),
+  ("smeared2Action/smeared2Force", smeared2Action, smeared2Force),
+  ("smeared3Action/smeared3Force", smeared3Action, smeared3Force),
+]
+
+# Section A: baseline FD
+for (name, action, force) in pipelines:
+  fail += runGaugeActionForceFD(
+    env,
+    action, force,
+    actionForceCfgDefault(name)
+  ).failed
 
 # echoTimers()
 

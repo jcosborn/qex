@@ -9,6 +9,7 @@ export matinv
 import matexp
 export matexp
 import projUderiv
+export projUderiv
 getOptimPragmas()
 
 proc determinantN*(a: auto): auto =
@@ -298,7 +299,7 @@ template rsqrtPH*[T:Mat1](x: T): T =
   rsqrtPH(r, x)
   r
 
-proc projectUrsqrt(r: var Mat1; x: Mat2, eps = 1e-20) {.alwaysInline.} =
+proc projectUrsqrt*(r: var Mat1; x: Mat2, eps = 1e-20) {.alwaysInline.} =
   #let t = x.adj * x   # issues with gcc
   let xa = x.adj
   var t = xa * x
@@ -355,6 +356,411 @@ proc projectUderiv*(r: var Mat1, x: Mat2, c: Mat3) =
   projectU(u, x)
   #echo u, x, c
   projectUderiv(r, u, x, c)
+
+proc projectUVJP*(r: var Mat1, u: Mat2, x: Mat3, chain: Mat4, eps = 1e-20) =
+  ## Alias for projectUderiv with naming based on the kernel.
+  projectUderiv(r, u, x, chain, eps)
+
+proc projectUVJP*(r: var Mat1, x: Mat2, c: Mat3) =
+  ## Convenience alias for projectUderiv without providing u.
+  projectUderiv(r, x, c)
+
+proc projectUHVPu*(r: var Mat1, u: Mat2, x: Mat3, c: Mat4, dx: Mat3, dc: Mat4, eps = 1e-20) =
+  ## Analytical directional second derivative of the unitary projection.
+  ##
+  ## Given:
+  ##   u     = projectU(x)
+  ##   r₁(x) = projectUderiv(u, x, chain)
+  ##
+  ## this returns
+  ##   r = d/dε [ r₁(x + ε dx, chain + ε dc) ] |_{ε=0}
+  ##
+  ## by differentiating the algebra used in `projectUderiv`:
+  ##   Z = (X†X)^(-1/2),  Y = Z^(-1)
+  ##   R0 = C Z
+  ##   T2 solves  Y T2 + T2 Y = U† R0
+  ##   S  = T2 + T2†
+  ##   r1 = R0 - X S
+  ##
+  ## Variations:
+  ##   dA  = X† dX + dX† X
+  ##   dY  solves Y dY + dY Y = dA
+  ##   dZ  = - Z dY Z
+  ##   dR0 = dC Z + C dZ
+  ##   dU  = dX Z + X dZ   ,   dU† = Z dX† + dZ X†
+  ##   dB  = dU† R0 + U† dR0          (B = U† R0)
+  ##   dT2 solves Y dT2 + dT2 Y = dB - dY T2 - T2 dY
+  ##   dS  = dT2 + dT2†
+  ##   r   = dR0 - dX S - X dS
+  ##
+  ## This keeps all Sylvester solves local and avoids another outer finite
+  ## difference.
+  discard eps  # parameter kept for API compatibility
+  var z, y: Mat1
+  projectUrsqrt(z, x)   # Z
+  inverse(y, z)         # Y = Z^{-1} = sqrt(X†X)
+
+  # Base first-derivative pieces (same as projectUderiv).
+  var r0, t1, s: Mat1
+  mul(r0, c, z)       # R0 = C Z
+  mul(t1, u.adj, r0)      # B  = U† R0
+  # Solve directly for S: Y S + S Y = B + B†
+  var bSym: Mat1
+  bSym := t1
+  bSym += t1.adj
+  sylsolve(s, y, bSym)
+
+  # dA = X† dX + dX† X
+  var da, tmp: Mat1
+  mul(da, x.adj, dx)
+  mul(tmp, dx.adj, x)
+  da += tmp
+  # Keep dA Hermitian (numerical symmetrization).
+  da = 0.5*(da + da.adj)
+
+  # dY from sqrt(A): Y dY + dY Y = dA
+  var dy: Mat1
+  sylsolve(dy, y, da)
+  dy = 0.5*(dy + dy.adj)
+
+  # dZ via inverse derivative: dZ = - Z dY Z (exact for Z = Y^{-1}).
+  var dz: Mat1
+  var zdy: Mat1
+  mul(zdy, z, dy)
+  mul(dz, zdy, z)
+  dz *= -1
+  dz = 0.5*(dz + dz.adj)
+
+  # dR0 = dC Z + C dZ
+  var dr0: Mat1
+  mul(dr0, dc, z)
+  mul(tmp, c, dz)
+  dr0 += tmp
+
+  # dU = dX Z + X dZ
+  var du: Mat1
+  mul(du, dx, z)
+  mul(tmp, x, dz)
+  du += tmp
+
+  # dU† = Z dX† + dZ X†
+  var duAdj: Mat1
+  mul(duAdj, z, dx.adj)
+  mul(tmp, dz, x.adj)
+  duAdj += tmp               # full dU† including dZ contribution
+
+  # dB pieces
+  # Full variation: dB = dU† R0 + U† dR0
+  # However, the dR0 contribution through U† dR0 is separate from the direct dR0 term.
+  # We include both here as the Sylvester equation for dS needs the full dB.
+  var db: Mat1
+  mul(db, duAdj, r0)           # dU† R0
+  mul(tmp, u.adj, dr0)         # U† dR0
+  db += tmp                    # full dB
+
+  # rhs for dT2: dB - dY T2 - T2 dY
+  # Solve directly for dS: Y dS + dS Y = d(B+B†) - dY S - S dY
+  var rhs, dyS, Sdy: Mat1
+  # Build full symmetric RHS for dS:
+  # RHS = (dB + dB†) - (dY S + S dY)
+  # Note: dY and S are both Hermitian, so dY S + S dY is Hermitian
+  var dBsym: Mat1
+  # dB = dU† R0 + U† dR0, already in db
+  dBsym := db + db.adj
+  # dY S + S dY (already Hermitian since dY and S are Hermitian)
+  mul(dyS, dy, s)
+  mul(Sdy, s, dy)
+  rhs := dBsym
+  rhs -= dyS
+  rhs -= Sdy
+
+  var ds: Mat1
+  sylsolve(ds, y, rhs)
+  ds = 0.5*(ds + ds.adj)  # Ensure ds is Hermitian
+
+  # Final directional second derivative: dR0 - dX S - X dS
+  tmp := 0
+  mul(tmp, dx, s)
+  r := dr0
+  r -= tmp
+  tmp := 0
+  mul(tmp, x, ds)
+  r -= tmp
+
+proc projectUHVPu*(r: var Mat1, u: Mat2, x: Mat3, c: Mat4, dx: Mat3, eps = 1e-20) =
+  ## Compatibility wrapper when no upstream variation dc is provided.
+  var dc {.noInit.}: type(c)
+  dc := 0
+  projectUHVPu(r, u, x, c, dx, dc, eps)
+
+proc projectUHVP*(r: var Mat1, x: Mat2, c: Mat3, dx: Mat2, eps = 1e-20) =
+  ## Convenience wrapper for projectUHVP when only x is given.
+  var u {.noInit.}: type(r)
+  var dc {.noInit.}: type(c)
+  projectU(u, x)
+  dc := 0
+  projectUHVPu(r, u, x, c, dx, dc, eps)
+
+proc projectUHVP*(r: var Mat1, x: Mat2, c: Mat3, dx: Mat2, dc: Mat3, eps = 1e-20) =
+  ## Convenience wrapper including an upstream variation dc.
+  var u {.noInit.}: type(r)
+  projectU(u, x)
+  projectUHVPu(r, u, x, c, dx, dc, eps)
+
+proc projectUJVP*(du: var Mat1, u: Mat2, x: Mat3, dx: Mat3, eps = 1e-20) =
+  ## Forward tangent of unitary projection.
+  ##
+  ## Computes: du = d/dε[ projectU(x + ε dx) ]|_{ε=0}
+  ##
+  ## Given U = X Z where Z = (X†X)^{-1/2}, Y = Z^{-1} = sqrt(X†X):
+  ##   dU = dX Z + X dZ
+  ## where dZ = -Z dY Z and Y dY + dY Y = dA, dA = X† dX + dX† X
+  discard eps
+  var z, y: Mat1
+  projectUrsqrt(z, x)   # Z = (X†X)^{-1/2}
+  inverse(y, z)         # Y = Z^{-1}
+
+  # dA = X† dX + dX† X (Hermitian)
+  var da, tmp: Mat1
+  mul(tmp, x.adj, dx)
+  da := tmp + tmp.adj
+
+  # Solve Y dY + dY Y = dA
+  var dy: Mat1
+  sylsolve(dy, y, da)
+
+  # dZ = -Z dY Z
+  var dz: Mat1
+  tmp := dy * z
+  dz := z * tmp
+  dz := -dz
+
+  # dU = dX Z + X dZ
+  mul(du, dx, z)
+  tmp := x * dz
+  du += tmp
+
+proc projectUJVP*(du: var Mat1, x: Mat2, dx: Mat2, eps = 1e-20) =
+  ## Convenience wrapper when u is not provided.
+  var u {.noInit.}: type(du)
+  projectU(u, x)
+  projectUJVP(du, u, x, dx, eps)
+
+proc projectUVJPChain*(chainbar: var Mat1, u: Mat2, x: Mat3, rbar: Mat4, eps = 1e-20) =
+  ## Adjoint of projectUderiv with respect to the chain input.
+  ##
+  ## Given: r = projectUderiv(u, x, chain) which computes
+  ##   Z = (X†X)^{-1/2}, Y = Z^{-1}
+  ##   R0 = chain * Z
+  ##   T1 = U† * R0
+  ##   sylsolve(T2, Y, T1)  // Y*T2 + T2*Y = T1
+  ##   S = T2 + T2†
+  ##   r = R0 - X*S
+  ##
+  ## This computes chainbar such that ⟨rbar, r⟩ = ⟨chainbar, chain⟩
+  ## for any chain (the map chain → r is linear).
+  ##
+  ## Derivation:
+  ##   r = chain*Z - X*(T2 + T2†) where Y*T2 + T2*Y = U†*chain*Z
+  ##
+  ##   Term 1: chain*Z contributes Z*rbar to chainbar (Z is Hermitian)
+  ##
+  ##   Term 2: -X*S where S = T2 + T2†
+  ##   ⟨-X*S, rbar⟩ = ⟨S, -X†*rbar⟩
+  ##   Let Q = -X†*rbar, then ⟨S, Q⟩ = ⟨T2+T2†, Q⟩ = ⟨T2, Q+Q†⟩
+  ##   Adjoint of Sylvester Y*T2 + T2*Y = T1 gives: Y*T2bar + T2bar*Y = Q+Q†
+  ##   Then ⟨T1, T2bar⟩ = ⟨U†*chain*Z, T2bar⟩ = ⟨chain, U*T2bar*Z⟩
+  ##
+  ##   Total: chainbar = Z*rbar + U*T2bar*Z
+  discard eps
+  var z, y: Mat1
+  projectUrsqrt(z, x)   # Z = (X†X)^{-1/2}
+  inverse(y, z)         # Y = Z^{-1}
+
+  # Q = -X†*rbar, Q_sym = Q + Q†
+  var q, qsym, tmp: Mat1
+  mul(q, x.adj, rbar)
+  q := -q
+  qsym := q + q.adj
+
+  # Solve Y*T2bar + T2bar*Y = Q_sym
+  var t2bar: Mat1
+  sylsolve(t2bar, y, qsym)
+
+  # chainbar = rbar*Z + U*T2bar*Z
+  mul(chainbar, rbar, z)       # rbar*Z (Z is Hermitian, so Z† = Z)
+  mul(tmp, u, t2bar)
+  tmp := tmp * z
+  chainbar += tmp
+
+proc projectUVJPChain*(chainbar: var Mat1, x: Mat2, rbar: Mat3, eps = 1e-20) =
+  ## Convenience wrapper when u is not provided.
+  var u {.noInit.}: type(chainbar)
+  projectU(u, x)
+  projectUVJPChain(chainbar, u, x, rbar, eps)
+
+proc projectUHVPVJP_dx*(dxbar: var Mat1, u: Mat2, x: Mat3, c: Mat4, rbar: auto, eps = 1e-20) =
+  ## Adjoint of projectUHVP with respect to dx.
+  ##
+  ## Given: r = projectUHVPu(u, x, c, dx) which computes (with dc=0):
+  ##   Z = (X†X)^{-1/2}, Y = Z^{-1}
+  ##   R0 = C Z
+  ##   B = U† R0
+  ##   S solves Y S + S Y = B + B†
+  ##   dA = X† dx + dx† X
+  ##   dY solves Y dY + dY Y = dA
+  ##   dZ = -Z dY Z
+  ##   dR0 = C dZ  (since dc=0)
+  ##   dU = dx Z + X dZ
+  ##   dU† = Z dx† + dZ X†
+  ##   dB = dU† R0 + U† dR0
+  ##   dS solves Y dS + dS Y = (dB + dB†) - dY S - S dY
+  ##   r = dR0 - dx S - X dS
+  ##
+  ## This computes dxbar such that ⟨rbar, r⟩ = ⟨dxbar, dx⟩.
+  ##
+  ## dx appears in:
+  ##   1. Direct: -dx S  →  dxbar += -rbar S†  (S is Hermitian, so S† = S)
+  ##   2. dU = dx Z  →  contribution through dU (NOT dU†!)
+  ##   3. dU† = Z dx†  →  contribution through dU† to dB
+  ##   4. dA = X† dx + dx† X  →  flows through dY, dZ
+  ##
+  ## Backward pass traces through the chain of dependencies.
+  discard eps
+  var z, y: Mat1
+  projectUrsqrt(z, x)   # Z = (X†X)^{-1/2}
+  inverse(y, z)         # Y = Z^{-1}
+
+  # Forward quantities needed for adjoint
+  var r0, b, s, tmp: Mat1
+  mul(r0, c, z)         # R0 = C Z
+  mul(b, u.adj, r0)     # B = U† R0
+  var bSym: Mat1
+  bSym := b + b.adj
+  sylsolve(s, y, bSym)  # Y S + S Y = B + B†
+
+  # === Backward pass ===
+
+  # Step 1: Direct term -dx S
+  # ⟨rbar, -dx S⟩ = ⟨-rbar S, dx⟩ (S is Hermitian)
+  mul(dxbar, rbar, s)
+  dxbar := -dxbar
+
+  # Step 2: Trace through dS
+  # r -= X dS, so rbar gives contribution to dSbar
+  # ⟨rbar, -X dS⟩ = ⟨-X† rbar, dS⟩
+  var dSbar: Mat1
+  mul(dSbar, x.adj, rbar)
+  dSbar := -dSbar
+
+  # dS solves Y dS + dS Y = RHS where RHS = (dB+dB†) - dY S - S dY
+  # RHS is Hermitian (sum of Hermitian terms), so dS is already Hermitian.
+  # The 0.5 symmetrization in forward is just numerical cleanup.
+  # Sylvester adjoint: Y dRHSbar + dRHSbar Y = dSbar
+  var dRHSbar: Mat1
+  sylsolve(dRHSbar, y, dSbar)
+
+  # RHS = (dB + dB†) - dY S - S dY
+  # From (dB + dB†): ⟨dRHSbar, dB + dB†⟩ = ⟨dRHSbar + dRHSbar†, dB⟩
+  var dBbar: Mat1
+  dBbar := dRHSbar + dRHSbar.adj
+
+  # From -dY S - S dY: contribution to dYbar
+  # ⟨dRHSbar, -dY S - S dY⟩ = -⟨dRHSbar S + S dRHSbar, dY⟩
+  var dYbar: Mat1
+  var rhsS, Srhs: Mat1
+  mul(rhsS, dRHSbar, s)
+  mul(Srhs, s, dRHSbar)
+  dYbar := -(rhsS + Srhs)
+
+  # Step 3: Trace through dR0
+  # r += dR0 (positive sign), so ⟨rbar, dR0⟩
+  # dR0 = C dZ (since dc=0)
+  # ⟨rbar, C dZ⟩ = ⟨C† rbar, dZ⟩
+  var dZbar: Mat1
+  mul(dZbar, c.adj, rbar)
+
+  # Step 4: Trace through dB = dU† R0 + U† dR0
+  #
+  # From dU† R0: ⟨dBbar, dU† R0⟩
+  # dU† = Z dx† + dZ X†
+  #
+  # For Z dx†: ⟨dBbar, Z dx† R0⟩ = Re(tr(dBbar† Z dx† R0))
+  #   = Re(tr(R0 dBbar† Z dx†)) = Re(tr((Z† dBbar R0†)† dx†))
+  #   = Re(tr(dx (Z† dBbar R0†))) = redot((Z† dBbar R0†)†, dx)
+  #   = redot(R0 dBbar† Z, dx)
+  # So: dxbar += R0 dBbar† Z
+  var tmp2: Mat1
+  mul(tmp, r0, dBbar.adj)
+  mul(tmp2, tmp, z)
+  dxbar += tmp2
+
+  # For dZ X† in dU†: ⟨dBbar, dZ X† R0⟩ = ⟨R0† X dBbar, dZ⟩
+  # Actually: Re(tr(dBbar† dZ X† R0)) = Re(tr(R0 dBbar† dZ X†))
+  #         = Re(tr(X† R0 dBbar† dZ)) = redot((R0 dBbar†)† X, dZ)
+  #         = redot(dBbar R0† X, dZ)? Let me be more careful.
+  # ⟨dBbar, dZ X† R0⟩ = Re(tr(dBbar† dZ X† R0))
+  # Let A = dBbar†, then tr(A dZ X† R0) = tr(X† R0 A dZ)
+  # = redot((X† R0 A)†, dZ) = redot(A† R0† X, dZ) = redot(dBbar R0† X, dZ)
+  # Hmm, let me use the identity: redot(A, B) = Re(tr(A† B))
+  # redot(dBbar, dZ X† R0) = Re(tr(dBbar† dZ X† R0))
+  # We want ⟨?, dZ⟩ form: Re(tr(?† dZ))
+  # tr(dBbar† dZ X† R0) = tr((X† R0 dBbar†)† dZ)†... no, that's wrong
+  # Actually: tr(A B) = tr(B A), so tr(dBbar† dZ X† R0) = tr(X† R0 dBbar† dZ)
+  # = tr((X† R0 dBbar†)† dZ)† = [tr(dZ† (X† R0 dBbar†))]†
+  # For real part: Re(tr(X† R0 dBbar† dZ)) = redot((X† R0 dBbar†)†, dZ) = redot(dBbar R0† X, dZ)
+  # So: dZbar += dBbar R0† X
+  mul(tmp, dBbar, r0.adj)
+  mul(tmp2, tmp, x)
+  dZbar += tmp2
+
+  # From U† dR0: ⟨dBbar, U† dR0⟩ = ⟨U dBbar, dR0⟩
+  # dR0 = C dZ, so ⟨U dBbar, C dZ⟩ = ⟨C† U dBbar, dZ⟩
+  mul(tmp, u, dBbar)
+  mul(tmp2, c.adj, tmp)
+  dZbar += tmp2
+
+  # Step 5: Trace through dZ = -Z dY Z
+  # dZ is then numerically symmetrized: dZ_final = 0.5*(dZ + dZ†)
+  # But since Z and dY are Hermitian, dZ = -Z dY Z is already Hermitian.
+  # So the 0.5 factor is just numerical cleanup and doesn't affect the adjoint.
+  # ⟨dZbar, -Z dY Z⟩ = -⟨Z dZbar Z, dY⟩
+  var zDzbarZ: Mat1
+  mul(tmp, z, dZbar)
+  mul(zDzbarZ, tmp, z)
+  dYbar -= zDzbarZ
+
+  # Step 6: Trace through dY
+  # Y dY + dY Y = dA, then dY is symmetrized: dY_final = 0.5*(dY + dY†)
+  # Since dA is Hermitian and Y is Hermitian, dY is already Hermitian.
+  # So the 0.5 factor is just numerical cleanup.
+  # Sylvester adjoint: Y dAbar + dAbar Y = dYbar
+  var dAbar: Mat1
+  sylsolve(dAbar, y, dYbar)
+
+  # Step 7: Trace through dA = X† dx + dx† X
+  # From X† dx: ⟨dAbar, X† dx⟩ = ⟨X dAbar, dx⟩
+  # From dx† X: ⟨dAbar, dx† X⟩ = ⟨X dAbar†, dx⟩ (verified by test!)
+  # Combined: dxbar += X dAbar + X dAbar†
+  mul(tmp, x, dAbar)
+  dxbar += tmp
+  mul(tmp, x, dAbar.adj)
+  dxbar += tmp
+
+proc projectUHVPVJP_dx*(dxbar: var Mat1, x: Mat2, c: Mat3, rbar: Mat4, eps = 1e-20) =
+  ## Convenience wrapper when u is not provided.
+  var u {.noInit.}: type(dxbar)
+  projectU(u, x)
+  projectUHVPVJP_dx(dxbar, u, x, c, rbar, eps)
+
+proc projectUHVPVJP_dc*(dcbar: var Mat1, u: Mat2, x: Mat3, c: Mat4, rbar: auto, eps = 1e-20) =
+  ## Adjoint of projectUHVP with respect to dc (chain tangent).
+  ## This is identical to the VJP w.r.t. the chain input of projectUVJP.
+  projectUVJPChain(dcbar, u, x, rbar, eps)
+
+proc projectUHVPVJP_dc*(dcbar: var Mat1, x: Mat2, c: Mat3, rbar: Mat4, eps = 1e-20) =
+  ## Convenience wrapper when u is not provided.
+  projectUVJPChain(dcbar, x, rbar, eps)
 
 proc projectSU*(r: var Mat1; x: Mat2) =
   const nc = r.nrows

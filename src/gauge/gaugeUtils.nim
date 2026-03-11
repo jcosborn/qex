@@ -414,6 +414,42 @@ proc contractProjectTAH*[T](g:openArray[T], f:openArray[T]) =
         let s = u[mu][e]*o[mu][e].adj
         o[mu][e].projectTAH s
 
+proc contractProjectTAHVJP*[T](g: openArray[T], f: openArray[T],
+                                fbar: openArray[T],
+                                dbar: openArray[T], ubar: openArray[T]) =
+  ## VJP of contractProjectTAH.
+  ##
+  ## Forward: F = projectTAH(U · D†)
+  ##
+  ## Given F̄ (adjoint seed), computes:
+  ##   D̄ = adjoint w.r.t. D (the input force before contraction)
+  ##   Ū = adjoint w.r.t. U (the gauge field)
+  ##
+  ## Mathematical derivation:
+  ##   dT = ⟨F̄, dF⟩ = ⟨F̄, projectTAH(U · dD†)⟩
+  ##   Since projectTAH is self-adjoint on TAH: = ⟨projectTAH(F̄), U · dD†⟩
+  ##   = Re⟨projectTAH(F̄)† · U, dD⟩
+  ##
+  ## Since projectTAH output is anti-Hermitian: X† = -X
+  ## So: D̄ = projectTAH(F̄)† · U = -projectTAH(F̄) · U
+  ##
+  ## For Ū: dT = ⟨F̄, projectTAH(dU · D†)⟩ = ⟨projectTAH(F̄), dU · D†⟩
+  ##   = Re⟨projectTAH(F̄) · D, dU⟩
+  ## So: Ū = projectTAH(F̄) · D
+  let nd = g.len
+  let u = cast[ptr cArray[T]](unsafeAddr(g[0]))
+  let d = cast[ptr cArray[T]](unsafeAddr(f[0]))
+  let fb = cast[ptr cArray[T]](unsafeAddr(fbar[0]))
+  let db = cast[ptr cArray[T]](unsafeAddr(dbar[0]))
+  let ub = cast[ptr cArray[T]](unsafeAddr(ubar[0]))
+  threads:
+    for mu in 0..<nd:
+      for e in u[mu]:
+        var pf {.noInit.}: type(fb[0][0])
+        pf.projectTAH fb[mu][e]  # projectTAH(F̄)
+        db[mu][e] := -pf * u[mu][e]  # D̄ = -projectTAH(F̄) · U
+        ub[mu][e] := pf * d[mu][e]   # Ū = projectTAH(F̄) · D
+
 type
   Link[F:ref] = object
     field:F
