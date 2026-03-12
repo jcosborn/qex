@@ -4,6 +4,8 @@ import maths/matrixConcept
 export matrixConcept
 import maths/matrixFunctions
 export matrixFunctions
+import maths/projUderiv
+export projUderiv
 import maths/types
 export types
 

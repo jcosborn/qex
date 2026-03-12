@@ -1,6 +1,6 @@
 import math
 import random
-import maths/[matrixFunctions, types, matrixConcept, complexNumbers]
+import maths/[matrixFunctions, projUderiv, types, matrixConcept, complexNumbers]
 import ./utils
 
 var gRng = initRand(123456)
