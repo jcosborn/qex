@@ -50,7 +50,7 @@ jobs:
         mpicc -v
         cat /proc/sys/kernel/core_pattern
     - name: checkout Nim
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         repository: nim-lang/Nim
         ref: ${{ matrix.nim-branch }}
@@ -67,7 +67,7 @@ jobs:
     - name: set path to nim
       run: echo "${{ github.workspace }}/Nim/bin" >> $GITHUB_PATH
     - name: checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v6
       with:
         path: qex
     - name: install nimble dependencies
