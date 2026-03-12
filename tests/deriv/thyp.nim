@@ -32,6 +32,13 @@ var info = PerfInfo()
 
 let gc = GaugeActionCoeffs(plaq:6.0)
 
+var shapeHs = lo.newHypSmear(coef)
+var shapeSg = lo.newGauge
+shapeHs.smear(g, shapeSg)
+
+type
+  PairField = type(shapeHs.state.l1x)
+
 let adjCoefCombos = [
   HypCoefs(alpha1:0.0, alpha2:0.0, alpha3:0.0),  # 0: All off
   HypCoefs(alpha1:0.4, alpha2:0.0, alpha3:0.0),  # 1: Only L1
@@ -96,6 +103,7 @@ proc testSmearForceConsistency(): int =
     rtol = 1e-12,
     verbose = true
   )
+  cfg.reportBanner
   var sgClosure = lo.newGauge
   var sgPrealloc = lo.newGauge
   var chain = lo.newGauge
@@ -134,6 +142,147 @@ proc restoreHypState(hs: var auto; sg: GaugeField) =
 proc primeHypReverse(hs: var auto; sg, deriv: GaugeField; chain: GaugeField) =
   restoreHypState(hs, sg)
   hs.smearVJP(deriv, chain)
+
+template forPairsTest(mu, nu: untyped; body: untyped) =
+  for mu in 0..<4:
+    for nu in 0..<4:
+      if nu != mu:
+        body
+
+template forThirdTest(mu, nu, a, b: untyped; body: untyped) =
+  for a in 0..<4:
+    if a != mu and a != nu:
+      let b = 1 + 2 + 3 - mu - nu - a
+      discard b
+      body
+
+proc projectPairField(xfield: PairField): PairField =
+  var projected = newOneOf(xfield)
+  threads:
+    forPairsTest(mu, nu):
+      projectU(projected[mu,nu], xfield[mu,nu])
+  projected
+
+proc currentHypL1(hs: var auto): PairField =
+  when compiles(hs.state.l1):
+    result = hs.state.l1
+  else:
+    result = projectPairField(hs.state.l1x)
+
+proc currentHypL2(hs: var auto): PairField =
+  when compiles(hs.state.l2):
+    result = hs.state.l2
+  else:
+    result = projectPairField(hs.state.l2x)
+
+proc makePairFieldGaussianLike(shape: PairField): PairField =
+  var field = newOneOf(shape)
+  threads:
+    forPairsTest(mu, nu):
+      field[mu,nu].gaussian r
+  field
+
+proc perturbGaugeFieldAdd(x: GaugeField; dx: GaugeField; eps: float; res: var GaugeField) =
+  let resPtr = cast[ptr GaugeField](unsafeAddr(res))
+  threads:
+    for mu in 0..<4:
+      resPtr[][mu] := x[mu]
+      resPtr[][mu] += eps * dx[mu]
+
+proc perturbPairFieldAdd(x: PairField; dx: PairField; eps: float; res: var PairField) =
+  let resPtr = cast[ptr PairField](unsafeAddr(res))
+  threads:
+    forPairsTest(mu, nu):
+      resPtr[][mu,nu] := x[mu,nu]
+      resPtr[][mu,nu] += eps * dx[mu,nu]
+
+proc zeroGaugeField(): GaugeField =
+  var z = lo.newGauge
+  threads:
+    for mu in 0..<4:
+      z[mu] := 0
+  z
+
+proc zeroPairField(shape: PairField): PairField =
+  var z = newOneOf(shape)
+  threads:
+    forPairsTest(mu, nu):
+      z[mu,nu] := 0
+  z
+
+proc zeroInPlace(x: var GaugeField) =
+  let xPtr = cast[ptr GaugeField](unsafeAddr(x))
+  threads:
+    for mu in 0..<4:
+      xPtr[][mu] := 0
+
+proc zeroInPlace(x: var PairField) =
+  let xPtr = cast[ptr PairField](unsafeAddr(x))
+  threads:
+    forPairsTest(mu, nu):
+      xPtr[][mu,nu] := 0
+
+proc initShiftedGaugeTangents(dx: GaugeField): auto =
+  var s: array[4,array[4,Shifter[type(dx[0]),type(dx[0][0])]]]
+  forPairsTest(mu, nu):
+    s[mu][nu] = newShifter(dx[mu], nu, 1)
+  threads:
+    forPairsTest(mu, nu):
+      discard s[mu][nu] ^*! dx[mu]
+  s
+
+proc initShiftedStage2Tangents(dl1: PairField): auto =
+  var s: array[4, array[4, array[4, array[2, Shifter[type(dl1[0,1]),type(dl1[0,1][0])]]]]]
+  forPairsTest(mu, nu):
+    forThirdTest(mu, nu, a, b):
+      s[mu][nu][a][0] = newShifter(dl1[a,b], mu, 1)
+      s[mu][nu][a][1] = newShifter(dl1[mu,b], a, 1)
+  threads:
+    forPairsTest(mu, nu):
+      forThirdTest(mu, nu, a, b):
+        discard s[mu][nu][a][0] ^*! dl1[a,b]
+        discard s[mu][nu][a][1] ^*! dl1[mu,b]
+  s
+
+proc initShiftedOutputTangents(dl2: PairField): auto =
+  var s: array[4,array[4,Shifter[type(dl2[0,1]),type(dl2[0,1][0])]]]
+  forPairsTest(mu, nu):
+    s[mu][nu] = newShifter(dl2[mu,nu], nu, 1)
+  threads:
+    forPairsTest(mu, nu):
+      discard s[mu][nu] ^*! dl2[mu,nu]
+  s
+
+proc runMixedAdjointIdentity(
+    cfg: TestConfig,
+    makeBase: auto,
+    makeDir: auto,
+    makeYbar: auto,
+    jvp: auto,
+    vjp: auto
+  ): TestResult =
+  type
+    X = typeof(makeBase(0))
+    DX = typeof(makeDir(0, default(X)))
+    Y = typeof(makeYbar(0, default(X)))
+  reportBanner(cfg)
+  result.name = cfg.name
+  for sample in 0..<cfg.samples:
+    let base = makeBase(sample)
+    let dx = makeDir(sample, base)
+    let ybar = makeYbar(sample, base)
+    var dy = allocLike(ybar)
+    var dxbar = allocLike(dx)
+    jvp(base, dx, dy)
+    vjp(base, ybar, dxbar)
+    let lhs = dotLike(ybar, dy)
+    let rhs = dotLike(dxbar, dx)
+    let err = abs(lhs - rhs)
+    let refVal = max(1.0, max(abs(lhs), abs(rhs)))
+    let rel = err / refVal
+    let ok = err <= max(cfg.atol, cfg.rtol * refVal)
+    reportSimple(cfg, sample, lhs, rhs, err, rel, ok)
+    if ok: inc result.passed else: inc result.failed
 
 template contractedForceJvp(hs, x, forcebar, chain, dg: untyped;
                             dchain: untyped = @[]): untyped =
@@ -452,6 +601,221 @@ proc testSmearDerivAdjChain(): int =
       var chain = lo.newGauge
       chain.gaussian r
       chain,
+  )
+  result = res.failed
+
+proc testHypPairStage1JVP(): int =
+  var hs = lo.newHypSmear(coef)
+  let cfg = initTestConfig(
+    name = "L1 stage JVP",
+    samples = 3,
+    eps = 1e-3,
+    scale = 2.0,
+    atol = 1e-5,
+    rtol = 1e-4,
+    fdFactor = 3.0,
+    verbose = true
+  )
+  let res = runFDJVP(
+    cfg = cfg,
+    makeBase = proc(sample: int): GaugeField =
+      g,
+    makeDir = proc(sample: int; x: GaugeField): GaugeField =
+      var dx = lo.newGauge
+      dx.gaussian r
+      dx,
+    makeProbe = proc(sample: int; x: GaugeField): PairField =
+      var hsProbe = lo.newHypSmear(coef)
+      var sgProbe = lo.newGauge
+      hsProbe.smear(x, sgProbe)
+      makePairFieldGaussianLike(currentHypL1(hsProbe)),
+    perturb = proc(x: GaugeField; dx: GaugeField; eps: float; res: var GaugeField) =
+      perturbGaugeFieldAdd(x, dx, eps, res),
+    f = proc(x: GaugeField; res: var PairField) =
+      var sg = lo.newGauge
+      hs.smear(x, sg)
+      var pre = newOneOf(hs.state.l1x)
+      var dummy = newOneOf(hs.state.l1x)
+      hypPairStage[1](hs, dummy, pre, res),
+    jvp = proc(x: GaugeField; dx: GaugeField; res: var PairField) =
+      var sg = lo.newGauge
+      hs.smear(x, sg)
+      var pre0 = newOneOf(hs.state.l1x)
+      var proj0 = newOneOf(hs.state.l1x)
+      var dummy = newOneOf(hs.state.l1x)
+      hypPairStage[1](hs, dummy, pre0, proj0)
+      let ds1 = initShiftedGaugeTangents(dx)
+      var dpre = newOneOf(pre0)
+      hypPairStageJVP[1](hs, dummy, dx, ds1, pre0, proj0, dx, dpre, res)
+  )
+  result = res.failed
+
+proc testHypPairStage2JVP(): int =
+  var hs = lo.newHypSmear(coef)
+  var sg = lo.newGauge
+  hs.smear(g, sg)
+  let l1 = currentHypL1(hs)
+  let l2 = currentHypL2(hs)
+  let dgEffZero = zeroGaugeField()
+  let cfg = initTestConfig(
+    name = "L2 stage JVP (pair input)",
+    samples = 3,
+    eps = 1e-3,
+    scale = 2.0,
+    atol = 1e-5,
+    rtol = 1e-4,
+    fdFactor = 3.0,
+    verbose = true
+  )
+  let res = runFDJVP(
+    cfg = cfg,
+    makeBase = proc(sample: int): PairField =
+      l1,
+    makeDir = proc(sample: int; x: PairField): PairField =
+      makePairFieldGaussianLike(x),
+    makeProbe = proc(sample: int; x: PairField): PairField =
+      makePairFieldGaussianLike(l2),
+    perturb = proc(x: PairField; dx: PairField; eps: float; res: var PairField) =
+      perturbPairFieldAdd(x, dx, eps, res),
+    f = proc(x: PairField; res: var PairField) =
+      var pre = newOneOf(hs.state.l2x)
+      hypPairStage[2](hs, x, pre, res),
+    jvp = proc(x: PairField; dx: PairField; res: var PairField) =
+      var pre0 = newOneOf(hs.state.l2x)
+      var proj0 = newOneOf(hs.state.l2x)
+      hypPairStage[2](hs, x, pre0, proj0)
+      let dsl1 = initShiftedStage2Tangents(dx)
+      var dpre = newOneOf(pre0)
+      hypPairStageJVP[2](hs, x, dx, dsl1, pre0, proj0, dgEffZero, dpre, res)
+  )
+  result = res.failed
+
+proc testHypOutputStageJVP(): int =
+  var hs = lo.newHypSmear(coef)
+  var sg = lo.newGauge
+  hs.smear(g, sg)
+  let l2 = currentHypL2(hs)
+  let dgEffZero = zeroGaugeField()
+  let cfg = initTestConfig(
+    name = "Output stage JVP (pair input)",
+    samples = 3,
+    eps = 1e-3,
+    scale = 2.0,
+    atol = 1e-5,
+    rtol = 1e-4,
+    fdFactor = 3.0,
+    verbose = true
+  )
+  let res = runFDJVP(
+    cfg = cfg,
+    makeBase = proc(sample: int): PairField =
+      l2,
+    makeDir = proc(sample: int; x: PairField): PairField =
+      makePairFieldGaussianLike(x),
+    makeProbe = proc(sample: int; x: PairField): GaugeField =
+      makeProbe(),
+    perturb = proc(x: PairField; dx: PairField; eps: float; res: var PairField) =
+      perturbPairFieldAdd(x, dx, eps, res),
+    f = proc(x: PairField; res: var GaugeField) =
+      var proj = lo.newGauge
+      hypOutputStage(hs, x, res, proj),
+    jvp = proc(x: PairField; dx: PairField; res: var GaugeField) =
+      let dsl2 = initShiftedOutputTangents(dx)
+      hypOutputStageJVP(hs, x, dx, dsl2, dgEffZero, res)
+  )
+  result = res.failed
+
+proc testHypPairStage1ChainAdjoint(): int =
+  var hs = lo.newHypSmear(coef)
+  let cfg = initTestConfig(
+    name = "L1 stage staple/chain adjoint",
+    samples = 3,
+    atol = 1e-12,
+    rtol = 1e-10,
+    verbose = true
+  )
+  let res = runMixedAdjointIdentity(
+    cfg = cfg,
+    makeBase = proc(sample: int): GaugeField =
+      g,
+    makeDir = proc(sample: int; x: GaugeField): PairField =
+      var hsProbe = lo.newHypSmear(coef)
+      var sgProbe = lo.newGauge
+      hsProbe.smear(x, sgProbe)
+      makePairFieldGaussianLike(currentHypL1(hsProbe)),
+    makeYbar = proc(sample: int; x: GaugeField): GaugeField =
+      makeProbe(),
+    jvp = proc(x: GaugeField; dx: PairField; res: var GaugeField) =
+      var sg = lo.newGauge
+      hs.smear(x, sg)
+      let l1 = currentHypL1(hs)
+      zeroInPlace(res)
+      hypPairStageStapleVJP[1](hs, l1, dx, res),
+    vjp = proc(x: GaugeField; ybar: GaugeField; res: var PairField) =
+      var sg = lo.newGauge
+      hs.smear(x, sg)
+      let l1 = currentHypL1(hs)
+      zeroInPlace(res)
+      hypPairStageChainVJP[1](hs, l1, ybar, res)
+  )
+  result = res.failed
+
+proc testHypPairStage2ChainAdjoint(): int =
+  var hs = lo.newHypSmear(coef)
+  var sg = lo.newGauge
+  hs.smear(g, sg)
+  let l1 = currentHypL1(hs)
+  let l2 = currentHypL2(hs)
+  let cfg = initTestConfig(
+    name = "L2 stage staple/chain adjoint",
+    samples = 3,
+    atol = 1e-12,
+    rtol = 1e-10,
+    verbose = true
+  )
+  let res = runMixedAdjointIdentity(
+    cfg = cfg,
+    makeBase = proc(sample: int): int =
+      0,
+    makeDir = proc(sample: int; x: int): PairField =
+      makePairFieldGaussianLike(l2),
+    makeYbar = proc(sample: int; x: int): PairField =
+      makePairFieldGaussianLike(l1),
+    jvp = proc(x: int; dx: PairField; res: var PairField) =
+      zeroInPlace(res)
+      hypPairStageStapleVJP[2](hs, l1, dx, res),
+    vjp = proc(x: int; ybar: PairField; res: var PairField) =
+      zeroInPlace(res)
+      hypPairStageChainVJP[2](hs, l1, ybar, res)
+  )
+  result = res.failed
+
+proc testHypOutputStageChainAdjoint(): int =
+  var hs = lo.newHypSmear(coef)
+  var sg = lo.newGauge
+  hs.smear(g, sg)
+  let l2 = currentHypL2(hs)
+  let cfg = initTestConfig(
+    name = "Output stage staple/chain adjoint",
+    samples = 3,
+    atol = 1e-12,
+    rtol = 1e-10,
+    verbose = true
+  )
+  let res = runMixedAdjointIdentity(
+    cfg = cfg,
+    makeBase = proc(sample: int): int =
+      0,
+    makeDir = proc(sample: int; x: int): GaugeField =
+      makeProbe(),
+    makeYbar = proc(sample: int; x: int): PairField =
+      makePairFieldGaussianLike(l2),
+    jvp = proc(x: int; dx: GaugeField; res: var PairField) =
+      zeroInPlace(res)
+      hypOutputStageStapleVJP(hs, l2, dx, res),
+    vjp = proc(x: int; ybar: PairField; res: var GaugeField) =
+      zeroInPlace(res)
+      hypOutputStageChainVJP(hs, l2, ybar, res)
   )
   result = res.failed
 
@@ -935,7 +1299,15 @@ fail += testSmearTangentAdjoint()
 fail += testSmearDerivAdjChain()
 fail += testGradForceReverseMode()
 
-# Section D: term-by-term / internal adjoints
+# Section D: individual stage operators
+fail += testHypPairStage1JVP()
+fail += testHypPairStage2JVP()
+fail += testHypOutputStageJVP()
+fail += testHypPairStage1ChainAdjoint()
+fail += testHypPairStage2ChainAdjoint()
+fail += testHypOutputStageChainAdjoint()
+
+# Section E: term-by-term / internal adjoints
 fail += testDgEffConversion()
 fail += testDirectContribution()
 block:

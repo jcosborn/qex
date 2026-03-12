@@ -127,6 +127,17 @@ proc allocLike*[T](x: T): T =
       a: allocLike(x.a),
       b: allocLike(x.b)
     )
+  elif T is seq:
+    var y: T
+    y.setLen(x.len)
+    for i in 0..<x.len:
+      y[i] = allocLike(x[i])
+    y
+  elif T is array:
+    var y: T
+    for i in 0..<y.len:
+      y[i] = allocLike(x[i])
+    y
   elif compiles(newOneOf(x)):
     newOneOf(x)
   else:
@@ -140,6 +151,22 @@ proc zeroLike*[T](x: T): T =
       a: zeroLike(x.a),
       b: zeroLike(x.b)
     )
+  elif T is seq:
+    var y = allocLike(x)
+    for i in 0..<x.len:
+      y[i] = zeroLike(x[i])
+    y
+  elif T is array:
+    var y: T
+    for i in 0..<y.len:
+      y[i] = zeroLike(x[i])
+    y
+  elif T is FieldArray:
+    var y = allocLike(x)
+    for i in 0..<y.arr.len:
+      if y.arr[i] != nil:
+        y.arr[i] := 0
+    y
   else:
     var y = allocLike(x)
     when compiles(y := 0):
@@ -240,7 +267,7 @@ proc reportFD*(cfg: TestConfig; sample: int; ana, fd, err, fdErr: float; ok: boo
     echo "Test ", sample, " FAILED: Ana=", ana, " FD=", fd,
          " err=", err, " ±", fdErr
 
-proc reportSimple(cfg: TestConfig; sample: int; lhs, rhs, err, rel: float; ok: bool) =
+proc reportSimple*(cfg: TestConfig; sample: int; lhs, rhs, err, rel: float; ok: bool) =
   if ok:
     if cfg.verbose:
       echo "Test ", sample, " Passed: LHS=", lhs, " RHS=", rhs,
@@ -256,7 +283,7 @@ proc reportCompare*(
     label = ""
   ): bool =
   if label.len > 0:
-    echo "  ", label
+    echo "- ", label
   let err = abs(lhs - rhs)
   let refVal = max(1.0, max(abs(lhs), abs(rhs)))
   let rel = err / refVal
