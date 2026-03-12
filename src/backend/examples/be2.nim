@@ -1,6 +1,7 @@
 import backend/[accel,cpugpu]
 import bench/commonBench
 import base
+import strformat
 
 type
   myarray[T] = object
@@ -40,39 +41,54 @@ template fromGpu*(x: var cgarray, g: myarray, cpy: bool) =
 
 block:
   commsInit()
-  let N = intParam("n", 1024*1024)
-  var x = newCgarray[float](N)
-  var y = newCgarray[float](N)
-  var z = newCgarray[float](N)
-  template initX(i: int): float = 1.0 + i.float
-  template initY(i: int): float = 2.0 + i.float
-  for i in 0..<N:
-    x[i] = initX(i)
-    y[i] = initY(i)
+  let N = intParam("n", -1)
+  let Nmin = intParam("nmin", if N>0: N else: 1024)
+  let Nmax = intParam("nmax", if N>0: N else: 128*1024*1024)
+  type Real = float32
+  var x = newCgarray[Real](Nmax)
+  var y = newCgarray[Real](Nmax)
+  var z = newCgarray[Real](Nmax)
+  template initX(i: int): Real = Real(1 + i)
+  template initY(i: int): Real = Real(2 + i)
+  threads:
+    for i in threadRange(Nmax):
+      x[i] = initX(i)
+      y[i] = initY(i)
   x.gpuReadOnly
   y.gpuReadOnly
   z.gpuWriteOnly
-  var b = newBench()
-  benchSingle(b):
-    let nrep = b.nrep
-    #echo nrep
-    onGpu:
-      for rep in 1..nrep:
-        for i in gpuRange(N):
-          z[i] = x[i] * y[i]
-  echo "z[N-1]: ", z[N-1]
-  var errcnt = 0
-  for i in 0..<N:
-    let r = initX(i) * initY(i)
-    if z[i] != r:
-      if errcnt < 1:
-        echo "Error: ", i, " ", z[i], " ", r, " ", z[i]-r
-      inc errcnt
-  if errcnt > 0:
-    echo "Error count: ", errcnt
-  let flops = N
-  let bytes = 3*N*sizeof(x[0])
-  echo "Gflops: ", flops * b.perNs
-  echo "Gbytes: ", bytes * b.perNs
-  doAssert(errcnt==0)
+
+  proc test(n: int) =
+    var b = newBench()
+    benchSingle(b):
+      let nrep = b.nrep
+      #echo nrep
+      onGpu:
+        for rep in 1..nrep:
+          for i in gpuRange(n):
+            z[i] = x[i] * y[i]
+    #echo "z[n-1]: ", z[n-1]
+    var errcnt = 0
+    for i in 0..<n:
+      let r = initX(i) * initY(i)
+      if z[i] != r:
+        if errcnt < 1:
+          echo "Error: ", i, " ", z[i], " ", r, " ", z[i]-r
+        inc errcnt
+    if errcnt > 0:
+      echo "Error count: ", errcnt
+    let bytes = 3*n*sizeof(x[0])
+    let flops = n
+    let memMB = 1e-6 * bytes
+    let bwGB = bytes * b.perNs
+    let flopsGB = flops * b.perNs
+    echo &"{memMB:8.3f} {bwGB:8.3f} {flopsGB:8.3f}"
+    doAssert(errcnt==0)
+
+  echo "      MB     GB/s  GFlop/s    (z=x*y ", (if sizeof(Real)==8:"double)" else:"single)")
+  var n = Nmin
+  while n <= Nmax:
+    test(n)
+    n *= 2
+
   commsFinalize()
