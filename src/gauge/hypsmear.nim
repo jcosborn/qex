@@ -469,12 +469,13 @@ proc scaleFactors[V:static[int],F,T](hs: HypSmear[V,F,T]): HypScaleFactors {.inl
     ma3: 1 - hs.coef.alpha3,
   )
 
-proc pairStageScales[Stage: static int](hs: HypSmear): auto {.inline.} =
+proc pairStageScalesL1(hs: HypSmear): auto {.inline.} =
   let sc = hs.scaleFactors
-  when Stage == 1:
-    result = (ma: sc.ma1, alp: sc.alp1)
-  else:
-    result = (ma: sc.ma2, alp: sc.alp2)
+  result = (ma: sc.ma1, alp: sc.alp1)
+
+proc pairStageScalesL2(hs: HypSmear): auto {.inline.} =
+  let sc = hs.scaleFactors
+  result = (ma: sc.ma2, alp: sc.alp2)
 
 proc outputStageScales(hs: HypSmear): auto {.inline.} =
   let sc = hs.scaleFactors
@@ -745,138 +746,155 @@ proc hypOutputStageChainVJP*(hs: var HypSmear, l2, seedBar: auto;
                       hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[nu])
     threadBarrier()
 
-## Pair-stage operator family.
-## Stage 1 corresponds to L1; Stage 2 corresponds to L2.
-proc hypPairStage*[Stage: static int](hs: var HypSmear, pairSrc: auto;
-                                      outX, outProj: auto) =
+## Pair-stage operator family split into explicit Level-1/Level-2 entry points.
+proc hypPairStageL1*(hs: var HypSmear; outX, outProj: auto) =
   let hsp = hs.addr
-  let sc = pairStageScales[Stage](hsp[])
-  when Stage == 1:
-    threads:
-      forPairs(mu, nu):
-        discard hsp[].state.gaugePairShift[mu][nu] ^*! hsp[].state.gf[mu]
+  let sc = pairStageScalesL1(hsp[])
+  threads:
+    forPairs(mu, nu):
+      discard hsp[].state.gaugePairShift[mu][nu] ^*! hsp[].state.gf[mu]
 
   threads:
     forPairs(mu, nu):
       outX[mu,nu] := sc.ma * hsp[].state.gf[mu]
-      when Stage == 1:
-        symStaple(outX[mu,nu], sc.alp, hsp[].state.gf[nu], hsp[].state.gf[mu],
-                  hsp[].state.gaugePairShift[nu][mu], hsp[].state.gaugePairShift[mu][nu],
-                  hsp[].work.tm1, hsp[].state.sm1[nu])
-        threadBarrier()
-      else:
-        forThird(mu, nu, a, b):
-          let pl1 = pairSrc[a,b]
-          let pl2 = pairSrc[mu,b]
-          threadBarrier()
-          discard hsp[].state.stagePairShift[nu][mu] ^*! pl1
-          discard hsp[].state.stagePairShift[mu][a] ^*! pl2
-          threadBarrier()
-          symStaple(outX[mu,nu], sc.alp, pl1, pl2,
-                    hsp[].state.stagePairShift[nu][mu], hsp[].state.stagePairShift[mu][a],
-                    hsp[].work.tm1, hsp[].state.sm1[a])
-          threadBarrier()
+      symStaple(outX[mu,nu], sc.alp, hsp[].state.gf[nu], hsp[].state.gf[mu],
+                hsp[].state.gaugePairShift[nu][mu], hsp[].state.gaugePairShift[mu][nu],
+                hsp[].work.tm1, hsp[].state.sm1[nu])
+      threadBarrier()
       outProj[mu,nu].proj outX[mu,nu]
 
-proc hypPairStageJVP*[Stage: static int](hs: var HypSmear, pairSrc, tangentSrc,
-                                         shiftedTangents, preProjBase, projBase,
-                                         dgEff: auto;
-                                         preProjOut, tangentOut: auto) =
+proc hypPairStageL2*(hs: var HypSmear, pairSrc: auto;
+                     outX, outProj: auto) =
   let hsp = hs.addr
-  let sc = pairStageScales[Stage](hsp[])
-  when Stage == 1:
-    threads:
-      forPairs(mu, nu):
-        discard hsp[].state.gaugePairShift[mu][nu] ^*! hsp[].state.gf[mu]
+  let sc = pairStageScalesL2(hsp[])
+  threads:
+    forPairs(mu, nu):
+      outX[mu,nu] := sc.ma * hsp[].state.gf[mu]
+      forThird(mu, nu, a, b):
+        let pl1 = pairSrc[a,b]
+        let pl2 = pairSrc[mu,b]
+        threadBarrier()
+        discard hsp[].state.stagePairShift[nu][mu] ^*! pl1
+        discard hsp[].state.stagePairShift[mu][a] ^*! pl2
+        threadBarrier()
+        symStaple(outX[mu,nu], sc.alp, pl1, pl2,
+                  hsp[].state.stagePairShift[nu][mu], hsp[].state.stagePairShift[mu][a],
+                  hsp[].work.tm1, hsp[].state.sm1[a])
+        threadBarrier()
+      outProj[mu,nu].proj outX[mu,nu]
+
+proc hypPairStageJVPL1*(hs: var HypSmear, tangentSrc, shiftedTangents,
+                        preProjBase, projBase, dgEff: auto;
+                        preProjOut, tangentOut: auto) =
+  let hsp = hs.addr
+  let sc = pairStageScalesL1(hsp[])
+  threads:
+    forPairs(mu, nu):
+      discard hsp[].state.gaugePairShift[mu][nu] ^*! hsp[].state.gf[mu]
 
   threads:
     forPairs(mu, nu):
       preProjOut[mu,nu] := sc.ma * dgEff[mu]
-      when Stage == 1:
-        symStapleJVP(preProjOut[mu,nu], sc.alp,
-                     hsp[].state.gf[nu], hsp[].state.gf[mu],
-                     hsp[].state.gaugePairShift[nu][mu], hsp[].state.gaugePairShift[mu][nu],
-                     tangentSrc[nu], tangentSrc[mu],
-                     shiftedTangents[nu][mu], shiftedTangents[mu][nu],
-                     hsp[].work.tm1, hsp[].state.sm1[nu])
-        threadBarrier()
-      else:
-        forThird(mu, nu, a, b):
-          let pl1 = pairSrc[a,b]
-          let pl2 = pairSrc[mu,b]
-          let dpl1 = tangentSrc[a,b]
-          let dpl2 = tangentSrc[mu,b]
-          threadBarrier()
-          discard hsp[].state.stagePairShift[nu][mu] ^*! pl1
-          discard hsp[].state.stagePairShift[mu][a] ^*! pl2
-          discard shiftedTangents[mu][nu][a][0] ^*! dpl1
-          discard shiftedTangents[mu][nu][a][1] ^*! dpl2
-          threadBarrier()
-          symStapleJVP(preProjOut[mu,nu], sc.alp,
-                       pl1, pl2, hsp[].state.stagePairShift[nu][mu], hsp[].state.stagePairShift[mu][a],
-                       dpl1, dpl2,
-                       shiftedTangents[mu][nu][a][0], shiftedTangents[mu][nu][a][1],
-                       hsp[].work.tm1, hsp[].state.sm1[a])
-          threadBarrier()
+      symStapleJVP(preProjOut[mu,nu], sc.alp,
+                   hsp[].state.gf[nu], hsp[].state.gf[mu],
+                   hsp[].state.gaugePairShift[nu][mu], hsp[].state.gaugePairShift[mu][nu],
+                   tangentSrc[nu], tangentSrc[mu],
+                   shiftedTangents[nu][mu], shiftedTangents[mu][nu],
+                   hsp[].work.tm1, hsp[].state.sm1[nu])
+      threadBarrier()
       tangentOut[mu,nu].projJVP(projBase[mu,nu], preProjBase[mu,nu], preProjOut[mu,nu])
 
-proc hypPairStageStapleVJP*[Stage: static int](hs: var HypSmear, pairSrc, chainIn: auto;
-                                               dst: auto) =
+proc hypPairStageJVPL2*(hs: var HypSmear, pairSrc, tangentSrc,
+                        shiftedTangents, preProjBase, projBase,
+                        dgEff: auto;
+                        preProjOut, tangentOut: auto) =
   let hsp = hs.addr
+  let sc = pairStageScalesL2(hsp[])
   threads:
     forPairs(mu, nu):
-      when Stage == 1:
-        discard hsp[].work.chainShift[nu] ^* chainIn[mu,nu]
-        symStapleVJP(dst[nu], dst[mu],
-                     hsp[].state.gf[nu], hsp[].state.gf[mu],
-                     hsp[].state.gaugePairShift[nu][mu], hsp[].state.gaugePairShift[mu][nu],
-                     chainIn[mu,nu], hsp[].work.chainShift[nu],
-                     hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[nu], hsp[].state.sm1[mu])
+      preProjOut[mu,nu] := sc.ma * dgEff[mu]
+      forThird(mu, nu, a, b):
+        let pl1 = pairSrc[a,b]
+        let pl2 = pairSrc[mu,b]
+        let dpl1 = tangentSrc[a,b]
+        let dpl2 = tangentSrc[mu,b]
         threadBarrier()
-      else:
-        forThird(mu, nu, a, b):
-          let pl1 = pairSrc[a,b]
-          let pl2 = pairSrc[mu,b]
-          threadBarrier()
-          discard hsp[].state.stagePairShift[nu][mu] ^*! pl1
-          discard hsp[].state.stagePairShift[mu][a] ^*! pl2
-          discard hsp[].work.chainShift[a] ^*! chainIn[mu,nu]
-          threadBarrier()
-          symStapleVJP(dst[a,b], dst[mu,b],
-                       pl1, pl2,
-                       hsp[].state.stagePairShift[nu][mu], hsp[].state.stagePairShift[mu][a],
-                       chainIn[mu,nu], hsp[].work.chainShift[a],
-                       hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[a], hsp[].state.sm1[mu])
-          threadBarrier()
+        discard hsp[].state.stagePairShift[nu][mu] ^*! pl1
+        discard hsp[].state.stagePairShift[mu][a] ^*! pl2
+        discard shiftedTangents[mu][nu][a][0] ^*! dpl1
+        discard shiftedTangents[mu][nu][a][1] ^*! dpl2
+        threadBarrier()
+        symStapleJVP(preProjOut[mu,nu], sc.alp,
+                     pl1, pl2, hsp[].state.stagePairShift[nu][mu], hsp[].state.stagePairShift[mu][a],
+                     dpl1, dpl2,
+                     shiftedTangents[mu][nu][a][0], shiftedTangents[mu][nu][a][1],
+                     hsp[].work.tm1, hsp[].state.sm1[a])
+        threadBarrier()
+      tangentOut[mu,nu].projJVP(projBase[mu,nu], preProjBase[mu,nu], preProjOut[mu,nu])
 
-proc hypPairStageChainVJP*[Stage: static int](hs: var HypSmear, pairSrc, seedBar: auto;
-                                              dst: auto) =
+proc hypPairStageStapleVJPL1*(hs: var HypSmear, chainIn: auto; dst: auto) =
   let hsp = hs.addr
   threads:
     forPairs(mu, nu):
-      when Stage == 1:
-        symStapleVJPChain(dst[mu,nu],
-                          hsp[].state.gf[nu], hsp[].state.gf[mu],
-                          hsp[].state.gaugePairShift[nu][mu], hsp[].state.gaugePairShift[mu][nu],
-                          seedBar[nu], seedBar[mu],
-                          hsp[].work.chainShift[nu], hsp[].work.seedShift[mu],
-                          hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[nu])
+      discard hsp[].work.chainShift[nu] ^* chainIn[mu,nu]
+      symStapleVJP(dst[nu], dst[mu],
+                   hsp[].state.gf[nu], hsp[].state.gf[mu],
+                   hsp[].state.gaugePairShift[nu][mu], hsp[].state.gaugePairShift[mu][nu],
+                   chainIn[mu,nu], hsp[].work.chainShift[nu],
+                   hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[nu], hsp[].state.sm1[mu])
+      threadBarrier()
+
+proc hypPairStageStapleVJPL2*(hs: var HypSmear, pairSrc, chainIn: auto;
+                              dst: auto) =
+  let hsp = hs.addr
+  threads:
+    forPairs(mu, nu):
+      forThird(mu, nu, a, b):
+        let pl1 = pairSrc[a,b]
+        let pl2 = pairSrc[mu,b]
         threadBarrier()
-      else:
-        forThird(mu, nu, a, b):
-          let pl1 = pairSrc[a,b]
-          let pl2 = pairSrc[mu,b]
-          threadBarrier()
-          discard hsp[].state.stagePairShift[nu][mu] ^*! pl1
-          discard hsp[].state.stagePairShift[mu][a] ^*! pl2
-          threadBarrier()
-          symStapleVJPChain(dst[mu,nu],
-                            pl1, pl2,
-                            hsp[].state.stagePairShift[nu][mu], hsp[].state.stagePairShift[mu][a],
-                            seedBar[a,b], seedBar[mu,b],
-                            hsp[].work.chainShift[a], hsp[].work.seedShift[mu],
-                            hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[a])
-          threadBarrier()
+        discard hsp[].state.stagePairShift[nu][mu] ^*! pl1
+        discard hsp[].state.stagePairShift[mu][a] ^*! pl2
+        discard hsp[].work.chainShift[a] ^*! chainIn[mu,nu]
+        threadBarrier()
+        symStapleVJP(dst[a,b], dst[mu,b],
+                     pl1, pl2,
+                     hsp[].state.stagePairShift[nu][mu], hsp[].state.stagePairShift[mu][a],
+                     chainIn[mu,nu], hsp[].work.chainShift[a],
+                     hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[a], hsp[].state.sm1[mu])
+        threadBarrier()
+
+proc hypPairStageChainVJPL1*(hs: var HypSmear, seedBar: auto; dst: auto) =
+  let hsp = hs.addr
+  threads:
+    forPairs(mu, nu):
+      symStapleVJPChain(dst[mu,nu],
+                        hsp[].state.gf[nu], hsp[].state.gf[mu],
+                        hsp[].state.gaugePairShift[nu][mu], hsp[].state.gaugePairShift[mu][nu],
+                        seedBar[nu], seedBar[mu],
+                        hsp[].work.chainShift[nu], hsp[].work.seedShift[mu],
+                        hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[nu])
+      threadBarrier()
+
+proc hypPairStageChainVJPL2*(hs: var HypSmear, pairSrc, seedBar: auto;
+                             dst: auto) =
+  let hsp = hs.addr
+  threads:
+    forPairs(mu, nu):
+      forThird(mu, nu, a, b):
+        let pl1 = pairSrc[a,b]
+        let pl2 = pairSrc[mu,b]
+        threadBarrier()
+        discard hsp[].state.stagePairShift[nu][mu] ^*! pl1
+        discard hsp[].state.stagePairShift[mu][a] ^*! pl2
+        threadBarrier()
+        symStapleVJPChain(dst[mu,nu],
+                          pl1, pl2,
+                          hsp[].state.stagePairShift[nu][mu], hsp[].state.stagePairShift[mu][a],
+                          seedBar[a,b], seedBar[mu,b],
+                          hsp[].work.chainShift[a], hsp[].work.seedShift[mu],
+                          hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[a])
+        threadBarrier()
 
 template accumulateAndScaleGauge(dst, src, ma, alp: auto) =
   threads:
@@ -906,83 +924,87 @@ template applyPairProjectionHvpPhase(chainBar, dChainBar, projected, xfield,
   applyProjectionHVP(chainBar, dChainBar, projected, xfield, preProjChain, tangent)
   accumulateAndScalePairs(derivHvp, chainBar, ma, alp)
 
-proc hypPairStageHVP*[Stage: static int](hs: var HypSmear, pairSrc, tangentSrc,
-                                         chainSrc, dChainIn: auto;
-                                         dst: auto) =
+proc hypPairStageHVPL1*(hs: var HypSmear, tangentSrc, chainSrc, dChainIn: auto;
+                        dst: auto) =
   block:
     let hsp = hs.addr
     let lo = hsp[].state.gf[0].l
     type Fld = typeof(hsp[].state.gf[0])
-    when Stage == 1:
-      var shiftedPairTangents: array[4, array[4, array[2, Shifter[Fld,type(hsp[].state.gf[0][0])]]]]
-      var shiftedChainTangents: array[4, array[4, Shifter[Fld,type(hsp[].state.gf[0][0])]]]
-      forPairs(mu, nu):
-        shiftedPairTangents[mu][nu][0] = newShifter(tangentSrc[nu], mu, 1)
-        shiftedPairTangents[mu][nu][1] = newShifter(tangentSrc[mu], nu, 1)
-        shiftedChainTangents[mu][nu] = newShifter(dChainIn[mu,nu], nu, 1)
-      var acc1 = newFieldArray2(lo, Fld, [4,4], mu!=nu)
-      var acc2 = newFieldArray2(lo, Fld, [4,4], mu!=nu)
+    var shiftedPairTangents: array[4, array[4, array[2, Shifter[Fld,type(hsp[].state.gf[0][0])]]]]
+    var shiftedChainTangents: array[4, array[4, Shifter[Fld,type(hsp[].state.gf[0][0])]]]
+    forPairs(mu, nu):
+      shiftedPairTangents[mu][nu][0] = newShifter(tangentSrc[nu], mu, 1)
+      shiftedPairTangents[mu][nu][1] = newShifter(tangentSrc[mu], nu, 1)
+      shiftedChainTangents[mu][nu] = newShifter(dChainIn[mu,nu], nu, 1)
+    var acc1 = newFieldArray2(lo, Fld, [4,4], mu!=nu)
+    var acc2 = newFieldArray2(lo, Fld, [4,4], mu!=nu)
 
-      threads:
-        forPairs(mu, nu):
-          discard hsp[].work.chainShift[nu] ^* chainSrc[mu,nu]
-          discard shiftedPairTangents[mu][nu][0] ^*! tangentSrc[nu]
-          discard shiftedPairTangents[mu][nu][1] ^*! tangentSrc[mu]
-          discard shiftedChainTangents[mu][nu] ^*! dChainIn[mu,nu]
-          symStapleHVP(dst[nu], dst[mu], acc1[mu,nu], acc2[mu,nu],
-                       hsp[].state.gf[nu], hsp[].state.gf[mu],
-                       hsp[].state.gaugePairShift[nu][mu], hsp[].state.gaugePairShift[mu][nu],
-                       chainSrc[mu,nu], hsp[].work.chainShift[nu],
-                       tangentSrc[nu], tangentSrc[mu], dChainIn[mu,nu],
-                       shiftedPairTangents[mu][nu][0], shiftedPairTangents[mu][nu][1],
-                       shiftedChainTangents[mu][nu],
-                       hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[nu], hsp[].state.sm1[mu])
-          threadBarrier()
-    else:
-      var shiftedPairTangents: array[4, array[4, array[4, array[2, Shifter[Fld,type(hsp[].state.gf[0][0])]]]]]
-      var shiftedChainTangents: array[4, array[4, array[4, Shifter[Fld,type(hsp[].state.gf[0][0])]]]]
+    threads:
       forPairs(mu, nu):
-        forThird(mu, nu, a, b):
-          shiftedPairTangents[mu][nu][a][0] = newShifter(tangentSrc[a,b], mu, 1)
-          shiftedPairTangents[mu][nu][a][1] = newShifter(tangentSrc[mu,b], a, 1)
-          shiftedChainTangents[mu][nu][a] = newShifter(dChainIn[mu,nu], a, 1)
-      var acc1: array[4, array[4, array[4, Fld]]]
-      var acc2: array[4, array[4, array[4, Fld]]]
-      forPairs(mu, nu):
-        forThird(mu, nu, a, b):
-          acc1[mu][nu][a] = lo.newField(type(hsp[].state.gf[0][0]))
-          acc2[mu][nu][a] = lo.newField(type(hsp[].state.gf[0][0]))
+        discard hsp[].work.chainShift[nu] ^* chainSrc[mu,nu]
+        discard shiftedPairTangents[mu][nu][0] ^*! tangentSrc[nu]
+        discard shiftedPairTangents[mu][nu][1] ^*! tangentSrc[mu]
+        discard shiftedChainTangents[mu][nu] ^*! dChainIn[mu,nu]
+        symStapleHVP(dst[nu], dst[mu], acc1[mu,nu], acc2[mu,nu],
+                     hsp[].state.gf[nu], hsp[].state.gf[mu],
+                     hsp[].state.gaugePairShift[nu][mu], hsp[].state.gaugePairShift[mu][nu],
+                     chainSrc[mu,nu], hsp[].work.chainShift[nu],
+                     tangentSrc[nu], tangentSrc[mu], dChainIn[mu,nu],
+                     shiftedPairTangents[mu][nu][0], shiftedPairTangents[mu][nu][1],
+                     shiftedChainTangents[mu][nu],
+                     hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[nu], hsp[].state.sm1[mu])
+        threadBarrier()
 
-      threads:
-        forPairs(mu, nu):
-          forThird(mu, nu, a, b):
-            let pl1 = pairSrc[a,b]
-            let pl2 = pairSrc[mu,b]
-            threadBarrier()
-            discard hsp[].state.stagePairShift[nu][mu] ^*! pl1
-            discard hsp[].state.stagePairShift[mu][a] ^*! pl2
-            discard hsp[].work.chainShift[a] ^*! chainSrc[mu,nu]
-            discard shiftedPairTangents[mu][nu][a][0] ^*! tangentSrc[a,b]
-            discard shiftedPairTangents[mu][nu][a][1] ^*! tangentSrc[mu,b]
-            discard shiftedChainTangents[mu][nu][a] ^*! dChainIn[mu,nu]
-            threadBarrier()
-            symStapleHVP(dst[a,b], dst[mu,b],
-                         acc1[mu][nu][a], acc2[mu][nu][a],
-                         pl1, pl2,
-                         hsp[].state.stagePairShift[nu][mu], hsp[].state.stagePairShift[mu][a],
-                         chainSrc[mu,nu], hsp[].work.chainShift[a],
-                         tangentSrc[a,b], tangentSrc[mu,b], dChainIn[mu,nu],
-                         shiftedPairTangents[mu][nu][a][0], shiftedPairTangents[mu][nu][a][1],
-                         shiftedChainTangents[mu][nu][a],
-                         hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[a], hsp[].state.sm1[mu])
-            threadBarrier()
-
-proc hypPairStageHVPVJP*[Stage: static int](hs: var HypSmear, pairSrc, chainSrc,
-                                            seedBar, projected, xfield, preProjChain: auto;
-                                            pairBarOut, chainBar, nextChainBar: auto) =
+proc hypPairStageHVPL2*(hs: var HypSmear, pairSrc, tangentSrc, chainSrc, dChainIn: auto;
+                        dst: auto) =
   block:
     let hsp = hs.addr
-    let sc = pairStageScales[Stage](hsp[])
+    let lo = hsp[].state.gf[0].l
+    type Fld = typeof(hsp[].state.gf[0])
+    var shiftedPairTangents: array[4, array[4, array[4, array[2, Shifter[Fld,type(hsp[].state.gf[0][0])]]]]]
+    var shiftedChainTangents: array[4, array[4, array[4, Shifter[Fld,type(hsp[].state.gf[0][0])]]]]
+    forPairs(mu, nu):
+      forThird(mu, nu, a, b):
+        shiftedPairTangents[mu][nu][a][0] = newShifter(tangentSrc[a,b], mu, 1)
+        shiftedPairTangents[mu][nu][a][1] = newShifter(tangentSrc[mu,b], a, 1)
+        shiftedChainTangents[mu][nu][a] = newShifter(dChainIn[mu,nu], a, 1)
+    var acc1: array[4, array[4, array[4, Fld]]]
+    var acc2: array[4, array[4, array[4, Fld]]]
+    forPairs(mu, nu):
+      forThird(mu, nu, a, b):
+        acc1[mu][nu][a] = lo.newField(type(hsp[].state.gf[0][0]))
+        acc2[mu][nu][a] = lo.newField(type(hsp[].state.gf[0][0]))
+
+    threads:
+      forPairs(mu, nu):
+        forThird(mu, nu, a, b):
+          let pl1 = pairSrc[a,b]
+          let pl2 = pairSrc[mu,b]
+          threadBarrier()
+          discard hsp[].state.stagePairShift[nu][mu] ^*! pl1
+          discard hsp[].state.stagePairShift[mu][a] ^*! pl2
+          discard hsp[].work.chainShift[a] ^*! chainSrc[mu,nu]
+          discard shiftedPairTangents[mu][nu][a][0] ^*! tangentSrc[a,b]
+          discard shiftedPairTangents[mu][nu][a][1] ^*! tangentSrc[mu,b]
+          discard shiftedChainTangents[mu][nu][a] ^*! dChainIn[mu,nu]
+          threadBarrier()
+          symStapleHVP(dst[a,b], dst[mu,b],
+                       acc1[mu][nu][a], acc2[mu][nu][a],
+                       pl1, pl2,
+                       hsp[].state.stagePairShift[nu][mu], hsp[].state.stagePairShift[mu][a],
+                       chainSrc[mu,nu], hsp[].work.chainShift[a],
+                       tangentSrc[a,b], tangentSrc[mu,b], dChainIn[mu,nu],
+                       shiftedPairTangents[mu][nu][a][0], shiftedPairTangents[mu][nu][a][1],
+                       shiftedChainTangents[mu][nu][a],
+                       hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[a], hsp[].state.sm1[mu])
+          threadBarrier()
+
+proc hypPairStageHVPVJPL1*(hs: var HypSmear, chainSrc, seedBar,
+                           projected, xfield, preProjChain: auto;
+                           gaugeBarOut, chainBar, nextChainBar: auto) =
+  block:
+    let hsp = hs.addr
+    let sc = pairStageScalesL1(hsp[])
     let lo = hsp[].state.gf[0].l
     type Fld = typeof(hsp[].state.gf[0])
     var dcbar = newFieldArray2(lo, Fld, [4,4], mu!=nu)
@@ -992,33 +1014,15 @@ proc hypPairStageHVPVJP*[Stage: static int](hs: var HypSmear, pairSrc, chainSrc,
 
     threads:
       forPairs(mu, nu):
-        when Stage == 1:
-          discard hsp[].work.chainShift[nu] ^* chainSrc[mu,nu]
-          symStapleHVPVJP(pairBarOut[nu], pairBarOut[mu], dcbar[mu,nu],
-                          hsp[].state.gf[nu], hsp[].state.gf[mu],
-                          hsp[].state.gaugePairShift[nu][mu], hsp[].state.gaugePairShift[mu][nu],
-                          chainSrc[mu,nu], hsp[].work.chainShift[nu],
-                          seedBar[nu], seedBar[mu],
-                          hsp[].work.seedShift[nu], hsp[].work.seedShift[mu],
-                          hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[nu], hsp[].state.sm1[mu])
-          threadBarrier()
-        else:
-          forThird(mu, nu, a, b):
-            let pl1 = pairSrc[a,b]
-            let pl2 = pairSrc[mu,b]
-            threadBarrier()
-            discard hsp[].state.stagePairShift[nu][mu] ^*! pl1
-            discard hsp[].state.stagePairShift[mu][a] ^*! pl2
-            discard hsp[].work.chainShift[a] ^*! chainSrc[mu,nu]
-            threadBarrier()
-            symStapleHVPVJP(pairBarOut[a,b], pairBarOut[mu,b], dcbar[mu,nu],
-                            pl1, pl2,
-                            hsp[].state.stagePairShift[nu][mu], hsp[].state.stagePairShift[mu][a],
-                            chainSrc[mu,nu], hsp[].work.chainShift[a],
-                            seedBar[a,b], seedBar[mu,b],
-                            hsp[].work.seedShift[a], hsp[].work.seedShift[mu],
-                            hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[a], hsp[].state.sm1[mu])
-            threadBarrier()
+        discard hsp[].work.chainShift[nu] ^* chainSrc[mu,nu]
+        symStapleHVPVJP(gaugeBarOut[nu], gaugeBarOut[mu], dcbar[mu,nu],
+                        hsp[].state.gf[nu], hsp[].state.gf[mu],
+                        hsp[].state.gaugePairShift[nu][mu], hsp[].state.gaugePairShift[mu][nu],
+                        chainSrc[mu,nu], hsp[].work.chainShift[nu],
+                        seedBar[nu], seedBar[mu],
+                        hsp[].work.seedShift[nu], hsp[].work.seedShift[mu],
+                        hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[nu], hsp[].state.sm1[mu])
+        threadBarrier()
 
     addScaledPairs(chainBar, dcbar, sc.alp)
 
@@ -1029,37 +1033,87 @@ proc hypPairStageHVPVJP*[Stage: static int](hs: var HypSmear, pairSrc, chainSrc,
           chainBar[mu,nu]
         )
 
-proc hypPairStageJVPVJP*[Stage: static int](hs: var HypSmear, pairSrc, tangentXBar: auto;
-                                            pairBarOut, dgEffbar: auto) =
-  let hsp = hs.addr
-  let sc = pairStageScales[Stage](hsp[])
-  threads:
-    forPairs(mu, nu):
-      dgEffbar[mu] += sc.ma * tangentXBar[mu,nu]
+proc hypPairStageHVPVJPL2*(hs: var HypSmear, pairSrc, chainSrc,
+                           seedBar, projected, xfield, preProjChain: auto;
+                           pairBarOut, chainBar, nextChainBar: auto) =
+  block:
+    let hsp = hs.addr
+    let sc = pairStageScalesL2(hsp[])
+    let lo = hsp[].state.gf[0].l
+    type Fld = typeof(hsp[].state.gf[0])
+    var dcbar = newFieldArray2(lo, Fld, [4,4], mu!=nu)
+    threads:
+      forPairs(mu, nu):
+        dcbar[mu,nu] := 0
 
-  threads:
-    forPairs(mu, nu):
-      when Stage == 1:
-        symStapleJVPVJP(dgEffbar[nu], dgEffbar[mu], sc.alp,
-                        hsp[].state.gf[nu], hsp[].state.gf[mu],
-                        hsp[].state.gaugePairShift[nu][mu], hsp[].state.gaugePairShift[mu][nu],
-                        tangentXBar[mu,nu], hsp[].work.seedShift[nu],
-                        hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[nu], hsp[].state.sm1[mu])
-        threadBarrier()
-      else:
+    threads:
+      forPairs(mu, nu):
         forThird(mu, nu, a, b):
           let pl1 = pairSrc[a,b]
           let pl2 = pairSrc[mu,b]
           threadBarrier()
           discard hsp[].state.stagePairShift[nu][mu] ^*! pl1
           discard hsp[].state.stagePairShift[mu][a] ^*! pl2
+          discard hsp[].work.chainShift[a] ^*! chainSrc[mu,nu]
           threadBarrier()
-          symStapleJVPVJP(pairBarOut[a,b], pairBarOut[mu,b], sc.alp,
+          symStapleHVPVJP(pairBarOut[a,b], pairBarOut[mu,b], dcbar[mu,nu],
                           pl1, pl2,
                           hsp[].state.stagePairShift[nu][mu], hsp[].state.stagePairShift[mu][a],
-                          tangentXBar[mu,nu], hsp[].work.seedShift[a],
+                          chainSrc[mu,nu], hsp[].work.chainShift[a],
+                          seedBar[a,b], seedBar[mu,b],
+                          hsp[].work.seedShift[a], hsp[].work.seedShift[mu],
                           hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[a], hsp[].state.sm1[mu])
           threadBarrier()
+
+    addScaledPairs(chainBar, dcbar, sc.alp)
+
+    threads:
+      forPairs(mu, nu):
+        nextChainBar[mu,nu].projHVPVJP_dc(
+          projected[mu,nu], xfield[mu,nu], preProjChain[mu,nu],
+          chainBar[mu,nu]
+        )
+
+proc hypPairStageJVPVJPL1*(hs: var HypSmear, tangentXBar: auto;
+                           dgEffbar: auto) =
+  let hsp = hs.addr
+  let sc = pairStageScalesL1(hsp[])
+  threads:
+    forPairs(mu, nu):
+      dgEffbar[mu] += sc.ma * tangentXBar[mu,nu]
+
+  threads:
+    forPairs(mu, nu):
+      symStapleJVPVJP(dgEffbar[nu], dgEffbar[mu], sc.alp,
+                      hsp[].state.gf[nu], hsp[].state.gf[mu],
+                      hsp[].state.gaugePairShift[nu][mu], hsp[].state.gaugePairShift[mu][nu],
+                      tangentXBar[mu,nu], hsp[].work.seedShift[nu],
+                      hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[nu], hsp[].state.sm1[mu])
+      threadBarrier()
+
+proc hypPairStageJVPVJPL2*(hs: var HypSmear, pairSrc, tangentXBar: auto;
+                           pairBarOut, dgEffbar: auto) =
+  let hsp = hs.addr
+  let sc = pairStageScalesL2(hsp[])
+  threads:
+    forPairs(mu, nu):
+      dgEffbar[mu] += sc.ma * tangentXBar[mu,nu]
+
+  threads:
+    forPairs(mu, nu):
+      forThird(mu, nu, a, b):
+        let pl1 = pairSrc[a,b]
+        let pl2 = pairSrc[mu,b]
+        threadBarrier()
+        discard hsp[].state.stagePairShift[nu][mu] ^*! pl1
+        discard hsp[].state.stagePairShift[mu][a] ^*! pl2
+        threadBarrier()
+        symStapleJVPVJP(pairBarOut[a,b], pairBarOut[mu,b], sc.alp,
+                        pl1, pl2,
+                        hsp[].state.stagePairShift[nu][mu], hsp[].state.stagePairShift[mu][a],
+                        tangentXBar[mu,nu], hsp[].work.seedShift[a],
+                        hsp[].work.tm1, hsp[].work.tm2, hsp[].state.sm1[a], hsp[].state.sm1[mu])
+        threadBarrier()
 
 ## Final output-stage operator family built from L2 pair fields.
 proc hypOutputStage*(hs: var HypSmear, l2: auto; flx, fl: auto) =
@@ -1121,7 +1175,7 @@ proc buildTangentState[L,F,T](hs: var HypSmear[L,F,T], dg: auto): auto =
 
   clearTangentWorkspace(dflx, dl1x, dl2x, dl1, dl2)
 
-  hypPairStageJVP[1](hs, l1, dgEff, ds1, hs.state.l1x, l1, dgEff, dl1x, dl1)
+  hypPairStageJVPL1(hs, dgEff, ds1, hs.state.l1x, l1, dgEff, dl1x, dl1)
 
   var dsl1_l2: array[4, array[4, array[4, array[2, Shifter[Fld,type(hs.state.gf[0][0])]]]]]
   forPairs(mu, nu):
@@ -1129,7 +1183,7 @@ proc buildTangentState[L,F,T](hs: var HypSmear[L,F,T], dg: auto): auto =
       dsl1_l2[mu][nu][a][0] = newShifter(dl1[a,b], mu, 1)
       dsl1_l2[mu][nu][a][1] = newShifter(dl1[mu,b], a, 1)
 
-  hypPairStageJVP[2](hs, l1, dl1, dsl1_l2, hs.state.l2x, l2, dgEff, dl2x, dl2)
+  hypPairStageJVPL2(hs, l1, dl1, dsl1_l2, hs.state.l2x, l2, dgEff, dl2x, dl2)
 
   var dsl2: array[4,array[4,Shifter[Fld,type(hs.state.gf[0][0])]]]
   forPairs(mu, nu):
@@ -1223,7 +1277,7 @@ template buildReverseState(hsp, chain, deriv: untyped; accumulateDirect: static 
   projectAndScalePairChain(hsp.work.level2Chain, l2, hsp.state.l2x,
                            hsp.work.preProjLevel2Chain, sc.alp2, deriv, sc.ma2,
                            accumulateDirect)
-  hypPairStageStapleVJP[2](hsp[], l1, hsp[].work.level2Chain, hsp[].work.level1Chain)
+  hypPairStageStapleVJPL2(hsp[], l1, hsp[].work.level2Chain, hsp[].work.level1Chain)
   projectAndScalePairChain(hsp.work.level1Chain, l1, hsp.state.l1x,
                            hsp.work.preProjLevel1Chain, sc.alp1, deriv, sc.ma1,
                            accumulateDirect)
@@ -1241,8 +1295,8 @@ proc smear*(hs: var HypSmear, gf: auto, fl: auto) =
   var l2: typeof(l2x)
   initForwardProjectedLevels(hs, l1, l2)
 
-  hypPairStage[1](hs, l1, l1x, l1)
-  hypPairStage[2](hs, l1, l2x, l2)
+  hypPairStageL1(hs, l1x, l1)
+  hypPairStageL2(hs, l1, l2x, l2)
   hypOutputStage(hs, l2, flx, fl)
 
 proc smearVJP*(hs: var HypSmear, deriv: auto, chain: auto) =
@@ -1252,7 +1306,7 @@ proc smearVJP*(hs: var HypSmear, deriv: auto, chain: auto) =
   ## Backpropagate derivative through hs.smear
   let hsp = hs.addr
   buildReverseState(hsp, chain, deriv, true)
-  hypPairStageStapleVJP[1](hsp[], hsp[].work.level1Chain, hsp[].work.level1Chain, deriv)
+  hypPairStageStapleVJPL1(hsp[], hsp[].work.level1Chain, deriv)
 
 proc hypOutputProjectionJVP*(dst: auto; projected, preProj, tangent: auto) =
   let lo = preProj[0].l
@@ -1349,12 +1403,12 @@ proc smearHVP*[G](hs: var HypSmear, dderiv: G, chain: G, dg: G,
   # Level 2: projection on l2x and staples built from l1
   applyPairProjectionHvpPhase(work.dLevel2Chain, work.dPreProjLevel2Chain, l2, hsp.state.l2x,
                               hsp.work.preProjLevel2Chain, dl2x, dderiv, sc.ma2, sc.alp2)
-  hypPairStageHVP[2](hsp[], l1, dl1, hsp[].work.level2Chain, work.dLevel2Chain, work.dLevel1Chain)
+  hypPairStageHVPL2(hsp[], l1, dl1, hsp[].work.level2Chain, work.dLevel2Chain, work.dLevel1Chain)
 
   # Level 1: projection on l1x and staples built directly from gf
   applyPairProjectionHvpPhase(work.dLevel1Chain, work.dPreProjLevel1Chain, l1, hsp.state.l1x,
                               hsp.work.preProjLevel1Chain, dl1x, dderiv, sc.ma1, sc.alp1)
-  hypPairStageHVP[1](hsp[], dgEff, dgEff, hsp[].work.level1Chain, work.dLevel1Chain, dderiv)
+  hypPairStageHVPL1(hsp[], dgEff, hsp[].work.level1Chain, work.dLevel1Chain, dderiv)
 
 proc smearVJPChain*[G](hs: var HypSmear, chainbar: G, derivbar: G) =
   ## Adjoint of `smearVJP` with respect to `chain`.
@@ -1375,7 +1429,7 @@ proc smearVJPChain*[G](hs: var HypSmear, chainbar: G, derivbar: G) =
   var work = newChainAdjointWorkspace(chainbar, hsp.state.gf)
 
   # Phase 2: backpropagate the Level 1 reverse pair stage
-  hypPairStageChainVJP[1](hsp[], l1, derivbar, work.level1ChainBar)
+  hypPairStageChainVJPL1(hsp[], derivbar, work.level1ChainBar)
 
   # Phase 3: apply the Level 1 direct term and projection-chain adjoint
   threads:
@@ -1385,7 +1439,7 @@ proc smearVJPChain*[G](hs: var HypSmear, chainbar: G, derivbar: G) =
   applyPairProjectionChainAdjoint(work.level1ChainBar, l1, hsp.state.l1x)
 
   # Phase 4: backpropagate the Level 2 reverse pair stage
-  hypPairStageChainVJP[2](hsp[], l1, work.level1ChainBar, work.level2ChainBar)
+  hypPairStageChainVJPL2(hsp[], l1, work.level1ChainBar, work.level2ChainBar)
 
   # Phase 5: apply the Level 2 direct term and projection-chain adjoint
   threads:
@@ -1466,13 +1520,13 @@ proc smearHVPVJP*[G](hs: var HypSmear, gbar: G, derivbar: G, chain: G) =
   seedSmearHVPAdjoints(work.dfl1bar, work.dfl2bar, work.dfcbar, derivbar, sc.ma1, sc.ma2, sc.ma3)
 
   # Phase 2: reverse the Level 1 and Level 2 HVP output paths
-  hypPairStageHVPVJP[1](hsp[], l1, hsp[].work.level1Chain, derivbar,
-                        l1, hsp.state.l1x, hsp.work.preProjLevel1Chain,
-                        work.dgEffbar, work.dfl1bar, work.dfl1barL2)
+  hypPairStageHVPVJPL1(hsp[], hsp[].work.level1Chain, derivbar,
+                       l1, hsp.state.l1x, hsp.work.preProjLevel1Chain,
+                       work.dgEffbar, work.dfl1bar, work.dfl1barL2)
 
-  hypPairStageHVPVJP[2](hsp[], l1, hsp[].work.level2Chain, work.dfl1barL2,
-                        l2, hsp.state.l2x, hsp.work.preProjLevel2Chain,
-                        work.dl1bar, work.dfl2bar, work.dfl2barL3)
+  hypPairStageHVPVJPL2(hsp[], l1, hsp[].work.level2Chain, work.dfl1barL2,
+                       l2, hsp.state.l2x, hsp.work.preProjLevel2Chain,
+                       work.dl1bar, work.dfl2bar, work.dfl2barL3)
 
   # Phase 3: reverse the Level 3 HVP output path back into the tangent state
   hypOutputStageHVPVJP(hsp[], work.dfl2barL3, l2, work.dl2bar, work.dfcbar)
@@ -1483,11 +1537,11 @@ proc smearHVPVJP*[G](hs: var HypSmear, gbar: G, derivbar: G, chain: G) =
 
   # Phase 4: reverse the Level 2 projection and tangent contributions
   accumulateProjectionAdjoint(work.dl2xbar, hsp.state.l2x, hsp.work.preProjLevel2Chain, work.dl2bar, work.dfl2bar)
-  hypPairStageJVPVJP[2](hsp[], l1, work.dl2xbar, work.dl1bar, work.dgEffbar)
+  hypPairStageJVPVJPL2(hsp[], l1, work.dl2xbar, work.dl1bar, work.dgEffbar)
 
   # Phase 5: reverse the Level 1 projection and tangent contributions
   accumulateProjectionAdjoint(work.dl1xbar, hsp.state.l1x, hsp.work.preProjLevel1Chain, work.dl1bar, work.dfl1bar)
-  hypPairStageJVPVJP[1](hsp[], hsp[].state.gf, work.dl1xbar, work.dl1xbar, work.dgEffbar)
+  hypPairStageJVPVJPL1(hsp[], work.dl1xbar, work.dgEffbar)
 
   # Phase 6: return the adjoint with respect to the multiplicative tangent `dg*g`
   threads:

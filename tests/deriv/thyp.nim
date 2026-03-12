@@ -37,7 +37,7 @@ var shapeSg = lo.newGauge
 shapeHs.smear(g, shapeSg)
 
 type
-  PairField = type(shapeHs.state.l1x)
+  PairField = type(newOneOf(shapeHs.state.l1x))
 
 let adjCoefCombos = [
   HypCoefs(alpha1:0.0, alpha2:0.0, alpha3:0.0),  # 0: All off
@@ -635,18 +635,16 @@ proc testHypPairStage1JVP(): int =
       var sg = lo.newGauge
       hs.smear(x, sg)
       var pre = newOneOf(hs.state.l1x)
-      var dummy = newOneOf(hs.state.l1x)
-      hypPairStage[1](hs, dummy, pre, res),
+      hypPairStageL1(hs, pre, res),
     jvp = proc(x: GaugeField; dx: GaugeField; res: var PairField) =
       var sg = lo.newGauge
       hs.smear(x, sg)
       var pre0 = newOneOf(hs.state.l1x)
       var proj0 = newOneOf(hs.state.l1x)
-      var dummy = newOneOf(hs.state.l1x)
-      hypPairStage[1](hs, dummy, pre0, proj0)
+      hypPairStageL1(hs, pre0, proj0)
       let ds1 = initShiftedGaugeTangents(dx)
       var dpre = newOneOf(pre0)
-      hypPairStageJVP[1](hs, dummy, dx, ds1, pre0, proj0, dx, dpre, res)
+      hypPairStageJVPL1(hs, dx, ds1, pre0, proj0, dx, dpre, res)
   )
   result = res.failed
 
@@ -679,14 +677,14 @@ proc testHypPairStage2JVP(): int =
       perturbPairFieldAdd(x, dx, eps, res),
     f = proc(x: PairField; res: var PairField) =
       var pre = newOneOf(hs.state.l2x)
-      hypPairStage[2](hs, x, pre, res),
+      hypPairStageL2(hs, x, pre, res),
     jvp = proc(x: PairField; dx: PairField; res: var PairField) =
       var pre0 = newOneOf(hs.state.l2x)
       var proj0 = newOneOf(hs.state.l2x)
-      hypPairStage[2](hs, x, pre0, proj0)
+      hypPairStageL2(hs, x, pre0, proj0)
       let dsl1 = initShiftedStage2Tangents(dx)
       var dpre = newOneOf(pre0)
-      hypPairStageJVP[2](hs, x, dx, dsl1, pre0, proj0, dgEffZero, dpre, res)
+      hypPairStageJVPL2(hs, x, dx, dsl1, pre0, proj0, dgEffZero, dpre, res)
   )
   result = res.failed
 
@@ -748,15 +746,13 @@ proc testHypPairStage1ChainAdjoint(): int =
     jvp = proc(x: GaugeField; dx: PairField; res: var GaugeField) =
       var sg = lo.newGauge
       hs.smear(x, sg)
-      let l1 = currentHypL1(hs)
       zeroInPlace(res)
-      hypPairStageStapleVJP[1](hs, l1, dx, res),
+      hypPairStageStapleVJPL1(hs, dx, res),
     vjp = proc(x: GaugeField; ybar: GaugeField; res: var PairField) =
       var sg = lo.newGauge
       hs.smear(x, sg)
-      let l1 = currentHypL1(hs)
       zeroInPlace(res)
-      hypPairStageChainVJP[1](hs, l1, ybar, res)
+      hypPairStageChainVJPL1(hs, ybar, res)
   )
   result = res.failed
 
@@ -783,10 +779,10 @@ proc testHypPairStage2ChainAdjoint(): int =
       makePairFieldGaussianLike(l1),
     jvp = proc(x: int; dx: PairField; res: var PairField) =
       zeroInPlace(res)
-      hypPairStageStapleVJP[2](hs, l1, dx, res),
+      hypPairStageStapleVJPL2(hs, l1, dx, res),
     vjp = proc(x: int; ybar: PairField; res: var PairField) =
       zeroInPlace(res)
-      hypPairStageChainVJP[2](hs, l1, ybar, res)
+      hypPairStageChainVJPL2(hs, l1, ybar, res)
   )
   result = res.failed
 
