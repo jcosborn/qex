@@ -97,7 +97,9 @@ macro substVars*(x: untyped, a: untyped): auto =
   var v = newSeq[NimNode](0)
   let e = getVars(v, x, a)
   result = e
-  echo result.treerepr
+  #echo result.treerepr
+
+const Keywords = ["addr"]
 
 proc prepareVars*(n:NimNode, deref:proc): seq[NimNode] =
   # get a list of vars and new symbols to replace them, using let binding for now XXX
@@ -127,7 +129,14 @@ proc prepareVars*(n:NimNode, deref:proc): seq[NimNode] =
       of {nnkVarSection,nnkLetSection}:
         for cc in n[i]:
           for c in 0..cc.len-2:
-            ignoreStack[^1].add cc[c]
+            case cc[c].kind
+            of nnkPragmaExpr:
+              ignoreStack[^1].add cc[c][0]
+            of nnkBracketExpr:
+              for ccc in cc[c]:
+                ignoreStack[^1].add ccc
+            else:
+              ignoreStack[^1].add cc[c]
       of nnkOpenSymChoice:
         if n.kind in Callnodes: continue
       of Callnodes:
@@ -146,8 +155,14 @@ proc prepareVars*(n:NimNode, deref:proc): seq[NimNode] =
         #echo n[i].treerepr
         if n[i][0][0].kind in {nnkIdent,nnkSym}:
           ignoreStack[^1].add n[i][0][0]
+      of nnkPragma:
+        continue
+      of nnkCast:
+        n[i][1].go
+        continue
       of {nnkSym, nnkIdent}:
         if n.kind == nnkDotExpr and i > 0: continue
+        if n[i].repr in Keywords: continue
         var ignore = false
         for cc in ignoreStack:
           for c in cc:

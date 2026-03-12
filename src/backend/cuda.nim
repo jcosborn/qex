@@ -261,6 +261,9 @@ macro onGpu*(nn0,tpb0: untyped, body: untyped): auto =
 
 template onGpu*(nn: untyped, body: untyped): untyped = onGpu(nn, 64, body)
 template onGpu*(body: untyped): untyped = onGpu(512*64, 64, body)
+#template onGpu*(body: untyped): untyped = onGpu(256*128, 128, body)
+#template onGpu*(body: untyped): untyped = onGpu(1024*64, 64, body)
+#template onGpu*(body: untyped): untyped = onGpu(4864, 64, body)
 
 when isMainModule:
   type FltArr = UncheckedArray[float32]

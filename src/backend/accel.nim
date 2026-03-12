@@ -1,3 +1,5 @@
+import macros
+
 const Backend {.strdefine.} = "OpenMP"
 #const Backend {.strdefine.} = "CUDA"
 #const Backend {.strdefine.} = "SYCL"
@@ -34,7 +36,14 @@ proc gpuMalloc*[T](x: var ptr T) =
 
 template toGpu*(x:SomeNumber):auto = x
 template toGpu*(x:var SomeNumber):auto = addr x
-template getGpu*(x:SomeNumber, g:SomeNumber):auto = g
+#template getGpu*(x:SomeNumber, g:SomeNumber):auto = g
+macro getGpu*(x:SomeNumber, g:SomeNumber):auto =
+  #echo x.treerepr
+  #if x.kind == nnkSym and x.symKind == nskConst:
+  if x.kind in nnkLiterals:
+    result = x
+  else:
+    result = g
 template getGpu*(x:SomeNumber, g:ptr SomeNumber):auto = g[]
 template fromGpu*(x:SomeNumber, g:SomeNumber) = discard
 template fromGpu*(x:var SomeNumber, g:ptr SomeNumber) = (x = g[])
@@ -51,7 +60,7 @@ iterator gpuRange*(n: int): int =
     let id = gpuThreadNum()
     let i0 = (n*id) div s
     let i1 = (n*(id+1)) div s
-    for i in i0 .. i1:
+    for i in i0 ..< i1:
       yield i
 
 when isMainModule:

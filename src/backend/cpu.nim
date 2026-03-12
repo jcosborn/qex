@@ -49,10 +49,14 @@ macro onGpu*(body: untyped): auto =
     cpuPrepare = genCpuPrepare v
     cpuFinalize = genCpuFinalize v
   result = getast(target(cpuPrepare, cpuFinalize, body))
-  if dumpKernels == 1:
+  case dumpKernels
+  of 1:
     echo result.repr
-  elif dumpKernels > 1:
-    result = newCall(bindsym"echoTyped", result)
+  of 2:
+    echo result.treerepr
+  else:
+    if dumpKernels > 2:
+      result = newCall(bindsym"echoTyped", result)
 
 #template onGpu*(n,x:untyped) = onGpu(x)
 #template onGpu*(n,t,x:untyped) = onGpu(x)
