@@ -17,31 +17,44 @@ type
     envParams: seq[Gvalue]
     envValues: seq[Gvalue]
     resolved: bool
-  ApplyInputView = object
-    inputs: seq[Gvalue]
+  CallableResolution = object
+    value: Gvalue
+    fn: Glambda
+  CallableResolveMode = enum
+    crmShallow, crmReduced
+  ApplySnapshot = object
+    fun: Gvalue
+    arg: Gvalue
+    deps: seq[Gvalue]
+    fn: Glambda
+    callableKey: NodeKey
+    freshEpoch: int
+    hasReductionState: bool
+  ApplyPartialView = object
+    base: Gvalue
+    targets: seq[Gvalue]
   ApplySignature = object
-    callableKey: pointer
-    inputKeys: seq[pointer]
+    callableKey: NodeKey
+    inputKeys: seq[NodeKey]
   ApplyCacheEntry = ref object
     hasSignature: bool
     signature: ApplySignature
     freshEpoch: int
     reduced: Gvalue
-    partials: Table[pointer, Gvalue]
+    partials: NodeTable[Gvalue]
   DependencyEpochContext = object
-    seenCallable: HashSet[pointer]
-    seenValues: HashSet[pointer]
-  CallableDepContext = ref object
-    seenCallable: HashSet[pointer]
-    seenValues: HashSet[pointer]
-    deps: seq[Gvalue]
+    seenCallable: NodeSet
+    seenValues: NodeSet
+  CallableDepWalkMode = enum
+    cdwmEpoch, cdwmValueDeps
   ApplyCacheStats* = object
     reduceHits*: int
     reduceMisses*: int
     partialHits*: int
     partialMisses*: int
+  NodeBindings = NodeTable[Gvalue]
 
-var applyCache = initTable[pointer, ApplyCacheEntry]()
+var applyCache = initNodeTable[ApplyCacheEntry]()
 var applyCacheStats*: ApplyCacheStats
 var gapplyDeferred: Gfunc
 var gapplyPartialDeferred: Gfunc
@@ -49,20 +62,30 @@ var gapplyPartialDeferred: Gfunc
 # Section: Private Forward Declarations
 
 # Lambda cloning and closure conversion.
-proc cloneWithSubst(v: Gvalue, subst: Table[pointer, Gvalue],
-                    memo: var Table[pointer, Gvalue]): Gvalue
+proc cloneWithSubst(v: Gvalue, subst: NodeBindings,
+                    memo: var NodeBindings): Gvalue
 proc cloneResolvedLambdaWithSubst(fn: Glambda,
-                                  subst: Table[pointer, Gvalue],
-                                  memo: var Table[pointer, Gvalue]): Gvalue
+                                  subst: NodeBindings,
+                                  memo: var NodeBindings): Gvalue
 proc recloseLambda(fn: Glambda)
 proc instantiateLambdaBody(fn: Glambda, x: Gvalue): Gvalue
 
 # Callable resolution and apply normalization.
+proc resolveCallable(fun: Gvalue, mode: CallableResolveMode): CallableResolution
 proc resolveDirectLambda(fun: Gvalue): Glambda
 proc resolveLambda(fun: Gvalue): Glambda
-proc buildApplyInputView(v: Gvalue): ApplyInputView
+proc buildApplySnapshot(v: Gvalue): ApplySnapshot
+proc parseApplyPartial(v: Gvalue): ApplyPartialView
+proc prepareApplyReduction(snapshot: var ApplySnapshot)
 proc appendApplySignature(v: Gvalue, tokens: var seq[GradSigToken])
-proc collectCallableValueDeps(roots: openArray[Gvalue], deps: var seq[Gvalue])
+proc collectCallableValueDeps(roots: openArray[Gvalue],
+                              seeded: openArray[Gvalue]): seq[Gvalue]
+proc inputDependencyEpoch(snapshot: ApplySnapshot): int
+proc callableShellRepr(label: string, bound: Gvalue): string
+proc appendCallableToken(v: Gvalue, tokens: var seq[GradSigToken])
+proc isCallableBoundary(v: Gvalue, mode: CallableDepWalkMode): bool
+proc callableBoundaryDeps(v: Gvalue,
+                          mode: CallableDepWalkMode): seq[Gvalue]
 
 # Deferred apply-partial node construction.
 proc deferredTargetNode(baseInputs: seq[Gvalue],
@@ -81,10 +104,8 @@ proc inputDependencyEpoch(inputs: openArray[Gvalue]): int
 proc ensureApplyReduction(v: Gvalue): ApplyCacheEntry
 proc requireApplyReduction(v: Gvalue): ApplyCacheEntry
 proc setApplyReduction(entry: ApplyCacheEntry,
-                       callableKey: pointer,
-                       inputs: seq[Gvalue],
-                       reduced: Gvalue,
-                       freshEpoch: int)
+                       snapshot: ApplySnapshot,
+                       reduced: Gvalue)
 proc freshCallableBound(v: Gvalue): Gvalue
 
 # Section: Runtime Limits and Stats Reset
@@ -94,7 +115,7 @@ var applyGradPrepareDepthLimit* = 4096
 var applyGradPrepareDepth = 0
 
 proc resetApplyCacheStats*() =
-  applyCache = initTable[pointer, ApplyCacheEntry]()
+  applyCache = initNodeTable[ApplyCacheEntry]()
   applyCacheStats = ApplyCacheStats()
 
 # Section: Small Shared Helpers
@@ -104,20 +125,29 @@ proc copySeq[T](src: seq[T]): seq[T] =
   for i in 0..<src.len:
     result[i] = src[i]
 
+proc initNodeBindings(): NodeBindings =
+  initNodeTable[Gvalue]()
+
 proc updateMax(value: var int, candidate: int) =
   if value < candidate:
     value = candidate
 
 proc initDependencyEpochContext(): DependencyEpochContext =
-  result.seenCallable = initHashSet[pointer]()
-  result.seenValues = initHashSet[pointer]()
+  result.seenCallable = initNodeSet()
+  result.seenValues = initNodeSet()
 
-proc markSeenNode(seen: var HashSet[pointer], v: Gvalue): bool =
-  let key = cast[pointer](v)
-  if key in seen:
+proc markSeenNode(seen: var NodeSet, v: Gvalue): bool =
+  if seen.containsNode(v):
     return false
-  seen.incl key
+  seen.inclNode v
   true
+
+proc bindSubst(subst: var NodeBindings, key, value: Gvalue) =
+  subst.putNode(key, value)
+
+proc dropSubst(subst: var NodeBindings, key: Gvalue) =
+  if key != nil and subst.hasNode(key):
+    subst.delNode(key)
 
 proc scanDependencyInputs(ctx: var DependencyEpochContext,
                           value: var int,
@@ -127,45 +157,56 @@ proc scanDependencyInputs(ctx: var DependencyEpochContext,
 
 # Section: Callable Resolution and Apply Signatures
 
-proc callableKey(fn: Glambda): pointer =
+proc callableKey(fn: Glambda): NodeKey =
   if fn == nil:
     return nil
-  cast[pointer](fn)
+  fn.nodeKey
+
+proc applySnapshotInputCount(snapshot: ApplySnapshot): int =
+  2 + snapshot.deps.len
+
+proc visitApplySnapshotInputs(snapshot: ApplySnapshot,
+                              visit: proc(n: Gvalue) {.closure.}) =
+  visit snapshot.fun
+  visit snapshot.arg
+  for dep in snapshot.deps:
+    visit dep
 
 proc applySignatureMatches(signature: ApplySignature,
-                           callableKey: pointer,
-                           inputs: seq[Gvalue]): bool =
-  if signature.callableKey != callableKey:
+                           snapshot: ApplySnapshot): bool =
+  if signature.callableKey != snapshot.callableKey:
     return false
-  if signature.inputKeys.len != inputs.len:
+  if signature.inputKeys.len != snapshot.applySnapshotInputCount:
     return false
-  for i in 0..<inputs.len:
-    if signature.inputKeys[i] != cast[pointer](inputs[i]):
+  if signature.inputKeys[0] != snapshot.fun.nodeKey:
+    return false
+  if signature.inputKeys[1] != snapshot.arg.nodeKey:
+    return false
+  for i in 0..<snapshot.deps.len:
+    if signature.inputKeys[i + 2] != snapshot.deps[i].nodeKey:
       return false
   true
 
-proc setApplySignature(entry: ApplyCacheEntry,
-                       callableKey: pointer,
-                       inputs: seq[Gvalue]) =
-  entry.signature.callableKey = callableKey
-  entry.signature.inputKeys = newseq[pointer](inputs.len)
-  for i in 0..<inputs.len:
-    entry.signature.inputKeys[i] = cast[pointer](inputs[i])
+proc setApplySignature(entry: ApplyCacheEntry, snapshot: ApplySnapshot) =
+  entry.signature.callableKey = snapshot.callableKey
+  entry.signature.inputKeys = newseq[NodeKey](snapshot.applySnapshotInputCount)
+  entry.signature.inputKeys[0] = snapshot.fun.nodeKey
+  entry.signature.inputKeys[1] = snapshot.arg.nodeKey
+  for i in 0..<snapshot.deps.len:
+    entry.signature.inputKeys[i + 2] = snapshot.deps[i].nodeKey
 
 proc applyCacheEntry(v: Gvalue): ApplyCacheEntry =
-  let key = cast[pointer](v)
-  if not applyCache.hasKey(key):
-    applyCache[key] = ApplyCacheEntry()
-  applyCache[key]
+  if not applyCache.hasNode(v):
+    applyCache.putNode(v, ApplyCacheEntry())
+  applyCache.getNode(v)
 
 proc applyEntryMatches(entry: ApplyCacheEntry,
-                       callableKey: pointer,
-                       inputs: seq[Gvalue]): bool =
+                       snapshot: ApplySnapshot): bool =
   if not entry.hasSignature or entry.reduced == nil:
     return false
-  if not entry.signature.applySignatureMatches(callableKey, inputs):
+  if not entry.signature.applySignatureMatches(snapshot):
     return false
-  entry.freshEpoch >= inputs.inputDependencyEpoch
+  entry.freshEpoch >= snapshot.freshEpoch
 
 proc maxInputEpoch(v: Gvalue): int =
   if v == nil:
@@ -220,7 +261,7 @@ proc nextCallableBinding(v: Gvalue): Gvalue =
       return cv.bound
   nil
 
-proc resolveCallableValue(v: Gvalue, reduceApply: bool): Gvalue =
+proc resolveCallableValue(v: Gvalue, mode: CallableResolveMode): Gvalue =
   var current = v
   var depth = 0
   while depth < lambdaResolveDepthLimit:
@@ -231,7 +272,7 @@ proc resolveCallableValue(v: Gvalue, reduceApply: bool): Gvalue =
       current = next
       inc depth
       continue
-    if reduceApply and current.gfunc == gapplyDeferred and current.inputs.len >= 2:
+    if mode == crmReduced and current.gfunc == gapplyDeferred and current.inputs.len >= 2:
       try:
         let entry = current.ensureApplyReduction
         current = entry.reduced
@@ -244,39 +285,93 @@ proc resolveCallableValue(v: Gvalue, reduceApply: bool): Gvalue =
     "callable resolution exceeded depth limit " & $lambdaResolveDepthLimit &
     ":\n" & v.nodeRepr)
 
-proc resolveDirectLambda(fun: Gvalue): Glambda =
-  let current = fun.resolveCallableValue(reduceApply = false)
-  if current == nil or not (current of Glambda):
-    return nil
-  let fn = Glambda(current)
+proc resolveCallable(fun: Gvalue, mode: CallableResolveMode): CallableResolution =
+  result.value = fun.resolveCallableValue(mode)
+  if result.value == nil or not (result.value of Glambda):
+    return
+  let fn = Glambda(result.value)
   if fn.resolved:
-    return fn
-  nil
+    result.fn = fn
+
+proc resolveDirectLambda(fun: Gvalue): Glambda =
+  fun.resolveCallable(crmShallow).fn
 
 proc symbolicCallableToken(v: Gvalue): pointer =
-  let current = v.resolveCallableValue(reduceApply = false)
-  if current == nil:
+  let resolved = v.resolveCallable(crmShallow)
+  if resolved.value == nil:
     return nil
-  let fn = resolveDirectLambda(current)
-  if fn != nil:
-    return callableKey(fn)
-  if current != v:
-    return cast[pointer](current)
+  if resolved.fn != nil:
+    return callableKey(resolved.fn)
+  if resolved.value != v:
+    return resolved.value.nodeKey
   nil
 
 proc appendApplySignature(v: Gvalue, tokens: var seq[GradSigToken]) =
-  for j in 0..<v.inputs.len:
-    if j >= 2:
-      break
-    let token = symbolicCallableToken(v.inputs[j])
+  let snapshot = v.buildApplySnapshot
+  for input in [snapshot.fun, snapshot.arg]:
+    let token = symbolicCallableToken(input)
     if token != nil:
       tokens.add GradSigToken(kind: gstCallable, nodePtr: token)
-  let view = v.buildApplyInputView
-  for j in 2..<view.inputs.len:
-    tokens.add GradSigToken(kind: gstInput, nodePtr: cast[pointer](view.inputs[j]))
+  for dep in snapshot.deps:
+    tokens.add GradSigToken(kind: gstInput, nodePtr: dep.nodeKey)
 
 proc isCallableLike(v: Gvalue): bool =
   v.callableResultProto != nil
+
+proc isCallableBoundary(v: Gvalue, mode: CallableDepWalkMode): bool =
+  if v == nil:
+    return false
+  case mode
+  of cdwmEpoch:
+    (v of Gcallable) or
+      (v of Glocal and Glocal(v).retProto != nil) or
+      (v of Glambda and Glambda(v).resolved)
+  of cdwmValueDeps:
+    (v of Gcallable) or
+      (v of Glocal and Glocal(v).retProto != nil) or
+      (v of Glambda)
+
+proc callableBoundaryDeps(v: Gvalue,
+                          mode: CallableDepWalkMode): seq[Gvalue] =
+  var deps: seq[Gvalue] = @[]
+
+  proc addDep(dep: Gvalue) =
+    if dep != nil:
+      deps.add dep
+
+  case mode
+  of cdwmEpoch:
+    if v of Glambda:
+      for ev in Glambda(v).envValues:
+        addDep(ev)
+      return deps
+    if v of Gcallable:
+      let cv = Gcallable(v)
+      addDep(cv.bound)
+      for input in v.inputs:
+        addDep(input)
+      return deps
+    if v of Glocal:
+      v.walkSymbolicDeps(proc(n: Gvalue) = addDep(n))
+      for input in v.inputs:
+        addDep(input)
+      return deps
+  of cdwmValueDeps:
+    if v of Glambda:
+      for ev in Glambda(v).envValues:
+        addDep(ev)
+      return deps
+    if v.gfunc != nil:
+      v.prepareNode
+    if v of Gcallable:
+      let boundCallable = v.freshCallableBound
+      if boundCallable != nil:
+        addDep(boundCallable)
+        return deps
+    v.walkSymbolicDeps(proc(n: Gvalue) = addDep(n))
+    for input in v.inputs:
+      addDep(input)
+    return deps
 
 # Section: Public Local and Prototype Constructors
 
@@ -304,16 +399,14 @@ method valCopy*(z: Glocal, x: Glocal) =
 method valCopy*(z: Glocal, x: Gvalue) =
   z.bound = x
   z.updated
-method `$`*(x: Glocal): string =
-  if x.bound == nil: "local" else: "local(" & $x.bound & ")"
+method `$`*(x: Glocal): string = callableShellRepr("local", x.bound)
 
 method newOneOf*(x: Gcallable): Gvalue = Gcallable(retProto: x.retProto)
 method valCopy*(z: Gcallable, x: Gcallable) =
   z.retProto = x.retProto
   z.bound = x.bound
 method valCopy*(z: Gcallable, x: Gvalue) = z.bound = x
-method `$`*(x: Gcallable): string =
-  if x.bound == nil: "callable" else: "callable(" & $x.bound & ")"
+method `$`*(x: Gcallable): string = callableShellRepr("callable", x.bound)
 
 method newOneOf*(x: Glambda): Gvalue =
   Glambda(
@@ -332,9 +425,7 @@ method walkSymbolicDeps*(v: Glocal, visit: proc(n: Gvalue) {.closure.}) =
     visit v.bound
 
 method appendSignatureTokens*(v: Glocal, tokens: var seq[GradSigToken]) =
-  let token = symbolicCallableToken(v)
-  if token != nil:
-    tokens.add GradSigToken(kind: gstCallable, nodePtr: token)
+  appendCallableToken(v, tokens)
 
 method walkSymbolicDeps*(v: Gcallable, visit: proc(n: Gvalue) {.closure.}) =
   let boundCallable = freshCallableBound(v)
@@ -344,9 +435,7 @@ method walkSymbolicDeps*(v: Gcallable, visit: proc(n: Gvalue) {.closure.}) =
     visit v.bound
 
 method appendSignatureTokens*(v: Gcallable, tokens: var seq[GradSigToken]) =
-  let token = symbolicCallableToken(v)
-  if token != nil:
-    tokens.add GradSigToken(kind: gstCallable, nodePtr: token)
+  appendCallableToken(v, tokens)
 
 method walkSymbolicDeps*(v: Glambda, visit: proc(n: Gvalue) {.closure.}) =
   for ev in v.envValues:
@@ -355,17 +444,16 @@ method walkSymbolicDeps*(v: Glambda, visit: proc(n: Gvalue) {.closure.}) =
 
 # Section: Lambda Closure Conversion and Cloning
 
-proc collectCaptureValues(v: Gvalue, bound: var HashSet[pointer],
-                          seenCaps: var HashSet[pointer],
-                          seenNodes: var HashSet[pointer],
+proc collectCaptureValues(v: Gvalue, bound: var NodeSet,
+                          seenCaps: var NodeSet,
+                          seenNodes: var NodeSet,
                           caps: var seq[Gvalue]) =
   if v == nil:
     return
-  let key = cast[pointer](v)
-  if key in seenNodes:
+  if seenNodes.containsNode(v):
     return
-  seenNodes.incl key
-  if key in bound:
+  seenNodes.inclNode v
+  if bound.containsNode(v):
     return
 
   if v of Glambda and Glambda(v).resolved:
@@ -380,30 +468,25 @@ proc collectCaptureValues(v: Gvalue, bound: var HashSet[pointer],
     return
 
   if v.gfunc == nil and v.inputs.len == 0:
-    if key notin seenCaps and not (v of Glambda):
-      seenCaps.incl key
+    if not seenCaps.containsNode(v) and not (v of Glambda):
+      seenCaps.inclNode v
       caps.add v
     return
 
   for i in v.inputs:
     collectCaptureValues(i, bound, seenCaps, seenNodes, caps)
 
-proc trimSubstForLambda(subst: Table[pointer, Gvalue], fn: Glambda): Table[pointer, Gvalue] =
+proc trimSubstForLambda(subst: NodeBindings, fn: Glambda): NodeBindings =
   result = subst
-  let pkey = cast[pointer](fn.param)
-  if result.hasKey(pkey):
-    result.del(pkey)
+  result.dropSubst(fn.param)
   for ep in fn.envParams:
-    let ekey = cast[pointer](ep)
-    if result.hasKey(ekey):
-      result.del(ekey)
+    result.dropSubst(ep)
 
 proc cloneResolvedLambdaWithSubst(fn: Glambda,
-                                  subst: Table[pointer, Gvalue],
-                                  memo: var Table[pointer, Gvalue]): Gvalue =
-  let key = cast[pointer](fn)
+                                  subst: NodeBindings,
+                                  memo: var NodeBindings): Gvalue =
   result = Glambda(param: fn.param, resolved: fn.resolved)
-  memo[key] = result
+  memo.putNode(fn, result)
 
   let r = Glambda(result)
   if fn.envParams.len > 0:
@@ -414,32 +497,28 @@ proc cloneResolvedLambdaWithSubst(fn: Glambda,
       r.envValues[i] = cloneWithSubst(fn.envValues[i], subst, memo)
   if fn.body != nil:
     let innerSubst = subst.trimSubstForLambda(fn)
-    var innerMemo = initTable[pointer, Gvalue]()
+    var innerMemo = initNodeBindings()
     r.body = cloneWithSubst(fn.body, innerSubst, innerMemo)
 
-proc bindSubst(subst: var Table[pointer, Gvalue], key, value: Gvalue) =
-  subst[cast[pointer](key)] = value
-
-proc cloneWithFreshMemo(v: Gvalue, subst: Table[pointer, Gvalue]): Gvalue =
-  var memo = initTable[pointer, Gvalue]()
+proc cloneWithFreshMemo(v: Gvalue, subst: NodeBindings): Gvalue =
+  var memo = initNodeBindings()
   cloneWithSubst(v, subst, memo)
 
-proc bindLambdaEnvValues(subst: var Table[pointer, Gvalue], fn: Glambda) =
+proc bindLambdaEnvValues(subst: var NodeBindings, fn: Glambda) =
   if fn.envParams.len != fn.envValues.len:
     raiseValueError("lambda env arity mismatch during instantiation")
   for i in 0..<fn.envParams.len:
     subst.bindSubst(fn.envParams[i], fn.envValues[i])
 
-proc cloneWithSubst(v: Gvalue, subst: Table[pointer, Gvalue],
-                    memo: var Table[pointer, Gvalue]): Gvalue =
+proc cloneWithSubst(v: Gvalue, subst: NodeBindings,
+                    memo: var NodeBindings): Gvalue =
   if v == nil:
     return nil
 
-  let key = cast[pointer](v)
-  if subst.hasKey(key):
-    return subst[key]
-  if memo.hasKey(key):
-    return memo[key]
+  if subst.hasNode(v):
+    return subst.getNode(v)
+  if memo.hasNode(v):
+    return memo.getNode(v)
 
   if v of Glambda and Glambda(v).resolved:
     return Glambda(v).cloneResolvedLambdaWithSubst(subst, memo)
@@ -447,14 +526,14 @@ proc cloneWithSubst(v: Gvalue, subst: Table[pointer, Gvalue],
   let boundCallable = v.freshCallableBound
   if boundCallable != nil:
     result = cloneWithSubst(boundCallable, subst, memo)
-    memo[key] = result
+    memo.putNode(v, result)
     return result
 
   if v.gfunc == nil and v.inputs.len == 0:
     return v
 
   result = v.newOneOf
-  memo[key] = result
+  memo.putNode(v, result)
   if v.inputs.len > 0:
     result.inputs = newseq[Gvalue](v.inputs.len)
     for i in 0..<v.inputs.len:
@@ -466,15 +545,15 @@ proc cloneWithSubst(v: Gvalue, subst: Table[pointer, Gvalue],
 proc openLambdaBody(fn: Glambda): Gvalue =
   if fn.envParams.len == 0:
     return fn.body
-  var subst = initTable[pointer, Gvalue]()
+  var subst = initNodeBindings()
   subst.bindLambdaEnvValues(fn)
   fn.body.cloneWithFreshMemo(subst)
 
 proc collectLambdaCaptures(fn: Glambda): seq[Gvalue] =
-  var bound = initHashSet[pointer]()
-  bound.incl cast[pointer](fn.param)
-  var seenCaps = initHashSet[pointer]()
-  var seenNodes = initHashSet[pointer]()
+  var bound = initNodeSet()
+  bound.inclNode fn.param
+  var seenCaps = initNodeSet()
+  var seenNodes = initNodeSet()
   collectCaptureValues(fn.body, bound, seenCaps, seenNodes, result)
 
 proc rewriteLambdaCaptures(fn: Glambda, captures: seq[Gvalue]) =
@@ -484,7 +563,7 @@ proc rewriteLambdaCaptures(fn: Glambda, captures: seq[Gvalue]) =
     return
 
   fn.envParams = newseq[Gvalue](captures.len)
-  var subst = initTable[pointer, Gvalue]()
+  var subst = initNodeBindings()
   for i in 0..<captures.len:
     let ep = localValue(captures[i])
     fn.envParams[i] = ep
@@ -502,19 +581,13 @@ proc recloseLambda(fn: Glambda) =
   fn.rewriteLambdaCaptures(captures)
 
 proc instantiateLambdaBody(fn: Glambda, x: Gvalue): Gvalue =
-  var subst = initTable[pointer, Gvalue]()
+  var subst = initNodeBindings()
   subst.bindSubst(fn.param, x)
   subst.bindLambdaEnvValues(fn)
   fn.body.cloneWithFreshMemo(subst)
 
 proc resolveLambda(fun: Gvalue): Glambda =
-  let current = fun.resolveCallableValue(reduceApply = true)
-  if current == nil or not (current of Glambda):
-    return nil
-  let fn = Glambda(current)
-  if fn.resolved:
-    return fn
-  nil
+  fun.resolveCallable(crmReduced).fn
 
 # Section: Dependency Epoch Tracking
 
@@ -522,31 +595,15 @@ proc dependencyEpoch(ctx: var DependencyEpochContext, v: Gvalue): int =
   if v == nil:
     return 0
 
-  if v of Glambda and Glambda(v).resolved:
+  if v.isCallableBoundary(cdwmEpoch):
     if not ctx.seenCallable.markSeenNode(v):
       return 0
-    let fn = Glambda(v)
-    ctx.scanDependencyInputs(result, fn.envValues)
-    return result
-
-  if v of Gcallable:
-    if not ctx.seenCallable.markSeenNode(v):
-      return 0
-    let cv = Gcallable(v)
-    if cv.bound != nil:
-      result.updateMax ctx.dependencyEpoch(cv.bound)
-    ctx.scanDependencyInputs(result, v.inputs)
-    return result
-
-  if v of Glocal and Glocal(v).retProto != nil:
-    if not ctx.seenCallable.markSeenNode(v):
-      return 0
-    result.updateMax v.epochOf
-    let lv = Glocal(v)
-    if lv.bound != nil:
-      result.updateMax ctx.dependencyEpoch(lv.bound)
-    ctx.scanDependencyInputs(result, v.inputs)
-    return result
+    var maxEpoch = 0
+    if v of Glocal:
+      maxEpoch.updateMax v.epochOf
+    for dep in v.callableBoundaryDeps(cdwmEpoch):
+      maxEpoch.updateMax ctx.dependencyEpoch(dep)
+    return maxEpoch
 
   if not ctx.seenValues.markSeenNode(v):
     return 0
@@ -630,20 +687,28 @@ proc applyPartialDeferred(dep: Gvalue, target: Gvalue): Gvalue =
     raiseError("applyPartialDeferred has nil input")
   applyPartialDeferredNode(@[dep], @[target])
 
+proc parseApplyPartial(v: Gvalue): ApplyPartialView =
+  if v.inputs.len < 2:
+    raiseValueError("applyPartialDeferred node requires a base apply and at least one target")
+  result.base = v.inputs[0]
+  if result.base == nil:
+    raiseError("applyPartialDeferred node has nil base input:\n" & v.nodeRepr)
+  result.targets = newseq[Gvalue](v.inputs.len - 1)
+  for j in 1..<v.inputs.len:
+    let target = v.inputs[j]
+    if target == nil:
+      raiseError("applyPartialDeferred target cannot be nil:\n" & v.nodeRepr)
+    result.targets[j - 1] = target
+
 proc applyPartialDeferredAppendTarget(z: Gvalue, target: Gvalue): Gvalue =
   if target == nil:
     raiseError("applyPartialDeferred append target cannot be nil")
   if z.gfunc != gapplyPartialDeferred:
     raiseValueError("applyPartialDeferred append target expects applyPartialDeferred node")
-  let baseLen = 1
-  if z.inputs.len < baseLen + 1:
-    raiseValueError("applyPartialDeferred node missing target inputs")
-  let existingTargetsLen = z.inputs.len - baseLen
-  var targets = newseq[Gvalue](existingTargetsLen + 1)
-  for j in 0..<existingTargetsLen:
-    targets[j] = z.inputs[baseLen + j]
-  targets[existingTargetsLen] = target
-  applyPartialDeferredNode(z.inputs[0..<baseLen], targets)
+  let view = z.parseApplyPartial
+  var targets = view.targets
+  targets.add target
+  applyPartialDeferredNode(@[view.base], targets)
 
 proc applyPartialDeferredContrib(zb: Gvalue, z: Gvalue, target: Gvalue): Gvalue =
   result = applyPartialDeferredAppendTarget(z, target)
@@ -652,115 +717,131 @@ proc applyPartialDeferredContrib(zb: Gvalue, z: Gvalue, target: Gvalue): Gvalue 
 
 # Section: Callable Dependency Collection and Apply Views
 
-proc collectCallableValueDeps(roots: openArray[Gvalue], deps: var seq[Gvalue]) =
-  let ctx = CallableDepContext(
-    seenCallable: initHashSet[pointer](),
-    seenValues: initHashSet[pointer](),
-    deps: deps)
+proc collectCallableValueDeps(roots: openArray[Gvalue],
+                              seeded: openArray[Gvalue]): seq[Gvalue] =
+  var seenCallable = initNodeSet()
+  var seenValues = initNodeSet()
+  var deps: seq[Gvalue] = @[]
 
-  for dep in deps:
+  for dep in seeded:
     if dep != nil:
-      ctx.seenValues.incl cast[pointer](dep)
+      seenValues.inclNode dep
+  for root in roots:
+    if root != nil:
+      seenValues.inclNode root
 
   proc collect(v: Gvalue) =
     if v == nil:
       return
-    if isCallableLike(v):
-      let ckey = cast[pointer](v)
-      if ckey in ctx.seenCallable:
+    if v.isCallableBoundary(cdwmValueDeps):
+      if seenCallable.containsNode(v):
         return
-      ctx.seenCallable.incl ckey
-      if v.gfunc != nil:
-        v.prepareNode
-      let fn = resolveDirectLambda(v)
-      if fn != nil:
-        for ev in fn.envValues:
-          collect(ev)
-        return
-      let boundCallable = v.freshCallableBound
-      if boundCallable != nil:
-        collect(boundCallable)
-        return
-      v.walkSymbolicDeps(proc(n: Gvalue) =
-        collect(n))
-      for input in v.inputs:
-        collect(input)
+      seenCallable.inclNode v
+      for dep in v.callableBoundaryDeps(cdwmValueDeps):
+        collect(dep)
       return
-    let vkey = cast[pointer](v)
-    if vkey in ctx.seenValues:
+    if seenValues.containsNode(v):
       return
-    ctx.seenValues.incl vkey
-    ctx.deps.add v
+    seenValues.inclNode v
+    deps.add v
 
   for root in roots:
     collect(root)
-  deps = ctx.deps
+  result = deps
 
-proc buildApplyInputView(v: Gvalue): ApplyInputView =
+proc buildApplySnapshot(v: Gvalue): ApplySnapshot =
   if v.inputs.len < 2:
     raiseValueError("apply node requires at least two inputs")
-  let f = v.inputs[0]
-  let x = v.inputs[1]
-  result.inputs = @[f, x]
+  result.fun = v.inputs[0]
+  result.arg = v.inputs[1]
+  if result.fun == nil:
+    raiseError("apply node has nil function input:\n" & v.nodeRepr)
+  if result.arg == nil:
+    raiseError("apply node has nil argument input:\n" & v.nodeRepr)
 
-  let fn = resolveDirectLambda(f)
+  let fn = resolveDirectLambda(result.fun)
   if fn != nil:
-    for ev in fn.envValues:
-      result.inputs.add ev
+    result.deps = fn.envValues.copySeq
+  for dep in collectCallableValueDeps([result.fun, result.arg], result.deps):
+    result.deps.add dep
 
-  collectCallableValueDeps([f, x], result.inputs)
+proc prepareApplyReduction(snapshot: var ApplySnapshot) =
+  if snapshot.hasReductionState:
+    return
+  snapshot.fn = resolveLambda(snapshot.fun)
+  if snapshot.fn != nil:
+    snapshot.callableKey = callableKey(snapshot.fn)
+  snapshot.freshEpoch = snapshot.inputDependencyEpoch
+  snapshot.hasReductionState = true
 
-proc walkApplyInputView(v: Gvalue, visit: proc(n: Gvalue) {.closure.}) =
-  let view = v.buildApplyInputView
-  for input in view.inputs:
-    visit input
+proc inputDependencyEpoch(snapshot: ApplySnapshot): int =
+  var ctx = initDependencyEpochContext()
+  var maxEpoch = 0
+  snapshot.visitApplySnapshotInputs(proc(n: Gvalue) =
+    if n != nil:
+      maxEpoch.updateMax ctx.dependencyEpoch(n))
+  result = maxEpoch
+
+proc visitApplySnapshotInputs(v: Gvalue, visit: proc(n: Gvalue) {.closure.}) =
+  v.buildApplySnapshot.visitApplySnapshotInputs(visit)
 
 proc emptyLike(x: Gvalue): Gvalue =
   ## Type-preserving neutral constructor; callable-like nodes may not support update(0).
   x.newOneOf
 
+proc gradOrEmpty(expr: Gvalue, target: Gvalue): Gvalue =
+  result = expr.gradIsolated(target)
+  if result == nil:
+    result = emptyLike(target)
+
 proc resolvedCallableValue(v: Gvalue): Gvalue =
   ## Collapse freshly-bound callable wrappers to their callable descriptor after eval.
-  let direct = v.resolveCallableValue(reduceApply = false)
-  if direct == nil:
+  let direct = v.resolveCallable(crmShallow)
+  if direct.value == nil:
     return nil
-  let resolved = direct.resolveCallableValue(reduceApply = true)
-  if resolved != nil:
-    return resolved
-  direct
+  let reduced = direct.value.resolveCallable(crmReduced)
+  if reduced.value != nil:
+    return reduced.value
+  direct.value
+
+proc callableShellRepr(label: string, bound: Gvalue): string =
+  if bound == nil:
+    return label
+  label & "(" & $bound & ")"
+
+proc appendCallableToken(v: Gvalue, tokens: var seq[GradSigToken]) =
+  let token = symbolicCallableToken(v)
+  if token != nil:
+    tokens.add GradSigToken(kind: gstCallable, nodePtr: token)
 
 # Section: Apply Cache and Lazy Reduction
 
 proc setApplyReduction(entry: ApplyCacheEntry,
-                       callableKey: pointer,
-                       inputs: seq[Gvalue],
-                       reduced: Gvalue,
-                       freshEpoch: int) =
+                       snapshot: ApplySnapshot,
+                       reduced: Gvalue) =
   entry.hasSignature = true
-  entry.setApplySignature(callableKey, inputs)
-  entry.freshEpoch = freshEpoch
+  entry.setApplySignature(snapshot)
+  entry.freshEpoch = snapshot.freshEpoch
   entry.reduced = reduced
-  entry.partials = initTable[pointer, Gvalue]()
+  entry.partials = initNodeTable[Gvalue]()
 
 proc ensureApplyReduction(v: Gvalue): ApplyCacheEntry =
-  let view = v.buildApplyInputView
-  let fn = resolveLambda(view.inputs[0])
-  if fn == nil:
-    raiseUnresolvedValueError("deferred apply unresolved at eval: " & view.inputs[0].nodeRepr)
-  let key = callableKey(fn)
+  var snapshot = v.buildApplySnapshot
+  snapshot.prepareApplyReduction
+  if snapshot.fn == nil:
+    raiseUnresolvedValueError("deferred apply unresolved at eval: " & snapshot.fun.nodeRepr)
 
   result = v.applyCacheEntry
-  if result.applyEntryMatches(key, view.inputs):
+  if result.applyEntryMatches(snapshot):
     applyCacheStats.reduceHits.inc
     return
   applyCacheStats.reduceMisses.inc
 
-  let freshEpoch = view.inputs.inputDependencyEpoch
-  let reduced = instantiateLambdaBody(fn, view.inputs[1])
+  let reduced = instantiateLambdaBody(snapshot.fn, snapshot.arg)
   if reduced of Glambda and Glambda(reduced).resolved:
     recloseLambda(Glambda(reduced))
 
-  result.setApplyReduction(key, view.inputs, reduced, freshEpoch)
+  result.setApplyReduction(snapshot, reduced)
 
 proc requireApplyReduction(v: Gvalue): ApplyCacheEntry =
   result = v.ensureApplyReduction
@@ -773,14 +854,13 @@ proc ensureApplyPartial(z: Gvalue, target: Gvalue): Gvalue =
   if target == nil:
     raiseValueError("apply partial target cannot be nil")
   let entry = z.requireApplyReduction
-  let targetKey = cast[pointer](target)
-  if entry.partials.hasKey(targetKey):
+  if entry.partials.hasNode(target):
     applyCacheStats.partialHits.inc
-    return entry.partials[targetKey]
+    return entry.partials.getNode(target)
   applyCacheStats.partialMisses.inc
   if isCallableLike(target):
     result = emptyLike(target)
-    entry.partials[targetKey] = result
+    entry.partials.putNode(target, result)
     return
   inc applyGradPrepareDepth
   defer:
@@ -791,13 +871,8 @@ proc ensureApplyPartial(z: Gvalue, target: Gvalue): Gvalue =
       $applyGradPrepareDepthLimit &
       "\napply: " & z.nodeRepr &
       "\ntarget: " & target.nodeRepr)
-  let reduced = entry.reduced
-  let g = reduced.gradIsolated(target)
-  if g == nil:
-    result = emptyLike(target)
-  else:
-    result = g
-  entry.partials[targetKey] = result
+  result = entry.reduced.gradOrEmpty(target)
+  entry.partials.putNode(target, result)
 
 proc applyDeferredf(v: Gvalue) =
   let entry = v.requireApplyReduction
@@ -834,95 +909,57 @@ proc applyDeferredBackwardTarget(zb: Gvalue,
   discard dep
   applyDeferredContribution(zb, z, target)
 
-proc applyDeferredWalkEvalInputs(v: Gvalue, visit: proc(n: Gvalue) {.closure.}) =
-  v.walkApplyInputView(visit)
-
-proc applyDeferredWalkGradSignatureInputs(v: Gvalue, visit: proc(n: Gvalue) {.closure.}) =
-  v.walkApplyInputView(visit)
-
-proc walkApplyInputViewWithUnknown(v: Gvalue,
-                                   visit: proc(n: Gvalue) {.closure.},
-                                   onUnknown: proc(tbranch, fbranch: Gvalue) {.closure.}) =
+proc applyDeferredWalkInputs(v: Gvalue,
+                             mode: InputWalkMode,
+                             visit: proc(n: Gvalue) {.closure.},
+                             onUnknown: proc(tbranch, fbranch: Gvalue) {.closure.}) =
+  discard mode
   let _ = onUnknown
-  v.walkApplyInputView(visit)
-
-proc applyDeferredWalkDependInputs(v: Gvalue,
-                                   visit: proc(n: Gvalue) {.closure.},
-                                   onUnknown: proc(tbranch, fbranch: Gvalue) {.closure.}) =
-  v.walkApplyInputViewWithUnknown(visit, onUnknown)
-
-proc applyDeferredWalkGradMarkInputs(v: Gvalue,
-                                     visit: proc(n: Gvalue) {.closure.},
-                                     onUnknown: proc(tbranch, fbranch: Gvalue) {.closure.}) =
-  v.walkApplyInputViewWithUnknown(visit, onUnknown)
+  v.visitApplySnapshotInputs(visit)
 
 proc applyPartialDeferredf(v: Gvalue) =
-  if v.inputs.len < 2:
-    raiseValueError("applyPartialDeferred requires a base apply and at least one target")
-  let base = v.inputs[0]
-  if base == nil:
-    raiseError("applyPartialDeferred has nil base apply")
-  var expr = base.ensureApplyPartial(v.inputs[1])
-  for j in 2..<v.inputs.len:
-    let target = v.inputs[j]
-    if target == nil:
-      raiseError("applyPartialDeferred target cannot be nil")
-    var g = expr.gradIsolated(target)
-    if g == nil:
-      g = emptyLike(target)
-    expr = g
+  let view = v.parseApplyPartial
+  var expr = view.base.ensureApplyPartial(view.targets[0])
+  for j in 1..<view.targets.len:
+    expr = expr.gradOrEmpty(view.targets[j])
   discard expr.eval
   v.valCopy expr
 
 proc applyPartialDeferredb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
+  discard zb
+  discard dep
+  let view = z.parseApplyPartial
   if i < 0 or i >= z.inputs.len:
     raiseValueError("applyPartialDeferred backward input index out of range: " & $i)
-  emptyLike(z.inputs[i])
+  if i == 0:
+    return emptyLike(view.base)
+  emptyLike(view.targets[i - 1])
 
-proc requireApplyPartialBase(v: Gvalue): Gvalue =
-  if v.inputs.len < 2:
-    raiseValueError("applyPartialDeferred node requires a base apply and at least one target")
-  result = v.inputs[0]
-  if result == nil:
-    raiseError("applyPartialDeferred node has nil base input:\n" & v.nodeRepr)
-
-proc applyPartialDeferredWalkEvalInputs(v: Gvalue, visit: proc(n: Gvalue) {.closure.}) =
-  let base = v.requireApplyPartialBase
-  var seen = initHashSet[pointer]()
-  proc walkEvalDeps(n: Gvalue) =
-    if n == nil:
-      raiseError("applyPartialDeferred eval dependency walk encountered nil node")
-    let key = cast[pointer](n)
-    if key in seen:
-      return
-    seen.incl key
-    n.prepareNode
-    if n.gfunc == gapplyDeferred or n.gfunc == gapplyPartialDeferred:
-      n.walkPreparedDependInputs(walkEvalDeps)
-      return
-    n.walkPreparedEvalInputs(walkEvalDeps)
-    n.walkSymbolicDeps(walkEvalDeps)
-    visit n
-  walkEvalDeps(base)
-
-proc applyPartialDeferredWalkGradSignatureInputs(v: Gvalue, visit: proc(n: Gvalue) {.closure.}) =
-  visit(v.requireApplyPartialBase)
-
-proc visitApplyPartialBaseWithUnknown(v: Gvalue,
-                                      visit: proc(n: Gvalue) {.closure.},
-                                      onUnknown: proc(tbranch, fbranch: Gvalue) {.closure.}) =
+proc applyPartialDeferredWalkInputs(v: Gvalue,
+                                    mode: InputWalkMode,
+                                    visit: proc(n: Gvalue) {.closure.},
+                                    onUnknown: proc(tbranch, fbranch: Gvalue) {.closure.}) =
+  let view = v.parseApplyPartial
   let _ = onUnknown
-  visit(v.requireApplyPartialBase)
-
-proc applyPartialDeferredWalkDependInputs(v: Gvalue,
-                                          visit: proc(n: Gvalue) {.closure.},
-                                          onUnknown: proc(tbranch, fbranch: Gvalue) {.closure.}) =
-  v.visitApplyPartialBaseWithUnknown(visit, onUnknown)
-
-proc applyPartialDeferredWalkGradMarkInputs(v: Gvalue,
-                                            visit: proc(n: Gvalue) {.closure.},
-                                            onUnknown: proc(tbranch, fbranch: Gvalue) {.closure.}) =
-  v.visitApplyPartialBaseWithUnknown(visit, onUnknown)
+  case mode
+  of iwmEval:
+    var seen = initNodeSet()
+    proc walkEvalDeps(n: Gvalue) =
+      if n == nil:
+        raiseError("applyPartialDeferred eval dependency walk encountered nil node")
+      if seen.containsNode(n):
+        return
+      seen.inclNode n
+      n.prepareNode
+      if n.gfunc == gapplyDeferred or n.gfunc == gapplyPartialDeferred:
+        n.walkPreparedDependInputs(walkEvalDeps)
+        return
+      n.walkPreparedEvalInputs(walkEvalDeps)
+      n.walkSymbolicDeps(walkEvalDeps)
+      visit n
+    walkEvalDeps(view.base)
+  of iwmGradSignature, iwmDepend:
+    visit(view.base)
 
 proc applyPartialDeferredBackwardTarget(zb: Gvalue,
                                         z: Gvalue,
@@ -934,19 +971,13 @@ proc applyPartialDeferredBackwardTarget(zb: Gvalue,
 gapplyPartialDeferred = newGfunc(
   forward = applyPartialDeferredf,
   backward = applyPartialDeferredb,
-  walkEvalInputs = applyPartialDeferredWalkEvalInputs,
-  walkGradSignatureInputs = applyPartialDeferredWalkGradSignatureInputs,
-  walkDependInputs = applyPartialDeferredWalkDependInputs,
-  walkGradMarkInputs = applyPartialDeferredWalkGradMarkInputs,
+  walkInputs = applyPartialDeferredWalkInputs,
   backwardTarget = applyPartialDeferredBackwardTarget,
   name = "applyPartialDeferred")
 gapplyDeferred = newGfunc(
   forward = applyDeferredf,
   backward = applyDeferredb,
-  walkEvalInputs = applyDeferredWalkEvalInputs,
-  walkGradSignatureInputs = applyDeferredWalkGradSignatureInputs,
-  walkDependInputs = applyDeferredWalkDependInputs,
-  walkGradMarkInputs = applyDeferredWalkGradMarkInputs,
+  walkInputs = applyDeferredWalkInputs,
   backwardTarget = applyDeferredBackwardTarget,
   signature = appendApplySignature,
   name = "applyDeferred")

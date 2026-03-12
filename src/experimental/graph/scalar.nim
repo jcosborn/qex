@@ -184,16 +184,9 @@ method exp*(x: Gscalar): Gvalue = Gscalar(inputs: @[Gvalue(x)], gfunc: exps)
 method `<`*(x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("`<`(" & $x & ", " & $y & ")")
 method equal*(x: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("equal(" & $x & ", " & $y & ")")
 
-proc newFalse(x: Gvalue): Gvalue =
-  result = x.newOneOf
-  result.update 0
-proc newTrue(x: Gvalue): Gvalue =
-  result = x.newOneOf
-  result.update 1
-
-proc `not`*(x: Gvalue): Gvalue = cond(x, x.newFalse, x.newTrue)
-proc `and`*(x: Gvalue, y: Gvalue): Gvalue = cond(x, y, y.newFalse)  ## return type follows the second operand, as does cond
-proc `or`*(x: Gvalue, y: Gvalue): Gvalue = cond(x, y.newTrue, y)  ## return type follows the second operand, as does cond
+proc `not`*(x: Gvalue): Gvalue = cond(x, x.constLike(0), x.constLike(1))
+proc `and`*(x: Gvalue, y: Gvalue): Gvalue = cond(x, y, y.constLike(0))  ## return type follows the second operand, as does cond
+proc `or`*(x: Gvalue, y: Gvalue): Gvalue = cond(x, y.constLike(1), y)  ## return type follows the second operand, as does cond
 proc `xor`*(x: Gvalue, y: Gvalue): Gvalue = cond(x, not(y), y)  ## return type follows the second operand, as does cond
 
 proc `>`*(x, y: Gvalue): Gvalue = not(x < y)

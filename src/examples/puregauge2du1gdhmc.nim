@@ -199,7 +199,7 @@ proc mdv(t:float) =
     threads:
       for i in 0..<p.len:
         p[i] *= etxi
-    lnj += dof*t*xi
+    lnJ += dof*t*xi
 
 # For force gradient update
 proc fgv(t:float) =
@@ -282,8 +282,14 @@ proc revCheck(evo:auto; h0,ga0,t0,eh0:float) =
   toc("done")
 
 proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float]) =
-  let dHrms = Hvals.jackknife(jkBlockSize, proc(xs: Ensemble[seq[float]]):float=sqrt(mean(xs)))
+  proc rootmean(xs: Ensemble[seq[float]]):float = sqrt(mean(xs))
+  let dHrms = Hvals.jackknife(jkBlockSize, rootmean)
   let lnJ = Jvals.jackknife(jkBlockSize, mean)
+  var J2vals = newseq[float](Jvals.len)
+  for i in 0..<Jvals.len:
+    let a = Jvals[i]
+    J2vals[i] = a*a
+  let lnJrms = J2vals.jackknife(jkBlockSize, rootmean)
   let expmdh = Avals.jackknife(jkBlockSize, mean)
   var APvals = newseq[float](Avals.len)
   for i in 0..<Avals.len:
@@ -323,6 +329,7 @@ proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float]) =
   let Q2ac = Q2vals.jackknife(jkBlockSize, naiveIntAutocorr, 200)
 
   echo "lnJ = ", lnJ.mean, " ± ", lnJ.stdev
+  echo "lnJrms = ", lnJrms.mean, " ± ", lnJrms.stdev
   echo "dHrms = ", dHrms.mean, " ± ", dHrms.stdev
   echo "exp(-dH) = ", expmdh.mean, " ± ", expmdh.stdev
   echo "Pacc = ", pacc.mean, " ± ", pacc.stdev
