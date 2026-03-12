@@ -216,6 +216,13 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
             l2[mu,nu].proj l2x[mu,nu]
     toc("2")
 
+    when keepProj:
+      for mu in 0..<4:
+        for nu in 0..<4:
+          if nu!=mu:
+            threadBarrier()
+            discard s1[mu][nu] ^*! l2[mu,nu]
+
     for mu in 0..<4:
       flx[mu] := ma3 * gf[mu]
       for nu in 0..<4:
@@ -226,10 +233,10 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
           else:
             lp1.proj l2x[nu,mu]
             lp2.proj l2x[mu,nu]
-          threadBarrier()
-          discard s1[nu][mu] ^*! lp1
-          discard s1[mu][nu] ^*! lp2
-          threadBarrier()
+            threadBarrier()
+            discard s1[nu][mu] ^*! lp1
+            discard s1[mu][nu] ^*! lp2
+            threadBarrier()
           symStaple(flx[mu], alp3, lp1, lp2,
                     s1[nu][mu], s1[mu][nu], tm1, sm1[nu])
       fl[mu].proj flx[mu]
@@ -263,6 +270,12 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
       for mu in 0..<4:
         f[mu] := ma3 * fc[mu]
         fc[mu] *= alp3
+      when keepProj:
+        for mu in 0..<4:
+          for nu in 0..<4:
+            if nu!=mu:
+              threadBarrier()
+              discard s1[mu][nu] ^*! l2[mu,nu]
       for mu in 0..<4:
         for nu in 0..<4:
           if nu!=mu:
@@ -272,9 +285,9 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
             else:
               lp1.proj l2x[nu,mu]
               lp2.proj l2x[mu,nu]
-            threadBarrier()
-            discard s1[nu][mu] ^*! lp1
-            discard s1[mu][nu] ^*! lp2
+              threadBarrier()
+              discard s1[nu][mu] ^*! lp1
+              discard s1[mu][nu] ^*! lp2
             discard fs[nu] ^*! fc[mu]
             threadBarrier()
             symStapleDeriv(fl2[nu,mu], fl2[mu,nu],
@@ -499,20 +512,22 @@ proc newHypSmear*(l: Layout, coef: HypCoefs): auto =
 
 proc initProjectedLevelsImpl(hs: var HypSmear; l1, l2: var auto;
                              populateFromCache: static bool) =
-  let hsp = hs.addr
   when keepProj:
-    l1 = hsp[].state.l1
-    l2 = hsp[].state.l2
+    l1 = hs.state.l1
+    l2 = hs.state.l2
   else:
-    let lo = hsp[].state.gf[0].l
-    type Fld = typeof(hsp[].state.gf[0])
+    let lo = hs.state.gf[0].l
+    type Fld = typeof(hs.state.gf[0])
     l1 = newFieldArray2(lo, Fld, [4,4], mu!=nu)
     l2 = newFieldArray2(lo, Fld, [4,4], mu!=nu)
     when populateFromCache:
+      let hsp = hs.addr
+      let l1p = l1.addr
+      let l2p = l2.addr
       threads:
         forPairs(mu, nu):
-          l1[mu,nu].proj hsp[].state.l1x[mu,nu]
-          l2[mu,nu].proj hsp[].state.l2x[mu,nu]
+          l1p[][mu,nu].proj hsp.state.l1x[mu,nu]
+          l2p[][mu,nu].proj hsp.state.l2x[mu,nu]
 
 proc initProjectedLevels(hs: var HypSmear; l1, l2: var auto) =
   initProjectedLevelsImpl(hs, l1, l2, true)
