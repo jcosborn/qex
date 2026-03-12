@@ -10,8 +10,13 @@ import std/tables
 import std/sets
 
 type
+  NodeKey* = pointer
+  NodeTable*[T] = Table[NodeKey, T]
+  NodeSet* = HashSet[NodeKey]
   GnodeVisit = proc(n: Gvalue) {.closure.}
   GbranchVisit = proc(tbranch, fbranch: Gvalue) {.closure.}
+  InputWalkMode* = enum
+    iwmEval, iwmGradSignature, iwmDepend
   GradSigTokenKind* = enum
     gstNode, gstInput, gstCallable
   GradSigToken* = object
@@ -23,10 +28,7 @@ type
     backward: proc(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue  ## builds a symbolic backprop contribution
     prepare: proc(z: Gvalue)  ## optional node normalization hook before traversal/eval/grad work
     signature: proc(z: Gvalue, tokens: var seq[GradSigToken])  ## optional cache-signature hook after prepare
-    walkEvalInputs: proc(z: Gvalue, visit: GnodeVisit)
-    walkGradSignatureInputs: proc(z: Gvalue, visit: GnodeVisit)
-    walkDependInputs: proc(z: Gvalue, visit: GnodeVisit, onUnknown: GbranchVisit)
-    walkGradMarkInputs: proc(z: Gvalue, visit: GnodeVisit, onUnknown: GbranchVisit)
+    walkInputs: proc(z: Gvalue, mode: InputWalkMode, visit: GnodeVisit, onUnknown: GbranchVisit)
     backwardTarget: proc(zb: Gvalue, z: Gvalue, target: Gvalue, dep: Gvalue): Gvalue
     runCount: int
     name: string
@@ -63,10 +65,7 @@ proc newGfunc*(
     backward: proc(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue = nil,
     prepare: proc(z: Gvalue) = nil,
     signature: proc(z: Gvalue, tokens: var seq[GradSigToken]) = nil,
-    walkEvalInputs: proc(z: Gvalue, visit: GnodeVisit) = nil,
-    walkGradSignatureInputs: proc(z: Gvalue, visit: GnodeVisit) = nil,
-    walkDependInputs: proc(z: Gvalue, visit: GnodeVisit, onUnknown: GbranchVisit) = nil,
-    walkGradMarkInputs: proc(z: Gvalue, visit: GnodeVisit, onUnknown: GbranchVisit) = nil,
+    walkInputs: proc(z: Gvalue, mode: InputWalkMode, visit: GnodeVisit, onUnknown: GbranchVisit) = nil,
     backwardTarget: proc(zb: Gvalue, z: Gvalue, target: Gvalue, dep: Gvalue): Gvalue = nil,
     name: string): Gfunc =
   Gfunc(
@@ -74,10 +73,7 @@ proc newGfunc*(
     backward: backward,
     prepare: prepare,
     signature: signature,
-    walkEvalInputs: walkEvalInputs,
-    walkGradSignatureInputs: walkGradSignatureInputs,
-    walkDependInputs: walkDependInputs,
-    walkGradMarkInputs: walkGradMarkInputs,
+    walkInputs: walkInputs,
     backwardTarget: backwardTarget,
     name: name)
 
@@ -104,6 +100,42 @@ proc epochOf*(x: Gvalue): int =
     return 0
   x.epoch
 
+proc nodeKey*(x: Gvalue): NodeKey {.inline.} =
+  cast[NodeKey](x)
+
+proc nodeFromKey(key: NodeKey): Gvalue {.inline.} =
+  cast[Gvalue](key)
+
+proc initNodeTable*[T](): NodeTable[T] {.inline.} =
+  initTable[NodeKey, T]()
+
+proc initNodeSet*(): NodeSet {.inline.} =
+  initHashSet[NodeKey]()
+
+proc hasNode*[T](t: NodeTable[T], x: Gvalue): bool {.inline.} =
+  t.hasKey(x.nodeKey)
+
+proc getNode*[T](t: NodeTable[T], x: Gvalue): T {.inline.} =
+  t[x.nodeKey]
+
+proc putNode*[T](t: var NodeTable[T], x: Gvalue, value: T) {.inline.} =
+  t[x.nodeKey] = value
+
+proc delNode*[T](t: var NodeTable[T], x: Gvalue) {.inline.} =
+  t.del(x.nodeKey)
+
+proc nodeOrDefault*[T](t: NodeTable[T], x: Gvalue, default: T): T {.inline.} =
+  t.getOrDefault(x.nodeKey, default)
+
+proc containsNode*(s: NodeSet, x: Gvalue): bool {.inline.} =
+  x.nodeKey in s
+
+proc inclNode*(s: var NodeSet, x: Gvalue) {.inline.} =
+  s.incl x.nodeKey
+
+proc exclNode*(s: var NodeSet, x: Gvalue) {.inline.} =
+  s.excl x.nodeKey
+
 method newOneOf*(x: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("newOneOf(" & $x & ")")  ## Derived types should return a zero-initialized sibling node.
 method valCopy*(z: Gvalue, x: Gvalue) {.base.} = raiseErrorBaseMethod("valCopy(" & $z & "," & $x & ")")
 
@@ -111,32 +143,34 @@ method isZero*(x: Gvalue): bool {.base.} = raiseErrorBaseMethod("isZero(" & $x &
 method update*(x: Gvalue, y: int) {.base.} = raiseErrorBaseMethod("update(" & $x & "," & $y & ")")
 method update*(x: Gvalue, y: float) {.base.} = raiseErrorBaseMethod("update(" & $x & "," & $y & ")")
 
+proc constLike*(x: Gvalue, value: int): Gvalue =
+  result = x.newOneOf
+  result.update value
+
 proc treeRepr*(v: Gvalue): string =
-  var seen = initHashSet[pointer]()
+  var seen = initNodeSet()
   var shared = newseq[Gvalue]()
   proc mark(x: Gvalue) =
     if x == nil:
       return
-    let key = cast[pointer](x)
-    if key in seen:
+    if seen.containsNode(x):
       if shared.find(x) < 0:
         shared.add x
       return
-    seen.incl key
+    seen.inclNode x
     for i in x.inputs:
       mark(i)
-  var rendered = initHashSet[pointer]()
+  var rendered = initNodeSet()
   proc render(x: Gvalue): seq[string] =
     let si = shared.find x
     result = @[x.nodeRepr]
-    let key = cast[pointer](x)
-    if key in rendered:
+    if rendered.containsNode(x):
       if si >= 0:
         result[0] &= " #" & $si
       return
     if si >= 0:
       result[0] &= " #" & $si & "#"
-    rendered.incl key
+    rendered.inclNode x
     for i in x.inputs:
       for ir in render(i):
         result.add("  " & ir)
@@ -189,91 +223,73 @@ proc walkRawInputs(v: Gvalue, visit: GnodeVisit) =
       raiseError("node has nil input at index " & $j & ":\n" & v.nodeRepr)
     visit input
 
-proc walkPreparedEvalInputs*(v: Gvalue, visit: GnodeVisit) =
+proc includesSymbolicDeps(mode: InputWalkMode): bool {.inline.} =
+  mode != iwmEval
+
+proc walkDefaultPreparedInputs(v: Gvalue,
+                               mode: InputWalkMode,
+                               visit: GnodeVisit) =
+  v.walkRawInputs(visit)
+  if mode.includesSymbolicDeps:
+    v.walkSymbolicDeps(visit)
+
+proc walkPreparedInputs(v: Gvalue,
+                        mode: InputWalkMode,
+                        visit: GnodeVisit,
+                        onUnknown: GbranchVisit = nil) =
   if v == nil:
-    raiseError("eval input walk received nil node")
+    case mode
+    of iwmEval:
+      raiseError("eval input walk received nil node")
+    of iwmGradSignature:
+      raiseError("signature input walk received nil node")
+    of iwmDepend:
+      raiseError("dependency input walk received nil node")
 
   let f = v.gfunc
-  if f != nil and f.walkEvalInputs != nil:
-    f.walkEvalInputs(v, visit)
+  if f != nil and f.walkInputs != nil:
+    f.walkInputs(v, mode, visit, onUnknown)
     return
+  v.walkDefaultPreparedInputs(mode, visit)
 
-  v.walkRawInputs(visit)
+proc walkPreparedEvalInputs*(v: Gvalue, visit: GnodeVisit) =
+  v.walkPreparedInputs(iwmEval, visit)
 
 proc walkPreparedGradSignatureInputs*(v: Gvalue, visit: GnodeVisit) =
-  if v == nil:
-    raiseError("signature input walk received nil node")
-
-  let f = v.gfunc
-  if f != nil and f.walkGradSignatureInputs != nil:
-    f.walkGradSignatureInputs(v, visit)
-    return
-
-  v.walkRawInputs(visit)
-  v.walkSymbolicDeps(visit)
+  v.walkPreparedInputs(iwmGradSignature, visit)
 
 proc walkPreparedDependInputs*(v: Gvalue,
                                visit: GnodeVisit,
                                onUnknown: GbranchVisit = nil) =
-  if v == nil:
-    raiseError("dependency input walk received nil node")
-
-  let f = v.gfunc
-  if f != nil and f.walkDependInputs != nil:
-    f.walkDependInputs(v, visit, onUnknown)
-    return
-
-  v.walkRawInputs(visit)
-  v.walkSymbolicDeps(visit)
-
-proc walkPreparedGradMarkInputs*(v: Gvalue,
-                                 visit: GnodeVisit,
-                                 onUnknown: GbranchVisit = nil) =
-  if v == nil:
-    raiseError("gradient-mark input walk received nil node")
-
-  let f = v.gfunc
-  if f != nil and f.walkGradMarkInputs != nil:
-    f.walkGradMarkInputs(v, visit, onUnknown)
-    return
-
-  v.walkRawInputs(visit)
-  v.walkSymbolicDeps(visit)
+  v.walkPreparedInputs(iwmDepend, visit, onUnknown)
 
 proc walkEvalInputs(v: Gvalue, visit: GnodeVisit) =
   v.prepareNode
-  v.walkPreparedEvalInputs(visit)
+  v.walkPreparedInputs(iwmEval, visit)
 
 proc walkGradSignatureInputs(v: Gvalue, visit: GnodeVisit) =
   v.prepareNode
-  v.walkPreparedGradSignatureInputs(visit)
+  v.walkPreparedInputs(iwmGradSignature, visit)
 
 proc walkDependInputs(v: Gvalue,
                       visit: GnodeVisit,
                       onUnknown: GbranchVisit = nil) =
   v.prepareNode
-  v.walkPreparedDependInputs(visit, onUnknown)
-
-proc walkGradMarkInputs(v: Gvalue,
-                        visit: GnodeVisit,
-                        onUnknown: GbranchVisit = nil) =
-  v.prepareNode
-  v.walkPreparedGradMarkInputs(visit, onUnknown)
+  v.walkPreparedInputs(iwmDepend, visit, onUnknown)
 
 proc sameNode(a: Gvalue, b: Gvalue): bool =
-  cast[pointer](a) == cast[pointer](b)
+  a.nodeKey == b.nodeKey
 
 proc dependsOnPreparedGraph(root: Gvalue, target: Gvalue): bool =
-  var seen = initHashSet[pointer]()
+  var seen = initNodeSet()
   proc d(v: Gvalue): bool =
     if v == nil:
       return false
     if sameNode(v, target):
       return true
-    let key = cast[pointer](v)
-    if key in seen:
+    if seen.containsNode(v):
       return false
-    seen.incl key
+    seen.inclNode v
     var found = false
     proc search(n: Gvalue) =
       if not found and d(n):
@@ -289,30 +305,22 @@ proc dependsOnPreparedGraph(root: Gvalue, target: Gvalue): bool =
   d(root)
 
 proc condb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  proc zeroLikeInput(input: Gvalue): Gvalue =
-    result = input.newOneOf
-    result.update 0
-
-  proc oneLikeInput(input: Gvalue): Gvalue =
-    result = input.newOneOf
-    result.update 1
-
   proc branchGrad(c: Gvalue, branch: Gvalue, takeTrue: bool): Gvalue =
     if zb == nil:
-      let one = oneLikeInput(branch)
-      let zero = zeroLikeInput(branch)
+      let one = branch.constLike(1)
+      let zero = branch.constLike(0)
       if takeTrue:
         return cond(c, one, zero)
       return cond(c, zero, one)
 
-    let zero = branch.newOneOf
+    let zero = branch.constLike(0)
     if takeTrue:
       return cond(c, zb, zero)
     return cond(c, zero, zb)
 
   case i
   of 0:
-    return zeroLikeInput(z.inputs[0])
+    return z.inputs[0].constLike(0)
   of 1:
     # Keep the selector in the returned graph so cached gradients remain live when it changes.
     return branchGrad(z.inputs[0], z.inputs[1], takeTrue = true)
@@ -321,29 +329,24 @@ proc condb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   else:
     raiseValueError("i must be 0, 1, or 2, got: " & $i)
 
-proc condWalkEvalInputs(v: Gvalue, visit: GnodeVisit) =
+proc condWalkInputs(v: Gvalue,
+                    mode: InputWalkMode,
+                    visit: GnodeVisit,
+                    onUnknown: GbranchVisit) =
   let ci = v.condInputs
-  visit(ci.c)
-  if ci.c.isZero:
-    visit(ci.f)
-  else:
-    visit(ci.t)
-
-proc condWalkGradSignatureInputs(v: Gvalue, visit: GnodeVisit) =
-  visit(v.condInputs.c)
-
-proc condWalkDependInputs(v: Gvalue,
-                          visit: GnodeVisit,
-                          onUnknown: GbranchVisit) =
-  let ci = v.condInputs
-  visit(ci.c)
-  if onUnknown != nil:
-    onUnknown(ci.t, ci.f)
-
-proc condWalkGradMarkInputs(v: Gvalue,
-                            visit: GnodeVisit,
-                            onUnknown: GbranchVisit) =
-  condWalkDependInputs(v, visit, onUnknown)
+  case mode
+  of iwmEval:
+    visit(ci.c)
+    if ci.c.isZero:
+      visit(ci.f)
+    else:
+      visit(ci.t)
+  of iwmGradSignature:
+    visit(ci.c)
+  of iwmDepend:
+    visit(ci.c)
+    if onUnknown != nil:
+      onUnknown(ci.t, ci.f)
 
 proc condBackwardTarget(zb: Gvalue, z: Gvalue, target: Gvalue, dep: Gvalue): Gvalue =
   discard dep
@@ -361,10 +364,7 @@ proc condf(v: Gvalue) =
 gcond = newGfunc(
   forward = condf,
   backward = condb,
-  walkEvalInputs = condWalkEvalInputs,
-  walkGradSignatureInputs = condWalkGradSignatureInputs,
-  walkDependInputs = condWalkDependInputs,
-  walkGradMarkInputs = condWalkGradMarkInputs,
+  walkInputs = condWalkInputs,
   backwardTarget = condBackwardTarget,
   name = "cond")
 
@@ -389,14 +389,13 @@ proc evaluated*(x: Gvalue) =
   x.epoch = maxep
 
 proc eval*(v: Gvalue): Gvalue {.discardable.} =
-  var seen = initHashSet[pointer]()
+  var seen = initNodeSet()
   proc r(x: Gvalue) =
     if x == nil:
       raiseError("eval traversal encountered nil node")
-    let key = cast[pointer](x)
-    if key in seen:
+    if seen.containsNode(x):
       return
-    seen.incl key
+    seen.inclNode x
     var maxep = 0
     proc visit(n: Gvalue) =
       n.r
@@ -425,10 +424,15 @@ type
   GradCacheEntry = object
     hasSignature: bool
     signature: GradSignature
-    grads: Table[pointer, Gvalue]
-  GradBuildPlan = object
-    relevant: Table[pointer, bool]
+    grads: NodeTable[Gvalue]
+  GradBuildContext = object
+    dep: Gvalue
+    x: Gvalue
+    signature: GradSignature
+    cache: GradCacheEntry
+    relevant: NodeTable[bool]
     order: seq[Gvalue]
+    contribs: NodeTable[seq[Gvalue]]
   GradCacheStats* = object
     signatureHits*: int
     signatureMisses*: int
@@ -436,31 +440,30 @@ type
     directMisses*: int
     invalidations*: int
 
-var gradCacheByOutput = initTable[pointer, GradCacheEntry]()
+var gradCacheByOutput = initNodeTable[GradCacheEntry]()
 var gradCacheStats*: GradCacheStats
 
 proc buildGradSignature(dep: Gvalue): GradSignature
 proc findGrad*(input: Gvalue, output: Gvalue): Gvalue
 
 proc resetGradCacheStats*() =
-  gradCacheByOutput = initTable[pointer, GradCacheEntry]()
+  gradCacheByOutput = initNodeTable[GradCacheEntry]()
   gradCacheStats = GradCacheStats()
 
 proc buildGradSignature(dep: Gvalue): GradSignature =
   var sig: GradSignature
-  var seen = initHashSet[pointer]()
+  var seen = initNodeSet()
   proc walk(v: Gvalue) =
     if v == nil:
       raiseError("grad signature traversal encountered nil node")
-    let key = cast[pointer](v)
-    if key in seen:
+    if seen.containsNode(v):
       return
-    seen.incl key
-    sig.tokens.add GradSigToken(kind: gstNode, nodePtr: cast[pointer](v))
+    seen.inclNode v
+    sig.tokens.add GradSigToken(kind: gstNode, nodePtr: v.nodeKey)
     v.prepareNode
     let f = v.gfunc
     for i in v.inputs:
-      sig.tokens.add GradSigToken(kind: gstInput, nodePtr: cast[pointer](i))
+      sig.tokens.add GradSigToken(kind: gstInput, nodePtr: i.nodeKey)
     if f != nil and f.signature != nil:
       f.signature(v, sig.tokens)
     v.appendSignatureTokens(sig.tokens)
@@ -472,8 +475,7 @@ proc gradIsolated*(dep: Gvalue, x: Gvalue): Gvalue
 
 proc zeroLikeNode(x: Gvalue): Gvalue =
   ## Numeric zero constructor for differentiable value nodes.
-  result = x.newOneOf
-  result.update 0
+  x.constLike(0)
 
 proc buildGradExpr(dep: Gvalue, x: Gvalue): Gvalue =
   if dep == nil or x == nil:
@@ -488,22 +490,20 @@ proc buildGradExpr(dep: Gvalue, x: Gvalue): Gvalue =
 proc dumpGradientList* =
   echo "# Gradient Cache:"
   for outputKey, entry in gradCacheByOutput.pairs:
-    let output = cast[Gvalue](outputKey)
+    let output = nodeFromKey(outputKey)
     echo "## output: ",output.nodeRepr
     for inputKey, grad in entry.grads.pairs:
-      let input = cast[Gvalue](inputKey)
+      let input = nodeFromKey(inputKey)
       echo "### w.r.t.: ",input.nodeRepr
       echo grad.treeRepr
 
 proc findGrad*(input: Gvalue, output: Gvalue): Gvalue =
-  let outputKey = cast[pointer](output)
-  if not gradCacheByOutput.hasKey(outputKey):
+  if not gradCacheByOutput.hasNode(output):
     return nil
-  let entry = gradCacheByOutput[outputKey]
-  let inputKey = cast[pointer](input)
-  if not entry.grads.hasKey(inputKey):
+  let entry = gradCacheByOutput.getNode(output)
+  if not entry.grads.hasNode(input):
     return nil
-  entry.grads[inputKey]
+  entry.grads.getNode(input)
 
 proc sumGradContributions(parts: seq[Gvalue]): Gvalue =
   if parts.len == 0:
@@ -512,113 +512,111 @@ proc sumGradContributions(parts: seq[Gvalue]): Gvalue =
   for j in 1..<parts.len:
     result = result + parts[j]
 
-proc addGradContribution(contribs: var Table[pointer, seq[Gvalue]],
+proc initGradBuildContext(dep: Gvalue, x: Gvalue): GradBuildContext =
+  result.dep = dep
+  result.x = x
+  result.relevant = initNodeTable[bool]()
+  result.contribs = initNodeTable[seq[Gvalue]]()
+
+proc storeGradCache(ctx: GradBuildContext) =
+  gradCacheByOutput.putNode(ctx.dep, ctx.cache)
+
+proc addGradContribution(ctx: var GradBuildContext,
                          input: Gvalue,
                          contrib: Gvalue) =
   if input == nil or contrib == nil:
     return
-  let key = cast[pointer](input)
-  if not contribs.hasKey(key):
-    contribs[key] = @[]
-  contribs[key].add contrib
+  if not ctx.contribs.hasNode(input):
+    ctx.contribs.putNode(input, @[])
+  ctx.contribs[input.nodeKey].add contrib
 
-proc prepareGradCache(dep: Gvalue,
-                      x: Gvalue,
-                      sig: GradSignature,
-                      depKey: var pointer,
-                      xKey: var pointer,
-                      cache: var GradCacheEntry): Gvalue =
-  depKey = cast[pointer](dep)
-  cache =
-    if gradCacheByOutput.hasKey(depKey):
-      gradCacheByOutput[depKey]
+proc prepareGradCache(ctx: var GradBuildContext): Gvalue =
+  ctx.signature = ctx.dep.buildGradSignature
+  ctx.cache =
+    if gradCacheByOutput.hasNode(ctx.dep):
+      gradCacheByOutput.getNode(ctx.dep)
     else:
-      GradCacheEntry(grads: initTable[pointer, Gvalue]())
-  if cache.grads.len == 0:
-    cache.grads = initTable[pointer, Gvalue]()
+      GradCacheEntry(grads: initNodeTable[Gvalue]())
+  if ctx.cache.grads.len == 0:
+    ctx.cache.grads = initNodeTable[Gvalue]()
 
-  xKey = cast[pointer](x)
-  let sameSignature = cache.hasSignature and cache.signature == sig
+  let sameSignature = ctx.cache.hasSignature and ctx.cache.signature == ctx.signature
   if sameSignature:
     gradCacheStats.signatureHits.inc
-    if cache.grads.hasKey(xKey):
-      let direct = cache.grads[xKey]
+    if ctx.cache.grads.hasNode(ctx.x):
+      let direct = ctx.cache.grads.getNode(ctx.x)
       if direct != nil:
         gradCacheStats.directHits.inc
         return direct
     gradCacheStats.directMisses.inc
   else:
     gradCacheStats.signatureMisses.inc
-    if cache.hasSignature:
+    if ctx.cache.hasSignature:
       gradCacheStats.invalidations.inc
-    cache.hasSignature = true
-    cache.signature = sig
-    cache.grads = initTable[pointer, Gvalue]()
-    gradCacheByOutput[depKey] = cache
+    ctx.cache.hasSignature = true
+    ctx.cache.signature = ctx.signature
+    ctx.cache.grads = initNodeTable[Gvalue]()
+    ctx.storeGradCache
 
-  if sameNode(dep, x):
-    var one = x.newOneOf
-    one.update 1
-    cache.grads[xKey] = one
-    gradCacheByOutput[depKey] = cache
+  if sameNode(ctx.dep, ctx.x):
+    let one = ctx.x.constLike(1)
+    ctx.cache.grads.putNode(ctx.x, one)
+    ctx.storeGradCache
     return one
 
-proc collectGradBuildPlan(dep: Gvalue, x: Gvalue): GradBuildPlan =
-  var plan: GradBuildPlan
-  plan.relevant = initTable[pointer, bool]()
-  var active = initHashSet[pointer]()
+proc collectGradBuildPlan(ctx: var GradBuildContext) =
+  let dep = ctx.dep
+  let x = ctx.x
+  var active = initNodeSet()
+  var relevant = ctx.relevant
+  var order = ctx.order
 
   proc mark(v: Gvalue): bool =
     if v == nil:
       return false
-    let key = cast[pointer](v)
-    if plan.relevant.hasKey(key):
-      return plan.relevant[key]
-    if key in active:
+    if relevant.hasNode(v):
+      return relevant.getNode(v)
+    if active.containsNode(v):
       return false
-    active.incl key
+    active.inclNode v
     v.prepareNode
     var need = sameNode(v, x)
     proc visit(n: Gvalue) =
       if mark(n):
         need = true
-    v.walkPreparedGradMarkInputs(
+    v.walkPreparedDependInputs(
       visit,
       onUnknown = proc(tbranch: Gvalue, fbranch: Gvalue) =
         if mark(tbranch):
           need = true
         if mark(fbranch):
           need = true)
-    active.excl key
-    plan.relevant[key] = need
+    active.exclNode v
+    relevant.putNode(v, need)
     if need:
-      plan.order.add v
+      order.add v
     need
 
   discard mark(dep)
-  result = plan
+  ctx.relevant = relevant
+  ctx.order = order
 
-proc accumulateGradContributions(dep: Gvalue,
-                                 x: Gvalue,
-                                 plan: GradBuildPlan): Gvalue =
-  let xKey = cast[pointer](x)
-  var contribs = initTable[pointer, seq[Gvalue]]()
-  for j in countdown(plan.order.high, 0):
-    let v = plan.order[j]
-    let vKey = cast[pointer](v)
-    let hasUpstream = sameNode(v, dep) or contribs.hasKey(vKey)
+proc upstreamGradient(ctx: GradBuildContext, v: Gvalue): Gvalue =
+  if sameNode(v, ctx.dep):
+    return nil
+  if ctx.contribs.hasNode(v):
+    return sumGradContributions(ctx.contribs.getNode(v))
+
+proc accumulateGradContributions(ctx: var GradBuildContext): Gvalue =
+  for j in countdown(ctx.order.high, 0):
+    let v = ctx.order[j]
+    let hasUpstream = sameNode(v, ctx.dep) or ctx.contribs.hasNode(v)
     if not hasUpstream:
       continue
     let f = v.gfunc
-    let vgr =
-      if sameNode(v, dep):
-        nil
-      elif contribs.hasKey(vKey):
-        sumGradContributions(contribs[vKey])
-      else:
-        nil
+    let vgr = ctx.upstreamGradient(v)
     if f != nil and f.backwardTarget != nil:
-      addGradContribution(contribs, x, f.backwardTarget(vgr, v, x, dep))
+      ctx.addGradContribution(ctx.x, f.backwardTarget(vgr, v, ctx.x, ctx.dep))
       continue
     if f == nil:
       continue
@@ -626,32 +624,33 @@ proc accumulateGradContributions(dep: Gvalue,
       let input = v.inputs[i]
       if input == nil:
         raiseError("node has nil input at index " & $i & ":\n" & v.nodeRepr)
-      let inputKey = cast[pointer](input)
-      if not plan.relevant.getOrDefault(inputKey, false):
+      if not ctx.relevant.nodeOrDefault(input, false):
         continue
       if f.backward == nil:
         raiseError(v.nodeRepr & ":" & $i & ":" & input.nodeRepr & ": backward undefined")
-      addGradContribution(contribs, input, f.backward(vgr, v, i, dep))
+      ctx.addGradContribution(input, f.backward(vgr, v, i, ctx.dep))
 
-  if contribs.hasKey(xKey):
-    return sumGradContributions(contribs[xKey])
-  zeroLikeNode(x)
+  if ctx.contribs.hasNode(ctx.x):
+    return sumGradContributions(ctx.contribs.getNode(ctx.x))
+  zeroLikeNode(ctx.x)
+
+proc storeGradResult(ctx: GradBuildContext, grad: Gvalue) =
+  var cache = ctx.cache
+  cache.grads.putNode(ctx.x, grad)
+  gradCacheByOutput.putNode(ctx.dep, cache)
 
 proc gradImpl(dep: Gvalue, x: Gvalue): Gvalue =
-  let sig = dep.buildGradSignature
-  var depKey, xKey: pointer
-  var cache: GradCacheEntry
-  result = prepareGradCache(dep, x, sig, depKey, xKey, cache)
+  var ctx = initGradBuildContext(dep, x)
+  result = ctx.prepareGradCache
   if result != nil:
     return
 
-  let plan = collectGradBuildPlan(dep, x)
-  if plan.relevant.getOrDefault(depKey, false):
-    result = accumulateGradContributions(dep, x, plan)
+  ctx.collectGradBuildPlan
+  if ctx.relevant.nodeOrDefault(dep, false):
+    result = ctx.accumulateGradContributions
   else:
     result = zeroLikeNode(x)
-  cache.grads[xKey] = result
-  gradCacheByOutput[depKey] = cache
+  ctx.storeGradResult(result)
 
 proc grad*(dep: Gvalue, x: Gvalue): Gvalue =
   gradImpl(dep, x)
@@ -659,7 +658,7 @@ proc grad*(dep: Gvalue, x: Gvalue): Gvalue =
 proc gradIsolated*(dep: Gvalue, x: Gvalue): Gvalue =
   let savedGradCacheByOutput = gradCacheByOutput
   let savedGradCacheStats = gradCacheStats
-  gradCacheByOutput = initTable[pointer, GradCacheEntry]()
+  gradCacheByOutput = initNodeTable[GradCacheEntry]()
   gradCacheStats = GradCacheStats()
   try:
     result = gradImpl(dep, x)
