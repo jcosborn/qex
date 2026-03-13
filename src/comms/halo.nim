@@ -173,7 +173,8 @@ proc makeHalo*[L,F,T](hl: HaloLayout[L], f: F, t: typedesc[T]): Halo[L,F,T] =
   result.halo.newU(nhalo)
 
 template makeHalo*[L,F](hl: HaloLayout[L], f: F): auto =
-  makeHalo(hl, f, eval(F.type[0]))
+  #makeHalo(hl, f, eval(F.type[0]))
+  makeHalo(hl, f, eval(F.type.index(int)))
 
 template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], d: pointer, s: SomeInteger) =
   type E = eval(index(type T, type asSimd(0)))

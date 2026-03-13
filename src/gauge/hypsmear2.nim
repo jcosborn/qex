@@ -523,7 +523,8 @@ when isMainModule:
         toc "HTsmear"
         ht.force(coef, f2, c)
         toc "HTforce"
-    echoTimers()
+    #echoTimers()
+    echoProf()
     echo fl.plaq
     echo fl2.plaq
     echo f.plaq
