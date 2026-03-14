@@ -144,7 +144,7 @@ proc free(ls:var RTInfoObjList) {.borrow.}
 #proc add(ls:var RTInfoObjList, x:RTInfoObj) {.borrow.}
 proc add(ls:var RTInfoObjList, x:RTInfoObj) = add(List[RTInfoObj](ls), x)
 template len(ls:RTInfoObjList):int32 = List[RTInfoObj](ls).len
-template `[]`(ls:RTInfoObjList, n:int32):untyped = List[RTInfoObj](ls)[n]
+template `[]`(ls:RTInfoObjList, n:int):untyped = List[RTInfoObj](ls)[n]
 iterator mitems(ls:RTInfoObjList):var RTInfoObj =
   for i in 0..<ls.len:
     yield ls[i]
@@ -791,12 +791,12 @@ proc makeHotspotTable(lrti: List[RTInfoObj]): tuple[ns:int64,oh:int64] =
       for i in 0..<ri.children.len:
         var j = 0
         while j < t.children.len:
-          if ri.children[i].curr.loc != t.children[int32 j].curr.loc: inc j; continue
-          if ri.children[i].tic.name != t.children[int32 j].tic.name: inc j; continue
+          if ri.children[i].curr.loc != t.children[j].curr.loc: inc j; continue
+          if ri.children[i].tic.name != t.children[j].tic.name: inc j; continue
           break
         if j < t.children.len:
-          t.children[int32 j].nsec += ri.children[i].nsec
-          t.children[int32 j].overhead += ri.children[i].overhead
+          t.children[j].nsec += ri.children[i].nsec
+          t.children[j].overhead += ri.children[i].overhead
         else:
           t.children.add ri.children[i]
     do: # loc not found
@@ -815,6 +815,7 @@ proc echoHotspots* =
   var maxcount = 0
   var nstot = 0.0
   for k,v in hs:
+    #echo &"{k} {v.children.len} {v.nsec} {v.childrenOverhead}"
     if v.children.len>0:
       let ins = v.nsec - v.childrenOverhead
       skeys.add (ns: ins, loc: "incl" & k)
@@ -858,8 +859,10 @@ proc echoHotspots* =
       else:
         tsns += nk.ns
         let tsnspct = 100.0 * tsns / nstot
-        echo &"{pct:6.3f} {tsnspct:7.3f} {count} {mf} {nc} S {lc} {nm}"
-        #echo &"{pct:6.3f} {tsnspct:7.3f} {count}         {nc} S {lc} {nm}"
+        if t.children.len == 0:
+          echo &"{pct:6.3f} {tsnspct:7.3f} {count} {mf} {nc} S {lc} {nm}"
+        else:
+          echo &"{pct:6.3f} {tsnspct:7.3f} {count}         {nc} S {lc} {nm}"
 
 proc echoProf*(def = 0) =
   case intParam("prof",def)

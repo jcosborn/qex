@@ -229,7 +229,7 @@ proc update*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
   toc("gather")
 
 proc updateRev*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
-  tic("Halo update")
+  tic("Halo updateRev")
   let elemSize = sizeof(T) div L.V
   var gh: GatherHalo[F,T,true]
   gh.src = h.field
