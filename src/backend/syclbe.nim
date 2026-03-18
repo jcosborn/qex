@@ -51,27 +51,30 @@ proc genCpuFinalize(n:seq[NimNode]):NimNode =
     result.add getast r(c[0],c[1])
 
 proc gpuDefaultNumThreads*(): int =
-  64 * q.device.maxComputeUnits.int * q.device.subGroupSizes.max_element.int
+  32 * q.device.maxComputeUnits.int * q.device.subGroupSizes.max_element.int
+  #64 * q.device.maxComputeUnits.int * q.device.subGroupSizes.max_element.int
 
-macro onGpuQ*(q: Queue, body: untyped): auto =
+macro onGpuQ*(q: Queue, n,b,body: untyped): auto =
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   template target(q, cpuPrepare, cpuFinalize, body: untyped) =
     mixin toGpu, getGpu, fromGpu
     {.push checks: off.}
     {.push stacktrace: off.}
+    cpuPrepare  # a let section declare and save device pointers
     proc gpuProc {.gensym.} =
-      cpuPrepare  # a let section declare and save device pointers
-      #let nth = 32 * q.device.maxComputeUnits.int * q.device.preferredVectorWidthFloat.int
-      #let nth = 32 * q.device.maxComputeUnits.int
-      let nth = gpuDefaultNumThreads()
-      #echo "Launching threads:", nth
-      q.submit:
-        parallelFor(nth):
-          syclDefs:
-            body
-      q.wait
-      cpuFinalize
+      threadSingle:
+        let nth = n
+        #echo "Launching threads:", nth
+        q.submit:
+          parallelFor(nth):
+            syclDefs:
+              body
     gpuProc()
+    proc finalize {.gensym.} =
+      threadSingle:
+        q.wait
+      cpuFinalize
+    finalize
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
@@ -79,11 +82,35 @@ macro onGpuQ*(q: Queue, body: untyped): auto =
   result = getast(target(q, cpuPrepare, cpuFinalize, body))
   echo result.repr
 
+#var gpuNumThreadsRequest* = 0
+#var gpuBlockSizeRequest* = 0
+template onGpuNowait*(n,b,body: untyped): auto =
+  onGpuQ(q, n, b, body)
+template onGpuNowait*(body: untyped): auto =
+  let n = gpuDefaultNumThreads()
+  onGpuNoWait(n, 0, body)
+template onGpuNowait*(n,body: untyped): auto =
+  onGpuNoWait(n, 0, body)
+
+template onGpu*(body: untyped) =
+  let finalize = onGpuNoWait(body)
+  finalize()
+template onGpu*(n,body: untyped) =
+  let finalize = onGpuNoWait(n, body)
+  finalize()
+template onGpu*(n,b,body: untyped) =
+  let finalize = onGpuNoWait(n, b, body)
+  finalize()
+
 
 # XXX fix the following
-template onGpu*(body: untyped) = onGpuQ(q, body)
+template onGpu*(body: untyped) =
+  let finalize = onGpuQ(q, body)
+  finalize()
 #template onGpu*(totalNumThreads, body: untyped): untyped = onGpu(body)
 #template onGpu*(totalNumThreads, numThreadsPerTeam, body: untyped): untyped = onGpu(body)
+template onGpuNowait*(body: untyped): auto =
+  onGpuQ(q, body)
 
 
 when isMainModule:

@@ -227,8 +227,10 @@ proc genCpuFinalize(n:seq[NimNode], a: NimNode):NimNode =
   for c in n:
     result.add getast r(a,c[0],c[2])
 
-macro onGpu*(nn0,tpb0: untyped, body: untyped): auto =
-  template target(nn, tpb, v, arg, cpuPrepare, cpuFinalize, body: untyped) =
+#macro onGpuX(nn0,tpb0: untyped, body: untyped): auto =  # return callback to wait and finalize
+
+macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
+  template target(nn, tpb, v, arg, cpuPrepare, cpuFinalize, fin, body: untyped): untyped =
     mixin toGpu, getGpu, fromGpu
     block:
       var v = cpuPrepare  # kernel argument tuple
@@ -242,9 +244,14 @@ macro onGpu*(nn0,tpb0: untyped, body: untyped): auto =
       let threadsPerBlock = tpb.int32
       let blocksPerGrid = (ni+threadsPerBlock-1) div threadsPerBlock
       #echo "launching kernel"
-      cudaLaunch(kern, blocksPerGrid, threadsPerBlock, v)
-      discard cudaDeviceSynchronize()
+      threadSingle:
+        cudaLaunch(kern, blocksPerGrid, threadsPerBlock, v)
+    proc fin =
+      threadSingle:
+        discard cudaDeviceSynchronize()
       cpuFinalize
+      #threadBarrier()
+    fin
   let
     varg = gensym(nskVar, "varg")
     arg = gensym(nskParam, "arg")
@@ -256,14 +263,31 @@ macro onGpu*(nn0,tpb0: untyped, body: untyped): auto =
     v = prepareVars(body,deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
     cpuFinalize = genCpuFinalize(v, varg)
-  result = getast(target(nn0, tpb0, varg, arg, cpuPrepare, cpuFinalize, body))
+    fin = gensym(nskProc, "finalize")
+  result = getast(target(nn0, tpb0, varg, arg, cpuPrepare, cpuFinalize, fin, body))
   echo result.repr
+  #echo result.treerepr
 
-template onGpu*(nn: untyped, body: untyped): untyped = onGpu(nn, 64, body)
-template onGpu*(body: untyped): untyped = onGpu(512*64, 64, body)
-#template onGpu*(body: untyped): untyped = onGpu(256*128, 128, body)
-#template onGpu*(body: untyped): untyped = onGpu(1024*64, 64, body)
-#template onGpu*(body: untyped): untyped = onGpu(4864, 64, body)
+var gpuNumThreadsRequest* = 512*64
+var gpuBlockSizeRequest* = 64
+template onGpuNowait*(body: untyped): auto =
+  onGpuNoWait(gpuNumThreadsRequest, gpuBlockSizeRequest, body)
+template onGpuNowait*(n,body: untyped): auto =
+  var b = gpuBlockSizeRequest
+  while b > n: b = b div 2
+  onGpuNoWait(n, b, body)
+#template onGpuNowait*(n,b,body: untyped): auto =
+#  onGpuNoWait(n, b, body)
+
+template onGpu*(body: untyped) =
+  let finalize = onGpuNoWait(body)
+  finalize()
+template onGpu*(n,body: untyped) =
+  let finalize = onGpuNoWait(n, body)
+  finalize()
+template onGpu*(n,b,body: untyped) =
+  let finalize = onGpuNoWait(n, b, body)
+  finalize()
 
 when isMainModule:
   type FltArr = UncheckedArray[float32]

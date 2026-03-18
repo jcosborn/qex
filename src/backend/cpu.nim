@@ -41,16 +41,23 @@ proc gpuDefaultNumThreads*(): int =
       nt = numThreads
   result = nt
 
-macro onGpu*(body: untyped): auto =
+macro onGpuNowait*(n,b,body: untyped): auto =
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   template target(cpuPrepare, cpuFinalize, body: untyped) =
     mixin toGpu, getGpu, fromGpu
+    cpuPrepare  # a let section declare and save device pointers
     proc gpuProc {.gensym.} =
-      cpuPrepare  # a let section declare and save device pointers
-      threads:
+      if numThreads == 1:
+        threads:
+          body
+      else:
         body
-      cpuFinalize
     gpuProc()
+    proc finalize {.gensym.} =
+      threadBarrier()
+      cpuFinalize
+      #threadBarrier()
+    finalize
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
@@ -64,6 +71,27 @@ macro onGpu*(body: untyped): auto =
   else:
     if dumpKernels > 2:
       result = newCall(bindsym"echoTyped", result)
+
+var gpuNumThreadsRequest* = 0
+var gpuBlockSizeRequest* = 0
+template onGpuNowait*(body: untyped): auto =
+  onGpuNoWait(gpuNumThreadsRequest, gpuBlockSizeRequest, body)
+template onGpuNowait*(n,body: untyped): auto =
+  var b = gpuBlockSizeRequest
+  while b > n: b = b div 2
+  onGpuNoWait(n, b, body)
+#template onGpuNowait*(n,b,body: untyped): auto =
+#  onGpuNoWait(n, b, body)
+
+template onGpu*(body: untyped) =
+  let finalize = onGpuNoWait(body)
+  finalize()
+template onGpu*(n,body: untyped) =
+  let finalize = onGpuNoWait(n, body)
+  finalize()
+template onGpu*(n,b,body: untyped) =
+  let finalize = onGpuNoWait(n, b, body)
+  finalize()
 
 #template onGpu*(n,x:untyped) = onGpu(x)
 #template onGpu*(n,t,x:untyped) = onGpu(x)

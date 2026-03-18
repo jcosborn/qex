@@ -1,3 +1,5 @@
+import base/threading
+
 type
   CpuGpu*[C,G] = object
     cpu*: C
@@ -6,6 +8,9 @@ type
     noReadGpu* {.bitsize:1.}: bool # won't read from GPU field in next kernel
     noWriteCpu* {.bitsize:1.}: bool # haven't written to CPU field since last sync
     noWriteGpu* {.bitsize:1.}: bool # won't write to GPU field in next kernel
+    useCount*: int  # counts times used in gpu kernel
+    lastCopyIn*: int  # useCount of last copy to gpu
+    lastCopyOut*: int  # useCount of last copy from gpu
   # toGpu is called before kernel if it will be read on the gpu and was written on cpu since last sync
   # fromGpu is called after kernel if it was written on gpu and will be read on cpu later
 
@@ -37,7 +42,11 @@ template gpuReadWrite*(x: CpuGpu) =
 proc toGpu*(x: var CpuGpu): auto {.discardable.} =
   mixin toGpu
   # copy if gpuR and cpuW
-  x.gpu.toGpu(x, (not x.noReadGpu) and (not x.noWriteCpu))
+  let cpy = (not x.noReadGpu) and (not x.noWriteCpu)
+  threadSingle:
+    inc x.useCount
+    if cpy: x.lastCopyIn = x.useCount
+  x.gpu.toGpu(x, cpy)
   x.gpu
 
 template getGpu*[C,G](x: CpuGpu[C,G], g: G): auto =
@@ -46,11 +55,27 @@ template getGpu*[C,G](x: CpuGpu[C,G], g: G): auto =
 proc fromGpu*[C,G](x: var CpuGpu[C,G], g: G) =
   mixin fromGpu
   # copy if cpuR and gpuW
-  x.fromGpu(g, (not x.noReadCpu) and (not x.noWriteGpu))
+  let cpy = (not x.noReadCpu) and (not x.noWriteGpu)
+  threadSingle:
+    if cpy: x.lastCopyOut = x.useCount
+  x.fromGpu(g, cpy)
 
 proc fromGpu*[C,G](x: var CpuGpu[C,G]) =
   # copy if cpuR and gpuW
-  x.fromGpu(x.gpu, (not x.noReadCpu) and (not x.noWriteGpu))
+  let cpy = (not x.noReadCpu) and (not x.noWriteGpu)
+  threadSingle:
+    if cpy: x.lastCopyOut = x.useCount
+  x.fromGpu(x.gpu, cpy)
+
+template wasCopiedIn*(x: CpuGpu): bool =
+  x.lastCopyIn == x.useCount
+template wasCopiedOut*(x: CpuGpu): bool =
+  x.lastCopyOut == x.useCount
+
+# cpuSyncRead
+# cpuWasWritten
+# gpuSyncRead
+# gpuWasWritten
 
 when isMainModule:
   import backend/accel

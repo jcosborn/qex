@@ -110,16 +110,17 @@ template openmpDefs(body: untyped) =
   #let
   #  numTeams = omp_get_num_teams()
   #  teamNum = omp_get_team_num()
+  #ompBlock("parallel num_threads(512)"):
   ompBlock("parallel"):
     #let
     #  numThreads = omp_get_num_threads()
     #  threadNum = omp_get_thread_num()
     #template getThreadNum: untyped {.used.} = teamNum.int * numThreads.int + threadNum.int
     #template getNumThreads: untyped {.used.} = numTeams.int * numThreads.int
-    {.emit:["#define nimZeroMem(b,len) memset((b),0,(len))"].}
+    #{.emit:["#define nimZeroMem(b,len) memset((b),0,(len))"].}
     inlineProcs:
       body
-    {.emit:["#undef nimZeroMem"].}
+    #{.emit:["#undef nimZeroMem"].}
 
 
 proc genCpuPrepare(n:seq[NimNode]):NimNode =
@@ -176,19 +177,24 @@ template useDevicePtr(x: auto) =
 #  result = newLit(" map(to:"&n&")")
 #macro mapto(x: typed): untyped =
 
-macro onGpu*(body: untyped): auto =
+macro onGpuNowait*(n,b,body: untyped): auto =
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   template target(cpuPrepare, cpuFinalize, devicePtrDeclare, body: untyped) =
     mixin toGpu, getGpu, fromGpu
     {.push checks: off.}
     {.push stacktrace: off.}
+    cpuPrepare  # a let section declare and save device pointers
     proc gpuProc {.gensym.} =
-      cpuPrepare  # a let section declare and save device pointers
-      ompBlock2("target teams ", devicePtrDeclare):
-        openmpDefs:
-          body
-      cpuFinalize
+      threadSingle:
+        #ompBlock2("target teams num_teams(1024)", devicePtrDeclare):
+        ompBlock2("target teams", devicePtrDeclare):
+          openmpDefs:
+            body
     gpuProc()
+    proc finalize {.gensym.} =
+      cpuFinalize
+      #threadBarrier()
+    finalize
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
@@ -197,9 +203,26 @@ macro onGpu*(body: untyped): auto =
   result = getast(target(cpuPrepare, cpuFinalize, isDevicePtrs, body))
   echo result.repr
 
-# XXX fix the following
-template onGpu*(totalNumThreads, body: untyped): untyped = onGpu(body)
-template onGpu*(totalNumThreads, numThreadsPerTeam, body: untyped): untyped = onGpu(body)
+var gpuNumThreadsRequest* = 0
+var gpuBlockSizeRequest* = 0
+template onGpuNowait*(body: untyped): auto =
+  onGpuNoWait(gpuNumThreadsRequest, gpuBlockSizeRequest, body)
+template onGpuNowait*(n,body: untyped): auto =
+  var b = gpuBlockSizeRequest
+  while b > n: b = b div 2
+  onGpuNoWait(n, b, body)
+#template onGpuNowait*(n,b,body: untyped): auto =
+#  onGpuNoWait(n, b, body)
+
+template onGpu*(body: untyped) =
+  let finalize = onGpuNoWait(body)
+  finalize()
+template onGpu*(n,body: untyped) =
+  let finalize = onGpuNoWait(n, body)
+  finalize()
+template onGpu*(n,b,body: untyped) =
+  let finalize = onGpuNoWait(n, b, body)
+  finalize()
 
 template toUArray(a:untyped):untyped = cast[ptr UncheckedArray[typeof(a[0])]](a[0].unsafeaddr)
 proc cleanAst(n:NimNode):NimNode =
