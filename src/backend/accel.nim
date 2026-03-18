@@ -35,7 +35,7 @@ proc gpuMalloc*[T](x: var ptr T) =
   x = cast[ptr T](gpuMalloc(n))
 
 template toGpu*(x:SomeNumber):auto = x
-template toGpu*(x:var SomeNumber):auto = addr x
+#template toGpu*(x:var SomeNumber):auto = addr x
 #template getGpu*(x:SomeNumber, g:SomeNumber):auto = g
 macro getGpu*(x:SomeNumber, g:SomeNumber):auto =
   #echo x.treerepr

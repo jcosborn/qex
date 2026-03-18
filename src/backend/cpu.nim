@@ -34,6 +34,13 @@ macro echoTyped(body: auto): auto =
   #echo body.treerepr
   result = body
 
+proc gpuDefaultNumThreads*(): int =
+  var nt = 0
+  threads:
+    threadSingle:
+      nt = numThreads
+  result = nt
+
 macro onGpu*(body: untyped): auto =
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   template target(cpuPrepare, cpuFinalize, body: untyped) =

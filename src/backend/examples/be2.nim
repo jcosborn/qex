@@ -85,6 +85,7 @@ block:
     echo &"{memMB:8.3f} {bwGB:8.3f} {flopsGB:8.3f}"
     doAssert(errcnt==0)
 
+  echo "gpuDefaultNumThreads: ", gpuDefaultNumThreads()
   echo "      MB     GB/s  GFlop/s    (z=x*y ", (if sizeof(Real)==8:"double)" else:"single)")
   var n = Nmin
   while n <= Nmax:

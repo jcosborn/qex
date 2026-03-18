@@ -16,12 +16,15 @@ template gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger) =
   q.wait
 
 template gpuThreadNum*: auto =
-  let item = getNdItem1()
-  item[]
+  #let item = getNdItem1()
+  #item[]
+  #getNdItem1()[]
+  int getGlobalId1()
 
 template gpuNumThreads*: auto =
-  let item = getNdItem1()
-  item.getRange
+  #let item = getNdItem1()
+  #item.getRange
+  int getGlobalRange1()
 
 template syclDefs(body: untyped) =
   setupSycl()
@@ -47,6 +50,9 @@ proc genCpuFinalize(n:seq[NimNode]):NimNode =
   for c in n:
     result.add getast r(c[0],c[1])
 
+proc gpuDefaultNumThreads*(): int =
+  64 * q.device.maxComputeUnits.int * q.device.subGroupSizes.max_element.int
+
 macro onGpuQ*(q: Queue, body: untyped): auto =
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   template target(q, cpuPrepare, cpuFinalize, body: untyped) =
@@ -55,7 +61,10 @@ macro onGpuQ*(q: Queue, body: untyped): auto =
     {.push stacktrace: off.}
     proc gpuProc {.gensym.} =
       cpuPrepare  # a let section declare and save device pointers
-      let nth = q.device.maxComputeUnits.int * q.device.preferredVectorWidthFloat.int
+      #let nth = 32 * q.device.maxComputeUnits.int * q.device.preferredVectorWidthFloat.int
+      #let nth = 32 * q.device.maxComputeUnits.int
+      let nth = gpuDefaultNumThreads()
+      #echo "Launching threads:", nth
       q.submit:
         parallelFor(nth):
           syclDefs:
