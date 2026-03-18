@@ -103,16 +103,6 @@ template onGpu*(n,b,body: untyped) =
   finalize()
 
 
-# XXX fix the following
-template onGpu*(body: untyped) =
-  let finalize = onGpuQ(q, body)
-  finalize()
-#template onGpu*(totalNumThreads, body: untyped): untyped = onGpu(body)
-#template onGpu*(totalNumThreads, numThreadsPerTeam, body: untyped): untyped = onGpu(body)
-template onGpuNowait*(body: untyped): auto =
-  onGpuQ(q, body)
-
-
 when isMainModule:
   type FltArr = object
     a:ptr UncheckedArray[float32]
