@@ -26,13 +26,16 @@ template toGpu*(g: var Myarray, x: Cgarray, cpy: bool) =
   threadSingle:
     if g.p.isNil:
       when backendIsGpu:
+        #echo "gpuMalloc"
         g.p = cast[type g.p](gpuMalloc(g.bytes))
+        #echo "... done"
       else:
         g.p = x.cpu.p
     when backendIsGpu:
       if cpy:
-        #echo "Copy in"
+        #echo "gpuMemCpyToGPU"
         gpuMemCpyToGPU(g.p, x.cpu.p, g.bytes)
+        #echo "... done"
 
 template getGpu*(x: Cgarray, g: Myarray): auto = g
 

@@ -127,6 +127,7 @@ proc genCpuPrepare(n:seq[NimNode]):NimNode =
   mixin toGpu
   template r(x,v:untyped):untyped =
     var v = toGpu(x)
+    var `v xx` = v
   result = newstmtlist()
   for c in n:
     result.add getast r(c[0],c[1])
@@ -178,23 +179,25 @@ template useDevicePtr(x: auto) =
 #macro mapto(x: typed): untyped =
 
 macro onGpuNowait*(n,b,body: untyped): auto =
-  proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
+  #proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
+  proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,newTree(nnkAccQuoted,g,ident"xx"))
   template target(cpuPrepare, cpuFinalize, devicePtrDeclare, body: untyped) =
     mixin toGpu, getGpu, fromGpu
     {.push checks: off.}
     {.push stacktrace: off.}
-    cpuPrepare  # a let section declare and save device pointers
-    proc gpuProc {.gensym.} =
+    block:
+      cpuPrepare  # a let section declare and save device pointers
+      #proc gpuProc {.gensym.} =
       threadSingle:
         #ompBlock2("target teams num_teams(1024)", devicePtrDeclare):
         ompBlock2("target teams", devicePtrDeclare):
           openmpDefs:
             body
-    gpuProc()
-    proc finalize {.gensym.} =
-      cpuFinalize
-      #threadBarrier()
-    finalize
+      #gpuProc()
+      proc finalize {.gensym.} =
+        cpuFinalize
+        #threadBarrier()
+      finalize
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v

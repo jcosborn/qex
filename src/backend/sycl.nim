@@ -220,6 +220,7 @@ proc getRange*(x: Nd1): cint {.importcpp:"#.get_global_range(0)".}
 template parallelFor*(n: int, body: typed) =
   #{.emit:["cgh.parallel_for<class syclkern>(sycl::range<1>{",n.uint,"},[=](sycl::item<1> it)"].}
   {.emit:["cgh.parallel_for<>(sycl::range<1>{",n.uint,"},[=](sycl::item<1> it)"].}
+  #{.emit:["cgh.parallel_for<>(sycl::nd_range<1>{",n.uint,",16},[=](sycl::nd_item<1> it)"].}
   block:
     body
   {.emit:[");"].}

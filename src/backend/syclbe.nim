@@ -39,6 +39,7 @@ template syclDefs(body: untyped) =
 proc genCpuPrepare(n:seq[NimNode]):NimNode =
   template r(x,v:untyped):untyped =
     var v = toGpu(x)
+    var `v xx` = v
   result = newstmtlist()
   for c in n:
     result.add getast r(c[0],c[1])
@@ -46,6 +47,8 @@ proc genCpuPrepare(n:seq[NimNode]):NimNode =
 proc genCpuFinalize(n:seq[NimNode]):NimNode =
   template r(x,v:untyped):untyped =
     fromGpu(x,v)
+    #fromGpu(x)
+    #discard
   result = newstmtlist()
   for c in n:
     result.add getast r(c[0],c[1])
@@ -55,13 +58,15 @@ proc gpuDefaultNumThreads*(): int =
   #64 * q.device.maxComputeUnits.int * q.device.subGroupSizes.max_element.int
 
 macro onGpuQ*(q: Queue, n,b,body: untyped): auto =
-  proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
+  #proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
+  proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,newTree(nnkAccQuoted,g,ident"xx"))
   template target(q, cpuPrepare, cpuFinalize, body: untyped) =
     mixin toGpu, getGpu, fromGpu
     {.push checks: off.}
     {.push stacktrace: off.}
-    cpuPrepare  # a let section declare and save device pointers
-    proc gpuProc {.gensym.} =
+    block:
+      cpuPrepare  # a let section declare and save device pointers
+      #proc gpuProc {.gensym.} =
       threadSingle:
         let nth = n
         #echo "Launching threads:", nth
@@ -69,18 +74,19 @@ macro onGpuQ*(q: Queue, n,b,body: untyped): auto =
           parallelFor(nth):
             syclDefs:
               body
-    gpuProc()
-    proc finalize {.gensym.} =
-      threadSingle:
-        q.wait
-      cpuFinalize
-    finalize
+      #gpuProc()
+      proc finalize {.gensym.} =
+        threadSingle:
+          q.wait
+        cpuFinalize
+      finalize
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
     cpuFinalize = genCpuFinalize v
   result = getast(target(q, cpuPrepare, cpuFinalize, body))
-  echo result.repr
+  #echo result.repr
+  #echo result.treerepr
 
 #var gpuNumThreadsRequest* = 0
 #var gpuBlockSizeRequest* = 0
