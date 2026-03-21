@@ -268,8 +268,8 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
   echo result.repr
   #echo result.treerepr
 
-var gpuNumThreadsRequest* = 512*64
 var gpuBlockSizeRequest* = 64
+var gpuNumThreadsRequest* = 32*1024
 template onGpuNowait*(body: untyped): auto =
   onGpuNoWait(gpuNumThreadsRequest, gpuBlockSizeRequest, body)
 template onGpuNowait*(n,body: untyped): auto =

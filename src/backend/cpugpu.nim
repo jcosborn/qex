@@ -72,6 +72,10 @@ template wasCopiedIn*(x: CpuGpu): bool =
 template wasCopiedOut*(x: CpuGpu): bool =
   x.lastCopyOut == x.useCount
 
+proc copyToGpu*(x: var CpuGpu) =
+  mixin toGpu
+  x.gpu.toGpu(x, true)
+
 # cpuSyncRead
 # cpuWasWritten
 # gpuSyncRead
