@@ -210,9 +210,9 @@ proc cudaproc(s:string, p:NimNode):NimNode =
   result.addPragma parseExpr("{.codegenDecl:\""&s&" $# $#$#\".}")[0]
   result.body = getAst(cudaDefs(result.body))
   var sl = newStmtList()
-  sl.add( quote do:
-    {.push checks: off.}
-    {.push stacktrace: off.} )
+  #sl.add( quote do:
+  #  {.push checks: off.}
+  #  {.push stacktrace: off.} )
   sl.add result
   result = sl
   #echo "end cuda:"
@@ -234,7 +234,8 @@ proc genCpuFinalize(n:seq[NimNode], a: NimNode):NimNode =
 #macro onGpuX(nn0,tpb0: untyped, body: untyped): auto =  # return callback to wait and finalize
 
 macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
-  template target(nn, tpb, v, arg, cpuPrepare, cpuFinalize, fin, body: untyped): untyped =
+  let li = body.lineinfo
+  template target(nn, tpb, v, arg, cpuPrepare, cpuFinalize, body: untyped): untyped =
     mixin toGpu, getGpu, fromGpu
     block:
       var v = cpuPrepare  # kernel argument tuple
@@ -250,12 +251,12 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
       #echo "launching kernel"
       threadSingle:
         cudaLaunch(kern, blocksPerGrid, threadsPerBlock, v)
-    proc fin =
-      threadSingle:
-        discard cudaDeviceSynchronize()
-      cpuFinalize
-      #threadBarrier()
-    fin
+      proc finalize {.gensym.} =
+        threadSingle:
+          discard cudaDeviceSynchronize()
+        cpuFinalize
+        #threadBarrier()
+      finalize
   let
     varg = gensym(nskVar, "varg")
     arg = gensym(nskParam, "arg")
@@ -267,18 +268,21 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
     v = prepareVars(body,deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
     cpuFinalize = genCpuFinalize(v, varg)
-    fin = gensym(nskProc, "finalize")
-  result = getast(target(nn0, tpb0, varg, arg, cpuPrepare, cpuFinalize, fin, body))
-  #echo result.repr
-  #echo result.treerepr
+  result = getast(target(nn0, tpb0, varg, arg, cpuPrepare, cpuFinalize, body))
   case dumpKernels
   of 1:
+    echo li
     echo result.repr
   of 2:
+    echo li
     echo result.treerepr
   else:
     if dumpKernels > 2:
-      result = newCall(bindsym"echoRep", result)
+      echo li
+      var sl = newNimNode(nnkStmtListExpr)
+      sl.add newCall(bindsym"echoTyped", result)
+      sl.add result
+      result = sl
 
 var gpuBlockSizeRequest* = 64
 var gpuNumThreadsRequest* = 32*1024

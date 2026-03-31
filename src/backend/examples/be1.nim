@@ -380,13 +380,11 @@ block:
         x.copyToGpu; x.cpuUnused
         y.copyToGpu; y.cpuUnused
         z.copyToGpu; z.cpuUnused
-        #var cb = newSeq[proc()](0)
         var b = newBench()
         benchSingle(b):
           let nrep = b.nrep
           threads:
             var cb = newSeq[proc()](nrep)
-            #cb.setLen(nrep)
             for rep in 0 ..< nrep:
               cb[rep] = onGpuNowait(n):
                 for i in gpuRange(n):

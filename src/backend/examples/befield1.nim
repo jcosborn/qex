@@ -219,6 +219,7 @@ template toGpuField[V:static int, T](t: typedesc[Field[V,T]]): typedesc =
 type
   CgField*[T] = CpuGpu[T, toGpuField(T)]
   CgFld[C:Field,G:GpuField] = CpuGpu[C,G]
+  CgFld2[C:Field,G:GpuField] = CpuGpu[C,G]
 proc destroy*[C:Field,G:GpuField](x: var CpuGpu[C,G]) = discard
 template `[]`*(x: CgFld, i: int): auto = x.cpu[i]
 template numberType*[T:CgFld](x: T): typedesc = numberType(T.C)
@@ -230,7 +231,10 @@ proc newCgField(c: Field): auto =
   var r: CgField[T]
   r.cpu = c
   r.gpu.n = c.l.nSitesOuter
-  r.gpu.p = cast[type r.gpu.p](gpuMalloc(r.gpu.bytes))
+  when backendIsGpu:
+    r.gpu.p = cast[type r.gpu.p](gpuMalloc(r.gpu.bytes))
+  else:
+    r.gpu.p = cast[type r.gpu.p](addr r.cpu[0])
   r
 proc CgColorVector(lo: Layout): auto = newCgField(lo.ColorVector())
 proc CgColorMatrix(lo: Layout): auto = newCgField(lo.ColorMatrix())
@@ -251,6 +255,12 @@ template fromGpu*(x: CgFld, g: GpuField, cpy: bool) =
     if cpy:
       gpuMemCpyToCPU(addr x.cpu[0], g.p, g.bytes)
 
+template `*`(x: SomeNumber, y: CgFld): auto = x * y.cpu
+template `*`(x: CgFld, y: CgFld2): auto = x.cpu * y.cpu
+template `+`(x: SomeField, y: CgFld): auto = x + y.cpu
+template `:=`(x: var CgFld, y: SomeField) =
+  x.cpu := y
+
 macro exp2string(x:untyped):auto =
   #var s = repr fixBracket symToIdent x
   var s = repr symToIdent x
@@ -259,10 +269,30 @@ macro exp2string(x:untyped):auto =
   let n = skipWhitespace(s)
   newlit s[n..^1]
 
+template check(r,eqn: untyped) =
+  block:
+    var s = r.cpu.newOneOf
+    threads:
+      r := 0
+      threadBarrier()
+      eqn
+      threadBarrier()
+      s := r.cpu
+      threadBarrier()
+      r := 0
+    onGpu:
+      eqn
+    threads:
+      s -= r.cpu
+      echo s.norm2
+
 var bs = newSeq[string](0)
 var br = newSeq[string](0)
-template bench(N,V,fps,bps,mm,eqn: untyped) =
+template bench(r,fps,bps,mm,eqn: untyped) =
+  check(r, eqn)
   block:
+    let N = r.cpu.l.nSitesOuter
+    let V = r.cpu.l.V
     let vol = N*V
     var b = newBench()
     benchSingle(b):
@@ -315,18 +345,21 @@ proc test(lat:auto, double:static bool=false) =
   let mb = nc*vb
   let mvf = (2*nc2-1)*nc2
   echo "Float type: ", $(v1.numberType)
-  threads:
-    m1 := 2
-    v1 := 1
-    v2 := 0
-    v3 := 0
-  echo "done setup"
-  var nbench = 0
+  proc reset =
+    threads:
+      m1 := 2
+      v1 := 1
+      v2 := 0
+      v3 := 0
+  #echo "done setup"
+  #var nbench = 0
 
-  bench(lo.nSitesOuter, lo.V, 2*nc2, 3*vb, 2*vb):
+  reset()
+  bench(v2, 2*nc2, 3*vb, 2*vb):
     v2 := Real(0.5)*v2 + v1
 
-  bench(lo.nSitesOuter, lo.V, mvf, mb+2*vb, mb+2*vb):
+  reset()
+  bench(v2, mvf, mb+2*vb, mb+2*vb):
     v2 := m1 * v1
 
 qexInit()
@@ -341,6 +374,7 @@ template runtests(double:static bool) =
   test([24,24,24,24], double)
   test([32,32,32,32], double)
   test([40,40,40,40], double)
+  #test([48,48,48,48], double)
 runtests(false)
 let bs32 = bs
 let br32 = br

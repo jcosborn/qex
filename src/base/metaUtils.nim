@@ -897,8 +897,9 @@ macro echoUntypedTree*(x: untyped): auto =
   result = newEmptyNode()
   echo x.treeRepr
 macro echoTyped*(x: typed): auto =
-  result = newEmptyNode()
+  echo x.lineinfo
   echo x.repr
+  newEmptyNode()
 macro echoTypedTree*(x: typed): auto =
   result = newEmptyNode()
   echo x.treeRepr

@@ -1,5 +1,6 @@
 import base/threading
 import backend/expr
+import base/metaUtils
 import macros
 
 const dumpKernels {.intdefine.} = 0
@@ -29,10 +30,10 @@ proc genCpuFinalize(n:seq[NimNode]):NimNode =
   for c in n:
     result.add getast r(c[0],c[1])
 
-macro echoTyped(body: auto): auto =
-  echo body.repr
-  #echo body.treerepr
-  result = body
+#macro echoTyped(body: auto): auto =
+#  echo body.repr
+#  #echo body.treerepr
+#  result = body
 
 proc gpuDefaultNumThreads*(): int =
   var nt = 0
@@ -71,7 +72,10 @@ macro onGpuNowait*(n,b,body: untyped): auto =
     echo result.treerepr
   else:
     if dumpKernels > 2:
-      result = newCall(bindsym"echoTyped", result)
+      var sl = newNimNode(nnkStmtListExpr)
+      sl.add newCall(bindsym"echoTyped", result)
+      sl.add result
+      result = sl
 
 var gpuNumThreadsRequest* = 0
 var gpuBlockSizeRequest* = 0

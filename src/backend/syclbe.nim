@@ -60,7 +60,7 @@ proc gpuDefaultNumThreads*(): int =
 macro onGpuQ*(q: Queue, n,b,body: untyped): auto =
   #proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,newTree(nnkAccQuoted,g,ident"xx"))
-  template target(q, cpuPrepare, cpuFinalize, body: untyped) =
+  template target(q, n, cpuPrepare, cpuFinalize, body: untyped) =
     mixin toGpu, getGpu, fromGpu
     {.push checks: off.}
     {.push stacktrace: off.}
@@ -84,7 +84,7 @@ macro onGpuQ*(q: Queue, n,b,body: untyped): auto =
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
     cpuFinalize = genCpuFinalize v
-  result = getast(target(q, cpuPrepare, cpuFinalize, body))
+  result = getast(target(q, n, cpuPrepare, cpuFinalize, body))
   #echo result.repr
   #echo result.treerepr
 
