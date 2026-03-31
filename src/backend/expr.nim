@@ -99,7 +99,7 @@ macro substVars*(x: untyped, a: untyped): auto =
   result = e
   #echo result.treerepr
 
-const Keywords = ["addr"]
+const Keywords = ["addr","array"]
 
 proc prepareVars*(n:NimNode, deref:proc): seq[NimNode] =
   # get a list of vars and new symbols to replace them, using let binding for now XXX

@@ -18,6 +18,12 @@ proc newCgarray*[T](n: int): Cgarray[T] =
   result.cpu.n = n
   result.cpu.p = cast[ptr UncheckedArray[T]](T.createU(n))
   result.gpu.n = n
+proc destroy*(x: var Cgarray) =
+  when backendIsGpu:
+    if x.gpu.p != nil:
+      gpuFree(x.gpu.p)
+  if x.cpu.p != nil:
+    dealloc(x.cpu.p)
 template `[]`*(x: Cgarray, i: SomeInteger): auto = x.cpu[i]
 template `[]=`*(x: Cgarray, i: SomeInteger, y: auto): auto =
   x.cpu[i] = y
@@ -47,6 +53,7 @@ template fromGpu*(x: var Cgarray, g: Myarray, cpy: bool) =
         gpuMemCpyToCPU(x.cpu.p, g.p, x.cpu.bytes)
 
 block:
+  threadsInit()
   commsInit()
   let N = intParam("n", -1)
   let Nmin = intParam("nmin", if N>0: N else: 1024)
@@ -54,9 +61,20 @@ block:
   var ns = newSeq[int](0)
   block:
     var n = Nmin
-    while n <= Nmax:
+    while n < Nmax:
       ns.add n
+      ns.add int(round(n*sqrt(2.0)))
       n *= 2
+    ns.add n
+  echo ns
+  type
+    BenchResult = object
+      name: string
+      n: int
+      threadLoc: string
+      b: Bench
+  var br: BenchResult
+  var brs = newSeq[BenchResult](0)
 
   proc runtest(Real: typedesc) =
     var x = newCgarray[Real](Nmax)
@@ -69,7 +87,7 @@ block:
         x[i] = initX(i)
         y[i] = initY(i)
 
-    proc check(n: int) =
+    proc check2(n: int, ii: auto) =
       var errcnt = 0
       for i in 0..<n:
         #let r = initX(i) * initY(i)
@@ -80,7 +98,22 @@ block:
           inc errcnt
       if errcnt > 0:
         echo "Error count: ", errcnt
+        echo "n: ", n, "  ", ii
       doAssert(errcnt==0)
+    template check(n: int) =
+      check2(n, instantiationInfo())
+
+    proc mem(br: BenchResult): float=
+      let n = br.n
+      let bytes = 3*n*sizeof(x[0])
+      let memMB = 1e-6 * bytes
+      memMB
+
+    proc bw(br: BenchResult): float =
+      let n = br.n
+      let bytes = 3*n*sizeof(x[0])
+      let bwGB = bytes * br.b.perNs
+      bwGB
 
     proc perf(n: int, b: Bench) =
       let bytes = 3*n*sizeof(x[0])
@@ -96,7 +129,7 @@ block:
       x.gpuReadOnly; y.gpuReadOnly; z.gpuWriteOnly
       template set(a,b: SomeNumber, c = 0) =
         threads:
-          for i in threadRange(n):
+          for i in threadRangeV(n):
             x[i] += a
             y[i] += b
             z[i] += c
@@ -223,44 +256,170 @@ block:
       doAssert(z.wasCopiedOut and not z.wasCopiedIn)
 
     proc benchCpu(n: int) =
-      threads: (for i in threadRange(n): z[i] = 0)
-      z.copyToGpu
-      var b = newBench()
-      benchSingle(b):
-        let nrep = b.nrep
-        threads:
-          for rep in 1..nrep:
-            for i in threadRange(n):
-              z[i] = x[i] * y[i]
-      perf(n, b)
-      check(n)
+      br.name = "CPU"
+      br.n = n
+      block:
+        br.threadLoc = "out"
+        threads: (for i in threadRangeAligned(n,16): z[i] = 0)
+        var b = newBench()
+        benchSingle(b):
+          let nrep = b.nrep
+          threads:
+            for rep in 0..<nrep:
+              for i in threadRangeAligned(n,16):
+                z[i] = x[i] * y[i]
+        #perf(n, b)
+        br.b = b
+        brs.add br
+        check(n)
+      block:
+        br.threadLoc = "in"
+        threads: (for i in threadRangeAligned(n,16): z[i] = 0)
+        var b = newBench()
+        benchSingle(b):
+          let nrep = b.nrep
+          for rep in 0..<nrep:
+            threads:
+              for i in threadRangeAligned(n,16):
+                z[i] = x[i] * y[i]
+        #perf(n, b)
+        br.b = b
+        brs.add br
+        check(n)
 
     proc benchGpu(n: int) =
-      threads: (for i in threadRange(n): z[i] = 0)
-      z.copyToGpu
-      var b = newBench()
-      benchSingle(b):
-        let nrep = b.nrep
-        onGpu(n):
-          for rep in 1..nrep:
-            for i in gpuRange(n):
-              z[i] = x[i] * y[i]
-      perf(n, b)
-      check(n)
-
-    proc benchNested(n: int) =
-      threads: (for i in threadRange(n): z[i] = 0)
-      z.copyToGpu
-      var b = newBench()
-      benchSingle(b):
-        let nrep = b.nrep
-        threads:
+      br.name = "GPU"
+      br.n = n
+      block:
+        br.threadLoc = "out"
+        threads: (for i in threadRangeAligned(n,16): z[i] = 0)
+        z.copyToGpu
+        var b = newBench()
+        benchSingle(b):
+          let nrep = b.nrep
           onGpu(n):
-            for rep in 1..nrep:
+            for rep in 0..<nrep:
               for i in gpuRange(n):
                 z[i] = x[i] * y[i]
-      perf(n, b)
-      check(n)
+        #perf(n, b)
+        br.b = b
+        brs.add br
+        check(n)
+      when false: #block:
+        br.threadLoc = "in"
+        threads: (for i in threadRangeAligned(n,16): z[i] = 0)
+        x.copyToGpu; x.cpuUnused
+        y.copyToGpu; y.cpuUnused
+        z.copyToGpu; z.cpuUnused
+        var cb = newSeq[proc()](0)
+        var cbr = 0
+        var b = newBench()
+        let maxrun = 1
+        benchSingle(b):
+          let nrep = b.nrep
+          cb.setLen(nrep)
+          for rep in 0 ..< nrep:
+            cb[rep] = onGpuNowait(n):
+              for i in gpuRange(n):
+                z[i] = x[i] * y[i]
+            if (rep+1) mod maxrun == 0:
+              for i in cbr .. rep : cb[i]()
+              cbr = rep + 1
+          for i in cbr ..< nrep : cb[i]()
+          #for rep in 0 ..< nrep: cb[rep]()
+        #perf(n, b)
+        br.b = b
+        brs.add br
+        x.cpuWriteOnly; y.cpuWriteOnly
+        z.copyFromGpu; z.cpuReadOnly
+        check(n)
+      block:
+        br.threadLoc = "ins"
+        threads: (for i in threadRangeAligned(n,16): z[i] = 0)
+        x.copyToGpu; x.cpuUnused
+        y.copyToGpu; y.cpuUnused
+        z.copyToGpu; z.cpuUnused
+        var b = newBench()
+        benchSingle(b):
+          let nrep = b.nrep
+          for rep in 0 ..< nrep:
+            onGpu(n):
+              for i in gpuRange(n):
+                z[i] = x[i] * y[i]
+        #perf(n, b)
+        br.b = b
+        brs.add br
+        x.cpuWriteOnly; y.cpuWriteOnly
+        z.copyFromGpu; z.cpuReadOnly
+        check(n)
+
+    proc benchNested(n: int) =
+      br.name = "Nest"
+      br.n = n
+      block:
+      #when false:
+        br.threadLoc = "out"
+        threads: (for i in threadRangeAligned(n,16): z[i] = 0)
+        z.copyToGpu
+        var b = newBench()
+        benchSingle(b):
+          let nrep = b.nrep
+          threads:
+            onGpu(n):
+              for rep in 0 ..< nrep:
+                for i in gpuRange(n):
+                  z[i] = x[i] * y[i]
+        #perf(n, b)
+        br.b = b
+        brs.add br
+        check(n)
+      block:
+      #when false:
+        br.threadLoc = "in"
+        threads: (for i in threadRangeAligned(n,16): z[i] = 0)
+        x.copyToGpu; x.cpuUnused
+        y.copyToGpu; y.cpuUnused
+        z.copyToGpu; z.cpuUnused
+        #var cb = newSeq[proc()](0)
+        var b = newBench()
+        benchSingle(b):
+          let nrep = b.nrep
+          threads:
+            var cb = newSeq[proc()](nrep)
+            #cb.setLen(nrep)
+            for rep in 0 ..< nrep:
+              cb[rep] = onGpuNowait(n):
+                for i in gpuRange(n):
+                  z[i] = x[i] * y[i]
+            for rep in 0 ..< nrep:
+              cb[rep]()
+        #perf(n, b)
+        br.b = b
+        brs.add br
+        x.cpuWriteOnly; y.cpuWriteOnly
+        z.copyFromGpu; z.cpuReadOnly
+        check(n)
+      block:
+      #when false:
+        br.threadLoc = "ins"
+        threads: (for i in threadRangeAligned(n,16): z[i] = 0)
+        x.copyToGpu; x.cpuUnused
+        y.copyToGpu; y.cpuUnused
+        z.copyToGpu; z.cpuUnused
+        var b = newBench()
+        benchSingle(b):
+          let nrep = b.nrep
+          threads:
+            for rep in 0 ..< nrep:
+              onGpu(n):
+                for i in gpuRange(n):
+                  z[i] = x[i] * y[i]
+        #perf(n, b)
+        br.b = b
+        brs.add br
+        x.cpuWriteOnly; y.cpuWriteOnly
+        z.copyFromGpu; z.cpuReadOnly
+        check(n)
 
     echo "Testing GPU ", $Real
     for n in ns: testGpu(n)
@@ -268,12 +427,35 @@ block:
     echo "Testing Nested ", $Real
     for n in ns: testNested(n)
 
-    echo "CPU   MB      GB/s  GFlop/s    (z=x*y ", $Real, ")"
+    proc echobr =
+      var lastn = 0
+      var s = ""
+      for br in brs:
+        if br.n != lastn:
+          if lastn > 0: echo s
+          s = &"{br.mem:8.3f}"
+          lastn = br.n
+        s &= &" {br.bw:9.3f}"
+      echo s
+
+    brs.setLen(0)
     for n in ns: benchCpu(n)
-    echo "GPU   MB      GB/s  GFlop/s    (z=x*y ", $Real, ")"
+    #echo "CPU   MB      GB/s  GFlop/s    (z=x*y ", $Real, ")"
+    echo "CPU   MB      GB/s      (z=x*y ", $Real, ")"
+    echobr()
+
+    brs.setLen(0)
     for n in ns: benchGpu(n)
-    echo "Nest  MB      GB/s  GFlop/s    (z=x*y ", $Real, ")"
+    #echo "GPU   MB      GB/s  GFlop/s    (z=x*y ", $Real, ")"
+    echo "GPU   MB      GB/s      (z=x*y ", $Real, ")"
+    echobr()
+
+    brs.setLen(0)
     for n in ns: benchNested(n)
+    #echo "Nest  MB      GB/s  GFlop/s    (z=x*y ", $Real, ")"
+    echo "Nest  MB      GB/s      (z=x*y ", $Real, ")"
+    echobr()
+
 
   runtest(float64)
   runtest(float32)

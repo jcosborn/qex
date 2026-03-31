@@ -236,6 +236,7 @@ proc inlineLets(n:NimNode):NimNode =
 ]#
 
 proc regenSym(n:NimNode):NimNode =
+  #echo "regenSym: ", n.repr
   # Only regen nskVar and nskLet symbols.
 
   # We need to regenerate symbols for multiple inlined procs,
@@ -251,7 +252,9 @@ proc regenSym(n:NimNode):NimNode =
           echo n.treerepr
           quit 1
         for i in 0..<d.len-2:   # Last 2 is type and value.
+          #echo "d[i]: ", d[i].treerepr
           if d[i].kind == nnkSym: result.add d[i]
+          elif d[i].kind == nnkPragmaExpr: result.add d[i][0]
         for c in d[^1]: result.append c.get k
     else:
       for c in n: result.append c.get k
@@ -475,6 +478,14 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
       body = body.replaceNonDeclSym(sym, c)
     elif typ.kind == nnkVarTy:
       pre.add getAst(letX(t, newNimNode(nnkAddr,p).add p))
+      #let p0 = p[0]  # skip HiddenAddr
+      #if p0.kind == nnkStmtListExpr:
+      #  for i in 0..(p0.len-2):
+      #    pre.add p0[i]
+      #  pre.add getAst(letX(t, newNimNode(nnkAddr,p0).add p0[^1]))
+      #else:
+      #  pre.add getAst(letX(t, newNimNode(nnkAddr,p0).add p0))
+      #echo "varty: ", p.treerepr
       body = body.replaceNonDeclSym(sym, newNimNode(nnkDerefExpr,p).add(t), nnkHiddenDeref)
     elif typ.kind == nnkSym and typ.repr == "typedesc":
       #echo "repl: ", $sym, " -> ", $p
@@ -558,9 +569,13 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
     # echo "TYPEof call[0]: ",call[0].lisprepr," ",call[0].gettypeimpl.treerepr
     # echo "TYPEof fp[0]: ",fp[0].lisprepr," ",fp[0].gettype.treerepr
     # echo "TYPEof pi[7]: ",procImpl[7].lisprepr," ",procImpl[7].gettype.treerepr
-    template varX(x,t:untyped):untyped =
+    template varX(x,t:untyped) =
       var x: t
-    template varXNI(x,t:untyped):untyped =
+    #template varXd(x,t,s:untyped) =
+    #  when t is void:
+    #    static: echo s
+    #  var x: t
+    template varXNI(x,t:untyped) =
       var x {.noinit.} : t
     var calln:NimNode
     if call.kind == nnkHiddenCallConv:
@@ -585,7 +600,10 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
         if c.eqIdent "noinit":
           noinit = true
           break
+    #echo "ty: ", ty.repr
+    #echo "call: ", call.treerepr
     let d = if noinit: getAst(varXNI(z,ty)) else: getAst(varX(z,ty))
+    #let d = if noinit: getAst(varXNI(z,ty)) else: getAst(varXd(z,ty,ty.repr))
     # if noinit: echo "noinit: ", d.lisprepr
     pre.add body.replace(r,z)
     sl = newBlockStmt(newNimNode(nnkStmtListExpr,call).add(d, newBlockStmt(blockname, pre), z))
@@ -619,7 +637,12 @@ proc inlineProcsX(body: NimNode): NimNode =
       if procImpl.kind == nnkTypeDef: return it.copyNimTree
       if procImpl.isNotMagic and
           procImpl.body.kind!=nnkEmpty and
-          procImpl.kind != nnkIteratorDef:
+          procImpl.kind != nnkIteratorDef and
+          (procImpl.kind != nnkTemplateDef or $procImpl.params[0] != "typedesc"):
+        #echo "inspecting call"
+        #echo procImpl.repr
+        #echo procImpl.kind
+        #echo procImpl.params[0].treerepr
         return recurse inlineProcsY(it, procImpl)
     result = copyNimNode(it)
     for c in it: result.add recurse c

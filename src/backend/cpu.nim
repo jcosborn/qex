@@ -46,13 +46,14 @@ macro onGpuNowait*(n,b,body: untyped): auto =
   template target(cpuPrepare, cpuFinalize, body: untyped) =
     mixin toGpu, getGpu, fromGpu
     cpuPrepare  # a let section declare and save device pointers
-    proc gpuProc {.gensym.} =
+    #proc gpuProc {.gensym.} =
+    block:
       if numThreads == 1:
         threads:
           body
       else:
         body
-    gpuProc()
+    #gpuProc()
     proc finalize {.gensym.} =
       threadBarrier()
       cpuFinalize

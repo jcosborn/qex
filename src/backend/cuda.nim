@@ -2,6 +2,8 @@ import macros
 import base/metaUtils
 import expr
 
+const dumpKernels {.intdefine.} = 0
+
 #{.passC:"--with-arch=sm_86".}
 #{.passL:"--with-arch=sm_86".}
 
@@ -140,10 +142,12 @@ template cudaDefs(body: untyped): untyped {.dirty.} =
   #template getThreadNum: untyped {.used.} = blockDim.x * blockIdx.x + threadIdx.x
   #template getNumThreads: untyped {.used.} = gridDim.x * blockDim.x
   bind inlineProcs
-  #{.emit:"#define nimZeroMem(b,len) memset((b),0,(len))".}
+  {.emit:["#define nimZeroMem(b,len) memset((b),0,(len))"].}
+  {.emit:["#define nimCopyMem(a,b,len) memcpy((a),(b),(len))"].}
   inlineProcs:
     body
-  #{.emit:"#undef nimZeroMem".}
+  {.emit:["#undef nimZeroMem"].}
+  {.emit:["#undef nimCopyMem"].}
 
 template cudaLaunch*(p: proc {.cdecl.}; blocksPerGrid,threadsPerBlock: SomeInteger;
                      arg: varargs[pointer,dataAddr]) =
@@ -265,8 +269,16 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
     cpuFinalize = genCpuFinalize(v, varg)
     fin = gensym(nskProc, "finalize")
   result = getast(target(nn0, tpb0, varg, arg, cpuPrepare, cpuFinalize, fin, body))
-  echo result.repr
+  #echo result.repr
   #echo result.treerepr
+  case dumpKernels
+  of 1:
+    echo result.repr
+  of 2:
+    echo result.treerepr
+  else:
+    if dumpKernels > 2:
+      result = newCall(bindsym"echoRep", result)
 
 var gpuBlockSizeRequest* = 64
 var gpuNumThreadsRequest* = 32*1024

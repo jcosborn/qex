@@ -34,6 +34,10 @@ proc gpuMalloc*[T](x: var ptr T) =
   let n = sizeof(T)
   x = cast[ptr T](gpuMalloc(n))
 
+template toGpu*(x: typedesc): auto = false
+template getGpu*(x: typedesc, g: auto): typedesc = x
+template fromGpu*(x: typedesc, g: auto) = discard
+
 template toGpu*(x:SomeNumber):auto = x
 #template toGpu*(x:var SomeNumber):auto = addr x
 #template getGpu*(x:SomeNumber, g:SomeNumber):auto = g

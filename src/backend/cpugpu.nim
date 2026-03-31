@@ -13,33 +13,36 @@ type
     lastCopyOut*: int  # useCount of last copy from gpu
   # toGpu is called before kernel if it will be read on the gpu and was written on cpu since last sync
   # fromGpu is called after kernel if it was written on gpu and will be read on cpu later
+proc `=destroy`[C,G](x: var CpuGpu[C,G]) =
+  mixin destroy
+  destroy(x)  # forward destructor
 
-template cpuUnused*(x: CpuGpu) =
+template cpuUnused*(x: CpuGpu | ref CpuGpu) =
   x.noReadCpu = true
   x.noWriteCpu = true
-template gpuUnused*(x: CpuGpu) =
+template gpuUnused*(x: CpuGpu | ref CpuGpu) =
   x.noReadGpu = true
   x.noWriteGpu = true
-template cpuReadOnly*(x: CpuGpu) =
+template cpuReadOnly*(x: CpuGpu | ref CpuGpu) =
   x.noReadCpu = false
   x.noWriteCpu = true
-template gpuReadOnly*(x: CpuGpu) =
+template gpuReadOnly*(x: CpuGpu | ref CpuGpu) =
   x.noReadGpu = false
   x.noWriteGpu = true
-template cpuWriteOnly*(x: CpuGpu) =
+template cpuWriteOnly*(x: CpuGpu | ref CpuGpu) =
   x.noReadCpu = true
   x.noWriteCpu = false
-template gpuWriteOnly*(x: CpuGpu) =
+template gpuWriteOnly*(x: CpuGpu | ref CpuGpu) =
   x.noReadGpu = true
   x.noWriteGpu = false
-template cpuReadWrite*(x: CpuGpu) =
+template cpuReadWrite*(x: CpuGpu | ref CpuGpu) =
   x.noReadCpu = false
   x.noWriteCpu = false
-template gpuReadWrite*(x: CpuGpu) =
+template gpuReadWrite*(x: CpuGpu | ref CpuGpu) =
   x.noReadGpu = false
   x.noWriteGpu = false
 
-proc toGpu*(x: var CpuGpu): auto {.discardable.} =
+proc toGpu*(x: var (CpuGpu | ref CpuGpu)): auto {.discardable.} =
   mixin toGpu
   # copy if gpuR and cpuW
   let cpy = (not x.noReadGpu) and (not x.noWriteCpu)
@@ -52,7 +55,7 @@ proc toGpu*(x: var CpuGpu): auto {.discardable.} =
 template getGpu*[C,G](x: CpuGpu[C,G], g: G): auto =
   getGpu(x, g)
 
-proc fromGpu*[C,G](x: var CpuGpu[C,G], g: G) =
+proc fromGpu*[C,G](x: var (CpuGpu[C,G] | ref CpuGpu[C,G]), g: G) =
   mixin fromGpu
   # copy if cpuR and gpuW
   let cpy = (not x.noReadCpu) and (not x.noWriteGpu)
@@ -75,6 +78,10 @@ template wasCopiedOut*(x: CpuGpu): bool =
 proc copyToGpu*(x: var CpuGpu) =
   mixin toGpu
   x.gpu.toGpu(x, true)
+
+proc copyFromGpu*(x: var CpuGpu) =
+  mixin fromGpu
+  x.fromGpu(x.gpu, true)
 
 # cpuSyncRead
 # cpuWasWritten

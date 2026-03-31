@@ -50,16 +50,19 @@ template numberType*[T](x:tuple[re,im:T]):typedesc = numberType(T)
 template numberType*[T](x:typedesc[tuple[re,im:T]]):typedesc = numberType(T)
 template numberType*[I,T](x:array[I,T]):typedesc = numberType(type(T))
 template numberType*[I,T](x:typedesc[array[I,T]]):typedesc = numberType(type(T))
-#template numberType*(x:not typedesc):untyped = numberType(type(x))
+#template numberType*[T:not typedesc](x:T):typedesc = numberType(T)
 template `[]`*[T](x:typedesc[ptr T]):typedesc = T
-template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x
+template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x  # FIXME should get rid of this
 template isWrapper*(x: SomeNumber): bool = false
 template isWrapper*(x: typedesc[SomeNumber]): bool = false
 template has*[T:SomeNumber](x: typedesc[T], y: typedesc): bool = T is y
-template eval*[T:SomeNumber](x: typedesc[T]): typedesc = typeof(T)
+template eval*[T:SomeNumber](x: typedesc[T]): typedesc = T
 template evalType*[T](x: T): typedesc =
+  #echoTyped: x
+  #static: echo instantiationInfo()
+  #static: echo $x.type, "  ", $T
   mixin eval
-  eval typeof T
+  eval T
 
 #proc fpclassify*(x: cfloat): cint {.importc:"fpclassifyf",header:"<math.h>".}
 #proc fpclassify*(x: cdouble): cint {.importc:"fpclassify",header:"<math.h>".}
