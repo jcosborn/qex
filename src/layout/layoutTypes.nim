@@ -109,6 +109,8 @@ type
     shifts*: Table[ShiftKey,ShiftIndices]
     coords*: seq[seq[int16]]
     vcoordTemp*: seq[array[V,int16]]
+    coordmin*: seq[int]  # lower bounding box for coords in this rank
+    coordmax*: seq[int]  # upper bounding box for coords in this rank
   Layout2*[V:static[int]] = Layout[V]
   Layout3*[V:static[int]] = Layout[V]
   Subset* = object

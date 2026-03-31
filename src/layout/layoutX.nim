@@ -6,8 +6,8 @@ import layoutTypes
 export layoutTypes
 import shiftX
 export shiftX
-
 import qlayout
+import sequtils
 
 var noSplitInnerList = newSeq[int](0)
 proc noSplitInnerDim*(d: int) =
@@ -159,6 +159,8 @@ proc newLayoutX*(comm: Comm; lat: openArray[int]; V: static[int];
   result.myrank = myRank
   result.shifts.init
   result.coords.newSeq(nd)
+  result.coordmin = int.high.repeat nd
+  result.coordmax = 0.repeat nd
   for i in 0..<nd: result.coords[i].newSeq(result.nSites)
   var coords = newSeq[cint](nd)
   #let coa = cast[ptr cArray[cint]](addr(coords[0]))
@@ -167,7 +169,10 @@ proc newLayoutX*(comm: Comm; lat: openArray[int]; V: static[int];
     #layoutCoordQ(result.lq.addr, coa, li.addr)
     layoutCoordQ(result.lq.addr, coords, li.addr)
     #echo coords[0]
-    for d in 0..<nd: result.coords[d][i] = coords[d].int16
+    for d in 0..<nd:
+      result.coords[d][i] = coords[d].int16
+      result.coordmin[d] = min(result.coordmin[d], coords[d])
+      result.coordmax[d] = max(result.coordmax[d], coords[d])
   result.vcoordTemp.newSeq(nd)
 template newLayout*(l:openArray[int]; n:static[int], rg,ig: seq[int]):untyped =
   let comm = getDefaultComm()
