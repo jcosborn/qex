@@ -49,6 +49,7 @@ macro onGpuNowait*(n,b,body: untyped): auto =
     cpuPrepare  # a let section declare and save device pointers
     #proc gpuProc {.gensym.} =
     block:
+      const inOnGpu {.inject.} = true
       if numThreads == 1:
         threads:
           body

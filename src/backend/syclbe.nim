@@ -1,7 +1,10 @@
 import macros
 #import base/metaUtils
 import backend/expr
+import base/metaUtils
 import sycl
+
+const dumpKernels {.intdefine.} = 0
 
 let dev = defaultDevice()
 let q = dev.queue
@@ -58,6 +61,7 @@ proc gpuDefaultNumThreads*(): int =
   #64 * q.device.maxComputeUnits.int * q.device.subGroupSizes.max_element.int
 
 macro onGpuQ*(q: Queue, n,b,body: untyped): auto =
+  let li = body.lineinfo
   #proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,newTree(nnkAccQuoted,g,ident"xx"))
   template target(q, n, cpuPrepare, cpuFinalize, body: untyped) =
@@ -72,6 +76,7 @@ macro onGpuQ*(q: Queue, n,b,body: untyped): auto =
         #echo "Launching threads:", nth
         q.submit:
           parallelFor(nth):
+            const inOnGpu {.inject.} = true
             syclDefs:
               body
       #gpuProc()
@@ -85,8 +90,20 @@ macro onGpuQ*(q: Queue, n,b,body: untyped): auto =
     cpuPrepare = genCpuPrepare v
     cpuFinalize = genCpuFinalize v
   result = getast(target(q, n, cpuPrepare, cpuFinalize, body))
-  #echo result.repr
-  #echo result.treerepr
+  case dumpKernels
+  of 1:
+    echo li
+    echo result.repr
+  of 2:
+    echo li
+    echo result.treerepr
+  else:
+    if dumpKernels > 2:
+      echo li
+      var sl = newNimNode(nnkStmtListExpr)
+      sl.add newCall(bindsym"echoTyped", result)
+      sl.add result
+      result = sl
 
 #var gpuNumThreadsRequest* = 0
 #var gpuBlockSizeRequest* = 0

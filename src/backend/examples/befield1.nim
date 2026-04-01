@@ -80,6 +80,9 @@ template `*`*[X:Color,Y:Color2](x: typedesc[ptr X], y: typedesc[ptr Y]): typedes
 
 template toSingleImpl*[N:static int](x: array[N,float32]): auto = x
 template toDoubleImpl*[N:static int](x: array[N,float]): auto = x
+proc `:=`*(r: var Color, x: ptr Color2) =
+  r := x[]
+
 proc mul*[R:array,Y:array](r: var R, x: SomeNumber, y: Y) =
   for i in 0..<r.len:
     r[i] = x * y[i]
@@ -140,6 +143,7 @@ type
   GpuField2*[V:static int, T] = GpuFieldObj[V,T]
   SomeGpuField = GpuField | GpuFieldExpr
   SomeGpuField2 = GpuField2 | GpuFieldExpr2
+template gpuSites(x: GpuField): auto = gpuSites(x.n, x.V)
 
 proc bytes*[T:GpuField](x: T): int = x.n * sizeof(T.T)
 
@@ -225,6 +229,7 @@ template `[]`*(x: CgFld, i: int): auto = x.cpu[i]
 template numberType*[T:CgFld](x: T): typedesc = numberType(T.C)
 template `:=`*(r: CgFld, x: SomeNumber) =
   r.cpu := x
+template gpuSites(x: CgFld): auto = gpuSites(x.gpu.n, x.gpu.V)
 
 proc newCgField(c: Field): auto =
   type T = typeof c
@@ -260,6 +265,8 @@ template `*`(x: CgFld, y: CgFld2): auto = x.cpu * y.cpu
 template `+`(x: SomeField, y: CgFld): auto = x + y.cpu
 template `:=`(x: var CgFld, y: SomeField) =
   x.cpu := y
+template `:=`(x: var CgFld, y: CgFld) =
+  x.cpu := y.cpu
 
 macro exp2string(x:untyped):auto =
   #var s = repr fixBracket symToIdent x
@@ -353,6 +360,18 @@ proc test(lat:auto, double:static bool=false) =
       v3 := 0
   #echo "done setup"
   #var nbench = 0
+  template ioGpu:untyped = declared(inOnGpu)
+
+  reset()
+  template job1(v2,v1:untyped) =
+    when ioGpu:
+      for s in gpuRange(v2.n):
+        for ic in 0..<v2.p[0].getNc:
+          v2.p[s][ic] = Real(0.5)*v2.p[s][ic] + v1.p[s][ic]
+    else:
+      v2.cpu := v1.cpu
+  bench(v2, 2*nc2, 3*vb, 2*vb):
+    job1(v2, v1)
 
   reset()
   bench(v2, 2*nc2, 3*vb, 2*vb):

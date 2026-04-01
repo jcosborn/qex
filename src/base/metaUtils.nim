@@ -278,6 +278,9 @@ proc matchGeneric(n,ty,g:NimNode):NimNode =
   # echo "MG:I: ",n.lisprepr
   # echo "MG:T: ",ty.lisprepr
   # echo "MG:G: ",g.lisprepr
+  #echo "MG:n: ", n.repr
+  #echo "MG:t: ", ty.repr
+  #echo "MG:g: ", g.repr
   proc isG(n:NimNode):bool =
     n.kind == nnkIdent and n.eqIdent($g)
   proc typeof(n:NimNode):NimNode =
@@ -285,10 +288,12 @@ proc matchGeneric(n,ty,g:NimNode):NimNode =
   proc getGParams(ti:NimNode):NimNode =
     # ti ~ type[G0,G1,...], is from gettypeinst
     # We go through the implementation to find the correct generic names.
+    #echo "getGParams: ", ti.treerepr
     ti.expectKind nnkBracketExpr
     let tn = ti[0]
     tn.expectKind nnkSym
     let td = tn.getImpl
+    #echo "  td: ", td.treerepr
     td.expectKind nnkTypeDef
     result = td[1]
     result.expectKind nnkGenericParams
@@ -296,7 +301,9 @@ proc matchGeneric(n,ty,g:NimNode):NimNode =
     # match instantiation type `ti`, with generic type `ty`
     # recursively find the chain of generic type variables
     # correponding to `g` in `ty`.
-    #result = newPar()
+    #echo "MT:ti: ", ti.repr
+    #echo "MT:ty: ", ty.repr
+    #echo "MT:g: ", g.repr
     result = newNimNode(nnkTupleConstr)
     var i = 0
     let tg = getGParams ti
@@ -318,6 +325,11 @@ proc matchGeneric(n,ty,g:NimNode):NimNode =
               return
   if ty.isG: return typeof n
   elif ty.kind == nnkBracketExpr:
+    let ti = n.gettypeinst
+    for i in 0..<ty.len:
+      if ty[i].isG:
+        result = ti[i]
+        return
     let ts = matchT(n.gettypeinst,ty,g)
     result = n
     if ts.len > 0:
@@ -500,6 +512,7 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
   # echo "### body with fp replaced:"
   # echo body.repr
   proc resolveGeneric(n:NimNode):NimNode =
+    #echo "resolveGeneric: ", n.repr
     proc find(n:NimNode, s:string):bool =
       if n.kind == nnkDotExpr:
         # ignore n[1]
