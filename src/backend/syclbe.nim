@@ -76,7 +76,7 @@ macro onGpuQ*(q: Queue, n,b,body: untyped): auto =
         #echo "Launching threads:", nth
         q.submit:
           parallelFor(nth):
-            const inOnGpu {.inject.} = true
+            const inOnGpu {.inject,used.} = true
             syclDefs:
               body
       #gpuProc()

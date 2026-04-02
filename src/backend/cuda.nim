@@ -242,7 +242,7 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
       type ByCopy[T] {.bycopy.} = object
         d: T
       proc kern(arg: ByCopy[type(v)]) {.cdecl,cudaGlobal.} =
-        const inOnGpu {.inject.} = true
+        const inOnGpu {.inject,used.} = true
         {.push checks: off.}
         {.push stacktrace: off.}
         body

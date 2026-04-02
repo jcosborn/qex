@@ -2,11 +2,11 @@ import qex
 import physics/qcdTypes
 import backend/[accel,cpugpu]
 import bench/commonBench
-import strformat
+#import strformat
 import macros
 import base/metaUtils
 import parseUtils
-import sequtils
+import sequtils, strutils
 
 template isWrapper*(x: typedesc[array]): bool = false
 
@@ -29,7 +29,7 @@ template `*`*[X:SomeNumber,Y:AsVector](x: typedesc[X], y: typedesc[Y]): typedesc
 template `*`*[X:SomeNumber,Y:Color](x: typedesc[X], y: typedesc[Y]): typedesc =
   asColor(X * Y[])
 template `*`*[X:SomeNumber,Y:Color](x: typedesc[X], y: typedesc[ptr Y]): typedesc =
-  static: echo $Y, "  ", $(Y[])
+  #static: echo $Y, "  ", $(Y[])
   asColor(X * Y[])
 
 template `*`*[X:ComplexObj,Y:ComplexObj2](x: typedesc[X], y: typedesc[Y]): typedesc =
@@ -131,8 +131,8 @@ else:
       yield SiteV[V](s)
 
 type
-  FieldProxy[T] = object
-    f: T
+  #FieldProxy[T] = object
+  #  f: T
   GpuFieldObj*[V:static int, T] = object
     n: int
     p: ptr UncheckedArray[T]
@@ -224,13 +224,16 @@ type
   CgField*[T] = CpuGpu[T, toGpuField(T)]
   CgFld[C:Field,G:GpuField] = CpuGpu[C,G]
   CgFld2[C:Field,G:GpuField] = CpuGpu[C,G]
-proc destroy*[C:Field,G:GpuField](x: var CpuGpu[C,G]) = discard
 template `[]`*(x: CgFld, i: int): auto = x.cpu[i]
 template numberType*[T:CgFld](x: T): typedesc = numberType(T.C)
 template `:=`*(r: CgFld, x: SomeNumber) =
   r.cpu := x
 template gpuSites(x: CgFld): auto = gpuSites(x.gpu.n, x.gpu.V)
 
+proc destroy*[C:Field,G:GpuField](x: var CpuGpu[C,G]) =
+  when backendIsGpu:
+    if x.gpu.p != nil:
+      gpuFree(x.gpu.p)
 proc newCgField(c: Field): auto =
   type T = typeof c
   var r: CgField[T]
@@ -269,14 +272,18 @@ template `:=`(x: var CgFld, y: CgFld) =
   x.cpu := y.cpu
 
 macro exp2string(x:untyped):auto =
+  #echo x.treerepr
+  #echo x.repr
   #var s = repr fixBracket symToIdent x
   var s = repr symToIdent x
   #echo x.repr
   #echo s
   let n = skipWhitespace(s)
-  newlit s[n..^1]
+  result = newlit s[n..^1].replace("\n"," ")
+  #echo result
 
 template check(r,eqn: untyped) =
+  r.cpuReadWrite
   block:
     var s = r.cpu.newOneOf
     threads:
@@ -292,9 +299,11 @@ template check(r,eqn: untyped) =
     threads:
       s -= r.cpu
       echo s.norm2
+  r.cpuUnused
 
 var bs = newSeq[string](0)
-var br = newSeq[string](0)
+var br = newSeq[array[3,string]](0)
+var repin = 0
 template bench(r,fps,bps,mm,eqn: untyped) =
   check(r, eqn)
   block:
@@ -302,18 +311,34 @@ template bench(r,fps,bps,mm,eqn: untyped) =
     let V = r.cpu.l.V
     let vol = N*V
     var b = newBench()
-    benchSingle(b):
-      let nrep = b.nrep
-      onGpu(vol):
+    case repin
+    of 0:
+      benchSingle(b):
+        let nrep = b.nrep
+        onGpu(vol):
+          for rep in 0..<nrep:
+            eqn
+    of 1:
+      benchSingle(b):
+        let nrep = b.nrep
         for rep in 0..<nrep:
-          eqn
+          onGpu(vol):
+            eqn
+    else:
+      r.cpuReadWrite
+      benchSingle(b):
+        let nrep = b.nrep
+        for rep in 0..<nrep:
+          onGpu(vol):
+            eqn
+      r.cpuUnused
     let memMB = vol * mm.float / (1024.0*1024.0)
     let gb = vol * bps.float * b.perNs
     let gf = vol * fps.float * b.perNs
     #echo &"{memMB:8.3f} {gb:8.3f} {gf:8.3f}"
     #echo memMB|(8,-3), " ", gb|(9,-3), " ", gf|(8,-3)
     bs.add exp2string(eqn)
-    br.add memMB|(8,-3)&" "&gb|(9,-3)&" "&gf|(8,-3)
+    br.add [memMB|(8,-3), gb|(9,-3), gf|(8,-3)]
 
 proc test(lat:auto, double:static bool=false) =
   let minl = intParam("minl",0)
@@ -336,12 +361,12 @@ proc test(lat:auto, double:static bool=false) =
 
   var v1 = newCV()
   var v2 = newCV()
-  var v3 = newCV()
+  #var v3 = newCV()
   var m1 = newCM()
-  var m2 = newCM()
-  var m3 = newCM()
-  var m4 = newCM()
-  var m5 = newCM()
+  #var m2 = newCM()
+  #var m3 = newCM()
+  #var m4 = newCM()
+  #var m5 = newCM()
   #var h1 = newHF()
   #var d1 = newDF()
   #var d2 = newDF()
@@ -352,12 +377,19 @@ proc test(lat:auto, double:static bool=false) =
   let mb = nc*vb
   let mvf = (2*nc2-1)*nc2
   echo "Float type: ", $(v1.numberType)
+  macro xfer(x: varargs[untyped]): auto =
+    result = newNimNode(nnkStmtList)
+    for n in x:
+      result.add quote do:
+        `n`.copyToGpu
+        `n`.cpuUnused
   proc reset =
     threads:
       m1 := 2
       v1 := 1
       v2 := 0
-      v3 := 0
+      #v3 := 0
+    xfer(m1, v1, v2)
   #echo "done setup"
   #var nbench = 0
   template ioGpu:untyped = declared(inOnGpu)
@@ -365,13 +397,16 @@ proc test(lat:auto, double:static bool=false) =
   reset()
   template job1(v2,v1:untyped) =
     when ioGpu:
+      #v2 := Real(0.5)*v2 + v1
       for s in gpuRange(v2.n):
-        for ic in 0..<v2.p[0].getNc:
-          v2.p[s][ic] = Real(0.5)*v2.p[s][ic] + v1.p[s][ic]
+        v2.p[s] = Real(0.5)*v2.p[s] + v1.p[s]
+      #for s in gpuRange(v2.n):
+      #  for ic in 0..<v2.p[0].getNc:
+      #    v2.p[s][ic] = Real(0.5)*v2.p[s][ic] + v1.p[s][ic]
     else:
-      v2.cpu := v1.cpu
+      v2.cpu := Real(0.5)*v2.cpu + v1.cpu
   bench(v2, 2*nc2, 3*vb, 2*vb):
-    job1(v2, v1)
+    job1(v2, v1);  ## loop over outer sites
 
   reset()
   bench(v2, 2*nc2, 3*vb, 2*vb):
@@ -385,7 +420,12 @@ qexInit()
 echo "rank ", myRank, "/", nRanks
 threads:
   echo "thread ", threadNum, "/", numThreads
+
+var bss = newSeq[typeof bs](0)
+var brs = newSeq[typeof br](0)
 template runtests(double:static bool) =
+  bs.setLen(0)
+  br.setLen(0)
   test([4,4,4,4], double)
   test([8,8,8,8], double)
   test([12,12,12,12], double)
@@ -394,21 +434,28 @@ template runtests(double:static bool) =
   test([32,32,32,32], double)
   test([40,40,40,40], double)
   #test([48,48,48,48], double)
-runtests(false)
-let bs32 = bs
-let br32 = br
-bs.setLen(0)
-br.setLen(0)
-runtests(true)
+  bss.add bs
+  brs.add br
+template runt(double:static bool) =
+  repin = 0
+  runtests(double)
+  repin = 1
+  runtests(double)
+  repin = 2
+  runtests(double)
+runt(false)
+let bss32 = bss
+let brs32 = brs
+runt(true)
 
-proc echoResult(p: string, s,r: seq) =
-  let sd = s.deduplicate
+proc echoResult(p: string, s: seq, r: auto) =
+  let sd = s[0].deduplicate
   for t in 0..<sd.len:
-    echo "      MB      GB/s     Gf/s  ", p, "  ", sd[t]
-    for i in 0..<r.len:
-      if s[i] == sd[t]:
-        echo r[i]
-echoResult("float32", bs32, br32)
-echoResult("float64", bs, br)
+    echo "      MB      GB/s     ", p, "  ", sd[t]
+    for i in 0..<r[0].len:
+      if s[0][i] == sd[t]:
+        echo r[0][i][0], " ", r[0][i][1], " ", r[1][i][1], " ", r[2][i][1]
+echoResult("float32", bss32, brs32)
+echoResult("float64", bss, brs)
 
 qexFinalize()

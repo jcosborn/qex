@@ -675,21 +675,21 @@ macro inlineProcs*(body: typed): auto =
 
 proc symToIdent*(x: NimNode): NimNode =
   case x.kind:
-    of nnkCharLit..nnkUInt64Lit:
-      result = newNimNode(x.kind)
-      result.intVal = x.intVal
-    of nnkFloatLit..nnkFloat64Lit:
-      result = newNimNode(x.kind)
-      result.floatVal = x.floatVal
-    of nnkStrLit..nnkTripleStrLit:
-      result = newNimNode(x.kind)
-      result.strVal = x.strVal
+    #of nnkCharLit..nnkUInt64Lit:
+    #  result = newNimNode(x.kind)
+    #  result.intVal = x.intVal
+    #of nnkFloatLit..nnkFloat64Lit:
+    #  result = newNimNode(x.kind)
+    #  result.floatVal = x.floatVal
+    #of nnkStrLit..nnkTripleStrLit:
+    #  result = newNimNode(x.kind)
+    #  result.strVal = x.strVal
     of nnkIdent, nnkSym:
       result = newIdentNode($x)
     of nnkOpenSymChoice:
       result = newIdentNode($x[0])
     else:
-      result = newNimNode(x.kind)
+      result = copyNimNode(x)
       for c in x:
         result.add symToIdent(c)
 

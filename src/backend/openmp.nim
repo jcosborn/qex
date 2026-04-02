@@ -192,7 +192,7 @@ macro onGpuNowait*(n,b,body: untyped): auto =
         #ompBlock2("target teams num_teams(1024)", devicePtrDeclare):
         ompBlock2("target teams", devicePtrDeclare):
           openmpDefs:
-            const inOnGpu {.inject.} = true
+            const inOnGpu {.inject,used.} = true
             body
       #gpuProc()
       proc finalize {.gensym.} =
