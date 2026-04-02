@@ -6,6 +6,7 @@ type
   AsFloat* = AsFloat32 | AsFloat64
   Float* = SomeFloat | AsFloat
   AsNumber* = AsFloat
+  AsNumber2* = AsFloat
   Number* = SomeNumber | AsNumber
 
 template asFloat32*[T](x: T): auto = AsFloat32[type T](x)
@@ -90,7 +91,11 @@ template f3(fn: untyped) =
   template fn*[R,Y:SomeNumber,X:AsNumber](r: R, x: X, y: Y) =
     mixin fn
     fn(r, eval(x), y)
+  template fn*[R:SomeNumber,X:AsNumber,Y:AsNumber2](r: R, x: X, y: Y) =
+    mixin fn
+    fn(r, eval(x), eval(y))
 
+f3(add)
 f3(mul)
 f3(imadd)
 f3(imsub)

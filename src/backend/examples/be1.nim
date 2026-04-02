@@ -115,13 +115,13 @@ block:
       let bwGB = bytes * br.b.perNs
       bwGB
 
-    proc perf(n: int, b: Bench) =
-      let bytes = 3*n*sizeof(x[0])
-      let flops = n
-      let memMB = 1e-6 * bytes
-      let bwGB = bytes * b.perNs
-      let flopsGB = flops * b.perNs
-      echo &"{memMB:8.3f} {bwGB:9.3f} {flopsGB:8.3f}"
+    #proc perf(n: int, b: Bench) =
+    #  let bytes = 3*n*sizeof(x[0])
+    #  let flops = n
+    #  let memMB = 1e-6 * bytes
+    #  let bwGB = bytes * b.perNs
+    #  let flopsGB = flops * b.perNs
+    #  echo &"{memMB:8.3f} {bwGB:9.3f} {flopsGB:8.3f}"
 
     proc testGpu(n: int) =
       #echo "testGpu: ", n
@@ -196,11 +196,11 @@ block:
             x[i] += a
             y[i] += b
             z[i] += c
-      template setr(a,b: SomeNumber, c = 0) =
-        for i in threadRange(n):
-          x[i] += a
-          y[i] += b
-          z[i] += c
+      #template setr(a,b: SomeNumber, c = 0) =
+      #  for i in threadRange(n):
+      #    x[i] += a
+      #    y[i] += b
+      #    z[i] += c
       template run(body: untyped) =
         threads:
           onGpu:

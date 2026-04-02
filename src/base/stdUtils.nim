@@ -198,6 +198,26 @@ proc `-`*[T](x: seq[T]): seq[T] {.inline.} =
   for i in 0..<n:
     result[i] = -x[i]
 
+proc add*[R:array,X:array,Y:array](r: var R, x: X, y: Y) {.inline.} =
+  for i in 0..<r.len:
+    r[i] = x[i] + y[i]
+
+proc mul*[R:array,Y:array](r: var R, x: SomeNumber, y: Y) {.inline.} =
+  for i in 0..<r.len:
+    r[i] = x * y[i]
+
+proc mul*[R,X,Y:array](r: var R, x: X, y: Y) {.inline.} =
+  for i in 0..<r.len:
+    r[i] = x[i] * y[i]
+
+proc imadd*[R,X,Y:array](r: var R, x: X, y: Y) {.inline.} =
+  for i in 0..<r.len:
+    r[i] += x[i] * y[i]
+
+proc imsub*[R,X,Y:array](r: var R, x: X, y: Y) {.inline.} =
+  for i in 0..<r.len:
+    r[i] -= x[i] * y[i]
+
 #proc sum*[T](x: openArray[T]): T =
 #  for i in 0..<x.len: result += x[i]
 

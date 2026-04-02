@@ -55,6 +55,8 @@ template `[]`*[T](x:typedesc[ptr T]):typedesc = T
 template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x  # FIXME should get rid of this
 template isWrapper*(x: SomeNumber): bool = false
 template isWrapper*(x: typedesc[SomeNumber]): bool = false
+template isWrapper*(x: array): bool = false
+template isWrapper*(x: typedesc[array]): bool = false
 template has*[T:SomeNumber](x: typedesc[T], y: typedesc): bool = T is y
 template eval*[T:SomeNumber](x: typedesc[T]): typedesc = T
 template evalType*[T](x: T): typedesc =
@@ -245,7 +247,19 @@ template `*`*[T:SomeFloat](x:T; y:SomeInteger):auto = x * (T(y))
 template `/`*[T:SomeFloat](x:SomeInteger,y:T):auto = (T(x)) / y
 template `/`*[T:SomeFloat](x:T,y:SomeInteger):auto = x / (T(y))
 
+template `+`*[T:SomeNumber](x: typedesc[T], y: typedesc[T]): typedesc = T
+template `-`*[T:SomeNumber](x: typedesc[T], y: typedesc[T]): typedesc = T
+template `*`*[T:SomeNumber](x: typedesc[T], y: typedesc[T]): typedesc = T
+
+template `+`*[N:static int,X,Y](x: typedesc[array[N,X]], y: typedesc[array[N,Y]]): typedesc = array[N,X+Y]
+template `-`*[N:static int,X,Y](x: typedesc[array[N,X]], y: typedesc[array[N,Y]]): typedesc = array[N,X-Y]
+template `*`*[N:static int,X,Y](x: typedesc[array[N,X]], y: typedesc[array[N,Y]]): typedesc = array[N,X*Y]
+template `*`*[X:SomeNumber,N:static int,Y](x: typedesc[X], y: typedesc[array[N,Y]]): typedesc = array[N,X*Y]
+
 template `:=`*[T](x: SomeNumber; y: array[1,T]) = assign(x,y[0])
+
+template toSingleImpl*[N:static int](x: array[N,float32]): auto = x
+template toDoubleImpl*[N:static int](x: array[N,float64]): auto = x
 
 template setUnopP*(op,fun,t1,t2: untyped) {.dirty.} =
   proc op*(x: t1): auto {.alwaysInline,noInit.} =

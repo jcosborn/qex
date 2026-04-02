@@ -8,14 +8,6 @@ import base/metaUtils
 import parseUtils
 import sequtils, strutils
 
-template isWrapper*(x: typedesc[array]): bool = false
-
-template `*`*[T:SomeNumber](x: typedesc[T], y: typedesc[T]): typedesc =
-  T
-template `*`*[N:static int,X,Y](x: typedesc[array[N,X]], y: typedesc[array[N,Y]]): typedesc =
-  array[N, X * Y]
-template `*`*[X:SomeNumber,N:static int,T](x: typedesc[X], y: typedesc[array[N,T]]): typedesc =
-  array[N, X * T]
 template `*`*[X:SomeNumber,Y:Simd](x: typedesc[X], y: typedesc[Y]): typedesc =
   asSimd(X * Y[])
 template `*`*[X:SomeNumber,Y:ComplexObj](x: typedesc[X], y: typedesc[Y]): typedesc =
@@ -41,15 +33,6 @@ template `*`*[N,M:static int;X,Y](x: typedesc[MatrixArrayObj[N,M,X]], y: typedes
 template `*`*[X:AsMatrix,Y:AsVector](x: typedesc[X], y: typedesc[Y]): typedesc =
   asVector(X[] * Y[])
 
-template `+`*[T:SomeNumber](x: typedesc[T], y: typedesc[T]): typedesc =
-  T
-template `-`*[T:SomeNumber](x: typedesc[T], y: typedesc[T]): typedesc =
-  T
-
-template `+`*[N:static int,X,Y](x: typedesc[array[N,X]], y: typedesc[array[N,Y]]): typedesc =
-  array[N, X + Y]
-template `-`*[N:static int,X,Y](x: typedesc[array[N,X]], y: typedesc[array[N,Y]]): typedesc =
-  array[N, X - Y]
 template `+`*[X:Simd,Y:Simd](x: typedesc[X], y: typedesc[Y]): typedesc =
   asSimd(X[] + Y[])
 template `-`*[X:Simd,Y:Simd](x: typedesc[X], y: typedesc[Y]): typedesc =
@@ -78,41 +61,14 @@ template `*`*[X:Color,Y:Color2](x: typedesc[X], y: typedesc[ptr Y]): typedesc =
 template `*`*[X:Color,Y:Color2](x: typedesc[ptr X], y: typedesc[ptr Y]): typedesc =
   asColor(X[] * Y[])
 
-template toSingleImpl*[N:static int](x: array[N,float32]): auto = x
-template toDoubleImpl*[N:static int](x: array[N,float]): auto = x
 proc `:=`*(r: var Color, x: ptr Color2) =
   r := x[]
 
-proc mul*[R:array,Y:array](r: var R, x: SomeNumber, y: Y) =
-  for i in 0..<r.len:
-    r[i] = x * y[i]
-proc mul*[R,X,Y:array](r: var R, x: X, y: Y) =
-  for i in 0..<r.len:
-    r[i] = x[i] * y[i]
 proc mul*(r: var Color, x: SomeNumber, y: ptr Color2) =
   mul(r[], x, y[][])
 proc mul*(r: var Color, x: ptr Color2, y: ptr Color3) =
   mul(r[], x[][], y[][])
 
-template add*[R:SomeNumber,X:SomeNumber,Y:AsFloat](r: R, x: X, y: Y) =
-  r = x + eval(y)
-  #r = x
-template mul*[R:SomeNumber,X:AsFloat,Y:AsFloat](r: R, x: X, y: Y) =
-  r = eval(x) * eval(y)
-template imadd*[R:SomeNumber,X:AsFloat,Y:AsFloat](r: R, x: X, y: Y) =
-  r += eval(x) * eval(y)
-template imsub*[R:SomeNumber,X:AsFloat,Y:AsFloat](r: R, x: X, y: Y) =
-  r -= eval(x) * eval(y)
-proc imadd*[R,X,Y:array](r: var R, x: X, y: Y) =
-  for i in 0..<r.len:
-    r[i] += x[i] * y[i]
-proc imsub*[R,X,Y:array](r: var R, x: X, y: Y) =
-  for i in 0..<r.len:
-    r[i] -= x[i] * y[i]
-
-proc add*[R:array,X:array,Y:array](r: var R, x: X, y: Y) =
-  for i in 0..<r.len:
-    r[i] = x[i] + y[i]
 proc add*(r: var Color, x: Color, y: ptr Color) =
   add(r[], x[], y[][])
 
@@ -205,23 +161,21 @@ proc `[]`*[X:SomeGpuField,Y:SomeGpuField2,I:SiteV](e: GpuFieldExpr["*",(X,Y)], i
   r.mul(e.args[0][i], e.args[1][i])
   r
 
-#template toGpuField(t: typedesc[SimdD16Obj]): typedesc =
-#  array[16,float]
-template toGpuField[T](t: typedesc[Simd[T]]): typedesc =
+template gpuType[T](t: typedesc[Simd[T]]): typedesc =
   Simd[array[T.numNumbers,T.numberType]]
-template toGpuField[T](t: typedesc[ComplexType[T]]): typedesc =
-  ComplexType[toGpuField(T)]
-template toGpuField[N:static int; T](t: typedesc[VectorArray[N,T]]): typedesc =
-  VectorArray[N,toGpuField(T)]
-template toGpuField[N,M:static int; T](t: typedesc[MatrixArray[N,M,T]]): typedesc =
-  MatrixArray[N,M,toGpuField(T)]
-template toGpuField[T](t: typedesc[Color[T]]): typedesc =
-  Color[toGpuField(T)]
-template toGpuField[V:static int, T](t: typedesc[Field[V,T]]): typedesc =
-  GpuField[V,toGpuField(T)]
+template gpuType[T](t: typedesc[ComplexType[T]]): typedesc =
+  ComplexType[gpuType(T)]
+template gpuType[N:static int; T](t: typedesc[VectorArray[N,T]]): typedesc =
+  VectorArray[N,gpuType(T)]
+template gpuType[N,M:static int; T](t: typedesc[MatrixArray[N,M,T]]): typedesc =
+  MatrixArray[N,M,gpuType(T)]
+template gpuType[T](t: typedesc[Color[T]]): typedesc =
+  Color[gpuType(T)]
+template gpuType[V:static int, T](t: typedesc[Field[V,T]]): typedesc =
+  GpuField[V,gpuType(T)]
 
 type
-  CgField*[T] = CpuGpu[T, toGpuField(T)]
+  CgField*[T] = CpuGpu[T, gpuType(T)]
   CgFld[C:Field,G:GpuField] = CpuGpu[C,G]
   CgFld2[C:Field,G:GpuField] = CpuGpu[C,G]
 template `[]`*(x: CgFld, i: int): auto = x.cpu[i]

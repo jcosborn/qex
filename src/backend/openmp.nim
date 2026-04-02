@@ -3,6 +3,8 @@ import base/metaUtils
 import base/omp
 import backend/expr
 
+const dumpKernels {.intdefine.} = 0
+
 {.pragma: omp, header:"omp.h".}
 {.passC:"-fcf-protection=none -no-pie -fno-stack-protector" .}
 {.passL:"-fcf-protection=none -no-pie -fno-stack-protector" .}
@@ -169,7 +171,7 @@ proc declarePtrTuple(n:seq[NimNode]):NimNode =
 #  echo x.treerepr
 #  result = x
 
-template useDevicePtr(x: auto) =
+template useDevicePtr*(x: auto) =
   #getrepr:
   {.emit: ["#pragma omp target data use_device_ptr(",x,")"].}
 
@@ -179,6 +181,7 @@ template useDevicePtr(x: auto) =
 #macro mapto(x: typed): untyped =
 
 macro onGpuNowait*(n,b,body: untyped): auto =
+  let li = body.lineinfo
   #proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,newTree(nnkAccQuoted,g,ident"xx"))
   template target(cpuPrepare, cpuFinalize, devicePtrDeclare, body: untyped) =
@@ -205,7 +208,20 @@ macro onGpuNowait*(n,b,body: untyped): auto =
     cpuFinalize = genCpuFinalize v
     isDevicePtrs = declarePtrTuple v
   result = getast(target(cpuPrepare, cpuFinalize, isDevicePtrs, body))
-  echo result.repr
+  case dumpKernels
+  of 1:
+    echo li
+    echo result.repr
+  of 2:
+    echo li
+    echo result.treerepr
+  else:
+    if dumpKernels > 2:
+      echo li
+      var sl = newNimNode(nnkStmtListExpr)
+      sl.add newCall(bindsym"echoTyped", result)
+      sl.add result
+      result = sl
 
 var gpuNumThreadsRequest* = 0
 var gpuBlockSizeRequest* = 0
