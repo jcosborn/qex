@@ -446,6 +446,8 @@ template runt(double:static bool) =
 runt(false)
 let bss32 = bss
 let brs32 = brs
+bss.setLen(0)
+brs.setLen(0)
 runt(true)
 
 proc echoResult(p: string, s: seq, r: auto) =
