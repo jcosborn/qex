@@ -702,6 +702,22 @@ macro getConst*(x: static[int64]): auto =
   #result = newLit(3)
   #result = newLit(x.intVal)
 
+proc isConstImpl*(x: NimNode): bool =
+  case x.kind
+  of nnkLiterals:
+    result = true
+  of nnkSym:
+    if x.symKind == nskConst:
+      result = true
+  of nnkConv:
+    result = isConstImpl(x[1])
+  else:
+    discard
+macro isConst*(x: auto): auto =
+  var r = isConstImpl(x)
+  result = newLit(r)
+  #echo "isConst: ", x.treerepr, " ", r
+
 macro makeIdent*(x: untyped): untyped =
   result = symToIdent(x)
 

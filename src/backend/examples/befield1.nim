@@ -8,70 +8,42 @@ import base/metaUtils
 import parseUtils
 import sequtils, strutils
 
-template `*`*[X:SomeNumber,Y:Simd](x: typedesc[X], y: typedesc[Y]): typedesc =
-  asSimd(X * Y[])
-template `*`*[X:SomeNumber,Y:ComplexObj](x: typedesc[X], y: typedesc[Y]): typedesc =
-  ComplexObj[X*Y.TR,X*Y.TI]
-template `*`*[X:SomeNumber,Y:AsComplex](x: typedesc[X], y: typedesc[Y]): typedesc =
-  asComplex(X * Y[])
 template `*`*[X:SomeNumber,Y:VectorArrayObj](x: typedesc[X], y: typedesc[Y]): typedesc =
   VectorArrayObj[Y.I, X * Y.T]
 template `*`*[X:SomeNumber,Y:AsVector](x: typedesc[X], y: typedesc[Y]): typedesc =
   asVector(X * Y[])
+template `*`*[X:AsMatrix,Y:AsVector](x: typedesc[X], y: typedesc[Y]): typedesc =
+  asVector(X[] * Y[])
+template `*`*[N,M:static int;X,Y](x: typedesc[MatrixArrayObj[N,M,X]], y: typedesc[VectorArrayObj[M,Y]]): typedesc =
+  VectorArrayObj[N, X * Y]
+template `+`*[I:static int,X,Y](x: typedesc[VectorArrayObj[I,X]], y: typedesc[VectorArrayObj[I,Y]]):
+  typedesc = VectorArrayObj[I, X + Y]
+template `+`*[X:AsVector,Y:AsVector](x: typedesc[X], y: typedesc[Y]): typedesc =
+  asVector(X[] + Y[])
+
 template `*`*[X:SomeNumber,Y:Color](x: typedesc[X], y: typedesc[Y]): typedesc =
   asColor(X * Y[])
 template `*`*[X:SomeNumber,Y:Color](x: typedesc[X], y: typedesc[ptr Y]): typedesc =
   #static: echo $Y, "  ", $(Y[])
   asColor(X * Y[])
-
-template `*`*[X:ComplexObj,Y:ComplexObj2](x: typedesc[X], y: typedesc[Y]): typedesc =
-  ComplexObj[X.TR*Y.TR-X.TI*Y.TI,X.TR*Y.TI+X.TI*Y.TR]
-template `*`*[X:AsComplex,Y:AsComplex2](x: typedesc[X], y: typedesc[Y]): typedesc =
-  asComplex(X[] * Y[])
-template `*`*[N,M:static int;X,Y](x: typedesc[MatrixArrayObj[N,M,X]], y: typedesc[VectorArrayObj[M,Y]]): typedesc =
-  VectorArrayObj[N, X * Y]
-template `*`*[X:AsMatrix,Y:AsVector](x: typedesc[X], y: typedesc[Y]): typedesc =
-  asVector(X[] * Y[])
-
-template `+`*[X:Simd,Y:Simd](x: typedesc[X], y: typedesc[Y]): typedesc =
-  asSimd(X[] + Y[])
-template `-`*[X:Simd,Y:Simd](x: typedesc[X], y: typedesc[Y]): typedesc =
-  asSimd(X[] - Y[])
-template `-`*[X:ComplexObj,Y:ComplexObj](x: typedesc[X], y: typedesc[Y]): typedesc =
-  ComplexObj[X.TR-Y.TR,X.TI-Y.TI]
-template `+`*[X:ComplexObj,Y:ComplexObj](x: typedesc[X], y: typedesc[Y]): typedesc =
-  ComplexObj[X.TR+Y.TR,X.TI+Y.TI]
-template `+`*[X:AsComplex,Y:AsComplex](x: typedesc[X], y: typedesc[Y]): typedesc =
-  asComplex(X[] + Y[])
-template `+`*[I:static int,X,Y](x: typedesc[VectorArrayObj[I,X]], y: typedesc[VectorArrayObj[I,Y]]):
-  typedesc = VectorArrayObj[I, X + Y]
-template `+`*[X:AsVector,Y:AsVector](x: typedesc[X], y: typedesc[Y]): typedesc =
-  asVector(X[] + Y[])
 template `+`*[X:Color,Y:Color2](x: typedesc[X], y: typedesc[Y]): typedesc =
   asColor(X[] + Y[])
 template `+`*[X:Color,Y:Color2](x: typedesc[X], y: typedesc[ptr Y]): typedesc =
   asColor(X[] + Y[])
-
-template `*`*[X:Simd,Y:Simd](x: typedesc[X], y: typedesc[Y]): typedesc =
-  asSimd(X[] * Y[])
 template `*`*[X:Color,Y:Color2](x: typedesc[X], y: typedesc[Y]): typedesc =
   asColor(X[] * Y[])
 template `*`*[X:Color,Y:Color2](x: typedesc[X], y: typedesc[ptr Y]): typedesc =
   asColor(X[] * Y[])
 template `*`*[X:Color,Y:Color2](x: typedesc[ptr X], y: typedesc[ptr Y]): typedesc =
   asColor(X[] * Y[])
-
 proc `:=`*(r: var Color, x: ptr Color2) =
   r := x[]
-
 proc mul*(r: var Color, x: SomeNumber, y: ptr Color2) =
   mul(r[], x, y[][])
 proc mul*(r: var Color, x: ptr Color2, y: ptr Color3) =
   mul(r[], x[][], y[][])
-
 proc add*(r: var Color, x: Color, y: ptr Color) =
   add(r[], x[], y[][])
-
 
 type
   SiteV[V:static int] = distinct int

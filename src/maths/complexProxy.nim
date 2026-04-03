@@ -21,6 +21,10 @@ type
   ComplexProxy3*[T] = ComplexProxy[T]
   ComplexProxy4*[T] = ComplexProxy[T]
 
+  RIC = RealProxy | ImagProxy | ComplexProxy
+  RIC2 = RealProxy2 | ImagProxy2 | ComplexProxy2
+  RIC3 = RealProxy3 | ImagProxy3 | ComplexProxy3
+
 # optimization convention:
 #   flatten args if accessed more than once
 #   calculate results in temporaries then return object with temps
@@ -188,6 +192,13 @@ template newImagP*(x: typed): untyped =
   newImagImpl(x)
 template newComplexP*(x,y: typed): untyped =
   newComplexImpl(x, y)
+template newRICP*(x,y: auto): auto =
+  when isConstZero y:
+    newRealP(x)
+  elif isConstZero x:
+    newImagP(x)
+  else:
+    newComplexP(x, y)
 
 template re*(x: RealProxy): untyped = x[]
 template im*(x: RealProxy): untyped = 0
@@ -383,6 +394,36 @@ proc ln*(x: ComplexProxy): auto {.inline,noInit.} =
 
 # add, sub, mul, divd
 
+template binaryOverloadsO(fn,fre,fim: untyped) {.dirty.} =
+  proc fn*(x: SomeNumber, y: RIC2): auto {.alwaysInline.} =
+    newRICP(fre(x, 0, y.re, y.im), fim(x, 0, y.re, y.im))
+  proc fn*(x: RIC, y: SomeNumber): auto {.alwaysInline.} =
+    newRICP(fre(x.re, x.im, y, 0), fim(x.re, x.im, y, 0))
+  proc fn*(x: RIC, y: RIC2): auto {.alwaysInline.} =
+    newRICP(fre(x.re, x.im, y.re, y.im), fim(x.re, x.im, y.re, y.im))
+  template fn*[X:SomeNumber,Y:RIC2](x: typedesc[X], y: typedesc[Y]): typedesc =
+    evalType(fn(default X, default Y))
+  template fn*[X:RIC,Y:SomeNumber](x: typedesc[X], y: typedesc[Y]): typedesc =
+    evalType(fn(default X, default Y))
+  template fn*[X:RIC,Y:RIC2](x: typedesc[X], y: typedesc[Y]): typedesc =
+    evalType(fn(default X, default Y))
+
+template addre(xr,xi,yr,yi:untyped):auto = add0(xr, yr)
+template addim(xr,xi,yr,yi:untyped):auto = add0(xi, yi)
+binaryOverloadsO(`+`, addre, addim)
+binaryOverloadsO(add, addre, addim)
+
+template subre(xr,xi,yr,yi:untyped):auto = sub0(xr, yr)
+template subim(xr,xi,yr,yi:untyped):auto = sub0(xi, yi)
+binaryOverloadsO(`-`, subre, subim)
+binaryOverloadsO(sub, subre, subim)
+
+template mulre(xr,xi,yr,yi:untyped):auto = sub0(mul0(xr,yr),mul0(xi,yi))
+template mulim(xr,xi,yr,yi:untyped):auto = add0(mul0(xr,yi),mul0(xi,yr))
+binaryOverloadsO(`*`, mulre, mulim)
+binaryOverloadsO(mul, mulre, mulim)
+
+#[
 template binaryOverloadsAddSub(op,fn: untyped) {.dirty.} =
   template fn*(x: RealProxy, y: RealProxy2): untyped = newRealP(op(x[],y[]))
   template op*(x: RealProxy, y: RealProxy2): untyped = fn(x,y)
@@ -442,7 +483,9 @@ template binaryOverloadsAddSub(op,fn: untyped) {.dirty.} =
 
 binaryOverloadsAddSub(`+`, add)
 binaryOverloadsAddSub(`-`, sub)
+]#
 
+#[
 template binaryOverloadsMul(op,fn: untyped) {.dirty.} =
   template fn*(x: RealProxy, y: RealProxy2): untyped = newRealP(op(x[],y[]))
   template op*(x: RealProxy, y: RealProxy2): untyped = fn(x,y)
@@ -528,6 +571,7 @@ template binaryOverloadsMul(op,fn: untyped) {.dirty.} =
   template op*(x: ComplexProxy, y: ComplexProxy2): untyped = fn(x,y)
 
 binaryOverloadsMul(`*`, mul)
+]#
 
 template binaryOverloadsF(op,fn,impl: untyped) {.dirty.} =
   template fn*(x: RealProxy, y: RealProxy2): untyped = impl(x,y)

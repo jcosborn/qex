@@ -60,7 +60,7 @@ attrib(numNumbers)
 attrib(simdType)
 attrib(simdLength)
 
-template noSimd*[T](x: typedesc[Simd[T]]): untyped =
+template noSimd*[T](x: typedesc[Simd[T]]): typedesc =
   numberType(type T)
 
 # no return value
@@ -130,8 +130,10 @@ template f1(f: untyped) {.dirty.} =
   template f*(x: Simd): auto =
     mixin f
     asSimd(f(x[]))
+  template f*[T:Simd](x: typedesc[T]): typedesc =
+    eval(T)
 
-template f2(f: untyped) {.dirty.} =
+template f2o(f: untyped) {.dirty.} =
   template f*[T1,T2](x: Simd[T1], y: Simd[T2]): auto =
     mixin f
     #static: echo numberType(T1), " ", numberType(T2)
@@ -142,14 +144,52 @@ template f2(f: untyped) {.dirty.} =
     else:
       asSimd(f(x[].toDoubleImpl, y[]))
 
-template f2s(f: untyped) {.dirty.} =
+template f2t(f: untyped) {.dirty.} =
+  template f*[T1,T2](x: typedesc[Simd[T1]], y: typedesc[Simd[T2]]): typedesc =
+    mixin f
+    #static: echo numberType(T1), " ", numberType(T2)
+    doAssert(T1.simdLength == T2.simdLength)
+    asSimd(SimdObjType[T1.simdLength,f(T1.numberType,T2.numberType)])
+
+template f2(f: untyped) {.dirty.} =
+  f2o(f)
+  f2t(f)
+
+template f2os(f: untyped) {.dirty.} =
   template f*(x: Simd, y: SomeNumber): auto =
     mixin f
     asSimd(f(x[], y))
   template f*(x: SomeNumber, y: Simd): auto =
     mixin f
     asSimd(f(x, y[]))
+  #f2(f)
+
+template f2ts(f: untyped) {.dirty.} =
+  template f*[X;Y:SomeNumber](x: typedesc[Simd[X]], y: typedesc[Y]): typedesc =
+    mixin f
+    asSimd(SimdObjType[T.simdLength,f(X.numberType,Y)])
+  template f*[X:SomeNumber;Y](x: typedesc[X], y: typedesc[Simd[Y]]): typedesc =
+    mixin f
+    asSimd(SimdObjType[T.simdLength,f(X,Y.numberType)])
+  #f2(f)
+
+template f2s(f: untyped) {.dirty.} =
   f2(f)
+  f2os(f)
+  f2ts(f)
+
+template f2si(f: untyped) {.dirty.} =  # returns Simd integer
+  f2o(f)
+  f2os(f)
+  template f*[T1,T2](x: typedesc[Simd[T1]], y: typedesc[Simd[T2]]): typedesc =
+    mixin f
+    asSimd(typeof(f(T1(),T2())))
+  template f*[X;Y:SomeNumber](x: typedesc[Simd[X]], y: typedesc[Y]): typedesc =
+    mixin f
+    asSimd(typeof(f(X(),Y())))
+  template f*[X:SomeNumber;Y](x: typedesc[X], y: typedesc[Simd[Y]]): typedesc =
+    mixin f
+    asSimd(typeof(f(X(),Y())))
 
 f1(`-`)
 f1(abs)
@@ -161,8 +201,10 @@ f1(cos)
 f1(acos)
 f1(tanh)
 f1(load1)
+
 f2(atan2)
 f2(copySign)
+
 f2s(`+`)
 f2s(`-`)
 f2s(`*`)
@@ -172,10 +214,10 @@ f2s(sub)
 f2s(mul)
 f2s(min)
 f2s(max)
-f2s(`==`)
-f2s(`<`)
-#f2s('>')
 
+f2si(`==`)
+f2si(`<`)
+#f2si('>')
 
 # special cases
 
@@ -235,6 +277,17 @@ f1i(exp)
 f1i(expm1)
 f1i(ln)
 f1i(ln1p)
+
+# Type operations
+#template `*`*[X:SomeNumber,Y:Simd](x: typedesc[X], y: typedesc[Y]): typedesc =
+#  asSimd(X * Y[])
+#template `+`*[X:Simd,Y:Simd](x: typedesc[X], y: typedesc[Y]): typedesc =
+#  asSimd(X[] + Y[])
+#template `-`*[X:Simd,Y:Simd](x: typedesc[X], y: typedesc[Y]): typedesc =
+#  asSimd(X[] - Y[])
+#template `*`*[X:Simd,Y:Simd](x: typedesc[X], y: typedesc[Y]): typedesc =
+#  asSimd(X[] * Y[])
+
 
 #template select*(x: Simd[T], y,z: SomeNumber): untyped =
 #  mixin f

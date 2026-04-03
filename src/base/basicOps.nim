@@ -10,6 +10,7 @@ import globals
 import math
 export math
 import macros
+import metaUtils
 
 {.passL:"-lm".}
 
@@ -296,6 +297,41 @@ else:
     setUnopP(op, fun, t1, t2)
   template setBinop*(op,fun,t1,t2,t3: untyped) {.dirty.} =
     setBinopP(op, fun, t1, t2, t3)
+
+template isConstZero*(x: auto): bool = false
+template isConstZero*(x: SomeNumber): bool =
+  when isConst(x):
+    x == 0
+  else:
+    false
+
+template add0*(x,y: auto): auto =
+  when isConstZero y:
+    x
+  elif isConstZero x:
+    y
+  else:
+    x + y
+template sub0*(x,y: auto): auto =
+  when isConstZero y:
+    x
+  elif isConstZero x:
+    -y
+  else:
+    x - y
+template mul0*(x,y: auto): auto =
+  when (isConstZero x) or (isConstZero y):
+    0
+  else:
+    x * y
+
+template add0*(r,x,y: auto) =
+  when isConstZero y:
+    r := x
+  elif isConstZero x:
+    r := y
+  else:
+    add(r, x, y)
 
 import numberWrap
 export numberWrap
