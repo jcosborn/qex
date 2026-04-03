@@ -10,6 +10,7 @@ import globals
 import math
 export math
 import macros
+import metaUtils
 
 {.passL:"-lm".}
 
@@ -50,16 +51,21 @@ template numberType*[T](x:tuple[re,im:T]):typedesc = numberType(T)
 template numberType*[T](x:typedesc[tuple[re,im:T]]):typedesc = numberType(T)
 template numberType*[I,T](x:array[I,T]):typedesc = numberType(type(T))
 template numberType*[I,T](x:typedesc[array[I,T]]):typedesc = numberType(type(T))
-#template numberType*(x:not typedesc):untyped = numberType(type(x))
+#template numberType*[T:not typedesc](x:T):typedesc = numberType(T)
 template `[]`*[T](x:typedesc[ptr T]):typedesc = T
-template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x
+template `[]`*(x:SomeNumber; i:SomeInteger):untyped = x  # FIXME should get rid of this
 template isWrapper*(x: SomeNumber): bool = false
 template isWrapper*(x: typedesc[SomeNumber]): bool = false
+template isWrapper*(x: array): bool = false
+template isWrapper*(x: typedesc[array]): bool = false
 template has*[T:SomeNumber](x: typedesc[T], y: typedesc): bool = T is y
-template eval*[T:SomeNumber](x: typedesc[T]): typedesc = typeof(T)
+template eval*[T:SomeNumber](x: typedesc[T]): typedesc = T
 template evalType*[T](x: T): typedesc =
+  #echoTyped: x
+  #static: echo instantiationInfo()
+  #static: echo $x.type, "  ", $T
   mixin eval
-  eval typeof T
+  eval T
 
 #proc fpclassify*(x: cfloat): cint {.importc:"fpclassifyf",header:"<math.h>".}
 #proc fpclassify*(x: cdouble): cint {.importc:"fpclassify",header:"<math.h>".}
@@ -242,7 +248,19 @@ template `*`*[T:SomeFloat](x:T; y:SomeInteger):auto = x * (T(y))
 template `/`*[T:SomeFloat](x:SomeInteger,y:T):auto = (T(x)) / y
 template `/`*[T:SomeFloat](x:T,y:SomeInteger):auto = x / (T(y))
 
+template `+`*[T:SomeNumber](x: typedesc[T], y: typedesc[T]): typedesc = T
+template `-`*[T:SomeNumber](x: typedesc[T], y: typedesc[T]): typedesc = T
+template `*`*[T:SomeNumber](x: typedesc[T], y: typedesc[T]): typedesc = T
+
+template `+`*[N:static int,X,Y](x: typedesc[array[N,X]], y: typedesc[array[N,Y]]): typedesc = array[N,X+Y]
+template `-`*[N:static int,X,Y](x: typedesc[array[N,X]], y: typedesc[array[N,Y]]): typedesc = array[N,X-Y]
+template `*`*[N:static int,X,Y](x: typedesc[array[N,X]], y: typedesc[array[N,Y]]): typedesc = array[N,X*Y]
+template `*`*[X:SomeNumber,N:static int,Y](x: typedesc[X], y: typedesc[array[N,Y]]): typedesc = array[N,X*Y]
+
 template `:=`*[T](x: SomeNumber; y: array[1,T]) = assign(x,y[0])
+
+template toSingleImpl*[N:static int](x: array[N,float32]): auto = x
+template toDoubleImpl*[N:static int](x: array[N,float64]): auto = x
 
 template setUnopP*(op,fun,t1,t2: untyped) {.dirty.} =
   proc op*(x: t1): auto {.alwaysInline,noInit.} =
@@ -279,6 +297,41 @@ else:
     setUnopP(op, fun, t1, t2)
   template setBinop*(op,fun,t1,t2,t3: untyped) {.dirty.} =
     setBinopP(op, fun, t1, t2, t3)
+
+template isConstZero*(x: auto): bool = false
+template isConstZero*(x: SomeNumber): bool =
+  when isConst(x):
+    x == 0
+  else:
+    false
+
+template add0*(x,y: auto): auto =
+  when isConstZero y:
+    x
+  elif isConstZero x:
+    y
+  else:
+    x + y
+template sub0*(x,y: auto): auto =
+  when isConstZero y:
+    x
+  elif isConstZero x:
+    -y
+  else:
+    x - y
+template mul0*(x,y: auto): auto =
+  when (isConstZero x) or (isConstZero y):
+    0
+  else:
+    x * y
+
+template add0*(r,x,y: auto) =
+  when isConstZero y:
+    r := x
+  elif isConstZero x:
+    r := y
+  else:
+    add(r, x, y)
 
 import numberWrap
 export numberWrap

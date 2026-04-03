@@ -246,6 +246,7 @@ type
 template toSingleX*[T](x: T): untyped =
   ToSingle[T](v: x)
 template toSingle*(x: typedesc): typedesc =
+  mixin toSingleImpl
   #static: echo "toSingle typedesc"
   toSingleImpl(x)
 template toSingle*(x: typed): untyped =

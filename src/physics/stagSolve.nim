@@ -15,6 +15,7 @@ import grid/Grid
 #var precon = false
 
 proc stagSingle(s: Staggered, init=false, free=false): auto =
+  mixin toSingle
   var ss {.global.}: toSingle(type s)
   if init:
     ss = toSingle(s)

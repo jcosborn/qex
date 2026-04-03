@@ -1,5 +1,6 @@
 import base/threading
 import backend/expr
+import base/metaUtils
 import macros
 
 const dumpKernels {.intdefine.} = 0
@@ -29,21 +30,37 @@ proc genCpuFinalize(n:seq[NimNode]):NimNode =
   for c in n:
     result.add getast r(c[0],c[1])
 
-macro echoTyped(body: auto): auto =
-  echo body.repr
-  #echo body.treerepr
-  result = body
+#macro echoTyped(body: auto): auto =
+#  echo body.repr
+#  #echo body.treerepr
+#  result = body
 
-macro onGpu*(body: untyped): auto =
+proc gpuDefaultNumThreads*(): int =
+  var nt = 0
+  threads:
+    threadSingle:
+      nt = numThreads
+  result = nt
+
+macro onGpuNowait*(n,b,body: untyped): auto =
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   template target(cpuPrepare, cpuFinalize, body: untyped) =
     mixin toGpu, getGpu, fromGpu
-    proc gpuProc {.gensym.} =
-      cpuPrepare  # a let section declare and save device pointers
-      threads:
+    cpuPrepare  # a let section declare and save device pointers
+    #proc gpuProc {.gensym.} =
+    block:
+      const inOnGpu {.inject,used.} = true
+      if numThreads == 1:
+        threads:
+          body
+      else:
         body
+    #gpuProc()
+    proc finalize {.gensym.} =
+      threadBarrier()
       cpuFinalize
-    gpuProc()
+      #threadBarrier()
+    finalize
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
@@ -56,7 +73,31 @@ macro onGpu*(body: untyped): auto =
     echo result.treerepr
   else:
     if dumpKernels > 2:
-      result = newCall(bindsym"echoTyped", result)
+      var sl = newNimNode(nnkStmtListExpr)
+      sl.add newCall(bindsym"echoTyped", result)
+      sl.add result
+      result = sl
+
+var gpuNumThreadsRequest* = 0
+var gpuBlockSizeRequest* = 0
+template onGpuNowait*(body: untyped): auto =
+  onGpuNoWait(gpuNumThreadsRequest, gpuBlockSizeRequest, body)
+template onGpuNowait*(n,body: untyped): auto =
+  var b = gpuBlockSizeRequest
+  while b > n: b = b div 2
+  onGpuNoWait(n, b, body)
+#template onGpuNowait*(n,b,body: untyped): auto =
+#  onGpuNoWait(n, b, body)
+
+template onGpu*(body: untyped) =
+  let finalize = onGpuNoWait(body)
+  finalize()
+template onGpu*(n,body: untyped) =
+  let finalize = onGpuNoWait(n, body)
+  finalize()
+template onGpu*(n,b,body: untyped) =
+  let finalize = onGpuNoWait(n, b, body)
+  finalize()
 
 #template onGpu*(n,x:untyped) = onGpu(x)
 #template onGpu*(n,t,x:untyped) = onGpu(x)

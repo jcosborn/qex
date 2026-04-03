@@ -236,6 +236,7 @@ proc inlineLets(n:NimNode):NimNode =
 ]#
 
 proc regenSym(n:NimNode):NimNode =
+  #echo "regenSym: ", n.repr
   # Only regen nskVar and nskLet symbols.
 
   # We need to regenerate symbols for multiple inlined procs,
@@ -251,7 +252,9 @@ proc regenSym(n:NimNode):NimNode =
           echo n.treerepr
           quit 1
         for i in 0..<d.len-2:   # Last 2 is type and value.
+          #echo "d[i]: ", d[i].treerepr
           if d[i].kind == nnkSym: result.add d[i]
+          elif d[i].kind == nnkPragmaExpr: result.add d[i][0]
         for c in d[^1]: result.append c.get k
     else:
       for c in n: result.append c.get k
@@ -275,6 +278,9 @@ proc matchGeneric(n,ty,g:NimNode):NimNode =
   # echo "MG:I: ",n.lisprepr
   # echo "MG:T: ",ty.lisprepr
   # echo "MG:G: ",g.lisprepr
+  #echo "MG:n: ", n.repr
+  #echo "MG:t: ", ty.repr
+  #echo "MG:g: ", g.repr
   proc isG(n:NimNode):bool =
     n.kind == nnkIdent and n.eqIdent($g)
   proc typeof(n:NimNode):NimNode =
@@ -282,10 +288,12 @@ proc matchGeneric(n,ty,g:NimNode):NimNode =
   proc getGParams(ti:NimNode):NimNode =
     # ti ~ type[G0,G1,...], is from gettypeinst
     # We go through the implementation to find the correct generic names.
+    #echo "getGParams: ", ti.treerepr
     ti.expectKind nnkBracketExpr
     let tn = ti[0]
     tn.expectKind nnkSym
     let td = tn.getImpl
+    #echo "  td: ", td.treerepr
     td.expectKind nnkTypeDef
     result = td[1]
     result.expectKind nnkGenericParams
@@ -293,7 +301,9 @@ proc matchGeneric(n,ty,g:NimNode):NimNode =
     # match instantiation type `ti`, with generic type `ty`
     # recursively find the chain of generic type variables
     # correponding to `g` in `ty`.
-    #result = newPar()
+    #echo "MT:ti: ", ti.repr
+    #echo "MT:ty: ", ty.repr
+    #echo "MT:g: ", g.repr
     result = newNimNode(nnkTupleConstr)
     var i = 0
     let tg = getGParams ti
@@ -315,6 +325,11 @@ proc matchGeneric(n,ty,g:NimNode):NimNode =
               return
   if ty.isG: return typeof n
   elif ty.kind == nnkBracketExpr:
+    let ti = n.gettypeinst
+    for i in 0..<ty.len:
+      if ty[i].isG:
+        result = ti[i]
+        return
     let ts = matchT(n.gettypeinst,ty,g)
     result = n
     if ts.len > 0:
@@ -475,6 +490,14 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
       body = body.replaceNonDeclSym(sym, c)
     elif typ.kind == nnkVarTy:
       pre.add getAst(letX(t, newNimNode(nnkAddr,p).add p))
+      #let p0 = p[0]  # skip HiddenAddr
+      #if p0.kind == nnkStmtListExpr:
+      #  for i in 0..(p0.len-2):
+      #    pre.add p0[i]
+      #  pre.add getAst(letX(t, newNimNode(nnkAddr,p0).add p0[^1]))
+      #else:
+      #  pre.add getAst(letX(t, newNimNode(nnkAddr,p0).add p0))
+      #echo "varty: ", p.treerepr
       body = body.replaceNonDeclSym(sym, newNimNode(nnkDerefExpr,p).add(t), nnkHiddenDeref)
     elif typ.kind == nnkSym and typ.repr == "typedesc":
       #echo "repl: ", $sym, " -> ", $p
@@ -489,6 +512,7 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
   # echo "### body with fp replaced:"
   # echo body.repr
   proc resolveGeneric(n:NimNode):NimNode =
+    #echo "resolveGeneric: ", n.repr
     proc find(n:NimNode, s:string):bool =
       if n.kind == nnkDotExpr:
         # ignore n[1]
@@ -558,9 +582,13 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
     # echo "TYPEof call[0]: ",call[0].lisprepr," ",call[0].gettypeimpl.treerepr
     # echo "TYPEof fp[0]: ",fp[0].lisprepr," ",fp[0].gettype.treerepr
     # echo "TYPEof pi[7]: ",procImpl[7].lisprepr," ",procImpl[7].gettype.treerepr
-    template varX(x,t:untyped):untyped =
+    template varX(x,t:untyped) =
       var x: t
-    template varXNI(x,t:untyped):untyped =
+    #template varXd(x,t,s:untyped) =
+    #  when t is void:
+    #    static: echo s
+    #  var x: t
+    template varXNI(x,t:untyped) =
       var x {.noinit.} : t
     var calln:NimNode
     if call.kind == nnkHiddenCallConv:
@@ -585,7 +613,10 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
         if c.eqIdent "noinit":
           noinit = true
           break
+    #echo "ty: ", ty.repr
+    #echo "call: ", call.treerepr
     let d = if noinit: getAst(varXNI(z,ty)) else: getAst(varX(z,ty))
+    #let d = if noinit: getAst(varXNI(z,ty)) else: getAst(varXd(z,ty,ty.repr))
     # if noinit: echo "noinit: ", d.lisprepr
     pre.add body.replace(r,z)
     sl = newBlockStmt(newNimNode(nnkStmtListExpr,call).add(d, newBlockStmt(blockname, pre), z))
@@ -619,7 +650,12 @@ proc inlineProcsX(body: NimNode): NimNode =
       if procImpl.kind == nnkTypeDef: return it.copyNimTree
       if procImpl.isNotMagic and
           procImpl.body.kind!=nnkEmpty and
-          procImpl.kind != nnkIteratorDef:
+          procImpl.kind != nnkIteratorDef and
+          (procImpl.kind != nnkTemplateDef or $procImpl.params[0] != "typedesc"):
+        #echo "inspecting call"
+        #echo procImpl.repr
+        #echo procImpl.kind
+        #echo procImpl.params[0].treerepr
         return recurse inlineProcsY(it, procImpl)
     result = copyNimNode(it)
     for c in it: result.add recurse c
@@ -639,21 +675,21 @@ macro inlineProcs*(body: typed): auto =
 
 proc symToIdent*(x: NimNode): NimNode =
   case x.kind:
-    of nnkCharLit..nnkUInt64Lit:
-      result = newNimNode(x.kind)
-      result.intVal = x.intVal
-    of nnkFloatLit..nnkFloat64Lit:
-      result = newNimNode(x.kind)
-      result.floatVal = x.floatVal
-    of nnkStrLit..nnkTripleStrLit:
-      result = newNimNode(x.kind)
-      result.strVal = x.strVal
+    #of nnkCharLit..nnkUInt64Lit:
+    #  result = newNimNode(x.kind)
+    #  result.intVal = x.intVal
+    #of nnkFloatLit..nnkFloat64Lit:
+    #  result = newNimNode(x.kind)
+    #  result.floatVal = x.floatVal
+    #of nnkStrLit..nnkTripleStrLit:
+    #  result = newNimNode(x.kind)
+    #  result.strVal = x.strVal
     of nnkIdent, nnkSym:
       result = newIdentNode($x)
     of nnkOpenSymChoice:
       result = newIdentNode($x[0])
     else:
-      result = newNimNode(x.kind)
+      result = copyNimNode(x)
       for c in x:
         result.add symToIdent(c)
 
@@ -665,6 +701,22 @@ macro getConst*(x: static[int64]): auto =
   #echo x.treerepr
   #result = newLit(3)
   #result = newLit(x.intVal)
+
+proc isConstImpl*(x: NimNode): bool =
+  case x.kind
+  of nnkLiterals:
+    result = true
+  of nnkSym:
+    if x.symKind == nskConst:
+      result = true
+  of nnkConv:
+    result = isConstImpl(x[1])
+  else:
+    discard
+macro isConst*(x: auto): auto =
+  var r = isConstImpl(x)
+  result = newLit(r)
+  #echo "isConst: ", x.treerepr, " ", r
 
 macro makeIdent*(x: untyped): untyped =
   result = symToIdent(x)
@@ -874,8 +926,9 @@ macro echoUntypedTree*(x: untyped): auto =
   result = newEmptyNode()
   echo x.treeRepr
 macro echoTyped*(x: typed): auto =
-  result = newEmptyNode()
+  echo x.lineinfo
   echo x.repr
+  newEmptyNode()
 macro echoTypedTree*(x: typed): auto =
   result = newEmptyNode()
   echo x.treeRepr

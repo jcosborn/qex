@@ -6,11 +6,12 @@ type
   AsFloat* = AsFloat32 | AsFloat64
   Float* = SomeFloat | AsFloat
   AsNumber* = AsFloat
+  AsNumber2* = AsFloat
   Number* = SomeNumber | AsNumber
 
 template asFloat32*[T](x: T): auto = AsFloat32[type T](x)
 template `[]`*[T](x: AsFloat32[T]): auto = (type T)(x)
-template asWrapper*(x: typedesc[float32], y: typed): auto = asFloat32(y)
+template asWrapper*(x: typedesc[float32], y: auto): auto = asFloat32(y)
 template eval*(x: typedesc[AsFloat32]): typedesc = float32
 template eval*(x: AsFloat32): auto =
   mixin `:=`
@@ -20,7 +21,7 @@ template eval*(x: AsFloat32): auto =
 
 template asFloat64*[T](x: T): auto = AsFloat64[type T](x)
 template `[]`*[T](x: AsFloat64[T]): auto = (type T)(x)
-template asWrapper*(x: typedesc[float64], y: typed): auto = asFloat64(y)
+template asWrapper*(x: typedesc[float64], y: auto): auto = asFloat64(y)
 template eval*(x: typedesc[AsFloat64]): typedesc = float64
 template eval*(x: AsFloat64): auto =
   mixin `:=`
@@ -90,7 +91,11 @@ template f3(fn: untyped) =
   template fn*[R,Y:SomeNumber,X:AsNumber](r: R, x: X, y: Y) =
     mixin fn
     fn(r, eval(x), y)
+  template fn*[R:SomeNumber,X:AsNumber,Y:AsNumber2](r: R, x: X, y: Y) =
+    mixin fn
+    fn(r, eval(x), eval(y))
 
+f3(add)
 f3(mul)
 f3(imadd)
 f3(imsub)

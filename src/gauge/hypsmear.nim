@@ -472,9 +472,6 @@ template projectAndScaleProjectedPairChainInPlace(chain, xfield,
   threads:
     forPairs(mu, nu):
       chain[mu,nu].projVJP(xfield[mu,nu], chain[mu,nu])
-
-  threads:
-    forPairs(mu, nu):
       when accumulateDirect:
         derivSink[mu] += ma * chain[mu,nu]
       chain[mu,nu] *= alp
@@ -882,6 +879,7 @@ template hypPairStageL1StapleVJPCore(gf, pairShift, sm1, tm1,
   threads:
     forPairs(mu, nu):
       discard chainShift[nu] ^* chainIn[mu,nu]
+      threadBarrier()
       symStapleVJP(dst[nu], dst[mu],
                    gf[nu], gf[mu],
                    pairShift[nu][mu], pairShift[mu][nu],
@@ -1580,6 +1578,7 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
   ## The resulting proc still depends on the original `gf`.
   ## The correctness of the algorithm depends on `gf` remaining the same.
   ## Changes to the smeared gauge `fl` do not affect the force calculation.
+  tic()
   type lcm = type(gf[0])
   let lo = gf[0].l
   proc newlcm: lcm = result.new(gf[0].l)
@@ -1614,28 +1613,29 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
     ma2 = 1 - coef.alpha2
     ma3 = 1 - coef.alpha3
 
+  toc("prep")
   threads:
     forPairs(mu, nu):
       discard s1[mu][nu] ^*! gf[mu]
 
   when keepProj:
     hypPairStageL1ForwardCore(gf, s1, sm1, tm1, ma1, alp1, l1x, l1, true, true)
-  else:
-    hypPairStageL1ForwardCore(gf, s1, sm1, tm1, ma1, alp1, l1x, l1x, false, true)
-
-  when keepProj:
+    toc("1")
     hypPairStageL2ForwardCore(gf, l1, s1, sm1, tm1, ma2, alp2, l2x, l2, true)
-  else:
-    hypPairStageL2ForwardProjectedCore(gf, l1x, lp1, lp2, s1, sm1, tm1,
-                                       ma2, alp2, l2x, l2x, false)
-
-  when keepProj:
+    toc("2")
     hypOutputForwardCore(gf, l2, s1, sm1, tm1, ma3, alp3, flx, fl, true, true)
   else:
+    hypPairStageL1ForwardCore(gf, s1, sm1, tm1, ma1, alp1, l1x, l1x, false, true)
+    toc("1")
+    hypPairStageL2ForwardProjectedCore(gf, l1x, lp1, lp2, s1, sm1, tm1,
+                                       ma2, alp2, l2x, l2x, false)
+    toc("2")
     hypOutputForwardProjectedCore(gf, l2x, lp1, lp2, s1, sm1, tm1,
                                   ma3, alp3, flx, fl, true)
+  toc("3")
 
   proc smearedForce(f,chain:G) =
+    tic("smearedF")
     var
       fl1 = newFieldArray2(lo,lcm,[4,4],mu!=nu)
       fl2 = newOneOf(fl1)
@@ -1650,6 +1650,7 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
       forPairs(mu, nu):
         fl1[mu,nu] := 0
         fl2[mu,nu] := 0
+    toc("prep")
 
     projectAndScaleOutputChain(fc, flx, chain, alp3, f, ma3, true)
 
@@ -1660,25 +1661,25 @@ proc smearGetForce*[G](coef: HypCoefs, gf: G, fl: G,
           discard s1[mu][nu] ^*! l2[mu,nu]
 
       hypOutputStageStapleVJPCore(l2, s1, sm1, tm1, fc, fs, tm2, fl2)
-    else:
-      hypOutputStageProjectedStapleVJPCore(l2x, lp1, lp2, s1, sm1, tm1,
-                                           fc, fs, tm2, fl2)
-
-    when keepProj:
+      toc("1")
       projectAndScalePairChainInPlace(fl2, l2, l2x, alp2, f, ma2, true)
       hypPairStageL2StapleVJPCore(l1, s1, sm1, tm1, fl2, fs, tm2, fl1)
-    else:
-      projectAndScaleProjectedPairChainInPlace(fl2, l2x, alp2, f, ma2, true)
-      hypPairStageL2ProjectedStapleVJPCore(l1x, lp1, lp2, s1, sm1, tm1,
-                                           fl2, fs, tm2, fl1)
-
-    when keepProj:
+      toc("2")
       projectAndScalePairChainInPlace(fl1, l1, l1x, alp1, f, ma1, true)
       hypPairStageL1StapleVJPCore(gf, s1, sm1, tm1, fl1, fs, tm2, f, true)
     else:
+      hypOutputStageProjectedStapleVJPCore(l2x, lp1, lp2, s1, sm1, tm1,
+                                           fc, fs, tm2, fl2)
+      toc("1")
+      projectAndScaleProjectedPairChainInPlace(fl2, l2x, alp2, f, ma2, true)
+      hypPairStageL2ProjectedStapleVJPCore(l1x, lp1, lp2, s1, sm1, tm1,
+                                           fl2, fs, tm2, fl1)
+      toc("2")
       projectAndScaleProjectedPairChainInPlace(fl1, l1x, alp1, f, ma1, true)
       hypPairStageL1StapleVJPCore(gf, s1, sm1, tm1, fl1, fs, tm2, f, true)
+    toc("end")
 
+  toc("end")
   smearedForce
 
 proc smearPriv[G](coef: HypCoefs, gf: G, fl: G, info: var PerfInfo) {.codegenDecl:

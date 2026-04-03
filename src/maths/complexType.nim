@@ -175,22 +175,36 @@ template map*(xx: ComplexProxy; f: untyped): auto =
   let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
   newComplex(f(x.re),f(x.im))
 
-template add*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3) =
-  r := x + y
-template add*(r: ComplexProxy, x: ComplexProxy2, y: SomeNumber) =
-  r := x + y
-template add*(r: ComplexProxy, x: RealProxy, y: ComplexProxy3) =
-  r := x + y
-template add*(r: ComplexProxy, x: ComplexProxy2, y: RealProxy) =
-  r := x + y
-proc add*[R,X,Y:ComplexProxy](r: var R, x: X, y: Y) {.alwaysInline.} =
-#template add*[R,X,Y:ComplexProxy](rr: R, xx: X, yy: Y) =
-#  let rp = getPtr rr; template r:untyped {.gensym.} = rp[]
-#  let xp = getPtr xx; template x:untyped {.gensym.} = xp[]
-#  let yp = getPtr yy; template y:untyped {.gensym.} = yp[]
-  mixin add
-  add(r.re, x.re, y.re)
-  add(r.im, x.im, y.im)
+template binaryOverloads(fn,fre,fim: untyped) {.dirty.} =
+  type RIC = RealProxy | ImagProxy | ComplexProxy
+  type RIC2 = RealProxy2 | ImagProxy2 | ComplexProxy2
+  type RIC3 = RealProxy3 | ImagProxy3 | ComplexProxy3
+  proc fn*(r: var RIC, x: SomeNumber, y: RIC3) {.alwaysInline.} =
+    fre(r.re, x, 0, y.re, y.im)
+    fim(r.im, x, 0, y.re, y.im)
+  proc fn*(r: var RIC, x: RIC2, y: SomeNumber) {.alwaysInline.} =
+    fre(r.re, x.re, x.im, y, 0)
+    fim(r.im, x.re, x.im, y, 0)
+  proc fn*(r: var RIC, x: RIC2, y: RIC3) {.alwaysInline.} =
+    fre(r.re, x.re, x.im, y.re, y.im)
+    fim(r.im, x.re, x.im, y.re, y.im)
+
+template addre(rr,xr,xi,yr,yi:untyped):auto = add0(rr, xr, yr)
+template addim(ri,xr,xi,yr,yi:untyped):auto = add0(ri, xi, yi)
+binaryOverloads(add, addre, addim)
+
+#template add*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3) =
+#  r := x + y
+#template add*(r: ComplexProxy, x: ComplexProxy2, y: SomeNumber) =
+#  r := x + y
+#template add*(r: ComplexProxy, x: RealProxy, y: ComplexProxy3) =
+#  r := x + y
+#template add*(r: ComplexProxy, x: ComplexProxy2, y: RealProxy) =
+#  r := x + y
+#proc add*[R,X,Y:ComplexProxy](r: var R, x: X, y: Y) {.alwaysInline.} =
+#  mixin add
+#  add(r.re, x.re, y.re)
+#  add(r.im, x.im, y.im)
 
 template sub*(r: ComplexProxy, x: SomeNumber, y: ComplexProxy3) =
   r := x - y

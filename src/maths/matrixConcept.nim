@@ -173,8 +173,6 @@ type
   #AsVarVector*[T] = AsVar[AsVector[T]]
   #AsVarMatrix*[T] = AsVar[AsMatrix[T]]
 
-template isWrapper*(x: array): untyped = false
-
 #template isWrapper*(x: AsVector): untyped = true
 #template asWrapper*(x: AsVector, y: typed): untyped =
 #  #static: echo "asWrapper AsVector"

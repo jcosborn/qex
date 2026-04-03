@@ -1,4 +1,5 @@
 import base, layout, gauge, hypsmear, comms/halo, bitops
+import strformat
 getOptimPragmas()
 
 #nflop = 61632.0
@@ -498,6 +499,7 @@ when isMainModule:
     var f = lo.newGauge()
     var f2 = lo.newGauge()
     var c = lo.newGauge()
+    var ths1, thf1, ths2, thf2 = 0.0
     c.gaussian rng
     block:
       let fn = coef.smearGetForce(g, fl, info)
@@ -506,8 +508,10 @@ when isMainModule:
     block:
       tic()
       let fn = coef.smearGetForce(g, fl, info)
+      ths1 = getElapsedTime()
       toc "smear"
       fn(f, c)
+      thf1 = getElapsedTime() - ths1
       toc "force"
     block:
       tic()
@@ -520,10 +524,13 @@ when isMainModule:
       block:
         tic()
         ht.smear(coef, fl2)
+        ths2 = getElapsedTime()
         toc "HTsmear"
         ht.force(coef, f2, c)
+        thf2 = getElapsedTime() - ths1
         toc "HTforce"
-    echoTimers()
+    #echoTimers()
+    echoProf()
     echo fl.plaq
     echo fl2.plaq
     echo f.plaq
@@ -538,6 +545,8 @@ when isMainModule:
       d2f[mu] = sqrt(d.norm2/f[mu].norm2)
     echo "error smear: ", d2fl
     echo "error force: ", d2f
+    echo &"shift time smear: {ths1:8.6f} force: {thf1:8.6f}"
+    echo &"halo  time smear: {ths2:8.6f} force: {thf2:8.6f}"
 
   testForce()
 

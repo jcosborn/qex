@@ -62,6 +62,14 @@ proc `$`*(x: cppstring): string =
   result = newString(n)
   copyMem(addr(result[0]), x.cstring, n)
 
+type cppvector[T] {.importcpp:"std::vector",header:"vector".} = object
+type cppvectorIterator[T] {.importcpp:"std::vector<'0>::iterator",header:"vector".} = object
+proc size*(x: cppvector): csize_t {.importcpp:"#.size()",header:"vector".}
+proc begin*[T](x: cppvector[T]): cppvectorIterator[T] {.importcpp:"#.begin()",header:"vector".}
+proc `end`*[T](x: cppvector[T]): cppvectorIterator[T] {.importcpp:"#.end()",header:"vector".}
+proc max_element*[T](b,e: cppVectorIterator[T]): T {.importcpp:"*std::max_element(#,#)",header:"algorithm".}
+proc max_element*(v: cppVector): auto = max_element(v.begin,v.`end`)
+
 proc name*(x: Device): cppstring {.
   importcpp:"#.get_info<sycl::info::device::name>()".}
 proc version*(x: Device): cppstring {.
@@ -73,12 +81,17 @@ proc maxComputeUnits*(x: Device): uint32 {.
   importcpp:"#.get_info<sycl::info::device::max_compute_units>()".}
 proc preferredVectorWidthFloat*(x: Device): uint32 {.
   importcpp:"#.get_info<sycl::info::device::preferred_vector_width_float>()".}
+proc subGroupSizes*(x: Device): cppvector[csize_t] {.
+  importcpp:"#.get_info<sycl::info::device::sub_group_sizes>()".}
 
 proc wait*(q: Queue) {.importcpp:"#.wait()".}
 proc device*(q: Queue): Device {.importcpp:"#.get_device()".}
 
-proc getNdItem1*(): Nd1 {.importcpp:"sycl::ext::oneapi::this_work_item::get_nd_item<1>()".}
+proc getNdItem1*(): Nd1 {.importcpp:"sycl::ext::oneapi::this_work_item::get_nd_item<1>()",constructor.}
 proc getWorkGroup1*(): WorkGroup1 {.importcpp:"sycl::ext::oneapi::this_work_item::get_work_group<1>()".}
+
+proc getGlobalId1*(): csize_t {.importcpp:"sycl::ext::oneapi::this_work_item::get_nd_item<1>().get_global_id(0)".}
+proc getGlobalRange1*(): csize_t {.importcpp:"sycl::ext::oneapi::this_work_item::get_nd_item<1>().get_global_range(0)".}
 
 #proc newSyclBuffer*[T](): SyclBuffer[T,0] {.noinit,
 #  importcpp:"'0()", constructor, syclh.}
@@ -205,7 +218,9 @@ proc getRange*(x: Item1): cint {.importcpp:"#.get_range(0)".}
 proc getRange*(x: Nd1): cint {.importcpp:"#.get_global_range(0)".}
 
 template parallelFor*(n: int, body: typed) =
-  {.emit:["cgh.parallel_for<class syclkern>(sycl::range<1>{",n.uint,"},[=](sycl::item<1> it)"].}
+  #{.emit:["cgh.parallel_for<class syclkern>(sycl::range<1>{",n.uint,"},[=](sycl::item<1> it)"].}
+  {.emit:["cgh.parallel_for<>(sycl::range<1>{",n.uint,"},[=](sycl::item<1> it)"].}
+  #{.emit:["cgh.parallel_for<>(sycl::nd_range<1>{",n.uint,",16},[=](sycl::nd_item<1> it)"].}
   block:
     body
   {.emit:[");"].}

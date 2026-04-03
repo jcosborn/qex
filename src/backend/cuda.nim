@@ -2,6 +2,8 @@ import macros
 import base/metaUtils
 import expr
 
+const dumpKernels {.intdefine.} = 0
+
 #{.passC:"--with-arch=sm_86".}
 #{.passL:"--with-arch=sm_86".}
 
@@ -140,10 +142,12 @@ template cudaDefs(body: untyped): untyped {.dirty.} =
   #template getThreadNum: untyped {.used.} = blockDim.x * blockIdx.x + threadIdx.x
   #template getNumThreads: untyped {.used.} = gridDim.x * blockDim.x
   bind inlineProcs
-  #{.emit:"#define nimZeroMem(b,len) memset((b),0,(len))".}
+  {.emit:["#define nimZeroMem(b,len) memset((b),0,(len))"].}
+  {.emit:["#define nimCopyMem(a,b,len) memcpy((a),(b),(len))"].}
   inlineProcs:
     body
-  #{.emit:"#undef nimZeroMem".}
+  {.emit:["#undef nimZeroMem"].}
+  {.emit:["#undef nimCopyMem"].}
 
 template cudaLaunch*(p: proc {.cdecl.}; blocksPerGrid,threadsPerBlock: SomeInteger;
                      arg: varargs[pointer,dataAddr]) =
@@ -206,9 +210,9 @@ proc cudaproc(s:string, p:NimNode):NimNode =
   result.addPragma parseExpr("{.codegenDecl:\""&s&" $# $#$#\".}")[0]
   result.body = getAst(cudaDefs(result.body))
   var sl = newStmtList()
-  sl.add( quote do:
-    {.push checks: off.}
-    {.push stacktrace: off.} )
+  #sl.add( quote do:
+  #  {.push checks: off.}
+  #  {.push stacktrace: off.} )
   sl.add result
   result = sl
   #echo "end cuda:"
@@ -227,14 +231,18 @@ proc genCpuFinalize(n:seq[NimNode], a: NimNode):NimNode =
   for c in n:
     result.add getast r(a,c[0],c[2])
 
-macro onGpu*(nn0,tpb0: untyped, body: untyped): auto =
-  template target(nn, tpb, v, arg, cpuPrepare, cpuFinalize, body: untyped) =
+#macro onGpuX(nn0,tpb0: untyped, body: untyped): auto =  # return callback to wait and finalize
+
+macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
+  let li = body.lineinfo
+  template target(nn, tpb, v, arg, cpuPrepare, cpuFinalize, body: untyped): untyped =
     mixin toGpu, getGpu, fromGpu
     block:
       var v = cpuPrepare  # kernel argument tuple
       type ByCopy[T] {.bycopy.} = object
         d: T
       proc kern(arg: ByCopy[type(v)]) {.cdecl,cudaGlobal.} =
+        const inOnGpu {.inject,used.} = true
         {.push checks: off.}
         {.push stacktrace: off.}
         body
@@ -242,9 +250,14 @@ macro onGpu*(nn0,tpb0: untyped, body: untyped): auto =
       let threadsPerBlock = tpb.int32
       let blocksPerGrid = (ni+threadsPerBlock-1) div threadsPerBlock
       #echo "launching kernel"
-      cudaLaunch(kern, blocksPerGrid, threadsPerBlock, v)
-      discard cudaDeviceSynchronize()
-      cpuFinalize
+      threadSingle:
+        cudaLaunch(kern, blocksPerGrid, threadsPerBlock, v)
+      proc finalize {.gensym.} =
+        threadSingle:
+          discard cudaDeviceSynchronize()
+        cpuFinalize
+        #threadBarrier()
+      finalize
   let
     varg = gensym(nskVar, "varg")
     arg = gensym(nskParam, "arg")
@@ -257,13 +270,41 @@ macro onGpu*(nn0,tpb0: untyped, body: untyped): auto =
     cpuPrepare = genCpuPrepare v
     cpuFinalize = genCpuFinalize(v, varg)
   result = getast(target(nn0, tpb0, varg, arg, cpuPrepare, cpuFinalize, body))
-  echo result.repr
+  case dumpKernels
+  of 1:
+    echo li
+    echo result.repr
+  of 2:
+    echo li
+    echo result.treerepr
+  else:
+    if dumpKernels > 2:
+      echo li
+      var sl = newNimNode(nnkStmtListExpr)
+      sl.add newCall(bindsym"echoTyped", result)
+      sl.add result
+      result = sl
 
-template onGpu*(nn: untyped, body: untyped): untyped = onGpu(nn, 64, body)
-template onGpu*(body: untyped): untyped = onGpu(512*64, 64, body)
-#template onGpu*(body: untyped): untyped = onGpu(256*128, 128, body)
-#template onGpu*(body: untyped): untyped = onGpu(1024*64, 64, body)
-#template onGpu*(body: untyped): untyped = onGpu(4864, 64, body)
+var gpuBlockSizeRequest* = 64
+var gpuNumThreadsRequest* = 32*1024
+template onGpuNowait*(body: untyped): auto =
+  onGpuNoWait(gpuNumThreadsRequest, gpuBlockSizeRequest, body)
+template onGpuNowait*(n,body: untyped): auto =
+  var b = gpuBlockSizeRequest
+  while b > n: b = b div 2
+  onGpuNoWait(n, b, body)
+#template onGpuNowait*(n,b,body: untyped): auto =
+#  onGpuNoWait(n, b, body)
+
+template onGpu*(body: untyped) =
+  let finalize = onGpuNoWait(body)
+  finalize()
+template onGpu*(n,body: untyped) =
+  let finalize = onGpuNoWait(n, body)
+  finalize()
+template onGpu*(n,b,body: untyped) =
+  let finalize = onGpuNoWait(n, b, body)
+  finalize()
 
 when isMainModule:
   type FltArr = UncheckedArray[float32]

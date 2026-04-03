@@ -1,7 +1,10 @@
 import macros
 #import base/metaUtils
 import backend/expr
+import base/metaUtils
 import sycl
+
+const dumpKernels {.intdefine.} = 0
 
 let dev = defaultDevice()
 let q = dev.queue
@@ -16,12 +19,15 @@ template gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger) =
   q.wait
 
 template gpuThreadNum*: auto =
-  let item = getNdItem1()
-  item[]
+  #let item = getNdItem1()
+  #item[]
+  #getNdItem1()[]
+  int getGlobalId1()
 
 template gpuNumThreads*: auto =
-  let item = getNdItem1()
-  item.getRange
+  #let item = getNdItem1()
+  #item.getRange
+  int getGlobalRange1()
 
 template syclDefs(body: untyped) =
   setupSycl()
@@ -36,6 +42,7 @@ template syclDefs(body: untyped) =
 proc genCpuPrepare(n:seq[NimNode]):NimNode =
   template r(x,v:untyped):untyped =
     var v = toGpu(x)
+    var `v xx` = v
   result = newstmtlist()
   for c in n:
     result.add getast r(c[0],c[1])
@@ -43,38 +50,80 @@ proc genCpuPrepare(n:seq[NimNode]):NimNode =
 proc genCpuFinalize(n:seq[NimNode]):NimNode =
   template r(x,v:untyped):untyped =
     fromGpu(x,v)
+    #fromGpu(x)
+    #discard
   result = newstmtlist()
   for c in n:
     result.add getast r(c[0],c[1])
 
-macro onGpuQ*(q: Queue, body: untyped): auto =
-  proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
-  template target(q, cpuPrepare, cpuFinalize, body: untyped) =
+proc gpuDefaultNumThreads*(): int =
+  32 * q.device.maxComputeUnits.int * q.device.subGroupSizes.max_element.int
+  #64 * q.device.maxComputeUnits.int * q.device.subGroupSizes.max_element.int
+
+macro onGpuQ*(q: Queue, n,b,body: untyped): auto =
+  let li = body.lineinfo
+  #proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
+  proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,newTree(nnkAccQuoted,g,ident"xx"))
+  template target(q, n, cpuPrepare, cpuFinalize, body: untyped) =
     mixin toGpu, getGpu, fromGpu
     {.push checks: off.}
     {.push stacktrace: off.}
-    proc gpuProc {.gensym.} =
+    block:
       cpuPrepare  # a let section declare and save device pointers
-      let nth = q.device.maxComputeUnits.int * q.device.preferredVectorWidthFloat.int
-      q.submit:
-        parallelFor(nth):
-          syclDefs:
-            body
-      q.wait
-      cpuFinalize
-    gpuProc()
+      #proc gpuProc {.gensym.} =
+      threadSingle:
+        let nth = n
+        #echo "Launching threads:", nth
+        q.submit:
+          parallelFor(nth):
+            const inOnGpu {.inject,used.} = true
+            syclDefs:
+              body
+      #gpuProc()
+      proc finalize {.gensym.} =
+        threadSingle:
+          q.wait
+        cpuFinalize
+      finalize
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
     cpuFinalize = genCpuFinalize v
-  result = getast(target(q, cpuPrepare, cpuFinalize, body))
-  echo result.repr
+  result = getast(target(q, n, cpuPrepare, cpuFinalize, body))
+  case dumpKernels
+  of 1:
+    echo li
+    echo result.repr
+  of 2:
+    echo li
+    echo result.treerepr
+  else:
+    if dumpKernels > 2:
+      echo li
+      var sl = newNimNode(nnkStmtListExpr)
+      sl.add newCall(bindsym"echoTyped", result)
+      sl.add result
+      result = sl
 
+#var gpuNumThreadsRequest* = 0
+#var gpuBlockSizeRequest* = 0
+template onGpuNowait*(n,b,body: untyped): auto =
+  onGpuQ(q, n, b, body)
+template onGpuNowait*(body: untyped): auto =
+  let n = gpuDefaultNumThreads()
+  onGpuNoWait(n, 0, body)
+template onGpuNowait*(n,body: untyped): auto =
+  onGpuNoWait(n, 0, body)
 
-# XXX fix the following
-template onGpu*(body: untyped) = onGpuQ(q, body)
-#template onGpu*(totalNumThreads, body: untyped): untyped = onGpu(body)
-#template onGpu*(totalNumThreads, numThreadsPerTeam, body: untyped): untyped = onGpu(body)
+template onGpu*(body: untyped) =
+  let finalize = onGpuNoWait(body)
+  finalize()
+template onGpu*(n,body: untyped) =
+  let finalize = onGpuNoWait(n, body)
+  finalize()
+template onGpu*(n,b,body: untyped) =
+  let finalize = onGpuNoWait(n, b, body)
+  finalize()
 
 
 when isMainModule:

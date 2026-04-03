@@ -62,7 +62,8 @@ type
 
 template elemType*(x:Field):typedesc = evalType(x[0])
 template elemType*[V:static[int],T](x:typedesc[Field[V,T]]):typedesc = evalType(T)
-template numberType*(x:Field):untyped = numberType(x[0])
+template numberType*(x:typedesc[Field]):typedesc = numberType(x.T)
+template numberType*[T:Field](x:T):typedesc = numberType(T)
 
 #template fieldUnop*(o: static[FieldOps], x: SomeField): auto =
 #  FieldUnop[o,type(x)](f1: x)
