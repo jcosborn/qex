@@ -1,4 +1,6 @@
 import macros
+import qex
+import base/qexInternal
 
 const Backend {.strdefine.} = "OpenMP"
 #const Backend {.strdefine.} = "CUDA"
@@ -13,6 +15,8 @@ elif Backend == "CUDA":
   const backendIsGpu* = true
   import cuda
   export cuda
+  proc init = gpuInit(0)
+  qexGlobalPreInit.add init
 elif Backend == "SYCL":
   const backendIsGpu* = true
   #const backendIsGpu* = false
@@ -52,6 +56,37 @@ template getGpu*(x:SomeNumber, g:ptr SomeNumber):auto = g[]
 template fromGpu*(x:SomeNumber, g:SomeNumber) = discard
 template fromGpu*(x:var SomeNumber, g:ptr SomeNumber) = (x = g[])
 
+type
+  gpuSeq*[T] = object
+    n*: int
+    p*: ptr UncheckedArray[T]
+proc bytes*[T:gpuSeq](x: T): int = x.n * sizeof(T.T)
+proc newGpuSeq*[T](g: var gpuSeq[T], n: int) =
+  g.n = n
+  g.p = cast[type g.p](gpuMalloc(g.bytes))
+proc newGpuSeq*[T](n: int): gpuSeq[T] =
+  result.newGpuSeq(n)
+template `[]`*(x: gpuSeq, i: auto): auto =
+  #doAssert(i>=0)
+  #doAssert(i<x.n)
+  x.p[i]
+
+template toGpu*(x: seq): auto =
+  mixin gpuType
+  var g = newGpuSeq[gpuType(typeof x[0])](x.len)
+  g.toGpu(x)
+  #for i in 0..<x.len:
+  #  g[i] = toGpu(x[i])
+  g
+
+template getGpu*(x: seq, g: gpuSeq): auto = g
+
+template fromGpu*(x: seq, g: gpuSeq) =
+  #when backendIsGpu:
+  #  for i in 0..<x.len:
+  #    x[i].fromGpu(g[i])
+  x.copyFromGpu(g)
+
 iterator gpuRange*(n: int): int =
   when backendIsGpu:
     let s = gpuNumThreads()
@@ -66,6 +101,32 @@ iterator gpuRange*(n: int): int =
     let i1 = (n*(id+1)) div s
     for i in i0 ..< i1:
       yield i
+
+type
+  SiteV*[V:static int] = distinct int
+template `[]`*(x: SiteV): int = int(x)
+
+when backendIsGpu:
+  iterator gpuSites*(n:int, V:static int): SiteV[1] =
+    for s in gpuRange(n*V):
+      yield SiteV[1](s)
+else:
+  iterator gpuSites*(n:int, V:static int): SiteV[V] =
+    for s in gpuRange(n):
+      yield SiteV[V](s)
+
+template gpuType*[T](t: typedesc[Simd[T]]): typedesc =
+  Simd[array[T.numNumbers,T.numberType]]
+template gpuType*[T](t: typedesc[ComplexType[T]]): typedesc =
+  ComplexType[gpuType(T)]
+template gpuType*[N:static int; T](t: typedesc[VectorArray[N,T]]): typedesc =
+  VectorArray[N,gpuType(T)]
+template gpuType*[N,M:static int; T](t: typedesc[MatrixArray[N,M,T]]): typedesc =
+  MatrixArray[N,M,gpuType(T)]
+template gpuType*[T](t: typedesc[Color[T]]): typedesc =
+  Color[gpuType(T)]
+template gpuType*[V:static int, T](t: typedesc[Field[V,T]]): typedesc =
+  GpuField[V,gpuType(T)]
 
 when isMainModule:
   #import qex

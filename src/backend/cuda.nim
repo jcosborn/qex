@@ -1,4 +1,4 @@
-import macros
+import macros, strutils
 import base/metaUtils
 import expr
 
@@ -44,6 +44,8 @@ template dataAddr*(x: typed): pointer =
   else: pointer(unsafeAddr(x))
   #else: x
 
+proc cudaSetDevice*(device: cint): cudaError_t
+  {.importC,header:"cuda_runtime.h".}
 proc cudaGetLastError*(): cudaError_t
   {.importC,header:"cuda_runtime.h".}
 proc cudaGetErrorStringX*(error: cudaError_t): ptr char
@@ -74,6 +76,11 @@ template cudaMemcpy*(dst,src: typed, count: csize_t,
   let psrc = toPointer(src)
   cudaMemcpyX(pdst, psrc, count, kind)
 
+proc gpuInit*(device: int) =
+  let err = cudaSetDevice(cint device)
+  if err:
+    echo "CUDA error: ", cast[cint](err)
+  doAssert(not err)
 template gpuMalloc*(size: SomeInteger):pointer =
   var p:pointer
   let err = cudaMalloc(p, csize_t size)
@@ -235,10 +242,14 @@ proc genCpuFinalize(n:seq[NimNode], a: NimNode):NimNode =
 
 macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
   let li = body.lineinfo
-  template target(nn, tpb, v, arg, cpuPrepare, cpuFinalize, body: untyped): untyped =
+  let lis = li.split({'/','.','(',','})
+  let fl = lis[^4] & "(" & lis[^2] & ")"
+  template target(fl, nn, tpb, v, arg, cpuPrepare, cpuFinalize, body: untyped): untyped =
     mixin toGpu, getGpu, fromGpu
     block:
+      tic(fl)
       var v = cpuPrepare  # kernel argument tuple
+      toc("cpuPrepare")
       type ByCopy[T] {.bycopy.} = object
         d: T
       proc kern(arg: ByCopy[type(v)]) {.cdecl,cudaGlobal.} =
@@ -252,11 +263,15 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
       #echo "launching kernel"
       threadSingle:
         cudaLaunch(kern, blocksPerGrid, threadsPerBlock, v)
+      toc("launch")
       proc finalize {.gensym.} =
+        tic(fl)
         threadSingle:
           discard cudaDeviceSynchronize()
+        toc("wait")
         cpuFinalize
         #threadBarrier()
+        toc("cpuFinalize")
       finalize
   let
     varg = gensym(nskVar, "varg")
@@ -269,7 +284,7 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
     v = prepareVars(body,deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
     cpuFinalize = genCpuFinalize(v, varg)
-  result = getast(target(nn0, tpb0, varg, arg, cpuPrepare, cpuFinalize, body))
+  result = getast(target(fl, nn0, tpb0, varg, arg, cpuPrepare, cpuFinalize, body))
   case dumpKernels
   of 1:
     echo li

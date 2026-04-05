@@ -34,10 +34,10 @@ template syclDefs(body: untyped) =
   #var item {.item1.}: Item1
   #template getThreadNum: auto {.used.} = item[]
   #template getNumThreads: auto {.used.} = item.getRange
-  {.emit:["#define nimZeroMem(b,len) memset((b),0,(len))"].}
-  #inlineProcs:
-  body
-  {.emit:["#undef nimZeroMem"].}
+  #{.emit:["#define nimZeroMem(b,len) memset((b),0,(len))"].}
+  inlineProcs:
+    body
+  #{.emit:["#undef nimZeroMem"].}
 
 proc genCpuPrepare(n:seq[NimNode]):NimNode =
   template r(x,v:untyped):untyped =

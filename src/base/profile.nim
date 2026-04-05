@@ -33,7 +33,7 @@ template `-`*(x,y: TicType): TicType = TicType(x.int64 - y.int64)
 
 var
   ## Drop children timers if the proportion of their overhead is larger than this.
-  DropWasteTimerRatio* = floatParam("dropRatio", 0.05)
+  DropWasteTimerRatio* = floatParam("dropRatio", if intParam("prof",0)==0: 0.05 else: 1.0)
   VerboseTimer* = false  ## If true print out all the timers during execution.
 
 ##[
