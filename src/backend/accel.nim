@@ -89,8 +89,8 @@ template fromGpu*(x: seq, g: gpuSeq) =
 
 iterator gpuRange*(n: int): int =
   when backendIsGpu:
-    let s = gpuNumThreads()
-    var i = gpuThreadNum()
+    let s = int gpuNumThreads()
+    var i = int gpuThreadNum()
     while i < n:
       yield i
       i += s
@@ -127,6 +127,11 @@ template gpuType*[T](t: typedesc[Color[T]]): typedesc =
   Color[gpuType(T)]
 template gpuType*[V:static int, T](t: typedesc[Field[V,T]]): typedesc =
   GpuField[V,gpuType(T)]
+
+template gpuSites*(lo: Layout): int = lo.nSites
+
+#import gpumem
+#export gpumem
 
 when isMainModule:
   #import qex

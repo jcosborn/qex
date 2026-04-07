@@ -13,9 +13,9 @@ type
     lastCopyOut*: int  # useCount of last copy from gpu
   # toGpu is called before kernel if it will be read on the gpu and was written on cpu since last sync
   # fromGpu is called after kernel if it was written on gpu and will be read on cpu later
-proc `=destroy`[C,G](x: var CpuGpu[C,G]) =
-  mixin destroy
-  destroy(x)  # forward destructor
+#proc `=destroy`[C,G](x: var CpuGpu[C,G]) =
+#  mixin destroy
+#  destroy(x)  # forward destructor
 
 template cpuUnused*(x: CpuGpu | ref CpuGpu) =
   x.noReadCpu = true

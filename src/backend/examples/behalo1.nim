@@ -174,7 +174,11 @@ proc testPlaq(g:auto) =
     for i in 0..<6:
       p[i] := 0
   var pl = newSeq[float](6)
+  var gs = newGpuSum[array[6,float]](lo.nSites)
+  #var gs = newGpuSum[float](lo.nSites)
   toc "create fields"
+  proc gpuSite(x: GpuField): auto =
+    for i in gpuSites(x): return x[i]
   when false:
     threads:
       for i in g[0]:
@@ -188,8 +192,10 @@ proc testPlaq(g:auto) =
             p[k][i] += a.adj * b
             inc k
   else:
-    onGpu:
+    onGpu(lo):
       template g(i:int):auto = h[i].field
+      var tpl: array[6,float]
+      #var tpl: array[6,typeof redot(g(0).gpuSite,g(0).gpuSite)]
       for s in gpuSites(g(0)):
         let i = (s.V*s[]) div g(0).V
         let j = (s.V*s[]) mod g(0).V
@@ -202,17 +208,25 @@ proc testPlaq(g:auto) =
             let s1 = (typeof s)((n1*g(0).V+j)div(s.V))
             let a = g(mu)[s] * h[nu][s0]
             let b = g(nu)[s] * h[mu][s1]
-            p[k][s] += a.adj * b
+            #p[k][s] += a.adj * b
+            #static: echo $a.type
+            #let t = redot(a,b)
+            #static: echo $t.type
+            tpl[k] += redot(a, b).simdSum
             inc k
+      #var tplf: array[6,float]
+      gs.reduce tpl
   toc "p"
-  threads:
-    for k in 0..<6:
-      pl[k] = p[k].trace.re
+  #threads:
+  for k in 0..<6:
+    #pl[k] = p[k].trace.re
+    pl[k] = gs.value[k]
   toc "pl"
   let vf = 1.0/(g[0][0].nRows*lo.physVol)
   let ph = pl * vf
   let pp = 6.0 * g.plaq
   let d = ph - pp
+  echo ph
   echo d
   echo "norm2 diff: ", sum(d*d)
   #echo pl * vf

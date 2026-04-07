@@ -200,7 +200,10 @@ proc prepareVars*(n:NimNode, deref:proc): seq[NimNode] =
         continue
       of nnkDotExpr:
         #echo "nnkDotExpr: ", n[i].repr, "  ", n[i][0].treerepr
-        n[i].go 0
+        #n[i].go 0
+        var s = newNimNode(nnkStmtList).add n[i][0]
+        s.go
+        n[i][0] = s[0]
         continue
       of nnkTemplateDef:
         #echo n[i].treerepr

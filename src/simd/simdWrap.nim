@@ -60,6 +60,9 @@ attrib(numNumbers)
 attrib(simdType)
 attrib(simdLength)
 
+template simdLength*[T:array](x: typedesc[Simd[T]]): auto = T.high - T.low
+template simdLength*[T:array](x: Simd[T]): auto = T.high - T.low
+
 template noSimd*[T](x: typedesc[Simd[T]]): typedesc =
   numberType(type T)
 
@@ -244,6 +247,9 @@ template trace*(x: Simd): untyped = x
 template simdReduce*(x: Simd): untyped =
   mixin simdReduce
   simdReduce(x[])
+template simdReduce*(x: Simd[array]): untyped =
+  mixin sum
+  sum(x[])
 template simdMaxReduce*(x: Simd): untyped =
   mixin simdMaxReduce
   simdMaxReduce(x[])

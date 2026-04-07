@@ -17,6 +17,7 @@ type
 template gpuSites*(x: GpuField): auto = gpuSites(x.n, x.V)
 
 proc bytes*[T:GpuField](x: T): int = x.n * sizeof(T.T)
+proc bytes*[T:GpuField](x: ref T): int = x.n * sizeof(T.T)
 
 template index*[T;V,L:static int](X: typedesc[GpuField[V,T]], I: typedesc[SiteV[L]]): typedesc =
   when V == L:
@@ -77,23 +78,30 @@ proc `[]`*[X:SomeGpuField,Y:SomeGpuField2,I:SiteV](e: GpuFieldExpr["*",(X,Y)], i
   r
 
 type
-  CgField*[T] = CpuGpu[T, gpuType(T)]
-  CgFld*[C:Field,G:GpuField] = CpuGpu[C,G]
-  CgFld2*[C:Field,G:GpuField] = CpuGpu[C,G]
+  CgField*[T] = CpuGpu[T, ref gpuType(T)]
+  CgFld*[C:Field,G:GpuField] = CpuGpu[C, ref G]
+  CgFld2*[C:Field,G:GpuField] = CpuGpu[C, ref G]
 template `[]`*(x: CgFld, i: int): auto = x.cpu[i]
+template numberType*[T:CgFld](x: typedesc T): typedesc = numberType(T.C)
 template numberType*[T:CgFld](x: T): typedesc = numberType(T.C)
 template `:=`*(r: CgFld, x: SomeNumber) =
   r.cpu := x
 template gpuSites*(x: CgFld): auto = gpuSites(x.gpu.n, x.gpu.V)
 
-proc destroy*[C:Field,G:GpuField](x: var CpuGpu[C,G]) =
+#proc destroy*[C:Field,G:GpuField](x: var CpuGpu[C,G]) =
+#  when backendIsGpu:
+#    if x.gpu.p != nil:
+#      gpuFree(x.gpu.p)
+proc finalize*[G:GpuField](x: ref G) =
   when backendIsGpu:
-    if x.gpu.p != nil:
-      gpuFree(x.gpu.p)
+    if x.p != nil:
+      gpuFree(x.p)
 proc newCgField*(c: Field): auto =
   type T = typeof c
   var r: CgField[T]
   r.cpu = c
+  #r.gpu.new()
+  r.gpu.new(finalize[typeof r.gpu[]])
   r.gpu.n = c.l.nSitesOuter
   when backendIsGpu:
     r.gpu.p = cast[type r.gpu.p](gpuMalloc(r.gpu.bytes))
@@ -107,14 +115,14 @@ proc CgColorMatrixS*(lo: Layout): auto = newCgField(lo.ColorMatrixS())
 proc CgColorVectorD*(lo: Layout): auto = newCgField(lo.ColorVectorD())
 proc CgColorMatrixD*(lo: Layout): auto = newCgField(lo.ColorMatrixD())
 
-template toGpu*(g: var GpuField, x: CgFld, cpy: bool) =
+template toGpu*(g: ref GpuField, x: CgFld, cpy: bool) =
   when backendIsGpu:
     if cpy:
       gpuMemCpyToGPU(g.p, addr x.cpu[0], g.bytes)
 
-template getGpu*(x: CgFld, g: GpuField): auto = g
+template getGpu*(x: CgFld, g: ref GpuField): auto = g[]
 
-template fromGpu*(x: CgFld, g: GpuField, cpy: bool) =
+template fromGpu*(x: CgFld, g: ref GpuField, cpy: bool) =
   when backendIsGpu:
     if cpy:
       gpuMemCpyToCPU(addr x.cpu[0], g.p, g.bytes)

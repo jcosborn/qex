@@ -93,11 +93,25 @@ template onGpu*(body: untyped) =
   let finalize = onGpuNoWait(body)
   finalize()
 template onGpu*(n,body: untyped) =
-  let finalize = onGpuNoWait(n, body)
+  let finalize = onGpuNoWait(gpuSites(n), body)
   finalize()
 template onGpu*(n,b,body: untyped) =
-  let finalize = onGpuNoWait(n, b, body)
+  let finalize = onGpuNoWait(gpuSites(n), b, body)
   finalize()
 
 #template onGpu*(n,x:untyped) = onGpu(x)
 #template onGpu*(n,t,x:untyped) = onGpu(x)
+
+type GpuSum*[T] = object
+    val: T
+proc newGpuSum*[T](n: int): GpuSum[T] =
+  discard
+template value*(x: GpuSum): auto = x.val
+template toGpu*(x: GpuSum): auto = addr x
+template getGpu*(x: GpuSum, g: ptr GpuSum): auto = g[]
+template fromGpu*(x: GpuSum, g: ptr GpuSum): auto = discard
+
+proc reduce*[T](gs: var GpuSum[T], x: T) =
+  var t = x
+  t.threadSum
+  gs.val = t

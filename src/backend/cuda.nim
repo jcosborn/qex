@@ -1,5 +1,5 @@
 import macros, strutils
-import base/metaUtils
+import base/[metaUtils,profile]
 import expr
 
 const dumpKernels {.intdefine.} = 0
@@ -17,7 +17,7 @@ macro procInst*(p: typed): auto =
 
 type
   CudaDim3* {.importc:"dim3",header:"cuda_runtime.h".} = object
-    x*, y*, z*: cint
+    x*, y*, z*: cuint
   cudaError_t* {.importc,header:"cuda_runtime.h".} = object
   cudaMemcpyKind* {.importc,header:"cuda_runtime.h".} = object
 var
@@ -36,13 +36,21 @@ template toPointer*(x: typed): pointer =
   elif x is ptr: x
   elif x is seq: toPointer(x[0])
   else: pointer(unsafeAddr(x))
+#template dataAddr*(x: typed): pointer =
+#  #dumpType: x
+#  when x is seq: dataAddr(x[0])
+#  elif x is array: dataAddr(x[0])
+#  #elif x is ptr: x
+#  else: pointer(unsafeAddr(x))
+#  #else: x
 template dataAddr*(x: typed): pointer =
-  #dumpType: x
-  when x is seq: dataAddr(x[0])
-  elif x is array: dataAddr(x[0])
-  #elif x is ptr: x
-  else: pointer(unsafeAddr(x))
-  #else: x
+  when x is seq:
+    var a = addr x[0]
+    dataAddr(a)
+  elif x is array:
+    vara a = addr x[0]
+    dataAddr(a)
+  else: pointer(addr x)
 
 proc cudaSetDevice*(device: cint): cudaError_t
   {.importC,header:"cuda_runtime.h".}
@@ -67,6 +75,12 @@ proc cudaFree*(p: pointer): cudaError_t
   {.importC,header:"cuda_runtime.h".}
 proc cudaMallocManaged*(p: ptr pointer, size: csize_t): cudaError_t
   {.importC,header:"cuda_runtime.h".}
+proc cudaMallocHost*(p: ptr pointer, size: csize_t): cudaError_t
+  {.importC,header:"cuda_runtime.h".}
+
+proc cudaMemset*(devPtr: pointer, value: cint, count: csize_t):
+  cudaError_t {.importC:"cudaMemset",header:"cuda_runtime.h".}
+#template cudaMemsetX*(devPtr: pointer, value: SomeInteger, count: SomeInteger)
 
 proc cudaMemcpyX*(dst,src: pointer, count: csize_t, kind: cudaMemcpyKind):
   cudaError_t {.importC:"cudaMemcpy",header:"cuda_runtime.h".}
@@ -85,28 +99,44 @@ template gpuMalloc*(size: SomeInteger):pointer =
   var p:pointer
   let err = cudaMalloc(p, csize_t size)
   if err:
-    echo err
+    echo "gpuMalloc: ", err
     p = cast[pointer](0)
   p
+template gpuMalloc[T](x: var ptr UncheckedArray[T], n: int) =
+  x = cast[typeof x](gpuMalloc(n*sizeof(T)))
+template gpuMalloc[T](x: ptr T) =
+  x = cast[typeof x](gpuMalloc(sizeof(T)))
 template gpuFree*(p:pointer) =
   let err = cudaFree(p)
   if err:
     echo err
     quit cast[cint](err)
+proc gpuMemset*(devPtr: pointer, value: SomeInteger, count: SomeInteger) =
+  let err = cudaMemset(devPtr, cint value, csize_t count)
+  if err:
+    echo "gpuMemset: ", err
 #proc gpuMemCpyToGpu*(dst,src: pointer, count: SomeInteger):cint {.discardable.} =
 proc gpuMemCpyToGpu*(dst,src: pointer, count: SomeInteger) =
   let err = cudaMemcpy(dst,src,csize_t count,cudaMemcpyHostToDevice)
   if err:
-    echo err
+    echo "gpuMemCpyToGpu: ", err
 #proc gpuMemCpyToCpu*(dst,src: pointer, count: SomeInteger):cint {.discardable.} =
-proc gpuMemCpyToCpu*(dst,src: pointer, count: SomeInteger) =
+template gpuMemCpyToCpu*(dst,src: pointer, count: SomeInteger) =
   let err = cudaMemcpy(dst,src,csize_t count,cudaMemcpyDeviceToHost)
   if err:
-    echo err
+    echo instantiationInfo()
+    echo "gpuMemCpyToCpu: ", err
 
 proc cudaLaunchKernel(p:pointer, gd,bd: CudaDim3, args: ptr pointer):
   cudaError_t {.importC,header:"cuda_runtime.h".}
 
+proc syncThreads() {.importc:"__syncthreads",header:"cuda_runtime.h".}
+proc threadFence() {.importc:"__threadfence",header:"cuda_runtime.h".}
+proc atomicInc(address: ptr cuint, val: cuint): cuint {.importc,header:"cuda_runtime.h".}
+template atomicInc(address: ptr cuint, val: SomeInteger): auto =
+  atomicInc(address, cuint val)
+#template sharedArray(x: untyped, n: static int, T: typedesc) {.dirty.} =
+#  var x {.shared.}: array[n,T]
 proc cudaDeviceReset*(): cudaError_t
   {.importC,header:"cuda_runtime.h".}
 proc cudaDeviceSynchronize*(): cudaError_t
@@ -116,22 +146,14 @@ proc cudaDeviceSynchronize*(): cudaError_t
 #proc fprintf*(stream:ptr FILE,fmt:cstring):cint {.importc,varargs,header:"<stdio.h>".}
 #proc malloc*(size: csize_t):pointer {.importc,header:"<stdlib.h>".}
 
-#template getGridDim*: untyped {.used.} =
-#  var gridDim{.global,importC,noDecl.}: CudaDim3
-#  gridDim
-#template getBlockIdx*: untyped {.used.} =
-#  var blockIdx{.global,importC,noDecl.}: CudaDim3
-#  blockIdx
-#template getBlockDim*: untyped {.used.} =
-#  var blockDim{.global,importC,noDecl.}: CudaDim3
-#  blockDim
-#template getThreadIdx*: untyped {.used.} =
-#  var threadIdx{.global,importC,noDecl.}: CudaDim3
-#  threadIdx
 var gridDim*{.importC,header:"cuda_runtime.h".}: CudaDim3
 var blockDim*{.importC,header:"cuda_runtime.h".}: CudaDim3
 var blockIdx*{.importC,header:"cuda_runtime.h".}: CudaDim3
 var threadIdx*{.importC,header:"cuda_runtime.h".}: CudaDim3
+template getGridDim*: auto = gridDim
+template getBlockIdx*: auto = blockIdx
+template getBlockDim*: auto = blockDim
+template getThreadIdx*: auto = threadIdx
 template gpuThreadNum*: auto =
   blockDim.x * blockIdx.x + threadIdx.x
 template gpuNumThreads*: auto =
@@ -151,6 +173,7 @@ template cudaDefs(body: untyped): untyped {.dirty.} =
   bind inlineProcs
   {.emit:["#define nimZeroMem(b,len) memset((b),0,(len))"].}
   {.emit:["#define nimCopyMem(a,b,len) memcpy((a),(b),(len))"].}
+  {.pragma: shared, noInit, codegendecl:"__shared__ $# $#".}
   inlineProcs:
     body
   {.emit:["#undef nimZeroMem"].}
@@ -160,10 +183,10 @@ template cudaLaunch*(p: proc {.cdecl.}; blocksPerGrid,threadsPerBlock: SomeInteg
                      arg: varargs[pointer,dataAddr]) =
   var pp = pointer p
   var gridDim, blockDim: CudaDim3
-  gridDim.x = blocksPerGrid
+  gridDim.x = cuint blocksPerGrid
   gridDim.y = 1
   gridDim.z = 1
-  blockDim.x = threadsPerBlock
+  blockDim.x = cuint threadsPerBlock
   blockDim.y = 1
   blockDim.z = 1
   var args: array[arg.len, pointer]
@@ -171,7 +194,7 @@ template cudaLaunch*(p: proc {.cdecl.}; blocksPerGrid,threadsPerBlock: SomeInteg
   #echo "really launching kernel"
   let err = cudaLaunchKernel(pp, gridDim, blockDim, addr args[0])
   if err:
-    echo err
+    echo "cudaLaunch: ", err
     quit cast[cint](err)
 
 template `<<`*(p: proc, x: tuple): untyped = (p,x)
@@ -311,45 +334,177 @@ template onGpuNowait*(n,body: untyped): auto =
 #template onGpuNowait*(n,b,body: untyped): auto =
 #  onGpuNoWait(n, b, body)
 
+template gpuSites(n: int): int = n
 template onGpu*(body: untyped) =
   let finalize = onGpuNoWait(body)
   finalize()
 template onGpu*(n,body: untyped) =
-  let finalize = onGpuNoWait(n, body)
+  mixin gpuSites
+  let finalize = onGpuNoWait(gpuSites(n), body)
   finalize()
 template onGpu*(n,b,body: untyped) =
-  let finalize = onGpuNoWait(n, b, body)
+  mixin gpuSites
+  let finalize = onGpuNoWait(gpuSites(n), b, body)
   finalize()
+
+#{.emit:"/*INCLUDESECTION*/#include <cooperative_groups.h>".}
+proc importCG() {.header:"<cooperative_groups.h>",importcpp:"@".}
+proc warpSumSmall*[T](x: T): T =  # for up to 32 bytes
+  importCG()
+  result = x
+  {.emit:["""
+  namespace cg = cooperative_groups;
+  const int warp_size = 32;
+  cg::thread_block cta = cg::this_thread_block();
+  cg::thread_block_tile<warp_size> tile = cg::tiled_partition<warp_size>(cta);
+  for (int offset = warp_size / 2; offset >= 1; offset /= 2)
+     """,result,""" += tile.shfl_down(""",result,""", offset);"""].}
+template atomic_type[N:static int,T](t: typedesc[array[N,T]]): typedesc = T
+proc cmemcpy(dest,src: pointer, count: csize_t): pointer {.importc:"memcpy",header:"string.h".}
+proc warpSumLarge*[T](x: T): T =  # for over 32 bytes
+  importCG()
+  type atomic_t = atomic_type(T)
+  const n = sizeof(T) div sizeof(atomic_t)
+  #doAssert(sizeof(T) == n * sizeof(atomic_t))
+  var sum_tmp {.noInit.}: array[n, atomic_t]
+  discard cmemcpy(addr sum_tmp, addr x, csize_t sizeof(T))
+  for i in 0..<n:
+    sum_tmp[i] = warpSumSmall(sum_tmp[i])
+  discard cmemcpy(addr result, addr sum_tmp, csize_t sizeof(T))
+template warpSum*[T](x: T): T =
+  when sizeof(T) <= 32:
+    warpSumSmall(x)
+  else:
+    warpSumLarge(x)
+
+#proc warpBroadcast*[T](x: T): T =
+#  cg::thread_block cta = cg::this_thread_block();
+#  cg::thread_block_tile<warp_size> tile = cg::tiled_partition<warp_size>(cta);
+#  result = tile.shfl(x, 0);
+
+proc blockSum*[T](x: T): T = # only thread 0 gets result
+  const max_block_size = 1024;
+  const warp_size = 32;
+  const max_items = max_block_size div warp_size;
+  let thread_idx = threadIdx.x;
+  let block_size = blockDim.x;
+  let warp_idx = thread_idx div warp_size;
+  let warp_items = (block_size + warp_size - 1) div warp_size;
+  # first do warp reduce
+  result = warpSum(x)
+  if warp_items == 1: return
+  # now do reduction between warps
+  syncThreads()
+  #var storage {.noInit,codegendecl:"__shared__ $# $#".}: array[max_items, T]
+  var storage {.shared.}: array[max_items, T]
+  #sharedArray(storage, max_items, T)
+  # if first thread in warp, write result to shared memory
+  if thread_idx mod warp_size == 0: storage[warp_idx] = result
+  syncThreads()
+  if warp_idx == 0:
+    #if constexpr (max_items > device::warp_size()) { // never true for max block size 1024, warp = 32
+    #  value = r.init();
+    #  for (auto i = thread_idx; i < warp_items; i += device::warp_size())
+    #    value = r(storage[batch * warp_items + i], value);
+    #} else { // optimized path where we know the final reduction will fit in a warp
+    result = if thread_idx < warp_items: storage[thread_idx] else: default(T)
+    #}
+    result = warpSum(result)
+
+type GpuSum*[T] = object
+    partial: ptr UncheckedArray[T]
+    npartial: cuint
+    #maxblock: int
+    val: ptr T
+    count: ptr cuint
+proc newGpuSum*[T](n: int): GpuSum[T] =
+  let bytes = n * sizeof(T)
+  result.partial.gpuMalloc(n)
+  result.partial.gpuMemset(0, n*sizeof(T))
+  result.npartial = cuint n
+  let err = cudaMallocHost((ptr pointer)(addr result.val), csize_t sizeof(T))
+  result.count.gpuMalloc()
+  result.count.gpuMemset(0, sizeof(result.count[]))
+template value*(x: GpuSum): auto = x.val[]
+template toGpu*(x: GpuSum): auto = x
+template getGpu*(x,g: GpuSum): auto = g
+template fromGpu*(x,g: GpuSum): auto = discard
+
+proc reduce*[T](gs: GpuSum[T], x: T) =
+  #__shared__ bool isLastBlockDone;
+  var isLastBlockDone {.shared.}: bool
+  var aggregate = blockSum(x)
+  if threadIdx.x == 0:
+    if blockIdx.x < gs.npartial:
+      gs.partial[blockIdx.x] = aggregate;
+    threadFence() # flush result
+    # increment global block counter
+    let value = atomicInc(gs.count, gridDim.x)
+    # determine if last block
+    isLastBlockDone = (value == (gridDim.x - 1))
+  syncThreads()
+  # finish the reduction if last block
+  if isLastBlockDone:
+    var i = threadIdx.x
+    var sum = default(T)
+    let n = min(gs.npartial, gridDim.x)
+    while i < n:
+      sum += gs.partial[i]
+      i += blockDim.x;
+    sum = blockSum(sum)
+    # write out the final reduced value
+    if threadIdx.x == 0:
+      gs.val[] = sum
+      gs.count[] = 0  # set to zero for next time
 
 when isMainModule:
   type FltArr = UncheckedArray[float32]
 
-  proc vectorAdd(A: FltArr; B: FltArr; C: var FltArr; n: int32) {.cudaGlobal.} =
-    var i = blockDim.x * blockIdx.x + threadIdx.x
-    if i < n:
-      C[i] = A[i] + B[i]
+  #proc vectorAdd(A: FltArr; B: FltArr; C: var FltArr; n: int32) {.cdecl,cudaGlobal.} =
+  #  var i = blockDim.x * blockIdx.x + threadIdx.x
+  #  if i < n:
+  #    C[i] = A[i] + B[i]
 
   proc test =
-    var n = 50000.cint
+    var n = 50000
     var
       a = newSeq[float32](n)
       b = newSeq[float32](n)
       c = newSeq[float32](n)
-    var threadsPerBlock: cint = 256
-    var blocksPerGrid: cint = (n + threadsPerBlock - 1) div threadsPerBlock
+    for i in 0..<n:
+      a[i] = 1
+      b[i] = 2
+    var threadsPerBlock = 256
+    var blocksPerGrid = (n + threadsPerBlock - 1) div threadsPerBlock
 
-    cudaLaunch(vectorAdd, blocksPerGrid, threadsPerBlock, a, b, c, n)
+    #cudaLaunch(vectorAdd, blocksPerGrid, threadsPerBlock, a, b, c, n)
+    #discard cudaDeviceSynchronize()
 
-    template getGpuPtr(x: int): untyped = x
-    template getGpuPtr[T](x: seq[T]): untyped = addr(x[0])
-    template `[]`(x: ptr SomeNumber, i: SomeInteger): untyped {.used.} =
-      cast[ptr UncheckedArray[type(x[])]](x)[][i]
-    template `[]=`(x: ptr SomeNumber, i: SomeInteger, y:untyped): untyped {.used.} =
-      cast[ptr UncheckedArray[type(x[])]](x)[][i] = y
+    template toGpu(x: SomeNumber): auto = x
+    template getGpu(x,g: SomeNumber): auto = g
+    template fromGpu(x,g: SomeNumber) = discard
 
+    proc toGpu[T](x: seq[T]): ptr UncheckedArray[T] =
+      let n = x.len
+      result = cast[typeof result](gpuMalloc(n*sizeof(T)))
+      #echo "p: ", cast[int](result)
+      gpuMemCpyToGpu(result, addr x[0], n*sizeof(T))
+    template getGpu(x: seq, g: ptr UncheckedArray): auto = g
+    template fromGpu[T](x: seq[T], g: ptr UncheckedArray[T]) =
+      let n = x.len
+      gpuMemCpyToCpu(addr x[0], g, n*sizeof(T))
+      # should free g
+
+    var gs = newGpuSum[float](n)
     onGpu(n):
-      let i = getBlockDim().x * getBlockIdx().x + getThreadIdx().x
+      let i = int getBlockDim().x * getBlockIdx().x + getThreadIdx().x
+      var r: typeof c[0]
       if i < n:
         c[i] = a[i] + b[i]
+        r = c[i]
+      gs.reduce r
+      #let s = warpSumSmall(c[i])
+    echo gs.val[]
+    #echo 3*n
 
   test()
