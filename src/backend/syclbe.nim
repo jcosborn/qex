@@ -10,6 +10,10 @@ let dev = defaultDevice()
 let q = dev.queue
 
 template gpuMalloc*(size: SomeInteger): pointer = mallocDevice(size, q)
+template gpuMalloc[T](x: var ptr UncheckedArray[T], n: int) =
+  x = cast[typeof x](gpuMalloc(n*sizeof(T)))
+template gpuMalloc[T](x: ptr T) =
+  x = cast[typeof x](gpuMalloc(sizeof(T)))
 template gpuFree*(device_ptr: pointer) = freeDevice(device_ptr, q)
 template gpuMemCpyToCPU*(dst: pointer, src: pointer; length: SomeInteger) =
   memcpy(q, dst, src, length)
@@ -107,23 +111,153 @@ macro onGpuQ*(q: Queue, n,b,body: untyped): auto =
 
 #var gpuNumThreadsRequest* = 0
 #var gpuBlockSizeRequest* = 0
+template gpuSites(n: int): int = n
 template onGpuNowait*(n,b,body: untyped): auto =
-  onGpuQ(q, n, b, body)
+  mixin gpuSites
+  onGpuQ(q, gpuSites(n), b, body)
 template onGpuNowait*(body: untyped): auto =
   let n = gpuDefaultNumThreads()
   onGpuNoWait(n, 0, body)
 template onGpuNowait*(n,body: untyped): auto =
-  onGpuNoWait(n, 0, body)
+  mixin gpuSites
+  onGpuNoWait(gpuSites(n), 0, body)
 
 template onGpu*(body: untyped) =
   let finalize = onGpuNoWait(body)
   finalize()
 template onGpu*(n,body: untyped) =
-  let finalize = onGpuNoWait(n, body)
+  mixin gpuSites
+  let finalize = onGpuNoWait(gpuSites(n), body)
   finalize()
 template onGpu*(n,b,body: untyped) =
-  let finalize = onGpuNoWait(n, b, body)
+  mixin gpuSites
+  let finalize = onGpuNoWait(gpuSites(n), b, body)
   finalize()
+
+proc subgroupSum*[T](x: T): T =  # only thread 0 gets result
+  result = x
+  let sg = getSubgroup()
+  let n = sg.size()
+  var offset = n div 2
+  while offset >= 1:
+    result += sg.shift_left(result, offset)
+    offset = offset div 2
+
+template `:=`*(r: LocalPtr[SomeNumber], x: SomeNumber) =
+  {.emit:["*",r," = ", x, ";"].}
+template `:=`*[N:static int,T](r: LocalPtr[array[N,T]], x: array[N,T]) =
+  for i in 0..<N:
+    r[i] = x[i]
+template `:=`*[N:static int,T](r: array[N,T], x: LocalPtr[array[N,T]]) =
+  for i in 0..<N:
+    r[i] = x[i]
+proc `[]`*[N:static int,T](x: LocalPtr[array[N,T]], i: int): LocalPtr[T] =
+  {.emit:[result," = &",x,"[0][",i,"];"].}
+proc `[]=`*[N:static int,T](x: LocalPtr[array[N,T]], i: int, y: auto) =
+  var t = x[i]
+  t := y
+proc `[]=`*[N:static int,T](x: array[N,T], i: int, y: LocalPtr[T]) =
+  {.emit:[x,"[",i,"] = *",y,";"].}
+
+proc blockSumSmall*[T](x: T): T = # only thread 0 gets result
+  const max_block_size = 1024
+  const min_warp_size = 16
+  const max_items = max_block_size div min_warp_size
+  let g = getGroup()
+  let sg = getSubgroup()
+  let thread_idx = g.localId #threadIdx.x;
+  let block_size = g.size #blockDim.x;
+  let warp_size = sg.size
+  let warp_idx = thread_idx div warp_size;
+  let warp_items = (block_size + warp_size - 1) div warp_size;
+  # first do warp reduce
+  result = subgroupSum(x)
+  #if warp_items == 1: return
+  # now do reduction between warps
+  g.barrier()
+  #var storage {.shared.}: array[max_items, T]
+  #var storage = localMem[array[max_items, T]](g)
+  #var storage = localMem(array[max_items, T], g)
+  var lp = localMem(array[max_items, T], g)
+  var storage = lp.get
+  # if first thread in warp, write result to shared memory
+  if thread_idx mod warp_size == 0: storage[warp_idx] = result
+  g.barrier()
+  if warp_idx == 0:
+    #result = if thread_idx < warp_items: storage[thread_idx][] else: default(T)
+    if thread_idx < warp_items:
+      result := storage[thread_idx]
+    else:
+      result = default(T)
+    result = subgroupSum(result)
+
+proc blockSum*[T](x: T): T = # only thread 0 gets result
+  const min_shared_mem = 48*1024 - sizeof(bool)  # bool used in GpuSum reduce
+  const max_items = 64
+  const max_size = min_shared_mem div max_items
+  when sizeof(T) <= max_size:
+    blockSumSmall(x)
+  else:
+    static: echo $x.type, "  ", sizeof(T)
+    {.error:"blockSum: type size too large".}  # FIXME later
+
+type GpuSum*[T] = object
+    partial: ptr UncheckedArray[T]
+    npartial: cint
+    #maxblock: int
+    val: ptr T
+    count: ptr cint
+proc newGpuSum*[T](ns: int): GpuSum[T] =
+  let n = (ns + 15) div 16  # divide by warp size
+  result.partial.gpuMalloc(n)
+  #result.partial.gpuMemset(0, n*sizeof(T))
+  q.memset(result.partial, 0, n*sizeof(T))
+  result.npartial = cint n
+  result.val = cast[ptr T](mallocHost(sizeof(T), q))
+  result.count.gpuMalloc()
+  #result.count.gpuMemset(0, sizeof(result.count[]))
+  q.memset(result.count, 0, sizeof(result.count[]))
+template value*(x: GpuSum): auto = x.val[]
+template toGpu*(x: GpuSum): auto = x
+template getGpu*(x,g: GpuSum): auto = g
+template fromGpu*(x,g: GpuSum): auto = discard
+
+proc atomicInc[T](x: ptr T): T =
+  var a = makeAtomicRef(x)
+  a.fetchAdd(1)
+
+proc reduce*[T](gs: GpuSum[T], x: T) =
+  let g = getGroup()
+  let threadIdx = g.localId #threadIdx.x;
+  let blockIdx = g.groupId #
+  let blockDim = g.size #blockDim.x;
+  let gridDim = g.range
+  var isLastBlockDone = false
+  var aggregate = blockSum(x)
+  if threadIdx == 0:
+    if blockIdx < gs.npartial:
+      gs.partial[blockIdx] = aggregate;
+    #threadFence() # flush result
+    {.emit:["sycl::atomic_fence(sycl::memory_order::release, sycl::memory_scope::device);"].}
+    # increment global block counter
+    let value = atomicInc(gs.count)
+    # determine if last block
+    isLastBlockDone = (value == (gridDim - 1))
+  isLastBlockDone = g.anyOf(isLastBlockDone)
+  #g.barrier()
+  # finish the reduction if last block
+  if isLastBlockDone:
+    var i = threadIdx
+    var sum = default(T)
+    let n = min(gs.npartial, gridDim)
+    while i < n:
+      sum += gs.partial[i]
+      i += blockDim;
+    sum = blockSum(sum)
+    # write out the final reduced value
+    if threadIdx == 0:
+      gs.val[] = sum
+      gs.count[] = 0  # set to zero for next time
 
 
 when isMainModule:

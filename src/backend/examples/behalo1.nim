@@ -191,7 +191,6 @@ proc testPlaq(g:auto) =
   #    p[i] := 0
   var pl = newSeq[float](6)
   var gs = newGpuSum[array[6,float]](lo.nSites)
-  #var gs = newGpuSum[float](lo.nSites)
   toc "create fields"
   proc gpuSite(x: GpuField): auto =
     for i in gpuSites(x): return x[i]
@@ -221,9 +220,12 @@ proc testPlaq(g:auto) =
             let a = g(mu)[s] * h[nu][smu]
             let b = g(nu)[s] * h[mu][snu]
             tpl[k] += redot(a, b).simdSum
+            #tpl[k] += redot(a, b)
             inc k
-      #var tplf: array[6,float]
       gs.reduce tpl
+      #var tplf: array[6,float]
+      #for k in 0..<6: tplf[k] = tpl[k].simdSum
+      #gs.reduce tplf
   toc "p"
   #threads:
   for k in 0..<6:

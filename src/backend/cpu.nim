@@ -80,9 +80,12 @@ macro onGpuNowait*(n,b,body: untyped): auto =
 
 var gpuNumThreadsRequest* = 0
 var gpuBlockSizeRequest* = 0
+template gpuSites(n: int): int = n
 template onGpuNowait*(body: untyped): auto =
   onGpuNoWait(gpuNumThreadsRequest, gpuBlockSizeRequest, body)
-template onGpuNowait*(n,body: untyped): auto =
+template onGpuNowait*(n0,body: untyped): auto =
+  mixin gpuSites
+  let n = gpuSites(n0)
   var b = gpuBlockSizeRequest
   while b > n: b = b div 2
   onGpuNoWait(n, b, body)
@@ -93,9 +96,11 @@ template onGpu*(body: untyped) =
   let finalize = onGpuNoWait(body)
   finalize()
 template onGpu*(n,body: untyped) =
+  mixin gpuSites
   let finalize = onGpuNoWait(gpuSites(n), body)
   finalize()
 template onGpu*(n,b,body: untyped) =
+  mixin gpuSites
   let finalize = onGpuNoWait(gpuSites(n), b, body)
   finalize()
 

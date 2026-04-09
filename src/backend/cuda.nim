@@ -6,6 +6,51 @@ const dumpKernels {.intdefine.} = 0
 
 #{.passC:"--with-arch=sm_86".}
 #{.passL:"--with-arch=sm_86".}
+{.pragma: cudah, header:"cuda_runtime.h".}
+
+# vector types
+type
+  float2* {.importc,cudah,completeStruct.} = object
+    x,y: float32
+  double2* {.importc,cudah,completeStruct.} = object
+    x,y: float64
+  float3* {.importc,cudah,completeStruct.} = object
+    x,y,z: float32
+  double3* {.importc,cudah,completeStruct.} = object
+    x,y,z: float64
+  float4* {.importc,cudah,completeStruct.} = object
+    x,y,z,w: float32
+  double4* {.importc,cudah,completeStruct.} = object
+    x,y,z,w: float64
+  CudaVecTypes* = float2 | double2 | float3 | double3 | float4 | double4
+  CudaTypes* = int32 | int64 | float32 | float64 | CudaVecTypes
+template vecType[N:static int,T](t: typedesc[array[N,T]]): typedesc =
+  when T is float32:
+    when N == 1: float32
+    elif N == 2: float2
+    elif N == 3: float3
+    elif N == 4: float4
+    else: t
+  elif T is float64:
+    when N == 1: float64
+    elif N == 2: double2
+    elif N == 3: double3
+    elif N == 4: double4
+    else: t
+  else:
+    t
+template `+=`*(a,b: float2 | double2) =
+  a.x += b.x
+  a.y += b.y
+template `+=`*(a,b: float3 | double3) =
+  a.x += b.x
+  a.y += b.y
+  a.z += b.z
+template `+=`*(a,b: float4 | double4) =
+  a.x += b.x
+  a.y += b.y
+  a.z += b.z
+  a.w += b.w
 
 proc addChildrenFrom*(dst,src: NimNode): NimNode =
   for c in src: dst.add(c)
@@ -135,8 +180,6 @@ proc threadFence() {.importc:"__threadfence",header:"cuda_runtime.h".}
 proc atomicInc(address: ptr cuint, val: cuint): cuint {.importc,header:"cuda_runtime.h".}
 template atomicInc(address: ptr cuint, val: SomeInteger): auto =
   atomicInc(address, cuint val)
-#template sharedArray(x: untyped, n: static int, T: typedesc) {.dirty.} =
-#  var x {.shared.}: array[n,T]
 proc cudaDeviceReset*(): cudaError_t
   {.importC,header:"cuda_runtime.h".}
 proc cudaDeviceSynchronize*(): cudaError_t
@@ -325,16 +368,18 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
 
 var gpuBlockSizeRequest* = 64
 var gpuNumThreadsRequest* = 32*1024
+template gpuSites(n: int): int = n
 template onGpuNowait*(body: untyped): auto =
   onGpuNoWait(gpuNumThreadsRequest, gpuBlockSizeRequest, body)
-template onGpuNowait*(n,body: untyped): auto =
+template onGpuNowait*(n0,body: untyped): auto =
+  mixin gpuSites
+  let n = gpuSites(n0)
   var b = gpuBlockSizeRequest
   while b > n: b = b div 2
   onGpuNoWait(n, b, body)
 #template onGpuNowait*(n,b,body: untyped): auto =
 #  onGpuNoWait(n, b, body)
 
-template gpuSites(n: int): int = n
 template onGpu*(body: untyped) =
   let finalize = onGpuNoWait(body)
   finalize()
@@ -349,21 +394,36 @@ template onGpu*(n,b,body: untyped) =
 
 #{.emit:"/*INCLUDESECTION*/#include <cooperative_groups.h>".}
 proc importCG() {.header:"<cooperative_groups.h>",importcpp:"@".}
-proc warpSumSmall*[T](x: T): T =  # for up to 32 bytes
+proc warpSumSmall*[T:CudaTypes](x: T): T =  # for up to 32 bytes
   importCG()
   result = x
+  var t {.noInit.}: T
   {.emit:["""
   namespace cg = cooperative_groups;
   const int warp_size = 32;
   cg::thread_block cta = cg::this_thread_block();
   cg::thread_block_tile<warp_size> tile = cg::tiled_partition<warp_size>(cta);
-  for (int offset = warp_size / 2; offset >= 1; offset /= 2)
-     """,result,""" += tile.shfl_down(""",result,""", offset);"""].}
-template atomic_type[N:static int,T](t: typedesc[array[N,T]]): typedesc = T
+  for (int offset = warp_size / 2; offset >= 1; offset /= 2) {""",
+  t,""" = tile.shfl_down(""",result,""", offset);"""].}
+  result += t
+  {.emit:["}"].}
+
+template atomic_type*(t: CudaTypes): typedesc = t
+template atomic_type*[N:static int,T](t: typedesc[array[N,T]]): typedesc =
+  mixin atomic_type
+  type vt = vecType(t)
+  when vt is CudaTypes:
+    vt
+  else:
+    when N mod 2 == 0:
+      atomic_type(array[N div 2, T])
+    else:
+      T
 proc cmemcpy(dest,src: pointer, count: csize_t): pointer {.importc:"memcpy",header:"string.h".}
 proc warpSumLarge*[T](x: T): T =  # for over 32 bytes
   importCG()
   type atomic_t = atomic_type(T)
+  static: echo "type: ", $T, "  atomic_t: ", $atomic_t
   const n = sizeof(T) div sizeof(atomic_t)
   #doAssert(sizeof(T) == n * sizeof(atomic_t))
   var sum_tmp {.noInit.}: array[n, atomic_t]
@@ -371,8 +431,9 @@ proc warpSumLarge*[T](x: T): T =  # for over 32 bytes
   for i in 0..<n:
     sum_tmp[i] = warpSumSmall(sum_tmp[i])
   discard cmemcpy(addr result, addr sum_tmp, csize_t sizeof(T))
+
 template warpSum*[T](x: T): T =
-  when sizeof(T) <= 32:
+  when sizeof(T) <= 32 and T is CudaTypes:
     warpSumSmall(x)
   else:
     warpSumLarge(x)
@@ -382,34 +443,36 @@ template warpSum*[T](x: T): T =
 #  cg::thread_block_tile<warp_size> tile = cg::tiled_partition<warp_size>(cta);
 #  result = tile.shfl(x, 0);
 
-proc blockSum*[T](x: T): T = # only thread 0 gets result
-  const max_block_size = 1024;
-  const warp_size = 32;
-  const max_items = max_block_size div warp_size;
-  let thread_idx = threadIdx.x;
-  let block_size = blockDim.x;
-  let warp_idx = thread_idx div warp_size;
-  let warp_items = (block_size + warp_size - 1) div warp_size;
+proc blockSumSmall*[T](x: T): T = # only thread 0 gets result
+  const max_block_size = 1024
+  const warp_size = 32
+  const max_items = max_block_size div warp_size
+  let thread_idx = threadIdx.x
+  let block_size = blockDim.x
+  let warp_idx = thread_idx div warp_size
+  let warp_items = (block_size + warp_size - 1) div warp_size
   # first do warp reduce
   result = warpSum(x)
   if warp_items == 1: return
   # now do reduction between warps
   syncThreads()
-  #var storage {.noInit,codegendecl:"__shared__ $# $#".}: array[max_items, T]
   var storage {.shared.}: array[max_items, T]
-  #sharedArray(storage, max_items, T)
   # if first thread in warp, write result to shared memory
   if thread_idx mod warp_size == 0: storage[warp_idx] = result
   syncThreads()
   if warp_idx == 0:
-    #if constexpr (max_items > device::warp_size()) { // never true for max block size 1024, warp = 32
-    #  value = r.init();
-    #  for (auto i = thread_idx; i < warp_items; i += device::warp_size())
-    #    value = r(storage[batch * warp_items + i], value);
-    #} else { // optimized path where we know the final reduction will fit in a warp
     result = if thread_idx < warp_items: storage[thread_idx] else: default(T)
-    #}
     result = warpSum(result)
+
+proc blockSum*[T](x: T): T = # only thread 0 gets result
+  const min_shared_mem = 48*1024 - sizeof(bool)  # bool used in GpuSum reduce
+  const max_items = 32
+  const max_size = min_shared_mem div max_items
+  when sizeof(T) <= max_size:
+    blockSumSmall(x)
+  else:
+    static: echo $x.type, "  ", sizeof(T)
+    {.error:"blockSum: type size too large".}  # FIXME later
 
 type GpuSum*[T] = object
     partial: ptr UncheckedArray[T]
@@ -417,8 +480,8 @@ type GpuSum*[T] = object
     #maxblock: int
     val: ptr T
     count: ptr cuint
-proc newGpuSum*[T](n: int): GpuSum[T] =
-  let bytes = n * sizeof(T)
+proc newGpuSum*[T](ns: int): GpuSum[T] =
+  let n = (ns + 31) div 32  # divide by warp size
   result.partial.gpuMalloc(n)
   result.partial.gpuMemset(0, n*sizeof(T))
   result.npartial = cuint n
@@ -431,7 +494,6 @@ template getGpu*(x,g: GpuSum): auto = g
 template fromGpu*(x,g: GpuSum): auto = discard
 
 proc reduce*[T](gs: GpuSum[T], x: T) =
-  #__shared__ bool isLastBlockDone;
   var isLastBlockDone {.shared.}: bool
   var aggregate = blockSum(x)
   if threadIdx.x == 0:
