@@ -59,6 +59,10 @@ macro makeCall*(p: proc, x: tuple): NimNode =
 
 proc omp_target_alloc*(size: csize_t, device_num: cint): pointer {.omp.}
 proc omp_target_free*(device_ptr: pointer, device_num: cint) {.omp.}
+proc omp_target_alloc_host*(size: csize_t, device_num: cint): pointer {.omp.}
+proc omp_target_free_host*(device_ptr: pointer, device_num: cint) {.omp.}
+proc omp_target_alloc_shared*(size: csize_t, device_num: cint): pointer {.omp.}
+proc omp_target_free_shared*(device_ptr: pointer, device_num: cint) {.omp.}
 proc omp_target_memcpy*(dst: pointer, src: pointer;
     length, dst_offset, src_offset: csize_t;
     dst_device_num, src_device_num: cint): cint {.omp.}
@@ -66,9 +70,15 @@ proc omp_get_default_device*: cint {.omp.}
 proc omp_get_initial_device*: cint {.omp.}
 proc omp_get_num_teams*: cint {.omp.}
 proc omp_get_team_num*: cint {.omp.}
+proc omp_alloc*(size: SomeInteger): pointer =
+    {.emit:["omp_alloc(",size,", omp_default_mem_alloc);"].}
 
 template omp_target_alloc*(size: SomeNumber): pointer =
   omp_target_alloc(csize_t size, omp_get_default_device())
+template omp_target_alloc_host*(size: SomeNumber): pointer =
+  omp_target_alloc_host(csize_t size, omp_get_default_device())
+template omp_target_alloc_shared*(size: SomeNumber): pointer =
+  omp_target_alloc_shared(csize_t size, omp_get_default_device())
 template omp_target_memcpy_tocpu*(dst: pointer, src: pointer; length: csize_t): cint =
   omp_target_memcpy(dst, src, length, 0, 0, omp_get_initial_device(), omp_get_default_device())
 template omp_target_memcpy_togpu*(dst: pointer, src: pointer; length: csize_t): cint =
@@ -82,6 +92,20 @@ proc gpuMemCpyToCPU*(dst: pointer, src: pointer; length: SomeInteger): cint {.di
   omp_target_memcpy_tocpu(dst, src, csize_t length)
 proc gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger): cint {.discardable.} =
   omp_target_memcpy_togpu(dst, src, csize_t length)
+template gpuMalloc[T](x: var ptr UncheckedArray[T], n: int) =
+  x = cast[typeof x](gpuMalloc(n*sizeof(T)))
+template gpuMalloc[T](x: ptr T) =
+  x = cast[typeof x](gpuMalloc(sizeof(T)))
+
+proc gpuMemset*[T](p: ptr UncheckedArray[T], val: T, count: int) =
+  {.emit:["#pragma omp target teams distribute parallel for"].}
+  {.emit:["for (int i = 0; i < ",count,"; i++)"].}
+  block:
+    var i {.importc,codegendecl:"".}: cint
+    p[i] = val
+proc gpuMemset*[T](p: ptr T, val: T) =
+  {.emit:["#pragma omp target teams"].}
+  p[] = val
 
 template toPointer*(x: typed): pointer =
   #dumpType: x
@@ -225,9 +249,12 @@ macro onGpuNowait*(n,b,body: untyped): auto =
 
 var gpuNumThreadsRequest* = 0
 var gpuBlockSizeRequest* = 0
+template gpuSites(n: int): int = n
 template onGpuNowait*(body: untyped): auto =
   onGpuNoWait(gpuNumThreadsRequest, gpuBlockSizeRequest, body)
-template onGpuNowait*(n,body: untyped): auto =
+template onGpuNowait*(n0,body: untyped): auto =
+  mixin gpuSites
+  let n = gpuSites(n0)
   var b = gpuBlockSizeRequest
   while b > n: b = b div 2
   onGpuNoWait(n, b, body)
@@ -238,10 +265,12 @@ template onGpu*(body: untyped) =
   let finalize = onGpuNoWait(body)
   finalize()
 template onGpu*(n,body: untyped) =
-  let finalize = onGpuNoWait(n, body)
+  mixin gpuSites
+  let finalize = onGpuNoWait(gpuSites(n), body)
   finalize()
 template onGpu*(n,b,body: untyped) =
-  let finalize = onGpuNoWait(n, b, body)
+  mixin gpuSites
+  let finalize = onGpuNoWait(gpuSites(n), b, body)
   finalize()
 
 template toUArray(a:untyped):untyped = cast[ptr UncheckedArray[typeof(a[0])]](a[0].unsafeaddr)
@@ -353,6 +382,101 @@ macro simdFor*(n:untyped):untyped =
       echo n.treerepr
       quit 1
   p n
+
+proc blockSumSmall*[T](x: T): T = # only thread 0 gets result
+  const max_block_size = 1024
+  const max_items = max_block_size
+  let thread_idx = omp_get_thread_num()
+  let block_size = omp_get_num_threads()
+  var storage {.noInit,codegendecl:"static $# $#".}: array[max_items, T]
+  {.emit:["#pragma omp groupprivate(",storage,")"].}
+  storage[thread_idx] = x
+  {.emit:["#pragma omp barrier"].}
+  if thread_idx == 0:
+    result = x
+    for i in 1..<block_size:
+      result += storage[i]
+
+proc blockSum*[T](x: T): T = # only thread 0 gets result
+  const min_shared_mem = 48*1024 - sizeof(bool)  # bool used in GpuSum reduce
+  const max_items = 512 #1024
+  const max_size = min_shared_mem div max_items
+  when sizeof(T) <= max_size:
+    blockSumSmall(x)
+  else:
+    static: echo $x.type, "  ", sizeof(T)
+    {.error:"blockSum: type size too large".}  # FIXME later
+
+type GpuSum*[T] = object
+    partial: ptr UncheckedArray[T]
+    npartial: cint
+    #maxblock: int
+    val: ptr T
+    valh: T
+    valvalid: bool
+    count: ptr cint
+proc newGpuSum*[T](ns: int): GpuSum[T] =
+  let n = (ns + 15) div 16  # divide by warp size
+  result.partial.gpuMalloc(n)
+  result.partial.gpuMemset(default(T), n)
+  result.npartial = cint n
+  #result.val = cast[ptr T](omp_target_alloc_host(csize_t sizeof(T)))
+  #result.val = cast[ptr T](omp_target_alloc_shared(csize_t sizeof(T)))
+  result.val = cast[ptr T](omp_target_alloc(csize_t sizeof(T)))
+  result.count.gpuMalloc()
+  #result.count.gpuMemset(0, sizeof(result.count[]))
+  #q.memset(result.count, 0, sizeof(result.count[]))
+  result.count.gpuMemset(0)
+#template value*(x: GpuSum): auto = x.val[]
+template value*(x: GpuSum): auto =
+  if not x.valvalid:
+    x.valvalid = true
+    gpuMemCpyToCPU(addr x.valh, x.val, sizeof(x.valh))
+  x.valh
+template toGpu*(x: GpuSum): auto =
+  x.valvalid = false
+  x
+template getGpu*(x,g: GpuSum): auto = g
+template fromGpu*(x,g: GpuSum): auto = discard
+
+proc reduce*[T](gs: GpuSum[T], x: T) =
+  var aggregate = blockSum(x)
+  let threadIdx = omp_get_thread_num()
+  let blockIdx = omp_get_team_num()
+  let blockDim = omp_get_num_threads()
+  let gridDim = omp_get_num_teams()
+  block:
+    var isLastBlockDone{.noInit,codegendecl:"static $# $#".}: bool
+    {.emit:["#pragma omp groupprivate(",isLastBlockDone,")"].}
+    #isLastBlockDone = false
+    if threadIdx == 0:
+      if blockIdx < gs.npartial:
+        gs.partial[blockIdx] = aggregate;
+      #threadFence() # flush result
+      {.emit:["#pragma omp flush release"].}
+      # increment global block counter
+      #let value = atomicInc(gs.count)
+      var value: typeof gs.count[]
+      {.emit:["#pragma omp atomic capture"].}
+      block:
+        value = gs.count[]
+        gs.count[] += 1
+      # determine if last block
+      isLastBlockDone = (value == (gridDim - 1))
+    {.emit:["#pragma omp barrier"].}
+    # finish the reduction if last block
+    if isLastBlockDone:
+      var i = threadIdx
+      var sum = default(T)
+      let n = min(gs.npartial, gridDim)
+      while i < n:
+        sum += gs.partial[i]
+        i += blockDim;
+      sum = blockSum(sum)
+      # write out the final reduced value
+      if threadIdx == 0:
+        gs.val[] = sum
+        gs.count[] = 0  # set to zero for next time
 
 when isMainModule:
   type FltArr = object
