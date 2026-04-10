@@ -131,13 +131,14 @@ template gpuNumThreads*: untyped =
   let numThreads = omp_get_num_threads()
   numTeams.int * numThreads.int
 
-template openmpDefs(body: untyped) =
+template openmpDefs(n,body: untyped) =
   # XXX check if GC matters
   #let
   #  numTeams = omp_get_num_teams()
   #  teamNum = omp_get_team_num()
   #ompBlock("parallel num_threads(512)"):
-  ompBlock("parallel"):
+  #ompBlock("parallel"):
+  ompBlock2("parallel num_threads(", n, ")"):
     #let
     #  numThreads = omp_get_num_threads()
     #  threadNum = omp_get_thread_num()
@@ -208,7 +209,7 @@ macro onGpuNowait*(n,b,body: untyped): auto =
   let li = body.lineinfo
   #proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,newTree(nnkAccQuoted,g,ident"xx"))
-  template target(cpuPrepare, cpuFinalize, devicePtrDeclare, body: untyped) =
+  template target(n,b,cpuPrepare, cpuFinalize, devicePtrDeclare, body: untyped) =
     mixin toGpu, getGpu, fromGpu
     {.push checks: off.}
     {.push stacktrace: off.}
@@ -216,9 +217,12 @@ macro onGpuNowait*(n,b,body: untyped): auto =
       cpuPrepare  # a let section declare and save device pointers
       #proc gpuProc {.gensym.} =
       threadSingle:
+        let nthreads = n
+        let nteams = n div b
         #ompBlock2("target teams num_teams(1024)", devicePtrDeclare):
-        ompBlock2("target teams", devicePtrDeclare):
-          openmpDefs:
+        #ompBlock2("target teams", devicePtrDeclare):
+        ompBlock2("target teams num_teams(", nteams, ")", devicePtrDeclare):
+          openmpDefs(nthreads):
             const inOnGpu {.inject,used.} = true
             body
       #gpuProc()
@@ -231,7 +235,7 @@ macro onGpuNowait*(n,b,body: untyped): auto =
     cpuPrepare = genCpuPrepare v
     cpuFinalize = genCpuFinalize v
     isDevicePtrs = declarePtrTuple v
-  result = getast(target(cpuPrepare, cpuFinalize, isDevicePtrs, body))
+  result = getast(target(n,b,cpuPrepare, cpuFinalize, isDevicePtrs, body))
   case dumpKernels
   of 1:
     echo li
@@ -247,8 +251,8 @@ macro onGpuNowait*(n,b,body: untyped): auto =
       sl.add result
       result = sl
 
-var gpuNumThreadsRequest* = 0
-var gpuBlockSizeRequest* = 0
+var gpuNumThreadsRequest* = 32*1024
+var gpuBlockSizeRequest* = 64
 template gpuSites(n: int): int = n
 template onGpuNowait*(body: untyped): auto =
   onGpuNoWait(gpuNumThreadsRequest, gpuBlockSizeRequest, body)

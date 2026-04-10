@@ -11,8 +11,15 @@ type
     useCount*: int  # counts times used in gpu kernel
     lastCopyIn*: int  # useCount of last copy to gpu
     lastCopyOut*: int  # useCount of last copy from gpu
+    #r: ref ptr CpuGpu[C,G]
   # toGpu is called before kernel if it will be read on the gpu and was written on cpu since last sync
   # fromGpu is called after kernel if it was written on gpu and will be read on cpu later
+#proc init*(x: var CpuGpu) =
+#  x.r.new
+#  x.r[] = addr x
+#template init*[T:CpuGpu](x: var T, p: proc(x: ref ptr T){.nimcall.}) =
+#  x.r.new(p)
+#  x.r[] = addr x
 #proc `=destroy`[C,G](x: var CpuGpu[C,G]) =
 #  mixin destroy
 #  destroy(x)  # forward destructor
@@ -52,7 +59,7 @@ proc toGpu*(x: var (CpuGpu | ref CpuGpu)): auto {.discardable.} =
   x.gpu.toGpu(x, cpy)
   x.gpu
 
-template getGpu*[C,G](x: CpuGpu[C,G], g: G): auto =
+template getGpu*[C,G](x: (CpuGpu[C,G] | ref CpuGpu[C,G]), g: G): auto =
   getGpu(x, g)
 
 proc fromGpu*[C,G](x: var (CpuGpu[C,G] | ref CpuGpu[C,G]), g: G) =
@@ -63,23 +70,23 @@ proc fromGpu*[C,G](x: var (CpuGpu[C,G] | ref CpuGpu[C,G]), g: G) =
     if cpy: x.lastCopyOut = x.useCount
   x.fromGpu(g, cpy)
 
-proc fromGpu*[C,G](x: var CpuGpu[C,G]) =
+proc fromGpu*[C,G](x: var (CpuGpu[C,G] | ref CpuGpu[C,G])) =
   # copy if cpuR and gpuW
   let cpy = (not x.noReadCpu) and (not x.noWriteGpu)
   threadSingle:
     if cpy: x.lastCopyOut = x.useCount
   x.fromGpu(x.gpu, cpy)
 
-template wasCopiedIn*(x: CpuGpu): bool =
+template wasCopiedIn*(x: (CpuGpu | ref CpuGpu)): bool =
   x.lastCopyIn == x.useCount
-template wasCopiedOut*(x: CpuGpu): bool =
+template wasCopiedOut*(x: (CpuGpu | ref CpuGpu)): bool =
   x.lastCopyOut == x.useCount
 
-proc copyToGpu*(x: var CpuGpu) =
+proc copyToGpu*(x: var (CpuGpu | ref CpuGpu)) =
   mixin toGpu
   x.gpu.toGpu(x, true)
 
-proc copyFromGpu*(x: var CpuGpu) =
+proc copyFromGpu*(x: var (CpuGpu | ref CpuGpu)) =
   mixin fromGpu
   x.fromGpu(x.gpu, true)
 
