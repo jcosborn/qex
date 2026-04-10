@@ -1,4 +1,4 @@
-import macros
+import macros, strutils
 import base/metaUtils
 import base/omp
 import backend/expr
@@ -207,14 +207,18 @@ template useDevicePtr*(x: auto) =
 
 macro onGpuNowait*(n,b,body: untyped): auto =
   let li = body.lineinfo
+  let lis = li.split({'/','.','(',','})
+  let fl = lis[^4] & "(" & lis[^2] & ")"
   #proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,newTree(nnkAccQuoted,g,ident"xx"))
-  template target(n,b,cpuPrepare, cpuFinalize, devicePtrDeclare, body: untyped) =
+  template target(fl,n,b,cpuPrepare, cpuFinalize, devicePtrDeclare, body: untyped) =
     mixin toGpu, getGpu, fromGpu
     {.push checks: off.}
     {.push stacktrace: off.}
     block:
+      tic(fl)
       cpuPrepare  # a let section declare and save device pointers
+      toc("cpuPrepare")
       #proc gpuProc {.gensym.} =
       threadSingle:
         let nthreads = n
@@ -226,16 +230,20 @@ macro onGpuNowait*(n,b,body: untyped): auto =
             const inOnGpu {.inject,used.} = true
             body
       #gpuProc()
+      toc("launch")
       proc finalize {.gensym.} =
+        tic(fl)
+        toc("wait")
         cpuFinalize
         #threadBarrier()
+        toc("cpuFinalize")
       finalize
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
     cpuFinalize = genCpuFinalize v
     isDevicePtrs = declarePtrTuple v
-  result = getast(target(n,b,cpuPrepare, cpuFinalize, isDevicePtrs, body))
+  result = getast(target(fl,n,b,cpuPrepare, cpuFinalize, isDevicePtrs, body))
   case dumpKernels
   of 1:
     echo li

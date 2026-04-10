@@ -2,8 +2,8 @@ import macros
 import qex
 import base/qexInternal
 
-const Backend {.strdefine.} = "OpenMP"
-#const Backend {.strdefine.} = "CUDA"
+#const Backend {.strdefine.} = "OpenMP"
+const Backend {.strdefine.} = "CUDA"
 #const Backend {.strdefine.} = "SYCL"
 #const Backend {.strdefine.} = "CPU"
 
@@ -15,13 +15,15 @@ elif Backend == "CUDA":
   const backendIsGpu* = true
   import cuda
   export cuda
-  proc init = gpuInit(0)
-  qexGlobalPreInit.add init
+  proc init = gpuInit(myRank)
+  qexGlobalInitializers.add init
 elif Backend == "SYCL":
   const backendIsGpu* = true
   #const backendIsGpu* = false
   import syclbe
   export syclbe
+  proc init = gpuInit(myRank)
+  qexGlobalInitializers.add init
 else:
   when Backend != "CPU":
     static: echo "Backend: ", Backend

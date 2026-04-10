@@ -180,9 +180,6 @@ proc testPlaq(g:auto) =
   for d in 0..<nd:
     h[d] = makeHalo(hl, g[d])
   toc "makeHalo"
-  for d in 0..<nd:
-    h[d].update hm[d], comm
-  toc "update"
   #var p = newSeq[typeof g[0]](6)
   #for i in 0..<6:
   #  p[i] = g[0].newOneOf
@@ -197,6 +194,10 @@ proc testPlaq(g:auto) =
   for nreps in [2,10]:
     resetTimers()
     for rep in 0..<nreps:
+      tic "rep"
+      for d in 0..<nd:
+        h[d].update hm[d], comm
+      toc "update"
       when false:
         threads:
           for i in g[0]:
@@ -229,12 +230,13 @@ proc testPlaq(g:auto) =
           #var tplf: array[6,float]
           #for k in 0..<6: tplf[k] = tpl[k].simdSum
           #gs.reduce tplf
-  toc "p"
+  #toc "p"
   #threads:
   for k in 0..<6:
     #pl[k] = p[k].trace.re
     pl[k] = gs.value[k]
-  toc "pl"
+  #toc "pl"
+  rankSum pl
   let vf = 1.0/(g[0][0].nRows*lo.physVol)
   let ph = pl * vf
   let pp = 6.0 * g.plaq

@@ -135,8 +135,16 @@ template cudaMemcpy*(dst,src: typed, count: csize_t,
   let psrc = toPointer(src)
   cudaMemcpyX(pdst, psrc, count, kind)
 
+proc cudaGetDeviceCount*(deviceCount: ptr cint):
+  cudaError_t {.importC,header:"cuda_runtime.h".}
+proc gpuNumDevices*: int =
+  var deviceCount = cint 0
+  discard cudaGetDeviceCount(addr deviceCount)
+  result = deviceCount
+
 proc gpuInit*(device: int) =
-  let err = cudaSetDevice(cint device)
+  let dev = device mod gpuNumDevices()
+  let err = cudaSetDevice(cint dev)
   if err:
     echo "CUDA error: ", cast[cint](err)
   doAssert(not err)

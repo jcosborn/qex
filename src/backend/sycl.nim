@@ -8,6 +8,7 @@ type
   #DefaultSelector* {.importcpp:"sycl::default_selector_v", syclh.} = object
   #HostSelector* {.importcpp:"sycl::host_selector_v", syclh.} = object
   Context* {.importcpp:"sycl::context", syclh.} = object
+  Platform* {.importcpp:"sycl::platform", syclh.} = object
   Device* {.importcpp:"sycl::device", syclh.} = object
   Queue* {.importcpp:"sycl::queue", syclh.} = object
   SyclBuffer*[T;N:static[int]] {.importcpp:"sycl::buffer", syclh.} = object
@@ -70,10 +71,13 @@ proc `$`*(x: cppstring): string =
 type cppvector[T] {.importcpp:"std::vector",header:"vector".} = object
 type cppvectorIterator[T] {.importcpp:"std::vector<'0>::iterator",header:"vector".} = object
 proc size*(x: cppvector): csize_t {.importcpp:"#.size()",header:"vector".}
+proc `[]`*[T](x: cppvector[T], i: SomeInteger): T {.importcpp:"#[#]",header:"vector".}
 proc begin*[T](x: cppvector[T]): cppvectorIterator[T] {.importcpp:"#.begin()",header:"vector".}
 proc `end`*[T](x: cppvector[T]): cppvectorIterator[T] {.importcpp:"#.end()",header:"vector".}
 proc max_element*[T](b,e: cppVectorIterator[T]): T {.importcpp:"*std::max_element(#,#)",header:"algorithm".}
 proc max_element*(v: cppVector): auto = max_element(v.begin,v.`end`)
+
+proc getDevices*(p: Platform): cppvector[Device] {.syclh,importcpp:"#.get_devices()".}
 
 proc name*(x: Device): cppstring {.
   importcpp:"#.get_info<sycl::info::device::name>()".}
