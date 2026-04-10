@@ -194,38 +194,41 @@ proc testPlaq(g:auto) =
   toc "create fields"
   proc gpuSite(x: GpuField): auto =
     for i in gpuSites(x): return x[i]
-  when false:
-    threads:
-      for i in g[0]:
-        var k = 0
-        for mu in 1..<4:
-          let n0 = hl.neighborFwd[mu][i]
-          for nu in 0..<mu:
-            let n1 = hl.neighborFwd[nu][i]
-            let a = g[mu][i] * h[nu][n0]
-            let b = g[nu][i] * h[mu][n1]
-            p[k][i] += a.adj * b
-            inc k
-  else:
-    onGpu(lo):
-      template g(i:int):auto = h[i].field
-      var tpl: array[6,float]
-      #var tpl: array[6,typeof redot(g(0).gpuSite,g(0).gpuSite)]
-      for s in gpuSites(g(0)):
-        var k = 0
-        for mu in 1..<4:
-          let smu = hl.nbrFwd(mu, s)
-          for nu in 0..<mu:
-            let snu = hl.nbrFwd(nu, s)
-            let a = g(mu)[s] * h[nu][smu]
-            let b = g(nu)[s] * h[mu][snu]
-            tpl[k] += redot(a, b).simdSum
-            #tpl[k] += redot(a, b)
-            inc k
-      gs.reduce tpl
-      #var tplf: array[6,float]
-      #for k in 0..<6: tplf[k] = tpl[k].simdSum
-      #gs.reduce tplf
+  for nreps in [2,10]:
+    resetTimers()
+    for rep in 0..<nreps:
+      when false:
+        threads:
+          for i in g[0]:
+            var k = 0
+            for mu in 1..<4:
+              let n0 = hl.neighborFwd[mu][i]
+              for nu in 0..<mu:
+                let n1 = hl.neighborFwd[nu][i]
+                let a = g[mu][i] * h[nu][n0]
+                let b = g[nu][i] * h[mu][n1]
+                p[k][i] += a.adj * b
+                inc k
+      else:
+        onGpu(lo):
+          template g(i:int):auto = h[i].field
+          var tpl: array[6,float]
+          #var tpl: array[6,typeof redot(g(0).gpuSite,g(0).gpuSite)]
+          for s in gpuSites(g(0)):
+            var k = 0
+            for mu in 1..<4:
+              let smu = hl.nbrFwd(mu, s)
+              for nu in 0..<mu:
+                let snu = hl.nbrFwd(nu, s)
+                let a = g(mu)[s] * h[nu][smu]
+                let b = g(nu)[s] * h[mu][snu]
+                tpl[k] += redot(a, b).simdSum
+                #tpl[k] += redot(a, b)
+                inc k
+          gs.reduce tpl
+          #var tplf: array[6,float]
+          #for k in 0..<6: tplf[k] = tpl[k].simdSum
+          #gs.reduce tplf
   toc "p"
   #threads:
   for k in 0..<6:
