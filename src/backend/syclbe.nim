@@ -185,11 +185,21 @@ template `+=`*[N:static int,T](r: array[N,T], x: LocalPtr[array[N,T]]) =
     r[i] += x[i]
 proc `[]`*[N:static int,T](x: LocalPtr[array[N,T]], i: int): LocalPtr[T] =
   {.emit:[result," = &",x,"[0][",i,"];"].}
-proc `[]=`*[N:static int,T](x: LocalPtr[array[N,T]], i: int, y: auto) =
+proc `[]`*[N,M:static int,T,I,J](x: LocalPtr[array[N,array[M,T]]], i: I, j: J): T =
+  {.emit:[result," = ",x,"[0][",i,"][",j,"];"].}
+#template `[]`*[N:static int,T](x: LocalPtr[array[N,T]], i: int): LocalPtr[T] =
+#  {.emit:["&",x,"[0][",i,"];"].}
+#proc `[]`*[N:static int,T](x: LocalPtr[array[N,T]], i: int): LocalPtr[T]
+#  {.importcpp:"(&((#)[0][#]))".}
+template `[]=`*[N:static int,T](x: LocalPtr[array[N,T]], i: int, y: auto) =
   var t = x[i]
   t := y
-proc `[]=`*[N:static int,T](x: array[N,T], i: int, y: LocalPtr[T]) =
+template`[]=`*[N:static int,T](x: array[N,T], i: int, y: LocalPtr[T]) =
   {.emit:[x,"[",i,"] = *",y,";"].}
+
+template`setIndexed`*[N,M:static int,T](x: array[N,T], y: LocalPtr[array[M,array[N,T]]], i: SomeInteger) =
+  for j in 0..<N:
+    x[j] = y[i,j]
 
 proc blockSumSmall*[T](x: T): T = # only thread 0 gets result
   const max_block_size = 1024
@@ -214,62 +224,19 @@ proc blockSumSmall*[T](x: T): T = # only thread 0 gets result
   var lp = localMem(array[max_items, T], g)
   var storage = lp.get
   # if first thread in warp, write result to shared memory
-  if warp_idx < max_items and warp_thread == 0:
-    storage[warp_idx] = result
   var store_idx = warp_idx
   var store_items = warp_items
-  while true:
-    g.barrier()
-    store_items -= max_items
-    if store_items <= 0: break
-    store_idx -= max_items
+  while store_items >= 0:
     if store_idx >= 0 and store_idx < max_items and warp_thread == 0:
-      storage[store_idx] += result
-  if warp_idx == 0:
-    if thread_idx < warp_items:
-      result := storage[thread_idx]
-      var i = thread_idx + warp_size
-      while i < min(warp_items, max_items):
-        result += storage[i]
-        i += warp_size
-    else:
-      result = default(T)
-    result = subgroupSum(result)
-
-proc blockSumSmallX*[T](x: T): T = # only thread 0 gets result
-  const max_block_size = 1024
-  const min_warp_size = 16
-  const max_items = 512 #max_block_size div min_warp_size
-  let g = getGroup()
-  let sg = getSubgroup()
-  let thread_idx = g.localId #threadIdx.x;
-  let block_size = g.size #blockDim.x;
-  let warp_size = sg.size
-  let warp_idx = thread_idx div warp_size
-  let warp_items = (block_size + warp_size - 1) div warp_size
-  let warp_thread = thread_idx mod warp_size
-  # first do warp reduce
-  result = subgroupSum(x)
-  #if warp_items == 1: return
-  # now do reduction between warps
-  g.barrier()
-  #var storage {.shared.}: array[max_items, T]
-  #var storage = localMem[array[max_items, T]](g)
-  #var storage = localMem(array[max_items, T], g)
-  var lp = localMem(array[max_items, T], g)
-  var storage = lp.get
-  # if first thread in warp, write result to shared memory
-  if warp_idx < max_items and warp_thread == 0:
-    storage[warp_idx] = result
-  var store_idx = warp_idx
-  var store_items = warp_items
-  while true:
-    g.barrier()
+      if store_idx != warp_idx:
+        var t{.noInit.}: T
+        #t := storage[store_idx]
+        setIndexed(t, storage, store_idx)
+        result += t
+      storage[store_idx] = result   # apparently can only store to local in one code location
     store_items -= max_items
-    if store_items <= 0: break
     store_idx -= max_items
-    if store_idx >= 0 and store_idx < max_items and warp_thread == 0:
-      storage[store_idx] += result
+    g.barrier()
   if warp_idx == 0:
     if thread_idx < warp_items:
       result := storage[thread_idx]

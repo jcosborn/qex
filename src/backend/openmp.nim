@@ -481,6 +481,7 @@ proc reduce*[T](gs: GpuSum[T], x: T) =
       var i = threadIdx
       var sum = default(T)
       let n = min(gs.npartial, gridDim)
+      {.emit:["#pragma omp flush release"].}
       while i < n:
         sum += gs.partial[i]
         i += blockDim;

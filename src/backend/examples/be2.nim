@@ -86,14 +86,23 @@ template `[]`*[N,M:static int, T](x: Mat[N,M,T], i,j: SomeNumber): auto = x.mat[
 
 type
   cmatarr[N:static int; T] = Mat[N,N,T]
-  cgmatarr[N:static int; T] = CpuGpu[cmatarr[N,T], cmatarr[N,T]]
-proc destroy*(x: var cgmatarr) =
+  cgmatarrObj[N:static int; T] = CpuGpu[cmatarr[N,T], cmatarr[N,T]]
+  cgmatarr[N:static int; T] = ref CpuGpu[cmatarr[N,T], cmatarr[N,T]]
+#proc destroy*(x: var cgmatarr) =
+#  when backendIsGpu:
+#    if x.gpu.dat != nil:
+#      gpuFree(x.gpu.dat)
+#  if x.cpu.dat != nil:
+#    dealloc(x.cpu.dat)
+proc finalize[T:cgmatarr](x: T) =
+  #echo "finalize cgmatarr"
   when backendIsGpu:
     if x.gpu.dat != nil:
       gpuFree(x.gpu.dat)
   if x.cpu.dat != nil:
     dealloc(x.cpu.dat)
 proc newCgmatarr*[N:static int; T](n: int): cgmatarr[N,T] =
+  result.new(finalize[typeof result])
   result.cpu = newMat[N,N,T](n)
   when backendIsGpu:
     let gp = cast[ptr UncheckedArray[T]](gpuMalloc(n*N*N*sizeof(T)))
