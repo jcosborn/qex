@@ -264,7 +264,7 @@ type GpuSum*[T] = object
     #maxblock: int
     val: ptr T
     count: ptr cint
-    stats: ptr array[3,int]
+    #stats: ptr array[3,int]
 proc newGpuSum*[T](ns: int): GpuSum[T] =
   let n = (ns + 15) div 16  # divide by warp size
   result.partial.gpuMalloc(n)
@@ -275,11 +275,11 @@ proc newGpuSum*[T](ns: int): GpuSum[T] =
   result.count.gpuMalloc()
   #result.count.gpuMemset(0, sizeof(result.count[]))
   q.memset(result.count, 0, sizeof(result.count[]))
-  result.stats.gpuMalloc()  # nthreads, ngroups
+  #result.stats.gpuMalloc()  # nthreads, ngroups
 template value*(x: GpuSum): auto =
-  var s: array[3,int]
-  gpuMemCpyToCpu(addr s, x.stats, sizeof(x.stats[]))
-  echo "subgroup: ", s[2], "  blockDim: ", s[0], "  gridDim: ", s[1]
+  #var s: array[3,int]
+  #gpuMemCpyToCpu(addr s, x.stats, sizeof(x.stats[]))
+  #echo "subgroup: ", s[2], "  blockDim: ", s[0], "  gridDim: ", s[1]
   x.val[]
 template toGpu*(x: GpuSum): auto = x
 template getGpu*(x,g: GpuSum): auto = g
@@ -295,10 +295,10 @@ proc reduce*[T](gs: GpuSum[T], x: T) =
   let blockIdx = g.groupId #
   let blockDim = g.size #blockDim.x;
   let gridDim = g.range
-  if threadIdx == 0 and blockIdx == 0:
-    gs.stats[0] = int blockDim
-    gs.stats[1] = int gridDim
-    gs.stats[2] = int getSubgroup().size()
+  #if threadIdx == 0 and blockIdx == 0:
+  #  gs.stats[0] = int blockDim
+  #  gs.stats[1] = int gridDim
+  #  gs.stats[2] = int getSubgroup().size()
   #if blockDim > 8: gs.stats[2] = blockDim
   var isLastBlockDone = false
   var aggregate = blockSum(x)

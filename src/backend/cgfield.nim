@@ -118,7 +118,9 @@ proc CgColorMatrixD*(lo: Layout): auto = newCgField(lo.ColorMatrixD())
 template toGpu*(g: GpuField, x: CgFld, cpy: bool) =
   when backendIsGpu:
     if cpy:
+      tic("toGpuCgField")
       gpuMemCpyToGPU(g.p, addr x.cpu[0], g.bytes)
+      toc("gpuMemCpyToGPU")
 
 template getGpu*(x: CgFld, g: GpuField): auto = g
 
@@ -137,13 +139,17 @@ template `:=`*(x: var CgFld, y: CgFld) =
 
 
 proc toGpu*(x: Field): auto =
+  tic("toGpuField")
   var g: gpuType(typeof x)
   g.n = x.l.nSitesOuter
   when backendIsGpu:
     g.p = cast[type g.p](gpuMalloc(g.bytes))
+    toc("gpuMalloc")
     gpuMemCpyToGPU(g.p, addr x[0], g.bytes)
+    toc("gpuMemCpyToGPU")
   else:
     g.p = cast[type g.p](addr x[0])
+  toc("end")
   g
 
 template getGpu*(x: Field, g: GpuField): auto = g

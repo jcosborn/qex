@@ -128,12 +128,15 @@ proc toGpu*[L,F,T](x: Halo[L,F,T]): auto {.noInit.} =
   var g {.noInit.}: gpuHalo[L.V, gpuType F, gpuType T]
   g.layout = getGhl(x.layout.L.V)[]
   g.field = toGpu(x.field)
+  toc("toGpuField")
   g.nOut = x.nOut
   g.nExt = x.nExt
   g.halo.newGpuSeq x.halo.len
+  toc("newGpuSeq")
   gpuMemCpyToGPU(g.halo.p, addr x.halo[0], g.halo.bytes)
+  toc("gpuMemCpyToGPU")
   #ghl.checkNeighbors
-  toc("end")
+  #toc("end")
   g
 
 proc fromGpu*(x: var Halo, g: gpuHalo) =
