@@ -233,6 +233,10 @@ proc testPlaq(g:auto) =
           #var tplf: array[6,float]
           #for k in 0..<6: tplf[k] = tpl[k].simdSum
           #gs.reduce tplf
+      let nc = g[0][0].getNc
+      let mm = nc*nc*(8*nc-2)
+      let rd = 8*nc*nc
+      toc("plaq",flops=lo.nSites*6*(2*mm+rd))
   #toc "p"
   #threads:
   for k in 0..<6:
