@@ -4,6 +4,7 @@ import backend/expr
 import base/metaUtils
 import sycl
 
+var kernelCallCount* = 0  # count of kernel calls
 const dumpKernels {.intdefine.} = 0
 
 #let dev = defaultDevice()

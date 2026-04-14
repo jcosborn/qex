@@ -3,6 +3,7 @@ import backend/expr
 import base/metaUtils
 import macros
 
+var kernelCallCount* = 0  # count of kernel calls
 const dumpKernels {.intdefine.} = 0
 
 template gpuMalloc*(size:SomeInteger):pointer = alloc(size)

@@ -3,6 +3,7 @@ import base/metaUtils
 import base/omp
 import backend/expr
 
+var kernelCallCount* = 0  # count of kernel calls
 const dumpKernels {.intdefine.} = 0
 
 {.pragma: omp, header:"omp.h".}

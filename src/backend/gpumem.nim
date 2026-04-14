@@ -1,4 +1,3 @@
-import backend/accel
 import tables, strformat, strutils, algorithm
 
 # kinds
@@ -79,7 +78,10 @@ proc pushGpuMemTag*(s: string) =
 proc popGpuMemTag*() =
   gpuMemTag.setLen(gpuMemTag.len - 1)
 
+import backend/accelbase
+
 proc freeGpuMem*(cpuPtr: pointer) =
+  mixin gpuFree
   var x: GpuMem
   if gpuMemTable.pop(cpuPtr, x):
     gpuFree(x.p)
@@ -107,7 +109,7 @@ proc dumpGpuMem*(): string =
     result = cmp(x.tag.join, y.tag.join)
     if result == 0:
       result = cmp(x.bytes, y.bytes)
-  result = "GpuMem items: " & $gpuMemTable.len & "  bytes: " & $mem
+  result = "GpuMem items: " & $gpuMemTable.len & "  bytes: " & ($mem).insertSep(',')
   for v in gms:
     result &= "\n " & v.summary
 
