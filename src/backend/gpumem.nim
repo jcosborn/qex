@@ -97,7 +97,7 @@ proc getGpuMem*(cpuPtr: pointer, gpuBytes: int): ptr GpuMem =
   result.touch
   #echo result[]
 
-proc echoGpuMem* =
+proc dumpGpuMem*(): string =
   var gms = newSeq[GpuMem](0)
   var mem = 0
   for v in gpuMemTable.values:
@@ -107,9 +107,9 @@ proc echoGpuMem* =
     result = cmp(x.tag.join, y.tag.join)
     if result == 0:
       result = cmp(x.bytes, y.bytes)
-  echo "GpuMem items: ", gpuMemTable.len, "  bytes: ", mem
+  result = "GpuMem items: " & $gpuMemTable.len & "  bytes: " & $mem
   for v in gms:
-    echo " ", v.summary
+    result &= "\n " & v.summary
 
 #[
 proc gpuMem*(gpuBytes: int, cpuPtr: pointer = nil): pointer =

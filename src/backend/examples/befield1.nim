@@ -223,7 +223,7 @@ let brs32 = brs
 bss.setLen(0)
 brs.setLen(0)
 runt(true)
-echoGpuMem()
+echo dumpGpuMem()
 
 proc echoResult(p: string, s: seq, r: auto) =
   let sd = s[0].deduplicate

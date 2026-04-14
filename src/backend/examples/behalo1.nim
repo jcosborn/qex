@@ -318,7 +318,7 @@ proc testPlaq(g:auto) =
   echo "norm2 diff: ", sum(d*d)
   #echo pl * vf
   #echo 6.0 * g.plaq
-  echoGpuMem()
+  echo dumpGpuMem()
 
 when isMainModule:
   qexInit()
