@@ -150,7 +150,7 @@ proc test(lat:auto, double:static bool=false) =
   let vb = nc2*sf
   let mb = nc*vb
   let mvf = (2*nc2-1)*nc2
-  echo "Float type: ", $(v1.numberType)
+  echo "Float type: ", $(v1.numberType), "  repin: ", repin
   macro xfer(x: varargs[untyped]): auto =
     result = newNimNode(nnkStmtList)
     for n in x:
@@ -223,6 +223,7 @@ let brs32 = brs
 bss.setLen(0)
 brs.setLen(0)
 runt(true)
+echoGpuMem()
 
 proc echoResult(p: string, s: seq, r: auto) =
   let sd = s[0].deduplicate
@@ -234,4 +235,5 @@ proc echoResult(p: string, s: seq, r: auto) =
 echoResult("float32", bss32, brs32)
 echoResult("float64", bss, brs)
 
+echoProf()
 qexFinalize()

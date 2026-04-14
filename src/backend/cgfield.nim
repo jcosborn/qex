@@ -1,12 +1,16 @@
 import qex
 import backend/[accel,cpugpu]
+import strutils
 
 type
   #FieldProxy[T] = object
   #  f: T
-  GpuFieldObj*[V:static int, T] = object
+  GpuFieldData*[V:static int, T] = object
     n*: int
     p*: ptr UncheckedArray[T]
+  GpuFieldObj*[V:static int, T] = object
+    d*: GpuFieldData[V,T]
+    pgm*: ptr GpuMem
   GpuFieldExpr*[OP:static string, A] = object
     args*: A
   GpuFieldExpr2*[OP:static string, A] = GpuFieldExpr[OP,A]
@@ -14,6 +18,8 @@ type
   GpuField2*[V:static int, T] = GpuFieldObj[V,T]
   SomeGpuField* = GpuField | GpuFieldExpr
   SomeGpuField2* = GpuField2 | GpuFieldExpr2
+template n*(x: GpuField): auto = x.d.n
+template p*(x: GpuField): auto = x.d.p
 template gpuSites*(x: GpuField): auto = gpuSites(x.n, x.V)
 
 proc bytes*[T:GpuField](x: T): int = x.n * sizeof(T.T)
@@ -92,8 +98,17 @@ proc finalize*[T:CpuGpu](x: ref T) {.nimcall.} =
   #echo "finalize CpuGpu"
   when backendIsGpu:
     if x.gpu.p != nil:
-      gpuFree(x.gpu.p)
+      #let pgm = getGpuMem(addr x.cpu[0], x.gpu.bytes)
+      #gpuFree(x.gpu.p)
+      freeGpuMem(addr x.cpu[0])
       x.gpu.p = nil
+
+template displayName*[T](t: typedesc[Color[T]]): string =
+  "Color" & displayName(T)
+template displayName*[N:static int,T](t: typedesc[VectorArray[N,T]]): string =
+  "Vector" & $N
+template displayName*[N,M:static int,T](t: typedesc[MatrixArray[N,M,T]]): string =
+  "Matrix" & $N & "," & $M
 
 proc newCgField*(c: Field): auto =
   type C = typeof c
@@ -103,7 +118,12 @@ proc newCgField*(c: Field): auto =
   r.cpu = c
   r.gpu.n = c.l.nSitesOuter
   when backendIsGpu:
-    r.gpu.p = cast[type r.gpu.p](gpuMalloc(r.gpu.bytes))
+    #r.gpu.p = cast[type r.gpu.p](gpuMalloc(r.gpu.bytes))
+    pushGpuMemTag("Field"&capitalizeAscii(displayName(typeof(r.gpu.T))))
+    let pgm = getGpuMem(addr c[0], r.gpu.bytes)
+    popGpuMemTag()
+    r.gpu.p = cast[type r.gpu.p](pgm.p)
+    r.gpu.pgm = pgm
     #echo "malloc: ", cast[int](r.gpu.p)
   else:
     r.gpu.p = cast[type r.gpu.p](addr r.cpu[0])
@@ -117,6 +137,7 @@ proc CgColorMatrixD*(lo: Layout): auto = newCgField(lo.ColorMatrixD())
 
 template toGpu*(g: GpuField, x: CgFld, cpy: bool) =
   when backendIsGpu:
+    g.pgm.touch
     if cpy:
       tic("toGpuCgField")
       gpuMemCpyToGPU(g.p, addr x.cpu[0], g.bytes)
@@ -127,7 +148,9 @@ template getGpu*(x: CgFld, g: GpuField): auto = g
 template fromGpu*(x: CgFld, g: GpuField, cpy: bool) =
   when backendIsGpu:
     if cpy:
+      tic("fromGpuCgField")
       gpuMemCpyToCPU(addr x.cpu[0], g.p, g.bytes)
+      toc("gpuMemCpyToCPU")
 
 template `*`*(x: SomeNumber, y: CgFld): auto = x * y.cpu
 template `*`*(x: CgFld, y: CgFld2): auto = x.cpu * y.cpu
@@ -143,9 +166,14 @@ proc toGpu*(x: Field): auto =
   var g: gpuType(typeof x)
   g.n = x.l.nSitesOuter
   when backendIsGpu:
-    g.p = cast[type g.p](gpuMalloc(g.bytes))
-    toc("gpuMalloc")
-    gpuMemCpyToGPU(g.p, addr x[0], g.bytes)
+    pushGpuMemTag("Field"&capitalizeAscii(displayName(typeof(g.T))))
+    let pgm = getGpuMem(addr x[0], g.bytes)
+    popGpuMemTag()
+    g.p = cast[type g.p](pgm.p)
+    g.pgm = pgm
+    toc("getGpuMem")
+    if pgm.needsCopyIn:
+      gpuMemCpyToGPU(g.p, addr x[0], g.bytes)
     toc("gpuMemCpyToGPU")
   else:
     g.p = cast[type g.p](addr x[0])
@@ -156,9 +184,10 @@ template getGpu*(x: Field, g: GpuField): auto = g
 
 proc fromGpu*(x: Field, g: GpuField) =
   when backendIsGpu:
-    gpuMemCpyToCPU(addr x[0], g.p, g.bytes)
+    if g.pgm.needsCopyOut:
+      gpuMemCpyToCPU(addr x[0], g.p, g.bytes)
 
-proc toGpu*(g: gpuSeq[GpuField], x: seq[Field]) =
+proc toGpu*(g: GpuSeq[GpuField], x: seq[Field]) =
   tic("toGpuSeqField")
   for i in 0..<g.n:
     #g[i] = toGpu(x[i])
@@ -166,7 +195,7 @@ proc toGpu*(g: gpuSeq[GpuField], x: seq[Field]) =
     gpuMemCpyToGpu(addr g[i], addr t, sizeof(t))
   toc("end")
 
-proc copyFromGpu*(x: seq[Field], g: gpuSeq[GpuField]) =
+proc copyFromGpu*(x: seq[Field], g: GpuSeq[GpuField]) =
   tic("copyFromGpuSeqField")
   #for i in 0..<x.len:
   #  var t {.noInit.}: typeof g[i]

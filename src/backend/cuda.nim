@@ -172,13 +172,14 @@ proc gpuMemset*(devPtr: pointer, value: SomeInteger, count: SomeInteger) =
 proc gpuMemCpyToGpu*(dst,src: pointer, count: SomeInteger) =
   let err = cudaMemcpy(dst,src,csize_t count,cudaMemcpyHostToDevice)
   if err:
-    echo "gpuMemCpyToGpu: ", err
+    echo instantiationInfo()
+    echo "  gpuMemCpyToGpu: ", err
 #proc gpuMemCpyToCpu*(dst,src: pointer, count: SomeInteger):cint {.discardable.} =
 template gpuMemCpyToCpu*(dst,src: pointer, count: SomeInteger) =
   let err = cudaMemcpy(dst,src,csize_t count,cudaMemcpyDeviceToHost)
   if err:
     echo instantiationInfo()
-    echo "gpuMemCpyToCpu: ", err
+    echo "  gpuMemCpyToCpu: ", err
 
 proc cudaLaunchKernel(p:pointer, gd,bd: CudaDim3, args: ptr pointer):
   cudaError_t {.importC,header:"cuda_runtime.h".}
@@ -322,6 +323,7 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
     mixin toGpu, getGpu, fromGpu
     block:
       tic(fl)
+      inc kernelCallCount
       var v = cpuPrepare  # kernel argument tuple
       toc("cpuPrepare")
       type ByCopy[T] {.bycopy.} = object

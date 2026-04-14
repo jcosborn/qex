@@ -10,7 +10,7 @@ import sequtils, strutils
 import comms/halo
 
 type
-  gpuHaloLayout*[V:static int] = object
+  GpuHaloLayout*[V:static int] = object
     #lo*: L  # layout
     #outerExt*: seq[int32]  # extended outer lattice size
     #offset*: seq[int32]  # offset of outer lattice in extended outer
@@ -18,32 +18,32 @@ type
     #index*: seq[int32]  # index of extended site for given lex index
     #neighborFwd*: gpuSeq[gpuSeq[int32]]  # fwd neighbor for extended outer lattice
     #neighborBck*: gpuSeq[gpuSeq[int32]]  # bck neighbor for extended outer lattice
-    neighborFwd*: gpuSeq[ptr UncheckedArray[int32]]  # fwd neighbor for extended outer lattice
-    neighborBck*: gpuSeq[ptr UncheckedArray[int32]]  # bck neighbor for extended outer lattice
+    neighborFwd*: GpuSeq[ptr UncheckedArray[int32]]  # fwd neighbor for extended outer lattice
+    neighborBck*: GpuSeq[ptr UncheckedArray[int32]]  # bck neighbor for extended outer lattice
     nOut*: int  # sites in outer lattice
     nExt*: int  # sites in extended outer lattice
     #nOutPar*: array[2,int]  # sites in outer lattice by parity
     #nExtPar*: array[2,int]  # sites in extended outer lattice by parity
 
-proc nbrFwd[T](ghl: gpuHaloLayout, mu: int, s: T): T =
+proc nbrFwd[T](ghl: GpuHaloLayout, mu: int, s: T): T =
   let i = (s.V*s[]) div ghl.V
   let j = (s.V*s[]) mod ghl.V
   let n0 = ghl.neighborFwd[mu][i]
   let s0 = T((n0*ghl.V+j)div(s.V))
   result = s0
 
-proc nbrBck[T](ghl: gpuHaloLayout, mu: int, s: T): T =
+proc nbrBck[T](ghl: GpuHaloLayout, mu: int, s: T): T =
   let i = (s.V*s[]) div ghl.V
   let j = (s.V*s[]) mod ghl.V
   let n0 = ghl.neighborBck[mu][i]
   let s0 = T((n0*ghl.V+j)div(s.V))
   result = s0
 
-proc getGhl(V:static int): ptr gpuHaloLayout[V] =  # FIXME: need to make pointer map
-  var ghl {.global.}: gpuHaloLayout[V]
+proc getGhl(V:static int): ptr GpuHaloLayout[V] =  # FIXME: need to make pointer map
+  var ghl {.global.}: GpuHaloLayout[V]
   result = addr ghl
 
-#proc checkNeighbors(g: gpuHaloLayout) =
+#proc checkNeighbors(g: GpuHaloLayout) =
 #  for i in 0..<g.neighborFwd.n:
 #    for j in 0..<g.neighborFwd[i].n:
 #      if g.neighborFwd[i][j] >= g.nExt: echo i, " ", j, " ", g.neighborFwd[i][j]
@@ -53,9 +53,10 @@ proc getGhl(V:static int): ptr gpuHaloLayout[V] =  # FIXME: need to make pointer
 
 proc toGpu*(x: HaloLayout): auto =  # TODO make CPU not copy inner seq
   tic("toGpuHaloLayout")
-  var g: gpuHaloLayout[x.lo.V]
+  var g: GpuHaloLayout[x.lo.V]
   g.nOut = x.nOut
   g.nExt = x.nExt
+  #[
   g.neighborFwd.newGpuSeq x.neighborFwd.len
   for i in 0..<g.neighborFwd.n:
     #g.neighborFwd[i].newGpuSeq x.neighborFwd[i].len
@@ -67,7 +68,12 @@ proc toGpu*(x: HaloLayout): auto =  # TODO make CPU not copy inner seq
     let p = gpuMalloc(b)
     gpuMemCpyToGpu(p, addr x.neighborFwd[i][0], b)  # copy data to GPU
     gpuMemCpyToGpu(addr g.neighborFwd[i], addr p, sizeof(p))  # copy ptr to GPU
+  ]#
+  pushGpuMemTag("neighborFwd")
+  g.neighborFwd.toGpu(x.neighborFwd)
+  popGpuMemTag()
   toc("neighborFwd")
+  #[
   g.neighborBck.newGpuSeq x.neighborBck.len
   for i in 0..<g.neighborBck.n:
     #g.neighborBck[i].newGpuSeq x.neighborBck[i].len
@@ -79,33 +85,39 @@ proc toGpu*(x: HaloLayout): auto =  # TODO make CPU not copy inner seq
     let p = gpuMalloc(b)
     gpuMemCpyToGpu(p, addr x.neighborBck[i][0], b)  # copy data to GPU
     gpuMemCpyToGpu(addr g.neighborBck[i], addr p, sizeof(p))  # copy ptr to GPU
+  ]#
+  pushGpuMemTag("neighborBck")
+  g.neighborBck.toGpu(x.neighborBck)
+  popGpuMemTag()
   #g.checkNeighbors
   toc("neighborBck")
   getGhl(x.lo.V)[] = g
   g
 
-template getGpu*(x: HaloLayout, g: gpuHaloLayout): auto = g
+template getGpu*(x: HaloLayout, g: GpuHaloLayout): auto = g
 
-template fromGpu*(x: HaloLayout, g: gpuHaloLayout) = discard
+template fromGpu*(x: HaloLayout, g: GpuHaloLayout) = discard
 
 type
-  gpuHalo*[V:static int,F,T] = object
-    layout*: gpuHaloLayout[V]
+  GpuHalo*[V:static int,F,T] = object
+    layout*: GpuHaloLayout[V]
     field*: F
-    halo*: gpuSeq[T]
+    halo*: GpuSeq[T]
     nOut*: int  # sites in outer lattice
     nExt*: int  # sites in extended outer lattice
     #nOutPar*: array[2,int]  # sites in outer lattice by parity
     #nExtPar*: array[2,int]  # sites in extended outer lattice by parity
+proc displayName*(x: typedesc[GpuHalo]): string =
+  result = "GpuHalo"
 
-proc indexPtr*[V:static int,F,T](h: gpuHalo[V,F,T], i: SomeInteger): ptr T =
+proc indexPtr*[V:static int,F,T](h: GpuHalo[V,F,T], i: SomeInteger): ptr T =
   #doAssert(i>=0)
   #if i>=h.nExt: echo "i: ", i, "  nExt: ", h.nExt
   #doAssert(i<h.nExt)
   let k = i - h.nOut
   result = if k<0: addr h.field.p[i] else: addr h.halo[k]
-template `[]`*(h: gpuHalo, i: SomeInteger): auto = indexPtr(h,i)[]
-template `[]`*[F,T;VV,L:static int](h: gpuHalo[VV,F,T], i: SiteV[L]): auto =
+template `[]`*(h: GpuHalo, i: SomeInteger): auto = indexPtr(h,i)[]
+template `[]`*[F,T;VV,L:static int](h: GpuHalo[VV,F,T], i: SiteV[L]): auto =
   when F.V == L:
     h[i[]]
   else:
@@ -113,7 +125,7 @@ template `[]`*[F,T;VV,L:static int](h: gpuHalo[VV,F,T], i: SiteV[L]): auto =
     let v = i[] mod F.V
     h[s][asSimd(v)]
 
-proc `[]=`*(h: gpuHalo, i: SomeInteger, x: auto) =
+proc `[]=`*(h: GpuHalo, i: SomeInteger, x: auto) =
   let k = i - h.nOut
   if k < 0:
     h.field[i] = x
@@ -121,11 +133,12 @@ proc `[]=`*(h: gpuHalo, i: SomeInteger, x: auto) =
     h.halo[k] := x
 
 template gpuType*[L,F,T](x: typedesc[Halo[L,F,T]]): typedesc =
-  gpuHalo[L.V, gpuType F, gpuType T]
+  GpuHalo[L.V, gpuType F, gpuType T]
 
+#[
 proc toGpu*[L,F,T](x: Halo[L,F,T]): auto {.noInit.} =
   tic("toGpuHalo")
-  var g {.noInit.}: gpuHalo[L.V, gpuType F, gpuType T]
+  var g {.noInit.}: GpuHalo[L.V, gpuType F, gpuType T]
   g.layout = getGhl(x.layout.L.V)[]
   g.field = toGpu(x.field)
   toc("toGpuField")
@@ -138,26 +151,75 @@ proc toGpu*[L,F,T](x: Halo[L,F,T]): auto {.noInit.} =
   #ghl.checkNeighbors
   #toc("end")
   g
+]#
+proc toGpu*[L,F,T](x: Halo[L,F,T]): auto {.noInit.} =
+  tic("toGpuHalo new")
+  var g {.noInit.}: GpuHalo[L.V, gpuType F, gpuType T]
+  g.layout = getGhl(x.layout.L.V)[]
+  pushGpuMemTag("Halo")
+  g.field = toGpu(x.field)
+  toc("toGpuField")
+  g.nOut = x.nOut
+  g.nExt = x.nExt
+  g.halo.n = x.halo.len
+  let pgm = getGpuMem(addr x.halo[0], g.halo.bytes)
+  popGpuMemTag()
+  g.halo.p = cast[typeof g.halo.p](pgm.p)
+  toc("getGpuMem")
+  gpuMemCpyToGPU(g.halo.p, addr x.halo[0], g.halo.bytes)
+  toc("gpuMemCpyToGPU")
+  #ghl.checkNeighbors
+  #toc("end")
+  g
 
-proc fromGpu*(x: var Halo, g: gpuHalo) =
+proc toGpu*(g: ptr GpuHalo, c: Halo) =  # g is a ptr on the GPU, don't touch on CPU
+  tic("toGpuHalo old")
+  discard toGpu(c.field) # should update field
+  toc("toGpuField")
+  let bytes = c.halo.len * sizeof(c.halo[0])
+  let pgm = getGpuMem(addr c.halo[0], bytes)
+  toc("getGpuMem")
+  if pgm.needsCopyIn:
+    gpuMemCpyToGPU(pgm.p, addr c.halo[0], bytes)
+  toc("gpuMemCpyToGPU")
+
+proc fromGpu*(x: var Halo, g: GpuHalo) =
   tic("fromGpuHalo")
   gpuMemCpyToCPU(addr x.halo[0], g.halo.p, g.halo.bytes)
   toc("end")
 
-proc toGpu*(g: var gpuSeq[gpuHalo], x: seq[Halo]) =
-  tic("toGpuSeqHalo")
-  for i in 0..<g.n:
-    #g[i] = toGpu(x[i])
-    let t = toGpu(x[i])
-    gpuMemCpyToGpu(addr g[i], addr t, sizeof(t))
-  toc("end")
+#proc toGpu*(g: var GpuSeq[GpuHalo], x: seq[Halo]) =
+#  tic("toGpuSeqHalo")
+#  for i in 0..<g.n:
+#    #g[i] = toGpu(x[i])
+#    let t = toGpu(x[i])
+#    gpuMemCpyToGpu(addr g[i], addr t, sizeof(t))
+#  toc("end")
 
-proc copyFromGpu*(x: var seq[Halo], g: gpuSeq[gpuHalo]) =
+proc toGpu*(g: var GpuSeq[GpuHalo], c: seq[Halo], pgm: ptr GpuMem) =
+  if pgm.useCount == 1:  # newly created
+    #echo "toGpu new GpuSeq[GpuHalo]"
+    var t = newSeq[typeof g[0]](g.n)
+    for i in 0..<g.n:
+      t[i] = toGpu(c[i])
+    gpuMemCpyToGpu(g.p, addr t[0], t.bytes)
+  elif pgm.needsCopyIn:
+    for i in 0..<g.n:
+      toGpu(addr g.p[i], c[i])
+      #let t = getGpuMem(addr c[i], sizeof(g[i]))
+      #if t.useCount == 1:
+      #  var x = toGpu(c[i])
+      #  gpuMemCpyToGpu(addr g.p[i], addr x, sizeof(x))
+      #else:
+      #  if t.needsCopyIn:
+      #    gpuMemCpyToGpu(t.p, addr c[i], sizeof(g[i]))
+
+proc copyFromGpu*(x: var seq[Halo], g: GpuSeq[GpuHalo]) =
   tic("fromGpuSeqHalo")
   for i in 0..<x.len:
     var t {.noInit.}: typeof g[i]
-    gpuMemCpyToCpu(addr t, addr g[i], sizeof(t))
-    x[i].fromGpu(t)
+    #gpuMemCpyToCpu(addr t, addr g[i], sizeof(t))
+    #x[i].fromGpu(t)
   toc("end")
 
 proc testPlaq(g:auto) =
@@ -191,6 +253,7 @@ proc testPlaq(g:auto) =
   #    p[i] := 0
   var pl = newSeq[float](6)
   var gs = newGpuSum[array[6,float]](lo.nSites)
+  pushGpuMemTag("testPlaq")
   toc "create fields"
   proc gpuSite(x: GpuField): auto =
     for i in gpuSites(x): return x[i]
@@ -226,6 +289,8 @@ proc testPlaq(g:auto) =
                 let snu = hl.nbrFwd(nu, s)
                 let a = g(mu)[s] * h[nu][smu]
                 let b = g(nu)[s] * h[mu][snu]
+                #let a = h[1][s]
+                #let b = h[1][s]
                 tpl[k] += redot(a, b).simdSum
                 #tpl[k] += redot(a, b)
                 inc k
@@ -253,6 +318,7 @@ proc testPlaq(g:auto) =
   echo "norm2 diff: ", sum(d*d)
   #echo pl * vf
   #echo 6.0 * g.plaq
+  echoGpuMem()
 
 when isMainModule:
   qexInit()

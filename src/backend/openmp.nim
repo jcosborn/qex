@@ -217,6 +217,7 @@ macro onGpuNowait*(n,b,body: untyped): auto =
     {.push stacktrace: off.}
     block:
       tic(fl)
+      inc kernelCallCount
       cpuPrepare  # a let section declare and save device pointers
       toc("cpuPrepare")
       #proc gpuProc {.gensym.} =

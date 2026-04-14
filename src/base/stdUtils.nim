@@ -21,6 +21,7 @@ proc constCast*(x: ptr ConstInt): ptr cint {.importc:"(int *)",nodecl.}
 proc newSeqU*[T](n: int): seq[T] =
   result = newSeqOfCap[T](n)
   result.setLen(n)
+proc bytes*[T](x: seq[T]): int = x.len*sizeof(T)
 
 iterator range*[T: SomeInteger](count: T): T =
   var res = T(0)

@@ -46,6 +46,7 @@ macro onGpuNowait*(n,b,body: untyped): auto =
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   template target(cpuPrepare, cpuFinalize, body: untyped) =
     mixin toGpu, getGpu, fromGpu
+    inc kernelCallCount
     cpuPrepare  # a let section declare and save device pointers
     #proc gpuProc {.gensym.} =
     block:
