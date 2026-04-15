@@ -6,7 +6,7 @@ import maths/[matproject]
 
 export hisqLinks
 
-proc asqtadDeriv[T](
+proc asqtadDeriv*[T](
     deriv: auto, 
     gauge,mid: T,  
     coef: Fat7lCoefs,
@@ -15,24 +15,28 @@ proc asqtadDeriv[T](
     perf: var PerfInfo
   ) =
   var (f,fll) = (newOneOf(mid),newOneOf(mid))
+  threads:
+    for mu in 0..<mid.len:
+      f[mu] := 0
+      fll[mu] := 0
   fat7lderiv(f,gauge,mid,coef,fll,llgauge,llmid,naik,perf)
   threads:
     for mu in 0..<mid.len:
       for s in deriv[mu]: deriv[mu][s] := f[mu][s] + fll[mu][s]
 
-proc fat7Deriv[T](
+proc fat7Deriv*[T](
     deriv: auto,
     gauge,mid: T,
     coef: Fat7lCoefs,
     perf: var PerfInfo
   ) = deriv.fat7lDeriv(gauge,mid,coef,perf)
 
-proc project[T](self: UnitaryProjection, v: auto; u: T) =
+proc project*[T](self: UnitaryProjection, v: auto; u: T) =
   threads:
     for mu in 0..<u.len:
       for s in u[mu]: self.projectU(v[mu][s], u[mu][s])
 
-proc projectDeriv[T](self: UnitaryProjection, dvdu: auto; v,u: T; chain: T) =
+proc projectDeriv*[T](self: UnitaryProjection, dvdu: auto; v,u: T; chain: T) =
   threads:
     for mu in 0..<chain.len:
       for s in chain[mu]:
