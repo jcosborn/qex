@@ -23,7 +23,9 @@ elif Backend == "SYCL":
   #const backendIsGpu* = false
   import syclbe
   export syclbe
-  proc init = gpuInit(myRank)
+  proc init =
+    gpuInit(myRank)
+    echo "SYCL device: ", gpuDeviceName()
   qexGlobalInitializers.add init
 else:
   when Backend != "CPU":

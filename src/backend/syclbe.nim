@@ -16,13 +16,15 @@ var q: Queue
 proc gpuNumDevices*: int =
   result = int platform.getDevices.size()
 
+proc gpuDeviceName*: string =
+  $dev.name
+
 proc gpuInit*(device: int) =
   let devs = platform.getDevices()
   let n = int devs.size()
   let d = device mod n
   dev = devs[d]
   q = dev.queue
-  echo "SYCL device: ", dev.name
 
 template gpuMalloc*(size: SomeInteger): pointer = mallocDevice(size, q)
 template gpuMalloc[T](x: var ptr UncheckedArray[T], n: int) =
