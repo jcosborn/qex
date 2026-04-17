@@ -294,11 +294,11 @@ template copy(gd: GatherPointer, d: SomeInteger, s: pointer) =
 template copy(gd: GatherPointer, d: SomeInteger, s: SomeInteger) =
   copyMem(cast[pointer](addr gd.dest[gd.elemsize*d]),
           cast[pointer](addr gd.src[gd.elemsize*s]), gd.elemsize)
-#proc gather*(c: Comm; gm: GatherMap; elemsize: int; d,s: pointer) =
-#  let dest = cast[ptr UncheckedArray[char]](d)
-#  let src = cast[ptr UncheckedArray[char]](s)
-#  var gd = GatherPointer(src: src, dest: dest, elemsize: elemsize)
-#  c.gather(gm, gd)
+proc gather*(c: Comm; gm: GatherMap; elemsize: int; d,s: pointer) =
+  let dest = cast[ptr UncheckedArray[char]](d)
+  let src = cast[ptr UncheckedArray[char]](s)
+  var gd = GatherPointer(src: src, dest: dest, elemsize: elemsize)
+  c.gather(gm, gd)
 
 type GatherField[S,D] = object
   src: S
@@ -324,20 +324,20 @@ proc gather*[D,S:Field](c: Comm; gm: GatherMap; d: D, s: S) =
   var gd = GatherField[S,D](src:s,dest:d,elemsize:sizeof(T),vlen:max(D.V,S.V))
   c.gather(gm, gd)
 
-#proc gatherReversed*(c: Comm; gm: GatherMap; elemsize: int;
-#                     dest,src: pointer) =
-#  var r = GatherMap.new
-#  r.nsrc = gm.ndest
-#  r.ndest = gm.nsrc
-#  r.sidx = gm.rdest
-#  r.rdest = gm.sidx
-#  r.smsginfo = gm.rmsginfo
-#  r.rmsginfo = gm.smsginfo
-#  r.lidx = gm.ldest
-#  r.ldest = gm.lidx
-#  r.sendbuf = gm.recvbuf
-#  r.recvbuf = gm.sendbuf
-#  c.gather(r, elemsize, dest, src)
+proc gatherReversed*(c: Comm; gm: GatherMap; elemsize: int;
+                     dest,src: pointer) =
+  var r = GatherMap.new
+  r.nsrc = gm.ndest
+  r.ndest = gm.nsrc
+  r.sidx = gm.rdest
+  r.rdest = gm.sidx
+  r.smsginfo = gm.rmsginfo
+  r.rmsginfo = gm.smsginfo
+  r.lidx = gm.ldest
+  r.ldest = gm.lidx
+  r.sendbuf = gm.recvbuf
+  r.recvbuf = gm.sendbuf
+  c.gather(r, elemsize, dest, src)
 
 when isMainModule:
   import strformat
