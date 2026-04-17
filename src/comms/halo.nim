@@ -222,17 +222,30 @@ template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], d: SomeInteger, s: 
     let o = d div gh.vlen
     let i = d mod gh.vlen
     gh.dest[o][asSimd(i)] = gh.src{s}
-#[
-template copy*[F,T](gh: GatherHalo[F,T], dv: SomeInteger, di: array,
-                    s: array, n: SomeInteger) =
-  echo n, " ", dv, " ", di, " ", s
+template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], dv: SomeInteger, di: array,
+                                    s: array, n: SomeInteger) =
+  #echo n, " ", dv, " ", di, " ", s
   #for i in 0..<n:
   #  gh.dest[dv][asSimd(di[i])] = gh.src{s[i]}
-  let t = gh.dest[dv]
-  for i in 0..<n:
-    t[asSimd(di[i])] = gh.src{s[i]}
+  var t = gh.dest[dv]
+  #echo $typeof(t)
+  when typeof(t) is Color[MatrixArray]:
+  #when false:
+    #echo "true"
+    for ic in 0..<t.nrows:
+      for jc in 0..<t.ncols:
+        for i in 0..<n:
+          let sv = s[i] div gh.vlen
+          let si = s[i] mod gh.vlen
+          #static: echo $typeof(t[ic,jc]), " ", $typeof(asSimd(di[i])), " ", $typeof(gh.src[sv][ic,jc][asSimd(si)])
+          t[ic,jc][asSimd(di[i])] = gh.src[sv][ic,jc][asSimd(si)]
+  else:
+    for i in 0..<n:
+      t[asSimd(di[i])] = gh.src{s[i]}
+      #let sv = s[i] div gh.vlen
+      #let si = s[i] mod gh.vlen
+      #t[asSimd(di[i])] = gh.src[sv][asSimd(si)]
   gh.dest[dv] = t
-]#
 
 proc update*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
   tic("Halo update")

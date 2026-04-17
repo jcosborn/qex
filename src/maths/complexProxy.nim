@@ -132,6 +132,7 @@ template `[]=`*(x: ComplexProxy, y: typed) =
   #else:
     x.v := y
 proc `[]=`*(x: var ComplexProxy, i: auto, y: ComplexProxy2) {.alwaysInline.} =
+  #static: echo $i.type
   mixin re, im, `[]=`
   when isWrapper i:
     x.re[i] = y.re
@@ -213,6 +214,10 @@ template `re=`*(x: ImagProxy, y: typed) = discard
 template `im=`*(x: ImagProxy, y: typed) = x[] = y
 template `re=`*(x: ComplexProxy, y: typed) = x[].re = y
 template `im=`*(x: ComplexProxy, y: typed) = x[].im = y
+
+#proc `=`*[T](x: var ComplexProxy[T], y: ComplexProxy[T]) {.alwaysInline.} =
+#  x[].re = y[].re
+#  #x.im = y.im
 
 #template setU*(r: ComplexProxy, x: typed, y: typed) =
 #  r[].re = x

@@ -21,6 +21,10 @@ type
 template n*(x: GpuField): auto = x.d.n
 template p*(x: GpuField): auto = x.d.p
 template gpuSites*(x: GpuField): auto = gpuSites(x.n, x.V)
+proc gpuFlagsExcl*(x: Field, f: set[gmFlags]) =
+  gpuMemFlagsExcl(addr x[0], f)
+proc gpuFlagsIncl*(x: Field, f: set[gmFlags]) =
+  gpuMemFlagsIncl(addr x[0], f)
 
 proc bytes*[T:GpuField](x: T): int = x.n * sizeof(T.T)
 
@@ -96,7 +100,7 @@ template gpuSites*(x: CgFld): auto = gpuSites(x.gpu.n, x.gpu.V)
 
 proc finalize*[T:CpuGpu](x: ref T) {.nimcall.} =
   #echo "finalize CpuGpu"
-  when backendIsGpu:
+  when not beSharedMem:
     if x.gpu.p != nil:
       #let pgm = getGpuMem(addr x.cpu[0], x.gpu.bytes)
       #gpuFree(x.gpu.p)
@@ -117,7 +121,7 @@ proc newCgField*(c: Field): auto =
   r.new(finalize[CG])
   r.cpu = c
   r.gpu.n = c.l.nSitesOuter
-  when backendIsGpu:
+  when not beSharedMem:
     #r.gpu.p = cast[type r.gpu.p](gpuMalloc(r.gpu.bytes))
     pushGpuMemTag("Field"&capitalizeAscii(displayName(typeof(r.gpu.T))))
     let pgm = getGpuMem(addr c[0], r.gpu.bytes)
@@ -136,20 +140,22 @@ proc CgColorVectorD*(lo: Layout): auto = newCgField(lo.ColorVectorD())
 proc CgColorMatrixD*(lo: Layout): auto = newCgField(lo.ColorMatrixD())
 
 template toGpu*(g: GpuField, x: CgFld, cpy: bool) =
-  when backendIsGpu:
+  when not beSharedMem:
     g.pgm.touch
     if cpy:
       tic("toGpuCgField")
       gpuMemCpyToGPU(g.p, addr x.cpu[0], g.bytes)
+      g.pgm.wasCopiedIn
       toc("gpuMemCpyToGPU")
 
 template getGpu*(x: CgFld, g: GpuField): auto = g
 
 template fromGpu*(x: CgFld, g: GpuField, cpy: bool) =
-  when backendIsGpu:
+  when not beSharedMem:
     if cpy:
       tic("fromGpuCgField")
       gpuMemCpyToCPU(addr x.cpu[0], g.p, g.bytes)
+      g.pgm.wasCopiedOut
       toc("gpuMemCpyToCPU")
 
 template `*`*(x: SomeNumber, y: CgFld): auto = x * y.cpu
@@ -161,32 +167,42 @@ template `:=`*(x: var CgFld, y: CgFld) =
   x.cpu := y.cpu
 
 
-proc toGpu*(x: Field): auto =
+proc toGpu*(g: var GpuField, c: Field) =
   tic("toGpuField")
-  var g: gpuType(typeof x)
-  g.n = x.l.nSitesOuter
-  when backendIsGpu:
+  g.n = c.l.nSitesOuter
+  when not beSharedMem:
     pushGpuMemTag("Field"&capitalizeAscii(displayName(typeof(g.T))))
-    let pgm = getGpuMem(addr x[0], g.bytes)
+    let pgm = getGpuMem(addr c[0], g.bytes)
     popGpuMemTag()
     g.p = cast[type g.p](pgm.p)
     g.pgm = pgm
     toc("getGpuMem")
-    if pgm.needsCopyIn:
-      gpuMemCpyToGPU(g.p, addr x[0], g.bytes)
+    #if pgm.needsCopyIn:
+    #  gpuMemCpyToGPU(g.p, addr x[0], g.bytes)
+    pgm.copyIn(addr c[0])
+    #g.toGpu(x, pgm)
     toc("gpuMemCpyToGPU")
   else:
-    g.p = cast[type g.p](addr x[0])
+    g.p = cast[type g.p](addr c[0])
   toc("end")
+
+proc toGpu*(c: Field): auto =
+  var g: gpuType(typeof x)
+  g.toGpu(c)
   g
 
 template getGpu*(x: Field, g: GpuField): auto = g
 
-proc fromGpu*(x: Field, g: GpuField) =
-  when backendIsGpu:
-    if g.pgm.needsCopyOut:
-      gpuMemCpyToCPU(addr x[0], g.p, g.bytes)
+proc fromGpu*(x: Field) =
+  when not beSharedMem:
+    let pgm = getGpuMem(addr x[0])
+    pgm.copyOut(addr x[0])
 
+template fromGpu*(x: Field, g: GpuField) = fromGpu(x)
+
+
+
+#[
 proc toGpu*(g: GpuSeq[GpuField], x: seq[Field]) =
   tic("toGpuSeqField")
   for i in 0..<g.n:
@@ -194,7 +210,9 @@ proc toGpu*(g: GpuSeq[GpuField], x: seq[Field]) =
     let t = toGpu(x[i])
     gpuMemCpyToGpu(addr g[i], addr t, sizeof(t))
   toc("end")
+]#
 
+#[
 proc copyFromGpu*(x: seq[Field], g: GpuSeq[GpuField]) =
   tic("copyFromGpuSeqField")
   #for i in 0..<x.len:
@@ -206,3 +224,4 @@ proc copyFromGpu*(x: seq[Field], g: GpuSeq[GpuField]) =
   for i in 0..<x.len:
     x[i].fromGpu(t[i])
   toc("end")
+]#

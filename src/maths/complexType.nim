@@ -52,9 +52,11 @@ template has*[R,I](x: typedesc[ComplexObj[R,I]], y: typedesc): bool =
   has(R.type, y) or has(I.type, y)
 
 template `[]`*[T](x: AsComplex, i: T): untyped =
+  #static: echo "AsComplex[] ", $i.type
   when T is AsComplex:
     x[][i[]]
   elif T.isWrapper:
+    #static: echo "wrapper ", $typeof(indexed(x,i))
     indexed(x, i)
     #asVar(asComplex(x[][i]))
   else:

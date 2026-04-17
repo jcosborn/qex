@@ -8,10 +8,12 @@ const Backend {.strdefine.} = "CPU"
 
 when Backend == "OpenMP":
   const backendIsGpu* = true
+  const beSharedMem* {.booldefine.} = false
   import openmp
   export openmp
 elif Backend == "CUDA":
   const backendIsGpu* = true
+  const beSharedMem* {.booldefine.} = false
   import cudabe
   export cudabe
   import cudasum
@@ -20,6 +22,7 @@ elif Backend == "CUDA":
   qexGlobalInitializers.add init
 elif Backend == "SYCL":
   const backendIsGpu* = true
+  const beSharedMem* {.booldefine.} = false
   #const backendIsGpu* = false
   import syclbe
   export syclbe
@@ -32,8 +35,12 @@ else:
     static: echo "Backend: ", Backend
     {.warning: "Backend unknown, using CPU only.".}
   const backendIsGpu* = false
+  const beSharedMem* {.booldefine.} = true
   import cpu
   export cpu
+  proc init =
+    echo "Using CPU backend"
+  qexGlobalInitializers.add init
 const backendIsCpu* = not backendIsGpu
 
 proc gpuMalloc*[T](x: var ptr T) =

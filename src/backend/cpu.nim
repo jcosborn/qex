@@ -3,7 +3,7 @@ import backend/expr
 import base/metaUtils
 import macros
 
-var kernelCallCount* = 0  # count of kernel calls
+var kernelCallCount* = 0  # _twice_ kernel calls, incremented before setup and after finalize
 const dumpKernels {.intdefine.} = 0
 
 template gpuMalloc*(size:SomeInteger):pointer = alloc(size)
@@ -47,22 +47,31 @@ macro onGpuNowait*(n,b,body: untyped): auto =
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   template target(cpuPrepare, cpuFinalize, body: untyped) =
     mixin toGpu, getGpu, fromGpu
-    inc kernelCallCount
-    cpuPrepare  # a let section declare and save device pointers
-    #proc gpuProc {.gensym.} =
+    inc kernelCallCount  # increment before setup
     block:
-      const inOnGpu {.inject,used.} = true
-      if numThreads == 1:
-        threads:
+      let thisKernelCallCount = kernelCallCount  # save current value for finalizer
+      cpuPrepare  # a let section declare and save device pointers
+      #proc gpuProc {.gensym.} =
+      block:
+        const inOnGpu {.inject,used.} = true
+        if numThreads == 1:
+          threads:
+            body
+        else:
           body
-      else:
-        body
-    #gpuProc()
-    proc finalize {.gensym.} =
-      threadBarrier()
-      cpuFinalize
-      #threadBarrier()
-    finalize
+      #gpuProc()
+      proc finalize {.gensym.} =
+        var countSave = 0
+        threadBarrier()
+        threadSingle:
+          countSave = kernelCallCount
+          kernelCallCount = thisKernelCallCount
+        cpuFinalize
+        threadSingle:
+          kernelCallCount = countSave
+        #threadBarrier()
+      inc kernelCallCount  # increment after launch
+      finalize
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v

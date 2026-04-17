@@ -40,11 +40,13 @@ proc toGpu*[T](x: seq[T]): auto =
 
 template getGpu*(x: seq, g: GpuSeq): auto = g
 
-template fromGpu*(x: seq, g: GpuSeq) =
+proc fromGpu*(x: var seq, g: GpuSeq) =
   #when backendIsGpu:
   #  for i in 0..<x.len:
   #    x[i].fromGpu(g[i])
-  x.copyFromGpu(g)
+  #x.copyFromGpu(g)
+  let pgm = getGpuMem(addr x[0], g.bytes)
+  fromGpu(x, g, pgm)
 
 proc toGpu*[G,C](g: var GpuSeq[G], x: seq[C]) =
   mixin toGpu, displayName
@@ -57,11 +59,12 @@ proc toGpu*[G,C](g: var GpuSeq[G], x: seq[C]) =
   g.toGpu(x, pgm)
 
 proc toGpu*[T:SomeNumber](g: var GpuSeq[T], c: seq[T], pgm: ptr GpuMem) =
-  if pgm.needsCopyIn:
-    gpuMemCpyToGpu(g.p, addr c[0], c.bytes)
+  #if pgm.needsCopyIn:
+  #  gpuMemCpyToGpu(g.p, addr c[0], c.bytes)
+  pgm.copyIn(addr c[0])
 
 proc toGpu*[G,C](g: var GpuSeq[GpuSeq[G]], c: seq[seq[C]], pgm: ptr GpuMem) =
-  if pgm.useCount == 1:  # newly created
+  if pgm.isNew:  # newly created
     var t = newSeq[GpuSeq[G]](g.n)
     for i in 0..<g.n:
       t[i] = toGpu(c[i])
@@ -78,23 +81,24 @@ proc toGpu*[G,C](g: var GpuSeq[GpuSeq[G]], c: seq[seq[C]], pgm: ptr GpuMem) =
           gpuMemCpyToGpu(t.p, addr c[i][0], c[i].bytes)
 
 proc toGpu*[G,C](g: var GpuSeq[ptr UncheckedArray[G]], c: seq[seq[C]], pgm: ptr GpuMem) =
-  if pgm.useCount == 1:  # newly created
+  if pgm.needsCopyIn:
     var t = newSeq[ptr UncheckedArray[G]](g.n)
     for i in 0..<g.n:
       t[i].toGpu(c[i])
-    gpuMemCpyToGpu(g.p, addr t[0], t.bytes)
-  elif pgm.needsCopyIn:
+    pgm.copyIn(addr t[0])
+  else:
     for i in 0..<g.n:
-      #toGpu(addr g.p[i], c[i])
-      pushGpuMemTag("SeqPtr" & displayName(G))
-      let t = getGpuMem(addr c[i][0], c[i].bytes)
-      popGpuMemTag()
-      if t.useCount == 1:
-        var x = toGpu(c[i])
-        gpuMemCpyToGpu(addr g.p[i], x.p, sizeof(x.p))
-      else:
-        if t.needsCopyIn:
-          gpuMemCpyToGpu(t.p, addr c[i][0], c[i].bytes)
+      discard toGpu(c[i])
+
+proc fromGpu*[C,G](c: var seq[seq[C]], g: GpuSeq[ptr UncheckedArray[G]], pgm: ptr GpuMem) =
+  if pgm.needsCopyOut:
+    var t = newSeq[ptr UncheckedArray[G]](g.n)
+    pgm.copyOut(addr t[0])
+    for i in 0..<g.n:
+      c[i].fromGpu(t[i])
+  else:
+    for i in 0..<g.n:
+      fromGpu(c[i])
 
 proc toGpu*[T:SomeNumber](g: var ptr UncheckedArray[T], x: seq[T]) =
   mixin toGpu
@@ -105,8 +109,31 @@ proc toGpu*[T:SomeNumber](g: var ptr UncheckedArray[T], x: seq[T]) =
   g.toGpu(x, pgm)
 
 proc toGpu*[T:SomeNumber](g: var ptr UncheckedArray[T], c: seq[T], pgm: ptr GpuMem) =
-  if pgm.needsCopyIn:
-    gpuMemCpyToGpu(g, addr c[0], c.bytes)
+  #if pgm.needsCopyIn:
+  #  gpuMemCpyToGpu(g, addr c[0], c.bytes)
+  pgm.copyIn(addr c[0])
+
+proc fromGpu*[T:SomeNumber](c: var seq[T], g: ptr UncheckedArray[T]) =
+  mixin fromGpu
+  let pgm = getGpuMem(addr c[0])
+  pgm.copyOut(addr c[0])
+
+proc fromGpu*(x: var seq) =
+  let pgm = getGpuMem(addr x[0])
+  pgm.copyOut(addr x[0])
+
+
+proc toGpu*(g: var GpuSeq, c: alignedMem) =
+  g.n = c.len
+  let pgm = getGpuMem(addr c[0], g.bytes)
+  g.p = cast[typeof g.p](pgm.p)
+  pgm.copyIn(addr c[0])
+
+proc fromGpu*(c: var alignedMem) =
+  let pgm = getGpuMem(addr c[0])
+  pgm.copyOut(addr c[0])
+
+template fromGpu*(c: var alignedMem, g: GpuSeq) = fromGpu(c)
 
 
 iterator gpuRange*(n: int): int =

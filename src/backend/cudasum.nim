@@ -35,7 +35,7 @@ proc cmemcpy(dest,src: pointer, count: csize_t): pointer {.importc:"memcpy",head
 proc warpSumLarge*[T](x: T): T =  # for over 32 bytes
   importCG()
   type atomic_t = atomic_type(T)
-  static: echo "type: ", $T, "  atomic_t: ", $atomic_t
+  #static: echo "type: ", $T, "  atomic_t: ", $atomic_t
   const n = sizeof(T) div sizeof(atomic_t)
   #doAssert(sizeof(T) == n * sizeof(atomic_t))
   var sum_tmp {.noInit.}: array[n, atomic_t]

@@ -4,7 +4,9 @@ import expr
 import cuda
 export cuda.dataAddr
 
-var kernelCallCount* = 0  # count of kernel calls
+var kernelCallCount* = 0  # _twice_ kernel calls, incremented before setup and after finalize
+#var kernelSetupCount* = 0  # number of kernel calls, incremented before setup
+#var kernelFinalizeCount* = 0  # number of kernel calls, incremented after finalize
 const dumpKernels {.intdefine.} = 0
 
 proc gpuNumDevices*: int =
@@ -110,9 +112,10 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
   let fl = lis[^4] & "(" & lis[^2] & ")"
   template target(fl, nn, tpb, v, arg, cpuPrepare, cpuFinalize, body: untyped): untyped =
     mixin toGpu, getGpu, fromGpu
+    inc kernelCallCount  # increment before setup
     block:
+      let thisKernelCallCount = kernelCallCount  # save current value for finalizer
       tic(fl)
-      inc kernelCallCount
       var v = cpuPrepare  # kernel argument tuple
       toc("cpuPrepare")
       type ByCopy[T] {.bycopy.} = object
@@ -130,13 +133,19 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
         cudaLaunch(kern, blocksPerGrid, threadsPerBlock, v)
       toc("launch")
       proc finalize {.gensym.} =
+        var countSave = 0
         tic(fl)
         threadSingle:
+          countSave = kernelCallCount
+          kernelCallCount = thisKernelCallCount
           discard cudaDeviceSynchronize()
         toc("wait")
         cpuFinalize
         #threadBarrier()
+        threadSingle:
+          kernelCallCount = countSave
         toc("cpuFinalize")
+      inc kernelCallCount  # increment after launch
       finalize
   let
     varg = gensym(nskVar, "varg")

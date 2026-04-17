@@ -39,64 +39,39 @@ proc nbrBck[T](ghl: GpuHaloLayout, mu: int, s: T): T =
   let s0 = T((n0*ghl.V+j)div(s.V))
   result = s0
 
-proc getGhl(V:static int): ptr GpuHaloLayout[V] =  # FIXME: need to make pointer map
-  var ghl {.global.}: GpuHaloLayout[V]
-  result = addr ghl
+proc setRO(x: seq[seq]) =
+  gpuMemFlagsExcl(addr x[0], {gmCpuWrite,gmGpuWrite}) # set read only
+  for i in 0..<x.len:
+    gpuMemFlagsExcl(addr x[i][0], {gmCpuWrite,gmGpuWrite}) # set read only
 
-#proc checkNeighbors(g: GpuHaloLayout) =
-#  for i in 0..<g.neighborFwd.n:
-#    for j in 0..<g.neighborFwd[i].n:
-#      if g.neighborFwd[i][j] >= g.nExt: echo i, " ", j, " ", g.neighborFwd[i][j]
-#  for i in 0..<g.neighborBck.n:
-#    for j in 0..<g.neighborBck[i].n:
-#      if g.neighborBck[i][j] >= g.nExt: echo i, " ", j, " ", g.neighborBck[i][j]
-
-proc toGpu*(x: HaloLayout): auto =  # TODO make CPU not copy inner seq
+proc toGpu*(g: var GpuHaloLayout, c: HaloLayout) =  # TODO implement copyIn once
   tic("toGpuHaloLayout")
-  var g: GpuHaloLayout[x.lo.V]
-  g.nOut = x.nOut
-  g.nExt = x.nExt
-  #[
-  g.neighborFwd.newGpuSeq x.neighborFwd.len
-  for i in 0..<g.neighborFwd.n:
-    #g.neighborFwd[i].newGpuSeq x.neighborFwd[i].len
-    #for j in 0..<g.neighborFwd[i].n:
-    #  g.neighborFwd[i][j] = x.neighborFwd[i][j]
-    let n = x.neighborFwd[i].len
-    let b = n*sizeof(int32)
-    #g.neighborFwd[i] = cast[typeof g.neighborFwd[i]](gpuMalloc(b))
-    let p = gpuMalloc(b)
-    gpuMemCpyToGpu(p, addr x.neighborFwd[i][0], b)  # copy data to GPU
-    gpuMemCpyToGpu(addr g.neighborFwd[i], addr p, sizeof(p))  # copy ptr to GPU
-  ]#
-  pushGpuMemTag("neighborFwd")
-  g.neighborFwd.toGpu(x.neighborFwd)
+  g.nOut = c.nOut
+  g.nExt = c.nExt
+  pushGpuMemTag("nbrFwd")
+  g.neighborFwd.toGpu(c.neighborFwd)
+  setRO(c.neighborFwd)
   popGpuMemTag()
-  toc("neighborFwd")
-  #[
-  g.neighborBck.newGpuSeq x.neighborBck.len
-  for i in 0..<g.neighborBck.n:
-    #g.neighborBck[i].newGpuSeq x.neighborBck[i].len
-    #for j in 0..<g.neighborBck[i].n:
-    #  g.neighborBck[i][j] = x.neighborBck[i][j]
-    let n = x.neighborBck[i].len
-    let b = n*sizeof(int32)
-    #g.neighborBck[i] = cast[typeof g.neighborBck[i]](gpuMalloc(b))
-    let p = gpuMalloc(b)
-    gpuMemCpyToGpu(p, addr x.neighborBck[i][0], b)  # copy data to GPU
-    gpuMemCpyToGpu(addr g.neighborBck[i], addr p, sizeof(p))  # copy ptr to GPU
-  ]#
-  pushGpuMemTag("neighborBck")
-  g.neighborBck.toGpu(x.neighborBck)
+  toc("nbrFwd")
+  pushGpuMemTag("nbrBck")
+  g.neighborBck.toGpu(c.neighborBck)
+  setRO(c.neighborBck)
   popGpuMemTag()
-  #g.checkNeighbors
-  toc("neighborBck")
-  getGhl(x.lo.V)[] = g
+  toc("nbrBck")
+
+proc toGpu*(c: HaloLayout): auto =
+  var g: GpuHaloLayout[c.lo.V]
+  g.toGpu(c)
   g
 
-template getGpu*(x: HaloLayout, g: GpuHaloLayout): auto = g
+template getGpu*(c: HaloLayout, g: GpuHaloLayout): auto = g
 
-template fromGpu*(x: HaloLayout, g: GpuHaloLayout) = discard
+proc fromGpu*(c: HaloLayout, g: GpuHaloLayout) =
+  tic("fromGpuHaloLayout")
+  c.neighborFwd.fromGpu(g.neighborFwd)
+  toc("nbrFwd")
+  c.neighborBck.fromGpu(g.neighborBck)
+  toc("nbrBck")
 
 type
   GpuHalo*[V:static int,F,T] = object
@@ -132,95 +107,76 @@ proc `[]=`*(h: GpuHalo, i: SomeInteger, x: auto) =
   else:
     h.halo[k] := x
 
-template gpuType*[L,F,T](x: typedesc[Halo[L,F,T]]): typedesc =
+template gpuType*[L,F,T](c: typedesc[Halo[L,F,T]]): typedesc =
   GpuHalo[L.V, gpuType F, gpuType T]
 
-#[
-proc toGpu*[L,F,T](x: Halo[L,F,T]): auto {.noInit.} =
+proc gpuFlagsExcl*(x: Halo, f: set[gmFlags]) =
+  gpuMemFlagsExcl(addr x.halo[0], f)
+proc gpuFlagsIncl*(x: Halo, f: set[gmFlags]) =
+  gpuMemFlagsIncl(addr x.halo[0], f)
+
+proc toGpu*(g: var GpuHalo, c: Halo) =
   tic("toGpuHalo")
-  var g {.noInit.}: GpuHalo[L.V, gpuType F, gpuType T]
-  g.layout = getGhl(x.layout.L.V)[]
-  g.field = toGpu(x.field)
-  toc("toGpuField")
-  g.nOut = x.nOut
-  g.nExt = x.nExt
-  g.halo.newGpuSeq x.halo.len
-  toc("newGpuSeq")
-  gpuMemCpyToGPU(g.halo.p, addr x.halo[0], g.halo.bytes)
-  toc("gpuMemCpyToGPU")
-  #ghl.checkNeighbors
-  #toc("end")
-  g
-]#
-proc toGpu*[L,F,T](x: Halo[L,F,T]): auto {.noInit.} =
-  tic("toGpuHalo new")
-  var g {.noInit.}: GpuHalo[L.V, gpuType F, gpuType T]
-  g.layout = getGhl(x.layout.L.V)[]
+  g.nOut = c.nOut
+  g.nExt = c.nExt
   pushGpuMemTag("Halo")
-  g.field = toGpu(x.field)
-  toc("toGpuField")
-  g.nOut = x.nOut
-  g.nExt = x.nExt
-  g.halo.n = x.halo.len
-  let pgm = getGpuMem(addr x.halo[0], g.halo.bytes)
+  g.layout.toGpu(c.layout)
+  toc("Layout")
+  g.field.toGpu(c.field)
+  toc("Field")
+  g.halo.toGpu(c.halo)
   popGpuMemTag()
-  g.halo.p = cast[typeof g.halo.p](pgm.p)
-  toc("getGpuMem")
-  gpuMemCpyToGPU(g.halo.p, addr x.halo[0], g.halo.bytes)
-  toc("gpuMemCpyToGPU")
-  #ghl.checkNeighbors
-  #toc("end")
+  toc("Halo")
+
+proc toGpu*[L,F,T](c: Halo[L,F,T]): auto {.noInit.} =
+  var g {.noInit.}: GpuHalo[L.V, gpuType F, gpuType T]
+  g.toGpu(c)
   g
 
-proc toGpu*(g: ptr GpuHalo, c: Halo) =  # g is a ptr on the GPU, don't touch on CPU
-  tic("toGpuHalo old")
-  discard toGpu(c.field) # should update field
-  toc("toGpuField")
-  let bytes = c.halo.len * sizeof(c.halo[0])
-  let pgm = getGpuMem(addr c.halo[0], bytes)
-  toc("getGpuMem")
-  if pgm.needsCopyIn:
-    gpuMemCpyToGPU(pgm.p, addr c.halo[0], bytes)
-  toc("gpuMemCpyToGPU")
-
-proc fromGpu*(x: var Halo, g: GpuHalo) =
+proc fromGpu*(c: var Halo, g: GpuHalo) =
   tic("fromGpuHalo")
-  gpuMemCpyToCPU(addr x.halo[0], g.halo.p, g.halo.bytes)
-  toc("end")
+  c.field.fromGpu(g.field)
+  toc("Field")
+  c.halo.fromGpu(g.halo)
+  toc("Halo")
 
-#proc toGpu*(g: var GpuSeq[GpuHalo], x: seq[Halo]) =
-#  tic("toGpuSeqHalo")
-#  for i in 0..<g.n:
-#    #g[i] = toGpu(x[i])
-#    let t = toGpu(x[i])
-#    gpuMemCpyToGpu(addr g[i], addr t, sizeof(t))
-#  toc("end")
+proc fromGpu*(c: var Halo) =
+  tic("fromGpuHalo")
+  c.field.fromGpu()
+  toc("Field")
+  c.halo.fromGpu()
+  toc("Halo")
 
 proc toGpu*(g: var GpuSeq[GpuHalo], c: seq[Halo], pgm: ptr GpuMem) =
-  if pgm.useCount == 1:  # newly created
-    #echo "toGpu new GpuSeq[GpuHalo]"
+  if pgm.needsCopyIn:
+    tic("toGpuSeqHaloCopyIn")
     var t = newSeq[typeof g[0]](g.n)
     for i in 0..<g.n:
-      t[i] = toGpu(c[i])
-    gpuMemCpyToGpu(g.p, addr t[0], t.bytes)
-  elif pgm.needsCopyIn:
+      t[i].toGpu(c[i])
+    toc("loopToGpu")
+    pgm.copyIn(addr t[0])
+    pgm.flags.excl {gmCpuWrite,gmGpuWrite}  # set seq container read only (not halo data)
+    toc("copyIn")
+  else:
+    tic("toGpuSeqHalo")
     for i in 0..<g.n:
-      toGpu(addr g.p[i], c[i])
-      #let t = getGpuMem(addr c[i], sizeof(g[i]))
-      #if t.useCount == 1:
-      #  var x = toGpu(c[i])
-      #  gpuMemCpyToGpu(addr g.p[i], addr x, sizeof(x))
-      #else:
-      #  if t.needsCopyIn:
-      #    gpuMemCpyToGpu(t.p, addr c[i], sizeof(g[i]))
+      discard toGpu(c[i])
+    toc("loopToGpu")
 
-proc copyFromGpu*(x: var seq[Halo], g: GpuSeq[GpuHalo]) =
-  tic("fromGpuSeqHalo")
-  for i in 0..<x.len:
-    var t {.noInit.}: typeof g[i]
-    #gpuMemCpyToCpu(addr t, addr g[i], sizeof(t))
-    #x[i].fromGpu(t)
-  toc("end")
+proc fromGpu*(c: var seq[Halo], g: GpuSeq[GpuHalo], pgm: ptr GpuMem) =
+  if pgm.needsCopyOut:
+    tic("fromGpuSeqHaloCopyOut")
+    var t = newSeq[typeof g[0]](g.n)
+    pgm.copyOut(addr t[0])
+    toc("copyOut")
+    for i in 0..<g.n:
+      c[i].fromGpu(t[i])
+    toc("loopToGpu")
+  else:
+    tic("fromGpuSeqHalo")
+    for i in 0..<g.n:
+      c[i].fromGpu()
+    toc("loopFromGpu")
 
 proc testPlaq(g:auto) =
   tic "testPlaq"
@@ -244,6 +200,10 @@ proc testPlaq(g:auto) =
   var h = newSeq[H](nd)
   for d in 0..<nd:
     h[d] = makeHalo(hl, g[d])
+    h[d].gpuFlagsExcl {gmGpuWrite}
+    h[d].gpuFlagsIncl {gmCpuWriteOnce}
+    g[d].gpuFlagsExcl {gmGpuWrite}
+    g[d].gpuFlagsIncl {gmCpuWriteOnce}
   toc "makeHalo"
   #var p = newSeq[typeof g[0]](6)
   #for i in 0..<6:
