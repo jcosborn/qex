@@ -210,8 +210,7 @@ proc kineticAction*(hmc: HmcAction): float =
     for mu in 0..<hmc.p.len: p2t += hmc.p[mu].norm2
     threadBarrier()
     threadMaster: p2 = p2t
-  result = 0.5*p2 - 16.0*float(hmc.p[0].l.physVol)
-  echo "kinetic action: ", result
+  return 0.5*p2 - 16.0*float(hmc.p[0].l.physVol)
 
 proc action*(hmc: var HmcAction): float =
   result = 0.0
@@ -628,7 +627,7 @@ proc heatbath*(self: StaggeredPauliVillarsAction; u: GaugeConfiguration; rng: au
   threads: 
     psi.gaussian(rng)
     self.phi := 0
-  self.stag.solve(self.phi, psi, -self.mass, self.spa)
+  self.stag.solve(self.phi, psi, self.mass, self.spa)
   threads: self.phi.odd := 0
   u.setBC()
   u.stagPhase()
@@ -643,7 +642,7 @@ proc action*(self: StaggeredPauliVillarsAction; u: GaugeConfiguration): float =
   threads:
     psi := 0
     threadBarrier()
-    self.stag.D(psi, self.phi, -self.mass)
+    self.stag.D(psi, self.phi, self.mass)
     threadBarrier()
     var psi2t = psi.norm2()
     threadBarrier()

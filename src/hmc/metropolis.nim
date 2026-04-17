@@ -1,5 +1,5 @@
 import strUtils
-import comms/commsUtils, math, strformat, stats
+import comms/[commsUtils, commsEcho], math, strformat, stats
 
 type
   MetropolisStats* = object
