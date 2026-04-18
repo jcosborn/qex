@@ -168,9 +168,10 @@ qexInit()
 <span class="hljs-keyword">let</span> lat = [<span class="hljs-number">4</span>, <span class="hljs-number">4</span>, <span class="hljs-number">4</span>, <span class="hljs-number">4</span>]
 <span class="hljs-keyword">let</span> lo = newLayout(lat)
 <span class="hljs-keyword">var</span> v = lo.<span class="hljs-type">ColorVector</span>()
-v := <span class="hljs-number">1</span>
-<span class="hljs-keyword">if</span> myRank == <span class="hljs-number">0</span>:
-  <span class="hljs-keyword">echo</span> <span class="hljs-string">&quot;Vector element at site 0:&quot;</span>, v[<span class="hljs-number">0</span>][<span class="hljs-number">0</span>]
+threads:
+  v := <span class="hljs-number">1</span>
+<span class="hljs-keyword">echo</span> <span class="hljs-string">&quot;norm2 of vector:&quot;</span>, v.norm2
+<span class="hljs-keyword">echo</span> <span class="hljs-string">&quot;3 * volume: &quot;</span>, <span class="hljs-number">3</span> * lo.physVol
 qexFinalize()</code></pre><pre class="nb-output">Using Comm: QMP
 #physGeom:@[4, 4, 4, 4]
 #rankGeom:@[1, 1, 1, 1]
@@ -181,8 +182,9 @@ qexFinalize()</code></pre><pre class="nb-output">Using Comm: QMP
 #outerGeom:@[2, 2, 2, 2]
 #innerCb: 0
 #innerCbDir: 0
-Vector element at site 0:(fSimd: [1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0])+(fSimd: [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0])I
-[0.493 s] Total time (Init - Finalize): 0.492640045 seconds.</pre>
+norm2 of vector:768.0
+3 * volume: 768
+[0.517 s] Total time (Init - Finalize): 0.516789163 seconds.</pre>
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
