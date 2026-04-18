@@ -39,13 +39,18 @@ template toPrec*(x: Simd, y: typedesc[float64]): untyped = toDouble(x)
 template stripSimdAsView*[T](x: T): untyped = x
 template stripSimdAsView*(x: AsView): untyped = stripSimdAsView x[]
 template stripSimdAsView*(x: Simd): untyped = stripSimdAsView x[]
-template `[]=`*(x: Simd, i: typed, y: typed): untyped =
+template `[]=`*[N:static int,T](x: array[N,T], i: SomeInteger, y: not T) =
+    x[i] = T(y)
+template `[]=`*[S](x: Simd[S], i: typed, y: typed) =
   when y is Simd:
     #x[][stripSimdAsView i] = doIndexed(y[])
     x[][stripSimdAsView i] = eval(y[])
   else:
+    #static: echo $x.type
     #x[][stripSimdAsView i] = doIndexed(y)
     x[][stripSimdAsView i] = eval(y)
+    #x[][stripSimdAsView i] = (index(S,stripSimdAsView i))(eval(y))
+    #x[][stripSimdAsView i] = eval(y)
 
 template attrib(att: untyped): untyped {.dirty.} =
   template att*[T](x: typedesc[Simd[T]]): untyped =

@@ -5,6 +5,11 @@ import gpumem
 export gpumem
 import qex
 
+proc gpuFlagsIncl*(x: seq, f: set[gmFlags]) =
+  gpuMemFlagsIncl(addr x[0], f)
+proc gpuFlagsExcl*(x: seq, f: set[gmFlags]) =
+  gpuMemFlagsExcl(addr x[0], f)
+
 type
   GpuSeq*[T] = object
     n*: int
@@ -25,6 +30,8 @@ proc displayName*(x: typedesc[SomeNumber]): string =
   $x
 proc displayName*[T](x: typedesc[ptr UncheckedArray[T]]): string =
   result = "Ptr" & capitalizeAscii($T)
+
+
 
 proc toGpu*[T](x: seq[T]): auto =
   mixin gpuType, toGpu, displayName

@@ -86,6 +86,87 @@ proc `[]`*[X:SomeGpuField,Y:SomeGpuField2,I:SiteV](e: GpuFieldExpr["*",(X,Y)], i
   r.mul(e.args[0][i], e.args[1][i])
   r
 
+
+proc toGpu*(g: var GpuField, c: Field) =
+  g.n = c.l.nSitesOuter
+  when not beSharedMem:
+    tic("toGpuField")
+    pushGpuMemTag("Field"&capitalizeAscii(displayName(typeof(g.T))))
+    let pgm = getGpuMem(addr c[0], g.bytes)
+    popGpuMemTag()
+    g.p = cast[type g.p](pgm.p)
+    g.pgm = pgm
+    toc("getGpuMem")
+    pgm.copyIn(addr c[0])
+    toc("copyIn")
+  else:
+    g.p = cast[type g.p](addr c[0])
+
+proc toGpu*(c: Field): auto =
+  var g: gpuType(typeof c)
+  g.toGpu(c)
+  g
+
+template getGpu*(x: Field, g: GpuField): auto = g
+
+proc fromGpu*(x: Field) =
+  when not beSharedMem:
+    tic("fromGpuField")
+    let pgm = getGpuMem(addr x[0])
+    pgm.copyOut(addr x[0])
+    toc("copyOut")
+
+template fromGpu*(x: Field, g: GpuField) = fromGpu(x)
+
+proc toGpu*(g: GpuSeq[GpuField], c: seq[Field], pgm: ptr GpuMem) =
+  if pgm.needsCopyIn:
+    tic("toGpuSeqFieldNew")
+    var t = newSeq[typeof(g[0])](g.n)
+    for i in 0..<g.n:
+      t[i].toGpu(c[i])
+    toc("toGpu")
+    pgm.copyIn(addr t[0])
+    toc("copyIn")
+  else:
+    tic("toGpuSeqFieldOld")
+    for i in 0..<g.n:
+      discard toGpu(c[i])
+    toc("toGpu")
+
+proc fromGpu*(c: var seq[Field], g: GpuSeq[GpuField], pgm: ptr GpuMem) =
+  if pgm.needsCopyOut:
+    tic("fromGpuSeqFieldNew")
+    var t = newSeq[typeof(g[0])](g.n)
+    pgm.copyOut(addr t[0])
+    toc("copyOut")
+    for i in 0..<g.n:
+      c[i].fromGpu(t[i])
+    toc("fromGpu")
+  else:
+    tic("fromGpuSeqFieldOld")
+    for i in 0..<g.n:
+      fromGpu(c[i])
+    toc("fromGpu")
+
+#[
+proc copyFromGpu*(x: seq[Field], g: GpuSeq[GpuField]) =
+  tic("copyFromGpuSeqField")
+  #for i in 0..<x.len:
+  #  var t {.noInit.}: typeof g[i]
+  #  gpuMemCpyToCpu(addr t, addr g[i], sizeof(t))
+  #  x[i].fromGpu(t)
+  var t = newSeq[GpuField](g.n)
+  gpuMemCpyToCpu(addr t[0], addr g[0], g.bytes)
+  for i in 0..<x.len:
+    x[i].fromGpu(t[i])
+  toc("end")
+]#
+
+
+
+
+
+
 type
   CgFieldObj*[T] = CpuGpu[T, gpuType(T)]
   CgField*[T] = ref CpuGpu[T, gpuType(T)]
@@ -113,6 +194,8 @@ template displayName*[N:static int,T](t: typedesc[VectorArray[N,T]]): string =
   "Vector" & $N
 template displayName*[N,M:static int,T](t: typedesc[MatrixArray[N,M,T]]): string =
   "Matrix" & $N & "," & $M
+template displayName*[V:static int,T](t: typedesc[GpuField[V,T]]): string =
+  "Field" & displayName(T)
 
 proc newCgField*(c: Field): auto =
   type C = typeof c
@@ -165,63 +248,3 @@ template `:=`*(x: var CgFld, y: SomeField) =
   x.cpu := y
 template `:=`*(x: var CgFld, y: CgFld) =
   x.cpu := y.cpu
-
-
-proc toGpu*(g: var GpuField, c: Field) =
-  tic("toGpuField")
-  g.n = c.l.nSitesOuter
-  when not beSharedMem:
-    pushGpuMemTag("Field"&capitalizeAscii(displayName(typeof(g.T))))
-    let pgm = getGpuMem(addr c[0], g.bytes)
-    popGpuMemTag()
-    g.p = cast[type g.p](pgm.p)
-    g.pgm = pgm
-    toc("getGpuMem")
-    #if pgm.needsCopyIn:
-    #  gpuMemCpyToGPU(g.p, addr x[0], g.bytes)
-    pgm.copyIn(addr c[0])
-    #g.toGpu(x, pgm)
-    toc("gpuMemCpyToGPU")
-  else:
-    g.p = cast[type g.p](addr c[0])
-  toc("end")
-
-proc toGpu*(c: Field): auto =
-  var g: gpuType(typeof x)
-  g.toGpu(c)
-  g
-
-template getGpu*(x: Field, g: GpuField): auto = g
-
-proc fromGpu*(x: Field) =
-  when not beSharedMem:
-    let pgm = getGpuMem(addr x[0])
-    pgm.copyOut(addr x[0])
-
-template fromGpu*(x: Field, g: GpuField) = fromGpu(x)
-
-
-
-#[
-proc toGpu*(g: GpuSeq[GpuField], x: seq[Field]) =
-  tic("toGpuSeqField")
-  for i in 0..<g.n:
-    #g[i] = toGpu(x[i])
-    let t = toGpu(x[i])
-    gpuMemCpyToGpu(addr g[i], addr t, sizeof(t))
-  toc("end")
-]#
-
-#[
-proc copyFromGpu*(x: seq[Field], g: GpuSeq[GpuField]) =
-  tic("copyFromGpuSeqField")
-  #for i in 0..<x.len:
-  #  var t {.noInit.}: typeof g[i]
-  #  gpuMemCpyToCpu(addr t, addr g[i], sizeof(t))
-  #  x[i].fromGpu(t)
-  var t = newSeq[GpuField](g.n)
-  gpuMemCpyToCpu(addr t[0], addr g[0], g.bytes)
-  for i in 0..<x.len:
-    x[i].fromGpu(t[i])
-  toc("end")
-]#
