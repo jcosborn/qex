@@ -1,0 +1,383 @@
+<!DOCTYPE HTML>
+<html lang="en-us" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using nimibook -->
+        <meta charset="UTF-8">
+        <title>Installation - Quantum Expressions (QEX)</title>
+
+        <!-- Custom HTML head -->
+
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="Quantum Expressions (QEX) documentation">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>🐳</text></svg>">
+        <link rel="stylesheet" href="./assets/css/variables.css">
+        <link rel="stylesheet" href="./assets/css/general.css">
+        <link rel="stylesheet" href="./assets/css/chrome.css">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="./assets/FontAwesome/css/font-awesome.min.css">
+
+        <!-- Highlight.js Stylesheets - I could use nimib native highlight but let's keep it for styling... -->
+        <link rel="stylesheet" href="./assets/css/highlight.css">
+        <link rel="stylesheet" href="./assets/css/tomorrow-night.css">
+        <link rel="stylesheet" href="./assets/css/ayu-highlight.css">
+
+        <!-- Custom theme stylesheets - why the "../"? -->
+
+
+        
+
+            <script src="https://cdn.jsdelivr.net/gh/pietroppeter/nimib@main/assets/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+
+        
+        <!-- plausible analytics (new in nimibook) -->
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = ".//assets";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                                <ol class="chapter">
+                <li class="chapter-item expanded ">
+                  <a href="./index.html" tabindex="0">
+                      Introduction
+                  </a></li>
+                <li class="chapter-item expanded ">
+                  <a href="./install.html" class="active" tabindex="0">
+                    <strong aria-hidden="true">1.</strong> Installation
+                  </a></li>
+                <li class="chapter-item expanded ">
+                  <a href="./build.html" tabindex="0">
+                    <strong aria-hidden="true">2.</strong> Building
+                  </a></li>
+                <li class="chapter-item expanded ">
+                  <a href="./qex/index.html" tabindex="0">
+                    <strong aria-hidden="true">3.</strong> QEX Tutorial
+                  </a></li>
+                  <li>
+                  <ol class="section">
+                <li class="chapter-item expanded ">
+                  <a href="./qex/getting_started.html" tabindex="0">
+                    <strong aria-hidden="true">3.1.</strong> Getting Started
+                  </a></li>
+                <li class="chapter-item expanded ">
+                  <a href="./qex/basic_ops.html" tabindex="0">
+                    <strong aria-hidden="true">3.2.</strong> Basic Operations
+                  </a></li>
+                </ol>
+<!-- I could use also an unescaped context value -->
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                    </div>
+
+                    <h1 class="menu-title">Quantum Expressions (QEX)</h1>
+
+                    <div class="right-buttons">
+                        <a href="https://github.com/jcosborn/qex" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <p><a name = "quick-installation-guide"></a></p>
+<h2>Quick installation guide</h2>
+<p>Clone the github repo (devel branch recommended for now).</p>
+<p>Create a separate build directory (optional but recommended).</p>
+<p>From the build directory run the <code>configure</code> script found with the source.</p>
+<pre><code>NIM=/path/to/nim \
+path/to/qex/configure \
+  qmpdir:/path/to/qmp \
+  qiodir:/path/to/qio
+</code></pre>
+<p>More options for <code>configure</code> are
+<a href="install.html#compiler-and-configuration-options">below</a>.</p>
+<p>If the <code>nim</code> executable isn't found in your path,
+or specified in the <code>NIM</code> environment variable,
+it will be installed as described
+<a href="install.html#nim-installation">below</a>.</p>
+<p>The <code>configure</code> command will create the files <code>Makefile</code> and <code>qexconfig.nims</code>
+in the current directory.
+It will also create the symlinks <code>qex</code> and <code>qex.nimble</code>.</p>
+<p>Check the Nim executable path in <code>Makefile</code> and the
+settings in <code>qexconfig.nims</code>, and edit if necessary.</p>
+<p>Try compiling a simple example:</p>
+<pre><code>make testStagProp
+</code></pre>
+<p>The resulting binary will be in the directory <code>./bin</code>.</p>
+<p>Then run it</p>
+<pre><code>bin/testStagProp
+</code></pre>
+<p><a name = "nim-installation"></a></p>
+<h2>Nim installation</h2>
+<p>QEX requires the Nim compiler version 1.4 or later
+(1.6.4 or later recommended).</p>
+<p>The <code>configure</code> script will search for the Nim executable in the following
+places in order (using the <a href="https://github.com/jcosborn/qex/blob/devel/build/findNim">findNim</a> script)</p>
+<ul>
+<li><code>$PATH</code> (using <code>which nim</code>)</li>
+<li><code>$HOME/bin/nim</code></li>
+<li><code>$HOME/bin/nim-[0-9]*</code></li>
+<li><code>$HOME/bin/nim-*</code></li>
+<li><code>$HOME/nim/Nim/bin/nim</code></li>
+<li><code>$HOME/nim/Nim-[0-9]*/bin/nim</code></li>
+<li><code>$HOME/nim/Nim-*/bin/nim</code></li>
+</ul>
+<p>If Nim is not found, it will be installed using the
+<a href="https://github.com/jcosborn/qex/blob/devel/build/installNim">installNim</a> script.</p>
+<p>You can install Nim yourself either by using the <code>installNim</code> script directly,
+or from the official instructions given
+<a href="http://nim-lang.org/download.html">on the Nim website</a>.</p>
+<p><code>installNim</code> defaults to downloading and building Nim into <code>$HOME/nim</code>
+with a symlink added to <code>$HOME/bin</code>.
+These can be overridden by setting the environment variables</p>
+<ul>
+<li><code>NIMDIR</code> directory to place Nim source and build (default <code>$HOME/nim</code>)</li>
+<li><code>BINDIR</code> directory to place symlinks (default <code>$HOME/bin</code>)</li>
+</ul>
+<p>These will be necessary to set when on a system with a shared home directory
+across different host (build) architectures to keep separate copies of Nim.</p>
+<p>By default <code>installNim</code> installs the latest stable version of Nim.
+You can also specify a version, e.g. <code>installNim 1.6.4</code> for version 1.6.4, or
+<code>installNim devel</code> to install the current devel branch.</p>
+<p>You can also switch the symlinks between different (previously installed)
+versions of Nim with e.g. <code>installNim default 1.6.4</code> or <code>installNim default devel</code>.
+You should be able to check which version of Nim is default with <code>nim -v</code>.</p>
+<p><code>installNim</code> with no options will also give a help message.</p>
+<p><a name = "required-dependencies"></a></p>
+<h2>Required dependencies</h2>
+<p>QMP and QIO are currently required and need to be installed separately.
+The <a href="https://github.com/jcosborn/qex/blob/devel/bootstrap-travis">bootstrap-travis</a> script can also be used to install them.</p>
+<p>The QMP and QIO directories can be set in <code>configure</code> with the environment variables
+<code>QMPDIR</code> and <code>QIODIR</code>.
+One can also specify them as arguments to <code>configure</code>
+(see <a href="install.html#compiler-and-configuration-options">below</a> ).</p>
+<p>The other required dependencies can be installed by running
+<code>nimble install -dy</code>.
+<a href="https://github.com/nim-lang/nimble">Nimble</a> is the Nim package manager
+which is used to install Nim dependencies.
+Nimble is also installed (with a symlink in <code>$BINDIR</code>) by the <code>installNim</code> script.
+The list of required packages that Nimble installs
+is in the <a href="https://github.com/jcosborn/qex/blob/devel/qex.nimble#L25">qex.nimble</a> file.</p>
+<p><a name = "optional-dependencies"></a></p>
+<h2>Optional dependencies</h2>
+<p>For Chroma set</p>
+<ul>
+<li>chromaDir</li>
+</ul>
+<p>For Grid set</p>
+<ul>
+<li>gridDir</li>
+</ul>
+<p>For QUDA set</p>
+<ul>
+<li>qudaDir</li>
+<li>cudaLibDir</li>
+</ul>
+<p>For Primme set</p>
+<ul>
+<li>primmeDir</li>
+</ul>
+<p><a name = "compiler-and-configuration-options"></a></p>
+<h2>Compiler and configuration options</h2>
+<p>Compiler, linker and other configuration options can be passed
+as arguments to <code>configure</code> like:</p>
+<pre><code>path/to/qex/configure \
+  qmpdir:/path/to/qmp \
+  qiodir:/path/to/qio \
+  cc:&quot;mpicc&quot; \
+  cflagsspeed:&quot;-Ofast -march=skylake-avx512 -ffast-math&quot; \
+  cpp:&quot;mpicxx&quot; \
+  cppflagsspeed:&quot;-Ofast -march=skylake-avx512 -ffast-math&quot;
+</code></pre>
+<p>Note that the option names are case insensitive
+(qmpdir and qmpDir both work fine).</p>
+<p>The options in the
+<a href="https://github.com/jcosborn/qex/blob/devel/build/configDefault.nims">default QEX configuration file</a>
+can be passed in this way, which will modify their values
+in the generated <code>qexconfig.nims</code> file in the build directory.</p>
+<p>Environment variables to be set during compile time
+(set in the <code>envs</code> variable in the
+<a href="https://github.com/jcosborn/qex/blob/devel/build/configDefault.nims#L70">config file</a> ),
+can be passed one at a time using <code>env:FOO=BAR</code>.
+See the <a href="#configuration-examples">examples</a> below.
+The full set can also be passed as a Nim seqeunce of strings using the
+syntax <code>envs:'@[&quot;FOO=BAR&quot;,&quot;FOO2=BAR2&quot;,&quot;FOO3_WITH_SPACE_QUOTES=BAR3 \&quot;IN QUOTES\&quot;&quot;]'</code>.
+The third one defines an environment variable with name <code>FOO3_WITH_SPACE_QUOTES</code> and
+its content <code>BAR3 &quot;IN QUOTES&quot;</code>.
+The single quotes above prevent shell from interpreting the Nim expression,
+which uses double quotes to denote Nim strings.
+And the backslashes preserve the double quotes in Nim strings.
+For the single arguments (<code>env:FOO=BAR</code>) the double quotes will be added by Nim
+so are unnecessary.</p>
+<p>Details on the Nim compiler options can be found
+<a href="https://nim-lang.org/docs/nimc.html">here</a>.</p>
+<p><a name = "configuration-files"></a></p>
+<h2>Configuration files</h2>
+<p>The available options and their default settings can be found in
+<a href="https://github.com/jcosborn/qex/blob/devel/build/configDefault.nims">build/configDefault.nims</a>.</p>
+<p>This default configuration file will be copied to the build directory
+and renamed <code>qexconfig.nims</code>,
+with the appropriate substitutions specified on the command line.</p>
+<p><a name = "build-guide"></a></p>
+<h2>Build guide</h2>
+<p>Details on building applications can be found in <a href="build.html">build.html</a>.</p>
+<p>The test suite can be built with <code>make tests</code>.</p>
+<p>This creates a <code>testscript.sh</code> in the current directory which will
+run the tests.
+The comments in that file explain what environment variables can be set
+to run it with a parallel job launcher (i.e. mpirun).</p>
+<p><a name = "configuration-examples"></a></p>
+<h2>Configuration examples</h2>
+<p>The configure command can be run from a build directory that is separate
+from the source directory, or from the source directory.</p>
+<p><code>&lt;configure&gt;</code> is the configure script, including path, in the QEX source directory.</p>
+<p><a name = "axv2-using-mpicc/mpicxx-set-to-use-gcc"></a></p>
+<h3>AXV2 using mpicc/mpicxx set to use gcc</h3>
+<pre><code>&lt;configure&gt; \
+  qmpdir:&quot;$HOME/lqcd/install/qmp&quot; \
+  qiodir:&quot;$HOME/lqcd/install/qio&quot; \
+  cc:&quot;mpicc&quot; \
+  cflagsspeed:&quot;-Ofast -march=native -ffast-math&quot; \
+  cpp:&quot;mpicxx&quot; \
+  cppflagsspeed:&quot;-Ofast -march=native -ffast-math&quot; \
+  simd:&quot;SSE,AVX&quot; vlen:8
+</code></pre>
+<p><a name = "axv512-using-openmpi-mpicc/mpicxx-and-specifying-clang/clang++"></a></p>
+<h3>AXV512 using OpenMPI mpicc/mpicxx and specifying clang/clang++</h3>
+<pre><code>&lt;configure&gt; \
+  qmpdir:&quot;$HOME/lqcd/install/qmp&quot; \
+  qiodir:&quot;$HOME/lqcd/install/qio&quot; \
+  cctype:&quot;clang&quot; \
+  cc:&quot;mpicc&quot; \
+  env:&quot;OMPI_CC=clang&quot; \
+  cflagsspeed:&quot;-Ofast -march=native -ffast-math&quot; \
+  cpp:&quot;mpicxx&quot; \
+  env:&quot;OMPI_CXX=clang++&quot; \
+  cppflagsspeed:&quot;-Ofast -march=native -ffast-math&quot; \
+  simd:&quot;SSE,AVX,AVX512&quot; vlen:16
+</code></pre>
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="./index.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next" href="./build.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="./index.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next" href="./build.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+
+
+
+        <script src="./assets/js/clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="./assets/js/book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </body>
+</html>

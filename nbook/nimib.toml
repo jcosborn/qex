@@ -1,0 +1,9 @@
+[nimib]
+srcDir = "book"
+homeDir = "docs"
+
+[nimibook]
+language = "en-us"
+title = "Quantum Expressions (QEX)"
+description = "Quantum Expressions (QEX) documentation"
+git_repository_url = "https://github.com/jcosborn/qex"
