@@ -157,7 +157,7 @@ proc uniform*(prn: var RngMilc6): float32 =
 
 proc gaussian*(prn: var RngMilc6): float32 =
   ## Gaussian normal deviate
-  ## Probability distribution exp( -x*x/2 ), so < x^2 > = 1
+  ## Probability distribution exp( -x\*x/2 ), so < x^2 > = 1
   #if QLA_use_milc_gaussian:
   when defined(FUELCompat):
     if prn.iset != 0:

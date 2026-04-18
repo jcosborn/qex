@@ -1674,6 +1674,7 @@ macro indexTuple*(x: tuple, i: static[int]): untyped =
     result = newTree(nnkBracketExpr, x, newLit(i))
   #echo result.treerepr
 
+#[
 ####
 # modified from std/decls.nim:byaddr
 # doesn't work in every context
@@ -1715,3 +1716,4 @@ macro byptr*(sect:untyped):untyped =
       var `lhs` = `ex`
   result.copyLineInfo(def)
   echo result.repr
+]#

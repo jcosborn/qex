@@ -224,7 +224,7 @@ proc uniform*(prn: var MRG32k3a): float =
 
 proc gaussian*(prn: var MRG32k3a): float =
   ## Gaussian normal deviate
-  ## Probability distribution exp( -x*x/2 ), so < x^2 > = 1
+  ## Probability distribution exp( -x\*x/2 ), so < x^2 > = 1
   var v,p,r: float
   v = prn.uniform
   p = prn.uniform * 2.0 * PI
