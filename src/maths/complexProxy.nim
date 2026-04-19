@@ -131,6 +131,7 @@ template `[]=`*(x: ComplexProxy, y: typed) =
   #  x.v = y
   #else:
     x.v := y
+proc `[]=`*(x: ComplexProxy, i: auto, y: ComplexProxy2) {.error:"x is not var".} = discard
 proc `[]=`*(x: var ComplexProxy, i: auto, y: ComplexProxy2) {.alwaysInline.} =
   #static: echo $i.type
   mixin re, im, `[]=`
