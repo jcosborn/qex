@@ -12,6 +12,8 @@ type
 template asFloat32*[T](x: T): auto = AsFloat32[type T](x)
 template `[]`*[T](x: AsFloat32[T]): auto = (type T)(x)
 template asWrapper*(x: typedesc[float32], y: auto): auto = asFloat32(y)
+template asWrapper*(x: typedesc[AsFloat32], y: auto): auto = asFloat32(y)
+template isWrapper*(x: typedesc[AsFloat32]): bool = true
 template eval*(x: typedesc[AsFloat32]): typedesc = float32
 template eval*(x: AsFloat32): auto =
   mixin `:=`
@@ -22,6 +24,8 @@ template eval*(x: AsFloat32): auto =
 template asFloat64*[T](x: T): auto = AsFloat64[type T](x)
 template `[]`*[T](x: AsFloat64[T]): auto = (type T)(x)
 template asWrapper*(x: typedesc[float64], y: auto): auto = asFloat64(y)
+template asWrapper*(x: typedesc[AsFloat64], y: auto): auto = asFloat64(y)
+template isWrapper*(x: typedesc[AsFloat64]): bool = true
 template eval*(x: typedesc[AsFloat64]): typedesc = float64
 template eval*(x: AsFloat64): auto =
   mixin `:=`
@@ -42,6 +46,7 @@ liftUnary(exp)
 liftUnary(ln)
 liftUnary(norm2)
 liftUnary(trace)
+liftUnary(`-`)
 
 template liftBinary(fn: untyped) =
   template fn*(x: AsNumber, y: SomeNumber): auto =

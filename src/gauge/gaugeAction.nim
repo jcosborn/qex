@@ -175,11 +175,11 @@ proc gaugeActionDeriv*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq, 
       for nu in 0..<nd:
         if mu==nu: continue
         sf[mu][nu].initShiftB(u[mu], nu, 1, "all")
-  toc("gaugeActionDeriv init")
+  toc("init")
   var (stf,stu,ss) = makeStaples(uu, cs)
-  toc("gaugeActionDeriv makeStaples")
+  toc("makeStaples")
   threads:
-    tic()
+    tic("gaugeActionDerivThreads")
     if cr!=0:
       for mu in 1..<nd:
         for nu in 0..<mu:
@@ -239,7 +239,7 @@ proc gaugeActionDeriv*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq, 
               f[nu][ir] += cr * u[mu][ir] * snumu
               f[mu][ir] += cr * u[nu][ir] * snumu.adj
               ru[mu,nu][ir] += u[nu][ir].adj * u[mu][ir] * snu
-    toc("gaugeActionDeriv local")
+    toc("local")
     for mu in 1..<nd:
       for nu in 0..<mu:
         var needBoundary = false
@@ -300,7 +300,7 @@ proc gaugeActionDeriv*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq, 
           threadBarrier()
           sb[mu][nu].startSB(ru[mu,nu][ix])
           sb[nu][mu].startSB(ru[nu,mu][ix])
-      toc("gaugeActionDeriv staple boundary")
+      toc("staple boundary")
       for ir in u[0]:
         for mu in 1..<nd:
           for nu in 0..<mu:
@@ -312,7 +312,7 @@ proc gaugeActionDeriv*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq, 
               var b: type(load1(u[0][0]))
               localSB(sb[nu][mu], ir, assign(b,it), ru[nu,mu][ix])
               f[nu][ir] += cr * b
-      toc("gaugeActionDeriv back rect local")
+      toc("back rect local")
       for mu in 1..<nd:
         for nu in 0..<mu:
           var needBoundary = false
@@ -329,7 +329,7 @@ proc gaugeActionDeriv*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq, 
                 var b: type(load1(u[0][0]))
                 getSB(sb[nu][mu], ir, assign(b,it), ru[nu,mu][ix])
                 f[nu][ir] += cr * b
-  toc("gaugeActionDeriv end")
+  toc("end")
 
 proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq) =
   tic("gaugeForce")

@@ -233,6 +233,7 @@ template declaredMatrix*(x:Adjointed):untyped = isMatrix(x[])
 template re*(x:Adjointed):untyped = x[].re
 template im*(x:Adjointed):untyped = -(x[].im)
 template simdType*(x: Adjointed): untyped = simdType(x[])
+template `:=`*(r: SomeNumber, x: Adjointed) = (r := x[])
 #template mvLevel*(x:Adjointed):untyped =
 #  mixin mvLevel
 #  mvLevel(x[])
@@ -395,6 +396,8 @@ template mindexed*[T,I](x: T, i: I): untyped =
     #static: echo "mindexed not isWrapper"
     var tIndexed = indexedX(getAlias x, i)
     tIndexed
+template isWrapper*(x: Indexed): bool = false
+template isWrapper*(x: typedesc[Indexed]): bool = false
 template obj(x:Indexed):untyped =
   #static: echo "obj: ", $type(x)
   #static: echo $type(x.indexedPtr)

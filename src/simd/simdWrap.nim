@@ -39,13 +39,18 @@ template toPrec*(x: Simd, y: typedesc[float64]): untyped = toDouble(x)
 template stripSimdAsView*[T](x: T): untyped = x
 template stripSimdAsView*(x: AsView): untyped = stripSimdAsView x[]
 template stripSimdAsView*(x: Simd): untyped = stripSimdAsView x[]
-template `[]=`*(x: Simd, i: typed, y: typed): untyped =
+template `[]=`*[N:static int,T](x: array[N,T], i: SomeInteger, y: not T) =
+    x[i] = T(y)
+template `[]=`*[S](x: Simd[S], i: typed, y: typed) =
   when y is Simd:
     #x[][stripSimdAsView i] = doIndexed(y[])
     x[][stripSimdAsView i] = eval(y[])
   else:
+    #static: echo $x.type
     #x[][stripSimdAsView i] = doIndexed(y)
     x[][stripSimdAsView i] = eval(y)
+    #x[][stripSimdAsView i] = (index(S,stripSimdAsView i))(eval(y))
+    #x[][stripSimdAsView i] = eval(y)
 
 template attrib(att: untyped): untyped {.dirty.} =
   template att*[T](x: typedesc[Simd[T]]): untyped =
@@ -59,6 +64,9 @@ attrib(numberType)
 attrib(numNumbers)
 attrib(simdType)
 attrib(simdLength)
+
+template simdLength*[T:array](x: typedesc[Simd[T]]): auto = T.high - T.low
+template simdLength*[T:array](x: Simd[T]): auto = T.high - T.low
 
 template noSimd*[T](x: typedesc[Simd[T]]): typedesc =
   numberType(type T)
@@ -244,6 +252,9 @@ template trace*(x: Simd): untyped = x
 template simdReduce*(x: Simd): untyped =
   mixin simdReduce
   simdReduce(x[])
+template simdReduce*(x: Simd[array]): untyped =
+  mixin sum
+  sum(x[])
 template simdMaxReduce*(x: Simd): untyped =
   mixin simdMaxReduce
   simdMaxReduce(x[])

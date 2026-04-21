@@ -8,6 +8,7 @@ type
   #DefaultSelector* {.importcpp:"sycl::default_selector_v", syclh.} = object
   #HostSelector* {.importcpp:"sycl::host_selector_v", syclh.} = object
   Context* {.importcpp:"sycl::context", syclh.} = object
+  Platform* {.importcpp:"sycl::platform", syclh.} = object
   Device* {.importcpp:"sycl::device", syclh.} = object
   Queue* {.importcpp:"sycl::queue", syclh.} = object
   SyclBuffer*[T;N:static[int]] {.importcpp:"sycl::buffer", syclh.} = object
@@ -25,7 +26,12 @@ type
   Id1* {.importcpp:"sycl::id<1>", syclh.} = object
   Item1* {.importcpp:"sycl::item<1>", syclh.} = object
   Nd1* {.importcpp:"sycl::nd_item<1>", syclh.} = object
+  Group* {.importcpp:"sycl::group<1>", syclh.} = object
+  SubGroup* {.importcpp:"sycl::sub_group", syclh.} = object
   WorkGroup1* {.importcpp:"sycl::work_group<1>", syclh.} = object
+  LocalMultiPtr*[T] {.importcpp:"sycl::multi_ptr<'0,sycl::access::address_space::local_space,sycl::access::decorated::legacy>".} = object
+  LocalPtr*[T] {.importcpp:"decltype(sycl::multi_ptr<'0,sycl::access::address_space::local_space,sycl::access::decorated::legacy>().get())",syclh.} = object
+  AtomicRef*[T] {.importcpp:"sycl::atomic_ref<'0,sycl::memory_order::relaxed,sycl::memory_scope::device,sycl::access::address_space::global_space>".} = object
   SyclPlus*[T] {.importcpp:"std::plus", syclh.} = object
   #SyclReduction*[T,R] {.importcpp:"sycl::intel::reduction", syclh.} = object
   #SyclRed*[N:static[int]] = object
@@ -65,10 +71,13 @@ proc `$`*(x: cppstring): string =
 type cppvector[T] {.importcpp:"std::vector",header:"vector".} = object
 type cppvectorIterator[T] {.importcpp:"std::vector<'0>::iterator",header:"vector".} = object
 proc size*(x: cppvector): csize_t {.importcpp:"#.size()",header:"vector".}
+proc `[]`*[T](x: cppvector[T], i: SomeInteger): T {.importcpp:"#[#]",header:"vector".}
 proc begin*[T](x: cppvector[T]): cppvectorIterator[T] {.importcpp:"#.begin()",header:"vector".}
 proc `end`*[T](x: cppvector[T]): cppvectorIterator[T] {.importcpp:"#.end()",header:"vector".}
 proc max_element*[T](b,e: cppVectorIterator[T]): T {.importcpp:"*std::max_element(#,#)",header:"algorithm".}
 proc max_element*(v: cppVector): auto = max_element(v.begin,v.`end`)
+
+proc getDevices*(p: Platform): cppvector[Device] {.syclh,importcpp:"#.get_devices()".}
 
 proc name*(x: Device): cppstring {.
   importcpp:"#.get_info<sycl::info::device::name>()".}
@@ -92,6 +101,21 @@ proc getWorkGroup1*(): WorkGroup1 {.importcpp:"sycl::ext::oneapi::this_work_item
 
 proc getGlobalId1*(): csize_t {.importcpp:"sycl::ext::oneapi::this_work_item::get_nd_item<1>().get_global_id(0)".}
 proc getGlobalRange1*(): csize_t {.importcpp:"sycl::ext::oneapi::this_work_item::get_nd_item<1>().get_global_range(0)".}
+
+proc getGroup*(): Group {.importc:"sycl::ext::oneapi::this_work_item::get_work_group<1>",syclh.}
+proc getSubgroup*(): SubGroup {.importc:"sycl::ext::oneapi::this_work_item::get_sub_group",syclh.}
+proc size*(g: Group | SubGroup): cint {.importcpp:"#.get_local_range()[0]",syclh.}
+proc range*(g: Group): cint {.importcpp:"#.get_group_range()[0]",syclh.}
+proc localId*(g: Group): cint {.importcpp:"#.get_local_id()[0]",syclh.}
+proc groupId*(g: Group): cint {.importcpp:"#.get_group_id()[0]",syclh.}
+proc barrier*(g: Group) {.importc:"group_barrier",syclh.}
+proc shift_left*[T](g: SubGroup, val: T, offset: cint):T {.importcpp:"sycl::shift_group_left(@)",syclh.}
+proc localMem*[T](t: typedesc[T], g: Group):LocalMultiPtr[T] {.
+  importcpp:"sycl::ext::oneapi::group_local_memory_for_overwrite<'1>(@)",syclh.}
+proc get*[T](m: LocalMultiPtr[T]):LocalPtr[T] {.importcpp:"#.get()",syclh.}
+proc anyOf*(g: Group, x: bool): bool {.importc:"sycl::any_of_group",syclh.}
+proc makeAtomicRef*[T](x: ptr T): AtomicRef[T] {.importcpp:"'0(*#)",syclh.}
+proc fetchAdd*[T](a: AtomicRef[T], val: T): T {.importcpp:"#.fetch_add(#)",syclh.}
 
 #proc newSyclBuffer*[T](): SyclBuffer[T,0] {.noinit,
 #  importcpp:"'0()", constructor, syclh.}
@@ -141,6 +165,11 @@ proc mallocDevice*(num_bytes: int, q: Queue):
 proc freeDevice*(p: pointer, q: Queue)
     {.importcpp:"sycl::free(@)".}
 
+proc mallocHost*(num_bytes: int, q: Queue):
+    pointer {.importcpp:"sycl::malloc_host(@)".}
+
+proc freeHost*(p: pointer, q: Queue)
+    {.importcpp:"sycl::free(@)".}
 
 proc mallocShared*(num_bytes: int, dev: Device, ctxt: Context):
                  pointer {.importcpp:"sycl::malloc_shared".}
@@ -152,8 +181,9 @@ proc mallocShared*(T: typedesc, count: int, q: Queue): ptr UncheckedArray[T] {.
   importcpp:"sycl::malloc_shared<'1>(##,#)".}
 
 proc memcpy*(q: Queue, dest,src: pointer, count: SomeInteger)
-  {.importcpp:"#.memcpy(@)".}
-
+  {.importcpp:"#.memcpy(@).wait()".}
+proc memset*(q: Queue, dest: pointer, val,count: SomeInteger)
+  {.importcpp:"#.memset(@).wait()".}
 
 proc syclPlus*[T](t: typedesc[T]): SyclPlus[T] {.
   importcpp:"'0()", syclh, constructor.}

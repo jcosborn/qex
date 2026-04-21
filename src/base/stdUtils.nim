@@ -21,6 +21,7 @@ proc constCast*(x: ptr ConstInt): ptr cint {.importc:"(int *)",nodecl.}
 proc newSeqU*[T](n: int): seq[T] =
   result = newSeqOfCap[T](n)
   result.setLen(n)
+proc bytes*[T](x: seq[T]): int = x.len*sizeof(T)
 
 iterator range*[T: SomeInteger](count: T): T =
   var res = T(0)
@@ -67,6 +68,10 @@ proc indexOf*[T](x: openArray[T], y: auto): int =
   let n = x.len
   while result<n and x[result]!=y: inc result
 
+proc `-`*[N,T](x: array[N,T]): array[N,T] {.inline,noInit.} =
+  for i in 0..<result.len:
+    result[i] = -x[i]
+
 proc `+`*[N,T](x: SomeNumber, y: array[N,T]): auto {.inline,noInit.} =
   var r: array[N, type(x+y[0])]
   for i in 0..<r.len:
@@ -91,6 +96,11 @@ proc `*`*[T](x: SomeNumber, y: seq[T]): seq[T] {.inline,noInit.} =
   result.newSeq(y.len)
   for i in 0..<result.len:
     result[i] = x * y[i]
+proc `*`*[T](x: seq[T], y: seq[T]): seq[T] {.inline,noInit.} =
+  assert(x.len==y.len)
+  result.newSeq(x.len)
+  for i in 0..<result.len:
+    result[i] = x[i] * y[i]
 
 proc `/`*[N,T](x: SomeNumber, y: array[N,T]): auto {.inline,noInit.} =
   var r: array[N, type(x/y[0])]

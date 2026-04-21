@@ -3,6 +3,7 @@ import backend/expr
 import base/metaUtils
 import macros
 
+var kernelCallCount* = 0  # _twice_ kernel calls, incremented before setup and after finalize
 const dumpKernels {.intdefine.} = 0
 
 template gpuMalloc*(size:SomeInteger):pointer = alloc(size)
@@ -46,21 +47,31 @@ macro onGpuNowait*(n,b,body: untyped): auto =
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   template target(cpuPrepare, cpuFinalize, body: untyped) =
     mixin toGpu, getGpu, fromGpu
-    cpuPrepare  # a let section declare and save device pointers
-    #proc gpuProc {.gensym.} =
+    inc kernelCallCount  # increment before setup
     block:
-      const inOnGpu {.inject,used.} = true
-      if numThreads == 1:
-        threads:
+      let thisKernelCallCount = kernelCallCount  # save current value for finalizer
+      cpuPrepare  # a let section declare and save device pointers
+      #proc gpuProc {.gensym.} =
+      block:
+        const inOnGpu {.inject,used.} = true
+        if numThreads == 1:
+          threads:
+            body
+        else:
           body
-      else:
-        body
-    #gpuProc()
-    proc finalize {.gensym.} =
-      threadBarrier()
-      cpuFinalize
-      #threadBarrier()
-    finalize
+      #gpuProc()
+      proc finalize {.gensym.} =
+        var countSave = 0
+        threadBarrier()
+        threadSingle:
+          countSave = kernelCallCount
+          kernelCallCount = thisKernelCallCount
+        cpuFinalize
+        threadSingle:
+          kernelCallCount = countSave
+        #threadBarrier()
+      inc kernelCallCount  # increment after launch
+      finalize
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
@@ -80,9 +91,12 @@ macro onGpuNowait*(n,b,body: untyped): auto =
 
 var gpuNumThreadsRequest* = 0
 var gpuBlockSizeRequest* = 0
+template gpuSites(n: int): int = n
 template onGpuNowait*(body: untyped): auto =
   onGpuNoWait(gpuNumThreadsRequest, gpuBlockSizeRequest, body)
-template onGpuNowait*(n,body: untyped): auto =
+template onGpuNowait*(n0,body: untyped): auto =
+  mixin gpuSites
+  let n = gpuSites(n0)
   var b = gpuBlockSizeRequest
   while b > n: b = b div 2
   onGpuNoWait(n, b, body)
@@ -93,11 +107,27 @@ template onGpu*(body: untyped) =
   let finalize = onGpuNoWait(body)
   finalize()
 template onGpu*(n,body: untyped) =
-  let finalize = onGpuNoWait(n, body)
+  mixin gpuSites
+  let finalize = onGpuNoWait(gpuSites(n), body)
   finalize()
 template onGpu*(n,b,body: untyped) =
-  let finalize = onGpuNoWait(n, b, body)
+  mixin gpuSites
+  let finalize = onGpuNoWait(gpuSites(n), b, body)
   finalize()
 
 #template onGpu*(n,x:untyped) = onGpu(x)
 #template onGpu*(n,t,x:untyped) = onGpu(x)
+
+type GpuSum*[T] = object
+    val: T
+proc newGpuSum*[T](n: int): GpuSum[T] =
+  discard
+template value*(x: GpuSum): auto = x.val
+template toGpu*(x: GpuSum): auto = addr x
+template getGpu*(x: GpuSum, g: ptr GpuSum): auto = g[]
+template fromGpu*(x: GpuSum, g: ptr GpuSum): auto = discard
+
+proc reduce*[T](gs: var GpuSum[T], x: T) =
+  var t = x
+  t.threadSum
+  gs.val = t
