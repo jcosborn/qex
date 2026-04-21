@@ -1,88 +1,221 @@
-import core, scalar
+import core
 
 type
   Gmulti* {.final.} = ref object of Gvalue
-    mval: seq[Gvalue]
+    slots: seq[Gvalue]  ## Forward storage for each output slot.
+                        ## Read storage with `slotValue`; build graph expressions with `[]`.
 
-proc getmulti*(x: Gvalue): seq[Gvalue] = Gmulti(x).mval
+method `[]`*(x: Gvalue, i: int): Gvalue {.base.} =
+  raiseErrorBaseMethod($x & "[" & $i & "]")
 
-proc `getmulti=`*(x: Gvalue, y: seq[Gvalue]) =
-  let xs = Gmulti(x)
-  xs.mval = y
+proc requireConcreteSlotIndex(index: int,
+                              size: int,
+                              label: string,
+                              node: Gvalue = nil): int =
+  if index < 0 or index >= size:
+    raiseValueError(
+      label & " index out of range: " & $index &
+      " for size " & $size &
+      node.nodeContext)
+  index
 
-proc update*(x: Gvalue, y: seq[Gvalue]) =
-  x.getmulti = y
-  x.updated
+proc requireMultiSlotProto(slotProto: Gvalue, label: string) =
+  if slotProto == nil:
+    raiseValueError(label & " slot prototype cannot be nil")
 
-proc toGvalue*(x: seq[Gvalue]): Gmulti =
-  # proc instead of converter to avoid converting seq
-  result = Gmulti(mval: x)
-  result.updated
+proc allocSlots(slotProtos: openArray[Gvalue],
+                label: string): seq[Gvalue] =
+  if slotProtos.len == 0:
+    raiseValueError(label & " requires at least one slot")
+  result = newseq[Gvalue](slotProtos.len)
+  for i in 0..<slotProtos.len:
+    let slotProto = slotProtos[i]
+    slotProto.requireMultiSlotProto(label)
+    result[i] = slotProto.newOneOf
+
+proc requireMultiArity(dstLen: int,
+                       srcLen: int,
+                       label: string) =
+  if dstLen != srcLen:
+    raiseValueError(
+      label & " arity mismatch: " &
+      $dstLen & " vs " & $srcLen)
+
+proc requireMultiValue*(v: Gvalue,
+                        label: string): Gmulti =
+  if v == nil:
+    raiseValueError(label & " requires non-nil multi value")
+  if not (v of Gmulti):
+    raiseValueError(label & " expects multi value")
+  Gmulti(v)
+
+proc requireMultiUpstream*(zb: Gvalue,
+                           label: string): Gmulti =
+  if zb == nil:
+    raiseValueError(label & " requires non-nil upstream gradient")
+  zb.requireMultiValue(label & " upstream gradient")
+
+proc copySlotValues(dst: var seq[Gvalue],
+                    src: openArray[Gvalue],
+                    label: string) =
+  requireMultiArity(dst.len, src.len, label)
+  for i in 0..<dst.len:
+    dst[i].valCopy(src[i])
+
+# Construct multi-output carriers through this helper.
+proc newMultiOutputNode*(slotProtos: openArray[Gvalue],
+                         inputs: openArray[Gvalue],
+                         gfuncValue: Gfunc,
+                         label: string): Gmulti =
+  let checkedInputs = checkedInputValues(inputs, label)
+  let slotStorage = allocSlots(slotProtos, label)
+  # Multi carriers take their runtime from output slot prototypes, not inputs.
+  let slotGrt = slotProtos.sharedGraphRuntime
+  result = Gmulti(
+    inputs: checkedInputs,
+    gfunc: gfuncValue,
+    runtime: slotGrt)
+  result.slots = slotStorage
+  let inputGrt = checkedInputs.sharedGraphRuntime
+  # `nil` only means there were no inputs; values themselves have runtimes.
+  if inputGrt != nil and inputGrt != result.runtime:
+    raiseValueError(label & " mixes multiple graph runtimes")
+
+proc multiCarrierFromExprs(values: openArray[Gvalue],
+                           label = "multi values"): Gmulti
+
+proc refreshSlotStorage(x: Gmulti, label: string) =
+  x.slots.copySlotValues(x.inputs, label)
+
+proc requireSlotIndex(x: Gmulti,
+                      index: int,
+                      label: string,
+                      node: Gvalue = nil): int =
+  result = requireConcreteSlotIndex(index, x.slots.len, label, node)
+
+proc slotValue*(x: Gmulti, k: int): Gvalue
+
+proc requireMultiSelectBase(v: Gvalue,
+                            label: string): Gmulti =
+  v.requireInputCountExactly(1, label)
+  v.requireNodeInput(0, label, "base").requireMultiValue(label & " base")
+
+# Concrete slot storage stays separate from symbolic `x[k]` selection.
+proc slotValue*(x: Gmulti, k: int): Gvalue =
+  ## Read last evaluated slot storage for forward hooks and tests.
+  ## This does not build a graph node and is only current after evaluating the
+  ## carrier or a consumer.
+  x.slots[x.requireSlotIndex(k, "multi slot")]
+
+proc scatterSlotGrad(x: Gmulti,
+                     index: int,
+                     slotGrad: Gvalue,
+                     label: string,
+                     node: Gvalue): Gvalue =
+  let slotIndex = x.requireSlotIndex(index, label, node)
+  var values = newseq[Gvalue](x.slots.len)
+  for j in 0..<values.len:
+    if j == slotIndex:
+      values[j] = slotGrad
+    else:
+      values[j] = x.slotValue(j).zeroLike
+  multiCarrierFromExprs(values, label)
 
 method newOneOf*(x: Gmulti): Gvalue =
-  let r = Gmulti(mval: newseq[Gvalue](x.mval.len))
-  for i in 0..<x.mval.len:
-    r.mval[i] = newOneOf x.mval[i]
-  r
+  newMultiOutputNode(x.slots, @[], nil, "multi prototype")
 
 method valCopy*(z: Gmulti, x: Gmulti) =
-  for i in 0..<z.mval.len:
-    z.mval[i] = x.mval[i]
+  ## Copy concrete slot storage only; graph structure is not cloned.
+  if z.runtime != x.runtime:
+    raiseValueError("multi copy mixes multiple graph runtimes")
+  z.slots.copySlotValues(x.slots, "multi copy")
 
-method `$`*(x: Gmulti): string = $x.mval
+method copyCompatible*(prototype: Gmulti, value: Gmulti): bool =
+  if prototype.slots.len != value.slots.len:
+    return false
+  for i in 0..<prototype.slots.len:
+    if not prototype.slots[i].copyCompatible(value.slots[i]):
+      return false
+  true
 
-method `[]`*(x: Gvalue, i: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod($x & "[" & $i & "]")
-method updateAt*(x: Gvalue, i: Gvalue, y: Gvalue): Gvalue {.base.} = raiseErrorBaseMethod("updateAt(" & $x & "," & $i & "," & $y & ")")
+method `$`*(x: Gmulti): string =
+  $x.slots
 
-proc getAtmb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  case i
-  of 0:
-    if zb == nil:
-      # the output must be a scalar, otherwise crash later
-      return z.inputs[0].newOneOf.updateAt(z.inputs[1], toGvalue(1.0))
-    else:
-      return z.inputs[0].newOneOf.updateAt(z.inputs[1], zb)
-  of 1:
-    return toGvalue(0)
-  else:
-    raiseValueError("i must be 0 or 1, got: " & $i)
+proc multiValuesForward(v: Gvalue) =
+  let z = v.requireMultiValue("values forward")
+  ## Copy input values into slot storage.
+  z.refreshSlotStorage("values node storage/input")
 
-proc getAtmf(v: Gvalue) =
-  let x = Gmulti(v.inputs[0])
-  let i = v.inputs[1].getint
-  v.valCopy x.mval[i]
+proc multiValuesBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
+  discard dep
+  if i < 0 or i >= z.inputs.len:
+    raiseValueError("values backward input index out of range: " & $i)
+  let upstream = requireMultiUpstream(zb, "values backward")
+  upstream[i]
 
-let getAtm = newGfunc(forward = getAtmf, backward = getAtmb, name = "getAtm")
+let multiValuesFunc = newGfunc(
+  forward = multiValuesForward,
+  backward = multiValuesBackward,
+  name = "multiValues")
 
-method `[]`*(x: Gmulti, i: Gint): Gvalue =
-  result = newOneOf x.mval[i.getint]
-  result.inputs = @[Gvalue(x), i]
-  result.gfunc = getAtm
+proc multiCarrierFromExprs(values: openArray[Gvalue],
+                           label = "multi values"): Gmulti =
+  newMultiOutputNode(values, values, multiValuesFunc, label)
 
-proc updateAtmb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  case i
-  of 0:
-    return zb.updateAt(z.inputs[1], z.inputs[2].newOneOf)
-  of 1:
-    return toGvalue(0)
-  of 2:
-    return zb[i]
-  else:
-    raiseValueError("i must be 0, 1, or 2, got: " & $i)
+const multiSelectSignatureNamespace = 0x6d756c7469530000'u64 # "multiS"
 
-proc updateAtmf(v: Gvalue) =
-  let x = Gmulti(v.inputs[0])
-  let i = v.inputs[1].getint
-  let z = Gmulti(v)
-  for k in 0..<z.mval.len:
-    if k == i:
-      z.mval[k].valCopy(v.inputs[2])
-    else:
-      z.mval[k].valCopy(x.mval[k])
+proc multiSelectSignatureKey(index: int): uint64 =
+  multiSelectSignatureNamespace xor uint64(index)
 
-let updateAtm = newGfunc(forward = updateAtmf, backward = updateAtmb, name = "updateAtm")
+proc newMultiSelectFunc(index: int): Gfunc =
+  let label = "multiSelect[" & $index & "]"
 
-method updateAt*(x: Gmulti, i: Gint, y: Gvalue): Gvalue =
-  result = x.newOneOf
-  result.inputs = @[Gvalue(x), i, y]
-  result.gfunc = updateAtm
+  proc multiSelectForward(v: Gvalue) =
+    let base = v.requireMultiSelectBase(label)
+    ## The slot index is fixed when the selection node is built.
+    v.valCopy base.slotValue(index)
+
+  proc multiSelectBackward(zb: Gvalue,
+                           z: Gvalue,
+                           i: int,
+                           dep: Gvalue): Gvalue =
+    discard dep
+    if i != 0:
+      raiseValueError(label & " input index must be 0, got: " & $i)
+    let base = z.requireMultiSelectBase(label)
+    let slotGrad =
+      if zb == nil:
+        z.constLike(1)
+      else:
+        zb
+    base.scatterSlotGrad(index, slotGrad, label & " backward", z)
+
+  newGfunc(
+    forward = multiSelectForward,
+    backward = multiSelectBackward,
+    signatureKey = multiSelectSignatureKey(index),
+    name = label)
+
+method `[]`*(x: Gmulti, i: int): Gvalue =
+  ## Build a symbolic selection for a statically chosen slot.
+  let k = x.requireSlotIndex(i, "[]", x)
+  graphNode(x.slotValue(k).newOneOf, @[Gvalue(x)], newMultiSelectFunc(k), "multiSelect")
+
+method `+`(x: Gmulti, y: Gmulti): Gvalue =
+  requireMultiArity(x.slots.len, y.slots.len, "multi add")
+  var values = newseq[Gvalue](x.slots.len)
+  for k in 0..<values.len:
+    values[k] = x[k] + y[k]
+  multiCarrierFromExprs(values, "multi add")
+
+method constLike*(x: Gmulti, value: int): Gvalue =
+  var values = newseq[Gvalue](x.slots.len)
+  for k in 0..<values.len:
+    values[k] = x.slotValue(k).constLike(value)
+  multiCarrierFromExprs(values, "multi const")
+
+method zeroLike*(x: Gmulti): Gvalue =
+  var values = newseq[Gvalue](x.slots.len)
+  for k in 0..<values.len:
+    values[k] = x.slotValue(k).zeroLike
+  multiCarrierFromExprs(values, "multi zero")

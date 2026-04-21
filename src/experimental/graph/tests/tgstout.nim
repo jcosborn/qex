@@ -1,5 +1,5 @@
 import qex, algorithms/numdiff, gauge/stoutsmear
-import core, scalar, gauge
+import ../[core, scalar, gauge]
 
 qexInit()
 
@@ -16,9 +16,11 @@ echo "rank ", myRank, "/", nRanks
 threads: echo "thread ", threadNum, "/", numThreads
 
 let
+  grt = initGraphRuntime()
   lo = lat.newLayout
   vol = lo.physVol
   gc = GaugeActionCoeffs(plaq: beta)
+  gcGraph = toGvalue(grt, gc)
   g = lo.newgauge
   u = lo.newgauge
 
@@ -56,14 +58,14 @@ echo "numdiff smear dS/dt: ",ndt," +/- ",err
 proc stout(g, t: Gvalue, n: int): Gvalue =
   var g = g
   for i in 1..n:
-    g = axexpmuly(t, gaugeForce(actWilson(-3.0), g), g)
+    g = axexpmuly(t, gaugeForce(actWilson(g.runtime, -3.0), g), g)
   g
 
 let
-  gdt = toGvalue dt
-  gg = toGvalue g
+  gdt = toGvalue(grt, dt)
+  gg = toGvalue(grt, g)
   gs = gg.stout(gdt, nstep)
-  s = gc.gaugeAction gs
+  s = gcGraph.gaugeAction gs
   ddt = s.grad gdt
 
 gs.eval.getgauge.echoPlaq
