@@ -98,7 +98,7 @@ proc toGpu*(g: var GpuField, c: Field) =
     g.pgm = pgm
     toc("getGpuMem")
     pgm.copyIn(addr c[0])
-    toc("copyIn")
+    toc("copyIn",flops=pgm.bytes)
   else:
     g.p = cast[type g.p](addr c[0])
 
@@ -114,7 +114,7 @@ proc fromGpu*(x: Field) =
     tic("fromGpuField")
     let pgm = getGpuMem(addr x[0])
     pgm.copyOut(addr x[0])
-    toc("copyOut")
+    toc("copyOut",flops=pgm.bytes)
 
 template fromGpu*(x: Field, g: GpuField) = fromGpu(x)
 

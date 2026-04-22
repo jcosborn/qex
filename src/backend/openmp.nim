@@ -146,6 +146,8 @@ template openmpDefs(n,body: untyped) =
     #template getThreadNum: untyped {.used.} = teamNum.int * numThreads.int + threadNum.int
     #template getNumThreads: untyped {.used.} = numTeams.int * numThreads.int
     #{.emit:["#define nimZeroMem(b,len) memset((b),0,(len))"].}
+    {.push checks: off.}
+    {.push stacktrace: off.}
     inlineProcs:
       body
     #{.emit:["#undef nimZeroMem"].}
@@ -214,11 +216,10 @@ macro onGpuNowait*(n,b,body: untyped): auto =
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,newTree(nnkAccQuoted,g,ident"xx"))
   template target(fl,n,b,cpuPrepare, cpuFinalize, devicePtrDeclare, body: untyped) =
     mixin toGpu, getGpu, fromGpu
-    {.push checks: off.}
-    {.push stacktrace: off.}
+    inc kernelCallCount
     block:
+      let thisKernelCallCount = kernelCallCount  # save current value for finalizer
       tic(fl)
-      inc kernelCallCount
       cpuPrepare  # a let section declare and save device pointers
       toc("cpuPrepare")
       #proc gpuProc {.gensym.} =
@@ -232,13 +233,22 @@ macro onGpuNowait*(n,b,body: untyped): auto =
             const inOnGpu {.inject,used.} = true
             body
       #gpuProc()
-      toc("launch")
+      when declared gpuWaitFlops:
+        toc("wait",flops=gpuWaitFlops)
+      else:
+        toc("wait")
       proc finalize {.gensym.} =
         tic(fl)
-        toc("wait")
+        var countSave = 0
+        threadSingle:
+          countSave = kernelCallCount
+          kernelCallCount = thisKernelCallCount
         cpuFinalize
         #threadBarrier()
+        threadSingle:
+          kernelCallCount = countSave
         toc("cpuFinalize")
+      inc kernelCallCount  # increment after launch
       finalize
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
