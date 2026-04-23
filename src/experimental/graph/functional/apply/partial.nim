@@ -51,7 +51,7 @@ proc contributeApplyPartialTarget*(partialGfunc: Gfunc,
                                    label: string): Gvalue =
   result = newApplyPartialNode(partialGfunc, z, target, label)
   if zb != nil:
-    result = zb * result
+    result = result.scaleLike zb
 
 proc applyPartialBase*(v: Gvalue): Gvalue =
   v.requireApplyPartialView.base

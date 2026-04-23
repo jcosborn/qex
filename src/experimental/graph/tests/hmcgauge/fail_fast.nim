@@ -14,7 +14,7 @@ suite "hmcgauge fail-fast":
       integratorCoeffs: parseIntegratorCoeffs(ik2MN, []),
       alwaysAccept: false)
 
-  proc validIntegratorInputs(): tuple[gc, g0, p0, dt: Gvalue] =
+  proc validIntegratorInputs(): tuple[gc: Gactcoeff, g0: Ggauge, p0: Ggauge, dt: Gscalar] =
     (
       gc: grt.actWilson(6.0),
       g0: grt.toGvalue(g),
@@ -32,22 +32,22 @@ suite "hmcgauge fail-fast":
       discard optimizer.optimize(parameters, gradients, -1, 0.1)
 
   test "integrateGauge rejects nonpositive step count before gauge ops":
-    let placeholder = grt.toGvalue(0.0)
+    let inputs = validIntegratorInputs()
 
     expect(GraphValueError):
       discard integrateGauge(
-        placeholder,
-        placeholder,
-        placeholder,
-        placeholder,
+        inputs.gc,
+        inputs.g0,
+        inputs.p0,
+        inputs.dt,
         0,
         parseIntegratorCoeffs(ik2MN, []))
     expect(GraphValueError):
       discard integrateGauge(
-        placeholder,
-        placeholder,
-        placeholder,
-        placeholder,
+        inputs.gc,
+        inputs.g0,
+        inputs.p0,
+        inputs.dt,
         -1,
         parseIntegratorCoeffs(ik2MN, []))
 

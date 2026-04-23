@@ -40,7 +40,7 @@ suite "graph multi":
     let y = grt.toGvalue(3.0)
     let left = newScalarMulti([x, y], "left")
     let right = newScalarMulti([y, x], "right")
-    let added = requireMultiValue(left + right, "multi add")
+    let added = left + right
 
     added[0] :~ 5.0
     added[1] :~ 5.0
@@ -49,19 +49,19 @@ suite "graph multi":
     grad(added[1], x) :~ 1.0
     grad(added[1], y) :~ 1.0
 
-  test "constLike and zeroLike preserve multi shape":
+  test "oneLike and zeroLike preserve multi shape":
     let x = grt.toGvalue(2.0)
     let y = grt.toGvalue(3.0)
     let pair = newScalarMulti([x, y], "pair")
-    let constPair = requireMultiValue(pair.constLike(7), "const pair")
+    let onePair = requireMultiValue(pair.oneLike, "one pair")
     let zeroPair = requireMultiValue(pair.zeroLike, "zero pair")
 
-    constPair[0] :~ 7.0
-    constPair[1] :~ 7.0
+    onePair[0] :~ 1.0
+    onePair[1] :~ 1.0
     zeroPair[0] :~ 0.0
     zeroPair[1] :~ 0.0
-    grad(constPair[0], x) :~ 0.0
-    grad(constPair[1], y) :~ 0.0
+    grad(onePair[0], x) :~ 0.0
+    grad(onePair[1], y) :~ 0.0
 
   test "selection rejects out-of-range indices early":
     let x = grt.toGvalue(2.0)

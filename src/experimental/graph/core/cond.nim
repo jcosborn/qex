@@ -6,10 +6,12 @@ type
     whenTrue: Gvalue
     whenFalse: Gvalue
 
-proc cond*(c: Gvalue, x: Gvalue, y: Gvalue): Gvalue
-proc newCondNode(selector: Gvalue,
-                 whenTrue: Gvalue,
-                 whenFalse: Gvalue): Gvalue
+proc newCondNode*(selector: Gvalue,
+                  whenTrue: Gvalue,
+                  whenFalse: Gvalue): Gvalue
+proc newCondNode*[T: Gvalue](selector: Gvalue,
+                             whenTrue: T,
+                             whenFalse: T): T
 
 proc requireCondOperand(value: Gvalue,
                         label: string) =
@@ -47,6 +49,12 @@ proc branchExpr(view: CondView,
                 whenFalse: Gvalue): Gvalue =
   newCondNode(view.selector, whenTrue, whenFalse)
 
+proc newCondResult(whenTrue: Gvalue): Gvalue =
+  whenTrue.newOneOf
+
+proc newCondResult[T: Gvalue](whenTrue: T): T =
+  T(whenTrue.newOneOf)
+
 proc walkCondEvalInputs(view: CondView,
                         visit: GnodeVisit) =
   visit(view.selector)
@@ -80,7 +88,7 @@ proc condBackwardTarget(zb: Gvalue,
     gradOrZero(view.whenTrue, target),
     gradOrZero(view.whenFalse, target))
   if zb != nil:
-    result = zb * result
+    result = result.scaleLike zb
 
 proc condf(v: Gvalue) =
   v.valCopy v.requireCondView.selectedBranch
@@ -94,14 +102,20 @@ let gcond = newGfunc(
   backwardTarget = condBackwardTarget,
   name = "cond")
 
-proc newCondNode(selector: Gvalue,
-                 whenTrue: Gvalue,
-                 whenFalse: Gvalue): Gvalue =
-  graphNode(whenTrue.newOneOf, @[selector, whenTrue, whenFalse], gcond, "cond")
+proc newCondNode*(selector: Gvalue,
+                  whenTrue: Gvalue,
+                  whenFalse: Gvalue): Gvalue =
+  selector.requireCondOperand("condition")
+  whenTrue.requireCondOperand("true-branch")
+  whenFalse.requireCondOperand("false-branch")
+  requireCompatibleCondBranches(whenTrue, whenFalse)
+  graphNode(newCondResult(whenTrue), @[selector, whenTrue, whenFalse], gcond, "cond")
 
-proc cond*(c: Gvalue, x: Gvalue, y: Gvalue): Gvalue =
-  c.requireCondOperand("condition")
-  x.requireCondOperand("true-branch")
-  y.requireCondOperand("false-branch")
-  requireCompatibleCondBranches(x, y)
-  result = newCondNode(c, x, y)
+proc newCondNode*[T: Gvalue](selector: Gvalue,
+                             whenTrue: T,
+                             whenFalse: T): T =
+  selector.requireCondOperand("condition")
+  whenTrue.requireCondOperand("true-branch")
+  whenFalse.requireCondOperand("false-branch")
+  requireCompatibleCondBranches(whenTrue, whenFalse)
+  graphNode(newCondResult(whenTrue), @[selector, whenTrue, whenFalse], gcond, "cond")

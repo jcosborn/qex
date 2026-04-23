@@ -20,6 +20,16 @@ suite "gauge fused":
     ckbinarynorm2grad(contractProjTAH(gg, gu), projTAH(gg * gu.adj), gg, gu, 1e-26)
     ckgradm2(contractProjTAH, gg, gu, gp, gq, gm)
 
+  test "erased-right fused gauge overloads preserve concrete result type":
+    let erased: Gvalue = gu
+    let adjmulResult: Ggauge = adjmul(gg, erased)
+    let muladjResult: Ggauge = muladj(gg, erased)
+    let contractResult: Ggauge = contractProjTAH(gg, erased)
+
+    norm2(adjmulResult - adjmul(gg, gu)) :< 1e-26
+    norm2(muladjResult - muladj(gg, gu)) :< 1e-26
+    norm2(contractResult - contractProjTAH(gg, gu)) :< 1e-26
+
   test "contractProjTAH shared backward helper stays correct across outputs":
     let rf = contractProjTAH(gg, gu)
     let rg = projTAH(gg * gu.adj)
@@ -78,8 +88,8 @@ suite "gauge fused":
 
   test "axexpmuly pack shares helper and result without breaking derivatives":
     let packed = axexpmulyPack(x, gm, gg)
-    let packedExp = packed[0]
-    let packedResult = packed[1]
+    let packedExp = Ggauge(packed[0])
+    let packedResult = Ggauge(packed[1])
     let refExp = axexp(x, gm)
     let refResult = exp(x * gm) * gg
     let packedScalar = retr(packedExp * gu) + retr(packedResult * gp)

@@ -32,41 +32,41 @@ template check(ii: tuple[filename:string, line:int, column:int], ast: string, dz
     checkpoint("  reldelta: " & $(abs(dzdt-gdota)/abs(dzdt+gdota)))
     fail()
 
-template ckforce(s: untyped, f: untyped, x: Gvalue, p: Gvalue) =
+template ckforce(s: untyped, f: untyped, x: untyped, p: untyped) =
   let t = grt.toGvalue(0.0)
   let (dsdt, e) = ndiff(s(exp(t*p)*x), t)
   let pdotf = eval(redot(p, f(x))).getfloat
   check(instantiationInfo(), astTostr(s(x) -> f(x)), dsdt, e, pdotf)
 
-template ckgrad(f: untyped, x: Gvalue, a: Gvalue) =
+template ckgrad(f: untyped, x: untyped, a: untyped) =
   let t = grt.toGvalue(0.0)
   let (dzdt, e) = ndiff(f(x+t*a), t)
   let ff = f(x)
   let gdota = eval(redot(grad(ff, x), a)).getfloat
   check(instantiationInfo(), astTostr(f(x)), dzdt, e, gdota)
 
-template ckgrad2(f: untyped, x: Gvalue, y: Gvalue, ax: Gvalue, ay: Gvalue) =
+template ckgrad2(f: untyped, x: untyped, y: untyped, ax: untyped, ay: untyped) =
   let t = grt.toGvalue(0.0)
   let (dzdt, e) = ndiff(f(x+t*ax, y+t*ay), t)
   let ff = f(x, y)
   let gdota = eval(redot(grad(ff, x), ax) + redot(grad(ff, y), ay)).getfloat
   check(instantiationInfo(), astTostr(f(x,y)), dzdt, e, gdota)
 
-template ckgradm(f: untyped, x: Gvalue, a: Gvalue, b: Gvalue) =
+template ckgradm(f: untyped, x: untyped, a: untyped, b: untyped) =
   let t = grt.toGvalue(0.0)
   let (dzdt, e) = ndiff(f(x+t*a).redot b, t)
   let ff = f(x).redot b
   let gdota = eval(redot(grad(ff, x), a)).getfloat
   check(instantiationInfo(), astTostr(f(x)), dzdt, e, gdota)
 
-template ckgradm2(f: untyped, x: Gvalue, y: Gvalue, ax: Gvalue, ay: Gvalue, b: Gvalue) =
+template ckgradm2(f: untyped, x: untyped, y: untyped, ax: untyped, ay: untyped, b: untyped) =
   let t = grt.toGvalue(0.0)
   let (dzdt, e) = ndiff(f(x+t*ax, y+t*ay).redot b, t)
   let ff = f(x, y).redot b
   let gdota = eval(redot(grad(ff, x), ax) + redot(grad(ff, y), ay)).getfloat
   check(instantiationInfo(), astTostr(f(x,y)), dzdt, e, gdota)
 
-template ckgradm3(f: untyped, x: Gvalue, y: Gvalue, u: Gvalue, ax: Gvalue, ay: Gvalue, au: Gvalue, b: Gvalue) =
+template ckgradm3(f: untyped, x: untyped, y: untyped, u: untyped, ax: untyped, ay: untyped, au: untyped, b: untyped) =
   let t = grt.toGvalue(0.0)
   let (dzdt, e) = ndiff(f(x+t*ax, y+t*ay, u+t*au).redot b, t)
   let ff = f(x, y, u).redot b
@@ -75,8 +75,8 @@ template ckgradm3(f: untyped, x: Gvalue, y: Gvalue, u: Gvalue, ax: Gvalue, ay: G
 
 template ckbinarynorm2grad(fusedExpr: untyped,
                            refExpr: untyped,
-                           x: Gvalue,
-                           y: Gvalue,
+                           x: untyped,
+                           y: untyped,
                            tol: float) =
   let fused = fusedExpr
   let refv = refExpr

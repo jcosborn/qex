@@ -5,7 +5,7 @@ import ../[core, scalar]
 type
   SampleScalarValues* = tuple[a, b: float]
   SampleScalarSweep* = tuple[a, b, c, d: float]
-  ScalarLeafPair* = tuple[a, b: float, x, y: Gvalue]
+  ScalarLeafPair* = tuple[a, b: float, x, y: Gscalar]
   MutableScalarPair* = tuple[a, b, c, d: float, x, y: Gscalar]
 
 proc sampleScalarValues*(): SampleScalarValues =

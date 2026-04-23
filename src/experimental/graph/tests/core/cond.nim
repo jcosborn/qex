@@ -72,6 +72,46 @@ suite "bool and cond":
     (iy > ix) :~ 1
     (ix > iy) :~ 0
 
+  test "comparison literal overloads preserve concrete result type":
+    let sx = grt.toGvalue(2.0)
+    let sy = grt.toGvalue(3.0)
+    let ix = grt.toGvalue(2)
+    let iy = grt.toGvalue(3)
+
+    let slt: Gscalar = sx < sy
+    let seqv: Gscalar = equal(sx, 2.0)
+    let seqLeft: Gscalar = equal(2.0, sx)
+    let sltRight: Gscalar = sx < 3
+    let sltLeft: Gscalar = 1 < sx
+    let sgeRight: Gscalar = sx >= 2.0
+    let sleLeft: Gscalar = 2.0 <= sx
+
+    slt :~ 1.0
+    seqv :~ 1.0
+    seqLeft :~ 1.0
+    sltRight :~ 1.0
+    sltLeft :~ 1.0
+    sgeRight :~ 1.0
+    sleLeft :~ 1.0
+    equal(sx, sy) :~ 0.0
+
+    let ilt: Gint = ix < iy
+    let ieq: Gint = equal(ix, 2)
+    let ieqLeft: Gint = equal(2, ix)
+    let iltRight: Gint = ix < 3
+    let iltLeft: Gint = 1 < ix
+    let igeRight: Gint = ix >= 2
+    let ileLeft: Gint = 2 <= ix
+
+    ilt :~ 1
+    ieq :~ 1
+    ieqLeft :~ 1
+    iltRight :~ 1
+    iltLeft :~ 1
+    igeRight :~ 1
+    ileLeft :~ 1
+    equal(ix, iy) :~ 0
+
   test "condi":
     let k = grt.toGvalue(0)
     let z = cond(k, x, y)
@@ -154,15 +194,35 @@ suite "bool and cond":
     dxLive :~ 1.0
     dyLive :~ 0.0
 
+  test "literal cond overloads preserve concrete branch type":
+    let ks = grt.toGvalue(1.0)
+    let ki = grt.toGvalue(1)
+    let sx = grt.toGvalue(2.0)
+    let ix = grt.toGvalue(2)
+
+    let scalarRight: Gscalar = cond(ks, sx, 0.0)
+    let scalarLeft: Gscalar = cond(ki, 0.0, sx)
+    let scalarIntLiteral: Gscalar = cond(ks, sx, 1)
+    let intRight: Gint = cond(ki, ix, 0)
+    let intLeft: Gint = cond(ks, 0, ix)
+
+    scalarRight :~ 2.0
+    scalarLeft :~ 0.0
+    scalarIntLiteral :~ 2.0
+    intRight :~ 2
+    intLeft :~ 0
+
+    scalarRight.grad(sx) :~ 1.0
+    ks.update 0.0
+    scalarRight :~ 0.0
+    scalarRight.grad(sx) :~ 0.0
+
   test "cond rejects malformed inputs early":
-    expect(GraphValueError):
-      discard cond(nil, grt.toGvalue(1.0), grt.toGvalue(2.0))
+    let scalarBranch: Gvalue = grt.toGvalue(2.0)
+    let intBranch: Gvalue = grt.toGvalue(3)
 
     expect(GraphValueError):
-      discard cond(grt.toGvalue(1), grt.toGvalue(2.0), grt.toGvalue(3))
-
-    expect(GraphValueError):
-      discard cond(grt.toGvalue(1), grt.toGvalue(3), grt.toGvalue(2.0))
+      discard cond(grt.toGvalue(1), scalarBranch, intBranch)
 
     let z = cond(grt.toGvalue(1), grt.toGvalue(2.0), grt.toGvalue(3.0))
     z.inputs.setLen 2

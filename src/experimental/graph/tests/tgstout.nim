@@ -55,7 +55,7 @@ var ndt, err: float
 ndiff(ndt, err, act, dt, eps, ordMax=3)
 echo "numdiff smear dS/dt: ",ndt," +/- ",err
 
-proc stout(g, t: Gvalue, n: int): Gvalue =
+proc stout(g: Ggauge, t: Gscalar, n: int): Ggauge =
   var g = g
   for i in 1..n:
     g = axexpmuly(t, gaugeForce(actWilson(g.runtime, -3.0), g), g)

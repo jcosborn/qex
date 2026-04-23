@@ -25,7 +25,7 @@ proc addGradContribution(ctx: var GradBuildContext,
   if input == nil or contrib == nil:
     return
   if ctx.contribs.hasNode(input):
-    ctx.contribs.putNode(input, ctx.contribs.getNode(input) + contrib)
+    ctx.contribs.putNode(input, input.addLike(ctx.contribs.getNode(input), contrib))
   else:
     ctx.contribs.putNode(input, contrib)
 

@@ -5,9 +5,6 @@ type
     slots: seq[Gvalue]  ## Forward storage for each output slot.
                         ## Read storage with `slotValue`; build graph expressions with `[]`.
 
-method `[]`*(x: Gvalue, i: int): Gvalue {.base.} =
-  raiseErrorBaseMethod($x & "[" & $i & "]")
-
 proc requireConcreteSlotIndex(index: int,
                               size: int,
                               label: string,
@@ -83,6 +80,7 @@ proc newMultiOutputNode*(slotProtos: openArray[Gvalue],
 
 proc multiCarrierFromExprs(values: openArray[Gvalue],
                            label = "multi values"): Gmulti
+proc `[]`*(x: Gmulti, i: int): Gvalue
 
 proc refreshSlotStorage(x: Gmulti, label: string) =
   x.slots.copySlotValues(x.inputs, label)
@@ -124,19 +122,27 @@ proc scatterSlotGrad(x: Gmulti,
 method newOneOf*(x: Gmulti): Gvalue =
   newMultiOutputNode(x.slots, @[], nil, "multi prototype")
 
-method valCopy*(z: Gmulti, x: Gmulti) =
+proc valCopy*(z: Gmulti, x: Gmulti) =
   ## Copy concrete slot storage only; graph structure is not cloned.
   if z.runtime != x.runtime:
     raiseValueError("multi copy mixes multiple graph runtimes")
   z.slots.copySlotValues(x.slots, "multi copy")
 
-method copyCompatible*(prototype: Gmulti, value: Gmulti): bool =
+method valCopy*(z: Gmulti, x: Gvalue) =
+  z.valCopy(x.requireMultiValue("multi copy"))
+
+proc copyCompatible*(prototype: Gmulti, value: Gmulti): bool =
   if prototype.slots.len != value.slots.len:
     return false
   for i in 0..<prototype.slots.len:
     if not prototype.slots[i].copyCompatible(value.slots[i]):
       return false
   true
+
+method copyCompatible*(prototype: Gmulti, value: Gvalue): bool =
+  if value == nil or not (value of Gmulti):
+    return false
+  prototype.copyCompatible(Gmulti(value))
 
 method `$`*(x: Gmulti): string =
   $x.slots
@@ -185,7 +191,7 @@ proc newMultiSelectFunc(index: int): Gfunc =
     let base = z.requireMultiSelectBase(label)
     let slotGrad =
       if zb == nil:
-        z.constLike(1)
+        z.oneLike
       else:
         zb
     base.scatterSlotGrad(index, slotGrad, label & " backward", z)
@@ -196,23 +202,33 @@ proc newMultiSelectFunc(index: int): Gfunc =
     signatureKey = multiSelectSignatureKey(index),
     name = label)
 
-method `[]`*(x: Gmulti, i: int): Gvalue =
+proc `[]`*(x: Gmulti, i: int): Gvalue =
   ## Build a symbolic selection for a statically chosen slot.
   let k = x.requireSlotIndex(i, "[]", x)
   graphNode(x.slotValue(k).newOneOf, @[Gvalue(x)], newMultiSelectFunc(k), "multiSelect")
 
-method `+`(x: Gmulti, y: Gmulti): Gvalue =
+proc `+`*(x: Gmulti, y: Gmulti): Gmulti =
   requireMultiArity(x.slots.len, y.slots.len, "multi add")
   var values = newseq[Gvalue](x.slots.len)
   for k in 0..<values.len:
-    values[k] = x[k] + y[k]
+    values[k] = x.slotValue(k).addLike(x[k], y[k])
   multiCarrierFromExprs(values, "multi add")
 
-method constLike*(x: Gmulti, value: int): Gvalue =
+method addLike*(prototype: Gmulti, x: Gvalue, y: Gvalue): Gvalue =
+  let left = x.requireMultiValue("multi gradient add left")
+  let right = y.requireMultiValue("multi gradient add right")
+  requireMultiArity(left.slots.len, right.slots.len, "multi gradient add")
+  requireMultiArity(prototype.slots.len, left.slots.len, "multi gradient add prototype")
+  var values = newseq[Gvalue](prototype.slots.len)
+  for k in 0..<values.len:
+    values[k] = prototype.slotValue(k).addLike(left[k], right[k])
+  multiCarrierFromExprs(values, "multi gradient add")
+
+method oneLike*(x: Gmulti): Gvalue =
   var values = newseq[Gvalue](x.slots.len)
   for k in 0..<values.len:
-    values[k] = x.slotValue(k).constLike(value)
-  multiCarrierFromExprs(values, "multi const")
+    values[k] = x.slotValue(k).oneLike
+  multiCarrierFromExprs(values, "multi one")
 
 method zeroLike*(x: Gmulti): Gvalue =
   var values = newseq[Gvalue](x.slots.len)

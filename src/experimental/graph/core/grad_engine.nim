@@ -33,7 +33,7 @@ proc prepareGradCache(ctx: GradBuildContext,
     cache.grads = initTable[NodeId, Gvalue]()
 
   if sameNode(ctx.dep, ctx.x):
-    result = ctx.x.constLike(1)
+    result = ctx.x.oneLike
     cache.cacheGrad(ctx.x, result)
 
 proc gradImpl(dep: Gvalue, x: Gvalue): Gvalue =

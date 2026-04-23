@@ -22,7 +22,7 @@ suite "functional lambda gradients":
   test "higher order apply gradient wrt closure and input":
     let f = local(grt.localScalar())
     let u = grt.localScalar()
-    let hof = lambda(f, lambda(u, apply(f, u) * apply(f, u)))
+    let hof = lambda(f, lambda(u, Gscalar(apply(f, u)) * Gscalar(apply(f, u))))
     let v = grt.localScalar()
     let a = grt.toGvalue(2.0)
     let x = grt.toGvalue(3.0)
@@ -47,7 +47,7 @@ suite "functional lambda gradients":
     let v = grt.localScalar()
     let f = lambda(v, v * y)
     let g = lambda(v, v + y)
-    let z = apply(f, x) * apply(g, x + 1.0)
+    let z = Gscalar(apply(f, x)) * Gscalar(apply(g, x + 1.0))
     let dzdy = z.grad y
     let dzdx = z.grad x
     z :~ 80.0
@@ -73,7 +73,7 @@ suite "functional lambda gradients":
     let step = grt.toGvalue(1.0)
     let F = lambda(rf, lambda(u,
       cond(equal(u, 0.0), base,
-        apply(lambda(v, apply(rf, v) + step), u - 1.0))))
+        Gscalar(apply(lambda(v, Gscalar(apply(rf, v)) + step), u - 1.0)))))
 
     let z = apply(apply(Y, F), 3.0)
     let dzdstep = z.grad step

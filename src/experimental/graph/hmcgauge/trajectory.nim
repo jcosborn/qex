@@ -5,24 +5,24 @@ import config, integrator
 
 type
   TrajectoryState = object
-    gauge: Gvalue
-    momentum: Gvalue
-    gaugeAction: Gvalue
-    kinetic: Gvalue
-    hamiltonian: Gvalue
+    gauge: Ggauge
+    momentum: Ggauge
+    gaugeAction: Gscalar
+    kinetic: Gscalar
+    hamiltonian: Gscalar
   LearnedParameter* = object
-    node*: Gvalue
+    node*: Gscalar
     gradientExpr*: Gvalue
   TrajectoryGraph* = object
     initialState: TrajectoryState
     finalState: TrajectoryState
-    deltaHamiltonian: Gvalue
-    acceptanceExpr: Gvalue
-    lossExpr: Gvalue
+    deltaHamiltonian: Gscalar
+    acceptanceExpr: Gscalar
+    lossExpr: Gscalar
     learnedParameters*: seq[LearnedParameter]
 
-proc initLearnedParameters(lossExpr: Gvalue,
-                           parameterNodes: openArray[Gvalue]): seq[LearnedParameter] =
+proc initLearnedParameters(lossExpr: Gscalar,
+                           parameterNodes: openArray[Gscalar]): seq[LearnedParameter] =
   result = newSeq[LearnedParameter](parameterNodes.len)
   for i in 0..<result.len:
     result[i] = LearnedParameter(
@@ -47,9 +47,9 @@ template resampleMomentum*(graphValue, randomFieldValue: untyped) =
       graphValue.initialState.momentum.getgauge.randomTAH randomFieldValue
     graphValue.initialState.momentum.updated
 
-proc buildTrajectoryState(gc: Gvalue,
-                          gauge: Gvalue,
-                          momentum: Gvalue): TrajectoryState =
+proc buildTrajectoryState(gc: Gactcoeff,
+                          gauge: Ggauge,
+                          momentum: Ggauge): TrajectoryState =
   let kineticScale = scalarLeafLike(momentum, 0.5)
   result.gauge = gauge
   result.momentum = momentum
@@ -65,10 +65,10 @@ proc logTrajectoryState(label: string,
 
 proc buildTrajectoryGraph*(grt: GraphRuntime,
                            g, p: auto,
-                           gc: Gvalue,
+                           gc: Gactcoeff,
                            config: RunConfig): TrajectoryGraph =
   let gdt = toGvalue(grt, config.dt)
-  var parameterNodes = @[Gvalue(gdt)]
+  var parameterNodes = @[gdt]
   result.initialState = buildTrajectoryState(gc, toGvalue(grt, g), toGvalue(grt, p))
   let tau = float(config.gsteps) * gdt
   let (g1, p1, learnedCoeffs) = integrateGauge(

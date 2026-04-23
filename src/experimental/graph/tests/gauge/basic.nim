@@ -1,3 +1,23 @@
+proc mixedScalarGaugeForward(v: Gvalue) =
+  let z = v.requireMultiValue("mixed scalar/gauge forward")
+  for i in 0..<z.inputs.len:
+    z.slotValue(i).valCopy(z.inputs[i])
+
+proc mixedScalarGaugeBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
+  discard dep
+  let upstream = requireMultiUpstream(zb, "mixed scalar/gauge backward")
+  if i < 0 or i >= z.inputs.len:
+    raiseValueError("mixed scalar/gauge backward input index out of range: " & $i)
+  upstream[i]
+
+let mixedScalarGaugeFunc = newGfunc(
+  forward = mixedScalarGaugeForward,
+  backward = mixedScalarGaugeBackward,
+  name = "mixedScalarGauge")
+
+proc newScalarGaugeMulti(s: Gscalar, g: Ggauge, label: string): Gmulti =
+  newMultiOutputNode([Gvalue(s), Gvalue(g)], [Gvalue(s), Gvalue(g)], mixedScalarGaugeFunc, label)
+
 suite "gauge basic":
   setup:
     let gg {.used.} = grt.toGvalue(g)
@@ -28,6 +48,24 @@ suite "gauge basic":
     norm2(grad(pq, gp) - gq) :< 1e-26
     norm2(grad(pq, gq) - gp) :< 1e-26
     ckgrad2(redot, gp, gq, gg, gu)
+
+  test "erased-right gauge overloads preserve concrete result type":
+    let erasedGauge: Gvalue = gq
+    let erasedScalar: Gvalue = x
+
+    let addResult: Ggauge = gp + erasedGauge
+    let mulResult: Ggauge = gp * erasedGauge
+    let subGaugeResult: Ggauge = gp - erasedGauge
+    let subScalarResult: Ggauge = gp - erasedScalar
+    let dotResult: Gscalar = redot(gp, erasedGauge)
+    let derivResult: Ggauge = expDeriv(gp, erasedGauge)
+
+    norm2(addResult - (gp + gq)) :< 1e-26
+    norm2(mulResult - (gp * gq)) :< 1e-26
+    norm2(subGaugeResult - (gp - gq)) :< 1e-26
+    norm2(subScalarResult - (gp - x)) :< 1e-26
+    dotResult :~ redot(gp, gq)
+    norm2(derivResult - expDeriv(gp, gq)) :< 1e-26
 
   test "retr":
     let rtp = gp.retr
@@ -130,3 +168,14 @@ suite "gauge basic":
     check second.copyCompatible(right)
     check not first.copyCompatible(right)
     check not second.copyCompatible(left)
+
+  test "multi add supports heterogeneous scalar and gauge slots":
+    let left = newScalarGaugeMulti(x, gp, "mixed left")
+    let right = newScalarGaugeMulti(y, gq, "mixed right")
+    let added: Gmulti = left + right
+    let addedGauge: Ggauge = Ggauge(added[1])
+
+    added[0] :~ a + b
+    norm2(addedGauge - (gp + gq)) :< 1e-26
+    grad(added[0], x) :~ 1.0
+    grad(added[0], y) :~ 1.0

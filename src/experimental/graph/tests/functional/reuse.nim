@@ -51,7 +51,7 @@ suite "functional reuse":
 
     let f = local(grt.localScalar())
     let u = grt.localScalar()
-    let hof = lambda(f, lambda(u, apply(f, u) + 1.0))
+    let hof = lambda(f, lambda(u, Gscalar(apply(f, u)) + 1.0))
     let v = grt.localScalar()
     let a = grt.toGvalue(2.0)
     let b = grt.toGvalue(3.0)
@@ -358,7 +358,7 @@ suite "functional reuse":
     let x = grt.toGvalue(3.0)
     let k = grt.toGvalue(1)
     let v = grt.localScalar()
-    let z = cond(k, apply(lambda(v, v * v + 1.0), x), 0.0)
+    let z = cond(k, Gscalar(apply(lambda(v, v * v + 1.0), x)), 0.0)
 
     let dz = z.grad x
     let p0 = cast[pointer](dz)
@@ -440,7 +440,7 @@ suite "functional reuse":
     let step = grt.toGvalue(1.0)
     let F = lambda(rf, lambda(u,
       cond(equal(u, 0.0), base,
-        apply(lambda(v, apply(rf, v) + step), u - 1.0))))
+        Gscalar(apply(lambda(v, Gscalar(apply(rf, v)) + step), u - 1.0)))))
 
     let z = apply(apply(Y, F), 3.0)
     let dzdstep = z.grad step

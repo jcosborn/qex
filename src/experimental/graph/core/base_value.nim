@@ -8,19 +8,14 @@ method valCopy*(z: Gvalue, x: Gvalue) {.base.} =
 method copyCompatible*(prototype: Gvalue, value: Gvalue): bool {.base.} =
   false
 method zeroLike*(x: Gvalue): Gvalue {.base.} = x.newOneOf
+method oneLike*(x: Gvalue): Gvalue {.base.} =
+  raiseErrorBaseMethod("oneLike(" & $x & ")")
+
+method addLike*(prototype: Gvalue, x: Gvalue, y: Gvalue): Gvalue {.base.} =
+  raiseErrorBaseMethod("addLike(" & $prototype & "," & $x & "," & $y & ")")
 
 method isZero*(x: Gvalue): bool {.base.} =
   raiseErrorBaseMethod("isZero(" & $x & ")")
-method update*(x: Gvalue, y: int) {.base.} =
-  raiseErrorBaseMethod("update(" & $x & "," & $y & ")")
-method update*(x: Gvalue, y: float) {.base.} =
-  raiseErrorBaseMethod("update(" & $x & "," & $y & ")")
-
-method constLike*(x: Gvalue, value: int): Gvalue {.base.} =
-  ## Convenience for scalar-like graph values.
-  ## This is not a universal algebraic identity for every Gvalue subtype.
-  result = x.newOneOf
-  result.update value
 
 proc treeReprImpl*(v: Gvalue,
                    children: proc(node: Gvalue): seq[Gvalue] {.closure.}): string =
@@ -59,18 +54,8 @@ proc treeReprImpl*(v: Gvalue,
 proc treeRepr*(v: Gvalue): string =
   treeReprImpl(v, proc(node: Gvalue): seq[Gvalue] = node.inputs)
 
-method `-`*(x: Gvalue): Gvalue {.base.} =
-  raiseErrorBaseMethod("`-`(" & $x & ")")
-method `+`*(x: Gvalue, y: Gvalue): Gvalue {.base.} =
-  raiseErrorBaseMethod("`+`(" & $x & ", " & $y & ")")
-method `*`*(x: Gvalue, y: Gvalue): Gvalue {.base.} =
-  raiseErrorBaseMethod("`*`(" & $x & ", " & $y & ")")
-method `-`*(x: Gvalue, y: Gvalue): Gvalue {.base.} =
-  raiseErrorBaseMethod("`-`(" & $x & ", " & $y & ")")
-method `/`*(x: Gvalue, y: Gvalue): Gvalue {.base.} =
-  raiseErrorBaseMethod("`/`(" & $x & ", " & $y & ")")
-method exp*(x: Gvalue): Gvalue {.base.} =
-  raiseErrorBaseMethod("exp(" & $x & ")")
+method scaleLike*(contribution: Gvalue, upstream: Gvalue): Gvalue {.base.} =
+  raiseErrorBaseMethod("scaleLike(" & $contribution & ", " & $upstream & ")")
 
 method walkHiddenDeps*(v: Gvalue,
                        mode: InputWalkMode,

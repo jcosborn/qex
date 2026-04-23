@@ -78,7 +78,7 @@ proc applyDeferredContribution(zb: Gvalue, z: Gvalue, target: Gvalue): Gvalue =
     "applyPartialDeferred")
   if zb == nil:
     return partial
-  zb * partial
+  partial.scaleLike zb
 
 proc applyDeferredBackwardTarget(zb: Gvalue,
                                  z: Gvalue,

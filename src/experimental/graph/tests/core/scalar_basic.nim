@@ -116,7 +116,7 @@ suite "scalar basic":
     let kRuntime = grt.toGvalue(1)
     let sum = xRuntime + 3.0
     let scaled = 0.5 * sum
-    let chosen = cond(kRuntime, scaled, 0.0)
+    let chosen: Gscalar = cond(kRuntime, scaled, 0.0)
     let dx = chosen.grad xRuntime
 
     chosen :~ 2.5
@@ -124,6 +124,40 @@ suite "scalar basic":
     check sum.runtime == grt
     check scaled.runtime == grt
     check chosen.runtime == grt
+
+  test "literal and erased-right scalar overloads preserve concrete type":
+    let erasedY: Gvalue = y
+
+    let addRight: Gscalar = x + 2.0
+    let addLeft: Gscalar = 2.0 + x
+    let subRight: Gscalar = x - 2
+    let subLeft: Gscalar = 2 - x
+    let mulRight: Gscalar = x * 2.0
+    let mulLeft: Gscalar = 2.0 * x
+    let divRight: Gscalar = x / 2
+    let divLeft: Gscalar = 2 / x
+
+    addRight :~ a + 2.0
+    addLeft :~ 2.0 + a
+    subRight :~ a - 2.0
+    subLeft :~ 2.0 - a
+    mulRight :~ 2.0 * a
+    mulLeft :~ 2.0 * a
+    divRight :~ a / 2.0
+    divLeft :~ 2.0 / a
+
+    let addErased: Gscalar = x + erasedY
+    let subErased: Gscalar = x - erasedY
+    let mulErased: Gscalar = x * erasedY
+    let divErased: Gscalar = x / erasedY
+    let chained: Gscalar = (x + erasedY) * 2.0
+
+    addErased :~ a + b
+    subErased :~ a - b
+    mulErased :~ a * b
+    divErased :~ a / b
+    chained :~ 2.0 * (a + b)
+    chained.grad(x) :~ 2.0
 
   test "exp":
     let z = exp(x)
@@ -148,7 +182,7 @@ suite "scalar basic":
       let plain = grt.toGvalue(7.0)
       if zb == nil:
         return plain
-      zb * plain
+      plain.scaleLike zb
 
     proc targetPriorityBackwardTarget(zb: Gvalue,
                                       z: Gvalue,
@@ -160,7 +194,7 @@ suite "scalar basic":
       let targeted = grt.toGvalue(11.0)
       if zb == nil:
         return targeted
-      zb * targeted
+      targeted.scaleLike zb
 
     let gtargetPriority = newGfunc(
       forward = targetPriorityf,
@@ -187,7 +221,7 @@ suite "scalar basic":
       let targeted = grt.toGvalue(13.0)
       if zb == nil:
         return targeted
-      zb * targeted
+      targeted.scaleLike zb
 
     let gtargetOnly = newGfunc(
       forward = targetOnlyf,

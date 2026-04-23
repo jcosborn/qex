@@ -28,7 +28,7 @@ template defineUnaryGraphOp*(gfuncName,
     backward = backwardName,
     name = gfuncLabel)
 
-  method methodSym*(inputSym: InputType): Gvalue =
+  proc methodSym*(inputSym: InputType): typeof(resultNode) =
     graphNode(resultNode, @[Gvalue(inputSym)], gfuncName, gfuncLabel)
 
 template defineBinaryGraphOp*(gfuncName,
@@ -46,5 +46,5 @@ template defineBinaryGraphOp*(gfuncName,
     backward = backwardName,
     name = gfuncLabel)
 
-  method methodSym*(leftSym: LeftType, rightSym: RightType): Gvalue =
-    graphNode(resultNode, @[Gvalue(leftSym), rightSym], gfuncName, gfuncLabel)
+  proc methodSym*(leftSym: LeftType, rightSym: RightType): typeof(resultNode) =
+    graphNode(resultNode, @[Gvalue(leftSym), Gvalue(rightSym)], gfuncName, gfuncLabel)

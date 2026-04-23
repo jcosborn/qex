@@ -110,6 +110,11 @@ caches, that change is usually fighting the design rather than refining it.
 
 This package prefers construction-time checks over late coercion.
 
+Public graph-building operators should preserve concrete node types whenever the
+result type is known. `Gvalue` is the erased storage type used by core hooks,
+node input arrays, apply results, and other genuinely opaque boundaries; it is
+not a general operator-dispatch surface.
+
 Two consequences matter across modules:
 
 - `copyCompatible` is a real semantic contract, not a convenience predicate
@@ -119,9 +124,16 @@ Two consequences matter across modules:
 Mixed numeric literals are supported only through explicit, runtime-anchored
 helpers and overloads. They should never smuggle in a global runtime choice.
 
-Top-level `grad(dep, x)` is intended to be scalar-rooted. Non-scalar roots can
-work only when the root operator already defines a meaningful upstream
-convention; that is not a general package promise.
+The remaining dynamic methods are value-prototype contracts used after type
+erasure has already happened: allocation/copy compatibility, zero/one creation,
+gradient accumulation, upstream scaling, hidden dependency walks, signature
+tokens, and value display. Concrete graph math should be ordinary procs, and
+erased values should be cast or validated at the boundary that knows the
+expected type.
+
+Reverse-mode root and upstream conventions are type-specific. Do not recover
+generic erased arithmetic as a fallback; add the needed `addLike`, `scaleLike`,
+`zeroLike`, or `oneLike` behavior to the value type that owns the convention.
 
 Closure-body cloning assumes ordinary graph nodes can be reconstructed from
 `newOneOf`, cloned `inputs`, and the original `gfunc`. Nodes with additional
@@ -138,6 +150,7 @@ or near the implementation:
 - depend-mode dependencies
 - whether `backwardTarget` overrides ordinary `backward`
 - which static metadata must enter `signatureKey`
+- where erased raw inputs or upstream values are restored to concrete types
 - whether `newOneOf + cloned inputs + gfunc` preserves the node
 
 ## `cond`
@@ -147,6 +160,9 @@ into structural churn.
 
 Its contract is:
 
+- public selectors are scalar or int graph values
+- branches must have compatible result shape, and public same-type calls keep
+  that concrete branch type
 - evaluation is lazy and follows only the selector plus the chosen branch
 - dependency traversal sees the selector and both branches
 - gradient-signature traversal only recurses through the selector, while raw
@@ -156,8 +172,13 @@ That split is deliberate. It keeps branch evaluation lazy while allowing
 selector flips to reuse symbolic gradients when the branch roots themselves have
 not changed.
 
-Use `cond` for choosing between compatible values. Do not use it as a back door
-for shape changes.
+Literal branch conveniences are only for scalar and int branches. Other value
+types must pass explicit graph values on both branches. If a branch comes from a
+boundary that returns erased `Gvalue`, such as `apply`, cast it before using it
+as a typed branch.
+
+Use `cond` for choosing between compatible values, not as a back door for shape
+changes.
 
 ## Higher-Order Functions
 
@@ -172,6 +193,11 @@ The higher-order path therefore distinguishes between:
 
 Closures are normalized before cached reuse matters. That keeps capture
 structure explicit and makes substitution-based instantiation the stable model.
+
+`apply` returns an erased `Gvalue` because function-valued expressions can be
+resolved only as the callable graph is reduced. Code that knows the callable's
+result type should cast the apply result before feeding it into typed graph
+operators.
 
 Callable freshness is intentionally asymmetric:
 
@@ -211,6 +237,11 @@ of scope by design. That keeps selection local, keeps slot shape resolution
 simple, and avoids turning multi-output carriers into a second general-purpose
 data language.
 
+Multi-output carriers may be heterogeneous. Slotwise combination and gradient
+accumulation therefore use each slot prototype's algebra, not a single erased
+`Gvalue` operator. Indexing a multi-output carrier still returns an erased
+fixed-slot expression; callers that know the slot type should cast it.
+
 If control flow must choose between slots, express that choice outside the
 indexing operation.
 
@@ -222,6 +253,11 @@ consumer.
 
 The gauge layer extends the graph model to gauge-field values and related
 operators. Its primary differentiation contract is with respect to gauge fields.
+
+Gauge graph construction should stay in concrete gauge/scalar/coefficient types.
+Backward builders are the expected place to recover erased raw inputs or
+upstreams, because each backward builder is tied to one forward operator and
+knows the concrete operand types it stored.
 
 Zero-valued gauges are ordinary zeroed storage, not a privileged semantic flag.
 There is no separate zero-state fast path to keep in sync with the payload.

@@ -5,10 +5,30 @@ proc requireUpstream*(zb: Gvalue, label: string): Gvalue =
     raiseValueError(label & " requires non-nil upstream gradient")
   zb
 
-proc scaledUpstreamOr*(zb: Gvalue, scale: Gvalue): Gvalue =
+proc requireUpstream*[T: Gvalue](zb: Gvalue,
+                                 upstreamType: typedesc[T],
+                                 label: string): T =
+  let value = requireUpstream(zb, label)
+  if not (value of T):
+    raiseValueError(
+      label & " expects upstream gradient of type " & $upstreamType &
+      ", got:\n" & value.nodeRepr)
+  T(value)
+
+template scaledUpstreamOr*(zb: Gvalue, scale: Gvalue): untyped =
   if zb == nil:
-    return scale
-  zb * scale
+    scale
+  else:
+    scale.scaleLike zb
+
+template scaledUpstreamOr*[U: Gvalue, S: Gvalue](zb: Gvalue,
+                                                 upstreamType: typedesc[U],
+                                                 scale: S,
+                                                 label: string): untyped =
+  if zb == nil:
+    scale
+  else:
+    scale.scaleLike requireUpstream(zb, upstreamType, label)
 
 proc raiseInputIndexError*(label: string,
                            expected: string,

@@ -24,7 +24,7 @@ suite "functional lambda":
     let y = grt.toGvalue(7.0)
     let v = grt.localScalar()
     let f = lambda(v, v + y)
-    let z = apply(f, x) * apply(f, x + 1.0)
+    let z = Gscalar(apply(f, x)) * Gscalar(apply(f, x + 1.0))
     let dzdy = z.grad y
     z :~ 90.0
     dzdy :~ 19.0
@@ -32,7 +32,7 @@ suite "functional lambda":
   test "higher order function argument":
     let f = local(grt.localScalar())
     let u = grt.localScalar()
-    let hof = lambda(f, lambda(u, apply(f, u) + 1.0))
+    let hof = lambda(f, lambda(u, Gscalar(apply(f, u)) + 1.0))
     let v = grt.localScalar()
     let a = grt.toGvalue(2.0)
     let g = lambda(v, a * v)
@@ -47,7 +47,7 @@ suite "functional lambda":
   test "evaluated function-valued apply remains callable":
     let f = local(grt.localScalar())
     let u = grt.localScalar()
-    let hof = lambda(f, lambda(u, apply(f, u) + 1.0))
+    let hof = lambda(f, lambda(u, Gscalar(apply(f, u)) + 1.0))
     let v = grt.localScalar()
     let a = grt.toGvalue(2.0)
     let g = lambda(v, a * v)
@@ -63,7 +63,7 @@ suite "functional lambda":
   test "evaluated function-valued apply tracks closure updates":
     let f = local(grt.localScalar())
     let u = grt.localScalar()
-    let hof = lambda(f, lambda(u, apply(f, u) + 1.0))
+    let hof = lambda(f, lambda(u, Gscalar(apply(f, u)) + 1.0))
     let v = grt.localScalar()
     let a = grt.toGvalue(2.0)
     let g = lambda(v, a * v)
@@ -81,7 +81,7 @@ suite "functional lambda":
 
     let f = local(grt.localScalar())
     let u = grt.localScalar()
-    let hof = lambda(f, lambda(u, apply(f, u) + 1.0))
+    let hof = lambda(f, lambda(u, Gscalar(apply(f, u)) + 1.0))
     let v = grt.localScalar()
     let a = grt.toGvalue(2.0)
     let g = lambda(v, a * v)
@@ -135,7 +135,7 @@ suite "functional lambda":
   test "callable wrapper stays stale until reevaluated":
     let f = local(grt.localScalar())
     let u = grt.localScalar()
-    let hof = lambda(f, lambda(u, apply(f, u) + 1.0))
+    let hof = lambda(f, lambda(u, Gscalar(apply(f, u)) + 1.0))
     let v = grt.localScalar()
     let a = grt.toGvalue(2.0)
     let g = lambda(v, a * v)
@@ -195,7 +195,7 @@ suite "functional lambda":
     let y = grt.toGvalue(4.0)
     let F = lambda(rf, lambda(u,
       cond(equal(u, 0.0), y,
-        apply(lambda(v, apply(rf, v) + apply(rf, v)), u - 1.0))))
+        Gscalar(apply(lambda(v, Gscalar(apply(rf, v)) + Gscalar(apply(rf, v))), u - 1.0)))))
 
     let z = apply(apply(Y, F), 4.0)
     z :~ 64.0

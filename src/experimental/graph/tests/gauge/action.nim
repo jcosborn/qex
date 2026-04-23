@@ -15,20 +15,20 @@ suite "gauge action":
     let c = grt.actWilson(beta)
     let s = gaugeAction(c, gg)
     s :~ -gplaq*float(6*vol*beta)
-    proc act(x: Gvalue): Gvalue = gaugeAction(c, x)
+    proc act(x: Ggauge): Gscalar = gaugeAction(c, x)
     ckgrad(act, gg, gu)
 
   test "wilson force":
     let beta = 5.4
     let c = grt.actWilson(beta)
-    proc act(x: Gvalue): Gvalue = gaugeAction(c, x)
-    proc force(x: Gvalue): Gvalue = gaugeForce(c, x)
+    proc act(x: Ggauge): Gscalar = gaugeAction(c, x)
+    proc force(x: Ggauge): Ggauge = gaugeForce(c, x)
     ckforce(act, force, gg, 10.0*gm)
 
   test "wilson force gradient":
     let beta = 5.4
     let c = grt.actWilson(beta)
-    proc force(x: Gvalue): Gvalue = gaugeForce(c, x)
+    proc force(x: Ggauge): Ggauge = gaugeForce(c, x)
     ckgradm(force, gg, gu, gm)
 
   test "wilson force gradient recomp":

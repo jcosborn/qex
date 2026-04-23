@@ -85,7 +85,7 @@ proc `getfloat=`*(x: Gvalue, y: float) =
   let xs = Gscalar(x)
   xs.sval = y
 
-method update*(x: Gscalar, y: float) =
+proc update*(x: Gscalar, y: float) =
   x.getfloat = y
   x.updated
 
@@ -99,9 +99,14 @@ proc valCopy*(z: Gvalue,
 
 method newOneOf*(x: Gscalar): Gvalue =
   result = Gscalar(runtime: x.runtime)
-method valCopy*(z: Gscalar, x: Gscalar) = z.sval = x.sval
-method copyCompatible*(prototype: Gscalar, value: Gscalar): bool =
+method oneLike*(x: Gscalar): Gvalue =
+  toGvalue(x.runtime, 1.0)
+proc valCopy*(z: Gscalar, x: Gscalar) = z.sval = x.sval
+method valCopy*(z: Gscalar, x: Gvalue) = z.valCopy(x.requireScalar("scalar copy"))
+proc copyCompatible*(prototype: Gscalar, value: Gscalar): bool =
   prototype != nil and value != nil
+method copyCompatible*(prototype: Gscalar, value: Gvalue): bool =
+  prototype != nil and value != nil and value of Gscalar
 
 method `$`*(x: Gscalar): string = $x.sval
 
@@ -111,7 +116,7 @@ proc `getfloat=`*(x: Gvalue, y: int) =
   let xs = Gscalar(x)
   xs.sval = float(y)
 
-method update*(x: Gscalar, y: int) =
+proc update*(x: Gscalar, y: int) =
   x.getfloat = y
   x.updated
 
@@ -121,7 +126,7 @@ proc `getint=`*(x: Gvalue, y: int) =
   let xs = Gint(x)
   xs.ival = y
 
-method update*(x: Gint, y: int) =
+proc update*(x: Gint, y: int) =
   x.getint = y
   x.updated
 
@@ -135,9 +140,14 @@ proc valCopy*(z: Gvalue,
 
 method newOneOf*(x: Gint): Gvalue =
   result = Gint(runtime: x.runtime)
-method valCopy*(z: Gint, x: Gint) = z.ival = x.ival
-method copyCompatible*(prototype: Gint, value: Gint): bool =
+method oneLike*(x: Gint): Gvalue =
+  toGvalue(x.runtime, 1)
+proc valCopy*(z: Gint, x: Gint) = z.ival = x.ival
+method valCopy*(z: Gint, x: Gvalue) = z.valCopy(x.requireInt("int copy"))
+proc copyCompatible*(prototype: Gint, value: Gint): bool =
   prototype != nil and value != nil
+method copyCompatible*(prototype: Gint, value: Gvalue): bool =
+  prototype != nil and value != nil and value of Gint
 
 method `$`*(x: Gint): string = $x.ival
 

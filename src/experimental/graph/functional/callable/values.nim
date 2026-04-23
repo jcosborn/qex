@@ -122,7 +122,7 @@ proc requireCompatibleWrapperBinding(z: Gwrapper,
 method newOneOf*(x: Gwrapper): Gvalue =
   result = initWrapper(x.kind, x.runtime, x.retProto)
 
-method valCopy*(z: Gwrapper, x: Gwrapper) =
+proc valCopy*(z: Gwrapper, x: Gwrapper) =
   if not z.copyCompatible(x):
     raiseValueError(
       "wrapper copy requires compatible result prototypes" &
@@ -134,12 +134,17 @@ method valCopy*(z: Gwrapper, x: Gwrapper) =
   if z.kind == wkLocal:
     z.updated
 
-method copyCompatible*(prototype: Gwrapper, value: Gwrapper): bool =
+proc copyCompatible*(prototype: Gwrapper, value: Gwrapper): bool =
   if prototype.kind != value.kind:
     return false
   if prototype.retProto == nil or value.retProto == nil:
     return prototype.retProto == nil and value.retProto == nil
   prototype.retProto.copyCompatible(value.retProto)
+
+method copyCompatible*(prototype: Gwrapper, value: Gvalue): bool =
+  if value == nil or not (value of Gwrapper):
+    return false
+  prototype.copyCompatible(Gwrapper(value))
 
 method valCopy*(z: Gwrapper, x: Gvalue) =
   z.requireCompatibleWrapperBinding(x)

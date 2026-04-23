@@ -117,7 +117,7 @@ template raiseUnresolvedValueError*(msg: string) =
 template raiseErrorBaseMethod*(msg: string) =
   raiseError(
     "Base method invoked: " & msg &
-    "\nMake sure to pass `--multimethods:on` and check there is a custom method for each derived type.")
+    "\nCheck that graph-building code keeps concrete Gvalue subtypes, and cast erased inputs back to their expected type in backward builders.")
 
 proc initGraphRuntime*(): GraphRuntime =
   GraphRuntime(

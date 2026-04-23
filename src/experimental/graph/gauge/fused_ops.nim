@@ -1,12 +1,19 @@
 import ../[core, scalar, multi]
 import ../support/op
 import layout, physics/qcdTypes
-import shared
+import shared, basic_ops
 
 # Section: Fused Gauge Ops
 
+proc adjmul*(x: Ggauge, y: Ggauge): Ggauge
+proc muladj*(x: Ggauge, y: Ggauge): Ggauge
+proc contractProjTAH*(x: Ggauge, y: Ggauge): Ggauge
+proc axexp*(a: Gscalar, x: Ggauge): Ggauge
+proc axexpmulyPack*(a: Gscalar, x: Ggauge, y: Ggauge): Gmulti
+proc axexpmuly*(a: Gscalar, x: Ggauge, y: Ggauge): Ggauge
+
 proc adjmulggb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  let view = z.requireBinaryNodeView("adjmul backward")
+  let view = z.requireBinaryNodeView(Ggauge, Ggauge, "adjmul backward")
   discard dep
   # adjmul(x, y) == x.adj * y
   binaryBackwardCase("adjmul backward", i,
@@ -18,10 +25,13 @@ proc adjmulggb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
 defineBinaryForward(adjmulggf, Ggauge, Ggauge, Ggauge, "adjmul forward"):
   z.mapGaugeSites(x.gval[mu].adj * y.gval[mu])
 
-defineBinaryGraphOp(adjmulgg, adjmul, Ggauge, Ggauge, x, y, x.newOneOf, adjmulggf, adjmulggb, "g.adj*g")
+defineBinaryGraphOp(adjmulgg, adjmul, Ggauge, Ggauge, x, y, x.gaugeNodeLike, adjmulggf, adjmulggb, "g.adj*g")
+
+proc adjmul*(x: Ggauge, y: Gvalue): Ggauge =
+  adjmul(x, y.requireGauge("adjmul right"))
 
 proc muladjggb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  let view = z.requireBinaryNodeView("muladj backward")
+  let view = z.requireBinaryNodeView(Ggauge, Ggauge, "muladj backward")
   discard dep
   # muladj(x, y) == x * y.adj
   binaryBackwardCase("muladj backward", i,
@@ -33,13 +43,16 @@ proc muladjggb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
 defineBinaryForward(muladjggf, Ggauge, Ggauge, Ggauge, "muladj forward"):
   z.mapGaugeSites(x.gval[mu] * y.gval[mu].adj)
 
-defineBinaryGraphOp(muladjgg, muladj, Ggauge, Ggauge, x, y, x.newOneOf, muladjggf, muladjggb, "g*g.adj")
+defineBinaryGraphOp(muladjgg, muladj, Ggauge, Ggauge, x, y, x.gaugeNodeLike, muladjggf, muladjggb, "g*g.adj")
+
+proc muladj*(x: Ggauge, y: Gvalue): Ggauge =
+  muladj(x, y.requireGauge("muladj right"))
 
 proc contractProjTAHb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  let view = z.requireBinaryNodeView("contractProjTAH backward")
+  let view = z.requireBinaryNodeView(Ggauge, Ggauge, "contractProjTAH backward")
   discard dep
   # contractProjTAH(x, y) == projTAH(x * y.adj)
-  let proj = gaugeUpstreamProjTAH(zb, "contractProjTAH backward")
+  let proj = projTAH(gaugeUpstreamValue(zb, "contractProjTAH backward"))
   binaryBackwardCase("contractProjTAH backward", i,
     block:
       return proj * view.y,
@@ -51,10 +64,13 @@ defineBinaryForward(contractProjTAHf, Ggauge, Ggauge, Ggauge, "contractProjTAH f
     let s = x.gval[mu][e] * y.gval[mu][e].adj
     z.gval[mu][e].projectTAH s
 
-defineBinaryGraphOp(contractProjTAHg, contractProjTAH, Ggauge, Ggauge, x, y, x.newOneOf, contractProjTAHf, contractProjTAHb, "projTAHg")
+defineBinaryGraphOp(contractProjTAHg, contractProjTAH, Ggauge, Ggauge, x, y, x.gaugeNodeLike, contractProjTAHf, contractProjTAHb, "projTAHg")
+
+proc contractProjTAH*(x: Ggauge, y: Gvalue): Ggauge =
+  contractProjTAH(x, y.requireGauge("contractProjTAH right"))
 
 proc axexpb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  let view = z.requireBinaryNodeView("axexp backward")
+  let view = z.requireBinaryNodeView(Gscalar, Ggauge, "axexp backward")
   discard dep
   # axexp(a, x) == exp(a * x)
   let deriv = expDeriv(gaugeUpstreamValue(zb, "axexp backward"), view.x * view.y)
@@ -69,38 +85,41 @@ defineBinaryForward(axexpf, Gscalar, Ggauge, Ggauge, "axexp forward"):
   z.mapGaugeElements:
     z.gval[mu][e] := exp(f * y.gval[mu][e])
 
-defineBinaryGraphOp(axexpg, axexp, Gscalar, Ggauge, a, x, x.newOneOf, axexpf, axexpb, "axexp")
+defineBinaryGraphOp(axexpg, axexp, Gscalar, Ggauge, a, x, x.gaugeNodeLike, axexpf, axexpb, "axexp")
 
 const
   axexpmulyPackExpSlot = 0
   axexpmulyPackResultSlot = 1
 
-proc packExpValue(pack: Gmulti): Gvalue =
-  pack.slotValue(axexpmulyPackExpSlot)
+proc packExpValue(pack: Gmulti): Ggauge =
+  Ggauge(pack.slotValue(axexpmulyPackExpSlot))
 
-proc packResultValue(pack: Gmulti): Gvalue =
-  pack.slotValue(axexpmulyPackResultSlot)
+proc packResultValue(pack: Gmulti): Ggauge =
+  Ggauge(pack.slotValue(axexpmulyPackResultSlot))
 
-proc packExpNode(pack: Gmulti): Gvalue =
-  pack[axexpmulyPackExpSlot]
+proc packExpNode(pack: Gmulti): Ggauge =
+  Ggauge(pack[axexpmulyPackExpSlot])
 
-proc packResultNode(pack: Gmulti): Gvalue =
-  pack[axexpmulyPackResultSlot]
+proc packResultNode(pack: Gmulti): Ggauge =
+  Ggauge(pack[axexpmulyPackResultSlot])
 
 proc packExpGauge(pack: Gmulti): Ggauge =
-  Ggauge(pack.packExpValue)
+  pack.packExpValue
 
 proc packResultGauge(pack: Gmulti): Ggauge =
-  Ggauge(pack.packResultValue)
+  pack.packResultValue
 
-proc axexpmulyPackDeriv(expUp: Gvalue,
-                        resultUp: Gvalue,
-                        ax: Gvalue,
-                        y: Gvalue): Gvalue =
+proc axexpmulyPackDeriv(expUp: Ggauge,
+                        resultUp: Ggauge,
+                        ax: Ggauge,
+                        y: Ggauge): Ggauge =
   expDeriv(expUp + resultUp.muladj y, ax)
 
 proc axexpmulyPackb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   let view = z.requireTernaryNodeView(
+    Gscalar,
+    Ggauge,
+    Ggauge,
     "axexpmulyPack backward",
     "scale",
     "exponent",
@@ -145,8 +164,8 @@ proc axexpmulyPackf(v: Gvalue) =
 
 let axexpmulyPackg = newGfunc(forward = axexpmulyPackf, backward = axexpmulyPackb, name = "axexpmulyPack")
 
-method axexpmulyPack*(a: Gscalar, x: Ggauge, y: Ggauge): Gmulti =
+proc axexpmulyPack*(a: Gscalar, x: Ggauge, y: Ggauge): Gmulti =
   newMultiOutputNode(@[Gvalue(x), x], @[Gvalue(a), x, y], axexpmulyPackg, "axexpmulyPack")
 
-method axexpmuly*(a: Gscalar, x: Ggauge, y: Ggauge): Gvalue =
+proc axexpmuly*(a: Gscalar, x: Ggauge, y: Ggauge): Ggauge =
   axexpmulyPack(a, x, y).packResultNode

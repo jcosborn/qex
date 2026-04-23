@@ -25,12 +25,12 @@ type
     iskDrift, iskKick, iskForceGradKick
   IntegratorStep = object
     kind: IntegratorStepKind
-    coeff: Gvalue
-    gradCoeff: Gvalue
+    coeff: Gscalar
+    gradCoeff: Gscalar
   IntegratorRunSpec = object
-    leadDrift, repeatLeadDrift, tailDrift: Gvalue
+    leadDrift, repeatLeadDrift, tailDrift: Gscalar
     steps: seq[IntegratorStep]
-    learnedCoeffs: seq[Gvalue]
+    learnedCoeffs: seq[Gscalar]
 
 proc getCoeffValue(coeffs: openArray[float],
                    i: int,
@@ -66,19 +66,19 @@ proc parseIntegratorKind*(name: string): IntegratorKind =
   else:
     raiseValueError("unknown intalg: " & name)
 
-proc driftStep(coeff: Gvalue): IntegratorStep =
+proc driftStep(coeff: Gscalar): IntegratorStep =
   IntegratorStep(kind: iskDrift, coeff: coeff)
 
-proc kickStep(coeff: Gvalue): IntegratorStep =
+proc kickStep(coeff: Gscalar): IntegratorStep =
   IntegratorStep(kind: iskKick, coeff: coeff)
 
-proc forceGradKickStep(coeff: Gvalue,
-                       gradCoeff: Gvalue): IntegratorStep =
+proc forceGradKickStep(coeff: Gscalar,
+                       gradCoeff: Gscalar): IntegratorStep =
   IntegratorStep(kind: iskForceGradKick, coeff: coeff, gradCoeff: gradCoeff)
 
-proc applyIntegratorStep(gc: Gvalue,
-                         g: var Gvalue,
-                         p: var Gvalue,
+proc applyIntegratorStep(gc: Gactcoeff,
+                         g: var Ggauge,
+                         p: var Ggauge,
                          step: IntegratorStep) =
   case step.kind
   of iskDrift:
@@ -89,12 +89,14 @@ proc applyIntegratorStep(gc: Gvalue,
     let fg = gaugeForce(gc, g)
     p = p - step.coeff * gaugeForce(gc, axexpmuly(-step.gradCoeff, fg, g))
 
-proc runIntegrator(gc, g0, p0: Gvalue,
-                   leadDrift: Gvalue,
-                   repeatLeadDrift: Gvalue,
-                   tailDrift: Gvalue,
+proc runIntegrator(gc: Gactcoeff,
+                   g0: Ggauge,
+                   p0: Ggauge,
+                   leadDrift: Gscalar,
+                   repeatLeadDrift: Gscalar,
+                   tailDrift: Gscalar,
                    n: int,
-                   steps: openArray[IntegratorStep]): (Gvalue, Gvalue) =
+                   steps: openArray[IntegratorStep]): (Ggauge, Ggauge) =
   var g = g0
   var p = p0
   g = axexpmuly(leadDrift, p, g)
@@ -106,9 +108,9 @@ proc runIntegrator(gc, g0, p0: Gvalue,
   g = axexpmuly(tailDrift, p, g)
   (g, p)
 
-proc initIntegratorRunSpec(leadDrift, repeatLeadDrift, tailDrift: Gvalue,
+proc initIntegratorRunSpec(leadDrift, repeatLeadDrift, tailDrift: Gscalar,
                            steps: openArray[IntegratorStep],
-                           learnedCoeffs: openArray[Gvalue]): IntegratorRunSpec =
+                           learnedCoeffs: openArray[Gscalar]): IntegratorRunSpec =
   result.leadDrift = leadDrift
   result.repeatLeadDrift = repeatLeadDrift
   result.tailDrift = tailDrift
@@ -193,58 +195,55 @@ proc parseIntegratorCoeffs*(kind: IntegratorKind,
   of ik4MN5F2GP:
     result.fourMN5F2GP = complete4MN5F2GPCoeffs(values)
 
-proc build2MNSpec(dt: Gvalue,
+proc build2MNSpec(dt: Gscalar,
                   coeffs: Integrator2MNCoeffs): IntegratorRunSpec =
-  let dtScalar: Gvalue = dt.requireScalar("2MN dt")
-  let lambda: Gvalue = scalarLeafLike(dtScalar, coeffs.lambda)
-  let h = 0.5 * dtScalar
-  let t05 = lambda * dtScalar
+  let lambda = scalarLeafLike(dt, coeffs.lambda)
+  let h = 0.5 * dt
+  let t05 = lambda * dt
   let t0 = 2.0 * t05
-  let t1 = dtScalar - t0
+  let t1 = dt - t0
   initIntegratorRunSpec(t05, t0, t05,
     [kickStep(h), driftStep(t1), kickStep(h)],
     [lambda])
 
-proc build4MN3F1GPSpec(dt: Gvalue,
+proc build4MN3F1GPSpec(dt: Gscalar,
                        coeffs: Integrator4MN3F1GPCoeffs): IntegratorRunSpec =
-  let dtScalar: Gvalue = dt.requireScalar("4MN3F1GP dt")
-  let lambda: Gvalue = scalarLeafLike(dtScalar, coeffs.lambda)
-  let theta: Gvalue = scalarLeafLike(dtScalar, coeffs.theta)
-  let chi: Gvalue = scalarLeafLike(dtScalar, coeffs.chi)
-  let a0 = theta * dtScalar
+  let lambda = scalarLeafLike(dt, coeffs.lambda)
+  let theta = scalarLeafLike(dt, coeffs.theta)
+  let chi = scalarLeafLike(dt, coeffs.chi)
+  let a0 = theta * dt
   let a02 = 2.0 * a0
-  let a1 = 0.5 * dtScalar - a0
-  let b0 = lambda * dtScalar
-  let b1 = dtScalar - 2.0 * b0
-  let c1 = 0.1 * chi * (dtScalar * dtScalar)
+  let a1 = 0.5 * dt - a0
+  let b0 = lambda * dt
+  let b1 = dt - 2.0 * b0
+  let c1 = 0.1 * chi * (dt * dt)
   initIntegratorRunSpec(a0, a02, a0,
     [kickStep(b0), driftStep(a1), forceGradKickStep(b1, c1),
      driftStep(a1), kickStep(b0)],
     [lambda, theta, chi])
 
-proc build4MN5F2GPSpec(dt: Gvalue,
+proc build4MN5F2GPSpec(dt: Gscalar,
                        coeffs: Integrator4MN5F2GPCoeffs): IntegratorRunSpec =
-  let dtScalar: Gvalue = dt.requireScalar("4MN5F2GP dt")
-  let rho: Gvalue = scalarLeafLike(dtScalar, coeffs.rho)
-  let theta: Gvalue = scalarLeafLike(dtScalar, coeffs.theta)
-  let vtheta: Gvalue = scalarLeafLike(dtScalar, coeffs.vtheta)
-  let lambda: Gvalue = scalarLeafLike(dtScalar, coeffs.lambda)
-  let xi: Gvalue = scalarLeafLike(dtScalar, coeffs.xi)
-  let a0 = rho * dtScalar
+  let rho = scalarLeafLike(dt, coeffs.rho)
+  let theta = scalarLeafLike(dt, coeffs.theta)
+  let vtheta = scalarLeafLike(dt, coeffs.vtheta)
+  let lambda = scalarLeafLike(dt, coeffs.lambda)
+  let xi = scalarLeafLike(dt, coeffs.xi)
+  let a0 = rho * dt
   let a02 = 2.0 * a0
-  let a1 = theta * dtScalar
-  let a2 = (0.5 - (theta + rho)) * dtScalar
-  let b1 = lambda * dtScalar
-  let b0 = vtheta * dtScalar
-  let b2 = (1.0 - 2.0 * (lambda + vtheta)) * dtScalar
-  let c1 = 0.05 * xi * (dtScalar * dtScalar)
+  let a1 = theta * dt
+  let a2 = (0.5 - (theta + rho)) * dt
+  let b1 = lambda * dt
+  let b0 = vtheta * dt
+  let b2 = (1.0 - 2.0 * (lambda + vtheta)) * dt
+  let c1 = 0.05 * xi * (dt * dt)
   initIntegratorRunSpec(a0, a02, a0,
     [kickStep(b0), driftStep(a1), forceGradKickStep(b1, c1),
      driftStep(a2), kickStep(b2), driftStep(a2),
      forceGradKickStep(b1, c1), driftStep(a1), kickStep(b0)],
     [rho, theta, vtheta, lambda, xi])
 
-proc buildIntegratorRunSpec(dt: Gvalue,
+proc buildIntegratorRunSpec(dt: Gscalar,
                             coeffs: IntegratorCoeffs): IntegratorRunSpec =
   case coeffs.kind
   of ik2MN:
@@ -254,9 +253,12 @@ proc buildIntegratorRunSpec(dt: Gvalue,
   of ik4MN5F2GP:
     build4MN5F2GPSpec(dt, coeffs.fourMN5F2GP)
 
-proc integrateGauge*(gc, g0, p0, dt: Gvalue,
+proc integrateGauge*(gc: Gactcoeff,
+                     g0: Ggauge,
+                     p0: Ggauge,
+                     dt: Gscalar,
                      n: int,
-                     coeffs: IntegratorCoeffs): (Gvalue, Gvalue, seq[Gvalue]) =
+                     coeffs: IntegratorCoeffs): (Ggauge, Ggauge, seq[Gscalar]) =
   let spec = buildIntegratorRunSpec(dt, coeffs)
   let (g, p) = runIntegrator(
     gc,

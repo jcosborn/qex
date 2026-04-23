@@ -24,7 +24,7 @@ block:
 block:
   let f = local(grt.localScalar())
   let u = grt.localScalar()
-  let hof = lambda(f, lambda(u, apply(f, u) + 1.0))
+  let hof = lambda(f, lambda(u, Gscalar(apply(f, u)) + 1.0))
   let v = grt.localScalar()
   let a = grt.toGvalue(2.0)
   let g = lambda(v, a * v)
@@ -59,7 +59,7 @@ block:
   let step = grt.toGvalue(1.0)
   let F = lambda(rf, lambda(u,
     cond(equal(u, 0.0), base,
-      apply(lambda(v, apply(rf, v) + step), u - 1.0))))
+      Gscalar(apply(lambda(v, Gscalar(apply(rf, v)) + step), u - 1.0)))))
 
   let z = apply(apply(Y, F), 3.0)
   echo "## Y recursion z (before eval)"
