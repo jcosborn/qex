@@ -111,7 +111,10 @@ macro onGpuQ*(q: Queue, n,b,body: untyped): auto =
         tic(fl)
         threadSingle:
           q.wait
-        toc("wait")
+        when declared gpuWaitFlops:
+          toc("wait",flops=gpuWaitFlops)
+        else:
+          toc("wait")
         cpuFinalize
         toc("cpuFinalize")
       finalize

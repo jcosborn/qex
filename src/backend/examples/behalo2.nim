@@ -9,7 +9,7 @@ import parseUtils
 import sequtils, strutils
 import comms/[halo, halogpu]
 
-proc testPlaqForce(g:auto) =
+proc testPlaqForce(g:auto, force:static bool = true) =
   tic "testPlaqForce"
   let lo = g[0].l
   let nd = lo.nDim
@@ -49,10 +49,19 @@ proc testPlaqForce(g:auto) =
   f.gpuFlagsExcl {gmGpuWrite}
   toc "makeHalo"
   let gac = GaugeActionCoeffs(plaq:3)  # coeff is devided by Nc
-  gac.gaugeActionDeriv(g, f2)  # warmup
+  let nc = g[0][0].getNc
+  let mm = nc*nc*(8*nc-2)
+  let pm = 2*nc*nc
+  when force:
+    let flops = lo.nSites*(6*(7*mm+4*pm)+4*(mm+2*nc*nc+4*nc))
+    gac.gaugeForce(g, f2)  # warmup
+  else:
+    let flops = lo.nSites*(6*(7*mm+4*pm))
+    gac.gaugeActionDeriv(g, f2)  # warmup
   toc "create fields"
   pushGpuMemTag("testPlaqForce")
   var halotime = 0.0
+  let gpuWaitFlops = flops
   for nreps in [2,10]:
     resetTimers()
     halotime = 0
@@ -79,14 +88,18 @@ proc testPlaqForce(g:auto) =
               f[nu][s] += g(mu)[s] * a.adj
               f[mu][s] += h[nu][bnu].adj * h[mu][bnu] * h[nu][bnufmu]
               f[nu][s] += h[mu][bmu].adj * h[nu][bmu] * h[mu][bmufnu]
+          when force:
+            for mu in 0..<4:
+              let t = g(mu)[s] * f[mu][s].adj
+              f[mu][s].projectTAH t
       halotime += getElapsedTime() / nreps
-      let nc = g[0][0].getNc
-      let mm = nc*nc*(8*nc-2)
-      let pm = 2*nc*nc
-      toc("gpu",flops=lo.nSites*6*(7*mm+4*pm))
+      toc("gpu",flops=flops)
   toc("gpu")
   var gadtime = getElapsedTime()
-  gac.gaugeActionDeriv(g, f2)
+  when force:
+    gac.gaugeForce(g, f2)  # warmup
+  else:
+    gac.gaugeActionDeriv(g, f2)  # warmup
   gadtime = getElapsedTime() - gadtime
   for mu in 0..<4:
     let nf = f[mu].norm2
@@ -111,6 +124,7 @@ when isMainModule:
   echo 6.0 * g.plaq
   toc "plaq"
   resetTimers()
+  #testPlaqForce(g, false)
   testPlaqForce(g)
   echoProf()
   qexFinalize()

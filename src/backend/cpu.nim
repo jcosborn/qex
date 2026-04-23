@@ -1,7 +1,7 @@
 import base/threading
 import backend/expr
 import base/metaUtils
-import macros
+import macros, strutils
 
 var kernelCallCount* = 0  # _twice_ kernel calls, incremented before setup and after finalize
 const dumpKernels {.intdefine.} = 0
@@ -44,13 +44,18 @@ proc gpuDefaultNumThreads*(): int =
   result = nt
 
 macro onGpuNowait*(n,b,body: untyped): auto =
+  let li = body.lineinfo
+  let lis = li.split({'/','.','(',','})
+  let fl = lis[^4] & "(" & lis[^2] & ")"
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
-  template target(cpuPrepare, cpuFinalize, body: untyped) =
+  template target(fl, cpuPrepare, cpuFinalize, body: untyped) =
     mixin toGpu, getGpu, fromGpu
     inc kernelCallCount  # increment before setup
     block:
+      tic(fl)
       let thisKernelCallCount = kernelCallCount  # save current value for finalizer
       cpuPrepare  # a let section declare and save device pointers
+      toc("cpuPrepare")
       #proc gpuProc {.gensym.} =
       block:
         const inOnGpu {.inject,used.} = true
@@ -60,7 +65,12 @@ macro onGpuNowait*(n,b,body: untyped): auto =
         else:
           body
       #gpuProc()
+      when declared gpuWaitFlops:
+        toc("wait",flops=gpuWaitFlops)
+      else:
+        toc("wait")
       proc finalize {.gensym.} =
+        tic(fl)
         var countSave = 0
         threadBarrier()
         threadSingle:
@@ -70,20 +80,24 @@ macro onGpuNowait*(n,b,body: untyped): auto =
         threadSingle:
           kernelCallCount = countSave
         #threadBarrier()
+        toc("cpuFinalize")
       inc kernelCallCount  # increment after launch
       finalize
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
     cpuFinalize = genCpuFinalize v
-  result = getast(target(cpuPrepare, cpuFinalize, body))
+  result = getast(target(fl,cpuPrepare, cpuFinalize, body))
   case dumpKernels
   of 1:
+    echo li
     echo result.repr
   of 2:
+    echo li
     echo result.treerepr
   else:
     if dumpKernels > 2:
+      echo li
       var sl = newNimNode(nnkStmtListExpr)
       sl.add newCall(bindsym"echoTyped", result)
       sl.add result

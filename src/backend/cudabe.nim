@@ -139,7 +139,10 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
           countSave = kernelCallCount
           kernelCallCount = thisKernelCallCount
           discard cudaDeviceSynchronize()
-        toc("wait")
+        when declared gpuWaitFlops:
+          toc("wait",flops=gpuWaitFlops)
+        else:
+          toc("wait")
         cpuFinalize
         #threadBarrier()
         threadSingle:
