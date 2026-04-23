@@ -9,12 +9,13 @@ type
   NodeSet* = HashSet[NodeKey]
   Gvalue* {.acyclic.} = ref object of RootObj
     ## A value participates in the graph only through traversal-visible dependencies.
-    ## Fields other than `inputs` are ignored unless a custom walk/signature hook exposes them.
-    inputs*: seq[Gvalue]
-    gfunc*: Gfunc
-    epoch*: int
+    ## Storage is private; construct graph nodes through `graphNode` or
+    ## `newMultiOutputNode` so runtime and dependency invariants stay checked.
+    inputsData: seq[Gvalue]
+    gfuncData: Gfunc
+    epochData: int
     stableId: NodeId
-    runtime*: GraphRuntime
+    runtimeData: GraphRuntime
   GnodeVisit* = proc(n: Gvalue) {.closure.}
   InputWalkMode* = enum
     iwmEval, iwmGradSignature, iwmDepend
@@ -126,6 +127,52 @@ proc initGraphRuntime*(): GraphRuntime =
     runCountsByFunc: initTable[uint64, int](),
     lambdaResolveDepthLimit: 64,
     applyGradPrepareDepthLimit: 4096)
+
+proc inputs*(x: Gvalue): lent seq[Gvalue] =
+  x.inputsData
+
+proc gfunc*(x: Gvalue): Gfunc =
+  if x == nil:
+    return nil
+  x.gfuncData
+
+proc epoch*(x: Gvalue): int =
+  if x == nil:
+    return 0
+  x.epochData
+
+proc runtime*(x: Gvalue): GraphRuntime =
+  if x == nil:
+    return nil
+  x.runtimeData
+
+proc attachRuntime*[T: Gvalue](x: T, grt: GraphRuntime): T {.discardable.} =
+  if x == nil:
+    raiseValueError("cannot attach graph runtime to nil value")
+  if grt == nil:
+    raiseValueError("graph value requires non-nil runtime")
+  if x.runtimeData != nil and x.runtimeData != grt:
+    raiseValueError("graph value runtime is already set")
+  x.runtimeData = grt
+  x
+
+proc newGvalueIn*(grt: GraphRuntime): Gvalue =
+  Gvalue().attachRuntime(grt)
+
+proc setNodeEpoch*(x: Gvalue, epoch: int) =
+  if x == nil:
+    raiseValueError("cannot set epoch on nil graph value")
+  if epoch < 0:
+    raiseValueError("graph epoch must be >= 0, got " & $epoch)
+  x.epochData = epoch
+
+proc defineGraphNode*(node: Gvalue,
+                      inputs: sink seq[Gvalue],
+                      gfunc: Gfunc) =
+  if node == nil:
+    raiseValueError("cannot define nil graph node")
+  node.inputsData = inputs
+  node.gfuncData = gfunc
 
 const
   rawInputDepWalkSpec* = GdepWalkSpec(kind: dwkRawInputs)

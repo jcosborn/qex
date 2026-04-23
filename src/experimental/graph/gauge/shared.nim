@@ -56,15 +56,15 @@ proc toGvalue*(grt: GraphRuntime,
   if isZero:
     let g = x.newOneOf
     g.zeroGaugeStorage
-    result = Ggauge(gval: g, runtime: grt)
+    result = Ggauge(gval: g).attachRuntime(grt)
   else:
-    result = Ggauge(gval: x, runtime: grt)
+    result = Ggauge(gval: x).attachRuntime(grt)
   result.updated
 
 proc gaugeNodeLike*(x: Ggauge): Ggauge =
   let g = x.gval.newOneOf
   g.zeroGaugeStorage
-  Ggauge(gval: g, runtime: x.runtime)
+  Ggauge(gval: g).attachRuntime(x.runtime)
 
 method newOneOf*(x: Ggauge): Gvalue =
   x.gaugeNodeLike

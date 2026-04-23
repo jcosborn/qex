@@ -12,13 +12,13 @@ proc initCloneCtx*(subst: Bindings): CloneCtx =
 
 proc clone*(v: Gvalue, ctx: var CloneCtx): Gvalue
 
-proc cloneInputs(dst: Gvalue,
-                 src: Gvalue,
-                 ctx: var CloneCtx) =
-  if src.inputs.len > 0:
-    dst.inputs = newseq[Gvalue](src.inputs.len)
-    for i in 0..<src.inputs.len:
-      dst.inputs[i] = clone(src.inputs[i], ctx)
+proc cloneInputs(src: Gvalue,
+                 ctx: var CloneCtx): seq[Gvalue] =
+  if src.inputs.len == 0:
+    return @[]
+  result = newseq[Gvalue](src.inputs.len)
+  for i in 0..<src.inputs.len:
+    result[i] = clone(src.inputs[i], ctx)
 
 proc withoutLambdaBindings*(subst: Bindings, fn: Glambda): Bindings =
   result = subst
@@ -39,8 +39,7 @@ proc cloneEnv(env: openArray[LambdaBinding],
 proc cloneResolvedLambda(fn: Glambda,
                          ctx: var CloneCtx): Gvalue =
   result = Glambda(
-    param: fn.param,
-    runtime: fn.runtime)
+    param: fn.param).attachRuntime(fn.runtime)
   ctx.memo.putNode(fn, result)
 
   let r = Glambda(result)
@@ -77,5 +76,4 @@ proc clone*(v: Gvalue, ctx: var CloneCtx): Gvalue =
 
   result = v.newOneOf
   ctx.memo.putNode(v, result)
-  result.cloneInputs(v, ctx)
-  result.gfunc = v.gfunc
+  result.defineGraphNode(v.cloneInputs(ctx), v.gfunc)

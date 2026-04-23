@@ -100,11 +100,14 @@ proc applyPartialDeferredBackwardTarget(zb: Gvalue,
     "applyPartialDeferred")
 
 proc directLambdaArgCompatible(param: Gvalue, arg: Gvalue): bool =
-  # Callable wrapper parameters have their own binding semantics. Keep this
-  # fast path to ordinary value parameters until callable shape gets a type
-  # object that can describe higher-order arguments precisely.
-  if param.wrapper != nil:
-    return true
+  let expectedCallableResult = param.bindingResultProto
+  if expectedCallableResult != nil:
+    let actualCallableResult = arg.bindingResultProto
+    if actualCallableResult == nil:
+      return false
+    if expectedCallableResult.copyCompatible(actualCallableResult):
+      return true
+    return expectedCallableResult.isCallableLike and actualCallableResult.isCallableLike
   param.copyCompatible(arg)
 
 proc apply*(fun: Gvalue, x: Gvalue): Gvalue =

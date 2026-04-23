@@ -174,12 +174,24 @@ suite "functional lambda":
     expect(GraphValueError):
       discard apply(lambda(v, v + 1.0), intArg)
 
-  test "apply rejects malformed node arity early":
-    let v = grt.localScalar()
-    let z = apply(lambda(v, v + 1.0), 2.0)
-    z.inputs.add grt.toGvalue(3.0)
+  test "apply rejects incompatible callable wrapper argument":
+    let f = local(grt.localScalar())
+    let u = grt.localScalar()
+    let hof = lambda(f, apply(f, u))
+    let intParam = grt.localInt()
+    let intFn = lambda(intParam, intParam)
+
     expect(GraphValueError):
-      discard z.eval
+      discard apply(hof, intFn)
+    expect(GraphValueError):
+      discard apply(hof, grt.toGvalue(1.0))
+
+  test "apply rejects nil operands early":
+    let v = grt.localScalar()
+    expect(GraphValueError):
+      discard apply(nil, grt.toGvalue(2.0))
+    expect(GraphValueError):
+      discard apply(lambda(v, v + 1.0), nil)
 
   test "Y combinator style recursion eval":
     let protoArg = grt.localScalar()

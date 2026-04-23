@@ -8,7 +8,7 @@ type
     cval: GaugeActionCoeffs
 
 proc coeffNodeIn(grt: GraphRuntime): Gactcoeff =
-  Gactcoeff(runtime: grt)
+  Gactcoeff().attachRuntime(grt)
 
 proc coeffNodeLike(anchor: Gvalue): Gactcoeff =
   coeffNodeIn(anchor.runtime)
@@ -26,12 +26,11 @@ proc update*(x: Gvalue, c: GaugeActionCoeffs) =
 proc toGvalue*(grt: GraphRuntime,
                x: GaugeActionCoeffs): Gactcoeff =
   result = Gactcoeff(
-    cval: x,
-    runtime: grt)
+    cval: x).attachRuntime(grt)
   result.updated
 
 method newOneOf*(x: Gactcoeff): Gvalue =
-  result = Gactcoeff(runtime: x.runtime)
+  result = Gactcoeff().attachRuntime(x.runtime)
 proc valCopy*(z: Gactcoeff, x: Gactcoeff) = z.cval = x.cval
 method valCopy*(z: Gactcoeff, x: Gvalue) =
   if x == nil or not (x of Gactcoeff):
@@ -46,8 +45,8 @@ method `$`*(x: Gactcoeff): string = $x.cval
 proc initCoeffLeaf(grt: GraphRuntime,
                    coeffs: GaugeActionCoeffs): Gactcoeff =
   result = Gactcoeff(
-    cval: coeffs,
-    runtime: grt)
+    cval: coeffs).attachRuntime(grt)
+  result.updated
 
 proc raiseCoeffBackwardUnsupported*(label: string) {.noreturn.} =
   raiseUnsupportedPath(label, "derivative with respect to gauge-action coefficients")

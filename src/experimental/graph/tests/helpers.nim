@@ -69,7 +69,14 @@ template `:~`*(a: Gvalue, b: float) =
   checkeq(instantiationInfo(), astToStr a, a.eval.getfloat, astToStr b, b)
 
 template `:~`*(a: Gvalue, b: int) =
-  checkeq(instantiationInfo(), astToStr a, a.eval.getint, astToStr b, b)
+  let av = a.eval
+  if av of Gint:
+    checkeq(instantiationInfo(), astToStr a, av.getint, astToStr b, b)
+  elif av of Gscalar:
+    checkeq(instantiationInfo(), astToStr a, av.getfloat, astToStr b, float(b))
+  else:
+    raise newException(GraphValueError,
+      "Gvalue :~ int only supports scalar or int nodes; use norm-based checks for gauge values")
 
 template `:~`*(a: Gvalue, b: Gvalue) =
   let av = a.eval

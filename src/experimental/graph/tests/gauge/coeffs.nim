@@ -33,6 +33,12 @@ suite "gauge coeffs":
     beta.update 5.0
     symanzik.checkRectCoeff(5.0, -1.0 / 12.0)
 
+  test "named action coefficient constant leaf starts fresh":
+    let wilson: Gactcoeff = grt.actWilson(6.0)
+    let unitCoeff = wilson.requireNodeInput(1, "wilson coefficient test", "unit coefficient")
+
+    check unitCoeff.epochOf > 0
+
   test "actAdj keeps adjoint coefficient live":
     let beta = grt.toGvalue(6.0)
     let adjFac = grt.toGvalue(0.25)

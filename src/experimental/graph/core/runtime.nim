@@ -3,7 +3,7 @@ import base, traverse
 proc updated*(x: Gvalue) =
   let grt = x.runtime
   inc grt.graphEpochCounter
-  x.epoch = grt.graphEpochCounter
+  x.setNodeEpoch(grt.graphEpochCounter)
 
 proc maxInputEpoch(inputs: openArray[Gvalue]): int =
   for input in inputs:
@@ -23,7 +23,7 @@ proc evaluated*(x: Gvalue) =
   ## Marks a node current with respect to raw `inputs` only.
   ## This ignores custom eval deps and hidden deps; use it only when the
   ## caller owns the node's full forward freshness contract.
-  x.epoch = x.inputs.maxInputEpoch
+  x.setNodeEpoch(x.inputs.maxInputEpoch)
 
 proc eval*(v: Gvalue): Gvalue {.discardable.} =
   var seen = initNodeSet()
@@ -44,7 +44,7 @@ proc eval*(v: Gvalue): Gvalue {.discardable.} =
       node.debugEval
       if f.forward != nil:
         f.forward node
-        node.epoch = maxep
+        node.setNodeEpoch(maxep)
         # `f` is checked above; `node.runtime` is non-nil by construction.
         node.runtime.recordRun(f)
       else:

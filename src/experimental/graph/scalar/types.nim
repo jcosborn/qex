@@ -8,13 +8,12 @@ type
     ival: int
 
 proc scalarNodeIn*(grt: GraphRuntime): Gscalar =
-  Gscalar(runtime: grt)
+  Gscalar().attachRuntime(grt)
 
 proc scalarLeafIn*(grt: GraphRuntime,
                    value: float): Gscalar =
   result = Gscalar(
-    sval: value,
-    runtime: grt)
+    sval: value).attachRuntime(grt)
   result.updated
 
 proc scalarNodeLike*(anchor: Gvalue): Gscalar =
@@ -31,13 +30,12 @@ proc scalarLeafLike*(anchor: Gvalue,
   scalarLeafLike(anchor, float(value))
 
 proc intNodeIn*(grt: GraphRuntime): Gint =
-  Gint(runtime: grt)
+  Gint().attachRuntime(grt)
 
 proc intLeafIn*(grt: GraphRuntime,
                 value: int): Gint =
   result = Gint(
-    ival: value,
-    runtime: grt)
+    ival: value).attachRuntime(grt)
   result.updated
 
 proc intNodeLike*(anchor: Gvalue): Gint =
@@ -79,10 +77,11 @@ proc requireInt*(value: Gvalue,
     raiseValueError(label & " expects int value, got:\n" & value.nodeRepr)
   Gint(value)
 
-proc getfloat*(x: Gvalue): float = Gscalar(x).sval
+proc getfloat*(x: Gvalue): float =
+  x.requireScalar("getfloat").sval
 
 proc `getfloat=`*(x: Gvalue, y: float) =
-  let xs = Gscalar(x)
+  let xs = x.requireScalar("setfloat")
   xs.sval = y
 
 proc update*(x: Gscalar, y: float) =
@@ -98,7 +97,7 @@ proc valCopy*(z: Gvalue,
   z.valCopy(toGvalue(z.runtime, x))
 
 method newOneOf*(x: Gscalar): Gvalue =
-  result = Gscalar(runtime: x.runtime)
+  result = Gscalar().attachRuntime(x.runtime)
 method oneLike*(x: Gscalar): Gvalue =
   toGvalue(x.runtime, 1.0)
 proc valCopy*(z: Gscalar, x: Gscalar) = z.sval = x.sval
@@ -113,17 +112,18 @@ method `$`*(x: Gscalar): string = $x.sval
 method isZero*(x: Gscalar): bool = x.sval == 0.0
 
 proc `getfloat=`*(x: Gvalue, y: int) =
-  let xs = Gscalar(x)
+  let xs = x.requireScalar("setfloat")
   xs.sval = float(y)
 
 proc update*(x: Gscalar, y: int) =
   x.getfloat = y
   x.updated
 
-proc getint*(x: Gvalue): int = Gint(x).ival
+proc getint*(x: Gvalue): int =
+  x.requireInt("getint").ival
 
 proc `getint=`*(x: Gvalue, y: int) =
-  let xs = Gint(x)
+  let xs = x.requireInt("setint")
   xs.ival = y
 
 proc update*(x: Gint, y: int) =
@@ -139,7 +139,7 @@ proc valCopy*(z: Gvalue,
   z.valCopy(toGvalue(z.runtime, x))
 
 method newOneOf*(x: Gint): Gvalue =
-  result = Gint(runtime: x.runtime)
+  result = Gint().attachRuntime(x.runtime)
 method oneLike*(x: Gint): Gvalue =
   toGvalue(x.runtime, 1)
 proc valCopy*(z: Gint, x: Gint) = z.ival = x.ival

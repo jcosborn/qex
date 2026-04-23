@@ -74,6 +74,12 @@ suite "scalar basic":
     expect(GraphValueError):
       discard dzdx.eval
 
+  test "scalar getters reject wrong value type":
+    expect(GraphValueError):
+      discard grt.toGvalue(1).getfloat
+    expect(GraphValueError):
+      discard grt.toGvalue(1.0).getint
+
   test "separate runtimes isolate node ids and reject mixed graphs":
     let leftGrt = initGraphRuntime()
     let rightGrt = initGraphRuntime()

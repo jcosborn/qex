@@ -55,8 +55,7 @@ proc initWrapper(kind: WrapperKind,
                  retPrototype: Gvalue = nil): Gwrapper =
   Gwrapper(
     kind: kind,
-    retProto: retPrototype,
-    runtime: grt)
+    retProto: retPrototype).attachRuntime(grt)
 
 proc callableWrapperNode*(retPrototype: Gvalue = nil): Gwrapper =
   if retPrototype == nil:
@@ -179,8 +178,7 @@ method `$`*(x: Gwrapper): string =
 
 method newOneOf*(x: Glambda): Gvalue =
   result = Glambda(
-    param: x.param,
-    runtime: x.runtime)
+    param: x.param).attachRuntime(x.runtime)
 
 method `$`*(x: Glambda): string =
   result = "lambda(" & $x.param & " -> " & $x.body & ")"

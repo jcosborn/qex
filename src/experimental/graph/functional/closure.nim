@@ -11,7 +11,7 @@ proc lambda*(param: Gvalue, body: Gvalue): Gvalue =
   # Closure captures must stay in one runtime for cloning and cache identity.
   if grt != body.runtime:
     raiseValueError("lambda mixes multiple graph runtimes")
-  let fn = Glambda(param: param, body: body, runtime: grt)
+  let fn = Glambda(param: param, body: body).attachRuntime(grt)
   normalizeClosure(fn)
   result = fn
   result.updated

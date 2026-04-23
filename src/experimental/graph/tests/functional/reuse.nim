@@ -222,7 +222,7 @@ suite "functional reuse":
     let v = grt.localScalar()
     f.valCopy lambda(v, a * v)
 
-    let opaque = graphNode(Gvalue(runtime: f.runtime), @[f], opaqueWrap)
+    let opaque = graphNode(newGvalueIn(f.runtime), @[f], opaqueWrap)
     let deps = collectCallableValueDeps([opaque], [opaque])
 
     check deps.len == 1

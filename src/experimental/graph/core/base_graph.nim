@@ -7,12 +7,12 @@ template graphNode*(nodeValue,
   block:
     var node {.gensym.} = nodeValue
     let inputs {.gensym.} = inputsValue
-    node.inputs = checkedInputValues(inputs, label)
-    let inputGrt {.gensym.} = node.inputs.sharedGraphRuntime
+    let checkedInputs {.gensym.} = checkedInputValues(inputs, label)
+    let inputGrt {.gensym.} = checkedInputs.sharedGraphRuntime
     # `nil` only means there were no inputs; values themselves have runtimes.
     if inputGrt != nil and node.runtime != inputGrt:
       raiseValueError(label & " mixes multiple graph runtimes")
-    node.gfunc = gfuncValue
+    node.defineGraphNode(checkedInputs, gfuncValue)
     node
 
 template defineUnaryGraphOp*(gfuncName,

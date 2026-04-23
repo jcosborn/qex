@@ -224,10 +224,10 @@ suite "bool and cond":
     expect(GraphValueError):
       discard cond(grt.toGvalue(1), scalarBranch, intBranch)
 
-    let z = cond(grt.toGvalue(1), grt.toGvalue(2.0), grt.toGvalue(3.0))
-    z.inputs.setLen 2
     expect(GraphValueError):
-      discard z.eval
+      discard newCondNode(nil, scalarBranch, scalarBranch)
+    expect(GraphValueError):
+      discard newCondNode(grt.toGvalue(1), nil, scalarBranch)
 
   test "walkedInputs rejects nil callbacks":
     expect(GraphValueError):

@@ -68,10 +68,8 @@ proc newMultiOutputNode*(slotProtos: openArray[Gvalue],
   let slotStorage = allocSlots(slotProtos, label)
   # Multi carriers take their runtime from output slot prototypes, not inputs.
   let slotGrt = slotProtos.sharedGraphRuntime
-  result = Gmulti(
-    inputs: checkedInputs,
-    gfunc: gfuncValue,
-    runtime: slotGrt)
+  result = Gmulti().attachRuntime(slotGrt)
+  result.defineGraphNode(checkedInputs, gfuncValue)
   result.slots = slotStorage
   let inputGrt = checkedInputs.sharedGraphRuntime
   # `nil` only means there were no inputs; values themselves have runtimes.
