@@ -249,6 +249,18 @@ indexing operation.
 Callers should treat it as current only after evaluating the carrier or a
 consumer.
 
+### Shared-Compute `Gmulti` Patterns
+
+Use `Gmulti` inside fused operators to share real work across related outputs or
+input gradients. Keep the public API typed; the operator implementation owns any
+`Gmulti` input/output carrier.
+
+The packed carrier should have an operator-specific slot contract, and its
+backward should build shared subexpressions once, then return slot gradients as a
+single `Gmulti`. See `axexpmuly(a, x, y)` in `gauge/fused_ops.nim`: it packs
+`[a, x, y]`, computes `[exp(a*x), exp(a*x)*y]`, reuses the saved exponential for
+`y_bar`, and shares the exponential derivative for `a_bar` and `x_bar`.
+
 ## Gauge Layer
 
 The gauge layer extends the graph model to gauge-field values and related

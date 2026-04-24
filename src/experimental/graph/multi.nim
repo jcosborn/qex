@@ -46,6 +46,11 @@ proc requireMultiValue*(v: Gvalue,
     raiseValueError(label & " expects multi value")
   Gmulti(v)
 
+proc len*(x: Gmulti): int =
+  if x == nil:
+    raiseValueError("multi len requires non-nil multi value")
+  x.slots.len
+
 proc requireMultiUpstream*(zb: Gvalue,
                            label: string): Gmulti =
   if zb == nil:
@@ -165,6 +170,11 @@ let multiValuesFunc = newGfunc(
 proc multiCarrierFromExprs(values: openArray[Gvalue],
                            label = "multi values"): Gmulti =
   newMultiOutputNode(values, values, multiValuesFunc, label)
+
+proc multiValues*(values: openArray[Gvalue],
+                  label = "multi values"): Gmulti =
+  ## Build a symbolic multi carrier from already-constructed graph values.
+  multiCarrierFromExprs(values, label)
 
 const multiSelectSignatureNamespace = 0x6d756c7469530000'u64 # "multiS"
 

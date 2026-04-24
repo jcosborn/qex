@@ -20,6 +20,24 @@ suite "gauge fused":
     ckbinarynorm2grad(contractProjTAH(gg, gu), projTAH(gg * gu.adj), gg, gu, 1e-26)
     ckgradm2(contractProjTAH, gg, gu, gp, gq, gm)
 
+  test "contractProjTAH packed input shares backward projection":
+    let rf = contractProjTAH(gg, gu)
+    let args = rf.requireUnaryNodeView(Gmulti, "public contractProjTAH result", "args").x
+    let rg = projTAH(gg * gu.adj)
+    let srf = redot(rf, gp)
+    let srg = redot(rg, gp)
+    let packedGrad = requireMultiValue(grad(srf, args), "contractProjTAH packed grad")
+    let probe = projTAH(gp)
+    let before = grt.runCount(probe.gfunc)
+
+    discard packedGrad.eval
+
+    check grt.runCount(probe.gfunc) - before == 1
+    norm2(rf - rg) :< 1e-26
+    check args.inputs.len == 2
+    norm2(Ggauge(packedGrad[0]) - grad(srg, gg)) :< 1e-26
+    norm2(Ggauge(packedGrad[1]) - grad(srg, gu)) :< 1e-26
+
   test "erased-right fused gauge overloads preserve concrete result type":
     let erased: Gvalue = gu
     let adjmulResult: Ggauge = adjmul(gg, erased)
@@ -63,6 +81,24 @@ suite "gauge fused":
     norm2(grad(srf, gm) - grad(srg, gm)) :< 1e-26
     ckgradm2(axexp, x, gm, y, 0.05*gq, gp)
 
+  test "axexp packed input shares backward derivative":
+    let rf = axexp(x, gm)
+    let args = rf.requireUnaryNodeView(Gmulti, "public axexp result", "args").x
+    let rg = exp(x * gm)
+    let srf = redot(rf, gu)
+    let srg = redot(rg, gu)
+    let packedGrad = requireMultiValue(grad(srf, args), "axexp packed grad")
+    let probe = expDeriv(gp, gm)
+    let before = grt.runCount(probe.gfunc)
+
+    discard packedGrad.eval
+
+    check grt.runCount(probe.gfunc) - before == 1
+    norm2(rf - rg) :< 1e-26
+    check args.inputs.len == 2
+    packedGrad[0] :~ grad(srg, x)
+    norm2(Ggauge(packedGrad[1]) - grad(srg, gm)) :< 1e-26
+
   test "axexp shared backward helper stays correct across outputs":
     let rf = axexp(x, gm)
     let rg = exp(x * gm)
@@ -87,7 +123,8 @@ suite "gauge fused":
     norm2(dtrfgm - dtrggm) :< 1e-26
 
   test "axexpmuly pack shares helper and result without breaking derivatives":
-    let packed = axexpmulyPack(x, gm, gg)
+    let publicResult = axexpmuly(x, gm, gg)
+    let packed = publicResult.requireUnaryNodeView(Gmulti, "public axexpmuly result", "pack").x
     let packedExp = Ggauge(packed[0])
     let packedResult = Ggauge(packed[1])
     let refExp = axexp(x, gm)
@@ -97,7 +134,7 @@ suite "gauge fused":
 
     norm2(packedExp - refExp) :< 1e-26
     norm2(packedResult - refResult) :< 1e-26
-    norm2(packedResult - axexpmuly(x, gm, gg)) :< 1e-26
+    norm2(packedResult - publicResult) :< 1e-26
     packedScalar :~ refScalar
     grad(packedScalar, x) :~ grad(refScalar, x)
     norm2(grad(packedScalar, gm) - grad(refScalar, gm)) :< 1e-25
@@ -107,11 +144,37 @@ suite "gauge fused":
 
     norm2(packedExp - refExp) :< 1e-26
     norm2(packedResult - refResult) :< 1e-26
-    norm2(packedResult - axexpmuly(x, gm, gg)) :< 1e-26
+    norm2(packedResult - publicResult) :< 1e-26
     packedScalar :~ refScalar
     grad(packedScalar, x) :~ grad(refScalar, x)
     norm2(grad(packedScalar, gm) - grad(refScalar, gm)) :< 1e-25
     norm2(grad(packedScalar, gg) - grad(refScalar, gg)) :< 1e-26
+
+  test "axexpmuly packed input and output share backward derivative":
+    let publicResult = axexpmuly(x, gm, gg)
+    let packed = publicResult.requireUnaryNodeView(Gmulti, "public axexpmuly result", "pack").x
+    let args = packed.inputs[0].requireMultiValue("public axexpmuly args")
+    let packedExp = Ggauge(packed[0])
+    let packedResult = Ggauge(packed[1])
+    let refExp = axexp(x, gm)
+    let refResult = exp(x * gm) * gg
+    let packedScalar = redot(packedExp, gu) + redot(packedResult, gp)
+    let refScalar = redot(refExp, gu) + redot(refResult, gp)
+    let packedGrad = requireMultiValue(grad(packedScalar, args), "axexpmuly packed grad")
+    let probe = expDeriv(gu, gm)
+    let before = grt.runCount(probe.gfunc)
+
+    discard packedGrad.eval
+
+    check grt.runCount(probe.gfunc) - before == 1
+    norm2(packedExp - refExp) :< 1e-26
+    norm2(packedResult - refResult) :< 1e-26
+    norm2(publicResult - refResult) :< 1e-26
+    check packed.inputs.len == 1
+    check args.inputs.len == 3
+    packedGrad[0] :~ grad(refScalar, x)
+    norm2(Ggauge(packedGrad[1]) - grad(refScalar, gm)) :< 1e-25
+    norm2(Ggauge(packedGrad[2]) - grad(refScalar, gg)) :< 1e-26
 
   test "axexpmuly":
     let rf = axexpmuly(x, gm, gg)

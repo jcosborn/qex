@@ -9,8 +9,37 @@ proc adjmul*(x: Ggauge, y: Ggauge): Ggauge
 proc muladj*(x: Ggauge, y: Ggauge): Ggauge
 proc contractProjTAH*(x: Ggauge, y: Ggauge): Ggauge
 proc axexp*(a: Gscalar, x: Ggauge): Ggauge
-proc axexpmulyPack*(a: Gscalar, x: Ggauge, y: Ggauge): Gmulti
 proc axexpmuly*(a: Gscalar, x: Ggauge, y: Ggauge): Ggauge
+
+proc requirePackedArity(pack: Gmulti,
+                        expected: int,
+                        label: string) =
+  let actual = pack.len
+  if actual != expected:
+    raiseValueError(
+      label & " expects " & $expected &
+      " packed slots, got " & $actual)
+
+proc packedSlotValue[T: Gvalue](pack: Gmulti,
+                                index: int,
+                                slotType: typedesc[T],
+                                label: string,
+                                slotLabel: string): T =
+  let value = pack.slotValue(index)
+  if not (value of T):
+    raiseValueError(
+      label & " expects " & slotLabel &
+      " slot " & $index & " of type " & $slotType &
+      ", got:\n" & value.nodeRepr)
+  T(value)
+
+proc packedSlotNode[T: Gvalue](pack: Gmulti,
+                               index: int,
+                               slotType: typedesc[T],
+                               label: string,
+                               slotLabel: string): T =
+  discard pack.packedSlotValue(index, slotType, label, slotLabel)
+  T(pack[index])
 
 proc adjmulggb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   let view = z.requireBinaryNodeView(Ggauge, Ggauge, "adjmul backward")
@@ -48,44 +77,90 @@ defineBinaryGraphOp(muladjgg, muladj, Ggauge, Ggauge, x, y, x.gaugeNodeLike, mul
 proc muladj*(x: Ggauge, y: Gvalue): Ggauge =
   muladj(x, y.requireGauge("muladj right"))
 
-proc contractProjTAHb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  let view = z.requireBinaryNodeView(Ggauge, Ggauge, "contractProjTAH backward")
+proc contractProjTAHPackedInputb(zb: Gvalue,
+                                 z: Gvalue,
+                                 i: int,
+                                 dep: Gvalue): Gvalue =
+  let view = z.requireUnaryNodeView(Gmulti, "contractProjTAH packed backward", "args")
   discard dep
-  # contractProjTAH(x, y) == projTAH(x * y.adj)
-  let proj = projTAH(gaugeUpstreamValue(zb, "contractProjTAH backward"))
-  binaryBackwardCase("contractProjTAH backward", i,
-    block:
-      return proj * view.y,
-    block:
-      return proj.adjmul view.x)
+  unaryBackwardCase("contractProjTAH packed backward", i):
+    let args = view.x
+    args.requirePackedArity(2, "contractProjTAH packed backward")
+    let x = args.packedSlotNode(0, Ggauge, "contractProjTAH packed backward", "left")
+    let y = args.packedSlotNode(1, Ggauge, "contractProjTAH packed backward", "right")
+    let proj = projTAH(gaugeUpstreamValue(zb, "contractProjTAH packed backward"))
+    return multiValues(
+      [Gvalue(proj * y), Gvalue(proj.adjmul x)],
+      "contractProjTAH packed input gradients")
 
-defineBinaryForward(contractProjTAHf, Ggauge, Ggauge, Ggauge, "contractProjTAH forward"):
+proc contractProjTAHPackedInputf(v: Gvalue) =
+  let view = v.requireUnaryNodeView(Gmulti, "contractProjTAH packed forward", "args")
+  let args = view.x
+  args.requirePackedArity(2, "contractProjTAH packed forward")
+  let x = args.packedSlotValue(0, Ggauge, "contractProjTAH packed forward", "left")
+  let y = args.packedSlotValue(1, Ggauge, "contractProjTAH packed forward", "right")
+  let z = v.requireGauge("contractProjTAH packed forward result")
   z.mapGaugeElements:
     let s = x.gval[mu][e] * y.gval[mu][e].adj
     z.gval[mu][e].projectTAH s
 
-defineBinaryGraphOp(contractProjTAHg, contractProjTAH, Ggauge, Ggauge, x, y, x.gaugeNodeLike, contractProjTAHf, contractProjTAHb, "projTAHg")
+let contractProjTAHPackedInputg = newGfunc(
+  forward = contractProjTAHPackedInputf,
+  backward = contractProjTAHPackedInputb,
+  name = "contractProjTAH packed")
+
+proc contractProjTAHPacked(args: Gmulti): Ggauge =
+  args.requirePackedArity(2, "contractProjTAH packed")
+  let x = args.packedSlotValue(0, Ggauge, "contractProjTAH packed", "left")
+  discard args.packedSlotValue(1, Ggauge, "contractProjTAH packed", "right")
+  graphNode(x.gaugeNodeLike, @[Gvalue(args)], contractProjTAHPackedInputg, "contractProjTAH packed")
+
+proc contractProjTAH*(x: Ggauge, y: Ggauge): Ggauge =
+  let args = multiValues([Gvalue(x), Gvalue(y)], "contractProjTAH args")
+  contractProjTAHPacked(args)
 
 proc contractProjTAH*(x: Ggauge, y: Gvalue): Ggauge =
   contractProjTAH(x, y.requireGauge("contractProjTAH right"))
 
-proc axexpb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  let view = z.requireBinaryNodeView(Gscalar, Ggauge, "axexp backward")
+proc axexpPackedInputb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
+  let view = z.requireUnaryNodeView(Gmulti, "axexp packed backward", "args")
   discard dep
-  # axexp(a, x) == exp(a * x)
-  let deriv = expDeriv(gaugeUpstreamValue(zb, "axexp backward"), view.x * view.y)
-  binaryBackwardCase("axexp backward", i,
-    block:
-      return deriv.redot view.y,
-    block:
-      return view.x * deriv)
+  unaryBackwardCase("axexp packed backward", i):
+    let args = view.x
+    args.requirePackedArity(2, "axexp packed backward")
+    let a = args.packedSlotNode(0, Gscalar, "axexp packed backward", "scale")
+    let x = args.packedSlotNode(1, Ggauge, "axexp packed backward", "exponent")
+    let ax = a * x
+    let deriv = expDeriv(gaugeUpstreamValue(zb, "axexp packed backward"), ax)
+    return multiValues(
+      [Gvalue(deriv.redot x), Gvalue(a * deriv)],
+      "axexp packed input gradients")
 
-defineBinaryForward(axexpf, Gscalar, Ggauge, Ggauge, "axexp forward"):
-  let f = x.getfloat
+proc axexpPackedInputf(v: Gvalue) =
+  let view = v.requireUnaryNodeView(Gmulti, "axexp packed forward", "args")
+  let args = view.x
+  args.requirePackedArity(2, "axexp packed forward")
+  let a = args.packedSlotValue(0, Gscalar, "axexp packed forward", "scale")
+  let x = args.packedSlotValue(1, Ggauge, "axexp packed forward", "exponent")
+  let z = v.requireGauge("axexp packed forward result")
+  let f = a.getfloat
   z.mapGaugeElements:
-    z.gval[mu][e] := exp(f * y.gval[mu][e])
+    z.gval[mu][e] := exp(f * x.gval[mu][e])
 
-defineBinaryGraphOp(axexpg, axexp, Gscalar, Ggauge, a, x, x.gaugeNodeLike, axexpf, axexpb, "axexp")
+let axexpPackedInputg = newGfunc(
+  forward = axexpPackedInputf,
+  backward = axexpPackedInputb,
+  name = "axexp packed")
+
+proc axexpPacked(args: Gmulti): Ggauge =
+  args.requirePackedArity(2, "axexp packed")
+  discard args.packedSlotValue(0, Gscalar, "axexp packed", "scale")
+  let x = args.packedSlotValue(1, Ggauge, "axexp packed", "exponent")
+  graphNode(x.gaugeNodeLike, @[Gvalue(args)], axexpPackedInputg, "axexp packed")
+
+proc axexp*(a: Gscalar, x: Ggauge): Ggauge =
+  let args = multiValues([Gvalue(a), Gvalue(x)], "axexp args")
+  axexpPacked(args)
 
 const
   axexpmulyPackExpSlot = 0
@@ -115,45 +190,10 @@ proc axexpmulyPackDeriv(expUp: Ggauge,
                         y: Ggauge): Ggauge =
   expDeriv(expUp + resultUp.muladj y, ax)
 
-proc axexpmulyPackb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  let view = z.requireTernaryNodeView(
-    Gscalar,
-    Ggauge,
-    Ggauge,
-    "axexpmulyPack backward",
-    "scale",
-    "exponent",
-    "value")
-  discard dep
-  # axexpmulyPack(a, x, y) returns:
-  #   slot 0 = exp(a * x)
-  #   slot 1 = exp(a * x) * y
-  let upstream = requireMultiUpstream(zb, "axexpmulyPack backward")
-  let expUp = upstream.packExpNode
-  let resultUp = upstream.packResultNode
-  let ax = view.x * view.y
-  let deriv = axexpmulyPackDeriv(expUp, resultUp, ax, view.z)
-  ternaryBackwardCase("axexpmulyPack backward", i,
-    block:
-      return deriv.redot view.y,
-    block:
-      return view.x * deriv,
-    block:
-      return z.requireMultiValue("axexpmulyPack backward result").packExpNode.adjmul resultUp)
-
-proc axexpmulyPackf(v: Gvalue) =
-  let view = v.requireTernaryNodeView(
-    Gscalar,
-    Ggauge,
-    Ggauge,
-    "axexpmulyPack forward",
-    "scale",
-    "exponent",
-    "value")
-  let a = view.x
-  let x = view.y
-  let y = view.z
-  let pack = v.requireMultiValue("axexpmulyPack forward result")
+proc fillAxexpmulyPack(pack: Gmulti,
+                       a: Gscalar,
+                       x: Ggauge,
+                       y: Ggauge) =
   let expax = pack.packExpGauge
   let result = pack.packResultGauge
   let f = a.getfloat
@@ -165,10 +205,54 @@ proc axexpmulyPackf(v: Gvalue) =
         expax.gval[mu][e] := t
         result.gval[mu][e] := t * y.gval[mu][e]
 
-let axexpmulyPackg = newGfunc(forward = axexpmulyPackf, backward = axexpmulyPackb, name = "axexpmulyPack")
+proc axexpmulyPackedInputPackb(zb: Gvalue,
+                               z: Gvalue,
+                               i: int,
+                               dep: Gvalue): Gvalue =
+  let view = z.requireUnaryNodeView(Gmulti, "axexpmulyPack packed backward", "args")
+  discard dep
+  unaryBackwardCase("axexpmulyPack packed backward", i):
+    let args = view.x
+    args.requirePackedArity(3, "axexpmulyPack packed backward")
+    let a = args.packedSlotNode(0, Gscalar, "axexpmulyPack packed backward", "scale")
+    let x = args.packedSlotNode(1, Ggauge, "axexpmulyPack packed backward", "exponent")
+    let y = args.packedSlotNode(2, Ggauge, "axexpmulyPack packed backward", "value")
+    let upstream = requireMultiUpstream(zb, "axexpmulyPack packed backward")
+    let expUp = upstream.packExpNode
+    let resultUp = upstream.packResultNode
+    let ax = a * x
+    let deriv = axexpmulyPackDeriv(expUp, resultUp, ax, y)
+    let expNode = z.requireMultiValue("axexpmulyPack packed backward result").packExpNode
+    return multiValues(
+      [
+        Gvalue(deriv.redot x),
+        Gvalue(a * deriv),
+        Gvalue(expNode.adjmul resultUp)
+      ],
+      "axexpmulyPack packed input gradients")
 
-proc axexpmulyPack*(a: Gscalar, x: Ggauge, y: Ggauge): Gmulti =
-  newMultiOutputNode(@[Gvalue(x), x], @[Gvalue(a), x, y], axexpmulyPackg, "axexpmulyPack")
+proc axexpmulyPackedInputPackf(v: Gvalue) =
+  let view = v.requireUnaryNodeView(Gmulti, "axexpmulyPack packed forward", "args")
+  let args = view.x
+  args.requirePackedArity(3, "axexpmulyPack packed forward")
+  let a = args.packedSlotValue(0, Gscalar, "axexpmulyPack packed forward", "scale")
+  let x = args.packedSlotValue(1, Ggauge, "axexpmulyPack packed forward", "exponent")
+  let y = args.packedSlotValue(2, Ggauge, "axexpmulyPack packed forward", "value")
+  let pack = v.requireMultiValue("axexpmulyPack packed forward result")
+  pack.fillAxexpmulyPack(a, x, y)
+
+let axexpmulyPackedInputPackg = newGfunc(
+  forward = axexpmulyPackedInputPackf,
+  backward = axexpmulyPackedInputPackb,
+  name = "axexpmulyPack packed")
+
+proc axexpmulyPack(args: Gmulti): Gmulti =
+  args.requirePackedArity(3, "axexpmulyPack packed")
+  discard args.packedSlotValue(0, Gscalar, "axexpmulyPack packed", "scale")
+  let x = args.packedSlotValue(1, Ggauge, "axexpmulyPack packed", "exponent")
+  discard args.packedSlotValue(2, Ggauge, "axexpmulyPack packed", "value")
+  newMultiOutputNode(@[Gvalue(x), x], @[Gvalue(args)], axexpmulyPackedInputPackg, "axexpmulyPack packed")
 
 proc axexpmuly*(a: Gscalar, x: Ggauge, y: Ggauge): Ggauge =
-  axexpmulyPack(a, x, y).packResultNode
+  let args = multiValues([Gvalue(a), Gvalue(x), Gvalue(y)], "axexpmuly args")
+  axexpmulyPack(args).packResultNode
