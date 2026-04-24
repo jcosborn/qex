@@ -1,0 +1,10 @@
+# Extra Tests
+# Source files relative to the QEX src directory to compile for testing.
+# If a directory with the same base name as the source appears here,
+# then the test script will run the 'run' script within that directory,
+# otherwise it will just run the executable as is.
+
+gauge/wflow.nim
+examples/staghmc_sh.nim
+examples/generichmc.nim
+

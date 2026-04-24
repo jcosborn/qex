@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -o pipefail
+
+exe="$1"
+outdir=tests/extra/generichmc
+[[ -d $outdir ]] || mkdir -p "$outdir"
+if [[ ${FUELCompat:-0} == 0 ]]; then
+  comp=''
+else
+  comp='.FUELCompat'
+fi
+ofn="$outdir/out$comp"
+
+"$exe" 2>&1 | tee "$ofn"
+
+hold="`grep 'hOld' $ofn`"
+hold2="hOld: -122757.425136  hNew: -122755.998377"
+if [ "X$hold" != "X$hold2" ]; then
+  echo "error in hOld"
+  echo "got: $hold"
+  echo "ref: $hold2"
+  exit 1
+fi
+
+dh="`grep 'deltaH' $ofn`"
+dh2="ACCEPT deltaH: 1.426759  pAccept: 0.240086  rnd: 0.066972"
+if [ "X$dh" != "X$dh2" ]; then
+  echo "error in deltaH"
+  echo "got: $dh"
+  echo "ref: $dh2"
+  exit 1
+fi
+
+echo "Test passed"

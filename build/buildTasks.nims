@@ -249,10 +249,13 @@ buildTask clean, cleanDesc:
     #if f.endsWith(".o") or f.endsWith(".c") or f.endsWith(".cpp"):
     rmFile f
 
-let extraTests = [
-  "gauge/wflow.nim",
-  "examples/staghmc_sh.nim",
-]
+#let extraTests = [
+#  "gauge/wflow.nim",
+#  "examples/staghmc_sh.nim",
+#]
+let extraTests = readFile(qexDir/"tests"/"extra"/"extra.txt").splitLines
+  .filterIt((it.len>0) and (not it.startsWith("#")))
+#echo "Extra tests: ", extraTests
 
 proc addTest(runscript:var seq[string], f, outdir:string) =
   let name = f.splitFile.name
