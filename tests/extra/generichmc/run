@@ -6,15 +6,18 @@ outdir=tests/extra/generichmc
 [[ -d $outdir ]] || mkdir -p "$outdir"
 if [[ ${FUELCompat:-0} == 0 ]]; then
   comp=''
+  hold2="hOld: -122757.425136  hNew: -122755.998377"
+  dh2="ACCEPT deltaH: 1.426759  pAccept: 0.240086  rnd: 0.066972"
 else
   comp='.FUELCompat'
+  hold2="hOld: -123211.595200  hNew: -123210.388257"
+  dh2="ACCEPT deltaH: 1.206943  pAccept: 0.299110  rnd: 0.066972"
 fi
 ofn="$outdir/out$comp"
 
 "$exe" 2>&1 | tee "$ofn"
 
 hold="`grep 'hOld' $ofn`"
-hold2="hOld: -122757.425136  hNew: -122755.998377"
 if [ "X$hold" != "X$hold2" ]; then
   echo "error in hOld"
   echo "got: $hold"
@@ -23,7 +26,6 @@ if [ "X$hold" != "X$hold2" ]; then
 fi
 
 dh="`grep 'deltaH' $ofn`"
-dh2="ACCEPT deltaH: 1.426759  pAccept: 0.240086  rnd: 0.066972"
 if [ "X$dh" != "X$dh2" ]; then
   echo "error in deltaH"
   echo "got: $dh"
