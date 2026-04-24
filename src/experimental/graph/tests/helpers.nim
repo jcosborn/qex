@@ -66,31 +66,36 @@ template checkeq*(ii: tuple[filename: string, line: int, column: int],
     fail()
 
 template `:~`*(a: Gvalue, b: float) =
-  checkeq(instantiationInfo(), astToStr a, a.eval.getfloat, astToStr b, b)
+  checkeq(
+    instantiationInfo(),
+    astToStr a,
+    a.eval.requireScalar(astToStr a).getfloat,
+    astToStr b,
+    b)
 
 template `:~`*(a: Gvalue, b: int) =
-  let av = a.eval
+  let av: Gvalue = a.eval
   if av of Gint:
-    checkeq(instantiationInfo(), astToStr a, av.getint, astToStr b, b)
+    checkeq(instantiationInfo(), astToStr a, Gint(av).getint, astToStr b, b)
   elif av of Gscalar:
-    checkeq(instantiationInfo(), astToStr a, av.getfloat, astToStr b, float(b))
+    checkeq(instantiationInfo(), astToStr a, Gscalar(av).getfloat, astToStr b, float(b))
   else:
     raise newException(GraphValueError,
       "Gvalue :~ int only supports scalar or int nodes; use norm-based checks for gauge values")
 
 template `:~`*(a: Gvalue, b: Gvalue) =
-  let av = a.eval
-  let bv = b.eval
+  let av: Gvalue = a.eval
+  let bv: Gvalue = b.eval
   if (av of Gscalar) and (bv of Gscalar):
-    checkeq(instantiationInfo(), astToStr a, av.getfloat, astToStr b, bv.getfloat)
+    checkeq(instantiationInfo(), astToStr a, Gscalar(av).getfloat, astToStr b, Gscalar(bv).getfloat)
   elif (av of Gint) and (bv of Gint):
-    checkeq(instantiationInfo(), astToStr a, av.getint, astToStr b, bv.getint)
+    checkeq(instantiationInfo(), astToStr a, Gint(av).getint, astToStr b, Gint(bv).getint)
   else:
     raise newException(GraphValueError,
       "Gvalue :~ Gvalue only supports scalar or int nodes; use norm-based checks for gauge values")
 
 template `:<`*(a: Gvalue, b: float) =
-  let av = abs(a.eval.getfloat)
+  let av = abs(a.eval.requireScalar(astToStr a).getfloat)
   if av >= b:
     let ii = instantiationInfo()
     let sa = astToStr a

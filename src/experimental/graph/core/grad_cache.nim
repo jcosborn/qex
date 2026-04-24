@@ -35,11 +35,7 @@ proc cacheGrad*(entry: GradCacheEntry,
   entry.grads[input.stableNodeId] = grad
 
 proc findGrad*(input: Gvalue, output: Gvalue): Gvalue =
-  let inputGrt = input.runtime
-  let grt = output.runtime
-  # Stable node ids are runtime-local, so this identity check is semantic.
-  if inputGrt != grt:
-    raiseValueError("findGrad mixes multiple graph runtimes")
+  let grt = requireSameGraphRuntime(input, output, "findGrad", "input", "output")
   let outputId = output.stableNodeId
   if not grt.gradCacheByOutput.hasKey(outputId):
     return nil

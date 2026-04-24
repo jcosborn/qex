@@ -16,7 +16,7 @@ let grt = initGraphRuntime()
 # Directional-derivative check:
 # z(t) = f(x + t A) B†, so d/dt z should match redot(dz/dx, A).
 
-proc ndiff(zt: Gvalue, t: Gscalar): (float, float) =
+proc ndiff(zt: Gscalar, t: Gscalar): (float, float) =
   proc z(v:float):float =
     t.update v
     zt.eval.getfloat

@@ -136,6 +136,23 @@ suite "hmcgauge fail-fast":
     check after != before
     discard graph.lossValue
 
+  test "accepted trajectory commit uses a pre-training final gauge snapshot":
+    let graph = buildTrajectoryGraph(grt, g, p, grt.actWilson(6.0), validRunConfig())
+    let acceptedGauge = graph.finalGaugeSnapshot
+    let expectedGauge = acceptedGauge.gaugeNodeLike
+    expectedGauge.valCopy acceptedGauge
+    expectedGauge.getgauge.reunitGauge
+    expectedGauge.updated
+
+    for learned in graph.learnedParameters:
+      learned.node.update learned.node.getfloat + 0.001
+
+    graph.commitAcceptedTrajectory(acceptedGauge)
+
+    check graph.currentGauge.len == acceptedGauge.getgauge.len
+    norm2(grt.toGvalue(graph.currentGauge) - expectedGauge) :< 1e-26
+    discard graph.lossValue
+
   test "run config validation rejects invalid ranges":
     var bad = validRunConfig()
     bad.trajsTrain = -1

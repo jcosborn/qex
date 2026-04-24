@@ -5,11 +5,6 @@ proc updated*(x: Gvalue) =
   inc grt.graphEpochCounter
   x.setNodeEpoch(grt.graphEpochCounter)
 
-proc maxInputEpoch(inputs: openArray[Gvalue]): int =
-  for input in inputs:
-    if result < input.epoch:
-      result = input.epoch
-
 proc debugEval(node: Gvalue) =
   if not node.runtime.graphDebug:
     return
@@ -19,13 +14,7 @@ proc debugEval(node: Gvalue) =
   )
   echo s
 
-proc evaluated*(x: Gvalue) =
-  ## Marks a node current with respect to raw `inputs` only.
-  ## This ignores custom eval deps and hidden deps; use it only when the
-  ## caller owns the node's full forward freshness contract.
-  x.setNodeEpoch(x.inputs.maxInputEpoch)
-
-proc eval*(v: Gvalue): Gvalue {.discardable.} =
+proc eval*[T: Gvalue](v: T): T {.discardable.} =
   var seen = initNodeSet()
 
   proc walkNode(node: Gvalue) =

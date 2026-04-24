@@ -23,6 +23,32 @@ proc `-`*(x: Ggauge, y: Ggauge): Ggauge
 
 proc redot*(x: Gscalar, y: Gscalar): Gscalar = x*y
 
+proc gaugeScalarLiteral(anchor: Ggauge,
+                        value: float): Gscalar =
+  scalarLeafLike(anchor, value)
+
+proc gaugeScalarLiteral(anchor: Ggauge,
+                        value: int): Gscalar =
+  scalarLeafLike(anchor, value)
+
+proc `+`*(x: float, y: Ggauge): Ggauge =
+  gaugeScalarLiteral(y, x) + y
+
+proc `+`*(x: int, y: Ggauge): Ggauge =
+  gaugeScalarLiteral(y, x) + y
+
+proc `*`*(x: float, y: Ggauge): Ggauge =
+  gaugeScalarLiteral(y, x) * y
+
+proc `*`*(x: int, y: Ggauge): Ggauge =
+  gaugeScalarLiteral(y, x) * y
+
+proc `-`*(x: Ggauge, y: float): Ggauge =
+  x - gaugeScalarLiteral(x, y)
+
+proc `-`*(x: Ggauge, y: int): Ggauge =
+  x - gaugeScalarLiteral(x, y)
+
 proc localGaugeUpstreamRetr(zb: Gvalue, label: string): Gscalar {.inline.} =
   retr(gaugeUpstreamValue(zb, label))
 

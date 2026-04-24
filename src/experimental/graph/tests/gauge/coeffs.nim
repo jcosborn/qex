@@ -33,6 +33,18 @@ suite "gauge coeffs":
     beta.update 5.0
     symanzik.checkRectCoeff(5.0, -1.0 / 12.0)
 
+  test "action coefficient validator rejects wrong value type":
+    let beta = grt.toGvalue(6.0)
+    let scalarValue: Gvalue = beta
+    let missing: Gvalue = nil
+
+    expect(GraphValueError):
+      discard scalarValue.requireActCoeff("getactcoeff")
+    expect(GraphValueError):
+      discard missing.requireActCoeff("getactcoeff")
+    expect(GraphValueError):
+      discard scalarValue.requireActCoeff("setactcoeff")
+
   test "named action coefficient constant leaf starts fresh":
     let wilson: Gactcoeff = grt.actWilson(6.0)
     let unitCoeff = wilson.requireNodeInput(1, "wilson coefficient test", "unit coefficient")

@@ -31,6 +31,25 @@ proc nodeContext*(node: Gvalue): string =
     return ""
   ":\n" & node.nodeRepr
 
+proc requireGraphValue*(value: Gvalue,
+                        label: string): Gvalue =
+  if value == nil:
+    raiseValueError(label & " cannot be nil")
+  if value.runtime == nil:
+    raiseValueError(label & " has no graph runtime")
+  value
+
+proc requireSameGraphRuntime*(left: Gvalue,
+                              right: Gvalue,
+                              label: string,
+                              leftLabel = "left",
+                              rightLabel = "right"): GraphRuntime =
+  let checkedLeft = left.requireGraphValue(label & " " & leftLabel)
+  let checkedRight = right.requireGraphValue(label & " " & rightLabel)
+  result = checkedLeft.runtime
+  if result != checkedRight.runtime:
+    raiseValueError(label & " mixes multiple graph runtimes")
+
 proc requireInputCountAtLeast*(node: Gvalue,
                                minimum: int,
                                label: string) =

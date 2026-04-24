@@ -77,12 +77,11 @@ proc requireInt*(value: Gvalue,
     raiseValueError(label & " expects int value, got:\n" & value.nodeRepr)
   Gint(value)
 
-proc getfloat*(x: Gvalue): float =
-  x.requireScalar("getfloat").sval
+proc getfloat*(x: Gscalar): float =
+  x.sval
 
-proc `getfloat=`*(x: Gvalue, y: float) =
-  let xs = x.requireScalar("setfloat")
-  xs.sval = y
+proc `getfloat=`*(x: Gscalar, y: float) =
+  x.sval = y
 
 proc update*(x: Gscalar, y: float) =
   x.getfloat = y
@@ -111,20 +110,18 @@ method `$`*(x: Gscalar): string = $x.sval
 
 method isZero*(x: Gscalar): bool = x.sval == 0.0
 
-proc `getfloat=`*(x: Gvalue, y: int) =
-  let xs = x.requireScalar("setfloat")
-  xs.sval = float(y)
+proc `getfloat=`*(x: Gscalar, y: int) =
+  x.sval = float(y)
 
 proc update*(x: Gscalar, y: int) =
   x.getfloat = y
   x.updated
 
-proc getint*(x: Gvalue): int =
-  x.requireInt("getint").ival
+proc getint*(x: Gint): int =
+  x.ival
 
-proc `getint=`*(x: Gvalue, y: int) =
-  let xs = x.requireInt("setint")
-  xs.ival = y
+proc `getint=`*(x: Gint, y: int) =
+  x.ival = y
 
 proc update*(x: Gint, y: int) =
   x.getint = y

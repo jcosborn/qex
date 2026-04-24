@@ -21,10 +21,15 @@ proc gaugeActionb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
       return scaledUpstreamOr(zb, Gscalar, gaugeActionDeriv(view.x, view.y), "gaugeAction backward"))
 
 proc gaugeActionf(v: Gvalue) =
-  let view = v.requireBinaryNodeView("gaugeAction forward", "coefficients", "gauge")
+  let view = v.requireBinaryNodeView(
+    Gactcoeff,
+    Ggauge,
+    "gaugeAction forward",
+    "coefficients",
+    "gauge")
   let gc = view.x.getactcoeff
-  let g = Ggauge(view.y)
-  let z = Gscalar(v)
+  let g = view.y
+  let z = v.requireScalar("gaugeAction forward result")
   z.getfloat = evalGaugeActionValue(gc, g.gval)
 
 defineBinaryGraphOp(gaugeActiong, gaugeAction, Gactcoeff, Ggauge, c, g, scalarNodeLike(c), gaugeActionf, gaugeActionb, "gaugeAction")
@@ -42,10 +47,15 @@ proc gaugeActionDerivb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
                                view.y))
 
 proc gaugeActionDerivf(v: Gvalue) =
-  let view = v.requireBinaryNodeView("gaugeActionDeriv forward", "coefficients", "gauge")
+  let view = v.requireBinaryNodeView(
+    Gactcoeff,
+    Ggauge,
+    "gaugeActionDeriv forward",
+    "coefficients",
+    "gauge")
   let gc = view.x.getactcoeff
-  let g = Ggauge(view.y)
-  let z = Ggauge(v)
+  let g = view.y
+  let z = v.requireGauge("gaugeActionDeriv forward result")
   evalGaugeForceValue(gc, g.gval, z.gval)
 
 defineBinaryGraphOp(gaugeActionDerivg, gaugeActionDeriv, Gactcoeff, Ggauge, c, g, g.gaugeNodeLike, gaugeActionDerivf, gaugeActionDerivb, "gaugeActionDeriv")
@@ -71,14 +81,17 @@ proc gaugeActionDeriv2b(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
 
 proc gaugeActionDeriv2f(v: Gvalue) =
   let view = v.requireTernaryNodeView(
+    Ggauge,
+    Gactcoeff,
+    Ggauge,
     "gaugeActionDeriv2 forward",
     "direction",
     "coefficients",
     "gauge")
-  let b = Ggauge(view.x)
+  let b = view.x
   let gc = view.y.getactcoeff
-  let g = Ggauge(view.z)
-  let z = Ggauge(v)
+  let g = view.z
+  let z = v.requireGauge("gaugeActionDeriv2 forward result")
   evalGaugeForceJacobian(b.gval, gc, g.gval, z.gval)
 
 let gaugeActionDeriv2g = newGfunc(

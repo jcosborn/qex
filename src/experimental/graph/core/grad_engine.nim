@@ -4,9 +4,13 @@ import grad_signature, grad_cache, grad_build
 
 proc gradIsolated*(dep: Gvalue, x: Gvalue): Gvalue
 
+proc requireGradOperands(dep: Gvalue,
+                         x: Gvalue,
+                         label: string): GraphRuntime =
+  requireSameGraphRuntime(dep, x, label, "output", "input")
+
 proc gradOrZero*(dep: Gvalue, x: Gvalue): Gvalue =
-  if dep == nil or x == nil:
-    raiseError("gradOrZero has nil input")
+  discard requireGradOperands(dep, x, "gradOrZero")
   result = dep.gradIsolated(x)
   if result == nil:
     result = x.zeroLike
@@ -37,11 +41,7 @@ proc prepareGradCache(ctx: GradBuildContext,
     cache.cacheGrad(ctx.x, result)
 
 proc gradImpl(dep: Gvalue, x: Gvalue): Gvalue =
-  let depGrt = dep.runtime
-  let xGrt = x.runtime
-  # Grad caches are runtime-owned; never build a cross-runtime derivative.
-  if depGrt != xGrt:
-    raiseValueError("grad mixes multiple graph runtimes")
+  discard requireGradOperands(dep, x, "grad")
   var ctx = initGradBuildContext(dep, x)
   var cache: GradCacheEntry
   result = ctx.prepareGradCache(cache)
@@ -59,5 +59,6 @@ proc grad*(dep: Gvalue, x: Gvalue): Gvalue =
   gradImpl(dep, x)
 
 proc gradIsolated*(dep: Gvalue, x: Gvalue): Gvalue =
-  withIsolatedGradCache(dep.runtime, proc(): Gvalue =
+  let grt = requireGradOperands(dep, x, "gradIsolated")
+  withIsolatedGradCache(grt, proc(): Gvalue =
     gradImpl(dep, x))

@@ -67,6 +67,31 @@ suite "gauge basic":
     dotResult :~ redot(gp, gq)
     norm2(derivResult - expDeriv(gp, gq)) :< 1e-26
 
+  test "gauge validator rejects wrong value type":
+    let scalarValue: Gvalue = x
+    let missing: Gvalue = nil
+    expect(GraphValueError):
+      discard scalarValue.requireGauge("getgauge")
+    expect(GraphValueError):
+      discard missing.requireGauge("getgauge")
+
+  test "gauge numeric literal overloads stay explicit":
+    let one = grt.toGvalue(1.0)
+    let two = grt.toGvalue(2.0)
+    let shiftedFloat: Ggauge = gp - 1.0
+    let shiftedInt: Ggauge = gp - 1
+    let addedFloat: Ggauge = 1.0 + gp
+    let addedInt: Ggauge = 1 + gp
+    let scaledFloat: Ggauge = 2.0 * gp
+    let scaledInt: Ggauge = 2 * gp
+
+    norm2(shiftedFloat - (gp - one)) :< 1e-26
+    norm2(shiftedInt - (gp - one)) :< 1e-26
+    norm2(addedFloat - (one + gp)) :< 1e-26
+    norm2(addedInt - (one + gp)) :< 1e-26
+    norm2(scaledFloat - (two * gp)) :< 1e-26
+    norm2(scaledInt - (two * gp)) :< 1e-26
+
   test "retr":
     let rtp = gp.retr
     let n2 = retr(gg * gg.adj)

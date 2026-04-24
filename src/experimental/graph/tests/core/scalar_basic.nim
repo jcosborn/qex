@@ -74,11 +74,13 @@ suite "scalar basic":
     expect(GraphValueError):
       discard dzdx.eval
 
-  test "scalar getters reject wrong value type":
+  test "scalar validators reject wrong value type":
+    let intValue: Gvalue = grt.toGvalue(1)
+    let scalarValue: Gvalue = grt.toGvalue(1.0)
     expect(GraphValueError):
-      discard grt.toGvalue(1).getfloat
+      discard intValue.requireScalar("getfloat")
     expect(GraphValueError):
-      discard grt.toGvalue(1.0).getint
+      discard scalarValue.requireInt("getint")
 
   test "separate runtimes isolate node ids and reject mixed graphs":
     let leftGrt = initGraphRuntime()
@@ -115,6 +117,26 @@ suite "scalar basic":
 
     expect(GraphValueError):
       discard findGrad(xRight, zLeft)
+
+  test "gradient APIs reject nil operands early":
+    let missing: Gvalue = nil
+
+    expect(GraphValueError):
+      discard grad(missing, x)
+    expect(GraphValueError):
+      discard grad(x, missing)
+    expect(GraphValueError):
+      discard gradIsolated(missing, x)
+    expect(GraphValueError):
+      discard gradIsolated(x, missing)
+    expect(GraphValueError):
+      discard gradOrZero(missing, x)
+    expect(GraphValueError):
+      discard gradOrZero(x, missing)
+    expect(GraphValueError):
+      discard findGrad(missing, x)
+    expect(GraphValueError):
+      discard findGrad(x, missing)
 
   test "mixed numeric literals stay inside the anchored runtime":
     let grt = initGraphRuntime()

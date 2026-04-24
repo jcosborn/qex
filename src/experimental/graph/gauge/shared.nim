@@ -10,6 +10,14 @@ type
   Ggauge* {.final.} = ref object of Gvalue
     gval*: Gauge
 
+proc requireGauge*(value: Gvalue,
+                   label: string): Ggauge =
+  if value == nil:
+    raiseValueError(label & " requires non-nil gauge value")
+  if not (value of Ggauge):
+    raiseValueError(label & " expects gauge value, got:\n" & value.nodeRepr)
+  Ggauge(value)
+
 template copyGaugeStorage(dst, src: untyped) =
   threads:
     for mu in 0..<dst.len:
@@ -26,27 +34,19 @@ proc reunitGauge*(g: Gauge) =
 proc reunitGauge*(g: auto) =
   reunitGaugeImpl(g)
 
-proc getgauge*(x: Gvalue): Gauge = Ggauge(x).gval
-
-proc requireGauge*(value: Gvalue,
-                   label: string): Ggauge =
-  if value == nil:
-    raiseValueError(label & " requires non-nil gauge value")
-  if not (value of Ggauge):
-    raiseValueError(label & " expects gauge value, got:\n" & value.nodeRepr)
-  Ggauge(value)
+proc getgauge*(x: Ggauge): Gauge =
+  x.gval
 
 proc zeroGaugeStorage*(g: Gauge) =
   threads:
     for mu in 0..<g.len:
       g[mu] := 0.0
 
-proc update*(x: Gvalue, g: Gauge, isZero = false) =
-  let u = Ggauge(x)
+proc update*(x: Ggauge, g: Gauge, isZero = false) =
   if isZero:
-    u.gval.zeroGaugeStorage
+    x.gval.zeroGaugeStorage
   else:
-    u.gval.copyGaugeStorage(g)
+    x.gval.copyGaugeStorage(g)
   x.updated
 
 proc toGvalue*(grt: GraphRuntime,
@@ -73,9 +73,7 @@ proc valCopy*(z: Ggauge, x: Ggauge) =
   z.gval.copyGaugeStorage(x.gval)
 
 method valCopy*(z: Ggauge, x: Gvalue) =
-  if x == nil or not (x of Ggauge):
-    raiseValueError("gauge copy expects gauge value")
-  z.valCopy(Ggauge(x))
+  z.valCopy(x.requireGauge("gauge copy"))
 
 proc sameGaugeShape(a: Gauge, b: Gauge): bool =
   if a.len != b.len:
@@ -100,8 +98,8 @@ template defineUnaryForward*(forwardName, InputType, ResultType: untyped,
                              label: static[string],
                              forwardBody: untyped) =
   proc forwardName(v: Gvalue) =
-    let view {.inject.} = v.requireUnaryNodeView(label)
-    let x {.inject.} = InputType(view.x)
+    let view {.inject.} = v.requireUnaryNodeView(InputType, label)
+    let x {.inject.} = view.x
     let z {.inject.} = ResultType(v)
     forwardBody
 
@@ -109,9 +107,9 @@ template defineBinaryForward*(forwardName, LeftType, RightType, ResultType: unty
                               label: static[string],
                               forwardBody: untyped) =
   proc forwardName(v: Gvalue) =
-    let view {.inject.} = v.requireBinaryNodeView(label)
-    let x {.inject.} = LeftType(view.x)
-    let y {.inject.} = RightType(view.y)
+    let view {.inject.} = v.requireBinaryNodeView(LeftType, RightType, label)
+    let x {.inject.} = view.x
+    let y {.inject.} = view.y
     let z {.inject.} = ResultType(v)
     forwardBody
 

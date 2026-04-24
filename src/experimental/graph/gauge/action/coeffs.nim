@@ -13,13 +13,23 @@ proc coeffNodeIn(grt: GraphRuntime): Gactcoeff =
 proc coeffNodeLike(anchor: Gvalue): Gactcoeff =
   coeffNodeIn(anchor.runtime)
 
-proc getactcoeff*(x: Gvalue): GaugeActionCoeffs = Gactcoeff(x).cval
+proc requireActCoeff*(value: Gvalue,
+                      label: string): Gactcoeff =
+  if value == nil:
+    raiseValueError(label & " requires non-nil gauge-action coefficient value")
+  if not (value of Gactcoeff):
+    raiseValueError(
+      label & " expects gauge-action coefficient value, got:\n" &
+      value.nodeRepr)
+  Gactcoeff(value)
 
-proc `getactcoeff=`*(x: Gvalue, c: GaugeActionCoeffs) =
-  let gc = Gactcoeff(x)
-  gc.cval = c
+proc getactcoeff*(x: Gactcoeff): GaugeActionCoeffs =
+  x.cval
 
-proc update*(x: Gvalue, c: GaugeActionCoeffs) =
+proc `getactcoeff=`*(x: Gactcoeff, c: GaugeActionCoeffs) =
+  x.cval = c
+
+proc update*(x: Gactcoeff, c: GaugeActionCoeffs) =
   x.getactcoeff = c
   x.updated
 
@@ -33,9 +43,7 @@ method newOneOf*(x: Gactcoeff): Gvalue =
   result = Gactcoeff().attachRuntime(x.runtime)
 proc valCopy*(z: Gactcoeff, x: Gactcoeff) = z.cval = x.cval
 method valCopy*(z: Gactcoeff, x: Gvalue) =
-  if x == nil or not (x of Gactcoeff):
-    raiseValueError("gauge-action coefficient copy expects coefficient value")
-  z.valCopy(Gactcoeff(x))
+  z.valCopy(x.requireActCoeff("gauge-action coefficient copy"))
 proc copyCompatible*(prototype: Gactcoeff, value: Gactcoeff): bool =
   prototype != nil and value != nil
 method copyCompatible*(prototype: Gactcoeff, value: Gvalue): bool =

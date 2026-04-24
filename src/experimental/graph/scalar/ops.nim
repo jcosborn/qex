@@ -7,39 +7,39 @@ template defineScalarUnaryForward(forwardName: untyped,
                                   label: static[string],
                                   forwardBody: untyped) =
   proc forwardName(v: Gvalue) =
-    let view {.inject.} = v.requireUnaryNodeView(label)
+    let view {.inject.} = v.requireUnaryNodeView(Gscalar, label)
     let x {.inject.} = view.x
-    let z {.inject.} = v
+    let z {.inject.} = v.requireScalar(label & " result")
     forwardBody
 
 template defineScalarBinaryForward(forwardName: untyped,
                                    label: static[string],
                                    forwardBody: untyped) =
   proc forwardName(v: Gvalue) =
-    let view {.inject.} = v.requireBinaryNodeView(label)
+    let view {.inject.} = v.requireBinaryNodeView(Gscalar, Gscalar, label)
     let x {.inject.} = view.x
     let y {.inject.} = view.y
-    let z {.inject.} = v
+    let z {.inject.} = v.requireScalar(label & " result")
     forwardBody
 
 template defineScalarComparisonForward(forwardName: untyped,
                                        label: static[string],
                                        predicate: untyped) =
   proc forwardName(v: Gvalue) =
-    let view {.inject.} = v.requireBinaryNodeView(label)
+    let view {.inject.} = v.requireBinaryNodeView(Gscalar, Gscalar, label)
     let x {.inject.} = view.x
     let y {.inject.} = view.y
-    let z {.inject.} = v
+    let z {.inject.} = v.requireScalar(label & " result")
     z.getfloat = if predicate: 1.0 else: 0.0
 
 template defineIntComparisonForward(forwardName: untyped,
                                     label: static[string],
                                     predicate: untyped) =
   proc forwardName(v: Gvalue) =
-    let view {.inject.} = v.requireBinaryNodeView(label)
+    let view {.inject.} = v.requireBinaryNodeView(Gint, Gint, label)
     let x {.inject.} = view.x
     let y {.inject.} = view.y
-    let z {.inject.} = v
+    let z {.inject.} = v.requireInt(label & " result")
     z.getint = if predicate: 1 else: 0
 
 proc `-`*(x: Gscalar): Gscalar
@@ -96,52 +96,52 @@ proc numericLiteral(anchor: Gvalue,
                     value: float): Gvalue =
   numericLeafLike(anchor, value)
 
-proc `+`*[T: Gvalue](x: T, y: float): auto =
+proc `+`*(x: Gscalar, y: float): Gscalar =
   x + scalarLiteral(x, y)
 
-proc `+`*[T: Gvalue](x: float, y: T): auto =
+proc `+`*(x: float, y: Gscalar): Gscalar =
   scalarLiteral(y, x) + y
 
-proc `+`*[T: Gvalue](x: T, y: int): auto =
+proc `+`*(x: Gscalar, y: int): Gscalar =
   x + scalarLiteral(x, y)
 
-proc `+`*[T: Gvalue](x: int, y: T): auto =
+proc `+`*(x: int, y: Gscalar): Gscalar =
   scalarLiteral(y, x) + y
 
-proc `-`*[T: Gvalue](x: T, y: float): auto =
+proc `-`*(x: Gscalar, y: float): Gscalar =
   x - scalarLiteral(x, y)
 
-proc `-`*[T: Gvalue](x: float, y: T): auto =
+proc `-`*(x: float, y: Gscalar): Gscalar =
   scalarLiteral(y, x) - y
 
-proc `-`*[T: Gvalue](x: T, y: int): auto =
+proc `-`*(x: Gscalar, y: int): Gscalar =
   x - scalarLiteral(x, y)
 
-proc `-`*[T: Gvalue](x: int, y: T): auto =
+proc `-`*(x: int, y: Gscalar): Gscalar =
   scalarLiteral(y, x) - y
 
-proc `*`*[T: Gvalue](x: T, y: float): auto =
+proc `*`*(x: Gscalar, y: float): Gscalar =
   x * scalarLiteral(x, y)
 
-proc `*`*[T: Gvalue](x: float, y: T): auto =
+proc `*`*(x: float, y: Gscalar): Gscalar =
   scalarLiteral(y, x) * y
 
-proc `*`*[T: Gvalue](x: T, y: int): auto =
+proc `*`*(x: Gscalar, y: int): Gscalar =
   x * scalarLiteral(x, y)
 
-proc `*`*[T: Gvalue](x: int, y: T): auto =
+proc `*`*(x: int, y: Gscalar): Gscalar =
   scalarLiteral(y, x) * y
 
-proc `/`*[T: Gvalue](x: T, y: float): auto =
+proc `/`*(x: Gscalar, y: float): Gscalar =
   x / scalarLiteral(x, y)
 
-proc `/`*[T: Gvalue](x: float, y: T): auto =
+proc `/`*(x: float, y: Gscalar): Gscalar =
   scalarLiteral(y, x) / y
 
-proc `/`*[T: Gvalue](x: T, y: int): auto =
+proc `/`*(x: Gscalar, y: int): Gscalar =
   x / scalarLiteral(x, y)
 
-proc `/`*[T: Gvalue](x: int, y: T): auto =
+proc `/`*(x: int, y: Gscalar): Gscalar =
   scalarLiteral(y, x) / y
 
 proc requireNonZeroDivisor(y: Gvalue, z: Gvalue) =

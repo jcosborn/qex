@@ -12,7 +12,7 @@ type
     hamiltonian: Gscalar
   LearnedParameter* = object
     node*: Gscalar
-    gradientExpr*: Gvalue
+    gradientExpr*: Gscalar
   TrajectoryGraph* = object
     initialState: TrajectoryState
     finalState: TrajectoryState
@@ -112,7 +112,20 @@ proc shouldAccept*(graph: TrajectoryGraph,
                    alwaysAccept: bool): bool =
   draw <= graph.acceptanceProbability or alwaysAccept
 
-proc commitAcceptedTrajectory*(graph: TrajectoryGraph) =
-  graph.initialState.gauge.valCopy graph.finalState.gauge
+proc finalGaugeSnapshot*(graph: TrajectoryGraph): Ggauge =
+  discard graph.finalState.gauge.eval
+  result = graph.finalState.gauge.gaugeNodeLike
+  result.valCopy graph.finalState.gauge
+  result.updated
+
+proc commitAcceptedTrajectory*(graph: TrajectoryGraph,
+                               finalGauge: Ggauge) =
+  discard requireSameGraphRuntime(
+    finalGauge,
+    graph.initialState.gauge,
+    "accepted trajectory commit",
+    "snapshot",
+    "initial gauge")
+  graph.initialState.gauge.valCopy finalGauge
   graph.initialState.gauge.getgauge.reunitGauge
   graph.initialState.gauge.updated

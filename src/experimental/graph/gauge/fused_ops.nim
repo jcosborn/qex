@@ -143,13 +143,16 @@ proc axexpmulyPackb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
 
 proc axexpmulyPackf(v: Gvalue) =
   let view = v.requireTernaryNodeView(
+    Gscalar,
+    Ggauge,
+    Ggauge,
     "axexpmulyPack forward",
     "scale",
     "exponent",
     "value")
-  let a = Gscalar(view.x)
-  let x = Ggauge(view.y)
-  let y = Ggauge(view.z)
+  let a = view.x
+  let x = view.y
+  let y = view.z
   let pack = v.requireMultiValue("axexpmulyPack forward result")
   let expax = pack.packExpGauge
   let result = pack.packResultGauge

@@ -7,7 +7,7 @@ from hmcgauge/config import
 from hmcgauge/trajectory import
   buildTrajectoryGraph, resampleMomentum, echoTrajectoryHamiltonians,
   shouldAccept, logAcceptance, lossValue, commitAcceptedTrajectory,
-  currentGauge
+  currentGauge, finalGaugeSnapshot
 from hmcgauge/training import
   initTrainingState, formatFloatValues, parameterValues, trainStep
 from hmcgauge/gauge_io import loadOrInitGauge, maybeSaveGauge
@@ -35,9 +35,9 @@ proc runTrajectoryPhase(graph: auto,
 proc finishTrajectory(graph: auto,
                       runConfig: RunConfig,
                       traj: int,
-                      accepted: bool) =
-  if accepted:
-    graph.commitAcceptedTrajectory
+                      acceptedGauge: Ggauge) =
+  if acceptedGauge != nil:
+    graph.commitAcceptedTrajectory(acceptedGauge)
 
   graph.currentGauge.echoPlaq
   graph.currentGauge.maybeSaveGauge(runConfig, traj)
@@ -57,12 +57,17 @@ proc runTrajectory(random: var RngMilc6,
     accepted,
     acceptDraw,
     runConfig.alwaysAccept)
+  let acceptedGauge: Ggauge =
+    if accepted:
+      graph.finalGaugeSnapshot
+    else:
+      nil
   qexGC "traj done"
 
   toc("forward end")
 
   runTrajectoryPhase(graph, trainer, runConfig, phase, traj)
-  finishTrajectory(graph, runConfig, traj, accepted)
+  finishTrajectory(graph, runConfig, traj, acceptedGauge)
   qexLog "traj ",traj," secs: ",getElapsedTime()
   toc("traj end")
 
