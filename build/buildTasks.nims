@@ -33,11 +33,14 @@ proc setUserNimFlags(x: seq[string]) =
   userNimFlags = x
 var nimFlags: seq[string] = @[]
 var nimCmdArgs = ""
+#var extraFlags = ""
 proc setNimFlags() =
   if nimFlags.len == 0:
     nimFlags = getNimFlags(fo)
     nimFlags.add userNimFlags
   nimCmdArgs = join(nimArgs," ") & " " & join(nimFlags," ")
+  #if extraFlags != "":
+  #  nimCmdArgs &= " " & extraFlags
 
 var run = false
 var runArgs = ""
@@ -253,20 +256,31 @@ buildTask clean, cleanDesc:
 #  "gauge/wflow.nim",
 #  "examples/staghmc_sh.nim",
 #]
-let extraTests = readFile(qexDir/"tests"/"extra"/"extra.txt").splitLines
-  .filterIt((it.len>0) and (not it.startsWith("#")))
+#let extraTests = readFile(qexDir/"tests"/"extra"/"extra.txt").splitLines
+#  .filterIt((it.len>0) and (not it.startsWith("#")))
+#echo "Extra tests: ", extraTests2
+var extraTests = newSeq[string]()
+var extraTestArgs = newSeq[string]()
+template extraTest(f:string, a="") =
+  extraTests.add f
+  extraTestArgs.add a
+incl qexDir/"tests"/"extra"/"extra.nims"
 #echo "Extra tests: ", extraTests
+#echo "Extra args: ", extraTestArgs
 
+var extraArgs = ""
 proc addTest(runscript:var seq[string], f, outdir:string) =
   let name = f.splitFile.name
   var rj = gorge("awk '$1==\"#RUNCMD\"{$1=\"\";print}' "&f).strip
   if rj == "": rj = "$RUNJOB"
   let exe = outdir/name
   discard buildFile(f, exe)
-  let runner = qexDir/"tests/extra"/name/"run"
+  let runner = qexDir/"tests/extra"/"t"&name/"run"
   if fileExists(runner): rj = runner
-  runscript.add("echo Running: "&exe)
-  runscript.add(rj&" ./"&exe&" || failed=\"$failed "&name&"\"")  # use " ./"&exe for /usr/bin/env
+  var args = exe
+  if extraArgs != "": args &= " " & extraArgs
+  runscript.add("echo Running: "&args)
+  runscript.add(rj&" ./"&args&" || failed=\"$failed "&name&"\"")  # use " ./"&exe for /usr/bin/env
 
 proc buildTests() =
   var runscript = @["#!/bin/sh",
@@ -291,11 +305,14 @@ proc buildTests() =
       #echo dir, " ", name, " ", ext
       if name[0]=='t' and ext==".nim":
         runscript.addTest(f, outdir)
-  for f in extraTests:
+  for i in 0..<extraTests.len:
+    let f = extraTests[i]
+    extraArgs = extraTestArgs[i]
     let outdir = bindir
     if not dirExists(outdir):
       mkDir outdir
     runscript.addTest(qexDir/"src"/f, outdir)
+    extraArgs = ""
   #echo runscript.join("\n")
   runscript.add("$CLEANUPJOBS")
   runscript.add("if [ X != \"X$failed\" ];then echo Failed tests: $failed;exit 1;fi")

@@ -6,7 +6,7 @@ var nim = paramStr(0)
 var nimuserargs = newSeq[string](0)
 var script = ""
 var args = newSeq[string](0)
-var qexDir = thisDir().parentDir
+const qexDir = thisDir().parentDir
 
 for i in 1..paramCount():
   let p = paramStr(i)

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+declare -r mydir="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+export FUELCompat=1
+exec $mydir/../tstaghmc_sh/run "$@"
