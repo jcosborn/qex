@@ -2,7 +2,7 @@
 set -o pipefail
 
 exe="$1"
-outdir=tests/extra/generichmc
+outdir=tests/extra/tgenerichmc
 [[ -d $outdir ]] || mkdir -p "$outdir"
 if [[ ${FUELCompat:-0} == 0 ]]; then
   comp=''

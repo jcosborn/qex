@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# ../qex/tests/extra/staghmc_sh/run bin/staghmc_sh [0|1|2|...]
+# ../qex/tests/extra/tstaghmc_sh/run bin/staghmc_sh [0|1|2|...]
 set -o pipefail
 
 declare -r exe="$1"
 shift
 declare -ai tids=("$@")
 declare -r mydir="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-declare -r outdir=tests/extra/staghmc_sh
+declare -r outdir=tests/extra/tstaghmc_sh
 declare -ai res=()
 
 if [[ ${FUELCompat:-0} == 0 ]];then

@@ -49,13 +49,22 @@ macro splitVars(sl: untyped): untyped =
 
 # deriv convention: (d/dm') Tr[ w' f(m) + f(m)' w ]/2
 
+# 1 MM
+proc expm1Poly2*(m: Mat1): auto {.noInit.} =
+  var a = C2*m
+  a += 1
+  result = a*m
+proc expPoly2*(m: Mat1): auto {.noInit.} =
+  var r = expm1Poly2(m)
+  r += 1
+  r
+
 # 2 MM
 proc expm1Poly3*(m: Mat1): auto {.noInit.} =
   splitVars:
     var b = C3*m + C2
     var a =  b*m + 1
-    var r =  a*m
-  r
+  result = a*m
 proc expPoly3*(m: Mat1): auto {.noInit.} =
   var r = expm1Poly3(m)
   r += 1
@@ -189,6 +198,46 @@ proc expPoly8*(m: Mat1): auto {.noInit.} =
     var a =  b*m2 + C3*m + C2
     var r =  a*m2 + m + 1
   r
+#[
+# 3 MM
+proc expm1Poly8*(m: Mat1): auto {.noInit.} =
+  const c1 = 4.018761610201036e-4
+  const c2 = 2.945531440279683e-3
+  const c3 = -8.709066576837676e-3
+  const c4 = 4.017568440673568e-1
+  const c5 = 3.230762888122312e-2
+  const c6 = 5.768988513026145
+  let m2 = m*m
+  splitVars:
+    var t02 = c1*m2 + c2*m
+    var y02 = m2*t02
+    var a = c3*m2 + c4*m + y02
+    var b = c5*m2 + y02
+    var r = a*b + c6*y02 + C2*m2 + m
+  r
+# 3 MM
+proc expm1Poly8*(m: Mat1): auto {.noInit.} =
+  const x3 = 2/3
+  const x1 = x3 * (1+sqrt(177.0))/88
+  const x2 = x3 * (1+sqrt(177.0))/352
+  const x4 = (29*sqrt(177.0)-271)/(315*x3)
+  const x5 = 11*(sqrt(177.0)-1)/(1260*x3)
+  const x6 = 11*(sqrt(177.0)-9)/(5040*x3)
+  const x7 = (89-sqrt(177.0))/(5040*x3*x3)
+  const y2 = (857-58*sqrt(177.0))/630
+  let m2 = m*m
+  splitVars:
+    var t4 = x2*m2 + x1*m
+    var a4 = m2*t4
+    var a = x7*a4 + x6*m2 + x5*m + x4
+    var b = x3*m2 + a4
+    var r = a*b + y2*m2 + m
+  r
+proc expPoly8*(m: Mat1): auto {.noInit.} =
+  var r = expm1Poly8(m)
+  r += 1
+  r
+]#
 
 # 4 MM
 proc expm1Poly9*(m: Mat1): auto {.noInit.} =
@@ -275,6 +324,61 @@ proc expPoly12*(m: Mat1): auto {.noInit.} =
 
 ## Pade approximations of exp
 
+#[
+proc expm1Pade1*(m: Mat1): auto {.noInit.} =
+  var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
+  var d = (-0.5)*m
+  d += 1
+  var di{.noInit.}: type(d)
+  inverse(di, d)
+  r := m * di
+  r
+]#
+proc expm1Pade1*(m: Mat1): auto {.noInit.} =
+  var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
+  var d = (-2.0/9.0)*m
+  d += (2.0/3.0)
+  var di{.noInit.}: type(d)
+  inverse(di, d)
+  di -= 0.5
+  r := m * di
+  r
+proc expPade1*(m: Mat1): auto {.noInit.} =
+  var r = expm1Pade1(m)
+  r += 1
+  r
+
+#[
+proc expm1Pade2*(m: Mat1): auto {.noInit.} =
+  var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
+  #var d = (1.0/12.0)*m*m
+  var d = m*m
+  d *= (1.0/12.0)
+  d += (-0.5)*m
+  d += 1
+  var di{.noInit.}: type(d)
+  inverse(di, d)
+  r := m * di
+  r
+]#
+proc expm1Pade2*(m: Mat1): auto {.noInit.} =
+  let m2 = m*m
+  var d = (1.0/30.0)*m2
+  d += (-1.0/3.0)*m
+  d += 1
+  var di{.noInit.}: type(d)
+  inverse(di, d)
+  var n = (25.0/36.0)*m2
+  n += (-5.0/6.0)*m
+  var r = n * di
+  r += (1.0/12.0)*m2
+  r += (11.0/6.0)*m
+  r
+proc expPade2*(m: Mat1): auto {.noInit.} =
+  var r = expm1Pade2(m)
+  r += 1
+  r
+
 proc expm1Pade3*(m: Mat1): auto {.noInit.} =
   var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
   let m2 = m*m
@@ -302,6 +406,29 @@ proc expPade3*(m: Mat1): auto {.noInit.} =
   inverse(di, d)
   r := n * di
   r
+#[
+proc expm1Pade3*(m: Mat1): auto {.noInit.} =
+  let m2 = m*m
+  let m3 = m*m2
+  var d = (-1.0/504.0)*m3
+  d += (1.0/24.0)*m2
+  d += (-1.0/3.0)*m
+  d += 1
+  var di{.noInit.}: type(d)
+  inverse(di, d)
+  var n = (287.0/960.0)*m3
+  n += (-49.0/20.0)*m2
+  n += (399.0/40.0)*m
+  var r = n * di
+  r += (-1.0/120.0)*m3
+  r += (-3.0/8.0)*m2
+  r += (-359.0/40.0)*m
+  r
+proc expPade3*(m: Mat1): auto {.noInit.} =
+  var r = expm1Pade3(m)
+  r += 1
+  r
+]#
 
 # dp = v + (m'm'v-5m'vm'+vm'm')/60 + m'm'vm'm'/600
 proc expm1Pade3Deriv*(m: Mat1, w: Mat2): auto {.noInit.} =
@@ -574,6 +701,7 @@ proc expm1NoScale*[R,M:Mat1](p: var ExpParam, r: var R, m: M) =
   case p.kind
   of ekPoly:
     case p.order
+    of 2: r := expm1Poly2(m)
     of 3: r := expm1Poly3(m)
     of 4: r := expm1Poly4(m)
     of 5: r := expm1Poly5(m)
@@ -589,6 +717,8 @@ proc expm1NoScale*[R,M:Mat1](p: var ExpParam, r: var R, m: M) =
       p.valid = false
   of ekPade:
     case p.order
+    of 1: r := expm1Pade1(m)
+    of 2: r := expm1Pade2(m)
     of 3: r := expm1Pade3(m)
     of 4: r := expm1Pade4(m)
     of 5: r := expm1Pade5(m)
@@ -605,6 +735,7 @@ proc expNoScale*[R,M:Mat1](p: var ExpParam, r: var R, m: M) =
   case p.kind
   of ekPoly:
     case p.order
+    of 2: r := expPoly2(m)
     of 3: r := expPoly3(m)
     of 4: r := expPoly4(m)
     of 5: r := expPoly5(m)
@@ -620,6 +751,8 @@ proc expNoScale*[R,M:Mat1](p: var ExpParam, r: var R, m: M) =
       p.valid = false
   of ekPade:
     case p.order
+    of 1: r := expPade1(m)
+    of 2: r := expPade2(m)
     of 3: r := expPade3(m)
     of 4: r := expPade4(m)
     of 5: r := expPade5(m)
@@ -753,7 +886,7 @@ when isMainModule:
       e = newSeq[float](n)
       p: ExpParam
       valid: bool
-      nreps = 1000000
+      nreps = 10000000
     p.scale = scale
     var s = "Kind  Ord"
     for i in 0..<n:
@@ -763,7 +896,7 @@ when isMainModule:
     echo s
     for kind in ExpKind:
       p.kind = kind
-      for order in 3..12:
+      for order in 1..12:
         p.order = order
         valid = false
         var secs = 0.0
@@ -810,7 +943,7 @@ when isMainModule:
     echo s
     for kind in ExpKind:
       p.kind = kind
-      for order in 3..12:
+      for order in 1..12:
         p.order = order
         valid = false
         var secs = 0.0
@@ -834,19 +967,20 @@ when isMainModule:
             o &= &"{e[i]:12.4e}"
           echo o, "  ", ((secs*1e9)/(nreps*n))|3, " ns"
 
-  #testi()
+  testi()
 
   proc testm() =
     #var x: MatrixArray[3,3,float]
     var x: MatrixArray[3,3,ComplexType[float]]
     var p: ExpParam
-    var nreps = 1000000
+    var nreps = 4000000
     p.scale = scale
     for kind in ExpKind:
       p.kind = kind
-      for order in 3..12:
+      for order in 1..12:
         p.order = order
         var y = p.exp(x)
+        for rep in 1..100: discard p.exp(x)
         if p.valid:
           tic()
           var secs = 0.0
@@ -854,7 +988,7 @@ when isMainModule:
             y += p.exp(x)
           secs += getElapsedTime()
           echo &"{p.kind} {p.order:-2d} {(secs*1e9)/nreps:6.1f} ns"
-  #testm()
+  testm()
 
   proc testr2() =
     var
@@ -943,9 +1077,9 @@ when isMainModule:
     Cmplx[T] = ComplexType[T]
     CM[N:static[int],T] = MatrixArray[N,N,Cmplx[T]]
 
-  testDeriv(CM[1,float])
-  testDeriv(CM[2,float])
-  testDeriv(CM[3,float])
+  #testDeriv(CM[1,float])
+  #testDeriv(CM[2,float])
+  #testDeriv(CM[3,float])
 
   # example from https://blogs.mathworks.com/cleve/2012/07/23/a-balancing-act-for-the-matrix-exponential
   proc getm3: MatrixArray[3,3,float] =
@@ -983,5 +1117,5 @@ when isMainModule:
     echo a
     echo b
     echo sqrt(d.norm2/ae.norm2)
-  testgetm3()
+  #testgetm3()
 

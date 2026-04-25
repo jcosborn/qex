@@ -1,15 +1,14 @@
 import os, macros
 
-var nim = selfExe()
-var qexDir = thisDir()
-if dirExists(qexDir/"qex"): qexDir = qexDir/"qex"
+const nim = selfExe()
+const qexDir = if dirExists(thisDir()/"qex"): thisDir()/"qex" else: thisDir()
 echo "Nim: ", nim
 echo "QEX dir: ", qexDir
 
 # workaround for limitation of include
 macro incl(s: static string): untyped = quote do: include `s`
 
-include "build/configBase.nims"
+include "qex/build/configBase.nims"
 const qc = getCurrentDir() / "qexconfig.nims"
 when fileExists(qc): incl qc
 include "build/buildTasks.nims"
