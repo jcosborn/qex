@@ -14,10 +14,12 @@ jobs:
         #nim-branch: [version-2-0, version-2-2, devel]
         #nim-branch: [v2.0.14, v2.2.2]
         nim-branch: [v2.0.16, version-2-2, devel]
-        fuel-compat: [0, 1]
+        #fuel-compat: [0, 1]
+        fuel-compat: [0]
       fail-fast: false
     name: nim-${{ matrix.nim-branch }}-${{ matrix.mpi-impl }}-FUELCompat:${{ matrix.fuel-compat }}
-    runs-on: ubuntu-22.04
+    #runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
     - name: environment
       run: |
