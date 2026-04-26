@@ -2,6 +2,7 @@ import math
 import base, field, layout, maths, maths/types, simd
 import comms/qmp
 import base/wrapperTypes
+import rng/milcrng
 
 type
   RNG* = concept var r
@@ -44,11 +45,10 @@ template uniform*(r: AsVar, x: untyped) =
 proc uniform*(v: Field, r: RNGField) =
   mapRngField(uniform, v, r)
 
-when defined(FUELCompat):
-  # For maximal compatibility, see below.
-  proc gaussian_call2(x: var AsComplex, a,b:float) =
-    x.re = a
-    x.im = b
+# For maximal compatibility, see below.
+proc gaussian_call2(x: var AsComplex, a,b:float) =
+  x.re = a
+  x.im = b
 proc gaussian*(x: var SomeNumber, r: var RNG) =
   mixin gaussian
   x = gaussian(r)
@@ -64,7 +64,7 @@ proc gaussian*(x: var AsNumber, r: var RNG) =
 #  x[] := gaussian(r)
 proc gaussian*(x: var AsComplex, r: var RNG) =
   mixin gaussian
-  when defined(FUELCompat):
+  when r is RngFuel:
     # This is how QLA does it for complex types (e.g. QLA_D3_V_veq_gaussian_S).
     # Technically which one in this call gets evaluated is undefined in C.
     # Let's hope if you use the same C compiler,
@@ -103,7 +103,7 @@ proc z4*(x: var AsComplex, r: var RNG) =
   when numNumbers(x.re) > 1:
     static: echo "z4 for type ", typeof(x), " not implemented"
     {.error.}
-  when defined(FUELCompat):
+  when r is RngFuel:
     x.gaussian r
     var n,o {.noinit.}: float
     n := x.re
@@ -155,7 +155,7 @@ proc z2*(x: var AsComplex, r: var RNG) =
   when numNumbers(x.re) > 1:
     static: echo "z2 for type ", typeof(x), " not implemented"
     {.error.}
-  when defined(FUELCompat):
+  when r is RngFuel:
     x.gaussian r
     var n {.noinit.}:float
     n := x.re
@@ -183,7 +183,7 @@ proc u1*(x: var AsComplex, r: var RNG) =
   when numNumbers(x.re) > 1:
     static: echo "u1 for type ", typeof(x), " not implemented"
     {.error.}
-  when defined(FUELCompat):
+  when r is RngFuel:
     x.gaussian r
     let n = x.norm2
     if n == 0:
@@ -305,6 +305,7 @@ proc vonMises*[D](rng:var RNG, lambda:D):auto =
 
 proc newRNGField*[R: RNG](lo: Layout, rng: typedesc[R],
                           s: uint64 = uint64(17^7)): Field[1,R] =
+  mixin seedIndep
   ## The seed `s` is broadcasted from rank 0.
   var ss = s
   QMP_broadcast(ss.addr, sizeof(ss).csize_t)
