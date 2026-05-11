@@ -70,6 +70,14 @@ proc fromGpu*(c: HaloLayout, g: GpuHaloLayout) =
   c.neighborBck.fromGpu(g.neighborBck)
   toc("nbrBck")
 
+proc freeGpuMem*(c: HaloLayout) =
+  freeGpuMem addr c.neighborFwd[0]
+  for i in 0..<c.neighborFwd.len:
+    freeGpuMem addr c.neighborFwd[i][0]
+  freeGpuMem addr c.neighborBck[0]
+  for i in 0..<c.neighborBck.len:
+    freeGpuMem addr c.neighborBck[i][0]
+
 type
   GpuHalo*[V:static int,F,T] = object
     layout*: GpuHaloLayout[V]
@@ -129,6 +137,8 @@ proc toGpu*[L,F,T](c: Halo[L,F,T]): auto {.noInit.} =
   var g {.noInit.}: GpuHalo[L.V, gpuType F, gpuType T]
   g.toGpu(c)
   g
+
+template getGpu*(c: Halo, g: GpuHalo): auto = g
 
 proc fromGpu*(c: var Halo, g: GpuHalo) =
   tic("fromGpuHalo")

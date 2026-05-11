@@ -151,7 +151,8 @@ proc gpuMemFlagsIncl*(cpuPtr: pointer, flags: set[gmFlags]) =
   var pgm = getGpuMemDef(cpuPtr)
   pgm.flags.incl flags
 
-proc getGpuMem*(cpuPtr: pointer, gpuBytes: int): ptr GpuMem =
+var gb = 0
+proc getGpuMemImpl*(cpuPtr: pointer, gpuBytes: int): ptr GpuMem =
   result = getGpuMemDef(cpuPtr)
   #echo gpuMemTag
   if gmValidBytes notin result.flags:
@@ -160,12 +161,19 @@ proc getGpuMem*(cpuPtr: pointer, gpuBytes: int): ptr GpuMem =
     result.tag = gpuMemTag
   else:
     if result.bytes != gpuBytes:
-      echo "getGpuMem bytes mismatch result.bytes: ", result.bytes, "  gpuBytes: ", gpuBytes
-      doAssert(result.bytes == gpuBytes)
+      gb = result.bytes
+      return nil
   if result.p == nil:
     result.p = gpuMalloc(gpuBytes)
   result.touch
   #echo result[]
+template getGpuMem*(cpuPtr: pointer, gpuBytes: int): ptr GpuMem =
+  let p = getGpuMemImpl(cpuPtr, gpuBytes)
+  if p == nil:
+    echo "getGpuMem bytes mismatch result.bytes: ", gb, "  gpuBytes: ", gpuBytes
+    echo instantiationInfo()
+    doAssert(gb == gpuBytes)
+  p
 
 proc dumpGpuMem*(): string =
   var gms = newSeq[GpuMem](0)
@@ -181,6 +189,12 @@ proc dumpGpuMem*(): string =
   result &= "\n " & statsHeader
   for v in gms:
     result &= "\n " & v.stats
+
+proc freeAllGpuMem*() =
+  mixin gpuFree
+  for v in gpuMemTable.values:
+    gpuFree(v.p)
+  gpuMemTable.clear
 
 #[
 proc gpuMem*(gpuBytes: int, cpuPtr: pointer = nil): pointer =

@@ -114,23 +114,6 @@ macro fieldShift*(x:SomeField, d,l:int):auto =
   result = quote do:
     Shifted[type(`x`)](field:`x`,dir:`d`,ln:`l`)
   #echo result.repr
-template adjImpl*(x: SomeField): untyped =
-  fieldUnop(foAdj, x)
-template toSingleImpl*[F:Field](x: typedesc[F]): typedesc =
-  Field[F.V,toSingle(F.T)]
-template toSingleImpl*(x: SomeField): auto =
-  #static: echo $x.type
-  fieldUnop(foToSingle, x)
-template toDoubleImpl*(x: SomeField): auto =
-  fieldUnop(foToDouble, x)
-
-template eval*[F:Field](x: typedesc[F]): typedesc =
-  Field[F.V,eval(type F.T)]
-template eval*[F:FieldObj](x: typedesc[F]): typedesc =
-  FieldObj[F.V,eval(type F.T)]
-template eval*[F:Field](x: typedesc[FieldUnop[foToSingle,F]]): typedesc =
-  mixin toSingle
-  Field[F.V,toSingle(eval(type F.T))]
 
 proc new*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) =
   # remember to change newFieldArray if the following changes
@@ -352,6 +335,30 @@ macro indexFieldM*(x:FieldMul; tx:typedesc; y:int):auto =
 template indexField*[T](x: FieldMul[T], y: int): untyped =
   indexFieldM(x, x.T, y)
 template `[]`*(x:FieldMul, y:int):untyped = indexField(x, y)
+
+template adjImpl*(x: SomeField): untyped =
+  fieldUnop(foAdj, x)
+template toSingleImpl*[F:Field](x: typedesc[F]): typedesc =
+  Field[F.V,toSingle(F.T)]
+template toSingleImpl*(x: SomeField): auto =
+  #static: echo $x.type
+  fieldUnop(foToSingle, x)
+template toDoubleImpl*(x: SomeField): auto =
+  fieldUnop(foToDouble, x)
+
+template eval*[F:Field](x: typedesc[F]): typedesc =
+  Field[F.V,eval(type F.T)]
+template eval*[F:FieldObj](x: typedesc[F]): typedesc =
+  FieldObj[F.V,eval(type F.T)]
+template eval*[F:Field](x: typedesc[FieldUnop[foToSingle,F]]): typedesc =
+  mixin toSingle
+  Field[F.V,toSingle(eval(type F.T))]
+proc eval*[F:FieldUnop](x: F): auto =
+  type E = eval F
+  var e: E
+  e.new(x.l)
+  e := x
+  e
 
 template itemsI*(n0,n1:int):untyped =
   let n = n1 - n0
@@ -846,6 +853,14 @@ proc toSingleImpl*[F:Field](x: seq[F]): auto =
     r[i].new(x[0].l)
     r[i] := x[i]
   r
+proc eval*[F:Field](x: seq[F]): auto =
+  type E = eval F
+  when E is F:
+    result = x
+  else:
+    result = newSeq[E](x.len)
+    for i in 0..<s.len:
+      result[i] := x[i]
 
 when isMainModule:
   import qex
