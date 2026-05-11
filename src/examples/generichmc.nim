@@ -55,7 +55,7 @@ var s: RngMilc6
 s.seed(serialSeed, 987654321)
 
 # set up gauge field and gauge configuration
-var 
+var
   g = lo.newGauge()
   uc = newGaugeConfiguration(g)
 
@@ -91,7 +91,7 @@ spf.verbosity = 1
 #[ build action in coordination with integrator levels ]#
 
 var gc = GaugeActionCoeffs(plaq: beta)
-var ga = gc.newGaugeAction()
+var ga = gc.newGaugeAction(uc)
 
 var fermionLevel = newActionLevel(multiplier = outerSteps, integrator = outerIntegrator)
 
