@@ -10,14 +10,14 @@ qexInit()
 # specify parameters; overrwide with -<option>:<value> on command line
 letParam:
   gaugeFilename = "checkpoint.lat"
-  
+
   lattice = @[8, 8, 8, 8]
 
   beta = 7.5
   mass = 0.005
   massH = 0.6
   massPV = 0.75
-  
+
   numSt = 1 # number of staggered fermions
   numPV = 8 # number of staggered Pauli-Villars
 
@@ -50,8 +50,9 @@ processHelpParam()
 let lo = lattice.newLayout()
 
 # set up random number generator
-var r = lo.newRNGField(RngMilc6, parallelSeed.uint64)
-var s: RngMilc6
+type RngType = RngMilc6
+var r = lo.newRNGField(RngType, parallelSeed.uint64)
+var s: RngType
 s.seed(serialSeed, 987654321)
 
 # set up gauge field and gauge configuration
@@ -71,9 +72,9 @@ when defined(HypSmearing):
   let stag = newStag(uc.su)
 elif defined(StoutSmearing):
   qexError "Stout smearing for HMC not yet implemented"
-elif defined(HisqSmearing): 
+elif defined(HisqSmearing):
   let stag = newStag3(uc.su, uc.sul)
-else: 
+else:
   let stag = newStag(uc.u)
 
 var spa = initSolverParams()
@@ -90,23 +91,23 @@ spf.verbosity = 1
 
 #[ build action in coordination with integrator levels ]#
 
+var hmc = uc.newHmcAction(s, r, trajectoryLength)
+
 var gc = GaugeActionCoeffs(plaq: beta)
 var ga = gc.newGaugeAction(uc)
+var gaugeLevel = newActionLevel(multiplier = innerSteps, integrator = innerIntegrator)
+gaugeLevel.add ga
+hmc.add gaugeLevel   # inner level
 
 var fermionLevel = newActionLevel(multiplier = outerSteps, integrator = outerIntegrator)
 
 for i in 0..<numSt:
-  fermionLevel.add newStaggeredFermionAction(stag, massH, spa, spf)
-  fermionLevel.add newStaggeredRatioAction(stag, stag, mass, massH, spa, spf)
+  fermionLevel.add newStaggeredFermionAction(stag, massH, spa, spf, r)
+  fermionLevel.add newStaggeredRatioAction(stag, stag, mass, massH, spa, spf, r)
 
 for i in 0..<numPV:
-  fermionLevel.add newStaggeredPauliVillarsAction(stag, massPV, spa, spf)
+  fermionLevel.add newStaggeredPauliVillarsAction(stag, massPV, spa, spf, r)
 
-var gaugeLevel = newActionLevel(multiplier = innerSteps, integrator = innerIntegrator)
-gaugeLevel.add ga
-
-var hmc = uc.newHmcAction(s, r, trajectoryLength)
-hmc.add gaugeLevel   # inner level
 hmc.add fermionLevel # outer level
 
 #[ do HMC trajectory ]#
