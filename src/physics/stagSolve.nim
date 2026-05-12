@@ -285,11 +285,14 @@ proc solveReconR(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
     toc("setup")
     s.solveEE(y, b, m, sp)
     toc("solveEE")
+    #echo "solveReconR solveEE y2: ", y.norm2
+    #echo "solveReconR Ddag x2: ", x.norm2
     threads:
       y.even *= 4
       threadBarrier()
       s.Ddag(x, y, m)
     toc("reconstruct")
+    #echo "solveReconR Ddag x2: ", x.norm2
     return
   var r2stopo = (if b2e <= r2stop2: r2stop-b2e else: r2stop2)
   #echo "b2o: ", b2o, "  r2stopo: ", r2stopo
@@ -350,9 +353,11 @@ proc solveInner(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
   var r2stopo = (if b2e <= r2stop2: r2stop-b2e else: r2stop2)
   if b2e <= r2stope or b2o <= r2stopo or m == 0.0:
     solveReconR(s, x, b, m, sp, b2e, b2o)
+    #echo "solveInner solveReconR x2: ", x.norm2
   else:
     solveReconL(s, x, b, m, sp, b2e, b2o)
     #solveReconR(s, x, b, m, sp, b2e, b2o)
+    #echo "solveInner solveReconL x2: ", x.norm2
 
 proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
   tic()

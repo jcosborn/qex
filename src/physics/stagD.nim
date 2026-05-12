@@ -394,23 +394,42 @@ proc stagD2*(sd:StaggeredD; r:SomeField; g:openArray[Field2];
     optimizeAst:
       startSB(sb0[mu], g[mu][ix].adj*x[ix])
   toc("startShiftB")
-  for ir in r[sd.subset]:
-  #let ns0 = sd.subset.lowOuter
-  #let ns1 = sd.subset.highOuter
-  #let ns = ns1 - ns0
-  #tFor iri, 0, ns.pred:
-  #  let ir = ns0 + iri
-    XoptimizeAst:
-      var rir{.noInit.}:evalType(r[ir])
-      rir := a*r[ir] + b*x[ir]
-      for mu in 0..<nd:
-        localSB(sf0[mu], ir, imadd(rir, g[mu][ir], it), x[ix])
-      #for mu in 0..<nd:
-        localSB(sb0[mu], ir, isub(rir, it), g[mu][ix].adj*x[ix])
-        #localSB(sb0[mu], ir, rir:=it, g[mu][ix].adj*x[ix])
-        #var t{.noInit.}:type(load1(x[0]))
-        #localSB(sb0[mu], ir, isub(rir, it), (mul(t,g[mu][ix].adj,x[ix]);t))
-      assign(r[ir], rir)
+  if a == 0:
+    for ir in r[sd.subset]:
+    #let ns0 = sd.subset.lowOuter
+    #let ns1 = sd.subset.highOuter
+    #let ns = ns1 - ns0
+    #tFor iri, 0, ns.pred:
+    #  let ir = ns0 + iri
+      XoptimizeAst:
+        var rir{.noInit.}:evalType(r[ir])
+        rir := b*x[ir]
+        for mu in 0..<nd:
+          localSB(sf0[mu], ir, imadd(rir, g[mu][ir], it), x[ix])
+        #for mu in 0..<nd:
+          localSB(sb0[mu], ir, isub(rir, it), g[mu][ix].adj*x[ix])
+          #localSB(sb0[mu], ir, rir:=it, g[mu][ix].adj*x[ix])
+          #var t{.noInit.}:type(load1(x[0]))
+          #localSB(sb0[mu], ir, isub(rir, it), (mul(t,g[mu][ix].adj,x[ix]);t))
+        assign(r[ir], rir)
+  else:
+    for ir in r[sd.subset]:
+    #let ns0 = sd.subset.lowOuter
+    #let ns1 = sd.subset.highOuter
+    #let ns = ns1 - ns0
+    #tFor iri, 0, ns.pred:
+    #  let ir = ns0 + iri
+      XoptimizeAst:
+        var rir{.noInit.}:evalType(r[ir])
+        rir := a*r[ir] + b*x[ir]
+        for mu in 0..<nd:
+          localSB(sf0[mu], ir, imadd(rir, g[mu][ir], it), x[ix])
+        #for mu in 0..<nd:
+          localSB(sb0[mu], ir, isub(rir, it), g[mu][ix].adj*x[ix])
+          #localSB(sb0[mu], ir, rir:=it, g[mu][ix].adj*x[ix])
+          #var t{.noInit.}:type(load1(x[0]))
+          #localSB(sb0[mu], ir, isub(rir, it), (mul(t,g[mu][ix].adj,x[ix]);t))
+        assign(r[ir], rir)
   toc("local", flops=(18+nd*(72+66+6))*sd.subset.len)
   for mu in 0..<nd:
     template f(ir,it: untyped): untyped =

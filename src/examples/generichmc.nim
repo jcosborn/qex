@@ -11,7 +11,7 @@ qexInit()
 letParam:
   gaugeFilename = "checkpoint.lat"
 
-  lattice = @[8, 8, 8, 8]
+  lattice = when declared(defaultLat): defaultLat else: @[8, 8, 8, 8]
 
   beta = 7.5
   mass = 0.005
@@ -116,4 +116,9 @@ hmc.init()
 hmc.verbosity = 1
 for traj in startTraj..<startTraj + numTraj: hmc.update()
 
+when declared(genericHmcTest):
+  genericHmcTest(hmc)
+
+processSaveParams()
+writeParamFile()
 qexFinalize()
