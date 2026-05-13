@@ -15,6 +15,7 @@ template sum*[R,T](c:Comm, v:ptr array[R,T], n:int) =
   #treerep:
   #  v[][rangeLow(R)]
   c.allReduce(v[][rangeLow(R)].addr, n*rangeLen(R))
+template sum*[R,T](c:Comm, v:var array[R,T]) = c.sum(addr v[rangeLow(R)], rangeLen(R))
 #template qmpSum*(v:ptr tuple, n:int):untyped =
 #  qmpSum(v[][0].addr, n*(sizeOf(v) div sizeOf(v[0])))
 #template qmpSum*(v:ptr object, n:int):untyped =
@@ -42,7 +43,7 @@ template sum*[T](c:Comm, v:seq[T]):untyped =
 #  qmpSum(v[])
 #template qmpSum*[T](v:T):untyped =
 #  qmpSum(v[])
-template sum*(c:Comm, v:typed) =
+template sum*(c:Comm, v:not SomeNumber) =
   when numberType(v) is float64:
     sum(c, cast[ptr float64](addr v), sizeof(v) div sizeof(float64))
   elif numberType(v) is float32:
