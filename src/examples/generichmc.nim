@@ -5,7 +5,7 @@ import physics/[stagSolve]
 
 import hmc/[hmcAction]
 
-qexInit()
+qexInit(verb=2)
 
 # specify parameters; overrwide with -<option>:<value> on command line
 letParam:
@@ -42,8 +42,8 @@ letParam:
 
 installStandardParams()
 echoParams()
-echo "rank ", myRank, "/", nRanks
-threads: echo "thread ", threadNum, "/", numThreads
+#echo "rank ", myRank, "/", nRanks
+#threads: echo "thread ", threadNum, "/", numThreads
 processHelpParam()
 
 # set up lattice layout
@@ -86,15 +86,16 @@ spf.r2req = forceTol
 spa.maxits = actionMaxIter
 spf.maxits = forceMaxIter
 
-spa.verbosity = 1
-spf.verbosity = 1
+#spa.verbosity = 0
+#spf.verbosity = 0
 
 #[ build action in coordination with integrator levels ]#
 
 var hmc = uc.newHmcAction(s, r, trajectoryLength)
 
 var gc = GaugeActionCoeffs(plaq: beta)
-var ga = gc.newGaugeAction(uc)
+#var ga = gc.newGaugeAction(uc)
+var ga = hmc.newGaugeAction(gc, uc)
 var gaugeLevel = newActionLevel(multiplier = innerSteps, integrator = innerIntegrator)
 gaugeLevel.add ga
 hmc.add gaugeLevel   # inner level
@@ -112,9 +113,13 @@ hmc.add fermionLevel # outer level
 
 #[ do HMC trajectory ]#
 
+echo "== Action ===================="
+echo hmc.description
+echo "=============================="
+
 hmc.init()
 hmc.verbosity = 1
-for traj in startTraj..<startTraj + numTraj: hmc.update()
+for traj in startTraj..<startTraj + numTraj: hmc.run()
 
 when declared(genericHmcTest):
   genericHmcTest(hmc)

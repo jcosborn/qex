@@ -16,7 +16,7 @@ import layout
 
 import mdevolve
 
-import std/[os]
+import std/[os,strutils]
 
 import algorithms/[integrator]
 
@@ -50,6 +50,9 @@ type ActionRoot* = ref object of RootObj
   actionProc*: proc(self: ActionRoot, u: ActionField): float
   forceProc*: proc(self: ActionRoot, u: ActionField, dtau: float, f: ActionForce)
   name*: string
+  id*: string
+  description*: string
+  stats*: Table[string,Table[string,float]]
 
 type GaugeConfiguration*[U] = ref object of ActionField
   u*: seq[U]
@@ -83,11 +86,14 @@ type
 
   GaugeAction*[U] = ref object of ActionRoot
     gc*: GaugeActionCoeffs
+    aperf*: PerfInfo
+    fperf*: PerfInfo
 
-  StaggeredFermionAction*[U, T, S] = ref object of ActionRoot
+  StaggeredFermionAction*[U, T, S, R] = ref object of ActionRoot
     mass*: float
     stag*: Staggered[U, T]
     phi*: S
+    prng*: R
     spa*: SolverParams
     spf*: SolverParams
 
@@ -113,7 +119,7 @@ type
     multiplier*: int
     integrator*: IntegratorProc
 
-  HmcAction*[U, R] = ref object of MetropolisRootObj
+  HmcAction*[U, R] = ref object of MetropolisRoot
     tau*: float
     uc*: GaugeConfiguration[U]
     prng*: R
@@ -123,6 +129,28 @@ type
     bu*: seq[U]
     heatbathProc*: proc()
     globalRandProc*: proc(): float
+    hmcStats*: seq[proc():string]
+    secs*: float
+
+  #HmcEvolver*[U, R] = ref object of MetropolisRoot
+  #  tau*: float
+  #  uc*: GaugeConfiguration[U]
+  #  prng*: R
+  #  levels*: seq[ActionLevel]
+  #  p*: seq[U]
+  #  f*: seq[U]
+  #  bu*: seq[U]
+  #  heatbathProc*: proc()
+  #  globalRandProc*: proc(): float
+  #  hmcStats*: seq[proc():string]
+
+# HmcAction
+#   tuple(fields)
+#   levels
+#   stats
+
+# HmcRunner
+#   tau, globalRand
 
 proc newHmcAction*[U,R](
   uc: GaugeConfiguration[U];
@@ -137,10 +165,10 @@ proc newHmcAction*[U,R](
   result.p = lo.newGauge()
   result.f = lo.newGauge()
   result.bu = lo.newGauge()
-  template ET: untyped = evalType(lo.ColorVector()[0])
-  template FT: untyped = evalType(lo.ColorVector())
-
+  result.hmcStats.newSeq(0)
   result.tau = tau
+  #template ET: untyped = evalType(lo.ColorVector()[0])
+  #template FT: untyped = evalType(lo.ColorVector())
 
   let pHB = result.p
   result.heatbathProc = proc =
@@ -150,6 +178,17 @@ proc newHmcAction*[U,R](
 
   var sRng = srng
   result.globalRandProc = proc(): float = sRng.uniform()
+
+proc description*(h: HmcAction): string =
+  result = ""
+  for i,l in h.levels.pairs:
+    if i>0: result &= "\n"
+    result &= "ActionLevel " & $i
+    for a in l.actions:
+      if a.id != "":
+        result &= "\n" & a.id
+        if a.description != "":
+          result &= "\n" & a.description.indent(2)
 
 #[ ActionLevel: virtual dispatch for nested integrators ]#
 
@@ -262,6 +301,24 @@ proc accept*(hmc: var HmcAction) = hmc.reunit()
 
 proc reject*(hmc: var HmcAction) = setGauge(hmc.uc.u, hmc.bu)
 
+proc run*(hmc: var HmcAction) =
+  tic("HmcAction:run")
+  let nup = hmc.nUpdates + 1
+  echo &"== Begin HMC update {nup} =========="
+  metropolis.update(hmc)
+  let dt = getElapsedTime()
+  hmc.secs += dt
+  echo &"End HMC update {nup}: {dt:.2f} seconds ({hmc.secs:.2f} total)"
+  #for s in hmc.hmcStats:
+  #  echo s()
+  #for level in hmc.levels:
+  #  for a in level.actions:
+      #echo &"{a.name}"
+      #let s = a.stats(a)
+      #if s != "": echo s
+  #echo &"  {}"
+  toc("end")
+
 #[ gauge configuration implementation ]#
 
 when defined(HypSmearing):
@@ -365,12 +422,18 @@ proc stagPhase[U](self: GaugeConfiguration[U]) =
 #[ gauge action implementation ]#
 
 proc action*(self: GaugeAction, u: GaugeConfiguration): float =
-  return self.gc.gaugeAction1(u.u)
+  tic("GaugeAction:action")
+  result = self.gc.gaugeAction1(u.u)
+  self.aperf.secs += getElapsedTime()
+  toc("end")
 
 proc force*(self: GaugeAction, u: GaugeConfiguration): auto =
+  tic("GaugeAction:force")
   let lo = u.u[0].l
   var f = lo.newGauge()
   self.gc.gaugeForce(u.u, f)
+  self.fperf.secs += getElapsedTime()
+  toc("end")
   return f
 
 proc gaugeActionHeatbathProc(self: ActionRoot, u: ActionField, r: ActionRngField) = discard
@@ -388,12 +451,26 @@ proc gaugeActionForceProc[U](self: ActionRoot, u: ActionField, dtau: float, f: A
   threads:
     for mu in 0..<gf.f.len: gf.f[mu] += dtau * fi[mu]
 
-proc newGaugeAction*[U](gc: GaugeActionCoeffs, u: GaugeConfiguration[U]): GaugeAction[U] =
+proc gaugeActionStatsA(a: GaugeAction): string =
+  result = &"GaugeAction: {a.aperf.secs:.2f}"
+  a.aperf.clear
+
+proc gaugeActionStatsF(a: GaugeAction): string =
+  result = &"GaugeForce:  {a.fperf.secs:.2f}"
+  a.fperf.clear
+
+var GaugeActionCount = 0
+proc newGaugeAction*[U](h: HmcAction, gc: GaugeActionCoeffs, u: GaugeConfiguration[U]): GaugeAction[U] =
   result = GaugeAction[U](gc: gc)
   result.name = "GaugeAction"
+  result.id = "GA" & $GaugeActionCount; inc GaugeActionCount
+  result.description = result.name & $gc
   result.heatbathProc = gaugeActionHeatbathProc
   result.actionProc = gaugeActionActionProc[U]
   result.forceProc = gaugeActionForceProc[U]
+  let a = result
+  h.hmcStats.add proc():string = gaugeActionStatsA(a)
+  h.hmcStats.add proc():string = gaugeActionStatsF(a)
 
 #[ fermion force helpers ]#
 
@@ -526,14 +603,14 @@ proc fermForce[U, S](f: seq[U]; psi: S; u: GaugeConfiguration[U]) =
 
 #[ staggered fermion action ]#
 
-proc heatbath*(self: StaggeredFermionAction; u: GaugeConfiguration; rng: auto) =
+proc heatbath*(self: StaggeredFermionAction; u: GaugeConfiguration) =
   let lo = self.phi.l
   var psi = lo.ColorVector()
   u.smear()
   u.setBC()
   u.stagPhase()
   threads:
-    psi.gaussian(rng)
+    psi.gaussian(self.prng)
     threadBarrier()
     self.stag.D(self.phi, psi, -self.mass)
     threadBarrier()
@@ -558,7 +635,7 @@ proc action*(self: StaggeredFermionAction; u: GaugeConfiguration): float =
   u.stagPhase()
   return 0.5*psi2
 
-proc force*[U](self: StaggeredFermionAction; u: GaugeConfiguration[U]): auto =
+proc force*(self: StaggeredFermionAction; u: GaugeConfiguration): auto =
   let lo = self.phi.l
   var f = lo.newGauge()
   var psi = lo.ColorVector()
@@ -576,25 +653,25 @@ proc force*[U](self: StaggeredFermionAction; u: GaugeConfiguration[U]): auto =
 
 proc staggeredFermionActionHeatbathProc[U,ET,FT,R](self: ActionRoot, u: ActionField,
                                                    r: ActionRngField) =
-  let fa = StaggeredFermionAction[U, ET, FT](self)
+  let fa = StaggeredFermionAction[U,ET,FT,R](self)
   let gc = GaugeConfiguration[U](u)
-  let ap = ActionPrng[R](r)
-  fa.heatbath(gc, ap.r)
+  fa.heatbath(gc)
 
-proc staggeredFermionActionActionProc[U,ET,FT](self: ActionRoot, u: ActionField): float =
-  let fa = StaggeredFermionAction[U, ET, FT](self)
+proc staggeredFermionActionActionProc[U,ET,FT,R](self: ActionRoot, u: ActionField): float =
+  let fa = StaggeredFermionAction[U, ET, FT, R](self)
   let gc = GaugeConfiguration[U](u)
   fa.action(gc)
 
-proc staggeredFermionActionForceProc[U,ET,FT](self: ActionRoot, u: ActionField, dtau: float,
+proc staggeredFermionActionForceProc[U,ET,FT,R](self: ActionRoot, u: ActionField, dtau: float,
                                               f: ActionForce) =
-  let fa = StaggeredFermionAction[U, ET, FT](self)
+  let fa = StaggeredFermionAction[U, ET, FT, R](self)
   let gc = GaugeConfiguration[U](u)
   let gf = GaugeForce[U](f)
   let fi = fa.force(gc)
   threads:
     for mu in 0..<gf.f.len: gf.f[mu] += dtau * fi[mu]
 
+var StaggeredFermionActionCount = 0
 proc newStaggeredFermionAction*[U, T, R](
   stag: Staggered[U, T];
   mass: float;
@@ -605,17 +682,20 @@ proc newStaggeredFermionAction*[U, T, R](
   let lo = stag.g[0].l
   var phi = lo.newField(T)
   type FT = evalType(phi)
-  result = StaggeredFermionAction[U, T, FT](
+  result = StaggeredFermionAction[U, T, FT, R](
     mass: mass,
     stag: stag,
     phi: phi,
+    prng: r,
     spa: spa,
     spf: spf
   )
   result.name = "StaggeredFermionAction"
+  result.id = "SFA" & $StaggeredFermionActionCount; inc StaggeredFermionActionCount
+  result.description = result.name & &"(mass: {mass})"
   result.heatbathProc = staggeredFermionActionHeatbathProc[U,T,FT,R]
-  result.actionProc = staggeredFermionActionActionProc[U,T,FT]
-  result.forceProc = staggeredFermionActionForceProc[U,T,FT]
+  result.actionProc = staggeredFermionActionActionProc[U,T,FT,R]
+  result.forceProc = staggeredFermionActionForceProc[U,T,FT,R]
 
 #[ staggered Pauli-Villars action ]#
 
@@ -694,6 +774,7 @@ proc staggeredPauliVillarsActionForceProc[U,ET,FT](self: ActionRoot, u: ActionFi
   threads:
     for mu in 0..<gf.f.len: gf.f[mu] += dtau * fi[mu]
 
+var StaggeredPauliVillarsActionCount = 0
 proc newStaggeredPauliVillarsAction*[U, T, R](
   stag: Staggered[U, T];
   mass: float;
@@ -712,6 +793,8 @@ proc newStaggeredPauliVillarsAction*[U, T, R](
     spf: spf
   )
   result.name = "StaggeredPauliVillarsAction"
+  result.id = "SPVA" & $StaggeredPauliVillarsActionCount; inc StaggeredPauliVillarsActionCount
+  result.description = result.name & &"(mass: {mass})"
   result.heatbathProc = staggeredPauliVillarsActionHeatbathProc[U,T,FT,R]
   result.actionProc = staggeredPauliVillarsActionActionProc[U,T,FT]
   result.forceProc = staggeredPauliVillarsActionForceProc[U,T,FT]
@@ -793,6 +876,7 @@ proc staggeredRatioActionForceProc[U,ET,FT](self: ActionRoot, u: ActionField, dt
   threads:
     for mu in 0..<gf.f.len: gf.f[mu] += dtau * fi[mu]
 
+var StaggeredRatioActionCount = 0
 proc newStaggeredRatioAction*[U, T, R](
   stagNum: Staggered[U, T];
   stagDen: Staggered[U, T];
@@ -815,6 +899,8 @@ proc newStaggeredRatioAction*[U, T, R](
     spf: spf
   )
   result.name = "StaggeredRatioAction"
+  result.id = "SRA" & $StaggeredRatioActionCount; inc StaggeredRatioActionCount
+  result.description = result.name & &"(massNum: {massNum}, massDen: {massDen})"
   result.heatbathProc = staggeredRatioActionHeatbathProc[U,T,FT,R]
   result.actionProc = staggeredRatioActionActionProc[U,T,FT]
   result.forceProc = staggeredRatioActionForceProc[U,T,FT]

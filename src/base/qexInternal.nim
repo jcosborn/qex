@@ -6,8 +6,9 @@ import comms/comms
 export comms
 import profile
 export profile
+import version
 
-import algorithm, strutils
+import algorithm, strutils, times, std/compilesettings
 
 var
   qexGlobalInitializers* = newseq[proc()]() ## Will be run in qexInit in forward order
@@ -52,12 +53,22 @@ template qexFatal*(s:varargs[string,`$`]) =
   #commsBarrier()
   qexAbort()
 
-proc qexInit* =
+proc qexInit*(verb = 1) =
   qexStartTime = getTics()
   for p in qexGlobalPreInit: p()
   threadsInit()
   commsInit()
   for p in qexGlobalInitializers: p()
+  if verb >= 1:
+    qexLog("QEX Initialized at ", now().format("yyyy-MM-dd HH:mm:ss"))
+    var nth = 0
+    threads: threadSingle: nth = numThreads
+    qexLog("Running with ", nRanks, " ranks and ", nth, " threads per rank")
+  if verb >= 2:
+    echo getBuildInfo()
+    echo "Nim compile command:"
+    echo "nim", querySetting(commandLine)
+    echo '='.repeat(78)
   when defined(FUELCompat):
     echo "FUEL compatibility mode: ON"
   #echo "rank " & $rank & "/" & $size
