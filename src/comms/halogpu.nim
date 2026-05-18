@@ -131,7 +131,7 @@ proc toGpu*(g: var GpuHalo, c: Halo) =
   toc("Field")
   g.halo.toGpu(c.halo)
   popGpuMemTag()
-  toc("Halo",flops=g.halo.bytes)
+  toc("Halo")
 
 proc toGpu*[L,F,T](c: Halo[L,F,T]): auto {.noInit.} =
   var g {.noInit.}: GpuHalo[L.V, gpuType F, gpuType T]
