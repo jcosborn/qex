@@ -1,3 +1,7 @@
+import base/globals
+setDefaultNc(1)
+setVLENmax(4)
+
 import qex
 import gauge, physics/qcdTypes
 import algorithms/integrator, maths/special, utils/resample

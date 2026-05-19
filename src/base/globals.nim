@@ -30,13 +30,23 @@ macro setNoAlias*(x:static[bool]):auto =
   noAlias = x
   result = newEmptyNode()
 
-when existsEnv("VLEN"):
-  const VLEN* = getEnv("VLEN").parseInt
-else:
-  const VLEN* = 8
-
-static:
+var VLENmax {.compileTime.} = 256
+var VLEN* {.compileTime.} = min(VLENmax, 8)
+macro setVLEN*(n: static[int]): auto =
+  VLEN = min(VLENmax, n)
   echo "VLEN: ", VLEN
+  result = newEmptyNode()
+macro setVLENmax*(n: static[int]): auto =
+  VLENmax = n
+  VLEN = min(VLENmax, VLEN)
+  echo "VLENmax: ", VLENmax
+  echo "VLEN: ", VLEN
+  result = newEmptyNode()
+when existsEnv("VLEN"):
+  setVLEN(getEnv("VLEN").parseInt)
+else:
+  static:
+    echo "VLEN: ", VLEN
 
 var defaultNc {.compiletime.} = 3
 macro setDefaultNc*(n: static[int]): untyped =
