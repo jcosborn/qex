@@ -149,7 +149,7 @@ proc materializeConcreteApplyPartial(z: Gvalue,
       $grt.applyGradPrepareDepthLimit &
       "\napply: " & z.nodeRepr &
       "\ntarget: " & target.nodeRepr)
-  reduced.gradIsolated(target)
+  reduced.grad(target)
 
 proc ensurePartial(z: Gvalue, target: Gvalue): Gvalue =
   ## Resolve the target-specific partial for an apply expression. Nested
@@ -162,7 +162,7 @@ proc ensurePartial(z: Gvalue, target: Gvalue): Gvalue =
     raiseValueError("apply partial mixes multiple graph runtimes")
   if z.isApplyPartialNode:
     let view = z.requireApplyPartialView
-    return view.base.ensurePartial(view.target).gradIsolated(target)
+    return view.base.ensurePartial(view.target).grad(target)
   let entry = z.ensureReduction
   let targetId = target.stableNodeId
   if entry.partials.hasKey(targetId):

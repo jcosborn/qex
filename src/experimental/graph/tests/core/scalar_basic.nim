@@ -214,6 +214,224 @@ suite "scalar basic":
     if found != nil:
       check sameNode(found, dzdx)
 
+  test "gradient cache reuses intermediate adjoints across targets and deps":
+    var fLeftCalls = 0
+    var fRightCalls = 0
+    var gLeftCalls = 0
+    var gRightCalls = 0
+    var hCalls = 0
+
+    proc upstreamOrOne(zb: Gvalue, z: Gvalue, label: string): Gscalar =
+      if zb == nil:
+        return scalarLeafLike(z, 1.0)
+      zb.requireScalar(label)
+
+    proc addForward(v: Gvalue) =
+      let view = v.requireBinaryNodeView(Gscalar, Gscalar, "tracked add forward")
+      v.requireScalar("tracked add result").sval = view.x.sval + view.y.sval
+
+    proc addBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
+      discard dep
+      let upstream = upstreamOrOne(zb, z, "tracked add upstream")
+      case i
+      of 0:
+        inc fLeftCalls
+        upstream
+      of 1:
+        inc fRightCalls
+        upstream
+      else:
+        raiseValueError("tracked add input index")
+
+    proc mulForward(v: Gvalue) =
+      let view = v.requireBinaryNodeView(Gscalar, Gscalar, "tracked mul forward")
+      v.requireScalar("tracked mul result").sval = view.x.sval * view.y.sval
+
+    proc mulBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
+      discard dep
+      let view = z.requireBinaryNodeView(Gscalar, Gscalar, "tracked mul backward")
+      let upstream = upstreamOrOne(zb, z, "tracked mul upstream")
+      case i
+      of 0:
+        inc gLeftCalls
+        upstream * view.y
+      of 1:
+        inc gRightCalls
+        upstream * view.x
+      else:
+        raiseValueError("tracked mul input index")
+
+    proc squareForward(v: Gvalue) =
+      let inputNode = v.requireNodeInput(0, "tracked square", "input")
+      let input = inputNode.requireScalar("tracked square input")
+      v.requireScalar("tracked square result").sval = input.sval * input.sval
+
+    proc squareBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
+      discard dep
+      if i != 0:
+        raiseValueError("tracked square input index")
+      inc hCalls
+      let inputNode = z.requireNodeInput(0, "tracked square", "input")
+      let input = inputNode.requireScalar("tracked square input")
+      upstreamOrOne(zb, z, "tracked square upstream") * input * 2.0
+
+    let gFunc = newGfunc(
+      forward = mulForward,
+      backward = mulBackward,
+      name = "tracked g")
+    let hFunc = newGfunc(
+      forward = squareForward,
+      backward = squareBackward,
+      name = "tracked h")
+    let fFunc = newGfunc(
+      forward = addForward,
+      backward = addBackward,
+      name = "tracked f")
+
+    let gNode = graphNode(
+      scalarNodeLike(x),
+      @[Gvalue(x), Gvalue(y)],
+      gFunc,
+      "tracked g")
+    let hNode = graphNode(scalarNodeLike(y), @[Gvalue(y)], hFunc, "tracked h")
+    let dep = graphNode(
+      scalarNodeLike(gNode),
+      @[Gvalue(gNode), Gvalue(hNode)],
+      fFunc,
+      "tracked f")
+
+    let dx = dep.grad x
+    dx :~ b
+    check fLeftCalls == 1
+    check fRightCalls == 0
+    check gLeftCalls == 1
+    check gRightCalls == 0
+    check hCalls == 0
+
+    let cachedGAdjoint = findGrad(gNode, dep)
+    check cachedGAdjoint != nil
+
+    let e = dep + dx
+    let dedy = e.grad y
+    dedy :~ a + 2.0 * b + 1.0
+
+    let cAdjointInE = findGrad(dep, e)
+    check cAdjointInE != nil
+    let gAdjointInE = findGrad(gNode, e)
+    check gAdjointInE != nil
+
+    let callsBeforeDy = (
+      fLeft: fLeftCalls,
+      fRight: fRightCalls,
+      gLeft: gLeftCalls,
+      gRight: gRightCalls,
+      h: hCalls)
+
+    let dy = dep.grad y
+    dy :~ a + 2.0 * b
+    check fLeftCalls == callsBeforeDy.fLeft
+    check fRightCalls == callsBeforeDy.fRight + 1
+    check gLeftCalls == callsBeforeDy.gLeft
+    check gRightCalls == callsBeforeDy.gRight + 1
+    check hCalls == callsBeforeDy.h + 1
+
+    let reusedGAdjoint = findGrad(gNode, dep)
+    check reusedGAdjoint != nil
+    if cachedGAdjoint != nil and reusedGAdjoint != nil:
+      check sameNode(cachedGAdjoint, reusedGAdjoint)
+
+    let z = dedy + dy
+    z :~ 2.0 * a + 4.0 * b + 1.0
+
+  test "failed gradient expansion is not cached as expanded":
+    var failRight = true
+    var rightCalls = 0
+
+    proc addForward(v: Gvalue) =
+      let view = v.requireBinaryNodeView(Gscalar, Gscalar, "flaky add forward")
+      v.requireScalar("flaky add result").sval = view.x.sval + view.y.sval
+
+    proc addBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
+      discard dep
+      let upstream =
+        if zb == nil:
+          scalarLeafLike(z, 1.0)
+        else:
+          zb.requireScalar("flaky add upstream")
+      case i
+      of 0:
+        upstream
+      of 1:
+        inc rightCalls
+        if failRight:
+          raiseValueError("flaky right gradient")
+        upstream
+      else:
+        raiseValueError("flaky add input index")
+
+    let flakyAdd = newGfunc(
+      forward = addForward,
+      backward = addBackward,
+      name = "flaky add")
+    let z = graphNode(
+      scalarNodeLike(x),
+      @[Gvalue(x), Gvalue(y)],
+      flakyAdd,
+      "flaky add")
+
+    z.grad(x) :~ 1.0
+    check rightCalls == 0
+
+    expect(GraphValueError):
+      discard z.grad(y)
+    check rightCalls == 1
+
+    failRight = false
+    z.grad(y) :~ 1.0
+    check rightCalls == 2
+
+  test "failed backwardTarget expansion is not cached as expanded":
+    var failHidden = true
+    var hiddenCalls = 0
+
+    proc copyForward(v: Gvalue) =
+      v.valCopy v.inputs[0]
+
+    proc walkHidden(node: Gvalue, visit: GnodeVisit) =
+      visit node.inputs[0]
+      visit y
+
+    proc targetBackward(zb: Gvalue,
+                        z: Gvalue,
+                        target: Gvalue,
+                        dep: Gvalue): Gvalue =
+      discard zb
+      discard z
+      discard dep
+      if sameNode(target, y):
+        inc hiddenCalls
+        if failHidden:
+          raiseValueError("flaky hidden target")
+      target.oneLike
+
+    let targetFunc = newGfunc(
+      forward = copyForward,
+      backwardTarget = targetBackward,
+      depWalks = GdepWalks(depend: walkHidden),
+      name = "flaky target")
+    let z = graphNode(scalarNodeLike(x), @[Gvalue(x)], targetFunc, "flaky target")
+
+    z.grad(x) :~ 1.0
+    check hiddenCalls == 0
+
+    expect(GraphValueError):
+      discard z.grad(y)
+    check hiddenCalls == 1
+
+    failHidden = false
+    z.grad(y) :~ 1.0
+    check hiddenCalls == 2
+
   test "graph construction rejects values without runtimes":
     let rawNode = Gvalue()
     let rawInput = Gvalue()

@@ -70,8 +70,8 @@ proc condBackwardTarget(zb: Gvalue,
   let view = z.requireCondView
   result = newCondNode(
     view.selector,
-    view.whenTrue.gradIsolated(target),
-    view.whenFalse.gradIsolated(target))
+    view.whenTrue.grad(target),
+    view.whenFalse.grad(target))
   if zb != nil:
     result = result.scaleLike zb
 

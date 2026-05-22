@@ -168,6 +168,27 @@ That means:
 If a change makes plain captured-value updates routinely invalidate structural
 caches, that change is usually fighting the design rather than refining it.
 
+Gradient cache entries are per output node and signature. They store complete
+adjoints separately from lower-level expansion records:
+
+- a direct `findGrad` or `grad` cache hit is valid only for a target whose
+  adjoint has been marked complete
+- ordinary raw-input expansions may reuse a cached input contribution instead
+  of rerunning the node's `backward` hook
+- target-directed expansions remember which `(node, target)` pairs have already
+  been expanded through `backwardTarget`
+
+Those records are committed only after a gradient build succeeds, so failed
+ordinary or target-directed expansions do not poison later builds. When a build
+uses any `backwardTarget`, only the requested target adjoint is considered
+complete; intermediate adjoints from that build are internal scratch unless a
+later ordinary build proves them complete.
+
+`gradIsolated` remains available for callers that intentionally want temporary
+cache isolation. Core lazy operators such as `cond` and deferred `apply` should
+normally call `grad` inside their target hooks so branch and partial gradients
+can share the runtime's structural cache.
+
 ## Shape And Construction Contracts
 
 This package prefers construction-time checks over late coercion.

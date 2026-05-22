@@ -63,7 +63,11 @@ type
   GradCacheEntry* = ref object
     hasSignature*: bool
     signature*: GradSignature
-    grads*: Table[NodeId, Gvalue]
+    adjoints*: Table[NodeId, Gvalue]
+    completeAdjoints*: HashSet[NodeId]
+    inputContributions*: Table[NodeId, Table[int, Gvalue]]
+    expandedInputs*: Table[NodeId, HashSet[int]]
+    expandedTargets*: Table[NodeId, HashSet[NodeId]]
   GradCacheStats* = object
     signatureHits*: int
     signatureMisses*: int

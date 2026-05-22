@@ -331,6 +331,39 @@ suite "bool and cond":
     check t2.runCount == expRuns0
     check f2.runCount == mulRuns0
 
+  test "cond target hook does not reuse cached branch adjoint as active upstream":
+    let x2 = grt.toGvalue(2.0)
+    let k = grt.toGvalue(1)
+    let p = x2 * x2
+    let z: Gscalar = cond(k, p, 0.0)
+
+    z.grad(p) :~ 1.0
+    z.grad(x2) :~ 4.0
+
+  test "cond target hook does not double count cached intermediate adjoint":
+    let y2 = grt.toGvalue(2.0)
+    let c2 = grt.toGvalue(0.5)
+    let k = grt.toGvalue(1)
+    let v = y2 * y2
+    let dep = (y2 - c2) * (v - cond(k, v + v, v))
+
+    dep.grad(v) :~ -(2.0 - 0.5)
+    dep.grad(y2) :~ -(2.0 * 2.0) - (2.0 - 0.5) * 2.0 * 2.0
+
+  test "cond target hook does not cache partial intermediate adjoint":
+    let y2 = grt.toGvalue(0.5)
+    let c2 = grt.toGvalue(3.0)
+    let k = grt.toGvalue(0)
+    let e = y2 * y2
+    let denom = e * e + 1.0
+    let dep = y2 / denom - exp(cond(k, c2, e))
+    let ev = 0.5 * 0.5
+    let expected = -2.0 * 0.5 * ev / ((ev * ev + 1.0) * (ev * ev + 1.0)) -
+      exp(ev)
+
+    discard dep.grad(y2).eval
+    dep.grad(e) :~ expected
+
   test "cond eval short-circuits value and gradient graphs":
     block:
       let x2 = grt.toGvalue(2.0)
