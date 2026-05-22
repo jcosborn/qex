@@ -10,11 +10,6 @@ type
     seed*: uint
     config*: RunConfig
 
-template installHmcGaugeParams*() =
-  installStandardParams()
-  echoParams()
-  processHelpParam()
-
 proc readHmcGaugeInputs*(): HmcGaugeInputs =
   letParam:
     gaugefile = ""
@@ -64,7 +59,3 @@ proc readHmcGaugeInputs*(): HmcGaugeInputs =
     gsteps: gsteps,
     integratorCoeffs: parseIntegratorCoeffs(integratorKind, integratorCoeffValues),
     alwaysAccept: alwaysAccept)
-
-template persistHmcGaugeParams*() =
-  processSaveParams()
-  writeParamFile()

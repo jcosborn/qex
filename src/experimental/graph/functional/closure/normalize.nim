@@ -1,5 +1,8 @@
+import std/[sets, tables]
 import ../../core
+import ../../core/base
 import ../callable
+import ../callable/walk
 import clone
 
 type
@@ -10,29 +13,30 @@ type
     captures: seq[Gvalue]
 
 proc initCaptureCtx(boundValue: Gvalue): CaptureCtx =
-  result.bound = initNodeSet()
-  result.seenCaps = initNodeSet()
-  result.seenNodes = initNodeSet()
-  if boundValue != nil:
-    result.bound.inclNode boundValue
+  result.bound = initHashSet[NodeKey]()
+  result.seenCaps = initHashSet[NodeKey]()
+  result.seenNodes = initHashSet[NodeKey]()
+  result.bound.incl boundValue.nodeKey
 
 proc isClosureLeaf(v: Gvalue): bool =
-  v != nil and v.gfunc == nil and v.inputs.len == 0
+  v.gfunc == nil and v.inputs.len == 0
 
 proc addCaptureLeaf(ctx: var CaptureCtx, v: Gvalue) =
-  if not ctx.seenCaps.containsNode(v) and v.lambdaValue == nil:
-    ctx.seenCaps.inclNode v
+  let key = v.nodeKey
+  if key notin ctx.seenCaps and not (v of Glambda):
+    ctx.seenCaps.incl key
     ctx.captures.add v
 
 proc collectCaptureValues(v: Gvalue, ctx: var CaptureCtx)
 
 proc collectClosureCaptureChildren(v: Gvalue,
                                    ctx: var CaptureCtx): bool =
-  let fn = v.resolvedClosure
-  if fn != nil:
-    for binding in fn.env:
-      collectCaptureValues(binding.value, ctx)
-    return true
+  if v of Glambda:
+    let fn = Glambda(v)
+    if fn.isResolvedClosure:
+      for binding in fn.env:
+        collectCaptureValues(binding.value, ctx)
+      return true
 
   let boundCallable = v.freshCallableBound
   if boundCallable != nil:
@@ -42,12 +46,11 @@ proc collectClosureCaptureChildren(v: Gvalue,
   false
 
 proc collectCaptureValues(v: Gvalue, ctx: var CaptureCtx) =
-  if v == nil:
+  let key = v.nodeKey
+  if key in ctx.seenNodes:
     return
-  if ctx.seenNodes.containsNode(v):
-    return
-  ctx.seenNodes.inclNode v
-  if ctx.bound.containsNode(v):
+  ctx.seenNodes.incl key
+  if key in ctx.bound:
     return
 
   if v.collectClosureCaptureChildren(ctx):
@@ -65,31 +68,31 @@ proc collectLambdaBodyCaptures(fn: Glambda): seq[Gvalue] =
   collectCaptureValues(fn.body, ctx)
   ctx.captures
 
-proc initLambdaSubst*(fn: Glambda, arg: Gvalue = nil): Bindings =
-  result = initBindings()
+proc initLambdaSubst(fn: Glambda, arg: Gvalue = nil): Bindings =
+  result = initTable[NodeKey, Gvalue]()
   for binding in fn.env:
-    result.bindNode(binding.param, binding.value)
+    result[binding.param.nodeKey] = binding.value
   if arg != nil:
-    result.bindNode(fn.param, arg)
+    result[fn.param.nodeKey] = arg
 
-proc initCaptureParamBindings*(captures: openArray[Gvalue]): tuple[
+proc initCaptureParamBindings(captures: openArray[Gvalue]): tuple[
     env: seq[LambdaBinding], subst: Bindings] =
   result.env = newseq[LambdaBinding](captures.len)
-  result.subst = initBindings()
+  result.subst = initTable[NodeKey, Gvalue]()
   for i in 0..<captures.len:
-    let param = localValue(captures[i])
+    let param = captures[i].newOneOf
     result.env[i] = LambdaBinding(param: param, value: captures[i])
-    result.subst.bindNode(captures[i], param)
+    result.subst[captures[i].nodeKey] = param
 
-proc materializeLambdaEnvBody*(fn: Glambda): Gvalue =
+proc materializeLambdaEnvBody(fn: Glambda): Gvalue =
   if fn.env.len == 0:
     return fn.body
   let subst = fn.initLambdaSubst
   fn.body.cloneWithFreshMemo(subst)
 
-proc bindLambdaCaptureParams*(fn: Glambda, captures: seq[Gvalue]) =
-  fn.env.setLen(0)
+proc bindLambdaCaptureParams(fn: Glambda, captures: seq[Gvalue]) =
   if captures.len == 0:
+    fn.env.setLen(0)
     return
 
   let captureBindings = initCaptureParamBindings(captures)
@@ -104,10 +107,11 @@ proc normalizeClosure*(fn: Glambda) =
     return
 
   fn.body = materializeLambdaEnvBody(fn)
+  fn.env.setLen(0)
   let captures = fn.collectLambdaBodyCaptures
   fn.bindLambdaCaptureParams(captures)
 
-proc instantiateBody*(fn: Glambda, x: Gvalue): Gvalue =
+proc instantiateBody(fn: Glambda, x: Gvalue): Gvalue =
   let subst = fn.initLambdaSubst(x)
   fn.body.cloneWithFreshMemo(subst)
 

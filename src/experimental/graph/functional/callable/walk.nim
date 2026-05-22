@@ -1,250 +1,191 @@
+import std/sets
 import ../../core
-import types, values
+import ../../core/base
+import types
 
 type
-  CallableBoundaryMode = enum
-    cbmValue, cbmEpoch
-  FreshCallableBinding = proc(w: Gwrapper, v: Gvalue): Gvalue {.closure.}
-  CallableBoundary = object
-    matched: bool
-    deps: seq[Gvalue]
+  CallableFreshnessCtx = object
+    active: NodeSet
   CallableWalkCtx = object
     seenCallable: NodeSet
     seenValues: NodeSet
     excludedValues: NodeSet
+  CallableWalkResult = object
+    maxEpoch: int
+    valueDeps: seq[Gvalue]
 
-proc addDependency(deps: var seq[Gvalue], dep: Gvalue) {.inline.} =
-  if dep != nil:
-    deps.add dep
+proc addCallableDep(deps: var seq[Gvalue],
+                    dep: Gvalue,
+                    label: string) =
+  if dep == nil:
+    raiseValueError(label & " produced nil dependency")
+  deps.add dep
 
-proc collectDeps(deps: var seq[Gvalue], values: openArray[Gvalue]) =
-  for value in values:
-    deps.addDependency(value)
+proc producerDeps(v: Gvalue): seq[Gvalue] =
+  ## Collect the producer-side deps that decide whether a callable wrapper's
+  ## cached binding is still fresh. Wrapper self-bindings are excluded here;
+  ## including them would make stale callable captures look current.
+  if not (v of Gwrapper):
+    return v.collectNodeInputs(iwmDepend)
 
-proc collectLambdaEnvDeps(deps: var seq[Gvalue], fn: Glambda) =
-  for binding in fn.env:
-    deps.addDependency(binding.value)
+  let walk = v.gfunc.depWalkForMode(iwmDepend)
+  if walk == nil:
+    for input in v.inputs:
+      result.addCallableDep(input, "callable wrapper raw input")
+  else:
+    var collected: seq[Gvalue] = @[]
+    walk(v, proc(input: Gvalue) =
+      collected.addCallableDep(input, "custom callable dependency walk"))
+    result = collected
 
-proc collectInputDeps(deps: var seq[Gvalue], v: Gvalue) =
-  deps.collectDeps(v.inputs)
+proc freshBound(w: Gwrapper,
+                freshness: var CallableFreshnessCtx): Gvalue
 
-proc collectHiddenDeps(deps: var seq[Gvalue],
-                       v: Gvalue,
-                       mode: InputWalkMode = iwmDepend) =
-  var collected = deps
-  v.walkHiddenDeps(mode, proc(dep: Gvalue) = collected.addDependency(dep))
-  deps = collected
+proc maxCallableVisibleEpoch(roots: openArray[Gvalue],
+                             freshness: var CallableFreshnessCtx): int
 
-proc collectGraphDeps(v: Gvalue, deps: var seq[Gvalue]) =
-  deps.collectHiddenDeps(v)
-  deps.collectInputDeps(v)
-
-proc hasBoundary(w: Gwrapper): bool =
-  w != nil and (w.kind == wkCallable or w.retProto != nil)
-
-proc initCallableBoundary(deps: seq[Gvalue] = @[]): CallableBoundary =
-  CallableBoundary(matched: true, deps: deps)
-
-proc noCallableBoundary(): CallableBoundary =
-  CallableBoundary()
-
-proc wrapperBoundary(w: Gwrapper,
-                     v: Gvalue,
-                     mode: CallableBoundaryMode,
-                     freshBound: FreshCallableBinding): CallableBoundary =
-  if not w.hasBoundary:
-    return noCallableBoundary()
-
-  var deps: seq[Gvalue] = @[]
-  case mode
-  of cbmValue:
-    if w.kind == wkCallable and freshBound != nil:
-      let boundCallable = freshBound(w, v)
-      if boundCallable != nil:
-        deps.addDependency(boundCallable)
-        return initCallableBoundary(deps)
-    v.collectGraphDeps(deps)
-  of cbmEpoch:
-    case w.kind
-    of wkCallable:
-      deps.addDependency(w.bound)
-      deps.collectInputDeps(v)
-    of wkLocal:
-      v.collectGraphDeps(deps)
-  initCallableBoundary(deps)
-
-proc lambdaBoundary(v: Gvalue,
-                    mode: CallableBoundaryMode): CallableBoundary =
-  discard mode
-  let fn = v.resolvedClosure
-  if fn == nil:
-    return noCallableBoundary()
-
-  var deps: seq[Gvalue] = @[]
-  deps.collectLambdaEnvDeps(fn)
-  initCallableBoundary(deps)
-
-proc describeCallableBoundary(v: Gvalue,
-                              mode: CallableBoundaryMode,
-                              freshBound: FreshCallableBinding = nil): CallableBoundary =
-  result = v.lambdaBoundary(mode)
-  if result.matched:
-    return
-  result = v.wrapper.wrapperBoundary(v, mode, freshBound)
-
-proc updateMax(value: var int, candidate: int) {.inline.} =
-  if value < candidate:
-    value = candidate
-
-proc initCallableWalkCtx(): CallableWalkCtx =
-  result.seenCallable = initNodeSet()
-  result.seenValues = initNodeSet()
-  result.excludedValues = initNodeSet()
-
-proc seedExcludedValues(ctx: var CallableWalkCtx,
-                        values: openArray[Gvalue]) =
-  for value in values:
-    if value != nil:
-      ctx.excludedValues.inclNode value
-
-proc pushDependencies(stack: var seq[Gvalue], deps: openArray[Gvalue]) =
-  if deps.len == 0:
-    return
-  for i in countdown(deps.len - 1, 0):
-    stack.add deps[i]
-
-proc visitIfBound(bound: Gvalue, visit: proc(n: Gvalue) {.closure.}) =
-  if bound != nil:
-    visit bound
-
-proc maxInputEpoch(v: Gvalue): int =
-  if v == nil:
-    return 0
-  for input in v.inputs:
-    if input != nil and result < input.epochOf:
-      result = input.epochOf
-
-proc callableDependencyEpoch*(v: Gvalue): int
-
-proc freshBound*(w: Gwrapper, v: Gvalue): Gvalue =
+proc freshBound(w: Gwrapper,
+                freshness: var CallableFreshnessCtx): Gvalue =
   ## Reuse a callable wrapper binding while its producer is fresh.
-  if not w.isWrapperKind(wkCallable):
+  if w == nil or w.kind != wkCallable or w.bound == nil:
     return nil
-  if w.bound == nil:
+  let node = Gvalue(w)
+  # A leaf callable wrapper has no producer graph to refresh, so its last
+  # binding is its symbolic value.
+  if node.gfunc == nil and node.inputs.len == 0:
+    return w.bound
+  let key = node.nodeKey
+  if key in freshness.active:
     return nil
-  var maxep = v.maxInputEpoch
-  let boundEpoch = callableDependencyEpoch(w.bound)
-  if maxep < boundEpoch:
-    maxep = boundEpoch
-  if v.epochOf < maxep:
+  freshness.active.incl key
+  defer:
+    freshness.active.excl key
+
+  # Closure captures remain dependency-visible through the bound callable; they
+  # do not make the producer binding itself stale.
+  let maxep = maxCallableVisibleEpoch(node.producerDeps, freshness)
+  if node.epoch < maxep:
     return nil
   w.bound
 
-proc symbolicBinding*(w: Gwrapper, v: Gvalue): Gvalue =
+proc symbolicBinding(w: Gwrapper,
+                     freshness: var CallableFreshnessCtx): Gvalue =
   if w == nil:
     return nil
   case w.kind
   of wkLocal:
     return w.bound
   of wkCallable:
-    result = w.freshBound(v)
-    if result == nil and w.inputs.len == 0:
-      result = w.bound
+    w.freshBound(freshness)
 
 proc freshCallableBound*(v: Gvalue): Gvalue =
-  v.callableWrapper.freshBound(v)
+  if not (v of Gwrapper):
+    return nil
+  let w = Gwrapper(v)
+  if w.kind != wkCallable:
+    return nil
+  var freshness = CallableFreshnessCtx(active: initHashSet[NodeKey]())
+  w.freshBound(freshness)
 
 proc symbolicWrapperBinding*(v: Gvalue): Gvalue =
-  v.wrapper.symbolicBinding(v)
+  if not (v of Gwrapper):
+    return nil
+  var freshness = CallableFreshnessCtx(active: initHashSet[NodeKey]())
+  Gwrapper(v).symbolicBinding(freshness)
 
-proc visitWrapperHiddenDeps*(v: Gvalue, visit: proc(n: Gvalue) {.closure.}) =
-  visitIfBound(v.symbolicWrapperBinding, visit)
-
-proc walkCallableGraph(v: Gvalue,
-                       ctx: var CallableWalkCtx,
-                       mode: CallableBoundaryMode,
-                       visitBoundary: proc(v: Gvalue) {.closure.} = nil,
-                       visitValue: proc(v: Gvalue) {.closure.} = nil) =
-  ## Walk graph structure until a callable boundary, then continue through the
-  ## dependencies exposed at that boundary.
+proc walkCallableVisibleDeps(roots: openArray[Gvalue],
+                             seedValues: openArray[Gvalue],
+                             freshness: var CallableFreshnessCtx): CallableWalkResult =
+  ## Walk graph structure until callable boundaries, then follow only the
+  ## binding that is symbolically valid for the boundary's current freshness.
+  ## The same walk answers both freshness and apply-cache value-dependency
+  ## questions so those contracts cannot drift.
+  var ctx = CallableWalkCtx(
+    seenCallable: initHashSet[NodeKey](),
+    seenValues: initHashSet[NodeKey](),
+    excludedValues: initHashSet[NodeKey]())
+  for value in seedValues:
+    ctx.excludedValues.incl value.nodeKey
   var stack: seq[Gvalue] = @[]
-  if v != nil:
-    stack.add v
+  if roots.len > 0:
+    for i in countdown(roots.len - 1, 0):
+      stack.add roots[i]
+
   while stack.len > 0:
     let node = stack[^1]
     stack.setLen(stack.len - 1)
-    let boundary = node.describeCallableBoundary(
-      mode,
-      proc(w: Gwrapper, owner: Gvalue): Gvalue =
-        w.freshBound(owner))
-    if boundary.matched:
+
+    if node of Glambda:
+      let fn = Glambda(node)
+      if fn.isResolvedClosure:
+        if not ctx.seenCallable.markSeenNode(node):
+          continue
+        var deps: seq[Gvalue] = @[]
+        for binding in fn.env:
+          deps.addCallableDep(binding.value, "lambda closure binding")
+        if deps.len > 0:
+          for i in countdown(deps.len - 1, 0):
+            stack.add deps[i]
+        continue
+
+    let w =
+      if node of Gwrapper:
+        Gwrapper(node)
+      else:
+        nil
+    if w != nil:
       if not ctx.seenCallable.markSeenNode(node):
         continue
-      if visitBoundary != nil:
-        visitBoundary(node)
-      stack.pushDependencies(boundary.deps)
+      var deps: seq[Gvalue] = @[]
+      case w.kind
+      of wkLocal:
+        if result.maxEpoch < node.epoch:
+          result.maxEpoch = node.epoch
+        deps = node.collectNodeInputs(iwmDepend)
+      of wkCallable:
+        let boundCallable = w.freshBound(freshness)
+        if boundCallable != nil:
+          stack.add boundCallable
+          continue
+        deps = node.producerDeps
+      if deps.len > 0:
+        for i in countdown(deps.len - 1, 0):
+          stack.add deps[i]
       continue
+
     if not ctx.seenValues.markSeenNode(node):
       continue
-    if visitValue != nil:
-      visitValue(node)
-    stack.pushDependencies(node.collectNodeInputs(iwmDepend))
+    if result.maxEpoch < node.epoch:
+      result.maxEpoch = node.epoch
+    if node.nodeKey notin ctx.excludedValues:
+      result.valueDeps.add node
+    let deps = node.collectNodeInputs(iwmDepend)
+    if deps.len > 0:
+      for i in countdown(deps.len - 1, 0):
+        stack.add deps[i]
 
-proc walkCallableValueDeps(v: Gvalue,
-                           ctx: var CallableWalkCtx,
-                           visitCollectedValue: proc(v: Gvalue) {.closure.}) =
-  ## Seeded values are traversed but not reported.
-  let excludedValues = ctx.excludedValues
-  let collectValue = proc(node: Gvalue) =
-    if visitCollectedValue != nil and not excludedValues.containsNode(node):
-      visitCollectedValue(node)
-  walkCallableGraph(v, ctx, cbmValue, visitValue = collectValue)
-
-proc dependencyEpoch(ctx: var CallableWalkCtx, v: Gvalue): int =
-  var epoch = 0
-  let markBoundary = proc(node: Gvalue) =
-    if node.isLocalWrapper:
-      epoch.updateMax node.epochOf
-  let markValue = proc(node: Gvalue) =
-    epoch.updateMax node.epochOf
-  walkCallableGraph(
-    v,
-    ctx,
-    cbmEpoch,
-    visitBoundary = markBoundary,
-    visitValue = markValue)
-  result = epoch
+proc maxCallableVisibleEpoch(roots: openArray[Gvalue],
+                             freshness: var CallableFreshnessCtx): int =
+  let seedValues: seq[Gvalue] = @[]
+  let walk = walkCallableVisibleDeps(roots, seedValues, freshness)
+  walk.maxEpoch
 
 proc collectCallableValueDeps*(roots: openArray[Gvalue],
                                seedValues: openArray[Gvalue]): seq[Gvalue] =
-  var ctx = initCallableWalkCtx()
-  var collected: seq[Gvalue] = @[]
-  ctx.seedExcludedValues(seedValues)
-  let collectValue = proc(node: Gvalue) =
-    collected.add node
-  for root in roots:
-    walkCallableValueDeps(root, ctx, collectValue)
-  result = collected
-
-proc callableDependencyEpoch*(v: Gvalue): int =
-  var ctx = initCallableWalkCtx()
-  ctx.dependencyEpoch(v)
-
-proc trackDependencyEpoch(ctx: var CallableWalkCtx,
-                          value: Gvalue,
-                          freshEpoch: var int) =
-  if value == nil:
-    return
-  freshEpoch.updateMax ctx.dependencyEpoch(value)
-
-proc collectDependencyEpoch*(values: openArray[Gvalue]): int =
-  var ctx = initCallableWalkCtx()
-  for value in values:
-    ctx.trackDependencyEpoch(value, result)
+  ## Return apply-cache-visible ordinary value dependencies under callable
+  ## boundaries. Seed values are excluded from the returned value deps; fresh
+  ## callable wrappers expose their bound callable, stale wrappers expose
+  ## producer deps, and custom walks must not yield nil dependencies.
+  var freshness = CallableFreshnessCtx(active: initHashSet[NodeKey]())
+  let walk = walkCallableVisibleDeps(roots, seedValues, freshness)
+  walk.valueDeps
 
 method walkHiddenDeps*(v: Gwrapper,
                        mode: InputWalkMode,
                        visit: GnodeVisit) =
   if mode notin {iwmGradSignature, iwmDepend}:
     return
-  Gvalue(v).visitWrapperHiddenDeps(visit)
+  var freshness = CallableFreshnessCtx(active: initHashSet[NodeKey]())
+  let bound = v.symbolicBinding(freshness)
+  if bound != nil:
+    visit bound

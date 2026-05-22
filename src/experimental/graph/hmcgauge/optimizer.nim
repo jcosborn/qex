@@ -56,11 +56,6 @@ proc initAdamW*(param: openArray[float],
   result.firstMoment = newSeq[float](param.len)
   result.secondMoment = newSeq[float](param.len)
 
-proc optimizerName*(opt: AdamW): string =
-  if opt.weightDecay == 0:
-    return "Adam"
-  return "AdamW"
-
 proc optimize*(opt: var AdamW,
                param: var seq[float],
                grad: openArray[float],

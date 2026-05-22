@@ -3,63 +3,10 @@ import types
 import ../support/op
 import math
 
-template defineScalarUnaryForward(forwardName: untyped,
-                                  label: static[string],
-                                  forwardBody: untyped) =
-  proc forwardName(v: Gvalue) =
-    let view {.inject.} = v.requireUnaryNodeView(Gscalar, label)
-    let x {.inject.} = view.x
-    let z {.inject.} = v.requireScalar(label & " result")
-    forwardBody
-
-template defineScalarBinaryForward(forwardName: untyped,
-                                   label: static[string],
-                                   forwardBody: untyped) =
-  proc forwardName(v: Gvalue) =
-    let view {.inject.} = v.requireBinaryNodeView(Gscalar, Gscalar, label)
-    let x {.inject.} = view.x
-    let y {.inject.} = view.y
-    let z {.inject.} = v.requireScalar(label & " result")
-    forwardBody
-
-template defineScalarComparisonForward(forwardName: untyped,
-                                       label: static[string],
-                                       predicate: untyped) =
-  proc forwardName(v: Gvalue) =
-    let view {.inject.} = v.requireBinaryNodeView(Gscalar, Gscalar, label)
-    let x {.inject.} = view.x
-    let y {.inject.} = view.y
-    let z {.inject.} = v.requireScalar(label & " result")
-    z.getfloat = if predicate: 1.0 else: 0.0
-
-template defineIntComparisonForward(forwardName: untyped,
-                                    label: static[string],
-                                    predicate: untyped) =
-  proc forwardName(v: Gvalue) =
-    let view {.inject.} = v.requireBinaryNodeView(Gint, Gint, label)
-    let x {.inject.} = view.x
-    let y {.inject.} = view.y
-    let z {.inject.} = v.requireInt(label & " result")
-    z.getint = if predicate: 1 else: 0
-
-proc `-`*(x: Gscalar): Gscalar
-proc `+`*(x: Gscalar, y: Gscalar): Gscalar
-proc `*`*(x: Gscalar, y: Gscalar): Gscalar
-proc `-`*(x: Gscalar, y: Gscalar): Gscalar
-proc `/`*(x: Gscalar, y: Gscalar): Gscalar
-proc exp*(x: Gscalar): Gscalar
-proc `<`*(x: Gscalar, y: Gscalar): Gscalar
-proc equal*(x: Gscalar, y: Gscalar): Gscalar
-proc `<`*(x: Gint, y: Gint): Gint
-proc equal*(x: Gint, y: Gint): Gint
 type CondSelector = Gscalar | Gint
-proc cond*[C: CondSelector, T: Gvalue](c: C, x: T, y: T): T
-proc cond*(c: CondSelector, x: Gscalar, y: float): Gscalar
-proc cond*(c: CondSelector, x: float, y: Gscalar): Gscalar
-proc cond*(c: CondSelector, x: Gscalar, y: int): Gscalar
-proc cond*(c: CondSelector, x: int, y: Gscalar): Gscalar
-proc cond*(c: CondSelector, x: Gint, y: int): Gint
-proc cond*(c: CondSelector, x: int, y: Gint): Gint
+proc `-`*(x: Gscalar): Gscalar
+proc `*`*(x: Gscalar, y: Gscalar): Gscalar
+proc `/`*(x: Gscalar, y: Gscalar): Gscalar
 
 proc zeroComparisonGrad[T: Gvalue](zero: T, i: int): T =
   case i
@@ -80,97 +27,49 @@ proc affineUpstream(zb: Gvalue,
     return -upstream
   scalarLeafLike(anchor, scale) * upstream
 
-proc scalarLiteral(anchor: Gvalue,
-                   value: float): Gscalar =
-  scalarLeafLike(anchor, value)
+proc negsf(v: Gvalue) =
+  let view = v.requireUnaryNodeView(Gscalar, "- forward")
+  let x = view.x
+  let z = v.requireScalar("- forward result")
+  z.sval = -x.sval
 
-proc scalarLiteral(anchor: Gvalue,
-                   value: int): Gscalar =
-  scalarLeafLike(anchor, value)
-
-proc numericLiteral(anchor: Gvalue,
-                    value: int): Gvalue =
-  numericLeafLike(anchor, value)
-
-proc numericLiteral(anchor: Gvalue,
-                    value: float): Gvalue =
-  numericLeafLike(anchor, value)
-
-proc `+`*(x: Gscalar, y: float): Gscalar =
-  x + scalarLiteral(x, y)
-
-proc `+`*(x: float, y: Gscalar): Gscalar =
-  scalarLiteral(y, x) + y
-
-proc `+`*(x: Gscalar, y: int): Gscalar =
-  x + scalarLiteral(x, y)
-
-proc `+`*(x: int, y: Gscalar): Gscalar =
-  scalarLiteral(y, x) + y
-
-proc `-`*(x: Gscalar, y: float): Gscalar =
-  x - scalarLiteral(x, y)
-
-proc `-`*(x: float, y: Gscalar): Gscalar =
-  scalarLiteral(y, x) - y
-
-proc `-`*(x: Gscalar, y: int): Gscalar =
-  x - scalarLiteral(x, y)
-
-proc `-`*(x: int, y: Gscalar): Gscalar =
-  scalarLiteral(y, x) - y
-
-proc `*`*(x: Gscalar, y: float): Gscalar =
-  x * scalarLiteral(x, y)
-
-proc `*`*(x: float, y: Gscalar): Gscalar =
-  scalarLiteral(y, x) * y
-
-proc `*`*(x: Gscalar, y: int): Gscalar =
-  x * scalarLiteral(x, y)
-
-proc `*`*(x: int, y: Gscalar): Gscalar =
-  scalarLiteral(y, x) * y
-
-proc `/`*(x: Gscalar, y: float): Gscalar =
-  x / scalarLiteral(x, y)
-
-proc `/`*(x: float, y: Gscalar): Gscalar =
-  scalarLiteral(y, x) / y
-
-proc `/`*(x: Gscalar, y: int): Gscalar =
-  x / scalarLiteral(x, y)
-
-proc `/`*(x: int, y: Gscalar): Gscalar =
-  scalarLiteral(y, x) / y
-
-proc requireNonZeroDivisor(y: Gvalue, z: Gvalue) =
-  if y.isZero:
-    raiseValueError("division by zero:\n" & z.nodeRepr)
-
-defineScalarUnaryForward(negsf, "- forward"):
-  z.getfloat = -x.getfloat
 proc negsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  discard z.requireUnaryNodeView("- backward")
   discard dep
   unaryBackwardCase("- backward", i):
     return affineUpstream(zb, -1.0, z)
-defineUnaryGraphOp(gsneg, `-`, Gscalar, x, scalarNodeLike(x), negsf, negsb, "-")
 
-defineScalarBinaryForward(addsf, "+ forward"):
-  z.getfloat = x.getfloat + y.getfloat
+let gsneg = newGfunc(forward = negsf, backward = negsb, name = "-")
+
+proc `-`*(x: Gscalar): Gscalar =
+  graphNode(scalarNodeLike(x), @[Gvalue(x)], gsneg, "-")
+
+proc addsf(v: Gvalue) =
+  let view = v.requireBinaryNodeView(Gscalar, Gscalar, "+ forward")
+  let x = view.x
+  let y = view.y
+  let z = v.requireScalar("+ forward result")
+  z.sval = x.sval + y.sval
+
 proc addsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  discard z.requireBinaryNodeView("+ backward")
   discard dep
   binaryBackwardCase("+ backward", i,
     block:
       return affineUpstream(zb, 1.0, z),
     block:
       return affineUpstream(zb, 1.0, z))
-defineBinaryGraphOp(gsadd, `+`, Gscalar, Gscalar, x, y, scalarNodeLike(x), addsf, addsb, "+")
 
-defineScalarBinaryForward(mulsf, "* forward"):
-  z.getfloat = x.getfloat * y.getfloat
+let gsadd = newGfunc(forward = addsf, backward = addsb, name = "+")
+
+proc `+`*(x: Gscalar, y: Gscalar): Gscalar =
+  graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], gsadd, "+")
+
+proc mulsf(v: Gvalue) =
+  let view = v.requireBinaryNodeView(Gscalar, Gscalar, "* forward")
+  let x = view.x
+  let y = view.y
+  let z = v.requireScalar("* forward result")
+  z.sval = x.sval * y.sval
+
 proc mulsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   let view = z.requireBinaryNodeView(Gscalar, Gscalar, "* backward")
   discard dep
@@ -179,61 +78,130 @@ proc mulsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
       return scaledUpstreamOr(zb, Gscalar, view.y, "* backward"),
     block:
       return scaledUpstreamOr(zb, Gscalar, view.x, "* backward"))
-defineBinaryGraphOp(gsmul, `*`, Gscalar, Gscalar, x, y, scalarNodeLike(x), mulsf, mulsb, "*")
 
-defineScalarBinaryForward(subsf, "- forward"):
-  z.getfloat = x.getfloat - y.getfloat
+let gsmul = newGfunc(forward = mulsf, backward = mulsb, name = "*")
+
+proc `*`*(x: Gscalar, y: Gscalar): Gscalar =
+  graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], gsmul, "*")
+
+proc subsf(v: Gvalue) =
+  let view = v.requireBinaryNodeView(Gscalar, Gscalar, "- forward")
+  let x = view.x
+  let y = view.y
+  let z = v.requireScalar("- forward result")
+  z.sval = x.sval - y.sval
+
 proc subsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  discard z.requireBinaryNodeView("- backward")
   discard dep
   binaryBackwardCase("- backward", i,
     block:
       return affineUpstream(zb, 1.0, z),
     block:
       return affineUpstream(zb, -1.0, z))
-defineBinaryGraphOp(gssub, `-`, Gscalar, Gscalar, x, y, scalarNodeLike(x), subsf, subsb, "-")
 
-defineScalarBinaryForward(divsf, "/ forward"):
-  requireNonZeroDivisor(y, z)
-  z.getfloat = x.getfloat / y.getfloat
+let gssub = newGfunc(forward = subsf, backward = subsb, name = "-")
+
+proc `-`*(x: Gscalar, y: Gscalar): Gscalar =
+  graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], gssub, "-")
+
+proc divsf(v: Gvalue) =
+  let view = v.requireBinaryNodeView(Gscalar, Gscalar, "/ forward")
+  let x = view.x
+  let y = view.y
+  let z = v.requireScalar("/ forward result")
+  if y.isZero:
+    raiseValueError("division by zero:\n" & z.nodeRepr)
+  z.sval = x.sval / y.sval
+
 proc divsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   let view = z.requireBinaryNodeView(Gscalar, Gscalar, "/ backward")
   discard dep
   # d(x / y) = dx / y - x * dy / y^2
   binaryBackwardCase("/ backward", i,
     block:
-      return scaledUpstreamOr(zb, Gscalar, 1.0 / view.y, "/ backward"),
+      return scaledUpstreamOr(
+        zb,
+        Gscalar,
+        scalarLeafLike(view.y, 1.0) / view.y,
+        "/ backward"),
     block:
       return scaledUpstreamOr(zb, Gscalar, -Gscalar(z) / view.y, "/ backward"))
-defineBinaryGraphOp(gsdiv, `/`, Gscalar, Gscalar, x, y, scalarNodeLike(x), divsf, divsb, "/")
 
-defineScalarUnaryForward(expsf, "exp forward"):
-  z.getfloat = math.exp(x.getfloat)
+let gsdiv = newGfunc(forward = divsf, backward = divsb, name = "/")
+
+proc `/`*(x: Gscalar, y: Gscalar): Gscalar =
+  graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], gsdiv, "/")
+
+proc expsf(v: Gvalue) =
+  let view = v.requireUnaryNodeView(Gscalar, "exp forward")
+  let x = view.x
+  let z = v.requireScalar("exp forward result")
+  z.sval = math.exp(x.sval)
+
 proc expsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  discard z.requireUnaryNodeView("exp backward")
   discard dep
   unaryBackwardCase("exp backward", i):
     return scaledUpstreamOr(zb, Gscalar, Gscalar(z), "exp backward")
-defineUnaryGraphOp(exps, exp, Gscalar, x, scalarNodeLike(x), expsf, expsb, "exps")
+
+let exps = newGfunc(forward = expsf, backward = expsb, name = "exps")
+
+proc exp*(x: Gscalar): Gscalar =
+  graphNode(scalarNodeLike(x), @[Gvalue(x)], exps, "exps")
+
+proc `+`*(x: Gscalar, y: float): Gscalar =
+  x + scalarLeafLike(x, y)
+
+proc `+`*(x: float, y: Gscalar): Gscalar =
+  scalarLeafLike(y, x) + y
+
+proc `+`*(x: Gscalar, y: int): Gscalar =
+  x + scalarLeafLike(x, y)
+
+proc `+`*(x: int, y: Gscalar): Gscalar =
+  scalarLeafLike(y, x) + y
+
+proc `-`*(x: Gscalar, y: float): Gscalar =
+  x - scalarLeafLike(x, y)
+
+proc `-`*(x: float, y: Gscalar): Gscalar =
+  scalarLeafLike(y, x) - y
+
+proc `-`*(x: Gscalar, y: int): Gscalar =
+  x - scalarLeafLike(x, y)
+
+proc `-`*(x: int, y: Gscalar): Gscalar =
+  scalarLeafLike(y, x) - y
+
+proc `*`*(x: Gscalar, y: float): Gscalar =
+  x * scalarLeafLike(x, y)
+
+proc `*`*(x: float, y: Gscalar): Gscalar =
+  scalarLeafLike(y, x) * y
+
+proc `*`*(x: Gscalar, y: int): Gscalar =
+  x * scalarLeafLike(x, y)
+
+proc `*`*(x: int, y: Gscalar): Gscalar =
+  scalarLeafLike(y, x) * y
+
+proc `/`*(x: Gscalar, y: float): Gscalar =
+  x / scalarLeafLike(x, y)
+
+proc `/`*(x: float, y: Gscalar): Gscalar =
+  scalarLeafLike(y, x) / y
+
+proc `/`*(x: Gscalar, y: int): Gscalar =
+  x / scalarLeafLike(x, y)
+
+proc `/`*(x: int, y: Gscalar): Gscalar =
+  scalarLeafLike(y, x) / y
 
 method addLike*(prototype: Gscalar, x: Gvalue, y: Gvalue): Gvalue =
   discard prototype
   x.requireScalar("scalar gradient add left") + y.requireScalar("scalar gradient add right")
 
-proc `+`*(x: Gscalar, y: Gvalue): Gscalar =
-  x + y.requireScalar("scalar + right")
-
 method scaleLike*(contribution: Gscalar, upstream: Gvalue): Gvalue =
   upstream.requireScalar("scalar scale upstream") * contribution
-
-proc `*`*(x: Gscalar, y: Gvalue): Gscalar =
-  x * y.requireScalar("scalar * right")
-
-proc `-`*(x: Gscalar, y: Gvalue): Gscalar =
-  x - y.requireScalar("scalar - right")
-
-proc `/`*(x: Gscalar, y: Gvalue): Gscalar =
-  x / y.requireScalar("scalar / right")
 
 method addLike*(prototype: Gint, x: Gvalue, y: Gvalue): Gvalue =
   discard prototype
@@ -244,6 +212,27 @@ method addLike*(prototype: Gint, x: Gvalue, y: Gvalue): Gvalue =
   if right.isZero:
     return left
   raiseValueError("cannot accumulate non-zero int graph gradients")
+
+proc cond*[C: CondSelector, T: Gvalue](c: C, x: T, y: T): T =
+  newCondNode(c, x, y)
+
+proc cond*(c: CondSelector, x: Gscalar, y: float): Gscalar =
+  cond(c, x, scalarLeafLike(x, y))
+
+proc cond*(c: CondSelector, x: float, y: Gscalar): Gscalar =
+  cond(c, scalarLeafLike(y, x), y)
+
+proc cond*(c: CondSelector, x: Gscalar, y: int): Gscalar =
+  cond(c, x, scalarLeafLike(x, y))
+
+proc cond*(c: CondSelector, x: int, y: Gscalar): Gscalar =
+  cond(c, scalarLeafLike(y, x), y)
+
+proc cond*(c: CondSelector, x: Gint, y: int): Gint =
+  cond(c, x, intLeafLike(x, y))
+
+proc cond*(c: CondSelector, x: int, y: Gint): Gint =
+  cond(c, intLeafLike(y, x), y)
 
 proc falseValue(x: Gscalar): Gscalar =
   scalarLeafLike(x, 0.0)
@@ -275,58 +264,73 @@ proc `xor`*(x: Gscalar, y: Gint): Gint = cond(x, not(y), y)
 proc `xor`*(x: Gint, y: Gscalar): Gscalar = cond(x, not(y), y)
 proc `xor`*(x: Gint, y: Gint): Gint = cond(x, not(y), y)
 
-proc cond*[C: CondSelector, T: Gvalue](c: C, x: T, y: T): T =
-  newCondNode(c, x, y)
+proc ltsf(v: Gvalue) =
+  let view = v.requireBinaryNodeView(Gscalar, Gscalar, "< forward")
+  let x = view.x
+  let y = view.y
+  let z = v.requireScalar("< forward result")
+  z.sval = if x.sval < y.sval: 1.0 else: 0.0
 
-proc cond*(c: CondSelector, x: Gscalar, y: float): Gscalar =
-  cond(c, x, scalarLeafLike(x, y))
-
-proc cond*(c: CondSelector, x: float, y: Gscalar): Gscalar =
-  cond(c, scalarLeafLike(y, x), y)
-
-proc cond*(c: CondSelector, x: Gscalar, y: int): Gscalar =
-  cond(c, x, scalarLeafLike(x, y))
-
-proc cond*(c: CondSelector, x: int, y: Gscalar): Gscalar =
-  cond(c, scalarLeafLike(y, x), y)
-
-proc cond*(c: CondSelector, x: Gint, y: int): Gint =
-  cond(c, x, intLeafLike(x, y))
-
-proc cond*(c: CondSelector, x: int, y: Gint): Gint =
-  cond(c, intLeafLike(y, x), y)
-
-defineScalarComparisonForward(ltsf, "< forward", x.getfloat < y.getfloat)
 proc ltsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   discard zb
-  discard z.requireBinaryNodeView("< backward")
   discard dep
-  zeroComparisonGrad(numericLiteral(z, 0.0), i)
-defineBinaryGraphOp(lts, `<`, Gscalar, Gscalar, x, y, scalarNodeLike(x), ltsf, ltsb, "lts")
+  zeroComparisonGrad(numericLeafLike(z, 0.0), i)
 
-defineScalarComparisonForward(equalsf, "equal forward", x.getfloat == y.getfloat)
+let lts = newGfunc(forward = ltsf, backward = ltsb, name = "lts")
+
+proc `<`*(x: Gscalar, y: Gscalar): Gscalar =
+  graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], lts, "lts")
+
+proc equalsf(v: Gvalue) =
+  let view = v.requireBinaryNodeView(Gscalar, Gscalar, "equal forward")
+  let x = view.x
+  let y = view.y
+  let z = v.requireScalar("equal forward result")
+  z.sval = if x.sval == y.sval: 1.0 else: 0.0
+
 proc equalsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   discard zb
-  discard z.requireBinaryNodeView("equal backward")
   discard dep
-  zeroComparisonGrad(numericLiteral(z, 0.0), i)
-defineBinaryGraphOp(equals, equal, Gscalar, Gscalar, x, y, scalarNodeLike(x), equalsf, equalsb, "equals")
+  zeroComparisonGrad(numericLeafLike(z, 0.0), i)
 
-defineIntComparisonForward(ltif, "int < forward", x.getint < y.getint)
+let equals = newGfunc(forward = equalsf, backward = equalsb, name = "equals")
+
+proc equal*(x: Gscalar, y: Gscalar): Gscalar =
+  graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], equals, "equals")
+
+proc ltif(v: Gvalue) =
+  let view = v.requireBinaryNodeView(Gint, Gint, "int < forward")
+  let x = view.x
+  let y = view.y
+  let z = v.requireInt("int < forward result")
+  z.ival = if x.ival < y.ival: 1 else: 0
+
 proc ltib(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   discard zb
-  discard z.requireBinaryNodeView("int < backward")
   discard dep
-  zeroComparisonGrad(numericLiteral(z, 0), i)
-defineBinaryGraphOp(lti, `<`, Gint, Gint, x, y, intNodeLike(x), ltif, ltib, "lti")
+  zeroComparisonGrad(numericLeafLike(z, 0), i)
 
-defineIntComparisonForward(equalif, "int equal forward", x.getint == y.getint)
+let lti = newGfunc(forward = ltif, backward = ltib, name = "lti")
+
+proc `<`*(x: Gint, y: Gint): Gint =
+  graphNode(intNodeLike(x), @[Gvalue(x), Gvalue(y)], lti, "lti")
+
+proc equalif(v: Gvalue) =
+  let view = v.requireBinaryNodeView(Gint, Gint, "int equal forward")
+  let x = view.x
+  let y = view.y
+  let z = v.requireInt("int equal forward result")
+  z.ival = if x.ival == y.ival: 1 else: 0
+
 proc equalib(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   discard zb
-  discard z.requireBinaryNodeView("int equal backward")
   discard dep
-  zeroComparisonGrad(numericLiteral(z, 0), i)
-defineBinaryGraphOp(equali, equal, Gint, Gint, x, y, intNodeLike(x), equalif, equalib, "equali")
+  zeroComparisonGrad(numericLeafLike(z, 0), i)
+
+let equali = newGfunc(forward = equalif, backward = equalib, name = "equali")
+
+proc equal*(x: Gint, y: Gint): Gint =
+  graphNode(intNodeLike(x), @[Gvalue(x), Gvalue(y)], equali, "equali")
 
 proc `>`*(x, y: Gscalar): auto = y < x
 proc `>=`*(x, y: Gscalar): auto = (y < x) or equal(x, y)

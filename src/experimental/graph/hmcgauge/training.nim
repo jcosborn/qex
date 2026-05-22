@@ -6,23 +6,29 @@ import optimizer
 
 type
   TrainingState* = object
-    learned: seq[LearnedParameter]
+    learned*: seq[LearnedParameter]
     optimizer: AdamW
 
-proc formatFloatValues*(label: string, values: openArray[float]): string =
+proc formatNamedValues(training: TrainingState,
+                       label: string,
+                       values: openArray[float]): string =
+  if values.len != training.learned.len:
+    raiseValueError(
+      "training value count mismatch: expected " &
+      $training.learned.len & ", got " & $values.len)
   result = label
-  for value in values:
-    result &= " " & $value
+  for i in 0..<values.len:
+    result &= " " & training.learned[i].name & "=" & $values[i]
 
 proc parameterValues*(training: TrainingState): seq[float] =
   result = newSeq[float](training.learned.len)
   for i in 0..<result.len:
-    result[i] = training.learned[i].node.getfloat
+    result[i] = training.learned[i].node.sval
 
 proc gradientValues(training: TrainingState): seq[float] =
   result = newSeq[float](training.learned.len)
   for i in 0..<result.len:
-    result[i] = training.learned[i].gradientExpr.eval.getfloat
+    result[i] = training.learned[i].gradientExpr.eval.sval
 
 proc applyParameterValues(training: var TrainingState,
                           values: openArray[float]) =
@@ -33,27 +39,21 @@ proc applyParameterValues(training: var TrainingState,
   for i in 0..<values.len:
     training.learned[i].node.update values[i]
 
-proc logOptimizerStats(training: TrainingState,
-                       stats: openArray[AdamStepStat]) =
-  ## Log per-parameter optimizer state without adding logging to the optimizer.
-  let label = training.optimizer.optimizerName
-  for i in 0..<stats.len:
-    echo label, ": ", i, " ", stats[i].firstMoment, " ", stats[i].secondMoment
-
 proc initTrainingState*(graph: TrajectoryGraph,
                         weightDecay: float): TrainingState =
   result.learned = graph.learnedParameters
   result.optimizer = initAdamW(result.parameterValues, weightDecay = weightDecay)
 
+proc formatParameterValues*(training: TrainingState): string =
+  training.formatNamedValues("param:", training.parameterValues)
+
 proc trainStep*(training: var TrainingState,
-                graph: TrajectoryGraph,
                 config: RunConfig,
                 traj: int) =
   tic()
   let trainingStep = traj - config.trajsThermo
-  echo "tloss: ", graph.lossValue
   let gradients = training.gradientValues
-  echo formatFloatValues("grad:", gradients)
+  echo training.formatNamedValues("grad:", gradients)
   var parameters = training.parameterValues
   let learningRate = warmUpCosDecay(
     trainingStep,
@@ -67,7 +67,14 @@ proc trainStep*(training: var TrainingState,
     gradients,
     trainingStep,
     learningRate)
-  training.logOptimizerStats(optimizerStats)
+  let optimizerLabel =
+    if config.weightDecay == 0.0:
+      "Adam"
+    else:
+      "AdamW"
+  for i in 0..<optimizerStats.len:
+    echo optimizerLabel, ": ", training.learned[i].name, " ",
+      optimizerStats[i].firstMoment, " ", optimizerStats[i].secondMoment
   training.applyParameterValues(parameters)
-  echo formatFloatValues("param:", parameters)
+  echo training.formatNamedValues("param:", parameters)
   toc("training")

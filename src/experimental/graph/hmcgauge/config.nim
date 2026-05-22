@@ -41,14 +41,18 @@ proc validateRunConfig*(config: RunConfig) =
   if config.lrmin > config.lrmax:
     raiseValueError(
       "lrmin must be <= lrmax, got " & $config.lrmin & " > " & $config.lrmax)
-  if config.weightDecay < 0.0:
-    raiseValueError("weightDecay must be >= 0, got " & $config.weightDecay)
+  requireNonNegative("weightDecay", config.weightDecay)
 
 proc totalTrajs*(config: RunConfig): int =
   config.trajsThermo + config.trajsTrain + config.trajsInfer
 
 proc trajectoryPhase*(config: RunConfig,
                       traj: int): TrajectoryPhase =
+  let total = config.totalTrajs
+  if traj < 1 or traj > total:
+    raiseValueError(
+      "trajectory index must satisfy 1 <= traj <= " & $total &
+      ", got " & $traj)
   if traj <= config.trajsThermo:
     return tpThermo
   if traj <= config.trajsThermo + config.trajsTrain:

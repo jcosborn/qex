@@ -13,10 +13,11 @@ proc newCondNode*[T: Gvalue](selector: Gvalue,
                              whenTrue: T,
                              whenFalse: T): T
 
-proc requireCondOperand(value: Gvalue,
-                        label: string) =
-  if value == nil:
-    raiseValueError("cond " & label & " cannot be nil")
+proc requireCondSelector(selector: Gvalue) =
+  if not selector.supportsCondSelection:
+    raiseValueError(
+      "cond condition must be a scalar or int selector, got:\n" &
+      selector.nodeRepr)
 
 proc requireCondBranchCopyCompatible(protoSource: Gvalue,
                                      branch: Gvalue,
@@ -44,35 +45,18 @@ proc selectedBranch(view: CondView): Gvalue =
     return view.whenFalse
   view.whenTrue
 
-proc branchExpr(view: CondView,
-                whenTrue: Gvalue,
-                whenFalse: Gvalue): Gvalue =
-  newCondNode(view.selector, whenTrue, whenFalse)
-
-proc newCondResult(whenTrue: Gvalue): Gvalue =
-  whenTrue.newOneOf
-
-proc newCondResult[T: Gvalue](whenTrue: T): T =
-  T(whenTrue.newOneOf)
-
-proc walkCondEvalInputs(view: CondView,
+proc condWalkEvalInputs(v: Gvalue,
                         visit: GnodeVisit) =
+  let view = v.requireCondView
   visit(view.selector)
   visit(view.selectedBranch)
 
-proc walkCondDependInputs(view: CondView,
+proc condWalkDependInputs(v: Gvalue,
                           visit: GnodeVisit) =
+  let view = v.requireCondView
   visit(view.selector)
   visit(view.whenTrue)
   visit(view.whenFalse)
-
-proc condWalkEvalInputs(v: Gvalue,
-                        visit: GnodeVisit) =
-  v.requireCondView.walkCondEvalInputs(visit)
-
-proc condWalkDependInputs(v: Gvalue,
-                          visit: GnodeVisit) =
-  v.requireCondView.walkCondDependInputs(visit)
 
 proc condWalkGradSignatureInputs(v: Gvalue,
                                  visit: GnodeVisit) =
@@ -84,9 +68,10 @@ proc condBackwardTarget(zb: Gvalue,
                         dep: Gvalue): Gvalue =
   discard dep
   let view = z.requireCondView
-  result = view.branchExpr(
-    gradOrZero(view.whenTrue, target),
-    gradOrZero(view.whenFalse, target))
+  result = newCondNode(
+    view.selector,
+    view.whenTrue.gradIsolated(target),
+    view.whenFalse.gradIsolated(target))
   if zb != nil:
     result = result.scaleLike zb
 
@@ -95,27 +80,31 @@ proc condf(v: Gvalue) =
 
 let gcond = newGfunc(
   forward = condf,
-  depWalks = newDepWalks(
-    eval = walkedInputs(condWalkEvalInputs),
-    gradSignature = walkedInputs(condWalkGradSignatureInputs),
-    depend = walkedInputs(condWalkDependInputs)),
+  # Eval follows only the selected branch; depend-mode keeps both branches
+  # reachable; grad signatures recurse through the selector while raw branch
+  # identities still enter the node signature.
+  depWalks = GdepWalks(
+    eval: condWalkEvalInputs,
+    gradSignature: condWalkGradSignatureInputs,
+    depend: condWalkDependInputs),
   backwardTarget = condBackwardTarget,
   name = "cond")
 
 proc newCondNode*(selector: Gvalue,
                   whenTrue: Gvalue,
                   whenFalse: Gvalue): Gvalue =
-  selector.requireCondOperand("condition")
-  whenTrue.requireCondOperand("true-branch")
-  whenFalse.requireCondOperand("false-branch")
-  requireCompatibleCondBranches(whenTrue, whenFalse)
-  graphNode(newCondResult(whenTrue), @[selector, whenTrue, whenFalse], gcond, "cond")
+  let checkedSelector = selector.requireGraphValue("cond condition")
+  let checkedTrue = whenTrue.requireGraphValue("cond true-branch")
+  let checkedFalse = whenFalse.requireGraphValue("cond false-branch")
+  checkedSelector.requireCondSelector
+  requireCompatibleCondBranches(checkedTrue, checkedFalse)
+  graphNode(
+    checkedTrue.newOneOf,
+    @[checkedSelector, checkedTrue, checkedFalse],
+    gcond,
+    "cond")
 
 proc newCondNode*[T: Gvalue](selector: Gvalue,
                              whenTrue: T,
                              whenFalse: T): T =
-  selector.requireCondOperand("condition")
-  whenTrue.requireCondOperand("true-branch")
-  whenFalse.requireCondOperand("false-branch")
-  requireCompatibleCondBranches(whenTrue, whenFalse)
-  graphNode(newCondResult(whenTrue), @[selector, whenTrue, whenFalse], gcond, "cond")
+  T(newCondNode(selector, Gvalue(whenTrue), Gvalue(whenFalse)))

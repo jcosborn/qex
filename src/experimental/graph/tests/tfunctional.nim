@@ -4,7 +4,7 @@ addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 
 import helpers
 import ../[core, scalar, functional]
-import ../functional/callable/walk
+import ../core/base
 
 let grt = initGraphRuntime()
 

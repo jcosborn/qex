@@ -37,14 +37,32 @@ described as "differentiate each raw input independently". Use it when laziness,
 hidden dependencies, or operator-specific semantics make ordinary input-wise
 backprop misleading.
 
-`backwardTarget` is not additive with ordinary `backward`. If a node defines
-both, reverse mode uses `backwardTarget` and skips raw-input propagation for that
-node.
+`backwardTarget` is not additive with ordinary `backward`. `newGfunc` rejects
+nodes that define both, so a node must choose either ordinary raw-input
+propagation or target-directed propagation.
+
+Custom dependency walks affect reachability, freshness, and cache signatures.
+They do not turn hidden dependencies into raw backward inputs. If a hidden
+dependency is differentiable, the node should use `backwardTarget`.
+
+In `GdepWalks`, a nil hook means "walk raw inputs" for that traversal mode.
+Only store a custom walk hook when raw inputs are not the right dependency
+surface.
 
 When node semantics depend on static metadata that is not present in raw inputs,
 that metadata must be exposed structurally or encoded in the node's
 `gfunc.signatureKey`. `multiSelect[i]` is an example: the selected slot index is
 part of the operator identity.
+
+Layer-specific node categories should stay in the layer that owns them. For
+example, deferred-apply nodes are recognized in `functional/apply` by comparing
+the node's `Gfunc` with that layer's singleton function objects; core `Gfunc`
+does not carry an apply-specific kind field.
+
+`Gfunc` is a compact operator record, not an abstraction layer. Its hooks and
+metadata are read directly by graph internals. Keep computed accessors only when
+they add behavior, such as preserving the signature-key fallback for function
+records whose explicit key is zero.
 
 Gradient-signature traversal can hide subtrees, but each visited node still
 records the runtime-local ids of its raw input roots. This lets nodes such as
@@ -74,19 +92,63 @@ behavior:
 - runtime-local evaluation counters
 - depth guards for callable resolution and apply-partial preparation
 
+Those fields are mutable runtime state, not a separate service layer. Counters,
+debug flags, depth limits, and cache stats should be updated directly at the use
+site. A runtime helper is justified only when it validates runtime ownership,
+keeps a multi-field update atomic, or gives a repeated cache operation one clear
+failure model.
+
+Cache reset helpers are runtime/core operations. Higher layers may use the
+runtime fields they own, but should not re-export cache controls only to rename
+where callers import them from.
+
 Stable ids and cache entries are meaningful only inside one runtime. Mixing
 nodes from different runtimes is a construction error, not a valid advanced
 case.
 
 `graphNode` does not assign runtimes. Its job is only to verify that the result
-node and all inputs already agree on one runtime.
+node and all inputs already agree on one runtime. Inputful graph nodes must also
+have a graph function at construction time; zero-input prototypes may leave it
+nil.
 
 `newMultiOutputNode` is the special multi-output constructor that anchors the
-carrier runtime from slot prototypes, then verifies input compatibility. Keep
-that rule local to `multi.nim`.
+carrier runtime from slot prototypes, then verifies input compatibility. Like
+`graphNode`, an inputful carrier requires a graph function. Keep that rule local
+to `multi.nim`.
 
 The package is not thread-safe at the graph-runtime level. A runtime should be
 treated as exclusive mutable state.
+
+## Nil Checks
+
+Ordinary graph values are non-nil by construction. After a value has crossed a
+graph-construction boundary, code should use it directly rather than repeating
+defensive `nil` checks at every traversal, validator, copy, or accessor site.
+That includes public graph operators whose parameters are graph values: passing
+`nil` is outside their contract unless that parameter explicitly documents `nil`
+as meaningful.
+
+Keep `nil` validation at the few places that deliberately cross from
+unconstructed or erased data into graph storage, such as runtime attachment,
+`graphNode` input checking, `newMultiOutputNode` slot/input checking, and
+explicitly erased public APIs that must restore a concrete value type.
+
+Inside graph internals, check for `nil` only when `nil` is part of the local
+protocol. Current examples include optional `Gfunc` hooks, nil dependency-walk
+hooks meaning "raw inputs", cache misses, unresolved callable reductions,
+unbound callable wrappers, optional lambda construction fields before closure
+resolution, root/upstream gradient conventions where `zb == nil` means "use
+one-like", and HMC acceptance state where a missing accepted gauge has semantic
+meaning.
+
+Do not use `nil` as a second error channel for malformed graph structure. If a
+node can contain an invalid ordinary input, catch that at construction. If a
+hook is required to return a graph value, returning `nil` is a protocol error
+and should fail near the hook result.
+
+Do not add local prechecks merely to turn caller-supplied `nil` into a nicer
+operator-specific error. That spreads a non-invariant through normal graph code
+and makes the simple path harder to read.
 
 ## Freshness And Reuse
 
@@ -148,7 +210,7 @@ or near the implementation:
 - eval dependencies
 - grad-signature dependencies
 - depend-mode dependencies
-- whether `backwardTarget` overrides ordinary `backward`
+- whether it uses ordinary `backward` or target-directed `backwardTarget`
 - which static metadata must enter `signatureKey`
 - where erased raw inputs or upstream values are restored to concrete types
 - whether `newOneOf + cloned inputs + gfunc` preserves the node
@@ -194,6 +256,15 @@ The higher-order path therefore distinguishes between:
 Closures are normalized before cached reuse matters. That keeps capture
 structure explicit and makes substitution-based instantiation the stable model.
 
+Callable storage is deliberately flat. `Glambda` owns `param`, `body`, and
+captured bindings directly. `Gwrapper` owns its result prototype and optional
+bound value directly, with `kind` distinguishing local wrappers from callable
+producer wrappers. Do not reintroduce subtype-only wrappers or getter/setter
+pairs unless they enforce a new invariant at construction.
+
+Callable placeholders must carry an explicit result prototype. A wrapper without
+one is malformed rather than a wildcard callable.
+
 `apply` returns an erased `Gvalue` because function-valued expressions can be
 resolved only as the callable graph is reduced. Code that knows the callable's
 result type should cast the apply result before feeding it into typed graph
@@ -205,22 +276,30 @@ Callable freshness is intentionally asymmetric:
 - callable wrappers represent the last produced callable until their producer is
   reevaluated
 
+Binding a wrapper is a semantic update for both cases. A callable producer's
+forward hook may install a binding whose hidden captures are newer than the raw
+producer inputs, so the wrapper epoch must remain at least as new as both its
+visible producer dependencies and the captures reachable through the bound
+callable. Evaluation may raise a node epoch to match visible eval dependencies,
+but it must not move an epoch backwards after a forward hook mutates the node.
+
 That asymmetry is part of the public behavior. It is what lets the system reuse
 structural work aggressively without pretending that all callables are live
 views of their producers.
 
-Deferred-apply evaluation traversal is core-owned. Exceptional traversal that
-skips through deferred nodes lives in `walkDeferredEvalGraph` rather than being
-reimplemented ad hoc at each apply node.
+Deferred-apply evaluation traversal is apply-owned. The apply-partial eval walk
+skips through deferred apply nodes using their depend-mode view, while concrete
+nodes still expose depend-mode hidden deps so closure boundaries remain
+reachable.
 
 Deferred apply-partial nodes carry one target as a raw input, but traversal and
 gradient-signature exposure deliberately follow only the base expression.
 Target-specific partials are materialized from cached reduced expressions on
 demand.
 
-`walkDeferredEvalGraph` intentionally follows depend-mode hidden callable
-boundary deps while skipping through deferred apply nodes, so deferred
-evaluation can stay lazy without losing closure reachability.
+Apply cache lookup and partial materialization are local to the apply node code.
+Keep the direct table operations there unless another caller needs the same
+multi-step operation with the same error semantics.
 
 ## `Gmulti`
 
@@ -238,14 +317,15 @@ simple, and avoids turning multi-output carriers into a second general-purpose
 data language.
 
 Multi-output carriers may be heterogeneous. Slotwise combination and gradient
-accumulation therefore use each slot prototype's algebra, not a single erased
-`Gvalue` operator. Indexing a multi-output carrier still returns an erased
-fixed-slot expression; callers that know the slot type should cast it.
+accumulation therefore use the contribution slot's algebra, not a single erased
+`Gvalue` operator, and accumulation does not recheck the original carrier
+prototype. Indexing a multi-output carrier still returns an erased fixed-slot
+expression; callers that know the slot type should cast it.
 
 If control flow must choose between slots, express that choice outside the
 indexing operation.
 
-`slotValue` exposes stored forward slot state, not a symbolic graph node.
+`storedSlot` exposes stored forward slot state, not a symbolic graph node.
 Callers should treat it as current only after evaluating the carrier or a
 consumer.
 
@@ -255,11 +335,12 @@ Use `Gmulti` inside fused operators to share real work across related outputs or
 input gradients. Keep the public API typed; the operator implementation owns any
 `Gmulti` input/output carrier.
 
-The packed carrier should have an operator-specific slot contract, and its
-backward should build shared subexpressions once, then return slot gradients as a
-single `Gmulti`. See `axexpmuly(a, x, y)` in `gauge/fused_ops.nim`: it packs
-`[a, x, y]`, computes `[exp(a*x), exp(a*x)*y]`, reuses the saved exponential for
-`y_bar`, and shares the exponential derivative for `a_bar` and `x_bar`.
+The packed carrier should have an operator-specific slot contract documented at
+the fused operator, not a pile of one-call slot wrappers. Its backward should
+build shared subexpressions once, then return slot gradients as a single
+`Gmulti`. See `axexpmuly(a, x, y)` in `gauge/fused_ops.nim`: it packs
+`[a, x, y]`, computes `[exp(a*x), exp(a*x)*y]`, reuses the saved exponential
+for `y_bar`, and shares the exponential derivative for `a_bar` and `x_bar`.
 
 ## Gauge Layer
 
@@ -270,6 +351,17 @@ Gauge graph construction should stay in concrete gauge/scalar/coefficient types.
 Backward builders are the expected place to recover erased raw inputs or
 upstreams, because each backward builder is tied to one forward operator and
 knows the concrete operand types it stored.
+
+`toGvalue(grt, gauge)` copies caller gauge storage into graph-owned storage.
+After construction, graph state changes should happen through the returned graph
+value and `updated`; mutating the original caller gauge must not silently change a
+graph leaf.
+
+`gaugeSnapshot` returns a copy, not a live view of graph-owned storage. Code
+that intentionally mutates graph-owned gauge storage must use `mutateGauge` so
+the freshness epoch is marked even though the storage update happens in place.
+The top-level `gauge` module does not re-export `unsafeGaugeStorage`; direct
+storage access is for gauge implementation modules that import `gauge/shared`.
 
 Zero-valued gauges are ordinary zeroed storage, not a privileged semantic flag.
 There is no separate zero-state fast path to keep in sync with the payload.
@@ -292,9 +384,18 @@ Its design role is operational:
 - keep learned parameters paired with their gradient expressions rather than
   spreading that invariant across parallel arrays
 
+Trajectory snapshot accessors return detached raw gauge storage. Accepted
+trajectory commit copies that snapshot back into the graph-owned initial gauge
+and marks the mutation there.
+
 Integrator coefficient completion is intentionally narrow. For the force-gradient
 families, callers either accept the default tuple or provide the full explicit
 tuple; partial positional completion is out of scope.
+
+`IntegratorCoeffs` is simple parsed configuration data. Validation belongs where
+the coefficients are turned into a concrete integrator run spec; the data object
+does not need variant-object protection or accessor wrappers just to represent
+the parsed text.
 
 This layer should consume graph-core contracts, not redefine them. In
 particular, runtime identity, cache policy, and dependency semantics belong

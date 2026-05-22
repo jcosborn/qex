@@ -1,16 +1,19 @@
+import std/tables
 import ../../core
+import ../../core/base
 import ../callable
+import ../callable/walk
 
 type
-  CloneCtx* = object
+  CloneCtx = object
     subst: Bindings
     memo: Bindings
 
-proc initCloneCtx*(subst: Bindings): CloneCtx =
+proc initCloneCtx(subst: Bindings): CloneCtx =
   result.subst = subst
-  result.memo = initBindings()
+  result.memo = initTable[NodeKey, Gvalue]()
 
-proc clone*(v: Gvalue, ctx: var CloneCtx): Gvalue
+proc clone(v: Gvalue, ctx: var CloneCtx): Gvalue
 
 proc cloneInputs(src: Gvalue,
                  ctx: var CloneCtx): seq[Gvalue] =
@@ -20,11 +23,13 @@ proc cloneInputs(src: Gvalue,
   for i in 0..<src.inputs.len:
     result[i] = clone(src.inputs[i], ctx)
 
-proc withoutLambdaBindings*(subst: Bindings, fn: Glambda): Bindings =
+proc withoutLambdaBindings(subst: Bindings, fn: Glambda): Bindings =
   result = subst
-  result.deleteBinding(fn.param)
+  if result.hasKey(fn.param.nodeKey):
+    result.del(fn.param.nodeKey)
   for binding in fn.env:
-    result.deleteBinding(binding.param)
+    if result.hasKey(binding.param.nodeKey):
+      result.del(binding.param.nodeKey)
 
 proc cloneEnv(env: openArray[LambdaBinding],
               ctx: var CloneCtx): seq[LambdaBinding] =
@@ -38,42 +43,44 @@ proc cloneEnv(env: openArray[LambdaBinding],
 
 proc cloneResolvedLambda(fn: Glambda,
                          ctx: var CloneCtx): Gvalue =
-  result = Glambda(
-    param: fn.param).attachRuntime(fn.runtime)
-  ctx.memo.putNode(fn, result)
+  result = Glambda(param: fn.param).attachRuntime(fn.runtime)
+  ctx.memo[fn.nodeKey] = result
 
   let r = Glambda(result)
+  var innerCtx = initCloneCtx(ctx.subst.withoutLambdaBindings(fn))
   r.env = cloneEnv(fn.env, ctx)
-  if fn.body != nil:
-    var innerCtx = initCloneCtx(ctx.subst.withoutLambdaBindings(fn))
-    r.body = clone(fn.body, innerCtx)
+  r.body = clone(fn.body, innerCtx)
 
 proc cloneWithFreshMemo*(v: Gvalue, subst: Bindings): Gvalue =
   var ctx = initCloneCtx(subst)
   clone(v, ctx)
 
-proc clone*(v: Gvalue, ctx: var CloneCtx): Gvalue =
-  if v == nil:
-    return nil
+proc clone(v: Gvalue, ctx: var CloneCtx): Gvalue =
+  let key = v.nodeKey
+  if ctx.subst.hasKey(key):
+    return ctx.subst[key]
+  if ctx.memo.hasKey(key):
+    return ctx.memo[key]
 
-  if ctx.subst.hasNode(v):
-    return ctx.subst.getNode(v)
-  if ctx.memo.hasNode(v):
-    return ctx.memo.getNode(v)
-
-  let fn = v.resolvedClosure
-  if fn != nil:
-    return fn.cloneResolvedLambda(ctx)
+  if v of Glambda:
+    let fn = Glambda(v)
+    if fn.isResolvedClosure:
+      return fn.cloneResolvedLambda(ctx)
 
   let boundCallable = v.freshCallableBound
   if boundCallable != nil:
     result = clone(boundCallable, ctx)
-    ctx.memo.putNode(v, result)
+    ctx.memo[key] = result
     return result
 
   if v.gfunc == nil and v.inputs.len == 0:
     return v
 
+  # Generic graph-node clone is valid only for nodes whose structural state is
+  # fully represented by `inputs` plus `gfunc`. Nodes with extra structural
+  # fields need explicit clone handling or prototype state preserved by
+  # `newOneOf`.
   result = v.newOneOf
-  ctx.memo.putNode(v, result)
-  result.defineGraphNode(v.cloneInputs(ctx), v.gfunc)
+  ctx.memo[key] = result
+  result.inputs = v.cloneInputs(ctx)
+  result.gfunc = v.gfunc

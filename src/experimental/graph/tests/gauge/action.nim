@@ -12,7 +12,7 @@ suite "gauge action":
 
   test "wilson action":
     let beta = 5.4
-    let c = grt.actWilson(beta)
+    let c = actWilson(scalar.toGvalue(grt, beta))
     let s = gaugeAction(c, gg)
     s :~ -gplaq*float(6*vol*beta)
     proc act(x: Ggauge): Gscalar = gaugeAction(c, x)
@@ -20,30 +20,30 @@ suite "gauge action":
 
   test "wilson force":
     let beta = 5.4
-    let c = grt.actWilson(beta)
+    let c = actWilson(scalar.toGvalue(grt, beta))
     proc act(x: Ggauge): Gscalar = gaugeAction(c, x)
     proc force(x: Ggauge): Ggauge = gaugeForce(c, x)
     ckforce(act, force, gg, 10.0*gm)
 
   test "wilson force gradient":
     let beta = 5.4
-    let c = grt.actWilson(beta)
+    let c = actWilson(scalar.toGvalue(grt, beta))
     proc force(x: Ggauge): Ggauge = gaugeForce(c, x)
     ckgradm(force, gg, gu, gm)
 
   test "wilson force gradient recomp":
     let beta = 5.4
-    let c = grt.actWilson(beta)
+    let c = actWilson(scalar.toGvalue(grt, beta))
     let a = gaugeAction(c, gg)
     let f2 = gaugeForce(c, gg).norm2
     let df2 = grad(f2, gg).norm2
-    let rs1 = [a.eval.getfloat, f2.eval.getfloat, df2.eval.getfloat]
+    let rs1 = [a.eval.sval, f2.eval.sval, df2.eval.sval]
     c.updated
     gg.updated
-    let rs2 = [a.eval.getfloat, f2.eval.getfloat, df2.eval.getfloat]
+    let rs2 = [a.eval.sval, f2.eval.sval, df2.eval.sval]
     c.updated
     gg.updated
-    let rs3 = [a.eval.getfloat, f2.eval.getfloat, df2.eval.getfloat]
+    let rs3 = [a.eval.sval, f2.eval.sval, df2.eval.sval]
     check rs1 == rs2
     check rs1 == rs3
 

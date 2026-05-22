@@ -52,7 +52,9 @@ suite "functional lambda":
     let a = grt.toGvalue(2.0)
     let g = lambda(v, a * v)
     let h = apply(hof, g)
-    check h.isCallableWrapper
+    check h of Gwrapper
+    if h of Gwrapper:
+      check Gwrapper(h).kind == wkCallable
     discard h.eval
 
     let z = apply(h, 3.0)
@@ -103,12 +105,13 @@ suite "functional lambda":
     let f = local(grt.localScalar())
     let a = grt.toGvalue(2.0)
     let v = grt.localScalar()
-    let epoch0 = f.epochOf
+    let epoch0 = f.epoch
     f.valCopy lambda(v, a * v + 1.0)
 
-    check f.isLocalWrapper
-    check not f.isCallableWrapper
-    check f.epochOf > epoch0
+    check f of Gwrapper
+    if f of Gwrapper:
+      check Gwrapper(f).kind == wkLocal
+    check f.epoch > epoch0
 
     let rawTree = f.treeRepr
     let depTree = f.treeRepr(iwmDepend)
@@ -117,14 +120,126 @@ suite "functional lambda":
     check depTree.splitLines.len > rawTree.splitLines.len
     check sigTree.splitLines.len > rawTree.splitLines.len
 
-    let epoch1 = f.epochOf
+    let epoch1 = f.epoch
     f.valCopy lambda(v, a * v + 2.0)
-    check f.epochOf > epoch1
+    check f.epoch > epoch1
 
   test "callable placeholder rejects non-callable binding":
     let f = local(grt.localScalar())
+    check not compiles(f.valCopy 3.0)
+    check not compiles(f.valCopy 3)
+
+    let v = grt.localScalar()
+    let valid = lambda(v, v + 1.0)
+    f.valCopy valid
+    let bound = Gwrapper(f).bound
+    let epoch = f.epoch
+
     expect(GraphValueError):
-      f.valCopy 3.0
+      f.valCopy(grt.toGvalue(3.0))
+
+    check sameNode(Gwrapper(f).bound, bound)
+    check f.epoch == epoch
+
+  test "callable wrapper node requires explicit result prototype":
+    check not compiles(callableWrapperNode())
+    let missing: Gvalue = nil
+    let rawPrototype = Gvalue()
+    expect(GraphValueError):
+      discard callableWrapperNode(missing)
+    expect(GraphValueError):
+      discard callableWrapperNode(rawPrototype)
+
+  test "local callable placeholder requires runtime-bearing prototype":
+    check not compiles(local(grt))
+    let rawPrototype = Gvalue()
+    expect(GraphValueError):
+      discard local(rawPrototype)
+
+  test "callable placeholders require result prototypes before binding":
+    let malformed = Gwrapper(kind: wkLocal).attachRuntime(grt)
+    let v = grt.localScalar()
+
+    expect(GraphValueError):
+      malformed.valCopy lambda(v, v + 1.0)
+
+  test "apply result prototype validates graph values":
+    let scalar = grt.localScalar()
+    let intValue = grt.localInt()
+    let param = grt.localScalar()
+    let fn = lambda(param, param + 1.0)
+    let wrapper = callableWrapperNode(grt.localScalar())
+
+    check applyResultProto(fn) != nil
+    check applyResultProto(wrapper) != nil
+    check applyResultProto(scalar) == nil
+    check applyResultProto(intValue) == nil
+
+    let missing: Gvalue = nil
+    let raw = Gvalue()
+    expect(GraphValueError):
+      discard applyResultProto(missing)
+    expect(GraphValueError):
+      discard applyResultProto(raw)
+
+  test "apply result prototype materializes nested callable wrappers":
+    let finalProto = grt.localScalar()
+    let innerParam = grt.localScalar()
+    let innerFnProto = lambda(innerParam, finalProto)
+    let outerParam = grt.localScalar()
+    let outerFn = lambda(outerParam, innerFnProto)
+
+    let proto = applyResultProto(outerFn)
+
+    check proto of Gwrapper
+    if proto of Gwrapper:
+      let wrapper = Gwrapper(proto)
+      check wrapper.kind == wkCallable
+      check wrapper.bound == nil
+      check wrapper.retProto of Gscalar
+      if wrapper.retProto != nil:
+        check wrapper.retProto.copyCompatible(finalProto)
+
+  test "apply result prototype depth limit rejects too-deep callable wrappers":
+    let savedLimit = grt.lambdaResolveDepthLimit
+    grt.lambdaResolveDepthLimit = 1
+    try:
+      let finalProto = grt.localScalar()
+      let innerParam = grt.localScalar()
+      let innerFnProto = lambda(innerParam, finalProto)
+      let middleParam = grt.localScalar()
+      let middleFnProto = lambda(middleParam, innerFnProto)
+      let outerParam = grt.localScalar()
+      let outerFn = lambda(outerParam, middleFnProto)
+
+      expect(GraphValueError):
+        discard applyResultProto(outerFn)
+    finally:
+      grt.lambdaResolveDepthLimit = savedLimit
+
+  test "apply result prototype accepts nesting at the depth limit":
+    let savedLimit = grt.lambdaResolveDepthLimit
+    grt.lambdaResolveDepthLimit = 2
+    try:
+      let finalProto = grt.localScalar()
+      let innerParam = grt.localScalar()
+      let innerFnProto = lambda(innerParam, finalProto)
+      let middleParam = grt.localScalar()
+      let middleFnProto = lambda(middleParam, innerFnProto)
+      let outerParam = grt.localScalar()
+      let outerFn = lambda(outerParam, middleFnProto)
+
+      let proto = applyResultProto(outerFn)
+
+      check proto of Gwrapper
+      if proto of Gwrapper:
+        let outerWrapper = Gwrapper(proto)
+        check outerWrapper.retProto of Gwrapper
+        if outerWrapper.retProto of Gwrapper:
+          let innerWrapper = Gwrapper(outerWrapper.retProto)
+          check innerWrapper.retProto.copyCompatible(finalProto)
+    finally:
+      grt.lambdaResolveDepthLimit = savedLimit
 
   test "cond rejects incompatible callable branch prototypes":
     let scalarFn = local(grt.localScalar())
@@ -141,8 +256,9 @@ suite "functional lambda":
     let g = lambda(v, a * v)
     let h = apply(hof, g)
 
-    check h.isCallableWrapper
-    check not h.isLocalWrapper
+    check h of Gwrapper
+    if h of Gwrapper:
+      check Gwrapper(h).kind == wkCallable
 
     let rawTree = h.treeRepr
     let depTree = h.treeRepr(iwmDepend)
@@ -151,15 +267,15 @@ suite "functional lambda":
     check sigTree.splitLines.len > rawTree.splitLines.len
 
     discard h.eval
-    let epoch0 = h.epochOf
+    let epoch0 = h.epoch
     let runs0 = h.runCount
 
     a.update 4.0
-    check h.epochOf == epoch0
+    check h.epoch == epoch0
 
     discard h.eval
     check h.runCount == runs0 + 1
-    check h.epochOf > epoch0
+    check h.epoch > epoch0
 
   test "deferred apply unresolved throws":
     let f = local(grt.localScalar())
@@ -174,6 +290,37 @@ suite "functional lambda":
     expect(GraphValueError):
       discard apply(lambda(v, v + 1.0), intArg)
 
+  test "deferred apply rejects resolved lambda argument shape mismatch":
+    let f = local(grt.localScalar())
+    let x = grt.toGvalue(2.0)
+    let z = apply(f, x)
+    let i = grt.localInt()
+    f.valCopy lambda(i, grt.toGvalue(0.0))
+
+    expect(GraphValueError):
+      discard z.eval
+
+    let v = grt.localScalar()
+    f.valCopy lambda(v, v + 1.0)
+    z :~ 3.0
+
+  test "deferred apply gradient rejects resolved lambda argument shape mismatch":
+    grt.resetGradCache()
+
+    let f = local(grt.localScalar())
+    let x = grt.toGvalue(2.0)
+    let z = apply(f, x)
+    let dzdx = z.grad x
+    let i = grt.localInt()
+    f.valCopy lambda(i, grt.toGvalue(0.0))
+
+    expect(GraphValueError):
+      discard dzdx.eval
+
+    let v = grt.localScalar()
+    f.valCopy lambda(v, v * v)
+    dzdx :~ 4.0
+
   test "apply rejects incompatible callable wrapper argument":
     let f = local(grt.localScalar())
     let u = grt.localScalar()
@@ -186,12 +333,35 @@ suite "functional lambda":
     expect(GraphValueError):
       discard apply(hof, grt.toGvalue(1.0))
 
-  test "apply rejects nil operands early":
-    let v = grt.localScalar()
+  test "apply compares nested callable result prototypes":
+    let innerProtoArg = grt.localScalar()
+    let innerProtoRet = grt.localScalar()
+    let scalarFnProto = lambda(innerProtoArg, innerProtoRet)
+    let f = local(scalarFnProto)
+    let hof = lambda(f, apply(apply(f, 1.0), 2.0))
+
+    let makeArg = grt.localScalar()
+    let makeInner = grt.localScalar()
+    let maker = lambda(makeArg, lambda(makeInner, makeArg + makeInner))
+    let z = apply(hof, maker)
+    z :~ 3.0
+
+    let badArg = grt.localScalar()
+    let intParam = grt.localInt()
+    let badMaker = lambda(badArg, lambda(intParam, intParam))
     expect(GraphValueError):
-      discard apply(nil, grt.toGvalue(2.0))
+      discard apply(hof, badMaker)
+
+  test "callable resolution rejects nil reductions":
+    proc nilReduce(v: Gvalue): Gvalue =
+      discard v
+      nil
+
+    let x = grt.localScalar()
+    let badReduce = newGfunc(reduceCallable = nilReduce, name = "badReduce")
+    let badNode = graphNode(scalarNodeLike(x), @[Gvalue(x)], badReduce, "badReduce")
     expect(GraphValueError):
-      discard apply(lambda(v, v + 1.0), nil)
+      discard badNode.resolveCallableChain(crmReduced)
 
   test "Y combinator style recursion eval":
     let protoArg = grt.localScalar()

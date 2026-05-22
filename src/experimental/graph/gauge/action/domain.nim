@@ -5,7 +5,7 @@ import ../../../../physics/qcdTypes
 import ../shared
 
 type
-  GaugeActionFamily* = enum
+  GaugeActionFamily = enum
     gafGaugeAction1, gafActionA
 
 const
@@ -13,17 +13,17 @@ const
   C1Iwasaki* = -0.331
   C1DBW2* = -1.4088
 
-proc raiseUnsupportedGaugeCoeff*(gc: GaugeActionCoeffs) {.noreturn.} =
+proc raiseUnsupportedGaugeCoeff(gc: GaugeActionCoeffs) {.noreturn.} =
   raiseValueError("Gauge coefficient unsupported: " & $gc)
 
-proc gaugeActionFamily*(gc: GaugeActionCoeffs): GaugeActionFamily =
+proc gaugeActionFamily(gc: GaugeActionCoeffs): GaugeActionFamily =
   if gc.adjplaq == 0:
     return gafGaugeAction1
   if gc.rect == 0 and gc.pgm == 0:
     return gafActionA
   raiseUnsupportedGaugeCoeff(gc)
 
-proc negatedGaugeCoeffs*(gc: GaugeActionCoeffs): GaugeActionCoeffs =
+proc negatedGaugeCoeffs(gc: GaugeActionCoeffs): GaugeActionCoeffs =
   result = gc
   for f in result.fields:
     f = -f

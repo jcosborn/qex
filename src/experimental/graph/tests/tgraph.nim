@@ -4,6 +4,7 @@ addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 
 import helpers
 import ../[core, scalar, multi]
+import ../core/base
 from ../core/grad_cache import findGrad
 
 let grt = initGraphRuntime()

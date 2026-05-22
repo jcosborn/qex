@@ -17,27 +17,20 @@ type
     lambda*: float
     xi*: float
   IntegratorCoeffs* = object
-    kind*: IntegratorKind
-    twoMN*: Integrator2MNCoeffs
-    fourMN3F1GP*: Integrator4MN3F1GPCoeffs
-    fourMN5F2GP*: Integrator4MN5F2GPCoeffs
-  IntegratorStepKind = enum
-    iskDrift, iskKick, iskForceGradKick
-  IntegratorStep = object
-    kind: IntegratorStepKind
-    coeff: Gscalar
-    gradCoeff: Gscalar
-  IntegratorRunSpec = object
-    leadDrift, repeatLeadDrift, tailDrift: Gscalar
-    steps: seq[IntegratorStep]
-    learnedCoeffs: seq[Gscalar]
-
-proc getCoeffValue(coeffs: openArray[float],
-                   i: int,
-                   defaultValue: float): float =
-  if coeffs.len <= i:
-    return defaultValue
-  coeffs[i]
+    case kind*: IntegratorKind
+    of ik2MN:
+      twoMN*: Integrator2MNCoeffs
+    of ik4MN3F1GP:
+      fourMN3F1GP*: Integrator4MN3F1GPCoeffs
+    of ik4MN5F2GP:
+      fourMN5F2GP*: Integrator4MN5F2GPCoeffs
+  LearnedCoeff* = object
+    name*: string
+    node*: Gscalar
+  IntegrationResult* = object
+    gauge*: Ggauge
+    momentum*: Ggauge
+    learnedCoeffs*: seq[LearnedCoeff]
 
 proc requireCoeffCount(label: string,
                        values: openArray[float],
@@ -66,62 +59,6 @@ proc parseIntegratorKind*(name: string): IntegratorKind =
   else:
     raiseValueError("unknown intalg: " & name)
 
-proc driftStep(coeff: Gscalar): IntegratorStep =
-  IntegratorStep(kind: iskDrift, coeff: coeff)
-
-proc kickStep(coeff: Gscalar): IntegratorStep =
-  IntegratorStep(kind: iskKick, coeff: coeff)
-
-proc forceGradKickStep(coeff: Gscalar,
-                       gradCoeff: Gscalar): IntegratorStep =
-  IntegratorStep(kind: iskForceGradKick, coeff: coeff, gradCoeff: gradCoeff)
-
-proc applyIntegratorStep(gc: Gactcoeff,
-                         g: var Ggauge,
-                         p: var Ggauge,
-                         step: IntegratorStep) =
-  case step.kind
-  of iskDrift:
-    g = axexpmuly(step.coeff, p, g)
-  of iskKick:
-    p = p - step.coeff * gaugeForce(gc, g)
-  of iskForceGradKick:
-    let fg = gaugeForce(gc, g)
-    p = p - step.coeff * gaugeForce(gc, axexpmuly(-step.gradCoeff, fg, g))
-
-proc runIntegrator(gc: Gactcoeff,
-                   g0: Ggauge,
-                   p0: Ggauge,
-                   leadDrift: Gscalar,
-                   repeatLeadDrift: Gscalar,
-                   tailDrift: Gscalar,
-                   n: int,
-                   steps: openArray[IntegratorStep]): (Ggauge, Ggauge) =
-  var g = g0
-  var p = p0
-  g = axexpmuly(leadDrift, p, g)
-  for i in 0..<n:
-    if i > 0:
-      g = axexpmuly(repeatLeadDrift, p, g)
-    for step in steps:
-      applyIntegratorStep(gc, g, p, step)
-  g = axexpmuly(tailDrift, p, g)
-  (g, p)
-
-proc initIntegratorRunSpec(leadDrift, repeatLeadDrift, tailDrift: Gscalar,
-                           steps: openArray[IntegratorStep],
-                           learnedCoeffs: openArray[Gscalar]): IntegratorRunSpec =
-  result.leadDrift = leadDrift
-  result.repeatLeadDrift = repeatLeadDrift
-  result.tailDrift = tailDrift
-  result.steps = @steps
-  result.learnedCoeffs = @learnedCoeffs
-
-proc requireIntegratorStepCount(n: int): int =
-  if n <= 0:
-    raiseValueError("integrator step count must be >= 1, got " & $n)
-  n
-
 proc requireFiniteCoeff(label: string,
                         value: float): float =
   if classify(value) in {fcNan, fcInf, fcNegInf}:
@@ -141,7 +78,11 @@ proc default4MN3F1GPChi(lambdaValue: float): float =
 
 proc complete2MNCoeffs(coeffs: openArray[float]): Integrator2MNCoeffs =
   requireCoeffCount("2MN", coeffs, 1)
-  result.lambda = coeffs.getCoeffValue(0, 0.1931833275037836)
+  result.lambda =
+    if coeffs.len == 0:
+      0.1931833275037836
+    else:
+      coeffs[0]
   result.lambda = requireFiniteCoeff("2MN.lambda", result.lambda)
 
 proc complete4MN3F1GPCoeffs(
@@ -186,28 +127,48 @@ proc complete4MN5F2GPCoeffs(
 
 proc parseIntegratorCoeffs*(kind: IntegratorKind,
                             values: openArray[float]): IntegratorCoeffs =
-  result.kind = kind
   case kind
   of ik2MN:
-    result.twoMN = complete2MNCoeffs(values)
+    return IntegratorCoeffs(kind: ik2MN, twoMN: complete2MNCoeffs(values))
   of ik4MN3F1GP:
-    result.fourMN3F1GP = complete4MN3F1GPCoeffs(values)
+    return IntegratorCoeffs(
+      kind: ik4MN3F1GP,
+      fourMN3F1GP: complete4MN3F1GPCoeffs(values))
   of ik4MN5F2GP:
-    result.fourMN5F2GP = complete4MN5F2GPCoeffs(values)
+    return IntegratorCoeffs(
+      kind: ik4MN5F2GP,
+      fourMN5F2GP: complete4MN5F2GPCoeffs(values))
 
-proc build2MNSpec(dt: Gscalar,
-                  coeffs: Integrator2MNCoeffs): IntegratorRunSpec =
+proc integrate2MN(gc: Gactcoeff,
+                  g0: Ggauge,
+                  p0: Ggauge,
+                  dt: Gscalar,
+                  n: int,
+                  coeffs: Integrator2MNCoeffs): IntegrationResult =
   let lambda = scalarLeafLike(dt, coeffs.lambda)
   let h = 0.5 * dt
   let t05 = lambda * dt
   let t0 = 2.0 * t05
   let t1 = dt - t0
-  initIntegratorRunSpec(t05, t0, t05,
-    [kickStep(h), driftStep(t1), kickStep(h)],
-    [lambda])
+  var g = g0
+  var p = p0
+  for i in 0..<n:
+    g = axexpmuly(if i == 0: t05 else: t0, p, g)
+    p = p - h * gaugeForce(gc, g)
+    g = axexpmuly(t1, p, g)
+    p = p - h * gaugeForce(gc, g)
+  g = axexpmuly(t05, p, g)
+  IntegrationResult(
+    gauge: g,
+    momentum: p,
+    learnedCoeffs: @[LearnedCoeff(name: "lambda", node: lambda)])
 
-proc build4MN3F1GPSpec(dt: Gscalar,
-                       coeffs: Integrator4MN3F1GPCoeffs): IntegratorRunSpec =
+proc integrate4MN3F1GP(gc: Gactcoeff,
+                       g0: Ggauge,
+                       p0: Ggauge,
+                       dt: Gscalar,
+                       n: int,
+                       coeffs: Integrator4MN3F1GPCoeffs): IntegrationResult =
   let lambda = scalarLeafLike(dt, coeffs.lambda)
   let theta = scalarLeafLike(dt, coeffs.theta)
   let chi = scalarLeafLike(dt, coeffs.chi)
@@ -217,13 +178,31 @@ proc build4MN3F1GPSpec(dt: Gscalar,
   let b0 = lambda * dt
   let b1 = dt - 2.0 * b0
   let c1 = 0.1 * chi * (dt * dt)
-  initIntegratorRunSpec(a0, a02, a0,
-    [kickStep(b0), driftStep(a1), forceGradKickStep(b1, c1),
-     driftStep(a1), kickStep(b0)],
-    [lambda, theta, chi])
+  var g = g0
+  var p = p0
+  for i in 0..<n:
+    g = axexpmuly(if i == 0: a0 else: a02, p, g)
+    p = p - b0 * gaugeForce(gc, g)
+    g = axexpmuly(a1, p, g)
+    let fg = gaugeForce(gc, g)
+    p = p - b1 * gaugeForce(gc, axexpmuly(-c1, fg, g))
+    g = axexpmuly(a1, p, g)
+    p = p - b0 * gaugeForce(gc, g)
+  g = axexpmuly(a0, p, g)
+  IntegrationResult(
+    gauge: g,
+    momentum: p,
+    learnedCoeffs: @[
+      LearnedCoeff(name: "lambda", node: lambda),
+      LearnedCoeff(name: "theta", node: theta),
+      LearnedCoeff(name: "chi", node: chi)])
 
-proc build4MN5F2GPSpec(dt: Gscalar,
-                       coeffs: Integrator4MN5F2GPCoeffs): IntegratorRunSpec =
+proc integrate4MN5F2GP(gc: Gactcoeff,
+                       g0: Ggauge,
+                       p0: Ggauge,
+                       dt: Gscalar,
+                       n: int,
+                       coeffs: Integrator4MN5F2GPCoeffs): IntegrationResult =
   let rho = scalarLeafLike(dt, coeffs.rho)
   let theta = scalarLeafLike(dt, coeffs.theta)
   let vtheta = scalarLeafLike(dt, coeffs.vtheta)
@@ -237,36 +216,46 @@ proc build4MN5F2GPSpec(dt: Gscalar,
   let b0 = vtheta * dt
   let b2 = (1.0 - 2.0 * (lambda + vtheta)) * dt
   let c1 = 0.05 * xi * (dt * dt)
-  initIntegratorRunSpec(a0, a02, a0,
-    [kickStep(b0), driftStep(a1), forceGradKickStep(b1, c1),
-     driftStep(a2), kickStep(b2), driftStep(a2),
-     forceGradKickStep(b1, c1), driftStep(a1), kickStep(b0)],
-    [rho, theta, vtheta, lambda, xi])
-
-proc buildIntegratorRunSpec(dt: Gscalar,
-                            coeffs: IntegratorCoeffs): IntegratorRunSpec =
-  case coeffs.kind
-  of ik2MN:
-    build2MNSpec(dt, coeffs.twoMN)
-  of ik4MN3F1GP:
-    build4MN3F1GPSpec(dt, coeffs.fourMN3F1GP)
-  of ik4MN5F2GP:
-    build4MN5F2GPSpec(dt, coeffs.fourMN5F2GP)
+  var g = g0
+  var p = p0
+  for i in 0..<n:
+    g = axexpmuly(if i == 0: a0 else: a02, p, g)
+    p = p - b0 * gaugeForce(gc, g)
+    g = axexpmuly(a1, p, g)
+    block:
+      let fg = gaugeForce(gc, g)
+      p = p - b1 * gaugeForce(gc, axexpmuly(-c1, fg, g))
+    g = axexpmuly(a2, p, g)
+    p = p - b2 * gaugeForce(gc, g)
+    g = axexpmuly(a2, p, g)
+    block:
+      let fg = gaugeForce(gc, g)
+      p = p - b1 * gaugeForce(gc, axexpmuly(-c1, fg, g))
+    g = axexpmuly(a1, p, g)
+    p = p - b0 * gaugeForce(gc, g)
+  g = axexpmuly(a0, p, g)
+  IntegrationResult(
+    gauge: g,
+    momentum: p,
+    learnedCoeffs: @[
+      LearnedCoeff(name: "rho", node: rho),
+      LearnedCoeff(name: "theta", node: theta),
+      LearnedCoeff(name: "vtheta", node: vtheta),
+      LearnedCoeff(name: "lambda", node: lambda),
+      LearnedCoeff(name: "xi", node: xi)])
 
 proc integrateGauge*(gc: Gactcoeff,
                      g0: Ggauge,
                      p0: Ggauge,
                      dt: Gscalar,
                      n: int,
-                     coeffs: IntegratorCoeffs): (Ggauge, Ggauge, seq[Gscalar]) =
-  let spec = buildIntegratorRunSpec(dt, coeffs)
-  let (g, p) = runIntegrator(
-    gc,
-    g0,
-    p0,
-    spec.leadDrift,
-    spec.repeatLeadDrift,
-    spec.tailDrift,
-    n.requireIntegratorStepCount,
-    spec.steps)
-  (g, p, spec.learnedCoeffs)
+                     coeffs: IntegratorCoeffs): IntegrationResult =
+  if n <= 0:
+    raiseValueError("integrator step count must be >= 1, got " & $n)
+  case coeffs.kind
+  of ik2MN:
+    integrate2MN(gc, g0, p0, dt, n, coeffs.twoMN)
+  of ik4MN3F1GP:
+    integrate4MN3F1GP(gc, g0, p0, dt, n, coeffs.fourMN3F1GP)
+  of ik4MN5F2GP:
+    integrate4MN5F2GP(gc, g0, p0, dt, n, coeffs.fourMN5F2GP)

@@ -8,16 +8,6 @@ suite "scalar d2":
     let x {.used.} = fixture.x
     let y {.used.} = fixture.y
 
-  test "samnd dx dy":
-    let w = x-2.0
-    let v = w+y
-    let z = v*(-v)/w
-    let dy = z.grad y
-    let dxy = dy.grad x
-    z :~ (a+b-2.0)*(2.0-a-b)/(a-2.0)
-    dy :~ -2.0*(a+b-2.0)/(a-2.0)
-    dxy :~ 2.0*b/((a-2.0)*(a-2.0))
-
   test "samnd dx dy repeat":
     let w = x-2.0
     let v = w+y

@@ -1,4 +1,4 @@
-import math, unittest
+import math, strutils, unittest
 
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 
@@ -7,8 +7,10 @@ import qex except epsilon
 import algorithms/numdiff, gauge/stoutsmear
 import helpers
 import ../[core, scalar, multi, gauge]
+import ../gauge/shared as graphGaugeShared
 import ../hmcgauge/optimizer, ../hmcgauge/integrator
 import ../hmcgauge/trajectory
+import ../hmcgauge/training
 import ../hmcgauge/config
 
 let grt = initGraphRuntime()
@@ -19,7 +21,7 @@ let grt = initGraphRuntime()
 proc ndiff(zt: Gscalar, t: Gscalar): (float, float) =
   proc z(v:float):float =
     t.update v
-    zt.eval.getfloat
+    zt.eval.sval
   var dzdt,e: float
   ndiff(dzdt, e, z, 0.0, 0.125, ordMax=3)
   (dzdt, e)
@@ -35,42 +37,42 @@ template check(ii: tuple[filename:string, line:int, column:int], ast: string, dz
 template ckforce(s: untyped, f: untyped, x: untyped, p: untyped) =
   let t = grt.toGvalue(0.0)
   let (dsdt, e) = ndiff(s(exp(t*p)*x), t)
-  let pdotf = eval(redot(p, f(x))).getfloat
+  let pdotf = eval(redot(p, f(x))).sval
   check(instantiationInfo(), astTostr(s(x) -> f(x)), dsdt, e, pdotf)
 
 template ckgrad(f: untyped, x: untyped, a: untyped) =
   let t = grt.toGvalue(0.0)
   let (dzdt, e) = ndiff(f(x+t*a), t)
   let ff = f(x)
-  let gdota = eval(redot(grad(ff, x), a)).getfloat
+  let gdota = eval(redot(grad(ff, x), a)).sval
   check(instantiationInfo(), astTostr(f(x)), dzdt, e, gdota)
 
 template ckgrad2(f: untyped, x: untyped, y: untyped, ax: untyped, ay: untyped) =
   let t = grt.toGvalue(0.0)
   let (dzdt, e) = ndiff(f(x+t*ax, y+t*ay), t)
   let ff = f(x, y)
-  let gdota = eval(redot(grad(ff, x), ax) + redot(grad(ff, y), ay)).getfloat
+  let gdota = eval(redot(grad(ff, x), ax) + redot(grad(ff, y), ay)).sval
   check(instantiationInfo(), astTostr(f(x,y)), dzdt, e, gdota)
 
 template ckgradm(f: untyped, x: untyped, a: untyped, b: untyped) =
   let t = grt.toGvalue(0.0)
   let (dzdt, e) = ndiff(f(x+t*a).redot b, t)
   let ff = f(x).redot b
-  let gdota = eval(redot(grad(ff, x), a)).getfloat
+  let gdota = eval(redot(grad(ff, x), a)).sval
   check(instantiationInfo(), astTostr(f(x)), dzdt, e, gdota)
 
 template ckgradm2(f: untyped, x: untyped, y: untyped, ax: untyped, ay: untyped, b: untyped) =
   let t = grt.toGvalue(0.0)
   let (dzdt, e) = ndiff(f(x+t*ax, y+t*ay).redot b, t)
   let ff = f(x, y).redot b
-  let gdota = eval(redot(grad(ff, x), ax) + redot(grad(ff, y), ay)).getfloat
+  let gdota = eval(redot(grad(ff, x), ax) + redot(grad(ff, y), ay)).sval
   check(instantiationInfo(), astTostr(f(x,y)), dzdt, e, gdota)
 
 template ckgradm3(f: untyped, x: untyped, y: untyped, u: untyped, ax: untyped, ay: untyped, au: untyped, b: untyped) =
   let t = grt.toGvalue(0.0)
   let (dzdt, e) = ndiff(f(x+t*ax, y+t*ay, u+t*au).redot b, t)
   let ff = f(x, y, u).redot b
-  let gdota = eval(redot(grad(ff, x), ax) + redot(grad(ff, y), ay) + redot(grad(ff, u), au)).getfloat
+  let gdota = eval(redot(grad(ff, x), ax) + redot(grad(ff, y), ay) + redot(grad(ff, u), au)).sval
   check(instantiationInfo(), astToStr(f(x,y,u)), dzdt, e, gdota)
 
 template ckbinarynorm2grad(fusedExpr: untyped,
@@ -118,6 +120,10 @@ threads:
 let scalarValues = sampleScalarValues()
 let a = scalarValues.a
 let b = scalarValues.b
+
+proc zeroGaugeLike(source: graphGaugeShared.Gauge): graphGaugeShared.Gauge =
+  result = source.newOneOf
+  result.zeroGaugeStorage
 
 include gauge/coeffs
 include gauge/basic

@@ -4,48 +4,38 @@ import ../gauge/shared as graphGauge
 import config, integrator
 
 type
-  TrajectoryState = object
-    gauge: Ggauge
-    momentum: Ggauge
-    gaugeAction: Gscalar
-    kinetic: Gscalar
-    hamiltonian: Gscalar
+  TrajectoryState* = object
+    gauge*: Ggauge
+    momentum*: Ggauge
+    gaugeAction*: Gscalar
+    kinetic*: Gscalar
+    hamiltonian*: Gscalar
   LearnedParameter* = object
+    name*: string
     node*: Gscalar
     gradientExpr*: Gscalar
   TrajectoryGraph* = object
-    initialState: TrajectoryState
-    finalState: TrajectoryState
-    deltaHamiltonian: Gscalar
-    acceptanceExpr: Gscalar
-    lossExpr: Gscalar
+    initialState*: TrajectoryState
+    finalState*: TrajectoryState
+    deltaHamiltonian*: Gscalar
+    acceptanceExpr*: Gscalar
+    lossExpr*: Gscalar
     learnedParameters*: seq[LearnedParameter]
 
 proc initLearnedParameters(lossExpr: Gscalar,
-                           parameterNodes: openArray[Gscalar]): seq[LearnedParameter] =
-  result = newSeq[LearnedParameter](parameterNodes.len)
+                           parameters: openArray[LearnedCoeff]): seq[LearnedParameter] =
+  result = newSeq[LearnedParameter](parameters.len)
   for i in 0..<result.len:
     result[i] = LearnedParameter(
-      node: parameterNodes[i],
-      gradientExpr: lossExpr.grad parameterNodes[i])
+      name: parameters[i].name,
+      node: parameters[i].node,
+      gradientExpr: lossExpr.grad parameters[i].node)
 
-proc lossValue*(graph: TrajectoryGraph): float =
-  graph.lossExpr.eval.getfloat
-
-proc acceptanceProbability*(graph: TrajectoryGraph): float =
-  graph.acceptanceExpr.eval.getfloat
-
-proc currentGauge*(graph: TrajectoryGraph): graphGauge.Gauge =
-  graph.initialState.gauge.getgauge
-
-proc currentMomentum*(graph: TrajectoryGraph): graphGauge.Gauge =
-  graph.initialState.momentum.getgauge
-
-template resampleMomentum*(graphValue, randomFieldValue: untyped) =
-  block:
+proc resampleMomentum*(graph: TrajectoryGraph, randomField: var auto) =
+  let randomFieldPtr = addr randomField
+  mutateGauge(graph.initialState.momentum, momentumStorage):
     threads:
-      graphValue.initialState.momentum.getgauge.randomTAH randomFieldValue
-    graphValue.initialState.momentum.updated
+      momentumStorage.randomTAH randomFieldPtr[]
 
 proc buildTrajectoryState(gc: Gactcoeff,
                           gauge: Ggauge,
@@ -57,28 +47,25 @@ proc buildTrajectoryState(gc: Gactcoeff,
   result.kinetic = kineticScale * momentum.norm2
   result.hamiltonian = result.gaugeAction + result.kinetic
 
-proc logTrajectoryState(label: string,
-                        state: TrajectoryState) =
-  echo label, " H: ", state.hamiltonian.eval,
-    "  Sg: ", state.gaugeAction.eval,
-    "  T: ", state.kinetic.eval
-
 proc buildTrajectoryGraph*(grt: GraphRuntime,
-                           g, p: auto,
+                           g, p: graphGauge.Gauge,
                            gc: Gactcoeff,
                            config: RunConfig): TrajectoryGraph =
   let gdt = toGvalue(grt, config.dt)
-  var parameterNodes = @[gdt]
+  var parameters = @[LearnedCoeff(name: "dt", node: gdt)]
   result.initialState = buildTrajectoryState(gc, toGvalue(grt, g), toGvalue(grt, p))
   let tau = float(config.gsteps) * gdt
-  let (g1, p1, learnedCoeffs) = integrateGauge(
+  let integrated = integrateGauge(
     gc,
     result.initialState.gauge,
     result.initialState.momentum,
     gdt,
     config.gsteps,
     config.integratorCoeffs)
-  result.finalState = buildTrajectoryState(gc, g1, p1)
+  result.finalState = buildTrajectoryState(
+    gc,
+    integrated.gauge,
+    integrated.momentum)
   result.deltaHamiltonian =
     result.finalState.hamiltonian - result.initialState.hamiltonian
   let deltaZero = scalarLeafLike(result.deltaHamiltonian, 0.0)
@@ -86,46 +73,10 @@ proc buildTrajectoryGraph*(grt: GraphRuntime,
   result.acceptanceExpr =
     cond(result.deltaHamiltonian < deltaZero, acceptOne, exp(-result.deltaHamiltonian))
   result.lossExpr = -result.acceptanceExpr * (tau * tau)
-  parameterNodes.add learnedCoeffs
-  result.learnedParameters = initLearnedParameters(result.lossExpr, parameterNodes)
-
-proc echoTrajectoryHamiltonians*(graph: TrajectoryGraph) =
-  logTrajectoryState("Begin", graph.initialState)
-  logTrajectoryState("End", graph.finalState)
-
-proc logAcceptance*(graph: TrajectoryGraph,
-                    accepted: bool,
-                    draw: float,
-                    alwaysAccept: bool) =
-  if accepted:
-    echo "ACCEPT:  dH: ", graph.deltaHamiltonian.eval,
-      "  exp(-dH): ", graph.acceptanceExpr.eval,
-      "  r: ", draw,
-      (if alwaysAccept: " (ignored)" else: "")
-  else:
-    echo "REJECT:  dH: ", graph.deltaHamiltonian.eval,
-      "  exp(-dH): ", graph.acceptanceExpr.eval,
-      "  r: ", draw
-
-proc shouldAccept*(graph: TrajectoryGraph,
-                   draw: float,
-                   alwaysAccept: bool): bool =
-  draw <= graph.acceptanceProbability or alwaysAccept
-
-proc finalGaugeSnapshot*(graph: TrajectoryGraph): Ggauge =
-  discard graph.finalState.gauge.eval
-  result = graph.finalState.gauge.gaugeNodeLike
-  result.valCopy graph.finalState.gauge
-  result.updated
+  parameters.add integrated.learnedCoeffs
+  result.learnedParameters = initLearnedParameters(result.lossExpr, parameters)
 
 proc commitAcceptedTrajectory*(graph: TrajectoryGraph,
-                               finalGauge: Ggauge) =
-  discard requireSameGraphRuntime(
-    finalGauge,
-    graph.initialState.gauge,
-    "accepted trajectory commit",
-    "snapshot",
-    "initial gauge")
-  graph.initialState.gauge.valCopy finalGauge
-  graph.initialState.gauge.getgauge.reunitGauge
-  graph.initialState.gauge.updated
+                               finalGauge: graphGauge.Gauge) =
+  graph.initialState.gauge.update finalGauge
+  graph.initialState.gauge.unsafeGaugeStorage.reunitGauge

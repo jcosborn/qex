@@ -1,73 +1,75 @@
 import qex
 import core
+import scalar
 import gauge
+import gauge/shared as graphGauge
 from hmcgauge/config import
-  RunConfig, TrajectoryPhase, tpThermo, tpTrain, tpInfer,
+  RunConfig, tpThermo, tpTrain, tpInfer,
   totalTrajs, trajectoryPhase, phaseLabel, validateRunConfig
 from hmcgauge/trajectory import
-  buildTrajectoryGraph, resampleMomentum, echoTrajectoryHamiltonians,
-  shouldAccept, logAcceptance, lossValue, commitAcceptedTrajectory,
-  currentGauge, finalGaugeSnapshot
+  TrajectoryGraph, buildTrajectoryGraph, resampleMomentum,
+  commitAcceptedTrajectory
 from hmcgauge/training import
-  initTrainingState, formatFloatValues, parameterValues, trainStep
+  TrainingState, initTrainingState, formatParameterValues, trainStep
 from hmcgauge/gauge_io import loadOrInitGauge, maybeSaveGauge
-from hmcgauge/params import
-  installHmcGaugeParams, readHmcGaugeInputs, persistHmcGaugeParams
+from hmcgauge/params import readHmcGaugeInputs
 
 proc echoRuntimeBanner() =
   echo "rank ", myRank, "/", nRanks
   threads:
     echo "thread ", threadNum, "/", numThreads
 
-proc runTrajectoryPhase(graph: auto,
-                        trainer: var auto,
-                        runConfig: RunConfig,
-                        phase: TrajectoryPhase,
-                        traj: int) =
-  case phase
-  of tpThermo:
-    echo "bloss: ", graph.lossValue
-  of tpTrain:
-    trainer.trainStep(graph, runConfig, traj)
-  of tpInfer:
-    echo "iloss: ", graph.lossValue
-
-proc finishTrajectory(graph: auto,
-                      runConfig: RunConfig,
-                      traj: int,
-                      acceptedGauge: Ggauge) =
-  if acceptedGauge != nil:
-    graph.commitAcceptedTrajectory(acceptedGauge)
-
-  graph.currentGauge.echoPlaq
-  graph.currentGauge.maybeSaveGauge(runConfig, traj)
-
 proc runTrajectory(random: var RngMilc6,
-                   graph: auto,
-                   trainer: var auto,
+                   graph: TrajectoryGraph,
+                   trainer: var TrainingState,
                    runConfig: RunConfig,
                    traj: int) =
   tic("traj")
   let phase = runConfig.trajectoryPhase(traj)
   echo runConfig.phaseLabel(phase, traj)
-  graph.echoTrajectoryHamiltonians
+  echo "Begin H: ", graph.initialState.hamiltonian.eval.sval,
+    "  Sg: ", graph.initialState.gaugeAction.eval.sval,
+    "  T: ", graph.initialState.kinetic.eval.sval
+  echo "End H: ", graph.finalState.hamiltonian.eval.sval,
+    "  Sg: ", graph.finalState.gaugeAction.eval.sval,
+    "  T: ", graph.finalState.kinetic.eval.sval
   let acceptDraw = random.uniform
-  let accepted = graph.shouldAccept(acceptDraw, runConfig.alwaysAccept)
-  graph.logAcceptance(
-    accepted,
-    acceptDraw,
-    runConfig.alwaysAccept)
-  let acceptedGauge: Ggauge =
-    if accepted:
-      graph.finalGaugeSnapshot
-    else:
-      nil
+  let deltaHamiltonian = graph.deltaHamiltonian.eval.sval
+  let acceptanceProbability = graph.acceptanceExpr.eval.sval
+  let accepted = acceptDraw <= acceptanceProbability or runConfig.alwaysAccept
+  if accepted:
+    echo "ACCEPT:  dH: ", deltaHamiltonian,
+      "  exp(-dH): ", acceptanceProbability,
+      "  r: ", acceptDraw,
+      (if runConfig.alwaysAccept: " (ignored)" else: "")
+  else:
+    echo "REJECT:  dH: ", deltaHamiltonian,
+      "  exp(-dH): ", acceptanceProbability,
+      "  r: ", acceptDraw
+  var acceptedGauge: graphGauge.Gauge
+  if accepted:
+    discard graph.finalState.gauge.eval
+    acceptedGauge = graph.finalState.gauge.gaugeSnapshot
   qexGC "traj done"
 
   toc("forward end")
+  let loss = graph.lossExpr.eval.sval
 
-  runTrajectoryPhase(graph, trainer, runConfig, phase, traj)
-  finishTrajectory(graph, runConfig, traj, acceptedGauge)
+  case phase
+  of tpThermo:
+    echo "bloss: ", loss
+  of tpTrain:
+    echo "tloss: ", loss
+    trainer.trainStep(runConfig, traj)
+  of tpInfer:
+    echo "iloss: ", loss
+
+  if accepted:
+    graph.commitAcceptedTrajectory(acceptedGauge)
+
+  let currentGauge = graph.initialState.gauge.gaugeSnapshot
+  currentGauge.echoPlaq
+  currentGauge.maybeSaveGauge(runConfig, traj)
   qexLog "traj ",traj," secs: ",getElapsedTime()
   toc("traj end")
 
@@ -82,17 +84,19 @@ proc runHmcGauge*() =
 
   echoRuntimeBanner()
 
-  installHmcGaugeParams()
+  installStandardParams()
+  echoParams()
+  processHelpParam()
 
   let
     runConfig = inputs.config
     lo = inputs.lat.newLayout
     grt = initGraphRuntime()
-    gc = actWilson(grt, inputs.beta)
+    gc = actWilson(scalar.toGvalue(grt, inputs.beta))
 
-  var r = lo.newRNGField(RngMilc6, inputs.seed)
-  var R:RngMilc6  # global RNG
-  R.seed(inputs.seed, 987654321)
+  var momentumRandom = lo.newRNGField(RngMilc6, inputs.seed)
+  var acceptRandom: RngMilc6
+  acceptRandom.seed(inputs.seed, 987654321)
 
   var
     g = lo.newgauge
@@ -105,17 +109,18 @@ proc runHmcGauge*() =
   let graph = buildTrajectoryGraph(grt, g, p, gc, runConfig)
   var trainer = initTrainingState(graph, runConfig.weightDecay)
 
-  echo formatFloatValues("param:", trainer.parameterValues)
+  echo trainer.formatParameterValues
 
   toc("prep")
 
   for traj in 1..runConfig.totalTrajs:
-    graph.resampleMomentum(r)
-    runTrajectory(R, graph, trainer, runConfig, traj)
+    graph.resampleMomentum(momentumRandom)
+    runTrajectory(acceptRandom, graph, trainer, runConfig, traj)
 
   toc()
 
-  persistHmcGaugeParams()
+  processSaveParams()
+  writeParamFile()
 
 when isMainModule:
   runHmcGauge()

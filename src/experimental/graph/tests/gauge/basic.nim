@@ -1,7 +1,7 @@
 proc mixedScalarGaugeForward(v: Gvalue) =
   let z = v.requireMultiValue("mixed scalar/gauge forward")
   for i in 0..<z.inputs.len:
-    z.slotValue(i).valCopy(z.inputs[i])
+    z.storedSlot(i).valCopy(z.inputs[i])
 
 proc mixedScalarGaugeBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
   discard dep
@@ -49,16 +49,31 @@ suite "gauge basic":
     norm2(grad(pq, gq) - gp) :< 1e-26
     ckgrad2(redot, gp, gq, gg, gu)
 
-  test "erased-right gauge overloads preserve concrete result type":
+  test "g+g propagates gauge upstream to both inputs":
+    let z = redot(gp + gq, gu)
+
+    norm2(grad(z, gp) - gu) :< 1e-26
+    norm2(grad(z, gq) - gu) :< 1e-26
+
+  test "gauge operators require explicit erased operand casts":
     let erasedGauge: Gvalue = gq
     let erasedScalar: Gvalue = x
+    let castGauge = erasedGauge.requireGauge("erased gauge test right")
+    let castScalar = erasedScalar.requireScalar("erased gauge test scalar")
 
-    let addResult: Ggauge = gp + erasedGauge
-    let mulResult: Ggauge = gp * erasedGauge
-    let subGaugeResult: Ggauge = gp - erasedGauge
-    let subScalarResult: Ggauge = gp - erasedScalar
-    let dotResult: Gscalar = redot(gp, erasedGauge)
-    let derivResult: Ggauge = expDeriv(gp, erasedGauge)
+    check not compiles(gp + erasedGauge)
+    check not compiles(gp * erasedGauge)
+    check not compiles(gp - erasedGauge)
+    check not compiles(gp - erasedScalar)
+    check not compiles(redot(gp, erasedGauge))
+    check not compiles(expDeriv(gp, erasedGauge))
+
+    let addResult: Ggauge = gp + castGauge
+    let mulResult: Ggauge = gp * castGauge
+    let subGaugeResult: Ggauge = gp - castGauge
+    let subScalarResult: Ggauge = gp - castScalar
+    let dotResult: Gscalar = redot(gp, castGauge)
+    let derivResult: Ggauge = expDeriv(gp, castGauge)
 
     norm2(addResult - (gp + gq)) :< 1e-26
     norm2(mulResult - (gp * gq)) :< 1e-26
@@ -69,11 +84,107 @@ suite "gauge basic":
 
   test "gauge validator rejects wrong value type":
     let scalarValue: Gvalue = x
-    let missing: Gvalue = nil
     expect(GraphValueError):
-      discard scalarValue.requireGauge("getgauge")
+      discard scalarValue.requireGauge("gaugeSnapshot")
+
+  test "gauge gradient add labels wrong operand side":
+    try:
+      discard gg.addLike(Gvalue(x), Gvalue(gg))
+      fail()
+    except GraphValueError as e:
+      check e.msg.contains("gauge gradient add left")
+
+    try:
+      discard gg.addLike(Gvalue(gg), Gvalue(x))
+      fail()
+    except GraphValueError as e:
+      check e.msg.contains("gauge gradient add right")
+
+  test "explicit gauge forward hooks reject wrong result node type":
+    proc wrongGaugeResultForward(v: Gvalue) =
+      discard v.requireUnaryNodeView(Ggauge, "wrong gauge result forward")
+      discard v.requireGauge("wrong gauge result forward result")
+
+    let wrongGaugeResultFunc = newGfunc(
+      forward = wrongGaugeResultForward,
+      name = "wrongGaugeResult")
+    let malformed = graphNode(
+      scalarNodeLike(x),
+      @[Gvalue(gg)],
+      wrongGaugeResultFunc,
+      "wrong gauge result")
+
+    try:
+      discard malformed.eval
+      fail()
+    except GraphValueError as e:
+      check e.msg.contains("wrong gauge result forward")
+      check e.msg.contains("expects gauge value")
+
+  test "toGvalue owns a snapshot of caller gauge storage":
+    var localGauge = lo.newgauge
+    threads:
+      for mu in 0..<localGauge.len:
+        localGauge[mu] := g[mu]
+
+    let wrapped = grt.toGvalue(localGauge)
+    let snapshot = wrapped.gaugeNodeLike
+    snapshot.valCopy(wrapped)
+    snapshot.updated
+
+    threads:
+      for mu in 0..<localGauge.len:
+        localGauge[mu] := 0.0
+
+    norm2(wrapped - snapshot) :< 1e-26
+
+  test "gaugeSnapshot returns a snapshot of graph gauge storage":
+    let wrapped = grt.toGvalue(g)
+    let before = wrapped.norm2.eval.sval
+    var snapshot = wrapped.gaugeSnapshot
+    snapshot.zeroGaugeStorage
+
+    wrapped.norm2 :~ before
+
+  test "mutateGauge marks graph-owned gauge storage fresh":
+    let wrapped = grt.toGvalue(g)
+    let n2 = wrapped.norm2
+    n2 :~ 4.0*float(nc*vol)
+
+    mutateGauge(wrapped, storage):
+      storage.zeroGaugeStorage
+
+    n2 :~ 0.0
+
+  test "gauge copy paths reject incompatible shapes before copying":
+    let lo2 = @[4,4,4,8].newLayout
+    let g2 = lo2.newgauge
+    let left = grt.toGvalue(zeroGaugeLike(g))
+    let right = grt.toGvalue(zeroGaugeLike(g2))
+
     expect(GraphValueError):
-      discard missing.requireGauge("getgauge")
+      left.update(g2)
+    expect(GraphValueError):
+      left.valCopy(right)
+
+  test "binary gauge ops reject incompatible layouts at construction":
+    let lo2 = @[4,4,4,8].newLayout
+    let g2 = lo2.newgauge
+    let other = grt.toGvalue(zeroGaugeLike(g2))
+    let erasedOther: Gvalue = other
+
+    expect(GraphValueError):
+      discard gg + other
+    expect(GraphValueError):
+      discard gg * other
+    expect(GraphValueError):
+      discard gg - other
+    expect(GraphValueError):
+      discard redot(gg, other)
+    expect(GraphValueError):
+      discard expDeriv(gg, other)
+    expect(GraphValueError):
+      discard gg + erasedOther.requireGauge("erased shape right")
 
   test "gauge numeric literal overloads stay explicit":
     let one = grt.toGvalue(1.0)
@@ -157,6 +268,21 @@ suite "gauge basic":
     norm2(egp*egp.adj - 1.0) :< 1e-20
     ckgradm(exp, gm, 0.1*gp, gg)
 
+  test "expDeriv backward reports unsupported paths for both inputs":
+    let loss = expDeriv(gp, gm).norm2
+
+    try:
+      discard loss.grad gp
+      fail()
+    except GraphValueError as e:
+      check e.msg.contains("force-direction input")
+
+    try:
+      discard loss.grad gm
+      fail()
+    except GraphValueError as e:
+      check e.msg.contains("matrix exponential")
+
   test "projTAH":
     let gt = gg.projTAH
     let tgt = gt.retr
@@ -164,7 +290,7 @@ suite "gauge basic":
     ckgradm(projTAH, gg, gp, gu)
 
   test "zero-valued gauges carry zero buffers through copies and arithmetic":
-    let zero = grt.toGvalue(g, isZero = true)
+    let zero = grt.toGvalue(zeroGaugeLike(g))
     let zeroCopy = Ggauge(zero.newOneOf)
     zeroCopy.valCopy(zero)
 
@@ -177,17 +303,20 @@ suite "gauge basic":
     let g2 = lo2.newgauge
 
     expect(GraphValueError):
-      discard cond(grt.toGvalue(1), grt.toGvalue(g, isZero = true), grt.toGvalue(g2, isZero = true))
+      discard cond(
+        grt.toGvalue(1),
+        grt.toGvalue(zeroGaugeLike(g)),
+        grt.toGvalue(zeroGaugeLike(g2)))
 
   test "multi output preserves heterogeneous gauge layouts":
     let lo2 = @[4,4,4,8].newLayout
     let g2 = lo2.newgauge
-    let left = grt.toGvalue(g, isZero = true)
-    let right = grt.toGvalue(g2, isZero = true)
+    let left = grt.toGvalue(zeroGaugeLike(g))
+    let right = grt.toGvalue(zeroGaugeLike(g2))
     let slots = [Gvalue(left), Gvalue(right)]
-    let mixed = newMultiOutputNode(slots, slots, nil, "mixed gauge")
-    let first = Ggauge(mixed.slotValue(0))
-    let second = Ggauge(mixed.slotValue(1))
+    let mixed = newMultiOutputNode(slots, newSeq[Gvalue](0), nil, "mixed gauge")
+    let first = Ggauge(mixed.storedSlot(0))
+    let second = Ggauge(mixed.storedSlot(1))
 
     check first.copyCompatible(left)
     check second.copyCompatible(right)

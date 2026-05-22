@@ -58,7 +58,7 @@ echo "numdiff smear dS/dt: ",ndt," +/- ",err
 proc stout(g: Ggauge, t: Gscalar, n: int): Ggauge =
   var g = g
   for i in 1..n:
-    g = axexpmuly(t, gaugeForce(actWilson(g.runtime, -3.0), g), g)
+    g = axexpmuly(t, gaugeForce(actWilson(scalar.toGvalue(g.runtime, -3.0)), g), g)
   g
 
 let
@@ -68,16 +68,16 @@ let
   s = gcGraph.gaugeAction gs
   ddt = s.grad gdt
 
-gs.eval.getgauge.echoPlaq
-let sgg = s.eval.getfloat
+gs.eval.gaugeSnapshot.echoPlaq
+let sgg = s.eval.sval
 echo "graph S: ",sgg
 
-let gddt = ddt.eval.getfloat
+let gddt = ddt.eval.sval
 echo "graph dS/dt: ",gddt
 
 proc gact(t: float): float =
   gdt.update t
-  s.eval.getfloat
+  s.eval.sval
 var gndt, gerr: float
 ndiff(gndt, gerr, gact, dt, eps, ordMax=4)
 echo "numdiff graph dS/dt: ",gndt," +/- ",gerr

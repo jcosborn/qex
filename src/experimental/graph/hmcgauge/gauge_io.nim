@@ -3,16 +3,6 @@ from os import fileExists
 from strformat import `&`
 import config
 
-proc reunitAndReportGauge(g: auto) =
-  threads:
-    let d = g.checkSU
-    threadBarrier()
-    echo "unitary deviation avg: ", d.avg, " max: ", d.max
-    g.projectSU
-    threadBarrier()
-    let dd = g.checkSU
-    echo "new unitary deviation avg: ", dd.avg, " max: ", dd.max
-
 proc loadOrInitGauge*(g: var auto, gaugefile: string) =
   if fileExists(gaugefile):
     tic("load")
@@ -22,7 +12,15 @@ proc loadOrInitGauge*(g: var auto, gaugefile: string) =
     toc("read")
     block:
       tic("reunit")
-      g.reunitAndReportGauge
+      let gaugePtr = addr g
+      threads:
+        let d = gaugePtr[].checkSU
+        threadBarrier()
+        echo "unitary deviation avg: ", d.avg, " max: ", d.max
+        gaugePtr[].projectSU
+        threadBarrier()
+        let dd = gaugePtr[].checkSU
+        echo "new unitary deviation avg: ", dd.avg, " max: ", dd.max
       toc("reunit")
   else:
     g.unit

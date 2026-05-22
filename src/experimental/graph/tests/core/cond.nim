@@ -194,6 +194,23 @@ suite "bool and cond":
     dxLive :~ 1.0
     dyLive :~ 0.0
 
+  test "typed newCondNode preserves concrete result and gradients":
+    let selector = grt.toGvalue(1)
+    let trueBranch = grt.toGvalue(5.0)
+    let falseBranch = grt.toGvalue(7.0)
+    let z: Gscalar = newCondNode(selector, trueBranch, falseBranch)
+    let dzTrue = z.grad trueBranch
+    let dzFalse = z.grad falseBranch
+
+    z :~ 5.0
+    dzTrue :~ 1.0
+    dzFalse :~ 0.0
+
+    selector.update 0
+    z :~ 7.0
+    dzTrue :~ 0.0
+    dzFalse :~ 1.0
+
   test "literal cond overloads preserve concrete branch type":
     let ks = grt.toGvalue(1.0)
     let ki = grt.toGvalue(1)
@@ -223,31 +240,24 @@ suite "bool and cond":
 
     expect(GraphValueError):
       discard cond(grt.toGvalue(1), scalarBranch, intBranch)
-
     expect(GraphValueError):
-      discard newCondNode(nil, scalarBranch, scalarBranch)
-    expect(GraphValueError):
-      discard newCondNode(grt.toGvalue(1), nil, scalarBranch)
-
-  test "walkedInputs rejects nil callbacks":
-    expect(GraphValueError):
-      discard walkedInputs(nil)
+      discard newCondNode(rawGraphValueIn(grt), scalarBranch, scalarBranch)
 
   test "cond eval shortcut":
     let t = grt.toGvalue(2.0)
     let f = grt.toGvalue(0.0)
     let t2 = t*t
     let t3 = t*t*t
-    check t2.getfloat == 0.0
-    check t3.getfloat == 0.0
+    check t2.sval == 0.0
+    check t3.sval == 0.0
     var tt = cond(t, t2, t3)
     tt :~ 4.0
-    check t2.getfloat == 4.0
-    check t3.getfloat == 0.0
+    check t2.sval == 4.0
+    check t3.sval == 0.0
     tt = cond(f, t3, t2)
     tt :~ 4.0
-    check t2.getfloat == 4.0
-    check t3.getfloat == 0.0
+    check t2.sval == 4.0
+    check t3.sval == 0.0
 
   test "treeRepr mode follows eval and dependency walks":
     let k = grt.toGvalue(1)
@@ -261,6 +271,35 @@ suite "bool and cond":
     check not evalTree.contains("23.0")
     check dependTree.contains("17.0")
     check dependTree.contains("23.0")
+
+  test "walkDeps exposes cond mode-specific inputs":
+    let k = grt.toGvalue(1)
+    let t = grt.toGvalue(17.0)
+    let f = grt.toGvalue(23.0)
+    let trueBranch = t + 1.0
+    let falseBranch = f + 1.0
+    let z = cond(k, trueBranch, falseBranch)
+
+    proc walked(mode: InputWalkMode): seq[Gvalue] =
+      var deps: seq[Gvalue] = @[]
+      z.walkDeps(mode, proc(child: Gvalue) =
+        deps.add child)
+      deps
+
+    let evalDeps = walked(iwmEval)
+    check evalDeps.len == 2
+    check sameNode(evalDeps[0], k)
+    check sameNode(evalDeps[1], trueBranch)
+
+    let dependDeps = walked(iwmDepend)
+    check dependDeps.len == 3
+    check sameNode(dependDeps[0], k)
+    check sameNode(dependDeps[1], trueBranch)
+    check sameNode(dependDeps[2], falseBranch)
+
+    let signatureDeps = walked(iwmGradSignature)
+    check signatureDeps.len == 1
+    check sameNode(signatureDeps[0], k)
 
   test "signature tree omits cond branches":
     let k = grt.toGvalue(1)
@@ -328,7 +367,7 @@ suite "bool and cond":
       check cnd.runCount > condRuns0
       check cnd.inputs[0].runCount > subRuns0
       check t2.runCount == expRuns0
-      check f2.runCount > mulRuns0
+      check f2.runCount == mulRuns0
 
     block:
       let x2 = grt.toGvalue(1.0)

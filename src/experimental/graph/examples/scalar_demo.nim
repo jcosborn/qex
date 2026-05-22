@@ -31,10 +31,8 @@ echo z.treeRepr
 echo "dzdy = ", dzdy
 echo dzdy.treeRepr
 
-dumpGradientList(grt)
-
-doAssert almostEqual(z.getfloat, f(a, b))
-doAssert almostEqual(dzdy.getfloat, dfdb(a, b))
+doAssert almostEqual(z.sval, f(a, b))
+doAssert almostEqual(dzdy.sval, dfdb(a, b))
 
 y.update c
 z.eval
@@ -43,5 +41,5 @@ echo "z = ", z
 echo z.treeRepr
 echo "dzdy = ", dzdy
 echo dzdy.treeRepr
-doAssert almostEqual(z.getfloat, f(a, c))
-doAssert almostEqual(dzdy.getfloat, dfdb(a, c))
+doAssert almostEqual(z.sval, f(a, c))
+doAssert almostEqual(dzdy.sval, dfdb(a, c))
