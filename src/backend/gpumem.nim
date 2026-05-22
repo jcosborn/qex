@@ -1,4 +1,5 @@
 import tables, strformat, strutils, algorithm
+import base/profile
 import backend/accelbase
 
 # kinds
@@ -104,13 +105,17 @@ template wasCopiedOut*(x: ptr GpuMem) =
 
 proc copyIn*(x: GpuMem | ptr GpuMem, p: pointer) =
   if x.needsCopyIn:
+    tic("copyIn")
     gpuMemCpyToGpu(x.p, p, x.bytes)
     x.wasCopiedIn
+    toc("end",flops=x.bytes)
 
 proc copyOut*(x: GpuMem | ptr GpuMem, p: pointer) =
   if x.needsCopyOut:
+    tic("copyOut")
     gpuMemCpyToCpu(p, x.p, x.bytes)
     x.wasCopiedOut
+    toc("end",flops=x.bytes)
 
 #proc newGpuMem*(gpuBytes: int): GpuMem =
 #  result.p = gpuMalloc(gpuBytes)

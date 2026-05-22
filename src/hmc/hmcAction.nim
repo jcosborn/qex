@@ -16,7 +16,7 @@ import layout
 
 import mdevolve
 
-import std/[os]
+import std/[os,strutils,algorithm,sequtils]
 
 import algorithms/[integrator]
 
@@ -41,6 +41,13 @@ import hmc/[metropolis]
 export metropolis
 
 type
+  ActionStats* = TableRef[string,float]
+proc newActionStats*():auto = newTable[string,float]()
+let baseStats0 = {"n":0.0,"secs":0,"flops":0}
+let forceStats0 = {"n":0.0,"secs":0,"flops":0,"f2":0,"f4":0,"finf":0}
+let solveStats0 = {"n":0.0,"secs":0,"flops":0,"its":0,"r2":0,"r2max":0}
+
+type
   ActionField* = ref object of RootObj
   ActionRngField* = ref object of ActionField
   ActionForce* = ref object of ActionField
@@ -50,6 +57,9 @@ type ActionRoot* = ref object of RootObj
   actionProc*: proc(self: ActionRoot, u: ActionField): float
   forceProc*: proc(self: ActionRoot, u: ActionField, dtau: float, f: ActionForce)
   name*: string
+  id*: string
+  description*: string
+  stats*: Table[string,ActionStats]
 
 type GaugeConfiguration*[U] = ref object of ActionField
   u*: seq[U]
@@ -84,10 +94,11 @@ type
   GaugeAction*[U] = ref object of ActionRoot
     gc*: GaugeActionCoeffs
 
-  StaggeredFermionAction*[U, T, S] = ref object of ActionRoot
+  StaggeredFermionAction*[U, T, S, R] = ref object of ActionRoot
     mass*: float
     stag*: Staggered[U, T]
     phi*: S
+    prng*: R
     spa*: SolverParams
     spf*: SolverParams
 
@@ -113,7 +124,7 @@ type
     multiplier*: int
     integrator*: IntegratorProc
 
-  HmcAction*[U, R] = ref object of MetropolisRootObj
+  HmcAction*[U, R] = ref object of MetropolisRoot
     tau*: float
     uc*: GaugeConfiguration[U]
     prng*: R
@@ -123,6 +134,27 @@ type
     bu*: seq[U]
     heatbathProc*: proc()
     globalRandProc*: proc(): float
+    hmcStats*: Table[string,ActionStats]
+    secs*: float
+
+  #HmcEvolver*[U, R] = ref object of MetropolisRoot
+  #  tau*: float
+  #  uc*: GaugeConfiguration[U]
+  #  prng*: R
+  #  levels*: seq[ActionLevel]
+  #  p*: seq[U]
+  #  f*: seq[U]
+  #  bu*: seq[U]
+  #  heatbathProc*: proc()
+  #  globalRandProc*: proc(): float
+
+# HmcAction
+#   tuple(fields)
+#   levels
+#   stats
+
+# HmcRunner
+#   tau, globalRand
 
 proc newHmcAction*[U,R](
   uc: GaugeConfiguration[U];
@@ -137,10 +169,10 @@ proc newHmcAction*[U,R](
   result.p = lo.newGauge()
   result.f = lo.newGauge()
   result.bu = lo.newGauge()
-  template ET: untyped = evalType(lo.ColorVector()[0])
-  template FT: untyped = evalType(lo.ColorVector())
-
   result.tau = tau
+  result.hmcStats = initTable[string,ActionStats]()
+  #template ET: untyped = evalType(lo.ColorVector()[0])
+  #template FT: untyped = evalType(lo.ColorVector())
 
   let pHB = result.p
   result.heatbathProc = proc =
@@ -150,6 +182,17 @@ proc newHmcAction*[U,R](
 
   var sRng = srng
   result.globalRandProc = proc(): float = sRng.uniform()
+
+proc description*(h: HmcAction): string =
+  result = ""
+  for i,l in h.levels.pairs:
+    if i>0: result &= "\n"
+    result &= "ActionLevel " & $i
+    for a in l.actions:
+      if a.id != "":
+        result &= "\n" & a.id
+        if a.description != "":
+          result &= "\n" & a.description.indent(2)
 
 #[ ActionLevel: virtual dispatch for nested integrators ]#
 
@@ -199,12 +242,17 @@ proc integrator*(hmc: var HmcAction): Integrator =
   let gf = GaugeForce[hmc.U](f: fp[])
   let levels = addr hmc.levels
   let nlevels = hmc.levels.len
+  let pstats = addr hmc.hmcStats
 
   proc mdt(dtau: float) =
+    tic("mdt")
     threads:
       for mu in 0..<uc.u.len:
         for s in uc.u[mu]:
           uc.u[mu][s] := exp(dtau * pp[][mu][s]) * uc.u[mu][s]
+    pstats[]["GU"]["n"] += 1
+    pstats[]["GU"]["secs"] += getElapsedTime()
+    toc("end")
 
   proc mdv(dtau: openArray[float]) =
     threads:
@@ -246,6 +294,7 @@ proc reunit*(hmc: var HmcAction) = reunit(hmc.uc.u)
 proc getH*(hmc: var HmcAction): float = hmc.hamiltonian()
 
 proc start*(hmc: var HmcAction) =
+  hmc.hmcStats["GU"] = baseStats0.newTable
   hmc.heatbathProc()
   let r = ActionPrng[hmc.R](r: hmc.prng)
   for level in hmc.levels: level.heatbath(hmc.uc, r)
@@ -261,6 +310,102 @@ proc globalRand*(hmc: var HmcAction): float = hmc.globalRandProc()
 proc accept*(hmc: var HmcAction) = hmc.reunit()
 
 proc reject*(hmc: var HmcAction) = setGauge(hmc.uc.u, hmc.bu)
+
+proc merge(stats,b: var Table) =
+  for id in b.keys:
+    if stats.contains id:
+      for k,v in b[id]:
+        if k.endsWith("max") or k.endsWith("inf"):
+          stats[id][k].maxeq v
+        else:
+          stats[id][k] += v
+    else:
+      stats[id] = newActionStats()
+      for t,u in b[id]:
+        stats[id][t] = u
+
+proc run*(hmc: var HmcAction) =
+  tic("HmcAction:run")
+  let nup = hmc.nUpdates + 1
+  echo &"== Begin HMC update {nup} =========="
+  metropolis.update(hmc)
+  let dt = getElapsedTime()
+  hmc.secs += dt
+  var stats = initTable[string,ActionStats]()
+  stats.merge hmc.hmcStats
+  for level in hmc.levels:
+    for a in level.actions:
+      stats.merge a.stats
+  var secs = 0.0
+  var st = [newSeq[string](0),newSeq[string](0),newSeq[string](0)]
+  let ids = stats.keys.toSeq.sorted
+  for id in ids:
+    var stval = 0
+    let t = stats[id]
+    var ks1 = t.keys.toSeq
+    var s = &"{id:8}"
+    var n0 = 0.0
+    var secs0 = 0.0
+    var norm20 = 0.0
+    if ks1.contains "secs":
+      let v = t["secs"]
+      let p = 100.0 * v / dt
+      s &= &""" {v:8.2f}s"""
+      s &= &""" {p:5.1f}%"""
+      ks1.del ks1.find "secs"
+      secs += v
+      secs0 = v
+    if ks1.contains "n":
+      n0 = t["n"]
+      let v = int n0
+      s &= &""" {v:5d}"""
+      ks1.del ks1.find "n"
+    if ks1.contains "flops":
+      var v = int (1e-9 * t["flops"] / secs0)
+      if secs0==0: v = 0
+      s &= &""" {v:5d}GF"""
+      ks1.del ks1.find "flops"
+    if ks1.contains "f2":
+      stval = 1
+      norm20 = t["f2"]/n0
+      var v = sqrt(norm20)
+      s &= &" {v:6.4f}RMS"
+      ks1.del ks1.find "f2"
+    if ks1.contains "f4":
+      stval = 1
+      var v = t["f4"]/n0
+      v = sqrt(sqrt(abs(v - norm20*norm20)))
+      s &= &" {v:6.4f}Var"
+      ks1.del ks1.find "f4"
+    if ks1.contains "finf":
+      var v = sqrt t["finf"]
+      s &= &" {v:6.4f}Inf"
+      ks1.del ks1.find "finf"
+    if ks1.contains "its":
+      var v = int round(t["its"] / n0)
+      s &= &" {v:5d}avg"
+      ks1.del ks1.find "its"
+    if ks1.contains "r2":
+      stval = 2
+      var v = t["r2"] / n0
+      s &= &" {v:9.4g}avg"
+      ks1.del ks1.find "r2"
+    if ks1.contains "r2max":
+      var v = t["r2max"]
+      s &= &" {v:9.4g}max"
+      ks1.del ks1.find "r2max"
+    for k1 in ks1.sorted:
+      let v = t[k1]
+      s &= " " & k1 & " " & $v
+    st[stval].add s
+  for stx in st:
+    for s in stx:
+      echo s
+  let unsecs = dt - secs
+  let unp = 100.0 * unsecs / dt
+  echo &"other    {unsecs:8.2f}s {unp:5.1f}% "
+  echo &"End HMC update {nup}: {dt:.2f} seconds ({hmc.secs:.2f} total)"
+  toc("end")
 
 #[ gauge configuration implementation ]#
 
@@ -311,13 +456,12 @@ proc read*(c: var GaugeConfiguration; filename: string) =
     qexLog "gauge configuration loaded from file: ", filename
   else: qexError "gauge configuration file does not exist: ", filename
 
-proc smear(self: GaugeConfiguration) =
+proc smear(self: GaugeConfiguration): PerfInfo =
   # HISQ is a staggered smearing, so I don't mind having to explicitly insert the
   # the staggered rephasing here. For other smearings, rephasing must be decoupled
   # from the smearing, which is the case for nHYP
   when defined(HypSmearing):
-    var info: PerfInfo
-    discard self.sc.smearGetForce(self.u, self.su, info)
+    discard self.sc.smearGetForce(self.u, self.su, result)
   elif defined(StoutSmearing):
     qexError "Stout smearing for HMC not yet implemented"
   elif defined(HisqSmearing):
@@ -364,16 +508,54 @@ proc stagPhase[U](self: GaugeConfiguration[U]) =
 
 #[ gauge action implementation ]#
 
-proc action*(self: GaugeAction, u: GaugeConfiguration): float =
-  return self.gc.gaugeAction1(u.u)
+proc addForce*(fr: auto, s: float, fi: auto): array[3,float] =
+  var fs: array[3,float]
+  mixin simdMax
+  threads:
+    var t2: evalType(fr[0][0].norm2)
+    var t4: evalType(fr[0][0].norm2)
+    var tinf: evalType(max(fr[0][0].norm2,fr[0][0].norm2))
+    for mu in 0..<fr.len:
+      for n in fr[mu]:
+        let fn = s * fi[mu][n]
+        fr[mu][n] += fn
+        let fn2 = fn.norm2
+        t2 += fn2
+        t4 += fn2*fn2
+        tinf = max(tinf, fn2)
+    var ts = [simdSum(t2),simdSum(t4),simdMax(tinf)]
+    threadSum(ts)
+    threadSingle:
+      fs = ts
+  rankSum(fs)
+  fs[0] *= 1.0/(fr.len*fr[0].l.physVol)
+  fs[1] *= 1.0/(fr.len*fr[0].l.physVol)
+  #echo fs
+  result = fs
 
-proc force*(self: GaugeAction, u: GaugeConfiguration): auto =
+proc action*(self: GaugeAction, u: GaugeConfiguration): float =
+  tic("GaugeAction:action")
+  result = self.gc.gaugeAction1(u.u)
+  self.stats[self.id&"A"]["n"] += 1
+  self.stats[self.id&"A"]["secs"] += getElapsedTime()
+  toc("end")
+
+proc force*(self: GaugeAction, u: GaugeConfiguration, dtau: float, gf: auto) =
+  tic("GaugeAction:force")
   let lo = u.u[0].l
   var f = lo.newGauge()
   self.gc.gaugeForce(u.u, f)
-  return f
+  let fstats = addForce(gf, dtau, f)
+  self.stats[self.id&"F"]["n"] += 1
+  self.stats[self.id&"F"]["secs"] += getElapsedTime()
+  self.stats[self.id&"F"]["f2"] += fstats[0]
+  self.stats[self.id&"F"]["f4"] += fstats[1]
+  self.stats[self.id&"F"]["finf"].maxeq fstats[2]
+  toc("end")
 
-proc gaugeActionHeatbathProc(self: ActionRoot, u: ActionField, r: ActionRngField) = discard
+proc gaugeActionHeatbathProc(self: ActionRoot, u: ActionField, r: ActionRngField) =
+  self.stats[self.id & "A"] = baseStats0.newTable
+  self.stats[self.id & "F"] = forceStats0.newTable
 
 proc gaugeActionActionProc[U](self: ActionRoot, u: ActionField): float =
   let ga = GaugeAction[U](self)
@@ -384,16 +566,18 @@ proc gaugeActionForceProc[U](self: ActionRoot, u: ActionField, dtau: float, f: A
   let ga = GaugeAction[U](self)
   let gc = GaugeConfiguration[U](u)
   let gf = GaugeForce[U](f)
-  let fi = ga.force(gc)
-  threads:
-    for mu in 0..<gf.f.len: gf.f[mu] += dtau * fi[mu]
+  ga.force(gc, dtau, gf.f)
 
-proc newGaugeAction*[U](gc: GaugeActionCoeffs, u: GaugeConfiguration[U]): GaugeAction[U] =
+var GaugeActionCount = 0
+proc newGaugeAction*[U](h: HmcAction, gc: GaugeActionCoeffs, u: GaugeConfiguration[U]): GaugeAction[U] =
   result = GaugeAction[U](gc: gc)
   result.name = "GaugeAction"
+  result.id = "GA" & $GaugeActionCount; inc GaugeActionCount
+  result.description = result.name & $gc
   result.heatbathProc = gaugeActionHeatbathProc
   result.actionProc = gaugeActionActionProc[U]
   result.forceProc = gaugeActionForceProc[U]
+  result.stats = initTable[string,ActionStats]()
 
 #[ fermion force helpers ]#
 
@@ -526,29 +710,47 @@ proc fermForce[U, S](f: seq[U]; psi: S; u: GaugeConfiguration[U]) =
 
 #[ staggered fermion action ]#
 
-proc heatbath*(self: StaggeredFermionAction; u: GaugeConfiguration; rng: auto) =
+proc heatbath*(self: StaggeredFermionAction; u: GaugeConfiguration) =
+  tic("StaggeredFermionAction:refresh")
+  self.stats[self.id & "F"] = forceStats0.newTable
+  self.stats[self.id & "AS"] = solveStats0.newTable
+  self.stats[self.id & "FS"] = solveStats0.newTable
+  self.stats["SS"] = baseStats0.newTable
+  self.stats["SF"] = baseStats0.newTable
   let lo = self.phi.l
   var psi = lo.ColorVector()
-  u.smear()
+  let info = u.smear()
+  let tsmear = getElapsedTime()
   u.setBC()
   u.stagPhase()
   threads:
-    psi.gaussian(rng)
+    psi.gaussian(self.prng)
     threadBarrier()
     self.stag.D(self.phi, psi, -self.mass)
     threadBarrier()
     self.phi.odd := 0
   u.setBC()
   u.stagPhase()
+  let tend = getElapsedTime()
+  if info.flops > 0:
+    self.stats["SS"]["n"] += 1
+    self.stats["SS"]["secs"] += info.secs
+    self.stats["SS"]["flops"] += info.flops
+  else:
+    self.stats["SS"]["n"] += 1
+    self.stats["SS"]["secs"] += tsmear
+  toc("end")
 
 proc action*(self: StaggeredFermionAction; u: GaugeConfiguration): float =
+  tic("StaggeredFermionAction:action")
   let lo = self.phi.l
   var psi = lo.ColorVector()
   var psi2: float
   threads: psi := 0
-  u.smear()
+  discard u.smear()
   u.setBC()
   u.stagPhase()
+  self.spa.resetStats
   self.stag.solve(psi, self.phi, -self.mass, self.spa)
   threads:
     var psi2t = psi.norm2()
@@ -556,45 +758,69 @@ proc action*(self: StaggeredFermionAction; u: GaugeConfiguration): float =
     threadMaster: psi2 = psi2t
   u.setBC()
   u.stagPhase()
+  self.stats[self.id&"AS"]["n"] += 1
+  self.stats[self.id&"AS"]["secs"] += self.spa.seconds
+  self.stats[self.id&"AS"]["flops"] += self.spa.flops
+  self.stats[self.id&"AS"]["its"] += self.spa.iterations
+  self.stats[self.id&"AS"]["r2"] += self.spa.r2.mean
+  self.stats[self.id&"AS"]["r2max"].maxeq self.spa.r2.max
+  toc("end")
   return 0.5*psi2
 
-proc force*[U](self: StaggeredFermionAction; u: GaugeConfiguration[U]): auto =
+template maxeq*(x,y: auto) =
+  let t = addr x
+  t[] = max(t[], y)
+
+proc force*(self: StaggeredFermionAction; u: GaugeConfiguration, dtau: float, gf: auto) =
+  tic("StaggeredFermionAction:force")
   let lo = self.phi.l
   var f = lo.newGauge()
   var psi = lo.ColorVector()
   u.smearGetForce()
+  let tsmear = getElapsedTime()
   u.setBC()
   u.stagPhase()
+  self.spf.resetStats
   self.stag.stagForceSolve(psi, self.phi, self.mass, self.spf)
   f.fermForce(psi, u)
   u.setBC()
   u.stagPhase()
-  threads:
-    for mu in 0..<f.len:
-      for n in f[mu]: f[mu][n] *= 0.25
-  return f
+  let sc = 0.25 * dtau
+  let fstats = addForce(gf, sc, f)
+  self.stats["SF"]["n"] += 1
+  self.stats["SF"]["secs"] += tsmear
+  self.stats[self.id&"F"]["n"] += 1
+  self.stats[self.id&"F"]["secs"] += getElapsedTime()
+  self.stats[self.id&"F"]["f2"] += fstats[0]
+  self.stats[self.id&"F"]["f4"] += fstats[1]
+  self.stats[self.id&"F"]["finf"].maxeq fstats[2]
+  self.stats[self.id&"FS"]["n"] += 1
+  self.stats[self.id&"FS"]["secs"] += self.spf.seconds
+  self.stats[self.id&"FS"]["flops"] += self.spf.flops
+  self.stats[self.id&"FS"]["its"] += self.spf.iterations
+  self.stats[self.id&"FS"]["r2"] += self.spf.r2.mean
+  self.stats[self.id&"FS"]["r2max"].maxeq self.spf.r2.max
+  toc("end")
 
 proc staggeredFermionActionHeatbathProc[U,ET,FT,R](self: ActionRoot, u: ActionField,
                                                    r: ActionRngField) =
-  let fa = StaggeredFermionAction[U, ET, FT](self)
+  let fa = StaggeredFermionAction[U,ET,FT,R](self)
   let gc = GaugeConfiguration[U](u)
-  let ap = ActionPrng[R](r)
-  fa.heatbath(gc, ap.r)
+  fa.heatbath(gc)
 
-proc staggeredFermionActionActionProc[U,ET,FT](self: ActionRoot, u: ActionField): float =
-  let fa = StaggeredFermionAction[U, ET, FT](self)
+proc staggeredFermionActionActionProc[U,ET,FT,R](self: ActionRoot, u: ActionField): float =
+  let fa = StaggeredFermionAction[U, ET, FT, R](self)
   let gc = GaugeConfiguration[U](u)
   fa.action(gc)
 
-proc staggeredFermionActionForceProc[U,ET,FT](self: ActionRoot, u: ActionField, dtau: float,
-                                              f: ActionForce) =
-  let fa = StaggeredFermionAction[U, ET, FT](self)
+proc staggeredFermionActionForceProc[U,ET,FT,R](self: ActionRoot, u: ActionField, dtau: float,
+                                                f: ActionForce) =
+  let fa = StaggeredFermionAction[U, ET, FT, R](self)
   let gc = GaugeConfiguration[U](u)
   let gf = GaugeForce[U](f)
-  let fi = fa.force(gc)
-  threads:
-    for mu in 0..<gf.f.len: gf.f[mu] += dtau * fi[mu]
+  fa.force(gc, dtau, gf.f)
 
+var StaggeredFermionActionCount = 0
 proc newStaggeredFermionAction*[U, T, R](
   stag: Staggered[U, T];
   mass: float;
@@ -605,39 +831,66 @@ proc newStaggeredFermionAction*[U, T, R](
   let lo = stag.g[0].l
   var phi = lo.newField(T)
   type FT = evalType(phi)
-  result = StaggeredFermionAction[U, T, FT](
+  result = StaggeredFermionAction[U, T, FT, R](
     mass: mass,
     stag: stag,
     phi: phi,
+    prng: r,
     spa: spa,
     spf: spf
   )
   result.name = "StaggeredFermionAction"
+  result.id = "SFA" & $StaggeredFermionActionCount; inc StaggeredFermionActionCount
+  result.description = result.name & &"(mass: {mass})"
   result.heatbathProc = staggeredFermionActionHeatbathProc[U,T,FT,R]
-  result.actionProc = staggeredFermionActionActionProc[U,T,FT]
-  result.forceProc = staggeredFermionActionForceProc[U,T,FT]
+  result.actionProc = staggeredFermionActionActionProc[U,T,FT,R]
+  result.forceProc = staggeredFermionActionForceProc[U,T,FT,R]
+  result.stats = initTable[string,ActionStats]()
 
 #[ staggered Pauli-Villars action ]#
 
 proc heatbath*(self: StaggeredPauliVillarsAction; u: GaugeConfiguration; rng: auto) =
+  tic("StaggeredPauliVillarsAction:refresh")
+  self.stats[self.id & "F"] = forceStats0.newTable
+  self.stats[self.id & "RS"] = solveStats0.newTable
+  self.stats["SS"] = baseStats0.newTable
+  self.stats["SF"] = baseStats0.newTable
   let lo = self.phi.l
   var psi = lo.ColorVector()
-  u.smear()
+  let info = u.smear()
+  let tsmear = getElapsedTime()
   u.setBC()
   u.stagPhase()
   threads:
     psi.gaussian(rng)
     self.phi := 0
+  self.spa.resetStats
   self.stag.solve(self.phi, psi, self.mass, self.spa)
   threads: self.phi.odd := 0
   u.setBC()
   u.stagPhase()
+  let tend = getElapsedTime()
+  if info.flops > 0:
+    self.stats["SS"]["n"] += 1
+    self.stats["SS"]["secs"] += info.secs
+    self.stats["SS"]["flops"] += info.flops
+  else:
+    self.stats["SS"]["n"] += 1
+    self.stats["SS"]["secs"] += tsmear
+  self.stats[self.id&"RS"]["n"] += 1
+  self.stats[self.id&"RS"]["secs"] += self.spa.seconds
+  self.stats[self.id&"RS"]["flops"] += self.spa.flops
+  self.stats[self.id&"RS"]["its"] += self.spa.iterations
+  self.stats[self.id&"RS"]["r2"] += self.spa.r2.mean
+  self.stats[self.id&"RS"]["r2max"].maxeq self.spa.r2.max
+  toc("end")
 
 proc action*(self: StaggeredPauliVillarsAction; u: GaugeConfiguration): float =
+  tic("StaggeredPauliVillarsAction:action")
   let lo = self.phi.l
   var psi = lo.ColorVector()
   var psi2: float
-  u.smear()
+  discard u.smear()
   u.setBC()
   u.stagPhase()
   threads:
@@ -650,9 +903,11 @@ proc action*(self: StaggeredPauliVillarsAction; u: GaugeConfiguration): float =
     threadMaster: psi2 = psi2t
   u.setBC()
   u.stagPhase()
-  return 0.5*psi2
+  result = 0.5*psi2
+  toc("end")
 
-proc force*[U](self: StaggeredPauliVillarsAction; u: GaugeConfiguration[U]): auto =
+proc force*[U](self: StaggeredPauliVillarsAction; u: GaugeConfiguration[U], dtau: float, gf: auto) =
+  tic("StaggeredPauliVillarsAction:force")
   let lo = self.phi.l
   var f = lo.newGauge()
   var psi = lo.ColorVector()
@@ -668,10 +923,14 @@ proc force*[U](self: StaggeredPauliVillarsAction; u: GaugeConfiguration[U]): aut
   f.fermForce(psi, u)
   u.setBC()
   u.stagPhase()
-  threads:
-    for mu in 0..<f.len:
-      for n in f[mu]: f[mu][n] *= -0.25
-  return f
+  let sc = -0.25 * dtau
+  let fstats = addForce(gf, sc, f)
+  self.stats[self.id&"F"]["n"] += 1
+  self.stats[self.id&"F"]["secs"] += getElapsedTime()
+  self.stats[self.id&"F"]["f2"] += fstats[0]
+  self.stats[self.id&"F"]["f4"] += fstats[1]
+  self.stats[self.id&"F"]["finf"].maxeq fstats[2]
+  toc("end")
 
 proc staggeredPauliVillarsActionHeatbathProc[U,ET,FT,R](self: ActionRoot, u: ActionField,
                                                         r: ActionRngField) =
@@ -686,14 +945,13 @@ proc staggeredPauliVillarsActionActionProc[U,ET,FT](self: ActionRoot, u: ActionF
   pva.action(gc)
 
 proc staggeredPauliVillarsActionForceProc[U,ET,FT](self: ActionRoot, u: ActionField, dtau: float,
-                                              f: ActionForce) =
+                                                   f: ActionForce) =
   let pva = StaggeredPauliVillarsAction[U, ET, FT](self)
   let gc = GaugeConfiguration[U](u)
   let gf = GaugeForce[U](f)
-  let fi = pva.force(gc)
-  threads:
-    for mu in 0..<gf.f.len: gf.f[mu] += dtau * fi[mu]
+  pva.force(gc, dtau, gf.f)
 
+var StaggeredPauliVillarsActionCount = 0
 proc newStaggeredPauliVillarsAction*[U, T, R](
   stag: Staggered[U, T];
   mass: float;
@@ -712,9 +970,12 @@ proc newStaggeredPauliVillarsAction*[U, T, R](
     spf: spf
   )
   result.name = "StaggeredPauliVillarsAction"
+  result.id = "SPVA" & $StaggeredPauliVillarsActionCount; inc StaggeredPauliVillarsActionCount
+  result.description = result.name & &"(mass: {mass})"
   result.heatbathProc = staggeredPauliVillarsActionHeatbathProc[U,T,FT,R]
   result.actionProc = staggeredPauliVillarsActionActionProc[U,T,FT]
   result.forceProc = staggeredPauliVillarsActionForceProc[U,T,FT]
+  result.stats = initTable[string,ActionStats]()
 
 #[ staggered "ratio" (Pauli-Villars/fermion) action ]#
 
@@ -722,7 +983,7 @@ proc heatbath*(self: StaggeredRatioAction; u: GaugeConfiguration; rng: auto) =
   let lo = self.phi.l
   var psi = lo.ColorVector()
   var phi = lo.ColorVector()
-  u.smear()
+  discard u.smear()
   u.setBC()
   u.stagPhase()
   threads:
@@ -740,7 +1001,7 @@ proc action*(self: StaggeredRatioAction; u: GaugeConfiguration): float =
   var psi = lo.ColorVector()
   var phi = lo.ColorVector()
   var psi2: float
-  u.smear()
+  discard u.smear()
   u.setBC()
   u.stagPhase()
   threads:
@@ -793,6 +1054,7 @@ proc staggeredRatioActionForceProc[U,ET,FT](self: ActionRoot, u: ActionField, dt
   threads:
     for mu in 0..<gf.f.len: gf.f[mu] += dtau * fi[mu]
 
+var StaggeredRatioActionCount = 0
 proc newStaggeredRatioAction*[U, T, R](
   stagNum: Staggered[U, T];
   stagDen: Staggered[U, T];
@@ -815,6 +1077,8 @@ proc newStaggeredRatioAction*[U, T, R](
     spf: spf
   )
   result.name = "StaggeredRatioAction"
+  result.id = "SRA" & $StaggeredRatioActionCount; inc StaggeredRatioActionCount
+  result.description = result.name & &"(massNum: {massNum}, massDen: {massDen})"
   result.heatbathProc = staggeredRatioActionHeatbathProc[U,T,FT,R]
   result.actionProc = staggeredRatioActionActionProc[U,T,FT]
   result.forceProc = staggeredRatioActionForceProc[U,T,FT]
