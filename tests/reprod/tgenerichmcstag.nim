@@ -24,4 +24,8 @@ proc genericHmcTest(hmc: HmcAction) =
   if myRank==0:
     doAssert(err == 0)
 
-include examples/generichmc
+import examples/generichmc
+
+genericHmcTest(hmc)
+
+finalize()

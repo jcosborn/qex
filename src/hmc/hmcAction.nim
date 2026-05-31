@@ -22,6 +22,7 @@ import algorithms/[integrator]
 
 import base/[qexInternal]
 import base/[basicOps]
+import base/[globals]
 
 import gauge/[gaugeAction]
 import gauge/[gaugeUtils]
@@ -33,7 +34,14 @@ import gauge/[hisqsmear]
 import physics/[stagD]
 import physics/[stagSolve]
 
-when defined(HisqSmearing):
+const StaggeredSmearing* {.strdefine.} = getGlobal("StaggeredSmearing","")
+static:
+  if StaggeredSmearing notin ["","HISQ","HYP"]:
+    echo "Error: StaggeredSmearing not supported: ", StaggeredSmearing
+    quit(-1)
+
+#when defined(HisqSmearing):
+when StaggeredSmearing == "HISQ":
   import maths/[matproject]
 
 import hmc/[metropolis]
@@ -63,25 +71,31 @@ type ActionRoot* = ref object of RootObj
 
 type GaugeConfiguration*[U] = ref object of ActionField
   u*: seq[U]
-  when defined(HypSmearing):
+  #when defined(HypSmearing):
+  #  su*: seq[U]
+  #elif defined(StoutSmearing):
+  #  discard
+  #elif defined(HisqSmearing):
+  #  su*, sul*: seq[U]
+  #when defined(HypSmearing):
+  #  sc*: HypCoefs
+  #elif defined(StoutSmearing):
+  #  discard
+  #elif defined(HisqSmearing):
+  #  sc*: HisqCoefs
+  #when defined(HypSmearing):
+  #  deriv*: proc(f: seq[U]; chain: seq[U])
+  #elif defined(StoutSmearing):
+  #  discard
+  #elif defined(HisqSmearing):
+  #  deriv*: proc(dsdu: var seq[U]; dsdsu, dsdsul: seq[U])
+  when StaggeredSmearing == "HYP":
     su*: seq[U]
-  elif defined(StoutSmearing):
-    discard
-  elif defined(HisqSmearing):
-    su*, sul*: seq[U]
-
-  when defined(HypSmearing):
     sc*: HypCoefs
-  elif defined(StoutSmearing):
-    discard
-  elif defined(HisqSmearing):
-    sc*: HisqCoefs
-
-  when defined(HypSmearing):
     deriv*: proc(f: seq[U]; chain: seq[U])
-  elif defined(StoutSmearing):
-    discard
-  elif defined(HisqSmearing):
+  elif StaggeredSmearing == "HISQ":
+    su*, sul*: seq[U]
+    sc*: HisqCoefs
     deriv*: proc(dsdu: var seq[U]; dsdsu, dsdsul: seq[U])
 
 type
@@ -409,7 +423,8 @@ proc run*(hmc: var HmcAction) =
 
 #[ gauge configuration implementation ]#
 
-when defined(HypSmearing):
+#when defined(HypSmearing):
+when StaggeredSmearing == "HYP":
   proc newGaugeConfiguration*[U](
     u: seq[U];
     alpha1: float = 0.4;
@@ -420,10 +435,11 @@ when defined(HypSmearing):
     result = GaugeConfiguration[U](u: u)
     result.sc = HypCoefs(alpha1: alpha1, alpha2: alpha2, alpha3: alpha3)
     result.su = lo.newGauge()
-elif defined(StoutSmearing):
-  proc newGaugeConfiguration*[U](u: seq[U]): GaugeConfiguration[U] =
-    qexError "Stout smearing for HMC not yet implemented"
-elif defined(HisqSmearing):
+#elif defined(StoutSmearing):
+#  proc newGaugeConfiguration*[U](u: seq[U]): GaugeConfiguration[U] =
+#    qexError "Stout smearing for HMC not yet implemented"
+#elif defined(HisqSmearing):
+elif StaggeredSmearing == "HISQ":
   proc newGaugeConfiguration*[U](
     u: seq[U];
     naik: float = 1.0;
@@ -460,11 +476,13 @@ proc smear(self: GaugeConfiguration): PerfInfo =
   # HISQ is a staggered smearing, so I don't mind having to explicitly insert the
   # the staggered rephasing here. For other smearings, rephasing must be decoupled
   # from the smearing, which is the case for nHYP
-  when defined(HypSmearing):
+  #when defined(HypSmearing):
+  when StaggeredSmearing == "HYP":
     discard self.sc.smearGetForce(self.u, self.su, result)
-  elif defined(StoutSmearing):
-    qexError "Stout smearing for HMC not yet implemented"
-  elif defined(HisqSmearing):
+  #elif defined(StoutSmearing):
+  #  qexError "Stout smearing for HMC not yet implemented"
+  #elif defined(HisqSmearing):
+  elif StaggeredSmearing == "HISQ":
     threads:
       self.u.setBC()
       threadBarrier()
@@ -476,12 +494,14 @@ proc smear(self: GaugeConfiguration): PerfInfo =
       self.u.stagPhase()
 
 proc smearGetForce[U](self: GaugeConfiguration[U]) =
-  when defined(HypSmearing):
+  #when defined(HypSmearing):
+  when StaggeredSmearing == "HYP":
     var info: PerfInfo
     self.deriv = self.sc.smearGetForce(self.u, self.su, info)
-  elif defined(StoutSmearing):
-    qexError "Stout smearing for HMC not yet implemented"
-  elif defined(HisqSmearing):
+  #elif defined(StoutSmearing):
+  #  qexError "Stout smearing for HMC not yet implemented"
+  #elif defined(HisqSmearing):
+  elif StaggeredSmearing == "HISQ":
     threads:
       self.u.setBC()
       threadBarrier()
@@ -494,17 +514,27 @@ proc smearGetForce[U](self: GaugeConfiguration[U]) =
 
 proc setBC[U](self: GaugeConfiguration[U]) =
   threads:
-    when defined(HypSmearing): self.su.setBC()
-    elif defined(StoutSmearing): qexError "Stout smearing for HMC not yet implemented"
-    elif defined(HisqSmearing): discard
-    else: self.u.setBC()
+    #when defined(HypSmearing):
+    when StaggeredSmearing == "HYP":
+      self.su.setBC()
+    #elif defined(StoutSmearing): qexError "Stout smearing for HMC not yet implemented"
+    #elif defined(HisqSmearing):
+    elif StaggeredSmearing == "HISQ":
+      discard
+    else:
+      self.u.setBC()
 
 proc stagPhase[U](self: GaugeConfiguration[U]) =
   threads:
-    when defined(HypSmearing): self.su.stagPhase()
-    elif defined(StoutSmearing): qexError "Stout smearing for HMC not yet implemented"
-    elif defined(HisqSmearing): discard
-    else: self.u.stagPhase()
+    #when defined(HypSmearing):
+    when StaggeredSmearing == "HYP":
+      self.su.stagPhase()
+    #elif defined(StoutSmearing): qexError "Stout smearing for HMC not yet implemented"
+    #elif defined(HisqSmearing):
+    elif StaggeredSmearing == "HISQ":
+      discard
+    else:
+      self.u.stagPhase()
 
 #[ gauge action implementation ]#
 
@@ -642,7 +672,8 @@ proc fermForce[U, S](f: seq[U]; psi: S; u: GaugeConfiguration[U]) =
     ff = f.newOneOf()
     f1 = f.newOneOf()
     t1 = newSeq[Shifter[typeOf(psi), typeOf(psi[0])]](nd)
-  when defined(HisqSmearing):
+  #when defined(HisqSmearing):
+  when StaggeredSmearing=="HISQ":
     var
       f3 = f.newOneOf()
       t3 = newSeq[Shifter[typeOf(psi), typeOf(psi[0])]](nd)
@@ -650,7 +681,8 @@ proc fermForce[U, S](f: seq[U]; psi: S; u: GaugeConfiguration[U]) =
   for mu in 0..<nd:
     t1[mu] = newShifter(psi, mu, 1)
     discard t1[mu] ^* psi
-    when defined(HisqSmearing):
+    #when defined(HisqSmearing):
+    when StaggeredSmearing=="HISQ":
       t3[mu] = newShifter(psi, mu, 3)
       discard t3[mu] ^* psi
 
@@ -661,20 +693,23 @@ proc fermForce[U, S](f: seq[U]; psi: S; u: GaugeConfiguration[U]) =
         forO a, 0, nc-1:
           forO b, 0, nc-1:
             f1[mu][n][a, b] := psi[n][a] * t1[mu].field[n][b].adj
-            when defined(HisqSmearing):
+            #when defined(HisqSmearing):
+            when StaggeredSmearing=="HISQ":
               f3[mu][n][a, b] := psi[n][a] * t3[mu].field[n][b].adj
         f[mu][n] := 0
         ff[mu][n] := 0
     threadBarrier()
 
     # rephase
-    when defined(HypSmearing):
+    #when defined(HypSmearing):
+    when StaggeredSmearing == "HYP":
       f1.setBC()
       threadBarrier()
       f1.stagPhase()
-    elif defined(StoutSmearing):
-      qexError "Stout smearing for HMC not yet implemented"
-    elif defined(HisqSmearing):
+    #elif defined(StoutSmearing):
+    #  qexError "Stout smearing for HMC not yet implemented"
+    #elif defined(HisqSmearing):
+    elif StaggeredSmearing == "HISQ":
       u.u.setBC()
       threadBarrier()
       u.u.stagPhase()
@@ -685,13 +720,18 @@ proc fermForce[U, S](f: seq[U]; psi: S; u: GaugeConfiguration[U]) =
     for mu in 0..<nd:
       for n in f[mu].odd:
         f1[mu][n] *= -1
-        when defined(HisqSmearing):
+        #when defined(HisqSmearing):
+        when StaggeredSmearing=="HISQ":
           f3[mu][n] *= -1
 
   # smear
-  when defined(HypSmearing): u.deriv(ff, f1)
-  elif defined(StoutSmearing): qexError "Stout smearing for HMC not yet implemented"
-  elif defined(HisqSmearing): u.deriv(ff, f1, f3)
+  #when defined(HypSmearing):
+  when StaggeredSmearing == "HYP":
+    u.deriv(ff, f1)
+  #elif defined(StoutSmearing): qexError "Stout smearing for HMC not yet implemented"
+  #elif defined(HisqSmearing):
+  elif StaggeredSmearing == "HISQ":
+    u.deriv(ff, f1, f3)
   else: # no smearing - identity chain rule
     threads:
       for mu in 0..<ff.len: ff[mu] := f1[mu]
@@ -701,7 +741,8 @@ proc fermForce[U, S](f: seq[U]; psi: S; u: GaugeConfiguration[U]) =
     for mu in 0..<f.len:
       for n in f[mu]: f1[mu][n] := ff[mu][n] * u.u[mu][n].adj
     threadBarrier()
-    when defined(HisqSmearing):
+    #when defined(HisqSmearing):
+    when StaggeredSmearing=="HISQ":
       u.u.setBC()
       threadBarrier()
       u.u.stagPhase()

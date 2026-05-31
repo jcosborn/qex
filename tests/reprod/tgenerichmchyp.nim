@@ -1,5 +1,6 @@
-{.define: HypSmearing.}
-import qex, hmc/hmcAction, macros
+import base/globals
+setGlobal("StaggeredSmearing", "HYP")
+import hmc/hmcAction, macros
 
 proc reldiff(a,b:float):float = 0.5*abs(a-b)/(abs(a)+abs(b))
 macro name(x:untyped):auto = newLit(x.repr)
@@ -22,4 +23,8 @@ proc genericHmcTest(hmc: HmcAction) =
   test(hmc.rnd, 0.06697195768356323, eps)
   doAssert(err == 0)
 
-include examples/generichmc
+import examples/generichmc
+
+genericHmcTest(hmc)
+
+finalize()

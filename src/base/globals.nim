@@ -2,6 +2,24 @@ import os
 import strUtils
 #import stdUtils
 import macros
+import tables
+
+var globalsTable{.compileTime.} = initTable[string,string]()
+proc setGlobalCT*(k,v: string) {.compileTime.} =
+  echo "setGlobal: ", k, "  ", v
+  globalsTable[k] = v
+proc getGlobalCT*(k: string): string {.compileTime.} =
+  globalsTable[k]
+proc getGlobalCT*(k,d: string): string {.compileTime.} =
+  globalsTable.getOrDefault(k,d)
+template setGlobal*(k,v: static string) =
+  static: setGlobalCT(k, v)
+macro getGlobal*(k: static string): auto =
+  let v = getGlobalCT(k)
+  result = newLit(v)
+macro getGlobal*(k,d: static string): auto =
+  let v = getGlobalCT(k,d)
+  result = newLit(v)
 
 const profileEqnsInt {.intdefine.} = 1
 when profileEqnsInt == 0:

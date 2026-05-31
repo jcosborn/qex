@@ -1,7 +1,8 @@
-{.define: HisqSmearing.}
-const defaultLat = @[8, 8, 8, 32]
-
-import qex, hmc/hmcAction, macros
+import base/globals
+setGlobal("StaggeredSmearing", "HISQ")
+#const defaultLat = @[8, 8, 8, 32]
+setGlobal("DefaultLat", "8,8,8,32")
+import hmc/hmcAction, macros
 
 proc reldiff(a,b:float):float = 0.5*abs(a-b)/(abs(a)+abs(b))
 macro name(x:untyped):auto = newLit(x.repr)
@@ -31,4 +32,9 @@ proc genericHmcTest(hmc: HmcAction) =
   test(hmc.rnd, t[3], eps)
   doAssert(err == 0)
 
-include examples/generichmc
+#include examples/generichmc
+import examples/generichmc
+
+genericHmcTest(hmc)
+
+finalize()

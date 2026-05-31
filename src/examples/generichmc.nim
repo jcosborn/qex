@@ -1,4 +1,7 @@
-import qex
+import qex, macros, strutils, sequtils
+#setGlobal("StaggeredSmearing","HISQ")
+when getGlobal("DefaultLat","") != "":
+  let defaultLat = split(getGlobal("DefaultLat",""),',').map(parseInt)
 
 import physics/[stagD]
 import physics/[stagSolve]
@@ -68,11 +71,13 @@ else: qexError "invalid start type"
 
 #[ build staggered Dirac operator ]#
 
-when defined(HypSmearing):
+#when defined(HypSmearing):
+when StaggeredSmearing == "HYP":
   let stag = newStag(uc.su)
-elif defined(StoutSmearing):
-  qexError "Stout smearing for HMC not yet implemented"
-elif defined(HisqSmearing):
+#elif defined(StoutSmearing):
+#  qexError "Stout smearing for HMC not yet implemented"
+#elif defined(HisqSmearing):
+elif StaggeredSmearing == "HISQ":
   let stag = newStag3(uc.su, uc.sul)
 else:
   let stag = newStag(uc.u)
@@ -91,7 +96,7 @@ spf.maxits = forceMaxIter
 
 #[ build action in coordination with integrator levels ]#
 
-var hmc = uc.newHmcAction(s, r, trajectoryLength)
+var hmc* = uc.newHmcAction(s, r, trajectoryLength)
 
 var gc = GaugeActionCoeffs(plaq: beta)
 #var ga = gc.newGaugeAction(uc)
@@ -121,9 +126,13 @@ hmc.init()
 hmc.verbosity = 1
 for traj in startTraj..<startTraj + numTraj: hmc.run()
 
-when declared(genericHmcTest):
-  genericHmcTest(hmc)
+#when declared(genericHmcTest):
+#  genericHmcTest(hmc)
 
-processSaveParams()
-writeParamFile()
-qexFinalize()
+proc finalize* =
+  processSaveParams()
+  writeParamFile()
+  qexFinalize()
+
+when isMainModule:
+  finalize()
