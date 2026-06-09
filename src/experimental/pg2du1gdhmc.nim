@@ -109,10 +109,11 @@ proc hamiltonian(gc:GaugeActionCoeffs, g:auto, p:auto):auto =
   toc("hamiltonian")
   (ga, t, h)
 
-type MDAlgo = enum hamilton, nosehoover
+type MDAlgo = enum hamilton, nosehoover, ghmc, gv, test1
 converter toMDAlgo(s:string):MDAlgo = parseEnum[MDAlgo](s)
+let gAlgs = [ghmc, gv]
 
-qexinit()
+qexinit(verb=2)
 
 tic()
 
@@ -130,6 +131,7 @@ letParam:
         qexWarn "Nonexistent gauge file: ", gaugefile
       @[64,64]
   beta = 5.0
+  bg = beta
   tau = 2.0
   ntraj = 128
   ntrajThermo = 64
@@ -143,6 +145,7 @@ letParam:
   ## 2MN,0.21 | 4MN3F1GP,0.27 | 4MN5F2GP
   gintalg:IntegratorProc = "2MN,0.21"
   gsteps = 20
+  intsteps = 100
   alwaysAccept:bool = 0
   revCheckFreq = ntraj
   verboseGCStats:bool = 0
@@ -150,8 +153,8 @@ letParam:
 
 installStandardParams()
 echoParams()
-qexLog "rank ", myRank, "/", nRanks
-threads: qexLog "thread ", threadNum, "/", numThreads
+#qexLog "rank ", myRank, "/", nRanks
+#threads: qexLog "thread ", threadNum, "/", numThreads
 processHelpParam()
 
 VerboseGCStats = verboseGCStats
@@ -159,9 +162,11 @@ VerboseTimer = verboseTimer
 
 let
   lo = lat.newLayout
+  nd = lo.nDim
   gc = GaugeActionCoeffs(plaq:beta)
   vol = lo.physVol
   dof = float(2*vol)
+  useG = mdAlgo in gAlgs
 
 var
   g = lo.newGauge
@@ -173,39 +178,247 @@ g.random r
 
 qexLog "Initial plaq: ",g.plaq3
 
+####  modify to add new HMC variants  ###
 var
   p = lo.newgauge
   f = lo.newgauge
   gg = lo.newgauge  # FG backup gauge
   g0 = lo.newgauge
   xi = 0.0
+  xi1 = xi
   lnJ = 0.0
 
+proc revBegin =
+  case mdalgo
+  of nosehoover:
+    xi1 = xi
+    xi *= -1
+  else:
+    discard
+
+proc revEnd =
+  case mdalgo
+  of nosehoover:
+    xi = xi1
+  else:
+    discard
+
+proc extraInit =
+  lnJ = 0.0
+  case mdalgo
+  of nosehoover:
+    xi = R.gaussian * sqrt(gamma)
+  else:
+    discard
+
+proc extraH: float =
+  case mdalgo
+  of nosehoover:
+    result = xi * xi / (2.0 * gamma)
+  else:
+    discard
+
+var
+  gf = lo.newgauge
+  gb: array[2,typeof(gf)]
+  gbb = lo.newgauge
+for i in 0..<nd: gb[i] = lo.newgauge()
+
+proc initgV =
+  let tf = newShifters(g[0], 1)
+  let tb = newShifters(g[0], -1)
+  threads:
+    for i in 0..<nd:
+      gf[i] := tf[1-i] ^* g[i]
+      for j in 0..<nd:
+        gb[i][j] := tb[i] ^* g[j]
+        threadBarrier()
+      gbb[i] := tb[i] ^* gf[i]
+
+#[
+proc gfunV(x,mu: auto): auto =
+  let nu = 1 - mu
+  let su = g[nu][x] * gf[mu][x] * gf[nu][x].adj
+  let sd = gb[nu][nu][x].adj * gb[nu][mu][x] * gbb[nu][x]
+  let s = su + sd
+  let p = g[mu][x] * s.adj
+  let a = beta * (2 - p.re)
+  result = exp(a)
+]#
+
+proc gfunderivV(x,mu: auto): auto =
+  let nu = 1 - mu
+  let su = g[nu][x] * gf[mu][x] * gf[nu][x].adj
+  let sd = gb[nu][nu][x].adj * gb[nu][mu][x] * gbb[nu][x]
+  let s = su + sd
+  let p = g[mu][x] * s.adj
+  let pt = trace(p)
+  let a = bg * (1 - pt.re)
+  let f = exp(a)
+  let d = (0.5*bg*f)*(p - p.adj)
+  result = (f,d)
+
+proc gpotV(x,mu: auto): auto =
+  let nu = 1 - mu
+  let su = g[nu][x] * gf[mu][x] * gf[nu][x].adj
+  let sd = gb[nu][nu][x].adj * gb[nu][mu][x] * gbb[nu][x]
+  let s = su + sd
+  let p = g[mu][x] * s.adj
+  let pt = trace(p)
+  let a = exp(bg)
+  let b = -bg * pt
+  result = (a,b)
+
+proc initg =
+  case mdalgo
+  of gv:
+    initgV()
+  else:
+    discard
+
+#[
+proc gfun(x,mu: auto): auto =
+  case mdalgo
+  of ghmc:
+    result = 1
+  of gv:
+    result = gfunV(x, mu)
+]#
+
+#[
+proc gderiv(x,mu: auto): auto =
+  case mdalgo
+  of ghmc:
+    result = 0
+  of gv:
+    result = gderivV(x, mu)
+]#
+
+proc gfunderiv(x,mu: auto): auto =
+  var r: typeof(gfunderivV(x, mu))
+  case mdalgo
+  of ghmc:
+    r[0] := 1
+    r[1] := 0
+  of gv:
+    r = gfunderivV(x, mu)
+  else:
+    discard
+  result = r
+
+proc gpot(x,mu: auto): auto =
+  var r: typeof(gpotV(x, mu))
+  case mdalgo
+  of ghmc:
+    r[0] := 1
+    r[1] := 0
+  of gv:
+    r = gpotV(x, mu)
+  else:
+    discard
+  result = r
+
+proc gupdate0(x,mu: int, t: float): auto =
+  let dt = t / intsteps
+  var lnJt: evalType(g[mu][x][0,0].re)
+  for s in 0..<intsteps:
+    let gd = gfunderiv(x,mu)
+    let tg = dt*gd[0]
+    let te = exp(tg*p[mu][x])
+    let etpg = te*g[mu][x]
+    let j = 1 + (dt*gd[1][0,0].im)*p[mu][x][0,0].im
+    lnJt -= ln(j)
+    g[mu][x] := etpg
+  result = lnJt
+
+proc gupdate(x,mu: int, t: float): auto =
+  var lnJt: evalType(g[mu][x][0,0].re)
+  let dt = t / intsteps
+  let gp = gpot(x,mu)
+  let b = gp[0] * p[mu][x][0,0].im
+  #var s: typeof(lnJt)
+  var ae = gp[1]
+  for i in 1..intsteps:
+    let acc = ae.re
+    let asc = ae.im
+    let s1 = exp(acc)
+    #let s0 = s1*dt
+    let s2 = -0.5*b*asc*s1*s1
+    let s0 = s1*dt + s2*dt*dt
+    let f = exp(s0*gp[0]*p[mu][x])
+    let u = f * g[mu][x]
+    let g0 = gp[0] * s1
+    let g1 = gp[0] * exp(re(ae*f[0,0]))
+    #s += s0
+    ae *= f[0,0]
+    g[mu][x] := u
+    lnJt -= ln(g1/g0)
+  result = lnJt
+
 proc mdt(t:float) =
-  threads:
-    for i in 0..<g.len:
-      for e in g[i]:
-        let etpg = exp(t*p[i][e])*g[i][e]
-        g[i][e] := etpg
-  if mdalgo == nosehoover:
-    xi += t * gamma * (p.pnorm2 - dof)
+  if useG:
+    let eosub = [lo.getSubset("even"), lo.getSubset("odd")]
+    let dt = 0.5 * t
+    for rd in [0,1]:
+      for mux in [0,1]:
+        let mu = if rd==0: mux else: 1-mux
+        for eox in [0,1]:
+          let eo = if rd==0: eox else: 1-eox
+          initg()
+          threads:
+            var lnJt: evalType(g[0][0][0,0].re)
+            for x in eosub[eo]:
+              lnJt += gupdate(x,mu,dt)
+            var lnJs = simdSum(lnJt)
+            threadRankSum(lnJs)
+            threadSingle: lnJ += lnJs
+  else:
+    threads:
+      for i in 0..<g.len:
+        for e in g[i]:
+          let etpg = exp(t*p[i][e])*g[i][e]
+          g[i][e] := etpg
+    if mdalgo == nosehoover:
+      xi += t * gamma * (p.pnorm2 - dof)
+
 proc mdv(t:float) =
-  gc.gaugeforce2(g, f)
-  let etxi = exp(-0.5*t*xi)
-  if mdalgo == nosehoover:
+  if useG:
+    gc.gaugeforce2(g, f)
+    initg()
+    #var f2 = 0.0
     threads:
-      for i in 0..<p.len:
-        p[i] *= etxi
-  threads:
-    for i in 0..<f.len:
-      for e in f[i]:
-        let tf = (-t)*f[i][e]
-        p[i][e] += tf
-  if mdalgo == nosehoover:
+      #var f2t: typeof(norm2(f[0][0]))
+      for i in 0..<g.len:
+        for e in g[i]:
+          let gd = gfunderiv(e,i)
+          let tg = t*gd[0]
+          var ff = -tg * f[i][e]  # - to correct for sign of f
+          ff += t * gd[1]
+          p[i][e] += ff
+          #f2t += ff.norm2
+          #var f2s = simdSum(f2t)
+          #threadRankSum(f2s)
+          #threadSingle: f2 = f2s
+    #echo "F2: ", f2 / g[0].l.physVol
+  else:
+    gc.gaugeforce2(g, f)
+    let etxi = exp(-0.5*t*xi)
+    if mdalgo == nosehoover:
+      threads:
+        for i in 0..<p.len:
+          p[i] *= etxi
     threads:
-      for i in 0..<p.len:
-        p[i] *= etxi
-    lnJ += dof*t*xi
+      for i in 0..<f.len:
+        for e in f[i]:
+          let tf = (-t)*f[i][e]
+          p[i][e] += tf
+    if mdalgo == nosehoover:
+      threads:
+        for i in 0..<p.len:
+          p[i] *= etxi
+      lnJ += dof*t*xi
+
+####  end of area to modify to add new HMC variants  ###
 
 proc updatefga(ts:openarray[float]) =
   tic("updatefga")
@@ -217,19 +430,21 @@ proc revCheck(evo:auto; h0,ga0,t0,eh0:float) =
   var
     g1 = lo.newgauge
     p1 = lo.newgauge
-    xi1 = xi
+    #xi1 = xi
     lnJ1 = lnJ
   threads:
     for i in 0..<g1.len:
       g1[i] := g[i]
       p1[i] := p[i]
       p[i] := -1*p[i]
-  xi = -xi
+  #xi = -xi
+  revBegin()
   evo.evolve tau
   evo.finish
   let
     (ga1, t1, h1) = hamiltonian(gc,g,p)
-    eh1 = xi * xi / (2.0 * gamma)
+    #eh1 = xi * xi / (2.0 * gamma)
+    eh1 = extraH()
     dH = h1-h0+eh1-eh0+lnJ
     dSg = ga1-ga0
     dT = t1-t0
@@ -242,7 +457,8 @@ proc revCheck(evo:auto; h0,ga0,t0,eh0:float) =
   for i in 0..<g1.len:
     g[i] := g1[i]
     p[i] := p1[i]
-  xi = xi1
+  #xi = xi1
+  revEnd()
   lnJ = lnJ1
   toc("done")
 
@@ -307,9 +523,23 @@ proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float]) =
   for i in 0..qmax:
     echo "P(Q=",i,") = ",qdist[i].mean/float(ntraj), " ± ", qdist[i].stdev/float(ntraj)
 
-let
-  (V,T) = newIntegratorPair(updatefga, mdt)
-  md = gintalg(T = T, V = V[0], steps = gsteps)
+#let
+#  (V,T) = newIntegratorPair(updatefga, mdt)
+#  md = gintalg(T = T, V = V[0], steps = gsteps)
+
+type Md = object
+var md: Md
+proc evolve(md: Md, t: float) =
+  let eps = t / gsteps
+  let eps2 = 0.5 * eps
+  mdv eps2
+  mdt eps
+  for i in 1..<gsteps:
+    mdv eps
+    mdt eps
+  mdv eps2
+
+proc finish(md: Md) = discard
 
 proc mc =
   tic("mc")
@@ -327,16 +557,19 @@ proc mc =
       for i in 0..<p.len:
         g0[i] := g[i]
       p.randomTAH r
-    if mdalgo == nosehoover:
-      xi = R.gaussian * sqrt(gamma)
-      lnJ = 0.0
+    #if mdalgo == nosehoover:
+    #  xi = R.gaussian * sqrt(gamma)
+    #  lnJ = 0.0
+    extraInit()
     let (ga0, t0, h0) = hamiltonian(gc,g,p)
-    let eh0 = xi * xi / (2.0 * gamma)
+    #let eh0 = xi * xi / (2.0 * gamma)
+    let eh0 = extraH()
     qexLog "Begin H: ",h0,"  Sg: ",ga0,"  T: ",t0,"  extH: ",eh0
     md.evolve tau
     md.finish
     let (ga1, t1, h1) = hamiltonian(gc,g,p)
-    let eh1 = xi * xi / (2.0 * gamma)
+    #let eh1 = xi * xi / (2.0 * gamma)
+    let eh1 = extraH()
     qexLog "End H: ",h1,"  Sg: ",ga1,"  T: ",t1,"  extH: ",eh1,"  lnJ: ",lnJ
 
     if revCheckFreq > 0 and n>=0 and n mod revCheckFreq == 0:

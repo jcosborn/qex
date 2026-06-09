@@ -99,6 +99,9 @@ template has*[T:AsMatrix](x: typedesc[T], y: typedesc): bool =
   when y is AsMatrix: true
   else: has(T.type[], y)
 
+template re*[T:AsVector](x: typedesc[T]): typedesc = asVector(T.re)
+template re*[T:AsMatrix](x: typedesc[T]): typedesc = asMatrix(T.re)
+
 #declareScalar(AsScalar)
 #declareScalar(AsVarScalar)
 #declareVector(AsVector)
