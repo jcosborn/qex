@@ -331,7 +331,7 @@ proc gupdate0(x,mu: int, t: float): auto =
     g[mu][x] := etpg
   result = lnJt
 
-proc gupdate(x,mu: int, t: float): auto =
+proc gupdate1(x,mu: int, t: float): auto =
   var lnJt: evalType(g[mu][x][0,0].re)
   let dt = t / intsteps
   let gp = gpot(x,mu)
@@ -345,15 +345,98 @@ proc gupdate(x,mu: int, t: float): auto =
     #let s0 = s1*dt
     let s2 = -0.5*b*asc*s1*s1
     let s0 = s1*dt + s2*dt*dt
+    #let s3 = (1.0/6.0)*(2*asc*asc-acc)*b*b*s1*s1*s1
+    #let s0 = s1*dt + s2*dt*dt + s3*dt*dt*dt
+    #let s4 = (1.0/24.0)*(-6*asc*asc*asc+7*acc*asc+asc)*b*b*b*s1*s1*s1*s1
+    #let s0 = s1*dt + s2*dt*dt + s3*dt*dt*dt + s4*dt*dt*dt*dt
     let f = exp(s0*gp[0]*p[mu][x])
     let u = f * g[mu][x]
-    let g0 = gp[0] * s1
-    let g1 = gp[0] * exp(re(ae*f[0,0]))
+    #let g0 = gp[0] * s1
+    #let g1 = gp[0] * exp(re(ae*f[0,0]))
     #s += s0
     ae *= f[0,0]
     g[mu][x] := u
-    lnJt -= ln(g1/g0)
+    #lnJt -= ln(g1/g0)
+    lnJt -= re(ae) - acc
+    #let j = 1 + re(ae)/acc
+    #lnJt -= ln(j)
   result = lnJt
+
+proc gupdate2(x,mu: int, t: float): auto =
+  let gp = gpot(x,mu)
+  let b = abs(gp[0] * p[mu][x][0,0].im)
+  let s1 = 2*PI/b  # period in s
+  let ds = s1 / intsteps
+  let df = exp(ds*gp[0]*p[mu][x][0,0])
+  var ae = gp[1]
+  var dt = 0.5*exp(-ae.re)
+  for i in 1..<intsteps:
+    ae *= df
+    dt += exp(-ae.re)
+  ae *= df
+  dt += 0.5*exp(-ae.re)
+  dt /= intsteps  # period in t
+  let nf = t / dt
+  let r = dt*(nf - trunc(nf)) # the remainder of t modulo period dt
+  ae = gp[1]
+  let fac = 0.5/intsteps
+  var s,r0,r1: typeof(b)
+  var eae = fac * exp(-ae.re)
+  for i in 1..intsteps:
+    r0 = r1
+    r1 += eae
+    ae *= df
+    eae = fac * exp(-ae.re)
+    r1 += eae
+    let dr = max(min(r,r1),r0)-r0
+    s += dr*ds/(r1-r0)
+  let f = exp(s*gp[0]*p[mu][x])
+  let u = f * g[mu][x]
+  g[mu][x] := u
+  ae = gp[1]
+  ae = gp[1]*f[0,0]
+  result = gp[1].re - ae.re
+
+const rkorder = 4
+proc gupdaterk(x,mu: int, t: float): auto =
+  let dt = t / intsteps
+  let gp = gpot(x,mu)
+  let lam = gp[0]*p[mu][x][0,0]
+  var s: typeof(lam.re)
+  for i in 1..intsteps:
+    let ae = gp[1] * exp(s*lam)
+    let k1 = dt * exp(ae.re)
+    case rkorder
+    of 1:
+      let ds = k1  # first order
+      s += ds
+    of 2:
+      let ae2 = ae * exp(k1*lam)
+      let k2 = dt * exp(ae2.re)
+      let ds = 0.5*(k1+k2)  # second order
+      s += ds
+    of 3:
+      let ae2 = ae * exp(0.5*k1*lam)
+      let k2 = dt * exp(ae2.re)
+      let ae3 = ae * exp((2*k2-k1)*lam)
+      let k3 = dt * exp(ae3.re)
+      let ds = (1.0/6.0)*(k1+4*k2+k3)  # third order
+      s += ds
+    of 4:
+      let ae2 = ae * exp(0.5*k1*lam)
+      let k2 = dt * exp(ae2.re)
+      let ae3 = ae * exp(0.5*k2*lam)
+      let k3 = dt * exp(ae3.re)
+      let ae4 = ae * exp(k3*lam)
+      let k4 = dt * exp(ae4.re)
+      let ds = (1.0/6.0)*(k1+2*k2+2*k3+k4)  # fourth order
+      s += ds
+    else: discard
+  let f = exp(s*gp[0]*p[mu][x])
+  let u = f * g[mu][x]
+  g[mu][x] := u
+  var ae = gp[1] * exp(s*lam)
+  result = gp[1].re - ae.re
 
 proc mdt(t:float) =
   if useG:
@@ -368,7 +451,7 @@ proc mdt(t:float) =
           threads:
             var lnJt: evalType(g[0][0][0,0].re)
             for x in eosub[eo]:
-              lnJt += gupdate(x,mu,dt)
+              lnJt += gupdaterk(x,mu,dt)
             var lnJs = simdSum(lnJt)
             threadRankSum(lnJs)
             threadSingle: lnJ += lnJs

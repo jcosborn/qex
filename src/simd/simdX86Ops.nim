@@ -295,6 +295,7 @@ template basicDefs(T,F,N,P,S:untyped) {.dirty.} =
   proc sqrt*(x:T):T {.alwaysInline,noInit.} = `P "_sqrt_" S`(x)
   proc rsqrt*(x:T):T {.alwaysInline,noInit.} = divd(sqrt(x),x)
   proc rsqrt*(r:var T; x:T) {.alwaysInline.} = r = rsqrt(x)
+  proc trunc*(x:T):T {.alwaysInline,noInit.} = `P "_roundscale_" S`(x,MM_FROUND_TO_ZERO)
   map1(T,N, sin)
   map1(T,N, cos)
   map1(T,N, acos)

@@ -75,3 +75,5 @@ template eval*(x: SimdX86): untyped = x
 
 #var CMP_EQ_OS {.importc: "_CMP_EQ_OS", imm.} = cint
 var CMP_LT_OS* {.importc: "_CMP_LT_OS", imm.}: cint
+
+var MM_FROUND_TO_ZERO* {.importc: "_MM_FROUND_TO_ZERO", imm.}: cint
