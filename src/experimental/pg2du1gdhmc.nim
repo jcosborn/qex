@@ -6,6 +6,9 @@ import qex
 import gauge, physics/qcdTypes
 import algorithms/integrator, maths/special, utils/resample
 import os, strutils, times
+import numericalnim
+from numericalnim/ode import IntegratorProc
+type IntegratorProc*[T] = ode.IntegratorProc[T]
 
 proc mean(xs: Ensemble[seq[float]]): float =
   var m = 0.0
@@ -143,7 +146,7 @@ letParam:
   ## extra params in other mdalgo
   gamma = 1.0
   ## 2MN,0.21 | 4MN3F1GP,0.27 | 4MN5F2GP
-  gintalg:IntegratorProc = "2MN,0.21"
+  gintalg:integrator.IntegratorProc = "2MN,0.21"
   gsteps = 20
   intsteps = 100
   alwaysAccept:bool = 0
@@ -435,26 +438,84 @@ proc gupdaterk(x,mu: int, t: float): auto =
   let f = exp(s*gp[0]*p[mu][x])
   let u = f * g[mu][x]
   g[mu][x] := u
-  var ae = gp[1] * exp(s*lam)
+  let ae = gp[1] * exp(s*lam)
   result = gp[1].re - ae.re
 
-proc mdt(t:float) =
+proc rkint(t: float, f: auto): float =
+  let dt = t / intsteps
+  var s = 0.0
+  for i in 1..intsteps:
+    let k1 = dt * f(s)
+    case rkorder
+    of 1:
+      let ds = k1  # first order
+      s += ds
+    of 2:
+      let k2 = dt * f(s+k1)
+      let ds = 0.5*(k1+k2)  # second order
+      s += ds
+    of 3:
+      let k2 = dt * f(s+0.5*k1)
+      let k3 = dt * f(s+2*k2-k1)
+      let ds = (1.0/6.0)*(k1+4*k2+k3)  # third order
+      s += ds
+    of 4:
+      let k2 = dt * f(s+0.5*k1)
+      let k3 = dt * f(s+0.5*k2)
+      let k4 = dt * f(s+k3)
+      let ds = (1.0/6.0)*(k1+2*k2+2*k3+k4)  # fourth order
+      s += ds
+    else: discard
+  result = s
+
+mixin ode.IntegratorProc
+proc gupA(lam: auto, a: auto, t: float): float =
+  #proc dsdt(y: float): float =
+  proc dsdt(t: float, y: float, ctx: NumContext[float, float]): float =
+    let ae = a * exp(y*lam)
+    result = exp(ae.re)
+  #result = rkint(t, dsdt)
+  let s0 = 0.0
+  let tspan = [t]
+  #let odeOptions = newODEoptions(dtMin=0.0,absTol=1e-6)
+  let odeOptions = newODEoptions(dtMin=1e-12,dtMax=1e-3,absTol=1e-18,relTol=1e-18)
+  #let intg = "rk21"
+  let intg = "tsit54"
+  let (t1, y1) = solveOde(dsdt, s0, tspan, odeOptions, integrator=intg)
+  result = y1[^1]
+
+proc gupdateA(x,mu: int, t: float): auto =
+  var s: evalType(g[mu][x][0,0].re)
+  const vl = simdLength(s)
+  let gp = gpot(x,mu)
+  let lam = gp[0]*p[mu][x][0,0]
+  for i in 0..<vl:
+    let li = lam[asSimd(i)]
+    let ai = gp[1][asSimd(i)]
+    let si = gupA(li, ai, t)
+    s[i] = si
+  let f = exp(s*gp[0]*p[mu][x])
+  let u = f * g[mu][x]
+  g[mu][x] := u
+  let ae = gp[1] * exp(s*lam)
+  result = gp[1].re - ae.re
+
+proc mdtfb(t:float, fb:int) =
   if useG:
     let eosub = [lo.getSubset("even"), lo.getSubset("odd")]
-    let dt = 0.5 * t
-    for rd in [0,1]:
-      for mux in [0,1]:
-        let mu = if rd==0: mux else: 1-mux
-        for eox in [0,1]:
-          let eo = if rd==0: eox else: 1-eox
-          initg()
-          threads:
-            var lnJt: evalType(g[0][0][0,0].re)
-            for x in eosub[eo]:
-              lnJt += gupdaterk(x,mu,dt)
-            var lnJs = simdSum(lnJt)
-            threadRankSum(lnJs)
-            threadSingle: lnJ += lnJs
+    let dt = t
+    for mux in [0,1]:
+      let mu = if fb==0: mux else: 1-mux
+      for eox in [0,1]:
+        let eo = if fb==0: eox else: 1-eox
+        initg()
+        threads:
+          var lnJt: evalType(g[0][0][0,0].re)
+          for x in eosub[eo]:
+            lnJt += gupdateA(x,mu,dt)
+          var lnJs = simdSum(lnJt)
+          threadRankSum(lnJs)
+          threadSingle: lnJ += lnJs
   else:
     threads:
       for i in 0..<g.len:
@@ -463,6 +524,29 @@ proc mdt(t:float) =
           g[i][e] := etpg
     if mdalgo == nosehoover:
       xi += t * gamma * (p.pnorm2 - dof)
+
+proc mdtf(t:float) =
+  #let t = 0.25*t
+  mdtfb(t, 0)
+  #mdtfb(t, 1)
+  #mdtfb(t, 0)
+  #mdtfb(t, 1)
+
+proc mdtb(t:float) =
+  #let t = 0.25*t
+  #mdtfb(t, 0)
+  mdtfb(t, 1)
+  #mdtfb(t, 0)
+  #mdtfb(t, 1)
+
+proc mdt(t:float) =
+  if useG:
+    let t2 = 0.5*t
+    mdtf t2
+    mdtb t2
+    #mdtf t
+  else:
+    mdtf t
 
 proc mdv(t:float) =
   if useG:
@@ -612,7 +696,7 @@ proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float]) =
 
 type Md = object
 var md: Md
-proc evolve(md: Md, t: float) =
+proc evolve0(md: Md, t: float) =
   let eps = t / gsteps
   let eps2 = 0.5 * eps
   mdv eps2
@@ -621,6 +705,22 @@ proc evolve(md: Md, t: float) =
     mdv eps
     mdt eps
   mdv eps2
+proc evolve(md: Md, t: float) =
+  let eps = t / gsteps
+  let epsa1 = 0.21 * eps
+  let epsa1x2 = 2*epsa1
+  let epsa2 = eps - epsa1x2
+  let epsb1 = 0.5 * eps
+  mdv epsa1
+  mdtf epsb1
+  mdv epsa2
+  mdtb epsb1
+  for i in 1..<gsteps:
+    mdv epsa1x2
+    mdtf epsb1
+    mdv epsa2
+    mdtb epsb1
+  mdv epsa1
 
 proc finish(md: Md) = discard
 
