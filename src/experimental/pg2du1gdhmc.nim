@@ -147,8 +147,11 @@ letParam:
   gamma = 1.0
   ## 2MN,0.21 | 4MN3F1GP,0.27 | 4MN5F2GP
   gintalg:integrator.IntegratorProc = "2MN,0.21"
+  omfLambda = 0.21
   gsteps = 20
   intsteps = 100
+  relTol = 1e-12
+  reduceT = true
   alwaysAccept:bool = 0
   revCheckFreq = ntraj
   verboseGCStats:bool = 0
@@ -475,7 +478,7 @@ proc gupA(lam: auto, a: auto, t: float): float =
   let i0a = besselI0(sqrt(a.norm2))
   let smag = t / i0a
   var t = t
-  if lam.im != 0.0:
+  if reduceT and lam.im != 0.0:
     let tp = i0a * 2 * PI / abs(lam.im)
     t -= tp * trunc(t/tp)
   #proc dsdt(y: float): float =
@@ -487,8 +490,11 @@ proc gupA(lam: auto, a: auto, t: float): float =
   let tspan = [t]
   #let odeOptions = newODEoptions(dtMin=0.0,absTol=1e-6)
   #let odeOptions = newODEoptions(dtMin=1e-14,dtMax=1e-3,absTol=1e-18,relTol=1e-20)
-  let odeOptions = newODEoptions(dtMin=1e-16,dtMax=1e-3,absTol=1e-12*smag,relTol=0.0)
+  #let odeOptions = newODEoptions(dtMin=1e-16,dtMax=1e-3,absTol=1e-12*smag,relTol=0.0)
   #let odeOptions = newODEoptions(dtMin=1e-16,dtMax=1e-3,absTol=0.0,relTol=1e-16/smag)
+  let abst = 0.0
+  let relt = relTol / smag
+  let odeOptions = newODEoptions(dtMin=1e-16,dtMax=1e-3,absTol=abst,relTol=relt)
   #let intg = "rk21"
   let intg = "dopri54"
   #let intg = "tsit54"
@@ -731,7 +737,7 @@ proc evolve0(md: Md, t: float) =
   mdv eps2
 proc evolve(md: Md, t: float) =
   let eps = t / gsteps
-  let epsa1 = 0.21 * eps
+  let epsa1 = omfLambda * eps
   let epsa1x2 = 2*epsa1
   let epsa2 = eps - epsa1x2
   let epsb1 = 0.5 * eps
