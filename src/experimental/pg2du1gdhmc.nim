@@ -187,6 +187,7 @@ var
   f = lo.newgauge
   gg = lo.newgauge  # FG backup gauge
   g0 = lo.newgauge
+  p0 = lo.newgauge
   xi = 0.0
   xi1 = xi
   lnJ = 0.0
@@ -470,6 +471,13 @@ proc rkint(t: float, f: auto): float =
 
 mixin ode.IntegratorProc
 proc gupA(lam: auto, a: auto, t: float): float =
+  # s ~ t / I0(|a|)
+  let i0a = besselI0(sqrt(a.norm2))
+  let smag = t / i0a
+  var t = t
+  if lam.im != 0.0:
+    let tp = i0a * 2 * PI / abs(lam.im)
+    t -= tp * trunc(t/tp)
   #proc dsdt(y: float): float =
   proc dsdt(t: float, y: float, ctx: NumContext[float, float]): float =
     let ae = a * exp(y*lam)
@@ -478,9 +486,13 @@ proc gupA(lam: auto, a: auto, t: float): float =
   let s0 = 0.0
   let tspan = [t]
   #let odeOptions = newODEoptions(dtMin=0.0,absTol=1e-6)
-  let odeOptions = newODEoptions(dtMin=1e-12,dtMax=1e-3,absTol=1e-18,relTol=1e-18)
+  #let odeOptions = newODEoptions(dtMin=1e-14,dtMax=1e-3,absTol=1e-18,relTol=1e-20)
+  let odeOptions = newODEoptions(dtMin=1e-16,dtMax=1e-3,absTol=1e-12*smag,relTol=0.0)
+  #let odeOptions = newODEoptions(dtMin=1e-16,dtMax=1e-3,absTol=0.0,relTol=1e-16/smag)
   #let intg = "rk21"
-  let intg = "tsit54"
+  let intg = "dopri54"
+  #let intg = "tsit54"
+  #let intg = "vern65"
   let (t1, y1) = solveOde(dsdt, s0, tspan, odeOptions, integrator=intg)
   result = y1[^1]
 
@@ -490,8 +502,8 @@ proc gupdateA(x,mu: int, t: float): auto =
   let gp = gpot(x,mu)
   let lam = gp[0]*p[mu][x][0,0]
   for i in 0..<vl:
-    let li = lam[asSimd(i)]
-    let ai = gp[1][asSimd(i)]
+    let li = eval(lam[asSimd(i)])
+    let ai = eval(gp[1][asSimd(i)])
     let si = gupA(li, ai, t)
     s[i] = si
   let f = exp(s*gp[0]*p[mu][x])
@@ -592,7 +604,7 @@ proc updatefga(ts:openarray[float]) =
   mdv ts[0]
   toc("mdv")
 
-proc revCheck(evo:auto; h0,ga0,t0,eh0:float) =
+proc revCheck(evo:auto; h0,ga0,t0,eh0:float, g0,p0:auto) =
   tic("reversibility")
   var
     g1 = lo.newgauge
@@ -616,14 +628,26 @@ proc revCheck(evo:auto; h0,ga0,t0,eh0:float) =
     dSg = ga1-ga0
     dT = t1-t0
     deh = eh1-eh0
+  var dg2 = 0.0
+  var dp2 = 0.0
+  threads:
+    for i in 0..<g.len:
+      g[i] -= g0[i]
+      let tg2 = g[i].norm2
+      threadSingle: dg2 += tg2
+      p[i] += p0[i]
+      let tp2 = p[i].norm2
+      threadSingle: dp2 += tp2
+      g[i] := g1[i]
+      p[i] := p1[i]
+  dg2 = sqrt(dg2/float(lo.nDim * lo.physVol))
+  dp2 = sqrt(dp2/float(lo.nDim * lo.physVol))
   qexLog "Reversed H: ",h1,"  Sg: ",ga1,"  T: ",t1,"  extH: ",eh1,"  lnJ: ",lnJ
-  qexLog "Reversibility: dH: ",dH,"  dSg: ",dSg,"  dT: ",dT,"  dextH: ",deh
-  proc epf(d,x:float):float = abs(d/x)/dof
-  if epf(dH,h0+eh0)>1e-14 or epf(dSg,ga0)>1e-14 or epf(dT,t0)>1e-14 or abs(lnJ/dof)>1e-14:
-    qexWarn "broken reversibility in error/volume: dH: ",epf(dH,h0+eh0),"  dSg: ",epf(dSg,ga0),"  dT: ",epf(dT,t0),"  lnJ: ",abs(lnJ/dof)
-  for i in 0..<g1.len:
-    g[i] := g1[i]
-    p[i] := p1[i]
+  #qexLog "Reversibility: dH: ",dH,"  dSg: ",dSg,"  dT: ",dT,"  dextH: ",deh
+  qexLog "Reversibility: dg2: ",dg2,"  dp2: ",dp2,"  dSg: ",dSg,"  dT: ",dT
+  #proc epf(d,x:float):float = abs(d/x)/dof
+  #if epf(dH,h0+eh0)>1e-14 or epf(dSg,ga0)>1e-14 or epf(dT,t0)>1e-14 or abs(lnJ/dof)>1e-14:
+  #  qexWarn "broken reversibility in error/volume: dH: ",epf(dH,h0+eh0),"  dSg: ",epf(dSg,ga0),"  dT: ",epf(dT,t0),"  lnJ: ",abs(lnJ/dof)
   #xi = xi1
   revEnd()
   lnJ = lnJ1
@@ -737,9 +761,10 @@ proc mc =
     tic("traj")
     qexLog "Begin traj: ",n
     threads:
+      p.randomTAH r
       for i in 0..<p.len:
         g0[i] := g[i]
-      p.randomTAH r
+        p0[i] := p[i]
     #if mdalgo == nosehoover:
     #  xi = R.gaussian * sqrt(gamma)
     #  lnJ = 0.0
@@ -756,7 +781,7 @@ proc mc =
     qexLog "End H: ",h1,"  Sg: ",ga1,"  T: ",t1,"  extH: ",eh1,"  lnJ: ",lnJ
 
     if revCheckFreq > 0 and n>=0 and n mod revCheckFreq == 0:
-      md.revCheck(h0,ga0,t0,eh0)
+      md.revCheck(h0,ga0,t0,eh0,g0,p0)
 
     let
       dH = h1 - h0 + eh1 - eh0 + lnJ

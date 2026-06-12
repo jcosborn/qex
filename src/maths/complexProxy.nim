@@ -145,6 +145,11 @@ template eval*[T](x: typedesc[ComplexProxy[T]]): typedesc =
   mixin eval
   asComplexProxy(eval typeof T)
 
+proc eval*(x: ComplexProxy): auto {.noInit,alwaysInline.} =
+  var t {.noInit.}: evalType(x)
+  t := x
+  result = t
+
 proc `$`*(x: RealProxy): string =
   result = $x[]
 proc `$`*(x: ImagProxy): string =
