@@ -659,7 +659,7 @@ proc revCheck(evo:auto; h0,ga0,t0,eh0:float, g0,p0:auto) =
   lnJ = lnJ1
   toc("done")
 
-proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float]) =
+proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float], secs:float) =
   proc rootmean(xs: Ensemble[seq[float]]):float = sqrt(mean(xs))
   let dHrms = Hvals.jackknife(jkBlockSize, rootmean)
   let lnJ = Jvals.jackknife(jkBlockSize, mean)
@@ -678,9 +678,11 @@ proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float]) =
       APvals[i] = a
   let pacc = APvals.jackknife(jkBlockSize, mean)
   let Pmean = Pvals.jackknife(jkBlockSize, mean)
+  let Pac = Pvals.jackknife(jkBlockSize, naiveIntAutocorr, 200)
   let Qmean = Qvals.jackknife(jkBlockSize, mean)
   let Qac = Qvals.jackknife(jkBlockSize, naiveIntAutocorr, 200)
   let dQrms = Qvals.jackknife(jkBlockSize, tunnelingRate)
+  let spt = secs / Qvals.len
 
   var qmax = 0
   for qv in Qvals:
@@ -712,9 +714,11 @@ proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float]) =
   echo "exp(-dH) = ", expmdh.mean, " ± ", expmdh.stdev
   echo "Pacc = ", pacc.mean, " ± ", pacc.stdev
   echo "Pmean = ", Pmean.mean, " ± ", Pmean.stdev, "  dP = ",Pmean.mean-infVolPlaq(beta)
+  echo "Tau_P = ", Pac.mean, " ± ", Pac.stdev
   echo "Qmean = ", Qmean.mean, " ± ", Qmean.stdev
   echo "Tau_Q = ", Qac.mean, " ± ", Qac.stdev
   echo "dQrms = ", dQrms.mean, " ± ", dQrms.stdev
+  echo "dQ/s = ", dQrms.mean/spt, " ± ", dQrms.stdev/spt
   echo "Q2/V = ", Q2.mean/float(vol), " ± ", Q2.stdev/float(vol), "  dQ2/V = ", Q2.mean/float(vol)-infVolChiQ(beta)
   echo "Tau_Q2 = ", Q2ac.mean, " ± ", Q2ac.stdev
   for i in 0..qmax:
@@ -762,10 +766,13 @@ proc mc =
     Avals = newSeq[float](ntraj)
     Pvals = newSeq[float](ntraj)
     Qvals = newSeq[float](ntraj)
+    trajStart = 0.0
 
   for n in 1-ntrajThermo..ntraj:
     tic("traj")
     qexLog "Begin traj: ",n
+    if n == 1:
+      trajStart = getTics().seconds
     threads:
       p.randomTAH r
       for i in 0..<p.len:
@@ -813,7 +820,8 @@ proc mc =
     qexLog "plaq: ",pl.re," ",pl.im," topo: ",Qvals[n-1]
     toc("done")
 
-  obstat(Hvals, Jvals, Avals, Pvals, Qvals)
+  let trajtime = getTics().seconds - trajStart
+  obstat(Hvals, Jvals, Avals, Pvals, Qvals, trajtime)
   toc("done")
 
 toc("prep")
