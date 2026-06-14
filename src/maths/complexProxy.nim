@@ -396,6 +396,16 @@ proc exp*(x: ComplexProxy): auto {.inline,noInit.} =
   let si = sin(xi)
   newComplexP(er*ci, er*si)
 
+proc expm1*(x: ComplexProxy): auto {.inline,noInit.} =
+  #mixin expm1, cos, sin
+  let erm1 = expm1(x.re)
+  let er = erm1 + 1
+  let xi = x.im
+  let sih = sin(0.5*xi)
+  let mcp1 = 2 * sih * sih
+  let si = sin(xi)
+  newComplexP(erm1-er*mcp1, er*si)
+
 proc ln*(x: ComplexProxy): auto {.inline,noInit.} =
   mixin ln, atan2
   let n = 0.5 * x.norm2.ln

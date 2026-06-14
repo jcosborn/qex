@@ -150,7 +150,8 @@ letParam:
   omfLambda = 0.21
   gsteps = 20
   intsteps = 100
-  relTol = 1e-12
+  absTol = 1e-16
+  relTol = 0.0
   reduceT = true
   alwaysAccept:bool = 0
   revCheckFreq = ntraj
@@ -472,7 +473,36 @@ proc rkint(t: float, f: auto): float =
     else: discard
   result = s
 
-mixin ode.IntegratorProc
+proc getT(lam: auto, a: auto, s: float): float =
+  # dt = ds exp(-Re[a exp(lam s)])
+  let an2 = a.norm2
+  if an2 == 0.0:
+    return s
+  if lam.im == 0.0:
+    return s*exp(-a.re)
+  let an = sqrt(an2)
+  let ap = -a / an
+  var apk = ap
+  var em = expm1(lam*s)
+  var z = em + 1
+  var c = em/lam
+  var ck = c
+  var t = s*besselI0(an)
+  #for k in 1..intsteps:
+  var k = 1
+  while true:
+    let ac = apk * ck
+    let dt = besselIn(k, an) * ac.re * (2.0/float(k))
+    t += dt
+    if abs(dt) < 1e-16 * abs(t): break
+    apk *= ap
+    ck = z*ck + c
+    inc k
+  result = t
+
+var terr = 0.0
+var terrmax = 0.0
+var nterr = 0
 proc gupA(lam: auto, a: auto, t: float): float =
   # s ~ t / I0(|a|)
   let i0a = besselI0(sqrt(a.norm2))
@@ -481,6 +511,7 @@ proc gupA(lam: auto, a: auto, t: float): float =
   if reduceT and lam.im != 0.0:
     let tp = i0a * 2 * PI / abs(lam.im)
     t -= tp * trunc(t/tp)
+    #echo "tp: ", tp, "  ", t
   #proc dsdt(y: float): float =
   proc dsdt(t: float, y: float, ctx: NumContext[float, float]): float =
     let ae = a * exp(y*lam)
@@ -492,8 +523,12 @@ proc gupA(lam: auto, a: auto, t: float): float =
   #let odeOptions = newODEoptions(dtMin=1e-14,dtMax=1e-3,absTol=1e-18,relTol=1e-20)
   #let odeOptions = newODEoptions(dtMin=1e-16,dtMax=1e-3,absTol=1e-12*smag,relTol=0.0)
   #let odeOptions = newODEoptions(dtMin=1e-16,dtMax=1e-3,absTol=0.0,relTol=1e-16/smag)
+  #let abst = absTol * smag
+  #let relt = relTol
+  #let abst = absTol
+  #let relt = relTol / smag
   let abst = 0.0
-  let relt = relTol / smag
+  let relt = relTol + absTol / smag
   let odeOptions = newODEoptions(dtMin=1e-16,dtMax=1e-3,absTol=abst,relTol=relt)
   #let intg = "rk21"
   let intg = "dopri54"
@@ -501,9 +536,38 @@ proc gupA(lam: auto, a: auto, t: float): float =
   #let intg = "vern65"
   let (t1, y1) = solveOde(dsdt, s0, tspan, odeOptions, integrator=intg)
   result = y1[^1]
+  let tc = getT(lam,a,result)
+  #echo "err: ", tc - t, "  ", tc, "  ", t
+  let te = abs(tc-t)
+  threadCritical:
+    terr += te
+    terrmax = max(terrmax, te)
+    inc nterr
+
+proc gupI(lam: auto, a: auto, t: float): float =
+  var dt = t / intsteps
+  var s = 0.0
+  let i0a = besselI0(sqrt(a.norm2))
+  let ds0 = dt / i0a
+  proc f(ds: float): float =
+    let ae = a * exp((s+0.5*ds)*lam)
+    result = dt * exp(ae.re) - ds
+  proc fd(ds: float): float =
+    let ae = a * exp((s+0.5*ds)*lam)
+    let aed = 0.5 * ae * lam
+    result = dt * exp(ae.re) * aed.re - 1.0
+  var lj = 0.0
+  for i in 1..intsteps:
+    # ds = dt dsdt(s+0.5*ds)
+    # s1 = s0 + dt dsdt(0.5*(s0+s1)) => ds1 = ds0 + dt
+    let ds = newtons(f, fd, ds0, 1e-6)
+    s += ds
+    #lj += 
+  result = s
 
 proc gupdateA(x,mu: int, t: float): auto =
   var s: evalType(g[mu][x][0,0].re)
+  #var lj: evalType(g[mu][x][0,0].re)
   const vl = simdLength(s)
   let gp = gpot(x,mu)
   let lam = gp[0]*p[mu][x][0,0]
@@ -511,12 +575,17 @@ proc gupdateA(x,mu: int, t: float): auto =
     let li = eval(lam[asSimd(i)])
     let ai = eval(gp[1][asSimd(i)])
     let si = gupA(li, ai, t)
+    #let si = gupI(li, ai, t)
+    #let (si,dsi) = gupI(li, ai, t)
     s[i] = si
+    #lj[i] = lji
   let f = exp(s*gp[0]*p[mu][x])
   let u = f * g[mu][x]
   g[mu][x] := u
   let ae = gp[1] * exp(s*lam)
   result = gp[1].re - ae.re
+  #result = lj
+  # du = f dg + df g = f dg + g lam f ds
 
 proc mdtfb(t:float, fb:int) =
   if useG:
@@ -818,6 +887,11 @@ proc mc =
       Pvals[n-1] = pl.re
       Qvals[n-1] = g.topo2DU1
     qexLog "plaq: ",pl.re," ",pl.im," topo: ",Qvals[n-1]
+    qexLog "terr: ",terr/nterr,"  ",terrmax
+    if n==0:
+      terr = 0
+      nterr = 0
+      terrmax = 0
     toc("done")
 
   let trajtime = getTics().seconds - trajStart
