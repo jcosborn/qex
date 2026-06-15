@@ -621,8 +621,8 @@ proc gupdateA(x,mu: int, t: float): auto =
   for i in 0..<vl:
     let li = eval(lam[asSimd(i)])
     let ai = eval(gp[1][asSimd(i)])
-    #let si = gupA(li, ai, t)
-    let si = gupInv(li, ai, t)
+    let si = gupA(li, ai, t)
+    #let si = gupInv(li, ai, t)
     #let si = gupI(li, ai, t)
     #let (si,dsi) = gupI(li, ai, t)
     s[i] = si
