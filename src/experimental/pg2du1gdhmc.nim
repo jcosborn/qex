@@ -262,6 +262,7 @@ proc gfunderivV(x,mu: auto): auto =
   let p = g[mu][x] * s.adj
   let pt = trace(p)
   let a = bg * (1 - pt.re)
+  #let a = bg * (0 - pt.re)
   let f = exp(a)
   let d = (0.5*bg*f)*(p - p.adj)
   result = (f,d)
@@ -274,6 +275,7 @@ proc gpotV(x,mu: auto): auto =
   let p = g[mu][x] * s.adj
   let pt = trace(p)
   let a = exp(bg)
+  #let a = 0.0
   let b = -bg * pt
   result = (a,b)
 
@@ -489,12 +491,15 @@ proc getT(lam: auto, a: auto, s: float): float =
   var ck = c
   var t = s*besselI0(an)
   #for k in 1..intsteps:
+  var nsmall = 0
   var k = 1
   while true:
     let ac = apk * ck
     let dt = besselIn(k, an) * ac.re * (2.0/float(k))
     t += dt
-    if abs(dt) < 1e-16 * abs(t): break
+    #if abs(dt) < 1e-24 * abs(t): break
+    if abs(dt) < 1e-18 * abs(t): inc nsmall else: nsmall = 0
+    if nsmall >= 10: break
     apk *= ap
     ck = z*ck + c
     inc k
@@ -544,6 +549,48 @@ proc gupA(lam: auto, a: auto, t: float): float =
     terrmax = max(terrmax, te)
     inc nterr
 
+proc gupInv(lam: auto, a: auto, t: float): float =
+  let an2 = a.norm2
+  if an2 == 0.0:
+    return t
+  if lam.im == 0.0:
+    return t*exp(a.re)
+  let an = sqrt(an2)
+  let i0a = besselI0(an)
+  var s0 = 0.0
+  var t0 = 0.0
+  var s1 = 2 * PI / abs(lam.im)
+  var t1 = i0a * s1
+  var t = t
+  t -= t1 * trunc(t/t1)
+  var s = 0.0
+  while true:
+    s = 0.5*(s0+s1)
+    if s==s0 or s==s1: break
+    let ts = getT(lam, a, s)
+    #echo s, "  ", ts, "  ", t
+    if ts == t: break
+    if ts < t:
+      s0 = s
+      t0 = ts
+    else:
+      s1 = s
+      t1 = ts
+  result = s
+  let tc = getT(lam,a,result)
+  let te = abs(tc-t)
+  if te > 1e-12:
+    echo s, "  ", tc, "  ", t
+    echo s0, "  ", s, "  ", s1
+    echo t0, "  ", tc, "  ", t1
+    let sa = gupA(lam, a, t)
+    let ta = getT(lam,a,sa)
+    echo sa, "  ", ta
+  threadCritical:
+    terr += te
+    terrmax = max(terrmax, te)
+    inc nterr
+
 proc gupI(lam: auto, a: auto, t: float): float =
   var dt = t / intsteps
   var s = 0.0
@@ -574,7 +621,8 @@ proc gupdateA(x,mu: int, t: float): auto =
   for i in 0..<vl:
     let li = eval(lam[asSimd(i)])
     let ai = eval(gp[1][asSimd(i)])
-    let si = gupA(li, ai, t)
+    #let si = gupA(li, ai, t)
+    let si = gupInv(li, ai, t)
     #let si = gupI(li, ai, t)
     #let (si,dsi) = gupI(li, ai, t)
     s[i] = si
