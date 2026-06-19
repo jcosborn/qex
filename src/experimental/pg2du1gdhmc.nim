@@ -638,19 +638,20 @@ proc gupdateA(x,mu: int, t: float): auto =
 proc mdtfb(t:float, fb:int) =
   if useG:
     let eosub = [lo.getSubset("even"), lo.getSubset("odd")]
-    let dt = t
-    for mux in [0,1]:
-      let mu = if fb==0: mux else: 1-mux
-      for eox in [0,1]:
-        let eo = if fb==0: eox else: 1-eox
-        initg()
-        threads:
-          var lnJt: evalType(g[0][0][0,0].re)
-          for x in eosub[eo]:
-            lnJt += gupdateA(x,mu,dt)
-          var lnJs = simdSum(lnJt)
-          threadRankSum(lnJs)
-          threadSingle: lnJ += lnJs
+    let dt = t / intsteps
+    for st in 1..intsteps:
+      for mux in [0,1]:
+        let mu = if fb==0: mux else: 1-mux
+        for eox in [0,1]:
+          let eo = if fb==0: eox else: 1-eox
+          initg()
+          threads:
+            var lnJt: evalType(g[0][0][0,0].re)
+            for x in eosub[eo]:
+              lnJt += gupdateA(x,mu,dt)
+            var lnJs = simdSum(lnJt)
+            threadRankSum(lnJs)
+            threadSingle: lnJ += lnJs
   else:
     threads:
       for i in 0..<g.len:
@@ -685,23 +686,24 @@ proc mdt(t:float) =
 
 proc mdv(t:float) =
   if useG:
-    gc.gaugeforce2(g, f)
-    initg()
-    #var f2 = 0.0
-    threads:
-      #var f2t: typeof(norm2(f[0][0]))
-      for i in 0..<g.len:
-        for e in g[i]:
-          let gd = gfunderiv(e,i)
-          let tg = t*gd[0]
-          var ff = -tg * f[i][e]  # - to correct for sign of f
-          ff += t * gd[1]
-          p[i][e] += ff
-          #f2t += ff.norm2
-          #var f2s = simdSum(f2t)
-          #threadRankSum(f2s)
-          #threadSingle: f2 = f2s
-    #echo "F2: ", f2 / g[0].l.physVol
+    if not (mdalgo==gv and bg==beta):
+      gc.gaugeforce2(g, f)
+      initg()
+      var f2 = 0.0
+      threads:
+        var f2t: typeof(norm2(f[0][0]))
+        for i in 0..<g.len:
+          for e in g[i]:
+            let gd = gfunderiv(e,i)
+            let tg = t*gd[0]
+            var ff = -tg * f[i][e]  # - to correct for sign of f
+            ff += t * gd[1]
+            p[i][e] += ff
+            f2t += ff.norm2
+            var f2s = simdSum(f2t)
+            threadRankSum(f2s)
+            threadSingle: f2 = f2s
+      echo "F2: ", f2 / g[0].l.physVol
   else:
     gc.gaugeforce2(g, f)
     let etxi = exp(-0.5*t*xi)
