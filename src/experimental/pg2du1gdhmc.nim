@@ -508,6 +508,8 @@ proc getT(lam: auto, a: auto, s: float): float =
 var terr = 0.0
 var terrmax = 0.0
 var nterr = 0
+var serr = 0.0
+var serrmax = 0.0
 proc gupA(lam: auto, a: auto, t: float): float =
   # s ~ t / I0(|a|)
   let i0a = besselI0(sqrt(a.norm2))
@@ -517,10 +519,11 @@ proc gupA(lam: auto, a: auto, t: float): float =
     let tp = i0a * 2 * PI / abs(lam.im)
     t -= tp * trunc(t/tp)
     #echo "tp: ", tp, "  ", t
-  #proc dsdt(y: float): float =
-  proc dsdt(t: float, y: float, ctx: NumContext[float, float]): float =
+  template dsdtImpl(y: float): float =
     let ae = a * exp(y*lam)
-    result = exp(ae.re)
+    exp(ae.re)
+  proc dsdt(y: float): float = dsdtImpl(y)
+  proc dsdt(t: float, y: float, ctx: NumContext[float, float]): float = dsdtImpl(y)
   #result = rkint(t, dsdt)
   let s0 = 0.0
   let tspan = [t]
@@ -544,9 +547,12 @@ proc gupA(lam: auto, a: auto, t: float): float =
   let tc = getT(lam,a,result)
   #echo "err: ", tc - t, "  ", tc, "  ", t
   let te = abs(tc-t)
+  let se = te*dsdt(result)
   threadCritical:
     terr += te
     terrmax = max(terrmax, te)
+    serr += se
+    serrmax = max(serrmax, se)
     inc nterr
 
 proc gupInv(lam: auto, a: auto, t: float): float =
@@ -689,9 +695,9 @@ proc mdv(t:float) =
     if not (mdalgo==gv and bg==beta):
       gc.gaugeforce2(g, f)
       initg()
-      var f2 = 0.0
+      #var f2 = 0.0
       threads:
-        var f2t: typeof(norm2(f[0][0]))
+        #var f2t: typeof(norm2(f[0][0]))
         for i in 0..<g.len:
           for e in g[i]:
             let gd = gfunderiv(e,i)
@@ -699,11 +705,11 @@ proc mdv(t:float) =
             var ff = -tg * f[i][e]  # - to correct for sign of f
             ff += t * gd[1]
             p[i][e] += ff
-            f2t += ff.norm2
-            var f2s = simdSum(f2t)
-            threadRankSum(f2s)
-            threadSingle: f2 = f2s
-      echo "F2: ", f2 / g[0].l.physVol
+            #f2t += ff.norm2
+            #var f2s = simdSum(f2t)
+            #threadRankSum(f2s)
+            #threadSingle: f2 = f2s
+      #echo "F2: ", f2 / g[0].l.physVol
   else:
     gc.gaugeforce2(g, f)
     let etxi = exp(-0.5*t*xi)
@@ -938,6 +944,7 @@ proc mc =
       Qvals[n-1] = g.topo2DU1
     qexLog "plaq: ",pl.re," ",pl.im," topo: ",Qvals[n-1]
     qexLog "terr: ",terr/nterr,"  ",terrmax
+    qexLog "serr: ",serr/nterr,"  ",serrmax
     if n==0:
       terr = 0
       nterr = 0
