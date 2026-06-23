@@ -22,6 +22,69 @@ suite "scalar basic":
     z :~ 25.0
     dzdx :~ 10.0
 
+  test "mutable zero upstream stays live in cached gradient":
+    grt.resetGradCache()
+
+    let s = grt.toGvalue(0.0)
+    let x2 = grt.toGvalue(2.0)
+    let z = s * (x2 * x2)
+    let dzdx = z.grad x2
+    let dzdxPointer = cast[pointer](dzdx)
+
+    dzdx :~ 0.0
+
+    s.update 3.0
+    dzdx :~ 12.0
+
+    let dzdxAgain = z.grad x2
+    dzdxAgain :~ 12.0
+    check cast[pointer](dzdxAgain) == dzdxPointer
+
+  test "explicit static zero marker distinguishes mutable zero leaves":
+    let mutableScalar = scalarNodeLike(x)
+    let mutableInt = intNodeLike(grt.toGvalue(0))
+    let scalarZero = x.zeroLike
+    let intZero = grt.toGvalue(1).zeroLike
+
+    check mutableScalar.isZero
+    check mutableInt.isZero
+    check not mutableScalar.isStaticZeroLeaf
+    check not mutableInt.isStaticZeroLeaf
+    check scalarZero.isStaticZeroLeaf
+    check intZero.isStaticZeroLeaf
+
+    Gscalar(scalarZero).update 2.0
+    check not scalarZero.isStaticZeroLeaf
+
+  test "computed zero graph nodes are not static zero leaves":
+    let z = x - x
+
+    z :~ 0.0
+    check z.isZero
+    check not z.isStaticZeroLeaf
+
+  test "stable node ids are assigned at construction and read-only":
+    let beforeLeaf = grt.nextStableNodeId
+    let leaf = Gscalar(runtime: grt).assignStableNodeId
+    let leafId = leaf.stableNodeId
+
+    check leafId == beforeLeaf + 1
+    check grt.nextStableNodeId == leafId
+    check leaf.stableNodeId == leafId
+    check grt.nextStableNodeId == leafId
+
+    let beforeNode = grt.nextStableNodeId
+    let z = x + y
+    let nodeId = z.stableNodeId
+
+    check nodeId == beforeNode + 1
+    check grt.nextStableNodeId == nodeId
+    check z.stableNodeId == nodeId
+    check grt.nextStableNodeId == nodeId
+
+    expect(GraphValueError):
+      discard Gscalar().stableNodeId
+
   test "direct scalar field writes do not mark freshness":
     let mutable = grt.toGvalue(2.0)
     let z = mutable + 1.0
@@ -67,6 +130,92 @@ suite "scalar basic":
     check not scalarDst.copyCompatible(intSrc)
     check not intDst.copyCompatible(x)
 
+  test "graphNode rejects nil values and nil runtimes":
+    let copyFunc = Gfunc(
+      forward: proc(v: Gvalue) =
+        v.valCopy(v.inputs[0]),
+      name: "construction test copy")
+    let missing: Gvalue = nil
+    let raw = Gscalar()
+    let rawWithRuntime = Gscalar(runtime: grt)
+
+    expect(GraphValueError):
+      discard graphNode(
+        scalarNodeLike(x),
+        [missing],
+        copyFunc,
+        "nil input graph node")
+
+    expect(GraphValueError):
+      discard graphNode(
+        scalarNodeLike(x),
+        [Gvalue(raw)],
+        copyFunc,
+        "raw input graph node")
+
+    expect(GraphValueError):
+      discard graphNode(
+        scalarNodeLike(x),
+        [Gvalue(rawWithRuntime)],
+        copyFunc,
+        "unconstructed input graph node")
+
+    expect(GraphValueError):
+      discard graphNode(
+        Gscalar(nil),
+        [Gvalue(x)],
+        copyFunc,
+        "nil result graph node")
+
+    expect(GraphValueError):
+      discard graphNode(
+        raw,
+        [Gvalue(x)],
+        copyFunc,
+        "raw result graph node")
+
+  test "gradSeeded returns compatible same-node seed":
+    let seed = grt.toGvalue(3.0)
+    let result = x.gradSeeded(x, seed)
+
+    check result.nodeKey == seed.nodeKey
+    result :~ 3.0
+
+  test "gradSeeded rejects seed incompatible with output":
+    let badSeed = grt.toGvalue(1)
+
+    try:
+      discard x.gradSeeded(x, badSeed)
+      fail()
+    except GraphValueError as e:
+      check e.msg.contains("gradSeeded seed is incompatible with output")
+
+    let z = x + y
+    try:
+      discard z.gradSeeded(x, badSeed)
+      fail()
+    except GraphValueError as e:
+      check e.msg.contains("gradSeeded seed is incompatible with output")
+
+  test "gradSeeded with unit seed matches ordinary scalar gradient":
+    let z = x * y + x
+    let seeded = z.gradSeeded(x, grt.toGvalue(1.0))
+    let ordinary = z.grad x
+
+    z :~ a * b + a
+    seeded :~ b + 1.0
+    ordinary :~ b + 1.0
+
+  test "gradSeeded unreachable target returns zero without populating cache":
+    grt.resetGradCache()
+
+    let z = x * x
+    let seeded = z.gradSeeded(y, grt.toGvalue(7.0))
+
+    seeded :~ 0.0
+    check findGrad(y, z) == nil
+    check grt.gradCacheStats == GradCacheStats()
+
   test "n":
     let z = -x
     let dx = z.grad x
@@ -81,9 +230,13 @@ suite "scalar basic":
     dx :~ 1.0
     dy :~ 1.0
 
-  test "run counts are per node, not per graph function":
-    let first = x + y
-    let second = x + y
+  test "eval freshness is per node, not per graph function":
+    proc addForward(v: Gvalue) =
+      Gscalar(v).sval = Gscalar(v.inputs[0]).sval + Gscalar(v.inputs[1]).sval
+    let f = Gfunc(forward: addForward, name: "counted add")
+
+    let first = graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], f, "counted first add")
+    let second = graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], f, "counted second add")
     let firstId = first.stableNodeId
     let secondId = second.stableNodeId
 
@@ -144,36 +297,25 @@ suite "scalar basic":
     dx :~ 1.0/b
     dy :~ -a/(b*b)
 
-  test "division by zero fails fast":
+  test "division by zero follows backend scalar semantics":
     let x2 = grt.toGvalue(2.0)
     let zero = grt.toGvalue(0.0)
     let z = x2 / zero
-    expect(GraphValueError):
-      discard z.eval
+    discard z.eval
+    check z.sval.classify == fcInf
 
     let dzdx = z.grad x2
-    expect(GraphValueError):
-      discard dzdx.eval
-
-  test "scalar validators reject wrong value type":
-    let intValue: Gvalue = grt.toGvalue(1)
-    let scalarValue: Gvalue = grt.toGvalue(1.0)
-    expect(GraphValueError):
-      discard intValue.requireScalar("requireScalar")
-    expect(GraphValueError):
-      discard scalarValue.requireInt("requireInt")
+    discard dzdx.eval
+    check dzdx.sval.classify == fcInf
 
   test "separate runtimes isolate node ids and reject mixed graphs":
     let leftGrt = initGraphRuntime()
     let rightGrt = initGraphRuntime()
 
-    let xLeft = scalarNodeIn(leftGrt)
-    let yLeft = scalarNodeIn(leftGrt)
-    xLeft.update 2.0
-    yLeft.update 3.0
+    let xLeft = leftGrt.toGvalue(2.0)
+    let yLeft = leftGrt.toGvalue(3.0)
 
-    let xRight = scalarNodeIn(rightGrt)
-    xRight.update 5.0
+    let xRight = rightGrt.toGvalue(5.0)
 
     let xLeftId = xLeft.stableNodeId
     let yLeftId = yLeft.stableNodeId
@@ -194,6 +336,8 @@ suite "scalar basic":
     let xLeft = leftGrt.toGvalue(2.0)
     let yLeft = leftGrt.toGvalue(3.0)
     let xRight = rightGrt.toGvalue(5.0)
+    discard xLeft.stableNodeId
+    discard xRight.stableNodeId
     let zLeft = xLeft + yLeft
 
     discard zLeft.grad(xLeft).eval
@@ -212,7 +356,34 @@ suite "scalar basic":
     let found = findGrad(localX, z)
     check found != nil
     if found != nil:
-      check sameNode(found, dzdx)
+      check found.nodeKey == dzdx.nodeKey
+
+  test "findGrad ignores stale symbolic revisions":
+    grt.resetGradCache()
+    let localX = grt.toGvalue(2.0)
+    let localY = grt.toGvalue(3.0)
+    let z = localX * localY
+    discard z.grad localX
+
+    check findGrad(localX, z) != nil
+    inc grt.symbolicRevision
+    check findGrad(localX, z) == nil
+
+  test "same-node gradients keep revision cache current":
+    grt.resetGradCache()
+    let localX = grt.toGvalue(2.0)
+
+    let dx = localX.grad localX
+    dx :~ 1.0
+    check grt.gradCacheStats.revisionMisses == 1
+    check grt.gradCacheStats.directHits == 0
+    check grt.gradCacheStats.invalidations == 0
+
+    let dxAgain = localX.grad localX
+    dxAgain :~ 1.0
+    check grt.gradCacheStats.revisionHits == 1
+    check grt.gradCacheStats.directHits == 1
+    check grt.gradCacheStats.revisionMisses == 1
 
   test "gradient cache reuses intermediate adjoints across targets and deps":
     var fLeftCalls = 0
@@ -221,18 +392,18 @@ suite "scalar basic":
     var gRightCalls = 0
     var hCalls = 0
 
-    proc upstreamOrOne(zb: Gvalue, z: Gvalue, label: string): Gscalar =
+    proc upstreamOrOne(zb: Gvalue, z: Gvalue): Gscalar =
       if zb == nil:
-        return scalarLeafLike(z, 1.0)
-      zb.requireScalar(label)
+        return toGvalue(z.runtime, 1.0)
+      Gscalar(zb)
 
     proc addForward(v: Gvalue) =
-      let view = v.requireBinaryNodeView(Gscalar, Gscalar, "tracked add forward")
-      v.requireScalar("tracked add result").sval = view.x.sval + view.y.sval
+      let left = Gscalar(v.inputs[0])
+      let right = Gscalar(v.inputs[1])
+      Gscalar(v).sval = left.sval + right.sval
 
-    proc addBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-      discard dep
-      let upstream = upstreamOrOne(zb, z, "tracked add upstream")
+    proc addBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+      let upstream = upstreamOrOne(zb, z)
       case i
       of 0:
         inc fLeftCalls
@@ -244,49 +415,49 @@ suite "scalar basic":
         raiseValueError("tracked add input index")
 
     proc mulForward(v: Gvalue) =
-      let view = v.requireBinaryNodeView(Gscalar, Gscalar, "tracked mul forward")
-      v.requireScalar("tracked mul result").sval = view.x.sval * view.y.sval
+      let left = Gscalar(v.inputs[0])
+      let right = Gscalar(v.inputs[1])
+      Gscalar(v).sval = left.sval * right.sval
 
-    proc mulBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-      discard dep
-      let view = z.requireBinaryNodeView(Gscalar, Gscalar, "tracked mul backward")
-      let upstream = upstreamOrOne(zb, z, "tracked mul upstream")
+    proc mulBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+      let left = Gscalar(z.inputs[0])
+      let right = Gscalar(z.inputs[1])
+      let upstream = upstreamOrOne(zb, z)
       case i
       of 0:
         inc gLeftCalls
-        upstream * view.y
+        upstream * right
       of 1:
         inc gRightCalls
-        upstream * view.x
+        upstream * left
       else:
         raiseValueError("tracked mul input index")
 
     proc squareForward(v: Gvalue) =
-      let inputNode = v.requireNodeInput(0, "tracked square", "input")
-      let input = inputNode.requireScalar("tracked square input")
-      v.requireScalar("tracked square result").sval = input.sval * input.sval
+      let inputNode = v.inputs[0]
+      let input = Gscalar(inputNode)
+      Gscalar(v).sval = input.sval * input.sval
 
-    proc squareBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-      discard dep
+    proc squareBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
       if i != 0:
         raiseValueError("tracked square input index")
       inc hCalls
-      let inputNode = z.requireNodeInput(0, "tracked square", "input")
-      let input = inputNode.requireScalar("tracked square input")
-      upstreamOrOne(zb, z, "tracked square upstream") * input * 2.0
+      let inputNode = z.inputs[0]
+      let input = Gscalar(inputNode)
+      upstreamOrOne(zb, z) * input * 2.0
 
-    let gFunc = newGfunc(
-      forward = mulForward,
-      backward = mulBackward,
-      name = "tracked g")
-    let hFunc = newGfunc(
-      forward = squareForward,
-      backward = squareBackward,
-      name = "tracked h")
-    let fFunc = newGfunc(
-      forward = addForward,
-      backward = addBackward,
-      name = "tracked f")
+    let gFunc = Gfunc(
+      forward: mulForward,
+      backward: mulBackward,
+      name: "tracked g")
+    let hFunc = Gfunc(
+      forward: squareForward,
+      backward: squareBackward,
+      name: "tracked h")
+    let fFunc = Gfunc(
+      forward: addForward,
+      backward: addBackward,
+      name: "tracked f")
 
     let gNode = graphNode(
       scalarNodeLike(x),
@@ -338,7 +509,7 @@ suite "scalar basic":
     let reusedGAdjoint = findGrad(gNode, dep)
     check reusedGAdjoint != nil
     if cachedGAdjoint != nil and reusedGAdjoint != nil:
-      check sameNode(cachedGAdjoint, reusedGAdjoint)
+      check cachedGAdjoint.nodeKey == reusedGAdjoint.nodeKey
 
     let z = dedy + dy
     z :~ 2.0 * a + 4.0 * b + 1.0
@@ -348,16 +519,16 @@ suite "scalar basic":
     var rightCalls = 0
 
     proc addForward(v: Gvalue) =
-      let view = v.requireBinaryNodeView(Gscalar, Gscalar, "flaky add forward")
-      v.requireScalar("flaky add result").sval = view.x.sval + view.y.sval
+      let left = Gscalar(v.inputs[0])
+      let right = Gscalar(v.inputs[1])
+      Gscalar(v).sval = left.sval + right.sval
 
-    proc addBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-      discard dep
+    proc addBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
       let upstream =
         if zb == nil:
-          scalarLeafLike(z, 1.0)
+          toGvalue(z.runtime, 1.0)
         else:
-          zb.requireScalar("flaky add upstream")
+          Gscalar(zb)
       case i
       of 0:
         upstream
@@ -369,10 +540,10 @@ suite "scalar basic":
       else:
         raiseValueError("flaky add input index")
 
-    let flakyAdd = newGfunc(
-      forward = addForward,
-      backward = addBackward,
-      name = "flaky add")
+    let flakyAdd = Gfunc(
+      forward: addForward,
+      backward: addBackward,
+      name: "flaky add")
     let z = graphNode(
       scalarNodeLike(x),
       @[Gvalue(x), Gvalue(y)],
@@ -385,94 +556,19 @@ suite "scalar basic":
     expect(GraphValueError):
       discard z.grad(y)
     check rightCalls == 1
+    check findGrad(y, z) == nil
 
     failRight = false
     z.grad(y) :~ 1.0
     check rightCalls == 2
 
-  test "failed backwardTarget expansion is not cached as expanded":
-    var failHidden = true
-    var hiddenCalls = 0
+  test "graph values are constructed with explicit runtimes":
+    let node = Gvalue(runtime: grt)
+    let gnoop = Gfunc(name: "explicit runtime")
+    let z = graphNode(node, newSeq[Gvalue](), gnoop, "explicit runtime")
 
-    proc copyForward(v: Gvalue) =
-      v.valCopy v.inputs[0]
-
-    proc walkHidden(node: Gvalue, visit: GnodeVisit) =
-      visit node.inputs[0]
-      visit y
-
-    proc targetBackward(zb: Gvalue,
-                        z: Gvalue,
-                        target: Gvalue,
-                        dep: Gvalue): Gvalue =
-      discard zb
-      discard z
-      discard dep
-      if sameNode(target, y):
-        inc hiddenCalls
-        if failHidden:
-          raiseValueError("flaky hidden target")
-      target.oneLike
-
-    let targetFunc = newGfunc(
-      forward = copyForward,
-      backwardTarget = targetBackward,
-      depWalks = GdepWalks(depend: walkHidden),
-      name = "flaky target")
-    let z = graphNode(scalarNodeLike(x), @[Gvalue(x)], targetFunc, "flaky target")
-
-    z.grad(x) :~ 1.0
-    check hiddenCalls == 0
-
-    expect(GraphValueError):
-      discard z.grad(y)
-    check hiddenCalls == 1
-
-    failHidden = false
-    z.grad(y) :~ 1.0
-    check hiddenCalls == 2
-
-  test "graph construction rejects values without runtimes":
-    let rawNode = Gvalue()
-    let rawInput = Gvalue()
-    let gnoop = newGfunc(name = "runtime-less")
-
-    expect(GraphValueError):
-      discard graphNode(rawNode, @[x], gnoop, "runtime-less result")
-    expect(GraphValueError):
-      discard graphNode(rawGraphValueIn(grt), @[rawInput], gnoop, "runtime-less input")
-
-  test "runtime attachment rejects nil values":
-    let missing: Gvalue = nil
-
-    try:
-      discard missing.attachRuntime(grt)
-      check false
-    except GraphValueError as e:
-      check e.msg.contains("cannot attach graph runtime to nil value")
-
-  test "graph construction rejects nil and runtime-less inputs":
-    let gnoop = newGfunc(name = "input precheck")
-
-    block:
-      let missing: Gvalue = nil
-      try:
-        discard graphNode(rawGraphValueIn(grt), @[missing], gnoop, "nil input precheck")
-        check false
-      except GraphValueError as e:
-        check e.msg.contains("nil input precheck input 0 cannot be nil")
-
-    block:
-      let rawInput = Gvalue()
-      try:
-        discard graphNode(
-          rawGraphValueIn(grt),
-          @[rawInput],
-          gnoop,
-          "runtime-less input precheck")
-        check false
-      except GraphValueError as e:
-        check e.msg.contains("runtime-less input precheck input 0 has no graph runtime")
+    check z.runtime == grt
+    check z.gfunc == gnoop
 
   test "graph construction rejects inputful nodes without graph functions":
     let missingFunc: Gfunc = nil
@@ -491,41 +587,33 @@ suite "scalar basic":
     proc copyForward(v: Gvalue) =
       v.valCopy v.inputs[0]
 
-    let gcopy = newGfunc(forward = copyForward, name = "field copy")
-    let z = graphNode(scalarNodeLike(x), @[Gvalue(x)], gcopy, "field copy")
+    let gcopy = Gfunc(forward: copyForward, name: "field copy")
+    let z: Gscalar = graphNode(scalarNodeLike(x), @[Gvalue(x)], gcopy, "field copy")
 
     check z.inputs.len == 1
-    check sameNode(z.inputs[0], x)
+    check z.inputs[0].nodeKey == x.nodeKey
     check z.gfunc == gcopy
     check z.runtime == grt
     check z.epoch == 0
     z :~ a
 
-  test "typed node validators return simple tuples":
-    let z = x + y
-    let view = z.requireBinaryNodeView(Gscalar, Gscalar, "binary tuple")
+  test "eval keeps graph node topology for ordinary forward hooks":
+    proc copyForward(v: Gvalue) =
+      v.valCopy v.inputs[0]
 
-    check sameNode(view.x, x)
-    check sameNode(view.y, y)
-
-    expect(GraphValueError):
-      discard x.requireBinaryNodeView(Gscalar, Gscalar, "wrong arity tuple")
-
-    let intValue = grt.toGvalue(1)
-    let mixed = graphNode(
+    let copying = Gfunc(
+      forward: copyForward,
+      name: "copy forward")
+    let z = graphNode(
       scalarNodeLike(x),
-      @[Gvalue(x), Gvalue(intValue)],
-      newGfunc(name = "mixed validator"),
-      "mixed validator")
+      @[Gvalue(x)],
+      copying,
+      "copy forward")
 
-    expect(GraphValueError):
-      discard mixed.requireBinaryNodeView(Gscalar, Gscalar, "wrong type tuple")
-
-    try:
-      discard mixed.requireNodeInput(3, "labeled input", "right")
-      check false
-    except GraphValueError as e:
-      check e.msg.contains("right index out of range")
+    discard z.eval
+    check z.gfunc == copying
+    check z.inputs.len == 1
+    check z.inputs[0].nodeKey == x.nodeKey
 
   test "mixed numeric literals stay inside the anchored runtime":
     let grt = initGraphRuntime()
@@ -544,7 +632,7 @@ suite "scalar basic":
 
   test "literal scalar overloads and explicit erased scalar casts preserve concrete type":
     let erasedY: Gvalue = y
-    let castY = erasedY.requireScalar("erased scalar test right")
+    let castY = Gscalar(erasedY)
 
     check not compiles(x + erasedY)
     check not compiles(x - erasedY)
@@ -593,52 +681,108 @@ suite "scalar basic":
     ddx :~ e
     dddx :~ e
 
-  test "newGfunc rejects conflicting gradient hooks":
-    proc rawBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
+  test "Gfunc accepts only graph operation hooks":
+    check not compiles(Gfunc(
+      cloneInputs = proc(src: Gvalue, clonedInputs: seq[Gvalue]): seq[Gvalue] =
+        discard src
+        clonedInputs,
+      name: "clone hook"))
+
+  test "backward mode exposes dynamic deps without mutating raw inputs":
+    var sawDynamicInput = false
+
+    proc copyForward(v: Gvalue) =
+      v.valCopy v.inputs[0]
+
+    proc dynamicInputView(v: Gvalue, mode: InputWalkMode, visit: GnodeVisit) =
+      case mode
+      of iwmBackward:
+        visit y
+        visit v.inputs[0]
+      of iwmEval, iwmReachable:
+        visit v.inputs[0]
+
+    proc dynamicBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
       discard zb
       discard z
+      case i
+      of 0:
+        check input.nodeKey == y.nodeKey
+        sawDynamicInput = true
+        toGvalue(y.runtime, 7.0)
+      of 1:
+        check input.nodeKey == x.nodeKey
+        toGvalue(x.runtime, 1.0)
+      else:
+        raiseValueError("dynamic input index")
+
+    let dynamicFunc = Gfunc(
+      forward: copyForward,
+      backward: dynamicBackward,
+      inputView: dynamicInputView,
+      name: "dynamic backward deps")
+    let z = graphNode(
+      scalarNodeLike(x),
+      @[Gvalue(x)],
+      dynamicFunc,
+      "dynamic backward deps")
+
+    check z.inputs.len == 1
+    check z.inputs[0].nodeKey == x.nodeKey
+    z.grad(y) :~ 7.0
+    check sawDynamicInput
+    check z.inputs.len == 1
+    check z.inputs[0].nodeKey == x.nodeKey
+
+  test "backward mode rejects cross-runtime values":
+    proc copyForward(v: Gvalue) =
+      v.valCopy v.inputs[0]
+
+    proc passthroughBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
       discard i
-      discard dep
-      nil
+      discard input
+      if zb == nil:
+        return z.oneLike
+      zb
 
-    proc targetBackward(zb: Gvalue, z: Gvalue, target: Gvalue, dep: Gvalue): Gvalue =
-      discard zb
-      discard z
-      discard target
-      discard dep
-      nil
+    block:
+      let other = initGraphRuntime().toGvalue(1.0)
 
-    expect(GraphValueError):
-      discard newGfunc(
-        backward = rawBackward,
-        backwardTarget = targetBackward,
-        name = "badGradientHooks")
+      proc mixedInputView(v: Gvalue, mode: InputWalkMode, visit: GnodeVisit) =
+        case mode
+        of iwmBackward:
+          visit other
+        of iwmEval, iwmReachable:
+          visit v.inputs[0]
 
-  test "newGfunc rejects blank names":
-    for name in ["", "   "]:
-      var failed = false
-      try:
-        discard newGfunc(name = name)
-      except GraphValueError as e:
-        failed = true
-        check e.msg.contains("graph function name")
-      check failed
+      let mixedFunc = Gfunc(
+        forward: copyForward,
+        backward: passthroughBackward,
+        inputView: mixedInputView,
+        name: "mixed backward deps")
+      let z = graphNode(
+        scalarNodeLike(x),
+        @[Gvalue(x)],
+        mixedFunc,
+        "mixed backward deps")
+
+      expect(GraphValueError):
+        discard z.grad x
 
   test "raw backward returning nil fails fast":
     proc copyForward(v: Gvalue) =
       v.valCopy v.inputs[0]
 
-    proc nilBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
+    proc nilBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
       discard zb
       discard z
       discard i
-      discard dep
       nil
 
-    let gnilBackward = newGfunc(
-      forward = copyForward,
-      backward = nilBackward,
-      name = "nilBackward")
+    let gnilBackward = Gfunc(
+      forward: copyForward,
+      backward: nilBackward,
+      name: "nilBackward")
     let z = graphNode(scalarNodeLike(x), @[x], gnilBackward, "nilBackward")
 
     expect(GraphValueError):
@@ -648,17 +792,16 @@ suite "scalar basic":
     proc leftForward(v: Gvalue) =
       v.valCopy v.inputs[0]
 
-    proc guardedBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
+    proc guardedBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
       discard zb
-      discard dep
       if i == 0:
         return z.oneLike
       raiseValueError("irrelevant input backward was called")
 
-    let guarded = newGfunc(
-      forward = leftForward,
-      backward = guardedBackward,
-      name = "guardedLeft")
+    let guarded = Gfunc(
+      forward: leftForward,
+      backward: guardedBackward,
+      name: "guardedLeft")
     let z = graphNode(
       scalarNodeLike(x),
       @[Gvalue(x), Gvalue(y)],
@@ -668,160 +811,162 @@ suite "scalar basic":
     z.grad(x) :~ 1.0
 
   test "gradient planning rejects dependency cycles":
-    let left = scalarNodeLike(x)
-    let right = scalarNodeLike(x)
-    let gcycle = newGfunc(name = "cycle")
-    left.inputs = @[Gvalue(right)]
-    left.gfunc = gcycle
-    right.inputs = @[Gvalue(left)]
-    right.gfunc = gcycle
+    var left: Gscalar
+    var right: Gscalar
+    proc leftInputView(node: Gvalue, mode: InputWalkMode, visit: GnodeVisit) =
+      discard node
+      discard mode
+      visit right
+    proc rightInputView(node: Gvalue, mode: InputWalkMode, visit: GnodeVisit) =
+      discard node
+      discard mode
+      visit left
+
+    left = graphNode(
+      scalarNodeLike(x),
+      newSeq[Gvalue](),
+      Gfunc(inputView: leftInputView, name: "cycle left"),
+      "cycle left")
+    right = graphNode(
+      scalarNodeLike(x),
+      newSeq[Gvalue](),
+      Gfunc(inputView: rightInputView, name: "cycle right"),
+      "cycle right")
 
     expect(GraphError):
       discard left.grad x
 
   test "eval rejects dependency cycles":
-    let left = scalarNodeLike(x)
-    let right = scalarNodeLike(x)
-    let gcycle = newGfunc(name = "eval cycle")
-    left.inputs = @[Gvalue(right)]
-    left.gfunc = gcycle
-    right.inputs = @[Gvalue(left)]
-    right.gfunc = gcycle
+    var left: Gscalar
+    var right: Gscalar
+    proc leftInputView(node: Gvalue, mode: InputWalkMode, visit: GnodeVisit) =
+      discard node
+      discard mode
+      visit right
+    proc rightInputView(node: Gvalue, mode: InputWalkMode, visit: GnodeVisit) =
+      discard node
+      discard mode
+      visit left
+
+    left = graphNode(
+      scalarNodeLike(x),
+      newSeq[Gvalue](),
+      Gfunc(inputView: leftInputView, name: "eval cycle left"),
+      "eval cycle left")
+    right = graphNode(
+      scalarNodeLike(x),
+      newSeq[Gvalue](),
+      Gfunc(inputView: rightInputView, name: "eval cycle right"),
+      "eval cycle right")
 
     expect(GraphError):
       discard left.eval
 
-  test "dependency walks reject nil dependencies at traversal boundary":
-    proc walkNil(node: Gvalue, visit: GnodeVisit) =
+  test "input views reject nil dependencies at traversal boundary":
+    proc walkNil(node: Gvalue, mode: InputWalkMode, visit: GnodeVisit) =
       discard node
+      discard mode
       let missing: Gvalue = nil
       visit missing
 
     proc expectNilDependency(mode: InputWalkMode,
-                             walks: GdepWalks,
+                             inputView: GinputViewHook,
                              label: string) =
       let node = graphNode(
         scalarNodeLike(x),
         @[Gvalue(x)],
-        newGfunc(depWalks = walks, name = label),
+        Gfunc(inputView: inputView, name: label),
         label)
       try:
-        discard node.collectNodeInputs(mode)
+        discard node.collectInputView(mode)
         check false
       except GraphValueError as e:
-        check e.msg.contains("dependency walk produced nil dependency")
+        check e.msg.contains("input view produced nil dependency")
 
-    expectNilDependency(iwmEval, GdepWalks(eval: walkNil), "nil eval dependency")
-    expectNilDependency(
-      iwmDepend,
-      GdepWalks(depend: walkNil),
-      "nil depend dependency")
-    expectNilDependency(
-      iwmGradSignature,
-      GdepWalks(gradSignature: walkNil),
-      "nil signature dependency")
+    expectNilDependency(iwmEval, walkNil, "nil eval dependency")
+    expectNilDependency(iwmReachable, walkNil, "nil reachable dependency")
+    expectNilDependency(iwmBackward, walkNil, "nil backward dependency")
 
-  test "backwardTarget works without backward hook":
-    proc targetOnlyf(v: Gvalue) =
-      v.valCopy v.inputs[0]
+  test "input views reject unconstructed dependencies at traversal boundary":
+    let raw = Gscalar(runtime: grt)
 
-    proc targetOnlyBackwardTarget(zb: Gvalue,
-                                  z: Gvalue,
-                                  target: Gvalue,
-                                  dep: Gvalue): Gvalue =
-      discard z
-      discard target
-      discard dep
-      let targeted = grt.toGvalue(13.0)
-      if zb == nil:
-        return targeted
-      targeted.scaleLike zb
+    proc walkRaw(node: Gvalue, mode: InputWalkMode, visit: GnodeVisit) =
+      discard node
+      discard mode
+      visit raw
 
-    let gtargetOnly = newGfunc(
-      forward = targetOnlyf,
-      backwardTarget = targetOnlyBackwardTarget,
-      name = "targetOnly")
+    proc expectRawDependency(mode: InputWalkMode,
+                             label: string) =
+      let node = graphNode(
+        scalarNodeLike(x),
+        @[Gvalue(x)],
+        Gfunc(inputView: walkRaw, name: label),
+        label)
+      try:
+        discard node.collectInputView(mode)
+        check false
+      except GraphValueError as e:
+        check e.msg.contains("graph value has no stable node id")
 
-    let z = graphNode(scalarNodeLike(x), @[x], gtargetOnly)
-    let dx = z.grad x
-    z :~ a
-    dx :~ 13.0
+    expectRawDependency(iwmEval, "raw eval dependency")
+    expectRawDependency(iwmReachable, "raw reachable dependency")
+    expectRawDependency(iwmBackward, "raw backward dependency")
 
-  test "custom depend walk does not make hidden deps raw backward inputs":
+  test "input views reject cross-runtime dependencies at traversal boundary":
+    let other = initGraphRuntime().toGvalue(9.0)
+
+    proc walkOtherRuntime(node: Gvalue,
+                          mode: InputWalkMode,
+                          visit: GnodeVisit) =
+      discard node
+      discard mode
+      visit other
+
+    proc expectCrossRuntimeDependency(mode: InputWalkMode,
+                                      label: string) =
+      let node = graphNode(
+        scalarNodeLike(x),
+        @[Gvalue(x)],
+        Gfunc(inputView: walkOtherRuntime, name: label),
+        label)
+      try:
+        discard node.collectInputView(mode)
+        check false
+      except GraphValueError as e:
+        check e.msg.contains("mixes graph runtimes")
+
+    expectCrossRuntimeDependency(iwmEval, "foreign eval dependency")
+    expectCrossRuntimeDependency(iwmReachable, "foreign reachable dependency")
+    expectCrossRuntimeDependency(iwmBackward, "foreign backward dependency")
+
+  test "custom reachable view does not make extra deps raw backward deps":
     let hidden = grt.toGvalue(5.0)
 
     proc copyForward(v: Gvalue) =
       v.valCopy v.inputs[0]
 
-    proc walkHiddenDepend(node: Gvalue, visit: GnodeVisit) =
+    proc walkExtraReachable(node: Gvalue, mode: InputWalkMode, visit: GnodeVisit) =
       visit node.inputs[0]
-      visit hidden
+      if mode == iwmReachable:
+        visit hidden
 
-    proc rawBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-      discard dep
+    proc rawBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
       if i != 0:
-        raiseValueError("custom depend raw backward input index")
+        raiseValueError("custom reachable raw backward dep index")
       if zb == nil:
         return z.oneLike
       zb
 
-    let rawFunc = newGfunc(
-      forward = copyForward,
-      backward = rawBackward,
-      depWalks = GdepWalks(depend: walkHiddenDepend),
-      name = "custom depend raw backward")
-    let rawNode = graphNode(scalarNodeLike(x), @[Gvalue(x)], rawFunc, "custom depend raw")
+    let rawFunc = Gfunc(
+      forward: copyForward,
+      backward: rawBackward,
+      inputView: walkExtraReachable,
+      name: "custom reachable raw backward")
+    let rawNode = graphNode(scalarNodeLike(x), @[Gvalue(x)], rawFunc, "custom reachable raw")
 
     rawNode :~ a
     rawNode.grad(x) :~ 1.0
     rawNode.grad(hidden) :~ 0.0
-
-    proc targetBackward(zb: Gvalue,
-                        z: Gvalue,
-                        target: Gvalue,
-                        dep: Gvalue): Gvalue =
-      discard z
-      discard dep
-      if not sameNode(target, hidden):
-        return nil
-      let contribution = hidden.oneLike
-      if zb == nil:
-        return contribution
-      contribution.scaleLike zb
-
-    let targetFunc = newGfunc(
-      forward = copyForward,
-      backwardTarget = targetBackward,
-      depWalks = GdepWalks(depend: walkHiddenDepend),
-      name = "custom depend target backward")
-    let targetNode = graphNode(scalarNodeLike(x), @[Gvalue(x)], targetFunc, "custom depend target")
-
-    targetNode :~ a
-    targetNode.grad(hidden) :~ 1.0
-
-  test "nil backwardTarget contribution is treated as zero":
-    proc targetNilf(v: Gvalue) =
-      v.valCopy v.inputs[0]
-
-    proc targetNilBackwardTarget(zb: Gvalue,
-                                 z: Gvalue,
-                                 target: Gvalue,
-                                 dep: Gvalue): Gvalue =
-      discard zb
-      discard z
-      discard target
-      discard dep
-      nil
-
-    let gtargetNil = newGfunc(
-      forward = targetNilf,
-      backwardTarget = targetNilBackwardTarget,
-      name = "targetNil")
-
-    let z = graphNode(scalarNodeLike(x), @[x], gtargetNil)
-    let dx = z.grad x
-    z :~ a
-    dx :~ 0.0
 
   test "nm":
     let z = (-x)*x

@@ -8,6 +8,22 @@ suite "scalar d2":
     let x {.used.} = fixture.x
     let y {.used.} = fixture.y
 
+  test "zero upstream scalar keeps higher order gradient live":
+    let s = grt.toGvalue(0.0)
+    let z = s * (x * x)
+    let dzdx = z.grad x
+    let d2zdxds = dzdx.grad s
+
+    dzdx :~ 0.0
+    d2zdxds :~ 2.0 * a
+
+    x.update d
+    d2zdxds :~ 2.0 * d
+
+    s.update 5.0
+    dzdx :~ 10.0 * d
+    d2zdxds :~ 2.0 * d
+
   test "samnd dx dy repeat":
     let w = x-2.0
     let v = w+y

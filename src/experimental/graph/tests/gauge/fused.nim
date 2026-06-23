@@ -37,7 +37,7 @@ suite "gauge fused":
 
   test "fused gauge operators require explicit erased operand casts":
     let erased: Gvalue = gu
-    let castGauge = erased.requireGauge("erased fused gauge right")
+    let castGauge = Ggauge(erased)
 
     check not compiles(adjmul(gg, erased))
     check not compiles(muladj(gg, erased))
@@ -51,11 +51,32 @@ suite "gauge fused":
     norm2(muladjResult - muladj(gg, gu)) :< 1e-26
     norm2(contractResult - contractProjTAH(gg, gu)) :< 1e-26
 
+  test "fused gauge backward hooks reject missing upstream":
+    let adjmulResult = adjmul(gg, gu)
+    let muladjResult = muladj(gg, gu)
+    let contractResult = contractProjTAH(gg, gu)
+    let axexpResult = axexp(x, gm)
+    let axexpmulyResult = axexpmuly(x, gm, gg)
+
+    expect(GraphValueError):
+      discard adjmulResult.gfunc.backward(nil, adjmulResult, 0, gg)
+    expect(GraphValueError):
+      discard muladjResult.gfunc.backward(nil, muladjResult, 0, gg)
+    expect(GraphValueError):
+      discard contractResult.gfunc.backward(nil, contractResult, 0, gg)
+    expect(GraphValueError):
+      discard axexpResult.gfunc.backward(nil, axexpResult, 0, x)
+    expect(GraphValueError):
+      discard axexpmulyResult.inputs[0].gfunc.backward(
+        nil,
+        axexpmulyResult.inputs[0],
+        0,
+        axexpmulyResult.inputs[0].inputs[0])
+
   test "fused gauge ops reject incompatible layouts at construction":
     let lo2 = @[4,4,4,8].newLayout
     let g2 = lo2.newgauge
     let other = grt.toGvalue(zeroGaugeLike(g2))
-    let erasedOther: Gvalue = other
 
     expect(GraphValueError):
       discard adjmul(gg, other)
@@ -65,8 +86,6 @@ suite "gauge fused":
       discard contractProjTAH(gg, other)
     expect(GraphValueError):
       discard axexpmuly(x, gg, other)
-    expect(GraphValueError):
-      discard adjmul(gg, erasedOther.requireGauge("erased fused shape right"))
 
   test "contractProjTAH shared backward helper stays correct across outputs":
     let rf = contractProjTAH(gg, gu)

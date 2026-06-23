@@ -3,6 +3,7 @@ import ../core
 import ../scalar
 import config, trajectory
 import optimizer
+from integrator import LearnedParameter
 
 type
   TrainingState* = object
@@ -12,10 +13,6 @@ type
 proc formatNamedValues(training: TrainingState,
                        label: string,
                        values: openArray[float]): string =
-  if values.len != training.learned.len:
-    raiseValueError(
-      "training value count mismatch: expected " &
-      $training.learned.len & ", got " & $values.len)
   result = label
   for i in 0..<values.len:
     result &= " " & training.learned[i].name & "=" & $values[i]
@@ -24,20 +21,6 @@ proc parameterValues*(training: TrainingState): seq[float] =
   result = newSeq[float](training.learned.len)
   for i in 0..<result.len:
     result[i] = training.learned[i].node.sval
-
-proc gradientValues(training: TrainingState): seq[float] =
-  result = newSeq[float](training.learned.len)
-  for i in 0..<result.len:
-    result[i] = training.learned[i].gradientExpr.eval.sval
-
-proc applyParameterValues(training: var TrainingState,
-                          values: openArray[float]) =
-  if values.len != training.learned.len:
-    raiseValueError(
-      "training parameter count mismatch: expected " &
-      $training.learned.len & ", got " & $values.len)
-  for i in 0..<values.len:
-    training.learned[i].node.update values[i]
 
 proc initTrainingState*(graph: TrajectoryGraph,
                         weightDecay: float): TrainingState =
@@ -49,10 +32,15 @@ proc formatParameterValues*(training: TrainingState): string =
 
 proc trainStep*(training: var TrainingState,
                 config: RunConfig,
-                traj: int) =
+                trainingStep: int) =
   tic()
-  let trainingStep = traj - config.trajsThermo
-  let gradients = training.gradientValues
+  if trainingStep < 1 or trainingStep > config.trajsTrain:
+    raiseValueError(
+      "training step must satisfy 1 <= step <= " & $config.trajsTrain &
+      ", got " & $trainingStep)
+  var gradients = newSeq[float](training.learned.len)
+  for i in 0..<gradients.len:
+    gradients[i] = training.learned[i].gradientExpr.eval.sval
   echo training.formatNamedValues("grad:", gradients)
   var parameters = training.parameterValues
   let learningRate = warmUpCosDecay(
@@ -75,6 +63,7 @@ proc trainStep*(training: var TrainingState,
   for i in 0..<optimizerStats.len:
     echo optimizerLabel, ": ", training.learned[i].name, " ",
       optimizerStats[i].firstMoment, " ", optimizerStats[i].secondMoment
-  training.applyParameterValues(parameters)
+  for i in 0..<parameters.len:
+    training.learned[i].node.update parameters[i]
   echo training.formatNamedValues("param:", parameters)
   toc("training")

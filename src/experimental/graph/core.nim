@@ -1,8 +1,7 @@
-import core/base, core/traverse, core/runtime, core/grad_engine, core/grad_cache, core/cond
+import core/base, core/traverse, core/eval, core/grad_engine, core/cond
 
 export base
 export traverse
-export runtime
+export eval
 export grad_engine
-export grad_cache
 export cond

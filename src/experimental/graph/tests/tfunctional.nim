@@ -3,8 +3,9 @@ import math, strutils, unittest
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 
 import helpers
-import ../[core, scalar, functional]
+import ../[core, scalar]
 import ../core/base
+import ../functional
 
 let grt = initGraphRuntime()
 

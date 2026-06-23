@@ -5,7 +5,7 @@ import gauge
 import gauge/shared as graphGauge
 from hmcgauge/config import
   RunConfig, tpThermo, tpTrain, tpInfer,
-  totalTrajs, trajectoryPhase, phaseLabel, validateRunConfig
+  totalTrajs, trajectoryPhase, validateRunConfig
 from hmcgauge/trajectory import
   TrajectoryGraph, buildTrajectoryGraph, resampleMomentum,
   commitAcceptedTrajectory
@@ -26,7 +26,13 @@ proc runTrajectory(random: var RngMilc6,
                    traj: int) =
   tic("traj")
   let phase = runConfig.trajectoryPhase(traj)
-  echo runConfig.phaseLabel(phase, traj)
+  case phase
+  of tpThermo:
+    echo "Thermalization step: ", traj
+  of tpTrain:
+    echo "Training step: ", traj - runConfig.trajsThermo
+  of tpInfer:
+    echo "Inference step: ", traj - (runConfig.trajsThermo + runConfig.trajsTrain)
   echo "Begin H: ", graph.initialState.hamiltonian.eval.sval,
     "  Sg: ", graph.initialState.gaugeAction.eval.sval,
     "  T: ", graph.initialState.kinetic.eval.sval
@@ -36,7 +42,7 @@ proc runTrajectory(random: var RngMilc6,
   let acceptDraw = random.uniform
   let deltaHamiltonian = graph.deltaHamiltonian.eval.sval
   let acceptanceProbability = graph.acceptanceExpr.eval.sval
-  let accepted = acceptDraw <= acceptanceProbability or runConfig.alwaysAccept
+  let accepted = runConfig.alwaysAccept or acceptDraw <= acceptanceProbability
   if accepted:
     echo "ACCEPT:  dH: ", deltaHamiltonian,
       "  exp(-dH): ", acceptanceProbability,
@@ -60,7 +66,7 @@ proc runTrajectory(random: var RngMilc6,
     echo "bloss: ", loss
   of tpTrain:
     echo "tloss: ", loss
-    trainer.trainStep(runConfig, traj)
+    trainer.trainStep(runConfig, traj - runConfig.trajsThermo)
   of tpInfer:
     echo "iloss: ", loss
 

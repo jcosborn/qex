@@ -51,13 +51,6 @@ suite "gauge coeffs":
     beta.update 5.0
     symanzik.checkRectCoeff(5.0, -1.0 / 12.0)
 
-  test "action coefficient validator rejects wrong value type":
-    let beta = grt.toGvalue(6.0)
-    let scalarValue: Gvalue = beta
-
-    expect(GraphValueError):
-      discard scalarValue.requireActCoeff("requireActCoeff")
-
   test "action coefficient erased copy compatibility stays direct":
     let source = grt.toGvalue(GaugeActionCoeffs(plaq: 2.0, rect: 3.0))
     let target = Gactcoeff(source.newOneOf)
@@ -71,7 +64,7 @@ suite "gauge coeffs":
 
   test "named action coefficient constant leaf starts fresh":
     let wilson: Gactcoeff = actWilson(scalar.toGvalue(grt, 6.0))
-    let unitCoeff = wilson.requireNodeInput(1, "wilson coefficient test", "unit coefficient")
+    let unitCoeff = wilson.inputs[1]
 
     check unitCoeff.epoch > 0
 
@@ -90,3 +83,26 @@ suite "gauge coeffs":
     discard coeff.eval
     check almostEqual(coeff.cval.plaq, 6.0)
     check almostEqual(coeff.cval.adjplaq, 3.0)
+
+  test "actAdj scalarized gradients follow beta and adjoint factor":
+    let beta = grt.toGvalue(6.0)
+    let adjFac = grt.toGvalue(0.25)
+    let seed = grt.toGvalue(GaugeActionCoeffs(plaq: 2.0, adjplaq: 3.0))
+    let coeff = actAdj(beta, adjFac)
+    let z = redot(coeff, seed)
+
+    z :~ 16.5
+    z.grad(beta) :~ 2.75
+    z.grad(adjFac) :~ 18.0
+
+    adjFac.update 0.5
+    z :~ 21.0
+    z.grad(beta) :~ 3.5
+
+  test "coefficient backward hooks reject missing upstream":
+    let beta = grt.toGvalue(6.0)
+    let adjFac = grt.toGvalue(0.25)
+    let coeff = actAdj(beta, adjFac)
+
+    expect(GraphValueError):
+      discard coeff.gfunc.backward(nil, coeff, 0, beta)

@@ -2,28 +2,31 @@ import qex
 from os import fileExists
 from strformat import `&`
 import config
+from ../core/base import raiseValueError
 
 proc loadOrInitGauge*(g: var auto, gaugefile: string) =
-  if fileExists(gaugefile):
-    tic("load")
-    if 0 != g.loadGauge gaugefile:
-      qexError "failed to load gauge file: ", gaugefile
-    qexLog "loaded gauge from file: ", gaugefile, " secs: ", getElapsedTime()
-    toc("read")
-    block:
-      tic("reunit")
-      let gaugePtr = addr g
-      threads:
-        let d = gaugePtr[].checkSU
-        threadBarrier()
-        echo "unitary deviation avg: ", d.avg, " max: ", d.max
-        gaugePtr[].projectSU
-        threadBarrier()
-        let dd = gaugePtr[].checkSU
-        echo "new unitary deviation avg: ", dd.avg, " max: ", dd.max
-      toc("reunit")
-  else:
+  if gaugefile.len == 0:
     g.unit
+    return
+  if not fileExists(gaugefile):
+    raiseValueError("gauge file does not exist: " & gaugefile)
+  tic("load")
+  if 0 != g.loadGauge gaugefile:
+    qexError "failed to load gauge file: ", gaugefile
+  qexLog "loaded gauge from file: ", gaugefile, " secs: ", getElapsedTime()
+  toc("read")
+  block:
+    tic("reunit")
+    let gaugePtr = addr g
+    threads:
+      let d = gaugePtr[].checkSU
+      threadBarrier()
+      echo "unitary deviation avg: ", d.avg, " max: ", d.max
+      gaugePtr[].projectSU
+      threadBarrier()
+      let dd = gaugePtr[].checkSU
+      echo "new unitary deviation avg: ", dd.avg, " max: ", dd.max
+    toc("reunit")
 
 proc maybeSaveGauge*(g: auto,
                      config: RunConfig,

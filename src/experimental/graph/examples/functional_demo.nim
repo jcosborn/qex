@@ -22,7 +22,7 @@ block:
   echo "dzdx = ", dzdx
 
 block:
-  let f = local(grt.localScalar())
+  let f = lambdaParam(grt.localScalar(), grt.localScalar())
   let u = grt.localScalar()
   let hof = lambda(f, lambda(u, Gscalar(apply(f, u)) + 1.0))
   let v = grt.localScalar()
@@ -48,11 +48,11 @@ block:
   let protoArg = grt.localScalar()
   let protoRet = grt.localScalar()
   let fnProto = lambda(protoArg, protoRet)
-  let x = local(fnProto)
-  let f = local(fnProto)
+  let x = lambdaParam(fnProto, fnProto)
+  let f = lambdaParam(fnProto, fnProto)
   let Y = lambda(f, apply(lambda(x, apply(f, apply(x, x))), lambda(x, apply(f, apply(x, x)))))
 
-  let rf = local(grt.localScalar())
+  let rf = lambdaParam(grt.localScalar(), grt.localScalar())
   let u = grt.localScalar()
   let v = grt.localScalar()
   let base = grt.toGvalue(1.0)

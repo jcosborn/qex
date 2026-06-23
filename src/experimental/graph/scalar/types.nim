@@ -1,5 +1,4 @@
 import ../core
-import ../core/base
 
 type
   Gscalar* {.final.} = ref object of Gvalue
@@ -8,110 +7,79 @@ type
   Gint* {.final.} = ref object of Gvalue
     ival*: int
 
-proc scalarNodeIn*(grt: GraphRuntime): Gscalar =
-  Gscalar().attachRuntime(grt)
-
-proc scalarLeafIn*(grt: GraphRuntime,
-                   value: float): Gscalar =
+proc toGvalue*(grt: GraphRuntime,
+               x: float): Gscalar =
   result = Gscalar(
-    sval: value).attachRuntime(grt)
+    runtime: grt,
+    sval: x).assignStableNodeId
   result.updated
 
 proc scalarNodeLike*(anchor: Gvalue): Gscalar =
-  scalarNodeIn(anchor.runtime)
+  Gscalar(runtime: anchor.runtime).assignStableNodeId
 
-proc scalarLeafLike*(anchor: Gvalue,
-                     value: float): Gscalar =
-  scalarLeafIn(anchor.runtime, value)
-
-proc scalarLeafLike*(anchor: Gvalue,
-                     value: int): Gscalar =
-  scalarLeafLike(anchor, float(value))
-
-proc intNodeIn*(grt: GraphRuntime): Gint =
-  Gint().attachRuntime(grt)
-
-proc intLeafIn*(grt: GraphRuntime,
-                value: int): Gint =
+proc toGvalue*(grt: GraphRuntime,
+               x: int): Gint =
   result = Gint(
-    ival: value).attachRuntime(grt)
+    runtime: grt,
+    ival: x).assignStableNodeId
   result.updated
 
 proc intNodeLike*(anchor: Gvalue): Gint =
-  intNodeIn(anchor.runtime)
-
-proc intLeafLike*(anchor: Gvalue,
-                  value: int): Gint =
-  intLeafIn(anchor.runtime, value)
+  Gint(runtime: anchor.runtime).assignStableNodeId
 
 proc numericLeafLike*(anchor: Gvalue,
                       value: int): Gvalue =
   if anchor of Gint:
-    return intLeafLike(anchor, value)
-  scalarLeafLike(anchor, value)
+    return toGvalue(anchor.runtime, value)
+  toGvalue(anchor.runtime, float(value))
 
 proc numericLeafLike*(anchor: Gvalue,
                       value: float): Gvalue =
   if anchor of Gint:
     raiseValueError("float literal is incompatible with int graph value")
-  scalarLeafLike(anchor, value)
+  toGvalue(anchor.runtime, value)
 
-proc requireScalar*(value: Gvalue,
-                    label: string): Gscalar =
-  if not (value of Gscalar):
-    raiseValueError(label & " expects scalar value, got:\n" & value.nodeRepr)
-  Gscalar(value)
-
-proc requireInt*(value: Gvalue,
-                 label: string): Gint =
-  if not (value of Gint):
-    raiseValueError(label & " expects int value, got:\n" & value.nodeRepr)
-  Gint(value)
+# Fresh, current scalar/int leaf nodes; used as local variable / lambda-parameter
+# placeholders. They are just the zero-valued leaf constructors.
+proc localScalar*(grt: GraphRuntime): Gscalar = toGvalue(grt, 0.0)
+proc localInt*(grt: GraphRuntime): Gint = toGvalue(grt, 0)
 
 proc update*(x: Gscalar, y: float) =
   x.sval = y
   x.updated
 
-proc toGvalue*(grt: GraphRuntime,
-               x: float): Gscalar =
-  scalarLeafIn(grt, x)
-
 method newOneOf*(x: Gscalar): Gvalue =
-  result = Gscalar().attachRuntime(x.runtime)
+  result = scalarNodeLike(x)
+method zeroLike*(x: Gscalar): Gvalue =
+  result = scalarNodeLike(x)
+  result.markStaticZeroLeaf
 method oneLike*(x: Gscalar): Gvalue =
   toGvalue(x.runtime, 1.0)
 method valCopy*(z: Gscalar, x: Gvalue) =
-  z.sval = x.requireScalar("scalar copy").sval
+  z.sval = Gscalar(x).sval
 method copyCompatible*(prototype: Gscalar, value: Gvalue): bool =
   value of Gscalar
 
 method `$`*(x: Gscalar): string = $x.sval
 
 method isZero*(x: Gscalar): bool = x.sval == 0.0
-method supportsCondSelection*(x: Gscalar): bool = true
-
-proc update*(x: Gscalar, y: int) =
-  x.sval = float(y)
-  x.updated
 
 proc update*(x: Gint, y: int) =
   x.ival = y
   x.updated
 
-proc toGvalue*(grt: GraphRuntime,
-               x: int): Gint =
-  intLeafIn(grt, x)
-
 method newOneOf*(x: Gint): Gvalue =
-  result = Gint().attachRuntime(x.runtime)
+  result = intNodeLike(x)
+method zeroLike*(x: Gint): Gvalue =
+  result = intNodeLike(x)
+  result.markStaticZeroLeaf
 method oneLike*(x: Gint): Gvalue =
   toGvalue(x.runtime, 1)
 method valCopy*(z: Gint, x: Gvalue) =
-  z.ival = x.requireInt("int copy").ival
+  z.ival = Gint(x).ival
 method copyCompatible*(prototype: Gint, value: Gvalue): bool =
   value of Gint
 
 method `$`*(x: Gint): string = $x.ival
 
 method isZero*(x: Gint): bool = x.ival == 0
-method supportsCondSelection*(x: Gint): bool = true

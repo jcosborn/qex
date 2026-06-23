@@ -11,8 +11,8 @@ suite "hmcgauge fail-fast":
       trajsInfer: 0,
       savefreq: 0,
       gsteps: 4,
-      integratorCoeffs: parseIntegratorCoeffs(ik2MN, []),
-      alwaysAccept: false)
+      alwaysAccept: false,
+      integratorCoeffs: parseIntegratorCoeffs(ik2MN, []))
 
   proc validIntegratorInputs(): tuple[gc: Gactcoeff, g0: Ggauge, p0: Ggauge, dt: Gscalar] =
     (
@@ -20,6 +20,31 @@ suite "hmcgauge fail-fast":
       g0: grt.toGvalue(g),
       p0: grt.toGvalue(p),
       dt: grt.toGvalue(0.025))
+
+  proc integrateTest(
+      inputs: tuple[gc: Gactcoeff, g0: Ggauge, p0: Ggauge, dt: Gscalar],
+      coeffs: IntegratorCoeffs,
+      steps = 1): IntegrationResult =
+    integrateGauge(
+      inputs.gc,
+      inputs.g0,
+      inputs.p0,
+      inputs.dt,
+      steps,
+      coeffs)
+
+  template expectIntegrateError(inputs: untyped,
+                                coeffs: untyped,
+                                steps: untyped) =
+    expect(GraphValueError):
+      discard integrateTest(inputs, coeffs, steps)
+
+  template expectInvalidConfig(body: untyped) =
+    block:
+      var bad {.inject.} = validRunConfig()
+      body
+      expect(GraphValueError):
+        bad.validateRunConfig
 
   proc learnedNames(graph: TrajectoryGraph): seq[string] =
     for learned in graph.learnedParameters:
@@ -58,25 +83,41 @@ suite "hmcgauge fail-fast":
     expect(GraphValueError):
       discard optimizer.optimize(parameters, gradients, -1, 0.1)
 
+  test "optimizer rejects invalid hyperparameters and inputs":
+    expect(GraphValueError):
+      discard initAdamW([1.0], stepScale = 0.0)
+    expect(GraphValueError):
+      discard initAdamW([1.0], beta1 = -0.1)
+    expect(GraphValueError):
+      discard initAdamW([1.0], beta1 = 1.0)
+    expect(GraphValueError):
+      discard initAdamW([1.0], beta2 = -0.1)
+    expect(GraphValueError):
+      discard initAdamW([1.0], beta2 = 1.0)
+
+    var optimizer = initAdamW([1.0], weightDecay = 0.0)
+    var parameters = @[1.0]
+    expect(GraphValueError):
+      discard optimizer.optimize(parameters, @[0.5, 0.25], 1, 0.1)
+    expect(GraphValueError):
+      discard optimizer.optimize(parameters, @[0.5], 1, -0.1)
+
+  test "warmUpCosDecay handles validated schedule boundaries":
+    proc close(a: float, b: float): bool =
+      abs(a - b) < 1e-12
+
+    check close(warmUpCosDecay(5, 1, 0, 1.0, 0.2), 0.2)
+    check close(warmUpCosDecay(5, 5, 10, 1.0, 0.2), 1.0)
+    check close(warmUpCosDecay(0, 0, 10, 1.0, 0.2), 1.0)
+    check close(warmUpCosDecay(1, 0, 10, 1.0, 0.2), 1.0)
+    check warmUpCosDecay(2, 0, 10, 1.0, 0.2) < 1.0
+    check close(warmUpCosDecay(10, 0, 10, 1.0, 0.2), 0.2)
+
   test "integrateGauge rejects nonpositive step count before gauge ops":
     let inputs = validIntegratorInputs()
 
-    expect(GraphValueError):
-      discard integrateGauge(
-        inputs.gc,
-        inputs.g0,
-        inputs.p0,
-        inputs.dt,
-        0,
-        parseIntegratorCoeffs(ik2MN, []))
-    expect(GraphValueError):
-      discard integrateGauge(
-        inputs.gc,
-        inputs.g0,
-        inputs.p0,
-        inputs.dt,
-        -1,
-        parseIntegratorCoeffs(ik2MN, []))
+    expectIntegrateError(inputs, parseIntegratorCoeffs(ik2MN, []), 0)
+    expectIntegrateError(inputs, parseIntegratorCoeffs(ik2MN, []), -1)
 
   test "integrateGauge rejects step count before building a spec":
     let inputs = validIntegratorInputs()
@@ -101,13 +142,8 @@ suite "hmcgauge fail-fast":
 
     let twoMN = parseIntegratorCoeffs(ik2MN, [])
     check twoMN.kind == ik2MN
-    let twoMNResult: IntegrationResult = integrateGauge(
-      inputs.gc,
-      inputs.g0,
-      inputs.p0,
-      inputs.dt,
-      1,
-      twoMN)
+    check twoMN.lambda != 0.0
+    let twoMNResult: IntegrationResult = integrateTest(inputs, twoMN)
     check twoMNResult.gauge != nil
     check twoMNResult.momentum != nil
     check twoMNResult.gauge.runtime == inputs.g0.runtime
@@ -116,112 +152,61 @@ suite "hmcgauge fail-fast":
 
     let fourMN3F1GP = parseIntegratorCoeffs(ik4MN3F1GP, [])
     check fourMN3F1GP.kind == ik4MN3F1GP
-    let fourMN3F1GPResult = integrateGauge(
-      inputs.gc,
-      inputs.g0,
-      inputs.p0,
-      inputs.dt,
-      1,
-      fourMN3F1GP)
+    check fourMN3F1GP.lambda != 0.0
+    check fourMN3F1GP.theta != 0.0
+    check fourMN3F1GP.chi != 0.0
+    let fourMN3F1GPResult = integrateTest(inputs, fourMN3F1GP)
     check fourMN3F1GPResult.learnedCoeffs.len == 3
 
     let fourMN5F2GP = parseIntegratorCoeffs(ik4MN5F2GP, [])
     check fourMN5F2GP.kind == ik4MN5F2GP
-    let fourMN5F2GPResult = integrateGauge(
-      inputs.gc,
-      inputs.g0,
-      inputs.p0,
-      inputs.dt,
-      1,
-      fourMN5F2GP)
+    check fourMN5F2GP.rho != 0.0
+    check fourMN5F2GP.theta != 0.0
+    check fourMN5F2GP.vtheta != 0.0
+    check fourMN5F2GP.lambda != 0.0
+    check fourMN5F2GP.xi != 0.0
+    let fourMN5F2GPResult = integrateTest(inputs, fourMN5F2GP)
     check fourMN5F2GPResult.learnedCoeffs.len == 5
 
   test "integrator variants accept expanded multi-step schedules":
     let inputs = validIntegratorInputs()
 
-    block:
-      let coeffs = parseIntegratorCoeffs(ik2MN, [])
-      let oneStep = integrateGauge(
+    proc checkExpanded(coeffs: IntegratorCoeffs, learnedLen: int) =
+      let oneStep = integrateTest(inputs, coeffs)
+      let twoStep = integrateTest(inputs, coeffs, 2)
+      let chained = integrateGauge(
         inputs.gc,
-        inputs.g0,
-        inputs.p0,
+        oneStep.gauge,
+        oneStep.momentum,
         inputs.dt,
         1,
         coeffs)
-      check oneStep.learnedCoeffs.len == 1
-      let twoStep = integrateGauge(
-        inputs.gc,
-        inputs.g0,
-        inputs.p0,
-        inputs.dt,
-        2,
-        coeffs)
-      check twoStep.learnedCoeffs.len == 1
-      check twoStep.gauge.treeRepr.count("axexpmulyPack packed") >
-        oneStep.gauge.treeRepr.count("axexpmulyPack packed")
+      check oneStep.learnedCoeffs.len == learnedLen
+      check twoStep.learnedCoeffs.len == learnedLen
+      norm2(twoStep.gauge - chained.gauge) :< 1e-16
+      norm2(twoStep.momentum - chained.momentum) :< 1e-16
+
+    block:
+      let coeffs = parseIntegratorCoeffs(ik2MN, [])
+      checkExpanded(coeffs, 1)
 
     block:
       let coeffs = parseIntegratorCoeffs(ik4MN3F1GP, [])
-      let oneStep = integrateGauge(
-        inputs.gc,
-        inputs.g0,
-        inputs.p0,
-        inputs.dt,
-        1,
-        coeffs)
-      check oneStep.learnedCoeffs.len == 3
-      let twoStep = integrateGauge(
-        inputs.gc,
-        inputs.g0,
-        inputs.p0,
-        inputs.dt,
-        2,
-        coeffs)
-      check twoStep.learnedCoeffs.len == 3
-      check twoStep.gauge.treeRepr.count("axexpmulyPack packed") >
-        oneStep.gauge.treeRepr.count("axexpmulyPack packed")
+      checkExpanded(coeffs, 3)
 
     block:
       let coeffs = parseIntegratorCoeffs(ik4MN5F2GP, [])
-      let oneStep = integrateGauge(
-        inputs.gc,
-        inputs.g0,
-        inputs.p0,
-        inputs.dt,
-        1,
-        coeffs)
-      check oneStep.learnedCoeffs.len == 5
-      let twoStep = integrateGauge(
-        inputs.gc,
-        inputs.g0,
-        inputs.p0,
-        inputs.dt,
-        2,
-        coeffs)
-      check twoStep.learnedCoeffs.len == 5
-      check twoStep.gauge.treeRepr.count("axexpmulyPack packed") >
-        oneStep.gauge.treeRepr.count("axexpmulyPack packed")
+      checkExpanded(coeffs, 5)
 
   test "4MN3F1GP rejects partial coefficient tuples":
     let inputs = validIntegratorInputs()
 
-    expect(GraphValueError):
-      discard integrateGauge(
-        inputs.gc,
-        inputs.g0,
-        inputs.p0,
-        inputs.dt,
-        1,
-        parseIntegratorCoeffs(ik4MN3F1GP, [0.0]))
+    expectIntegrateError(inputs, parseIntegratorCoeffs(ik4MN3F1GP, [0.0]), 1)
 
   test "4MN3F1GP accepts explicit full finite tuple":
     let inputs = validIntegratorInputs()
-    let result = integrateGauge(
-      inputs.gc,
-      inputs.g0,
-      inputs.p0,
-      inputs.dt,
-      1,
+    let result = integrateTest(
+      inputs,
       parseIntegratorCoeffs(ik4MN3F1GP, [0.0, 0.25, 0.0]))
 
     check result.learnedCoeffs.len == 3
@@ -235,23 +220,15 @@ suite "hmcgauge fail-fast":
   test "4MN5F2GP rejects partial coefficient tuples":
     let inputs = validIntegratorInputs()
 
-    expect(GraphValueError):
-      discard integrateGauge(
-        inputs.gc,
-        inputs.g0,
-        inputs.p0,
-        inputs.dt,
-        1,
-        parseIntegratorCoeffs(ik4MN5F2GP, [0.1, 0.2, 0.1, 0.0]))
+    expectIntegrateError(
+      inputs,
+      parseIntegratorCoeffs(ik4MN5F2GP, [0.1, 0.2, 0.1, 0.0]),
+      1)
 
   test "4MN5F2GP accepts explicit full finite tuple":
     let inputs = validIntegratorInputs()
-    let result = integrateGauge(
-      inputs.gc,
-      inputs.g0,
-      inputs.p0,
-      inputs.dt,
-      1,
+    let result = integrateTest(
+      inputs,
       parseIntegratorCoeffs(ik4MN5F2GP, [0.1, 0.2, 0.1, 0.0, 0.0]))
 
     check result.learnedCoeffs.len == 5
@@ -365,7 +342,7 @@ suite "hmcgauge fail-fast":
     norm2(grt.toGvalue(currentGauge) - expectedGauge) :< 1e-26
     discard graph.lossExpr.eval.sval
 
-  test "accepted trajectory commit marks freshness once":
+  test "accepted trajectory commit marks freshness":
     let graph = buildTrajectoryGraph(
       grt,
       g,
@@ -398,30 +375,52 @@ suite "hmcgauge fail-fast":
     let after = trainer.parameterValues
     check after.len == before.len
     check after.len == graph.learnedParameters.len
+    check after != before
+
+  test "training step rejects indexes outside training phase":
+    let config = validRunConfig()
+    let graph = buildTrajectoryGraph(
+      grt,
+      g,
+      p,
+      actWilson(scalar.toGvalue(grt, 6.0)),
+      config)
+    var trainer = initTrainingState(graph, config.weightDecay)
+
+    expect(GraphValueError):
+      trainer.trainStep(config, 0)
+    expect(GraphValueError):
+      trainer.trainStep(config, config.trajsTrain + 1)
+
+  test "nonempty missing gauge file fails instead of silently uniting":
+    var localGauge = lo.newgauge
+
+    expect(GraphValueError):
+      localGauge.loadOrInitGauge("/definitely/missing/qex-graph-test.lime")
 
   test "run config validation rejects invalid ranges":
-    var bad = validRunConfig()
-    bad.trajsTrain = -1
-    expect(GraphValueError):
-      bad.validateRunConfig
-
-    bad = validRunConfig()
-    bad.savefreq = -1
-    expect(GraphValueError):
-      bad.validateRunConfig
-
-    bad = validRunConfig()
-    bad.gsteps = 0
-    expect(GraphValueError):
-      bad.validateRunConfig
-
-    bad = validRunConfig()
-    bad.lrmin = 2.0
-    bad.lrmax = 1.0
-    expect(GraphValueError):
-      bad.validateRunConfig
-
-    bad = validRunConfig()
-    bad.weightDecay = -0.1
-    expect(GraphValueError):
-      bad.validateRunConfig
+    expectInvalidConfig:
+      bad.dt = 0.0
+    expectInvalidConfig:
+      bad.lrmin = -0.1
+    expectInvalidConfig:
+      bad.lrmax = -0.1
+    expectInvalidConfig:
+      bad.trajsThermo = -1
+    expectInvalidConfig:
+      bad.trajsTrain = -1
+    expectInvalidConfig:
+      bad.trajsTrainlrWarm = -1
+    expectInvalidConfig:
+      bad.trajsTrainlrWarm = bad.trajsTrain + 1
+    expectInvalidConfig:
+      bad.trajsInfer = -1
+    expectInvalidConfig:
+      bad.savefreq = -1
+    expectInvalidConfig:
+      bad.gsteps = 0
+    expectInvalidConfig:
+      bad.lrmin = 2.0
+      bad.lrmax = 1.0
+    expectInvalidConfig:
+      bad.weightDecay = -0.1

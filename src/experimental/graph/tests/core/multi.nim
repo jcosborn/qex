@@ -1,30 +1,22 @@
 proc copyMultiForward(v: Gvalue) =
-  let z = v.requireMultiValue("copyMulti forward")
+  let z = Gmulti(v)
   for i in 0..<z.inputs.len:
     z.storedSlot(i).valCopy(z.inputs[i])
 
-proc copyMultiBackward(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  discard dep
-  let upstream = requireMultiUpstream(zb, "copyMulti backward")
-  upstream[i]
+proc copyMultiBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  let zb = Gmulti(zb)
+  zb[i]
 
-let copyMultiFunc = newGfunc(
-  forward = copyMultiForward,
-  backward = copyMultiBackward,
-  name = "copyMulti")
-
-proc newScalarMulti[T: Gvalue](values: openArray[T],
-                               label = "scalar multi"): Gmulti =
-  var inputs = newseq[Gvalue](values.len)
-  for i in 0..<values.len:
-    inputs[i] = values[i]
-  newMultiOutputNode(inputs, inputs, copyMultiFunc, label)
+let copyMultiFunc = Gfunc(
+  forward: copyMultiForward,
+  backward: copyMultiBackward,
+  name: "copyMulti")
 
 suite "graph multi":
   test "selection forwards and scatters gradients":
     let x = grt.toGvalue(2.0)
     let y = grt.toGvalue(3.0)
-    let pair = newScalarMulti([x, y], "pair")
+    let pair = multiValues("pair", x, y)
     let first = pair[0]
     let second = pair[1]
 
@@ -35,12 +27,12 @@ suite "graph multi":
     grad(second, x) :~ 0.0
     grad(second, y) :~ 1.0
 
-  test "multi add keeps slotwise forward and backward behavior":
+  test "multi addLike keeps slotwise forward and backward behavior":
     let x = grt.toGvalue(2.0)
     let y = grt.toGvalue(3.0)
-    let left = newScalarMulti([x, y], "left")
-    let right = newScalarMulti([y, x], "right")
-    let added = left + right
+    let left = multiValues("left", x, y)
+    let right = multiValues("right", y, x)
+    let added = Gmulti(left.addLike(left, right))
 
     added[0] :~ 5.0
     added[1] :~ 5.0
@@ -49,12 +41,39 @@ suite "graph multi":
     grad(added[1], x) :~ 1.0
     grad(added[1], y) :~ 1.0
 
+  test "cond over multi carriers selects slots and gradients":
+    let x0 = grt.toGvalue(2.0)
+    let x1 = grt.toGvalue(3.0)
+    let y0 = grt.toGvalue(5.0)
+    let y1 = grt.toGvalue(7.0)
+    let k = grt.toGvalue(1)
+    let left = multiValues("cond left", x0, x1)
+    let right = multiValues("cond right", y0, y1)
+    let selected = cond(k, left, right)
+    let first = selected[0]
+    let second = selected[1]
+
+    first :~ 2.0
+    second :~ 3.0
+    grad(first, x0) :~ 1.0
+    grad(first, y0) :~ 0.0
+    grad(second, x1) :~ 1.0
+    grad(second, y1) :~ 0.0
+
+    k.update 0
+    first :~ 5.0
+    second :~ 7.0
+    grad(first, x0) :~ 0.0
+    grad(first, y0) :~ 1.0
+    grad(second, x1) :~ 0.0
+    grad(second, y1) :~ 1.0
+
   test "oneLike and zeroLike preserve multi shape":
     let x = grt.toGvalue(2.0)
     let y = grt.toGvalue(3.0)
-    let pair = newScalarMulti([x, y], "pair")
-    let onePair = requireMultiValue(pair.oneLike, "one pair")
-    let zeroPair = requireMultiValue(pair.zeroLike, "zero pair")
+    let pair = multiValues("pair", x, y)
+    let onePair = Gmulti(pair.oneLike)
+    let zeroPair = Gmulti(pair.zeroLike)
 
     onePair[0] :~ 1.0
     onePair[1] :~ 1.0
@@ -63,46 +82,40 @@ suite "graph multi":
     grad(onePair[0], x) :~ 0.0
     grad(onePair[1], y) :~ 0.0
 
-  test "selection rejects out-of-range indices early":
-    let x = grt.toGvalue(2.0)
-    let y = grt.toGvalue(3.0)
-    let pair = newScalarMulti([x, y], "pair")
-
-    expect(GraphValueError):
-      discard pair[-1]
-    expect(GraphValueError):
-      discard pair[2]
-
   test "selection exposes only the base as a graph dependency":
     let x = grt.toGvalue(2.0)
     let y = grt.toGvalue(3.0)
-    let pair = newScalarMulti([x, y], "pair")
+    let pair = multiValues("pair", x, y)
     let first = pair[0]
-    let deps = first.collectNodeInputs(iwmDepend)
+    let deps = first.collectInputView(iwmReachable)
 
     check deps.len == 1
     if deps.len > 0:
-      check sameNode(deps[0], pair)
+      check deps[0].nodeKey == pair.nodeKey
 
-  test "selection slot index is signature metadata":
+  test "selection slot index stays fixed by the selection node":
     let x = grt.toGvalue(2.0)
     let y = grt.toGvalue(3.0)
-    let pair = newScalarMulti([x, y], "pair")
+    let pair = multiValues("pair", x, y)
     let first = pair[0]
     let firstAgain = pair[0]
     let second = pair[1]
 
-    check signatureKey(first.gfunc) == signatureKey(firstAgain.gfunc)
-    check signatureKey(first.gfunc) != signatureKey(second.gfunc)
+    first :~ 2.0
+    firstAgain :~ 2.0
+    second :~ 3.0
+    grad(first, x) :~ 1.0
+    grad(firstAgain, y) :~ 0.0
+    grad(second, y) :~ 1.0
 
-  test "multi add rejects mismatched arity":
+  test "multi addLike rejects mismatched arity":
     let x = grt.toGvalue(2.0)
     let y = grt.toGvalue(3.0)
-    let left = newScalarMulti([x, y], "left")
-    let right = newScalarMulti([x], "right")
+    let left = multiValues("left", x, y)
+    let right = multiValues("right", x)
 
     expect(GraphValueError):
-      discard left + right
+      discard left.addLike(left, right)
 
   test "multi constructor rejects slot and input runtime mismatch":
     let leftGrt = initGraphRuntime()
@@ -116,24 +129,6 @@ suite "graph multi":
         [Gvalue(input)],
         copyMultiFunc,
         "mixed runtime multi")
-
-  test "multi constructor rejects invalid slot prototypes":
-    let x = grt.toGvalue(2.0)
-    let rawSlot = Gvalue()
-    let missingSlot: Gvalue = nil
-
-    expect(GraphValueError):
-      discard newMultiOutputNode(
-        [rawSlot],
-        [Gvalue(x)],
-        copyMultiFunc,
-        "runtime-less slot multi")
-    expect(GraphValueError):
-      discard newMultiOutputNode(
-        [missingSlot],
-        [Gvalue(x)],
-        copyMultiFunc,
-        "nil slot multi")
 
   test "multi constructor rejects inputful carriers without graph functions":
     let x = grt.toGvalue(2.0)
@@ -149,15 +144,59 @@ suite "graph multi":
     except GraphValueError as e:
       check e.msg.contains("nil multi function with inputs requires a graph function")
 
+  test "multi constructor rejects nil values and nil runtimes":
+    let x = grt.toGvalue(2.0)
+    let missing: Gvalue = nil
+    let raw = Gscalar()
+    let rawWithRuntime = Gscalar(runtime: grt)
+
+    expect(GraphValueError):
+      discard newMultiOutputNode(
+        [missing],
+        [Gvalue(x)],
+        copyMultiFunc,
+        "nil slot multi")
+
+    expect(GraphValueError):
+      discard newMultiOutputNode(
+        [Gvalue(x)],
+        [missing],
+        copyMultiFunc,
+        "nil input multi")
+
+    expect(GraphValueError):
+      discard newMultiOutputNode(
+        [Gvalue(raw)],
+        [Gvalue(x)],
+        copyMultiFunc,
+        "raw slot multi")
+
+    expect(GraphValueError):
+      discard newMultiOutputNode(
+        [Gvalue(x)],
+        [Gvalue(raw)],
+        copyMultiFunc,
+        "raw input multi")
+
+    expect(GraphValueError):
+      discard newMultiOutputNode(
+        [Gvalue(rawWithRuntime)],
+        [Gvalue(x)],
+        copyMultiFunc,
+        "unconstructed slot multi")
+
+    expect(GraphValueError):
+      discard newMultiOutputNode(
+        [Gvalue(x)],
+        [Gvalue(rawWithRuntime)],
+        copyMultiFunc,
+        "unconstructed input multi")
+
   test "carrier supports heterogeneous slot prototypes and per-slot symbolic access":
     let scalar = grt.toGvalue(2.0)
     let intValue = grt.toGvalue(3)
-    let mixed = newMultiOutputNode(
-      [scalar, intValue],
-      [scalar, intValue],
-      copyMultiFunc,
-      "mixed")
-    let zeroMixed = requireMultiValue(mixed.zeroLike, "mixed zero")
+    let mixed = multiValues("mixed", scalar, intValue)
+    let zeroMixed = Gmulti(mixed.zeroLike)
     discard mixed.eval
     discard zeroMixed.eval
 
@@ -182,6 +221,17 @@ suite "graph multi":
     grad(pair[1], x) :~ 0.0
     grad(pair[1], y) :~ 1.0
 
+  test "multiValues root gradient seeds all slots":
+    let x = grt.toGvalue(2.0)
+    let y = grt.toGvalue(3.0)
+    let pair = multiValues("root pair", x, y)
+
+    grad(pair, x) :~ 1.0
+    grad(pair, y) :~ 1.0
+
+    let mixed = multiValues("root mixed", x, x * x)
+    grad(mixed, x) :~ 5.0
+
   test "multiValues packs mixed varargs":
     let scalar = grt.toGvalue(2.0)
     let intValue = grt.toGvalue(3)
@@ -192,55 +242,6 @@ suite "graph multi":
     mixed.storedSlot(0) :~ 2.0
     mixed.storedSlot(1) :~ 3
     mixed.storedSlot(2) :~ 4.0
-
-  test "symbolicSlots returns typed tuple selections":
-    let x = grt.toGvalue(2.0)
-    let y = grt.toGvalue(3.0)
-    let pair = multiValues("symbolic tuple pair", x, y)
-    let (left, right) =
-      symbolicSlots[tuple[left: Gscalar, right: Gscalar]](pair, "symbolic tuple")
-
-    left :~ 2.0
-    right :~ 3.0
-    grad(left, x) :~ 1.0
-    grad(left, y) :~ 0.0
-    grad(right, x) :~ 0.0
-    grad(right, y) :~ 1.0
-
-  test "storedSlots returns typed tuple storage":
-    let x = grt.toGvalue(2.0)
-    let y = grt.toGvalue(3.0)
-    let pair = multiValues("stored tuple pair", x, y)
-    discard pair.eval
-    let (left, right) =
-      storedSlots[tuple[left: Gscalar, right: Gscalar]](pair, "stored tuple")
-
-    left :~ 2.0
-    right :~ 3.0
-
-  test "tuple slot unpacking reports arity mismatches with caller label":
-    let x = grt.toGvalue(2.0)
-    let y = grt.toGvalue(3.0)
-    let pair = multiValues("arity pair", x, y)
-
-    try:
-      discard symbolicSlots[
-        tuple[left: Gscalar, middle: Gscalar, right: Gscalar]](pair, "arity tuple")
-      check false
-    except GraphValueError as e:
-      check e.msg.contains("arity tuple expects 3 packed slots, got 2")
-
-  test "tuple slot unpacking reports type mismatches with field label":
-    let scalar = grt.toGvalue(2.0)
-    let intValue = grt.toGvalue(3)
-    let mixed = multiValues("type pair", scalar, intValue)
-
-    try:
-      discard symbolicSlots[
-        tuple[left: Gscalar, right: Gscalar]](mixed, "typed tuple")
-      check false
-    except GraphValueError as e:
-      check e.msg.contains("typed tuple.right expects Gscalar")
 
   test "multiValues rejects empty packs":
     expect(GraphValueError):

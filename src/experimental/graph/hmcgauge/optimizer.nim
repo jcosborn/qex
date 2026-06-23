@@ -24,14 +24,6 @@ proc requireOptimizerShape(opt: AdamW,
       "optimizer second-moment count mismatch: " &
       $opt.secondMoment.len & " vs " & $param.len)
 
-proc requirePositive(label: string, value: float) =
-  if value <= 0.0:
-    raiseValueError(label & " must be > 0, got " & $value)
-
-proc requireNonNegative(label: string, value: float) =
-  if value < 0.0:
-    raiseValueError(label & " must be >= 0, got " & $value)
-
 proc requireMomentumCoeff(label: string, value: float) =
   if value < 0.0 or value >= 1.0:
     raiseValueError(label & " must satisfy 0 <= value < 1, got " & $value)
@@ -42,11 +34,14 @@ proc initAdamW*(param: openArray[float],
                 beta2 = 0.999,
                 epsilon = 1e-8,
                 weightDecay = 0.01): AdamW =
-  requirePositive("optimizer stepScale", stepScale)
+  if stepScale <= 0.0:
+    raiseValueError("optimizer stepScale must be > 0, got " & $stepScale)
   requireMomentumCoeff("optimizer beta1", beta1)
   requireMomentumCoeff("optimizer beta2", beta2)
-  requirePositive("optimizer epsilon", epsilon)
-  requireNonNegative("optimizer weightDecay", weightDecay)
+  if epsilon <= 0.0:
+    raiseValueError("optimizer epsilon must be > 0, got " & $epsilon)
+  if weightDecay < 0.0:
+    raiseValueError("optimizer weightDecay must be >= 0, got " & $weightDecay)
   result = AdamW(
     stepScale: stepScale,
     beta1: beta1,
@@ -64,7 +59,8 @@ proc optimize*(opt: var AdamW,
   opt.requireOptimizerShape(param, grad)
   if t <= 0:
     raiseValueError("optimizer step must be >= 1, got " & $t)
-  requireNonNegative("optimizer learning rate", lr)
+  if lr < 0.0:
+    raiseValueError("optimizer learning rate must be >= 0, got " & $lr)
   result = newSeq[AdamStepStat](grad.len)
   let
     stepScale = opt.stepScale
@@ -77,15 +73,17 @@ proc optimize*(opt: var AdamW,
     weightDecay = opt.weightDecay
     epsilon = opt.epsilon
   for i in 0..<grad.len:
-    opt.firstMoment[i] = b1 * opt.firstMoment[i] + sb1 * grad[i]
-    opt.secondMoment[i] = b2 * opt.secondMoment[i] + sb2 * (grad[i] * grad[i])
+    let paramValue = param[i]
+    let gradValue = grad[i]
+    opt.firstMoment[i] = b1 * opt.firstMoment[i] + sb1 * gradValue
+    opt.secondMoment[i] = b2 * opt.secondMoment[i] + sb2 * (gradValue * gradValue)
     let firstMoment = opt.firstMoment[i] / sb1t
     let secondMoment = sqrt(opt.secondMoment[i] / sb2t)
     result[i] = AdamStepStat(
       firstMoment: firstMoment,
       secondMoment: secondMoment)
     let update = stepScale * firstMoment / (secondMoment + epsilon)
-    param[i] = param[i] - lr * (update + weightDecay * param[i])
+    param[i] = paramValue - lr * (update + weightDecay * paramValue)
 
 func warmUpCosDecay*(t,
                      twarm,
@@ -95,32 +93,15 @@ func warmUpCosDecay*(t,
   if tmax <= 0:
     return lrmin
 
-  let clampedT =
-    if t < 0:
-      0
-    elif t > tmax:
-      tmax
-    else:
-      t
-  let warmSteps =
-    if twarm < 0:
-      0
-    elif twarm > tmax:
-      tmax
-    else:
-      twarm
-
-  if warmSteps > 0 and clampedT <= warmSteps:
-    return lrmin + (lrmax - lrmin) * clampedT.float / warmSteps.float
-
-  if warmSteps >= tmax:
-    return lrmax
-
-  if warmSteps == 0:
-    if clampedT <= 1 or tmax == 1:
+  if twarm > 0:
+    if t <= twarm:
+      return lrmin + (lrmax - lrmin) * t.float / twarm.float
+    if twarm >= tmax:
       return lrmax
     return lrmin + 0.5 * (lrmax - lrmin) *
-      (1.0 + cos(PI * float(clampedT - 1) / float(tmax - 1)))
+      (1.0 + cos(PI * float(t - twarm) / float(tmax - twarm)))
 
+  if t <= 1 or tmax == 1:
+    return lrmax
   lrmin + 0.5 * (lrmax - lrmin) *
-    (1.0 + cos(PI * float(clampedT - warmSteps) / float(tmax - warmSteps)))
+    (1.0 + cos(PI * float(t - 1) / float(tmax - 1)))

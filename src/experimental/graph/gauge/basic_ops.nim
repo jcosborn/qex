@@ -1,15 +1,15 @@
 import ../[core, scalar]
-import ../scalar/types
 import ../support/op
 import layout, gauge, physics/qcdTypes
 import shared
 
 # Section: Basic Gauge Ops
 
+type GaugeLiteral = int | float
+
 proc retr*(x: Ggauge): Gscalar
 proc adj*(x: Ggauge): Ggauge
 proc norm2*(x: Ggauge): Gscalar
-proc redot*(x: Gscalar, y: Gscalar): Gscalar
 proc redot*(x: Ggauge, y: Ggauge): Gscalar
 proc exp*(x: Ggauge): Ggauge
 proc expDeriv*(b: Ggauge, x: Ggauge): Ggauge
@@ -22,191 +22,149 @@ proc `*`*(x: Ggauge, y: Ggauge): Ggauge
 proc `-`*(x: Ggauge, y: Gscalar): Ggauge
 proc `-`*(x: Ggauge, y: Ggauge): Ggauge
 
-proc redot*(x: Gscalar, y: Gscalar): Gscalar = x*y
+proc `+`*[T: GaugeLiteral](x: T, y: Ggauge): Ggauge =
+  toGvalue(y.runtime, float(x)) + y
 
-proc `+`*(x: float, y: Ggauge): Ggauge =
-  scalarLeafLike(y, x) + y
+proc `*`*[T: GaugeLiteral](x: T, y: Ggauge): Ggauge =
+  toGvalue(y.runtime, float(x)) * y
 
-proc `+`*(x: int, y: Ggauge): Ggauge =
-  scalarLeafLike(y, x) + y
+proc `-`*[T: GaugeLiteral](x: Ggauge, y: T): Ggauge =
+  x - toGvalue(x.runtime, float(y))
 
-proc `*`*(x: float, y: Ggauge): Ggauge =
-  scalarLeafLike(y, x) * y
-
-proc `*`*(x: int, y: Ggauge): Ggauge =
-  scalarLeafLike(y, x) * y
-
-proc `-`*(x: Ggauge, y: float): Ggauge =
-  x - scalarLeafLike(x, y)
-
-proc `-`*(x: Ggauge, y: int): Ggauge =
-  x - scalarLeafLike(x, y)
-
-proc retrgb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  let view = z.requireUnaryNodeView(Ggauge, "retr backward")
-  discard dep
-  unaryBackwardCase("retr backward", i):
-    let g = view.x.unsafeGaugeStorage.newOneOf
-    threads:
-      for f in g:
-        f := 1.0
-    return scaledUpstreamOr(zb, Gscalar, toGvalue(view.x.runtime, g), "retr backward")
+proc retrgb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  let x = Ggauge(z.inputs[0])
+  let g = x.gval.newOneOf
+  threads:
+    for f in g:
+      f := 1.0
+  scaledUpstreamOr(zb, Gscalar, toGvalue(x.runtime, g))
 
 proc retrgf(v: Gvalue) =
-  let view = v.requireUnaryNodeView(Ggauge, "retr forward")
-  let x = view.x
-  let z = v.requireScalar("retr forward result")
+  let x = Ggauge(v.inputs[0])
+  let z = Gscalar(v)
   threads:
     var t = 0.0
-    for mu in 0..<x.unsafeGaugeStorage.len:
-      t += x.unsafeGaugeStorage[mu].trace.re
+    for mu in 0..<x.gval.len:
+      t += x.gval[mu].trace.re
     threadMaster: z.sval = t
 
-let retrg = newGfunc(forward = retrgf, backward = retrgb, name = "retrg")
+let retrg = Gfunc(forward: retrgf, backward: retrgb, name: "retrg")
 
 proc retr*(x: Ggauge): Gscalar =
   graphNode(scalarNodeLike(x), @[Gvalue(x)], retrg, "retrg")
 
-proc adjgb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  discard z
-  discard dep
-  unaryBackwardCase("adj backward", i):
-    return requireUpstream(zb, Ggauge, "adj backward").adj
+proc adjgb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  requireUpstream(zb, "adjg backward", Ggauge).adj
 
 proc adjgf(v: Gvalue) =
-  let view = v.requireUnaryNodeView(Ggauge, "adj forward")
-  let x = view.x
-  let z = v.requireGauge("adj forward result")
-  z.mapGaugeSites(x.unsafeGaugeStorage[mu].adj)
+  let x = Ggauge(v.inputs[0])
+  let z = Ggauge(v)
+  z.mapGaugeSites(x.gval[mu].adj)
 
-let adjg = newGfunc(forward = adjgf, backward = adjgb, name = "adjg")
+let adjg = Gfunc(forward: adjgf, backward: adjgb, name: "adjg")
 
 proc adj*(x: Ggauge): Ggauge =
   graphNode(x.gaugeNodeLike, @[Gvalue(x)], adjg, "adjg")
 
-proc norm2gb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  let view = z.requireUnaryNodeView(Ggauge, "norm2 backward")
-  discard dep
-  unaryBackwardCase("norm2 backward", i):
-    return scaledUpstreamOr(zb, Gscalar, 2.0 * view.x, "norm2 backward")
+proc norm2gb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  let x = Ggauge(z.inputs[0])
+  scaledUpstreamOr(zb, Gscalar, toGvalue(x.runtime, 2.0) * x)
 
 proc norm2gf(v: Gvalue) =
-  let view = v.requireUnaryNodeView(Ggauge, "norm2 forward")
-  let x = view.x
-  let z = v.requireScalar("norm2 forward result")
+  let x = Ggauge(v.inputs[0])
+  let z = Gscalar(v)
   threads:
     var t = 0.0
-    for mu in 0..<x.unsafeGaugeStorage.len:
-      t += x.unsafeGaugeStorage[mu].norm2
+    for mu in 0..<x.gval.len:
+      t += x.gval[mu].norm2
     threadMaster: z.sval = t
 
-let norm2g = newGfunc(forward = norm2gf, backward = norm2gb, name = "norm2g")
+let norm2g = Gfunc(forward: norm2gf, backward: norm2gb, name: "norm2g")
 
 proc norm2*(x: Ggauge): Gscalar =
   graphNode(scalarNodeLike(x), @[Gvalue(x)], norm2g, "norm2g")
 
-proc neggb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  discard z
-  discard dep
-  unaryBackwardCase("neg backward", i):
-    return -requireUpstream(zb, Ggauge, "neg backward")
+proc neggb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  -requireUpstream(zb, "-g backward", Ggauge)
 
 proc neggf(v: Gvalue) =
-  let view = v.requireUnaryNodeView(Ggauge, "neg forward")
-  let x = view.x
-  let z = v.requireGauge("neg forward result")
-  z.mapGaugeSites(-x.unsafeGaugeStorage[mu])
+  let x = Ggauge(v.inputs[0])
+  let z = Ggauge(v)
+  z.mapGaugeSites(-x.gval[mu])
 
-let negg = newGfunc(forward = neggf, backward = neggb, name = "-g")
+let negg = Gfunc(forward: neggf, backward: neggb, name: "-g")
 
 proc `-`*(x: Ggauge): Ggauge =
   graphNode(x.gaugeNodeLike, @[Gvalue(x)], negg, "-g")
 
-proc addsgb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  discard z
-  discard dep
-  binaryBackwardCase("s+g backward", i,
-    block:
-      return retr(requireUpstream(zb, Ggauge, "s+g backward")),
-    block:
-      return requireUpstream(zb, Ggauge, "s+g backward"))
+proc addsgb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  let upstream = requireUpstream(zb, "s+g backward", Ggauge)
+  if i == 0:
+    return retr(upstream)
+  upstream
 
 proc addsgf(v: Gvalue) =
-  let view = v.requireBinaryNodeView(Gscalar, Ggauge, "s+g forward")
-  let x = view.x
-  let y = view.y
-  let z = v.requireGauge("s+g forward result")
-  z.mapGaugeSites(x.sval + y.unsafeGaugeStorage[mu])
+  let x = Gscalar(v.inputs[0])
+  let y = Ggauge(v.inputs[1])
+  let z = Ggauge(v)
+  z.mapGaugeSites(x.sval + y.gval[mu])
 
-let addsg = newGfunc(forward = addsgf, backward = addsgb, name = "s+g")
+let addsg = Gfunc(forward: addsgf, backward: addsgb, name: "s+g")
 
 proc `+`*(x: Gscalar, y: Ggauge): Ggauge =
   graphNode(y.gaugeNodeLike, @[Gvalue(x), Gvalue(y)], addsg, "s+g")
 
-proc addggb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  discard z
-  discard dep
-  binaryBackwardCase("g+g backward", i,
-    block:
-      return requireUpstream(zb, Ggauge, "g+g backward"),
-    block:
-      return requireUpstream(zb, Ggauge, "g+g backward"))
+proc addggb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  requireUpstream(zb, "g+g backward", Ggauge)
 
 proc addggf(v: Gvalue) =
-  let view = v.requireBinaryNodeView(Ggauge, Ggauge, "g+g forward")
-  let x = view.x
-  let y = view.y
-  let z = v.requireGauge("g+g forward result")
-  z.mapGaugeSites(x.unsafeGaugeStorage[mu] + y.unsafeGaugeStorage[mu])
+  let x = Ggauge(v.inputs[0])
+  let y = Ggauge(v.inputs[1])
+  let z = Ggauge(v)
+  z.mapGaugeSites(x.gval[mu] + y.gval[mu])
 
-let addgg = newGfunc(forward = addggf, backward = addggb, name = "g+g")
+let addgg = Gfunc(forward: addggf, backward: addggb, name: "g+g")
 
 proc `+`*(x: Ggauge, y: Ggauge): Ggauge =
   graphNode(sameShapeGaugeNodeLike(x, y, "g+g"), @[Gvalue(x), Gvalue(y)], addgg, "g+g")
 
 method addLike*(prototype: Ggauge, x: Gvalue, y: Gvalue): Gvalue =
-  discard prototype
-  x.requireGauge("gauge gradient add left") +
-    y.requireGauge("gauge gradient add right")
+  Ggauge(x) + Ggauge(y)
 
-proc mulsgb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  let view = z.requireBinaryNodeView(Gscalar, Ggauge, "s*g backward")
-  discard dep
-  binaryBackwardCase("s*g backward", i,
-    block:
-      return redot(requireUpstream(zb, Ggauge, "s*g backward"), view.y),
-    block:
-      return view.x * requireUpstream(zb, Ggauge, "s*g backward"))
+proc mulsgb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  let x = Gscalar(z.inputs[0])
+  let y = Ggauge(z.inputs[1])
+  let upstream = requireUpstream(zb, "s*g backward", Ggauge)
+  if i == 0:
+    return redot(upstream, y)
+  x * upstream
 
 proc mulsgf(v: Gvalue) =
-  let view = v.requireBinaryNodeView(Gscalar, Ggauge, "s*g forward")
-  let x = view.x
-  let y = view.y
-  let z = v.requireGauge("s*g forward result")
-  z.mapGaugeSites(x.sval * y.unsafeGaugeStorage[mu])
+  let x = Gscalar(v.inputs[0])
+  let y = Ggauge(v.inputs[1])
+  let z = Ggauge(v)
+  z.mapGaugeSites(x.sval * y.gval[mu])
 
-let mulsg = newGfunc(forward = mulsgf, backward = mulsgb, name = "s*g")
+let mulsg = Gfunc(forward: mulsgf, backward: mulsgb, name: "s*g")
 
 proc `*`*(x: Gscalar, y: Ggauge): Ggauge =
   graphNode(y.gaugeNodeLike, @[Gvalue(x), Gvalue(y)], mulsg, "s*g")
 
-proc mulggb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  let view = z.requireBinaryNodeView(Ggauge, Ggauge, "g*g backward")
-  discard dep
-  binaryBackwardCase("g*g backward", i,
-    block:
-      return requireUpstream(zb, Ggauge, "g*g backward") * view.y.adj,
-    block:
-      return view.x.adj * requireUpstream(zb, Ggauge, "g*g backward"))
+proc mulggb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  let x = Ggauge(z.inputs[0])
+  let y = Ggauge(z.inputs[1])
+  let upstream = requireUpstream(zb, "g*g backward", Ggauge)
+  if i == 0:
+    return upstream * y.adj
+  x.adj * upstream
 
 proc mulggf(v: Gvalue) =
-  let view = v.requireBinaryNodeView(Ggauge, Ggauge, "g*g forward")
-  let x = view.x
-  let y = view.y
-  let z = v.requireGauge("g*g forward result")
-  z.mapGaugeSites(x.unsafeGaugeStorage[mu] * y.unsafeGaugeStorage[mu])
+  let x = Ggauge(v.inputs[0])
+  let y = Ggauge(v.inputs[1])
+  let z = Ggauge(v)
+  z.mapGaugeSites(x.gval[mu] * y.gval[mu])
 
-let mulgg = newGfunc(forward = mulggf, backward = mulggb, name = "g*g")
+let mulgg = Gfunc(forward: mulggf, backward: mulggb, name: "g*g")
 
 proc `*`*(x: Ggauge, y: Ggauge): Ggauge =
   graphNode(sameShapeGaugeNodeLike(x, y, "g*g"), @[Gvalue(x), Gvalue(y)], mulgg, "g*g")
@@ -218,113 +176,89 @@ method scaleLike*(contribution: Ggauge, upstream: Gvalue): Gvalue =
     return Ggauge(upstream) * contribution
   raiseValueError("gauge scale upstream expects scalar or gauge value, got:\n" & upstream.nodeRepr)
 
-proc redotggb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  discard dep
-  let view = z.requireBinaryNodeView(Ggauge, Ggauge, "redotgg backward")
-  binaryBackwardCase("redotgg backward", i,
-    block:
-      return scaledUpstreamOr(zb, Gscalar, view.y, "redotgg backward"),
-    block:
-      return scaledUpstreamOr(zb, Gscalar, view.x, "redotgg backward"))
+proc redotggb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  bilinearBackward(zb, z, i, Ggauge)
 
 proc redotggf(v: Gvalue) =
-  let view = v.requireBinaryNodeView(Ggauge, Ggauge, "redot forward")
-  let x = view.x
-  let y = view.y
-  let z = v.requireScalar("redot forward result")
+  let x = Ggauge(v.inputs[0])
+  let y = Ggauge(v.inputs[1])
+  let z = Gscalar(v)
   threads:
     var t = 0.0
-    for mu in 0..<x.unsafeGaugeStorage.len:
-      t += redot(x.unsafeGaugeStorage[mu], y.unsafeGaugeStorage[mu])
+    for mu in 0..<x.gval.len:
+      t += redot(x.gval[mu], y.gval[mu])
     threadMaster: z.sval = t
 
-let redotgg = newGfunc(forward = redotggf, backward = redotggb, name = "redotgg")
+let redotgg = Gfunc(forward: redotggf, backward: redotggb, name: "redotgg")
 
 proc redot*(x: Ggauge, y: Ggauge): Gscalar =
   x.requireSameGaugeShape(y, "redotgg")
   graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], redotgg, "redotgg")
 
-proc subgsb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  discard z
-  discard dep
-  binaryBackwardCase("g-s backward", i,
-    block:
-      return requireUpstream(zb, Ggauge, "g-s backward"),
-    block:
-      return -retr(requireUpstream(zb, Ggauge, "g-s backward")))
+proc subgsb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  let upstream = requireUpstream(zb, "g-s backward", Ggauge)
+  if i == 0:
+    return upstream
+  -retr(upstream)
 
 proc subgsf(v: Gvalue) =
-  let view = v.requireBinaryNodeView(Ggauge, Gscalar, "g-s forward")
-  let x = view.x
-  let y = view.y
-  let z = v.requireGauge("g-s forward result")
-  z.mapGaugeSites(x.unsafeGaugeStorage[mu] - y.sval)
+  let x = Ggauge(v.inputs[0])
+  let y = Gscalar(v.inputs[1])
+  let z = Ggauge(v)
+  z.mapGaugeSites(x.gval[mu] - y.sval)
 
-let subgs = newGfunc(forward = subgsf, backward = subgsb, name = "g-s")
+let subgs = Gfunc(forward: subgsf, backward: subgsb, name: "g-s")
 
 proc `-`*(x: Ggauge, y: Gscalar): Ggauge =
   graphNode(x.gaugeNodeLike, @[Gvalue(x), Gvalue(y)], subgs, "g-s")
 
-proc subggb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  discard z
-  discard dep
-  binaryBackwardCase("g-g backward", i,
-    block:
-      return requireUpstream(zb, Ggauge, "g-g backward"),
-    block:
-      return -requireUpstream(zb, Ggauge, "g-g backward"))
+proc subggb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  let upstream = requireUpstream(zb, "g-g backward", Ggauge)
+  if i == 0:
+    return upstream
+  -upstream
 
 proc subggf(v: Gvalue) =
-  let view = v.requireBinaryNodeView(Ggauge, Ggauge, "g-g forward")
-  let x = view.x
-  let y = view.y
-  let z = v.requireGauge("g-g forward result")
-  z.mapGaugeSites(x.unsafeGaugeStorage[mu] - y.unsafeGaugeStorage[mu])
+  let x = Ggauge(v.inputs[0])
+  let y = Ggauge(v.inputs[1])
+  let z = Ggauge(v)
+  z.mapGaugeSites(x.gval[mu] - y.gval[mu])
 
-let subgg = newGfunc(forward = subggf, backward = subggb, name = "g-g")
+let subgg = Gfunc(forward: subggf, backward: subggb, name: "g-g")
 
 proc `-`*(x: Ggauge, y: Ggauge): Ggauge =
   graphNode(sameShapeGaugeNodeLike(x, y, "g-g"), @[Gvalue(x), Gvalue(y)], subgg, "g-g")
 
-proc expgb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  let view = z.requireUnaryNodeView(Ggauge, "exp backward")
-  discard dep
-  unaryBackwardCase("exp backward", i):
-    return expDeriv(requireUpstream(zb, Ggauge, "exp backward"), view.x)
+proc expgb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  let x = Ggauge(z.inputs[0])
+  expDeriv(requireUpstream(zb, "expg backward", Ggauge), x)
 
 proc expgf(v: Gvalue) =
-  let view = v.requireUnaryNodeView(Ggauge, "exp forward")
-  let x = view.x
-  let z = v.requireGauge("exp forward result")
+  let x = Ggauge(v.inputs[0])
+  let z = Ggauge(v)
   z.mapGaugeElements:
-    z.unsafeGaugeStorage[mu][e] := exp(x.unsafeGaugeStorage[mu][e])
+    z.gval[mu][e] := exp(x.gval[mu][e])
 
-let expg = newGfunc(forward = expgf, backward = expgb, name = "expg")
+let expg = Gfunc(forward: expgf, backward: expgb, name: "expg")
 
 proc exp*(x: Ggauge): Ggauge =
   graphNode(x.gaugeNodeLike, @[Gvalue(x)], expg, "expg")
 
-proc expDerivgb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  discard zb
-  discard z
-  discard dep
-  binaryBackwardCase("expDeriv backward", i,
-    block:
-      raiseUnsupportedPath("expDeriv backward", "derivative with respect to force-direction input"),
-    block:
-      raiseUnsupportedPath("expDeriv backward", "second derivatives of matrix exponential"))
+proc expDerivgb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  if i == 0:
+    raiseUnsupportedPath("expDeriv backward", "derivative with respect to force-direction input")
+  raiseUnsupportedPath("expDeriv backward", "second derivatives of matrix exponential")
 
 proc expDerivgf(v: Gvalue) =
-  let view = v.requireBinaryNodeView(Ggauge, Ggauge, "expDeriv forward")
-  let x = view.x
-  let y = view.y
-  let z = v.requireGauge("expDeriv forward result")
+  let x = Ggauge(v.inputs[0])
+  let y = Ggauge(v.inputs[1])
+  let z = Ggauge(v)
   z.mapGaugeElements:
-    z.unsafeGaugeStorage[mu][e] := expDeriv(
-      y.unsafeGaugeStorage[mu][e],
-      x.unsafeGaugeStorage[mu][e])
+    z.gval[mu][e] := expDeriv(
+      y.gval[mu][e],
+      x.gval[mu][e])
 
-let expDerivg = newGfunc(forward = expDerivgf, backward = expDerivgb, name = "expDerivg")
+let expDerivg = Gfunc(forward: expDerivgf, backward: expDerivgb, name: "expDerivg")
 
 proc expDeriv*(b: Ggauge, x: Ggauge): Ggauge =
   graphNode(
@@ -333,20 +267,16 @@ proc expDeriv*(b: Ggauge, x: Ggauge): Ggauge =
     expDerivg,
     "expDerivg")
 
-proc projTAHb(zb: Gvalue, z: Gvalue, i: int, dep: Gvalue): Gvalue =
-  discard z
-  discard dep
-  unaryBackwardCase("projTAH backward", i):
-    return projTAH(requireUpstream(zb, Ggauge, "projTAH backward"))
+proc projTAHb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  projTAH(requireUpstream(zb, "projTAH backward", Ggauge))
 
 proc projTAHf(v: Gvalue) =
-  let view = v.requireUnaryNodeView(Ggauge, "projTAH forward")
-  let x = view.x
-  let z = v.requireGauge("projTAH forward result")
+  let x = Ggauge(v.inputs[0])
+  let z = Ggauge(v)
   z.mapGaugeElements:
-    z.unsafeGaugeStorage[mu][e].projectTAH(x.unsafeGaugeStorage[mu][e])
+    z.gval[mu][e].projectTAH(x.gval[mu][e])
 
-let projTAHg = newGfunc(forward = projTAHf, backward = projTAHb, name = "projTAH")
+let projTAHg = Gfunc(forward: projTAHf, backward: projTAHb, name: "projTAH")
 
 proc projTAH*(x: Ggauge): Ggauge =
   graphNode(x.gaugeNodeLike, @[Gvalue(x)], projTAHg, "projTAH")
