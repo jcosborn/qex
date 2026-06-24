@@ -123,15 +123,15 @@ tic()
 let seed0 = defaultComm.broadcast(uint(1000*epochTime()))
 
 letParam:
-  gaugefile = ""
-  savefile = "config"
-  savefreq = 0
+  infn = ""  # input gauge file name
+  outfn = ""  # output gauge file name
+  #savefreq = 0
   lat =
-    if fileExists(gaugefile):
-      getFileLattice gaugefile
+    if fileExists(infn):
+      getFileLattice infn
     else:
-      if gaugefile.len > 0:
-        qexWarn "Nonexistent gauge file: ", gaugefile
+      if infn.len > 0:
+        qexWarn "Nonexistent gauge file: ", infn
       @[64,64]
   beta = 5.0
   bg = beta
@@ -181,7 +181,17 @@ var
   R:RngMilc6  # global RNG
 R.seed(seed, 987654321)
 
-g.random r
+case infn
+of "":
+  g.random r
+  #g.unit
+of "hot":
+  g.random r
+of "cold":
+  g.unit
+else:
+  echo "Loading gauge field from file: ", infn
+  let err = g.loadGauge infn
 
 qexLog "Initial plaq: ",g.plaq3
 
@@ -958,6 +968,10 @@ proc mc =
 toc("prep")
 mc()
 toc("hmc")
+
+if outfn != "":
+  echo "Saving gauge field to file: ", outfn
+  let err = g.saveGauge outfn
 
 echoProf()
 qexGC()
