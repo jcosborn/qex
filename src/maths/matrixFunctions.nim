@@ -471,7 +471,8 @@ proc exp*(m: Mat1): auto {.noInit.} =
 proc expDeriv*(m: Mat1, c:Mat2): auto {.noInit.} =
   var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
   when m.nrows == 1:
-    r := exp(m[0,0]) * c[0,0]
+    # Match the adjoint convention of the Nc>1, exp(m†)·c
+    r := exp(m[0,0].adj) * c[0,0]
   else:
     var p: ExpParam
     p.scale = 20
