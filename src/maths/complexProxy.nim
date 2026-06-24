@@ -145,6 +145,11 @@ template eval*[T](x: typedesc[ComplexProxy[T]]): typedesc =
   mixin eval
   asComplexProxy(eval typeof T)
 
+proc eval*(x: ComplexProxy): auto {.noInit,alwaysInline.} =
+  var t {.noInit.}: evalType(x)
+  t := x
+  result = t
+
 proc `$`*(x: RealProxy): string =
   result = $x[]
 proc `$`*(x: ImagProxy): string =
@@ -390,6 +395,16 @@ proc exp*(x: ComplexProxy): auto {.inline,noInit.} =
   let ci = cos(xi)
   let si = sin(xi)
   newComplexP(er*ci, er*si)
+
+proc expm1*(x: ComplexProxy): auto {.inline,noInit.} =
+  #mixin expm1, cos, sin
+  let erm1 = expm1(x.re)
+  let er = erm1 + 1
+  let xi = x.im
+  let sih = sin(0.5*xi)
+  let mcp1 = 2 * sih * sih
+  let si = sin(xi)
+  newComplexP(erm1-er*mcp1, er*si)
 
 proc ln*(x: ComplexProxy): auto {.inline,noInit.} =
   mixin ln, atan2

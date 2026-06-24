@@ -6,6 +6,9 @@ import qex
 import gauge, physics/qcdTypes
 import algorithms/integrator, maths/special, utils/resample
 import os, strutils, times
+import numericalnim
+from numericalnim/ode import IntegratorProc
+type IntegratorProc*[T] = ode.IntegratorProc[T]
 
 proc mean(xs: Ensemble[seq[float]]): float =
   var m = 0.0
@@ -120,15 +123,15 @@ tic()
 let seed0 = defaultComm.broadcast(uint(1000*epochTime()))
 
 letParam:
-  gaugefile = ""
-  savefile = "config"
-  savefreq = 0
+  infn = ""  # input gauge file name
+  outfn = ""  # output gauge file name
+  #savefreq = 0
   lat =
-    if fileExists(gaugefile):
-      getFileLattice gaugefile
+    if fileExists(infn):
+      getFileLattice infn
     else:
-      if gaugefile.len > 0:
-        qexWarn "Nonexistent gauge file: ", gaugefile
+      if infn.len > 0:
+        qexWarn "Nonexistent gauge file: ", infn
       @[64,64]
   beta = 5.0
   bg = beta
@@ -143,9 +146,13 @@ letParam:
   ## extra params in other mdalgo
   gamma = 1.0
   ## 2MN,0.21 | 4MN3F1GP,0.27 | 4MN5F2GP
-  gintalg:IntegratorProc = "2MN,0.21"
+  gintalg:integrator.IntegratorProc = "2MN,0.21"
+  omfLambda = 0.21
   gsteps = 20
   intsteps = 100
+  absTol = 1e-16
+  relTol = 0.0
+  reduceT = true
   alwaysAccept:bool = 0
   revCheckFreq = ntraj
   verboseGCStats:bool = 0
@@ -174,7 +181,17 @@ var
   R:RngMilc6  # global RNG
 R.seed(seed, 987654321)
 
-g.random r
+case infn
+of "":
+  g.random r
+  #g.unit
+of "hot":
+  g.random r
+of "cold":
+  g.unit
+else:
+  echo "Loading gauge field from file: ", infn
+  let err = g.loadGauge infn
 
 qexLog "Initial plaq: ",g.plaq3
 
@@ -184,6 +201,7 @@ var
   f = lo.newgauge
   gg = lo.newgauge  # FG backup gauge
   g0 = lo.newgauge
+  p0 = lo.newgauge
   xi = 0.0
   xi1 = xi
   lnJ = 0.0
@@ -254,6 +272,7 @@ proc gfunderivV(x,mu: auto): auto =
   let p = g[mu][x] * s.adj
   let pt = trace(p)
   let a = bg * (1 - pt.re)
+  #let a = bg * (0 - pt.re)
   let f = exp(a)
   let d = (0.5*bg*f)*(p - p.adj)
   result = (f,d)
@@ -266,6 +285,7 @@ proc gpotV(x,mu: auto): auto =
   let p = g[mu][x] * s.adj
   let pt = trace(p)
   let a = exp(bg)
+  #let a = 0.0
   let b = -bg * pt
   result = (a,b)
 
@@ -435,23 +455,216 @@ proc gupdaterk(x,mu: int, t: float): auto =
   let f = exp(s*gp[0]*p[mu][x])
   let u = f * g[mu][x]
   g[mu][x] := u
-  var ae = gp[1] * exp(s*lam)
+  let ae = gp[1] * exp(s*lam)
   result = gp[1].re - ae.re
 
-proc mdt(t:float) =
+proc rkint(t: float, f: auto): float =
+  let dt = t / intsteps
+  var s = 0.0
+  for i in 1..intsteps:
+    let k1 = dt * f(s)
+    case rkorder
+    of 1:
+      let ds = k1  # first order
+      s += ds
+    of 2:
+      let k2 = dt * f(s+k1)
+      let ds = 0.5*(k1+k2)  # second order
+      s += ds
+    of 3:
+      let k2 = dt * f(s+0.5*k1)
+      let k3 = dt * f(s+2*k2-k1)
+      let ds = (1.0/6.0)*(k1+4*k2+k3)  # third order
+      s += ds
+    of 4:
+      let k2 = dt * f(s+0.5*k1)
+      let k3 = dt * f(s+0.5*k2)
+      let k4 = dt * f(s+k3)
+      let ds = (1.0/6.0)*(k1+2*k2+2*k3+k4)  # fourth order
+      s += ds
+    else: discard
+  result = s
+
+proc getT(lam: auto, a: auto, s: float): float =
+  # dt = ds exp(-Re[a exp(lam s)])
+  let an2 = a.norm2
+  if an2 == 0.0:
+    return s
+  if lam.im == 0.0:
+    return s*exp(-a.re)
+  let an = sqrt(an2)
+  let ap = -a / an
+  var apk = ap
+  var em = expm1(lam*s)
+  var z = em + 1
+  var c = em/lam
+  var ck = c
+  var t = s*besselI0(an)
+  #for k in 1..intsteps:
+  var nsmall = 0
+  var k = 1
+  while true:
+    let ac = apk * ck
+    let dt = besselIn(k, an) * ac.re * (2.0/float(k))
+    t += dt
+    #if abs(dt) < 1e-24 * abs(t): break
+    if abs(dt) < 1e-18 * abs(t): inc nsmall else: nsmall = 0
+    if nsmall >= 10: break
+    apk *= ap
+    ck = z*ck + c
+    inc k
+  result = t
+
+var terr = 0.0
+var terrmax = 0.0
+var nterr = 0
+var serr = 0.0
+var serrmax = 0.0
+proc gupA(lam: auto, a: auto, t: float): float =
+  # s ~ t / I0(|a|)
+  let i0a = besselI0(sqrt(a.norm2))
+  let smag = t / i0a
+  var t = t
+  if reduceT and lam.im != 0.0:
+    let tp = i0a * 2 * PI / abs(lam.im)
+    t -= tp * trunc(t/tp)
+    #echo "tp: ", tp, "  ", t
+  template dsdtImpl(y: float): float =
+    let ae = a * exp(y*lam)
+    exp(ae.re)
+  proc dsdt(y: float): float = dsdtImpl(y)
+  proc dsdt(t: float, y: float, ctx: NumContext[float, float]): float = dsdtImpl(y)
+  #result = rkint(t, dsdt)
+  let s0 = 0.0
+  let tspan = [t]
+  #let odeOptions = newODEoptions(dtMin=0.0,absTol=1e-6)
+  #let odeOptions = newODEoptions(dtMin=1e-14,dtMax=1e-3,absTol=1e-18,relTol=1e-20)
+  #let odeOptions = newODEoptions(dtMin=1e-16,dtMax=1e-3,absTol=1e-12*smag,relTol=0.0)
+  #let odeOptions = newODEoptions(dtMin=1e-16,dtMax=1e-3,absTol=0.0,relTol=1e-16/smag)
+  #let abst = absTol * smag
+  #let relt = relTol
+  #let abst = absTol
+  #let relt = relTol / smag
+  let abst = 0.0
+  let relt = relTol + absTol / smag
+  let odeOptions = newODEoptions(dtMin=1e-16,dtMax=1e-3,absTol=abst,relTol=relt)
+  #let intg = "rk21"
+  let intg = "dopri54"
+  #let intg = "tsit54"
+  #let intg = "vern65"
+  let (t1, y1) = solveOde(dsdt, s0, tspan, odeOptions, integrator=intg)
+  result = y1[^1]
+  let tc = getT(lam,a,result)
+  #echo "err: ", tc - t, "  ", tc, "  ", t
+  let te = abs(tc-t)
+  let se = te*dsdt(result)
+  threadCritical:
+    terr += te
+    terrmax = max(terrmax, te)
+    serr += se
+    serrmax = max(serrmax, se)
+    inc nterr
+
+proc gupInv(lam: auto, a: auto, t: float): float =
+  let an2 = a.norm2
+  if an2 == 0.0:
+    return t
+  if lam.im == 0.0:
+    return t*exp(a.re)
+  let an = sqrt(an2)
+  let i0a = besselI0(an)
+  var s0 = 0.0
+  var t0 = 0.0
+  var s1 = 2 * PI / abs(lam.im)
+  var t1 = i0a * s1
+  var t = t
+  t -= t1 * trunc(t/t1)
+  var s = 0.0
+  while true:
+    s = 0.5*(s0+s1)
+    if s==s0 or s==s1: break
+    let ts = getT(lam, a, s)
+    #echo s, "  ", ts, "  ", t
+    if ts == t: break
+    if ts < t:
+      s0 = s
+      t0 = ts
+    else:
+      s1 = s
+      t1 = ts
+  result = s
+  let tc = getT(lam,a,result)
+  let te = abs(tc-t)
+  if te > 1e-12:
+    echo s, "  ", tc, "  ", t
+    echo s0, "  ", s, "  ", s1
+    echo t0, "  ", tc, "  ", t1
+    let sa = gupA(lam, a, t)
+    let ta = getT(lam,a,sa)
+    echo sa, "  ", ta
+  threadCritical:
+    terr += te
+    terrmax = max(terrmax, te)
+    inc nterr
+
+proc gupI(lam: auto, a: auto, t: float): float =
+  var dt = t / intsteps
+  var s = 0.0
+  let i0a = besselI0(sqrt(a.norm2))
+  let ds0 = dt / i0a
+  proc f(ds: float): float =
+    let ae = a * exp((s+0.5*ds)*lam)
+    result = dt * exp(ae.re) - ds
+  proc fd(ds: float): float =
+    let ae = a * exp((s+0.5*ds)*lam)
+    let aed = 0.5 * ae * lam
+    result = dt * exp(ae.re) * aed.re - 1.0
+  var lj = 0.0
+  for i in 1..intsteps:
+    # ds = dt dsdt(s+0.5*ds)
+    # s1 = s0 + dt dsdt(0.5*(s0+s1)) => ds1 = ds0 + dt
+    let ds = newtons(f, fd, ds0, 1e-6)
+    s += ds
+    #lj += 
+  result = s
+
+proc gupdateA(x,mu: int, t: float): auto =
+  var s: evalType(g[mu][x][0,0].re)
+  #var lj: evalType(g[mu][x][0,0].re)
+  const vl = simdLength(s)
+  let gp = gpot(x,mu)
+  let lam = gp[0]*p[mu][x][0,0]
+  for i in 0..<vl:
+    let li = eval(lam[asSimd(i)])
+    let ai = eval(gp[1][asSimd(i)])
+    let si = gupA(li, ai, t)
+    #let si = gupInv(li, ai, t)
+    #let si = gupI(li, ai, t)
+    #let (si,dsi) = gupI(li, ai, t)
+    s[i] = si
+    #lj[i] = lji
+  let f = exp(s*gp[0]*p[mu][x])
+  let u = f * g[mu][x]
+  g[mu][x] := u
+  let ae = gp[1] * exp(s*lam)
+  result = gp[1].re - ae.re
+  #result = lj
+  # du = f dg + df g = f dg + g lam f ds
+
+proc mdtfb(t:float, fb:int) =
   if useG:
     let eosub = [lo.getSubset("even"), lo.getSubset("odd")]
-    let dt = 0.5 * t
-    for rd in [0,1]:
+    let dt = t / intsteps
+    for st in 1..intsteps:
       for mux in [0,1]:
-        let mu = if rd==0: mux else: 1-mux
+        let mu = if fb==0: mux else: 1-mux
         for eox in [0,1]:
-          let eo = if rd==0: eox else: 1-eox
+          let eo = if fb==0: eox else: 1-eox
           initg()
           threads:
             var lnJt: evalType(g[0][0][0,0].re)
             for x in eosub[eo]:
-              lnJt += gupdaterk(x,mu,dt)
+              lnJt += gupdateA(x,mu,dt)
             var lnJs = simdSum(lnJt)
             threadRankSum(lnJs)
             threadSingle: lnJ += lnJs
@@ -464,25 +677,49 @@ proc mdt(t:float) =
     if mdalgo == nosehoover:
       xi += t * gamma * (p.pnorm2 - dof)
 
+proc mdtf(t:float) =
+  #let t = 0.25*t
+  mdtfb(t, 0)
+  #mdtfb(t, 1)
+  #mdtfb(t, 0)
+  #mdtfb(t, 1)
+
+proc mdtb(t:float) =
+  #let t = 0.25*t
+  #mdtfb(t, 0)
+  mdtfb(t, 1)
+  #mdtfb(t, 0)
+  #mdtfb(t, 1)
+
+proc mdt(t:float) =
+  if useG:
+    let t2 = 0.5*t
+    mdtf t2
+    mdtb t2
+    #mdtf t
+  else:
+    mdtf t
+
 proc mdv(t:float) =
   if useG:
-    gc.gaugeforce2(g, f)
-    initg()
-    #var f2 = 0.0
-    threads:
-      #var f2t: typeof(norm2(f[0][0]))
-      for i in 0..<g.len:
-        for e in g[i]:
-          let gd = gfunderiv(e,i)
-          let tg = t*gd[0]
-          var ff = -tg * f[i][e]  # - to correct for sign of f
-          ff += t * gd[1]
-          p[i][e] += ff
-          #f2t += ff.norm2
-          #var f2s = simdSum(f2t)
-          #threadRankSum(f2s)
-          #threadSingle: f2 = f2s
-    #echo "F2: ", f2 / g[0].l.physVol
+    if not (mdalgo==gv and bg==beta):
+      gc.gaugeforce2(g, f)
+      initg()
+      #var f2 = 0.0
+      threads:
+        #var f2t: typeof(norm2(f[0][0]))
+        for i in 0..<g.len:
+          for e in g[i]:
+            let gd = gfunderiv(e,i)
+            let tg = t*gd[0]
+            var ff = -tg * f[i][e]  # - to correct for sign of f
+            ff += t * gd[1]
+            p[i][e] += ff
+            #f2t += ff.norm2
+            #var f2s = simdSum(f2t)
+            #threadRankSum(f2s)
+            #threadSingle: f2 = f2s
+      #echo "F2: ", f2 / g[0].l.physVol
   else:
     gc.gaugeforce2(g, f)
     let etxi = exp(-0.5*t*xi)
@@ -508,7 +745,7 @@ proc updatefga(ts:openarray[float]) =
   mdv ts[0]
   toc("mdv")
 
-proc revCheck(evo:auto; h0,ga0,t0,eh0:float) =
+proc revCheck(evo:auto; h0,ga0,t0,eh0:float, g0,p0:auto) =
   tic("reversibility")
   var
     g1 = lo.newgauge
@@ -532,20 +769,32 @@ proc revCheck(evo:auto; h0,ga0,t0,eh0:float) =
     dSg = ga1-ga0
     dT = t1-t0
     deh = eh1-eh0
+  var dg2 = 0.0
+  var dp2 = 0.0
+  threads:
+    for i in 0..<g.len:
+      g[i] -= g0[i]
+      let tg2 = g[i].norm2
+      threadSingle: dg2 += tg2
+      p[i] += p0[i]
+      let tp2 = p[i].norm2
+      threadSingle: dp2 += tp2
+      g[i] := g1[i]
+      p[i] := p1[i]
+  dg2 = sqrt(dg2/float(lo.nDim * lo.physVol))
+  dp2 = sqrt(dp2/float(lo.nDim * lo.physVol))
   qexLog "Reversed H: ",h1,"  Sg: ",ga1,"  T: ",t1,"  extH: ",eh1,"  lnJ: ",lnJ
-  qexLog "Reversibility: dH: ",dH,"  dSg: ",dSg,"  dT: ",dT,"  dextH: ",deh
-  proc epf(d,x:float):float = abs(d/x)/dof
-  if epf(dH,h0+eh0)>1e-14 or epf(dSg,ga0)>1e-14 or epf(dT,t0)>1e-14 or abs(lnJ/dof)>1e-14:
-    qexWarn "broken reversibility in error/volume: dH: ",epf(dH,h0+eh0),"  dSg: ",epf(dSg,ga0),"  dT: ",epf(dT,t0),"  lnJ: ",abs(lnJ/dof)
-  for i in 0..<g1.len:
-    g[i] := g1[i]
-    p[i] := p1[i]
+  #qexLog "Reversibility: dH: ",dH,"  dSg: ",dSg,"  dT: ",dT,"  dextH: ",deh
+  qexLog "Reversibility: dg2: ",dg2,"  dp2: ",dp2,"  dSg: ",dSg,"  dT: ",dT
+  #proc epf(d,x:float):float = abs(d/x)/dof
+  #if epf(dH,h0+eh0)>1e-14 or epf(dSg,ga0)>1e-14 or epf(dT,t0)>1e-14 or abs(lnJ/dof)>1e-14:
+  #  qexWarn "broken reversibility in error/volume: dH: ",epf(dH,h0+eh0),"  dSg: ",epf(dSg,ga0),"  dT: ",epf(dT,t0),"  lnJ: ",abs(lnJ/dof)
   #xi = xi1
   revEnd()
   lnJ = lnJ1
   toc("done")
 
-proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float]) =
+proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float], secs:float) =
   proc rootmean(xs: Ensemble[seq[float]]):float = sqrt(mean(xs))
   let dHrms = Hvals.jackknife(jkBlockSize, rootmean)
   let lnJ = Jvals.jackknife(jkBlockSize, mean)
@@ -564,9 +813,11 @@ proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float]) =
       APvals[i] = a
   let pacc = APvals.jackknife(jkBlockSize, mean)
   let Pmean = Pvals.jackknife(jkBlockSize, mean)
+  let Pac = Pvals.jackknife(jkBlockSize, naiveIntAutocorr, 200)
   let Qmean = Qvals.jackknife(jkBlockSize, mean)
   let Qac = Qvals.jackknife(jkBlockSize, naiveIntAutocorr, 200)
   let dQrms = Qvals.jackknife(jkBlockSize, tunnelingRate)
+  let spt = secs / Qvals.len
 
   var qmax = 0
   for qv in Qvals:
@@ -598,9 +849,11 @@ proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float]) =
   echo "exp(-dH) = ", expmdh.mean, " ± ", expmdh.stdev
   echo "Pacc = ", pacc.mean, " ± ", pacc.stdev
   echo "Pmean = ", Pmean.mean, " ± ", Pmean.stdev, "  dP = ",Pmean.mean-infVolPlaq(beta)
+  echo "Tau_P = ", Pac.mean, " ± ", Pac.stdev
   echo "Qmean = ", Qmean.mean, " ± ", Qmean.stdev
   echo "Tau_Q = ", Qac.mean, " ± ", Qac.stdev
   echo "dQrms = ", dQrms.mean, " ± ", dQrms.stdev
+  echo "dQ/s = ", dQrms.mean/spt, " ± ", dQrms.stdev/spt
   echo "Q2/V = ", Q2.mean/float(vol), " ± ", Q2.stdev/float(vol), "  dQ2/V = ", Q2.mean/float(vol)-infVolChiQ(beta)
   echo "Tau_Q2 = ", Q2ac.mean, " ± ", Q2ac.stdev
   for i in 0..qmax:
@@ -612,7 +865,7 @@ proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float]) =
 
 type Md = object
 var md: Md
-proc evolve(md: Md, t: float) =
+proc evolve0(md: Md, t: float) =
   let eps = t / gsteps
   let eps2 = 0.5 * eps
   mdv eps2
@@ -621,6 +874,22 @@ proc evolve(md: Md, t: float) =
     mdv eps
     mdt eps
   mdv eps2
+proc evolve(md: Md, t: float) =
+  let eps = t / gsteps
+  let epsa1 = omfLambda * eps
+  let epsa1x2 = 2*epsa1
+  let epsa2 = eps - epsa1x2
+  let epsb1 = 0.5 * eps
+  mdv epsa1
+  mdtf epsb1
+  mdv epsa2
+  mdtb epsb1
+  for i in 1..<gsteps:
+    mdv epsa1x2
+    mdtf epsb1
+    mdv epsa2
+    mdtb epsb1
+  mdv epsa1
 
 proc finish(md: Md) = discard
 
@@ -632,14 +901,18 @@ proc mc =
     Avals = newSeq[float](ntraj)
     Pvals = newSeq[float](ntraj)
     Qvals = newSeq[float](ntraj)
+    trajStart = 0.0
 
   for n in 1-ntrajThermo..ntraj:
     tic("traj")
     qexLog "Begin traj: ",n
+    if n == 1:
+      trajStart = getTics().seconds
     threads:
+      p.randomTAH r
       for i in 0..<p.len:
         g0[i] := g[i]
-      p.randomTAH r
+        p0[i] := p[i]
     #if mdalgo == nosehoover:
     #  xi = R.gaussian * sqrt(gamma)
     #  lnJ = 0.0
@@ -656,7 +929,7 @@ proc mc =
     qexLog "End H: ",h1,"  Sg: ",ga1,"  T: ",t1,"  extH: ",eh1,"  lnJ: ",lnJ
 
     if revCheckFreq > 0 and n>=0 and n mod revCheckFreq == 0:
-      md.revCheck(h0,ga0,t0,eh0)
+      md.revCheck(h0,ga0,t0,eh0,g0,p0)
 
     let
       dH = h1 - h0 + eh1 - eh0 + lnJ
@@ -680,14 +953,25 @@ proc mc =
       Pvals[n-1] = pl.re
       Qvals[n-1] = g.topo2DU1
     qexLog "plaq: ",pl.re," ",pl.im," topo: ",Qvals[n-1]
+    qexLog "terr: ",terr/nterr,"  ",terrmax
+    qexLog "serr: ",serr/nterr,"  ",serrmax
+    if n==0:
+      terr = 0
+      nterr = 0
+      terrmax = 0
     toc("done")
 
-  obstat(Hvals, Jvals, Avals, Pvals, Qvals)
+  let trajtime = getTics().seconds - trajStart
+  obstat(Hvals, Jvals, Avals, Pvals, Qvals, trajtime)
   toc("done")
 
 toc("prep")
 mc()
 toc("hmc")
+
+if outfn != "":
+  echo "Saving gauge field to file: ", outfn
+  let err = g.saveGauge outfn
 
 echoProf()
 qexGC()

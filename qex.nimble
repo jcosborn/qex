@@ -8,7 +8,8 @@ echo "QEX dir: ", qexDir
 # workaround for limitation of include
 macro incl(s: static string): untyped = quote do: include `s`
 
-include "qex/build/configBase.nims"
+#include "qex/build/configBase.nims"
+incl qexDir/"build/configBase.nims"
 const qc = getCurrentDir() / "qexconfig.nims"
 when fileExists(qc): incl qc
 include "build/buildTasks.nims"
@@ -27,6 +28,7 @@ requires "nim >= 2.0.0"
 requires "nimibook"
 requires "chebyshev >= 0.2.1"
 requires "mdevolve >= 1.0.0"
+requires "numericalnim"
 if primmeDir != "":
   requires "primme >= 3.0.0"
 
