@@ -31,19 +31,16 @@ proc readHmcGaugeInputs*(): HmcGaugeInputs =
     lrmax = 1.0
     lrmin = 0.0001
     weightDecay = 0.0
+    alwaysAccept = false
     seed:uint = 1234567891
     gintalg = "2MN"
-    # Legacy parameter name; this is an integrator coefficient vector, not
-    # always a single lambda coefficient.
-    lambda = newSeq[float]()
+    gintcoeffs = newSeq[float]()
     gsteps = 4
-    alwaysAccept:bool = 0
 
   result.lat = lat
   result.beta = beta
   result.seed = seed
   let integratorKind = parseIntegratorKind(gintalg)
-  let integratorCoeffValues = lambda
   result.config = RunConfig(
     gaugefile: gaugefile,
     savefile: savefile,
@@ -57,5 +54,5 @@ proc readHmcGaugeInputs*(): HmcGaugeInputs =
     trajsInfer: trajsInfer,
     savefreq: savefreq,
     gsteps: gsteps,
-    integratorCoeffs: parseIntegratorCoeffs(integratorKind, integratorCoeffValues),
-    alwaysAccept: alwaysAccept)
+    alwaysAccept: alwaysAccept,
+    integratorCoeffs: parseIntegratorCoeffs(integratorKind, gintcoeffs))

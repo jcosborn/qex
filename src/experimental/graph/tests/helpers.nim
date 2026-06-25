@@ -43,9 +43,6 @@ proc initMutableScalarPair*(grt: GraphRuntime): MutableScalarPair =
     x: x,
     y: y)
 
-proc rawGraphValueIn*(grt: GraphRuntime): Gvalue =
-  Gvalue().attachRuntime(grt)
-
 template checkeq*(ii: tuple[filename: string, line: int, column: int],
                   sa: string,
                   a: float,
@@ -69,10 +66,11 @@ template checkeq*(ii: tuple[filename: string, line: int, column: int],
     fail()
 
 template `:~`*(a: Gvalue, b: float) =
+  let av: Gvalue = a.eval
   checkeq(
     instantiationInfo(),
     astToStr a,
-    a.eval.requireScalar(astToStr a).sval,
+    Gscalar(av).sval,
     astToStr b,
     b)
 
@@ -98,7 +96,8 @@ template `:~`*(a: Gvalue, b: Gvalue) =
       "Gvalue :~ Gvalue only supports scalar or int nodes; use norm-based checks for gauge values")
 
 template `:<`*(a: Gvalue, b: float) =
-  let av = abs(a.eval.requireScalar(astToStr a).sval)
+  let evaluated: Gvalue = a.eval
+  let av = abs(Gscalar(evaluated).sval)
   if av >= b:
     let ii = instantiationInfo()
     let sa = astToStr a

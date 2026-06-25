@@ -51,9 +51,7 @@ proc evalGaugeForceJacobian*(b: shared.Gauge,
                              outg: shared.Gauge) =
   case gc.gaugeActionFamily
   of gafGaugeAction1:
-    threads:
-      for mu in 0..<outg.len:
-        outg[mu] := 0.0
+    outg.zeroGaugeStorage
     gc.gaugeDerivDeriv2(g, b, outg)
   of gafActionA:
     raiseUnsupportedPath("evalGaugeForceJacobian", "ActionA-family second derivatives")

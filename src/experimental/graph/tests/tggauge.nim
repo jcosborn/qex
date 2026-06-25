@@ -12,6 +12,7 @@ import ../hmcgauge/optimizer, ../hmcgauge/integrator
 import ../hmcgauge/trajectory
 import ../hmcgauge/training
 import ../hmcgauge/config
+import ../hmcgauge/gauge_io
 
 let grt = initGraphRuntime()
 
@@ -123,7 +124,7 @@ let b = scalarValues.b
 
 proc zeroGaugeLike(source: graphGaugeShared.Gauge): graphGaugeShared.Gauge =
   result = source.newOneOf
-  result.zeroGaugeStorage
+  graphGaugeShared.zeroGaugeStorage(result)
 
 include gauge/coeffs
 include gauge/basic

@@ -10,10 +10,6 @@ type
     gaugeAction*: Gscalar
     kinetic*: Gscalar
     hamiltonian*: Gscalar
-  LearnedParameter* = object
-    name*: string
-    node*: Gscalar
-    gradientExpr*: Gscalar
   TrajectoryGraph* = object
     initialState*: TrajectoryState
     finalState*: TrajectoryState
@@ -21,15 +17,6 @@ type
     acceptanceExpr*: Gscalar
     lossExpr*: Gscalar
     learnedParameters*: seq[LearnedParameter]
-
-proc initLearnedParameters(lossExpr: Gscalar,
-                           parameters: openArray[LearnedCoeff]): seq[LearnedParameter] =
-  result = newSeq[LearnedParameter](parameters.len)
-  for i in 0..<result.len:
-    result[i] = LearnedParameter(
-      name: parameters[i].name,
-      node: parameters[i].node,
-      gradientExpr: lossExpr.grad parameters[i].node)
 
 proc resampleMomentum*(graph: TrajectoryGraph, randomField: var auto) =
   let randomFieldPtr = addr randomField
@@ -40,11 +27,10 @@ proc resampleMomentum*(graph: TrajectoryGraph, randomField: var auto) =
 proc buildTrajectoryState(gc: Gactcoeff,
                           gauge: Ggauge,
                           momentum: Ggauge): TrajectoryState =
-  let kineticScale = scalarLeafLike(momentum, 0.5)
   result.gauge = gauge
   result.momentum = momentum
   result.gaugeAction = gc.gaugeAction(gauge)
-  result.kinetic = kineticScale * momentum.norm2
+  result.kinetic = toGvalue(momentum.runtime, 0.5) * momentum.norm2
   result.hamiltonian = result.gaugeAction + result.kinetic
 
 proc buildTrajectoryGraph*(grt: GraphRuntime,
@@ -52,7 +38,6 @@ proc buildTrajectoryGraph*(grt: GraphRuntime,
                            gc: Gactcoeff,
                            config: RunConfig): TrajectoryGraph =
   let gdt = toGvalue(grt, config.dt)
-  var parameters = @[LearnedCoeff(name: "dt", node: gdt)]
   result.initialState = buildTrajectoryState(gc, toGvalue(grt, g), toGvalue(grt, p))
   let tau = float(config.gsteps) * gdt
   let integrated = integrateGauge(
@@ -68,15 +53,20 @@ proc buildTrajectoryGraph*(grt: GraphRuntime,
     integrated.momentum)
   result.deltaHamiltonian =
     result.finalState.hamiltonian - result.initialState.hamiltonian
-  let deltaZero = scalarLeafLike(result.deltaHamiltonian, 0.0)
-  let acceptOne = scalarLeafLike(result.deltaHamiltonian, 1.0)
+  let deltaZero = toGvalue(result.deltaHamiltonian.runtime, 0.0)
+  let acceptOne = toGvalue(result.deltaHamiltonian.runtime, 1.0)
   result.acceptanceExpr =
     cond(result.deltaHamiltonian < deltaZero, acceptOne, exp(-result.deltaHamiltonian))
   result.lossExpr = -result.acceptanceExpr * (tau * tau)
-  parameters.add integrated.learnedCoeffs
-  result.learnedParameters = initLearnedParameters(result.lossExpr, parameters)
+  # Pair each learned parameter (dt + integrator coefficients) with its gradient
+  # expression. gradientExpr needs lossExpr, so it is filled once lossExpr exists.
+  result.learnedParameters = @[LearnedParameter(name: "dt", node: gdt)]
+  for c in integrated.learnedCoeffs:
+    result.learnedParameters.add c
+  for p in mitems(result.learnedParameters):
+    p.gradientExpr = result.lossExpr.grad p.node
 
 proc commitAcceptedTrajectory*(graph: TrajectoryGraph,
                                finalGauge: graphGauge.Gauge) =
+  finalGauge.reunitGauge
   graph.initialState.gauge.update finalGauge
-  graph.initialState.gauge.unsafeGaugeStorage.reunitGauge

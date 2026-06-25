@@ -1,3 +1,13 @@
+type
+  GcondWide = ref object of Gvalue
+  GcondNarrow = ref object of GcondWide
+
+method copyCompatible*(prototype: GcondWide, value: Gvalue): bool =
+  value of GcondWide
+
+method copyCompatible*(prototype: GcondNarrow, value: Gvalue): bool =
+  value of GcondNarrow
+
 suite "bool and cond":
   setup:
     let values = sampleScalarSweep()
@@ -125,6 +135,45 @@ suite "bool and cond":
     dx :~ 1.0
     dy :~ 0.0
 
+  test "condParts exposes selector and branches":
+    let k = grt.toGvalue(1)
+    let trueBranch = x + 1.0
+    let falseBranch = y + 1.0
+    let z = cond(k, trueBranch, falseBranch)
+    let parts = z.condParts
+
+    check parts.selector.nodeKey == k.nodeKey
+    check parts.whenTrue.nodeKey == trueBranch.nodeKey
+    check parts.whenFalse.nodeKey == falseBranch.nodeKey
+
+    expect(GraphValueError):
+      discard x.condParts
+
+  test "graphNode clears stale static zero markers":
+    proc identityForward(v: Gvalue) =
+      v.valCopy(v.inputs[0])
+
+    proc identityBackward(zb: Gvalue,
+                          z: Gvalue,
+                          i: int,
+                          input: Gvalue): Gvalue =
+      discard z
+      discard i
+      discard input
+      if zb == nil:
+        return x.oneLike
+      zb
+
+    let identityFunc = Gfunc(
+      forward: identityForward,
+      backward: identityBackward,
+      name: "zero-backed identity")
+    let z = graphNode(Gscalar(x.zeroLike), @[Gvalue(x)], identityFunc, "zero-backed identity")
+
+    check not z.isStaticZeroLeaf
+    z :~ a
+    z.grad(x) :~ 1.0
+
   test "conds":
     let k = grt.toGvalue(1.0)
     let z = cond(k, x, y)
@@ -211,6 +260,15 @@ suite "bool and cond":
     dzTrue :~ 0.0
     dzFalse :~ 1.0
 
+  test "cond backward rejects malformed raw input index":
+    let selector = grt.toGvalue(1)
+    let trueBranch = grt.toGvalue(5.0)
+    let falseBranch = grt.toGvalue(7.0)
+    let z = cond(selector, trueBranch, falseBranch)
+
+    expect(GraphValueError):
+      discard z.gfunc.backward(nil, z, 3, trueBranch)
+
   test "literal cond overloads preserve concrete branch type":
     let ks = grt.toGvalue(1.0)
     let ki = grt.toGvalue(1)
@@ -240,8 +298,17 @@ suite "bool and cond":
 
     expect(GraphValueError):
       discard cond(grt.toGvalue(1), scalarBranch, intBranch)
+
+  test "cond checks branch compatibility in both directions":
+    let selector = grt.toGvalue(1)
+    let wide = GcondWide(runtime: grt)
+    let narrow = GcondNarrow(runtime: grt)
+
     expect(GraphValueError):
-      discard newCondNode(rawGraphValueIn(grt), scalarBranch, scalarBranch)
+      discard newCondNode(selector, Gvalue(narrow), Gvalue(wide))
+
+    expect(GraphValueError):
+      discard newCondNode(selector, Gvalue(wide), Gvalue(narrow))
 
   test "cond eval shortcut":
     let t = grt.toGvalue(2.0)
@@ -259,20 +326,38 @@ suite "bool and cond":
     check t2.sval == 4.0
     check t3.sval == 0.0
 
-  test "treeRepr mode follows eval and dependency walks":
+  test "treeRepr mode follows eval and input views":
     let k = grt.toGvalue(1)
     let t = grt.toGvalue(17.0)
     let f = grt.toGvalue(23.0)
     let z = cond(k, t + 1.0, f + 1.0)
     let evalTree = z.treeRepr(iwmEval)
-    let dependTree = z.treeRepr(iwmDepend)
+    let reachableTree = z.treeRepr(iwmReachable)
+    let defaultTree = z.treeRepr
 
     check evalTree.contains("17.0")
     check not evalTree.contains("23.0")
-    check dependTree.contains("17.0")
-    check dependTree.contains("23.0")
+    check reachableTree.contains("17.0")
+    check reachableTree.contains("23.0")
+    check defaultTree == reachableTree
 
-  test "walkDeps exposes cond mode-specific inputs":
+  test "eval tree follows cached cond selector without evaluating it":
+    let k = grt.toGvalue(1)
+    let selector = equal(k, 1)
+    let t = grt.toGvalue(17.0)
+    let f = grt.toGvalue(23.0)
+    let z = cond(selector, t + 1.0, f + 1.0)
+
+    let staleTree = z.treeRepr(iwmEval)
+    check staleTree.contains("23.0")
+    check not staleTree.contains("17.0")
+
+    discard selector.eval
+    let currentTree = z.treeRepr(iwmEval)
+    check currentTree.contains("17.0")
+    check not currentTree.contains("23.0")
+
+  test "walkInputView exposes cond mode-specific inputs":
     let k = grt.toGvalue(1)
     let t = grt.toGvalue(17.0)
     let f = grt.toGvalue(23.0)
@@ -282,34 +367,30 @@ suite "bool and cond":
 
     proc walked(mode: InputWalkMode): seq[Gvalue] =
       var deps: seq[Gvalue] = @[]
-      z.walkDeps(mode, proc(child: Gvalue) =
+      z.walkInputView(mode, proc(child: Gvalue) =
         deps.add child)
       deps
 
     let evalDeps = walked(iwmEval)
     check evalDeps.len == 2
-    check sameNode(evalDeps[0], k)
-    check sameNode(evalDeps[1], trueBranch)
+    check evalDeps[0].nodeKey == k.nodeKey
+    check evalDeps[1].nodeKey == trueBranch.nodeKey
 
-    let dependDeps = walked(iwmDepend)
-    check dependDeps.len == 3
-    check sameNode(dependDeps[0], k)
-    check sameNode(dependDeps[1], trueBranch)
-    check sameNode(dependDeps[2], falseBranch)
+    let reachableDeps = walked(iwmReachable)
+    check reachableDeps.len == 3
+    check reachableDeps[0].nodeKey == k.nodeKey
+    check reachableDeps[1].nodeKey == trueBranch.nodeKey
+    check reachableDeps[2].nodeKey == falseBranch.nodeKey
 
-    let signatureDeps = walked(iwmGradSignature)
-    check signatureDeps.len == 1
-    check sameNode(signatureDeps[0], k)
-
-  test "signature tree omits cond branches":
+  test "reachable tree includes cond branches":
     let k = grt.toGvalue(1)
     let t = grt.toGvalue(17.0)
     let f = grt.toGvalue(23.0)
     let z = cond(k, t + 1.0, f + 1.0)
-    let sigTree = z.treeRepr(iwmGradSignature)
+    let reachableTree = z.treeRepr(iwmReachable)
 
-    check not sigTree.contains("17.0")
-    check not sigTree.contains("23.0")
+    check reachableTree.contains("17.0")
+    check reachableTree.contains("23.0")
 
   test "cond grad build does not eval value or derivative graphs":
     let x2 = grt.toGvalue(2.0)
@@ -331,7 +412,78 @@ suite "bool and cond":
     check t2.runCount == expRuns0
     check f2.runCount == mulRuns0
 
-  test "cond target hook does not reuse cached branch adjoint as active upstream":
+  test "inactive true cond branch derivative is not evaluated":
+    let x2 = grt.toGvalue(3.0)
+    let k = grt.toGvalue(0)
+    let z = cond(k, 1.0 / (x2 - 3.0), 0.0)
+
+    z :~ 0.0
+    z.grad(x2) :~ 0.0
+
+  test "inactive false cond branch derivative is not evaluated":
+    let x2 = grt.toGvalue(3.0)
+    let k = grt.toGvalue(1)
+    let z = cond(k, 0.0, 1.0 / (x2 - 3.0))
+
+    z :~ 0.0
+    z.grad(x2) :~ 0.0
+
+  test "inactive cond branch derivative is not evaluated with upstream":
+    let x2 = grt.toGvalue(3.0)
+    let k = grt.toGvalue(0)
+    let z = cond(k, 1.0 / (x2 - 3.0), 0.0)
+    let dep = 2.0 * z
+
+    dep :~ 0.0
+    dep.grad(x2) :~ 0.0
+
+  test "seeded cond gradient is lazy zero when target is unreachable":
+    let x2 = grt.toGvalue(2.0)
+    let kSource = grt.toGvalue(1.0)
+    let cnd = equal(kSource, 1.0)
+    let z = cond(cnd, grt.toGvalue(17.0), grt.toGvalue(23.0))
+    let seed = grt.toGvalue(3.0)
+
+    let cndRuns0 = cnd.runCount
+    let dzdx = z.gradSeeded(x2, seed)
+
+    check not dzdx.isCondNode
+    dzdx :~ 0.0
+    check cnd.runCount == cndRuns0
+
+  test "seeded cond gradient is lazy zero for selector-only target":
+    let x2 = grt.toGvalue(2.0)
+    let cnd = equal(x2, 0.0)
+    let z = cond(cnd, grt.toGvalue(17.0), grt.toGvalue(23.0))
+    let seed = grt.toGvalue(3.0)
+
+    let cndRuns0 = cnd.runCount
+    let dzdx = z.gradSeeded(x2, seed)
+
+    check not dzdx.isCondNode
+    dzdx :~ 0.0
+    check cnd.runCount == cndRuns0
+
+  test "seeded cond gradient scales selected branch and follows selector flips":
+    let x2 = grt.toGvalue(2.0)
+    let y2 = grt.toGvalue(5.0)
+    let k = grt.toGvalue(1)
+    let seed = grt.toGvalue(3.0)
+    let z = cond(k, x2 * x2, y2 * y2)
+    let dzdx = z.gradSeeded(x2, seed)
+    let dzdy = z.gradSeeded(y2, seed)
+
+    dzdx :~ 12.0
+    dzdy :~ 0.0
+
+    k.update 0
+    dzdx :~ 0.0
+    dzdy :~ 30.0
+
+    seed.update 4.0
+    dzdy :~ 40.0
+
+  test "cond backward reuses cached branch adjoint as branch upstream":
     let x2 = grt.toGvalue(2.0)
     let k = grt.toGvalue(1)
     let p = x2 * x2
@@ -340,7 +492,7 @@ suite "bool and cond":
     z.grad(p) :~ 1.0
     z.grad(x2) :~ 4.0
 
-  test "cond target hook does not double count cached intermediate adjoint":
+  test "cond backward does not double count cached intermediate adjoint":
     let y2 = grt.toGvalue(2.0)
     let c2 = grt.toGvalue(0.5)
     let k = grt.toGvalue(1)
@@ -350,7 +502,7 @@ suite "bool and cond":
     dep.grad(v) :~ -(2.0 - 0.5)
     dep.grad(y2) :~ -(2.0 * 2.0) - (2.0 - 0.5) * 2.0 * 2.0
 
-  test "cond target hook does not cache partial intermediate adjoint":
+  test "cond backward caches complete intermediate adjoints":
     let y2 = grt.toGvalue(0.5)
     let c2 = grt.toGvalue(3.0)
     let k = grt.toGvalue(0)

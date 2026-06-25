@@ -58,3 +58,11 @@ suite "gauge action":
     let c = actWilson(beta)
     expect(GraphValueError):
       discard gaugeActionDeriv(c, gg).grad beta
+
+  test "gaugeActionDeriv backward rejects missing upstream":
+    let beta = grt.toGvalue(5.4)
+    let c = actWilson(beta)
+    let force = gaugeActionDeriv(c, gg)
+
+    expect(GraphValueError):
+      discard force.gfunc.backward(nil, force, 1, gg)

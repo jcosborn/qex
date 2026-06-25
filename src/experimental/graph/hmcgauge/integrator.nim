@@ -1,44 +1,25 @@
 import ../[core, scalar, gauge]
-from math import sqrt, classify, fcNan, fcInf, fcNegInf
+from math import sqrt
 
 type
   IntegratorKind* = enum
     ik2MN, ik4MN3F1GP, ik4MN5F2GP
-  Integrator2MNCoeffs* = object
-    lambda*: float
-  Integrator4MN3F1GPCoeffs* = object
-    lambda*: float
-    theta*: float
-    chi*: float
-  Integrator4MN5F2GPCoeffs* = object
+  IntegratorCoeffs* = object
+    kind*: IntegratorKind
     rho*: float
     theta*: float
     vtheta*: float
     lambda*: float
+    chi*: float
     xi*: float
-  IntegratorCoeffs* = object
-    case kind*: IntegratorKind
-    of ik2MN:
-      twoMN*: Integrator2MNCoeffs
-    of ik4MN3F1GP:
-      fourMN3F1GP*: Integrator4MN3F1GPCoeffs
-    of ik4MN5F2GP:
-      fourMN5F2GP*: Integrator4MN5F2GPCoeffs
-  LearnedCoeff* = object
+  LearnedParameter* = object
     name*: string
     node*: Gscalar
+    gradientExpr*: Gscalar
   IntegrationResult* = object
     gauge*: Ggauge
     momentum*: Ggauge
-    learnedCoeffs*: seq[LearnedCoeff]
-
-proc requireCoeffCount(label: string,
-                       values: openArray[float],
-                       maximum: int) =
-  if values.len > maximum:
-    raiseValueError(
-      label & " accepts at most " & $maximum &
-      " coefficient values, got " & $values.len)
+    learnedCoeffs*: seq[LearnedParameter]
 
 proc requireCoeffCountOrDefault(label: string,
                                 values: openArray[float],
@@ -59,93 +40,56 @@ proc parseIntegratorKind*(name: string): IntegratorKind =
   else:
     raiseValueError("unknown intalg: " & name)
 
-proc requireFiniteCoeff(label: string,
-                        value: float): float =
-  if classify(value) in {fcNan, fcInf, fcNegInf}:
-    raiseValueError(
-      label & " must be finite after completion, got " & $value)
-  value
-
-proc default4MN3F1GPTheta(lambdaValue: float): float =
-  ## Default completion for the force-gradient integrator family.
-  ## The tuple is all-or-default by design; partial positional completion is unsupported.
-  0.5 - 1.0 / sqrt(24.0 * lambdaValue)
-
-proc default4MN3F1GPChi(lambdaValue: float): float =
-  let numer = 1.0 - sqrt(6.0 * lambdaValue) * (1.0 - lambdaValue)
-  let scale = 20.0 / (1.0 - 2.0 * lambdaValue)
-  (numer / 12.0) * scale
-
-proc complete2MNCoeffs(coeffs: openArray[float]): Integrator2MNCoeffs =
-  requireCoeffCount("2MN", coeffs, 1)
-  result.lambda =
-    if coeffs.len == 0:
-      0.1931833275037836
-    else:
-      coeffs[0]
-  result.lambda = requireFiniteCoeff("2MN.lambda", result.lambda)
-
-proc complete4MN3F1GPCoeffs(
-    coeffs: openArray[float]): Integrator4MN3F1GPCoeffs =
-  requireCoeffCountOrDefault("4MN3F1GP", coeffs, 3)
-  if coeffs.len == 0:
-    result.lambda = 0.2470939580390842
-    result.theta = default4MN3F1GPTheta(result.lambda)
-    result.chi = default4MN3F1GPChi(result.lambda)
-  else:
-    result.lambda = coeffs[0]
-    result.theta = coeffs[1]
-    result.chi = coeffs[2]
-  result.lambda = requireFiniteCoeff("4MN3F1GP.lambda", result.lambda)
-  result.theta = requireFiniteCoeff("4MN3F1GP.theta", result.theta)
-  result.chi = requireFiniteCoeff("4MN3F1GP.chi", result.chi)
-
-proc default4MN5F2GPXi(lambdaValue: float): float =
-  ## Keep the scale factors explicit so learned coefficient formulas are auditable.
-  0.0009628905212024874 * (2.0 / lambdaValue * 20.0)
-
-proc complete4MN5F2GPCoeffs(
-    coeffs: openArray[float]): Integrator4MN5F2GPCoeffs =
-  requireCoeffCountOrDefault("4MN5F2GP", coeffs, 5)
-  if coeffs.len == 0:
-    result.rho = 0.06419108866816235
-    result.theta = 0.1919807940455741
-    result.vtheta = 0.1518179640276466
-    result.lambda = 0.2158369476787619
-    result.xi = default4MN5F2GPXi(result.lambda)
-  else:
-    result.rho = coeffs[0]
-    result.theta = coeffs[1]
-    result.vtheta = coeffs[2]
-    result.lambda = coeffs[3]
-    result.xi = coeffs[4]
-  result.rho = requireFiniteCoeff("4MN5F2GP.rho", result.rho)
-  result.theta = requireFiniteCoeff("4MN5F2GP.theta", result.theta)
-  result.vtheta = requireFiniteCoeff("4MN5F2GP.vtheta", result.vtheta)
-  result.lambda = requireFiniteCoeff("4MN5F2GP.lambda", result.lambda)
-  result.xi = requireFiniteCoeff("4MN5F2GP.xi", result.xi)
-
 proc parseIntegratorCoeffs*(kind: IntegratorKind,
                             values: openArray[float]): IntegratorCoeffs =
   case kind
   of ik2MN:
-    return IntegratorCoeffs(kind: ik2MN, twoMN: complete2MNCoeffs(values))
+    requireCoeffCountOrDefault("2MN", values, 1)
+    result = IntegratorCoeffs(kind: ik2MN)
+    result.lambda =
+      if values.len == 0:
+        0.1931833275037836
+      else:
+        values[0]
   of ik4MN3F1GP:
-    return IntegratorCoeffs(
-      kind: ik4MN3F1GP,
-      fourMN3F1GP: complete4MN3F1GPCoeffs(values))
+    # Force-gradient family: defaults are all-or-default by design; partial
+    # positional completion is unsupported. Keep the derived formulas explicit.
+    requireCoeffCountOrDefault("4MN3F1GP", values, 3)
+    result = IntegratorCoeffs(kind: ik4MN3F1GP)
+    if values.len == 0:
+      result.lambda = 0.2470939580390842
+      result.theta = 0.5 - 1.0 / sqrt(24.0 * result.lambda)
+      let numer = 1.0 - sqrt(6.0 * result.lambda) * (1.0 - result.lambda)
+      let scale = 20.0 / (1.0 - 2.0 * result.lambda)
+      result.chi = (numer / 12.0) * scale
+    else:
+      result.lambda = values[0]
+      result.theta = values[1]
+      result.chi = values[2]
   of ik4MN5F2GP:
-    return IntegratorCoeffs(
-      kind: ik4MN5F2GP,
-      fourMN5F2GP: complete4MN5F2GPCoeffs(values))
+    requireCoeffCountOrDefault("4MN5F2GP", values, 5)
+    result = IntegratorCoeffs(kind: ik4MN5F2GP)
+    if values.len == 0:
+      result.rho = 0.06419108866816235
+      result.theta = 0.1919807940455741
+      result.vtheta = 0.1518179640276466
+      result.lambda = 0.2158369476787619
+      # Keep the scale factors explicit so the learned coefficient formula is auditable.
+      result.xi = 0.0009628905212024874 * (2.0 / result.lambda * 20.0)
+    else:
+      result.rho = values[0]
+      result.theta = values[1]
+      result.vtheta = values[2]
+      result.lambda = values[3]
+      result.xi = values[4]
 
 proc integrate2MN(gc: Gactcoeff,
                   g0: Ggauge,
                   p0: Ggauge,
                   dt: Gscalar,
                   n: int,
-                  coeffs: Integrator2MNCoeffs): IntegrationResult =
-  let lambda = scalarLeafLike(dt, coeffs.lambda)
+                  coeffs: IntegratorCoeffs): IntegrationResult =
+  let lambda = toGvalue(dt.runtime, coeffs.lambda)
   let h = 0.5 * dt
   let t05 = lambda * dt
   let t0 = 2.0 * t05
@@ -161,17 +105,17 @@ proc integrate2MN(gc: Gactcoeff,
   IntegrationResult(
     gauge: g,
     momentum: p,
-    learnedCoeffs: @[LearnedCoeff(name: "lambda", node: lambda)])
+    learnedCoeffs: @[LearnedParameter(name: "lambda", node: lambda)])
 
 proc integrate4MN3F1GP(gc: Gactcoeff,
                        g0: Ggauge,
                        p0: Ggauge,
                        dt: Gscalar,
                        n: int,
-                       coeffs: Integrator4MN3F1GPCoeffs): IntegrationResult =
-  let lambda = scalarLeafLike(dt, coeffs.lambda)
-  let theta = scalarLeafLike(dt, coeffs.theta)
-  let chi = scalarLeafLike(dt, coeffs.chi)
+                       coeffs: IntegratorCoeffs): IntegrationResult =
+  let lambda = toGvalue(dt.runtime, coeffs.lambda)
+  let theta = toGvalue(dt.runtime, coeffs.theta)
+  let chi = toGvalue(dt.runtime, coeffs.chi)
   let a0 = theta * dt
   let a02 = 2.0 * a0
   let a1 = 0.5 * dt - a0
@@ -193,21 +137,21 @@ proc integrate4MN3F1GP(gc: Gactcoeff,
     gauge: g,
     momentum: p,
     learnedCoeffs: @[
-      LearnedCoeff(name: "lambda", node: lambda),
-      LearnedCoeff(name: "theta", node: theta),
-      LearnedCoeff(name: "chi", node: chi)])
+      LearnedParameter(name: "lambda", node: lambda),
+      LearnedParameter(name: "theta", node: theta),
+      LearnedParameter(name: "chi", node: chi)])
 
 proc integrate4MN5F2GP(gc: Gactcoeff,
                        g0: Ggauge,
                        p0: Ggauge,
                        dt: Gscalar,
                        n: int,
-                       coeffs: Integrator4MN5F2GPCoeffs): IntegrationResult =
-  let rho = scalarLeafLike(dt, coeffs.rho)
-  let theta = scalarLeafLike(dt, coeffs.theta)
-  let vtheta = scalarLeafLike(dt, coeffs.vtheta)
-  let lambda = scalarLeafLike(dt, coeffs.lambda)
-  let xi = scalarLeafLike(dt, coeffs.xi)
+                       coeffs: IntegratorCoeffs): IntegrationResult =
+  let rho = toGvalue(dt.runtime, coeffs.rho)
+  let theta = toGvalue(dt.runtime, coeffs.theta)
+  let vtheta = toGvalue(dt.runtime, coeffs.vtheta)
+  let lambda = toGvalue(dt.runtime, coeffs.lambda)
+  let xi = toGvalue(dt.runtime, coeffs.xi)
   let a0 = rho * dt
   let a02 = 2.0 * a0
   let a1 = theta * dt
@@ -238,11 +182,11 @@ proc integrate4MN5F2GP(gc: Gactcoeff,
     gauge: g,
     momentum: p,
     learnedCoeffs: @[
-      LearnedCoeff(name: "rho", node: rho),
-      LearnedCoeff(name: "theta", node: theta),
-      LearnedCoeff(name: "vtheta", node: vtheta),
-      LearnedCoeff(name: "lambda", node: lambda),
-      LearnedCoeff(name: "xi", node: xi)])
+      LearnedParameter(name: "rho", node: rho),
+      LearnedParameter(name: "theta", node: theta),
+      LearnedParameter(name: "vtheta", node: vtheta),
+      LearnedParameter(name: "lambda", node: lambda),
+      LearnedParameter(name: "xi", node: xi)])
 
 proc integrateGauge*(gc: Gactcoeff,
                      g0: Ggauge,
@@ -254,8 +198,8 @@ proc integrateGauge*(gc: Gactcoeff,
     raiseValueError("integrator step count must be >= 1, got " & $n)
   case coeffs.kind
   of ik2MN:
-    integrate2MN(gc, g0, p0, dt, n, coeffs.twoMN)
+    integrate2MN(gc, g0, p0, dt, n, coeffs)
   of ik4MN3F1GP:
-    integrate4MN3F1GP(gc, g0, p0, dt, n, coeffs.fourMN3F1GP)
+    integrate4MN3F1GP(gc, g0, p0, dt, n, coeffs)
   of ik4MN5F2GP:
-    integrate4MN5F2GP(gc, g0, p0, dt, n, coeffs.fourMN5F2GP)
+    integrate4MN5F2GP(gc, g0, p0, dt, n, coeffs)

@@ -1,5 +1,4 @@
-import ../[core, multi]
-import ../core/base
+import ../core
 import layout, gauge, physics/qcdTypes
 
 # Shared Gauge Helpers
@@ -8,23 +7,14 @@ type
   Gauge* = seq[DLatticeColorMatrixV]
 
   Ggauge* {.final.} = ref object of Gvalue
-    gval: Gauge
-
-proc requireGauge*(value: Gvalue,
-                   label: string): Ggauge =
-  if not (value of Ggauge):
-    raiseValueError(label & " expects gauge value, got:\n" & value.nodeRepr)
-  Ggauge(value)
+    ## `gval` is graph-owned mutable gauge storage. Prefer `gaugeSnapshot` for
+    ## snapshots and `mutateGauge`/`update` for public writes so freshness is marked.
+    gval*: Gauge
 
 template copyGaugeStorage(dst, src: untyped) =
   threads:
     for mu in 0..<dst.len:
       dst[mu] := src[mu]
-
-template unsafeGaugeStorage*(x: Ggauge): untyped =
-  ## Graph-owned mutable gauge storage. Prefer `gaugeSnapshot` for snapshots and
-  ## `mutateGauge`/`update` for public writes so freshness is marked.
-  x.gval
 
 proc sameGaugeShape(a: Gauge, b: Gauge): bool =
   if a.len != b.len:
@@ -51,7 +41,7 @@ proc reunitGauge*(g: Gauge) =
     threadBarrier()
 
 proc gaugeSnapshot*(x: Ggauge): Gauge =
-  let storage = x.unsafeGaugeStorage
+  let storage = x.gval
   let snapshot = storage.newOneOf
   snapshot.copyGaugeStorage(storage)
   result = snapshot
@@ -69,7 +59,7 @@ proc update*(x: Ggauge, g: Gauge) =
 template mutateGauge*(x: Ggauge, storageName: untyped, body: untyped) =
   block:
     let gaugeNode {.gensym.} = x
-    let storageName {.inject.} = gaugeNode.unsafeGaugeStorage
+    let storageName {.inject.} = gaugeNode.gval
     try:
       body
     finally:
@@ -80,13 +70,13 @@ proc toGvalue*(grt: GraphRuntime,
   # Use a proc instead of a converter so seq values are not converted implicitly.
   let g = x.newOneOf
   g.copyGaugeStorage(x)
-  result = Ggauge(gval: g).attachRuntime(grt)
+  result = Ggauge(runtime: grt, gval: g).assignStableNodeId
   result.updated
 
 proc gaugeNodeLike*(x: Ggauge): Ggauge =
   let g = x.gval.newOneOf
   g.zeroGaugeStorage
-  Ggauge(gval: g).attachRuntime(x.runtime)
+  Ggauge(runtime: x.runtime, gval: g).assignStableNodeId
 
 proc sameShapeGaugeNodeLike*(x: Ggauge,
                              y: Ggauge,
@@ -97,18 +87,13 @@ proc sameShapeGaugeNodeLike*(x: Ggauge,
 method newOneOf*(x: Ggauge): Gvalue =
   x.gaugeNodeLike
 
-proc valCopy*(z: Ggauge, x: Ggauge) =
-  z.gval.requireSameGaugeShape(x.gval, "gauge copy")
-  z.gval.copyGaugeStorage(x.gval)
-
 method valCopy*(z: Ggauge, x: Gvalue) =
-  z.valCopy(x.requireGauge("gauge copy"))
-
-proc copyCompatible*(prototype: Ggauge, value: Ggauge): bool =
-  sameGaugeShape(prototype.gval, value.gval)
+  let src = Ggauge(x)
+  z.gval.requireSameGaugeShape(src.gval, "gauge copy")
+  z.gval.copyGaugeStorage(src.gval)
 
 method copyCompatible*(prototype: Ggauge, value: Gvalue): bool =
-  value of Ggauge and prototype.copyCompatible(Ggauge(value))
+  value of Ggauge and sameGaugeShape(prototype.gval, Ggauge(value).gval)
 
 method `$`*(x: Ggauge): string =
   let v = x.gval[0][0][0,0]

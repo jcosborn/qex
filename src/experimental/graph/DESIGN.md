@@ -1,423 +1,729 @@
 # Experimental Graph Design
 
-This note records the subtree-level contracts that are easy to miss when
-reading one module at a time. Keep operator formulas, local mechanics, and
-test-only conveniences in the code and tests.
+This document records the contracts that are easiest to miss when reading one
+module at a time. It is intentionally about subtree-level design; local formulas,
+operator-specific details, and test-only conveniences should stay in code and
+nearby tests.
 
-## Scope
+## 1. Layers And Scope
 
-The reusable graph layers are `core.nim`, `scalar.nim`, `functional.nim`, and
-`gauge.nim`.
+The reusable graph layers are:
 
-`multi.nim` is support plumbing for multi-output operators rather than a second
-general-purpose value language.
+- `core.nim`: graph values, runtimes, traversal, evaluation, and reverse-mode
+  gradient construction.
+- `scalar.nim`: scalar/int graph values and scalar operators.
+- `functional.nim`: first-class structural lambdas, `apply`, and structural VJP
+  construction.
+- `gauge.nim`: gauge-field graph values and gauge operators.
 
-`hmcgauge.nim` is an application layer built on those surfaces. It owns
-trajectory construction, training, and logging, but it should consume graph
-contracts rather than redefine them.
+`multi.nim` is support plumbing for multi-output operators, not a second
+product-value language.
 
-## Core Model
+`hmcgauge.nim` is an application layer. It owns trajectory construction,
+training, and logging, but consumes the graph contracts instead of redefining
+runtime identity, cache policy, or dependency semantics.
 
-The graph is value-centric: each node is a value plus a contract for how the
-rest of the system is allowed to see it.
+## 2. Core Graph Model
 
-Raw `inputs` are only the obvious edges. They are not the whole dependency
-surface. Every nontrivial node effectively answers three different questions:
+The graph is value-centric: each node is a value plus a `Gfunc` contract for how
+other graph machinery may see it.
 
-- What must evaluation see to compute the current value?
-- What structure is allowed to invalidate a cached symbolic gradient?
-- What can affect the value or any derivative downstream?
+Raw `inputs` are only the obvious edges. Nontrivial nodes must answer three
+separate dependency questions:
 
-Those are different questions, so the package keeps separate traversal modes for
-them. Most correctness bugs in this subtree come from exposing the wrong set of
-dependencies for one mode.
+1. **Eval:** what must evaluation visit to compute the current concrete value?
+2. **Grad plan:** what differentiable structure can contribute to a target?
+3. **Reachable:** what can affect this value or any downstream derivative?
 
-`backwardTarget` exists for the cases where reverse propagation is not well
-described as "differentiate each raw input independently". Use it when laziness,
-hidden dependencies, or operator-specific semantics make ordinary input-wise
-backprop misleading.
+Those surfaces are deliberately separate. Most subtle bugs in this subtree are
+wrong-dependency-surface bugs.
 
-`backwardTarget` is not additive with ordinary `backward`. `newGfunc` rejects
-nodes that define both, so a node must choose either ordinary raw-input
-propagation or target-directed propagation.
+### Input views
 
-Custom dependency walks affect reachability, freshness, and cache signatures.
-They do not turn hidden dependencies into raw backward inputs. If a hidden
-dependency is differentiable, the node should use `backwardTarget`.
+`Gfunc.inputView` is the single dependency hook. It receives an
+`InputWalkMode`:
 
-In `GdepWalks`, a nil hook means "walk raw inputs" for that traversal mode.
-Only store a custom walk hook when raw inputs are not the right dependency
-surface.
+- `iwmEval`: values needed to compute the current concrete value;
+- `iwmReachable`: values that should appear in reachability/debug traversals;
+- `iwmBackward`: differentiable deps used by reverse-mode planning and
+  propagation.
 
-When node semantics depend on static metadata that is not present in raw inputs,
-that metadata must be exposed structurally or encoded in the node's
-`gfunc.signatureKey`. `multiSelect[i]` is an example: the selected slot index is
-part of the operator identity.
+A nil hook means "walk raw `inputs`" for every mode. Only install a custom hook
+when raw inputs are not the right dependency surface.
 
-Layer-specific node categories should stay in the layer that owns them. For
-example, deferred-apply nodes are recognized in `functional/apply` by comparing
-the node's `Gfunc` with that layer's singleton function objects; core `Gfunc`
-does not carry an apply-specific kind field.
+Custom input views must emit ordinary graph values without mutating `inputs`.
+The `backward` hook receives both the backward dep index and the actual `input`,
+because an `iwmBackward` surface need not line up with raw input positions.
 
-`Gfunc` is a compact operator record, not an abstraction layer. Its hooks and
-metadata are read directly by graph internals. Keep computed accessors only when
-they add behavior, such as preserving the signature-key fallback for function
-records whose explicit key is zero.
+### Topology-stable evaluation
 
-Gradient-signature traversal can hide subtrees, but each visited node still
-records the runtime-local ids of its raw input roots. This lets nodes such as
-`cond` and deferred apply-partials keep selected internals lazy while still
-making root identity changes visible to cache invalidation.
+Evaluation is topology-stable. A `forward` hook may update only the current
+node's cached concrete value or runtime-local value storage. It must not change
+`inputs`, `gfunc`, unrelated nodes, or lambda producer bindings. `eval` does
+not audit this on every run; module-owned hooks are covered by tests, and custom
+hooks are trusted to obey the construction contract. A hook that rewires
+topology during evaluation is invalid and may fail later near the bad mutation.
 
-## Runtime Ownership
+### Gfunc identity and metadata
 
-Every `Gvalue` belongs to exactly one `GraphRuntime`, and it must have that
-runtime at construction time.
+`Gfunc` is a compact operator record, not an abstraction layer. Core and higher
+layers read its hooks directly.
 
-The runtime reference is non-nil by construction. Core code assumes this
-invariant and uses `value.runtime` directly instead of rechecking it at each
-call site.
+When semantics depend on static metadata not represented by raw inputs, close
+over that metadata in the `Gfunc` hook that owns it. Graph topology and operator
+metadata are fixed after construction; user updates change concrete values, not
+which operation a node represents.
 
-There is no default runtime in this subtree. Root constructors such as
-`toGvalue(grt, ...)` are explicit, and internal literal materialization must be
-anchored to an existing runtime-bearing node.
+Layer-specific node categories stay in the owning layer. Real structural nodes
+use hidden `Gfunc` subtypes owned by their modules, such as `Gcond` in core
+conditionals and `Gapply` in the functional apply layer; callers should use the
+exported predicates rather than inspect public names. Core `Gfunc` has no
+apply/lambda kind field or lambda-result permission bit. The public `Gfunc.name`
+string is diagnostic text only.
 
-The runtime owns the mutable state that gives a graph its identity and reuse
-behavior:
+## 3. Runtime Ownership And Freshness
+
+Every `Gvalue` belongs to exactly one non-nil `GraphRuntime` at construction
+time. There is no default runtime. Root constructors such as `toGvalue(grt, ...)`
+are explicit, and internal literal materialization must be anchored to an
+existing runtime-bearing prototype.
+
+The runtime owns mutable graph identity and generic reuse state:
 
 - freshness epochs
 - stable node ids
-- gradient and apply caches
+- symbolic graph revision
+- gradient cache
+- functional state: apply instantiation cache
 - cache stats and debug knobs
-- runtime-local evaluation counters
-- depth guards for callable resolution and apply-partial preparation
+- runtime-local run counters
 
-Those fields are mutable runtime state, not a separate service layer. Counters,
-debug flags, depth limits, and cache stats should be updated directly at the use
-site. A runtime helper is justified only when it validates runtime ownership,
-keeps a multi-field update atomic, or gives a repeated cache operation one clear
-failure model.
-
-Cache reset helpers are runtime/core operations. Higher layers may use the
-runtime fields they own, but should not re-export cache controls only to rename
-where callers import them from.
+There is no string-keyed runtime extension registry. State used by more than one
+graph layer, or needed to make cache invalidation visible, lives as an ordinary
+`GraphRuntime` field. Functional state is grouped under `GraphRuntime.functional`
+so the core runtime has one clear field for the functional module's cache and
+configuration. The functional layer owns that state’s semantics, but the storage
+is direct typed runtime data rather than an erased extension object.
 
 Stable ids and cache entries are meaningful only inside one runtime. Mixing
-nodes from different runtimes is a construction error, not a valid advanced
-case.
+runtimes is a construction error.
 
-`graphNode` does not assign runtimes. Its job is only to verify that the result
-node and all inputs already agree on one runtime. Inputful graph nodes must also
-have a graph function at construction time; zero-input prototypes may leave it
-nil.
+`graphNode` does not assign runtimes. It verifies that the result and checked
+inputs already agree on one runtime, then installs `inputs` and `gfunc`.
+Inputful graph nodes require a non-nil `Gfunc`; zero-input prototypes may have
+no function.
 
-`newMultiOutputNode` is the special multi-output constructor that anchors the
-carrier runtime from slot prototypes, then verifies input compatibility. Like
-`graphNode`, an inputful carrier requires a graph function. Keep that rule local
-to `multi.nim`.
+Leaf mutation is explicit. Callers mark semantic changes with `updated`, and
+derived nodes become current relative to their eval-visible dependencies.
+`updated` clears the `staticZeroLeaf` marker because a formerly static zero leaf
+has become ordinary mutable storage.
 
-The package is not thread-safe at the graph-runtime level. A runtime should be
-treated as exclusive mutable state.
+Static zero leaves are a construction invariant. `markStaticZeroLeaf` is only
+valid for inputless leaves whose concrete value is zero. `isStaticZeroLeaf` is a
+cheap marker-and-value query, not a structural validator; computed graph nodes
+that currently evaluate to zero are not static zero leaves.
 
-## Nil Checks
+Caches are structural, not value-based:
 
-Ordinary graph values are non-nil by construction. After a value has crossed a
-graph-construction boundary, code should use it directly rather than repeating
-defensive `nil` checks at every traversal, validator, copy, or accessor site.
-That includes public graph operators whose parameters are graph values: passing
-`nil` is outside their contract unless that parameter explicitly documents `nil`
-as meaningful.
+- ordinary leaf/capture value updates should usually preserve cached symbolic
+  work;
+- changing graph topology, selected lambda identity, or lambda-boundary
+  structure advances the runtime symbolic revision and invalidates cached
+  reductions and gradients;
+- cache keys are tied to runtime-local stable ids and the runtime symbolic
+  revision, not current numeric values.
 
-Keep `nil` validation at the few places that deliberately cross from
-unconstructed or erased data into graph storage, such as runtime attachment,
-`graphNode` input checking, `newMultiOutputNode` slot/input checking, and
-explicitly erased public APIs that must restore a concrete value type.
+If a change makes ordinary captured-value updates routinely invalidate symbolic
+caches, it is probably fighting the design.
 
-Inside graph internals, check for `nil` only when `nil` is part of the local
-protocol. Current examples include optional `Gfunc` hooks, nil dependency-walk
-hooks meaning "raw inputs", cache misses, unresolved callable reductions,
-unbound callable wrappers, optional lambda construction fields before closure
-resolution, root/upstream gradient conventions where `zb == nil` means "use
-one-like", and HMC acceptance state where a missing accepted gauge has semantic
-meaning.
+Arbitrary in-place mutation of structural lambda bodies after cached use is not a
+public freshness model. Build a fresh lambda or update captured leaves instead of
+rewiring a normalized lambda body and expecting existing structural caches to
+track that mutation. Lambda-ref binding/copying is a construction-time mechanism;
+rebinding a lambda placeholder after `grad`, `vjpOf`, or apply instantiation has
+built symbolic work is the same kind of unsupported topology mutation.
 
-Do not use `nil` as a second error channel for malformed graph structure. If a
-node can contain an invalid ordinary input, catch that at construction. If a
-hook is required to return a graph value, returning `nil` is a protocol error
-and should fail near the hook result.
+The package is not graph-runtime thread-safe. Treat a runtime as exclusive
+mutable state; globals used to connect functional submodules are not a concurrency
+contract.
 
-Do not add local prechecks merely to turn caller-supplied `nil` into a nicer
-operator-specific error. That spreads a non-invariant through normal graph code
-and makes the simple path harder to read.
-
-## Freshness And Reuse
-
-Leaf mutation is explicit. Callers mark semantic change with `updated`, and
-derived nodes become current relative to the dependencies visible to evaluation.
-
-The important design choice is that caches are structural, not value-based.
-
-That means:
-
-- ordinary leaf-value updates should usually preserve cached symbolic work
-- changing callable identity or callable-boundary structure should invalidate
-  cached reductions and gradients
-- cache keys are tied to runtime-local stable ids, not object addresses or
-  current numeric values
-
-If a change makes plain captured-value updates routinely invalidate structural
-caches, that change is usually fighting the design rather than refining it.
-
-Gradient cache entries are per output node and signature. They store complete
-adjoints separately from lower-level expansion records:
-
-- a direct `findGrad` or `grad` cache hit is valid only for a target whose
-  adjoint has been marked complete
-- ordinary raw-input expansions may reuse a cached input contribution instead
-  of rerunning the node's `backward` hook
-- target-directed expansions remember which `(node, target)` pairs have already
-  been expanded through `backwardTarget`
-
-Those records are committed only after a gradient build succeeds, so failed
-ordinary or target-directed expansions do not poison later builds. When a build
-uses any `backwardTarget`, only the requested target adjoint is considered
-complete; intermediate adjoints from that build are internal scratch unless a
-later ordinary build proves them complete.
-
-`gradIsolated` remains available for callers that intentionally want temporary
-cache isolation. Core lazy operators such as `cond` and deferred `apply` should
-normally call `grad` inside their target hooks so branch and partial gradients
-can share the runtime's structural cache.
-
-## Shape And Construction Contracts
+## 4. Construction, Shape, And Nil Contracts
 
 This package prefers construction-time checks over late coercion.
 
-Public graph-building operators should preserve concrete node types whenever the
-result type is known. `Gvalue` is the erased storage type used by core hooks,
-node input arrays, apply results, and other genuinely opaque boundaries; it is
-not a general operator-dispatch surface.
+`copyCompatible` is a semantic contract. Operators that choose between
+alternatives, such as `cond`, require compatible result shape up front.
 
-Two consequences matter across modules:
+Public graph operators should preserve concrete node types whenever the result
+type is known. `Gvalue` is the erased storage type for core hooks, input arrays,
+`apply` results, and genuinely opaque boundaries; it is not a generic operator
+dispatch surface.
 
-- `copyCompatible` is a real semantic contract, not a convenience predicate
-- operators that choose between alternatives, such as `cond`, require result
-  shape agreement up front
+Mixed numeric literals are supported only through runtime-anchored helpers.
+They must be anchored to the prototype that owns the literal's meaning. For
+`apply(fun, 1)`, that means the lambda parameter prototype, not the lambda-valued
+function expression itself.
 
-Mixed numeric literals are supported only through explicit, runtime-anchored
-helpers and overloads. They should never smuggle in a global runtime choice.
+Ordinary graph values are non-nil after construction. Keep nil validation at
+boundaries that cross from unconstructed or erased data into graph storage:
+runtime attachment, graph-node input checking, multi-output slot/input checking,
+and public erased APIs that restore concrete value types. Inside graph internals,
+check nil only when nil is part of the local protocol: optional hooks, cache
+misses, unresolved lambda bindings, optional construction fields, or root/upstream
+conventions.
 
-The remaining dynamic methods are value-prototype contracts used after type
-erasure has already happened: allocation/copy compatibility, zero/one creation,
-gradient accumulation, upstream scaling, hidden dependency walks, signature
-tokens, and value display. Concrete graph math should be ordinary procs, and
-erased values should be cast or validated at the boundary that knows the
-expected type.
+Fixed-shape internal nodes should index the inputs they constructed. Do not add
+per-use input-count wrappers for shapes owned by the same module; malformed
+manual node mutation is user error and should crash or fail close to the bad
+mutation. Keep checks that prevent silent wrong graphs, such as branch shape
+compatibility, mixed runtimes, nil dynamic dependencies, and erased type
+recovery.
 
-Reverse-mode root and upstream conventions are type-specific. Do not recover
-generic erased arithmetic as a fallback; add the needed `addLike`, `scaleLike`,
-`zeroLike`, or `oneLike` behavior to the value type that owns the convention.
+Module-internal consistency should usually be a unit-test contract, not a
+runtime `require...` guard repeated at every use. Add a runtime check only when a
+bad state would otherwise fail silently, corrupt shared state, or cross a public
+or erased boundary with misleading semantics.
 
-Closure-body cloning assumes ordinary graph nodes can be reconstructed from
-`newOneOf`, cloned `inputs`, and the original `gfunc`. Nodes with additional
-structural state must either expose that state through inputs/signature metadata
-or receive clone-aware handling.
+Do not use nil as a second error channel for malformed graph structure. Invalid
+ordinary inputs should be rejected at construction; hooks required to return a
+value should fail near the hook result if they return nil.
 
-## Adding An Exceptional Node
+## 5. Gradient Cache And Reverse Mode
 
-If a node is not "raw inputs plus ordinary backward", state all of these before
-or near the implementation:
+`grad(dep, x)` builds a backward graph. It does not evaluate `dep`.
 
-- eval dependencies
-- grad-signature dependencies
-- depend-mode dependencies
-- whether it uses ordinary `backward` or target-directed `backwardTarget`
-- which static metadata must enter `signatureKey`
-- where erased raw inputs or upstream values are restored to concrete types
-- whether `newOneOf + cloned inputs + gfunc` preserves the node
+The core gradient engine:
 
-## `cond`
+1. walks each node's `iwmBackward` input view to mark nodes that can contribute
+   to `x`;
+2. visits marked nodes in reverse dependency order;
+3. asks each node's ordinary `backward` hook for graph expressions for
+   backward-dep adjoints;
+4. accumulates those expressions with the target value's graph algebra.
 
-`cond` exists to express data-dependent choice without turning branch selection
-into structural churn.
+Gradient cache entries are per output node and runtime symbolic revision. They
+store complete adjoints only:
+
+- a direct `grad` hit is valid only for a target whose adjoint is marked
+  complete;
+- intermediate nodes with complete cached adjoints can reuse those adjoints
+  across later target builds for the same output/revision;
+- pending adjoints are committed only after a successful build, so failed builds
+  do not poison later builds.
+
+Public cache lookup follows the same revision contract. `findGrad(input, output)`
+returns only adjoints from the current runtime symbolic revision; stale entries
+are treated as cache misses.
+
+The symbolic revision changes only when internal symbolic lambda/VJP metadata is
+registered. Ordinary `update` calls change concrete values and freshness epochs,
+but do not invalidate symbolic gradient cache structure. Rewriting topology,
+lambda bodies, bindings, or operator metadata after construction is outside the
+contract; build a fresh graph instead.
+
+Structural functional VJP bodies use uncached seeded builds: the public
+output-gradient cache owns `grad(dep, target)` reuse, while seed-specific VJP
+bodies avoid storing contributions whose meaning depends on a particular
+upstream adjoint.
+
+Conditional upstream gradients are split before calling a node's `backward`.
+Static zero branches are skipped there, so inactive branches can produce guarded
+VJP graphs without constructing or evaluating the inactive apply VJP.
+
+## 6. Exceptional Node Checklist
+
+If a node is not "raw inputs plus ordinary backward", document or make obvious:
+
+- eval dependencies;
+- grad-plan dependencies;
+- reachable dependencies;
+- how ordinary `backward` maps raw inputs to symbolic contributions;
+- where erased raw inputs/upstreams are restored to concrete types;
+- whether `newOneOf + cloned inputs + gfunc` preserves the node, or whether it
+  needs clone-aware handling.
+
+Nodes with additional structural state must expose that state through inputs,
+increment the runtime symbolic revision when internal symbolic metadata changes,
+or implement clone-aware handling. Functional symbolic VJPs are ordinary graph
+nodes, so their function and target dependencies must be visible through inputs.
+
+## 7. `cond`
+
+`cond` expresses data-dependent choice without turning branch selection into
+structural churn.
 
 Its contract is:
 
-- public selectors are scalar or int graph values
-- branches must have compatible result shape, and public same-type calls keep
-  that concrete branch type
-- evaluation is lazy and follows only the selector plus the chosen branch
-- dependency traversal sees the selector and both branches
-- gradient-signature traversal only recurses through the selector, while raw
-  branch-root identities still contribute to the cache signature
+- selectors are scalar or int graph values;
+- branches must have compatible result shape;
+- same-type public calls preserve the branch concrete type;
+- eval walks only the selector and selected branch;
+- reachable and grad-plan walks see the selector and both branches;
+- reverse mode gives the selector a zero adjoint and gives each branch the
+  upstream adjoint guarded by `cond`.
 
-That split is deliberate. It keeps branch evaluation lazy while allowing
-selector flips to reuse symbolic gradients when the branch roots themselves have
-not changed.
+This split keeps value evaluation lazy while letting `grad` build branch
+backward graphs directly. Selector flips reuse symbolic gradients because branch
+choice remains a runtime value.
 
 Literal branch conveniences are only for scalar and int branches. Other value
-types must pass explicit graph values on both branches. If a branch comes from a
-boundary that returns erased `Gvalue`, such as `apply`, cast it before using it
-as a typed branch.
+types must pass explicit graph values on both branches. If a branch comes from an
+erased boundary such as `apply`, cast it before using it as a typed branch.
 
 Use `cond` for choosing between compatible values, not as a back door for shape
 changes.
 
-## Higher-Order Functions
+## 8. Functional Layer: Structural Lambdas And `apply`
 
-`apply(fun, x)` is designed to stay lazy even when the callable is produced by
-the graph itself.
+The functional layer is a structural lambda calculus embedded in the graph. It
+supports higher-order AD by rewriting lambda/application/VJP expressions into
+ordinary graph structure.
 
-The higher-order path therefore distinguishes between:
+A lambda value has type:
 
-- symbolic callable boundaries, which decide structural identity
-- concrete reduction, which instantiates a body only when needed
-- deferred partials, which preserve laziness during gradient construction
+```text
+Lambda<A, B> = paramProto A -> resultProto B
+```
 
-Closures are normalized before cached reuse matters. That keeps capture
-structure explicit and makes substitution-based instantiation the stable model.
+Both parameter and result prototypes are required. Result-only placeholders are
+malformed because VJP shape depends on every argument level and the final result
+cotangent.
 
-Callable storage is deliberately flat. `Glambda` owns `param`, `body`, and
-captured bindings directly. `Gwrapper` owns its result prototype and optional
-bound value directly, with `kind` distinguishing local wrappers from callable
-producer wrappers. Do not reintroduce subtype-only wrappers or getter/setter
-pairs unless they enforce a new invariant at construction.
+### Lambda storage and normalization
 
-Callable placeholders must carry an explicit result prototype. A wrapper without
-one is malformed rather than a wildcard callable.
+`Glambda` owns `param`, `body`, and `captureParams` directly. Captured values
+live in `Glambda.inputs`.
 
-`apply` returns an erased `Gvalue` because function-valued expressions can be
-resolved only as the callable graph is reduced. Code that knows the callable's
-result type should cast the apply result before feeding it into typed graph
-operators.
+`GlambdaRef` owns `kind`, `paramProto`, `resultProto`, and optional `binding`.
+`lrkLocal` refs are local placeholders; `lrkProduced` refs are symbolic
+lambda-valued results.
 
-Callable freshness is intentionally asymmetric:
+Lambdas are normalized into capture form before cached reuse matters. Free
+values move into `Glambda.inputs`, and `captureParams` stores fresh body
+parameters standing for those inputs. This makes substitution-based
+instantiation stable and gives ordinary traversal concrete edges for captures.
+Resolved lambdas maintain `captureParams.len == inputs.len`; each pair means
+"substitute this capture parameter with this captured value." Normalization,
+cloning, and generated-lambda construction own that invariant, and downstream
+code may index the two sequences directly.
 
-- local wrappers expose the current binding symbolically
-- callable wrappers represent the last produced callable until their producer is
-  reevaluated
+Resolved `Glambda` values are structural graph values, not fake graph operations.
+When captures exist, they install the internal `lambda captures` function only
+to make capture freshness visible to ordinary evaluation. Captures still live
+directly in `inputs`; the function is not a public lambda-producing operation.
+Whole-lambda gradients are rejected; scalar capture gradients are built by
+apply's structural VJP path.
 
-Binding a wrapper is a semantic update for both cases. A callable producer's
-forward hook may install a binding whose hidden captures are newer than the raw
-producer inputs, so the wrapper epoch must remain at least as new as both its
-visible producer dependencies and the captures reachable through the bound
-callable. Evaluation may raise a node epoch to match visible eval dependencies,
-but it must not move an epoch backwards after a forward hook mutates the node.
+`lambdaParam(paramProto, resultProto)` is the public way to build higher-order
+lambda parameters. Produced lambda refs are internal placeholders used as result
+shapes for structural lambda forms owned by the functional layer, such as real
+`apply` and real `cond`.
 
-That asymmetry is part of the public behavior. It is what lets the system reuse
-structural work aggressively without pretending that all callables are live
-views of their producers.
+### Apply
 
-Deferred-apply evaluation traversal is apply-owned. The apply-partial eval walk
-skips through deferred apply nodes using their depend-mode view, while concrete
-nodes still expose depend-mode hidden deps so closure boundaries remain
-reachable.
+`apply(fun, arg)` is an ordinary graph node:
 
-Deferred apply-partial nodes carry one target as a raw input, but traversal and
-gradient-signature exposure deliberately follow only the base expression.
-Target-specific partials are materialized from cached reduced expressions on
-demand.
+```text
+apply : Lambda<A, B> * A -> B
+```
 
-Apply cache lookup and partial materialization are local to the apply node code.
-Keep the direct table operations there unless another caller needs the same
-multi-step operation with the same error semantics.
+Graph construction does not eagerly instantiate lambda bodies. Bodies are
+instantiated when the apply node is evaluated, or when the backward graph builder
+structurally transforms a direct lambda body.
 
-## `Gmulti`
+`apply` returns erased `Gvalue` because function-valued expressions may resolve
+only through structural lambda graph forms. Code that knows the result type
+should cast before passing the result to typed graph operators.
 
-`Gmulti` is operator plumbing for multi-output nodes. It is not a general
-product-value abstraction.
+For scalar/int literal overloads, literals are materialized from the lambda
+parameter prototype. This is required for structural, non-direct lambdas such as
+`cond(k, f1, f2)`: the function expression itself is lambda-valued and is not the
+argument prototype.
 
-The key separation is between:
+`apply` does not perform construction-time argument compatibility checks. The
+node records a symbolic lambda application from the function's result prototype;
+body instantiation decides what is actually demanded. If the body never uses an
+incompatible argument, evaluation and gradients may still be well-defined. If a
+demanded path treats a non-lambda as a lambda or copies an incompatible result
+shape, that path fails when it is evaluated or differentiated.
 
-- forward slot storage, which holds concrete evaluated values
-- symbolic slot selection, which builds a graph expression for one fixed slot
+### Apply traversal and caches
+
+Apply traversal is apply-owned. Apply nodes always store the function and
+argument. During structural VJP construction they may also store active value
+targets as explicit inputs; those targets are construction-time graph edges, not
+a later core refresh.
+
+Eval, reachable, and backward input views compute lambda-visible surfaces
+dynamically. Apply VJP construction passes active structural targets through an
+explicit build context. Any dependency needed by a generated apply must become
+an ordinary graph input on that apply before the generated graph is used. Lambda
+clone remains substitution; when generated VJP bodies need active value targets
+on cloned apply nodes, the VJP builder supplies an explicit source-node to
+extra-input map. The clone module appends only those data-listed inputs.
+
+Some function-side structure is needed only to invalidate stale gradient caches,
+not to receive a raw adjoint. Apply cache entries key on the selected nominal
+lambda closure and the runtime symbolic revision. Whole lambda values are not
+differentiable raw inputs; function-side structural identity invalidates stale
+pullbacks without introducing first-class lambda cotangents.
+
+Apply instantiation and VJP construction remain local to the apply node code, and
+plain `apply` construction must not prepare VJPs eagerly. Backward/VJP builders
+own that work. Keep direct runtime apply-cache table operations local to
+`ensureInstantiation` unless another caller needs the exact same multi-step
+operation and failure semantics.
+
+## 9. Structural VJP Transformation
+
+`vjpOf(fun)` is a symbolic lambda-valued graph node only when the function cannot
+be lowered immediately. Direct lambdas lower to ordinary generated lambdas.
+Unresolved placeholders keep an explicit `vjpOf`/`vjpOfResult` node whose inputs
+are the function expression and, for capture/result targets, the differentiated
+graph value. A single apply-owned reducer lowers those delayed nodes once lambda
+substitution or evaluation makes the source lambda available.
+
+```text
+vjpOf(fun)                 == callVjpOf(fun)
+internal vjpOf(fun,target) == captureVjpOf(fun, target)
+internal vjpOfResult(...)  == resultVjpOf(fun, target)
+```
+
+The final graph may contain only ordinary constructs plus unresolved symbolic VJP
+nodes:
+
+```text
+lambda(...)
+apply(...)
+cond(...)
+scalar ops
+regular custom scalar/multi/gauge graph nodes
+vjpOf(...)
+vjpOfResult(...)
+```
+
+These graph-visible constructs must not exist:
+
+```text
+lambdaVjp
+GlambdaCotangent
+lambdaCapture
+lambdaCotangent
+lowerLambdaCotangent
+structuralVjps metadata on lambdas
+```
+
+The builder uses three structural VJP expressions:
+
+```text
+callVjpOf(fun)
+captureVjpOf(fun, target)
+resultVjpOf(fun, target)
+```
+
+These names are documentation notation for the type rules below; in code they are
+a single `VjpSpec` record whose `kind`/`target` fields select the form:
+`callVjpOf` is `VjpSpec(kind = lvkCall, target = lvtkArgument)`, `captureVjpOf` is
+`VjpSpec(kind = lvkCall, target = lvtkValue)`, and `resultVjpOf` is
+`VjpSpec(kind = lvkResult, ...)`. On-graph they reduce to the `vjpOf` /
+`vjpOfResult` nodes (`gvjpOfCall` / `gvjpOfResult`).
+
+Targets are represented as one value, `LambdaVjpTarget`: either the call
+argument or a concrete graph value target. Keeping the target kind and value
+together avoids parallel fields that can drift out of sync.
+
+For `fun : A -> B`:
+
+```text
+callVjpOf(fun) : A -> Cotangent<B> -> Cotangent<A>
+
+callVjpOf(fun) =
+  lambda(arg,
+    lambda(seed,
+      dArg))
+```
+
+For a scalar capture or other scalar graph target:
+
+```text
+captureVjpOf(fun, target) =
+  lambda(arg,
+    lambda(seed,
+      dTarget))
+```
+
+For a function returning another function:
+
+```text
+fun : A -> (B -> C)
+
+resultVjpOf(fun, target) =
+  lambda(a,
+    lambda(b,
+      lambda(seed,
+        dTarget)))
+```
+
+Deeper returned lambdas add one argument lambda per returned function level
+before the final seed lambda.
+
+For a direct scalar-result lambda:
+
+```text
+fun = lambda(x, body)
+
+callVjpOf(fun) =
+  lambda(x2,
+    lambda(seed,
+      gradSeeded(instantiate(body, x -> x2), x2, seed)))
+```
+
+The capture VJP is the same transform with a different target:
+
+```text
+captureVjpOf(fun, target) =
+  lambda(x2,
+    lambda(seed,
+      gradSeeded(instantiate(body, x -> x2), target, seed)))
+```
+
+For unresolved lambda refs, this type rule is prototype-driven: the seed
+parameter is `Cotangent<B>`, derived from the result prototype, not from
+`Cotangent<A>`.
+
+For lambda-valued bodies, VJP construction descends into the returned lambda:
+
+```text
+callVjpOf(lambda(x, lambda(y, body))) =
+  lambda(x2,
+    lambda(y2,
+      lambda(seed,
+        gradSeeded(
+          instantiate(body, x -> x2, y -> y2),
+          x2,
+          seed))))
+```
+
+For scalar-result application:
+
+```text
+z = apply(fun, arg)
+
+dArg = apply(apply(callVjpOf(fun), arg), seed)
+```
+
+For scalar targets captured by `fun`:
+
+```text
+dTarget = apply(apply(captureVjpOf(fun, target), arg), seed)
+```
+
+For an application whose function position is itself lambda-valued:
+
+```text
+fun2 = apply(hof, hofArg)
+z = apply(fun2, arg)
+
+captureVjpOf(fun2, target) =
+  apply(resultVjpOf(hof, target), hofArg)
+```
+
+If `target` is inside an ordinary scalar `hofArg`, the cotangent for `hofArg` is
+propagated by scalar reverse mode. If `hofArg` is lambda-valued, there is no
+first-class lambda cotangent; unresolved structural VJPs stay as symbolic
+`vjpOf` nodes until lambda substitution replaces the formal function with the
+actual lambda expression.
+
+### Symbolic VJP substitution
+
+Instantiating a lambda with a lambda-valued argument substitutes ordinary graph
+nodes. A symbolic VJP is just another graph node, so the function input is
+substituted by normal clone/memo rules:
+
+```text
+hof = lambda(f, body)
+actual = lambda(v, actualBody)
+instantiate(hof, actual)
+
+f                         -> actual
+vjpOf(f)                  -> vjpOf(actual)
+vjpOf(f, target)          -> vjpOf(actual, target)
+vjpOfResult(f, target)    -> vjpOfResult(actual, target)
+```
+
+The same rule applies to captured lambda values. If normalization turns a free
+lambda value into a capture parameter, symbolic VJP nodes that reference that
+value are cloned to reference the capture parameter. Later instantiation replaces
+the capture parameter with the actual structural lambda value.
+
+No lambda value owns persistent VJP metadata. The graph expression carries the
+function, target, and result prototype directly; cloning remaps those ordinary
+inputs with the rest of the body.
+
+### Conditionals and recursion
+
+Conditional lambdas remain symbolic:
+
+```text
+f = cond(k, f1, f2)
+z = apply(f, x)
+```
+
+Graph construction must not rewrite that to:
+
+```text
+cond(k, apply(f1, x), apply(f2, x))
+```
+
+VJP expressions distribute over the conditional:
+
+```text
+callVjpOf(cond(k, f1, f2)) =
+  cond(k, callVjpOf(f1), callVjpOf(f2))
+
+captureVjpOf(cond(k, f1, f2), target) =
+  cond(k, captureVjpOf(f1, target), captureVjpOf(f2, target))
+
+resultVjpOf(cond(k, f1, f2), target) =
+  cond(k, resultVjpOf(f1, target), resultVjpOf(f2, target))
+```
+
+Only the selected branch is evaluated at eval time.
+
+Self-application and other recursive lambda expressions use shared generated VJP
+shells. The shell is registered before its body is transformed; recursive uses
+that reduce to the same nominal lambda closure, VJP kind, target, and compatible
+prototypes reuse the active shell. Recursive VJP correctness does not depend on
+matching lambda body structure. Generated lambda normalization preserves active
+VJP shells so recursive references stay shared instead of cloning open-endedly.
+
+The active recursive VJP stack lives in an `ApplyVjpBuildCtx` passed through
+apply/VJP construction. It is not process-global state; independent VJP builds
+must not inherit active targets or memo entries from each other.
+
+Persistent cache invalidation is handled by the runtime symbolic revision.
+Active recursive VJP sharing is nominal and build-local: selected lambda
+identity, VJP kind, target, and compatible prototypes identify the shell while a
+VJP transform is running. Completed memo entries are keyed by selected lambda and
+capture identity so same-shaped captured lambdas cannot reuse stale branch
+pullbacks.
+
+## 10. Custom Graph Functions And Lambda Values
+
+Custom `Gfunc` nodes may appear inside lambda bodies when they produce ordinary
+scalar, multi, or gauge values and expose normal forward/backward behavior.
+
+Custom `Gfunc` nodes should produce ordinary values. Lambda-valued behavior is
+represented with structural lambda forms:
+
+```text
+lambda(...)
+apply(hof, arg)
+cond(k, f1, f2)
+lambdaParam(paramProto, resultProto)
+```
+
+Produced lambda refs and symbolic VJP nodes are internal functional-layer data. A
+custom `Gfunc(name: "apply")` or `Gfunc(name: "cond")` is still an
+opaque function; names are not structural authority.
+
+Representative acceptance checks are:
+
+```text
+vjpOf(lambda(x, x * x))
+vjpOf(vjpOf(lambda(x, x * x)))
+
+hof = lambda(f, lambda(x, Gscalar(apply(f, x)) * Gscalar(apply(f, x))))
+g = lambda(v, a * v + 1.0)
+z = apply(apply(hof, g), x)
+dzda = grad(z, a)
+d2zda2 = grad(dzda, a)
+```
+
+Those should evaluate as ordinary higher-order graphs. Direct lambdas should
+lower to generated lambdas, while unresolved lambda placeholders may keep
+symbolic `vjpOf` nodes until apply/eval selects a concrete lambda expression.
+
+## 11. `Gmulti`
+
+`Gmulti` is operator plumbing for multi-output nodes. It is not a general product
+value abstraction.
+
+The key separation is:
+
+- forward slot storage holds concrete evaluated values;
+- symbolic slot selection builds a graph expression for one fixed slot.
 
 Slot indices are static operator metadata. Dynamic graph-valued indexing is out
-of scope by design. That keeps selection local, keeps slot shape resolution
-simple, and avoids turning multi-output carriers into a second general-purpose
-data language.
+of scope. That keeps selection local, keeps slot shape resolution simple, and
+avoids turning multi-output carriers into another value language.
 
 Multi-output carriers may be heterogeneous. Slotwise combination and gradient
-accumulation therefore use the contribution slot's algebra, not a single erased
-`Gvalue` operator, and accumulation does not recheck the original carrier
-prototype. Indexing a multi-output carrier still returns an erased fixed-slot
-expression; callers that know the slot type should cast it.
+accumulation use the contribution slot's algebra, not a single erased `Gvalue`
+operator. Indexing a carrier returns an erased fixed-slot expression; callers
+that know the slot type should cast it.
 
-If control flow must choose between slots, express that choice outside the
-indexing operation.
-
-`storedSlot` exposes stored forward slot state, not a symbolic graph node.
-Callers should treat it as current only after evaluating the carrier or a
-consumer.
-
-### Shared-Compute `Gmulti` Patterns
+If control flow must choose between slots, express that choice outside indexing.
+`storedSlot` exposes stored forward slot state, not a symbolic graph node; treat
+it as current only after evaluating the carrier or a consumer.
 
 Use `Gmulti` inside fused operators to share real work across related outputs or
-input gradients. Keep the public API typed; the operator implementation owns any
-`Gmulti` input/output carrier.
+input gradients. The packed carrier should have an operator-specific slot
+contract documented at the fused operator. Its backward should build shared
+subexpressions once, then return slot gradients as a single `Gmulti`.
 
-The packed carrier should have an operator-specific slot contract documented at
-the fused operator, not a pile of one-call slot wrappers. Its backward should
-build shared subexpressions once, then return slot gradients as a single
-`Gmulti`. See `axexpmuly(a, x, y)` in `gauge/fused_ops.nim`: it packs
-`[a, x, y]`, computes `[exp(a*x), exp(a*x)*y]`, reuses the saved exponential
-for `y_bar`, and shares the exponential derivative for `a_bar` and `x_bar`.
-
-## Gauge Layer
+## 12. Gauge Layer
 
 The gauge layer extends the graph model to gauge-field values and related
 operators. Its primary differentiation contract is with respect to gauge fields.
 
 Gauge graph construction should stay in concrete gauge/scalar/coefficient types.
-Backward builders are the expected place to recover erased raw inputs or
-upstreams, because each backward builder is tied to one forward operator and
-knows the concrete operand types it stored.
+Backward builders recover erased raw inputs or upstreams by direct cast, because
+each backward builder is tied to one forward operator and knows the operand
+types it stored. A wrong internal cast is a developer error. Let it fail instead
+of adding wrappers that only restate the type contract.
 
 `toGvalue(grt, gauge)` copies caller gauge storage into graph-owned storage.
 After construction, graph state changes should happen through the returned graph
 value and `updated`; mutating the original caller gauge must not silently change a
 graph leaf.
 
-`gaugeSnapshot` returns a copy, not a live view of graph-owned storage. Code
-that intentionally mutates graph-owned gauge storage must use `mutateGauge` so
-the freshness epoch is marked even though the storage update happens in place.
-The top-level `gauge` module does not re-export `unsafeGaugeStorage`; direct
-storage access is for gauge implementation modules that import `gauge/shared`.
+`gaugeSnapshot` returns a copy, not a live view. Code that intentionally mutates
+graph-owned gauge storage must use `mutateGauge` so freshness is marked even
+though storage changes in place. The raw `Ggauge.gval` storage field is exported
+for gauge implementation modules that import `gauge/shared`; the top-level gauge
+module does not re-export it, and public writers should use `update`/`mutateGauge`.
 
 Zero-valued gauges are ordinary zeroed storage, not a privileged semantic flag.
 There is no separate zero-state fast path to keep in sync with the payload.
 
-Gauge-action coefficients are graph values and can participate in coefficient
+Gauge-action coefficients are graph values and may participate in coefficient
 subgraphs, but the action layer does not promise differentiation of
 `gaugeAction` or `gaugeActionDeriv` with respect to those coefficients.
-Unsupported coefficient gradients should fail explicitly rather than degrade
-into ambiguous behavior.
+Unsupported coefficient gradients should fail explicitly rather than degrade into
+ambiguous behavior.
 
-## `hmcgauge`
+## 13. `hmcgauge`
 
 `hmcgauge` composes graph primitives into trajectory evaluation, acceptance,
 integration, and training.
 
 Its design role is operational:
 
-- own trajectory-level graph construction
-- keep mutation points explicit
+- own trajectory-level graph construction;
+- keep mutation points explicit;
 - keep learned parameters paired with their gradient expressions rather than
-  spreading that invariant across parallel arrays
+  spreading that invariant across parallel arrays.
 
 Trajectory snapshot accessors return detached raw gauge storage. Accepted
 trajectory commit copies that snapshot back into the graph-owned initial gauge
 and marks the mutation there.
 
-Integrator coefficient completion is intentionally narrow. For the force-gradient
+Integrator coefficient completion is intentionally narrow. For force-gradient
 families, callers either accept the default tuple or provide the full explicit
 tuple; partial positional completion is out of scope.
 
-`IntegratorCoeffs` is simple parsed configuration data. Validation belongs where
-the coefficients are turned into a concrete integrator run spec; the data object
-does not need variant-object protection or accessor wrappers just to represent
-the parsed text.
-
-This layer should consume graph-core contracts, not redefine them. In
-particular, runtime identity, cache policy, and dependency semantics belong
-below this layer.
+`IntegratorCoeffs` is parsed configuration data. Validation belongs where the
+coefficients are turned into a concrete integrator run spec; the data object does
+not need variant-object protection or accessor lambda refs just to represent
+parsed text.
