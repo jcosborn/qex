@@ -17,7 +17,7 @@ proc mean(xs: Ensemble[seq[float]]): float =
     m += (x - m)/float(i+1)
   m
 
-proc naiveIntAutocorr(xs: Ensemble[seq[float]], maxlen: int): float =
+proc naiveIntAutocorrL(xs: Ensemble[seq[float]], maxlen: int): float =
   ## Very rough integrated autocorrelation: sum of correlation out to some cut.
   let N = xs.len
   let m = mean(xs)
@@ -40,6 +40,16 @@ proc naiveIntAutocorr(xs: Ensemble[seq[float]], maxlen: int): float =
       break
     sumRho += 2.0*rho
   sumRho
+
+proc naiveIntAutocorr(xs: Ensemble[seq[float]]): float =
+  var ac = 39.0
+  var maxlen = 0
+  while true:
+    let newmaxlen = min(xs.len, int(5*(ac+1)))
+    if newmaxlen <= maxlen: break
+    maxlen = newmaxlen
+    ac = naiveIntAutocorrL(xs, maxlen)
+  ac
 
 proc tunnelingRate(xs: Ensemble[seq[float]]): float =
   var r = 0.0
@@ -813,9 +823,11 @@ proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float], secs:float) =
       APvals[i] = a
   let pacc = APvals.jackknife(jkBlockSize, mean)
   let Pmean = Pvals.jackknife(jkBlockSize, mean)
-  let Pac = Pvals.jackknife(jkBlockSize, naiveIntAutocorr, 200)
+  #let Pac = Pvals.jackknife(jkBlockSize, naiveIntAutocorrL, 200)
+  let Pac = Pvals.jackknife(jkBlockSize, naiveIntAutocorr)
   let Qmean = Qvals.jackknife(jkBlockSize, mean)
-  let Qac = Qvals.jackknife(jkBlockSize, naiveIntAutocorr, 200)
+  #let Qac = Qvals.jackknife(jkBlockSize, naiveIntAutocorrL, 200)
+  let Qac = Qvals.jackknife(jkBlockSize, naiveIntAutocorr)
   let dQrms = Qvals.jackknife(jkBlockSize, tunnelingRate)
   let spt = secs / Qvals.len
 
@@ -841,7 +853,8 @@ proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float], secs:float) =
     let a = Qvals[i]
     Q2vals[i] = a*a
   let Q2 = Q2vals.jackknife(jkBlockSize, mean)
-  let Q2ac = Q2vals.jackknife(jkBlockSize, naiveIntAutocorr, 200)
+  #let Q2ac = Q2vals.jackknife(jkBlockSize, naiveIntAutocorrL, 200)
+  let Q2ac = Q2vals.jackknife(jkBlockSize, naiveIntAutocorr)
 
   echo "lnJ = ", lnJ.mean, " ± ", lnJ.stdev
   echo "lnJrms = ", lnJrms.mean, " ± ", lnJrms.stdev
