@@ -250,6 +250,12 @@ template norm2*[T](x: Simd[T]): untyped =
 
 template trace*(x: Simd): untyped = x
 
+# Scalar reductions. Not over simd. Note adj(x)=x.
+template dot*(x: Simd, y: Simd): untyped = x*y
+template idot*(r: var Simd; x: Simd; y: Simd) = imadd(r, x, y)
+template redot*(x: Simd, y: Simd): untyped = x*y
+template redotinc*(r: var Simd; x: Simd; y: Simd) = r += x*y
+
 template simdReduce*(x: Simd): untyped =
   mixin simdReduce
   simdReduce(x[])

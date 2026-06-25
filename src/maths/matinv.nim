@@ -218,9 +218,29 @@ when isMainModule:
     #echo "err: ", err, (if err.simdSum>10*epsilon(numberType(m1)):"  FAIL" else:"")
     check(err, 5)
 
+  proc testReal(T: typedesc) =
+    # Real (non-complex) matrix inverse, e.g. the (N^2-1)x(N^2-1) adjoint-rep
+    # matrix from groupOps. Exercises the SIMD scalar dot/redot used by the
+    # generic matrix dot in inverseN/flv.
+    var m1,m2,m3: T
+    let N = m1.nrows
+    for i in 0..<N:
+      for j in 0..<N:
+        var fd = (i - j).float
+        if 2*fd>N.float: fd -= N.float
+        if -2*fd>N.float: fd += N.float
+        m1[i,j] := 1.0 + fd*fd
+    echo "testReal " & $N & " " & $T
+    inverse(m2, 1.5, m1)
+    m3 := (1.0/1.5)*(m1*m2)
+    let err = sqrt((1-m3).norm2.simdMax)/N
+    echo "err: ", err
+    check(err, 5)
+
   type
     Cmplx[T] = ComplexType[T]
     CM[N:static[int],T] = MatrixArray[N,N,Cmplx[T]]
+    RM[N:static[int],T] = MatrixArray[N,N,T]
   template doTest(t:untyped) =
     when declared(t):
       test(CM[1,t])
@@ -233,6 +253,9 @@ when isMainModule:
       test(CM[8,t])
       #test(CM[9,t])
       #test(CM[10,t])
+      testReal(RM[3,t])
+      testReal(RM[5,t])
+      testReal(RM[8,t])
   doTest(float32)
   doTest(float64)
   doTest(SimdS4)
