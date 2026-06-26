@@ -325,6 +325,10 @@ proc accept*(hmc: var HmcAction) = hmc.reunit()
 
 proc reject*(hmc: var HmcAction) = setGauge(hmc.uc.u, hmc.bu)
 
+template maxeq*(x,y: auto) =
+  let t = addr x
+  t[] = max(t[], y)
+
 proc merge(stats,b: var Table) =
   for id in b.keys:
     if stats.contains id:
@@ -807,10 +811,6 @@ proc action*(self: StaggeredFermionAction; u: GaugeConfiguration): float =
   self.stats[self.id&"AS"]["r2max"].maxeq self.spa.r2.max
   toc("end")
   return 0.5*psi2
-
-template maxeq*(x,y: auto) =
-  let t = addr x
-  t[] = max(t[], y)
 
 proc force*(self: StaggeredFermionAction; u: GaugeConfiguration, dtau: float, gf: auto) =
   tic("StaggeredFermionAction:force")
