@@ -526,6 +526,10 @@ template `+=`*(x: var ThreadSingle, y: auto) =
   let ty = y
   threadSingle:
     x[] += ty
+template maxeq*(x: var ThreadSingle, y: auto) =
+  let ty = y
+  threadSingle:
+    x[] = max(x[], ty)
 converter fromThreadSingle*[T](x: ThreadSingle[T]): T = T(x)
 
 when isMainModule:

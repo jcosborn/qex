@@ -6,9 +6,10 @@ import qex
 import gauge, physics/qcdTypes
 import algorithms/integrator, maths/special, utils/resample
 import os, strutils, times
-import numericalnim
-from numericalnim/ode import IntegratorProc
-type IntegratorProc*[T] = ode.IntegratorProc[T]
+#import numericalnim
+#from numericalnim/ode import IntegratorProc
+#type IntegratorProc*[T] = ode.IntegratorProc[T]
+import algorithms/ode
 
 proc mean(xs: Ensemble[seq[float]]): float =
   var m = 0.0
@@ -160,6 +161,7 @@ letParam:
   omfLambda = 0.21
   gsteps = 20
   intsteps = 100
+  adapt = true
   absTol = 1e-16
   relTol = 0.0
   reduceT = true
@@ -495,8 +497,15 @@ proc rkint(t: float, f: auto): float =
     else: discard
   result = s
 
-proc getT(lam: auto, a: auto, s: float): float =
+var getTmaxN = 0
+proc getT(lam: auto, a: auto, s: float, bessels: var seq[float]): float =
   # dt = ds exp(-Re[a exp(lam s)])
+  template getBessel(k,x): float =
+    if k >= bessels.len:
+      for i in bessels.len..k:
+        bessels.add besselIn(i,x)
+    bessels[k]
+    #besselIn(k,x)
   let an2 = a.norm2
   if an2 == 0.0:
     return s
@@ -509,21 +518,34 @@ proc getT(lam: auto, a: auto, s: float): float =
   var z = em + 1
   var c = em/lam
   var ck = c
-  var t = s*besselI0(an)
-  #for k in 1..intsteps:
+  var t = s*getBessel(0,an)
   var nsmall = 0
   var k = 1
+  const ntmp = 100
+  var tmp {.noInit.}: array[ntmp, float]
+  tmp[0] = t
+  var itmp = 1
   while true:
     let ac = apk * ck
-    let dt = besselIn(k, an) * ac.re * (2.0/float(k))
+    let dt = getBessel(k,an) * ac.re * (2.0/float(k))
     t += dt
+    if itmp < ntmp:
+      tmp[itmp] = dt
+      inc itmp
+    else:
+      tmp[ntmp-1] += dt
+    #echo "t: ", t, "  ", dt
     #if abs(dt) < 1e-24 * abs(t): break
-    if abs(dt) < 1e-18 * abs(t): inc nsmall else: nsmall = 0
-    if nsmall >= 10: break
+    if abs(dt) < 1e-20 * abs(t): inc nsmall else: nsmall = 0
+    if nsmall >= 20: break
     apk *= ap
     ck = z*ck + c
     inc k
-  result = t
+  #echo "itmp: ", itmp
+  for i in countdown(itmp-1,0): result += tmp[i]
+  #threadCritical:
+  #  getTmaxN = max(getTmaxN, k)
+  #echo "done"
 
 var terr = 0.0
 var terrmax = 0.0
@@ -543,7 +565,7 @@ proc gupA(lam: auto, a: auto, t: float): float =
     let ae = a * exp(y*lam)
     exp(ae.re)
   proc dsdt(y: float): float = dsdtImpl(y)
-  proc dsdt(t: float, y: float, ctx: NumContext[float, float]): float = dsdtImpl(y)
+  proc dsdtx(t: float, y: float, ctx: NumContext[float, float]): float = dsdtImpl(y)
   #result = rkint(t, dsdt)
   let s0 = 0.0
   let tspan = [t]
@@ -562,9 +584,10 @@ proc gupA(lam: auto, a: auto, t: float): float =
   let intg = "dopri54"
   #let intg = "tsit54"
   #let intg = "vern65"
-  let (t1, y1) = solveOde(dsdt, s0, tspan, odeOptions, integrator=intg)
+  let (t1, y1) = solveOde(dsdtx, s0, tspan, odeOptions, integrator=intg)
   result = y1[^1]
-  let tc = getT(lam,a,result)
+  var bessels = @[i0a]
+  let tc = getT(lam,a,result,bessels)
   #echo "err: ", tc - t, "  ", tc, "  ", t
   let te = abs(tc-t)
   let se = te*dsdt(result)
@@ -575,6 +598,7 @@ proc gupA(lam: auto, a: auto, t: float): float =
     serrmax = max(serrmax, se)
     inc nterr
 
+var gupInvMaxN = 0
 proc gupInv(lam: auto, a: auto, t: float): float =
   let an2 = a.norm2
   if an2 == 0.0:
@@ -583,17 +607,20 @@ proc gupInv(lam: auto, a: auto, t: float): float =
     return t*exp(a.re)
   let an = sqrt(an2)
   let i0a = besselI0(an)
+  var bessels = @[i0a]
   var s0 = 0.0
   var t0 = 0.0
   var s1 = 2 * PI / abs(lam.im)
   var t1 = i0a * s1
   var t = t
   t -= t1 * trunc(t/t1)
+  var nit = 0
   var s = 0.0
   while true:
     s = 0.5*(s0+s1)
     if s==s0 or s==s1: break
-    let ts = getT(lam, a, s)
+    let ts = getT(lam, a, s, bessels)
+    inc nit
     #echo s, "  ", ts, "  ", t
     if ts == t: break
     if ts < t:
@@ -603,20 +630,23 @@ proc gupInv(lam: auto, a: auto, t: float): float =
       s1 = s
       t1 = ts
   result = s
-  let tc = getT(lam,a,result)
+  let tc = getT(lam,a,result,bessels)
   let te = abs(tc-t)
   if te > 1e-12:
-    echo s, "  ", tc, "  ", t
-    echo s0, "  ", s, "  ", s1
-    echo t0, "  ", tc, "  ", t1
+    echoAll "gupInv fail"
+    echoAll "  ", s, "  ", tc, "  ", t
+    echoAll "  ", s0, "  ", s, "  ", s1
+    echoAll "  ", t0, "  ", tc, "  ", t1
     let sa = gupA(lam, a, t)
-    let ta = getT(lam,a,sa)
-    echo sa, "  ", ta
+    let ta = getT(lam,a,sa,bessels)
+    echoAll "  ", sa, "  ", ta
   threadCritical:
     terr += te
     terrmax = max(terrmax, te)
     inc nterr
+    gupInvMaxN = max(gupInvMaxN, nit)
 
+#[
 proc gupI(lam: auto, a: auto, t: float): float =
   var dt = t / intsteps
   var s = 0.0
@@ -637,6 +667,7 @@ proc gupI(lam: auto, a: auto, t: float): float =
     s += ds
     #lj += 
   result = s
+]#
 
 proc gupdateA(x,mu: int, t: float): auto =
   var s: evalType(g[mu][x][0,0].re)
@@ -647,8 +678,11 @@ proc gupdateA(x,mu: int, t: float): auto =
   for i in 0..<vl:
     let li = eval(lam[asSimd(i)])
     let ai = eval(gp[1][asSimd(i)])
-    let si = gupA(li, ai, t)
-    #let si = gupInv(li, ai, t)
+    var si: float
+    if adapt:
+      si = gupA(li, ai, t)
+    else:
+      si = gupInv(li, ai, t)
     #let si = gupI(li, ai, t)
     #let (si,dsi) = gupI(li, ai, t)
     s[i] = si
@@ -965,8 +999,8 @@ proc mc =
       Jvals[n-1] = lnJ
       Pvals[n-1] = pl.re
       Qvals[n-1] = g.topo2DU1
-    qexLog "plaq: ",pl.re," ",pl.im," topo: ",Qvals[n-1]
-    qexLog "terr: ",terr/nterr,"  ",terrmax
+    qexLog "plaq: ",pl.re," ",pl.im," topo: ",(if n>0: Qvals[n-1] else: g.topo2DU1)
+    qexLog "terr: ",terr/nterr,"  ",terrmax,"  ",getTmaxN,"  ",gupInvMaxN
     qexLog "serr: ",serr/nterr,"  ",serrmax
     if n==0:
       terr = 0
