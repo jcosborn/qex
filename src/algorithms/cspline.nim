@@ -41,10 +41,24 @@ type
 
 const CSplineBoundEstimateDy* = CSplineBoundDy(kind:CSBEstimateDy)
 const CSplineBoundZeroD2y* = CSplineBoundDy(kind:CSBZeroD2y)
-converter toCSplineBoundDy*(dy:float):CSplineBoundDy = CSplineBoundDy(kind:CSBSetDy,dy:dy)
+proc dyBound*(dy:float):CSplineBoundDy = CSplineBoundDy(kind:CSBSetDy,dy:dy)  ## Fixed endpoint first derivative.
 
 proc csplineBounds*(lo=CSplineBoundEstimateDy, hi=CSplineBoundEstimateDy):CSplineBounds =
   CSplineBounds(lo:lo, hi:hi)
+
+func triSolve[T](a,b,c,r:openarray[T]):seq[T] =
+  ## Solve a tridiagonal system. a[0] and c[^1] are unused.
+  let n = b.len
+  result = newseq[T](n)
+  var gam = newseq[T](n)
+  var bet = b[0]
+  result[0] = r[0]/bet
+  for j in 1..<n:
+    gam[j] = c[j-1]/bet
+    bet = b[j] - a[j]*gam[j]
+    result[j] = (r[j] - a[j]*result[j-1])/bet
+  for j in countdown(n-2,0):
+    result[j] -= gam[j+1]*result[j+1]
 
 proc newCSpline*[T](x,y:openarray[T], bounds=csplineBounds()):CSpline[T] =
   let n = x.len
@@ -61,13 +75,15 @@ proc newCSpline*[T](x,y:openarray[T], bounds=csplineBounds()):CSpline[T] =
   template x(i:int):auto = r.x[i]
   template y(i:int):auto = r.ys[i][0]
   template d2y(i:int):auto = r.ys[i][1]
-  var g = newseq[T](n-1)
-
-  var beta:T
+  var
+    a = newseq[T](n)
+    b = newseq[T](n)
+    c = newseq[T](n)
+    rhs = newseq[T](n)
 
   if bounds.lo.kind==CSBZeroD2y:
-    d2y(0) = T(0)
-    g[0] = T(0)
+    b[0] = T(1.0)
+    rhs[0] = T(0.0)
   else:
     let
       dy =
@@ -80,10 +96,10 @@ proc newCSpline*[T](x,y:openarray[T], bounds=csplineBounds()):CSpline[T] =
           bounds.lo.dy
       d = y(1)-y(0)
       h = x(1)-x(0)
-    d2y(0) = T(3.0)*(d/h-dy)/h
-    g[0] = T(0.5)
+    b[0] = T(1.0)
+    c[0] = T(0.5)
+    rhs[0] = T(3.0)*(d/h-dy)/h
 
-  # solve the tridiagonal system
   for j in 1..<n-1:
     let
       xm = x(j-1)
@@ -98,21 +114,14 @@ proc newCSpline*[T](x,y:openarray[T], bounds=csplineBounds()):CSpline[T] =
       dhm = (yj-ym)/hm
       dhj = (yp-yj)/hj
       bj = T(2.0)*(T(1.0)+hjm)
-    beta = bj - g[j-1]
-    d2y(j) = (T(6.0)*(dhj-dhm)/hm-d2y(j-1))/beta
-    g[j] = hjm/beta
-    #echo "# iter j = ",j
-    #echo "(h",j-1,"+h",j,")/3 ",(xp-xm)/3.0
-    #echo "d",j-1,"/h",j-1," ",dhm,"  d",j,"/h",j," ",dhj
-    #echo "2(1+h",j,"/h",j-1,") ",bj
-    #echo "h",j,"/h",j-1," ",hjm
-    #echo "6(d",j,"/h",j,"-d",j-1,"/h",j-1,")/h",j-1," ",T(6.0)*(dhj-dhm)/hm
-    #echo "beta ",beta,"  g",j," ",g[j]
-    #echo "forward: d2y(",j,") ",d2y(j)
+    a[j] = T(1.0)
+    b[j] = bj
+    c[j] = hjm
+    rhs[j] = T(6.0)*(dhj-dhm)/hm
 
-  # last row
   if bounds.hi.kind==CSBZeroD2y:
-    d2y(n-1) = T(0)
+    b[n-1] = T(1.0)
+    rhs[n-1] = T(0.0)
   else:
     let
       dy =
@@ -125,29 +134,26 @@ proc newCSpline*[T](x,y:openarray[T], bounds=csplineBounds()):CSpline[T] =
           bounds.hi.dy
       d = y(n-1)-y(n-2)
       h = x(n-1)-x(n-2)
-    d2y(n-1) = (T(6.0)*(dy-d/h)/h-d2y(n-2))/(T(2.0)-g[n-2])
+    a[n-1] = T(1.0)
+    b[n-1] = T(2.0)
+    rhs[n-1] = T(6.0)*(dy-d/h)/h
 
-  # back substitute
-  for j in countdown(n-2,0):
-    d2y(j) -= g[j]*d2y(j+1)
-    #echo "back: d2y(",j,") ",d2y(j)
+  let m = triSolve(a,b,c,rhs)
+  for j in 0..<n:
+    d2y(j) = m[j]
 
   return r
 
 func bisect*[T](xs:openarray[T], x:T): int =
-  ## assuming ascending xs
-  ## no boundary check
+  ## Segment i with xs[i] <= x, clamped so xs[i+1] is valid. Assumes sorted xs.
   var
-    tot = xs.len
-    mid = tot div 2
-  while tot>1:
-    if x<xs[mid]:
-      tot = mid
-      mid -= tot div 2
-    else:
-      tot -= mid
-      mid += tot div 2
-  mid
+    lo = 0
+    hi = xs.len - 1
+  while hi - lo > 1:
+    let mid = (lo + hi) div 2
+    if xs[mid] <= x: lo = mid
+    else: hi = mid
+  lo
 
 func interpolate*[T](csp:CSpline[T], x:T):T =
   let
@@ -196,6 +202,61 @@ func interpolateD2y*[T](csp:CSpline[T], x:T):T =
     c = (a*a*a-a)*h*h/T(6.0)
     d = (b*b*b-b)*h*h/T(6.0)
   a*d2y0 + b*d2y1
+
+# --- periodic uniform cubic spline ---------------------------------------------
+
+func cyclicSolve[T](a,b,c:openarray[T]; alpha,beta:T; r:openarray[T]):seq[T] =
+  ## Solve a tridiagonal system with corner entries A[0][^1] and A[^1][0].
+  let n = b.len
+  let gamma = -b[0]
+  var bb = newseq[T](n)
+  bb[0] = b[0] - gamma
+  bb[n-1] = b[n-1] - alpha*beta/gamma
+  for i in 1..<n-1: bb[i] = b[i]
+  let x = triSolve(a, bb, c, r)
+  var u = newseq[T](n)
+  u[0] = gamma
+  u[n-1] = alpha
+  let z = triSolve(a, bb, c, u)
+  let fact = (x[0] + beta*x[n-1]/gamma) / (T(1.0) + z[0] + beta*z[n-1]/gamma)
+  result = newseq[T](n)
+  for i in 0..<n: result[i] = x[i] - fact*z[i]
+
+proc newCSplinePeriodic*[T](y:openarray[T]; x0,h:T):CSpline[T] =
+  ## Uniform periodic cubic spline. Values wrap, so y[n] == y[0].
+  let n = y.len
+  if n < 3:
+    qexError "periodic cubic spline needs at least 3 knots, got ", n
+  var r = newseq[T](n)
+  for j in 0..<n:
+    let jm = (j + n - 1) mod n
+    let jp = (j + 1) mod n
+    r[j] = T(6.0)*(y[jp] - T(2.0)*y[j] + y[jm])/(h*h)
+  var a = newseq[T](n)
+  var b = newseq[T](n)
+  var c = newseq[T](n)
+  for j in 0..<n:
+    a[j] = T(1.0); b[j] = T(4.0); c[j] = T(1.0)
+  let m = cyclicSolve(a, b, c, T(1.0), T(1.0), r)
+  result = CSpline[T](x: newseq[T](n+1), ys: newseq[array[2,T]](n+1))
+  for j in 0..<n:
+    result.x[j] = x0 + T(j)*h
+    result.ys[j] = [y[j], m[j]]
+  result.x[n] = x0 + T(n)*h
+  result.ys[n] = [y[0], m[0]]
+
+func segmentCoeffs*[T](csp:CSpline[T]; i:int):tuple[a,b,c,d:T] =
+  ## Coefficients for S(x) = a + b*u + c*u^2 + d*u^3, u = x - csp.x[i].
+  let
+    h = csp.x[i+1] - csp.x[i]
+    y0 = csp.ys[i][0]
+    y1 = csp.ys[i+1][0]
+    m0 = csp.ys[i][1]
+    m1 = csp.ys[i+1][1]
+  result.a = y0
+  result.b = (y1 - y0)/h - h*(T(2.0)*m0 + m1)/T(6.0)
+  result.c = T(0.5)*m0
+  result.d = (m1 - m0)/(T(6.0)*h)
 
 when isMainModule:
   import qex
@@ -280,16 +341,72 @@ when isMainModule:
       ord, f)
     testCSp(
       test.newTest("cspline set 1st deriv. bounds"),
-      newCSpline(xs,ys,csplineBounds(dys[0][0],dys[^1][0])),
+      newCSpline(xs,ys,csplineBounds(dyBound(dys[0][0]),dyBound(dys[^1][0]))),
       ord, f)
     testCSp(
       test.newTest("cspline natural (zero 2nd deriv.)"),
       newCSpline(xs,ys,csplineBounds(CSplineBoundZeroD2y,CSplineBoundZeroD2y)),
       ord, f, checkValues=false)
 
+  proc runPeriodic(test:QEXTest) =
+    ## Periodic spline for a smooth periodic function.
+    let test = test.newTest("periodic cubic spline")
+    const n = 64
+    let x0 = -PI
+    let h = 2.0*PI/float(n)
+    proc f(p:float):tuple[v,d1:float] =
+      let v = exp(0.5*cos(p) + 0.3*sin(p))
+      (v, (-0.5*sin(p) + 0.3*cos(p))*v)
+    var ys = newseq[float](n)
+    for j in 0..<n: ys[j] = f(x0 + float(j)*h).v
+    let csp = newCSplinePeriodic(ys, x0, h)
+
+    let tknot = test.newTest("knot values")
+    for j in 0..<n:
+      tknot.assertAlmostEqual(csp.interpolate(x0 + float(j)*h), ys[j])
+
+    let tseg = test.newTest("segment coeffs vs interpolate")
+    for j in 0..<n:
+      let (a,b,c,d) = csp.segmentCoeffs(j)
+      for t in [0.17, 0.5, 0.83]:
+        let u = t*h
+        let x = x0 + float(j)*h + u
+        tseg.assertAlmostEqual(a + b*u + c*u*u + d*u*u*u, csp.interpolate(x))
+        tseg.assertAlmostEqual(b + 2.0*c*u + 3.0*d*u*u, csp.interpolateDy(x))
+
+    # Check derivative continuity across the wrap.
+    test.newTest("seam derivative").assertAlmostEqual(
+      csp.interpolateDy(x0 + 1e-7), csp.interpolateDy(x0 + 2.0*PI - 1e-7),
+      absTol=1e-6, relTol=1e-6)
+
+    # Simpson must match the exact cubic integral.
+    let tint = test.newTest("segment integral")
+    var total = 0.0
+    for j in 0..<n:
+      let (a,b,c,d) = csp.segmentCoeffs(j)
+      let segInt = a*h + 0.5*b*h*h + (c/3.0)*h*h*h + 0.25*d*h*h*h*h
+      let hm = 0.5*h
+      let yL = a
+      let yMid = a + b*hm + c*hm*hm + d*hm*hm*hm
+      let yR = a + b*h + c*h*h + d*h*h*h
+      tint.assertAlmostEqual(segInt, (h/6.0)*(yL + 4.0*yMid + yR))
+      total += segInt
+    var refInt = 0.0
+    const nf = 200000
+    for i in 0..<nf: refInt += f(x0 + (float(i)+0.5)*2.0*PI/float(nf)).v
+    refInt *= 2.0*PI/float(nf)
+    test.newTest("period integral").assertAlmostEqual(total, refInt, absTol=1e-4, relTol=1e-4)
+
+    let tapp = test.newTest("approximation")
+    for t in [0.1, 1.3, 2.7, 4.5, 6.0]:
+      let x = x0 + t
+      tapp.assertAlmostEqual(csp.interpolate(x), f(x).v, absTol=1e-5, relTol=1e-5)
+      tapp.assertAlmostEqual(csp.interpolateDy(x), f(x).d1, absTol=1e-3, relTol=1e-3)
+
   qexInit()
   let thetest = newQEXTest("CSpline")
   thetest.run(1,fun0)
   thetest.run(2,fun1)
   thetest.run(3,fun2)
+  thetest.runPeriodic
   thetest.qexFinalize
