@@ -310,7 +310,7 @@ basicDefs(m512,  float32, 16, mm512, ps)
 basicDefs(m512d, float64,  8, mm512, pd)
 
 proc copySign*[T:SimdX86](to,frm: T): T {.alwaysInline.} =
-  result = `or`(`and`(frm, -0.0), andnot(to, -0.0))
+  result = `or`(`and`(-0.0, frm), andnot(-0.0, to))
 
 proc simdReduce*(r:var SomeNumber; x:m128) {.alwaysInline.} =
   let y = mm_hadd_ps(x, x)

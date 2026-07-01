@@ -123,7 +123,7 @@ proc hamiltonian(gc:GaugeActionCoeffs, g:auto, p:auto):auto =
   toc("hamiltonian")
   (ga, t, h)
 
-type MDAlgo = enum hamilton, nosehoover, ghmc, gv, test1
+type MDAlgo = enum hamilton, nosehoover, ghmc, gv, test1, linp
 converter toMDAlgo(s:string):MDAlgo = parseEnum[MDAlgo](s)
 let gAlgs = [ghmc, gv]
 
@@ -156,14 +156,18 @@ letParam:
   mdalgo:MDAlgo = "hamilton"
   ## extra params in other mdalgo
   gamma = 1.0
+  a = 1.0
+  b = 0.0
+  eps = 1e-32
   ## 2MN,0.21 | 4MN3F1GP,0.27 | 4MN5F2GP
   gintalg:integrator.IntegratorProc = "2MN,0.21"
   omfLambda = 0.21
   gsteps = 20
   intsteps = 100
   adapt = true
-  absTol = 1e-16
-  relTol = 0.0
+  impl = false
+  absTol = 0.0
+  relTol = 1e-16
   reduceT = true
   alwaysAccept:bool = 0
   revCheckFreq = ntraj
@@ -214,12 +218,18 @@ var
   gg = lo.newgauge  # FG backup gauge
   g0 = lo.newgauge
   p0 = lo.newgauge
+  afield = lo.newgauge
+  bfield = lo.newgauge
   xi = 0.0
   xi1 = xi
   lnJ = 0.0
 
 proc revBegin =
   case mdalgo
+  of linp:
+    threads:
+      for mu in 0..<bfield.len:
+        bfield[mu] *= -1
   of nosehoover:
     xi1 = xi
     xi *= -1
@@ -228,6 +238,10 @@ proc revBegin =
 
 proc revEnd =
   case mdalgo
+  of linp:
+    threads:
+      for mu in 0..<bfield.len:
+        bfield[mu] *= -1
   of nosehoover:
     xi = xi1
   else:
@@ -236,6 +250,19 @@ proc revEnd =
 proc extraInit =
   lnJ = 0.0
   case mdalgo
+  of linp:
+    #echo "a: ", a, "  b: ", b
+    threads:
+      for mu in 0..<bfield.len:
+        bfield[mu].uniform(r)
+        for e in bfield[mu]:
+          afield[mu][e] := a
+          var bv: typeof(bfield[mu][e][0,0].re)
+          bv := b
+          bfield[mu][e][0,0].re = copysign(bv, 2*bfield[mu][e][0,0].re-1)
+          bfield[mu][e][0,0].im = 0
+      #echo "a2: ", afield.norm2
+      #echo "b2: ", bfield.norm2
   of nosehoover:
     xi = R.gaussian * sqrt(gamma)
   else:
@@ -631,8 +658,8 @@ proc gupInv(lam: auto, a: auto, t: float): float =
       t1 = ts
   result = s
   let tc = getT(lam,a,result,bessels)
-  let te = abs(tc-t)
-  if te > 1e-12:
+  let te = abs(tc-t) / t
+  if te > 1e-10:
     echoAll "gupInv fail"
     echoAll "  ", s, "  ", tc, "  ", t
     echoAll "  ", s0, "  ", s, "  ", s1
@@ -646,28 +673,49 @@ proc gupInv(lam: auto, a: auto, t: float): float =
     inc nterr
     gupInvMaxN = max(gupInvMaxN, nit)
 
-#[
 proc gupI(lam: auto, a: auto, t: float): float =
-  var dt = t / intsteps
+  const nsteps = 1
+  var dt = t / nsteps
   var s = 0.0
   let i0a = besselI0(sqrt(a.norm2))
-  let ds0 = dt / i0a
+  #let dst = dt / i0a
+  #echoAll "dst: ", dst
   proc f(ds: float): float =
     let ae = a * exp((s+0.5*ds)*lam)
     result = dt * exp(ae.re) - ds
-  proc fd(ds: float): float =
-    let ae = a * exp((s+0.5*ds)*lam)
-    let aed = 0.5 * ae * lam
-    result = dt * exp(ae.re) * aed.re - 1.0
-  var lj = 0.0
-  for i in 1..intsteps:
+  #proc fd(ds: float): float =
+  #  let ae = a * exp((s+0.5*ds)*lam)
+  #  let aed = 0.5 * ae * lam
+  #  result = dt * exp(ae.re) * aed.re - 1.0
+  #var lj = 0.0
+  for i in 1..nsteps:
     # ds = dt dsdt(s+0.5*ds)
     # s1 = s0 + dt dsdt(0.5*(s0+s1)) => ds1 = ds0 + dt
-    let ds = newtons(f, fd, ds0, 1e-6)
+    #let ds = newtons(f, fd, ds0, 1e-6)
+    var ds0 = 0.0
+    var f0 = f(ds0)
+    #var ds1 = 0.01*dst
+    var ds1 = 0.1*dt
+    var f1 = f(ds1)
+    while f0*f1>0:
+      ds1 *= 2
+      #ds1 += 0.1*dst
+      f1 = f(ds1)
+    var ds = 0.0
+    while true:
+      ds = 0.5*(ds0+ds1)
+      if ds==ds0 or ds==ds1: break
+      let fds = f(ds)
+      if fds==0: break
+      if f0*fds>0:
+        ds0 = ds
+        f0 = fds
+      else:
+        ds1 = ds
+        f1 = fds
     s += ds
     #lj += 
   result = s
-]#
 
 proc gupdateA(x,mu: int, t: float): auto =
   var s: evalType(g[mu][x][0,0].re)
@@ -679,11 +727,17 @@ proc gupdateA(x,mu: int, t: float): auto =
     let li = eval(lam[asSimd(i)])
     let ai = eval(gp[1][asSimd(i)])
     var si: float
-    if adapt:
+    if impl:
+      si = gupI(li, ai, t)
+      let ai2 = ai * exp(si*li)
+      let si2 = gupI(-li, ai2, t)
+      let err = 2*abs(si-si2)/(si+si2)
+      if err > 1e-10:
+        echoAll "gupI reverse: ", err, "  ", si, "  ", si2, "  ", t
+    elif adapt:
       si = gupA(li, ai, t)
     else:
       si = gupInv(li, ai, t)
-    #let si = gupI(li, ai, t)
     #let (si,dsi) = gupI(li, ai, t)
     s[i] = si
     #lj[i] = lji
@@ -713,13 +767,24 @@ proc mdtfb(t:float, fb:int) =
             threadRankSum(lnJs)
             threadSingle: lnJ += lnJs
   else:
-    threads:
-      for i in 0..<g.len:
-        for e in g[i]:
-          let etpg = exp(t*p[i][e])*g[i][e]
-          g[i][e] := etpg
-    if mdalgo == nosehoover:
-      xi += t * gamma * (p.pnorm2 - dof)
+    case mdalgo
+    of linp:
+      threads:
+        for i in 0..<g.len:
+          for e in g[i]:
+            let pi = p[i][e][0,0].im
+            var ap = afield[i][e][0,0].re * p[i][e]
+            ap[0,0].im += bfield[i][e][0,0].re * (pi*pi-1)
+            let etpg = exp(t*ap)*g[i][e]
+            g[i][e] := etpg
+    else:
+      threads:
+        for i in 0..<g.len:
+          for e in g[i]:
+            let etpg = exp(t*p[i][e])*g[i][e]
+            g[i][e] := etpg
+      if mdalgo == nosehoover:
+        xi += t * gamma * (p.pnorm2 - dof)
 
 proc mdtf(t:float) =
   #let t = 0.25*t
@@ -766,21 +831,45 @@ proc mdv(t:float) =
       #echo "F2: ", f2 / g[0].l.physVol
   else:
     gc.gaugeforce2(g, f)
-    let etxi = exp(-0.5*t*xi)
-    if mdalgo == nosehoover:
+    case mdalgo
+    of linp:
+      let eps0 = eps
+      threads:
+        var lnJt: typeof(f[0][0][0,0].re)
+        for i in 0..<p.len:
+          for e in p[i]:
+            let tf = (-t)*f[i][e][0,0].im
+            let af = afield[i][e][0,0].re * tf
+            let bf = bfield[i][e][0,0].re * tf
+            let br = bfield[i][e][0,0].re
+            let bd = afield[i][e][0,0].re*br / (br*br+eps0)
+            let eb1 = expm1(bf)
+            p[i][e][0,0].re = 0
+            p[i][e][0,0].im = (eb1+1)*p[i][e][0,0].im + af + bd*(eb1-bf)
+            lnJt += bf
+        var lnJs = simdSum(lnJt)
+        threadRankSum(lnJs)
+        threadSingle: lnJ += lnJs
+    of nosehoover:
+      let etxi = exp(-0.5*t*xi)
       threads:
         for i in 0..<p.len:
           p[i] *= etxi
-    threads:
-      for i in 0..<f.len:
-        for e in f[i]:
-          let tf = (-t)*f[i][e]
-          p[i][e] += tf
-    if mdalgo == nosehoover:
+      threads:
+        for i in 0..<f.len:
+          for e in f[i]:
+            let tf = (-t)*f[i][e]
+            p[i][e] += tf
       threads:
         for i in 0..<p.len:
           p[i] *= etxi
       lnJ += dof*t*xi
+    else:
+      threads:
+        for i in 0..<f.len:
+          for e in f[i]:
+            let tf = (-t)*f[i][e]
+            p[i][e] += tf
 
 ####  end of area to modify to add new HMC variants  ###
 
