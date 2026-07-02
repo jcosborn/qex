@@ -261,14 +261,11 @@ let equali = Gfunc(forward: equalif, backward: comparisonZeroBackward, name: "eq
 proc equal*(x: Gint, y: Gint): Gint =
   graphNode(intNodeLike(x), @[Gvalue(x), Gvalue(y)], equali, "equali")
 
+# Note: nim system defines `>` and `>=` as templates.
+
 # Concrete per-type overloads (not a `CondSelector` generic): a generic here is
 # ambiguous with system's `<=`/`>=`/`>` over `ref T`, since Gscalar/Gint are refs.
-proc `>`*(x, y: Gscalar): auto = y < x
-proc `>=`*(x, y: Gscalar): auto = (y < x) or equal(x, y)
 proc `<=`*(x, y: Gscalar): auto = (x < y) or equal(x, y)
-
-proc `>`*(x, y: Gint): auto = y < x
-proc `>=`*(x, y: Gint): auto = (y < x) or equal(x, y)
 proc `<=`*(x, y: Gint): auto = (x < y) or equal(x, y)
 
 # Literal RHS/LHS sugar for binary ops: each op already exists value-vs-value
@@ -289,11 +286,7 @@ litCmp(`*`)
 litCmp(`/`)
 litCmp(`<`)
 litCmp(equal)
-litCmp(`>`)
-litCmp(`>=`)
 litCmp(`<=`)
 litCmpInt(`<`)
 litCmpInt(equal)
-litCmpInt(`>`)
-litCmpInt(`>=`)
 litCmpInt(`<=`)

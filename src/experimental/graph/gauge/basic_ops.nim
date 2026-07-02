@@ -12,7 +12,7 @@ proc adj*(x: Ggauge): Ggauge
 proc norm2*(x: Ggauge): Gscalar
 proc redot*(x: Ggauge, y: Ggauge): Gscalar
 proc exp*(x: Ggauge): Ggauge
-proc expDeriv*(b: Ggauge, x: Ggauge): Ggauge
+proc expDeriv*(b: Ggauge, x: Ggauge, parity = -1, dir = 0): Ggauge
 proc projTAH*(x: Ggauge): Ggauge
 proc `-`*(x: Ggauge): Ggauge
 proc `+`*(x: Gscalar, y: Ggauge): Ggauge
@@ -118,15 +118,35 @@ proc addggb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   requireUpstream(zb, "g+g backward", Ggauge)
 
 proc addggf(v: Gvalue) =
-  let x = Ggauge(v.inputs[0])
-  let y = Ggauge(v.inputs[1])
   let z = Ggauge(v)
-  z.mapGaugeSites(x.gval[mu] + y.gval[mu])
+  threads:
+    for mu in 0..<z.gval.len:
+      for e in z.gval[mu]:
+        var t {.noinit.}: evalType(z.gval[mu][e])
+        t := Ggauge(v.inputs[0]).gval[mu][e]
+        for i in 1..<v.inputs.len:
+          t += Ggauge(v.inputs[i]).gval[mu][e]
+        z.gval[mu][e] := t
 
 let addgg = Gfunc(forward: addggf, backward: addggb, name: "g+g")
 
+proc gaugeAddTerms*(x: Ggauge): seq[Ggauge] =
+  ## Return the leaves of a gauge sum in evaluation order.
+  if x.gfunc == addgg:
+    for input in x.inputs:
+      result.add gaugeAddTerms(Ggauge(input))
+  else:
+    result.add x
+
 proc `+`*(x: Ggauge, y: Ggauge): Ggauge =
-  graphNode(sameShapeGaugeNodeLike(x, y, "g+g"), @[Gvalue(x), Gvalue(y)], addgg, "g+g")
+  x.requireSameGaugeShape(y, "g+g")
+  var inputs: seq[Gvalue]
+  if x.gfunc == addgg:
+    inputs.add x.inputs
+  else:
+    inputs.add Gvalue(x)
+  inputs.add Gvalue(y)
+  graphNode(x.gaugeNodeLike, inputs, addgg, "g+g")
 
 method addLike*(prototype: Ggauge, x: Gvalue, y: Gvalue): Gvalue =
   Ggauge(x) + Ggauge(y)
@@ -260,12 +280,23 @@ proc expDerivgf(v: Gvalue) =
 
 let expDerivg = Gfunc(forward: expDerivgf, backward: expDerivgb, name: "expDerivg")
 
-proc expDeriv*(b: Ggauge, x: Ggauge): Ggauge =
-  graphNode(
-    sameShapeGaugeNodeLike(b, x, "expDerivg"),
-    @[Gvalue(b), Gvalue(x)],
-    expDerivg,
+proc expDeriv*(b: Ggauge, x: Ggauge, parity = -1, dir = 0): Ggauge =
+  ## D exp(x)^*[b], on the whole field or only (parity,dir); zero elsewhere.
+  let node = sameShapeGaugeNodeLike(b, x, "expDerivg")
+  if parity < 0:
+    return graphNode(node, @[Gvalue(b), Gvalue(x)], expDerivg, "expDerivg")
+  let sub = b.gval.paritySubset(parity)
+  proc fwd(v: Gvalue) =
+    let b = Ggauge(v.inputs[0])
+    let x = Ggauge(v.inputs[1])
+    let z = Ggauge(v)
+    forGaugeSubset(sub):
+      # element order matches whole-field expDerivgf: expDeriv(inputs[1], inputs[0])
+      z.gval[dir][e] := expDeriv(x.gval[dir][e], b.gval[dir][e])
+  result = graphNode(node, @[Gvalue(b), Gvalue(x)],
+    Gfunc(forward: fwd, backward: expDerivgb, name: "expDerivg"),
     "expDerivg")
+  result.zeroGaugeStorage
 
 proc projTAHb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   projTAH(requireUpstream(zb, "projTAH backward", Ggauge))

@@ -7,7 +7,7 @@ export
   update, mutateGauge, toGvalue,
   retr, adj, norm2, redot, exp, expDeriv, projTAH,
   `-`, `+`, `*`,
-  adjmul, muladj, contractProjTAH, axexp, axexpmuly,
+  axpy, adjmul, muladj, contractProjTAH, axexp, axexpmuly, blendSubset,
   Gactcoeff,
   actWilson, actSymanzik, actIwasaki, actDBW2, actAdj,
   gaugeAction, gaugeActionDeriv, gaugeActionDeriv2, gaugeForce

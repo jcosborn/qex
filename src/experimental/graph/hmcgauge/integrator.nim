@@ -1,4 +1,5 @@
 import ../[core, scalar, gauge]
+import layout, physics/qcdTypes   # threads / simd reductions for forceRmsMinMax
 from math import sqrt
 
 type
@@ -20,6 +21,80 @@ type
     gauge*: Ggauge
     momentum*: Ggauge
     learnedCoeffs*: seq[LearnedParameter]
+    forces*: seq[Ggauge]
+  MdForceStats* = object
+    count*: int
+    rmsMean*, rmsMax*: float
+    fminMean*, fminMin*: float
+    fmaxMean*, fmaxMax*: float
+  GaugeAction* = proc(g: Ggauge): Gscalar
+    ## S(g); the integrator differentiates it for the MD force.
+  GaugeForceFn* = proc(g: Ggauge): Ggauge
+
+proc gradForce*(action: GaugeAction, g: Ggauge, force: GaugeForceFn = nil): Ggauge =
+  ## F = projectTAH(grad(S(g),g)*g†).
+  ## `force`, when given, computes the same F directly.
+  if force.isNil:
+    contractProjTAH(grad(action(g), g), g)
+  else:
+    force(g)
+
+proc gradForce(action: GaugeAction; g: Ggauge; forces: var seq[Ggauge]; force: GaugeForceFn): Ggauge =
+  result = gradForce(action, g, force)
+  forces.add result
+
+proc forceRmsMinMaxValue(force: Ggauge; dof: float): tuple[rms, fmin, fmax: float] =
+  let fs = force.gval
+  var s2 = 0.0
+  var n2 = 1e300
+  var m2 = 0.0
+  threads:
+    var ls = 0.0
+    var ln = 1e300
+    var lm = 0.0
+    for mu in 0..<fs.len:
+      for x in fs[mu]:
+        let n = fs[mu][x].norm2
+        ls += n.simdSum
+        let nn = n.simdMin
+        if nn < ln: ln = nn
+        let mm = n.simdMax
+        if lm < mm: lm = mm
+    ls.threadRankSum
+    ln = -ln
+    ln.threadRankMax  # min(x) = -max(-x)
+    lm.threadRankMax
+    threadSingle:
+      s2 = ls
+      n2 = -ln
+      m2 = lm
+  (rms: sqrt(s2/dof), fmin: sqrt(n2), fmax: sqrt(m2))
+
+proc forceRmsMinMax*(force: Ggauge; dof: float): tuple[rms, fmin, fmax: float] =
+  ## RMS, min, and max over links of the MD force magnitude |F| at the force node's
+  ## current value. `dof` is the total link degrees of freedom (Σ_μ vol).
+  discard force.eval
+  forceRmsMinMaxValue(force, dof)
+
+proc mdForceStats*(forces: openArray[Ggauge]): MdForceStats =
+  ## Statistics from retained integrator force nodes.
+  if forces.len == 0:
+    raiseValueError("MD force statistics require at least one force")
+  discard forces[^1].eval
+  let dof = float(forces[0].gval.len * forces[0].gval[0].l.physVol)
+  result.count = forces.len
+  result.fminMin = 1e300
+  for force in forces:
+    let f = forceRmsMinMaxValue(force, dof)
+    result.rmsMean += f.rms
+    result.fminMean += f.fmin
+    result.fmaxMean += f.fmax
+    result.rmsMax = max(result.rmsMax, f.rms)
+    result.fminMin = min(result.fminMin, f.fmin)
+    result.fmaxMax = max(result.fmaxMax, f.fmax)
+  result.rmsMean /= float(result.count)
+  result.fminMean /= float(result.count)
+  result.fmaxMean /= float(result.count)
 
 proc requireCoeffCountOrDefault(label: string,
                                 values: openArray[float],
@@ -83,36 +158,41 @@ proc parseIntegratorCoeffs*(kind: IntegratorKind,
       result.lambda = values[3]
       result.xi = values[4]
 
-proc integrate2MN(gc: Gactcoeff,
+proc integrate2MN(action: GaugeAction,
                   g0: Ggauge,
                   p0: Ggauge,
                   dt: Gscalar,
                   n: int,
-                  coeffs: IntegratorCoeffs): IntegrationResult =
+                  coeffs: IntegratorCoeffs,
+                  force: GaugeForceFn): IntegrationResult =
   let lambda = toGvalue(dt.runtime, coeffs.lambda)
   let h = 0.5 * dt
   let t05 = lambda * dt
   let t0 = 2.0 * t05
   let t1 = dt - t0
+  let mh = -h
   var g = g0
   var p = p0
+  var forces: seq[Ggauge]
   for i in 0..<n:
     g = axexpmuly(if i == 0: t05 else: t0, p, g)
-    p = p - h * gaugeForce(gc, g)
+    p = axpy(mh, gradForce(action, g, forces, force), p)
     g = axexpmuly(t1, p, g)
-    p = p - h * gaugeForce(gc, g)
+    p = axpy(mh, gradForce(action, g, forces, force), p)
   g = axexpmuly(t05, p, g)
   IntegrationResult(
     gauge: g,
     momentum: p,
-    learnedCoeffs: @[LearnedParameter(name: "lambda", node: lambda)])
+    learnedCoeffs: @[LearnedParameter(name: "lambda", node: lambda)],
+    forces: forces)
 
-proc integrate4MN3F1GP(gc: Gactcoeff,
+proc integrate4MN3F1GP(action: GaugeAction,
                        g0: Ggauge,
                        p0: Ggauge,
                        dt: Gscalar,
                        n: int,
-                       coeffs: IntegratorCoeffs): IntegrationResult =
+                       coeffs: IntegratorCoeffs,
+                       force: GaugeForceFn): IntegrationResult =
   let lambda = toGvalue(dt.runtime, coeffs.lambda)
   let theta = toGvalue(dt.runtime, coeffs.theta)
   let chi = toGvalue(dt.runtime, coeffs.chi)
@@ -122,16 +202,19 @@ proc integrate4MN3F1GP(gc: Gactcoeff,
   let b0 = lambda * dt
   let b1 = dt - 2.0 * b0
   let c1 = 0.1 * chi * (dt * dt)
+  let mb0 = -b0
+  let mb1 = -b1
   var g = g0
   var p = p0
+  var forces: seq[Ggauge]
   for i in 0..<n:
     g = axexpmuly(if i == 0: a0 else: a02, p, g)
-    p = p - b0 * gaugeForce(gc, g)
+    p = axpy(mb0, gradForce(action, g, forces, force), p)
     g = axexpmuly(a1, p, g)
-    let fg = gaugeForce(gc, g)
-    p = p - b1 * gaugeForce(gc, axexpmuly(-c1, fg, g))
+    let fg = gradForce(action, g, forces, force)
+    p = axpy(mb1, gradForce(action, axexpmuly(-c1, fg, g), forces, force), p)
     g = axexpmuly(a1, p, g)
-    p = p - b0 * gaugeForce(gc, g)
+    p = axpy(mb0, gradForce(action, g, forces, force), p)
   g = axexpmuly(a0, p, g)
   IntegrationResult(
     gauge: g,
@@ -139,14 +222,16 @@ proc integrate4MN3F1GP(gc: Gactcoeff,
     learnedCoeffs: @[
       LearnedParameter(name: "lambda", node: lambda),
       LearnedParameter(name: "theta", node: theta),
-      LearnedParameter(name: "chi", node: chi)])
+      LearnedParameter(name: "chi", node: chi)],
+    forces: forces)
 
-proc integrate4MN5F2GP(gc: Gactcoeff,
+proc integrate4MN5F2GP(action: GaugeAction,
                        g0: Ggauge,
                        p0: Ggauge,
                        dt: Gscalar,
                        n: int,
-                       coeffs: IntegratorCoeffs): IntegrationResult =
+                       coeffs: IntegratorCoeffs,
+                       force: GaugeForceFn): IntegrationResult =
   let rho = toGvalue(dt.runtime, coeffs.rho)
   let theta = toGvalue(dt.runtime, coeffs.theta)
   let vtheta = toGvalue(dt.runtime, coeffs.vtheta)
@@ -160,23 +245,27 @@ proc integrate4MN5F2GP(gc: Gactcoeff,
   let b0 = vtheta * dt
   let b2 = (1.0 - 2.0 * (lambda + vtheta)) * dt
   let c1 = 0.05 * xi * (dt * dt)
+  let mb0 = -b0
+  let mb1 = -b1
+  let mb2 = -b2
   var g = g0
   var p = p0
+  var forces: seq[Ggauge]
   for i in 0..<n:
     g = axexpmuly(if i == 0: a0 else: a02, p, g)
-    p = p - b0 * gaugeForce(gc, g)
+    p = axpy(mb0, gradForce(action, g, forces, force), p)
     g = axexpmuly(a1, p, g)
     block:
-      let fg = gaugeForce(gc, g)
-      p = p - b1 * gaugeForce(gc, axexpmuly(-c1, fg, g))
+      let fg = gradForce(action, g, forces, force)
+      p = axpy(mb1, gradForce(action, axexpmuly(-c1, fg, g), forces, force), p)
     g = axexpmuly(a2, p, g)
-    p = p - b2 * gaugeForce(gc, g)
+    p = axpy(mb2, gradForce(action, g, forces, force), p)
     g = axexpmuly(a2, p, g)
     block:
-      let fg = gaugeForce(gc, g)
-      p = p - b1 * gaugeForce(gc, axexpmuly(-c1, fg, g))
+      let fg = gradForce(action, g, forces, force)
+      p = axpy(mb1, gradForce(action, axexpmuly(-c1, fg, g), forces, force), p)
     g = axexpmuly(a1, p, g)
-    p = p - b0 * gaugeForce(gc, g)
+    p = axpy(mb0, gradForce(action, g, forces, force), p)
   g = axexpmuly(a0, p, g)
   IntegrationResult(
     gauge: g,
@@ -186,20 +275,22 @@ proc integrate4MN5F2GP(gc: Gactcoeff,
       LearnedParameter(name: "theta", node: theta),
       LearnedParameter(name: "vtheta", node: vtheta),
       LearnedParameter(name: "lambda", node: lambda),
-      LearnedParameter(name: "xi", node: xi)])
+      LearnedParameter(name: "xi", node: xi)],
+    forces: forces)
 
-proc integrateGauge*(gc: Gactcoeff,
+proc integrateGauge*(action: GaugeAction,
                      g0: Ggauge,
                      p0: Ggauge,
                      dt: Gscalar,
                      n: int,
-                     coeffs: IntegratorCoeffs): IntegrationResult =
+                     coeffs: IntegratorCoeffs,
+                     force: GaugeForceFn = nil): IntegrationResult =
   if n <= 0:
     raiseValueError("integrator step count must be >= 1, got " & $n)
   case coeffs.kind
   of ik2MN:
-    integrate2MN(gc, g0, p0, dt, n, coeffs)
+    integrate2MN(action, g0, p0, dt, n, coeffs, force)
   of ik4MN3F1GP:
-    integrate4MN3F1GP(gc, g0, p0, dt, n, coeffs)
+    integrate4MN3F1GP(action, g0, p0, dt, n, coeffs, force)
   of ik4MN5F2GP:
-    integrate4MN5F2GP(gc, g0, p0, dt, n, coeffs)
+    integrate4MN5F2GP(action, g0, p0, dt, n, coeffs, force)

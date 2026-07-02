@@ -19,7 +19,7 @@ The reusable graph layers are:
 `multi.nim` is support plumbing for multi-output operators, not a second
 product-value language.
 
-`hmcgauge.nim` is an application layer. It owns trajectory construction,
+`pghmc.nim` is an application layer. It owns trajectory construction,
 training, and logging, but consumes the graph contracts instead of redefining
 runtime identity, cache policy, or dependency semantics.
 

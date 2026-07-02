@@ -35,6 +35,43 @@ suite "gauge basic":
     norm2(grad(z, gp) - gu) :< 1e-26
     norm2(grad(z, gq) - gu) :< 1e-26
 
+  test "g+g flattens left-associated sums without changing results":
+    let
+      flat = ((gp + gq) + gm) + gu
+      nested = gp + (gq + (gm + gu))
+      z = redot(flat, gg)
+    norm2(flat - nested) :< 1e-26
+    norm2(grad(z, gp) - gg) :< 1e-26
+    norm2(grad(z, gq) - gg) :< 1e-26
+    norm2(grad(z, gm) - gg) :< 1e-26
+    norm2(grad(z, gu) - gg) :< 1e-26
+
+    let
+      dup = redot((gp + gp) + gq, gu)
+      twoGu = 2.0 * gu
+    norm2(grad(dup, gp) - twoGu) :< 1e-26
+
+    gq.update(p)
+    norm2(flat - nested) :< 1e-26
+
+  test "gaugeAddTerms preserves nested sums and multiplicity":
+    let
+      summed = (gp + (gq + gm)) + gp
+      terms = graphGaugeBasic.gaugeAddTerms(summed)
+    check terms.len == 4
+    var rebuilt = terms[0]
+    for i in 1..<terms.len:
+      rebuilt = rebuilt + terms[i]
+    norm2(rebuilt - summed) :< 1e-25
+
+    gq.update(p)
+    norm2(rebuilt - summed) :< 1e-25
+
+  test "gauge zeroLike is a known zero leaf":
+    let z = Ggauge(gp.zeroLike)
+    check z.isStaticZeroLeaf
+    z.norm2 :~ 0.0
+
   test "basic gauge backward hooks reject missing upstream":
     proc checkMissingUpstream(z: Gvalue) =
       expect(GraphValueError):
@@ -257,10 +294,7 @@ suite "gauge basic":
     let g2 = lo2.newgauge
 
     expect(GraphValueError):
-      discard cond(
-        grt.toGvalue(1),
-        grt.toGvalue(zeroGaugeLike(g)),
-        grt.toGvalue(zeroGaugeLike(g2)))
+      discard cond(grt.toGvalue(1), grt.toGvalue(zeroGaugeLike(g)), grt.toGvalue(zeroGaugeLike(g2)))
 
   test "multi output preserves heterogeneous gauge layouts":
     let lo2 = @[4,4,4,8].newLayout

@@ -41,6 +41,51 @@ suite "graph multi":
     grad(added[1], x) :~ 1.0
     grad(added[1], y) :~ 1.0
 
+  test "multi addLike reuses nonzero slots":
+    let
+      x = grt.toGvalue(2.0)
+      y = grt.toGvalue(3.0)
+      zx = x.zeroLike
+      zy = y.zeroLike
+      left = multiValues("zero left", x, zy)
+      right = multiValues("zero right", zx, y)
+      added = Gmulti(left.addLike(left, right))
+
+    check added[0].nodeKey == x.nodeKey
+    check added[1].nodeKey == y.nodeKey
+    added[0] :~ 2.0
+    added[1] :~ 3.0
+
+  test "structural carrier is shape-only and clone-safe":
+    let
+      x = grt.toGvalue(2.0)
+      y = grt.toGvalue(3.0)
+      args = multiValues("structural args", x, y)
+    var forwards = 0
+    proc fwd(v: Gvalue) =
+      inc forwards
+    proc bwd(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+      raiseValueError("structural carrier test has no value view")
+    let carrier = newMultiStructureNode([Gvalue(x), Gvalue(y)], [Gvalue(args)],
+      Gfunc(forward: fwd, backward: bwd, name: "structural carrier"), "structural carrier")
+
+    discard carrier.eval
+    check forwards == 1
+    x.update 5.0
+    discard carrier.eval
+    check forwards == 2
+    expect(GraphValueError):
+      discard carrier[0]
+    expect(GraphValueError):
+      discard carrier.storedSlot(0)
+
+    let cloned = Gmulti(carrier.newOneOf)
+    expect(GraphValueError):
+      discard cloned[1]
+
+    expect(GraphValueError):
+      discard newMultiStructureNode(newSeq[Gvalue](), [Gvalue(args)], carrier.gfunc, "empty structural carrier")
+
   test "cond over multi carriers selects slots and gradients":
     let x0 = grt.toGvalue(2.0)
     let x1 = grt.toGvalue(3.0)
@@ -82,16 +127,16 @@ suite "graph multi":
     grad(onePair[0], x) :~ 0.0
     grad(onePair[1], y) :~ 0.0
 
-  test "selection exposes only the base as a graph dependency":
+  test "bundle selection returns the input node directly (zero-copy)":
+    # A multiValues bundle aliases its inputs, so selecting a slot returns the input
+    # node itself — no intermediate carrier and no per-eval copy. (A genuine
+    # multi-output carrier still builds a selection node; see the gauge fused tests.)
     let x = grt.toGvalue(2.0)
     let y = grt.toGvalue(3.0)
     let pair = multiValues("pair", x, y)
-    let first = pair[0]
-    let deps = first.collectInputView(iwmReachable)
 
-    check deps.len == 1
-    if deps.len > 0:
-      check deps[0].nodeKey == pair.nodeKey
+    check pair[0].nodeKey == x.nodeKey
+    check pair[1].nodeKey == y.nodeKey
 
   test "selection slot index stays fixed by the selection node":
     let x = grt.toGvalue(2.0)
@@ -124,22 +169,14 @@ suite "graph multi":
     let input = rightGrt.toGvalue(1.0)
 
     expect(GraphValueError):
-      discard newMultiOutputNode(
-        [Gvalue(slot)],
-        [Gvalue(input)],
-        copyMultiFunc,
-        "mixed runtime multi")
+      discard newMultiOutputNode([Gvalue(slot)], [Gvalue(input)], copyMultiFunc, "mixed runtime multi")
 
   test "multi constructor rejects inputful carriers without graph functions":
     let x = grt.toGvalue(2.0)
     let missingFunc: Gfunc = nil
 
     try:
-      discard newMultiOutputNode(
-        [Gvalue(x)],
-        [Gvalue(x)],
-        missingFunc,
-        "nil multi function")
+      discard newMultiOutputNode([Gvalue(x)], [Gvalue(x)], missingFunc, "nil multi function")
       check false
     except GraphValueError as e:
       check e.msg.contains("nil multi function with inputs requires a graph function")
@@ -151,46 +188,22 @@ suite "graph multi":
     let rawWithRuntime = Gscalar(runtime: grt)
 
     expect(GraphValueError):
-      discard newMultiOutputNode(
-        [missing],
-        [Gvalue(x)],
-        copyMultiFunc,
-        "nil slot multi")
+      discard newMultiOutputNode([missing], [Gvalue(x)], copyMultiFunc, "nil slot multi")
 
     expect(GraphValueError):
-      discard newMultiOutputNode(
-        [Gvalue(x)],
-        [missing],
-        copyMultiFunc,
-        "nil input multi")
+      discard newMultiOutputNode([Gvalue(x)], [missing], copyMultiFunc, "nil input multi")
 
     expect(GraphValueError):
-      discard newMultiOutputNode(
-        [Gvalue(raw)],
-        [Gvalue(x)],
-        copyMultiFunc,
-        "raw slot multi")
+      discard newMultiOutputNode([Gvalue(raw)], [Gvalue(x)], copyMultiFunc, "raw slot multi")
 
     expect(GraphValueError):
-      discard newMultiOutputNode(
-        [Gvalue(x)],
-        [Gvalue(raw)],
-        copyMultiFunc,
-        "raw input multi")
+      discard newMultiOutputNode([Gvalue(x)], [Gvalue(raw)], copyMultiFunc, "raw input multi")
 
     expect(GraphValueError):
-      discard newMultiOutputNode(
-        [Gvalue(rawWithRuntime)],
-        [Gvalue(x)],
-        copyMultiFunc,
-        "unconstructed slot multi")
+      discard newMultiOutputNode([Gvalue(rawWithRuntime)], [Gvalue(x)], copyMultiFunc, "unconstructed slot multi")
 
     expect(GraphValueError):
-      discard newMultiOutputNode(
-        [Gvalue(x)],
-        [Gvalue(rawWithRuntime)],
-        copyMultiFunc,
-        "unconstructed input multi")
+      discard newMultiOutputNode([Gvalue(x)], [Gvalue(rawWithRuntime)], copyMultiFunc, "unconstructed input multi")
 
   test "carrier supports heterogeneous slot prototypes and per-slot symbolic access":
     let scalar = grt.toGvalue(2.0)

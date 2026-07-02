@@ -1,41 +1,21 @@
-suite "hmcgauge fail-fast":
+suite "hmcgauge":
+  proc act(gc: Gactcoeff): GaugeAction =
+    (proc(g: Ggauge): Gscalar = gaugeAction(gc, g))
   proc validRunConfig(): RunConfig =
     RunConfig(
-      dt: 0.025,
-      lrmax: 1.0,
-      lrmin: 0.0001,
-      weightDecay: 0.0,
-      trajsThermo: 0,
-      trajsTrain: 50,
-      trajsTrainlrWarm: 10,
-      trajsInfer: 0,
-      savefreq: 0,
-      gsteps: 4,
-      alwaysAccept: false,
+      dt: 0.025, lrmax: 1.0, lrmin: 0.0001, weightDecay: 0.0,
+      trajsThermo: 0, trajs: 50, trajsForceAcc: 0, trajsTrain: 50, trajsTrainlrWarm: 10,
+      savefreq: 0, gsteps: 4,
       integratorCoeffs: parseIntegratorCoeffs(ik2MN, []))
 
   proc validIntegratorInputs(): tuple[gc: Gactcoeff, g0: Ggauge, p0: Ggauge, dt: Gscalar] =
-    (
-      gc: actWilson(scalar.toGvalue(grt, 6.0)),
-      g0: grt.toGvalue(g),
-      p0: grt.toGvalue(p),
-      dt: grt.toGvalue(0.025))
+    (gc: actWilson(scalar.toGvalue(grt, 6.0)), g0: grt.toGvalue(g), p0: grt.toGvalue(p), dt: grt.toGvalue(0.025))
 
-  proc integrateTest(
-      inputs: tuple[gc: Gactcoeff, g0: Ggauge, p0: Ggauge, dt: Gscalar],
-      coeffs: IntegratorCoeffs,
-      steps = 1): IntegrationResult =
-    integrateGauge(
-      inputs.gc,
-      inputs.g0,
-      inputs.p0,
-      inputs.dt,
-      steps,
-      coeffs)
+  proc integrateTest(inputs: tuple[gc: Gactcoeff, g0: Ggauge, p0: Ggauge, dt: Gscalar]; coeffs: IntegratorCoeffs;
+                     steps = 1): IntegrationResult =
+    integrateGauge(act(inputs.gc), inputs.g0, inputs.p0, inputs.dt, steps, coeffs)
 
-  template expectIntegrateError(inputs: untyped,
-                                coeffs: untyped,
-                                steps: untyped) =
+  template expectIntegrateError(inputs, coeffs, steps: untyped) =
     expect(GraphValueError):
       discard integrateTest(inputs, coeffs, steps)
 
@@ -49,6 +29,29 @@ suite "hmcgauge fail-fast":
   proc learnedNames(graph: TrajectoryGraph): seq[string] =
     for learned in graph.learnedParameters:
       result.add learned.name
+
+  test "RNG names select the supported HMC generators":
+    check default(GaugeParams).rng == rkPhilox4x64
+    check parseRngKind("Philox4x64") == rkPhilox4x64
+    check parseRngKind("PHILOX4X64") == rkPhilox4x64
+    check parseRngKind("Threefry4x64") == rkThreefry4x64
+    check parseRngKind("THREEFRY4X64") == rkThreefry4x64
+    check parseRngKind("MRG32K3A") == rkMrg32k3a
+    for kind in RngKind:
+      check parseRngKind($kind) == kind
+    expect(ValueError):
+      discard parseRngKind("unknown")
+    expect(ValueError):
+      discard parseRngKind("RngMilc6")
+
+  test "RNG dispatch selects the native type":
+    for kind in RngKind:
+      var selected = rkPhilox4x64
+      withRng(kind, R):
+        when R is Philox4x64: selected = rkPhilox4x64
+        elif R is Threefry4x64: selected = rkThreefry4x64
+        elif R is MRG32k3a: selected = rkMrg32k3a
+      check selected == kind
 
   test "trajectoryPhase rejects indexes outside the configured run":
     let config = validRunConfig()
@@ -64,7 +67,7 @@ suite "hmcgauge fail-fast":
     var config = validRunConfig()
     config.trajsThermo = 2
     config.trajsTrain = 3
-    config.trajsInfer = 4
+    config.trajs = 7        # 3 training + 4 inference
 
     check config.trajectoryPhase(1) == tpThermo
     check config.trajectoryPhase(2) == tpThermo
@@ -124,13 +127,7 @@ suite "hmcgauge fail-fast":
     var failed = false
 
     try:
-      discard integrateGauge(
-        inputs.gc,
-        inputs.g0,
-        inputs.p0,
-        inputs.dt,
-        0,
-        IntegratorCoeffs())
+      discard integrateGauge(act(inputs.gc), inputs.g0, inputs.p0, inputs.dt, 0, IntegratorCoeffs())
     except GraphValueError as e:
       failed = true
       check e.msg.contains("integrator step count")
@@ -149,6 +146,7 @@ suite "hmcgauge fail-fast":
     check twoMNResult.gauge.runtime == inputs.g0.runtime
     check twoMNResult.momentum.runtime == inputs.p0.runtime
     check twoMNResult.learnedCoeffs.len == 1
+    check twoMNResult.forces.len == 2
 
     let fourMN3F1GP = parseIntegratorCoeffs(ik4MN3F1GP, [])
     check fourMN3F1GP.kind == ik4MN3F1GP
@@ -157,6 +155,7 @@ suite "hmcgauge fail-fast":
     check fourMN3F1GP.chi != 0.0
     let fourMN3F1GPResult = integrateTest(inputs, fourMN3F1GP)
     check fourMN3F1GPResult.learnedCoeffs.len == 3
+    check fourMN3F1GPResult.forces.len == 4
 
     let fourMN5F2GP = parseIntegratorCoeffs(ik4MN5F2GP, [])
     check fourMN5F2GP.kind == ik4MN5F2GP
@@ -167,36 +166,74 @@ suite "hmcgauge fail-fast":
     check fourMN5F2GP.xi != 0.0
     let fourMN5F2GPResult = integrateTest(inputs, fourMN5F2GP)
     check fourMN5F2GPResult.learnedCoeffs.len == 5
+    check fourMN5F2GPResult.forces.len == 7
 
   test "integrator variants accept expanded multi-step schedules":
     let inputs = validIntegratorInputs()
 
-    proc checkExpanded(coeffs: IntegratorCoeffs, learnedLen: int) =
+    proc checkExpanded(coeffs: IntegratorCoeffs; learnedLen, forcesPerStep: int) =
       let oneStep = integrateTest(inputs, coeffs)
       let twoStep = integrateTest(inputs, coeffs, 2)
-      let chained = integrateGauge(
-        inputs.gc,
-        oneStep.gauge,
-        oneStep.momentum,
-        inputs.dt,
-        1,
-        coeffs)
+      let chained = integrateGauge(act(inputs.gc), oneStep.gauge, oneStep.momentum, inputs.dt, 1, coeffs)
       check oneStep.learnedCoeffs.len == learnedLen
       check twoStep.learnedCoeffs.len == learnedLen
+      check oneStep.forces.len == forcesPerStep
+      check twoStep.forces.len == 2 * forcesPerStep
       norm2(twoStep.gauge - chained.gauge) :< 1e-16
       norm2(twoStep.momentum - chained.momentum) :< 1e-16
 
     block:
       let coeffs = parseIntegratorCoeffs(ik2MN, [])
-      checkExpanded(coeffs, 1)
+      checkExpanded(coeffs, 1, 2)
 
     block:
       let coeffs = parseIntegratorCoeffs(ik4MN3F1GP, [])
-      checkExpanded(coeffs, 3)
+      checkExpanded(coeffs, 3, 4)
 
     block:
       let coeffs = parseIntegratorCoeffs(ik4MN5F2GP, [])
-      checkExpanded(coeffs, 5)
+      checkExpanded(coeffs, 5, 7)
+
+  test "integrator direct force matches action differentiation":
+    let
+      inputs = validIntegratorInputs()
+      coeffs = parseIntegratorCoeffs(ik2MN, [])
+      automatic = integrateTest(inputs, coeffs)
+    proc force(x: Ggauge): Ggauge = gaugeForce(inputs.gc, x)
+    let direct = integrateGauge(act(inputs.gc), inputs.g0, inputs.p0, inputs.dt, 1, coeffs, force)
+    norm2(direct.gauge - automatic.gauge) :< 1e-16
+    norm2(direct.momentum - automatic.momentum) :< 1e-16
+    check direct.forces.len == automatic.forces.len
+    for i in 0..<direct.forces.len:
+      norm2(direct.forces[i] - automatic.forces[i]) :< 1e-16
+
+  test "integrator reuses evaluated nodes for MD force statistics":
+    let inputs = validIntegratorInputs()
+    let result = integrateTest(inputs, parseIntegratorCoeffs(ik2MN, []), 2)
+    discard result.momentum.eval
+    var runs = newSeq[int](result.forces.len)
+    for i, force in result.forces:
+      runs[i] = force.runCount
+      check runs[i] > 0
+    let stats = result.forces.mdForceStats
+
+    check stats.count == 4
+    check stats.rmsMean >= 0.0
+    check stats.rmsMax >= stats.rmsMean
+    check stats.fminMin > 0.0
+    check stats.fminMean >= stats.fminMin and stats.fminMean <= stats.rmsMean
+    check stats.fmaxMean >= stats.rmsMean
+    check stats.fmaxMax >= stats.fmaxMean
+    for i, force in result.forces:
+      check force.runCount == runs[i]
+
+  test "force extrema include exact zero magnitudes":
+    let force = grt.toGvalue(zeroGaugeLike(g))
+    let stats = force.forceRmsMinMax(float(g.len * lo.physVol))
+
+    check stats.rms == 0.0
+    check stats.fmin == 0.0
+    check stats.fmax == 0.0
 
   test "4MN3F1GP rejects partial coefficient tuples":
     let inputs = validIntegratorInputs()
@@ -205,9 +242,7 @@ suite "hmcgauge fail-fast":
 
   test "4MN3F1GP accepts explicit full finite tuple":
     let inputs = validIntegratorInputs()
-    let result = integrateTest(
-      inputs,
-      parseIntegratorCoeffs(ik4MN3F1GP, [0.0, 0.25, 0.0]))
+    let result = integrateTest(inputs, parseIntegratorCoeffs(ik4MN3F1GP, [0.0, 0.25, 0.0]))
 
     check result.learnedCoeffs.len == 3
     check result.learnedCoeffs[0].name == "lambda"
@@ -220,16 +255,11 @@ suite "hmcgauge fail-fast":
   test "4MN5F2GP rejects partial coefficient tuples":
     let inputs = validIntegratorInputs()
 
-    expectIntegrateError(
-      inputs,
-      parseIntegratorCoeffs(ik4MN5F2GP, [0.1, 0.2, 0.1, 0.0]),
-      1)
+    expectIntegrateError(inputs, parseIntegratorCoeffs(ik4MN5F2GP, [0.1, 0.2, 0.1, 0.0]), 1)
 
   test "4MN5F2GP accepts explicit full finite tuple":
     let inputs = validIntegratorInputs()
-    let result = integrateTest(
-      inputs,
-      parseIntegratorCoeffs(ik4MN5F2GP, [0.1, 0.2, 0.1, 0.0, 0.0]))
+    let result = integrateTest(inputs, parseIntegratorCoeffs(ik4MN5F2GP, [0.1, 0.2, 0.1, 0.0, 0.0]))
 
     check result.learnedCoeffs.len == 5
     check result.learnedCoeffs[0].name == "rho"
@@ -249,13 +279,7 @@ suite "hmcgauge fail-fast":
     let g0 = gauge.toGvalue(grt, g)
     let p0 = gauge.toGvalue(grt, p)
     let dt = scalar.toGvalue(grt, 0.025)
-    let result = integrateGauge(
-      gc,
-      g0,
-      p0,
-      dt,
-      1,
-      parseIntegratorCoeffs(ik4MN3F1GP, []))
+    let result = integrateGauge(act(gc), g0, p0, dt, 1, parseIntegratorCoeffs(ik4MN3F1GP, []))
 
     check result.learnedCoeffs.len == 3
     for coeff in result.learnedCoeffs:
@@ -265,44 +289,26 @@ suite "hmcgauge fail-fast":
     block:
       var config = validRunConfig()
       config.integratorCoeffs = parseIntegratorCoeffs(ik2MN, [])
-      let graph = buildTrajectoryGraph(
-        grt,
-        g,
-        p,
-        actWilson(scalar.toGvalue(grt, 6.0)),
-        config)
+      let graph = buildTrajectoryGraph(grt, g, p, act(actWilson(scalar.toGvalue(grt, 6.0))), config)
       check graph.learnedNames == @["dt", "lambda"]
+      check graph.mdForces.len == 2 * config.gsteps
 
     block:
       var config = validRunConfig()
       config.integratorCoeffs = parseIntegratorCoeffs(ik4MN3F1GP, [])
-      let graph = buildTrajectoryGraph(
-        grt,
-        g,
-        p,
-        actWilson(scalar.toGvalue(grt, 6.0)),
-        config)
+      let graph = buildTrajectoryGraph(grt, g, p, act(actWilson(scalar.toGvalue(grt, 6.0))), config)
       check graph.learnedNames == @["dt", "lambda", "theta", "chi"]
+      check graph.mdForces.len == 4 * config.gsteps
 
     block:
       var config = validRunConfig()
       config.integratorCoeffs = parseIntegratorCoeffs(ik4MN5F2GP, [])
-      let graph = buildTrajectoryGraph(
-        grt,
-        g,
-        p,
-        actWilson(scalar.toGvalue(grt, 6.0)),
-        config)
-      check graph.learnedNames == @[
-        "dt", "rho", "theta", "vtheta", "lambda", "xi"]
+      let graph = buildTrajectoryGraph(grt, g, p, act(actWilson(scalar.toGvalue(grt, 6.0))), config)
+      check graph.learnedNames == @["dt", "rho", "theta", "vtheta", "lambda", "xi"]
+      check graph.mdForces.len == 7 * config.gsteps
 
   test "trajectory resamples graph-owned momentum":
-    let graph = buildTrajectoryGraph(
-      grt,
-      g,
-      p,
-      actWilson(scalar.toGvalue(grt, 6.0)),
-      validRunConfig())
+    let graph = buildTrajectoryGraph(grt, g, p, act(actWilson(scalar.toGvalue(grt, 6.0))), validRunConfig())
     var before = 0.0
     for mu in graph.initialState.momentum.gaugeSnapshot:
       before += mu.norm2
@@ -320,12 +326,7 @@ suite "hmcgauge fail-fast":
     discard graph.lossExpr.eval.sval
 
   test "accepted trajectory commit uses a pre-training final gauge snapshot":
-    let graph = buildTrajectoryGraph(
-      grt,
-      g,
-      p,
-      actWilson(scalar.toGvalue(grt, 6.0)),
-      validRunConfig())
+    let graph = buildTrajectoryGraph(grt, g, p, act(actWilson(scalar.toGvalue(grt, 6.0))), validRunConfig())
     discard graph.finalState.gauge.eval
     let acceptedGauge = graph.finalState.gauge.gaugeSnapshot
     let expectedGauge = grt.toGvalue(acceptedGauge)
@@ -343,12 +344,7 @@ suite "hmcgauge fail-fast":
     discard graph.lossExpr.eval.sval
 
   test "accepted trajectory commit marks freshness":
-    let graph = buildTrajectoryGraph(
-      grt,
-      g,
-      p,
-      actWilson(scalar.toGvalue(grt, 6.0)),
-      validRunConfig())
+    let graph = buildTrajectoryGraph(grt, g, p, act(actWilson(scalar.toGvalue(grt, 6.0))), validRunConfig())
     discard graph.finalState.gauge.eval
     let acceptedGauge = graph.finalState.gauge.gaugeSnapshot
     let epochBeforeCommit = grt.graphEpochCounter
@@ -361,12 +357,7 @@ suite "hmcgauge fail-fast":
 
   test "training step updates existing learned parameters":
     let config = validRunConfig()
-    let graph = buildTrajectoryGraph(
-      grt,
-      g,
-      p,
-      actWilson(scalar.toGvalue(grt, 6.0)),
-      config)
+    let graph = buildTrajectoryGraph(grt, g, p, act(actWilson(scalar.toGvalue(grt, 6.0))), config)
     var trainer = initTrainingState(graph, config.weightDecay)
     let before = trainer.parameterValues
 
@@ -379,12 +370,7 @@ suite "hmcgauge fail-fast":
 
   test "training step rejects indexes outside training phase":
     let config = validRunConfig()
-    let graph = buildTrajectoryGraph(
-      grt,
-      g,
-      p,
-      actWilson(scalar.toGvalue(grt, 6.0)),
-      config)
+    let graph = buildTrajectoryGraph(grt, g, p, act(actWilson(scalar.toGvalue(grt, 6.0))), config)
     var trainer = initTrainingState(graph, config.weightDecay)
 
     expect(GraphValueError):
@@ -414,7 +400,11 @@ suite "hmcgauge fail-fast":
     expectInvalidConfig:
       bad.trajsTrainlrWarm = bad.trajsTrain + 1
     expectInvalidConfig:
-      bad.trajsInfer = -1
+      bad.trajs = -1
+    expectInvalidConfig:
+      bad.trajsForceAcc = -1
+    expectInvalidConfig:
+      bad.trajsTrain = bad.trajs + 1
     expectInvalidConfig:
       bad.savefreq = -1
     expectInvalidConfig:

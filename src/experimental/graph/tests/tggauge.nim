@@ -7,12 +7,16 @@ import qex except epsilon
 import algorithms/numdiff, gauge/stoutsmear
 import helpers
 import ../[core, scalar, multi, gauge]
+import ../functional
 import ../gauge/shared as graphGaugeShared
+import ../gauge/basic_ops as graphGaugeBasic
 import ../hmcgauge/optimizer, ../hmcgauge/integrator
 import ../hmcgauge/trajectory
 import ../hmcgauge/training
 import ../hmcgauge/config
 import ../hmcgauge/gauge_io
+import ../hmcgauge/params
+import ../hmcgauge/rng
 
 let grt = initGraphRuntime()
 
@@ -97,7 +101,7 @@ let
   seed = 1234567891u64
   vol = lo.physVol
 var
-  r = lo.newRNGField(MRG32k3a, seed)
+  r = lo.newRNGField(Philox4x64, seed)
   g = lo.newgauge
   u = lo.newgauge
   p = lo.newgauge
@@ -130,6 +134,6 @@ include gauge/coeffs
 include gauge/basic
 include gauge/fused
 include gauge/action
-include hmcgauge/fail_fast
+include hmcgauge/basic
 
 qexFinalize()

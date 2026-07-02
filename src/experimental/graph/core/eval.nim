@@ -1,6 +1,7 @@
 import std/tables
 import std/sets
 import base, traverse
+import base/profile  # qex timing facility: getTics/ticDiffSecs
 
 proc updated*(x: Gvalue) =
   x.staticZeroLeaf = false
@@ -45,10 +46,13 @@ proc eval*[T: Gvalue](v: T): T {.discardable.} =
         else:
           f.forward
       if forward != nil:
+        let t0 = getTics()
         forward node
+        let secs = ticDiffSecs(getTics(), t0)
         if node.epoch < maxep:
           node.epoch = maxep
-        inc node.runtime.runCountsByNode.mgetOrPut(node.stableNodeId, 0)
+        node.runtime.runStatsByNode.mgetOrPut(node.stableNodeId, RunStat())
+          .record(secs, f.name)
       else:
         raiseError(
           "inputs.len: " & $node.inputs.len &

@@ -6,9 +6,8 @@ import layout, gauge, physics/qcdTypes
 type
   Gauge* = seq[DLatticeColorMatrixV]
 
-  Ggauge* {.final.} = ref object of Gvalue
-    ## `gval` is graph-owned mutable gauge storage. Prefer `gaugeSnapshot` for
-    ## snapshots and `mutateGauge`/`update` for public writes so freshness is marked.
+  Ggauge* = ref object of Gvalue
+    ## Graph-owned storage; public writes must mark freshness.
     gval*: Gauge
 
 template copyGaugeStorage(dst, src: untyped) =
@@ -36,9 +35,26 @@ proc requireSameGaugeShape*(left: Ggauge,
   left.gval.requireSameGaugeShape(right.gval, label)
 
 proc reunitGauge*(g: Gauge) =
+  # Project each link back onto its gauge group. SU(1) is trivial ({1}), so for
+  # Nc==1 (U(1)) reunitize to the unit circle with projectU; otherwise projectSU.
+  const nc = g[0][0].nrows
   threads:
-    g.projectSU
+    when nc == 1:
+      g.projectU
+    else:
+      g.projectSU
     threadBarrier()
+
+proc checkUnitary*(g: Gauge): tuple[avg, max: float] =
+  ## Mean/max link distance from U(1) or SU(N); does not modify g.
+  const nc = g[0][0].nrows
+  var a, m: float
+  threads:
+    let d = when nc == 1: g.checkU else: g.checkSU
+    threadMaster:
+      a = d.avg
+      m = d.max
+  (avg: a, max: m)
 
 proc gaugeSnapshot*(x: Ggauge): Gauge =
   let storage = x.gval
@@ -87,6 +103,14 @@ proc sameShapeGaugeNodeLike*(x: Ggauge,
 method newOneOf*(x: Ggauge): Gvalue =
   x.gaugeNodeLike
 
+method zeroLike*(x: Ggauge): Gvalue =
+  result = x.gaugeNodeLike
+  result.staticZeroLeaf = true
+
+method isZero*(x: Ggauge): bool =
+  ## Gauge zero leaves are marked when constructed; other gauges are not scanned.
+  x.staticZeroLeaf
+
 method valCopy*(z: Ggauge, x: Gvalue) =
   let src = Ggauge(x)
   z.gval.requireSameGaugeShape(src.gval, "gauge copy")
@@ -109,3 +133,20 @@ template mapGaugeElements*(dst: Ggauge, body: untyped) =
     for mu {.inject.} in 0..<dst.gval.len:
       for e {.inject.} in dst.gval[mu]:
         body
+
+proc paritySubset*(g: Gauge, parity: int): Subset =
+  ## Even (parity 0) / odd (parity 1) subset of the layout backing `g`.
+  g[0].l.getSubset(if parity == 0: "even" else: "odd")
+
+proc zeroGaugeStorage*(g: Ggauge) =
+  ## Zero once; subset kernels leave off-subset entries zero across evaluations.
+  threads:
+    for mu in 0..<g.gval.len:
+      g.gval[mu] := 0.0
+
+template forGaugeSubset*(sub: Subset, body: untyped) =
+  ## Run `body` (seeing injected outer index `e`) for each outer site in `sub`.
+  ## Pair with a one-time `zeroGaugeStorage` on the output so off-subset stays 0.
+  threads:
+    for e {.inject.} in sub:
+      body

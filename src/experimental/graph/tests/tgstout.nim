@@ -25,7 +25,7 @@ let
   u = lo.newgauge
 
 var
-  r = lo.newRNGField(RngMilc6, seed)
+  r = lo.newRNGField(Philox4x64, seed)
   ss = lo.newStoutSmear(dt)
 
 for i in 0..3:

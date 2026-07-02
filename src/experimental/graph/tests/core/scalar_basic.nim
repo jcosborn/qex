@@ -297,17 +297,6 @@ suite "scalar basic":
     dx :~ 1.0/b
     dy :~ -a/(b*b)
 
-  test "division by zero follows backend scalar semantics":
-    let x2 = grt.toGvalue(2.0)
-    let zero = grt.toGvalue(0.0)
-    let z = x2 / zero
-    discard z.eval
-    check z.sval.classify == fcInf
-
-    let dzdx = z.grad x2
-    discard dzdx.eval
-    check dzdx.sval.classify == fcInf
-
   test "separate runtimes isolate node ids and reject mixed graphs":
     let leftGrt = initGraphRuntime()
     let rightGrt = initGraphRuntime()

@@ -1,5 +1,5 @@
 from strutils import toHex, strip
-import std/[sets, tables]
+import std/[sets, tables, math, algorithm, strformat]
 
 type
   NodeId* = uint64
@@ -61,6 +61,16 @@ type
   FunctionalRuntimeState* = object
     applyCacheByNode*: Table[NodeId, ApplyCacheEntry]
     applyCacheStats*: ApplyCacheStats
+  RunStat* = object
+    ## Running timing statistics for one node's forward evaluations. Time is in
+    ## seconds; `mean`/`m2` are maintained by Welford's online algorithm so
+    ## `stdev` is available without storing per-run samples.
+    name*: string      ## gfunc name, captured on the first run
+    count*: int        ## number of forward evaluations
+    total*: float      ## total seconds across all evaluations
+    mean*: float       ## running mean of per-evaluation seconds
+    m2*: float         ## running sum of squared deviations from the mean
+    min*, max*: float  ## extremes of a single evaluation, in seconds
   GraphRuntime* = ref object
     nextStableNodeId*: NodeId
     symbolicRevision*: uint64
@@ -69,7 +79,7 @@ type
     functional*: FunctionalRuntimeState
     gradCacheByOutput*: Table[NodeId, GradCacheEntry]
     gradCacheStats*: GradCacheStats
-    runCountsByNode*: Table[NodeId, int]
+    runStatsByNode*: Table[NodeId, RunStat]
 
 type
   GraphError* = object of CatchableError
@@ -91,12 +101,81 @@ proc initGraphRuntime*(): GraphRuntime =
     functional: FunctionalRuntimeState(
       applyCacheByNode: initTable[NodeId, ApplyCacheEntry]()),
     gradCacheByOutput: initTable[NodeId, GradCacheEntry](),
-    runCountsByNode: initTable[NodeId, int]())
+    runStatsByNode: initTable[NodeId, RunStat]())
+
+proc record*(s: var RunStat, secs: float, name: string) =
+  ## Fold one forward-evaluation duration (seconds) into the running statistics.
+  if s.count == 0:
+    s.name = name
+    s.min = secs
+    s.max = secs
+  else:
+    if secs < s.min: s.min = secs
+    if secs > s.max: s.max = secs
+  inc s.count
+  s.total += secs
+  let d = secs - s.mean
+  s.mean += d / s.count.float
+  s.m2 += d * (secs - s.mean)
+
+proc stdev*(s: RunStat): float =
+  ## Sample standard deviation of per-evaluation time, 0 with fewer than 2 runs.
+  if s.count > 1: sqrt(s.m2 / float(s.count - 1)) else: 0.0
+
+proc runStat*(x: Gvalue): RunStat =
+  ## Timing statistics gathered for `x`'s forward evaluations (empty if unrun).
+  if x.stableId == 0:
+    return RunStat()
+  x.runtime.runStatsByNode.getOrDefault(x.stableId)
 
 proc runCount*(x: Gvalue): int =
   if x.stableId == 0:
     return 0
-  x.runtime.runCountsByNode.getOrDefault(x.stableId)
+  x.runtime.runStatsByNode.getOrDefault(x.stableId).count
+
+proc merge(a: var RunStat, b: RunStat) =
+  ## Pool b's evaluations into a (parallel Welford combine) for aggregate reports.
+  if b.count == 0: return
+  if a.count == 0:
+    a = b
+    return
+  let
+    nA = a.count.float
+    nB = b.count.float
+    n = nA + nB
+    delta = b.mean - a.mean
+  a.m2 = a.m2 + b.m2 + delta*delta*nA*nB/n
+  a.mean = a.mean + delta*nB/n
+  a.count += b.count
+  a.total += b.total
+  if b.min < a.min: a.min = b.min
+  if b.max > a.max: a.max = b.max
+
+proc echoRunStats*(grt: GraphRuntime) =
+  ## Print forward-evaluation timing gathered during `eval`, aggregated by op
+  ## (gfunc) name and ordered by descending total time. `nodes` is the number of
+  ## distinct graph nodes sharing a name; `count` is their total evaluations.
+  ## All times are seconds.
+  var
+    byName: Table[string, RunStat]
+    nodes: CountTable[string]
+    totNodes = 0
+    tot = 0.0
+  for s in grt.runStatsByNode.values:
+    if s.count == 0: continue
+    byName.mgetOrPut(s.name, RunStat()).merge(s)
+    nodes.inc s.name
+    inc totNodes
+    tot += s.total
+  var rows: seq[RunStat]
+  for s in byName.values: rows.add s
+  rows.sort(proc(a, b: RunStat): int = cmp(b.total, a.total))
+  echo &"Graph run statistics: {rows.len} ops, {totNodes} nodes, total {tot:.6g} s"
+  echo &"""{"name":<24} {"nodes":>7} {"count":>9} {"total/s":>13}""" &
+    &"""{"mean/s":>13} {"stdev/s":>13} {"min/s":>13} {"max/s":>13}"""
+  for s in rows:
+    echo &"{s.name:<24} {nodes[s.name]:>7} {s.count:>9} {s.total:>13.6e} " &
+      &"{s.mean:>13.6e} {s.stdev:>13.6e} {s.min:>13.6e} {s.max:>13.6e}"
 
 proc `$`*(x: Gfunc): string = x.name
 

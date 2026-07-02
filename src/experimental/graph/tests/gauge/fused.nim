@@ -20,6 +20,100 @@ suite "gauge fused":
     ckbinarynorm2grad(contractProjTAH(gg, gu), projTAH(gg * gu.adj), gg, gu, 1e-26)
     ckgradm2(contractProjTAH, gg, gu, gp, gq, gm)
 
+  test "blendSubset applies the same mask to values and cotangents":
+    const
+      parity = 1
+      dir = 2
+    let sub = g[0].l.getSubset("odd")
+    var
+      rv = zeroGaugeLike(g)
+      rc = zeroGaugeLike(g)
+      rw = zeroGaugeLike(g)
+    threads:
+      for mu in 0..<g.len:
+        rv[mu] := u[mu]
+        rw[mu] := m[mu]
+      threadBarrier()
+      for e in sub:
+        rv[dir][e] := g[dir][e]
+        rc[dir][e] := m[dir][e]
+        rw[dir][e] := 0
+    let
+      z = blendSubset(parity, dir, gg, gu)
+      s = redot(z, gm)
+    norm2(z - grt.toGvalue(rv)) :< 1e-26
+    norm2(grad(s, gg) - grt.toGvalue(rc)) :< 1e-26
+    norm2(grad(s, gu) - grt.toGvalue(rw)) :< 1e-26
+
+  test "contractProjTAH subset matches masked separate ops":
+    const
+      parity = 1
+      dir = 2
+    let
+      zero = grt.toGvalue(zeroGaugeLike(g))
+      rf = contractProjTAH(gg, gu, parity, dir)
+      rr = blendSubset(parity, dir, contractProjTAH(gg, gu), zero)
+      sf = redot(rf, gm)
+      sr = redot(rr, gm)
+    norm2(rf - rr) :< 1e-26
+    norm2(grad(sf, gg) - grad(sr, gg)) :< 1e-26
+    norm2(grad(sf, gu) - grad(sr, gu)) :< 1e-26
+    gg.update(u)
+    norm2(rf - rr) :< 1e-26
+
+  test "contractProjTAH consumes gauge sums without materializing them":
+    let
+      summed = (gg + gp) + (gq + gp)
+      rf = contractProjTAH(summed, gu)
+    discard rf.eval
+    check summed.runCount == 0
+
+    let
+      rr = projTAH(summed * gu.adj)
+      sf = redot(rf, gm)
+      sr = redot(rr, gm)
+    norm2(rf - rr) :< 5e-26
+    norm2(grad(sf, summed) - grad(sr, summed)) :< 1e-26
+    norm2(grad(sf, gg) - grad(sr, gg)) :< 1e-26
+    norm2(grad(sf, gp) - grad(sr, gp)) :< 1e-26
+    norm2(grad(sf, gq) - grad(sr, gq)) :< 1e-26
+    norm2(grad(sf, gu) - grad(sr, gu)) :< 1e-26
+    gg.update(u)
+    norm2(rf - rr) :< 5e-26
+
+  test "contractProjTAH subset consumes gauge sums without materializing them":
+    const
+      parity = 1
+      dir = 2
+    let
+      zero = grt.toGvalue(zeroGaugeLike(g))
+      summed = (gg + gp) + gq
+      rf = contractProjTAH(summed, gu, parity, dir)
+    discard rf.eval
+    check summed.runCount == 0
+
+    let
+      rr = blendSubset(parity, dir, projTAH(summed * gu.adj), zero)
+      sf = redot(rf, gm)
+      sr = redot(rr, gm)
+    norm2(rf - rr) :< 1e-26
+    norm2(grad(sf, summed) - grad(sr, summed)) :< 1e-26
+    norm2(grad(sf, gg) - grad(sr, gg)) :< 1e-26
+    norm2(grad(sf, gp) - grad(sr, gp)) :< 1e-26
+    norm2(grad(sf, gq) - grad(sr, gq)) :< 1e-26
+    norm2(grad(sf, gu) - grad(sr, gu)) :< 1e-26
+
+  test "axpy":
+    let rf = axpy(x, gm, gg)
+    let rg = x * gm + gg
+    norm2(rf - rg) :< 1e-26
+    let srf = retr(rf * gu)
+    let srg = retr(rg * gu)
+    grad(srf, x) :~ grad(srg, x)
+    norm2(grad(srf, gm) - grad(srg, gm)) :< 1e-26
+    norm2(grad(srf, gg) - grad(srg, gg)) :< 1e-26
+    ckgradm3(axpy, x, gm, gu, y, 0.05*gq, gg, gp)
+
   test "contractProjTAH packed slots stay stable across gauge updates":
     let rf = contractProjTAH(gg, gu)
     let rg = projTAH(gg * gu.adj)
@@ -55,8 +149,12 @@ suite "gauge fused":
     let adjmulResult = adjmul(gg, gu)
     let muladjResult = muladj(gg, gu)
     let contractResult = contractProjTAH(gg, gu)
+    let axpyResult = axpy(x, gm, gg)
     let axexpResult = axexp(x, gm)
     let axexpmulyResult = axexpmuly(x, gm, gg)
+    let blendSubsetResult = blendSubset(1, 2, gg, gu)
+    let contractSubsetResult = contractProjTAH(gg, gu, 1, 2)
+    let axexpmulySubsetResult = axexpmuly(x, gm, gg, 1, 2)
 
     expect(GraphValueError):
       discard adjmulResult.gfunc.backward(nil, adjmulResult, 0, gg)
@@ -65,13 +163,18 @@ suite "gauge fused":
     expect(GraphValueError):
       discard contractResult.gfunc.backward(nil, contractResult, 0, gg)
     expect(GraphValueError):
+      discard axpyResult.gfunc.backward(nil, axpyResult, 0, x)
+    expect(GraphValueError):
       discard axexpResult.gfunc.backward(nil, axexpResult, 0, x)
     expect(GraphValueError):
-      discard axexpmulyResult.inputs[0].gfunc.backward(
-        nil,
-        axexpmulyResult.inputs[0],
-        0,
-        axexpmulyResult.inputs[0].inputs[0])
+      discard axexpmulyResult.inputs[0].gfunc.backward(nil, axexpmulyResult.inputs[0], 0, axexpmulyResult.inputs[0].inputs[0])
+    expect(GraphValueError):
+      discard blendSubsetResult.gfunc.backward(nil, blendSubsetResult, 0, gg)
+    expect(GraphValueError):
+      discard contractSubsetResult.gfunc.backward(nil, contractSubsetResult, 0, contractSubsetResult.inputs[0])
+    expect(GraphValueError):
+      discard axexpmulySubsetResult.inputs[0].gfunc.backward(nil, axexpmulySubsetResult.inputs[0], 0,
+        axexpmulySubsetResult.inputs[0].inputs[0])
 
   test "fused gauge ops reject incompatible layouts at construction":
     let lo2 = @[4,4,4,8].newLayout
@@ -85,7 +188,11 @@ suite "gauge fused":
     expect(GraphValueError):
       discard contractProjTAH(gg, other)
     expect(GraphValueError):
+      discard axpy(x, gg, other)
+    expect(GraphValueError):
       discard axexpmuly(x, gg, other)
+    expect(GraphValueError):
+      discard blendSubset(0, 0, gg, other)
 
   test "contractProjTAH shared backward helper stays correct across outputs":
     let rf = contractProjTAH(gg, gu)
@@ -169,6 +276,21 @@ suite "gauge fused":
     norm2(grad(srf, gm) - grad(srg, gm)) :< 1e-26
     norm2(grad(srf, gg) - grad(srg, gg)) :< 1e-26
     ckgradm3(axexpmuly, x, gm, gu, y, 0.05*gq, gg, gp)
+
+  test "axexpmuly subset matches masked separate ops":
+    const
+      parity = 1
+      dir = 2
+    let
+      zero = grt.toGvalue(zeroGaugeLike(g))
+      rf = axexpmuly(x, gm, gg, parity, dir)
+      rr = blendSubset(parity, dir, axexpmuly(x, gm, gg), zero)
+      sf = redot(rf, gu)
+      sr = redot(rr, gu)
+    norm2(rf - rr) :< 1e-26
+    grad(sf, x) :~ grad(sr, x)
+    norm2(grad(sf, gm) - grad(sr, gm)) :< 1e-26
+    norm2(grad(sf, gg) - grad(sr, gg)) :< 1e-26
 
   test "axexpmuly shared result stays correct across outputs and updates":
     let rf = axexpmuly(x, gm, gg)

@@ -3,6 +3,7 @@ from os import fileExists
 from strformat import `&`
 import config
 from ../core/base import raiseValueError
+from ../gauge/shared import reunitGauge, checkUnitary
 
 proc loadOrInitGauge*(g: var auto, gaugefile: string) =
   if gaugefile.len == 0:
@@ -17,16 +18,27 @@ proc loadOrInitGauge*(g: var auto, gaugefile: string) =
   toc("read")
   block:
     tic("reunit")
-    let gaugePtr = addr g
-    threads:
-      let d = gaugePtr[].checkSU
-      threadBarrier()
-      echo "unitary deviation avg: ", d.avg, " max: ", d.max
-      gaugePtr[].projectSU
-      threadBarrier()
-      let dd = gaugePtr[].checkSU
-      echo "new unitary deviation avg: ", dd.avg, " max: ", dd.max
+    let before = g.checkUnitary
+    echo "unitary deviation avg: ", before.avg, " max: ", before.max
+    g.reunitGauge
+    let after = g.checkUnitary
+    echo "new unitary deviation avg: ", after.avg, " max: ", after.max
     toc("reunit")
+
+proc maxGaugeDiff2*(a, b: auto): float =
+  ## Max over links of the squared per-link difference |a−b|², reduced across
+  ## threads/ranks. Used to report the load-time round-trip residual |f(f⁻¹(U))−U|
+  ## for the field-transformation samplers.
+  var m = 0.0
+  threads:
+    var mm = 0.0
+    for mu in 0..<a.len:
+      for x in a[mu]:
+        let e = (a[mu][x] - b[mu][x]).norm2.simdMax
+        if mm < e: mm = e
+    mm.threadRankMax
+    threadSingle: m = mm
+  m
 
 proc maybeSaveGauge*(g: auto,
                      config: RunConfig,

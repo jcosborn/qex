@@ -2,11 +2,9 @@ import core
 
 type
   Gmulti* {.final.} = ref object of Gvalue
-    ## Multi-output carrier used by fused graph ops. Forward hooks read
-    ## evaluated slot storage with `storedSlot`; backward builders use `[]` to
-    ## build symbolic slot selections, allowing one fused backward graph to
-    ## return all input-slot gradients together.
+    ## Fused multi-output carrier.
     slots: seq[Gvalue]
+    shapeOnly: bool
   GmultiSelect = ref object of Gfunc
     index: int
 
@@ -41,14 +39,23 @@ proc newMultiOutputNode*(slotProtos: openArray[Gvalue],
   result.slots = slotStorage
   result = graphNode(result, inputs, gfuncValue, label)
 
+proc newMultiStructureNode*(slotProtos, inputs: openArray[Gvalue], gfuncValue: Gfunc, label: string): Gmulti =
+  ## Construct a structural carrier whose slots are shape prototypes only.
+  ## Its forward hook must not write them; consumers expose values through views.
+  if slotProtos.len == 0:
+    raiseValueError(label & " requires at least one slot")
+  result = Gmulti(runtime: sharedGraphRuntime(slotProtos, label), shapeOnly: true)
+  result.slots = @slotProtos
+  result = graphNode(result, inputs, gfuncValue, label)
+
 proc `[]`*(x: Gmulti, i: int): Gvalue
 proc multiValues*(label: string, values: varargs[Gvalue]): Gmulti
 
 # Concrete slot storage stays separate from symbolic `x[k]` selection.
 proc storedSlot*(x: Gmulti, k: int): Gvalue =
-  ## Read last evaluated slot storage for forward hooks and tests.
-  ## This does not build a graph node and is only current after evaluating the
-  ## carrier or a consumer.
+  ## Last evaluated slot; does not build a selection node.
+  if x.shapeOnly:
+    raiseValueError("structural multi carrier has no stored slot values")
   x.slots[k]
 
 proc mapSlots(x: Gmulti,
@@ -61,12 +68,15 @@ proc mapSlots(x: Gmulti,
   multiValues(label, values)
 
 method newOneOf*(x: Gmulti): Gvalue =
-  newMultiOutputNode(x.slots, @[], nil, "multi prototype")
+  if x.shapeOnly:
+    Gmulti(runtime: x.runtime, slots: x.slots, shapeOnly: true).assignStableNodeId
+  else:
+    newMultiOutputNode(x.slots, @[], nil, "multi prototype")
 
 method valCopy*(z: Gmulti, x: Gvalue) =
-  ## Copy concrete slot storage only; graph structure is not cloned. The only
-  ## runtime path here is `cond` selecting between carriers, which `copyCompatible`
-  ## already required to have matching slot shape.
+  ## Copy slot values only; copyCompatible has checked their shapes.
+  if z.shapeOnly or Gmulti(x).shapeOnly:
+    raiseValueError("structural multi carrier cannot be copied")
   z.slots.copySlotValues(Gmulti(x).slots)
 
 method copyCompatible*(prototype: Gmulti, value: Gvalue): bool =
@@ -84,9 +94,8 @@ method `$`*(x: Gmulti): string =
   $x.slots
 
 proc multiValuesForward(v: Gvalue) =
-  let z = Gmulti(v)
-  ## Copy input values into slot storage.
-  z.slots.copySlotValues(z.inputs)
+  ## Restore input aliases after generic graph cloning creates fresh slot prototypes.
+  Gmulti(v).slots = v.inputs
 
 proc multiValuesBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   let upstream = Gmulti(rootedUpstream(zb, z))
@@ -97,10 +106,14 @@ let multiValuesFunc = Gfunc(
   backward: multiValuesBackward,
   name: "multiValues")
 
-proc multiValues*(label: string,
-                  values: varargs[Gvalue]): Gmulti =
-  ## Build a symbolic multi carrier from already-constructed graph values.
-  newMultiOutputNode(values, values, multiValuesFunc, label)
+proc multiValues*(label: string, values: varargs[Gvalue]): Gmulti =
+  ## Zero-copy bundle: slots alias inputs and the forward is a no-op.
+  ## Use the bundle as a read source; destinations own their storage.
+  if values.len == 0:
+    raiseValueError(label & " requires at least one slot")
+  result = Gmulti(runtime: sharedGraphRuntime(values, label))
+  result.slots = @values
+  result = graphNode(result, values, multiValuesFunc, label)
 
 proc multiSelectForward(v: Gvalue) =
   let f = GmultiSelect(v.gfunc)
@@ -126,7 +139,11 @@ proc newMultiSelectFunc(index: int): Gfunc =
     name: label)
 
 proc `[]`*(x: Gmulti, i: int): Gvalue =
-  ## Build a symbolic selection for a statically chosen slot.
+  ## Return an aliased bundle input; otherwise build a slot selection.
+  if x.shapeOnly:
+    raiseValueError("structural multi carrier slots cannot be selected")
+  if x.gfunc == multiValuesFunc:
+    return x.inputs[i]
   let proto = x.storedSlot(i)
   graphNode(proto.newOneOf, @[Gvalue(x)], newMultiSelectFunc(i), "multiSelect")
 
@@ -135,7 +152,15 @@ method addLike*(prototype: Gmulti, x: Gvalue, y: Gvalue): Gvalue =
   let right = Gmulti(y)
   requireMultiArity(left.slots.len, right.slots.len, "multi add")
   left.mapSlots("multi add", proc(slot: Gvalue, k: int): Gvalue =
-    slot.addLike(left[k], right[k]))
+    let
+      a = left[k]
+      b = right[k]
+    if a.isStaticZeroLeaf:
+      b
+    elif b.isStaticZeroLeaf:
+      a
+    else:
+      slot.addLike(a, b))
 
 method oneLike*(x: Gmulti): Gvalue =
   x.mapSlots("multi one", proc(slot: Gvalue, k: int): Gvalue = slot.oneLike)
