@@ -193,8 +193,10 @@ let
 
 var
   g = lo.newGauge
-  r = lo.newRNGField(RngMilc6, seed)
-  R:RngMilc6  # global RNG
+  #r = lo.newRNGField(RngMilc6, seed)
+  #R:RngMilc6  # global RNG
+  r = lo.newRNGField(MRG32K3A, seed)
+  R:MRG32K3A  # global RNG
 R.seed(seed, 987654321)
 
 case infn

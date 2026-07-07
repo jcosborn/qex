@@ -340,6 +340,7 @@ template makeSimdArray2*(L:typed;B,F:typedesc;N0,N:typed,T:untyped) {.dirty.} =
       neg(result[][i], x[][i])
 
   map011(T, L, abs, abs)
+  map011(T, L, trunc, trunc)
   map011(T, L, trace, trace)
   map011(T, L, norm2, norm2)
   map011(T, L, sqrt, sqrt)
