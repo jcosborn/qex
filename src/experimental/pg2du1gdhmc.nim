@@ -191,6 +191,12 @@ let
   dof = float(2*vol)
   useG = mdAlgo in gAlgs
 
+if useG and a != 1:
+  if not adapt or impl:
+    qexError "useG with a != 1 must use adapt"
+  if reduceT:
+    qexError "useG with a != 1 must not use reduceT"
+
 var
   g = lo.newGauge
   #r = lo.newRNGField(RngMilc6, seed)
@@ -581,18 +587,21 @@ var terrmax = 0.0
 var nterr = 0
 var serr = 0.0
 var serrmax = 0.0
-proc gupA(lam: auto, a: auto, t: float): float =
+proc gupA(lam: auto, aa: auto, t: float): float =
+  var a = a
   # s ~ t / I0(|a|)
-  let i0a = besselI0(sqrt(a.norm2))
+  let i0a = besselI0(sqrt(aa.norm2))
   let smag = t / i0a
   var t = t
   if reduceT and lam.im != 0.0:
     let tp = i0a * 2 * PI / abs(lam.im)
     t -= tp * trunc(t/tp)
     #echo "tp: ", tp, "  ", t
+  var ebg = (1-a)*exp(-bg)
   template dsdtImpl(y: float): float =
-    let ae = a * exp(y*lam)
-    exp(ae.re)
+    let ae = aa * exp(y*lam)
+    #exp(ae.re)
+    ebg+a*exp(ae.re)
   proc dsdt(y: float): float = dsdtImpl(y)
   proc dsdtx(t: float, y: float, ctx: NumContext[float, float]): float = dsdtImpl(y)
   #result = rkint(t, dsdt)
@@ -615,11 +624,20 @@ proc gupA(lam: auto, a: auto, t: float): float =
   #let intg = "vern65"
   let (t1, y1) = solveOde(dsdtx, s0, tspan, odeOptions, integrator=intg)
   result = y1[^1]
-  var bessels = @[i0a]
-  let tc = getT(lam,a,result,bessels)
-  #echo "err: ", tc - t, "  ", tc, "  ", t
-  let te = abs(tc-t)
-  let se = te*dsdt(result)
+  var te = 0.0
+  var se = 0.0
+  if a == 1:
+    var bessels = @[i0a]
+    let tc = getT(lam,aa,result,bessels)
+    #echo "err: ", tc - t, "  ", tc, "  ", t
+    te = abs(tc-t)
+    se = te*dsdt(result)
+  else:
+    a *= -1
+    ebg *= -1
+    let (t2, y2) = solveOde(dsdtx, result, tspan, odeOptions, integrator=intg)
+    a *= -1
+    se = abs(y2[^1])
   threadCritical:
     terr += te
     terrmax = max(terrmax, te)
@@ -747,7 +765,8 @@ proc gupdateA(x,mu: int, t: float): auto =
   let u = f * g[mu][x]
   g[mu][x] := u
   let ae = gp[1] * exp(s*lam)
-  result = gp[1].re - ae.re
+  #result = gp[1].re - ae.re
+  result = ln(((1-a)+a*gp[0]*exp(gp[1].re))/((1-a)+a*gp[0]*exp(ae.re)))
   #result = lj
   # du = f dg + df g = f dg + g lam f ds
 
@@ -813,7 +832,8 @@ proc mdt(t:float) =
 
 proc mdv(t:float) =
   if useG:
-    if not (mdalgo==gv and bg==beta):
+    if not (mdalgo==gv and bg==beta and a==1):
+      # (1-a) + a G
       gc.gaugeforce2(g, f)
       initg()
       #var f2 = 0.0
@@ -822,9 +842,10 @@ proc mdv(t:float) =
         for i in 0..<g.len:
           for e in g[i]:
             let gd = gfunderiv(e,i)
-            let tg = t*gd[0]
+            #let tg = t*gd[0]
+            let tg = t*((1-a) + a*gd[0])
             var ff = -tg * f[i][e]  # - to correct for sign of f
-            ff += t * gd[1]
+            ff += t * a * gd[1]
             p[i][e] += ff
             #f2t += ff.norm2
             #var f2s = simdSum(f2t)
