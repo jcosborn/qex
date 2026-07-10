@@ -193,6 +193,8 @@ template `+`*(r: Color, x: AsComplex): untyped =
   asColor(r[] + x)
 template `-`*(r: Color, x: AsComplex): untyped =
   asColor(r[] - x)
+template `-`*(x: AsComplex, y: Color): auto =
+  asColor(x - y[])
 template add*(r: var Color, x: Color2, y: Color3) =
   add(r[], x[], y[])
 template sub*(r: var Color, x: Color2, y: Color3) =
