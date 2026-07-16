@@ -1,5 +1,6 @@
 import qex
 import physics/qcdTypes
+import maths/groupOps
 import testutils
 
 qexInit()
@@ -204,5 +205,60 @@ suite "Test adaptive AH exponential":
   when declared(SimdD4):
     expAH1Test(SimdD4)
     expAHTest(SimdD4)
+
+proc expProjMulJac1Test(T: typedesc) =
+  type M = CM[1,T]
+  test("U(1) projected-exponential multiplication Jacobian " & $T):
+    var m, g, ge, x, p, pe:M
+    m := 0
+    m[0, 0].re := 0.2
+    m[0, 0].im := -0.3
+    let
+      v = expProjMulLogJac(m)
+      ve = ln(1.2)
+    g.expProjMulLogJacGrad(m)
+    ge := 0
+    ge[0, 0].re := 1.0/1.2
+    x := 0
+    x[0, 0].re := 0.4
+    x[0, 0].im := -0.7
+    g.expProjMulLogJacGrad(p, m, x)
+    pe.projectTAH(x)
+    check abs(v - ve).simdMax < 2e-14
+    check sqrt((g - ge).norm2.simdMax) < 2e-14
+    check sqrt((p - pe).norm2.simdMax) < 2e-14
+    when T is SomeFloat:
+      let h = 1e-6
+      var mp, mm:M
+      mp := m
+      mm := m
+      mp[0, 0].re += h
+      mm[0, 0].re -= h
+      let d = (expProjMulLogJac(mp) - expProjMulLogJac(mm))/(2.0*h)
+      check abs(d - g[0, 0].re) < 2e-10
+
+proc expPullback1Test(T: typedesc) =
+  type M = CM[1,T]
+  test("U(1) exponential pullback " & $T):
+    var a, c, p, pe:M
+    a := 0
+    a[0, 0].im := 0.3
+    c := 0
+    c[0, 0].re := 0.7
+    c[0, 0].im := -0.2
+    let e = exp(a)
+    p.expProjectTAHPullback(a, e.adj*c)
+    pe.projectTAH(expDeriv(a, c))
+    check sqrt((p - pe).norm2.simdMax) < 2e-14
+
+suite "Test projected-exponential multiplication Jacobian":
+  expProjMulJac1Test(float64)
+  when declared(SimdD4):
+    expProjMulJac1Test(SimdD4)
+
+suite "Test exponential pullback":
+  expPullback1Test(float64)
+  when declared(SimdD4):
+    expPullback1Test(SimdD4)
 
 qexFinalize()
