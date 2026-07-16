@@ -72,6 +72,71 @@ proc inverseN*(r: var Mat1, c: SomeNumber, x: Mat2) =
   #let f = c*x.nrows/r.adj.dot(x)
   #r *= f
 
+proc solveLRNoPivot*(a, l, r: var Mat1) {.alwaysInline.} =
+  ## For A = L*U: l <- A^-1*l; r <- r*A^-1.
+  ## a <- (strict L, strict U, 1/U_ii). No aliasing; pivots must be nonzero.
+  mixin imul, imsub
+  const n = a.nrows
+
+  # Factor a = L U.
+  for k in 0..<n:
+    let di = 1.0/a[k, k]
+    a[k, k] := di
+    for i in (k+1)..<n:
+      imul(a[i, k], di)
+    for i in (k+1)..<n:
+      let lik = a[i, k]
+      for j in (k+1)..<n:
+        imsub(a[i, j], lik, a[k, j])
+
+  # l <- a^-1 l.
+  for i in 0..<n:
+    for k in 0..<i:
+      let lik = a[i, k]
+      for j in 0..<n:
+        imsub(l[i, j], lik, l[k, j])
+  for i in countdown(n-1, 0):
+    for k in (i+1)..<n:
+      let uik = a[i, k]
+      for j in 0..<n:
+        imsub(l[i, j], uik, l[k, j])
+    let di = a[i, i]
+    for j in 0..<n:
+      imul(l[i, j], di)
+
+  # r <- r a^-1.
+  for j in 0..<n:
+    for k in 0..<j:
+      let ukj = a[k, j]
+      for i in 0..<n:
+        imsub(r[i, j], r[i, k], ukj)
+    let di = a[j, j]
+    for i in 0..<n:
+      imul(r[i, j], di)
+  for j in countdown(n-1, 0):
+    for k in (j+1)..<n:
+      let lkj = a[k, j]
+      for i in 0..<n:
+        imsub(r[i, j], r[i, k], lkj)
+
+proc detNoPivot*(a: Mat1): auto {.noInit, alwaysInline.} =
+  ## Return the determinant using unpivoted LU; leading pivots must be nonzero.
+  mixin imsub
+  const n = a.nrows
+  var u {.noinit.}: evalType(a)
+  var r {.noinit.}: evalType(a[0, 0])
+  u := a
+  r := 1
+  for k in 0..<n:
+    let d = u[k, k]
+    r *= d
+    let di = 1.0/d
+    for i in (k+1)..<n:
+      let f = u[i, k]*di
+      for j in (k+1)..<n:
+        imsub(u[i, j], f, u[k, j])
+  r
+
 proc inverse*(r: var Mat1, c: SomeNumber, x: Mat2) {.alwaysInline.} =
   const nc = r.nrows
   when nc==1:

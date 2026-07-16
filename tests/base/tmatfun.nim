@@ -89,4 +89,59 @@ suite "Test matrix rsqrtPH":
   doTest(SimdS8)
   doTest(SimdD8)
 
+proc solveLRTest(T: typedesc) =
+  type A = MatrixArray[8,8,T]
+  test("paired left/right solve " & $T):
+    var a, a0, l, l0, r, r0:A
+    for i in 0..<8:
+      for j in 0..<8:
+        when T is SomeFloat:
+          a[i, j] := (if i == j: 3.0 + 0.1*i.float else: 0.01*(1 + 3*i - 2*j).float)
+          l[i, j] := 0.02*(1 + 2*i + 3*j).float
+          r[i, j] := 0.03*(2 - 3*i + j).float
+        else:
+          for k in 0..<simdLength(a[i, j]):
+            let s = 1.0 + 0.01*k.float
+            a[i, j][asSimd(k)] = s*(if i == j: 3.0 + 0.1*i.float else: 0.01*(1 + 3*i - 2*j).float)
+            l[i, j][asSimd(k)] = s*0.02*(1 + 2*i + 3*j).float
+            r[i, j][asSimd(k)] = s*0.03*(2 - 3*i + j).float
+    a0 := a
+    l0 := l
+    r0 := r
+    a.solveLRNoPivot(l, r)
+    let
+      el = sqrt((a0*l - l0).norm2.simdMax)
+      er = sqrt((r*a0 - r0).norm2.simdMax)
+    check el < 2e-12
+    check er < 2e-12
+
+suite "Test matrix paired solves":
+  solveLRTest(float64)
+  when declared(SimdD4):
+    solveLRTest(SimdD4)
+
+proc detNoPivotTest(T: typedesc) =
+  type A = MatrixArray[8,8,T]
+  test("unpivoted determinant " & $T):
+    var a:A
+    for i in 0..<8:
+      for j in 0..<8:
+        when T is SomeFloat:
+          a[i, j] := (if i == j: 3.0 + 0.1*i.float else: 0.01*(1 + 3*i - 2*j).float)
+        else:
+          for k in 0..<simdLength(a[i, j]):
+            let s = 1.0 + 0.01*k.float
+            a[i, j][asSimd(k)] = s*(if i == j: 3.0 + 0.1*i.float else: 0.01*(1 + 3*i - 2*j).float)
+    let
+      x = detNoPivot(a)
+      y = determinant(a)
+      e = sqrt(norm2(x - y).simdMax)
+      s = max(1.0, sqrt(norm2(y).simdMax))
+    check e/s < 2e-12
+
+suite "Test unpivoted determinant":
+  detNoPivotTest(float64)
+  when declared(SimdD4):
+    detNoPivotTest(SimdD4)
+
 qexFinalize()
