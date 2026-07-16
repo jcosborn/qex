@@ -451,6 +451,50 @@ proc gaugeDeriv2*(c: GaugeActionCoeffs, g,f: array|seq) =
           shiftExpr(t2[mu].sb, f[mu][ir] += cr * t[nu].field[ir]*adj(it), t[mu].field[ix])
   toc("end")
 
+proc gaugeDeriv2SubsetWork*(c: GaugeActionCoeffs, g, f: array|seq, sd, sf, sb: auto, parity, dir: int, clear: static bool) =
+  ## f[dir]|P = D_plaq(g)|P; other directions are unchanged.
+  ## clear=false requires f[dir]|~P = 0.
+  if c.rect != 0 or c.pgm != 0 or c.adjplaq != 0:
+    raise newException(ValueError, "gaugeDeriv2SubsetWork supports plaquette coefficients only")
+  mixin adj
+  tic("gaugeDeriv2Subset")
+  let lo = g[0].l
+  let nd = lo.nDim
+  const nc = g[0][0].nrows
+  let cp = -c.plaq / float(nc)
+  when clear:
+    let other = lo.getSubset(if parity == 0: "odd" else: "even")
+  let firstNu = if dir == 0: 1 else: 0
+  toc("gaugeDeriv2Subset setup")
+  threads:
+    when clear:
+      for x in other:
+        f[dir][x] := 0
+    for nu in 0..<nd:
+      if nu == dir: continue
+
+      discard sd ^*! g[nu]
+      threadBarrier()
+      if nu == firstNu:
+        shiftExpr(sf[nu], f[dir][ir] := cp * (g[nu][ir] * it) * adj(sd.field[ir]), g[dir][ix])
+      else:
+        shiftExpr(sf[nu], f[dir][ir] += cp * (g[nu][ir] * it) * adj(sd.field[ir]), g[dir][ix])
+      # := and += may use different shift partitions.
+      threadBarrier()
+      toc("gaugeDeriv2Subset forward")
+      shiftExpr(sb[nu], f[dir][ir] += cp*it, g[nu][ix].adj * (g[dir][ix] * sd.field[ix]))
+      threadBarrier()
+      toc("gaugeDeriv2Subset backward")
+  toc("gaugeDeriv2Subset end")
+
+proc gaugeDeriv2Subset*(c: GaugeActionCoeffs, g, f: array|seq, parity, dir: int) =
+  ## f[dir]|P = D_plaq(g)|P. Plaquette-only.
+  let ps = if parity == 0: "even" else: "odd"
+  let sd = newShifter(g[0], dir, 1)
+  let sf = createShiftBufs(g[0], 1, ps)
+  let sb = createShiftBufs(g[0], -1, ps)
+  c.gaugeDeriv2SubsetWork(g, f, sd, sf, sb, parity, dir, true)
+
 proc gaugeDerivDeriv2*(c: GaugeActionCoeffs, g,h,f: array|seq) =
   mixin adj
   tic("gaugeDeriv2")
@@ -478,6 +522,107 @@ proc gaugeDerivDeriv2*(c: GaugeActionCoeffs, g,h,f: array|seq) =
         f[mu] += cp * td[nu] ^* th[mu] ^* g[nu]
         f[mu] += cp * thd[nu] ^* t[mu] ^* g[nu]
   toc("end")
+
+proc gaugeDerivDeriv2SubsetImpl(c: GaugeActionCoeffs, g: array|seq, hs, hdir: auto, f: array|seq, parity, dir: int, sum, add, addBase: static bool) =
+  # S=(parity,dir); sum: hdir|P=sum(hs)|P; add: f+=H(hdir|P).
+  # addBase: f[S]+=H(hdir|P); f[~S]=base[~S]+H(hdir|P).
+  if c.rect != 0 or c.pgm != 0 or c.adjplaq != 0:
+    raise newException(ValueError, "gaugeDerivDeriv2Subset supports plaquette coefficients only")
+  mixin adj
+  tic("gaugeDerivDeriv2Subset")
+  let lo = g[0].l
+  let nd = lo.nDim
+  const nc = g[0][0].nrows
+  let cp = -c.plaq / float(nc)
+  let ps = if parity == 0: "even" else: "odd"
+  let po = if parity == 0: "odd" else: "even"
+  when sum:
+    let sub = lo.getSubset(ps)
+  when addBase:
+    let other = lo.getSubset(po)
+    let firstNu = if dir == 0: 1 else: 0
+  let sd = newShifter(g[0], dir, 1)
+  let sfSame = createShiftBufs(g[0], 1, ps)
+  let sfOther = createShiftBufs(g[0], 1, po)
+  let sb = createShiftBufs(g[0], -1, po)
+  let sq = g[0].newOneOf
+  let bqSame = createShiftB(g[0], dir, -1, ps)
+  let bqOther = createShiftB(g[0], dir, -1, po)
+  toc("gaugeDerivDeriv2Subset setup")
+  threads:
+    when sum:
+      for x in sub:
+        hdir[x] := hs[0][x]
+        for k in 1..<hs.len:
+          hdir[x] += hs[k][x]
+      threadBarrier()
+      toc("gaugeDerivDeriv2Subset sum")
+    when addBase:
+      if nd == 1:
+        for x in other:
+          f[dir][x] := hs[dir][x]
+    elif not add:
+      f[dir] := 0
+
+    for nu in 0..<nd:
+      if nu == dir: continue
+
+      discard sd ^*! g[nu]
+      threadBarrier()
+      template put(i, y: untyped) =
+        when addBase:
+          f[nu][i] := hs[nu][i] + y
+        elif add:
+          f[nu][i] += y
+        else:
+          f[nu][i] := y
+      template setOtherAdd(i, t: untyped) =
+        put(i, cp * (g[dir][i] * sd.field[i]) * adj(t))
+        sq[i] := g[nu][i] * t
+        f[dir][i] += cp * sq[i] * adj(sd.field[i])
+      when addBase:
+        template setOtherBase(i, t: untyped) =
+          put(i, cp * (g[dir][i] * sd.field[i]) * adj(t))
+          sq[i] := g[nu][i] * t
+          f[dir][i] := hs[dir][i] + cp * sq[i] * adj(sd.field[i])
+      template setSame(i, t: untyped) =
+        sd.field[i] := hdir[i] * sd.field[i]
+        put(i, cp * sd.field[i] * adj(t))
+        sq[i] := g[nu][i] * t
+      when addBase:
+        if nu == firstNu:
+          shiftExpr(sfOther[nu], setOtherBase(ir, it), hdir[ix])
+        else:
+          shiftExpr(sfOther[nu], setOtherAdd(ir, it), hdir[ix])
+      else:
+        shiftExpr(sfOther[nu], setOtherAdd(ir, it), hdir[ix])
+      shiftExpr(sfSame[nu], setSame(ir, it), g[dir][ix])
+      threadBarrier()
+      toc("gaugeDerivDeriv2Subset forward")
+
+      shiftExpr(bqSame, f[nu][ir] += cp*it, g[dir][ix].adj * sq[ix])
+      shiftExpr(bqOther, f[nu][ir] += cp*it, hdir[ix].adj * sq[ix])
+      shiftExpr(sb[nu], f[dir][ir] += cp*it, g[nu][ix].adj * sd.field[ix])
+      threadBarrier()
+      toc("gaugeDerivDeriv2Subset backward")
+  toc("gaugeDerivDeriv2Subset end")
+
+proc gaugeDerivDeriv2Subset*(c: GaugeActionCoeffs, g,h,f: array|seq, parity, dir: int) =
+  ## f = H_g(h[dir]|P). Plaquette-only.
+  c.gaugeDerivDeriv2SubsetImpl(g, h, h[dir], f, parity, dir, false, false, false)
+
+proc gaugeDerivDeriv2SubsetAdd*(c: GaugeActionCoeffs, g: array|seq, hdir: auto, f: array|seq, parity, dir: int) =
+  ## f += H_g(hdir|P). Plaquette-only.
+  c.gaugeDerivDeriv2SubsetImpl(g, hdir, hdir, f, parity, dir, false, true, false)
+
+proc gaugeDerivDeriv2SubsetAddBase*(c: GaugeActionCoeffs, g: array|seq, hdir: auto, base, f: array|seq, parity, dir: int) =
+  ## S=(P,dir): f[S] += H_g(hdir|P)[S].
+  ## f[~S] = base[~S] + H_g(hdir|P)[~S]. Plaquette-only.
+  c.gaugeDerivDeriv2SubsetImpl(g, base, hdir, f, parity, dir, false, false, true)
+
+proc gaugeDerivDeriv2SubsetSum*(c: GaugeActionCoeffs, g,h: array|seq, w: auto, f: array|seq, parity, dir: int) =
+  ## w|P = sum(h)|P; f = H_g(w|P). Plaquette-only.
+  c.gaugeDerivDeriv2SubsetImpl(g, h, w, f, parity, dir, true, false, false)
 
 proc gaugeForce2*(c: GaugeActionCoeffs, g,f: array|seq) =
   mixin adj,projectTAH
