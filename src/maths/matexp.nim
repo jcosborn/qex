@@ -1,4 +1,5 @@
 import base
+import complexNumbers
 import matrixConcept
 import types
 import matinv
@@ -320,6 +321,28 @@ proc expPoly12*(m: Mat1): auto {.noInit.} =
     var a =   b*m3 + C5*m2 + C4*m + C3
     var r =   a*m3 + C2*m2 + m + 1
   r
+
+proc expAH*(m: Mat1): auto {.noInit.} =
+  ## Requires m†=-m: exp(m/2^k) is unitary, avoiding norm growth while squaring.
+  ## 1x1 uses scalar exp; otherwise scale to norm2 <= 1/16, evaluate P12, and square back.
+  when m.nrows == 1 and m.ncols == 1:
+    var r {.noinit.}: evalType(m)
+    r[0, 0] := exp(m[0, 0])
+    r
+  else:
+    mixin simdMax
+    var
+      n2 = m.norm2.simdMax
+      scale = 1.0
+      ns = 0
+    while n2 > 1.0/16.0:
+      n2 *= 0.25
+      scale *= 0.5
+      inc ns
+    var r = expPoly12(scale*m)
+    for i in 0..<ns:
+      r := r*r
+    r
 
 
 ## Pade approximations of exp
@@ -1118,4 +1141,3 @@ when isMainModule:
     echo b
     echo sqrt(d.norm2/ae.norm2)
   #testgetm3()
-

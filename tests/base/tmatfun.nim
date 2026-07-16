@@ -144,4 +144,65 @@ suite "Test unpivoted determinant":
   when declared(SimdD4):
     detNoPivotTest(SimdD4)
 
+proc expAHTest(T: typedesc) =
+  type M = CM[3,T]
+  test("adaptive AH exponential " & $T):
+    for a in [0.0, 0.14, 0.16, 0.5, 2.0, 8.0]:
+      var s:T
+      when T is SomeFloat:
+        s = a
+      else:
+        var v: array[simdLength(s), float]
+        for k in 0..<v.len:
+          v[k] = a*(1.0 + 0.1*k.float)
+        s := v
+      var m:M
+      m := 0
+      m[0, 0].im := 0.3*s
+      m[1, 1].im := -0.1*s
+      m[2, 2].im := -0.2*s
+      m[0, 1].re := s
+      m[1, 0].re := -s
+      m[1, 2].im := 0.5*s
+      m[2, 1].im := 0.5*s
+      let
+        r = expAH(m)
+        er = exp(m)
+        de = sqrt((r - er).norm2.simdMax)
+        du = sqrt((r.adj*r - 1.0).norm2.simdMax)
+        dd = sqrt(norm2(determinant(r) - 1.0).simdMax)
+      check de < 2e-12
+      check du < 2e-12
+      check dd < 2e-12
+
+proc expAH1Test(T: typedesc) =
+  type M = CM[1,T]
+  test("adaptive U(1) exponential " & $T):
+    for a in [0.0, 0.14, 0.5, 2.0, 8.0]:
+      var s:T
+      when T is SomeFloat:
+        s = a
+      else:
+        var v: array[simdLength(s), float]
+        for k in 0..<v.len:
+          v[k] = a*(1.0 + 0.1*k.float)
+        s := v
+      var m:M
+      m := 0
+      m[0, 0].im := s
+      let
+        r = expAH(m)
+        er = exp(m)
+        de = sqrt((r - er).norm2.simdMax)
+        du = sqrt((r.adj*r - 1.0).norm2.simdMax)
+      check de < 2e-12
+      check du < 2e-12
+
+suite "Test adaptive AH exponential":
+  expAH1Test(float64)
+  expAHTest(float64)
+  when declared(SimdD4):
+    expAH1Test(SimdD4)
+    expAHTest(SimdD4)
+
 qexFinalize()
