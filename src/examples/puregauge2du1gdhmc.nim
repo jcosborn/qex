@@ -14,30 +14,6 @@ proc mean(xs: Ensemble[seq[float]]): float =
     m += (x - m)/float(i+1)
   m
 
-proc naiveIntAutocorr(xs: Ensemble[seq[float]], maxlen: int): float =
-  ## Very rough integrated autocorrelation: sum of correlation out to some cut.
-  let N = xs.len
-  let m = mean(xs)
-  # c(0)
-  var c0 = 0.0
-  for i in 0..<xs.len:
-    let d = xs[i]-m
-    c0 += d*d
-  c0 /= float(N)
-  if c0 <= 1e-14: return 1.0
-
-  var sumRho = 1.0
-  for lag in 1..(min(maxlen, N-1)):
-    var cLag = 0.0
-    for i in 0..<(N-lag):
-      cLag += (xs[i] - m)*(xs[i+lag] - m)
-    cLag /= float(N-lag)
-    let rho = cLag/c0
-    if rho < 0.0:
-      break
-    sumRho += 2.0*rho
-  sumRho
-
 proc tunnelingRate(xs: Ensemble[seq[float]]): float =
   var r = 0.0
   for i in 1..<xs.len:
@@ -305,7 +281,7 @@ proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float]) =
   let pacc = APvals.jackknife(jkBlockSize, mean)
   let Pmean = Pvals.jackknife(jkBlockSize, mean)
   let Qmean = Qvals.jackknife(jkBlockSize, mean)
-  let Qac = Qvals.jackknife(jkBlockSize, naiveIntAutocorr, 200)
+  let Qac = Qvals.jackknife(jkBlockSize, intAutocorr)
   let dQrms = Qvals.jackknife(jkBlockSize, tunnelingRate)
 
   var qmax = 0
@@ -330,7 +306,7 @@ proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float]) =
     let a = Qvals[i]
     Q2vals[i] = a*a
   let Q2 = Q2vals.jackknife(jkBlockSize, mean)
-  let Q2ac = Q2vals.jackknife(jkBlockSize, naiveIntAutocorr, 200)
+  let Q2ac = Q2vals.jackknife(jkBlockSize, intAutocorr)
 
   echo "lnJ = ", lnJ.mean, " ± ", lnJ.stdev
   echo "lnJrms = ", lnJrms.mean, " ± ", lnJrms.stdev
