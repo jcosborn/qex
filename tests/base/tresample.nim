@@ -87,11 +87,12 @@ block:
     test.assertAlmostEqual(6.1708850248690785, r.stdev)
 
 block:
-  let test = mytest.newTest("weighted jackknife undefined one-block error")
+  let test = mytest.newTest("weighted jackknife marks one-block error unavailable")
   let x = @[1.0, 2.0, 3.0, 4.0]
   let s = x.weightedJackknife(@[1.0, 1.0, 0.0, 0.0], 2)
   test.assertAlmostEqual(1.5, s.mean)
-  test.assertAlmostEqual(1.0, if classify(s.stdev) == fcNan: 1.0 else: 0.0)
+  test.assertAlmostEqual(0.0, s.stdev)
+  test.assertAlmostEqual(0.0, if s.hasStdev: 1.0 else: 0.0)
 
 block:
   let arTest = mytest.newTest("AR(1) sequence test")

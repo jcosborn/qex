@@ -21,6 +21,7 @@ type
       # Then bias = E - mean(zeta_i) and the variance estimate is
       #   Var(E) ≈ (1/(g (g-1))) * sum_i (zeta_i - mean(zeta))^2
     stdev*: Value  ## the jackknife estimate of the standard deviation of the expectation value
+    hasStdev*: bool  ## whether stdev is defined
 
   EnsembleKind = enum
     EKoriginal, EKjackknife
@@ -110,7 +111,8 @@ proc jackknife*[D,V,A](ensemble:D, blocksize:int, estimator:proc(x:Ensemble[D], 
     zM2 += dz * dzn * float(i)
   JackknifeStat[V](mean:m, jksamples:jk,
     bias:m - zmean,
-    stdev:sqrt(zM2 / (float(g) * float(max(1, g-1)))))
+    stdev:sqrt(zM2 / (float(g) * float(max(1, g-1)))),
+    hasStdev:g > 1)
 
 proc jackknife*[D,V](ensemble:D, blocksize:int, estimator:proc(x:Ensemble[D]):V): auto =
   ## Perform grouped jackknife with blocksize
@@ -137,7 +139,8 @@ proc jackknife*[D,V](ensemble:D, blocksize:int, estimator:proc(x:Ensemble[D]):V)
     zM2 += dz * dzn * float(i)
   JackknifeStat[V](mean:m, jksamples:jk,
     bias:m - zmean,
-    stdev:sqrt(zM2 / (float(g) * float(max(1, g-1)))))
+    stdev:sqrt(zM2 / (float(g) * float(max(1, g-1)))),
+    hasStdev:g > 1)
 
 type WeightedValue = tuple[x, w: float]
 
@@ -159,10 +162,21 @@ proc weightedRms(xs: Ensemble[seq[WeightedValue]]): float =
 
 proc weightedJackknife*(values, weights: seq[float]; blocksize: int; isRms = false): JackknifeStat[float] =
   ## Weighted block jackknife; zero weights keep their block positions.
-  ## A deletion with zero total weight gives NaN.
   if values.len != weights.len:
     raise newException(ValueError, "weightedJackknife values/weights length mismatch")
   var xs = newSeq[WeightedValue](values.len)
   for i in 0..<xs.len:
     xs[i] = (values[i], weights[i])
-  xs.jackknife(blocksize, if isRms: weightedRms else: weightedMean)
+  result = xs.jackknife(blocksize, if isRms: weightedRms else: weightedMean)
+  var
+    lo = 0
+    blocks = 0
+  while lo < weights.len:
+    var w = 0.0
+    for i in lo..<min(lo + blocksize, weights.len):
+      w += weights[i]
+    if w != 0.0: inc blocks
+    lo += blocksize
+  if blocks < 2:
+    result.stdev = 0.0
+    result.hasStdev = false
