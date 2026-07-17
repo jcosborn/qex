@@ -1,4 +1,5 @@
 import qex
+import algorithms/numdiff
 import physics/qcdTypes
 import maths/groupOps
 import testutils
@@ -228,14 +229,13 @@ proc expProjMulJac1Test(T: typedesc) =
     check sqrt((g - ge).norm2.simdMax) < 2e-14
     check sqrt((p - pe).norm2.simdMax) < 2e-14
     when T is SomeFloat:
-      let h = 1e-6
-      var mp, mm:M
-      mp := m
-      mm := m
-      mp[0, 0].re += h
-      mm[0, 0].re -= h
-      let d = (expProjMulLogJac(mp) - expProjMulLogJac(mm))/(2.0*h)
-      check abs(d - g[0, 0].re) < 2e-10
+      var b:M
+      b := 0
+      b[0, 0].re := 1.0
+      proc f(x:T):T = expProjMulLogJac(m + x*b)
+      var d, e:T
+      ndiff(d, e, f, 0.0, 0.2, ordMax=5)
+      check abs(d - g[0, 0].re) < 1e-13
 
 proc expPullback1Test(T: typedesc) =
   type M = CM[1,T]
