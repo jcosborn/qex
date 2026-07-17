@@ -45,6 +45,19 @@ proc evalGaugeForceValue*(gc: GaugeActionCoeffs,
   of gafActionA:
     coeffs.gaugeADeriv(g, outg)
 
+proc evalProjectedGaugeForceValue*(gc: GaugeActionCoeffs, g, outg: shared.Gauge) =
+  case gc.gaugeActionFamily
+  of gafGaugeAction1:
+    gc.gaugeForce(g, outg)
+  of gafActionA:
+    gc.forceA(g, outg)
+
+proc evalGaugeForceSubset*(gc: GaugeActionCoeffs, g, outg: shared.Gauge, sd, sf, sb: auto, parity, dir: int) =
+  ## Subset Wilson derivative; reject non-plaquette coefficients.
+  if gc.rect != 0 or gc.pgm != 0 or gc.adjplaq != 0:
+    raiseUnsupportedGaugeCoeff(gc)
+  gc.gaugeDeriv2SubsetWork(g, outg, sd, sf, sb, parity, dir, clear=false)
+
 proc evalGaugeForceJacobian*(b: shared.Gauge,
                              gc: GaugeActionCoeffs,
                              g: shared.Gauge,
@@ -55,3 +68,14 @@ proc evalGaugeForceJacobian*(b: shared.Gauge,
     gc.gaugeDerivDeriv2(g, b, outg)
   of gafActionA:
     raiseUnsupportedPath("evalGaugeForceJacobian", "ActionA-family second derivatives")
+
+proc evalGaugeForceJacobianSubset*(b: shared.Gauge, gc: GaugeActionCoeffs, g, outg: shared.Gauge, parity, dir: int) =
+  ## outg = H_g(b[dir]|parity); writes all neighbouring links. Plaquette-only.
+  if gc.rect != 0 or gc.pgm != 0 or gc.adjplaq != 0:
+    raiseUnsupportedGaugeCoeff(gc)
+  gc.gaugeDerivDeriv2Subset(g, b, outg, parity, dir)
+
+proc evalGaugeForceJacobianSubsetSum*(b: seq[DLatticeColorMatrixV], w: DLatticeColorMatrixV, gc: GaugeActionCoeffs, g, outg: shared.Gauge, parity, dir: int) =
+  if gc.rect != 0 or gc.pgm != 0 or gc.adjplaq != 0:
+    raiseUnsupportedGaugeCoeff(gc)
+  gc.gaugeDerivDeriv2SubsetSum(g, b, w, outg, parity, dir)

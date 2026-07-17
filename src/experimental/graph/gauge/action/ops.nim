@@ -1,6 +1,4 @@
-## Gauge-action coefficient value type and all gauge-action graph operations.
-## Merged from the former coeffs.nim; the physics-evaluation bridge (raw QEX
-## action routines) stays separate in domain.nim.
+## Gauge-action graph values and operations.
 import ../../[core, scalar]
 import ../../scalar/types
 import ../../support/op
@@ -123,10 +121,9 @@ proc actAdj*(beta: Gscalar, adjFac: Gscalar): Gactcoeff = beta * adjCoeff(adjFac
 
 proc gaugeActionDeriv*(c: Gactcoeff, g: Ggauge): Ggauge
 proc gaugeActionDeriv2*(b: Ggauge, c: Gactcoeff, g: Ggauge): Ggauge
+proc gaugeActionDeriv2Subset(b: Ggauge, c: Gactcoeff, g: Ggauge, parity, dir: int): Ggauge
 
-proc gaugeForce*(c: Gactcoeff, g: Ggauge): Ggauge =
-  ## Gauge force is the projected derivative consumed by the HMC integrators.
-  contractProjTAH(gaugeActionDeriv(c, g), g)
+proc gaugeForce*(c: Gactcoeff, g: Ggauge): Ggauge
 
 proc gaugeActionb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   let c = Gactcoeff(z.inputs[0])
@@ -180,16 +177,74 @@ let gaugeActionDerivg = Gfunc(
 proc gaugeActionDeriv*(c: Gactcoeff, g: Ggauge): Ggauge =
   graphNode(g.gaugeNodeLike, @[Gvalue(c), Gvalue(g)], gaugeActionDerivg, "gaugeActionDeriv")
 
+proc gaugeForceb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  let
+    c = Gactcoeff(z.inputs[0])
+    g = Ggauge(z.inputs[1])
+  if i == 0:
+    raiseCoeffBackwardUnsupported("gaugeForce backward")
+  let proj = projTAH(requireUpstream(zb, "gaugeForce backward", Ggauge))
+  gaugeActionDeriv2(proj * g, c, g) + proj.adjmul(gaugeActionDeriv(c, g))
+
+proc gaugeForcef(v: Gvalue) =
+  let
+    c = Gactcoeff(v.inputs[0])
+    g = Ggauge(v.inputs[1])
+    z = Ggauge(v)
+  evalProjectedGaugeForceValue(c.cval, g.gval, z.gval)
+
+let gaugeForceg = Gfunc(
+  forward: gaugeForcef,
+  backward: gaugeForceb,
+  name: "gaugeForce")
+
+proc gaugeForce*(c: Gactcoeff, g: Ggauge): Ggauge =
+  ## Project the action derivative directly into the force output.
+  graphNode(g.gaugeNodeLike, @[Gvalue(c), Gvalue(g)], gaugeForceg, "gaugeForce")
+
+type GsubsetDeriv = ref object of Ggauge
+  sd: Shifter[DLatticeColorMatrixV, DColorMatrixV]
+  sf, sb: seq[ShiftB[DColorMatrixV]]
+  parity, dir: int
+
+proc subsetDerivNodeLike(x: Ggauge, parity, dir: int): GsubsetDeriv =
+  let
+    g = x.gval.newOneOf
+    ps = if parity == 0: "even" else: "odd"
+  g.zeroGaugeStorage
+  GsubsetDeriv(
+    runtime: x.runtime,
+    gval: g,
+    sd: newShifter(g[0], dir, 1),
+    sf: createShiftBufs(g[0], 1, ps),
+    sb: createShiftBufs(g[0], -1, ps),
+    parity: parity,
+    dir: dir).assignStableNodeId
+
+method newOneOf(x: GsubsetDeriv): Gvalue =
+  x.subsetDerivNodeLike(x.parity, x.dir)
+
+proc gaugeActionDeriv*(c: Gactcoeff, g: Ggauge, parity, dir: int): Ggauge =
+  ## Subset Wilson derivative; its pullback scatters to all staple neighbours.
+  proc fwd(v: Gvalue) =
+    let c = Gactcoeff(v.inputs[0])
+    let g = Ggauge(v.inputs[1])
+    let z = GsubsetDeriv(v)
+    evalGaugeForceSubset(c.cval, g.gval, z.gval, z.sd, z.sf, z.sb, parity, dir)
+  proc bwd(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+    let c = Gactcoeff(z.inputs[0])
+    let g = Ggauge(z.inputs[1])
+    if i == 0:
+      raiseCoeffBackwardUnsupported("gaugeActionDerivSubset backward")
+    gaugeActionDeriv2Subset(requireUpstream(zb, "gaugeActionDerivSubset backward", Ggauge), c, g, parity, dir)
+  graphNode(g.subsetDerivNodeLike(parity, dir), @[Gvalue(c), Gvalue(g)], Gfunc(forward: fwd, backward: bwd, name: "gaugeActionDerivSubset"), "gaugeActionDerivSubset")
+
 proc gaugeActionDeriv2b(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   if i == 0:
-    raiseUnsupportedPath(
-      "gaugeActionDeriv2 backward",
-      "derivative with respect to force-direction input")
+    raiseUnsupportedPath("gaugeActionDeriv2 backward", "derivative with respect to force-direction input")
   if i == 1:
     raiseCoeffBackwardUnsupported("gaugeActionDeriv2 backward")
-  raiseUnsupportedPath(
-    "gaugeActionDeriv2 backward",
-    "higher derivatives with respect to the gauge field")
+  raiseUnsupportedPath("gaugeActionDeriv2 backward", "higher derivatives with respect to the gauge field")
 
 proc gaugeActionDeriv2f(v: Gvalue) =
   let b = Ggauge(v.inputs[0])
@@ -206,3 +261,55 @@ let gaugeActionDeriv2g = Gfunc(
 
 proc gaugeActionDeriv2*(b: Ggauge, c: Gactcoeff, g: Ggauge): Ggauge =
   graphNode(g.gaugeNodeLike, @[Gvalue(b), c, g], gaugeActionDeriv2g, "gaugeActionDeriv2")
+
+type GsubsetHess = ref object of Ggauge
+  hdir: DLatticeColorMatrixV
+
+method newOneOf(x: GsubsetHess): Gvalue =
+  let g = x.gval.newOneOf
+  g.zeroGaugeStorage
+  GsubsetHess(
+    runtime: x.runtime,
+    gval: g,
+    hdir: x.hdir.newOneOf).assignStableNodeId
+
+proc gaugeActionDeriv2Subset(b: Ggauge, c: Gactcoeff, g: Ggauge, parity, dir: int): Ggauge =
+  let terms = b.gaugeAddTerms
+  let nterms = terms.len
+  proc bwd(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+    if i < nterms:
+      raiseUnsupportedPath("gaugeActionDeriv2Subset backward", "derivative with respect to force-direction input")
+    if i == nterms:
+      raiseCoeffBackwardUnsupported("gaugeActionDeriv2Subset backward")
+    raiseUnsupportedPath("gaugeActionDeriv2Subset backward", "higher derivatives with respect to the gauge field")
+  if nterms == 1:
+    proc fwd(v: Gvalue) =
+      let
+        b = Ggauge(v.inputs[0])
+        c = Gactcoeff(v.inputs[1])
+        g = Ggauge(v.inputs[2])
+        z = Ggauge(v)
+      evalGaugeForceJacobianSubset(b.gval, c.cval, g.gval, z.gval, parity, dir)
+    return graphNode(g.gaugeNodeLike, @[Gvalue(terms[0]), Gvalue(c), Gvalue(g)], Gfunc(forward: fwd, backward: bwd, name: "gaugeActionDeriv2Subset"), "gaugeActionDeriv2Subset")
+  var inputs = newSeq[Gvalue](nterms + 2)
+  for i, term in terms:
+    inputs[i] = Gvalue(term)
+  inputs[nterms] = Gvalue(c)
+  inputs[nterms + 1] = Gvalue(g)
+  proc fwd(v: Gvalue) =
+    let c = Gactcoeff(v.inputs[nterms])
+    let g = Ggauge(v.inputs[nterms + 1])
+    let z = GsubsetHess(v)
+    var h = newSeq[DLatticeColorMatrixV](nterms)
+    for i in 0..<nterms:
+      h[i] = Ggauge(v.inputs[i]).gval[dir]
+    evalGaugeForceJacobianSubsetSum(h, z.hdir, c.cval, g.gval, z.gval, parity, dir)
+  let z = g.gaugeNodeLike
+  graphNode(
+    GsubsetHess(
+      runtime: z.runtime,
+      gval: z.gval,
+      hdir: g.gval[dir].newOneOf),
+    inputs,
+    Gfunc(forward: fwd, backward: bwd, name: "gaugeActionDeriv2Subset"),
+    "gaugeActionDeriv2Subset")

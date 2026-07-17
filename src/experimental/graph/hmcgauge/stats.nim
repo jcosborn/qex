@@ -48,7 +48,7 @@ proc echoMdStats*(xs: seq[MdForceStats]; blockSize: int; tag: string = ""; selec
   if count == 0: return
   proc je(vals: seq[float]): string =
     let x = vals.weightedJackknife(weights, blockSize)
-    $x.mean & " ± " & (if classify(x.stdev) == fcNan: "n/a" else: $x.stdev)
+    $x.mean & " ± " & (if x.hasStdev: $x.stdev else: "n/a")
   let prefix = if tag.len == 0: "" else: tag & " "
   echo prefix, "MD forces: ", count
   echo prefix, "fRMS mean: ", je(rmsVals)

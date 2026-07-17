@@ -114,7 +114,7 @@ proc statsByQ*(Hvals, Avals: seq[float]; dQchanged: seq[bool]; jkBlockSize: int;
       return
     proc je(xs: seq[float]; isRms: bool): string =
       let s = xs.weightedJackknife(weights, jkBlockSize, isRms)
-      $s.mean & " ± " & (if classify(s.stdev) == fcNan: "n/a" else: $s.stdev)
+      $s.mean & " ± " & (if s.hasStdev: $s.stdev else: "n/a")
     let he = extrema(h)
     echo tag, " Pacc: ", je(APvals, false)
     echo tag, " exp(-dH): ", je(Avals, false)
@@ -170,26 +170,28 @@ proc obstat*(Hvals, Avals, Pvals, Qvals: seq[float]; beta: float; vol, ntraj, jk
     Q2vals[i] = a*a
   let Q2 = Q2vals.jackknife(jkBlockSize, mean)
   let Q2ac = Q2vals.jackknife(jkBlockSize, intAutocorr)
+  proc err(x: JackknifeStat[float]; scale = 1.0): string =
+    if x.hasStdev: $(scale*x.stdev) else: "n/a"
 
   echo "all ntraj: ", Hvals.len
   if Jvals.len > 0:
     let lnDet = Jvals.jackknife(jkBlockSize, mean)
     let lnDetrms = Jvals.jackknife(jkBlockSize, rms)
-    echo "all lnDet: ", lnDet.mean, " ± ", lnDet.stdev
-    echo "all lnDetrms: ", lnDetrms.mean, " ± ", lnDetrms.stdev
+    echo "all lnDet: ", lnDet.mean, " ± ", err(lnDet)
+    echo "all lnDetrms: ", lnDetrms.mean, " ± ", err(lnDetrms)
   let he = extrema(Hvals)
-  echo "all dHrms: ", dHrms.mean, " ± ", dHrms.stdev
+  echo "all dHrms: ", dHrms.mean, " ± ", err(dHrms)
   echo "all dH min/max: ", he.lo, " / ", he.hi
-  echo "all exp(-dH): ", expmdh.mean, " ± ", expmdh.stdev
-  echo "all Pacc: ", pacc.mean, " ± ", pacc.stdev
+  echo "all exp(-dH): ", expmdh.mean, " ± ", err(expmdh)
+  echo "all Pacc: ", pacc.mean, " ± ", err(pacc)
   if mdvals.len > 0:
     echoMdStats(mdvals, jkBlockSize, "all")
-  echo "all Pmean: ", Pmean.mean, " ± ", Pmean.stdev, "  dP: ", Pmean.mean - infVolPlaq(beta)
-  echo "all Tau_P: ", Pac.mean, " ± ", Pac.stdev
-  echo "all Qmean: ", Qmean.mean, " ± ", Qmean.stdev
-  echo "all Tau_Q: ", Qac.mean, " ± ", Qac.stdev
-  echo "all dQrms: ", dQrms.mean, " ± ", dQrms.stdev
-  echo "all Q2/V: ", Q2.mean/float(vol), " ± ", Q2.stdev/float(vol), "  dQ2/V: ", Q2.mean/float(vol) - infVolChiQ(beta)
-  echo "all Tau_Q2: ", Q2ac.mean, " ± ", Q2ac.stdev
+  echo "all Pmean: ", Pmean.mean, " ± ", err(Pmean), "  dP: ", Pmean.mean - infVolPlaq(beta)
+  echo "all Tau_P: ", Pac.mean, " ± ", err(Pac)
+  echo "all Qmean: ", Qmean.mean, " ± ", err(Qmean)
+  echo "all Tau_Q: ", Qac.mean, " ± ", err(Qac)
+  echo "all dQrms: ", dQrms.mean, " ± ", err(dQrms)
+  echo "all Q2/V: ", Q2.mean/float(vol), " ± ", err(Q2, 1.0/float(vol)), "  dQ2/V: ", Q2.mean/float(vol) - infVolChiQ(beta)
+  echo "all Tau_Q2: ", Q2ac.mean, " ± ", err(Q2ac)
   for i in 0..qmax:
-    echo "all P(Q=", i, "): ", qdist[i].mean/float(ntraj), " ± ", qdist[i].stdev/float(ntraj)
+    echo "all P(Q=", i, "): ", qdist[i].mean/float(ntraj), " ± ", err(qdist[i], 1.0/float(ntraj))
