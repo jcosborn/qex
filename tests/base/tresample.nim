@@ -81,8 +81,10 @@ block:
     let
       m = x.weightedJackknife(w, 2)
       r = x.weightedJackknife(w, 2, isRms = true)
+    test.assertAlmostEqual(1.0, if m.hasStdev: 1.0 else: 0.0)
     test.assertAlmostEqual(7.5, m.mean)
     test.assertAlmostEqual(7.386290792181598, m.stdev)
+    test.assertAlmostEqual(1.0, if r.hasStdev: 1.0 else: 0.0)
     test.assertAlmostEqual(11.180339887498949, r.mean)
     test.assertAlmostEqual(6.1708850248690785, r.stdev)
 

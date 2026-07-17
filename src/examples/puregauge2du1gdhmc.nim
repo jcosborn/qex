@@ -307,20 +307,22 @@ proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float]) =
     Q2vals[i] = a*a
   let Q2 = Q2vals.jackknife(jkBlockSize, mean)
   let Q2ac = Q2vals.jackknife(jkBlockSize, intAutocorr)
+  proc err(x: JackknifeStat[float]; scale = 1.0): string =
+    if x.hasStdev: $(scale*x.stdev) else: "n/a"
 
-  echo "lnJ = ", lnJ.mean, " ± ", lnJ.stdev
-  echo "lnJrms = ", lnJrms.mean, " ± ", lnJrms.stdev
-  echo "dHrms = ", dHrms.mean, " ± ", dHrms.stdev
-  echo "exp(-dH) = ", expmdh.mean, " ± ", expmdh.stdev
-  echo "Pacc = ", pacc.mean, " ± ", pacc.stdev
-  echo "Pmean = ", Pmean.mean, " ± ", Pmean.stdev, "  dP = ",Pmean.mean-infVolPlaq(beta)
-  echo "Qmean = ", Qmean.mean, " ± ", Qmean.stdev
-  echo "Tau_Q = ", Qac.mean, " ± ", Qac.stdev
-  echo "dQrms = ", dQrms.mean, " ± ", dQrms.stdev
-  echo "Q2/V = ", Q2.mean/float(vol), " ± ", Q2.stdev/float(vol), "  dQ2/V = ", Q2.mean/float(vol)-infVolChiQ(beta)
-  echo "Tau_Q2 = ", Q2ac.mean, " ± ", Q2ac.stdev
+  echo "lnJ = ", lnJ.mean, " ± ", err(lnJ)
+  echo "lnJrms = ", lnJrms.mean, " ± ", err(lnJrms)
+  echo "dHrms = ", dHrms.mean, " ± ", err(dHrms)
+  echo "exp(-dH) = ", expmdh.mean, " ± ", err(expmdh)
+  echo "Pacc = ", pacc.mean, " ± ", err(pacc)
+  echo "Pmean = ", Pmean.mean, " ± ", err(Pmean), "  dP = ",Pmean.mean-infVolPlaq(beta)
+  echo "Qmean = ", Qmean.mean, " ± ", err(Qmean)
+  echo "Tau_Q = ", Qac.mean, " ± ", err(Qac)
+  echo "dQrms = ", dQrms.mean, " ± ", err(dQrms)
+  echo "Q2/V = ", Q2.mean/float(vol), " ± ", err(Q2, 1.0/float(vol)), "  dQ2/V = ", Q2.mean/float(vol)-infVolChiQ(beta)
+  echo "Tau_Q2 = ", Q2ac.mean, " ± ", err(Q2ac)
   for i in 0..qmax:
-    echo "P(Q=",i,") = ",qdist[i].mean/float(ntraj), " ± ", qdist[i].stdev/float(ntraj)
+    echo "P(Q=",i,") = ",qdist[i].mean/float(ntraj), " ± ", err(qdist[i], 1.0/float(ntraj))
 
 let
   (V,T) = newIntegratorPair(updatefga, mdt)

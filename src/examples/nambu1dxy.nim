@@ -522,16 +522,18 @@ for a in Qvals.mitems:
   a = a*a
 let Q2 = Qvals.jackknife(jkBlockSize, mean)
 let Q2ac = Qvals.jackknife(jkBlockSize, intAutocorr)
+proc err(x: JackknifeStat[float]; scale = 1.0): string =
+  if x.hasStdev: $(scale*x.stdev) else: "n/a"
 
-echo "exp(-dH) = ", expmdh.mean, " ± ", expmdh.stdev
-echo "Pacc = ",pacc.mean, " ± ", pacc.stdev
-echo "Emean = ", Emean.mean, " ± ", Emean.stdev, "  dE = ",Emean.mean-besselI1(beta)/besselI0(beta)
-echo "Qmean = ", Qmean.mean, " ± ", Qmean.stdev
-echo "Tau_Q = ", Qac.mean, " ± ", Qac.stdev
-echo "dQrms = ", dQrms.mean, " ± ", dQrms.stdev
-echo "Q2/L = ", Q2.mean/float(xlen), " ± ", Q2.stdev/float(xlen)
-echo "Tau_Q2 = ", Q2ac.mean, " ± ", Q2ac.stdev
+echo "exp(-dH) = ", expmdh.mean, " ± ", err(expmdh)
+echo "Pacc = ",pacc.mean, " ± ", err(pacc)
+echo "Emean = ", Emean.mean, " ± ", err(Emean), "  dE = ",Emean.mean-besselI1(beta)/besselI0(beta)
+echo "Qmean = ", Qmean.mean, " ± ", err(Qmean)
+echo "Tau_Q = ", Qac.mean, " ± ", err(Qac)
+echo "dQrms = ", dQrms.mean, " ± ", err(dQrms)
+echo "Q2/L = ", Q2.mean/float(xlen), " ± ", err(Q2, 1.0/float(xlen))
+echo "Tau_Q2 = ", Q2ac.mean, " ± ", err(Q2ac)
 for i in 0..qmax:
-  echo "P(Q=",i,") = ",qdist[i].mean/float(ntraj), " ± ", qdist[i].stdev/float(ntraj)
+  echo "P(Q=",i,") = ",qdist[i].mean/float(ntraj), " ± ", err(qdist[i], 1.0/float(ntraj))
 
 qexFinalize()
