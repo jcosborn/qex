@@ -61,30 +61,50 @@ func len*[D](sample:Ensemble[D]):int =
     else:
       n - sample.blocksize
 
-proc intAutocorr*(xs: Ensemble[seq[float]]): float =
-  ## rho(t) = sum_i dx_i*dx_(i+t)/(n*C(0)).
-  ## tau = 1/2 + sum_t rho(t); stop at rho <= 0 or t >= 6*tau; return 2*tau.
+proc intAc(xs: Ensemble[seq[float]], mean: float, wolff: bool): float =
+  ## rho(t) = sum_i dx_i*dx_(i+t)/(n*C(0)); return 2*tau_int.
+  ## Ulli Wolff's automatic window (CPC 156 (2004) 143), S = 1.5.
   let n = xs.len
   if n < 2: return 1.0
-  var m = 0.0
-  for i in 0..<n:
-    m += (xs[i]-m)/float(i+1)
   var c0 = 0.0
   for i in 0..<n:
-    let d = xs[i]-m
+    let d = xs[i]-mean
     c0 += d*d
   c0 /= float(n)
   if c0 == 0.0: return 1.0
   var tau = 0.5
-  for lag in 1..<n:
+  let wmax = if wolff: n div 2 else: n-1
+  for lag in 1..wmax:
     var c = 0.0
     for i in 0..<(n-lag):
-      c += (xs[i]-m)*(xs[i+lag]-m)
+      c += (xs[i]-mean)*(xs[i+lag]-mean)
     let rho = c/(float(n)*c0)
-    if rho <= 0.0: break
+    if not wolff and rho <= 0.0: break
     tau += rho
-    if float(lag) >= 6.0*tau: break
+    if wolff:
+      if tau <= 0.5: break
+      let
+        w = float(lag)
+        tw = 1.5/ln((2.0*tau+1.0)/(2.0*tau-1.0))
+      if exp(-w/tw) < tw/sqrt(w*float(n)): break
+    elif float(lag) >= 6.0*tau:
+      break
   2.0*tau
+
+proc intAc(xs: Ensemble[seq[float]], wolff: bool): float =
+  var mean = 0.0
+  for i in 0..<xs.len:
+    mean += (xs[i]-mean)/float(i+1)
+  intAc(xs, mean, wolff)
+
+proc intAutocorr*(xs: Ensemble[seq[float]]): float =
+  intAc(xs, true)
+
+proc intAutocorr*(xs: Ensemble[seq[float]], mean: float): float =
+  intAc(xs, mean, true)
+
+proc intAutocorrPositive*(xs: Ensemble[seq[float]]): float =
+  intAc(xs, false)
 
 proc jackknife*[D,V,A](ensemble:D, blocksize:int, estimator:proc(x:Ensemble[D], arg:A):V, arg:A): auto =
   ## Perform grouped jackknife with blocksize

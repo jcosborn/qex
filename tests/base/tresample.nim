@@ -49,23 +49,30 @@ testbs(3)
 testbs(8)
 
 block:
-  let test = mytest.newTest("autocorrelation positive window")
+  let test = mytest.newTest("autocorrelation windows")
   let
     constant = @[2.0, 2.0, 2.0, 2.0]
     alternating = @[1.0, -1.0, 1.0, -1.0]
     onePositive = @[1.0, 1.0, -1.0, -1.0]
     onePositiveSmall = @[1.0e-8, 1.0e-8, -1.0e-8, -1.0e-8]
   test.assertAlmostEqual(1.0, constant.jackknife(1, intAutocorr).mean)
-  test.assertAlmostEqual(1.0, alternating.jackknife(1, intAutocorr).mean)
+  test.assertAlmostEqual(-0.5, alternating.jackknife(1, intAutocorr).mean)
   test.assertAlmostEqual(1.5, onePositive.jackknife(1, intAutocorr).mean)
   test.assertAlmostEqual(1.5, onePositiveSmall.jackknife(1, intAutocorr).mean)
+  test.assertAlmostEqual(1.0, alternating.jackknife(1, intAutocorrPositive).mean)
+
+block:
+  let test = mytest.newTest("autocorrelation true mean")
+  let x = @[1.0, 2.0]
+  test.assertAlmostEqual(0.0, x.jackknife(x.len, intAutocorr).mean)
+  test.assertAlmostEqual(1.8, x.jackknife(x.len, intAutocorr, 0.0).mean)
 
 block:
   let test = mytest.newTest("autocorrelation window past 200 lags")
   var x = newSeq[float](2048)
   for i in 0..<x.len:
     x[i] = sin(2.0*PI*float(i)/float(x.len))
-  let tau = x.jackknife(x.len, intAutocorr).mean
+  let tau = x.jackknife(x.len, intAutocorrPositive).mean
   test.assertAlmostEqual(1.0, if tau > 500.0: 1.0 else: 0.0)
 
 block:

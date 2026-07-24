@@ -498,7 +498,7 @@ for a in Avals.mitems:
 let pacc = Avals.jackknife(jkBlockSize, mean)
 let Emean = Evals.jackknife(jkBlockSize, mean)
 let Qmean = Qvals.jackknife(jkBlockSize, mean)
-let Qac = Qvals.jackknife(jkBlockSize, intAutocorr)
+let Qac = Qvals.jackknife(jkBlockSize, intAutocorr, 0.0)
 let dQrms = Qvals.jackknife(jkBlockSize, tunnelingRate)
 
 var qmax = 0

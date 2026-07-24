@@ -281,7 +281,7 @@ proc obstat(Hvals, Jvals, Avals, Pvals, Qvals:seq[float]) =
   let pacc = APvals.jackknife(jkBlockSize, mean)
   let Pmean = Pvals.jackknife(jkBlockSize, mean)
   let Qmean = Qvals.jackknife(jkBlockSize, mean)
-  let Qac = Qvals.jackknife(jkBlockSize, intAutocorr)
+  let Qac = Qvals.jackknife(jkBlockSize, intAutocorr, 0.0)
   let dQrms = Qvals.jackknife(jkBlockSize, tunnelingRate)
 
   var qmax = 0
