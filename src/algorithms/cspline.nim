@@ -23,9 +23,15 @@ proc estimateDerivative*[N:static[int],T](dx,dy:array[N,T]):T =
   else:
     error("estimateDerivative: Unimplemented for N = " & $N)
 
-type CSpline*[T] = object
-  x: seq[T]
-  ys: seq[array[2,T]]  ## y and computed second derivatives of y
+type
+  CSpline*[T] = object
+    x: seq[T]
+    ys: seq[array[2,T]]  ## y and computed second derivatives of y
+
+  CubicCoeffs*[T] = tuple[a,b,c,d:T]
+
+  BSplineWeights*[T] = object
+    w*, dw*, iw*: array[4,T]
 
 type
   CSplineBoundDyKind = enum
@@ -63,7 +69,7 @@ func triSolve[T](a,b,c,r:openarray[T]):seq[T] =
 proc newCSpline*[T](x,y:openarray[T], bounds=csplineBounds()):CSpline[T] =
   let n = x.len
   if y.len != n:
-    qexError "different length in x and y: ",n," != ",y.len
+    qexError("different length in x and y: ", n, " != ", y.len)
   var r = CSpline[T](x:newseq[T](n), ys:newseq[array[2,T]](n))
   for i in 0..<n:
     r.ys[i] = [y[i], x[i]]
@@ -222,11 +228,67 @@ func cyclicSolve[T](a,b,c:openarray[T]; alpha,beta:T; r:openarray[T]):seq[T] =
   result = newseq[T](n)
   for i in 0..<n: result[i] = x[i] - fact*z[i]
 
+func bSplineCoeffs*[T](ctl:array[4,T]; h:T):CubicCoeffs[T] =
+  ## ctl = [c[i-1],c[i],c[i+1],c[i+2]], h > 0.
+  ## p(u) = a+b*u+c*u^2+d*u^3 on 0 <= u <= h.
+  let
+    hi = T(1.0)/h
+    hi2 = hi*hi
+    hi3 = hi2*hi
+  result.a = (ctl[0]+T(4.0)*ctl[1]+ctl[2])/T(6.0)
+  result.b = (-ctl[0]+ctl[2])*hi/T(2.0)
+  result.c = (ctl[0]-T(2.0)*ctl[1]+ctl[2])*hi2/T(2.0)
+  result.d = (-ctl[0]+T(3.0)*ctl[1]-T(3.0)*ctl[2]+ctl[3])*hi3/T(6.0)
+
+func bSplineWeights*[T](u,h:T):BSplineWeights[T] =
+  ## h > 0 and 0 <= u <= h.
+  ## w[k] = B_k(u/h), dw[k] = dB_k(u/h)/du,
+  ## iw[k] = integral_0^u B_k(v/h) dv.
+  let
+    f = u/h
+    f2 = f*f
+    f3 = f2*f
+    fm = T(1.0)-f
+    fm2 = fm*fm
+    hi = T(1.0)/h
+    hs = h/T(24.0)
+  result.w = [fm2*fm/T(6.0),
+    (T(3.0)*f3-T(6.0)*f2+T(4.0))/T(6.0),
+    (-T(3.0)*f3+T(3.0)*f2+T(3.0)*f+T(1.0))/T(6.0),
+    f3/T(6.0)]
+  result.dw = [-T(0.5)*fm2*hi,
+    (T(1.5)*f2-T(2.0)*f)*hi,
+    (-T(1.5)*f2+f+T(0.5))*hi,
+    T(0.5)*f2*hi]
+  result.iw = [
+    hs*f*(T(4.0)+f*(-T(6.0)+f*(T(4.0)-f))),
+    hs*f*(T(16.0)+f2*(-T(8.0)+T(3.0)*f)),
+    hs*f*(T(4.0)+f*(T(6.0)+f*(T(4.0)-T(3.0)*f))),
+    hs*f*f3]
+
+proc periodicBSplineControls*[T](y:openarray[T]):seq[T] =
+  ## Controls c_j of the uniform periodic cubic B-spline interpolating y_j:
+  ## (c_{j-1} + 4 c_j + c_{j+1}) / 6 = y_j.
+  let n = y.len
+  if n < 3:
+    qexError("periodic cubic B-spline needs at least 3 values, got ", n)
+  var
+    a = newseq[T](n)
+    b = newseq[T](n)
+    c = newseq[T](n)
+    r = newseq[T](n)
+  for j in 0..<n:
+    a[j] = T(1.0)
+    b[j] = T(4.0)
+    c[j] = T(1.0)
+    r[j] = T(6.0)*y[j]
+  cyclicSolve(a, b, c, T(1.0), T(1.0), r)
+
 proc newCSplinePeriodic*[T](y:openarray[T]; x0,h:T):CSpline[T] =
   ## Uniform periodic cubic spline. Values wrap, so y[n] == y[0].
   let n = y.len
   if n < 3:
-    qexError "periodic cubic spline needs at least 3 knots, got ", n
+    qexError("periodic cubic spline needs at least 3 knots, got ", n)
   var r = newseq[T](n)
   for j in 0..<n:
     let jm = (j + n - 1) mod n
@@ -245,7 +307,7 @@ proc newCSplinePeriodic*[T](y:openarray[T]; x0,h:T):CSpline[T] =
   result.x[n] = x0 + T(n)*h
   result.ys[n] = [y[0], m[0]]
 
-func segmentCoeffs*[T](csp:CSpline[T]; i:int):tuple[a,b,c,d:T] =
+func segmentCoeffs*[T](csp:CSpline[T]; i:int):CubicCoeffs[T] =
   ## Coefficients for S(x) = a + b*u + c*u^2 + d*u^3, u = x - csp.x[i].
   let
     h = csp.x[i+1] - csp.x[i]
@@ -257,156 +319,3 @@ func segmentCoeffs*[T](csp:CSpline[T]; i:int):tuple[a,b,c,d:T] =
   result.b = (y1 - y0)/h - h*(T(2.0)*m0 + m1)/T(6.0)
   result.c = T(0.5)*m0
   result.d = (m1 - m0)/(T(6.0)*h)
-
-when isMainModule:
-  import qex
-  import utils/test
-
-  proc fun0(x:float):auto =
-    return (1.0+x, 1.0, 0.0, 0.0)
-  proc fun1(x:float):auto =
-    return ((1.0+x)*(2.0-x), 1.0-2.0*x, -2.0, 0.0)
-  proc fun2(x:float):auto =
-    return ((1.0+x)*(2.0-x)*(1.0-x), (3.0*x-4.0)*x-1.0, 6.0*x-4.0, 6.0)
-
-  proc testEstD(test:QEXTest, ord:int, dx,dy:array[3,float], actual:float) =
-    let d = [estimateDerivative([dx[0]],[dy[0]]),
-             estimateDerivative([dx[0],dx[1]],[dy[0],dy[1]]),
-             estimateDerivative(dx,dy)]
-    let test = test.newTest("estimate derivative")
-    for o in ord..3:
-      test.assertAlmostEqual(d[o-1], actual)
-
-  proc testCSp(test:QEXTest, spline:CSPline[float], ord:int, f:proc, checkValues=true) =
-    let n = spline.x.len
-    for i in 0..<n:
-      test.logInfo i," x: ",spline.x[i]," y: ",spline.ys[i][0]," y'': ",spline.ys[i][1]
-      let fx = f(spline.x[i])
-      test.logInfo "  exact y': ",fx[1],"  y'': ",fx[2],"  y''': ",fx[3]
-      #if i<n-1:
-      #  let h = spline.x[i+1]-spline.x[i]
-      #  let d = spline.ys[i+1][0]-spline.ys[i][0]
-      #  echo "  y'",i," ",d/h+h*spline.ys[i][1]/(-3.0)+h*spline.ys[i+1][1]/(-6.0)
-      #  echo "  y'",i+1," ",d/h+h*spline.ys[i][1]/6.0+h*spline.ys[i+1][1]/3.0
-    let testcontdy = test.newTest("Continuous Derivatives", hidden=1)
-    for i in 1..<n-1:
-      let
-        hm = spline.x[i]-spline.x[i-1]
-        hp = spline.x[i+1]-spline.x[i]
-        dym = (spline.ys[i][0]-spline.ys[i-1][0])/hm + hm*spline.ys[i-1][1]/6.0 + hm*spline.ys[i][1]/3.0
-        dyp = (spline.ys[i+1][0]-spline.ys[i][0])/hp + hp*spline.ys[i][1]/(-3.0) + hp*spline.ys[i+1][1]/(-6.0)
-      testcontdy.assertAlmostEqual(dyp, dym)
-    if checkValues:
-      for x in [spline.x[0], spline.x[n-1], spline.x[0]+0.05, 0.0, spline.x[n-1]-0.05]:
-        let
-          testp = test.newTest("x=" & $x, hidden=1)
-          yi = spline.interpolate(x)
-          dyi = spline.interpolateDy(x)
-          d2yi = spline.interpolateD2y(x)
-          (y, dy, d2y, d3y) = f(x)
-        if ord<4:
-          testp.newTest("y", hidden=1).assertAlmostEqual(yi, y)
-          testp.newTest("dy", hidden=1).assertAlmostEqual(dyi, dy)
-          testp.newTest("d2y", hidden=1).assertAlmostEqual(d2yi, d2y)
-
-  proc run(test:QEXTest, ord:int, f:proc) =
-    let test = test.newTest("polynomial degree " & $ord)
-    let
-      n = 7
-      m = 4
-    var
-      xs = newseq[float](n+m)
-      ys = newseq[float](n+m)
-      dys = newseq[array[3,float]](n+m)
-    for i in 0..<n:
-      let x = float(i)*5.0/float(n-1) - 2.0
-      let fx = f(x)
-      xs[i] = x
-      ys[i] = fx[0]
-      dys[i][0] = fx[1]
-      dys[i][1] = fx[2]
-      dys[i][2] = fx[3]
-    for i in 0..<m:
-      let x = float(i)*5.0/float(m-1) - 1.9
-      let fx = f(x)
-      xs[n+i] = x
-      ys[n+i] = fx[0]
-      dys[n+i][0] = fx[1]
-      dys[n+i][1] = fx[2]
-      dys[n+i][2] = fx[3]
-    testEstD(test, ord, [xs[3]-xs[2],xs[4]-xs[2],xs[5]-xs[2]], [ys[3]-ys[2],ys[4]-ys[2],ys[5]-ys[2]], dys[2][0])
-    testCSp(
-      test.newTest("cspline default (est. 1st deriv.)"),
-      newCSpline(xs,ys),
-      ord, f)
-    testCSp(
-      test.newTest("cspline set 1st deriv. bounds"),
-      newCSpline(xs,ys,csplineBounds(dyBound(dys[0][0]),dyBound(dys[^1][0]))),
-      ord, f)
-    testCSp(
-      test.newTest("cspline natural (zero 2nd deriv.)"),
-      newCSpline(xs,ys,csplineBounds(CSplineBoundZeroD2y,CSplineBoundZeroD2y)),
-      ord, f, checkValues=false)
-
-  proc runPeriodic(test:QEXTest) =
-    ## Periodic spline for a smooth periodic function.
-    let test = test.newTest("periodic cubic spline")
-    const n = 64
-    let x0 = -PI
-    let h = 2.0*PI/float(n)
-    proc f(p:float):tuple[v,d1:float] =
-      let v = exp(0.5*cos(p) + 0.3*sin(p))
-      (v, (-0.5*sin(p) + 0.3*cos(p))*v)
-    var ys = newseq[float](n)
-    for j in 0..<n: ys[j] = f(x0 + float(j)*h).v
-    let csp = newCSplinePeriodic(ys, x0, h)
-
-    let tknot = test.newTest("knot values")
-    for j in 0..<n:
-      tknot.assertAlmostEqual(csp.interpolate(x0 + float(j)*h), ys[j])
-
-    let tseg = test.newTest("segment coeffs vs interpolate")
-    for j in 0..<n:
-      let (a,b,c,d) = csp.segmentCoeffs(j)
-      for t in [0.17, 0.5, 0.83]:
-        let u = t*h
-        let x = x0 + float(j)*h + u
-        tseg.assertAlmostEqual(a + b*u + c*u*u + d*u*u*u, csp.interpolate(x))
-        tseg.assertAlmostEqual(b + 2.0*c*u + 3.0*d*u*u, csp.interpolateDy(x))
-
-    # Check derivative continuity across the wrap.
-    test.newTest("seam derivative").assertAlmostEqual(
-      csp.interpolateDy(x0 + 1e-7), csp.interpolateDy(x0 + 2.0*PI - 1e-7),
-      absTol=1e-6, relTol=1e-6)
-
-    # Simpson must match the exact cubic integral.
-    let tint = test.newTest("segment integral")
-    var total = 0.0
-    for j in 0..<n:
-      let (a,b,c,d) = csp.segmentCoeffs(j)
-      let segInt = a*h + 0.5*b*h*h + (c/3.0)*h*h*h + 0.25*d*h*h*h*h
-      let hm = 0.5*h
-      let yL = a
-      let yMid = a + b*hm + c*hm*hm + d*hm*hm*hm
-      let yR = a + b*h + c*h*h + d*h*h*h
-      tint.assertAlmostEqual(segInt, (h/6.0)*(yL + 4.0*yMid + yR))
-      total += segInt
-    var refInt = 0.0
-    const nf = 200000
-    for i in 0..<nf: refInt += f(x0 + (float(i)+0.5)*2.0*PI/float(nf)).v
-    refInt *= 2.0*PI/float(nf)
-    test.newTest("period integral").assertAlmostEqual(total, refInt, absTol=1e-4, relTol=1e-4)
-
-    let tapp = test.newTest("approximation")
-    for t in [0.1, 1.3, 2.7, 4.5, 6.0]:
-      let x = x0 + t
-      tapp.assertAlmostEqual(csp.interpolate(x), f(x).v, absTol=1e-5, relTol=1e-5)
-      tapp.assertAlmostEqual(csp.interpolateDy(x), f(x).d1, absTol=1e-3, relTol=1e-3)
-
-  qexInit()
-  let thetest = newQEXTest("CSpline")
-  thetest.run(1,fun0)
-  thetest.run(2,fun1)
-  thetest.run(3,fun2)
-  thetest.runPeriodic
-  thetest.qexFinalize

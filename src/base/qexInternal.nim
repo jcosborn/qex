@@ -20,6 +20,9 @@ var
 
 proc qexTime*: float = ticDiffSecs(getTics(), qexStartTime)
 
+proc qexAbort*(status = -1) =
+  commsAbort(status)
+
 template qexLogT*(t:float, s:varargs[string,`$`]) =
   echo "[", formatFloat(t,ffDecimal,3), " s] ", s.join
 
@@ -34,6 +37,7 @@ template qexWarn*(s:varargs[string,`$`]) =
     echo "  ", s.join
 
 template qexError*(s:varargs[string,`$`]) =
+  bind qexAbort
   let ii = instantiationInfo()
   echo "Error: ", ii.filename, ":", ii.line, ":"
   if s.len > 0:
@@ -100,6 +104,3 @@ proc qexFinalize*() =
 proc qexExit*(status = 0) =
   qexFinalize()
   quit(status)
-
-proc qexAbort*(status = -1) =
-  commsAbort(status)
