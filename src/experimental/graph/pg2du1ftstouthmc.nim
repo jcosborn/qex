@@ -42,7 +42,7 @@ for n in gp.lat:
     raiseValueError("pg2du1ftstouthmc requires even lattice extents")
 if sp.nsmear < 0:
   raiseValueError("nsmear must be >= 0, got " & $sp.nsmear)
-# J = 1 + rho(cos p+ + cos p-) > 0 for every link.
+# J = 1 - rho(cos p+ + cos p-) > 0 for every link.
 if abs(sp.rho) >= 0.5:
   qexWarn "abs(rho) >= 1/2; the 2D U(1) stout Jacobian is not guaranteed positive: rho ", sp.rho
 installStandardParams()
