@@ -950,7 +950,7 @@ proc setVerbosityQuda*(verbosity: QudaVerbosity; prefix: ptr char; outfile: ptr 
 ##
 
 type
-  QudaCommsMap* = proc (coords: ptr cint; fdata: pointer): cint {.cdecl.}
+  QudaCommsMap* = proc (coords: ptr ConstInt; fdata: pointer): cint {.cdecl.}
 
 ##
 ##  @param mycomm User provided MPI communicator in place of MPI_COMM_WORLD
