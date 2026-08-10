@@ -670,7 +670,7 @@ proc stagForceSolve[T](
   sp0.addStats(sp)
 
 proc fermForce[U, S](f: seq[U]; psi: S; u: GaugeConfiguration[U]) =
-  let nc = psi[0].len
+  const nc = psi[0].len
   let nd = psi.l.nDim
   var
     ff = f.newOneOf()
