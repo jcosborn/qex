@@ -46,7 +46,7 @@ var run = false
 var runArgs = ""
 #var verbosity = -1
 var bindir = "bin"
-var srcPaths = @[".", "qex/src", "qex/tests"]  # use relative paths for convenience
+var srcPaths = @[".", "qex/src", "qex/tests", "qex/prod"]  # use relative paths for convenience
 if getCurrentDir() == qexDir: srcPaths = @["."]
 
 proc findSrc(g: string): tuple[files:seq[string],dirs:seq[string]] =
@@ -311,7 +311,7 @@ proc buildTests() =
     let outdir = bindir
     if not dirExists(outdir):
       mkDir outdir
-    runscript.addTest(qexDir/"src"/f, outdir)
+    runscript.addTest(qexDir/f, outdir)
     extraArgs = ""
   #echo runscript.join("\n")
   runscript.add("$CLEANUPJOBS")

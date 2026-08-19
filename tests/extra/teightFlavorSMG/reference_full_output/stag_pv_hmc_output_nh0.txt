@@ -1,0 +1,464 @@
+Using Comm: QMP
+[0.727 s] QEX Initialized at 2026-08-19 09:34:01
+[0.728 s] Running with 1 ranks and 16 threads per rank
+
+Start: 2026-08-19T13:34:01Z
+
+ ~~~~ Parallel information  ~~~~
+
+# ranks: 1
+# threads: 16
+                                .oooooo.      oooooooooooo ooooooo  ooooo                                
+                               d8P'  `Y8b     `888'     `8  `8888    d8'                                 
+                              888      888     888            Y888..8P                                   
+                              888      888     888oooo8        `8888'                                    
+                              888      888     888    "       .8PY888.                                   
+                              `88b    d88b     888       o   d8'  `888b                                  
+                               `Y8bood8P'Ybd' o888ooooood8 o888o  o88888o                                
+                                                                                                         
+                                                                                                         
+                                                                                                         
+ .oooooo..o     .                                            ooooo   ooooo ooo        ooooo   .oooooo.   
+d8P'    `Y8   .o8                                            `888'   `888' `88.       .888'  d8P'  `Y8b  
+Y88bo.      .o888oo  .oooo.    .oooooooo  .oooooooo           888     888   888b     d'888  888          
+ `"Y8888o.    888   `P  )88b  888' `88b  888' `88b            888ooooo888   8 Y88. .P  888  888          
+     `"Y88b   888    .oP"888  888   888  888   888            888     888   8  `888'   888  888          
+oo     .d8P   888 . d8(  888  `88bod8P'  `88bod8P'  .o.       888     888   8    Y     888  `88b    ooo  
+8""88888P'    "888" `Y888""8o `8oooooo.  `8oooooo.  Y8P      o888o   o888o o8o        o888o  `Y8bood8P'  
+                              d"     YD  d"     YD                                                       
+                              "Y88888P'  "Y88888P'                                                       
+                
+Quantum EXpressions (QEX) authors: James Osborn & Xiao-Yong Jin
+QEX Staggered HMC authors: James Osborn, Xiao-Yong Jin, Curtis Taylor Peterson, Anna Hasenfratz
+QEX GitHub: https://github.com/jcosborn/qex
+QEX Staggered HMC GitHub: https://github.com/ctpeterson/qex_staghmc 
+   
+
+ ~~~~ Command line options ~~~~
+
+XML file: tests/extra/teightFlavorSMG/reference_full_output/stag_pv_hmc_input_nh0.xml
+start config: 0
+end config: 1
+config. spacing: 1 trajs.
+save frequency: 0
+
+ ~~~~ XML information ~~~~
+
+tau: 0.15
+multirate_scheme: nested
+g_steps: 2
+sg_steps: 1
+f_steps: 3
+pv_steps: 3
+gauge_int_alg: 2MN
+smeared_gauge_int_alg: 2MN
+ferm_int_alg: 2MN
+pv_int_alg: 2MN
+no_metropolis_until: 0
+start_config: 0
+start: cold
+rng_type: RngMilc6
+parallel_seed: 987654321
+serial_seed: 987654321
+Ns: 4
+Nt: 4
+num_Ns: 3
+num_Nt: 1
+bc: pppa
+gauge_act: adjoint
+beta: 6.0
+adj_fac: -0.25
+c1: 0.0
+sg_opt: 0
+smeared_gauge_act: adjoint
+sm_beta: 6.0
+sm_adj_fac: -0.25
+sm_c1: 0.0
+Nf: 2
+mass: 0.05
+preconditioner: none
+mass_h: 0.3
+num_pv: 8
+mass_pv: 0.75
+gauge_smearing: nhyp
+matter_smearing: nhyp
+alpha_1: 0.4
+alpha_2: 0.5
+alpha_3: 0.5
+a_tol: 1e-24
+a_maxits: 10000
+f_tol: 1e-16
+f_maxits: 10000
+check_solvers: 0
+plaq_freq: 1
+plaq_verbose: true
+ploop_freq: 1
+rev_check_freq: 0
+#physGeom:@[4, 4, 4, 4]
+#rankGeom:@[1, 1, 1, 1]
+#localGeom:@[4, 4, 4, 4]
+#innerGeom:@[1, 2, 2, 2]
+#outerGeom:@[4, 2, 2, 2]
+#innerGeom:@[1, 2, 2, 2]
+#outerGeom:@[4, 2, 2, 2]
+#innerCb: 0
+#innerCbDir: 0
+
+Using rectangle action with beta_F, beta_A/beta_F = 6.0, -0.25
+
+ ~~~~ Initialize gauge/RNG fields ~~~~
+
+#newRNGField lo:
+[1, 1, 1, 1]
+#physGeom:@[4, 4, 4, 4]
+#rankGeom:@[1, 1, 1, 1]
+#localGeom:@[4, 4, 4, 4]
+#innerGeom:@[1, 1, 1, 1]
+#outerGeom:@[4, 4, 4, 4]
+#innerGeom:@[1, 1, 1, 1]
+#outerGeom:@[4, 4, 4, 4]
+#innerCb: 0
+#innerCbDir: 0
+
+Smeared links will use nHYP-smearing with alpha1, alpha2, alpha3 = 0.4, 0.5, 0.5, 
+Staggered Dirac op. to use smeared gauge links
+
+~~~~ Integrator information ~~~~
+
+Omelyan2MN:dt^2{
+  (steps=3){
+    0: 0.1931833275037836 * Omelyan2MN:dt^2{
+        (steps=2){
+          0: 0.1931833275037836 * mdt
+          1: 0.5 * mdvAllfgaN[0]
+          2: 0.6136333449924328 * mdt{0}
+          3: 0.5 * mdvAllfgaN[0]{1}
+          4: 0.1931833275037836 * mdt{0}
+        }
+      }
+    1: 0.5 * mdvAllfgaN[1]
+    2: 0.6136333449924328 * Omelyan2MN{0}
+    3: 0.5 * mdvAllfgaN[1]{1}
+    4: 0.1931833275037836 * Omelyan2MN{0}
+  }
+}
+
+~~~~ Trajectory #: 0 1/1 ~~~~
+
+Generate momenta and save backup gauge field: 0.00020067600000001073
+Smear gauge field for gauge sector 0.0025879330000000422
+Rephase: 0.000007633999999978602
+stagSolve: 4  0.0003291s  2.343Gf/s  1.492e-31
+stagSolve: 4  0.0001678s  4.595Gf/s  1.414e-31
+stagSolve: 4  0.0001588s  4.854Gf/s  1.486e-31
+stagSolve: 4  0.0001471s  5.243Gf/s  1.713e-31
+stagSolve: 4  0.0001506s  5.119Gf/s  1.741e-31
+stagSolve: 4  0.0001375s  5.606Gf/s  1.406e-31
+stagSolve: 4  0.0001502s  5.135Gf/s  1.677e-31
+stagSolve: 4  0.0001487s  5.185Gf/s  1.513e-31
+Generate fermion/boson fields: 0.001733371000000039
+stagSolve: 4  0.0001346s  5.729Gf/s  9.701e-32
+stagSolve: 4  9.037e-05s  8.532Gf/s  9.395e-32
+Calculate action: 0.004966835000000003
+Beginning H: 3936.2892634144587 Sg: 0.0, Ssg: 0.0, Sf: 3894.790157512182, Sf (indiv.): @[391.2960037606756, 394.9353136348723, 379.7656117814614, 402.36934694708054, 411.20477586232875, 375.59734019677353, 376.34503902641586, 373.254912249764, 396.83000287826957, 393.1918111745405], T: 41.499105902276824
+Gauge field update: 0.00008665199999996487
+Smear gauge field & prepare force proc. 0.0000010019999999721918
+Gauge field momentum update from unsmeared gauge sector: 0.00018220099999999295
+Integrator update:  0.00020114799999998434
+Gauge field update: 0.00003806100000003365
+Smear gauge field & prepare force proc. 0.000000920999999987071
+Gauge field momentum update from unsmeared gauge sector: 0.000382616999999974
+Integrator update:  0.00040171300000002574
+Gauge field update: 0.00003811199999997905
+Smear gauge field & prepare force proc. 0.0000008819999999798434
+Gauge field momentum update from unsmeared gauge sector: 0.0005217579999999833
+Integrator update:  0.0005499720000000097
+Gauge field update: 0.000053240000000009946
+Smear gauge field & prepare force proc. 0.0000009319999999535256
+Gauge field momentum update from unsmeared gauge sector: 0.0005164080000000237
+Integrator update:  0.0005368069999999725
+Gauge field update: 0.00003797100000002551
+Smear gauge field & prepare force proc. 0.0009772730000000007
+Rephase: 0.000007283000000024575
+Rephase smeared links: 0.0010467639999999778
+stagSolve: 13  0.0001486s  14.59Gf/s  6.677e-17
+stagSolve: 13  0.0001327s  16.33Gf/s  6.423e-17
+D app.: 0.000056936000000007425
+D app.: 0.000005992000000010211
+D app.: 0.000005629999999978708
+D app.: 0.000018955999999958895
+D app.: 0.000005810999999966704
+D app.: 0.000005741000000003549
+D app.: 0.0000054099999999834836
+D app.: 0.000005729999999981583
+Dslash and outer product 0.0006851250000000086
+Rephase: 0.00000611200000000256
+Rephase force/set BC's: 0.00001914599999996991
+Smeared matter force: 0.0008270510000000231
+Multiply force by gauge link and project TA: 0.0008474490000000001
+Full fermion/boson force calculation: 0.0015497560000000132
+Gauge field momentum update from fermion/boson sector: 0.001567109000000011
+Integrator update:  0.0026301429999999737
+Gauge field update: 0.00003845299999999385
+Smear gauge field & prepare force proc. 0.0000010320000000119123
+Gauge field momentum update from unsmeared gauge sector: 0.00010482700000002954
+Integrator update:  0.00012468400000004154
+Gauge field update: 0.00003809199999998958
+Smear gauge field & prepare force proc. 0.0000008220000000114247
+Gauge field momentum update from unsmeared gauge sector: 0.00008428799999998793
+Integrator update:  0.00010177100000002826
+Gauge field update: 0.00003827100000003414
+Smear gauge field & prepare force proc. 0.0000009420000000037732
+Gauge field momentum update from unsmeared gauge sector: 0.0002509910000000337
+Integrator update:  0.0002794740000000018
+Gauge field update: 0.000043030999999971176
+Smear gauge field & prepare force proc. 0.0000010010000000004737
+Gauge field momentum update from unsmeared gauge sector: 0.00008651300000001028
+Integrator update:  0.00010444500000000856
+Gauge field update: 0.000038020999999999194
+Smear gauge field & prepare force proc. 0.0010308829999999825
+Rephase: 0.000007362999999982467
+Rephase smeared links: 0.0010597779999999557
+stagSolve: 17  0.0002249s  12.40Gf/s  5.395e-17
+stagSolve: 17  0.0002017s  13.82Gf/s  4.921e-17
+D app.: 0.000006561999999987744
+D app.: 0.000005831000000011688
+D app.: 0.000007513999999986254
+D app.: 0.000005719999999986847
+D app.: 0.000005670999999984883
+D app.: 0.000005600999999966216
+D app.: 0.000010239999999994698
+D app.: 0.000005860999999995897
+Dslash and outer product 0.000793949000000016
+Rephase: 0.000006121000000025578
+Rephase force/set BC's: 0.0000191159999999857
+Smeared matter force: 0.0011397380000000013
+Multiply force by gauge link and project TA: 0.001164624000000003
+Full fermion/boson force calculation: 0.0019754049999999856
+Gauge field momentum update from fermion/boson sector: 0.0019900620000000147
+Integrator update:  0.003065979999999968
+Gauge field update: 0.00006202599999999281
+Smear gauge field & prepare force proc. 0.0000010319999999564011
+Gauge field momentum update from unsmeared gauge sector: 0.00032923699999998224
+Integrator update:  0.0003478129999999746
+Gauge field update: 0.00003844199999997189
+Smear gauge field & prepare force proc. 0.0000009219999999587891
+Gauge field momentum update from unsmeared gauge sector: 0.0004858919999999878
+Integrator update:  0.0005077419999999777
+Gauge field update: 0.0000385220000000408
+Smear gauge field & prepare force proc. 0.000000961000000021528
+Gauge field momentum update from unsmeared gauge sector: 0.00029047400000004053
+Integrator update:  0.00030885899999999467
+Gauge field update: 0.00003803200000002116
+Smear gauge field & prepare force proc. 0.0000008810000000081253
+Gauge field momentum update from unsmeared gauge sector: 0.00024533000000004357
+Integrator update:  0.0002639349999999929
+Gauge field update: 0.000038042000000015896
+Smear gauge field & prepare force proc. 0.0000008309999999789319
+Gauge field momentum update from unsmeared gauge sector: 0.0003123259999999739
+Integrator update:  0.00033755299999999044
+Gauge field update: 0.00003835200000001926
+Smear gauge field & prepare force proc. 0.0000008619999999903705
+Gauge field momentum update from unsmeared gauge sector: 0.00024957799999997254
+Integrator update:  0.00026803300000000085
+Gauge field update: 0.00003807100000002839
+Smear gauge field & prepare force proc. 0.0000008919999999745798
+Gauge field momentum update from unsmeared gauge sector: 0.00045119599999998705
+Integrator update:  0.0004727170000000114
+Gauge field update: 0.00003826200000001112
+Smear gauge field & prepare force proc. 0.0000009119999999640527
+Gauge field momentum update from unsmeared gauge sector: 0.0002683729999999884
+Integrator update:  0.0002867179999999636
+Gauge field update: 0.00003835199999996375
+Smear gauge field & prepare force proc. 0.0008831960000000305
+Rephase: 0.00000781500000002211
+Rephase smeared links: 0.0009126110000000076
+stagSolve: 20  0.0002401s  13.55Gf/s  6.616e-18
+stagSolve: 20  0.0002380s  13.67Gf/s  6.751e-18
+D app.: 0.0000069129999999972824
+D app.: 0.00000588099999998537
+D app.: 0.000005851000000001161
+D app.: 0.000005749999999971056
+D app.: 0.000008606000000022096
+D app.: 0.000005750999999998285
+D app.: 0.000005811000000022215
+D app.: 0.000005801000000027479
+Dslash and outer product 0.000912310999999999
+Rephase: 0.000006070999999996385
+Rephase force/set BC's: 0.000019416000000049838
+Smeared matter force: 0.0010391080000000108
+Multiply force by gauge link and project TA: 0.0010585450000000218
+Full fermion/boson force calculation: 0.0019873169999999885
+Gauge field momentum update from fermion/boson sector: 0.0020015439999999662
+Integrator update:  0.0029302150000000138
+Gauge field update: 0.000038651999999972375
+Smear gauge field & prepare force proc. 0.0000009719999999879825
+Gauge field momentum update from unsmeared gauge sector: 0.00028210899999997485
+Integrator update:  0.0003121859999999921
+Gauge field update: 0.00003823200000002691
+Smear gauge field & prepare force proc. 0.0000009409999999765439
+Gauge field momentum update from unsmeared gauge sector: 0.00008969899999999864
+Integrator update:  0.00010978499999997338
+Gauge field update: 0.00003820099999995996
+Smear gauge field & prepare force proc. 0.0000009009999999975982
+Gauge field momentum update from unsmeared gauge sector: 0.00008530000000001037
+Integrator update:  0.00010279299999998992
+Gauge field update: 0.000038310999999957573
+Smear gauge field & prepare force proc. 0.0000008710000000133888
+Gauge field momentum update from unsmeared gauge sector: 0.00008545999999998166
+Integrator update:  0.00010288200000002634
+Gauge field update: 0.000038221000000004945
+Smear gauge field & prepare force proc. 0.00044231900000002433
+Rephase: 0.0000073040000000412775
+Rephase smeared links: 0.00046796700000001357
+stagSolve: 21  0.0002996s  11.38Gf/s  2.394e-17
+stagSolve: 21  0.0002866s  11.89Gf/s  2.641e-17
+D app.: 0.000006593000000054694
+D app.: 0.000015910000000007862
+D app.: 0.000006030999999961928
+D app.: 0.000015329000000008364
+D app.: 0.000010159000000009577
+D app.: 0.000005870999999990634
+D app.: 0.000005760999999993022
+D app.: 0.000005790999999977231
+Dslash and outer product 0.001097118000000008
+Rephase: 0.000012072000000029615
+Rephase force/set BC's: 0.000027671999999978603
+Smeared matter force: 0.0008055409999999652
+Multiply force by gauge link and project TA: 0.0008221820000000046
+Full fermion/boson force calculation: 0.0019358409999999937
+Gauge field momentum update from fermion/boson sector: 0.001950337999999996
+Integrator update:  0.00243463599999999
+Gauge field update: 0.000038482000000006344
+Smear gauge field & prepare force proc. 0.0000010220000000171758
+Gauge field momentum update from unsmeared gauge sector: 0.00010009699999996569
+Integrator update:  0.00012017500000000014
+Gauge field update: 0.00003829199999999533
+Smear gauge field & prepare force proc. 0.0000009320000000090367
+Gauge field momentum update from unsmeared gauge sector: 0.0001721729999999977
+Integrator update:  0.00019013699999997913
+Gauge field update: 0.00003788100000001737
+Smear gauge field & prepare force proc. 0.0000009219999999587891
+Gauge field momentum update from unsmeared gauge sector: 0.00023022200000000215
+Integrator update:  0.00024849599999998695
+Gauge field update: 0.00003801099999994895
+Smear gauge field & prepare force proc. 0.0000008619999999903705
+Gauge field momentum update from unsmeared gauge sector: 0.0017638279999999673
+Integrator update:  0.0017869409999999863
+Gauge field update: 0.00003838200000000347
+Smear gauge field & prepare force proc. 0.0000008920000000300909
+Gauge field momentum update from unsmeared gauge sector: 0.0007614680000000429
+Integrator update:  0.0007834400000000241
+Gauge field update: 0.000038312000000040314
+Smear gauge field & prepare force proc. 0.0000009420000000037732
+Gauge field momentum update from unsmeared gauge sector: 0.0002449900000000005
+Integrator update:  0.00026377500000002163
+Gauge field update: 0.00003826200000001112
+Smear gauge field & prepare force proc. 0.0000009810000000110009
+Gauge field momentum update from unsmeared gauge sector: 0.0002598580000000017
+Integrator update:  0.00027888300000000754
+Gauge field update: 0.00003812100000000207
+Smear gauge field & prepare force proc. 0.000000810999999989459
+Gauge field momentum update from unsmeared gauge sector: 0.000295455
+Integrator update:  0.0003168139999999986
+Gauge field update: 0.00003802199999997091
+Smear gauge field & prepare force proc. 0.0008475499999999747
+Rephase: 0.000008345000000020697
+Rephase smeared links: 0.0008784579999999709
+stagSolve: 22  0.0002542s  14.02Gf/s  5.662e-17
+stagSolve: 22  0.0004340s  8.210Gf/s  7.278e-17
+D app.: 0.000007864999999995792
+D app.: 0.000014296999999996451
+D app.: 0.000005629999999978708
+D app.: 0.000005790999999977231
+D app.: 0.00001576999999997053
+D app.: 0.000005780999999982495
+D app.: 0.000005570000000010289
+D app.: 0.000014958000000009353
+Dslash and outer product 0.0011424930000000222
+Rephase: 0.000005700999999969092
+Rephase force/set BC's: 0.000018493999999980026
+Smeared matter force: 0.0009528369999999842
+Multiply force by gauge link and project TA: 0.0009720529999999727
+Full fermion/boson force calculation: 0.002131366999999995
+Gauge field momentum update from fermion/boson sector: 0.0021455840000000337
+Integrator update:  0.003040292
+Gauge field update: 0.00003800100000000972
+Smear gauge field & prepare force proc. 0.0000009810000000110009
+Gauge field momentum update from unsmeared gauge sector: 0.00009056999999995652
+Integrator update:  0.00010872300000003277
+Gauge field update: 0.00003803099999999393
+Smear gauge field & prepare force proc. 0.0000009219999999587891
+Gauge field momentum update from unsmeared gauge sector: 0.0000856800000000324
+Integrator update:  0.00010326399999999181
+Gauge field update: 0.0000377810000000145
+Smear gauge field & prepare force proc. 0.0000009020000000248274
+Gauge field momentum update from unsmeared gauge sector: 0.00015863700000001701
+Integrator update:  0.00017728200000000083
+Gauge field update: 0.00003795100000003604
+Smear gauge field & prepare force proc. 0.0000008819999999798434
+Gauge field momentum update from unsmeared gauge sector: 0.00032722400000001484
+Integrator update:  0.0003494549999999985
+Gauge field update: 0.000038391999999998205
+Smear gauge field & prepare force proc. 0.00034362499999995855
+Rephase: 0.000007254000000012084
+Rephase smeared links: 0.0003693830000000009
+stagSolve: 24  0.0002033s  19.05Gf/s  3.986e-17
+stagSolve: 24  0.0001975s  19.61Gf/s  4.557e-17
+D app.: 0.000006282000000024102
+D app.: 0.000006102000000007823
+D app.: 0.000005890999999980107
+D app.: 0.000006000999999977719
+D app.: 0.0000058009999999719675
+D app.: 0.000005670999999984883
+D app.: 0.000005831000000011688
+D app.: 0.000005801000000027479
+Dslash and outer product 0.000752319999999973
+Rephase: 0.000006451999999990132
+Rephase force/set BC's: 0.000019706999999979935
+Smeared matter force: 0.000812083000000019
+Multiply force by gauge link and project TA: 0.0008304780000000234
+Full fermion/boson force calculation: 0.001599548999999978
+Gauge field momentum update from fermion/boson sector: 0.0016138370000000068
+Integrator update:  0.001999449999999958
+Gauge field update: 0.000038632000000038413
+Smear gauge field & prepare force proc. 0.0000009810000000110009
+Gauge field momentum update from unsmeared gauge sector: 0.00009220199999998568
+Integrator update:  0.00010995600000002215
+Gauge field update: 0.00003814200000001877
+Smear gauge field & prepare force proc. 0.000000920999999987071
+Gauge field momentum update from unsmeared gauge sector: 0.00008758500000000113
+Integrator update:  0.00010528699999995395
+Gauge field update: 0.00003944399999999959
+Smear gauge field & prepare force proc. 0.0000009020000000248274
+Gauge field momentum update from unsmeared gauge sector: 0.0001624640000000288
+Integrator update:  0.00018063900000003796
+Gauge field update: 0.000038132000000024036
+Smear gauge field & prepare force proc. 0.0000008509999999684048
+Gauge field momentum update from unsmeared gauge sector: 0.00027176000000000977
+Integrator update:  0.0002904149999999883
+Gauge field update: 0.000038362000000013996
+Smear gauge field for gauge sector 0.0010836929999999967
+Rephase: 0.00002817300000002021
+stagSolve: 36  0.0007058s  8.126Gf/s  5.285e-25
+stagSolve: 36  0.0004087s  14.03Gf/s  5.904e-25
+Calculate action: 0.0024755830000000034
+Ending H: 3936.287081075318 Sg: 523.6632664952248, Ssg: 0.0, Sf: 3884.3800410720564, Sf (indiv.): @[395.9663700554574, 395.7717025257666, 375.3629405417343, 400.1926120156169, 405.8624503046495, 374.0192053852513, 375.44093976026693, 371.83592012132453, 396.3015420322555, 393.6263583297336], T: -471.7562264919634
+dg, dsg, d(t + g), df2, df2 (indiv.): 523.6632664952248, 0.0, 10.407934100984562, -10.410116440125421, @[4.670366294781786, 0.8363888908943409, -4.402671239727113, -2.1767349314636704, -5.34232555767926, -1.5781348115222045, -0.9040992661489327, -1.41899212843947, -0.5284608460140703, 0.4345471551931155]
+ACCEPT: dH: -0.002182339140745171  exp(-dH): 1.002184722176023  r: 0.06697195768356323
+unitary deviation avg: 3.555038291220697e-16 max: 9.231555440928007e-16
+new unitary deviation avg: 3.12354184644957e-16 max: 8.34752514876889e-16
+MEASplaq ss: 0.8937060075695966  st: 0.8932286883109506  tot: 0.8934673479402736
+MEASplaq 0-dir even/odd: 0.8907961111355043 0.9003106251881122
+MEASplaq 1-dir even/odd: 0.8918868417109012 0.8964498815971313
+MEASplaq 2-dir even/odd: 0.893122132735346 0.888715814533292
+MEASplaq 3-dir even/odd: 0.8931651599546517 0.8932922166672492
+MEASploop spatial: 0.8848682813219191 0.0004077201027485773 temporal: 0.8796440674943892 0.0004907372865245194
+
+Total time for config. #0 1/1: 0.039171495
+
+Total time for config. #0: 0.039181072999999955
+
+End: 2026-08-19T13:34:01Z
+
+[0.773 s] Total time (Init - Finalize): 0.7734262580000001 seconds.

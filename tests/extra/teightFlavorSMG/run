@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+set -o pipefail
+
+exe="$1"
+declare -r mydir="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+declare -r qexdir="$(cd "$mydir/../../.." &>/dev/null && pwd)"
+outdir=tests/extra/teightFlavorSMG
+[[ -d $outdir ]] || mkdir -p "$outdir"
+
+diffnum() { "$mydir/../../diffnum" "$@"; }
+
+out="$outdir/out"
+$RUNJOB "$exe" \
+  -xml:"$mydir/test_input.xml" \
+  -start_config:0 -end_config:1 -config_space:1 -save_freq:0 -verbosity:1 \
+  2>&1 | tee "$out"
+status=$?
+((status==0)) || exit $status
+
+echo
+echo "== 1. Reversibility check =="
+revline="$(grep '^REVERSE' "$out")"
+echo "$revline"
+dh0="$(echo "$revline" | sed -E 's/.*dH0 \(from hOld\): *(-?[0-9.eE+-]+).*/\1/')"
+python3 -c "
+import sys
+dh0 = float('$dh0')
+tol = 1e-8
+if abs(dh0) > tol:
+    print(f'FAILED: |dH0| = {abs(dh0)} > {tol}')
+    sys.exit(1)
+print(f'OK: |dH0| = {abs(dh0)} <= {tol}')
+" || exit 1
+
+echo
+echo "== 2. Self-regression (vs. self_regression.ref, rel. tol. 1e-12) =="
+grep -E '^Beginning H:|^Ending H:|^ACCEPT|^REJECT|^MEASplaq|^MEASploop' "$out" > "$outdir/self.check"
+diffnum "$mydir/self_regression.ref" "$outdir/self.check" 1e-12 || exit 1
+echo "OK"
+
+echo
+echo "== 2b. Every action reports force stats (none silently empty) =="
+nforce="$(grep -cE '^(GA0|SFA[0-9]+|SRA[0-9]+|SPVA[0-9]+)F ' "$out")"
+if [[ $nforce -ne 13 ]]; then
+  echo "FAILED: expected 13 force-stats lines (GA0F, SFA0F, SFA1F, SRA0F, SRA1F, SPVA0F..SPVA7F), got $nforce"
+  grep -E '^(GA0|SFA[0-9]+|SRA[0-9]+|SPVA[0-9]+)F ' "$out"
+  exit 1
+fi
+echo "OK: $nforce/13 force-stats lines present"
+
+echo
+echo "== 3. Cross-implementation vs. stag_pv_hmc =="
+grep -E '^MEASplaq |^MEASploop' "$out" > "$outdir/cross.check"
+diffnum "$mydir/stag_pv_hmc_reference.ref" "$outdir/cross.check" 1e-13 || exit 1
+
+awk '
+  /^Beginning H:/ { sub(/^Beginning /, ""); beg=$0 }
+  /^Ending H:/ { sub(/^Ending /, ""); last=$0; print "HAM_BEG " beg; print "HAM_END " last; exit }
+' "$out" > "$outdir/cross_ham.check"
+diffnum "$mydir/stag_pv_hmc_reference_hamiltonian.ref" "$outdir/cross_ham.check" 1e-13 || exit 1
+echo "OK"
+
+echo
+echo "== 4. Checkpoint/resume (must match a continuous run bit for bit) =="
+ckptdir="$outdir/ckpt"
+rm -rf "$ckptdir"; mkdir -p "$ckptdir"
+
+$RUNJOB "$exe" \
+  -xml:"$mydir/test_input.xml" \
+  -start_config:0 -end_config:1 -config_space:2 -save_freq:0 -verbosity:1 \
+  > "$ckptdir/continuous.out" 2>&1 || exit $?
+grep -E '^MEASplaq|^MEASploop' "$ckptdir/continuous.out" | tail -n 6 > "$ckptdir/continuous.check"
+
+$RUNJOB "$exe" \
+  -xml:"$mydir/test_input.xml" \
+  -start_config:0 -end_config:1 -config_space:1 -save_freq:1 -verbosity:1 \
+  -path:"$ckptdir/" \
+  > "$ckptdir/save.out" 2>&1 || exit $?
+
+$RUNJOB "$exe" \
+  -xml:"$mydir/test_input_resume.xml" \
+  -start_config:1 -end_config:2 -config_space:1 -save_freq:0 -verbosity:1 \
+  -path:"$ckptdir/" \
+  > "$ckptdir/resume.out" 2>&1 || exit $?
+grep -E '^MEASplaq|^MEASploop' "$ckptdir/resume.out" > "$ckptdir/resume.check"
+
+diffnum "$ckptdir/continuous.check" "$ckptdir/resume.check" 1e-12 || exit 1
+echo "OK"
+
+echo
+echo "== 5. Rejected trajectory (gauge field must restore exactly) =="
+rejdir="$outdir/reject"
+rm -rf "$rejdir"; mkdir -p "$rejdir"
+$RUNJOB "$exe" \
+  -xml:"$mydir/test_input_reject.xml" \
+  -start_config:0 -end_config:1 -config_space:1 -save_freq:0 -verbosity:1 \
+  > "$rejdir/out" 2>&1 || exit $?
+grep -q '^REJECT' "$rejdir/out" || { echo "FAILED: trajectory was not rejected"; exit 1; }
+plaqline="$(grep '^MEASplaq ss:' "$rejdir/out")"
+echo "$plaqline"
+python3 -c "
+import re, sys
+vals = [float(x) for x in re.findall(r'-?\d+\.\d+(?:[eE][-+]?\d+)?', '''$plaqline''')]
+bad = [v for v in vals if v != 1.0]
+if bad:
+    print('FAILED: plaquette after reject is not exactly 1.0:', bad)
+    sys.exit(1)
+print('OK: plaquette after reject is exactly 1.0')
+" || exit 1
+
+echo
+echo "== 6. No-Hasenbusch (Nh=0) =="
+nh0dir="$outdir/nh0"
+rm -rf "$nh0dir"; mkdir -p "$nh0dir"
+$RUNJOB "$exe" \
+  -xml:"$mydir/test_input_nh0.xml" \
+  -start_config:0 -end_config:1 -config_space:1 -save_freq:0 -verbosity:1 \
+  > "$nh0dir/out" 2>&1 || exit $?
+
+echo "-- self-regression (rel. tol. 1e-12) --"
+grep -E '^Beginning H:|^Ending H:|^ACCEPT|^REJECT|^MEASplaq|^MEASploop' "$nh0dir/out" > "$nh0dir/self.check"
+diffnum "$mydir/self_regression_nh0.ref" "$nh0dir/self.check" 1e-12 || exit 1
+echo "OK"
+
+echo "-- cross-implementation vs. stag_pv_hmc, preconditioner=none --"
+grep -E '^MEASplaq |^MEASploop' "$nh0dir/out" > "$nh0dir/cross.check"
+diffnum "$mydir/stag_pv_hmc_reference_nh0.ref" "$nh0dir/cross.check" 1e-13 || exit 1
+awk '
+  /^Beginning H:/ { sub(/^Beginning /, ""); beg=$0 }
+  /^Ending H:/ { sub(/^Ending /, ""); last=$0; print "HAM_BEG " beg; print "HAM_END " last; exit }
+' "$nh0dir/out" > "$nh0dir/cross_ham.check"
+diffnum "$mydir/stag_pv_hmc_reference_hamiltonian_nh0.ref" "$nh0dir/cross_ham.check" 1e-13 || exit 1
+echo "OK"
+
+echo
+echo "== 7. Production XML (prod/lsd/eightFlavorSMG.xml boots) =="
+proddir="$outdir/prodxml"
+rm -rf "$proddir"; mkdir -p "$proddir"
+$RUNJOB "$exe" \
+  -xml:"$qexdir/prod/lsd/eightFlavorSMG.xml" \
+  -start_config:0 -end_config:0 \
+  > "$proddir/out" 2>&1 || exit $?
+grep -q '^#physGeom:@\[8, 8, 8, 16\]' "$proddir/out" || {
+  echo "FAILED: prod/lsd/eightFlavorSMG.xml did not set up the expected 8^3x16 lattice"
+  exit 1
+}
+echo "OK"
+
+echo
+echo "== 8. Multi-trajectory / save cycle (config_space:2, save_freq:1) =="
+multidir="$outdir/multitraj"
+rm -rf "$multidir"; mkdir -p "$multidir"
+$RUNJOB "$exe" \
+  -xml:"$mydir/test_input.xml" \
+  -start_config:0 -end_config:1 -config_space:2 -save_freq:1 -verbosity:1 \
+  -path:"$multidir/" \
+  > "$multidir/out" 2>&1 || exit $?
+nplaq="$(grep -c '^MEASplaq ss:' "$multidir/out")"
+if [[ $nplaq -ne 2 ]]; then
+  echo "FAILED: expected 2 plaquette measurements (one per trajectory), got $nplaq"
+  exit 1
+fi
+for f in ckpoint_1.lat ckpoint_1.parallelRNG ckpoint_1.serialRNG; do
+  [[ -s "$multidir/$f" ]] || { echo "FAILED: $f was not written"; exit 1; }
+done
+echo "OK"
+
+echo
+echo "eightFlavorSMG test suite passed"
