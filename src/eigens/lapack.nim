@@ -82,6 +82,10 @@ proc zgeev*(jobvl: cstring; jobvr: cstring; n: ptr fint; a: ptr doublecomplex;
             work: ptr doublecomplex; lwork: ptr fint; rwork: ptr doublereal;
             info: ptr fint) {.lapack, importc: "zgeev_".}
 
+proc zgesv*(n: ptr fint; nrhs: ptr fint; a: ptr doublecomplex; lda: ptr fint;
+            ipiv: ptr fint; b: ptr doublecomplex; ldb: ptr fint;
+            info: ptr fint) {.lapack, importc: "zgesv_".}
+
 proc dbdsqr*(uplo: cstring; n: ptr fint; ncvt: ptr fint; nru: ptr fint;
              ncc: ptr fint; d: ptr float64; e: ptr float64;
              vt: ptr float64; ldvt: ptr fint; u: ptr float64;
