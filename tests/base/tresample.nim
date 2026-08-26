@@ -22,6 +22,9 @@ proc meanErrEst[D](xs: Ensemble[D], bs: int): float =
   let jkstat = jackknife(xs, bs, meanEst)
   jkstat.stdev
 
+proc shiftedMeanEst[D](xs: Ensemble[D], shift: float): float =
+  meanEst(xs) + shift
+
 let nconf = 1024
 var xs = newSeq[float](nconf)
 var r: MRG32k3a
@@ -47,6 +50,21 @@ proc testbs(bs: int) =
 testbs(1)
 testbs(3)
 testbs(8)
+
+block:
+  let
+    test = mytest.newTest("unequal final block")
+    x = @[1.0, 2.0, 4.0, 8.0, 16.0]
+    expectedMean = 6.2
+    expectedStdev = sqrt(12.921111111111115)
+    direct = x.jackknife(2, meanEst)
+    withArg = x.jackknife(2, shiftedMeanEst, 3.0)
+  test.assertAlmostEqual(expectedMean, direct.mean)
+  test.assertAlmostEqual(expectedStdev, direct.stdev)
+  test.assertAlmostEqual(0.0, direct.bias, absTol=1e-14)
+  test.assertAlmostEqual(expectedMean + 3.0, withArg.mean)
+  test.assertAlmostEqual(expectedStdev, withArg.stdev)
+  test.assertAlmostEqual(0.0, withArg.bias, absTol=1e-14)
 
 block:
   let test = mytest.newTest("autocorrelation windows")
