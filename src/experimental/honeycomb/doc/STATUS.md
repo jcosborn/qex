@@ -293,7 +293,7 @@ make run src/experimental/honeycomb/tests/tfree.nim        # 0.2 s
 make run src/experimental/honeycomb/hcFreeSpectrum.nim     # 1 s   -> freespec.png
 make run src/experimental/honeycomb/hcFreePressure.nim     # 25 s  -> pressure.png
 # optional arguments: hcFreeSpectrum [ns] [nt] [per|anti]
-#                     hcFreePressure [ntMax] [maxGrid]      (defaults 32, 1024)
+#                     hcFreePressure [ntMax] [maxGrid]      (defaults 32, 1024; minima 32, 48)
 ```
 
 ### Extreme eigenvalues (slide 14) — all ✅

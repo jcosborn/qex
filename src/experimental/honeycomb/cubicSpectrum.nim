@@ -75,7 +75,7 @@ echo "found ", files.len, " configurations"
 
 let ncvUse = if ncv > 0: ncv else: 3*nev
 var fh: File
-let haveOut = outfile.len > 0
+let haveOut = outfile.len > 0 and myRank == 0
 if haveOut: fh = open(outfile, fmWrite)
 proc emit(line: string) =
   echo line

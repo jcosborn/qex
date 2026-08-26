@@ -193,7 +193,8 @@ proc runAll(hl: auto) =
     ## <triangleSum> vs beta, heatbath, fresh -start (default hot) per beta
     var hb = newHcHeatbath(g, beta)
     var fh: File
-    if scanout.len > 0:
+    let haveScanOut = scanout.len > 0 and myRank == 0
+    if haveScanOut:
       fh = open(scanout, fmWrite)
       fh.writeLine "# 16-cell honeycomb triangle action: <triangleSum> vs beta"
       fh.writeLine &"# heatbath 1 HB + {norsweeps} OR per update, geom {geom}, " &
@@ -214,10 +215,10 @@ proc runAll(hl: auto) =
         (tsM, tsE0) = jackknifeMean(tss)
         tsE = tsE0*sqrt(max(1.0, 2.0*tauTs))
       echo &"SCAN {b:.4f} {tsM:.8f} {tsE:.8f} {tauTs:.2f}"
-      if scanout.len > 0:
+      if haveScanOut:
         fh.writeLine &"{b:.4f} {tsM:.8f} {tsE:.8f} {tauTs:.2f}"
         fh.flushFile
-    if scanout.len > 0: fh.close
+    if haveScanOut: fh.close
     toc("scan")
 
   else:

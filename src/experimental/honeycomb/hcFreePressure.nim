@@ -4,7 +4,7 @@
 ##   export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk
 ##   cd build_mac && make run src/experimental/honeycomb/hcFreePressure.nim
 ##
-## Optional arguments:  hcFreePressure [ntMax] [maxGrid]
+## Optional arguments:  hcFreePressure [ntMax>=32] [maxGrid>=48]
 ##
 ## Method
 ## ------
@@ -186,8 +186,23 @@ when isMainModule:
     ntMax = 32
     maxGrid = 1024
   let av = commandLineParams()
-  if av.len > 0: ntMax = parseInt(av[0])
-  if av.len > 1: maxGrid = parseInt(av[1])
+  if av.len > 2:
+    stderr.writeLine "usage: hcFreePressure [ntMax>=32] [maxGrid>=48]"
+    quit(QuitFailure)
+  try:
+    if av.len > 0: ntMax = parseInt(av[0])
+    if av.len > 1: maxGrid = parseInt(av[1])
+  except ValueError:
+    stderr.writeLine "hcFreePressure: ntMax and maxGrid must be integers"
+    quit(QuitFailure)
+  if ntMax < 32:
+    stderr.writeLine "hcFreePressure: ntMax must be at least 32 " &
+      "(the fixed asymptotic fits require Nt=32)"
+    quit(QuitFailure)
+  if maxGrid < 48:
+    stderr.writeLine "hcFreePressure: maxGrid must be at least 48 " &
+      "(the second Richardson family starts at 48)"
+    quit(QuitFailure)
   const ntMin = 3
   # Two *geometric* grid families (ratio 2).  The Richardson recursion below
   # eliminates 1/ng^4, 1/ng^6, ... exactly only when the ratio ng_i/ng_{i-1} is

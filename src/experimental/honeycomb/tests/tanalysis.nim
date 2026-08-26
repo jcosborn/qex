@@ -132,6 +132,22 @@ block:
   check("binned jackknife inflates error on correlated data by ~sqrt(bin)",
         e8/e1 > 2.0 and e8/e1 < 4.0, &"e1 = {e1:.5f} e8 = {e8:.5f} ratio {e8/e1:.3f}")
 
+# A trailing partial block is not exchangeable with the full blocks.  For the
+# mean, unequal-delete pseudovalues are exactly the deleted block means, making
+# this small example independently calculable.
+block:
+  let x = @[1.0, 2.0, 4.0, 8.0, 16.0]  # block means 1.5, 6, 16 for bin=2
+  let (m, e) = jackknifeMean(x, 2)
+  let
+    jm = x.mean
+    expectVar = ((2.0/3.0)*(1.5-jm)^2 +
+                 (2.0/3.0)*(6.0-jm)^2 +
+                 0.25*(16.0-jm)^2)/3.0
+    expect = sqrt(expectVar)
+  check("unequal-delete jackknife weights a partial block",
+        close(m, jm, 1e-14) and close(e, expect, 1e-14),
+        &"mean {m:.12f}, err {e:.12f}, expected {expect:.12f}")
+
 # --------------------------------------------------------------------------
 echo ""
 echo "== autocorrTime =="

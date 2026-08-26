@@ -278,7 +278,7 @@ for icfg, fn in files:
   echo line
   outLines.add line
 
-  if flowdump.len > 0 and icfg == 0:
+  if flowdump.len > 0 and icfg == 0 and myRank == 0:
     var fh = open(flowdump, fmWrite)
     fh.write("# flow history of " & fn & "\n")
     fh.write("# t  t^2E  W=t d/dt[t^2E]  Q_corrected  Q_qexTopoQ  dist(Q_corr,int)  dist(Q_raw,int)\n")
@@ -291,7 +291,7 @@ for icfg, fn in files:
 
 toc("measure")
 
-if outfile.len > 0:
+if outfile.len > 0 and myRank == 0:
   var fh = open(outfile, fmWrite)
   fh.write("# CFG name t0 w0sq Q(t0) Q(tend) tend roundDist\n")
   for l in outLines: fh.write(l & "\n")

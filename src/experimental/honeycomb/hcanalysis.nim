@@ -156,13 +156,16 @@ proc jackknife*[T](x: openArray[T], f: proc(s: openArray[T]): float,
                    bin = 1): tuple[mean, err: float] =
   ## Delete-`bin` jackknife of the estimator `f`.
   ##
-  ## `mean` is the full-sample estimate `f(x)`; `err` is the jackknife error
-  ## `sqrt((nb-1)/nb * sum_i (theta_i - theta_bar)^2)`.  For `f = mean` and
-  ## `bin = 1` this reproduces the ordinary standard error of the mean exactly.
+  ## `mean` is the full-sample estimate `f(x)`.  Equal-sized blocks use the
+  ## standard `sqrt((nb-1)/nb * sum_i (theta_i - theta_bar)^2)` error.  A
+  ## trailing partial block is handled with the unequal-delete (`delete-m_j`)
+  ## pseudovalue variance, which reduces exactly to that formula when all
+  ## blocks have equal size.  For `f = mean` and `bin = 1` this reproduces the
+  ## ordinary standard error of the mean exactly.
   ##
   ## `bin > 1` deletes whole blocks of `bin` consecutive entries, which is the
   ## standard way to absorb autocorrelation.  A trailing partial block is kept
-  ## as its own (shorter) block.
+  ## as its own, correctly weighted shorter block.
   let n = x.len
   if n == 0: return (0.0, 0.0)
   result.mean = f(x)
@@ -170,7 +173,8 @@ proc jackknife*[T](x: openArray[T], f: proc(s: openArray[T]): float,
   let b = max(1, bin)
   let nb = (n + b - 1) div b
   if nb < 2: return
-  var th = newSeq[float](nb)
+  var pseudo = newSeq[float](nb)
+  var hs = newSeq[float](nb)
   var sample = newSeq[T](0)
   for i in 0..<nb:
     let lo = i*b
@@ -178,13 +182,17 @@ proc jackknife*[T](x: openArray[T], f: proc(s: openArray[T]): float,
     sample.setLen(0)
     for j in 0..<n:
       if j < lo or j >= hi: sample.add x[j]
-    th[i] = f(sample)
-  var tb = 0.0
-  for v in th: tb += v
-  tb = tb/nb.float
-  var s = 0.0
-  for v in th: s += (v-tb)*(v-tb)
-  result.err = sqrt(float(nb-1)/nb.float * s)
+    let h = n.float/(hi-lo).float
+    let deleted = f(sample)
+    hs[i] = h
+    pseudo[i] = h*result.mean - (h-1.0)*deleted
+  var jackmean = 0.0
+  for i in 0..<nb: jackmean += pseudo[i]/hs[i]
+  var v = 0.0
+  for i in 0..<nb:
+    let d = pseudo[i] - jackmean
+    v += d*d/(hs[i]-1.0)
+  result.err = sqrt(max(0.0, v/nb.float))
 
 proc jackknifeMean*(x: openArray[float], bin = 1): tuple[mean, err: float] =
   ## Convenience wrapper: jackknife of the plain mean.
