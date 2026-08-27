@@ -166,7 +166,7 @@ proc gaugeActionDeriv*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq, 
   let cp = c.plaq / float(nc)
   let cr = c.rect / float(nc)
   var cs = startCornerShifts(uu)
-  var ru:FieldArray[type(u[0]).V,type(u[0]).T]  # the rect parts of 3
+  var ru:FieldArray[2,type(u[0]).V,type(u[0]).T]  # the rect parts of 3
   var sb:seq[seq[ShiftB[type(u[0][0])]]]  # backward ru
   var sf:seq[seq[ShiftB[type(u[0][0])]]]  # forward stf
   if cr!=0:

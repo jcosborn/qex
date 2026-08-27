@@ -264,6 +264,48 @@ template projectUderiv*(r: var Color, u: Color2, x: Color3, chain: Color4) =
   projectUderiv(r[], u[], x[], chain[])
 template projectUderiv*(r: var Color, x: Color3, chain: Color4) =
   projectUderiv(r[], x[], chain[])
+template projectUVJP*(r: var Color, u: Color2, x: Color3, chain: Color4) =
+  ## Alias for projectUderiv.
+  projectUderiv(r[], u[], x[], chain[])
+template projectUVJP*(r: var Color, x: Color3, chain: Color4) =
+  ## Alias for projectUderiv (convenience wrapper).
+  projectUderiv(r[], x[], chain[])
+template projectUHVPu*(r: var Color, u, x, chain, dx: Color) =
+  ## Wrapper for the directional second derivative of the unitary projection.
+  projectUHVPu(r[], u[], x[], chain[], dx[])
+template projectUHVP*(r: var Color, x, chain, dx: Color) =
+  ## Wrapper for the directional second derivative of the unitary projection.
+  projectUHVP(r[], x[], chain[], dx[])
+template projectUHVPu*(r: var Color, u, x, chain, dx, dc: Color) =
+  ## Wrapper including an upstream chain tangent dc.
+  projectUHVPu(r[], u[], x[], chain[], dx[], dc[])
+template projectUHVP*(r: var Color, x, chain, dx, dc: Color) =
+  ## Wrapper including an upstream chain tangent dc.
+  projectUHVP(r[], x[], chain[], dx[], dc[])
+template projectUJVP*(du: var Color, u, x, dx: Color) =
+  ## Forward tangent of unitary projection.
+  projectUJVP(du[], u[], x[], dx[])
+template projectUJVP*(du: var Color, x, dx: Color) =
+  ## Forward tangent of unitary projection (convenience wrapper).
+  projectUJVP(du[], x[], dx[])
+template projectUVJPChain*(chainbar: var Color, u, x, rbar: Color) =
+  ## Adjoint of projectUVJP with respect to the chain input.
+  projectUVJPChain(chainbar[], u[], x[], rbar[])
+template projectUVJPChain*(chainbar: var Color, x, rbar: Color) =
+  ## Adjoint of projectUVJP (convenience wrapper).
+  projectUVJPChain(chainbar[], x[], rbar[])
+template projectUHVPVJP_dx*(dxbar: var Color, u, x, c, rbar: Color) =
+  ## Adjoint of projectUHVP with respect to dx.
+  projectUHVPVJP_dx(dxbar[], u[], x[], c[], rbar[])
+template projectUHVPVJP_dx*(dxbar: var Color, x, c, rbar: Color) =
+  ## Adjoint of projectUHVP with respect to dx (convenience wrapper).
+  projectUHVPVJP_dx(dxbar[], x[], c[], rbar[])
+template projectUHVPVJP_dc*(dcbar: var Color, u, x, c, rbar: Color) =
+  ## Adjoint of projectUHVP with respect to dc (chain tangent).
+  projectUHVPVJP_dc(dcbar[], u[], x[], c[], rbar[])
+template projectUHVPVJP_dc*(dcbar: var Color, x, c, rbar: Color) =
+  ## Adjoint of projectUHVP with respect to dc (convenience wrapper).
+  projectUHVPVJP_dc(dcbar[], x[], c[], rbar[])
 template projectSU*(r: var Color) =
   projectSU(r[])
 template projectSU*(r: var Color, x: Color2) =
@@ -289,3 +331,6 @@ template im*(x: Color): untyped = asColor(im(x[]))
 template exp*(x: Color): untyped = asColor(exp(x[]))
 template expDeriv*(x: Color, c: Color2): untyped = asColor(expDeriv(x[], c[]))
 template ln*(x: Color): untyped = asColor(ln(x[]))
+template sylsolve*(r: var Color, y: Color2, b: Color3) =
+  ## Solve Sylvester equation: Y R + R Y = B
+  sylsolve(r[], y[], b[])
