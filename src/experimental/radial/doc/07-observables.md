@@ -107,10 +107,26 @@ Hence, from slide 6,
 The \((1-D^\dagger)\) factor is the Ginsparg–Wilson contact subtraction; the residual \({\rm tr}\,\mathbb 1\)
 is a field-independent constant and drops out of every connected correlator.
 
-**Soft mass (slide 10).** The condensate scan adds \(m\,\sigma_{PS}\) to the action, which with the
-additive convention is \(D(m)=D_{\rm ov}+m\). Measure \(\langle\sigma_{PS}\rangle\) with Gaussian
-volume noise and cross-check against the exact dense-spectrum value
-\(\frac1N\sum_k{\rm Re}\frac{1-\lambda_k/2}{\lambda_k+m}\) on a small lattice.
+At finite standard-overlap mass, with
+\(D(m)=(1-m/2)D_{\rm ov}+m\), \(S=D(m)^{-1}\), the FS factor must be evaluated as
+\[
+(1-D_{\rm ov}^\dagger)S^\dagger
+=\frac{(1+m/2)S^\dagger-\mathbb 1}{1-m/2}.
+\]
+This identity, including both the propagator coefficient and the contact coefficient, is used
+by the dense and point-source contractions.
+
+**Soft mass (slide 10).** We adopt the standard lattice-QCD overlap convention above. The mass
+derivative is \(\partial_mD=1-D_{\rm ov}/2\), so measure the corresponding GW-improved
+condensate
+\[
+\frac1N{\rm Re\,tr}\left[(1-D_{\rm ov}/2)D(m)^{-1}\right]
+=\frac1N\sum_k{\rm Re}\frac{1-\lambda_k/2}
+{(1-m/2)\lambda_k+m}
+\]
+with Gaussian volume noise and cross-check it against the exact dense-spectrum value on a
+small lattice. The slides' raw \(m\,\sigma_{PS}\) wording and this improved insertion agree in
+the continuum; at finite cutoff the latter is the convention deliberately chosen here.
 
 **Acceptance test for this whole section (slide 16):** \(\sigma_{PS}\) and \(\sigma_{FS}\) must give
 **identical spectra**. That is a sharp structural check that needs no statistics — if the two

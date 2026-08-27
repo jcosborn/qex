@@ -2,7 +2,8 @@
 ## non-compact Gaussian gauge action (WP-H production app).
 ##
 ## Theory (doc/02 sections 4.2, 5): S = S_g(theta) + pseudofermion frames, N_f
-## even, one pair per two flavors, additive mass D(m) = D_ov + m, m_0 physical.
+## even, one pair per two flavors, standard overlap mass
+## D(m) = (1-m/2)D_ov + m (rho = 1), m_0 physical.
 ## actOp (Zolotarev order 31) does heatbath and accept/reject; frcOp (order 11)
 ## does MD forces only.  Nested Omelyan 2MN: gauge innermost with
 ## steps*innerSteps, each Hasenbusch frame with `steps`.  Gauge zero modes
@@ -22,7 +23,7 @@
 ## The kernel window is monitored every windowEvery trajectories;
 ## `inside == false` is a hard stop (the frozen rationals are never rebuilt).
 ##
-## Mass convention in every manifest: additive, D(m) = D_ov + m.
+## Mass convention in every manifest: standard-overlap-rho1.
 
 import base
 import std/[math, os, strformat, times]
@@ -92,7 +93,7 @@ echo &"overlap: M = {M}  window [{ratLo}, {ratHi}]" &
      &"  maxRelErr({frcOrder}) = {ratFrc.maxRelErr:.3e}"
 echo &"rational hashes: act {ratAct.hash:#x}  frc {ratFrc.hash:#x}"
 echo &"pseudofermions: nf = {nf} ({pf.ncopy} pair(s))  masses = {masses}" &
-     &"  (additive: D(m) = D_ov + m)"
+     &"  ({ovMassConvention}: D(m) = (1-m/2) D_ov + m)"
 echo &"MD: tau = {tau}  steps/level = {lsteps} (gauge first, then heaviest->lightest)"
 echo &"dof: links {nlink(lat)}  ker M {sph.nv*nt}  momentum dof {nlink(lat) - sph.nv*nt}"
 
@@ -140,7 +141,8 @@ for k in 1..ntraj:
     echo "WARNING: a solve missed its tolerance this run (stats.ok false)"
   if not win.inside:
     if ckpt != "": saveCheckpoint(m, ckpt)
-    echo "STOP: kernel window violated -- widen the frozen window and restart"
+    echo "STOP: kernel window violated -- start a fresh ensemble directory with" &
+         " a wider frozen window; never resume this checkpoint with a new rational"
     qexExit(1)
   if ckpt != "" and ckptFreq > 0 and m.traj mod ckptFreq == 0:
     saveCheckpoint(m, ckpt)

@@ -223,6 +223,42 @@ suite "T1.3d, T1.3e  Ginsparg-Wilson circle identities":
 
 suite "adjoint and gauge covariance":
 
+  test "massive operator is the standard rho=1 overlap operator":
+    for fx in fixes:
+      let
+        mass = 0.13
+        alpha = ovMassAlpha(mass)
+        x = randSpin(lat.nsite, 4199)
+      var
+        d0 = newSpin(lat.nsite)
+        dm = newSpin(lat.nsite)
+        refv = newSpin(lat.nsite)
+        mapped = newSpin(lat.nsite)
+      applyOv(fx.o31, d0, x, fx.u, 0.0)
+      applyOv(fx.o31, dm, x, fx.u, mass)
+      refv := d0
+      scale(refv, alpha)
+      axpy(refv, mass, x)
+      let e = reldiff(dm, refv)
+      # Exact parameter map to the old additive operator:
+      # D_std(m) = alpha [D_ov + mu], mu = m/alpha.
+      mapped := d0
+      axpy(mapped, mass/alpha, x)
+      scale(mapped, alpha)
+      let emap = reldiff(dm, mapped)
+      echo &"  {fx.name}: standard formula rel {e:.3e}, additive-map rel {emap:.3e}"
+      check e < 1e-13
+      check emap < 1e-13
+
+  test "invalid standard masses are rejected":
+    let
+      fx = fixes[0]
+      x = randSpin(lat.nsite, 4200)
+    var y = newSpin(lat.nsite)
+    for bad in [-0.1, 2.0, Inf, NaN]:
+      expect ValueError:
+        applyOv(fx.o31, y, x, fx.u, bad)
+
   test "applyOvAdj is the true adjoint":
     for fx in fixes:
       let
@@ -370,6 +406,23 @@ suite "ovGradient":
     for i in 0..<f1.s.len: e = max(e, abs(f1.s[i] - f2.s[i]))
     for i in 0..<f1.t.len: e = max(e, abs(f1.t[i] - f2.t[i]))
     echo &"  |scale 2 - (0.5 + 1.5)| = {e:.3e}"
+    check e < 1e-12
+
+  test "massive pullback carries the standard alpha factor":
+    let fx = fixes[1]
+    let
+      mass = 0.3
+      left = randSpin(lat.nsite, 4651)
+      right = randSpin(lat.nsite, 4652)
+    var f0 = newGauge(lat)
+    var fm = newGauge(lat)
+    ovGradient(fx.o11, f0, left, right, fx.u)
+    ovGradient(fx.o11, fm, left, right, fx.u, mass = mass)
+    let alpha = ovMassAlpha(mass)
+    var e = 0.0
+    for i in 0..<f0.s.len: e = max(e, abs(fm.s[i] - alpha*f0.s[i]))
+    for i in 0..<f0.t.len: e = max(e, abs(fm.t[i] - alpha*f0.t[i]))
+    echo &"  |dD(m) - (1-m/2)dD_ov|_max = {e:.3e}"
     check e < 1e-12
 
   test "Ward identity: pure-gauge du gives delta D_ov = i(alpha D_ov - D_ov alpha)":
@@ -562,7 +615,7 @@ suite "solve counts and allocation":
       applyOv(o, y, x, fx.u, 0.1)
       applyOvAdj(o, x, y, fx.u, 0.1)
       applyNormal(o, y, x, fx.u, 0.2)
-      ovGradient(o, f, x, y, fx.u, 1e-9, add = true)
+      ovGradient(o, f, x, y, fx.u, 1e-9, add = true, mass = 0.1)
       let s = 1.0/sqrt(norm2(x) + norm2(y))
       scale(x, s)
       scale(y, s)
@@ -574,7 +627,7 @@ suite "solve counts and allocation":
       applyOv(o, y, x, fx.u, 0.1)
       applyOvAdj(o, x, y, fx.u, 0.1)
       applyNormal(o, y, x, fx.u, 0.2)
-      ovGradient(o, f, x, y, fx.u, 1e-9, add = true)
+      ovGradient(o, f, x, y, fx.u, 1e-9, add = true, mass = 0.1)
       let s = 1.0/sqrt(norm2(x) + norm2(y))
       scale(x, s)
       scale(y, s)

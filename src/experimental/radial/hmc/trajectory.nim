@@ -246,7 +246,7 @@ proc windowCheck*(m: RadialHmc): tuple[smin, smax, lo, hi: float, inside: bool] 
 
 const
   ckptMagic = 0x51455852484D4331'u64   ## "QEXRHMC1"
-  ckptVersion = 1'i32
+  ckptVersion = 2'i32                  ## v2 adds the mass-convention identifier
 
 func fnv(s: string): uint64 =
   result = 0xcbf29ce484222325'u64
@@ -255,10 +255,12 @@ func fnv(s: string): uint64 =
 
 proc saveCheckpoint*(m: RadialHmc, path: string) =
   ## Versioned binary manifest + gauge field + trailing FNV-1a of everything.
-  ## Mass convention in force: additive, D(m) = D_ov + m.
+  ## Version 1 checkpoints used the legacy additive mass and are intentionally
+  ## incompatible.  Version 2 records the standard-overlap convention explicitly.
   var st = newStringStream()
   st.write ckptMagic
   st.write ckptVersion
+  st.write ovMassConventionId
   st.write int32(m.l.sph.lev)
   st.write int32(m.l.nt)
   st.write m.l.at
@@ -312,6 +314,7 @@ proc loadCheckpoint*(m: RadialHmc, path: string) =
   var f64: float
   st.read u64; ckWant u64 == ckptMagic, "magic"
   st.read i32; ckWant i32 == ckptVersion, "version"
+  st.read i32; ckWant i32 == ovMassConventionId, "mass convention"
   st.read i32; ckWant int(i32) == m.l.sph.lev, "lev"
   st.read i32; ckWant int(i32) == m.l.nt, "nt"
   st.read f64; ckWant f64 == m.l.at, "at"

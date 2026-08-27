@@ -396,10 +396,15 @@ suite "dataio":
     cols[2].add PI
     writeTsv(path, meta, names, cols)
     let got = readTsv path
+    let header = readTsvMeta path
     note "tsv round trip rows=", cols[0].len, " cols=", cols.len, " meta=", meta.len
     check got.names == names
     check got.meta.len == meta.len
-    for (k, v) in meta: check got.meta[k] == v
+    check header.len == meta.len
+    for (k, v) in meta:
+      check got.meta[k] == v
+      check header[k] == v
+    check not header.hasKey("columns")
     check got.cols.len == 3
     for j in 0..2:
       check got.cols[j].len == cols[j].len

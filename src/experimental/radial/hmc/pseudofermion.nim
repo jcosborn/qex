@@ -3,8 +3,8 @@
 ## Normative reference: doc/02-formulation.md section 4.2, doc/04-interfaces.md
 ## section 13.  N_f even; one pseudofermion pair per two flavors (copies = nf/2),
 ## each copy carrying a Hasenbusch ladder over the strictly increasing masses
-## m_0 < m_1 < ... < m_K, m_0 = physical, with the additive convention
-## D(m) = D_ov + m and Q_i = D(m_i)^dag D(m_i).  Frames per copy:
+## m_0 < m_1 < ... < m_K, m_0 = physical, with the standard rho=1 overlap
+## convention D(m) = (1-m/2)D_ov + m and Q_i = D(m_i)^dag D(m_i).  Frames per copy:
 ##
 ##   ratio frame i (i = 0..K-1):  S_i = phi^dag D_{i+1} Q_i^{-1} D_{i+1}^dag phi
 ##     heatbath  phi = D_{i+1} Q_{i+1}^{-1} D_i^dag xi   =>  S_i = |xi|^2 exactly
@@ -17,9 +17,9 @@
 ## one flavor pair.  masses.len == 1 is the no-Hasenbusch case (heaviest only).
 ##
 ## Forces differentiate ALL theta dependence and go through `ovGradient` only
-## (doc/04 section 10: THE single pullback; the additive mass carries no link):
-##   heaviest:  dS = -2 Re<y, dD_ov eta>,          eta = Q_K^{-1} phi, y = D_K eta
-##   ratio:     dS = +2 Re<phi, dD_ov eta> - 2 Re<y, dD_ov eta>,
+## (doc/04 section 10: THE single pullback; dD_i=(1-m_i/2)dD_ov):
+##   heaviest:  dS = -2 Re<y, dD_K eta>,           eta = Q_K^{-1} phi, y = D_K eta
+##   ratio:     dS = +2 Re<phi, dD_{i+1} eta> - 2 Re<y, dD_i eta>,
 ##              chi = D_{i+1}^dag phi, eta = Q_i^{-1} chi, y = D_i eta.
 ##
 ## Two overlap operators share the lattice and M but not the rational order:
@@ -48,12 +48,18 @@ func ncopy*(p: Pf): int = p.nf div 2
 func nframe*(p: Pf): int = p.masses.len
 
 proc newPf*(l: Lat, actOp, frcOp: Ov, nf: int, masses: seq[float]): Pf =
-  doAssert nf >= 2 and nf mod 2 == 0, "nf must be even and >= 2"
-  doAssert masses.len >= 1, "need at least one mass"
+  if nf < 2 or nf mod 2 != 0:
+    raise newException(ValueError, "nf must be even and >= 2")
+  if masses.len < 1:
+    raise newException(ValueError, "need at least one mass")
+  for mass in masses: requireOvMass mass
   for i in 1..<masses.len:
-    doAssert masses[i] > masses[i-1], "masses must be strictly increasing"
-  doAssert actOp.l == l and frcOp.l == l, "operators must share the lattice"
-  doAssert actOp.m == frcOp.m, "operators must share the kernel height M"
+    if masses[i] <= masses[i-1]:
+      raise newException(ValueError, "masses must be strictly increasing")
+  if actOp.l != l or frcOp.l != l:
+    raise newException(ValueError, "operators must share the lattice")
+  if actOp.m != frcOp.m:
+    raise newException(ValueError, "operators must share the kernel height M")
   let p = Pf(l: l, actOp: actOp, frcOp: frcOp, nf: nf, masses: masses)
   p.phi = newSeq[seq[Spin]](nf div 2)
   p.xi2 = newSeq[seq[float]](nf div 2)
@@ -113,13 +119,15 @@ proc frameForce*(p: Pf, o: Ov, f: var Gauge, u: Gauge, c, i: int, add = false) =
   if i == k:
     discard solveNormal(o, p.wa, p.phi[c][i], u, p.masses[k])  # eta
     applyOv(o, p.wb, p.wa, u, p.masses[k])                     # y = D_K eta
-    ovGradient(o, f, p.wb, p.wa, u, -1.0, add)
+    ovGradient(o, f, p.wb, p.wa, u, -1.0, add, mass = p.masses[k])
   else:
     applyOvAdj(o, p.wb, p.phi[c][i], u, p.masses[i+1])         # chi
     discard solveNormal(o, p.wa, p.wb, u, p.masses[i])         # eta
     applyOv(o, p.wc, p.wa, u, p.masses[i])                     # y = D_i eta
-    ovGradient(o, f, p.phi[c][i], p.wa, u, 1.0, add)
-    ovGradient(o, f, p.wc, p.wa, u, -1.0, add = true)
+    ovGradient(o, f, p.phi[c][i], p.wa, u, 1.0, add,
+               mass = p.masses[i+1])
+    ovGradient(o, f, p.wc, p.wa, u, -1.0, add = true,
+               mass = p.masses[i])
 
 proc pfForce*(p: Pf, f: var Gauge, u: Gauge, level: int) =
   ## MD force of Hasenbusch level `level` (1 = heaviest frame ... nframe =

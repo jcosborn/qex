@@ -254,26 +254,28 @@ suite "fermion propagator and condensate vs dense oracles":
 
 suite "the current kernel: dense tangent pinned against ovGradient":
 
-  test "2 Re<l, denseOvDeriv r> == <ovGradient, du> (both fields)":
+  test "2 Re<l, denseOvDeriv r> == <ovGradient, du> (both fields and masses)":
     for (nm, u, o) in [("free", uF0, ovF0), ("random", uFr, ovFr)]:
-      let
-        du = randGauge(latF, 404, 1.0)
-        left = randSpin(latF.nsite, 405)
-        right = randSpin(latF.nsite, 406)
-        dd = denseOvDeriv(o, u, du)
-      var rhs = complex64(0.0, 0.0)
-      for i in 0..<ndF:
-        var s = complex64(0.0, 0.0)
-        for j in 0..<ndF: s += dd[i + ndF*j]*right[j shr 1][j and 1]
-        rhs += conjugate(left[i shr 1][i and 1])*s
-      var f = newGauge(latF)
-      ovGradient(o, f, left, right, u)
-      var lhs = 0.0
-      for i in 0..<f.s.len: lhs += f.s[i]*du.s[i]
-      for i in 0..<f.t.len: lhs += f.t[i]*du.t[i]
-      let e = abs(lhs - 2.0*rhs.re)/abs(lhs)
-      echo &"  {nm}: <f,du> = {lhs:.12e}  2Re<l,dD r> = {2.0*rhs.re:.12e}  rel {e:.3e}"
-      check e < 1e-11
+      for mass in [0.0, 0.17]:
+        let
+          du = randGauge(latF, 404, 1.0)
+          left = randSpin(latF.nsite, 405)
+          right = randSpin(latF.nsite, 406)
+          dd = denseOvDeriv(o, u, du, mass)
+        var rhs = complex64(0.0, 0.0)
+        for i in 0..<ndF:
+          var s = complex64(0.0, 0.0)
+          for j in 0..<ndF: s += dd[i + ndF*j]*right[j shr 1][j and 1]
+          rhs += conjugate(left[i shr 1][i and 1])*s
+        var f = newGauge(latF)
+        ovGradient(o, f, left, right, u, mass = mass)
+        var lhs = 0.0
+        for i in 0..<f.s.len: lhs += f.s[i]*du.s[i]
+        for i in 0..<f.t.len: lhs += f.t[i]*du.t[i]
+        let e = abs(lhs - 2.0*rhs.re)/abs(lhs)
+        echo &"  {nm} mass={mass}: <f,du> = {lhs:.12e}  " &
+             &"2Re<l,dD r> = {2.0*rhs.re:.12e}  rel {e:.3e}"
+        check e < 1e-11
 
 suite "Ward / charge conservation (measurement level)":
 
@@ -504,6 +506,68 @@ suite "sigma_PS vs sigma_FS":
       echo &"  {nm} point: max|PS-FS| (dt!=0) = {devp:.3e}; vs dense {worst:.3e}"
       check devp < 1e-9*scale
       check worst < 1e-9*scale
+      check o.stats.ok
+
+  test "finite-mass FS uses the standard-overlap contact identity":
+    let mass = 0.13
+    for (nm, u, o) in [("free", uF0, ovF0), ("random", uFr, ovFr)]:
+      let
+        d0 = denseOv(o, u)
+        s = denseS(o, u, mass)
+        alpha = ovMassAlpha(mass)
+        beta = ovMassBeta(mass)
+      # Matrix-level identity, independent of the correlator implementation:
+      # (1-D0^dag)S^dag = (beta*S^dag-1)/alpha.
+      var worstId = 0.0
+      for j in 0..<ndF:
+        for i in 0..<ndF:
+          var lhs = complex64(0.0, 0.0)
+          for k in 0..<ndF:
+            var a = -conjugate(d0[k + ndF*i])
+            if i == k: a += complex64(1.0, 0.0)
+            lhs += a*conjugate(s[j + ndF*k])
+          var rhs = beta*conjugate(s[j + ndF*i])
+          if i == j: rhs -= complex64(1.0, 0.0)
+          rhs = rhs/alpha
+          worstId = max(worstId, abs(lhs - rhs))
+      check worstId < 1e-11
+
+      # The iterative point contraction must match the dense contraction made
+      # from that identity at the same nonzero mass.
+      let (pp, pf) = scalarCorrPoint(o, u, mass, v5, 0)
+      var worstPs = 0.0
+      var worstFs = 0.0
+      var scale = 0.0
+      for dt in 0..<latF.nt:
+        var z1 = complex64(0.0, 0.0)
+        var z2 = complex64(0.0, 0.0)
+        for x in 0..<sph1.nv:
+          let site = sIdx(latF, x, dt)
+          for c in 0..1:
+            for cp in 0..1:
+              let
+                i2 = 2*site + c
+                i1 = 2*sIdx(latF, v5, 0) + cp
+                sxy = s[i2 + ndF*i1]
+                syx = s[i1 + ndF*i2]
+              z1 += sxy*syx
+              var
+                a = beta*conjugate(syx)
+                b = beta*conjugate(sxy)
+              if i2 == i1:
+                a -= complex64(1.0, 0.0)
+                b -= complex64(1.0, 0.0)
+              z2 += (a/alpha)*(b/alpha)
+        let
+          psRef = -2.0*z1.re
+          fsRef = -z1.re - z2.re
+        scale = max(scale, max(abs(psRef), abs(fsRef)))
+        worstPs = max(worstPs, abs(pp[dt] - psRef))
+        worstFs = max(worstFs, abs(pf[dt] - fsRef))
+      echo &"  {nm} mass={mass}: FS identity {worstId:.3e}, " &
+           &"point PS/FS vs dense {worstPs:.3e}/{worstFs:.3e}"
+      check worstPs < 1e-9*scale
+      check worstFs < 1e-9*scale
       check o.stats.ok
 
 # ==============================================================================

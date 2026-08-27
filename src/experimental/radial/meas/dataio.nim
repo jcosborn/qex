@@ -14,6 +14,22 @@ import std/[os, strformat, strutils, tables]
 
 const colKey = "columns"
 
+proc readTsvMeta*(path: string): Table[string, string] =
+  ## Read only the leading metadata header.  This is used by restart/analysis
+  ## compatibility checks without parsing a potentially large data body.
+  result = initTable[string, string]()
+  for raw in path.lines:
+    let s = raw.strip
+    if s.len == 0: continue
+    if s[0] != '#': break
+    let h = s[1..^1].strip
+    let i = h.find '='
+    if i < 0: continue
+    let
+      k = h[0..<i].strip
+      v = h[i+1..^1].strip
+    if k != colKey: result[k] = v
+
 proc writeTsv*(path: string, header: openArray[(string, string)],
                colNames: openArray[string], cols: openArray[seq[float]]) =
   ## `cols` is column major: cols[j][i] is row i of column j.  Every column must

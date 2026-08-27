@@ -1887,11 +1887,12 @@ design).  Dependencies: `core/lattice`, `core/spinor`,
 * \(X = D_{\rm lat} - M\) with the **raw** operator of (IV.1) and plain matrix adjoints,
   \(M\) in raw units (doc/04 §10 settled convention; M = 1 default).  `applyX`/`applyXAdj`
   are one `applyDw`/`applyDwAdj` each; `applyH` = \(X^\dagger X\).
-* `applyOv` = \((1{+}\rm mass) + X R(H)\), `applyOvAdj` = \((1{+}\rm mass) + R(H)X^\dagger\)
+* `applyOv` = \((1{+}m/2) + (1{-}m/2)X R(H)\), `applyOvAdj` =
+  \((1{+}m/2) + (1{-}m/2)R(H)X^\dagger\), the standard \(\rho=1\) overlap mass,
   with \(R\) the frozen Zolotarev rational (σ² poles), each **one** `cgmSolve` multishift
   solve at `r2inner`; `applyNormal` = adjoint∘forward (two solves); `solveNormal` = outer CG
-  on the normal operator at `r2outer` (2(iters+1) multishift solves).  Mass additive,
-  \(D(m)=D_{\rm ov}+m\).
+  on the normal operator at `r2outer` (2(iters+1) multishift solves). Masses are always-on
+  validated in \(0\le m<2\).
 * **`ovGradient`** — the single shared pullback, exactly the formula of doc/04 §10:
   two multishift solves (\(s_j=G_j\,\)right, \(t_j=G_jX^\dagger\)left), then
   \(2n_{\rm pole}{+}1\) `dwPullback` calls with weights \((1, -r_j, -r_j)\).  No second
@@ -2075,7 +2076,8 @@ QEX `hmc/metropolis` (`RadialHmc` subclasses `MetropolisRoot`), the `mdevolve` n
 
 ### Implemented
 
-* **Hasenbusch ladder** (doc/02 §4.2), additive mass \(D(m)=D_{\rm ov}+m\),
+* **Hasenbusch ladder** (doc/02 §4.2), standard mass
+  \(D(m)=(1-m/2)D_{\rm ov}+m\),
   \(Q_i=D(m_i)^\dagger D(m_i)\), copies = nf/2, frames per copy over the strictly
   increasing `masses`:
   ratio frame \(i<K\): \(S_i=\phi^\dagger D_{i+1}Q_i^{-1}D_{i+1}^\dagger\phi\), heatbath
@@ -2085,11 +2087,11 @@ QEX `hmc/metropolis` (`RadialHmc` subclasses `MetropolisRoot`), the `mdevolve` n
   Only Hermitian solves anywhere (`solveNormal`).  `masses.len == 1` = no Hasenbusch.
 * **Forces through `ovGradient` only** (the single pullback; both terms of the ratio
   frame are separate `ovGradient` calls, never a second derived kernel):
-  heaviest \(dS=-2{\rm Re}\langle y,\delta D_{\rm ov}\eta\rangle\) with
+  heaviest \(dS=-2{\rm Re}\langle y,\delta D_K\eta\rangle\) with
   \(\eta=Q_K^{-1}\phi\), \(y=D_K\eta\); ratio
-  \(dS=+2{\rm Re}\langle\phi,\delta D_{\rm ov}\eta\rangle-2{\rm Re}\langle y,\delta D_{\rm ov}\eta\rangle\)
-  with \(\chi=D_{i+1}^\dagger\phi\), \(\eta=Q_i^{-1}\chi\), \(y=D_i\eta\).  The additive
-  mass carries no link, so no mass enters the pullback.
+  \(dS=+2{\rm Re}\langle\phi,\delta D_{i+1}\eta\rangle-2{\rm Re}\langle y,\delta D_i\eta\rangle\)
+  with \(\chi=D_{i+1}^\dagger\phi\), \(\eta=Q_i^{-1}\chi\), \(y=D_i\eta\), and
+  \(\delta D_i=(1-m_i/2)\delta D_{\rm ov}\).
 * **actOp (order 31) / frcOp (order 11) split**: heatbath, both Hamiltonians and the
   accept test use actOp; MD forces use frcOp; orders are never mixed inside one gradient.
 * **Momentum**: one unit Gaussian per link (spatial + temporal), kinetic \(|p|^2/2\).
@@ -2112,12 +2114,13 @@ QEX `hmc/metropolis` (`RadialHmc` subclasses `MetropolisRoot`), the `mdevolve` n
   a splitmix64 chain over (baseSeed, trajectory number, purpose, copy, frame); purposes
   `rkMomentum/rkAccept/rkPseudo`.  No generator state is serialized; a restart depends
   only on the committed trajectory counter.
-* **Checkpoint**: versioned binary manifest (magic, version, lev, nt, at, g2, geometry
+* **Checkpoint**: versioned binary manifest (magic, version, mass-convention id, lev, nt,
+  at, g2, geometry
   convention, nf, M, both `Rat.hash` values, masses, tau, per-level steps, seed,
   trajectory counter) + the gauge field + a trailing FNV-1a over the whole payload.
   `loadCheckpoint` validates EVERY manifest field against the live configuration and
-  raises on any mismatch or on a hash (corruption) failure.  Mass convention stated:
-  additive, D(m) = D_ov + m.
+  raises on any mismatch or on a hash (corruption) failure. Version 2 records
+  `standard-overlap-rho1`; legacy version-1 additive checkpoints are rejected.
 * **`reversibilityCheck`** (forward τ, p→−p, forward τ, p→−p; reports field/momentum
   drifts, ΔH and the round-trip momentum transversality; restores the state) and
   **`windowCheck`** (kernelWindow on the committed field against BOTH frozen rationals;
@@ -2753,12 +2756,14 @@ launch commands are at the end for the coordinator.  Smoke/calibration outputs a
 Reads `<dir>/<cfg>.t<traj>` configurations through **WP-H's own reader**
 (`hmc/trajectory.loadCheckpoint` on a `RadialHmc` built from the command line), so **every
 manifest field is validated** — lev, nt, at, g2, convention, nf, M, both rational hashes, masses,
+the standard-overlap mass-convention id,
 tau, per-level steps, seed — and a mismatch refuses to measure
 (verified: `-g2R:2.5` against the g2R=1.5 smoke ensemble dies with
 `checkpoint mismatch: g2 [ValueError]`, exit 1).  Per configuration, selected by `-obs:` (comma
 list or `all`), it writes one TSV per observable per configuration under `<dir>/meas/`, each with
-a full `#key=value` manifest (ensemble parameters, `convention=gcExactArea`, both rational
-hashes, valence mass, estimator notes).  Existing files are skipped (`-skipDone:false` remeasures)
+a full `#key=value` manifest (ensemble parameters, `convention=gcExactArea`,
+`massConvention=standard-overlap-rho1`, `overlapRho=1`, both rational hashes, valence mass,
+estimator notes). Existing files are skipped (`-skipDone:false` remeasures)
 and measurement randomness is trajectory-addressed (`keyedRng(seed, traj, purpose)`, purposes
 101/102/104 disjoint from HMC's 1–3), so a re-run is bit-reproducible — verified: the re-measure
 after the interruption reproduced every number to the printed digit.
@@ -2991,3 +2996,52 @@ Statistics expectation, stated honestly: per-ensemble 10–21 measured configs �
 at the few-% level (good signal); correlator-ratio observables (Δ ratios of slides 11–16) at
 trend level with 10–30 % errors; ℓ=1,2 protection and PS≡FS are exact per configuration and
 independent of statistics.
+
+---
+
+## WP-M — standard-overlap mass migration (2026-08-26)
+
+The active convention now matches established lattice QCD:
+\[
+D(m)=\left(1-\frac{m}{2\rho}\right)D(0)+m,\qquad \rho=1,\qquad 0\le m<2.
+\]
+The value \(\rho=1\) follows from this project's normalization \(D(0)=1+V\); it is
+distinct from the Wilson-kernel height M. The exact map from the retired additive parameter is
+\[
+\mu=\frac{m}{1-m/2},\qquad m=\frac{\mu}{1+\mu/2},\qquad
+D_{\rm std}(m)=(1-m/2)D_{\rm add}(\mu).
+\]
+Equal numeric masses therefore are not the same finite-cutoff theory, and no checkpoint or
+measurement is converted in place.
+
+The implementation treats the convention as one scientific contract:
+
+1. Forward/adjoint operators, normal solves, propagators, and dense inverses use standard
+   \(D(m)\).
+2. Gauge derivatives, dense tangents, Hasenbusch forces, and conserved currents carry
+   \(\alpha(m)=1-m/2\).
+3. The condensate is
+   \({\rm Re\,tr}[(1-D_{\rm ov}/2)D(m)^{-1}]/N\).
+4. Massive FS contractions use
+   \[
+   (1-D_{\rm ov}^\dagger)D(m)^{-\dagger}
+   =\frac{(1+m/2)D(m)^{-\dagger}-1}{1-m/2}.
+   \]
+5. Always-on validation rejects non-finite masses and values outside \(0\le m<2\).
+6. Checkpoint version 2 stores a mass-convention id and rejects version 1. TSVs store
+   massConvention=standard-overlap-rho1 and overlapRho=1; skip/analysis paths validate them.
+7. The campaign defaults to output/radial/t2-standard-overlap. Any frozen rational-window or
+   manifest change requires another fresh RADIAL_T2_OUT. Legacy output/radial/t2 is preserved.
+
+Production-flag verification:
+
+* toverlap passes: the direct formula and additive-parameter map agree at
+  \(2.1\times10^{-16}\); massive pullback scaling agrees to \(1.3\times10^{-15}\).
+* tmeas passes: the finite-mass FS identity is accurate to \(4.7\times10^{-15}\), and the
+  point-source FS contraction agrees with its dense reference within \(5.1\times10^{-13}\).
+* thmc passes: dense pseudofermion actions agree within \(2.4\times10^{-14}\), massive
+  frame-force finite differences within \(8.2\times10^{-9}\), and checkpoint-v2 restart is
+  bitwise identical.
+
+The previous Tier-2 report is historical additive-convention output. Tier-1 and strictly
+massless operator identities are unchanged; supported production starts new Tier-2 ensembles.

@@ -10,6 +10,9 @@ Reproduction of
 The lattice is a refined icosahedron projected onto \(S^2\) (\(N_V=10L^2{+}2\)) times a regular
 temporal direction. The gauge field is a **non-compact** \(U(1)\) one-cochain with a Gaussian
 action; the fermion is a two-component **overlap** operator built from a simplicial Wilson kernel.
+Finite masses use the standard lattice-QCD convention
+\(D(m)=(1-m/2)D_{\rm ov}+m\) at \(\rho=1\). Legacy additive-mass checkpoints and
+measurements are rejected rather than silently reused.
 
 Because the lattice is simplicial, this code deliberately does **not** use QEX's hypercubic
 `Layout`/`Field` machinery. It imports `base` for parameters, timers and comms, and reuses

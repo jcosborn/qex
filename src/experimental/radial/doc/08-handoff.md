@@ -5,6 +5,33 @@ Written 2026-08-21 ~17:50 by the session that built this project, for a successo
 
 ---
 
+## 2026-08-26 convention migration — read before any Tier-2 command
+
+The active code now uses the standard lattice-QCD overlap mass
+\[
+D(m)=(1-m/2)D_{\rm ov}+m\qquad(\rho=1),
+\]
+not the legacy additive \(D_{\rm ov}+\mu\). Binary checkpoints are version 2 and carry an
+explicit mass-convention id; all version-1 checkpoints are intentionally rejected. Measurement
+TSVs carry `massConvention=standard-overlap-rho1` and `overlapRho=1`, and restart/analysis
+rejects files without matching metadata.
+
+Everything below that refers to `output/radial/t2`, its running jobs, results, or resume commands
+is a **historical 2026-08-21 record**. Do not resume those checkpoints or append measurements
+with the current binaries. They remain useful only as legacy additive-convention artifacts.
+The active campaign defaults to:
+
+```
+output/radial/t2-standard-overlap/
+```
+
+Start it with `bash src/experimental/radial/campaign/t2.sh <ensemble>`. To change a frozen
+rational window, mass ladder, or other ensemble manifest field, set `RADIAL_T2_OUT` to another
+fresh directory; never alter parameters and resume an existing checkpoint. The exact parameter
+map is \(\mu=m/(1-m/2)\), \(m=\mu/(1+\mu/2)\), but no automatic data migration is performed.
+
+---
+
 ## 0. What this project is
 
 Reproduce, inside QEX, the Lattice 2026 talk *"Studying QED3 in radial quantization:
@@ -85,7 +112,7 @@ conservation ~1e−9 on dynamical configs; m=0 condensate exactly 0 by Ginsparg�
 
 ---
 
-## 2. State: what is RUNNING right now (check first!)
+## 2. Historical 2026-08-21 state (legacy additive campaign; do not resume)
 
 At handoff time (~17:50, 2026-08-21) four background shell jobs were running the preliminary
 Tier-2 campaign. **They may or may not have survived the session handoff** (they are OS
@@ -96,8 +123,8 @@ cd /Users/xjin/K/W/P003/qex/.claude/worktrees/qed3-slides-reproduction-plan-0e70
 ls -lT output/radial/t2/*/ckpt 2>/dev/null       # ckpt mtimes advancing => still running
 tail -2 output/radial/t2/*/hmc.log 2>/dev/null    # if the script logs there; else check dirs
 ```
-If checkpoint mtimes are advancing every ~1–5 min, they are alive — just wait.
-If frozen, **resume is one command per ensemble** (idempotent, checkpointed, skips what's done):
+These commands are retained only to document the old run. They must not be used with the
+current standard-overlap binaries:
 ```bash
 cd /Users/xjin/K/W/P003/qex/.claude/worktrees/qed3-slides-reproduction-plan-0e70b6
 export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk

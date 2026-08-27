@@ -448,8 +448,9 @@ proc applyOv*(o: Ov, dst: var Spin, src: Spin, u: Gauge, mass = 0.0)
 proc applyOvAdj*(o: Ov, dst: var Spin, src: Spin, u: Gauge, mass = 0.0)
 proc applyNormal*(o: Ov, dst: var Spin, src: Spin, u: Gauge, mass = 0.0)  ## D^dag D
 proc solveNormal*(o: Ov, x: var Spin, b: Spin, u: Gauge, mass = 0.0): CgInfo
-proc ovGradient*(o: Ov, f: var Gauge, left, right: Spin, u: Gauge, scale = 1.0, add = false)
-  ## THE single pullback: f (+)= scale * d[2 Re <left, D_ov right>]/d theta.  Used by the
+proc ovGradient*(o: Ov, f: var Gauge, left, right: Spin, u: Gauge,
+                 scale = 1.0, add = false, mass = 0.0)
+  ## THE single pullback: f (+)= scale * d[2 Re <left, D(mass) right>]/d theta.  Used by the
   ## HMC force, the Hasenbusch frames, the conserved current, and the Ward test.  There
   ## must not be a second, separately derived force kernel.
 proc kernelWindow*(o: Ov, u: Gauge, iters = 32): tuple[smin, smax, lo, hi: float; inside: bool]
@@ -457,7 +458,11 @@ proc kernelWindow*(o: Ov, u: Gauge, iters = 32): tuple[smin, smax, lo, hi: float
 proc denseOv*(o: Ov, u: Gauge): seq[Complex64]
   ## exact dense D_ov = 1 + X (X^dag X)^{-1/2} via denseDw + zheev, tests only
 ```
-Mass convention: **additive**, \(D(m)=D_{\rm ov}+m\). State it in every output manifest.
+Mass convention: **standard overlap at \(\rho=1\)**,
+\(D(m)=(1-m/2)D_{\rm ov}+m\), with always-on validation \(0\le m<2\).
+It is recorded as `massConvention=standard-overlap-rho1` and `overlapRho=1` in every
+output manifest. Legacy additive mass \(\mu\) maps as
+\(\mu=m/(1-m/2)\), or \(m=\mu/(1+\mu/2)\); equal numeric values are not equivalent.
 The rational window is **frozen** at construction. Never rebuild it mid-ensemble.
 
 **Implemented contract (WP-F; measured numbers in [`06-status.md`](06-status.md)):**
@@ -480,8 +485,8 @@ The rational window is **frozen** at construction. Never rebuild it mid-ensemble
   \(z=R(H)\,\text{right}\), \(s_j=G_j\,\text{right}\), \(t_j=G_jX^\dagger\text{left}\):
   \(dF=2\,\mathrm{Re}[\langle\text{left},\delta X\,z\rangle-\sum_jr_j(\langle Xs_j,\delta X\,t_j\rangle+\langle Xt_j,\delta X\,s_j\rangle)]\),
   each term one `dwPullback` (\(\delta X=\delta D_W\), M constant); cost 2 multishift solves
-  + \(2n_{\rm pole}{+}1\) X applies and pullbacks. The mass term carries no link, so there
-  is no mass parameter.
+  + \(2n_{\rm pole}{+}1\) X applies and pullbacks. The result is multiplied by
+  \(1-m/2\), because \(\delta D(m)=(1-m/2)\delta D_{\rm ov}\).
 
 **Kernel convention (settled 2026-08-21, after WP-E).** \(X=D_{\rm lat}-M\) uses the **raw**
 operator of (IV.1) with **plain matrix adjoints**, \(M=1\) default — exactly the paper's (IV.9).
@@ -622,14 +627,14 @@ Structurally like `src/experimental/graph/hmcgauge/trajectory.nim`, built on
 (`RadialHmc` subclasses `MetropolisRoot`; hooks `start/getH/generate/globalRand/accept/reject`).
 
 ```nim
-# pseudofermion.nim -- the Hasenbusch ladder, additive mass D(m) = D_ov + m,
+# pseudofermion.nim -- the Hasenbusch ladder, standard mass D(m) = (1-m/2)D_ov + m,
 # Q_i = D(m_i)^dag D(m_i); one pseudofermion pair per two flavors.
 #   ratio frame i < K:  S_i = phi^dag D_{i+1} Q_i^{-1} D_{i+1}^dag phi,
 #                       heatbath phi = D_{i+1} Q_{i+1}^{-1} D_i^dag xi  => S_i = |xi|^2
 #   heaviest frame K:   S_K = phi^dag Q_K^{-1} phi, heatbath phi = D_K^dag xi
 # Forces via ovGradient ONLY:
-#   heaviest: dS = -2Re<y, dD_ov eta>, eta = Q_K^{-1} phi, y = D_K eta
-#   ratio:    dS = +2Re<phi, dD_ov eta> - 2Re<y, dD_ov eta>,
+#   heaviest: dS = -2Re<y, dD_K eta>, eta = Q_K^{-1} phi, y = D_K eta
+#   ratio:    dS = +2Re<phi, dD_{i+1} eta> - 2Re<y, dD_i eta>,
 #             chi = D_{i+1}^dag phi, eta = Q_i^{-1} chi, y = D_i eta
 type Pf* = ref object
   l*: Lat
@@ -707,9 +712,10 @@ bitwise identical — tested).
 
 **Checkpoint** (versioned binary, trailing FNV-1a over the payload): magic/version, lev, nt,
 at, g2, geometry convention, nf, M, both rational hashes (`Rat.hash`), masses, tau, per-level
-steps, seed, trajectory counter, the gauge field.  `loadCheckpoint` validates every manifest
-field against the live configuration and refuses mismatches; the mass convention is additive,
-\(D(m)=D_{\rm ov}+m\).
+steps, seed, trajectory counter, the gauge field. Version 2 also stores the explicit
+`standard-overlap-rho1` convention identifier. `loadCheckpoint` validates every manifest
+field against the live configuration and refuses mismatches; legacy version-1 additive-mass
+checkpoints are deliberately rejected.
 
 **Solver targets.** Keep `r2inner`/`r2outer` ~2 decades above the operators' roundoff floors
 (WP-D): the WP-F suite values (1e-26, 1e-22) sit ON the floor once `solveNormal` outer solves
@@ -737,21 +743,21 @@ proc icosaGroup*(sph: Sphere, tol = 1e-6): IcosaGroup
 # observables.nim  -- IMPLEMENTED (WP-I)
 func fiveFoldSite*(sph: Sphere): int            ## first original icosahedron vertex
 proc propSolve*(o: Ov, x: var Spin, b: Spin, u: Gauge, mass = 0.0): CgInfo
-  ## x = S b = (D^dag D)^{-1} D^dag b  (adjoint FIRST; D = D_ov + mass)
+  ## x = S b = (D^dag D)^{-1} D^dag b  (adjoint FIRST; D = D(mass))
 proc propSolveDag*(o: Ov, x: var Spin, b: Spin, u: Gauge, mass = 0.0): CgInfo
   ## x = S^dag b = D (D^dag D)^{-1} b
 proc propagatorT*(o: Ov, u: Gauge, mass: float, src: int): seq[Spinor]
   ## G(t) at the coincident site: source (src, t=0, component 0)
 proc condensatePS*(o: Ov, u: Gauge, mass: float, nnoise: int,
                    r: var Threefry4x64): tuple[v, e: float]
-  ## Re tr[(1 - D_ov/2)(D_ov + m)^{-1}]/(2 nsite), Gaussian noise, stderr
+  ## Re tr[(1 - D_ov/2)D(m)^{-1}]/(2 nsite), Gaussian noise, stderr
 proc condensateDense*(o: Ov, u: Gauge, mass: float): float   ## exact spectral oracle
 proc denseS*(o: Ov, u: Gauge, mass = 0.0): seq[Complex64]    ## exact dense S (tests)
-proc denseOvDeriv*(o: Ov, u: Gauge, du: Gauge): seq[Complex64]
-  ## exact dense delta D_ov[du] of the RATIONAL operator (tests); pinned
+proc denseOvDeriv*(o: Ov, u: Gauge, du: Gauge, mass = 0.0): seq[Complex64]
+  ## exact dense delta D(mass)[du] of the RATIONAL operator (tests); pinned
   ## against ovGradient -- the ONE current kernel (doc/07 1.1)
 proc tsliceForm*(l: Lat, w: openArray[float], t: int): Gauge ## du on slice-t temporal links
-proc linkCurrent*(o: Ov, u: Gauge, left, right: Spin): tuple[re, im: Gauge]
+proc linkCurrent*(o: Ov, u: Gauge, left, right: Spin, mass = 0.0): tuple[re, im: Gauge]
   ## <left, K_l right> per link via TWO ovGradient calls (left and i*left)
 proc tsliceAmp*(l: Lat, g: tuple[re, im: Gauge], w: openArray[float]): seq[Complex64]
   ## A(t) = sum_y w_y <left, K_{(y,t)} right>; w = Y_lm site values (the
@@ -773,7 +779,8 @@ proc currentTraceDisc*(samples: openArray[CurrentSample], k1, k2: int):
 proc scalarCorrDense*(o: Ov, u: Gauge, mass = 0.0): tuple[ps, fs: seq[float]]
 proc scalarCorrPoint*(o: Ov, u: Gauge, mass: float, v0, t0: int): tuple[ps, fs: seq[float]]
   ## sigma_PS / sigma_FS connected timeslice correlators (doc/07 section 3);
-  ## at mass 0 they are IDENTICAL at every dt, configuration by configuration
+  ## F=(1-D_ov^dag)S^dag=((1+m/2)S^dag-1)/(1-m/2);
+  ## at mass 0 PS and FS are IDENTICAL at every dt, configuration by configuration
 proc jtopProject*(l: Lat, u: Gauge, lh, mh: int): seq[float] ## sum_f Y Theta_f per t
 proc f2Project*(l: Lat, u: Gauge, lh, mh: int): seq[float]
   ## sum_f Y Theta^2/A_f + sum_e Y(mid) Theta_e^2 2A_e/(l_e a_t)^2, RAW

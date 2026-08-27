@@ -257,6 +257,44 @@ Also \(D_{\rm ov}^{-1}=1-(D_{\rm ov}^\dagger)^{-1}\) (IV.17), and the parity rel
 \(-\sigma_1(D_{\rm ov}|_{x\to x_P})^{-1}\sigma_1=D_{\rm ov}^{-1}-1\).
 **All three are exact numerical identities to test.**
 
+**Mass convention (settled 2026-08-26).** Use the standard massive overlap operator
+
+\[
+D(m)=\left(1-\frac{m}{2\rho}\right)D(0)+m,
+\qquad 0\le m<2\rho .
+\]
+
+This is the conventional lattice-QCD definition (for example, Eq. (A1) of
+[Bai et al., PRD 98, 074509](https://doi.org/10.1103/PhysRevD.98.074509)). The radial
+paper normalizes \(D(0)=1+V\), so this repository has **\(\rho=1\)** and therefore
+
+\[
+\boxed{D(m)=(1-m/2)D_{\rm ov}+m=(1+m/2)\mathbf1+(1-m/2)V.}
+\]
+
+Here \(\rho\) is the normalization multiplying \(1+V\); it is not the independently
+configurable Wilson-kernel height `M`. The rotated structure also matches the established
+three-dimensional overlap construction
+\(C_o(m)=\tfrac12(1+V)+\tfrac m2(1-V)\) in
+[Karthik and Narayanan](https://arxiv.org/abs/1606.04109): explicitly,
+\(C_o(m_K)=D(m)/2\) for \(m_K=m/2\), since their massless operator is
+\(C_o(0)=(1+V)/2\).
+
+For comparison with legacy additive data, if
+\(D_{\rm add}(\mu)=D_{\rm ov}+\mu\), then
+
+\[
+D(m)=\alpha D_{\rm add}(\mu),\qquad
+\alpha=1-m/2,\qquad \mu=\frac{m}{1-m/2},\qquad
+m=\frac{\mu}{1+\mu/2}.
+\]
+
+Thus the two conventions differ only by a mass reparameterization and an overall determinant
+factor on a fixed gauge field, but the **same numeric mass does not denote the same operator**.
+Gauge derivatives and conserved currents obey \(\delta D(m)=(1-m/2)\delta D_{\rm ov}\), and
+the mass derivative/condensate insertion is
+\(\partial_mD(m)=1-D_{\rm ov}/2\).
+
 ### 4.1 Zolotarev approximation
 \((X^\dagger X)^{-1/2}\) is approximated by the optimal rational function of \(1/\sqrt{z}\) on
 \([\varepsilon,1]\) after rescaling, with \(\varepsilon=\lambda_{\min}/\lambda_{\max}\) of \(X^\dagger X\):
@@ -295,7 +333,10 @@ With \(\Psi=\binom{\xi}{\eta}\):
 \sigma_{FS}\equiv\eta^\dagger\xi-\xi^\dagger\big(1-D^\dagger_{\rm ov}\big)\eta
 \quad\text{(flavor symmetric, parity non-singlet)} .
 \]
-The soft mass term used for the condensate scan is \(m\,\sigma_{PS}\).
+The slides describe the condensate scan as a soft \(m\,\sigma_{PS}\) deformation. In the
+standard-overlap convention implemented here, the finite-cutoff mass insertion is the usual
+GW-rotated bilinear \(\partial_mD=1-D_{\rm ov}/2\); it approaches the same continuum operator.
+The raw slide operators above are retained for the PS/FS correlator comparison.
 
 ---
 

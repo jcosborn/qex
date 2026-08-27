@@ -6,7 +6,7 @@
 ## doc/04-interfaces.md section 14.
 ##
 ## THE single current kernel (doc/07 section 1.1): the conserved current is
-## J_l = dS_F/dtheta_l = Psibar K_l Psi with K_l = dD_ov/dtheta_l, and the only
+## J_l = dS_F/dtheta_l = Psibar K_l Psi with K_l = dD(mass)/dtheta_l, and the only
 ## implementation of K_l in the tree is `ovGradient` (WP-F).  Every current
 ## measurement here reaches K_l through `linkCurrent` (two ovGradient calls),
 ## and the connected correlator is estimated in the factorized form
@@ -16,7 +16,8 @@
 ## tangent.  The dense oracle `denseOvDeriv` (tests only) is the same rational
 ## formula evaluated in exact linear algebra and is pinned against ovGradient.
 ##
-## Propagator conventions: S(m) = (D_ov + m)^{-1} (additive mass),
+## Propagator conventions: S(m) = D(m)^{-1}, with the standard rho=1 overlap
+## mass D(m) = (1-m/2)D_ov + m,
 ##   S b       = (D^dag D)^{-1} D^dag b        -- `propSolve` (adjoint FIRST)
 ##   S^dag b   = D (D^dag D)^{-1} b            -- `propSolveDag`
 ## Getting the order wrong gives D^dag (D^dag D)^{-1} = D^{-1} D^{-dag} D^dag
@@ -45,7 +46,7 @@ func fiveFoldSite*(sph: Sphere): int =
   doAssert false, "no 5-fold site found"
 
 proc propSolve*(o: Ov, x: var Spin, b: Spin, u: Gauge, mass = 0.0): CgInfo =
-  ## x = S b = (D^dag D)^{-1} D^dag b, D = D_ov + mass.
+  ## x = S b = (D^dag D)^{-1} D^dag b, D = D(mass).
   var rhs = newSpin(o.l.nsite)
   applyOvAdj(o, rhs, b, u, mass)
   solveNormal(o, x, rhs, u, mass)
@@ -74,7 +75,8 @@ proc propagatorT*(o: Ov, u: Gauge, mass: float, src: int): seq[Spinor] =
 proc condensatePS*(o: Ov, u: Gauge, mass: float, nnoise: int,
                    r: var Threefry4x64): tuple[v, e: float] =
   ## GW contact-subtracted condensate (doc/07 section 3):
-  ##   Sigma = Re tr[(1 - D_ov/2)(D_ov + mass)^{-1}] / (2 nsite)
+  ##   Sigma = Re tr[(1 - D_ov/2)D(mass)^{-1}] / (2 nsite),
+  ## the derivative of the standard overlap operator with respect to mass.
   ## by Gaussian volume noise, <eta eta^dag> = 1 per complex component.
   ## Returns the noise mean and the standard error of the mean.
   let n = o.l.nsite
@@ -97,18 +99,20 @@ proc condensatePS*(o: Ov, u: Gauge, mass: float, nnoise: int,
   result.e = sqrt(varm/float(max(1, nnoise - 1)))
 
 proc condensateDense*(o: Ov, u: Gauge, mass: float): float =
-  ## Exact: (1/N) sum_k Re[(1 - lambda_k/2)/(lambda_k + mass)] over the dense
+  ## Exact: (1/N) sum_k Re[(1-lambda_k/2)/((1-m/2)lambda_k+m)] over the dense
   ## D_ov spectrum, N = 2 nsite.  The trace of the same rational function of
   ## D_ov, so it equals `condensatePS`'s expectation up to the rational/solver
   ## error of the iterative path.
+  requireOvMass mass
   let
     nd = 2*o.l.nsite
     a = denseOv(o, u)
   var m = a
   var ev = newSeq[Complex64](nd)
   zgeigs(cast[ptr float64](addr m[0]), cast[ptr float64](addr ev[0]), nd)
+  let alpha = ovMassAlpha(mass)
   for k in 0..<nd:
-    let z = (1.0 - 0.5*ev[k])/(ev[k] + mass)
+    let z = (1.0 - 0.5*ev[k])/(alpha*ev[k] + mass)
     result += z.re
   result /= float(nd)
 
@@ -134,10 +138,13 @@ proc zmmAdjL(a, b: seq[Complex64], n: int): seq[Complex64] =
       result[i + n*j] = s
 
 proc denseS*(o: Ov, u: Gauge, mass = 0.0): seq[Complex64] =
-  ## Exact dense S = (D_ov + mass)^{-1} via A^{-1} = (A^dag A)^{-1} A^dag with
+  ## Exact dense S = D(mass)^{-1} via A^{-1} = (A^dag A)^{-1} A^dag with
   ## the Hermitian A^dag A eigendecomposed by zheev.  Tests only.
+  requireOvMass mass
   let nd = 2*o.l.nsite
   var a = denseOv(o, u)
+  let alpha = ovMassAlpha(mass)
+  for i in 0..<a.len: a[i] = alpha*a[i]
   for i in 0..<nd: a[i + nd*i] += complex64(mass, 0.0)
   var h = zmmAdjL(a, a, nd)
   var ev = newSeq[float](nd)
@@ -167,14 +174,15 @@ proc denseDwDeriv(l: Lat, u, du: Gauge): seq[Complex64] =
     applyDwDeriv(l, col, b, u, du)
     for i in 0..<nd: result[i + nd*j] = col[i shr 1][i and 1]
 
-proc denseOvDeriv*(o: Ov, u: Gauge, du: Gauge): seq[Complex64] =
-  ## Exact dense tangent delta D_ov[du] of the RATIONAL overlap operator --
+proc denseOvDeriv*(o: Ov, u: Gauge, du: Gauge, mass = 0.0): seq[Complex64] =
+  ## Exact dense tangent delta D(mass)[du] of the RATIONAL overlap operator --
   ## the same formula ovGradient pulls back (doc/04 section 10), evaluated in
   ## exact linear algebra:
   ##   delta D_ov = dX R(H) + X dR,  dR = -sum_j r_j G_j dH G_j,
   ##   dH = dX^dag X + X^dag dX,     G_j = (H + q_j)^{-1},
   ## with H = X^dag X eigendecomposed.  Tests only; pinned against ovGradient
   ## by contraction in tmeas.
+  requireOvMass mass
   let
     l = o.l
     nd = 2*l.nsite
@@ -213,6 +221,9 @@ proc denseOvDeriv*(o: Ov, u: Gauge, du: Gauge): seq[Complex64] =
   result = zmm(dx, rh, nd)
   let t2 = zmm(x, dr, nd)
   for i in 0..<nd*nd: result[i] += t2[i]
+  let alpha = ovMassAlpha(mass)
+  if alpha != 1.0:
+    for i in 0..<nd*nd: result[i] = alpha*result[i]
 
 # --- the current kernel, measurement face ------------------------------------
 
@@ -224,19 +235,20 @@ proc tsliceForm*(l: Lat, w: openArray[float], t: int): Gauge =
   for y in 0..<l.sph.nv:
     result.t[tIdx(l, y, t)] = w[y]
 
-proc linkCurrent*(o: Ov, u: Gauge, left, right: Spin): tuple[re, im: Gauge] =
-  ## <left, K_l right> per link, K_l = dD_ov/dtheta_l, through the ONE kernel:
+proc linkCurrent*(o: Ov, u: Gauge, left, right: Spin, mass = 0.0):
+    tuple[re, im: Gauge] =
+  ## <left, K_l right> per link, K_l = dD(mass)/dtheta_l, through the ONE kernel:
   ## ovGradient gives 2 Re<left, K_l right>; a second call with i*left gives
   ## 2 Im.  result.re.s[l] + i*result.im.s[l] = <left, K_l right> (same for .t).
   let n = o.l.nsite
   result.re = newGauge(o.l)
   result.im = newGauge(o.l)
-  ovGradient(o, result.re, left, right, u, 0.5)
+  ovGradient(o, result.re, left, right, u, 0.5, mass = mass)
   var il = newSpin(n)
   for i in 0..<n:
     for c in 0..1:
       il[i][c] = complex64(-left[i][c].im, left[i][c].re)
-  ovGradient(o, result.im, il, right, u, 0.5)
+  ovGradient(o, result.im, il, right, u, 0.5, mass = mass)
 
 proc tsliceAmp*(l: Lat, g: tuple[re, im: Gauge], w: openArray[float]):
     seq[Complex64] =
@@ -276,7 +288,7 @@ proc wardChargeScan*(o: Ov, u: Gauge, mass: float, v0, ta, tb: int):
   doAssert ci.converged
   ci = propSolveDag(o, rr, bb, u, mass)
   doAssert ci.converged
-  let g = linkCurrent(o, u, rr, x)
+  let g = linkCurrent(o, u, rr, x, mass)
   var w = newSeq[float](l.sph.nv)
   for y in 0..<w.len: w[y] = 1.0
   result.c = tsliceAmp(l, g, w)
@@ -314,9 +326,9 @@ proc currentSample*(o: Ov, u: Gauge, mass: float, w: openArray[seq[float]],
   ci = propSolve(o, xxi, xi, u, mass)
   doAssert ci.converged
   let
-    ga = linkCurrent(o, u, eta, xxi)    # <eta, K S xi>
-    gb = linkCurrent(o, u, xi, xeta)    # <xi, K S eta>
-    gd = linkCurrent(o, u, eta, xeta)   # <eta, K S eta>
+    ga = linkCurrent(o, u, eta, xxi, mass)    # <eta, K S xi>
+    gb = linkCurrent(o, u, xi, xeta, mass)    # <xi, K S eta>
+    gd = linkCurrent(o, u, eta, xeta, mass)   # <eta, K S eta>
   result.a = newSeq[Complex64](w.len*nt)
   result.b = newSeq[Complex64](w.len*nt)
   result.d = newSeq[Complex64](w.len*nt)
@@ -379,10 +391,11 @@ proc currentTraceDisc*(samples: openArray[CurrentSample], k1, k2: int):
 proc scalarCorrDense*(o: Ov, u: Gauge, mass = 0.0): tuple[ps, fs: seq[float]] =
   ## Connected timeslice correlators of sigma_PS and sigma_FS from the dense
   ## propagator, averaged over the source slice (tests only).  With slice
-  ## projectors P_t and S = (D_ov + m)^{-1}, Sb = S^dag:
+  ## projectors P_t and S = D(m)^{-1}, Sb = S^dag:
   ##   C_PS(dt) = -(1/nt) sum_t ( tr[P_{t+dt} S P_t S] + tr[P_{t+dt} Sb P_t Sb] )
   ##   C_FS(dt) = -(1/nt) sum_t ( tr[P_{t+dt} S P_t S]
-  ##                              + tr[P_{t+dt} (Sb-1) P_t (Sb-1)] )
+  ##                              + tr[P_{t+dt} F P_t F] ),
+  ##   F = (1-D_ov^dag)Sb = ((1+m/2)Sb-1)/(1-m/2)
   ## from sigma_FS = eta^dag xi - xi^dag (1 - D_ov^dag) eta and
   ## (1 - D_ov^dag) Sb = Sb - 1 at mass 0 (the GW contact subtraction).
   ## At mass 0 and dt != 0 the two are IDENTICAL configuration by
@@ -393,6 +406,8 @@ proc scalarCorrDense*(o: Ov, u: Gauge, mass = 0.0): tuple[ps, fs: seq[float]] =
     nt = l.nt
     nd = 2*l.nsite
     s = denseS(o, u, mass)
+    alpha = ovMassAlpha(mass)
+    beta = ovMassBeta(mass)
   result.ps = newSeq[float](nt)
   result.fs = newSeq[float](nt)
   # site-diagonal spin blocks of S restricted to slice pairs
@@ -405,7 +420,7 @@ proc scalarCorrDense*(o: Ov, u: Gauge, mass = 0.0): tuple[ps, fs: seq[float]] =
       let t2 = (t1 + dt) mod nt
       var
         z1 = complex64(0.0, 0.0)   # tr[P2 S P1 S]
-        z2 = complex64(0.0, 0.0)   # tr[P2 (Sdag-1) P1 (Sdag-1)]
+        z2 = complex64(0.0, 0.0)   # tr[P2 F P1 F], F=(1-D_ov^dag)Sdag
       for x in 0..<nv:
         for y in 0..<nv:
           for c in 0..1:
@@ -416,13 +431,15 @@ proc scalarCorrDense*(o: Ov, u: Gauge, mass = 0.0): tuple[ps, fs: seq[float]] =
                 sxy = s[i2 + nd*i1]                       # S_{x2, y1}
                 syx = s[i1 + nd*i2]                       # S_{y1, x2}
               z1 += sxy*syx
-              # (Sdag - 1)_{x2,y1} = conj(S_{y1,x2}) - delta
+              # F_{x2,y1} = (beta*conj(S_{y1,x2}) - delta)/alpha
               var
-                a = conjugate(syx)
-                b = conjugate(sxy)
+                a = beta*conjugate(syx)
+                b = beta*conjugate(sxy)
               if i2 == i1:
                 a -= complex64(1.0, 0.0)
                 b -= complex64(1.0, 0.0)
+              a = a/alpha
+              b = b/alpha
               z2 += a*b
       aps += -2.0*z1.re
       afs += -z1.re - z2.re
@@ -435,7 +452,8 @@ proc scalarCorrPoint*(o: Ov, u: Gauge, mass: float, v0, t0: int):
   ## contractions with P_{t1} replaced by the projector on the two spin
   ## components at (v0, t0).  4 solves: S e_c and S^dag e_c for c = 0, 1.
   ##   ps[dt] = -sum_{x in slice t0+dt} sum_{c,c'} 2 Re[ S_{xc,y0c'} S_{y0c',xc} ]
-  ##   fs[dt] = same with the second factor pair from (S^dag - 1).
+  ##   fs[dt] = same with the second factor pair from
+  ##            F=((1+m/2)S^dag-1)/(1-m/2).
   ## Identical for dt != 0 at mass 0 (assert in tests); at dt = 0 they differ
   ## by the GW contact term.
   let
@@ -444,6 +462,8 @@ proc scalarCorrPoint*(o: Ov, u: Gauge, mass: float, v0, t0: int):
     nv = l.sph.nv
     nt = l.nt
     y0 = sIdx(l, v0, t0)
+    alpha = ovMassAlpha(mass)
+    beta = ovMassBeta(mass)
   var
     col: array[2, Spin]
     rw: array[2, Spin]
@@ -471,11 +491,13 @@ proc scalarCorrPoint*(o: Ov, u: Gauge, mass: float, v0, t0: int):
             syx = conjugate(rw[cp][i][c])      # S_{y0cp, xc}
           z1 += sxy*syx
           var
-            a = conjugate(syx)                 # (Sdag)_{xc,y0cp}
-            b = conjugate(sxy)                 # (Sdag)_{y0cp,xc}
+            a = beta*conjugate(syx)             # beta*(Sdag)_{xc,y0cp}
+            b = beta*conjugate(sxy)             # beta*(Sdag)_{y0cp,xc}
           if i == y0 and c == cp:
             a -= complex64(1.0, 0.0)
             b -= complex64(1.0, 0.0)
+          a = a/alpha
+          b = b/alpha
           z2 += a*b
     result.ps[dt] = -2.0*z1.re
     result.fs[dt] = -z1.re - z2.re

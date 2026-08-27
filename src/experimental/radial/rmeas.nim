@@ -3,7 +3,7 @@
 ## Reads a directory of configurations saved by rhmc (`<cfg>.t<traj>`, the WP-H
 ## checkpoint format) through hmc/trajectory.loadCheckpoint, which validates
 ## EVERY manifest field (lev, nt, at, g2, convention, nf, M, both rational
-## hashes, masses, tau, per-level steps, seed) -- so a parameter mismatch
+## hashes, masses, mass convention, tau, per-level steps, seed) -- so a parameter mismatch
 ## between this command line and the ensemble refuses to measure instead of
 ## producing silently wrong numbers.  Per configuration it measures, selected
 ## by -obs: (comma list, or "all"):
@@ -26,7 +26,8 @@
 ##
 ## Output: one TSV per observable per configuration under <dir>/meas/, each
 ## with a full #key=value manifest (ensemble parameters, rational hashes,
-## convention).  Existing files are skipped (-skipDone:false remeasures), so
+## geometry and mass conventions).  Existing files are skipped
+## (-skipDone:false remeasures), so
 ## the driver is restartable.  Measurement randomness is trajectory addressed
 ## (keyedRng over (seed, traj, purpose)), so a remeasure is bit-reproducible
 ## and independent of which configurations already have files.
@@ -145,6 +146,8 @@ let obsList = block:
 
 if dir.len == 0:
   raise newException(ValueError, "need -dir:<ensemble directory>")
+if masses.len == 0:
+  raise newException(ValueError, "need at least one mass")
 
 let
   sph = newSphere(lev)
@@ -180,7 +183,10 @@ echo &"couplings: g2R = {g2R} (g2a = {g2R/float(lev)})  conv = {bt.conv}"
 echo &"overlap: M = {M}  window [{ratLo}, {ratHi}]" &
      &"  maxRelErr({actOrder}) = {ratAct.maxRelErr:.3e}"
 echo &"rational hashes: act {ratAct.hash:#x}  frc {ratFrc.hash:#x}"
-echo &"valence mass: {mass} (sea {masses[0]}; additive, D(m) = D_ov + m)"
+requireOvMass mass
+
+echo &"valence mass: {mass} (sea {masses[0]}; {ovMassConvention}, " &
+     &"D(m) = (1-m/2) D_ov + m)"
 echo &"loop basis ({shapes.len} shapes at L = {lev}): {shapes}"
 
 if ckptInfo:
@@ -222,12 +228,28 @@ proc manifest(extra: varargs[(string, string)]): seq[(string, string)] =
     "lev": $lev, "nt": $nt, "at": &"{at:.17g}", "T": &"{ttot:.17g}",
     "g2R": &"{g2R:.17g}", "g2a": &"{g2R/float(lev):.17g}",
     "convention": $bt.conv,
+    "massConvention": ovMassConvention, "overlapRho": &"{ovRho:.17g}",
     "nf": $nf, "M": &"{M:.17g}", "masses": fmtMasses(),
     "mass": &"{mass:.17g}",
     "ratWindow": &"[{ratLo:g}, {ratHi:g}]",
     "ratHashAct": &"{ratAct.hash:#x}", "ratHashFrc": &"{ratFrc.hash:#x}",
     "seed": $seed}
   for kv in extra: result.add kv
+
+proc requireOutputConvention(path: string) =
+  ## Do not let existence-based restart or analysis silently mix legacy
+  ## additive-mass TSVs with standard-overlap results.
+  let meta = readTsvMeta(path)
+  require meta.getOrDefault("massConvention", "") == ovMassConvention,
+    &"{path}: missing or incompatible massConvention; rerun with " &
+    "-skipDone:false or use a fresh output directory"
+  require meta.getOrDefault("overlapRho", "") == &"{ovRho:.17g}",
+    &"{path}: incompatible overlapRho"
+
+proc outputDone(path: string): bool =
+  if not fileExists(path): return false
+  requireOutputConvention path
+  true
 
 proc foldC(c: openArray[float]): seq[float] =
   ## Periodic fold to dt = 0..nt/2 (average of dt and nt-dt).
@@ -585,7 +607,7 @@ proc measureOne(u: Gauge, traj: int) =
            " on this configuration are outside the rational's validity"
   for name in obsList:
     let primary = opath(name, traj)
-    if skipDone and fileExists(primary):
+    if skipDone and outputDone(primary):
       echo &"  skip {name} traj {traj} (exists)"
       continue
     clearStats actOp
@@ -610,7 +632,7 @@ if not analyze:
     for k in 1..nconf:
       var allDone = skipDone
       for name in obsList:
-        if not fileExists(opath(name, k)): allDone = false
+        if allDone and not outputDone(opath(name, k)): allDone = false
       if allDone:
         echo &"  skip config {k} (all observables exist)"
         continue
@@ -641,6 +663,7 @@ type MeasSet = object
 proc listMeas(name: string): MeasSet =
   var found: seq[CfgFile]
   for path in walkFiles(measDir/(name & ".t*.tsv")):
+    requireOutputConvention path
     let fn = extractFilename(path)
     var t: int
     try:

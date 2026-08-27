@@ -1,11 +1,16 @@
 # Preliminary report — QED3 in radial quantization on S²×ℝ, reproduced in QEX
 
+> **Convention notice (2026-08-26):** Tier-1/massless results remain directly applicable.
+> The Tier-2 files under `output/radial/t2` were generated with the retired additive-mass
+> convention and are preserved as legacy results. The active standard-overlap campaign writes
+> to `output/radial/t2-standard-overlap` and must be generated afresh; do not combine the two.
+
 2026-08-21. Code: `src/experimental/radial/` (worktree
 `qed3-slides-reproduction-plan-0e70b6`, branch `claude/qed3-slides-reproduction-plan-0e70b6`,
 uncommitted). Targets: the Lattice 2026 talk (doc/01) and arXiv:2510.03085 (doc/02).
 Everything below is reproducible: 12 test suites (~196 tests, all green), deterministic
 free-limit apps (`rfree`, `rspec`), and a checkpointed HMC campaign (`campaign/t2.sh`).
-**Resume instructions: doc/08-handoff.md.** Full audit trail: doc/06-status.md.
+**Current restart instructions: doc/08-handoff.md.** Full audit trail: doc/06-status.md.
 
 Statistics disclaimer, per the user's direction: Tier 2 ran at *preliminary* statistics
 (10–21 measured configurations per ensemble, one L=2 attempt cut before thermalization) to

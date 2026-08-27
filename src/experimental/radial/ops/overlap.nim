@@ -5,7 +5,7 @@
 ##   X = D_lat - M          the RAW Wilson operator of (IV.1), plain matrix adjoints,
 ##                          M in raw D_lat units (settled: doc/04 section 10; M = 1 default)
 ##   D_ov = 1 + X (X^dag X)^{-1/2}                                   (IV.9)
-##   D(mass) = D_ov + mass  (additive mass convention)
+##   D(mass) = (1 - mass/2) D_ov + mass  (standard overlap convention, rho = 1)
 ##
 ## (X^dag X)^{-1/2} is the frozen Zolotarev rational of ops/zolotarev.nim,
 ##   R(x) = cst + sum_j res_j/(x + pole_j),  x in [smin^2, smax^2],  poles in sigma^2
@@ -61,7 +61,38 @@ type
     hop: proc(dst: var Spin, src: Spin)   ## H = X^dag X at cu[]
     nop: proc(dst: var Spin, src: Spin)   ## D(cmass)^dag D(cmass) at cu[]
 
-const nwork = 6
+const
+  nwork = 6
+  ovRho* = 1.0
+  ovMassConvention* = "standard-overlap-rho1"
+  ovMassConventionId* = 1'i32
+
+static:
+  doAssert sizeof(float) == sizeof(uint64),
+    "bit-level overlap-mass validation requires IEEE-754 binary64 float"
+
+func finiteBits(x: float): bool {.inline.} =
+  ## IEEE-754 classification that remains valid when callers are built with
+  ## fast-math.  The production build deliberately uses that optimization.
+  (cast[uint64](x) and 0x7ff0000000000000'u64) != 0x7ff0000000000000'u64
+
+func validOvMass*(mass: float): bool {.inline.} =
+  ## The standard overlap mass interval for rho = 1.
+  finiteBits(mass) and mass >= 0.0 and mass < 2.0*ovRho
+
+proc requireOvMass*(mass: float) {.inline.} =
+  ## Always-on validation: `doAssert` is stripped by the production build.
+  if not validOvMass(mass):
+    raise newException(ValueError,
+      "standard overlap mass must satisfy 0 <= mass < 2*rho (rho = 1)")
+
+func ovMassAlpha*(mass: float): float {.inline.} =
+  ## Coefficient of the massless overlap operator in D(m).
+  1.0 - mass/(2.0*ovRho)
+
+func ovMassBeta*(mass: float): float {.inline.} =
+  ## Coefficient of the identity when D_ov = 1 + V.
+  1.0 + mass/(2.0*ovRho)
 
 proc clearStats*(o: Ov) =
   o.stats = SolveStats(ok: true)
@@ -91,36 +122,43 @@ proc msolve(o: Ov, xs: var seq[Spin], b: Spin) =
   if not mi.converged: o.stats.ok = false
 
 proc applyOv*(o: Ov, dst: var Spin, src: Spin, u: Gauge, mass = 0.0) =
-  ## dst = (D_ov + mass) src = (1 + mass) src + X R(H) src.  One multishift solve.
+  ## dst = D(mass) src, with the standard rho=1 overlap convention
+  ## D(m) = (1-m/2) D_ov + m = (1+m/2) + (1-m/2) X R(H).
+  ## One multishift solve.
+  requireOvMass mass
+  let alpha = ovMassAlpha(mass)
   o.cu = addr u
   msolve(o, o.xs, src)
   o.work[1] := src                    # z = R(H) src
-  scale(o.work[1], o.rat.cst)
-  for j in 0..<o.rat.npole: axpy(o.work[1], o.rat.res[j], o.xs[j])
+  scale(o.work[1], alpha*o.rat.cst)
+  for j in 0..<o.rat.npole: axpy(o.work[1], alpha*o.rat.res[j], o.xs[j])
   applyX(o, dst, o.work[1], u)
-  axpy(dst, 1.0 + mass, src)
+  axpy(dst, ovMassBeta(mass), src)
 
 proc applyOvAdj*(o: Ov, dst: var Spin, src: Spin, u: Gauge, mass = 0.0) =
-  ## dst = (D_ov + mass)^dag src = (1 + mass) src + R(H) X^dag src.
+  ## dst = D(mass)^dag src = (1+m/2) src + (1-m/2) R(H) X^dag src.
   ## One multishift solve; the exact adjoint of `applyOv` up to solve residuals,
   ## because R(H) is Hermitian and (X R(H))^dag = R(H) X^dag.
+  requireOvMass mass
+  let alpha = ovMassAlpha(mass)
   o.cu = addr u
   applyXAdj(o, o.work[1], src, u)
   msolve(o, o.xs, o.work[1])
   dst := src
-  scale(dst, 1.0 + mass)
-  axpy(dst, o.rat.cst, o.work[1])
-  for j in 0..<o.rat.npole: axpy(dst, o.rat.res[j], o.xs[j])
+  scale(dst, ovMassBeta(mass))
+  axpy(dst, alpha*o.rat.cst, o.work[1])
+  for j in 0..<o.rat.npole: axpy(dst, alpha*o.rat.res[j], o.xs[j])
 
 proc applyNormal*(o: Ov, dst: var Spin, src: Spin, u: Gauge, mass = 0.0) =
-  ## dst = (D_ov + mass)^dag (D_ov + mass) src.  Two multishift solves.
+  ## dst = D(mass)^dag D(mass) src.  Two multishift solves.
   applyOv(o, o.work[2], src, u, mass)
   applyOvAdj(o, dst, o.work[2], u, mass)
 
 proc solveNormal*(o: Ov, x: var Spin, b: Spin, u: Gauge, mass = 0.0): CgInfo =
-  ## x = [(D_ov + mass)^dag (D_ov + mass)]^{-1} b, CG from x = 0 at r2outer.
+  ## x = [D(mass)^dag D(mass)]^{-1} b, CG from x = 0 at r2outer.
   ## Every CG iteration costs two multishift solves (plus one extra applyNormal
   ## for cgSolve's recomputed true residual).
+  requireOvMass mass
   o.cu = addr u
   o.cmass = mass
   result = cgSolve(x, b, o.r2outer, o.maxits, o.nop)
@@ -129,8 +167,8 @@ proc solveNormal*(o: Ov, x: var Spin, b: Spin, u: Gauge, mass = 0.0): CgInfo =
   if not result.converged: o.stats.ok = false
 
 proc ovGradient*(o: Ov, f: var Gauge, left, right: Spin, u: Gauge,
-                 scale = 1.0, add = false) =
-  ## f_link (+)= scale * d[ 2 Re <left, D_ov right> ] / d theta_link.
+                 scale = 1.0, add = false, mass = 0.0) =
+  ## f_link (+)= scale * d[ 2 Re <left, D(mass) right> ] / d theta_link.
   ##
   ## THE single pullback: the HMC force, the Hasenbusch frames, the conserved
   ## current and the Ward test all go through here -- never derive a second one.
@@ -140,9 +178,12 @@ proc ovGradient*(o: Ov, f: var Gauge, left, right: Spin, u: Gauge,
   ##   delta R = -sum_j r_j G_j (delta H) G_j,  delta H = (delta X)^dag X + X^dag delta X,
   ## and with z = R(H) right, s_j = G_j right, t_j = G_j X^dag left,
   ##   dF = 2 Re[ <left, dX z> - sum_j r_j ( <X s_j, dX t_j> + <X t_j, dX s_j> ) ],
-  ## each term one dwPullback (delta X = delta D_W, M constant).  The mass term of
-  ## D(m) = D_ov + m carries no link, so there is no mass parameter here.
+  ## each term one dwPullback (delta X = delta D_W, M constant).  In the standard
+  ## convention delta D(m) = (1-m/2) delta D_ov, so the complete pullback is
+  ## scaled by alpha(m).
   ## Cost: two multishift solves (s_j and t_j), 2 npole + 1 X applies and pullbacks.
+  requireOvMass mass
+  let coeff = scale*ovMassAlpha(mass)
   o.cu = addr u
   msolve(o, o.xs, right)                       # s_j
   o.work[3].zero                               # z = R(H) right
@@ -150,9 +191,9 @@ proc ovGradient*(o: Ov, f: var Gauge, left, right: Spin, u: Gauge,
   for j in 0..<o.rat.npole: axpy(o.work[3], o.rat.res[j], o.xs[j])
   applyXAdj(o, o.work[4], left, u)
   msolve(o, o.xt, o.work[4])                   # t_j
-  dwPullback(o.l, f, left, o.work[3], u, scale, add)
+  dwPullback(o.l, f, left, o.work[3], u, coeff, add)
   for j in 0..<o.rat.npole:
-    let rj = scale*o.rat.res[j]
+    let rj = coeff*o.rat.res[j]
     applyX(o, o.work[5], o.xs[j], u)           # X s_j
     dwPullback(o.l, f, o.work[5], o.xt[j], u, -rj, add = true)
     applyX(o, o.work[5], o.xt[j], u)           # X t_j

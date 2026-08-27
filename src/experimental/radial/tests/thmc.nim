@@ -12,7 +12,7 @@
 ##  9. short end-to-end run: acceptance, <exp(-dH)>, seconds/trajectory
 ## plus the allocation regression (live memory across GC_fullCollect).
 
-import std/[math, complex, os, strformat, times, unittest]
+import std/[math, complex, os, streams, strformat, times, unittest]
 import base/alignedMem
 import eigens/linalgFuncs
 import ../hmc/trajectory
@@ -50,8 +50,11 @@ proc denseAdjApply(a: seq[Complex64], nd: int, dst: var Spin, src: Spin) =
 
 proc qEig(dov: seq[Complex64], nd: int, mass: float):
     tuple[v: seq[Complex64], ev: seq[float]] =
-  ## Eigendecomposition of Q(m) = D(m)^dag D(m), D(m) = dov + m.
+  ## Eigendecomposition of Q(m) = D(m)^dag D(m),
+  ## D(m) = (1-m/2)dov + m (rho=1).
   var d = dov
+  let alpha = ovMassAlpha(mass)
+  for i in 0..<d.len: d[i] = alpha*d[i]
   for j in 0..<nd: d[j + nd*j] += complex64(mass, 0.0)
   result.v = newSeq[Complex64](nd*nd)
   for j in 0..<nd:
@@ -79,6 +82,24 @@ proc bitwiseEq(a, b: Gauge): bool =
     if a.s[i] != b.s[i]: return false
   for i in 0..<a.t.len:
     if a.t[i] != b.t[i]: return false
+
+func checkpointHash(s: string): uint64 =
+  ## Test-side copy of the checkpoint FNV-1a, used to construct checksum-valid
+  ## files with deliberately incompatible semantic headers.
+  result = 0xcbf29ce484222325'u64
+  for ch in s:
+    result = (result xor uint64(ord(ch))) * 0x100000001b3'u64
+
+proc rewriteCheckpointI32(src, dst: string, offset: int, value: int32) =
+  var payload = readFile(src)
+  payload.setLen(payload.len - 8)       # drop the stored checksum
+  var body = newStringStream(payload)
+  body.setPosition(offset)
+  body.write value
+  var packed = newStringStream()
+  packed.write body.data
+  packed.write checkpointHash(body.data)
+  writeFile(dst, packed.data)
 
 # --- fixtures ------------------------------------------------------------------
 # L = 1: nv 12, ne 30, nf 20.  Operator fixture nt = 6, at = 0.4 (nsite 72,
@@ -148,6 +169,13 @@ proc newMdHmc(masses: seq[float], steps: seq[int], tau: float,
 
 suite "heatbath identity S == |xi|^2 (ladder item 7)":
 
+  test "pseudofermion ladders reject masses outside the standard interval":
+    let (a, f) = newOps()
+    expect ValueError:
+      discard newPf(lat, a, f, 2, @[-0.1, 0.5])
+    expect ValueError:
+      discard newPf(lat, a, f, 2, @[0.0, 2.0])
+
   test "every frame, both mass ladders, free and random field":
     var worst = 0.0
     for masses in [mass2, @[0.0], mass3]:
@@ -193,6 +221,8 @@ suite "dense action oracle and Hasenbusch telescoping (ladder item 8)":
           o = oracleS(qs[k].v, qs[k].ev, nd, p.phi[c][i])
         else:
           var d = dov
+          let alpha = ovMassAlpha(mass3[i+1])
+          for j in 0..<d.len: d[j] = alpha*d[j]
           for j in 0..<nd: d[j + nd*j] += complex64(mass3[i+1], 0.0)
           denseAdjApply(d, nd, chi, p.phi[c][i])
           o = oracleS(qs[i].v, qs[i].ev, nd, chi)
@@ -429,6 +459,8 @@ suite "checkpoint round trip and exact restart":
       dir = getTempDir()
       path = dir / "thmc_ckpt.bin"
       pathBad = dir / "thmc_ckpt_bad.bin"
+      pathV1 = dir / "thmc_ckpt_v1.bin"
+      pathConv = dir / "thmc_ckpt_convention.bin"
     var ma = newMdHmc(mass2, @[4, 2, 2], 0.6, 770001'u64)
     ma.update                    # trajectory 1
     saveCheckpoint(ma, path)
@@ -467,6 +499,22 @@ suite "checkpoint round trip and exact restart":
     writeFile(pathBad, data)
     expect ValueError:
       loadCheckpoint(mb, pathBad)
+    # Semantic compatibility: both files have valid checksums, but one carries
+    # the retired v1/additive header and one has the wrong v2 convention id.
+    rewriteCheckpointI32(path, pathV1, 8, 1'i32)
+    var mismatch = ""
+    try:
+      loadCheckpoint(mb, pathV1)
+    except ValueError as e:
+      mismatch = e.msg
+    check mismatch == "checkpoint mismatch: version"
+    rewriteCheckpointI32(path, pathConv, 12, 99'i32)
+    mismatch = ""
+    try:
+      loadCheckpoint(mb, pathConv)
+    except ValueError as e:
+      mismatch = e.msg
+    check mismatch == "checkpoint mismatch: mass convention"
     # mismatch: same file against a different-parameter sampler
     var mc = newMdHmc(@[0.0, 0.6], @[4, 2, 2], 0.6, 770001'u64)
     expect ValueError:
@@ -474,9 +522,11 @@ suite "checkpoint round trip and exact restart":
     var md = newMdHmc(mass2, @[4, 2, 2], 0.7, 770001'u64)
     expect ValueError:
       loadCheckpoint(md, path)
-    echo "  corrupted and mismatched checkpoints raise"
+    echo "  corrupted, legacy-version, convention, and parameter mismatches raise"
     removeFile(path)
     removeFile(pathBad)
+    removeFile(pathV1)
+    removeFile(pathConv)
 
 # --- 9. end-to-end -----------------------------------------------------------------
 
