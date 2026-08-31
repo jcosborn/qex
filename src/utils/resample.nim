@@ -17,9 +17,12 @@ type
       # bias = E - m = (n-k)/k (Ej-E)
       # In the unequal last-block case (n % k != 0),
       # let k_i be the delete size for group i and define
+      #   h_i = n/k_i
       #   zeta_i = (n/k_i) * E - ((n-k_i)/k_i) * E_{(i)}
-      # Then bias = E - mean(zeta_i) and the variance estimate is
-      #   Var(E) ≈ (1/(g (g-1))) * sum_i (zeta_i - mean(zeta))^2
+      # Then E_jack = sum_i zeta_i/h_i, bias = E - E_jack, and
+      #   Var(E) ≈ (1/g) * sum_i (zeta_i-E_jack)^2/(h_i-1).
+      # For equal blocks h_i=g, reducing to the usual grouped-jackknife
+      # formulas.
     stdev*: Value  ## the jackknife estimate of the standard deviation of the expectation value
     hasStdev*: bool  ## whether stdev is defined
 
@@ -114,9 +117,10 @@ proc jackknife*[D,V,A](ensemble:D, blocksize:int, estimator:proc(x:Ensemble[D], 
     n = ensemble.len
     g = (n+blocksize-1) div blocksize
   var jk = newseq[V](g)
-  # Pseudo-value accumulation for unequal delete sizes k_i
-  var zmean = V(0)  # mean of pseudo-values ζ_i
-  var zM2   = V(0)  # sum of squared deviations for ζ_i
+  # Pseudovalues and h_i=n/k_i for unequal delete sizes k_i.
+  var
+    zeta = newSeq[V](g)
+    hs = newSeq[float](g)
   for i in 0..<g:
     let j = jackknifeSample(addr ensemble, blocksize, i)
     let e = estimator(j, arg)
@@ -124,14 +128,20 @@ proc jackknife*[D,V,A](ensemble:D, blocksize:int, estimator:proc(x:Ensemble[D], 
     let skiplow = i*blocksize
     let ki = if skiplow + blocksize > n: n - skiplow else: blocksize
     let kif = float(ki)
-    let zeta = (float(n)/kif)*m - (float(n-ki)/kif)*e
-    let dz = zeta - zmean
-    let dzn = dz / float(i+1)
-    zmean += dzn
-    zM2 += dz * dzn * float(i)
+    hs[i] = float(n)/kif
+    zeta[i] = hs[i]*m - (hs[i]-1.0)*e
+  var jackmean = V(0)
+  for i in 0..<g:
+    jackmean += zeta[i]/hs[i]
+  var variance = V(0)
+  if g > 1:
+    for i in 0..<g:
+      let dz = zeta[i] - jackmean
+      variance += dz*dz/(hs[i]-1.0)
+    variance /= float(g)
   JackknifeStat[V](mean:m, jksamples:jk,
-    bias:m - zmean,
-    stdev:sqrt(zM2 / (float(g) * float(max(1, g-1)))),
+    bias:m - jackmean,
+    stdev:if g > 1: sqrt(variance) else: V(0),
     hasStdev:g > 1)
 
 proc jackknife*[D,V](ensemble:D, blocksize:int, estimator:proc(x:Ensemble[D]):V): auto =
@@ -142,9 +152,10 @@ proc jackknife*[D,V](ensemble:D, blocksize:int, estimator:proc(x:Ensemble[D]):V)
     n = ensemble.len
     g = (n+blocksize-1) div blocksize
   var jk = newseq[V](g)
-  # Pseudo-value accumulation for unequal delete sizes k_i
-  var zmean = V(0)  # mean of pseudo-values ζ_i
-  var zM2   = V(0)  # sum of squared deviations for ζ_i
+  # Pseudovalues and h_i=n/k_i for unequal delete sizes k_i.
+  var
+    zeta = newSeq[V](g)
+    hs = newSeq[float](g)
   for i in 0..<g:
     let j = jackknifeSample(addr ensemble, blocksize, i)
     let e = estimator(j)
@@ -152,14 +163,20 @@ proc jackknife*[D,V](ensemble:D, blocksize:int, estimator:proc(x:Ensemble[D]):V)
     let skiplow = i*blocksize
     let ki = if skiplow + blocksize > n: n - skiplow else: blocksize
     let kif = float(ki)
-    let zeta = (float(n)/kif)*m - (float(n-ki)/kif)*e
-    let dz = zeta - zmean
-    let dzn = dz / float(i+1)
-    zmean += dzn
-    zM2 += dz * dzn * float(i)
+    hs[i] = float(n)/kif
+    zeta[i] = hs[i]*m - (hs[i]-1.0)*e
+  var jackmean = V(0)
+  for i in 0..<g:
+    jackmean += zeta[i]/hs[i]
+  var variance = V(0)
+  if g > 1:
+    for i in 0..<g:
+      let dz = zeta[i] - jackmean
+      variance += dz*dz/(hs[i]-1.0)
+    variance /= float(g)
   JackknifeStat[V](mean:m, jksamples:jk,
-    bias:m - zmean,
-    stdev:sqrt(zM2 / (float(g) * float(max(1, g-1)))),
+    bias:m - jackmean,
+    stdev:if g > 1: sqrt(variance) else: V(0),
     hasStdev:g > 1)
 
 type WeightedValue = tuple[x, w: float]

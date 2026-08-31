@@ -8,6 +8,7 @@ import shiftX
 export shiftX
 import qlayout
 import sequtils
+import strformat
 
 var noSplitInnerList = newSeq[int](0)
 proc noSplitInnerDim*(d: int) =
@@ -122,7 +123,10 @@ proc newLayoutX*(comm: Comm; lat: openArray[int]; V: static[int];
           break
     if (ig[i]>1 and (og[i] mod 2)==1) or (ig[i]>2):
       #echo "error: can't lay out inner geom"
-      #quit -1
+      if ig[i]>2:
+        echo &"Inner geom[{i}]: {ig[i]} > 2"
+      else:
+        echo &"Inner geom[{i}]: {ig[i]} > 1 and Outer geom: {og[i]} is odd"
       raise newException(Defect, "can't lay out inner geom")
 
   echo "#innerGeom:" & $ig

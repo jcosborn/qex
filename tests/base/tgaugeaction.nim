@@ -5,7 +5,8 @@ import testutils
 qexInit()
 
 let
-  (lo, g, r0) = setupLattice([4, 4, 4, 4])
+  lat = latticeFromLocalLattice([4,4,4,4], nRanks)
+  (lo, g, r0) = setupLattice(lat)
   h = lo.newGauge
   base = lo.newGauge
 var r = r0
