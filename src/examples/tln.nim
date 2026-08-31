@@ -103,8 +103,8 @@ proc cos[V: static[int]](a: Coordinate[V]): Coordinate[V] =
   for lane in 0..<V: result[lane] = cos(a[lane])
 
 proc `-=`[V: static[int]](a: var DComplexV; b: Coordinate[V]) =
-  for lane in 0..<V: 
-    a.re[lane] -= b[lane]
+  for lane in 0..<V:
+    a.re[asSimd(lane)] -= b[lane]
     a.im[lane] = 0.0
 
 proc `:=`[V: static[int]](a: var DComplexV; b: Coordinate[V]) =
