@@ -30,11 +30,11 @@ type
     state*: T
 # required routines:
 #   start, logWeight, generate, globalRand, accept, reject
-# be careful with writing up default implementations -- they may not be overridden
-# in the files that import this one, leading to incorrect behavior; the "compiles"
-# templates in update work around cases where an implementation of a procedure that 
-# is called on MetropolisRoot is not provided by its derived type [Curtis]
-
+# optional routines
+#   proc finish*[M:MetropolisRoot](m: var M) = discard
+#   proc checkReverse*[M:MetropolisRoot](m: var M): bool = false
+#   proc generateReverse*[M:MetropolisRoot](m: var M) = discard
+#   proc finishReverse*[M:MetropolisRoot](m: var M) = discard
 
 proc clearStats*[M:MetropolisRoot](m: var M) =
   m.stats.setLen(0)
@@ -61,7 +61,7 @@ proc updateStats*[M:MetropolisRoot](m: var M) =
   m.avgPAccept = (n*m.avgPAccept + m.pAccept) / (n+1)
   m.pAcceptStats.push m.pAccept
 
-proc init*[M:MetropolisRoot](m: var M; verbosity: int = 0) =
+proc init*[M:MetropolisRoot](m: var M; verbosity = 0) =
   m.verbosity = verbosity
   m.stats.newSeq(0)
   m.clearStats()
@@ -77,16 +77,20 @@ proc update*[T:MetropolisRoot](m: var T) =
   m.generate
   m.hNew = m.getH
   m.deltaH = m.hNew - m.hOld
+  if m.verbosity>0:
+    echo &"hOld: {m.hOld:.6f}  hNew: {m.hNew:.6f}"
   when compiles(finish(m)): m.finish
 
   # run reversibility check
   var doReverse = false
   when compiles(checkReverse(m)): doReverse = m.checkReverse
   if doReverse:
-    echo "== Reversibility check =========="
+    if m.verbosity>0:
+      echo "== Reversibility check =========="
     when compiles(generateReverse(m)): m.generateReverse
     when compiles(finishReverse(m)): m.finishReverse
-    echo "================================="
+    if m.verbosity>0:
+      echo "================================="
 
   # do metropolis test
   m.rnd = m.globalRand
@@ -95,14 +99,14 @@ proc update*[T:MetropolisRoot](m: var T) =
   if m.rnd <= m.pAccept:
     m.accepted = true
     m.updateStats
-    echo "ACCEPT deltaH: $1  pAccept: $2  rnd: $3"%
-      [m.deltaH.ff, m.pAccept.ff, m.rnd.ff]
+    if m.verbosity>0:
+      echo &"ACCEPT deltaH: {m.deltaH.ff}  pAccept: {m.pAccept.ff}  rnd: {m.rnd.ff}"
     m.accept
   else:
     m.accepted = false
     m.updateStats
-    echo "REJECT deltaH: $1  pAccept: $2  rnd: $3"%
-      [m.deltaH.ff, m.pAccept.ff, m.rnd.ff]
+    if m.verbosity>0:
+      echo &"REJECT deltaH: {m.deltaH.ff}  pAccept: {m.pAccept.ff}  rnd: {m.rnd.ff}"
     m.reject
 
 
