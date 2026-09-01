@@ -1,0 +1,69 @@
+<?xml version="1.0"?>
+<!--
+  Sample input for prod/lsd/eightFlavorSMG.nim
+
+  Run as, e.g.:
+    <exec-path>/eightFlavorSMG -xml:<xml-path>/eightFlavorSMG.xml \
+      -start_config:0 -end_config:10 -save_freq:1 \
+      -path:<io-path> -filename:<base-filename-convention>
+-->
+<qex>
+  <hmc> <!-- HMC/integrator parameters -->
+    <tau>1.0</tau> <!-- trajectory length -->
+    <f_steps>10</f_steps> <!-- outer (fermion + Hasenbusch + PV) integrator steps -->
+    <g_steps>3</g_steps> <!-- inner (gauge) integrator steps, per outer step -->
+    <ferm_int_alg>2MN</ferm_int_alg> <!-- outer integrator algorithm -->
+    <gauge_int_alg>2MN</gauge_int_alg> <!-- inner integrator algorithm -->
+    <no_metropolis_until>0</no_metropolis_until> <!-- accept unconditionally for configs < this (0 = always test) -->
+  </hmc>
+  <config_opts> <!-- gauge configuration start-up -->
+    <start>cold</start> <!-- cold, hot, or read (read resumes from start_config) -->
+  </config_opts>
+  <rng> <!-- random number seeds -->
+    <parallel_seed>987654321</parallel_seed> <!-- per-site RNG field (momenta, pseudofermions) -->
+    <serial_seed>987654321</serial_seed> <!-- global RNG (Metropolis test) -->
+  </rng>
+  <action> <!-- action parameters -->
+    <geom> <!-- lattice geometry: Ns^3 x Nt -->
+      <Ns>8</Ns>
+      <Nt>16</Nt>
+      <bc>aaaa</bc> <!-- fermion boundary conditions, one char per direction: p(eriodic)/a(ntiperiodic) -->
+    </geom>
+    <gauge> <!-- adjoint-plaquette gauge action -->
+      <beta>6.0</beta>
+    </gauge>
+    <ferm> <!-- staggered fermion action, Hasenbusch-preconditioned -->
+      <Nf>2</Nf> <!-- number of staggered species (Nf=2 -> 8 Dirac fermions) -->
+      <mass>0.05</mass>
+      <Nh>1</Nh> <!-- number of Hasenbusch masses per species (0 or 1) -->
+      <mass_h>0.3</mass_h>
+    </ferm>
+    <pv> <!-- Pauli-Villars fields -->
+      <num_pv>8</num_pv>
+      <mass_pv>0.75</mass_pv>
+    </pv>
+  </action>
+  <smearing> <!-- HYP smearing coefficients -->
+    <nhyp_smearing>
+      <alpha_1>0.4</alpha_1>
+      <alpha_2>0.5</alpha_2>
+      <alpha_3>0.5</alpha_3>
+    </nhyp_smearing>
+  </smearing>
+  <solver> <!-- CG solver tolerances -->
+    <a_tol>1e-24</a_tol> <!-- action solver residual^2 -->
+    <a_maxits>10000</a_maxits>
+    <f_tol>1e-16</f_tol> <!-- force solver residual^2 -->
+    <f_maxits>10000</f_maxits>
+  </solver>
+  <basic_meas> <!-- measurements, made after every trajectory -->
+    <plaq><!-- plaquette -->
+      <plaq_freq>1</plaq_freq> 
+    </plaq>
+    <ploop_freq>1</ploop_freq> <!-- Polyakov loop -->
+    <s4_freq>1</s4_freq> <!-- "s4 order parameter" from  -->
+    <hmc_checks>
+      <rev_check_freq>1</rev_check_freq> <!-- reversibility check every N trajectories -->
+    </hmc_checks>
+  </basic_meas>
+</qex>

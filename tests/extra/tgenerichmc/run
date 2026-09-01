@@ -17,7 +17,9 @@ ofn="$outdir/out$comp"
 
 "$exe" 2>&1 | tee "$ofn"
 
-hold="`grep 'hOld' $ofn`"
+begh="`grep '^Beginning H:' $ofn | awk '{printf "%.6f", $3}'`"
+endh="`grep '^Ending H:' $ofn | awk '{printf "%.6f", $3}'`"
+hold="hOld: $begh  hNew: $endh"
 if [ "X$hold" != "X$hold2" ]; then
   echo "error in hOld"
   echo "got: $hold"

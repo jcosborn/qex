@@ -1,0 +1,243 @@
+Using Comm: QMP
+[0.729 s] QEX Initialized at 2026-08-19 12:25:14
+[0.731 s] Running with 1 ranks and 16 threads per rank
+==============================================================================
+QEX Compilation information:
+  Time: Wed Aug 19 12:24:02 PM EDT 2026
+  Host: Linux pop-os 6.17.4-76061704-generic #202510191616~1762410050~22.04~898873a SMP PREEMPT_DYNAMIC Thu N x86_64 x86_64 x86_64 GNU/Linux
+  Log: commit f93ce40d9d88acf6c8dea1477e85e07bd50ecc01
+       Merge: f24c5ff 6bd7bd4
+       Author: Xiao-Yong Jin <xjin@anl.gov>
+       Date:   Mon Aug 10 18:09:15 2026 -0500
+       
+           Merge branch 'devel' of github.com:jcosborn/qex into devel
+  Status: On branch devel
+          Your branch is up to date with 'origin/devel'.
+          
+          Changes not staged for commit:
+            (use "git add <file>..." to update what will be committed)
+            (use "git restore <file>..." to discard changes in working directory)
+          	modified:   ../../build/buildTasks.nims
+          	modified:   ../base.nim
+          	modified:   ../examples/generichmc.nim
+          	modified:   ../gauge/gaugeUtils.nim
+          	modified:   ../hmc/hmcAction.nim
+          	modified:   ../hmc/metropolis.nim
+          	modified:   ../maths/complexProxy.nim
+          	modified:   ../maths/matrixConcept.nim
+          	modified:   ../maths/types.nim
+          	modified:   ../physics/colorOld.nim
+          	modified:   ../../tests/extra/extra.nims
+          
+          no changes added to commit (use "git add" and/or "git commit -a")
+==============================================================================
+Nim compile command:
+nim --path:qex/src --cc:gcc --gcc.exe:mpicc --gcc.linkerexe:mpicc --gcc.options.always:-g --gcc.options.debug --gcc.options.speed:'-Ofast -march=native' --gcc.options.linker:'-g -ldl' --gcc.cpp.exe:mpicxx --gcc.cpp.linkerexe:mpicxx --gcc.cpp.options.always:-g --gcc.cpp.options.debug --gcc.cpp.options.speed:'-Ofast -march=native' --gcc.cpp.options.linker:'-g -ldl' --d:qmpDir:/home/curtyp/Software/qex/qmp --d:qioDir:/home/curtyp/Software/qex/qio --threads:on --tlsEmulation:off --verbosity:1 --nimcache:/home/curtyp/Software/qex/local/nimcache --'warning[SmallLshouldNotBeUsed]':off --styleCheck:usages --embedsrc --mm:refc --d:release --d:danger --putenv:VLEN=8 cc -o:bin/eightFlavorSMG qex/prod/lsd/eightFlavorSMG.nim
+==============================================================================
+rank 0/1
+thread 0/16
+Params:
+  prof: 0
+  dropRatio: 0.05
+  start_config: 0
+  end_config: 1
+  config_space: 1
+  save_freq: 0
+  path: ./
+  filename: ckpoint
+  xml: tests/extra/teightFlavorSMG/test_input.xml
+  verbosity: 1
+  rank_geom: 
+  simd_geom: 
+  saveParams:                        #Save params to file
+  loadParams:                        #Load params from file
+  h: false                           #Print the help message
+XML parameters:
+  hmc/tau: 0.15
+  hmc/f_steps: 3
+  hmc/g_steps: 2
+  hmc/ferm_int_alg: 2MN
+  hmc/gauge_int_alg: 2MN
+  hmc/no_metropolis_until: 0
+  config_opts/start: cold
+  rng/parallel_seed: 987654321
+  rng/serial_seed: 987654321
+  action/geom/Ns: 4
+  action/geom/Nt: 4
+  action/geom/bc: pppa
+  action/gauge/beta: 6.0
+  action/ferm/Nf: 2
+  action/ferm/mass: 0.05
+  action/ferm/Nh: 1
+  action/ferm/mass_h: 0.3
+  action/pv/num_pv: 8
+  action/pv/mass_pv: 0.75
+  smearing/nhyp_smearing/alpha_1: 0.4
+  smearing/nhyp_smearing/alpha_2: 0.5
+  smearing/nhyp_smearing/alpha_3: 0.5
+  solver/a_tol: 1e-24
+  solver/a_maxits: 10000
+  solver/f_tol: 1e-16
+  solver/f_maxits: 10000
+  basic_meas/plaq/plaq_freq: 1
+  basic_meas/ploop_freq: 1
+  basic_meas/s4_freq: 1
+  basic_meas/hmc_checks/rev_check_freq: 1
+#physGeom:@[4, 4, 4, 4]
+#rankGeom:@[1, 1, 1, 1]
+#localGeom:@[4, 4, 4, 4]
+#innerGeom:@[1, 2, 2, 2]
+#outerGeom:@[4, 2, 2, 2]
+#innerGeom:@[1, 2, 2, 2]
+#outerGeom:@[4, 2, 2, 2]
+#innerCb: 0
+#innerCbDir: 0
+#newRNGField lo:
+[1, 1, 1, 1]
+#physGeom:@[4, 4, 4, 4]
+#rankGeom:@[1, 1, 1, 1]
+#localGeom:@[4, 4, 4, 4]
+#innerGeom:@[1, 1, 1, 1]
+#outerGeom:@[4, 4, 4, 4]
+#innerGeom:@[1, 1, 1, 1]
+#outerGeom:@[4, 4, 4, 4]
+#innerCb: 0
+#innerCbDir: 0
+== Action ====================
+ActionLevel 0: 
+  SFA0:   StaggeredFermionAction(mass: 0.3)
+  SRA0:   StaggeredRatioAction(massNum: 0.05, massDen: 0.3)
+  SFA1:   StaggeredFermionAction(mass: 0.3)
+  SRA1:   StaggeredRatioAction(massNum: 0.05, massDen: 0.3)
+  SPVA0:   StaggeredPauliVillarsAction(mass: 0.75)
+  SPVA1:   StaggeredPauliVillarsAction(mass: 0.75)
+  SPVA2:   StaggeredPauliVillarsAction(mass: 0.75)
+  SPVA3:   StaggeredPauliVillarsAction(mass: 0.75)
+  SPVA4:   StaggeredPauliVillarsAction(mass: 0.75)
+  SPVA5:   StaggeredPauliVillarsAction(mass: 0.75)
+  SPVA6:   StaggeredPauliVillarsAction(mass: 0.75)
+  SPVA7:   StaggeredPauliVillarsAction(mass: 0.75)
+  ActionLevel 1: 
+    GA0:   GaugeAction(plaq: 6.0, rect: 0.0, pgm: 0.0, adjplaq: -1.5)
+==============================
+== Begin HMC update 1 ==========
+stagSolve: 4  0.0004613s  1.671Gf/s  1.323e-30
+stagSolve: 4  0.0001741s  4.428Gf/s  1.047e-30
+stagSolve: 4  0.0001487s  5.185Gf/s  1.486e-31
+stagSolve: 4  0.0001555s  4.959Gf/s  1.713e-31
+stagSolve: 4  0.0004447s  1.734Gf/s  1.741e-31
+stagSolve: 4  0.0001009s  7.644Gf/s  1.406e-31
+stagSolve: 4  9.697e-05s  7.952Gf/s  1.677e-31
+stagSolve: 4  0.0001027s  7.507Gf/s  1.513e-31
+stagSolve: 4  9.859e-05s  7.821Gf/s  1.634e-31
+stagSolve: 4  9.368e-05s  8.231Gf/s  1.508e-31
+stagSolve: 4  9.374e-05s  8.226Gf/s  7.319e-32
+stagSolve: 4  9.445e-05s  8.164Gf/s  7.633e-29
+stagSolve: 4  8.858e-05s  8.705Gf/s  7.598e-32
+stagSolve: 4  0.0001072s  7.191Gf/s  8.227e-29
+Beginning H: 4665.6308856670975729 T: 41.4991059022768241 V: 4624.1317797648207488
+stagSolve: 13  0.0001417s  15.30Gf/s  1.152e-17
+stagSolve: 14  0.0001255s  18.50Gf/s  5.090e-17
+stagSolve: 13  0.0001265s  17.13Gf/s  1.401e-17
+stagSolve: 14  0.0001325s  17.53Gf/s  5.950e-17
+stagSolve: 16  0.0001567s  16.80Gf/s  8.476e-17
+stagSolve: 18  0.0001520s  19.36Gf/s  3.949e-17
+stagSolve: 17  0.0001498s  18.62Gf/s  6.328e-18
+stagSolve: 18  0.0001551s  18.97Gf/s  4.851e-17
+stagSolve: 18  0.0001719s  17.12Gf/s  3.334e-17
+stagSolve: 20  0.0002089s  15.57Gf/s  5.515e-18
+stagSolve: 18  0.0002278s  12.92Gf/s  4.912e-17
+stagSolve: 20  0.0001960s  16.60Gf/s  5.183e-18
+stagSolve: 20  0.0001901s  17.11Gf/s  2.257e-17
+stagSolve: 21  0.0001742s  19.57Gf/s  6.201e-17
+stagSolve: 20  0.0001664s  19.55Gf/s  2.958e-17
+stagSolve: 21  0.0002631s  12.95Gf/s  5.349e-17
+stagSolve: 21  0.0001834s  18.58Gf/s  9.970e-18
+stagSolve: 23  0.0002083s  17.86Gf/s  3.584e-17
+stagSolve: 21  0.0001813s  18.80Gf/s  1.270e-17
+stagSolve: 23  0.0001775s  20.95Gf/s  3.033e-17
+stagSolve: 22  0.0001867s  19.08Gf/s  3.470e-17
+stagSolve: 24  0.0001921s  20.16Gf/s  4.506e-17
+stagSolve: 22  0.001391s  2.562Gf/s  5.419e-17
+stagSolve: 24  0.0001985s  19.52Gf/s  4.758e-17
+stagSolve: 33  0.0002810s  18.75Gf/s  3.172e-25
+stagSolve: 40  0.0003034s  20.95Gf/s  5.478e-25
+stagSolve: 33  0.0002584s  20.39Gf/s  4.015e-25
+stagSolve: 40  0.0003010s  21.12Gf/s  4.775e-25
+Ending H: 4665.6286983277559557 T: -478.2801398203973804 V: 5143.9088381481533361
+== Reversibility check ==========
+stagSolve: 22  0.0001893s  18.83Gf/s  3.470e-17
+stagSolve: 24  0.0001856s  20.87Gf/s  4.506e-17
+stagSolve: 22  0.0001728s  20.63Gf/s  5.419e-17
+stagSolve: 24  0.0001850s  20.93Gf/s  4.758e-17
+stagSolve: 21  0.0001861s  18.31Gf/s  9.970e-18
+stagSolve: 23  0.0001819s  20.45Gf/s  3.584e-17
+stagSolve: 21  0.0001658s  20.55Gf/s  1.270e-17
+stagSolve: 23  0.0001803s  20.62Gf/s  3.033e-17
+stagSolve: 20  0.0001905s  17.08Gf/s  2.257e-17
+stagSolve: 21  0.0001703s  20.02Gf/s  6.201e-17
+stagSolve: 20  0.0001632s  19.94Gf/s  2.958e-17
+stagSolve: 21  0.0001671s  20.39Gf/s  5.349e-17
+stagSolve: 18  0.0001652s  17.82Gf/s  3.334e-17
+stagSolve: 20  0.0001684s  19.32Gf/s  5.515e-18
+stagSolve: 18  0.0001532s  19.20Gf/s  4.912e-17
+stagSolve: 20  0.0001629s  19.97Gf/s  5.183e-18
+stagSolve: 16  0.0001542s  17.08Gf/s  8.476e-17
+stagSolve: 18  0.0001466s  20.08Gf/s  3.949e-17
+stagSolve: 17  0.0001471s  18.95Gf/s  6.328e-18
+stagSolve: 18  0.0001515s  19.43Gf/s  4.851e-17
+stagSolve: 13  0.0001375s  15.76Gf/s  1.152e-17
+stagSolve: 14  0.0001269s  18.29Gf/s  5.090e-17
+stagSolve: 13  0.0001178s  18.40Gf/s  1.401e-17
+stagSolve: 14  0.0001331s  17.45Gf/s  5.950e-17
+stagSolve: 4  0.0001097s  7.031Gf/s  9.864e-32
+stagSolve: 4  8.996e-05s  8.571Gf/s  1.432e-28
+stagSolve: 4  8.532e-05s  9.037Gf/s  1.073e-31
+stagSolve: 4  8.763e-05s  8.799Gf/s  1.072e-28
+Reverse H: 4665.6308856670957539 T: 41.4991059022759146 V: 4624.1317797648198393
+REVERSE   dH (from hNew): 0.0021873393397982  dH0 (from hOld): -1.8189894035458565e-12
+=================================
+ACCEPT deltaH: -0.002187  pAccept: 1.000000  rnd: 0.066972
+unitary deviation avg: 3.655076196388394e-16 max: 8.76585480851419e-16
+new unitary deviation avg: 3.0195029422363312e-16 max: 8.245030395529817e-16
+GA0A         0.00s   0.0%     3     0GF
+GU           0.00s   1.1%    86     0GF
+SF           0.01s   3.8%    24     0GF
+SS           0.01s   2.7%    10     0GF
+GA0F         0.01s   4.5%    72     0GF 0.0086RMS 0.0120Var 0.1466Inf
+SFA0F        0.02s   6.7%    12     0GF 0.0147RMS 0.0132Var 0.1250Inf
+SFA1F        0.02s   7.9%    12     0GF 0.0161RMS 0.0151Var 0.1326Inf
+SPVA0F       0.02s   6.6%    12     0GF 0.0120RMS 0.0118Var 0.1081Inf
+SPVA1F       0.02s   6.0%    12     0GF 0.0106RMS 0.0097Var 0.0868Inf
+SPVA2F       0.02s   7.1%    12     0GF 0.0112RMS 0.0115Var 0.1052Inf
+SPVA3F       0.02s   6.3%    12     0GF 0.0107RMS 0.0100Var 0.0863Inf
+SPVA4F       0.02s   5.3%    12     0GF 0.0117RMS 0.0111Var 0.0988Inf
+SPVA5F       0.02s   6.4%    12     0GF 0.0117RMS 0.0111Var 0.1038Inf
+SPVA6F       0.02s   5.1%    12     0GF 0.0114RMS 0.0109Var 0.0960Inf
+SPVA7F       0.03s   9.5%    12     0GF 0.0108RMS 0.0101Var 0.0909Inf
+SRA0F        0.02s   6.9%    12     0GF 0.0012RMS 0.0012Var 0.0108Inf
+SRA1F        0.02s   7.0%    12     0GF 0.0012RMS 0.0011Var 0.0097Inf
+SFA0AS       0.00s   0.2%     3    14GF    14avg 1.057e-25avg 3.172e-25max
+SFA0FS       0.00s   0.7%    12    17GF    18avg 3.281e-17avg 8.476e-17max
+SFA1AS       0.00s   0.1%     3    15GF    14avg 1.338e-25avg 4.015e-25max
+SFA1FS       0.00s   1.0%    12    11GF    19avg 2.766e-17avg 5.419e-17max
+SPVA0RS      0.00s   0.0%     1     5GF     4avg 1.486e-31avg 1.486e-31max
+SPVA1RS      0.00s   0.1%     1     4GF     4avg 1.713e-31avg 1.713e-31max
+SPVA2RS      0.00s   0.1%     1     1GF     4avg 1.741e-31avg 1.741e-31max
+SPVA3RS      0.00s   0.0%     1     7GF     4avg 1.406e-31avg 1.406e-31max
+SPVA4RS      0.00s   0.0%     1     7GF     4avg 1.677e-31avg 1.677e-31max
+SPVA5RS      0.00s   0.0%     1     7GF     4avg 1.513e-31avg 1.513e-31max
+SPVA6RS      0.00s   0.0%     1     7GF     4avg 1.634e-31avg 1.634e-31max
+SPVA7RS      0.00s   0.0%     1     8GF     4avg 1.508e-31avg 1.508e-31max
+other        0.01s   4.5% 
+End HMC update 1: 0.31 seconds (0.31 total)
+====================================
+== measurements ==========
+MEASplaq ss: 0.893751349741964  st: 0.8933628441066109  tot: 0.8935570969242874
+MEASplaq 0-dir even/odd: 0.890539019797149 0.9004111192629867
+MEASplaq 1-dir even/odd: 0.8918801753610677 0.8969083079987418
+MEASplaq 2-dir even/odd: 0.8932166762364616 0.8887757885246708
+MEASplaq 3-dir even/odd: 0.8931063497113388 0.8936193385018827
+MEASploop spatial: 0.8849103932318685 0.00034823358848612223 temporal: 0.8796426523099729 0.0005584390741579131
+==========================
+[1.046 s] Total time (Init - Finalize): 1.046388593 seconds.
