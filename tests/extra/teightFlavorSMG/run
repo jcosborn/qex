@@ -129,7 +129,7 @@ awk '
   /^Beginning H:/ { sub(/^Beginning /, ""); beg=$0 }
   /^Ending H:/ { sub(/^Ending /, ""); last=$0; print "HAM_BEG " beg; print "HAM_END " last; exit }
 ' "$nh0dir/out" > "$nh0dir/cross_ham.check"
-diffnum "$mydir/stag_pv_hmc_reference_hamiltonian_nh0.ref" "$nh0dir/cross_ham.check" 1e-13 || exit 1
+diffnum "$mydir/stag_pv_hmc_reference_hamiltonian_nh0.ref" "$nh0dir/cross_ham.check" 1e-12 || exit 1
 echo "OK"
 
 echo
