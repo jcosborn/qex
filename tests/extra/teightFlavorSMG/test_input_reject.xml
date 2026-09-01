@@ -20,8 +20,8 @@
 
   <action>
     <geom>
-      <Ns>4</Ns>
-      <Nt>4</Nt>
+      <Ns>8</Ns>
+      <Nt>8</Nt>
       <bc>pppa</bc>
     </geom>
 

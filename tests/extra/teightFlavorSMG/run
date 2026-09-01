@@ -137,7 +137,7 @@ echo "== 7. Production XML (prod/lsd/eightFlavorSMG.xml boots) =="
 proddir="$outdir/prodxml"
 rm -rf "$proddir"; mkdir -p "$proddir"
 $RUNJOB "$exe" \
-  -xml:"$qexdir/prod/lsd/eightFlavorSMG.xml" \
+  -xml:"$qexdir/src/prod/lsd/eightFlavorSMG.xml" \
   -start_config:0 -end_config:0 \
   > "$proddir/out" 2>&1 || exit $?
 grep -q '^#physGeom:@\[8, 8, 8, 16\]' "$proddir/out" || {
