@@ -21,14 +21,11 @@
 ##
 ## -simdlen:1 for cell geometries the VLEN=4 layout rejects (6^4, 9^4, ...).
 ##
-## NOTE the t0/w0 interpolators below are local linear versions, kept here so
-## this task does not touch task C's concurrently-edited hcanalysis.nim; task
-## R should consolidate on hcanalysis.findT0/findW0 (cubic-side validated).
-
 import std/[math, os, monotimes, times]
 import qex
 import physics/qcdTypes
 import hcgeom, hclayout, hcgauge, hcaction, hcflow, hctopo, hcio
+import hcanalysis
 
 qexInit()
 tic()
@@ -65,21 +62,6 @@ if gaugefile.len > 0 and not haveFile:
 let cgeom = if haveFile: hcFileGeom(gaugefile) else: geom
 echo "cell geometry: ", cgeom, "  (sites ", 2*cgeom[0]*cgeom[1]*cgeom[2]*cgeom[3], ")"
 
-# local linear interpolators (see NOTE above)
-proc crossUp(x, y: openArray[float], target: float): float =
-  ## first upward crossing y = target, linear interpolation; -1 if never
-  for i in 1..<y.len:
-    if y[i-1] < target and y[i] >= target:
-      return x[i-1] + (x[i]-x[i-1])*(target-y[i-1])/(y[i]-y[i-1])
-  -1.0
-
-proc interpAt(x, y: openArray[float], x0: float): float =
-  if x0 <= x[0]: return y[0]
-  for i in 1..<x.len:
-    if x[i] >= x0:
-      return y[i-1] + (y[i]-y[i-1])*(x0-x[i-1])/(x[i]-x[i-1])
-  y[^1]
-
 template runAll(hlx: typed) =
   let hl = hlx
   var g = newHcGauge(hl)
@@ -105,7 +87,6 @@ template runAll(hlx: typed) =
   var
     ts = @[0.0]
     t2Es = @[0.0]
-    tdt2Es = @[0.0]
     qs: seq[float]
   block:
     let (e0, q0) = hcEQ(wt, g)
@@ -127,11 +108,11 @@ template runAll(hlx: typed) =
       let (e, q) = hcEQ(wt, g)
       let
         t2E = wflowT*wflowT*e
+        # Endpoint estimate for live output and the stopping condition.
         dt2E = (t2E - t2Es[^1])/(eps*measevery.float)
         tdt2E = wflowT*dt2E
       ts.add wflowT
       t2Es.add t2E
-      tdt2Es.add tdt2E
       qs.add q
       echo "HCFLOW ", wflowT, " ", e, " ", t2E, " ", tdt2E, " ", q
       if (tmax > 0 and wflowT >= tmax - 1e-9) or
@@ -141,8 +122,8 @@ template runAll(hlx: typed) =
   let secs = (getMonoTime()-tstart).inMicroseconds.float*1e-6
   toc("flow")
 
-  let t0 = crossUp(ts, t2Es, t0target)
-  let w0sq = crossUp(ts, tdt2Es, w0target)
+  let t0 = findT0(ts, t2Es, t0target)
+  let w0sq = findW0(ts, derivT2E(ts, t2Es), w0target)
   if t0 > 0.0:
     let q0 = interpAt(ts, qs, t0)
     echo "T0 ", t0, " ", q0, "   # t0/a^2, Q(t0)  [t^2E = ", t0target, "]"

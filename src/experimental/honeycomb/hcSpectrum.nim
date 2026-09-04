@@ -233,6 +233,31 @@ type SpecMode* = object
 proc lamFromMu*(mu: Complex64; sigma: float): Complex64 =
   complex64(sigma, 0.0) + complex64(1.0, 0.0)/mu
 
+proc measureModes*[F](mus: openArray[Complex64]; vecs: openArray[F];
+                      sigma: float; applyD: proc(r: var F; x: F);
+                      residcut = -1.0): seq[SpecMode] =
+  ## vecs contains nonzero eigenvectors paired with mus. applyD evaluates D.
+  ## A negative residcut retains all candidates; otherwise keep direct residuals <= residcut.
+  if mus.len != vecs.len:
+    raise newException(ValueError, "eigenvalues and eigenvectors must have equal lengths")
+  if mus.len == 0: return
+  var tmp = newOneOf(vecs[0])
+  for i, mu in mus:
+    var m = SpecMode(lam: lamFromMu(mu, sigma))
+    let v = vecs[i]
+    let n2 = vnorm2(v)
+    applyD(tmp, v)
+    axpyP(tmp, -m.lam, v)
+    m.resid = sqrt(vnorm2(tmp)/n2)
+    when F is HcFermion:
+      applyGamma5(tmp, v)
+    else:
+      for e in tmp:
+        tmp[e] := gamma5 * v[e]
+    m.chi = vdot(v, tmp).re/n2
+    if residcut >= 0.0 and m.resid > residcut: continue
+    result.add m
+
 type SpecSummary* = object
   lam0*: Complex64     ## converged mode with the smallest Re lambda
   nconv*, nreal*, nplus*, nminus*: int
@@ -269,16 +294,23 @@ proc worstConjPairing*(vals: openArray[Complex64]): float =
       d = min(d, abs(conjugate(v) - u))
     result = max(result, d)
 
-proc interpAtT*(x, y: openArray[float]; x0: float): float =
-  ## linear interpolation of y(x) at x0 (x increasing); clamps at the ends
-  let n = min(x.len, y.len)
-  if n == 0: return 0.0
-  if x0 <= x[0]: return y[0]
-  for i in 1..<n:
-    if x[i] >= x0:
-      let f = (x0 - x[i-1])/(x[i] - x[i-1])
-      return y[i-1] + f*(y[i] - y[i-1])
-  y[n-1]
+proc specLines*(modes: openArray[SpecMode]; epsreal: float; icfg: int;
+                rho, qflow: float; nbad, napply: int; stats: SiStats;
+                secs: float): seq[string] =
+  ## secs measures computation through measureModes, before formatting or writing.
+  let s = summarize(modes, epsreal)
+  var vals: seq[Complex64]
+  for k, m in modes:
+    vals.add m.lam
+    result.add &"EIG {icfg} {rho:.3f} {k} {m.lam.re:.10g} {m.lam.im:.10g} {m.chi:.8f} {m.resid:.3e}"
+  let cp = worstConjPairing(vals)
+  result.add &"CFG {icfg} {rho:.3f} {s.lam0.re:.10g} {s.lam0.im:.10g} " &
+             &"{s.nconv} {s.nreal} {s.nplus} {s.nminus} {s.qdirac:.1f} {qflow:.6f} " &
+             &"{napply} {stats.totIts} {secs:.2f}"
+  result.add &"CFGX {icfg} {rho:.3f} conj {cp:.3e} worstresid {s.worstResid:.3e} " &
+             &"imgapC {s.minAbsImComplex:.3e} imgapR {s.maxAbsImReal:.3e} " &
+             &"sumchi {s.sumChiReal:.4f} nbad {nbad} cgmax {stats.maxUsedIts} " &
+             &"cghitmax {stats.nHitMax} sidirect {stats.worstDirect:.3e}"
 
 # ===========================================================================
 # the honeycomb driver
@@ -365,8 +397,6 @@ when isMainModule:
   # fermion workspace
   var proto = newHcFermion(hl)
   type HF = typeof(proto)
-  var tmpv = newOneOf(proto)
-  var g5v = newOneOf(proto)
 
   # deterministic start vectors
   var startCount = 0'u64
@@ -422,9 +452,9 @@ when isMainModule:
     for j in 0..<min(t2Es.len, sumT2E.len):
       sumT2E[j] += t2Es[j]
     let t0cfg = findT0(ts, t2Es, 0.3, 1)
-    let qflow = interpAtT(ts, qs, t0use)
-    let q15 = interpAtT(ts, qs, 1.5)
-    let q24 = interpAtT(ts, qs, min(2.4, ts[^1]))
+    let qflow = interpAt(ts, qs, t0use)
+    let q15 = interpAt(ts, qs, 1.5)
+    let q24 = interpAt(ts, qs, min(2.4, ts[^1]))
     lastQflow = qflow            # consumed by the CFG summary line
     emit &"FLOWQ {icfg} {t0cfg:.6f} {qflow:.6f} {q15:.6f} {q24:.6f} {qs[0]:.6f}"
 
@@ -437,39 +467,14 @@ when isMainModule:
       gs.setBC
     cw.gaugeRefresh
     stats.reset
-    let (mus, vecs, resids, napply) =
+    let (mus, vecs, _, napply) =
       arnoldi(op, nev, ncvUse, tol, maxRestarts, "LM", verb)
-    var modes: seq[SpecMode]
-    var nbad = 0
-    for i in 0..<mus.len:
-      var m: SpecMode
-      m.lam = lamFromMu(mus[i], sigma)
-      # direct residual with the exact operator
-      cw.D(tmpv, vecs[i], mass, rw)
-      axpyP(tmpv, complex64(-m.lam.re, -m.lam.im), vecs[i])
-      let vn2 = vnorm2(vecs[i])
-      m.resid = sqrt(vnorm2(tmpv)/max(vn2, 1e-300))
-      applyGamma5(g5v, vecs[i])
-      m.chi = vdot(vecs[i], g5v).re/vn2
-      if m.resid > residcut:         # unconverged leftover: count, exclude
-        inc nbad
-        continue
-      modes.add m
-    let s = summarize(modes, epsreal)
-    let cp = block:
-      var vv: seq[Complex64]
-      for m in modes: vv.add m.lam
-      worstConjPairing(vv)
-    for k, m in modes:
-      emit &"EIG {icfg} {rhoTag:.3f} {k} {m.lam.re:.10g} {m.lam.im:.10g} {m.chi:.8f} {m.resid:.3e}"
+    let modes = measureModes(mus, vecs, sigma,
+      proc(r: var HF; x: HF) = cw.D(r, x, mass, rw), residcut)
     let secs = (getMonoTime() - tw0).inMicroseconds.float*1e-6
-    emit &"CFG {icfg} {rhoTag:.3f} {s.lam0.re:.10g} {s.lam0.im:.10g} " &
-         &"{s.nconv} {s.nreal} {s.nplus} {s.nminus} {s.qdirac:.1f} {lastQflow:.6f} " &
-         &"{napply} {stats.totIts} {secs:.2f}"
-    emit &"CFGX {icfg} {rhoTag:.3f} conj {cp:.3e} worstresid {s.worstResid:.3e} " &
-         &"imgapC {s.minAbsImComplex:.3e} imgapR {s.maxAbsImReal:.3e} " &
-         &"sumchi {s.sumChiReal:.4f} nbad {nbad} cgmax {stats.maxUsedIts} " &
-         &"cghitmax {stats.nHitMax} sidirect {stats.worstDirect:.3e}"
+    for line in specLines(modes, epsreal, icfg, rhoTag, lastQflow,
+                          mus.len - modes.len, napply, stats, secs):
+      emit line
 
   if bench > 0:
     var x1 = newOneOf(proto)

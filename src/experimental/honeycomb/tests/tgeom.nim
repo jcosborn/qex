@@ -108,6 +108,18 @@ suite "hcgeom: 16-cell honeycomb geometry":
       if not isDiagVec(allDirs[d]): axisOk = false
     ok("first 8 are axis, last 16 are diagonal", axisOk)
 
+  test "1b. step returns the directed link between neighbouring sites":
+    for c in [Cell([0, 0, 0, 0]), Cell([2, -1, 3, -4])]:
+      for sub in 0..1:
+        let s = Site(cell: c, sub: sub)
+        for d in 0..<nDirs:
+          let (l, dst) = step(s, d)
+          let (a, b) = linkEnds(l)
+          checkpoint(&"cell={c} sub={sub} dir={d}")
+          check a == s
+          check b == dst
+          check sub2(pos2(dst), pos2(s)) == dirVec(d)
+
   test "2. sum_i n_mu n_nu = 6 delta_munu  (2 delta_munu for the 8 axis)":
     # everything is doubled, so the doubled sum is 4x the true one
     var s24, s8: array[nDim, array[nDim, int]]

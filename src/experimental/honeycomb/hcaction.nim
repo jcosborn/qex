@@ -9,8 +9,8 @@
 ## `x`, i.e. over all `64 N_cells` triangles, each counted exactly once
 ## (`hcgeom.apexTris`).
 ##
-## Staple recipe -- derived from `hcgeom.triPath`, not from prose
-## --------------------------------------------------------------
+## Staple recipe from `hcgeom.triPath`
+## ----------------------------------
 ## Every link field sits in exactly 8 triangles.  For each occurrence write the
 ## triangle loop re-based (cyclically, reversing orientation where the link
 ## enters daggered -- Re Tr is orientation blind) so it starts with the link
@@ -20,11 +20,9 @@
 ##
 ## QEX's staple convention keeps V = W^dag so that P = U_l V^dag, exactly like
 ## `makeStaples`/`gaugeActionDeriv`/`contractProjectTAH` on the cubic lattice.
-## At module load this file *scans all 64 triangles per cell* via
-## `hcgeom.triPath`, collects all 24x8 = 192 (link, triangle) incidences, and
-## `doAssert`s them equal to the closed-form six families the executor below
-## implements.  Action and force therefore cannot drift apart from the
-## geometry or from each other.
+## `tests/tgeom.nim` checks the triangle paths and link incidences;
+## `tests/taction.nim` compares the action with `triangleSum` and the force
+## with numerical derivatives on warm configurations.
 ##
 ## The six families, for each `apexTris` entry `(mu, delta)` [bit mu of delta
 ## clear, `deltaP = delta or 2^mu`, `db = delta xor 15` (bit mu set),
@@ -65,121 +63,12 @@
 ## allocates inside a `threads:` block.  The convenience overloads without a
 ## work object allocate a fresh one per call -- fine for tests only.
 
-import std/algorithm
 import base, layout, field, maths, rng
 import physics/qcdTypes
 import gauge
 import hcgeom, hclayout, hcgauge
 
 export hcgauge
-
-# ---------------------------------------------------------------------------
-# staple recipe: scan hcgeom.triPath and check the executor's six families
-# ---------------------------------------------------------------------------
-
-type
-  HcStapleFactor = object
-    kind: LinkKind
-    idx: int
-    cell: Cell     ## offset relative to the cell of the target link
-    dag: bool
-
-func relCell(a, b: Cell): Cell =
-  for i in 0..<nDim: result[i] = a[i] - b[i]
-
-func negCell(a: Cell): Cell =
-  for i in 0..<nDim: result[i] = -a[i]
-
-func deltaCell(delta: int): Cell =
-  for i in 0..<nDim: result[i] = (delta shr i) and 1
-
-func muCell(mu: int): Cell =
-  result[mu] = 1
-
-proc termKey(tk: LinkKind, ti: int, a, b: HcStapleFactor): string =
-  ## canonical string form of one staple term:
-  ##   V(x) = a(x + a.cell)^{a.dag} . b(x + b.cell)^{b.dag}  for link (tk, ti)
-  $tk & " " & $ti & " | " & $a.kind & " " & $a.idx & " " & $a.cell & " " &
-    $a.dag & " | " & $b.kind & " " & $b.idx & " " & $b.cell & " " & $b.dag
-
-proc linkSlot(k: LinkKind, idx: int): int =
-  case k
-  of lkA: idx
-  of lkB: nDim + idx
-  of lkD: 2*nDim + idx
-
-proc scanStapleTerms(): seq[string] =
-  ## Every (link, triangle) incidence obtained by walking all 64 triangles of a
-  ## cell with `hcgeom.triPath`, re-basing each loop at each of its three links
-  ## and converting to the staple V = W^dag.  Independent of the executor.
-  var count: array[nDirs, int]
-  for sub in 0..1:
-    for t in apexTris:
-      let path = triPath(Site(cell: [0, 0, 0, 0], sub: sub), t)
-      for pos in 0..2:
-        var lp: array[3, LinkRef]
-        if not path[pos].dag:
-          for k in 0..<3: lp[k] = path[(pos+k) mod 3]
-        else:
-          # reverse the loop so our link enters un-daggered, then rotate it
-          # to the front
-          var rev: array[3, LinkRef]
-          for k in 0..<3:
-            rev[k] = path[2-k]
-            rev[k].dag = not rev[k].dag
-          let rpos = 2 - pos
-          for k in 0..<3: lp[k] = rev[(rpos+k) mod 3]
-        doAssert (not lp[0].dag) and lp[0].kind == path[pos].kind and
-                 lp[0].idx == path[pos].idx and lp[0].cell == path[pos].cell
-        # W = lp[1] . lp[2]  =>  V = W^dag = lp[2]^flip . lp[1]^flip
-        let a = HcStapleFactor(kind: lp[2].kind, idx: lp[2].idx,
-                               cell: relCell(lp[2].cell, lp[0].cell),
-                               dag: not lp[2].dag)
-        let b = HcStapleFactor(kind: lp[1].kind, idx: lp[1].idx,
-                               cell: relCell(lp[1].cell, lp[0].cell),
-                               dag: not lp[1].dag)
-        result.add termKey(lp[0].kind, lp[0].idx, a, b)
-        inc count[linkSlot(lp[0].kind, lp[0].idx)]
-  for s in 0..<nDirs:
-    doAssert count[s] == nTriPerLink,
-      "hcaction: link slot " & $s & " sits in " & $count[s] & " triangles"
-
-proc executorStapleTerms(): seq[string] =
-  ## the six families hcActionDeriv implements, in the same canonical form
-  template add(tk, ti, ak, ai, ac, ad, bk, bi, bc, bd: untyped) =
-    result.add termKey(tk, ti,
-      HcStapleFactor(kind: ak, idx: ai, cell: ac, dag: ad),
-      HcStapleFactor(kind: bk, idx: bi, cell: bc, dag: bd))
-  let zero: Cell = [0, 0, 0, 0]
-  for t in apexTris:
-    let
-      mu = t.mu
-      delta = t.delta
-      deltaP = t.deltaP
-      db = delta xor 15
-      dbp = deltaP xor 15
-      cD = deltaCell(delta)
-      cDm = negCell(cD)
-      cMu = muCell(mu)
-      cMum = negCell(cMu)
-    # apex-B triangle (mu, delta)
-    add(lkD, delta,  lkD, deltaP, zero, false,  lkA, mu, cD, true)
-    add(lkD, deltaP, lkD, delta,  zero, false,  lkA, mu, cD, false)
-    add(lkA, mu,     lkD, delta,  cDm,  true,   lkD, deltaP, cDm, false)
-    # apex-A triangle (mu, db)
-    add(lkB, mu,     lkD, db,     zero, false,  lkD, dbp, cMu, true)
-    add(lkD, db,     lkB, mu,     zero, false,  lkD, dbp, cMu, false)
-    add(lkD, dbp,    lkB, mu,     cMum, true,   lkD, db,  cMum, false)
-
-block:
-  ## run the recipe check once at module load; pure combinatorics, no QEX state
-  var a = scanStapleTerms()
-  var b = executorStapleTerms()
-  doAssert a.len == 3*2*nTriPerSite and b.len == a.len
-  sort a
-  sort b
-  doAssert a == b,
-    "hcaction: staple recipe disagrees with hcgeom.triPath -- refusing to run"
 
 # ---------------------------------------------------------------------------
 # persistent work space
@@ -375,7 +264,6 @@ proc randomTAH*(g: HcGauge, r: var RNGField) =
 when isMainModule:
   import std/monotimes, std/times
   qexInit()
-  echo "hcaction: staple recipe check passed (192 terms match hcgeom.triPath)"
   let hl = newHcLayout([4, 4, 4, 4])
   var g = newHcGauge(hl)
   var f = newOneOf(g)

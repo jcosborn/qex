@@ -14,7 +14,7 @@ Files: `hcanalysis.nim`, `refCubicGen.nim`, `refCubicMeas.nim`,
 ## 0. Headline: the `topoQ` normalisation question is settled
 
 > **QEX's `topoQ` (`src/gauge/gaugeUtils.nim:1274`, prefactor `-1/(4 π²`) is
-> CORRECT. There is no factor of 2. `hcanalysis.qexTopoQNormFix = 1.0`.**
+> CORRECT. There is no factor of 2. Use `topoQ(f)` directly.**
 >
 > `doc/FORMULATION.md` §4.3 and `doc/PLAN.md` task W2 both say the prefactor is
 > "suspect by a factor 2". **They are wrong** and should be corrected by their
@@ -90,9 +90,8 @@ exactly as it must. The closed-form lattice prediction
 verified: `E = 2sin²φ₁ + 2sin²φ₂` to `2e−16`.
 
 **A factor 2 is excluded at the 10⁻³ level**: `2×topoQ` would be 3.999… where
-the exact answer is 2, in every row. (`refCubicMeas -abeliantest` prints the
-`2×topoQ` and `hcanalysis.fixTopoQ` values explicitly so the comparison is on
-the face of the output.)
+the exact answer is 2, in every row. (`refCubicMeas -abeliantest` prints
+`2×topoQ` for comparison.)
 
 ### Supporting evidence from real configurations
 
@@ -130,7 +129,6 @@ and runs in under 2 s and the honeycomb tasks can use it unchanged.
 | `jackknife(x, f, bin=1)`, `jackknifeMean` | delete-`bin` jackknife of an arbitrary estimator |
 | `fitPoly(x, y, dy, powers)` / `fitPolyCov` | weighted linear least squares in arbitrary integer powers, with covariance and `χ²/dof` |
 | `evalPoly`, `readColumns` | helpers |
-| `qexTopoQNormFix`, `fixTopoQ`, `topoQcorrected` | the (unit) `topoQ` normalisation, documented as above |
 | `noCrossing = -1.0` | sentinel for "target never reached" — **not** `NaN`, because QEX builds with `-Ofast -ffast-math` under which `x != x` is optimised away |
 
 ### `tests/tanalysis.nim` — 23/23 PASS

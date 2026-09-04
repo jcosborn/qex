@@ -1,4 +1,4 @@
-## Stout smearing on the 16-cell honeycomb, plus a thin uniform wrapper around
+## Stout smearing on the 16-cell honeycomb and repeated steps for
 ## QEX's cubic `gauge/stoutsmear` (task **D2**, part 1).
 ##
 ## Morningstar-Peardon (hep-lat/0311018) stout step, per link:
@@ -20,13 +20,12 @@
 ## the gradient-descent direction of the triangle action: smearing INCREASES
 ## the triangle sum (tests/tstout.nim test 4).
 ##
-## Cubic wrapper.  QEX's `StoutSmear.smear` computes
+## Cubic smearing.  QEX's `StoutSmear.smear` computes
 ## U' = exp(-alpha*nc * projectTAH(U ds^dag)) U with
 ## ds = gaugeActionDeriv(plaq=1) = (1/nc) * (plaquette staple sum), i.e.
-## U' = exp(rho * projectTAH(C U^dag)) U with C = rho * (staple sum) -- exactly
-## the isotropic MP step with rho = alpha.  `CubicStout` below only packages it
-## with the same `smear`/`smearN` shape as `HcStout`.  (REUSED, not
-## reimplemented; conventions verified against the heat-kernel test.)
+## U' = exp(projectTAH(C U^dag)) U with C = rho * (staple sum),
+## the isotropic MP step with rho = alpha.  The `smearN` overload below
+## repeats this step; `StoutSmear.alpha` controls its strength.
 ##
 ## Heat-kernel normalisation (the numbers task D4 needs)
 ## -----------------------------------------------------
@@ -61,7 +60,7 @@
 ## (honeycomb) and open their own `threads:` blocks -- do NOT call from inside
 ## one.  `gout` may be the same object as `gin` (in-place smearing).
 ## No force/chain rule (`smearDeriv`) on the honeycomb: quenched measurements
-## only (the cubic wrapper's inner `StoutSmear` still has QEX's if needed).
+## only (`StoutSmear` provides QEX's cubic chain rule).
 
 import base, layout, field, maths
 import physics/qcdTypes
@@ -139,37 +138,19 @@ proc smearN*[V: static[int], F, W](s: HcStout[V, F, W], g: HcGauge[V, F],
       smear(s, gout, gout)
 
 # ---------------------------------------------------------------------------
-# cubic (thin wrapper around QEX gauge/stoutsmear -- REUSED, same conventions)
+# cubic
 # ---------------------------------------------------------------------------
 
-type
-  CubicStout*[G] = ref object
-    ## Same interface shape as `HcStout` for QEX cubic gauge fields
-    ## (seq of 4 ColorMatrix fields).  Wraps `gauge/stoutsmear.StoutSmear`,
-    ## which is exactly the isotropic MP step with rho = alpha (module docs).
-    rho*: float
-    ss*: StoutSmear[G]
-
-proc newCubicStout*(lo: Layout, rho: float): auto =
-  ## Allocate the QEX stout work space (4 scratch gauges).  Outside `threads:`.
-  type G = typeof(lo.newGauge)
-  CubicStout[G](rho: rho, ss: newStoutSmear(lo, rho))
-
-proc smear*[G](s: CubicStout[G], gin: G, gout: G) =
-  ## One MP stout step; `gout` may be the same gauge as `gin`.
-  ## Opens its own `threads:` (inside QEX's smear).
-  s.ss.smear(gin, gout)
-
-proc smearN*[G](s: CubicStout[G], g: G, gout: G, n: int) =
+proc smearN*[G](s: var StoutSmear[G], g: G, gout: G, n: int) =
   ## n stout steps; n = 0 copies g to gout.
   if n <= 0:
     threads:
       for mu in 0..<gout.len:
         gout[mu] := g[mu]
   else:
-    s.ss.smear(g, gout)
+    s.smear(g, gout)
     for i in 1..<n:
-      s.ss.smear(gout, gout)
+      s.smear(gout, gout)
 
 when isMainModule:
   import std/monotimes, std/times
@@ -203,7 +184,7 @@ when isMainModule:
     var g = lo.newGauge
     threads:
       g.warm(0.35, r)
-    var st = newCubicStout(lo, 0.05)
+    var st = newStoutSmear(lo, 0.05)
     echo "cubic 8^4: plaq(0) = ", g.plaq.sum
     st.smear(g, g)
     let n = 10

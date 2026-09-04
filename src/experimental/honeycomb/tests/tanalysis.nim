@@ -19,6 +19,15 @@ proc check(name: string, ok: bool, info = "") =
 
 proc close(a, b, tol: float): bool = abs(a-b) <= tol
 
+template rejects(name: string, call: untyped) =
+  block:
+    var raised = false
+    try:
+      discard call
+    except ValueError:
+      raised = true
+    check(name, raised)
+
 # --------------------------------------------------------------------------
 echo "== findT0 / findW0 / findCrossing on analytic curves =="
 
@@ -78,6 +87,38 @@ block:
   let w0sq = findW0(t, w, 0.3)
   check("findW0 (returns w0^2) on t^2E = A t^3",
         close(w0sq, exact, 1e-3), &"w0^2 = {w0sq:.8f} exact {exact:.8f}")
+
+block:
+  var t, y: seq[float]
+  for i in 0..20:
+    let tt = 0.1*i.float
+    t.add tt
+    y.add 0.15*tt*tt
+  # W(t) = t d/dt(0.15 t^2) = 0.3 t^2, so w0^2 = 1.
+  let w0sq = findW0(t, derivT2E(t, y))
+  check("findW0 recovers the quadratic crossing",
+        close(w0sq, 1.0, 1e-12), &"w0^2 = {w0sq:.12f}")
+
+block:
+  let t = @[0.0, 0.1, 0.4, 1.1, 1.6, 2.0]
+  var y: seq[float]
+  for tt in t: y.add 0.15*tt*tt
+  let w = derivT2E(t, y)
+  var ok = true
+  for i in 1..<t.len-1:
+    ok = ok and close(w[i], 0.3*t[i]*t[i], 1e-12)
+  check("derivT2E is exact on a nonuniform quadratic grid at interior points", ok)
+
+block:
+  let x = @[1.0, 2.0, 4.0]
+  let y = @[3.0, 5.0, 9.0]
+  check("interpAt within a bracket", close(interpAt(x, y, 3.0), 7.0, 1e-14))
+  check("interpAt at and beyond endpoints",
+        interpAt(x, y, 1.0) == 3.0 and interpAt(x, y, 0.0) == 3.0 and
+        interpAt(x, y, 4.0) == 9.0 and interpAt(x, y, 5.0) == 9.0)
+  check("interpAt empty inputs", interpAt([], [], 1.0) == 0.0)
+  check("interpAt singleton inputs",
+        interpAt([2.0], [5.0], 1.0) == 5.0 and interpAt([2.0], [5.0], 3.0) == 5.0)
 
 # --------------------------------------------------------------------------
 echo ""
@@ -151,6 +192,24 @@ block:
 # --------------------------------------------------------------------------
 echo ""
 echo "== autocorrTime =="
+
+block:
+  for n in 0..3:
+    check(&"autocorrTimeW for {n} samples", autocorrTimeW(newSeq[float](n)) == (0.5, 0.0, 0))
+  let x = @[2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0]
+  let (tau, err, w) = autocorrTimeW(x)
+  check("autocorrTimeW constant series",
+        tau == 0.5 and w == 3 and close(err, 0.5*sqrt(14.0/8.0), 1e-14))
+
+block:
+  let x = @[1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0]
+  check("autocorr alternating series", autocorr(x) == @[1.0, -1.0, 1.0, -1.0, 1.0])
+  let (tau, err, w) = autocorrTimeW(x)
+  check("autocorrTimeW clamps negative contributions before closing the window",
+        tau == 0.5 and w == 3 and close(err, 0.5*sqrt(14.0/8.0), 1e-14))
+  let (tm, em, wm) = autocorrTimeW(x, 100.0)
+  check("autocorrTimeW stops at half the series length when the window stays open",
+        tm == 1.5 and wm == 4 and close(em, 2.25, 1e-14))
 
 # 8. Uncorrelated white noise -> tau ~ 0.5.
 block:
@@ -256,13 +315,24 @@ block:
 
 # --------------------------------------------------------------------------
 echo ""
-echo "== topoQ normalisation constant =="
-# Verdict (see hcanalysis.nim and doc/RESULTS_CUBIC.md): QEX's topoQ is right,
-# so the fix factor is 1.  The *numerical* proof lives in
-# `refCubicMeas -abeliantest`, which needs a QEX layout and so cannot run here.
-check("qexTopoQNormFix == 1 (QEX topoQ needs no correction)",
-      qexTopoQNormFix == 1.0)
-check("fixTopoQ is the identity", close(fixTopoQ(0.37), 0.37, 1e-15))
+echo "== matching input lengths =="
+
+block:
+  let a = @[1.0, 2.0]
+  for b in [newSeq[float](0), @[1.0], @[1.0, 2.0, 3.0]]:
+    for (x, y) in [(a, b), (b, a)]:
+      let lens = &" ({x.len}, {y.len})"
+      rejects("interpAt rejects mismatched lengths" & lens, interpAt(x, y, 1.0))
+      rejects("findCrossing rejects mismatched lengths" & lens, findCrossing(x, y, 0.3))
+      rejects("derivT2E rejects mismatched lengths" & lens, derivT2E(x, y))
+    rejects(&"fitPolyCov rejects mismatched x length {b.len}", fitPolyCov(b, a, a, [0]))
+    rejects(&"fitPolyCov rejects mismatched y length {b.len}", fitPolyCov(a, b, a, [0]))
+    rejects(&"fitPolyCov rejects mismatched dy length {b.len}", fitPolyCov(a, a, b, [0]))
+    rejects(&"evalPoly rejects mismatched coefficient length {b.len}", evalPoly(b, [0, 1], 1.0))
+    rejects(&"evalPoly rejects mismatched power length {b.len}", evalPoly(a, newSeq[int](b.len), 1.0))
+  rejects("findT0 rejects mismatched lengths", findT0(a, [1.0]))
+  rejects("findW0 rejects mismatched lengths", findW0(a, [1.0]))
+  rejects("fitPoly rejects mismatched lengths", fitPoly(a, a, [1.0], [0]))
 
 # --------------------------------------------------------------------------
 echo ""

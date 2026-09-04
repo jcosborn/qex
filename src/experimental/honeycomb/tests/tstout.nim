@@ -187,7 +187,7 @@ proc hcStoutRate(ns, k: int, rho: float, nsteps: int):
 
 proc cubicStoutRate(ns, k: int, rho: float, nsteps: int):
     tuple[rate, drift, p2, perstep: float] =
-  ## same on the cubic lattice with the wrapped QEX StoutSmear.
+  ## same on the cubic lattice with QEX StoutSmear.
   ## `perstep` = the late-window per-step ln(S ratio)/2, to compare with the
   ## exact linearised Euler/stout map factor -ln(1 - rho phat^2).
   var pv, epsv: array[4, float]
@@ -196,7 +196,7 @@ proc cubicStoutRate(ns, k: int, rho: float, nsteps: int):
   let lo = newLayout(@[ns, ns, ns, ns])
   var g = lo.newGauge
   setAbelianCubic(g, lo, epsv, pv)
-  var st = newCubicStout(lo, rho)
+  var st = newStoutSmear(lo, rho)
   let gact = GaugeActionCoeffs(plaq: 1.0)
   var ss = @[wilsonAction(gact, g)]
   for n in 0..<nsteps:
@@ -228,7 +228,7 @@ suite "hcstout (task D2 part 1)":
       var g = lo.newGauge
       threads:
         g.random r
-      var st = newCubicStout(lo, 0.05)
+      var st = newStoutSmear(lo, 0.05)
       st.smearN(g, g, 6)
       let d = cubicCheckSU(g)
       echo &"  cubic 8^4 random, 6 steps rho=0.05: checkSU avg {d.avg:.2e} max {d.max:.2e}"
@@ -268,7 +268,7 @@ suite "hcstout (task D2 part 1)":
       threads:
         g.random r
         t.randomSU r
-      var st = newCubicStout(lo, 0.05)
+      var st = newStoutSmear(lo, 0.05)
       st.smear(g, s1)
       gaugeTransform(s1, s1, t)     # s1 <- t s1 t(x+mu)^dag
       gaugeTransform(g2, g, t)
@@ -297,11 +297,48 @@ suite "hcstout (task D2 part 1)":
       var g1 = lo.newGauge
       threads:
         g.random r
-      var st = newCubicStout(lo, 0.0)
+      var st = newStoutSmear(lo, 0.0)
       st.smear(g, g1)
       let d = cubicNorm2Diff(g1, g)
       echo &"  cubic rho=0: |smear(U) - U|^2 = {d:.3e}"
       ok("cubic rho=0 exact identity", d == 0.0)
+
+  test "cubic alpha changes the next smear":
+    let lo = newLayout(@[4, 4, 4, 4])
+    var r = lo.newRNGField(RngMilc6, seed + 10)
+    var g = lo.newGauge
+    var gs = lo.newGauge
+    threads:
+      g.random r
+    var st = newStoutSmear(lo, 0.05)
+    st.smear(g, gs)
+    check cubicNorm2Diff(gs, g) > 0.0
+    st.alpha = 0.0
+    st.smear(g, gs)
+    check cubicNorm2Diff(gs, g) == 0.0
+
+  test "cubic repeated smearing copies or repeats the same step":
+    let lo = newLayout(@[4, 4, 4, 4])
+    var r = lo.newRNGField(RngMilc6, seed + 11)
+    var g = lo.newGauge
+    var gs = lo.newGauge
+    var gt = lo.newGauge
+    threads:
+      g.random r
+      gs.unit
+    var st = newStoutSmear(lo, 0.05)
+    st.smearN(g, gs, 0)
+    check cubicNorm2Diff(gs, g) == 0.0
+    st.smearN(gs, gs, 0)
+    check cubicNorm2Diff(gs, g) == 0.0
+    st.smearN(g, gs, 3)
+    st.smear(g, gt)
+    st.smear(gt, gt)
+    st.smear(gt, gt)
+    check cubicNorm2Diff(gs, gt) == 0.0
+    st.smearN(g, gt, 0)
+    st.smearN(gt, gt, 3)
+    check cubicNorm2Diff(gs, gt) == 0.0
 
   test "4. smoothing: 6 steps at rho=0.05 strictly increase the loop sums":
     block:                      # honeycomb triangleSum
@@ -328,7 +365,7 @@ suite "hcstout (task D2 part 1)":
       var g = lo.newGauge
       threads:
         g.warm(0.35, r)
-      var st = newCubicStout(lo, 0.05)
+      var st = newStoutSmear(lo, 0.05)
       var ps = @[g.plaq.sum]
       for n in 0..<6:
         st.smear(g, g)
@@ -439,7 +476,7 @@ suite "hcstout (task D2 part 1)":
       var g = lo.newGauge
       threads:
         g.warm(0.35, r)
-      var st = newCubicStout(lo, 0.05)
+      var st = newStoutSmear(lo, 0.05)
       st.smear(g, g)
       var dt = 1e30
       for batch in 0..<5:

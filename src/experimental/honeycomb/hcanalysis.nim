@@ -2,16 +2,15 @@
 ##
 ## Nothing here knows about QEX fields or about the lattice geometry, so the
 ## same code serves the cubic reference pipeline (`refCubicGen`/`refCubicMeas`)
-## and the honeycomb measurements.  Pure Nim, only `math`/`algorithm`/`strutils`.
+## and the honeycomb measurements.  Pure Nim, only `math`/`strutils`.
 ##
 ## Contents
-##   * flow-scale finders   `findT0`, `findW0`, `findCrossing`
+##   * flow-scale finders   `findT0`, `findW0`, `findCrossing`, `interpAt`
 ##   * statistics           `mean`, `variance`, `stddev`, `stderrMean`,
 ##                          `autocorrTime`, `autocorr`
 ##   * resampling           `jackknife` (delete-1, optionally binned)
 ##   * fitting              `fitPoly` (weighted linear least squares in
 ##                          arbitrary integer powers of x)
-##   * the QEX `topoQ` normalisation fix, see `topoQNormFix` below.
 ##
 ## Test: `src/experimental/honeycomb/tests/tanalysis.nim`.
 
@@ -24,48 +23,6 @@ const
     ## Sentinel returned by `findCrossing`/`findT0`/`findW0` when the target is
     ## never reached.  A sentinel rather than `NaN` because QEX is built with
     ## `-Ofast -ffast-math`, under which `x != x` is optimised away.
-
-const
-  qexTopoQNormFix* = 1.0
-    ## **VERDICT: QEX's `topoQ` normalisation is CORRECT.  No fix is needed.**
-    ## (`doc/FORMULATION.md` sec. 4.3 and `doc/PLAN.md` task W2 both flag it as
-    ## "suspect by a factor 2".  It is not.  See `doc/RESULTS_CUBIC.md`.)
-    ##
-    ## `topoQ` (src/gauge/gaugeUtils.nim) evaluates `-1/(4 pi^2) * (a - b + c)`
-    ## with `a = sum_x Re tr(F_10 F_32)`, `b = sum_x Re tr(F_20 F_31)`,
-    ## `c = sum_x Re tr(F_21 F_30)` and QEX's traceless-**antihermitian** `F`
-    ## (so that the plaquette is `P ~ exp(a^2 F)`).
-    ##
-    ## Derivation.  The index density is
-    ##   `Q = -(1/(8 pi^2)) int tr(F ^ F) = -(1/(32 pi^2)) int eps_{mnrs} tr(F_mn F_rs)`
-    ## and `eps_{mnrs} tr(F_mn F_rs) = 8 [tr(F01 F23) - tr(F02 F13) + tr(F03 F12)]`
-    ## (each of the 3 disjoint index pairings occurs 8 times among the 4! terms),
-    ## hence `Q = -(1/(4 pi^2)) (a - b + c)` -- exactly QEX's expression.
-    ##
-    ## The "factor 2" suspicion comes from combining
-    ## `Q = (1/(32 pi^2)) int eps F^a F^a` with `F^a F^a = -2 tr(F F)`.  The
-    ## first of those is the mis-remembered form: the textbook identity is
-    ##   `Q = (1/(32 pi^2)) int F^a_mn Ftilde^a_mn = (1/(64 pi^2)) int eps F^a F^a`
-    ## (check: for a self-dual BPST instanton `int F^a F^a = 32 pi^2`, giving
-    ## `Q = 1`, whereas `1/(32 pi^2)` would give 2).  With the correct `1/(64 pi^2)`
-    ## everything agrees with QEX.
-    ##
-    ## Verified numerically to 1e-12 by `refCubicMeas -abeliantest` on a
-    ## constant-field-strength Cartan configuration `T = diag(1,-1,0)` with
-    ## fluxes `n1, n2`, whose exact charge is `Q = sum_i q_i^2 n1 n2 = 2 n1 n2`
-    ## by the Atiyah-Singer index theorem for a direct sum of U(1) bundles.
-
-template topoQcorrected*(f: untyped): untyped {.dirty.} =
-  ## Properly normalised topological charge from a QEX `fmunu` tensor.
-  ## Since `qexTopoQNormFix == 1` this is just `topoQ(f)`; the wrapper exists so
-  ## that the honeycomb code has one place to go if the convention ever changes.
-  ## Dirty template so that `topoQ` is resolved in the caller's scope
-  ## (i.e. `gauge/gaugeUtils`), keeping this module free of QEX dependencies.
-  qexTopoQNormFix * topoQ(f)
-
-proc fixTopoQ*(q: float): float {.inline.} =
-  ## Same normalisation applied to an already-computed QEX `topoQ` value.
-  qexTopoQNormFix * q
 
 # ---------------------------------------------------------------- basic stats
 
@@ -94,6 +51,11 @@ proc stderrMean*(x: openArray[float]): float =
   if x.len < 2: return 0.0
   sqrt(x.variance / x.len.float)
 
+proc cov(x: openArray[float], m: float, t: int): float =
+  var s = 0.0
+  for i in 0..<(x.len-t): s += (x[i]-m)*(x[i+t]-m)
+  s / float(x.len-t)
+
 proc autocorr*(x: openArray[float], tmax = -1): seq[float] =
   ## Normalised autocorrelation function `rho(t) = Gamma(t)/Gamma(0)`,
   ## `t = 0 .. tmax` (default `min(n-1, n div 2)`).
@@ -103,9 +65,7 @@ proc autocorr*(x: openArray[float], tmax = -1): seq[float] =
   let m = x.mean
   var g = newSeq[float](tm+1)
   for t in 0..tm:
-    var s = 0.0
-    for i in 0..<(n-t): s += (x[i]-m)*(x[i+t]-m)
-    g[t] = s / float(n-t)
+    g[t] = cov(x, m, t)
   let g0 = g[0]
   if g0 == 0.0:
     for t in 0..tm: g[t] = if t == 0: 1.0 else: 0.0
@@ -121,11 +81,12 @@ proc autocorrTimeW*(x: openArray[float], c = 5.0):
   ## `tau*sqrt(2(2W+1)/n)`.
   let n = x.len
   if n < 4: return (0.5, 0.0, 0)
-  let rho = x.autocorr
+  let m = x.mean
+  let g0 = cov(x, m, 0)
   var tau = 0.5
-  var w = rho.len-1
-  for t in 1..<rho.len:
-    tau += rho[t]
+  var w = n div 2
+  for t in 1..w:
+    if g0 != 0.0: tau += cov(x, m, t)/g0
     if tau < 0.5: tau = 0.5      # guard against noise driving tau negative
     if float(t) >= c*tau:
       w = t
@@ -200,6 +161,20 @@ proc jackknifeMean*(x: openArray[float], bin = 1): tuple[mean, err: float] =
 
 # -------------------------------------------------------------- flow  scales
 
+proc interpAt*(x, y: openArray[float], x0: float): float =
+  ## Linear interpolation of y(x), clamped at the ends; 0 for empty inputs.
+  ## x must be increasing, and x and y must have equal lengths.
+  if x.len != y.len:
+    raise newException(ValueError, "interpAt requires x and y of equal length")
+  let n = x.len
+  if n == 0: return 0.0
+  if x0 <= x[0]: return y[0]
+  for i in 1..<n:
+    if x[i] >= x0:
+      let f = (x0-x[i-1])/(x[i]-x[i-1])
+      return y[i-1] + f*(y[i]-y[i-1])
+  y[n-1]
+
 proc lagrange(xs, ys: openArray[float], x: float): float =
   ## Lagrange interpolation through all supplied points.
   var s = 0.0
@@ -212,7 +187,7 @@ proc lagrange(xs, ys: openArray[float], x: float): float =
 
 proc findCrossing*(x, y: openArray[float], target: float, order = 1): float =
   ## Flow-time (or generic abscissa) at which the series `y(x)` first crosses
-  ## `target` from below.  `x` must be increasing.
+  ## `target` from below.  `x` must be increasing; x and y must have equal lengths.
   ##
   ## `order = 1` linear interpolation between the bracketing pair (the usual
   ## convention for t0).  `order = 3` fits a cubic through the two points on
@@ -220,7 +195,9 @@ proc findCrossing*(x, y: openArray[float], target: float, order = 1): float =
   ## discretisation error of the *interpolation* from O(dt^2) to O(dt^4).
   ##
   ## Returns `noCrossing` (= -1) if the target is never reached.
-  let n = min(x.len, y.len)
+  if x.len != y.len:
+    raise newException(ValueError, "findCrossing requires x and y of equal length")
+  let n = x.len
   if n < 2: return noCrossing
   var k = -1
   for i in 1..<n:
@@ -266,7 +243,10 @@ proc findW0*(t: openArray[float], tdt2E: openArray[float], target = 0.3,
 proc derivT2E*(t, t2E: openArray[float]): seq[float] =
   ## `W(t) = t d/dt [t^2 <E>]` by centred differences on a (not necessarily
   ## uniform) grid; one-sided at the ends.
-  let n = min(t.len, t2E.len)
+  ## t must be increasing, and t and t2E must have equal lengths.
+  if t.len != t2E.len:
+    raise newException(ValueError, "derivT2E requires t and t2E of equal length")
+  let n = t.len
   result = newSeq[float](n)
   if n < 2: return
   for i in 0..<n:
@@ -319,8 +299,10 @@ proc fitPolyCov*(x, y, dy: openArray[float], powers: openArray[int]):
           dof: int, chisqDof: float] =
   ## Weighted linear least squares of `y +- dy` to `sum_k c_k x^{p_k}`.
   ## Returns the coefficients, their errors, the full covariance matrix, and
-  ## chi^2 / dof.  `dy` entries must be > 0.
-  let n = min(min(x.len, y.len), dy.len)
+  ## chi^2 / dof.  `dy` entries must be > 0; x, y and dy must have equal lengths.
+  if x.len != y.len or x.len != dy.len:
+    raise newException(ValueError, "fitPolyCov requires x, y and dy of equal length")
+  let n = x.len
   let np = powers.len
   result.coef = newSeq[float](np)
   result.err = newSeq[float](np)
@@ -373,9 +355,11 @@ proc fitPoly*(x, y, dy: openArray[float], powers: openArray[int]):
   (r.coef, r.err, r.chisqDof)
 
 proc evalPoly*(coef: openArray[float], powers: openArray[int], x: float): float =
-  ## Evaluate `sum_k coef[k] x^{powers[k]}`.
+  ## Evaluate `sum_k coef[k] x^{powers[k]}`; coef and powers must have equal lengths.
+  if coef.len != powers.len:
+    raise newException(ValueError, "evalPoly requires coef and powers of equal length")
   var s = 0.0
-  for k in 0..<min(coef.len, powers.len):
+  for k in 0..<coef.len:
     s += coef[k]*pow(x, powers[k].float)
   s
 

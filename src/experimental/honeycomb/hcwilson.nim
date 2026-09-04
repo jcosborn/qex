@@ -13,8 +13,8 @@
 ## A honeycomb fermion is one Dirac fermion field per sublattice, both on the
 ## CELL layout:  `psiA(y)` at the A site `y`, `psiB(y)` at the B site `y+1/2`.
 ##
-## Hop structure per cell `y` (derived from `hcgeom.step` and asserted against
-## it in `newHcWilson`):
+## Hop structure per cell `y` (`tests/tgeom.nim` checks the link endpoints;
+## `tests/twilson.nim` checks the operator's locality and free spectrum):
 ##
 ##   A row, axis +mu :  uA[mu](y)          psiA(y+e_mu)     gamma factor (+gamma_mu - r)
 ##   A row, axis -mu :  uA[mu](y-e_mu)^dag psiA(y-e_mu)                   (-gamma_mu - r)
@@ -178,7 +178,6 @@ type
     gm: array[nDirs, SpinMat]    ## (gamma.n_dir - rw)/6
     rwCur: float
     rwValid: bool
-    aLink, bLink: array[nDiag, int]  ## hop tables derived from hcgeom.step
 
 proc setHopMats(w: HcWilson, rw: float) =
   ## rebuild the 24 hop matrices if the Wilson parameter changed;
@@ -223,36 +222,6 @@ proc newHcWilson*[V: static[int], MF](g: HcGauge[V, MF]): auto =
     w.shDb[mu] = newShifter(g.uA[0], mu, -1)
   w.shAf = newHcShift16(proto, 1)
   w.shBb = newHcShift16(proto, -1)
-  # Derive the hop tables from hcgeom.step and assert every field of the
-  # LinkRefs, so that any change in the link convention fails loudly here.
-  for d in 0..<nDiag:
-    let dir = diagIndex(d)
-    block:                      # from an A site: A(y)+d(delta) = B(y-dbar)
-      let (l, dest) = step(Site(sub: 0), dir)
-      doAssert l.kind == lkD and l.dag and dest.sub == 1
-      doAssert l.cell == dest.cell
-      for mu in 0..<nDim:
-        doAssert l.cell[mu] == -((l.idx shr mu) and 1)
-      w.aLink[d] = l.idx        # = d xor 15
-    block:                      # from a B site: B(y)+d(delta) = A(y+delta)
-      let (l, dest) = step(Site(sub: 1), dir)
-      doAssert l.kind == lkD and not l.dag and dest.sub == 0
-      doAssert l.cell == Cell([0, 0, 0, 0])
-      for mu in 0..<nDim:
-        doAssert dest.cell[mu] == ((l.idx shr mu) and 1)
-      w.bLink[d] = l.idx        # = d
-  for mu in 0..<nDim:
-    for sub in 0..1:
-      block:
-        let (l, dest) = step(Site(sub: sub), axisIndex(mu, false))
-        doAssert l.kind == (if sub == 0: lkA else: lkB) and l.idx == mu
-        doAssert (not l.dag) and l.cell == Cell([0, 0, 0, 0]) and
-                 dest.sub == sub and dest.cell[mu] == 1
-      block:
-        let (l, dest) = step(Site(sub: sub), axisIndex(mu, true))
-        doAssert l.kind == (if sub == 0: lkA else: lkB) and l.idx == mu
-        doAssert l.dag and l.cell[mu] == -1 and dest.sub == sub and
-                 dest.cell == l.cell
   w.gaugeRefresh
   w
 
@@ -298,11 +267,10 @@ proc applyDirac(w: HcWilson, r: HcFermion, x: HcFermion,
     for d in 0..<nDiag:
       let gmm = w.gm[cf[diagIndex(d)]]        # gamma.d(delta) for both rows
       block:                                  # B row: uD[d](y) psiA(y+d)
-        let dl = w.bLink[d]
         for e in r.b:
-          r.b[e] += gmm * (w.g.uD[dl][e] * w.shAf.f[dl][e])
+          r.b[e] += gmm * (w.g.uD[d][e] * w.shAf.f[d][e])
       block:               # A row: uD[dbar](y-dbar)^dag psiB(y-dbar)
-        let dl = w.aLink[d]
+        let dl = d xor 15
         for e in r.a:
           r.a[e] += gmm * (w.uDsh[dl][e].adj * w.shBb.f[dl][e])
 

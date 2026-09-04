@@ -26,7 +26,7 @@
 ## Conventions (FORMULATION.md sec. 4):
 ##   E from the clover F_munu (`gauge/gaugeUtils.fmunu`, `densityE`),
 ##   t0 from `t^2<E> = 0.3`, w0^2 from `t d/dt[t^2<E>] = 0.3`,
-##   Q = `qexTopoQNormFix * topoQ(f)` -- see `hcanalysis.qexTopoQNormFix`,
+##   Q = `topoQ(f)` -- normalisation derived in `doc/RESULTS_CUBIC.md`,
 ##   chi = <Q^2>/V with V = prod(lat) in lattice units.
 
 import qex, gauge, gauge/wflow
@@ -134,7 +134,6 @@ if abeliantest:
   echo &"closed-form lattice  {qpredict:.12f}   diff {abs(q-qpredict):.3e}"
   echo &"exact (index thm)    {qexact:.12f}   diff {abs(q-qexact):.3e}   ratio {q/qexact:.10f}"
   echo &"2 x topoQ            {2.0*q:.12f}   ratio to exact {2.0*q/qexact:.10f}"
-  echo &"hcanalysis.fixTopoQ  {fixTopoQ(q):.12f}   ratio to exact {fixTopoQ(q)/qexact:.10f}"
   let ok = abs(q/qexact - 1.0) < 0.02
   echo(if ok: "VERDICT: QEX topoQ is correctly normalised (factor 1)."
        else: "VERDICT: QEX topoQ is NOT correctly normalised -- investigate.")
@@ -192,27 +191,15 @@ var g = lo.newGauge
 var
   ft: seq[float] = @[]     # flow time
   ft2E: seq[float] = @[]   # t^2 <E>
-  fq: seq[float] = @[]     # Q (corrected normalisation)
-  fqRaw: seq[float] = @[]  # Q as QEX's topoQ returns it
+  fq: seq[float] = @[]     # Q
 
 proc eqm(g: auto, loop: int): auto =
-  ## (E_s, E_t, Q_raw) from the clover field strength.
+  ## (E_s, E_t, Q) from the clover field strength.
   let
     f = g.fmunu loop
     (es, et) = f.densityE
     q = f.topoQ
   (es, et, q)
-
-proc interpAt(x, y: openArray[float], x0: float): float =
-  ## linear interpolation of y(x) at x0 (x increasing)
-  let n = min(x.len, y.len)
-  if n == 0: return 0.0
-  if x0 <= x[0]: return y[0]
-  for i in 1..<n:
-    if x[i] >= x0:
-      let f = (x0-x[i-1])/(x[i]-x[i-1])
-      return y[i-1] + f*(y[i]-y[i-1])
-  y[n-1]
 
 var
   t0s: seq[float] = @[]
@@ -230,28 +217,25 @@ for icfg, fn in files:
   ft.setLen 0
   ft2E.setLen 0
   fq.setLen 0
-  fqRaw.setLen 0
   if 0 != g.loadGauge fn:
     qexError "failed to load ", fn
   threads: g.projectSU
   block:
-    let (es, et, qraw) = g.eqm fmunuloop
+    let (es, et, q) = g.eqm fmunuloop
     ft.add 0.0
     ft2E.add 0.0
-    fq.add fixTopoQ(qraw)
-    fqRaw.add qraw
+    fq.add q
     discard es
     discard et
   var nstep = 0
   g.gaugeFlow(0, eps):
     inc nstep
     if nstep mod measevery == 0:
-      let (es, et, qraw) = g.eqm fmunuloop
+      let (es, et, q) = g.eqm fmunuloop
       let t2e = wflowT*wflowT*(es+et)
       ft.add wflowT
       ft2E.add t2e
-      fq.add fixTopoQ(qraw)
-      fqRaw.add qraw
+      fq.add q
       if (tmax > 0.0 and wflowT >= tmax) or
          (t2Estop > 0.0 and t2e > t2Estop):
         break
@@ -281,11 +265,11 @@ for icfg, fn in files:
   if flowdump.len > 0 and icfg == 0 and myRank == 0:
     var fh = open(flowdump, fmWrite)
     fh.write("# flow history of " & fn & "\n")
+    # Preserve the legacy duplicate charge columns for existing consumers.
     fh.write("# t  t^2E  W=t d/dt[t^2E]  Q_corrected  Q_qexTopoQ  dist(Q_corr,int)  dist(Q_raw,int)\n")
     for i in 0..<ft.len:
       let a = abs(fq[i]-round(fq[i]))
-      let b = abs(fqRaw[i]-round(fqRaw[i]))
-      fh.write(&"{ft[i]:.6f} {ft2E[i]:.8f} {w[i]:.8f} {fq[i]:.8f} {fqRaw[i]:.8f} {a:.6f} {b:.6f}\n")
+      fh.write(&"{ft[i]:.6f} {ft2E[i]:.8f} {w[i]:.8f} {fq[i]:.8f} {fq[i]:.8f} {a:.6f} {a:.6f}\n")
     fh.close
     echo "wrote flow history to ", flowdump
 

@@ -5,11 +5,11 @@
 ##
 ## Per configuration (loaded from -cfgs glob):
 ##   a. gradient flow on the PERIODIC, UNsmeared links (QEX gaugeFlow +
-##      fmunu/densityE/topoQ, task C conventions, fixTopoQ = x1):
+##      fmunu/densityE/topoQ, task C conventions):
 ##      Q(t) and t^2E(t) on a fixed grid to -flowtmax;
 ##      Q_flow = Q(t = -t0use), plus the per-config/ensemble t0 crossings;
-##   b. 6 stout steps rho = 0.05 (QEX StoutSmear via task D2's CubicStout =
-##      the plain MP step), antiperiodic time BC, massless r=1 cSW=1 clover
+##   b. 6 stout steps rho = 0.05 (QEX StoutSmear, the plain MP step),
+##      antiperiodic time BC, massless r=1 cSW=1 clover
 ##      operator (task D2 CubicCloverWilson), shift-invert Arnoldi
 ##      (hcSpectrum machinery: CGNR inner solves, direct residuals with the
 ##      exact operator, chirality, real-mode classification, Q_Dirac).
@@ -95,19 +95,11 @@ emit &"# qDiracSign {qDiracSign}"
 
 var g = lo.newGauge          # loaded configuration; the flow runs on it in place
 var gferm = lo.newGauge      # smeared + BC copy (the operator lives on this)
-var st = newCubicStout(lo, rho)
+var st = newStoutSmear(lo, rho)
 var cw = newCubicCloverWilson(gferm, cSW)
 
 var proto = lo.DiracFermion()
 type DF = typeof(proto)
-var tmpv = newOneOf(proto)
-var g5v = newOneOf(proto)
-tmpv := 0
-g5v := 0
-
-proc applyG5(rf: DF; xf: DF) =
-  for e in rf:
-    rf[e] := gamma5 * xf[e]
 
 var startCount = 0'u64
 proc startVec(v: var DF) =
@@ -134,7 +126,7 @@ proc eqm(gg: auto): tuple[e, q: float] =
   ## (E, Q) from the 1x1 clover field strength (task C conventions)
   let f = gg.fmunu 1
   let (es, et) = f.densityE
-  (es + et, fixTopoQ(f.topoQ))
+  (es + et, f.topoQ)
 
 # flow bookkeeping
 let nFlowSteps = int(round(flowtmax/floweps))
@@ -166,9 +158,9 @@ proc measureFlow(icfg: int) =
   for j in 0..<min(t2Es.len, sumT2E.len):
     sumT2E[j] += t2Es[j]
   let t0cfg = findT0(ts, t2Es, 0.3, 1)
-  lastQflow = interpAtT(ts, qs, t0use)
-  let q15 = interpAtT(ts, qs, 1.5)
-  let q24 = interpAtT(ts, qs, min(2.4, ts[^1]))
+  lastQflow = interpAt(ts, qs, t0use)
+  let q15 = interpAt(ts, qs, 1.5)
+  let q24 = interpAt(ts, qs, min(2.4, ts[^1]))
   emit &"FLOWQ {icfg} {t0cfg:.6f} {lastQflow:.6f} {q15:.6f} {q24:.6f} {qs[0]:.6f}"
 
 proc measureSpec(icfg: int) =
@@ -180,38 +172,14 @@ proc measureSpec(icfg: int) =
   gferm.setBC
   cw.gaugeRefresh
   stats.reset
-  let (mus, vecs, resids, napply) =
+  let (mus, vecs, _, napply) =
     arnoldi(op, nev, ncvUse, tol, maxRestarts, "LM", verb)
-  var modes: seq[SpecMode]
-  var nbad = 0
-  for i in 0..<mus.len:
-    var m: SpecMode
-    m.lam = lamFromMu(mus[i], sigma)
-    cw.D(tmpv, vecs[i], mass)
-    axpyP(tmpv, complex64(-m.lam.re, -m.lam.im), vecs[i])
-    let vn2 = vnorm2(vecs[i])
-    m.resid = sqrt(vnorm2(tmpv)/max(vn2, 1e-300))
-    applyG5(g5v, vecs[i])
-    m.chi = vdot(vecs[i], g5v).re/vn2
-    if m.resid > residcut:
-      inc nbad
-      continue
-    modes.add m
-  let s = summarize(modes, epsreal)
-  let cp = block:
-    var vv: seq[Complex64]
-    for m in modes: vv.add m.lam
-    worstConjPairing(vv)
-  for k, m in modes:
-    emit &"EIG {icfg} {rho:.3f} {k} {m.lam.re:.10g} {m.lam.im:.10g} {m.chi:.8f} {m.resid:.3e}"
+  let modes = measureModes(mus, vecs, sigma,
+    proc(r: var DF; x: DF) = cw.D(r, x, mass), residcut)
   let secs = (getMonoTime() - tw0).inMicroseconds.float*1e-6
-  emit &"CFG {icfg} {rho:.3f} {s.lam0.re:.10g} {s.lam0.im:.10g} " &
-       &"{s.nconv} {s.nreal} {s.nplus} {s.nminus} {s.qdirac:.1f} {lastQflow:.6f} " &
-       &"{napply} {stats.totIts} {secs:.2f}"
-  emit &"CFGX {icfg} {rho:.3f} conj {cp:.3e} worstresid {s.worstResid:.3e} " &
-       &"imgapC {s.minAbsImComplex:.3e} imgapR {s.maxAbsImReal:.3e} " &
-       &"sumchi {s.sumChiReal:.4f} nbad {nbad} cgmax {stats.maxUsedIts} " &
-       &"cghitmax {stats.nHitMax} sidirect {stats.worstDirect:.3e}"
+  for line in specLines(modes, epsreal, icfg, rho, lastQflow,
+                        mus.len - modes.len, napply, stats, secs):
+    emit line
 
 toc("setup")
 let trun0 = getMonoTime()
