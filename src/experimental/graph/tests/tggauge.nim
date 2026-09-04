@@ -23,12 +23,12 @@ let grt = initGraphRuntime()
 # Directional-derivative check:
 # z(t) = f(x + t A) B†, so d/dt z should match redot(dz/dx, A).
 
-proc ndiff(zt: Gscalar, t: Gscalar): (float, float) =
+proc ndiff(zt: Gscalar, t: Gscalar, dx = 0.125, ordMax: static int = 3): (float, float) =
   proc z(v:float):float =
     t.update v
     zt.eval.sval
   var dzdt,e: float
-  ndiff(dzdt, e, z, 0.0, 0.125, ordMax=3)
+  ndiff(dzdt, e, z, 0.0, dx, ordMax=ordMax)
   (dzdt, e)
 
 template check(ii: tuple[filename:string, line:int, column:int], ast: string, dzdt, e, gdota: float) =
@@ -41,7 +41,8 @@ template check(ii: tuple[filename:string, line:int, column:int], ast: string, dz
 
 template ckforce(s: untyped, f: untyped, x: untyped, p: untyped) =
   let t = grt.toGvalue(0.0)
-  let (dsdt, e) = ndiff(s(exp(t*p)*x), t)
+  # S(exp(t*p)*x): wider steps limit cancellation; five levels cancel h^2 through h^8.
+  let (dsdt, e) = ndiff(s(exp(t*p)*x), t, 2.0, ordMax=5)
   let pdotf = eval(redot(p, f(x))).sval
   check(instantiationInfo(), astTostr(s(x) -> f(x)), dsdt, e, pdotf)
 
