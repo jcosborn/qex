@@ -31,6 +31,24 @@ proc collectInputView*(v: Gvalue,
     children.add child)
   result = children
 
+proc reaches*(v, target: Gvalue,
+              mode: InputWalkMode,
+              stop: Gvalue = nil): bool =
+  ## Whether `target` is on `v`'s `mode` dependency surface (`v` counts), cut at `stop`.
+  var seen = initHashSet[NodeKey]()
+  var found = false
+  proc visit(node: Gvalue) =
+    if found or (stop != nil and node.nodeKey == stop.nodeKey):
+      return
+    if node.nodeKey == target.nodeKey:
+      found = true
+      return
+    if not seen.markSeenNode(node):
+      return
+    node.walkInputView(mode, visit)
+  visit(v)
+  found
+
 proc treeRepr*(v: Gvalue, mode: InputWalkMode): string =
   ## Renders the graph through the same input view used by `mode`.
   var shared = newseq[Gvalue]()

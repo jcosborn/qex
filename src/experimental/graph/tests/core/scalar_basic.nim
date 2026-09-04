@@ -777,6 +777,31 @@ suite "scalar basic":
     expect(GraphValueError):
       discard z.grad x
 
+  test "malformed intermediate backward shape fails at its edge":
+    proc copyForward(v: Gvalue) =
+      v.valCopy v.inputs[0]
+
+    proc intBackward(zb: Gvalue, z: Gvalue,
+                     i: int, input: Gvalue): Gvalue =
+      discard zb
+      discard i
+      discard input
+      Gvalue(toGvalue(z.runtime, 1))
+
+    let
+      middle = exp(x)
+      malformed = graphNode(
+        scalarNodeLike(middle),
+        @[Gvalue(middle)],
+        Gfunc(
+          forward: copyForward,
+          backward: intBackward,
+          name: "wrong-shaped backward"),
+        "wrong-shaped backward")
+
+    expect(GraphValueError):
+      discard malformed.grad x
+
   test "gradient planning skips irrelevant raw inputs":
     proc leftForward(v: Gvalue) =
       v.valCopy v.inputs[0]

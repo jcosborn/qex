@@ -80,24 +80,23 @@ proc portalMasksStride*(proto: PortalMask; stride, offx, offy: int): seq[PortalM
       ms{j} := (if active: 1.0 else: 0.0)
   @[ms]
 
-template fillPlaqAngle(pa, t, g: untyped) =
+template fillPlaqAngle(pa, sf, g: untyped) =
   block:
-    let p = (t[0] ^* g[1])*(t[1] ^* g[0]).adj
+    let p = (g[0]*(sf[0] ^* g[1]))*(g[1]*(sf[1] ^* g[0])).adj
     for x in pa:
       let z = p[x][0, 0]
       pa[x][0, 0].re := atan2(z.im, z.re)
 
 proc plaqAngleField*(g: shared.Gauge): auto =
   let
-    t = newTransporters(g, g[0], 1)
+    sf = newShifters(g[0], 1)
     p = g[0].newOneOf
   threads:
-    fillPlaqAngle(p, t, g)
+    fillPlaqAngle(p, sf, g)
   p
 
 proc portalSmearGrad(V, cU: Ggauge; mask: PortalMask; m: CircleMap): Ggauge =
   let
-    t = newTransporters(V.gval, V.gval[0], 1)
     pa = V.gval[0].newOneOf
     D = V.gval[0].newOneOf
     GP = V.gval[0].newOneOf
@@ -115,7 +114,7 @@ proc portalSmearGrad(V, cU: Ggauge; mask: PortalMask; m: CircleMap): Ggauge =
       cU = Ggauge(v.inputs[1])
       cV = Ggauge(v)
     threads:
-      fillPlaqAngle(pa, t, V.gval)
+      fillPlaqAngle(pa, sf, V.gval)
       threadBarrier()
       for x in D:
         let
@@ -199,18 +198,20 @@ proc portalSmearGrad(V, cU: Ggauge; mask: PortalMask; m: CircleMap): Ggauge =
   let f = Gfunc(forward: kf, backward: kb, name: "portalSmearGrad")
   graphNode(V.gaugeNodeLike, @[Gvalue(V), Gvalue(cU)], f, "portalSmearGrad")
 
+proc portalLogDetJ(V: Ggauge; mask: PortalMask; m: CircleMap): Gscalar
+
 proc portalSmear*(V: Ggauge; mask: PortalMask; m: CircleMap): Ggauge =
   let
-    t = newTransporters(V.gval, V.gval[0], 1)
     pa = V.gval[0].newOneOf
     D = V.gval[0].newOneOf
+    sf = newShifters(V.gval[0], 1)
     sb = newShifters(V.gval[0], -1)
   proc forward(v: Gvalue) =
     let
       V = Ggauge(v.inputs[0])
       U = Ggauge(v)
     threads:
-      fillPlaqAngle(pa, t, V.gval)
+      fillPlaqAngle(pa, sf, V.gval)
       threadBarrier()
       for x in D:
         D[x][0, 0].re := mask[x][0, 0].re*mapDelta(m, pa[x][0, 0].re)
@@ -238,12 +239,14 @@ proc portalSmear*(V: Ggauge; mask: PortalMask; m: CircleMap): Ggauge =
   proc backward(zb, z: Gvalue; i: int; input: Gvalue): Gvalue =
     let cU = requireUpstream(zb, "portalSmear backward", Ggauge)
     Gvalue(portalSmearGrad(Ggauge(z.inputs[0]), cU, mask, m))
-  let f = Gfunc(forward: forward, backward: backward, name: "portalSmear")
+  proc ldj(z: Gvalue): tuple[ld, via: Gvalue] =
+    (Gvalue(portalLogDetJ(Ggauge(z.inputs[0]), mask, m)), z.inputs[0])
+  let f = Gfunc(forward: forward, backward: backward, logdet: ldj, name: "portalSmear")
   graphNode(V.gaugeNodeLike, @[Gvalue(V)], f, "portalSmear")
 
-proc portalLogDetJ*(V: Ggauge; mask: PortalMask; m: CircleMap): Gscalar =
+proc portalLogDetJ(V: Ggauge; mask: PortalMask; m: CircleMap): Gscalar =
   let
-    tf = newTransporters(V.gval, V.gval[0], 1)
+    sf = newShifters(V.gval[0], 1)
     pf = V.gval[0].newOneOf
   proc forward(v: Gvalue) =
     let
@@ -251,7 +254,7 @@ proc portalLogDetJ*(V: Ggauge; mask: PortalMask; m: CircleMap): Gscalar =
       z = Gscalar(v)
     var res = 0.0
     threads:
-      fillPlaqAngle(pf, tf, V.gval)
+      fillPlaqAngle(pf, sf, V.gval)
       threadBarrier()
       var s = 0.0
       for x in pf:
@@ -261,16 +264,16 @@ proc portalLogDetJ*(V: Ggauge; mask: PortalMask; m: CircleMap): Gscalar =
     z.sval = res
   proc gradKernel(V: Ggauge): Ggauge =
     let
-      t = newTransporters(V.gval, V.gval[0], 1)
       pa = V.gval[0].newOneOf
       D = V.gval[0].newOneOf
+      sf = newShifters(V.gval[0], 1)
       sb = newShifters(V.gval[0], -1)
     proc kf(v: Gvalue) =
       let
         V = Ggauge(v.inputs[0])
         cV = Ggauge(v)
       threads:
-        fillPlaqAngle(pa, t, V.gval)
+        fillPlaqAngle(pa, sf, V.gval)
         threadBarrier()
         for x in D:
           D[x][0, 0].re := mask[x][0, 0].re*mapDlogj(m, pa[x][0, 0].re)
@@ -300,16 +303,12 @@ proc portalLogDetJ*(V: Ggauge; mask: PortalMask; m: CircleMap): Gscalar =
   let f = Gfunc(forward: forward, backward: backward, name: "portalLogDetJ")
   graphNode(scalarNodeLike(V), @[Gvalue(V)], f, "portalLogDetJ")
 
-proc smearFlow*(grt: GraphRuntime; V: Ggauge; m: CircleMap; masks: seq[PortalMask]; sweeps: int): tuple[u: Ggauge, lndet: Gscalar] =
+proc smearFlow*(V: Ggauge; m: CircleMap; masks: seq[PortalMask]; sweeps: int): Ggauge =
   doAssert sweeps >= 0, "portal sweep count must be nonnegative"
-  var
-    U = V
-    ld = scalar.toGvalue(grt, 0.0)
+  result = V
   for _ in 0..<sweeps:
     for mask in masks:
-      ld = ld+portalLogDetJ(U, mask, m)
-      U = portalSmear(U, mask, m)
-  (U, ld)
+      result = portalSmear(result, mask, m)
 
 proc portalSmearHost*(V: shared.Gauge; mask: PortalMask; m: CircleMap): tuple[u: shared.Gauge, lndet: float] =
   let
@@ -411,12 +410,7 @@ proc invertPortalFlow*(U: auto; m: CircleMap; masks: seq[PortalMask]; sweeps: in
     for j in countdown(masks.len-1, 0):
       invertPortalSmear(U, masks[j], m, tol, maxIter)
 
-proc onePlaqAction*(grt: GraphRuntime; gc: Gactcoeff; m: CircleMap; masks: seq[PortalMask]; sweeps: int): proc(V: Ggauge): Gscalar =
-  result = proc(V: Ggauge): Gscalar =
-    let f = smearFlow(grt, V, m, masks, sweeps)
-    gaugeAction(gc, f.u)-f.lndet
-
-# Local action correction shared by link2 and block5 layers.
+# Local action correction for the block5 coupling layer.
 proc blockNeighborAngles(pa: DLatticeColorMatrixV): array[4, DLatticeColorMatrixV] =
   let
     n0 = pa.newOneOf
@@ -565,7 +559,7 @@ proc pairAngles(pa: DLatticeColorMatrixV; dir: int): tuple[plus, minus: DLattice
         pm[x][0, 0].re := pa[x][0, 0].re
   (pp, pm)
 
-proc pairCorrection*(V: Ggauge; mask: PortalMask; p: PairMap; beta: float; dir: int): Gscalar =
+proc pairLogDetJ(V: Ggauge; mask: PortalMask; p: PairMap; dir: int): Gscalar =
   proc forward(v: Gvalue) =
     let
       V = Ggauge(v.inputs[0])
@@ -581,8 +575,7 @@ proc pairCorrection*(V: Ggauge; mask: PortalMask; p: PairMap; beta: float; dir: 
             let
               pp = ps.plus[x][0, 0].re[k]
               pm = ps.minus[x][0, 0].re[k]
-              e = evalPair(p, pp, pm)
-            s += e.action+beta*(cos(pp)+cos(pm))
+            s += evalPair(p, pp, pm).logdet
       s.threadRankSum
       threadSingle: acc = s
     z.sval = acc
@@ -607,8 +600,8 @@ proc pairCorrection*(V: Ggauge; mask: PortalMask; p: PairMap; beta: float; dir: 
                 pp = ps.plus[x][0, 0].re[k]
                 pm = ps.minus[x][0, 0].re[k]
                 e = evalPair(p, pp, pm)
-              vp[k] = e.forcePlus-beta*sin(pp)
-              vm[k] = e.forceMinus-beta*sin(pm)
+              vp[k] = e.logdetPlus
+              vm[k] = e.logdetMinus
             else:
               vp[k] = 0.0
               vm[k] = 0.0
@@ -644,13 +637,13 @@ proc pairCorrection*(V: Ggauge; mask: PortalMask; p: PairMap; beta: float; dir: 
           cV.gval[1][x][0, 0].re := -a1*v1i
           cV.gval[1][x][0, 0].im := a1*v1r
     proc kb(zb, z: Gvalue; i: int; input: Gvalue): Gvalue =
-      raiseUnsupportedPath("pairCorrection gradient backward", "pair correction gradient is not differentiated")
-    let f = Gfunc(forward: kf, backward: kb, name: "pairCorrectionGrad")
-    graphNode(V.gaugeNodeLike, @[Gvalue(V)], f, "pairCorrectionGrad")
+      raiseUnsupportedPath("pairLogDetJ gradient backward", "pair log-Jacobian gradient is not differentiated")
+    let f = Gfunc(forward: kf, backward: kb, name: "pairLogDetJgrad")
+    graphNode(V.gaugeNodeLike, @[Gvalue(V)], f, "pairLogDetJgrad")
   proc backward(zb, z: Gvalue; i: int; input: Gvalue): Gvalue =
     scaledUpstreamOr(zb, Gscalar, gradKernel(Ggauge(z.inputs[0])))
-  let f = Gfunc(forward: forward, backward: backward, name: "pairCorrection")
-  graphNode(scalarNodeLike(V), @[Gvalue(V)], f, "pairCorrection")
+  let f = Gfunc(forward: forward, backward: backward, name: "pairLogDetJ")
+  graphNode(scalarNodeLike(V), @[Gvalue(V)], f, "pairLogDetJ")
 
 proc pairSmearGrad(V, cU: Ggauge; mask: PortalMask; p: PairMap; dir: int): Ggauge =
   proc kf(v: Gvalue) =
@@ -812,7 +805,9 @@ proc pairSmear*(V: Ggauge; mask: PortalMask; p: PairMap; dir: int): Ggauge =
   proc backward(zb, z: Gvalue; i: int; input: Gvalue): Gvalue =
     let cU = requireUpstream(zb, "pairSmear backward", Ggauge)
     Gvalue(pairSmearGrad(Ggauge(z.inputs[0]), cU, mask, p, dir))
-  let f = Gfunc(forward: forward, backward: backward, name: "pairSmear")
+  proc ldj(z: Gvalue): tuple[ld, via: Gvalue] =
+    (Gvalue(pairLogDetJ(Ggauge(z.inputs[0]), mask, p, dir)), z.inputs[0])
+  let f = Gfunc(forward: forward, backward: backward, logdet: ldj, name: "pairSmear")
   graphNode(V.gaugeNodeLike, @[Gvalue(V)], f, "pairSmear")
 
 proc pairSmearHost*(V: shared.Gauge; mask: PortalMask; p: PairMap; dir: int): tuple[u: shared.Gauge, lndet: float] =
@@ -915,17 +910,12 @@ proc invertPairFlow*(U: auto; p: PairMap; layers: seq[PairLayer]; rounds: int) =
     for j in countdown(layers.len-1, 0):
       invertPairSmear(U, layers[j].mask, p, layers[j].dir)
 
-proc pairAction*(gc: Gactcoeff; p: PairMap; layers: seq[PairLayer]; rounds: int): proc(V: Ggauge): Gscalar =
+proc pairFlow*(V: Ggauge; p: PairMap; layers: seq[PairLayer]; rounds: int): Ggauge =
   if rounds < 1: mapFail("pair-flow rounds must be positive")
-  result = proc(V: Ggauge): Gscalar =
-    var
-      W = V
-      s = gaugeAction(gc, V)
-    for _ in 0..<rounds:
-      for layer in layers:
-        s = s+pairCorrection(W, layer.mask, p, p.beta, layer.dir)
-        W = pairSmear(W, layer.mask, p, layer.dir)
-    s
+  result = V
+  for _ in 0..<rounds:
+    for layer in layers:
+      result = pairSmear(result, layer.mask, p, layer.dir)
 
 # Block5 coupling: four coordinates at fixed five-plaquette flux.
 type

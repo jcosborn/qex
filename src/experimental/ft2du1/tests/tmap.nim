@@ -8,6 +8,7 @@ import gauge/gaugefix
 import ../../graph/[core, scalar, gauge]
 import ../../graph/hmcgauge/ftstout
 import ../[flow, scan]
+from ../../graph/functional import lambda, apply
 
 proc baseParams(geometry, construction, basis: string): MapParams =
   MapParams(geometry: geometry, construction: construction, basis: basis,
@@ -78,7 +79,7 @@ proc scalarTests() =
       " dddy=", dddyErr, " inv=", invErr, " seam=", seamErr
 
 proc pairTests() =
-  type D6 = VectorArray[6, float]
+  type D5 = VectorArray[5, float]
   for name in ["identity", "sine", "sqfourier", "bspline",
                "tensor-bspline", "fejer", "stout"]:
     let basis = if name == "tensor-bspline": "bspline" else: name
@@ -90,23 +91,22 @@ proc pairTests() =
     let
       spec = buildMapSpec(p, 3.5)
       m = spec.pair
-    var jacErr, detErr, logjErr, forceErr, invErr, seamErr, mixedErr = 0.0
+    var jacErr, detErr, logjErr, invErr, seamErr, mixedErr = 0.0
     for (pp0, pm0) in [(0.77, -0.29), (0.82, -0.46),
                        (0.20, 0.10), (2.7, -2.1)]:
       var
         pp = pp0
         pm = pm0
-      proc vals(xp, xm: float): D6 =
+      proc vals(xp, xm: float): D5 =
         let e = evalPair(m, xp, xm)
         result[0] = e.physicalPlus
         result[1] = e.physicalMinus
         result[2] = e.delta
         result[3] = e.det
         result[4] = e.logdet
-        result[5] = e.action
-      proc fx(x: float): D6 = vals(x, pm)
-      proc fm0(x: float): D6 = vals(pp, x)
-      var dx, dy, ex, ey: D6
+      proc fx(x: float): D5 = vals(x, pm)
+      proc fm0(x: float): D5 = vals(pp, x)
+      var dx, dy, ex, ey: D5
       ndiff(dx, ex, fx, pp, 1e-3, ordMax = 5)
       ndiff(dy, ey, fm0, pm, 1e-3, ordMax = 5)
       let
@@ -122,8 +122,6 @@ proc pairTests() =
       detErr = max(detErr, abs(dy[3]-e.detMinus))
       logjErr = max(logjErr, abs(dx[4]-e.logdetPlus))
       logjErr = max(logjErr, abs(dy[4]-e.logdetMinus))
-      forceErr = max(forceErr, abs(dx[5]-e.forcePlus))
-      forceErr = max(forceErr, abs(dy[5]-e.forceMinus))
       invErr = max(invErr, abs(back[0]-pp))
       invErr = max(invErr, abs(back[1]-pm))
       doAssert det > 0.0 and abs(det-e.det) < 2e-13
@@ -158,12 +156,11 @@ proc pairTests() =
     doAssert jacErr < 2e-8
     doAssert detErr < 3e-8
     doAssert logjErr < 3e-8
-    doAssert forceErr < 5e-8
     doAssert invErr < 3e-11
     doAssert seamErr < 3e-10
     doAssert mixedErr < 3e-7
     echo "pair[", name, "]: jac=", jacErr, " det=", detErr, " logj=", logjErr,
-      " force=", forceErr, " inv=", invErr, " seam=", seamErr
+      " inv=", invErr, " seam=", seamErr
 
   let
     c = 0.4
@@ -237,7 +234,7 @@ proc stagedParameterTests() =
                   0.0, -0.031, -0.009, 0.0]
   let
     m = buildMapSpec(p, 3.0).pair
-    want = PairMap(beta: 3.0, invTol: p.mapInvTol, invIter: p.mapInvIter,
+    want = PairMap(invTol: p.mapInvTol, invIter: p.mapInvIter,
       stages: @[
         sineContextMap(1, 2, 1, p.mapCoeffs[0..3], 1.0, p.mapFloor,
           twisted = true),
@@ -251,8 +248,6 @@ proc stagedParameterTests() =
     doAssert abs(a.physicalPlus-b.physicalPlus) < 2e-14
     doAssert abs(a.physicalMinus-b.physicalMinus) < 2e-14
     doAssert abs(a.logdet-b.logdet) < 2e-14
-    doAssert abs(a.forcePlus-b.forcePlus) < 2e-13
-    doAssert abs(a.forceMinus-b.forceMinus) < 2e-13
 
   var q = baseParams("plaq4", "scalar", "sine")
   q.mapDepth = 2
@@ -494,7 +489,7 @@ proc hessianStepTests() =
 proc scanOutputTests() =
   let
     spec = buildMapSpec(baseParams("link2", "scalar", "identity"), 3.0)
-    path = "/tmp/qex_ft2du1_scan_" & $myRank & ".dat"
+    path = getTempDir() / "qex_ft2du1_scan_" & $myRank & ".dat"
   if fileExists(path): removeFile(path)
   let s = mapScan(spec, 8, path)
   let lines = readFile(path).splitLines
@@ -518,7 +513,7 @@ proc scanOutputTests() =
 
   let
     stoutSpec = buildMapSpec(baseParams("link2", "scalar", "stout"), 3.0)
-    stoutPath = "/tmp/qex_ft2du1_stout_scan_" & $myRank & ".dat"
+    stoutPath = getTempDir() / "qex_ft2du1_stout_scan_" & $myRank & ".dat"
   if fileExists(stoutPath): removeFile(stoutPath)
   let stoutScan = mapScan(stoutSpec, 8, stoutPath)
   let stoutHeader = readFile(stoutPath)
@@ -539,7 +534,7 @@ proc functionOutputTests() =
   for (geometry, construction, basis, contexts, sets) in cases:
     let
       spec = buildMapSpec(baseParams(geometry, construction, basis), 3.0)
-      path = "/tmp/qex_ft2du1_function_" & geometry & "_" & $myRank & ".dat"
+      path = getTempDir() / "qex_ft2du1_function_" & geometry & "_" & $myRank & ".dat"
     if fileExists(path): removeFile(path)
     dumpMapFunction(spec, n, contexts, path)
     var rows, datasets = 0
@@ -690,6 +685,42 @@ proc runPureMapTests*() =
   functionOutputTests()
   validationTests()
 
+const latticeCases = [
+  ("plaq4", "scalar", "identity"),
+  ("plaq4", "scalar", "sine"),
+  ("plaq4", "scalar", "sqfourier"),
+  ("plaq4", "scalar", "cspline"),
+  ("plaq4", "scalar", "bspline"),
+  ("plaq4", "scalar", "fejer"),
+  ("link2", "scalar", "sine"),
+  ("link2", "scalar", "sqfourier"),
+  ("link2", "scalar", "bspline"),
+  ("link2", "scalar", "tensor-bspline"),
+  ("link2", "scalar", "fejer"),
+  ("link2", "scalar", "stout"),
+  ("block5", "chain", "sqfourier"),
+  ("block5", "chain", "bspline"),
+  ("block5", "chain", "tensor-bspline"),
+  ("block5", "coupling", "sine"),
+  ("block5", "coupling", "sqfourier"),
+  ("block5", "coupling", "bspline"),
+  ("block5", "coupling", "tensor-bspline")]
+
+proc caseParams(geometry, construction, profile: string): MapParams =
+  ## Parameters for one latticeCases entry; "tensor-bspline" is the bspline
+  ## basis with a bspline context.
+  let basis = if profile == "tensor-bspline": "bspline" else: profile
+  result = baseParams(geometry, construction, basis)
+  if profile == "tensor-bspline": result.ctxBasis = "bspline"
+  if geometry == "block5" and construction == "chain" and basis == "sqfourier":
+    result.mapDepth = 2
+    result.mapStrengths = @[0.20, 0.30]
+    result.flowDepth = 2
+  if basis == "stout":
+    result.mapStride = 4
+    result.mapOffsets = @[1, 2]
+    result.mapDirs = @[0, 1]
+
 proc maxLinkDiff2(a, b: seq): float =
   var m = 0.0
   threads:
@@ -836,43 +867,12 @@ proc latticeTests() =
       " rel=", rel
     doAssert rel < tol
 
-  let cases = [
-    ("plaq4", "scalar", "identity"),
-    ("plaq4", "scalar", "sine"),
-    ("plaq4", "scalar", "sqfourier"),
-    ("plaq4", "scalar", "cspline"),
-    ("plaq4", "scalar", "bspline"),
-    ("plaq4", "scalar", "fejer"),
-    ("link2", "scalar", "sine"),
-    ("link2", "scalar", "sqfourier"),
-    ("link2", "scalar", "bspline"),
-    ("link2", "scalar", "tensor-bspline"),
-    ("link2", "scalar", "fejer"),
-    ("link2", "scalar", "stout"),
-    ("block5", "chain", "sqfourier"),
-    ("block5", "chain", "bspline"),
-    ("block5", "chain", "tensor-bspline"),
-    ("block5", "coupling", "sine"),
-    ("block5", "coupling", "sqfourier"),
-    ("block5", "coupling", "bspline"),
-    ("block5", "coupling", "tensor-bspline")]
-
-  for (geometry, construction, profile) in cases:
-    let basis = if profile == "tensor-bspline": "bspline" else: profile
-    var p = baseParams(geometry, construction, basis)
-    if profile == "tensor-bspline": p.ctxBasis = "bspline"
-    if geometry == "block5" and construction == "chain" and basis == "sqfourier":
-      p.mapDepth = 2
-      p.mapStrengths = @[0.20, 0.30]
-      p.flowDepth = 2
-    if basis == "stout":
-      p.mapStride = 4
-      p.mapOffsets = @[1, 2]
-      p.mapDirs = @[0, 1]
+  for (geometry, construction, profile) in latticeCases:
+    let p = caseParams(geometry, construction, profile)
     let
       spec = buildMapSpec(p, beta)
       layout = buildMapLayout(v0[0], p, spec)
-      action = mapAction(grt, gc, spec, layout)
+      action = mapAction(gc, spec, layout)
       hs = mapHost(v0, spec, layout)
       ghs = mapHost(vgt, spec, layout)
       vg = gauge.toGvalue(grt, v0)
@@ -888,6 +888,11 @@ proc latticeTests() =
     let actionErr = abs(seff-literal)/(1.0+abs(literal))
     echo "literal[", name, "]: err=", actionErr, " logdet=", hs.lndet
     doAssert actionErr < 2e-10
+
+    if spec.hasGraphFlow:
+      # The engine-composed log-Jacobian must match the host-side flow.
+      let autoLd = logDetJ(mapFlow(vg, spec, layout), vg).eval.sval
+      doAssert abs(autoLd-hs.lndet) < 2e-10*(1.0+abs(hs.lndet))
 
     var transformed = lo.newgauge
     transformed.gaugeTransform(hs.u, gt)
@@ -923,14 +928,14 @@ proc latticeTests() =
       spec = buildMapSpec(dense, beta)
       layout = buildMapLayout(v0[0], dense, spec)
       pair = mapHost(v0, spec, layout)
-      qex = smearedField(gauge.toGvalue(grt, v0), spec.mapRho,
-        spec.flowDepth)
-    discard qex.smeared.eval
+      vq = gauge.toGvalue(grt, v0)
+      qex = smearedField(vq, spec.mapRho, spec.flowDepth)
+    discard qex.eval
     let
-      qexGauge = qex.smeared.gaugeSnapshot
-      qexLogj = qex.lndet.eval.sval
+      qexGauge = qex.gaugeSnapshot
+      qexLogj = logDetJ(qex, vq).eval.sval
       vg = gauge.toGvalue(grt, v0)
-      pairSeff = mapAction(grt, gc, spec, layout)(vg)
+      pairSeff = mapAction(gc, spec, layout)(vg)
       qexSeff = stoutAction(gc, spec.mapRho, spec.flowDepth).action(vg)
       pairForce = contractProjTAH(grad(pairSeff, vg), vg)
       qexForce = contractProjTAH(grad(qexSeff, vg), vg)
@@ -951,15 +956,60 @@ proc latticeTests() =
       spec = buildMapSpec(p, beta)
       layout = buildMapLayout(v0[0], p, spec)
       vg = gauge.toGvalue(grt, v0)
-      sf = contractProjTAH(grad(mapAction(grt, gc, spec, layout)(vg), vg), vg)
+      sf = contractProjTAH(grad(mapAction(gc, spec, layout)(vg), vg), vg)
       wf = gaugeForce(gc, vg)
     doAssert (sf-wf).norm2.eval.sval < 1e-20*(1.0+wf.norm2.eval.sval)
 
   globalJacobianTests()
   echo "ft2du1 analytic maps OK"
 
+proc functionalCloneTests() =
+  const beta = 3.0
+  let
+    lo = @[8, 8].newLayout
+    grt = initGraphRuntime()
+    gc = actWilson(scalar.toGvalue(grt, beta))
+  var
+    rng = lo.newRNGField(MRG32k3a, 975318642'u)
+    v = lo.newgauge
+    other = lo.newgauge
+  v.warm(0.22, rng)
+  other.warm(0.61, rng)
+  doAssert maxLinkDiff2(v, other) > 1e-6
+
+  for (geometry, construction, profile) in latticeCases:
+    let mp = caseParams(geometry, construction, profile)
+    let
+      spec = buildMapSpec(mp, beta)
+      name = geometry & "/" & construction & "/" & profile
+    if not spec.hasGraphFlow:
+      continue
+    let
+      layout = buildMapLayout(v[0], mp, spec)
+      action = mapAction(gc, spec, layout)
+      vg = gauge.toGvalue(grt, v)
+      p = Ggauge(vg.newOneOf)
+      body = action(p)
+      fn = lambda(p, body)
+      cloned = Gscalar(apply(fn, vg))
+      direct = action(vg)
+      clonedGrad = grad(cloned, vg)
+      directGrad = grad(direct, vg)
+    p.update(other)
+    let
+      clonedValue = cloned.eval.sval
+      directValue = direct.eval.sval
+      valueRel = abs(clonedValue-directValue)/(1.0+abs(directValue))
+      gradDiff2 = (clonedGrad-directGrad).norm2.eval.sval
+      gradRef2 = directGrad.norm2.eval.sval
+      gradRel = sqrt(gradDiff2/(1.0+gradRef2))
+    echo "clone[", name, "]: valueRel=", valueRel, " gradRel=", gradRel
+    doAssert valueRel < 1e-12
+    doAssert gradRel < 1e-12
+
 when isMainModule:
   qexInit()
   runPureMapTests()
   latticeTests()
+  functionalCloneTests()
   qexFinalize()

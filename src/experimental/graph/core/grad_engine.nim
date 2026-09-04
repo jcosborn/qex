@@ -88,23 +88,15 @@ proc buildInputContribution(graphFunc: Gfunc,
                             inputIndex: int,
                             input: Gvalue): Gvalue =
   # A conditional upstream is split so each branch gets its own guarded backward
-  # graph. Static-zero branches are skipped here, so an inactive branch never
-  # builds a backward graph. `buildInputContribution` itself never returns nil,
-  # so a nil branch result can only mean the static-zero short-circuit.
+  # graph; static-zero branches contribute nil, so an inactive branch never
+  # builds a backward graph.
   if upstream != nil and upstream.isCondNode:
-    let parts = upstream.condParts
     proc branchContribution(branch: Gvalue): Gvalue =
       if branch.isStaticZeroLeaf:
         return nil
       buildInputContribution(graphFunc, branch, node, inputIndex, input)
-    let whenTrue = branchContribution(parts.whenTrue)
-    let whenFalse = branchContribution(parts.whenFalse)
-    if whenTrue == nil and whenFalse == nil:
-      return input.zeroLike
-    return newCondNode(
-      parts.selector,
-      if whenTrue == nil: input.zeroLike else: whenTrue,
-      if whenFalse == nil: input.zeroLike else: whenFalse)
+    let split = distributeCond(upstream, branchContribution)
+    return (if split == nil: input.zeroLike else: split)
 
   let backward = graphFunc.backward
   if backward == nil:
@@ -116,6 +108,9 @@ proc buildInputContribution(graphFunc: Gfunc,
     raiseValueError(
       graphFunc.name & " backward returned nil for input " & $inputIndex &
       ":\n" & node.nodeRepr)
+  # distributeCond fills a nil branch with the sibling branch's zeroLike, not
+  # the input's, so a mis-shaped backward result must fail here, at its own edge.
+  requireGradResultShape(graphFunc.name & " backward", input, result)
 
 proc executeGradPlan(ctx: GradBuildContext): Gvalue =
   for j in countdown(ctx.plan.order.high, 0):

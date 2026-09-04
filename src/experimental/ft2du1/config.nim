@@ -7,7 +7,6 @@ import std/strutils
 import flow
 export flow
 
-import ../graph/core
 import ../graph/scalar
 import ../graph/gauge
 import ../graph/gauge/shared
@@ -370,7 +369,7 @@ proc buildPair(p: MapParams; beta: float): PairMap =
       mapFail("stout requires abs(mapRho) < 1/2 for a positive link Jacobian")
     if 1.0-2.0*abs(p.mapRho) < p.mapFloor:
       mapFail("stout link Jacobian is below mapFloor")
-    result = PairMap(beta: beta, invTol: p.mapInvTol, invIter: p.mapInvIter)
+    result = PairMap(invTol: p.mapInvTol, invIter: p.mapInvIter)
     # QEX: g(u;m)=u-2 rho cos(m) sin(u), J=1-rho(cos p+ + cos p-).
     result.stages.add sineContextMap(1, 1, 1, [0.0, -2.0*p.mapRho],
       1.0, p.mapFloor, twisted = true)
@@ -399,7 +398,7 @@ proc buildPair(p: MapParams; beta: float): PairMap =
       mapFail("mapOrder must be at least two for the default Fejer kernel")
   of mbIdentity, mbCSpline: discard
   of mbStout: discard
-  result = PairMap(beta: beta, invTol: p.mapInvTol, invIter: p.mapInvIter)
+  result = PairMap(invTol: p.mapInvTol, invIter: p.mapInvIter)
   for stage, strength in ss:
     case basis
     of mbIdentity:
@@ -654,18 +653,32 @@ proc buildMapLayout*(proto: PortalMask; p: MapParams; spec: MapSpec): MapLayout 
       result.blockMask = portalMasksStride(proto, stride, off.x, off.y)[0]
     of mcScalar: discard
 
-proc mapAction*(grt: GraphRuntime; gc: Gactcoeff; spec: MapSpec;
-                layout: MapLayout): proc(V: Ggauge): Gscalar =
+proc hasGraphFlow*(spec: MapSpec): bool =
+  ## block5 coupling stays a fused local correction with no graph-level flow.
+  not (spec.geometry == mgBlock5 and spec.construction == mcCoupling)
+
+proc mapFlow*(V: Ggauge; spec: MapSpec; layout: MapLayout): Ggauge =
+  ## Graph-level U = f(V); ln det f'(V) is logDetJ(result, V).
   case spec.geometry
   of mgPlaq4:
-    onePlaqAction(grt, gc, spec.circle, layout.circleMasks, spec.flowDepth)
+    smearFlow(V, spec.circle, layout.circleMasks, spec.flowDepth)
   of mgLink2:
-    pairAction(gc, spec.pair, layout.pairLayers, spec.flowDepth)
+    pairFlow(V, spec.pair, layout.pairLayers, spec.flowDepth)
   of mgBlock5:
     case spec.construction
-    of mcChain: pairAction(gc, spec.pair, layout.pairLayers, spec.flowDepth)
-    of mcCoupling: blockAction(gc, layout.blockMask, spec.blockMap)
-    of mcScalar: mapFail("invalid block5 scalar construction")
+    of mcChain: pairFlow(V, spec.pair, layout.pairLayers, spec.flowDepth)
+    else: mapFail("no graph-level flow for block5 " &
+      constructionName(spec.construction))
+
+proc mapAction*(gc: Gactcoeff; spec: MapSpec;
+                layout: MapLayout): proc(V: Ggauge): Gscalar =
+  ## S_eff(V) = S(f(V)) - ln det f'(V); block5 coupling keeps its fused
+  ## local-correction form.
+  if not spec.hasGraphFlow:
+    return blockAction(gc, layout.blockMask, spec.blockMap)
+  result = proc(V: Ggauge): Gscalar =
+    let u = mapFlow(V, spec, layout)
+    gaugeAction(gc, u)-logDetJ(u, V)
 
 proc mapHost*(V: shared.Gauge; spec: MapSpec; layout: MapLayout): tuple[u: shared.Gauge, lndet: float] =
   case spec.geometry

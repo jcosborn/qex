@@ -13,3 +13,4 @@ include core/scalar_basic
 include core/scalar_d2
 include core/cond
 include core/multi
+include core/logdet
