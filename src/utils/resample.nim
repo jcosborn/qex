@@ -109,27 +109,20 @@ proc intAutocorr*(xs: Ensemble[seq[float]], mean: float): float =
 proc intAutocorrPositive*(xs: Ensemble[seq[float]]): float =
   intAc(xs, false)
 
-proc jackknife*[D,V,A](ensemble:D, blocksize:int, estimator:proc(x:Ensemble[D], arg:A):V, arg:A): auto =
-  ## Perform grouped jackknife with blocksize
-  ## The expectation value: estimator(ensemble, arg)
-  let
-    m = estimator(wrapEnsemble(addr ensemble), arg)
-    n = ensemble.len
-    g = (n+blocksize-1) div blocksize
-  var jk = newseq[V](g)
-  # Pseudovalues and h_i=n/k_i for unequal delete sizes k_i.
+proc jackknife*[V](mean: V, reps: seq[V], n, blocksize: int): JackknifeStat[V] =
+  ## Reduce saved delete-block estimates; reps[i] omits group i from n samples.
+  if blocksize <= 0 or n < 0:
+    raise newException(ValueError, "jackknife: require positive blocksize and nonnegative sample count")
+  let g = reps.len
+  if g != (n + blocksize - 1) div blocksize:
+    raise newException(ValueError, "jackknife: replica count does not match the groups")
   var
     zeta = newSeq[V](g)
     hs = newSeq[float](g)
   for i in 0..<g:
-    let j = jackknifeSample(addr ensemble, blocksize, i)
-    let e = estimator(j, arg)
-    jk[i] = e
-    let skiplow = i*blocksize
-    let ki = if skiplow + blocksize > n: n - skiplow else: blocksize
-    let kif = float(ki)
-    hs[i] = float(n)/kif
-    zeta[i] = hs[i]*m - (hs[i]-1.0)*e
+    let ki = min(blocksize, n - i*blocksize)
+    hs[i] = float(n)/float(ki)
+    zeta[i] = hs[i]*mean - (hs[i]-1.0)*reps[i]
   var jackmean = V(0)
   for i in 0..<g:
     jackmean += zeta[i]/hs[i]
@@ -139,10 +132,22 @@ proc jackknife*[D,V,A](ensemble:D, blocksize:int, estimator:proc(x:Ensemble[D], 
       let dz = zeta[i] - jackmean
       variance += dz*dz/(hs[i]-1.0)
     variance /= float(g)
-  JackknifeStat[V](mean:m, jksamples:jk,
-    bias:m - jackmean,
+  JackknifeStat[V](mean:mean, jksamples:reps,
+    bias:mean - jackmean,
     stdev:if g > 1: sqrt(variance) else: V(0),
     hasStdev:g > 1)
+
+proc jackknife*[D,V,A](ensemble:D, blocksize:int, estimator:proc(x:Ensemble[D], arg:A):V, arg:A): auto =
+  ## Perform grouped jackknife with blocksize
+  ## The expectation value: estimator(ensemble, arg)
+  let
+    m = estimator(wrapEnsemble(addr ensemble), arg)
+    n = ensemble.len
+    g = (n+blocksize-1) div blocksize
+  var jk = newseq[V](g)
+  for i in 0..<g:
+    jk[i] = estimator(jackknifeSample(addr ensemble, blocksize, i), arg)
+  jackknife(m, jk, n, blocksize)
 
 proc jackknife*[D,V](ensemble:D, blocksize:int, estimator:proc(x:Ensemble[D]):V): auto =
   ## Perform grouped jackknife with blocksize
@@ -152,32 +157,9 @@ proc jackknife*[D,V](ensemble:D, blocksize:int, estimator:proc(x:Ensemble[D]):V)
     n = ensemble.len
     g = (n+blocksize-1) div blocksize
   var jk = newseq[V](g)
-  # Pseudovalues and h_i=n/k_i for unequal delete sizes k_i.
-  var
-    zeta = newSeq[V](g)
-    hs = newSeq[float](g)
   for i in 0..<g:
-    let j = jackknifeSample(addr ensemble, blocksize, i)
-    let e = estimator(j)
-    jk[i] = e
-    let skiplow = i*blocksize
-    let ki = if skiplow + blocksize > n: n - skiplow else: blocksize
-    let kif = float(ki)
-    hs[i] = float(n)/kif
-    zeta[i] = hs[i]*m - (hs[i]-1.0)*e
-  var jackmean = V(0)
-  for i in 0..<g:
-    jackmean += zeta[i]/hs[i]
-  var variance = V(0)
-  if g > 1:
-    for i in 0..<g:
-      let dz = zeta[i] - jackmean
-      variance += dz*dz/(hs[i]-1.0)
-    variance /= float(g)
-  JackknifeStat[V](mean:m, jksamples:jk,
-    bias:m - jackmean,
-    stdev:if g > 1: sqrt(variance) else: V(0),
-    hasStdev:g > 1)
+    jk[i] = estimator(jackknifeSample(addr ensemble, blocksize, i))
+  jackknife(m, jk, n, blocksize)
 
 type WeightedValue = tuple[x, w: float]
 

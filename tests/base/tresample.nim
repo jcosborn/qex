@@ -67,6 +67,30 @@ block:
   test.assertAlmostEqual(0.0, withArg.bias, absTol=1e-14)
 
 block:
+  let test = mytest.newTest("saved nonlinear replicas")
+  # Squared mean of [1,2,3], deleting [1,2] and then [3].
+  let st = jackknife(4.0, @[9.0, 2.25], 3, 2)
+  test.assertAlmostEqual(4.0, st.mean)
+  test.assertAlmostEqual(0.5, st.bias)
+  test.assertAlmostEqual(sqrt(8.0), st.stdev)
+  test.assertAlmostEqual(1.0, float(ord(st.hasStdev)))
+  test.assertAlmostEqual(9.0, st.jksamples[0])
+  test.assertAlmostEqual(2.25, st.jksamples[1])
+
+block:
+  let test = mytest.newTest("saved replicas validate group structure")
+  for (n, bs, g) in [(5, 2, 2), (5, 2, 4), (5, 0, 0), (5, -1, 0), (-1, 2, 0)]:
+    var caught = false
+    try:
+      discard jackknife(1.0, newSeq[float](g), n, bs)
+    except ValueError:
+      caught = true
+    test.assertAlmostEqual(1.0, float(ord(caught)))
+  for st in [jackknife(0.0, newSeq[float](0), 0, 2), jackknife(4.0, @[0.0], 3, 3)]:
+    test.assertAlmostEqual(0.0, st.stdev)
+    test.assertAlmostEqual(0.0, float(ord(st.hasStdev)))
+
+block:
   let test = mytest.newTest("autocorrelation windows")
   let
     constant = @[2.0, 2.0, 2.0, 2.0]
