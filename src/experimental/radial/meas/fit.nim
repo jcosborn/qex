@@ -15,6 +15,9 @@ import std/math
 import utils/resample
 
 type
+  FitStatus* = enum
+    fitLimit, fitOk, fitShort, fitSingular, fitStalled
+
   PlateauFit* = object
     d0*, c*, dp*: float               ## Delta_0, c, Delta' of (V.6)
     ed0*, ec*, edp*: float            ## 1 sigma parameter errors
@@ -22,7 +25,7 @@ type
     chi2*: float
     dof*: int                         ## npoint - 3
     iters*: int
-    converged*: bool
+    status*: FitStatus                ## only fitOk makes the fit usable
 
   LineFit* = object
     a*, b*: float                     ## intercept, slope
@@ -48,6 +51,7 @@ type
   SeriesStat* = object
     mean*: float
     err*: float                       ## blocked jackknife error of the mean
+    hasErr*: bool                     ## at least two delete groups
     bias*: float                      ## Quenouille bias estimate
     tau2*: float                      ## 2 tau_int, Wolff automatic window
     tau2p*: float                     ## 2 tau_int, positive-sequence truncation
@@ -56,7 +60,17 @@ type
     stride*: int                      ## measurement separation of the samples; recorded only
     blockSize*: int
     nblock*: int
-    provisional*: bool                ## nblock < 4: `err` is an order of magnitude, nothing more
+    provisional*: bool                ## nblock < 4: too few blocks for a stable error
+
+  Estimate* = object
+    v*: float
+    ok*: bool
+
+  Jk* = object
+    full*: Estimate
+    reps*: seq[Estimate]
+    trajs*: seq[int]                   ## ordered sample identities within one ensemble
+    bs*: int
 
 func chi2dof*(f: PlateauFit|LineFit|PlaneFit): float = f.chi2/float(f.dof)
 
@@ -124,6 +138,10 @@ proc plateauFit*(m: openArray[float], t0, t1: int, at = 1.0,
   let
     n = t1 - t0
     tref = at*float(t0)
+  result.dof = n - 3
+  if n < 4:
+    result.status = fitShort
+    return
   var
     u = newSeq[float](n)
     y = newSeq[float](n)
@@ -199,6 +217,18 @@ proc plateauFit*(m: openArray[float], t0, t1: int, at = 1.0,
   while it < maxit:
     inc it
     normal(p, jtj, jtr)
+    var grad = 0.0
+    for a in 0..2:
+      if jtj[a][a] == 0.0:
+        result.status = fitSingular
+        break
+      grad = max(grad, abs(jtr[a])/sqrt(jtj[a][a]))
+    if result.status == fitSingular: break
+    # |J^T W r| / sqrt(diag(J^T W J)); relative residual stationarity plus
+    # an absolute floor for noiseless data whose chi2 approaches zero.
+    if grad <= 1e-7*sqrt(chi2) + 1e-14:
+      result.status = fitOk
+      break
     var aa = jtj
     for a in 0..2: aa[a][a] *= 1.0 + lam
     if inv3 aa:
@@ -209,23 +239,17 @@ proc plateauFit*(m: openArray[float], t0, t1: int, at = 1.0,
         d[a] = s
       let c2 = chi2At(p[0]+d[0], p[1]+d[1], p[2]+d[2])
       if c2 < chi2:
-        var rel = 0.0
-        for a in 0..2: rel = max(rel, abs(d[a])/(abs(p[a]) + 1e-12))
         for a in 0..2: p[a] += d[a]
         chi2 = c2
         lam = max(0.1*lam, 1e-14)
-        if rel < 1e-13:
-          result.converged = true
-          break
         continue
     lam *= 10.0
-    if lam > 1e14:                     # step rejected at the roundoff floor
-      result.converged = true
+    if lam > 1e14:
+      result.status = fitStalled
       break
 
   normal(p, jtj, jtr)
   result.chi2 = chi2
-  result.dof = n - 3
   result.iters = it
   var cv = jtj
   if inv3 cv:
@@ -253,12 +277,126 @@ proc plateauFit*(m: openArray[float], t0, t1: int, at = 1.0,
         for k in 0..2: s += tm[a][k]*mm[b][k]
         result.cov[a][b] = s
     sym3 result.cov
+  else:
+    result.status = fitSingular
   result.d0 = p[0]
   result.c = p[1]*exp(p[2]*tref)
   result.dp = p[2]
   result.ed0 = sqrt result.cov[0][0]
   result.ec = sqrt result.cov[1][1]
   result.edp = sqrt result.cov[2][2]
+
+proc effLocal*(c: openArray[float], at: float, positive = false): seq[Estimate] =
+  ## Delta(t) = ln(c(t)/c(t+at))/at. Signed correlators permit either common sign;
+  ## GEVP eigenvalues require both values positive.
+  result = newSeq[Estimate](max(0, c.len - 1))
+  for i in 0..<result.len:
+    let ok = (c[i] > 0.0 and c[i+1] > 0.0) or
+             (not positive and c[i] < 0.0 and c[i+1] < 0.0)
+    if ok: result[i] = Estimate(v: ln(c[i]/c[i+1])/at, ok: true)
+
+proc deltaFit*(m: openArray[Estimate], t0, t1: int, at: float): Estimate =
+  ## Fit the longest available run in [t0, t1), retaining the first on a tie.
+  var lo, hi = 0
+  var j = t0
+  while j < min(t1, m.len):
+    if m[j].ok:
+      var k = j
+      while k < min(t1, m.len) and m[k].ok: inc k
+      if k - j > hi - lo:
+        lo = j
+        hi = k
+      j = k
+    else:
+      inc j
+  if hi - lo < 4: return
+  var y = newSeq[float](hi)
+  for i in lo..<hi: y[i] = m[i].v
+  let f = plateauFit(y, lo, hi, at)
+  Estimate(v: f.d0, ok: f.status == fitOk)
+
+proc deltaFit*(c: openArray[float], t0, t1: int, at: float): Estimate =
+  deltaFit(effLocal(c, at), t0, t1, at)
+
+proc jkFrom*[V: float|Estimate](cs: seq[seq[float]], est: proc(c: seq[float]): V,
+                              trajs: seq[int], bs = 1): Jk =
+  ## Apply est to the mean and every delete-block mean. A failed replica retains
+  ## its group position and makes the error unavailable.
+  let n = cs.len
+  if trajs.len != n:
+    raise newException(ValueError, "jkFrom: sample identity count mismatch")
+  result.trajs = trajs
+  result.bs = max(1, bs)
+  if n == 0: return
+  let nd = cs[0].len
+  var tot = newSeq[float](nd)
+  for c in cs:
+    for d in 0..<nd: tot[d] += c[d]
+  var mean = newSeq[float](nd)
+  for d in 0..<nd: mean[d] = tot[d]/float(n)
+  template estimate(c: seq[float]): Estimate =
+    when V is Estimate: est(c)
+    else: Estimate(v: est(c), ok: true)
+  result.full = estimate(mean)
+  let nb = (n + result.bs - 1) div result.bs
+  if nb < 2: return                    # deleting the only group leaves no estimate
+  result.reps = newSeq[Estimate](nb)
+  for b in 0..<nb:
+    let lo = b*result.bs
+    let hi = min(lo + result.bs, n)
+    var sub = newSeq[float](nd)
+    for d in 0..<nd: sub[d] = tot[d]
+    for k in lo..<hi:
+      for d in 0..<nd: sub[d] -= cs[k][d]
+    for d in 0..<nd: mean[d] = sub[d]/float(n - hi + lo)
+    result.reps[b] = estimate(mean)
+
+proc jkStat*(j: Jk): tuple[v, e: Estimate] =
+  result.v = j.full
+  if not j.full.ok or j.reps.len < 2: return
+  var rs = newSeq[float](j.reps.len)
+  for i, x in j.reps:
+    if not x.ok: return
+    rs[i] = x.v
+  let st = jackknife(j.full.v, rs, j.trajs.len, j.bs)
+  result.e = Estimate(v: st.stdev, ok: st.hasStdev)
+
+proc jkMean*(js: openArray[Jk]): Jk =
+  ## Average estimators from the same ordered configuration set and blocks.
+  result.trajs = js[0].trajs
+  result.bs = js[0].bs
+  result.full.ok = true
+  result.reps = newSeq[Estimate](js[0].reps.len)
+  for b in 0..<result.reps.len: result.reps[b].ok = true
+  for j in js:
+    if j.trajs != result.trajs or j.bs != result.bs or j.reps.len != result.reps.len:
+      raise newException(ValueError, "jkMean: sample identities or blocks differ")
+    result.full.ok = result.full.ok and j.full.ok
+    result.full.v += j.full.v/float(js.len)
+    for b, x in j.reps:
+      result.reps[b].ok = result.reps[b].ok and x.ok
+      result.reps[b].v += x.v/float(js.len)
+
+proc ratioVE*(a, b: Jk): tuple[v, e: Estimate] =
+  ## IDs belong to one ensemble. Pair matching delete groups, assume disjoint
+  ## sample sets independent, and leave overlapping unpaired errors unavailable.
+  if not a.full.ok or not b.full.ok or b.full.v == 0.0: return
+  result.v = Estimate(v: a.full.v/b.full.v, ok: true)
+  if a.trajs == b.trajs and a.bs == b.bs and a.reps.len == b.reps.len:
+    var r = Jk(full: result.v, trajs: a.trajs, bs: a.bs,
+               reps: newSeq[Estimate](a.reps.len))
+    for i in 0..<r.reps.len:
+      if a.reps[i].ok and b.reps[i].ok and b.reps[i].v != 0.0:
+        r.reps[i] = Estimate(v: a.reps[i].v/b.reps[i].v, ok: true)
+    return jkStat(r)
+  for id in a.trajs:
+    if id in b.trajs: return
+  let sa = jkStat(a)
+  let sb = jkStat(b)
+  if sa.e.ok and sb.e.ok:
+    let da = sa.e.v/b.full.v
+    let db = a.full.v*sb.e.v/(b.full.v*b.full.v)
+    result.e = Estimate(v: sqrt(da*da + db*db), ok: true)
 
 proc contFit*(x, y, e: openArray[float]): LineFit =
   ## Inverse-variance weighted straight line y = a + b x.  For the O(a^2) continuum
@@ -407,6 +545,6 @@ proc jack*(s: openArray[float], stride = 1, bs = 0): SeriesStat =
     b = if bs > 0: bs else: max(1, int(ceil(max(1.0, tau2))))
     st = xs.jackknife(b, seriesMean)
     nb = (n + b - 1) div b
-  SeriesStat(mean: st.mean, err: st.stdev, bias: st.bias,
+  SeriesStat(mean: st.mean, err: st.stdev, hasErr: st.hasStdev, bias: st.bias,
              tau2: tau2, tau2p: tau2p, neff: float(n)/max(1.0, tau2),
              n: n, stride: stride, blockSize: b, nblock: nb, provisional: nb < 4)

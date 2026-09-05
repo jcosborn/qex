@@ -10,7 +10,7 @@
 ## as `names`, not in `meta`.  A `#` line with no `=` is a comment and is dropped.
 ## Blank lines are skipped, so a file may carry gnuplot dataset separators.
 
-import std/[os, strformat, strutils, tables]
+import std/[os, strformat, strutils, tables, tempfiles]
 
 const colKey = "columns"
 
@@ -30,27 +30,61 @@ proc readTsvMeta*(path: string): Table[string, string] =
       v = h[i+1..^1].strip
     if k != colKey: result[k] = v
 
-proc writeTsv*(path: string, header: openArray[(string, string)],
-               colNames: openArray[string], cols: openArray[seq[float]]) =
+proc requireTsvMeta*(path: string, expected: openArray[(string, string)]) =
+  ## Extra descriptive metadata is allowed; every identifying field must match.
+  let meta = readTsvMeta(path)
+  for (k, v) in expected:
+    if not meta.hasKey(k) or meta[k] != v:
+      let got = if meta.hasKey(k): meta[k] else: "<missing>"
+      raise newException(ValueError, &"{path}: incompatible {k}: expected {v}, got {got}; " &
+        "remeasure with -skipDone:false or use a fresh output directory")
+
+proc outputsDone*(paths: openArray[string], expected: openArray[(string, string)]): bool =
+  ## An interrupted group is incomplete. Check all existing members for conflicts.
+  result = true
+  for path in paths:
+    if fileExists(path): requireTsvMeta(path, expected)
+    else: result = false
+
+proc writeTsv*[T: float|string = float](path: string, header: openArray[(string, string)],
+               colNames: openArray[string], cols: openArray[seq[T]]) =
   ## `cols` is column major: cols[j][i] is row i of column j.  Every column must
-  ## have the length of cols[0].
+  ## have the length of cols[0]. String cells are preformatted fields and must
+  ## contain no tabs or line breaks. Publish only a closed, complete file.
+  let nrow = if cols.len == 0: 0 else: cols[0].len
+  if colNames.len > 0 and colNames.len != cols.len:
+    raise newException(ValueError, path & ": column name count mismatch")
+  for col in cols:
+    if col.len != nrow:
+      raise newException(ValueError, path & ": column length mismatch")
+    when T is string:
+      for cell in col:
+        if '\t' in cell or '\n' in cell or '\r' in cell:
+          raise newException(ValueError, path & ": tab or line break in TSV field")
   let dir = path.parentDir
   if dir.len > 0: createDir dir
-  var f = open(path, fmWrite)
-  defer: f.close()
-  for (k, v) in header: f.writeLine("# " & k & "=" & v)
-  if colNames.len > 0: f.writeLine("# " & colKey & "=" & colNames.join(" "))
-  let nrow = if cols.len == 0: 0 else: cols[0].len
-  for i in 0..<nrow:
-    var line = ""
-    for j in 0..<cols.len:
-      if j > 0: line.add '\t'
-      line.add &"{cols[j][i]:.17g}"
-    f.writeLine line
+  let (f, tmp) = createTempFile(path.extractFilename & ".", ".tmp",
+                               if dir.len > 0: dir else: ".")
+  try:
+    block:
+      defer: f.close()
+      for (k, v) in header: f.writeLine("# " & k & "=" & v)
+      if colNames.len > 0: f.writeLine("# " & colKey & "=" & colNames.join(" "))
+      for i in 0..<nrow:
+        var line = ""
+        for j in 0..<cols.len:
+          if j > 0: line.add '\t'
+          when T is string: line.add cols[j][i]
+          else: line.add &"{cols[j][i]:.17g}"
+        f.writeLine line
+      f.flushFile()
+    moveFile(tmp, path)
+  finally:
+    if fileExists(tmp): removeFile tmp
 
 proc readTsv*(path: string): tuple[meta: Table[string, string], names: seq[string],
                                    cols: seq[seq[float]]] =
-  ## Inverse of `writeTsv`.  The column count is set by the first data line.
+  ## Read numeric TSV fields. The column count is set by the first data line.
   result.meta = initTable[string, string]()
   for raw in path.lines:
     let s = raw.strip

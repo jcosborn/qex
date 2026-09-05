@@ -455,46 +455,51 @@ proc projectKernel*(l: Lat, p: var Gauge, r2req = 1e-24, maxits = 10000): CgInfo
 
 # --- solvers ----------------------------------------------------------------
 
+template cgGauge(l, x, b, r2req, maxits, op: untyped): CgInfo =
+  block:
+    if x.s.len != b.s.len: x = newGauge(l)
+    let b2 = norm2(b)
+    if b2 == 0.0:
+      x.zero
+      return CgInfo(iters: 0, r2: 0.0, converged: true)
+    var
+      r = newGauge(l)
+      q = newGauge(l)
+      ap = newGauge(l)
+    x.zero
+    r := b
+    q := b
+    var
+      r2 = b2
+      its = 0
+    let stop = r2req*b2
+    while r2 > stop and its < maxits:
+      op(ap, q)
+      let pap = dot(q, ap)
+      if pap <= 0.0: break
+      let a = r2/pap
+      axpy(x, a, q)
+      axpy(r, -a, ap)
+      let r2n = norm2(r)
+      axpby(q, 1.0, r, r2n/r2)
+      r2 = r2n
+      inc its
+    op(ap, x)
+    var t2 = 0.0
+    for i in 0..<b.s.len:
+      let d = b.s[i] - ap.s[i]
+      t2 += d*d
+    for i in 0..<b.t.len:
+      let d = b.t[i] - ap.t[i]
+      t2 += d*d
+    CgInfo(iters: its, r2: t2/b2, converged: t2 <= 1.001*r2req*b2)
+
 proc cgM*(l: Lat, x: var Gauge, b: Gauge, bt: Beta,
           r2req = 1e-20, maxits = 20000): CgInfo =
   ## CG for M x = b from x = 0.  `b` must lie in range(M): the Krylov space then
   ## never touches the kernel, which is exactly the (V.16)-(V.17) prescription.
-  if x.s.len != b.s.len: x = newGauge(l)
-  let b2 = norm2(b)
-  if b2 == 0.0:
-    x.zero
-    return CgInfo(iters: 0, r2: 0.0, converged: true)
-  var
-    r = newGauge(l)
-    q = newGauge(l)
-    ap = newGauge(l)
-  x.zero
-  r := b
-  q := b
-  var
-    r2 = b2
-    its = 0
-  let stop = r2req*b2
-  while r2 > stop and its < maxits:
-    gaugeForce(l, ap, q, bt)
-    let pap = dot(q, ap)
-    if pap <= 0.0: break
-    let a = r2/pap
-    axpy(x, a, q)
-    axpy(r, -a, ap)
-    let r2n = norm2(r)
-    axpby(q, 1.0, r, r2n/r2)
-    r2 = r2n
-    inc its
-  gaugeForce(l, ap, x, bt)
-  var t2 = 0.0
-  for i in 0..<b.s.len:
-    let d = b.s[i] - ap.s[i]
-    t2 += d*d
-  for i in 0..<b.t.len:
-    let d = b.t[i] - ap.t[i]
-    t2 += d*d
-  CgInfo(iters: its, r2: t2/b2, converged: t2 <= 1.001*r2req*b2)
+  template op(dst, src: untyped) = gaugeForce(l, dst, src, bt)
+  cgGauge(l, x, b, r2req, maxits, op)
 
 proc pseudoSolve*(l: Lat, x: var Gauge, b: Gauge, bt: Beta,
                   r2req = 1e-20, maxits = 20000): tuple[proj, sol: CgInfo] =
@@ -547,42 +552,8 @@ proc regSolve*(l: Lat, x: var Gauge, b: Gauge, o: var RegOp,
                r2req = 1e-24, maxits = 100000): CgInfo =
   ## CG on the regularized operator.  For b in range(M) this returns Mtilde^{-1} b
   ## and is stable to the roundoff floor.
-  if x.s.len != b.s.len: x = newGauge(l)
-  let b2 = norm2(b)
-  if b2 == 0.0:
-    x.zero
-    return CgInfo(iters: 0, r2: 0.0, converged: true)
-  var
-    r = newGauge(l)
-    q = newGauge(l)
-    ap = newGauge(l)
-  x.zero
-  r := b
-  q := b
-  var
-    r2 = b2
-    its = 0
-  let stop = r2req*b2
-  while r2 > stop and its < maxits:
-    applyReg(l, o, ap, q)
-    let pap = dot(q, ap)
-    if pap <= 0.0: break
-    let a = r2/pap
-    axpy(x, a, q)
-    axpy(r, -a, ap)
-    let r2n = norm2(r)
-    axpby(q, 1.0, r, r2n/r2)
-    r2 = r2n
-    inc its
-  applyReg(l, o, ap, x)
-  var t2 = 0.0
-  for i in 0..<b.s.len:
-    let d = b.s[i] - ap.s[i]
-    t2 += d*d
-  for i in 0..<b.t.len:
-    let d = b.t[i] - ap.t[i]
-    t2 += d*d
-  CgInfo(iters: its, r2: t2/b2, converged: t2 <= 1.001*r2req*b2)
+  template op(dst, src: untyped) = applyReg(l, o, dst, src)
+  cgGauge(l, x, b, r2req, maxits, op)
 
 proc gaugePropagator*(l: Lat, g2: float, srcLink: int,
                       r2req = 1e-20, maxits = 20000): seq[float] =

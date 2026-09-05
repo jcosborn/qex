@@ -24,11 +24,12 @@
 ##             min|D_W - M| (slide 8 / T2.1); skipped with a message when
 ##             2*nsite > wspecMaxDim
 ##
-## Output: one TSV per observable per configuration under <dir>/meas/, each
-## with a full #key=value manifest (ensemble parameters, rational hashes,
-## geometry and mass conventions).  Existing files are skipped
-## (-skipDone:false remeasures), so
-## the driver is restartable.  Measurement randomness is trajectory addressed
+## Output: TSV groups per observable and configuration under <dir>/meas/, each
+## with a #key=value identity (ensemble, source, and measurement parameters).
+## Complete compatible groups are skipped; -skipDone:false remeasures.
+## Analysis requires the same producing parameters; selection and analysis
+## parameters may change. Old TSVs without this identity must be remeasured.
+## Measurement randomness is trajectory addressed
 ## (keyedRng over (seed, traj, purpose)), so a remeasure is bit-reproducible
 ## and independent of which configurations already have files.
 ##
@@ -96,7 +97,7 @@ letParam:
   ckptName = "ckpt"
   # --- what to do
   obs = ""             ## comma list of cond,currents,scalars,gluon,wspec or all
-  skipDone = true      ## skip observables whose per-config TSV already exists
+  skipDone = true      ## skip complete compatible per-configuration TSV groups
   analyze = false      ## aggregate <dir>/meas/ instead of measuring
   pure = false         ## generate heatbath configurations instead of reading
   nconf = 0            ## pure mode: number of heatbath configurations
@@ -161,6 +162,7 @@ let
   ttot = at*float(nt)
   nt2 = nt div 2
   mass = if measMass >= 0.0: measMass else: masses[0]
+  bs = max(1, jackBs)
   measDir = dir/"meas"
   anaDir = dir/"analysis"
   shapes = if lev == 1: @[lsTri, lsTPlaq, lsTRect2]
@@ -207,49 +209,99 @@ const
   pkCond = 101         ## measurement purpose keys for keyedRng, disjoint from
   pkCurr = 102         ## trajectory.nim's rkMomentum/rkAccept/rkPseudo = 1,2,3
   pkPure = 104
-
-func finite(x: float): bool = (x == x) and x < Inf and x > -Inf
+  pureR2 = 1e-20
 
 template require(cond: bool, msg: string) =
-  ## Always-on check (the build runs -d:danger, which strips doAssert).
+  ## Report invalid external inputs as ValueError.
   if not cond:
     raise newException(ValueError, msg)
 
 proc opath(name: string, traj: int): string = measDir/(name & ".t" & $traj & ".tsv")
 
-proc fmtMasses(): string =
-  for i in 0..<masses.len:
+proc fmtNums(x: openArray[float]): string =
+  for i in 0..<x.len:
     if i > 0: result.add ","
-    result.add &"{masses[i]:g}"
+    result.add &"{x[i]:.17g}"
+
+let
+  ovKeys = @{
+    "massConvention": ovMassConvention, "overlapRho": &"{ovRho:.17g}",
+    "M": &"{M:.17g}", "ratWindow": fmtNums([ratLo, ratHi]),
+    "ratHashAct": &"{ratAct.hash:#x}"}
+  ensKeys = block:
+    var s = @{
+      "format": "radial-meas-2",
+      "lev": $lev, "nt": $nt, "at": &"{at:.17g}",
+      "g2R": &"{g2R:.17g}", "convention": $bt.conv, "seed": $seed,
+      "pure": $pure, "seaNf": $(if pure: 0 else: nf),
+      "source": (if pure: "heatbath" else: "checkpoint")}
+    if pure:
+      s.add [("heatbathR2", &"{pureR2:.17g}"), ("heatbathMaxits", $maxits)]
+    else:
+      s.add ovKeys
+      s.add [("cfgName", cfgName), ("masses", fmtNums(masses)),
+             ("ratHashFrc", &"{ratFrc.hash:#x}"), ("tau", &"{tau:.17g}"),
+             ("steps", $lsteps)]
+    s
+  labels = @{
+    "ensemble": dir, "T": &"{ttot:.17g}", "g2a": &"{g2R/float(lev):.17g}"}
+  valKeys = block:
+    var s: seq[(string, string)]
+    if pure: s.add ovKeys
+    s.add [("mass", &"{mass:.17g}"), ("nf", $nf), ("maxits", $maxits)]
+    s
+  nzKeys = @[("r2nzIn", &"{r2nzIn:.17g}"), ("r2nzOut", &"{r2nzOut:.17g}")]
+  ptKeys = @[("r2ptIn", &"{r2ptIn:.17g}"), ("r2ptOut", &"{r2ptOut:.17g}")]
+  srcTimes = block:
+    var s: seq[int]
+    for i in 0..<nscalarSrc: s.add (i*nt) div nscalarSrc
+    s
+  wardTimes = [nt div 4, (3*nt) div 4]
+  btFlow = newBeta(lat, 1.0)
+  flowStep = 0.1/mDiagMax(lat, btFlow)
+  stimes = @[0.0] & flowTimes
+
+type ObsSpec = object
+  files: seq[string]
+  meta: seq[(string, string)]
+
+let specs = block:
+  var s = initTable[string, ObsSpec]()
+  s["cond"] = ObsSpec(files: @["cond"], meta: ensKeys & valKeys & nzKeys &
+    @[("observable", "cond"), ("nnoise", $nnoise)])
+  var cur = ObsSpec(files: @["currents"], meta: ensKeys & valKeys & nzKeys &
+    @[("observable", "currents"), ("npair", $npair), ("lmaxJ", $lmaxJ),
+      ("disc", $disc), ("ward", $ward)])
+  if ward:
+    cur.meta.add ptKeys
+    cur.meta.add [("wardSite", $v5), ("wardTimes", $wardTimes)]
+  if disc: cur.files.add ["currdisc", "currtrace"]
+  s["currents"] = cur
+  s["scalars"] = ObsSpec(files: @["scalars"], meta: ensKeys & valKeys & ptKeys &
+    @[("observable", "scalars"), ("nscalarSrc", $nscalarSrc),
+      ("srcSite", $v5), ("srcTimes", $srcTimes)])
+  s["gluon"] = ObsSpec(files: @["flow", "loops", "f2"], meta: ensKeys &
+    @[("observable", "gluon"), ("flowTimes", fmtNums(stimes)),
+      ("rkStep", &"{flowStep:.17g}"), ("flowConvention", $btFlow.conv),
+      ("flowMethod", $RK4CK_2N), ("shapes", $shapes)])
+  var ws = ObsSpec(files: @["wspec"], meta: ensKeys &
+    @[("observable", "wspec"), ("radius", &"{wspecRad:.17g}")])
+  if pure: ws.meta.add ("M", &"{M:.17g}")
+  s["wspec"] = ws
+  s
 
 proc manifest(extra: varargs[(string, string)]): seq[(string, string)] =
-  result = @{
-    "ensemble": dir,
-    "lev": $lev, "nt": $nt, "at": &"{at:.17g}", "T": &"{ttot:.17g}",
-    "g2R": &"{g2R:.17g}", "g2a": &"{g2R/float(lev):.17g}",
-    "convention": $bt.conv,
-    "massConvention": ovMassConvention, "overlapRho": &"{ovRho:.17g}",
-    "nf": $nf, "M": &"{M:.17g}", "masses": fmtMasses(),
-    "mass": &"{mass:.17g}",
-    "ratWindow": &"[{ratLo:g}, {ratHi:g}]",
-    "ratHashAct": &"{ratAct.hash:#x}", "ratHashFrc": &"{ratFrc.hash:#x}",
-    "seed": $seed}
+  result = ensKeys & valKeys & labels & @[("jackBs", $bs)]
   for kv in extra: result.add kv
 
-proc requireOutputConvention(path: string) =
-  ## Do not let existence-based restart or analysis silently mix legacy
-  ## additive-mass TSVs with standard-overlap results.
-  let meta = readTsvMeta(path)
-  require meta.getOrDefault("massConvention", "") == ovMassConvention,
-    &"{path}: missing or incompatible massConvention; rerun with " &
-    "-skipDone:false or use a fresh output directory"
-  require meta.getOrDefault("overlapRho", "") == &"{ovRho:.17g}",
-    &"{path}: incompatible overlapRho"
+proc measMeta(name: string, traj: int, extra: varargs[(string, string)]): seq[(string, string)] =
+  result = specs[name].meta & labels & @[("traj", $traj)]
+  for kv in extra: result.add kv
 
-proc outputDone(path: string): bool =
-  if not fileExists(path): return false
-  requireOutputConvention path
-  true
+proc outputDone(name: string, traj: int): bool =
+  var paths: seq[string]
+  for f in specs[name].files: paths.add opath(f, traj)
+  outputsDone(paths, specs[name].meta & @[("traj", $traj)])
 
 proc foldC(c: openArray[float]): seq[float] =
   ## Periodic fold to dt = 0..nt/2 (average of dt and nt-dt).
@@ -271,8 +323,7 @@ proc measCond(u: Gauge, traj: int) =
   actOp.r2outer = r2nzOut
   var r = keyedRng(uint64(seed), traj, pkCond)
   let (v, e) = condensatePS(actOp, u, mass, nnoise, r)
-  require finite(v) and finite(e), "condensate is not finite"
-  writeTsv(opath("cond", traj), manifest(("nnoise", $nnoise)),
+  writeTsv(opath("cond", traj), measMeta("cond", traj),
            ["traj", "mass", "nnoise", "sigma", "err"],
            [@[float(traj)], @[mass], @[float(nnoise)], @[v], @[e]])
   echo &"  cond traj {traj}: sigma_PS = {v:.6g} +- {e:.6g}  ({nnoise} noise)"
@@ -291,14 +342,13 @@ proc measCurrents(u: Gauge, traj: int) =
   ## T(t2) T(t1) with T = 2 Re tr[K S] (this configuration's value), plus the
   ## per-slice trace itself -- the vector channel is assembled at analysis
   ## time as C_V = -2 Re k + Nf (P - <T>^2).
-  var wardFlat = NaN
-  var wardJump = NaN
+  var wardKeys: seq[(string, string)]
   if ward:
     actOp.r2inner = r2ptIn
     actOp.r2outer = r2ptOut
     let
-      ta = nt div 4
-      tb = (3*nt) div 4
+      ta = wardTimes[0]
+      tb = wardTimes[1]
       (c, jump) = wardChargeScan(actOp, u, mass, v5, ta, tb)
     var
       mIn = complex64(0.0, 0.0)
@@ -312,9 +362,11 @@ proc measCurrents(u: Gauge, traj: int) =
     for t in 0..<nt:
       let d = if t >= ta and t < tb: abs(c[t] - mIn) else: abs(c[t] - mOut)
       dev = max(dev, d)
-    let ja = abs(jump)
-    wardFlat = dev/ja
-    wardJump = abs(mOut - mIn - jump)/ja
+    let
+      ja = abs(jump)
+      wardFlat = dev/ja
+      wardJump = abs(mOut - mIn - jump)/ja
+    wardKeys = @[("ward_flat", &"{wardFlat:.17g}"), ("ward_jump", &"{wardJump:.17g}")]
     echo &"  ward traj {traj}: plateau flatness {wardFlat:.3e}" &
          &"  jump deviation {wardJump:.3e}  (rel to |i S_ba| = {ja:.3e})"
 
@@ -361,7 +413,6 @@ proc measCurrents(u: Gauge, traj: int) =
         s2 += v.re*v.re
       let m = s/float(npair)
       let varr = max(0.0, s2/float(npair) - m.re*m.re)
-      require finite(m.re) and finite(m.im), "current correlator not finite"
       cl.add float(ops[iop].l)
       cm.add float(ops[iop].m)
       cdt.add float(dt)
@@ -369,10 +420,8 @@ proc measCurrents(u: Gauge, traj: int) =
       kim.add m.im
       kerr.add sqrt(varr/float(max(1, npair - 1)))
   writeTsv(opath("currents", traj),
-           manifest(("npair", $npair), ("lmaxJ", $lmaxJ),
-                    ("estimator", "factorized noise, tr[K S K S]; C_conn = -2 Re k"),
-                    ("ward_flat", &"{wardFlat:.17g}"),
-                    ("ward_jump", &"{wardJump:.17g}")),
+           measMeta("currents", traj,
+             ("estimator", "factorized noise, tr[K S K S]; C_conn = -2 Re k")) & wardKeys,
            ["l", "m", "dt", "kre", "kim", "kerr"],
            [cl, cm, cdt, kre, kim, kerr])
   if disc:
@@ -411,10 +460,10 @@ proc measCurrents(u: Gauge, traj: int) =
         tre.add sx[t]/float(npair)
         tim.add sy[t]/float(npair)
     writeTsv(opath("currdisc", traj),
-             manifest(("npair", $npair),
-                      ("estimator", "cross-sample T(t2)T(t1), T = 2 Re tr[K S]")),
+             measMeta("currents", traj,
+               ("estimator", "cross-sample T(t2)T(t1), T = 2 Re tr[K S]")),
              ["l", "m", "dt", "p"], [dl, dm, ddt, dp])
-    writeTsv(opath("currtrace", traj), manifest(("npair", $npair)),
+    writeTsv(opath("currtrace", traj), measMeta("currents", traj),
              ["l", "m", "t", "tre", "tim"], [tl, tm, tt, tre, tim])
   echo &"  currents traj {traj}: {nop} ops x {npair} pairs" &
        (if disc: " + disconnected" else: "")
@@ -425,8 +474,7 @@ proc measScalars(u: Gauge, traj: int) =
   var
     ps = newSeq[float](nt)
     fs = newSeq[float](nt)
-  for isrc in 0..<nscalarSrc:
-    let t0 = (isrc*nt) div nscalarSrc
+  for t0 in srcTimes:
     let (p, f) = scalarCorrPoint(actOp, u, mass, v5, t0)
     for dt in 0..<nt:
       ps[dt] += p[dt]/float(nscalarSrc)
@@ -434,7 +482,6 @@ proc measScalars(u: Gauge, traj: int) =
   var dev = 0.0
   var scale = 0.0
   for dt in 0..<nt:
-    require finite(ps[dt]) and finite(fs[dt]), "scalar correlator not finite"
     scale = max(scale, abs(ps[dt]))
     if dt != 0: dev = max(dev, abs(ps[dt] - fs[dt]))
   let psfs = dev/scale
@@ -446,8 +493,7 @@ proc measScalars(u: Gauge, traj: int) =
   var cdt = newSeq[float](nt)
   for dt in 0..<nt: cdt[dt] = float(dt)
   writeTsv(opath("scalars", traj),
-           manifest(("nscalarSrc", $nscalarSrc), ("srcSite", $v5),
-                    ("psfs_maxdev", &"{psfs:.17g}"),
+           measMeta("scalars", traj, ("psfs_maxdev", &"{psfs:.17g}"),
                     ("psfs_contact", &"{contact:.17g}")),
            ["dt", "ps", "fs"], [cdt, ps, fs])
   echo &"  scalars traj {traj}: PS==FS dt!=0 dev {psfs:.3e}" &
@@ -458,10 +504,6 @@ proc measGluon(u: Gauge, traj: int) =
   ## Flow a copy; at each flow time (0 first) measure E_s/E_t, the folded
   ## m-averaged loop correlator matrices for l = 1, 2, and the folded F^2
   ## l = 0 correlator (RAW: vacuum subtraction happens at analysis time).
-  let btFlow = newBeta(lat, 1.0)
-  let h = 0.1/mDiagMax(lat, btFlow)
-  var stimes = @[0.0]
-  for s in flowTimes: stimes.add s
   let nsh = shapes.len
   var
     fS, fEs, fEt: seq[float]                       # flow.t
@@ -469,7 +511,7 @@ proc measGluon(u: Gauge, traj: int) =
     f2S, f2Dt, f2C: seq[float]                     # f2.t
   var uf = newGauge(lat)
   uf := u
-  flowRun(lat, uf, btFlow, stimes, h, RK4CK_2N,
+  flowRun(lat, uf, btFlow, stimes, flowStep, RK4CK_2N,
     proc(s: float, v: Gauge) =
       fS.add s
       fEs.add energyDensity(lat, v, bt)
@@ -515,20 +557,16 @@ proc measGluon(u: Gauge, traj: int) =
         f2S.add s
         f2Dt.add float(dt)
         f2C.add cf[dt])
-  for x in fEs: require finite(x), "E_s not finite"
-  for x in gC: require finite(x), "loop correlator not finite"
-  for x in f2C: require finite(x), "F^2 correlator not finite"
-  let flowKeys = manifest(
+  let flowKeys = measMeta("gluon", traj,
     ("flow", "generated by newBeta(g2=1): coupling-independent flow time"),
-    ("Es", "spatial action density S_s/(4 pi T), ensemble Beta"),
-    ("rkStep", &"{h:.17g}"))
+    ("Es", "spatial action density S_s/(4 pi T), ensemble Beta"))
   writeTsv(opath("flow", traj), flowKeys, ["s", "Es", "Et"], [fS, fEs, fEt])
   writeTsv(opath("loops", traj),
-           manifest(("shapes", $shapes), ("fold", "C(dt)+C(nt-dt) over 2"),
+           measMeta("gluon", traj, ("fold", "C(dt)+C(nt-dt) over 2"),
                     ("mavg", "averaged over m at each l")),
            ["s", "l", "i", "j", "dt", "c"], [gS, gL, gI, gJ, gDt, gC])
   writeTsv(opath("f2", traj),
-           manifest(("note", "dt = -1 rows carry the slice mean of O_F2 (RAW)")),
+           measMeta("gluon", traj, ("note", "dt = -1 rows carry the slice mean of O_F2 (RAW)")),
            ["s", "dt", "c"], [f2S, f2Dt, f2C])
   echo &"  gluon traj {traj}: {stimes.len} flow times, {nsh} shapes, l = 1, 2 + F^2"
 
@@ -542,14 +580,13 @@ proc measWspec(u: Gauge, traj: int) =
   var ev = newSeq[Complex64](nd)
   zgeigs(cast[ptr float64](addr a[0]), cast[ptr float64](addr ev[0]), nd)
   var
-    minAbs = Inf
+    minAbs = abs(ev[0])
     kmin = 0
-  for k in 0..<nd:
+  for k in 1..<nd:
     let r = abs(ev[k])
     if r < minAbs:
       minAbs = r
       kmin = k
-  require finite(minAbs), "wspec eigenvalues not finite"
   var re, im, ax: seq[float]
   for k in 0..<nd:
     let r = abs(ev[k])
@@ -558,8 +595,7 @@ proc measWspec(u: Gauge, traj: int) =
       im.add ev[k].im
       ax.add r
   writeTsv(opath("wspec", traj),
-           manifest(("min_abs", &"{minAbs:.17g}"),
-                    ("radius", &"{wspecRad:.17g}"), ("dim", $nd),
+           measMeta("wspec", traj, ("min_abs", &"{minAbs:.17g}"), ("dim", $nd),
                     ("operator", "raw D_lat (doc/04 section 10); columns are eig(D_W)")),
            ["reDw", "imDw", "absX"], [re, im, ax])
   echo &"  wspec traj {traj}: min|D_W - {M:g}| = {minAbs:.4f}" &
@@ -606,9 +642,8 @@ proc measureOne(u: Gauge, traj: int) =
            &" outside the frozen [{ratLo}, {ratHi}] -- overlap measurements" &
            " on this configuration are outside the rational's validity"
   for name in obsList:
-    let primary = opath(name, traj)
-    if skipDone and outputDone(primary):
-      echo &"  skip {name} traj {traj} (exists)"
+    if skipDone and outputDone(name, traj):
+      echo &"  skip {name} traj {traj} (complete)"
       continue
     clearStats actOp
     let t0 = epochTime()
@@ -632,12 +667,12 @@ if not analyze:
     for k in 1..nconf:
       var allDone = skipDone
       for name in obsList:
-        if allDone and not outputDone(opath(name, k)): allDone = false
+        if skipDone and not outputDone(name, k): allDone = false
       if allDone:
         echo &"  skip config {k} (all observables exist)"
         continue
       var r = keyedRng(uint64(seed), k, pkPure)
-      let ci = heatbath(lat, u, bt, r, 1e-20, maxits)
+      let ci = heatbath(lat, u, bt, r, pureR2, maxits)
       require ci.converged, "heatbath solve failed"
       measureOne(u, k)
   else:
@@ -661,167 +696,77 @@ type MeasSet = object
   files: seq[string]
 
 proc listMeas(name: string): MeasSet =
+  var obs = ""
+  for k, spec in specs:
+    if name in spec.files:
+      obs = k
+      break
+  if obs.len == 0: return
   var found: seq[CfgFile]
-  for path in walkFiles(measDir/(name & ".t*.tsv")):
-    requireOutputConvention path
-    let fn = extractFilename(path)
-    var t: int
-    try:
-      t = parseInt(fn[(name.len + 2)..^5])
-    except ValueError:
-      continue
-    if t < tmin: continue
-    if tmax > 0 and t > tmax: continue
-    found.add (t, path)
+  var seen = initTable[int, bool]()
+  # Discover every group member, including a companion whose primary is absent.
+  for file in specs[obs].files:
+    for path in walkFiles(measDir/(file & ".t*.tsv")):
+      let fn = extractFilename(path)
+      var t: int
+      try:
+        t = parseInt(fn[(file.len + 2)..^5])
+      except ValueError:
+        continue
+      if t < tmin: continue
+      if tmax > 0 and t > tmax: continue
+      if seen.hasKey(t): continue
+      seen[t] = true
+      found.add (t, opath(name, t))
   found.sort(proc(a, b: CfgFile): int = cmp(a.traj, b.traj))
-  for (t, p) in found:
+  for i, cfg in found:
+    if tstride > 1 and i mod tstride != 0: continue
+    let (t, p) = cfg
+    require outputDone(obs, t),
+      &"{measDir}: incomplete {obs} output group for trajectory {t}; remeasure before analysis"
     result.trajs.add t
     result.files.add p
 
-proc key(ms: MeasSet): string =
-  for t in ms.trajs: result.add $t & ","
-
-# --- Delta estimators on a folded correlator ----------------------------------
+# --- estimators and summary -----------------------------------------------------
 
 let
   fitHiEff = if fitHiT > 0.0: fitHiT else: 0.5*ttot - at
+  fitLo = max(1, int(round(fitLoT/at)))
+  fitHi = int(round(fitHiEff/at)) + 1
   iref = max(1, int(round(trefT/at)))
 
-proc effLocal(c: seq[float]): seq[float] =
-  ## LOCAL log-ratio effective mass, Delta_eff(t) = ln(c(t)/c(t+at))/at.
-  ## The paper's (V.4)-(V.5) arccosh form references c(T/2), which is exact
-  ## for the deterministic free-limit correlators but unresolvable noise for
-  ## Monte-Carlo data (e^{-Delta T/2} ~ 1e-5 at Delta = 2, T = 12).  In the
-  ## fit windows the periodic-image bias of the log ratio is e^{-Delta(T-2t)},
-  ## far below any statistical error here.  NaN where the ratio is <= 0.
-  result = newSeq[float](c.len - 1)
-  for i in 0..<c.len - 1:
-    result[i] = ln(c[i]/c[i+1])/at
+proc deltaFit(c: seq[float]): Estimate =
+  ## Local log ratios retain the Monte Carlo estimator; the midpoint-referenced
+  ## arccosh estimator is reserved for deterministic correlators in rfree/rgauge.
+  fit.deltaFit(c, fitLo, fitHi, at)
 
-proc fitRun(m: seq[float]): tuple[i0, i1: int, ok: bool] =
-  ## Longest finite run of the effective mass inside the fit window.
-  var
-    i0 = max(1, int(round(fitLoT/at)))
-    i1 = min(int(round(fitHiEff/at)) + 1, m.len)
-  var bi0, bi1 = 0
-  var j = i0
-  while j < i1:
-    if finite(m[j]):
-      var k = j
-      while k < i1 and finite(m[k]): inc k
-      if k - j > bi1 - bi0:
-        bi0 = j
-        bi1 = k
-      j = k
-    else:
-      inc j
-  (bi0, bi1, bi1 - bi0 >= 4)
+proc deltaEff(c: seq[float]): Estimate =
+  let m = effLocal(c, at)
+  if iref < m.len: result = m[iref]
 
-proc deltaFit(c: seq[float]): float =
-  ## Plateau-fit Delta_0 of a folded correlator (local log-ratio effective
-  ## mass); NaN when the window has fewer than 4 finite points or the fit
-  ## fails.
-  let m = effLocal(c)
-  let (i0, i1, ok) = fitRun(m)
-  if not ok: return NaN
-  let f = plateauFit(m, i0, i1, at)
-  if f.converged and finite(f.d0): f.d0 else: NaN
-
-proc deltaEff(c: seq[float]): float =
-  ## Local effective mass at t = trefT: the honest low-statistics estimator.
-  let m = effLocal(c)
-  if iref < m.len: m[iref] else: NaN
-
-# --- delete-block jackknife over configurations --------------------------------
-
-type Jk = object
-  full: float
-  reps: seq[float]
-  key: string
-
-proc jkStat(j: Jk): tuple[v, e: float] =
-  result.v = j.full
-  result.e = NaN
-  var n = 0
-  var m = 0.0
-  for x in j.reps:
-    if finite(x):
-      m += x
-      inc n
-  if n < 2 or not finite(j.full): return
-  m /= float(n)
-  var s = 0.0
-  for x in j.reps:
-    if finite(x): s += (x - m)*(x - m)
-  result.e = sqrt(s*float(n - 1)/float(n))
-
-proc jkFrom(cs: seq[seq[float]], est: proc(c: seq[float]): float,
-            key: string): Jk =
-  ## est applied to the ensemble mean and to every delete-block mean.
-  ## cs[cfg] is an arbitrary flat vector (correlator + extra scalars).
-  let n = cs.len
-  let nd = cs[0].len
-  let bs = max(1, jackBs)
-  let nb = (n + bs - 1) div bs
-  var tot = newSeq[float](nd)
-  for c in cs:
-    for d in 0..<nd: tot[d] += c[d]
-  var mean = newSeq[float](nd)
-  for d in 0..<nd: mean[d] = tot[d]/float(n)
-  result.full = est(mean)
-  result.key = key & "/b" & $bs
-  result.reps = newSeq[float](nb)
-  for b in 0..<nb:
-    var sub = tot
-    var cnt = n
-    var k = b*bs
-    while k < min((b + 1)*bs, n):
-      for d in 0..<nd: sub[d] -= cs[k][d]
-      dec cnt
-      inc k
-    var cm = newSeq[float](nd)
-    for d in 0..<nd: cm[d] = sub[d]/float(cnt)
-    result.reps[b] = est(cm)
-
-proc jkMean(js: openArray[Jk]): Jk =
-  ## Plain average of estimators sharing one configuration set.
-  result.key = js[0].key
-  result.reps = newSeq[float](js[0].reps.len)
-  for j in js:
-    doAssert j.key == result.key and j.reps.len == result.reps.len
-    result.full += j.full/float(js.len)
-    for b in 0..<j.reps.len: result.reps[b] += j.reps[b]/float(js.len)
-
-proc ratioVE(a, b: Jk): tuple[v, e: float] =
-  ## Jackknife ratio when the two share configurations, independent-error
-  ## propagation otherwise.
-  if a.key == b.key and a.reps.len == b.reps.len and a.reps.len > 1:
-    var r = Jk(full: a.full/b.full, key: a.key,
-               reps: newSeq[float](a.reps.len))
-    for i in 0..<a.reps.len: r.reps[i] = a.reps[i]/b.reps[i]
-    return jkStat(r)
-  let (av, ae) = jkStat(a)
-  let (bv, be) = jkStat(b)
-  result.v = av/bv
-  result.e = abs(result.v)*sqrt((ae/av)*(ae/av) + (be/bv)*(be/bv))
-
-# --- summary accumulator --------------------------------------------------------
+proc deltaJks(cs: seq[seq[float]], ids: seq[int]): tuple[fit, eff: Jk] =
+  (jkFrom(cs, deltaFit, ids, bs), jkFrom(cs, deltaEff, ids, bs))
 
 type SumRow = object
   name: string
-  vFit, eFit, vEff, eEff: float
+  fit, eff: tuple[v, e: Estimate]
 
 var summary: seq[SumRow]
 
-proc addSum(name: string, fit, eff: tuple[v, e: float]) =
-  summary.add SumRow(name: name, vFit: fit.v, eFit: fit.e,
-                     vEff: eff.v, eEff: eff.e)
+proc addSum(name: string, fit, eff: tuple[v, e: Estimate]) =
+  summary.add SumRow(name: name, fit: fit, eff: eff)
 
-proc addSum1(name: string, v, e: float) =
-  summary.add SumRow(name: name, vFit: v, eFit: e, vEff: v, eEff: e)
+proc addSum1(name: string, v: float, e = Estimate()) =
+  let st = (Estimate(v: v, ok: true), e)
+  summary.add SumRow(name: name, fit: st, eff: st)
 
-proc deltaJks(cs: seq[seq[float]], k: string): tuple[fit, eff: Jk] =
-  (jkFrom(cs, deltaFit, k), jkFrom(cs, deltaEff, k))
+proc outText(x: float, fmt = ".17g"): string =
+  formatValue(result, x, fmt)
+
+proc outText(x: Estimate, fmt = ".17g"): string =
+  ## Fast math can erase a floating NaN branch; emit missing values as text.
+  if x.ok: result = outText(x.v, fmt)
+  else: result = "nan"
 
 if analyze:
   createDir anaDir
@@ -832,21 +777,21 @@ if analyze:
   let msCond = listMeas("cond")
   if msCond.trajs.len > 0:
     var vals: seq[float]
-    var m0 = NaN
+    let m0 = mass
     for f in msCond.files:
-      let (meta, _, cols) = readTsv(f)
+      let (_, _, cols) = readTsv(f)
       vals.add cols[3][0]
-      m0 = parseFloat(meta.getOrDefault("mass", "nan"))
     let stride = if msCond.trajs.len > 1: msCond.trajs[1] - msCond.trajs[0] else: 1
-    let st = jack(vals, stride)
+    let st = jack(vals, stride, bs = bs)
+    let err = Estimate(v: st.err, ok: st.hasErr)
     writeTsv(anaDir/"cond.tsv",
              manifest(("nconf", $vals.len), ("stride_traj", $stride),
                       ("provisional", $st.provisional)),
              ["mR", "sigma", "err", "tau2", "neff", "nconf"],
-             [@[m0], @[st.mean], @[st.err], @[st.tau2], @[st.neff],
-              @[float(vals.len)]])
-    addSum1("sigmaPS(m=" & &"{m0:g}" & ")", st.mean, st.err)
-    echo &"cond: {vals.len} configs  sigma_PS = {st.mean:.6g} +- {st.err:.6g}" &
+             [@[outText(m0)], @[outText(st.mean)], @[outText(err)], @[outText(st.tau2)],
+              @[outText(st.neff)], @[outText(float(vals.len))]])
+    addSum1("sigmaPS(m=" & &"{m0:g}" & ")", st.mean, err)
+    echo &"cond: {vals.len} configs  sigma_PS = {st.mean:.6g} +- {outText(err, \".6g\")}" &
          &"  2tau = {st.tau2:.2f}" & (if st.provisional: "  (provisional)" else: "")
 
   # ---------------- currents ----------------
@@ -872,14 +817,13 @@ if analyze:
                   int(cols[1][row]) == ops[iop].m and int(cols[2][row]) == dt,
                   "currents file row order mismatch"
           kdat[iop][ic][dt] = cols[3][row]
-      let wf = parseFloat(meta.getOrDefault("ward_flat", "nan"))
-      let wj = parseFloat(meta.getOrDefault("ward_jump", "nan"))
-      if finite(wf): wardF.add wf
-      if finite(wj): wardJ.add wj
-    let ck = key(msCurr)
+      if parseBool(meta["ward"]):
+        wardF.add parseFloat(meta["ward_flat"])
+        wardJ.add parseFloat(meta["ward_jump"])
+    let ck = msCurr.trajs
     # per-op Delta and the ensemble-mean correlators
-    var cl, cm2, cdt, cc, ce: seq[float]
-    var el, em, et, ed, ee: seq[float]
+    var cl, cm2, cdt, cc, ce: seq[string]
+    var el, em, et, ed, ee: seq[string]
     var perOpFit = newSeq[Jk](nop)
     var perOpEff = newSeq[Jk](nop)
     for iop in 0..<nop:
@@ -888,29 +832,29 @@ if analyze:
       for dt in 0..nt2:
         var csl = newSeq[seq[float]](ncf)
         for ic in 0..<ncf: csl[ic] = @[kdat[iop][ic][dt]]
-        let jj = jkFrom(csl, proc(c: seq[float]): float = -2.0*c[0], ck)
+        let jj = jkFrom(csl, proc(c: seq[float]): float = -2.0*c[0], ck, bs)
         let (v, e) = jkStat(jj)
-        cl.add float(ops[iop].l)
-        cm2.add float(ops[iop].m)
-        cdt.add float(dt)
-        cc.add v
-        ce.add e
+        cl.add outText(float(ops[iop].l))
+        cm2.add outText(float(ops[iop].m))
+        cdt.add outText(float(dt))
+        cc.add outText(v)
+        ce.add outText(e)
       # effective-mass curve of the ensemble mean, delete-block errors
       var meanC = newSeq[float](nd)
       for ic in 0..<ncf:
         for dt in 0..nt2: meanC[dt] += kdat[iop][ic][dt]/float(ncf)
-      let mm = effLocal(meanC)
+      let mm = effLocal(meanC, at)
       for it in 0..<mm.len:
         let itl = it
-        let jj = jkFrom(kdat[iop], proc(c: seq[float]): float =
-          let m = effLocal(c)
-          m[itl], ck)
+        let jj = jkFrom(kdat[iop], proc(c: seq[float]): Estimate =
+          let m = effLocal(c, at)
+          m[itl], ck, bs)
         let (_, e) = jkStat(jj)
-        el.add float(ops[iop].l)
-        em.add float(ops[iop].m)
-        et.add at*float(it)
-        ed.add mm[it]
-        ee.add e
+        el.add outText(float(ops[iop].l))
+        em.add outText(float(ops[iop].m))
+        et.add outText(at*float(it))
+        ed.add outText(mm[it])
+        ee.add outText(e)
     writeTsv(anaDir/"curr_corr.tsv",
              manifest(("nconf", $ncf), ("sign", "-2 Re tr[K S K S] per 4c flavor")),
              ["l", "m", "dt", "c", "err"], [cl, cm2, cdt, cc, ce])
@@ -940,8 +884,8 @@ if analyze:
       # per-m effective-mass estimator, relative to the mean
       var vs: seq[float]
       for iop in 0..<nop:
-        if ops[iop].l == 3 and finite(perOpEff[iop].full):
-          vs.add perOpEff[iop].full
+        if ops[iop].l == 3 and perOpEff[iop].full.ok:
+          vs.add perOpEff[iop].full.v
       if vs.len == 7:
         var lo = vs[0]
         var hi = vs[0]
@@ -950,27 +894,27 @@ if analyze:
           lo = min(lo, x)
           hi = max(hi, x)
           mn += x/7.0
-        addSum1("l3_spread_over_m", (hi - lo)/mn, NaN)
+        addSum1("l3_spread_over_m", (hi - lo)/mn)
     # conserved-charge diagnostics
     if wardF.len > 0:
       var wf = 0.0
       var wj = 0.0
       for x in wardF: wf = max(wf, x)
       for x in wardJ: wj = max(wj, x)
-      addSum1("ward_flat_max", wf, NaN)
-      addSum1("ward_jump_max", wj, NaN)
+      addSum1("ward_flat_max", wf)
+      addSum1("ward_jump_max", wj)
     block:                        # l = 0 connected correlator flatness (WP-I caveat)
       var meanC = newSeq[float](nd)
       for ic in 0..<ncf:
         for dt in 0..nt2: meanC[dt] += -2.0*kdat[0][ic][dt]/float(ncf)
-      var lo = Inf
-      var hi = -Inf
+      var lo = meanC[1]
+      var hi = meanC[1]
       var mn = 0.0
       for dt in 1..nt2:
         lo = min(lo, meanC[dt])
         hi = max(hi, meanC[dt])
         mn += meanC[dt]/float(nt2)
-      addSum1("l0_conn_variation", (hi - lo)/abs(mn), NaN)
+      addSum1("l0_conn_variation", (hi - lo)/abs(mn))
     echo &"currents: {ncf} configs, {nop} operators (l <= {lmaxJ})"
     # ------------ vector channel (needs -disc data) ------------
     let msD = listMeas("currdisc")
@@ -998,8 +942,8 @@ if analyze:
         for m in 0..2: t2 += v[2*nd + m]*v[2*nd + m]/3.0
         for dt in 0..nd-1:
           result[dt] = -2.0*v[dt] + float(nf)*(v[nd + dt] - t2)
-      let jVfit = jkFrom(vdat, proc(v: seq[float]): float = deltaFit(vecCorr(v)), ck)
-      let jVeff = jkFrom(vdat, proc(v: seq[float]): float = deltaEff(vecCorr(v)), ck)
+      let jVfit = jkFrom(vdat, proc(v: seq[float]): Estimate = deltaFit(vecCorr(v)), ck, bs)
+      let jVeff = jkFrom(vdat, proc(v: seq[float]): Estimate = deltaEff(vecCorr(v)), ck, bs)
       addSum("Delta_V", jkStat(jVfit), jkStat(jVeff))
       addSum("R_V_A", ratioVE(jVfit, jAfit), ratioVE(jVeff, jAeff))
       # write the assembled vector correlator
@@ -1033,11 +977,9 @@ if analyze:
       let (meta, _, cols) = readTsv(msScal.files[ic])
       psD[ic] = foldC(cols[1])
       fsD[ic] = foldC(cols[2])
-      let pm = parseFloat(meta.getOrDefault("psfs_maxdev", "nan"))
-      if finite(pm): psfs = max(psfs, pm)
-      let pc = parseFloat(meta.getOrDefault("psfs_contact", "nan"))
-      if finite(pc): psfsC = max(psfsC, pc)
-    let ck = key(msScal)
+      psfs = max(psfs, parseFloat(meta["psfs_maxdev"]))
+      psfsC = max(psfsC, parseFloat(meta["psfs_contact"]))
+    let ck = msScal.trajs
     let (jPSf, jPSe) = deltaJks(psD, ck)
     let (jFSf, jFSe) = deltaJks(fsD, ck)
     addSum("Delta_PS", jkStat(jPSf), jkStat(jPSe))
@@ -1045,22 +987,22 @@ if analyze:
     if haveA:
       addSum("R_PS_A", ratioVE(jPSf, jAfit), ratioVE(jPSe, jAeff))
       addSum("R_FS_A", ratioVE(jFSf, jAfit), ratioVE(jFSe, jAeff))
-    addSum1("psfs_maxdev", psfs, NaN)
-    addSum1("psfs_contact_m0", psfsC, NaN)
-    var sdt, sp, spe, sf, sfe: seq[float]
+    addSum1("psfs_maxdev", psfs)
+    addSum1("psfs_contact_m0", psfsC)
+    var sdt, sp, spe, sf, sfe: seq[string]
     for dt in 0..nt2:
       var cp = newSeq[seq[float]](ncf)
       var cf = newSeq[seq[float]](ncf)
       for ic in 0..<ncf:
         cp[ic] = @[psD[ic][dt]]
         cf[ic] = @[fsD[ic][dt]]
-      let (pv, pe) = jkStat(jkFrom(cp, proc(c: seq[float]): float = c[0], ck))
-      let (fv, fe) = jkStat(jkFrom(cf, proc(c: seq[float]): float = c[0], ck))
-      sdt.add float(dt)
-      sp.add pv
-      spe.add pe
-      sf.add fv
-      sfe.add fe
+      let (pv, pe) = jkStat(jkFrom(cp, proc(c: seq[float]): float = c[0], ck, bs))
+      let (fv, fe) = jkStat(jkFrom(cf, proc(c: seq[float]): float = c[0], ck, bs))
+      sdt.add outText(float(dt))
+      sp.add outText(pv)
+      spe.add outText(pe)
+      sf.add outText(fv)
+      sfe.add outText(fe)
     writeTsv(anaDir/"scalars.tsv", manifest(("nconf", $ncf),
              ("psfs_maxdev", &"{psfs:.17g}"), ("psfs_contact", &"{psfsC:.17g}")),
              ["dt", "ps", "psErr", "fs", "fsErr"], [sdt, sp, spe, sf, sfe])
@@ -1080,28 +1022,21 @@ if analyze:
       let (_, _, cols) = readTsv(msFlow.files[ic])
       es[ic] = cols[1]
       et[ic] = cols[2]
-    var fs, frs, fe, fee, fsl, ft, fte: seq[float]
+    var fs, frs, fe, fee, fsl, ft, fte: seq[string]
     for i in 0..<ss.len:
-      var m = 0.0
-      var m2 = 0.0
-      var mt = 0.0
-      var mt2 = 0.0
+      var xs, xt: seq[float]
       for ic in 0..<ncf:
-        m += es[ic][i]
-        m2 += es[ic][i]*es[ic][i]
-        mt += et[ic][i]
-        mt2 += et[ic][i]*et[ic][i]
-      m /= float(ncf)
-      mt /= float(ncf)
-      let ev = sqrt(max(0.0, m2/float(ncf) - m*m)/float(max(1, ncf - 1)))
-      let ez = sqrt(max(0.0, mt2/float(ncf) - mt*mt)/float(max(1, ncf - 1)))
-      fs.add ss[i]
-      frs.add (if ss[i] > 0.0: 1.0/ss[i] else: NaN)
-      fe.add m
-      fee.add ev
-      fsl.add m*sqrt(float(lev))
-      ft.add mt
-      fte.add ez
+        xs.add es[ic][i]
+        xt.add et[ic][i]
+      let st = jack(xs, bs = bs)
+      let zt = jack(xt, bs = bs)
+      fs.add outText(ss[i])
+      frs.add (if ss[i] > 0.0: outText(1.0/ss[i]) else: "nan")
+      fe.add outText(st.mean)
+      fee.add outText(Estimate(v: st.err, ok: st.hasErr))
+      fsl.add outText(st.mean*sqrt(float(lev)))
+      ft.add outText(zt.mean)
+      fte.add outText(Estimate(v: zt.err, ok: zt.hasErr))
     writeTsv(anaDir/"flow.tsv",
              manifest(("nconf", $ncf), ("r", "1.0 (sphere radius R)")),
              ["s", "r_over_s", "Es", "EsErr", "Es_sqrtL", "Et", "EtErr"],
@@ -1115,7 +1050,7 @@ if analyze:
     let ncf = msLoop.trajs.len
     let nsh = shapes.len
     let nd = nt2 + 1
-    let ck = key(msLoop)
+    let ck = msLoop.trajs
     var ss: seq[float]
     block:
       let (_, _, cols) = readTsv(msLoop.files[0])
@@ -1149,29 +1084,26 @@ if analyze:
           for j in 0..<nsh:
             result[dt][i][j] = v[(i*nsh + j)*nd + dt]
     let iG = min(max(1, int(round(gevpTref/at))), nd - 2)
-    proc gDeltaEff(v: seq[float]): float =
+    proc gMass(v: seq[float]): seq[Estimate] =
       let c = unflat(v)
-      let chk = gevpCheck(c, gevpT0)
-      if not (chk.evmax > 0.0): return NaN
-      let d = gevpDims(c, gevpT0, at, gevpCut)
-      if iG < d.len and d[iG].len > 0: d[iG][0] else: NaN
-    proc gDeltaFit(v: seq[float]): float =
-      let c = unflat(v)
-      let chk = gevpCheck(c, gevpT0)
-      if not (chk.evmax > 0.0): return NaN
-      let d = gevpDims(c, gevpT0, at, gevpCut)
-      var m = newSeq[float](d.len)
-      for t in 0..<d.len: m[t] = (if d[t].len > 0: d[t][0] else: NaN)
-      let (i0, i1, ok) = fitRun(m)
-      if not ok: return NaN
-      let f = plateauFit(m, i0, i1, at)
-      if f.converged and finite(f.d0): f.d0 else: NaN
-    var gs, gl, gv, ge, gvf, gef, grk, gev0, gev1: seq[float]
+      if gevpCheck(c, gevpT0).evmax <= 0.0: return
+      var lam = newSeq[float](c.len)
+      for t in 0..<c.len:
+        let ev = gevp(c, gevpT0, t, gevpCut)
+        if ev.len == 0: return
+        lam[t] = ev[0]
+      effLocal(lam, at, positive = true)
+    proc gDeltaEff(v: seq[float]): Estimate =
+      let m = gMass(v)
+      if iG < m.len: result = m[iG]
+    proc gDeltaFit(v: seq[float]): Estimate =
+      fit.deltaFit(gMass(v), fitLo, fitHi, at)
+    var gs, gl, gv, ge, gvf, gef, grk, gev0, gev1: seq[string]
     var jByS = initTable[(int, int), (Jk, Jk)]()
     for si in 0..<nS:
       for lh in 1..2:
-        let jf = jkFrom(ldat[(si, lh)], gDeltaFit, ck)
-        let je = jkFrom(ldat[(si, lh)], gDeltaEff, ck)
+        let jf = jkFrom(ldat[(si, lh)], gDeltaFit, ck, bs)
+        let je = jkFrom(ldat[(si, lh)], gDeltaEff, ck, bs)
         jByS[(si, lh)] = (jf, je)
         # health of the full-sample C(t0)
         var mv = newSeq[float](blockLen)
@@ -1185,15 +1117,15 @@ if analyze:
             rank = gevp(c, gevpT0, gevpT0, gevpCut).len
         let (fv, fe2) = jkStat(jf)
         let (evv, eve) = jkStat(je)
-        gs.add ss[si]
-        gl.add float(lh)
-        gvf.add fv
-        gef.add fe2
-        gv.add evv
-        ge.add eve
-        grk.add float(rank)
-        gev0.add chk.evmin
-        gev1.add chk.evmax
+        gs.add outText(ss[si])
+        gl.add outText(float(lh))
+        gvf.add outText(fv)
+        gef.add outText(fe2)
+        gv.add outText(evv)
+        ge.add outText(eve)
+        grk.add outText(float(rank))
+        gev0.add outText(chk.evmin)
+        gev1.add outText(chk.evmax)
     writeTsv(anaDir/"gevp.tsv",
              manifest(("nconf", $ncf), ("t0", $gevpT0), ("cut", $gevpCut),
                       ("tref", &"{gevpTref:g}"), ("shapes", $shapes)),
@@ -1237,10 +1169,10 @@ if analyze:
         for dt in 0..<nd: result[dt] = v[dt] - v[nd]*v[nd]
       var jf2f, jf2e: Jk
       for si in 0..<nS:
-        let jf = jkFrom(f2dat[si], proc(v: seq[float]): float =
-          deltaFit(f2corr(v)), ck)
-        let je = jkFrom(f2dat[si], proc(v: seq[float]): float =
-          deltaEff(f2corr(v)), ck)
+        let jf = jkFrom(f2dat[si], proc(v: seq[float]): Estimate =
+          deltaFit(f2corr(v)), ck, bs)
+        let je = jkFrom(f2dat[si], proc(v: seq[float]): Estimate =
+          deltaEff(f2corr(v)), ck, bs)
         if si == siRef:
           jf2f = jf
           jf2e = je
@@ -1256,25 +1188,20 @@ if analyze:
     var wt, wr, wi, wa: seq[float]
     for ic in 0..<msW.trajs.len:
       let (meta, _, cols) = readTsv(msW.files[ic])
-      mins.add parseFloat(meta.getOrDefault("min_abs", "nan"))
+      mins.add parseFloat(meta["min_abs"])
       for r in 0..<cols[0].len:
         wt.add float(msW.trajs[ic])
         wr.add cols[0][r]
         wi.add cols[1][r]
         wa.add cols[2][r]
-    var m = 0.0
-    var m2 = 0.0
-    for x in mins:
-      m += x
-      m2 += x*x
-    m /= float(mins.len)
-    let e = sqrt(max(0.0, m2/float(mins.len) - m*m)/float(max(1, mins.len - 1)))
+    let st = jack(mins, bs = bs)
+    let e = Estimate(v: st.err, ok: st.hasErr)
     writeTsv(anaDir/"wspec_eigs.tsv",
-             manifest(("nconf", $mins.len), ("min_abs_mean", &"{m:.17g}"),
-                      ("min_abs_err", &"{e:.17g}")),
+             manifest(("nconf", $mins.len), ("min_abs_mean", &"{st.mean:.17g}"),
+                      ("min_abs_err", outText(e))),
              ["traj", "reDw", "imDw", "absX"], [wt, wr, wi, wa])
-    addSum1("min_DW_minus_M", m, e)
-    echo &"wspec: {mins.len} configs  min|D_W - {M:g}| = {m:.4f} +- {e:.4f}"
+    addSum1("min_DW_minus_M", st.mean, e)
+    echo &"wspec: {mins.len} configs  min|D_W - {M:g}| = {st.mean:.4f} +- {outText(e, \".4f\")}"
 
   # ---------------- summary ----------------
   block:
@@ -1287,14 +1214,14 @@ if analyze:
       f.writeLine("# " & k & "=" & v)
     f.writeLine("# columns=name g2R lev nf valueFit errFit valueEff errEff")
     for r in summary:
-      f.writeLine(&"{r.name}\t{g2R:g}\t{lev}\t{nf}\t{r.vFit:.8g}\t" &
-                  &"{r.eFit:.8g}\t{r.vEff:.8g}\t{r.eEff:.8g}")
+      f.writeLine(&"{r.name}\t{g2R:g}\t{lev}\t{nf}\t{outText(r.fit.v, \".8g\")}\t" &
+                  &"{outText(r.fit.e, \".8g\")}\t{outText(r.eff.v, \".8g\")}\t{outText(r.eff.e, \".8g\")}")
     echo ""
     echo &"summary -> {path}"
     let hd = "eff(t=" & &"{trefT:g}" & ")"
     echo &"""{"name":<26} {"fit":>12} {"+-":>10} {hd:>14} {"+-":>10}"""
     for r in summary:
-      echo &"{r.name:<26} {r.vFit:>12.6g} {r.eFit:>10.4g} {r.vEff:>14.6g} {r.eEff:>10.4g}"
+      echo &"{r.name:<26} {outText(r.fit.v, \".6g\"):>12} {outText(r.fit.e, \".4g\"):>10} {outText(r.eff.v, \".6g\"):>14} {outText(r.eff.e, \".4g\"):>10}"
 
 processSaveParams()
 writeParamFile()

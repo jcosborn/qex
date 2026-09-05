@@ -471,9 +471,9 @@ The rational window is **frozen** at construction. Never rebuild it mid-ensemble
   All counts and D_W-level applies accumulate in `stats`; `stats.ok` goes false if any
   inner solve missed its tolerance — check it, nothing raises in the apply path.
 * `dst` must not alias `src` in any apply (same rule as `applyDw`).
-* Everything the apply path needs is preallocated in `newOv` (`work`, `xs`, `xt`, and the
-  two solver closures); the module allocates nothing per apply. `cgmSolve`/`cgSolve`
-  themselves allocate their per-call scratch (WP-D §9 statelessness) — garbage, not growth.
+* `newOv` preallocates `work`, `xs`, and `xt`. Solver callbacks capture gauge and mass
+  within each call; their environments and `cgmSolve`/`cgSolve` scratch are temporary.
+  Repeated calls retain no growing state. Each `Ov` requires exclusive use of its scratch.
 * `kernelWindow`: `smin`/`smax` are Rayleigh quotients of \(X^\dagger X\) (σ units), so
   `smin` ≥ σ_min and `smax` ≤ σ_max unconditionally; `lo`/`hi` expand them by the eigenpair
   residual \(|Hv-\rho v|/|v|\), so [lo, hi] brackets the truth once the iteration is
@@ -815,6 +815,8 @@ proc gevpCheck*(c: seq[seq[seq[float]]], t0: int): tuple[evmin, evmax, cond, asy
 
 # fit.nim   -- IMPLEMENTED (WP-J); the signatures below supersede the earlier sketch
 type
+  FitStatus* = enum
+    fitLimit, fitOk, fitShort, fitSingular, fitStalled
   PlateauFit* = object
     d0*, c*, dp*: float                ## Delta_0, c, Delta' of (V.6)
     ed0*, ec*, edp*: float
@@ -822,7 +824,7 @@ type
     chi2*: float
     dof*: int                          ## npoint - 3
     iters*: int
-    converged*: bool
+    status*: FitStatus                 ## only fitOk is usable for extrapolation
   LineFit* = object
     a*, b*, ea*, eb*, cab*: float      ## intercept, slope, errors, cov(a,b)
     chi2*: float
@@ -841,10 +843,19 @@ type
     resDof*: float
   SeriesStat* = object
     mean*, err*, bias*: float
+    hasErr*: bool                      ## false when fewer than two groups are available
     tau2*, tau2p*: float               ## 2 tau_int: Wolff window / positive sequence
     neff*: float                       ## n / max(1, tau2)
     n*, stride*, blockSize*, nblock*: int
     provisional*: bool                 ## nblock < 4
+  Estimate* = object
+    v*: float
+    ok*: bool
+  Jk* = object
+    full*: Estimate
+    reps*: seq[Estimate]               ## failed replicas retain their group positions
+    trajs*: seq[int]                   ## ordered identities within one ensemble
+    bs*: int
 
 func chi2dof*(f: PlateauFit|LineFit|PlaneFit): float
 
@@ -863,10 +874,27 @@ proc nmaxFit*(g: openArray[float], model: proc(nmax: int): seq[float],
   ## (V.9).  Empty `e` selects the relative residual w_t = 1/g_t^2.
 proc jack*(s: openArray[float], stride = 1, bs = 0): SeriesStat    ## uses utils/resample
   ## blockSize = ceil(max(1, 2 tau_int)) unless `bs > 0` overrides it.
+proc effLocal*(c: openArray[float], at: float, positive = false): seq[Estimate]
+  ## Log ratios require adjacent values with the same nonzero sign; positive=true for GEVP.
+proc deltaFit*(m: openArray[Estimate], t0, t1: int, at: float): Estimate
+proc deltaFit*(c: openArray[float], t0, t1: int, at: float): Estimate
+  ## Fit the longest available run in [t0,t1), retaining the first on a tie.
+proc jkFrom*[V: float|Estimate](cs: seq[seq[float]], est: proc(c: seq[float]): V,
+                              trajs: seq[int], bs = 1): Jk
+proc jkStat*(j: Jk): tuple[v, e: Estimate]
+proc jkMean*(js: openArray[Jk]): Jk
+proc ratioVE*(a, b: Jk): tuple[v, e: Estimate]
+  ## Paired groups preserve covariance; overlapping unpaired groups have no error estimate.
+  ## Disjoint identities use independent-error propagation. All IDs share one ensemble domain.
+  ## A failed replica makes uncertainty unavailable. Availability is serialized as text.
 
 # dataio.nim  -- IMPLEMENTED (WP-J).  TSV, `#key=value` header lines, %.17g numbers.
-proc writeTsv*(path: string, header: openArray[(string, string)],
-               colNames: openArray[string], cols: openArray[seq[float]])
+proc writeTsv*[T: float|string = float](path: string, header: openArray[(string, string)],
+                                      colNames: openArray[string], cols: openArray[seq[T]])
+  ## Atomically replace a complete file. String cells are literal text without tabs or newlines.
+proc requireTsvMeta*(path: string, expected: openArray[(string, string)])
+proc outputsDone*(paths: openArray[string], expected: openArray[(string, string)]): bool
+  ## All members must exist and match identifying metadata; incompatible files raise ValueError.
 proc readTsv*(path: string): tuple[meta: Table[string, string], names: seq[string],
                                    cols: seq[seq[float]]]
   ## `columns` is the reserved key carrying the column names; it comes back as

@@ -354,6 +354,34 @@ suite "gauge action: pseudo-inverse (T1.5g)":
 
   let mp = den.pinv(ev, evtol)
 
+  test "zero sources clear reused solutions without iterations":
+    let b = newGauge(lat)
+    var
+      x = newGauge(lat)
+      reg = newRegOp(lat, bet)
+    for regular in [false, true]:
+      x.s[0] = 1.0
+      x.t[0] = 2.0
+      let ci = if regular: regSolve(lat, x, b, reg) else: cgM(lat, x, b, bet)
+      check ci.converged
+      check ci.iters == 0
+      check ci.r2 == 0.0
+      check norm2(x) == 0.0
+
+  test "zero iteration limits report the residual from a zero start":
+    var
+      b = newGauge(lat)
+      x = newGauge(lat)
+      reg = newRegOp(lat, bet)
+    triSource(lat, b, 0, 0)
+    for regular in [false, true]:
+      x := b
+      let ci = if regular: regSolve(lat, x, b, reg, maxits = 0) else: cgM(lat, x, b, bet, maxits = 0)
+      check not ci.converged
+      check ci.iters == 0
+      check ci.r2 == 1.0
+      check norm2(x) == 0.0
+
   test "double-CG pseudo-inverse matches the dense one":
     var e = 0.0
     var sc = 0.0

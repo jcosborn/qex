@@ -2,6 +2,7 @@
 
 import std/[math, os, random, tables, unittest]
 import ../meas/[fit, dataio]
+import utils/resample
 
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 
@@ -53,6 +54,19 @@ suite "effMass":
 # --- (V.6) --------------------------------------------------------------------
 
 suite "plateauFit":
+  test "constant data has an unidentified exponential gap":
+    let f = plateauFit([2.0, 2, 2, 2, 2, 2, 2, 2, 2, 2], 0, 10,
+                       e = [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
+    check f.status == fitSingular
+
+  test "insufficient data and iteration exhaustion are explicit":
+    check plateauFit([1.0, 1.1, 1.2], 0, 3).status == fitShort
+    var m = newSeq[float](10)
+    for i in 0..<m.len: m[i] = 1.0 + 0.8*exp(-0.9*float(i))
+    let f = plateauFit(m, 0, m.len, maxit = 0)
+    check f.status == fitLimit
+    check f.iters == 0
+
   test "noiseless recovery of (Delta_0, c, Delta')":
     # (d0, c, dp, at, t0, t1); the first row is the paper's window 4 <= t < 8, T=16, Lt=168
     for cs in [(1.0, 0.5, 1.3, 16.0/168.0, 42, 84),
@@ -64,7 +78,7 @@ suite "plateauFit":
       let f = plateauFit(m, t0, t1, at)
       note "plateauFit t=[", at*float(t0), ",", at*float(t1), ") |dd0|=", abs(f.d0 - d0),
         " |dc/c|=", abs(f.c/c - 1.0), " |ddp|=", abs(f.dp - dp), " iters=", f.iters
-      check f.converged
+      check f.status == fitOk
       check f.dof == t1 - t0 - 3
       check abs(f.d0 - d0) < 1e-9
       check abs(f.c - c) < 1e-9*abs(c)
@@ -89,7 +103,7 @@ suite "plateauFit":
     for k in 0..<nrep:
       for i in 0..<t1: m[i] = d0 + c*exp(-dp*at*float(i)) + r.gauss(0.0, sig)
       let f = plateauFit(m, 0, t1, at, e)
-      if not f.converged: inc nbad
+      if f.status != fitOk: inc nbad
       let p = (f.d0 - d0)/f.ed0
       sp += p
       sp2 += p*p
@@ -113,6 +127,119 @@ suite "plateauFit":
     note "plateauFit chi2/dof=", f.chi2dof
     check f.chi2dof > 0.4
     check f.chi2dof < 2.0
+
+suite "local dimensions":
+  test "logarithm availability comes from its input domain":
+    let
+      a = effLocal([4.0, 2.0, 1.0], 0.5)
+      b = effLocal([-4.0, -2.0, -1.0], 0.5)
+      c = effLocal([4.0, 0.0, -1.0, 2.0], 0.5)
+      g = effLocal([-4.0, -2.0, -1.0], 0.5, positive = true)
+    for i in 0..1:
+      check a[i].ok and b[i].ok
+      check abs(a[i].v - 2.0*ln(2.0)) < 1e-14
+      check a[i].v == b[i].v
+      check not g[i].ok
+    for x in c: check not x.ok
+
+  test "plateau selection uses the longest available run and keeps the first tie":
+    var m = newSeq[Estimate](11)
+    for i in 0..<m.len:
+      let d = if i < 5: 1.2 else: 2.3
+      m[i] = Estimate(v: d + 0.7*exp(-0.8*0.2*float(i)), ok: i != 5)
+    let a = deltaFit(m, 0, m.len, 0.2)
+    check a.ok
+    check abs(a.v - 1.2) < 1e-9
+    m[1].ok = false
+    let b = deltaFit(m, 0, m.len, 0.2)
+    check b.ok
+    check abs(b.v - 2.3) < 1e-9
+    check not deltaFit(m, 0, 5, 0.2).ok
+
+suite "configuration jackknife":
+  test "unequal groups use the shared pseudo-value convention":
+    let
+      xs = @[0.0, 0.0, 0.0, 0.0, 100.0]
+      cs = @[@[0.0], @[0.0], @[0.0], @[0.0], @[100.0]]
+      ids = @[10, 20, 30, 40, 50]
+    proc mean(xs: Ensemble[seq[float]]): float =
+      for i in 0..<xs.len: result += xs[i]/float(xs.len)
+    for bs in [1, 2]:
+      let j = jkFrom(cs, proc(c: seq[float]): float = c[0], ids, bs)
+      let got = jkStat(j)
+      let want = xs.jackknife(bs, mean)
+      check got.v.ok and got.e.ok
+      check abs(got.v.v - want.mean) < 1e-13
+      check abs(got.e.v - want.stdev) < 1e-13
+      for i in 0..<j.reps.len:
+        check j.reps[i].ok
+        check abs(j.reps[i].v - want.jksamples[i]) < 1e-13
+    let st = jkStat(jkFrom(cs, proc(c: seq[float]): float = c[0], ids, 2))
+    check abs(st.e.v - 80.0/3.0) < 1e-13
+
+  test "one group evaluates only the full sample and has no error":
+    for cs in [@[@[3.0]], @[@[2.0], @[4.0]]]:
+      var calls = 0
+      var ids: seq[int]
+      for i in 0..<cs.len: ids.add i
+      let j = jkFrom(cs, proc(c: seq[float]): float =
+        inc calls
+        c[0], ids, 3)
+      let st = jkStat(j)
+      check calls == 1
+      check j.reps.len == 0
+      check st.v.ok and st.v.v == 3.0
+      check not st.e.ok
+    let st = jack([3.0], bs = 1)
+    check st.mean == 3.0
+    check not st.hasErr
+
+  test "failed replicas keep their positions and invalidate uncertainty":
+    let cs = @[@[1.0], @[2.0], @[3.0], @[4.0]]
+    let ids = @[1, 2, 3, 4]
+    let a = jkFrom(cs, proc(c: seq[float]): Estimate =
+      Estimate(v: c[0], ok: c[0] != 3.0), ids)
+    let b = jkFrom(cs, proc(c: seq[float]): float = c[0], ids)
+    let st = jkStat(a)
+    check a.reps.len == 4
+    check not a.reps[0].ok
+    for i in 1..3: check a.reps[i].ok
+    check st.v.ok and st.v.v == 2.5
+    check not st.e.ok
+    let av = jkStat(jkMean([a, b]))
+    check av.v.ok and av.v.v == 2.5
+    check not av.e.ok
+    let rat = ratioVE(a, b)
+    check rat.v.ok and rat.v.v == 1.0
+    check not rat.e.ok
+    let bad = jkFrom(cs, proc(c: seq[float]): Estimate =
+      Estimate(v: c[0], ok: c[0] != 2.5), ids)
+    check not jkStat(bad).v.ok
+    check not jkStat(bad).e.ok
+
+  test "ratios pair groups only when sample identities and blocks match":
+    let cs = @[@[1.0], @[2.0], @[4.0], @[8.0], @[16.0]]
+    let ids = @[1, 2, 3, 4, 5]
+    let a = jkFrom(cs, proc(c: seq[float]): float = 2.0*c[0], ids, 2)
+    let b = jkFrom(cs, proc(c: seq[float]): float = c[0], ids, 2)
+    let rat = ratioVE(a, b)
+    check rat.v.ok and rat.e.ok
+    check rat.v.v == 2.0
+    check rat.e.v == 0.0
+    let dis = jkFrom(cs, proc(c: seq[float]): float = c[0], @[6, 7, 8, 9, 10], 2)
+    let dr = ratioVE(a, dis)
+    let sa = jkStat(a)
+    let sb = jkStat(dis)
+    let want = 2.0*sqrt((sa.e.v/sa.v.v)^2 + (sb.e.v/sb.v.v)^2)
+    check dr.v.ok and dr.e.ok
+    check abs(dr.e.v - want) < 1e-13
+    for other in [jkFrom(cs, proc(c: seq[float]): float = c[0], ids, 1),
+                  jkFrom(cs, proc(c: seq[float]): float = c[0], @[2, 1, 3, 4, 5], 2),
+                  jkFrom(cs, proc(c: seq[float]): float = c[0], @[5, 6, 7, 8, 9], 2)]:
+      let r = ratioVE(a, other)
+      check r.v.ok and r.v.v == 2.0
+      check not r.e.ok
+      expect ValueError: discard jkMean([a, other])
 
 # --- (V.7), one dimension -----------------------------------------------------
 

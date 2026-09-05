@@ -565,6 +565,29 @@ suite "kernelWindow":
 
 suite "solve counts and allocation":
 
+  test "solveNormal keeps gauge and mass local to each solve":
+    let
+      l = newLat(newSphere(1), 2, 0.4)
+      o = newOv(l, 1.0, newRat(0.2, 30.0, 11), 1e-20, 1e-14, 500)
+      us = [newGauge(l), randGauge(l, 4900, 0.2)]
+      v = randSpin(l.nsite, 4903)
+    var
+      b = newSpin(l.nsite)
+      x = newSpin(l.nsite)
+      y = newSpin(l.nsite)
+    for (k, mass) in [(0, 0.25), (1, 0.75), (0, 0.5), (1, 0.25)]:
+      o.clearStats
+      applyNormal(o, b, v, us[k], mass)
+      let ci = solveNormal(o, x, b, us[k], mass)
+      applyNormal(o, y, x, us[k], mass)
+      let r2 = reldiff(y, b)^2
+      check ci.converged
+      check ci.iters > 1
+      check reldiff(x, v) < 1e-6
+      check r2 <= 1.01*o.r2outer
+      check abs(r2 - ci.r2) < 1e-6*o.r2outer
+      check o.stats.ok
+
   test "solves per call":
     let fx = fixes[1]
     let o = fx.o31
@@ -597,14 +620,8 @@ suite "solve counts and allocation":
     check o.stats.ok
 
   test "allocation regression over 64 applies":
-    ## The Ov-owned path allocates nothing: work/xs/xt are preallocated and the
-    ## solver closures are built once in newOv.  cgmSolve/cgSolve DO allocate their
-    ## nshift+3 scratch fields per call (a documented WP-D property of the stateless
-    ## section-9 signatures), all of it garbage on return; under this build's refc
-    ## GC the raw occupied counter therefore drifts with the collection cadence.
-    ## The assertion with teeth is live memory across GC_fullCollect: it must be
-    ## identical, i.e. nothing in the apply path GROWS the live set.  The raw drift
-    ## is echoed so the churn stays visible.
+    ## work/xs/xt are reused; callback environments and solver scratch are temporary.
+    ## Live memory after collection must stay fixed across repeated calls.
     let fx = fixes[1]
     let o = fx.o11
     var x = randSpin(lat.nsite, 4902)

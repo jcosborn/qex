@@ -493,7 +493,9 @@ when isMainModule:
     var gh = newSeq[float](half + 1)
     for i in 0..half: gh[i] = g[i]
     let m = effMass(gh, at, T)
-    plateauFit(m, int(round(fitLo/at)), min(int(round(fitHi/at)), m.len), at)
+    result = plateauFit(m, int(round(fitLo/at)), min(int(round(fitHi/at)), m.len), at)
+    if result.status != fitOk:
+      raise newException(ValueError, "delta0Fit: " & $result.status)
 
   proc normDev(g: seq[float], at, T: float, lo, hi: float,
                model: proc(t: float): float): float =
@@ -758,7 +760,7 @@ when isMainModule:
         fGrid.add FRow(lv: lv, lt: lt, at: at, d0: fit.d0, ed0: fit.ed0,
                        chi: fit.chi2dof)
         echo &"    T=16 Lt={lt:3d}: Delta_0 = {fit.d0:.6f} +- {fit.ed0:.6f}" &
-             &"   chi2/dof = {fit.chi2dof:.2e}  (converged {fit.converged})"
+             &"   chi2/dof = {fit.chi2dof:.2e}  (status {fit.status})"
         if lv == 1 and lt == 168: f1d0 = fit
         if lt == 168:                                  # Fig 8 at Lt = 168
           let half = int(round(0.5*t16/at))

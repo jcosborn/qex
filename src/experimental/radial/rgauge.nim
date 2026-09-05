@@ -128,6 +128,8 @@ proc reportCorr(lv: int, conv: GeomConv, c: CorrOut) =
     i0 = int(round(fitLo/at))
     i1 = min(int(round(fitHi/at)), m.len)
     fit = plateauFit(m, i0, i1, at)
+  if fit.status != fitOk:
+    raise newException(ValueError, "reportCorr: " & $fit.status)
   echo ""
   echo &"--- T1.5a/T1.5b  L = {lv}  geometry = {tag}  nt = {nt}  T = {ttot}  " &
        &"at = {at:.6f}  1/g^2 = {g2inv}"
@@ -143,7 +145,7 @@ proc reportCorr(lv: int, conv: GeomConv, c: CorrOut) =
     echo &"  {t:7.4f}  {c.g[i]:16.8e}  {an:16.8e}  {c.g[i]/an:9.5f}  {d:10.6f}"
   echo &"    plateau fit [{fitLo}, {fitHi}) -> Delta_0 = {fit.d0:.6f} +- {fit.ed0:.6f}" &
        &"   c = {fit.c:.4g}  Delta' = {fit.dp:.4f}  chi2/dof = {fit.chi2dof:.3e}" &
-       &"  (dof {fit.dof}, {fit.iters} its, converged {fit.converged})"
+       &"  (dof {fit.dof}, {fit.iters} its, status {fit.status})"
   echo &"    published Delta_0 = {published}  (dev {100.0*(fit.d0/published - 1.0):+.3f}%)" &
        &"   continuum sqrt(2) = {sqrt(2.0):.6f}  (dev {100.0*(fit.d0/sqrt(2.0) - 1.0):+.3f}%)"
   if lv == 1 and nt == 120 and abs(ttot - 16.0) < 1e-12:
@@ -181,6 +183,9 @@ proc reportCorr(lv: int, conv: GeomConv, c: CorrOut) =
         j0 = int(round(a/at))
         j1 = min(int(round(b/at)), m.len)
         fw = plateauFit(m, j0, j1, at)
+      if fw.status != fitOk:
+        echo &"    [{a:4.1f},{b:4.1f})   {fw.status}"
+        continue
       echo &"    [{a:4.1f},{b:4.1f})   {fw.d0:11.6f}  {fw.ed0:11.6f}  " &
            &"{fw.chi2dof:11.3e}  {fw.dp:9.4f}"
 
@@ -196,6 +201,8 @@ proc delta0(lv, ntv: int, atv: float, conv: GeomConv,
     tt = atv*float(ntv)
     m = effMass(gh, atv, tt)
     fit = plateauFit(m, int(round(fitLo/atv)), min(int(round(fitHi/atv)), m.len), atv)
+  if fit.status != fitOk:
+    raise newException(ValueError, "delta0: " & $fit.status)
   (fit.d0, fit.ed0, fit.chi2dof)
 
 if doCorr != 0:
@@ -245,6 +252,8 @@ if doCorr != 0:
     let
       m = effMass(gh, atv, 12.0)
       fit = plateauFit(m, int(round(3.0/atv)), int(round(6.0/atv)), atv)
+    if fit.status != fitOk:
+      raise newException(ValueError, "T=12 fit: " & $fit.status)
     echo ""
     echo &"    T = 12 variant (L=1, nt={nt}, at = {atv:.6f}), window [3, 6): " &
          &"Delta_0 = {fit.d0:.6f}"

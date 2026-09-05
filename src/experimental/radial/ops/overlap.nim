@@ -17,11 +17,11 @@
 ## solve missed its tolerance (keep r2inner at least ~2 decades above the operator's
 ## roundoff floor (eps*cond)^2, doc/06 WP-D).  Solver initial guesses are always zero.
 ##
-## Workspace: everything the apply path needs is preallocated in `newOv` (`work`
-## slots, `xs`/`xt` multishift banks); this module allocates nothing per apply.
-## `cgmSolve`/`cgSolve` allocate their own scratch per call (nshift+3 fields; a
-## documented WP-D property of the stateless section-9 signatures).  `dst` must not
-## alias `src` in any apply.  Fixed `work` slots:
+## Workspace: `newOv` preallocates `work` and the `xs`/`xt` multishift banks.
+## Solver callbacks capture gauge and mass for one call; their environments and
+## `cgmSolve`/`cgSolve` scratch are temporary. Calls retain no growing state.
+## Each Ov requires exclusive use of its scratch. `dst` must not alias `src` in
+## any apply. Fixed `work` slots:
 ##   0 applyH intermediate, 1 applyOv/applyOvAdj, 2 applyNormal,
 ##   3..5 ovGradient (z, X^dag left, X s_j / X t_j).
 
@@ -56,10 +56,6 @@ type
     r2inner*, r2outer*: float  ## multishift / outer-CG relative residual targets
     maxits*: int
     stats*: SolveStats
-    cu: ptr Gauge              ## gauge field for the solver closures, set per call
-    cmass: float               ## mass for the solveNormal closure
-    hop: proc(dst: var Spin, src: Spin)   ## H = X^dag X at cu[]
-    nop: proc(dst: var Spin, src: Spin)   ## D(cmass)^dag D(cmass) at cu[]
 
 const
   nwork = 6
@@ -112,10 +108,10 @@ proc applyH*(o: Ov, dst: var Spin, src: Spin, u: Gauge) =
   applyX(o, o.work[0], src, u)
   applyXAdj(o, dst, o.work[0], u)
 
-proc msolve(o: Ov, xs: var seq[Spin], b: Spin) =
+proc msolve(o: Ov, xs: var seq[Spin], b: Spin, u: Gauge) =
   ## (H + pole_j) xs_j = b for every Zolotarev pole out of one Krylov space.
-  ## `o.cu` must already point at the gauge field.
-  let mi = cgmSolve(xs, b, o.rat.pole, o.r2inner, o.maxits, o.hop)
+  proc op(dst: var Spin, src: Spin) = applyH(o, dst, src, u)
+  let mi = cgmSolve(xs, b, o.rat.pole, o.r2inner, o.maxits, op)
   inc o.stats.nmulti
   o.stats.miters += mi.iters
   o.stats.mrefits += mi.refits
@@ -127,8 +123,7 @@ proc applyOv*(o: Ov, dst: var Spin, src: Spin, u: Gauge, mass = 0.0) =
   ## One multishift solve.
   requireOvMass mass
   let alpha = ovMassAlpha(mass)
-  o.cu = addr u
-  msolve(o, o.xs, src)
+  msolve(o, o.xs, src, u)
   o.work[1] := src                    # z = R(H) src
   scale(o.work[1], alpha*o.rat.cst)
   for j in 0..<o.rat.npole: axpy(o.work[1], alpha*o.rat.res[j], o.xs[j])
@@ -141,9 +136,8 @@ proc applyOvAdj*(o: Ov, dst: var Spin, src: Spin, u: Gauge, mass = 0.0) =
   ## because R(H) is Hermitian and (X R(H))^dag = R(H) X^dag.
   requireOvMass mass
   let alpha = ovMassAlpha(mass)
-  o.cu = addr u
   applyXAdj(o, o.work[1], src, u)
-  msolve(o, o.xs, o.work[1])
+  msolve(o, o.xs, o.work[1], u)
   dst := src
   scale(dst, ovMassBeta(mass))
   axpy(dst, alpha*o.rat.cst, o.work[1])
@@ -159,9 +153,8 @@ proc solveNormal*(o: Ov, x: var Spin, b: Spin, u: Gauge, mass = 0.0): CgInfo =
   ## Every CG iteration costs two multishift solves (plus one extra applyNormal
   ## for cgSolve's recomputed true residual).
   requireOvMass mass
-  o.cu = addr u
-  o.cmass = mass
-  result = cgSolve(x, b, o.r2outer, o.maxits, o.nop)
+  proc op(dst: var Spin, src: Spin) = applyNormal(o, dst, src, u, mass)
+  result = cgSolve(x, b, o.r2outer, o.maxits, op)
   inc o.stats.ncg
   o.stats.cgiters += result.iters
   if not result.converged: o.stats.ok = false
@@ -184,13 +177,12 @@ proc ovGradient*(o: Ov, f: var Gauge, left, right: Spin, u: Gauge,
   ## Cost: two multishift solves (s_j and t_j), 2 npole + 1 X applies and pullbacks.
   requireOvMass mass
   let coeff = scale*ovMassAlpha(mass)
-  o.cu = addr u
-  msolve(o, o.xs, right)                       # s_j
+  msolve(o, o.xs, right, u)                    # s_j
   o.work[3].zero                               # z = R(H) right
   axpy(o.work[3], o.rat.cst, right)
   for j in 0..<o.rat.npole: axpy(o.work[3], o.rat.res[j], o.xs[j])
   applyXAdj(o, o.work[4], left, u)
-  msolve(o, o.xt, o.work[4])                   # t_j
+  msolve(o, o.xt, o.work[4], u)                # t_j
   dwPullback(o.l, f, left, o.work[3], u, coeff, add)
   for j in 0..<o.rat.npole:
     let rj = coeff*o.rat.res[j]
@@ -212,7 +204,6 @@ proc kernelWindow*(o: Ov, u: Gauge, iters = 32):
   ## `inside` false means the frozen window is violated: the caller must STOP --
   ## never rebuild the rational mid-ensemble.  Allocates its own vectors: this is a
   ## monitor, not an inner-loop routine.
-  o.cu = addr u
   let n = o.l.nsite
   var
     v = newSpin(n)
@@ -220,10 +211,11 @@ proc kernelWindow*(o: Ov, u: Gauge, iters = 32):
     x = newSpin(n)
     r: Threefry4x64
   r.seedIndep(20260821, 0)
+  proc op(dst: var Spin, src: Spin) = applyH(o, dst, src, u)
   proc eigpair(v, hv: var Spin): tuple[rq, rho: float] =
     ## Normalizes v, forms hv = H v, returns the Rayleigh quotient and residual.
     scale(v, 1.0/sqrt(norm2(v)))
-    applyH(o, hv, v, o.cu[])
+    applyH(o, hv, v, u)
     result.rq = redot(v, hv)
     var d2 = 0.0
     for i in 0..<n:
@@ -245,7 +237,7 @@ proc kernelWindow*(o: Ov, u: Gauge, iters = 32):
   var bot = eigpair(v, hv)
   for k in 1..<iters:
     if bot.rho <= 1e-8*bot.rq: break
-    let ci = cgSolve(x, v, o.r2inner, o.maxits, o.hop)
+    let ci = cgSolve(x, v, o.r2inner, o.maxits, op)
     inc o.stats.ncg
     o.stats.cgiters += ci.iters
     if not ci.converged: o.stats.ok = false
@@ -291,7 +283,7 @@ proc denseOv*(o: Ov, u: Gauge): seq[Complex64] =
     result[j + nd*j] += complex64(1.0, 0.0)
 
 proc newOv*(l: Lat, m: float, rat: Rat, r2inner, r2outer: float, maxits: int): Ov =
-  ## All workspace is allocated here; the apply path allocates nothing.
+  ## Allocate persistent workspace; solver scratch and callbacks are local to each call.
   let o = Ov(l: l, m: m, rat: rat, r2inner: r2inner, r2outer: r2outer,
              maxits: maxits)
   o.work = newSeq[Spin](nwork)
@@ -302,6 +294,4 @@ proc newOv*(l: Lat, m: float, rat: Rat, r2inner, r2outer: float, maxits: int): O
     o.xs[j] = newSpin(l.nsite)
     o.xt[j] = newSpin(l.nsite)
   o.clearStats
-  o.hop = proc(dst: var Spin, src: Spin) = applyH(o, dst, src, o.cu[])
-  o.nop = proc(dst: var Spin, src: Spin) = applyNormal(o, dst, src, o.cu[], o.cmass)
   o
