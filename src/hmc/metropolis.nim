@@ -61,33 +61,38 @@ proc updateStats*[M:MetropolisRoot](m: M) =
   m.avgPAccept = (n*m.avgPAccept + m.pAccept) / (n+1)
   m.pAcceptStats.push m.pAccept
 
-proc init*[M:MetropolisRoot](m: M) =
-  m.verbosity = 0
+proc init*[M:MetropolisRoot](m: M; verbosity = 0) =
+  m.verbosity = verbosity
   m.stats.newSeq(0)
-  m.clearStats
+  m.clearStats()
 
 proc update*[M:MetropolisRoot](m: M) =
   mixin finish, checkReverse, generateReverse, finishReverse
   template ff(x: float): string =
     formatFloat(x, ffDecimal, precision=6)
 
+  # run full HMC trajectory
   m.start
-
   m.hOld = m.getH
   m.generate
   m.hNew = m.getH
   m.deltaH = m.hNew - m.hOld
   if m.verbosity>0:
     echo &"hOld: {m.hOld:.6f}  hNew: {m.hNew:.6f}"
+  when compiles(finish(m)): m.finish
 
-  m.finish
+  # run reversibility check
+  var doReverse = false
+  when compiles(checkReverse(m)): doReverse = m.checkReverse
+  if doReverse:
+    if m.verbosity>0:
+      echo "== Reversibility check =========="
+    when compiles(generateReverse(m)): m.generateReverse
+    when compiles(finishReverse(m)): m.finishReverse
+    if m.verbosity>0:
+      echo "================================="
 
-  if m.checkReverse:
-    m.generateReverse
-    #m.hReverse = m.getH
-    m.finishReverse
-    # echo?
-
+  # do metropolis test
   m.rnd = m.globalRand
   m.expmDeltaH = exp(-m.deltaH)
   m.pAccept = min(1.0, m.expmDeltaH)
@@ -95,15 +100,13 @@ proc update*[M:MetropolisRoot](m: M) =
     m.accepted = true
     m.updateStats
     if m.verbosity>0:
-      echo "ACCEPT deltaH: $1  pAccept: $2  rnd: $3"%
-        [m.deltaH.ff, m.pAccept.ff, m.rnd.ff]
+      echo &"ACCEPT deltaH: {m.deltaH.ff}  pAccept: {m.pAccept.ff}  rnd: {m.rnd.ff}"
     m.accept
   else:
     m.accepted = false
     m.updateStats
     if m.verbosity>0:
-      echo "REJECT deltaH: $1  pAccept: $2  rnd: $3"%
-        [m.deltaH.ff, m.pAccept.ff, m.rnd.ff]
+      echo &"REJECT deltaH: {m.deltaH.ff}  pAccept: {m.pAccept.ff}  rnd: {m.rnd.ff}"
     m.reject
 
 
