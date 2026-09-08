@@ -30,13 +30,11 @@ type
     state*: T
 # required routines:
 #   start, logWeight, generate, globalRand, accept, reject
-
 # optional routines
-proc finish*[M:MetropolisRoot](m: M) = discard
-proc checkReverse*[M:MetropolisRoot](m: M): bool = false
-proc generateReverse*[M:MetropolisRoot](m: M) = discard
-proc finishReverse*[M:MetropolisRoot](m: M) = discard
-
+#   proc finish*[M:MetropolisRoot](m: M) = discard
+#   proc checkReverse*[M:MetropolisRoot](m: M): bool = false
+#   proc generateReverse*[M:MetropolisRoot](m: M) = discard
+#   proc finishReverse*[M:MetropolisRoot](m: M) = discard
 
 proc clearStats*[M:MetropolisRoot](m: M) =
   m.stats.setLen(0)
