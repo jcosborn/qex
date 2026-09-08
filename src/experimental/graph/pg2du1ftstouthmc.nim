@@ -79,6 +79,7 @@ withRng(gp.rng, R):
     graph = buildTrajectoryGraph(grt, g, p, sa.action, runConfig, buildTraining = false)
     # physical field U = f(V) and its log-Jacobian, for measurement on the V leaf
     measure = sa.flow(graph.initialState.gauge)
+    measureLd = logDetJ(measure, graph.initialState.gauge)
     # proposed physical field U = f(V_prop) from the end-of-MD state, for the
     # proposed-configuration monitor (dQ, maxP)
     measureProp = sa.flow(graph.finalState.gauge)
@@ -87,8 +88,8 @@ withRng(gp.rng, R):
     prevQ = 0.0   # committed topological charge from the previous trajectory
     proposalQ = 0.0
   block:
-    discard measure.smeared.eval
-    let us = measure.smeared.gaugeSnapshot
+    discard measure.eval
+    let us = measure.gaugeSnapshot
     echo "Initial smeared plaq: ", us.plaq3
     prevQ = us.topo2DU1
     if Uloaded.len > 0:   # f(f^-1(U)) must reproduce the loaded physical config
@@ -109,8 +110,8 @@ withRng(gp.rng, R):
   # Proposed-configuration monitor (pre-commit): dQ = Q(f(V_prop)) − Q(committed) and
   # max|plaquette angle| of the end-of-MD proposal, independent of accept/reject.
   proc proposalMon(traj: int; dH, acc: float) =
-    discard measureProp.smeared.eval
-    let tm = measureProp.smeared.gaugeSnapshot.topoMaxP2DU1
+    discard measureProp.eval
+    let tm = measureProp.gaugeSnapshot.topoMaxP2DU1
     let dq = int(round(tm.topo - prevQ))
     proposalQ = tm.topo
     echo "proposal: dQ ", dq, "  maxP ", tm.maxP
@@ -118,10 +119,10 @@ withRng(gp.rng, R):
       dQchanged[traj - runConfig.trajsThermo - 1] = dq != 0
 
   proc measureTraj(traj: int; dH, acc: float; accepted: bool; forceStats: MdForceStats) =
-    discard measure.smeared.eval
+    discard measure.eval
     let
-      u = measure.smeared.gaugeSnapshot
-      lndetCur = measure.lndet.eval.sval
+      u = measure.gaugeSnapshot
+      lndetCur = measureLd.eval.sval
       pl = u.plaq3
       q = if accepted: proposalQ else: prevQ
     echo "plaq: ", pl.re, "  topo: ", q, "  lnDet: ", lndetCur

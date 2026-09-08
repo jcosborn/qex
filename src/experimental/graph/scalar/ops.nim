@@ -1,4 +1,5 @@
 import ../core
+import ../core/logdet
 import types
 import ../support/op
 import math
@@ -119,6 +120,30 @@ let exps = Gfunc(forward: expsf, backward: expsb, name: "exps")
 
 proc exp*(x: Gscalar): Gscalar =
   graphNode(scalarNodeLike(x), @[Gvalue(x)], exps, "exps")
+
+proc lnsf(v: Gvalue) =
+  let x = Gscalar(v.inputs[0])
+  let z = Gscalar(v)
+  z.sval = math.ln(x.sval)
+
+proc lnsb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  let x = Gscalar(z.inputs[0])
+  scaledUpstreamOr(zb, Gscalar, toGvalue(x.runtime, 1.0) / x)
+
+let lns = Gfunc(forward: lnsf, backward: lnsb, name: "lns")
+
+proc ln*(x: Gscalar): Gscalar =
+  graphNode(scalarNodeLike(x), @[Gvalue(x)], lns, "lns")
+
+proc logDetJ*(u: Gvalue, v: Gvalue): Gscalar =
+  ## ln|det(du/dv)| summed along the factorization chain from v to u
+  ## (`Gfunc.logdet` steps). The empty chain u == v is a fresh static zero leaf.
+  let r = logDetJImpl(u, v)
+  if r == nil:
+    return scalarNodeLike(u).markStaticZeroLeaf
+  if not (r of Gscalar):
+    raiseValueError("logDetJ contributions must be scalar:\n" & r.nodeRepr)
+  Gscalar(r)
 
 proc lazyScalef(v: Gvalue) =
   let upstream = Gscalar(v.inputs[0])

@@ -94,6 +94,7 @@ The runtime owns mutable graph identity and generic reuse state:
 - stable node ids
 - symbolic graph revision
 - gradient cache
+- log-Jacobian chain cache
 - functional state: apply instantiation cache
 - cache stats and debug knobs
 - runtime-local run counters
@@ -230,6 +231,76 @@ Conditional upstream gradients are split before calling a node's `backward`.
 Static zero branches are skipped there, so inactive branches can produce guarded
 VJP graphs without constructing or evaluating the inactive apply VJP.
 
+## 5.1 Log-Jacobian Factorization (`logDetJ`)
+
+Determinants do not localize across merging paths, so unlike reverse mode the
+log-Jacobian engine works only on declared composition chains:
+
+```text
+v = w0 -> w1 -> ... -> wn = u
+ln|det(du/dv)| = sum_k ln|det(d w_k / d w_{k-1})|
+```
+
+`Gfunc.logdet` is the per-op contract. For a step node `z` it returns
+`(ld, via)` meaning:
+
+- every backward path from `z` to values upstream of `via` passes through
+  `via`, so `d z/d base = (d z/d via)·(d via/d base)` for any base below it;
+- `ld` is a scalar graph expression for `ln|det(d z/d via)|`, the total
+  derivative through every edge between `z` and `via` (a re-entrant context
+  edge such as a subset-frozen staple built from `via` is inside that factor);
+- `z` and `via` are shape-compatible (the step is square).
+
+Structural verification checks squareness. For graph dependence it sees only
+`iwmBackward`: `via` must be a backward dependency of the step, and no backward
+path to the requested base may bypass it. This trusts the op's input view at the
+same level as reverse mode.
+
+An op whose local determinant formula holds graph-valued auxiliaries fixed must
+itself reject any that depend on `via` (for stout: `ds`, `alpha`, or
+coefficients). A re-entrant auxiliary is valid only when the owning op
+internalizes it and proves a frozen/triangular decomposition, as the action-aware
+subset stout step does. The local formula is op-owned math, like `backward`, and
+must be pinned by tests.
+
+Whether the map is globally invertible is the application's concern; the engine
+needs only the factorization, and a singular step shows up as `-inf`/`nan` in
+the ordinary output.
+
+`logDetJ(u, v)` builds the chain sum as an ordinary scalar graph:
+
+- it asks each chain node's hook once and memoizes hook results and per-base
+  sums in `GraphRuntime.ldjCacheByNode`, keyed by the runtime symbolic
+  revision, so repeated calls return the identical node and shared prefixes are
+  reused; `resetLdjCache` drops all entries;
+- `cond` distributes: each branch is its own chain, the selector contributes
+  nothing (the same a.e. convention as cond's backward), and eval follows only
+  the selected branch's sum;
+- a static-zero `ld` is elided from the sum, so a chain of only static-zero
+  steps remains a static zero; the empty chain (`u` is `v`) is a fresh static
+  zero scalar;
+- a chain node without a hook, or a chain that dead-ends on a leaf off the
+  base, fails at construction.
+
+`apply`/lambda values are not chains the engine can walk; `logDetJ` fails at the
+apply node. Generic cloning reuses the same `Gfunc`, so its hook may capture
+immutable configuration but must derive graph values, including `ld` and `via`,
+from `z` and its inputs.
+
+Actions on a graph-level flow u = f(v) take the generic form
+
+```text
+S_eff(v) = S(u) - logDetJ(u, v)
+```
+
+- The fused stout pair carries its logdet view as a structural input of its
+  update view, so cloning preserves the pair without a side cache.
+- A fused local correction without a graph-level flow, such as block5 coupling,
+  remains valid and declares no factorization.
+- Versus a telescoped local correction, the generic action costs one extra step
+  forward and one extra pullback per force (2 of 3K kernels for K steps).
+  Recover them by fusing each step's smear and logdet kernels, not by telescoping.
+
 ## 6. Exceptional Node Checklist
 
 If a node is not "raw inputs plus ordinary backward", document or make obvious:
@@ -238,6 +309,14 @@ If a node is not "raw inputs plus ordinary backward", document or make obvious:
 - grad-plan dependencies;
 - reachable dependencies;
 - how ordinary `backward` maps raw inputs to symbolic contributions;
+- whether the op declares a `logdet` factorization, and that its hook derives
+  `ld` and `via` from `z` when the `Gfunc` can be shared or cloned;
+- kernel capture and cloning: a `Gfunc`'s closures may capture only immutable
+  configuration and layout-only scratch (`newOneOf` buffers and shifters).
+  Anything holding input values (`Transporter.link`, saved field references, or
+  a captured input node used instead of `v.inputs[i]`) must be rebound from
+  `v.inputs` inside the kernel, because generic cloning (`newOneOf` + cloned
+  inputs + the same `Gfunc`) shares those closures;
 - where erased raw inputs/upstreams are restored to concrete types;
 - whether `newOneOf + cloned inputs + gfunc` preserves the node, or whether it
   needs clone-aware handling.

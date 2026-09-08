@@ -442,10 +442,7 @@ proc exp*(m: Mat1): auto {.noInit.} =
     #r := expPade4(m)
     #r := expPade8(m)
     #r := expPade9(m)
-    var p: ExpParam
-    p.scale = 20
-    p.kind = ekPoly
-    p.order = 4
+    var p = newExpParam()
     r := p.exp(m)
     #[
     type ft = numberType(m)
@@ -474,10 +471,7 @@ proc expDeriv*(m: Mat1, c:Mat2): auto {.noInit.} =
     # Match the adjoint convention of the Nc>1, exp(m†)·c
     r := exp(m[0,0].adj) * c[0,0]
   else:
-    var p: ExpParam
-    p.scale = 20
-    p.kind = ekPoly
-    p.order = 4
+    var p = newExpParam()
     r := p.expDeriv(m, c)
   r
 

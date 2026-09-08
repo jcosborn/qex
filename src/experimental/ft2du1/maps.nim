@@ -373,7 +373,6 @@ type
     y*, du*, dm*, duu*, dum*: float
 
   PairMap* = object
-    beta*: float
     stages*: seq[ContextMap]
     invTol*: float
     invIter*: int
@@ -385,7 +384,6 @@ type
     jac*: array[2, array[2, float]]
     det*, detPlus*, detMinus*: float
     logdet*, logdetPlus*, logdetMinus*: float
-    action*, forcePlus*, forceMinus*: float
 
 proc featureCount*(nctx, order: int; phase = false): int {.inline.} =
   if phase: 1+2*order else: 1+nctx*order
@@ -1009,13 +1007,6 @@ proc evalPair*(m: PairMap; pplus, pminus: float): PairEval =
   result.logdet = ln(result.det)
   result.logdetPlus = result.detPlus/result.det
   result.logdetMinus = result.detMinus/result.det
-  result.action = -m.beta*(cos(result.physicalPlus)+cos(result.physicalMinus))-
-    result.logdet
-  let
-    sp = m.beta*sin(result.physicalPlus)
-    sm = m.beta*sin(result.physicalMinus)
-  result.forcePlus = result.jac[0][0]*sp+result.jac[1][0]*sm-result.logdetPlus
-  result.forceMinus = result.jac[0][1]*sp+result.jac[1][1]*sm-result.logdetMinus
 
 proc invertPair*(m: PairMap; physicalPlus, physicalMinus: float): array[2, float] =
   let

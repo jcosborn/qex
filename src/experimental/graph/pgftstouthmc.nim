@@ -106,11 +106,13 @@ proc runStoutHmc[T](R: typedesc[T]) =
 
   let
     graph = buildTrajectoryGraph(grt, g, p, sa.action, runConfig, buildTraining = false)
+    # physical field U = f(V) and its log-Jacobian, for measurement on the V leaf
     measure = sa.flow(graph.initialState.gauge)
+    measureLd = logDetJ(measure, graph.initialState.gauge)
 
   block:
-    discard measure.smeared.eval
-    let us = measure.smeared.gaugeSnapshot
+    discard measure.eval
+    let us = measure.gaugeSnapshot
     echo "Initial smeared plaq: ", us.avgPlaq
     if Uloaded.len > 0:   # f(f^-1(U)) must reproduce the loaded physical config
       echo "load round-trip |f(f^-1(U)) - U|_max^2: ", maxGaugeDiff2(us, Uloaded)
@@ -125,10 +127,10 @@ proc runStoutHmc[T](R: typedesc[T]) =
 
   # Measure on the physical field U = f(V) at the committed configuration.
   proc measureTraj(traj: int; dH, acc: float; accepted: bool; forceStats: MdForceStats) =
-    discard measure.smeared.eval
+    discard measure.eval
     let
-      u = measure.smeared.gaugeSnapshot
-      lndetCur = measure.lndet.eval.sval
+      u = measure.gaugeSnapshot
+      lndetCur = measureLd.eval.sval
       pl = u.avgPlaq
       lp = u.ploops
     echo "plaq: ", pl, "  ploop: ", lp.spatial, " ", lp.temporal, "  lnDet: ", lndetCur

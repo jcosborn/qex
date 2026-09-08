@@ -24,6 +24,20 @@ proc gaugeGradSlot(x: Gmulti, i: int): Ggauge =
     raiseUnsupportedPath("stout gradient slot view backward", "higher stout derivatives")
   graphNode(view, @[Gvalue(x)], Gfunc(forward: fwd, backward: bwd, name: "stoutGradView"), "stoutGradView")
 
+proc stoutLogDetJ*(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): Gscalar
+
+proc requireLogdetAuxIndependent(wrt, auxiliary: Gvalue,
+                                  opName, argName: string) =
+  ## stoutLogDetJ is the derivative with auxiliary held fixed. A graph-derived
+  ## auxiliary changes the total map unless an owning overload explicitly
+  ## guarantees a frozen/triangular context.
+  if auxiliary.reaches(wrt, iwmBackward):
+    raiseValueError(
+      opName & " cannot declare a logDetJ factorization because " & argName &
+      " depends on the flow input:" &
+      "\nflow input: " & wrt.nodeRepr &
+      "\n" & argName & ": " & auxiliary.nodeRepr)
+
 # --- stoutUpdate: fused subset map -------------------------------------------
 
 type GstoutUpdate = ref object of Ggauge
@@ -164,6 +178,15 @@ proc stoutUpdateImpl(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): GstoutUpd
     let pair = gradPair(W, ds, alpha, upstream, GstoutUpdate(z))
     Gvalue(multiValues("stoutUpdate input gradients", gaugeGradSlot(pair, 0), gaugeGradSlot(pair, 1), alphaGrad(W, ds, alpha, upstream)))
 
+  proc ldj(z: Gvalue): tuple[ld, via: Gvalue] =
+    let args = Gmulti(z.inputs[0])
+    let W = Ggauge(args[0])
+    let ds = Ggauge(args[1])
+    let alpha = Gscalar(args[2])
+    requireLogdetAuxIndependent(W, ds, "stoutUpdate", "ds")
+    requireLogdetAuxIndependent(W, alpha, "stoutUpdate", "alpha")
+    (Gvalue(stoutLogDetJ(W, ds, alpha, parity, dir)), Gvalue(W))
+
   let g = W.gval.newOneOf
   g.zeroGaugeStorage
   graphNode(
@@ -172,18 +195,20 @@ proc stoutUpdateImpl(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): GstoutUpd
       gval: g,
       expa: W.gval[dir].newOneOf),
     @[Gvalue(args)],
-    Gfunc(forward: forward, backward: backward, name: "stoutUpdate"),
+    Gfunc(forward: forward, backward: backward, logdet: ldj, name: "stoutUpdate"),
     "stoutUpdate")
 
 proc stoutUpdate*(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): Ggauge =
   ## W' = exp(alpha*projectTAH(W ds†))*W on (parity,dir).
+  ## Its logDetJ hook requires ds and alpha to be graph-independent of W.
   stoutUpdateImpl(W, ds, alpha, parity, dir)
 
 # --- stoutLogDetJ: per-substep log-Jacobian -----------------------------------
 
 proc stoutLogDetJ*(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): Gscalar =
   ## sum(x in S) log det J(M_x), M_x = alpha W_x ds_x†.
-  ## ds must be the derivative used by the matching subset update.
+  ## ds must be the derivative used by the matching subset update. As a local
+  ## determinant formula, this treats ds and alpha as fixed update auxiliaries.
   W.requireSameGaugeShape(ds, "stoutLogDetJ")
   let args = multiValues("stoutLogDetJ args", W, ds, alpha)
   let sub = W.gval.paritySubset(parity)
@@ -671,22 +696,6 @@ proc stoutUpdateLogDetJImpl(W, ds: Ggauge, alpha: Gscalar, c: Gactcoeff, parity,
       logdetBaseInput = 2
   let parent = newMultiStructureNode(@[Gvalue(updateBase), Gvalue(logdetBase)], parentInputs, parentFunc, "stoutStep")
 
-  proc updateForward(v: Gvalue) =
-    Ggauge(v).gval = Ggauge(v.inputs[1]).gval
-
-  proc updateBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-    if i != 0:
-      raiseValueError("stoutStep update view has one backward input")
-    let upstream = Ggauge(rootedUpstream(zb, z))
-    let parent = Gmulti(z.inputs[0])
-    Gvalue(multiValues("stoutStep update cotangents", upstream, parent.inputs[logdetBaseInput].zeroLike))
-
-  let updateView = Ggauge(runtime: updateBase.runtime, gval: updateBase.gval)
-  result.Wnew = graphNode(
-    updateView, @[Gvalue(parent), Gvalue(updateBase)],
-    Gfunc(forward: updateForward, backward: updateBackward, inputView: stoutStepOutputView, name: "stoutStepUpdate"),
-    "stoutStepUpdate")
-
   proc logdetForward(v: Gvalue) =
     Gscalar(v).sval = Gscalar(v.inputs[1]).sval
 
@@ -697,16 +706,55 @@ proc stoutUpdateLogDetJImpl(W, ds: Ggauge, alpha: Gscalar, c: Gactcoeff, parity,
     let parent = Gmulti(z.inputs[0])
     Gvalue(multiValues("stoutStep logdet cotangents", parent.inputs[updateBaseInput].zeroLike, upstream))
 
-  result.lj = graphNode(
-    scalarNodeLike(logdetBase), @[Gvalue(parent), Gvalue(logdetBase)],
-    Gfunc(forward: logdetForward, backward: logdetBackward, inputView: stoutStepOutputView, name: "stoutStepLogDet"),
-    "stoutStepLogDet")
+  let ljFunc = Gfunc(forward: logdetForward, backward: logdetBackward,
+    inputView: stoutStepOutputView, name: "stoutStepLogDet")
+  result.lj = graphNode(scalarNodeLike(logdetBase),
+    @[Gvalue(parent), Gvalue(logdetBase)], ljFunc, "stoutStepLogDet")
+
+  proc updateForward(v: Gvalue) =
+    Ggauge(v).gval = Ggauge(v.inputs[1]).gval
+
+  proc updateBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+    if i != 0:
+      raiseValueError("stoutStep update view has one backward input")
+    let upstream = Ggauge(rootedUpstream(zb, z))
+    let parent = Gmulti(z.inputs[0])
+    Gvalue(multiValues("stoutStep update cotangents", upstream, parent.inputs[logdetBaseInput].zeroLike))
+
+  const logdetViewInput = 2
+  proc updateLdj(z: Gvalue): tuple[ld, via: Gvalue] =
+    # Derive from z so clones of the shared Gfunc stay valid.
+    let p = Gmulti(z.inputs[0])
+    let flowIn = when fuseHess: p.inputs[0] else: Gmulti(p.inputs[0])[0]
+    when fuseHess:
+      requireLogdetAuxIndependent(
+        flowIn, p.inputs[1], "stoutUpdateLogDetJ", "coefficients")
+      requireLogdetAuxIndependent(
+        flowIn, p.inputs[2], "stoutUpdateLogDetJ", "alpha")
+    else:
+      let args = Gmulti(p.inputs[0])
+      requireLogdetAuxIndependent(
+        flowIn, args[1], "stoutUpdateLogDetJ", "ds")
+      requireLogdetAuxIndependent(
+        flowIn, args[2], "stoutUpdateLogDetJ", "alpha")
+    (z.inputs[logdetViewInput], flowIn)
+
+  let updateView = Ggauge(runtime: updateBase.runtime, gval: updateBase.gval)
+  # Keep the matching logdet view as a raw structural input. Generic cloning
+  # copies it, while the input view excludes it from ordinary traversal.
+  result.Wnew = graphNode(
+    updateView, @[Gvalue(parent), Gvalue(updateBase), Gvalue(result.lj)],
+    Gfunc(forward: updateForward, backward: updateBackward, inputView: stoutStepOutputView, logdet: updateLdj, name: "stoutStepUpdate"),
+    "stoutStepUpdate")
 
 proc stoutUpdateLogDetJ*(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): tuple[Wnew: Ggauge, lj: Gscalar] =
-  ## Return one subset update and its log-Jacobian.
+  ## Return one subset update and its fixed-auxiliary log-Jacobian. Wnew's
+  ## generic factorization requires ds and alpha to be graph-independent of W.
   stoutUpdateLogDetJImpl(W, ds, alpha, nil, parity, dir, false)
 
 proc stoutUpdateLogDetJ*(W: Ggauge, c: Gactcoeff, alpha: Gscalar, parity, dir: int): tuple[Wnew: Ggauge, lj: Gscalar] =
-  ## As above; form ds internally and fuse its Hessian pullback.
+  ## As above; form the subset-frozen ds internally and fuse its Hessian
+  ## pullback. The generic factorization requires c and alpha to be independent
+  ## of W.
   let ds = gaugeActionDeriv(c, W, parity, dir)
   stoutUpdateLogDetJImpl(W, ds, alpha, c, parity, dir, true)

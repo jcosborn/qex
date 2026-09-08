@@ -95,7 +95,7 @@ when isMainModule:
       invertMapFlow(g, spec, layout)
 
     let
-      action = mapAction(grt, gc, spec, layout)
+      action = mapAction(gc, spec, layout)
       graph = buildTrajectoryGraph(grt, g, p, action, runConfig,
         buildTraining = false)
 

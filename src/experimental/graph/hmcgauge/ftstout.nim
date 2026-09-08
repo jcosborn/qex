@@ -13,13 +13,13 @@ import qex
 from ../gauge/action/domain import evalGaugeForceValue
 
 type
-  StoutFlow* = tuple[smeared: Ggauge, lndet: Gscalar]
   StoutAction* = object
     action*: GaugeAction
-    flow*: proc(V: Ggauge): StoutFlow {.closure.}
+    flow*: proc(V: Ggauge): Ggauge {.closure.}
 
-proc smearFlow*(V: Ggauge, c1: Gactcoeff, alpha: Gscalar, sweeps: int): StoutFlow =
-  ## U = f(V); lndet is the sum over `sweeps` even/odd-direction substeps.
+proc smearFlow*(V: Ggauge, c1: Gactcoeff, alpha: Gscalar, sweeps: int): Ggauge =
+  ## U = f(V); ln det f'(V) is logDetJ(result, V). c1 and alpha must be
+  ## graph-independent of V (the stout logdet hooks reject them otherwise).
   if sweeps < 0:
     raiseValueError("stout sweeps must be >= 0, got " & $sweeps)
   if sweeps > 0:
@@ -27,19 +27,14 @@ proc smearFlow*(V: Ggauge, c1: Gactcoeff, alpha: Gscalar, sweeps: int): StoutFlo
       if (n and 1) != 0:
         raiseValueError("stout flow requires even lattice extents")
   let nd = V.gval.len
-  var W = V
-  var lndet = scalar.toGvalue(V.runtime, 0.0)
+  result = V
   for s in 0..<sweeps:
     for parity in 0..1:
       for dir in 0..<nd:
-        let st = stoutUpdateLogDetJ(W, c1, alpha, parity, dir)
-        W = st.Wnew
-        lndet = lndet + st.lj
-  result.smeared = W
-  result.lndet = lndet
+        result = stoutUpdateLogDetJ(result, c1, alpha, parity, dir).Wnew
 
-proc smearedField*(V: Ggauge, rho: float, sweeps: int): StoutFlow =
-  ## Return U = f(V) and log det f'(V).
+proc smearedField*(V: Ggauge, rho: float, sweeps: int): Ggauge =
+  ## U = f(V); ln det f'(V) is logDetJ(result, V).
   smearFlow(V, actWilson(scalar.toGvalue(V.runtime, 1.0)), scalar.toGvalue(V.runtime, rho), sweeps)
 
 proc stoutAction*(gc: Gactcoeff, rho: float, sweeps: int): StoutAction =
@@ -49,16 +44,16 @@ proc stoutAction*(gc: Gactcoeff, rho: float, sweeps: int): StoutAction =
   let
     c1 = actWilson(scalar.toGvalue(gc.runtime, 1.0))
     alpha = scalar.toGvalue(gc.runtime, rho)
-  var flows = initTable[NodeKey, StoutFlow]()
-  proc getFlow(V: Ggauge): StoutFlow =
+  var flows = initTable[NodeKey, Ggauge]()
+  proc getFlow(V: Ggauge): Ggauge =
     let key = V.nodeKey
     if key notin flows:
       flows[key] = smearFlow(V, c1, alpha, sweeps)
     flows[key]
   result.flow = getFlow
   result.action = proc(V: Ggauge): Gscalar =
-    let f = getFlow(V)
-    gaugeAction(gc, f.smeared) - f.lndet
+    let u = getFlow(V)
+    gaugeAction(gc, u) - logDetJ(u, V)
 
 proc invertStoutFlow*(U: auto, rho: float, sweeps: int; rdf2req = 1e-24, maxiter = 1000, verbose = false): tuple[iter: int, rdf2: float] =
   ## Invert U = f(V) in place, reversing the subset order:

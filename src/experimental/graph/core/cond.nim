@@ -81,3 +81,19 @@ proc newCondNode*[T: Gvalue](selector: Gvalue,
     newCondNodeErased(selector, whenTrue, whenFalse)
   else:
     T(newCondNodeErased(selector, whenTrue, whenFalse))
+
+proc distributeCond*(v: Gvalue,
+                     branch: proc(b: Gvalue): Gvalue): Gvalue =
+  ## Apply `branch` to both branches of cond node `v` and rebuild the cond;
+  ## the selector contributes nothing (the a.e. piecewise convention). A nil
+  ## branch result means "no contribution" and is filled with the other side's
+  ## zeroLike; returns nil when both are nil.
+  let parts = v.condParts
+  let whenTrue = branch(parts.whenTrue)
+  let whenFalse = branch(parts.whenFalse)
+  if whenTrue == nil and whenFalse == nil:
+    return nil
+  newCondNodeErased(
+    parts.selector,
+    (if whenTrue == nil: whenFalse.zeroLike else: whenTrue),
+    (if whenFalse == nil: whenTrue.zeroLike else: whenFalse))

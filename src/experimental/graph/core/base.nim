@@ -31,6 +31,12 @@ type
   ## Emits this node's dependency surface for one traversal mode.
   ## A nil hook means "walk raw inputs" for every mode.
   GinputViewHook* = proc(z: Gvalue, mode: InputWalkMode, visit: GnodeVisit)
+  ## Declares one factorization step for `logDetJ`: `ld` is a scalar graph
+  ## expression for ln|det(d z/d via)|, the total derivative through every edge
+  ## between z and via. Derive every graph value from z's inputs; only immutable
+  ## non-graph configuration may be captured. Full contract in DESIGN.md
+  ## "Log-Jacobian factorization"; nil declares no factorization.
+  GlogdetHook* = proc(z: Gvalue): tuple[ld, via: Gvalue]
   Gfunc* {.acyclic.} = ref object of RootObj
     ## Represents a graph operation: inputs -> output.
     ## Dependency exposure contract:
@@ -39,11 +45,18 @@ type
     forward*: GforwardHook
     backward*: GbackwardHook
     inputView*: GinputViewHook
+    logdet*: GlogdetHook
     name*: string
   GradCacheEntry* = ref object
     revision*: uint64
     ## Contains only adjoints from completed gradient builds.
     adjoints*: Table[NodeId, Gvalue]
+  LdjCacheEntry* = ref object
+    ## Per-node logDetJ state for one symbolic revision: the node's hook result
+    ## (nil until first use) and completed chain sums keyed by base node id.
+    revision*: uint64
+    ld*, via*: Gvalue
+    sums*: Table[NodeId, Gvalue]
   GradCacheStats* = object
     revisionHits*: int
     revisionMisses*: int
@@ -79,6 +92,7 @@ type
     functional*: FunctionalRuntimeState
     gradCacheByOutput*: Table[NodeId, GradCacheEntry]
     gradCacheStats*: GradCacheStats
+    ldjCacheByNode*: Table[NodeId, LdjCacheEntry]
     runStatsByNode*: Table[NodeId, RunStat]
 
 type
@@ -101,6 +115,7 @@ proc initGraphRuntime*(): GraphRuntime =
     functional: FunctionalRuntimeState(
       applyCacheByNode: initTable[NodeId, ApplyCacheEntry]()),
     gradCacheByOutput: initTable[NodeId, GradCacheEntry](),
+    ldjCacheByNode: initTable[NodeId, LdjCacheEntry](),
     runStatsByNode: initTable[NodeId, RunStat]())
 
 proc record*(s: var RunStat, secs: float, name: string) =

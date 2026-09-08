@@ -98,6 +98,17 @@ proc runFtStoutTests*(lat: seq[int]; beta, rho: float; nsmear = 1) =
       rejected = true
     doAssert rejected
 
+  block:
+    let
+      Vg = gauge.toGvalue(grt, V0)
+      u = smearFlow(Vg, c1, rhoG, 0)
+      ld = logDetJ(u, Vg)
+      seff = stoutAction(gc, rho, 0).action(Vg)
+      plain = gaugeAction(gc, Vg)
+    doAssert u.nodeKey == Vg.nodeKey
+    doAssert ld.isStaticZeroLeaf
+    checkScalarEq("stoutAction zero sweep", seff, plain)
+
   proc checkGrad(name: string, build: proc(Vt: Ggauge): Gscalar) =
     ## Perturb V along a random algebra direction R via V(t)=exp(t R)V0 and compare
     ## the graph gradient d/dt with the numerical derivative of the forward.
@@ -131,11 +142,11 @@ proc runFtStoutTests*(lat: seq[int]; beta, rho: float; nsmear = 1) =
     # Vt on the (even, dir0) subset: blendSubset cand-slot backward
     gaugeAction(gc, blendSubset(0, 0, Vt, Ag)))
   checkGrad("lndet", proc(Vt: Ggauge): Gscalar =
-    smearFlow(Vt, c1, rhoG, nsmear).lndet)
+    logDetJ(smearFlow(Vt, c1, rhoG, nsmear), Vt))
   checkGrad("seff", proc(Vt: Ggauge): Gscalar =
     # the full S_eff whose grad is the integrator force
-    let flow = smearFlow(Vt, c1, rhoG, nsmear)
-    gaugeAction(gc, flow.smeared) - flow.lndet)
+    let u = smearFlow(Vt, c1, rhoG, nsmear)
+    gaugeAction(gc, u) - logDetJ(u, Vt))
 
   proc checkAlphaGrad(name: string, build: proc(a: Gscalar): Gscalar) =
     let
@@ -153,10 +164,12 @@ proc runFtStoutTests*(lat: seq[int]; beta, rho: float; nsmear = 1) =
     if rel >= 1e-6: inc nfail
 
   checkAlphaGrad("lndet_rho", proc(a: Gscalar): Gscalar =
-    smearFlow(gauge.toGvalue(grt, V0), c1, a, nsmear).lndet)
+    let Vg = gauge.toGvalue(grt, V0)
+    logDetJ(smearFlow(Vg, c1, a, nsmear), Vg))
   checkAlphaGrad("seff_rho", proc(a: Gscalar): Gscalar =
-    let flow = smearFlow(gauge.toGvalue(grt, V0), c1, a, nsmear)
-    gaugeAction(gc, flow.smeared) - flow.lndet)
+    let Vg = gauge.toGvalue(grt, V0)
+    let u = smearFlow(Vg, c1, a, nsmear)
+    gaugeAction(gc, u) - logDetJ(u, Vg))
 
   # Direct fused/reference test for one odd-parity subset. The split objective
   # also checks a summed upstream and reevaluation after an alpha update.
@@ -223,6 +236,110 @@ proc runFtStoutTests*(lat: seq[int]; beta, rho: float; nsmear = 1) =
     checkGaugeEq("stoutStep ds grad refresh", ddsg, ddsr)
     checkScalarEq("stoutStep alpha grad refresh", dag, dar)
     a.update(rho)
+
+  # logDetJ must match the hand-accumulated substep sum and its gradients.
+  block:
+    let
+      W0 = gauge.toGvalue(grt, V0)
+      a = scalar.toGvalue(grt, rho)
+      nd = V0.len
+    var
+      W = W0
+      steps: seq[tuple[Wnew: Ggauge, lj: Gscalar]]
+      manual = scalar.toGvalue(grt, 0.0)
+    for parity in 0..1:
+      for dir in 0..<nd:
+        let st = stoutUpdateLogDetJ(W, c1, a, parity, dir)
+        W = st.Wnew
+        steps.add st
+        manual = manual + st.lj
+    let auto = logDetJ(W, W0)
+    checkScalarEq("logDetJ fused chain", auto, manual)
+    doAssert logDetJ(W, W0).nodeKey == auto.nodeKey   # cached: the same node
+    # A one-step chain is the step's own fused logdet view, not a duplicate.
+    doAssert logDetJ(steps[0].Wnew, W0).nodeKey == steps[0].lj.nodeKey
+    # An intermediate flow node is a valid base.
+    checkScalarEq("logDetJ tail chain",
+      logDetJ(W, steps[0].Wnew) + steps[0].lj, manual)
+    checkGaugeEq("logDetJ fused chain grad", grad(auto, W0), grad(manual, W0))
+    checkScalarEq("logDetJ fused chain alpha grad", grad(auto, a), grad(manual, a))
+    a.update(0.8*rho)
+    checkScalarEq("logDetJ fused chain refresh", auto, manual)
+    a.update(rho)
+    # cond between two flows: the sum is piecewise and follows the selector.
+    let
+      k = scalar.toGvalue(grt, 1.0)
+      condLd = logDetJ(cond(k, W, steps[0].Wnew), W0)
+    checkScalarEq("logDetJ cond flow", condLd, auto)
+    k.update 0.0
+    checkScalarEq("logDetJ cond flow flip", condLd, steps[0].lj)
+    k.update 1.0
+    # Plain stoutUpdate steps declare the same factorization.
+    let
+      ds = gauge.toGvalue(grt, Aconst)
+      u1 = stoutUpdate(W0, ds, a, 1, min(1, nd - 1))
+      ldRef = stoutLogDetJ(W0, ds, a, 1, min(1, nd - 1))
+    checkScalarEq("logDetJ stoutUpdate", logDetJ(u1, W0), ldRef)
+
+  # A local stout determinant holds free auxiliaries fixed. Do not advertise it
+  # as a total factorization when those auxiliaries feed back from the flow
+  # input; the action-aware staple is the explicit frozen-context exception.
+  block:
+    let
+      parity = 1
+      dir = min(1, V0.len - 1)
+      W = gauge.toGvalue(grt, V0)
+      ds = gauge.toGvalue(grt, Aconst)
+      a = scalar.toGvalue(grt, rho)
+
+    proc rejectsLogdet(u: Ggauge): bool =
+      try:
+        discard logDetJ(u, W)
+      except GraphValueError:
+        return true
+      false
+
+    let aliased = stoutUpdate(W, W, a, parity, dir)
+    when nc == 1:
+      # projectTAH(W W†) is zero, so the composed U(1) map is the identity.
+      checkGaugeEq("reentrant stout identity", aliased, W)
+    doAssert rejectsLogdet(aliased)
+    doAssert rejectsLogdet(
+      stoutUpdateLogDetJ(W, W, a, parity, dir).Wnew)
+
+    let fieldDs = W + ds
+    doAssert rejectsLogdet(stoutUpdate(W, fieldDs, a, parity, dir))
+
+    let fieldAlpha = redot(W, Ag)
+    doAssert rejectsLogdet(stoutUpdate(W, ds, fieldAlpha, parity, dir))
+    doAssert rejectsLogdet(
+      stoutUpdateLogDetJ(W, c1, fieldAlpha, parity, dir).Wnew)
+
+    let fieldCoefficients = actWilson(redot(W, Ag))
+    doAssert rejectsLogdet(
+      stoutUpdateLogDetJ(W, fieldCoefficients, a, parity, dir).Wnew)
+
+  # logDetJ sums participate in functional cloning like ordinary graph values.
+  block:
+    let
+      W = gauge.toGvalue(grt, V0)
+      p = Ggauge(W.newOneOf)
+      a = scalar.toGvalue(grt, rho)
+      stepP0 = stoutUpdateLogDetJ(p, c1, a, 0, 0)
+      stepP1 = stoutUpdateLogDetJ(stepP0.Wnew, c1, a, 1, min(1, V0.len - 1))
+      body = redot(stepP1.Wnew, Bg) - logDetJ(stepP1.Wnew, p)
+      fn = lambda(p, body)
+      cloned = Gscalar(apply(fn, W))
+      stepW0 = stoutUpdateLogDetJ(W, c1, a, 0, 0)
+      stepW1 = stoutUpdateLogDetJ(stepW0.Wnew, c1, a, 1, min(1, V0.len - 1))
+      direct = redot(stepW1.Wnew, Bg) - logDetJ(stepW1.Wnew, W)
+      clonedGrad = grad(cloned, W)
+      directGrad = grad(direct, W)
+    p.update(Aconst)
+    discard cloned.eval
+    discard body.eval
+    checkScalarEq("logDetJ functional clone", cloned, direct)
+    checkGaugeEq("logDetJ functional clone grad", clonedGrad, directGrad)
 
   # The action-aware overload folds the internally constructed staple pullback
   # into W while preserving the explicit-staple operation as a reference.
@@ -426,21 +543,21 @@ proc runFtStoutTests*(lat: seq[int]; beta, rho: float; nsmear = 1) =
       f2 = sa.flow(Vg)
       Vother = gauge.toGvalue(grt, V0)
       fo = sa.flow(Vother)
-      direct = gaugeAction(gc, f0.smeared) - f0.lndet
-    doAssert f0.smeared.nodeKey == f1.smeared.nodeKey
-    doAssert f0.lndet.nodeKey == f1.lndet.nodeKey
-    doAssert f0.smeared.nodeKey == f2.smeared.nodeKey
-    doAssert f0.lndet.nodeKey == f2.lndet.nodeKey
-    doAssert f0.smeared.nodeKey != fo.smeared.nodeKey
+      direct = gaugeAction(gc, f0) - logDetJ(f0, Vg)
+    doAssert f0.nodeKey == f1.nodeKey
+    doAssert f0.nodeKey == f2.nodeKey
+    doAssert f0.nodeKey != fo.nodeKey
+    # The action evaluates the same cached logDetJ node returned for the flow.
+    doAssert seff.reaches(logDetJ(f0, Vg), iwmEval)
     doAssert abs(seff.eval.sval - direct.eval.sval) < 1e-12
     Vg.update(Aconst)
     let
       refreshed = sa.flow(Vg)
       fresh = smearedField(Vg, rho, nsmear)
-    doAssert refreshed.smeared.nodeKey == f0.smeared.nodeKey
-    doAssert refreshed.lndet.nodeKey == f0.lndet.nodeKey
-    checkGaugeEq("stoutAction cache refresh", refreshed.smeared, fresh.smeared)
-    checkScalarEq("stoutAction logdet refresh", refreshed.lndet, fresh.lndet)
+    doAssert refreshed.nodeKey == f0.nodeKey
+    checkGaugeEq("stoutAction cache refresh", refreshed, fresh)
+    checkScalarEq("stoutAction logdet refresh",
+      logDetJ(refreshed, Vg), logDetJ(fresh, Vg))
     doAssert nfail == 0
 
   # --- B. log-Jacobian forward leading order at small rho --------------------
@@ -451,9 +568,9 @@ proc runFtStoutTests*(lat: seq[int]; beta, rho: float; nsmear = 1) =
     const linCoef = when nc == 1: 1.0 else: float(nc*nc - 1) / float(nc)
     let
       V0g = gauge.toGvalue(grt, V0)
-      flow = smearFlow(V0g, c1, scalar.toGvalue(grt, smallRho), 1)
+      u = smearFlow(V0g, c1, scalar.toGvalue(grt, smallRho), 1)
       lin = scalar.toGvalue(grt, linCoef*smallRho) * redot(V0g, gaugeActionDeriv(c1, V0g))
-      lndetVal = flow.lndet.eval.sval
+      lndetVal = logDetJ(u, V0g).eval.sval
       linVal = lin.eval.sval
     let rel = abs((lndetVal - linVal) / (abs(lndetVal) + abs(linVal) + 1e-30))
     echo "B lndet: actual=", lndetVal, " linear=", linVal, " rel=", rel
@@ -463,13 +580,13 @@ proc runFtStoutTests*(lat: seq[int]; beta, rho: float; nsmear = 1) =
   block:
     let
       V0g = gauge.toGvalue(grt, V0)
-      flow = smearFlow(V0g, c1, scalar.toGvalue(grt, 0.0), nsmear)
-      seff = gaugeAction(gc, flow.smeared) - flow.lndet
+      u = smearFlow(V0g, c1, scalar.toGvalue(grt, 0.0), nsmear)
+      seff = gaugeAction(gc, u) - logDetJ(u, V0g)
       sPlain = gaugeAction(gc, V0g)
       fForce = contractProjTAH(grad(seff, V0g), V0g)
       gForce = gaugeForce(gc, V0g)
     let
-      lndet0 = flow.lndet.eval.sval
+      lndet0 = logDetJ(u, V0g).eval.sval
       dS = abs(seff.eval.sval - sPlain.eval.sval)
       fNorm = gForce.norm2.eval.sval
       fDiff = (fForce - gForce).norm2.eval.sval
@@ -480,7 +597,7 @@ proc runFtStoutTests*(lat: seq[int]; beta, rho: float; nsmear = 1) =
 
   # --- D. inverse round trip: invertStoutFlow(smearFlow(V0)) recovers V0 ------
   block:
-    let smeared = smearFlow(gauge.toGvalue(grt, V0), c1, rhoG, nsmear).smeared
+    let smeared = smearFlow(gauge.toGvalue(grt, V0), c1, rhoG, nsmear)
     discard smeared.eval
     let Usnap = smeared.gaugeSnapshot          # physical U = f(V0)
     var Uinv = lo.newgauge
@@ -498,7 +615,7 @@ proc runFtStoutTests*(lat: seq[int]; beta, rho: float; nsmear = 1) =
       m.threadRankMax
       threadSingle: dV = m
     # forward of the recovered field vs the physical U (independent of injectivity)
-    let reSmeared = smearFlow(gauge.toGvalue(grt, Uinv), c1, rhoG, nsmear).smeared
+    let reSmeared = smearFlow(gauge.toGvalue(grt, Uinv), c1, rhoG, nsmear)
     discard reSmeared.eval
     let reSnap = reSmeared.gaugeSnapshot
     threads:

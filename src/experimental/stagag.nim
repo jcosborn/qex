@@ -1561,7 +1561,7 @@ template masses(bi: BackwardsIndex): float =
   if i==0: mass
   else: vhmasses[i-1].obj
 
-proc start*(m: var Met) =
+proc start*(m: Met) =
   tic("start")
   m.state = 0
   threads:
@@ -1835,7 +1835,7 @@ proc updateParams(ratefac: float) =
   #for i in 0..<n:
   #  clear cgstat[i]
 
-proc finish*(m: var Met) =
+proc finish*(m: Met) =
   discard
   #for mu in 0..<g.len:
   #  g[mu] := g0[mu]
@@ -1876,11 +1876,11 @@ proc disp(m: Met) =
   echo "avgPAccept: ", m.avgPAccept
   echo "pacc.mean:  ", pacc.mean
 
-proc accept*(m: var Met) =
+proc accept*(m: Met) =
   pacc.push m.pAccept
   disp(m)
 
-proc reject*(m: var Met) =
+proc reject*(m: Met) =
   threads:
     for i in 0..<g.len:
       g[i] := g0[i]
@@ -1892,7 +1892,7 @@ proc globalRand*(m: Met): float =
   if not alwaysAccept:
     result = R.uniform
 
-proc generate*(m: var Met) =
+proc generate*(m: Met) =
   update()
 
 var m: Met
