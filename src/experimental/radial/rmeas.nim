@@ -794,6 +794,8 @@ let
   fitLo = max(1, int(round(fitLoT/at)))
   fitHi = int(round(fitHiEff/at)) + 1
   iref = max(1, int(round(trefT/at)))
+require gevpT0 >= 0 and gevpT0 <= nt2,
+  &"-gevpT0:{gevpT0} must be a folded separation index in [0, {nt2}] (nt = {nt})"
 
 proc deltaFit(c: seq[float]): Estimate =
   ## Local log ratios retain the Monte Carlo estimator; the midpoint-referenced

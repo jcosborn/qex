@@ -36,8 +36,9 @@ what was built, what passes, what does not, and any interface change (which must
 * `import base` gives params, threading, timers, comms and echo with **no** hypercubic
   Layout/Field dependency. `import qex` would drag all of it in — don't.
 * LAPACK is linked automatically by importing `eigens/lapack`. Bound routines: `zgeev`, `zheev`,
-  `zhegv`, `zgemm`, `dgetrf`, and the real bidiagonal SVD family. **Not** bound: `zgesv`,
-  `zgesvd`, `zggev`, Cholesky, `dsyev`. Add what you need there (5 lines each).
+  `zhegv`, `zgemm`, `dgetrf`, `zgesv` (added by this project), and the real bidiagonal SVD
+  family. **Not** bound: `zgesvd`, `zggev`, Cholesky, `dsyev`. Add what you need there (5 lines
+  each). The radial wrappers are in `core/dense.nim`.
 * `eigens/linalgFuncs` gives `zeigs` (Hermitian), `zgeigs` (general eigenvalues only), and
   `zeigsgv` (Hermitian generalized — this is the GEVP we need).
 * `algorithms/rk.nim` is fully generic and closure-driven with **zero** QEX coupling — use it for

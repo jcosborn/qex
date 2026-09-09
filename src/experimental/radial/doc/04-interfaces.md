@@ -751,10 +751,6 @@ and MD-moved fields are in play — `thmc` measured multishift floors ~8e-27 and
 # earlier Complex64 sketch became float throughout.
 func legendreP*(l: int, x: float): float    ## recurrence; the ylm oracle (addition theorem)
 func ylm*(l, m: int, v: Vec3): float        ## real orthonormal Y_lm, l <= 4, hard-coded
-func siteProject*(sph: Sphere, x: openArray[float], l, m: int): float
-  ## sum_y A_y Y_lm(pos_y) x_y   (x per site, one time slice)
-func faceProject*(sph: Sphere, x: openArray[float], l, m: int): float
-  ## sum_f Y_lm(cc_f) x_f -- NO area weight: for x = Theta_f the area cancels (doc/07 4.1)
 func siteGram*(sph: Sphere, l1, l2: int): seq[float]   ## (2l1+1)x(2l2+1) row-major
 func faceGram*(sph: Sphere, l1, l2: int): seq[float]   ## same, sum_f A_tri Y Y'
 type IcosaGroup* = object
@@ -818,6 +814,16 @@ proc scalarCorrPoint*(o: Ov, u: Gauge, mass: float, v0, t0: int): tuple[ps, fs: 
   ## sigma_PS / sigma_FS CONNECTED timeslice correlators (doc/07 section 3.1);
   ## F=(1-D_ov^dag)S^dag=((1+m/2)S^dag-1)/(1-m/2);
   ## at mass 0 PS and FS are identical at every dt as a GW identity of the contraction
+# projections are done inline by the callers (tsliceAmp, jtopProject); the
+# representation matrices and I-irreducible projectors of the real Y_lm:
+proc ylmRep*(l: int, r: array[3, Vec3]): seq[float]           ## D(R) on the real Y_lm
+type Irrep* = object
+  name*: string
+  dim*: int
+  p*: seq[float]                                             ## row-major projector
+proc icosaProjectors*(g: IcosaGroup, l: int): seq[Irrep]      ## l <= 4; l = 3 -> T2, G
+func blockMean*(c: openArray[float], ir: Irrep, n: int): float  ## tr[P c]/dim
+func blockResidual*(c: openArray[float], irs: openArray[Irrep], n: int): float
 proc jtopProject*(l: Lat, u: Gauge, lh, mh: int): seq[float] ## sum_f Y Theta_f per t
 proc f2Project*(l: Lat, u: Gauge, lh, mh: int): seq[float]
   ## sum_f Y Theta^2/A_f + sum_e Y(mid) Theta_e^2 2A_e/(l_e a_t)^2, RAW
