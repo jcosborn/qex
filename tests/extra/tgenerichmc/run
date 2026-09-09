@@ -15,7 +15,7 @@ else
 fi
 ofn="$outdir/out$comp"
 
-"$exe" 2>&1 | tee "$ofn"
+$RUNJOB "$exe" 2>&1 | tee "$ofn"
 
 hold="`grep 'hOld' $ofn`"
 if [ "X$hold" != "X$hold2" ]; then
