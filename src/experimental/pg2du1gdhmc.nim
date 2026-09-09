@@ -123,9 +123,9 @@ proc hamiltonian(gc:GaugeActionCoeffs, g:auto, p:auto):auto =
   toc("hamiltonian")
   (ga, t, h)
 
-type MDAlgo = enum hamilton, nosehoover, ghmc, gv, test1, linp
+type MDAlgo = enum hamilton, nosehoover, ghmc, gv, gq, test1, linp
 converter toMDAlgo(s:string):MDAlgo = parseEnum[MDAlgo](s)
-let gAlgs = [ghmc, gv]
+let gAlgs = [ghmc, gv, gq]
 
 qexinit(verb=2)
 
@@ -318,11 +318,17 @@ proc gfunderivV(x,mu: auto): auto =
   let s = su + sd
   let p = g[mu][x] * s.adj
   let pt = trace(p)
-  let a = bg * (1 - pt.re)
-  #let a = bg * (0 - pt.re)
-  let f = exp(a)
-  let d = (0.5*bg*f)*(p - p.adj)
-  result = (f,d)
+  if mdalgo == gv:
+    let a = bg * (1 - pt.re)
+    #let a = bg * (0 - pt.re)
+    let f = exp(a)
+    let d = (0.5*bg*f)*(p - p.adj)
+    result = (f,d)
+  else: # gq
+    let a = bg * pt.im
+    let f = exp(a)
+    let d = (asImag(0.5)*bg*f)*(p + p.adj)
+    result = (f,d)
 
 proc gpotV(x,mu: auto): auto =
   let nu = 1 - mu
@@ -331,14 +337,18 @@ proc gpotV(x,mu: auto): auto =
   let s = su + sd
   let p = g[mu][x] * s.adj
   let pt = trace(p)
-  let a = exp(bg)
-  #let a = 0.0
-  let b = -bg * pt
-  result = (a,b)
+  if mdalgo == gv:
+    let a = exp(bg)
+    let b = -bg * pt
+    result = (a,b)
+  else: # gq
+    let a = 1.0
+    let b = asImag(-1) * bg * pt
+    result = (a,b)
 
 proc initg =
   case mdalgo
-  of gv:
+  of {gv,gq}:
     initgV()
   else:
     discard
@@ -367,7 +377,7 @@ proc gfunderiv(x,mu: auto): auto =
   of ghmc:
     r[0] := 1
     r[1] := 0
-  of gv:
+  of {gv,gq}:
     r = gfunderivV(x, mu)
   else:
     discard
@@ -379,7 +389,7 @@ proc gpot(x,mu: auto): auto =
   of ghmc:
     r[0] := 1
     r[1] := 0
-  of gv:
+  of {gv,gq}:
     r = gpotV(x, mu)
   else:
     discard
@@ -832,7 +842,7 @@ proc mdt(t:float) =
 
 proc mdv(t:float) =
   if useG:
-    if not (mdalgo==gv and bg==beta and a==1):
+    if not (mdalgo == gv and bg==beta and a==1):
       # (1-a) + a G
       gc.gaugeforce2(g, f)
       initg()

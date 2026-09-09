@@ -225,10 +225,10 @@ proc action(level: ActionLevel, u: ActionField): float =
 proc force(level: ActionLevel, u: ActionField, dtau: float, f: ActionForce) =
   for a in level.actions: a.forceProc(a, u, dtau, f)
 
-proc add*(hmc: var HmcAction; level: ActionLevel) =
+proc add*(hmc: HmcAction; level: ActionLevel) =
   hmc.levels.add(level)
 
-proc heatbath(hmc: var HmcAction; rng: auto) =
+proc heatbath(hmc: HmcAction; rng: auto) =
   var p = hmc.p
   threads:
     for mu in 0..<p.len: p[mu].randomTAH(rng)
@@ -243,13 +243,13 @@ proc kineticAction*(hmc: HmcAction): float =
     threadMaster: p2 = p2t
   return 0.5*p2 - 16.0*float(hmc.p[0].l.physVol)
 
-proc action*(hmc: var HmcAction): float =
+proc action*(hmc: HmcAction): float =
   result = 0.0
   for level in hmc.levels: result += level.action(hmc.uc)
 
-proc hamiltonian*(hmc: var HmcAction): float = hmc.kineticAction() + hmc.action()
+proc hamiltonian*(hmc: HmcAction): float = hmc.kineticAction() + hmc.action()
 
-proc integrator*(hmc: var HmcAction): Integrator =
+proc integrator*(hmc: HmcAction): Integrator =
   let uc = hmc.uc
   let pp = addr hmc.p
   let fp = addr hmc.f
@@ -301,29 +301,29 @@ proc reunit(g: auto) =
     let dd = g.checkSU
     echo "new unitary deviation avg: ",dd.avg," max: ",dd.max
 
-proc reunit*(hmc: var HmcAction) = reunit(hmc.uc.u)
+proc reunit*(hmc: HmcAction) = reunit(hmc.uc.u)
 
 #[ "virtual" MetropolisRootObj procedures ]#
 
-proc getH*(hmc: var HmcAction): float = hmc.hamiltonian()
+proc getH*(hmc: HmcAction): float = hmc.hamiltonian()
 
-proc start*(hmc: var HmcAction) =
+proc start*(hmc: HmcAction) =
   hmc.hmcStats["GU"] = baseStats0.newTable
   hmc.heatbathProc()
   let r = ActionPrng[hmc.R](r: hmc.prng)
   for level in hmc.levels: level.heatbath(hmc.uc, r)
   setGauge(hmc.bu, hmc.uc.u)
 
-proc generate*(hmc: var HmcAction) =
+proc generate*(hmc: HmcAction) =
   var integ = hmc.integrator()
   integ.evolve(hmc.tau)
   integ.finish()
 
-proc globalRand*(hmc: var HmcAction): float = hmc.globalRandProc()
+proc globalRand*(hmc: HmcAction): float = hmc.globalRandProc()
 
-proc accept*(hmc: var HmcAction) = hmc.reunit()
+proc accept*(hmc: HmcAction) = hmc.reunit()
 
-proc reject*(hmc: var HmcAction) = setGauge(hmc.uc.u, hmc.bu)
+proc reject*(hmc: HmcAction) = setGauge(hmc.uc.u, hmc.bu)
 
 template maxeq*(x,y: auto) =
   let t = addr x
@@ -342,7 +342,7 @@ proc merge(stats,b: var Table) =
       for t,u in b[id]:
         stats[id][t] = u
 
-proc run*(hmc: var HmcAction) =
+proc run*(hmc: HmcAction) =
   tic("HmcAction:run")
   let nup = hmc.nUpdates + 1
   echo &"== Begin HMC update {nup} =========="
