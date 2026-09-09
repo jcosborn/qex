@@ -13,44 +13,11 @@ import ../meas/observables
 import ../meas/gevp
 import ../meas/fit
 import ../ops/flow
+import thelpers
 
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 
 # --- helpers -------------------------------------------------------------------
-
-proc randGauge(l: Lat, sed: int, amp = 1.0): Gauge =
-  result = newGauge(l)
-  var r: Threefry4x64
-  r.seedIndep(sed, 0)
-  for i in 0..<result.s.len: result.s[i] = amp*r.gaussian
-  for i in 0..<result.t.len: result.t[i] = amp*r.gaussian
-
-proc randSpin(n, sed: int): Spin =
-  result = newSpin(n)
-  var r: Threefry4x64
-  r.seedIndep(sed, 0)
-  result.gaussian r
-
-proc denseHBounds(x: seq[Complex64], nd: int): tuple[smin, smax: float] =
-  var h = newSeq[Complex64](nd*nd)
-  for j in 0..<nd:
-    for i in j..<nd:
-      var s = complex64(0.0, 0.0)
-      for k in 0..<nd: s += conjugate(x[k + nd*i])*x[k + nd*j]
-      h[i + nd*j] = s
-      h[j + nd*i] = conjugate(s)
-  var ev = newSeq[float](nd)
-  zeigs(cast[ptr float64](addr h[0]), addr ev[0], nd)
-  (sqrt(ev[0]), sqrt(ev[nd-1]))
-
-proc symEig(m: seq[float], n: int): seq[float] =
-  ## Ascending eigenvalues of a real symmetric matrix (row-major n x n).
-  var a = newSeq[Complex64](n*n)
-  for i in 0..<n:
-    for j in 0..<n:
-      a[i + n*j] = complex64(0.5*(m[i*n + j] + m[j*n + i]), 0.0)
-  result = newSeq[float](n)
-  zeigs(cast[ptr float64](addr a[0]), addr result[0], n)
 
 proc clusters(ev: seq[float]): tuple[k: int, s1, s2, gap: float] =
   ## Best split of the sorted eigenvalues into two clusters: the split index
@@ -83,9 +50,6 @@ func offDiagId(g: seq[float], n: int): tuple[off, spread, mean: float] =
         result.off = max(result.off, abs(g[i*n + j]))
       result.mean += (if i == j: g[i*n + j]/float(n) else: 0.0)
   result.spread = dmax - dmin
-
-func maxAbs(g: seq[float]): float =
-  for x in g: result = max(result, abs(x))
 
 # ==============================================================================
 suite "harmonics: addition theorem and quadrature Gram matrices":
@@ -204,7 +168,7 @@ let
 proc makeOv(u: Gauge, order: int): Ov =
   let
     x = denseDw(latF, u, 1.0)
-    (smin, smax) = denseHBounds(x, ndF)
+    (smin, smax) = sigmaBounds(x, ndF)
   newOv(latF, 1.0, newRat(0.95*smin, 1.05*smax, order), r2in, r2out, mxit)
 
 let
@@ -465,6 +429,104 @@ suite "connected and disconnected current estimators vs dense":
     echo &"  disc worst pull {worstX:.2f} (stderr from correlated pairs: optimistic)"
     check worstX < 10.0
 
+  test "per-configuration estimators (connFold, crossFold, traceSeries) vs dense":
+    ## The rmeas production path: t1-averaged, folded products.  Dense reference
+    ## from Q_t = K(t) S for the l = 0 charge (op 0) and Y_10 (op 1) operators:
+    ##   C_ab(dt) = mean_t1 tr[Q_a(t1+dt) Q_b(t1)],   T_a(t) = 2 Re tr[K_a(t) S].
+    let
+      u = uFr
+      o = ovFr
+      nt = latF.nt
+      nd = nt div 2 + 1
+      s = denseS(o, u, 0.0)
+    var w1 = newSeq[float](sph1.nv)
+    for y in 0..<w1.len: w1[y] = 1.0
+    var wy = newSeq[float](sph1.nv)
+    for y in 0..<wy.len: wy[y] = ylm(1, 0, sph1.pos[y])
+    let wops = [w1, wy]
+    var q = newSeq[seq[Complex64]](2*nt)     # Q_a(t) = K_a(t) S
+    var tr1 = newSeq[Complex64](2*nt)        # tr[K_a(t) S]
+    for a in 0..1:
+      for t in 0..<nt:
+        q[a*nt + t] = zmm(denseOvDeriv(o, u, tsliceForm(latF, wops[a], t)), s, ndF)
+        for i in 0..<ndF: tr1[a*nt + t] += q[a*nt + t][i + ndF*i]
+    proc dconn(a, b: int): seq[Complex64] =
+      ## folded, t1-averaged tr[Q_a(t2) Q_b(t1)], symmetrized in (a, b) like connFold
+      result = newSeq[Complex64](nd)
+      for dt in 0..<nd:
+        var acc = complex64(0.0, 0.0)
+        for t1 in 0..<nt:
+          for (x, y, d) in [(a, b, dt), (a, b, (nt - dt) mod nt)]:
+            let t2 = (t1 + d) mod nt
+            for i in 0..<ndF:
+              for j in 0..<ndF:
+                acc += q[x*nt + t2][i + ndF*j]*q[y*nt + t1][j + ndF*i]
+        result[dt] = acc/float(2*nt)
+    var r: Threefry4x64
+    r.seedIndep(707, 0)
+    const npair = 96
+    let oc = newOv(latF, 1.0, o.rat, 1e-23, 1e-16, mxit)
+    var samples = newSeq[CurrentSample](npair)
+    for k in 0..<npair: samples[k] = currentSample(oc, u, 0.0, wops, r)
+    check oc.stats.ok
+    var worst = 0.0
+    for (a, b) in [(0, 0), (1, 1), (0, 1)]:
+      let
+        rf = dconn(a, b)
+        (m, e) = sampleMean(connFold(samples, nt, a, b))
+      for dt in 0..<nd:
+        worst = max(worst, abs(m[dt].re - rf[dt].re)/max(e[dt], 1e-30))
+      echo &"  connFold ops ({a},{b}) dt=1: dense {rf[1].re:.6e}  noise {m[1].re:.6e} +- {e[1]:.2e}"
+    echo &"  connFold worst pull over ops and dt: {worst:.2f}"
+    check worst < 6.0
+    # one-point series and the cross-sample products against the dense products,
+    # the latter with delete-one jackknife errors over the samples
+    proc jkCross(x: seq[seq[float]]): tuple[v, e: seq[float]] =
+      result.v = crossFold(x, nt)
+      var reps = newSeq[seq[float]](x.len)
+      for k in 0..<x.len:
+        var xs: seq[seq[float]]
+        for j in 0..<x.len:
+          if j != k: xs.add x[j]
+        reps[k] = crossFold(xs, nt)
+      result.e = newSeq[float](nd)
+      for dt in 0..<nd:
+        var m = 0.0
+        for k in 0..<x.len: m += reps[k][dt]/float(x.len)
+        var v2 = 0.0
+        for k in 0..<x.len: v2 += (reps[k][dt] - m)*(reps[k][dt] - m)
+        result.e[dt] = sqrt(v2*float(x.len - 1)/float(x.len))
+    for a in 0..1:
+      let
+        xr = traceSeries(samples, nt, a)
+        xi = traceSeries(samples, nt, a, im = true)
+        mr = seriesMean(xr)
+        pre = jkCross(xr)
+        pim = jkCross(xi)
+      var wt = 0.0
+      var wp = 0.0
+      for t in 0..<nt:
+        var v2 = 0.0
+        for k in 0..<npair: v2 += (xr[k][t] - mr[t])*(xr[k][t] - mr[t])
+        let se = sqrt(v2/float(npair*(npair - 1)))
+        wt = max(wt, abs(mr[t] - 2.0*tr1[a*nt + t].re)/max(se, 1e-30))
+      for dt in 0..<nd:
+        var dref = 0.0
+        var iref = 0.0
+        for t1 in 0..<nt:
+          for d in [dt, (nt - dt) mod nt]:
+            let t2 = (t1 + d) mod nt
+            dref += 4.0*tr1[a*nt + t2].re*tr1[a*nt + t1].re/float(2*nt)
+            iref += 4.0*tr1[a*nt + t2].im*tr1[a*nt + t1].im/float(2*nt)
+        wp = max(wp, abs(pre.v[dt] - dref)/max(pre.e[dt], 1e-30))
+        wp = max(wp, abs(pim.v[dt] - iref)/max(pim.e[dt], 1e-30))
+        if dt == 1:
+          echo &"  op{a} cross dt=1: dense re {dref:.4e} im {iref:.4e}; " &
+               &"noise re {pre.v[dt]:.4e} +- {pre.e[dt]:.1e}, im {pim.v[dt]:.4e} +- {pim.e[dt]:.1e}"
+      echo &"  op{a}: trace series worst pull {wt:.2f}; cross products worst pull {wp:.2f}"
+      check wt < 6.0
+      check wp < 6.0
+
 suite "sigma_PS vs sigma_FS":
 
   test "connected timeslice correlators are IDENTICAL at every dt (mass 0)":
@@ -570,6 +632,101 @@ suite "sigma_PS vs sigma_FS":
       check worstFs < 1e-9*scale
       check o.stats.ok
 
+  test "scalarSample: connected trace, one-point traces and scalarConn vs dense":
+    ## The volume-averaged stochastic scalar path (rmeas scalarvol/scalardisc):
+    ## E[a(t2) b(t1)] = tr[P_t2 S P_t1 S], E[d(t)] = tr[P_t S]; the assembly
+    ## scalarConn on the DENSE traces must reproduce scalarCorrDense exactly, and
+    ## scalarOnePoint's Re T = n_V at m = 0 is the GW statement behind the
+    ## constant sigma_PS one-point function.
+    for (nm, u, o, mass) in [("free", uF0, ovF0, 0.0), ("random", uFr, ovFr, 0.0),
+                             ("random", uFr, ovFr, 0.13)]:
+      let
+        nt = latF.nt
+        nv = sph1.nv
+        nd = nt div 2 + 1
+        s = denseS(o, u, mass)
+      # dense k(dt) = folded mean_t1 tr[P_t2 S P_t1 S] and T(t) = tr[P_t S]
+      var tdense = newSeq[Complex64](nt)
+      for t in 0..<nt:
+        for y in 0..<nv:
+          for c in 0..1:
+            let i = 2*sIdx(latF, y, t) + c
+            tdense[t] += s[i + ndF*i]
+      var kdense = newSeq[float](nd)
+      for dt in 0..<nd:
+        var acc = 0.0
+        for t1 in 0..<nt:
+          for d in [dt, (nt - dt) mod nt]:
+            let t2 = (t1 + d) mod nt
+            for x in 0..<nv:
+              for y in 0..<nv:
+                for c in 0..1:
+                  for cp in 0..1:
+                    let
+                      i2 = 2*sIdx(latF, x, t2) + c
+                      i1 = 2*sIdx(latF, y, t1) + cp
+                    acc += (s[i2 + ndF*i1]*s[i1 + ndF*i2]).re
+        kdense[dt] = acc/float(2*nt)
+      var trMean = 0.0
+      for t in 0..<nt: trMean += tdense[t].re/float(nt)
+      # scalarConn on the dense traces == scalarCorrDense (folded)
+      let
+        (ps, fs) = scalarCorrDense(o, u, mass)
+        sc = scalarConn(kdense, trMean, nv, mass)
+      var dev = 0.0
+      var scale = 0.0
+      for dt in 0..<nd:
+        let
+          pf = 0.5*(ps[dt] + ps[(nt - dt) mod nt])
+          ff = 0.5*(fs[dt] + fs[(nt - dt) mod nt])
+        scale = max(scale, abs(pf))
+        dev = max(dev, max(abs(sc.ps[dt] - pf), abs(sc.fs[dt] - ff)))
+      echo &"  {nm} m={mass}: scalarConn vs scalarCorrDense max dev {dev:.3e} (scale {scale:.3e})"
+      check dev < 1e-10*scale
+      if mass == 0.0:
+        var gw = 0.0
+        for t in 0..<nt: gw = max(gw, abs(tdense[t].re - float(nv)))
+        echo &"  {nm}: max |Re tr[P_t S] - n_V| = {gw:.3e}  (GW: sigma_PS one-point is constant)"
+        check gw < 1e-9
+      # stochastic estimators
+      var r: Threefry4x64
+      r.seedIndep(808, 0)
+      const npair = 64
+      let oc = newOv(latF, 1.0, o.rat, 1e-23, 1e-16, mxit)
+      var samples = newSeq[CurrentSample](npair)
+      for k in 0..<npair: samples[k] = scalarSample(oc, u, mass, r)
+      check oc.stats.ok
+      let (m, e) = sampleMean(connFold(samples, nt, 0, 0))
+      var wk = 0.0
+      for dt in 0..<nd: wk = max(wk, abs(m[dt].re - kdense[dt])/max(e[dt], 1e-30))
+      let
+        xr = traceSeries(samples, nt, 0)
+        xi = traceSeries(samples, nt, 0, im = true)
+        mr = seriesMean(xr)
+        mi = seriesMean(xi)
+      var wt = 0.0
+      for t in 0..<nt:
+        var v2 = 0.0
+        for k in 0..<npair: v2 += (xr[k][t] - mr[t])*(xr[k][t] - mr[t])
+        let se = sqrt(v2/float(npair*(npair - 1)))
+        wt = max(wt, abs(mr[t] - 2.0*tdense[t].re)/max(se, 1e-30))
+        var w2 = 0.0
+        for k in 0..<npair: w2 += (xi[k][t] - mi[t])*(xi[k][t] - mi[t])
+        let si = sqrt(w2/float(npair*(npair - 1)))
+        wt = max(wt, abs(mi[t] - 2.0*tdense[t].im)/max(si, 1e-30))
+      echo &"  {nm} m={mass}: connected worst pull {wk:.2f}; trace series worst pull {wt:.2f}"
+      check wk < 6.0
+      check wt < 6.0
+      # the FS one-point per slice from the dense trace, and its imaginary part
+      var fsIm = 0.0
+      for t in 0..<nt:
+        let op = scalarOnePoint(tdense[t], nv, mass)
+        fsIm = max(fsIm, abs(op.fs.im))
+        if mass == 0.0: check abs(op.ps + 2.0*float(nv)) < 1e-9
+      echo &"  {nm} m={mass}: max |Im <sigma_FS(t)>| on this configuration = {fsIm:.3e}" &
+           (if nm == "free": "  (parity-even background: 0)" else: "  (the hairpin source)")
+      if nm == "free": check fsIm < 1e-9
+
 # ==============================================================================
 # gluonic fixture: L = 1, nt = 60, at = 0.2, g2 R = 1, exact-area convention
 
@@ -633,6 +790,45 @@ suite "gluonic exact correlator: icosahedral protection (deterministic)":
         echo &"  L={lev} t={float(dt)*lat.at:.1f}: Delta({nlo0}-fold) {dLo:.6f}  " &
              &"Delta({7-nlo0}-fold) {dHi:.6f}  mean {dm:.6f}  " &
              &"split {100.0*abs(dHi-dLo)/dm:.2f} %  (free tower sqrt(12) = {sqrt(12.0):.6f})"
+
+  test "icosaProjectors: algebra for l <= 4 and the exact l = 3 block decomposition":
+    let grp = icosaGroup(sph1)
+    let want = [@["A"], @["T1"], @["H"], @["T2", "G"], @["G", "H"]]
+    for lh in 0..4:
+      let
+        n = 2*lh + 1
+        irs = icosaProjectors(grp, lh)
+      var names: seq[string]
+      for ir in irs: names.add ir.name
+      check names == want[lh]
+      # sum P = 1, P^2 = P, P symmetric
+      var tot = newSeq[float](n*n)
+      var worst = 0.0
+      for ir in irs:
+        for i in 0..<n*n: tot[i] += ir.p[i]
+        for i in 0..<n:
+          for j in 0..<n:
+            var pp = 0.0
+            for k in 0..<n: pp += ir.p[i*n + k]*ir.p[k*n + j]
+            worst = max(worst, abs(pp - ir.p[i*n + j]))
+            worst = max(worst, abs(ir.p[i*n + j] - ir.p[j*n + i]))
+      for i in 0..<n:
+        for j in 0..<n:
+          worst = max(worst, abs(tot[i*n + j] - (if i == j: 1.0 else: 0.0)))
+      echo &"  l={lh}: irreps {names}, max |P^2-P|, |P-P^T|, |sum P - 1| = {worst:.2e}"
+      check worst < 1e-10
+    # the exact free l = 3 correlator is c_T2 P_T2 + c_G P_G
+    let
+      irs = icosaProjectors(grp, 3)
+      c = jtopCorrExact(latG, btG, 3)
+    var worst = 0.0
+    for dt in 1..4:
+      worst = max(worst, blockResidual(c[dt], irs, 7))
+    let
+      cT2 = blockMean(c[1], irs[0], 7)
+      cG = blockMean(c[1], irs[1], 7)
+    echo &"  l=3 dt=1: T2 block {cT2:.6e}  G block {cG:.6e}; max block residual over dt=1..4 {worst:.2e}"
+    check worst < 1e-9
 
 suite "single heatbath configuration: group-averaged degeneracy (exact)":
 

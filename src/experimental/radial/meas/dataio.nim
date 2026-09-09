@@ -84,7 +84,8 @@ proc writeTsv*[T: float|string = float](path: string, header: openArray[(string,
 
 proc readTsv*(path: string): tuple[meta: Table[string, string], names: seq[string],
                                    cols: seq[seq[float]]] =
-  ## Read numeric TSV fields. The column count is set by the first data line.
+  ## Read numeric TSV fields.  Every data line must have the column count of
+  ## the first one; a short or long line is a corrupt file and raises.
   result.meta = initTable[string, string]()
   for raw in path.lines:
     let s = raw.strip
@@ -101,4 +102,6 @@ proc readTsv*(path: string): tuple[meta: Table[string, string], names: seq[strin
     else:
       let w = s.splitWhitespace
       if result.cols.len == 0: result.cols.setLen w.len
+      elif w.len != result.cols.len:
+        raise newException(ValueError, path & ": inconsistent column count in a data line")
       for j in 0..<w.len: result.cols[j].add parseFloat(w[j])

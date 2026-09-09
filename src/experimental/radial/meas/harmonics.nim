@@ -26,8 +26,9 @@
 ## permutations they induce, for the exact single-configuration degeneracy
 ## tests.
 
-import std/math
+import std/[math, complex]
 import ../core/geom
+import ../core/dense
 export geom
 
 func legendreP*(l: int, x: float): float =
@@ -218,3 +219,111 @@ proc icosaGroup*(sph: Sphere, tol = 1e-6): IcosaGroup =
       result.site.add sp
       result.face.add fp
   doAssert result.rot.len == 60
+
+# --- representation matrices and the I-irreducible projectors -------------------
+
+proc ylmRep*(l: int, r: array[3, Vec3]): seq[float] =
+  ## The (2l+1) x (2l+1) matrix of the rotation `r` (rows, as in IcosaGroup.rot)
+  ## on the real harmonics,  Y_lm(R v) = sum_m' D[m', m] Y_lm'(v),  row-major
+  ## D[m'*(2l+1) + m].  Solved by least squares from evaluations at 4l+4 points
+  ## of a Fibonacci spiral (generic: no symmetry axis), exact for polynomials of
+  ## degree l.
+  let
+    n = 2*l + 1
+    np = 4*l + 4
+  var pts = newSeq[Vec3](np)
+  for i in 0..<np:
+    let
+      z = 1.0 - 2.0*(float(i) + 0.5)/float(np)
+      ph = 2.0*PI*float(i)*0.6180339887498949
+      st = sqrt(1.0 - z*z)
+    pts[i] = [st*cos(ph), st*sin(ph), z]
+  # normal equations: (Y^T Y) D = Y^T Y', Y[i, m] = Y_lm(v_i), Y'[i, m] = Y_lm(R v_i)
+  var
+    a = newSeq[Complex64](n*n)
+    b = newSeq[Complex64](n*n)
+  for i in 0..<np:
+    let
+      v = pts[i]
+      w = [dot(r[0], v), dot(r[1], v), dot(r[2], v)]
+    for m1 in 0..<n:
+      let y1 = ylm(l, m1 - l, v)
+      for m2 in 0..<n:
+        a[m1 + n*m2] += complex64(y1*ylm(l, m2 - l, v), 0.0)
+        b[m1 + n*m2] += complex64(y1*ylm(l, m2 - l, w), 0.0)
+  zsolve(a, b, n, n)            # b <- (Y^T Y)^{-1} Y^T Y', column m = D[., m]
+  result = newSeq[float](n*n)
+  for m1 in 0..<n:
+    for m2 in 0..<n: result[m1*n + m2] = b[m1 + n*m2].re
+
+type Irrep* = object
+  ## One I-irreducible block of the real Y_lm: its name, dimension and projector
+  ## (row-major (2l+1) x (2l+1)).
+  name*: string
+  dim*: int
+  p*: seq[float]
+
+proc icosaProjectors*(g: IcosaGroup, l: int): seq[Irrep] =
+  ## Projectors P_a = (dim_a/60) sum_g chi_a(g) D(g) onto the irreducible
+  ## subspaces of the icosahedral rotation group I inside the spin-l harmonics,
+  ## l <= 4, from the 60 rotations of `g`.  Classes are read off the rotation
+  ## angle, tr R = 1 + 2 cos(theta): E (3), C5 (phi), C5^2 (1-phi), C3 (0), C2 (-1),
+  ## phi = (1+sqrt5)/2; the character table of I is
+  ##   A  1  1    1    1  1
+  ##   T1 3  phi  1-phi 0 -1
+  ##   T2 3  1-phi phi  0 -1
+  ##   G  4 -1   -1    1  0
+  ##   H  5  0    0   -1  1.
+  ## Only irreps of multiplicity one occur for l <= 4 (l = 3: T2 + G, the
+  ## splitting of slide 13), so tr P_a = dim_a identifies the occurring ones.
+  let
+    n = 2*l + 1
+    phi = 0.5*(1.0 + sqrt 5.0)
+    names = ["A", "T1", "T2", "G", "H"]
+    dims = [1, 3, 3, 4, 5]
+    chars = [[1.0, 1.0, 1.0, 1.0, 1.0],
+             [3.0, phi, 1.0 - phi, 0.0, -1.0],
+             [3.0, 1.0 - phi, phi, 0.0, -1.0],
+             [4.0, -1.0, -1.0, 1.0, 0.0],
+             [5.0, 0.0, 0.0, -1.0, 1.0]]
+    classTr = [3.0, phi, 1.0 - phi, 0.0, -1.0]
+  var acc = newSeq[seq[float]](5)
+  for a in 0..4: acc[a] = newSeq[float](n*n)
+  for r in g.rot:
+    let tr = r[0][0] + r[1][1] + r[2][2]
+    var cls = -1
+    for c in 0..4:
+      if abs(tr - classTr[c]) < 1e-6: cls = c
+    doAssert cls >= 0, "icosaProjectors: rotation angle not in a class of I"
+    let d = ylmRep(l, r)
+    for a in 0..4:
+      let w = dims[a].float/60.0*chars[a][cls]
+      if w != 0.0:
+        for i in 0..<n*n: acc[a][i] += w*d[i]
+  for a in 0..4:
+    var t = 0.0
+    for i in 0..<n: t += acc[a][i*n + i]
+    let mult = int(round(t/dims[a].float))
+    doAssert abs(t - float(mult*dims[a])) < 1e-8, "icosaProjectors: non-integer multiplicity"
+    doAssert mult <= 1, "icosaProjectors: multiplicity > 1 is not supported"
+    if mult == 1: result.add Irrep(name: names[a], dim: dims[a], p: acc[a])
+
+func blockMean*(c: openArray[float], ir: Irrep, n: int): float =
+  ## The eigenvalue of a (2l+1) x (2l+1) I-invariant matrix c on the block `ir`:
+  ## tr[P c]/dim, exact when c = sum_a c_a P_a.
+  for i in 0..<n:
+    for j in 0..<n: result += ir.p[i*n + j]*c[j*n + i]
+  result /= float(ir.dim)
+
+func blockResidual*(c: openArray[float], irs: openArray[Irrep], n: int): float =
+  ## |c - sum_a blockMean_a P_a| / |c|: how far c is from I-invariant.
+  var cm = newSeq[float](n*n)
+  for i in 0..<n*n: cm[i] = c[i]
+  for ir in irs:
+    let v = blockMean(c, ir, n)
+    for i in 0..<n*n: cm[i] -= v*ir.p[i]
+  var num, den = 0.0
+  for i in 0..<n*n:
+    num += cm[i]*cm[i]
+    den += c[i]*c[i]
+  if den > 0.0: sqrt(num/den) else: 0.0

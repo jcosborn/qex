@@ -10,12 +10,18 @@
 ##
 ##   cond      <sigma_PS> stochastic condensate at the sea mass       (T2.3)
 ##   currents  temporal link-current correlators projected on Y_lm,
-##             l = 0..lmaxJ all m, factorized noise estimator; the l = 0
-##             row is the conserved-charge diagnostic; -disc:true adds the
-##             disconnected building blocks for the vector channel;
+##             l = 0..lmaxJ all m, factorized noise estimator (the l = 0
+##             row is the conserved-charge diagnostic), plus the cross-m
+##             (2l+1)x(2l+1) correlator matrices per l whose icosahedral
+##             blocks the analysis reads (the l = 3 T2/G splitting);
+##             -disc:true adds the one-point traces T = 2 Re tr[K S] and
+##             tau = 2 Im tr[K S] and their cross-sample products, the
+##             hairpins of the vector and of the block axial current;
 ##             -ward:true runs the exact fermion-line charge scan  (T2.4/5/6)
-##   scalars   sigma_PS and sigma_FS timeslice correlators from the 5-fold
-##             vertex (identical at m = 0 -- checked per configuration) (T2.9)
+##   scalars   sigma_PS and sigma_FS: point-source connected correlators from
+##             the 5-fold vertex, and the volume-averaged stochastic estimators
+##             of the connected trace AND the one-point functions -- the
+##             sigma_FS hairpin is part of the physical singlet correlator (T2.9)
 ##   gluon     gradient flow of a COPY of the configuration to the deck's
 ##             flow times; per flow time E_s/E_t (T2.2, slide 9), the
 ##             Y_lm-projected Wilson-loop correlator matrices for l = 1, 2
@@ -36,11 +42,14 @@
 ## -analyze:true aggregates <dir>/meas/ instead of measuring: ensemble means
 ## with delete-block jackknife (block size -jackBs), effective masses (V.4/5),
 ## plateau fits (V.6) with an effective-mass-at-tref fallback for short runs,
-## the loop GEVP per flow time (meas/gevp with rank truncation), the vector =
-## connected + Nf * disconnected assembly, and a summary TSV of the deck's
-## ratios (Delta_l2/Delta_l1, Delta_l3/Delta_l1 + spread, Delta_V/Delta_A,
-## Delta_F/Delta_A, Delta_Fl2/Delta_Fl1, Delta_F2/Delta_F, Delta_PS/Delta_A,
-## Delta_FS/Delta_A) keyed by g2R for cross-ensemble plots.
+## the loop GEVP per flow time (meas/gevp with rank truncation), the hairpin
+## assemblies C = C_conn + (N_f/2)(P - <O>^2) for the vector, the block axial
+## and both scalars (doc/07 sections 1.2 and 3), the l = 3 T2/G block
+## dimensions, and a summary TSV of the deck's ratios (Delta_l2/Delta_l1,
+## Delta_l3/Delta_l1 + block splitting, Delta_V/Delta_A, Delta_F/Delta_A,
+## Delta_Fl2/Delta_Fl1, Delta_F2/Delta_F, Delta_PS/Delta_A, Delta_FS/Delta_A)
+## keyed by g2R for cross-ensemble plots.  Rows named *_conn are connected-only
+## (what the deck's non-singlet plots are), rows named *_full include the hairpin.
 ##
 ## -pure:true generates -nconf exact-heatbath pure-gauge configurations in
 ## memory (WP-G heatbath, no HMC, seeded per configuration) and measures them
@@ -105,6 +114,8 @@ letParam:
   measMass = -1.0      ## valence mass; < 0 means the sea mass masses[0]
   nnoise = 16          ## cond: Gaussian noise vectors
   npair = 8            ## currents: (eta, xi) noise pairs
+  nscalarPair = 8      ## scalars: (eta, xi) noise pairs of the volume estimators
+  allowWindow = false  ## measure even when the kernel window is violated
   lmaxJ = 3            ## currents: project Y_lm for l = 1..lmaxJ (l = 0 always)
   disc = false         ## currents: also the disconnected building blocks
   ward = true          ## currents: the exact fermion-line charge scan
@@ -208,6 +219,7 @@ if ckptInfo:
 const
   pkCond = 101         ## measurement purpose keys for keyedRng, disjoint from
   pkCurr = 102         ## trajectory.nim's rkMomentum/rkAccept/rkPseudo = 1,2,3
+  pkScal = 103
   pkPure = 104
   pureR2 = 1e-20
 
@@ -230,7 +242,7 @@ let
     "ratHashAct": &"{ratAct.hash:#x}"}
   ensKeys = block:
     var s = @{
-      "format": "radial-meas-2",
+      "format": "radial-meas-3",
       "lev": $lev, "nt": $nt, "at": &"{at:.17g}",
       "g2R": &"{g2R:.17g}", "convention": $bt.conv, "seed": $seed,
       "pure": $pure, "seaNf": $(if pure: 0 else: nf),
@@ -269,7 +281,7 @@ let specs = block:
   var s = initTable[string, ObsSpec]()
   s["cond"] = ObsSpec(files: @["cond"], meta: ensKeys & valKeys & nzKeys &
     @[("observable", "cond"), ("nnoise", $nnoise)])
-  var cur = ObsSpec(files: @["currents"], meta: ensKeys & valKeys & nzKeys &
+  var cur = ObsSpec(files: @["currents", "currmat"], meta: ensKeys & valKeys & nzKeys &
     @[("observable", "currents"), ("npair", $npair), ("lmaxJ", $lmaxJ),
       ("disc", $disc), ("ward", $ward)])
   if ward:
@@ -277,9 +289,10 @@ let specs = block:
     cur.meta.add [("wardSite", $v5), ("wardTimes", $wardTimes)]
   if disc: cur.files.add ["currdisc", "currtrace"]
   s["currents"] = cur
-  s["scalars"] = ObsSpec(files: @["scalars"], meta: ensKeys & valKeys & ptKeys &
+  s["scalars"] = ObsSpec(files: @["scalars", "scalarvol", "scalardisc"],
+    meta: ensKeys & valKeys & ptKeys & nzKeys &
     @[("observable", "scalars"), ("nscalarSrc", $nscalarSrc),
-      ("srcSite", $v5), ("srcTimes", $srcTimes)])
+      ("srcSite", $v5), ("srcTimes", $srcTimes), ("nscalarPair", $nscalarPair)])
   s["gluon"] = ObsSpec(files: @["flow", "loops", "f2"], meta: ensKeys &
     @[("observable", "gluon"), ("flowTimes", fmtNums(stimes)),
       ("rkStep", &"{flowStep:.17g}"), ("flowConvention", $btFlow.conv),
@@ -333,6 +346,10 @@ proc currentOps(): seq[tuple[l, m: int]] =
   for lh in 1..lmaxJ:
     for mh in -lh..lh: result.add (lh, mh)
 
+func opIndex(lh, mh: int): int =
+  ## Position of (l, m) in `currentOps`: (0,0) first, then l = 1.. with m ascending.
+  lh*lh + mh + lh
+
 proc measCurrents(u: Gauge, traj: int) =
   ## Factorized noise estimator (doc/07 1.1-1.3, WP-I production path):
   ## per (l, m) the folded, t1-averaged same-op product
@@ -382,93 +399,80 @@ proc measCurrents(u: Gauge, traj: int) =
   var samples = newSeq[CurrentSample](npair)
   for k in 0..<npair:
     samples[k] = currentSample(actOp, u, mass, w, r)
-  # folded, t1-averaged connected product per sample.  Both pairings
-  # E[a(t2) b(t1)] and E[b(t2) a(t1)] equal tr[K(t2) S K(t1) S], so averaging
-  # them (and the dt <-> nt-dt fold) costs nothing and reduces the variance.
-  let nd = nt2 + 1
-  var vk = newSeq[seq[Complex64]](npair)
-  for k in 0..<npair:
-    vk[k] = newSeq[Complex64](nop*nd)
-    for iop in 0..<nop:
-      for dt in 0..nt2:
-        let dtr = (nt - dt) mod nt
-        var s = complex64(0.0, 0.0)
-        for t1 in 0..<nt:
-          let
-            i1 = iop*nt + t1
-            i2 = iop*nt + (t1 + dt) mod nt
-            i2r = iop*nt + (t1 + dtr) mod nt
-          s += samples[k].a[i2]*samples[k].b[i1] + samples[k].b[i2]*samples[k].a[i1]
-          s += samples[k].a[i2r]*samples[k].b[i1] + samples[k].b[i2r]*samples[k].a[i1]
-        vk[k][iop*nd + dt] = s/float(4*nt)
-  var
-    cl, cm, cdt, kre, kim, kerr: seq[float]
+  # same-op connected products, folded and t1-averaged (meas/observables.connFold)
+  var cl, cm, cdt, kre, kim, kerr: seq[float]
   for iop in 0..<nop:
+    let (m, e) = sampleMean(connFold(samples, nt, iop, iop))
     for dt in 0..nt2:
-      var s = complex64(0.0, 0.0)
-      var s2 = 0.0
-      for k in 0..<npair:
-        let v = vk[k][iop*nd + dt]
-        s += v
-        s2 += v.re*v.re
-      let m = s/float(npair)
-      let varr = max(0.0, s2/float(npair) - m.re*m.re)
       cl.add float(ops[iop].l)
       cm.add float(ops[iop].m)
       cdt.add float(dt)
-      kre.add m.re
-      kim.add m.im
-      kerr.add sqrt(varr/float(max(1, npair - 1)))
+      kre.add m[dt].re
+      kim.add m[dt].im
+      kerr.add e[dt]
   writeTsv(opath("currents", traj),
            measMeta("currents", traj,
              ("estimator", "factorized noise, tr[K S K S]; C_conn = -2 Re k")) & wardKeys,
            ["l", "m", "dt", "kre", "kim", "kerr"],
            [cl, cm, cdt, kre, kim, kerr])
+  # cross-m connected products per l: the (2l+1) x (2l+1) correlator matrices
+  var ml, mm1, mm2, mdt, mc: seq[float]
+  for lh in 1..lmaxJ:
+    for i1 in -lh..lh:
+      for i2 in -lh..lh:
+        let (m, _) = sampleMean(connFold(samples, nt, opIndex(lh, i1), opIndex(lh, i2)))
+        for dt in 0..nt2:
+          ml.add float(lh)
+          mm1.add float(i1)
+          mm2.add float(i2)
+          mdt.add float(dt)
+          mc.add m[dt].re
+  writeTsv(opath("currmat", traj),
+           measMeta("currents", traj,
+             ("estimator", "cross-m folded connected products, Re tr[K_m1 S K_m2 S]")),
+           ["l", "m1", "m2", "dt", "c"], [ml, mm1, mm2, mdt, mc])
   if disc:
-    # x_k(op, t) = 2 Re <eta_k, K S eta_k>; cross-sample products are unbiased
+    # one-point traces T = 2 Re tr[K S] (vector) and tau = 2 Im tr[K S] (block
+    # axial) and their unbiased cross-sample products (meas/observables)
     var
-      dl, dm, ddt, dp: seq[float]
+      dl, dm, ddt, dp, dpi: seq[float]
       tl, tm, tt, tre, tim: seq[float]
     for iop in 0..<nop:
-      var
-        sx = newSeq[float](nt)
-        sy = newSeq[float](nt)
-      for t in 0..<nt:
-        for k in 0..<npair:
-          sx[t] += 2.0*samples[k].d[iop*nt + t].re
-          sy[t] += 2.0*samples[k].d[iop*nt + t].im
-      var praw = newSeq[float](nt)
-      for dt in 0..<nt:
-        var s = 0.0
-        for t1 in 0..<nt:
-          let t2 = (t1 + dt) mod nt
-          var rkk = 0.0
-          for k in 0..<npair:
-            rkk += 4.0*samples[k].d[iop*nt + t2].re*samples[k].d[iop*nt + t1].re
-          s += sx[t2]*sx[t1] - rkk
-        praw[dt] = s/float(nt*npair*(npair - 1))
-      let pf = foldC(praw)
+      let
+        xr = traceSeries(samples, nt, iop)
+        xi = traceSeries(samples, nt, iop, im = true)
+        pr = crossFold(xr, nt)
+        pim = crossFold(xi, nt)
+        mr = seriesMean(xr)
+        mi = seriesMean(xi)
       for dt in 0..nt2:
         dl.add float(ops[iop].l)
         dm.add float(ops[iop].m)
         ddt.add float(dt)
-        dp.add pf[dt]
+        dp.add pr[dt]
+        dpi.add pim[dt]
       for t in 0..<nt:
         tl.add float(ops[iop].l)
         tm.add float(ops[iop].m)
         tt.add float(t)
-        tre.add sx[t]/float(npair)
-        tim.add sy[t]/float(npair)
+        tre.add mr[t]
+        tim.add mi[t]
     writeTsv(opath("currdisc", traj),
              measMeta("currents", traj,
-               ("estimator", "cross-sample T(t2)T(t1), T = 2 Re tr[K S]")),
-             ["l", "m", "dt", "p"], [dl, dm, ddt, dp])
+               ("estimator", "cross-sample <T(t2)T(t1)> (p) and <tau(t2)tau(t1)> (pim)")),
+             ["l", "m", "dt", "p", "pim"], [dl, dm, ddt, dp, dpi])
     writeTsv(opath("currtrace", traj), measMeta("currents", traj),
              ["l", "m", "t", "tre", "tim"], [tl, tm, tt, tre, tim])
   echo &"  currents traj {traj}: {nop} ops x {npair} pairs" &
-       (if disc: " + disconnected" else: "")
+       (if disc: " + one-point traces" else: "")
 
 proc measScalars(u: Gauge, traj: int) =
+  ## Point-source connected correlators from the 5-fold vertex (precise, the
+  ## deck-style connected effective masses), then the volume-averaged stochastic
+  ## estimators: the connected trace k(dt) = Re tr[P_t2 S P_t1 S], the one-point
+  ## functions <sigma_PS(t)>, <sigma_FS(t)> and their cross-sample products --
+  ## the ingredients of the full (hairpin-included) correlators assembled at
+  ## analysis time (doc/07 section 3).
   actOp.r2inner = r2ptIn
   actOp.r2outer = r2ptOut
   var
@@ -485,10 +489,9 @@ proc measScalars(u: Gauge, traj: int) =
     scale = max(scale, abs(ps[dt]))
     if dt != 0: dev = max(dev, abs(ps[dt] - fs[dt]))
   let psfs = dev/scale
-  # At dt != 0 this contraction makes PS == FS bitwise (z2 = conj(z1)); the
-  # statement with content is dt = 0, where FS keeps its GW contact term and
-  # (S + S^dag)_{xx} = 2 at m = 0 makes it cancel (doc/06 WP-I) -- so the
-  # contact deviation is the real m = 0 check, solver-level small.
+  # At dt != 0 this contraction makes PS == FS bitwise at m = 0 (z2 = conj(z1),
+  # a GW identity, not a measurement); the statement with content is dt = 0,
+  # where FS keeps its contact term and (S + S^dag)_{xx} = 2 makes it cancel.
   let contact = abs(ps[0] - fs[0])/scale
   var cdt = newSeq[float](nt)
   for dt in 0..<nt: cdt[dt] = float(dt)
@@ -496,9 +499,64 @@ proc measScalars(u: Gauge, traj: int) =
            measMeta("scalars", traj, ("psfs_maxdev", &"{psfs:.17g}"),
                     ("psfs_contact", &"{contact:.17g}")),
            ["dt", "ps", "fs"], [cdt, ps, fs])
+  # volume-averaged stochastic estimators
+  actOp.r2inner = r2nzIn
+  actOp.r2outer = r2nzOut
+  var r = keyedRng(uint64(seed), traj, pkScal)
+  var samples = newSeq[CurrentSample](nscalarPair)
+  for k in 0..<nscalarPair: samples[k] = scalarSample(actOp, u, mass, r)
+  let
+    (km, ke) = sampleMean(connFold(samples, nt, 0, 0))
+    xr = traceSeries(samples, nt, 0)
+    xi = traceSeries(samples, nt, 0, im = true)
+  # per-sample one-point functions O_FS = a + i b, O_PS = c from T_k(t) = d_k(t)
+  var fa, fb, fc: seq[seq[float]]
+  for k in 0..<nscalarPair:
+    var a, b, c: seq[float]
+    for t in 0..<nt:
+      let op = scalarOnePoint(complex64(0.5*xr[k][t], 0.5*xi[k][t]), sph.nv, mass)
+      a.add op.fs.re
+      b.add op.fs.im
+      c.add op.ps
+    fa.add a
+    fb.add b
+    fc.add c
+  let
+    paa = crossFold(fa, nt)
+    pbb = crossFold(fb, nt)
+    pcc = crossFold(fc, nt)
+    mfa = seriesMean(fa)
+    mfb = seriesMean(fb)
+    mfc = seriesMean(fc)
+    mtr = seriesMean(xr)
+  var vdt, vk, vke, vaa, vbb, vcc: seq[float]
+  for dt in 0..nt2:
+    vdt.add float(dt)
+    vk.add km[dt].re
+    vke.add ke[dt]
+    vaa.add paa[dt]
+    vbb.add pbb[dt]
+    vcc.add pcc[dt]
+  writeTsv(opath("scalarvol", traj),
+           measMeta("scalars", traj,
+             ("k", "folded Re tr[P_t2 S P_t1 S], volume-averaged connected trace"),
+             ("p", "cross-sample <O(t2) O(t1)>: aa/bb = Re/Im sigma_FS, cc = sigma_PS")),
+           ["dt", "kre", "kerr", "paa", "pbb", "pcc"], [vdt, vk, vke, vaa, vbb, vcc])
+  var st, sfa, sfb, sfc, strr: seq[float]
+  for t in 0..<nt:
+    st.add float(t)
+    sfa.add mfa[t]
+    sfb.add mfb[t]
+    sfc.add mfc[t]
+    strr.add 0.5*mtr[t]
+  writeTsv(opath("scalardisc", traj),
+           measMeta("scalars", traj,
+             ("onepoint", "<sigma_FS(t)> = fsre + i fsim, <sigma_PS(t)> = ps, Re tr[P_t S] = trre")),
+           ["t", "fsre", "fsim", "ps", "trre"], [st, sfa, sfb, sfc, strr])
   echo &"  scalars traj {traj}: PS==FS dt!=0 dev {psfs:.3e}" &
        &"  dt=0 GW contact dev {contact:.3e}" &
-       (if mass != 0.0: "  (m != 0: equality not expected)" else: "")
+       (if mass != 0.0: "  (m != 0: equality not expected)" else: "") &
+       &"  + {nscalarPair} volume pairs"
 
 proc measGluon(u: Gauge, traj: int) =
   ## Flow a copy; at each flow time (0 first) measure E_s/E_t, the folded
@@ -638,9 +696,11 @@ proc measureOne(u: Gauge, traj: int) =
   if fermionic:
     let win = kernelWindow(actOp, u)
     if not win.inside:
-      echo &"  WARNING traj {traj}: kernel window [{win.lo:.4f}, {win.hi:.4f}]" &
-           &" outside the frozen [{ratLo}, {ratHi}] -- overlap measurements" &
-           " on this configuration are outside the rational's validity"
+      let msg = &"traj {traj}: kernel window [{win.lo:.4f}, {win.hi:.4f}]" &
+                &" outside the frozen [{ratLo}, {ratHi}]: overlap measurements" &
+                " on this configuration are outside the rational's validity"
+      require allowWindow, msg & " (pass -allowWindow:true to measure anyway)"
+      echo "  WARNING " & msg
   for name in obsList:
     if skipDone and outputDone(name, traj):
       echo &"  skip {name} traj {traj} (complete)"
@@ -796,7 +856,7 @@ if analyze:
 
   # ---------------- currents ----------------
   let msCurr = listMeas("currents")
-  var jAfit, jAeff: Jk            # Delta_A = axial l = 1 (kept for ratios)
+  var jAfit, jAeff: Jk            # Delta_A = connected axial l = 1 (kept for ratios)
   var haveA = false
   if msCurr.trajs.len > 0:
     let ops = currentOps()
@@ -856,12 +916,12 @@ if analyze:
         ed.add outText(mm[it])
         ee.add outText(e)
     writeTsv(anaDir/"curr_corr.tsv",
-             manifest(("nconf", $ncf), ("sign", "-2 Re tr[K S K S] per 4c flavor")),
+             manifest(("nconf", $ncf), ("sign", "-2 Re tr[K S K S] per 4c flavor, connected")),
              ["l", "m", "dt", "c", "err"], [cl, cm2, cdt, cc, ce])
     writeTsv(anaDir/"curr_effmass.tsv",
              manifest(("nconf", $ncf), ("form", "local log ratio ln(c(t)/c(t+at))/at")),
              ["l", "m", "t", "deff", "err"], [el, em, et, ed, ee])
-    # per-l summaries: m-average within each l (degenerate for l = 1, 2)
+    # per-l summaries of the CONNECTED correlators: m-average within each l
     var lFit = initTable[int, Jk]()
     var lEff = initTable[int, Jk]()
     for lh in 1..lmaxJ:
@@ -872,16 +932,18 @@ if analyze:
           je.add perOpEff[iop]
       lFit[lh] = jkMean(jf)
       lEff[lh] = jkMean(je)
-      addSum(&"Delta_A_l{lh}", jkStat(lFit[lh]), jkStat(lEff[lh]))
+      addSum(&"Delta_A_conn_l{lh}", jkStat(lFit[lh]), jkStat(lEff[lh]))
     jAfit = lFit[1]
     jAeff = lEff[1]
     haveA = true
     if lmaxJ >= 2:
-      addSum("R_l2_l1_axial", ratioVE(lFit[2], jAfit), ratioVE(lEff[2], jAeff))
+      addSum("R_l2_l1_axial_conn", ratioVE(lFit[2], jAfit), ratioVE(lEff[2], jAeff))
     if lmaxJ >= 3:
-      addSum("R_l3_l1_axial", ratioVE(lFit[3], jAfit), ratioVE(lEff[3], jAeff))
-      # the deck's per-m spread at l = 3 (slide 13): full spread over m of the
-      # per-m effective-mass estimator, relative to the mean
+      addSum("R_l3_l1_axial_conn", ratioVE(lFit[3], jAfit), ratioVE(lEff[3], jAeff))
+      # the deck's per-m presentation (slide 13): spread over m of the per-m
+      # effective masses.  FRAME DEPENDENT: the real Y_3m of this chart (z = a
+      # 2-fold axis) mix the T2 and G blocks; the invariant splitting is the
+      # block analysis below.
       var vs: seq[float]
       for iop in 0..<nop:
         if ops[iop].l == 3 and perOpEff[iop].full.ok:
@@ -894,7 +956,7 @@ if analyze:
           lo = min(lo, x)
           hi = max(hi, x)
           mn += x/7.0
-        addSum1("l3_spread_over_m", (hi - lo)/mn)
+        addSum1("l3_spread_over_m_frame", (hi - lo)/mn)
     # conserved-charge diagnostics
     if wardF.len > 0:
       var wf = 0.0
@@ -916,52 +978,150 @@ if analyze:
         mn += meanC[dt]/float(nt2)
       addSum1("l0_conn_variation", (hi - lo)/abs(mn))
     echo &"currents: {ncf} configs, {nop} operators (l <= {lmaxJ})"
-    # ------------ vector channel (needs -disc data) ------------
+    # ------------ cross-m matrices: icosahedral blocks (doc/07 section 2) ------------
+    let msMat = listMeas("currmat")
+    if msMat.trajs == msCurr.trajs:
+      let grp = icosaGroup(sph)
+      for lh in 1..lmaxJ:
+        let
+          nm = 2*lh + 1
+          irs = icosaProjectors(grp, lh)
+          blen = nm*nm*nd
+        var mdat = newSeq[seq[float]](ncf)
+        for ic in 0..<ncf:
+          let (_, _, cols) = readTsv(msMat.files[ic])
+          var v = newSeq[float](blen)
+          var found = 0
+          for r in 0..<cols[0].len:
+            if int(cols[0][r]) != lh: continue
+            let
+              i1 = int(cols[1][r]) + lh
+              i2 = int(cols[2][r]) + lh
+              dt = int(cols[3][r])
+            v[(i1*nm + i2)*nd + dt] = cols[4][r]
+            inc found
+          require found == blen, "currmat file layout mismatch"
+          mdat[ic] = v
+        proc matAt(v: seq[float], dt: int): seq[float] =
+          result = newSeq[float](nm*nm)
+          for i in 0..<nm*nm: result[i] = v[i*nd + dt]
+        # the ensemble mean: how I-invariant is it (l = 1, 2 must be pure blocks)
+        var mv = newSeq[float](blen)
+        for ic in 0..<ncf:
+          for d in 0..<blen: mv[d] += mdat[ic][d]/float(ncf)
+        var resid = 0.0
+        for dt in 1..min(iref, nt2): resid = max(resid, blockResidual(matAt(mv, dt), irs, nm))
+        addSum1(&"l{lh}_block_residual", resid)
+        if irs.len == 1: continue
+        # l = 3: dimensions of the T2 and G blocks, their splitting and the
+        # multiplicity-weighted mean (the deck's "average scales correctly")
+        var jb: seq[(Jk, Jk)]
+        for ir in irs:
+          let irc = ir
+          proc series(v: seq[float]): seq[float] =
+            result = newSeq[float](nd)
+            for dt in 0..<nd: result[dt] = blockMean(matAt(v, dt), irc, nm)
+          let jf = jkFrom(mdat, proc(v: seq[float]): Estimate = deltaFit(series(v)), ck, bs)
+          let je = jkFrom(mdat, proc(v: seq[float]): Estimate = deltaEff(series(v)), ck, bs)
+          jb.add (jf, je)
+          addSum(&"Delta_A_conn_l{lh}_{ir.name}", jkStat(jf), jkStat(je))
+        proc combine(js: seq[Jk], weighted: bool): Jk =
+          ## per replica: multiplicity-weighted mean, or |D_0 - D_1|/mean
+          result.trajs = js[0].trajs
+          result.bs = js[0].bs
+          proc f(es: seq[Estimate]): Estimate =
+            var tot = 0.0
+            for i, e in es:
+              if not e.ok: return
+              tot += float(irs[i].dim)*e.v
+            let mean = tot/float(nm)
+            if weighted: Estimate(v: mean, ok: true)
+            else: Estimate(v: abs(es[0].v - es[1].v)/mean, ok: mean != 0.0)
+          var full: seq[Estimate]
+          for j in js: full.add j.full
+          result.full = f(full)
+          result.reps = newSeq[Estimate](js[0].reps.len)
+          for b in 0..<result.reps.len:
+            var es: seq[Estimate]
+            for j in js: es.add j.reps[b]
+            result.reps[b] = f(es)
+        var jfs, jes: seq[Jk]
+        for (jf, je) in jb:
+          jfs.add jf
+          jes.add je
+        addSum(&"Delta_A_conn_l{lh}_blocks", jkStat(combine(jfs, true)), jkStat(combine(jes, true)))
+        addSum(&"l{lh}_block_split", jkStat(combine(jfs, false)), jkStat(combine(jes, false)))
+      echo &"currmat: I_h block analysis for l <= {lmaxJ}"
+    else:
+      echo "currmat: files missing or misaligned -- block analysis skipped"
+    # ------------ hairpins: vector and block axial channel (needs -disc data) ------------
     let msD = listMeas("currdisc")
     let msT = listMeas("currtrace")
     if msD.trajs == msCurr.trajs and msT.trajs == msCurr.trajs and
         msD.trajs.len > 0:
-      # per config flat vector: kavg(l=1) & Pavg(l=1) & tmean_m (3 entries)
+      # per config flat: k(l=1 avg) & p & pim (nd each) & tmean_m & taumean_m (3 each)
       var vdat = newSeq[seq[float]](ncf)
       for ic in 0..<ncf:
         let (_, _, dcols) = readTsv(msD.files[ic])
         let (_, _, tcols) = readTsv(msT.files[ic])
-        var v = newSeq[float](2*nd + 3)
+        var v = newSeq[float](3*nd + 6)
         for iop in 0..<nop:
           if ops[iop].l != 1: continue
           for dt in 0..nt2:
             v[dt] += kdat[iop][ic][dt]/3.0
             v[nd + dt] += dcols[3][iop*nd + dt]/3.0
+            v[2*nd + dt] += dcols[4][iop*nd + dt]/3.0
           var tm = 0.0
-          for t in 0..<nt: tm += tcols[3][iop*nt + t]/float(nt)
-          v[2*nd + (ops[iop].m + 1)] = tm
+          var um = 0.0
+          for t in 0..<nt:
+            tm += tcols[3][iop*nt + t]/float(nt)
+            um += tcols[4][iop*nt + t]/float(nt)
+          v[3*nd + (ops[iop].m + 1)] = tm
+          v[3*nd + 3 + (ops[iop].m + 1)] = um
         vdat[ic] = v
+      let npairs = float(nf div 2)      # four-component pairs: the hairpin weight
       proc vecCorr(v: seq[float]): seq[float] =
+        ## C_V = -2 Re k + (N_f/2)(P - <T>^2)    (doc/07 1.2, per pair)
         result = newSeq[float](nd)
         var t2 = 0.0
-        for m in 0..2: t2 += v[2*nd + m]*v[2*nd + m]/3.0
+        for m in 0..2: t2 += v[3*nd + m]*v[3*nd + m]/3.0
         for dt in 0..nd-1:
-          result[dt] = -2.0*v[dt] + float(nf)*(v[nd + dt] - t2)
+          result[dt] = -2.0*v[dt] + npairs*(v[nd + dt] - t2)
+      proc axCorr(v: seq[float]): seq[float] =
+        ## C_A = -2 Re k - (N_f/2)(P_im - <tau>^2): the block tau_3 current has
+        ## the one-point function -i tau per pair (doc/07 1.2)
+        result = newSeq[float](nd)
+        var u2 = 0.0
+        for m in 0..2: u2 += v[3*nd + 3 + m]*v[3*nd + 3 + m]/3.0
+        for dt in 0..nd-1:
+          result[dt] = -2.0*v[dt] - npairs*(v[2*nd + dt] - u2)
       let jVfit = jkFrom(vdat, proc(v: seq[float]): Estimate = deltaFit(vecCorr(v)), ck, bs)
       let jVeff = jkFrom(vdat, proc(v: seq[float]): Estimate = deltaEff(vecCorr(v)), ck, bs)
-      addSum("Delta_V", jkStat(jVfit), jkStat(jVeff))
-      addSum("R_V_A", ratioVE(jVfit, jAfit), ratioVE(jVeff, jAeff))
-      # write the assembled vector correlator
-      var vdt, vca, vcv, vdd: seq[float]
-      var meanV = newSeq[float](2*nd + 3)
+      let jXfit = jkFrom(vdat, proc(v: seq[float]): Estimate = deltaFit(axCorr(v)), ck, bs)
+      let jXeff = jkFrom(vdat, proc(v: seq[float]): Estimate = deltaEff(axCorr(v)), ck, bs)
+      addSum("Delta_V_full", jkStat(jVfit), jkStat(jVeff))
+      addSum("Delta_A_full_l1", jkStat(jXfit), jkStat(jXeff))
+      addSum("R_Vfull_Aconn", ratioVE(jVfit, jAfit), ratioVE(jVeff, jAeff))
+      addSum("R_Vfull_Afull", ratioVE(jVfit, jXfit), ratioVE(jVeff, jXeff))
+      # write the assembled correlators
+      var vdt, vca, vcv, vdd, vcx, vdx: seq[float]
+      var meanV = newSeq[float](3*nd + 6)
       for ic in 0..<ncf:
         for d in 0..<meanV.len: meanV[d] += vdat[ic][d]/float(ncf)
       let cv = vecCorr(meanV)
+      let cx = axCorr(meanV)
       for dt in 0..nt2:
         vdt.add float(dt)
         vca.add -2.0*meanV[dt]
         vcv.add cv[dt]
         vdd.add cv[dt] + 2.0*meanV[dt]
+        vcx.add cx[dt]
+        vdx.add cx[dt] + 2.0*meanV[dt]
       writeTsv(anaDir/"vector.tsv",
                manifest(("nconf", $ncf),
-                        ("assembly", "C_V = -2 Re k + Nf (P - <T>^2), l = 1 m-avg")),
-               ["dt", "cA", "cV", "NfD"], [vdt, vca, vcv, vdd])
-      echo &"vector: assembled from conn + {nf} * disc"
+                        ("assembly", "C_V = -2 Re k + (Nf/2)(P - <T>^2); C_Afull = -2 Re k - (Nf/2)(Pim - <tau>^2); l = 1 m-avg")),
+               ["dt", "cA", "cV", "hairV", "cAfull", "hairA"], [vdt, vca, vcv, vdd, vcx, vdx])
+      echo &"vector/axial: assembled from conn + {nf div 2} * hairpin"
     elif disc:
       echo "vector: disconnected files missing or misaligned -- skipped"
 
@@ -969,6 +1129,7 @@ if analyze:
   let msScal = listMeas("scalars")
   if msScal.trajs.len > 0:
     let ncf = msScal.trajs.len
+    let nd = nt2 + 1
     var psD = newSeq[seq[float]](ncf)
     var fsD = newSeq[seq[float]](ncf)
     var psfs = 0.0
@@ -982,12 +1143,12 @@ if analyze:
     let ck = msScal.trajs
     let (jPSf, jPSe) = deltaJks(psD, ck)
     let (jFSf, jFSe) = deltaJks(fsD, ck)
-    addSum("Delta_PS", jkStat(jPSf), jkStat(jPSe))
-    addSum("Delta_FS", jkStat(jFSf), jkStat(jFSe))
+    addSum("Delta_PS_conn", jkStat(jPSf), jkStat(jPSe))
+    addSum("Delta_FS_conn", jkStat(jFSf), jkStat(jFSe))
     if haveA:
-      addSum("R_PS_A", ratioVE(jPSf, jAfit), ratioVE(jPSe, jAeff))
-      addSum("R_FS_A", ratioVE(jFSf, jAfit), ratioVE(jFSe, jAeff))
-    addSum1("psfs_maxdev", psfs)
+      addSum("R_PSconn_Aconn", ratioVE(jPSf, jAfit), ratioVE(jPSe, jAeff))
+      addSum("R_FSconn_Aconn", ratioVE(jFSf, jAfit), ratioVE(jFSe, jAeff))
+    addSum1("psfs_conn_maxdev", psfs)
     addSum1("psfs_contact_m0", psfsC)
     var sdt, sp, spe, sf, sfe: seq[string]
     for dt in 0..nt2:
@@ -1004,9 +1165,99 @@ if analyze:
       sf.add outText(fv)
       sfe.add outText(fe)
     writeTsv(anaDir/"scalars.tsv", manifest(("nconf", $ncf),
+             ("contraction", "point source, connected only"),
              ("psfs_maxdev", &"{psfs:.17g}"), ("psfs_contact", &"{psfsC:.17g}")),
              ["dt", "ps", "psErr", "fs", "fsErr"], [sdt, sp, spe, sf, sfe])
-    echo &"scalars: {ncf} configs  PS==FS dt!=0 dev {psfs:.3e}  contact {psfsC:.3e}"
+    echo &"scalars (point, connected): {ncf} configs  PS==FS dt!=0 dev {psfs:.3e}  contact {psfsC:.3e}"
+    # ------------ full correlators: volume estimators + hairpins ------------
+    let msV = listMeas("scalarvol")
+    let msDs = listMeas("scalardisc")
+    if msV.trajs == msScal.trajs and msDs.trajs == msScal.trajs:
+      # per config: kre(nd) & paa(nd) & pbb(nd) & pcc(nd) & trre & fsre & fsim & ps
+      var vdat = newSeq[seq[float]](ncf)
+      for ic in 0..<ncf:
+        let (_, _, vc) = readTsv(msV.files[ic])
+        let (_, _, dc) = readTsv(msDs.files[ic])
+        require vc[0].len == nd and dc[0].len == nt, "scalarvol/scalardisc layout mismatch"
+        var v = newSeq[float](4*nd + 4)
+        for dt in 0..<nd:
+          v[dt] = vc[1][dt]
+          v[nd + dt] = vc[3][dt]
+          v[2*nd + dt] = vc[4][dt]
+          v[3*nd + dt] = vc[5][dt]
+        for t in 0..<nt:
+          v[4*nd] += dc[4][t]/float(nt)
+          v[4*nd + 1] += dc[1][t]/float(nt)
+          v[4*nd + 2] += dc[2][t]/float(nt)
+          v[4*nd + 3] += dc[3][t]/float(nt)
+        vdat[ic] = v
+      let npairs = float(nf div 2)
+      proc assemble(v: seq[float]): tuple[psC, fsC, psF, fsF: seq[float]] =
+        ## conn from scalarConn; hairpin (N_f/2)(<O(t2)O(t1)> - <O>^2) with
+        ## Re[O_FS(t2) O_FS(t1)] = a a - b b, O_PS real (doc/07 section 3)
+        var k = newSeq[float](nd)
+        for dt in 0..<nd: k[dt] = v[dt]
+        let sc = scalarConn(k, v[4*nd], sph.nv, mass)
+        result.psC = sc.ps
+        result.fsC = sc.fs
+        result.psF = newSeq[float](nd)
+        result.fsF = newSeq[float](nd)
+        let
+          fsre = v[4*nd + 1]
+          fsim = v[4*nd + 2]
+          psm = v[4*nd + 3]
+        for dt in 0..<nd:
+          let
+            dFS = (v[nd + dt] - v[2*nd + dt]) - (fsre*fsre - fsim*fsim)
+            dPS = v[3*nd + dt] - psm*psm
+          result.psF[dt] = sc.ps[dt] + npairs*dPS
+          result.fsF[dt] = sc.fs[dt] + npairs*dFS
+      let jPvf = jkFrom(vdat, proc(v: seq[float]): Estimate = deltaFit(assemble(v).psC), ck, bs)
+      let jPve = jkFrom(vdat, proc(v: seq[float]): Estimate = deltaEff(assemble(v).psC), ck, bs)
+      let jPFf = jkFrom(vdat, proc(v: seq[float]): Estimate = deltaFit(assemble(v).psF), ck, bs)
+      let jPFe = jkFrom(vdat, proc(v: seq[float]): Estimate = deltaEff(assemble(v).psF), ck, bs)
+      let jFFf = jkFrom(vdat, proc(v: seq[float]): Estimate = deltaFit(assemble(v).fsF), ck, bs)
+      let jFFe = jkFrom(vdat, proc(v: seq[float]): Estimate = deltaEff(assemble(v).fsF), ck, bs)
+      addSum("Delta_PS_vol_conn", jkStat(jPvf), jkStat(jPve))
+      addSum("Delta_PS_full", jkStat(jPFf), jkStat(jPFe))
+      addSum("Delta_FS_full", jkStat(jFFf), jkStat(jFFe))
+      if haveA:
+        addSum("R_PSfull_Aconn", ratioVE(jPFf, jAfit), ratioVE(jPFe, jAeff))
+        addSum("R_FSfull_Aconn", ratioVE(jFFf, jAfit), ratioVE(jFFe, jAeff))
+      var meanV = newSeq[float](4*nd + 4)
+      for ic in 0..<ncf:
+        for d in 0..<meanV.len: meanV[d] += vdat[ic][d]/float(ncf)
+      let am = assemble(meanV)
+      var fdev = 0.0
+      var fscale = 0.0
+      var hfrac = 0.0
+      for dt in 1..nt2:
+        fscale = max(fscale, abs(am.psF[dt]))
+        fdev = max(fdev, abs(am.psF[dt] - am.fsF[dt]))
+        if dt <= iref and am.fsF[dt] != 0.0:
+          hfrac = max(hfrac, abs(am.fsF[dt] - am.fsC[dt])/abs(am.fsF[dt]))
+      addSum1("psfs_full_maxdev", (if fscale > 0.0: fdev/fscale else: 0.0))
+      addSum1("fs_hairpin_fraction", hfrac)
+      var fdt, fpc, ffc, fpf, fpfe, fff, fffe: seq[string]
+      for dt in 0..nt2:
+        let dtl = dt
+        let (pv, pe) = jkStat(jkFrom(vdat, proc(v: seq[float]): float = assemble(v).psF[dtl], ck, bs))
+        let (fv, fe) = jkStat(jkFrom(vdat, proc(v: seq[float]): float = assemble(v).fsF[dtl], ck, bs))
+        fdt.add outText(float(dt))
+        fpc.add outText(am.psC[dt])
+        ffc.add outText(am.fsC[dt])
+        fpf.add outText(pv)
+        fpfe.add outText(pe)
+        fff.add outText(fv)
+        fffe.add outText(fe)
+      writeTsv(anaDir/"scalars_full.tsv", manifest(("nconf", $ncf),
+               ("assembly", "volume-averaged conn + (Nf/2)(<O O> - <O>^2); FS hairpin = fsFull - fsConn")),
+               ["dt", "psConn", "fsConn", "psFull", "psFullErr", "fsFull", "fsFullErr"],
+               [fdt, fpc, ffc, fpf, fpfe, fff, fffe])
+      echo &"scalars (volume + hairpin): PS/FS full max dev {fdev/max(fscale, 1e-300):.3e}, " &
+           &"FS hairpin fraction (t <= {trefT:g}) {hfrac:.3e}"
+    else:
+      echo "scalars: volume/one-point files missing or misaligned -- full correlators skipped"
 
   # ---------------- gluonic sector ----------------
   let msFlow = listMeas("flow")
@@ -1206,22 +1457,27 @@ if analyze:
   # ---------------- summary ----------------
   block:
     let path = anaDir/"summary.tsv"
-    var f = open(path, fmWrite)
-    defer: f.close()
-    for (k, v) in manifest(("estimators",
-        "fit = plateau (V.6) on the effective mass; " &
-        "eff = Delta_eff at t = " & &"{trefT:g}" & " (low-statistics fallback)")):
-      f.writeLine("# " & k & "=" & v)
-    f.writeLine("# columns=name g2R lev nf valueFit errFit valueEff errEff")
+    var cn, cg, clv, cnf, cvf, cef, cve, cee: seq[string]
     for r in summary:
-      f.writeLine(&"{r.name}\t{g2R:g}\t{lev}\t{nf}\t{outText(r.fit.v, \".8g\")}\t" &
-                  &"{outText(r.fit.e, \".8g\")}\t{outText(r.eff.v, \".8g\")}\t{outText(r.eff.e, \".8g\")}")
+      cn.add r.name
+      cg.add &"{g2R:g}"
+      clv.add $lev
+      cnf.add $nf
+      cvf.add outText(r.fit.v, ".8g")
+      cef.add outText(r.fit.e, ".8g")
+      cve.add outText(r.eff.v, ".8g")
+      cee.add outText(r.eff.e, ".8g")
+    writeTsv(path, manifest(("estimators",
+        "fit = plateau (V.6) on the effective mass; " &
+        "eff = Delta_eff at t = " & &"{trefT:g}" & " (low-statistics fallback)")),
+        ["name", "g2R", "lev", "nf", "valueFit", "errFit", "valueEff", "errEff"],
+        [cn, cg, clv, cnf, cvf, cef, cve, cee])
     echo ""
     echo &"summary -> {path}"
     let hd = "eff(t=" & &"{trefT:g}" & ")"
-    echo &"""{"name":<26} {"fit":>12} {"+-":>10} {hd:>14} {"+-":>10}"""
+    echo &"""{"name":<28} {"fit":>12} {"+-":>10} {hd:>14} {"+-":>10}"""
     for r in summary:
-      echo &"{r.name:<26} {outText(r.fit.v, \".6g\"):>12} {outText(r.fit.e, \".4g\"):>10} {outText(r.eff.v, \".6g\"):>14} {outText(r.eff.e, \".4g\"):>10}"
+      echo &"{r.name:<28} {outText(r.fit.v, \".6g\"):>12} {outText(r.fit.e, \".4g\"):>10} {outText(r.eff.v, \".6g\"):>14} {outText(r.eff.e, \".4g\"):>10}"
 
 processSaveParams()
 writeParamFile()

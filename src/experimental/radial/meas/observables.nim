@@ -16,6 +16,16 @@
 ## tangent.  The dense oracle `denseOvDeriv` (tests only) is the same rational
 ## formula evaluated in exact linear algebra and is pinned against ovGradient.
 ##
+## Per-configuration estimators (`connFold`, `crossFold`, `traceSeries`) turn a
+## set of samples into the t1-averaged, dt-folded connected products, the
+## unbiased cross-sample products of the one-point traces (the fermion-
+## disconnected pieces) and the trace series themselves; rmeas writes exactly
+## these, so the production path is the tested path.  `scalarSample` is the same
+## factorization with the time-slice projectors as the operators, which gives
+## the volume-averaged sigma_PS / sigma_FS correlators AND their one-point
+## functions -- sigma_FS is the flavor singlet, and its hairpin is a required
+## piece of the physical correlator (doc/07 section 3).
+##
 ## Propagator conventions: S(m) = D(m)^{-1}, with the standard rho=1 overlap
 ## mass D(m) = (1-m/2)D_ov + m,
 ##   S b       = (D^dag D)^{-1} D^dag b        -- `propSolve` (adjoint FIRST)
@@ -31,8 +41,8 @@ import ../core/lattice
 import ../core/spinor
 import ../ops/overlap
 import ../ops/gaugeact
+import ../core/dense
 import harmonics
-import eigens/linalgFuncs
 
 export overlap, gaugeact, harmonics
 
@@ -106,11 +116,8 @@ proc condensateDense*(o: Ov, u: Gauge, mass: float): float =
   requireOvMass mass
   let
     nd = 2*o.l.nsite
-    a = denseOv(o, u)
-  var m = a
-  var ev = newSeq[Complex64](nd)
-  zgeigs(cast[ptr float64](addr m[0]), cast[ptr float64](addr ev[0]), nd)
-  let alpha = ovMassAlpha(mass)
+    ev = eigvals(denseOv(o, u), nd)
+    alpha = ovMassAlpha(mass)
   for k in 0..<nd:
     let z = (1.0 - 0.5*ev[k])/(alpha*ev[k] + mass)
     result += z.re
@@ -118,46 +125,15 @@ proc condensateDense*(o: Ov, u: Gauge, mass: float): float =
 
 # --- dense oracles (tests only) ----------------------------------------------
 
-proc zmm(a, b: seq[Complex64], n: int): seq[Complex64] =
-  ## c = a b, column-major.
-  result = newSeq[Complex64](n*n)
-  for j in 0..<n:
-    for k in 0..<n:
-      let bkj = b[k + n*j]
-      if bkj.re != 0.0 or bkj.im != 0.0:
-        for i in 0..<n:
-          result[i + n*j] += a[i + n*k]*bkj
-
-proc zmmAdjL(a, b: seq[Complex64], n: int): seq[Complex64] =
-  ## c = a^dag b, column-major.
-  result = newSeq[Complex64](n*n)
-  for j in 0..<n:
-    for i in 0..<n:
-      var s = complex64(0.0, 0.0)
-      for k in 0..<n: s += conjugate(a[k + n*i])*b[k + n*j]
-      result[i + n*j] = s
-
 proc denseS*(o: Ov, u: Gauge, mass = 0.0): seq[Complex64] =
-  ## Exact dense S = D(mass)^{-1} via A^{-1} = (A^dag A)^{-1} A^dag with
-  ## the Hermitian A^dag A eigendecomposed by zheev.  Tests only.
+  ## Exact dense S = D(mass)^{-1} by LU (core/dense.zinv).  Tests only.
   requireOvMass mass
   let nd = 2*o.l.nsite
   var a = denseOv(o, u)
   let alpha = ovMassAlpha(mass)
   for i in 0..<a.len: a[i] = alpha*a[i]
   for i in 0..<nd: a[i + nd*i] += complex64(mass, 0.0)
-  var h = zmmAdjL(a, a, nd)
-  var ev = newSeq[float](nd)
-  zeigs(cast[ptr float64](addr h[0]), addr ev[0], nd)   # h <- eigenvectors V
-  let w = zmm(a, h, nd)                                 # w = A V
-  # A^{-1} = V diag(1/ev) (A V)^dag
-  result = newSeq[Complex64](nd*nd)
-  for j in 0..<nd:
-    for k in 0..<nd:
-      let f = conjugate(w[j + nd*k])/ev[k]
-      if f.re != 0.0 or f.im != 0.0:
-        for i in 0..<nd:
-          result[i + nd*j] += h[i + nd*k]*f
+  zinv(a, nd)
 
 proc denseDwDeriv(l: Lat, u, du: Gauge): seq[Complex64] =
   ## Dense delta D_W[du], column by column through applyDwDeriv.
@@ -189,8 +165,7 @@ proc denseOvDeriv*(o: Ov, u: Gauge, du: Gauge, mass = 0.0): seq[Complex64] =
     x = denseDw(l, u, o.m)
     dx = denseDwDeriv(l, u, du)
   var v = zmmAdjL(x, x, nd)              # H
-  var ev = newSeq[float](nd)
-  zeigs(cast[ptr float64](addr v[0]), addr ev[0], nd)   # v <- eigenvectors
+  let ev = heig(v, nd)                   # v <- eigenvectors
   let
     xv = zmm(x, v, nd)
     dxv = zmm(dx, v, nd)
@@ -385,6 +360,154 @@ proc currentTraceDisc*(samples: openArray[CurrentSample], k1, k2: int):
   result.v = s/float(n)
   let varm = max(0.0, s2/float(n) - result.v*result.v)
   result.e = sqrt(varm/float(max(1, n - 1)))   # correlated pairs: optimistic
+
+# --- per-configuration estimators ----------------------------------------------
+
+proc connFold*(samples: openArray[CurrentSample], nt, iop1, iop2: int):
+    seq[seq[Complex64]] =
+  ## Per sample k the t1-averaged, dt-folded connected product of operators
+  ## iop1 (sink) and iop2 (source),
+  ##   v_k(dt) = (1/4nt) sum_t1 [a1(t1+dt) b2(t1) + b1(t1+dt) a2(t1) + (dt -> nt-dt)],
+  ## E[v_k(dt)] = (1/2)(C_12(dt) + C_21(dt)) with C_12(dt) = mean_t1 tr[K1(t1+dt) S K2(t1) S]:
+  ## both noise pairings estimate the same trace, and the fold symmetrizes the
+  ## operator pair.  result[k][dt], dt = 0..nt/2.
+  let nd = nt div 2 + 1
+  result = newSeq[seq[Complex64]](samples.len)
+  for k in 0..<samples.len:
+    result[k] = newSeq[Complex64](nd)
+    for dt in 0..<nd:
+      let dtr = (nt - dt) mod nt
+      var s = complex64(0.0, 0.0)
+      for t1 in 0..<nt:
+        let
+          i1 = iop2*nt + t1
+          i2 = iop1*nt + (t1 + dt) mod nt
+          i2r = iop1*nt + (t1 + dtr) mod nt
+        s += samples[k].a[i2]*samples[k].b[i1] + samples[k].b[i2]*samples[k].a[i1]
+        s += samples[k].a[i2r]*samples[k].b[i1] + samples[k].b[i2r]*samples[k].a[i1]
+      result[k][dt] = s/float(4*nt)
+
+proc sampleMean*(v: seq[seq[Complex64]]): tuple[m: seq[Complex64], e: seq[float]] =
+  ## Mean over samples and the standard error of its real part.
+  let n = v.len
+  let nd = v[0].len
+  result.m = newSeq[Complex64](nd)
+  result.e = newSeq[float](nd)
+  for dt in 0..<nd:
+    var s = complex64(0.0, 0.0)
+    var s2 = 0.0
+    for k in 0..<n:
+      s += v[k][dt]
+      s2 += v[k][dt].re*v[k][dt].re
+    let m = s/float(n)
+    result.m[dt] = m
+    result.e[dt] = sqrt(max(0.0, s2/float(n) - m.re*m.re)/float(max(1, n - 1)))
+
+proc traceSeries*(samples: openArray[CurrentSample], nt, iop: int, im = false):
+    seq[seq[float]] =
+  ## x[k][t] = 2 Re <eta_k, K_(iop,t) S eta_k>  (or 2 Im with `im`): per-sample
+  ## estimates of T(t) = 2 Re tr[K S] and tau(t) = 2 Im tr[K S], the one-point
+  ## traces of the vector and of the block (tau_3) axial current.
+  result = newSeq[seq[float]](samples.len)
+  for k in 0..<samples.len:
+    result[k] = newSeq[float](nt)
+    for t in 0..<nt:
+      let d = samples[k].d[iop*nt + t]
+      result[k][t] = 2.0*(if im: d.im else: d.re)
+
+proc crossFold*(x: seq[seq[float]], nt: int): seq[float] =
+  ## Unbiased estimate of <x(t2) x(t1)> on this configuration from n >= 2 samples
+  ## x[k][t] (E[x_k] = x, independent noise), t1-averaged and dt-folded:
+  ##   P(dt) = (1/nt) sum_t1 [ (sum_k x_k(t2))(sum_k x_k(t1)) - sum_k x_k(t2) x_k(t1) ] / (n(n-1)).
+  ## Same-sample products are excluded because they carry the noise variance.
+  let n = x.len
+  doAssert n >= 2, "crossFold needs at least two samples"
+  let nd = nt div 2 + 1
+  var sx = newSeq[float](nt)
+  for k in 0..<n:
+    for t in 0..<nt: sx[t] += x[k][t]
+  var raw = newSeq[float](nt)
+  for dt in 0..<nt:
+    var s = 0.0
+    for t1 in 0..<nt:
+      let t2 = (t1 + dt) mod nt
+      var same = 0.0
+      for k in 0..<n: same += x[k][t2]*x[k][t1]
+      s += sx[t2]*sx[t1] - same
+    raw[dt] = s/float(nt*n*(n - 1))
+  result = newSeq[float](nd)
+  for dt in 0..<nd: result[dt] = 0.5*(raw[dt] + raw[(nt - dt) mod nt])
+
+proc seriesMean*(x: seq[seq[float]]): seq[float] =
+  ## Sample mean per slice.
+  result = newSeq[float](x[0].len)
+  for k in 0..<x.len:
+    for t in 0..<x[k].len: result[t] += x[k][t]/float(x.len)
+
+proc scalarSample*(o: Ov, u: Gauge, mass: float, r: var Threefry4x64): CurrentSample =
+  ## The scalar analogue of `currentSample`: one noise pair (eta, xi), two solves,
+  ## with the time-slice projectors P_t as the operators (nop = 1, index t):
+  ##   a[t] = <eta, P_t S xi>,  b[t] = <xi, P_t S eta>,  d[t] = <eta, P_t S eta>,
+  ## so E[a(t2) b(t1)] = tr[P_t2 S P_t1 S] (the volume-averaged connected sigma
+  ## correlator) and E[d(t)] = tr[P_t S] (the one-point trace of the scalars).
+  let
+    l = o.l
+    n = l.nsite
+    nv = l.sph.nv
+    nt = l.nt
+  var
+    eta = newSpin(n)
+    xi = newSpin(n)
+    seta = newSpin(n)
+    sxi = newSpin(n)
+  eta.gaussian r
+  xi.gaussian r
+  var ci = propSolve(o, seta, eta, u, mass)
+  doAssert ci.converged
+  ci = propSolve(o, sxi, xi, u, mass)
+  doAssert ci.converged
+  result.a = newSeq[Complex64](nt)
+  result.b = newSeq[Complex64](nt)
+  result.d = newSeq[Complex64](nt)
+  for t in 0..<nt:
+    for y in 0..<nv:
+      let i = sIdx(l, y, t)
+      result.a[t] += sdot(eta[i], sxi[i])
+      result.b[t] += sdot(xi[i], seta[i])
+      result.d[t] += sdot(eta[i], seta[i])
+
+proc scalarOnePoint*(tr: Complex64, nv: int, mass: float): tuple[ps: float, fs: Complex64] =
+  ## The one-point functions on a configuration from T = tr[P_t S] (doc/07 3):
+  ##   <sigma_PS(t)> = -tr[P_t S] - tr[P_t S^dag]        = -2 Re T,
+  ##   <sigma_FS(t)> = -tr[P_t S] + tr[P_t F],  F = ((1+m/2) S^dag - 1)/(1-m/2)
+  ##                 = -T + ((1+m/2) conj(T) - 2 n_V)/(1-m/2).
+  ## At m = 0, Re T = n_V exactly (GW), so PS is the constant -2 n_V and only
+  ## Im T fluctuates: the sigma_FS hairpin is -4 <Im T(t2) Im T(t1)>_conn.
+  let
+    alpha = ovMassAlpha(mass)
+    beta = ovMassBeta(mass)
+  result.ps = -2.0*tr.re
+  result.fs = -tr + (beta*conjugate(tr) - complex64(2.0*float(nv), 0.0))/alpha
+
+proc scalarConn*(k: openArray[float], trMean: float, nv: int, mass: float):
+    tuple[ps, fs: seq[float]] =
+  ## Connected sigma_PS / sigma_FS from the folded trace k(dt) = Re tr[P_t2 S P_t1 S]
+  ## and the slice mean of Re tr[P_t S] (the same contractions as scalarCorrDense):
+  ##   PS(dt) = -2 k(dt)
+  ##   FS(dt) = -k(dt) - (beta/alpha)^2 k(dt)                       (dt != 0)
+  ##   FS(0)  = -k(0) - [beta^2 k(0) - 2 beta trMean + 2 n_V]/alpha^2 (the GW contact)
+  ## At m = 0 and dt != 0 the two coincide identically: that equality is an
+  ## algebraic consequence of the Ginsparg-Wilson relation, not a measurement.
+  let
+    alpha = ovMassAlpha(mass)
+    beta = ovMassBeta(mass)
+    q = beta*beta/(alpha*alpha)
+  result.ps = newSeq[float](k.len)
+  result.fs = newSeq[float](k.len)
+  for dt in 0..<k.len:
+    result.ps[dt] = -2.0*k[dt]
+    result.fs[dt] = -k[dt] - q*k[dt]
+  result.fs[0] = -k[0] - (beta*beta*k[0] - 2.0*beta*trMean + 2.0*float(nv))/(alpha*alpha)
 
 # --- scalar correlators (doc/07 section 3) ------------------------------------
 
