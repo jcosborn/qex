@@ -86,7 +86,7 @@ For a link \(y_1y_2\), \(\gamma_{y_1y_2}\) is the geodesic; \(\ell_{y_1y_2}\) it
 |---|---|
 | \(\sum_\triangle A_\triangle = 4\pi\) | closure of the sphere |
 | \(\sum_y A_y = 4\pi\) | dual tiling closure |
-| \(\sum_{\rm links} A_{y_1y_2} = 2\cdot 4\pi/\ldots\) → use \(A_{y_1y_2}=\tfrac12\ell_{y_1y_2}(\ell^{*}_{1}+\ell^{*}_{2})\) | consistency of diamond and dual-length definitions |
+| \(\sum_{\rm links} A_{y_1y_2} = 4\pi\) with the exact diamond area (the two spherical triangles of the paper's definition); the flat form \(\tfrac12\ell(\ell^*_1+\ell^*_2)\) misses by \(O(\bar a_s^2)\) | consistency of diamond and dual-length definitions |
 | \(\sum_i 4\arctan\!\big[\tan(\ell_i/4)\tan(\ell^*_i/2)\big]=A_\triangle\) | dual decomposition, **exact on the sphere** |
 | \(\sum_{i}\tfrac12\ell_{i,i+1}\ell^*_{i,i+1}=A_\triangle+O(\bar a_s^2)\) | the *flat* form of the same identity — only \(O(a^2)\), **do not assert it exactly** |
 | \(\sum_{\triangle\ni y}\tilde A_{(\triangle,y)}=A_y\) | dual-cell decomposition |
@@ -132,8 +132,8 @@ This is exactly \(-\int\cos\theta\,d\varphi\) and is the reference implementatio
 \[
 \oint_\gamma dy^\alpha\omega^S_\alpha=\frac{i\sigma_3}{2}\Big[\,{\rm Area}({\rm int}\,\gamma)-2\pi\eta(\gamma)\Big],
 \]
-with \(\eta=\pm1\) if \(\gamma\) encircles the north (south) pole in the positive (negative)
-\(\varphi\) direction, else 0. Introduce a **cut** \(\gamma_c\): a meridian from N to S pole placed so
+with \(\eta(\gamma)=1\) if \(\gamma\) encircles the north pole in the positive or the south pole
+in the negative \(\varphi\) direction (the paper's wording; +1 in both cases), else 0. Introduce a **cut** \(\gamma_c\): a meridian from N to S pole placed so
 it touches no site; every link whose geodesic crosses \(\gamma_c\) gets an extra factor \(-1\) on
 \(\Omega\). This implements the antiperiodic boundary condition for \(\psi\) in \(\varphi\)
 (\(m\in\mathbb Z+\tfrac12\)) and exactly cancels the \(\eta\) term.
@@ -173,12 +173,18 @@ S_W=\;&\sum_t\sum_{y_1,y_2}\kappa_{y_1y_2}\,\bar\psi_{y_1,t}
 \]
 with **free-limit couplings** (IV.2)
 \[
-\boxed{\ \kappa_{y_1y_2}=\frac{2A_{y_1y_2}}{\bar a_s\,\ell_{y_1y_2}}
-=\frac{\ell^{*}_{1}+\ell^{*}_{2}}{\bar a_s},\qquad
+\boxed{\ \kappa_{y_1y_2}=\frac{2A_{y_1y_2}}{\bar a_s\,\ell_{y_1y_2}},\qquad
 \kappa'_y=\frac{A_y}{\bar a_s\,a_t}\ }
 \]
-\(\kappa_{y_1y_2}\) is nonzero only for nearest neighbours and is symmetric.
-The second form follows from \(A_{y_1y_2}=\tfrac12\ell(\ell^*_1+\ell^*_2)\).
+\(\kappa_{y_1y_2}\) is nonzero only for nearest neighbours and is symmetric. The paper defines
+\(A_{y_1y_2}\) as "the sum of the two areas of the spherical triangles that are made with the link
+and the nearby dual sites" (Sec. III), i.e. the exact spherical diamond, and states that the flat
+simplicial formulas are "equally possible" at \(O(a^2)\). The flat identity
+\(\kappa=(\ell^*_1+\ell^*_2)/\bar a_s\) (from \(A=\tfrac12\ell(\ell^*_1+\ell^*_2)\)) is **not**
+written in (IV.2); it is the form in which the per-prism decomposition (IV.4) and the gauge
+derivation (IV.33)/(IV.35) are written, which is what makes the paper \(O(a^2)\)-ambiguous. The
+published \(\Delta_0\) values single out the exact area (doc/06); an earlier version of this
+document attributed the flat identity to (IV.2) itself, which was a transcription error.
 
 **These same couplings are used unchanged in the interacting theory** (slide 7 working hypothesis).
 
@@ -221,17 +227,19 @@ D_{\rm lat}\psi=\tilde\lambda\,(\overline{\delta V})^{-1}\delta V\,\psi
 \tilde\lambda\ \text{= eigenvalues of}\ \ {\rm diag}\!\big(\overline{A_ya_t}/(A_ya_t)\big)\,D_{\rm lat}.
 \]
 
-> **Corrected 2026-08-21 (WP-E).** This section originally carried the weight the other way up,
-> \({\rm diag}(A_y a_t/\overline{A_ya_t})\), transcribing (IV.12) as printed. That is inconsistent
-> with (IV.11): per prism, \(C^{(\triangle,t)}\sim\frac{1}{\bar a_sa_t}A_\triangle a_t\,\sigma\!\cdot\!\nabla\),
-> so summing the prisms around a site gives \((D_{\rm lat}\psi)_y\simeq(A_y/\bar a_s)(D\psi)(y)\),
-> i.e. \(D_{\rm cont}=\bar a_s\,{\rm diag}(1/A_y)\,D_{\rm lat}\) — the compensating weight is
-> \(\overline{\delta V}/\delta V\). Verified analytically on the flat equilateral lattice
-> (\([C\psi]=(A_y/\bar a)\sigma\!\cdot\!\partial\psi\) exactly) and numerically: with this weight the
-> free spectrum converges to \(\pm i(\ell+1)\) (max dev 0.084 → 0.024 → 0.006 for L = 1, 2, 4)
-> while the inverted weight moves away (0.134 → 0.508 → 0.745). Note the correct
-> \(\tilde\lambda\) satisfies \({\rm eig}(\hat D_W)=\bar a_s\,{\rm eig}(D_{\rm cont})\) up to the
-> Wilson term.
+> **Note (corrected 2026-09-09).** This is exactly what the paper prints:
+> \(D_{\rm lat}\psi=\tilde\lambda\,(\overline{\delta V})^{-1}\delta V\psi\), whose generalized
+> eigenvalues are those of \({\rm diag}(\overline{\delta V}/\delta V)\,D_{\rm lat}\). An earlier
+> version of this section read the generalized problem \(A\psi=\lambda B\psi\) as
+> \(\lambda\in{\rm eig}(BA)\), concluded that "(IV.12) as printed is inverted", and propagated that
+> claim to doc/06, doc/08, doc/09 and the rspec header. The paper is self-consistent with (IV.11):
+> per prism \(C^{(\triangle,t)}\sim\frac{1}{\bar a_sa_t}A_\triangle a_t\,\sigma\!\cdot\!\nabla\), so
+> \((D_{\rm lat}\psi)_y\simeq(A_y/\bar a_s)(D\psi)(y)\) and the compensating weight is
+> \(\overline{\delta V}/\delta V\) — the weight the code uses. The numerical "evidence" quoted
+> earlier (0.084 → 0.024 → 0.006 versus 0.134 → 0.508 → 0.745) does not discriminate the two
+> readings: at L=1 all \(A_y\) are equal and both weightings are the identity, and the second
+> column is the first rescaled by \(\overline{A_y}/\bar a_s\) at every L. The analytic argument
+> stands; \({\rm eig}(\hat D_W)=\bar a_s\,{\rm eig}(D_{\rm cont})\) up to the Wilson term.
 
 ---
 
@@ -309,8 +317,9 @@ van den Eshof, Frommer, Lippert, Schilling, van der Vorst, CPC 146 (2002) 203.
 Requires Jacobi \({\rm sn}\) and the complete elliptic integral \(K(k)\) — **neither exists in QEX**,
 so we implement them (AGM for \(K\), descending Landen / AGM for \(\rm sn\)).
 
-Slide 6: **order n = 31 (15 poles)** for the accept/reject action,
-**order n = 11 (6 poles)** for the force. Make the order a parameter and reproduce both.
+Slide 6: **order n = 31 (15 poles)** for the accept/reject action, **order n = 11** for the
+force, which the slide calls "6 poles": with \(m=(n-1)/2\) that is 5 poles plus the constant term
+(ops/zolotarev.nim; doc/06 open question 4). Make the order a parameter and reproduce both.
 
 Applying \(D_{\rm ov}\) then needs one **multi-shift CG** solve of \((X^\dagger X+c_{2i-1})\chi_i=\psi\).
 
@@ -379,13 +388,25 @@ The action is **exactly Gaussian**: \(S_{g,\rm lat}=\tfrac12\theta^TM\theta\). C
 - the gradient flow \(\dot\theta=-M\theta\) is **linear**.
 
 **Gauge zero modes.** \(M\) is singular; its kernel is the gauge orbit
-\(\theta_m\to\theta_m+(\Lambda_{y_2}-\Lambda_{y_1})\). For gauge-invariant observables use the
-pseudo-inverse \(\tilde M^{-1}\), realized with CG plus projection (V.16)/(V.17):
+\(\theta_m\to\theta_m+(\Lambda_{y_2}-\Lambda_{y_1})\) **plus one more direction**, the uniform
+shift of all temporal links \(\theta^t_{y,t}\to\theta^t_{y,t}+c\): every temporal plaquette
+contains \(\theta^t_{y_2,t}-\theta^t_{y_1,t}\), and a periodic gauge function can only produce
+temporal shifts summing to zero round the time circle (\(H^1(S^2\times S^1)=\mathbb R\)), so
+\(\dim\ker M=n_VL_t\). For gauge-invariant observables use the pseudo-inverse \(\tilde M^{-1}\),
+realized with CG plus projection (V.16)/(V.17):
 ```
 b' = P b = Mtilde^{-1} (M b)     # first CG: project the source
 chi =      Mtilde^{-1} b'        # second CG: the actual solve
 ```
 starting CG from \(\chi_0=0\), so the Krylov space never contains the kernel.
+
+**The extra mode with fermions.** The uniform temporal shift is not a gauge transformation of
+the fermion field: it is the twist \(e^{icL_t}\) of the fermion's temporal boundary condition, and
+\(|\det D|^2\) depends on it (periodically, with period \(2\pi/L_t\)). The HMC of this project
+projects it out of the momentum and of every fermion force and keeps it at zero, which selects
+the exactly antiperiodic sector instead of integrating over one period with the determinant as
+weight. The two differ by \(O(e^{-\Delta T})\), negligible at the campaign's \(T=12\); it is a
+choice, recorded here because the earlier documents described it as part of the gauge fixing.
 
 ---
 
@@ -466,7 +487,7 @@ which must equal (C.55) \(\sigma_1\sum_{n\ge0}\frac{(-1)^n}{\pi\sqrt2}\xi_{1/2,n
 
 | quantity | setup | published value |
 |---|---|---|
-| \(\Delta_0^{\rm cont}\), fermion | fit over L=2,4,8 × \(L_t\)=120,144,168, T=16, fit range \(4\le t<8\) | **0.999998(34)** (exact 1) |
+| \(\Delta_0^{\rm cont}\), fermion | fit over the eight unbracketed lattices of Table I with \(L\ge2\): L=2,4 × \(L_t\)=120,144,168 and L=8 × \(L_t\)=144,168; T=16, fit range \(4\le t<8\); the systematic error adds \(L_t=96\) | **0.999998(34)** (exact 1) |
 | \(\Delta_0\), fermion, L=1 | \(L_t=168\), T=16 | **0.953918** |
 | \(n_{\max}(L)\), fermion | T=12, \(L_t=168\) | **6, 10, 19, 32** for L=1,2,4,8 |
 | residual/DOF, fermion | DOF = 168−2 | **0.028, 0.012, 0.0039, 0.038** |
@@ -496,17 +517,24 @@ Fig. 11 (\(J^tJ^t\)), Fig. 12 (gauge \(O(a^2)\) scaling), Figs. 13–14 (\(S^2\)
 | \(\Delta_{F^2}/\Delta_F\) | **2** (large \(N_f\)) | — | slide 15 |
 | \(\Delta_{PS}/\Delta_A\), \(\Delta_{FS}/\Delta_A\) | — | **1** | slide 16 |
 
-> **Open question (resolve numerically, do not guess).** The free Maxwell tower on
-> \(S^2\times\mathbb R\) is \(\Delta_\ell=\sqrt{\ell(\ell+1)}\) (§7.2), giving
-> \(\Delta_{\ell=2}/\Delta_{\ell=1}=\sqrt6/\sqrt2=\sqrt3\approx1.732\), not the \(\sqrt{3/2}\approx1.225\)
-> drawn on slide 14. Our own free-limit computation (WP-B, WP-F) settles this; report both.
+> **Free reference for slide 14 (settled from the paper, 2026-09-09).** The free Maxwell tower on
+> \(S^2\times\mathbb R\) is \(\Delta_\ell=\sqrt{\ell(\ell+1)}\) ((C.37) and (V.14), verified against
+> the PDF), giving \(\Delta_{\ell=2}/\Delta_{\ell=1}=\sqrt3\approx1.732\) in the continuum. The slide's
+> panel is titled "Glueball F ratio ℓ=2/ℓ=1" and draws its free line near 1.22; that value equals
+> \(\sqrt6/2=\Delta^{\rm free}_2/\Delta_A\), which is a plausible reading of how the line was made,
+> not an established fact. The lattice free value at finite L is O(a²) away from \(\sqrt3\); compare
+> Monte-Carlo ratios with the exact lattice reference (`jtopCorrExact`), see doc/07 §5.
 
 ## 10. Open items to settle in code, not by assumption
 
-1. \(a_t\) used in the interacting runs (best evidence: 0.2; see §6).
+1. \(a_t\) used in the interacting runs (best evidence: 0.2; see §6). The free-limit paper never
+   uses \(a_t=0.2\) (its spacings are \(T/L_t\): 0.0952, 0.0714, 0.1, 0.167); 0.2 is a slide inference.
 2. \(L_t\) / \(T\) for the interacting runs (evidence: slide 13 x-axis `dt` to 30 with fit window
    8–16 ⇒ \(L_t\approx60\), \(T\approx12\); slide 11 shows \(t\) to 8 ⇒ \(T=16\)).
-3. Exact definition of the 7 Wilson-loop shapes in the slide-14 GEVP.
-4. The precise Zolotarev pole counts behind "n=31 → 15 poles" and "n=11 → 6 poles".
+3. Exact definition of the 7 Wilson-loop shapes in the slide-14 GEVP — still unknown; our basis
+   is recorded in doc/07 §4.2.
+4. Zolotarev pole counts: 15 for n=31, 5 (+ constant) for n=11 — resolved, §4.1.
 5. Sign/branch conventions in \(\Omega\) — fixed by the triangle-area test (§2.3).
-6. The free reference in §9 row 6.
+6. The free reference in §9 row 6 — resolved from (C.37), §9.
+7. Fig. 10 of the paper: the caption and plot say L=1, the body text says L=2 (a paper-internal
+   inconsistency); rfree follows the caption.

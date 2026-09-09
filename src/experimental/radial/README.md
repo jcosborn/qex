@@ -5,7 +5,7 @@ Reproduction of
 * **arXiv:2510.03085v2**, Boyle, Brower, Fleming, Katz, Matsumoto, Misra,
   *Studying QED3 with radial quantization on the lattice: Free limit* (PRD, to appear), and
 * the Lattice 2026 talk *Studying QED3 in radial quantization: Interacting system on coarse
-  lattices* (N. Matsumoto).
+  lattice* (N. Matsumoto).
 
 The lattice is a refined icosahedron projected onto \(S^2\) (\(N_V=10L^2{+}2\)) times a regular
 temporal direction. The gauge field is a **non-compact** \(U(1)\) one-cochain with a Gaussian
@@ -17,12 +17,18 @@ measurements are rejected rather than silently reused.
 Because the lattice is simplicial, this code deliberately does **not** use QEX's hypercubic
 `Layout`/`Field` machinery. It imports `base` for parameters, timers and comms, and reuses
 `algorithms/rk` (gradient flow), `mdevolve` + `hmc/metropolis` (HMC), `eigens/lapack` and
-`eigens/linalgFuncs` (dense spectra, GEVP), `rng/threefry4x64`, and `utils/resample`.
+`eigens/linalgFuncs` (dense spectra, GEVP), `rng/threefry4x64`, and `utils/resample`. Everything
+else in the main tree that overlaps in function is typed on `Layout`/`Field`; what is generic
+here (the CG of `ops/solve.nim`, the dense helpers of `core/dense.nim`, the elliptic and Jacobi
+functions, `meas/dataio.nim`) is kept inside `radial/` for now.
+
+Branch `experimental/radial-quant`; `campaign/t2.sh` is committed, `output/` is not.
 
 ## Continuing this work
 
 **Start with [`doc/08-handoff.md`](doc/08-handoff.md)** — the self-contained handoff report
-(state, running jobs, exact resume commands, remaining steps, gotchas).
+(state, exact commands, remaining steps, gotchas), then [`doc/09-preliminary-report.md`](doc/09-preliminary-report.md)
+§6 for the 2026-09-09 review corrections.
 
 ## Documents
 
@@ -44,5 +50,5 @@ Because the lattice is simplicial, this code deliberately does **not** use QEX's
 cd build_mac && SDKROOT=$(xcrun --show-sdk-path) make run experimental/radial/tests/tgeom
 ```
 
-`SDKROOT` is required — without it `clang-mp-22` cannot find the system headers.
+`SDKROOT` is required — without it `clang-mp-23` cannot find the system headers.
 Binaries land in `build_mac/bin/`.

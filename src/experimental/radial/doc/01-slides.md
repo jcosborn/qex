@@ -1,5 +1,7 @@
 # Slide deck: "Studying QED3 in radial quantization: Interacting system on coarse lattice"
 
+Transcribed from the PDF; reference details in square brackets were verified 2026-09-09.
+
 Source: <https://indico.global/event/16565/contributions/161926/attachments/74534/144803/qed3_v10.pdf>
 Nobuyuki Matsumoto (Boston U, RBRC), Lattice 2026, 18 pages (17 numbered + "Thanks!").
 Collaboration: P. Boyle (BNL), R. C. Brower (BU), G. Fleming (FNAL), A. Katz (BU), N. Matsumoto, R. Misra (BU).
@@ -43,7 +45,8 @@ S_{\rm cont}=\int d^3x\sqrt{g}\Big[\tfrac{1}{4g^2}F_{\mu\nu}F^{\mu\nu}
   Redlich PRL/PRD (1984).
 - Sketch: \(\beta(\mu)\) vs \(1/\mu\) — super-renormalizable at high energy, CFT in the IR.
 - Conformality breaking may be tied to SSB of \(SU(N_f)\) flavor symmetry, \(\langle\bar\psi_f\psi_f\rangle\ne0\).
-  Parity cannot break in a vector-like theory (Vafa–Witten 1984).
+  Parity cannot break in a vector-like theory (Vafa–Witten 1984 [PRL 53, 535; the slide cites
+  "Phys Lett 1984"]).
 - Also the effective theory of a superconducting system (Dorey–Mavromatos, PLB 1990).
 
 ### Slide 5 — "Theory landscape"  (scale hierarchy)
@@ -101,7 +104,9 @@ on log–log, nine curves (L=1,2,4 × three \(g^2R\)). Reference dashed line of 
 Three regions: small \(r/t\) (large flow time) = lattice-UV-clean; mid = **weak coupling, universal**
 (all nine curves collapse); large \(r/t\) (small flow time) = **lattice UV contaminated,
 \(g^2a\)-dependent**.
-Cf. A. Hasenfratz, C. Rebbi, O. Witzel 2019; A. Hasenfratz, C. Peterson 2024; Robert, Harlander, Mason 2026.
+Cf. A. Hasenfratz, C. Rebbi, O. Witzel 2019 [PRD 100, 114508]; A. Hasenfratz, C. Peterson 2024
+[Peterson & Hasenfratz, PRD 109, 114507]; L. Georg, R. V. Harlander, R. H. Mason 2026
+[arXiv:2601.13914].
 
 ### Slide 10 — "Conformal window study: Condensate"
 Soft mass term with \(\sigma_{PS}\) (breaks flavor symmetry); measure \(\langle\sigma_{PS}\rangle\) vs \(mR\).
@@ -131,9 +136,10 @@ Topological current \(J^\mu_{\rm top}\equiv\epsilon^{\mu\nu\rho}F_{\nu\rho}\) (t
 Generalized eigenvalues from a **GEVP over 7 Wilson-loop shapes**.
 - \(\Delta_F/\Delta_A\) vs \(g^2R\): CFT = 1, free = \(1/\sqrt2\). Data approach the CFT value at
   strong coupling, **faster for larger \(N_f\)**.
-- \(\Delta_{F,\ell=2}/\Delta_{F,\ell=1}\) vs \(g^2R\): CFT = 1.5, free line drawn at \(\sqrt{3/2}\approx1.2247\).
-  (See the open question in [`03-targets.md`](03-targets.md): the naive free-Maxwell value on
-  \(S^2\times\mathbb R\) is \(\sqrt{6}/\sqrt2=\sqrt3\approx1.732\). We recompute this ourselves.)
+- \(\Delta_{F,\ell=2}/\Delta_{F,\ell=1}\) vs \(g^2R\) (panel title "Glueball F ratio ℓ=2/ℓ=1"):
+  CFT = 1.5, free line drawn at \(\approx1.22\) (the text layer reads "√3/2 … free").
+  The free-Maxwell value on \(S^2\times\mathbb R\) from the paper's (C.37) is
+  \(\sqrt6/\sqrt2=\sqrt3\approx1.732\); see [`02-formulation.md`](02-formulation.md) §9.
 
 ### Slide 15 — "Prediction 1: \(F^2\) — the relevant term in the action"
 Effective masses of the \(F^2\) (0++) channel at L=1, 2 vs flow time \(t\); then

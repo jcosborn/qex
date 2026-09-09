@@ -23,8 +23,8 @@ what was built, what passes, what does not, and any interface change (which must
 
 * Worktree: `/Users/xjin/K/W/P003/qex/.claude/worktrees/qed3-slides-reproduction-plan-0e70b6`
 * Build dir: `<worktree>/build_mac` — already configured with the user's
-  `qex_conf_mac` settings (clang-mp-22, `-Ofast -march=native -ffast-math`, QMP/QIO, vlen 4).
-* **`SDKROOT` must be set** or clang-mp-22 cannot find the system headers:
+  `qex_conf_mac` settings (clang-mp-23 as of 2026-09-09, `-Ofast -march=native -ffast-math`, QMP/QIO, vlen 4).
+* **`SDKROOT` must be set** or clang cannot find the system headers:
   ```bash
   cd build_mac && SDKROOT=$(xcrun --show-sdk-path) make run experimental/radial/tests/tgeom
   ```
@@ -153,7 +153,7 @@ areas (\(A_y\), \(A_\triangle\)) and are unchanged.
 \(a_t\approx0.133\): flat 1.1582 → "1.154", exact 1.2104). Evidently older diagnostic plots.
 When we remake slide 8 we produce both conventions, exact as primary.
 
-**Integration TODO (main, after WP-H/WP-I land, before WP-K):** switch `core/lattice.nim` (κ) and
+**Integration TODO (main, after WP-H/WP-I land, before WP-K) — DONE, see "Integration pass" below:** switch `core/lattice.nim` (κ) and
 the gauge \(\beta_\ell\) path to the exact kite area (add it to `core/geom.nim`; keep the flat
 form available for the slide-8 comparison), then re-run the whole test suite and update pinned
 numbers that legitimately move (e.g. min\(|{\rm eig}X|\) 1.1234 → 1.1770 at a_t=0.2, Zolotarev
@@ -248,7 +248,8 @@ at every L, while the flat sum misses by −3.562e-2/−9.971e-3/−2.550e-3/−
    2.3e-2, vs published 0.0031. The fitted \(C_{\rm opt}\approx1.30\) at \(n_{\max}=3\)
    (compensating the truncated spectral weight). Verdict: quote \(n_{\max}\) (robust) and our own
    residual with the convention stated; do not chase the published 0.0031. — **good enough**
-3. The 7 Wilson-loop shapes of the slide-14 GEVP. — **open**
+3. The 7 Wilson-loop shapes of the slide-14 GEVP. — the deck's definition is still unknown; our
+   basis is fixed in WP-I below and recorded in doc/07 §4.2 (2026-09-09).
 4. Zolotarev pole counts behind "n=31 → 15 poles", "n=11 → 6 poles"; with
    `npole=(n-1)/2` these are 15 and 5, so the slide's "6" probably counts the constant term.
    — **resolved, see WP-B below: 15 and 5 poles; the slide's "6" is 5 poles + the constant.**
@@ -258,9 +259,11 @@ at every L, while the flat sum misses by −3.562e-2/−9.971e-3/−2.550e-3/−
    — **For the gauge \(\beta_\ell\) of (IV.26) it is the EXACT spherical area: WP-G gets
    \(\Delta_0(L{=}1,L_t{=}120) = 1.332430\) against the published 1.33242 (1e-5 relative) with
    it, and 1.356697 with the flat form.** See the WP-G entry, T1.5b.
-   — **For the fermion \(\kappa\) of (IV.2) it is still OPEN**, and it is not obviously the same
-   answer: (IV.2) writes \(\kappa=(\ell^*_1+\ell^*_2)/\bar a_s\) as an equivalent form, which is
-   the *flat* identity. `core/lattice.newLat` currently uses `Edge.area`, i.e. the flat form.
+   — For the fermion \(\kappa\) of (IV.2): RESOLVED by T1.4c in the integration pass below (exact
+   area, 0.953918). [2026-09-09 correction: the paper's (IV.2) does NOT write the flat identity
+   \(\kappa=(\ell^*_1+\ell^*_2)/\bar a_s\); that was doc/02's own addition. The paper defines
+   \(A_{y_1y_2}\) as the exact sum of two spherical triangles and calls the flat formulas
+   "equally possible" at O(a²). `Edge.area` is the exact kite area since the integration pass.]
    **Decide it by rerunning T1.4c (published \(\Delta_0 = 0.953918\), L=1, \(L_t=168\)) both
    ways** — one line in `newLat`, and it fixes the convention for every single-lattice number
    in the project.
@@ -1276,6 +1279,15 @@ plain Nim `seq`, so it reads 0 → 0 and proves nothing by itself. `getOccupiedM
 that has teeth here; both are asserted, as in `tspinor.nim`.
 
 ### T1.2h — free spatial spectrum, and a correction to doc/02 §3.2
+
+> [2026-09-09] The inverted weight was doc/02's original *transcription*, not the paper's
+> (IV.12), which prints \(D_{\rm lat}\psi=\tilde\lambda(\overline{\delta V})^{-1}\delta V\psi\), i.e.
+> exactly the corrected form. Later documents (doc/02's note, doc/08, doc/09, rspec) turned this
+> into "the paper prints it inverted"; that attribution is withdrawn. Also, the numerical table
+> below compares the *hat*-normalized spectrum with the inverted-weight *raw* spectrum: at L=1
+> all \(A_y\) are equal, so both weightings are the identity there and the columns differ only by
+> the normalization \(\overline{A_y}/\bar a_s\); the table does not discriminate the weight
+> direction. The analytic argument (item 1) is what settles it.
 
 **The volume weight in doc/02 §3.2 is inverted.** (IV.11) says
 \(\bar a_sa_t\,D_{\rm lat}=\delta V\,D_{\rm cont}\), hence
@@ -2423,6 +2435,15 @@ current–current correlator would have been wrong, and the dense probe is the e
 
 ### σ_PS vs σ_FS — a stronger theorem than "identical spectra"
 
+> [2026-09-09] Withdrawn as a physics statement. What is shown below is an identity of the
+> CONNECTED contractions. σ_FS is the flavor singlet (slide 6, doc/07 §1.2), and its correlator
+> carries a fermion-disconnected piece from the fluctuating one-point function
+> \(\langle\sigma_{FS}(t)\rangle=-2n_V-2i\,{\rm Im\,tr}[\Pi_tS]\) at m=0; the last sentence of this
+> section ("the disconnected pieces cancel in the non-singlet flavor assembly") is wrong for σ_FS.
+> The hairpin is now measured (`scalarSample`, rmeas `scalarvol`/`scalardisc`, `Delta_FS_full`);
+> see doc/07 §3.2. The finite-mass factor quoted below is the additive-era one; the standard
+> convention's is in WP-M.
+
 With \(\langle\xi\eta^\dagger\rangle=S\), \(\langle\eta\xi^\dagger\rangle=S^\dagger\), the two
 connected timeslice correlators differ only through \((1-D^\dagger)S^\dagger=S^\dagger-1\)
 (the GW contact subtraction).  At \(dt\ne0\) every extra term carries a slice overlap
@@ -3045,3 +3066,44 @@ Production-flag verification:
 
 The previous Tier-2 report is historical additive-convention output. Tier-1 and strictly
 massless operator identities are unchanged; supported production starts new Tier-2 ensembles.
+
+## Review pass — corrections and code consolidation (2026-09-09)
+
+A full review (own derivations of every equation, six read-only subagent audits, and a
+verification of doc/02 and doc/03 against the published PDF of arXiv:2510.03085v2 and the slide
+PDF). Nothing was rerun; the numbers above stand where they are backed by files. Corrections
+(all applied in the code and in doc/02, 03, 04, 07, 08, 09, README; details in doc/09 §6):
+
+1. **σ_FS hairpin** (this file, WP-I section above): the singlet's fermion-disconnected piece was
+   never computed. `meas/observables`: `scalarSample`, `scalarOnePoint`, `scalarConn`; rmeas writes
+   `scalarvol`/`scalardisc` and reports `Delta_PS_full`, `Delta_FS_full`, `fs_hairpin_fraction`.
+2. **Block axial hairpin**: the τ₃ current of one four-component pair has the one-point function
+   \(-2i\,{\rm Im\,tr}[KS]\); the flavor-trace argument of doc/07 §1.2 does not apply to the block
+   propagator diag(S, S†). rmeas: `currdisc` gains `pim`, `Delta_A_full_l1`; connected rows renamed
+   `*_conn`.
+3. **Vector hairpin weight** N_f → N_f/2 in rmeas (`vecCorr`).
+4. **ℓ=3**: `meas/harmonics.ylmRep`/`icosaProjectors`/`blockMean`; rmeas measures the cross-m
+   matrices (`currmat`) and reports the T₂/G block dimensions and `l{1,2}_block_residual`; the
+   per-m spread is kept as the frame-dependent `l3_spread_over_m_frame`.
+5. **Paper attributions**: (IV.12) is printed correctly; the flat identity is not in (IV.2); (B.4)
+   has η=1 in both cases; Fig. 10 text vs caption L; a_t=0.2 never appears in the paper. Notes
+   added at the affected places above.
+6. **Polyakov mode**: physical choice, documented (doc/02 §5, hmc/trajectory.nim).
+7. **Bookkeeping**: doc/09 configuration counts (10–19 measured, not 17–21), the additive-μ labels
+   of the condensate rows, the never-created `t2-standard-overlap`, the unsourced 1.3299, test
+   counts (13 suites), branch name, clang-mp-23, `zgesv` bound (contradicting "Known facts" above).
+8. **Code**: one generic CG in `ops/solve.nim` (Spin, Gauge, seq[float]; `Ov`, `KernelProj`,
+   `RegOp` own reusable scratch, so MD and measurement solves allocate nothing after the first
+   call); `core/dense.nim` (zmm, zsolve, zinv, eigvals, heig, sigmaBounds, ovFromX) replaces the
+   copies in overlap/observables/rfree/tests; `core/fnv.nim`; `geom.levels`; `analytic.effDim`
+   deleted (`fit.effMass`); `tests/thelpers.nim`; twilson tests rfree's mode construction instead of
+   a copy; rmeas uses `connFold`/`crossFold`/`traceSeries` from observables; rmeas stops on a
+   kernel-window violation (`-allowWindow:true` overrides), writes `summary.tsv` atomically and
+   in format `radial-meas-3`; `readTsv` rejects ragged files; dead exports removed (`loopOps`,
+   `siteProject`, `faceProject`, `applyM`, `slink`); the gauge force is no longer projected (it is
+   in range(M)); Metropolis hooks take `RadialHmc` by value (devel's `hmc/metropolis.nim`);
+   thmc's reversibility bound tightened to 1e-12 and a `<|xi|^2> = 2 nsite` check added; tflow's
+   spectrum test now pins the kernel dimension.
+9. **campaign/t2.sh**: committed; `-nnoise` passed to the condensate scan (`NNOISE`, default 8 as
+   the legacy files); N_f=4,6 and pureL4 removed from the default list; dry runs make no
+   directories or logs; `ckpt_traj` aborts on an empty counter; `-tstride:3` for the L=2 wspec.

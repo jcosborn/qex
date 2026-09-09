@@ -57,8 +57,8 @@ Two tiers.
 | T1.4c | \(\Delta_0\) at L=1, \(L_t=168\), T=16, fit \(4\le t<8\) | **0.953918** |
 | T1.4d | **Fig. 9** \(O(a^2)\) scaling in \(\bar a_s^2\) and \(a_t^2\) | remake figure |
 | T1.4e | \(\Delta_0^{\rm cont}\) from (V.7) | **0.999998(34)**, exact 1 |
-| T1.4f | \(n_{\max}(L)\) at T=12, \(L_t=168\) | **6, 10, 19, 32** (L=1,2,4,8) |
-| T1.4g | residual/DOF for T1.4f, DOF=166 | **0.028, 0.012, 0.0039, 0.038** |
+| T1.4f | \(n_{\max}(L)\) at T=12, \(L_t=168\) | **6, 10, 19, 32** (L=1,2,4,8) — NOT reproduced (ours 3, 7, 14, 28; selection rule unstated in the paper) |
+| T1.4g | residual/DOF for T1.4f, DOF=166 (paper: \(L_t-2\), i.e. all slices; ours uses t>0, DOF 165) | **0.028, 0.012, 0.0039, 0.038** — equals our residual at the published \(n_{\max}\) |
 | T1.4h | **Fig. 10** T-symmetry: \(D_W\) violates, \(D_{\rm ov}\) preserves | remake figure |
 | T1.4i | Table I doubler table, T=16, \(\bar a_s/a_t\ge4/3\) | exact membership |
 
@@ -69,8 +69,8 @@ Two tiers.
 | T1.5b | \(\Delta_0\) at L=1, \(L_t=120\) | **1.33242** |
 | T1.5c | **Fig. 12** \(O(a^2)\) scaling | remake figure |
 | T1.5d | \(\Delta_0^{\rm cont}\) | **1.41409(18)**, exact \(\sqrt2\) |
-| T1.5e | \(n_{\max}(L)\) at T=12, \(L_t=120\) | **3, 8, 18, 35** |
-| T1.5f | residual/DOF, DOF=118 | **0.0031, 0.0023, 0.0031, 0.0037** |
+| T1.5e | \(n_{\max}(L)\) at T=12, \(L_t=120\) | **3, 8, 18, 35** — L=1 reproduced, L≥2 not (ours 3, 7, 16, 30) |
+| T1.5f | residual/DOF, DOF=118 | **0.0031, 0.0023, 0.0031, 0.0037** — L=1 reproduced; L=4, 8 not (ours 0.0049, 0.0063 at the published \(n_{\max}\)) |
 | T1.5g | zero-mode projection: \(\tilde M^{-1}\) via double CG (V.16-17) works, result gauge invariant | \(<10^{-10}\) |
 
 ### T1.6 Two-dimensional analytic checks
@@ -122,12 +122,16 @@ Effective mass of the axial link-current correlator; \(\Delta_{\ell=2}/\Delta_{\
 CFT = 3/2. Published band: ≈1.40–1.44 at L=2, ≈1.28–1.36 at L=1.
 
 ### T2.5 Slide 12 — vector conserved current
-\(\Delta_V/\Delta_A\) vs \(g^2R\) at L=1, \(N_f=2,4,6\). CFT = 1. Requires the disconnected diagram.
+\(\Delta_V/\Delta_A\) vs \(g^2R\) at L=1, \(N_f=2,4,6\). CFT = 1. Requires the disconnected diagram
+with weight \(N_f/2\) per pair (doc/07 §1.2); the block axial current has a hairpin of its own,
+so report the axial both connected-only and full.
 
 ### T2.6 Slide 13 — \(\ell=3\) spherical-symmetry breaking
 Per-\(m\) effective masses for \(\ell=3\); \(\Delta_{\ell=3}/\Delta_{\ell=1}\) vs \((a/R)^2\), CFT = 2.
 Key quantitative claim: **~3 % spread among the \(m\) components at L=2**, and \(\ell=1,2\) protected
-by \(I_h\) (their spread must be ~0). This one is testable even at modest statistics.
+by \(I_h\) (their spread must be ~0). The frame-independent form of the claim is the splitting of
+the \(T_2\) and \(G\) block dimensions (doc/07 §2); the per-\(m\) spread depends on the chart.
+This one is testable even at modest statistics.
 
 ### T2.7 Slide 14 — gluonic sector
 \(J^\mu_{\rm top}=\epsilon^{\mu\nu\rho}F_{\nu\rho}\) via a GEVP over 7 Wilson-loop shapes.
@@ -140,8 +144,10 @@ by \(I_h\) (their spread must be ~0). This one is testable even at modest statis
 
 ### T2.9 Slide 16 — scalars
 \(\Delta_{PS}/\Delta_A\) and \(\Delta_{FS}/\Delta_A\) vs \(g^2R\); free = 1; published 0.88–0.98.
-Key structural claim: **\(\sigma_{PS}\) and \(\sigma_{FS}\) give identical spectra** — that is a sharp,
-cheap test that does not need good statistics.
+Key structural claim: **\(\sigma_{PS}\) and \(\sigma_{FS}\) give identical spectra**. For the
+*connected* contractions this is a Ginsparg–Wilson identity (no test content); for the full
+correlators it is a physics statement about the singlet's hairpin (doc/07 §3.2) and needs
+statistics: measure `Delta_FS_full` against `Delta_PS_full`.
 
 ---
 

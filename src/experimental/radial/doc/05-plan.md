@@ -133,7 +133,8 @@ degeneracy exact under \(I_h\) (**T2.6 protection claim**); \(\sigma_{PS}\) and 
 spectra identical (**T2.9 structural claim**).
 
 ## WP-J — Statistics and fitting
-Files: `meas/fit.nim`, `meas/dataio.nim`, `tests/tfit.nim`, app `ranalyze.nim`.
+Files: `meas/fit.nim`, `meas/dataio.nim`, `tests/tfit.nim`, `tests/tdataio.nim` (the analysis
+driver is the `-analyze` mode of `rmeas.nim`; no separate `ranalyze` app exists).
 
 Effective mass, plateau fit (V.6), \(O(a^2)\) fit (V.7), \(n_{\max}\) least-squares fit (V.9),
 jackknife + integrated autocorrelation via `utils/resample`, TSV read/write, gnuplot scripts.
@@ -153,8 +154,8 @@ Grid \(g^2a\in\{0.5,1,1.5\}\times L\in\{1,2\}\times N_f\in\{2,4,6\}\) at \(a_t=0
 ## Rules for every work package
 
 1. **Work only in the worktree** `/Users/xjin/K/W/P003/qex/.claude/worktrees/qed3-slides-reproduction-plan-0e70b6`.
-   Never write to `/Users/xjin/K/W/P003/qex/src/experimental/qed3` or anywhere else in the main
-   checkout — it holds the user's uncommitted work.
+   Never write anywhere in the main checkout (the untracked `src/experimental/qed3` this rule
+   once named is gone; the rule stands for whatever is there now).
 2. **Never run a state-changing git command.** No `checkout`, `reset`, `clean`, `stash`, `commit`.
 3. Build and test from `<worktree>/build_mac` with
    `make run experimental/radial/tests/t<name>`.

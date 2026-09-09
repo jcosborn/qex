@@ -18,7 +18,7 @@ diverge silently, other packages are being written against it in parallel.
 | timers | call **`freezeTimers()`** in every app after `qexInit` | QEX `tic/toc` metadata allocation caused a 900× RSS blow-up on small volumes in the prior attempt |
 | solver initial guess | **always zero** | MD reversibility |
 | Zolotarev poles | stored in **σ² units** (`spec(X†X) ⊂ [σmin², σmax²]`) | the single easiest thing to get wrong |
-| imports | `import base` (never `import qex`) plus explicit `rng/threefry4x64`, `eigens/lapack`, `eigens/linalgFuncs`, `algorithms/rk`, `algorithms/integrator`, `utils/resample`, `hmc/metropolis` | keeps the hypercubic machinery out |
+| imports | `import base` (never `import qex`) plus explicit `rng/threefry4x64`, `eigens/lapack`, `eigens/linalgFuncs`, `algorithms/rk`, `utils/resample`, `hmc/metropolis`, and the nimble `mdevolve` | keeps the hypercubic machinery out |
 
 Every app starts:
 ```nim
@@ -45,14 +45,15 @@ make run experimental/radial/tests/tgeom
 ```
 src/experimental/radial/
   doc/            01-slides 02-formulation 03-targets 04-interfaces 05-plan 06-status
-  core/           types.nim  geom.nim  lattice.nim  spinor.nim  analytic.nim
+  core/           types.nim  geom.nim  lattice.nim  spinor.nim  analytic.nim  dense.nim  fnv.nim
   ops/            wilson.nim  zolotarev.nim  solve.nim  overlap.nim  gaugeact.nim  flow.nim
   hmc/            pseudofermion.nim  trajectory.nim
   meas/           harmonics.nim  observables.nim  gevp.nim  fit.nim  dataio.nim
-  tests/          tgeom.nim tspinor.nim twilson.nim tzolo.nim tsolve.nim toverlap.nim
-                  tgauge.nim tflow.nim thmc.nim tmeas.nim tanalytic.nim tfit.nim
+  tests/          thelpers.nim (shared fixtures and the dense gauge-action oracle)
+                  tgeom.nim tspinor.nim twilson.nim tzolo.nim tsolve.nim toverlap.nim
+                  tgauge.nim tflow.nim thmc.nim tmeas.nim tanalytic.nim tfit.nim tdataio.nim
   campaign/       t2.sh (WP-L interacting driver)  free/ (WP-K figure scripts)
-  rgeom.nim  rfree.nim  rspec.nim  rgauge.nim  rflow.nim  rhmc.nim  rmeas.nim  ranalyze.nim
+  rgeom.nim  rfree.nim  rspec.nim  rgauge.nim  rhmc.nim  rmeas.nim
   README.md
 ```
 Library modules live in subdirectories; **apps live at the subtree root** (same convention as
@@ -173,12 +174,14 @@ func pframe*(ch: array[3, Vec3], p: Vec3): array[2, Vec3]   ## (e_theta, e_phi)
 
 **Spherical vs flat dual identities.** The complex is intrinsic, so the flat relations
 \(\sum_i\ell_i\ell^*_i/2=A_\triangle\) and \(A_e=\tfrac12\ell(\ell^*_1+\ell^*_2)\) hold only up to
-\(O(\bar a_s^2)\). `Edge.area` uses the flat form **by definition** (it is what enters
-\(\kappa\) and \(\beta_\ell\)); the exact spherical statement, which does hold to \(10^{-16}\), is
+\(O(\bar a_s^2)\). `Edge.area` is the **exact** spherical kite sum
+\(A_e=\sum_\pm4\arctan(\tan(\ell/4)\tan(\ell^*_\pm/2))\) (`kiteArea`), the paper's definition of
+\(A_{y_1y_2}\) and what enters \(\kappa\) and \(\beta_\ell\); per face it satisfies exactly
 \[
 A_\triangle=\sum_i 4\arctan\!\big(\tan(\ell_i/4)\,\tan(\ell^*_i/2)\big).
 \]
-See the WP-A entry in [`06-status.md`](06-status.md).
+`Edge.dual` keeps \(\ell^*_1+\ell^*_2\) for the flat variant (`gcGeodesic`, the slide-8 legends).
+`levels(top)` is the refinement ladder 1, 2, 4, … See the WP-A entry in [`06-status.md`](06-status.md).
 
 Construction notes (normative):
 * Icosahedron vertices: the 12 cyclic permutations of \((0,\pm1,\pm\phi)/\sqrt{1+\phi^2}\), \(\phi=(1+\sqrt5)/2\).
@@ -241,9 +244,10 @@ proc gaussian*(x: var Spin, r: var Threefry4x64)    ## <|x_i|^2> = 1 per complex
 proc pointSource*(n, site, comp: int): Spin
 ```
 `spinor.nim` depends only on `core/types.nim` and `rng/threefry4x64` — it does **not** import
-`lattice.nim`, so fields are sized by a plain `int` and `pointSource` takes a flat site index.
-`lattice.nim` owns the convenience overloads `newSpin(l: Lat)` and `pointSource(l: Lat, v, t, c)`.
-`axpby` is the CG search-direction update; it is exported because `ops/solve.nim` needs it.
+`lattice.nim`, so fields are sized by a plain `int` and `pointSource` takes a flat site index
+(`sIdx(l, v, t)`); there are no `Lat`-taking overloads. `newLike`, `sameShape`, `zero`, `:=`,
+`axpy`, `axpby`, `redot`, `norm2` are the vector-space contract of `ops/solve.nim`; `Gauge` and
+`seq[float]` provide the same set in `ops/gaugeact.nim`.
 
 ## 6. `core/analytic.nim` — continuum formulas  *(WP-C, done)*
 
@@ -259,8 +263,9 @@ func gaugeGPeriodic*(t, T: float, nmax = 200): float
 func flatSpectrum*(kap, kapT: float, n1, n2, nt: int): seq[Complex64]   ## (IV.8)
 func s2FermionProp*(theta: float, nmax: int): float ## (C.55) vs sigma1/(4 pi sin(theta/2)) (C.54)
 func s2CurrentCorr*(z: float, nmax: int): float     ## (C.57)
-func effDim*(g: openArray[float], at, T: float): seq[float]  ## (V.4)-(V.5)
 ```
+The effective dimension (V.4)-(V.5) is `meas/fit.effMass` (one implementation; the former
+`effDim` here was a duplicate).
 
 Conventions (all settled in WP-C, see [`06-status.md`](06-status.md)):
 
@@ -272,7 +277,7 @@ Conventions (all settled in WP-C, see [`06-status.md`](06-status.md)):
   consecutively, so the result has `2*n1*n2*nt` entries and is closed under conjugation.
 * **`s2FermionProp`** returns the scalar coefficient of \(\sigma_1\) (the paper plots the (1,2)
   spinor component and the matrix is \(\sigma_1\) times this scalar).
-* **`effDim`** indexes `g[i]` at \(t=i\,a_t\) and returns `g.len-1` values, `result[i]` =
+* **`effMass`** (meas/fit) indexes `g[i]` at \(t=i\,a_t\) and returns `g.len-1` values, `result[i]` =
   \(\Delta_{\rm eff}(i\,a_t)\); \(G(T/2)\) is read at index `round(T/(2 at))`. Past \(T/2\) the sign
   flips, as it must.
 * No `legendreP` was added: `jacobiP(l, 0, 0, x)` is the Legendre polynomial and nothing in WP-C
@@ -393,15 +398,27 @@ type
     refined*: int            ## how many shifts needed a single-shift refinement pass
     refits*: int             ## CG iterations spent in those refinement passes
 
-proc cgSolve*(x: var Spin, b: Spin, r2req: float, maxits: int,
-              op: proc(dst: var Spin, src: Spin)): CgInfo
-proc cgmSolve*(xs: var seq[Spin], b: Spin, shifts: openArray[float],
-               r2req: float, maxits: int,
-               op: proc(dst: var Spin, src: Spin)): MultiCgInfo
+proc ensureWork*[V](w: var seq[V], n: int, like: V)          ## grow a scratch bank
+proc conform*[V](x: var V, like: V)                            ## shape x like `like`
+proc cgSolve*[V](x: var V, b: V, r2req: float, maxits: int,
+                 op: proc(dst: var V, src: V), work: var seq[V]): CgInfo
+proc cgSolve*[V](x: var V, b: V, r2req: float, maxits: int,
+                 op: proc(dst: var V, src: V)): CgInfo            ## temporary bank
+proc cgmSolve*[V](xs: var seq[V], b: V, shifts: openArray[float],
+                  r2req: float, maxits: int,
+                  op: proc(dst: var V, src: V), work: var seq[V]): MultiCgInfo
+proc cgmSolve*[V](xs: var seq[V], b: V, shifts: openArray[float],
+                  r2req: float, maxits: int,
+                  op: proc(dst: var V, src: V)): MultiCgInfo
   ## op applies the UNSHIFTED positive operator. `shifts` must be ascending and > 0.
   ## After the recurrence converges, the TRUE residual is recomputed for every shift and any
   ## shift that misses tolerance is re-solved with a plain shifted CG. Always starts from x = 0.
 ```
+Generic over any V with `newLike`, `sameShape`, `zero`, `:=`, `axpy(x, a: float, y)`, `axpby`,
+`redot`, `norm2` (Euclidean products): `Spin`, `Gauge` and `seq[float]`. This is the one CG in
+the tree (`cgM`, `regSolve`, `projectGauge` and the overlap solves all go through it). The `work`
+bank (`3` vectors for `cgSolve`, `3 + shifts.len` for `cgmSolve`) is grown on demand and reused,
+so owners of a bank (`Ov.cgw`/`Ov.mcw`, `KernelProj`, `RegOp`) solve allocation-free.
 `r2` is **relative** (divided by `|b|^2`) in both info records, and is always the recomputed
 residual, never the recursive one — so the guard below reads literally. `cgSolve` therefore costs
 one extra operator apply per solve.
@@ -435,6 +452,7 @@ type
     rat*: Rat                  ## frozen rational; poles in sigma^2 units
     work*: seq[Spin]           ## persistent scratch, 6 fixed slots -- see overlap.nim header
     xs*, xt*: seq[Spin]        ## multishift solution banks, npole fields each, preallocated
+    mcw*, cgw*: seq[Spin]      ## CG scratch banks (multishift / single-shift), grown once
     r2inner*, r2outer*: float
     maxits*: int
     stats*: SolveStats
@@ -519,7 +537,6 @@ type
 
 proc newBeta*(l: Lat, g2: float, conv = gcExactArea): Beta   ## default = the paper's convention
 func nlink*(l: Lat): int                 ## (ne + nv)*nt
-func slink*(l: Lat): int                 ## ne*nt, where the temporal links start
 
 # vector space (the CG needs it; same names as core/spinor.nim's Spin ops)
 proc `:=`*(x: var Gauge, y: Gauge)
@@ -542,29 +559,32 @@ proc gaugeAction*(l: Lat, u: Gauge, b: Beta): float
 proc gaugeAction*(l: Lat, u: Gauge, g2: float): float
 proc gaugeForce*(l: Lat, f: var Gauge, u: Gauge, b: Beta)        ## f = dS/dtheta = M u
 proc gaugeForce*(l: Lat, f: var Gauge, u: Gauge, g2: float)
-template applyM*(l: Lat, dst: var Gauge, src: Gauge, b: Beta)    ## = gaugeForce
 proc mDiagonal*(l: Lat, d: var Gauge, b: Beta)                   ## diag(M), sizes the flow step
 proc mDiagMax*(l: Lat, b: Beta): float
 
 proc gradient*(l: Lat, p: var Gauge, alpha: openArray[float])    ## d alpha
 proc divergence*(l: Lat, d: var seq[float], p: Gauge)            ## d^dagger p
 proc laplace*(l: Lat, dst: var seq[float], src: openArray[float])  ## d^dagger d
+type KernelProj* = object                ## scratch of projectGauge (one lattice shape)
+proc newKernelProj*(l: Lat): KernelProj
+proc projectGauge*(l: Lat, p: var Gauge, k: var KernelProj, r2req = 1e-24, maxits = 10000): CgInfo
 proc projectGauge*(l: Lat, p: var Gauge, r2req = 1e-24, maxits = 10000): CgInfo
   ## remove the gauge-orbit component; applied to the committed field, the refreshed
-  ## momentum, AND every MD force at every level.
+  ## momentum, and every fermion MD force (the gauge force is in range(M) already).
 proc projectFlat*(l: Lat, p: var Gauge)                          ## uniform Polyakov mode
+proc projectKernel*(l: Lat, p: var Gauge, k: var KernelProj, r2req = 1e-24, maxits = 10000): CgInfo
 proc projectKernel*(l: Lat, p: var Gauge, r2req = 1e-24, maxits = 10000): CgInfo
 
 proc cgM*(l: Lat, x: var Gauge, b: Gauge, bt: Beta, r2req = 1e-20, maxits = 20000): CgInfo
 proc pseudoSolve*(l: Lat, x: var Gauge, b: Gauge, bt: Beta,
                   r2req = 1e-20, maxits = 20000): tuple[proj, sol: CgInfo]
   ## the literal (V.16)-(V.17) double CG; use for sources that are NOT transverse
-type RegOp* = object                     ## A = M + sig d d^dagger + tau P P^T/|P|^2
+type RegOp* = ref object                 ## A = M + sig d d^dagger + tau P P^T/|P|^2
   bt*: Beta
-  sig*, tau*: float
+  sig*, tau*: float                      ## plus private scratch and the CG bank
 proc newRegOp*(l: Lat, bt: Beta, sig = 0.0, tau = 0.0): RegOp
-proc applyReg*(l: Lat, o: var RegOp, dst: var Gauge, src: Gauge)
-proc regSolve*(l: Lat, x: var Gauge, b: Gauge, o: var RegOp,
+proc applyReg*(l: Lat, o: RegOp, dst: var Gauge, src: Gauge)
+proc regSolve*(l: Lat, x: var Gauge, b: Gauge, o: RegOp,
                r2req = 1e-24, maxits = 100000): CgInfo
   ## SPD, so stable to the roundoff floor; equals Mtilde^{-1} b for transverse b
 
@@ -581,9 +601,9 @@ proc triSource*(l: Lat, b: var Gauge, f, t: int)
 ```
 
 **`gcExactArea` is the paper's convention for \(A_\ell\).** With it, Δ₀(L=1, L_t=120, T=16)
-comes out 1.332430 against the published 1.33242 — every digit — where the flat-form
-`Edge.area` gives 1.356697. See the WP-G entry in [`06-status.md`](06-status.md) T1.5b; the
-same question is open for the fermion \(\kappa\).
+comes out 1.332430 against the published 1.33242 — every digit — where the flat form
+(`gcGeodesic`, `Edge.dual`) gives 1.356697. See the WP-G entry in [`06-status.md`](06-status.md)
+T1.5b. The fermion \(\kappa\) uses the same exact area (`core/lattice.newLat`, pinned by T1.4c).
 
 **ker M is one dimension bigger than the gauge orbit.** The uniform temporal mode
 \(\theta^t_v(t)=c\), \(\theta^s=0\) costs no action and is *not* a gauge mode (a gauge function
@@ -698,12 +718,15 @@ makes the accept/reject `dH` saturate at the dt-independent action mismatch
 \(\sim 2\,\mathrm{maxRelErr}(11)\,S_{\rm pf}\times O(2\%)\) — measured, see WP-H in
 [`06-status.md`](06-status.md).
 
-**Gauge zero modes (non-negotiable).** `projectKernel` (WP-G) is applied to (a) the committed
-field — at construction/load and at every commit, so `reject` stays a bitwise restore of the
-trajectory's start field; (b) the refreshed momentum; (c) every MD force at every level.
-All three are required: at fixed \(\phi\) the extended action has a longitudinal force even
-though the integrated determinant is gauge invariant.  Momentum dof
-\(=(n_E{+}n_V)L_t-\dim\ker M=n_EL_t\).
+**Gauge zero modes.** `projectKernel` (WP-G) is applied to (a) the committed field — by the app
+at a hot start and at every accept, so `reject` stays a bitwise restore of the trajectory's
+start field (`loadCheckpoint` restores the stored transverse field bitwise); (b) the refreshed
+momentum; (c) every fermion MD force (the gauge force \(Mu\) is in range(M)). The gauge-orbit
+part is a Landau-type gauge fixing: at fixed \(\phi\) the extended action has a longitudinal force
+even though the integrated determinant is gauge invariant. The Polyakov part is a physical choice
+(the fermion's temporal twist, doc/02 §5), effect \(O(e^{-\Delta T})\). Momentum dof
+\(=(n_E{+}n_V)L_t-\dim\ker M=n_EL_t\). The Metropolis hooks `start/generate/accept/reject`
+take `RadialHmc` by value (it is a ref), the form `hmc/metropolis.update` requires.
 
 **Randomness is trajectory addressed**: every draw comes from a Threefry stream seeded by a
 splitmix64 mix of (baseSeed, trajectory number, purpose, copy, frame); no generator state is
@@ -776,11 +799,25 @@ proc currentCorrConn*(samples: openArray[CurrentSample], k1, k2: int):
     tuple[v, e: Complex64]           ## mean/stderr of tr[K1 S K2 S]
 proc currentTraceDisc*(samples: openArray[CurrentSample], k1, k2: int):
     tuple[v, e: float]               ## 2Re tr[K1 S] 2Re tr[K2 S], cross-noise products
+# per-configuration estimators (the rmeas production path, pinned in tmeas)
+proc connFold*(samples: openArray[CurrentSample], nt, iop1, iop2: int): seq[seq[Complex64]]
+  ## per sample: t1-averaged, dt-folded (symmetrized in the op pair) connected product
+proc sampleMean*(v: seq[seq[Complex64]]): tuple[m: seq[Complex64], e: seq[float]]
+proc traceSeries*(samples: openArray[CurrentSample], nt, iop: int, im = false): seq[seq[float]]
+  ## per sample: T(t) = 2 Re tr[K S] (or tau(t) = 2 Im tr[K S] with `im`)
+proc crossFold*(x: seq[seq[float]], nt: int): seq[float]   ## unbiased <x(t2) x(t1)>, folded
+proc seriesMean*(x: seq[seq[float]]): seq[float]
+proc scalarSample*(o: Ov, u: Gauge, mass: float, r: var Threefry4x64): CurrentSample
+  ## the scalar analogue with the slice projectors as operators (nop = 1)
+proc scalarOnePoint*(tr: Complex64, nv: int, mass: float): tuple[ps: float, fs: Complex64]
+  ## <sigma_PS(t)>, <sigma_FS(t)> from T = tr[P_t S] (doc/07 3.2)
+proc scalarConn*(k: openArray[float], trMean: float, nv: int, mass: float): tuple[ps, fs: seq[float]]
+  ## connected PS/FS from the folded trace, incl. the dt = 0 GW contact (doc/07 3.1)
 proc scalarCorrDense*(o: Ov, u: Gauge, mass = 0.0): tuple[ps, fs: seq[float]]
 proc scalarCorrPoint*(o: Ov, u: Gauge, mass: float, v0, t0: int): tuple[ps, fs: seq[float]]
-  ## sigma_PS / sigma_FS connected timeslice correlators (doc/07 section 3);
+  ## sigma_PS / sigma_FS CONNECTED timeslice correlators (doc/07 section 3.1);
   ## F=(1-D_ov^dag)S^dag=((1+m/2)S^dag-1)/(1-m/2);
-  ## at mass 0 PS and FS are IDENTICAL at every dt, configuration by configuration
+  ## at mass 0 PS and FS are identical at every dt as a GW identity of the contraction
 proc jtopProject*(l: Lat, u: Gauge, lh, mh: int): seq[float] ## sum_f Y Theta_f per t
 proc f2Project*(l: Lat, u: Gauge, lh, mh: int): seq[float]
   ## sum_f Y Theta^2/A_f + sum_e Y(mid) Theta_e^2 2A_e/(l_e a_t)^2, RAW
@@ -792,7 +829,6 @@ func loopCount*(l: Lat, sh: LoopShape): int
 func loopCenter*(sph: Sphere, sh: LoopShape, i: int): Vec3
 func loopFlux*(l: Lat, u: Gauge, sh: LoopShape, i, t: int): float
 proc loopProject*(l: Lat, u: Gauge, sh: LoopShape, lh, mh: int): seq[float]
-proc loopOps*(l: Lat, u: Gauge, shapes: openArray[LoopShape], lh, mh: int): seq[seq[float]]
 proc loopSource*(l: Lat, b: var Gauge, sh: LoopShape, lh, mh, t: int)
   ## incidence vector of the projected shape operator; exactly transverse
 proc jtopCorrExact*(l: Lat, bt: Beta, lh: int, r2req = 1e-26,

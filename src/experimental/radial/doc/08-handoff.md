@@ -1,7 +1,25 @@
 # HANDOFF REPORT — QED3 radial-quantization reproduction
 
-Written 2026-08-21 ~17:50 by the session that built this project, for a successor model.
+Written 2026-08-21 ~17:50 by the session that built this project, for a successor model;
+corrected 2026-09-09 after the full review (doc/09 §6 lists the corrections).
 **Read this file first, then `06-status.md` for details. Everything you need is on disk.**
+
+## 2026-09-09 state (supersedes the dated sections below where they differ)
+
+* Branch `experimental/radial-quant`, worktree `.claude/worktrees/qed3-slides-reproduction-plan-0e70b6`;
+  `src/experimental/radial/` including `campaign/` is committed; `output/` is untracked.
+* 13 test suites `tests/t*.nim`, all green at the review; `tests/thelpers.nim` holds the shared
+  fixtures and the dense gauge-action oracle.
+* The old untracked `src/experimental/qed3/` and `docs/qed3_*.md` of the main checkout no longer
+  exist; the safety rules below about them are moot, the rule about read-only subagents stands.
+* `output/radial/t2-standard-overlap/` has never been created: no Tier-2 data exist in the active
+  mass convention.  `bash campaign/t2.sh <ens>` starts fresh ensembles (the default list is the
+  N_f=2 profile; name `L1g10nf4`, `L1g10nf6`, `pureL4` explicitly).
+* New in rmeas: `currmat` (cross-m correlator matrices), the block axial hairpin, the scalar
+  volume estimators with hairpins (`scalarvol`, `scalardisc`), TSV format `radial-meas-3`;
+  summary rows are named `*_conn` / `*_full`.  Legacy `output/radial/t2` measurements are
+  rejected by the current binaries (old format and convention).
+* Compiler in build_mac: clang-mp-23 (`build_mac/qexconfig.nims`).
 
 ---
 
@@ -29,6 +47,7 @@ Start it with `bash src/experimental/radial/campaign/t2.sh <ensemble>`. To chang
 rational window, mass ladder, or other ensemble manifest field, set `RADIAL_T2_OUT` to another
 fresh directory; never alter parameters and resume an existing checkpoint. The exact parameter
 map is \(\mu=m/(1-m/2)\), \(m=\mu/(1+\mu/2)\), but no automatic data migration is performed.
+The legacy condensate rows of doc/09 §3.3 are labelled by the additive μ.
 
 ---
 
@@ -42,7 +61,8 @@ fermion (Zolotarev order 31 action / 11 force); HMC with Hasenbusch; radial-quan
 spectroscopy (operator dimensions Δ from temporal correlators).
 
 * Worktree (ALL work happens here):
-  `/Users/xjin/K/W/P003/qex/.claude/worktrees/qed3-slides-reproduction-plan-0e70b6`
+  `/Users/xjin/K/W/P003/qex/.claude/worktrees/qed3-slides-reproduction-plan-0e70b6`,
+  branch `experimental/radial-quant`.
 * All new code: `src/experimental/radial/` (that directory of the worktree).
 * Docs, in reading order: `doc/01-slides.md` (what the talk shows), `doc/02-formulation.md`
   (every equation, normative), `doc/03-targets.md` (every published number + tolerance),
@@ -52,11 +72,10 @@ spectroscopy (operator dimensions Δ from temporal correlators).
 
 ### Absolute safety rules (violating these destroys the user's uncommitted work)
 1. NEVER write to `/Users/xjin/K/W/P003/qex/src/...` or anything in the main checkout.
-   The main checkout contains ~5000 lines of the user's UNTRACKED prior work
-   (`src/experimental/qed3/`, several `docs/qed3_*.md`). Work only in the worktree above.
+   Work only in the worktree above.  (The main checkout's untracked `src/experimental/qed3/`
+   that this rule once protected is gone; the rule stands for whatever is there now.)
 2. NEVER run state-changing git commands (no checkout/reset/clean/stash/commit/add) unless the
-   user explicitly asks. Current branch: `claude/qed3-slides-reproduction-plan-0e70b6`.
-   Everything under `src/experimental/radial/` and `output/` is intentionally uncommitted.
+   user explicitly asks. Current branch: `experimental/radial-quant`; `output/` is untracked.
 3. Subagents you spawn must be given rules 1–2 verbatim. A past project lost work this way.
 
 ### Build (memorize this)
@@ -64,7 +83,7 @@ spectroscopy (operator dimensions Δ from temporal correlators).
 cd /Users/xjin/K/W/P003/qex/.claude/worktrees/qed3-slides-reproduction-plan-0e70b6/build_mac
 SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk make run experimental/radial/tests/tgeom
 ```
-* `SDKROOT` is MANDATORY (clang-mp-22 cannot find system headers without it; `$(xcrun ...)` may
+* `SDKROOT` is MANDATORY (clang-mp-23 cannot find system headers without it; `$(xcrun ...)` may
   fail under the sandbox — use the literal path).
 * `make <suffix-of-path>` finds targets case-insensitively; binaries land in `build_mac/bin/`.
 * `make` can exit 0 even when the build failed — check the binary exists / rerun and grep Error.
@@ -75,8 +94,8 @@ SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk make run experimenta
 
 ## 1. State: what is DONE and verified (do not redo)
 
-**Tier 1 — the free-limit paper is fully reproduced.** 12 test suites, ~196 tests, all green
-(`tests/t{geom,zolo,analytic,spinor,solve,wilson,overlap,gauge,flow,hmc,meas,fit}.nim`).
+**Tier 1 — the free-limit paper is reproduced except for the n_max rows** (doc/09 §1). 13 test
+suites, all green (`tests/t{geom,zolo,analytic,spinor,solve,wilson,overlap,gauge,flow,hmc,meas,fit,dataio}.nim`).
 Master table (published | ours):
 
 | quantity | published | ours |
@@ -92,23 +111,26 @@ Figures 4–12 of the paper: TSVs + rendered PNGs in `output/radial/free/`, gnup
 `rspec.nim` (spectra). Logs: `build_mac/rfree_full2.log`, `rspec_full2.log`.
 
 **One known, honest discrepancy (do NOT try to fix by tuning):** the Eq. (V.9) n_max integers.
-Ours: fermion 3/7/14/28, gauge 3/7/16/30. Published: 6/10/19/32 and 3/8/18/35. BUT the published
-residual column equals our relative residual/DOF evaluated AT their n_max — the correlators agree
-perfectly; only the paper's (unstated) n_max selection rule differs. Recorded in 06-status WP-K.
+Ours: fermion 3/7/14/28, gauge 3/7/16/30. Published: 6/10/19/32 and 3/8/18/35. The published
+fermion residual column equals our relative residual/DOF evaluated AT their n_max — the
+correlators agree; the paper's selection rule is unstated (doc/09 §1). Recorded in 06-status WP-K.
 
-**The single most important physics fact discovered here** (doc/06 section "THE COUPLING
-CONVENTION"): the paper's couplings use the **exact spherical kite area**
-A_e = Σ± 4·arctan(tan(ℓ/4)·tan(ℓ*±/2)) for both κ_e and β_ℓ — NOT the flat ½ℓ(ℓ*₁+ℓ*₂) that
-Eq. (IV.2) writes as an equivalent. Both published Δ₀ values pin this to six digits. `Edge.area`
-in `core/geom.nim` IS the exact form. Exception: the slide-8 Wilson-spectrum legends match the
-FLAT convention (`gcGeodesic` in `ops/gaugeact.nim`), and the L=1 legend additionally used
-a_t ≈ 0.1333 instead of the campaign's 0.2. All reproduced; see `output/radial/free/slide8_legend.tsv`.
+**The coupling convention** (doc/06 "THE COUPLING CONVENTION", doc/09 §2): the couplings use the
+**exact spherical kite area** A_e = Σ± 4·arctan(tan(ℓ/4)·tan(ℓ*±/2)) for both κ_e and β_ℓ.
+That is the paper's own definition of A_{y1y2}; what the reproduction settled is the paper's O(a²)
+ambiguity between it and the flat ½ℓ(ℓ*₁+ℓ*₂) form of its derivations (the flat identity is NOT
+written in (IV.2), an earlier attribution here was wrong). Both published Δ₀ values pin the exact
+form to six digits. `Edge.area` in `core/geom.nim` IS the exact form. Exception: the slide-8
+Wilson-spectrum legends match the FLAT convention (`gcGeodesic` in `ops/gaugeact.nim`), and the
+L=1 legend additionally used a_t ≈ 0.1333 instead of the campaign's 0.2. All reproduced; see
+`output/radial/free/slide8_legend.tsv`.
 
-**Tier-2 exact results already in hand** (statistics-independent, from tests + smoke runs):
-ℓ=1,2 correlator multiplets exactly degenerate under I_h (machine precision — slide 13's
-"protection"); ℓ=3 splits exactly 3+4 (splitting 27.4% at L=1, 6.9% at L=2 free-field);
-σ_PS ≡ σ_FS exactly at every dt (stronger than the slide's "identical spectra"); Ward charge
-conservation ~1e−9 on dynamical configs; m=0 condensate exactly 0 by Ginsparg–Wilson.
+**Tier-2 exact results in hand** (statistics-independent, from tests + smoke runs): the exact free
+ℓ=1,2 correlator multiplets are degenerate under I_h and ℓ=3 splits exactly 3+4 = T₂+G (splitting
+27.4% at L=1, 6.9% at L=2 free-field); Ward charge conservation ~1e−9 on dynamical configs; m=0
+condensate exactly 0 by Ginsparg–Wilson. NOT an exact result: "σ_PS ≡ σ_FS at every dt" is the
+GW identity of the *connected* contraction; the singlet σ_FS has a hairpin that rmeas only now
+measures (doc/07 §3.2).
 
 ---
 
@@ -172,11 +194,13 @@ Write (or extend `ranalyze.nim` if it exists — check) a short aggregation that
    (CFT 2) from the m00 ensembles; per-m ℓ=3 splitting.
 3. **Slide 12**: Δ_V/Δ_A (CFT 1) — disconnected piece is noisy; report with honest errors.
 4. **Slide 14/15**: gluonic Δ_F/Δ_A (free 1/√2 → CFT 1) and Δ_{F²}/Δ_F (CFT 2) from the
-   GEVP summaries vs g²R ∈ {0.5, 1.0, 1.5} (+3.0 at L=2). NOTE (recorded in 06-status): the free
-   reference for Δ_{F,ℓ=2}/Δ_{F,ℓ=1} is **√3**, not the slide's √(3/2) (slide used Δ_A in the
-   denominator); at L=1 all spatial loop shapes collapse to ONE operator after ℓ-projection, so
-   the L=1 GEVP is 3 temporal shapes with rank truncation.
-5. **Slide 16**: Δ_PS/Δ_A, Δ_FS/Δ_A (free 1; published 0.88–0.98) + the PS≡FS exactness.
+   GEVP summaries vs g²R ∈ {0.5, 1.0, 1.5} (+3.0 at L=2). NOTE: the continuum free reference for
+   Δ_{F,ℓ=2}/Δ_{F,ℓ=1} is **√3** from (C.37); the slide draws ≈1.22, possibly Δ₂^free/Δ_A (a
+   reading, not a fact); compare finite-L ensembles with the exact lattice ratio from
+   `jtopCorrExact`. At L=1 all spatial loop shapes collapse to ONE operator after ℓ-projection,
+   so the L=1 GEVP is 3 temporal shapes with rank truncation.
+5. **Slide 16**: Δ_PS/Δ_A, Δ_FS/Δ_A (free 1; published 0.88–0.98) from the `*_full` rows; the
+   connected PS≡FS identity is a consistency check only.
 6. **Slide 9**: E_s(t)√L vs r/t from pureL1/pureL2 + the dynamical m00 ensembles. Known open
    item: raw E_s collapses across L for pure gauge, E_s·√L does NOT — the slide's √L
    normalization is unexplained (06-status WP-G); plot both and say so.
@@ -213,22 +237,25 @@ from running ensembles concurrently. MPI is wired in QEX but radial code is sing
    paper's (IV.12) as printed is inverted vs its own (IV.11)).
 5. `ovGradient` is THE only force/current kernel. Never write a second one — the Ward test
    only protects one.
-6. Zero-mode projection hits the committed field, refreshed momentum, AND every MD force.
-   ker M = gauge orbit + the uniform temporal (Polyakov) mode: dim = n_V·L_t (not n_V·L_t − 1).
+6. Zero-mode projection hits the committed field, the refreshed momentum, and every fermion
+   MD force (the gauge force M u is in range(M) already). ker M = gauge orbit + the uniform
+   temporal (Polyakov) mode: dim = n_V·L_t. Freezing the Polyakov mode with fermions is a
+   physical choice (the temporal twist; effect O(e^{−ΔT})), see doc/02 §5.
 7. Nim: never assign `result` inside `threads:`; `tFor` collides in one scope; the radial code
    is deliberately serial (OpenMP was 60× slower at these volumes in a prior attempt).
 8. Only `import base` (+ explicit small modules), never `import qex`, in radial code.
-9. LAPACK bindings live in `src/eigens/lapack.nim`; `zgesv` was added there (3 lines) — the
-   only change outside `radial/`. `zeigs`/`zgeigs`/`zeigsgv` wrappers: `eigens/linalgFuncs`.
+9. LAPACK bindings live in `src/eigens/lapack.nim`; `zgesv` was added there — the only change
+   outside `radial/`. `zeigs`/`zgeigs`/`zeigsgv` wrappers: `eigens/linalgFuncs`; the radial
+   dense helpers (`core/dense.nim`) wrap them.
 10. The effective-dimension convention is the paper's arccosh form (V.4–V.5) for deterministic
     data; rmeas's MC analysis uses a local log-ratio instead (arccosh is unusable on noise).
 11. `rmeas` re-measurement is bit-reproducible (trajectory-addressed RNG); skip-done means you
     can always just rerun the whole `t2.sh <ens>` line.
 
 ## 5. Independent oracles (for re-verification)
-Pure-Python cross-checks used to validate the Nim live in `/tmp/claude-502/qed3/*.py` (may be
-gone — /tmp; the important results are all transcribed into 06-status). The strongest in-repo
-checks: `tests/` (196 tests), the WP-K four-way validation (dense `denseOv`, dense `denseDw`,
+Pure-Python cross-checks used to validate the Nim lived in `/tmp/claude-502/qed3/*.py` and are
+gone (the important results are transcribed into 06-status). The strongest in-repo checks:
+`tests/` (13 suites), the WP-K four-way validation (dense `denseOv`, dense `denseDw`,
 real-space `regSolve`, WP-G pinned table), and `rgeom`/`rfree`/`rspec` which re-verify on
 every run. The papers: slides + free-limit PDF summaries are fully transcribed in
 `doc/01-slides.md` / `doc/02-formulation.md`; source PDFs were at
