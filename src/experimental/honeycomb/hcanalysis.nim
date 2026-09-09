@@ -1,0 +1,389 @@
+## Analysis utilities: flow scales, statistics, resampling and fits.
+##   findT0: t^2E(t) = target (linear or 4-point interpolation)
+##   findW0: t d/dt(t^2E) = target
+##   autocorrTime: Madras-Sokal tau_int = 1/2 + sum_{t<=W} rho(t), W the
+##     smallest window with W >= c tau(W); error tau sqrt(2(2W+1)/n)
+##   jackknife: delete-block, via utils/resample
+##   fitPoly: weighted linear least squares in integer powers of x,
+##     cov = (A^T W A)^-1, chi^2/dof
+##   FlowRec, chiTop: flow-history bookkeeping and the joint jackknife of
+##     10^4 t0^2 <Q^2>/V and a^2/t0
+## Pure Nim (std + utils/resample).
+
+import std/[math, strutils]
+import utils/resample
+
+const
+  noCrossing* = -1.0
+    ## Sentinel returned by `findCrossing`/`findT0`/`findW0` when the target is
+    ## never reached.  A sentinel rather than `NaN` because QEX is built with
+    ## `-Ofast -ffast-math`, under which `x != x` is optimised away.
+
+# ---------------------------------------------------------------- basic stats
+
+proc mean*(x: openArray[float]): float =
+  ## Arithmetic mean.  0 for an empty input.
+  if x.len == 0: return 0.0
+  var s = 0.0
+  for v in x: s += v
+  s / x.len.float
+
+proc variance*(x: openArray[float]): float =
+  ## Unbiased (n-1) sample variance.
+  if x.len < 2: return 0.0
+  let m = x.mean
+  var s = 0.0
+  for v in x: s += (v-m)*(v-m)
+  s / (x.len-1).float
+
+proc stderrMean*(x: openArray[float]): float =
+  ## Naive standard error of the mean, sqrt(var/n).  Ignores autocorrelation;
+  ## multiply by sqrt(2 tau_int) to correct (see `autocorrTime`).
+  if x.len < 2: return 0.0
+  sqrt(x.variance / x.len.float)
+
+proc cov(x: openArray[float], m: float, t: int): float =
+  var s = 0.0
+  for i in 0..<(x.len-t): s += (x[i]-m)*(x[i+t]-m)
+  s / float(x.len-t)
+
+proc autocorr*(x: openArray[float], tmax = -1): seq[float] =
+  ## Normalised autocorrelation function `rho(t) = Gamma(t)/Gamma(0)`,
+  ## `t = 0 .. tmax` (default `min(n-1, n div 2)`).
+  let n = x.len
+  if n < 2: return @[1.0]
+  let tm = if tmax >= 0: min(tmax, n-1) else: min(n-1, n div 2)
+  let m = x.mean
+  var g = newSeq[float](tm+1)
+  for t in 0..tm:
+    g[t] = cov(x, m, t)
+  let g0 = g[0]
+  if g0 == 0.0:
+    for t in 0..tm: g[t] = if t == 0: 1.0 else: 0.0
+    return g
+  for t in 0..tm: g[t] = g[t]/g0
+  g
+
+proc autocorrTimeW*(x: openArray[float], c = 5.0):
+    tuple[tau, dtau: float, window: int] =
+  ## Integrated autocorrelation time with the Madras-Sokal automatic window:
+  ## `tau_int(W) = 1/2 + sum_{t=1..W} rho(t)`, W the smallest value with
+  ## `W >= c*tau_int(W)`.  `dtau` is the Madras-Sokal error estimate
+  ## `tau*sqrt(2(2W+1)/n)`.
+  let n = x.len
+  if n < 4: return (0.5, 0.0, 0)
+  let m = x.mean
+  let g0 = cov(x, m, 0)
+  var tau = 0.5
+  var w = n div 2
+  for t in 1..w:
+    if g0 != 0.0: tau += cov(x, m, t)/g0
+    if tau < 0.5: tau = 0.5      # guard against noise driving tau negative
+    if float(t) >= c*tau:
+      w = t
+      break
+  let dtau = tau*sqrt(2.0*float(2*w+1)/float(n))
+  (tau, dtau, w)
+
+proc autocorrTime*(x: openArray[float], c = 5.0): float =
+  ## Integrated autocorrelation time (see `autocorrTimeW`).  A completely
+  ## uncorrelated series gives 0.5; the number of effectively independent
+  ## samples is `n/(2 tau)`.
+  x.autocorrTimeW(c).tau
+
+proc binned*(x: openArray[float], b: int): seq[float] =
+  ## Block averages of `x` in bins of `b` consecutive entries.  A trailing
+  ## partial bin is dropped.
+  if b <= 1: return @x
+  let nb = x.len div b
+  result = newSeq[float](nb)
+  for i in 0..<nb:
+    var s = 0.0
+    for j in 0..<b: s += x[i*b+j]
+    result[i] = s/b.float
+
+# ------------------------------------------------------------------ jackknife
+
+proc jackknife*[T](x: openArray[T], f: proc(s: openArray[T]): float,
+                   bin = 1): tuple[mean, err: float] =
+  ## delete-`bin`-block jackknife of the estimator f (utils/resample;
+  ## a trailing partial block is weighted as its own shorter block)
+  let xs = @x
+  proc est(e: Ensemble[seq[T]]): float =
+    var s = newSeq[T](e.len)
+    for i in 0..<e.len: s[i] = e[i]
+    f(s)
+  let st = resample.jackknife(xs, max(1, bin), est)
+  (st.mean, st.stdev)
+
+proc jackknifeMean*(x: openArray[float], bin = 1): tuple[mean, err: float] =
+  ## Convenience wrapper: jackknife of the plain mean.
+  jackknife(x, proc(s: openArray[float]): float = s.mean, bin)
+
+# -------------------------------------------------------------- flow  scales
+
+proc interpAt*(x, y: openArray[float], x0: float): float =
+  ## Linear interpolation of y(x), clamped at the ends; 0 for empty inputs.
+  ## x must be increasing, and x and y must have equal lengths.
+  let n = x.len
+  if n == 0: return 0.0
+  if x0 <= x[0]: return y[0]
+  for i in 1..<n:
+    if x[i] >= x0:
+      let f = (x0-x[i-1])/(x[i]-x[i-1])
+      return y[i-1] + f*(y[i]-y[i-1])
+  y[n-1]
+
+proc lagrange(xs, ys: openArray[float], x: float): float =
+  ## Lagrange interpolation through all supplied points.
+  var s = 0.0
+  for i in 0..<xs.len:
+    var p = ys[i]
+    for j in 0..<xs.len:
+      if j != i: p *= (x-xs[j])/(xs[i]-xs[j])
+    s += p
+  s
+
+proc findCrossing*(x, y: openArray[float], target: float, order = 1): float =
+  ## Flow-time (or generic abscissa) at which the series `y(x)` first crosses
+  ## `target` from below.  `x` must be increasing; x and y must have equal lengths.
+  ##
+  ## `order = 1` linear interpolation between the bracketing pair (the usual
+  ## convention for t0).  `order = 3` fits a cubic through the two points on
+  ## either side and solves it by bisection inside the bracket; this reduces the
+  ## discretisation error of the *interpolation* from O(dt^2) to O(dt^4).
+  ##
+  ## Returns `noCrossing` (= -1) if the target is never reached.
+  let n = x.len
+  if n < 2: return noCrossing
+  var k = -1
+  for i in 1..<n:
+    if y[i-1] < target and y[i] >= target:
+      k = i
+      break
+  if k < 0: return noCrossing
+  if order <= 1 or n < 4:
+    let f = (target - y[k-1])/(y[k] - y[k-1])
+    return x[k-1] + f*(x[k]-x[k-1])
+  # cubic through k-2,k-1,k,k+1 (shifted to stay inside the data)
+  var i0 = k-2
+  if i0 < 0: i0 = 0
+  if i0+4 > n: i0 = n-4
+  var xs, ys: array[4, float]
+  for j in 0..3:
+    xs[j] = x[i0+j]
+    ys[j] = y[i0+j]
+  var a = x[k-1]
+  var b = x[k]
+  # p(a)-target < 0 <= p(b)-target by construction of the bracket
+  for _ in 0..<60:
+    let m = 0.5*(a+b)
+    if lagrange(xs, ys, m) < target: a = m else: b = m
+  0.5*(a+b)
+
+proc findT0*(t: openArray[float], t2E: openArray[float], target = 0.3,
+             order = 1): float =
+  ## Lüscher's `t0`: the flow time where `t^2 <E>(t) = target` (0.3 for SU(3)).
+  ## Linear interpolation of the flow-time series by default.
+  ## Returns `noCrossing` (= -1) if the series never reaches `target`.
+  findCrossing(t, t2E, target, order)
+
+proc findW0*(t: openArray[float], tdt2E: openArray[float], target = 0.3,
+             order = 1): float =
+  ## The BMW `w0` scale, defined by `W(t) = t d/dt [t^2 <E>] = target`.
+  ##
+  ## **Returns `w0^2`, i.e. the flow time at the crossing** (so that it is the
+  ## direct analogue of `findT0`); take `sqrt` of the result to get `w0`.
+  ## Returns `noCrossing` (= -1) if the target is never reached.
+  findCrossing(t, tdt2E, target, order)
+
+proc derivT2E*(t, t2E: openArray[float]): seq[float] =
+  ## `W(t) = t d/dt [t^2 <E>]` by centred differences on a (not necessarily
+  ## uniform) grid; one-sided at the ends.
+  ## t must be increasing, and t and t2E must have equal lengths.
+  let n = t.len
+  result = newSeq[float](n)
+  if n < 2: return
+  for i in 0..<n:
+    var d: float
+    if i == 0:
+      d = (t2E[1]-t2E[0])/(t[1]-t[0])
+    elif i == n-1:
+      d = (t2E[n-1]-t2E[n-2])/(t[n-1]-t[n-2])
+    else:
+      let h1 = t[i]-t[i-1]
+      let h2 = t[i+1]-t[i]
+      d = (h1*h1*t2E[i+1] + (h2*h2-h1*h1)*t2E[i] - h2*h2*t2E[i-1]) /
+          (h1*h2*(h1+h2))
+    result[i] = t[i]*d
+
+# -------------------------------------------------------------------- fitting
+
+proc invertSym(a: seq[seq[float]]): tuple[inv: seq[seq[float]], ok: bool] =
+  ## Gauss-Jordan inverse with partial pivoting.  `a` is small (n <= ~8).
+  let n = a.len
+  var m = newSeq[seq[float]](n)
+  var inv = newSeq[seq[float]](n)
+  for i in 0..<n:
+    m[i] = a[i]
+    inv[i] = newSeq[float](n)
+    inv[i][i] = 1.0
+  for c in 0..<n:
+    var p = c
+    for r in c+1..<n:
+      if abs(m[r][c]) > abs(m[p][c]): p = r
+    if m[p][c] == 0.0: return (inv, false)
+    if p != c:
+      swap(m[p], m[c])
+      swap(inv[p], inv[c])
+    let d = 1.0/m[c][c]
+    for j in 0..<n:
+      m[c][j] *= d
+      inv[c][j] *= d
+    for r in 0..<n:
+      if r == c: continue
+      let f = m[r][c]
+      if f == 0.0: continue
+      for j in 0..<n:
+        m[r][j] -= f*m[c][j]
+        inv[r][j] -= f*inv[c][j]
+  (inv, true)
+
+proc fitPolyCov*(x, y, dy: openArray[float], powers: openArray[int]):
+    tuple[coef, err: seq[float], cov: seq[seq[float]], chisq: float,
+          dof: int, chisqDof: float] =
+  ## Weighted linear least squares of `y +- dy` to `sum_k c_k x^{p_k}`.
+  ## Returns the coefficients, their errors, the full covariance matrix, and
+  ## chi^2 / dof.  `dy` entries must be > 0; x, y and dy must have equal lengths.
+  let n = x.len
+  let np = powers.len
+  result.coef = newSeq[float](np)
+  result.err = newSeq[float](np)
+  result.cov = newSeq[seq[float]](np)
+  for i in 0..<np: result.cov[i] = newSeq[float](np)
+  if n == 0 or np == 0: return
+  var a = newSeq[seq[float]](n)
+  for i in 0..<n:
+    a[i] = newSeq[float](np)
+    for k in 0..<np:
+      a[i][k] = pow(x[i], powers[k].float)
+  var mm = newSeq[seq[float]](np)
+  for k in 0..<np: mm[k] = newSeq[float](np)
+  var b = newSeq[float](np)
+  for i in 0..<n:
+    let w = 1.0/(dy[i]*dy[i])
+    for k in 0..<np:
+      b[k] += w*a[i][k]*y[i]
+      for l in 0..<np:
+        mm[k][l] += w*a[i][k]*a[i][l]
+  let (inv, ok) = invertSym(mm)
+  if not ok:
+    # singular normal-equation matrix: leave coefficients zero and flag with a
+    # negative chi^2 (NaN is unusable under -ffast-math).
+    result.chisq = -1.0
+    result.chisqDof = -1.0
+    return
+  result.cov = inv
+  for k in 0..<np:
+    var s = 0.0
+    for l in 0..<np: s += inv[k][l]*b[l]
+    result.coef[k] = s
+    result.err[k] = sqrt(max(0.0, inv[k][k]))
+  var chi = 0.0
+  for i in 0..<n:
+    var f = 0.0
+    for k in 0..<np: f += result.coef[k]*a[i][k]
+    let r = (y[i]-f)/dy[i]
+    chi += r*r
+  result.chisq = chi
+  result.dof = n - np
+  result.chisqDof = if result.dof > 0: chi/result.dof.float else: -1.0
+
+proc fitPoly*(x, y, dy: openArray[float], powers: openArray[int]):
+    tuple[coef, err: seq[float], chisqDof: float] =
+  ## Weighted linear least squares in the given (integer) powers of `x`.
+  ## `powers = [0, 1]` is the O(a^2) continuum extrapolation of slide 10 when
+  ## `x = a^2/t0`; `powers = [0, 1, 2]` is the O(a^4) form.
+  let r = fitPolyCov(x, y, dy, powers)
+  (r.coef, r.err, r.chisqDof)
+
+proc evalPoly*(coef: openArray[float], powers: openArray[int], x: float): float =
+  ## Evaluate `sum_k coef[k] x^{powers[k]}`; coef and powers must have equal lengths.
+  var s = 0.0
+  for k in 0..<coef.len:
+    s += coef[k]*pow(x, powers[k].float)
+  s
+
+# ------------------------------------------------------------------- file I/O
+
+proc readColumns*(fn: string): seq[seq[float]] =
+  ## Read a whitespace-separated numeric table, skipping blank lines and lines
+  ## whose first non-blank character is '#'.  Returns rows.
+  result = @[]
+  for line in lines(fn):
+    let s = line.strip
+    if s.len == 0 or s[0] == '#': continue
+    var row: seq[float] = @[]
+    var bad = false
+    for tok in s.splitWhitespace:
+      try: row.add parseFloat(tok)
+      except ValueError: bad = true
+    if not bad and row.len > 0: result.add row
+
+# ------------------------------------------------------- flow bookkeeping
+
+type
+  FlowRec* = object
+    ## flow history (t, t^2E, Q) of the current configuration and the
+    ## ensemble sum of t^2E on the shared measurement grid
+    ts*, t2Es*, qs*: seq[float]
+    gridT*, sumT2E*: seq[float]
+    ncfg*: int
+
+proc start*(r: var FlowRec, q0: float) =
+  ## begin a configuration with its t = 0 charge
+  r.ts = @[0.0]
+  r.t2Es = @[0.0]
+  r.qs = @[q0]
+
+proc add*(r: var FlowRec, t, e, q: float) =
+  r.ts.add t
+  r.t2Es.add t*t*e
+  r.qs.add q
+
+proc accumulate*(r: var FlowRec) =
+  ## add the current history to the ensemble t^2E sum (same grid required)
+  if r.gridT.len == 0:
+    r.gridT = r.ts
+    r.sumT2E = newSeq[float](r.ts.len)
+  inc r.ncfg
+  for j in 0..<min(r.t2Es.len, r.sumT2E.len):
+    r.sumT2E[j] += r.t2Es[j]
+
+proc meanT2E*(r: FlowRec): seq[float] =
+  result = newSeq[float](r.gridT.len)
+  for j in 0..<r.gridT.len: result[j] = r.sumT2E[j]/float(r.ncfg)
+
+proc chiTop*(t0s, q2s: openArray[float], vol: float, bin = 1):
+    tuple[chi, err, x, xerr: float] =
+  ## jackknife of 10^4 t0^2 <Q^2>/V and of a^2/t0 = 1/<t0> on shared blocks
+  let n = t0s.len
+  let t0 = @t0s
+  let q2 = @q2s
+  var idx = newSeq[int](n)
+  for i in 0..<n: idx[i] = i
+  proc chi(s: openArray[int]): float =
+    var st = 0.0
+    var sq = 0.0
+    for i in s:
+      st += t0[i]
+      sq += q2[i]
+    let tm = st/s.len.float
+    1.0e4*tm*tm*(sq/s.len.float)/vol
+  proc x(s: openArray[int]): float =
+    var st = 0.0
+    for i in s: st += t0[i]
+    s.len.float/st
+  let (c, ce) = jackknife(idx, chi, bin)
+  let (xm, xe) = jackknife(idx, x, bin)
+  (c, ce, xm, xe)
