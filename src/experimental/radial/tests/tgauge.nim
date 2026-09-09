@@ -8,111 +8,10 @@
 ## beyond the geometry tables.
 
 import std/[math, strformat, unittest]
-import eigens/linalgFuncs
 import ../ops/gaugeact
+import thelpers
 
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
-
-# --- dense incidence oracle -------------------------------------------------
-
-type Dense = object
-  n: int                     ## number of links
-  m: seq[float]              ## column-major M = C^T W C
-  nplaq: int
-
-proc plaqRow(l: Lat, kind, idx, t: int, row: var seq[float]) =
-  ## Dense incidence row of a plaquette.  kind 0 = spatial triangle `idx`,
-  ## kind 1 = temporal plaquette of spatial edge `idx`.  Written literally from
-  ## doc/02 section 5, independently of gaugeact's loops.
-  for i in 0..<row.len: row[i] = 0.0
-  let ns = l.sph.ne*l.nt
-  if kind == 0:
-    let fc = l.sph.faces[idx]
-    for i in 0..2:
-      row[eIdx(l, fc.e[i], t)] += float(fc.s[i])
-  else:
-    let ed = l.sph.edges[idx]
-    row[eIdx(l, idx, t)] += 1.0
-    row[ns + tIdx(l, ed.b, t)] += 1.0
-    row[eIdx(l, idx, t+1)] -= 1.0
-    row[ns + tIdx(l, ed.a, t)] -= 1.0
-
-proc newDense(l: Lat, b: Beta): Dense =
-  result.n = nlink(l)
-  result.m = newSeq[float](result.n*result.n)
-  var row = newSeq[float](result.n)
-  var nz: seq[int]
-  for kind in 0..1:
-    let nk = if kind == 0: l.sph.nf else: l.sph.ne
-    for idx in 0..<nk:
-      let w = if kind == 0: b.face[idx] else: b.edge[idx]
-      for t in 0..<l.nt:
-        plaqRow(l, kind, idx, t, row)
-        nz.setLen 0
-        for i in 0..<result.n:
-          if row[i] != 0.0: nz.add i
-        for i in nz:
-          for j in nz:
-            result.m[i + result.n*j] += w*row[i]*row[j]
-        inc result.nplaq
-
-proc act(d: Dense, x: openArray[float]): float =
-  for j in 0..<d.n:
-    var s = 0.0
-    for i in 0..<d.n: s += d.m[i + d.n*j]*x[i]
-    result += 0.5*s*x[j]
-
-proc mul(d: Dense, x: openArray[float]): seq[float] =
-  result = newSeq[float](d.n)
-  for j in 0..<d.n:
-    let xj = x[j]
-    if xj == 0.0: continue
-    for i in 0..<d.n: result[i] += d.m[i + d.n*j]*xj
-
-proc eigen(d: Dense): tuple[v: seq[Complex64], w: seq[float]] =
-  ## Real symmetric eigenproblem through the Hermitian LAPACK path (zheev).
-  var h = newSeq[Complex64](d.n*d.n)
-  for i in 0..<d.n*d.n: h[i] = complex64(d.m[i], 0.0)
-  var ew = newSeq[float](d.n)
-  zeigs(cast[ptr float64](addr h[0]), addr ew[0], d.n)
-  (h, ew)
-
-proc pinv(d: Dense, ev: tuple[v: seq[Complex64], w: seq[float]], tol: float): seq[float] =
-  ## Moore-Penrose pseudo-inverse, kernel dropped.
-  result = newSeq[float](d.n*d.n)
-  for k in 0..<d.n:
-    if abs(ev.w[k]) <= tol: continue
-    let iw = 1.0/ev.w[k]
-    for j in 0..<d.n:
-      let c = iw*ev.v[j + d.n*k].re
-      if c == 0.0: continue
-      for i in 0..<d.n: result[i + d.n*j] += c*ev.v[i + d.n*k].re
-
-proc expm(d: Dense, ev: tuple[v: seq[Complex64], w: seq[float]], s: float): seq[float] =
-  ## exp(-M s), column major.
-  result = newSeq[float](d.n*d.n)
-  for k in 0..<d.n:
-    let e = exp(-s*ev.w[k])
-    for j in 0..<d.n:
-      let c = e*ev.v[j + d.n*k].re
-      for i in 0..<d.n: result[i + d.n*j] += c*ev.v[i + d.n*k].re
-
-# --- helpers ----------------------------------------------------------------
-
-proc randGauge(l: Lat, r: var Threefry4x64, sc = 1.0): Gauge =
-  result = newGauge(l)
-  for i in 0..<result.s.len: result.s[i] = sc*r.gaussian
-  for i in 0..<result.t.len: result.t[i] = sc*r.gaussian
-
-proc randSeqF(n: int, r: var Threefry4x64, sc = 1.0): seq[float] =
-  result = newSeq[float](n)
-  for i in 0..<n: result[i] = sc*r.gaussian
-
-proc maxAbs(x: openArray[float]): float =
-  for v in x: result = max(result, abs v)
-
-proc rng(sed: int): Threefry4x64 =
-  result.seedIndep(sed, 0)
 
 const
   lev = 1
@@ -124,7 +23,7 @@ let
   sph = newSphere(lev)
   lat = newLat(sph, nt, at)
   bet = newBeta(lat, g2)
-  den = newDense(lat, bet)
+  den = newDenseM(lat, bet)
   ev = den.eigen
   evtol = 1e-9*maxAbs(ev.w)
 
@@ -148,7 +47,7 @@ suite "gauge action: structure":
 
   test "S = 0 on a pure-gauge configuration theta = d alpha":
     var r = rng(12)
-    let al = randSeqF(lat.nsite, r)
+    let al = randReal(lat.nsite, r)
     var p = newGauge(lat)
     gradient(lat, p, al)
     let s = gaugeAction(lat, p, bet)
@@ -159,7 +58,7 @@ suite "gauge action: structure":
     var r = rng(13)
     let
       u = randGauge(lat, r)
-      al = randSeqF(lat.nsite, r, 3.0)
+      al = randReal(lat.nsite, r, 3.0)
     var p = newGauge(lat)
     gradient(lat, p, al)
     var v = newGauge(lat)
@@ -175,7 +74,7 @@ suite "gauge action: structure":
     var r = rng(14)
     let
       p = randGauge(lat, r)
-      al = randSeqF(lat.nsite, r)
+      al = randReal(lat.nsite, r)
     var dal = newGauge(lat)
     gradient(lat, dal, al)
     var dp = newSeq[float](lat.nsite)
@@ -187,7 +86,7 @@ suite "gauge action: structure":
 
   test "laplace == divergence . gradient":
     var r = rng(15)
-    let al = randSeqF(lat.nsite, r)
+    let al = randReal(lat.nsite, r)
     var p = newGauge(lat)
     gradient(lat, p, al)
     var d0 = newSeq[float](lat.nsite)
@@ -259,7 +158,7 @@ suite "gauge action: action and force":
     gaugeForce(lat, f, u, bet)
     var e = 0.0
     for k in 0..3:
-      let al = randSeqF(lat.nsite, r)
+      let al = randReal(lat.nsite, r)
       var p = newGauge(lat)
       gradient(lat, p, al)
       e = max(e, abs(dot(f, p))/sqrt(norm2(f)*norm2(p)))
@@ -310,7 +209,7 @@ suite "gauge action: zero modes":
 
   test "projectGauge kills a pure-gauge field":
     var r = rng(31)
-    let al = randSeqF(lat.nsite, r)
+    let al = randReal(lat.nsite, r)
     var p = newGauge(lat)
     gradient(lat, p, al)
     let n0 = sqrt(norm2 p)
@@ -410,7 +309,7 @@ suite "gauge action: pseudo-inverse (T1.5g)":
     triSource(lat, b, 0, 0)
     var x0 = newGauge(lat)
     discard pseudoSolve(lat, x0, b, bt, 1e-24, 40000)
-    let al = randSeqF(lat.nsite, r, 2.0)
+    let al = randReal(lat.nsite, r, 2.0)
     var k = newGauge(lat)
     gradient(lat, k, al)
     for i in 0..<k.t.len: k.t[i] += 0.75      # plus the flat Polyakov direction
@@ -456,7 +355,7 @@ suite "gauge action: pseudo-inverse (T1.5g)":
     check abs(dot(q, ap) - dot(p, aq)) < 1e-12*abs(dot(q, ap))
     check dot(p, ap) > 0.0
     var kv = newGauge(lat)
-    gradient(lat, kv, randSeqF(lat.nsite, r))
+    gradient(lat, kv, randReal(lat.nsite, r))
     applyReg(lat, reg, ap, kv)
     check dot(kv, ap) > 0.0                # positive definite on the kernel too
     # ... and it agrees with M on the transverse subspace
@@ -604,7 +503,7 @@ suite "gauge action: geometry conventions":
     var r = rng(61)
     let
       u = randGauge(lat, r)
-      al = randSeqF(lat.nsite, r)
+      al = randReal(lat.nsite, r)
     var p = newGauge(lat)
     gradient(lat, p, al)
     var v = newGauge(lat)
@@ -612,7 +511,7 @@ suite "gauge action: geometry conventions":
     axpy(v, 1.0, p)
     check abs(gaugeAction(lat, v, bf) - gaugeAction(lat, u, bf)) <
           1e-12*gaugeAction(lat, u, bf)
-    let df = newDense(lat, bf)
+    let df = newDenseM(lat, bf)
     var f = newGauge(lat)
     gaugeForce(lat, f, u, bf)
     let

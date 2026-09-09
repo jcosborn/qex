@@ -9,63 +9,12 @@
 
 import std/[math, complex, strformat, unittest]
 import base/alignedMem
-import eigens/linalgFuncs
 import ../ops/overlap
+import thelpers
 
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 
 # --- helpers -----------------------------------------------------------------
-
-proc randGauge(l: Lat, sed: int, amp = 1.0): Gauge =
-  result = newGauge(l)
-  var r: Threefry4x64
-  r.seedIndep(sed, 0)
-  for i in 0..<result.s.len: result.s[i] = amp*r.gaussian
-  for i in 0..<result.t.len: result.t[i] = amp*r.gaussian
-
-proc randSpin(n, sed: int): Spin =
-  result = newSpin(n)
-  var r: Threefry4x64
-  r.seedIndep(sed, 0)
-  result.gaussian r
-
-proc randReal(n, sed: int, amp = 1.0): seq[float] =
-  result = newSeq[float](n)
-  var r: Threefry4x64
-  r.seedIndep(sed, 0)
-  for i in 0..<n: result[i] = amp*r.gaussian
-
-proc denseApply(a: seq[Complex64], nd: int, dst: var Spin, src: Spin) =
-  ## dst = A src for the column-major matrix `a`.
-  for i in 0..<nd:
-    var s = complex64(0.0, 0.0)
-    for j in 0..<nd: s += a[i + nd*j]*src[j shr 1][j and 1]
-    dst[i shr 1][i and 1] = s
-
-proc reldiff(x, y: Spin): float =
-  ## |x - y| / |y|
-  var d = 0.0
-  for i in 0..<x.len:
-    for c in 0..1: d += abs2(x[i][c] - y[i][c])
-  sqrt(d/norm2(y))
-
-proc eigvals(a: seq[Complex64], nd: int): seq[Complex64] =
-  var m = a
-  result = newSeq[Complex64](nd)
-  zgeigs(cast[ptr float64](addr m[0]), cast[ptr float64](addr result[0]), nd)
-
-proc denseHBounds(x: seq[Complex64], nd: int): tuple[smin, smax: float] =
-  ## sigma bounds of X from the eigenvalues of the dense X^dag X.
-  var h = newSeq[Complex64](nd*nd)
-  for j in 0..<nd:
-    for i in j..<nd:
-      var s = complex64(0.0, 0.0)
-      for k in 0..<nd: s += conjugate(x[k + nd*i])*x[k + nd*j]
-      h[i + nd*j] = s
-      h[j + nd*i] = conjugate(s)
-  var ev = newSeq[float](nd)
-  zeigs(cast[ptr float64](addr h[0]), addr ev[0], nd)   # ascending
-  (sqrt(ev[0]), sqrt(ev[nd-1]))
 
 proc hShiftOp(l: Lat, u: Gauge, m, s: float): proc(dst: var Spin, src: Spin) =
   ## (X^dag X + s), built directly on applyDw/applyDwAdj -- independent of Ov.
@@ -124,7 +73,7 @@ proc makeFix(name: string, u: Gauge): Fix =
   result.name = name
   result.u = u
   result.x = denseDw(lat, u, 1.0)
-  (result.smin, result.smax) = denseHBounds(result.x, nd)
+  (result.smin, result.smax) = sigmaBounds(result.x, nd)
   let
     r31 = newRat(0.95*result.smin, 1.05*result.smax, 31)
     r11 = newRat(0.95*result.smin, 1.05*result.smax, 11)
@@ -500,7 +449,7 @@ suite "T1.3f  parity and time reversal (frame-independent consequences)":
       ndP = 2*latP.nsite
       uP = newGauge(latP)
       xP = denseDw(latP, uP, 1.0)
-      (pmin, pmax) = denseHBounds(xP, ndP)
+      (pmin, pmax) = sigmaBounds(xP, ndP)
       oP = newOv(latP, 1.0, newRat(0.95*pmin, 1.05*pmax, 31), r2in, r2out, mxit)
     let b = pointSource(latP.nsite, 0, 0)   # site (v = 0, t = 0), component 0
     # overlap: x = D_ov^{-1} b = (Ddag D)^{-1} Ddag b
@@ -688,7 +637,7 @@ suite "production window report (L = 1 free field, M = 1)":
         x[(2*y) + nb*(2*y)] += complex64(kt*(1.0 - cos(k)) - 1.0, kt*sin(k))
         x[(2*y + 1) + nb*(2*y + 1)] += complex64(kt*(1.0 - cos(k)) - 1.0, -kt*sin(k))
       for z in eigvals(x, nb): xmin = min(xmin, abs(z))
-      let (a, b) = denseHBounds(x, nb)
+      let (a, b) = sigmaBounds(x, nb)
       hmin = min(hmin, a)
       hmax = max(hmax, b)
     let

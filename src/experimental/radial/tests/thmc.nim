@@ -14,39 +14,12 @@
 
 import std/[math, complex, os, streams, strformat, times, unittest]
 import base/alignedMem
-import eigens/linalgFuncs
 import ../hmc/trajectory
+import thelpers
 
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 
 # --- helpers -------------------------------------------------------------------
-
-proc randGauge(l: Lat, sed: int, amp = 1.0): Gauge =
-  result = newGauge(l)
-  var r: Threefry4x64
-  r.seedIndep(sed, 0)
-  for i in 0..<result.s.len: result.s[i] = amp*r.gaussian
-  for i in 0..<result.t.len: result.t[i] = amp*r.gaussian
-
-proc denseHBounds(x: seq[Complex64], nd: int): tuple[smin, smax: float] =
-  ## sigma bounds of X from the eigenvalues of the dense X^dag X.
-  var h = newSeq[Complex64](nd*nd)
-  for j in 0..<nd:
-    for i in j..<nd:
-      var s = complex64(0.0, 0.0)
-      for k in 0..<nd: s += conjugate(x[k + nd*i])*x[k + nd*j]
-      h[i + nd*j] = s
-      h[j + nd*i] = conjugate(s)
-  var ev = newSeq[float](nd)
-  zeigs(cast[ptr float64](addr h[0]), addr ev[0], nd)
-  (sqrt(ev[0]), sqrt(ev[nd-1]))
-
-proc denseAdjApply(a: seq[Complex64], nd: int, dst: var Spin, src: Spin) =
-  ## dst = A^dag src, column-major a, spinor flat index i = 2*site + comp.
-  for j in 0..<nd:
-    var s = complex64(0.0, 0.0)
-    for i in 0..<nd: s += conjugate(a[i + nd*j])*src[i shr 1][i and 1]
-    dst[j shr 1][j and 1] = s
 
 proc qEig(dov: seq[Complex64], nd: int, mass: float):
     tuple[v: seq[Complex64], ev: seq[float]] =
@@ -63,8 +36,7 @@ proc qEig(dov: seq[Complex64], nd: int, mass: float):
       for k in 0..<nd: s += conjugate(d[k + nd*i])*d[k + nd*j]
       result.v[i + nd*j] = s
       result.v[j + nd*i] = conjugate(s)
-  result.ev = newSeq[float](nd)
-  zeigs(cast[ptr float64](addr result.v[0]), addr result.ev[0], nd)
+  result.ev = heig(result.v, nd)
 
 proc oracleS(v: seq[Complex64], ev: seq[float], nd: int, x: Spin): float =
   ## sum_k |q_k^dag x|^2 / lambda_k
@@ -126,8 +98,8 @@ let
 
 # tight window: dense sigma envelope of the two fixed test fields, padded 5%
 let
-  b0 = denseHBounds(denseDw(lat, u0, 1.0), nd)
-  br = denseHBounds(denseDw(lat, ur, 1.0), nd)
+  b0 = sigmaBounds(denseDw(lat, u0, 1.0), nd)
+  br = sigmaBounds(denseDw(lat, ur, 1.0), nd)
   sminFix = min(b0.smin, br.smin)
   smaxFix = max(b0.smax, br.smax)
   ratA = newRat(0.95*sminFix, 1.05*smaxFix, 31)
@@ -149,7 +121,7 @@ block:
   r.seedIndep(775577, 0)
   discard heatbath(lat, uh, bt, r)
 let
-  bh = denseHBounds(denseDw(lat, uh, 1.0), nd)
+  bh = sigmaBounds(denseDw(lat, uh, 1.0), nd)
   sminMd = 0.75*min(b0.smin, bh.smin)
   smaxMd = 1.30*max(b0.smax, bh.smax)
   ratAmd = newRat(sminMd, smaxMd, 31)
@@ -195,6 +167,28 @@ suite "heatbath identity S == |xi|^2 (ladder item 7)":
       echo &"  masses {masses}: worst |S - |xi|^2| / |xi|^2 = {worst:.3e}"
     check worst < 1e-8
 
+  test "the heatbath noise has unit covariance per complex component":
+    ## S == |xi|^2 holds for any consistent (heatbath, action) pair; the weight
+    ## exp(-S) is right only if <|xi|^2> = 2 nsite (Re, Im ~ N(0, 1/2) each).
+    let (a, f) = newOps()
+    let p = newPf(lat, a, f, 2, @[0.0])
+    var r: Threefry4x64
+    r.seedIndep(31002, 0)
+    let ndraw = 64
+    var s = 0.0
+    var s2 = 0.0
+    for k in 0..<ndraw:
+      refresh(p, u0, r)
+      let x = p.xi2[0][0]
+      s += x
+      s2 += x*x
+    let
+      mean = s/float(ndraw)
+      err = sqrt(max(0.0, s2/float(ndraw) - mean*mean)/float(ndraw - 1))
+      want = 2.0*float(lat.nsite)
+    echo &"  <|xi|^2> = {mean:.3f} +- {err:.3f}  (2 nsite = {want})"
+    check abs(mean - want) < 5.0*err
+
 # --- 2. dense oracle ------------------------------------------------------------
 
 suite "dense action oracle and Hasenbusch telescoping (ladder item 8)":
@@ -224,7 +218,7 @@ suite "dense action oracle and Hasenbusch telescoping (ladder item 8)":
           let alpha = ovMassAlpha(mass3[i+1])
           for j in 0..<d.len: d[j] = alpha*d[j]
           for j in 0..<nd: d[j + nd*j] += complex64(mass3[i+1], 0.0)
-          denseAdjApply(d, nd, chi, p.phi[c][i])
+          denseApply(d, nd, chi, p.phi[c][i], dag = true)
           o = oracleS(qs[i].v, qs[i].ev, nd, chi)
         worst = max(worst, abs(s - o)/o)
         stot += s
@@ -233,7 +227,9 @@ suite "dense action oracle and Hasenbusch telescoping (ladder item 8)":
          &"   total S = {stot:.12e} vs dense {otot:.12e}"
     check worst < 1e-8
 
-    # telescoping: sum_i (logdet Q_i - logdet Q_{i+1}) + logdet Q_K == logdet Q_0
+    # telescoping: sum_i (logdet Q_i - logdet Q_{i+1}) + logdet Q_K == logdet Q_0.
+    # An algebraic identity of the dense log-dets (it exercises no code path of
+    # the sampler); kept as the written-out statement of the frame weights.
     var lhs = 0.0
     for i in 0..<k: lhs += logdet(qs[i].ev) - logdet(qs[i+1].ev)
     lhs += logdet(qs[k].ev)
@@ -379,8 +375,10 @@ suite "reversibility and force counts (ladder items 10, 11)":
     echo &"  reverse: |du| rms {rv.duRms:.3e} max {rv.duMax:.3e}" &
          &"  |dp| rms {rv.dpRms:.3e} max {rv.dpMax:.3e}  dH {rv.dh:.3e}"
     echo &"  round-trip momentum: |div p|^2/|p|^2 = {rv.divP:.3e}  flat = {rv.flatP:.3e}"
-    check rv.duRms < 1e-6 and rv.dpRms < 1e-6
-    check abs(rv.dh) < 1e-6
+    # drifts sit at the 1e-16 roundoff floor; a chronological solver guess would
+    # show up at the outer-CG tolerance (~1e-9), so the bound is set below that
+    check rv.duRms < 1e-12 and rv.dpRms < 1e-12
+    check abs(rv.dh) < 1e-10
     check rv.divP < 1e-18
     check rv.flatP < 1e-10
 

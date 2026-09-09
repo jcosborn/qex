@@ -39,40 +39,10 @@
 
 import base
 import std/[math, os, strformat, strutils, tables, times]
-import eigens/lapack
-import eigens/linalgFuncs
-import core/analytic
+import core/[analytic, dense]
 import meas/[dataio, fit, observables]
 
-# --- dense helpers (shared with rspec) ---------------------------------------
-
-proc zsolve*(a: var seq[Complex64], b: var seq[Complex64], n, nrhs: int) =
-  ## Solve a x = b with LAPACK zgesv.  `a` (column-major n x n) is overwritten by
-  ## its LU factors, `b` (n x nrhs) by the solution.
-  var
-    nn = fint(n)
-    nr = fint(nrhs)
-    ipiv = newSeq[fint](n)
-    info = fint(0)
-  zgesv(addr nn, addr nr, cast[ptr dcomplex](addr a[0]), addr nn,
-        addr ipiv[0], cast[ptr dcomplex](addr b[0]), addr nn, addr info)
-  doAssert info == 0, "zgesv: info = " & $info
-
-proc zmm(ta, tb: cstring, n: int, a, b: seq[Complex64], c: var seq[Complex64]) =
-  ## c = op(a) op(b) for square column-major n x n matrices (BLAS zgemm).
-  var
-    nn = fint(n)
-    one = dcomplex(re: 1.0, im: 0.0)
-    zero = dcomplex(re: 0.0, im: 0.0)
-  zgemm(ta, tb, addr nn, addr nn, addr nn, addr one,
-        cast[ptr dcomplex](unsafeAddr a[0]), addr nn,
-        cast[ptr dcomplex](unsafeAddr b[0]), addr nn,
-        addr zero, cast[ptr dcomplex](addr c[0]), addr nn)
-
-proc eigvals*(a: var seq[Complex64], nd: int): seq[Complex64] =
-  ## General complex eigenvalues via zgeev; `a` is destroyed.
-  result = newSeq[Complex64](nd)
-  zgeigs(cast[ptr float64](addr a[0]), cast[ptr float64](addr result[0]), nd)
+export dense
 
 # --- fermion Matsubara blocks -------------------------------------------------
 
@@ -113,21 +83,9 @@ proc modeBlock*(l: Lat, dsp: seq[Complex64], k: float): seq[Complex64] =
 proc ovFromDwInto*(dw: var seq[Complex64], nd: int, bigM: float,
                    h, w, g: var seq[Complex64], ev: var seq[float]) =
   ## dw (= D_W(k) on entry) is replaced by D_ov(k) = 1 + X (X^dag X)^{-1/2},
-  ## X = D_W(k) - bigM, via zheev on H = X^dag X.  h, w, g, ev are scratch.
-  if h.len != nd*nd: h = newSeq[Complex64](nd*nd)
-  if w.len != nd*nd: w = newSeq[Complex64](nd*nd)
-  if g.len != nd*nd: g = newSeq[Complex64](nd*nd)
-  if ev.len != nd: ev = newSeq[float](nd)
+  ## X = D_W(k) - bigM (core/dense.ovFromXInto; h, w, g, ev are its scratch).
   for i in 0..<nd: dw[i + nd*i] -= complex64(bigM, 0.0)      # dw = X
-  zmm("C", "N", nd, dw, dw, h)                               # h = X^dag X
-  zeigs(cast[ptr float64](addr h[0]), addr ev[0], nd)        # h <- eigenvectors V
-  for j in 0..<nd:
-    let s = 1.0/sqrt(ev[j])
-    for i in 0..<nd: w[i + nd*j] = s*h[i + nd*j]             # w = V E^{-1/2}
-  zmm("N", "C", nd, w, h, g)                                 # g = V E^{-1/2} V^dag
-  zmm("N", "N", nd, dw, g, w)                                # w = X g
-  copyMem(addr dw[0], addr w[0], nd*nd*sizeof(Complex64))
-  for i in 0..<nd: dw[i + nd*i] += complex64(1.0, 0.0)       # dw = 1 + X g
+  ovFromXInto(dw, nd, h, w, g, ev)
 
 proc ovFromDw*(dw: seq[Complex64], nd: int, bigM = 1.0): seq[Complex64] =
   ## D_ov(k) from D_W(k) (fresh copy, convenience for rspec).
@@ -370,12 +328,6 @@ when isMainModule:
     writeTsv(path, {"imax": &"{result.c.imax:.17g}", "g2": &"{g2:.17g}",
                     "secs": &"{result.c.secs:.1f}"},
              ["gg"], [result.c.g])
-
-  proc levels(top: int): seq[int] =
-    var l = 1
-    while l <= top:
-      result.add l
-      l *= 2
 
   proc levIdx(lv: int): int =
     ## Index of L in (1, 2, 4, 8) for the published-value tables.

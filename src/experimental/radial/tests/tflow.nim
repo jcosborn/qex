@@ -7,80 +7,10 @@
 ## eigendecomposition of the same incidence matrix that `tgauge.nim` uses.
 
 import std/[math, strformat, unittest]
-import eigens/linalgFuncs
 import ../ops/flow
+import thelpers
 
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
-
-# --- dense oracle -----------------------------------------------------------
-
-type Dense = object
-  n: int
-  m: seq[float]
-
-proc newDense(l: Lat, b: Beta): Dense =
-  let
-    n = nlink(l)
-    ns = l.sph.ne*l.nt
-  var m = newSeq[float](n*n)
-  var row = newSeq[float](n)
-  var nz: seq[int]
-  for kind in 0..1:
-    for idx in 0..<(if kind == 0: l.sph.nf else: l.sph.ne):
-      let w = if kind == 0: b.face[idx] else: b.edge[idx]
-      for t in 0..<l.nt:
-        for i in 0..<n: row[i] = 0.0
-        if kind == 0:
-          for i in 0..2:
-            row[eIdx(l, l.sph.faces[idx].e[i], t)] += float(l.sph.faces[idx].s[i])
-        else:
-          row[eIdx(l, idx, t)] += 1.0
-          row[ns + tIdx(l, l.sph.edges[idx].b, t)] += 1.0
-          row[eIdx(l, idx, t+1)] -= 1.0
-          row[ns + tIdx(l, l.sph.edges[idx].a, t)] -= 1.0
-        nz.setLen 0
-        for i in 0..<n:
-          if row[i] != 0.0: nz.add i
-        for i in nz:
-          for j in nz: m[i + n*j] += w*row[i]*row[j]
-  Dense(n: n, m: m)
-
-proc eigen(d: Dense): tuple[v: seq[Complex64], w: seq[float]] =
-  var h = newSeq[Complex64](d.n*d.n)
-  for i in 0..<d.n*d.n: h[i] = complex64(d.m[i], 0.0)
-  var ew = newSeq[float](d.n)
-  zeigs(cast[ptr float64](addr h[0]), addr ew[0], d.n)
-  (h, ew)
-
-proc expmv(d: Dense, ev: tuple[v: seq[Complex64], w: seq[float]],
-           s: float, x: openArray[float]): seq[float] =
-  ## exp(-M s) x, formed mode by mode so no dense matrix is ever squared.
-  result = newSeq[float](d.n)
-  for k in 0..<d.n:
-    var c = 0.0
-    for i in 0..<d.n: c += ev.v[i + d.n*k].re*x[i]
-    c *= exp(-s*ev.w[k])
-    for i in 0..<d.n: result[i] += c*ev.v[i + d.n*k].re
-
-# --- helpers ----------------------------------------------------------------
-
-proc rng(sed: int): Threefry4x64 =
-  result.seedIndep(sed, 0)
-
-proc randGauge(l: Lat, r: var Threefry4x64): Gauge =
-  result = newGauge(l)
-  for i in 0..<result.s.len: result.s[i] = r.gaussian
-  for i in 0..<result.t.len: result.t[i] = r.gaussian
-
-proc randSeqF(n: int, r: var Threefry4x64): seq[float] =
-  result = newSeq[float](n)
-  for i in 0..<n: result[i] = r.gaussian
-
-proc maxDiff(a, b: openArray[float]): float =
-  for i in 0..<a.len: result = max(result, abs(a[i] - b[i]))
-
-proc maxAbs(x: openArray[float]): float =
-  for v in x: result = max(result, abs v)
 
 const
   lev = 1
@@ -92,15 +22,21 @@ let
   sph = newSphere(lev)
   lat = newLat(sph, nt, at)
   bet = newBeta(lat, g2)
-  den = newDense(lat, bet)
+  den = newDenseM(lat, bet)
   ev = den.eigen
 
 suite "gradient flow":
 
-  test "spectrum of M and the stability window":
-    echo &"  lambda(M) in [{maxAbs(ev.w):.4f} max];  ",
+  test "spectrum of M: kernel dimension n_V n_t and a positive rest":
+    var nz = 0
+    var lmin = maxAbs(ev.w)
+    for w in ev.w:
+      if abs(w) < 1e-10*maxAbs(ev.w): inc nz
+      else: lmin = min(lmin, w)
+    echo &"  lambda(M): {nz} zero modes, rest in [{lmin:.4f}, {maxAbs(ev.w):.4f}];  " &
          &"nlink = {den.n}, at = {at}, g2 = {g2}"
-    check maxAbs(ev.w) > 0.0
+    check nz == lat.sph.nv*lat.nt
+    check lmin > 0.0
 
   test "RK flow reproduces exp(-M s) theta_0":
     var r = rng(71)
@@ -161,7 +97,7 @@ suite "gradient flow":
     var r = rng(74)
     let
       u0 = randGauge(lat, r)
-      al = randSeqF(lat.nsite, r)
+      al = randReal(lat.nsite, r)
     var k = newGauge(lat)
     gradient(lat, k, al)
     var a = newGauge(lat)
@@ -247,7 +183,7 @@ suite "gradient flow":
     let
       bs = Beta(face: bet.face, edge: newSeq[float](sph.ne), afac: bet.afac,
                 g2: bet.g2, conv: bet.conv)
-      ds = newDense(lat, bs)
+      ds = newDenseM(lat, bs)
       tolw = 1e-9*maxAbs(ev.w)
     var tr = 0.0
     for k in 0..<den.n:

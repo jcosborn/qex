@@ -218,21 +218,3 @@ func s2CurrentCorr*(z: float, nmax: int): float =
   for n in 1..nmax:
     s += (2*n + 1).float/(n + 1).float*f0Deriv(n, z)
   -s/(4.0*PI)
-
-# --- Effective dimension ----------------------------------------------------
-
-func effDim*(g: openArray[float], at, T: float): seq[float] =
-  ## (V.4)-(V.5): f(t) = arccosh(G(t)/G(T/2)), Delta_eff(t) = -[f(t+at) - f(t)]/at.
-  ## `g[i]` is the correlator at t = i*at and `result[i]` is Delta_eff(i*at), so the result
-  ## is one shorter than the input.  G(T/2) is taken at index round(T/(2 at)).
-  ##
-  ## For a single state with (anti)periodic images G(t) = A cosh(Delta (T/2 - t)) the ratio is
-  ## exactly cosh(Delta (T/2 - t)), f is linear and Delta_eff = Delta with no discretization
-  ## error; the residual is pure excited-state contamination.  Past T/2 the sign flips.
-  let gh = g[int(round(0.5*T/at))]
-  result = newSeq[float](g.len - 1)
-  var f0 = arccosh(g[0]/gh)
-  for i in 0..<g.len - 1:
-    let f1 = arccosh(g[i + 1]/gh)
-    result[i] = -(f1 - f0)/at
-    f0 = f1

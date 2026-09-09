@@ -4,6 +4,7 @@
 
 import std/[math, os, strformat, unittest]
 import ../core/analytic
+import ../meas/fit
 
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 
@@ -188,7 +189,7 @@ suite "effective dimension (V.4)-(V.5)":
     let nt = int(round(T/at))
     var g = newSeq[float](nt)
     for i in 0..<nt: g[i] = cosh(dl*(0.5*T - i.float*at))
-    let d = effDim(g, at, T)
+    let d = effMass(g, at, T)
     var worst = 0.0
     for i in 0..<int(round((0.5*T - 1.0)/at)): worst = max(worst, abs(d[i] - dl))
     echo &"  max |Delta_eff - Delta| for t < T/2-1 : {worst:.3e}"
@@ -209,8 +210,8 @@ suite "effective dimension (V.4)-(V.5)":
     gf[0] = gf[1]                      # t = 0 is the contact singularity; never used below
     gg[0] = gg[1]
     let
-      df = effDim(gf, at, T)
-      dg = effDim(gg, at, T)
+      df = effMass(gf, at, T)
+      dg = effMass(gg, at, T)
     var
       wf = 0.0
       wg = 0.0

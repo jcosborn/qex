@@ -11,7 +11,10 @@
 ##
 ## Job 2.  E_s(s) sqrt(L) versus r/s on log-log, L x g^2 grid, on heatbath ensembles.
 ##
-## Output: TSV under output/radial/gauge/.
+## Output: TSV under output/radial/gauge/.  The stored files were produced with
+## -lev:4 -contLev:4 -nconf:64 (not the defaults below, which are sized for a
+## quick run); the paper-grid continuum fit and the Fig. 11 data at T = 12 live
+## in rfree, which supersedes Job 1c here.
 
 import base
 import std/[math, os, strformat, strutils]
@@ -66,12 +69,6 @@ const
   published = 1.33242        ## paper Sec. V B, Delta_0 at L=1, L_t=120
 
 let at = ttot/float(nt)
-
-proc levels(top: int): seq[int] =
-  var l = 1
-  while l <= top:
-    result.add l
-    l *= 2
 
 # --- job 1: free gauge current correlator -----------------------------------
 

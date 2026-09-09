@@ -3,7 +3,9 @@
 ##   C(t) v = lambda(t, t0) C(t0) v
 ##
 ## solved with QEX's committed `eigens/linalgFuncs.zeigsgv` (zhegv underneath,
-## Hermitian generalized, with its automatic diagonal-regularization retry).
+## Hermitian generalized; on a zhegv failure it silently retries with a small
+## eps added to diag(B) -- the rank truncation below normally keeps it from
+## ever reaching that path).
 ## Effective dimensions: Delta_n(t) = -ln(lambda_n(t+at)/lambda_n(t))/at.
 ##
 ## Normative reference: doc/07-observables.md section 4.3,
@@ -22,7 +24,7 @@
 ## has exactly ONE state, so ANY C(t0) there is rank 1).  Directions of C(t0)
 ## below cut*evmax are projected out and the remaining problem is whitened and
 ## solved as an ordinary Hermitian eigenproblem; only when every direction
-## passes the cut is the committed zeigsgv (zhegv + regularized retry) used
+## passes the cut is the committed zeigsgv used
 ## directly.  Without the truncation the near-null directions produce garbage
 ## generalized eigenvalues that can overtake the ground state.  For noisy
 ## (Monte Carlo) matrices set `cut` at the relative noise level of C(t0).

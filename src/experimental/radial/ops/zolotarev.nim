@@ -13,6 +13,7 @@
 ## Needs the complete elliptic integral K and the Jacobi sn/cn; QEX has neither.
 
 import std/math
+import ../core/fnv
 
 const
   agmIt = 60          ## AGM converges quadratically; a hard stop for k -> 1
@@ -75,24 +76,12 @@ func ratValue*(r: Rat, x: float): float =
   result = r.cst
   for j in 0..<r.npole: result += r.res[j]/(x + r.pole[j])
 
-const
-  fnvBasis = 0xcbf29ce484222325'u64
-  fnvPrime = 0x100000001b3'u64
-
-func fnv(h, v: uint64): uint64 =
-  ## FNV-1a over the 8 bytes of v, little end first.
-  result = h
-  var x = v
-  for _ in 0..7:
-    result = (result xor (x and 0xff'u64))*fnvPrime
-    x = x shr 8
-
 func ratHash(r: Rat): uint64 =
   ## Fingerprint of the frozen rational: (order, smin, smax, cst, poles, residues).
-  result = fnv(fnvBasis, uint64(r.order))
-  for v in [r.smin, r.smax, r.cst]: result = fnv(result, cast[uint64](v))
-  for v in r.pole: result = fnv(result, cast[uint64](v))
-  for v in r.res: result = fnv(result, cast[uint64](v))
+  result = fnv1a(fnvBasis, uint64(r.order))
+  for v in [r.smin, r.smax, r.cst]: result = fnv1a(result, cast[uint64](v))
+  for v in r.pole: result = fnv1a(result, cast[uint64](v))
+  for v in r.res: result = fnv1a(result, cast[uint64](v))
 
 proc newRat*(smin, smax: float, order: int, nsample = 20001): Rat =
   ## Zolotarev rational for 1/sqrt(x) on [smin^2, smax^2].  `order` odd and >= 3;

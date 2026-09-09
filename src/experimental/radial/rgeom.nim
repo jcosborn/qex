@@ -22,18 +22,8 @@ func mdiff(m, n: Mat2): float =
   for i in 0..1:
     for j in 0..1: result = max(result, abs(m[i][j] - n[i][j]))
 
-func dualExact(l, ls: float): float =
-  ## Area of the two right spherical triangles with legs l/2 and l*:
-  ## tan(E/2) = tan(a/2) tan(b/2), so E_pair = 4 arctan(tan(l/4) tan(l*/2)).
-  ## Flat limit l l*/2.
-  4.0*arctan(tan(0.25*l)*tan(0.5*ls))
-
 echo "L    N_V    N_E    N_F  V-E+F        abar         a/at        maxM"
-var levs: seq[int]
-var lv = 1
-while lv <= lev:
-  levs.add lv
-  lv *= 2
+let levs = levels(lev)
 for l in levs:
   let
     s = newSphere(l, tilt)
@@ -91,7 +81,7 @@ for l in levs:
     var ss = 0.0
     for i in 0..2:
       let e = s.faces[f].e[i]
-      de += dualExact(s.edges[e].len, s.edges[e].dl[if s.faces[f].s[i] > 0: 0 else: 1])
+      de += kiteArea(s.edges[e].len, s.edges[e].dl[if s.faces[f].s[i] > 0: 0 else: 1])
       ss += s.faces[f].sub[i]
     rex = max(rex, abs(de - s.faces[f].area))
     rsub = max(rsub, abs(ss - s.faces[f].area))

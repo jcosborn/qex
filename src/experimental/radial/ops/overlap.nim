@@ -17,18 +17,18 @@
 ## solve missed its tolerance (keep r2inner at least ~2 decades above the operator's
 ## roundoff floor (eps*cond)^2, doc/06 WP-D).  Solver initial guesses are always zero.
 ##
-## Workspace: `newOv` preallocates `work` and the `xs`/`xt` multishift banks.
-## Solver callbacks capture gauge and mass for one call; their environments and
-## `cgmSolve`/`cgSolve` scratch are temporary. Calls retain no growing state.
-## Each Ov requires exclusive use of its scratch. `dst` must not alias `src` in
-## any apply. Fixed `work` slots:
+## Workspace: `newOv` preallocates `work`, the `xs`/`xt` multishift banks and
+## the CG scratch banks `mcw` (multishift) and `cgw` (outer/normal CG), so an
+## apply or solve allocates nothing after the first call.  Solver callbacks
+## capture gauge and mass for one call only.  Each Ov requires exclusive use of
+## its scratch. `dst` must not alias `src` in any apply. Fixed `work` slots:
 ##   0 applyH intermediate, 1 applyOv/applyOvAdj, 2 applyNormal,
 ##   3..5 ovGradient (z, X^dag left, X s_j / X t_j).
 
 import std/[math, complex]
 import ../core/lattice
 import ../core/spinor
-import eigens/linalgFuncs
+import ../core/dense
 import wilson
 import zolotarev
 import solve
@@ -53,6 +53,7 @@ type
     work*: seq[Spin]           ## persistent scratch, fixed slots (module header)
     xs*: seq[Spin]             ## multishift solutions (H + pole_j)^{-1} b
     xt*: seq[Spin]             ## second bank: ovGradient's t_j
+    mcw*, cgw*: seq[Spin]      ## CG scratch banks: multishift, single-shift
     r2inner*, r2outer*: float  ## multishift / outer-CG relative residual targets
     maxits*: int
     stats*: SolveStats
@@ -77,7 +78,7 @@ func validOvMass*(mass: float): bool {.inline.} =
   finiteBits(mass) and mass >= 0.0 and mass < 2.0*ovRho
 
 proc requireOvMass*(mass: float) {.inline.} =
-  ## Always-on validation: `doAssert` is stripped by the production build.
+  ## User-facing validation of the mass argument, reported as ValueError.
   if not validOvMass(mass):
     raise newException(ValueError,
       "standard overlap mass must satisfy 0 <= mass < 2*rho (rho = 1)")
@@ -111,7 +112,7 @@ proc applyH*(o: Ov, dst: var Spin, src: Spin, u: Gauge) =
 proc msolve(o: Ov, xs: var seq[Spin], b: Spin, u: Gauge) =
   ## (H + pole_j) xs_j = b for every Zolotarev pole out of one Krylov space.
   proc op(dst: var Spin, src: Spin) = applyH(o, dst, src, u)
-  let mi = cgmSolve(xs, b, o.rat.pole, o.r2inner, o.maxits, op)
+  let mi = cgmSolve(xs, b, o.rat.pole, o.r2inner, o.maxits, op, o.mcw)
   inc o.stats.nmulti
   o.stats.miters += mi.iters
   o.stats.mrefits += mi.refits
@@ -154,7 +155,7 @@ proc solveNormal*(o: Ov, x: var Spin, b: Spin, u: Gauge, mass = 0.0): CgInfo =
   ## for cgSolve's recomputed true residual).
   requireOvMass mass
   proc op(dst: var Spin, src: Spin) = applyNormal(o, dst, src, u, mass)
-  result = cgSolve(x, b, o.r2outer, o.maxits, op)
+  result = cgSolve(x, b, o.r2outer, o.maxits, op, o.cgw)
   inc o.stats.ncg
   o.stats.cgiters += result.iters
   if not result.converged: o.stats.ok = false
@@ -237,7 +238,7 @@ proc kernelWindow*(o: Ov, u: Gauge, iters = 32):
   var bot = eigpair(v, hv)
   for k in 1..<iters:
     if bot.rho <= 1e-8*bot.rq: break
-    let ci = cgSolve(x, v, o.r2inner, o.maxits, op)
+    let ci = cgSolve(x, v, o.r2inner, o.maxits, op, o.cgw)
     inc o.stats.ncg
     o.stats.cgiters += ci.iters
     if not ci.converged: o.stats.ok = false
@@ -250,37 +251,10 @@ proc kernelWindow*(o: Ov, u: Gauge, iters = 32):
   result.inside = result.lo >= o.rat.smin and result.hi <= o.rat.smax
 
 proc denseOv*(o: Ov, u: Gauge): seq[Complex64] =
-  ## Exact dense D_ov = 1 + X (X^dag X)^{-1/2}: X from denseDw, X^dag X
-  ## eigendecomposed with zheev (zeigs), the inverse square root formed exactly.
+  ## Exact dense D_ov = 1 + X (X^dag X)^{-1/2}: X from denseDw, the inverse square
+  ## root formed from the zheev eigendecomposition (core/dense.ovFromX).
   ## Column-major, dimension 2*nsite, row index 2*sIdx + spin.  Tests only.
-  let
-    nd = 2*o.l.nsite
-    x = denseDw(o.l, u, o.m)
-  var h = newSeq[Complex64](nd*nd)       # h = X^dag X, exactly Hermitian
-  for j in 0..<nd:
-    for i in j..<nd:
-      var s = complex64(0.0, 0.0)
-      for k in 0..<nd: s += conjugate(x[k + nd*i])*x[k + nd*j]
-      h[i + nd*j] = s
-      h[j + nd*i] = conjugate(s)
-  var ev = newSeq[float](nd)
-  zeigs(cast[ptr float64](addr h[0]), addr ev[0], nd)   # h <- eigenvectors V
-  # g = V diag(ev^{-1/2}) V^dag
-  var g = newSeq[Complex64](nd*nd)
-  for j in 0..<nd:
-    for i in 0..<nd:
-      var s = complex64(0.0, 0.0)
-      for k in 0..<nd:
-        s += (1.0/sqrt(ev[k]))*h[i + nd*k]*conjugate(h[j + nd*k])
-      g[i + nd*j] = s
-  # result = 1 + X g
-  result = newSeq[Complex64](nd*nd)
-  for j in 0..<nd:
-    for i in 0..<nd:
-      var s = complex64(0.0, 0.0)
-      for k in 0..<nd: s += x[i + nd*k]*g[k + nd*j]
-      result[i + nd*j] = s
-    result[j + nd*j] += complex64(1.0, 0.0)
+  ovFromX(denseDw(o.l, u, o.m), 2*o.l.nsite)
 
 proc newOv*(l: Lat, m: float, rat: Rat, r2inner, r2outer: float, maxits: int): Ov =
   ## Allocate persistent workspace; solver scratch and callbacks are local to each call.

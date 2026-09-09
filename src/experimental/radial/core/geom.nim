@@ -116,6 +116,13 @@ func pframe*(ch: array[3, Vec3], p: Vec3): array[2, Vec3] =
     sp = y/st
   [ct*(cp*ch[0] + sp*ch[1]) - st*ch[2], (-sp)*ch[0] + cp*ch[1]]
 
+func levels*(top: int): seq[int] =
+  ## The refinement ladder 1, 2, 4, ... up to `top`: the paper's L grid.
+  var l = 1
+  while l <= top:
+    result.add l
+    l *= 2
+
 # --- construction -----------------------------------------------------------
 
 func icosa(): tuple[v: seq[Vec3], f: seq[array[3, int]]] =

@@ -17,6 +17,9 @@ proc newSpin*(n: int): Spin =
   ## Zero-initialized field of `n` sites.
   newSeq[Spinor](n)
 
+func newLike*(x: Spin): Spin = newSpin(x.len)
+func sameShape*(x, y: Spin): bool = x.len == y.len
+
 proc zero*(x: var Spin) =
   for i in 0..<x.len:
     for c in 0..1:

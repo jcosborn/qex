@@ -21,6 +21,14 @@
 ## temporal (Polyakov) mode theta^t = const, which is not a gauge mode because a
 ## gauge function periodic in t can only produce temporal shifts summing to zero
 ## round the time circle.  `projectGauge` removes the first, `projectKernel` both.
+## Removing the Polyakov mode is harmless for the pure gauge theory (the action is
+## flat along it) but a physical choice with fermions: the mode is the temporal
+## twist of the fermion boundary condition, and freezing it at zero selects the
+## antiperiodic sector exactly instead of integrating over one period 2 pi/n_t with
+## the determinant as weight.  The difference is O(e^{-Delta T}); see doc/02 5.
+##
+## All solves go through the generic CG of ops/solve.nim; `Gauge` and the site
+## scalars `seq[float]` provide the vector-space operations it needs.
 
 import std/math
 import ../core/lattice
@@ -59,10 +67,13 @@ type
 
 func nlink*(l: Lat): int = (l.sph.ne + l.sph.nv)*l.nt
   ## Total number of link degrees of freedom.
-func slink*(l: Lat): int = l.sph.ne*l.nt
-  ## Flat index range of the spatial links; temporal links follow.
 
-# --- vector space -----------------------------------------------------------
+# --- vector space (Gauge and site scalars; the contract of ops/solve.nim) ----
+
+func newLike*(x: Gauge): Gauge =
+  Gauge(s: newSeq[float](x.s.len), t: newSeq[float](x.t.len))
+
+func sameShape*(x, y: Gauge): bool = x.s.len == y.s.len and x.t.len == y.t.len
 
 proc `:=`*(x: var Gauge, y: Gauge) =
   for i in 0..<x.s.len: x.s[i] = y.s[i]
@@ -85,10 +96,32 @@ func dot*(x, y: Gauge): float =
   for i in 0..<x.s.len: result += x.s[i]*y.s[i]
   for i in 0..<x.t.len: result += x.t[i]*y.t[i]
 
+func redot*(x, y: Gauge): float = dot(x, y)
+
 func norm2*(x: Gauge): float = dot(x, x)
 
+func newLike*(x: seq[float]): seq[float] = newSeq[float](x.len)
+func sameShape*(x, y: seq[float]): bool = x.len == y.len
+
+proc zero*(x: var seq[float]) =
+  for i in 0..<x.len: x[i] = 0.0
+
+proc `:=`*(x: var seq[float], y: seq[float]) =
+  for i in 0..<y.len: x[i] = y[i]
+
+proc axpy*(x: var seq[float], a: float, y: seq[float]) =
+  for i in 0..<y.len: x[i] += a*y[i]
+
+proc axpby*(x: var seq[float], a: float, y: seq[float], b: float) =
+  for i in 0..<y.len: x[i] = a*y[i] + b*x[i]
+
+func redot*(x, y: seq[float]): float =
+  for i in 0..<x.len: result += x[i]*y[i]
+
+func norm2*(x: seq[float]): float = redot(x, x)
+
 func toSeq*(u: Gauge): seq[float] =
-  ## Flat link vector: spatial links first (index eIdx), then temporal (slink + tIdx).
+  ## Flat link vector: spatial links first (index eIdx), then temporal (ne*nt + tIdx).
   result = newSeq[float](u.s.len + u.t.len)
   for i in 0..<u.s.len: result[i] = u.s[i]
   for i in 0..<u.t.len: result[u.s.len + i] = u.t[i]
@@ -317,10 +350,6 @@ proc mDiagMax*(l: Lat, b: Beta): float =
   for x in d.s: result = max(result, x)
   for x in d.t: result = max(result, x)
 
-template applyM*(l: Lat, dst: var Gauge, src: Gauge, b: Beta) =
-  ## The Gaussian kernel of the action; identical to `gaugeForce` by construction.
-  gaugeForce(l, dst, src, b)
-
 # --- zero modes -------------------------------------------------------------
 
 proc gradient*(l: Lat, p: var Gauge, alpha: openArray[float]) =
@@ -391,52 +420,36 @@ proc removeMean(x: var seq[float]) =
   s /= float(x.len)
   for i in 0..<x.len: x[i] -= s
 
-proc projectGauge*(l: Lat, p: var Gauge, r2req = 1e-24, maxits = 10000): CgInfo =
+type KernelProj* = object
+  ## Scratch of `projectGauge`, owned by whoever projects repeatedly (the HMC
+  ## driver projects every force): the divergence, the gauge function, its
+  ## gradient and the CG bank.  One lattice shape per object.
+  b, al: seq[float]
+  da: Gauge
+  work: seq[seq[float]]
+
+proc newKernelProj*(l: Lat): KernelProj =
+  KernelProj(b: newSeq[float](l.sph.nv*l.nt), al: newSeq[float](l.sph.nv*l.nt),
+             da: newGauge(l))
+
+proc projectGauge*(l: Lat, p: var Gauge, k: var KernelProj, r2req = 1e-24,
+                   maxits = 10000): CgInfo =
   ## Remove the gauge-orbit component of `p`: solve (d^dagger d) alpha = d^dagger p
   ## by CG with the constant mode projected out at every step, then p -= d alpha.
   ## Afterwards d^dagger p = the CG residual, so the tolerance is a direct statement
   ## about the transversality of the result.
-  let n = l.sph.nv*l.nt
-  var b = newSeq[float](n)
-  divergence(l, b, p)
-  removeMean b
-  var b2 = 0.0
-  for v in b: b2 += v*v
-  if b2 == 0.0: return CgInfo(iters: 0, r2: 0.0, converged: true)
-  var
-    al = newSeq[float](n)
-    r = b
-    q = b
-    ap = newSeq[float](n)
-    r2 = b2
-    its = 0
-  let stop = r2req*b2
-  while r2 > stop and its < maxits:
-    laplace(l, ap, q)
-    removeMean ap
-    var pap = 0.0
-    for i in 0..<n: pap += q[i]*ap[i]
-    if pap <= 0.0: break
-    let a = r2/pap
-    var r2n = 0.0
-    for i in 0..<n:
-      al[i] += a*q[i]
-      r[i] -= a*ap[i]
-      r2n += r[i]*r[i]
-    let bt = r2n/r2
-    for i in 0..<n: q[i] = r[i] + bt*q[i]
-    r2 = r2n
-    inc its
-  laplace(l, ap, al)
-  removeMean ap
-  var t2 = 0.0
-  for i in 0..<n:
-    let d = b[i] - ap[i]
-    t2 += d*d
-  var da = newGauge(l)
-  gradient(l, da, al)
-  axpy(p, -1.0, da)
-  CgInfo(iters: its, r2: t2/b2, converged: t2 <= 1.001*r2req*b2)
+  divergence(l, k.b, p)
+  removeMean k.b
+  proc op(dst: var seq[float], src: seq[float]) =
+    laplace(l, dst, src)
+    removeMean dst
+  result = cgSolve(k.al, k.b, r2req, maxits, op, k.work)
+  gradient(l, k.da, k.al)
+  axpy(p, -1.0, k.da)
+
+proc projectGauge*(l: Lat, p: var Gauge, r2req = 1e-24, maxits = 10000): CgInfo =
+  var k = newKernelProj(l)
+  projectGauge(l, p, k, r2req, maxits)
 
 proc projectFlat*(l: Lat, p: var Gauge) =
   ## Remove the uniform temporal (Polyakov) direction theta^t = const, theta^s = 0.
@@ -448,58 +461,24 @@ proc projectFlat*(l: Lat, p: var Gauge) =
   s /= float(p.t.len)
   for i in 0..<p.t.len: p.t[i] -= s
 
-proc projectKernel*(l: Lat, p: var Gauge, r2req = 1e-24, maxits = 10000): CgInfo =
+proc projectKernel*(l: Lat, p: var Gauge, k: var KernelProj, r2req = 1e-24,
+                    maxits = 10000): CgInfo =
   ## Project out all of ker M = range(d) (+) span(uniform temporal).
-  result = projectGauge(l, p, r2req, maxits)
+  result = projectGauge(l, p, k, r2req, maxits)
   projectFlat(l, p)
 
-# --- solvers ----------------------------------------------------------------
+proc projectKernel*(l: Lat, p: var Gauge, r2req = 1e-24, maxits = 10000): CgInfo =
+  var k = newKernelProj(l)
+  projectKernel(l, p, k, r2req, maxits)
 
-template cgGauge(l, x, b, r2req, maxits, op: untyped): CgInfo =
-  block:
-    if x.s.len != b.s.len: x = newGauge(l)
-    let b2 = norm2(b)
-    if b2 == 0.0:
-      x.zero
-      return CgInfo(iters: 0, r2: 0.0, converged: true)
-    var
-      r = newGauge(l)
-      q = newGauge(l)
-      ap = newGauge(l)
-    x.zero
-    r := b
-    q := b
-    var
-      r2 = b2
-      its = 0
-    let stop = r2req*b2
-    while r2 > stop and its < maxits:
-      op(ap, q)
-      let pap = dot(q, ap)
-      if pap <= 0.0: break
-      let a = r2/pap
-      axpy(x, a, q)
-      axpy(r, -a, ap)
-      let r2n = norm2(r)
-      axpby(q, 1.0, r, r2n/r2)
-      r2 = r2n
-      inc its
-    op(ap, x)
-    var t2 = 0.0
-    for i in 0..<b.s.len:
-      let d = b.s[i] - ap.s[i]
-      t2 += d*d
-    for i in 0..<b.t.len:
-      let d = b.t[i] - ap.t[i]
-      t2 += d*d
-    CgInfo(iters: its, r2: t2/b2, converged: t2 <= 1.001*r2req*b2)
+# --- solvers ----------------------------------------------------------------
 
 proc cgM*(l: Lat, x: var Gauge, b: Gauge, bt: Beta,
           r2req = 1e-20, maxits = 20000): CgInfo =
   ## CG for M x = b from x = 0.  `b` must lie in range(M): the Krylov space then
   ## never touches the kernel, which is exactly the (V.16)-(V.17) prescription.
-  template op(dst, src: untyped) = gaugeForce(l, dst, src, bt)
-  cgGauge(l, x, b, r2req, maxits, op)
+  proc op(dst: var Gauge, src: Gauge) = gaugeForce(l, dst, src, bt)
+  cgSolve(x, b, r2req, maxits, op)
 
 proc pseudoSolve*(l: Lat, x: var Gauge, b: Gauge, bt: Beta,
                   r2req = 1e-20, maxits = 20000): tuple[proj, sol: CgInfo] =
@@ -513,7 +492,7 @@ proc pseudoSolve*(l: Lat, x: var Gauge, b: Gauge, bt: Beta,
   result.proj = cgM(l, bp, mb, bt, r2req, maxits)
   result.sol = cgM(l, x, bp, bt, r2req, maxits)
 
-type RegOp* = object
+type RegOp* = ref object
   ## M regularized on its kernel:  A = M + sig * d d^dagger + tau * P P^T/|P|^2.
   ## Both added blocks vanish on range(M) = ker(M)^perp and are positive definite on
   ## ker(M), so A is symmetric POSITIVE DEFINITE on the whole link space while
@@ -527,6 +506,7 @@ type RegOp* = object
   sig*, tau*: float
   d: seq[float]
   g: Gauge
+  work: seq[Gauge]           ## CG bank, reused across solves
 
 proc newRegOp*(l: Lat, bt: Beta, sig = 0.0, tau = 0.0): RegOp =
   ## sig/tau default to the mean plaquette coupling, which puts the regularized
@@ -538,7 +518,7 @@ proc newRegOp*(l: Lat, bt: Beta, sig = 0.0, tau = 0.0): RegOp =
   RegOp(bt: bt, sig: (if sig > 0.0: sig else: s), tau: (if tau > 0.0: tau else: s),
         d: newSeq[float](l.sph.nv*l.nt), g: newGauge(l))
 
-proc applyReg*(l: Lat, o: var RegOp, dst: var Gauge, src: Gauge) =
+proc applyReg*(l: Lat, o: RegOp, dst: var Gauge, src: Gauge) =
   gaugeForce(l, dst, src, o.bt)
   divergence(l, o.d, src)
   gradient(l, o.g, o.d)
@@ -548,12 +528,12 @@ proc applyReg*(l: Lat, o: var RegOp, dst: var Gauge, src: Gauge) =
   p = o.tau*p/float(src.t.len)
   for i in 0..<dst.t.len: dst.t[i] += p
 
-proc regSolve*(l: Lat, x: var Gauge, b: Gauge, o: var RegOp,
+proc regSolve*(l: Lat, x: var Gauge, b: Gauge, o: RegOp,
                r2req = 1e-24, maxits = 100000): CgInfo =
   ## CG on the regularized operator.  For b in range(M) this returns Mtilde^{-1} b
   ## and is stable to the roundoff floor.
-  template op(dst, src: untyped) = applyReg(l, o, dst, src)
-  cgGauge(l, x, b, r2req, maxits, op)
+  proc op(dst: var Gauge, src: Gauge) = applyReg(l, o, dst, src)
+  cgSolve(x, b, r2req, maxits, op, o.work)
 
 proc gaugePropagator*(l: Lat, g2: float, srcLink: int,
                       r2req = 1e-20, maxits = 20000): seq[float] =

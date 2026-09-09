@@ -4,10 +4,11 @@
 
 import std/[algorithm, math, complex, os, strformat, unittest]
 import base/alignedMem
-import eigens/linalgFuncs
 import ../core/analytic
 import ../meas/dataio
 import ../ops/wilson
+import ../rfree
+import thelpers
 
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 
@@ -16,37 +17,6 @@ const
            "output" / "radial" / "wilson"
 
 # --- helpers ----------------------------------------------------------------
-
-proc randGauge(l: Lat, sed: int, amp = 1.0): Gauge =
-  result = newGauge(l)
-  var r: Threefry4x64
-  r.seedIndep(sed, 0)
-  for i in 0..<result.s.len: result.s[i] = amp*r.gaussian
-  for i in 0..<result.t.len: result.t[i] = amp*r.gaussian
-
-proc randSpin(n, sed: int): Spin =
-  result = newSpin(n)
-  var r: Threefry4x64
-  r.seedIndep(sed, 0)
-  result.gaussian r
-
-proc randReal(n, sed: int, amp = 1.0): seq[float] =
-  result = newSeq[float](n)
-  var r: Threefry4x64
-  r.seedIndep(sed, 0)
-  for i in 0..<n: result[i] = amp*r.gaussian
-
-proc denseApply(a: seq[Complex64], nd: int, dst: var Spin, src: Spin, dag = false) =
-  ## dst = A src (or A^dag src) for the column-major matrix `a`.
-  for i in 0..<nd:
-    var s = complex64(0.0, 0.0)
-    for j in 0..<nd:
-      let m = if dag: conjugate(a[j + nd*i]) else: a[i + nd*j]
-      s += m*src[j shr 1][j and 1]
-    dst[i shr 1][i and 1] = s
-
-proc maxAbs(a: seq[Complex64]): float =
-  for z in a: result = max(result, abs(z))
 
 proc antiHermErr(a: seq[Complex64], nd: int): float =
   ## max |A + A^dag|
@@ -59,20 +29,6 @@ proc hermErr(a: seq[Complex64], nd: int): float =
   for i in 0..<nd:
     for j in 0..<nd:
       result = max(result, abs(a[i + nd*j] - conjugate(a[j + nd*i])))
-
-proc reldiff(x, y: Spin): float =
-  ## |x - y| / |y|
-  var d = 0.0
-  for i in 0..<x.len:
-    for c in 0..1:
-      let z = x[i][c] - y[i][c]
-      d += abs2(z)
-  sqrt(d/norm2(y))
-
-proc eigvals(a: var seq[Complex64], nd: int): seq[Complex64] =
-  ## General complex eigenvalues; `a` is destroyed.
-  result = newSeq[Complex64](nd)
-  zgeigs(cast[ptr float64](addr a[0]), cast[ptr float64](addr result[0]), nd)
 
 proc byIm(x, y: Complex64): int =
   if x.im < y.im: -1 elif x.im > y.im: 1
@@ -504,31 +460,12 @@ suite "performance discipline":
 # makes the L = 4, Lt = 24 panel of Fig. 4 (a 7776 x 7776 matrix) cheap.  The
 # decomposition is checked against a full dense diagonalization below.
 
-proc spatialDense(sph: Sphere, at: float): tuple[l: Lat, a: seq[Complex64]] =
-  ## The U = 0 spatial operator, 2*nv x 2*nv.  `nt = 1` because the spatial part does
-  ## not see the time direction; the returned Lat still carries kappa'(at).
-  let l = newLat(sph, 1, at)
-  (l, denseDw(l, newGauge(l), 0.0, dwSpace))
-
-proc matsuBlock(l: Lat, dsp: seq[Complex64], k: float): seq[Complex64] =
-  result = dsp
-  let
-    nv = l.sph.nv
-    nd = 2*nv
-  for y in 0..<nv:
-    let
-      kt = l.kapT[y]
-      dr = kt*(1.0 - cos(k))
-      di = kt*sin(k)
-    result[(2*y) + nd*(2*y)] += complex64(dr, di)
-    result[(2*y + 1) + nd*(2*y + 1)] += complex64(dr, -di)
-
 proc freeSpectrum(sph: Sphere, nt: int, at: float): seq[Complex64] =
   ## Full spectrum of the free D_W on sph x nt slices, Matsubara mode by Matsubara mode.
   let (l, dsp) = spatialDense(sph, at)
   result = newSeqOfCap[Complex64](2*sph.nv*nt)
   for n in 0..<nt:
-    var b = matsuBlock(l, dsp, PI*float(2*n + 1)/float(nt))
+    var b = modeBlock(l, dsp, PI*float(2*n + 1)/float(nt))
     for z in eigvals(b, 2*sph.nv): result.add z
 
 proc hatDense(l: Lat, a: seq[Complex64]): seq[Complex64] =
@@ -826,7 +763,7 @@ suite "normalization cross-check":
         var draw = 1e300
         let sc = hatScale(l)
         for n in 0..<nt:
-          var b = matsuBlock(l, dsp, PI*float(2*n + 1)/float(nt))
+          var b = modeBlock(l, dsp, PI*float(2*n + 1)/float(nt))
           var h = b
           let nd = 2*sph.nv
           for i in 0..<nd:
@@ -844,7 +781,7 @@ suite "normalization cross-check":
       for nt in [12, 16, 20, 24, 32, 48, 60, 80, 120, 168]:
         var d = 1e300
         for n in 0..<nt:
-          var b = matsuBlock(l, dsp, PI*float(2*n + 1)/float(nt))
+          var b = modeBlock(l, dsp, PI*float(2*n + 1)/float(nt))
           for z in eigvals(b, 2*sph.nv): d = min(d, abs(z - 1.0))
         line.add &" {nt}:{d:.4f}"
       echo line

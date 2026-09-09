@@ -9,9 +9,9 @@
 ## Eigenvalues per mode via zgeev (eigens/linalgFuncs.zgeigs).
 ##
 ## Fig. 6 conventions: raw D_lat of (IV.1), M = 1, and the generalized eigenvalues
-## use the CORRECTED volume weight diag(volbar/volw) of doc/02 section 3.2 (i.e.
-## eigenvalues of diag(Abar_y/A_y) D_lat; the weight the paper prints is inverted,
-## WP-E's correction).
+## of (IV.12), D_lat psi = lambda (dVbar)^{-1} dV psi, i.e. the eigenvalues of
+## diag(Abar_y/A_y) D_lat (doc/02 section 3.2; an earlier reading of (IV.12) as
+## the inverse weight was a transcription error of this project, not of the paper).
 ##
 ## Slide-8 legends (see doc/06 "THE COUPLING CONVENTION" and resolved open question
 ## 2): the published values 1.154 / 1.010 / 0.965 match the FLAT kappa
@@ -135,25 +135,21 @@ if doFig6 != 0:
     let k = PI*float(2*n + 1)/float(lt)
     modeBlockInto(l, dsp, k, x)
     let dov = ovFromDw(x, nd)          # D_ov(k), M = 1
-    var a = x
-    for z in eigvals(a, nd):
+    for z in eigvals(x, nd):
       wRe.add z.re
       wIm.add z.im
       wIdx.add float(n)
       d1w = min(d1w, abs(z - complex64(1.0, 0.0)))
-    a = dov
-    for z in eigvals(a, nd):
+    for z in eigvals(dov, nd):
       oRe.add z.re
       oIm.add z.im
       oIdx.add float(n)
       circDev = max(circDev, abs(abs(z - complex64(1.0, 0.0)) - 1.0))
-    a = rowScale(x)
-    for z in eigvals(a, nd):
+    for z in eigvals(rowScale(x), nd):
       gwRe.add z.re
       gwIm.add z.im
       gwIdx.add float(n)
-    a = rowScale(dov)
-    for z in eigvals(a, nd):
+    for z in eigvals(rowScale(dov), nd):
       goRe.add z.re
       goIm.add z.im
       goIdx.add float(n)

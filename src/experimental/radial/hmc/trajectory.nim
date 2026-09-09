@@ -14,13 +14,21 @@
 ##
 ## Gauge zero modes (WP-G machinery; ker M = gauge orbit + the uniform temporal
 ## Polyakov mode, dim n_V L_t): `projectKernel` is applied to
-##   (a) the committed field -- at construction/load and again at every commit,
-##       which keeps the field entering each trajectory transverse while `reject`
-##       stays a bitwise restore of the trajectory's start field;
+##   (a) the committed field -- by the app at a hot start and here at every
+##       accept, which keeps the field entering each trajectory transverse while
+##       `reject` stays a bitwise restore of the trajectory's start field;
+##       `loadCheckpoint` restores the stored (already transverse) field bitwise;
 ##   (b) the refreshed momentum;
-##   (c) every MD force at every level.
-## All three are required: at fixed phi the extended action has a longitudinal
-## force even though the integrated determinant is gauge invariant.
+##   (c) every fermion MD force.  The gauge force M u lies in range(M) by
+##       construction and is not projected.
+## The gauge-orbit part is a Landau-type gauge fixing (linear constraint, constant
+## Faddeev-Popov determinant): at fixed phi the pseudofermion action has a
+## longitudinal force even though the integrated determinant is gauge invariant.
+## The Polyakov part is a physical choice, not gauge fixing: with fermions the
+## uniform temporal shift is the twist of their temporal boundary condition and
+## the determinant depends on it, so freezing it at zero selects the exactly
+## antiperiodic sector rather than integrating over one period.  The difference
+## is O(e^{-Delta T}) (doc/02 section 5).
 ##
 ## Randomness is trajectory addressed: every draw comes from a Threefry stream
 ## keyed by splitmix64-mixing (baseSeed, trajectory number, purpose, copy,
@@ -30,6 +38,7 @@
 import std/[math, streams]
 import ../core/lattice
 import ../core/spinor
+import ../core/fnv
 import ../ops/gaugeact
 import pseudofermion
 import hmc/metropolis
@@ -85,12 +94,15 @@ type
     levels: seq[Integrator]  ## one 2MN per level, [0] = gauge
     evo: ParIntegrator       ## nil when there is a single level
     f: Gauge                 ## force scratch
+    kp: KernelProj           ## projection scratch (allocation-free MD)
 
 proc applyForce(m: RadialHmc, lv: int, t: float) =
-  ## p -= t * P f_lv, P = projectKernel: rule (c) of the module header.
-  if lv == 0: gaugeForce(m.l, m.f, m.u, m.bt)
-  else: pfForce(m.pf, m.f, m.u, lv)
-  discard projectKernel(m.l, m.f, m.projR2)
+  ## p -= t * P f_lv, P = projectKernel on the fermion levels: rule (c) above.
+  if lv == 0:
+    gaugeForce(m.l, m.f, m.u, m.bt)
+  else:
+    pfForce(m.pf, m.f, m.u, lv)
+    discard projectKernel(m.l, m.f, m.kp, m.projR2)
   axpy(m.p, -t, m.f)
   inc m.fcount[lv]
 
@@ -107,6 +119,7 @@ proc newRadialHmc*(l: Lat, bt: Beta, pf: Pf, tau: float, steps: seq[int],
   m.p = newGauge(l)
   m.uOld = newGauge(l)
   m.f = newGauge(l)
+  m.kp = newKernelProj(l)
   m.fcount = newSeq[int](steps.len)
   let mm = m
   proc mdt(t: float) = axpy(mm.u, t, mm.p)
@@ -144,7 +157,7 @@ proc hmcH*(m: RadialHmc): float =
 proc refreshMomentum*(m: RadialHmc, traj: int) =
   var r = keyedRng(m.seed, traj, rkMomentum)
   gaussian(m.p, r)
-  discard projectKernel(m.l, m.p, m.projR2)
+  discard projectKernel(m.l, m.p, m.kp, m.projR2)
 
 proc refreshPseudo*(m: RadialHmc, traj: int) =
   for c in 0..<m.pf.ncopy:
@@ -153,8 +166,10 @@ proc refreshPseudo*(m: RadialHmc, traj: int) =
       refreshFrame(m.pf, m.u, c, i, r)
 
 # --- metropolis hooks (required: start getH generate globalRand accept reject)
+# RadialHmc is a ref object, so the hooks take it by value -- the form
+# hmc/metropolis.update passes on.
 
-proc start*(m: var RadialHmc) =
+proc start*(m: RadialHmc) =
   inc m.traj
   m.uOld := m.u
   refreshMomentum(m, m.traj)
@@ -162,7 +177,7 @@ proc start*(m: var RadialHmc) =
 
 proc getH*(m: RadialHmc): float = hmcH(m)
 
-proc generate*(m: var RadialHmc) = mdEvolve(m)
+proc generate*(m: RadialHmc) = mdEvolve(m)
 
 proc globalRand*(m: RadialHmc): float =
   if m.forceAccept: return 0.0     # below any pAccept; no stream is consumed
@@ -170,11 +185,11 @@ proc globalRand*(m: RadialHmc): float =
   var r = keyedRng(m.seed, m.traj, rkAccept)
   r.uniform
 
-proc accept*(m: var RadialHmc) =
-  discard projectKernel(m.l, m.u, m.projR2)   # rule (a): commit transverse
+proc accept*(m: RadialHmc) =
+  discard projectKernel(m.l, m.u, m.kp, m.projR2)   # rule (a): commit transverse
 
-proc reject*(m: var RadialHmc) =
-  m.u := m.uOld                               # bitwise restore
+proc reject*(m: RadialHmc) =
+  m.u := m.uOld                                     # bitwise restore
 
 # --- diagnostics ---------------------------------------------------------------
 
@@ -248,11 +263,6 @@ const
   ckptMagic = 0x51455852484D4331'u64   ## "QEXRHMC1"
   ckptVersion = 2'i32                  ## v2 adds the mass-convention identifier
 
-func fnv(s: string): uint64 =
-  result = 0xcbf29ce484222325'u64
-  for ch in s:
-    result = (result xor uint64(ord(ch))) * 0x100000001b3'u64
-
 proc saveCheckpoint*(m: RadialHmc, path: string) =
   ## Versioned binary manifest + gauge field + trailing FNV-1a of everything.
   ## Version 1 checkpoints used the legacy additive mass and are intentionally
@@ -285,7 +295,7 @@ proc saveCheckpoint*(m: RadialHmc, path: string) =
   for x in m.u.s: st.write x
   for x in m.u.t: st.write x
   let body = st.data
-  st.write fnv(body)
+  st.write fnv1a(body)
   writeFile(path, st.data)
 
 template ckWant(cond: bool, what: string) =
@@ -306,7 +316,7 @@ proc loadCheckpoint*(m: RadialHmc, path: string) =
   var h: uint64
   st.setPosition(data.len - 8)
   st.read h
-  ckWant h == fnv(body), "payload hash (corrupted file)"
+  ckWant h == fnv1a(body), "payload hash (corrupted file)"
   st.setPosition(0)
   var u64: uint64
   var i32: int32
