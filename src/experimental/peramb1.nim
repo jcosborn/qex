@@ -2,7 +2,7 @@ import qex
 import comms/gather
 import io / [parallelIo, timesliceIo, modfile]
 import physics / [wilsonD, wilsonSolve]
-import contract, modeigs1
+import examples/[contract,modeigs1]
 import xmlparser, xmltree, strutils, sequtils, endians, times, strformat
 import niledb, hashes, serializetools/array2d, posix
 template `&&`(x: int32): untyped = cast[pointer](unsafeAddr(x))

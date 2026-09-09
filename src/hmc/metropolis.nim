@@ -30,15 +30,13 @@ type
     state*: T
 # required routines:
 #   start, logWeight, generate, globalRand, accept, reject
-
 # optional routines
-proc finish*[M:MetropolisRoot](m: var M) = discard
-proc checkReverse*[M:MetropolisRoot](m: var M): bool = false
-proc generateReverse*[M:MetropolisRoot](m: var M) = discard
-proc finishReverse*[M:MetropolisRoot](m: var M) = discard
+#   proc finish*[M:MetropolisRoot](m: M) = discard
+#   proc checkReverse*[M:MetropolisRoot](m: M): bool = false
+#   proc generateReverse*[M:MetropolisRoot](m: M) = discard
+#   proc finishReverse*[M:MetropolisRoot](m: M) = discard
 
-
-proc clearStats*[M:MetropolisRoot](m: var M) =
+proc clearStats*[M:MetropolisRoot](m: M) =
   m.stats.setLen(0)
   m.nUpdates = 0
   m.nAccepts = 0
@@ -49,7 +47,7 @@ proc clearStats*[M:MetropolisRoot](m: var M) =
   m.avgPAccept = 0
   clear m.pAcceptStats
 
-proc updateStats*[M:MetropolisRoot](m: var M) =
+proc updateStats*[M:MetropolisRoot](m: M) =
   m.stats.add MetropolisStats(hOld:m.hOld,hNew:m.hNew,rnd:m.rnd)
   let n = m.nUpdates.float
   inc m.nUpdates
@@ -63,33 +61,38 @@ proc updateStats*[M:MetropolisRoot](m: var M) =
   m.avgPAccept = (n*m.avgPAccept + m.pAccept) / (n+1)
   m.pAcceptStats.push m.pAccept
 
-proc init*[M:MetropolisRoot](m: var M) =
-  m.verbosity = 0
+proc init*[M:MetropolisRoot](m: M; verbosity = 0) =
+  m.verbosity = verbosity
   m.stats.newSeq(0)
-  m.clearStats
+  m.clearStats()
 
-proc update*[T:MetropolisRoot](m: var T) =
+proc update*[M:MetropolisRoot](m: M) =
   mixin finish, checkReverse, generateReverse, finishReverse
   template ff(x: float): string =
     formatFloat(x, ffDecimal, precision=6)
 
+  # run full HMC trajectory
   m.start
-
   m.hOld = m.getH
   m.generate
   m.hNew = m.getH
   m.deltaH = m.hNew - m.hOld
   if m.verbosity>0:
     echo &"hOld: {m.hOld:.6f}  hNew: {m.hNew:.6f}"
+  when compiles(finish(m)): m.finish
 
-  m.finish
+  # run reversibility check
+  var doReverse = false
+  when compiles(checkReverse(m)): doReverse = m.checkReverse
+  if doReverse:
+    if m.verbosity>0:
+      echo "== Reversibility check =========="
+    when compiles(generateReverse(m)): m.generateReverse
+    when compiles(finishReverse(m)): m.finishReverse
+    if m.verbosity>0:
+      echo "================================="
 
-  if m.checkReverse:
-    m.generateReverse
-    #m.hReverse = m.getH
-    m.finishReverse
-    # echo?
-
+  # do metropolis test
   m.rnd = m.globalRand
   m.expmDeltaH = exp(-m.deltaH)
   m.pAccept = min(1.0, m.expmDeltaH)
@@ -97,15 +100,13 @@ proc update*[T:MetropolisRoot](m: var T) =
     m.accepted = true
     m.updateStats
     if m.verbosity>0:
-      echo "ACCEPT deltaH: $1  pAccept: $2  rnd: $3"%
-        [m.deltaH.ff, m.pAccept.ff, m.rnd.ff]
+      echo &"ACCEPT deltaH: {m.deltaH.ff}  pAccept: {m.pAccept.ff}  rnd: {m.rnd.ff}"
     m.accept
   else:
     m.accepted = false
     m.updateStats
     if m.verbosity>0:
-      echo "REJECT deltaH: $1  pAccept: $2  rnd: $3"%
-        [m.deltaH.ff, m.pAccept.ff, m.rnd.ff]
+      echo &"REJECT deltaH: {m.deltaH.ff}  pAccept: {m.pAccept.ff}  rnd: {m.rnd.ff}"
     m.reject
 
 
@@ -119,22 +120,22 @@ when isMainModule:
       p: float
       nSteps: int
 
-  proc init*(m: var Met) =
+  proc init*(m: Met) =
     m.new
     var r = MetropolisRoot m
     init(r)
 
-  proc start(m: var Met) =
+  proc start(m: Met) =
     m.xSave = m.x
     m.p = 2.0*rand(1.0) - 1.0  # should really be Gaussian
     echo "start: x: ", m.x, "  p: ", m.p
 
-  proc finish(m: var Met) =
+  proc finish(m: Met) =
     echo "finish: x: ", m.x, "  p: ", m.p
 
-  proc accept(m: var Met) = discard
+  proc accept(m: Met) = discard
 
-  proc reject(m: var Met) =
+  proc reject(m: Met) =
     m.x = m.xSave
 
   proc globalRand(m: Met): float =
@@ -145,11 +146,11 @@ when isMainModule:
     let p = m.p
     1e10 + 0.5*p*p + x*x
 
-  proc updateX(m: var Met, e: float) =
+  proc updateX(m: Met, e: float) =
     m.x += e * m.p
-  proc updateP(m: var Met, e: float) =
+  proc updateP(m: Met, e: float) =
     m.p -= e * 2.0 * m.x
-  proc generate(m: var Met) =
+  proc generate(m: Met) =
     let n = m.nSteps
     let tau = 1.0
     let eps = tau / n.float

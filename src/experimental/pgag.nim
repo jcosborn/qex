@@ -465,7 +465,7 @@ proc init(m: var Met) =
   init(r)
   m.verbosity = 1
 
-proc start*(m: var Met) =
+proc start*(m: Met) =
   tic()
   m.state = 0
   threads:
@@ -631,7 +631,7 @@ proc updateParams(rate: float) =
   for i in 0..<n:
     clear cgstat[i]
 
-proc finish*(m: var Met) =
+proc finish*(m: Met) =
   discard
   #for mu in 0..<g.len:
   #  g[mu] := g0[mu]
@@ -671,10 +671,10 @@ proc disp(m: Met) =
   echo "rmsDeltaH: ", sqrt(m.avgDeltaH2)
   echo "avgPAccept: ", m.avgPAccept
 
-proc accept*(m: var Met) =
+proc accept*(m: Met) =
   disp(m)
 
-proc reject*(m: var Met) =
+proc reject*(m: Met) =
   threads:
     for i in 0..<g.len:
       g[i] := g0[i]
@@ -685,7 +685,7 @@ proc globalRand*(m: Met): float =
   if not alwaysAccept:
     result = R.uniform
 
-proc generate*(m: var Met) =
+proc generate*(m: Met) =
   update()
 
 var m: Met
