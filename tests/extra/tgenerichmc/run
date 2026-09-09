@@ -15,7 +15,7 @@ else
 fi
 ofn="$outdir/out$comp"
 
-"$exe" 2>&1 | tee "$ofn"
+$RUNJOB "$exe" 2>&1 | tee "$ofn"
 
 begh="`grep '^Beginning H:' $ofn | awk '{printf "%.6f", $3}'`"
 endh="`grep '^Ending H:' $ofn | awk '{printf "%.6f", $3}'`"
