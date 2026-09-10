@@ -95,6 +95,16 @@ suite "gauge action derivative tower":
     proc s3(x: Ggauge): Gscalar = redot(gq, grad(s2(x), x))
     ckgrad(s3, gg, gu)
 
+  test "rectangle reference action second derivative":
+    # The Hessian kernel is plaquette-only; the reference action carries
+    # the rectangle family through basic ops.
+    let cr = actSymanzik(scalar.toGvalue(grt, 5.4))
+    proc r1(x: Ggauge): Gscalar = gaugeActionGraph(cr, x)
+    proc r2(x: Ggauge): Gscalar = redot(gm, grad(r1(x), x))
+    ckgrad(r2, gg, gu)
+    expect(GraphValueError):
+      discard gaugeActionDeriv2(gm, cr, gg).eval
+
   test "second derivative with field-dependent force direction":
     # b input of gaugeActionDeriv2 depends on the field through norm2's
     # backward, exercising the self-adjoint Hessian branch.

@@ -19,6 +19,9 @@ proc raiseUnsupportedGaugeCoeff(gc: GaugeActionCoeffs) {.noreturn.} =
 proc isPlaqOnly*(gc: GaugeActionCoeffs): bool =
   gc.rect == 0 and gc.pgm == 0 and gc.adjplaq == 0
 
+proc isPlaqRect*(gc: GaugeActionCoeffs): bool =
+  gc.pgm == 0 and gc.adjplaq == 0
+
 proc gaugeActionFamily(gc: GaugeActionCoeffs): GaugeActionFamily =
   if gc.adjplaq == 0:
     return gafGaugeAction1
@@ -34,6 +37,9 @@ proc negatedGaugeCoeffs(gc: GaugeActionCoeffs): GaugeActionCoeffs =
 proc evalGaugeActionValue*(gc: GaugeActionCoeffs, g: types.Gauge): float =
   case gc.gaugeActionFamily
   of gafGaugeAction1:
+    # gaugeAction1 and gaugeActionDeriv carry no parallelogram terms.
+    if gc.pgm != 0:
+      raiseUnsupportedPath("gaugeAction", "parallelogram coefficients")
     gc.gaugeAction1 g
   of gafActionA:
     gc.actionA g
@@ -44,6 +50,8 @@ proc evalGaugeForceValue*(gc: GaugeActionCoeffs,
   let coeffs = gc.negatedGaugeCoeffs
   case coeffs.gaugeActionFamily
   of gafGaugeAction1:
+    if gc.pgm != 0:
+      raiseUnsupportedPath("gaugeActionDeriv", "parallelogram coefficients")
     coeffs.gaugeActionDeriv(g, outg)
   of gafActionA:
     coeffs.gaugeADeriv(g, outg)
@@ -67,6 +75,10 @@ proc evalGaugeForceJacobian*(b: types.Gauge,
                              outg: types.Gauge) =
   case gc.gaugeActionFamily
   of gafGaugeAction1:
+    # gaugeDerivDeriv2 has plaquette terms only; gaugeActionGraph differentiates
+    # the rectangle family through basic ops instead.
+    if not gc.isPlaqOnly:
+      raiseUnsupportedPath("evalGaugeForceJacobian", "rectangle and parallelogram Hessians")
     outg.zeroGaugeStorage
     gc.gaugeDerivDeriv2(g, b, outg)
   of gafActionA:

@@ -322,11 +322,11 @@ suite "gauge action":
     (beta * grad(w, beta) - w) :< 1e-6
     (beta * redot(grad(w, wilsonCoeff), plaqBasis) - w) :< 1e-6
 
-  test "gauge action graph rejects non-plaquette coefficients at evaluation":
+  test "gauge action graph rejects adjoint-plaquette coefficients at evaluation":
     let cc = grt.toGvalue(GaugeActionCoeffs(plaq: 1.0))
     let w = gaugeActionGraph(cc, gg)
     discard w.eval
-    cc.update GaugeActionCoeffs(plaq: 1.0, rect: 0.1)
+    cc.update GaugeActionCoeffs(plaq: 1.0, adjplaq: 0.1)
     expect GraphValueError:
       discard w.eval
 

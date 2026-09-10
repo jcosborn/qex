@@ -39,6 +39,23 @@ suite "gauge transport vs basic":
         gg.update u
     norm2(transport(gg, f, []) - f) :< 1e-24
 
+  test "lineProducts = hop chains, shared plaquette pair, rectangles":
+    let
+      ps = lineProducts(gg, [@(plaqPath(0, 1)), @[1, 1, 2, -1, -1, -2], @[2, 1, -2, -1]])
+      f0 = linkField(gm, 0)
+      f1 = linkField(gm, 1)
+      rf = redot(ps[0], f0) + redot(ps[1], f1) + redot(ps[2], f0)
+      rr = redot(wilsonLine(gg, plaqPath(0, 1)), f0) +
+           redot(wilsonLine(gg, [1, 1, 2, -1, -1, -2]), f1) +
+           redot(wilsonLine(gg, [2, 1, -2, -1]), f0)
+    for i in 0..2:
+      norm2(ps[i] - wilsonLine(gg, (if i == 0: @[1, 2, -1, -2] elif i == 1: @[1, 1, 2, -1, -1, -2] else: @[2, 1, -2, -1]))) :< 1e-18
+    (rf - rr) :< 1e-8
+    norm2(grad(rf, gg) - grad(rr, gg)) :< 1e-20
+    # the two orientations of one plaquette share their product node
+    let shared = lineProducts(gg, [@[1, 2, -1, -2], @[2, 1, -2, -1]])
+    check shared[1].inputs[0].nodeKey == shared[0].nodeKey
+
   test "wilsonLine plaquette = U_mu shift_mu(U_nu) shift_nu(U_mu).adj U_nu.adj":
     let
       a = linkField(gg, 0)
@@ -106,6 +123,17 @@ suite "gauge action vs paths":
       sr = (-1.0 / float(nc)) * beta * plaqSum(gg)
     (sf - sr) :< 1e-8
     norm2(grad(sf, gg) - grad(sr, gg)) :< 1e-16
+
+  test "gaugeActionGraph with rectangles = gaugeAction, in value and derivative":
+    let
+      cc = grt.toGvalue(GaugeActionCoeffs(plaq: 1.3, rect: -0.1))
+      sf = gaugeActionGraph(cc, gg)
+      sr = gaugeAction(cc, gg)
+    (sf - sr) :< 1e-8
+    norm2(grad(sf, gg) - gaugeActionDeriv(cc, gg)) :< 1e-16
+    # linear in beta: beta dS/dbeta = S for a rectangle family
+    let sym = gaugeActionGraph(actSymanzik(beta), gg)
+    (beta * grad(sym, beta) - sym) :< 1e-6
 
   test "gaugeAction with rectangles = weighted plaquette and 1x2 Wilson loops":
     let cc = grt.toGvalue(GaugeActionCoeffs(plaq: 1.3, rect: -0.1))

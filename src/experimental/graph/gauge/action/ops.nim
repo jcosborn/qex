@@ -141,50 +141,80 @@ proc actDBW2*(beta: Gscalar): Gactcoeff =
   )
 proc actAdj*(beta: Gscalar, adjFac: Gscalar): Gactcoeff = beta * adjCoeff(adjFac)
 
-proc coeffPlaqb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  scaledUpstreamOr(
-    zb,
-    Gscalar,
-    toGvalue(z.runtime, GaugeActionCoeffs(plaq: 1.0)))
+type Gcoeff = ref object of Gfunc
+  basis: GaugeActionCoeffs
+  plaqOnly: bool
 
-proc coeffPlaqf(v: Gvalue) =
-  # Guard the family on every evaluation: replica graphs built through this
-  # node assume plaquette-only coefficients, and the coefficient value can be
+proc coeffb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  scaledUpstreamOr(zb, Gscalar, toGvalue(z.runtime, Gcoeff(z.gfunc).basis))
+
+proc coefff(v: Gvalue) =
+  # Guard the family on every evaluation: the reference graphs built through
+  # this node cover only their family, and the coefficient value can be
   # updated after the graph is built.
+  let f = Gcoeff(v.gfunc)
   let gc = Gactcoeff(v.inputs[0]).cval
-  if not gc.isPlaqOnly:
-    raiseUnsupportedPath("coeffPlaq", "coefficient sets outside the plaquette action family")
-  Gscalar(v).sval = gc.plaq
+  if (if f.plaqOnly: not gc.isPlaqOnly else: not gc.isPlaqRect):
+    raiseUnsupportedPath(f.name, "coefficient sets outside the " &
+      (if f.plaqOnly: "plaquette" else: "plaquette and rectangle") & " family")
+  Gscalar(v).sval = (if f.basis.rect == 0: gc.plaq else: gc.rect)
 
-let coeffPlaqg = Gfunc(forward: coeffPlaqf, backward: coeffPlaqb, name: "coeffPlaq")
+let coeffPlaqg = Gcoeff(forward: coefff, backward: coeffb, name: "coeffPlaq",
+                        basis: GaugeActionCoeffs(plaq: 1.0))
+let coeffPlaqOnlyg = Gcoeff(forward: coefff, backward: coeffb, name: "coeffPlaqOnly",
+                            basis: GaugeActionCoeffs(plaq: 1.0), plaqOnly: true)
+let coeffRectg = Gcoeff(forward: coefff, backward: coeffb, name: "coeffRect",
+                        basis: GaugeActionCoeffs(rect: 1.0))
 
-proc coeffPlaq(c: Gactcoeff): Gscalar =
-  ## The plaquette coefficient as a scalar graph value. Evaluation rejects
-  ## coefficient sets outside the plaquette family, so plaquette-only replica
-  ## graphs fail loudly if the coefficient later changes family.
-  graphNode(scalarNodeLike(c), @[Gvalue(c)], coeffPlaqg, "coeffPlaq")
+proc coeff(c: Gactcoeff, f: Gcoeff): Gscalar =
+  ## One coefficient as a scalar graph value, with f's family guard.
+  graphNode(scalarNodeLike(c), @[Gvalue(c)], f, f.name)
+
+proc plaqSum(g: Ggauge): Gscalar =
+  ## sum_{mu>nu} sum_x retr P_munu(x) over hop chains.
+  let nd = g.gval.len
+  let unit = g.unitFieldLike
+  result = toGvalue(g.runtime, 0.0)
+  for mu in 1..<nd:
+    for nu in 0..<mu:
+      result = result + retr(transport(g, unit, plaqPath(mu, nu)))
+
+proc plaqActionGraph(c: Gactcoeff, g: Ggauge): Gscalar =
+  ## Plaquette-only reference, S = -(c_plaq/nc) plaqSum; the replica behind
+  ## gaugeActionDeriv2. Its coefficient node rejects other families.
+  const nc = g.gval[0][0].nrows
+  (toGvalue(g.runtime, -1.0/float(nc)) * coeff(c, coeffPlaqOnlyg)) * plaqSum(g)
 
 proc gaugeActionGraph*(c: Gactcoeff, g: Ggauge): Gscalar =
-  ## Grad-complete plaquette action reference,
-  ##   S = (-plaq/nc) * sum_{mu<nu} sum_x retr P_munu(x),
-  ## built from Wilson lines so it differentiates to any order. It matches
-  ## `gaugeAction` for plaquette-only coefficients; the embedded `coeffPlaq`
-  ## rejects other coefficient families at evaluation. This public spelling is
-  ## also the coefficient-differentiable alternative to optimized `gaugeAction`.
+  ## Reference action over the plaquette and rectangle families,
+  ##   S = -(1/nc) [c_plaq sum_{mu>nu} sum_x retr P_munu
+  ##                + c_rect sum_{mu>nu} sum_x (retr R_{2x1} + retr R_{1x2})],
+  ## differentiable to any order in the field and in the coefficients. It
+  ## matches `gaugeAction` for those families; the coefficient nodes reject
+  ## the others at evaluation. The rectangles are shared path products
+  ## (lineProducts) and are evaluated only when their coefficient is nonzero.
   discard sharedGraphRuntime(
     [Gvalue(c), Gvalue(g)], "gaugeActionGraph")
   let nd = g.gval.len
   const nc = g.gval[0][0].nrows
-  let unit = g.unitFieldLike
-  var s = toGvalue(g.runtime, 0.0)
+  var paths: seq[seq[int]]
   for mu in 1..<nd:
     for nu in 0..<mu:
-      s = s + retr(transport(g, unit, plaqPath(mu, nu)))
-  (toGvalue(g.runtime, -1.0/float(nc)) * coeffPlaq(c)) * s
+      let a = mu + 1
+      let b = nu + 1
+      paths.add @[a, a, b, -a, -a, -b]
+      paths.add @[a, b, b, -a, -b, -b]
+  let zero = toGvalue(g.runtime, 0.0)
+  let cr = coeff(c, coeffRectg)
+  var sr = zero
+  for p in lineProducts(g, paths, origin = false):
+    sr = sr + retr(p)
+  toGvalue(g.runtime, -1.0/float(nc)) *
+    (coeff(c, coeffPlaqg) * plaqSum(g) + cond(equal(cr, zero), zero, cr * sr))
 
 proc gaugeActionDerivGraph(c: Gactcoeff, g: Ggauge): Ggauge =
   ## Grad-complete replica of gaugeActionDeriv for plaquette-only c.
-  Ggauge(gradSeeded(gaugeActionGraph(c, g), g, toGvalue(g.runtime, 1.0)))
+  Ggauge(gradSeeded(plaqActionGraph(c, g), g, toGvalue(g.runtime, 1.0)))
 
 # --- gauge-action graph operations ---
 

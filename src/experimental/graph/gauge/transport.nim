@@ -13,9 +13,10 @@
 ## `wilsonLine`/`transport` chain hops, so path-ordered link products and all
 ## their derivatives (to any order) come from the basic-op closure.
 
+import std/tables
 import ../core
 import ../support/op
-import layout, physics/qcdTypes
+import layout, gauge, physics/qcdTypes
 import types, basic_ops, field_ops
 
 type Ghop = ref object of Gfield
@@ -94,6 +95,34 @@ proc wilsonLine*(g: Ggauge, path: openArray[int]): Gfield =
   ## wilsonLine(g, [mu+1, nu+1, -(mu+1), -(nu+1)])(x) is the mu-nu plaquette
   ##   U_mu(x) U_nu(x+mu) U_mu(x+nu)^dag U_nu(x)^dag.
   transport(g, g.unitFieldLike, path)
+
+proc lineProducts*(g: Ggauge, lines: openArray[seq[int]], origin = true): seq[Gfield] =
+  ## Path-ordered link products of every line as graph nodes, sharing
+  ## sub-products the way QEX's gaugeProd does (gaugeUtils.plan): each step is
+  ## L(x) * R(x - sh), memoized by path key, with the shift one node per
+  ## direction; link fields and their adjoints are hoisted leaves. Shared
+  ## nodes share their adjoints too, so derivatives inherit the sharing.
+  ## With origin the products start at the base site; traces do not need it.
+  let pl = lines.optimalPairs.plan(origin)
+  var nodes = initTable[seq[int], Gfield]()
+  var adjs = initTable[seq[int], Gfield]()
+  proc node(k: seq[int], a: bool): Gfield =
+    if k.len == 1 and k notin nodes:
+      nodes[k] = linkField(g, k[0] - 1)
+    if not a:
+      return nodes[k]
+    if k notin adjs:
+      adjs[k] = nodes[k].adj
+    adjs[k]
+  proc shifted(x: Gfield, sh: seq[int]): Gfield =
+    result = x
+    for mu, n in sh:
+      if n != 0:
+        result = shift(result, mu, -n)
+  for s in pl.steps:
+    nodes[s.key] = node(s.l, s.la) * shifted(node(s.r, s.ra), s.sh)
+  for o in pl.outs:
+    result.add shifted(node(o.key, o.adj), o.sh)
 
 proc plaqPath*(mu, nu: int): array[4, int] =
   if mu < 0 or nu < 0 or mu == nu:
