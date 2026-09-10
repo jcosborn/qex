@@ -801,6 +801,11 @@ proc `==`(x,y:OrdPath):bool {.noSideEffect.} =  # noSideEffect needed for Nim de
       of opList: x.s == y.s
       of opAdj: x.p == y.p
 
+proc lexLess(a, b: seq[int]): bool =
+  for i in 0..<min(a.len, b.len):
+    if a[i] != b[i]: return a[i] < b[i]
+  a.len < b.len
+
 proc mostSharedPair(paths:openarray[OrdPath]):(OrdPath,int) =
   ## Receives paths and search each element of OrdPath(k:opList).
   ## Return an OrdPath(k:opPair) occured most frequently among all the paths,
@@ -848,12 +853,14 @@ proc mostSharedPair(paths:openarray[OrdPath]):(OrdPath,int) =
       else:
         pc[pa] = ct
   c = 0
+  var fp0: seq[int]
   for k,v in pc.pairs:
-    # If there are multiple paris with the max count,
-    # which one we return depends on implementation of Table.
-    if v>c:
+    # Ties resolve to the smallest flattened path, so the plan is deterministic.
+    let fk = k.flatten
+    if v>c or (v==c and fk.lexLess(fp0)):
       c = v
       p = k
+      fp0 = fk
   if c==0:
     return (OrdPath(k:opList, s: @[]), 0)
   else:
@@ -925,6 +932,61 @@ proc optimalPairs*(paths:openarray[seq[int]]):OrdPathTree =
     ps[i] = p.newOrdPath
   ps.optimalPairs
 
+type
+  PathStep* = object
+    ## nodes[key](x) = L(x) * R(x - sh),  L = adjIf(nodes[l], la),  R = adjIf(nodes[r], ra)
+    key*, l*, r*: seq[int]
+    la*, ra*: bool
+    sh*: seq[int]
+  PathOut* = object
+    ## adjIf(nodes[key], adj)(x - sh)
+    key*: seq[int]
+    adj*: bool
+    sh*: seq[int]
+  PathPlan* = object
+    ## Evaluation plan over nodes keyed by flattened paths.
+    ## A key of length one is the raw link mu+1 (never negative, the sign is in la/ra/adj);
+    ## longer keys are step results.  Steps are in evaluation order, so every operand
+    ## is a link or an earlier step.  sh lists per-direction offsets, trailing zeros dropped.
+    steps*: seq[PathStep]
+    outs*: seq[PathOut]
+
+proc operand(s:OrdPath):(seq[int],bool) =
+  # Node key and adjoint flag of a step operand or an output path.
+  case s.k:
+  of opInt:
+    return (@[abs s.d], s.d<0)
+  of opPair:
+    return (s.flatten, false)
+  of opAdj:
+    let (k,a) = operand s.p
+    return (k, not a)
+  of opList:
+    if s.s.len==1:
+      return operand s.s[0]
+    qexError("operand: unexpected path ", $s)
+
+proc trim(c:Coord):seq[int] =
+  result = c.x
+  while result.len>0 and result[^1]==0:
+    result.setLen(result.len-1)
+
+proc plan*(t:OrdPathTree, origin=true):PathPlan =
+  ## Steps in the order gaugeProd evaluates them, then one output per input path.
+  ## origin=true shifts each output back to the path's starting site.
+  result.steps.newseq t.segments.len
+  for i,s in t.segments.pairs:
+    let
+      (l,la) = operand s.l
+      (r,ra) = operand s.r
+    result.steps[i] = PathStep(key:s.flatten, l:l, r:r, la:la, ra:ra, sh:trim(s.l.position - s.l.deltaX - s.r.position))
+  result.outs.newseq t.paths.len
+  for i,p in t.paths.pairs:
+    let (k,a) = operand p
+    result.outs[i] = PathOut(key:k, adj:a)
+    if origin:
+      result.outs[i].sh = trim(-p.position)
+
 proc singleshift[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]):F =
   # Result will be in one of the shift buffers.
   result = f
@@ -966,30 +1028,32 @@ proc lrmul(res:auto, l:auto, r:auto, la,ra:bool) =
     toc("direct")
 
 proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
+  ## Evaluate plan(ptree, origin) over the links g.
+  ## Outputs alias the step products unless adjoint or shifted.
   tic("gaugeProd")
   GC_fullCollect() # need to free space since we might allocate many fields
   type
     F = typeof(g[0])
     S = typeof(g[0][0])
-  let nd = g[0].l.nDim
+  let
+    nd = g[0].l.nDim
+    pl = ptree.plan origin
   var
     sf = newseq[Shifter[F,S]](nd)
     sb = newseq[Shifter[F,S]](nd)
-    sl = newseq[seq[int]](ptree.segments.len)
     gp = initTable[seq[int],F]()
     sfi = newseq[bool](nd)
     sbi = newseq[bool](nd)
-  for i,s in ptree.segments.pairs:
-    if s.k==opPair:
-      let sh = (s.l.position - s.l.deltaX - s.r.position).x
-      sl[i] = sh
-      for mu,n in sh.pairs:
-        if n>0:
-          sbi[mu] = true
-        elif n<0:
-          sfi[mu] = true
-    else:
-      qexError("Internal logic error.")
+  template mark(sh:seq[int]) =
+    for mu,n in sh.pairs:
+      if n>0:
+        sbi[mu] = true
+      elif n<0:
+        sfi[mu] = true
+  for s in pl.steps:
+    mark s.sh
+  for o in pl.outs:
+    mark o.sh
   for i in 0..<nd:
     if sfi[i]:
       sf[i] = newShifter(g[0], i, 1)
@@ -997,99 +1061,62 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
       sb[i] = newShifter(g[0], i, -1)
   toc("init shifts")
 
-  proc fetch(s:OrdPath):auto =
-    case s.k:
-    of opInt:
-      if s.d>0:
-        return (g[s.d-1],false)
-      else:
-        return (g[-s.d-1],true)
-    of opPair:
-      return (gp[s.flatten],false)
-    of opList:
-      qexError("Internal logic error.")
-    of opAdj:
-      let (f,a) = fetch s.p
-      return (f, a xor true)
+  proc node(k:seq[int]):F =
+    if k.len==1: g[k[0]-1] else: gp[k]
 
-  for i,s in ptree.segments.pairs:
-    if s.k==opPair:
-      let
-        (l,la) = fetch s.l
-        (r,ra) = fetch s.r
-        sh = sl[i]
-      # echo "gaugeProd:\n","  l: ",la," ",s.l.flatten,"\n    ",s.l.position,"  ",s.l.deltaX,"\n  r: ",ra," ",s.r.flatten,"\n    ",s.r.position,"  ",s.r.deltaX,"\n  sh: ",sh
-      var needs = 0
-      for x in sh:
-        let ax = abs x
-        if needs < ax:
-          needs = ax
-      var res = newOneOf(r)
-      threads:
-        let rr =
-          if needs==0:
-            r
-          elif needs==1:
-            r.singleshift(sh, sf, sb)
-          else:
-            res := r
-            res.multishifts(sh, sf, sb)
-        res.lrmul(l,rr,la,ra)
-      # echo "gaugeProd: add ",s.flatten," ",res.trace/float(g[0].l.physVol*g[0][0].ncols)
-      gp[s.flatten] = res
-    else:
-      qexError("Internal logic error.")
+  for s in pl.steps:
+    let
+      l = node s.l
+      r = node s.r
+      la = s.la
+      ra = s.ra
+      sh = s.sh
+    var needs = 0
+    for x in sh:
+      needs = max(needs, abs x)
+    var res = newOneOf(r)
+    threads:
+      let rr =
+        if needs==0:
+          r
+        elif needs==1:
+          r.singleshift(sh, sf, sb)
+        else:
+          res := r
+          res.multishifts(sh, sf, sb)
+      res.lrmul(l,rr,la,ra)
+    gp[s.key] = res
   toc("gaugeProd prod")
-  let n = ptree.paths.len
+  let n = pl.outs.len
   var res = newseq[F](n)
   var resAlloc = newseq[bool](n)  # TODO: implement tracing ref counting
-  for i,p in ptree.paths.pairs:
-    if p.k==opAdj:
-      let t = gp[p.p.flatten]
-      # echo "gaugeProd result ",i," adj path ",p.flatten," ",$p
+  for i,o in pl.outs.pairs:
+    let t = node o.key
+    if o.adj:
       res[i] = newOneOf t
       resAlloc[i] = true
       threads:
         res[i] := t.adj
     else:
-      res[i] = gp[p.flatten]
-  if origin:
-    var
-      s = newseq[seq[int]](n)
-      fi = newseq[bool](nd)
-      bi = newseq[bool](nd)
-    for i,p in ptree.paths.pairs:
-      s[i] = (-p.position).x
-      for mu,l in s[i].pairs:
-        if l>0:
-          bi[mu] = true
-        elif l<0:
-          fi[mu] = true
-    for i in 0..<nd:
-      if fi[i] and not sfi[i]:
-        sf[i] = newShifter(g[0], i, 1)
-      if bi[i] and not sbi[i]:
-        sb[i] = newShifter(g[0], i, -1)
-    for i,p in ptree.paths.pairs:
-      # echo "gaugeProd result ",i," shifts ",s[i]," path ",p.flatten," ",$p
-      var needs = 0
-      for x in s[i]:
-        let ax = abs x
-        if needs < ax:
-          needs = ax
-      if needs>0:
-        let r = res[i]
-        if not resAlloc[i]:
-          res[i] = newOneOf r
-          resAlloc[i] = true
-        threads:
-          let t =
-            if needs==1:
-              r.singleshift(s[i], sf, sb)
-            else:
-              res[i] := r
-              res[i].multishifts(s[i], sf, sb)
-          res[i] := t
+      res[i] = t
+  for i,o in pl.outs.pairs:
+    let sh = o.sh
+    var needs = 0
+    for x in sh:
+      needs = max(needs, abs x)
+    if needs>0:
+      let r = res[i]
+      if not resAlloc[i]:
+        res[i] = newOneOf r
+        resAlloc[i] = true
+      threads:
+        let t =
+          if needs==1:
+            r.singleshift(sh, sf, sb)
+          else:
+            res[i] := r
+            res[i].multishifts(sh, sf, sb)
+        res[i] := t
   result = res
   toc("done")
 

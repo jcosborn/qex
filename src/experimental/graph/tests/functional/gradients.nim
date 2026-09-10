@@ -201,6 +201,38 @@ suite "functional lambda gradients":
     dzdb :~ 176.0
     dzdx :~ 242.0
 
+  test "curried VJPs preserve argument depth through aliases and conditional functions":
+    let
+      a = grt.toGvalue(2.0)
+      b = grt.toGvalue(4.0)
+      c = grt.toGvalue(3.0)
+      x = grt.toGvalue(5.0)
+      k = grt.toGvalue(1)
+      t = grt.localScalar()
+      p = grt.localScalar()
+      q = grt.localScalar()
+      maker = lambda(t, lambda(p, lambda(q, t * p * p * q + a * p * q * q)))
+      plain = apply(apply(apply(maker, b), c), x)
+      fn = slotVar(cond(k, slotVar(apply(maker, b)), lambda(p, lambda(q, a * p * q))))
+      z = apply(slotVar(apply(fn, c)), x)
+      refp = b * c * c * x + a * c * x * x
+      refz = cond(k, refp, a * c * x)
+    var pairs: seq[tuple[v, r: Gvalue]] = @[(plain, Gvalue(refp)), (z, Gvalue(refz))]
+    for (v, r) in [(plain, Gvalue(refp)), (z, Gvalue(refz))]:
+      for arg in [a, b, c, x]:
+        pairs.add (Gvalue(v.grad(arg)), Gvalue(r.grad(arg)))
+      for (u, w) in [(x, b), (b, x), (x, c), (c, x), (x, a), (a, x)]:
+        pairs.add (Gvalue(v.grad(u).grad(w)), Gvalue(r.grad(u).grad(w)))
+      pairs.add (Gvalue(v.grad(x).grad(b).grad(c)), Gvalue(r.grad(x).grad(b).grad(c)))
+    for i in 0..2:
+      for pair in pairs:
+        pair.v :~ pair.r
+      k.update i mod 2
+      a.update float(3 + i)
+      b.update float(5 + i)
+      c.update float(4 + i)
+      x.update float(6 + i)
+
   test "structural VJP build does not mutate captured apply inputs":
     grt.resetApplyCache()
     grt.resetGradCache()

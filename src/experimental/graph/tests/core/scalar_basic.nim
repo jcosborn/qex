@@ -1,3 +1,22 @@
+type
+  SlotBaseValue = ref object of Gvalue
+    value: float
+  SlotDerivedValue = ref object of SlotBaseValue
+    marker: int
+
+method newOneOf(x: SlotBaseValue): Gvalue =
+  SlotBaseValue(runtime: x.runtime).assignStableNodeId
+
+method newOneOf(x: SlotDerivedValue): Gvalue =
+  SlotDerivedValue(runtime: x.runtime, marker: x.marker).assignStableNodeId
+
+method zeroLike(x: SlotBaseValue): Gvalue =
+  ## Deliberately erases derived types, as storage-only zeroLike methods may do.
+  SlotBaseValue(runtime: x.runtime).assignStableNodeId
+
+method valCopy(z: SlotBaseValue, x: Gvalue) =
+  z.value = SlotBaseValue(x).value
+
 suite "scalar basic":
   setup:
     let fixture = initScalarLeafPair(grt)
@@ -9,6 +28,63 @@ suite "scalar basic":
   test "assign":
     x :~ a
     y :~ b
+
+  test "scalar slotVar is transparent but a distinct target":
+    let v = grt.toGvalue(3.0)
+    let slot = slotVar(v)
+    let z = v * (slot * slot)
+    # Transparent: value and total gradient are those of v*v*v.
+    let dzdv = z.grad v
+    z :~ 27.0
+    dzdv :~ 27.0
+    # Distinct: a gradient seeded at the slot sees only the occurrences
+    # written over it, which is what makes a per-slot partial buildable.
+    let dzdslot = z.gradSeeded(slot, grt.toGvalue(1.0))
+    dzdslot :~ 18.0
+    v.update 2.0
+    z :~ 8.0
+    dzdv :~ 12.0
+    dzdslot :~ 8.0
+
+  test "slotVar preserves clone-aware concrete subtypes":
+    let original = SlotDerivedValue(
+      runtime: grt, value: 3.0, marker: 17).assignStableNodeId
+    original.updated
+    let slot = slotVar(original)
+    discard slot.eval
+    check Gvalue(slot) of SlotDerivedValue
+    check slot.marker == 17
+    check slot.value == original.value
+
+  test "secondPullback keeps seed and upstream live":
+    block:
+      let x = grt.toGvalue(2.0)
+      proc replica(slot: Gscalar): Gvalue =
+        slot * slot * slot
+      let r = secondPullback(x, x, x, replica)
+      let drdx = r.grad x
+
+      r :~ 48.0
+      drdx :~ 72.0
+
+      x.update 3.0
+      r :~ 162.0
+      drdx :~ 162.0
+
+  test "secondPullback rejects mixed runtimes before building a replica":
+    let
+      primal = grt.toGvalue(2.0)
+      other = initGraphRuntime().toGvalue(1.0)
+    var replicaCalls = 0
+    proc replica(slot: Gscalar): Gvalue =
+      inc replicaCalls
+      slot * slot
+
+    expect(GraphValueError):
+      discard secondPullback(primal, other, primal, replica)
+    expect(GraphValueError):
+      discard secondPullback(primal, primal, other, replica)
+    check replicaCalls == 0
 
   test "update refreshes cached scalar values and gradients":
     let mutable = grt.toGvalue(2.0)

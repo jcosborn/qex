@@ -1,7 +1,7 @@
 import ../[core, scalar, multi]
 import ../support/op
 import layout, physics/qcdTypes
-import shared, basic_ops
+import types, basic_ops, matfun
 
 # Section: Fused Gauge Ops
 
@@ -72,33 +72,6 @@ let muladjgg = Gfunc(forward: muladjggf, backward: muladjggb, name: "g*g.adj")
 proc muladj*(x: Ggauge, y: Ggauge): Ggauge =
   graphNode(sameShapeGaugeNodeLike(x, y, "g*g.adj"), @[Gvalue(x), Gvalue(y)], muladjgg, "g*g.adj")
 
-proc blendSubset*(parity, dir: int, cand, x: Ggauge): Ggauge =
-  ## Use `cand` on one parity/direction subset and `x` elsewhere.
-  let sub = x.gval.paritySubset(parity)
-
-  proc forward(v: Gvalue) =
-    let
-      cand = Ggauge(v.inputs[0])
-      x = Ggauge(v.inputs[1])
-      z = Ggauge(v)
-    threads:
-      for mu in 0..<z.gval.len:
-        z.gval[mu] := x.gval[mu]
-      threadBarrier()
-      for e in sub:
-        z.gval[dir][e] := cand.gval[dir][e]
-
-  proc backward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-    let
-      up = requireUpstream(zb, "blendSubset backward", Ggauge)
-      zero = Ggauge(up.zeroLike)
-    if i == 0:
-      Gvalue(blendSubset(parity, dir, up, zero))
-    else:
-      Gvalue(blendSubset(parity, dir, zero, up))
-
-  graphNode(sameShapeGaugeNodeLike(cand, x, "blendSubset"), @[Gvalue(cand), Gvalue(x)], Gfunc(forward: forward, backward: backward, name: "blendSubset"), "blendSubset")
-
 proc contractProjTAHPackedInputb(zb: Gvalue,
                                  z: Gvalue,
                                  i: int,
@@ -160,7 +133,7 @@ proc contractProjTAH*(x: Ggauge, y: Ggauge, parity = -1, dir = 0): Ggauge =
   x.requireSameGaugeShape(y, "contractProjTAH packed")
   let args = multiValues("contractProjTAH args", x, y)
   if parity < 0:
-    let terms = x.gaugeAddTerms
+    let terms = x.addTerms
     if terms.len > 1:
       var inputs = @[Gvalue(args), Gvalue(y)]
       for term in terms:
@@ -170,7 +143,7 @@ proc contractProjTAH*(x: Ggauge, y: Ggauge, parity = -1, dir = 0): Ggauge =
       x.gaugeNodeLike, @[Gvalue(args)], contractProjTAHPackedInputg,
       "contractProjTAH packed")
   let sub = x.gval.paritySubset(parity)
-  let terms = x.gaugeAddTerms
+  let terms = x.addTerms
   if terms.len > 1:
     var inputs = @[Gvalue(args), Gvalue(y)]
     for term in terms:

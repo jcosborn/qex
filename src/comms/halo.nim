@@ -1,4 +1,4 @@
-import qex, base/hyper, comms/gather
+import qex, base/hyper, comms/gather, tables
 getOptimPragmas()
 
 type
@@ -177,7 +177,38 @@ proc makeHaloMap*[L,N](hl: HaloLayout[L], c: Comm, offsets: seq[array[N,SomeInte
     o[i] = @t
   makeHaloMap(hl, c, o)
 
-# T is vectorized type
+# Memoized constructors, argument order as makeHaloLayout/makeHaloMap: one
+# table per L instantiation, keyed by the address of lo (hl) plus the widths
+# (offsets).  The cached value holds lo (hl), so its address cannot be reused
+# while cached.  Not thread safe: build outside `threads:`.
+proc haloLayout*[L:Layout](lo: L, fwd,bck: seq[int32]): HaloLayout[L] =
+  var cache {.global.}: Table[(pointer,seq[int32],seq[int32]), HaloLayout[L]]
+  let key = (cast[pointer](lo), fwd, bck)
+  result = cache.getOrDefault(key)
+  if result.isNil:
+    result = makeHaloLayout(lo, fwd, bck)
+    cache[key] = result
+proc haloLayout*[L:Layout](lo: L, fwdOffset,bckOffset: openarray[SomeInteger]): HaloLayout[L] =
+  var f,b: seq[int32]
+  f.init fwdOffset
+  b.init bckOffset
+  haloLayout(lo, f, b)
+
+proc haloMap*[L](hl: HaloLayout[L], c: Comm, offsets: seq[seq[int32]]): HaloMap[L] =
+  var cache {.global.}: Table[(pointer,seq[seq[int32]]), HaloMap[L]]
+  let key = (cast[pointer](hl), offsets)
+  result = cache.getOrDefault(key)
+  if result.isNil:
+    result = makeHaloMap(hl, c, offsets)
+    cache[key] = result
+proc haloMap*[L,N](hl: HaloLayout[L], c: Comm, offsets: seq[array[N,SomeInteger]]): HaloMap[L] =
+  var o = newSeq[seq[int32]](offsets.len)
+  for i in 0..<offsets.len:
+    o[i].init offsets[i]
+  haloMap(hl, c, o)
+
+# T is the vectorized site type. The buffer is not zeroed: only cells a map
+# fills are defined, and the reverse exchange reads every cell.
 proc makeHalo*[L,F,T](hl: HaloLayout[L], f: F, t: typedesc[T]): Halo[L,F,T] =
   result.new
   result.layout = hl
@@ -310,9 +341,9 @@ proc `[]=`*(h: Halo, i: SomeInteger, x: auto) {.alwaysInline.} =
 
 proc neighbor*(h: Halo, i: SomeInteger, mu: SomeInteger, fb: SomeInteger): int32 =
   if fb > 0:
-    h.map.neighborFwd[mu][i]
+    h.layout.neighborFwd[mu][i]
   else:
-    h.map.neighborBck[mu][i]
+    h.layout.neighborBck[mu][i]
 
 when isMainModule:
   qexInit()

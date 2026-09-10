@@ -1,4 +1,4 @@
-import gauge/shared, gauge/basic_ops, gauge/fused_ops
+import gauge/types, gauge/basic_ops, gauge/matfun, gauge/fused_ops
 import gauge/action/ops
 import gauge/stout
 
@@ -12,4 +12,5 @@ export
   Gactcoeff,
   actWilson, actSymanzik, actIwasaki, actDBW2, actAdj,
   gaugeAction, gaugeActionDeriv, gaugeActionDeriv2, gaugeForce,
+  gaugeActionGraph, adjPlaqAction,
   blendSubset, stoutUpdate, stoutLogDetJ, stoutUpdateLogDetJ

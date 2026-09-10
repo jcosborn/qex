@@ -1,4 +1,111 @@
 suite "functional lambda":
+  test "slotVar lambda aliases keep captures and higher derivatives live":
+    let
+      a = grt.toGvalue(2.0)
+      x = grt.toGvalue(3.0)
+      v = grt.localScalar()
+      f = lambda(v, a * v * v)
+      slot: GlambdaRef = slotVar(f)
+      erased = slotVar(Gvalue(f))
+      z = Gscalar(apply(slot, x)) + Gscalar(apply(erased, x))
+      dx = z.grad x
+      da = z.grad a
+      dxx = dx.grad x
+      dxa = dx.grad a
+    check slot.nodeKey != f.nodeKey
+    check erased.nodeKey != f.nodeKey
+    check slot.inputs[0].nodeKey == f.nodeKey
+    z :~ 36.0
+    dx :~ 24.0
+    da :~ 18.0
+    dxx :~ 8.0
+    dxa :~ 12.0
+    let rev = grt.symbolicRevision
+    a.update 4.0
+    x.update 2.0
+    z :~ 32.0
+    dx :~ 32.0
+    da :~ 8.0
+    dxx :~ 16.0
+    dxa :~ 8.0
+    check grt.symbolicRevision == rev
+
+  test "slotVar local lambda refs survive higher order substitution":
+    let
+      f = lambdaParam(grt.localScalar(), grt.localScalar())
+      v = grt.localScalar()
+      slot: GlambdaRef = slotVar(f)
+      erased = slotVar(Gvalue(f))
+      hof = lambda(f, lambda(v, Gscalar(apply(slot, v)) + Gscalar(apply(erased, v))))
+      a = grt.toGvalue(2.0)
+      x = grt.toGvalue(3.0)
+      g = lambda(v, a * v * v)
+      made = slotVar(apply(hof, g))
+      z = apply(made, x)
+      dx = z.grad x
+      da = z.grad a
+    z :~ 36.0
+    dx :~ 24.0
+    da :~ 18.0
+    a.update 4.0
+    x.update 2.0
+    z :~ 32.0
+    dx :~ 32.0
+    da :~ 8.0
+
+  test "slotVar conditional lambdas keep VJPs symbolic":
+    let
+      a = grt.toGvalue(2.0)
+      b = grt.toGvalue(5.0)
+      k = grt.toGvalue(1)
+      x = grt.toGvalue(3.0)
+      v = grt.localScalar()
+      f = slotVar(cond(k, lambda(v, a * v * v), lambda(v, b * v)))
+      z = apply(f, x)
+      dx = z.grad x
+      da = z.grad a
+      db = z.grad b
+      vjp = apply(apply(vjpOf(f), x), 1.0)
+    z :~ 18.0
+    dx :~ 12.0
+    da :~ 9.0
+    db :~ 0.0
+    vjp :~ 12.0
+    k.update 0
+    b.update 7.0
+    z :~ 21.0
+    dx :~ 7.0
+    da :~ 0.0
+    db :~ 3.0
+    vjp :~ 7.0
+
+  test "slotVar returned lambdas differentiate outer arguments":
+    let
+      a = grt.toGvalue(2.0)
+      b = grt.toGvalue(4.0)
+      x = grt.toGvalue(3.0)
+      p = grt.localScalar()
+      t = grt.localScalar()
+      maker = lambda(t, lambda(p, t * p * p + a * p))
+      f = slotVar(apply(maker, b))
+      z = apply(f, x)
+      db = z.grad b
+      da = z.grad a
+      dx = z.grad x
+      dxb = dx.grad b
+    z :~ 42.0
+    db :~ 9.0
+    da :~ 3.0
+    dx :~ 26.0
+    dxb :~ 6.0
+    b.update 6.0
+    a.update 5.0
+    z :~ 69.0
+    db :~ 9.0
+    da :~ 3.0
+    dx :~ 41.0
+    dxb :~ 6.0
+
   test "apply scalar and grad":
     let x = grt.toGvalue(3.0)
     let v = grt.localScalar()

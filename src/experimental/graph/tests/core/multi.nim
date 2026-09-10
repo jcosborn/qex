@@ -13,6 +13,28 @@ let copyMultiFunc = Gfunc(
   name: "copyMulti")
 
 suite "graph multi":
+  test "slotVar multi aliases preserve distinct targets and owned storage":
+    let
+      x = grt.toGvalue(2.0)
+      y = grt.toGvalue(3.0)
+      pair = multiValues("pair", x * x, y)
+      slot: Gmulti = slotVar(pair)
+      z = Gscalar(slot[0]) * Gscalar(slot[1])
+      dx = z.grad x
+      ds = Gmulti(z.gradSeeded(slot, grt.toGvalue(1.0)))
+    check slot.nodeKey != pair.nodeKey
+    check slot.storedSlot(0).nodeKey != pair.storedSlot(0).nodeKey
+    z :~ 12.0
+    dx :~ 12.0
+    ds[0] :~ 3.0
+    ds[1] :~ 4.0
+    x.update 4.0
+    y.update 5.0
+    z :~ 80.0
+    dx :~ 40.0
+    ds[0] :~ 5.0
+    ds[1] :~ 16.0
+
   test "selection forwards and scatters gradients":
     let x = grt.toGvalue(2.0)
     let y = grt.toGvalue(3.0)
@@ -82,6 +104,20 @@ suite "graph multi":
     let cloned = Gmulti(carrier.newOneOf)
     expect(GraphValueError):
       discard cloned[1]
+
+    let slot: Gmulti = slotVar(carrier)
+    check slot.inputs[0].nodeKey == carrier.nodeKey
+    discard slot.eval
+    check forwards == 2
+    check slot.runCount == 1
+    x.update 7.0
+    discard slot.eval
+    check forwards == 3
+    check slot.runCount == 2
+    expect(GraphValueError):
+      discard slot[0]
+    expect(GraphValueError):
+      cloned.valCopy(carrier)
 
     expect(GraphValueError):
       discard newMultiStructureNode(newSeq[Gvalue](), [Gvalue(args)], carrier.gfunc, "empty structural carrier")

@@ -57,7 +57,7 @@ suite "gauge basic":
   test "gaugeAddTerms preserves nested sums and multiplicity":
     let
       summed = (gp + (gq + gm)) + gp
-      terms = graphGaugeBasic.gaugeAddTerms(summed)
+      terms = graphGaugeBasic.addTerms(summed)
     check terms.len == 4
     var rebuilt = terms[0]
     for i in 1..<terms.len:
@@ -259,20 +259,34 @@ suite "gauge basic":
     norm2(egp*egp.adj - 1.0) :< 1e-20
     ckgradm(exp, gm, 0.1*gp, gg)
 
-  test "expDeriv backward reports unsupported paths for both inputs":
-    let loss = expDeriv(gp, gm).norm2
+  test "gauge slotVar is transparent but a distinct target":
+    # slotVar(v) must behave exactly like v everywhere except as a target.
+    let prod = gg * gu
+    let s1 = redot(gm, gg * slotVar(prod))
+    let s2 = redot(gm, gg * prod)
+    (s1 - s2) :< 1e-8
+    norm2(grad(s1, gg) - grad(s2, gg)) :< 1e-24
+    # Seeded at the slot, only the occurrences written over it are reached,
+    # matching an independent leaf that holds prod's value.
+    let slot = slotVar(prod)
+    let s3 = redot(gm, gg * slot)
+    let indep = grt.toGvalue(gaugeSnapshot(prod.eval))
+    let s4 = redot(gm, gg * indep)
+    norm2(Ggauge(gradSeeded(s3, slot, grt.toGvalue(1.0))) -
+          grad(s4, indep)) :< 1e-24
 
-    try:
-      discard loss.grad gp
-      fail()
-    except GraphValueError as e:
-      check e.msg.contains("force-direction input")
+  test "expDeriv differentiates the cotangent input":
+    # The cotangent slot is linear with an analytic adjoint (the kernel at
+    # x^dag); the exponent-slot replica tower is covered in tgtower on a
+    # small lattice.
+    proc lossb(x: Ggauge): Gscalar = norm2(expDeriv(x, gm))
+    ckgrad(lossb, gp, gq)
 
-    try:
-      discard loss.grad gm
-      fail()
-    except GraphValueError as e:
-      check e.msg.contains("matrix exponential")
+  test "subset expDeriv validates parity and direction":
+    expect(GraphValueError):
+      discard expDeriv(gp, gm, 2, 0)
+    expect(GraphValueError):
+      discard expDeriv(gp, gm, 0, g.len)
 
   test "projTAH":
     let gt = gg.projTAH

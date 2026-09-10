@@ -1,313 +1,346 @@
 import ../[core, scalar]
 import ../support/op
 import layout, gauge, physics/qcdTypes
-import shared
+import types
 
-# Section: Basic Gauge Ops
+# Site-local algebra, stamped once for the gauge bundle and once for the
+# single field. Backward hooks use the pairing dL = Re tr(G^dag dF): for
+# z = x*y, x-bar = u*y^dag and y-bar = x^dag*u; retr, norm2, redot and
+# projTAH are self-adjoint or have the unit/2x/partner adjoints below.
 
-type GaugeLiteral = int | float
+type Literal = int | float
 
-proc retr*(x: Ggauge): Gscalar
-proc adj*(x: Ggauge): Ggauge
-proc norm2*(x: Ggauge): Gscalar
-proc redot*(x: Ggauge, y: Ggauge): Gscalar
-proc exp*(x: Ggauge): Ggauge
-proc expDeriv*(b: Ggauge, x: Ggauge, parity = -1, dir = 0): Ggauge
-proc projTAH*(x: Ggauge): Ggauge
-proc `-`*(x: Ggauge): Ggauge
-proc `+`*(x: Gscalar, y: Ggauge): Ggauge
-proc `+`*(x: Ggauge, y: Ggauge): Ggauge
-proc `*`*(x: Gscalar, y: Ggauge): Ggauge
-proc `*`*(x: Ggauge, y: Ggauge): Ggauge
-proc `-`*(x: Ggauge, y: Gscalar): Ggauge
-proc `-`*(x: Ggauge, y: Ggauge): Ggauge
+template field(x: Ggauge, mu: int): untyped = x.gval[mu]
+template field(x: GfieldOf, mu: int): untyped = x.fval
+template nfields(x: Ggauge): int = x.gval.len
+template nfields(x: GfieldOf): int = 1
+template nodeLike(x: Ggauge): Ggauge = x.gaugeNodeLike
+template nodeLike(x: GfieldOf): untyped = x.fieldNodeLike
+template requireSameShape(x, y: Ggauge, label: string) = requireSameGaugeShape(x, y, label)
+template requireSameShape(x, y: GfieldOf, label: string) = requireSameFieldShape(x, y, label)
+template unitLike(x: Ggauge): Ggauge = x.unitGaugeLike
+template unitLike(x: GfieldOf): untyped = unitField(x.runtime, x.fval)
 
-proc `+`*[T: GaugeLiteral](x: T, y: Ggauge): Ggauge =
-  toGvalue(y.runtime, float(x)) + y
-
-proc `*`*[T: GaugeLiteral](x: T, y: Ggauge): Ggauge =
-  toGvalue(y.runtime, float(x)) * y
-
-proc `-`*[T: GaugeLiteral](x: Ggauge, y: T): Ggauge =
-  x - toGvalue(x.runtime, float(y))
-
-proc retrgb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  let x = Ggauge(z.inputs[0])
-  let g = x.gval.newOneOf
+template forFields(z: typed, body: untyped) =
+  ## One threads region over the fields of z; mu injected.
   threads:
-    for f in g:
-      f := 1.0
-  scaledUpstreamOr(zb, Gscalar, toGvalue(x.runtime, g))
+    for mu {.inject.} in 0 ..< z.nfields:
+      body
 
-proc retrgf(v: Gvalue) =
-  let x = Ggauge(v.inputs[0])
+template forElems(z: typed, body: untyped) =
+  ## One threads region over every site of every field of z; mu, e injected.
+  threads:
+    for mu {.inject.} in 0 ..< z.nfields:
+      for e {.inject.} in z.field(mu):
+        body
+
+# Hooks are generic in the node type; the stamp below binds them into
+# operator records and constructors for each concrete type.
+
+template ops =
+  mixin field, nfields, nodeLike, unitLike, adj, retr, redot, projTAH, `*`, `+`, `-`
+
+proc retrb[T](zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  ops
+  scaledUpstreamOr(zb, Gscalar, T(z.inputs[0]).unitLike)
+
+proc retrf[T](v: Gvalue) =
+  ops
+  let x = T(v.inputs[0])
   let z = Gscalar(v)
   threads:
     var t = 0.0
-    for mu in 0..<x.gval.len:
-      t += x.gval[mu].trace.re
+    for mu in 0 ..< x.nfields:
+      t += x.field(mu).trace.re
     threadMaster: z.sval = t
 
-let retrg = Gfunc(forward: retrgf, backward: retrgb, name: "retrg")
+proc adjb[T](zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  ops
+  requireUpstream(zb, "adj backward", T).adj
 
-proc retr*(x: Ggauge): Gscalar =
-  graphNode(scalarNodeLike(x), @[Gvalue(x)], retrg, "retrg")
+proc adjf[T](v: Gvalue) =
+  ops
+  let x = T(v.inputs[0])
+  let z = T(v)
+  z.forFields:
+    z.field(mu) := x.field(mu).adj
 
-proc adjgb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  requireUpstream(zb, "adjg backward", Ggauge).adj
+proc norm2b[T](zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  ops
+  scaledUpstreamOr(zb, Gscalar, 2.0 * T(z.inputs[0]))
 
-proc adjgf(v: Gvalue) =
-  let x = Ggauge(v.inputs[0])
-  let z = Ggauge(v)
-  z.mapGaugeSites(x.gval[mu].adj)
-
-let adjg = Gfunc(forward: adjgf, backward: adjgb, name: "adjg")
-
-proc adj*(x: Ggauge): Ggauge =
-  graphNode(x.gaugeNodeLike, @[Gvalue(x)], adjg, "adjg")
-
-proc norm2gb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  let x = Ggauge(z.inputs[0])
-  scaledUpstreamOr(zb, Gscalar, toGvalue(x.runtime, 2.0) * x)
-
-proc norm2gf(v: Gvalue) =
-  let x = Ggauge(v.inputs[0])
+proc norm2f[T](v: Gvalue) =
+  ops
+  let x = T(v.inputs[0])
   let z = Gscalar(v)
   threads:
     var t = 0.0
-    for mu in 0..<x.gval.len:
-      t += x.gval[mu].norm2
+    for mu in 0 ..< x.nfields:
+      t += x.field(mu).norm2
     threadMaster: z.sval = t
 
-let norm2g = Gfunc(forward: norm2gf, backward: norm2gb, name: "norm2g")
+proc negb[T](zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  ops
+  -requireUpstream(zb, "neg backward", T)
 
-proc norm2*(x: Ggauge): Gscalar =
-  graphNode(scalarNodeLike(x), @[Gvalue(x)], norm2g, "norm2g")
+proc negf[T](v: Gvalue) =
+  ops
+  let x = T(v.inputs[0])
+  let z = T(v)
+  z.forFields:
+    z.field(mu) := -x.field(mu)
 
-proc neggb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  -requireUpstream(zb, "-g backward", Ggauge)
-
-proc neggf(v: Gvalue) =
-  let x = Ggauge(v.inputs[0])
-  let z = Ggauge(v)
-  z.mapGaugeSites(-x.gval[mu])
-
-let negg = Gfunc(forward: neggf, backward: neggb, name: "-g")
-
-proc `-`*(x: Ggauge): Ggauge =
-  graphNode(x.gaugeNodeLike, @[Gvalue(x)], negg, "-g")
-
-proc addsgb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  let upstream = requireUpstream(zb, "s+g backward", Ggauge)
+proc addsb[T](zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  ops
+  let u = requireUpstream(zb, "s+ backward", T)
   if i == 0:
-    return retr(upstream)
-  upstream
+    return retr(u)
+  u
 
-proc addsgf(v: Gvalue) =
+proc addsf[T](v: Gvalue) =
+  ops
   let x = Gscalar(v.inputs[0])
-  let y = Ggauge(v.inputs[1])
-  let z = Ggauge(v)
-  z.mapGaugeSites(x.sval + y.gval[mu])
+  let y = T(v.inputs[1])
+  let z = T(v)
+  z.forFields:
+    z.field(mu) := x.sval + y.field(mu)
 
-let addsg = Gfunc(forward: addsgf, backward: addsgb, name: "s+g")
+proc addb[T](zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  requireUpstream(zb, "add backward", T)
 
-proc `+`*(x: Gscalar, y: Ggauge): Ggauge =
-  graphNode(y.gaugeNodeLike, @[Gvalue(x), Gvalue(y)], addsg, "s+g")
+proc addf[T](v: Gvalue) =
+  ops
+  let z = T(v)
+  z.forElems:
+    var t {.noinit.}: evalType(z.field(mu)[e])
+    t := T(v.inputs[0]).field(mu)[e]
+    for i in 1 ..< v.inputs.len:
+      t += T(v.inputs[i]).field(mu)[e]
+    z.field(mu)[e] := t
 
-proc addggb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  requireUpstream(zb, "g+g backward", Ggauge)
-
-proc addggf(v: Gvalue) =
-  let z = Ggauge(v)
-  threads:
-    for mu in 0..<z.gval.len:
-      for e in z.gval[mu]:
-        var t {.noinit.}: evalType(z.gval[mu][e])
-        t := Ggauge(v.inputs[0]).gval[mu][e]
-        for i in 1..<v.inputs.len:
-          t += Ggauge(v.inputs[i]).gval[mu][e]
-        z.gval[mu][e] := t
-
-let addgg = Gfunc(forward: addggf, backward: addggb, name: "g+g")
-
-proc gaugeAddTerms*(x: Ggauge): seq[Ggauge] =
-  ## Return the leaves of a gauge sum in evaluation order.
-  if x.gfunc == addgg:
-    for input in x.inputs:
-      result.add gaugeAddTerms(Ggauge(input))
-  else:
-    result.add x
-
-proc `+`*(x: Ggauge, y: Ggauge): Ggauge =
-  x.requireSameGaugeShape(y, "g+g")
-  var inputs: seq[Gvalue]
-  if x.gfunc == addgg:
-    inputs.add x.inputs
-  else:
-    inputs.add Gvalue(x)
-  inputs.add Gvalue(y)
-  graphNode(x.gaugeNodeLike, inputs, addgg, "g+g")
-
-method addLike*(prototype: Ggauge, x: Gvalue, y: Gvalue): Gvalue =
-  Ggauge(x) + Ggauge(y)
-
-proc mulsgb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+proc mulsb[T](zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  ops
   let x = Gscalar(z.inputs[0])
-  let y = Ggauge(z.inputs[1])
-  let upstream = requireUpstream(zb, "s*g backward", Ggauge)
+  let y = T(z.inputs[1])
+  let u = requireUpstream(zb, "s* backward", T)
   if i == 0:
-    return redot(upstream, y)
-  x * upstream
+    return redot(u, y)
+  x * u
 
-proc mulsgf(v: Gvalue) =
+proc mulsf[T](v: Gvalue) =
+  ops
   let x = Gscalar(v.inputs[0])
-  let y = Ggauge(v.inputs[1])
-  let z = Ggauge(v)
-  z.mapGaugeSites(x.sval * y.gval[mu])
+  let y = T(v.inputs[1])
+  let z = T(v)
+  z.forFields:
+    z.field(mu) := x.sval * y.field(mu)
 
-let mulsg = Gfunc(forward: mulsgf, backward: mulsgb, name: "s*g")
-
-proc `*`*(x: Gscalar, y: Ggauge): Ggauge =
-  graphNode(y.gaugeNodeLike, @[Gvalue(x), Gvalue(y)], mulsg, "s*g")
-
-proc mulggb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  let x = Ggauge(z.inputs[0])
-  let y = Ggauge(z.inputs[1])
-  let upstream = requireUpstream(zb, "g*g backward", Ggauge)
+proc mulb[T](zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  ops
+  let x = T(z.inputs[0])
+  let y = T(z.inputs[1])
+  let u = requireUpstream(zb, "mul backward", T)
   if i == 0:
-    return upstream * y.adj
-  x.adj * upstream
+    return u * y.adj
+  x.adj * u
 
-proc mulggf(v: Gvalue) =
-  let x = Ggauge(v.inputs[0])
-  let y = Ggauge(v.inputs[1])
-  let z = Ggauge(v)
-  z.mapGaugeSites(x.gval[mu] * y.gval[mu])
+proc mulf[T](v: Gvalue) =
+  ops
+  let x = T(v.inputs[0])
+  let y = T(v.inputs[1])
+  let z = T(v)
+  z.forFields:
+    z.field(mu) := x.field(mu) * y.field(mu)
 
-let mulgg = Gfunc(forward: mulggf, backward: mulggb, name: "g*g")
+proc redotb[T](zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  bilinearBackward(zb, z, i, T)
 
-proc `*`*(x: Ggauge, y: Ggauge): Ggauge =
-  graphNode(sameShapeGaugeNodeLike(x, y, "g*g"), @[Gvalue(x), Gvalue(y)], mulgg, "g*g")
-
-method scaleLike*(contribution: Ggauge, upstream: Gvalue): Gvalue =
-  if upstream of Gscalar:
-    return Gscalar(upstream) * contribution
-  if upstream of Ggauge:
-    return Ggauge(upstream) * contribution
-  raiseValueError("gauge scale upstream expects scalar or gauge value, got:\n" & upstream.nodeRepr)
-
-proc redotggb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  bilinearBackward(zb, z, i, Ggauge)
-
-proc redotggf(v: Gvalue) =
-  let x = Ggauge(v.inputs[0])
-  let y = Ggauge(v.inputs[1])
+proc redotf[T](v: Gvalue) =
+  ops
+  let x = T(v.inputs[0])
+  let y = T(v.inputs[1])
   let z = Gscalar(v)
   threads:
     var t = 0.0
-    for mu in 0..<x.gval.len:
-      t += redot(x.gval[mu], y.gval[mu])
+    for mu in 0 ..< x.nfields:
+      t += redot(x.field(mu), y.field(mu))
     threadMaster: z.sval = t
 
-let redotgg = Gfunc(forward: redotggf, backward: redotggb, name: "redotgg")
-
-proc redot*(x: Ggauge, y: Ggauge): Gscalar =
-  x.requireSameGaugeShape(y, "redotgg")
-  graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], redotgg, "redotgg")
-
-proc subgsb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  let upstream = requireUpstream(zb, "g-s backward", Ggauge)
+proc subsb[T](zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  ops
+  let u = requireUpstream(zb, "-s backward", T)
   if i == 0:
-    return upstream
-  -retr(upstream)
+    return u
+  -retr(u)
 
-proc subgsf(v: Gvalue) =
-  let x = Ggauge(v.inputs[0])
+proc subsf[T](v: Gvalue) =
+  ops
+  let x = T(v.inputs[0])
   let y = Gscalar(v.inputs[1])
-  let z = Ggauge(v)
-  z.mapGaugeSites(x.gval[mu] - y.sval)
+  let z = T(v)
+  z.forFields:
+    z.field(mu) := x.field(mu) - y.sval
 
-let subgs = Gfunc(forward: subgsf, backward: subgsb, name: "g-s")
-
-proc `-`*(x: Ggauge, y: Gscalar): Ggauge =
-  graphNode(x.gaugeNodeLike, @[Gvalue(x), Gvalue(y)], subgs, "g-s")
-
-proc subggb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  let upstream = requireUpstream(zb, "g-g backward", Ggauge)
+proc subb[T](zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  ops
+  let u = requireUpstream(zb, "sub backward", T)
   if i == 0:
-    return upstream
-  -upstream
+    return u
+  -u
 
-proc subggf(v: Gvalue) =
-  let x = Ggauge(v.inputs[0])
-  let y = Ggauge(v.inputs[1])
-  let z = Ggauge(v)
-  z.mapGaugeSites(x.gval[mu] - y.gval[mu])
+proc subf[T](v: Gvalue) =
+  ops
+  let x = T(v.inputs[0])
+  let y = T(v.inputs[1])
+  let z = T(v)
+  z.forFields:
+    z.field(mu) := x.field(mu) - y.field(mu)
 
-let subgg = Gfunc(forward: subggf, backward: subggb, name: "g-g")
+proc projTAHb[T](zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  ops
+  projTAH(requireUpstream(zb, "projTAH backward", T))
 
-proc `-`*(x: Ggauge, y: Ggauge): Ggauge =
-  graphNode(sameShapeGaugeNodeLike(x, y, "g-g"), @[Gvalue(x), Gvalue(y)], subgg, "g-g")
+proc projTAHf[T](v: Gvalue) =
+  ops
+  let x = T(v.inputs[0])
+  let z = T(v)
+  z.forElems:
+    z.field(mu)[e].projectTAH(x.field(mu)[e])
 
-proc expgb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  let x = Ggauge(z.inputs[0])
-  expDeriv(requireUpstream(zb, "expg backward", Ggauge), x)
+template stampSiteOps(T: typedesc, tag: static string) =
+  proc retr*(x: T): Gscalar
+  proc adj*(x: T): T
+  proc norm2*(x: T): Gscalar
+  proc redot*(x: T, y: T): Gscalar
+  proc projTAH*(x: T): T
+  proc `-`*(x: T): T
+  proc `+`*(x: Gscalar, y: T): T
+  proc `+`*(x: T, y: T): T
+  proc `*`*(x: Gscalar, y: T): T
+  proc `*`*(x: T, y: T): T
+  proc `-`*(x: T, y: Gscalar): T
+  proc `-`*(x: T, y: T): T
 
-proc expgf(v: Gvalue) =
-  let x = Ggauge(v.inputs[0])
-  let z = Ggauge(v)
-  z.mapGaugeElements:
-    z.gval[mu][e] := exp(x.gval[mu][e])
+  proc `+`*[L: Literal](x: L, y: T): T =
+    toGvalue(y.runtime, float(x)) + y
 
-let expg = Gfunc(forward: expgf, backward: expgb, name: "expg")
+  proc `*`*[L: Literal](x: L, y: T): T =
+    toGvalue(y.runtime, float(x)) * y
 
-proc exp*(x: Ggauge): Ggauge =
-  graphNode(x.gaugeNodeLike, @[Gvalue(x)], expg, "expg")
+  proc `-`*[L: Literal](x: T, y: L): T =
+    x - toGvalue(x.runtime, float(y))
 
-proc expDerivgb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  if i == 0:
-    raiseUnsupportedPath("expDeriv backward", "derivative with respect to force-direction input")
-  raiseUnsupportedPath("expDeriv backward", "second derivatives of matrix exponential")
+  let retrg = Gfunc(forward: retrf[T], backward: retrb[T], name: "retr" & tag)
+  let adjg = Gfunc(forward: adjf[T], backward: adjb[T], name: "adj" & tag)
+  let norm2g = Gfunc(forward: norm2f[T], backward: norm2b[T], name: "norm2" & tag)
+  let negg = Gfunc(forward: negf[T], backward: negb[T], name: "-" & tag)
+  let addsg = Gfunc(forward: addsf[T], backward: addsb[T], name: "s+" & tag)
+  let addg = Gfunc(forward: addf[T], backward: addb[T], name: tag & "+" & tag)
+  let mulsg = Gfunc(forward: mulsf[T], backward: mulsb[T], name: "s*" & tag)
+  let mulg = Gfunc(forward: mulf[T], backward: mulb[T], name: tag & "*" & tag)
+  let redotg = Gfunc(forward: redotf[T], backward: redotb[T], name: "redot" & tag)
+  let subsg = Gfunc(forward: subsf[T], backward: subsb[T], name: tag & "-s")
+  let subg = Gfunc(forward: subf[T], backward: subb[T], name: tag & "-" & tag)
+  let projTAHg = Gfunc(forward: projTAHf[T], backward: projTAHb[T], name: "projTAH" & tag)
 
-proc expDerivgf(v: Gvalue) =
-  let x = Ggauge(v.inputs[0])
-  let y = Ggauge(v.inputs[1])
-  let z = Ggauge(v)
-  z.mapGaugeElements:
-    z.gval[mu][e] := expDeriv(
-      y.gval[mu][e],
-      x.gval[mu][e])
+  proc retr*(x: T): Gscalar =
+    graphNode(scalarNodeLike(x), @[Gvalue(x)], retrg, "retr" & tag)
 
-let expDerivg = Gfunc(forward: expDerivgf, backward: expDerivgb, name: "expDerivg")
+  proc adj*(x: T): T =
+    graphNode(x.nodeLike, @[Gvalue(x)], adjg, "adj" & tag)
 
-proc expDeriv*(b: Ggauge, x: Ggauge, parity = -1, dir = 0): Ggauge =
-  ## D exp(x)^*[b], on the whole field or only (parity,dir); zero elsewhere.
-  let node = sameShapeGaugeNodeLike(b, x, "expDerivg")
-  if parity < 0:
-    return graphNode(node, @[Gvalue(b), Gvalue(x)], expDerivg, "expDerivg")
-  let sub = b.gval.paritySubset(parity)
-  proc fwd(v: Gvalue) =
-    let b = Ggauge(v.inputs[0])
-    let x = Ggauge(v.inputs[1])
-    let z = Ggauge(v)
-    forGaugeSubset(sub):
-      # element order matches whole-field expDerivgf: expDeriv(inputs[1], inputs[0])
-      z.gval[dir][e] := expDeriv(x.gval[dir][e], b.gval[dir][e])
-  result = graphNode(node, @[Gvalue(b), Gvalue(x)],
-    Gfunc(forward: fwd, backward: expDerivgb, name: "expDerivg"),
-    "expDerivg")
-  result.zeroGaugeStorage
+  proc norm2*(x: T): Gscalar =
+    graphNode(scalarNodeLike(x), @[Gvalue(x)], norm2g, "norm2" & tag)
 
-proc projTAHb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  projTAH(requireUpstream(zb, "projTAH backward", Ggauge))
+  proc `-`*(x: T): T =
+    graphNode(x.nodeLike, @[Gvalue(x)], negg, "-" & tag)
 
-proc projTAHf(v: Gvalue) =
-  let x = Ggauge(v.inputs[0])
-  let z = Ggauge(v)
-  z.mapGaugeElements:
-    z.gval[mu][e].projectTAH(x.gval[mu][e])
+  proc `+`*(x: Gscalar, y: T): T =
+    graphNode(y.nodeLike, @[Gvalue(x), Gvalue(y)], addsg, "s+" & tag)
 
-let projTAHg = Gfunc(forward: projTAHf, backward: projTAHb, name: "projTAH")
+  proc addTerms*(x: T): seq[T] =
+    ## The leaves of a sum in evaluation order.
+    if x.gfunc == addg:
+      for input in x.inputs:
+        result.add addTerms(T(input))
+    else:
+      result.add x
 
-proc projTAH*(x: Ggauge): Ggauge =
-  graphNode(x.gaugeNodeLike, @[Gvalue(x)], projTAHg, "projTAH")
+  proc `+`*(x: T, y: T): T =
+    ## n-ary: a sum of sums flattens into one node.
+    x.requireSameShape(y, tag & "+" & tag)
+    var inputs: seq[Gvalue]
+    if x.gfunc == addg:
+      inputs.add x.inputs
+    else:
+      inputs.add Gvalue(x)
+    inputs.add Gvalue(y)
+    graphNode(x.nodeLike, inputs, addg, tag & "+" & tag)
+
+  method addLike*(prototype: T, x: Gvalue, y: Gvalue): Gvalue =
+    T(x) + T(y)
+
+  proc `*`*(x: Gscalar, y: T): T =
+    graphNode(y.nodeLike, @[Gvalue(x), Gvalue(y)], mulsg, "s*" & tag)
+
+  proc `*`*(x: T, y: T): T =
+    x.requireSameShape(y, tag & "*" & tag)
+    graphNode(x.nodeLike, @[Gvalue(x), Gvalue(y)], mulg, tag & "*" & tag)
+
+  method scaleLike*(contribution: T, upstream: Gvalue): Gvalue =
+    if upstream of Gscalar:
+      return Gscalar(upstream) * contribution
+    if upstream of T:
+      return T(upstream) * contribution
+    raiseValueError(tag & " scale upstream expects a scalar or same-type value, got:\n" & upstream.nodeRepr)
+
+  proc redot*(x: T, y: T): Gscalar =
+    x.requireSameShape(y, "redot" & tag)
+    graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], redotg, "redot" & tag)
+
+  proc `-`*(x: T, y: Gscalar): T =
+    graphNode(x.nodeLike, @[Gvalue(x), Gvalue(y)], subsg, tag & "-s")
+
+  proc `-`*(x: T, y: T): T =
+    x.requireSameShape(y, tag & "-" & tag)
+    graphNode(x.nodeLike, @[Gvalue(x), Gvalue(y)], subg, tag & "-" & tag)
+
+  proc projTAH*(x: T): T =
+    graphNode(x.nodeLike, @[Gvalue(x)], projTAHg, "projTAH" & tag)
+
+stampSiteOps(Ggauge, "g")
+stampSiteOps(Gfield, "f")
+when not cfieldIsGfield:
+  stampSiteOps(Gcfield, "c")
+
+proc blendSubset*(parity, dir: int, cand, x: Ggauge): Ggauge =
+  ## Use `cand` on one parity/direction subset and `x` elsewhere.
+  requireParityDir(parity, dir, x.gval.len, "blendSubset")
+  let sub = x.gval.paritySubset(parity)
+
+  proc forward(v: Gvalue) =
+    let
+      cand = Ggauge(v.inputs[0])
+      x = Ggauge(v.inputs[1])
+      z = Ggauge(v)
+    threads:
+      for mu in 0..<z.gval.len:
+        z.gval[mu] := x.gval[mu]
+      threadBarrier()
+      for e in sub:
+        z.gval[dir][e] := cand.gval[dir][e]
+
+  proc backward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+    let
+      up = requireUpstream(zb, "blendSubset backward", Ggauge)
+      zero = Ggauge(up.zeroLike)
+    if i == 0:
+      Gvalue(blendSubset(parity, dir, up, zero))
+    else:
+      Gvalue(blendSubset(parity, dir, zero, up))
+
+  graphNode(sameShapeGaugeNodeLike(cand, x, "blendSubset"), @[Gvalue(cand), Gvalue(x)], Gfunc(forward: forward, backward: backward, name: "blendSubset"), "blendSubset")
+
+proc maskSubset*(parity, dir: int, x: Ggauge): Ggauge =
+  ## x on the (parity, dir) subset, zero elsewhere.
+  blendSubset(parity, dir, x, Ggauge(x.zeroLike))

@@ -51,6 +51,32 @@ suite "gauge coeffs":
     beta.update 5.0
     symanzik.checkRectCoeff(5.0, -1.0 / 12.0)
 
+  test "action coefficient addition and gradients":
+    let b1 = scalar.toGvalue(grt, 2.0)
+    let b2 = scalar.toGvalue(grt, 3.0)
+    let c1 = actWilson(b1)
+    let c2 = actWilson(b2)
+    let csum = c1 + c2
+    let basis = grt.toGvalue(GaugeActionCoeffs(plaq: 1.0))
+
+    discard csum.eval
+    check almostEqual(csum.cval.plaq, 5.0)
+    check almostEqual(csum.cval.rect, 0.0)
+    check almostEqual(csum.cval.pgm, 0.0)
+    check almostEqual(csum.cval.adjplaq, 0.0)
+    grad(redot(csum, basis), b1) :~ 1.0
+
+  test "shared Wilson coefficients accumulate adjoints":
+    let gg = grt.toGvalue(g)
+    let gu = grt.toGvalue(u)
+    let beta = scalar.toGvalue(grt, 5.4)
+    let c = actWilson(beta)
+    let w = gaugeActionGraph(c, gg) + gaugeActionGraph(c, gu)
+    let plaqBasis = grt.toGvalue(GaugeActionCoeffs(plaq: 1.0))
+
+    (beta * grad(w, beta) - w) :< 1e-6
+    (beta * redot(grad(w, c), plaqBasis) - w) :< 1e-6
+
   test "action coefficient erased copy compatibility stays direct":
     let source = grt.toGvalue(GaugeActionCoeffs(plaq: 2.0, rect: 3.0))
     let target = Gactcoeff(source.newOneOf)

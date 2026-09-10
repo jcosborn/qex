@@ -51,6 +51,14 @@ wrong-dependency-surface bugs.
 A nil hook means "walk raw `inputs`" for every mode. Only install a custom hook
 when raw inputs are not the right dependency surface.
 
+Core's example is `cond`, whose eval walk visits only the selected branch
+while its reachable and backward walks visit both.
+
+There is deliberately no stop-gradient op. Backward hooks keep dependencies
+live and use the per-slot construction rules in section 5 to isolate one input
+slot. Hiding a live dependence from `iwmBackward` makes the next derivative
+wrong because the returned graph is constant in something it depends on.
+
 Custom input views must emit ordinary graph values without mutating `inputs`.
 The `backward` hook receives both the backward dep index and the actual `input`,
 because an `iwmBackward` surface need not line up with raw input positions.
@@ -226,6 +234,31 @@ Structural functional VJP bodies use uncached seeded builds: the public
 output-gradient cache owns `grad(dep, target)` reuse, while seed-specific VJP
 bodies avoid storing contributions whose meaning depends on a particular
 upstream adjoint.
+
+### Per-slot partials and slot variables
+
+A backward hook returns the contribution for one input slot, and the engine
+sums those slot contributions. A hook must not account for a sibling slot's
+path. Naming a sibling in the returned value is fine because a value is not a
+path. Calling `grad` or `gradSeeded` with a target that also occurs in a sibling
+slot walks that sibling's path a second time.
+
+`slotVar(x)` is a transparent alias with the same value and derivatives as `x`
+but a distinct node. It has no custom `inputView` and is the graph spelling of
+`let slot = x`. Differentiating with respect to `slot` never reaches a sibling.
+Ordinary values preserve their concrete type through `newOneOf`. Resolved
+`Glambda` aliases return `GlambdaRef`; lambda resolution and structural VJPs
+follow their input edge. They support `apply` and `vjpOf`, subject to the
+functional layer's existing absence of whole-lambda cotangents. Structural
+`Gmulti` aliases retain shape prototypes and refresh through that edge without
+copying slot values.
+
+`secondPullback(x, seed, upstream, replica)` in `support/op` packages the shape
+used by replica-based fallback backwards. The replica must be built over its
+`slot` argument, and every occurrence of the differentiated argument must be
+spelled as `slot`. A builder that captures `x` directly compiles but returns the
+wrong partial. `seed` and `upstream` remain ordinary live graph values, which
+keeps the contribution exact under further differentiation.
 
 Conditional upstream gradients are split before calling a node's `backward`.
 Static zero branches are skipped there, so inactive branches can produce guarded
@@ -501,11 +534,19 @@ resultVjpOf(fun, target)
 ```
 
 These names are documentation notation for the type rules below; in code they are
-a single `VjpSpec` record whose `kind`/`target` fields select the form:
-`callVjpOf` is `VjpSpec(kind = lvkCall, target = lvtkArgument)`, `captureVjpOf` is
-`VjpSpec(kind = lvkCall, target = lvtkValue)`, and `resultVjpOf` is
-`VjpSpec(kind = lvkResult, ...)`. On-graph they reduce to the `vjpOf` /
-`vjpOfResult` nodes (`gvjpOfCall` / `gvjpOfResult`).
+a single `VjpSpec` record whose `depth`/`target` fields select the form:
+`callVjpOf` has depth zero and an argument target, `captureVjpOf` has depth zero
+and a value target, and `resultVjpOf` has positive depth. On-graph they reduce
+to the `vjpOf` / `vjpOfResult` nodes (`GvjpOf`). The depth counts enclosing
+arguments to preserve before taking the call VJP. Nested function applications
+increment it, and lambda shells decrement it. Symbolic VJP nodes and active
+shell matching retain the same depth, so later arguments of a curried function
+remain distinct differentiation targets.
+
+For `f(a0)(a1)...(an)`, a value target receives the direct capture contribution
+plus the chain contribution through each inner `ai`. The final `an` belongs
+to the outer apply's own argument slot. The builder keeps the original
+argument nodes, so these contributions remain live under further derivatives.
 
 Targets are represented as one value, `LambdaVjpTarget`: either the call
 argument or a concrete graph value target. Keeping the target kind and value
@@ -781,6 +822,100 @@ subgraphs, but the action layer does not promise differentiation of
 `gaugeAction` or `gaugeActionDeriv` with respect to those coefficients.
 Unsupported coefficient gradients should fail explicitly rather than degrade into
 ambiguous behavior.
+
+### Grad-complete basic tier
+
+A set of ops is grad-complete when every op's `backward` builds a graph made
+only of ops in the set (plus constant leaves and the scalar layer); any graph
+over such a set differentiates to arbitrary order with no per-order code.
+
+The gauge basic tier is grad-complete: the site-local `Ggauge` algebra
+(`retr`, `adj`, `norm2`, `redot`, `projTAH`, add/sub/scale/mul), `blendSubset`,
+the single-direction `Gfield` tier (`linkField`, `injectLink`, `shift`, and the
+matching site-local algebra), and the covariant transport step `hop`. `Gfield`
+is internal plumbing in the `Gmulti` spirit: applications keep whole-`Ggauge`
+signatures, but per-direction values are unavoidable because path products mix
+directions and ∂S/∂U_mu is per-direction. The `Gfield` closure contract includes
+the site-local `Ggauge` algebra, so `gauge/field_ops` imports `basic_ops`.
+`wilsonLine` and `transport` chain hops, so staples, loops, and actions have
+basic-tier expressions. These internal plumbing ops live in `gauge/field_ops`
+and `gauge/transport`; the top-level `gauge` facade does not re-export them.
+The site algebra is one template stamped per value type; the types differ
+only in storage (`gval[mu]` versus `fval`) and in the bundle-only subset ops.
+`Gcfield` is the complex scalar field spelled as 1x1 site matrices, so the
+matrix algebra and its kernels serve it unchanged: `norm2` of a complex field
+is the site sum of |c|^2 and `retr` its real sum. For Nc = 1 it is the same
+type as `Gfield`. `gauge/cfield` bridges the two: `trace` (per-site trace),
+`scale` (per-site complex times matrix) and `dot` (per-site tr(x^dag y)) are
+mutually adjoint under the pairing, so an observable such as the adjoint
+plaquette sum_x |tr P_x|^2 is `norm2(trace(P))` with derivatives to any order.
+
+`lineProducts` evaluates QEX's Wilson-line plan (`gaugeUtils.plan`, the
+segment tree behind `gaugeProd`) over graph nodes, memoized by path key, so
+shared sub-products and their derivatives are computed once. Each step
+L(x) * R(x - sh) is one `gp` node from `gauge/stencil`: R is read through a
+halo of its input (boundary exchange only, no interior copy, the halo
+layout narrowed to the offset's directions), so a step costs one field of
+storage. `gather` and `scatter` are the mutually adjoint halo moves the
+backward of `gp` is written with; scatter places every local site at its
+one target and finishes with the reverse exchange, so it starts from zero on
+every evaluation. A stencil node owns its halo buffers and index table and
+rebinds the halo to its input each evaluation (section 6). Hop chains remain
+the spelling for transporting a general field along a path.
+
+Each gauge module isolates one protocol, and that is the rule for adding one:
+
+```text
+gauge/types.nim       value storage: Ggauge, GfieldOf[F] (Gfield, Gcfield), ownership, shape helpers
+gauge/basic_ops.nim   closed generators: the site algebra stamped per type, blend/mask
+gauge/matfun.nim      exp family: kernels at every order (expJet) and the polynomial replica
+gauge/field_ops.nim   shift, linkField, injectLink
+gauge/cfield.nim      matrix field <-> complex field bridge: trace, scale, dot
+gauge/stencil.nim     halo moves of a field: gather, scatter, gp (gathered product)
+gauge/transport.nim   hop chains (transport, wilsonLine) and lineProducts on QEX's path plan
+gauge/fused_ops.nim   Gmulti-packed site kernels
+gauge/action/         QEX kernel dispatch (domain), coefficient type, action wrappers, reference actions
+gauge/stout.nim       stout monolith wrappers
+```
+
+Optimized operators keep fused kernels for the orders that matter. Where no
+optimized higher-order kernel exists, the backward hook must not raise; it
+builds a grad-complete replica of the node's function. The exp tower is
+fused at every order through `expJet` (matrix jets of the kernel polynomial;
+`expTopReplica` nests the basic-op polynomial replica past three directions),
+`plaqActionGraph` over hop chains is the replica behind `gaugeActionDeriv2`, and the
+stout update gradient kernels differentiate through a replica of the update
+built over slot variables. The Nc=1 exponential uses its exact scalar identity
+instead.
+
+The reference actions also carry what the QEX kernels omit, and the kernel
+dispatch in `action/domain` now raises there instead of returning a truncated
+value: `gaugeAction1` and `gaugeActionDeriv` have no parallelogram terms, and
+the Hessian kernel `gaugeDerivDeriv2` has plaquette terms only. `gaugeActionGraph`
+covers the plaquette and rectangle families (the rectangle products are built
+from `lineProducts` and evaluated only when their coefficient is nonzero) and
+`adjPlaqAction` the adjoint-plaquette family, each guarded at evaluation by
+its coefficient nodes, each differentiable in the coefficients.
+
+Replica backwards use `secondPullback` as described in section 5.
+`tests/gauge/higher` pins each replica backward one order past the derivative
+its hook builds, over a cotangent slot that aliases the field and over one that
+merely depends on it, because those are the orders a frozen seed would silently
+lose.
+
+Replicas must compute the same function as the kernel they stand behind
+(`expPolyGraph` mirrors the matexp poly-and-squaring scheme exactly), and
+pinning tests hold value and first-derivative agreement between the two. The
+matexp default kind, order, and scale come from `newExpParam`, with a
+compile-time check that rejects a stale graph replica.
+
+The remaining non-grad-complete boundaries are the stout log-Jacobian and the
+fused stout step (`stoutLogDetJ` and the `stoutUpdateLogDetJ` pullback kernels
+reject further differentiation), the optimized action ops past second order
+for families other than the plaquette (their Hessian kernel raises; the
+reference actions differentiate those families through basic ops), and
+coefficient gradients of the optimized action ops (the reference actions are
+the coefficient-differentiable spellings).
 
 ## 13. `hmcgauge`
 

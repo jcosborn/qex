@@ -860,6 +860,65 @@ proc expm1Deriv*(p: var ExpParam, m: Mat1, w: Mat2): auto {.noInit.} =
     p.expm1DerivNoScale(r, m, w)
   r
 
+
+# --- multivariate first-order jets of the matrix exponential -----------------
+#
+# For directions d_1..d_M and nilpotents e_i (e_i^2 = 0),
+#   P(y + sum_i e_i d_i) = sum_{s subset of {1..M}} c_s prod_{i in s} e_i,
+# with P the polynomial-and-squaring scheme of expm1 above. The coefficient
+# c_{1..M} is the symmetric mixed derivative
+#   expTop(y; d_1..d_M) = d/de_1 ... d/de_M P(y + sum e_i d_i) = L^M_P(y; d_1..d_M).
+# Real coefficients give, under the pairing redot(a, b) = Re tr(a^dag b),
+#   z = expTop(y; d):  d_i-bar = expTop(y^dag; v, d_j^dag (j != i)),
+#                      y-bar   = expTop(y^dag; v, d_1^dag, ..., d_M^dag),
+# and expTop(x^dag; d_1) = expDeriv(x, d_1).
+
+type JetMat*[M: static int, T] = object
+  ## Coefficient per subset (bit mask over the M directions).
+  c*: array[1 shl M, T]
+
+proc jmul[M: static int, T](r: var JetMat[M,T], a, b: JetMat[M,T]) =
+  ## r = a*b with e_i^2 = 0: only disjoint subsets multiply (3^M products).
+  for u in 0 ..< (1 shl M):
+    var s = u
+    var first = true
+    while true:
+      let t = u xor s
+      if first:
+        mul(r.c[u], a.c[s], b.c[t])
+        first = false
+      else:
+        imadd(r.c[u], a.c[s], b.c[t])
+      if s == 0: break
+      s = (s - 1) and u
+
+proc expTop*[M: static int; D](p: var ExpParam, y: Mat1, d: array[M, D]): auto {.noInit.} =
+  ## Top jet coefficient of the poly scheme; only kind ekPoly, order 4.
+  type T = MatrixArray[y.nrows, y.ncols, type(y[0,0])]
+  var j, m2, a, e, t, e2 {.noInit.}: JetMat[M, T]
+  p.valid = p.kind == ekPoly and p.order == 4
+  let s = numberType(y)(1.0/float(1 shl p.scale))
+  for u in 0 ..< (1 shl M):
+    j.c[u] := 0
+  j.c[0] := s * y
+  for i in 0 ..< M:
+    j.c[1 shl i] := s * d[i]
+  jmul(m2, j, j)
+  for u in 0 ..< (1 shl M):
+    a.c[u] := C4*m2.c[u] + C3*j.c[u]
+  a.c[0] += C2
+  jmul(e, a, m2)
+  for u in 0 ..< (1 shl M):
+    e.c[u] += j.c[u]
+  for k in 1 .. p.scale:
+    t = e
+    t.c[0] += 2
+    jmul(e2, e, t)
+    e = e2
+  var r {.noInit.}: T
+  r := e.c[(1 shl M) - 1]
+  r
+
 proc exp*(p: var ExpParam, m: Mat1): auto {.noInit.} =
   result = p.expm1(m)
   if p.valid:
