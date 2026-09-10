@@ -56,7 +56,10 @@
     <f_tol>1e-16</f_tol> <!-- force solver residual^2 -->
     <f_maxits>10000</f_maxits>
   </solver>
-  <basic_meas> <!-- measurements, made after every trajectory -->
+  <basic_meas> <!-- Plaquette, Polyakov-loop and S4 frequencies count trajectories
+                    within each configuration block, resetting each block.
+                    Values greater than config_space make no measurements;
+                    nonpositive values disable measurement. -->
     <plaq><!-- plaquette -->
       <plaq_freq>1</plaq_freq>
     </plaq>

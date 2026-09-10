@@ -46,7 +46,8 @@ letParam:
   rank_geom = newSeq[int](0) # <-+- if empty, guesses layout
   simd_geom = newSeq[int](0) # <-+
 
-# read xml inputs
+# read xml inputs - again, if you're using this as a reference, please, please, please
+# note that many of the choices made here are legacy and may not reflect best practices
 letXml xml:
   hmc:
     tau = 1.0    # trajectory length
@@ -54,7 +55,7 @@ letXml xml:
     g_steps = 3  # number of gauge (inner) integrator steps *PER* outer gauge update
     ferm_int_alg =  "2MN" # integrator for fermion/PV level
     gauge_int_alg = "2MN" # integrator for gauge level
-    no_metropolis_until = 0 # number of trajectories to run w/o Metropolis test
+    no_metropolis_until = 0 # accept unconditionally for configuration indices below this
 
   config_opts:
     start = "cold" # starting configuration: cold, hot, or read
@@ -96,10 +97,10 @@ letXml xml:
 
   basic_meas:
     plaq:
-      plaq_freq = 1 # frequency of plaquette measurement (trajectory units)
+      plaq_freq = 1 # every N trajectories within each configuration block; counter resets per block
 
-    ploop_freq = 1  # frequency of Polyakov loop measurement (trajectory units)
-    s4_freq = 1     # frequency of "s4 order parameter" measurement (trajectory units)
+    ploop_freq = 1  # every N trajectories within each configuration block
+    s4_freq = 1     # every N trajectories within each configuration block
 
     hmc_checks:
       rev_check_freq = 0 # frequency of reversibility checks (trajectory units)
@@ -111,6 +112,12 @@ echoParams()
 echoXml()
 
 if Nh != 0 and Nh != 1: qexError "eight flavor project only uses one Hasenbusch field"
+
+# Convert XML boundary conditions to per-direction periodic flags
+if bc.len != 4 or bc.anyIt(it notin {'p', 'a'}):
+  qexFatal "Boundary conditions must contain exactly four characters, each 'p' ",
+    "or 'a': ", bc
+let periodic = bc.mapIt(it == 'p')
 
 # set lattice up
 let lattice = @[Ns, Ns, Ns, Nt]
@@ -153,13 +160,13 @@ var hmc = uc.newHmcAction(s, r, tau, revCheckFreq = rev_check_freq)
 var fermionLevel = newActionLevel(multiplier = f_steps, integrator = ferm_int_alg)
 
 for _ in 0..<Nf:
-  if Nh == 0: fermionLevel.add newStaggeredFermionAction(stag, mass, spa, spf, r, bc = bc)
+  if Nh == 0: fermionLevel.add newStaggeredFermionAction(stag, mass, spa, spf, r, bc = periodic)
   else:
-    fermionLevel.add newStaggeredFermionAction(stag, mass_h, spa, spf, r, bc = bc)
-    fermionLevel.add newStaggeredRatioAction(stag, stag, mass, mass_h, spa, spf, r, bc = bc)
+    fermionLevel.add newStaggeredFermionAction(stag, mass_h, spa, spf, r, bc = periodic)
+    fermionLevel.add newStaggeredRatioAction(stag, stag, mass, mass_h, spa, spf, r, bc = periodic)
 
 for _ in 0..<num_pv:
-  fermionLevel.add newStaggeredPauliVillarsAction(stag, mass_pv, spa, spf, r, bc = bc)
+  fermionLevel.add newStaggeredPauliVillarsAction(stag, mass_pv, spa, spf, r, bc = periodic)
 
 hmc.add fermionLevel # outermost level
 
@@ -197,12 +204,14 @@ for config in start_config..<end_config:
     hmc.run(forceAccept = config < no_metropolis_until)
 
     echo "== measurements =========="
+    # Legacy schedule: restart the measurement counter for each configuration.
+    # A frequency greater than config_space produces no measurements.
     if (plaq_freq > 0) and ((traj + 1) mod plaq_freq == 0): hmc.measurePlaquette()
     if (s4_freq > 0) and ((traj + 1) mod s4_freq == 0): hmc.measurePlaquetteS4()
     if (ploop_freq > 0) and ((traj + 1) mod ploop_freq == 0): hmc.measurePolyakovLoop()
     echo "=========================="
 
-    # because Anna will most certainly ask about it at some point, if you want to
+    # Because Anna will most certainly ask about it at some point, if you want to
     # make a measurement of some observable at this stage of the HMC, just copy-and-
     # paste the procedure for it in this code and call it at this location. You can
     # access the gauge field of the HMC object with hmc.getGauge(). That is, you

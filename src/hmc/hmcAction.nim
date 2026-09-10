@@ -112,7 +112,7 @@ type
     prng*: R
     spa*: SolverParams
     spf*: SolverParams
-    bc*: string
+    bc*: seq[bool] ## Periodic in each direction when true.
 
   StaggeredPauliVillarsAction*[U, T, S] = ref object of ActionRoot
     mass*: float
@@ -120,7 +120,7 @@ type
     phi*: S
     spa*: SolverParams
     spf*: SolverParams
-    bc*: string
+    bc*: seq[bool] ## Periodic in each direction when true.
 
   StaggeredRatioAction*[U, T, S] = ref object of ActionRoot
     massNum*: float
@@ -130,7 +130,7 @@ type
     phi*: S
     spa*: SolverParams
     spf*: SolverParams
-    bc*: string
+    bc*: seq[bool] ## Periodic in each direction when true.
 
 type
   ActionLevel* = object
@@ -153,7 +153,7 @@ type
     secs*: float
     revCheckFreq*: int
     forceAccept*: bool
-    revChecked*: bool
+    atTrajectoryEnd: bool # Selects the Hamiltonian log label; evaluation does not change it.
 
   #HmcEvolver*[U, R] = ref object of MetropolisRoot
   #  tau*: float
@@ -257,18 +257,15 @@ proc action*(hmc: HmcAction): float =
   result = 0.0
   for level in hmc.levels: result += level.action(hmc.uc)
 
-var beginning = true
 proc hamiltonian*(hmc: HmcAction): float =
   let t = hmc.kineticAction()
   let v = hmc.action()
   result = t + v
 
-  if beginning:
-    echo fmt"Beginning H: {result:.16f} T: {t:.16f} V: {v:.16f}"
-    beginning = false
+  if hmc.atTrajectoryEnd:
+    echo fmt"Ending H: {result} T: {t} V: {v}"
   else:
-    echo fmt"Ending H: {result:.16f} T: {t:.16f} V: {v:.16f}"
-    beginning = true
+    echo fmt"Beginning H: {result} T: {t} V: {v}"
 
 proc integrator*(hmc: HmcAction): Integrator =
   let uc = hmc.uc
@@ -329,6 +326,7 @@ proc reunit*(hmc: HmcAction) = reunit(hmc.uc.u)
 proc getH*(hmc: HmcAction): float = hmc.hamiltonian()
 
 proc start*(hmc: HmcAction) =
+  hmc.atTrajectoryEnd = false
   hmc.hmcStats["GU"] = baseStats0.newTable
   hmc.heatbathProc()
   let r = ActionPrng[hmc.R](r: hmc.prng)
@@ -339,6 +337,7 @@ proc generate*(hmc: HmcAction) =
   var integ = hmc.integrator()
   integ.evolve(hmc.tau)
   integ.finish()
+  hmc.atTrajectoryEnd = true
 
 proc checkReverse*(hmc: HmcAction): bool =
   hmc.revCheckFreq > 0 and (hmc.nUpdates mod hmc.revCheckFreq == 0)
@@ -363,8 +362,7 @@ proc generateReverse*(hmc: HmcAction) =
   let t = hmc.kineticAction()
   let v = hmc.action()
   hmc.hReverse = t + v
-  echo fmt"Reverse H: {hmc.hReverse:.16f} T: {t:.16f} V: {v:.16f}"
-  hmc.revChecked = true
+  echo fmt"Reverse H: {hmc.hReverse} T: {t} V: {v}"
 
   threads:
     for mu in 0..<g1.len:
@@ -406,7 +404,6 @@ proc run*(hmc: HmcAction; forceAccept: bool = false) =
 
   echo &"== Begin HMC update {nup} =========="
   hmc.forceAccept = forceAccept
-  hmc.revChecked = false
   metropolis.update(hmc)
 
   let dt = getElapsedTime()
@@ -533,16 +530,16 @@ proc cold*(c: var GaugeConfiguration) = c.u.unit()
 proc read*(c: var GaugeConfiguration; filename: string) =
   if fileExists(filename):
     if 0 != c.u.loadGauge(filename):
-      qexError "error loading gauge configuration from file: ", filename
+      qexFatal "error loading gauge configuration from file: ", filename
     qexLog "gauge configuration loaded from file: ", filename
-  else: qexError "gauge configuration file does not exist: ", filename
+  else: qexFatal "gauge configuration file does not exist: ", filename
 
 proc write*(c: var GaugeConfiguration; filename: string) =
   if 0 != c.u.saveGauge(filename):
-    qexError "error saving gauge configuration to file: ", filename
+    qexFatal "error saving gauge configuration to file: ", filename
   qexLog "gauge configuration saved to file: ", filename
 
-proc smear(self: GaugeConfiguration; bc: string): PerfInfo =
+proc smear(self: GaugeConfiguration; bc: seq[bool]): PerfInfo =
   # HISQ is a staggered smearing, so I don't mind having to explicitly insert the
   # the staggered rephasing here. For other smearings, rephasing must be decoupled
   # from the smearing, which is the case for nHYP
@@ -559,7 +556,7 @@ proc smear(self: GaugeConfiguration; bc: string): PerfInfo =
       threadBarrier()
       self.u.stagPhase()
 
-proc smearGetForce[U](self: GaugeConfiguration[U]; bc: string) =
+proc smearGetForce[U](self: GaugeConfiguration[U]; bc: seq[bool]) =
   when StaggeredSmearing == "HYP":
     var info: PerfInfo
     self.deriv = self.sc.smearGetForce(self.u, self.su, info)
@@ -574,7 +571,7 @@ proc smearGetForce[U](self: GaugeConfiguration[U]; bc: string) =
       threadBarrier()
       self.u.stagPhase()
 
-proc setBC[U](self: GaugeConfiguration[U]; bc: string) =
+proc setBC[U](self: GaugeConfiguration[U]; bc: seq[bool]) =
   threads:
     when StaggeredSmearing == "HYP": self.su.setBC(bc)
     elif StaggeredSmearing == "HISQ": discard
@@ -728,7 +725,7 @@ proc stagForceSolve[T](
   if sp0.verbosity>0: echo "stagSolve: ", sp.getStats
   sp0.addStats(sp)
 
-proc fermForce[U, S](f: seq[U]; psi: S; u: GaugeConfiguration[U]; bc: string) =
+proc fermForce[U, S](f: seq[U]; psi: S; u: GaugeConfiguration[U]; bc: seq[bool]) =
   const nc = psi[0].len
   let nd = psi.l.nDim
   var
@@ -927,7 +924,7 @@ proc newStaggeredFermionAction*[U, T, R](
   spa: SolverParams;
   spf: SolverParams;
   r: R;
-  bc: string = "pppa"
+  bc: openArray[bool] = [true, true, true, false]
 ): auto =
   let lo = stag.g[0].l
   var phi = lo.newField(T)
@@ -939,7 +936,7 @@ proc newStaggeredFermionAction*[U, T, R](
     prng: r,
     spa: spa,
     spf: spf,
-    bc: bc
+    bc: @bc
   )
   result.name = "StaggeredFermionAction"
   result.id = "SFA" & $StaggeredFermionActionCount
@@ -1076,7 +1073,7 @@ proc newStaggeredPauliVillarsAction*[U, T, R](
   spa: SolverParams;
   spf: SolverParams;
   r: R;
-  bc: string = "pppa"
+  bc: openArray[bool] = [true, true, true, false]
 ): auto =
   let lo = stag.g[0].l
   var phi = lo.newField(T)
@@ -1087,7 +1084,7 @@ proc newStaggeredPauliVillarsAction*[U, T, R](
     phi: phi,
     spa: spa,
     spf: spf,
-    bc: bc
+    bc: @bc
   )
   result.name = "StaggeredPauliVillarsAction"
   result.id = "SPVA" & $StaggeredPauliVillarsActionCount
@@ -1197,7 +1194,7 @@ proc newStaggeredRatioAction*[U, T, R](
   spa: SolverParams;
   spf: SolverParams;
   r: R;
-  bc: string = "pppa"
+  bc: openArray[bool] = [true, true, true, false]
 ): auto =
   let lo = stagNum.g[0].l
   var phi = lo.newField(T)
@@ -1210,7 +1207,7 @@ proc newStaggeredRatioAction*[U, T, R](
     phi: phi,
     spa: spa,
     spf: spf,
-    bc: bc
+    bc: @bc
   )
   result.name = "StaggeredRatioAction"
   result.id = "SRA" & $StaggeredRatioActionCount
@@ -1271,17 +1268,17 @@ proc ms4(g: auto) =
     peot.threadRankSum
     threadBarrier()
     threadSingle:
-      for dir in 0..<nd:
-        peo[dir][0] += peot[dir][0]
-        peo[dir][1] += peot[dir][1]
+      for mu in 0..<nd:
+        peo[mu][0] += peot[mu][0]
+        peo[mu][1] += peot[mu][1]
 
   let n = 1.0 / (lo.physVol.float*0.5*float((nd-1)*nc))
-  for dir in 0..<nd:
-    peo[dir][0] *= n
-    peo[dir][1] *= n
+  for mu in 0..<nd:
+    peo[mu][0] *= n
+    peo[mu][1] *= n
 
-  for dir in 0..<nd: # sorry for the weird legacy formatting - cross-compatibility...
-    echo "MEASplaq ", dir, "-dir even/odd: ", peo[dir][0], " ", peo[dir][1]
+  for mu in 0..<nd:
+    echo "MEASplaqs4 mu: ", mu, " even: ", peo[mu][0], " odd: ", peo[mu][1]
 
 proc measurePlaquette*(hmc: HmcAction) = hmc.uc.u.mplaq()
 proc measurePolyakovLoop*(hmc: HmcAction) = hmc.uc.u.mploop()
@@ -1301,14 +1298,23 @@ proc read*(
   hmc.uc.read(gaugeFilename)
   if readParallelRNG:
     var rdr = hmc.prng.l.newReader(parallelRNGFilename)
-    if rdr.isNil: qexError "Failed to open parallel RNG file: " & parallelRNGFilename
+    if rdr.isNil or rdr.status != 0: qexFatal "Failed to open parallel RNG file: ", parallelRNGFilename
     rdr.read(hmc.prng)
+    if rdr.status != 0: qexFatal "Failed to read parallel RNG file: ", parallelRNGFilename
     rdr.close()
+    if rdr.status != 0: qexFatal "Failed to close parallel RNG file: ", parallelRNGFilename
   if readSerialRNG:
     var file = newFileStream(serialRNGFilename, fmRead)
-    if file.isNil: qexError "Failed to open serial RNG file: " & serialRNGFilename
-    discard file.readData(hmc.srng.addr, sizeof(hmc.srng))
-    file.flush()
+    if file.isNil: qexFatal "Failed to open serial RNG file: ", serialRNGFilename
+    defer: file.close()
+    let expectedBytes = sizeof(hmc.srng)
+    var bytesRead: int
+    try: bytesRead = file.readData(hmc.srng.addr, expectedBytes)
+    except IOError as err:
+      qexFatal "Failed to read serial RNG file: ", serialRNGFilename, ": ", err.msg
+    if bytesRead != expectedBytes:
+      qexFatal "Incomplete serial RNG file: ", serialRNGFilename,
+        " (expected ", expectedBytes, " bytes, read ", bytesRead, ")"
 
 proc write*(
   hmc: HmcAction;
@@ -1322,14 +1328,19 @@ proc write*(
   hmc.uc.write(gaugeFilename)
   if writeParallelRNG:
     var wtr = hmc.prng.l.newWriter(parallelRNGFilename, rngFileMd)
-    if wtr.isNil: qexError "Failed to open parallel RNG file: " & parallelRNGFilename
+    if wtr.isNil or wtr.status != 0: qexFatal "Failed to open parallel RNG file: ", parallelRNGFilename
     wtr.write(hmc.prng, rngRecordMd)
+    if wtr.status != 0: qexFatal "Failed to write parallel RNG file: ", parallelRNGFilename
     wtr.close()
+    if wtr.status != 0: qexFatal "Failed to close parallel RNG file: ", parallelRNGFilename
   if writeSerialRNG and myRank == 0: # prevent multiple processes from writing to same file
-    var file = newFileStream(serialRNGFilename, fmWrite)
-    if file.isNil: qexError "Failed to open serial RNG file: " & serialRNGFilename
-    file.writeData(hmc.srng.addr, sizeof(hmc.srng))
-    file.flush()
+    # Unbuffered writes report errors in writeData; Nim's flush/close may discard them.
+    var file = newFileStream(serialRNGFilename, fmWrite, bufSize = 0)
+    if file.isNil: qexFatal "Failed to open serial RNG file: ", serialRNGFilename
+    defer: file.close()
+    try: file.writeData(hmc.srng.addr, sizeof(hmc.srng))
+    except IOError as err:
+      qexFatal "Failed to write serial RNG file: ", serialRNGFilename, ": ", err.msg
 
 #[ misc ]#
 

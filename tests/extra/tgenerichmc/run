@@ -15,7 +15,7 @@ else
 fi
 ofn="$outdir/out$comp"
 
-$RUNJOB "$exe" 2>&1 | tee "$ofn"
+$RUNJOB "$exe" 2>&1 | tee "$ofn" || exit $?
 
 begh="`grep '^Beginning H:' $ofn | awk '{printf "%.6f", $3}'`"
 endh="`grep '^Ending H:' $ofn | awk '{printf "%.6f", $3}'`"
@@ -27,7 +27,10 @@ if [ "X$hold" != "X$hold2" ]; then
   exit 1
 fi
 
-dh="`grep 'deltaH' $ofn`"
+# Match the existing six-decimal reference after reading full-precision output
+dh="$(awk '/^(ACCEPT|REJECT) / {
+  printf "%s deltaH: %.6f  pAccept: %.6f  rnd: %.6f\n", $1, $3, $5, $7
+}' "$ofn")"
 if [ "X$dh" != "X$dh2" ]; then
   echo "error in deltaH"
   echo "got: $dh"

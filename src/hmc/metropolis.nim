@@ -1,4 +1,3 @@
-import strUtils
 import comms/[commsUtils, commsEcho], math, strformat, stats
 
 type
@@ -68,8 +67,6 @@ proc init*[M:MetropolisRoot](m: M; verbosity = 0) =
 
 proc update*[M:MetropolisRoot](m: M) =
   mixin finish, checkReverse, generateReverse, finishReverse
-  template ff(x: float): string =
-    formatFloat(x, ffDecimal, precision=6)
 
   # run full HMC trajectory
   m.start
@@ -78,7 +75,7 @@ proc update*[M:MetropolisRoot](m: M) =
   m.hNew = m.getH
   m.deltaH = m.hNew - m.hOld
   if m.verbosity>0:
-    echo &"hOld: {m.hOld:.6f}  hNew: {m.hNew:.6f}"
+    echo &"hOld: {m.hOld}  hNew: {m.hNew}"
   when compiles(finish(m)): m.finish
 
   # run reversibility check
@@ -100,13 +97,13 @@ proc update*[M:MetropolisRoot](m: M) =
     m.accepted = true
     m.updateStats
     if m.verbosity>0:
-      echo &"ACCEPT deltaH: {m.deltaH.ff}  pAccept: {m.pAccept.ff}  rnd: {m.rnd.ff}"
+      echo &"ACCEPT deltaH: {m.deltaH}  pAccept: {m.pAccept}  rnd: {m.rnd}"
     m.accept
   else:
     m.accepted = false
     m.updateStats
     if m.verbosity>0:
-      echo &"REJECT deltaH: {m.deltaH.ff}  pAccept: {m.pAccept.ff}  rnd: {m.rnd.ff}"
+      echo &"REJECT deltaH: {m.deltaH}  pAccept: {m.pAccept}  rnd: {m.rnd}"
     m.reject
 
 

@@ -139,11 +139,12 @@ proc setBC*(g: openArray[Field]) =
       #echoAll isMatrix(gt{i})
       #echoAll i, " ", gt[e][0,0]
 
-proc setBC*(u: openArray[Field]; bc: string) =
+proc setBC*(u: openArray[Field]; bc: openArray[bool]) =
+  ## Flip boundary links in directions where bc is false (antiperiodic).
   if bc.len != u.len:
-    qexError "BC string must have length equal to number of dimensions"
+    qexError "BC array must have length equal to number of dimensions"
   for mu in 0..<u.len:
-    if ($bc[mu] == "a"):
+    if not bc[mu]:
       for i in u[mu].l.sites:
         if u[mu].l.coords[mu][i] == u[mu].l.physGeom[mu] - 1: u[mu]{i} *= -1.0
 
