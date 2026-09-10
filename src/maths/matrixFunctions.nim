@@ -475,6 +475,21 @@ proc expDeriv*(m: Mat1, c:Mat2): auto {.noInit.} =
     r := p.expDeriv(m, c)
   r
 
+proc expTop*[M: static int; D](y: Mat1, d: array[M, D]): auto {.noInit.} =
+  ## Mixed derivative d/de_1..d/de_M exp(y + sum e_i d_i) of the exp kernel above.
+  ## expTop(x^dag, [c]) == expDeriv(x, c); higher M give the exp derivative tower.
+  var r{.noInit.}: MatrixArray[y.nrows,y.ncols,type(y[0,0])]
+  when y.nrows == 1:
+    # scalar exp: all directions commute
+    var t = exp(y[0,0])
+    for i in 0 ..< M:
+      t = t * d[i][0,0]
+    r := t
+  else:
+    var p = newExpParam()
+    r := p.expTop(y, d)
+  r
+
 proc ln*(m: Mat1): auto {.noInit.} =
   var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
   when m.nrows == 1:
