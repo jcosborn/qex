@@ -840,29 +840,55 @@ the site-local `Ggauge` algebra, so `gauge/field_ops` imports `basic_ops`.
 `wilsonLine` and `transport` chain hops, so staples, loops, and actions have
 basic-tier expressions. These internal plumbing ops live in `gauge/field_ops`
 and `gauge/transport`; the top-level `gauge` facade does not re-export them.
-The site algebra is one template stamped for `Ggauge` and `Gfield`; the two
-differ only in storage (`gval[mu]` versus `fval`) and in the bundle-only
-subset ops.
+The site algebra is one template stamped per value type; the types differ
+only in storage (`gval[mu]` versus `fval`) and in the bundle-only subset ops.
+`Gcfield` is the complex scalar field spelled as 1x1 site matrices, so the
+matrix algebra and its kernels serve it unchanged: `norm2` of a complex field
+is the site sum of |c|^2 and `retr` its real sum. For Nc = 1 it is the same
+type as `Gfield`. `gauge/cfield` bridges the two: `trace` (per-site trace),
+`scale` (per-site complex times matrix) and `dot` (per-site tr(x^dag y)) are
+mutually adjoint under the pairing, so an observable such as the adjoint
+plaquette sum_x |tr P_x|^2 is `norm2(trace(P))` with derivatives to any order.
+
+`lineProducts` evaluates QEX's Wilson-line plan (`gaugeUtils.plan`, the
+segment tree behind `gaugeProd`) over graph nodes, memoized by path key, so
+shared sub-products and their adjoints are single nodes. Each step is
+L(x) * R(x - sh) with one shift node per direction; hop chains stay the
+cheaper spelling for single paths because a hop fuses the shift and the
+product into one node.
 
 Each gauge module isolates one protocol, and that is the rule for adding one:
 
 ```text
-gauge/types.nim       value storage: Ggauge and Gfield, ownership, shape helpers, loop templates
-gauge/basic_ops.nim   closed generators: the site algebra stamped for both types, blend/mask
+gauge/types.nim       value storage: Ggauge, GfieldOf[F] (Gfield, Gcfield), ownership, shape helpers
+gauge/basic_ops.nim   closed generators: the site algebra stamped per type, blend/mask
 gauge/matfun.nim      exp family: kernels at every order (expJet) and the polynomial replica
 gauge/field_ops.nim   shift, linkField, injectLink
-gauge/transport.nim   hop chains: transport, wilsonLine
+gauge/cfield.nim      matrix field <-> complex field bridge: trace, scale, dot
+gauge/transport.nim   hop chains (transport, wilsonLine) and lineProducts on QEX's path plan
 gauge/fused_ops.nim   Gmulti-packed site kernels
-gauge/action/         QEX kernel dispatch (domain), coefficient type, action wrappers, reference action
+gauge/action/         QEX kernel dispatch (domain), coefficient type, action wrappers, reference actions
 gauge/stout.nim       stout monolith wrappers
 ```
 
 Optimized operators keep fused kernels for the orders that matter. Where no
 optimized higher-order kernel exists, the backward hook must not raise; it
-builds a grad-complete replica of the node's function. `expPolyGraph` is the
-replica behind the Nc>1 `expDeriv`, and `gaugeActionDerivGraph` is the replica behind
-`gaugeActionDeriv2`. The Nc=1 exponential uses its exact scalar identity
+builds a grad-complete replica of the node's function. The exp tower is
+fused at every order through `expJet` (matrix jets of the kernel polynomial;
+`expTopReplica` nests the basic-op polynomial replica past three directions),
+`plaqActionGraph` over hop chains is the replica behind `gaugeActionDeriv2`, and the
+stout update gradient kernels differentiate through a replica of the update
+built over slot variables. The Nc=1 exponential uses its exact scalar identity
 instead.
+
+The reference actions also carry what the QEX kernels omit, and the kernel
+dispatch in `action/domain` now raises there instead of returning a truncated
+value: `gaugeAction1` and `gaugeActionDeriv` have no parallelogram terms, and
+the Hessian kernel `gaugeDerivDeriv2` has plaquette terms only. `gaugeActionGraph`
+covers the plaquette and rectangle families (the rectangle products are built
+from `lineProducts` and evaluated only when their coefficient is nonzero) and
+`adjPlaqAction` the adjoint-plaquette family, each guarded at evaluation by
+its coefficient nodes, each differentiable in the coefficients.
 
 Replica backwards use `secondPullback` as described in section 5.
 `tests/gauge/higher` pins each replica backward one order past the derivative
@@ -876,20 +902,13 @@ pinning tests hold value and first-derivative agreement between the two. The
 matexp default kind, order, and scale come from `newExpParam`, with a
 compile-time check that rejects a stale graph replica.
 
-The remaining non-grad-complete boundaries are the stout log-Jacobian, the
-fused stout step, the action layer past second order, and coefficient
-gradients of the optimized action ops. The plain `stoutUpdate` gradient
-kernels differentiate through a basic-op replica of the update (built over
-slot variables, with the exp tower fused), so its tower closes; `stoutLogDetJ`
-and the fused `stoutUpdateLogDetJ` pullback kernels still reject further
-differentiation.
-The action layer past second order is plaquette-only: the `g`-slot third
-derivative of `gaugeActionDeriv2` goes through `gaugeActionDerivGraph`, whose
-embedded `coeffPlaq` rejects rectangle, parallelogram, and adjoint-plaquette
-coefficients at evaluation. `evalGaugeForceJacobian` in `action/domain.nim`
-still rejects adjoint-plaquette family Hessians. Coefficient gradients of the
-optimized action ops stay unsupported; `gaugeActionGraph` is the
-coefficient-differentiable spelling of the plaquette action.
+The remaining non-grad-complete boundaries are the stout log-Jacobian and the
+fused stout step (`stoutLogDetJ` and the `stoutUpdateLogDetJ` pullback kernels
+reject further differentiation), the optimized action ops past second order
+for families other than the plaquette (their Hessian kernel raises; the
+reference actions differentiate those families through basic ops), and
+coefficient gradients of the optimized action ops (the reference actions are
+the coefficient-differentiable spellings).
 
 ## 13. `hmcgauge`
 

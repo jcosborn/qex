@@ -11,15 +11,15 @@ import types
 type Literal = int | float
 
 template field(x: Ggauge, mu: int): untyped = x.gval[mu]
-template field(x: Gfield, mu: int): untyped = x.fval
+template field(x: GfieldOf, mu: int): untyped = x.fval
 template nfields(x: Ggauge): int = x.gval.len
-template nfields(x: Gfield): int = 1
+template nfields(x: GfieldOf): int = 1
 template nodeLike(x: Ggauge): Ggauge = x.gaugeNodeLike
-template nodeLike(x: Gfield): Gfield = x.fieldNodeLike
+template nodeLike(x: GfieldOf): untyped = x.fieldNodeLike
 template requireSameShape(x, y: Ggauge, label: string) = requireSameGaugeShape(x, y, label)
-template requireSameShape(x, y: Gfield, label: string) = requireSameFieldShape(x, y, label)
+template requireSameShape(x, y: GfieldOf, label: string) = requireSameFieldShape(x, y, label)
 template unitLike(x: Ggauge): Ggauge = x.unitGaugeLike
-template unitLike(x: Gfield): Gfield = unitField(x.runtime, x.fval)
+template unitLike(x: GfieldOf): untyped = unitField(x.runtime, x.fval)
 
 template forFields(z: typed, body: untyped) =
   ## One threads region over the fields of z; mu injected.
@@ -310,6 +310,8 @@ template stampSiteOps(T: typedesc, tag: static string) =
 
 stampSiteOps(Ggauge, "g")
 stampSiteOps(Gfield, "f")
+when not cfieldIsGfield:
+  stampSiteOps(Gcfield, "c")
 
 proc blendSubset*(parity, dir: int, cand, x: Ggauge): Ggauge =
   ## Use `cand` on one parity/direction subset and `x` elsewhere.

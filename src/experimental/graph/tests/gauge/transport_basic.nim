@@ -135,6 +135,20 @@ suite "gauge action vs paths":
     let sym = gaugeActionGraph(actSymanzik(beta), gg)
     (beta * grad(sym, beta) - sym) :< 1e-6
 
+  test "adjPlaqAction = gaugeAction for the adjoint-plaquette family":
+    let
+      cc = grt.toGvalue(GaugeActionCoeffs(plaq: 1.2, adjplaq: 0.3))
+      sf = adjPlaqAction(cc, gg)
+      sr = gaugeAction(cc, gg)
+    (sf - sr) :< 1e-8
+    norm2(grad(sf, gg) - gaugeActionDeriv(cc, gg)) :< 1e-16
+    # linear in both coefficients
+    let adjFac = grt.toGvalue(0.25)
+    let sa = adjPlaqAction(actAdj(beta, adjFac), gg)
+    (beta * grad(sa, beta) - sa) :< 1e-6
+    (adjFac * grad(sa, adjFac) + beta * grad(adjPlaqAction(actAdj(beta, adjFac), gg), beta) -
+      sa - adjFac * grad(sa, adjFac)) :< 1e-6
+
   test "gaugeAction with rectangles = weighted plaquette and 1x2 Wilson loops":
     let cc = grt.toGvalue(GaugeActionCoeffs(plaq: 1.3, rect: -0.1))
     var r = grt.toGvalue(0.0)

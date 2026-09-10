@@ -10,11 +10,26 @@ type
     ## Graph-owned storage; public writes must mark freshness.
     gval*: Gauge
 
-  Gfield* = ref object of Gvalue
-    ## One lattice color-matrix field (one direction of a Gauge); graph-owned
-    ## storage, public writes must mark freshness. Internal plumbing for
-    ## cross-direction expressions and per-direction cotangents.
-    fval*: DLatticeColorMatrixV
+  GfieldOf*[F] = ref object of Gvalue
+    ## One lattice field of site matrices; graph-owned storage, public writes
+    ## must mark freshness.
+    fval*: F
+
+  Gfield* = GfieldOf[DLatticeColorMatrixV]
+    ## One direction of a Gauge. Internal plumbing for cross-direction
+    ## expressions and per-direction cotangents.
+
+  DLatticeCmatV* = Field[VLEN, ColorMatrixN[1, DComplexV]]
+    ## Complex scalar field as 1x1 site matrices, so the matrix algebra and
+    ## its kernels serve it unchanged (trace, |c|^2 = norm2, exp).
+
+const cfieldIsGfield* = DColorMatrixV is ColorMatrixN[1, DComplexV]
+  ## With Nc = 1 the two field types coincide.
+
+when cfieldIsGfield:
+  type Gcfield* = Gfield
+else:
+  type Gcfield* = GfieldOf[DLatticeCmatV]
 
 template copyGaugeStorage(dst, src: untyped) =
   threads:
@@ -138,11 +153,11 @@ method `$`*(x: Ggauge): string =
   let v = x.gval[0][0][0,0]
   result = "Gauge (" & $v.re[0] & ", " & $v.im[0] & ")"
 
-proc requireSameFieldShape*(x: Gfield, y: Gfield, label: string) =
+proc requireSameFieldShape*[F](x, y: GfieldOf[F], label: string) =
   if x.fval.l != y.fval.l:
     raiseValueError(label & " requires matching field shapes")
 
-proc zeroFieldStorage*(f: DLatticeColorMatrixV) =
+proc zeroFieldStorage*(f: DLatticeColorMatrixV | DLatticeCmatV) =
   threads:
     f := 0.0
 
@@ -152,51 +167,56 @@ proc requireLinkShape*(g: Ggauge, mu: int, f: DLatticeColorMatrixV, label: strin
   if f.l != g.gval[mu].l:
     raiseValueError(label & " requires matching field shapes")
 
-proc fieldNodeLike*(x: Gfield): Gfield =
+proc fieldNodeLike*[F](x: GfieldOf[F]): GfieldOf[F] =
   let f = x.fval.newOneOf
   f.zeroFieldStorage
-  Gfield(runtime: x.runtime, fval: f).assignStableNodeId
+  GfieldOf[F](runtime: x.runtime, fval: f).assignStableNodeId
 
-proc sameShapeFieldNodeLike*(x: Gfield, y: Gfield, label: string): Gfield =
+proc sameShapeFieldNodeLike*[F](x, y: GfieldOf[F], label: string): GfieldOf[F] =
   x.requireSameFieldShape(y, label)
   x.fieldNodeLike
 
-proc unitField*(grt: GraphRuntime, proto: DLatticeColorMatrixV): Gfield =
+proc unitField*[F](grt: GraphRuntime, proto: F): GfieldOf[F] =
   ## Constant identity-matrix field leaf.
   let f = proto.newOneOf
   threads:
     f := 1.0
-  result = Gfield(runtime: grt, fval: f).assignStableNodeId
+  result = GfieldOf[F](runtime: grt, fval: f).assignStableNodeId
   result.updated
 
 proc unitFieldLike*(g: Ggauge): Gfield =
   ## Constant identity-matrix field leaf shaped like one direction of g.
   unitField(g.runtime, g.gval[0])
 
-method newOneOf*(x: Gfield): Gvalue =
-  x.fieldNodeLike
+template fieldMethods(T: typedesc, label: static string) =
+  method newOneOf*(x: T): Gvalue =
+    x.fieldNodeLike
 
-method zeroLike*(x: Gfield): Gvalue =
-  result = x.fieldNodeLike
-  result.staticZeroLeaf = true
+  method zeroLike*(x: T): Gvalue =
+    result = x.fieldNodeLike
+    result.staticZeroLeaf = true
 
-method isZero*(x: Gfield): bool =
-  ## Field zero leaves are marked when constructed; other fields are not scanned.
-  x.staticZeroLeaf
+  method isZero*(x: T): bool =
+    ## Zero leaves are marked when constructed; other fields are not scanned.
+    x.staticZeroLeaf
 
-method valCopy*(z: Gfield, x: Gvalue) =
-  let src = Gfield(x)
-  if z.fval.l != src.fval.l:
-    raiseValueError("field copy requires matching field shapes")
-  threads:
-    z.fval := src.fval
+  method valCopy*(z: T, x: Gvalue) =
+    let src = T(x)
+    if z.fval.l != src.fval.l:
+      raiseValueError(label & " copy requires matching field shapes")
+    threads:
+      z.fval := src.fval
 
-method copyCompatible*(prototype: Gfield, value: Gvalue): bool =
-  value of Gfield and prototype.fval.l == Gfield(value).fval.l
+  method copyCompatible*(prototype: T, value: Gvalue): bool =
+    value of T and prototype.fval.l == T(value).fval.l
 
-method `$`*(x: Gfield): string =
-  let v = x.fval[0][0,0]
-  result = "GaugeField (" & $v.re[0] & ", " & $v.im[0] & ")"
+  method `$`*(x: T): string =
+    let v = x.fval[0][0,0]
+    result = label & " (" & $v.re[0] & ", " & $v.im[0] & ")"
+
+fieldMethods(Gfield, "GaugeField")
+when not cfieldIsGfield:
+  fieldMethods(Gcfield, "ComplexField")
 
 template mapGaugeSites*(dst: Ggauge, valueExpr: untyped) =
   threads:

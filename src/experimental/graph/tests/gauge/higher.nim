@@ -105,6 +105,14 @@ suite "gauge action derivative tower":
     expect(GraphValueError):
       discard gaugeActionDeriv2(gm, cr, gg).eval
 
+  test "adjoint plaquette reference action second derivative":
+    let ca = grt.toGvalue(GaugeActionCoeffs(plaq: 1.2, adjplaq: 0.3))
+    proc a1(x: Ggauge): Gscalar = adjPlaqAction(ca, x)
+    proc a2(x: Ggauge): Gscalar = redot(gm, grad(a1(x), x))
+    ckgrad(a2, gg, gm)   # |tr P|^2 is too nonlinear for the O(1) direction
+    expect(GraphValueError):
+      discard gaugeActionDeriv2(gm, ca, gg).eval
+
   test "second derivative with field-dependent force direction":
     # b input of gaugeActionDeriv2 depends on the field through norm2's
     # backward, exercising the self-adjoint Hessian branch.

@@ -22,6 +22,10 @@ proc isPlaqOnly*(gc: GaugeActionCoeffs): bool =
 proc isPlaqRect*(gc: GaugeActionCoeffs): bool =
   gc.pgm == 0 and gc.adjplaq == 0
 
+proc isAdjPlaq*(gc: GaugeActionCoeffs): bool =
+  ## The kernel family with adjoint plaquettes (actionA), selected by adjplaq != 0.
+  gc.rect == 0 and gc.pgm == 0 and gc.adjplaq != 0
+
 proc gaugeActionFamily(gc: GaugeActionCoeffs): GaugeActionFamily =
   if gc.adjplaq == 0:
     return gafGaugeAction1

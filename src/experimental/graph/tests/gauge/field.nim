@@ -69,3 +69,16 @@ suite "gauge field ops":
     ckgrad(f2, gg, gu)
     proc f3(x: Ggauge): Gscalar = redot(gq, grad(f2(x), x))
     ckgrad(f3, gg, gu)
+
+  test "complex field bridge: trace, scale, dot":
+    let a = linkField(gg, 0)
+    let b = linkField(gu, 0)
+    (retr(trace(a)) - retr(a)) :< 1e-6
+    (retr(dot(a, b)) - redot(a, b)) :< 1e-6
+    norm2(scale(trace(unitFieldLike(gg)), b) - float(g[0][0].nrows) * b) :< 1e-20
+    proc c1(x: Ggauge): Gscalar = norm2(trace(linkField(x, 0) * linkField(gu, 1)))
+    ckgrad(c1, gg, gu)
+    proc c2(x: Ggauge): Gscalar = norm2(scale(dot(linkField(x, 0), linkField(gu, 0)), linkField(x, 1)))
+    ckgrad(c2, gg, gu)
+    proc c3(x: Ggauge): Gscalar = redot(scale(trace(linkField(x, 1)), linkField(gu, 1)), linkField(gm, 1))
+    ckgrad(c3, gg, gu)
