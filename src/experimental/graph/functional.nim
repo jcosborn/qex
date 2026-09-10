@@ -26,14 +26,15 @@ proc isResolvedLambda(fn: Glambda): bool {.inline.} =
 proc isLambdaShaped(v: Gvalue): bool {.inline.} =
   v of Glambda or v of GlambdaRef
 
+# An operation on a local prototype produces a graph ref with visible inputs.
 proc isLocalLambdaRef(w: GlambdaRef): bool {.inline.} =
-  w != nil and w.kind == lrkLocal
+  w != nil and w.kind == lrkLocal and w.gfunc == nil
 
 proc isProducedLambdaRef(w: GlambdaRef): bool {.inline.} =
-  w != nil and w.kind == lrkProduced
+  w != nil and (w.kind == lrkProduced or w.gfunc != nil)
 
 proc isGraphProducedLambdaRef(w: GlambdaRef): bool {.inline.} =
-  w.isProducedLambdaRef and Gvalue(w).gfunc != nil
+  w != nil and w.gfunc != nil
 
 proc lambdaParamProtoOrNil(v: Gvalue): Gvalue =
   if v of Glambda:
@@ -232,6 +233,10 @@ method newOneOf*(x: Glambda): Gvalue =
   if x.isResolvedLambda:
     return producedLambdaRef(x.param, x.body)
   Glambda(runtime: x.runtime, param: x.param).assignStableNodeId
+
+proc slotVar*(x: Glambda): GlambdaRef =
+  ## A lambda alias carries its structure through the input edge.
+  GlambdaRef(slotVar(Gvalue(x)))
 
 method zeroLike*(x: Glambda): Gvalue =
   cotangentProto(x)
@@ -601,8 +606,6 @@ proc lambda*(param: Gvalue, body: Gvalue): Glambda =
 type
   LambdaVjpTargetKind = enum
     lvtkArgument, lvtkValue
-  LambdaVjpKind = enum
-    lvkCall, lvkResult
   LambdaVjpTarget = object
     case kind: LambdaVjpTargetKind
     of lvtkArgument:
@@ -615,13 +618,12 @@ type
   ApplyBackwardDeps = seq[ApplyBackwardDep]
   Gapply = ref object of Gfunc
   GvjpOf = ref object of Gfunc
-    kind: LambdaVjpKind
+    depth: int
   VjpSpec = object
-    ## Both VJP kinds carry the same two prototypes: the lambda argument shape
-    ## and the (placeholder) body shape. `kind` selects how they are used, not
-    ## which fields exist. `callVjpSpec` requires `argProto`; `resultVjpSpec`
-    ## requires `bodyProto`.
-    kind: LambdaVjpKind
+    ## Call VJPs have depth 0. Result VJPs keep `depth` enclosing arguments
+    ## before taking the call VJP. `callVjpSpec` requires `argProto`;
+    ## `resultVjpSpec` requires the resulting `bodyProto`.
+    depth: int
     target: LambdaVjpTarget
     argProto: Gvalue
     bodyProto: Gvalue
@@ -635,7 +637,7 @@ type
     targetId: NodeId
     argProtoId: NodeId
   ActiveVjp = object
-    kind: LambdaVjpKind
+    depth: int
     owner: Glambda
     target: LambdaVjpTarget
     bodyProto: Gvalue
@@ -753,18 +755,18 @@ proc callVjpSpec(target: LambdaVjpTarget,
   if argProto == nil:
     raiseValueError("lambda call VJP requires argument prototype")
   VjpSpec(
-    kind: lvkCall,
     target: target,
     argProto: argProto,
     bodyProto: bodyProto)
 
 proc resultVjpSpec(target: LambdaVjpTarget,
                    bodyProto: Gvalue,
-                   argProto: Gvalue = nil): VjpSpec =
+                   argProto: Gvalue = nil,
+                   depth = 1): VjpSpec =
   if bodyProto == nil:
     raiseValueError("lambda result VJP requires result prototype")
   VjpSpec(
-    kind: lvkResult,
+    depth: depth,
     target: target,
     argProto: argProto,
     bodyProto: bodyProto)
@@ -781,33 +783,30 @@ proc resultVjpSpec(target: LambdaVjpTarget,
 
 proc vjpNodeProto(fun: Gvalue, spec: VjpSpec): Gvalue =
   ## Erased result type for a symbolic `vjpOf` node over `fun`.
-  case spec.kind
-  of lvkCall:
+  if spec.depth == 0:
     callVjpNodeProto(fun, targetGradProto(fun, spec.target, fun.lambdaParamProto))
-  of lvkResult:
+  else:
     let proto = fun.requireLambdaProto("lambda VJP prototype")
     producedLambdaRef(proto.paramProto, spec.bodyProto)
 
 proc vjpShellBodyProto(fun: Gvalue, spec: VjpSpec): Gvalue =
   ## Placeholder body type for a generated VJP shell before its body is built.
-  case spec.kind
-  of lvkCall:
+  if spec.depth == 0:
     if spec.bodyProto != nil:
       spec.bodyProto
     else:
       let proto = fun.requireLambdaProto("lambda VJP prototype")
       let gradProto = targetGradProto(fun, spec.target, proto.paramProto)
       producedLambdaRef(gradProto, gradProto)
-  of lvkResult:
+  else:
     spec.bodyProto
 
 proc vjpApplyResultProto(fun: Gvalue, spec: VjpSpec): Gvalue =
   ## Result type when threading a VJP through a lambda-valued apply node.
-  case spec.kind
-  of lvkCall:
+  if spec.depth == 0:
     callVjpNodeProto(fun, targetGradProto(fun, spec.target, spec.argProto))
-  of lvkResult:
-    spec.bodyProto
+  else:
+    producedLambdaRef(fun.lambdaParamProto, spec.bodyProto)
 
 # --- symbolic vjpOf node ---
 
@@ -824,13 +823,8 @@ proc vjpOfForward(v: Gvalue) =
   v.updated
 
 let gvjpOfCall = GvjpOf(
-  kind: lvkCall,
   forward: vjpOfForward,
   name: "vjpOf")
-let gvjpOfResult = GvjpOf(
-  kind: lvkResult,
-  forward: vjpOfForward,
-  name: "vjpOfResult")
 
 proc newVjpOfNode(fun: Gvalue,
                   spec: VjpSpec): Gvalue =
@@ -839,11 +833,10 @@ proc newVjpOfNode(fun: Gvalue,
   if spec.target.kind == lvtkValue:
     inputs.add spec.target.value
   let gfunc =
-    case spec.kind
-    of lvkCall:
+    if spec.depth == 0:
       gvjpOfCall
-    of lvkResult:
-      gvjpOfResult
+    else:
+      GvjpOf(depth: spec.depth, forward: vjpOfForward, name: "vjpOfResult")
   graphNode(proto.newOneOf, inputs, gfunc, "vjpOf")
 
 # --- apply backward-dependency discovery ---
@@ -1042,6 +1035,9 @@ proc evaluatedVjpOfLambda(v: Gvalue,
 proc nextEvalLambdaExpr(current: Gvalue,
                         label: string,
                         vjpLabel: string): Gvalue =
+  if current.isSlotVarNode:
+    return current.inputs[0]
+
   if current.isCondNode and current.lambdaResultProto != nil:
     let parts = current.condParts
     discard parts.selector.eval
@@ -1088,14 +1084,13 @@ proc reduceVjpOfNode(v: Gvalue,
                      ctx: ApplyVjpBuildCtx): Gvalue =
   var sourceFun = v.inputs[0]
   let sourceTarget = v.vjpOfTarget
-  let sourceKind = GvjpOf(v.gfunc).kind
+  let sourceDepth = GvjpOf(v.gfunc).depth
 
   proc sourceSpec(argProto: Gvalue): VjpSpec =
-    case sourceKind
-    of lvkCall:
+    if sourceDepth == 0:
       callVjpSpec(sourceTarget, argProto, v.lambdaResultProto)
-    of lvkResult:
-      resultVjpSpec(sourceTarget, v.lambdaResultProto, argProto)
+    else:
+      resultVjpSpec(sourceTarget, v.lambdaResultProto, argProto, sourceDepth)
 
   var seen = initHashSet[NodeKey]()
   while true:
@@ -1168,7 +1163,7 @@ proc activeVjpShellFor(fun: Gvalue,
   if fn == nil:
     return nil
   for active in ctx.active:
-    if active.kind == spec.kind and
+    if active.depth == spec.depth and
         active.owner != nil and active.owner.nodeKey == fn.nodeKey and
         sameVjpTarget(active.target, spec.target) and
         lambdaProtoMatch(active.bodyProto, bodyProto) and
@@ -1181,36 +1176,57 @@ proc buildFunctionApplyValueVjp(fun: Gvalue,
                                 targetValue: Gvalue,
                                 seed: Gvalue,
                                 ctx: ApplyVjpBuildCtx): Gvalue =
-  let appliedFun = fun.inputs[ApplyFunInput]
-  let appliedArg = fun.inputs[ApplyArgInput]
+  # f(a0)(a1)...(an): captures plus each inner argument's chain-rule term.
+  # The last argument belongs to the caller's separate argument backward slot.
+  var app = @[(f: fun, x: arg)]
+  while true:
+    let f = app[0].f
+    if f.isSlotVarNode:
+      app[0].f = f.inputs[0]
+    elif f.gfunc of Gapply:
+      app.insert((f: f.inputs[ApplyFunInput], x: f.inputs[ApplyArgInput]), 0)
+    else:
+      break
+
+  if app[0].f.isCondNode:
+    let parts = app[0].f.condParts
+    proc branch(f: Gvalue): Gvalue =
+      var g = f
+      for i in 0..<app.len - 1:
+        g = apply(g, app[i].x)
+      buildFunctionApplyValueVjp(g, app[^1].x, targetValue, seed, ctx)
+    return newCondNode(parts.selector, branch(parts.whenTrue), branch(parts.whenFalse))
+
+  proc finish(v: Gvalue, first: int): Gvalue =
+    result = v
+    for i in first..<app.len:
+      result = apply(result, app[i].x)
+    result = apply(result, seed)
+
   var pieces: seq[Gvalue] = @[]
   let gradProto = targetValue.zeroLike
-  let directResultProto = callVjpNodeProto(fun, gradProto)
-  let directVjp = apply(
+  pieces.add finish(
     buildStructuralLambdaVjp(
-      appliedFun,
-      resultVjpSpec(
+      app[0].f,
+      callVjpSpec(
         LambdaVjpTarget(kind: lvtkValue, value: targetValue),
-        directResultProto,
-        arg),
+        app[0].x,
+        structuralVjpResultProto(app[0].f.lambdaResultProto, gradProto)),
       ctx),
-    appliedArg)
-  pieces.add apply(apply(directVjp, arg), seed)
+    0)
 
-  if appliedArg.hasFirstClassCotangent:
-    let argGradProto = appliedArg.zeroLike
-    let argVjpResultProto = callVjpNodeProto(fun, argGradProto)
-    let argVjp = apply(
-      buildStructuralLambdaVjp(
-        appliedFun,
-        callVjpSpec(
-          LambdaVjpTarget(kind: lvtkArgument),
-          appliedArg,
-          argVjpResultProto),
-        ctx),
-      appliedArg)
-    let argCotangent = apply(apply(argVjp, arg), seed)
-    pieces.add lowerValueCotangent(appliedArg, targetValue, argCotangent)
+  for i in 0..<app.len - 1:
+    if app[i].x.hasFirstClassCotangent:
+      let cot = finish(
+        buildStructuralLambdaVjp(
+          app[i].f,
+          callVjpSpec(
+            LambdaVjpTarget(kind: lvtkArgument),
+            app[i].x,
+            structuralVjpResultProto(app[i].f.lambdaResultProto, app[i].x.zeroLike)),
+          ctx),
+        i)
+      pieces.add lowerValueCotangent(app[i].x, targetValue, cot)
 
   sumGradientPieces(gradProto, pieces)
 
@@ -1219,6 +1235,15 @@ proc buildApplyVjp(fun: Gvalue,
                     target: LambdaVjpTarget,
                     seed: Gvalue,
                     ctx: ApplyVjpBuildCtx): Gvalue =
+  if fun.isSlotVarNode:
+    return buildApplyVjp(fun.inputs[0], arg, target, seed, ctx)
+
+  if fun.isCondNode:
+    let parts = fun.condParts
+    return newCondNode(parts.selector,
+      buildApplyVjp(parts.whenTrue, arg, target, seed, ctx),
+      buildApplyVjp(parts.whenFalse, arg, target, seed, ctx))
+
   if target.kind == lvtkValue and fun.gfunc of Gapply and
       fun.lambdaResultProto != nil:
     return buildFunctionApplyValueVjp(fun, arg, target.value, seed, ctx)
@@ -1241,7 +1266,7 @@ proc reusableDirectVjpShell(fun: Gvalue,
                             spec: VjpSpec,
                             ctx: ApplyVjpBuildCtx,
                             bodyProto: Gvalue): Glambda =
-  if spec.kind == lvkCall:
+  if spec.depth == 0:
     # The key (funId + target + argProto, with the resolved lambda pinned by funId)
     # fully determines the shell shape, so a memo hit is always usable as-is.
     let memoValue = ctx.memo.getOrDefault(makeVjpKey(fun, spec))
@@ -1250,20 +1275,24 @@ proc reusableDirectVjpShell(fun: Gvalue,
 
   let activeShell = activeVjpShellFor(fun, spec, bodyProto, ctx)
   if activeShell != nil:
-    if spec.kind == lvkCall:
+    if spec.depth == 0:
       ctx.memo[makeVjpKey(fun, spec)] = Gvalue(activeShell)
     return activeShell
 
 proc buildResultVjpShellBody(bodyAtArg: Gvalue,
-                             target: LambdaVjpTarget,
+                             spec: VjpSpec,
                              ctx: ApplyVjpBuildCtx): Gvalue =
+  # D_k(lambda(a, f)) = lambda(a, D_(k-1)(f)); D_0 is the call VJP.
   if bodyAtArg.lambdaResultProto == nil:
     raiseValueError(
       "lambda result VJP expects lambda-valued body, got:\n" &
       bodyAtArg.nodeRepr)
   buildStructuralLambdaVjp(
     bodyAtArg,
-    callVjpSpec(target, bodyAtArg.lambdaParamProto),
+    if spec.depth == 1:
+      callVjpSpec(spec.target, bodyAtArg.lambdaParamProto)
+    else:
+      resultVjpSpec(spec.target, spec.bodyProto.lambdaResultProto, spec.argProto, spec.depth - 1),
     ctx)
 
 proc buildCallVjpShellBody(bodyAtArg: Gvalue,
@@ -1307,11 +1336,11 @@ proc buildDirectLambdaVjp(fun: Gvalue,
     param: argParam,
     body: bodyProto).assignStableNodeId
   shell.updated
-  if spec.kind == lvkCall:
+  if spec.depth == 0:
     ctx.memo[makeVjpKey(fun, spec)] = Gvalue(shell)
 
   ctx.active.add ActiveVjp(
-    kind: spec.kind,
+    depth: spec.depth,
     owner: fn,
     target: spec.target,
     bodyProto: bodyProto,
@@ -1321,13 +1350,7 @@ proc buildDirectLambdaVjp(fun: Gvalue,
     # VJP instantiation threads active scalar capture targets onto interior apply
     # nodes so the shell's backward can reach them.
     let bodyAtArg = instantiateBodyForVjp(fn, argParam, ctx)
-    case spec.kind
-    of lvkResult:
-      shell.body = buildResultVjpShellBody(
-        bodyAtArg,
-        spec.target,
-        ctx)
-    of lvkCall:
+    if spec.depth == 0:
       let bodyTarget =
         case spec.target.kind
         of lvtkArgument:
@@ -1339,6 +1362,11 @@ proc buildDirectLambdaVjp(fun: Gvalue,
         bodyTarget,
         ctx,
         shell)
+    else:
+      shell.body = buildResultVjpShellBody(
+        bodyAtArg,
+        spec,
+        ctx)
   finally:
     ctx.active.setLen(ctx.active.len - 1)
 
@@ -1356,11 +1384,13 @@ proc buildStructuralLambdaVjp(fun: Gvalue,
   # Dispatch on the structural form of the function and rewrite the VJP through
   # it. Every caller passes a non-nil ctx. Each branch below is one rewrite rule.
   let label =
-    case spec.kind
-    of lvkCall:
+    if spec.depth == 0:
       "apply VJP"
-    of lvkResult:
+    else:
       "lambda result VJP"
+
+  if fun.isSlotVarNode:
+    return buildStructuralLambdaVjp(fun.inputs[0], spec, ctx)
 
   # vjpOf(g): reduce g's source lambda, then VJP that; stay symbolic if unresolved.
   if fun.gfunc of GvjpOf:
@@ -1386,7 +1416,8 @@ proc buildStructuralLambdaVjp(fun: Gvalue,
         resultVjpSpec(
           spec.target,
           vjpApplyResultProto(fun, spec),
-          spec.argProto),
+          spec.argProto,
+          spec.depth + 1),
         ctx),
       fun.inputs[ApplyArgInput])
 

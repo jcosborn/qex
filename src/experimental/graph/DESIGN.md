@@ -534,11 +534,19 @@ resultVjpOf(fun, target)
 ```
 
 These names are documentation notation for the type rules below; in code they are
-a single `VjpSpec` record whose `kind`/`target` fields select the form:
-`callVjpOf` is `VjpSpec(kind = lvkCall, target = lvtkArgument)`, `captureVjpOf` is
-`VjpSpec(kind = lvkCall, target = lvtkValue)`, and `resultVjpOf` is
-`VjpSpec(kind = lvkResult, ...)`. On-graph they reduce to the `vjpOf` /
-`vjpOfResult` nodes (`gvjpOfCall` / `gvjpOfResult`).
+a single `VjpSpec` record whose `depth`/`target` fields select the form:
+`callVjpOf` has depth zero and an argument target, `captureVjpOf` has depth zero
+and a value target, and `resultVjpOf` has positive depth. On-graph they reduce
+to the `vjpOf` / `vjpOfResult` nodes (`GvjpOf`). The depth counts enclosing
+arguments to preserve before taking the call VJP. Nested function applications
+increment it, and lambda shells decrement it. Symbolic VJP nodes and active
+shell matching retain the same depth, so later arguments of a curried function
+remain distinct differentiation targets.
+
+For `f(a0)(a1)...(an)`, a value target receives the direct capture contribution
+plus the chain contribution through each inner `ai`. The final `an` belongs
+to the outer apply's own argument slot. The builder keeps the original
+argument nodes, so these contributions remain live under further derivatives.
 
 Targets are represented as one value, `LambdaVjpTarget`: either the call
 argument or a concrete graph value target. Keeping the target kind and value
