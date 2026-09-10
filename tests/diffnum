@@ -1,61 +1,72 @@
 #!/usr/bin/env python3
-# checks relative errors of numbers between two files
-import sys, re
+# Compare numeric output with relative and optional field-specific absolute tolerances.
+import argparse
+from itertools import zip_longest
+import math
+import re
+import sys
 
-if len(sys.argv)<=2:
-  print(f"{sys.argv[0]} <file1> <file2> [relative precision] [split chars]")
-  exit(1)
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("reference")
+parser.add_argument("actual")
+parser.add_argument("relative_precision", nargs="?", type=float, default=1e-12)
+parser.add_argument("split_chars", nargs="?", default=" \t[\\],")
+parser.add_argument(
+  "--atol-after", nargs=2, action="append", default=[], metavar=("LABEL", "ATOL"),
+  help="add ATOL to the relative allowance for a number immediately after LABEL; repeatable",
+)
+args = parser.parse_args()
+rel = args.relative_precision
+if not math.isfinite(rel) or rel < 0:
+  parser.error("relative precision must be finite and nonnegative")
+absolute = {}
+for label, value in args.atol_after:
+  try:
+    atol = float(value)
+  except ValueError:
+    parser.error(f"invalid absolute tolerance: {value}")
+  if not math.isfinite(atol) or atol < 0:
+    parser.error("absolute tolerances must be finite and nonnegative")
+  absolute[label] = atol
 
-fn1 = sys.argv[1]
-fn2 = ""
-if len(sys.argv)>2:
-  fn2 = sys.argv[2]
-rel = 1e-12
-if len(sys.argv)>3:
-  rel = float(sys.argv[3])
-spchars = " \t[\\],"
-if len(sys.argv)>4:
-  spchars = sys.argv[4]
-#print(fn1, fn2, rel, repr(spchars))
-
-lines1 = []
-lines2 = []
-with open(fn1) as f:
-  for line in f:
-    lines1.append(line.strip())
-with open(fn2) as f:
-  for line in f:
-    lines2.append(line.strip())
+with open(args.reference) as f:
+  lines1 = [line.strip() for line in f]
+with open(args.actual) as f:
+  lines2 = [line.strip() for line in f]
 
 err = False
-nl = max(len(lines1),len(lines2))
-for c in range(nl):
-  s1 = []
-  if c<len(lines1): s1 = re.split('['+spchars+']+', lines1[c])
-  s2 = []
-  if c<len(lines2): s2 = re.split('['+spchars+']+', lines2[c])
-  nf = max(len(s1),len(s2))
-  errf = []
-  rdf = []
-  for i in range(nf):
-    #print(s1[i], s2[i])
-    t1 = ""
-    if i<len(s1): t1 = s1[i]
-    t2 = ""
-    if i<len(s2): t2 = s2[i]
-    if t1 != t2:
-      f1 = float(t1)
-      f2 = float(t2)
-      a = 0.5*abs(f1+f2)
-      if abs(f1-f2) > a*rel:
-        errf.append(i)
-        rdf.append(abs(f1-f2)/a)
-  if len(errf)>0:
+for line_number, (line1, line2) in enumerate(zip_longest(lines1, lines2), 1):
+  if line1 is None or line2 is None:
+    print(f"Line {line_number}: missing line in {'reference' if line1 is None else 'actual'}")
     err = True
-    print("Line", c+1, "Error in fields", errf)
-    print(lines1[c])
-    print(lines2[c])
-    for e,rd in zip(errf,rdf):
-      print(" ", e, s1[e], s2[e], rd, rel)
+    continue
+  s1 = re.split('[' + args.split_chars + ']+', line1)
+  s2 = re.split('[' + args.split_chars + ']+', line2)
+  if len(s1) != len(s2):
+    print(f"Line {line_number}: field counts differ ({len(s1)} != {len(s2)})")
+    err = True
+    continue
+  for i, (t1, t2) in enumerate(zip(s1, s2)):
+    try:
+      f1, f2 = float(t1), float(t2)
+    except ValueError:
+      if t1 != t2:
+        print(f"Line {line_number}, field {i}: {t1!r} != {t2!r}")
+        err = True
+      continue
+    if not math.isfinite(f1) or not math.isfinite(f2):
+      print(f"Line {line_number}, field {i}: nonfinite value ({t1}, {t2})")
+      err = True
+      continue
 
-if err==True: exit(1)
+    scale = abs(0.5 * f1 + 0.5 * f2)
+    atol = absolute.get(s1[i-1], 0.0) if i > 0 and s1[i-1] == s2[i-1] else 0.0
+    tolerance = atol + rel * scale
+    difference = abs(f1 - f2)
+    if difference > tolerance:
+      print(f"Line {line_number}, field {i}: {t1} != {t2}; "
+            f"absolute error {difference:.6g} > tolerance {tolerance:.6g} "
+            f"(atol={atol:.6g}, rtol={rel:.6g}, scale={scale:.6g})")
+      err = True
+
+sys.exit(1 if err else 0)
