@@ -12,7 +12,7 @@ import ../[core, scalar, multi, gauge]
 import ../functional
 import ../gauge/types as graphGaugeShared
 import ../gauge/basic_ops as graphGaugeBasic
-import ../gauge/[types, field_ops, transport, cfield]
+import ../gauge/[types, field_ops, transport, cfield, stencil]
 import ../hmcgauge/optimizer, ../hmcgauge/integrator
 import ../hmcgauge/trajectory
 import ../hmcgauge/training

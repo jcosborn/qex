@@ -852,10 +852,16 @@ plaquette sum_x |tr P_x|^2 is `norm2(trace(P))` with derivatives to any order.
 
 `lineProducts` evaluates QEX's Wilson-line plan (`gaugeUtils.plan`, the
 segment tree behind `gaugeProd`) over graph nodes, memoized by path key, so
-shared sub-products and their adjoints are single nodes. Each step is
-L(x) * R(x - sh) with one shift node per direction; hop chains stay the
-cheaper spelling for single paths because a hop fuses the shift and the
-product into one node.
+shared sub-products and their derivatives are computed once. Each step
+L(x) * R(x - sh) is one `gp` node from `gauge/stencil`: R is read through a
+halo of its input (boundary exchange only, no interior copy, the halo
+layout narrowed to the offset's directions), so a step costs one field of
+storage. `gather` and `scatter` are the mutually adjoint halo moves the
+backward of `gp` is written with; scatter places every local site at its
+one target and finishes with the reverse exchange, so it starts from zero on
+every evaluation. A stencil node owns its halo buffers and index table and
+rebinds the halo to its input each evaluation (section 6). Hop chains remain
+the spelling for transporting a general field along a path.
 
 Each gauge module isolates one protocol, and that is the rule for adding one:
 
@@ -865,6 +871,7 @@ gauge/basic_ops.nim   closed generators: the site algebra stamped per type, blen
 gauge/matfun.nim      exp family: kernels at every order (expJet) and the polynomial replica
 gauge/field_ops.nim   shift, linkField, injectLink
 gauge/cfield.nim      matrix field <-> complex field bridge: trace, scale, dot
+gauge/stencil.nim     halo moves of a field: gather, scatter, gp (gathered product)
 gauge/transport.nim   hop chains (transport, wilsonLine) and lineProducts on QEX's path plan
 gauge/fused_ops.nim   Gmulti-packed site kernels
 gauge/action/         QEX kernel dispatch (domain), coefficient type, action wrappers, reference actions

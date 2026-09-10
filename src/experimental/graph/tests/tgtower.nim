@@ -10,7 +10,7 @@ import algorithms/numdiff, gauge/stoutsmear
 import helpers
 import ../[core, scalar, gauge]
 from ../gauge/matfun import expPolyGraph, expJet, expTopReplica
-import ../gauge/[types, field_ops, transport, cfield]
+import ../gauge/[types, field_ops, transport, cfield, stencil]
 
 let grt = initGraphRuntime()
 

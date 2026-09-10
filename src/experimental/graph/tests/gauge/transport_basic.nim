@@ -39,6 +39,42 @@ suite "gauge transport vs basic":
         gg.update u
     norm2(transport(gg, f, []) - f) :< 1e-24
 
+  test "gather and scatter = shifts, mutually adjoint":
+    let
+      f = linkField(gu, 0)
+      b = linkField(gm, 1)
+    for sh in [@[1], @[0, -2], @[1, -1], @[-1, 2]]:
+      var r = f
+      for mu, n in sh:
+        if n != 0:
+          r = shift(r, mu, -n)
+      norm2(gather(f, sh) - r) :< 1e-18
+      norm2(scatter(gather(f, sh), sh) - f) :< 1e-18
+      (redot(gather(f, sh), b) - redot(f, scatter(b, sh))) :< 1e-8
+    proc ga(x: Ggauge): Gscalar = redot(gather(linkField(x, 0) * linkField(x, 1), @[1, -1]), b)
+    ckgrad(ga, gg, gu)
+    proc sc(x: Ggauge): Gscalar = redot(scatter(linkField(x, 1), @[0, 2]), b * linkField(x, 0))
+    ckgrad(sc, gg, gu)
+
+  test "gp = flagged product of a and gathered b":
+    let
+      a = linkField(gg, 0)
+      c = linkField(gu, 1)
+      b = linkField(gm, 0)
+      sh = @[1, -1]
+      cs = gather(c, sh)
+    for fa in [false, true]:
+      for fb in [false, true]:
+        let aa = (if fa: a.adj else: a)
+        let bb = (if fb: cs.adj else: cs)
+        norm2(gp(a, c, sh, fa, fb) - aa * bb) :< 1e-18
+    proc g1(x: Ggauge): Gscalar = redot(gp(linkField(x, 0), linkField(x, 1), sh, true, false), b)
+    ckgrad(g1, gg, gu)
+    proc g2(x: Ggauge): Gscalar = redot(gp(linkField(x, 1), linkField(x, 0), sh, false, true), b)
+    ckgrad(g2, gg, gu)
+    proc g3(x: Ggauge): Gscalar = redot(gm, grad(g1(x), x))
+    ckgrad(g3, gg, gu)
+
   test "lineProducts = hop chains, shared plaquette pair, rectangles":
     let
       ps = lineProducts(gg, [@(plaqPath(0, 1)), @[1, 1, 2, -1, -1, -2], @[2, 1, -2, -1]])
@@ -55,6 +91,9 @@ suite "gauge transport vs basic":
     # the two orientations of one plaquette share their product node
     let shared = lineProducts(gg, [@[1, 2, -1, -2], @[2, 1, -2, -1]])
     check shared[1].inputs[0].nodeKey == shared[0].nodeKey
+    # with origin the outputs start at the base site like hop chains do
+    let og = lineProducts(gg, [@[-1, 2, 1, -2]], origin = true)
+    norm2(og[0] - wilsonLine(gg, [-1, 2, 1, -2])) :< 1e-18
 
   test "wilsonLine plaquette = U_mu shift_mu(U_nu) shift_nu(U_mu).adj U_nu.adj":
     let

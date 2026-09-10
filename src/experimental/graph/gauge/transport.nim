@@ -17,7 +17,7 @@ import std/tables
 import ../core
 import ../support/op
 import layout, gauge, physics/qcdTypes
-import types, basic_ops, field_ops
+import types, basic_ops, field_ops, stencil
 
 type Ghop = ref object of Gfield
   ## Owns the fused shift-multiply comm buffers (cloned by newOneOf).
@@ -98,31 +98,27 @@ proc wilsonLine*(g: Ggauge, path: openArray[int]): Gfield =
 
 proc lineProducts*(g: Ggauge, lines: openArray[seq[int]], origin = true): seq[Gfield] =
   ## Path-ordered link products of every line as graph nodes, sharing
-  ## sub-products the way QEX's gaugeProd does (gaugeUtils.plan): each step is
-  ## L(x) * R(x - sh), memoized by path key, with the shift one node per
-  ## direction; link fields and their adjoints are hoisted leaves. Shared
-  ## nodes share their adjoints too, so derivatives inherit the sharing.
-  ## With origin the products start at the base site; traces do not need it.
+  ## sub-products the way QEX's gaugeProd does (gaugeUtils.plan): each step
+  ## L(x) * R(x - sh) is one gp node (adjoint flags folded, R gathered through
+  ## a halo), memoized by path key, so shared products and their derivatives
+  ## are computed once. With origin the products start at the base site;
+  ## traces do not need it.
   let pl = lines.optimalPairs.plan(origin)
   var nodes = initTable[seq[int], Gfield]()
-  var adjs = initTable[seq[int], Gfield]()
-  proc node(k: seq[int], a: bool): Gfield =
+  proc node(k: seq[int]): Gfield =
     if k.len == 1 and k notin nodes:
       nodes[k] = linkField(g, k[0] - 1)
-    if not a:
-      return nodes[k]
-    if k notin adjs:
-      adjs[k] = nodes[k].adj
-    adjs[k]
-  proc shifted(x: Gfield, sh: seq[int]): Gfield =
-    result = x
-    for mu, n in sh:
+    nodes[k]
+  proc moved(x: Gfield, sh: seq[int]): Gfield =
+    for n in sh:
       if n != 0:
-        result = shift(result, mu, -n)
+        return gather(x, sh)
+    x
   for s in pl.steps:
-    nodes[s.key] = node(s.l, s.la) * shifted(node(s.r, s.ra), s.sh)
+    nodes[s.key] = gp(node(s.l), node(s.r), s.sh, s.la, s.ra)
   for o in pl.outs:
-    result.add shifted(node(o.key, o.adj), o.sh)
+    let x = node(o.key)
+    result.add moved((if o.adj: x.adj else: x), o.sh)
 
 proc plaqPath*(mu, nu: int): array[4, int] =
   if mu < 0 or nu < 0 or mu == nu:
