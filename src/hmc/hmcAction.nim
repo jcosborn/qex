@@ -225,7 +225,7 @@ proc getGauge*(hmc: HmcAction): seq[auto] = hmc.uc.u
 #[ ActionLevel: virtual dispatch for nested integrators ]#
 
 proc newActionLevel*(
-  multiplier: int = 1; 
+  multiplier: int = 1;
   integrator: IntegratorProc = "2MN"
 ): ActionLevel =
   return ActionLevel(actions: @[], multiplier: multiplier, integrator: integrator)
@@ -478,7 +478,7 @@ proc run*(hmc: HmcAction; forceAccept: bool = false) =
       let v = t[k1]
       s &= " " & k1 & " " & $v
     st[stval].add s
-  
+
   # print stats summary
   if hmc.verbosity > 0:
     for stx in st:
@@ -646,9 +646,9 @@ proc gaugeActionActionProc[U](self: ActionRoot, u: ActionField): float =
   ga.action(gc)
 
 proc gaugeActionForceProc[U](
-  self: ActionRoot, 
-  u: ActionField, 
-  dtau: float, 
+  self: ActionRoot,
+  u: ActionField,
+  dtau: float,
   f: ActionForce
 ) =
   let ga = GaugeAction[U](self)
@@ -658,8 +658,8 @@ proc gaugeActionForceProc[U](
 
 var GaugeActionCount = 0
 proc newGaugeAction*[U](
-  h: HmcAction, 
-  gc: GaugeActionCoeffs, 
+  h: HmcAction,
+  gc: GaugeActionCoeffs,
   u: GaugeConfiguration[U]
 ): GaugeAction[U] =
   result = GaugeAction[U](gc: gc)
@@ -857,9 +857,9 @@ proc action*(self: StaggeredFermionAction; u: GaugeConfiguration): float =
   return 0.5*psi2
 
 proc force*(
-  self: StaggeredFermionAction; 
-  u: GaugeConfiguration, 
-  dtau: float, 
+  self: StaggeredFermionAction;
+  u: GaugeConfiguration,
+  dtau: float,
   gf: auto
 ) =
   tic("StaggeredFermionAction:force")
@@ -893,7 +893,7 @@ proc force*(
   toc("end")
 
 proc staggeredFermionActionHeatbathProc[U,ET,FT,R](
-  self: ActionRoot, 
+  self: ActionRoot,
   u: ActionField,
   r: ActionRngField
 ) =
@@ -902,7 +902,7 @@ proc staggeredFermionActionHeatbathProc[U,ET,FT,R](
   fa.heatbath(gc)
 
 proc staggeredFermionActionActionProc[U,ET,FT,R](
-  self: ActionRoot, 
+  self: ActionRoot,
   u: ActionField
 ): float =
   let fa = StaggeredFermionAction[U, ET, FT, R](self)
@@ -910,8 +910,8 @@ proc staggeredFermionActionActionProc[U,ET,FT,R](
   fa.action(gc)
 
 proc staggeredFermionActionForceProc[U,ET,FT,R](
-  self: ActionRoot, 
-  u: ActionField, 
+  self: ActionRoot,
+  u: ActionField,
   dtau: float,
   f: ActionForce
 ) =
@@ -1010,9 +1010,9 @@ proc action*(self: StaggeredPauliVillarsAction; u: GaugeConfiguration): float =
   toc("end")
 
 proc force*[U](
-  self: StaggeredPauliVillarsAction; 
-  u: GaugeConfiguration[U], 
-  dtau: float, 
+  self: StaggeredPauliVillarsAction;
+  u: GaugeConfiguration[U],
+  dtau: float,
   gf: auto
 ) =
   tic("StaggeredPauliVillarsAction:force")
@@ -1041,7 +1041,7 @@ proc force*[U](
   toc("end")
 
 proc staggeredPauliVillarsActionHeatbathProc[U,ET,FT,R](
-  self: ActionRoot, 
+  self: ActionRoot,
   u: ActionField,
   r: ActionRngField
 ) =
@@ -1051,7 +1051,7 @@ proc staggeredPauliVillarsActionHeatbathProc[U,ET,FT,R](
   pva.heatbath(gc, ap.r)
 
 proc staggeredPauliVillarsActionActionProc[U,ET,FT](
-  self: ActionRoot, 
+  self: ActionRoot,
   u: ActionField
 ): float =
   let pva = StaggeredPauliVillarsAction[U, ET, FT](self)
@@ -1059,8 +1059,8 @@ proc staggeredPauliVillarsActionActionProc[U,ET,FT](
   pva.action(gc)
 
 proc staggeredPauliVillarsActionForceProc[U,ET,FT](
-  self: ActionRoot, 
-  u: ActionField, 
+  self: ActionRoot,
+  u: ActionField,
   dtau: float,
   f: ActionForce
 ) =

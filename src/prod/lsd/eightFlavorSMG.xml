@@ -58,7 +58,7 @@
   </solver>
   <basic_meas> <!-- measurements, made after every trajectory -->
     <plaq><!-- plaquette -->
-      <plaq_freq>1</plaq_freq> 
+      <plaq_freq>1</plaq_freq>
     </plaq>
     <ploop_freq>1</ploop_freq> <!-- Polyakov loop -->
     <s4_freq>1</s4_freq> <!-- "s4 order parameter" from  -->

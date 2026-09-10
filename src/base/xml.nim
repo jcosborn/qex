@@ -2,10 +2,10 @@
 ##
 ## XML parsing DSL that makes it easy to specify what parameters would be read from
 ## input XML file; includes default values for specified parameters.
-## 
+##
 ## It would be nice to have a corresponding DSL for JSON file using Nim's native
-## JSON parsing tools. 
-## 
+## JSON parsing tools.
+##
 ## Author: Curtis Taylor Peterson
 
 import std/[os]
@@ -33,7 +33,7 @@ proc echoXmlX: string =
   for p in xmlParamInfo: result &= "  " & p.name & ": " & p.value & "\n"
   result.removeSuffix '\n'
 
-template echoXml* = 
+template echoXml* =
   mixin echo
   echo echoXmlX()
 
@@ -54,7 +54,7 @@ proc fromXml[T](s: string; _: seq[T]): seq[T] =
   for x in s.replace(",", " ").splitWhitespace():
     result.add fromXml(x, default(T))
 
-proc xmlParam[T](root: XmlNode; path: openArray[string]; defaultValue: T): T = 
+proc xmlParam[T](root: XmlNode; path: openArray[string]; defaultValue: T): T =
   let node = findPath(root, path)
 
   result = defaultValue
@@ -68,7 +68,7 @@ proc xmlAttr[T](
   path: openArray[string];
   name: string;
   defaultValue: T
-): T = 
+): T =
   let node = findPath(root, path)
 
   result = defaultValue
@@ -82,7 +82,7 @@ proc xmlAttr[T](
 
 #[ DSL AST parsing ]#
 
-proc pathNode(path: seq[string]): NimNode {.compileTime.} = 
+proc pathNode(path: seq[string]): NimNode {.compileTime.} =
   result = newNimNode(nnkBracket)
   for name in path: result.add newLit(name)
 
@@ -106,9 +106,9 @@ proc emitXml(
       let name = node[0]
       let value = node[1]
 
-      if name.kind notin {nnkIdent, nnkSym}: 
+      if name.kind notin {nnkIdent, nnkSym}:
         error "letXml expects `name = default`: ", node
-    
+
       if isAttrCall(value): # XML attribute branch
         if value.len != 3: error "attr expects `attr(name, default)`: ", value
 
@@ -129,7 +129,7 @@ proc emitXml(
       let section = node[0]
       if node.len != 2 or node[^1].kind != nnkStmtList:
         error "malformed letXml subtree: ", node
-      if section.kind notin {nnkIdent, nnkSym}: 
+      if section.kind notin {nnkIdent, nnkSym}:
         error "letXml subtree name must be an identifier: ", section
 
       var childPath = path
@@ -139,9 +139,9 @@ proc emitXml(
     elif node.kind == nnkCommentStmt: discard
     else: error "unsupported syntax in letXml: ", node
 
-macro letXml*(xml: typed; body: untyped): untyped = 
+macro letXml*(xml: typed; body: untyped): untyped =
   ## Bind XML values to local variables
-  ## 
+  ##
   ## # Example XML (input.xml):
   ## # <?xml version="1.0"?>
   ## # <qex>
@@ -154,10 +154,10 @@ macro letXml*(xml: typed; body: untyped): untyped =
   ## #     <steps>10</steps>
   ## #   </hmc>
   ## # </qex>
-  ## 
+  ##
   ## # Example usage:
   ## let xml = "input.xml"
-  ## letXml xml: 
+  ## letXml xml:
   ##   action:
   ##     beta = 7.5
   ##     mass = 0.005
@@ -168,7 +168,7 @@ macro letXml*(xml: typed; body: untyped): untyped =
   let root = genSym(nskLet, "xml")
   result = newStmtList()
 
-  result.add quote do: 
+  result.add quote do:
     let `root` = loadXml(`xml`)
 
   emitXml(root, @[], body, result)
@@ -177,7 +177,7 @@ when isMainModule:
   let testFile = getTempDir() / "qex_xml_test.xml"
 
   writeFile(
-    testFile, 
+    testFile,
 """
 <qex>
   <lattice>
