@@ -75,6 +75,8 @@ method newOneOf*(x: Gmulti): Gvalue =
 
 method valCopy*(z: Gmulti, x: Gvalue) =
   ## Copy slot values only; copyCompatible has checked their shapes.
+  if z.shapeOnly and z.isSlotVarNode:
+    return
   if z.shapeOnly or Gmulti(x).shapeOnly:
     raiseValueError("structural multi carrier cannot be copied")
   z.slots.copySlotValues(Gmulti(x).slots)

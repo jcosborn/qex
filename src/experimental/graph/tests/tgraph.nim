@@ -1,3 +1,5 @@
+#RUNCMD $RUN1
+
 import math, strutils, unittest
 
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
@@ -5,6 +7,7 @@ addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 import helpers
 import ../[core, scalar, multi]
 import ../core/base
+import ../support/op
 from ../core/grad_engine import findGrad
 
 let grt = initGraphRuntime()

@@ -12,4 +12,5 @@ export
   Gactcoeff,
   actWilson, actSymanzik, actIwasaki, actDBW2, actAdj,
   gaugeAction, gaugeActionDeriv, gaugeActionDeriv2, gaugeForce,
+  gaugeActionGraph,
   blendSubset, stoutUpdate, stoutLogDetJ, stoutUpdateLogDetJ

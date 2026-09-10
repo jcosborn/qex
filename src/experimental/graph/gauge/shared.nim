@@ -89,6 +89,15 @@ proc toGvalue*(grt: GraphRuntime,
   result = Ggauge(runtime: grt, gval: g).assignStableNodeId
   result.updated
 
+proc unitGaugeLike*(x: Ggauge): Ggauge =
+  ## Constant identity-matrix gauge leaf shaped like x.
+  let g = x.gval.newOneOf
+  threads:
+    for f in g:
+      f := 1.0
+  result = Ggauge(runtime: x.runtime, gval: g).assignStableNodeId
+  result.updated
+
 proc gaugeNodeLike*(x: Ggauge): Ggauge =
   let g = x.gval.newOneOf
   g.zeroGaugeStorage
@@ -137,6 +146,12 @@ template mapGaugeElements*(dst: Ggauge, body: untyped) =
 proc paritySubset*(g: Gauge, parity: int): Subset =
   ## Even (parity 0) / odd (parity 1) subset of the layout backing `g`.
   g[0].l.getSubset(if parity == 0: "even" else: "odd")
+
+proc requireParityDir*(parity, dir, nd: int, label: string) =
+  if parity < 0 or parity > 1:
+    raiseValueError(label & " parity must be 0 or 1")
+  if dir < 0 or dir >= nd:
+    raiseValueError(label & " direction out of range")
 
 proc zeroGaugeStorage*(g: Ggauge) =
   ## Zero once; subset kernels leave off-subset entries zero across evaluations.

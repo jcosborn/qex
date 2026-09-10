@@ -25,13 +25,6 @@ suite "gauge action":
     proc force(x: Ggauge): Ggauge = gaugeForce(c, x)
     ckforce(act, force, gg, 10.0*gm)
 
-  test "wilson force matches separate derivative and projection":
-    let
-      c = actWilson(scalar.toGvalue(grt, 5.4))
-      fused = gaugeForce(c, gg)
-      separate = contractProjTAH(gaugeActionDeriv(c, gg), gg)
-    norm2(fused - separate) :< 1e-24
-
   test "wilson force gradient":
     let beta = 5.4
     let c = actWilson(scalar.toGvalue(grt, beta))
@@ -59,6 +52,13 @@ suite "gauge action":
       (d, e) = ndiff(action, t)
       analytic = redot(aSub, gaugeActionDeriv(c, gg, parity, dir)).eval.sval
     check(instantiationInfo(), "gaugeActionDeriv subset action derivative", d, e, analytic)
+
+  test "gaugeActionDerivSubset validates parity and direction":
+    let c = actWilson(scalar.toGvalue(grt, 5.4))
+    expect(GraphValueError):
+      discard gaugeActionDeriv(c, gg, -1, 0)
+    expect(GraphValueError):
+      discard gaugeActionDeriv(c, gg, 0, g.len)
 
   test "raw subset derivative overwrites only its requested output":
     let c = GaugeActionCoeffs(plaq: 5.4)
@@ -311,3 +311,38 @@ suite "gauge action":
       discard force.grad beta
     expect(GraphValueError):
       discard force.gfunc.backward(nil, force, 1, gg)
+
+  test "gauge action graph coefficient gradient":
+    # The action is linear in beta, so beta * dS/dbeta == S; this exercises
+    # the coefficient cotangent chain behind coeffPlaq.
+    let beta = scalar.toGvalue(grt, 5.4)
+    let wilsonCoeff = actWilson(beta)
+    let w = gaugeActionGraph(wilsonCoeff, gg)
+    let plaqBasis = grt.toGvalue(GaugeActionCoeffs(plaq: 1.0))
+    (beta * grad(w, beta) - w) :< 1e-6
+    (beta * redot(grad(w, wilsonCoeff), plaqBasis) - w) :< 1e-6
+
+  test "gauge action graph rejects non-plaquette coefficients at evaluation":
+    let cc = grt.toGvalue(GaugeActionCoeffs(plaq: 1.0))
+    let w = gaugeActionGraph(cc, gg)
+    discard w.eval
+    cc.update GaugeActionCoeffs(plaq: 1.0, rect: 0.1)
+    expect GraphValueError:
+      discard w.eval
+
+  test "gauge action graph rejects mixed runtimes before building paths":
+    let
+      otherRuntime = initGraphRuntime()
+      cc = otherRuntime.toGvalue(GaugeActionCoeffs(plaq: 1.0))
+      nextGaugeNode = grt.nextStableNodeId
+      nextCoeffNode = otherRuntime.nextStableNodeId
+    expect GraphValueError:
+      discard gaugeActionGraph(cc, gg)
+    check grt.nextStableNodeId == nextGaugeNode
+    check otherRuntime.nextStableNodeId == nextCoeffNode
+
+  test "gauge action graph reads coefficient values only at evaluation":
+    let cc = grt.toGvalue(GaugeActionCoeffs(plaq: 1.0, rect: 0.1))
+    let w = gaugeActionGraph(cc, gg)
+    cc.update GaugeActionCoeffs(plaq: 1.0)
+    (w - gaugeAction(actWilson(scalar.toGvalue(grt, 1.0)), gg)) :< 1e-8

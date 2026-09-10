@@ -51,6 +51,14 @@ wrong-dependency-surface bugs.
 A nil hook means "walk raw `inputs`" for every mode. Only install a custom hook
 when raw inputs are not the right dependency surface.
 
+Core's example is `cond`, whose eval walk visits only the selected branch
+while its reachable and backward walks visit both.
+
+There is deliberately no stop-gradient op. Backward hooks keep dependencies
+live and use the per-slot construction rules in section 5 to isolate one input
+slot. Hiding a live dependence from `iwmBackward` makes the next derivative
+wrong because the returned graph is constant in something it depends on.
+
 Custom input views must emit ordinary graph values without mutating `inputs`.
 The `backward` hook receives both the backward dep index and the actual `input`,
 because an `iwmBackward` surface need not line up with raw input positions.
@@ -226,6 +234,31 @@ Structural functional VJP bodies use uncached seeded builds: the public
 output-gradient cache owns `grad(dep, target)` reuse, while seed-specific VJP
 bodies avoid storing contributions whose meaning depends on a particular
 upstream adjoint.
+
+### Per-slot partials and slot variables
+
+A backward hook returns the contribution for one input slot, and the engine
+sums those slot contributions. A hook must not account for a sibling slot's
+path. Naming a sibling in the returned value is fine because a value is not a
+path. Calling `grad` or `gradSeeded` with a target that also occurs in a sibling
+slot walks that sibling's path a second time.
+
+`slotVar(x)` is a transparent alias with the same value and derivatives as `x`
+but a distinct node. It has no custom `inputView` and is the graph spelling of
+`let slot = x`. Differentiating with respect to `slot` never reaches a sibling.
+Ordinary values preserve their concrete type through `newOneOf`. Resolved
+`Glambda` aliases return `GlambdaRef`; lambda resolution and structural VJPs
+follow their input edge. They support `apply` and `vjpOf`, subject to the
+functional layer's existing absence of whole-lambda cotangents. Structural
+`Gmulti` aliases retain shape prototypes and refresh through that edge without
+copying slot values.
+
+`secondPullback(x, seed, upstream, replica)` in `support/op` packages the shape
+used by replica-based fallback backwards. The replica must be built over its
+`slot` argument, and every occurrence of the differentiated argument must be
+spelled as `slot`. A builder that captures `x` directly compiles but returns the
+wrong partial. `seed` and `upstream` remain ordinary live graph values, which
+keeps the contribution exact under further differentiation.
 
 Conditional upstream gradients are split before calling a node's `backward`.
 Static zero branches are skipped there, so inactive branches can produce guarded
@@ -781,6 +814,66 @@ subgraphs, but the action layer does not promise differentiation of
 `gaugeAction` or `gaugeActionDeriv` with respect to those coefficients.
 Unsupported coefficient gradients should fail explicitly rather than degrade into
 ambiguous behavior.
+
+### Grad-complete basic tier
+
+A set of ops is grad-complete when every op's `backward` builds a graph made
+only of ops in the set (plus constant leaves and the scalar layer); any graph
+over such a set differentiates to arbitrary order with no per-order code.
+
+The gauge basic tier is grad-complete: the site-local `Ggauge` algebra
+(`retr`, `adj`, `norm2`, `redot`, `projTAH`, add/sub/scale/mul), `blendSubset`,
+the single-direction `Gfield` tier (`linkField`, `injectLink`, `shift`, and the
+matching site-local algebra), and the covariant transport step `hop`. `Gfield`
+is internal plumbing in the `Gmulti` spirit: applications keep whole-`Ggauge`
+signatures, but per-direction values are unavoidable because path products mix
+directions and ∂S/∂U_mu is per-direction. The `Gfield` closure contract includes
+the site-local `Ggauge` algebra, so `gauge/field_ops` imports `basic_ops`.
+`wilsonLine` and `transport` chain hops, so staples, loops, and actions have
+basic-tier expressions. These internal plumbing ops live in `gauge/field_ops`
+and `gauge/transport`; the top-level `gauge` facade does not re-export them.
+
+Each gauge module isolates one protocol, and that is the rule for adding one:
+
+```text
+gauge/shared.nim      value storage: Ggauge, ownership, shape helpers, loop templates
+gauge/basic_ops.nim   closed generators: site algebra, blend/mask; exp family (kernels + replica)
+gauge/field_ops.nim   Gfield storage and its algebra, shift, linkField, injectLink
+gauge/transport.nim   hop chains: transport, wilsonLine
+gauge/fused_ops.nim   Gmulti-packed site kernels
+gauge/action/         QEX kernel dispatch (domain), coefficient type, action wrappers, reference action
+gauge/stout.nim       stout monolith wrappers
+```
+
+Optimized operators keep fused kernels for the orders that matter. Where no
+optimized higher-order kernel exists, the backward hook must not raise; it
+builds a grad-complete replica of the node's function. `expPolyGraph` is the
+replica behind the Nc>1 `expDeriv`, and `gaugeActionDerivGraph` is the replica behind
+`gaugeActionDeriv2`. The Nc=1 exponential uses its exact scalar identity
+instead.
+
+Replica backwards use `secondPullback` as described in section 5.
+`tests/gauge/higher` pins each replica backward one order past the derivative
+its hook builds, over a cotangent slot that aliases the field and over one that
+merely depends on it, because those are the orders a frozen seed would silently
+lose.
+
+Replicas must compute the same function as the kernel they stand behind
+(`expPolyGraph` mirrors the matexp poly-and-squaring scheme exactly), and
+pinning tests hold value and first-derivative agreement between the two. The
+matexp default kind, order, and scale come from `newExpParam`, with a
+compile-time check that rejects a stale graph replica.
+
+The remaining non-grad-complete boundaries are the stout layer, the action
+layer past second order, and coefficient gradients of the optimized action ops.
+Fused stout pullback kernels and `stoutLogDetJ` reject further differentiation.
+The action layer past second order is plaquette-only: the `g`-slot third
+derivative of `gaugeActionDeriv2` goes through `gaugeActionDerivGraph`, whose
+embedded `coeffPlaq` rejects rectangle, parallelogram, and adjoint-plaquette
+coefficients at evaluation. `evalGaugeForceJacobian` in `action/domain.nim`
+still rejects adjoint-plaquette family Hessians. Coefficient gradients of the
+optimized action ops stay unsupported; `gaugeActionGraph` is the
+coefficient-differentiable spelling of the plaquette action.
 
 ## 13. `hmcgauge`
 

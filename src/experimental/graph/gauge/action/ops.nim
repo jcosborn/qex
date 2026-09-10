@@ -3,7 +3,7 @@ import ../../[core, scalar]
 import ../../scalar/types
 import ../../support/op
 import layout, gauge, physics/qcdTypes
-import ../shared, ../basic_ops, ../fused_ops, domain
+import ../shared, ../basic_ops, ../fused_ops, ../field_ops, ../transport, domain
 
 # --- gauge-action coefficient value type and coefficient algebra ---
 
@@ -34,7 +34,11 @@ proc raiseCoeffBackwardUnsupported(label: string) {.noreturn.} =
   raiseUnsupportedPath(label, "derivative with respect to gauge-action coefficients")
 
 proc `*`*(x: Gscalar, y: Gactcoeff): Gactcoeff
+proc `+`*(x, y: Gactcoeff): Gactcoeff
 proc redot*(x: Gactcoeff, y: Gactcoeff): Gscalar
+
+method addLike*(prototype: Gactcoeff, x: Gvalue, y: Gvalue): Gvalue =
+  Gactcoeff(x) + Gactcoeff(y)
 
 method scaleLike*(contribution: Gactcoeff, upstream: Gvalue): Gvalue =
   Gscalar(upstream) * contribution
@@ -81,6 +85,26 @@ proc `*`*(x: Gscalar, y: Gactcoeff): Gactcoeff =
     mulsc,
     "s*c")
 
+proc addccb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  requireUpstream(zb, "c+c backward", Gactcoeff)
+
+proc addccf(v: Gvalue) =
+  let x = Gactcoeff(v.inputs[0])
+  let y = Gactcoeff(v.inputs[1])
+  let z = Gactcoeff(v)
+  z.cval = x.cval
+  for a, b in fields(z.cval, y.cval):
+    a += b
+
+let addcc = Gfunc(forward: addccf, backward: addccb, name: "c+c")
+
+proc `+`*(x, y: Gactcoeff): Gactcoeff =
+  graphNode(
+    Gactcoeff(runtime: x.runtime),
+    @[Gvalue(x), Gvalue(y)],
+    addcc,
+    "c+c")
+
 proc redotccb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   bilinearBackward(zb, z, i, Gactcoeff)
 
@@ -116,6 +140,51 @@ proc actDBW2*(beta: Gscalar): Gactcoeff =
     GaugeActionCoeffs(plaq: 1.0 - 8.0 * C1DBW2, rect: C1DBW2),
   )
 proc actAdj*(beta: Gscalar, adjFac: Gscalar): Gactcoeff = beta * adjCoeff(adjFac)
+
+proc coeffPlaqb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  scaledUpstreamOr(
+    zb,
+    Gscalar,
+    toGvalue(z.runtime, GaugeActionCoeffs(plaq: 1.0)))
+
+proc coeffPlaqf(v: Gvalue) =
+  # Guard the family on every evaluation: replica graphs built through this
+  # node assume plaquette-only coefficients, and the coefficient value can be
+  # updated after the graph is built.
+  let gc = Gactcoeff(v.inputs[0]).cval
+  if not gc.isPlaqOnly:
+    raiseUnsupportedPath("coeffPlaq", "coefficient sets outside the plaquette action family")
+  Gscalar(v).sval = gc.plaq
+
+let coeffPlaqg = Gfunc(forward: coeffPlaqf, backward: coeffPlaqb, name: "coeffPlaq")
+
+proc coeffPlaq(c: Gactcoeff): Gscalar =
+  ## The plaquette coefficient as a scalar graph value. Evaluation rejects
+  ## coefficient sets outside the plaquette family, so plaquette-only replica
+  ## graphs fail loudly if the coefficient later changes family.
+  graphNode(scalarNodeLike(c), @[Gvalue(c)], coeffPlaqg, "coeffPlaq")
+
+proc gaugeActionGraph*(c: Gactcoeff, g: Ggauge): Gscalar =
+  ## Grad-complete plaquette action reference,
+  ##   S = (-plaq/nc) * sum_{mu<nu} sum_x retr P_munu(x),
+  ## built from Wilson lines so it differentiates to any order. It matches
+  ## `gaugeAction` for plaquette-only coefficients; the embedded `coeffPlaq`
+  ## rejects other coefficient families at evaluation. This public spelling is
+  ## also the coefficient-differentiable alternative to optimized `gaugeAction`.
+  discard sharedGraphRuntime(
+    [Gvalue(c), Gvalue(g)], "gaugeActionGraph")
+  let nd = g.gval.len
+  const nc = g.gval[0][0].nrows
+  let unit = g.unitFieldLike
+  var s = toGvalue(g.runtime, 0.0)
+  for mu in 1..<nd:
+    for nu in 0..<mu:
+      s = s + retr(transport(g, unit, plaqPath(mu, nu)))
+  (toGvalue(g.runtime, -1.0/float(nc)) * coeffPlaq(c)) * s
+
+proc gaugeActionDerivGraph(c: Gactcoeff, g: Ggauge): Ggauge =
+  ## Grad-complete replica of gaugeActionDeriv for plaquette-only c.
+  Ggauge(gradSeeded(gaugeActionGraph(c, g), g, toGvalue(g.runtime, 1.0)))
 
 # --- gauge-action graph operations ---
 
@@ -226,6 +295,7 @@ method newOneOf(x: GsubsetDeriv): Gvalue =
 
 proc gaugeActionDeriv*(c: Gactcoeff, g: Ggauge, parity, dir: int): Ggauge =
   ## Subset Wilson derivative; its pullback scatters to all staple neighbours.
+  requireParityDir(parity, dir, g.gval.len, "gaugeActionDerivSubset")
   proc fwd(v: Gvalue) =
     let c = Gactcoeff(v.inputs[0])
     let g = Ggauge(v.inputs[1])
@@ -240,11 +310,24 @@ proc gaugeActionDeriv*(c: Gactcoeff, g: Ggauge, parity, dir: int): Ggauge =
   graphNode(g.subsetDerivNodeLike(parity, dir), @[Gvalue(c), Gvalue(g)], Gfunc(forward: fwd, backward: bwd, name: "gaugeActionDerivSubset"), "gaugeActionDerivSubset")
 
 proc gaugeActionDeriv2b(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  if i == 0:
-    raiseUnsupportedPath("gaugeActionDeriv2 backward", "derivative with respect to force-direction input")
+  ## z = gaugeActionDeriv2(b, c, g) is the action Hessian at g applied to b.
   if i == 1:
     raiseCoeffBackwardUnsupported("gaugeActionDeriv2 backward")
-  raiseUnsupportedPath("gaugeActionDeriv2 backward", "higher derivatives with respect to the gauge field")
+  let c = Gactcoeff(z.inputs[1])
+  let g = Ggauge(z.inputs[2])
+  let u = requireUpstream(zb, "gaugeActionDeriv2 backward", Ggauge)
+  if i == 0:
+    # The Hessian is self-adjoint, so the b cotangent is H[u].
+    return gaugeActionDeriv2(u, c, g)
+  # Third derivative: differentiate a grad-complete replica of z, the seeded
+  # pullback of the reference action gradient.
+  # secondPullback keeps this the partial g contribution even when b is g;
+  # see its doc.
+  # coeffPlaq guards the coefficient family at evaluation; graph building
+  # must not read coefficient values.
+  let b = Ggauge(z.inputs[0])
+  secondPullback(g, b, u, proc(slot: Ggauge): Gvalue =
+    gaugeActionDerivGraph(c, slot))
 
 proc gaugeActionDeriv2f(v: Gvalue) =
   let b = Ggauge(v.inputs[0])
@@ -277,11 +360,25 @@ proc gaugeActionDeriv2Subset(b: Ggauge, c: Gactcoeff, g: Ggauge, parity, dir: in
   let terms = b.gaugeAddTerms
   let nterms = terms.len
   proc bwd(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-    if i < nterms:
-      raiseUnsupportedPath("gaugeActionDeriv2Subset backward", "derivative with respect to force-direction input")
+    ## z = H_g[mask(sum_j b_j)] where mask keeps only (parity, dir).
     if i == nterms:
       raiseCoeffBackwardUnsupported("gaugeActionDeriv2Subset backward")
-    raiseUnsupportedPath("gaugeActionDeriv2Subset backward", "higher derivatives with respect to the gauge field")
+    let
+      c = Gactcoeff(z.inputs[nterms])
+      g = Ggauge(z.inputs[nterms + 1])
+      u = requireUpstream(zb, "gaugeActionDeriv2Subset backward", Ggauge)
+    if i < nterms:
+      # Linear in each b term with self-adjoint H: cotangent is mask(H[u]).
+      return maskSubset(parity, dir, gaugeActionDeriv2(u, c, g))
+    # The g cotangent differentiates a grad-complete replica of z.
+    # secondPullback keeps this the partial g contribution even when b is g;
+    # see its doc.
+    # coeffPlaq guards the coefficient family at evaluation.
+    var bsum = Ggauge(z.inputs[0])
+    for j in 1..<nterms:
+      bsum = bsum + Ggauge(z.inputs[j])
+    secondPullback(g, maskSubset(parity, dir, bsum), u,
+      proc(slot: Ggauge): Gvalue = gaugeActionDerivGraph(c, slot))
   if nterms == 1:
     proc fwd(v: Gvalue) =
       let

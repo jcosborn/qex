@@ -1,4 +1,6 @@
 import ../core/base
+from ../core/grad_engine import gradSeeded
+from ../core/slotvar import slotVar
 
 template scaledUpstreamOr*[U: Gvalue, S: Gvalue](zb: Gvalue,
                                                  upstreamType: typedesc[U],
@@ -32,3 +34,19 @@ template requireUpstream*(zb: Gvalue,
     if zb == nil:
       raiseValueError(label & " requires an explicit upstream gradient")
     upstreamType(zb)
+
+proc secondPullback*[T: Gvalue](x: T, seed: Gvalue, upstream: Gvalue,
+                                replica: proc(slot: T): Gvalue): Gvalue =
+  ## Computes `d/d slot [ (d replica/d slot)^T seed ]^T upstream` at
+  ## `slot = x`.
+  ##
+  ## `replica` must build the primal over `slot`. Every occurrence of the
+  ## differentiated argument must be spelled as `slot`. A builder that captures
+  ## `x` directly compiles but returns a wrong partial. `seed` and `upstream` are
+  ## ordinary graph values and stay live, so the result stays exact under
+  ## further differentiation even when they are `x` or depend on `x`. The
+  ## engine walks their paths to `x` through their own slots.
+  discard sharedGraphRuntime(
+    [Gvalue(x), seed, upstream], "secondPullback")
+  let slot = slotVar(x)
+  gradSeeded(gradSeeded(replica(slot), slot, seed), slot, upstream)
