@@ -1,7 +1,6 @@
 import ../[core, scalar]
 import ../support/op
 import layout, gauge, physics/qcdTypes
-from maths/matexp import newExpParam, ekPoly
 import shared
 
 # Section: Basic Gauge Ops
@@ -12,8 +11,6 @@ proc retr*(x: Ggauge): Gscalar
 proc adj*(x: Ggauge): Ggauge
 proc norm2*(x: Ggauge): Gscalar
 proc redot*(x: Ggauge, y: Ggauge): Gscalar
-proc exp*(x: Ggauge): Ggauge
-proc expDeriv*(b: Ggauge, x: Ggauge, parity = -1, dir = 0): Ggauge
 proc projTAH*(x: Ggauge): Ggauge
 proc `-`*(x: Ggauge): Ggauge
 proc `+`*(x: Gscalar, y: Ggauge): Ggauge
@@ -276,109 +273,6 @@ proc blendSubset*(parity, dir: int, cand, x: Ggauge): Ggauge =
 proc maskSubset*(parity, dir: int, x: Ggauge): Ggauge =
   ## x on the (parity, dir) subset, zero elsewhere.
   blendSubset(parity, dir, x, Ggauge(x.zeroLike))
-
-proc expgb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  let x = Ggauge(z.inputs[0])
-  expDeriv(requireUpstream(zb, "expg backward", Ggauge), x)
-
-proc expgf(v: Gvalue) =
-  let x = Ggauge(v.inputs[0])
-  let z = Ggauge(v)
-  z.mapGaugeElements:
-    z.gval[mu][e] := exp(x.gval[mu][e])
-
-let expg = Gfunc(forward: expgf, backward: expgb, name: "expg")
-
-proc exp*(x: Ggauge): Ggauge =
-  graphNode(x.gaugeNodeLike, @[Gvalue(x)], expg, "expg")
-
-proc expPolyGraph*(x: Ggauge): Ggauge =
-  ## Grad-complete graph replica of the site-local matrix exponential kernel
-  ## (matexp ekPoly order-4 with 2^-scale scaling and repeated squaring):
-  ##   y = x/2^scale
-  ##   e = (y^2/24 + y/6 + 1/2)*y^2 + y      # expm1Poly4(y)
-  ##   e <- e*(e+2), scale times             # (1+e)^2 = 1 + e*(e+2)
-  ##   exp(x) ~ 1 + e
-  ## For Nc > 1 this is the same scheme as the optimized `exp` kernel, so the
-  ## two agree to roundoff. Built only from grad-complete ops, so it can be
-  ## differentiated to any order.
-  const params = newExpParam()
-  static:
-    doAssert params.kind == ekPoly and params.order == 4,
-      "expPolyGraph must match the optimized matrix exponential"
-  const scale = params.scale
-  let y = (1.0 / float(1 shl scale)) * x
-  let y2 = y * y
-  let two = toGvalue(x.runtime, 2.0)
-  var e = (0.5 + ((1.0/24.0) * y2 + (1.0/6.0) * y)) * y2 + y
-  for _ in 1..scale:
-    e = e * (two + e)
-  result = 1.0 + e
-
-proc expDerivContribution(u: Ggauge, z: Gvalue, i: int,
-                          parity = -1, dir = 0): Gvalue =
-  ## Backward of z = expDeriv(b, x) (the pullback of exp at x with cotangent
-  ## b) under the raw upstream u; (parity, dir) select the subset variant.
-  let b = Ggauge(z.inputs[0])
-  let x = Ggauge(z.inputs[1])
-  if i == 0:
-    # z is linear in b with adjoint the pushforward of exp at x. For Nc>1,
-    # the kernel is a real-coefficient matrix polynomial P, so
-    # (dP_x)^adj = dP_{x^dag}; scalar exp has the same adjoint identity.
-    # Since exp is site-local, the subset kernel needs no masked upstream.
-    return expDeriv(u, x.adj, parity, dir)
-  # Second derivative of exp: differentiate the polynomial replica.
-  # <u, mask(w)> == <mask(u), w> masks the replica upstream for the subset.
-  let useed = if parity < 0: u else: maskSubset(parity, dir, u)
-  const nc = x.gval[0][0].nrows
-  when nc == 1:
-    # The optimized Nc=1 kernel is scalar exp, whose pullback is
-    # exp(x^dag)*b. Differentiate that exact expression instead of the
-    # polynomial replica used by the matrix kernel.
-    # This expression is already partial in x and keeps b live.
-    useed.adj * exp(x.adj) * b
-  else:
-    # secondPullback keeps this the partial x contribution even when b is x;
-    # see its doc.
-    secondPullback(x, b, useed, proc(slot: Ggauge): Gvalue = expPolyGraph(slot))
-
-proc expDerivgb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  expDerivContribution(
-    requireUpstream(zb, "expDeriv backward", Ggauge), z, i)
-
-proc expDerivgf(v: Gvalue) =
-  let x = Ggauge(v.inputs[0])
-  let y = Ggauge(v.inputs[1])
-  let z = Ggauge(v)
-  z.mapGaugeElements:
-    z.gval[mu][e] := expDeriv(
-      y.gval[mu][e],
-      x.gval[mu][e])
-
-let expDerivg = Gfunc(forward: expDerivgf, backward: expDerivgb, name: "expDerivg")
-
-proc expDeriv*(b: Ggauge, x: Ggauge, parity = -1, dir = 0): Ggauge =
-  ## D exp(x)^*[b], on the whole field or only (parity,dir); zero elsewhere.
-  if parity != -1:
-    requireParityDir(parity, dir, b.gval.len, "expDeriv")
-  let node = sameShapeGaugeNodeLike(b, x, "expDerivg")
-  if parity < 0:
-    return graphNode(node, @[Gvalue(b), Gvalue(x)], expDerivg, "expDerivg")
-  let sub = b.gval.paritySubset(parity)
-  proc fwd(v: Gvalue) =
-    let b = Ggauge(v.inputs[0])
-    let x = Ggauge(v.inputs[1])
-    let z = Ggauge(v)
-    forGaugeSubset(sub):
-      # element order matches whole-field expDerivgf: expDeriv(inputs[1], inputs[0])
-      z.gval[dir][e] := expDeriv(x.gval[dir][e], b.gval[dir][e])
-  proc bwd(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-    expDerivContribution(
-      requireUpstream(zb, "expDeriv subset backward", Ggauge), z, i, parity, dir)
-  result = graphNode(node, @[Gvalue(b), Gvalue(x)],
-    Gfunc(forward: fwd, backward: bwd, name: "expDerivg"),
-    "expDerivg")
-  result.zeroGaugeStorage
 
 proc projTAHb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   projTAH(requireUpstream(zb, "projTAH backward", Ggauge))

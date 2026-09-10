@@ -1,7 +1,7 @@
 import ../[core, scalar, multi]
 import ../support/op
 import layout, physics/qcdTypes
-import shared, basic_ops
+import shared, basic_ops, matfun
 
 # Section: Fused Gauge Ops
 

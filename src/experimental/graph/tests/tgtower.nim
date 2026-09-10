@@ -9,7 +9,7 @@ import qex except epsilon
 import algorithms/numdiff, gauge/stoutsmear
 import helpers
 import ../[core, scalar, gauge]
-from ../gauge/basic_ops import expPolyGraph
+from ../gauge/matfun import expPolyGraph, expJet, expTopReplica
 import ../gauge/[field_ops, transport]
 
 let grt = initGraphRuntime()

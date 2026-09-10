@@ -29,6 +29,15 @@ suite "exp derivative tower":
       norm2(exp(x) - expPolyGraph(x)) :< 1e-20
       norm2(grad(redot(gm, exp(x)), gg) - grad(redot(gm, expPolyGraph(x)), gg)) :< 1e-20
 
+  test "expJet matches its basic-op replica":
+    # Fused jet kernels (m <= 3) against the nested polynomial replica that
+    # also serves past m = 3. Directions are general matrices, not algebra.
+    let ds = [gm, gq, gg * gm]
+    for m in 1..3:
+      norm2(expJet(gg, ds[0..<m]) - expTopReplica(gg, ds[0..<m])) :< 1e-20
+    # symmetric in the directions
+    norm2(expJet(gg, [gm, gq]) - expJet(gg, [gq, gm])) :< 1e-24
+
   test "exp second derivative, constant cotangent":
     # grad hits only the x input of the expDeriv node (replica branch).
     proc h(x: Ggauge): Gscalar = redot(gm, exp(projTAH(x)))
