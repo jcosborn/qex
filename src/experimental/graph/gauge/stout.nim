@@ -10,7 +10,7 @@
 import ../[core, scalar, multi]
 import ../support/op
 import layout, gauge, physics/qcdTypes
-import types, basic_ops
+import types, basic_ops, matfun
 from action/ops import Gactcoeff, gaugeActionDeriv
 import maths/groupOps, maths/matrixFunctions
 
@@ -21,8 +21,44 @@ proc gaugeGradSlot(x: Gmulti, i: int): Ggauge =
   proc fwd(v: Gvalue) =
     Ggauge(v).gval = Ggauge(Gmulti(v.inputs[0]).storedSlot(i)).gval
   proc bwd(zb: Gvalue, z: Gvalue, j: int, input: Gvalue): Gvalue =
-    raiseUnsupportedPath("stout gradient slot view backward", "higher stout derivatives")
+    # The carrier's cotangent: the upstream in slot i, zero elsewhere.
+    let base = Gmulti(z.inputs[0])
+    let u = rootedUpstream(zb, z)
+    var slots: seq[Gvalue]
+    for k in 0 ..< base.len:
+      slots.add(if k == i: u else: base.storedSlot(k).zeroLike)
+    multiValues("stoutGradView backward", slots)
   graphNode(view, @[Gvalue(x)], Gfunc(forward: fwd, backward: bwd, name: "stoutGradView"), "stoutGradView")
+
+proc stoutReplica(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): Ggauge =
+  ## The subset update as basic ops: exp(alpha projTAH(W ds^dag)) W on
+  ## (parity, dir), W elsewhere.
+  blendSubset(parity, dir, exp(alpha * projTAH(W * ds.adj)) * W, W)
+
+proc replicaSlotGrads(args: Gmulti, nterms, ntail: int, parity, dir: int,
+                      score: proc(R, sW, sds: Ggauge, sa: Gscalar, u: Ggauge): Gscalar): Gmulti =
+  ## Backward of a stout gradient kernel with packed inputs
+  ## [W, ds, alpha, u_1..u_n, aux...]: the kernel output paired with its
+  ## upstream is S = score(R, ...) over the update replica R built on slot
+  ## variables, and each slot gets dS/d(slot). The ntail aux slots are
+  ## evaluation-only caches of functions of the other slots; they get zero.
+  let one = toGvalue(args.runtime, 1.0)
+  let sW = slotVar(Ggauge(args[0]))
+  let sds = slotVar(Ggauge(args[1]))
+  let sa = slotVar(Gscalar(args[2]))
+  var su: seq[Ggauge]
+  for j in 0 ..< nterms:
+    su.add slotVar(Ggauge(args[3 + j]))
+  var u = su[0]
+  for j in 1 ..< nterms:
+    u = u + su[j]
+  let S = score(stoutReplica(sW, sds, sa, parity, dir), sW, sds, sa, u)
+  var slots = @[gradSeeded(S, sW, one), gradSeeded(S, sds, one), gradSeeded(S, sa, one)]
+  for j in 0 ..< nterms:
+    slots.add gradSeeded(S, su[j], one)
+  for k in 0 ..< ntail:
+    slots.add args[3 + nterms + k].zeroLike
+  multiValues("stout gradient kernel input gradients", slots)
 
 proc stoutLogDetJ*(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): Gscalar
 
@@ -127,7 +163,14 @@ proc stoutUpdateImpl(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): GstoutUpd
           dds.gval[dir][x] := H.adj * w
       toc("stoutUpdateGrad kernel end")
     proc kb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-      raiseUnsupportedPath("stoutUpdate gradient backward", "higher stout update derivatives")
+      # Outputs (dW, dds) are the W and ds pullbacks of the update with
+      # cotangent u; paired with the upstream (vW, vds) that is
+      # S = <vW, dR_W^*[u]> + <vds, dR_ds^*[u]>.
+      let v = Gmulti(rootedUpstream(zb, z))
+      replicaSlotGrads(Gmulti(z.inputs[0]), nterms, 1, parity, dir,
+        proc(R, sW, sds: Ggauge, sa: Gscalar, u: Ggauge): Gscalar =
+          redot(Ggauge(v[0]), Ggauge(gradSeeded(R, sW, u))) +
+          redot(Ggauge(v[1]), Ggauge(gradSeeded(R, sds, u))))
     result = newMultiOutputNode(@[Gvalue(W), Gvalue(ds)], @[Gvalue(gradArgs)], Gfunc(forward: kf, backward: kb, name: "stoutUpdateGrad"), "stoutUpdateGrad")
     Ggauge(result.storedSlot(1)).zeroGaugeStorage
 
@@ -166,7 +209,11 @@ proc stoutUpdateImpl(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): GstoutUpd
       z.sval = da
       toc("stoutUpdateAlphaGrad kernel end")
     proc kb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-      raiseUnsupportedPath("stoutUpdate alpha gradient backward", "higher stout update derivatives")
+      # Output is the alpha pullback of the update: S = s * dR_alpha^*[u].
+      let s = Gscalar(rootedUpstream(zb, z))
+      replicaSlotGrads(Gmulti(z.inputs[0]), nterms, 0, parity, dir,
+        proc(R, sW, sds: Ggauge, sa: Gscalar, u: Ggauge): Gscalar =
+          s * Gscalar(gradSeeded(R, sa, u)))
     graphNode(scalarNodeLike(alpha), @[Gvalue(gradArgs)], Gfunc(forward: kf, backward: kb, name: "stoutUpdateAlphaGrad"), "stoutUpdateAlphaGrad")
 
   proc backward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =

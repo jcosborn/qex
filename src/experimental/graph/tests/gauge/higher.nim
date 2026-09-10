@@ -145,3 +145,27 @@ suite "gauge action derivative tower":
     ckgrad(r1, gg, gu)
     proc r2(x: Ggauge): Gscalar = redot(gm, grad(r1(x), x))
     ckgrad(r2, gg, gu)
+
+suite "stout update tower":
+  setup:
+    let gg {.used.} = grt.toGvalue(g)
+    let gu {.used.} = grt.toGvalue(u)
+    let gm {.used.} = grt.toGvalue(m)
+    let gq {.used.} = grt.toGvalue(q)
+    let alpha {.used.} = grt.toGvalue(0.1)
+    let c {.used.} = actWilson(scalar.toGvalue(grt, 5.4))
+
+  test "stout update second derivative, field-dependent staple":
+    # The staple sum makes both pullback slots of the update kernel live.
+    # (A staple like x*gu degenerates for U(1): W ds^dag = |x|^2 gu^dag.)
+    # Too nonlinear for the ndiff step along an O(1) link direction; use
+    # the small TAH direction as the exp tower does.
+    proc s1(x: Ggauge): Gscalar = redot(gm, stoutUpdate(x, gaugeActionDeriv(c, x), alpha, 1, subDir))
+    ckgrad(s1, gg, gm)
+    proc s2(x: Ggauge): Gscalar = redot(gq, grad(s1(x), x))
+    ckgrad(s2, gg, gm)
+
+  test "stout update alpha derivative differentiates in the field":
+    proc s1(x: Ggauge): Gscalar = redot(gm, stoutUpdate(x, gu, alpha, 0, subDir))
+    proc a1(x: Ggauge): Gscalar = grad(s1(x), alpha)
+    ckgrad(a1, gg, gm)

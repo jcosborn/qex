@@ -51,6 +51,8 @@ proc newMultiStructureNode*(slotProtos, inputs: openArray[Gvalue], gfuncValue: G
 proc `[]`*(x: Gmulti, i: int): Gvalue
 proc multiValues*(label: string, values: varargs[Gvalue]): Gmulti
 
+proc len*(x: Gmulti): int = x.slots.len
+
 # Concrete slot storage stays separate from symbolic `x[k]` selection.
 proc storedSlot*(x: Gmulti, k: int): Gvalue =
   ## Last evaluated slot; does not build a selection node.

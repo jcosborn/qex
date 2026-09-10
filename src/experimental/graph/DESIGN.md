@@ -876,9 +876,13 @@ pinning tests hold value and first-derivative agreement between the two. The
 matexp default kind, order, and scale come from `newExpParam`, with a
 compile-time check that rejects a stale graph replica.
 
-The remaining non-grad-complete boundaries are the stout layer, the action
-layer past second order, and coefficient gradients of the optimized action ops.
-Fused stout pullback kernels and `stoutLogDetJ` reject further differentiation.
+The remaining non-grad-complete boundaries are the stout log-Jacobian, the
+fused stout step, the action layer past second order, and coefficient
+gradients of the optimized action ops. The plain `stoutUpdate` gradient
+kernels differentiate through a basic-op replica of the update (built over
+slot variables, with the exp tower fused), so its tower closes; `stoutLogDetJ`
+and the fused `stoutUpdateLogDetJ` pullback kernels still reject further
+differentiation.
 The action layer past second order is plaquette-only: the `g`-slot third
 derivative of `gaugeActionDeriv2` goes through `gaugeActionDerivGraph`, whose
 embedded `coeffPlaq` rejects rectangle, parallelogram, and adjoint-plaquette
