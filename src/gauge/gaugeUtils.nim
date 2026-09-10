@@ -801,6 +801,11 @@ proc `==`(x,y:OrdPath):bool {.noSideEffect.} =  # noSideEffect needed for Nim de
       of opList: x.s == y.s
       of opAdj: x.p == y.p
 
+proc lexLess(a, b: seq[int]): bool =
+  for i in 0..<min(a.len, b.len):
+    if a[i] != b[i]: return a[i] < b[i]
+  a.len < b.len
+
 proc mostSharedPair(paths:openarray[OrdPath]):(OrdPath,int) =
   ## Receives paths and search each element of OrdPath(k:opList).
   ## Return an OrdPath(k:opPair) occured most frequently among all the paths,
@@ -848,12 +853,14 @@ proc mostSharedPair(paths:openarray[OrdPath]):(OrdPath,int) =
       else:
         pc[pa] = ct
   c = 0
+  var fp0: seq[int]
   for k,v in pc.pairs:
-    # If there are multiple paris with the max count,
-    # which one we return depends on implementation of Table.
-    if v>c:
+    # Ties resolve to the smallest flattened path, so the plan is deterministic.
+    let fk = k.flatten
+    if v>c or (v==c and fk.lexLess(fp0)):
       c = v
       p = k
+      fp0 = fk
   if c==0:
     return (OrdPath(k:opList, s: @[]), 0)
   else:
