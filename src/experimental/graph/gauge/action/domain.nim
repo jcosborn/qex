@@ -2,7 +2,7 @@ from ../../core/base import raiseValueError
 from ../../support/op import raiseUnsupportedPath
 import ../../../../layout, ../../../../gauge
 import ../../../../physics/qcdTypes
-import ../shared
+import ../types
 
 type
   GaugeActionFamily = enum
@@ -31,7 +31,7 @@ proc negatedGaugeCoeffs(gc: GaugeActionCoeffs): GaugeActionCoeffs =
   for f in result.fields:
     f = -f
 
-proc evalGaugeActionValue*(gc: GaugeActionCoeffs, g: shared.Gauge): float =
+proc evalGaugeActionValue*(gc: GaugeActionCoeffs, g: types.Gauge): float =
   case gc.gaugeActionFamily
   of gafGaugeAction1:
     gc.gaugeAction1 g
@@ -39,8 +39,8 @@ proc evalGaugeActionValue*(gc: GaugeActionCoeffs, g: shared.Gauge): float =
     gc.actionA g
 
 proc evalGaugeForceValue*(gc: GaugeActionCoeffs,
-                          g: shared.Gauge,
-                          outg: shared.Gauge) =
+                          g: types.Gauge,
+                          outg: types.Gauge) =
   let coeffs = gc.negatedGaugeCoeffs
   case coeffs.gaugeActionFamily
   of gafGaugeAction1:
@@ -48,23 +48,23 @@ proc evalGaugeForceValue*(gc: GaugeActionCoeffs,
   of gafActionA:
     coeffs.gaugeADeriv(g, outg)
 
-proc evalProjectedGaugeForceValue*(gc: GaugeActionCoeffs, g, outg: shared.Gauge) =
+proc evalProjectedGaugeForceValue*(gc: GaugeActionCoeffs, g, outg: types.Gauge) =
   case gc.gaugeActionFamily
   of gafGaugeAction1:
     gc.gaugeForce(g, outg)
   of gafActionA:
     gc.forceA(g, outg)
 
-proc evalGaugeForceSubset*(gc: GaugeActionCoeffs, g, outg: shared.Gauge, sd, sf, sb: auto, parity, dir: int) =
+proc evalGaugeForceSubset*(gc: GaugeActionCoeffs, g, outg: types.Gauge, sd, sf, sb: auto, parity, dir: int) =
   ## Subset Wilson derivative; reject non-plaquette coefficients.
   if not gc.isPlaqOnly:
     raiseUnsupportedGaugeCoeff(gc)
   gc.gaugeDeriv2SubsetWork(g, outg, sd, sf, sb, parity, dir, clear=false)
 
-proc evalGaugeForceJacobian*(b: shared.Gauge,
+proc evalGaugeForceJacobian*(b: types.Gauge,
                              gc: GaugeActionCoeffs,
-                             g: shared.Gauge,
-                             outg: shared.Gauge) =
+                             g: types.Gauge,
+                             outg: types.Gauge) =
   case gc.gaugeActionFamily
   of gafGaugeAction1:
     outg.zeroGaugeStorage
@@ -72,13 +72,13 @@ proc evalGaugeForceJacobian*(b: shared.Gauge,
   of gafActionA:
     raiseUnsupportedPath("evalGaugeForceJacobian", "ActionA-family second derivatives")
 
-proc evalGaugeForceJacobianSubset*(b: shared.Gauge, gc: GaugeActionCoeffs, g, outg: shared.Gauge, parity, dir: int) =
+proc evalGaugeForceJacobianSubset*(b: types.Gauge, gc: GaugeActionCoeffs, g, outg: types.Gauge, parity, dir: int) =
   ## outg = H_g(b[dir]|parity); writes all neighbouring links. Plaquette-only.
   if not gc.isPlaqOnly:
     raiseUnsupportedGaugeCoeff(gc)
   gc.gaugeDerivDeriv2Subset(g, b, outg, parity, dir)
 
-proc evalGaugeForceJacobianSubsetSum*(b: seq[DLatticeColorMatrixV], w: DLatticeColorMatrixV, gc: GaugeActionCoeffs, g, outg: shared.Gauge, parity, dir: int) =
+proc evalGaugeForceJacobianSubsetSum*(b: seq[DLatticeColorMatrixV], w: DLatticeColorMatrixV, gc: GaugeActionCoeffs, g, outg: types.Gauge, parity, dir: int) =
   if not gc.isPlaqOnly:
     raiseUnsupportedGaugeCoeff(gc)
   gc.gaugeDerivDeriv2SubsetSum(g, b, w, outg, parity, dir)

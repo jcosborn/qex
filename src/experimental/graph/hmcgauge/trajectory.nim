@@ -1,6 +1,6 @@
 import qex
 import ../[core, scalar, gauge]
-import ../gauge/shared as graphGauge
+import ../gauge/types as graphGauge
 import config, integrator
 export GaugeAction, GaugeForceFn, MdForceStats
 

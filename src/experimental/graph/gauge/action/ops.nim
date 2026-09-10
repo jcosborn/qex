@@ -3,7 +3,7 @@ import ../../[core, scalar]
 import ../../scalar/types
 import ../../support/op
 import layout, gauge, physics/qcdTypes
-import ../shared, ../basic_ops, ../fused_ops, ../field_ops, ../transport, domain
+import ../types, ../basic_ops, ../fused_ops, ../field_ops, ../transport, domain
 
 # --- gauge-action coefficient value type and coefficient algebra ---
 
@@ -357,7 +357,7 @@ method newOneOf(x: GsubsetHess): Gvalue =
     hdir: x.hdir.newOneOf).assignStableNodeId
 
 proc gaugeActionDeriv2Subset(b: Ggauge, c: Gactcoeff, g: Ggauge, parity, dir: int): Ggauge =
-  let terms = b.gaugeAddTerms
+  let terms = b.addTerms
   let nterms = terms.len
   proc bwd(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
     ## z = H_g[mask(sum_j b_j)] where mask keeps only (parity, dir).

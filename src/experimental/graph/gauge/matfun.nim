@@ -18,7 +18,7 @@ import ../[core, scalar]
 import ../support/op
 import layout, gauge, physics/qcdTypes
 from maths/matexp import newExpParam, ekPoly
-import shared, basic_ops
+import types, basic_ops
 
 proc exp*(x: Ggauge): Ggauge
 proc expDeriv*(b: Ggauge, x: Ggauge, parity = -1, dir = 0): Ggauge

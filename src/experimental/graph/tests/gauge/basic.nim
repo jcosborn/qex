@@ -57,7 +57,7 @@ suite "gauge basic":
   test "gaugeAddTerms preserves nested sums and multiplicity":
     let
       summed = (gp + (gq + gm)) + gp
-      terms = graphGaugeBasic.gaugeAddTerms(summed)
+      terms = graphGaugeBasic.addTerms(summed)
     check terms.len == 4
     var rebuilt = terms[0]
     for i in 1..<terms.len:

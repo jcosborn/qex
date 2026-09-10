@@ -10,7 +10,7 @@
 import ../[core, scalar, multi]
 import ../support/op
 import layout, gauge, physics/qcdTypes
-import shared, basic_ops
+import types, basic_ops
 from action/ops import Gactcoeff, gaugeActionDeriv
 import maths/groupOps, maths/matrixFunctions
 
@@ -83,7 +83,7 @@ proc stoutUpdateImpl(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): GstoutUpd
 
   proc gradPair(W, ds: Ggauge, alpha: Gscalar, upstream: Ggauge, update: GstoutUpdate): Gmulti =
     # The update dependency refreshes expa before this pullback.
-    let terms = upstream.gaugeAddTerms
+    let terms = upstream.addTerms
     let nterms = terms.len
     var values = @[Gvalue(W), Gvalue(ds), Gvalue(alpha)]
     for term in terms:
@@ -132,7 +132,7 @@ proc stoutUpdateImpl(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): GstoutUpd
     Ggauge(result.storedSlot(1)).zeroGaugeStorage
 
   proc alphaGrad(W, ds: Ggauge, alpha: Gscalar, upstream: Ggauge): Gscalar =
-    let terms = upstream.gaugeAddTerms
+    let terms = upstream.addTerms
     let nterms = terms.len
     var values = @[Gvalue(W), Gvalue(ds), Gvalue(alpha)]
     for term in terms:
@@ -433,7 +433,7 @@ proc stoutUpdateLogDetJImpl(W, ds: Ggauge, alpha: Gscalar, c: Gactcoeff, parity,
     let
       hasUpdate = not upUpdate.isStaticZeroLeaf
       hasLog = not upLog.isStaticZeroLeaf
-      terms = if hasUpdate: upUpdate.gaugeAddTerms else: @[]
+      terms = if hasUpdate: upUpdate.addTerms else: @[]
       nterms = terms.len
     var values = @[Gvalue(W), Gvalue(ds), Gvalue(alpha)]
     when fuseHess:
@@ -574,7 +574,7 @@ proc stoutUpdateLogDetJImpl(W, ds: Ggauge, alpha: Gscalar, c: Gactcoeff, parity,
     let
       hasUpdate = not upUpdate.isStaticZeroLeaf
       hasLog = not upLog.isStaticZeroLeaf
-      terms = if hasUpdate: upUpdate.gaugeAddTerms else: @[]
+      terms = if hasUpdate: upUpdate.addTerms else: @[]
       nterms = terms.len
     if not hasUpdate and not hasLog:
       return Gscalar(alpha.zeroLike)

@@ -1,4 +1,4 @@
-import gauge/shared, gauge/basic_ops, gauge/matfun, gauge/fused_ops
+import gauge/types, gauge/basic_ops, gauge/matfun, gauge/fused_ops
 import gauge/action/ops
 import gauge/stout
 

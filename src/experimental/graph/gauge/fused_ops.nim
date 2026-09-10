@@ -1,7 +1,7 @@
 import ../[core, scalar, multi]
 import ../support/op
 import layout, physics/qcdTypes
-import shared, basic_ops, matfun
+import types, basic_ops, matfun
 
 # Section: Fused Gauge Ops
 
@@ -133,7 +133,7 @@ proc contractProjTAH*(x: Ggauge, y: Ggauge, parity = -1, dir = 0): Ggauge =
   x.requireSameGaugeShape(y, "contractProjTAH packed")
   let args = multiValues("contractProjTAH args", x, y)
   if parity < 0:
-    let terms = x.gaugeAddTerms
+    let terms = x.addTerms
     if terms.len > 1:
       var inputs = @[Gvalue(args), Gvalue(y)]
       for term in terms:
@@ -143,7 +143,7 @@ proc contractProjTAH*(x: Ggauge, y: Ggauge, parity = -1, dir = 0): Ggauge =
       x.gaugeNodeLike, @[Gvalue(args)], contractProjTAHPackedInputg,
       "contractProjTAH packed")
   let sub = x.gval.paritySubset(parity)
-  let terms = x.gaugeAddTerms
+  let terms = x.addTerms
   if terms.len > 1:
     var inputs = @[Gvalue(args), Gvalue(y)]
     for term in terms:

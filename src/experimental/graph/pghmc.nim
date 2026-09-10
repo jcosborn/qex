@@ -2,7 +2,7 @@ import qex
 import core
 import scalar
 import gauge
-import gauge/shared as graphGauge
+import gauge/types as graphGauge
 from hmcgauge/config import
   RunConfig, tpThermo, tpTrain, tpInfer,
   totalTrajs, trajectoryPhase, validateRunConfig

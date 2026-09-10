@@ -840,13 +840,17 @@ the site-local `Ggauge` algebra, so `gauge/field_ops` imports `basic_ops`.
 `wilsonLine` and `transport` chain hops, so staples, loops, and actions have
 basic-tier expressions. These internal plumbing ops live in `gauge/field_ops`
 and `gauge/transport`; the top-level `gauge` facade does not re-export them.
+The site algebra is one template stamped for `Ggauge` and `Gfield`; the two
+differ only in storage (`gval[mu]` versus `fval`) and in the bundle-only
+subset ops.
 
 Each gauge module isolates one protocol, and that is the rule for adding one:
 
 ```text
-gauge/shared.nim      value storage: Ggauge, ownership, shape helpers, loop templates
-gauge/basic_ops.nim   closed generators: site algebra, blend/mask; exp family (kernels + replica)
-gauge/field_ops.nim   Gfield storage and its algebra, shift, linkField, injectLink
+gauge/types.nim       value storage: Ggauge and Gfield, ownership, shape helpers, loop templates
+gauge/basic_ops.nim   closed generators: the site algebra stamped for both types, blend/mask
+gauge/matfun.nim      exp family: kernels at every order (expJet) and the polynomial replica
+gauge/field_ops.nim   shift, linkField, injectLink
 gauge/transport.nim   hop chains: transport, wilsonLine
 gauge/fused_ops.nim   Gmulti-packed site kernels
 gauge/action/         QEX kernel dispatch (domain), coefficient type, action wrappers, reference action

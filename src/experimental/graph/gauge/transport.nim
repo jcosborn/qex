@@ -16,7 +16,7 @@
 import ../core
 import ../support/op
 import layout, physics/qcdTypes
-import shared, field_ops
+import types, basic_ops, field_ops
 
 type Ghop = ref object of Gfield
   ## Owns the fused shift-multiply comm buffers (cloned by newOneOf).

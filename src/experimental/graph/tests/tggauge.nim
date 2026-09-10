@@ -10,9 +10,9 @@ import algorithms/numdiff, gauge/stoutsmear
 import helpers
 import ../[core, scalar, multi, gauge]
 import ../functional
-import ../gauge/shared as graphGaugeShared
+import ../gauge/types as graphGaugeShared
 import ../gauge/basic_ops as graphGaugeBasic
-import ../gauge/[field_ops, transport]
+import ../gauge/[types, field_ops, transport]
 import ../hmcgauge/optimizer, ../hmcgauge/integrator
 import ../hmcgauge/trajectory
 import ../hmcgauge/training
