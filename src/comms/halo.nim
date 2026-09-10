@@ -310,9 +310,9 @@ proc `[]=`*(h: Halo, i: SomeInteger, x: auto) {.alwaysInline.} =
 
 proc neighbor*(h: Halo, i: SomeInteger, mu: SomeInteger, fb: SomeInteger): int32 =
   if fb > 0:
-    h.map.neighborFwd[mu][i]
+    h.layout.neighborFwd[mu][i]
   else:
-    h.map.neighborBck[mu][i]
+    h.layout.neighborBck[mu][i]
 
 when isMainModule:
   qexInit()
