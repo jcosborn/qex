@@ -49,7 +49,7 @@ to the `make` command below).
 | show    | Show Nim compile flags |
 | targets | Show available build targets. Targets NAME will search for targets matching NAME (can include standard shell wildcards) |
 | clean   | Remove contents of nimcache directory |
-| tests   | Build tests and create `testscript.sh` test runner |
+| tests   | Build tests and create `testscript.sh`. `tests experimental[/GROUP]` selects optional experimental suites and creates `testscript-experimental.sh` |
 | make    | Search for each [path]... as described below, compile, link, and put executables in `bin` |
 
 When using the `make` build method the `make` command is default and can be skipped.
@@ -93,9 +93,11 @@ source paths: `.`, `qex/src`, `qex/tests`
 ```
   make debug test0
   make example/testStagProp
+  make run tests experimental/graph
 ```
 
 ```
   nimble make debug test0
   nimble make example/testStagProp
+  nimble tests run experimental/graph
 ```

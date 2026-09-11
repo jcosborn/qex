@@ -100,7 +100,8 @@ task tests, tTests.desc:
   let ex = getExtraArgs("tests")
   let optargs = getNimUserArgs(ex)
   setUserNimFlags(nimuserargs)
-  runTask tTests
+  let cmdargs = parseOpts(optargs)
+  runTask tTests, cmdargs
 
 let tMake = getTask "make"
 task make, tMake.desc:

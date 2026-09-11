@@ -282,7 +282,23 @@ proc addTest(runscript:var seq[string], f, outdir:string) =
   runscript.add("echo Running: "&args)
   runscript.add(rj&" ./"&args&" || failed=\"$failed "&name&"\"")  # use " ./"&exe for /usr/bin/env
 
-proc buildTests() =
+proc buildTests(scope = "") =
+  var dirs: seq[tuple[src, dst: string]]
+  let optional = scope != ""
+  let script = if optional: "testscript-experimental.sh" else: "testscript.sh"
+  if optional:
+    for d in listDirs(qexDir/"src/experimental"):
+      let name = splitPath(d)[1]
+      if scope == "experimental" or scope == "experimental/" & name:
+        let src = d/"tests"
+        if dirExists(src):
+          dirs.add (src, "tests/experimental"/name)
+    if dirs.len == 0:
+      echo "Error: no experimental test group matches: ", scope
+      quit(1)
+  else:
+    for d in listDirs(qexDir/"tests"):
+      dirs.add (d, "tests"/splitPath(d)[1])
   var runscript = @["#!/bin/sh",
                     "# Runs QEX tests and reports on failed tests",
                     "# Environment variables that can affect this script:",
@@ -295,8 +311,10 @@ proc buildTests() =
   run = false
   if not dirExists("tests"):
     mkDir("tests")
-  for d in listDirs(qexDir/"tests"):
-    let outdir = "tests"/splitPath(d)[1]
+  if optional and not dirExists("tests/experimental"):
+    mkDir("tests/experimental")
+  var count = 0
+  for (d, outdir) in dirs:
     if not dirExists(outdir):
       mkDir(outdir)
     for f in listFiles(d):
@@ -304,27 +322,38 @@ proc buildTests() =
       let (dir, name, ext) = splitFile(f)
       #echo dir, " ", name, " ", ext
       if name[0]=='t' and ext==".nim":
+        inc count
         runscript.addTest(f, outdir)
-  for i in 0..<extraTests.len:
-    let f = extraTests[i]
-    extraArgs = extraTestArgs[i]
-    let outdir = bindir
-    if not dirExists(outdir):
-      mkDir outdir
-    runscript.addTest(qexDir/"src"/f, outdir)
-    extraArgs = ""
+  if optional and count == 0:
+    echo "Error: no experimental tests found for: ", scope
+    quit(1)
+  if not optional:
+    for i in 0..<extraTests.len:
+      let f = extraTests[i]
+      extraArgs = extraTestArgs[i]
+      let outdir = bindir
+      if not dirExists(outdir):
+        mkDir outdir
+      runscript.addTest(qexDir/"src"/f, outdir)
+      extraArgs = ""
   #echo runscript.join("\n")
   runscript.add("$CLEANUPJOBS")
   runscript.add("if [ X != \"X$failed\" ];then echo Failed tests: $failed;exit 1;fi")
   runscript.add("echo $0: All tests passed")
-  writeFile("testscript.sh", runscript.join("\n"))
-  exec("chmod 755 testscript.sh")
+  writeFile(script, runscript.join("\n"))
+  exec("chmod 755 " & script)
   if dorun:
-    exec "./testscript.sh"
+    exec "./" & script
 
-let testsDesc = "  Build tests and create `testscript.sh' test runner"
+let testsDesc = """  Build default tests and create `testscript.sh'
+               tests experimental builds src/experimental/*/tests/t*.nim
+               tests experimental/<group> selects one experimental group
+               Experimental selections create `testscript-experimental.sh'"""
 buildTask tests, testsDesc:
-  buildTests()
+  if remainingArgs.len > 1:
+    echo "Usage: tests [experimental[/<group>]]"
+    quit(1)
+  buildTests(if remainingArgs.len == 0: "" else: remainingArgs[0])
 
 proc runMake(args: seq[string]) =
   for a in args:
