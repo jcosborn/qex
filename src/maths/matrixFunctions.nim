@@ -8,7 +8,6 @@ import matinv
 export matinv
 import matexp
 export matexp
-import projUderiv
 getOptimPragmas()
 
 proc determinantN*(a: auto): auto =
@@ -298,7 +297,7 @@ template rsqrtPH*[T:Mat1](x: T): T =
   rsqrtPH(r, x)
   r
 
-proc projectUrsqrt(r: var Mat1; x: Mat2, eps = 1e-20) {.alwaysInline.} =
+proc projectUrsqrt*(r: var Mat1; x: Mat2, eps = 1e-20) {.alwaysInline.} =
   #let t = x.adj * x   # issues with gcc
   let xa = x.adj
   var t = xa * x
@@ -318,43 +317,6 @@ template projectU*(r: var Mat1, eps = 1e-20) =
   var t{.noInit.}: evalType(r)
   t := r
   r.projectU t, eps
-
-# (d/dX') Tr(U'C+C'U) / 2 = (d/dX') Tr(X'CZ+C'XZ) / 2
-# = CZ - (1/2) < Z (X'C + C'X) Z (dY/dX') >
-# (dY/dX') Y + Y (dY/dX') = 2X
-# Z(dY/dX') Y + Y Z(dY/dX') = 2ZX
-# S Y + Y S = U' C Z = Z X' C Z
-# cz-xz^3(x'c+c'x)/2
-# CH: 4528 flops
-proc projectUderiv*(r: var Mat1, u: Mat2, x: Mat3, chain: Mat4, eps = 1e-20) =
-  # U = X (X'X)^{-1/2} = (XX')^{-1/2} X
-  # Y = sqrt(X'X)
-  # Z = (X'X)^{-1/2}
-  # F = C Z - z (Cd U + Ud C) z (dY/dX)
-  var y, z, t1, t2: Mat1
-  #y := x.adj * u
-  #inverse(z, y)
-  projectUrsqrt(z, x)
-  inverse(y, z)
-  #echo "inverse: ", z
-  #QLA_M_eq_M_times_M(d, c, &z);
-  r := chain * z
-  #QLA_M_eq_Ma_times_M(&t1, p, d);
-  t1 := u.adj * r
-  #sylsolve_site(NCARG &t2, &y, &y, &t1);
-  sylsolve(t2, y, t1)
-  #QLA_M_eq_M(&t1, &t2);
-  #QLA_M_peq_Ma(&t1, &t2);
-  #QLA_M_eq_M_times_M(&t2, m, &t1);
-  #QLA_M_meq_M(d, &t2);
-  t1 := t2 + t2.adj
-  r -= x * t1
-
-proc projectUderiv*(r: var Mat1, x: Mat2, c: Mat3) =
-  var u {.noInit.}: type(r)
-  projectU(u, x)
-  #echo u, x, c
-  projectUderiv(r, u, x, c)
 
 proc projectSU*(r: var Mat1; x: Mat2) =
   const nc = r.nrows
