@@ -57,15 +57,17 @@ proc checkRev(g: auto, hl: auto, hm: auto, offsets: seq[seq[int32]]): int =
   const V = lo.V
   let comm = getDefaultComm()
   let z = newSeq[int32](lo.nDim)
-  # expected count per global site: each halo cell the offsets reach, once per lane
-  var tally = newSeq[int](lo.physVol)
+  # expected count per global site: each halo cell the offsets reach, once per
+  # lane, summed over ranks since every rank's halo sends back to the owner
+  var tally = newSeq[float](lo.physVol)
   var seen = newSeq[bool](hl.nExt - hl.nOut)
   for i in 0..<hl.nOut:
     for o in offsets:
       let j = hl.nbr(i, o)
       if j < hl.nOut or seen[j-hl.nOut]: continue
       seen[j-hl.nOut] = true
-      for k in 0..<V: inc tally[lo.site(i, k, o)]
+      for k in 0..<V: tally[lo.site(i, k, o)] += 1.0
+  rankSum tally
   for mu in 0..<g.len:
     g[mu] := 0
     let h = makeHalo(hl, g[mu])
@@ -73,7 +75,7 @@ proc checkRev(g: auto, hl: auto, hm: auto, offsets: seq[seq[int32]]): int =
     h.updateRev hm, comm
     for e in 0..<lo.nSitesOuter:
       for k in 0..<V:
-        let want = float tally[lo.site(e, k, z)]
+        let want = tally[lo.site(e, k, z)]
         let got = g[mu][e][0,0].re[k]
         if got != want:
           if result < 5: echo "mu ", mu, " site ", e, " lane ", k, ": ", got, " != ", want
@@ -100,6 +102,7 @@ proc haloPlaq(g: auto, hl: auto, hm: auto): seq[float] =
         let b = g[nu][i] * h[mu][n1]
         result[k] += simdReduce redot(a, b)
         inc k
+  rankSum result
   let vf = 1.0/(g[0][0].nrows*lo.physVol)
   for k in 0..<result.len: result[k] *= vf
 
