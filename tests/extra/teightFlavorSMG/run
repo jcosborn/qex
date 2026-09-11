@@ -181,7 +181,8 @@ else:
     raise SystemExit('Missing binary record in checkpoint fixture')
 PYCODE
   [[ $? == 0 ]] || exit 1
-  message="Failed to read parallel RNG file:"
+  #message="Failed to read parallel RNG file:"  # MPICH might not display this
+  message="QIO_compare_checksum(0): Checksum mismatch.  Found 2606c5d6 a1a670c6.  Expected b3761143 34d6a453"
   if [[ $extension == lat ]]; then message="error loading gauge configuration from file:"; fi
   expectFailure "$message" "$corruptdir/$extension.out" \
     $RUNJOB "$exe" -xml:"$mydir/test_input_resume.xml" \
