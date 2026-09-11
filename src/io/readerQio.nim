@@ -105,10 +105,12 @@ proc open(rd: var Reader; ql: var QIO_Layout) =
 
   var qioMd = QIO_string_create()
   rd.qr = QIO_open_read(qioMd, cstring rd.fileName, ql.addr, fs.addr, iflag.addr)
-  rd.fileMetadata = toString(qioMd)
+  if rd.qr == nil:
+    rd.status = -1
+  else:
+    rd.fileMetadata = toString(qioMd)
   QIO_string_destroy(qioMd)
   rd.recordInfoValid = false
-  if rd.qr==nil: rd.status = -1
 
 template newReader*[V: static[int]](l: Layout[V]; fn: string): untyped =
   var rd: Reader[V]

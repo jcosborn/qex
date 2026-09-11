@@ -117,6 +117,14 @@ suite "Test field IO":
     r.load fd
     r.finish
 
+  when defined(QioReader) or not defined(QioliteReader):
+    # QIO may leave peers inside a broadcast after a header error.
+    if nRanks == 1:
+      test "reject empty file on open":
+        writeFile(fn, "")
+        let r = l.newReader(fn)
+        check(r.status != 0)
+
 removeFile fn
 qexFinalize()
 
