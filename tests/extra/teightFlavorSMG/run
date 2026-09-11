@@ -1,0 +1,338 @@
+#!/usr/bin/env bash
+set -o pipefail
+
+exe="$1"
+declare -r mydir="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+declare -r qexdir="$(cd "$mydir/../../.." &>/dev/null && pwd)"
+outdir=tests/extra/teightFlavorSMG
+[[ -d $outdir ]] || mkdir -p "$outdir"
+
+diffnum() { "$mydir/../../diffnum" "$@"; }
+
+expectFailure() {
+  local message="$1" logfile="$2" status
+  shift 2
+  timeout -k 5s 60s "$@" > "$logfile" 2>&1
+  status=$?
+  if ((status == 0 || status == 124 || status == 137)) || ! grep -Fq "$message" "$logfile"; then
+    cat "$logfile"
+    echo "FAILED: expected prompt failure with '$message', got status $status"
+    return 1
+  fi
+}
+
+hamiltonianDiff() {
+  diffnum "$1" "$2" 1e-12 --atol-after T: "$kineticAtol"
+}
+
+selfRegressionOutput() {
+  # Keep the reference precision for Metropolis values; compare all other
+  # quantities at their printed precision; only T gets a scaled absolute allowance.
+  awk '
+    /^(ACCEPT|REJECT) / {
+      printf "%s deltaH: %.6f  pAccept: %.6f  rnd: %.6f\n", $1, $3, $5, $7
+      next
+    }
+    /^(Beginning H:|Ending H:|MEASplaq |MEASplaqs4 |MEASploop )/ { print }
+  ' "$1"
+}
+
+out="$outdir/out"
+$RUNJOB "$exe" \
+  -xml:"$mydir/test_input.xml" \
+  -start_config:0 -end_config:1 -config_space:1 -save_freq:0 -verbosity:1 \
+  2>&1 | tee "$out"
+status=$?
+((status==0)) || exit $status
+
+# kineticAction subtracts 16 * volume from the momentum norm. Budget roundoff
+# on that extensive scale, rather than only on the small shifted kinetic energy.
+kineticAtol="$(python3 - "$out" <<'PYCODE'
+import ast, math, sys
+with open(sys.argv[1]) as stream:
+    for line in stream:
+        if line.startswith("#physGeom:"):
+            geometry = ast.literal_eval(line.split("@", 1)[1])
+            if not geometry or any(type(n) is not int or n <= 0 for n in geometry):
+                raise SystemExit("Invalid lattice geometry for kinetic tolerance")
+            print(64 * sys.float_info.epsilon * 16 * math.prod(geometry))
+            break
+    else:
+        raise SystemExit("Missing lattice geometry for kinetic tolerance")
+PYCODE
+)" || exit 1
+echo "Kinetic comparison: atol=$kineticAtol (64 * epsilon * 16 * volume), rtol=1e-12"
+
+echo
+echo "== 1. Reversibility check =="
+revline="$(grep '^REVERSE' "$out")"
+echo "$revline"
+dh0="$(echo "$revline" | sed -E 's/.*dH0 \(from hOld\): *(-?[0-9.eE+-]+).*/\1/')"
+python3 -c "
+import sys
+dh0 = float('$dh0')
+tol = 1e-8
+if abs(dh0) > tol:
+    print(f'FAILED: |dH0| = {abs(dh0)} > {tol}')
+    sys.exit(1)
+print(f'OK: |dH0| = {abs(dh0)} <= {tol}')
+" || exit 1
+
+echo
+echo "== 2. Self-regression (rtol=1e-12, scaled atol for T) =="
+selfRegressionOutput "$out" > "$outdir/self.check"
+hamiltonianDiff "$mydir/self_regression.ref" "$outdir/self.check" || exit 1
+echo "OK"
+
+echo
+echo "== 2b. Every action reports force stats (none silently empty) =="
+nforce="$(grep -cE '^(GA0|SFA[0-9]+|SRA[0-9]+|SPVA[0-9]+)F ' "$out")"
+if [[ $nforce -ne 13 ]]; then
+  echo "FAILED: expected 13 force-stats lines (GA0F, SFA0F, SFA1F, SRA0F, SRA1F, SPVA0F..SPVA7F), got $nforce"
+  grep -E '^(GA0|SFA[0-9]+|SRA[0-9]+|SPVA[0-9]+)F ' "$out"
+  exit 1
+fi
+echo "OK: $nforce/13 force-stats lines present"
+
+echo
+echo "== 3. Cross-implementation vs. stag_pv_hmc =="
+grep -E '^MEASplaq |^MEASplaqs4 |^MEASploop ' "$out" > "$outdir/cross.check"
+diffnum "$mydir/stag_pv_hmc_reference.ref" "$outdir/cross.check" 1e-13 || exit 1
+
+awk '
+  /^Beginning H:/ { sub(/^Beginning /, ""); beg=$0 }
+  /^Ending H:/ { sub(/^Ending /, ""); last=$0; print "HAM_BEG " beg; print "HAM_END " last; exit }
+' "$out" > "$outdir/cross_ham.check"
+hamiltonianDiff "$mydir/stag_pv_hmc_reference_hamiltonian.ref" "$outdir/cross_ham.check" || exit 1
+echo "OK"
+
+echo
+echo "== 4. Checkpoint/resume (must match a continuous run bit for bit) =="
+ckptdir="$outdir/ckpt"
+rm -rf "$ckptdir"; mkdir -p "$ckptdir"
+
+$RUNJOB "$exe" \
+  -xml:"$mydir/test_input.xml" \
+  -start_config:0 -end_config:1 -config_space:2 -save_freq:0 -verbosity:1 \
+  > "$ckptdir/continuous.out" 2>&1 || exit $?
+grep -E '^MEASplaq |^MEASplaqs4 |^MEASploop ' "$ckptdir/continuous.out" | tail -n 6 > "$ckptdir/continuous.check"
+
+$RUNJOB "$exe" \
+  -xml:"$mydir/test_input.xml" \
+  -start_config:0 -end_config:1 -config_space:1 -save_freq:1 -verbosity:1 \
+  -path:"$ckptdir/" \
+  > "$ckptdir/save.out" 2>&1 || exit $?
+
+$RUNJOB "$exe" \
+  -xml:"$mydir/test_input_resume.xml" \
+  -start_config:1 -end_config:2 -config_space:1 -save_freq:0 -verbosity:1 \
+  -path:"$ckptdir/" \
+  > "$ckptdir/resume.out" 2>&1 || exit $?
+grep -E '^MEASplaq |^MEASplaqs4 |^MEASploop ' "$ckptdir/resume.out" > "$ckptdir/resume.check"
+
+diffnum "$ckptdir/continuous.check" "$ckptdir/resume.check" 1e-12 || exit 1
+# Equal gauge observables alone cannot detect an incorrect Metropolis RNG draw
+# when both trajectories accept. Check the full-precision draw explicitly.
+[[ $(grep -Ec '^(ACCEPT|REJECT) ' "$ckptdir/continuous.out") == 2 ]] || exit 1
+[[ $(grep -Ec '^(ACCEPT|REJECT) ' "$ckptdir/resume.out") == 1 ]] || exit 1
+grep -E '^(ACCEPT|REJECT) ' "$ckptdir/continuous.out" | tail -n 1 > "$ckptdir/continuous.metropolis"
+grep -E '^(ACCEPT|REJECT) ' "$ckptdir/resume.out" > "$ckptdir/resume.metropolis"
+diffnum "$ckptdir/continuous.metropolis" "$ckptdir/resume.metropolis" 1e-12 || exit 1
+echo "OK"
+
+echo
+echo "== 4b. Incomplete serial RNG checkpoints must abort =="
+badckptdir="$ckptdir/incomplete"
+mkdir -p "$badckptdir"
+cp "$ckptdir/ckpoint_1.lat" "$ckptdir/ckpoint_1.parallelRNG" "$badckptdir/" || exit 1
+serialBytes=$(wc -c < "$ckptdir/ckpoint_1.serialRNG")
+for bytes in 0 $((serialBytes - 1)); do
+  head -c "$bytes" "$ckptdir/ckpoint_1.serialRNG" > "$badckptdir/ckpoint_1.serialRNG" || exit 1
+  badout="$badckptdir/read-$bytes.out"
+  expectFailure "Incomplete serial RNG file: $badckptdir/ckpoint_1.serialRNG (expected $serialBytes bytes, read $bytes)" "$badout" \
+    $RUNJOB "$exe" \
+    -xml:"$mydir/test_input_resume.xml" \
+    -start_config:1 -end_config:1 -path:"$badckptdir" || exit 1
+done
+echo "OK: empty and truncated serial RNG checkpoints rejected"
+
+echo
+echo "== 4c. Corrupt parallel RNG and gauge checkpoints must abort =="
+corruptdir="$ckptdir/corrupt"
+mkdir -p "$corruptdir"
+for extension in parallelRNG lat; do
+  cp "$ckptdir"/ckpoint_1.* "$corruptdir/" || exit 1
+  python3 - "$ckptdir/ckpoint_1.$extension" "$corruptdir/ckpoint_1.$extension" <<'PYCODE'
+from pathlib import Path
+import struct, sys
+data = bytearray(Path(sys.argv[1]).read_bytes())
+offset = 0
+while offset + 144 <= len(data):
+    magic, version, flags, size, kind = struct.unpack_from('>IHHQ128s', data, offset)
+    if magic != 0x456789AB:
+        raise SystemExit('Invalid LIME fixture header')
+    offset += 144
+    if kind.rstrip(b'\0') == b'scidac-binary-data' and size:
+        data[offset] ^= 1
+        Path(sys.argv[2]).write_bytes(data)
+        break
+    offset += (size + 7) // 8 * 8
+else:
+    raise SystemExit('Missing binary record in checkpoint fixture')
+PYCODE
+  [[ $? == 0 ]] || exit 1
+  message="Failed to read parallel RNG file:"
+  if [[ $extension == lat ]]; then message="error loading gauge configuration from file:"; fi
+  expectFailure "$message" "$corruptdir/$extension.out" \
+    $RUNJOB "$exe" -xml:"$mydir/test_input_resume.xml" \
+    -start_config:1 -end_config:1 -path:"$corruptdir" || exit 1
+done
+echo "OK"
+
+echo
+echo "== 4d. Checkpoint write failures must abort =="
+writefaildir="$ckptdir/writefail"
+mkdir -p "$writefaildir/open/ckpoint_1.serialRNG" "$writefaildir/flush"
+expectFailure "Failed to open serial RNG file:" "$writefaildir/open.out" \
+  $RUNJOB "$exe" -xml:"$mydir/test_input.xml" \
+  -start_config:0 -end_config:1 -config_space:0 -save_freq:1 \
+  -path:"$writefaildir/open" || exit 1
+if [[ -e /dev/full ]]; then
+  ln -sf /dev/full "$writefaildir/flush/ckpoint_1.serialRNG"
+  expectFailure "Failed to write serial RNG file:" "$writefaildir/flush.out" \
+    $RUNJOB "$exe" -xml:"$mydir/test_input.xml" \
+    -start_config:0 -end_config:1 -config_space:0 -save_freq:1 \
+    -path:"$writefaildir/flush" || exit 1
+else
+  echo "SKIP: /dev/full is unavailable for buffered-write failure injection"
+fi
+echo "OK"
+
+echo
+echo "== 5. Rejected trajectory (gauge field must restore exactly) =="
+rejdir="$outdir/reject"
+rm -rf "$rejdir"; mkdir -p "$rejdir"
+$RUNJOB "$exe" \
+  -xml:"$mydir/test_input_reject.xml" \
+  -start_config:0 -end_config:1 -config_space:1 -save_freq:0 -verbosity:1 \
+  > "$rejdir/out" 2>&1 || exit $?
+grep -q '^REJECT' "$rejdir/out" || { echo "FAILED: trajectory was not rejected"; exit 1; }
+python3 - "$rejdir/out" <<'PYCODE'
+import math, sys
+with open(sys.argv[1]) as stream:
+    lines = [line.split() for line in stream if line.startswith('MEASplaq ss:')]
+if len(lines) != 1 or len(lines[0]) != 7 or lines[0][1::2] != ['ss:', 'st:', 'tot:']:
+    raise SystemExit('FAILED: missing or malformed plaquette after reject')
+vals = [float(x) for x in lines[0][2::2]]
+if any(not math.isfinite(v) or v != 1.0 for v in vals):
+    raise SystemExit(f'FAILED: plaquette after reject is not exactly 1.0: {vals}')
+print('OK: plaquette after reject is exactly 1.0')
+PYCODE
+[[ $? == 0 ]] || exit 1
+
+echo
+echo "== 6. No-Hasenbusch (Nh=0) =="
+nh0dir="$outdir/nh0"
+rm -rf "$nh0dir"; mkdir -p "$nh0dir"
+$RUNJOB "$exe" \
+  -xml:"$mydir/test_input_nh0.xml" \
+  -start_config:0 -end_config:1 -config_space:1 -save_freq:0 -verbosity:1 \
+  > "$nh0dir/out" 2>&1 || exit $?
+
+echo "-- self-regression (rtol=1e-12, scaled atol for T) --"
+selfRegressionOutput "$nh0dir/out" > "$nh0dir/self.check"
+hamiltonianDiff "$mydir/self_regression_nh0.ref" "$nh0dir/self.check" || exit 1
+echo "OK"
+
+echo "-- cross-implementation vs. stag_pv_hmc, preconditioner=none --"
+grep -E '^MEASplaq |^MEASplaqs4 |^MEASploop ' "$nh0dir/out" > "$nh0dir/cross.check"
+diffnum "$mydir/stag_pv_hmc_reference_nh0.ref" "$nh0dir/cross.check" 1e-13 || exit 1
+awk '
+  /^Beginning H:/ { sub(/^Beginning /, ""); beg=$0 }
+  /^Ending H:/ { sub(/^Ending /, ""); last=$0; print "HAM_BEG " beg; print "HAM_END " last; exit }
+' "$nh0dir/out" > "$nh0dir/cross_ham.check"
+hamiltonianDiff "$mydir/stag_pv_hmc_reference_hamiltonian_nh0.ref" "$nh0dir/cross_ham.check" || exit 1
+echo "OK"
+
+echo
+echo "== 7. Production XML (prod/lsd/eightFlavorSMG.xml boots) =="
+proddir="$outdir/prodxml"
+rm -rf "$proddir"; mkdir -p "$proddir"
+$RUNJOB "$exe" \
+  -xml:"$qexdir/src/prod/lsd/eightFlavorSMG.xml" \
+  -start_config:0 -end_config:0 \
+  > "$proddir/out" 2>&1 || exit $?
+grep -q '^#physGeom:@\[8, 8, 8, 16\]' "$proddir/out" || {
+  echo "FAILED: prod/lsd/eightFlavorSMG.xml did not set up the expected 8^3x16 lattice"
+  exit 1
+}
+echo "OK"
+
+echo
+echo "== 8. Multi-trajectory / save cycle (config_space:2, save_freq:1) =="
+multidir="$outdir/multitraj"
+rm -rf "$multidir"; mkdir -p "$multidir"
+$RUNJOB "$exe" \
+  -xml:"$mydir/test_input.xml" \
+  -start_config:0 -end_config:1 -config_space:2 -save_freq:1 -verbosity:1 \
+  -path:"$multidir/" \
+  > "$multidir/out" 2>&1 || exit $?
+nplaq="$(grep -c '^MEASplaq ss:' "$multidir/out")"
+if [[ $nplaq -ne 2 ]]; then
+  echo "FAILED: expected 2 plaquette measurements (one per trajectory), got $nplaq"
+  exit 1
+fi
+for f in ckpoint_1.lat ckpoint_1.parallelRNG ckpoint_1.serialRNG; do
+  [[ -s "$multidir/$f" ]] || { echo "FAILED: $f was not written"; exit 1; }
+done
+echo "OK"
+
+echo
+echo "== 9. Boundary validation and legacy configuration units =="
+unitsdir="$outdir/configuration_units"
+mkdir -p "$unitsdir"
+python3 - "$mydir/test_input.xml" "$unitsdir" <<'PYCODE'
+from pathlib import Path
+import sys, xml.etree.ElementTree as ET
+source, target = sys.argv[1], Path(sys.argv[2])
+tree = ET.parse(source)
+for key, value in {'Ns': '4', 'Nt': '4', 'Nf': '0', 'num_pv': '0',
+                   'tau': '0.01', 'f_steps': '1', 'g_steps': '1',
+                   'rev_check_freq': '0', 'no_metropolis_until': '1',
+                   'plaq_freq': '2', 's4_freq': '2', 'ploop_freq': '2'}.items():
+    tree.find('.//' + key).text = value
+tree.write(target / 'valid.xml')
+for boundary in ('pppx', 'ppp', 'ppppa'):
+    tree.find('.//bc').text = boundary
+    tree.write(target / (boundary + '.xml'))
+PYCODE
+[[ $? == 0 ]] || exit 1
+for boundary in pppx ppp ppppa; do
+  expectFailure "Boundary conditions must contain exactly four characters" "$unitsdir/$boundary.out" \
+    $RUNJOB "$exe" -xml:"$unitsdir/$boundary.xml" -end_config:0 || exit 1
+done
+for spacing in 1 2; do
+  $RUNJOB "$exe" -xml:"$unitsdir/valid.xml" -verbosity:1 \
+    -start_config:0 -end_config:2 -config_space:"$spacing" -save_freq:0 \
+    > "$unitsdir/spacing-$spacing.out" 2>&1 || exit $?
+done
+python3 - "$unitsdir" <<'PYCODE'
+from pathlib import Path
+import sys
+for spacing in (1, 2):
+    lines = (Path(sys.argv[1]) / f'spacing-{spacing}.out').read_text().splitlines()
+    draws = [float(line.split()[-1]) for line in lines if line.startswith(('ACCEPT ', 'REJECT '))]
+    if len(draws) != 2 * spacing or draws[:spacing] != [0.0] * spacing:
+        raise SystemExit(f'FAILED: forced-accept window for config_space={spacing}: {draws}')
+    if draws[spacing] != 0.06697195768356323:
+        raise SystemExit('FAILED: forced acceptance consumed serial RNG draws or lasted too long')
+    expected = 0 if spacing == 1 else 2
+    for prefix, count in [('MEASplaq ss:', expected), ('MEASplaqs4 ', 4 * expected), ('MEASploop ', expected)]:
+        if sum(line.startswith(prefix) for line in lines) != count:
+            raise SystemExit(f'FAILED: legacy measurement frequency for config_space={spacing}, {prefix}')
+print('OK: boundary validation, configuration-based forced acceptance, and measurement counter reset')
+PYCODE
+[[ $? == 0 ]] || exit 1
+
+echo
+echo "eightFlavorSMG test suite passed"

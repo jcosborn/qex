@@ -45,8 +45,6 @@ letParam:
 
 installStandardParams()
 echoParams()
-#echo "rank ", myRank, "/", nRanks
-#threads: echo "thread ", threadNum, "/", numThreads
 processHelpParam()
 
 # set up lattice layout
@@ -71,12 +69,8 @@ else: qexError "invalid start type"
 
 #[ build staggered Dirac operator ]#
 
-#when defined(HypSmearing):
 when StaggeredSmearing == "HYP":
   let stag = newStag(uc.su)
-#elif defined(StoutSmearing):
-#  qexError "Stout smearing for HMC not yet implemented"
-#elif defined(HisqSmearing):
 elif StaggeredSmearing == "HISQ":
   let stag = newStag3(uc.su, uc.sul)
 else:
@@ -91,19 +85,9 @@ spf.r2req = forceTol
 spa.maxits = actionMaxIter
 spf.maxits = forceMaxIter
 
-#spa.verbosity = 0
-#spf.verbosity = 0
-
 #[ build action in coordination with integrator levels ]#
 
 var hmc* = uc.newHmcAction(s, r, trajectoryLength)
-
-var gc = GaugeActionCoeffs(plaq: beta)
-#var ga = gc.newGaugeAction(uc)
-var ga = hmc.newGaugeAction(gc, uc)
-var gaugeLevel = newActionLevel(multiplier = innerSteps, integrator = innerIntegrator)
-gaugeLevel.add ga
-hmc.add gaugeLevel   # inner level
 
 var fermionLevel = newActionLevel(multiplier = outerSteps, integrator = outerIntegrator)
 
@@ -114,7 +98,14 @@ for i in 0..<numSt:
 for i in 0..<numPV:
   fermionLevel.add newStaggeredPauliVillarsAction(stag, massPV, spa, spf, r)
 
-hmc.add fermionLevel # outer level
+hmc.add fermionLevel # outermost level
+
+var gc = GaugeActionCoeffs(plaq: beta)
+#var ga = gc.newGaugeAction(uc)
+var ga = hmc.newGaugeAction(gc, uc)
+var gaugeLevel = newActionLevel(multiplier = innerSteps, integrator = innerIntegrator)
+gaugeLevel.add ga
+hmc.add gaugeLevel   # innermost level
 
 #[ do HMC trajectory ]#
 

@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<qex>
+  <hmc>
+    <tau>0.15</tau>
+    <f_steps>3</f_steps>
+    <g_steps>2</g_steps>
+    <ferm_int_alg>2MN</ferm_int_alg>
+    <gauge_int_alg>2MN</gauge_int_alg>
+    <no_metropolis_until>0</no_metropolis_until>
+  </hmc>
+
+  <config_opts>
+    <start>cold</start>
+  </config_opts>
+
+  <rng>
+    <parallel_seed>987654321</parallel_seed>
+    <serial_seed>987654321</serial_seed>
+  </rng>
+
+  <action>
+    <geom>
+      <Ns>8</Ns>
+      <Nt>8</Nt>
+      <bc>pppa</bc>
+    </geom>
+
+    <gauge>
+      <beta>6.0</beta>
+    </gauge>
+
+    <ferm>
+      <Nf>2</Nf>
+      <mass>0.05</mass>
+      <Nh>1</Nh>
+      <mass_h>0.3</mass_h>
+    </ferm>
+
+    <pv>
+      <num_pv>8</num_pv>
+      <mass_pv>0.75</mass_pv>
+    </pv>
+  </action>
+
+  <solver>
+    <a_tol>1e-24</a_tol>
+    <a_maxits>10000</a_maxits>
+    <f_tol>1e-16</f_tol>
+    <f_maxits>10000</f_maxits>
+  </solver>
+
+  <basic_meas>
+    <plaq>
+      <plaq_freq>1</plaq_freq>
+    </plaq>
+    <ploop_freq>1</ploop_freq>
+    <s4_freq>1</s4_freq>
+    <hmc_checks>
+      <rev_check_freq>1</rev_check_freq>
+    </hmc_checks>
+  </basic_meas>
+</qex>
