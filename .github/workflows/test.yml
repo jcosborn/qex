@@ -30,18 +30,6 @@ jobs:
         sudo apt-get install numdiff hwloc-nox libhwloc-dev gdb
         if test ${{ matrix.mpi-impl }} = openmpi; then sudo apt-get install openmpi-bin libopenmpi-dev; fi
         if test ${{ matrix.mpi-impl }} = mpich; then sudo apt-get install mpich libmpich-dev; fi
-    - name: install hwloc v2
-      run: |
-        curl -LO https://download.open-mpi.org/release/hwloc/v2.2/hwloc-2.2.0.tar.bz2
-        tar xf hwloc-2.2.0.tar.bz2
-        cd hwloc*/
-        ./configure --prefix="$PWD/../hwloc-v2" --disable-opencl --disable-netloc --disable-cairo
-        make -j $(nproc)
-        make install
-    - name: set path to hwloc v2
-      run: |
-        echo "${{ github.workspace }}/hwloc-v2/bin" >> $GITHUB_PATH
-        echo "LD_LIBRARY_PATH=${{ github.workspace }}/hwloc-v2/lib" >> $GITHUB_ENV
     - name: system info
       run: |
         free
