@@ -10,12 +10,20 @@ outdir=tests/extra/teightFlavorSMG
 diffnum() { "$mydir/../../diffnum" "$@"; }
 
 expectFailure() {
-  local message="$1" logfile="$2" status
+  local message="$1" logfile="$2" status dir file
   shift 2
-  timeout -k 5s 60s "$@" > "$logfile" 2>&1
+  dir=$(mktemp -d "$logfile.ranks.XXXXXXXX") || return 1
+  # Callers pass the binary and its arguments; RUNJOB launches capture on each rank.
+  # MPI_Abort can discard output in the launcher; capture each rank directly.
+  timeout -k 5s 60s $RUNJOB "$mydir/capture" "$dir" "$@" > "$logfile" 2>&1
   status=$?
-  if ((status == 0 || status == 124 || status == 137)) || ! grep -Fq "$message" "$logfile"; then
+  if ((status == 0 || status == 124 || status == 137)) || ! grep -Fq -- "$message" "$dir"/rank.* 2>/dev/null; then
     cat "$logfile"
+    for file in "$dir"/rank.*; do
+      [[ -f $file ]] || continue
+      echo "Rank output: $file"
+      cat "$file"
+    done
     echo "FAILED: expected prompt failure with '$message', got status $status"
     return 1
   fi
@@ -150,7 +158,7 @@ for bytes in 0 $((serialBytes - 1)); do
   head -c "$bytes" "$ckptdir/ckpoint_1.serialRNG" > "$badckptdir/ckpoint_1.serialRNG" || exit 1
   badout="$badckptdir/read-$bytes.out"
   expectFailure "Incomplete serial RNG file: $badckptdir/ckpoint_1.serialRNG (expected $serialBytes bytes, read $bytes)" "$badout" \
-    $RUNJOB "$exe" \
+    "$exe" \
     -xml:"$mydir/test_input_resume.xml" \
     -start_config:1 -end_config:1 -path:"$badckptdir" || exit 1
 done
@@ -184,7 +192,7 @@ PYCODE
   message="Failed to read parallel RNG file:"
   if [[ $extension == lat ]]; then message="error loading gauge configuration from file:"; fi
   expectFailure "$message" "$corruptdir/$extension.out" \
-    $RUNJOB "$exe" -xml:"$mydir/test_input_resume.xml" \
+    "$exe" -xml:"$mydir/test_input_resume.xml" \
     -start_config:1 -end_config:1 -path:"$corruptdir" || exit 1
 done
 echo "OK"
@@ -194,13 +202,13 @@ echo "== 4d. Checkpoint write failures must abort =="
 writefaildir="$ckptdir/writefail"
 mkdir -p "$writefaildir/open/ckpoint_1.serialRNG" "$writefaildir/flush"
 expectFailure "Failed to open serial RNG file:" "$writefaildir/open.out" \
-  $RUNJOB "$exe" -xml:"$mydir/test_input.xml" \
+  "$exe" -xml:"$mydir/test_input.xml" \
   -start_config:0 -end_config:1 -config_space:0 -save_freq:1 \
   -path:"$writefaildir/open" || exit 1
 if [[ -e /dev/full ]]; then
   ln -sf /dev/full "$writefaildir/flush/ckpoint_1.serialRNG"
   expectFailure "Failed to write serial RNG file:" "$writefaildir/flush.out" \
-    $RUNJOB "$exe" -xml:"$mydir/test_input.xml" \
+    "$exe" -xml:"$mydir/test_input.xml" \
     -start_config:0 -end_config:1 -config_space:0 -save_freq:1 \
     -path:"$writefaildir/flush" || exit 1
 else
@@ -290,7 +298,7 @@ echo "OK"
 echo
 echo "== 9. Boundary validation and legacy configuration units =="
 unitsdir="$outdir/configuration_units"
-mkdir -p "$unitsdir"
+rm -rf "$unitsdir"; mkdir -p "$unitsdir"
 python3 - "$mydir/test_input.xml" "$unitsdir" <<'PYCODE'
 from pathlib import Path
 import sys, xml.etree.ElementTree as ET
@@ -309,7 +317,7 @@ PYCODE
 [[ $? == 0 ]] || exit 1
 for boundary in pppx ppp ppppa; do
   expectFailure "Boundary conditions must contain exactly four characters" "$unitsdir/$boundary.out" \
-    $RUNJOB "$exe" -xml:"$unitsdir/$boundary.xml" -end_config:0 || exit 1
+    "$exe" -xml:"$unitsdir/$boundary.xml" -end_config:0 || exit 1
 done
 for spacing in 1 2; do
   $RUNJOB "$exe" -xml:"$unitsdir/valid.xml" -verbosity:1 \

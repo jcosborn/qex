@@ -1,0 +1,4 @@
+#!/bin/sh
+log=$(mktemp "$1/rank.XXXXXXXX") || exit 1
+shift
+exec "$@" > "$log" 2>&1
