@@ -90,7 +90,10 @@ jobs:
       run: ./bootstrap-travis
     - name: configure
       working-directory: qex
-      run: QMPDIR=qmp QIODIR=qio ./configure
+      run: |
+        QMPDIR=qmp QIODIR=qio ./configure \
+          cflagsSpeed:"-Ofast -march=native -fno-allow-store-data-races" \
+          cppflagsSpeed:"-Ofast -march=native -fno-allow-store-data-races"
     - name: make tests
       working-directory: qex
       run: make tests
