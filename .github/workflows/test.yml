@@ -18,7 +18,7 @@ jobs:
         fuel-compat: [0]
       fail-fast: false
     name: nim-${{ matrix.nim-branch }}-${{ matrix.mpi-impl }}-FUELCompat:${{ matrix.fuel-compat }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
     - name: environment
       run: |
@@ -48,8 +48,28 @@ jobs:
         cat /proc/cpuinfo
         hwloc-ls
         gcc -v
+        command -v mpicc mpiexec
         mpicc -v
         cat /proc/sys/kernel/core_pattern
+    - name: check MPI ranks
+      run: |
+        cat > "$RUNNER_TEMP/check-mpi.c" <<'EOF'
+        #include <mpi.h>
+        #include <stdio.h>
+        int main(int argc, char **argv) {
+          int rank, size, provided;
+          MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
+          MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+          MPI_Comm_size(MPI_COMM_WORLD, &size);
+          printf("MPI rank %d of %d\n", rank, size);
+          fflush(stdout);
+          if (size != 2) MPI_Abort(MPI_COMM_WORLD, 1);
+          MPI_Finalize();
+          return 0;
+        }
+        EOF
+        mpicc "$RUNNER_TEMP/check-mpi.c" -o "$RUNNER_TEMP/check-mpi"
+        timeout -k 5s 60s mpiexec -n 2 "$RUNNER_TEMP/check-mpi"
     - name: checkout Nim
       uses: actions/checkout@v7
       with:
