@@ -296,7 +296,7 @@ from pathlib import Path
 import sys, xml.etree.ElementTree as ET
 source, target = sys.argv[1], Path(sys.argv[2])
 tree = ET.parse(source)
-for key, value in {'Ns': '4', 'Nt': '4', 'Nf': '0', 'num_pv': '0',
+for key, value in {'Ns': '8', 'Nt': '8', 'Nf': '0', 'num_pv': '0',
                    'tau': '0.01', 'f_steps': '1', 'g_steps': '1',
                    'rev_check_freq': '0', 'no_metropolis_until': '1',
                    'plaq_freq': '2', 's4_freq': '2', 'ploop_freq': '2'}.items():
