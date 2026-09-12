@@ -1,6 +1,6 @@
 # sets up build tasks, included from either build.nims or qex.nimble
 # requires variables 'nim', 'qexDir' and 'nimArgs' to be declared before including
-import strFormat
+import strFormat, tables
 
 type
   Task* = tuple[cmd:string,desc:string,f:proc(){.nimcall.}]
@@ -34,10 +34,58 @@ proc setUserNimFlags(x: seq[string]) =
 var nimFlags: seq[string] = @[]
 var nimCmdArgs = ""
 #var extraFlags = ""
+type Compiler = tuple[name: string, major: int]
+
+proc compilerInfo(flags: seq[string]): Compiler =
+  # The merged flags contain configuration settings followed by user overrides.
+  var cfg = initTable[string, string]()
+  for arg in flags:
+    let s = arg.split(':', 1)
+    if s.len < 2: continue
+    let key = s[0].nimIdentNormalize
+    let val = parseCmdLine(s[1]).join("")
+    cfg[key] = val
+    if key == "--putenv":
+      let env = val.split('=', 1)
+      putEnv(env[0], env[1])
+
+  let typ = cfg.getOrDefault("--cc", ccType).nimIdentNormalize
+  if typ notin ["gcc", "clang"]: return
+  let pre = "--" & typ & (if ccDef == "cpp": ".cpp" else: "")
+  let def = if ccDef == "cpp": (if typ == "gcc": "g++" else: "clang++") else: typ
+  let exe = cfg.getOrDefault(pre & ".exe", def)
+  let dir = cfg.getOrDefault(pre & ".path", cfg.getOrDefault("--" & typ & ".path"))
+  let cmd = (if dir.len > 0: dir / exe else: exe).quoteShell
+  let lang = if ccDef == "cpp": "c++" else: "c"
+  # Probe the compiler behind MPI wrappers after applying environment/flag overrides.
+  # Other compilers also define __GNUC__; their own macros distinguish them from GCC.
+  let src = """
+#if defined(__INTEL_COMPILER) || defined(__INTEL_LLVM_COMPILER) || defined(__NVCOMPILER) || defined(__PGI)
+#elif defined(__clang__)
+qex_cc clang __clang_major__
+#elif defined(__GNUC__)
+qex_cc gcc __GNUC__
+#endif
+"""
+  let (outp, code) = gorgeEx(cmd & " -E -P -x " & lang & " -", src)
+  if code != 0:
+    raise newException(IOError, "Compiler probe failed for " & exe & ":\n" & outp)
+  for line in outp.splitLines:
+    let s = line.splitWhitespace
+    if s.len == 3 and s[0] == "qex_cc":
+      return (name: s[1], major: parseInt(s[2]))
+
+proc compilerFlags(c: Compiler): seq[string] =
+  if c.name == "gcc" and c.major >= 15:
+    # Under -Ofast, GCC can turn omp master assignments into stores by every thread.
+    # Disable -fallow-store-data-races so workers cannot overwrite updates with stale values.
+    result.add "--passC:-fno-allow-store-data-races"
+
 proc setNimFlags() =
   if nimFlags.len == 0:
     nimFlags = getNimFlags(fo)
     nimFlags.add userNimFlags
+    nimFlags.add compilerFlags(compilerInfo(nimFlags))
   nimCmdArgs = join(nimArgs," ") & " " & join(nimFlags," ")
   #if extraFlags != "":
   #  nimCmdArgs &= " " & extraFlags
