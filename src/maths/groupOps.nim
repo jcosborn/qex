@@ -696,7 +696,11 @@ proc su3ProjectDerivAdj*(r: var Mat1, h: Mat2) =
           r[i,j].re += su3AdjTables.prod[a][b][i,j].re*h[a,b]
           r[i,j].im += su3AdjTables.prod[a][b][i,j].im*h[a,b]
 
-const diffExpC = [
+const expProjectTAHScale* = 5
+  ## Five doublings put degree-13 seed truncation below binary64 rounding for ||F||_F <= 8.
+  ## Logdet accuracy also depends on the Jacobian's conditioning.
+
+const diffExpC* = [
   1.0,
   1.0/2.0,
   1.0/6.0,
@@ -841,20 +845,66 @@ proc reduceSu3AdPoly[T](c: var array[7, T], s1, s3: T) =
     c[k-2] -= s2*c[k]
     c[k-3] -= s3*c[k]
 
+template diffExp13Su3Coeff(even, odd, s1, s3: untyped) =
+  for i in 0..<7:
+    even[i] := diffExpC[2*i]
+    odd[i] := diffExpC[2*i + 1]
+  even.reduceSu3AdPoly(s1, s3)
+  odd.reduceSu3AdPoly(s1, s3)
+
+proc diffExpSu3Coeff[T](c: var array[8, T], s1, s3: T, order: int, scale: static int) =
+  ## P(X/2^scale), then P <- P + 2^(j-scale-1) X P^2, modulo the adjoint identity.
+  const h = 1.0 / float(1 shl scale)
+  let s2 = 0.25*s1*s1
+  var f = 1.0
+  if order == 13:
+    f = diffExpC[13]
+  else:
+    for k in 2..(order+1):
+      f /= float(k)
+  for k in 0..<8:
+    c[k] := 0
+  c[0] := f
+  for k in countdown(order, 1):
+    let z = h*c[7]
+    for i in countdown(7, 1):
+      c[i] := h*c[i-1]
+    if order == 13:
+      f = diffExpC[k-1]
+    else:
+      f *= float(k+1)
+    c[0] := f
+    c[6] -= s1*z
+    c[4] -= s2*z
+    c[2] -= s3*z
+  var d {.noinit.}: array[16, T]
+  var f2 = 0.5*h
+  for j in 0..<scale:
+    for k in 0..<16:
+      d[k] := 0
+    for i in 0..<8:
+      d[i] += c[i]
+      d[2*i+1] += f2*c[i]*c[i]
+      for k in (i+1)..<8:
+        d[i+k+1] += (2.0*f2)*c[i]*c[k]
+    for k in countdown(15, 8):
+      d[k-2] -= s1*d[k]
+      d[k-4] -= s2*d[k]
+      d[k-6] -= s3*d[k]
+    for k in 0..<8:
+      c[k] := d[k]
+    f2 *= 2.0
+
 proc diffExp13Su3Ad(r: var Mat1, x, x2, x4, x6: Mat2) =
   ## P_13(x), reduced by the SU(3) adjoint identity above.
   type T = evalType(x[0, 0])
   var
     even {.noinit.}: array[7, T]
     odd {.noinit.}: array[7, T]
-  for i in 0..<7:
-    even[i] := diffExpC[2*i]
-    odd[i] := diffExpC[2*i + 1]
   let
     s1 = -0.5*trace(x2)
     s3 = -(s1*s1*s1)/12.0 - trace(x6)/6.0
-  even.reduceSu3AdPoly(s1, s3)
-  odd.reduceSu3AdPoly(s1, s3)
+  diffExp13Su3Coeff(even, odd, s1, s3)
   var
     o {.noinit.}: evalType(x)
     xo {.noinit.}: evalType(x)
@@ -925,6 +975,32 @@ proc diffExp*(r: var Mat1, adX: Mat2, order=13) =
   else:
     r.diffExpX2(adX, x2, order)
 
+proc diffExpSu3Ad(r: var Mat1, x: Mat2, order: int, scale: static int) =
+  ## Phi(X): SU(3) adjoint seed at X/2^scale and fixed doubling recovery.
+  static: doAssert scale >= 0
+  const h = 1.0 / float(1 shl scale)
+  var y {.noinit.}: evalType(x)
+  when scale == 0:
+    y := x
+  else:
+    y := h*x
+  if order == 13:
+    var y2, y4, y6 {.noinit.}: evalType(x)
+    y2.squareSym(y)
+    y4.squareSym(y2)
+    y6.mulCommSym(y4, y2)
+    r.diffExp13Su3Ad(y, y2, y4, y6)
+  else:
+    r.diffExp(y, order)
+  when scale > 0:
+    var q, t {.noinit.}: evalType(x)
+    var c = 0.5*h
+    for j in 0..<scale:
+      q := r*r
+      t := x*q
+      r += c*t
+      c *= 2.0
+
 proc diffExpApply*(r: var Vec1, adX: Mat1, x: Vec2, order=13) {.inline.} =
   ## r = P_order(adX)*x.
   matchMatVec("diffExpApply", adX, x)
@@ -942,15 +1018,18 @@ proc diffExpApply*(r: var Vec1, adX: Mat1, x: Vec2, order=13) {.inline.} =
     c *= float(k+1)
     r := adX*r + c*x
 
-proc diffExpSuApply*(r: var Vec1, a: Mat1, x: Vec2, order=13) {.inline.} =
-  ## r = P_order(suad(a))*x, using nonzero SU(3) f constants.
+proc diffExpSuApply*(r: var Vec1, a: Mat1, x: Vec2, order=13, scale: static int = 0) {.inline.} =
+  ## r = Phi(suad(a))*x, with Phi = P_order at scale 0; order <= 0 is the identity at scale 0 only.
+  ## Both scales end in seven sparse ad applications on vectors and form no 8x8 matrix.
+  static: doAssert scale >= 0
   matchGroupVec("diffExpSuApply", a, r)
   matchGroupVec("diffExpSuApply", a, x)
   when r.len != x.len:
     static: error("diffExpSuApply result and input lengths differ")
-  if order <= 0:
-    r := x
-    return
+  when scale == 0:
+    if order <= 0:
+      r := x
+      return
   when r.len == 8:
     var v {.noinit.}: evalType(r)
     v.suToVec(a)
@@ -997,46 +1076,58 @@ proc diffExpSuApply*(r: var Vec1, a: Mat1, x: Vec2, order=13) {.inline.} =
         y[6] := h3*z0 + h4*z1 - h5*z2 - h0*z3 - h1*z4 + h2*z5 - f7*z5 + f5*z7
         y[7] := f4*z3 - f3*z4 + f6*z5 - f5*z6
     var t {.noinit.}: evalType(r)
-    if order == 13:
+    when scale > 0:
+      # Recover eight coefficients before applying the sparse adjoint products.
       type T = evalType(r[0])
-      var even, odd: array[7, T]
-      for i in 0..<7:
-        even[i] := diffExpC[2*i]
-        odd[i] := diffExpC[2*i + 1]
+      var c {.noinit.}: array[8, T]
       let
         n2 = a.norm2
         di = determinant(a).im
         s1 = 3.0*n2
         s3 = 0.5*n2*n2*n2 - 27.0*di*di
-      even.reduceSu3AdPoly(s1, s3)
-      odd.reduceSu3AdPoly(s1, s3)
-      r := odd[3]*x
+      c.diffExpSu3Coeff(s1, s3, order, scale)
+      r := c[7]*x
       for k in countdown(6, 0):
         adApply(t, r)
-        case k
-        of 0: r := t + even[0]*x
-        of 1: r := t + odd[0]*x
-        of 2: r := t + even[1]*x
-        of 3: r := t + odd[1]*x
-        of 4: r := t + even[2]*x
-        of 5: r := t + odd[2]*x
-        else: r := t + even[3]*x
+        r := t + c[k]*x
     else:
-      var n = order
-      var c = 1.0
-      for k in 2..(n+1):
-        c /= float(k)
-      r := c*x
-      for k in countdown(n, 1):
-        c *= float(k+1)
-        adApply(t, r)
-        r := t + c*x
+      # Even/odd reduction of the unscaled degree-13 polynomial.
+      if order == 13:
+        type T = evalType(r[0])
+        var even, odd: array[7, T]
+        let
+          n2 = a.norm2
+          di = determinant(a).im
+          s1 = 3.0*n2
+          s3 = 0.5*n2*n2*n2 - 27.0*di*di
+        diffExp13Su3Coeff(even, odd, s1, s3)
+        r := odd[3]*x
+        for k in countdown(6, 0):
+          adApply(t, r)
+          case k
+          of 0: r := t + even[0]*x
+          of 1: r := t + odd[0]*x
+          of 2: r := t + even[1]*x
+          of 3: r := t + odd[1]*x
+          of 4: r := t + even[2]*x
+          of 5: r := t + odd[2]*x
+          else: r := t + even[3]*x
+      else:
+        var n = order
+        var c = 1.0
+        for k in 2..(n+1):
+          c /= float(k)
+        r := c*x
+        for k in countdown(n, 1):
+          c *= float(k+1)
+          adApply(t, r)
+          r := t + c*x
   else:
     static: error("diffExpSuApply is implemented only for SU(3)")
 
-proc expProjectTAHPullback*(r: var Mat1, m: Mat2, x: Mat3, order=13) {.inline.} =
+proc expProjectTAHPullback*(r: var Mat1, m: Mat2, x: Mat3, order=13, scale: static int = 0) {.inline.} =
   ## A = projectTAH(m), E = exp(A), x = E† C.
-  ## redot(r, dm) = redot(C, dE).
+  ## Approximate redot(r, dm) = redot(C, dE) with the selected Lie differential.
   when r.nrows != m.nrows or r.nrows != x.nrows:
     {.error: "expProjectTAHPullback requires matrices of the same size".}
   when r.nrows == 1:
@@ -1047,7 +1138,7 @@ proc expProjectTAHPullback*(r: var Mat1, m: Mat2, x: Mat3, order=13) {.inline.} 
     q.projectTAH(x)
     var v, p {.noinit.}: evalType(suToVec(a))
     v.suToVec(q)
-    p.diffExpSuApply(a, v, order)
+    p.diffExpSuApply(a, v, order, scale)
     r.suFromVec(p)
   else:
     {.error: "expProjectTAHPullback supports only 1x1 and 3x3 matrices".}
@@ -1080,13 +1171,16 @@ proc expProjectTAHPullback*(r: var Mat1, m: Mat2, x: Mat3, order=13) {.inline.} 
           = - T^b tr[T^b (T^d M + M† T^d)] AdX^dc
 ]#
 
-proc diffExpProjectTAHMul*(J,JF,dF,adF: var Mat1, F:var Mat2, M: Mat3, order=13) =
+proc diffExpProjectTAHMul*(J,JF,dF,adF: var Mat1, F:var Mat2, M: Mat3, order=13, scale: static int = 0) =
+  ## JF seeds P_order(-adF/2^scale) and recovers by doubling.
   ## return F = projectTAH(X Y†) = - T^b ∂_b tr[X Y† + Y X†], and
   ## the simplified J = δ^ac + J(F)^ab [∂_c F]^b
-  ## Note it only has the same determinant as the actual J = exp(adF)^ac + J(-F)^ab [∂_c F]^b.
+  ## With the analytic Lie differential, this has the determinant of
+  ## exp(adF)^ac + J(-F)^ab [∂_c F]^b. The finite JF here approximates that
+  ## differential and the Jacobian of the numerical expAH update.
   ## with M = X Y†
   ## assuming X and Y are independent.
-  ## Only works with positive det(∂Z/∂X).
+  ## Logdet callers additionally require a positive determinant.
   ## Derivative target: base Jacobian is with respect to the updating link (∂ on X inside M).
   #[
     Z = exp(- T^b ∂_b tr[X Y† + Y X†]) X,  for X,Y in G, and ∂_b X = T_b X
@@ -1122,20 +1216,12 @@ proc diffExpProjectTAHMul*(J,JF,dF,adF: var Mat1, F:var Mat2, M: Mat3, order=13)
   F.projectTAH(M)
   dF.diffProjectTAH(M,F)
   adF.suad F
-  if order == 13:
-    var x, x2, x4, x6 {.noinit.}: evalType(adF)
-    x := -adF
-    x2.squareSym(x)
-    x4.squareSym(x2)
-    x6.mulCommSym(x4, x2)
-    JF.diffExp13Su3Ad(x, x2, x4, x6)
-  else:
-    JF.diffExp(-adF, order=order)
+  JF.diffExpSu3Ad(-adF, order, scale)
   J.mulAddI(JF, dF)
 
-proc buildJAndInvFromM(invJ, J, JF, dF, adF: var Mat1, F: var Mat2, M: Mat3, order=13) =
+proc buildJAndInvFromM(invJ, J, JF, dF, adF: var Mat1, F: var Mat2, M: Mat3, order=13, scale: static int = 0) =
   ## J = I + P(-adF)*dF; also form J^-1.
-  J.diffExpProjectTAHMul(JF, dF, adF, F, M, order=order)
+  J.diffExpProjectTAHMul(JF, dF, adF, F, M, order=order, scale=scale)
   invJ.inverse J
 
 proc buildDirectionalTerms(d2F: var Mat1, dFd: var Vec1, TM: Mat2) =
@@ -1145,13 +1231,6 @@ proc buildDirectionalTerms(d2F: var Mat1, dFd: var Vec1, TM: Mat2) =
   d2F.diffProjectTAH(TM, pTM)
   let vVec = suToVec(pTM)
   dFd := vVec
-
-proc accumulateGrad(invJ, JF, dFbase, adF: Mat1, d2F: Mat2, dFd: Vec1, halfOrder: int): auto {.noinit.} =
-  ## tr(invJ * (D P(-adF)[dadF]*dFbase + JF*d2F)).
-  var dadF, dJF: evalType(invJ)
-  dadF.sufabc(dFd)
-  dJF.diffDiffExp(-adF, dadF, halfOrder=halfOrder)
-  result = trace(invJ * (dJF * dFbase + JF * d2F))
 
 proc diffDiffExp11X4(r: var Mat1, x, dx, x2, x3, x4: Mat2) =
   ## D P_11(x)[dx], blocked in x^4.
@@ -1383,13 +1462,39 @@ proc diffDiffExp*(r: var Mat1, adX: Mat2, dadX: Mat3, halfOrder=6) =
   else:
     r.diffDiffExpX2(adX, dadX, x2, halfOrder)
 
-proc expProjMulLogJac*[T](M: MatrixArray[1, 1, T], order=13): auto {.inline.} =
+proc diffDiffExpScaled(r: var Mat1, x: Mat2, dx: Mat3, halfOrder: int, scale: static int) =
+  ## D Phi(X)[dX], differentiating the same finite seed and recovery.
+  const h = 1.0 / float(1 shl scale)
+  var p, q, dp, y, dy {.noinit.}: evalType(x)
+  y := h*x
+  dy := h*dx
+  p.diffExp(y, 2*halfOrder-1)
+  r.diffDiffExp(y, dy, halfOrder)
+  var c = 0.5*h
+  for j in 0..<scale:
+    q := p*p
+    dp := r*p + p*r
+    r += c*(dx*q + x*dp)
+    p += c*(x*q)
+    c *= 2.0
+
+proc accumulateGrad(invJ, JF, dFbase, adF: Mat1, d2F: Mat2, dFd: Vec1, halfOrder: int, scale: static int): auto {.noinit.} =
+  ## tr(invJ * (D P(-adF)[dadF]*dFbase + JF*d2F)).
+  var dadF, dJF: evalType(invJ)
+  dadF.sufabc(dFd)
+  when scale == 0:
+    dJF.diffDiffExp(-adF, dadF, halfOrder=halfOrder)
+  else:
+    dJF.diffDiffExpScaled(-adF, dadF, halfOrder, scale)
+  result = trace(invJ * (dJF * dFbase + JF * d2F))
+
+proc expProjMulLogJac*[T](M: MatrixArray[1, 1, T], order=13, scale: static int = 0): auto {.inline.} =
   ## ln J = ln(1 + Re M).
   discard order
   ln(1.0 + M[0, 0].re)
 
-proc expProjMulLogJac*(M: Mat1, order=13): auto {.noinit.} =
-  ## F = projectTAH(M), D = diffProjectTAH(M,F), J = I + P(-suad(F))*D.
+proc expProjMulLogJac*(M: Mat1, order=13, scale: static int = 0): auto {.noinit.} =
+  ## F = projectTAH(M), D = diffProjectTAH(M,F), J = I + Phi(-suad(F))*D.
   ## Return ln det J.
   ## Requires det J > 0 and nonzero LU pivots.
   when M.nrows != 3:
@@ -1397,8 +1502,8 @@ proc expProjMulLogJac*(M: Mat1, order=13): auto {.noinit.} =
   type T = evalType(M[0, 0].re)
   var J, JF, dF, adF {.noinit.}: MatrixArray[8, 8, T]
   var F {.noinit.}: evalType(M)
-  J.diffExpProjectTAHMul(JF, dF, adF, F, M, order=order)
-  ln(detNoPivot(J))
+  J.diffExpProjectTAHMul(JF, dF, adF, F, M, order=order, scale=scale)
+  logDet(J)
 
 proc addSu3FAsym(qf: var Vec1, A: Mat1, c: static float) {.inline.} =
   ## qf[g] += c*f[g,a,b]*(A[b,a] - A[a,b]), a < b.
@@ -1480,6 +1585,30 @@ proc projJacPullbackSu3(G: var Mat1, A, C: Mat2) =
   qf.addSu3FAsym(A, 1.0)
   G.projJacPullbackSu3(qf, C)
 
+proc diffExpRecover(p: var Mat1, x: Mat2, ps, qs: var auto, c: var float) {.inline.} =
+  # P <- P + c X P^2; save the inputs for its reverse pass.
+  var t {.noinit.}: evalType(p)
+  for j in 0..<ps.len:
+    ps[j] := p
+    qs[j] := p*p
+    t := x*qs[j]
+    p += c*t
+    c *= 2.0
+
+proc diffExpRecoverRev(dx: var Mat1, dp: var Mat2, x: Mat3, ps, qs: auto, c: var float) {.inline.} =
+  # dp uses tr(dp*dP); u uses the Frobenius pairing <u,dP>.
+  var u, b, t {.noinit.}: evalType(dp)
+  u := dp.adj
+  dx := 0
+  for j in countdown(ps.len-1, 0):
+    c *= 0.5
+    dx += c*(u*qs[j].adj)
+    b := c*(x.adj*u)
+    t := u + b*ps[j].adj
+    t += ps[j].adj*b
+    u := t
+  dp := u.adj
+
 #[
   F = projectTAH(M),  x = -suad(F)
   P = diffExp(x),  D = diffProjectTAH(M,F)
@@ -1489,7 +1618,7 @@ proc projJacPullbackSu3(G: var Mat1, A, C: Mat2) =
     = tr((D*J^-1)*dP) + tr((J^-1*P)*dD)
   Pull back both terms: d ln det J = redot(G,dM).
 ]#
-proc expProjMulLogJacGradSu3(G: var Mat1, M: Mat2, p: var Vec1, v: Vec2, apply: static bool, order: int) =
+proc expProjMulLogJacGradSu3(G: var Mat1, M: Mat2, p: var Vec1, v: Vec2, apply: static bool, order: int, scale: static int) =
   when M.nrows != 3 or G.nrows != 3:
     {.error: "expProjMulLogJacGradSu3 requires 3x3 matrices".}
   type T = evalType(M[0, 0].re)
@@ -1508,6 +1637,14 @@ proc expProjMulLogJacGradSu3(G: var Mat1, M: Mat2, p: var Vec1, v: Vec2, apply: 
   dF.diffProjectTAH(M, F)
   x.suad(F)
   x := -x
+  static: doAssert scale >= 0
+  const h = 1.0 / float(1 shl scale)
+  when scale > 0:
+    var ad, xb {.noinit.}: MatrixArray[8, 8, T]
+    var ps, qs {.noinit.}: array[scale, MatrixArray[8, 8, T]]  # P_j, P_j^2 saved for the reverse pass
+    var c = 0.5*h
+    ad := x
+    x *= h
   x2.squareSym(x)
   if order == 13:
     x4.squareSym(x2)
@@ -1515,6 +1652,8 @@ proc expProjMulLogJacGradSu3(G: var Mat1, M: Mat2, p: var Vec1, v: Vec2, apply: 
     JF.diffExp13Su3Ad(x, x2, x4, x6)
   else:
     JF.diffExpX2(x, x2, order)
+  when scale > 0:
+    JF.diffExpRecover(ad, ps, qs, c)
   when apply:
     for i in 0..<8:
       p[i] := JF[0, i] * v[0]
@@ -1522,56 +1661,70 @@ proc expProjMulLogJacGradSu3(G: var Mat1, M: Mat2, p: var Vec1, v: Vec2, apply: 
         p[i] += JF[j, i] * v[j]
   J.mulAddI(JF, dF)
   J.solveLRNoPivot(JF, dF)
+  when scale > 0:
+    xb.diffExpRecoverRev(dF, ad, ps, qs, c)
   if order == 13:
     var qf {.noinit.}: VectorArray[8, T]
     x3.mulSymSkew(x2, x)
     # x3 is skew-symmetric, so norm2(x3) = -trace(x6).
     let x3n2 = -trace(x6)
     qf.diffDiffExp13Su3AdRevF(x, dF, x2, x3, x4, x3n2)
+    when scale > 0:
+      # The CH seed already returns a generator cotangent; scale it once.
+      qf *= h
+      qf.addSu3FAsym(xb.adj, 1.0)
     G.projJacPullbackSu3(qf, JF)
   else:
     J.diffDiffExpX2(x, dF, x2, halfOrder)
-    G.projJacPullbackSu3(J, JF)
+    when scale > 0:
+      var qf {.noinit.}: VectorArray[8, T]
+      qf := 0
+      qf.addSu3FAsym(J, 1.0)
+      qf *= h
+      qf.addSu3FAsym(xb.adj, 1.0)
+      G.projJacPullbackSu3(qf, JF)
+    else:
+      G.projJacPullbackSu3(J, JF)
 
-proc expProjMulLogJacGrad*(G: var Mat1, M: Mat2, order=13) =
+proc expProjMulLogJacGrad*(G: var Mat1, M: Mat2, order=13, scale: static int = 0) =
   ## d ln det J = redot(G,dM). Requires det J > 0 and nonzero LU pivots.
   type V = evalType(suToVec(M))
   var p, v {.noinit.}: V
-  G.expProjMulLogJacGradSu3(M, p, v, false, order)
+  G.expProjMulLogJacGradSu3(M, p, v, false, order, scale)
 
-proc expProjMulLogJacGrad*[T](G: var MatrixArray[1, 1, T], M: MatrixArray[1, 1, T], order=13) {.inline.} =
+proc expProjMulLogJacGrad*[T](G: var MatrixArray[1, 1, T], M: MatrixArray[1, 1, T], order=13, scale: static int = 0) {.inline.} =
   ## G[0,0].re = 1/(1 + Re M).
   discard oddHalfOrder(order)
   G := 0
   G[0, 0].re := 1.0 / (1.0 + M[0, 0].re)
 
-proc expProjMulLogJacGrad*(G: var Mat1, p: var Vec1, M: Mat2, v: Vec2, order=13) =
-  ## Also set p = P(suad(projectTAH(M)))*v.
+proc expProjMulLogJacGrad*(G: var Mat1, p: var Vec1, M: Mat2, v: Vec2, order=13, scale: static int = 0) =
+  ## Also set p = Phi(suad(projectTAH(M)))*v.
   matchGroupVec("expProjMulLogJacGrad", M, p)
   matchGroupVec("expProjMulLogJacGrad", M, v)
   when p.len != v.len:
     static: error("expProjMulLogJacGrad vector lengths differ")
-  G.expProjMulLogJacGradSu3(M, p, v, true, order)
+  G.expProjMulLogJacGradSu3(M, p, v, true, order, scale)
 
-proc expProjMulLogJacGrad*(G: var Mat1, P: var Mat2, M: Mat3, X: Mat4, order=13) {.inline.} =
+proc expProjMulLogJacGrad*(G: var Mat1, P: var Mat2, M: Mat3, X: Mat4, order=13, scale: static int = 0) {.inline.} =
   ## A = projectTAH(M), E = exp(A), X = E† C.
-  ## Also set P so redot(P, dM) = redot(C, dE).
+  ## Also approximate redot(P, dM) = redot(C, dE) with the selected Lie differential.
   when G.nrows != P.nrows or G.nrows != M.nrows or G.nrows != X.nrows:
     {.error: "expProjMulLogJacGrad requires matrices of the same size".}
   when G.nrows == 1:
-    G.expProjMulLogJacGrad(M, order)
+    G.expProjMulLogJacGrad(M, order, scale)
     P.projectTAH(X)
   elif G.nrows == 3:
     var q {.noinit.}: evalType(G)
     q.projectTAH(X)
     var v, p {.noinit.}: evalType(suToVec(q))
     v.suToVec(q)
-    G.expProjMulLogJacGrad(p, M, v, order)
+    G.expProjMulLogJacGrad(p, M, v, order, scale)
     P.suFromVec(p)
   else:
     {.error: "expProjMulLogJacGrad supports only 1x1 and 3x3 matrices".}
 
-proc diffLnDetDiffExpProjectTAHMul*(r: var Vec1, M: Mat1, order=13) =
+proc diffLnDetDiffExpProjectTAHMul*(r: var Vec1, M: Mat1, order=13, scale: static int = 0) =
   #[
     ∇_d ln det {δ^ac + J(F)^ab [∂_c F^b]}    # ∇ can act on different links, ∂ only on the updating link
         = m^{-1}^ca {[∇_d J(F)^ab] [∂_c F^b] + J(F)^ab [∇_d ∂_c F^b]}
@@ -1596,16 +1749,16 @@ proc diffLnDetDiffExpProjectTAHMul*(r: var Vec1, M: Mat1, order=13) =
   var F,TM: evalType(M)
   var J,invJ,adF,JF,dF,d2F {.noinit.}: A
   var dFd {.noinit.}: V
-  buildJAndInvFromM(invJ, J, JF, dF, adF, F, M, order=order)
+  buildJAndInvFromM(invJ, J, JF, dF, adF, F, M, order=order, scale=scale)
   for d in 0..<dim:
     TM := t[d] * M
     buildDirectionalTerms(d2F, dFd, TM)
     # For same-link, ∇F equals the d-th column of dF (override dFd)
     for g in 0..<dim:
       dFd[g] = dF[g,d]
-    r[d] = accumulateGrad(invJ, JF, dF, adF, d2F, dFd, halfOrder)
+    r[d] = accumulateGrad(invJ, JF, dF, adF, d2F, dFd, halfOrder, scale)
 
-proc diffCrossGeneralLnDetDiffExpProjectTAHMul*(r: var Vec1, L: Mat1, Y: Mat2, R: Mat3, adjoint: static bool, order=13) =
+proc diffCrossGeneralLnDetDiffExpProjectTAHMul*(r: var Vec1, L: Mat1, Y: Mat2, R: Mat3, adjoint: static bool, order=13, scale: static int = 0) =
   ## Unified cross-link gradient for ln det {I + J(F)[∂F]} with M = L · Y^σ · R.
   ## adjoint=false: σ=+1,  M = L · Y · R,  δM = L · (T^d Y) · R
   ## adjoint=true:  σ=−1,  M = L · Y† · R, δM = − (L · Y†) · T^d · R
@@ -1624,7 +1777,7 @@ proc diffCrossGeneralLnDetDiffExpProjectTAHMul*(r: var Vec1, L: Mat1, Y: Mat2, R
     M := L * Y * R
   var J,invJ,adF,JF,dF,d2F {.noinit.}: A
   var dFd {.noinit.}: V
-  buildJAndInvFromM(invJ, J, JF, dF, adF, F, M, order=order)
+  buildJAndInvFromM(invJ, J, JF, dF, adF, F, M, order=order, scale=scale)
   let dFbase = dF
   for d in 0..<dim:
     when adjoint:
@@ -1632,9 +1785,9 @@ proc diffCrossGeneralLnDetDiffExpProjectTAHMul*(r: var Vec1, L: Mat1, Y: Mat2, R
     else:
       TM := L * t[d] * Y * R
     buildDirectionalTerms(d2F, dFd, TM)
-    r[d] = accumulateGrad(invJ, JF, dFbase, adF, d2F, dFd, halfOrder)
+    r[d] = accumulateGrad(invJ, JF, dFbase, adF, d2F, dFd, halfOrder, scale)
 
-proc diffCrossLnDetDiffExpProjectTAHMul*(r: var Vec1, X: Mat1, Y: Mat2, order=13) =
+proc diffCrossLnDetDiffExpProjectTAHMul*(r: var Vec1, X: Mat1, Y: Mat2, order=13, scale: static int = 0) =
   #[
     ∇_d ln det {δ^ac + J(F)^ab [∂_c F^b]}    # ∇ can act on different links, ∂ only on the updating link
         = m^{-1}^ca {[∇_d J(F)^ab] [∂_c F^b] + J(F)^ab [∇_d ∂_c F^b]}
@@ -1653,13 +1806,13 @@ proc diffCrossLnDetDiffExpProjectTAHMul*(r: var Vec1, X: Mat1, Y: Mat2, order=13
   ## base Jacobian is with respect to X (updating link).
   var I: evalType(X)
   I := 1.0
-  diffCrossGeneralLnDetDiffExpProjectTAHMul(r, X, Y, I, adjoint=false, order=order)
+  diffCrossGeneralLnDetDiffExpProjectTAHMul(r, X, Y, I, adjoint=false, order=order, scale=scale)
 
 # Cross-link for M = L · Y† · R, variation wrt Y (adjoint on middle factor)
-proc diffCrossAdjLnDetDiffExpProjectTAHMul*(r: var Vec1, LYadj: Mat1, R: Mat2, order=13) =
+proc diffCrossAdjLnDetDiffExpProjectTAHMul*(r: var Vec1, LYadj: Mat1, R: Mat2, order=13, scale: static int = 0) =
   var I: evalType(LYadj)
   I := 1.0
-  diffCrossGeneralLnDetDiffExpProjectTAHMul(r, LYadj, I, R, adjoint=true, order=order)
+  diffCrossGeneralLnDetDiffExpProjectTAHMul(r, LYadj, I, R, adjoint=true, order=order, scale=scale)
 
 proc ndiffSUtoReal*(r: var Vec1, err: var Vec2, f: proc, x: Mat2, dx:float=2.0, scale:float=5.0, ordMax:static int=4) =
   ## for a function f: SU(N) → Real

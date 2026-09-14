@@ -598,6 +598,21 @@ proc testDiffExpSuApply(T: typedesc) =
         check(d2 <= 4e-26*e2)
         if order == 0:
           check simdSum(norm2(got - x)) == 0
+        var plain, scaled, refp: V
+        var phi, j, jf, df, af: A
+        var f: M
+        plain.diffExpSuApply(m, x, order, scale=0)
+        scaled.diffExpSuApply(m, x, order, scale=expProjectTAHScale)
+        phi.diffExp((1.0/32.0)*ad, order)
+        var c = 1.0/64.0
+        for k in 0..<expProjectTAHScale:
+          phi := phi + c*(ad*(phi*phi))
+          c *= 2.0
+        refp := phi*x
+        j.diffExpProjectTAHMul(jf, df, af, f, m, order, scale=expProjectTAHScale)
+        check simdSum(norm2(got - plain)) == 0
+        check simdSum(norm2(scaled - refp)) <= 4e-26*max(1.0, simdSum(norm2(refp)))
+        check simdSum(norm2(jf - phi.adj)) <= 4e-26*max(1.0, simdSum(norm2(phi)))
       var q: T
       when sl == 1:
         q := 0.4
@@ -618,6 +633,21 @@ proc testDiffExpSuApply(T: typedesc) =
         d2 = simdSum(norm2(got - expected))
         e2 = simdSum(norm2(expected))
       check d2 <= 4e-26*e2
+      for shape in 0..1:
+        var b: M
+        if shape == 0:
+          b.suFromVec(a)
+        else:
+          b := m
+        for n in [0.0, 1e-12, 1.0, 4.0, 8.0]:
+          var f, fm: M
+          var j, jf, df, af: A
+          var scaled, refp: V
+          f := (n/sqrt(norm2(b)))*b
+          j.diffExpProjectTAHMul(jf, df, af, fm, f, scale=expProjectTAHScale)
+          scaled.diffExpSuApply(f, x, scale=expProjectTAHScale)
+          refp := jf.adj*x
+          check simdSum(norm2(scaled - refp)) <= 4e-24*max(1.0, simdSum(norm2(refp)))
 
     test "logdet gradient shares its adjoint application":
       const
@@ -686,6 +716,38 @@ proc testDiffExpSuApply(T: typedesc) =
           d2 = simdSum(norm2(got - expected))
           e2 = simdSum(norm2(expected))
         check d2 <= 2e-18*max(1.0, e2)
+
+    test "scaled same and cross gradients match free-matrix contractions":
+      var l, y, r, m, g: M
+      var got, other, expected: V
+      l := exp(0.12*su3gen[0])
+      r := exp(-0.07*su3gen[4])
+      y := 0.13*l + 0.09*r
+      for order in [1, 13]:
+        m := l*y*r
+        g.expProjMulLogJacGrad(m, order, scale=expProjectTAHScale)
+        got.diffLnDetDiffExpProjectTAHMul(m, order, scale=expProjectTAHScale)
+        for d in 0..<dim:
+          expected[d] := redot(g, su3gen[d]*m)
+        check simdSum(norm2(got - expected)) <= 4e-24*max(1.0, simdSum(norm2(expected)))
+        got.diffCrossGeneralLnDetDiffExpProjectTAHMul(l, y, r, false, order, scale=expProjectTAHScale)
+        for d in 0..<dim:
+          expected[d] := redot(g, l*su3gen[d]*y*r)
+        check simdSum(norm2(got - expected)) <= 4e-24*max(1.0, simdSum(norm2(expected)))
+        m := l*y
+        g.expProjMulLogJacGrad(m, order, scale=expProjectTAHScale)
+        got.diffCrossLnDetDiffExpProjectTAHMul(l, y, order, scale=expProjectTAHScale)
+        for d in 0..<dim:
+          expected[d] := redot(g, l*su3gen[d]*y)
+        check simdSum(norm2(got - expected)) <= 4e-24*max(1.0, simdSum(norm2(expected)))
+        m := l*y.adj*r
+        g.expProjMulLogJacGrad(m, order, scale=expProjectTAHScale)
+        got.diffCrossGeneralLnDetDiffExpProjectTAHMul(l, y, r, true, order, scale=expProjectTAHScale)
+        other.diffCrossAdjLnDetDiffExpProjectTAHMul(l*y.adj, r, order, scale=expProjectTAHScale)
+        for d in 0..<dim:
+          expected[d] := redot(g, -(l*y.adj*su3gen[d]*r))
+        check simdSum(norm2(got - expected)) <= 4e-24*max(1.0, simdSum(norm2(expected)))
+        check simdSum(norm2(other - expected)) <= 4e-24*max(1.0, simdSum(norm2(expected)))
 
 template doApplyTest(t: untyped) =
   when declared(t):
