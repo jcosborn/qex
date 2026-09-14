@@ -831,13 +831,13 @@ proc mostSharedPair(paths:openarray[OrdPath]):(OrdPath,int) =
       if not (ps.k==opList and ps.s.len>1):
         continue
       var i = 0
-      while i<ps.s.len-1:  # FIXME test reversed
+      while i<ps.s.len-1:
         i.inc
         let t = OrdPath(k:opPair, l:ps.s[i-1], r:ps.s[i])
         let ft = t.flatten
         if c==0:
           p = t
-          pa = OrdPath(k:opPair, l:t.l.adjointOp, r:t.r.adjointOp)
+          pa = OrdPath(k:opPair, l:t.r.adjointOp, r:t.l.adjointOp)
           if p in pc or pa in pc:
             continue
           fp = p.flatten()
@@ -1040,7 +1040,6 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
   ## Evaluate plan(ptree, origin) over the links g.
   ## Outputs alias the step products unless adjoint or shifted.
   tic("gaugeProd")
-  GC_fullCollect() # need to free space since we might allocate many fields
   type
     F = typeof(g[0])
     S = typeof(g[0][0])
@@ -1051,6 +1050,7 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
     sf = newseq[Shifter[F,S]](nd)
     sb = newseq[Shifter[F,S]](nd)
     gp = initTable[seq[int],F]()
+    uses = initCountTable[seq[int]]()  # pending reads per step; zero counts are dropped and read back as 0
     sfi = newseq[bool](nd)
     sbi = newseq[bool](nd)
   template mark(sh:seq[int]) =
@@ -1061,8 +1061,11 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
         sfi[mu] = true
   for s in pl.steps:
     mark s.sh
+    uses.inc s.l
+    uses.inc s.r
   for o in pl.outs:
     mark o.sh
+    uses.inc o.key
   for i in 0..<nd:
     if sfi[i]:
       sf[i] = newShifter(g[0], i, 1)
@@ -1072,6 +1075,12 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
 
   proc node(k:seq[int]):F =
     if k.len==1: g[k[0]-1] else: gp[k]
+
+  proc consumed(k: seq[int]) =
+    if k.len > 1:
+      uses.inc(k, -1)
+      if uses[k] == 0:
+        gp.del k
 
   for s in pl.steps:
     let
@@ -1095,10 +1104,12 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
           res.multishifts(sh, sf, sb)
       res.lrmul(l,rr,la,ra)
     gp[s.key] = res
+    consumed(s.l)
+    consumed(s.r)
   toc("gaugeProd prod")
   let n = pl.outs.len
   var res = newseq[F](n)
-  var resAlloc = newseq[bool](n)  # TODO: implement tracing ref counting
+  var resAlloc = newseq[bool](n)
   for i,o in pl.outs.pairs:
     let t = node o.key
     if o.adj:
@@ -1108,6 +1119,7 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
         res[i] := t.adj
     else:
       res[i] = t
+    consumed(o.key)
   for i,o in pl.outs.pairs:
     let sh = o.sh
     var needs = 0
