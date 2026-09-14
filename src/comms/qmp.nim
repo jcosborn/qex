@@ -28,8 +28,7 @@ type
   QMP_msghandle_t*{.qmp.} = object
 
 proc clear*(x: var QMP_msghandle_t) =
-  var p = cast[pointer](x)
-  p = nil
+  x = cast[QMP_msghandle_t](nil)
 
 proc isEmpty*(x: QMP_msghandle_t): bool =
   var p = cast[pointer](x)
