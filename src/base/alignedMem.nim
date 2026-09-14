@@ -81,22 +81,20 @@ proc ptrAlign[T](p:ptr T; a:int):ptr T =
   #echo x, ":", y
   result = cast[type(result)](y)
 
-proc new*[T](t:var alignedMem[T], n:int, align:int=64) =
+proc newShape*[T](t:var alignedMem[T], n:int, align:int=64) =
+  ## Descriptor only, sized as new would size it; no storage.
   t.len = n
   t.align = align
   t.stride = sizeof(T)
   t.bytes = t.len * t.stride + t.align
-  #unsafeNew(t.mem, t.bytes)
-  #t.data = ptrAlign(cast[ptr cArray[T]](t.mem[0].addr), align)
+  t.mem = nil
+  t.data = nil
+proc new*[T](t:var alignedMem[T], n:int, align:int=64) =
+  t.newShape(n, align)
   t.mem = newRawMemRef(t.bytes)
   t.data = ptrAlign(cast[ptr UncheckedArray[T]](t.mem.data), align)
 proc newU*[T](t:var alignedMem[T], n:int, align:int=64) =
-  t.len = n
-  t.align = align
-  t.stride = sizeof(T)
-  t.bytes = t.len * t.stride + t.align
-  #unsafeNewU(t.mem, t.bytes)
-  #t.data = ptrAlign(cast[ptr cArray[T]](t.mem[0].addr), align)
+  t.newShape(n, align)
   t.mem = newRawMemRefU(t.bytes)
   t.data = ptrAlign(cast[ptr UncheckedArray[T]](t.mem.data), align)
 proc newAlignedMem*[T](t:var alignedMem[T], n:int, align:int=64) =

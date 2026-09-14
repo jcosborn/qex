@@ -115,18 +115,16 @@ macro fieldShift*(x:SomeField, d,l:int):auto =
     Shifted[type(`x`)](field:`x`,dir:`d`,ln:`l`)
   #echo result.repr
 
-proc new*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) =
-  # remember to change newFieldArray if the following changes
+proc initField[V:static[int],T](x: var FieldObj[V,T], l: Layout[V], s: alignedMem.alignedMem[T]) =
   x.l = l
-  x.s.newU(l.nSitesOuter)
-  #fence()
-  x.elemSize = sizeOf(T)
+  x.s = s
+  x.elemSize = sizeof(T)
+
 proc newU*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) =
-  # remember to change newFieldArray if the following changes
-  x.l = l
-  x.s.newU(l.nSitesOuter)
-  #fence()
-  x.elemSize = sizeOf(T)
+  var s: alignedMem.alignedMem[T]
+  s.newU(l.nSitesOuter)
+  x.initField(l, s)
+proc new*[V:static[int],T](x:var FieldObj[V,T]; l:Layout[V]) = x.newU(l)
 proc new*[V:static[int],T](x:var Field[V,T]; l:Layout[V]) =
   x.new()
   newU(x[], l)
@@ -145,6 +143,15 @@ proc newOneOfU*(x: Field): auto =
   var r: type(x)
   r.newU(x.l)
   r
+proc newShape*[V:static[int],T](l: Layout[V], t: typedesc[T]): Field[V,T] =
+  ## Layout and element metadata without storage, sized as newField would.
+  ## Replacing an owner's descriptor leaves existing aliases and their data valid.
+  ## Bind or allocate storage before indexing or numerical use.
+  var s: alignedMem.alignedMem[T]
+  s.newShape(l.nSitesOuter)
+  result.new()
+  result[].initField(l, s)
+proc newShape*[V:static[int],T](x: Field[V,T]): Field[V,T] = newShape(x.l, T)
 template l*(x: FieldUnop): untyped = x.f1.l
 proc newOneOf*(x: FieldUnop): auto =
   var r: evalType(x)
@@ -160,10 +167,8 @@ template new*(x: typedesc[Field], l: Layout): untyped =
 
 proc newFarrElem[V:static[int],T](f:var Field[V,T]; l:Layout[V]; s:alignedMem[T]; offset:int) =
   f.new()
-  f.l = l
-  f.s = s
+  f[].initField(l, s)
   f.s.data = cast[typeof(s.data)](cast[int](s.data) + offset*l.nSitesOuter*s.stride)
-  f.elemSize = sizeOf(T)
 
 proc newFieldArray*[V:static[int],T](l:Layout[V]; t:typedesc[Field[V,T]]; n: int):FieldArray[V,T] {.noinit.} =
   result.shape = @[n]

@@ -472,11 +472,17 @@ type
 #proc field*(t: Transporter): auto = t.field
 #proc `link=`*(r,x: Transporter) = t.field
 
-proc newTransporter*(u: Field, f: Field2, dir,len: int, sub="all"): auto =
+proc newTransporter*[U,F:Field](u: U, f: F, dir,len: int, sub="all", dest: F = nil): auto =
+  ## The output must not alias either application operand.
+  ## Rebinding field must preserve f's layout.
   var t: Transporter[evalType(u),evalType(f),evalType(f[0])]
   t.link = u
-  t.field = f.newOneOf
-  #t.field := 0
+  if dest.isNil:
+    t.field = f.newOneOf
+  else:
+    if dest.l != f.l:
+      raise newException(ValueError, "transporter destination requires matching field layout")
+    t.field = dest
   t.sb.initShiftB(f, dir, len, sub)
   t.len = len
   t
@@ -507,10 +513,16 @@ proc clearLinks*(t: var openArray[Transporter]) =
   for i in 0..<t.len:
     t[i].link = nil
 
-proc newShifter*[F](f: F, dir,len: int, sub="all"): auto =
+proc newShifter*[F](f: F, dir,len: int, sub="all", dest: F = nil): auto =
+  ## The output must not alias the application operand.
+  ## Rebinding field must preserve f's layout.
   var r: Shifter[F,evalType(f[0])]
-  r.field = f.newOneOf
-  #r.field := 0
+  if dest.isNil:
+    r.field = f.newOneOf
+  else:
+    if dest.l != f.l:
+      raise newException(ValueError, "shifter destination requires matching field layout")
+    r.field = dest
   r.sb.initShiftB(f, dir, len, sub)
   r.len = len
   r

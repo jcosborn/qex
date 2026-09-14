@@ -2,6 +2,27 @@ import qex
 import unittest
 export unittest
 
+proc diffNorm2*(x, y: Field): float =
+  var err: float
+  threads:
+    let d = norm2(x-y)
+    threadSingle: err = d
+  err
+
+proc relativeDiff*(a, b: array|seq): float =
+  let d = newOneOf(a)
+  var err, scale: float
+  threads:
+    var e, s: float
+    for mu in 0..<a.len:
+      d[mu] := a[mu]-b[mu]
+      e += d[mu].norm2
+      s += a[mu].norm2+b[mu].norm2
+    threadSingle:
+      err = e
+      scale = s
+  sqrt(err/(1.0+scale))
+
 var AT* = -1.0   ## Absolute Tolerance
 var CT* = 1e-13  ## (relative) Comparison Tolerance for float
 var CT32* = 1e-5  ## (relative) Comparison Tolerance for float32
