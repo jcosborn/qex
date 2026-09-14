@@ -72,13 +72,11 @@ proc inverseN*(r: var Mat1, c: SomeNumber, x: Mat2) =
   #let f = c*x.nrows/r.adj.dot(x)
   #r *= f
 
-proc solveLRNoPivot*(a, l, r: var Mat1) {.alwaysInline.} =
-  ## For A = L*U: l <- A^-1*l; r <- r*A^-1.
-  ## a <- (strict L, strict U, 1/U_ii). No aliasing; pivots must be nonzero.
+proc luNoPivot*(a: var Mat1) {.alwaysInline.} =
+  ## a <- (strict L, strict U, 1/U_ii) of square A = L*U; pivots must be nonzero.
+  static: doAssert a.nrows == a.ncols, "LU requires a square matrix"
   mixin imul, imsub
   const n = a.nrows
-
-  # Factor a = L U.
   for k in 0..<n:
     let di = 1.0/a[k, k]
     a[k, k] := di
@@ -89,7 +87,11 @@ proc solveLRNoPivot*(a, l, r: var Mat1) {.alwaysInline.} =
       for j in (k+1)..<n:
         imsub(a[i, j], lik, a[k, j])
 
-  # l <- a^-1 l.
+proc solveLNoPivot*(a: Mat1, l: var Mat2) {.alwaysInline.} =
+  ## l <- A^-1*l for a from luNoPivot. No aliasing.
+  static: doAssert a.nrows == a.ncols and l.nrows == a.nrows and l.ncols == a.ncols, "solveLNoPivot requires matching square matrices"
+  mixin imul, imsub
+  const n = a.nrows
   for i in 0..<n:
     for k in 0..<i:
       let lik = a[i, k]
@@ -104,7 +106,11 @@ proc solveLRNoPivot*(a, l, r: var Mat1) {.alwaysInline.} =
     for j in 0..<n:
       imul(l[i, j], di)
 
-  # r <- r a^-1.
+proc solveRNoPivot*(a: Mat1, r: var Mat2) {.alwaysInline.} =
+  ## r <- r*A^-1 for a from luNoPivot. No aliasing.
+  static: doAssert a.nrows == a.ncols and r.nrows == a.nrows and r.ncols == a.ncols, "solveRNoPivot requires matching square matrices"
+  mixin imul, imsub
+  const n = a.nrows
   for j in 0..<n:
     for k in 0..<j:
       let ukj = a[k, j]
@@ -119,23 +125,65 @@ proc solveLRNoPivot*(a, l, r: var Mat1) {.alwaysInline.} =
       for i in 0..<n:
         imsub(r[i, j], r[i, k], lkj)
 
-proc detNoPivot*(a: Mat1): auto {.noInit, alwaysInline.} =
-  ## Return the determinant using unpivoted LU; leading pivots must be nonzero.
-  mixin imsub
+proc solveLRNoPivot*(a, l, r: var Mat1) {.alwaysInline.} =
+  ## For A = L*U: l <- A^-1*l; r <- r*A^-1.
+  ## a <- (strict L, strict U, 1/U_ii). No aliasing; pivots must be nonzero.
+  a.luNoPivot
+  a.solveLNoPivot(l)
+  a.solveRNoPivot(r)
+
+proc detLU(a: Mat1, log: static bool): auto {.noInit, alwaysInline.} =
+  mixin imsub, ln, abs, copySign
   const n = a.nrows
   var u {.noinit.}: evalType(a)
   var r {.noinit.}: evalType(a[0, 0])
   u := a
-  r := 1
+  when log: r := 0
+  else: r := 1
+  when log:
+    var s, one {.noinit.}: evalType(a[0, 0])
+    s := 1
+    one := 1
   for k in 0..<n:
     let d = u[k, k]
-    r *= d
+    when log:
+      r += ln(abs(d))
+      s *= copySign(one, d)
+    else: r *= d
     let di = 1.0/d
     for i in (k+1)..<n:
       let f = u[i, k]*di
       for j in (k+1)..<n:
         imsub(u[i, j], f, u[k, j])
+  when log: r += ln(s)  # Preserve the determinant sign without forming its magnitude.
   r
+
+proc detNoPivot*(a: Mat1): auto {.noInit, alwaysInline.} =
+  ## Return the determinant using unpivoted LU; leading pivots must be nonzero.
+  detLU(a, false)
+
+proc solve*(r: var Mat1, a: Mat2, b: Mat3) {.alwaysInline.} =
+  ## r = a^-1 b. Leading LU pivots must be nonzero; inputs may alias r.
+  static:
+    doAssert a.nrows == a.ncols and r.nrows == a.nrows and r.ncols == a.ncols and
+      b.nrows == a.nrows and b.ncols == a.ncols, "solve requires matching square matrices"
+  var aa {.noinit.}: evalType(a)
+  aa := a
+  aa.luNoPivot
+  r := b
+  aa.solveLNoPivot(r)
+
+proc inverseNoPivot*(r: var Mat1, a: Mat2) {.alwaysInline.} =
+  ## r = a^-1, on the same domain as solve.
+  var b {.noinit.}: evalType(a)
+  b := 1
+  solve(r, a, b)
+
+proc logDet*(a: Mat1): auto {.alwaysInline.} =
+  ## Real a with det a > 0 and nonzero leading LU pivots.
+  ## ln det a = sum_k ln |U_kk|; individual pivots may be negative.
+  static: doAssert a.nrows == a.ncols, "logDet requires a square matrix"
+  detLU(a, true)
 
 proc inverse*(r: var Mat1, c: SomeNumber, x: Mat2) {.alwaysInline.} =
   const nc = r.nrows

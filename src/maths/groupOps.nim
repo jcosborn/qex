@@ -648,6 +648,54 @@ proc diffCrossProjectTAH*(r: var Mat1, Adx: Mat2, dp: Mat3) =
   ]#
   r := dp * Adx
 
+proc su3AdNeg*(r: var Mat1, m: Mat2) =
+  ## r_ab = -ad(projectTAH(m))_ab = -2 Re tr([T_a,T_b] m).
+  static: doAssert r.nrows == 8 and r.ncols == 8 and m.nrows == 3 and m.ncols == 3
+  var f {.noinit.}: evalType(m)
+  f.projectTAH(m)
+  r.suad(f)
+  r *= -1.0
+
+proc su3ProjectDeriv*(r: var Mat1, m: Mat2) =
+  ## r_ab = -2 Re tr(T_a T_b m).
+  static: doAssert r.nrows == 8 and r.ncols == 8 and m.nrows == 3 and m.ncols == 3
+  var f {.noinit.}: evalType(m)
+  f.projectTAH(m)
+  r.diffProjectTAH(m, f)
+
+func mkSu3AdjTables(): tuple[comm, prod: array[8,array[8,MatrixArray[3,3,ComplexType[float]]]]] =
+  # comm[a][b] = 2 [T_a,T_b],  prod[a][b] = -2 T_b T_a
+  for a in 0..<8:
+    for b in 0..<8:
+      let ab = su3gen[a]*su3gen[b]
+      let ba = su3gen[b]*su3gen[a]
+      result.comm[a][b] = 2.0*(ab - ba)
+      result.prod[a][b] = -2.0*ba
+const su3AdjTables = mkSu3AdjTables()
+
+proc su3AdNegAdj*(r: var Mat1, h: Mat2) =
+  ## r = 2 sum_ab h_ab [T_a,T_b], for arbitrary real h.
+  ## <h,su3AdNeg(m)>_R = Re tr(r^dag m).
+  static: doAssert r.nrows == 3 and r.ncols == 3 and h.nrows == 8 and h.ncols == 8
+  r := 0
+  for a in 0..<8:
+    for b in 0..<8:
+      for i in 0..<3:
+        for j in 0..<3:
+          r[i,j].re += su3AdjTables.comm[a][b][i,j].re*h[a,b]
+          r[i,j].im += su3AdjTables.comm[a][b][i,j].im*h[a,b]
+
+proc su3ProjectDerivAdj*(r: var Mat1, h: Mat2) =
+  ## r = -2 sum_ab h_ab T_b T_a, for arbitrary real h.
+  static: doAssert r.nrows == 3 and r.ncols == 3 and h.nrows == 8 and h.ncols == 8
+  r := 0
+  for a in 0..<8:
+    for b in 0..<8:
+      for i in 0..<3:
+        for j in 0..<3:
+          r[i,j].re += su3AdjTables.prod[a][b][i,j].re*h[a,b]
+          r[i,j].im += su3AdjTables.prod[a][b][i,j].im*h[a,b]
+
 const diffExpC = [
   1.0,
   1.0/2.0,

@@ -83,6 +83,13 @@ type
   DLatticeColorMatrix* = Field[1,DColorMatrix]
   DLatticeColorMatrixV* = Field[VLEN,DColorMatrixV]
 
+  DRealMatrixV*[n:static[int]] = ColorMatrixN[n,Dvec0]
+  DComplexMatrixV*[n:static[int]] = ColorMatrixN[n,DComplexV]
+  DLatticeRealMatrixV*[n:static[int]] = Field[VLEN,DRealMatrixV[n]]
+    ## Real n x n site matrices; n = 1 is a real scalar field with matrix sites.
+  DLatticeComplexMatrixV*[n:static[int]] = Field[VLEN,DComplexMatrixV[n]]
+    ## Complex n x n site matrices; n = 1 is a complex scalar field with matrix sites.
+
   SDiracFermion* = Spin[VectorArray[ns,SColorVector]]
   SDiracFermionV* = Spin[VectorArray[ns,SColorVectorV]]
   SHalfFermion* = Spin[VectorArray[nh,SColorVector]]
@@ -398,6 +405,9 @@ proc blend*(r:var auto; x:ptr char; b:ptr char; blnd:int) {.inline.} =
 template newDComplexV*[V:static[int]](l: Layout[V]): auto =
   ComplexType[`SimdD V`]()
 
+template newDRealV[V:static[int]](l: Layout[V]): auto =
+  `SimdD V`()
+
 proc newField*[V:static[int]](l: Layout[V], T:typedesc): Field[V,T] =
   result.new(l)
 
@@ -405,6 +415,10 @@ proc ColorMatrix*(l: Layout, n: static[int]): auto =
   type C = type(l.newDComplexV)
   type CM = ColorMatrixN[n,C]
   result = l.newField(CM)
+
+proc RealMatrix*[V:static[int]](l: Layout[V], n: static[int]): auto =
+  type RM = ColorMatrixN[n,type(l.newDRealV)]
+  result = l.newField(RM)
 
 macro makeConstructors(x: untyped): untyped =
   template mp(f,r,rslt: untyped) =

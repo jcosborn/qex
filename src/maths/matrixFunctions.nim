@@ -499,13 +499,13 @@ proc ln*(m: Mat1): auto {.noInit.} =
   r
 
 proc re*(m: Mat1): auto {.noInit.} =
-  var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
+  var r{.noInit.}: MatrixArray[m.nrows,m.ncols,evalType(re(m[0,0]))]
   for i in 0..<m.nrows:
     for j in 0..<m.ncols:
       r[i,j] := re(m[i,j])
   r
 proc im*(m: Mat1): auto {.noInit.} =
-  var r{.noInit.}: MatrixArray[m.nrows,m.ncols,type(m[0,0])]
+  var r{.noInit.}: MatrixArray[m.nrows,m.ncols,evalType(im(m[0,0]))]
   for i in 0..<m.nrows:
     for j in 0..<m.ncols:
       r[i,j] := im(m[i,j])
