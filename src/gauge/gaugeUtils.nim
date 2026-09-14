@@ -980,20 +980,23 @@ proc trim(c:Coord):seq[int] =
   while result.len>0 and result[^1]==0:
     result.setLen(result.len-1)
 
-proc plan*(t:OrdPathTree, origin=true):PathPlan =
+proc plan*(t:OrdPathTree, origin=true, shifts=true):PathPlan =
   ## Steps in the order gaugeProd evaluates them, then one output per input path.
   ## origin=true shifts each output back to the path's starting site.
+  ## shifts=false treats integers as independent matrix symbols at one site.
   result.steps.newseq t.segments.len
   for i,s in t.segments.pairs:
     let
       (l,la) = operand s.l
       (r,ra) = operand s.r
-    result.steps[i] = PathStep(key:s.flatten, l:l, r:r, la:la, ra:ra, sh:trim(s.l.position - s.l.deltaX - s.r.position))
+    result.steps[i] = PathStep(key:s.flatten, l:l, r:r, la:la, ra:ra)
+    if shifts:
+      result.steps[i].sh = trim(s.l.position - s.l.deltaX - s.r.position)
   result.outs.newseq t.paths.len
   for i,p in t.paths.pairs:
     let (k,a) = operand p
     result.outs[i] = PathOut(key:k, adj:a)
-    if origin:
+    if origin and shifts:
       result.outs[i].sh = trim(-p.position)
 
 proc singleshift[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]):F =

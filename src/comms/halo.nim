@@ -224,35 +224,35 @@ template makeHalo*[L,F](hl: HaloLayout[L], f: F): auto =
   #makeHalo(hl, f, eval(F.type[0]))
   makeHalo(hl, f, eval(F.type.index(int)))
 
-template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], d: pointer, s: SomeInteger) =
-  type E = eval(index(type T, type asSimd(0)))
-  let p = cast[ptr E](d)
-  when Rev:
-    let o = s div gh.vlen
-    let i = s mod gh.vlen
-    p[] := gh.dest[o][asSimd(i)]
+template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], d, s: pointer|SomeInteger) =
+  # Keep all three gather transfers in one binding for indirect generic callers.
+  when d is pointer:
+    type E = eval(index(type T, type asSimd(0)))
+    let p = cast[ptr E](d)
+    when Rev:
+      let o = s div gh.vlen
+      let i = s mod gh.vlen
+      p[] := gh.dest[o][asSimd(i)]
+    else:
+      p[] := gh.src{s}
+  elif s is pointer:
+    type E = eval(index(type T,type asSimd(0)))
+    let p = cast[ptr E](s)
+    when Rev:
+      gh.src{d} += p[]
+    else:
+      let o = d div gh.vlen
+      let i = d mod gh.vlen
+      gh.dest[o][asSimd(i)] = p[]
   else:
-    p[] := gh.src{s}
-template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], d: SomeInteger, s: pointer) =
-  type E = eval(index(type T,type asSimd(0)))
-  let p = cast[ptr E](s)
-  when Rev:
-    #threadCritical:
-    gh.src{d} += p[]
-  else:
-    let o = d div gh.vlen
-    let i = d mod gh.vlen
-    gh.dest[o][asSimd(i)] = p[]
-template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], d: SomeInteger, s: SomeInteger) =
-  when Rev:
-    let o = s div gh.vlen
-    let i = s mod gh.vlen
-    #threadCritical:
-    gh.src{d} += gh.dest[o][asSimd(i)]
-  else:
-    let o = d div gh.vlen
-    let i = d mod gh.vlen
-    gh.dest[o][asSimd(i)] = gh.src{s}
+    when Rev:
+      let o = s div gh.vlen
+      let i = s mod gh.vlen
+      gh.src{d} += gh.dest[o][asSimd(i)]
+    else:
+      let o = d div gh.vlen
+      let i = d mod gh.vlen
+      gh.dest[o][asSimd(i)] = gh.src{s}
 template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], dv: SomeInteger, di: array,
                                     s: array, n: SomeInteger) =
   #echo n, " ", dv, " ", di, " ", s
@@ -279,6 +279,7 @@ template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], dv: SomeInteger, di
   gh.dest[dv] = t
 
 proc update*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
+  bind copy
   tic("Halo update")
   let elemSize = sizeof(T) div L.V
   var gh: GatherHalo[F,T,false]
@@ -290,6 +291,7 @@ proc update*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
   toc("gather")
 
 proc updateRev*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
+  bind copy
   tic("Halo updateRev")
   let elemSize = sizeof(T) div L.V
   var gh: GatherHalo[F,T,true]

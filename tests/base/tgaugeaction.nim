@@ -4,8 +4,9 @@ import testutils
 
 qexInit()
 
+letParam:
+  lat = latticeFromLocalLattice(@[4,4,4,4], nRanks)
 let
-  lat = latticeFromLocalLattice([4,4,4,4], nRanks)
   (lo, g, r0) = setupLattice(lat)
   h = lo.newGauge
   base = lo.newGauge
@@ -173,8 +174,8 @@ suite "Gauge action subset kernels":
       c.gaugeDerivDeriv2Subset(g, hm, expected, p, d)
       check(got ~ expected)
 
-  test "subset kernels reject non-plaquette coefficients":
-    let c = GaugeActionCoeffs(rect: 1.0)
+  test "subset kernels reject adjoint coefficients":
+    let c = GaugeActionCoeffs(adjplaq: 1.0)
     var
       outg = lo.newGauge
       w = g[0].newOneOf

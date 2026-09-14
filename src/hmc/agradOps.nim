@@ -392,13 +392,13 @@ template gaction*(gc: GaugeActionCoeffs, r: AgVar, x: auto) =
 
 proc gderivfwd[I,O](op: AgOp[I,O]) {.nimcall.} =
   zero op.outputs.obj
-  gaugeDeriv2(op.inputs[0], op.inputs[1].obj, op.outputs.obj)
+  gaugeDeriv2(op.inputs[0], op.inputs[1].obj, op.outputs.obj, work=op.inputs[2])
   zero op.inputs[1].grad
 proc gderivbck[I,O](op: AgOp[I,O]) {.nimcall.} =
   if op.inputs[1].doGrad:
-    gaugeDerivDeriv2(op.inputs[0], op.inputs[1].obj, op.outputs.grad, op.inputs[1].grad)
+    gaugeDerivDeriv2(op.inputs[0], op.inputs[1].obj, op.outputs.grad, op.inputs[1].grad, work=op.inputs[2])
 proc gderiv(c: var AgTape, gc: GaugeActionCoeffs, r: AgVar, x: auto) =
-  var op = newAgOp((gc,x), r, gderivfwd, gderivbck)
+  var op = newAgOp((gc,x,newLoopWork(x.obj[0])), r, gderivfwd, gderivbck)
   c.add op
 template gderiv*(gc: GaugeActionCoeffs, r: AgVar, x: auto) =
   r.ctx.gderiv(gc, r, x)

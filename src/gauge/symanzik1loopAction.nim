@@ -310,7 +310,9 @@ when isMainModule:
     let npgm = 4*nd
     let a0 = g[0].l.physVol*(np*gc.plaq + 2*np*gc.rect + npgm*gc.pgm)
     #echo "a0: ", a0
-    var a = a0 + gc.gaugeAction2(g)
+    var gcf = gc
+    gcf.adjplaq = 0  # gaugeAction2 covers the fundamental family only
+    var a = a0 + gcf.gaugeAction2(g)
     if gc.adjplaq != 0.0:
       var gc0 = GaugeActionCoeffs(adjplaq:gc.adjplaq)
       let ap = gc0.actionA(g)

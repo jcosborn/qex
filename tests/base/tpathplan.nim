@@ -85,6 +85,15 @@ suite "Test path plan":
     for o in paths.optimalPairs.plan(false).outs:
       check(o.sh.len == 0)
 
+  test "matrix symbols share products without geometric shifts":
+    let ps = @[@[1,2,3], @[1,2,4], @[-3,-2,-1]]
+    let pl = ps.optimalPairs.plan(shifts=false)
+    check pl.steps.len == 3
+    for step in pl.steps: check step.sh.len == 0
+    for i, outp in pl.outs:
+      check outp.sh.len == 0
+      check fold(outp.key,outp.adj) == ps[i]
+
   test "products":
     let
       ps = @[plq, rct, rot[0], rot[1]]

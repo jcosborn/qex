@@ -104,6 +104,8 @@ var
   g0 = lo.newgauge
   gg = lo.newgauge  # FG backup gauge
 
+let work = newLoopWork(g[0])
+
 proc fgsave =
   threads:
     for mu in 0..<g.len:
@@ -123,7 +125,7 @@ template pnorm2(p2:float) =
 proc gaction(g:auto, p2:float):auto =
   tic()
   let
-    ga = if gact==ActAdjoint: gc.actionA g else: gc.gaugeAction1 g
+    ga = gc.action(g, work=work)
     t = 0.5*p2 - float(16*vol)
     h = ga + t
   toc("gaction")
@@ -138,10 +140,7 @@ proc mdt(t: float) =
   toc("mdt")
 proc mdv(t: float) =
   tic()
-  if gact==ActAdjoint:
-    gc.forceA(g, f)
-  else:
-    gc.gaugeForce(g, f)
+  gc.force(g, f, work=work)
   qexGC "mdv forceA"
   threads:
     for mu in 0..<f.len:
@@ -150,10 +149,7 @@ proc mdv(t: float) =
 # FG update g from backup, gg
 proc fgv(t: float) =
   tic()
-  if gact==ActAdjoint:
-    gc.forceA(gg, f)
-  else:
-    gc.gaugeForce(gg, f)
+  gc.force(gg, f, work=work)
   qexGC "fgv forceA"
   threads:
     for mu in 0..<g.len:

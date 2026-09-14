@@ -1,4 +1,5 @@
 import base
+import std/bitops
 #import basicOps
 import complexNumbers
 #import complexType
@@ -10,6 +11,45 @@ import matexp
 export matexp
 import projUderiv
 getOptimPragmas()
+
+template productJet*(r: typed, n, order: static int, factor: untyped) =
+  ## [t_1...t_order] prod_k A_k(t), where every A_k is affine in the seeds.
+  ## factor(a,k) fills a[0] and a[d] = d_d A_k. At order=n, a[0] is unused.
+  ## Keep only seed subsets that can still reach the requested coefficient.
+  mixin `:=`, `*`, `+=`
+  static: doAssert n > 0 and order >= 0
+  when order > n:
+    r := 0
+  else:
+    const full = (1 shl order)-1
+    type M = evalType(r)
+    var p {.noinit.}: array[full+1,M]
+    forStatic k, 0, n-1:
+      var a {.noinit.}: array[order+1,M]
+      factor(a, k)
+      # Descending masks preserve the smaller prefix coefficients until read.
+      forStatic ix, 0, full:
+        const
+          mask = full-ix
+          bits = countSetBits(mask)
+        when bits <= k+1 and order-bits <= n-k-1:
+          when k == 0:
+            when mask == 0: p[mask] := a[0]
+            else: p[mask] := a[firstSetBit(mask)]
+          else:
+            var v {.noinit.}: M
+            when bits <= k: v := p[mask]*a[0]
+            forStatic ix2, 1, order:
+              const
+                d = order-ix2+1
+                bit = 1 shl (d-1)
+              when (mask and bit) != 0:
+                when bits > k and (mask shr d) == 0:
+                  v := p[mask xor bit]*a[d]
+                else:
+                  v += p[mask xor bit]*a[d]
+            p[mask] := v
+    r := p[full]
 
 proc determinantN*(a: auto): auto =
   mixin simdMinReduce

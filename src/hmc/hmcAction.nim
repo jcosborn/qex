@@ -104,6 +104,7 @@ type
 
   GaugeAction*[U] = ref object of ActionRoot
     gc*: GaugeActionCoeffs
+    work*: LoopWork[U.V,U.T]
 
   StaggeredFermionAction*[U, T, S, R] = ref object of ActionRoot
     mass*: float
@@ -612,9 +613,7 @@ proc addForce*(fr: auto, s: float, fi: auto): array[3,float] =
 
 proc action*(self: GaugeAction, u: GaugeConfiguration): float =
   tic("GaugeAction:action")
-  result =
-    if self.gc.adjplaq != 0.0: self.gc.actionA(u.u)
-    else: self.gc.gaugeAction1(u.u)
+  result = self.gc.action(u.u, work=self.work)
   self.stats[self.id&"A"]["n"] += 1
   self.stats[self.id&"A"]["secs"] += getElapsedTime()
   toc("end")
@@ -623,8 +622,7 @@ proc force*(self: GaugeAction, u: GaugeConfiguration, dtau: float, gf: auto) =
   tic("GaugeAction:force")
   let lo = u.u[0].l
   var f = lo.newGauge()
-  if self.gc.adjplaq != 0.0: self.gc.forceA(u.u, f)
-  else: self.gc.gaugeForce(u.u, f)
+  self.gc.force(u.u, f, work=self.work)
   let fstats = addForce(gf, dtau, f)
   self.stats[self.id&"F"]["n"] += 1
   self.stats[self.id&"F"]["secs"] += getElapsedTime()
@@ -659,7 +657,7 @@ proc newGaugeAction*[U](
   gc: GaugeActionCoeffs,
   u: GaugeConfiguration[U]
 ): GaugeAction[U] =
-  result = GaugeAction[U](gc: gc)
+  result = GaugeAction[U](gc: gc, work: newLoopWork(u.u[0]))
   result.name = "GaugeAction"
   result.id = "GA" & $GaugeActionCount
   inc GaugeActionCount
