@@ -111,7 +111,9 @@ proc findSrc(g: string): tuple[files:seq[string],dirs:seq[string]] =
     let d = staticExec &"cd {d}; find {p} -type d -ipath '*{g}' |sort"
     if d != "":
       ds.add d.splitLines
-  result = (files:fs, dirs:ds)
+  # Normalize overlapping matches to the same "./..." form before deduplicating.
+  result = (files: fs.mapIt("." / it.relativePath(d)).deduplicate,
+            dirs: ds.mapIt("." / it.relativePath(d)).deduplicate)
 
 # return true if failed
 proc buildFile(f: string, outfile=""): bool =
