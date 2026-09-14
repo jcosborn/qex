@@ -83,8 +83,13 @@ proc qudaInit* =
   qudaParam.initArg.verbosity = QUDA_SILENT
   qudaParam.initialized = false
 
+proc qudaFini() =
+  if qudaParam.initialized:
+    qudaFinalize()
+    qudaParam.initialized = false
+
 qexGlobalInitializers.add qudaInit
-qexGlobalFinalizers.add qudaFinalize
+qexGlobalFinalizers.add qudaFini
 
 var qudaLayout: Layout[1]
 
@@ -106,7 +111,7 @@ proc qudaSetup*(l: Layout, verbosity = QUDA_SILENT): Layout[1] =
     qudaParam.physGeom[i].update l.physGeom[i].cint
     qudaParam.rankGeom[i].update l.rankGeom[i].cint
   if updated or (not qudaParam.initialized):
-    if qudaParam.initialized: qudaFinalize()
+    qudaFini()
     proc qudaCommsMap(coords0: ptr quda.ConstInt; fdata: pointer): cint {.cdecl.} =
       let pl = cast[ptr type(l)](fdata)
       let coords = cast[ptr UncheckedArray[cint]](coords0)
