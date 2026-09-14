@@ -40,7 +40,7 @@ proc init*[L,F,T,G](ht: var HypTemps[L,F,T], gf: G, comm: Comm) =
   static: doAssert(type(gf[0][0]) is T)
   let lo = gf[0].l
   doAssert(lo.nDim == 4)
-  ht.hl = lo.makeHaloLayout([1,1,1,1],[1,1,1,1])
+  ht.hl = lo.haloLayout([1,1,1,1],[1,1,1,1])
   toc "makeHaloLayout"
   ht.l1x = newFieldArray2(lo,F,[4,4],mu!=nu)
   ht.l2x = newFieldArray2(lo,F,[4,4],mu!=nu)
@@ -65,7 +65,7 @@ proc init*[L,F,T,G](ht: var HypTemps[L,F,T], gf: G, comm: Comm) =
       for i in 0..<4:
         if k.testBit i: t[i] = -1
       offsets.add t
-    ht.hm = ht.hl.makeHaloMap(comm, offsets)
+    ht.hm = ht.hl.haloMap(comm, offsets)
   elif hmtype == 1:
     var offsets = newSeq[array[4,int32]](0)
     for k in 0..15:
@@ -78,7 +78,7 @@ proc init*[L,F,T,G](ht: var HypTemps[L,F,T], gf: G, comm: Comm) =
           t[mu] = 0
           offsets.add t
           t[mu] = 1
-    ht.hm = hl.makeHaloMap(comm, offsets)
+    ht.hm = ht.hl.haloMap(comm, offsets)
   toc "makeHaloMap"
 proc newHypTemps*[G](gf: G): auto =
   type
@@ -149,7 +149,7 @@ proc symderiv3(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu,nOut: SomeInte
     template prj(m: auto): auto = proj(m)
   else:
     template prj(m: auto): auto = m
-  if fnu>=0 and fmu>=0:
+  if fnu>=0 and fmu>=0 and (i<nOut or fnu<nOut or fmu<nOut):
     let xi = prj x[i]
     let yfnu = prj y[fnu]
     let xfmu = prj x[fmu]
@@ -163,7 +163,7 @@ proc symderiv3(s: var auto, x,y,cx,cy: auto, i,fnu,fmu,bnu,fmubnu,nOut: SomeInte
     if fmu<nOUt:
       s += xi * yfnu * cx[fmu].adj
       result += 18+2*3*66
-  if bnu>=0 and fmubnu>=0:
+  if bnu>=0 and fmubnu>=0 and (bnu<nOut or fmubnu<nOut):
     let xbnu = prj x[bnu]
     let ybnu = prj y[bnu]
     result += 2*projectUflops(3)
@@ -417,10 +417,15 @@ proc force*[L,F,T,G,C](ht: HypTemps[L,F,T], coef: HypCoefs, f: G, chain: C) =
     tfor i, 0..<nhalo:
       for mu in 0..<4:
         let fmu = hl.neighborFwd[mu][i]
-        var flp = 0
         for nu in 0..<4:
           if nu == mu: continue
           hl1[mu][nu][i] = 0
+          # Same neighbor tests as smear's first level; outside them h1x is uninitialized.
+          let fnu = hl.neighborFwd[nu][i]
+          let bnu = hl.neighborBck[nu][i]
+          if fmu<0 or fnu<0 or bnu<0: continue
+          if hl.neighborBck[nu][fmu]<0: continue
+          var flp = 0
           #var t {.noInit.}: evalType(hl1[mu][nu][i])
           #t := 0
           for a in 0..<4:
@@ -463,7 +468,7 @@ when isMainModule:
   import qex
   qexInit()
   tic("main")
-  var defaultLat = @[4,4,4,4]
+  var defaultLat = latticeFromLocalLattice(@[4,4,4,4], nRanks)
   defaultSetup()
   var seed = 987654321'u
   #var rng = newRngField(lo, RngMilc6, seed)

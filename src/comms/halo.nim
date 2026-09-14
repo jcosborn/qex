@@ -1,4 +1,5 @@
-import qex, base/hyper, comms/gather, tables
+import base, layout, field, maths, base/hyper, comms/gather, tables
+import physics/color
 getOptimPragmas()
 
 type
@@ -85,7 +86,6 @@ proc makeHaloLayout*[L:Layout](lo: L, fwdOffset,bckOffset: openarray[SomeInteger
     else:
       let par = (paro + x.sum) mod 2
       idxp[par].add int32 i
-      #echo par, " ", x
   var k = int32 nOut
   for p in 0..1:
     for i in idxp[p]:
@@ -346,6 +346,7 @@ proc neighbor*(h: Halo, i: SomeInteger, mu: SomeInteger, fb: SomeInteger): int32
     h.layout.neighborBck[mu][i]
 
 when isMainModule:
+  import qex
   qexInit()
   tic("main")
   var defaultLat = @[4,4,4,4]
@@ -500,4 +501,3 @@ when isMainModule:
 # [1,-1,0,0],[0,-1,1,0],[0,-1,0,1],
 # [1,0,-1,0],[0,1,-1,0],[0,0,-1,1],
 # [1,0,0,-1],[0,1,0,-1],[0,0,1,-1]
-
