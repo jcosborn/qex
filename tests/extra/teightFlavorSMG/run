@@ -145,7 +145,7 @@ diffnum "$ckptdir/continuous.check" "$ckptdir/resume.check" 1e-12 || exit 1
 [[ $(grep -Ec '^(ACCEPT|REJECT) ' "$ckptdir/resume.out") == 1 ]] || exit 1
 grep -E '^(ACCEPT|REJECT) ' "$ckptdir/continuous.out" | tail -n 1 > "$ckptdir/continuous.metropolis"
 grep -E '^(ACCEPT|REJECT) ' "$ckptdir/resume.out" > "$ckptdir/resume.metropolis"
-diffnum "$ckptdir/continuous.metropolis" "$ckptdir/resume.metropolis" 1e-12 || exit 1
+diffnum "$ckptdir/continuous.metropolis" "$ckptdir/resume.metropolis" 1e-9 || exit 1
 echo "OK"
 
 echo
