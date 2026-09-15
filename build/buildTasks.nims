@@ -79,13 +79,34 @@ proc compilerFlags(c: Compiler): seq[string] =
   if c.name == "gcc" and c.major >= 15:
     # Under -Ofast, GCC can turn omp master assignments into stores by every thread.
     # Disable -fallow-store-data-races so workers cannot overwrite updates with stale values.
-    result.add "--passC:-fno-allow-store-data-races"
+    result.add "-fno-allow-store-data-races"
+  elif c.name == "clang" and c.major == 19:
+    # LLVM 19 SLP can insert poison lanes in matrix powers (LLVM #108421).
+    result.add "-fno-slp-vectorize"
+
+proc addCompilerFlags(flags: var seq[string], cflags: seq[string]) =
+  if cflags.len == 0: return
+  let extra = cflags.join(" ")
+  # Nim emits --passC before optimization options, which can override it.
+  var cfg = initTable[string, string]()
+  for arg in flags:
+    let s = arg.split(':', 1)
+    cfg[s[0].nimIdentNormalize] = if s.len > 1: parseCmdLine(s[1]).join(" ") else: ""
+  let typ = cfg.getOrDefault("--cc", ccType).nimIdentNormalize
+  let pre = typ & (if ccDef == "cpp": ".cpp" else: "") & ".options."
+  # Preserve Nim's GCC/Clang defaults for empty option groups.
+  for (opt, def) in [("debug", "-g"), ("speed", "-O3"), ("size", "-Os")]:
+    let key = pre & opt
+    var val = cfg.getOrDefault("--" & key, get(key))
+    if val.len == 0: val = def
+    flags.add "--" & key & ":" & (val & " " & extra).quoteShell
+  flags.add "--passC:" & extra.quoteShell
 
 proc setNimFlags() =
   if nimFlags.len == 0:
     nimFlags = getNimFlags(fo)
     nimFlags.add userNimFlags
-    nimFlags.add compilerFlags(compilerInfo(nimFlags))
+    nimFlags.addCompilerFlags(compilerFlags(compilerInfo(nimFlags)))
   nimCmdArgs = join(nimArgs," ") & " " & join(nimFlags," ")
   #if extraFlags != "":
   #  nimCmdArgs &= " " & extraFlags
