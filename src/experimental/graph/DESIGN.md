@@ -868,6 +868,21 @@ subexpressions once, then return slot gradients as a single `Gmulti`.
 The gauge layer extends the graph model to gauge-field values and related
 operators. Its primary differentiation contract is with respect to gauge fields.
 
+Gauge graph nodes use the numerical field types and kernels described in
+[the numerical kernel reference](../../../docs/gauge_kernels.md).
+
+| Graph value | Numerical payload |
+| --- | --- |
+| `Ggauge` | One `DLatticeColorMatrixV` per direction |
+| `Gfield` | One `DLatticeColorMatrixV` |
+| `Gcfield` | `DLatticeComplexMatrixV[1]` |
+| `Grfield` | `DLatticeRealMatrixV[1]` |
+| `Grmat8` | `DLatticeRealMatrixV[8]` |
+
+Real and complex scalar fields explicitly use 1x1 matrix sites. `Grmat[n]` names
+the real family; graph storage and accumulation dispatch support sizes 1 and 8.
+Numerical constructors support static square matrix sizes.
+
 Gauge graph construction should stay in concrete gauge/scalar/coefficient types.
 Backward builders recover erased raw inputs or upstreams by direct cast, because
 each backward builder is tied to one forward operator and knows the operand
@@ -882,8 +897,7 @@ graph leaf.
 `gaugeSnapshot` returns a copy, not a live view. Code that intentionally mutates
 graph-owned gauge storage must use `mutateGauge` so freshness is marked even
 though storage changes in place. The raw `Ggauge.gval` storage field is exported
-for gauge implementation modules that import `gauge/shared`; the top-level gauge
-module does not re-export it, and public writers should use `update`/`mutateGauge`.
+through the gauge facade, and public writers should use `update`/`mutateGauge`.
 
 Generated zero gauges carry `staticZeroLeaf` and allocate cleared payloads on
 demand. Public updates clear that marker.
@@ -921,6 +935,20 @@ type as `Gfield`. `gauge/cfield` bridges the two: `trace` (per-site trace),
 mutually adjoint under the pairing, so an observable such as the adjoint
 plaquette sum_x |tr P_x|^2 is `norm2(trace(P))` with derivatives to any order.
 
+`gauge/matrix`, also exported by the gauge facade, adds real matrix arithmetic,
+transpose, solve, inverse, logdet, contractions, scalar functions and real/complex
+conversions. The real pairing is the unnormalized sum_x tr(H^T dA); local scalar
+weights use `scale`, and `sum` reduces a real scalar field over physical sites.
+The SU(3) bridges expose the real 8x8 adjoint and projection-derivative matrices
+and their real adjoints. These backward expressions remain in the same operator
+set and can be differentiated further.
+
+`solve` and `inverse` use unpivoted LU and require nonzero leading pivots at
+every site. `logDet` also requires a positive determinant; individual LU pivots
+may be negative. Real division requires a nonzero denominator, while `ln` and
+derivatives of `sqrt` require positive inputs. Derivatives of `arg` exclude zero
+and the principal branch cut.
+
 `lineProducts` evaluates QEX's Wilson-line plan (`gaugeUtils.plan`, the
 segment tree behind `gaugeProd`) over graph nodes, memoized by path key, so
 shared sub-products and their derivatives are computed once. Each step
@@ -937,11 +965,12 @@ the spelling for transporting a general field along a path.
 Each gauge module isolates one protocol, and that is the rule for adding one:
 
 ```text
-gauge/types.nim       value storage: Ggauge, GfieldOf[F] (Gfield, Gcfield), ownership, shape helpers
+gauge/types.nim       value storage: Ggauge, GfieldOf[F] (Gfield, Gcfield, Grmat), ownership, shape helpers
 gauge/basic_ops.nim   closed generators: the site algebra stamped per type, blend/mask
 gauge/matfun.nim      exp family: fused jets through three directions and graph replicas
 gauge/field_ops.nim   shift, linkField, injectLink
 gauge/cfield.nim      matrix field <-> complex field bridge: trace, scale, dot
+gauge/matrix.nim      real matrix/scalar bindings and SU(3) bridges
 gauge/stencil.nim     halo moves of a field: gather, scatter, gp (gathered product)
 gauge/transport.nim   hop chains (transport, wilsonLine) and lineProducts on QEX's path plan
 gauge/fused_ops.nim   Gmulti-packed site kernels

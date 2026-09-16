@@ -1,6 +1,9 @@
 import gauge/types, gauge/basic_ops, gauge/matfun, gauge/fused_ops
+import gauge/matrix
 import gauge/action/ops
 import gauge/stout
+
+export matrix
 
 export
   Gauge, Ggauge,

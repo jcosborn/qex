@@ -8,6 +8,7 @@
 import ../[core, scalar]
 import ../support/op
 import layout, gauge, physics/qcdTypes
+import field/matrixFields
 import types, basic_ops
 
 proc trace*(x: Gfield): Gcfield
@@ -29,8 +30,7 @@ proc tracef(v: Gvalue) =
   let x = Gfield(v.inputs[0])
   let z = Gcfield(v)
   threads:
-    for e in z.fval:
-      z.fval[e][0,0] := x.fval[e].trace
+    siteTrace(z.fval, x.fval)
 
 let traceg = Gfunc(bufferMode: bmFull, forward: tracef, backward: traceb, name: "trace")
 
@@ -51,8 +51,7 @@ proc scalef(v: Gvalue) =
   let x = Gfield(v.inputs[1])
   let z = Gfield(v)
   threads:
-    for e in z.fval:
-      z.fval[e] := c.fval[e][0,0] * x.fval[e]
+    scale(z.fval, c.fval, x.fval)
 
 let scaleg = Gfunc(bufferMode: bmFull, inplace: @[1], forward: scalef, backward: scaleb, name: "scale")
 
@@ -75,8 +74,7 @@ proc dotf(v: Gvalue) =
   let y = Gfield(v.inputs[1])
   let z = Gcfield(v)
   threads:
-    for e in z.fval:
-      z.fval[e][0,0] := dot(x.fval[e], y.fval[e])
+    siteDot(z.fval, x.fval, y.fval)
 
 let dotg = Gfunc(bufferMode: bmFull, forward: dotf, backward: dotb, name: "dot")
 

@@ -19,9 +19,10 @@ type
     ## One direction of a Gauge. Internal plumbing for cross-direction
     ## expressions and per-direction cotangents.
 
-  DLatticeCmatV* = Field[VLEN, ColorMatrixN[1, DComplexV]]
-    ## Complex scalar field as 1x1 site matrices, so the matrix algebra and
-    ## its kernels serve it unchanged (trace, |c|^2 = norm2, exp).
+  Grmat*[n:static[int]] = GfieldOf[DLatticeRealMatrixV[n]]
+    ## Graph storage bindings currently cover scalar (1) and local SU3 (8) matrices.
+  Grfield* = Grmat[1]
+  Grmat8* = Grmat[8]
 
 const cfieldIsGfield* = DColorMatrixV is ColorMatrixN[1, DComplexV]
   ## With Nc = 1 the two field types coincide.
@@ -29,7 +30,7 @@ const cfieldIsGfield* = DColorMatrixV is ColorMatrixN[1, DComplexV]
 when cfieldIsGfield:
   type Gcfield* = Gfield
 else:
-  type Gcfield* = GfieldOf[DLatticeCmatV]
+  type Gcfield* = GfieldOf[DLatticeComplexMatrixV[1]]
 
 proc zeroFieldStorage*[V:static[int],T](f: Field[V,T]) =
   if f.s.data.isNil:
@@ -340,8 +341,10 @@ template fieldMethods(T: typedesc, label: static string) =
 fieldMethods(Gfield, "GaugeField")
 when not cfieldIsGfield:
   fieldMethods(Gcfield, "ComplexField")
+fieldMethods(Grfield, "RealField")
+fieldMethods(Grmat8, "RealMatrix8")
 
-type MatrixStorage = DLatticeColorMatrixV | DLatticeCmatV
+type MatrixStorage = DLatticeColorMatrixV | DLatticeComplexMatrixV[1] | DLatticeRealMatrixV[1] | DLatticeRealMatrixV[8]
 
 proc toGvalue*[F:MatrixStorage](grt: GraphRuntime, x: F): GfieldOf[F] =
   let f = x.newOneOf
