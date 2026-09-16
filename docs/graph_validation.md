@@ -3,6 +3,30 @@
 See [Graph design](../src/experimental/graph/DESIGN.md) for runtime and numerical
 contracts.
 
+## Automated graph coverage
+
+The [GitHub workflow](../.github/workflows/test.yml) builds and runs a selected
+graph gate for every combination of Nim `v2.0.16`, `version-2-2` and `devel` with
+Open MPI and MPICH. These fixtures are built with `--assertions:on`:
+
+- One rank and one thread: `tgraph`, `tfunctional`, `tgvalueu1`, `tgstorageu1`,
+  `tgstorage`, `tgjac`, `tghmcu1` and `tgstouttrainu1`.
+- One rank and two threads: `tgstorage`, with the actual thread count checked
+  in its runtime output.
+- Two ranks and one thread per rank: `tgplaqstencil` and `tstencilmpi`, launched
+  with `mpiexec -n 2` and `-expectRanks:2`. Their global lattices are `4,4,4` and
+  `8,4,4,4`, with rank geometries `2,1,1` and `2,1,1,1`, respectively. Runtime
+  output also confirms the rank count.
+- SSE intrinsics on x86-64: `tmatrixFields` and `tgmatrix`, built with `-d:SSE`
+  in `build_sse` with separate binaries and cache, and run with one rank and one
+  thread. `tmatrixFields` receives no arguments because unittest filtering is
+  active in that driver.
+
+Each invocation must exit successfully, report at least one passing case and
+report no failed cases. It has a timeout of five minutes, followed by forced
+termination after ten seconds. The selected gate runs separately from the full
+optional test generation below.
+
 ## Optional test generation
 
 `make tests experimental` builds optional fixtures and generates
@@ -16,9 +40,7 @@ make tests experimental/graph
 RUNJOB='mpiexec -n 2' RUN1='mpiexec -n 1' ./testscript-experimental.sh
 ```
 
-The default GitHub pipeline and its `runtests.sh` MPI pass run the normal test
-script; they do not run optional graph tests automatically. QEX graph test
-drivers using `tests/helpers` disable unittest's automatic command-line name
+QEX graph test drivers using `tests/helpers` disable unittest's automatic command-line name
 filtering. Their QEX options use `-OPTION:VALUE`, and all unittest cases execute;
 no trailing `'*'` selector is needed. Check nonzero executed case counts as well
 as exit status. Generated commands do not set `-expectRanks`, so explicit MPI
