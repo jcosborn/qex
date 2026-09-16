@@ -671,7 +671,9 @@ func mkSu3AdjTables(): tuple[comm, prod: array[8,array[8,MatrixArray[3,3,Complex
       let ba = su3gen[b]*su3gen[a]
       result.comm[a][b] = 2.0*(ab - ba)
       result.prod[a][b] = -2.0*ba
-const su3AdjTables = mkSu3AdjTables()
+const
+  su3AdjComm = mkSu3AdjTables().comm
+  su3AdjProd = mkSu3AdjTables().prod
 
 proc su3AdNegAdj*(r: var Mat1, h: Mat2) =
   ## r = 2 sum_ab h_ab [T_a,T_b], for arbitrary real h.
@@ -682,8 +684,8 @@ proc su3AdNegAdj*(r: var Mat1, h: Mat2) =
     for b in 0..<8:
       for i in 0..<3:
         for j in 0..<3:
-          r[i,j].re += su3AdjTables.comm[a][b][i,j].re*h[a,b]
-          r[i,j].im += su3AdjTables.comm[a][b][i,j].im*h[a,b]
+          r[i,j].re += su3AdjComm[a][b][i,j].re*h[a,b]
+          r[i,j].im += su3AdjComm[a][b][i,j].im*h[a,b]
 
 proc su3ProjectDerivAdj*(r: var Mat1, h: Mat2) =
   ## r = -2 sum_ab h_ab T_b T_a, for arbitrary real h.
@@ -693,8 +695,8 @@ proc su3ProjectDerivAdj*(r: var Mat1, h: Mat2) =
     for b in 0..<8:
       for i in 0..<3:
         for j in 0..<3:
-          r[i,j].re += su3AdjTables.prod[a][b][i,j].re*h[a,b]
-          r[i,j].im += su3AdjTables.prod[a][b][i,j].im*h[a,b]
+          r[i,j].re += su3AdjProd[a][b][i,j].re*h[a,b]
+          r[i,j].im += su3AdjProd[a][b][i,j].im*h[a,b]
 
 const expProjectTAHScale* = 5
   ## Five doublings put degree-13 seed truncation below binary64 rounding for ||F||_F <= 8.

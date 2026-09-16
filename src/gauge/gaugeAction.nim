@@ -394,7 +394,7 @@ proc evalProducts(plan: LoopProducts, h: auto, i: int, values: auto) =
       if op.ra: multiply(values[op.left],values[op.right].adj)
       else: multiply(values[op.left],values[op.right])
 
-proc loopAction*[G:array|seq](c: GaugeActionCoeffs, g: G; work: typeof(newLoopWork(g[0])) = nil): float =
+proc loopAction*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]]; work: LoopWork[V,T] = nil): float =
   ## Fused S = -sum(c_loop Re tr U_loop)/Nc for fundamental loop terms.
   requireFundamental(c, "loopAction")
   let nd = g[0].l.nDim
@@ -408,16 +408,17 @@ proc loopAction*[G:array|seq](c: GaugeActionCoeffs, g: G; work: typeof(newLoopWo
   w.prepareProducts(products)
   let h = [w.gaugeLoopHalo(g,plan,0)]
   var sums = newSeq[array[3,float]](getMaxThreads())
+  let u = cast[ptr cArray[Field[V,T]]](unsafeAddr(g[0]))
   threads:
     let values = w.products[threadNum]
     var s: array[3,float]
-    for i in g[0]:
+    for i in u[0]:
       products.evalProducts(h,i,values)
       for outp in products.outs:
         if outp.adj:
-          s[ord(outp.kind)] += simdSum(redot(g[outp.mu][i],values[outp.source].adj))
+          s[ord(outp.kind)] += simdSum(redot(u[outp.mu][i],values[outp.source].adj))
         else:
-          s[ord(outp.kind)] += simdSum(redot(g[outp.mu][i],values[outp.source]))
+          s[ord(outp.kind)] += simdSum(redot(u[outp.mu][i],values[outp.source]))
     sums[threadNum] = s
   var total: array[3,float]
   for s in sums:
@@ -425,7 +426,7 @@ proc loopAction*[G:array|seq](c: GaugeActionCoeffs, g: G; work: typeof(newLoopWo
   rankSum(total)
   -(c.plaq*total[0]+c.rect*total[1]+c.pgm*total[2])/float(g[0][0].nrows)
 
-proc loopDeriv*[G:array|seq,H; K:static int](c: GaugeActionCoeffs, g:G, ds:array[K,H], f:array|seq; work:typeof(newLoopWork(g[0])) = nil) =
+proc loopDeriv*[V:static[int],T,H; K:static int](c: GaugeActionCoeffs, g:openArray[Field[V,T]], ds:array[K,H], f:array|seq; work:LoopWork[V,T] = nil) =
   ## f = D^K grad S(g)[ds]. The seed count is static; orders above degree vanish.
   ## Output must be disjoint from seeds and, below the polynomial degree, g.
   requireFundamental(c, "loopDeriv")
@@ -471,8 +472,8 @@ proc loopDeriv*[G:array|seq,H; K:static int](c: GaugeActionCoeffs, g:G, ds:array
         else: values[products.size+outp.mu] += a*values[outp.source]
       for mu in 0..<nd: f[mu][i] := values[products.size+mu]
 
-proc loopDeriv*[G:array|seq](c: GaugeActionCoeffs, g:G, f:array|seq; work:typeof(newLoopWork(g[0])) = nil) =
-  let ds = default(array[0,G])
+proc loopDeriv*[V:static[int],T](c: GaugeActionCoeffs, g:openArray[Field[V,T]], f:array|seq; work:LoopWork[V,T] = nil) =
+  let ds = default(array[0,seq[Field[V,T]]])
   c.loopDeriv(g,ds,f,work)
 
 # plaq: 6 types
@@ -483,11 +484,11 @@ proc loopDeriv*[G:array|seq](c: GaugeActionCoeffs, g:G, f:array|seq; work:typeof
 # plaq traces:
 #  plaq: U[mu]^+ * sum_{nu!=mu} s[mu][nu] (6)
 #  rect: shift(s[mu][nu], nu) (12 shifts)
-proc gaugeAction1*[T](c: GaugeActionCoeffs, uu: openarray[T]; work: typeof(newLoopWork(uu[0])) = nil): auto =
+proc gaugeAction1*[V:static[int],T](c: GaugeActionCoeffs, uu: openArray[Field[V,T]]; work: LoopWork[V,T] = nil): auto =
   requireFundamental(c, "gaugeAction1")
   mixin mul, redot, load1
   tic("gaugeAction1")
-  let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
+  let u = cast[ptr cArray[Field[V,T]]](unsafeAddr(uu[0]))
   let lo = u[0].l
   let nd = lo.nDim
   #let np = (nd*(nd-1)) div 2
@@ -572,13 +573,13 @@ proc gaugeAction1*[T](uu: openarray[T]): auto =
   let gc = GaugeActionCoeffs(plaq:1.0)
   return gc.gaugeAction1(uu)
 
-proc gaugeActionDeriv*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq, accumulate=false; work: typeof(newLoopWork(uu[0])) = nil) =
+proc gaugeActionDeriv*[V:static[int],T](c: GaugeActionCoeffs, uu: openArray[Field[V,T]], f: array|seq, accumulate=false; work: LoopWork[V,T] = nil) =
   ## if accumulate, the derivatives will add to f.
   ## if not, f is set to 0 first.
   requireFundamental(c, "gaugeActionDeriv")
   mixin load1, adj
   tic("gaugeActionDeriv")
-  let u = cast[ptr cArray[T]](unsafeAddr(uu[0]))
+  let u = cast[ptr cArray[Field[V,T]]](unsafeAddr(uu[0]))
   let lo = u[0].l
   let nd = lo.nDim
   #let np = (nd*(nd-1)) div 2
@@ -761,7 +762,7 @@ proc gaugeActionDeriv*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq, 
     gaugeLoopDeriv(GaugeActionCoeffs(pgm: c.pgm), uu, uu, f, false, work)
   toc("end")
 
-proc gaugeForce*[T](c: GaugeActionCoeffs, uu: openArray[T], f: array|seq; work: typeof(newLoopWork(uu[0])) = nil) =
+proc gaugeForce*[V:static[int],T](c: GaugeActionCoeffs, uu: openArray[Field[V,T]], f: array|seq; work: LoopWork[V,T] = nil) =
   tic("gaugeForce")
   gaugeActionDeriv(c, uu, f, work=work)
   toc("gaugeActionDeriv")
@@ -838,7 +839,7 @@ proc gaugeAction2*(g: array|seq): auto =
   var c = GaugeActionCoeffs(plaq:1.0)
   gaugeAction2(c, g)
 
-proc gaugeDeriv2*[G:array|seq](c: GaugeActionCoeffs, g: G, f: array|seq; work: typeof(newLoopWork(g[0])) = nil) =
+proc gaugeDeriv2*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: array|seq; work: LoopWork[V,T] = nil) =
   requireFundamental(c, "gaugeDeriv2")
   mixin adj
   tic("gaugeDeriv2")
@@ -853,31 +854,32 @@ proc gaugeDeriv2*[G:array|seq](c: GaugeActionCoeffs, g: G, f: array|seq; work: t
   let td = newTransporters(g, g[0], -1)
   let td2 = newTransporters(g, g[0], -1)
   toc("gaugeForce2 setup")
+  let u = cast[ptr cArray[Field[V,T]]](unsafeAddr(g[0]))
   threads:
     for mu in 0..<nd:
       #let mu = (mux + 1) mod nd
       #f[mu] := 0
       for nu in 0..<nd:
         if nu==mu: continue
-        discard t[nu] ^* g[mu]
-        shiftExpr(t[mu].sb, f[mu][ir] += cp * t[nu].field[ir]*adj(it), g[nu][ix])
-        f[mu] += cp * td[nu] ^* t[mu] ^* g[nu]
+        discard t[nu] ^* u[mu]
+        shiftExpr(t[mu].sb, f[mu][ir] += cp * t[nu].field[ir]*adj(it), u[nu][ix])
+        f[mu] += cp * td[nu] ^* t[mu] ^* u[nu]
         if cr != 0:
-          discard t2[nu] ^* t[nu] ^* g[mu]
-          discard tg[nu] ^* g[nu]
+          discard t2[nu] ^* t[nu] ^* u[mu]
+          discard tg[nu] ^* u[nu]
           shiftExpr(t[mu].sb, f[mu][ir] += cr * t2[nu].field[ir]*adj(it), tg[nu].field[ix])
-          f[mu] += cr * td2[nu] ^* td[nu] ^* tg[mu] ^* t[nu] ^* g[nu]
-          f[mu] += cr * td2[mu] ^* td[nu] ^* tg[mu] ^* t[mu] ^* g[nu]
-          discard td[nu] ^* tg[mu] ^* t[mu] ^* g[nu]
-          shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[nu].field[ir]*adj(it), g[mu][ix])
-          discard td[mu] ^* t[nu] ^* tg[mu] ^* g[mu]
-          shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[mu].field[ir]*adj(it), g[nu][ix])
+          f[mu] += cr * td2[nu] ^* td[nu] ^* tg[mu] ^* t[nu] ^* u[nu]
+          f[mu] += cr * td2[mu] ^* td[nu] ^* tg[mu] ^* t[mu] ^* u[nu]
+          discard td[nu] ^* tg[mu] ^* t[mu] ^* u[nu]
+          shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[nu].field[ir]*adj(it), u[mu][ix])
+          discard td[mu] ^* t[nu] ^* tg[mu] ^* u[mu]
+          shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[mu].field[ir]*adj(it), u[nu][ix])
           shiftExpr(t2[mu].sb, f[mu][ir] += cr * t[nu].field[ir]*adj(it), t[mu].field[ix])
   if c.pgm != 0:
     gaugeLoopDeriv(GaugeActionCoeffs(pgm: -c.pgm), g, g, f, false, work)
   toc("end")
 
-proc gaugeDerivSubset[G:array|seq](c: GaugeActionCoeffs, g: G, f: array|seq, parity, dir: int, clear: static bool; work: typeof(newLoopWork(g[0])) = nil) =
+proc gaugeDerivSubset[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: array|seq, parity, dir: int, clear: static bool; work: LoopWork[V,T] = nil) =
   # Full derivative into workspace scratch, then select the requested links.
   let
     w = useLoopWork(g, work)
@@ -891,7 +893,7 @@ proc gaugeDerivSubset[G:array|seq](c: GaugeActionCoeffs, g: G, f: array|seq, par
       else:
         when clear: f[dir][x] := 0
 
-proc gaugeDeriv2SubsetWork*[G:array|seq](c: GaugeActionCoeffs, g: G, f: array|seq, sd, sf, sb: auto, parity, dir: int, clear: static bool; work: typeof(newLoopWork(g[0])) = nil) =
+proc gaugeDeriv2SubsetWork*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: array|seq, sd, sf, sb: auto, parity, dir: int, clear: static bool; work: LoopWork[V,T] = nil) =
   ## f[dir]|P = D(g)|P; other directions are unchanged.
   ## clear=false preserves f[dir]|~P; clear=true sets it to zero.
   ## rect/pgm coefficients take the full-derivative route and ignore sd, sf, sb.
@@ -909,6 +911,7 @@ proc gaugeDeriv2SubsetWork*[G:array|seq](c: GaugeActionCoeffs, g: G, f: array|se
     let other = lo.getSubset(if parity == 0: "odd" else: "even")
   let firstNu = if dir == 0: 1 else: 0
   toc("gaugeDeriv2Subset setup")
+  let u = cast[ptr cArray[Field[V,T]]](unsafeAddr(g[0]))
   threads:
     when clear:
       for x in other:
@@ -916,21 +919,21 @@ proc gaugeDeriv2SubsetWork*[G:array|seq](c: GaugeActionCoeffs, g: G, f: array|se
     for nu in 0..<nd:
       if nu == dir: continue
 
-      discard sd ^*! g[nu]
+      discard sd ^*! u[nu]
       threadBarrier()
       if nu == firstNu:
-        shiftExpr(sf[nu], f[dir][ir] := cp * (g[nu][ir] * it) * adj(sd.field[ir]), g[dir][ix])
+        shiftExpr(sf[nu], f[dir][ir] := cp * (u[nu][ir] * it) * adj(sd.field[ir]), u[dir][ix])
       else:
-        shiftExpr(sf[nu], f[dir][ir] += cp * (g[nu][ir] * it) * adj(sd.field[ir]), g[dir][ix])
+        shiftExpr(sf[nu], f[dir][ir] += cp * (u[nu][ir] * it) * adj(sd.field[ir]), u[dir][ix])
       # := and += may use different shift partitions.
       threadBarrier()
       toc("gaugeDeriv2Subset forward")
-      shiftExpr(sb[nu], f[dir][ir] += cp*it, g[nu][ix].adj * (g[dir][ix] * sd.field[ix]))
+      shiftExpr(sb[nu], f[dir][ir] += cp*it, u[nu][ix].adj * (u[dir][ix] * sd.field[ix]))
       threadBarrier()
       toc("gaugeDeriv2Subset backward")
   toc("gaugeDeriv2Subset end")
 
-proc gaugeDeriv2Subset*[G:array|seq](c: GaugeActionCoeffs, g: G, f: array|seq, parity, dir: int; work: typeof(newLoopWork(g[0])) = nil) =
+proc gaugeDeriv2Subset*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: array|seq, parity, dir: int; work: LoopWork[V,T] = nil) =
   ## f[dir]|P = D(g)|P; other directions are unchanged.
   if c.rect != 0 or c.pgm != 0:
     gaugeDerivSubset(c, g, f, parity, dir, true, work)
@@ -941,7 +944,7 @@ proc gaugeDeriv2Subset*[G:array|seq](c: GaugeActionCoeffs, g: G, f: array|seq, p
   let sb = createShiftBufs(g[0], -1, ps)
   c.gaugeDeriv2SubsetWork(g, f, sd, sf, sb, parity, dir, true, work=work)
 
-proc gaugeDerivDeriv2*[G:array|seq](c: GaugeActionCoeffs, g: G, h, f: array|seq; work: typeof(newLoopWork(g[0])) = nil) =
+proc gaugeDerivDeriv2*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], h, f: array|seq; work: LoopWork[V,T] = nil) =
   ## f += H_g(h), under the ambient real Frobenius pairing.
   requireFundamental(c, "gaugeDerivDeriv2")
   mixin adj
@@ -963,24 +966,25 @@ proc gaugeDerivDeriv2*[G:array|seq](c: GaugeActionCoeffs, g: G, h, f: array|seq;
     th = newTransporters(h, g[0], 1)
     thd = newTransporters(h, g[0], -1)
   toc("gaugeForce2 setup")
+  let u = cast[ptr cArray[Field[V,T]]](unsafeAddr(g[0]))
   threads:
     for mu in 0..<nd:
       for nu in 0..<nd:
         if nu==mu: continue
-        discard t[nu] ^* g[mu]
+        discard t[nu] ^* u[mu]
         shiftExpr(t[mu].sb, f[mu][ir] += cp * t[nu].field[ir]*adj(it), h[nu][ix])
         discard t[nu] ^* h[mu]
-        shiftExpr(t[mu].sb, f[mu][ir] += cp * t[nu].field[ir]*adj(it), g[nu][ix])
-        discard th[nu] ^* g[mu]
-        shiftExpr(t[mu].sb, f[mu][ir] += cp * th[nu].field[ir]*adj(it), g[nu][ix])
+        shiftExpr(t[mu].sb, f[mu][ir] += cp * t[nu].field[ir]*adj(it), u[nu][ix])
+        discard th[nu] ^* u[mu]
+        shiftExpr(t[mu].sb, f[mu][ir] += cp * th[nu].field[ir]*adj(it), u[nu][ix])
         f[mu] += cp * td[nu] ^* t[mu] ^* h[nu]
-        f[mu] += cp * td[nu] ^* th[mu] ^* g[nu]
-        f[mu] += cp * thd[nu] ^* t[mu] ^* g[nu]
+        f[mu] += cp * td[nu] ^* th[mu] ^* u[nu]
+        f[mu] += cp * thd[nu] ^* t[mu] ^* u[nu]
   if c.rect != 0 or c.pgm != 0:
     gaugeLoopDeriv(GaugeActionCoeffs(rect: -c.rect, pgm: -c.pgm), g, h, f, true, work)
   toc("end")
 
-proc gaugeDerivDeriv2SubsetImpl[G:array|seq](c: GaugeActionCoeffs, g: G, hs, hdir: auto, f: array|seq, parity, dir: int, sum, add, addBase: static bool; work: typeof(newLoopWork(g[0])) = nil) =
+proc gaugeDerivDeriv2SubsetImpl[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], hs, hdir: auto, f: array|seq, parity, dir: int, sum, add, addBase: static bool; work: LoopWork[V,T] = nil) =
   # S=(parity,dir); sum: hdir|P=sum(hs)|P; add: f+=H(hdir|P).
   # addBase: f[S]+=H(hdir|P); f[~S]=base[~S]+H(hdir|P).
   requireFundamental(c, "gaugeDerivDeriv2Subset")
@@ -993,7 +997,7 @@ proc gaugeDerivDeriv2SubsetImpl[G:array|seq](c: GaugeActionCoeffs, g: G, hs, hdi
     when addBase:
       let other = g[0].l.getSubset(if parity == 0: "odd" else: "even")
     threads:
-      for mu in 0..<g.len:
+      for mu in 0..<hm.len:
         hm[mu] := 0
       threadBarrier()
       for x in sub:
@@ -1004,13 +1008,13 @@ proc gaugeDerivDeriv2SubsetImpl[G:array|seq](c: GaugeActionCoeffs, g: G, hs, hdi
         hm[dir][x] := hdir[x]
       threadBarrier()
       when addBase:
-        for mu in 0..<g.len:
+        for mu in 0..<f.len:
           if mu != dir:
             f[mu] := hs[mu]
         for x in other:
           f[dir][x] := hs[dir][x]
       elif not add:
-        for mu in 0..<g.len:
+        for mu in 0..<f.len:
           f[mu] := 0
     c.gaugeDerivDeriv2(g, hm, f, work=w)
     return
@@ -1035,6 +1039,7 @@ proc gaugeDerivDeriv2SubsetImpl[G:array|seq](c: GaugeActionCoeffs, g: G, hs, hdi
   let bqSame = createShiftB(g[0], dir, -1, ps)
   let bqOther = createShiftB(g[0], dir, -1, po)
   toc("gaugeDerivDeriv2Subset setup")
+  let u = cast[ptr cArray[Field[V,T]]](unsafeAddr(g[0]))
   threads:
     when sum:
       for x in sub:
@@ -1053,7 +1058,7 @@ proc gaugeDerivDeriv2SubsetImpl[G:array|seq](c: GaugeActionCoeffs, g: G, hs, hdi
     for nu in 0..<nd:
       if nu == dir: continue
 
-      discard sd ^*! g[nu]
+      discard sd ^*! u[nu]
       threadBarrier()
       template put(i, y: untyped) =
         when addBase:
@@ -1063,18 +1068,18 @@ proc gaugeDerivDeriv2SubsetImpl[G:array|seq](c: GaugeActionCoeffs, g: G, hs, hdi
         else:
           f[nu][i] := y
       template setOtherAdd(i, t: untyped) =
-        put(i, cp * (g[dir][i] * sd.field[i]) * adj(t))
-        sq[i] := g[nu][i] * t
+        put(i, cp * (u[dir][i] * sd.field[i]) * adj(t))
+        sq[i] := u[nu][i] * t
         f[dir][i] += cp * sq[i] * adj(sd.field[i])
       when addBase:
         template setOtherBase(i, t: untyped) =
-          put(i, cp * (g[dir][i] * sd.field[i]) * adj(t))
-          sq[i] := g[nu][i] * t
+          put(i, cp * (u[dir][i] * sd.field[i]) * adj(t))
+          sq[i] := u[nu][i] * t
           f[dir][i] := hs[dir][i] + cp * sq[i] * adj(sd.field[i])
       template setSame(i, t: untyped) =
         sd.field[i] := hdir[i] * sd.field[i]
         put(i, cp * sd.field[i] * adj(t))
-        sq[i] := g[nu][i] * t
+        sq[i] := u[nu][i] * t
       when addBase:
         if nu == firstNu:
           shiftExpr(sfOther[nu], setOtherBase(ir, it), hdir[ix])
@@ -1082,35 +1087,35 @@ proc gaugeDerivDeriv2SubsetImpl[G:array|seq](c: GaugeActionCoeffs, g: G, hs, hdi
           shiftExpr(sfOther[nu], setOtherAdd(ir, it), hdir[ix])
       else:
         shiftExpr(sfOther[nu], setOtherAdd(ir, it), hdir[ix])
-      shiftExpr(sfSame[nu], setSame(ir, it), g[dir][ix])
+      shiftExpr(sfSame[nu], setSame(ir, it), u[dir][ix])
       threadBarrier()
       toc("gaugeDerivDeriv2Subset forward")
 
-      shiftExpr(bqSame, f[nu][ir] += cp*it, g[dir][ix].adj * sq[ix])
+      shiftExpr(bqSame, f[nu][ir] += cp*it, u[dir][ix].adj * sq[ix])
       shiftExpr(bqOther, f[nu][ir] += cp*it, hdir[ix].adj * sq[ix])
-      shiftExpr(sb[nu], f[dir][ir] += cp*it, g[nu][ix].adj * sd.field[ix])
+      shiftExpr(sb[nu], f[dir][ir] += cp*it, u[nu][ix].adj * sd.field[ix])
       threadBarrier()
       toc("gaugeDerivDeriv2Subset backward")
   toc("gaugeDerivDeriv2Subset end")
 
-proc gaugeDerivDeriv2Subset*[G:array|seq](c: GaugeActionCoeffs, g: G, h, f: array|seq, parity, dir: int; work: typeof(newLoopWork(g[0])) = nil) =
+proc gaugeDerivDeriv2Subset*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], h, f: array|seq, parity, dir: int; work: LoopWork[V,T] = nil) =
   ## f = H_g(h[dir]|P), including all affected links.
   c.gaugeDerivDeriv2SubsetImpl(g, h, h[dir], f, parity, dir, false, false, false, work=work)
 
-proc gaugeDerivDeriv2SubsetAdd*[G:array|seq](c: GaugeActionCoeffs, g: G, hdir: auto, f: array|seq, parity, dir: int; work: typeof(newLoopWork(g[0])) = nil) =
+proc gaugeDerivDeriv2SubsetAdd*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], hdir: auto, f: array|seq, parity, dir: int; work: LoopWork[V,T] = nil) =
   ## f += H_g(hdir|P).
   c.gaugeDerivDeriv2SubsetImpl(g, hdir, hdir, f, parity, dir, false, true, false, work=work)
 
-proc gaugeDerivDeriv2SubsetAddBase*[G:array|seq](c: GaugeActionCoeffs, g: G, hdir: auto, base, f: array|seq, parity, dir: int; work: typeof(newLoopWork(g[0])) = nil) =
+proc gaugeDerivDeriv2SubsetAddBase*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], hdir: auto, base, f: array|seq, parity, dir: int; work: LoopWork[V,T] = nil) =
   ## S=(P,dir): f[S] += H_g(hdir|P)[S].
   ## f[~S] = base[~S] + H_g(hdir|P)[~S].
   c.gaugeDerivDeriv2SubsetImpl(g, base, hdir, f, parity, dir, false, false, true, work=work)
 
-proc gaugeDerivDeriv2SubsetSum*[G:array|seq](c: GaugeActionCoeffs, g: G, h: array|seq, w: auto, f: array|seq, parity, dir: int; work: typeof(newLoopWork(g[0])) = nil) =
+proc gaugeDerivDeriv2SubsetSum*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], h: array|seq, w: auto, f: array|seq, parity, dir: int; work: LoopWork[V,T] = nil) =
   ## w|P = sum(h)|P; f = H_g(w|P).
   c.gaugeDerivDeriv2SubsetImpl(g, h, w, f, parity, dir, true, false, false, work=work)
 
-proc gaugeForce2*[G:array|seq](c: GaugeActionCoeffs, g: G, f: array|seq; work: typeof(newLoopWork(g[0])) = nil) =
+proc gaugeForce2*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: array|seq; work: LoopWork[V,T] = nil) =
   requireFundamental(c, "gaugeForce2")
   if c.pgm != 0:
     c.gaugeForce(g, f, work=work)
@@ -1128,41 +1133,43 @@ proc gaugeForce2*[G:array|seq](c: GaugeActionCoeffs, g: G, f: array|seq; work: t
   let td = newTransporters(g, g[0], -1)
   let td2 = newTransporters(g, g[0], -1)
   toc("gaugeForce2 setup")
+  let u = cast[ptr cArray[Field[V,T]]](unsafeAddr(g[0]))
   threads:
     for mu in 0..<nd:
       #let mu = (mux + 1) mod nd
       f[mu] := 0
       for nu in 0..<nd:
         if nu==mu: continue
-        discard t[nu] ^* g[mu]
-        shiftExpr(t[mu].sb, f[mu][ir] += cp * t[nu].field[ir]*adj(it), g[nu][ix])
-        f[mu] += cp * td[nu] ^* t[mu] ^* g[nu]
+        discard t[nu] ^* u[mu]
+        shiftExpr(t[mu].sb, f[mu][ir] += cp * t[nu].field[ir]*adj(it), u[nu][ix])
+        f[mu] += cp * td[nu] ^* t[mu] ^* u[nu]
         if cr != 0:
-          discard t2[nu] ^* t[nu] ^* g[mu]
-          discard tg[nu] ^* g[nu]
+          discard t2[nu] ^* t[nu] ^* u[mu]
+          discard tg[nu] ^* u[nu]
           shiftExpr(t[mu].sb, f[mu][ir] += cr * t2[nu].field[ir]*adj(it), tg[nu].field[ix])
-          f[mu] += cr * td2[nu] ^* td[nu] ^* tg[mu] ^* t[nu] ^* g[nu]
-          f[mu] += cr * td2[mu] ^* td[nu] ^* tg[mu] ^* t[mu] ^* g[nu]
-          discard td[nu] ^* tg[mu] ^* t[mu] ^* g[nu]
-          shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[nu].field[ir]*adj(it), g[mu][ix])
-          discard td[mu] ^* t[nu] ^* tg[mu] ^* g[mu]
-          shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[mu].field[ir]*adj(it), g[nu][ix])
+          f[mu] += cr * td2[nu] ^* td[nu] ^* tg[mu] ^* t[nu] ^* u[nu]
+          f[mu] += cr * td2[mu] ^* td[nu] ^* tg[mu] ^* t[mu] ^* u[nu]
+          discard td[nu] ^* tg[mu] ^* t[mu] ^* u[nu]
+          shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[nu].field[ir]*adj(it), u[mu][ix])
+          discard td[mu] ^* t[nu] ^* tg[mu] ^* u[mu]
+          shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[mu].field[ir]*adj(it), u[nu][ix])
           threadBarrier()
           shiftExpr(t2[mu].sb, f[mu][ir] += cr * t[nu].field[ir]*adj(it), t[mu].field[ix])
     for mu in 0..<nd:
       for e in f[mu]:
-        let s = g[mu][e] * f[mu][e].adj
+        let s = u[mu][e] * f[mu][e].adj
         f[mu][e].projectTAH s
   toc("end")
 proc gaugeForce2*(f,g: array|seq) =
   var c = GaugeActionCoeffs(plaq:1.0)
   gaugeForce2(c,g,f)
 
-proc gaugeAction3*[G:array|seq](c: GaugeActionCoeffs, g: G; work: typeof(newLoopWork(g[0])) = nil): auto =
+proc gaugeAction3*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]]; work: LoopWork[V,T] = nil): auto =
   requireFundamental(c, "gaugeAction3")
   tic("gaugeAction3")
   const nc = g[0][0].nrows
   let lo = g[0].l
+  let gs = @g  # wilsonLines captures its links in closures
   var pl = 0.0
   var rt = 0.0
   for mu in 1..<lo.nDim:
@@ -1176,7 +1183,7 @@ proc gaugeAction3*[G:array|seq](c: GaugeActionCoeffs, g: G; work: typeof(newLoop
           ls.add @[mu, nu, -mu, -nu]
         if c.rect!=0:
           ls.add [@[mu, nu, nu, -mu, -nu, -nu], @[mu, mu, nu, -mu, -mu, -nu]]
-      let ws = g.wilsonLines ls
+      let ws = gs.wilsonLines ls
       var i = 0
       if c.plaq!=0:
         pl += ws[0].re
@@ -1219,7 +1226,7 @@ proc plaqRectPath(c:GaugeActionCoeffs, mu,nu:int):auto =
   memoize(j,mu,nu):
     c.plaqRectPath_fun(mu,nu)
 
-proc gaugeForce3*(c: GaugeActionCoeffs, g,f: auto; work: typeof(newLoopWork(g[0])) = nil) =
+proc gaugeForce3*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: auto; work: LoopWork[V,T] = nil) =
   requireFundamental(c, "gaugeForce3")
   if c.pgm != 0:
     c.gaugeForce(g, f, work=work)
@@ -1229,13 +1236,14 @@ proc gaugeForce3*(c: GaugeActionCoeffs, g,f: auto; work: typeof(newLoopWork(g[0]
   let nd = g[0].l.nDim
   let cp = c.plaq / nc.float
   let cr = c.rect / nc.float
+  let gs = @g  # gaugeProd captures its links in closures
   threads:
     for mu in 0..<nd:
       f[mu] := 0
   for mu in 1..<nd:
     for nu in 0..<mu:
       let ptree = c.plaqRectPath(mu,nu)
-      let ws = g.gaugeProd ptree
+      let ws = gs.gaugeProd ptree
       threads:
         for ir in f[mu]:
           var pmu,rmu,pnu,rnu: type(load1(f[0][0]))
@@ -1256,7 +1264,7 @@ proc gaugeForce3*(c: GaugeActionCoeffs, g,f: auto; work: typeof(newLoopWork(g[0]
   threads:
     for mu in 0..<nd:
       for e in f[mu]:
-        let s = g[mu][e] * f[mu][e].adj
+        let s = gs[mu][e] * f[mu][e].adj
         f[mu][e].projectTAH s
   toc("end")
 proc gaugeForce3*(f,g: array|seq) =
@@ -1401,14 +1409,14 @@ proc forceA*(c: GaugeActionCoeffs, g,f: auto) =
   #contractProjectTAH(f, g)
   toc("forceA end")
 
-proc action*(c: GaugeActionCoeffs, g: auto; work: typeof(newLoopWork(g[0])) = nil): float =
+proc action*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]]; work: LoopWork[V,T] = nil): float =
   ## Dispatch by coefficient family; mixed adjoint/improved terms are rejected.
-  if c.adjplaq != 0: c.actionA(g)
+  if c.adjplaq != 0: c.actionA(@g)  # actionA captures its links in threads
   else: c.gaugeAction1(g, work=work)
 
-proc force*(c: GaugeActionCoeffs, g, f: auto; work: typeof(newLoopWork(g[0])) = nil) =
+proc force*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: auto; work: LoopWork[V,T] = nil) =
   ## Projected force for action(c,g). Keep f disjoint from g.
-  if c.adjplaq != 0: c.forceA(g, f)
+  if c.adjplaq != 0: c.forceA(@g, f)  # forceA captures its links in threads
   else: c.gaugeForce(g, f, work=work)
 
 when isMainModule:

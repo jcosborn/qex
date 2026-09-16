@@ -16,11 +16,11 @@ type
     gf: array[4,F]
     hl: HaloLayout[L]
     hm: HaloMap[L]
-    l1x: FieldArray[L.V,T]
-    l2x: FieldArray[L.V,T]
-    l1: FieldArray[L.V,T]
-    l2: FieldArray[L.V,T]
-    flx: FieldArray[L.V,T]
+    l1x: typeof(newFieldArray(default(L), F, 0))
+    l2x: typeof(newFieldArray(default(L), F, 0))
+    l1: typeof(newFieldArray(default(L), F, 0))
+    l2: typeof(newFieldArray(default(L), F, 0))
+    flx: typeof(newFieldArray(default(L), F, 0))
     hgf: array[4,Halo[L,F,T]]
     h1x: array[4,array[4,Halo[L,F,T]]]
     h2x: array[4,array[4,Halo[L,F,T]]]

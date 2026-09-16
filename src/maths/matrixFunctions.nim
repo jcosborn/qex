@@ -22,10 +22,9 @@ template productJet*(r: typed, n, order: static int, factor: untyped) =
     r := 0
   else:
     const full = (1 shl order)-1
-    type M = evalType(r)
-    var p {.noinit.}: array[full+1,M]
+    var p {.noinit.}: array[full+1,evalType(r)]
     forStatic k, 0, n-1:
-      var a {.noinit.}: array[order+1,M]
+      var a {.noinit.}: array[order+1,evalType(r)]
       factor(a, k)
       # Descending masks preserve the smaller prefix coefficients until read.
       forStatic ix, 0, full:
@@ -37,7 +36,7 @@ template productJet*(r: typed, n, order: static int, factor: untyped) =
             when mask == 0: p[mask] := a[0]
             else: p[mask] := a[firstSetBit(mask)]
           else:
-            var v {.noinit.}: M
+            var v {.noinit.}: evalType(r)
             when bits <= k: v := p[mask]*a[0]
             forStatic ix2, 1, order:
               const

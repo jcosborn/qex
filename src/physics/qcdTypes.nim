@@ -412,13 +412,10 @@ proc newField*[V:static[int]](l: Layout[V], T:typedesc): Field[V,T] =
   result.new(l)
 
 proc ColorMatrix*(l: Layout, n: static[int]): auto =
-  type C = type(l.newDComplexV)
-  type CM = ColorMatrixN[n,C]
-  result = l.newField(CM)
+  result = l.newField(ColorMatrixN[n,type(l.newDComplexV)])
 
 proc RealMatrix*[V:static[int]](l: Layout[V], n: static[int]): auto =
-  type RM = ColorMatrixN[n,type(l.newDRealV)]
-  result = l.newField(RM)
+  result = l.newField(ColorMatrixN[n,type(l.newDRealV)])
 
 macro makeConstructors(x: untyped): untyped =
   template mp(f,r,rslt: untyped) =

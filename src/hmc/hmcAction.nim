@@ -104,7 +104,7 @@ type
 
   GaugeAction*[U] = ref object of ActionRoot
     gc*: GaugeActionCoeffs
-    work*: LoopWork[U.V,U.T]
+    work*: typeof(newLoopWork(default(U)))
 
   StaggeredFermionAction*[U, T, S, R] = ref object of ActionRoot
     mass*: float
