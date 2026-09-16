@@ -3,7 +3,7 @@ import testutils
 
 qexInit()
 letParam:
-  lat = latticeFromLocalLattice(@[4,4], nRanks)
+  lat = latticeFromLocalLattice(@[4,4,4,4], nRanks)
 let lo = lat.newLayout
 let x = lo.ColorMatrix(3)
 let u = lo.ColorMatrix(3)
