@@ -1,4 +1,4 @@
-import ../[core, scalar, gauge]
+import ../[core, scalar, multi, gauge]
 import layout, physics/qcdTypes   # threads / simd reductions for forceRmsMinMax
 from math import sqrt
 
@@ -76,16 +76,35 @@ proc forceRmsMinMax*(force: Ggauge; dof: float): tuple[rms, fmin, fmax: float] =
   discard force.eval
   forceRmsMinMaxValue(force, dof)
 
-proc mdForceStats*(forces: openArray[Ggauge]): MdForceStats =
-  ## Statistics from retained integrator force nodes.
+proc forceStatsForward(v: Gvalue) =
+  let
+    force = Ggauge(v.inputs[0])
+    dof = float(force.gval.len * force.gval[0].l.physVol)
+    f = forceRmsMinMaxValue(force, dof)
+    z = Gmulti(v)
+  Gscalar(z.storedSlot(0)).sval = f.rms
+  Gscalar(z.storedSlot(1)).sval = f.fmin
+  Gscalar(z.storedSlot(2)).sval = f.fmax
+
+let forceStatsFunc = Gfunc(
+  forward: forceStatsForward, bufferMode: bmFull, name: "forceStats")
+
+proc forceStats*(force: Ggauge): Gmulti =
+  ## Diagnostic sink with RMS/min/max scalar slots; differentiation is undefined.
+  ## Schedule each root near its force producer to avoid retaining force history.
+  let s = force.scalarNodeLike
+  newMultiOutputNode([Gvalue(s), Gvalue(s), Gvalue(s)], [Gvalue(force)],
+    forceStatsFunc, "forceStats")
+
+proc mdForceStats*(forces: openArray[tuple[rms, fmin, fmax: float]]): MdForceStats =
+  ## Aggregate copied RMS/min/max triples from integrator forces.
   if forces.len == 0:
     raiseValueError("MD force statistics require at least one force")
-  discard forces[^1].eval
-  let dof = float(forces[0].gval.len * forces[0].gval[0].l.physVol)
   result.count = forces.len
-  result.fminMin = 1e300
-  for force in forces:
-    let f = forceRmsMinMaxValue(force, dof)
+  result.rmsMax = forces[0].rms
+  result.fminMin = forces[0].fmin
+  result.fmaxMax = forces[0].fmax
+  for f in forces:
     result.rmsMean += f.rms
     result.fminMean += f.fmin
     result.fmaxMean += f.fmax
@@ -95,6 +114,17 @@ proc mdForceStats*(forces: openArray[Ggauge]): MdForceStats =
   result.rmsMean /= float(result.count)
   result.fminMean /= float(result.count)
   result.fmaxMean /= float(result.count)
+
+proc mdForceStats*(forces: openArray[Ggauge]): MdForceStats =
+  ## Statistics from retained integrator force nodes.
+  if forces.len == 0:
+    raiseValueError("MD force statistics require at least one force")
+  discard forces[^1].eval
+  let dof = float(forces[0].gval.len * forces[0].gval[0].l.physVol)
+  var values = newSeq[tuple[rms, fmin, fmax: float]](forces.len)
+  for i, force in forces:
+    values[i] = forceRmsMinMaxValue(force, dof)
+  values.mdForceStats
 
 proc requireCoeffCountOrDefault(label: string,
                                 values: openArray[float],

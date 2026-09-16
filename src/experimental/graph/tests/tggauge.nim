@@ -8,7 +8,7 @@ addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 import qex except epsilon
 import algorithms/numdiff, gauge/stoutsmear
 import helpers
-import ../[core, scalar, multi, gauge]
+import ../[core, scalar, multi, gauge, plan]
 import ../functional
 import ../gauge/types as graphGaugeShared
 import ../gauge/basic_ops as graphGaugeBasic
@@ -63,13 +63,14 @@ proc zeroGaugeLike(source: graphGaugeShared.Gauge): graphGaugeShared.Gauge =
   result = source.newOneOf
   graphGaugeShared.zeroGaugeStorage(result)
 
-include gauge/coeffs
-include gauge/basic
-include gauge/field
-include gauge/transport
-include gauge/fused_basic
-include gauge/fused
-include gauge/action
+when not declared(onlyHmc):
+  include gauge/coeffs
+  include gauge/basic
+  include gauge/field
+  include gauge/transport
+  include gauge/fused_basic
+  include gauge/fused
+  include gauge/action
 include hmcgauge/basic
 
 qexFinalize()

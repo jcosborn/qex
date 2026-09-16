@@ -32,15 +32,17 @@ proc formatParameterValues*(training: TrainingState): string =
 
 proc trainStep*(training: var TrainingState,
                 config: RunConfig,
-                trainingStep: int) =
+                trainingStep: int,
+                gradients: openArray[float]) =
+  ## Consume gradients copied from the proposal before updating parameter leaves.
   tic()
   if trainingStep < 1 or trainingStep > config.trajsTrain:
     raiseValueError(
       "training step must satisfy 1 <= step <= " & $config.trajsTrain &
       ", got " & $trainingStep)
-  var gradients = newSeq[float](training.learned.len)
-  for i in 0..<gradients.len:
-    gradients[i] = training.learned[i].gradientExpr.eval.sval
+  if gradients.len != training.learned.len:
+    raiseValueError("training parameter/gradient count mismatch: " &
+      $training.learned.len & " vs " & $gradients.len)
   echo training.formatNamedValues("grad:", gradients)
   var parameters = training.parameterValues
   let learningRate = warmUpCosDecay(

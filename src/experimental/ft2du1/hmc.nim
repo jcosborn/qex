@@ -119,14 +119,14 @@ when isMainModule:
       dQchanged = newSeq[bool](runConfig.trajs)
       mdvals = newSeq[MdForceStats](runConfig.trajs)
 
-    proc proposalMon(traj: int; dH, acc: float) =
+    proc proposalMon(traj: int; proposal: Proposal) =
       proposalQValid = false
       let
         show = mp.monitorEvery > 0 and (traj-1) mod mp.monitorEvery == 0
         prod = traj > runConfig.trajsThermo
       if not (show or prod): return
       let
-        u = mapHost(graph.finalState.gauge.gaugeSnapshot, spec, layout).u
+        u = mapHost(proposal.gauge.gaugeSnapshot, spec, layout).u
         m = u.topoMaxP2DU1
         dq = int(round(m.topo-prevQ))
       proposalQ = m.topo

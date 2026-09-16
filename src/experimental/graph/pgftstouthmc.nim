@@ -8,6 +8,7 @@ import sequtils
 import utils/resample
 
 import core
+import plan
 import scalar
 import gauge
 import hmcgauge/config
@@ -109,10 +110,11 @@ proc runStoutHmc[T](R: typedesc[T]) =
     # physical field U = f(V) and its log-Jacobian, for measurement on the V leaf
     measure = sa.flow(graph.initialState.gauge)
     measureLd = logDetJ(measure, graph.initialState.gauge)
+    meas = plan(measure, measureLd)
 
   block:
-    discard measure.eval
-    let us = measure.gaugeSnapshot
+    discard meas.eval
+    let us = Ggauge(meas[0]).gaugeSnapshot
     echo "Initial smeared plaq: ", us.avgPlaq
     if Uloaded.len > 0:   # f(f^-1(U)) must reproduce the loaded physical config
       echo "load round-trip |f(f^-1(U)) - U|_max^2: ", maxGaugeDiff2(us, Uloaded)
@@ -127,10 +129,10 @@ proc runStoutHmc[T](R: typedesc[T]) =
 
   # Measure on the physical field U = f(V) at the committed configuration.
   proc measureTraj(traj: int; dH, acc: float; accepted: bool; forceStats: MdForceStats) =
-    discard measure.eval
+    discard meas.eval
     let
-      u = measure.gaugeSnapshot
-      lndetCur = measureLd.eval.sval
+      u = Ggauge(meas[0]).gaugeSnapshot
+      lndetCur = Gscalar(meas[1]).sval
       pl = u.avgPlaq
       lp = u.ploops
     echo "plaq: ", pl, "  ploop: ", lp.spatial, " ", lp.temporal, "  lnDet: ", lndetCur
@@ -145,6 +147,7 @@ proc runStoutHmc[T](R: typedesc[T]) =
       u.maybeSaveGauge(runConfig, traj)   # save the physical field U = f(V)
 
   runHmc(graph, runConfig, randomField, acceptRandom, measureTraj)
+  meas.clear
 
   if Hvals.len > 0:
     obstat(Hvals, Avals, Pvals, Lvals, Jvals, mdvals, gp.jkBlockSize)

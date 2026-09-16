@@ -1224,9 +1224,24 @@ Its design role is operational:
 - keep learned parameters paired with their gradient expressions rather than
   spreading that invariant across parallel arrays.
 
-Trajectory snapshot accessors return detached raw gauge storage. Accepted
-trajectory commit copies that snapshot back into the graph-owned initial gauge
-and marks the mutation there.
+`runHmc` evaluates one active proposal plan. Roots contain initial H/S/T,
+per-force scalar RMS/min/max triples in integrator order, final gauge and H/S/T,
+and the requested reverse momentum, physical view, loss and training gradients.
+Early force reductions avoid retaining the force history solely for diagnostics;
+other derivative consumers retain values until their actual last use. A phase
+change replaces the plan when its gradient root set changes.
+
+The proposal callback receives `Proposal(gauge, view, dH, acc, loss, gradients)`.
+Gauge values are borrowed for that callback; scalars and gradients are copied.
+`trainStep` consumes those copied gradients and owns no graph execution plan.
+Sampling-only application construction omits training expressions. Committed
+physical-field and logdet measurements use their own joint plan.
+
+Acceptance takes an owned final-gauge snapshot before reverse checks or callback
+parameter updates. A separate reverse plan uses the saved forward-final values;
+`finally` restores both original leaves and clears the reverse plan. Commit uses
+the earlier accepted snapshot, then measurements run on the committed state.
+Save a `gaugeSnapshot` when a callback value must survive another plan execution.
 
 Integrator coefficient completion is intentionally narrow. For force-gradient
 families, callers either accept the default tuple or provide the full explicit

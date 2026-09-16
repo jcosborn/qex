@@ -72,9 +72,8 @@ withRng(gp.rng, R):
     proposalQ = prevQ
 
   # dQ = Q(proposal) - Q(committed), before accept/reject.
-  proc proposalMon(traj: int; dH, acc: float) =
-    discard graph.finalState.gauge.eval
-    let tm = graph.finalState.gauge.gaugeSnapshot.topoMaxP2DU1
+  proc proposalMon(traj: int; proposal: Proposal) =
+    let tm = proposal.gauge.gaugeSnapshot.topoMaxP2DU1
     let dq = int(round(tm.topo - prevQ))
     proposalQ = tm.topo
     echo "proposal: dQ ", dq, "  maxP ", tm.maxP

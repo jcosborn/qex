@@ -9,6 +9,7 @@ setVLENmax(4)
 import qex
 
 import core
+import plan
 import scalar
 import gauge
 import hmcgauge/config
@@ -80,6 +81,7 @@ withRng(gp.rng, R):
     # physical field U = f(V) and its log-Jacobian, for measurement on the V leaf
     measure = sa.flow(graph.initialState.gauge)
     measureLd = logDetJ(measure, graph.initialState.gauge)
+    meas = plan(measure, measureLd)
     # proposed physical field U = f(V_prop) from the end-of-MD state, for the
     # proposed-configuration monitor (dQ, maxP)
     measureProp = sa.flow(graph.finalState.gauge)
@@ -88,8 +90,8 @@ withRng(gp.rng, R):
     prevQ = 0.0   # committed topological charge from the previous trajectory
     proposalQ = 0.0
   block:
-    discard measure.eval
-    let us = measure.gaugeSnapshot
+    discard meas.eval
+    let us = Ggauge(meas[0]).gaugeSnapshot
     echo "Initial smeared plaq: ", us.plaq3
     prevQ = us.topo2DU1
     if Uloaded.len > 0:   # f(f^-1(U)) must reproduce the loaded physical config
@@ -109,9 +111,8 @@ withRng(gp.rng, R):
   # Measure on the physical field U = f(V) at the committed configuration.
   # Proposed-configuration monitor (pre-commit): dQ = Q(f(V_prop)) − Q(committed) and
   # max|plaquette angle| of the end-of-MD proposal, independent of accept/reject.
-  proc proposalMon(traj: int; dH, acc: float) =
-    discard measureProp.eval
-    let tm = measureProp.gaugeSnapshot.topoMaxP2DU1
+  proc proposalMon(traj: int; proposal: Proposal) =
+    let tm = proposal.view.gaugeSnapshot.topoMaxP2DU1
     let dq = int(round(tm.topo - prevQ))
     proposalQ = tm.topo
     echo "proposal: dQ ", dq, "  maxP ", tm.maxP
@@ -119,10 +120,10 @@ withRng(gp.rng, R):
       dQchanged[traj - runConfig.trajsThermo - 1] = dq != 0
 
   proc measureTraj(traj: int; dH, acc: float; accepted: bool; forceStats: MdForceStats) =
-    discard measure.eval
+    discard meas.eval
     let
-      u = measure.gaugeSnapshot
-      lndetCur = measureLd.eval.sval
+      u = Ggauge(meas[0]).gaugeSnapshot
+      lndetCur = Gscalar(meas[1]).sval
       pl = u.plaq3
       q = if accepted: proposalQ else: prevQ
     echo "plaq: ", pl.re, "  topo: ", q, "  lnDet: ", lndetCur
@@ -137,7 +138,9 @@ withRng(gp.rng, R):
       mdvals[i] = forceStats
       u.maybeSaveGauge(runConfig, traj)   # save the physical field U = f(V)
 
-  runHmc(graph, runConfig, random, acceptRandom, measureTraj, proposalMon)
+  runHmc(graph, runConfig, random, acceptRandom, measureTraj, proposalMon,
+    proposalView = measureProp)
+  meas.clear
 
   if Hvals.len > 0:
     obstat(Hvals, Avals, Pvals, Qvals, gp.beta, lo.physVol, runConfig.trajs, gp.jkBlockSize, Jvals, mdvals)

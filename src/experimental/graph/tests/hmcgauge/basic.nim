@@ -30,6 +30,11 @@ suite "hmcgauge":
     for learned in graph.learnedParameters:
       result.add learned.name
 
+  proc forceValues(x: Gmulti): tuple[rms, fmin, fmax: float] =
+    (rms: Gscalar(x.storedSlot(0)).sval,
+      fmin: Gscalar(x.storedSlot(1)).sval,
+      fmax: Gscalar(x.storedSlot(2)).sval)
+
   test "RNG names select the supported HMC generators":
     check default(GaugeParams).rng == rkPhilox4x64
     check parseRngKind("Philox4x64") == rkPhilox4x64
@@ -227,6 +232,102 @@ suite "hmcgauge":
     for i, force in result.forces:
       check force.runCount == runs[i]
 
+  test "copied MD force triples aggregate means and extrema":
+    let stats = [(rms: 2.0, fmin: 1.0, fmax: 3.0),
+      (rms: 4.0, fmin: 0.0, fmax: 7.0)].mdForceStats
+    check stats.count == 2
+    check stats.rmsMean == 3.0
+    check stats.rmsMax == 4.0
+    check stats.fminMean == 0.5
+    check stats.fminMin == 0.0
+    check stats.fmaxMean == 5.0
+    check stats.fmaxMax == 7.0
+    check [(rms: 0.0, fmin: 0.0, fmax: 0.0)].mdForceStats == MdForceStats(count: 1)
+
+  test "MD force statistics reject empty force and scalar lists":
+    expect(GraphValueError):
+      discard newSeq[Ggauge]().mdForceStats
+    expect(GraphValueError):
+      discard newSeq[tuple[rms, fmin, fmax: float]]().mdForceStats
+
+  test "planned force diagnostics match direct reductions and isolate source caches":
+    let
+      lo = lat.newLayout
+      g = lo.newgauge
+      p = lo.newgauge
+      dof = float(g.len * lo.physVol)
+    var rng = lo.newRNGField(Philox4x64, 921260914u64)
+    threads:
+      g.random rng
+      p.randomTAH rng
+    for kind in IntegratorKind:
+      let
+        grt = initGraphRuntime()
+        gc = actWilson(grt.toGvalue(6.0))
+        dt = grt.toGvalue(0.025)
+        traj = integrateGauge(act(gc), grt.toGvalue(g), grt.toGvalue(p), dt,
+          2, parseIntegratorCoeffs(kind, []))
+      var
+        stats: seq[Gmulti]
+        roots: seq[Gvalue]
+      for force in traj.forces:
+        let diag = force.forceStats
+        stats.add diag
+        roots.add diag
+      roots.add traj.gauge
+      let planned = plan(roots)
+      var
+        runs = newSeq[int](stats.len)
+        forceRuns = newSeq[int](stats.len)
+        previous = newSeq[tuple[rms, fmin, fmax: float]](stats.len)
+      for pass in 0..1:
+        discard planned.eval
+        var values = newSeq[tuple[rms, fmin, fmax: float]](stats.len)
+        for i, diag in stats:
+          check diag.runCount == runs[i]
+          check traj.forces[i].runCount == forceRuns[i]
+          if pass == 0:
+            check not diag.valueReady
+            check not traj.forces[i].valueReady
+            check not traj.forces[i].hasStorage
+          else:
+            check diag.forceValues == previous[i]
+          let value = Gmulti(planned[i])
+          check value.len == 3
+          check value.bufferBytes == 0
+          for j in 0..<3:
+            check value.storedSlot(j) of Gscalar
+          values[i] = value.forceValues
+        if pass > 0:
+          check values != previous
+        let forwards = planned.stats.forwards
+        discard planned.eval
+        check planned.stats.forwards == forwards
+
+        for i, diag in stats:
+          let want = traj.forces[i].forceRmsMinMax(dof)
+          discard diag.eval
+          let direct = diag.forceValues
+          for (got, expected) in [
+              (values[i].rms, want.rms), (values[i].fmin, want.fmin), (values[i].fmax, want.fmax),
+              (direct.rms, want.rms), (direct.fmin, want.fmin), (direct.fmax, want.fmax)]:
+            check abs(got - expected) < 1e-12 * (1.0 + abs(expected))
+          runs[i] = diag.runCount
+          forceRuns[i] = traj.forces[i].runCount
+          previous[i] = direct
+        let
+          got = values.mdForceStats
+          want = traj.forces.mdForceStats
+        check got.count == want.count
+        for (a, b) in [
+            (got.rmsMean, want.rmsMean), (got.rmsMax, want.rmsMax),
+            (got.fminMean, want.fminMean), (got.fminMin, want.fminMin),
+            (got.fmaxMean, want.fmaxMean), (got.fmaxMax, want.fmaxMax)]:
+          check abs(a - b) < 1e-12 * (1.0 + abs(b))
+        if pass == 0:
+          dt.update 0.0375
+      planned.clear
+
   test "force extrema include exact zero magnitudes":
     let force = grt.toGvalue(zeroGaugeLike(g))
     let stats = force.forceRmsMinMax(float(g.len * lo.physVol))
@@ -234,6 +335,11 @@ suite "hmcgauge":
     check stats.rms == 0.0
     check stats.fmin == 0.0
     check stats.fmax == 0.0
+    let diag = force.forceStats
+    discard diag.eval
+    check diag.forceValues == stats
+    expect(GraphError):
+      discard grad(Gscalar(diag[0]), force)
 
   test "4MN3F1GP rejects partial coefficient tuples":
     let inputs = validIntegratorInputs()
@@ -325,6 +431,422 @@ suite "hmcgauge":
     check after != before
     discard graph.lossExpr.eval.sval
 
+  test "reversibility failure restores both initial leaves":
+    let
+      grt = initGraphRuntime()
+      lo = lat.newLayout
+      g = lo.newgauge
+      p = lo.newgauge
+      gc = actWilson(grt.toGvalue(6.0))
+    var rng = lo.newRNGField(Philox4x64, 921260912u64)
+    threads:
+      g.random rng
+      p.randomTAH rng
+    var config = validRunConfig()
+    config.gsteps = 1
+    var
+      armed, failed = false
+      gi, pi: Ggauge
+      ge, pe: graphGaugeShared.Gauge
+    proc forward(v: Gvalue) =
+      if armed:
+        ge = gi.gaugeSnapshot
+        pe = pi.gaugeSnapshot
+        raiseError("requested reverse force failure")
+      v.valCopy(v.inputs[0])
+    proc force(x: Ggauge): Ggauge =
+      let f = gaugeForce(gc, x)
+      graphNode(f.gaugeNodeLike, [Gvalue(f)],
+        Gfunc(forward: forward, bufferMode: bmFull, name: "reverse force failure"),
+        "reverse force failure")
+    let graph = buildTrajectoryGraph(grt, g, p, act(gc), config,
+      buildTraining = false, force = force)
+    gi = graph.initialState.gauge
+    pi = graph.initialState.momentum
+    let
+      g0 = gi.gaugeSnapshot
+      p0 = pi.gaugeSnapshot
+    discard graph.finalState.hamiltonian.eval
+    let
+      gf = graph.finalState.gauge.gaugeSnapshot
+      pf = graph.finalState.momentum.gaugeSnapshot
+    # Arming leaves the forward caches current; reverse input updates trigger failure.
+    armed = true
+    try:
+      graph.reversibilityCheck
+    except GraphError as e:
+      failed = true
+      check e.msg == "requested reverse force failure"
+    check failed
+    norm2(grt.toGvalue(ge) - grt.toGvalue(gf)) :< 1e-26
+    norm2(grt.toGvalue(pe) + grt.toGvalue(pf)) :< 1e-26
+    norm2(gi - grt.toGvalue(g0)) :< 1e-26
+    norm2(pi - grt.toGvalue(p0)) :< 1e-26
+
+  test "planned proposals match retained values for integrators and loss branches":
+    let
+      lo = lat.newLayout
+      g = lo.newgauge
+      p = lo.newgauge
+    var rng = lo.newRNGField(Philox4x64, 921260915u64)
+    threads:
+      g.random rng
+      p.randomTAH rng
+    for kind in IntegratorKind:
+      for bias in [-2.0, 2.0]:
+        var config = validRunConfig()
+        config.gsteps = 1
+        config.trajs = 1
+        config.trajsTrain = 1
+        config.trajsTrainlrWarm = 0
+        config.trajsForceAcc = 1
+        config.integratorCoeffs = parseIntegratorCoeffs(kind, [])
+        let
+          rt = initGraphRuntime()
+          rr = initGraphRuntime()
+          gc = actWilson(rt.toGvalue(6.0))
+          rc = actWilson(rr.toGvalue(6.0))
+        # An initial-energy offset selects each acceptance-loss branch while its
+        # constant derivative leaves the integrator force unchanged.
+        proc action(x: Ggauge): Gscalar =
+          result = gaugeAction(gc, x)
+          if x.gfunc == nil: result = result + bias
+        proc referenceAction(x: Ggauge): Gscalar =
+          result = gaugeAction(rc, x)
+          if x.gfunc == nil: result = result + bias
+        let
+          graph = buildTrajectoryGraph(rt, g, p, action, config)
+          reference = buildTrajectoryGraph(rr, g, p, referenceAction, config)
+          view = adj(graph.finalState.gauge)
+        var
+          random = lo.newRNGField(Philox4x64, 921260916u64)
+          referenceRandom = lo.newRNGField(Philox4x64, 921260916u64)
+          serial: Philox4x64
+        serial.seed(921260917u64, 0)
+        reference.resampleMomentum(referenceRandom)
+        let
+          dh = reference.deltaHamiltonian.eval.sval
+          loss = reference.lossExpr.eval.sval
+          stats = reference.mdForces.mdForceStats
+          finalGauge = reference.finalState.gauge.gaugeSnapshot
+        check (dh < 0.0) == (bias > 0.0)
+        var gradients = newSeq[float](reference.learnedParameters.len)
+        for i, learned in reference.learnedParameters:
+          gradients[i] = learned.gradientExpr.eval.sval
+        var
+          roots = @[Gvalue(graph.initialState.hamiltonian),
+            Gvalue(graph.finalState.hamiltonian), Gvalue(view), Gvalue(graph.lossExpr)]
+          proposalCalled, measureCalled = false
+        for learned in graph.learnedParameters: roots.add learned.gradientExpr
+        let originals = graphValues(roots)
+        proc onProposal(traj: int; proposal: Proposal) =
+          proposalCalled = true
+          check traj == 1
+          check abs(proposal.dH - dh) < 1e-10
+          check abs(proposal.acc - exp(-dh)) < 1e-10 * (1.0 + exp(-dh))
+          check abs(proposal.loss - loss) < 1e-11 * (1.0 + abs(loss))
+          check proposal.gradients.len == gradients.len
+          for i, expected in gradients:
+            check abs(proposal.gradients[i] - expected) < 1e-9 * (1.0 + abs(expected))
+          norm2(proposal.gauge - rt.toGvalue(finalGauge)) :< 1e-20
+          norm2(proposal.view - adj(rt.toGvalue(finalGauge))) :< 1e-20
+          for original in originals: check original.runCount == 0
+          for learned in graph.learnedParameters:
+            learned.node.update learned.node.sval + 0.001
+        proc measure(traj: int; dH, acc: float; accepted: bool; forceStats: MdForceStats) =
+          measureCalled = true
+          check proposalCalled
+          check accepted
+          check forceStats.count == stats.count
+          for (got, expected) in [
+              (forceStats.rmsMean, stats.rmsMean), (forceStats.rmsMax, stats.rmsMax),
+              (forceStats.fminMean, stats.fminMean), (forceStats.fminMin, stats.fminMin),
+              (forceStats.fmaxMean, stats.fmaxMean), (forceStats.fmaxMax, stats.fmaxMax)]:
+            check abs(got - expected) < 1e-11 * (1.0 + abs(expected))
+          finalGauge.reunitGauge
+          norm2(graph.initialState.gauge - rt.toGvalue(finalGauge)) :< 1e-20
+          for original in originals: check original.runCount == 0
+        runHmc(graph, config, random, serial, measure, onProposal, proposalView = view)
+        check proposalCalled and measureCalled
+
+  test "driver phases evaluate loss each time and gradients only for training":
+    let
+      rt = initGraphRuntime()
+      lo = lat.newLayout
+      g = lo.newgauge
+      p = lo.newgauge
+      gc = actWilson(rt.toGvalue(6.0))
+    var random = lo.newRNGField(Philox4x64, 921260918u64)
+    threads:
+      g.random random
+      p.randomTAH random
+    var config = validRunConfig()
+    config.gsteps = 1
+    config.trajsThermo = 1
+    config.trajs = 2
+    config.trajsTrain = 1
+    config.trajsTrainlrWarm = 0
+    config.trajsForceAcc = 3
+    config.revCheckFreq = 2
+    var
+      graph = buildTrajectoryGraph(rt, g, p, act(gc), config)
+      proposalRuns, lossRuns, gradientRuns, proposals, measures: int
+      serial: Philox4x64
+      expected: graphGaugeShared.Gauge
+      copied: seq[float]
+    serial.seed(921260919u64, 0)
+    proc proposalForward(v: Gvalue) =
+      inc proposalRuns
+      v.valCopy(v.inputs[0])
+    proc lossForward(v: Gvalue) =
+      inc lossRuns
+      v.valCopy(v.inputs[0])
+    proc gradientForward(v: Gvalue) =
+      inc gradientRuns
+      v.valCopy(v.inputs[0])
+    graph.finalState.gauge = graphNode(graph.finalState.gauge.gaugeNodeLike,
+      [Gvalue(graph.finalState.gauge)],
+      Gfunc(forward: proposalForward, bufferMode: bmFull, name: "proposal count"), "proposal count")
+    graph.lossExpr = graphNode(graph.lossExpr.scalarNodeLike, [Gvalue(graph.lossExpr)],
+      Gfunc(forward: lossForward, bufferMode: bmFull, name: "loss count"), "loss count")
+    for learned in mitems(graph.learnedParameters):
+      learned.gradientExpr = graphNode(learned.gradientExpr.scalarNodeLike,
+        [Gvalue(learned.gradientExpr)],
+        Gfunc(forward: gradientForward, bufferMode: bmFull, name: "gradient count"), "gradient count")
+    var trainer = initTrainingState(graph, config.weightDecay)
+    proc onProposal(traj: int; proposal: Proposal) =
+      inc proposals
+      check proposalRuns == traj + traj div 2
+      check lossRuns == traj
+      check proposal.view == proposal.gauge
+      let
+        tau = float(config.gsteps) * graph.learnedParameters[0].node.sval
+        loss = -min(1.0, proposal.acc) * tau * tau
+      check abs(proposal.loss - loss) < 1e-12
+      expected = proposal.gauge.gaugeSnapshot
+      expected.reunitGauge
+      if config.trajectoryPhase(traj) == tpTrain:
+        check proposal.gradients.len == graph.learnedParameters.len
+        copied = proposal.gradients
+        trainer.trainStep(config, 1, proposal.gradients)
+        check proposal.gradients == copied
+      else:
+        check proposal.gradients.len == 0
+      check gradientRuns == (if traj < 2: 0 else: graph.learnedParameters.len)
+      check graph.finalState.gauge.runCount == 0
+      check graph.finalState.hamiltonian.runCount == 0
+      check graph.lossExpr.runCount == 0
+      for learned in graph.learnedParameters: check learned.gradientExpr.runCount == 0
+    proc measure(traj: int; dH, acc: float; accepted: bool; forceStats: MdForceStats) =
+      inc measures
+      check proposals == traj
+      check accepted
+      norm2(graph.initialState.gauge - rt.toGvalue(expected)) :< 1e-26
+    runHmc(graph, config, random, serial, measure, onProposal)
+    check proposals == 3
+    check measures == 3
+    check gradientRuns == graph.learnedParameters.len
+    check copied.len == graph.learnedParameters.len
+
+  test "driver accept reject and forced acceptance preserve the chosen snapshot":
+    let
+      lo = lat.newLayout
+      g = lo.newgauge
+      p = lo.newgauge
+    var rng = lo.newRNGField(Philox4x64, 921260920u64)
+    threads:
+      g.random rng
+      p.randomTAH rng
+    for mode in 0..2:
+      let rt = initGraphRuntime()
+      var config = validRunConfig()
+      config.gsteps = 1
+      config.trajs = 1
+      config.trajsTrain = 0
+      config.trajsTrainlrWarm = 0
+      config.trajsForceAcc = (if mode == 2: 1 else: 0)
+      var graph = buildTrajectoryGraph(rt, g, p,
+        act(actWilson(rt.toGvalue(6.0))), config, buildTraining = false)
+      graph.finalState.hamiltonian = graph.finalState.hamiltonian +
+        (if mode == 0: -100.0 else: 100.0)
+      var
+        random = lo.newRNGField(Philox4x64, 921260921u64)
+        serial: Philox4x64
+        proposed: graphGaugeShared.Gauge
+        proposals, measures: int
+      serial.seed(921260922u64, 0)
+      proc onProposal(traj: int; proposal: Proposal) =
+        inc proposals
+        check proposal.gradients.len == 0
+        check graph.lossExpr == nil
+        check graph.learnedParameters.len == 0
+        check (proposal.dH < 0.0) == (mode == 0)
+        proposed = proposal.gauge.gaugeSnapshot
+        proposed.reunitGauge
+        # The callback can write a borrowed result; commit uses its earlier copy.
+        proposal.gauge.update g
+      proc measure(traj: int; dH, acc: float; accepted: bool; forceStats: MdForceStats) =
+        inc measures
+        check proposals == 1
+        check accepted == (mode != 1)
+        let expected = if accepted: proposed else: g
+        norm2(graph.initialState.gauge - rt.toGvalue(expected)) :< 1e-26
+        check graph.finalState.hamiltonian.runCount == 0
+        check graph.finalState.gauge.runCount == 0
+      runHmc(graph, config, random, serial, measure, onProposal)
+      check measures == 1
+
+  test "seeded trajectories match retained acceptance state and RNG continuation":
+    let
+      lo = lat.newLayout
+      g = lo.newgauge
+      p = lo.newgauge
+      rt = initGraphRuntime()
+      rr = initGraphRuntime()
+      shifts = [-100.0, 0.0, 100.0]
+      shift = rt.toGvalue(shifts[0])
+      referenceShift = rr.toGvalue(shifts[0])
+    var rng = lo.newRNGField(Philox4x64, 921260925u64)
+    threads:
+      g.random rng
+      p.randomTAH rng
+    var config = validRunConfig()
+    config.gsteps = 1
+    config.trajs = shifts.len
+    config.trajsTrain = 0
+    config.trajsTrainlrWarm = 0
+    config.revCheckFreq = 2
+    var
+      graph = buildTrajectoryGraph(rt, g, p,
+        act(actWilson(rt.toGvalue(6.0))), config, buildTraining = false)
+      reference = buildTrajectoryGraph(rr, g, p,
+        act(actWilson(rr.toGvalue(6.0))), config, buildTraining = false)
+      random = lo.newRNGField(Philox4x64, 921260926u64)
+      referenceRandom = lo.newRNGField(Philox4x64, 921260926u64)
+      serial, referenceSerial: Philox4x64
+      delta, acc: float
+      accepted: bool
+      stats: MdForceStats
+      proposals, measures: int
+    serial.seed(921260927u64, 0)
+    referenceSerial.seed(921260927u64, 0)
+    # Finite offsets select acceptance and rejection. The middle trajectory has
+    # no offset for its reverse check.
+    graph.finalState.hamiltonian = graph.finalState.hamiltonian + shift
+    reference.finalState.hamiltonian = reference.finalState.hamiltonian + referenceShift
+    proc onProposal(traj: int; proposal: Proposal) =
+      inc proposals
+      reference.resampleMomentum(referenceRandom)
+      let h0 = reference.initialState.hamiltonian.eval.sval
+      delta = reference.finalState.hamiltonian.eval.sval - h0
+      acc = exp(-delta)
+      stats = reference.mdForces.mdForceStats
+      let finalGauge = reference.finalState.gauge.gaugeSnapshot
+      accepted = referenceSerial.uniform <= acc
+      check abs(proposal.dH - delta) < 1e-10
+      check abs(proposal.acc - acc) < 1e-11 * (1.0 + acc)
+      check proposal.gradients.len == 0
+      check norm2(proposal.gauge - rt.toGvalue(finalGauge)).eval.sval < 1e-20
+      if traj == 1: check accepted
+      if traj == shifts.len: check not accepted
+      if traj mod config.revCheckFreq == 0:
+        reference.reversibilityCheck
+      if accepted:
+        reference.commitAcceptedTrajectory(finalGauge)
+    proc measure(traj: int; dH, probability: float; chosen: bool; forceStats: MdForceStats) =
+      inc measures
+      check proposals == traj
+      check chosen == accepted
+      check abs(dH - delta) < 1e-10
+      check abs(probability - acc) < 1e-11 * (1.0 + acc)
+      check forceStats.count == stats.count
+      for (got, expected) in [
+          (forceStats.rmsMean, stats.rmsMean), (forceStats.rmsMax, stats.rmsMax),
+          (forceStats.fminMean, stats.fminMean), (forceStats.fminMin, stats.fminMin),
+          (forceStats.fmaxMean, stats.fmaxMean), (forceStats.fmaxMax, stats.fmaxMax)]:
+        check abs(got - expected) < 1e-11 * (1.0 + abs(expected))
+      check norm2(graph.initialState.gauge -
+        rt.toGvalue(reference.initialState.gauge.gaugeSnapshot)).eval.sval < 1e-20
+      check norm2(graph.initialState.momentum -
+        rt.toGvalue(reference.initialState.momentum.gaugeSnapshot)).eval.sval < 1e-20
+      if traj < shifts.len:
+        shift.update shifts[traj]
+        referenceShift.update shifts[traj]
+    runHmc(graph, config, random, serial, measure, onProposal)
+    check proposals == shifts.len
+    check measures == shifts.len
+    for draw in 0..<3:
+      check serial.uniform == referenceSerial.uniform
+
+  test "planned reverse failure restores resampled leaves and preserves forward storage":
+    let
+      rt = initGraphRuntime()
+      lo = lat.newLayout
+      g = lo.newgauge
+      p = lo.newgauge
+      gc = actWilson(rt.toGvalue(6.0))
+    var random = lo.newRNGField(Philox4x64, 921260923u64)
+    threads:
+      g.random random
+      p.randomTAH random
+    var config = validRunConfig()
+    config.gsteps = 1
+    config.trajs = 1
+    config.trajsTrain = 0
+    config.trajsTrainlrWarm = 0
+    config.trajsForceAcc = 1
+    config.revCheckFreq = 1
+    var
+      calls: int
+      failed, proposalCalled, measureCalled = false
+      gi, pi: Ggauge
+      g0, p0, forwardStorage, forwardSnapshot: graphGaugeShared.Gauge
+      serial: Philox4x64
+    serial.seed(921260924u64, 0)
+    proc forceForward(v: Gvalue) =
+      if calls == 0:
+        g0 = gi.gaugeSnapshot
+        p0 = pi.gaugeSnapshot
+      inc calls
+      if calls > 2: raiseError("requested planned reverse force failure")
+      v.valCopy(v.inputs[0])
+    proc force(x: Ggauge): Ggauge =
+      let f = gaugeForce(gc, x)
+      graphNode(f.gaugeNodeLike, [Gvalue(f)],
+        Gfunc(forward: forceForward, bufferMode: bmFull, name: "planned reverse failure"),
+        "planned reverse failure")
+    proc viewForward(v: Gvalue) =
+      v.valCopy(v.inputs[0])
+      forwardStorage = Ggauge(v).gval
+      forwardSnapshot = Ggauge(v).gaugeSnapshot
+    let graph = buildTrajectoryGraph(rt, g, p, act(gc), config,
+      buildTraining = false, force = force)
+    gi = graph.initialState.gauge
+    pi = graph.initialState.momentum
+    let view = graphNode(graph.finalState.gauge.gaugeNodeLike,
+      [Gvalue(graph.finalState.gauge)],
+      Gfunc(forward: viewForward, bufferMode: bmFull, name: "save forward storage"),
+      "save forward storage")
+    proc onProposal(traj: int; proposal: Proposal) =
+      proposalCalled = true
+    proc measure(traj: int; dH, acc: float; accepted: bool; forceStats: MdForceStats) =
+      measureCalled = true
+    try:
+      runHmc(graph, config, random, serial, measure, onProposal, proposalView = view)
+    except GraphError as e:
+      failed = true
+      check e.msg == "requested planned reverse force failure"
+    check failed
+    check calls == 3
+    check not proposalCalled
+    check not measureCalled
+    check forwardSnapshot.len == g.len
+    norm2(gi - rt.toGvalue(g0)) :< 1e-26
+    norm2(pi - rt.toGvalue(p0)) :< 1e-26
+    norm2(rt.toGvalue(forwardStorage) - rt.toGvalue(forwardSnapshot)) :< 1e-26
+    check graph.finalState.hamiltonian.runCount == 0
+    check graph.finalState.gauge.runCount == 0
+
   test "accepted trajectory commit uses a pre-training final gauge snapshot":
     let graph = buildTrajectoryGraph(grt, g, p, act(actWilson(scalar.toGvalue(grt, 6.0))), validRunConfig())
     discard graph.finalState.gauge.eval
@@ -360,13 +882,16 @@ suite "hmcgauge":
     let graph = buildTrajectoryGraph(grt, g, p, act(actWilson(scalar.toGvalue(grt, 6.0))), config)
     var trainer = initTrainingState(graph, config.weightDecay)
     let before = trainer.parameterValues
-
-    trainer.trainStep(config, 1)
+    let gradients = @[0.5, -0.25]
+    trainer.trainStep(config, 1, gradients)
 
     let after = trainer.parameterValues
     check after.len == before.len
     check after.len == graph.learnedParameters.len
     check after != before
+    for learned in graph.learnedParameters:
+      check learned.gradientExpr.runCount == 0
+    check graph.finalState.hamiltonian.runCount == 0
 
   test "training step rejects indexes outside training phase":
     let config = validRunConfig()
@@ -374,9 +899,11 @@ suite "hmcgauge":
     var trainer = initTrainingState(graph, config.weightDecay)
 
     expect(GraphValueError):
-      trainer.trainStep(config, 0)
+      trainer.trainStep(config, 0, @[0.5, -0.25])
     expect(GraphValueError):
-      trainer.trainStep(config, config.trajsTrain + 1)
+      trainer.trainStep(config, config.trajsTrain + 1, @[0.5, -0.25])
+    expect(GraphValueError):
+      trainer.trainStep(config, 1, @[0.5])
 
   test "nonempty missing gauge file fails instead of silently uniting":
     var localGauge = lo.newgauge

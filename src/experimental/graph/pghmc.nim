@@ -7,7 +7,7 @@ from hmcgauge/config import
   RunConfig, tpThermo, tpTrain, tpInfer,
   totalTrajs, trajectoryPhase, validateRunConfig
 from hmcgauge/trajectory import
-  TrajectoryGraph, MdForceStats, buildTrajectoryGraph, runHmc
+  TrajectoryGraph, MdForceStats, Proposal, buildTrajectoryGraph, runHmc
 from hmcgauge/rng import rkPhilox4x64, withRng
 from hmcgauge/training import
   TrainingState, initTrainingState, formatParameterValues, trainStep
@@ -62,24 +62,25 @@ proc runHmcGauge*() =
     let graph =
       if runConfig.trajsTrain == 0:
         let force = proc(x: Ggauge): Ggauge = gaugeForce(gc, x)
-        buildTrajectoryGraph(grt, g, p, action, runConfig, force = force)
+        buildTrajectoryGraph(grt, g, p, action, runConfig, buildTraining = false, force = force)
       else:
         buildTrajectoryGraph(grt, g, p, action, runConfig)
-    var trainer = initTrainingState(graph, runConfig.weightDecay)
-
-    echo trainer.formatParameterValues
+    var trainer: TrainingState
+    if runConfig.trajsTrain > 0:
+      trainer = initTrainingState(graph, runConfig.weightDecay)
+      echo trainer.formatParameterValues
 
     toc("prep")
 
     # Pre-commit (training) and post-commit (measurement) hooks for the shared driver.
-    proc onProposal(traj: int; dH, acc: float) =
-      let loss = graph.lossExpr.eval.sval
+    proc onProposal(traj: int; proposal: Proposal) =
+      if graph.lossExpr == nil: return
       case runConfig.trajectoryPhase(traj)
-      of tpThermo: echo "bloss: ", loss
+      of tpThermo: echo "bloss: ", proposal.loss
       of tpTrain:
-        echo "tloss: ", loss
-        trainer.trainStep(runConfig, traj - runConfig.trajsThermo)
-      of tpInfer: echo "iloss: ", loss
+        echo "tloss: ", proposal.loss
+        trainer.trainStep(runConfig, traj - runConfig.trajsThermo, proposal.gradients)
+      of tpInfer: echo "iloss: ", proposal.loss
     proc measureTraj(traj: int; dH, acc: float; accepted: bool; forceStats: MdForceStats) =
       let currentGauge = graph.initialState.gauge.gaugeSnapshot
       currentGauge.echoPlaq
