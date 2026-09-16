@@ -63,18 +63,26 @@ proc expPolyGraph*(x: Ggauge): Ggauge =
   result = 1.0 + e
 
 proc expTopReplica*(y: Ggauge, d: openArray[Ggauge]): Ggauge =
-  ## expTop(y; d) as a basic-op graph. For m = 0 it is the polynomial replica;
-  ## otherwise the y-bar rule read backwards, with one fewer direction:
+  ## For Nc = 1, expTop(y; d) = exp(y) * product(d), including m = 0.
+  ## For Nc > 1, m = 0 is the polynomial replica; higher orders use the
+  ## y-bar rule read backwards, with one fewer direction:
   ##   expTop(y; d_1..d_m) = gradSeeded(expTop(slot; d_2^dag..d_m^dag), slot, d_1),
   ##   slot = slotVar(y^dag).
   ## The fallback past m = 3, and the test oracle for the fused nodes.
+  const nc = y.gval[0][0].nrows
+  when nc == 1:
+    result = exp(y)
+    for x in d:
+      y.requireSameGaugeShape(x, "expTopReplica")
+      result = result * x
+    return
   if d.len == 0:
     return expPolyGraph(y)
   let slot = slotVar(y.adj)
   var rest: seq[Ggauge]
   for j in 1 ..< d.len:
     rest.add d[j].adj
-  Ggauge(gradSeeded(expTopReplica(slot, rest), slot, d[0]))
+  result = Ggauge(gradSeeded(expTopReplica(slot, rest), slot, d[0]))
 
 template expJetKernel(v: Gvalue, M: static int) =
   let y = Ggauge(v.inputs[0])

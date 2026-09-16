@@ -868,7 +868,7 @@ Each gauge module isolates one protocol, and that is the rule for adding one:
 ```text
 gauge/types.nim       value storage: Ggauge, GfieldOf[F] (Gfield, Gcfield), ownership, shape helpers
 gauge/basic_ops.nim   closed generators: the site algebra stamped per type, blend/mask
-gauge/matfun.nim      exp family: kernels at every order (expJet) and the polynomial replica
+gauge/matfun.nim      exp family: fused jets through three directions and graph replicas
 gauge/field_ops.nim   shift, linkField, injectLink
 gauge/cfield.nim      matrix field <-> complex field bridge: trace, scale, dot
 gauge/stencil.nim     halo moves of a field: gather, scatter, gp (gathered product)
@@ -880,13 +880,13 @@ gauge/stout.nim       stout monolith wrappers
 
 Optimized operators keep fused kernels for the orders that matter. Where no
 optimized higher-order kernel exists, the backward hook must not raise; it
-builds a grad-complete replica of the node's function. The exp tower is
-fused at every order through `expJet` (matrix jets of the kernel polynomial;
-`expTopReplica` nests the basic-op polynomial replica past three directions),
+builds a grad-complete replica of the node's function. `expJet` has fused kernels
+through three directions. For Nc > 1, `expTopReplica` differentiates the same
+finite polynomial past that boundary; for Nc = 1, every order uses the exact
+scalar identity `exp(y) * product(d)`, including zero directions.
 `plaqActionGraph` over hop chains is the replica behind `gaugeActionDeriv2`, and the
 stout update gradient kernels differentiate through a replica of the update
-built over slot variables. The Nc=1 exponential uses its exact scalar identity
-instead.
+built over slot variables.
 
 The reference actions also carry what the QEX kernels omit, and the kernel
 dispatch in `action/domain` now raises there instead of returning a truncated
