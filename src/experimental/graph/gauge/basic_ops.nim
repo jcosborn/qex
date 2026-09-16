@@ -230,18 +230,18 @@ template stampSiteOps(T: typedesc, tag: static string) =
   proc `-`*[L: Literal](x: T, y: L): T =
     x - toGvalue(x.runtime, float(y))
 
-  let retrg = Gfunc(forward: retrf[T], backward: retrb[T], name: "retr" & tag)
-  let adjg = Gfunc(forward: adjf[T], backward: adjb[T], name: "adj" & tag)
-  let norm2g = Gfunc(forward: norm2f[T], backward: norm2b[T], name: "norm2" & tag)
-  let negg = Gfunc(forward: negf[T], backward: negb[T], name: "-" & tag)
-  let addsg = Gfunc(forward: addsf[T], backward: addsb[T], name: "s+" & tag)
-  let addg = Gfunc(forward: addf[T], backward: addb[T], name: tag & "+" & tag)
-  let mulsg = Gfunc(forward: mulsf[T], backward: mulsb[T], name: "s*" & tag)
-  let mulg = Gfunc(forward: mulf[T], backward: mulb[T], name: tag & "*" & tag)
-  let redotg = Gfunc(forward: redotf[T], backward: redotb[T], name: "redot" & tag)
-  let subsg = Gfunc(forward: subsf[T], backward: subsb[T], name: tag & "-s")
-  let subg = Gfunc(forward: subf[T], backward: subb[T], name: tag & "-" & tag)
-  let projTAHg = Gfunc(forward: projTAHf[T], backward: projTAHb[T], name: "projTAH" & tag)
+  let retrg = Gfunc(bufferMode: bmFull, forward: retrf[T], backward: retrb[T], name: "retr" & tag)
+  let adjg = Gfunc(bufferMode: bmFull, forward: adjf[T], backward: adjb[T], name: "adj" & tag)
+  let norm2g = Gfunc(bufferMode: bmFull, forward: norm2f[T], backward: norm2b[T], name: "norm2" & tag)
+  let negg = Gfunc(bufferMode: bmFull, inplace: @[0], forward: negf[T], backward: negb[T], name: "-" & tag)
+  let addsg = Gfunc(bufferMode: bmFull, inplace: @[1], forward: addsf[T], backward: addsb[T], name: "s+" & tag)
+  let addg = Gfunc(bufferMode: bmFull, inplace: @[0, 1], forward: addf[T], backward: addb[T], name: tag & "+" & tag)
+  let mulsg = Gfunc(bufferMode: bmFull, inplace: @[1], forward: mulsf[T], backward: mulsb[T], name: "s*" & tag)
+  let mulg = Gfunc(bufferMode: bmFull, forward: mulf[T], backward: mulb[T], name: tag & "*" & tag)
+  let redotg = Gfunc(bufferMode: bmFull, forward: redotf[T], backward: redotb[T], name: "redot" & tag)
+  let subsg = Gfunc(bufferMode: bmFull, forward: subsf[T], backward: subsb[T], name: tag & "-s")
+  let subg = Gfunc(bufferMode: bmFull, forward: subf[T], backward: subb[T], name: tag & "-" & tag)
+  let projTAHg = Gfunc(bufferMode: bmFull, forward: projTAHf[T], backward: projTAHb[T], name: "projTAH" & tag)
 
   proc retr*(x: T): Gscalar =
     graphNode(scalarNodeLike(x), @[Gvalue(x)], retrg, "retr" & tag)
@@ -339,7 +339,7 @@ proc blendSubset*(parity, dir: int, cand, x: Ggauge): Ggauge =
     else:
       Gvalue(blendSubset(parity, dir, zero, up))
 
-  graphNode(sameShapeGaugeNodeLike(cand, x, "blendSubset"), @[Gvalue(cand), Gvalue(x)], Gfunc(forward: forward, backward: backward, name: "blendSubset"), "blendSubset")
+  graphNode(sameShapeGaugeNodeLike(cand, x, "blendSubset"), @[Gvalue(cand), Gvalue(x)], Gfunc(bufferMode: bmFull, forward: forward, backward: backward, name: "blendSubset"), "blendSubset")
 
 proc maskSubset*(parity, dir: int, x: Ggauge): Ggauge =
   ## x on the (parity, dir) subset, zero elsewhere.

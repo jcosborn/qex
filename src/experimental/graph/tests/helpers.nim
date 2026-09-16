@@ -1,5 +1,8 @@
 import math, unittest
 
+# Graph test drivers reserve command-line arguments for QEX and run every case.
+disableParamFiltering()
+
 import ../[core, scalar]
 
 type
@@ -98,7 +101,7 @@ template `:~`*(a: Gvalue, b: Gvalue) =
 template `:<`*(a: Gvalue, b: float) =
   let evaluated: Gvalue = a.eval
   let av = abs(Gscalar(evaluated).sval)
-  if av >= b:
+  if not (av < b):
     let ii = instantiationInfo()
     let sa = astToStr a
     let sb = astToStr b

@@ -19,16 +19,25 @@ type GfieldShift = ref object of Gfield
   sh: Shifter[DLatticeColorMatrixV, DColorMatrixV]
   dir, len: int
 
+method ensureStorage*(x: GfieldShift) =
+  procCall Gfield(x).ensureStorage
+  if x.sh.sb.sb.isNil:
+    x.sh = newShifter(x.fval, x.dir, x.len, dest = x.fval)
+  x.sh.field = x.fval
+
+method bindBuffer*(x: GfieldShift, buffer: Gvalue) =
+  procCall Gfield(x).bindBuffer(buffer)
+  x.sh.field = x.fval
+
+method releaseWork*(x: GfieldShift) =
+  x.sh = default(typeof(x.sh))
+
+method releaseStorage*(x: GfieldShift) =
+  x.releaseWork
+  procCall Gfield(x).releaseStorage
+
 proc shiftNodeLike(x: Gfield, dir, len: int): GfieldShift =
-  # Node storage aliases the shifter's receive buffer, so the apply writes
-  # the result directly into this node's value; newOneOf clones them as a pair.
-  result = GfieldShift(
-    runtime: x.runtime,
-    sh: newShifter(x.fval, dir, len),
-    dir: dir,
-    len: len)
-  result.fval = result.sh.field
-  result.fval.zeroFieldStorage
+  result = GfieldShift(runtime: x.runtime, fval: x.fval.newShape, dir: dir, len: len)
   result.assignStableNodeId
 
 method newOneOf(x: GfieldShift): Gvalue =
@@ -44,7 +53,7 @@ proc shiftff(v: Gvalue) =
   threads:
     discard z.sh ^* x.fval
 
-let shiftfg = Gfunc(forward: shiftff, backward: shiftfb, name: "shiftf")
+let shiftfg = Gfunc(bufferMode: bmFull, forward: shiftff, backward: shiftfb, name: "shiftf")
 
 proc shift*(x: Gfield, dir, len: int): Gfield =
   ## x(pos + len*dir); the adjoint of a lattice shift is the opposite shift.
@@ -58,8 +67,7 @@ proc linkField*(g: Ggauge, mu: int): Gfield =
   ## One direction of a gauge field as a single-field graph value.
   if mu < 0 or mu >= g.gval.len:
     raiseValueError("linkField direction out of range")
-  let f = g.gval[mu].newOneOf
-  f.zeroFieldStorage
+  let f = g.gval[mu].newShape
   proc forward(v: Gvalue) =
     let
       g = Ggauge(v.inputs[0])
@@ -74,7 +82,7 @@ proc linkField*(g: Ggauge, mu: int): Gfield =
   graphNode(
     Gfield(runtime: g.runtime, fval: f),
     @[Gvalue(g)],
-    Gfunc(forward: forward, backward: backward, name: "linkField"),
+    Gfunc(bufferMode: bmFull, forward: forward, backward: backward, name: "linkField"),
     "linkField")
 
 proc injectLink*(x: Gfield, mu: int, like: Ggauge): Ggauge =
@@ -82,7 +90,7 @@ proc injectLink*(x: Gfield, mu: int, like: Ggauge): Ggauge =
   ## `like` supplies the gauge shape only; it is not a graph dependency.
   like.requireLinkShape(mu, x.fval, "injectLink")
   proc forward(v: Gvalue) =
-    # Off-direction slots stay zero: gaugeNodeLike zeroes construction and clones.
+    # bmZero clears the other directions before this output buffer is reused.
     let
       x = Gfield(v.inputs[0])
       z = Ggauge(v)
@@ -93,5 +101,5 @@ proc injectLink*(x: Gfield, mu: int, like: Ggauge): Ggauge =
   graphNode(
     like.gaugeNodeLike,
     @[Gvalue(x)],
-    Gfunc(forward: forward, backward: backward, name: "injectLink"),
+    Gfunc(bufferMode: bmZero, forward: forward, backward: backward, name: "injectLink"),
     "injectLink")

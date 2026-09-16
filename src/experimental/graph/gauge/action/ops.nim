@@ -53,7 +53,7 @@ proc adjCoefff(v: Gvalue) =
   let z = Gactcoeff(v)
   z.cval = GaugeActionCoeffs(plaq: 1.0, adjplaq: x.sval)
 
-let adjCoeffg = Gfunc(forward: adjCoefff, backward: adjCoeffb, name: "adjCoeff")
+let adjCoeffg = Gfunc(bufferMode: bmFull, forward: adjCoefff, backward: adjCoeffb, name: "adjCoeff")
 
 proc adjCoeff(adjFac: Gscalar): Gactcoeff =
   graphNode(
@@ -76,7 +76,7 @@ proc mulscf(v: Gvalue) =
   let z = Gactcoeff(v)
   z.cval = x.sval * y.cval
 
-let mulsc = Gfunc(forward: mulscf, backward: mulscb, name: "s*c")
+let mulsc = Gfunc(bufferMode: bmFull, forward: mulscf, backward: mulscb, name: "s*c")
 
 proc `*`*(x: Gscalar, y: Gactcoeff): Gactcoeff =
   graphNode(
@@ -96,7 +96,7 @@ proc addccf(v: Gvalue) =
   for a, b in fields(z.cval, y.cval):
     a += b
 
-let addcc = Gfunc(forward: addccf, backward: addccb, name: "c+c")
+let addcc = Gfunc(bufferMode: bmFull, forward: addccf, backward: addccb, name: "c+c")
 
 proc `+`*(x, y: Gactcoeff): Gactcoeff =
   graphNode(
@@ -117,7 +117,7 @@ proc redotccf(v: Gvalue) =
     t += a * b
   z.sval = t
 
-let redotcc = Gfunc(forward: redotccf, backward: redotccb, name: "redotcc")
+let redotcc = Gfunc(bufferMode: bmFull, forward: redotccf, backward: redotccb, name: "redotcc")
 
 proc redot*(x: Gactcoeff, y: Gactcoeff): Gscalar =
   graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], redotcc, "redotcc")
@@ -161,15 +161,15 @@ proc coefff(v: Gvalue) =
     elif f.basis.adjplaq != 0: gc.adjplaq
     else: gc.plaq
 
-let coeffPlaqg = Gcoeff(forward: coefff, backward: coeffb, name: "coeffPlaq",
+let coeffPlaqg = Gcoeff(bufferMode: bmFull, forward: coefff, backward: coeffb, name: "coeffPlaq",
                         basis: GaugeActionCoeffs(plaq: 1.0), family: isPlaqRect)
-let coeffPlaqOnlyg = Gcoeff(forward: coefff, backward: coeffb, name: "coeffPlaqOnly",
+let coeffPlaqOnlyg = Gcoeff(bufferMode: bmFull, forward: coefff, backward: coeffb, name: "coeffPlaqOnly",
                             basis: GaugeActionCoeffs(plaq: 1.0), family: isPlaqOnly)
-let coeffRectg = Gcoeff(forward: coefff, backward: coeffb, name: "coeffRect",
+let coeffRectg = Gcoeff(bufferMode: bmFull, forward: coefff, backward: coeffb, name: "coeffRect",
                         basis: GaugeActionCoeffs(rect: 1.0), family: isPlaqRect)
-let coeffPlaqAg = Gcoeff(forward: coefff, backward: coeffb, name: "coeffPlaqA",
+let coeffPlaqAg = Gcoeff(bufferMode: bmFull, forward: coefff, backward: coeffb, name: "coeffPlaqA",
                          basis: GaugeActionCoeffs(plaq: 1.0), family: isAdjPlaq)
-let coeffAdjg = Gcoeff(forward: coefff, backward: coeffb, name: "coeffAdj",
+let coeffAdjg = Gcoeff(bufferMode: bmFull, forward: coefff, backward: coeffb, name: "coeffAdj",
                        basis: GaugeActionCoeffs(adjplaq: 1.0), family: isAdjPlaq)
 
 proc coeff(c: Gactcoeff, f: Gcoeff): Gscalar =
@@ -271,7 +271,7 @@ proc gaugeActionf(v: Gvalue) =
   let z = Gscalar(v)
   z.sval = evalGaugeActionValue(gc, g.gval)
 
-let gaugeActiong = Gfunc(
+let gaugeActiong = Gfunc(bufferMode: bmFull,
   forward: gaugeActionf,
   backward: gaugeActionb,
   name: "gaugeAction")
@@ -297,7 +297,7 @@ proc gaugeActionDerivf(v: Gvalue) =
   let z = Ggauge(v)
   evalGaugeForceValue(gc, g.gval, z.gval)
 
-let gaugeActionDerivg = Gfunc(
+let gaugeActionDerivg = Gfunc(bufferMode: bmFull,
   forward: gaugeActionDerivf,
   backward: gaugeActionDerivb,
   name: "gaugeActionDeriv")
@@ -321,7 +321,7 @@ proc gaugeForcef(v: Gvalue) =
     z = Ggauge(v)
   evalProjectedGaugeForceValue(c.cval, g.gval, z.gval)
 
-let gaugeForceg = Gfunc(
+let gaugeForceg = Gfunc(bufferMode: bmFull,
   forward: gaugeForcef,
   backward: gaugeForceb,
   name: "gaugeForce")
@@ -335,19 +335,26 @@ type GsubsetDeriv = ref object of Ggauge
   sf, sb: seq[ShiftB[DColorMatrixV]]
   parity, dir: int
 
+method ensureStorage*(x: GsubsetDeriv) =
+  procCall Ggauge(x).ensureStorage
+  if x.sd.field.isNil:
+    let ps = if x.parity == 0: "even" else: "odd"
+    x.sd = newShifter(x.gval[0], x.dir, 1)
+    x.sf = createShiftBufs(x.gval[0], 1, ps)
+    x.sb = createShiftBufs(x.gval[0], -1, ps)
+
+method releaseWork*(x: GsubsetDeriv) =
+  x.sd = default(typeof(x.sd))
+  x.sf = @[]
+  x.sb = @[]
+
+method releaseStorage*(x: GsubsetDeriv) =
+  x.releaseWork
+  procCall Ggauge(x).releaseStorage
+
 proc subsetDerivNodeLike(x: Ggauge, parity, dir: int): GsubsetDeriv =
-  let
-    g = x.gval.newOneOf
-    ps = if parity == 0: "even" else: "odd"
-  g.zeroGaugeStorage
-  GsubsetDeriv(
-    runtime: x.runtime,
-    gval: g,
-    sd: newShifter(g[0], dir, 1),
-    sf: createShiftBufs(g[0], 1, ps),
-    sb: createShiftBufs(g[0], -1, ps),
-    parity: parity,
-    dir: dir).assignStableNodeId
+  result = GsubsetDeriv(runtime: x.runtime, gval: x.gaugeNodeLike.gval, parity: parity, dir: dir)
+  result.assignStableNodeId
 
 method newOneOf(x: GsubsetDeriv): Gvalue =
   x.subsetDerivNodeLike(x.parity, x.dir)
@@ -366,7 +373,7 @@ proc gaugeActionDeriv*(c: Gactcoeff, g: Ggauge, parity, dir: int): Ggauge =
     if i == 0:
       raiseCoeffBackwardUnsupported("gaugeActionDerivSubset backward")
     gaugeActionDeriv2Subset(requireUpstream(zb, "gaugeActionDerivSubset backward", Ggauge), c, g, parity, dir)
-  graphNode(g.subsetDerivNodeLike(parity, dir), @[Gvalue(c), Gvalue(g)], Gfunc(forward: fwd, backward: bwd, name: "gaugeActionDerivSubset"), "gaugeActionDerivSubset")
+  graphNode(g.subsetDerivNodeLike(parity, dir), @[Gvalue(c), Gvalue(g)], Gfunc(bufferMode: bmZero, forward: fwd, backward: bwd, name: "gaugeActionDerivSubset"), "gaugeActionDerivSubset")
 
 proc gaugeActionDeriv2b(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   ## z = gaugeActionDeriv2(b, c, g) is the action Hessian at g applied to b.
@@ -396,7 +403,7 @@ proc gaugeActionDeriv2f(v: Gvalue) =
   let z = Ggauge(v)
   evalGaugeForceJacobian(b.gval, gc, g.gval, z.gval)
 
-let gaugeActionDeriv2g = Gfunc(
+let gaugeActionDeriv2g = Gfunc(bufferMode: bmFull,
   forward: gaugeActionDeriv2f,
   backward: gaugeActionDeriv2b,
   name: "gaugeActionDeriv2")
@@ -407,13 +414,20 @@ proc gaugeActionDeriv2*(b: Ggauge, c: Gactcoeff, g: Ggauge): Ggauge =
 type GsubsetHess = ref object of Ggauge
   hdir: DLatticeColorMatrixV
 
+method ensureStorage*(x: GsubsetHess) =
+  procCall Ggauge(x).ensureStorage
+  x.hdir.ensureFieldStorage
+
+method releaseWork*(x: GsubsetHess) =
+  x.hdir.releaseFieldStorage
+
+method releaseStorage*(x: GsubsetHess) =
+  x.releaseWork
+  procCall Ggauge(x).releaseStorage
+
 method newOneOf(x: GsubsetHess): Gvalue =
-  let g = x.gval.newOneOf
-  g.zeroGaugeStorage
-  GsubsetHess(
-    runtime: x.runtime,
-    gval: g,
-    hdir: x.hdir.newOneOf).assignStableNodeId
+  GsubsetHess(runtime: x.runtime, gval: x.gaugeNodeLike.gval,
+              hdir: x.hdir.newShape).assignStableNodeId
 
 proc gaugeActionDeriv2Subset(b: Ggauge, c: Gactcoeff, g: Ggauge, parity, dir: int): Ggauge =
   let terms = b.addTerms
@@ -446,7 +460,7 @@ proc gaugeActionDeriv2Subset(b: Ggauge, c: Gactcoeff, g: Ggauge, parity, dir: in
         g = Ggauge(v.inputs[2])
         z = Ggauge(v)
       evalGaugeForceJacobianSubset(b.gval, c.cval, g.gval, z.gval, parity, dir)
-    return graphNode(g.gaugeNodeLike, @[Gvalue(terms[0]), Gvalue(c), Gvalue(g)], Gfunc(forward: fwd, backward: bwd, name: "gaugeActionDeriv2Subset"), "gaugeActionDeriv2Subset")
+    return graphNode(g.gaugeNodeLike, @[Gvalue(terms[0]), Gvalue(c), Gvalue(g)], Gfunc(bufferMode: bmFull, forward: fwd, backward: bwd, name: "gaugeActionDeriv2Subset"), "gaugeActionDeriv2Subset")
   var inputs = newSeq[Gvalue](nterms + 2)
   for i, term in terms:
     inputs[i] = Gvalue(term)
@@ -465,7 +479,7 @@ proc gaugeActionDeriv2Subset(b: Ggauge, c: Gactcoeff, g: Ggauge, parity, dir: in
     GsubsetHess(
       runtime: z.runtime,
       gval: z.gval,
-      hdir: g.gval[dir].newOneOf),
+      hdir: g.gval[dir].newShape),
     inputs,
-    Gfunc(forward: fwd, backward: bwd, name: "gaugeActionDeriv2Subset"),
+    Gfunc(bufferMode: bmFull, forward: fwd, backward: bwd, name: "gaugeActionDeriv2Subset"),
     "gaugeActionDeriv2Subset")

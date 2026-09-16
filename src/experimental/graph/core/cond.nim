@@ -35,7 +35,11 @@ proc condBackward(zb: Gvalue,
     raiseValueError("malformed cond backward input index: " & $i)
 
 proc condf(v: Gvalue) =
-  v.valCopy(if v.inputs[0].isZero: v.inputs[2] else: v.inputs[1])
+  let src = if v.inputs[0].isZero: v.inputs[2] else: v.inputs[1]
+  if v.runtime.evalFrame != nil:
+    v.valAlias src
+  else:
+    v.valCopy src
 
 # Eval follows only the selected branch; reachable keeps both branches visible
 # for traversal and diagnostics.
@@ -43,6 +47,8 @@ let gcond = Gcond(
   forward: condf,
   inputView: condInputView,
   backward: condBackward,
+  bufferMode: bmAlias,
+  aliasInputs: @[1, 2],
   name: "cond")
 
 proc isCondNode*(v: Gvalue): bool =
@@ -69,7 +75,7 @@ proc newCondNodeErased(selector: Gvalue,
       "\nprototype: " & whenFalse.nodeRepr &
       "\nbranch: " & whenTrue.nodeRepr)
   graphNode(
-    whenTrue.newOneOf,
+    whenTrue.valueLike,
     @[selector, whenTrue, whenFalse],
     Gfunc(gcond),
     "cond")

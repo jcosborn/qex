@@ -24,18 +24,27 @@ type Ghop = ref object of Gfield
   tr: Transporter[DLatticeColorMatrixV, DLatticeColorMatrixV, DColorMatrixV]
   mu, sgn: int
 
+method ensureStorage*(x: Ghop) =
+  procCall Gfield(x).ensureStorage
+  if x.tr.sb.sb.isNil:
+    x.tr = newTransporter(x.fval, x.fval, x.mu, x.sgn, dest = x.fval)
+    x.tr.clearLink
+  x.tr.field = x.fval
+
+method bindBuffer*(x: Ghop, buffer: Gvalue) =
+  procCall Gfield(x).bindBuffer(buffer)
+  x.tr.field = x.fval
+  x.tr.clearLink
+
+method releaseWork*(x: Ghop) =
+  x.tr = default(typeof(x.tr))
+
+method releaseStorage*(x: Ghop) =
+  x.releaseWork
+  procCall Gfield(x).releaseStorage
+
 proc hopNodeLike(x: Gfield, mu, sgn: int): Ghop =
-  # Node storage aliases the transporter's receive buffer, so the fused
-  # shift-multiply writes the result directly into this node's value;
-  # newOneOf clones them as a pair. The initial link binding is shape only:
-  # hopf rebinds it from the gauge input on every evaluation.
-  result = Ghop(
-    runtime: x.runtime,
-    tr: newTransporter(x.fval, x.fval, mu, sgn),
-    mu: mu,
-    sgn: sgn)
-  result.fval = result.tr.field
-  result.fval.zeroFieldStorage
+  result = Ghop(runtime: x.runtime, fval: x.fval.newShape, mu: mu, sgn: sgn)
   result.assignStableNodeId
 
 method newOneOf(x: Ghop): Gvalue =
@@ -65,7 +74,7 @@ proc hopf(v: Gvalue) =
   threads:
     discard z.tr ^* x.fval
 
-let hopg = Gfunc(forward: hopf, backward: hopb, name: "hop")
+let hopg = Gfunc(bufferMode: bmFull, forward: hopf, backward: hopb, name: "hop")
 
 proc hop*(g: Ggauge, x: Gfield, mu: int, sgn: int): Gfield =
   ## One covariant transport step of x by the mu links of g (see module doc).

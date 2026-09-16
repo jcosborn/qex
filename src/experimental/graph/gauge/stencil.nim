@@ -32,7 +32,19 @@ type
     h: FieldHalo          # over the gathered input (gather, gp) or the output (scatter)
     fa, fb: bool          # gp flags
 
-proc moveNodeLike(x: Gfield, sh: seq[int], onOutput: bool): Gmove =
+method ensureStorage(x: Gmove) =
+  procCall Gfield(x).ensureStorage
+  if x.h.isNil:
+    x.h = makeHalo(x.hl, x.fval)
+
+method releaseWork(x: Gmove) =
+  x.h = nil
+
+method releaseStorage(x: Gmove) =
+  x.releaseWork
+  procCall Gfield(x).releaseStorage
+
+proc moveNodeLike(x: Gfield, sh: seq[int]): Gmove =
   ## Halo widths only along the offset's directions: x - sh needs bck width
   ## sh_d for sh_d > 0 and fwd width -sh_d for sh_d < 0.
   let lo = x.fval.l
@@ -45,9 +57,7 @@ proc moveNodeLike(x: Gfield, sh: seq[int], onOutput: bool): Gmove =
   let hl = haloLayout(lo, fwd, bck)
   result = Gmove(runtime: x.runtime, sh: sh, hl: hl,
                  hm: haloMap(hl, getDefaultComm(), @[off]))
-  result.fval = x.fval.newOneOf
-  result.fval.zeroFieldStorage
-  result.h = makeHalo(hl, (if onOutput: result.fval else: x.fval))
+  result.fval = x.fval.newShape
   result.idx = newSeq[int32](hl.nOut)
   for x in 0 ..< hl.nOut:
     var i = int32 x
@@ -73,13 +83,14 @@ proc gatherf(v: Gvalue) =
 proc gatherb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   scatter(requireUpstream(zb, "gather backward", Gfield), Gmove(z).sh)
 
-let gatherg = Gfunc(forward: gatherf, backward: gatherb, name: "gather")
+let gatherg = Gfunc(bufferMode: bmFull, forward: gatherf, backward: gatherb, name: "gather")
 
 proc scatterf(v: Gvalue) =
   # Every local x has one target x - sh: local targets are written directly,
   # shell targets go to their owners through the reverse exchange.
   let z = Gmove(v)
   let f = Gfield(v.inputs[0])
+  z.h.field = z.fval
   threads:
     # The reverse exchange accumulates, so the output and the shell start
     # from zero on every evaluation.
@@ -98,7 +109,7 @@ proc scatterf(v: Gvalue) =
 proc scatterb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   gather(requireUpstream(zb, "scatter backward", Gfield), Gmove(z).sh)
 
-let scatterg = Gfunc(forward: scatterf, backward: scatterb, name: "scatter")
+let scatterg = Gfunc(bufferMode: bmFull, forward: scatterf, backward: scatterb, name: "scatter")
 
 proc gpf(v: Gvalue) =
   let z = Gmove(v)
@@ -131,27 +142,27 @@ proc gpb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   if n.fb: t = t.adj
   scatter(t, n.sh)
 
-let gpg = Gfunc(forward: gpf, backward: gpb, name: "gp")
+let gpg = Gfunc(bufferMode: bmFull, forward: gpf, backward: gpb, name: "gp")
 
 method newOneOf(x: Gmove): Gvalue =
-  var r = moveNodeLike(x, x.sh, x.gfunc == scatterg)
+  var r = moveNodeLike(x, x.sh)
   r.fa = x.fa
   r.fb = x.fb
   r
 
 proc gather*(f: Gfield, sh: seq[int]): Gfield =
   ## f(x - sh) through a halo of f.
-  graphNode(moveNodeLike(f, sh, false), @[Gvalue(f)], gatherg, "gather")
+  graphNode(moveNodeLike(f, sh), @[Gvalue(f)], gatherg, "gather")
 
 proc scatter*(f: Gfield, sh: seq[int]): Gfield =
   ## f(y + sh), the adjoint of gather, through the reverse exchange.
-  graphNode(moveNodeLike(f, sh, true), @[Gvalue(f)], scatterg, "scatter")
+  graphNode(moveNodeLike(f, sh), @[Gvalue(f)], scatterg, "scatter")
 
 proc gp*(a, b: Gfield, sh: seq[int], fa = false, fb = false): Gfield =
   ## adjIf(a, fa)(x) * adjIf(b, fb)(x - sh) in one node: the product of a
   ## Wilson-line step, with b gathered rather than copied.
   a.requireSameFieldShape(b, "gp")
-  var n = moveNodeLike(b, sh, false)
+  var n = moveNodeLike(b, sh)
   n.fa = fa
   n.fb = fb
   graphNode(n, @[Gvalue(a), Gvalue(b)], gpg, "gp")

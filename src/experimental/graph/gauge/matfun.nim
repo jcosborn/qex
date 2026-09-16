@@ -34,7 +34,7 @@ proc expgf(v: Gvalue) =
   z.mapGaugeElements:
     z.gval[mu][e] := exp(x.gval[mu][e])
 
-let expg = Gfunc(forward: expgf, backward: expgb, name: "expg")
+let expg = Gfunc(bufferMode: bmFull, forward: expgf, backward: expgb, name: "expg")
 
 proc exp*(x: Ggauge): Ggauge =
   graphNode(x.gaugeNodeLike, @[Gvalue(x)], expg, "expg")
@@ -116,9 +116,9 @@ proc expJetb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   expJet(y.adj, ds)
 
 let expJetg = [
-  Gfunc(forward: expJetf1, backward: expJetb, name: "expJet1"),
-  Gfunc(forward: expJetf2, backward: expJetb, name: "expJet2"),
-  Gfunc(forward: expJetf3, backward: expJetb, name: "expJet3")]
+  Gfunc(bufferMode: bmFull, forward: expJetf1, backward: expJetb, name: "expJet1"),
+  Gfunc(bufferMode: bmFull, forward: expJetf2, backward: expJetb, name: "expJet2"),
+  Gfunc(bufferMode: bmFull, forward: expJetf3, backward: expJetb, name: "expJet3")]
 
 proc expJet*(y: Ggauge, d: openArray[Ggauge]): Ggauge =
   ## expTop(y; d_1..d_m) as a graph node; fused kernel for m <= 3.
@@ -168,7 +168,7 @@ proc expDerivgf(v: Gvalue) =
       y.gval[mu][e],
       x.gval[mu][e])
 
-let expDerivg = Gfunc(forward: expDerivgf, backward: expDerivgb, name: "expDerivg")
+let expDerivg = Gfunc(bufferMode: bmFull, forward: expDerivgf, backward: expDerivgb, name: "expDerivg")
 
 proc expDeriv*(b: Ggauge, x: Ggauge, parity = -1, dir = 0): Ggauge =
   ## D exp(x)^*[b], on the whole field or only (parity,dir); zero elsewhere.
@@ -189,6 +189,5 @@ proc expDeriv*(b: Ggauge, x: Ggauge, parity = -1, dir = 0): Ggauge =
     expDerivContribution(
       requireUpstream(zb, "expDeriv subset backward", Ggauge), z, i, parity, dir)
   result = graphNode(node, @[Gvalue(b), Gvalue(x)],
-    Gfunc(forward: fwd, backward: bwd, name: "expDerivg"),
+    Gfunc(bufferMode: bmZero, forward: fwd, backward: bwd, name: "expDerivg"),
     "expDerivg")
-  result.zeroGaugeStorage

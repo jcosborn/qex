@@ -175,6 +175,8 @@ proc bindLambdaRef(z: GlambdaRef,
   inc z.runtime.symbolicRevision
   Gvalue(z).updated
 
+method isStructuralValue*(x: GlambdaRef): bool = true
+
 method newOneOf*(x: GlambdaRef): Gvalue =
   GlambdaRef(
     runtime: x.runtime,
@@ -228,6 +230,8 @@ method `$`*(x: GlambdaRef): string =
   if x.binding == nil:
     return label
   label & "(bound)"
+
+method isStructuralValue*(x: Glambda): bool = true
 
 method newOneOf*(x: Glambda): Gvalue =
   if x.isResolvedLambda:
@@ -1532,7 +1536,7 @@ proc apply*(fun: Gvalue, x: Gvalue): Gvalue =
   if proto == nil:
     raiseValueError("apply expects a lambda value or lambda placeholder, got: " & fun.nodeRepr)
   discard sharedGraphRuntime([fun, x], "apply")
-  graphNode(proto.newOneOf, @[fun, x], Gfunc(gapply), "apply")
+  graphNode(proto.valueLike, @[fun, x], Gfunc(gapply), "apply")
 
 proc applyLiteralParamProto(fun: Gvalue): Gvalue =
   let direct = directLambda(fun, "apply literal function")

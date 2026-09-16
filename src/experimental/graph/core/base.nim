@@ -2,6 +2,8 @@ from strutils import toHex, strip
 import std/[sets, tables, math, algorithm, strformat]
 
 type
+  GbufferMode* = enum
+    bmOpaque, bmFull, bmZero, bmAlias
   NodeId* = uint64
   NodeKey* = pointer
   NodeTable*[T] = Table[NodeKey, T]
@@ -13,6 +15,9 @@ type
     inputs*: seq[Gvalue]
     gfunc*: Gfunc
     epoch*: int
+    valueReady*: bool
+    valueOverride*: bool
+    restoreValue*: GforwardHook
     staticZeroLeaf*: bool
     stableId: NodeId
     runtime*: GraphRuntime
@@ -47,6 +52,15 @@ type
     inputView*: GinputViewHook
     logdet*: GlogdetHook
     name*: string
+    ## Opaque forwards may retain input storage. Managed forwards borrow their
+    ## declared dependencies synchronously; private work must rebind before use.
+    ## Full writes every value component; Zero requires a cleared destination.
+    bufferMode*: GbufferMode
+    ## Raw input positions whose last-use storage may be overwritten in place.
+    ## Requires bmFull and a proof covering all simultaneously aliased operands.
+    inplace*: seq[int]
+    ## bmAlias keeps these raw inputs alive with the result; empty means all.
+    aliasInputs*: seq[int]
   GradCacheEntry* = ref object
     revision*: uint64
     ## Contains only adjoints from completed gradient builds.
@@ -68,6 +82,12 @@ type
   ApplyCacheEntry* = ref object
     key*: ApplyCacheKey
     instantiated*: Gvalue
+  ApplyFrameKey* = tuple[applyId, selectedLambdaId: NodeId, revision: uint64]
+  ApplyFrameCache* = TableRef[ApplyFrameKey, ApplyCacheEntry]
+  GworkKey* = tuple[kind: string, layout: pointer, fields, order: int]
+  Gwork* = ref object of RootObj
+    bytes*: int
+  GworkCache* = TableRef[GworkKey, Gwork]
   ApplyCacheStats* = object
     instantiationHits*: int
     instantiationMisses*: int
@@ -87,8 +107,14 @@ type
   GraphRuntime* = ref object
     nextStableNodeId*: NodeId
     symbolicRevision*: uint64
+    ## Source representation changes do not invalidate symbolic caches.
+    boundaryRevision*: uint64
     graphEpochCounter*: int
     graphDebug*: bool
+    ## Installed only while a storage plan executes its private graph.
+    evalFrame*: GforwardHook
+    applyFrame*: ApplyFrameCache
+    workFrame*: GworkCache
     functional*: FunctionalRuntimeState
     gradCacheByOutput*: Table[NodeId, GradCacheEntry]
     gradCacheStats*: GradCacheStats
@@ -255,8 +281,29 @@ proc markSeenNode*(seen: var NodeSet, x: Gvalue): bool {.inline.} =
 
 method newOneOf*(x: Gvalue): Gvalue {.base.} =
   raiseErrorBaseMethod("newOneOf(" & $x & ")")
+method valueLike*(x: Gvalue): Gvalue {.base.} =
+  ## A numerical result prototype, without caches owned by a producing kernel.
+  ## newOneOf instead preserves the node subtype when cloning that kernel.
+  x.newOneOf
 method valCopy*(z: Gvalue, x: Gvalue) {.base.} =
   raiseErrorBaseMethod("valCopy(" & $z & "," & $x & ")")
+method isStructuralValue*(x: Gvalue): bool {.base.} =
+  ## Structural values forward through graph dependencies, not payload copies.
+  false
+method hasStorage*(x: Gvalue): bool {.base.} = true
+method ensureStorage*(x: Gvalue) {.base.} = discard
+method releaseStorage*(x: Gvalue) {.base.} = discard
+method releaseWork*(x: Gvalue) {.base.} = discard
+method valAlias*(z: Gvalue, x: Gvalue) {.base.} =
+  ## Read-only payload alias for packed forward slots; defaults to value copy.
+  z.valCopy(x)
+method bufferProto*(x: Gvalue): Gvalue {.base.} = nil
+method bufferCompatible*(x, y: Gvalue): bool {.base.} = false
+method bindBuffer*(x, buffer: Gvalue) {.base.} =
+  raiseErrorBaseMethod("bindBuffer(" & $x & ")")
+method clearBuffer*(x: Gvalue) {.base.} =
+  raiseErrorBaseMethod("clearBuffer(" & $x & ")")
+method bufferBytes*(x: Gvalue): int {.base.} = 0
 method copyCompatible*(prototype: Gvalue, value: Gvalue): bool {.base.} =
   false
 method zeroLike*(x: Gvalue): Gvalue {.base.} = x.newOneOf
@@ -283,6 +330,8 @@ proc markStaticZeroLeaf*[T: Gvalue](v: T): T {.discardable.} =
     raiseValueError("static zero must be an inputless leaf")
   if not v.isZero:
     raiseValueError("static zero leaf must hold a zero value")
+  if not v.staticZeroLeaf and v.runtime.evalFrame == nil:
+    inc v.runtime.boundaryRevision
   v.staticZeroLeaf = true
   v
 
@@ -312,7 +361,11 @@ proc graphNode*[T: Gvalue, I: Gvalue](node: T,
     raiseValueError(label & " mixes multiple graph runtimes")
   node.inputs = nodeInputs
   node.gfunc = gfunc
+  node.valueReady = false
+  node.valueOverride = false
+  node.restoreValue = nil
   if nodeInputs.len > 0 or gfunc != nil:
     node.staticZeroLeaf = false
   node.assignStableNodeId
+  node.releaseStorage
   node

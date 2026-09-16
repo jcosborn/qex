@@ -122,6 +122,71 @@ inputs already agree on one runtime, then installs `inputs` and `gfunc`.
 Inputful graph nodes require a non-nil `Gfunc`; zero-input prototypes may have
 no function.
 
+### Value storage and ordinary evaluation
+
+Computed gauge and field outputs start with shape descriptors. `graphNode`
+releases output storage after installing a producer, and `eval` acquires it before
+running the forward. `toGvalue` copies authoritative inputs into resident leaves.
+Ordinary evaluation retains completed values and work for later calls.
+
+Freshness and residency are separate: `valueReady` records successful computation,
+`epoch` records logical freshness, and `hasStorage` reports payload residency.
+Restoring an unchanged computed value runs its producer while retaining the epoch,
+so a current consumer can retain its value. An explicit write to a computed value
+sets `valueOverride`. If a newer input or missing storage causes the original
+producer to run, that override expires and the epoch advances, invalidating
+ordinary cached consumers. A failed forward stays unready and can be retried.
+Zero-input producers run on their first evaluation.
+
+`ensureStorage` allocates missing payloads. Generated zeros and identities restore
+from their shape and restoration rule. `update` and `mutateGauge`/`mutateField`
+remove constant restoration; mutation evaluates the value before exposing its
+storage. After discarding an authoritative input's storage, provide its value
+again with `update` before using it.
+
+`releaseStorage` replaces graph-owned field descriptors and gauge sequences.
+Escaped raw references keep their allocations. `releaseWork` drops communication
+scratch, which the next required forward recreates and rebinds. Stout `expa` and
+`m` are part of the value payload and participate in complete copy, alias, and
+storage operations. Shift, hop, and halo forwards bind their current destinations
+before using retained communication work.
+
+A `multiValues` bundle owns numerical slot wrappers; their payloads alias the
+input values after evaluation. Symbolic `bundle[i]` selects the original input.
+Lambda values and shape-only carriers report `isStructuralValue` and retain their
+structural input references, including after cloning or forwarding a bundle.
+They are not copied through numerical payload hooks or released by their parent
+bundle. A mixed nested bundle still owns separate wrappers for its numerical
+children. This does not introduce cotangents for function-valued outputs.
+
+### Operator buffer contracts
+
+`Gfunc.bufferMode` describes the output write:
+
+| Mode | Contract |
+| --- | --- |
+| `bmFull` | Assign every numerical output component; borrow declared inputs synchronously. |
+| `bmZero` | Clear the numerical buffers before a partial or accumulating forward. Scalar slots must still be assigned by the forward. |
+| `bmAlias` | Hold input payloads; `aliasInputs` lists raw input positions, with an empty list meaning all inputs. |
+| `bmOpaque` | Default when ownership is not declared. |
+
+Ordinary evaluation clears `bmZero` numerical outputs on every forward, including
+retry after failure and replacement of an override. Value families supply
+`bufferProto`, `bufferCompatible`, `bindBuffer`, `clearBuffer`, and `bufferBytes`.
+Prototypes hold shape metadata; binding replaces numerical descriptors, and
+compatibility covers the value family and layout. Packed producer subtypes include
+every cached value component. The `inplace` metadata is valid only with a proof
+that the full forward may overwrite that raw input, including aliased operands.
+These declarations and inactive runtime frame hooks support later execution
+storage reuse; ordinary evaluation retains each node's storage.
+
+`tests/tgvalue` and `tests/tgvalueu1` exercise this contract using ordinary
+evaluation on small SU(3) and U(1) fixtures. Graph unittest drivers import
+`tests/helpers`, which disables unittest's automatic command-line filtering
+before their suites. Their arguments belong to QEX and every test case runs;
+options such as `-lat:4,4` are not test-name selectors. Parameterized validation
+must report a nonzero executed-case count.
+
 Leaf mutation is explicit. Callers mark semantic changes with `updated`, and
 derived nodes become current relative to their eval-visible dependencies.
 `updated` clears the `staticZeroLeaf` marker because a formerly static zero leaf
@@ -167,6 +232,12 @@ Public graph operators should preserve concrete node types whenever the result
 type is known. `Gvalue` is the erased storage type for core hooks, input arrays,
 `apply` results, and genuinely opaque boundaries; it is not a generic operator
 dispatch surface.
+
+`newOneOf` preserves a producer's concrete subtype and kernel metadata.
+`valueLike` creates its mathematical result family without producer caches.
+`cond`, `apply`, `slotVar`, multi selections, and numerical multi-output slots use
+`valueLike`; a value copied from a stout producer is an ordinary gauge result.
+Owned cache slots use `newOneOf` and alias every required payload component.
 
 Mixed numeric literals are supported only through runtime-anchored helpers.
 They must be anchored to the prototype that owns the literal's meaning. For
@@ -246,7 +317,7 @@ slot walks that sibling's path a second time.
 `slotVar(x)` is a transparent alias with the same value and derivatives as `x`
 but a distinct node. It has no custom `inputView` and is the graph spelling of
 `let slot = x`. Differentiating with respect to `slot` never reaches a sibling.
-Ordinary values preserve their concrete type through `newOneOf`. Resolved
+Ordinary values use their mathematical result family through `valueLike`. Resolved
 `Glambda` aliases return `GlambdaRef`; lambda resolution and structural VJPs
 follow their input edge. They support `apply` and `vjpOf`, subject to the
 functional layer's existing absence of whole-lambda cotangents. Structural
@@ -814,8 +885,8 @@ though storage changes in place. The raw `Ggauge.gval` storage field is exported
 for gauge implementation modules that import `gauge/shared`; the top-level gauge
 module does not re-export it, and public writers should use `update`/`mutateGauge`.
 
-Zero-valued gauges are ordinary zeroed storage, not a privileged semantic flag.
-There is no separate zero-state fast path to keep in sync with the payload.
+Generated zero gauges carry `staticZeroLeaf` and allocate cleared payloads on
+demand. Public updates clear that marker.
 
 Gauge-action coefficients are graph values and may participate in coefficient
 subgraphs, but the action layer does not promise differentiation of

@@ -6,8 +6,15 @@ import base
 ## backward hook differentiate a node replica with respect to one slot without
 ## reaching a sibling slot that holds the same node. See DESIGN.md section 5.
 
+method slotForward*(dst: Gvalue, src: Gvalue) {.base.} =
+  ## Ordinary slots copy values; structural value families override this hook.
+  if dst.runtime.evalFrame != nil:
+    dst.valAlias src
+  else:
+    dst.valCopy src
+
 proc slotVarForward(v: Gvalue) =
-  v.valCopy v.inputs[0]
+  v.slotForward v.inputs[0]
 
 proc slotVarBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   rootedUpstream(zb, z)
@@ -15,6 +22,7 @@ proc slotVarBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
 let slotVarFunc = Gfunc(
   forward: slotVarForward,
   backward: slotVarBackward,
+  bufferMode: bmAlias,
   name: "slotVar")
 
 proc isSlotVarNode*(x: Gvalue): bool =
@@ -23,4 +31,4 @@ proc isSlotVarNode*(x: Gvalue): bool =
 proc slotVar*[T: Gvalue](x: T): T =
   ## A fresh differentiation target holding x's value (see the module doc).
   # graphNode clears any static-zero marker when it installs the input edge.
-  graphNode(T(x.newOneOf), @[Gvalue(x)], slotVarFunc, "slotVar")
+  graphNode(T(x.valueLike), @[Gvalue(x)], slotVarFunc, "slotVar")

@@ -26,7 +26,7 @@ proc axpygf(v: Gvalue) =
   let z = Ggauge(v)
   z.mapGaugeSites(a.sval * x.gval[mu] + y.gval[mu])
 
-let axpyg = Gfunc(forward: axpygf, backward: axpygb, name: "axpy")
+let axpyg = Gfunc(bufferMode: bmFull, forward: axpygf, backward: axpygb, name: "axpy")
 
 proc axpy*(a: Gscalar, x, y: Ggauge): Ggauge =
   ## Fused `a*x + y`, evaluated in one whole-gauge pass.
@@ -47,7 +47,7 @@ proc adjmulggf(v: Gvalue) =
   let z = Ggauge(v)
   z.mapGaugeSites(x.gval[mu].adj * y.gval[mu])
 
-let adjmulgg = Gfunc(forward: adjmulggf, backward: adjmulggb, name: "g.adj*g")
+let adjmulgg = Gfunc(bufferMode: bmFull, forward: adjmulggf, backward: adjmulggb, name: "g.adj*g")
 
 proc adjmul*(x: Ggauge, y: Ggauge): Ggauge =
   graphNode(sameShapeGaugeNodeLike(x, y, "g.adj*g"), @[Gvalue(x), Gvalue(y)], adjmulgg, "g.adj*g")
@@ -67,7 +67,7 @@ proc muladjggf(v: Gvalue) =
   let z = Ggauge(v)
   z.mapGaugeSites(x.gval[mu] * y.gval[mu].adj)
 
-let muladjgg = Gfunc(forward: muladjggf, backward: muladjggb, name: "g*g.adj")
+let muladjgg = Gfunc(bufferMode: bmFull, forward: muladjggf, backward: muladjggb, name: "g*g.adj")
 
 proc muladj*(x: Ggauge, y: Ggauge): Ggauge =
   graphNode(sameShapeGaugeNodeLike(x, y, "g*g.adj"), @[Gvalue(x), Gvalue(y)], muladjgg, "g*g.adj")
@@ -97,7 +97,7 @@ proc contractProjTAHPackedInputf(v: Gvalue) =
     let s = x.gval[mu][e] * y.gval[mu][e].adj
     z.gval[mu][e].projectTAH s
 
-let contractProjTAHPackedInputg = Gfunc(
+let contractProjTAHPackedInputg = Gfunc(bufferMode: bmFull,
   forward: contractProjTAHPackedInputf,
   backward: contractProjTAHPackedInputb,
   name: "contractProjTAH packed")
@@ -122,7 +122,7 @@ proc contractProjTAHSumInputf(v: Gvalue) =
     let s = x * y.gval[mu][e].adj
     z.gval[mu][e].projectTAH s
 
-let contractProjTAHSumInputg = Gfunc(
+let contractProjTAHSumInputg = Gfunc(bufferMode: bmFull,
   forward: contractProjTAHSumInputf,
   backward: contractProjTAHPackedInputb,
   inputView: contractProjTAHSumInputView,
@@ -170,10 +170,9 @@ proc contractProjTAH*(x: Ggauge, y: Ggauge, parity = -1, dir = 0): Ggauge =
       multiValues("contractProjTAH subset input gradients", proj * y, proj.adjmul x)
     result = graphNode(
       x.gaugeNodeLike, inputs,
-      Gfunc(forward: sumf, backward: sumb, inputView: contractProjTAHSumInputView,
+      Gfunc(bufferMode: bmZero, forward: sumf, backward: sumb, inputView: contractProjTAHSumInputView,
             name: "contractProjTAH packed"),
       "contractProjTAH packed")
-    result.zeroGaugeStorage
     return
   proc fwd(v: Gvalue) =
     let args = Gmulti(v.inputs[0])
@@ -194,9 +193,8 @@ proc contractProjTAH*(x: Ggauge, y: Ggauge, parity = -1, dir = 0): Ggauge =
     multiValues("contractProjTAH subset input gradients", proj * y, proj.adjmul x)
   result = graphNode(
     x.gaugeNodeLike, @[Gvalue(args)],
-    Gfunc(forward: fwd, backward: bwd, name: "contractProjTAH packed"),
+    Gfunc(bufferMode: bmZero, forward: fwd, backward: bwd, name: "contractProjTAH packed"),
     "contractProjTAH packed")
-  result.zeroGaugeStorage
 
 proc axexpPackedInputb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   let args = Gmulti(z.inputs[0])
@@ -222,7 +220,7 @@ proc axexpPackedInputf(v: Gvalue) =
   z.mapGaugeElements:
     z.gval[mu][e] := exp(f * x.gval[mu][e])
 
-let axexpPackedInputg = Gfunc(
+let axexpPackedInputg = Gfunc(bufferMode: bmFull,
   forward: axexpPackedInputf,
   backward: axexpPackedInputb,
   name: "axexp packed")
@@ -273,7 +271,7 @@ proc axexpmulyPackedInputPackf(v: Gvalue) =
         expax.gval[mu][e] := t
         value.gval[mu][e] := t * y.gval[mu][e]
 
-let axexpmulyPackedInputPackg = Gfunc(
+let axexpmulyPackedInputPackg = Gfunc(bufferMode: bmFull,
   forward: axexpmulyPackedInputPackf,
   backward: axexpmulyPackedInputPackb,
   name: "axexpmulyPack packed")
@@ -322,8 +320,6 @@ proc axexpmuly*(a: Gscalar, x: Ggauge, y: Ggauge, parity = -1, dir = 0): Ggauge 
       resultExpax.adjmul upstreamValue)
   let pack = newMultiOutputNode(
     @[Gvalue(x), Gvalue(x)], @[Gvalue(args)],
-    Gfunc(forward: fwd, backward: bwd, name: "axexpmulyPack packed"),
+    Gfunc(bufferMode: bmZero, forward: fwd, backward: bwd, name: "axexpmulyPack packed"),
     "axexpmulyPack packed")
-  Ggauge(pack[0]).zeroGaugeStorage     # off-subset stays zero across evals
-  Ggauge(pack[1]).zeroGaugeStorage
   Ggauge(pack[1])

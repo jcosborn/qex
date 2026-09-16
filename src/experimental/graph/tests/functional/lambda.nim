@@ -651,3 +651,53 @@ suite "functional lambda":
 
     let z = apply(apply(Y, F), 4.0)
     z :~ 64.0
+
+
+suite "heterogeneous bundle forwarding":
+  test "lambda bundle slots preserve structure and own numerical wrappers":
+    let rt = initGraphRuntime()
+    let x = rt.toGvalue(2.0)
+    let fn = lambda(x, x*x)
+    let value = x*x
+    let bundle = multiValues("function bundle", fn, value)
+    check bundle[0].nodeKey == fn.nodeKey
+    apply(bundle[0], 3.0) :~ 9.0
+    discard bundle.eval
+    check bundle.storedSlot(0).nodeKey == fn.nodeKey
+    check bundle.storedSlot(1).nodeKey != value.nodeKey
+    apply(bundle.storedSlot(0), 4.0) :~ 16.0
+    let slot = slotVar(bundle.storedSlot(0))
+    discard slot.eval
+    apply(slot, 5.0) :~ 25.0
+    bundle.releaseStorage
+    apply(bundle[0], 6.0) :~ 36.0
+
+  test "cloned bundles forward the replacement structural input":
+    let rt = initGraphRuntime()
+    let x = rt.toGvalue(2.0)
+    let square = lambda(x, x*x)
+    let cube = lambda(x, x*x*x)
+    let bundle = multiValues("function prototype", square, x)
+    let cloned = graphNode(Gmulti(bundle.newOneOf),
+      [Gvalue(cube), Gvalue(x)], bundle.gfunc, "cloned function bundle")
+    discard cloned.eval
+    check cloned.storedSlot(0).nodeKey == cube.nodeKey
+    check cloned.storedSlot(1).nodeKey != x.nodeKey
+    apply(cloned[0], 3.0) :~ 27.0
+    apply(cloned.storedSlot(0), 4.0) :~ 64.0
+    let forwarded = slotVar(cloned)
+    discard forwarded.eval
+    apply(forwarded.storedSlot(0), 5.0) :~ 125.0
+
+  test "stored conditional lambda refs follow their visible selector":
+    let rt = initGraphRuntime()
+    let x = rt.toGvalue(2.0)
+    let selector = rt.toGvalue(1)
+    let fn = cond(selector, lambda(x, x*x), lambda(x, x*x*x))
+    let bundle = multiValues("selected function", fn)
+    discard bundle.eval
+    let call = apply(bundle.storedSlot(0), 3.0)
+    call :~ 9.0
+    selector.update(0)
+    discard bundle.eval
+    call :~ 27.0

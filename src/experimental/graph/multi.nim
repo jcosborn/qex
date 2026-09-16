@@ -8,6 +8,31 @@ type
   GmultiSelect = ref object of Gfunc
     index: int
 
+proc isAliasBundle(x: Gmulti): bool
+
+method isStructuralValue*(x: Gmulti): bool = x.shapeOnly
+
+method hasStorage*(x: Gmulti): bool =
+  if x.shapeOnly:
+    return true
+  for slot in x.slots:
+    if not slot.hasStorage:
+      return false
+  true
+
+method ensureStorage*(x: Gmulti) =
+  if x.shapeOnly or x.isAliasBundle:
+    return
+  for slot in x.slots:
+    if not slot.hasStorage:
+      slot.ensureStorage
+
+method releaseStorage*(x: Gmulti) =
+  if not x.shapeOnly:
+    for slot in x.slots:
+      if not slot.isStructuralValue:
+        slot.releaseStorage
+
 proc requireMultiArity(dstLen: int,
                        srcLen: int,
                        label: string) =
@@ -21,7 +46,10 @@ proc copySlotValues(dst: var seq[Gvalue],
   # Both callers guarantee matching lengths: the forward path builds dst and src
   # from one seq, and cond-driven valCopy is shape-checked by copyCompatible.
   for i in 0..<dst.len:
-    dst[i].valCopy(src[i])
+    if src[i].isStructuralValue:
+      dst[i] = src[i]
+    else:
+      dst[i].valCopy(src[i])
 
 # Construct multi-output carriers through this helper.
 proc newMultiOutputNode*(slotProtos: openArray[Gvalue],
@@ -33,7 +61,7 @@ proc newMultiOutputNode*(slotProtos: openArray[Gvalue],
   let slotGrt = sharedGraphRuntime(slotProtos, label)
   var slotStorage = newseq[Gvalue](slotProtos.len)
   for i in 0..<slotProtos.len:
-    slotStorage[i] = slotProtos[i].newOneOf
+    slotStorage[i] = slotProtos[i].valueLike
   # Multi carriers take their runtime from output slot prototypes, not inputs.
   result = Gmulti(runtime: slotGrt)
   result.slots = slotStorage
@@ -73,15 +101,93 @@ method newOneOf*(x: Gmulti): Gvalue =
   if x.shapeOnly:
     Gmulti(runtime: x.runtime, slots: x.slots, shapeOnly: true).assignStableNodeId
   else:
-    newMultiOutputNode(x.slots, @[], nil, "multi prototype")
+    var slots = newSeq[Gvalue](x.slots.len)
+    for i, slot in x.slots:
+      slots[i] = if slot.isStructuralValue: slot else: slot.newOneOf
+    graphNode(Gmulti(runtime: x.runtime, slots: slots),
+      newSeq[Gvalue](), nil, "multi prototype")
+
+method valueLike*(x: Gmulti): Gvalue =
+  if x.shapeOnly:
+    return x.newOneOf
+  var slots = newSeq[Gvalue](x.slots.len)
+  for i, slot in x.slots:
+    slots[i] = if slot.isStructuralValue: slot else: slot.valueLike
+  Gmulti(runtime: x.runtime, slots: slots).assignStableNodeId
+
+method bufferBytes*(x: Gmulti): int =
+  if not x.shapeOnly:
+    for slot in x.slots:
+      result += slot.bufferBytes
+
+method bufferProto*(x: Gmulti): Gvalue =
+  if x.shapeOnly:
+    return nil
+  var slots = newSeq[Gvalue](x.slots.len)
+  var hasBuffer = false
+  for i, slot in x.slots:
+    let buf = slot.bufferProto
+    if buf != nil:
+      slots[i] = buf
+      hasBuffer = true
+    elif slot.bufferBytes > 0:
+      return nil
+    else:
+      slots[i] = if slot.isStructuralValue: slot else: slot.newOneOf
+  if hasBuffer:
+    result = Gmulti(runtime: x.runtime, slots: slots).assignStableNodeId
+
+method bufferCompatible*(x: Gmulti, y: Gvalue): bool =
+  if not (y of Gmulti):
+    return false
+  let src = Gmulti(y)
+  if x.shapeOnly or src.shapeOnly or x.slots.len != src.slots.len:
+    return false
+  for i, slot in x.slots:
+    let other = src.slots[i]
+    if slot.bufferBytes == 0:
+      if other.bufferBytes != 0:
+        return false
+    elif not slot.bufferCompatible(other) or not other.bufferCompatible(slot):
+      return false
+  true
+
+method bindBuffer*(x: Gmulti, y: Gvalue) =
+  let src = Gmulti(y)
+  for i, slot in x.slots:
+    if slot.bufferBytes > 0:
+      slot.bindBuffer(src.slots[i])
+
+method clearBuffer*(x: Gmulti) =
+  if not x.shapeOnly:
+    for slot in x.slots:
+      if slot.bufferBytes > 0:
+        slot.clearBuffer
 
 method valCopy*(z: Gmulti, x: Gvalue) =
   ## Copy slot values only; copyCompatible has checked their shapes.
-  if z.shapeOnly and z.isSlotVarNode:
-    return
   if z.shapeOnly or Gmulti(x).shapeOnly:
     raiseValueError("structural multi carrier cannot be copied")
   z.slots.copySlotValues(Gmulti(x).slots)
+
+method valAlias*(z: Gmulti, x: Gvalue) =
+  let src = Gmulti(x)
+  if z.shapeOnly and src.shapeOnly:
+    return
+  if z.shapeOnly or src.shapeOnly:
+    raiseValueError("structural multi carrier cannot hold slot values")
+  for i in 0..<z.slots.len:
+    if src.slots[i].isStructuralValue:
+      z.slots[i] = src.slots[i]
+    else:
+      z.slots[i].valAlias(src.slots[i])
+
+method slotForward*(z: Gmulti, x: Gvalue) =
+  if not z.shapeOnly:
+    if z.runtime.evalFrame != nil:
+      z.valAlias(x)
+    else:
+      z.valCopy(x)
 
 method copyCompatible*(prototype: Gmulti, value: Gvalue): bool =
   if not (value of Gmulti):
@@ -98,8 +204,13 @@ method `$`*(x: Gmulti): string =
   $x.slots
 
 proc multiValuesForward(v: Gvalue) =
-  ## Restore input aliases after generic graph cloning creates fresh slot prototypes.
-  Gmulti(v).slots = v.inputs
+  ## Structural slots retain their declared input; numerical wrappers own descriptors.
+  let z = Gmulti(v)
+  for i in 0..<z.slots.len:
+    if v.inputs[i].isStructuralValue:
+      z.slots[i] = v.inputs[i]
+    else:
+      z.slots[i].valAlias(v.inputs[i])
 
 proc multiValuesBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   let upstream = Gmulti(rootedUpstream(zb, z))
@@ -108,21 +219,29 @@ proc multiValuesBackward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
 let multiValuesFunc = Gfunc(
   forward: multiValuesForward,
   backward: multiValuesBackward,
+  bufferMode: bmAlias,
   name: "multiValues")
 
+proc isAliasBundle(x: Gmulti): bool = x.gfunc == multiValuesFunc
+
 proc multiValues*(label: string, values: varargs[Gvalue]): Gmulti =
-  ## Zero-copy bundle: slots alias inputs and the forward is a no-op.
+  ## Numerical slots own wrappers; structural slots retain their input values.
   ## Use the bundle as a read source; destinations own their storage.
   if values.len == 0:
     raiseValueError(label & " requires at least one slot")
-  result = Gmulti(runtime: sharedGraphRuntime(values, label))
-  result.slots = @values
+  result = Gmulti(runtime: sharedGraphRuntime(values, label),
+    slots: newSeq[Gvalue](values.len))
+  for i, value in values:
+    result.slots[i] = if value.isStructuralValue: value else: value.newOneOf
   result = graphNode(result, values, multiValuesFunc, label)
 
 proc multiSelectForward(v: Gvalue) =
   let f = GmultiSelect(v.gfunc)
   let base = Gmulti(v.inputs[0])
-  v.valCopy base.storedSlot(f.index)
+  if v.runtime.evalFrame != nil:
+    v.valAlias base.storedSlot(f.index)
+  else:
+    v.valCopy base.storedSlot(f.index)
 
 proc multiSelectBackward(zb: Gvalue,
                          z: Gvalue,
@@ -140,6 +259,7 @@ proc newMultiSelectFunc(index: int): Gfunc =
     index: index,
     forward: multiSelectForward,
     backward: multiSelectBackward,
+    bufferMode: bmAlias,
     name: label)
 
 proc `[]`*(x: Gmulti, i: int): Gvalue =
@@ -149,7 +269,7 @@ proc `[]`*(x: Gmulti, i: int): Gvalue =
   if x.gfunc == multiValuesFunc:
     return x.inputs[i]
   let proto = x.storedSlot(i)
-  graphNode(proto.newOneOf, @[Gvalue(x)], newMultiSelectFunc(i), "multiSelect")
+  graphNode(proto.valueLike, @[Gvalue(x)], newMultiSelectFunc(i), "multiSelect")
 
 method addLike*(prototype: Gmulti, x: Gvalue, y: Gvalue): Gvalue =
   let left = Gmulti(x)

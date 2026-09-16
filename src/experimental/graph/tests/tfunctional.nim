@@ -3,7 +3,7 @@ import math, strutils, unittest
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 
 import helpers
-import ../[core, scalar]
+import ../[core, scalar, multi]
 import ../core/base
 import ../functional
 

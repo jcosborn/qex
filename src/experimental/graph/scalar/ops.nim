@@ -31,7 +31,7 @@ proc negsf(v: Gvalue) =
 proc negsb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   affineUpstream(zb, -1.0, z)
 
-let gsneg = Gfunc(forward: negsf, backward: negsb, name: "-")
+let gsneg = Gfunc(bufferMode: bmFull, forward: negsf, backward: negsb, name: "-")
 
 proc `-`*(x: Gscalar): Gscalar =
   graphNode(scalarNodeLike(x), @[Gvalue(x)], gsneg, "-")
@@ -45,7 +45,7 @@ proc addsf(v: Gvalue) =
 proc addsb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   affineUpstream(zb, 1.0, z)
 
-let gsadd = Gfunc(forward: addsf, backward: addsb, name: "+")
+let gsadd = Gfunc(bufferMode: bmFull, forward: addsf, backward: addsb, name: "+")
 
 proc `+`*(x: Gscalar, y: Gscalar): Gscalar =
   graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], gsadd, "+")
@@ -59,7 +59,7 @@ proc mulsf(v: Gvalue) =
 proc mulsb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   bilinearBackward(zb, z, i, Gscalar)
 
-let gsmul = Gfunc(forward: mulsf, backward: mulsb, name: "*")
+let gsmul = Gfunc(bufferMode: bmFull, forward: mulsf, backward: mulsb, name: "*")
 
 proc `*`*(x: Gscalar, y: Gscalar): Gscalar =
   graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], gsmul, "*")
@@ -79,7 +79,7 @@ proc subsb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
     return affineUpstream(zb, 1.0, z)
   affineUpstream(zb, -1.0, z)
 
-let gssub = Gfunc(forward: subsf, backward: subsb, name: "-")
+let gssub = Gfunc(bufferMode: bmFull, forward: subsf, backward: subsb, name: "-")
 
 proc `-`*(x: Gscalar, y: Gscalar): Gscalar =
   graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], gssub, "-")
@@ -103,7 +103,7 @@ proc divsb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
     Gscalar,
     -Gscalar(z) / y)
 
-let gsdiv = Gfunc(forward: divsf, backward: divsb, name: "/")
+let gsdiv = Gfunc(bufferMode: bmFull, forward: divsf, backward: divsb, name: "/")
 
 proc `/`*(x: Gscalar, y: Gscalar): Gscalar =
   graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], gsdiv, "/")
@@ -116,7 +116,7 @@ proc expsf(v: Gvalue) =
 proc expsb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   scaledUpstreamOr(zb, Gscalar, Gscalar(z))
 
-let exps = Gfunc(forward: expsf, backward: expsb, name: "exps")
+let exps = Gfunc(bufferMode: bmFull, forward: expsf, backward: expsb, name: "exps")
 
 proc exp*(x: Gscalar): Gscalar =
   graphNode(scalarNodeLike(x), @[Gvalue(x)], exps, "exps")
@@ -130,7 +130,7 @@ proc lnsb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   let x = Gscalar(z.inputs[0])
   scaledUpstreamOr(zb, Gscalar, toGvalue(x.runtime, 1.0) / x)
 
-let lns = Gfunc(forward: lnsf, backward: lnsb, name: "lns")
+let lns = Gfunc(bufferMode: bmFull, forward: lnsf, backward: lnsb, name: "lns")
 
 proc ln*(x: Gscalar): Gscalar =
   graphNode(scalarNodeLike(x), @[Gvalue(x)], lns, "lns")
@@ -169,7 +169,7 @@ proc lazyScaleb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
     return scaledUpstreamOr(zb, Gscalar, contribution)
   scaledUpstreamOr(zb, Gscalar, upstream)
 
-let glazyScale = Gfunc(
+let glazyScale = Gfunc(bufferMode: bmFull,
   forward: lazyScalef,
   inputView: lazyScaleInputView,
   backward: lazyScaleb,
@@ -248,7 +248,7 @@ proc ltsf(v: Gvalue) =
   let z = Gscalar(v)
   z.sval = if x.sval < y.sval: 1.0 else: 0.0
 
-let lts = Gfunc(forward: ltsf, backward: comparisonZeroBackward, name: "lts")
+let lts = Gfunc(bufferMode: bmFull, forward: ltsf, backward: comparisonZeroBackward, name: "lts")
 
 proc `<`*(x: Gscalar, y: Gscalar): Gscalar =
   graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], lts, "lts")
@@ -259,7 +259,7 @@ proc equalsf(v: Gvalue) =
   let z = Gscalar(v)
   z.sval = if x.sval == y.sval: 1.0 else: 0.0
 
-let equals = Gfunc(forward: equalsf, backward: comparisonZeroBackward, name: "equals")
+let equals = Gfunc(bufferMode: bmFull, forward: equalsf, backward: comparisonZeroBackward, name: "equals")
 
 proc equal*(x: Gscalar, y: Gscalar): Gscalar =
   graphNode(scalarNodeLike(x), @[Gvalue(x), Gvalue(y)], equals, "equals")
@@ -270,7 +270,7 @@ proc ltif(v: Gvalue) =
   let z = Gint(v)
   z.ival = if x.ival < y.ival: 1 else: 0
 
-let lti = Gfunc(forward: ltif, backward: comparisonZeroBackward, name: "lti")
+let lti = Gfunc(bufferMode: bmFull, forward: ltif, backward: comparisonZeroBackward, name: "lti")
 
 proc `<`*(x: Gint, y: Gint): Gint =
   graphNode(intNodeLike(x), @[Gvalue(x), Gvalue(y)], lti, "lti")
@@ -281,7 +281,7 @@ proc equalif(v: Gvalue) =
   let z = Gint(v)
   z.ival = if x.ival == y.ival: 1 else: 0
 
-let equali = Gfunc(forward: equalif, backward: comparisonZeroBackward, name: "equali")
+let equali = Gfunc(bufferMode: bmFull, forward: equalif, backward: comparisonZeroBackward, name: "equali")
 
 proc equal*(x: Gint, y: Gint): Gint =
   graphNode(intNodeLike(x), @[Gvalue(x), Gvalue(y)], equali, "equali")

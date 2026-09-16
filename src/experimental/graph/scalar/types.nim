@@ -1,7 +1,7 @@
 import ../core
 
 type
-  Gscalar* {.final.} = ref object of Gvalue
+  Gscalar* = ref object of Gvalue
     ## Float scalar node. `update` also marks dependent graphs stale.
     sval*: float
   Gint* {.final.} = ref object of Gvalue
@@ -50,6 +50,8 @@ proc update*(x: Gscalar, y: float) =
 
 method newOneOf*(x: Gscalar): Gvalue =
   result = scalarNodeLike(x)
+method valueLike*(x: Gscalar): Gvalue =
+  scalarNodeLike(x)
 method zeroLike*(x: Gscalar): Gvalue =
   result = scalarNodeLike(x)
   result.markStaticZeroLeaf
