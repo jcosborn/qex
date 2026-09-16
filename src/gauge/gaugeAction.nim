@@ -874,6 +874,9 @@ proc gaugeDeriv2*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]
           shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[nu].field[ir]*adj(it), u[mu][ix])
           discard td[mu] ^* t[nu] ^* tg[mu] ^* u[mu]
           shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[mu].field[ir]*adj(it), u[nu][ix])
+          # Back-to-back shifts through one buffer need every thread done with
+          # the previous receive before the next one is posted (see gaugeForce2).
+          threadBarrier()
           shiftExpr(t2[mu].sb, f[mu][ir] += cr * t[nu].field[ir]*adj(it), t[mu].field[ix])
   if c.pgm != 0:
     gaugeLoopDeriv(GaugeActionCoeffs(pgm: -c.pgm), g, g, f, false, work)
