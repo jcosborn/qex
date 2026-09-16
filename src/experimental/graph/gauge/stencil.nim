@@ -13,6 +13,7 @@
 ## to its input on every evaluation (clone rule, DESIGN section 6); layouts
 ## and maps come from the halo cache. Halo updates run outside `threads:`.
 
+import std/tables
 import ../core
 import ../scalar, ../scalar/types
 import ../support/op
@@ -171,6 +172,8 @@ proc gp*(a, b: Gfield, sh: seq[int], fa = false, fb = false): Gfield =
 
 type
   PlaqStorage = PlaqWork[Lo, DLatticeColorMatrixV, DColorMatrixV]
+  GplaqWork = ref object of Gwork
+    work: PlaqStorage
   GplaqSum = ref object of Gscalar
     work: PlaqStorage
   GstapleSum = ref object of Ggauge
@@ -182,7 +185,20 @@ proc stapleSum*(g: Ggauge, seeds: openArray[Ggauge]): Ggauge
 proc stapleSum*(g: Ggauge): Ggauge
 
 proc ensurePlaqWork(work: var PlaqStorage, g: Ggauge, order: int, action: bool) =
-  if work == nil:
+  let rt = g.runtime
+  if rt.evalFrame != nil and rt.workFrame != nil:
+    # These synchronous forwards rebind every halo field before using the work.
+    let key: GworkKey = (kind: (if action: "plaqSum" else: "stapleSum"),
+      layout: cast[pointer](g.gval[0].l), fields: g.gval.len, order: order)
+    var entry = GplaqWork(rt.workFrame.getOrDefault(key))
+    if entry == nil:
+      entry = GplaqWork(work: newPlaqWork(g.gval[0], order, action))
+      for row in entry.work.h:
+        for halo in row:
+          entry.bytes += halo.halo.bytes
+      rt.workFrame[key] = entry
+    work = entry.work
+  elif work == nil:
     work = newPlaqWork(g.gval[0], order, action)
 
 proc stapleNodeLike(g: Ggauge, order: int): GstapleSum =

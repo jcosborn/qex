@@ -15,6 +15,8 @@ The reusable graph layers are:
 - `functional.nim`: first-class structural lambdas, `apply`, and structural VJP
   construction.
 - `gauge.nim`: gauge-field graph values and gauge operators.
+- `plan.nim`: private execution graphs, joint result scheduling, and reusable
+  numerical buffers. Import `graph/plan` explicitly to use `plan`.
 
 `multi.nim` is support plumbing for multi-output operators, not a second
 product-value language.
@@ -63,6 +65,12 @@ Custom input views must emit ordinary graph values without mutating `inputs`.
 The `backward` hook receives both the backward dep index and the actual `input`,
 because an `iwmBackward` surface need not line up with raw input positions.
 
+A direct eval dependency must be declared in raw `inputs` or the reachable view.
+Plan scheduling and source audits use that union, preserving lazy eval order.
+`graphValues` follows raw inputs, reachable inputs, and symbolic lambda bindings;
+resolved lambda boundaries expose captures without entering their bound bodies.
+This source audit does not change differentiation's dependency surfaces.
+
 ### Topology-stable evaluation
 
 Evaluation is topology-stable. A `forward` hook may update only the current
@@ -101,9 +109,11 @@ The runtime owns mutable graph identity and generic reuse state:
 - freshness epochs
 - stable node ids
 - symbolic graph revision
+- source boundary revision
 - gradient cache
 - log-Jacobian chain cache
 - functional state: apply instantiation cache
+- active execution, apply-cache, and workspace frames while a storage plan runs
 - cache stats and debug knobs
 - runtime-local run counters
 
@@ -175,10 +185,13 @@ retry after failure and replacement of an override. Value families supply
 `bufferProto`, `bufferCompatible`, `bindBuffer`, `clearBuffer`, and `bufferBytes`.
 Prototypes hold shape metadata; binding replaces numerical descriptors, and
 compatibility covers the value family and layout. Packed producer subtypes include
-every cached value component. The `inplace` metadata is valid only with a proof
+every cached value component. A nil `bufferProto` declines pooling, and `bmZero`
+clears dedicated destinations as well as pooled buffers. The `inplace` metadata is valid only with a proof
 that the full forward may overwrite that raw input, including aliased operands.
-These declarations and inactive runtime frame hooks support later execution
-storage reuse; ordinary evaluation retains each node's storage.
+The planner also requires the input's last use, compatible concrete storage, and
+no active alias or external owner before an in-place transfer. `bmOpaque` inputs
+and their ancestry receive dedicated storage because the forward may retain them.
+Ordinary evaluation retains each node's storage.
 
 `tests/tgvalue` and `tests/tgvalueu1` exercise this contract using ordinary
 evaluation on small SU(3) and U(1) fixtures. Graph unittest drivers import
@@ -213,13 +226,110 @@ caches, it is probably fighting the design.
 Arbitrary in-place mutation of structural lambda bodies after cached use is not a
 public freshness model. Build a fresh lambda or update captured leaves instead of
 rewiring a normalized lambda body and expecting existing structural caches to
-track that mutation. Lambda-ref binding/copying is a construction-time mechanism;
-rebinding a lambda placeholder after `grad`, `vjpOf`, or apply instantiation has
-built symbolic work is the same kind of unsupported topology mutation.
+track that mutation. `valCopy` accepts compatible produced structural refs and
+advances the symbolic revision, so plans rebuild after supported rebinding. It
+rejects copying a resolved `Glambda` body. Rebuild constructed derivative expressions
+after changing a binding; direct rewrites of normalized bodies remain unsupported.
 
 The package is not graph-runtime thread-safe. Treat a runtime as exclusive
 mutable state; globals used to connect functional submodules are not a concurrency
 contract.
+
+### Shared execution plans
+
+Build expressions and their derivatives in one runtime, then pass every required
+result to `plan`. For a numerical gauge `g`:
+
+```nim
+import graph/[core, scalar, gauge]
+import graph/plan
+
+let rt = initGraphRuntime()
+let x = rt.toGvalue(g)
+let f = norm2(x*x)
+let df = grad(f, x)
+let p = plan(f, df)
+discard p.eval()
+let value = Gscalar(p[0]).sval
+let gradient = Ggauge(p[1])
+```
+
+`p.eval()` returns numerical results in root order; `p[i]` selects one after
+evaluation. Results are detached graph leaves. Build further derivatives from
+the original expressions and include them in the root set. Function-valued
+results and carriers containing function slots must be applied to numerical
+arguments before publication.
+
+The plan owns private clones, its buffer arena, and execution caches. Source
+numerical leaves keep their own storage, and escaped aliases to the original
+graph retain their allocations. Ordinary evaluation uses the original graph's
+values and caches. Only an active plan frame redirects nested evaluation into
+the private schedule.
+
+Published payloads may alias arena storage. They are valid until the next
+execution of that plan, including an attempted execution that fails. An unchanged
+`p.eval()` returns the current results without forwards. Copy a raw value when it
+must survive a later execution, and obtain `p[i]` again after a rebuild because
+public wrapper identity can change.
+
+The root set defines values that must remain available together. Consumer counts
+cover shared dependencies, and inputs stay live throughout each forward. Alias
+outputs retain selected source buffers until their last consumer. A released
+private descriptor is detached before its arena slot serves another value.
+Unselected dependency edges are cancelled without evaluating that branch.
+
+Nodes cache a compatible prototype-pool index. Each pool owns homogeneous
+allocations and free slots. Compatibility is checked in both directions on the
+concrete buffer; compatibility with a prototype need not be transitive. Rejected
+concrete storage leaves the requesting node dedicated for that private
+generation. In-place transfers retain the allocation's original pool, and only
+its current owner can return it. An opaque consumer can dedicate a live buffer.
+
+Explicit numerical overrides on computed source nodes form external boundaries.
+Ordinary evaluation decides when newer inputs or missing storage expire an
+override; the plan then rebuilds that boundary. A concrete override does not cut
+an abstract lambda body: each cloned body gets fresh binders and a scoped
+expression memo, while captures clone through the outer context. Generated zero
+and identity leaves are cloned separately; mutation of an original generated
+constant invalidates that representation. Supported source lambda-ref binding
+changes invalidate private structure through the runtime symbolic revision.
+
+The runtime boundary revision gates complete source audits. Ordinary numerical
+input updates require feed/result epoch and residency checks without a full
+source scan. New or expired computed overrides and mutations of generated
+constants advance the boundary revision. Validation checks it again after
+evaluating external overrides.
+
+Nested `apply` joins the active frame and keeps outer arguments live through the
+copy into its result. Private variants are keyed by apply identity, selected
+lambda identity, and symbolic revision. Returning to a selected body can reuse
+its private work. These entries belong exclusively to the plan and are not
+mirrored into the ordinary runtime apply cache. Plans execute serially within a
+runtime; a second plan cannot enter while a frame is active.
+
+Communication and stencil work remain available across forwards and rebind the
+current field/seed descriptors before use. Plaquette and staple forwards share
+one `PlaqWork` per plan, operation kind, layout, field count, and derivative
+order. Both the evaluation and workspace frames must be active; ordinary
+evaluation of an external boundary uses its own work. Every halo exchange
+finishes before another forward borrows the workspace. Shifts and hops likewise
+complete sends and receives before their inputs become reusable, and declare no
+in-place permission. An initialized leaf created by a nested forward keeps its
+owned payload because it has no producer to reconstruct it.
+
+`p.clear()` releases private caches and arena ownership. Published raw views keep
+their backing allocations; the next evaluation builds a fresh private generation.
+Failed execution leaves the plan and its results invalid, restores runtime
+frames, and permits retry after the cause is corrected. Retry through `p.eval()`;
+a detached result leaf cannot reconstruct its source expression.
+
+The `tests/tgstorage` chain fixtures assert two arena buffers for ordinary full
+writes and one when the forward explicitly permits in-place writes, excluding
+the preserved input. General derivative graphs can require more live values.
+`GraphPlan.stats` reports arena buffers and bytes, shared workspace payload bytes,
+source audits, and private forward activity. Metadata and communication work
+have separate ownership from numerical arena buffers. The shared SU(3)/U(1)
+storage suites and `tests/tglifetime` cover the execution and lifetime contracts.
 
 ## 4. Construction, Shape, And Nil Contracts
 
@@ -538,11 +648,23 @@ clone remains substitution; when generated VJP bodies need active value targets
 on cloned apply nodes, the VJP builder supplies an explicit source-node to
 extra-input map. The clone module appends only those data-listed inputs.
 
+Apply's reachable view declares every ordinary dependency that its eval view
+may visit directly, across both branches. Backward retains its maximal target
+frontier. `cloneValues` shares a context across roots and starts a fresh expression
+memo inside each lambda body; only active recursive lambda identities cross that
+scope boundary. Private cloning also isolates generated constants and bound refs,
+and disregards concrete numerical override cuts inside abstract bodies.
+
 Some function-side structure is needed only to invalidate stale gradient caches,
 not to receive a raw adjoint. Apply cache entries key on the selected nominal
 lambda closure and the runtime symbolic revision. Whole lambda values are not
 differentiable raw inputs; function-side structural identity invalidates stale
 pullbacks without introducing first-class lambda cotangents.
+
+During a plan frame, each selected body has a distinct cache entry keyed by
+`(applyId, selectedLambdaId, revision)`. The private lookup requires both the
+evaluation and apply frames. Ordinary evaluation of an external boundary uses
+the runtime's ordinary cache. Clearing a plan drops its private apply entries.
 
 Apply instantiation and VJP construction remain local to the apply node code, and
 plain `apply` construction must not prepare VJPs eagerly. Backward/VJP builders
@@ -961,10 +1083,12 @@ The staple is cubic: orders zero through three use fused kernels, and higher
 orders return an ordinary gauge zero after validating every seed's shape and
 runtime. Its further pullbacks are exactly zero.
 
-Each fused node owns its `PlaqWork`; cloning starts with empty work, and
-`releaseWork` or `releaseStorage` drops it. Every forward binds the current field
-and seeds before the numerical kernel exchanges halos. The graph tests compare
-all orders and pullbacks against independent hop chains, including the U(1)
+Ordinary fused nodes own their `PlaqWork`; cloning starts with empty work, and
+`releaseWork` or `releaseStorage` drops the node's reference. During planned
+execution compatible forwards borrow the plan's workspace, keyed by operation,
+layout, field count, and derivative order. Every forward binds the current field
+and seeds and completes its halo exchanges before returning. The graph tests
+compare all orders and pullbacks against independent hop chains, including the U(1)
 wrapper `tests/tgplaqstencilu1`. `tests/tstencilmpi` selects axes from the layout's
 rank geometry and checks remote faces and, when two axes are split, corners.
 

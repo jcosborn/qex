@@ -1,4 +1,56 @@
 suite "functional reuse":
+  test "shared root cloning isolates lambda body binders":
+    let p = grt.toGvalue(2.0)
+    let x = grt.toGvalue(3.0)
+    let body = p*p
+    let fn = lambda(p, body)
+    let z = Gscalar(apply(fn, x))
+    for reverse in [false, true]:
+      let roots = if reverse: @[Gvalue(z), Gvalue(body)] else: @[Gvalue(body), Gvalue(z)]
+      let copied = cloneValues(roots)
+      let i = if reverse: 1 else: 0
+      for values in [(2.0, 3.0), (-4.0, 5.0)]:
+        p.update(values[0])
+        x.update(values[1])
+        copied[i] :~ values[0]*values[0]
+        copied[1-i] :~ values[1]*values[1]
+
+  test "shared root cloning preserves nested binder shadowing":
+    let p = grt.toGvalue(2.0)
+    let x = grt.toGvalue(3.0)
+    let body = p*p
+    let inner = lambda(p, body)
+    let outer = lambda(p, inner)
+    let z = Gscalar(apply(apply(outer, 11.0), x))
+    let copied = cloneValues([Gvalue(body), Gvalue(z)])
+    copied[0] :~ 4.0
+    copied[1] :~ 9.0
+    p.update(7.0)
+    x.update(4.0)
+    copied[0] :~ 49.0
+    copied[1] :~ 16.0
+
+  test "private lambda bodies rebind concrete override cuts":
+    for reverse in [false, true]:
+      let p = grt.toGvalue(2.0)
+      let x = grt.toGvalue(3.0)
+      let body = p*p
+      let fn = lambda(p, body)
+      let z = Gscalar(apply(fn, x))
+      body.update(13.0)
+      let roots = if reverse: @[Gvalue(z), Gvalue(body)] else: @[Gvalue(body), Gvalue(z)]
+      let copied = cloneValues(roots, preserve = [Gvalue(body)], copyConstants = true)
+      let i = if reverse: 1 else: 0
+      check copied[i].nodeKey == body.nodeKey
+      copied[i] :~ 13.0
+      copied[1-i] :~ 9.0
+      x.update(4.0)
+      copied[i] :~ 13.0
+      copied[1-i] :~ 16.0
+      p.update(5.0)
+      copied[i] :~ 25.0
+      copied[1-i] :~ 16.0
+
   test "source lambda remains reusable after returned lambda capture rebinding":
     let outer = grt.localScalar()
     let inner = grt.localScalar()

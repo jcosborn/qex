@@ -651,6 +651,10 @@ suite "functional lambda":
 
     let z = apply(apply(Y, F), 4.0)
     z :~ 64.0
+    let copied = cloneValues([z])[0]
+    copied :~ 64.0
+    y.update(6.0)
+    copied :~ 96.0
 
 
 suite "heterogeneous bundle forwarding":

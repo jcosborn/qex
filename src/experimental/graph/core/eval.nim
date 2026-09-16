@@ -12,6 +12,7 @@ proc updated*(x: Gvalue) =
   x.restoreValue = nil
   x.valueReady = true
   x.valueOverride = true
+  x.stale = false
   inc grt.graphEpochCounter
   x.epoch = grt.graphEpochCounter
 
@@ -36,6 +37,8 @@ proc eval*[T: Gvalue](v: T): T {.discardable.} =
     let key = node.nodeKey
     if key in active:
       raiseError("cycle detected while evaluating graph:\n" & node.nodeRepr)
+    if node.stale:
+      raiseError("published plan result is invalid; evaluate its plan successfully and reacquire the result:\n" & node.nodeRepr)
     if key in seen and node.valueReady and node.hasStorage:
       return
     seen.incl key

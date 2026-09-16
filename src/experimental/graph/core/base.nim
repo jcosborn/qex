@@ -16,6 +16,8 @@ type
     gfunc*: Gfunc
     epoch*: int
     valueReady*: bool
+    stale*: bool
+      ## Invalid published results are stale and not ready; eval must refuse them.
     valueOverride*: bool
     restoreValue*: GforwardHook
     staticZeroLeaf*: bool

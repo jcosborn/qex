@@ -300,7 +300,8 @@ proc walkLambdaGraph(roots: openArray[Gvalue],
                      mode: InputWalkMode,
                      visitValue: GnodeVisit = nil,
                      visitNode: GnodeVisit = nil,
-                     stopValues: openArray[Gvalue] = []) =
+                     stopValues: openArray[Gvalue] = [],
+                     rawInputs = false) =
   ## Walk graph structure until lambda boundaries, then follow only symbolic
   ## structural lambda bindings.
   var seenLambda = initHashSet[NodeKey]()
@@ -342,6 +343,8 @@ proc walkLambdaGraph(roots: openArray[Gvalue],
         continue
       if visitNode != nil:
         visitNode node
+      if rawInputs:
+        stack.pushReverse(node.inputs)
       var deps: seq[Gvalue] = @[]
       if w.isLocalLambdaRef:
         if mode == iwmEval and w.binding != nil:
@@ -368,8 +371,18 @@ proc walkLambdaGraph(roots: openArray[Gvalue],
     if node.nodeKey notin excludedKeys:
       if visitValue != nil:
         visitValue node
+    if rawInputs and node.gfunc != nil and node.gfunc.inputView != nil:
+      stack.pushReverse(node.inputs)
     let deps = node.collectInputView(mode)
     stack.pushReverse(deps)
+
+proc graphValues*(roots: openArray[Gvalue]): seq[Gvalue] =
+  ## Audit raw and reachable sources, stopping at lambda binders while following
+  ## their bindings and captures. Differentiation keeps its own input views.
+  var nodes: seq[Gvalue] = @[]
+  walkLambdaGraph(roots, [], iwmReachable, rawInputs = true, visitNode = proc(node: Gvalue) =
+    nodes.add node)
+  nodes
 
 proc collectLambdaValueDeps(roots: openArray[Gvalue],
                             seedValues: openArray[Gvalue],
@@ -386,8 +399,10 @@ type
   CloneCtx = object
     subst: Bindings
     memo: Bindings
+    lambdas: seq[tuple[key: NodeKey, value: Gvalue]]
     preserve: NodeSet
     extraInputs: NodeTable[seq[Gvalue]]
+    copyConstants: bool
 
 proc clone(v: Gvalue, ctx: var CloneCtx): Gvalue
 
@@ -441,13 +456,18 @@ proc cloneResolvedLambda(fn: Glambda,
   ctx.memo[fn.nodeKey] = result
 
   let r = Glambda(result)
-  # Inner clone forks the substitution (binder params shadow) but shares the memo
-  # so already-cloned nodes stay identity-stable.
+  # Expressions must be cloned under the new binders. Only active recursive
+  # lambda identities can cross into the body's fresh memo.
   var innerCtx = CloneCtx(
     subst: ctx.subst.withoutLambdaBindings(fn),
-    memo: ctx.memo,
+    memo: initTable[NodeKey, Gvalue](),
+    lambdas: ctx.lambdas,
     preserve: ctx.preserve,
-    extraInputs: ctx.extraInputs)
+    extraInputs: ctx.extraInputs,
+    copyConstants: ctx.copyConstants)
+  innerCtx.lambdas.add (key: fn.nodeKey, value: result)
+  for binding in innerCtx.lambdas:
+    innerCtx.memo[binding.key] = binding.value
   r.param = cloneLambdaBinder(fn.param, innerCtx)
   r.captureParams = newseq[Gvalue](fn.captureParams.len)
   for i in 0..<fn.captureParams.len:
@@ -474,7 +494,11 @@ proc cloneWithFreshMemo(v: Gvalue,
 proc clone(v: Gvalue, ctx: var CloneCtx): Gvalue =
   let key = v.nodeKey
   if key in ctx.preserve:
-    return v
+    # Plan overrides cut concrete values, while abstract bodies bind afresh.
+    let rebind = ctx.copyConstants and ctx.lambdas.len > 0 and
+      v.gfunc != nil and v.valueOverride and v.lambdaResultProto == nil
+    if not rebind:
+      return v
   if ctx.subst.hasKey(key):
     return ctx.subst[key]
   if ctx.memo.hasKey(key):
@@ -485,6 +509,19 @@ proc clone(v: Gvalue, ctx: var CloneCtx): Gvalue =
     if fn.isResolvedLambda:
       return fn.cloneResolvedLambda(ctx)
 
+  if ctx.copyConstants and v of GlambdaRef:
+    let w = GlambdaRef(v)
+    if w.isLocalLambdaRef and w.binding != nil:
+      let r = GlambdaRef(runtime: w.runtime, kind: w.kind,
+        paramProto: w.paramProto.newOneOf,
+        resultProto: w.resultProto.newOneOf,
+        epoch: w.epoch, valueReady: w.valueReady).assignStableNodeId
+      r.paramProto.releaseStorage
+      r.resultProto.releaseStorage
+      ctx.memo[key] = r
+      r.binding = clone(w.binding, ctx)
+      return r
+
   let lambdaBinding = v.freshLambdaBinding
   if lambdaBinding != nil:
     result = clone(lambdaBinding, ctx)
@@ -492,6 +529,14 @@ proc clone(v: Gvalue, ctx: var CloneCtx): Gvalue =
     return result
 
   if v.gfunc == nil and v.inputs.len == 0:
+    if ctx.copyConstants and (v.staticZeroLeaf or v.restoreValue != nil):
+      result = v.newOneOf
+      result.releaseStorage
+      result.staticZeroLeaf = v.staticZeroLeaf
+      result.restoreValue = v.restoreValue
+      result.epoch = v.epoch
+      ctx.memo[key] = result
+      return
     return v
 
   # Generic graph-node clone is valid only for nodes whose structural state is
@@ -503,9 +548,30 @@ proc clone(v: Gvalue, ctx: var CloneCtx): Gvalue =
   result.inputs = v.clonedGraphInputs(ctx)
   result.gfunc = v.gfunc
 
+proc cloneValues*(roots: openArray[Gvalue],
+                  preserve: openArray[Gvalue] = [],
+                  copyConstants = false): seq[Gvalue] =
+  ## Clone a root set with shared intermediates; ordinary input leaves stay live.
+  ## copyConstants isolates generated constants and bound refs for private plans.
+  discard sharedGraphRuntime(roots, "cloneValues")
+  var kept = initHashSet[NodeKey]()
+  for value in preserve:
+    if value != nil:
+      kept.incl value.nodeKey
+  var ctx = CloneCtx(
+    subst: initTable[NodeKey, Gvalue](),
+    memo: initTable[NodeKey, Gvalue](),
+    preserve: kept,
+    extraInputs: initTable[NodeKey, seq[Gvalue]](),
+    copyConstants: copyConstants)
+  result = newSeq[Gvalue](roots.len)
+  for i, root in roots:
+    result[i] = clone(root, ctx)
+
 let lambdaCaptureGraph = Gfunc(
   forward: proc(v: Gvalue) =
     discard v,
+  bufferMode: bmAlias,
   name: "lambda captures")
 
 proc initLambdaSubst(fn: Glambda,
@@ -828,6 +894,7 @@ proc vjpOfForward(v: Gvalue) =
 
 let gvjpOfCall = GvjpOf(
   forward: vjpOfForward,
+  bufferMode: bmAlias,
   name: "vjpOf")
 
 proc newVjpOfNode(fun: Gvalue,
@@ -840,7 +907,7 @@ proc newVjpOfNode(fun: Gvalue,
     if spec.depth == 0:
       gvjpOfCall
     else:
-      GvjpOf(depth: spec.depth, forward: vjpOfForward, name: "vjpOfResult")
+      GvjpOf(depth: spec.depth, forward: vjpOfForward, bufferMode: bmAlias, name: "vjpOfResult")
   graphNode(proto.newOneOf, inputs, gfunc, "vjpOf")
 
 # --- apply backward-dependency discovery ---
@@ -997,6 +1064,19 @@ proc ensureInstantiation(v: Gvalue,
     revision: grt.symbolicRevision)
 
   let nodeId = v.stableNodeId
+  if grt.evalFrame != nil and grt.applyFrame != nil:
+    let frameKey: ApplyFrameKey = (applyId: nodeId,
+      selectedLambdaId: key.selectedLambdaId, revision: key.revision)
+    if grt.applyFrame.hasKey(frameKey):
+      result = grt.applyFrame[frameKey]
+      grt.functional.applyCacheStats.instantiationHits.inc
+    else:
+      grt.functional.applyCacheStats.instantiationMisses.inc
+      result = ApplyCacheEntry(key: key,
+        instantiated: instantiateNormalizedBody(fn, arg))
+      grt.applyFrame[frameKey] = result
+    return
+
   if not grt.functional.applyCacheByNode.hasKey(nodeId):
     grt.functional.applyCacheByNode[nodeId] = ApplyCacheEntry()
   result = grt.functional.applyCacheByNode[nodeId]
@@ -1480,10 +1560,22 @@ proc applyInputView(v: Gvalue,
       for dep in collectLambdaValueDeps([arg], [fun, arg], iwmEval):
         visit dep
   of iwmReachable:
-    visit v.inputs[ApplyFunInput]
-    visit v.inputs[ApplyArgInput]
-    for dep in v.applyBackwardDeps:
-      visit dep.input
+    let fun = v.inputs[ApplyFunInput]
+    let arg = v.inputs[ApplyArgInput]
+    var seen = initHashSet[NodeKey]()
+    proc add(input: Gvalue) =
+      if seen.markSeenNode(input): visit input
+    add fun
+    add arg
+    # Eval visits every ordinary capture dependency, including descendants of
+    # the maximal targets used by backward. Declare those direct edges here.
+    for dep in collectLambdaValueDeps([fun], [fun, arg], iwmReachable):
+      add dep
+    if not arg.hasFirstClassCotangent:
+      for dep in collectLambdaValueDeps([arg], [fun, arg], iwmReachable):
+        add dep
+    for dep in v.extraApplyValueTargets:
+      add dep
   of iwmBackward:
     for dep in v.applyBackwardDeps:
       visit dep.input
@@ -1525,6 +1617,7 @@ let gapply = block:
   f.forward = applyForward
   f.inputView = applyInputView
   f.backward = applyBackward
+  f.bufferMode = bmFull
   f.name = "apply"
   f
 
