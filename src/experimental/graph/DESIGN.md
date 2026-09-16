@@ -962,6 +962,20 @@ every evaluation. A stencil node owns its halo buffers and index table and
 rebinds the halo to its input each evaluation (section 6). Hop chains remain
 the spelling for transporting a general field along a path.
 
+`plaqSum(g)` is the unnormalized positive sum of real plaquette traces.
+`stapleSum(g, seeds)` is `D^seeds.len grad(plaqSum)` under the real Frobenius
+pairing. Field and seed pullbacks retain repeated inputs and live dependencies.
+The staple is cubic: orders zero through three use fused kernels, and higher
+orders return an ordinary gauge zero after validating every seed's shape and
+runtime. Its further pullbacks are exactly zero.
+
+Each fused node owns its `PlaqWork`; cloning starts with empty work, and
+`releaseWork` or `releaseStorage` drops it. Every forward binds the current field
+and seeds before the numerical kernel exchanges halos. The graph tests compare
+all orders and pullbacks against independent hop chains, including the U(1)
+wrapper `tests/tgplaqstencilu1`. `tests/tstencilmpi` selects axes from the layout's
+rank geometry and checks remote faces and, when two axes are split, corners.
+
 Each gauge module isolates one protocol, and that is the rule for adding one:
 
 ```text
@@ -971,7 +985,7 @@ gauge/matfun.nim      exp family: fused jets through three directions and graph 
 gauge/field_ops.nim   shift, linkField, injectLink
 gauge/cfield.nim      matrix field <-> complex field bridge: trace, scale, dot
 gauge/matrix.nim      real matrix/scalar bindings and SU(3) bridges
-gauge/stencil.nim     halo moves of a field: gather, scatter, gp (gathered product)
+gauge/stencil.nim     halo moves of a field and fused plaquette/staple kernels
 gauge/transport.nim   hop chains (transport, wilsonLine) and lineProducts on QEX's path plan
 gauge/fused_ops.nim   Gmulti-packed site kernels
 gauge/action/         QEX kernel dispatch (domain), coefficient type, action wrappers, reference actions

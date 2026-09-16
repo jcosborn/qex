@@ -14,8 +14,10 @@
 ## and maps come from the halo cache. Halo updates run outside `threads:`.
 
 import ../core
+import ../scalar, ../scalar/types
 import ../support/op
 import layout, gauge, physics/qcdTypes
+import gauge/plaquette
 import comms/[commsTypes, halo]
 import types, basic_ops
 
@@ -166,3 +168,100 @@ proc gp*(a, b: Gfield, sh: seq[int], fa = false, fb = false): Gfield =
   n.fa = fa
   n.fb = fb
   graphNode(n, @[Gvalue(a), Gvalue(b)], gpg, "gp")
+
+type
+  PlaqStorage = PlaqWork[Lo, DLatticeColorMatrixV, DColorMatrixV]
+  GplaqSum = ref object of Gscalar
+    work: PlaqStorage
+  GstapleSum = ref object of Ggauge
+    order: int
+    work: PlaqStorage
+
+proc plaqSum*(g: Ggauge): Gscalar
+proc stapleSum*(g: Ggauge, seeds: openArray[Ggauge]): Ggauge
+proc stapleSum*(g: Ggauge): Ggauge
+
+proc ensurePlaqWork(work: var PlaqStorage, g: Ggauge, order: int, action: bool) =
+  if work == nil:
+    work = newPlaqWork(g.gval[0], order, action)
+
+proc stapleNodeLike(g: Ggauge, order: int): GstapleSum =
+  GstapleSum(runtime: g.runtime, gval: g.gaugeNodeLike.gval, order: order).assignStableNodeId
+
+method newOneOf(x: GplaqSum): Gvalue =
+  GplaqSum(runtime: x.runtime).assignStableNodeId
+
+method newOneOf(x: GstapleSum): Gvalue =
+  stapleNodeLike(x, x.order)
+
+method releaseWork(x: GplaqSum) =
+  x.work = nil
+
+method releaseWork(x: GstapleSum) =
+  x.work = nil
+
+method releaseStorage(x: GplaqSum) =
+  x.releaseWork
+
+method releaseStorage(x: GstapleSum) =
+  x.releaseWork
+  procCall Ggauge(x).releaseStorage
+
+proc plaqSumf(v: Gvalue) =
+  let
+    z = GplaqSum(v)
+    g = Ggauge(v.inputs[0])
+  z.work.ensurePlaqWork(g, 0, true)
+  z.sval = plaquette.plaqSum(z.work, g.gval)
+
+proc plaqSumb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  scaledUpstreamOr(zb, Gscalar, stapleSum(Ggauge(z.inputs[0])))
+
+let plaqSumg = Gfunc(bufferMode: bmFull, forward: plaqSumf, backward: plaqSumb, name: "plaqSum")
+
+proc stapleSumf(v: Gvalue) =
+  let
+    z = GstapleSum(v)
+    g = Ggauge(v.inputs[0])
+  z.work.ensurePlaqWork(g, z.order, false)
+  var ds = newSeq[typeof(g.gval)](z.order)
+  for k in 0..<z.order:
+    ds[k] = Ggauge(v.inputs[k+1]).gval
+  plaquette.stapleSum(z.work, g.gval, ds, z.gval)
+
+proc stapleSumb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  # J_m = D^(m+1) P with m contracted slots. The scalar potential's
+  # derivatives are symmetric under the ambient real Frobenius pairing.
+  let
+    g = Ggauge(z.inputs[0])
+    u = requireUpstream(zb, "stapleSum backward", Ggauge)
+  var ds: seq[Ggauge]
+  for k in 1..<z.inputs.len:
+    ds.add Ggauge(z.inputs[k])
+  if i == 0:
+    ds.add u
+  else:
+    ds[i-1] = u
+  stapleSum(g, ds)
+
+let stapleSumg = Gfunc(bufferMode: bmFull, forward: stapleSumf, backward: stapleSumb, name: "stapleSum")
+
+proc plaqSum*(g: Ggauge): Gscalar =
+  ## Unnormalized positive sum Re tr(P), fused through axial halos.
+  graphNode(GplaqSum(runtime: g.runtime), @[Gvalue(g)], plaqSumg, "plaqSum")
+
+proc stapleSum*(g: Ggauge, seeds: openArray[Ggauge]): Ggauge =
+  ## D^(seeds.len) grad(plaqSum), including all local and remote links.
+  ## The quartic potential has no derivative past four gauge slots.
+  var inputs = @[Gvalue(g)]
+  for seed in seeds:
+    g.requireSameGaugeShape(seed, "stapleSum")
+    inputs.add Gvalue(seed)
+  discard sharedGraphRuntime(inputs, "stapleSum")
+  if seeds.len > 3:
+    return Ggauge(g.zeroLike)
+  graphNode(stapleNodeLike(g, seeds.len), inputs, stapleSumg, "stapleSum")
+
+proc stapleSum*(g: Ggauge): Ggauge =
+  let ds: seq[Ggauge] = @[]
+  stapleSum(g, ds)
