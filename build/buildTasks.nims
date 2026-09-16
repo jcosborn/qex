@@ -91,7 +91,22 @@ proc addCompilerFlags(flags: var seq[string], cflags: seq[string]) =
   var cfg = initTable[string, string]()
   for arg in flags:
     let s = arg.split(':', 1)
-    cfg[s[0].nimIdentNormalize] = if s.len > 1: parseCmdLine(s[1]).join(" ") else: ""
+    if s.len > 1:
+      var p = parseCmdLine(s[1])
+      # hack to fix parsing of some quotes:
+      while true:
+        var i = 0
+        while i < p.len and p[i] != "\'": inc i
+        var j = i+1
+        while j < p.len and p[j] != "\'": inc j
+        if j >= p.len: break
+        if i>0 and p[i-1][^1] == '=': dec i
+        for k in i+1 .. j:
+          p[i] &= p[k]
+        p.delete(i+1, j)
+      cfg[s[0].nimIdentNormalize] = p.join(" ")
+    else:
+      cfg[s[0].nimIdentNormalize] = ""
   let typ = cfg.getOrDefault("--cc", ccType).nimIdentNormalize
   let pre = typ & (if ccDef == "cpp": ".cpp" else: "") & ".options."
   # Preserve Nim's GCC/Clang defaults for empty option groups.
