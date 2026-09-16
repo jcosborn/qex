@@ -18,4 +18,4 @@ export
   gaugeAction, gaugeActionDeriv, gaugeActionDeriv2, gaugeForce,
   gaugeActionGraph, adjPlaqAction,
   plaqSum, stapleSum,
-  blendSubset, stoutUpdate, stoutLogDetJ, stoutUpdateLogDetJ
+  blendSubset, stoutUpdate, stoutLogDetJ, stoutLogDetJGraph, stoutUpdateLogDetJ

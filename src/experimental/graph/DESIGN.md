@@ -1015,10 +1015,16 @@ upstream before applying the full Hessian, whose output reaches every affected
 link. Coefficient pullbacks use fresh slots for partial derivatives, so existing
 dependencies among coefficients, fields and upstream values are retained.
 
-Stout update gradient kernels use the slot-variable replica and `secondPullback`
-described in section 5. The coefficient overload of `stoutUpdateLogDetJ` checks
-for Wilson coefficients on every evaluation: rectangle and parallelogram staples
-couple active links, invalidating independent parity/direction Jacobian blocks.
+Stout logdet and grouped update pullbacks retain live field, staple, alpha,
+coefficient and upstream slots. Independent slot variables define each partial,
+while their graph edges retain dependencies at further derivative orders.
+Cached exponential and Jacobian payloads remain evaluation dependencies and
+are excluded from backward traversal. The grouped field pullback includes the
+direct field partial and the action Hessian applied to the staple cotangent.
+The coefficient overload of `stoutUpdateLogDetJ` checks for Wilson coefficients
+on every evaluation: rectangle and parallelogram staples couple active links,
+invalidating independent parity/direction Jacobian blocks. Its coefficient
+tangents are restricted to `plaq`.
 
 `tests/gauge/higher` pins each replica backward one order past the derivative
 its hook builds, over a cotangent slot that aliases the field and over one that
@@ -1027,21 +1033,65 @@ lose. `tests/tgloops` covers every fundamental loop, repeated physical links at
 extent two, zero coefficients, cached family transitions and mixed coefficient/
 field derivatives. `tests/tgtoweru1` exercises the shared tower with U(1) fields.
 
-Replicas must compute the same function as the kernel they stand behind
-(`expPolyGraph` mirrors the matexp poly-and-squaring scheme exactly), and
+`expPolyGraph` mirrors the matexp polynomial and squaring scheme exactly, and
 pinning tests hold value and first-derivative agreement between the two. The
-matexp default kind, order, and scale come from `newExpParam`, with a
-compile-time check that rejects a stale graph replica.
+matexp default kind, order, and scale come from `newExpParam`, with a compile-time
+check that rejects a stale graph replica.
 
-The remaining non-grad-complete boundaries are the stout log-Jacobian and the
-fused stout step (`stoutLogDetJ` and the `stoutUpdateLogDetJ` pullback kernels
-reject further differentiation), and the optimized adjoint action field Hessian.
-`adjPlaqAction` remains the route for higher adjoint field derivatives.
+The optimized adjoint action field Hessian rejects further differentiation.
+`adjPlaqAction` supplies higher adjoint field derivatives.
+
+### Exponential and stout contracts
+
+| Operation | Numerical definition |
+| --- | --- |
+| Ordinary SU(3) graph exponential and its derivative tower | Degree-4 polynomial with scale-20 squaring |
+| SU(3) `axexpmuly` and stout update values | Adaptive degree-12 `expAH`, scaled to `norm2 <= 1/16` |
+| SU(3) stout field/staple pullbacks and logdet | Degree-13 adjoint seed at `X/32` and five doubling recoveries |
+| SU(3) stout alpha pullbacks and higher update replicas | Ordinary `expDeriv` and graph exponential polynomial |
+| U(1) graph exponential and its derivative tower | Exact scalar formulas |
+
+For `X=-ad(projectTAH(M))`, the finite differential is
+
+```text
+P = sum_{k=0..13} (X/32)^k/(k+1)!
+P <- P + 2^(j-6) X P^2, j=0..4
+K = I + P D
+logJac = ln det K
+```
+
+`stoutLogDetJGraph`, exported by the gauge facade, differentiates this finite
+logdet expression at every order. The structured SU(3) seed is defined on the
+adjoint image; its cotangents can be arbitrary real matrices. Positive
+determinants and nonzero leading LU pivots are required. The U(1) expression is
+`ln(1 + Re M)`.
+
+The SU(3) update value, first field/staple pullbacks, and higher update replicas
+use different finite numerical maps: adaptive `expAH`, the scaled Phi kernel
+with the cached `expAH` value, and the ordinary graph exponential, respectively.
+Alpha pullbacks also use the ordinary `expDeriv` polynomial. Higher update
+pullbacks approximate derivatives of the fused update and its first field
+pullback; they do not exactly differentiate those numerical maps at arbitrary
+norms. Accuracy depends on the generator norm and Jacobian conditioning.
+
+`tscaledexp` and `tgjac` share the runtime reference builder in
+`tests/base/scaledexpRef.nim`: dense polynomials, converged analytic series,
+and differentiated adaptive exponentials. The cases cover repeated spectra,
+scalar/SIMD scaling thresholds and generator Frobenius norms through eight.
+`tgjac` checks ambient and mixed higher logdet derivatives. Its separate
+directional finite difference of the first fused field pullback checks the
+higher update approximation near norm eight on a noncommuting fixture. The API
+does not enforce a norm cap; these checks establish no accuracy bound beyond
+the covered regime.
 
 ## 13. `hmcgauge`
 
 `hmcgauge` composes graph primitives into trajectory evaluation, acceptance,
 integration, and training.
+
+`stoutAction` and `smearedField` accept a graph scalar for rho. `StoutAction.rho`
+exposes that same value so mixed rho and field derivatives remain available.
+Their float overloads create a scalar in the input graph runtime.
 
 Its design role is operational:
 

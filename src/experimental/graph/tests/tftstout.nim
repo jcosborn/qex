@@ -2,12 +2,17 @@
 ## Check graph gradients against ndiff, the small-rho log-Jacobian, and rho=0.
 
 import qex, algorithms/numdiff, maths/groupOps
+import helpers
 import ../[core, scalar, gauge]
 import ../functional
 import ../hmcgauge/ftstout
 
-proc runFtStoutTests*(lat: seq[int]; beta, rho: float; nsmear = 1) =
+proc runFtStoutTests*(localLat: seq[int]; beta, rho: float; nsmear = 1) =
   qexInit()
+  letParam:
+    expectRanks = nRanks
+    lat = latticeFromLocalLattice(localLat, nRanks)
+  doAssert nRanks == expectRanks
   const eps = 1e-3
   let seed = 1234567891'u
   let
@@ -46,7 +51,7 @@ proc runFtStoutTests*(lat: seq[int]; beta, rho: float; nsmear = 1) =
       yv = y.eval.sval
       rel = abs(xv - yv)/(1.0 + abs(yv))
     echo "E[", name, "]: x=", xv, " ref=", yv, " rel=", rel
-    if rel > tol: inc nfail
+    if not (rel <= tol): inc nfail
 
   proc checkNodeGrad(name: string, f, t: Gscalar, x0: float) =
     let ana = f.grad(t).eval.sval
@@ -130,7 +135,7 @@ proc runFtStoutTests*(lat: seq[int]; beta, rho: float; nsmear = 1) =
     gt.update 0.0
     let rel = abs((nd - ana) / (abs(nd) + abs(ana) + 1e-30))
     echo "A[", name, "]: ana=", ana, " num=", nd, " +/- ", err, " rel=", rel
-    if rel >= 1e-6: inc nfail
+    if not (rel < 1e-6): inc nfail
 
   checkGrad("ax_xgauge", proc(Vt: Ggauge): Gscalar =
     # x = projTAH(ds Vt†) depends on Vt: isolates expDeriv (Nc=1 fix guard)
@@ -161,7 +166,7 @@ proc runFtStoutTests*(lat: seq[int]; beta, rho: float; nsmear = 1) =
     a.update rho
     let rel = abs((nd - ana) / (abs(nd) + abs(ana) + 1e-30))
     echo "A[", name, "]: ana=", ana, " num=", nd, " +/- ", err, " rel=", rel
-    if rel >= 1e-6: inc nfail
+    if not (rel < 1e-6): inc nfail
 
   checkAlphaGrad("lndet_rho", proc(a: Gscalar): Gscalar =
     let Vg = gauge.toGvalue(grt, V0)
@@ -372,15 +377,13 @@ proc runFtStoutTests*(lat: seq[int]; beta, rho: float; nsmear = 1) =
     checkGaugeEq("stoutActionStep update-only W grad", dWuf, dWur)
     checkGaugeEq("stoutActionStep log-only W grad", dWlf, dWlr)
     checkScalarEq("stoutActionStep log-only alpha grad", dalf, dalr)
-    var coeffRejected = false
-    try:
-      discard grad(ff, c1)
-    except GraphValueError:
-      coeffRejected = true
-    doAssert coeffRejected
+    let dcf = grad(ff,c1)
+    checkScalarEq("stoutActionStep coefficient gradient",redot(dcf,c1),a*daf)
+    doAssert dcf.cval.rect == 0 and dcf.cval.pgm == 0 and dcf.cval.adjplaq == 0
     W.update(Aconst)
     up.update(V0)
     a.update(0.8*rho)
+    checkScalarEq("stoutActionStep coefficient refresh",redot(dcf,c1),a*daf)
     checkGaugeEq(
       "stoutActionStep update refresh", fused.Wnew, reference.Wnew)
     checkScalarEq(
@@ -472,12 +475,12 @@ proc runFtStoutTests*(lat: seq[int]; beta, rho: float; nsmear = 1) =
         when nc == 1:
           s += simdSum(ln(1.0 + M[0, 0].re))
         elif nc == 3:
-          s += simdSum(expProjMulLogJac(M[]))
+          s += simdSum(expProjMulLogJac(M[], scale=expProjectTAHScale))
       s.threadRankSum
       threadSingle: exact = s
     let got = lj.eval.sval
     echo "E[stoutLogDetJ value]: x=", got, " ref=", exact
-    if abs(got - exact) > 1e-12*(1.0 + abs(exact)): inc nfail
+    if not (abs(got - exact) <= 1e-12*(1.0 + abs(exact))): inc nfail
 
     var
       Rw = lo.newgauge

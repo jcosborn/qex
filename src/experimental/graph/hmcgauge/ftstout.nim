@@ -16,6 +16,7 @@ type
   StoutAction* = object
     action*: GaugeAction
     flow*: proc(V: Ggauge): Ggauge {.closure.}
+    rho*: Gscalar
 
 proc smearFlow*(V: Ggauge, c1: Gactcoeff, alpha: Gscalar, sweeps: int): Ggauge =
   ## U = f(V); ln det f'(V) is logDetJ(result, V). c1 and alpha must be
@@ -33,17 +34,21 @@ proc smearFlow*(V: Ggauge, c1: Gactcoeff, alpha: Gscalar, sweeps: int): Ggauge =
       for dir in 0..<nd:
         result = stoutUpdateLogDetJ(result, c1, alpha, parity, dir).Wnew
 
-proc smearedField*(V: Ggauge, rho: float, sweeps: int): Ggauge =
+proc smearedField*(V: Ggauge, rho: Gscalar, sweeps: int): Ggauge =
   ## U = f(V); ln det f'(V) is logDetJ(result, V).
-  smearFlow(V, actWilson(scalar.toGvalue(V.runtime, 1.0)), scalar.toGvalue(V.runtime, rho), sweeps)
+  smearFlow(V, actWilson(scalar.toGvalue(V.runtime, 1.0)), rho, sweeps)
 
-proc stoutAction*(gc: Gactcoeff, rho: float, sweeps: int): StoutAction =
+proc smearedField*(V: Ggauge, rho: float, sweeps: int): Ggauge =
+  smearedField(V, scalar.toGvalue(V.runtime, rho), sweeps)
+
+proc stoutAction*(gc: Gactcoeff, rho: Gscalar, sweeps: int): StoutAction =
   ## S_eff(V) = S(f(V)) - log det f'(V).
   if sweeps < 0:
     raiseValueError("stout sweeps must be >= 0, got " & $sweeps)
   let
     c1 = actWilson(scalar.toGvalue(gc.runtime, 1.0))
-    alpha = scalar.toGvalue(gc.runtime, rho)
+    alpha = rho
+  discard sharedGraphRuntime([Gvalue(gc), Gvalue(rho)], "stoutAction")
   var flows = initTable[NodeKey, Ggauge]()
   proc getFlow(V: Ggauge): Ggauge =
     let key = V.nodeKey
@@ -51,9 +56,13 @@ proc stoutAction*(gc: Gactcoeff, rho: float, sweeps: int): StoutAction =
       flows[key] = smearFlow(V, c1, alpha, sweeps)
     flows[key]
   result.flow = getFlow
+  result.rho = rho
   result.action = proc(V: Ggauge): Gscalar =
     let u = getFlow(V)
     gaugeAction(gc, u) - logDetJ(u, V)
+
+proc stoutAction*(gc: Gactcoeff, rho: float, sweeps: int): StoutAction =
+  stoutAction(gc, scalar.toGvalue(gc.runtime, rho), sweeps)
 
 proc invertStoutFlow*(U: auto, rho: float, sweeps: int; rdf2req = 1e-24, maxiter = 1000, verbose = false): tuple[iter: int, rdf2: float] =
   ## Invert U = f(V) in place, reversing the subset order:

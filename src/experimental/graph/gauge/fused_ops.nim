@@ -115,10 +115,7 @@ proc contractProjTAHSumInputf(v: Gvalue) =
     y = Ggauge(v.inputs[1])
     z = Ggauge(v)
   z.mapGaugeElements:
-    var x {.noinit.}: evalType(y.gval[mu][e])
-    x := Ggauge(v.inputs[2]).gval[mu][e]
-    for i in 3..<v.inputs.len:
-      x += Ggauge(v.inputs[i]).gval[mu][e]
+    let x = gaugeTermSum(v.inputs.len-2,i,Ggauge(v.inputs[2+i]).gval[mu][e])
     let s = x * y.gval[mu][e].adj
     z.gval[mu][e].projectTAH s
 
@@ -153,10 +150,7 @@ proc contractProjTAH*(x: Ggauge, y: Ggauge, parity = -1, dir = 0): Ggauge =
         y = Ggauge(v.inputs[1])
         z = Ggauge(v)
       forGaugeSubset(sub):
-        var x {.noinit.}: evalType(y.gval[dir][e])
-        x := Ggauge(v.inputs[2]).gval[dir][e]
-        for i in 3..<v.inputs.len:
-          x += Ggauge(v.inputs[i]).gval[dir][e]
+        let x = gaugeTermSum(v.inputs.len-2,i,Ggauge(v.inputs[2+i]).gval[dir][e])
         let s = x * y.gval[dir][e].adj
         z.gval[dir][e].projectTAH s
     proc sumb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =

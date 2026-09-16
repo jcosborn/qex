@@ -508,6 +508,28 @@ suite "stout update vs paths":
         expect GraphValueError:
           discard st.lj.eval
 
+    test "grouped Wilson stout coefficient gradient matches scalar differences":
+      let b = grt.toGvalue(1.0)
+      let cc = actWilson(b)
+      let st = stoutUpdateLogDetJ(gg, cc, alpha, 1, subDir)
+      let score = redot(st.Wnew, gm) + st.lj
+      let dc = grad(score, cc)
+      let db = grad(score, b)
+      let (dv, err) = ndiff(score, b)
+      b.update 0.0
+      check(instantiationInfo(), "grouped stout coefficient gradient", dv, err, db.eval.sval)
+      discard dc.eval
+      check dc.cval.rect == 0.0
+      check dc.cval.pgm == 0.0
+      check dc.cval.adjplaq == 0.0
+      let raw = grt.toGvalue(GaugeActionCoeffs(plaq: 1.0))
+      let rr = stoutUpdateLogDetJ(gg, raw, alpha, 1, subDir)
+      let dr = grad(redot(rr.Wnew, gm) + rr.lj, raw)
+      discard dr.eval
+      raw.update GaugeActionCoeffs(plaq: 1.0, rect: 0.1)
+      expect GraphValueError:
+        discard dr.eval
+
   test "stoutUpdateLogDetJ with coefficients: Wnew = basic staple subset update":
     # lj additionally needs a site-local matrix Jacobian, beyond shift/hop algebra.
     let

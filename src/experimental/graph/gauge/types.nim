@@ -402,3 +402,36 @@ template forGaugeSubset*(sub: Subset, body: untyped) =
   threads:
     for e {.inject.} in sub:
       body
+
+template gaugeTermSum*(count: int, idx, term: untyped): untyped =
+  ## count > 0. Evaluate terms in order, retaining the caller's storage access.
+  block:
+    var idx = 0
+    var total {.noinit.}: evalType(term)
+    total := term
+    inc idx
+    while idx < count:
+      total += term
+      inc idx
+    total
+
+template forGaugeBlend*(g: Gauge, sub, other: Subset, dir: int,
+                        complement: bool, body: untyped) =
+  ## Inside a threads region; inject mu/e and compile-time active for each site.
+  ## The complement flag preserves fused kernels that supply their own base.
+  if complement:
+    for mu {.inject.} in 0..<g.len:
+      if mu != dir:
+        for e {.inject.} in g[mu]:
+          const active {.inject.} = false
+          body
+    block:
+      let mu {.inject.} = dir
+      for e {.inject.} in other:
+        const active {.inject.} = false
+        body
+  block:
+    let mu {.inject.} = dir
+    for e {.inject.} in sub:
+      const active {.inject.} = true
+      body
