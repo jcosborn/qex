@@ -21,9 +21,10 @@ The reusable graph layers are:
 `multi.nim` is support plumbing for multi-output operators, not a second
 product-value language.
 
-`pghmc.nim` is an application layer. It owns trajectory construction,
-training, and logging, but consumes the graph contracts instead of redefining
-runtime identity, cache policy, or dependency semantics.
+`hmcgauge` is the application layer for trajectory construction, sampling and
+training. Drivers such as `pghmc.nim` supply configuration, actions and callbacks.
+They consume the graph contracts for runtime identity, cache policy and
+dependency semantics.
 
 ## 2. Core Graph Model
 
@@ -210,13 +211,13 @@ valid for inputless leaves whose concrete value is zero. `isStaticZeroLeaf` is a
 cheap marker-and-value query, not a structural validator; computed graph nodes
 that currently evaluate to zero are not static zero leaves.
 
-Caches are structural, not value-based:
+Symbolic caches are keyed by structure:
 
 - ordinary leaf/capture value updates should usually preserve cached symbolic
   work;
-- changing graph topology, selected lambda identity, or lambda-boundary
-  structure advances the runtime symbolic revision and invalidates cached
-  reductions and gradients;
+- supported lambda binding changes advance the runtime symbolic revision and
+  invalidate cached reductions and gradients; selecting a different conditional
+  lambda uses a different instantiation key without rewriting topology;
 - cache keys are tied to runtime-local stable ids and the runtime symbolic
   revision, not current numeric values.
 
@@ -338,10 +339,10 @@ This package prefers construction-time checks over late coercion.
 `copyCompatible` is a semantic contract. Operators that choose between
 alternatives, such as `cond`, require compatible result shape up front.
 
-Public graph operators should preserve concrete node types whenever the result
-type is known. `Gvalue` is the erased storage type for core hooks, input arrays,
-`apply` results, and genuinely opaque boundaries; it is not a generic operator
-dispatch surface.
+Public graph operators should preserve the mathematical result type whenever it
+is known. `Gvalue` is the erased storage type for core hooks, input arrays,
+`apply` results and opaque boundaries; it is not a generic operator dispatch
+surface.
 
 `newOneOf` preserves a producer's concrete subtype and kernel metadata.
 `valueLike` creates its mathematical result family without producer caches.
@@ -405,11 +406,12 @@ Public cache lookup follows the same revision contract. `findGrad(input, output)
 returns only adjoints from the current runtime symbolic revision; stale entries
 are treated as cache misses.
 
-The symbolic revision changes only when internal symbolic lambda/VJP metadata is
-registered. Ordinary `update` calls change concrete values and freshness epochs,
-but do not invalidate symbolic gradient cache structure. Rewriting topology,
-lambda bodies, bindings, or operator metadata after construction is outside the
-contract; build a fresh graph instead.
+The symbolic revision changes when internal symbolic lambda/VJP metadata is
+registered or a supported `GlambdaRef.valCopy` binds a compatible graph-produced
+function value. Ordinary numerical `update` calls change concrete values and
+freshness epochs without invalidating symbolic gradient cache structure.
+Arbitrary rewrites of topology, lambda bodies or operator metadata after
+construction are outside the contract; build a fresh graph instead.
 
 Structural functional VJP bodies use uncached seeded builds: the public
 output-gradient cache owns `grad(dep, target)` reuse, while seed-specific VJP
@@ -526,7 +528,9 @@ If a node is not "raw inputs plus ordinary backward", document or make obvious:
   inputs + the same `Gfunc`) shares those closures;
 - where erased raw inputs/upstreams are restored to concrete types;
 - whether `newOneOf + cloned inputs + gfunc` preserves the node, or whether it
-  needs clone-aware handling.
+  needs clone-aware handling;
+- the buffer mode, numerical storage ownership and any input alias or in-place
+  permissions described in section 3.
 
 Nodes with additional structural state must expose that state through inputs,
 increment the runtime symbolic revision when internal symbolic metadata changes,
@@ -542,7 +546,8 @@ Its contract is:
 
 - selectors are scalar or int graph values;
 - branches must have compatible result shape;
-- same-type public calls preserve the branch concrete type;
+- numerical results use the branch's mathematical value family through
+  `valueLike`, without carrying producer caches;
 - eval walks only the selector and selected branch;
 - reachable and grad-plan walks see the selector and both branches;
 - reverse mode gives the selector a zero adjoint and gives each branch the
@@ -957,7 +962,8 @@ value abstraction.
 
 The key separation is:
 
-- forward slot storage holds concrete evaluated values;
+- numerical forward slots hold concrete evaluated values;
+- lambda slots retain their structural input values;
 - symbolic slot selection builds a graph expression for one fixed slot.
 
 Slot indices are static operator metadata. Dynamic graph-valued indexing is out
@@ -971,7 +977,9 @@ that know the slot type should cast it.
 
 If control flow must choose between slots, express that choice outside indexing.
 `storedSlot` exposes stored forward slot state, not a symbolic graph node; treat
-it as current only after evaluating the carrier or a consumer.
+it as current only after evaluating the carrier or a consumer. Shape-only
+carriers retain prototypes and reject both `storedSlot` and generic `[]`;
+their owning operator supplies result views.
 
 Use `Gmulti` inside fused operators to share real work across related outputs or
 input gradients. The packed carrier should have an operator-specific slot
@@ -1105,7 +1113,7 @@ gauge/stencil.nim     halo moves of a field and fused plaquette/staple kernels
 gauge/transport.nim   hop chains (transport, wilsonLine) and lineProducts on QEX's path plan
 gauge/fused_ops.nim   Gmulti-packed site kernels
 gauge/action/         QEX kernel dispatch (domain), coefficient type, action wrappers, reference actions
-gauge/stout.nim       stout monolith wrappers
+gauge/stout.nim       stout updates, finite logdet and grouped pullbacks
 ```
 
 Optimized operators keep fused kernels for the orders that matter. Supported
@@ -1157,8 +1165,8 @@ lose. `tests/tgloops` covers every fundamental loop, repeated physical links at
 extent two, zero coefficients, cached family transitions and mixed coefficient/
 field derivatives. `tests/tgtoweru1` exercises the shared tower with U(1) fields.
 
-`expPolyGraph` mirrors the matexp polynomial and squaring scheme exactly, and
-pinning tests hold value and first-derivative agreement between the two. The
+For Nc > 1, `expPolyGraph` mirrors the matexp polynomial and squaring scheme,
+and tests pin value and first-derivative agreement with the numerical kernel. The
 matexp default kind, order, and scale come from `newExpParam`, with a compile-time
 check that rejects a stale graph replica.
 
@@ -1169,11 +1177,12 @@ The optimized adjoint action field Hessian rejects further differentiation.
 
 | Operation | Numerical definition |
 | --- | --- |
-| Ordinary SU(3) graph exponential and its derivative tower | Degree-4 polynomial with scale-20 squaring |
+| Nc > 1 ordinary graph exponential and its derivative tower | Degree-4 polynomial with scale-20 squaring |
 | SU(3) `axexpmuly` and stout update values | Adaptive degree-12 `expAH`, scaled to `norm2 <= 1/16` |
 | SU(3) stout field/staple pullbacks and logdet | Degree-13 adjoint seed at `X/32` and five doubling recoveries |
 | SU(3) stout alpha pullbacks and higher update replicas | Ordinary `expDeriv` and graph exponential polynomial |
 | U(1) graph exponential and its derivative tower | Exact scalar formulas |
+| U(1) stout update differentials | Exact scalar formulas |
 
 For `X=-ad(projectTAH(M))`, the finite differential is
 
@@ -1251,3 +1260,9 @@ tuple; partial positional completion is out of scope.
 coefficients are turned into a concrete integrator run spec; the data object does
 not need variant-object protection or accessor lambda refs just to represent
 parsed text.
+
+## 14. Validation And Benchmarks
+
+The [validation and benchmark protocol](../../../docs/graph_validation.md)
+covers test execution, settings, counters and the required comparison of
+fingerprints from separate direct and planned runs.
