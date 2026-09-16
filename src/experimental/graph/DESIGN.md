@@ -324,13 +324,6 @@ functional layer's existing absence of whole-lambda cotangents. Structural
 `Gmulti` aliases retain shape prototypes and refresh through that edge without
 copying slot values.
 
-`secondPullback(x, seed, upstream, replica)` in `support/op` packages the shape
-used by replica-based fallback backwards. The replica must be built over its
-`slot` argument, and every occurrence of the differentiated argument must be
-spelled as `slot`. A builder that captures `x` directly compiles but returns the
-wrong partial. `seed` and `upstream` remain ordinary live graph values, which
-keeps the contribution exact under further differentiation.
-
 Conditional upstream gradients are split before calling a node's `backward`.
 Static zero branches are skipped there, so inactive branches can produce guarded
 VJP graphs without constructing or evaluating the inactive apply VJP.
@@ -902,11 +895,10 @@ through the gauge facade, and public writers should use `update`/`mutateGauge`.
 Generated zero gauges carry `staticZeroLeaf` and allocate cleared payloads on
 demand. Public updates clear that marker.
 
-Gauge-action coefficients are graph values and may participate in coefficient
-subgraphs, but the action layer does not promise differentiation of
-`gaugeAction` or `gaugeActionDeriv` with respect to those coefficients.
-Unsupported coefficient gradients should fail explicitly rather than degrade into
-ambiguous behavior.
+Gauge-action coefficients are graph values. `gaugeAction`, `gaugeActionDeriv`,
+`gaugeForce`, and the fundamental full/subset Hessians differentiate coefficient
+subgraphs within their supported family. Coefficient bases remain live when
+their current coefficient is zero.
 
 ### Grad-complete basic tier
 
@@ -992,30 +984,48 @@ gauge/action/         QEX kernel dispatch (domain), coefficient type, action wra
 gauge/stout.nim       stout monolith wrappers
 ```
 
-Optimized operators keep fused kernels for the orders that matter. Where no
-optimized higher-order kernel exists, the backward hook must not raise; it
-builds a grad-complete replica of the node's function. `expJet` has fused kernels
+Optimized operators keep fused kernels for the orders that matter. Supported
+higher derivatives use grad-complete replicas of the node's function when no
+optimized kernel exists. `expJet` has fused kernels
 through three directions. For Nc > 1, `expTopReplica` differentiates the same
 finite polynomial past that boundary; for Nc = 1, every order uses the exact
 scalar identity `exp(y) * product(d)`, including zero directions.
-`plaqActionGraph` over hop chains is the replica behind `gaugeActionDeriv2`, and the
-stout update gradient kernels differentiate through a replica of the update
-built over slot variables.
 
-The reference actions also carry what the QEX kernels omit, and the kernel
-dispatch in `action/domain` now raises there instead of returning a truncated
-value: `gaugeAction1` and `gaugeActionDeriv` have no parallelogram terms, and
-the Hessian kernel `gaugeDerivDeriv2` has plaquette terms only. `gaugeActionGraph`
-covers the plaquette and rectangle families (the rectangle products are built
-from `lineProducts` and evaluated only when their coefficient is nonzero) and
-`adjPlaqAction` the adjoint-plaquette family, each guarded at evaluation by
-its coefficient nodes, each differentiable in the coefficients.
+Fundamental actions support plaquette, rectangle and parallelogram coefficients
+in the action, ambient derivative, projected force and full/subset Hessians.
+`gaugeActionGraph` is the reference expression for that family. Its rectangle
+and parallelogram products use `lineProducts`; ordinary evaluation skips sums
+whose coefficients are zero while coefficient derivatives retain those bases.
+`adjPlaqAction` supplies the differentiable adjoint-plaquette reference.
 
-Replica backwards use `secondPullback` as described in section 5.
+The numerical action selects the fundamental family when `adjplaq == 0` and
+the adjoint-plaquette family when `adjplaq != 0` and `rect == pgm == 0`.
+Cached action, ambient-derivative and projected-force coefficient pullbacks
+follow that selection at evaluation; the family switch has no derivative.
+In particular, `gaugeAction(actAdj(beta, adjFac), g)` at `beta == 0` uses the
+fundamental coefficient derivative, so `dS/dbeta = -sum Re tr P/Nc` even with
+nonzero `adjFac`.
+
+`actionJet` contracts arbitrary field derivatives with live seeds. Its plaquette
+basis uses `stapleSum(g, seeds)`; rectangle and parallelogram bases differentiate
+the reference loops. Hidden bases are evaluation dependencies, while backward
+traversal visits coefficients, the field and each seed separately. This keeps
+aliased and dependent seeds live at later orders. Subset derivatives mask the
+upstream before applying the full Hessian, whose output reaches every affected
+link. Coefficient pullbacks use fresh slots for partial derivatives, so existing
+dependencies among coefficients, fields and upstream values are retained.
+
+Stout update gradient kernels use the slot-variable replica and `secondPullback`
+described in section 5. The coefficient overload of `stoutUpdateLogDetJ` checks
+for Wilson coefficients on every evaluation: rectangle and parallelogram staples
+couple active links, invalidating independent parity/direction Jacobian blocks.
+
 `tests/gauge/higher` pins each replica backward one order past the derivative
 its hook builds, over a cotangent slot that aliases the field and over one that
 merely depends on it, because those are the orders a frozen seed would silently
-lose.
+lose. `tests/tgloops` covers every fundamental loop, repeated physical links at
+extent two, zero coefficients, cached family transitions and mixed coefficient/
+field derivatives. `tests/tgtoweru1` exercises the shared tower with U(1) fields.
 
 Replicas must compute the same function as the kernel they stand behind
 (`expPolyGraph` mirrors the matexp poly-and-squaring scheme exactly), and
@@ -1025,11 +1035,8 @@ compile-time check that rejects a stale graph replica.
 
 The remaining non-grad-complete boundaries are the stout log-Jacobian and the
 fused stout step (`stoutLogDetJ` and the `stoutUpdateLogDetJ` pullback kernels
-reject further differentiation), the optimized action ops past second order
-for families other than the plaquette (their Hessian kernel raises; the
-reference actions differentiate those families through basic ops), and
-coefficient gradients of the optimized action ops (the reference actions are
-the coefficient-differentiable spellings).
+reject further differentiation), and the optimized adjoint action field Hessian.
+`adjPlaqAction` remains the route for higher adjoint field derivatives.
 
 ## 13. `hmcgauge`
 

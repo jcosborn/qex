@@ -33,7 +33,7 @@ suite "gauge action":
 
   test "gaugeActionDerivSubset matches masked full derivative and ndiff":
     let
-      c = actWilson(scalar.toGvalue(grt, 5.4))
+      c = grt.toGvalue(GaugeActionCoeffs(plaq: 0.7, rect: -0.03, pgm: 0.02))
       zero = grt.toGvalue(zeroGaugeLike(g))
       full = gaugeActionDeriv(c, gg)
     for parity in 0..1:
@@ -61,7 +61,7 @@ suite "gauge action":
       discard gaugeActionDeriv(c, gg, 0, g.len)
 
   test "raw subset derivative overwrites only its requested output":
-    let c = GaugeActionCoeffs(plaq: 5.4)
+    let c = GaugeActionCoeffs(plaq: 0.7, rect: -0.03, pgm: 0.02)
     var full = zeroGaugeLike(g)
     c.gaugeDeriv2(g, full)
     for p in 0..1:
@@ -119,7 +119,7 @@ suite "gauge action":
 
   test "gaugeActionDeriv2Subset matches the full Hessian and ndiff":
     let
-      c = actWilson(scalar.toGvalue(grt, 5.4))
+      c = grt.toGvalue(GaugeActionCoeffs(plaq: 0.7, rect: -0.03, pgm: 0.02))
       zero = grt.toGvalue(zeroGaugeLike(g))
     for parity in 0..1:
       for dir in 0..<g.len:
@@ -147,13 +147,13 @@ suite "gauge action":
         reference = gaugeActionDeriv2(bSub, c, gg)
       norm2(got - reference) :< 1e-22
 
-  test "wilson subset derivative rejects unsupported coefficients":
-    let c = actSymanzik(scalar.toGvalue(grt, 5.4))
+  test "subset derivative rejects adjoint coefficients":
+    let c = grt.toGvalue(GaugeActionCoeffs(adjplaq: 0.1))
     expect(GraphValueError):
       discard gaugeActionDeriv(c, gg, 0, 0).eval
 
-  test "raw subset kernels reject unsupported coefficients":
-    let c = GaugeActionCoeffs(rect: 1.0)
+  test "raw subset kernels reject adjoint coefficients":
+    let c = GaugeActionCoeffs(adjplaq: 0.1)
     var outg = zeroGaugeLike(g)
     let w = g[0].newOneOf
     expect(ValueError):
@@ -168,7 +168,7 @@ suite "gauge action":
       c.gaugeDerivDeriv2SubsetAddBase(g, m[0], u, outg, 0, 0)
 
   test "raw summed subset Hessian matches a materialized sum":
-    let c = GaugeActionCoeffs(plaq: 5.4)
+    let c = GaugeActionCoeffs(plaq: 0.7, rect: -0.03, pgm: 0.02)
     for p in 0..1:
       for d in 0..<g.len:
         let
@@ -187,7 +187,7 @@ suite "gauge action":
         norm2(grt.toGvalue(got) - grt.toGvalue(reference)) :< 1e-24
 
   test "raw accumulating subset Hessian adds to an arbitrary output":
-    let c = GaugeActionCoeffs(plaq: 5.4)
+    let c = GaugeActionCoeffs(plaq: 0.7, rect: -0.03, pgm: 0.02)
     for p in 0..1:
       for d in 0..<g.len:
         var
@@ -206,7 +206,7 @@ suite "gauge action":
         norm2(grt.toGvalue(got) - grt.toGvalue(reference)) :< 1e-24
 
   test "raw subset Hessian initializes its direct base in one pass":
-    let c = GaugeActionCoeffs(plaq: 5.4)
+    let c = GaugeActionCoeffs(plaq: 0.7, rect: -0.03, pgm: 0.02)
     for p in 0..1:
       let sub = g[0].l.getSubset(if p == 0: "even" else: "odd")
       for d in 0..<g.len:
@@ -276,23 +276,19 @@ suite "gauge action":
     check rs1 == rs2
     check rs1 == rs3
 
-  test "gaugeAction rejects coefficient gradients through the action layer":
+  test "optimized action coefficient gradient follows beta":
     let beta = grt.toGvalue(5.4)
     let c = actWilson(beta)
-    expect(GraphValueError):
-      discard gaugeAction(c, gg).grad beta
+    let action = gaugeAction(c, gg)
+    (beta * action.grad(beta) - action) :< 1e-6
 
-  test "gaugeActionDeriv rejects coefficient gradients through the action layer":
+  test "optimized derivative and force coefficient gradients follow beta":
     let beta = grt.toGvalue(5.4)
     let c = actWilson(beta)
-    expect(GraphValueError):
-      discard gaugeActionDeriv(c, gg).grad beta
-
-  test "gaugeForce rejects coefficient gradients through the action layer":
-    let beta = grt.toGvalue(5.4)
-    let c = actWilson(beta)
-    expect(GraphValueError):
-      discard gaugeForce(c, gg).grad beta
+    let d = redot(gaugeActionDeriv(c, gg), gm)
+    let f = redot(gaugeForce(c, gg), gm)
+    (beta * d.grad(beta) - d) :< 1e-6
+    (beta * f.grad(beta) - f) :< 1e-6
 
   test "gaugeActionDeriv backward rejects missing upstream":
     let beta = grt.toGvalue(5.4)
@@ -302,13 +298,13 @@ suite "gauge action":
     expect(GraphValueError):
       discard force.gfunc.backward(nil, force, 1, gg)
 
-  test "gaugeActionDeriv subset backward rejects invalid paths":
+  test "gaugeActionDeriv subset coefficient gradient and missing upstream":
     let
       beta = grt.toGvalue(5.4)
       c = actWilson(beta)
       force = gaugeActionDeriv(c, gg, 1, 2)
-    expect(GraphValueError):
-      discard force.grad beta
+    let score = redot(force, gm)
+    (beta * score.grad(beta) - score) :< 1e-6
     expect(GraphValueError):
       discard force.gfunc.backward(nil, force, 1, gg)
 

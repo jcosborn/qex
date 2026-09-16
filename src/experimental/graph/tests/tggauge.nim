@@ -1,4 +1,4 @@
-#RUNCMD env OMP_NUM_THREADS=2 $RUN1
+#RUNCMD env OMP_NUM_THREADS=1 $RUN1
 
 import math, strutils, unittest
 
@@ -27,8 +27,9 @@ include gauge/gaugehelpers
 
 qexInit()
 
+letParam:
+  lat = latticeFromLocalLattice(@[4,4,4,4], nRanks)
 let
-  lat = @[8,8,8,16]
   lo = lat.newLayout
   seed = 1234567891u64
   vol = lo.physVol

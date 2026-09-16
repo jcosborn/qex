@@ -64,36 +64,6 @@ suite "scalar basic":
     check slot.marker == 17
     check slot.value == original.value
 
-  test "secondPullback keeps seed and upstream live":
-    block:
-      let x = grt.toGvalue(2.0)
-      proc replica(slot: Gscalar): Gvalue =
-        slot * slot * slot
-      let r = secondPullback(x, x, x, replica)
-      let drdx = r.grad x
-
-      r :~ 48.0
-      drdx :~ 72.0
-
-      x.update 3.0
-      r :~ 162.0
-      drdx :~ 162.0
-
-  test "secondPullback rejects mixed runtimes before building a replica":
-    let
-      primal = grt.toGvalue(2.0)
-      other = initGraphRuntime().toGvalue(1.0)
-    var replicaCalls = 0
-    proc replica(slot: Gscalar): Gvalue =
-      inc replicaCalls
-      slot * slot
-
-    expect(GraphValueError):
-      discard secondPullback(primal, other, primal, replica)
-    expect(GraphValueError):
-      discard secondPullback(primal, primal, other, replica)
-    check replicaCalls == 0
-
   test "update refreshes cached scalar values and gradients":
     let mutable = grt.toGvalue(2.0)
     let z = mutable * mutable

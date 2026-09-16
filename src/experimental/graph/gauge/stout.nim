@@ -14,6 +14,27 @@ import types, basic_ops, matfun
 from action/ops import Gactcoeff, gaugeActionDeriv
 import maths/groupOps, maths/matrixFunctions
 
+proc stoutCoeff(c, value: Gactcoeff): Gactcoeff
+
+proc stoutCoefff(v: Gvalue) =
+  let c = Gactcoeff(v.inputs[0]).cval
+  if c.rect != 0 or c.pgm != 0 or c.adjplaq != 0:
+    raiseValueError("stoutUpdateLogDetJ requires Wilson coefficients for independent parity/direction Jacobian blocks")
+  Gactcoeff(v).cval = GaugeActionCoeffs(plaq: Gactcoeff(v.inputs[1]).cval.plaq)
+
+proc stoutCoeffb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  let c = Gactcoeff(z.inputs[0])
+  if i == 0:
+    return stoutCoeff(c, Gactcoeff(c.zeroLike))
+  stoutCoeff(c, requireUpstream(zb, "stout coefficients backward", Gactcoeff))
+
+let stoutCoeffg = Gfunc(bufferMode: bmFull, forward: stoutCoefff, backward: stoutCoeffb, name: "stoutCoeff")
+
+proc stoutCoeff(c, value: Gactcoeff): Gactcoeff =
+  # Rectangle and parallelogram staples couple active links, including a
+  # repeated physical link under extent-two periodic wrapping.
+  graphNode(Gactcoeff(runtime: c.runtime), @[Gvalue(c), Gvalue(value)], stoutCoeffg, "stoutCoeff")
+
 proc gaugeGradSlot(x: Gmulti, i: int): Ggauge =
   ## View slot i without copying; x remains an evaluation dependency.
   let slot = Ggauge(x.storedSlot(i))
@@ -900,8 +921,8 @@ proc stoutUpdateLogDetJ*(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): tuple
   stoutUpdateLogDetJImpl(W, ds, alpha, nil, parity, dir, false)
 
 proc stoutUpdateLogDetJ*(W: Ggauge, c: Gactcoeff, alpha: Gscalar, parity, dir: int): tuple[Wnew: Ggauge, lj: Gscalar] =
-  ## As above; form the subset-frozen ds internally and fuse its Hessian
-  ## pullback. The generic factorization requires c and alpha to be independent
-  ## of W.
-  let ds = gaugeActionDeriv(c, W, parity, dir)
-  stoutUpdateLogDetJImpl(W, ds, alpha, c, parity, dir, true)
+  ## Wilson coefficients give independent active-link Jacobian blocks.
+  ## The generic factorization requires c and alpha to be independent of W.
+  let checked = stoutCoeff(c, c)
+  let ds = gaugeActionDeriv(checked, W, parity, dir)
+  stoutUpdateLogDetJImpl(W, ds, alpha, checked, parity, dir, true)

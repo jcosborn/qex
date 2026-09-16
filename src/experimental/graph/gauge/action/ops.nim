@@ -4,6 +4,7 @@ import ../../scalar/types
 import ../../support/op
 import layout, gauge, physics/qcdTypes
 import ../types, ../basic_ops, ../fused_ops, ../field_ops, ../transport, ../cfield, domain
+from ../stencil import stapleSum
 
 # --- gauge-action coefficient value type and coefficient algebra ---
 
@@ -24,14 +25,19 @@ proc toGvalue*(grt: GraphRuntime,
 
 method newOneOf*(x: Gactcoeff): Gvalue =
   result = Gactcoeff(runtime: x.runtime).assignStableNodeId
+method isZero*(x: Gactcoeff): bool =
+  for f in x.cval.fields:
+    if f != 0.0:
+      return false
+  true
+method zeroLike*(x: Gactcoeff): Gvalue =
+  result = x.newOneOf
+  result.markStaticZeroLeaf
 method valCopy*(z: Gactcoeff, x: Gvalue) =
   z.cval = Gactcoeff(x).cval
 method copyCompatible*(prototype: Gactcoeff, value: Gvalue): bool =
   value of Gactcoeff
 method `$`*(x: Gactcoeff): string = $x.cval
-
-proc raiseCoeffBackwardUnsupported(label: string) {.noreturn.} =
-  raiseUnsupportedPath(label, "derivative with respect to gauge-action coefficients")
 
 proc `*`*(x: Gscalar, y: Gactcoeff): Gactcoeff
 proc `+`*(x, y: Gactcoeff): Gactcoeff
@@ -145,8 +151,26 @@ type Gcoeff = ref object of Gfunc
   basis: GaugeActionCoeffs
   family: proc(gc: GaugeActionCoeffs): bool {.nimcall.}
 
+proc coeffBasis(c: Gactcoeff, f: Gcoeff, basis: GaugeActionCoeffs): Gactcoeff
+
+proc coeffBasisf(v: Gvalue) =
+  let f = Gcoeff(v.gfunc)
+  if not f.family(Gactcoeff(v.inputs[0]).cval):
+    raiseUnsupportedPath(f.name, "coefficient set outside its family")
+  Gactcoeff(v).cval = f.basis
+
+proc coeffBasisb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  # Constant on the supported family; keep its domain visible at later orders.
+  coeffBasis(Gactcoeff(z.inputs[0]), Gcoeff(z.gfunc), GaugeActionCoeffs())
+
+proc coeffBasis(c: Gactcoeff, f: Gcoeff, basis: GaugeActionCoeffs): Gactcoeff =
+  graphNode(Gactcoeff(runtime: c.runtime), @[Gvalue(c)],
+    Gcoeff(bufferMode: bmFull, forward: coeffBasisf, backward: coeffBasisb, name: "coeffBasis",
+           basis: basis, family: f.family), "coeffBasis")
+
 proc coeffb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  scaledUpstreamOr(zb, Gscalar, toGvalue(z.runtime, Gcoeff(z.gfunc).basis))
+  let f = Gcoeff(z.gfunc)
+  scaledUpstreamOr(zb, Gscalar, coeffBasis(Gactcoeff(z.inputs[0]), f, f.basis))
 
 proc coefff(v: Gvalue) =
   # Guard the family on every evaluation: the reference graphs built through
@@ -158,15 +182,19 @@ proc coefff(v: Gvalue) =
     raiseUnsupportedPath(f.name, "coefficient set outside its family")
   Gscalar(v).sval =
     if f.basis.rect != 0: gc.rect
+    elif f.basis.pgm != 0: gc.pgm
     elif f.basis.adjplaq != 0: gc.adjplaq
     else: gc.plaq
 
 let coeffPlaqg = Gcoeff(bufferMode: bmFull, forward: coefff, backward: coeffb, name: "coeffPlaq",
-                        basis: GaugeActionCoeffs(plaq: 1.0), family: isPlaqRect)
-let coeffPlaqOnlyg = Gcoeff(bufferMode: bmFull, forward: coefff, backward: coeffb, name: "coeffPlaqOnly",
-                            basis: GaugeActionCoeffs(plaq: 1.0), family: isPlaqOnly)
+                        basis: GaugeActionCoeffs(plaq: 1.0), family: isFundamental)
 let coeffRectg = Gcoeff(bufferMode: bmFull, forward: coefff, backward: coeffb, name: "coeffRect",
-                        basis: GaugeActionCoeffs(rect: 1.0), family: isPlaqRect)
+                        basis: GaugeActionCoeffs(rect: 1.0), family: isFundamental)
+let coeffPgmg = Gcoeff(bufferMode: bmFull, forward: coefff, backward: coeffb, name: "coeffPgm",
+                       basis: GaugeActionCoeffs(pgm: 1.0), family: isFundamental)
+# Return adjplaq: zero selects the fundamental family, nonzero the adjoint family.
+let coeffFamilyg = Gcoeff(bufferMode: bmFull, forward: coefff, backward: coeffb, name: "coeffFamily",
+                          basis: GaugeActionCoeffs(adjplaq: 1.0), family: isGaugeAction)
 let coeffPlaqAg = Gcoeff(bufferMode: bmFull, forward: coefff, backward: coeffb, name: "coeffPlaqA",
                          basis: GaugeActionCoeffs(plaq: 1.0), family: isAdjPlaq)
 let coeffAdjg = Gcoeff(bufferMode: bmFull, forward: coefff, backward: coeffb, name: "coeffAdj",
@@ -185,38 +213,42 @@ proc plaqSum(g: Ggauge): Gscalar =
     for nu in 0..<mu:
       result = result + retr(transport(g, unit, plaqPath(mu, nu)))
 
-proc plaqActionGraph(c: Gactcoeff, g: Ggauge): Gscalar =
-  ## Plaquette-only reference, S = -(c_plaq/nc) plaqSum; the replica behind
-  ## gaugeActionDeriv2. Its coefficient node rejects other families.
-  const nc = g.gval[0][0].nrows
-  (toGvalue(g.runtime, -1.0/float(nc)) * coeff(c, coeffPlaqOnlyg)) * plaqSum(g)
-
-proc gaugeActionGraph*(c: Gactcoeff, g: Ggauge): Gscalar =
-  ## Reference action over the plaquette and rectangle families,
-  ##   S = -(1/nc) [c_plaq sum_{mu>nu} sum_x retr P_munu
-  ##                + c_rect sum_{mu>nu} sum_x (retr R_{2x1} + retr R_{1x2})],
-  ## differentiable to any order in the field and in the coefficients. It
-  ## matches `gaugeAction` for those families; the coefficient nodes reject
-  ## the others at evaluation. The rectangles are shared path products
-  ## (lineProducts) and are evaluated only when their coefficient is nonzero.
-  discard sharedGraphRuntime(
-    [Gvalue(c), Gvalue(g)], "gaugeActionGraph")
-  let nd = g.gval.len
-  const nc = g.gval[0][0].nrows
+proc loopSum(g: Ggauge, kind: int): Gscalar =
+  ## Basis 0 = plaquette, 1 = rectangle, 2 = parallelogram.
+  if kind == 0:
+    return plaqSum(g)
   var paths: seq[seq[int]]
-  for mu in 1..<nd:
+  for mu in 1..<g.gval.len:
     for nu in 0..<mu:
       let a = mu + 1
       let b = nu + 1
-      paths.add @[a, a, b, -a, -a, -b]
-      paths.add @[a, b, b, -a, -b, -b]
-  let zero = toGvalue(g.runtime, 0.0)
-  let cr = coeff(c, coeffRectg)
-  var sr = zero
+      if kind == 1:
+        paths.add @[a, a, b, -a, -a, -b]
+        paths.add @[a, b, b, -a, -b, -b]
+      else:
+        for sg in 0..<nu:
+          let d = sg + 1
+          # gaugeAction2's ts1, ts2, ts3, and ts7.
+          paths.add @[a, b, d, -a, -b, -d]
+          paths.add @[a, d, b, -a, -d, -b]
+          paths.add @[b, a, d, -b, -a, -d]
+          paths.add @[a, -b, d, -a, b, -d]
+  result = toGvalue(g.runtime, 0.0)
+  if paths.len == 0:
+    return
   for p in lineProducts(g, paths, origin = false):
-    sr = sr + retr(p)
+    result = result + retr(p)
+
+proc gaugeActionGraph*(c: Gactcoeff, g: Ggauge): Gscalar =
+  ## S = -(c_plaq sum Re tr P + c_rect sum Re tr R + c_pgm sum Re tr C)/Nc.
+  ## The fundamental family is adjplaq == 0. scalarScale skips an inactive
+  ## sum while preserving its coefficient derivative, including at zero.
+  discard sharedGraphRuntime([Gvalue(c), Gvalue(g)], "gaugeActionGraph")
+  const nc = g.gval[0][0].nrows
   toGvalue(g.runtime, -1.0/float(nc)) *
-    (coeff(c, coeffPlaqg) * plaqSum(g) + cond(equal(cr, zero), zero, cr * sr))
+    (Gscalar(loopSum(g, 0).scaleLike(coeff(c, coeffPlaqg))) +
+     Gscalar(loopSum(g, 1).scaleLike(coeff(c, coeffRectg))) +
+     Gscalar(loopSum(g, 2).scaleLike(coeff(c, coeffPgmg))))
 
 proc adjPlaqAction*(c: Gactcoeff, g: Ggauge): Gscalar =
   ## Reference for the adjoint-plaquette kernel family (actionA),
@@ -242,8 +274,110 @@ proc adjPlaqAction*(c: Gactcoeff, g: Ggauge): Gscalar =
     coeff(c, coeffAdjg) * (a0 - toGvalue(g.runtime, 1.0/float(nc*nc)) * sa)
 
 proc gaugeActionDerivGraph(c: Gactcoeff, g: Ggauge): Ggauge =
-  ## Grad-complete replica of gaugeActionDeriv for plaquette-only c.
-  Ggauge(gradSeeded(plaqActionGraph(c, g), g, toGvalue(g.runtime, 1.0)))
+  ## Fundamental-family replica behind the numerical Hessian pullbacks.
+  Ggauge(gradSeeded(gaugeActionGraph(c, g), g, toGvalue(g.runtime, 1.0)))
+
+proc actionCoeffPullback(c: Gactcoeff, g: Ggauge, u: Gscalar): Gactcoeff =
+  let s = slotVar(c)
+  # Differentiate each family before selecting it, so no inactive family's
+  # guarded coefficient basis enters a partial derivative of the other one.
+  cond(equal(coeff(c, coeffFamilyg), toGvalue(c.runtime, 0.0)),
+       Gactcoeff(gradSeeded(gaugeActionGraph(s, g), s, u)),
+       Gactcoeff(gradSeeded(adjPlaqAction(s, g), s, u)))
+
+proc derivCoeffPullback(c: Gactcoeff, g, u: Ggauge,
+                        fundamental = false): Gactcoeff =
+  let s = slotVar(c)
+  let x = slotVar(g)
+  let df = gaugeActionDerivGraph(s, x)
+  let cf = Gactcoeff(gradSeeded(df, s, u))
+  if fundamental:
+    return cf
+  let da = gradSeeded(adjPlaqAction(s, x), x, toGvalue(g.runtime, 1.0))
+  cond(equal(coeff(c, coeffFamilyg), toGvalue(c.runtime, 0.0)),
+       cf, Gactcoeff(gradSeeded(da, s, u)))
+
+proc hessCoeffPullback(c: Gactcoeff, g, b, u: Ggauge): Gactcoeff =
+  let s = slotVar(c)
+  let x = slotVar(g)
+  let d = gaugeActionDerivGraph(s, x)
+  let h = gradSeeded(d, x, b)
+  Gactcoeff(gradSeeded(h, s, u))
+
+type GactionJet = ref object of Gfunc
+  nseeds: int
+
+proc actionJet(c: Gactcoeff, g: Ggauge, seeds: openArray[Ggauge]): Ggauge
+
+proc actionJetInputs(v: Gvalue, mode: InputWalkMode, visit: GnodeVisit) =
+  let off = GactionJet(v.gfunc).nseeds + 2
+  for i in 0..<off:
+    visit v.inputs[i]
+  if mode == iwmBackward:
+    return
+  let c = Gactcoeff(v.inputs[0]).cval
+  for k, a in [c.plaq, c.rect, c.pgm]:
+    if mode != iwmEval or a != 0.0:
+      visit v.inputs[off + k]
+
+proc actionJetf(v: Gvalue) =
+  let c = Gactcoeff(v.inputs[0]).cval
+  if not c.isFundamental:
+    raiseUnsupportedPath("actionJet", "coefficient set outside its fundamental family")
+  let off = GactionJet(v.gfunc).nseeds + 2
+  let z = Ggauge(v)
+  threads:
+    for mu in 0..<z.gval.len:
+      z.gval[mu] := 0
+      if c.plaq != 0:
+        z.gval[mu] += c.plaq * Ggauge(v.inputs[off]).gval[mu]
+      if c.rect != 0:
+        z.gval[mu] += c.rect * Ggauge(v.inputs[off + 1]).gval[mu]
+      if c.pgm != 0:
+        z.gval[mu] += c.pgm * Ggauge(v.inputs[off + 2]).gval[mu]
+
+proc actionJetb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+  let c = Gactcoeff(z.inputs[0])
+  let g = Ggauge(z.inputs[1])
+  let n = GactionJet(z.gfunc).nseeds
+  let u = requireUpstream(zb, "actionJet backward", Ggauge)
+  if i == 0:
+    let off = n + 2
+    return redot(u, Ggauge(z.inputs[off])) * coeffBasis(c, coeffPlaqg, GaugeActionCoeffs(plaq: 1.0)) +
+           redot(u, Ggauge(z.inputs[off + 1])) * coeffBasis(c, coeffRectg, GaugeActionCoeffs(rect: 1.0)) +
+           redot(u, Ggauge(z.inputs[off + 2])) * coeffBasis(c, coeffPgmg, GaugeActionCoeffs(pgm: 1.0))
+  var seeds: seq[Ggauge]
+  for j in 0..<n:
+    seeds.add Ggauge(z.inputs[j + 2])
+  if i == 1:
+    seeds.add u
+  else:
+    seeds[i - 2] = u
+  actionJet(c, g, seeds)
+
+proc actionJet(c: Gactcoeff, g: Ggauge, seeds: openArray[Ggauge]): Ggauge =
+  ## D^(seeds.len+1) S[g] contracted with every seed, leaving one gauge slot.
+  ## The hidden basis replicas are eval inputs only. Public backward inputs
+  ## remain c, g, and the live seeds, including aliases and dependent seeds.
+  ## Each derivative order skips evaluation of zero-weight loop families.
+  const nc = g.gval[0][0].nrows
+  var inputs = @[Gvalue(c), Gvalue(g)]
+  for seed in seeds:
+    inputs.add Gvalue(seed)
+  discard sharedGraphRuntime(inputs, "actionJet")
+  for kind in 0..2:
+    if kind == 0:
+      inputs.add toGvalue(g.runtime, -1.0/float(nc)) * stapleSum(g, seeds)
+      continue
+    let slot = slotVar(g)
+    let a = toGvalue(g.runtime, -1.0/float(nc)) * loopSum(slot, kind)
+    var d = gradSeeded(a, slot, toGvalue(g.runtime, 1.0))
+    for seed in seeds:
+      d = gradSeeded(d, slot, seed)
+    inputs.add d
+  graphNode(g.gaugeNodeLike, inputs,
+    GactionJet(bufferMode: bmFull, forward: actionJetf, backward: actionJetb, inputView: actionJetInputs,
+               name: "actionJet", nseeds: seeds.len), "actionJet")
 
 # --- gauge-action graph operations ---
 
@@ -257,8 +391,7 @@ proc gaugeActionb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   let c = Gactcoeff(z.inputs[0])
   let g = Ggauge(z.inputs[1])
   if i == 0:
-    # This layer does not differentiate learned coefficients.
-    raiseCoeffBackwardUnsupported("gaugeAction backward")
+    return actionCoeffPullback(c, g, Gscalar(rootedUpstream(zb, z)))
   scaledUpstreamOr(
     zb,
     Gscalar,
@@ -277,14 +410,18 @@ let gaugeActiong = Gfunc(bufferMode: bmFull,
   name: "gaugeAction")
 
 proc gaugeAction*(c: Gactcoeff, g: Ggauge): Gscalar =
+  ## Coefficient pullbacks vary plaq/rect/pgm when adjplaq == 0, or plaq/adjplaq
+  ## in ActionA (rect == pgm == 0, adjplaq != 0); other slots are zero.
+  ## The family switch itself is not a differentiable coefficient direction.
+  ## For actAdj(beta, adjFac) at beta == 0, this gives dS/dbeta = -sum Re tr P/Nc
+  ## even with nonzero adjFac, since the zero coefficient value is fundamental.
   graphNode(scalarNodeLike(c), @[Gvalue(c), Gvalue(g)], gaugeActiong, "gaugeAction")
 
 proc gaugeActionDerivb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   let c = Gactcoeff(z.inputs[0])
   let g = Ggauge(z.inputs[1])
   if i == 0:
-    # This layer does not differentiate learned coefficients.
-    raiseCoeffBackwardUnsupported("gaugeActionDeriv backward")
+    return derivCoeffPullback(c, g, requireUpstream(zb, "gaugeActionDeriv backward", Ggauge))
   gaugeActionDeriv2(
     requireUpstream(zb, "gaugeActionDeriv backward", Ggauge),
     c,
@@ -309,9 +446,9 @@ proc gaugeForceb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   let
     c = Gactcoeff(z.inputs[0])
     g = Ggauge(z.inputs[1])
-  if i == 0:
-    raiseCoeffBackwardUnsupported("gaugeForce backward")
   let proj = projTAH(requireUpstream(zb, "gaugeForce backward", Ggauge))
+  if i == 0:
+    return derivCoeffPullback(c, g, proj * g)
   gaugeActionDeriv2(proj * g, c, g) + proj.adjmul(gaugeActionDeriv(c, g))
 
 proc gaugeForcef(v: Gvalue) =
@@ -360,7 +497,7 @@ method newOneOf(x: GsubsetDeriv): Gvalue =
   x.subsetDerivNodeLike(x.parity, x.dir)
 
 proc gaugeActionDeriv*(c: Gactcoeff, g: Ggauge, parity, dir: int): Ggauge =
-  ## Subset Wilson derivative; its pullback scatters to all staple neighbours.
+  ## Masked fundamental derivative; its pullback reaches all affected links.
   requireParityDir(parity, dir, g.gval.len, "gaugeActionDerivSubset")
   proc fwd(v: Gvalue) =
     let c = Gactcoeff(v.inputs[0])
@@ -371,29 +508,22 @@ proc gaugeActionDeriv*(c: Gactcoeff, g: Ggauge, parity, dir: int): Ggauge =
     let c = Gactcoeff(z.inputs[0])
     let g = Ggauge(z.inputs[1])
     if i == 0:
-      raiseCoeffBackwardUnsupported("gaugeActionDerivSubset backward")
+      return derivCoeffPullback(c, g, maskSubset(parity, dir,
+        requireUpstream(zb, "gaugeActionDerivSubset backward", Ggauge)), true)
     gaugeActionDeriv2Subset(requireUpstream(zb, "gaugeActionDerivSubset backward", Ggauge), c, g, parity, dir)
   graphNode(g.subsetDerivNodeLike(parity, dir), @[Gvalue(c), Gvalue(g)], Gfunc(bufferMode: bmZero, forward: fwd, backward: bwd, name: "gaugeActionDerivSubset"), "gaugeActionDerivSubset")
 
 proc gaugeActionDeriv2b(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
   ## z = gaugeActionDeriv2(b, c, g) is the action Hessian at g applied to b.
-  if i == 1:
-    raiseCoeffBackwardUnsupported("gaugeActionDeriv2 backward")
   let c = Gactcoeff(z.inputs[1])
   let g = Ggauge(z.inputs[2])
   let u = requireUpstream(zb, "gaugeActionDeriv2 backward", Ggauge)
+  if i == 1:
+    return hessCoeffPullback(c, g, Ggauge(z.inputs[0]), u)
   if i == 0:
     # The Hessian is self-adjoint, so the b cotangent is H[u].
     return gaugeActionDeriv2(u, c, g)
-  # Third derivative: differentiate a grad-complete replica of z, the seeded
-  # pullback of the reference action gradient.
-  # secondPullback keeps this the partial g contribution even when b is g;
-  # see its doc.
-  # coeffPlaq guards the coefficient family at evaluation; graph building
-  # must not read coefficient values.
-  let b = Ggauge(z.inputs[0])
-  secondPullback(g, b, u, proc(slot: Ggauge): Gvalue =
-    gaugeActionDerivGraph(c, slot))
+  actionJet(c, g, [Ggauge(z.inputs[0]), u])
 
 proc gaugeActionDeriv2f(v: Gvalue) =
   let b = Ggauge(v.inputs[0])
@@ -434,8 +564,6 @@ proc gaugeActionDeriv2Subset(b: Ggauge, c: Gactcoeff, g: Ggauge, parity, dir: in
   let nterms = terms.len
   proc bwd(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
     ## z = H_g[mask(sum_j b_j)] where mask keeps only (parity, dir).
-    if i == nterms:
-      raiseCoeffBackwardUnsupported("gaugeActionDeriv2Subset backward")
     let
       c = Gactcoeff(z.inputs[nterms])
       g = Ggauge(z.inputs[nterms + 1])
@@ -443,15 +571,12 @@ proc gaugeActionDeriv2Subset(b: Ggauge, c: Gactcoeff, g: Ggauge, parity, dir: in
     if i < nterms:
       # Linear in each b term with self-adjoint H: cotangent is mask(H[u]).
       return maskSubset(parity, dir, gaugeActionDeriv2(u, c, g))
-    # The g cotangent differentiates a grad-complete replica of z.
-    # secondPullback keeps this the partial g contribution even when b is g;
-    # see its doc.
-    # coeffPlaq guards the coefficient family at evaluation.
     var bsum = Ggauge(z.inputs[0])
     for j in 1..<nterms:
       bsum = bsum + Ggauge(z.inputs[j])
-    secondPullback(g, maskSubset(parity, dir, bsum), u,
-      proc(slot: Ggauge): Gvalue = gaugeActionDerivGraph(c, slot))
+    if i == nterms:
+      return hessCoeffPullback(c, g, maskSubset(parity, dir, bsum), u)
+    actionJet(c, g, [maskSubset(parity, dir, bsum), u])
   if nterms == 1:
     proc fwd(v: Gvalue) =
       let

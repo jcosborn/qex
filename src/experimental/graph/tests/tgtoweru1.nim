@@ -5,7 +5,7 @@
 ## for Nc=3; run alongside tggauge.
 ## Run with OMP_NUM_THREADS=1 (see tgtower.nim).
 
-#RUNCMD env OMP_NUM_THREADS=1 $RUN1
+#RUNCMD env OMP_NUM_THREADS=1 $RUNJOB
 
 import base/globals
 setDefaultNc(1)
