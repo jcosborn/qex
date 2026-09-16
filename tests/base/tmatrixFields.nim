@@ -33,8 +33,10 @@ threads:
 
 suite "numerical matrix fields":
   test "real scalar storage and explicit conversions":
+    # The size of a SIMD intrinsic type (SSE/AVX/AVX512 builds) is only
+    # known to the C compiler, so the storage checks run at runtime.
+    check sizeof(DRealMatrixV[1]) * 64 == sizeof(DRealMatrixV[8])
     static:
-      doAssert sizeof(DRealMatrixV[1]) * 64 == sizeof(DRealMatrixV[8])
       doAssert DLatticeRealMatrixV[1] isnot DLatticeRealV
     threads:
       toScalar(old, r)
@@ -47,8 +49,7 @@ suite "numerical matrix fields":
       re(r, c)
       im(s, c)
     check diffNorm2(r, s) < 1e-28
-    static:
-      doAssert sizeof(evalType(re(c[0][])[0,0])) == sizeof(evalType(r[0][0,0]))
+    check sizeof(evalType(re(c[0][])[0,0])) == sizeof(evalType(r[0][0,0]))
 
   test "LU helpers enforce square factors and right hand sides":
     static:
