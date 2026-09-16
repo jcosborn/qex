@@ -14,7 +14,6 @@ import scan
 import ../graph/core
 import ../graph/scalar
 import ../graph/gauge
-import ../graph/gauge/shared
 import ../graph/gauge/action/ops
 from ../graph/hmcgauge/config import validateRunConfig
 import ../graph/hmcgauge/trajectory

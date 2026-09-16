@@ -9,7 +9,6 @@ export flow
 
 import ../graph/scalar
 import ../graph/gauge
-import ../graph/gauge/shared
 
 type
   MapGeometry* = enum
@@ -680,7 +679,7 @@ proc mapAction*(gc: Gactcoeff; spec: MapSpec;
     let u = mapFlow(V, spec, layout)
     gaugeAction(gc, u)-logDetJ(u, V)
 
-proc mapHost*(V: shared.Gauge; spec: MapSpec; layout: MapLayout): tuple[u: shared.Gauge, lndet: float] =
+proc mapHost*(V: gauge.Gauge; spec: MapSpec; layout: MapLayout): tuple[u: gauge.Gauge, lndet: float] =
   case spec.geometry
   of mgPlaq4:
     smearFlowHost(V, spec.circle, layout.circleMasks, spec.flowDepth)

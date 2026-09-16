@@ -13,7 +13,7 @@ export maps
 import ../graph/core
 import ../graph/scalar
 import ../graph/gauge
-import ../graph/gauge/shared
+from ../graph/gauge/types import gaugeNodeLike
 import ../graph/gauge/basic_ops
 import ../graph/gauge/action/ops
 import ../graph/support/op as opsupport
@@ -87,7 +87,7 @@ template fillPlaqAngle(pa, sf, g: untyped) =
       let z = p[x][0, 0]
       pa[x][0, 0].re := atan2(z.im, z.re)
 
-proc plaqAngleField*(g: shared.Gauge): auto =
+proc plaqAngleField*(g: gauge.Gauge): auto =
   let
     sf = newShifters(g[0], 1)
     p = g[0].newOneOf
@@ -310,7 +310,7 @@ proc smearFlow*(V: Ggauge; m: CircleMap; masks: seq[PortalMask]; sweeps: int): G
     for mask in masks:
       result = portalSmear(result, mask, m)
 
-proc portalSmearHost*(V: shared.Gauge; mask: PortalMask; m: CircleMap): tuple[u: shared.Gauge, lndet: float] =
+proc portalSmearHost*(V: gauge.Gauge; mask: PortalMask; m: CircleMap): tuple[u: gauge.Gauge, lndet: float] =
   let
     pa = plaqAngleField(V)
     D = V[0].newOneOf
@@ -355,7 +355,7 @@ proc portalSmearHost*(V: shared.Gauge; mask: PortalMask; m: CircleMap): tuple[u:
       u1[z][0, 0].im := c1*v1i+s1*v1r
   (@[u0, u1], ld)
 
-proc smearFlowHost*(V: shared.Gauge; m: CircleMap; masks: seq[PortalMask]; sweeps: int): tuple[u: shared.Gauge, lndet: float] =
+proc smearFlowHost*(V: gauge.Gauge; m: CircleMap; masks: seq[PortalMask]; sweeps: int): tuple[u: gauge.Gauge, lndet: float] =
   doAssert sweeps >= 0, "portal sweep count must be nonnegative"
   result.u = V
   for _ in 0..<sweeps:
@@ -810,7 +810,7 @@ proc pairSmear*(V: Ggauge; mask: PortalMask; p: PairMap; dir: int): Ggauge =
   let f = Gfunc(forward: forward, backward: backward, logdet: ldj, name: "pairSmear")
   graphNode(V.gaugeNodeLike, @[Gvalue(V)], f, "pairSmear")
 
-proc pairSmearHost*(V: shared.Gauge; mask: PortalMask; p: PairMap; dir: int): tuple[u: shared.Gauge, lndet: float] =
+proc pairSmearHost*(V: gauge.Gauge; mask: PortalMask; p: PairMap; dir: int): tuple[u: gauge.Gauge, lndet: float] =
   let
     pa = plaqAngleField(V)
     ps = pairAngles(pa, dir)
@@ -895,7 +895,7 @@ type PairLayer* = object
   mask*: PortalMask
   dir*: int
 
-proc pairFlowHost*(V: shared.Gauge; p: PairMap; layers: seq[PairLayer]; rounds: int): tuple[u: shared.Gauge, lndet: float] =
+proc pairFlowHost*(V: gauge.Gauge; p: PairMap; layers: seq[PairLayer]; rounds: int): tuple[u: gauge.Gauge, lndet: float] =
   if rounds < 1: mapFail("pair-flow rounds must be positive")
   result.u = V
   for _ in 0..<rounds:
@@ -1072,7 +1072,7 @@ proc blockCorrection*(V: Ggauge; mask: PortalMask; m: BlockMap): Gscalar =
   blockCorrectionOp(V, mask, m.beta,
     proc(p: float; n: array[4, float]): BlockForce = blockForce(m, p, n))
 
-proc blockSmearHost*(V: shared.Gauge; mask: PortalMask; m: BlockMap): tuple[u: shared.Gauge, lndet: float] =
+proc blockSmearHost*(V: gauge.Gauge; mask: PortalMask; m: BlockMap): tuple[u: gauge.Gauge, lndet: float] =
   let
     pa = plaqAngleField(V)
     nb = blockNeighborAngles(pa)
