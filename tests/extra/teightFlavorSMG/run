@@ -153,9 +153,9 @@ echo "== 4b. Incomplete serial RNG checkpoints must abort =="
 badckptdir="$ckptdir/incomplete"
 mkdir -p "$badckptdir"
 cp "$ckptdir/ckpoint_1.lat" "$ckptdir/ckpoint_1.parallelRNG" "$badckptdir/" || exit 1
-serialBytes=$(wc -c < "$ckptdir/ckpoint_1.serialRNG")
+serialBytes=$(( $(wc -c < "$ckptdir/ckpoint_1.serialRNG") ))
 for bytes in 0 $((serialBytes - 1)); do
-  head -c "$bytes" "$ckptdir/ckpoint_1.serialRNG" > "$badckptdir/ckpoint_1.serialRNG" || exit 1
+  dd if="$ckptdir/ckpoint_1.serialRNG" of="$badckptdir/ckpoint_1.serialRNG" bs=1 count="$bytes" 2>/dev/null || exit 1
   badout="$badckptdir/read-$bytes.out"
   expectFailure "Incomplete serial RNG file: $badckptdir/ckpoint_1.serialRNG (expected $serialBytes bytes, read $bytes)" "$badout" \
     "$exe" \

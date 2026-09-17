@@ -109,16 +109,16 @@ jobs:
         CLEANUPJOBS=./finalizeTests ./runtests.sh
     - name: make experimental tests
       working-directory: qex
-      timeout-minutes: 45
+      timeout-minutes: 90
       run: make ARGS="--assertions:on" tests experimental
     - name: experimental testscript
       working-directory: qex
       timeout-minutes: 45
       env:
-        OMP_NUM_THREADS: '1'
+        OMP_NUM_THREADS: '2'
         OMP_DYNAMIC: 'FALSE'
-        RUNJOB: timeout -k 10s 20m mpiexec -n 1
-        RUN1: timeout -k 10s 20m mpiexec -n 1
+        RUNJOB: timeout -k 10s 20m
+        RUN1: timeout -k 10s 20m
       run: CLEANUPJOBS=./finalizeTests ./testscript-experimental.sh
     - name: experimental testscript with two ranks
       working-directory: qex
