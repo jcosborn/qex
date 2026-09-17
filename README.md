@@ -31,4 +31,6 @@ Installation guide: [INSTALL.md](INSTALL.md)
 Build guide: [BUILD.md](BUILD.md)
 
 Further examples:
+
 - [tests/examples](tests/examples)
+- [Learned U(1) field transformations](src/experimental/nnft/README.md)

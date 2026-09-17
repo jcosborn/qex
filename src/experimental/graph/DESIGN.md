@@ -992,12 +992,15 @@ pullbacks. Native tests cover input orders through four and one parameter
 derivative combined with input orders zero through four. Masks are discrete;
 `clipMin` has slopes zero, one-half and one below, at and above its threshold.
 
+The [learned U(1) application](../nnft/README.md) composes these operators
+with gauge paths and its clipped angular Jacobian.
+
 ## 13. `hmcgauge`
 
 `hmcgauge` owns trajectory construction, sampling, integration and training.
 `flowAction(gc, map)` caches each transformed graph by its input node and exposes
 `flow` and `action` callables, with $S_{\rm eff}(V)=S(f(V))-\log\det J_f(V)$.
-Stout flows use this constructor. `measure2du1.runFlowHmc` owns
+Stout and learned flows share this constructor. `measure2du1.runFlowHmc` owns
 their physical-field plans, proposal measurements and sampling statistics.
 Parameters remain paired with gradient expressions. `stoutAction` and
 `smearedField` accept graph rho; `StoutAction.rho` exposes it for mixed derivatives.

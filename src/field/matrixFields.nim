@@ -144,6 +144,12 @@ proc expi*[V:static[int],T](r: Field[V,ColorMatrixN[1,ComplexType[T]]],
     r[e][0,0].re := cos(x[e][0,0])
     r[e][0,0].im := sin(x[e][0,0])
 
+proc expi*[V:static[int],T](r: Field[V,ColorMatrixN[1,ComplexType[T]]], x: Field[V,T]) =
+  ## Unit phases exp(i x) of a real scalar field.
+  for e in r:
+    r[e][0,0].re := cos(x[e])
+    r[e][0,0].im := sin(x[e])
+
 proc arg*[V:static[int],T](r: Field[V,ColorMatrixN[1,T]],
                           x: Field[V,ColorMatrixN[1,ComplexType[T]]]) =
   ## Principal angle in [-pi,pi]; derivatives exclude zero and the branch cut.
