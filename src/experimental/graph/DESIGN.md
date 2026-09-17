@@ -973,6 +973,13 @@ joint plan. Force-gradient integrators accept the default coefficient tuple or
 a complete explicit tuple, not partial positional completion. Validate
 `IntegratorCoeffs` when constructing the run spec.
 
+`2MNp` is the momentum-first 2MN schedule; one procedure integrates both
+orderings with the same minimal-norm default lambda `0.1931833275037836`, and
+kicks apply the negated coefficient. Built with `trace = true`, every
+integrator records its force, kick, drift and force-gradient shift events as
+graph nodes; `tintegratoru1` replays them against the analytic U(1) dynamics,
+and plans root the event values to collect a complete trace.
+
 ## 14. Validation And Benchmarks
 
 See the [validation and benchmark protocol](graph_validation.md)

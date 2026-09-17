@@ -2,7 +2,7 @@ import qex
 import ../[core, scalar, multi, gauge, plan]
 import ../gauge/types as graphGauge
 import config, integrator
-export GaugeAction, GaugeForceFn, MdForceStats
+export GaugeAction, GaugeForceFn, MdForceStats, IntegrationEventKind, IntegrationEvent
 
 type
   TrajectoryState* = object
@@ -18,6 +18,8 @@ type
     lossExpr*: Gscalar
     learnedParameters*: seq[LearnedParameter]
     mdForces*: seq[Ggauge]
+    trace*: seq[IntegrationEvent]
+      ## Integration events when built with trace = true; empty otherwise.
   Proposal* = object
     ## Gauge values are borrowed through onProposal; save an owned gaugeSnapshot.
     ## loss is defined when lossExpr exists; gradients exist only during training.
@@ -46,10 +48,12 @@ proc buildTrajectoryGraph*(grt: GraphRuntime,
                            config: RunConfig,
                            buildTraining = true,
                            force: GaugeForceFn = nil,
-                           parameters: openArray[LearnedParameter] = []): TrajectoryGraph =
+                           parameters: openArray[LearnedParameter] = [],
+                           trace = false): TrajectoryGraph =
   ## Build HMC from S(g); the same S defines the force and both Hamiltonians.
   ## If not buildTraining, omit the loss and parameter-gradient graph.
   ## parameters adds exposed action/flow parameters to dt and integrator training.
+  ## trace keeps every integration event as graph nodes for tests and debugging.
   let gdt = toGvalue(grt, config.dt)
   result.initialState = buildTrajectoryState(action, toGvalue(grt, g), toGvalue(grt, p))
   let integrated = integrateGauge(
@@ -59,8 +63,10 @@ proc buildTrajectoryGraph*(grt: GraphRuntime,
     gdt,
     config.gsteps,
     config.integratorCoeffs,
-    force)
+    force,
+    trace)
   result.mdForces = integrated.forces
+  result.trace = integrated.trace
   result.finalState = buildTrajectoryState(
     action,
     integrated.gauge,

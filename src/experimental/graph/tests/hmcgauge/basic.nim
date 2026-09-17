@@ -12,8 +12,8 @@ suite "hmcgauge":
     (gc: actWilson(scalar.toGvalue(grt, 6.0)), g0: grt.toGvalue(g), p0: grt.toGvalue(p), dt: grt.toGvalue(0.025))
 
   proc integrateTest(inputs: tuple[gc: Gactcoeff, g0: Ggauge, p0: Ggauge, dt: Gscalar]; coeffs: IntegratorCoeffs;
-                     steps = 1): IntegrationResult =
-    integrateGauge(act(inputs.gc), inputs.g0, inputs.p0, inputs.dt, steps, coeffs)
+                     steps = 1; trace = false): IntegrationResult =
+    integrateGauge(act(inputs.gc), inputs.g0, inputs.p0, inputs.dt, steps, coeffs, trace = trace)
 
   template expectIntegrateError(inputs, coeffs, steps: untyped) =
     expect(GraphValueError):
@@ -126,6 +126,15 @@ suite "hmcgauge":
 
     expectIntegrateError(inputs, parseIntegratorCoeffs(ik2MN, []), 0)
     expectIntegrateError(inputs, parseIntegratorCoeffs(ik2MN, []), -1)
+    expectIntegrateError(inputs, parseIntegratorCoeffs(ik2MNp, []), 0)
+
+  test "both 2MN orderings share the minimal-norm lambda and have explicit names":
+    check parseIntegratorKind("2MNp") == ik2MNp
+    check parseIntegratorCoeffs(ik2MNp, []).lambda == 0.1931833275037836
+    check parseIntegratorCoeffs(ik2MN, []).lambda == 0.1931833275037836
+    check parseIntegratorCoeffs(ik2MNp, [0.21]).lambda == 0.21
+    expect(GraphValueError):
+      discard parseIntegratorCoeffs(ik2MNp, [0.1,0.2])
 
   test "integrateGauge rejects step count before building a spec":
     let inputs = validIntegratorInputs()
@@ -152,6 +161,18 @@ suite "hmcgauge":
     check twoMNResult.momentum.runtime == inputs.p0.runtime
     check twoMNResult.learnedCoeffs.len == 1
     check twoMNResult.forces.len == 2
+    check twoMNResult.trace.len == 0
+    check integrateTest(inputs, twoMN, trace = true).trace.len == 7
+
+    let twoMNp = integrateTest(inputs,parseIntegratorCoeffs(ik2MNp, []),trace = true)
+    check twoMNp.learnedCoeffs.len == 1
+    check twoMNp.forces.len == 3
+    check twoMNp.trace.len == 8
+    check twoMNp.trace[0].kind == ieForce
+    check twoMNp.trace[0].gauge.nodeKey == inputs.g0.nodeKey
+    check twoMNp.trace[1].kind == ieKick
+    check twoMNp.trace[2].kind == ieDrift
+    check twoMNp.trace[2].momentum.nodeKey == twoMNp.trace[1].momentum.nodeKey
 
     let fourMN3F1GP = parseIntegratorCoeffs(ik4MN3F1GP, [])
     check fourMN3F1GP.kind == ik4MN3F1GP
@@ -161,6 +182,8 @@ suite "hmcgauge":
     let fourMN3F1GPResult = integrateTest(inputs, fourMN3F1GP)
     check fourMN3F1GPResult.learnedCoeffs.len == 3
     check fourMN3F1GPResult.forces.len == 4
+    check fourMN3F1GPResult.trace.len == 0
+    check integrateTest(inputs, fourMN3F1GP, trace = true).trace.len == 12
 
     let fourMN5F2GP = parseIntegratorCoeffs(ik4MN5F2GP, [])
     check fourMN5F2GP.kind == ik4MN5F2GP
@@ -172,32 +195,37 @@ suite "hmcgauge":
     let fourMN5F2GPResult = integrateTest(inputs, fourMN5F2GP)
     check fourMN5F2GPResult.learnedCoeffs.len == 5
     check fourMN5F2GPResult.forces.len == 7
+    check integrateTest(inputs, fourMN5F2GP, trace = true).trace.len == 20
 
   test "integrator variants accept expanded multi-step schedules":
     let inputs = validIntegratorInputs()
 
-    proc checkExpanded(coeffs: IntegratorCoeffs; learnedLen, forcesPerStep: int) =
+    proc checkExpanded(coeffs: IntegratorCoeffs; learnedLen, forces1, forces2: int) =
       let oneStep = integrateTest(inputs, coeffs)
       let twoStep = integrateTest(inputs, coeffs, 2)
       let chained = integrateGauge(act(inputs.gc), oneStep.gauge, oneStep.momentum, inputs.dt, 1, coeffs)
       check oneStep.learnedCoeffs.len == learnedLen
       check twoStep.learnedCoeffs.len == learnedLen
-      check oneStep.forces.len == forcesPerStep
-      check twoStep.forces.len == 2 * forcesPerStep
+      check oneStep.forces.len == forces1
+      check twoStep.forces.len == forces2
       norm2(twoStep.gauge - chained.gauge) :< 1e-16
       norm2(twoStep.momentum - chained.momentum) :< 1e-16
 
     block:
       let coeffs = parseIntegratorCoeffs(ik2MN, [])
-      checkExpanded(coeffs, 1, 2)
+      checkExpanded(coeffs, 1, 2, 4)
+
+    block:
+      let coeffs = parseIntegratorCoeffs(ik2MNp, [])
+      checkExpanded(coeffs, 1, 3, 5)
 
     block:
       let coeffs = parseIntegratorCoeffs(ik4MN3F1GP, [])
-      checkExpanded(coeffs, 3, 4)
+      checkExpanded(coeffs, 3, 4, 8)
 
     block:
       let coeffs = parseIntegratorCoeffs(ik4MN5F2GP, [])
-      checkExpanded(coeffs, 5, 7)
+      checkExpanded(coeffs, 5, 7, 14)
 
   test "integrator direct force matches action differentiation":
     let
@@ -211,6 +239,12 @@ suite "hmcgauge":
     check direct.forces.len == automatic.forces.len
     for i in 0..<direct.forces.len:
       norm2(direct.forces[i] - automatic.forces[i]) :< 1e-16
+
+    let mp = parseIntegratorCoeffs(ik2MNp, [])
+    let ma = integrateTest(inputs,mp)
+    let md = integrateGauge(act(inputs.gc),inputs.g0,inputs.p0,inputs.dt,1,mp,force)
+    norm2(md.gauge-ma.gauge) :< 1e-16
+    norm2(md.momentum-ma.momentum) :< 1e-16
 
   test "integrator reuses evaluated nodes for MD force statistics":
     let inputs = validIntegratorInputs()

@@ -59,7 +59,9 @@ proc readGaugeInputs*(d: GaugeParams): GaugeParams =
     gsteps = d.gsteps
     seed = d.seed
     rng = $d.rng
+    ## 2MN, 2MNp (momentum first), 4MN3F1GP, or 4MN5F2GP.
     gintalg = d.intalg
+    ## Optional coefficients; 2MN and 2MNp take lambda.
     gintcoeffs = d.intcoeffs
     trajsThermo = d.trajsThermo
     trajs = d.trajs

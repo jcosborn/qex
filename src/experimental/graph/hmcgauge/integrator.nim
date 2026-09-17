@@ -4,7 +4,7 @@ from math import sqrt
 
 type
   IntegratorKind* = enum
-    ik2MN, ik4MN3F1GP, ik4MN5F2GP
+    ik2MN, ik4MN3F1GP, ik4MN5F2GP, ik2MNp
   IntegratorCoeffs* = object
     kind*: IntegratorKind
     rho*: float
@@ -17,11 +17,27 @@ type
     name*: string
     node*: Gscalar
     gradientExpr*: Gscalar
+  IntegrationEventKind* = enum
+    ieForce, ieKick, ieDrift, ieShift
+  IntegrationEvent* = object
+    ## Graph-node references, not stored values. A force event holds the gauge
+    ## and the momentum before its kick; the kick holds the gauge of the state
+    ## and the force node with the momentum after it. A shift event holds the
+    ## gauge displaced along a force for a force-gradient kick, that force and
+    ## the displacement; the force event that follows is at the shifted gauge.
+    kind*: IntegrationEventKind
+    step*: int # Repeated loop label: 0 for the leading events, i inside the
+               # loop including the seam, n for the final events.
+    gauge*, momentum*: Ggauge
+    force*: Ggauge
+    coefficient*: Gscalar # Signed applied coefficient; nil for force events.
   IntegrationResult* = object
     gauge*: Ggauge
     momentum*: Ggauge
     learnedCoeffs*: seq[LearnedParameter]
-    forces*: seq[Ggauge]
+    forces*: seq[Ggauge] # Force nodes in integration order for every kind; the
+                         # one home of force statistics.
+    trace*: seq[IntegrationEvent] # Every event when traced; empty otherwise.
   MdForceStats* = object
     count*: int
     rmsMean*, rmsMax*: float
@@ -138,24 +154,22 @@ proc parseIntegratorKind*(name: string): IntegratorKind =
   case name
   of "2MN":
     ik2MN
+  of "2MNp":
+    ik2MNp
   of "4MN3F1GP":
     ik4MN3F1GP
   of "4MN5F2GP":
     ik4MN5F2GP
   else:
-    raiseValueError("unknown intalg: " & name)
+    raiseValueError("unknown intalg: " & name & "; expected 2MN, 2MNp, 4MN3F1GP, or 4MN5F2GP")
 
 proc parseIntegratorCoeffs*(kind: IntegratorKind,
                             values: openArray[float]): IntegratorCoeffs =
   case kind
-  of ik2MN:
-    requireCoeffCountOrDefault("2MN", values, 1)
-    result = IntegratorCoeffs(kind: ik2MN)
-    result.lambda =
-      if values.len == 0:
-        0.1931833275037836
-      else:
-        values[0]
+  of ik2MN, ik2MNp:
+    requireCoeffCountOrDefault(if kind == ik2MN: "2MN" else: "2MNp", values, 1)
+    result = IntegratorCoeffs(kind: kind)
+    result.lambda = if values.len == 0: 0.1931833275037836 else: values[0]
   of ik4MN3F1GP:
     # Force-gradient family: defaults are all-or-default by design; partial
     # positional completion is unsupported. Keep the derived formulas explicit.
@@ -188,41 +202,86 @@ proc parseIntegratorCoeffs*(kind: IntegratorKind,
       result.lambda = values[3]
       result.xi = values[4]
 
+type Stepper = object
+  ## One MD state with the shared kick, drift and shift bookkeeping. Kicks and
+  ## shifts apply the negated coefficient: p -= c F and g_s = exp(-c F) g.
+  action: GaugeAction
+  force: GaugeForceFn
+  g, p: Ggauge
+  forces: seq[Ggauge]
+  trace: seq[IntegrationEvent]
+  traced: bool
+
+proc event(s: var Stepper; kind: IntegrationEventKind; step: int; force: Ggauge = nil;
+           coefficient: Gscalar = nil; gauge: Ggauge = nil) =
+  if s.traced:
+    s.trace.add IntegrationEvent(kind: kind, step: step,
+      gauge: (if gauge == nil: s.g else: gauge), momentum: s.p,
+      force: force, coefficient: coefficient)
+
+proc kick(s: var Stepper; c: Gscalar; step: int) =
+  let f = gradForce(s.action, s.g, s.forces, s.force)
+  s.event(ieForce, step, f)
+  let mc = -c
+  s.p = axpy(mc, f, s.p)
+  s.event(ieKick, step, f, mc)
+
+proc drift(s: var Stepper; c: Gscalar; step: int) =
+  s.g = axexpmuly(c, s.p, s.g)
+  s.event(ieDrift, step, coefficient = c)
+
+proc gradKick(s: var Stepper; c, shift: Gscalar; step: int) =
+  ## Kick with the force at the gauge displaced against its own force by shift.
+  let fg = gradForce(s.action, s.g, s.forces, s.force)
+  s.event(ieForce, step, fg)
+  let ms = -shift
+  let gs = axexpmuly(ms, fg, s.g)
+  s.event(ieShift, step, fg, ms, gs)
+  let f = gradForce(s.action, gs, s.forces, s.force)
+  s.event(ieForce, step, f, gauge = gs)
+  let mc = -c
+  s.p = axpy(mc, f, s.p)
+  s.event(ieKick, step, f, mc)
+
 proc integrate2MN(action: GaugeAction,
-                  g0: Ggauge,
-                  p0: Ggauge,
+                  g0, p0: Ggauge,
                   dt: Gscalar,
                   n: int,
                   coeffs: IntegratorCoeffs,
-                  force: GaugeForceFn): IntegrationResult =
+                  force: GaugeForceFn,
+                  traced: bool): IntegrationResult =
+  ## Second-order minimal norm, O(a) [I(h) O(b) I(h) O(2a)]^(n-1) I(h) O(b) I(h) O(a)
+  ## with a = lambda dt, b = (1-2 lambda) dt, h = dt/2: O is the kick and I the
+  ## drift for ik2MNp (momentum first), the reverse for ik2MN.
   let lambda = toGvalue(dt.runtime, coeffs.lambda)
-  let h = 0.5 * dt
-  let t05 = lambda * dt
-  let t0 = 2.0 * t05
-  let t1 = dt - t0
-  let mh = -h
-  var g = g0
-  var p = p0
-  var forces: seq[Ggauge]
+  let first = lambda * dt
+  let between = 2.0 * first
+  let middle = dt - between
+  let half = 0.5 * dt
+  let mf = coeffs.kind == ik2MNp
+  var s = Stepper(action: action, force: force, g: g0, p: p0, traced: traced)
+  proc outer(c: Gscalar; step: int) =
+    if mf: s.kick(c, step) else: s.drift(c, step)
+  proc inner(step: int) =
+    if mf: s.drift(half, step) else: s.kick(half, step)
+  outer(first, 0)
   for i in 0..<n:
-    g = axexpmuly(if i == 0: t05 else: t0, p, g)
-    p = axpy(mh, gradForce(action, g, forces, force), p)
-    g = axexpmuly(t1, p, g)
-    p = axpy(mh, gradForce(action, g, forces, force), p)
-  g = axexpmuly(t05, p, g)
-  IntegrationResult(
-    gauge: g,
-    momentum: p,
+    inner(i)
+    outer(middle, i)
+    inner(i)
+    if i+1 < n: outer(between, i)
+  outer(first, n)
+  IntegrationResult(gauge: s.g, momentum: s.p,
     learnedCoeffs: @[LearnedParameter(name: "lambda", node: lambda)],
-    forces: forces)
+    forces: s.forces, trace: s.trace)
 
 proc integrate4MN3F1GP(action: GaugeAction,
-                       g0: Ggauge,
-                       p0: Ggauge,
+                       g0, p0: Ggauge,
                        dt: Gscalar,
                        n: int,
                        coeffs: IntegratorCoeffs,
-                       force: GaugeForceFn): IntegrationResult =
+                       force: GaugeForceFn,
+                       traced: bool): IntegrationResult =
   let lambda = toGvalue(dt.runtime, coeffs.lambda)
   let theta = toGvalue(dt.runtime, coeffs.theta)
   let chi = toGvalue(dt.runtime, coeffs.chi)
@@ -232,36 +291,29 @@ proc integrate4MN3F1GP(action: GaugeAction,
   let b0 = lambda * dt
   let b1 = dt - 2.0 * b0
   let c1 = 0.1 * chi * (dt * dt)
-  let mb0 = -b0
-  let mb1 = -b1
-  var g = g0
-  var p = p0
-  var forces: seq[Ggauge]
+  var s = Stepper(action: action, force: force, g: g0, p: p0, traced: traced)
   for i in 0..<n:
-    g = axexpmuly(if i == 0: a0 else: a02, p, g)
-    p = axpy(mb0, gradForce(action, g, forces, force), p)
-    g = axexpmuly(a1, p, g)
-    let fg = gradForce(action, g, forces, force)
-    p = axpy(mb1, gradForce(action, axexpmuly(-c1, fg, g), forces, force), p)
-    g = axexpmuly(a1, p, g)
-    p = axpy(mb0, gradForce(action, g, forces, force), p)
-  g = axexpmuly(a0, p, g)
-  IntegrationResult(
-    gauge: g,
-    momentum: p,
+    s.drift(if i == 0: a0 else: a02, i)
+    s.kick(b0, i)
+    s.drift(a1, i)
+    s.gradKick(b1, c1, i)
+    s.drift(a1, i)
+    s.kick(b0, i)
+  s.drift(a0, n)
+  IntegrationResult(gauge: s.g, momentum: s.p,
     learnedCoeffs: @[
       LearnedParameter(name: "lambda", node: lambda),
       LearnedParameter(name: "theta", node: theta),
       LearnedParameter(name: "chi", node: chi)],
-    forces: forces)
+    forces: s.forces, trace: s.trace)
 
 proc integrate4MN5F2GP(action: GaugeAction,
-                       g0: Ggauge,
-                       p0: Ggauge,
+                       g0, p0: Ggauge,
                        dt: Gscalar,
                        n: int,
                        coeffs: IntegratorCoeffs,
-                       force: GaugeForceFn): IntegrationResult =
+                       force: GaugeForceFn,
+                       traced: bool): IntegrationResult =
   let rho = toGvalue(dt.runtime, coeffs.rho)
   let theta = toGvalue(dt.runtime, coeffs.theta)
   let vtheta = toGvalue(dt.runtime, coeffs.vtheta)
@@ -275,38 +327,27 @@ proc integrate4MN5F2GP(action: GaugeAction,
   let b0 = vtheta * dt
   let b2 = (1.0 - 2.0 * (lambda + vtheta)) * dt
   let c1 = 0.05 * xi * (dt * dt)
-  let mb0 = -b0
-  let mb1 = -b1
-  let mb2 = -b2
-  var g = g0
-  var p = p0
-  var forces: seq[Ggauge]
+  var s = Stepper(action: action, force: force, g: g0, p: p0, traced: traced)
   for i in 0..<n:
-    g = axexpmuly(if i == 0: a0 else: a02, p, g)
-    p = axpy(mb0, gradForce(action, g, forces, force), p)
-    g = axexpmuly(a1, p, g)
-    block:
-      let fg = gradForce(action, g, forces, force)
-      p = axpy(mb1, gradForce(action, axexpmuly(-c1, fg, g), forces, force), p)
-    g = axexpmuly(a2, p, g)
-    p = axpy(mb2, gradForce(action, g, forces, force), p)
-    g = axexpmuly(a2, p, g)
-    block:
-      let fg = gradForce(action, g, forces, force)
-      p = axpy(mb1, gradForce(action, axexpmuly(-c1, fg, g), forces, force), p)
-    g = axexpmuly(a1, p, g)
-    p = axpy(mb0, gradForce(action, g, forces, force), p)
-  g = axexpmuly(a0, p, g)
-  IntegrationResult(
-    gauge: g,
-    momentum: p,
+    s.drift(if i == 0: a0 else: a02, i)
+    s.kick(b0, i)
+    s.drift(a1, i)
+    s.gradKick(b1, c1, i)
+    s.drift(a2, i)
+    s.kick(b2, i)
+    s.drift(a2, i)
+    s.gradKick(b1, c1, i)
+    s.drift(a1, i)
+    s.kick(b0, i)
+  s.drift(a0, n)
+  IntegrationResult(gauge: s.g, momentum: s.p,
     learnedCoeffs: @[
       LearnedParameter(name: "rho", node: rho),
       LearnedParameter(name: "theta", node: theta),
       LearnedParameter(name: "vtheta", node: vtheta),
       LearnedParameter(name: "lambda", node: lambda),
       LearnedParameter(name: "xi", node: xi)],
-    forces: forces)
+    forces: s.forces, trace: s.trace)
 
 proc integrateGauge*(action: GaugeAction,
                      g0: Ggauge,
@@ -314,13 +355,15 @@ proc integrateGauge*(action: GaugeAction,
                      dt: Gscalar,
                      n: int,
                      coeffs: IntegratorCoeffs,
-                     force: GaugeForceFn = nil): IntegrationResult =
+                     force: GaugeForceFn = nil,
+                     trace = false): IntegrationResult =
+  ## trace records every force, kick, drift and shift as graph-node events.
   if n <= 0:
     raiseValueError("integrator step count must be >= 1, got " & $n)
   case coeffs.kind
-  of ik2MN:
-    integrate2MN(action, g0, p0, dt, n, coeffs, force)
+  of ik2MN, ik2MNp:
+    integrate2MN(action, g0, p0, dt, n, coeffs, force, trace)
   of ik4MN3F1GP:
-    integrate4MN3F1GP(action, g0, p0, dt, n, coeffs, force)
+    integrate4MN3F1GP(action, g0, p0, dt, n, coeffs, force, trace)
   of ik4MN5F2GP:
-    integrate4MN5F2GP(action, g0, p0, dt, n, coeffs, force)
+    integrate4MN5F2GP(action, g0, p0, dt, n, coeffs, force, trace)
