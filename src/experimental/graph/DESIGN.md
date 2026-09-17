@@ -9,7 +9,9 @@ Contracts shared across modules. Local kernel details belong in code and tests.
 | `core.nim` | Values, runtimes, traversal, evaluation, reverse mode |
 | `scalar.nim` | Scalar/int values and operators |
 | `functional.nim` | Structural lambdas, `apply`, VJP construction |
+| `field/types.nim` | Shared field and field-collection value storage |
 | `gauge.nim` | Gauge values and operators |
+| `nn.nim` | Real channel fields, parameter arrays and neural operators |
 | `plan.nim` | Private execution graphs, joint scheduling, reusable buffers; import explicitly |
 | `multi.nim` | Fused-operator slots and result views |
 | `hmcgauge` | Trajectories, sampling and training |
@@ -308,6 +310,14 @@ $$
 `grad(dep,x)` constructs this graph without evaluating `dep`: walk `iwmBackward`,
 mark paths to the target, traverse them in reverse order, call backward hooks,
 and accumulate with each target's algebra.
+
+The root cotangent is implicit: without a seed a root uses `oneLike`, the
+multiplicative unit of its algebra, so `grad(y,y)` is ones per channel for
+`Greal`/`Garray` and the site identity for matrix fields, where a root then
+differentiates $\sum_x\operatorname{Re}\operatorname{tr}$. Implicit seeding
+reaches only `grad(y,y)` and hooks written with `rootedUpstream` (`cond`,
+`multi`, `apply`, `slotVar`, the NN field ops); hooks written with
+`requireUpstream` raise at the root, and `Ggauge` has no default seed.
 
 Cache key: `(output node, runtime symbolic revision)`. Only complete adjoints
 are reusable, including complete intermediate adjoints. Pending contributions
@@ -937,6 +947,50 @@ adaptive-exponential references from `scaledexpRef`. Coverage includes repeated
 spectra, scalar/SIMD scaling thresholds and $\|F\|_F\le8$. The update approximation
 has nine field/staple/mixed-alpha directional cases at norms $0.12,2,8$, each with
 steps $10^{-3}$ and $5\cdot10^{-4}$, separate from finite-logdet derivative checks.
+
+## 12.1 Neural Fields
+
+`GfieldOf[F]` in `field/types` supplies the common storage contracts for a field
+or sequence of fields. The neural value types support `float32` and `float64`:
+
+| Value | Storage |
+| --- | --- |
+| `Greal[T]` | `GfieldOf[seq[RealField[T]]]`, one scalar QEX field per channel |
+| `Gmask` | A float32 field; zero excludes a site, nonzero selects it |
+| `Garray[T]` | Replicated parameter data and shape |
+
+Computed fields allocate on evaluation and support plan buffers. Parameter
+arrays allocate directly and do not use field buffer pooling. `gauge/rfield`
+converts one channel to/from `Grfield` and composes the matrix operators.
+NN kernels and wrappers have no checkpoint or file I/O.
+
+The [numerical kernels](../../nn.nim) own their thread regions. Convolution is
+periodic, stride-one cross-correlation; `convParams` constructs dense odd kernels
+with weights ordered `[output,input,spatial...]`, last spatial axis fastest.
+Forward subset/mask operations preserve the destination complement. Pointwise
+kernels permit in-place use; convolution requires disjoint source/destination
+fields. `convVjp` clears its destination and accumulates reverse halos;
+pointwise pullbacks zero complements unless `passthrough` is requested.
+
+NN parameter pullbacks are graph expressions. For convolution $C(x,w)$ and
+$B(x,b)_{oit}=\sum_s b_o(s)x_i(s+t)$,
+
+$$
+\partial_x\langle b,C(x,w)\rangle=C^T(b,w),\qquad
+\partial_w\langle b,C(x,w)\rangle=B(x,b),
+$$
+$$
+\partial_x\langle a,B(x,b)\rangle=C^T(b,a),\qquad
+\partial_b\langle a,B(x,b)\rangle=C(x,a).
+$$
+
+`channelSum` and `broadcast` are adjoints for bias and channel-scale pullbacks.
+Parameter gradients sum owned sites and reduce across spatial ranks once;
+array dot products act on the replicated result without another rank reduction.
+These rules permit one parameter derivative before or after repeated input
+pullbacks. Native tests cover input orders through four and one parameter
+derivative combined with input orders zero through four. Masks are discrete;
+`clipMin` has slopes zero, one-half and one below, at and above its threshold.
 
 ## 13. `hmcgauge`
 

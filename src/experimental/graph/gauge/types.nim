@@ -1,4 +1,6 @@
 import ../core
+import ../field/types
+export types
 import layout, gauge, physics/qcdTypes
 
 # Gauge-layer value storage: the gauge bundle and the single-direction field.
@@ -9,11 +11,6 @@ type
   Ggauge* = ref object of Gvalue
     ## Graph-owned storage; public writes must mark freshness.
     gval*: Gauge
-
-  GfieldOf*[F] = ref object of Gvalue
-    ## One lattice field of site matrices; graph-owned storage, public writes
-    ## must mark freshness.
-    fval*: F
 
   Gfield* = GfieldOf[DLatticeColorMatrixV]
     ## One direction of a Gauge. Internal plumbing for cross-direction
@@ -32,51 +29,14 @@ when cfieldIsGfield:
 else:
   type Gcfield* = GfieldOf[DLatticeComplexMatrixV[1]]
 
-proc zeroFieldStorage*[V:static[int],T](f: Field[V,T]) =
-  if f.s.data.isNil:
-    return
-  threads:
-    f := 0.0
-
-proc ensureFieldStorage*[F](f: var F) =
-  if f.s.data.isNil:
-    f = f.newOneOf
-    f.zeroFieldStorage
-
-proc releaseFieldStorage*[F](f: var F) =
-  # Replace the descriptor; aliases keep the old Field and RawMemRef alive.
-  if not f.s.data.isNil:
-    f = f.newShape
-
-method hasStorage*(x: Ggauge): bool =
-  for f in x.gval:
-    if f.s.data.isNil:
-      return false
-  true
+method hasStorage*(x: Ggauge): bool = x.gval.hasFieldStorage
 
 method ensureStorage*(x: Ggauge) =
-  if x.hasStorage:
-    return
-  var fields = newSeq[DLatticeColorMatrixV](x.gval.len)
-  for i, f in x.gval:
-    fields[i] = f
-    fields[i].ensureFieldStorage
-  x.gval = fields
-  if x.restoreValue != nil:
-    x.restoreValue(x)
+  if not x.hasStorage:
+    x.gval.ensureFieldStorage
+    if x.restoreValue != nil: x.restoreValue(x)
 
-method releaseStorage*(x: Ggauge) =
-  var resident = false
-  for f in x.gval:
-    if not f.s.data.isNil:
-      resident = true
-      break
-  if not resident:
-    return
-  var fields = newSeq[DLatticeColorMatrixV](x.gval.len)
-  for i, f in x.gval:
-    fields[i] = f.newShape
-  x.gval = fields
+method releaseStorage*(x: Ggauge) = x.gval.releaseFieldStorage
 
 method valAlias*(z: Ggauge, x: Gvalue) =
   z.gval = Ggauge(x).gval
@@ -86,18 +46,10 @@ template copyGaugeStorage(dst, src: untyped) =
     for mu in 0..<dst.len:
       dst[mu] := src[mu]
 
-proc sameGaugeShape(a: Gauge, b: Gauge): bool =
-  if a.len != b.len:
-    return false
-  for i in 0..<a.len:
-    if a[i].l != b[i].l:
-      return false
-  true
-
 proc requireSameGaugeShape(dst: Gauge,
                            src: Gauge,
                            label: string) =
-  if not sameGaugeShape(dst, src):
+  if not sameFieldShape(dst, src):
     raiseValueError(label & " requires matching gauge shapes")
 
 proc requireSameGaugeShape*(left: Ggauge,
@@ -105,26 +57,20 @@ proc requireSameGaugeShape*(left: Ggauge,
                             label: string) =
   left.gval.requireSameGaugeShape(right.gval, label)
 
-method bufferProto*(x: Ggauge): Gvalue =
-  var g = newSeq[DLatticeColorMatrixV](x.gval.len)
-  for i, f in x.gval:
-    g[i] = f.newShape
-  Ggauge(runtime:x.runtime,gval:g).assignStableNodeId
+proc gaugeNodeLike*(x: Ggauge): Ggauge =
+  Ggauge(runtime: x.runtime, gval: x.gval.newShape).assignStableNodeId
+
+method bufferProto*(x: Ggauge): Gvalue = x.gaugeNodeLike
 
 method bufferCompatible*(x: Ggauge, y: Gvalue): bool =
-  y of Ggauge and sameGaugeShape(x.gval,Ggauge(y).gval)
+  y of Ggauge and sameFieldShape(x.gval,Ggauge(y).gval)
 
 method bindBuffer*(x: Ggauge, buffer: Gvalue) =
   x.gval = Ggauge(buffer).gval
 
-method clearBuffer*(x: Ggauge) =
-  threads:
-    for f in x.gval:
-      f := 0.0
+method clearBuffer*(x: Ggauge) = x.gval.zeroFieldStorage
 
-method bufferBytes*(x: Ggauge): int =
-  for f in x.gval:
-    result += f.s.bytes
+method bufferBytes*(x: Ggauge): int = x.gval.fieldBytes
 
 proc gaugeSnapshot*(x: Ggauge): Gauge =
   if not x.hasStorage:
@@ -134,11 +80,7 @@ proc gaugeSnapshot*(x: Ggauge): Gauge =
   snapshot.copyGaugeStorage(storage)
   result = snapshot
 
-proc zeroGaugeStorage*(g: Gauge) =
-  threads:
-    for mu in 0..<g.len:
-      if not g[mu].s.data.isNil:
-        g[mu] := 0.0
+proc zeroGaugeStorage*(g: Gauge) = zeroFieldStorage(g)
 
 proc update*(x: Ggauge, g: Gauge) =
   x.gval.requireSameGaugeShape(g, "gauge update")
@@ -163,12 +105,6 @@ proc toGvalue*(grt: GraphRuntime,
   g.copyGaugeStorage(x)
   result = Ggauge(runtime: grt, gval: g).assignStableNodeId
   result.updated
-
-proc gaugeNodeLike*(x: Ggauge): Ggauge =
-  var g = newSeq[DLatticeColorMatrixV](x.gval.len)
-  for i, f in x.gval:
-    g[i] = f.newShape
-  Ggauge(runtime: x.runtime, gval: g).assignStableNodeId
 
 proc unitGaugeValue(v: Gvalue) =
   let x = Ggauge(v)
@@ -211,7 +147,7 @@ method valCopy*(z: Ggauge, x: Gvalue) =
   z.gval.copyGaugeStorage(src.gval)
 
 method copyCompatible*(prototype: Ggauge, value: Gvalue): bool =
-  value of Ggauge and sameGaugeShape(prototype.gval, Ggauge(value).gval)
+  value of Ggauge and sameFieldShape(prototype.gval, Ggauge(value).gval)
 
 method `$`*(x: Ggauge): string =
   if not x.hasStorage:
@@ -219,96 +155,18 @@ method `$`*(x: Ggauge): string =
   let v = x.gval[0][0][0,0]
   result = "Gauge (" & $v.re[0] & ", " & $v.im[0] & ")"
 
-proc requireSameFieldShape*[F](x, y: GfieldOf[F], label: string) =
-  if x.fval.l != y.fval.l:
-    raiseValueError(label & " requires matching field shapes")
-
 proc requireLinkShape*(g: Ggauge, mu: int, f: DLatticeColorMatrixV, label: string) =
   if mu < 0 or mu >= g.gval.len:
     raiseValueError(label & " direction out of range")
   if f.l != g.gval[mu].l:
     raiseValueError(label & " requires matching field shapes")
 
-proc fieldNodeLike*[F](x: GfieldOf[F]): GfieldOf[F] =
-  let f = x.fval.newShape
-  GfieldOf[F](runtime: x.runtime, fval: f).assignStableNodeId
-
-proc sameShapeFieldNodeLike*[F](x, y: GfieldOf[F], label: string): GfieldOf[F] =
-  x.requireSameFieldShape(y, label)
-  x.fieldNodeLike
-
-proc unitFieldValue[F](v: Gvalue) =
-  let x = GfieldOf[F](v)
-  threads:
-    x.fval := 1.0
-
-proc unitField*[F](grt: GraphRuntime, proto: F): GfieldOf[F] =
-  ## Constant identity value restored from shape on demand.
-  let f = proto.newShape
-  result = GfieldOf[F](runtime: grt, fval: f).assignStableNodeId
-  result.updated
-  # updated clears restoreValue; install the hook afterwards.
-  result.restoreValue = unitFieldValue[F]
-  result.valueOverride = false
-
 proc unitFieldLike*(g: Ggauge): Gfield =
   ## Constant identity-matrix field leaf shaped like one direction of g.
   unitField(g.runtime, g.gval[0])
 
-template fieldMethods(T: typedesc, label: static string) =
-  method bufferProto*(x: T): Gvalue =
-    T(runtime:x.runtime,fval:x.fval.newShape).assignStableNodeId
-
-  method bufferCompatible*(x: T, y: Gvalue): bool =
-    y of T and x.fval.l == T(y).fval.l
-
-  method bindBuffer*(x: T, buffer: Gvalue) =
-    x.fval = T(buffer).fval
-
-  method clearBuffer*(x: T) =
-    threads:
-      x.fval := 0.0
-
-  method bufferBytes*(x: T): int = x.fval.s.bytes
-
-  method hasStorage*(x: T): bool = not x.fval.s.data.isNil
-
-  method ensureStorage*(x: T) =
-    if not x.hasStorage:
-      x.fval.ensureFieldStorage
-      if x.restoreValue != nil:
-        x.restoreValue(x)
-
-  method releaseStorage*(x: T) =
-    x.fval.releaseFieldStorage
-
-  method valAlias*(z: T, x: Gvalue) =
-    z.fval = T(x).fval
-
-  method newOneOf*(x: T): Gvalue =
-    x.fieldNodeLike
-
-  method valueLike*(x: T): Gvalue =
-    x.fieldNodeLike
-
-  method zeroLike*(x: T): Gvalue =
-    result = x.fieldNodeLike
-    result.staticZeroLeaf = true
-
-  method isZero*(x: T): bool =
-    ## Zero leaves are marked when constructed; other fields are not scanned.
-    x.staticZeroLeaf
-
-  method valCopy*(z: T, x: Gvalue) =
-    let src = T(x)
-    if z.fval.l != src.fval.l:
-      raiseValueError(label & " copy requires matching field shapes")
-    z.ensureStorage
-    threads:
-      z.fval := src.fval
-
-  method copyCompatible*(prototype: T, value: Gvalue): bool =
-    value of T and prototype.fval.l == T(value).fval.l
+template matrixFieldMethods(T: typedesc, label: static string) =
+  fieldMethods(T, label)
 
   method `$`*(x: T): string =
     if not x.hasStorage:
@@ -316,38 +174,16 @@ template fieldMethods(T: typedesc, label: static string) =
     let v = x.fval[0][0,0]
     result = label & " (" & $v.re[0] & ", " & $v.im[0] & ")"
 
-fieldMethods(Gfield, "GaugeField")
+matrixFieldMethods(Gfield, "GaugeField")
 when not cfieldIsGfield:
-  fieldMethods(Gcfield, "ComplexField")
-fieldMethods(Grfield, "RealField")
-fieldMethods(Grmat8, "RealMatrix8")
+  matrixFieldMethods(Gcfield, "ComplexField")
+matrixFieldMethods(Grfield, "RealField")
+matrixFieldMethods(Grmat8, "RealMatrix8")
 
 type MatrixStorage = DLatticeColorMatrixV | DLatticeComplexMatrixV[1] | DLatticeRealMatrixV[1] | DLatticeRealMatrixV[8]
 
 proc toGvalue*[F:MatrixStorage](grt: GraphRuntime, x: F): GfieldOf[F] =
-  let f = x.newOneOf
-  threads:
-    f := x
-  result = GfieldOf[F](runtime: grt, fval: f).assignStableNodeId
-  result.updated
-
-proc update*[F](x: GfieldOf[F], f: F) =
-  if x.fval.l != f.l:
-    raiseValueError("field update requires matching field shapes")
-  x.ensureStorage
-  threads:
-    x.fval := f
-  x.updated
-
-template mutateField*[F](x: GfieldOf[F], storageName: untyped, body: untyped) =
-  block:
-    let node {.gensym.} = x
-    discard node.eval
-    let storageName {.inject.} = node.fval
-    try:
-      body
-    finally:
-      node.updated
+  toGfield(grt, x)
 
 template mapGaugeSites*(dst: Ggauge, valueExpr: untyped) =
   threads:

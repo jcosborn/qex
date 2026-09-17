@@ -98,11 +98,13 @@ template complexPart(op, real, imag: untyped) =
 complexPart(complex, a, 0)
 complexPart(imaginary, 0, a)
 
-proc toMatrix*[V:static[int],T](r: Field[V,ColorMatrixN[1,T]], x: Field[V,T]) =
+proc toMatrix*[V:static[int],R,T](r: Field[V,ColorMatrixN[1,R]], x: Field[V,T]) =
+  ## Scalar sites into 1x1 matrix sites; the precisions may differ.
   for e in r:
     r[e][0,0] := x[e]
 
-proc toScalar*[V:static[int],T](r: Field[V,T], x: Field[V,ColorMatrixN[1,T]]) =
+proc toScalar*[V:static[int],R,T](r: Field[V,R], x: Field[V,ColorMatrixN[1,T]]) =
+  ## 1x1 matrix sites into scalar sites; the precisions may differ.
   for e in r:
     r[e] := x[e][0,0]
 

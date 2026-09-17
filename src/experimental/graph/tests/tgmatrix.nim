@@ -82,6 +82,8 @@ suite "graph real matrix fields":
     check abs((sum(siteNorm2(ga))-norm2(ga)).eval.sval)/vol < 1e-12
     check abs((sum(siteRedot(ga,gb))-redot(ga,gb)).eval.sval)/vol < 1e-12
     check norm2(grad(3.0*sum(gr),gr)-3.0*unitField(gr.runtime,gr.fval)).eval.sval < 1e-26
+    # The implicit root seed of a matrix field is the site identity, not all ones.
+    check norm2(grad(ga,ga)-unitField(ga.runtime,ga.fval)).eval.sval < 1e-26
     check abs((sum(maskSubset(0,unitField(gr.runtime,gr.fval)))-0.5*float(lo.physVol)).eval.sval) < 1e-12
 
   test "1x1 solve inverse and logdet values and weighted pullbacks":

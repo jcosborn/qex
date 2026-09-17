@@ -317,8 +317,9 @@ method rootGradientSeed*(x: Gvalue): Gvalue {.base.} =
 proc rootedUpstream*(upstream: Gvalue, node: Gvalue): Gvalue =
   ## Effective upstream adjoint inside a backward hook: the given `upstream`, or
   ## `node`'s own root seed when this node is the root of the backward build
-  ## (`upstream == nil`). Structural nodes (cond, multi, apply) seed from
-  ## `rootGradientSeed`; leaf ops use `scaledUpstreamOr` instead.
+  ## (`upstream == nil`). Hooks written with this accept the implicit root seed
+  ## (`rootGradientSeed`, by default `oneLike`); hooks written with
+  ## `requireUpstream` raise at the root instead.
   if upstream == nil: node.rootGradientSeed else: upstream
 
 method addLike*(prototype: Gvalue, x: Gvalue, y: Gvalue): Gvalue {.base.} =
