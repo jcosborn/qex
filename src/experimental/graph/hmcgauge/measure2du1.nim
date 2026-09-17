@@ -1,7 +1,4 @@
-## Measurements and jackknife-analysis helpers shared by the 2D U(1) HMC apps,
-## including the full `obstat` jackknife report. Field-transformation apps
-## pass their per-trajectory ln det f'(V) as `Jvals`; `statsByQ` also accepts each
-## trajectory's MD-force aggregates as `mdvals`.
+## Measurements, sampling and jackknife analysis for 2D U(1) HMC applications.
 
 import qex
 import math
@@ -9,6 +6,9 @@ import maths/special
 import utils/resample
 import integrator
 import ./stats
+import ../[core, scalar, gauge, plan]
+import ../gauge/types as graphGauge
+import config, trajectory, gauge_io, flow
 
 proc tunnelingRate*(xs: Ensemble[seq[float]]): float =
   var r = 0.0
@@ -195,3 +195,63 @@ proc obstat*(Hvals, Avals, Pvals, Qvals: seq[float]; beta: float; vol, ntraj, jk
   echo "all Tau_Q2: ", Q2ac.mean, " ± ", err(Q2ac)
   for i in 0..qmax:
     echo "all P(Q=", i, "): ", qdist[i].mean/float(ntraj), " ± ", err(qdist[i], 1.0/float(ntraj))
+
+proc runFlowHmc*[R: RNG](graph: TrajectoryGraph; flow: GaugeFlow; config: RunConfig;
+    randomField: var Field[1, R]; randomSerial: var R; beta: float; jkBlockSize: int;
+    topology: proc(g: graphGauge.Gauge): float = nil; loaded: graphGauge.Gauge = @[]) =
+  ## Evolve the latent field; monitor, measure and save its physical image.
+  ## `topology`, when given, replaces `topo2DU1` for the monitored charge.
+  let
+    cur = flow(graph.initialState.gauge)
+    ld = logDetJ(cur, graph.initialState.gauge)
+    meas = plan(cur, ld)
+    proposed = flow(graph.finalState.gauge)
+    lo = graph.initialState.gauge.gval[0].l
+  defer: meas.clear
+  var prevQ, proposalQ: float
+  block:
+    discard meas.eval
+    let initial = Ggauge(meas[0]).gaugeSnapshot
+    echo "Initial smeared plaq: ", initial.plaq3
+    prevQ = if topology.isNil: initial.topo2DU1 else: topology(initial)
+    proposalQ = prevQ
+    if loaded.len > 0:
+      echo "load round-trip |f(f^-1(U)) - U|_max^2: ", maxGaugeDiff2(initial, loaded)
+
+  var
+    Hvals, Jvals, Avals, Pvals, Qvals = newSeq[float](config.trajs)
+    dQchanged = newSeq[bool](config.trajs)
+    mdvals = newSeq[MdForceStats](config.trajs)
+
+  proc proposalMon(traj: int; proposal: Proposal) =
+    let up = proposal.view.gaugeSnapshot
+    let tm = up.topoMaxP2DU1
+    proposalQ = if topology.isNil: tm.topo else: topology(up)
+    let dq = int(round(proposalQ - prevQ))
+    echo "proposal: dQ ", dq, "  maxP ", tm.maxP
+    if traj > config.trajsThermo:
+      dQchanged[traj - config.trajsThermo - 1] = dq != 0
+
+  proc measureTraj(traj: int; dH, acc: float; accepted: bool; forceStats: MdForceStats) =
+    discard meas.eval
+    let
+      u = Ggauge(meas[0]).gaugeSnapshot
+      lndet = Gscalar(meas[1]).sval
+      pl = u.plaq3
+      q = if accepted: proposalQ else: prevQ
+    echo "plaq: ", pl.re, "  topo: ", q, "  lnDet: ", lndet
+    prevQ = q
+    if traj > config.trajsThermo:
+      let i = traj - config.trajsThermo - 1
+      Hvals[i] = dH
+      Avals[i] = acc
+      Jvals[i] = lndet
+      Pvals[i] = pl.re
+      Qvals[i] = q
+      mdvals[i] = forceStats
+      u.maybeSaveGauge(config, traj)
+
+  runHmc(graph, config, randomField, randomSerial, measureTraj, proposalMon, proposalView = proposed)
+  if Hvals.len > 0:
+    obstat(Hvals, Avals, Pvals, Qvals, beta, lo.physVol, config.trajs, jkBlockSize, Jvals, mdvals)
+    statsByQ(Hvals, Avals, dQchanged, jkBlockSize, Jvals, mdvals)

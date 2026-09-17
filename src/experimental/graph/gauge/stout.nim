@@ -13,8 +13,7 @@ import layout, gauge, physics/qcdTypes
 import types, basic_ops, matfun, field_ops, matrix
 from action/ops import Gactcoeff, gaugeActionDeriv, gaugeActionDeriv2
 import maths/groupOps, maths/matrixFunctions
-
-const stoutOrder = 13
+import gauge/stoutsmear
 
 proc stoutCoeff(c, value: Gactcoeff): Gactcoeff
 
@@ -75,8 +74,8 @@ proc stoutLogDetJGraph*(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): Gscala
     let d = su3ProjectDeriv(m)
     const h = 1.0 / float(1 shl expProjectTAHScale)
     let y = h*x
-    var p = diffExpC[stoutOrder-1] + diffExpC[stoutOrder]*y
-    for k in countdown(stoutOrder-2, 0):
+    var p = diffExpC[expProjectTAHOrder-1] + diffExpC[expProjectTAHOrder]*y
+    for k in countdown(expProjectTAHOrder-2, 0):
       p = diffExpC[k] + y*p
     var c = 0.5*h
     for j in 0..<expProjectTAHScale:
@@ -237,17 +236,7 @@ proc stoutUpdateImpl(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): GstoutUpd
     let ds = Ggauge(args.storedSlot(1))
     let alpha = Gscalar(args.storedSlot(2))
     let z = GstoutUpdate(v)
-    threads:
-      forGaugeBlend(z.gval,sub,other,dir,true):
-        when active:
-          var A, F, E {.noinit.}: evalType(W.gval[mu][e])
-          F.projectTAH(W.gval[mu][e] * ds.gval[mu][e].adj)
-          A := alpha.sval * F
-          E[] := expAH(A[])
-          z.expa[e] := E
-          z.gval[mu][e] := E * W.gval[mu][e]
-        else:
-          z.gval[mu][e] := W.gval[mu][e]
+    stoutStepKernel(z.gval, W.gval, ds.gval, z.expa, alpha = alpha.sval, parity = parity, dir = dir)
     toc("stoutUpdate kernel end")
 
   proc gradPair(W, ds: Ggauge, alpha: Gscalar, upstream: Ggauge, update: GstoutUpdate): Gmulti =
@@ -278,12 +267,11 @@ proc stoutUpdateImpl(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): GstoutUpd
               w = W.gval[mu][e]
               d = ds.gval[mu][e]
               b = upstreamSum(mu,e)
-            var B, P {.noinit.}: evalType(w)
-            B := update.expa[e].adj * b
-            expProjectTAHPullback(P[], (alpha.sval * (w * d.adj))[], (B * w.adj)[], order=stoutOrder, scale=expProjectTAHScale)
-            let H = alpha.sval * P
-            dW.gval[mu][e] := B + H * d
-            dds.gval[mu][e] := H.adj * w
+            var rw, rd, M {.noinit.}: evalType(w)
+            M := alpha.sval * (w * d.adj)
+            stoutPullbackSite(rw, rd, w, d, update.expa[e], M, b, alpha.sval, 0.0)
+            dW.gval[mu][e] := rw
+            dds.gval[mu][e] := rd
           else:
             dW.gval[mu][e] := upstreamSum(mu,e)
       toc("stoutUpdateGrad kernel end")
@@ -393,7 +381,7 @@ proc stoutLogDetJ*(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): Gscalar =
       for x in sub:
         var M {.noinit.}: evalType(W.gval[dir][x])
         M := alpha.sval * (W.gval[dir][x] * ds.gval[dir][x].adj)
-        s += simdSum(expProjMulLogJac(M[], order=stoutOrder, scale=expProjectTAHScale))
+        s += simdSum(expProjMulLogJac(M[], order=expProjectTAHOrder, scale=expProjectTAHScale))
       s.threadRankSum
       threadSingle: res = s
     z.sval = res
@@ -419,7 +407,7 @@ proc stoutLogDetJ*(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): Gscalar =
           var q, M, G {.noinit.}: evalType(w)
           q := w * d.adj
           M := alpha.sval * q
-          expProjMulLogJacGrad(G[], M[], order=stoutOrder, scale=expProjectTAHScale)
+          expProjMulLogJacGrad(G[], M[], order=expProjectTAHOrder, scale=expProjectTAHScale)
           let H = (upstream.sval * alpha.sval) * G
           dW.gval[dir][x] := H * d
           dds.gval[dir][x] := H.adj * w
@@ -454,7 +442,7 @@ proc stoutLogDetJ*(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): Gscalar =
           var q, M, G {.noinit.}: evalType(w)
           q := w * d.adj
           M := alpha.sval * q
-          expProjMulLogJacGrad(G[], M[], order=stoutOrder, scale=expProjectTAHScale)
+          expProjMulLogJacGrad(G[], M[], order=expProjectTAHOrder, scale=expProjectTAHScale)
           let r = redot(G, q)
           s += upstream.sval * simdSum(r)
         s.threadRankSum
@@ -578,10 +566,7 @@ method newOneOf(x: GstoutStepForward): Gvalue =
 
 proc stoutStepForwardImpl(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): GstoutStepForward =
   W.requireSameGaugeShape(ds, "stoutStepForward")
-  let
-    sub = W.gval.paritySubset(parity)
-    other = W.gval.paritySubset(1 - parity)
-    args = multiValues("stoutStepForward args", W, ds, alpha)
+  let args = multiValues("stoutStepForward args", W, ds, alpha)
 
   proc forward(v: Gvalue) =
     tic("stoutStepForward kernel")
@@ -591,22 +576,7 @@ proc stoutStepForwardImpl(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): Gsto
       ds = Ggauge(args.storedSlot(1))
       alpha = Gscalar(args.storedSlot(2))
       z = GstoutStepForward(v)
-    threads:
-      forGaugeBlend(z.gval,sub,other,dir,true):
-        when active:
-          let
-            w = W.gval[mu][e]
-            d = ds.gval[mu][e]
-          var q, M, F, E {.noinit.}: evalType(w)
-          q := w * d.adj
-          M := alpha.sval * q
-          F.projectTAH M
-          E[] := expAH(F[])
-          z.expa[e] := E
-          z.m[e] := M
-          z.gval[mu][e] := E * w
-        else:
-          z.gval[mu][e] := W.gval[mu][e]
+    stoutStepKernel(z.gval, W.gval, ds.gval, z.expa, z.m, alpha.sval, parity, dir)
     toc("stoutStepForward kernel end")
 
   proc backward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
@@ -634,7 +604,7 @@ proc stoutStepLogDetValue(x: GstoutStepForward, parity, dir: int): Gscalar =
     threads:
       var s = 0.0
       for i in sub:
-        s += simdSum(expProjMulLogJac(x.m[i][], order=stoutOrder, scale=expProjectTAHScale))
+        s += simdSum(expProjMulLogJac(x.m[i][], order=expProjectTAHOrder, scale=expProjectTAHScale))
       s.threadRankSum
       threadSingle: res = s
     z.sval = res
@@ -721,22 +691,11 @@ proc stoutUpdateLogDetJImpl(W, ds: Ggauge, alpha: Gscalar, c: Gactcoeff, parity,
             rd := 0.0
             if hasUpdate:
               let base = upstreamSum(mu,e)
-              var B, P {.noinit.}: evalType(w)
-              B := update.expa[e].adj * base
-              if hasLog:
-                var G {.noinit.}: evalType(w)
-                expProjMulLogJacGrad(G[], P[], update.m[e][], (B * w.adj)[], order=stoutOrder, scale=expProjectTAHScale)
-                let H = alpha.sval * P + (upLog.sval * alpha.sval) * G
-                rw := B + H * d
-                rd := H.adj * w
-              else:
-                expProjectTAHPullback(P[], update.m[e][], (B * w.adj)[], order=stoutOrder, scale=expProjectTAHScale)
-                let H = alpha.sval * P
-                rw := B + H * d
-                rd := H.adj * w
+              stoutPullbackSite(rw, rd, w, d, update.expa[e], update.m[e], base, alpha.sval,
+                if hasLog: upLog.sval else: 0.0)
             elif hasLog:
               var G {.noinit.}: evalType(w)
-              expProjMulLogJacGrad(G[], update.m[e][], order=stoutOrder, scale=expProjectTAHScale)
+              expProjMulLogJacGrad(G[], update.m[e][], order=expProjectTAHOrder, scale=expProjectTAHScale)
               let H = (upLog.sval * alpha.sval) * G
               rw := H * d
               rd := H.adj * w
@@ -835,7 +794,7 @@ proc stoutUpdateLogDetJImpl(W, ds: Ggauge, alpha: Gscalar, c: Gactcoeff, parity,
             s += simdSum(redot(D, F))
           if hasLog:
             var G {.noinit.}: evalType(w)
-            expProjMulLogJacGrad(G[], update.m[x][], order=stoutOrder, scale=expProjectTAHScale)
+            expProjMulLogJacGrad(G[], update.m[x][], order=expProjectTAHOrder, scale=expProjectTAHScale)
             s += upLog.sval * simdSum(redot(G, q))
         s.threadRankSum
         threadSingle: da = s

@@ -1,6 +1,60 @@
 import base
 import layout
 import gauge
+import physics/qcdTypes
+import maths/groupOps, maths/matrixFunctions
+
+proc stoutStepKernel*[T](dst, W, ds: seq[T]; expa: T; m: T = nil; alpha: float; parity, dir: int; mask: SLatticeRealV = nil) =
+  ## Subset update; mask refines parity. dst and W must have distinct storage.
+  ## expa receives exp(alpha projectTAH(W ds†)) and m, when given, alpha W ds†.
+  let
+    lo = W[0].l
+    sub = lo.getSubset(if parity == 0: "even" else: "odd")
+    other = lo.getSubset(if parity == 0: "odd" else: "even")
+  if mask != nil and mask.l != lo:
+    raise newException(ValueError, "stout refinement mask layout differs from gauge")
+  threads:
+    for mu in 0..<dst.len:
+      if mu != dir: dst[mu] := W[mu]
+    for e in other:
+      dst[dir][e] := W[dir][e]
+    for e in sub:
+      let
+        w = W[dir][e]
+        d = ds[dir][e]
+      var q, M, F, E {.noinit.}: evalType(w)
+      q := w * d.adj
+      M := alpha * q
+      F.projectTAH M
+      E[] := expAH(F[])
+      expa[e] := E
+      if m != nil: m[e] := M
+      dst[dir][e] := E * w
+      if mask != nil:
+        for k in 0..<lo.V:
+          let s = e*lo.V+k
+          var keep: float32
+          keep := mask{s}
+          if keep == 0:
+            dst[dir]{s} := W[dir]{s}
+            expa{s} := 1
+            if m != nil: m{s} := 0
+
+proc stoutPullbackSite*(rw, rd: var auto; w, d, e, m, upstream: auto; alpha, ld: float) =
+  ## Joint update/logdet VJP at one scalar or SIMD site, with ds independent.
+  var B, P {.noinit.}: evalType(w)
+  B := e.adj * upstream
+  if ld != 0:
+    var G {.noinit.}: evalType(w)
+    expProjMulLogJacGrad(G[], P[], m[], (B * w.adj)[], order=expProjectTAHOrder, scale=expProjectTAHScale)
+    let H = alpha * P + (ld * alpha) * G
+    rw := B + H * d
+    rd := H.adj * w
+  else:
+    expProjectTAHPullback(P[], m[], (B * w.adj)[], order=expProjectTAHOrder, scale=expProjectTAHScale)
+    let H = alpha * P
+    rw := B + H * d
+    rd := H.adj * w
 
 type StoutSmear*[G] = object
   alpha*: float

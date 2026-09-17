@@ -5,7 +5,7 @@ import qex, algorithms/numdiff, maths/groupOps
 import helpers
 import ../[core, scalar, gauge]
 import ../functional
-import ../hmcgauge/ftstout
+import ../hmcgauge/[ftstout, flow]
 
 proc runFtStoutTests*(localLat: seq[int]; beta, rho: float; nsmear = 1) =
   qexInit()
@@ -111,6 +111,25 @@ proc runFtStoutTests*(localLat: seq[int]; beta, rho: float; nsmear = 1) =
     doAssert u.nodeKey == Vg.nodeKey
     doAssert ld.isStaticZeroLeaf
     checkScalarEq("stoutAction zero sweep", seff, plain)
+
+  block:
+    var calls = 0
+    let common = flowAction(gc, proc(V: Ggauge): Ggauge =
+      inc calls
+      V)
+    let Vg = gauge.toGvalue(grt, V0)
+    doAssert calls == 0
+    doAssert common.flow(Vg).nodeKey == Vg.nodeKey
+    let effective = common.action(Vg)
+    doAssert common.flow(Vg).nodeKey == Vg.nodeKey
+    doAssert calls == 1
+    checkScalarEq("identity flow action", effective, gaugeAction(gc, Vg))
+    Vg.update Aconst
+    checkScalarEq("cached flow input update", effective, gaugeAction(gc, Ag))
+    doAssert common.flow(Vg).nodeKey == Vg.nodeKey
+    doAssert calls == 1
+    doAssert common.flow(Ag).nodeKey == Ag.nodeKey
+    doAssert calls == 2
 
   proc checkGrad(name: string, build: proc(Vt: Ggauge): Gscalar) =
     ## Perturb V along a random algebra direction R via V(t)=exp(t R)V0 and compare

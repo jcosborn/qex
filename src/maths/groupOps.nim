@@ -698,6 +698,8 @@ proc su3ProjectDerivAdj*(r: var Mat1, h: Mat2) =
           r[i,j].re += su3AdjProd[a][b][i,j].re*h[a,b]
           r[i,j].im += su3AdjProd[a][b][i,j].im*h[a,b]
 
+const expProjectTAHOrder* = 13
+  ## Seed truncation degree shared by the kernels below and the graph replica series.
 const expProjectTAHScale* = 5
   ## Five doublings put degree-13 seed truncation below binary64 rounding for ||F||_F <= 8.
   ## Logdet accuracy also depends on the Jacobian's conditioning.
@@ -1127,7 +1129,7 @@ proc diffExpSuApply*(r: var Vec1, a: Mat1, x: Vec2, order=13, scale: static int 
   else:
     static: error("diffExpSuApply is implemented only for SU(3)")
 
-proc expProjectTAHPullback*(r: var Mat1, m: Mat2, x: Mat3, order=13, scale: static int = 0) {.inline.} =
+proc expProjectTAHPullback*(r: var Mat1, m: Mat2, x: Mat3, order=expProjectTAHOrder, scale: static int = 0) {.inline.} =
   ## A = projectTAH(m), E = exp(A), x = E† C.
   ## Approximate redot(r, dm) = redot(C, dE) with the selected Lie differential.
   when r.nrows != m.nrows or r.nrows != x.nrows:
@@ -1490,12 +1492,12 @@ proc accumulateGrad(invJ, JF, dFbase, adF: Mat1, d2F: Mat2, dFd: Vec1, halfOrder
     dJF.diffDiffExpScaled(-adF, dadF, halfOrder, scale)
   result = trace(invJ * (dJF * dFbase + JF * d2F))
 
-proc expProjMulLogJac*[T](M: MatrixArray[1, 1, T], order=13, scale: static int = 0): auto {.inline.} =
+proc expProjMulLogJac*[T](M: MatrixArray[1, 1, T], order=expProjectTAHOrder, scale: static int = 0): auto {.inline.} =
   ## ln J = ln(1 + Re M).
   discard order
   ln(1.0 + M[0, 0].re)
 
-proc expProjMulLogJac*(M: Mat1, order=13, scale: static int = 0): auto {.noinit.} =
+proc expProjMulLogJac*(M: Mat1, order=expProjectTAHOrder, scale: static int = 0): auto {.noinit.} =
   ## F = projectTAH(M), D = diffProjectTAH(M,F), J = I + Phi(-suad(F))*D.
   ## Return ln det J.
   ## Requires det J > 0 and nonzero LU pivots.
@@ -1688,19 +1690,19 @@ proc expProjMulLogJacGradSu3(G: var Mat1, M: Mat2, p: var Vec1, v: Vec2, apply: 
     else:
       G.projJacPullbackSu3(J, JF)
 
-proc expProjMulLogJacGrad*(G: var Mat1, M: Mat2, order=13, scale: static int = 0) =
+proc expProjMulLogJacGrad*(G: var Mat1, M: Mat2, order=expProjectTAHOrder, scale: static int = 0) =
   ## d ln det J = redot(G,dM). Requires det J > 0 and nonzero LU pivots.
   type V = evalType(suToVec(M))
   var p, v {.noinit.}: V
   G.expProjMulLogJacGradSu3(M, p, v, false, order, scale)
 
-proc expProjMulLogJacGrad*[T](G: var MatrixArray[1, 1, T], M: MatrixArray[1, 1, T], order=13, scale: static int = 0) {.inline.} =
+proc expProjMulLogJacGrad*[T](G: var MatrixArray[1, 1, T], M: MatrixArray[1, 1, T], order=expProjectTAHOrder, scale: static int = 0) {.inline.} =
   ## G[0,0].re = 1/(1 + Re M).
   discard oddHalfOrder(order)
   G := 0
   G[0, 0].re := 1.0 / (1.0 + M[0, 0].re)
 
-proc expProjMulLogJacGrad*(G: var Mat1, p: var Vec1, M: Mat2, v: Vec2, order=13, scale: static int = 0) =
+proc expProjMulLogJacGrad*(G: var Mat1, p: var Vec1, M: Mat2, v: Vec2, order=expProjectTAHOrder, scale: static int = 0) =
   ## Also set p = Phi(suad(projectTAH(M)))*v.
   matchGroupVec("expProjMulLogJacGrad", M, p)
   matchGroupVec("expProjMulLogJacGrad", M, v)
@@ -1708,7 +1710,7 @@ proc expProjMulLogJacGrad*(G: var Mat1, p: var Vec1, M: Mat2, v: Vec2, order=13,
     static: error("expProjMulLogJacGrad vector lengths differ")
   G.expProjMulLogJacGradSu3(M, p, v, true, order, scale)
 
-proc expProjMulLogJacGrad*(G: var Mat1, P: var Mat2, M: Mat3, X: Mat4, order=13, scale: static int = 0) {.inline.} =
+proc expProjMulLogJacGrad*(G: var Mat1, P: var Mat2, M: Mat3, X: Mat4, order=expProjectTAHOrder, scale: static int = 0) {.inline.} =
   ## A = projectTAH(M), E = exp(A), X = E† C.
   ## Also approximate redot(P, dM) = redot(C, dE) with the selected Lie differential.
   when G.nrows != P.nrows or G.nrows != M.nrows or G.nrows != X.nrows:

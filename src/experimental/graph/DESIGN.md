@@ -920,7 +920,7 @@ P_{j+1}=P_j+2^{j-6}XP_j^2\ (j=0,\ldots,4),\quad
 K=I+P_5D,\quad\ell=\log\det K.
 $$
 
-`stoutOrder=13` is shared by replica/kernel calls; scale is `expProjectTAHScale=5`.
+`expProjectTAHOrder=13` is shared by replica/kernel calls; scale is `expProjectTAHScale=5`.
 The seed lives in the SU(3) adjoint image; cotangents may be arbitrary real
 matrices. Require $\det K>0$ and nonzero leading LU pivots. U(1) uses
 $\ell=\log(1+\Re M)$.
@@ -941,6 +941,10 @@ steps $10^{-3}$ and $5\cdot10^{-4}$, separate from finite-logdet derivative chec
 ## 13. `hmcgauge`
 
 `hmcgauge` owns trajectory construction, sampling, integration and training.
+`flowAction(gc, map)` caches each transformed graph by its input node and exposes
+`flow` and `action` callables, with $S_{\rm eff}(V)=S(f(V))-\log\det J_f(V)$.
+Stout flows use this constructor. `measure2du1.runFlowHmc` owns
+their physical-field plans, proposal measurements and sampling statistics.
 Parameters remain paired with gradient expressions. `stoutAction` and
 `smearedField` accept graph rho; `StoutAction.rho` exposes it for mixed derivatives.
 Float overloads create a scalar in the input runtime.

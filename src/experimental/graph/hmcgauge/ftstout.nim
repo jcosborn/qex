@@ -6,16 +6,15 @@
 ##
 ## Each sweep applies the substep to every (parity,dir).
 
-import std/tables
 import ../[core, scalar, gauge]
-import integrator
+import integrator, flow
 import qex
 from ../gauge/action/domain import evalGaugeForceValue
 
 type
   StoutAction* = object
     action*: GaugeAction
-    flow*: proc(V: Ggauge): Ggauge {.closure.}
+    flow*: GaugeFlow
     rho*: Gscalar
 
 proc smearFlow*(V: Ggauge, c1: Gactcoeff, alpha: Gscalar, sweeps: int): Ggauge =
@@ -49,17 +48,11 @@ proc stoutAction*(gc: Gactcoeff, rho: Gscalar, sweeps: int): StoutAction =
     c1 = actWilson(scalar.toGvalue(gc.runtime, 1.0))
     alpha = rho
   discard sharedGraphRuntime([Gvalue(gc), Gvalue(rho)], "stoutAction")
-  var flows = initTable[NodeKey, Ggauge]()
-  proc getFlow(V: Ggauge): Ggauge =
-    let key = V.nodeKey
-    if key notin flows:
-      flows[key] = smearFlow(V, c1, alpha, sweeps)
-    flows[key]
-  result.flow = getFlow
+  let common = flowAction(gc, proc(V: Ggauge): Ggauge =
+    smearFlow(V, c1, alpha, sweeps))
+  result.flow = common.flow
   result.rho = rho
-  result.action = proc(V: Ggauge): Gscalar =
-    let u = getFlow(V)
-    gaugeAction(gc, u) - logDetJ(u, V)
+  result.action = common.action
 
 proc stoutAction*(gc: Gactcoeff, rho: float, sweeps: int): StoutAction =
   stoutAction(gc, scalar.toGvalue(gc.runtime, rho), sweeps)
