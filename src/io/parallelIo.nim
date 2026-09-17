@@ -346,25 +346,28 @@ type
     #ldest*: seq[int32] # indices in write buffer of src buffer elements
     gm*: GatherMap
 
-proc hyperIndex[T,U,V](x: seq[T], o: seq[U], s: seq[V]): int =
-  for i in countdown(x.len-1,0):
+proc hyperIndex[T,U,V](x: seq[T], o: seq[U], s: seq[V], corder = false): int =
+  ## Index in the hyper-rectangle, axis 0 fastest; corder makes the last axis fastest.
+  let n = x.len
+  for j in 0..<n:
+    let i = if corder: j else: n-1-j
     let k = x[i] - o[i]
     if k<0 or k>=s[i]:
       return -1
     result = result*s[i] + k
 
-iterator localIndicesInHyper(lo: Layout, size: seq[int], offset: seq[int]):
-    tuple[lidx:int,didx:int] =
+iterator localIndicesInHyper(lo: Layout, size: seq[int], offset: seq[int],
+                             corder = false): tuple[lidx:int,didx:int] =
   var x = newSeq[int32](lo.nDim)
   for i in 0..<lo.nSites:
     lo.coord(x, i)
-    let k = hyperIndex(x, offset, size)
+    let k = hyperIndex(x, offset, size, corder)
     if k>=0:
       yield (i,k)
 
 proc setupWrite*(lo: Layout, size: seq[int], offset: seq[int],
-                 ioranks: seq[int]): WriteMap =
-  ## setup hypercubic subset write
+                 ioranks: seq[int], corder = false): WriteMap =
+  ## setup hypercubic subset write; corder stores the last axis fastest
   let nsites = size.product
   let nwriters = ioranks.len
   var c = getComm()
@@ -372,7 +375,7 @@ proc setupWrite*(lo: Layout, size: seq[int], offset: seq[int],
 
   # find my sites to write
   var sl = newSeq[SendList](0)
-  for i,k in lo.localIndicesInHyper(size, offset):
+  for i,k in lo.localIndicesInHyper(size, offset, corder):
     # i: local, k: file
     #echo "i: ", i, "  k: ", k
     let ri = (k * nwriters) div nsites
