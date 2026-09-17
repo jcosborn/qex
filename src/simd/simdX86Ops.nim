@@ -300,6 +300,10 @@ template basicDefs(T,F,N,P,S:untyped) {.dirty.} =
   map1(T,N, cos)
   map1(T,N, acos)
   map1(T,N, tanh)
+  map1(T,N, exp)
+  map1(T,N, ln)
+  map1(T,N, erfc)
+  map1(T,N, arctan)
   map2(T,N, atan2)
 
 basicDefs(m128,  float32,  4, mm, ps)
