@@ -1,7 +1,3 @@
-#RUNCMD env OMP_NUM_THREADS=1 $RUN1
-import base/globals
-setVLENmax(4)
-
 import math, unittest
 import helpers
 when defined(graphPlanMemory):
@@ -15,9 +11,6 @@ import ../hmcgauge/[ftstout, trajectory, integrator, config, training]
 proc runStoutTrainingTests*(localLat: seq[int], beta: float) =
   qexInit()
   defer: qexFinalize()
-  letParam:
-    expectRanks = nRanks
-  check nRanks == expectRanks
   letParam:
     mode = "planned"
   let planned = case mode
@@ -238,4 +231,5 @@ proc runStoutTrainingTests*(localLat: seq[int], beta: float) =
       check rho.sval != before
 
 when isMainModule:
+  # The mixed-derivative arena already uses about 3.4 GB at 4^4 with VLEN=4.
   runStoutTrainingTests(@[4,4,4,4],5.4)

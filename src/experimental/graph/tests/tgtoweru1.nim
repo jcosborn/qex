@@ -3,12 +3,10 @@
 ## expDeriv branch needs its own coverage.
 ## Runs the shared path comparisons and derivative towers like tgtower does
 ## for Nc=3; run alongside tggauge.
-## Run with OMP_NUM_THREADS=1 (see tgtower.nim).
-
-#RUNCMD env OMP_NUM_THREADS=1 $RUNJOB
 
 import base/globals
 setDefaultNc(1)
+setVLENmax(4)
 
 import tgtower
 

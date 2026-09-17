@@ -291,7 +291,7 @@ structured operations.
 volume from the local lattice/rank count; `-lat:` is explicitly global.
 `make tests` builds numerical suites; `make tests experimental` generates optional
 suites. Generated scripts support the repository MPI runner. See the
-[graph validation protocol](graph_validation.md).
+[graph validation protocol](../src/experimental/graph/graph_validation.md).
 
 `benchGaugeActions`, `benchPlaq` and `benchExpProject` use `tic`/`toc` and
 `getElapsedTime`; parameters select lattice/repetitions/trials and, for site

@@ -4,7 +4,7 @@ import ../[core, scalar, gauge]
 qexInit()
 
 letParam:
-  lat = @[12,12,12,24]
+  lat = latticeFromLocalLattice(@[4,4,8,8], nRanks)
   dt = 0.1
   eps = 0.004
   nstep = 3

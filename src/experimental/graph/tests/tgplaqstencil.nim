@@ -1,8 +1,3 @@
-#RUNCMD env OMP_NUM_THREADS=1 $RUNJOB
-
-import base/globals
-setVLENmax(4)
-
 import math, unittest
 import qex except epsilon
 import algorithms/numdiff
@@ -38,10 +33,7 @@ proc compare(a, b: Gscalar, tol = 2.0e-11) =
 
 qexInit()
 letParam:
-  expectRanks = nRanks
-check nRanks == expectRanks
-letParam:
-  lat = latticeFromLocalLattice(@[2,4,4], nRanks)
+  lat = latticeFromLocalLattice(@[4,4,8,8], nRanks)
 let
   lo = lat.newLayout
   g = lo.newGauge

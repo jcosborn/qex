@@ -1,5 +1,3 @@
-#RUNCMD env OMP_NUM_THREADS=1 $RUN1
-
 import math, strutils, unittest
 
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
@@ -28,7 +26,7 @@ include gauge/gaugehelpers
 qexInit()
 
 letParam:
-  lat = latticeFromLocalLattice(@[4,4,4,4], nRanks)
+  lat = latticeFromLocalLattice(@[4,4,8,8], nRanks)
 let
   lo = lat.newLayout
   seed = 1234567891u64
@@ -51,6 +49,9 @@ threads:
 for i in 0..4:
   ss.smear(g, g)
   ss.smear(u, u)
+# The basic identities below require unitary fixture links.
+g.reunitGauge
+u.reunitGauge
 threads:
   for t in m:
     t *= 0.01

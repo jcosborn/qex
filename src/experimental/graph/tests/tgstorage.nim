@@ -1,7 +1,4 @@
-#RUNCMD env OMP_NUM_THREADS=1 $RUNJOB
 ## Joint graph evaluation with plan-owned reusable buffers.
-import base/globals
-setVLENmax(4)
 
 import math, unittest, std/[tables, sets]
 import qex except epsilon
@@ -13,10 +10,7 @@ import ../gauge/[types, field_ops, transport, matrix, stencil]
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 qexInit()
 letParam:
-  expectRanks = nRanks
-check nRanks == expectRanks
-letParam:
-  lat = latticeFromLocalLattice(@[4,4], nRanks)
+  lat = latticeFromLocalLattice(@[4,4,8,8], nRanks)
 let lo = lat.newLayout
 var rng = lo.newRNGField(Philox4x64, 921260913u64)
 let g = lo.newGauge
@@ -46,6 +40,13 @@ proc same(a, b: Gscalar) =
   let want = b.eval.sval
   check abs(a.sval-want) < 1e-11 * (1.0 + abs(want))
 
+proc pair(rt, keep: GraphRuntime, raw: auto): auto =
+  (rt.toGvalue(raw), keep.toGvalue(raw))
+
+proc updateBoth[T, V](value, reference: T, raw: V) =
+  value.update(raw)
+  reference.update(raw)
+
 proc snapshot(a: auto): auto =
   let z = a.newOneOf
   threads: z := a
@@ -54,6 +55,14 @@ proc snapshot(a: auto): auto =
 proc forwards(rt: GraphRuntime): int =
   for s in rt.runStatsByNode.values:
     result += s.count
+
+proc cached(rt: GraphRuntime, plans: varargs[GraphPlan]): int {.discardable.} =
+  result = forwards(rt)
+  let raw = getRawMemAllocated()
+  for p in plans:
+    discard p.eval()
+  check forwards(rt) == result
+  check getRawMemAllocated() == raw
 
 proc counts(rt: GraphRuntime): Table[NodeId, int] =
   for id, s in rt.runStatsByNode:
@@ -377,8 +386,7 @@ proc packed(values: varargs[Gvalue]): Gmulti =
 proc chain(overwrite: bool) =
   let rt = initGraphRuntime()
   let keep = initGraphRuntime()
-  let x = rt.toGvalue(g[0])
-  let kx = keep.toGvalue(g[0])
+  let (x, kx) = pair(rt, keep, g[0])
   let input = x.fval.s.data
   var z = x
   var kz = kx
@@ -415,8 +423,7 @@ proc chain(overwrite: bool) =
   check p.stats.forwards == f
   check forwards(rt) == n
   check getRawMemAllocated() == mem
-  x.update(u[0])
-  kx.update(u[0])
+  updateBoth(x, kx, u[0])
   let before = counts(rt)
   let bytes = p.stats.arenaBytes
   let used = getRawMemAllocated()
@@ -448,12 +455,6 @@ suite "graph shared storage plans":
   setup:
     let rt = initGraphRuntime()
     let keep = initGraphRuntime()
-    let x = rt.toGvalue(g)
-    let y = rt.toGvalue(u)
-    let b = rt.toGvalue(m)
-    let kx = keep.toGvalue(g)
-    let ky = keep.toGvalue(u)
-    let kb = keep.toGvalue(m)
     defer:
       rt.resetGradCache
       rt.resetApplyCache
@@ -532,8 +533,8 @@ suite "graph shared storage plans":
           tr.clearLink
 
   test "mixed shift and hop chains use two arena fields at every length":
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (x, kx) = pair(rt, keep, g)
+    let (f, kf) = pair(rt, keep, g[0])
     let fp = f.fval.s.data
     let gp = x.gval
     for n in [2, 4*lo.nDim, 12*lo.nDim]:
@@ -547,10 +548,8 @@ suite "graph shared storage plans":
       for pass in 0..2:
         let src = if pass == 1: u[0] else: g[0]
         let lnk = if pass == 2: u else: g
-        f.update(src)
-        kf.update(src)
-        x.update(lnk)
-        kx.update(lnk)
+        updateBoth(f, kf, src)
+        updateBoth(x, kx, lnk)
         let used = getRawMemAllocated()
         let before = p.stats.forwards
         discard p.eval()
@@ -572,9 +571,9 @@ suite "graph shared storage plans":
       p.clear()
 
   test "move outputs preserve source aliases through failure retry and double clear":
+    let (x, kx) = pair(rt, keep, g)
     let flag = rt.toGvalue(1)
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (f, kf) = pair(rt, keep, g[0])
     let sh = shift(f, 0, -1)
     let z = moves(x, sh, 4*lo.nDim)
     let kz = moves(kx, shift(kf, 0, -1), 4*lo.nDim)
@@ -590,10 +589,8 @@ suite "graph shared storage plans":
     sameRaw(sf, ss)
     sameRaw(zf, zs)
     flag.update(0)
-    f.update(u[0])
-    kf.update(u[0])
-    x.update(u)
-    kx.update(u)
+    updateBoth(f, kf, u[0])
+    updateBoth(x, kx, u)
     let raw = getRawMemAllocated()
     discard p.eval()
     check getRawMemAllocated() == raw
@@ -609,10 +606,8 @@ suite "graph shared storage plans":
       sameRaw(outp, saved)
       sameRaw(sf, ss)
       sameRaw(zf, zs)
-    f.update(g[0])
-    kf.update(g[0])
-    x.update(g)
-    kx.update(g)
+    updateBoth(f, kf, g[0])
+    updateBoth(x, kx, g)
     discard p.eval()
     check p.stats.buffers == 2
     check Gfield(p[0]).fval.s.data != outp.s.data
@@ -627,8 +622,9 @@ suite "graph shared storage plans":
     sameRaw(outp, saved)
 
   test "pooled shifts and hops preserve field link and mixed gradients after updates":
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (x, kx) = pair(rt, keep, g)
+    let (b, kb) = pair(rt, keep, m)
+    let (f, kf) = pair(rt, keep, g[0])
     let z = moves(x, f, 4*lo.nDim)
     let kz = moves(kx, kf, 4*lo.nDim)
     let score = redot(z, linkField(b, 0))
@@ -643,19 +639,13 @@ suite "graph shared storage plans":
     var bytes = 0
     for pass in 0..2:
       if pass == 1:
-        f.update(u[0])
-        kf.update(u[0])
-        x.update(u)
-        kx.update(u)
-        b.update(g)
-        kb.update(g)
+        updateBoth(f, kf, u[0])
+        updateBoth(x, kx, u)
+        updateBoth(b, kb, g)
       elif pass == 2:
-        f.update(m[0])
-        kf.update(m[0])
-        x.update(g)
-        kx.update(g)
-        b.update(u)
-        kb.update(u)
+        updateBoth(f, kf, m[0])
+        updateBoth(x, kx, g)
+        updateBoth(b, kb, u)
       let before = counts(rt)
       let raw = getRawMemAllocated()
       discard p.eval()
@@ -831,6 +821,8 @@ suite "graph shared storage plans":
     check calls == 0
 
   test "nested numeric bundles preserve stock families and equal-size layout identities":
+    let (x, kx) = pair(rt, keep, g)
+    let (y, ky) = pair(rt, keep, u)
     let lo2 = lo.physGeom.newLayout
     let g2 = lo2.newGauge
     let r = lo.RealMatrix(1)
@@ -886,20 +878,13 @@ suite "graph shared storage plans":
           r *= 1.1
           c *= 0.9
           m8 *= 1.2
-        f.update(u[0])
-        kf.update(u[0])
-        h.update(g2[0])
-        kh.update(g2[0])
-        gr.update(r)
-        kr.update(r)
-        gc.update(c)
-        kc.update(c)
-        ga.update(m8)
-        ka.update(m8)
-        x.update(u)
-        kx.update(u)
-        short.update(@[u[0]])
-        ks.update(@[u[0]])
+        updateBoth(f, kf, u[0])
+        updateBoth(h, kh, g2[0])
+        updateBoth(gr, kr, r)
+        updateBoth(gc, kc, c)
+        updateBoth(ga, ka, m8)
+        updateBoth(x, kx, u)
+        updateBoth(short, ks, @[u[0]])
 
   test "raw input overrides survive initial source discovery":
     let s = rt.toGvalue(2.0)
@@ -1017,6 +1002,7 @@ suite "graph shared storage plans":
     check rt.symbolicRevision == sym
 
   test "copied generated constants follow original mutations and updates":
+    let (x, kx) = pair(rt, keep, g)
     let unit = x.unitGaugeLike
     let ku = kx.unitGaugeLike
     let zero = Ggauge(x.zeroLike)
@@ -1040,24 +1026,17 @@ suite "graph shared storage plans":
       threads:
         for f in data:
           f *= 2.0
-    zero.update(u)
-    kz.update(u)
+    updateBoth(zero, kz, u)
     discard pu.eval()
     discard pz.eval()
     same(Gscalar(pu[0]), us)
     same(Gscalar(pz[0]), zs)
     check abs(Gscalar(pu[0]).sval - 4.0*initial) < 1e-11
     check Gscalar(pz[0]).sval > 0.0
-    let n = forwards(rt)
-    let raw = getRawMemAllocated()
-    discard pu.eval()
-    discard pz.eval()
-    check forwards(rt) == n
-    check getRawMemAllocated() == raw
+    cached(rt, pu, pz)
 
   test "diamonds and repeated inputs execute once across joint roots":
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (f, kf) = pair(rt, keep, g[0])
     let a = step(f)
     let left = join(a, a)
     let right = step(a)
@@ -1070,13 +1049,8 @@ suite "graph shared storage plans":
     check forwards(rt) == 4
     same(Gfield(p[0]), kz)
     same(Gfield(p[1]), ka)
-    let n = forwards(rt)
-    let mem = getRawMemAllocated()
-    discard p.eval()
-    check forwards(rt) == n
-    check getRawMemAllocated() == mem
-    f.update(u[0])
-    kf.update(u[0])
+    let n = cached(rt, p)
+    updateBoth(f, kf, u[0])
     let before = counts(rt)
     let used = getRawMemAllocated()
     discard p.eval()
@@ -1088,8 +1062,7 @@ suite "graph shared storage plans":
     same(Gfield(p[1]), ka)
 
   test "nested evaluation preserves an initialized ordinary field leaf":
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (f, kf) = pair(rt, keep, g[0])
     let z = step(nestedCopy(step(f)))
     let kz = 1.125*(1.125*kf)
     let p = plan(z)
@@ -1097,20 +1070,14 @@ suite "graph shared storage plans":
     same(Gfield(p[0]), kz)
     for pass in 0..2:
       if (pass and 1) == 0:
-        f.update(u[0])
-        kf.update(u[0])
+        updateBoth(f, kf, u[0])
       else:
-        f.update(g[0])
-        kf.update(g[0])
+        updateBoth(f, kf, g[0])
       let raw = getRawMemAllocated()
       discard p.eval()
       check getRawMemAllocated() == raw
       same(Gfield(p[0]), kz)
-    let n = forwards(rt)
-    let raw = getRawMemAllocated()
-    discard p.eval()
-    check forwards(rt) == n
-    check getRawMemAllocated() == raw
+    cached(rt, p)
 
   test "matrix8 and scalar fields keep separate compatible buffers":
     let a = lo.RealMatrix(8)
@@ -1144,21 +1111,18 @@ suite "graph shared storage plans":
       same(Grmat8(p[3]), Grmat8(grad(ks, ka)))
       same(Grfield(p[4]), Grfield(grad(ks, kr)))
       check Grmat8(p[0]).fval.s.bytes != Grfield(p[1]).fval.s.bytes
-      let n = forwards(rt)
-      let raw = getRawMemAllocated()
-      discard p.eval()
-      check forwards(rt) == n
-      check getRawMemAllocated() == raw
+      cached(rt, p)
       if pass == 0:
         threads:
           a *= 0.9
           r *= 1.1
-        ga.update(a)
-        ka.update(a)
-        gr.update(r)
-        kr.update(r)
+        updateBoth(ga, ka, a)
+        updateBoth(gr, kr, r)
 
   test "joint primal gradient and mixed derivative roots share one traversal":
+    let (x, kx) = pair(rt, keep, g)
+    let (y, ky) = pair(rt, keep, u)
+    let (b, kb) = pair(rt, keep, m)
     let a = x*y + x*x
     let ka = kx*ky + kx*kx
     let score = norm2(a)
@@ -1176,15 +1140,9 @@ suite "graph shared storage plans":
     same(Gscalar(p[1]), ks)
     same(Ggauge(p[2]), kd)
     same(Ggauge(p[3]), km)
-    let n = forwards(rt)
-    let mem = getRawMemAllocated()
-    discard p.eval()
-    check forwards(rt) == n
-    check getRawMemAllocated() == mem
-    x.update(u)
-    kx.update(u)
-    b.update(g)
-    kb.update(g)
+    let n = cached(rt, p)
+    updateBoth(x, kx, u)
+    updateBoth(b, kb, g)
     let before = counts(rt)
     let used = getRawMemAllocated()
     discard p.eval()
@@ -1199,6 +1157,8 @@ suite "graph shared storage plans":
     same(Ggauge(p[3]), km)
 
   test "plan execution leaves escaped source gauge and field storage intact":
+    let (x, kx) = pair(rt, keep, g)
+    let (y, ky) = pair(rt, keep, u)
     let a = x*y
     let f = shift(linkField(a, 0), 1, 1)
     discard a.eval
@@ -1213,8 +1173,7 @@ suite "graph shared storage plans":
     let fp = f.fval.s.data
     let p = plan(a, f)
     discard p.eval()
-    x.update(u)
-    kx.update(u)
+    updateBoth(x, kx, u)
     discard p.eval()
     same(Ggauge(p[0]), kx*ky)
     same(Gfield(p[1]), shift(linkField(kx*ky, 0), 1, 1))
@@ -1227,6 +1186,8 @@ suite "graph shared storage plans":
     check Gfield(p[1]).fval.s.data != fp
 
   test "injected and subset outputs clear dirty reused complements":
+    let (x, kx) = pair(rt, keep, g)
+    let (y, ky) = pair(rt, keep, u)
     let a = x*y
     let inj = injectLink(linkField(a, 0), 1, x)
     let sub = maskSubset(0, 0, inj+x)
@@ -1240,18 +1201,15 @@ suite "graph shared storage plans":
       check norm2(Ggauge(p[0]).gval[0]) == 0.0
       check norm2(Ggauge(p[1]).gval[1]) == 0.0
       if pass == 0:
-        x.update(u)
-        kx.update(u)
+        updateBoth(x, kx, u)
       elif pass == 1:
-        x.update(g)
-        kx.update(g)
+        updateBoth(x, kx, g)
     check p.stats.reuses > 0
 
   test "changing condition selections evaluates only active branches":
     let sel = rt.toGvalue(1)
     let flag = rt.toGvalue(1)
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (f, kf) = pair(rt, keep, g[0])
     let good = step(f)
     let bad = mayFail(f, flag)
     let z = cond(sel, good, bad)
@@ -1264,8 +1222,7 @@ suite "graph shared storage plans":
     sel.update(0)
     discard p.eval()
     same(Gfield(p[0]), 1.125*kf)
-    f.update(u[0])
-    kf.update(u[0])
+    updateBoth(f, kf, u[0])
     sel.update(1)
     flag.update(1)
     discard p.eval()
@@ -1300,6 +1257,8 @@ suite "graph shared storage plans":
     check Gscalar(p[0]).sval == 0.0
 
   test "nested identity applications keep shared captures live":
+    let (x, kx) = pair(rt, keep, g)
+    let (y, ky) = pair(rt, keep, u)
     let v = Ggauge(x.newOneOf)
     let id = lambda(v, v)
     let a = x*y
@@ -1317,13 +1276,8 @@ suite "graph shared storage plans":
       same(Ggauge(p[1]), ka)
       same(Ggauge(p[2]), Ggauge(grad(ks, kx)))
       if pass == 0:
-        y.update(g)
-        ky.update(g)
-    let n = forwards(rt)
-    let raw = getRawMemAllocated()
-    discard p.eval()
-    check forwards(rt) == n
-    check getRawMemAllocated() == raw
+        updateBoth(y, ky, g)
+    cached(rt, p)
 
   test "joint scalar roots keep lambda binders separate in either root order":
     let v = rt.toGvalue(2.0)
@@ -1421,15 +1375,11 @@ suite "graph shared storage plans":
     let kw = ka*ka
     for pass in 0..2:
       if pass == 1:
-        v.update(u[0])
-        kv.update(u[0])
-        arg.update(g[0])
-        ka.update(g[0])
+        updateBoth(v, kv, u[0])
+        updateBoth(arg, ka, g[0])
       elif pass == 2:
-        v.update(m[0])
-        kv.update(m[0])
-        arg.update(u[0])
-        ka.update(u[0])
+        updateBoth(v, kv, m[0])
+        updateBoth(arg, ka, u[0])
       discard p.eval()
       same(Gfield(p[0]), want)
       same(Gfield(p[1]), kw)
@@ -1444,8 +1394,9 @@ suite "graph shared storage plans":
       check call.runCount == 0
 
   test "conditional lambda changes select the current value and derivative":
-    let sel = rt.toGvalue(1)
-    let ksel = keep.toGvalue(1)
+    let (x, kx) = pair(rt, keep, g)
+    let (y, ky) = pair(rt, keep, u)
+    let (sel, ksel) = pair(rt, keep, 1)
     let v = Ggauge(x.newOneOf)
     let kv = Ggauge(kx.newOneOf)
     let fn = cond(sel, lambda(v, v+y), lambda(v, v*v+y))
@@ -1454,8 +1405,7 @@ suite "graph shared storage plans":
     let kz = Ggauge(apply(kfn, kx))
     let p = plan(z, grad(norm2(z), x))
     for flag in [1, 0, 1, 0]:
-      sel.update(flag)
-      ksel.update(flag)
+      updateBoth(sel, ksel, flag)
       discard p.eval()
       same(Ggauge(p[0]), kz)
       same(Ggauge(p[1]), Ggauge(grad(norm2(kz), kx)))
@@ -1488,17 +1438,13 @@ suite "graph shared storage plans":
       check p.stats.sourceAudits == audits
       check sel.runCount == 0
       check fn.runCount == 0
-    let n = forwards(rt)
-    let raw = getRawMemAllocated()
-    discard p.eval()
-    check forwards(rt) == n
-    check getRawMemAllocated() == raw
+    cached(rt, p)
     check p.stats.sourceAudits == audits
 
   test "alternating function bodies reuse warmed shift and hop work":
+    let (y, ky) = pair(rt, keep, u)
     let sel = rt.toGvalue(1)
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (f, kf) = pair(rt, keep, g[0])
     let v = Gfield(f.newOneOf)
     let fn = cond(sel,
       lambda(v, shift(v, 0, 1)), lambda(v, hop(y, v, 1, 1)))
@@ -1511,15 +1457,11 @@ suite "graph shared storage plans":
       let first = (pass and 1) == 0
       sel.update(if first: 1 else: 0)
       if pass mod 3 == 0:
-        f.update(u[0])
-        kf.update(u[0])
-        y.update(g)
-        ky.update(g)
+        updateBoth(f, kf, u[0])
+        updateBoth(y, ky, g)
       else:
-        f.update(g[0])
-        kf.update(g[0])
-        y.update(u)
-        ky.update(u)
+        updateBoth(f, kf, g[0])
+        updateBoth(y, ky, u)
       let raw = getRawMemAllocated()
       discard p.eval()
       if pass == 1:
@@ -1534,6 +1476,8 @@ suite "graph shared storage plans":
       same(Gfield(p[0]), if first: shifted else: hopped)
 
   test "manual nonleaf updates remain authoritative until an input changes":
+    let (x, kx) = pair(rt, keep, g)
+    let (y, ky) = pair(rt, keep, u)
     let a = x*x
     let ka = kx*kx
     let z = a+y
@@ -1541,8 +1485,7 @@ suite "graph shared storage plans":
     let p = plan(z)
     discard p.eval()
     same(Ggauge(p[0]), kz)
-    a.update(u)
-    ka.update(u)
+    updateBoth(a, ka, u)
     discard p.eval()
     same(Ggauge(p[0]), kz)
     check a.valueOverride
@@ -1560,8 +1503,7 @@ suite "graph shared storage plans":
     same(Ggauge(p[0]), kz)
     check rt.boundaryRevision == rev
     check p.stats.sourceAudits == audits
-    x.update(u)
-    kx.update(u)
+    updateBoth(x, kx, u)
     discard p.eval()
     same(Ggauge(p[0]), kz)
     check not a.valueOverride
@@ -1576,8 +1518,7 @@ suite "graph shared storage plans":
     check getRawMemAllocated() == raw
 
   test "published result updates and lost readiness or storage force reevaluation":
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (f, kf) = pair(rt, keep, g[0])
     let kz = 1.125*(1.125*kf)
     let p = plan(step(step(f)))
     discard p.eval()
@@ -1620,8 +1561,7 @@ suite "graph shared storage plans":
     check getRawMemAllocated() == raw
 
   test "ordinary input readiness and explicit storage replacement refresh the plan":
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (f, kf) = pair(rt, keep, g[0])
     let kz = 1.125*kf
     let p = plan(step(f))
     discard p.eval()
@@ -1643,8 +1583,7 @@ suite "graph shared storage plans":
     check f.epoch == ep
     sameRaw(data, g[0])
     # An authoritative leaf has no producer; its owner supplies replacement data.
-    f.update(u[0])
-    kf.update(u[0])
+    updateBoth(f, kf, u[0])
     check f.hasStorage
     check f.valueReady
     check f.epoch > ep
@@ -1660,8 +1599,7 @@ suite "graph shared storage plans":
     check forwards(rt) == n
 
   test "lost computed override storage expires its boundary and advances freshness":
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (f, kf) = pair(rt, keep, g[0])
     let a = step(f)
     a.update(u[0])
     let p = plan(step(a))
@@ -1695,8 +1633,7 @@ suite "graph shared storage plans":
     discard p.eval()
     check forwards(rt) == warm
     check p.stats.sourceAudits == checked
-    f.update(u[0])
-    kf.update(u[0])
+    updateBoth(f, kf, u[0])
     let next = p.stats.forwards
     discard p.eval()
     check p.stats.forwards-next == 2
@@ -1814,8 +1751,7 @@ suite "graph shared storage plans":
     let original = capture.fval
     let saved = snapshot(original)
     let capRuns = capture.runCount
-    let sel = rt.toGvalue(1)
-    let ksel = keep.toGvalue(1)
+    let (sel, ksel) = pair(rt, keep, 1)
     let v = Gfield(f.newOneOf)
     let fn = lambdaParam(v, Gfield(v.newOneOf))
     let produced = cond(sel,
@@ -1826,8 +1762,7 @@ suite "graph shared storage plans":
     let p = plan(z)
     let want = cond(ksel, kf*kf+cap, kf+cap)
     for flag in [1, 0]:
-      sel.update(flag)
-      ksel.update(flag)
+      updateBoth(sel, ksel, flag)
       discard p.eval()
       same(Gfield(p[0]), want)
       check produced.runCount == oldRuns
@@ -1839,13 +1774,10 @@ suite "graph shared storage plans":
     fn.valCopy(rebound)
     let newRuns = rebound.runCount
     let next = cond(ksel, cap*kf, cap+kf*kf)
-    f.update(u[0])
-    kf.update(u[0])
-    c.update(g[0])
-    kc.update(g[0])
+    updateBoth(f, kf, u[0])
+    updateBoth(c, kc, g[0])
     for flag in [1, 0]:
-      sel.update(flag)
-      ksel.update(flag)
+      updateBoth(sel, ksel, flag)
       discard p.eval()
       same(Gfield(p[0]), next)
       check rebound.runCount == newRuns
@@ -1855,6 +1787,8 @@ suite "graph shared storage plans":
       sameRaw(original, saved)
 
   test "cloned sources and separate plans own independent output buffers":
+    let (x, kx) = pair(rt, keep, g)
+    let (y, ky) = pair(rt, keep, u)
     let z = x*y+x
     let kz = kx*ky+kx
     let cloned = cloneValues([Gvalue(z)])
@@ -1865,8 +1799,7 @@ suite "graph shared storage plans":
     let output = Ggauge(p[0]).gval
     let saved = snapshot(output[0])
     check output[0].s.data != Ggauge(q[0]).gval[0].s.data
-    x.update(u)
-    kx.update(u)
+    updateBoth(x, kx, u)
     discard q.eval()
     same(Ggauge(q[0]), kz)
     sameRaw(output[0], saved)
@@ -1875,9 +1808,9 @@ suite "graph shared storage plans":
     check Ggauge(p[0]).gval[0].s.data != Ggauge(q[0]).gval[0].s.data
 
   test "published leaves and packed selections refuse reads before the first execution":
+    let (x, kx) = pair(rt, keep, g)
     let a = rt.toGvalue(2.0)
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (f, kf) = pair(rt, keep, g[0])
     let p = plan(2.0*a, x*x, packed(step(f), a*a))
     let s = Gscalar(p[0])
     let outg = Ggauge(p[1])
@@ -2052,10 +1985,10 @@ suite "graph shared storage plans":
     check Gscalar(outer[0]).sval == 3.0
 
   test "packed selections refuse failed publications and recover together":
+    let (x, kx) = pair(rt, keep, g)
     let a = rt.toGvalue(2.0)
     let flag = rt.toGvalue(0)
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (f, kf) = pair(rt, keep, g[0])
     let p = plan(packed(x*x, mayFail(f, flag), a*a))
     discard p.eval()
     let pub = Gmulti(p[0])
@@ -2074,8 +2007,7 @@ suite "graph shared storage plans":
         discard v.eval
     flag.update(0)
     a.update(3.0)
-    f.update(u[0])
-    kf.update(u[0])
+    updateBoth(f, kf, u[0])
     discard p.eval()
     same(outg.eval, kx*kx)
     same(outf.eval, 1.125*kf)
@@ -2083,8 +2015,7 @@ suite "graph shared storage plans":
 
   test "a failed forward can retry after dirtying a reusable buffer":
     let flag = rt.toGvalue(1)
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (f, kf) = pair(rt, keep, g[0])
     let z = step(mayFail(step(f), flag))
     let p = plan(z)
     expect(GraphError):
@@ -2093,16 +2024,14 @@ suite "graph shared storage plans":
     flag.update(0)
     discard p.eval()
     same(Gfield(p[0]), 1.125*(1.125*(1.125*kf)))
-    f.update(u[0])
-    kf.update(u[0])
+    updateBoth(f, kf, u[0])
     let raw = getRawMemAllocated()
     discard p.eval()
     check getRawMemAllocated() == raw
     same(Gfield(p[0]), 1.125*(1.125*(1.125*kf)))
 
   test "dedicated partial-write buffers clear complements after failure and updates":
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (f, kf) = pair(rt, keep, g[0])
     let flag = rt.toGvalue(1)
     let parity = rt.toGvalue(0)
     let p = plan(dedicatedSubset(f, flag, parity))
@@ -2114,8 +2043,7 @@ suite "graph shared storage plans":
     same(Gfield(p[0]), maskSubset(0, kf))
     check norm2(Gfield(p[0]).fval.odd) == 0.0
     parity.update(1)
-    f.update(u[0])
-    kf.update(u[0])
+    updateBoth(f, kf, u[0])
     discard p.eval()
     check p.stats.buffers == 0
     same(Gfield(p[0]), maskSubset(1, kf))
@@ -2123,8 +2051,7 @@ suite "graph shared storage plans":
 
   test "failed override validation invalidates previously published outputs":
     let flag = rt.toGvalue(0)
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (f, kf) = pair(rt, keep, g[0])
     let overridden = mayFail(f, flag)
     overridden.update(u[0])
     let p = plan(step(overridden))
@@ -2157,6 +2084,8 @@ suite "graph shared storage plans":
     same(use.eval, norm2(1.125*(1.125*kf)))
 
   test "cache clearing preserves published outputs and plan reuse":
+    let (x, kx) = pair(rt, keep, g)
+    let (y, ky) = pair(rt, keep, u)
     let v = Ggauge(x.newOneOf)
     let z = Ggauge(apply(lambda(v, v*v+y), x))
     let kz = kx*kx+ky
@@ -2172,13 +2101,14 @@ suite "graph shared storage plans":
     GC_fullCollect()
     same(output, kz)
     same(d, Ggauge(grad(ks, kx)))
-    x.update(u)
-    kx.update(u)
+    updateBoth(x, kx, u)
     discard p.eval()
     same(Ggauge(p[0]), kz)
     same(Ggauge(p[1]), Ggauge(grad(ks, kx)))
 
   test "double plan clear preserves raw outputs across a new private generation":
+    let (x, kx) = pair(rt, keep, g)
+    let (y, ky) = pair(rt, keep, u)
     let v = Ggauge(x.newOneOf)
     let st = stapleSum(x, [y])
     let z = Ggauge(apply(lambda(v, v*v+st), x))
@@ -2234,10 +2164,8 @@ suite "graph shared storage plans":
     for mu in 0..<output.len:
       sameRaw(output[mu], saved[mu])
     sameRaw(field, sf)
-    x.update(u)
-    kx.update(u)
-    y.update(g)
-    ky.update(g)
+    updateBoth(x, kx, u)
+    updateBoth(y, ky, g)
     discard p.eval()
     same(Ggauge(p[0]), kz)
     same(Gfield(p[1]), kf)
@@ -2252,8 +2180,7 @@ suite "graph shared storage plans":
 
   test "a failed plan can clear twice before a successful new generation":
     let flag = rt.toGvalue(1)
-    let f = rt.toGvalue(g[0])
-    let kf = keep.toGvalue(g[0])
+    let (f, kf) = pair(rt, keep, g[0])
     let p = plan(step(mayFail(step(f), flag)))
     expect(GraphError):
       discard p.eval()
@@ -2278,8 +2205,10 @@ suite "graph shared storage plans":
     check forwards(rt) == n
 
   test "grouped stout caches retain mixed alpha derivatives across updates":
-    let a = rt.toGvalue(0.04)
-    let ka = keep.toGvalue(0.04)
+    let (x, kx) = pair(rt, keep, g)
+    let (y, ky) = pair(rt, keep, u)
+    let (b, kb) = pair(rt, keep, m)
+    let (a, ka) = pair(rt, keep, 0.04)
     let both = stoutUpdateLogDetJ(x, y, a, 0, 0)
     let sep = stoutUpdate(x, y, a, 0, 0)
     let score = redot(both.Wnew, b) + 0.3*both.lj
@@ -2295,13 +2224,10 @@ suite "graph shared storage plans":
     let p = plan(both.Wnew, both.lj, sep, dw, da, mixed)
     var bytes = 0
     for pass, rho in [0.04, 0.065, 0.04]:
-      a.update(rho)
-      ka.update(rho)
+      updateBoth(a, ka, rho)
       if pass == 1:
-        x.update(u)
-        kx.update(u)
-        y.update(g)
-        ky.update(g)
+        updateBoth(x, kx, u)
+        updateBoth(y, ky, g)
       let before = counts(rt)
       discard p.eval()
       once(rt, before)
@@ -2318,10 +2244,11 @@ suite "graph shared storage plans":
     check p.stats.reuses > 0
 
   test "stout conditional and application results carry plain gauge values":
-    let a = rt.toGvalue(0.04)
-    let ka = keep.toGvalue(0.04)
-    let sel = rt.toGvalue(1)
-    let ksel = keep.toGvalue(1)
+    let (x, kx) = pair(rt, keep, g)
+    let (y, ky) = pair(rt, keep, u)
+    let (b, kb) = pair(rt, keep, m)
+    let (a, ka) = pair(rt, keep, 0.04)
+    let (sel, ksel) = pair(rt, keep, 1)
     let v = Ggauge(x.newOneOf)
     let kv = Ggauge(kx.newOneOf)
     let cached = stoutUpdate(x, y, a, 1, 1)
@@ -2344,13 +2271,10 @@ suite "graph shared storage plans":
     let p = plan(call, choice, composed, da, dw)
     var bytes = 0
     for pass, flag in [1, 0, 1, 0]:
-      sel.update(flag)
-      ksel.update(flag)
-      a.update(0.04 + 0.005*float(pass))
-      ka.update(0.04 + 0.005*float(pass))
+      updateBoth(sel, ksel, flag)
+      updateBoth(a, ka, 0.04 + 0.005*float(pass))
       if pass == 1:
-        y.update(g)
-        ky.update(g)
+        updateBoth(y, ky, g)
       discard p.eval()
       same(Ggauge(p[0]), kcall)
       same(Ggauge(p[1]), kchoice)
@@ -2364,14 +2288,16 @@ suite "graph shared storage plans":
         check p.stats.arenaBytes == bytes
 
   test "warm stencil work rebinds gathered and staple input buffers":
+    let (x, kx) = pair(rt, keep, g)
+    let (y, ky) = pair(rt, keep, u)
     let f = linkField(x, 0)
     let kf = linkField(kx, 0)
-    let moved = gather(f, @[1, 0])
-    let km = gather(kf, @[1, 0])
-    let back = scatter(moved, @[1, 0])
-    let kback = scatter(km, @[1, 0])
-    let prod = gp(moved, linkField(x, 1), @[0, -1], true)
-    let kp = gp(km, linkField(kx, 1), @[0, -1], true)
+    let moved = gather(f, @[1, 0, 0, 0])
+    let km = gather(kf, @[1, 0, 0, 0])
+    let back = scatter(moved, @[1, 0, 0, 0])
+    let kback = scatter(km, @[1, 0, 0, 0])
+    let prod = gp(moved, linkField(x, 1), @[0, -1, 0, 0], true)
+    let kp = gp(km, linkField(kx, 1), @[0, -1, 0, 0], true)
     let staple = stapleSum(x, [y])
     let kst = stapleSum(kx, [ky])
     let action = plaqSum(x)
@@ -2380,15 +2306,11 @@ suite "graph shared storage plans":
     var bytes = 0
     for pass in 0..2:
       if pass == 1:
-        x.update(u)
-        kx.update(u)
-        y.update(m)
-        ky.update(m)
+        updateBoth(x, kx, u)
+        updateBoth(y, ky, m)
       elif pass == 2:
-        x.update(g)
-        kx.update(g)
-        y.update(u)
-        ky.update(u)
+        updateBoth(x, kx, g)
+        updateBoth(y, ky, u)
       let before = counts(rt)
       discard p.eval()
       once(rt, before)
@@ -2403,6 +2325,9 @@ suite "graph shared storage plans":
         check p.stats.arenaBytes == bytes
 
   test "distinct staple nodes share one compatible plan workspace":
+    let (x, kx) = pair(rt, keep, g)
+    let (y, ky) = pair(rt, keep, u)
+    let (b, kb) = pair(rt, keep, m)
     let a = stapleSum(x, [y])
     let c = stapleSum(y, [b])
     let d = stapleSum(x+y, [x+b])
@@ -2413,15 +2338,11 @@ suite "graph shared storage plans":
     var bytes: int
     for pass in 0..2:
       if pass == 1:
-        x.update(u)
-        kx.update(u)
-        y.update(m)
-        ky.update(m)
+        updateBoth(x, kx, u)
+        updateBoth(y, ky, m)
       elif pass == 2:
-        x.update(g)
-        kx.update(g)
-        b.update(u)
-        kb.update(u)
+        updateBoth(x, kx, g)
+        updateBoth(b, kb, u)
       let raw = getRawMemAllocated()
       discard p.eval()
       check p.stats.workspaces == 1
@@ -2435,11 +2356,7 @@ suite "graph shared storage plans":
       same(Ggauge(p[0]), ka)
       same(Ggauge(p[1]), kc)
       same(Ggauge(p[2]), kd)
-    let n = forwards(rt)
-    let raw = getRawMemAllocated()
-    discard p.eval()
-    check forwards(rt) == n
-    check getRawMemAllocated() == raw
+    cached(rt, p)
     check p.stats.workspaces == 1
     check p.stats.workspaceBytes == bytes
 

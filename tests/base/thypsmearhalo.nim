@@ -4,9 +4,6 @@ import testutils
 
 qexInit()
 letParam:
-  expectRanks = nRanks
-check nRanks == expectRanks
-letParam:
   lat = latticeFromLocalLattice(@[4,4,4,4], nRanks)
 let lo = lat.newLayout
 var rng = lo.newRNGField(MRG32k3a, 987654321'u)

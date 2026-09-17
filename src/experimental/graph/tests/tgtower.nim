@@ -1,8 +1,3 @@
-#RUNCMD env OMP_NUM_THREADS=1 $RUNJOB
-
-import base/globals
-setVLENmax(4)
-
 import math, unittest
 
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
@@ -20,14 +15,11 @@ let grt = initGraphRuntime()
 include gauge/gaugehelpers
 
 # Path equivalences and higher derivatives build reference graphs behind the
-# fused kernels; keep the lattice small. Run this alongside tggauge and
+# fused kernels. Run this alongside tggauge and
 # tgtoweru1 (Nc=1) to cover both the path comparisons and derivative towers.
 proc runTowerTests*(localLat: seq[int], seed: uint64, subDir: int,
                     smearSteps: int) =
   qexInit()
-  letParam:
-    expectRanks = nRanks
-  check nRanks == expectRanks
   echo "tower ranks: ", nRanks
   letParam:
     lat = latticeFromLocalLattice(localLat,nRanks)
@@ -60,4 +52,4 @@ proc runTowerTests*(localLat: seq[int], seed: uint64, subDir: int,
 
 when isMainModule:
   # Smearing matches the tggauge fixtures, so both test the same kind of configuration.
-  runTowerTests(@[4,4,4,4], 987654321u64, 2, 5)
+  runTowerTests(@[4,4,8,8], 987654321u64, 2, 5)

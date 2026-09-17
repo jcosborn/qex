@@ -23,8 +23,8 @@ template check(ii: tuple[filename:string, line:int, column:int], ast: string, dz
 
 template ckforce(s: untyped, f: untyped, x: untyped, p: untyped) =
   let t = grt.toGvalue(0.0)
-  # S(exp(t*p)*x): wider steps limit cancellation; five levels cancel h^2 through h^8.
-  let (dsdt, e) = ndiff(s(exp(t*p)*x), t, 2.0, ordMax=5)
+  # S(exp(t*p)*x): wider steps limit cancellation; six levels cancel h^2 through h^10.
+  let (dsdt, e) = ndiff(s(exp(t*p)*x), t, 2.0, ordMax=6)
   let pdotf = eval(redot(p, f(x))).sval
   check(instantiationInfo(), astTostr(s(x) -> f(x)), dsdt, e, pdotf)
 

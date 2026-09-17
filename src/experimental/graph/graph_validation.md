@@ -1,50 +1,48 @@
 # Graph validation and benchmarks
 
-See [Graph design](../src/experimental/graph/DESIGN.md) for runtime and numerical
+See [Graph design](DESIGN.md) for runtime and numerical
 contracts.
 
-## Automated graph coverage
+## Generated test scripts
 
-The [GitHub workflow](../.github/workflows/test.yml) builds and runs a selected
-graph gate for every combination of Nim `v2.0.16`, `version-2-2` and `devel` with
-Open MPI and MPICH. These fixtures are built with `--assertions:on`:
-
-- One rank and one thread: `tgraph`, `tfunctional`, `tgvalueu1`, `tgstorageu1`,
-  `tgstorage`, `tgjac`, `tghmcu1` and `tgstouttrainu1`.
-- One rank and two threads: `tgstorage`, with the actual thread count checked
-  in its runtime output.
-- Two ranks and one thread per rank: `tgplaqstencil` and `tstencilmpi`, launched
-  with `mpiexec -n 2` and `-expectRanks:2`. Their global lattices are `4,4,4` and
-  `8,4,4,4`, with rank geometries `2,1,1` and `2,1,1,1`, respectively. Runtime
-  output also confirms the rank count.
-- SSE intrinsics on x86-64: `tmatrixFields` and `tgmatrix`, built with `-d:SSE`
-  in `build_sse` with separate binaries and cache, and run with one rank and one
-  thread. `tmatrixFields` receives no arguments because unittest filtering is
-  active in that driver.
-
-Each invocation must exit successfully, report at least one passing case and
-report no failed cases. It has a timeout of five minutes, followed by forced
-termination after ten seconds. The selected gate runs separately from the full
-optional test generation below.
-
-## Optional test generation
-
-`make tests experimental` builds optional fixtures and generates
-`testscript-experimental.sh`; `make tests experimental/graph` selects this group.
-The generated script uses `RUNJOB` for MPI-capable tests and `RUN1` for tests
-intended for one rank. From an MPI-enabled configured build directory, generate
-and run the optional script explicitly:
+The [workflow](../../../.github/workflows/test.yml) uses the ordinary test generator:
 
 ```sh
-make tests experimental/graph
-RUNJOB='mpiexec -n 2' RUN1='mpiexec -n 1' ./testscript-experimental.sh
+make ARGS="--assertions:on" tests experimental
+OMP_NUM_THREADS=1 RUNJOB='mpiexec -n 1' RUN1='mpiexec -n 1' ./testscript-experimental.sh
+OMP_NUM_THREADS=2 RUNJOB='mpiexec -n 2' RUN1='mpiexec -n 1' ./testscript-experimental.sh
 ```
 
-QEX graph test drivers using `tests/helpers` disable unittest's automatic command-line name
-filtering. Their QEX options use `-OPTION:VALUE`, and all unittest cases execute;
-no trailing `'*'` selector is needed. Check nonzero executed case counts as well
-as exit status. Generated commands do not set `-expectRanks`, so explicit MPI
-gates should supply the intended rank count and an appropriate geometry.
+| Selection | Sources | Generated script |
+| --- | --- | --- |
+| `make tests` | `tests/*/t*.nim` and registered extras | `testscript.sh` |
+| `make tests experimental` | `src/experimental/*/tests/t*.nim` | `testscript-experimental.sh` |
+| `make tests experimental/graph` | Graph drivers only | `testscript-experimental.sh` |
+
+All experimental drivers run across the Nim `v2.0.16`, `version-2-2`, `devel`
+× Open MPI, MPICH matrix. Each experimental test invocation has a
+20-minute timeout with forced termination after ten seconds; each workflow step
+has a 45-minute bound.
+
+General gauge fixtures default to local `4,4,8,8` where practical and inherit the
+configured SIMD width and thread count. Intentional 2D U(1) wrappers set their own
+SIMD cap before importing shared tests. The larger SU(3) derivative graphs use:
+
+| Fixture | Default geometry |
+| --- | --- |
+| Training | Local `4^4`; the joint arena already exceeds 3 GB |
+| Jacobian | Global `4^4`; two ranks split the main lattice |
+| Uniform Jacobian oracle | Local extents twice the configured inner geometry |
+
+For the four-dimensional oracle, $L_\mu=2I_\mu$ and
+$V_{local}=16\,VLEN$, so every outer extent is even without capping SIMD width.
+`tgloops`/`tgjac` collect graphs between case frames. All three fixtures restore
+the caller's raw-allocation GC threshold on exit.
+
+`RUNJOB` launches ordinary tests. An explicit `#RUNCMD $RUN1` selects one rank
+for a driver that needs it. Graph helpers reserve command-line arguments for
+QEX (`-OPTION:VALUE`) and disable unittest name filtering. The generated script
+aggregates exit failures and returns nonzero if any driver fails.
 
 ## Graph storage benchmark
 

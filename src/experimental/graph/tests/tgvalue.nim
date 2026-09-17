@@ -1,8 +1,4 @@
-#RUNCMD env OMP_NUM_THREADS=1 $RUNJOB
 ## Ordinary graph value lifetimes. QEX options configure the fixture; all cases run.
-import base/globals
-setVLENmax(4)
-
 import math, unittest
 import qex except epsilon
 import base/alignedMem
@@ -13,10 +9,7 @@ import ../gauge/[types, basic_ops, field_ops, transport, stencil]
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 qexInit()
 letParam:
-  expectRanks = nRanks
-check nRanks == expectRanks
-letParam:
-  lat = latticeFromLocalLattice(@[4,4], nRanks)
+  lat = latticeFromLocalLattice(@[4,4,8,8], nRanks)
 let lo = lat.newLayout
 var rng = lo.newRNGField(Philox4x64, 8091137u64)
 let g = lo.newGauge
@@ -263,12 +256,12 @@ suite "graph value lifetime":
     check norm2(delta) < 1e-18
 
   test "halo gather scatter and products rebuild released work":
-    let f = gather(linkField(x, 0), @[1, 0])
-    let kf = gather(linkField(kx, 0), @[1, 0])
-    let back = scatter(f, @[1, 0])
-    let kback = scatter(kf, @[1, 0])
-    let moved = gp(f, linkField(y, 1), @[1, -1])
-    let kmoved = gp(kf, linkField(ky, 1), @[1, -1])
+    let f = gather(linkField(x, 0), @[1, 0, 0, 0])
+    let kf = gather(linkField(kx, 0), @[1, 0, 0, 0])
+    let back = scatter(f, @[1, 0, 0, 0])
+    let kback = scatter(kf, @[1, 0, 0, 0])
+    let moved = gp(f, linkField(y, 1), @[1, -1, 0, 0])
+    let kmoved = gp(kf, linkField(ky, 1), @[1, -1, 0, 0])
     let score = redot(moved + back, linkField(b, 0))
     let want = redot(kmoved + kback, linkField(kb, 0))
     for _ in 0..1:

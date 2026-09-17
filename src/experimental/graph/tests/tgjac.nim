@@ -1,26 +1,33 @@
-#RUNCMD env OMP_NUM_THREADS=1 $RUN1
-## Small fixtures for stout logdet and grouped derivative closure.
-import base/globals
-setVLENmax(4)
-
+## Stout logdet and grouped derivative closure.
 import math, unittest
 import helpers
 import ../../../../tests/base/scaledexpRef
 import qex except epsilon
+import base/alignedMem
 import algorithms/numdiff
 import maths/groupOps
 import ../[core, scalar, gauge]
 import ../functional
 import ../hmcgauge/ftstout
 
-proc runJacTests*(localLat: seq[int]) =
+# A completed case must leave the conservative GC stack before collection.
+proc runCase(f: proc()) {.noinline.} = f()
+
+template test(name, body: untyped) =
+  runCase(proc() =
+    unittest.test name:
+      body)
+  GC_fullCollect()
+
+proc runJacTests*(lat0: seq[int]) =
   qexInit()
   defer: qexFinalize()
+  let rawGcThreshold = getRawMemGcThreshold()
+  defer: setRawMemGcThreshold(rawGcThreshold)
+  # Live derivative graphs exceed the allocator trigger; collect between cases.
+  setRawMemGcThreshold(int.high)
   letParam:
-    expectRanks = nRanks
-  check nRanks == expectRanks
-  letParam:
-    lat = latticeFromLocalLattice(localLat,nRanks)
+    lat = lat0
   let lo = lat.newLayout
   var rng = lo.newRNGField(Philox4x64, 734991'u64)
   let g = lo.newGauge
@@ -205,7 +212,10 @@ proc runJacTests*(localLat: seq[int]) =
 
   when g[0][0].nrows == 3:
     let refs = buildRefs()
-    let sl = latticeFromLocalLattice(@[4,4],nRanks).newLayout
+    # Uniform references need two outer sites per direction, at the configured SIMD width.
+    var small = newSeq[int](lo.nDim)
+    for i, n in lo.innerGeom: small[i] = 2*n
+    let sl = latticeFromLocalLattice(small,nRanks).newLayout
     type M = MatrixArray[3,3,ComplexType[float64]]
 
     proc sample(name: string): CaseRef =
@@ -444,4 +454,5 @@ proc runJacTests*(localLat: seq[int]) =
             checkUpdate(name & " update field pullback alpha",first)
 
 when isMainModule:
-  runJacTests(@[4,4])
+  # Both derivative graphs remain live; use a bounded global lattice across ranks.
+  runJacTests(@[4,4,4,4])

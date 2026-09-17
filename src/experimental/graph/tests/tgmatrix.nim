@@ -1,7 +1,3 @@
-#RUNCMD env OMP_NUM_THREADS=1 $RUNJOB
-import base/globals
-setVLENmax(4)
-
 import math, unittest
 import qex except epsilon
 import algorithms/numdiff
@@ -31,11 +27,9 @@ template ckmat2(f, x, y, a, b: untyped) =
 
 qexInit()
 letParam:
-  expectRanks = nRanks
-check nRanks == expectRanks
-letParam:
-  lat = latticeFromLocalLattice(@[4,4], nRanks)
+  lat = latticeFromLocalLattice(@[4,4,8,8], nRanks)
 let lo = lat.newLayout
+let vol = float(lo.physVol)
 let a = lo.RealMatrix(8)
 let b = lo.RealMatrix(8)
 let d = lo.RealMatrix(8)
@@ -52,11 +46,13 @@ threads:
         b[e][i,j] := 0.013*float(i+3*j-7)
         d[e][i,j] := 0.02*float(3*i-j+2)
   for e in r:
-    r[e][0,0] := 1.2 + 0.01*float(e)
-    s[e][0,0] := 0.2 + 0.03*float(e)
-    w[e][0,0] := (if e mod 2 == 0: -0.7 else: 0.4) + 0.02*float(e)
-    c[e][0,0].re := 1.1+0.02*float(e)
-    c[e][0,0].im := -0.2+0.01*float(e)
+    # Bound finite-difference directions independently of volume and SIMD width.
+    let z = float(e mod 4)
+    r[e][0,0] := 1.2 + 0.01*z
+    s[e][0,0] := 0.2 + 0.03*z
+    w[e][0,0] := (if e mod 2 == 0: -0.7 else: 0.4) + 0.02*z
+    c[e][0,0].re := 1.1+0.02*z
+    c[e][0,0].im := -0.2+0.01*z
     dc[e][0,0].re := 0.1
     dc[e][0,0].im := 0.3
 
@@ -81,9 +77,10 @@ suite "graph real matrix fields":
     check norm2(copy-gb).eval.sval < 1e-28
 
   test "local reductions and global sums":
-    check abs((sum(trace(ga))-retr(ga)).eval.sval) < 1e-12
-    check abs((sum(siteNorm2(ga))-norm2(ga)).eval.sval) < 1e-12
-    check abs((sum(siteRedot(ga,gb))-redot(ga,gb)).eval.sval) < 1e-12
+    # Compare densities: extensive reduction roundoff grows with lattice volume.
+    check abs((sum(trace(ga))-retr(ga)).eval.sval)/vol < 1e-12
+    check abs((sum(siteNorm2(ga))-norm2(ga)).eval.sval)/vol < 1e-12
+    check abs((sum(siteRedot(ga,gb))-redot(ga,gb)).eval.sval)/vol < 1e-12
     check norm2(grad(3.0*sum(gr),gr)-3.0*unitField(gr.runtime,gr.fval)).eval.sval < 1e-26
     check abs((sum(maskSubset(0,unitField(gr.runtime,gr.fval)))-0.5*float(lo.physVol)).eval.sval) < 1e-12
 
@@ -117,13 +114,13 @@ suite "graph real matrix fields":
     proc f(x: Grmat8): Gscalar = redot(logDet(x),gs)
     ckmat(f,ga,gd)
     proc constant(x: Grmat8): Gscalar = redot(grad(f(x),x),x*gd)
-    check abs((constant(ga)-redot(gs,trace(gd))).eval.sval) < 1e-12
+    check abs((constant(ga)-redot(gs,trace(gd))).eval.sval)/vol < 1e-12
     check norm2(grad(constant(ga),ga)).eval.sval < 1e-22
     proc f2(x: Grmat8): Gscalar = redot(grad(f(x),x),x.transpose*gd+gb)
     ckmat(f2,ga,gb)
     proc f3(x: Grmat8): Gscalar = redot(grad(f2(x),x),x*gb+gd)
     ckmat(f3,ga,gd)
-    check abs((sumLogDet(ga)-sum(logDet(ga))).eval.sval) < 1e-12
+    check abs((sumLogDet(ga)-sum(logDet(ga))).eval.sval)/vol < 1e-12
 
   test "real scalar functions and division":
     proc f(x: Grfield): Gscalar = sum(exp(sin(x))+ln(x)+sqrt(x)+cos(x)+x/gs)

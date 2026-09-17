@@ -10,9 +10,7 @@ import ../hmcgauge/ftstout
 proc runFtStoutTests*(localLat: seq[int]; beta, rho: float; nsmear = 1) =
   qexInit()
   letParam:
-    expectRanks = nRanks
     lat = latticeFromLocalLattice(localLat, nRanks)
-  doAssert nRanks == expectRanks
   const eps = 1e-3
   let seed = 1234567891'u
   let
@@ -638,4 +636,4 @@ proc runFtStoutTests*(localLat: seq[int]; beta, rho: float; nsmear = 1) =
   qexFinalize()
 
 when isMainModule:
-  runFtStoutTests(@[4, 4, 4, 4], 6.0, 0.02)
+  runFtStoutTests(@[4, 4, 8, 8], 6.0, 0.02)

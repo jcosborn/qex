@@ -1,8 +1,3 @@
-#RUNCMD env OMP_NUM_THREADS=1 $RUN1
-
-import base/globals
-setVLENmax(4)
-
 import math, unittest
 import qex except epsilon
 import algorithms/numdiff
@@ -24,7 +19,9 @@ template ckjet(f, x, a: untyped) =
 
 proc runJetTests*() =
   qexInit()
-  let lo = newLayout(@[4,4])
+  letParam:
+    lat = latticeFromLocalLattice(@[4,4,8,8], nRanks)
+  let lo = lat.newLayout
   var
     rng = lo.newRNGField(Philox4x64, 9040911u64)
     y = lo.newGauge

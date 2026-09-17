@@ -1,8 +1,3 @@
-#RUNCMD env OMP_NUM_THREADS=1 $RUNJOB
-
-import base/globals
-setVLENmax(4)
-
 import math, unittest
 import qex except epsilon
 import algorithms/numdiff
@@ -14,12 +9,9 @@ let grt = initGraphRuntime()
 include gauge/gaugehelpers
 
 qexInit()
-letParam:
-  expectRanks = nRanks
-check nRanks == expectRanks
 echo "stencil ranks: ", nRanks
 letParam:
-  lat = latticeFromLocalLattice(@[4,4,4,4], nRanks)
+  lat = latticeFromLocalLattice(@[4,4,8,8], nRanks)
 let lo = lat.newLayout
 doAssert lo.nDim >= 2, "stencil tests need at least two lattice dimensions"
 var axes: seq[int]

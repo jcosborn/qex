@@ -971,6 +971,6 @@ a complete explicit tuple, not partial positional completion. Validate
 
 ## 14. Validation And Benchmarks
 
-See the [validation and benchmark protocol](../../../docs/graph_validation.md)
+See the [validation and benchmark protocol](graph_validation.md)
 for test execution, counters/settings and required direct/planned fingerprint
 comparisons.

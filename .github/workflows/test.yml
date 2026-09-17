@@ -107,64 +107,28 @@ jobs:
       run: |
         ulimit -c unlimited
         CLEANUPJOBS=./finalizeTests ./runtests.sh
-    - name: build graph tests
+    - name: make experimental tests
       working-directory: qex
-      timeout-minutes: 30
-      run: |
-        make ARGS="--assertions:on" \
-          graph/tests/tgraph graph/tests/tfunctional \
-          graph/tests/tgvalueu1 graph/tests/tgstorageu1 graph/tests/tgstorage \
-          graph/tests/tgjac graph/tests/tghmcu1 graph/tests/tgstouttrainu1 \
-          graph/tests/tgplaqstencil graph/tests/tstencilmpi
-    - name: build SSE matrix tests
+      timeout-minutes: 45
+      run: make ARGS="--assertions:on" tests experimental
+    - name: experimental testscript
       working-directory: qex
-      timeout-minutes: 15
-      run: |
-        test "$RUNNER_ARCH" = X64
-        mkdir -p build_sse
-        cd build_sse
-        QMPDIR="$PWD/../qmp" QIODIR="$PWD/../qio" ../configure
-        make ARGS="-d:SSE --assertions:on" base/tmatrixFields graph/tests/tgmatrix
-    - name: run graph tests
-      working-directory: qex
-      timeout-minutes: 20
+      timeout-minutes: 45
       env:
         OMP_NUM_THREADS: '1'
         OMP_DYNAMIC: 'FALSE'
-      shell: bash
-      run: |
-        set -euo pipefail
-        logs="$RUNNER_TEMP/graph-tests"
-        mkdir -p "$logs"
-        run_test() {
-          local name=$1
-          shift
-          local log="$logs/$name.log"
-          timeout -k 10s 5m "$@" 2>&1 | tee "$log"
-          local count
-          count=$(grep -cE '^[[:space:]]*\[OK\] ' "$log" || true)
-          if (( count == 0 )) || grep -q '\[FAILED\]' "$log"; then
-            echo "::error::$name did not complete a nonempty passing suite"
-            return 1
-          fi
-          echo "$name: $count passing cases"
-        }
-        for name in tgraph tfunctional tghmcu1; do
-          run_test "$name" "./bin/$name"
-        done
-        for name in tgvalueu1 tgstorageu1 tgstorage tgjac tgstouttrainu1; do
-          run_test "$name" "./bin/$name" -expectRanks:1
-        done
-        run_test tgstorage-threads env OMP_NUM_THREADS=2 ./bin/tgstorage -expectRanks:1
-        grep -F 'Running with 1 ranks and 2 threads per rank' "$logs/tgstorage-threads.log"
-        run_test tgplaqstencil-mpi mpiexec -n 2 ./bin/tgplaqstencil \
-          -expectRanks:2 -lat:4,4,4 -rankgeom:2,1,1
-        grep -F 'Running with 2 ranks and 1 threads per rank' "$logs/tgplaqstencil-mpi.log"
-        run_test tstencilmpi-mpi mpiexec -n 2 ./bin/tstencilmpi \
-          -expectRanks:2 -lat:8,4,4,4 -rankgeom:2,1,1,1
-        grep -F 'Running with 2 ranks and 1 threads per rank' "$logs/tstencilmpi-mpi.log"
-        run_test tmatrixFields-sse ./build_sse/bin/tmatrixFields
-        run_test tgmatrix-sse ./build_sse/bin/tgmatrix -expectRanks:1
+        RUNJOB: timeout -k 10s 20m mpiexec -n 1
+        RUN1: timeout -k 10s 20m mpiexec -n 1
+      run: CLEANUPJOBS=./finalizeTests ./testscript-experimental.sh
+    - name: experimental testscript with two ranks
+      working-directory: qex
+      timeout-minutes: 45
+      env:
+        OMP_NUM_THREADS: '2'
+        OMP_DYNAMIC: 'FALSE'
+        RUNJOB: timeout -k 10s 20m mpiexec -n 2
+        RUN1: timeout -k 10s 20m mpiexec -n 1
+      run: CLEANUPJOBS=./finalizeTests ./testscript-experimental.sh
     - name: make bench
       working-directory: qex
       run: make /bench

@@ -1,4 +1,4 @@
-#RUNCMD env OMP_NUM_THREADS=1 $RUN1
+## Intentional two-dimensional U(1) training fixture.
 import base/globals
 setDefaultNc(1)
 setVLENmax(4)

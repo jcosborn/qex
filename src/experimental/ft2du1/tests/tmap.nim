@@ -755,7 +755,7 @@ proc rotateLink(g: gauge.Gauge; mu, x, y: int; a: float) =
 
 proc globalJacobianTests() =
   const
-    l = 4
+    l = 8
     n = 2*l*l
     h = 1e-2
     beta = 3.0

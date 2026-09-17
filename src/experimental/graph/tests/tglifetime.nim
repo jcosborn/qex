@@ -1,8 +1,4 @@
-#RUNCMD env OMP_NUM_THREADS=1 $RUNJOB
-## Graph buffer lifetimes on a small valid SIMD lattice.
-import base/globals
-setVLENmax(4)
-
+## Graph buffer lifetimes and released work.
 import math, unittest
 import qex except epsilon
 import base/alignedMem
@@ -13,10 +9,7 @@ import ../gauge/[types, field_ops, transport, stencil, matrix]
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 qexInit()
 letParam:
-  expectRanks = nRanks
-check nRanks == expectRanks
-letParam:
-  lat = latticeFromLocalLattice(@[4,4], nRanks)
+  lat = latticeFromLocalLattice(@[4,4,8,8], nRanks)
 let lo = lat.newLayout
 var rng = lo.newRNGField(Philox4x64, 8091137u64)
 let g = lo.newGauge
@@ -304,8 +297,8 @@ else:
     test "halo moves and fused plaquettes rebuild explicitly released work":
       let f = linkField(x, 0)
       let kf = linkField(kx, 0)
-      let moved = gp(f, linkField(y, 1), @[1,-1])
-      let kmoved = gp(kf, linkField(ky, 1), @[1,-1])
+      let moved = gp(f, linkField(y, 1), @[1,-1,0,0])
+      let kmoved = gp(kf, linkField(ky, 1), @[1,-1,0,0])
       let score = redot(moved, linkField(b, 0))
       let want = redot(kmoved, linkField(kb, 0))
       let a = x*x

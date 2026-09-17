@@ -1,5 +1,5 @@
 ## Graph storage measurements in fresh processes; see
-## ../../../docs/graph_validation.md for the root and counter contract and the
+## graph_validation.md for the root and counter contract and the
 ## required paired HMC fingerprint comparison.
 import qex
 import base/[alignedMem, omp]

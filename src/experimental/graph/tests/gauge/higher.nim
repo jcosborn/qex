@@ -14,7 +14,9 @@
 template ckgradNorm(f, x, a: untyped) =
   when declared(loopTestsOnly):
     let t = grt.toGvalue(0.0)
-    let (num, err) = ndiff(f(x + t*a), t, ordMax = 5)
+    # deg(grad S) <= 5, so deg(norm2(grad S)) <= 10, also after linear masks.
+    # Five levels cancel h^2 through h^8; wider points reduce cancellation.
+    let (num, err) = ndiff(f(x + t*a), t, 2.0, ordMax = 5)
     let ana = redot(grad(f(x), x), a).eval.sval
     echo "  loop norm finite difference: delta=", abs(num-ana), ", estimate=", err
     check(instantiationInfo(), astTostr(f(x)), num, err, ana)

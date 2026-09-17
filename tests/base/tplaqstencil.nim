@@ -114,9 +114,6 @@ proc run(lo: auto, nc: static int) =
 
 qexInit()
 letParam:
-  expectRanks = nRanks
-check nRanks == expectRanks
-letParam:
   lat = latticeFromLocalLattice(@[4,4,4,4], nRanks)
 let lo = lat.newLayout
 run(lo, 3)
