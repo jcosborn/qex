@@ -146,6 +146,22 @@ suite "Halo":
     let hp = haloPlaq(g, hl, hmA)
     for k in 0..<p.len: check(hp[k] ~ 6.0*p[k])
 
+  test "offset layout and index table":
+    # Widths from the extreme offsets: forward 2 along d0, backward 1 along d1.
+    let offs = @[@[2'i32,0,0,0], @[0'i32,-1,0,0], @[1'i32,-1,0,0], @[0'i32,0,0,0]]
+    let hlo = haloLayout(lo, offs)
+    check(hlo == haloLayout(lo, [2,0,0,0], [0,1,0,0]))
+    let idx = haloIndex(hlo, offs)
+    check(idx.len == hlo.nOut*offs.len)
+    var bad = 0
+    for i in 0..<hlo.nOut:
+      for t, o in offs:
+        if int(idx[i*offs.len+t]) != hlo.nbr(i, o): inc bad
+    check(bad == 0)
+    expect ValueError: discard haloLayout(lo, @[@[8'i32,0,0,0]])
+    expect ValueError: discard haloIndex(hlo, @[@[3'i32,0,0,0]])
+    expect ValueError: discard haloIndex(hlo, @[@[0'i32,-2,0,0]])
+
   test "cache":
     check(haloLayout(lo, [1,1,1,1], [1,1,1,1]) == hl)
     check(haloLayout(lo, [1'i32,1,1,1], [1'i32,1,1,1]) == hl)

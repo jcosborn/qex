@@ -194,6 +194,39 @@ proc haloLayout*[L:Layout](lo: L, fwdOffset,bckOffset: openarray[SomeInteger]): 
   b.init bckOffset
   haloLayout(lo, f, b)
 
+proc haloLayout*[L:Layout](lo: L, offsets: seq[seq[int32]]): HaloLayout[L] =
+  ## Widths from the extreme offsets, through the memoized constructor above.
+  ## Offsets must stay inside one period: the map folds a coordinate once.
+  let nd = lo.nDim
+  var fw = newSeq[int32](nd)
+  var bw = newSeq[int32](nd)
+  for off in offsets:
+    if off.len != nd:
+      raise newException(ValueError, "halo offset dimension differs from layout")
+    for d in 0..<nd:
+      if abs(off[d]) >= lo.physGeom[d]:
+        raise newException(ValueError, "halo offset exceeds the periodic extent")
+      fw[d] = max(fw[d], off[d])
+      bw[d] = max(bw[d], -off[d])
+  haloLayout(lo, fw, bw)
+
+proc haloIndex*[L](hl: HaloLayout[L], offsets: seq[seq[int32]]): seq[int32] =
+  ## Extended index of outer site i shifted by offsets[t], at i*offsets.len+t.
+  ## Not cached; each caller owns its table. Offsets must fit the widths.
+  let nd = hl.lo.nDim
+  let nt = offsets.len
+  for off in offsets:
+    for d in 0..<nd:
+      let fwd = int(hl.outerExt[d]) - int(hl.offset[d]) - hl.lo.outerGeom[d]
+      if off[d] > fwd or -off[d] > hl.offset[d]:
+        raise newException(ValueError, "halo offset exceeds the layout widths")
+  result = newSeq[int32](hl.nOut*nt)
+  var x = newSeq[int32](nd)
+  for i in 0..<hl.nOut:
+    x.lexCoord(hl.lex[i], hl.outerExt)
+    for t, off in offsets:
+      result[i*nt+t] = hl.index[(x+off).lexIndex(hl.outerExt)]
+
 proc haloMap*[L](hl: HaloLayout[L], c: Comm, offsets: seq[seq[int32]]): HaloMap[L] =
   var cache {.global.}: Table[(pointer,seq[seq[int32]]), HaloMap[L]]
   let key = (cast[pointer](hl), offsets)
