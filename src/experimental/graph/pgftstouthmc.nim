@@ -65,6 +65,9 @@ let
     savefile: "config", dt: 0.025, gsteps: 4, intalg: "2MN", trajs: 50))
   sp = readStoutParams(StoutParams(rho: 0.1, nsmear: 1))
   runConfig = gp.toRunConfig
+installStandardParams()
+echoParams()
+processHelpParam()
 runConfig.validateRunConfig
 if gp.lat.len != 4:
   raiseValueError("pgftstouthmc requires a 4D lattice, got " & $gp.lat.len & " dimensions")
@@ -76,9 +79,6 @@ if sp.nsmear < 0:
 # One-link contraction: 8|epsilon| < 1, epsilon = rho/3.
 if abs(sp.rho) >= 3.0/8.0:
   qexWarn "abs(rho) >= 3/8; the 4D SU(3) stout Jacobian is not guaranteed positive definite: rho ", sp.rho
-installStandardParams()
-echoParams()
-processHelpParam()
 
 proc runStoutHmc[T](R: typedesc[T]) =
   tic()

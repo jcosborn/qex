@@ -15,6 +15,7 @@ letParam:
   norm = 0.03
   reps = 2048
   trials = 5
+installHelpParam()
 processHelpParam()
 doAssert scale in [0, expProjectTAHScale]
 doAssert op in ["pullback", "logdet", "gradient", "combined"]

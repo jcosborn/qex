@@ -6,6 +6,7 @@ letParam:
   lat = latticeFromLocalLattice(@[4,4,4,4], nRanks)
   reps = 512
   trials = 5
+installHelpParam()
 processHelpParam()
 let
   lo = lat.newLayout

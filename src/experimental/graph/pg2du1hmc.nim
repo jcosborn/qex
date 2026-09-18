@@ -27,10 +27,10 @@ let
     savefile: "config", dt: 0.2, gsteps: 10, intalg: "2MN",
     trajsThermo: 64, trajs: 128, revCheckFreq: 0))
   runConfig = gp.toRunConfig
-runConfig.validateRunConfig
 installStandardParams()
 echoParams()
 processHelpParam()
+runConfig.validateRunConfig
 
 let
   lo = gp.lat.newLayout

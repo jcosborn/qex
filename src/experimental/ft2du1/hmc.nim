@@ -48,10 +48,10 @@ when isMainModule:
       mapFunctionDump: "", mapFunctionContexts: @[], monitorEvery: 1,
       checkMap: false, startWidth: -1.0))
     runConfig = gp.toRunConfig
-  runConfig.validateRunConfig
   installStandardParams()
   echoParams()
   processHelpParam()
+  runConfig.validateRunConfig
   if gp.lat.len != 2 or gp.lat[0] < 4 or gp.lat[1] < 4 or
       (gp.lat[0] and 1) != 0 or (gp.lat[1] and 1) != 0:
     raiseValueError("change-of-variables HMC needs an even two-dimensional lattice")

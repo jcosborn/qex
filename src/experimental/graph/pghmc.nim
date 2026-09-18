@@ -33,13 +33,13 @@ proc runHmcGauge*() =
     tp = readTrainParams(TrainParams(
       lrmax: 1.0, lrmin: 0.0001, trajsTrain: 50, trajsTrainlrWarm: 10))
     runConfig = toRunConfig(gp, tp)
-  runConfig.validateRunConfig
 
   echoRuntimeBanner()
 
   installStandardParams()
   echoParams()
   processHelpParam()
+  runConfig.validateRunConfig
 
   let grt = initGraphRuntime()
   withRng(gp.rng, R):
