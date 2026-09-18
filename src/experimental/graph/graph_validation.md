@@ -5,12 +5,16 @@ contracts.
 
 ## Generated test scripts
 
-The [workflow](../../../.github/workflows/test.yml) uses the ordinary test generator:
+The [workflow](../../../.github/workflows/test.yml) builds every experimental
+driver with the ordinary test generator and runs the generated script once per
+rank count. Its `env` sets `OMP_NUM_THREADS`, the launchers and the per-driver
+`timeout`; its `timeout-minutes` bounds each step. Change those values there.
+For example:
 
 ```sh
 make ARGS="--assertions:on" tests experimental
 OMP_NUM_THREADS=1 RUNJOB='mpiexec -n 1' RUN1='mpiexec -n 1' ./testscript-experimental.sh
-OMP_NUM_THREADS=2 RUNJOB='mpiexec -n 2' RUN1='mpiexec -n 1' ./testscript-experimental.sh
+OMP_NUM_THREADS=1 RUNJOB='mpiexec -n 2' RUN1='mpiexec -n 1' ./testscript-experimental.sh
 ```
 
 | Selection | Sources | Generated script |
@@ -19,14 +23,16 @@ OMP_NUM_THREADS=2 RUNJOB='mpiexec -n 2' RUN1='mpiexec -n 1' ./testscript-experim
 | `make tests experimental` | `src/experimental/*/tests/t*.nim` | `testscript-experimental.sh` |
 | `make tests experimental/graph` | Graph drivers only | `testscript-experimental.sh` |
 
-All experimental drivers run across the Nim `v2.0.16`, `version-2-2`, `devel`
-× Open MPI, MPICH matrix. Each experimental test invocation has a
-20-minute timeout with forced termination after ten seconds; each workflow step
-has a 45-minute bound.
+Every experimental driver runs for each Nim branch and MPI implementation in
+the workflow matrix. The drivers pin neither the thread count nor the rank
+count, so set `OMP_NUM_THREADS` as in the example.
 
 General gauge fixtures default to local `4,4,8,8` where practical and inherit the
-configured SIMD width and thread count. Intentional 2D U(1) wrappers set their own
-SIMD cap before importing shared tests. The larger SU(3) derivative graphs use:
+configured SIMD width and thread count. `tgloops` keeps one extent-two direction
+(local `2,4,8,8`, which lays out up to VLEN 8) so repeated physical links stay
+covered. U(1) wrappers that need a 2D fixture cap the SIMD width themselves
+(`setVLENmax`) before importing the shared tests; the rest inherit the 4D fixture.
+The larger SU(3) derivative graphs use:
 
 | Fixture | Default geometry |
 | --- | --- |
@@ -36,13 +42,15 @@ SIMD cap before importing shared tests. The larger SU(3) derivative graphs use:
 
 For the four-dimensional oracle, $L_\mu=2I_\mu$ and
 $V_{local}=16\,VLEN$, so every outer extent is even without capping SIMD width.
-`tgloops`/`tgjac` collect graphs between case frames. All three fixtures restore
-the caller's raw-allocation GC threshold on exit.
+`tgloops`/`tgjac` run each case in its own frame through `gcTest` and collect
+between cases. All three fixtures restore the caller's raw-allocation GC
+threshold on exit.
 
 `RUNJOB` launches ordinary tests. An explicit `#RUNCMD $RUN1` selects one rank
 for a driver that needs it. Graph helpers reserve command-line arguments for
-QEX (`-OPTION:VALUE`) and disable unittest name filtering. The generated script
-aggregates exit failures and returns nonzero if any driver fails.
+QEX (`-OPTION:VALUE`) and disable unittest name filtering; parameterized
+validation must still report executed cases. The generated script aggregates
+exit failures and returns nonzero if any driver fails.
 
 ## Graph storage benchmark
 

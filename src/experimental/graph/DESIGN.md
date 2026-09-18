@@ -159,7 +159,10 @@ An in-place transfer requires all of:
 - no active alias or external owner.
 
 `updated` clears `staticZeroLeaf`: a written constant becomes ordinary mutable
-storage. `markStaticZeroLeaf` is valid only for an inputless concrete zero.
+storage. Gauge and field `zeroLike` set the marker at construction, and their
+`isZero` reports the marker. `markStaticZeroLeaf` serves the scalar and
+coefficient leaves, whose `isZero` inspects the value; it requires an inputless
+zero and, outside an eval frame, advances the boundary revision.
 `isStaticZeroLeaf` checks marker and value, not arbitrary graph structure.
 
 | Change | Cache consequence |
@@ -169,21 +172,20 @@ storage. `markStaticZeroLeaf` is valid only for an inputless concrete zero.
 | Conditional lambda selection | Select a different instantiation key |
 | New/expired computed override or generated-constant mutation | Advance boundary revision for source audits |
 
-`GlambdaRef.valCopy` accepts compatible produced refs and changes the symbolic
-revision. It rejects copying a resolved `Glambda` body. Rebuild derivative
-expressions after rebinding. Arbitrary rewrites of cached topology/bodies are
-unsupported; build a fresh graph instead.
+`GlambdaRef.valCopy` binds a local ref to a compatible produced ref and advances
+the symbolic revision; on a graph-produced ref it checks compatibility and only
+refreshes freshness. It rejects copying a resolved `Glambda` body. Rebuild
+derivative expressions after rebinding. Arbitrary rewrites of cached
+topology/bodies are unsupported; build a fresh graph instead.
 
 `tgvalue`, `tgvalueu1`, `tgstorage` and `tglifetime` exercise these contracts.
-Graph test helpers reserve command-line arguments for QEX, disabling unittest
-name filtering; parameterized validation must still report executed cases.
 
 ### Shared execution plans
 
 Construct all derivatives before planning; include every result needed together:
 
 ```nim
-import graph/[core, scalar, gauge, plan]
+import experimental/graph/[core, scalar, gauge, plan]
 let rt = initGraphRuntime()
 let x = rt.toGvalue(g)
 let f = norm2(x*x)
@@ -195,7 +197,8 @@ let gradient = Ggauge(p[1])
 
 `p.eval()` publishes numerical roots in order as detached leaves. Build further
 derivatives from original expressions. Apply function-valued results, including
-function slots inside carriers, to numerical arguments before publication.
+function slots inside carriers, to numerical arguments before publication;
+shape-only carriers are rejected as roots too.
 
 The plan owns private clones, arena and caches; ordinary numerical sources keep
 their storage. Ordinary eval uses the original graph. Active plan frames redirect
@@ -348,9 +351,11 @@ $$
 f(x,x)=x^2,\qquad \bar x_1=u x^\dagger,\quad \bar x_2=x^\dagger u.
 $$
 
-Replicas spell the partial with `gradSeeded(replica(slot), slot, seed)`. There is
-no `secondPullback` helper: action Hessian backwards use `actionJet`; stout
-backwards differentiate scalar replica scores over independent live slots
+Replicas build the primal over an independent slot and spell the partial as
+`gradSeeded(primal, slot, seed)`; `expTopReplica(slot, rest)` in `gauge/matfun`
+is one. There is no `secondPullback` helper: action Hessian backwards use
+`actionJet`; stout backwards differentiate scalar replica scores over
+independent live slots
 (section 12). Conditional upstreams split before backward dispatch; static-zero
 branches skip inactive VJP construction and evaluation.
 
@@ -736,9 +741,9 @@ $$
 | $Y=A^{-1}$ | $\bar A=-Y^TuY^T$ |
 | $z=\log\det A$ | $\bar A=uA^{-T}$ |
 
-The LU kernels require nonzero leading pivots; logdet also requires
-$\det A>0$, allowing negative individual pivots. Per-site real weights use
-`scale`; `sum` reduces over physical sites. Transpose, contractions, scalar
+The LU kernels' domain rules are in the
+[kernel reference](../../../docs/gauge_kernels.md). Per-site real weights
+use `scale`; `sum` reduces over physical sites. Transpose, contractions, scalar
 functions and SU(3) bridges remain closed under further differentiation.
 
 $$
@@ -750,8 +755,8 @@ z=\arg x &: &\bar x&=iux/|x|^2.
 $$
 
 Real/complex embedding adjoints are `re` ↔ `complex` and `im` ↔ `imaginary`.
-Division requires a nonzero denominator; `ln` and differentiated `sqrt` require
-positive inputs. `arg` excludes zero and the principal branch cut.
+Scalar-function domains follow the kernel reference; differentiated `sqrt`
+additionally requires positive inputs.
 
 For halo offset $s$, define $G_s b(x)=b(x-s)$ and $S_s=G_s^*$. With no adjoint
 flags, the stencil product and pullbacks are
@@ -772,27 +777,23 @@ H_{\mu,+}f(x)=U_\mu(x)f(x+\hat\mu),\qquad
 H_{\mu,-}f(x)=U_\mu(x-\hat\mu)^\dagger f(x-\hat\mu).
 $$
 
-For the positive, unnormalized plaquette trace sum $P(U)$,
-
-$$
-J_m^P(U;h_1,\ldots,h_m)=D^m\nabla P(U)[h_1,\ldots,h_m],
-\qquad \operatorname{stapleSum}=J_m^P,
-$$
+With $J_m^P=\operatorname{stapleSum}$ of order $m$ as defined in the kernel
+reference, the pullbacks are
 
 $$
 \bar U=J_{m+1}^P(U;h_1,\ldots,h_m,u),\qquad
-\bar h_i=J_m^P(U;h_1,\ldots,u,\ldots,h_m).
+\bar h_i=J_m^P(U;h_1,\ldots,u,\ldots,h_m),
 $$
 
-$P$ is quartic, so $J_m^P=0$ for $m>3$. Fused orders $0\ldots3$ retain repeated
-and dependent seeds; higher orders validate every seed's shape/runtime before
-returning an ordinary static zero. `plaqSum` has pullback $uJ_0^P$.
+and `plaqSum` has pullback $uJ_0^P$. Fused orders $0\ldots3$ retain repeated and
+dependent seeds; the vanishing higher orders validate every seed's shape/runtime
+before returning an ordinary static zero.
 
-Ordinary fused nodes own `PlaqWork`; clones start empty and release drops the
-reference. Planned work is keyed by operation/layout/field count/order. Every
-call binds current inputs/seeds and completes exchanges. `tgplaqstencil` compares
-against hop chains; its U(1) wrapper covers the scalar specialization.
-`tstencilmpi` checks faces and, with two split axes, corners.
+Ordinary fused nodes own `PlaqWork`; clones start empty and `releaseWork` drops
+the node's reference (the numerical workspace has no release of its own).
+Planned work is keyed by operation/layout/field count/order.
+`tgplaqstencil` compares against hop chains; its U(1) wrapper covers the scalar
+specialization. `tstencilmpi` checks faces and, with two split axes, corners.
 
 | Module | Protocol |
 | --- | --- |
@@ -827,23 +828,17 @@ backward sees only coefficients, field and live seeds. A zero coefficient skips
 basis evaluation, not its coefficient derivative.
 
 The graph `gaugeActionDeriv` returns $\nabla S$ (the numerical wrapper negates
-coefficients for the underlying negative-gradient kernel). For $H=\nabla^2S$,
+coefficients for the underlying negative-gradient kernel). Subset derivatives
+pull back through the full Hessian applied to the masked seed, as in the kernel
+reference, so the pullback reaches all affected links. For $H=\nabla^2S$ and
+$z=Hb$, $\bar b=Hu$ and $\bar U=A_2(c,U;b,u)$; coefficient partials use fresh
+slots.
 
-$$
-f_S=M_S\nabla S,\qquad (Df_S)^*b=H(M_Sb).
-$$
-
-Thus a subset Hessian pullback reaches all affected links. For $z=Hb$,
-$\bar b=Hu$ and $\bar U=A_2(c,U;b,u)$; coefficient partials use fresh slots.
-
-| Coefficient value | Selected family/tangents |
-| --- | --- |
-| `adjplaq == 0` | Fundamental: plaq, rect, pgm |
-| `adjplaq != 0`, `rect == pgm == 0` | Adjoint plaquette: plaq, adjplaq |
-| Other combinations | Unsupported |
-
-`gaugeAction`, `gaugeActionDeriv`, `gaugeForce` and fundamental full/subset
-Hessians differentiate coefficient subgraphs within these families.
+Family selection follows the kernel reference: `adjplaq` chooses between the
+fundamental tangents (plaq, rect, pgm) and the adjoint-plaquette tangents (plaq,
+adjplaq); mixed sets raise there. `gaugeAction`, `gaugeActionDeriv`, `gaugeForce`
+and fundamental full/subset Hessians differentiate coefficient subgraphs within
+the selected family.
 
 Coefficient AD differentiates the active family only, without differentiating
 the selector. In particular,
@@ -885,9 +880,11 @@ rectangle/parallelogram staples couple active links and invalidate the independe
 parity/direction factorization. Its coefficient tangents are restricted to plaq.
 
 `tests/gauge/higher` differentiates one order beyond each built replica, with
-aliased and dependent cotangents. `tgloops` covers loop families, zero coefficients
-and mixed coefficient/field derivatives; `tgtoweru1`
-covers U(1). These checks pin live-slot dependence rather than frozen seeds.
+aliased and dependent cotangents. `tgloops` covers loop families, repeated
+physical links at extent two, zero coefficients and mixed coefficient/field
+derivatives at Nc=3; `tgtoweru1` runs the exp, action and stout towers at U(1)
+without the loop-family cases. These checks pin live-slot dependence rather than
+frozen seeds.
 
 ### Exponential and stout contracts
 
@@ -921,32 +918,25 @@ Y=X/2^{20},\quad q=Y+\tfrac12Y^2+\tfrac16Y^3+\tfrac1{24}Y^4,
 \qquad q\leftarrow q(2I+q)\ \text{20 times},\quad E(X)=I+q.
 $$
 
-For stout, $M=\alpha Wd_s^\dagger$, $X=-\operatorname{ad}(\Pi(M))$ and
-$D=\operatorname{su3ProjectDeriv}(M)$:
+For stout, $M=\alpha Wd_s^\dagger$ feeds the
+[kernel reference](../../../docs/gauge_kernels.md)'s scaled recovery
+map at the stout settings `expProjectTAHOrder` and `expProjectTAHScale`, giving
+$K=I+P_5D$ and $\ell=\log\det K$; replica and kernel calls share both
+constants. U(1) uses $\ell=\log(1+\Re M)$. Seed, cotangent and domain
+conventions are in the kernel reference.
 
-$$
-P_0=\sum_{k=0}^{13}\frac{(X/32)^k}{(k+1)!},\quad
-P_{j+1}=P_j+2^{j-6}XP_j^2\ (j=0,\ldots,4),\quad
-K=I+P_5D,\quad\ell=\log\det K.
-$$
-
-`expProjectTAHOrder=13` is shared by replica/kernel calls; scale is `expProjectTAHScale=5`.
-The seed lives in the SU(3) adjoint image; cotangents may be arbitrary real
-matrices. Require $\det K>0$ and nonzero leading LU pivots. U(1) uses
-$\ell=\log(1+\Re M)$.
-
-`stoutLogDetJGraph` differentiates **this finite expression** at every order.
+`stoutLogDetJGraph` differentiates **that finite expression** at every order.
 The update primal, its first field/staple pullbacks and its higher replicas use
 different finite maps (`expAH`, scaled Phi with cached `expAH`, ordinary $E$).
 Higher update pullbacks therefore approximate derivatives of the fused update
-and first pullback. Accuracy depends on generator norm and Jacobian conditioning;
-there is no enforced norm cap or accuracy bound outside tested fixtures.
+and first pullback; there is no enforced norm cap or accuracy bound outside
+tested fixtures.
 
-`tscaledexp`/`tgjac` use dense polynomial, converged series and differentiated
-adaptive-exponential references from `scaledexpRef`. Coverage includes repeated
-spectra, scalar/SIMD scaling thresholds and $\|F\|_F\le8$. The update approximation
-has nine field/staple/mixed-alpha directional cases at norms $0.12,2,8$, each with
-steps $10^{-3}$ and $5\cdot10^{-4}$, separate from finite-logdet derivative checks.
+`tgjac` checks the update approximation in nine field/staple/mixed-alpha
+directional cases at norms $0.12,2,8$, each with steps $10^{-3}$ and
+$5\cdot10^{-4}$, separate from the finite-logdet derivative checks. The
+reference kinds and the spectra they cover are listed with `tscaledexp` in the
+kernel reference.
 
 ## 12.1 Neural Fields
 
@@ -1012,9 +1002,10 @@ L=-\min(1,a)\,(n_{\rm steps}\,dt)^2.
 $$
 
 `runHmc` uses one active proposal plan per phase/root set. Roots include initial
-and final $H,S,T$, each force's scalar RMS/min/max, final gauge, and requested
-reverse momentum, view, loss and gradients. Early scalar reductions avoid
-retaining force history solely for diagnostics.
+and final $H,S,T$, each force's scalar RMS/min/max (`forceStats`, a diagnostic
+sink with no backward), final gauge, and requested reverse momentum, view, loss
+and gradients. Early scalar reductions avoid retaining force history solely for
+diagnostics.
 
 | Callback/data | Ownership/order |
 | --- | --- |
@@ -1025,9 +1016,10 @@ retaining force history solely for diagnostics.
 | Commit/measurement | Commit earlier accepted snapshot, then evaluate committed measurements |
 
 Take `gaugeSnapshot` for values retained beyond the callback. `pghmc` omits
-training expressions when `trajsTrain == 0`; physical/logdet measurements use a separate
-joint plan. Force-gradient integrators accept the default coefficient tuple or
-a complete explicit tuple, not partial positional completion. Validate
+training expressions when `trajsTrain == 0`; `pgftstouthmc` (4D SU(3)) builds
+its own joint measurement plan, while the 2D U(1) drivers measure through
+`runFlowHmc` above. Force-gradient integrators accept the default coefficient
+tuple or a complete explicit tuple, not partial positional completion. Validate
 `IntegratorCoeffs` when constructing the run spec.
 
 `2MNp` is the momentum-first 2MN schedule; one procedure integrates both
@@ -1039,6 +1031,6 @@ and plans root the event values to collect a complete trace.
 
 ## 14. Validation And Benchmarks
 
-See the [validation and benchmark protocol](graph_validation.md)
+See the [graph validation protocol](graph_validation.md)
 for test execution, counters/settings and required direct/planned fingerprint
 comparisons.

@@ -98,9 +98,10 @@ unadjointed results may alias inputs/shared products; copy before independent
 mutation. Release product entries after their last consumer. Test: `tpathplan`.
 
 Halo layouts preserve physical indices and parity; maps encode periodic
-coordinates. Construct/cache geometry outside `threads`. Only gathered halo
-entries are defined. Reverse exchange accumulates into physical fields.
-Test: `thalo`.
+coordinates. Construct/cache geometry outside `threads`. The halo buffer is
+allocated uninitialized: only gathered entries are defined, and the reverse
+exchange reads every cell its map covers before accumulating into physical
+fields, so zero or fill the halo first, as `hypsmear2` does. Test: `thalo`.
 
 HYP pullbacks project intermediates only within their forward construction
 domains, respecting neighbor validity and cotangent reach. `thypsmearhalo`
@@ -114,7 +115,10 @@ poisoned padding.
 | Fundamental | `plaq`, `rect`, `pgm` | `gaugeAction1/2/3`, `gaugeActionDeriv`, `gaugeDeriv2`, `gaugeForce*`, Hessians |
 | Plaquette + adjoint | `plaq`, `adjplaq` | `actionA`, `gaugeADeriv`, `forceA` |
 
-`action`/`force` select the adjoint family iff `adjplaq != 0`.
+`action`/`force` dispatch on `adjplaq`: zero selects the fundamental family,
+nonzero the adjoint family. Fundamental kernels reject `adjplaq != 0` and the
+adjoint kernels reject `rect`/`pgm` with `ValueError` (`requireFundamental`,
+`requireAdjoint`), so mixed coefficient sets have no entry point.
 For $\sigma<\nu<\mu$, paths are
 
 ```text
@@ -144,6 +148,7 @@ $\langle A,B\rangle=\sum\Re\operatorname{tr}(A^\dagger B)$:
 | `gaugeActionDeriv(c,g,f)` | $f=-\nabla S$, or accumulation when requested |
 | `gaugeDeriv2(c,g,f)` | $f\mathrel{+}=\nabla S$ |
 | `gaugeDerivDeriv2(c,g,h,f)` | $f\mathrel{+}=\nabla^2S\,h$ |
+| `gaugeForce(c,g,f)`, `force` | $f_\mu=\operatorname{projectTAH}\big(U_\mu(-\nabla S)_\mu^\dagger\big)$: `contractProjectTAH` after the derivative |
 
 Call complete gauge operations outside `threads`. `newLoopWork(g[0])` owns work
 for one layout/type: halos, improved-subset temporary gauge and full-Hessian
@@ -157,11 +162,15 @@ $$
 g_S=M_S\nabla S,\qquad (Dg_S)^*b=\nabla^2S(M_Sb).
 $$
 
-The Hessian reaches every affected link. `Subset` overwrites; `SubsetAdd`
-accumulates; `SubsetAddBase` adds on selected links and sets base plus Hessian
-elsewhere; `SubsetSum` combines selected-parity seeds. `gaugeDeriv2SubsetWork`
-preserves the complement for `clear=false` and zeros it for `clear=true`.
-Rectangle/parallelogram subsets use the workspace temporary gauge.
+The Hessian reaches every affected link. `gaugeDerivDeriv2Subset` overwrites;
+`gaugeDerivDeriv2SubsetAdd` accumulates; `gaugeDerivDeriv2SubsetAddBase` adds on
+selected links and sets base plus Hessian elsewhere; `gaugeDerivDeriv2SubsetSum`
+combines selected-parity seeds. The first derivative `gaugeDeriv2SubsetWork`
+takes caller-built `sd`, `sf`, `sb` (a direction shifter and parity shift
+buffers, as `gaugeDeriv2Subset` builds them), preserves the complement for
+`clear=false` and zeros it for `clear=true`. Rectangle/parallelogram subsets
+take the full-derivative route through the workspace temporary gauge and ignore
+those buffers.
 
 Warm Hessians reuse QEX raw buffers. Action staple scratch and generic halo
 message sequences still allocate. Tests: `tgaugeloops`, `tgaugeaction`.
@@ -201,8 +210,10 @@ $$
 `gaugeUtils.plan(shifts=false)` factors matrix symbols by link direction/offset,
 without field shifts. Only coefficients reaching requested outputs are evaluated.
 Zero-weight families are absent from paths/halos/plans; plaquettes vanish above
-order three. `LoopWork` reuses aligned per-thread site scratch, with no
-intermediate lattice fields.
+order three. `loopAction`/`loopDeriv` reuse aligned per-thread site scratch and
+no intermediate lattice fields; the rectangle/parallelogram subset routes, first
+derivative and subset Hessian, use the workspace's scratch gauge, and the full
+Hessian uses its transporters.
 
 For plaquettes,
 
@@ -216,9 +227,10 @@ $$
 \operatorname{stapleSum}(U,h)=D^{|h|}\nabla P(U)[h].
 $$
 
-`PlaqWork` fixes layout/order/action mode and rebinds inputs each call. It retains
-those references until rebinding/release. Outputs are disjoint from seeds and,
-below order three, the gauge. `newOneOf` allocates independent work.
+`PlaqWork` fixes layout/order/action mode and rebinds inputs each call. It keeps
+those references until the next call rebinds them; there is no release, so drop
+the workspace to free them. Outputs are disjoint from seeds and, below order
+three, the gauge. `newOneOf` allocates independent work.
 
 `productJet` propagates products of affine factors:
 
@@ -308,8 +320,7 @@ structured operations.
 
 `letParam` supplies lattice parameters. `latticeFromLocalLattice` derives global
 volume from the local lattice/rank count; `-lat:` is explicitly global.
-`make tests` builds numerical suites; `make tests experimental` generates optional
-suites. Generated scripts support the repository MPI runner. See the
+Test generation and the MPI launchers are described in the
 [graph validation protocol](../src/experimental/graph/graph_validation.md).
 
 `benchGaugeActions`, `benchPlaq` and `benchExpProject` use `tic`/`toc` and
