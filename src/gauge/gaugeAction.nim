@@ -1158,10 +1158,7 @@ proc gaugeForce2*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]
           shiftExpr(t2[mu].sb, f[mu][ir] += cr * td[mu].field[ir]*adj(it), u[nu][ix])
           threadBarrier()
           shiftExpr(t2[mu].sb, f[mu][ir] += cr * t[nu].field[ir]*adj(it), t[mu].field[ix])
-    for mu in 0..<nd:
-      for e in f[mu]:
-        let s = u[mu][e] * f[mu][e].adj
-        f[mu][e].projectTAH s
+    for mu in 0..<nd: contractProjectTAH(f[mu], u[mu], f[mu])
   toc("end")
 proc gaugeForce2*(f,g: array|seq) =
   var c = GaugeActionCoeffs(plaq:1.0)
@@ -1265,10 +1262,7 @@ proc gaugeForce3*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]
             f[mu][ir] += cr * rmu
             f[nu][ir] += cr * rnu
   threads:
-    for mu in 0..<nd:
-      for e in f[mu]:
-        let s = gs[mu][e] * f[mu][e].adj
-        f[mu][e].projectTAH s
+    for mu in 0..<nd: contractProjectTAH(f[mu], gs[mu], f[mu])
   toc("end")
 proc gaugeForce3*(f,g: array|seq) =
   var c = GaugeActionCoeffs(plaq:1.0)
@@ -1505,12 +1499,7 @@ when isMainModule:
   testR(g)
 
   proc updateX(g,p,eps:auto) =
-    mixin exp
-    for mu in 0..<g.len:
-      for e in g[mu]:
-        let t = exp(eps*p[mu][e])*g[mu][e]
-        g[mu][e] := t
-      #echo "g[", mu, "]: ", g[mu].norm2
+    axexpmuly(g, eps, p, g)
 
   proc updateP(c:GaugeActionCoeffs, g,p,eps:auto) =
     var f = newOneOf g

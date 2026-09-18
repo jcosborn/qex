@@ -118,11 +118,7 @@ var
   g0 = lo.newgauge
 
 proc mdt(t:float) =
-  threads:
-    for i in 0..<g.len:
-      for e in g[i]:
-        let etpg = exp(t*p[i][e])*g[i][e]
-        g[i][e] := etpg
+  threads: axexpmuly(g, t, p, g)
 proc mdv(t:float) =
   gc.gaugeforce2(g, f)
   if gfix: f.maxTreeFix 0.0

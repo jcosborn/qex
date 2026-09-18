@@ -8,7 +8,7 @@ export matrix
 
 export
   Gauge, Ggauge,
-  reunitGauge, gaugeSnapshot,
+  gaugeSnapshot,
   update, mutateGauge, toGvalue,
   retr, adj, norm2, redot, exp, expDeriv, projTAH,
   `-`, `+`, `*`,

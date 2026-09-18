@@ -35,13 +35,9 @@ for n in 0..<3:
   gc.gaugeForce(gaugesu2, fsu2)
   gc.gaugeForce(gaugesu3, fsu3)
   threads:
-    for mu in 0..<nd:
-      for s in gaugeu1[mu]:
-        gaugeu1[mu][s] := exp((-eps)*fu1[mu][s])*gaugeu1[mu][s]
-      for s in gaugesu2[mu]:
-        gaugesu2[mu][s] := exp((-eps)*fsu2[mu][s])*gaugesu2[mu][s]
-      for s in gaugesu3[mu]:
-        gaugesu3[mu][s] := exp((-eps)*fsu3[mu][s])*gaugesu3[mu][s]
+    axexpmuly(gaugeu1, -eps, fu1, gaugeu1)
+    axexpmuly(gaugesu2, -eps, fsu2, gaugesu2)
+    axexpmuly(gaugesu3, -eps, fsu3, gaugesu3)
 
 echo gc.gaugeAction1(gaugeu1)
 echoPlaq gaugeu1

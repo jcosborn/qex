@@ -3,7 +3,6 @@ from os import fileExists
 from strformat import `&`
 import config
 from ../core/base import raiseValueError
-from ../gauge/types import reunitGauge, checkUnitary
 
 proc loadOrInitGauge*(g: var auto, gaugefile: string) =
   if gaugefile.len == 0:

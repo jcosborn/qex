@@ -65,6 +65,25 @@ $\ln x:x>0$; $\sqrt x:x\ge0$; division: denominator nonzero;
 $\arg z\in[-\pi,\pi]$, with derivatives excluding zero and the branch cut.
 Test: `tmatrixFields`.
 
+### Fused gauge updates
+
+`gauge/gaugeUtils.nim` kernels run inside `threads` on each thread's site
+partition, on one field or on every direction of a gauge:
+
+$$
+\operatorname{axexp}(a,X)_x=e^{aX_x},\qquad
+\operatorname{axexpmuly}(a,X,Y)_x=e^{aX_x}Y_x,\qquad
+\operatorname{contractProjectTAH}(X,Y)_x=\operatorname{projectTAH}(X_xY_x^\dagger).
+$$
+
+$X$ is anti-Hermitian (traceless for SU(N)) and the exponential is `expAH`.
+The destination may alias an operand; `axexpmuly` can also store $e^{aX}$;
+the subset overloads act on one parity subset. The two-argument
+`contractProjectTAH(g,f)` overwrites `f` in its own threads region.
+`stoutsmear.stoutStepKernel` composes them for the subset stout step. The MD
+gauge updates and force projections of the HMC programs and the graph's fused
+gauge ops call these. Tests: `tggauge` (against basic graph ops), `tftstout`.
+
 ### Paths, halos and HYP
 
 Paths use signed directions $\pm(\mu+1)$. `gaugeUtils.plan` orders shared

@@ -412,16 +412,66 @@ proc echoPlaq*(g: auto) =
   for i in ns..<pl.len: pt += pl[i]
   echo "plaqS: ", 2*ps, "  plaqT: ", 2*pt, "  plaq: ", ps+pt
 
+# Fused gauge kernels. Each runs inside `threads` on the calling thread's site
+# partition, on one field or on every direction of a gauge. The destination
+# may alias an operand.
+
+proc contractProjectTAH*[F:Field](z: F; x, y: F) =
+  ## z = projectTAH(x y†) site by site.
+  for e in z:
+    let s = x[e] * y[e].adj
+    z[e].projectTAH s
+
+proc contractProjectTAH*[F:Field](z: F; x, y: F; sub: Subset) =
+  ## The same on sub's outer sites only.
+  for e in sub:
+    let s = x[e] * y[e].adj
+    z[e].projectTAH s
+
+proc contractProjectTAH*[F:Field](z: openArray[F]; x, y: openArray[F]) =
+  for mu in 0..<z.len: contractProjectTAH(z[mu], x[mu], y[mu])
+
 proc contractProjectTAH*[T](g:openArray[T], f:openArray[T]) =
-  ## f will be overwritten
+  ## f = projectTAH(g f†), in its own threads region.
   let nd = g.len
   let u = cast[ptr cArray[T]](unsafeAddr(g[0]))
   let o = cast[ptr cArray[T]](unsafeAddr(f[0]))
   threads:
     for mu in 0..<nd:
-      for e in o[mu]:
-        let s = u[mu][e]*o[mu][e].adj
-        o[mu][e].projectTAH s
+      contractProjectTAH(o[mu], u[mu], o[mu])
+
+proc axexp*[F:Field](z: F; a: float; x: F) =
+  ## z = exp(a x) site by site, with x anti-Hermitian (traceless for SU(N)).
+  for e in z:
+    var t {.noinit.}: evalType(x[e])
+    t[] := expAH(a * x[e][])
+    z[e] := t
+
+proc axexp*[F:Field](z: openArray[F]; a: float; x: openArray[F]) =
+  for mu in 0..<z.len: axexp(z[mu], a, x[mu])
+
+proc axexpmuly*[F:Field](z: F; a: float; x, y: F; expax: F = nil) =
+  ## z = exp(a x) y site by site, with x anti-Hermitian (traceless for SU(N));
+  ## expax, when given, receives exp(a x).
+  for e in z:
+    var t {.noinit.}: evalType(x[e])
+    t[] := expAH(a * x[e][])
+    if expax != nil: expax[e] := t
+    z[e] := t * y[e]
+
+proc axexpmuly*[F:Field](z: F; a: float; x, y: F; sub: Subset; expax: F = nil) =
+  ## The same on sub's outer sites only.
+  for e in sub:
+    var t {.noinit.}: evalType(x[e])
+    t[] := expAH(a * x[e][])
+    if expax != nil: expax[e] := t
+    z[e] := t * y[e]
+
+proc axexpmuly*[F:Field](z: openArray[F]; a: float; x, y: openArray[F]) =
+  for mu in 0..<z.len: axexpmuly(z[mu], a, x[mu], y[mu])
+
+proc axexpmuly*[F:Field](z: openArray[F]; a: float; x, y, expax: openArray[F]) =
+  for mu in 0..<z.len: axexpmuly(z[mu], a, x[mu], y[mu], expax[mu])
 
 type
   Link[F:ref] = object
@@ -1471,6 +1521,27 @@ proc checkU*[F:Field](x: openArray[F]): tuple[avg,max:float] {.noinit.} =
   a = sqrt( a / (c*float(x.len*vol)) )
   b = sqrt( b / c )
   return (a, b)
+
+proc reunitGauge*[F:Field](g: seq[F]) =
+  ## Project each link onto its group: U(1) for Nc = 1, SU(N) otherwise.
+  const nc = g[0][0].nrows
+  threads:
+    when nc == 1:
+      g.projectU
+    else:
+      g.projectSU
+    threadBarrier()
+
+proc checkUnitary*[F:Field](g: seq[F]): tuple[avg, max: float] =
+  ## Mean/max link distance from U(1) or SU(N); does not modify g.
+  const nc = g[0][0].nrows
+  var a, m: float
+  threads:
+    let d = when nc == 1: g.checkU else: g.checkSU
+    threadMaster:
+      a = d.avg
+      m = d.max
+  (avg: a, max: m)
 
 proc checkSU*[F:Field](x: openArray[F]): tuple[avg,max:float] {.noinit.} =
   var a,b:float

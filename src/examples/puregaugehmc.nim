@@ -133,10 +133,7 @@ proc gaction(g:auto, p2:float):auto =
 
 proc mdt(t: float) =
   tic()
-  threads:
-    for mu in 0..<g.len:
-      for s in g[mu]:
-        g[mu][s] := exp(t*p[mu][s])*g[mu][s]
+  threads: axexpmuly(g, t, p, g)
   toc("mdt")
 proc mdv(t: float) =
   tic()
@@ -151,10 +148,7 @@ proc fgv(t: float) =
   tic()
   gc.force(gg, f, work=work)
   qexGC "fgv forceA"
-  threads:
-    for mu in 0..<g.len:
-      for s in g[mu]:
-        g[mu][s] := exp((-t)*f[mu][s])*g[mu][s]
+  threads: axexpmuly(g, -t, f, g)
   toc("fgv")
 # Combined update for sharing computations
 proc mdvAllfga(ts,gs:openarray[float]) =

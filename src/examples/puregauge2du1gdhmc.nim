@@ -156,11 +156,7 @@ var
   lnJ = 0.0
 
 proc mdt(t:float) =
-  threads:
-    for i in 0..<g.len:
-      for e in g[i]:
-        let etpg = exp(t*p[i][e])*g[i][e]
-        g[i][e] := etpg
+  threads: axexpmuly(g, t, p, g)
   if mdalgo == nosehoover:
     xi += t * gamma * (p.pnorm2 - dof)
 proc mdv(t:float) =

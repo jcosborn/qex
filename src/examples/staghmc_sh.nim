@@ -409,12 +409,7 @@ proc smearedOneLinkForce(f: auto, smearedForce: proc, g:auto) =
   toc("smear")
 
   # 3. Tₐ ReTr( Tₐ U F† )
-  threads:
-    for mu in 0..<f.len:
-      for i in f[mu]:
-        var s {.noinit.}: typeof(f[0][0])
-        s := f[mu][i] * g[mu][i].adj
-        projectTAH(f[mu][i], s)
+  threads: contractProjectTAH(f, f, g)
   qexGC "combine"
   toc("combine")
 
@@ -464,10 +459,7 @@ proc fforce(stag: auto, f: auto, sf: proc, g: auto, ix:openarray[int], ts:openar
 
 proc mdt(t: float) =
   tic()
-  threads:
-    for mu in 0..<g.len:
-      for s in g[mu]:
-        g[mu][s] := exp(t*p[mu][s])*g[mu][s]
+  threads: axexpmuly(g, t, p, g)
   toc("mdt")
 proc mdv(t: float) =
   tic()
@@ -492,19 +484,13 @@ proc fgv(t: float) =
   tic()
   gc.forceA(gg, f)
   qexGC "fgv forceA"
-  threads:
-    for mu in 0..<g.len:
-      for s in g[mu]:
-        g[mu][s] := exp((-t)*f[mu][s])*g[mu][s]
+  threads: axexpmuly(g, -t, f, g)
   toc("fgv")
 proc fgvf(ix:openarray[int], sf:proc, ts:openarray[float]) =
   tic()
   stagg.fforce(f, sf, gg, ix, ts)
   qexGC "fgvf fforce"
-  threads:
-    for mu in 0..<g.len:
-      for s in g[mu]:
-        g[mu][s] := exp(f[mu][s])*g[mu][s]
+  threads: axexpmuly(g, 1.0, f, g)
   toc("fgvf")
 
 # Combined update for sharing computations

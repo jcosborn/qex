@@ -757,9 +757,7 @@ proc fermionForce*(self: var HisqHMC; dtau: float) =
 proc gaugeForce*(self: var HisqHMC) = self.gc.gaugeForce(self.u,self.f)
 
 proc updateGauge[T](u: auto; p: T; dtau: float) =
-  threads:
-    for mu in 0..<u.len:
-      for s in u[mu]: u[mu][s] := exp(dtau*p[mu][s])*u[mu][s]
+  threads: axexpmuly(u, dtau, p, u)
 
 proc updateGauge*(self: var HisqHMC; dtau: float) =
   self.u.updateGauge(self.p,dtau)

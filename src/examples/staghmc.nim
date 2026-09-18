@@ -111,10 +111,7 @@ proc fforce(f: auto) =
 
 proc mdt(t: float) =
   tic()
-  threads:
-    for mu in 0..<g.len:
-      for s in g[mu]:
-        g[mu][s] := exp(t*p[mu][s])*g[mu][s]
+  threads: axexpmuly(g, t, p, g)
   toc("mdt")
 proc mdv(t: float) =
   tic()
@@ -145,19 +142,13 @@ const useApproxFG2 = false
 proc fgv(t: float) =
   tic()
   gc.forceA(g, f)
-  threads:
-    for mu in 0..<g.len:
-      for s in g[mu]:
-        g[mu][s] := exp((-t)*f[mu][s])*g[mu][s]
+  threads: axexpmuly(g, -t, f, g)
   toc("fgv")
 proc fgvf(t: float) =
   tic()
   let t = -0.5*t/mass
   f.fforce()
-  threads:
-    for mu in 0..<g.len:
-      for s in g[mu]:
-        g[mu][s] := exp((-t)*f[mu][s])*g[mu][s]
+  threads: axexpmuly(g, -t, f, g)
   toc("fgvf")
 var gg = lo.newgauge
 proc fgsave =

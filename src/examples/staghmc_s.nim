@@ -120,12 +120,7 @@ proc smearedOneLinkForce(f: auto, smearedForce: proc, p: auto, g:auto) =
   f.smearedForce f
 
   # 4. Tₐ ReTr( Tₐ U F† )
-  threads:
-    for mu in 0..<f.len:
-      for i in f[mu]:
-        var s {.noinit.}: typeof(f[0][0])
-        s := f[mu][i] * g[mu][i].adj
-        projectTAH(f[mu][i], s)
+  threads: contractProjectTAH(f, f, g)
 
 proc fforce(f: auto) =
   tic()
@@ -138,10 +133,7 @@ proc fforce(f: auto) =
 
 proc mdt(t: float) =
   tic()
-  threads:
-    for mu in 0..<g.len:
-      for s in g[mu]:
-        g[mu][s] := exp(t*p[mu][s])*g[mu][s]
+  threads: axexpmuly(g, t, p, g)
   toc("mdt")
   GC_fullCollect()
   toc("GC")
@@ -172,19 +164,13 @@ const useApproxFG2 = false
 proc fgv(t: float) =
   tic()
   gc.forceA(g, f)
-  threads:
-    for mu in 0..<g.len:
-      for s in g[mu]:
-        g[mu][s] := exp((-t)*f[mu][s])*g[mu][s]
+  threads: axexpmuly(g, -t, f, g)
   toc("fgv")
 proc fgvf(t: float) =
   tic()
   let t = -0.5*t/mass
   f.fforce()
-  threads:
-    for mu in 0..<g.len:
-      for s in g[mu]:
-        g[mu][s] := exp((-t)*f[mu][s])*g[mu][s]
+  threads: axexpmuly(g, -t, f, g)
   toc("fgvf")
 var gg = lo.newgauge
 proc fgsave =

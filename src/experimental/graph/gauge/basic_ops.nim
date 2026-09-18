@@ -1,6 +1,7 @@
 import ../[core, scalar]
 import ../support/op
 import layout, gauge, physics/qcdTypes
+import field/matrixFields
 import types
 
 # Site-local algebra, stamped once for the gauge bundle and once for the
@@ -417,10 +418,8 @@ proc blendSubset*(parity, dir: int, cand, x: Ggauge): Ggauge =
       z = Ggauge(v)
     threads:
       for mu in 0..<z.gval.len:
-        z.gval[mu] := x.gval[mu]
-      threadBarrier()
-      for e in sub:
-        z.gval[dir][e] := cand.gval[dir][e]
+        if mu == dir: blendSubset(z.gval[mu], cand.gval[mu], x.gval[mu], sub)
+        else: z.gval[mu] := x.gval[mu]
 
   proc backward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
     let

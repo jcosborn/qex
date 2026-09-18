@@ -483,9 +483,7 @@ when isMainModule:
     #gf.gaugeForce3(g)
     toc "gaugeForce"
     for mu in 0..<nd:
-      for e in st[mu]:
-        let s = g[mu][e] * st[mu][e].adj
-        st[mu][e].projectTAH s
+      contractProjectTAH(st[mu], g[mu], st[mu])
       echo gf[mu].norm2, " ", st[mu].norm2, " ", (gf[mu]-st[mu]).norm2
   testStaple()
 

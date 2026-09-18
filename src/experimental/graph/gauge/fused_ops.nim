@@ -1,6 +1,7 @@
 import ../[core, scalar, multi]
 import ../support/op
 import layout, physics/qcdTypes
+import gauge/gaugeUtils
 import types, basic_ops, matfun
 
 # Section: Fused Gauge Ops
@@ -93,9 +94,8 @@ proc contractProjTAHPackedInputf(v: Gvalue) =
   let x = Ggauge(args.storedSlot(0))
   let y = Ggauge(args.storedSlot(1))
   let z = Ggauge(v)
-  z.mapGaugeElements:
-    let s = x.gval[mu][e] * y.gval[mu][e].adj
-    z.gval[mu][e].projectTAH s
+  threads:
+    contractProjectTAH(z.gval, x.gval, y.gval)
 
 let contractProjTAHPackedInputg = Gfunc(bufferMode: bmFull,
   forward: contractProjTAHPackedInputf,
@@ -173,9 +173,8 @@ proc contractProjTAH*(x: Ggauge, y: Ggauge, parity = -1, dir = 0): Ggauge =
     let x = Ggauge(args.storedSlot(0))
     let y = Ggauge(args.storedSlot(1))
     let z = Ggauge(v)
-    forGaugeSubset(sub):
-      let s = x.gval[dir][e] * y.gval[dir][e].adj
-      z.gval[dir][e].projectTAH s
+    threads:
+      contractProjectTAH(z.gval[dir], x.gval[dir], y.gval[dir], sub)
   proc bwd(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
     let args = Gmulti(z.inputs[0])
     let
@@ -210,9 +209,8 @@ proc axexpPackedInputf(v: Gvalue) =
   let a = Gscalar(args.storedSlot(0))
   let x = Ggauge(args.storedSlot(1))
   let z = Ggauge(v)
-  let f = a.sval
-  z.mapGaugeElements:
-    z.gval[mu][e] := exp(f * x.gval[mu][e])
+  threads:
+    axexp(z.gval, a.sval, x.gval)
 
 let axexpPackedInputg = Gfunc(bufferMode: bmFull,
   forward: axexpPackedInputf,
@@ -256,14 +254,8 @@ proc axexpmulyPackedInputPackf(v: Gvalue) =
   # Result slots: [exp(a*x), exp(a*x)*y]
   let expax = Ggauge(pack.storedSlot(0))
   let value = Ggauge(pack.storedSlot(1))
-  let f = a.sval
   threads:
-    for mu in 0..<value.gval.len:
-      for e in value.gval[mu]:
-        var t{.noinit.}: evalType(x.gval[mu][e])
-        t[] := expAH(f * x.gval[mu][e][])
-        expax.gval[mu][e] := t
-        value.gval[mu][e] := t * y.gval[mu][e]
+    axexpmuly(value.gval, a.sval, x.gval, y.gval, expax.gval)
 
 let axexpmulyPackedInputPackg = Gfunc(bufferMode: bmFull,
   forward: axexpmulyPackedInputPackf,
@@ -290,12 +282,8 @@ proc axexpmuly*(a: Gscalar, x: Ggauge, y: Ggauge, parity = -1, dir = 0): Ggauge 
     let pack = Gmulti(v)
     let expax = Ggauge(pack.storedSlot(0))
     let value = Ggauge(pack.storedSlot(1))
-    let f = a.sval
-    forGaugeSubset(sub):
-      var t{.noinit.}: evalType(x.gval[dir][e])
-      t[] := expAH(f * x.gval[dir][e][])
-      expax.gval[dir][e] := t
-      value.gval[dir][e] := t * y.gval[dir][e]
+    threads:
+      axexpmuly(value.gval[dir], a.sval, x.gval[dir], y.gval[dir], sub, expax.gval[dir])
   proc bwd(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
     let args = Gmulti(z.inputs[0])
     let a = Gscalar(args[0])

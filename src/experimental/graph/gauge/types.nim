@@ -126,28 +126,6 @@ method bufferBytes*(x: Ggauge): int =
   for f in x.gval:
     result += f.s.bytes
 
-proc reunitGauge*(g: Gauge) =
-  # Project each link back onto its gauge group. SU(1) is trivial ({1}), so for
-  # Nc==1 (U(1)) reunitize to the unit circle with projectU; otherwise projectSU.
-  const nc = g[0][0].nrows
-  threads:
-    when nc == 1:
-      g.projectU
-    else:
-      g.projectSU
-    threadBarrier()
-
-proc checkUnitary*(g: Gauge): tuple[avg, max: float] =
-  ## Mean/max link distance from U(1) or SU(N); does not modify g.
-  const nc = g[0][0].nrows
-  var a, m: float
-  threads:
-    let d = when nc == 1: g.checkU else: g.checkSU
-    threadMaster:
-      a = d.avg
-      m = d.max
-  (avg: a, max: m)
-
 proc gaugeSnapshot*(x: Ggauge): Gauge =
   if not x.hasStorage:
     discard x.eval

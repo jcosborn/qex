@@ -127,10 +127,7 @@ proc forceX(c: GaugeActionCoeffs, g: auto, f: auto) =
 var gutime = 0.0
 proc mdt(t: float) =
   tic()
-  threads:
-    for mu in 0..<g.len:
-      for s in g[mu]:
-        g[mu][s] := exp(t*p[mu][s])*g[mu][s]
+  threads: axexpmuly(g, t, p, g)
   gutime += getElapsedTime()
   toc("mdt")
 var gf2s = 0.0
