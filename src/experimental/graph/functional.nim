@@ -1055,6 +1055,13 @@ proc resetApplyCache*(grt: GraphRuntime, stats = true) =
   if stats:
     grt.functional.applyCacheStats = ApplyCacheStats()
 
+proc resetCaches*(grt: GraphRuntime, stats = true) =
+  ## Drop the grad, apply and ldj cache entries; `stats = false` keeps the grad
+  ## and apply counters. Run statistics and plan frames are untouched.
+  grt.resetGradCache(stats)
+  grt.resetApplyCache(stats)
+  grt.resetLdjCache
+
 proc ensureInstantiation(v: Gvalue,
                          arg: Gvalue,
                          fn: Glambda): ApplyCacheEntry =

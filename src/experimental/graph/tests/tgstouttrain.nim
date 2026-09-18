@@ -80,9 +80,7 @@ proc runStoutTrainingTests*(localLat: seq[int], beta: float) =
     parameters = [LearnedParameter(name:"flowRho",node:rho)])
   memory("after trajectory graph")
   defer:
-    rt.resetGradCache(false)
-    rt.resetApplyCache
-    rt.resetLdjCache
+    rt.resetCaches
   memory("before mixed derivatives")
   let
     dt = graph.learnedParameters[0].node

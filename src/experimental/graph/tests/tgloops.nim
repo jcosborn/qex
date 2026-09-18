@@ -25,9 +25,7 @@ proc runLoopTests() =
         unittest.test name:
           body
       runCase(fn)
-      grt.resetGradCache(false)
-      grt.resetApplyCache(false)
-      grt.resetLdjCache
+      grt.resetCaches
       GC_fullCollect()
   include gauge/gaugehelpers
   echo "graph loop ranks: ", nRanks

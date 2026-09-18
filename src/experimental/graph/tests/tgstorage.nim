@@ -456,12 +456,8 @@ suite "graph shared storage plans":
     let rt = initGraphRuntime()
     let keep = initGraphRuntime()
     defer:
-      rt.resetGradCache
-      rt.resetApplyCache
-      rt.resetLdjCache
-      keep.resetGradCache
-      keep.resetApplyCache
-      keep.resetLdjCache
+      rt.resetCaches
+      keep.resetCaches
 
   test "a preserved input chain reuses two arena buffers":
     chain(false)
@@ -2095,9 +2091,7 @@ suite "graph shared storage plans":
     discard p.eval()
     let output = Ggauge(p[0])
     let d = Ggauge(p[1])
-    rt.resetGradCache
-    rt.resetApplyCache
-    rt.resetLdjCache
+    rt.resetCaches
     GC_fullCollect()
     same(output, kz)
     same(d, Ggauge(grad(ks, kx)))

@@ -72,9 +72,7 @@ proc runJacTests*(lat0: seq[int]) =
     setup:
       let rt = initGraphRuntime()
       defer:
-        rt.resetGradCache(false)
-        rt.resetApplyCache(false)
-        rt.resetLdjCache
+        rt.resetCaches(false)
       let W = gauge.toGvalue(rt,g)
       let ds = gauge.toGvalue(rt,d)
       let gu = gauge.toGvalue(rt,u)
@@ -252,9 +250,7 @@ proc runJacTests*(lat0: seq[int]) =
       setup:
         let rt = initGraphRuntime()
         defer:
-          rt.resetGradCache(false)
-          rt.resetApplyCache(false)
-          rt.resetLdjCache
+          rt.resetCaches(false)
         let W = gauge.toGvalue(rt,one)
         let ds = gauge.toGvalue(rt,aux)
         let gu = gauge.toGvalue(rt,um)
@@ -371,9 +367,7 @@ proc runJacTests*(lat0: seq[int]) =
           gu.update uv
           a.update alpha
           if pass > 0:
-            rt.resetGradCache(false)
-            rt.resetApplyCache(false)
-            rt.resetLdjCache
+            rt.resetCaches(false)
           for repeat in 0..1:
             same(st.Wnew,up,4e-22)
             same(st.lj,lj,2e-11)

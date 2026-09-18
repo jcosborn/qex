@@ -76,9 +76,7 @@ if measure:
   echo "graph tower memory: mode=", mode, ", constructed=", built,
        ", peak=", peak, ", retained=", retained, ", value=", value
   if p != nil: p.clear
-  rt.resetGradCache
-  rt.resetApplyCache
-  rt.resetLdjCache
+  rt.resetCaches
 else:
   suite "graph value lifetime":
     setup:
@@ -91,12 +89,8 @@ else:
       let ky = keep.toGvalue(u)
       let kb = keep.toGvalue(m)
       defer:
-        rt.resetGradCache
-        rt.resetApplyCache
-        rt.resetLdjCache
-        keep.resetGradCache
-        keep.resetApplyCache
-        keep.resetLdjCache
+        rt.resetCaches
+        keep.resetCaches
 
     test "construction defers fields and generated identity values":
       let raw = getRawMemAllocated()
