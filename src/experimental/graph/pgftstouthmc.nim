@@ -111,6 +111,7 @@ proc runStoutHmc[T](R: typedesc[T]) =
     measure = sa.flow(graph.initialState.gauge)
     measureLd = logDetJ(measure, graph.initialState.gauge)
     meas = plan(measure, measureLd)
+  defer: meas.clear
 
   block:
     discard meas.eval
@@ -147,7 +148,6 @@ proc runStoutHmc[T](R: typedesc[T]) =
       u.maybeSaveGauge(runConfig, traj)   # save the physical field U = f(V)
 
   runHmc(graph, runConfig, randomField, acceptRandom, measureTraj)
-  meas.clear
 
   if Hvals.len > 0:
     obstat(Hvals, Avals, Pvals, Lvals, Jvals, mdvals, gp.jkBlockSize)
