@@ -8,8 +8,6 @@ import ../gauge/[types, field_ops, transport, cfield, stencil]
 
 addOutputFormatter(newConsoleOutputFormatter(colorOutput = false))
 
-proc runCase(f: proc()) {.noinline.} = f()
-
 proc runLoopTests() =
   qexInit()
   defer: qexFinalize()
@@ -18,20 +16,18 @@ proc runLoopTests() =
   # One coefficient check retains several GB, beyond the raw allocator's trigger.
   setRawMemGcThreshold(int.high)
   let grt = initGraphRuntime()
+  # The included suites spell `test`; route them through gcTest and drop the
+  # shared runtime's caches before each collection.
   template test(name, body: untyped) =
-    block:
-      # Keep each case's graph on a separate frame for collection.
-      let fn = proc() =
-        unittest.test name:
-          body
-      runCase(fn)
-      grt.resetCaches
-      GC_fullCollect()
+    gcTest(name):
+      defer: grt.resetCaches
+      body
   include gauge/gaugehelpers
   echo "graph loop ranks: ", nRanks
-  # Override lat with 2,4,8,8 to also exercise repeated physical links.
+  # The extent-two direction pins repeated physical links; the other extents
+  # keep every SIMD outer extent even up to VLEN 8.
   letParam:
-    lat = latticeFromLocalLattice(@[4,4,8,8], nRanks)
+    lat = latticeFromLocalLattice(@[2,4,8,8], nRanks)
   let lo = lat.newLayout
   let subDir = min(1, lat.len - 1)
   const loopTestsOnly = true

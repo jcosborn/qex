@@ -2245,13 +2245,13 @@ suite "graph shared storage plans":
     let (sel, ksel) = pair(rt, keep, 1)
     let v = Ggauge(x.newOneOf)
     let kv = Ggauge(kx.newOneOf)
-    let cached = stoutUpdate(x, y, a, 1, 1)
+    let upd = stoutUpdate(x, y, a, 1, 1)
     let kc = stoutUpdate(kx, ky, ka, 1, 1)
     let call = Ggauge(apply(lambda(v, stoutUpdate(v, y, a, 1, 1)), x))
     let kcall = Ggauge(apply(lambda(kv, stoutUpdate(kv, ky, ka, 1, 1)), kx))
-    let choice = cond(sel, cached, x)
+    let choice = cond(sel, upd, x)
     let kchoice = cond(ksel, kc, kx)
-    let composed = stoutUpdate(cached, y, a, 0, 0)
+    let composed = stoutUpdate(upd, y, a, 0, 0)
     let kc2 = stoutUpdate(kc, ky, ka, 0, 0)
     let score = redot(call + choice + composed, b)
     let ks = redot(kcall + kchoice + kc2, kb)
@@ -2259,7 +2259,7 @@ suite "graph shared storage plans":
     let kda = Gscalar(grad(ks, ka))
     let dw = Ggauge(grad(score, x))
     let kdw = Ggauge(grad(ks, kx))
-    check cached.bufferBytes > x.bufferBytes
+    check upd.bufferBytes > x.bufferBytes
     check call.bufferBytes == x.bufferBytes
     check choice.bufferBytes == x.bufferBytes
     let p = plan(call, choice, composed, da, dw)

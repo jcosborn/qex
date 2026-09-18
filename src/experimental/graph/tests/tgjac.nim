@@ -10,15 +10,6 @@ import ../[core, scalar, gauge]
 import ../functional
 import ../hmcgauge/ftstout
 
-# A completed case must leave the conservative GC stack before collection.
-proc runCase(f: proc()) {.noinline.} = f()
-
-template test(name, body: untyped) =
-  runCase(proc() =
-    unittest.test name:
-      body)
-  GC_fullCollect()
-
 proc runJacTests*(lat0: seq[int]) =
   qexInit()
   defer: qexFinalize()
@@ -84,7 +75,7 @@ proc runJacTests*(lat0: seq[int]) =
       const parity = 1
       const dir = 0
 
-    test "finite polynomial replica matches fused value and first gradients":
+    gcTest "finite polynomial replica matches fused value and first gradients":
       let ff = stoutLogDetJ(W,ds,a,parity,dir)
       let fr = stoutLogDetJGraph(W,ds,a,parity,dir)
       same(ff,fr)
@@ -101,7 +92,7 @@ proc runJacTests*(lat0: seq[int]) =
       same(grad(ff,ds),grad(fr,ds))
       same(grad(ff,a),grad(fr,a))
 
-    test "logdet second and third derivatives retain dependent cotangents":
+    gcTest "logdet second and third derivatives retain dependent cotangents":
       proc second(x,y: Ggauge, alpha, seed: Gscalar, replica=false): Gscalar =
         let f = seed * (if replica: stoutLogDetJGraph(x,y,alpha,parity,dir)
                        else: stoutLogDetJ(x,y,alpha,parity,dir))
@@ -114,7 +105,7 @@ proc runJacTests*(lat0: seq[int]) =
       let f3 = redot(grad(second(W,ds,a,b),W),W*gv+gu) + a*grad(second(W,ds,a,b),a)
       checkT("logdet third alpha",f3,a,0.09)
 
-    test "aliased field and scalar cotangents retain all input paths":
+    gcTest "aliased field and scalar cotangents retain all input paths":
       proc second(x: Ggauge, alpha: Gscalar, replica=false): Gscalar =
         let f = alpha * (if replica: stoutLogDetJGraph(x,x,alpha,parity,dir)
                         else: stoutLogDetJ(x,x,alpha,parity,dir))
@@ -125,7 +116,7 @@ proc runJacTests*(lat0: seq[int]) =
       same(grad(ff,t),grad(fr,t))
       checkT("aliased logdet",ff,t)
 
-    test "grouped fixed-staple update logdet and combined pullbacks":
+    gcTest "grouped fixed-staple update logdet and combined pullbacks":
       for mode in 0..2:
         proc score(x,y: Ggauge, alpha: Gscalar, grouped: bool): Gscalar =
           var z: Ggauge
@@ -152,7 +143,7 @@ proc runJacTests*(lat0: seq[int]) =
         same(grad(ff,t),grad(fr,t))
         checkT("grouped fixed staple " & $mode,ff,t)
 
-    test "grouped action Hessian preserves W coefficient and alpha dependence":
+    gcTest "grouped action Hessian preserves W coefficient and alpha dependence":
       for mode in 0..2:
         proc score(x: Ggauge, beta, alpha: Gscalar, fused: bool): Gscalar =
           let coeff = actWilson(beta)
@@ -180,7 +171,7 @@ proc runJacTests*(lat0: seq[int]) =
         same(gr,refg)
         same(grad(gr,b),grad(refg,b))
 
-    test "higher grouped pullbacks clone with their evaluation caches":
+    gcTest "higher grouped pullbacks clone with their evaluation caches":
       let p = Ggauge(W.newOneOf)
       proc score(x: Ggauge): Gscalar =
         let st = stoutUpdateLogDetJ(x,c,a,parity,dir)
@@ -199,7 +190,7 @@ proc runJacTests*(lat0: seq[int]) =
       same(cloned,direct)
       same(grad(cloned,W),grad(direct,W))
 
-    test "exposed flow rho participates in mixed force derivatives":
+    gcTest "exposed flow rho participates in mixed force derivatives":
       let sa = stoutAction(c,a,1)
       check sa.rho.nodeKey == a.nodeKey
       let f = sa.action(W)
@@ -261,7 +252,7 @@ proc runJacTests*(lat0: seq[int]) =
         const parity = 1
         const dir = 0
 
-      test "bounded oracle spectra match graph value and ambient gradients":
+      gcTest "bounded oracle spectra match graph value and ambient gradients":
         let ff = stoutLogDetJ(W,ds,a,parity,dir)
         let fr = stoutLogDetJGraph(W,ds,a,parity,dir)
         let fw = grad(ff,W)
@@ -308,7 +299,7 @@ proc runJacTests*(lat0: seq[int]) =
           same(fa,ea,2e-11)
           same(ra,ea,2e-11)
 
-      test "norm eight mixed fourth logdet derivatives commute":
+      gcTest "norm eight mixed fourth logdet derivatives commute":
         # Both ambient directions fail to commute with the base generator.
         let m = base.m
         let dm = base.dm
@@ -332,7 +323,7 @@ proc runJacTests*(lat0: seq[int]) =
         same(ftsts,fstst,2e-9)
         checkT("norm eight mixed fourth",ftst,s,0.0,0.001)
 
-      test "norm eight grouped caches match separate pullbacks after refresh":
+      gcTest "norm eight grouped caches match separate pullbacks after refresh":
         let st = stoutUpdateLogDetJ(W,ds,a,parity,dir)
         let up = stoutUpdate(W,ds,a,parity,dir)
         let lj = stoutLogDetJ(W,ds,a,parity,dir)
@@ -377,7 +368,7 @@ proc runJacTests*(lat0: seq[int]) =
             same(ga,ra,2e-11)
             same(gm,rm,2e-10)
 
-      test "norm eight update field pullback matches directional differences":
+      gcTest "norm eight update field pullback matches directional differences":
         var f, df: M
         f.projectTAH(base.m)
         df.projectTAH(base.c*base.m)
@@ -391,7 +382,7 @@ proc runJacTests*(lat0: seq[int]) =
         checkT("norm eight update field pullback",first,t,0.0,0.001)
         checkT("norm eight update field pullback half step",first,t,0.0,0.0005)
 
-      test "update pullbacks match differences across norms and inputs":
+      gcTest "update pullbacks match differences across norms and inputs":
         let dv = sl.newGauge
         let uv = sl.newGauge
         let vv = sl.newGauge
