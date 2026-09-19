@@ -1,4 +1,6 @@
 ## Standalone numerical NN module tests.
+import base/globals
+setVLENmax(4) # two-dimensional lattices
 import qex, nn
 import std/unittest
 import ./[pointwise, convolution, masks]

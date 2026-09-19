@@ -1,4 +1,6 @@
 ## Standalone NN graph value and operation tests.
+import base/globals
+setVLENmax(4) # two-dimensional lattices
 import qex
 import ../../../nn as numeric
 import ../nn as gnn

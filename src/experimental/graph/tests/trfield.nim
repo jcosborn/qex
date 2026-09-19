@@ -1,4 +1,6 @@
 ## Field bridge contracts independent of Python and checkpoint fixtures.
+import base/globals
+setVLENmax(4) # two-dimensional lattices
 import qex
 import std/[unittest, math]
 import ../[core, scalar, functional, plan]
