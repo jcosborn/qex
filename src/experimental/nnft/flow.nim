@@ -19,7 +19,6 @@ type
     scale*: seq[T]
   NnftParams*[T: SomeFloat] = seq[NnftNet[T]]
     ## One network per stage; stage s updates the class s mod 8.
-  NnWork[T: SomeFloat] = typeof(convWorkspace(default(RealField[T]), default(ConvParams[T])))
   GaugeElem = DLatticeColorMatrixV.T
   RealElem = DLatticeRealV.T
   GaugeHalo = Halo[Layout[VLEN],DLatticeColorMatrixV,GaugeElem]
@@ -51,7 +50,7 @@ type
     logdet*: float
     expa: DLatticeColorMatrixV
     m*: DLatticeColorMatrixV
-    net: seq[NnWork[T]]
+    net: seq[ConvWorkspace[T]]
     dsGrad, loopGrad, stapleGrad: seq[DLatticeColorMatrixV]
     coefGrad, tmpGrad1, tmpGrad2: seq[RealField[T]]
     grad: seq[seq[RealField[T]]] # per convolution, its input cotangent

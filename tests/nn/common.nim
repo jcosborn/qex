@@ -2,15 +2,17 @@ import qex, nn
 import std/[math, unittest]
 export unittest
 
-proc fields*[T: SomeFloat](lo: Layout[VLEN]; channels: int; value = T(0)): seq[RealField[T]] =
+proc fields*[T: SomeFloat](lo: Layout[VLEN]; channels: int; value: T = T(0)): seq[RealField[T]] =
   result = newSeq[RealField[T]](channels)
   for c in 0..<channels: result[c] = realField(lo,T)
   let fs = result
   threads:
     for f in fs: f := value
 
-proc sample*[F](f: F; site: int): numberType(F) =
-  result := f{site}
+proc sample*[F](f: F; site: int): auto =
+  var r: numberType(F)
+  r := f{site}
+  r
 
 proc fill*[F; T: SomeFloat](fs: seq[F]; value: T) =
   threads:

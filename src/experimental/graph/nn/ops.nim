@@ -7,18 +7,17 @@ import types
 import std/[math, tables, sequtils]
 
 type
-  NnWork[T: SomeFloat] = typeof(numeric.convWorkspace(default(RealField[T]),default(ConvParams[T])))
   ConvWork[T: SomeFloat] = ref object of Gwork
-    ws: NnWork[T]
+    ws: numeric.ConvWorkspace[T]
   Gconv[T: SomeFloat] = ref object of Greal[T]
     ## Numerical calls rebind every halo field before use.
     params: ConvParams[T]
     key: string
-    ws: NnWork[T]
+    ws: numeric.ConvWorkspace[T]
   GconvWeight[T: SomeFloat] = ref object of Garray[T]
     params: ConvParams[T]
     key: string
-    ws: NnWork[T]
+    ws: numeric.ConvWorkspace[T]
 
 
 proc requireTaps(offsets: seq[seq[int32]], lo: Layout[VLEN]) =
@@ -187,7 +186,7 @@ template realOps(T: typedesc) {.dirty.} =
     x.releaseWork
     procCall Greal[T](x).releaseStorage
 
-  proc work(ws: var NnWork[T], rt: GraphRuntime, proto: RealField[T], p: ConvParams[T], tag: string): NnWork[T] =
+  proc work(ws: var numeric.ConvWorkspace[T], rt: GraphRuntime, proto: RealField[T], p: ConvParams[T], tag: string): numeric.ConvWorkspace[T] =
     if rt.evalFrame != nil and rt.workFrame != nil:
       let key: GworkKey = (kind:tag,layout:cast[pointer](proto.l),fields:p.cin,order:0)
       var entry = ConvWork[T](rt.workFrame.getOrDefault(key))

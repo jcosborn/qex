@@ -10,7 +10,7 @@ proc realField*[T: SomeFloat](lo: Layout[VLEN]; precision: typedesc[T]): auto =
   when T is float32: lo.RealS()
   else: lo.RealD()
 
-type RealField*[T: SomeFloat] = typeof(realField(default(Layout[VLEN]),T))
+type RealField*[T: SomeFloat] = typeof(realField(Layout[VLEN](nil),T))
 type SiteMask* = RealField[float32]
   ## Existing lattice field storage; zero excludes a site, nonzero selects it.
 
@@ -45,10 +45,14 @@ type
     kernel*: seq[int]
     offsets*: seq[seq[int32]]
     weights*, bias*: seq[T]
-  ConvWorkspace*[L,F,E] = ref object
-    layout*: HaloLayout[L]
-    map*: HaloMap[L]
-    halo*: seq[Halo[L,F,E]]
+  ConvWorkspace*[T: SomeFloat] = ref object
+    ## Halo buffers, exchange map and tap table of one layout for RealField[T].
+    layout*: HaloLayout[Layout[VLEN]]
+    map*: HaloMap[Layout[VLEN]]
+    when T is float32:
+      halo*: seq[Halo[Layout[VLEN],SLatticeRealV,SLatticeRealV.T]]
+    else:
+      halo*: seq[Halo[Layout[VLEN],DLatticeRealV,DLatticeRealV.T]]
     offsets*: seq[seq[int32]]
     index*: seq[int32]
 
@@ -90,20 +94,18 @@ proc convParams*[T](cin, cout: int; shape: openArray[int]; weights: seq[T]; bias
   result.offsets = kernelOffsets(shape)
   result.validate(shape.len)
 
-proc convWorkspace*[F,T](proto: F; p: ConvParams[T]): auto =
+proc convWorkspace*[F,T](proto: F; p: ConvParams[T]): ConvWorkspace[T] =
   ## Halo buffers, exchange map and tap table for inputs shaped like proto.
   ## Every convolution rebinds the halo fields, so one workspace serves any
   ## inputs of that layout and channel count.
   let lo = proto.l
   p.validate(lo.nDim, false)
   let hl = lo.haloLayout(p.offsets)
-  type E = eval(F.type.index(int))
-  type L = type(lo)
-  var ws: ConvWorkspace[L,F,E]
+  var ws: ConvWorkspace[T]
   ws.new
   ws.layout = hl
   ws.offsets = p.offsets
-  ws.halo = newSeq[Halo[L,F,E]](p.cin)
+  ws.halo.setLen(p.cin)
   if hl.nExt > hl.nOut:
     ws.map = hl.haloMap(lo.comm, p.offsets)
   for i in 0..<p.cin:
@@ -122,7 +124,7 @@ proc validateFields[F](dst, src: openArray[F]; mask: SiteMask) =
   if mask != nil and mask.l != lo:
     raise newException(ValueError, "NN mask layout differs from source")
 
-proc conv*[L,F,E,T](dst, src: seq[F]; p: ConvParams[T]; ws: ConvWorkspace[L,F,E]; sub = "all"; addBias = true) =
+proc conv*[F,T](dst, src: seq[F]; p: ConvParams[T]; ws: ConvWorkspace[T]; sub = "all"; addBias = true) =
   ## Call outside a threads block. Workspace buffers are refreshed on every call.
   ## z_o(x) = sum_i,t W_o,i,t x_i(x+offset_t), followed by bias. A masked
   ## output composes with maskedCopy.
@@ -141,6 +143,7 @@ proc conv*[L,F,E,T](dst, src: seq[F]; p: ConvParams[T]; ws: ConvWorkspace[L,F,E]
     if ws.layout.nExt > ws.layout.nOut:
       ws.halo[i].update(ws.map, ws.layout.lo.comm)
   let nt = p.offsets.len
+  type E = eval(F.type.index(int))
   threads:
     for o in 0..<p.cout:
       for x in dst[o][sub]:
@@ -270,7 +273,7 @@ proc maskedCopy*[F](dst, src: seq[F]; mask: SiteMask; sub = "all") =
       for e in dst[c][sub]:
         store(dst[c], e, mask, R, src[c][e])
 
-proc convVjp*[L,F,E,T](dx, dy: seq[F]; p: ConvParams[T]; ws: ConvWorkspace[L,F,E]; sub = "all") =
+proc convVjp*[F,T](dx, dy: seq[F]; p: ConvParams[T]; ws: ConvWorkspace[T]; sub = "all") =
   ## dx_i(x+tap) += W_o,i,tap dy_o(x), followed by reverse halo accumulation.
   ## Each thread owns complete input channels, including their halo gradients.
   ## Writes dx from zero; workspace halos are rebound and reusable by conv.
@@ -289,6 +292,7 @@ proc convVjp*[L,F,E,T](dx, dy: seq[F]; p: ConvParams[T]; ws: ConvWorkspace[L,F,E
   for i in 0..<p.cin: ws.halo[i].field = dx[i]
   let sel = lo.getSubset(sub)
   let nt = p.offsets.len
+  type E = eval(F.type.index(int))
   threads:
     var i = threadNum
     while i < p.cin:
@@ -305,7 +309,7 @@ proc convVjp*[L,F,E,T](dx, dy: seq[F]; p: ConvParams[T]; ws: ConvWorkspace[L,F,E
   if ws.layout.nExt > ws.layout.nOut:
     for i in 0..<p.cin: ws.halo[i].updateRev(ws.map, lo.comm)
 
-proc convWeightVjp*[L,F,E,T](dw: var seq[T]; x, dy: seq[F]; p: ConvParams[T]; ws: ConvWorkspace[L,F,E]; sub = "all") =
+proc convWeightVjp*[F,T](dw: var seq[T]; x, dy: seq[F]; p: ConvParams[T]; ws: ConvWorkspace[T]; sub = "all") =
   ## dw_o,i,t = sum_s dy_o(s) x_i(s+offset_t), globally replicated.
   ## Threads own parameter entries; the rank reduction runs once after joining.
   validateFields(x,dy,nil)
@@ -323,6 +327,7 @@ proc convWeightVjp*[L,F,E,T](dw: var seq[T]; x, dy: seq[F]; p: ConvParams[T]; ws
   let sel = lo.getSubset(sub)
   let dst = cast[ptr UncheckedArray[T]](dw[0].addr)
   let n = dw.len
+  type E = eval(F.type.index(int))
   threads:
     var k = threadNum
     while k < n:
