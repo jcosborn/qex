@@ -86,11 +86,12 @@ proc testPointwise*[T: SomeFloat]() =
       let dx = fields[T](lo,2)
       arctanVjp(dx,x,dy)
       arctan(x,x)
+      # Fast-math may divide through a reciprocal estimate: a few ulps of T.
       for s in 0..<lo.nSites:
         check x[0].sample(s) == 0
         check close(x[1].sample(s),T(PI)/T(4))
-        check dx[0].sample(s) == T(2)
-        check dx[1].sample(s) == T(1)
+        check close(dx[0].sample(s),T(2))
+        check close(dx[1].sample(s),T(1))
 
     test "channel bias and scale preserve isolation and support in-place updates":
       let x = fields[T](lo,3)
