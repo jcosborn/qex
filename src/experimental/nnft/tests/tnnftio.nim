@@ -105,10 +105,10 @@ proc run() =
     test "latent angles map global direction, row and column in both precisions":
       let dir = createTempDir("qex-nnft-io-","")
       defer: removeDir(dir)
-      let lo = newLayout(@[8,12])
+      let lo = newLayout(@[8,16])
       let g = lo.newGauge
       for dtype in ["float32","float64"]:
-        let arr = spec("latent.bin",dtype,@[2,8,12])
+        let arr = spec("latent.bin",dtype,@[2,8,16])
         var data = newSeq[float64](arraySize(arr))
         for j in 0..<data.len:
           data[j] = 0.43*sin(0.31*float(j))+0.07*cos(0.19*float(j))
@@ -123,7 +123,7 @@ proc run() =
           for s in 0..<lo.nSites:
             let r = lo.coords[0][s].int
             let c = lo.coords[1][s].int
-            let a = stored[(d*8+r)*12+c]
+            let a = stored[(d*8+r)*16+c]
             var re,im: float64
             re := g[d]{s}[0,0].re
             im := g[d]{s}[0,0].im
@@ -134,18 +134,18 @@ proc run() =
     test "latent errors preserve destination storage":
       let dir = createTempDir("qex-nnft-io-","")
       defer: removeDir(dir)
-      let lo = newLayout(@[8,12])
+      let lo = newLayout(@[8,16])
       let g = lo.newGauge
       threads:
         for f in g: f := 1.0
-      let arr = spec("latent.bin","float64",@[2,8,12])
+      let arr = spec("latent.bin","float64",@[2,8,16])
       arrays.writeArray(dir,arr,values[float64](0,arraySize(arr)))
       let man = %*{"version":1,"arrays":{"latent":arr}}
       saveManifest(dir,man)
       expect ValueError: loadLatent(g,dir,"missing")
-      arr["shape"] = %(@[2,12,8])
+      arr["shape"] = %(@[2,16,8])
       expect ValueError: loadAngles(g,dir,arr)
-      arr["shape"] = %(@[2,8,12])
+      arr["shape"] = %(@[2,8,16])
       writeFile(dir/"latent.bin","short")
       expect ValueError: loadAngles(g,dir,arr)
       for d in 0..1:

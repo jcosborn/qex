@@ -1,6 +1,6 @@
 ## Field lifetimes and NN evaluation with reusable graph storage.
 proc lifetime[T: SomeFloat]() =
-  let lo = newLayout(@[8,12])
+  let lo = newLayout(@[8,16])
   let tol = when T is float64: 3e-12 else: 8e-6
   proc fields(n: int, value: T): seq[RealField[T]] =
     result = newSeq[RealField[T]](n)

@@ -50,7 +50,7 @@ proc forwards(rt: GraphRuntime): int =
 
 proc run[T: SomeFloat]() =
   suite "learned stages " & $T:
-    let lo = newLayout(@[8,12])
+    let lo = newLayout(@[8,16])
     let g = sample(lo)
     let p = parameters[T]()
 
@@ -280,7 +280,7 @@ proc run[T: SomeFloat]() =
       when DLatticeColorMatrixV.V == 1:
         let small = newLayout(@[2,8]).newGauge
         expect ValueError: discard learnedStage(gauge.toGvalue(rt,small),params[0],0)
-      let other = newLayout(@[8,12]).newGauge
+      let other = newLayout(@[8,8]).newGauge
       let mixed = @[g[0],other[1]]
       expect ValueError: discard learnedStage(gauge.toGvalue(rt,mixed),params[0],0)
       check rt.forwards == 0

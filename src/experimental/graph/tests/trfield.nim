@@ -103,7 +103,7 @@ proc runBridges*[T: SomeFloat](precision: typedesc[T]) =
     test "construction rejects incompatible channels and layouts":
       let two = neural.toGvalue(rt,@[re[0],im[0]])
       expect GraphValueError: discard rfield.complex(two,i)
-      let other = newLayout(@[8,12])
+      let other = newLayout(@[8,16])
       let raw = other.ColorMatrixD()
       threads: raw := 1.0
       expect GraphValueError: discard rfield.scale(r,toGfield(rt,raw))

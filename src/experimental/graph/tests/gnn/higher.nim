@@ -1,6 +1,6 @@
 ## Seeded input pullbacks and losses that train through input derivatives.
 proc higher[T: SomeFloat]() =
-  let lo = newLayout(@[8,12])
+  let lo = newLayout(@[8,16])
   let tol = when T is float64: 2e-11 else: 2e-5
   proc fields(n: int, phase: float): seq[RealField[T]] =
     result = newSeq[RealField[T]](n)

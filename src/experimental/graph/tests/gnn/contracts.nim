@@ -1,6 +1,6 @@
 ## Analytic graph contracts from elementary values and adjoint identities.
 proc contracts[T: SomeFloat](rt: GraphRuntime) =
-  let lo = newLayout(@[8,12])
+  let lo = newLayout(@[8,16])
   let tol = when T is float64: 3e-12 else: 8e-6
   proc fields(n: int, value: T): seq[RealField[T]] =
     result = newSeq[RealField[T]](n)
@@ -181,7 +181,7 @@ proc contracts[T: SomeFloat](rt: GraphRuntime) =
         check abs(sample(q)-float(c)) <= 4*eps*abs(float(c))
 
     test "replicated parameter contractions count each global site once":
-      for dims in [@[8,12],@[16,12]]:
+      for dims in [@[8,16],@[16,16]]:
         let layout = newLayout(dims)
         let raw = @[numeric.realField(layout,T),numeric.realField(layout,T)]
         threads:
