@@ -4,7 +4,7 @@ import common
 
 proc testConvolution*[T: SomeFloat]() =
   suite "NN convolution " & $T:
-    let lo = newLayout(@[8,12])
+    let lo = newLayout(@[8,16])
 
     test "one-tap identity, channel mixing, and bias ordering":
       let x = fields[T](lo,2)
@@ -28,7 +28,7 @@ proc testConvolution*[T: SomeFloat]() =
       let x = fields[T](lo,1)
       let y = fields[T](lo,1)
       for s in 0..<lo.nSites:
-        if lo.coords[0][s] == 0 and lo.coords[1][s] == 11: x[0]{s} := T(1)
+        if lo.coords[0][s] == 0 and lo.coords[1][s] == 15: x[0]{s} := T(1)
       let p = convParams(1,1,[3,3],@[T(1),T(2),T(4),T(8),T(16),T(32),T(64),T(128),T(256)])
       let ws = convWorkspace(x[0],p)
       conv(y,x,p,ws)
@@ -38,16 +38,16 @@ proc testConvolution*[T: SomeFloat]() =
         var expected = T(0)
         if r == 1:
           if c == 0: expected = T(1)
-          elif c == 11: expected = T(2)
-          elif c == 10: expected = T(4)
+          elif c == 15: expected = T(2)
+          elif c == 14: expected = T(4)
         elif r == 0:
           if c == 0: expected = T(8)
-          elif c == 11: expected = T(16)
-          elif c == 10: expected = T(32)
+          elif c == 15: expected = T(16)
+          elif c == 14: expected = T(32)
         elif r == 7:
           if c == 0: expected = T(64)
-          elif c == 11: expected = T(128)
-          elif c == 10: expected = T(256)
+          elif c == 15: expected = T(128)
+          elif c == 14: expected = T(256)
         check y[0].sample(s) == expected
 
     test "adjoint identity and repeated reverse calls clear all accumulated storage":
@@ -120,9 +120,9 @@ proc testConvolution*[T: SomeFloat]() =
           for t in 0..<15:
             var want = 0.0
             for r in 0..<8:
-              for s in 0..<12:
+              for s in 0..<16:
                 let rr = (r+t div 5-1+8) mod 8
-                let ss = (s+t mod 5-2+12) mod 12
+                let ss = (s+t mod 5-2+16) mod 16
                 want += float(value(i,rr,ss)*seed(o,r,s))
             let k = (o*2+i)*15+t
             check abs(float(dw[k])-want) <= tol*max(1.0,abs(want))
@@ -140,7 +140,7 @@ proc testConvolution*[T: SomeFloat]() =
       for v in dw: check v == T(0)
 
     test "replicated weight gradients scale once with the global volume":
-      for dims in [@[8,12],@[16,12]]:
+      for dims in [@[8,16],@[16,16]]:
         let layout = newLayout(dims)
         let x = fields[T](layout,2,T(2))
         let dy = fields[T](layout,3,T(3))
@@ -180,7 +180,7 @@ proc testConvolution*[T: SomeFloat]() =
       expect ValueError: discard convParams(1,2,[1,1],@[T(1)])
       expect ValueError: conv(x,x,p,ws)
       expect ValueError: convVjp(x,x,p,ws)
-      expect ValueError: conv(fields[T](newLayout(@[8,12]),1),x,p,ws)
-      expect ValueError: maskedCopy(y,x,realField(newLayout(@[8,12]),float32))
+      expect ValueError: conv(fields[T](newLayout(@[8,16]),1),x,p,ws)
+      expect ValueError: maskedCopy(y,x,realField(newLayout(@[8,16]),float32))
       var dw = newSeq[T](2)
       expect ValueError: convWeightVjp(dw,x,y,p,ws)

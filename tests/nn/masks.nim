@@ -4,7 +4,7 @@ import common
 
 proc testMasks*[T: SomeFloat]() =
   suite "NN field masks " & $T:
-    let lo = newLayout(@[8,12])
+    let lo = newLayout(@[8,16])
 
     test "global coordinates select SIMD lanes and subset complements stay unchanged":
       let x = fields[T](lo,2)
@@ -86,7 +86,7 @@ proc testMasks*[T: SomeFloat]() =
         var want = 0.0
         for t in 0..<15:
           let r = (lo.coords[0][s].int-(t div 5-1)+8) mod 8
-          let c = (lo.coords[1][s].int-(t mod 5-2)+12) mod 12
+          let c = (lo.coords[1][s].int-(t mod 5-2)+16) mod 16
           if r mod 2 == 0 and (r+c) mod 2 == 1: want += float(w[t])*float(seed(r,c))
         check abs(float(dx[0].sample(s))-want) <= tol*max(1.0,abs(want))
       for s in 0..<lo.nSites: ms{s} := 0'f32

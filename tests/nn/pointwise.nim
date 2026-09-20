@@ -4,7 +4,7 @@ import common
 
 proc testPointwise*[T: SomeFloat]() =
   suite "NN pointwise " & $T:
-    let lo = newLayout(@[8,12])
+    let lo = newLayout(@[8,16])
 
     test "GELU value, zero derivative, and reflection identity":
       let x = fields[T](lo,2)
@@ -131,7 +131,7 @@ proc testPointwise*[T: SomeFloat]() =
         check abs(float(dx[0].sample(s))-r) <= 4*eps*abs(r)
 
     test "channel reduction and broadcast are global adjoints and overwrite outputs":
-      for dims in [@[8,12],@[16,12]]:
+      for dims in [@[8,16],@[16,16]]:
         let layout = newLayout(dims)
         let x = fields[T](layout,3)
         let y = fields[T](layout,3,T(-73))
