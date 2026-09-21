@@ -127,8 +127,9 @@ proc run() =
             var re,im: float64
             re := g[d]{s}[0,0].re
             im := g[d]{s}[0,0].im
-            check abs(re-cos(a)) < 2e-16
-            check abs(im-sin(a)) < 2e-16
+            # Vector cos/sin may differ from the scalar reference by a few ulps.
+            check abs(re-cos(a)) < 2e-15
+            check abs(im-sin(a)) < 2e-15
         loadAngles(g,dir,arr)
 
     test "latent errors preserve destination storage":
