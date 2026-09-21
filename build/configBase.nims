@@ -134,9 +134,9 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
   else:
     echo "debug build"
 
-  let ss = simd.split(',')
-  if ss.len>0:
-    for s in items(ss):
+  # "auto" is resolved from the compiler probe in setNimFlags.
+  if simd != "auto":
+    for s in simd.split(','):
       case s
       of "QPX":
         d ~ QPX

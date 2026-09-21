@@ -186,6 +186,10 @@ from the source directory, or from the source directory.
 
 `<configure>` is the configure script, including path, in the QEX source directory.
 
+The default `simd:"auto"` asks the C compiler which intrinsics the build flags
+enable, for example through `-march=native`, so `simd:` is only needed for a
+specific setting.
+
 ### AXV2 using mpicc/mpicxx set to use gcc
 
 ```

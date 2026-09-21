@@ -34,7 +34,7 @@ proc setUserNimFlags(x: seq[string]) =
 var nimFlags: seq[string] = @[]
 var nimCmdArgs = ""
 #var extraFlags = ""
-type Compiler = tuple[name: string, major: int]
+type Compiler = tuple[name: string, major: int, simd: string]
 
 proc compilerInfo(flags: seq[string]): Compiler =
   # The merged flags contain configuration settings followed by user overrides.
@@ -57,8 +57,13 @@ proc compilerInfo(flags: seq[string]): Compiler =
   let dir = cfg.getOrDefault(pre & ".path", cfg.getOrDefault("--" & typ & ".path"))
   let cmd = (if dir.len > 0: dir / exe else: exe).quoteShell
   let lang = if ccDef == "cpp": "c++" else: "c"
+  # simd = "auto" reads the target macros set by the active optimization options,
+  # e.g. through -march=native; other settings keep the probe free of user options.
+  let optKey = pre[2..^1] & ".options." & (if fo.debug: "debug" else: "speed")
+  let opts = if simd == "auto": cfg.getOrDefault("--" & optKey, get(optKey)) else: ""
   # Probe the compiler behind MPI wrappers after applying environment/flag overrides.
   # Other compilers also define __GNUC__; their own macros distinguish them from GCC.
+  # The simd line reports the intrinsics the target supports; the AVX512 code needs DQ.
   let src = """
 #if defined(__INTEL_COMPILER) || defined(__INTEL_LLVM_COMPILER) || defined(__NVCOMPILER) || defined(__PGI)
 #elif defined(__clang__)
@@ -66,14 +71,22 @@ qex_cc clang __clang_major__
 #elif defined(__GNUC__)
 qex_cc gcc __GNUC__
 #endif
+#if defined(__AVX512F__) && defined(__AVX512DQ__)
+qex_simd SSE,AVX,AVX512
+#elif defined(__AVX__)
+qex_simd SSE,AVX
+#endif
 """
-  let (outp, code) = gorgeEx(cmd & " -E -P -x " & lang & " -", src)
+  let (outp, code) = gorgeEx(cmd & " " & opts & " -E -P -x " & lang & " -", src)
   if code != 0:
     raise newException(IOError, "Compiler probe failed for " & exe & ":\n" & outp)
   for line in outp.splitLines:
     let s = line.splitWhitespace
     if s.len == 3 and s[0] == "qex_cc":
-      return (name: s[1], major: parseInt(s[2]))
+      result.name = s[1]
+      result.major = parseInt(s[2])
+    elif s.len == 2 and s[0] == "qex_simd":
+      result.simd = s[1]
 
 proc compilerFlags(c: Compiler): seq[string] =
   if c.name == "gcc" and c.major >= 15:
@@ -117,11 +130,21 @@ proc addCompilerFlags(flags: var seq[string], cflags: seq[string]) =
     flags.add "--" & key & ":" & (val & " " & extra).quoteShell
   flags.add "--passC:" & extra.quoteShell
 
+proc simdFlags(c: Compiler): seq[string] =
+  for s in c.simd.split(','):
+    if s != "": result.add "--d:" & s
+
+var compiler: Compiler
 proc setNimFlags() =
   if nimFlags.len == 0:
     nimFlags = getNimFlags(fo)
+    compiler = compilerInfo(nimFlags & userNimFlags)
+    if simd == "auto":
+      # Auto defines precede user flags, so -u:AVX and friends still win.
+      echo "setting: simd <- \"", compiler.simd, "\" (auto)"
+      nimFlags.add simdFlags(compiler)
     nimFlags.add userNimFlags
-    nimFlags.addCompilerFlags(compilerFlags(compilerInfo(nimFlags)))
+    nimFlags.addCompilerFlags(compilerFlags(compiler))
   nimCmdArgs = join(nimArgs," ") & " " & join(nimFlags," ")
   #if extraFlags != "":
   #  nimCmdArgs &= " " & extraFlags

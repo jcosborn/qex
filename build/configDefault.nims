@@ -43,11 +43,12 @@ cppflagsSpeed = "-Ofast -march=native"
 ldpp = cpp
 ldppflags = cppflagsAlways & " -ldl"
 
-# SIMD intrinsics to use, comma separated list of SSE, AVX, AXV512
+# SIMD intrinsics to use, comma separated list of SSE, AVX, AVX512
+#   "auto" follows the target macros of the C compiler with the build flags
 #   "SSE,AVX" for up to AVX2
 #   "SSE,AVX,AVX512" for up to AVX512
 #   "" for no explicit intrinsics
-simd = ""
+simd = "auto"
 
 # default inner (SIMD) vector length (for both single and double)
 #   this is independent of hardware SIMD length

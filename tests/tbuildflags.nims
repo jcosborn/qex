@@ -37,7 +37,7 @@ try:
     gcc[i] = script(cmd & "-D__GNUC__=" & $v & " \"$@\"")
     cc = gcc[i]
     check(if v >= 15: gccFlag else: "")
-    doAssert compilerInfo(nimFlags) == ("gcc", v)
+    doAssert (compiler.name, compiler.major) == ("gcc", v)
   for mac in ["__INTEL_COMPILER", "__INTEL_LLVM_COMPILER", "__NVCOMPILER", "__PGI"]:
     cc = script(cmd & "-D__GNUC__=99 -D__clang__=1 -D__clang_major__=19 -D" & mac & "=1 \"$@\"")
     check()
@@ -46,7 +46,7 @@ try:
     clang[i] = script(cmd & "-D__GNUC__=99 -D__clang__=1 -D__clang_major__=" & $v & " \"$@\"")
     cc = clang[i]
     check(if v == 19: clangFlag else: "")
-    doAssert compilerInfo(nimFlags) == ("clang", v)
+    doAssert (compiler.name, compiler.major) == ("clang", v)
 
   let mpi = script("exec \"$OMPI_CC\" \"$@\"")
   cflagsSpeed = "-Ofast -march=native"
@@ -92,6 +92,35 @@ try:
     fo.debug = true
     check(flag)
     fo.debug = false
+
+  # simd = "auto" follows the target macros of the active compile options.
+  let native = script("case \"$*\" in *-march=native*) f='-D__AVX__=1 -D__AVX512F__=1 -D__AVX512DQ__=1';; *) f='';; esac; " &
+                      cmd & "-D__GNUC__=14 $f \"$@\"")
+  cc = native
+  cflagsSpeed = "-O2 -march=native"
+  cflagsDebug = "-Og"
+  simd = "auto"
+  check()
+  doAssert compiler.simd == "SSE,AVX,AVX512", nimCmdArgs
+  for d in ["--d:SSE", "--d:AVX", "--d:AVX512"]:
+    doAssert d in nimFlags, nimCmdArgs
+  # User flags follow the auto defines, so -u:AVX512 still removes a level.
+  check("", @["-u:AVX512"])
+  doAssert nimFlags.find("-u:AVX512") > nimFlags.find("--d:AVX512"), nimCmdArgs
+  fo.debug = true
+  check()
+  doAssert "--d:AVX" notin nimFlags, nimCmdArgs
+  fo.debug = false
+  cc = script(cmd & "-D__GNUC__=14 -D__AVX__=1 \"$@\"")
+  check()
+  doAssert "--d:AVX" in nimFlags and "--d:AVX512" notin nimFlags, nimCmdArgs
+  cc = script(cmd & "-D__GNUC__=14 \"$@\"")
+  check()
+  doAssert "--d:SSE" notin nimFlags, nimCmdArgs
+  simd = "SSE"
+  check()
+  doAssert "--d:SSE" in nimFlags and "--d:AVX" notin nimFlags, nimCmdArgs
+  simd = ""
 
   cc = script("exit 1")
   var failed = false
