@@ -143,6 +143,15 @@ proc assign*[N1,T1,N2,T2](r: var array[N1,T1], x: array[N2,T2]) {.inline.} =
     for i in 0..<n2:
       var ri = cast[ptr array[nr,T1]](addr r[nr*i])
       assign(ri[], x[i])
+  else:
+    const nx = n2 div n1
+    when nx*n1 != n2:
+      static:
+        echo "error: ':=' array sizes ", n1, " and ", n2
+        quit()
+    for i in 0..<n1:
+      let xi = cast[ptr array[nx,T2]](unsafeAddr x[nx*i])
+      assign(r[i], xi[])
 
 template `:=`*[N1,T1,N2,T2](r: var array[N1,T1], x: array[N2,T2]) =
   assign(r, x)
