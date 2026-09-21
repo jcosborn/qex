@@ -1,5 +1,6 @@
 import base/globals
 setDefaultNc(1)
+setVLENmax(4)
 import qex
 import std/unittest
 import trfield
