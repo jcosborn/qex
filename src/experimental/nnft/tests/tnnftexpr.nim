@@ -187,7 +187,7 @@ proc run[T: SomeFloat]() =
         run.clear
 
 proc runParameters[T: SomeFloat]() =
-  let lo = newLayout(@[4,4])
+  let lo = newLayout(@[4,8])
   let g = lo.newGauge
   let seed = lo.newGauge
   for mu in 0..1:
