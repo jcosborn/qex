@@ -192,9 +192,13 @@ proc erfc*[F](dst, src: seq[F]; sub = "all"; mask: SiteMask = nil) =
 
 proc clipMin*[F; T: SomeFloat](dst, src: seq[F]; floor: T; sub = "all"; mask: SiteMask = nil) =
   ## max(x, floor); clipSlope is its derivative in the JAX maximum convention.
-  var f: eval(F.type.index(int))
-  f := numberType(F)(floor)
-  mapFields(dst, src, sub, mask): max(x, f)
+  # Keep the SIMD floor out of the thread closure's heap environment: Nim 2.0
+  # refc does not honor the alignment required by AVX values there.
+  mapFields(dst, src, sub, mask):
+    block:
+      var f: typeof(x)
+      f := R(floor)
+      max(x, f)
 
 proc slope[E; R: SomeFloat](x: E; f: R): E =
   ## 0 below f, 1/2 at equality, 1 above, lane by lane.

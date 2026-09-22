@@ -273,10 +273,11 @@ proc evalStage*[T: SomeFloat](t: NnftStage[T]; p: NnftNet[T]; g: seq[DLatticeCol
         v := v-c*t.openStaples[k][x][0,0]
       t.ds[d][x][0,0] := v
   stoutStepKernel(t.output, t.input, t.ds, t.expa, t.m, 1.0, cls.parity, d, t.active)
-  var floor: RealElem
-  floor := nnftJacFloor
   var ld = 0.0
   threads:
+    # SIMD locals must stay out of the closure environment with Nim 2.0 refc.
+    var floor: RealElem
+    floor := nnftJacFloor
     var v = 0.0
     for x in sub:
       var a, j: RealElem
