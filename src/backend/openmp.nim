@@ -99,14 +99,16 @@ template gpuMalloc[T](x: ptr T) =
   x = cast[typeof x](gpuMalloc(sizeof(T)))
 
 proc gpuMemset*[T](p: ptr UncheckedArray[T], val: T, count: int) =
-  {.emit:["#pragma omp target teams distribute parallel for"].}
+  var v = val  # an array parameter is a host pointer in C, unmapped on the device
+  {.emit:["#pragma omp target teams distribute parallel for map(to:",v,")"].}
   {.emit:["for (int i = 0; i < ",count,"; i++)"].}
   block:
     var i {.importc,codegendecl:"".}: cint
-    p[i] = val
+    p[i] = v
 proc gpuMemset*[T](p: ptr T, val: T) =
-  {.emit:["#pragma omp target teams"].}
-  p[] = val
+  var v = val
+  {.emit:["#pragma omp target teams map(to:",v,")"].}
+  p[] = v
 
 template toPointer*(x: typed): pointer =
   #dumpType: x
