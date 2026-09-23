@@ -536,6 +536,36 @@ proc solveEE*[V: static int; T](s: StagGpu[V,T]; r, x: Field; m: float; sp: var 
     echo "GPU CG iterations: ", itn, "  r2/b2: ", r2/b2, "  secs: ", secs, "  Gflops: ", gf
   toc("end")
 
+proc cg[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; x, b: ptr UncheckedArray[float64];
+                       m, r2stop, r2in: float; maxits, verb: int): tuple[its, nres: int, r2: float] =
+  ## Solves A x_e = b_e from x_e = 0 until the global |res|^2 <= r2stop by
+  ## single precision CGs in ss, each until |res|^2 drops by r2in, adding
+  ## their solutions to x and restarting from the residual in double.
+  let c = getDefaultComm()
+  let rd = s.vec[0]
+  let ad = s.vec[1]
+  let t = s.vec[2]
+  let rs = ss.vec[5]
+  let e = ss.vec[6]
+  gpuFor(i, 6*s.ne):
+    x[i] = 0.0
+    rd[i] = b[i]
+  var r2 = s.redot(rd, rd)
+  c.allReduce(r2)
+  while result.its < maxits and r2 > r2stop:
+    ss.convert(rs, rd)
+    let (k, _) = ss.cg(e, rs, m, max(r2in*r2, 0.5*r2stop), maxits - result.its, verb)
+    result.its += k
+    s.addTo(x, e)
+    s.applyD2ee(ad, x, t, m*m)
+    s.resid(rd, b, ad)
+    r2 = s.redot(rd, rd)
+    c.allReduce(r2)
+    inc result.nres
+    if verb > 1:
+      echo "GPU mixed CG restart: ", result.nres, "  iterations: ", result.its, "  r2: ", r2
+  result.r2 = r2
+
 proc solveEE*[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; r, x: Field; m: float;
                              sp: var SolverParams; r2in = 1e-6) =
   ## As solveEE, with the CG iterations in single precision: each restart
@@ -545,35 +575,12 @@ proc solveEE*[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; r, x
   let c = getDefaultComm()
   let b = s.vec[5]
   let xd = s.vec[6]
-  let rd = s.vec[0]
-  let ad = s.vec[1]
-  let t = s.vec[2]
-  let rs = ss.vec[5]
-  let e = ss.vec[6]
   s.upload(b, x)
   var b2 = s.redot(b, b)
   c.allReduce(b2)
   toc("setup")
   let t0 = epochTime()
-  let r2stop = sp.r2req*b2
-  gpuFor(i, 6*s.ne):
-    xd[i] = 0.0
-    rd[i] = b[i]
-  var r2 = b2
-  var itn = 0
-  var nres = 0
-  while itn < sp.maxits and r2 > r2stop:
-    ss.convert(rs, rd)
-    let (k, _) = ss.cg(e, rs, m, max(r2in*r2, 0.5*r2stop), sp.maxits-itn, sp.verbosity)
-    itn += k
-    s.addTo(xd, e)
-    s.applyD2ee(ad, xd, t, m*m)
-    s.resid(rd, b, ad)
-    r2 = s.redot(rd, rd)
-    c.allReduce(r2)
-    inc nres
-    if sp.verbosity > 1:
-      echo "GPU mixed CG restart: ", nres, "  iterations: ", itn, "  r2/b2: ", r2/b2
+  let (itn, nres, r2) = cg(s, ss, xd, b, m, sp.r2req*b2, r2in, sp.maxits, sp.verbosity)
   let secs = epochTime() - t0
   toc("cg")
   s.download(r, xd)
@@ -617,7 +624,7 @@ proc stagSigns*[V: static int; E](g: openArray[Field[V,E]]): ptr UncheckedArray[
         sg[(nd+mu)*n + V*o+l] = float(u[0,0].re)
   sg.toDevice
 
-proc setLinks*[V: static int](s: StagGpu[V,float]; g: var GpuGauge[V]; sg: ptr UncheckedArray[float]) =
+proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr UncheckedArray[float]) =
   ## s.lf, s.lb = the links of g times the signs sg of stagSigns
   g.update
   let n = g.n
@@ -638,7 +645,7 @@ proc setLinks*[V: static int](s: StagGpu[V,float]; g: var GpuGauge[V]; sg: ptr U
     var x {.noInit.}: array[18, float]
     mload(x, u, o, V)
     let sf = sg[mu*n + k]
-    forStatic e, 0, 17: lf[o + e*V] = sf*x[e]
+    forStatic e, 0, 17: lf[o + e*V] = T(sf*x[e])
     case mu
     of 0: link(x, 0, int nb[nbB(0)*n + k])
     of 1: link(x, 1, int nb[nbB(1)*n + k])
@@ -647,8 +654,8 @@ proc setLinks*[V: static int](s: StagGpu[V,float]; g: var GpuGauge[V]; sg: ptr U
     let sb = sg[(4+mu)*n + k]
     forStatic a, 0, 2:
       forStatic b, 0, 2:
-        lb[o + (6*a+2*b)*V] = sb*x[6*b+2*a]
-        lb[o + (6*a+2*b+1)*V] = -sb*x[6*b+2*a+1]
+        lb[o + (6*a+2*b)*V] = T(sb*x[6*b+2*a])
+        lb[o + (6*a+2*b+1)*V] = T(-sb*x[6*b+2*a+1])
 
 proc norm2*[V: static int; T](s: StagGpu[V,T]; x: ptr UncheckedArray[T]): float =
   ## global |x|^2 over all sites
@@ -667,17 +674,21 @@ proc applyM*[V: static int; T](s: StagGpu[V,T]; d, x: ptr UncheckedArray[T]; m: 
   s.dslash(0, d, x, x, s.ex[1].rbuf, T(m), T(0.5), nil, nil, dot = false, send = false)
 
 proc solveM*[V: static int](s: StagGpu[V,float]; x, b: ptr UncheckedArray[float]; m: float;
-                            sp: var SolverParams) =
+                            sp: var SolverParams; ss: ptr StagGpu[V,float32] = nil; r2in = 1e-6) =
   ## Solves (m + D/2) x = b for b_o = 0, as stag.solve, until the residual
-  ## of the even system drops by sp.r2req:
+  ## of the even system drops by sp.r2req, in mixed precision with ss:
   ##   x_e = A^-1 4m b_e,  x_o = -D_oe x_e/(2m)
   let c = getDefaultComm()
   let b4 = s.vec[5]
   gpuFor(i, 6*s.ne): b4[i] = 4.0*m*b[i]
   var b2 = s.redot(b4, b4)
   c.allReduce(b2)
-  let (itn, _) = s.cg(x, b4, m, sp.r2req*b2, sp.maxits, sp.verbosity)
-  sp.iterations += itn
+  if ss == nil:
+    let (itn, _) = s.cg(x, b4, m, sp.r2req*b2, sp.maxits, sp.verbosity)
+    sp.iterations += itn
+  else:
+    let (itn, _, _) = cg(s, ss[], x, b4, m, sp.r2req*b2, r2in, sp.maxits, sp.verbosity)
+    sp.iterations += itn
   c.barrier
   s.ex[0].pack(x)
   s.ex[0].start
