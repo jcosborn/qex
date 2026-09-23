@@ -14,8 +14,8 @@ type
   RngMilcKind* = enum
     rmkV6, rmkFuel
   RngMilcV*[RMK: static RngMilcKind] = object
-    r0*, r1*, r2*, r3*, r4*, r5*, r6*: uint32
-    icState*, multiplier*: uint32
+    r0, r1, r2, r3, r4, r5, r6: uint32
+    icState, multiplier: uint32
     when RMK == rmkFuel:
       # for Gaussian
       iset: int32

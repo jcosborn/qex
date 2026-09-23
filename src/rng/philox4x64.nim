@@ -25,9 +25,12 @@ const
   w0 = 0x9E3779B97F4A7C15u64
   w1 = 0xBB67AE8584CAA73Bu64
 
+const Backend {.strdefine.} = "CPU"  # as in backend/accelbase
+
 proc mulHi(a,b:uint64):uint64 {.inline.} =
-  # Compile with `-d:philox4x64Portable` to force the portable path.
-  when not defined(philox4x64Portable) and
+  # Compile with `-d:philox4x64Portable` to force the portable path, which
+  # GPU backends take, as device code has no 128-bit integers.
+  when not defined(philox4x64Portable) and Backend == "CPU" and
       (defined(gcc) or defined(llvm_gcc) or defined(clang)):
     result = 0
     {.emit: """__uint128_t p = `a`; p *= `b`; `result` = p >> 64;""".}
@@ -63,7 +66,7 @@ template mixk(x0,x1,x2,x3:var uint64; k0,k1:var uint64):auto =
   k1 += w1
   mix(x0, x1, x2, x3, k0, k1)
 
-proc encrypt(r:var Philox4x64) =
+proc encrypt(r:var Philox4x64) {.inline.} =
   var
     b0 = r.c[0]
     b1 = r.c[1]
@@ -83,7 +86,7 @@ proc encrypt(r:var Philox4x64) =
   mixk(b0, b1, b2, b3, k0, k1)
   r.o = [b0, b1, b2, b3]
 
-proc incCounter(r:var Philox4x64) =
+proc incCounter(r:var Philox4x64) {.inline.} =
   r.c[0].inc
   if r.c[0] != 0: return
   r.c[1].inc
@@ -208,12 +211,12 @@ proc next*(prn:var Philox4x64):uint =
   ## Return random integer from 0 to maxInt
   result = uint prn.nextI
 
-proc uniform*(prn:var Philox4x64):float =
+proc uniform*(prn:var Philox4x64):float {.inline.} =
   ## Return random number uniform on (0,1]
   ## Use Random123's `u01<double>(uint64_t)` mapping.
   result = float(prn.next64) * norm + 0.5 * norm
 
-proc gaussian*(prn:var Philox4x64):float =
+proc gaussian*(prn:var Philox4x64):float {.inline.} =
   ## Gaussian normal deviate
   ## Probability distribution exp( -x\*x/2 ), so < x^2 > = 1
   let

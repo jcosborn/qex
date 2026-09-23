@@ -218,11 +218,11 @@ proc uniform*(prn:var MRG32k3a): float =
   else:
     result = (p1 - p2) * norm
 ]#
-proc uniform*(prn: var MRG32k3a): float =
+proc uniform*(prn: var MRG32k3a): float {.inline.} =
   ## Return random number uniform on (0,1)
   result = norm * prn.nextI.float
 
-proc gaussian*(prn: var MRG32k3a): float =
+proc gaussian*(prn: var MRG32k3a): float {.inline.} =
   ## Gaussian normal deviate
   ## Probability distribution exp( -x\*x/2 ), so < x^2 > = 1
   var v,p,r: float

@@ -44,7 +44,7 @@ template mixk(x0,x1:var uint64; rx:SomeInteger;
   x1 = x1 xor x0
   z1 = z1 xor z0
 
-proc encrypt(r:var Threefry4x64) =
+proc encrypt(r:var Threefry4x64) {.inline.} =
   var
     b0 = r.c[0]
     b1 = r.c[1]
@@ -84,7 +84,7 @@ proc encrypt(r:var Threefry4x64) =
   r.o[2] = b2 + k2
   r.o[3] = b3 + k3 + 5
 
-proc incCounter(r:var Threefry4x64) =
+proc incCounter(r:var Threefry4x64) {.inline.} =
   r.c[0].inc
   if r.c[0] != 0: return
   r.c[1].inc
@@ -208,12 +208,12 @@ proc next*(prn:var Threefry4x64):uint =
   ## Return random integer from 0 to maxInt
   result = uint prn.nextI
 
-proc uniform*(prn:var Threefry4x64):float =
+proc uniform*(prn:var Threefry4x64):float {.inline.} =
   ## Return random number uniform on (0,1]
   ## Use Random123's `u01<double>(uint64_t)` mapping.
   result = float(prn.next64) * norm + 0.5 * norm
 
-proc gaussian*(prn:var Threefry4x64):float =
+proc gaussian*(prn:var Threefry4x64):float {.inline.} =
   ## Gaussian normal deviate
   ## Probability distribution exp( -x\*x/2 ), so < x^2 > = 1
   let
