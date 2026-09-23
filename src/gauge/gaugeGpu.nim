@@ -219,9 +219,8 @@ proc actionA*[V: static int](g: var GpuGauge[V]; c: GaugeActionCoeffs): float =
   let h1 = g.ex[1].rbuf
   let h2 = g.ex[2].rbuf
   let h3 = g.ex[3].rbuf
-  var a {.exportc: "gaugeGpuA".} = 0.0
-  var b {.exportc: "gaugeGpuB".} = 0.0
-  for k in `||`(0, n-1, "target teams distribute parallel for " & gpuForClause & " reduction(+:gaugeGpuA,gaugeGpuB) map(tofrom:gaugeGpuA,gaugeGpuB)"):
+  var pl = gpuSum(k, n, 2):
+    var a, b = 0.0
     forStatic mu, 1, 3:
       forStatic nu, 0, mu-1:
         var x {.noInit.}, y {.noInit.}, t {.noInit.}, p {.noInit.}: array[18, float]
@@ -231,16 +230,16 @@ proc actionA*[V: static int](g: var GpuGauge[V]; c: GaugeActionCoeffs): float =
         link(y, mu, int nb[nbF(nu)*n + k])
         mmulNA(p, t, y)
         mload(y, u, 18*nu*n + lo18(V, k), V)
-        let tr = p[0]*y[0] + p[1]*y[1] + p[2]*y[2] + p[3]*y[3] + p[4]*y[4] + p[5]*y[5] +
-                 p[6]*y[6] + p[7]*y[7] + p[8]*y[8] + p[9]*y[9] + p[10]*y[10] + p[11]*y[11] +
-                 p[12]*y[12] + p[13]*y[13] + p[14]*y[14] + p[15]*y[15] + p[16]*y[16] + p[17]*y[17]
-        let ti = p[1]*y[0] - p[0]*y[1] + p[3]*y[2] - p[2]*y[3] + p[5]*y[4] - p[4]*y[5] +
-                 p[7]*y[6] - p[6]*y[7] + p[9]*y[8] - p[8]*y[9] + p[11]*y[10] - p[10]*y[11] +
-                 p[13]*y[12] - p[12]*y[13] + p[15]*y[14] - p[14]*y[15] + p[17]*y[16] - p[16]*y[17]
         # tr P = tr(p y^+) = sum_ab p_ab conj(y_ab)
+        var tr, ti = 0.0
+        forStatic e, 0, 8:
+          tr += p[2*e]*y[2*e] + p[2*e+1]*y[2*e+1]
+          ti += p[2*e+1]*y[2*e] - p[2*e]*y[2*e+1]
         a += tr
         b += tr*tr + ti*ti
-  var pl = [a/3.0, b/9.0]
+    [a, b]
+  pl[0] /= 3.0
+  pl[1] /= 9.0
   getDefaultComm().allReduce(addr pl[0], 2)
   let a0 = 6.0*float(g.lo.physVol)
   c.plaq*(a0 - pl[0]) + c.adjplaq*(a0 - pl[1])
@@ -327,8 +326,5 @@ proc expUpdate*[V: static int](g: var GpuGauge[V]; p: ptr UncheckedArray[float];
 
 proc norm2*[V: static int](g: GpuGauge[V]; p: ptr UncheckedArray[float]): float =
   ## global sum of |p|^2 over the links, p like g.u
-  var s {.exportc: "gaugeGpuN2".} = 0.0
-  for i in `||`(0, 4*18*g.n-1, "target teams distribute parallel for " & gpuForClause & " reduction(+:gaugeGpuN2) map(tofrom:gaugeGpuN2)"):
-    s += p[i]*p[i]
-  result = s
+  result = gpuSum(i, 4*18*g.n, 1, [p[i]*p[i]])[0]
   getDefaultComm().allReduce(result)

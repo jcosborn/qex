@@ -35,7 +35,6 @@ import times
 
 const nRed = 128  # atomic slots per dot product
 var hopSplit* = -1  ## CG second hop split around the exchange: 1 always, 0 never, -1 with off-node neighbors
-var stagGpuDep {.exportc.}: int  # orders a nowait hop before its taskwait
 
 type
   StagGpu*[V: static int; T] = object
@@ -47,6 +46,7 @@ type
     nbr*: ptr UncheckedArray[int32]  # [8][n]: x+mu, then x-mu, with the link signs for nl = 12
     ex*: array[2, GpuHaloEx[T]]  # exchange of the sites of each parity
     red*: ptr UncheckedArray[float]  # [2][2*nRed]: partial dot products, two buffers
+    hred*: ptr UncheckedArray[float]  # [2*nRed] pinned host copy of a buffer
     vec*: array[7, ptr UncheckedArray[T]]  # work vectors, 6*n reals each
     rh*, sh*: ptr UncheckedArray[T]  # CG halo copies of r and s, as s.ex[0].rbuf
     ord*: ptr UncheckedArray[int32]  # even sites, the nin with local neighbors only first
@@ -213,6 +213,7 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; recon 
   toc("links")
 
   result.red = newSeq[float](4*nRed).toDevice
+  result.hred = cast[ptr UncheckedArray[float]](gpuMallocHost(2*nRed*sizeof(float)))
   for i in 0..<result.vec.len:
     result.vec[i] = cast[ptr UncheckedArray[T]](gpuMalloc(6*n*sizeof(T)))
   let nh = max(1, 6*result.ex[0].nrecv)
@@ -226,6 +227,7 @@ proc free*[V: static int; T](s: var StagGpu[V,T]) =
   gpuFree(s.nbr)
   gpuFree(s.ord)
   gpuFree(s.red)
+  gpuFreeHost(s.hred)
   for p in s.vec: gpuFree(p)
   for p in 0..1: s.ex[p].free
 
@@ -270,11 +272,6 @@ template hopA(acc, u, o, v, st: untyped; e: untyped; nl: static int) =
     acc[2*a] -= wr
     acc[2*a+1] -= wi
 
-template atomicAdd(r: ptr UncheckedArray[float]; k: int; v: float) =
-  let kk = k
-  let vv = v
-  {.emit: ["#pragma omp atomic update\n", r, "[", kk, "] += ", vv, ";"].}
-
 template dots(i, d, y, yo, st, rs: untyped) =
   ## rs slots get y.y and d.y, y of the site at y[yo + c*st]
   var yy = 0.0
@@ -283,8 +280,8 @@ template dots(i, d, y, yo, st, rs: untyped) =
     let yc = float(y[yo + c*st])
     yy += yc*yc
     dy += float(d[c])*yc
-  atomicAdd(rs, i mod nRed, yy)
-  atomicAdd(rs, nRed + i mod nRed, dy)
+  gpuAtomicAdd(rs, i mod nRed, yy)
+  gpuAtomicAdd(rs, nRed + i mod nRed, dy)
 
 proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr UncheckedArray[T];
                               a, b: T; rs, rz: ptr UncheckedArray[float]; dot, send: static bool;
@@ -293,8 +290,7 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
   ## laid out as the receive buffer of s.ex[1-q]; for q = 0 on the sites
   ## s.ord[j0 ..< j0+m], all by default.  With send, stores d in the send
   ## slots of s.ex[q]; with dot, sums y.y and d.y in rs and zeros rz.  With
-  ## nowait, returns before the kernel completes; taskwait depend(inout:
-  ## stagGpuDep) waits for it.
+  ## nowait, returns before the kernel completes; gpuWaitAsync waits for it.
   let n = s.n
   let i0 = if q == 0: 0 else: s.ne
   let nk = if m >= 0: m elif q == 0: s.ne else: n - s.ne
@@ -349,8 +345,7 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
       dots(p, acc, y, yo, V, rs)
   template kern(nl: static int; fw: static bool) =
     when nowait:
-      for i in `||`(0, nk-1, "target teams distribute parallel for " & gpuForClause & " nowait depend(out:stagGpuDep)"):
-        body(i, nl, fw)
+      gpuForAsync(i, nk): body(i, nl, fw)
     else:
       gpuFor(i, nk): body(i, nl, fw)
   if s.nl == 12:
@@ -384,7 +379,7 @@ proc applyD2eeCG[V: static int; T](s: StagGpu[V,T]; w, r, t: ptr UncheckedArray[
     s.ex[1].wait
     toc("wait oe")
     s.dslash(0, w, t, r, s.ex[1].rbuf, T(4*m2), T(-1), rs, rz, dot = true, send = true, s.nin, s.ne - s.nin)
-    {.emit: "#pragma omp taskwait depend(inout:stagGpuDep)".}
+    gpuWaitAsync()
   else:
     s.ex[1].wait
     toc("wait oe")
@@ -392,8 +387,8 @@ proc applyD2eeCG[V: static int; T](s: StagGpu[V,T]; w, r, t: ptr UncheckedArray[
   toc("dslash eo")
   s.ex[0].start
   toc("start eo")
-  var h: array[2*nRed, float]
-  gpuMemCpyToCpu(addr h[0], rs, sizeof(h))
+  let h = s.hred
+  gpuMemCpyToCpu(h, rs, 2*nRed*sizeof(float))
   for k in 0..<nRed:
     result[0] += h[k]
     result[1] += h[nRed+k]
@@ -403,10 +398,7 @@ proc applyD2eeCG[V: static int; T](s: StagGpu[V,T]; w, r, t: ptr UncheckedArray[
 
 proc redot[V: static int; T](s: StagGpu[V,T]; x, y: ptr UncheckedArray[T]): float =
   ## local sum of x_e.y_e
-  var sum {.exportc: "stagGpuSum".} = 0.0
-  for i in `||`(0, 6*s.ne-1, "target teams distribute parallel for reduction(+:stagGpuSum) map(tofrom:stagGpuSum)"):
-    sum += float(x[i])*float(y[i])
-  result = sum
+  gpuSum(i, 6*s.ne, 1, [float(x[i])*float(y[i])])[0]
 
 proc update[V: static int; T](s: StagGpu[V,T]; x, r, p, sv, w: ptr UncheckedArray[T]; a, b: T) =
   ## p = r + b p, s = w + b s, x += a p, r -= a s on the even sites, and the
@@ -678,10 +670,7 @@ proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr Un
 
 proc norm2*[V: static int; T](s: StagGpu[V,T]; x: ptr UncheckedArray[T]): float =
   ## global |x|^2 over all sites
-  var sum {.exportc: "stagGpuN2".} = 0.0
-  for i in `||`(0, 6*s.n-1, "target teams distribute parallel for " & gpuForClause & " reduction(+:stagGpuN2) map(tofrom:stagGpuN2)"):
-    sum += float(x[i])*float(x[i])
-  result = sum
+  result = gpuSum(i, 6*s.n, 1, [float(x[i])*float(x[i])])[0]
   getDefaultComm().allReduce(result)
 
 proc applyM*[V: static int; T](s: StagGpu[V,T]; d, x: ptr UncheckedArray[T]; m: float) =
