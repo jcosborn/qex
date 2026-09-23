@@ -33,7 +33,7 @@ import gauge/gaugeGpu
 import base/metaUtils
 import times
 
-const nRed = 128  # atomic slots per dot product
+const nRed = 512  # atomic slots per dot product
 var hopSplit* = -1  ## CG second hop split around the exchange: 1 always, 0 never, -1 with off-node neighbors
 
 type
