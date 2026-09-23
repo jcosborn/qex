@@ -204,3 +204,26 @@ when isMainModule:
     echo "x: ", x
 
   test1()
+
+const gpuSumSlots = 128  # atomic slots per value of gpuSum
+var gpuSumBuf: ptr UncheckedArray[float]  # [8][gpuSumSlots], zero between the sums
+
+template gpuSum*(i: untyped; n: SomeInteger; m: static int; body: untyped): array[m, float] =
+  ## The m <= 8 sums over i in 0..<n of the values body gives as an
+  ## array[m, float], on this rank.
+  block:
+    if gpuSumBuf == nil:
+      gpuSumBuf = cast[ptr UncheckedArray[float]](gpuMalloc(8*gpuSumSlots*sizeof(float)))
+      let z = gpuSumBuf
+      gpuFor(k, 8*gpuSumSlots): z[k] = 0.0
+    let sb = gpuSumBuf
+    gpuFor(i, n):
+      let v: array[m, float] = body
+      for c in 0..<m: gpuAtomicAdd(sb, c*gpuSumSlots + i mod gpuSumSlots, v[c])
+    var h {.noInit.}: array[m*gpuSumSlots, float]
+    gpuMemCpyToCpu(addr h[0], sb, sizeof(h))
+    gpuFor(k, m*gpuSumSlots): sb[k] = 0.0
+    var r: array[m, float]
+    for c in 0..<m:
+      for k in 0..<gpuSumSlots: r[c] += h[c*gpuSumSlots + k]
+    r
