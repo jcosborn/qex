@@ -29,6 +29,7 @@ import physics/qcdTypes
 import solvers/solverBase
 import backend/accel
 import comms/[halo, halogpu]
+import gauge/gaugeGpu
 import base/metaUtils
 import times
 
@@ -583,3 +584,154 @@ proc solveEE*[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; r, x
     let gf = 1e-9*sp.flops*float(c.size)/secs
     echo "GPU mixed CG iterations: ", itn, "  restarts: ", nres, "  r2/b2: ", r2/b2, "  secs: ", secs, "  Gflops: ", gf
   toc("end")
+
+# HMC with the links of a GpuGauge: s keeps 18 reals per link and both sets
+
+proc stagSigns*[V: static int; E](g: openArray[Field[V,E]]): ptr UncheckedArray[float] =
+  ## [8][n] on the device: the sign of U_mu(x), then of U_mu(x-mu), for g a
+  ## unit gauge field after setBC and stagPhase
+  let lo = g[0].l
+  let nd = lo.nDim
+  let no = lo.nSitesOuter
+  let n = V*no
+  let c = getDefaultComm()
+  var w = newSeq[int](nd)
+  for d in 0..<nd: w[d] = 1
+  let hl = lo.makeHaloLayout(w, w)
+  var off = newSeq[int32](nd)
+  var sg = newSeq[float](2*nd*n)
+  type U = eval(index(E, type(asSimd(0))))
+  var u {.noInit.}: U
+  for mu in 0..<nd:
+    off[mu] = -1
+    let hm = hl.makeHaloMap(c, @[off])
+    off[mu] = 0
+    let h = makeHalo(hl, g[mu])
+    h.update(hm, c)
+    for o in 0..<no:
+      let e = hl.neighborBck[mu][o]
+      for l in 0..<V:
+        u := g[mu]{V*o+l}
+        sg[mu*n + V*o+l] = float(u[0,0].re)
+        u := h[e][asSimd(l)]
+        sg[(nd+mu)*n + V*o+l] = float(u[0,0].re)
+  sg.toDevice
+
+proc setLinks*[V: static int](s: StagGpu[V,float]; g: var GpuGauge[V]; sg: ptr UncheckedArray[float]) =
+  ## s.lf, s.lb = the links of g times the signs sg of stagSigns
+  g.update
+  let n = g.n
+  let u = g.u
+  let nb = g.nb
+  let ro = g.ex[0].rofs
+  let rs = g.ex[0].rstr
+  let h0 = g.ex[0].rbuf
+  let h1 = g.ex[1].rbuf
+  let h2 = g.ex[2].rbuf
+  let h3 = g.ex[3].rbuf
+  let lf = s.lf
+  let lb = s.lb
+  gpuFor(i, 4*n):
+    let mu = i div n
+    let k = i - mu*n
+    let o = 18*mu*n + lo18(V, k)
+    var x {.noInit.}: array[18, float]
+    mload(x, u, o, V)
+    let sf = sg[mu*n + k]
+    forStatic e, 0, 17: lf[o + e*V] = sf*x[e]
+    case mu
+    of 0: link(x, 0, int nb[nbB(0)*n + k])
+    of 1: link(x, 1, int nb[nbB(1)*n + k])
+    of 2: link(x, 2, int nb[nbB(2)*n + k])
+    else: link(x, 3, int nb[nbB(3)*n + k])
+    let sb = sg[(4+mu)*n + k]
+    forStatic a, 0, 2:
+      forStatic b, 0, 2:
+        lb[o + (6*a+2*b)*V] = sb*x[6*b+2*a]
+        lb[o + (6*a+2*b+1)*V] = -sb*x[6*b+2*a+1]
+
+proc norm2*[V: static int; T](s: StagGpu[V,T]; x: ptr UncheckedArray[T]): float =
+  ## global |x|^2 over all sites
+  var sum {.exportc: "stagGpuN2".} = 0.0
+  for i in `||`(0, 6*s.n-1, "target teams distribute parallel for " & gpuForClause & " reduction(+:stagGpuN2) map(tofrom:stagGpuN2)"):
+    sum += float(x[i])*float(x[i])
+  result = sum
+  getDefaultComm().allReduce(result)
+
+proc applyM*[V: static int; T](s: StagGpu[V,T]; d, x: ptr UncheckedArray[T]; m: float) =
+  ## d_e = m x_e + D_eo x_o/2, the even sites of stag.D(d, x, m)
+  getDefaultComm().barrier
+  s.ex[1].pack(x)
+  s.ex[1].start
+  s.ex[1].wait
+  s.dslash(0, d, x, x, s.ex[1].rbuf, T(m), T(0.5), nil, nil, dot = false, send = false)
+
+proc solveM*[V: static int](s: StagGpu[V,float]; x, b: ptr UncheckedArray[float]; m: float;
+                            sp: var SolverParams) =
+  ## Solves (m + D/2) x = b for b_o = 0, as stag.solve, until the residual
+  ## of the even system drops by sp.r2req:
+  ##   x_e = A^-1 4m b_e,  x_o = -D_oe x_e/(2m)
+  let c = getDefaultComm()
+  let b4 = s.vec[5]
+  gpuFor(i, 6*s.ne): b4[i] = 4.0*m*b[i]
+  var b2 = s.redot(b4, b4)
+  c.allReduce(b2)
+  let (itn, _) = s.cg(x, b4, m, sp.r2req*b2, sp.maxits, sp.verbosity)
+  sp.iterations += itn
+  c.barrier
+  s.ex[0].pack(x)
+  s.ex[0].start
+  s.ex[0].wait
+  s.dslash(1, x, x, x, s.ex[0].rbuf, 0.0, -0.5/m, nil, nil, dot = false, send = false)
+
+proc forceM*[V: static int](s: StagGpu[V,float]; p, x: ptr UncheckedArray[float]; t: float) =
+  ## p_mu(y) -= t e(y) TAH(x(y) (U_mu(y) x(y+mu))^+) with the links s.lf,
+  ## e = 1 on even and -1 on odd sites, as oneLinkForce of staghmc
+  getDefaultComm().barrier
+  for q in 0..1:
+    s.ex[q].pack(x)
+    s.ex[q].start
+  for q in 0..1: s.ex[q].wait
+  let n = s.n
+  let ne = s.ne
+  let lf = s.lf
+  let nb = s.nbr
+  let ro0 = s.ex[0].rofs
+  let rs0 = s.ex[0].rstr
+  let rb0 = s.ex[0].rbuf
+  let ro1 = s.ex[1].rofs
+  let rs1 = s.ex[1].rstr
+  let rb1 = s.ex[1].rbuf
+  gpuFor(i, 4*n):
+    let mu = i div n
+    let k = i - mu*n
+    let j = int nb[mu*n + k]
+    var v {.noInit.}: array[6, float]
+    if j < n:
+      let o = vo(V, j)
+      forStatic c, 0, 5: v[c] = x[o + c*V]
+    elif k < ne: recvSite(ro1, rs1, rb1, j-n, v)
+    else: recvSite(ro0, rs0, rb0, j-n, v)
+    let o = 18*mu*n + lo18(V, k)
+    var u {.noInit.}: array[18, float]
+    mload(u, lf, o, V)
+    var w {.noInit.}: array[6, float]  # U_mu(y) x(y+mu)
+    forStatic a, 0, 2:
+      var wr = 0.0
+      var wi = 0.0
+      forStatic b, 0, 2:
+        wr += u[6*a+2*b]*v[2*b] - u[6*a+2*b+1]*v[2*b+1]
+        wi += u[6*a+2*b]*v[2*b+1] + u[6*a+2*b+1]*v[2*b]
+      w[2*a] = wr
+      w[2*a+1] = wi
+    let yo = vo(V, k)
+    var y {.noInit.}: array[6, float]
+    forStatic c, 0, 5: y[c] = x[yo + c*V]
+    var f {.noInit.}, g {.noInit.}: array[18, float]  # f_ab = y_a conj(w_b)
+    forStatic a, 0, 2:
+      forStatic b, 0, 2:
+        f[6*a+2*b] = y[2*a]*w[2*b] + y[2*a+1]*w[2*b+1]
+        f[6*a+2*b+1] = y[2*a+1]*w[2*b] - y[2*a]*w[2*b+1]
+    mtah(g, f)
+    let sc = if k < ne: t else: -t
+    forStatic e, 0, 17: p[o + e*V] -= sc*g[e]
