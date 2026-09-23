@@ -48,8 +48,8 @@ var R:RngMilc6  # global RNG
 R.seed(seed, 987654321)
 
 var g = lo.newgauge
-#g.random r
-g.unit
+if intParam("hot", 0) != 0: g.random r  # random links instead of unit ones
+else: g.unit
 
 echo "plaq: ", 6.0*g.plaq
 echo "actionA: ", gc.actionA g
