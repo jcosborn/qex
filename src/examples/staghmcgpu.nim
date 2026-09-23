@@ -53,7 +53,7 @@ let
   lo = if rg.len > 0: newLayout(lat, VLEN, rg, innerGeom(lat, rg, static(VLEN))) else: lat.newLayout
   vol = lo.physVol
 
-var r = lo.newRNGField(RngMilc6, seed)
+var r = lo.newRNGFieldV(RngMilc6, seed)  # in the layout of the fields, as on the GPU
 var R: RngMilc6  # global RNG
 R.seed(seed, 987654321)
 
@@ -231,7 +231,7 @@ let
     mkOmelyan2MN(steps = gsteps, V = VAll[0], T = T),
     mkOmelyan2MN(steps = fsteps, V = VAll[1], T = T))
 
-let rgpu = newRngGpu(lo, r)
+let rgpu = newRngGpu(r)
 for n in 1..trajs:
   tic()
   let t0 = epochTime()
