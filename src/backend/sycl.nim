@@ -86,6 +86,7 @@ proc version*(x: Device): cppstring {.
 proc ename*(x: Device) =
   {.emit:["printf(\"%s\\n\",", x, ".get_info<sycl::info::device::name>().c_str());"].}
 proc queue*(x: Device): Queue {.importcpp:"sycl::queue(#)".}
+proc inOrderQueue*(x: Device): Queue {.importcpp:"sycl::queue(#, {sycl::property::queue::in_order(), sycl::ext::oneapi::property::queue::discard_events()})".}
 proc maxComputeUnits*(x: Device): uint32 {.
   importcpp:"#.get_info<sycl::info::device::max_compute_units>()".}
 proc preferredVectorWidthFloat*(x: Device): uint32 {.
@@ -180,10 +181,17 @@ proc mallocShared*(num_bytes: int, q: Queue):
 proc mallocShared*(T: typedesc, count: int, q: Queue): ptr UncheckedArray[T] {.
   importcpp:"sycl::malloc_shared<'1>(##,#)".}
 
-proc memcpy*(q: Queue, dest,src: pointer, count: SomeInteger)
-  {.importcpp:"#.memcpy(@).wait()".}
-proc memset*(q: Queue, dest: pointer, val,count: SomeInteger)
-  {.importcpp:"#.memset(@).wait()".}
+proc memcpyAsync(q: Queue, dest,src: pointer, count: SomeInteger)
+  {.importcpp:"#.memcpy(@)".}
+proc memsetAsync(q: Queue, dest: pointer, val,count: SomeInteger)
+  {.importcpp:"#.memset(@)".}
+proc memcpy*(q: Queue, dest,src: pointer, count: SomeInteger) =
+  ## waits on the queue, as its events may be discarded
+  q.memcpyAsync(dest, src, count)
+  q.wait
+proc memset*(q: Queue, dest: pointer, val,count: SomeInteger) =
+  q.memsetAsync(dest, val, count)
+  q.wait
 
 proc syclPlus*[T](t: typedesc[T]): SyclPlus[T] {.
   importcpp:"'0()", syclh, constructor.}
