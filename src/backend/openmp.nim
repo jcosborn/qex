@@ -315,11 +315,6 @@ template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) =
   for i in `||`(0, int(n)-1, "target teams distribute parallel for " & gpuForClause & " nowait depend(inout:gpuAsyncDep)"):
     body
 
-template gpuMallocHost*(size: SomeInteger): pointer =
-  ## pinned host memory, for fast copies from the device
-  omp_target_alloc_host(size)
-template gpuFreeHost*(p: pointer) = omp_target_free(p)
-
 template gpuWaitAsync* =
   discard addr(gpuAsyncDep)
   {.emit: "#pragma omp taskwait depend(inout:gpuAsyncDep)".}
@@ -329,6 +324,11 @@ template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
   let kk = k
   let vv = v
   {.emit: ["#pragma omp atomic update\n", r, "[", kk, "] += ", vv, ";"].}
+
+template gpuMallocHost*(size: SomeInteger): pointer =
+  ## pinned host memory, for fast copies from the device
+  omp_target_alloc_host(size)
+template gpuFreeHost*(p: pointer) = omp_target_free(p)
 
 {.emit: "/*INCLUDESECTION*/\n#include <omp.h>".}
 proc gpuZeContext*(): tuple[ctx, dev: pointer] =
