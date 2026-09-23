@@ -1,17 +1,18 @@
 ## Staggered HMC as examples/staghmc, with the links, momenta and fermion
 ## fields resident on the GPU and every step of the trajectories in GPU
-## kernels.  The momenta and the fermion source come from the same host
-## random number fields as in staghmc and go to the device once per
-## trajectory, so the two programs give the same trajectories.
+## kernels.  The momenta and the fermion source come from the generators
+## of the same host random number field as in staghmc, run on the device
+## (rng/rngGpu), so the two programs give the same trajectories.
 ##   -rg: ranks per dimension, with the lanes as in bestagcg
 ##   -hot:1 starts from random links instead of unit ones, as staghmc -hot:1
 ##   -mixed:1 solves in mixed precision, restarting single precision CGs
 ##   -recon:0 keeps 18 reals per link in the solvers, which otherwise take 12
 ##   and so need SU(3) links (the random ones of -hot:1 are so to 1e-10)
 ##   -check:1 first compares the gauge action, gauge force, link update and
-##   fermion force with the CPU ones on a random gauge field
+##   fermion force and random numbers with the CPU ones on a random gauge
+##   field
 import qex, gauge, physics/[qcdTypes, stagSolve, stagGpu], gauge/gaugeGpu
-import backend/accel
+import backend/accel, rng/rngGpu
 import mdevolve
 import times, macros
 
@@ -59,7 +60,6 @@ R.seed(seed, 987654321)
 var g = lo.newgauge
 if intParam("hot", 0) != 0: g.random r  # random links instead of unit ones
 else: g.unit
-var p = lo.newgauge
 var psi = lo.ColorVector()
 var gs = lo.newgauge  # unit links with the phases of the fermions
 gs.unit
@@ -136,6 +136,7 @@ if intParam("check", 0) != 0:
   gg.forceA(gc, mom, -1.0)
   gg.download(fg, mom)
   echo "check forceA  |GPU-CPU|^2/|CPU|^2: ", rel(fg, f)
+  var rgc = newRngGpu(lo, rc)
   var pr = lo.newgauge
   threads: pr.randomTAH rc
   threads: axexpmuly(f, 0.3, pr, gr)
@@ -149,6 +150,18 @@ if intParam("check", 0) != 0:
     threadBarrier()
     gr.stagPhase
     psi.gaussian rc
+  rgc.randomTAH mom
+  rgc.gaussian(x, 6)
+  gg.download(fg, mom)
+  var xr = lo.ColorVector()
+  gpuMemCpyToCpu(addr xr[0], x, 6*s.n*sizeof(float))
+  var rd = lo.newRNGField(RngMilc6, seed + 2)
+  rgc.download rd
+  var nd = 0.0  # generators differing from the host ones
+  for j in rd.l.sites:
+    if rd[j] != rc[j]: nd += 1
+  getDefaultComm().allReduce(nd)
+  echo "check random  |GPU-CPU|^2/|CPU|^2: ", rel(fg, pr), " ", rel([xr], [psi]), "  generators differing: ", nd
   let stag = newStag(gr)
   var ph = lo.ColorVector()
   var ps = lo.ColorVector()
@@ -218,17 +231,14 @@ let
     mkOmelyan2MN(steps = gsteps, V = VAll[0], T = T),
     mkOmelyan2MN(steps = fsteps, V = VAll[1], T = T))
 
+let rgpu = newRngGpu(lo, r)
 for n in 1..trajs:
   tic()
   let t0 = epochTime()
-  threads:
-    p.randomTAH r
-    psi.gaussian r
+  rgpu.randomTAH mom
+  rgpu.gaussian(x, 6)
   toc("random")
-  gg.upload(mom, p)
   gg.copy(g0, gg.u)
-  gpuMemCpyToGpu(x, addr psi[0], 6*s.n*sizeof(float))
-  toc("upload")
   setLinks()
   s.applyM(phi, x, mass)
   toc("init traj")

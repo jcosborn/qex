@@ -14,8 +14,8 @@ type
   RngMilcKind* = enum
     rmkV6, rmkFuel
   RngMilcV*[RMK: static RngMilcKind] = object
-    r0, r1, r2, r3, r4, r5, r6: uint32
-    icState, multiplier: uint32
+    r0*, r1*, r2*, r3*, r4*, r5*, r6*: uint32
+    icState*, multiplier*: uint32
     when RMK == rmkFuel:
       # for Gaussian
       iset: int32
@@ -165,13 +165,13 @@ proc next*(prn: var RngMilcV): uint =
   ## Return random integer from 0 to maxInt
   result = uint prn.nextI
 
-proc uniform*(prn: var RngMilcV): float32 =
+proc uniform*(prn: var RngMilcV): float32 {.inline.} =
   ## Return random number uniform on [0,1)
   ## The choice of including endpoints may vary among different RNGs
   let i = prn.nextI
   result = SCALE * float32(i)
 
-proc gaussian*(prn: var RngMilcV6): float32 =
+proc gaussian*(prn: var RngMilcV6): float32 {.inline.} =
   ## Gaussian normal deviate
   ## Probability distribution exp( -x\*x/2 ), so < x^2 > = 1
   const TINY = 9.999999999999999e-308
