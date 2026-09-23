@@ -5,7 +5,7 @@ import bench/commonBench
 import parseUtils
 import std/[nativesockets, hashes]
 import sequtils, strutils
-import comms/[halo,gather,qmp,commsQmp]
+import comms/[halo,gather,qmp,commsQmp,zeipc]
 
 type
   GpuHaloLayout*[V:static int] = object
@@ -201,35 +201,6 @@ proc haloSource*[L](hl: HaloLayout[L], gm: GatherMap): seq[int32] =
   for k in 0..<gm.ldest.len: result[gm.ldest[k]] = gm.lidx[k]
   for k in 0..<gm.rdest.len: result[gm.rdest[k]] = int32(L.V*hl.nOut + k)
 
-{.passL: "-lze_loader".}
-{.emit: """/*INCLUDESECTION*/
-#include <omp.h>
-""".}
-type
-  ZeIpcMemHandle {.importc: "ze_ipc_mem_handle_t", header: "level_zero/ze_api.h".} = object
-    data: array[64, char]
-proc zeMemGetIpcHandle(ctx, p: pointer; h: var ZeIpcMemHandle): cint {.importc, header: "level_zero/ze_api.h".}
-proc zeMemOpenIpcHandle(ctx, dev: pointer; h: ZeIpcMemHandle; flags: uint32; p: var pointer): cint {.importc, header: "level_zero/ze_api.h".}
-proc zeMemCloseIpcHandle(ctx, p: pointer): cint {.importc, header: "level_zero/ze_api.h".}
-proc zeMemGetAddressRange(ctx, p: pointer; base: var pointer; bytes: var csize_t): cint {.importc, header: "level_zero/ze_api.h".}
-proc syscall(n: clong): clong {.importc, header: "<unistd.h>", varargs.}
-proc getpid(): cint {.importc, header: "<unistd.h>".}
-var SYS_pidfd_open {.importc, header: "<sys/syscall.h>".}: clong
-var SYS_pidfd_getfd {.importc, header: "<sys/syscall.h>".}: clong
-
-proc zeContext(): tuple[ctx, dev: pointer] =
-  ## Level Zero context and device of the default OpenMP device.
-  var ctx, dev: pointer
-  {.emit: """
-  omp_interop_t obj = omp_interop_none;
-  int dn = omp_get_default_device(), err;
-  #pragma omp interop init(targetsync: obj) device(dn)
-  `ctx` = omp_get_interop_ptr(obj, omp_ipr_device_context, &err);
-  `dev` = omp_get_interop_ptr(obj, omp_ipr_device, &err);
-  #pragma omp interop destroy(obj)
-  """.}
-  (ctx, dev)
-
 var haloIpc* = true  ## peers on the same host store into each other's device memory
 
 type
@@ -263,9 +234,6 @@ type
     msg: QMP_msghandle_t  # all receives and sends, declared once
 
 proc newGpuHaloEx*[T](gm: GatherMap, ne, n, v: int, c: Comm): GpuHaloEx[T] =
-  type Info = object
-    pid, fd, off: int  # off: bytes from the exported allocation to the message
-    h: ZeIpcMemHandle
   tic("newGpuHaloEx")
   var ex = GpuHaloEx[T](ne: ne, n: n, v: v, nsend: gm.sidx.len, nrecv: gm.rdest.len)
   ex.sidx = gm.sidx.toDevice
@@ -302,26 +270,17 @@ proc newGpuHaloEx*[T](gm: GatherMap, ne, n, v: int, c: Comm): GpuHaloEx[T] =
   for i, m in ex.smsg: ex.speer[i] = haloIpc and host[m.rank] == host[c.rank]
   for i, m in ex.rmsg: ex.rpeer[i] = haloIpc and host[m.rank] == host[c.rank]
   toc("hosts")
-  let (ctx, dev) = zeContext()
-  var rout = newSeq[Info](ex.rmsg.len)
-  var sin = newSeq[Info](ex.smsg.len)
+  var rout = newSeq[ZeIpc](ex.rmsg.len)
+  var sin = newSeq[ZeIpc](ex.smsg.len)
   var ns, nr = 0
   for i, m in ex.rmsg:
     if ex.rpeer[i]:
-      # the handle maps the whole allocation holding rbuf, e.g. a pool block
-      var base: pointer
-      var bytes: csize_t
-      if zeMemGetAddressRange(ctx, ex.rbuf, base, bytes) != 0 or
-         zeMemGetIpcHandle(ctx, base, rout[i].h) != 0:
-        qexError("zeMemGetIpcHandle failed")
-      rout[i].pid = getpid()
-      rout[i].off = cast[int](addr ex.rbuf[ne*m.start]) - cast[int](base)
-      copyMem(addr rout[i].fd, addr rout[i].h.data[0], sizeof(cint))
-      c.pushSend(m.rank, addr rout[i], sizeof(Info))
+      rout[i] = zeExport(addr ex.rbuf[ne*m.start])
+      c.pushSend(m.rank, addr rout[i], sizeof(ZeIpc))
       inc ns
   for i, m in ex.smsg:
     if ex.speer[i]:
-      c.pushRecv(m.rank, addr sin[i], sizeof(Info))
+      c.pushRecv(m.rank, addr sin[i], sizeof(ZeIpc))
       inc nr
   if nr > 0: c.waitRecvs(nr)
   if ns > 0: c.waitSends(ns)
@@ -331,16 +290,9 @@ proc newGpuHaloEx*[T](gm: GatherMap, ne, n, v: int, c: Comm): GpuHaloEx[T] =
   for i, m in ex.smsg:
     var base = cast[ptr UncheckedArray[T]](addr ex.sbuf[ne*m.start])
     if ex.speer[i]:
-      let pfd = syscall(SYS_pidfd_open, sin[i].pid, 0)
-      let fd = cint syscall(SYS_pidfd_getfd, pfd, sin[i].fd, 0)
-      if pfd < 0 or fd < 0: qexError("pidfd_getfd failed")
-      var h = sin[i].h
-      copyMem(addr h.data[0], unsafeAddr fd, sizeof(cint))
-      var p: pointer
-      if zeMemOpenIpcHandle(ctx, dev, h, 0, p) != 0:
-        qexError("zeMemOpenIpcHandle failed")
-      ex.peers.add p
-      base = cast[ptr UncheckedArray[T]](cast[int](p) + sin[i].off)
+      let (b, p) = zeOpen(sin[i])
+      ex.peers.add b
+      base = cast[ptr UncheckedArray[T]](p)
     for k in 0..<m.count:
       sd[m.start+k] = cast[ptr UncheckedArray[T]](addr base[k])
       ss[m.start+k] = int32 m.count
@@ -378,8 +330,6 @@ template recvSite*(ro, rs, rb: untyped; p: int; v: untyped) =
   let sk = int rs[p]
   for c in 0..<v.len: v[c] = rb[o + c*sk]
 
-var gpuPackDep {.exportc.}: int  # orders pack before the sends in start
-
 proc pack*[T](ex: GpuHaloEx[T], f: ptr UncheckedArray[T]) =
   ## Stores the send slots of f; returns before the kernel completes, start
   ## waits for it.
@@ -389,7 +339,7 @@ proc pack*[T](ex: GpuHaloEx[T], f: ptr UncheckedArray[T]) =
   let si = ex.sidx
   let sd = ex.sdst
   let st = ex.sstr
-  for t in `||`(0, ne*ns-1, "target teams distribute parallel for " & gpuForClause & " nowait depend(out:gpuPackDep)"):
+  gpuForAsync(t, ne*ns):
     let c = t div ns
     let k = t - c*ns
     let j = int si[k]
@@ -398,7 +348,7 @@ proc pack*[T](ex: GpuHaloEx[T], f: ptr UncheckedArray[T]) =
 proc start*[T](ex: GpuHaloEx[T]) =
   ## Waits for pack, then starts the receives and sends; MPI reads the device
   ## buffers directly.  Kernels storing slots must have completed.
-  {.emit: "#pragma omp taskwait depend(inout:gpuPackDep)".}
+  gpuWaitAsync()
   if ex.mems.len > 0: discard QMP_start(ex.msg)
 
 proc wait*[T](ex: GpuHaloEx[T]) =
@@ -409,9 +359,7 @@ proc free*[T](ex: GpuHaloEx[T]) =
     QMP_free_msghandle(ex.msg)
     for m in ex.mems: QMP_free_msgmem(m)
     ex.mems.setLen(0)
-  if ex.peers.len > 0:
-    let (ctx, _) = zeContext()
-    for p in ex.peers: discard zeMemCloseIpcHandle(ctx, p)
+  for p in ex.peers: zeClose(p)
   ex.peers.setLen(0)
   for p in [pointer ex.sidx, ex.sslot, ex.sdst, ex.sstr, ex.rofs, ex.rstr, ex.sbuf, ex.rbuf]:
     if p != nil: gpuFree(p)
