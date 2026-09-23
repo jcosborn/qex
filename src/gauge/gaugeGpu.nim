@@ -128,47 +128,51 @@ proc update*[V: static int](g: var GpuGauge[V]) =
 
 template forLinks*[V: static int](g: var GpuGauge[V]; mu, k: untyped; body: untyped) =
   ## body for the link of each direction mu and site k, in kernels of
-  ## sub-groups of 16, with the halo of g.u current at the sites with remote
-  ## neighbors.  A stale halo is exchanged while the kernel over the sites
-  ## with all 20 neighbors local runs; that kernel also stores the send
-  ## slots, which update does separately.
+  ## sub-groups of 16, with the halo of g.u current.  A stale halo with
+  ## sends is exchanged while the kernel over the sites with all 20
+  ## neighbors local runs; that kernel also stores the send slots, which
+  ## update does separately.
   block:
     let n = g.n
-    let u = g.u
-    let od = g.ord
-    let nin = g.nin
-    let xch = not g.fresh
-    let ns = if xch: g.ex[0].nsend else: 0  # send slots, the same in the 4 halos
-    let si = g.ex[0].sidx
-    let st = g.ex[0].sstr
-    let sd0 = g.ex[0].sdst
-    let sd1 = g.ex[1].sdst
-    let sd2 = g.ex[2].sdst
-    let sd3 = g.ex[3].sdst
-    if xch: getDefaultComm().barrier  # as in update
-    let mi = max(4*nin, 1)
-    gpuFor(i, mi, 16):
-      var q = i
-      while q < 4*18*ns:  # the send slots, spread over the threads
-        let d = q div (18*ns)
-        let r = q - d*18*ns
-        let f = cast[ptr UncheckedArray[float]](addr u[18*d*n])
-        case d
-        of 0: packAt(si, sd0, st, 18, ns, V, r, f)
-        of 1: packAt(si, sd1, st, 18, ns, V, r, f)
-        of 2: packAt(si, sd2, st, 18, ns, V, r, f)
-        else: packAt(si, sd3, st, 18, ns, V, r, f)
-        q += mi
-      if i < 4*nin:
-        let mu = i div nin
-        let k = int od[i - mu*nin]
+    let ns = if g.fresh: 0 else: g.ex[0].nsend  # send slots, the same in the 4 halos
+    if ns == 0:
+      g.update
+      gpuFor(i, 4*n, 16):
+        let mu = i div n
+        let k = i - mu*n
         body
-    if xch:
+    else:
+      let u = g.u
+      let od = g.ord
+      let nin = g.nin
+      let si = g.ex[0].sidx
+      let st = g.ex[0].sstr
+      let sd0 = g.ex[0].sdst
+      let sd1 = g.ex[1].sdst
+      let sd2 = g.ex[2].sdst
+      let sd3 = g.ex[3].sdst
+      getDefaultComm().barrier  # as in update
+      let mi = max(4*nin, 1)
+      gpuFor(i, mi, 16):
+        var q = i
+        while q < 4*18*ns:  # the send slots, spread over the threads
+          let d = q div (18*ns)
+          let r = q - d*18*ns
+          let f = cast[ptr UncheckedArray[float]](addr u[18*d*n])
+          case d
+          of 0: packAt(si, sd0, st, 18, ns, V, r, f)
+          of 1: packAt(si, sd1, st, 18, ns, V, r, f)
+          of 2: packAt(si, sd2, st, 18, ns, V, r, f)
+          else: packAt(si, sd3, st, 18, ns, V, r, f)
+          q += mi
+        if i < 4*nin:
+          let mu = i div nin
+          let k = int od[i - mu*nin]
+          body
       for d in 0..3: g.ex[d].start
       for d in 0..3: g.ex[d].wait
       g.fresh = true
-    let m = n - nin
-    if m > 0:
+      let m = n - nin
       gpuFor(i, 4*m, 16):
         let mu = i div m
         let k = int od[nin + i - mu*m]
