@@ -154,6 +154,8 @@ when isMainModule:
     threadBarrier()
     g.stagPhase
     threadBarrier()
+    src := 0
+    threadBarrier()
     if myRank==0 and threadNum==0:
       when compiles(src[0].len):
         src{0}[0] := 1
