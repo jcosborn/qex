@@ -190,6 +190,7 @@ template gpuSites*(lo: Layout): int = lo.nSites
 #export gpumem
 
 const gpuSumSlots = 128  # atomic slots per value of gpuSum
+const gpuSumTerms = 16  # terms per thread, i = t, t+T, ... for T threads
 var gpuSumBuf: ptr UncheckedArray[float]  # [8][gpuSumSlots], zero between the sums
 var gpuSumHost: ptr UncheckedArray[float]  # pinned host copy of gpuSumBuf
 
@@ -203,9 +204,17 @@ template gpuSum*(i: untyped; n: SomeInteger; m: static int; body: untyped): arra
       let z = gpuSumBuf
       gpuFor(k, 8*gpuSumSlots): z[k] = 0.0
     let sb = gpuSumBuf
-    gpuFor(i, n):
-      let v: array[m, float] = body
-      for c in 0..<m: gpuAtomicAdd(sb, c*gpuSumSlots + i mod gpuSumSlots, v[c])
+    let gpuN = int(n)
+    let gpuT = (gpuN + gpuSumTerms - 1) div gpuSumTerms
+    gpuFor(t, gpuT):
+      var a {.noInit.}: array[m, float]
+      for c in 0..<m: a[c] = 0.0
+      for j in 0..<gpuSumTerms:
+        let i = t + j*gpuT
+        if i < gpuN:
+          let v: array[m, float] = body
+          for c in 0..<m: a[c] += v[c]
+      for c in 0..<m: gpuAtomicAdd(sb, c*gpuSumSlots + t mod gpuSumSlots, a[c])
     let h = gpuSumHost
     gpuMemCpyToCpu(h, sb, m*gpuSumSlots*sizeof(float))
     gpuFor(k, m*gpuSumSlots): sb[k] = 0.0
