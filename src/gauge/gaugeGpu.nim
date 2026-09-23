@@ -126,6 +126,54 @@ proc update*[V: static int](g: var GpuGauge[V]) =
   g.fresh = true
   toc("done")
 
+template forLinks*[V: static int](g: var GpuGauge[V]; mu, k: untyped; body: untyped) =
+  ## body for the link of each direction mu and site k, in kernels of
+  ## sub-groups of 16, with the halo of g.u current at the sites with remote
+  ## neighbors.  A stale halo is exchanged while the kernel over the sites
+  ## with all 20 neighbors local runs; that kernel also stores the send
+  ## slots, which update does separately.
+  block:
+    let n = g.n
+    let u = g.u
+    let od = g.ord
+    let nin = g.nin
+    let xch = not g.fresh
+    let ns = if xch: g.ex[0].nsend else: 0  # send slots, the same in the 4 halos
+    let si = g.ex[0].sidx
+    let st = g.ex[0].sstr
+    let sd0 = g.ex[0].sdst
+    let sd1 = g.ex[1].sdst
+    let sd2 = g.ex[2].sdst
+    let sd3 = g.ex[3].sdst
+    if xch: getDefaultComm().barrier  # as in update
+    let mi = max(4*nin, 1)
+    gpuFor(i, mi, 16):
+      var q = i
+      while q < 4*18*ns:  # the send slots, spread over the threads
+        let d = q div (18*ns)
+        let r = q - d*18*ns
+        let f = cast[ptr UncheckedArray[float]](addr u[18*d*n])
+        case d
+        of 0: packAt(si, sd0, st, 18, ns, V, r, f)
+        of 1: packAt(si, sd1, st, 18, ns, V, r, f)
+        of 2: packAt(si, sd2, st, 18, ns, V, r, f)
+        else: packAt(si, sd3, st, 18, ns, V, r, f)
+        q += mi
+      if i < 4*nin:
+        let mu = i div nin
+        let k = int od[i - mu*nin]
+        body
+    if xch:
+      for d in 0..3: g.ex[d].start
+      for d in 0..3: g.ex[d].wait
+      g.fresh = true
+    let m = n - nin
+    if m > 0:
+      gpuFor(i, 4*m, 16):
+        let mu = i div m
+        let k = int od[nin + i - mu*m]
+        body
+
 # 3x3 complex matrices as 18 reals, U_ab at 6a+2b (re) and 6a+2b+1 (im)
 
 template mload*(m, u, o, st: untyped) =
@@ -263,24 +311,11 @@ proc plaq*[V: static int](g: var GpuGauge[V]): float =
   1.0 - g.actionA(c)/(6.0*float(g.lo.physVol))
 
 proc forceA*[V: static int](g: var GpuGauge[V]; c: GaugeActionCoeffs; p: ptr UncheckedArray[float]; t: float) =
-  ## p -= t F for the gauge force F of plaq + adjplaq, as forceA.  With a
-  ## stale halo, the kernel over the sites with local neighbors also stores
-  ## the send slots of the 4 halos, as update, and the kernel over the
-  ## other sites follows the exchange.
+  ## p -= t F for the gauge force F of plaq + adjplaq, as forceA
   tic("gauge force")
   let n = g.n
   let u = g.u
   let nb = g.nb
-  let od = g.ord
-  let nin = g.nin
-  let xch = not g.fresh
-  let ns = if xch: g.ex[0].nsend else: 0  # send slots, the same in the 4 halos
-  let si = g.ex[0].sidx
-  let st = g.ex[0].sstr
-  let sd0 = g.ex[0].sdst
-  let sd1 = g.ex[1].sdst
-  let sd2 = g.ex[2].sdst
-  let sd3 = g.ex[3].sdst
   let ro = g.ex[0].rofs
   let rs = g.ex[0].rstr
   let h0 = g.ex[0].rbuf
@@ -289,10 +324,7 @@ proc forceA*[V: static int](g: var GpuGauge[V]; c: GaugeActionCoeffs; p: ptr Unc
   let h3 = g.ex[3].rbuf
   let cp = c.plaq/3.0
   let ca = 2.0*c.adjplaq/9.0
-  template body(i, m, j0: untyped) =
-    ## the link of direction i div m at site od[j0 + i mod m]
-    let mu = i div m
-    let k = int od[j0 + i - mu*m]
+  forLinks(g, mu, k):  # SIMD32 spills, 1.5-1.8x slower
     var x {.noInit.}, y {.noInit.}, s {.noInit.}, q {.noInit.}, f {.noInit.}: array[18, float]
     forStatic e, 0, 17: f[e] = 0.0
     template plaqs(mu: static int) =
@@ -330,30 +362,7 @@ proc forceA*[V: static int](g: var GpuGauge[V]; c: GaugeActionCoeffs; p: ptr Unc
     mtah(s, f)
     let o = 18*mu*n + lo18(V, k)
     forStatic e, 0, 17: p[o + e*V] -= t*s[e]
-  if xch: getDefaultComm().barrier  # as in update
-  let mi = max(4*nin, 1)
-  gpuFor(i, mi, 16):  # SIMD32 spills, 1.5-1.8x slower
-    var q = i
-    while q < 4*18*ns:  # the send slots, spread over the threads
-      let mu = q div (18*ns)
-      let r = q - mu*18*ns
-      let f = cast[ptr UncheckedArray[float]](addr u[18*mu*n])
-      case mu
-      of 0: packAt(si, sd0, st, 18, ns, V, r, f)
-      of 1: packAt(si, sd1, st, 18, ns, V, r, f)
-      of 2: packAt(si, sd2, st, 18, ns, V, r, f)
-      else: packAt(si, sd3, st, 18, ns, V, r, f)
-      q += mi
-    if i < 4*nin: body(i, nin, 0)
-  toc("interior")
-  if xch:
-    for mu in 0..3: g.ex[mu].start
-    for mu in 0..3: g.ex[mu].wait
-    g.fresh = true
-  toc("halo")
-  if nin < n:
-    gpuFor(i, 4*(n-nin), 16): body(i, n-nin, nin)
-  toc("boundary")
+  toc("done")
 
 proc expUpdate*[V: static int](g: var GpuGauge[V]; p: ptr UncheckedArray[float]; t: float) =
   ## g.u = exp(t p) g.u link by link, as axexpmuly

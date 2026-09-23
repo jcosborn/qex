@@ -623,7 +623,6 @@ proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr Un
   ## The links of s from those of g times the signs sg of stagSigns.  For
   ## links of 12 reals the signs in s.nbr are those of a unit gauge field
   ## with the phases, as newStagGpu gives, so the links of g must be SU(3).
-  g.update
   let n = g.n
   let u = g.u
   let nb = g.nb
@@ -642,9 +641,7 @@ proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr Un
   let lh1 = s.lh[1]
   let nr0 = s.ex[1].nrecv
   let nr1 = s.ex[0].nrecv
-  gpuFor(i, 4*n):
-    let mu = i div n
-    let k = i - mu*n
+  forLinks(g, mu, k):
     let ol = nl*mu*n + uo(V, k, nl)
     var x {.noInit.}, y {.noInit.}: array[18, float]
     mload(x, u, 18*mu*n + lo18(V, k), V)
