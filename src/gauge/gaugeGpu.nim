@@ -263,7 +263,7 @@ proc forceA*[V: static int](g: var GpuGauge[V]; c: GaugeActionCoeffs; p: ptr Unc
   let h3 = g.ex[3].rbuf
   let cp = c.plaq/3.0
   let ca = 2.0*c.adjplaq/9.0
-  gpuFor(i, 4*n):
+  gpuFor(i, 4*n, 16):  # SIMD32 spills, 1.5-1.8x slower
     let mu = i div n
     let k = i - mu*n
     var x {.noInit.}, y {.noInit.}, s {.noInit.}, q {.noInit.}, f {.noInit.}: array[18, float]

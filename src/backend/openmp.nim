@@ -302,18 +302,27 @@ template onGpu*(n,b,body: untyped) =
 const gpuThreads {.intdefine.} = 256  ## thread_limit of gpuFor kernels, 0 for the runtime default; 256 was best for the staggered kernels on PVC
 const gpuForMap {.strdefine.} = "defaultmap(firstprivate:pointer)"  ## pointers by value, no lookup in the mapping table at each launch
 const gpuForClause* = gpuForMap & (if gpuThreads > 0: " thread_limit(" & $gpuThreads & ")" else: "")
-template gpuFor*(i: untyped; n: SomeInteger; body: untyped) =
-  ## One SPMD kernel over i in 0..<n. Captured pointers must be device pointers.
-  for i in `||`(0, int(n)-1, "target teams distribute parallel for " & gpuForClause):
+template gpuSubClause(sub: static int): string =
+  when sub > 0: " ompx_sub_group_size(" & $sub & ")" else: ""
+
+template gpuFor*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
+  ## One SPMD kernel over i in 0..<n, in sub-groups of sub threads, or as
+  ## the compiler chooses for sub = 0.  Captured pointers must be device
+  ## pointers.
+  const gpuC = "target teams distribute parallel for " & gpuForClause & gpuSubClause(sub)
+  for i in `||`(0, int(n)-1, gpuC):
     body
+template gpuFor*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, body)
 
 var gpuAsyncDep {.exportc.}: int  # orders the gpuForAsync kernels before gpuWaitAsync
 
-template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) =
+template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
   ## gpuFor returning before the kernel completes; gpuWaitAsync waits for it.
   discard addr(gpuAsyncDep)  # declares it in the C file of the caller
-  for i in `||`(0, int(n)-1, "target teams distribute parallel for " & gpuForClause & " nowait depend(inout:gpuAsyncDep)"):
+  const gpuC = "target teams distribute parallel for " & gpuForClause & gpuSubClause(sub) & " nowait depend(inout:gpuAsyncDep)"
+  for i in `||`(0, int(n)-1, gpuC):
     body
+template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) = gpuForAsync(i, n, 0, body)
 
 template gpuWaitAsync* =
   discard addr(gpuAsyncDep)

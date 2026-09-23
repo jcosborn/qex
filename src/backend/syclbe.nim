@@ -45,23 +45,28 @@ template gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger) =
 const gpuThreads {.intdefine.} = 256  ## work group size of gpuFor kernels
 var gpuIt {.importc, nodecl.}: Nd1  # the work item of the gpuFor kernels
 
-template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) =
+template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
   ## One kernel over i in 0..<n, returning before it completes; gpuWaitAsync
-  ## waits for it.  Captured pointers must be device pointers.
+  ## waits for it.  Sub-groups of sub threads, or as the compiler chooses for
+  ## sub = 0.  Captured pointers must be device pointers.
+  const gpuA = when sub > 0: " [[sycl::reqd_sub_group_size(" & $sub & ")]]" else: ""
   let gpuN = int(n)
   if gpuN > 0:
     let gpuM = csize_t((gpuN + gpuThreads - 1) div gpuThreads * gpuThreads)
-    {.emit: [q, ".parallel_for(sycl::nd_range<1>(sycl::range<1>(", gpuM, "), sycl::range<1>(", gpuThreads, ")), [=](sycl::nd_item<1> gpuIt) {"].}
+    {.emit: [q, ".parallel_for(sycl::nd_range<1>(sycl::range<1>(", gpuM, "), sycl::range<1>(", gpuThreads, ")), [=](sycl::nd_item<1> gpuIt)", gpuA, " {"].}
     block:
       let i = int(gpuIt[])
       if i < gpuN:
         body
     {.emit: "});".}
 
-template gpuFor*(i: untyped; n: SomeInteger; body: untyped) =
-  ## One kernel over i in 0..<n.  Captured pointers must be device pointers.
-  gpuForAsync(i, n, body)
+template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) = gpuForAsync(i, n, 0, body)
+
+template gpuFor*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
+  ## gpuForAsync waiting for the kernel
+  gpuForAsync(i, n, sub, body)
   q.wait
+template gpuFor*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, body)
 
 template gpuWaitAsync* = q.wait
 
