@@ -23,6 +23,8 @@ type
     u*: ptr UncheckedArray[float]  # [4][n div V][18][V]
     ex*: array[4, GpuHaloEx[float]]  # halo of each direction, with the corners x+mu-nu
     nb*: ptr UncheckedArray[int32]  # [20][n]: x+mu, x-mu, x+mu-nu; j >= n is receive position j-n
+    ord*: ptr UncheckedArray[int32]  # sites, the nin with all 20 neighbors local first
+    nin*: int
     fresh*: bool  # the halo holds the current links
 
 template lo18*(V, k: untyped): untyped =
@@ -74,12 +76,24 @@ proc newGpuGauge*[V: static int](lo: Layout[V]): GpuGauge[V] =
           for l in 0..<V:
             nb[nbD(mu,nu)*n + V*o + l] = if e < no: int32(V*e + l) else: src[V*(e-no) + l]
   result.nb = nb.toDevice
+  var od = newSeq[int32](n)
+  var m = 0
+  for pass in 0..1:
+    for k in 0..<n:
+      var loc = true
+      for d in 0..<20: loc = loc and nb[d*n + k] < int32(n)
+      if loc == (pass == 0):
+        od[m] = int32 k
+        inc m
+    if pass == 0: result.nin = m
+  result.ord = od.toDevice
   result.u = cast[ptr UncheckedArray[float]](gpuMalloc(4*18*n*sizeof(float)))
   toc("done")
 
 proc free*[V: static int](g: var GpuGauge[V]) =
   gpuFree(g.u)
   gpuFree(g.nb)
+  gpuFree(g.ord)
   for mu in 0..3: g.ex[mu].free
 
 proc upload*[V: static int](g: var GpuGauge[V]; d: ptr UncheckedArray[float]; f: openArray[Field]) =
@@ -249,12 +263,24 @@ proc plaq*[V: static int](g: var GpuGauge[V]): float =
   1.0 - g.actionA(c)/(6.0*float(g.lo.physVol))
 
 proc forceA*[V: static int](g: var GpuGauge[V]; c: GaugeActionCoeffs; p: ptr UncheckedArray[float]; t: float) =
-  ## p -= t F for the gauge force F of plaq + adjplaq, as forceA
-  g.update
+  ## p -= t F for the gauge force F of plaq + adjplaq, as forceA.  With a
+  ## stale halo, the kernel over the sites with local neighbors also stores
+  ## the send slots of the 4 halos, as update, and the kernel over the
+  ## other sites follows the exchange.
   tic("gauge force")
   let n = g.n
   let u = g.u
   let nb = g.nb
+  let od = g.ord
+  let nin = g.nin
+  let xch = not g.fresh
+  let ns = if xch: g.ex[0].nsend else: 0  # send slots, the same in the 4 halos
+  let si = g.ex[0].sidx
+  let st = g.ex[0].sstr
+  let sd0 = g.ex[0].sdst
+  let sd1 = g.ex[1].sdst
+  let sd2 = g.ex[2].sdst
+  let sd3 = g.ex[3].sdst
   let ro = g.ex[0].rofs
   let rs = g.ex[0].rstr
   let h0 = g.ex[0].rbuf
@@ -263,9 +289,10 @@ proc forceA*[V: static int](g: var GpuGauge[V]; c: GaugeActionCoeffs; p: ptr Unc
   let h3 = g.ex[3].rbuf
   let cp = c.plaq/3.0
   let ca = 2.0*c.adjplaq/9.0
-  gpuFor(i, 4*n, 16):  # SIMD32 spills, 1.5-1.8x slower
-    let mu = i div n
-    let k = i - mu*n
+  template body(i, m, j0: untyped) =
+    ## the link of direction i div m at site od[j0 + i mod m]
+    let mu = i div m
+    let k = int od[j0 + i - mu*m]
     var x {.noInit.}, y {.noInit.}, s {.noInit.}, q {.noInit.}, f {.noInit.}: array[18, float]
     forStatic e, 0, 17: f[e] = 0.0
     template plaqs(mu: static int) =
@@ -303,7 +330,30 @@ proc forceA*[V: static int](g: var GpuGauge[V]; c: GaugeActionCoeffs; p: ptr Unc
     mtah(s, f)
     let o = 18*mu*n + lo18(V, k)
     forStatic e, 0, 17: p[o + e*V] -= t*s[e]
-  toc("done")
+  if xch: getDefaultComm().barrier  # as in update
+  let mi = max(4*nin, 1)
+  gpuFor(i, mi, 16):  # SIMD32 spills, 1.5-1.8x slower
+    var q = i
+    while q < 4*18*ns:  # the send slots, spread over the threads
+      let mu = q div (18*ns)
+      let r = q - mu*18*ns
+      let f = cast[ptr UncheckedArray[float]](addr u[18*mu*n])
+      case mu
+      of 0: packAt(si, sd0, st, 18, ns, V, r, f)
+      of 1: packAt(si, sd1, st, 18, ns, V, r, f)
+      of 2: packAt(si, sd2, st, 18, ns, V, r, f)
+      else: packAt(si, sd3, st, 18, ns, V, r, f)
+      q += mi
+    if i < 4*nin: body(i, nin, 0)
+  toc("interior")
+  if xch:
+    for mu in 0..3: g.ex[mu].start
+    for mu in 0..3: g.ex[mu].wait
+    g.fresh = true
+  toc("halo")
+  if nin < n:
+    gpuFor(i, 4*(n-nin), 16): body(i, n-nin, nin)
+  toc("boundary")
 
 proc expUpdate*[V: static int](g: var GpuGauge[V]; p: ptr UncheckedArray[float]; t: float) =
   ## g.u = exp(t p) g.u link by link, as axexpmuly

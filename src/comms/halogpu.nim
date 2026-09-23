@@ -330,6 +330,14 @@ template recvSite*(ro, rs, rb: untyped; p: int; v: untyped) =
   let sk = int rs[p]
   for c in 0..<v.len: v[c] = rb[o + c*sk]
 
+template packAt*(si, sd, st: untyped; ne, ns, v, t: int; f: untyped) =
+  ## Stores real t of the send slots of f, component t div ns of slot
+  ## t mod ns, inside a kernel.
+  let c = t div ns
+  let k = t - c*ns
+  let j = int si[k]
+  sd[k][c*int st[k]] = f[((j div v)*ne + c)*v + j mod v]
+
 proc pack*[T](ex: GpuHaloEx[T], f: ptr UncheckedArray[T]) =
   ## Stores the send slots of f; returns before the kernel completes, start
   ## waits for it.
@@ -339,11 +347,7 @@ proc pack*[T](ex: GpuHaloEx[T], f: ptr UncheckedArray[T]) =
   let si = ex.sidx
   let sd = ex.sdst
   let st = ex.sstr
-  gpuForAsync(t, ne*ns):
-    let c = t div ns
-    let k = t - c*ns
-    let j = int si[k]
-    sd[k][c*int st[k]] = f[((j div v)*ne + c)*v + j mod v]
+  gpuForAsync(t, ne*ns): packAt(si, sd, st, ne, ns, v, t, f)
 
 proc start*[T](ex: GpuHaloEx[T]) =
   ## Waits for pack, then starts the receives and sends; MPI reads the device
