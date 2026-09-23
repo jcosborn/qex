@@ -5,6 +5,7 @@
 ## trajectory, so the two programs give the same trajectories.
 ##   -rg: ranks per dimension, with the lanes as in bestagcg
 ##   -hot:1 starts from random links instead of unit ones, as staghmc -hot:1
+##   -mixed:1 solves in mixed precision, restarting single precision CGs
 ##   -check:1 first compares the gauge action, gauge force, link update and
 ##   fermion force with the CPU ones on a random gauge field
 import qex, gauge, physics/[qcdTypes, stagSolve, stagGpu], gauge/gaugeGpu
@@ -67,6 +68,8 @@ threads:
 
 var gg = newGpuGauge(lo)
 var s = newStagGpu(gs, float64, recon = false, fwd = 0)
+var ss: StagGpu[VLEN,float32]  # single precision solver with -mixed:1
+let ssp = if intParam("mixed", 0) != 0: (ss = newStagGpu(gs, float32, recon = false, fwd = 0); addr ss) else: nil
 let sg = stagSigns(gs)
 let mom = gg.newLinks  # momenta
 let g0 = gg.newLinks  # links at the start of the trajectory
@@ -187,11 +190,15 @@ proc mdv(t: float) =
   gg.forceA(gc, mom, t)
   toc("mdv")
 
+proc setLinks() =
+  s.setLinks(gg, sg)
+  if ssp != nil: ssp[].setLinks(gg, sg)
+
 proc mdvf(t: float) =
   tic()
-  s.setLinks(gg, sg)
+  setLinks()
   toc("fforce links")
-  s.solveM(x, phi, mass, spf)
+  s.solveM(x, phi, mass, spf, ssp)
   toc("fforce solve")
   s.forceM(mom, x, -0.5*t/mass)
   toc("mdvf")
@@ -215,10 +222,10 @@ for n in 1..trajs:
   gg.upload(mom, p)
   gg.copy(g0, gg.u)
   gpuMemCpyToGpu(x, addr psi[0], 6*s.n*sizeof(float))
-  s.setLinks(gg, sg)
+  setLinks()
   s.applyM(phi, x, mass)
   toc("init traj")
-  s.solveM(x, phi, mass, spa)
+  s.solveM(x, phi, mass, spa, ssp)
   toc("fa solve 1")
   let
     p2 = gg.norm2(mom)
@@ -234,8 +241,8 @@ for n in 1..trajs:
   toc("evolve")
 
   let p2e = gg.norm2(mom)
-  s.setLinks(gg, sg)
-  s.solveM(x, phi, mass, spa)
+  setLinks()
+  s.solveM(x, phi, mass, spa, ssp)
   toc("fa solve 2")
   let
     ga1 = gg.actionA(gc)
