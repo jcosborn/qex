@@ -6,6 +6,8 @@
 ##   -rg: ranks per dimension, with the lanes as in bestagcg
 ##   -hot:1 starts from random links instead of unit ones, as staghmc -hot:1
 ##   -mixed:1 solves in mixed precision, restarting single precision CGs
+##   -recon:0 keeps 18 reals per link in the solvers, which otherwise take 12
+##   and so need SU(3) links (the random ones of -hot:1 are so to 1e-10)
 ##   -check:1 first compares the gauge action, gauge force, link update and
 ##   fermion force with the CPU ones on a random gauge field
 import qex, gauge, physics/[qcdTypes, stagSolve, stagGpu], gauge/gaugeGpu
@@ -67,9 +69,11 @@ threads:
   gs.stagPhase
 
 var gg = newGpuGauge(lo)
-var s = newStagGpu(gs, float64, recon = false, fwd = 0)
+let recon = intParam("recon", 1) != 0
+var s = newStagGpu(gs, float64, recon)
 var ss: StagGpu[VLEN,float32]  # single precision solver with -mixed:1
-let ssp = if intParam("mixed", 0) != 0: (ss = newStagGpu(gs, float32, recon = false, fwd = 0); addr ss) else: nil
+let ssp = if intParam("mixed", 0) != 0: (ss = newStagGpu(gs, float32, recon); addr ss) else: nil
+echo "GPU links: ", s.nl, " reals", if s.lb == nil: ", forward only" else: ""
 let sg = stagSigns(gs)
 let mom = gg.newLinks  # momenta
 let g0 = gg.newLinks  # links at the start of the trajectory
@@ -123,6 +127,7 @@ if intParam("check", 0) != 0:
   var z = lo.newgauge
   gr.random rc
   threads:
+    gr.projectSU  # SU(3) to rounding, as the solvers with links of 12 reals need
     for mu in 0..<z.len: z[mu] := 0
   gg.upload(gg.u, gr)
   echo "check actionA  CPU: ", gc.actionA(gr), "  GPU: ", gg.actionA(gc)
@@ -162,7 +167,7 @@ if intParam("check", 0) != 0:
   s.applyM(phi, x, mass)
   s.solveM(x, phi, mass, sp)
   gg.upload(mom, z)
-  s.forceM(mom, x, -1.0)
+  s.forceM(gg, sg, mom, x, -1.0)
   gg.download(fg, mom)
   var xg = lo.ColorVector()
   gpuMemCpyToCpu(addr xg[0], x, 6*s.n*sizeof(float))
@@ -200,7 +205,7 @@ proc mdvf(t: float) =
   toc("fforce links")
   s.solveM(x, phi, mass, spf, ssp)
   toc("fforce solve")
-  s.forceM(mom, x, -0.5*t/mass)
+  s.forceM(gg, sg, mom, x, -0.5*t/mass)
   toc("mdvf")
 
 proc mdvAll(t: openarray[float]) =

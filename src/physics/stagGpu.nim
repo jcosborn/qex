@@ -625,7 +625,9 @@ proc stagSigns*[V: static int; E](g: openArray[Field[V,E]]): ptr UncheckedArray[
   sg.toDevice
 
 proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr UncheckedArray[float]) =
-  ## s.lf, s.lb = the links of g times the signs sg of stagSigns
+  ## The links of s from those of g times the signs sg of stagSigns.  For
+  ## links of 12 reals the signs in s.nbr are those of a unit gauge field
+  ## with the phases, as newStagGpu gives, so the links of g must be SU(3).
   g.update
   let n = g.n
   let u = g.u
@@ -636,26 +638,43 @@ proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr Un
   let h1 = g.ex[1].rbuf
   let h2 = g.ex[2].rbuf
   let h3 = g.ex[3].rbuf
+  let nl = s.nl
+  let ne = s.ne
+  let fn = s.nbr
   let lf = s.lf
   let lb = s.lb
+  let lh0 = s.lh[0]
+  let lh1 = s.lh[1]
+  let nr0 = s.ex[1].nrecv
+  let nr1 = s.ex[0].nrecv
   gpuFor(i, 4*n):
     let mu = i div n
     let k = i - mu*n
-    let o = 18*mu*n + lo18(V, k)
-    var x {.noInit.}: array[18, float]
-    mload(x, u, o, V)
+    let ol = nl*mu*n + uo(V, k, nl)
+    var x {.noInit.}, y {.noInit.}: array[18, float]
+    mload(x, u, 18*mu*n + lo18(V, k), V)
     let sf = sg[mu*n + k]
-    forStatic e, 0, 17: lf[o + e*V] = T(sf*x[e])
+    for e in 0..<nl: lf[ol + e*V] = T(sf*x[e])
     case mu
     of 0: link(x, 0, int nb[nbB(0)*n + k])
     of 1: link(x, 1, int nb[nbB(1)*n + k])
     of 2: link(x, 2, int nb[nbB(2)*n + k])
     else: link(x, 3, int nb[nbB(3)*n + k])
     let sb = sg[(4+mu)*n + k]
-    forStatic a, 0, 2:
+    forStatic a, 0, 2:  # y = sb U_mu(x-mu)^+
       forStatic b, 0, 2:
-        lb[o + (6*a+2*b)*V] = T(sb*x[6*b+2*a])
-        lb[o + (6*a+2*b+1)*V] = T(-sb*x[6*b+2*a+1])
+        y[6*a+2*b] = sb*x[6*b+2*a]
+        y[6*a+2*b+1] = -sb*x[6*b+2*a+1]
+    if lb != nil:
+      for e in 0..<nl: lb[ol + e*V] = T(y[e])
+    else:
+      let jj = int fn[(4+mu)*n + k]
+      let j = if jj < 0: -1-jj else: jj
+      if j >= n:
+        if k < ne:
+          for e in 0..<nl: lh0[e*nr0 + j-n] = T(y[e])
+        else:
+          for e in 0..<nl: lh1[e*nr1 + j-n] = T(y[e])
 
 proc norm2*[V: static int; T](s: StagGpu[V,T]; x: ptr UncheckedArray[T]): float =
   ## global |x|^2 over all sites
@@ -695,9 +714,11 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: ptr UncheckedArray[float]
   s.ex[0].wait
   s.dslash(1, x, x, x, s.ex[0].rbuf, 0.0, -0.5/m, nil, nil, dot = false, send = false)
 
-proc forceM*[V: static int](s: StagGpu[V,float]; p, x: ptr UncheckedArray[float]; t: float) =
-  ## p_mu(y) -= t e(y) TAH(x(y) (U_mu(y) x(y+mu))^+) with the links s.lf,
-  ## e = 1 on even and -1 on odd sites, as oneLinkForce of staghmc
+proc forceM*[V: static int](s: StagGpu[V,float]; g: GpuGauge[V]; sg: ptr UncheckedArray[float];
+                            p, x: ptr UncheckedArray[float]; t: float) =
+  ## p_mu(y) -= t e(y) TAH(x(y) (U_mu(y) x(y+mu))^+) with the links of g
+  ## times the signs sg of stagSigns, e = 1 on even and -1 on odd sites,
+  ## as oneLinkForce of staghmc
   getDefaultComm().barrier
   for q in 0..1:
     s.ex[q].pack(x)
@@ -705,7 +726,8 @@ proc forceM*[V: static int](s: StagGpu[V,float]; p, x: ptr UncheckedArray[float]
   for q in 0..1: s.ex[q].wait
   let n = s.n
   let ne = s.ne
-  let lf = s.lf
+  let u = g.u
+  let nl = s.nl
   let nb = s.nbr
   let ro0 = s.ex[0].rofs
   let rs0 = s.ex[0].rstr
@@ -716,7 +738,8 @@ proc forceM*[V: static int](s: StagGpu[V,float]; p, x: ptr UncheckedArray[float]
   gpuFor(i, 4*n):
     let mu = i div n
     let k = i - mu*n
-    let j = int nb[mu*n + k]
+    let jj = int nb[mu*n + k]
+    let j = if nl == 12 and jj < 0: -1-jj else: jj
     var v {.noInit.}: array[6, float]
     if j < n:
       let o = vo(V, j)
@@ -724,17 +747,18 @@ proc forceM*[V: static int](s: StagGpu[V,float]; p, x: ptr UncheckedArray[float]
     elif k < ne: recvSite(ro1, rs1, rb1, j-n, v)
     else: recvSite(ro0, rs0, rb0, j-n, v)
     let o = 18*mu*n + lo18(V, k)
-    var u {.noInit.}: array[18, float]
-    mload(u, lf, o, V)
+    var m {.noInit.}: array[18, float]
+    mload(m, u, o, V)
+    let sf = sg[mu*n + k]
     var w {.noInit.}: array[6, float]  # U_mu(y) x(y+mu)
     forStatic a, 0, 2:
       var wr = 0.0
       var wi = 0.0
       forStatic b, 0, 2:
-        wr += u[6*a+2*b]*v[2*b] - u[6*a+2*b+1]*v[2*b+1]
-        wi += u[6*a+2*b]*v[2*b+1] + u[6*a+2*b+1]*v[2*b]
-      w[2*a] = wr
-      w[2*a+1] = wi
+        wr += m[6*a+2*b]*v[2*b] - m[6*a+2*b+1]*v[2*b+1]
+        wi += m[6*a+2*b]*v[2*b+1] + m[6*a+2*b+1]*v[2*b]
+      w[2*a] = sf*wr
+      w[2*a+1] = sf*wi
     let yo = vo(V, k)
     var y {.noInit.}: array[6, float]
     forStatic c, 0, 5: y[c] = x[yo + c*V]
