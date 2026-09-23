@@ -224,9 +224,11 @@ for n in 1..trajs:
   threads:
     p.randomTAH r
     psi.gaussian r
+  toc("random")
   gg.upload(mom, p)
   gg.copy(g0, gg.u)
   gpuMemCpyToGpu(x, addr psi[0], 6*s.n*sizeof(float))
+  toc("upload")
   setLinks()
   s.applyM(phi, x, mass)
   toc("init traj")
