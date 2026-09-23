@@ -106,9 +106,8 @@ proc update*[V: static int](g: var GpuGauge[V]) =
   if g.fresh: return
   tic("gauge halo")
   getDefaultComm().barrier
-  for mu in 0..3:
-    g.ex[mu].pack(cast[ptr UncheckedArray[float]](addr g.u[18*mu*g.n]))
-    g.ex[mu].start
+  for mu in 0..3: g.ex[mu].pack(cast[ptr UncheckedArray[float]](addr g.u[18*mu*g.n]))
+  for mu in 0..3: g.ex[mu].start
   for mu in 0..3: g.ex[mu].wait
   g.fresh = true
   toc("done")
