@@ -368,8 +368,10 @@ proc applyD2eeCG[V: static int; T](s: StagGpu[V,T]; w, r, t: ptr UncheckedArray[
   ## w_e = 4 m2 r_e - D_eo D_oe r_e with the remote sites of r from s.rh,
   ## returning the global r_e.r_e and w_e.r_e summed in rs.  Starts the
   ## exchange of the boundary of w in s.ex[0]; the caller waits for it.
+  ## The first hop runs after the kernels already submitted, and the start
+  ## of the exchange of t waits for them.
   tic("A r")
-  s.dslash(1, t, r, r, s.rh, T(0), T(1), nil, nil, dot = false, send = true)
+  s.dslash(1, t, r, r, s.rh, T(0), T(1), nil, nil, dot = false, send = true, nowait = true)
   toc("dslash oe")
   s.ex[1].start
   toc("start oe")
@@ -403,12 +405,13 @@ proc redot[V: static int; T](s: StagGpu[V,T]; x, y: ptr UncheckedArray[T]): floa
 proc update[V: static int; T](s: StagGpu[V,T]; x, r, p, sv, w: ptr UncheckedArray[T]; a, b: T) =
   ## p = r + b p, s = w + b s, x += a p, r -= a s on the even sites, and the
   ## same for the halo copies s.rh, s.sh from the w boundary received in
-  ## s.ex[0]; a thread updates one real
+  ## s.ex[0]; a thread updates one real.  Returns before the kernel
+  ## completes, the first hop of applyD2eeCG runs after it.
   let n6 = 6*s.ne
   let wh = s.ex[0].rbuf
   let rh = s.rh
   let sh = s.sh
-  gpuFor(t, n6 + 6*s.ex[0].nrecv):
+  gpuForAsync(t, n6 + 6*s.ex[0].nrecv):
     if t < n6:
       let pk = r[t] + b*p[t]
       let sk = w[t] + b*sv[t]
@@ -461,8 +464,8 @@ proc cg[V: static int; T](s: StagGpu[V,T]; x, b: ptr UncheckedArray[T]; m, r2sto
     rr[i] = b[i]
     p[i] = T(0)
     sv[i] = T(0)
-  var z: array[4*nRed, float]
-  gpuMemCpyToGpu(s.red, addr z[0], sizeof(z))
+  let red = s.red
+  gpuFor(k, 4*nRed): red[k] = 0.0
   var rs = s.red
   var rz = cast[ptr UncheckedArray[float]](addr s.red[2*nRed])
   s.ex[0].pack(rr)
