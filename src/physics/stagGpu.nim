@@ -682,14 +682,38 @@ proc applyM*[V: static int; T](s: StagGpu[V,T]; d, x: ptr UncheckedArray[T]; m: 
   s.ex[1].wait
   s.dslash(0, d, x, x, s.ex[1].rbuf, T(m), T(0.5), nil, nil, dot = false, send = false)
 
+proc applyMfull*[V: static int; T](s: StagGpu[V,T]; d, x: ptr UncheckedArray[T]; m: float) =
+  ## d = (m + D/2) x on all sites, as stag.D
+  let c = getDefaultComm()
+  c.barrier
+  s.ex[1].pack(x)
+  s.ex[1].start
+  s.ex[1].wait
+  s.dslash(0, d, x, x, s.ex[1].rbuf, T(m), T(0.5), nil, nil, dot = false, send = false)
+  c.barrier
+  s.ex[0].pack(x)
+  s.ex[0].start
+  s.ex[0].wait
+  s.dslash(1, d, x, x, s.ex[0].rbuf, T(m), T(0.5), nil, nil, dot = false, send = false)
+
 proc solveM*[V: static int](s: StagGpu[V,float]; x, b: ptr UncheckedArray[float]; m: float;
-                            sp: var SolverParams; ss: ptr StagGpu[V,float32] = nil; r2in = 1e-6) =
+                            sp: var SolverParams; ss: ptr StagGpu[V,float32] = nil; r2in = 1e-6;
+                            full = false) =
   ## Solves (m + D/2) x = b for b_o = 0, as stag.solve, until the residual
   ## of the even system drops by sp.r2req, in mixed precision with ss:
   ##   x_e = A^-1 4m b_e,  x_o = -D_oe x_e/(2m)
+  ## With full, b_o may be nonzero, as solveReconL of the CPU solve:
+  ##   A x_e = 4m b_e - 2 D_eo b_o,  x_o = b_o/m - D_oe x_e/(2m)
   let c = getDefaultComm()
   let b4 = s.vec[5]
-  gpuFor(i, 6*s.ne): b4[i] = 4.0*m*b[i]
+  if full:
+    c.barrier
+    s.ex[1].pack(b)
+    s.ex[1].start
+    s.ex[1].wait
+    s.dslash(0, b4, b, b, s.ex[1].rbuf, 4.0*m, -2.0, nil, nil, dot = false, send = false)
+  else:
+    gpuFor(i, 6*s.ne): b4[i] = 4.0*m*b[i]
   var b2 = s.redot(b4, b4)
   c.allReduce(b2)
   if ss == nil:
@@ -702,7 +726,45 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: ptr UncheckedArray[float]
   s.ex[0].pack(x)
   s.ex[0].start
   s.ex[0].wait
-  s.dslash(1, x, x, x, s.ex[0].rbuf, 0.0, -0.5/m, nil, nil, dot = false, send = false)
+  if full: s.dslash(1, x, x, b, s.ex[0].rbuf, 1.0/m, -0.5/m, nil, nil, dot = false, send = false)
+  else: s.dslash(1, x, x, x, s.ex[0].rbuf, 0.0, -0.5/m, nil, nil, dot = false, send = false)
+
+proc outerM*[V: static int](s: StagGpu[V,float]; f, x: ptr UncheckedArray[float]; t: float) =
+  ## f_mu(y) += t x(y) x(y+mu)^+ over all sites, f like GpuGauge.u: the one
+  ## link force before the phases and the smearing pullback, as fforce of
+  ## staghmc_sh accumulates it over the mass terms
+  getDefaultComm().barrier
+  for q in 0..1:
+    s.ex[q].pack(x)
+    s.ex[q].start
+  for q in 0..1: s.ex[q].wait
+  let n = s.n
+  let ne = s.ne
+  let nl = s.nl
+  let nb = s.nbr
+  let ro0 = s.ex[0].rofs
+  let rs0 = s.ex[0].rstr
+  let rb0 = s.ex[0].rbuf
+  let ro1 = s.ex[1].rofs
+  let rs1 = s.ex[1].rstr
+  let rb1 = s.ex[1].rbuf
+  gpuFor(i, 4*n):
+    let mu = i div n
+    let k = i - mu*n
+    let jj = int nb[mu*n + k]
+    let j = if nl == 12 and jj < 0: -1-jj else: jj
+    var v {.noInit.}: array[6, float]
+    if j < n:
+      let o = vo(V, j)
+      forStatic c, 0, 5: v[c] = x[o + c*V]
+    elif k < ne: recvSite(ro1, rs1, rb1, j-n, v)
+    else: recvSite(ro0, rs0, rb0, j-n, v)
+    let yo = vo(V, k)
+    let o = 18*mu*n + lo18(V, k)
+    forStatic a, 0, 2:
+      forStatic b, 0, 2:
+        f[o + (6*a+2*b)*V] += t*(x[yo + 2*a*V]*v[2*b] + x[yo + (2*a+1)*V]*v[2*b+1])
+        f[o + (6*a+2*b+1)*V] += t*(x[yo + (2*a+1)*V]*v[2*b] - x[yo + 2*a*V]*v[2*b+1])
 
 proc forceM*[V: static int](s: StagGpu[V,float]; g: GpuGauge[V]; sg: ptr UncheckedArray[float];
                             p, x: ptr UncheckedArray[float]; t: float) =
