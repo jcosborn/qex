@@ -1,23 +1,24 @@
 ## Staggered HMC with Hasenbusch mass ratios as examples/staghmc_sh, with the
-## links, momenta and fermion fields on the GPU and the solves and one link
-## forces in kernels (physics/stagGpu, gauge/gaugeGpu).  The random numbers
-## come from the generators of staghmc_sh (rng/rngGpu) drawn in its order, so
-##   staghmc_sh -alpha1:0 -alpha2:0 -alpha3:0 -gintalg:2MN -fintalg:2MN -pbpreps:0 -revCheckFreq:0 -savefreq:0
+## links, momenta and fermion fields on the GPU and every step in kernels:
+## the solves and one link forces (physics/stagGpu), the gauge action and
+## force (gauge/gaugeGpu), the HYP smearing and its force (gauge/hypGpu).
+## The random numbers come from the generators of staghmc_sh (rng/rngGpu)
+## drawn in its order, so
+##   staghmc_sh -gintalg:2MN -fintalg:2MN -pbpreps:0 -revCheckFreq:0 -savefreq:0
 ## gives the same trajectories as this program with the same lattice, seed,
-## masses, steps and tau.  The HYP smearing of staghmc_sh is not on the GPU
-## yet: with any alpha nonzero the smearing and its force run on the host
-## (gauge/hypsmear2) around the GPU solves, and the solvers keep rows 0 and
-## 1 and the determinant of each link, 14 reals, as the smeared links are
-## U(3).  Checked against staghmc_sh with its default coefficients from unit
-## and random links (-hot:1 in both) and with one coefficient at a time: the
-## momenta agree at every force step to 1e-13 and dH to 1e-10.
+## masses, steps, tau and HYP coefficients.  The smeared links are U(3), so
+## with smearing the solvers keep the determinant of each link with rows 0
+## and 1, 14 reals, and rebuild row 2 = det U conj(row 0 x row 1).
 ##   -rg: ranks per dimension, lanes as in bestagcg; -hot:1 random links
 ##   -mass, -hmasses: the mass and the Hasenbusch masses, heavier
 ##   -gsteps, -fsteps, -hfsteps: steps of the gauge, mass and Hasenbusch terms
 ##   -arsq, -frsq, -hfrsq: CG tolerances of the action and force solves
+##   -alpha1, -alpha2, -alpha3: HYP coefficients, 0.4, 0.5, 0.5 as staghmc_sh
 ##   -mixed:1 mixed precision solves; -reals: reals per link of the solvers, 12 for
 ##   SU(3) links, 14 by default with smearing (rows 0 and 1 and the determinant), 18
-import qex, gauge, gauge/hypsmear, gauge/hypsmear2, physics/[qcdTypes, stagSolve, stagGpu], gauge/gaugeGpu
+##   -check:1 first compares the smeared links and the smearing force with
+##   gauge/hypsmear2 on random links
+import qex, gauge, gauge/[hypsmear, hypsmear2, gaugeGpu, hypGpu], physics/[qcdTypes, stagSolve, stagGpu]
 import backend/accel, rng/rngGpu
 import mdevolve
 import times, macros, sequtils
@@ -41,10 +42,10 @@ let
   frsq = floatParam("frsq", 1e-12)
   hfrsq = floatSeqParam("hfrsq", repeat(frsq, hmasses.len))
   nt = hmasses.len + 1  # fermion terms: the ratios and the heaviest determinant
-  alpha1 = floatParam("alpha1", 0.0)  # HYP smearing coefficients, as staghmc_sh with 0.4, 0.5, 0.5
-  alpha2 = floatParam("alpha2", 0.0)
-  alpha3 = floatParam("alpha3", 0.0)
-  smear = intParam("smear", int(alpha1 != 0 or alpha2 != 0 or alpha3 != 0)) != 0  # -smear:1 forces the host path
+  alpha1 = floatParam("alpha1", 0.4)  # HYP smearing coefficients, as staghmc_sh
+  alpha2 = floatParam("alpha2", 0.5)
+  alpha3 = floatParam("alpha3", 0.5)
+  smear = alpha1 != 0 or alpha2 != 0 or alpha3 != 0
   coef = HypCoefs(alpha1: alpha1, alpha2: alpha2, alpha3: alpha3)
 
 macro echoparam(x: typed): untyped =
@@ -65,7 +66,7 @@ echoparam(hmasses)
 echoparam(arsq)
 echoparam(frsq)
 echoparam(hfrsq)
-echo "smear = ", coef, if smear: "  on the host" else: "  off"
+echo "smear = ", coef
 if hfsteps.len != hmasses.len or hfrsq.len != hmasses.len:
   qexError "hfsteps and hfrsq need one entry per Hasenbusch mass"
 
@@ -99,17 +100,14 @@ echo "GPU links: ", s.nl, " reals", if s.lb == nil: ", forward only" else: ""
 let sg = stagSigns(gs)
 let mom = gg.newLinks
 let g0 = gg.newLinks
-# with smearing: the solver takes the smeared links sgg, uploaded from the
-# host, and the force goes through the smearing pullback on the host
+# with smearing the solvers take the smeared links sgo
 var sgo: GpuGauge[VLEN]
-if smear: sgo = newGpuGauge(lo)
+var hg: HypGpu[VLEN]
+if smear:
+  sgo = newGpuGauge(lo)
+  hg = newHypGpu(lo)
 let sgg = if smear: addr sgo else: addr gg  # the links of the solver
 let fF = if smear: gg.newLinks else: nil  # sum of the one link forces of a step
-let fd = if smear: gg.newLinks else: nil  # the force after the pullback
-var sgh = lo.newgauge  # smeared links, host
-var fh = lo.newgauge  # force, host
-var fch = lo.newgauge  # the chain of the pullback, host
-var ht = newHypTemps(g)  # the halo based smearing and its force, on the links g
 let n6 = 6*s.n
 proc newVec(): ptr UncheckedArray[float] = cast[ptr UncheckedArray[float]](gpuMalloc(n6*sizeof(float)))
 var phi = newSeq[ptr UncheckedArray[float]](nt)
@@ -150,13 +148,8 @@ var linksSet = false
 proc setLinks() =
   if linksSet: return
   if smear:
-    tic("smear")
-    gg.download(g, gg.u)
-    toc("download")
-    ht.smear(coef, sgh)
-    toc("smear")
-    sgg[].upload(sgg[].u, sgh)
-    toc("upload")
+    hg.smear(coef, gg, sgo.u)
+    sgo.fresh = false
   s.setLinks(sgg[], sg)
   if ssp != nil: ssp[].setLinks(sgg[], sg)
   linksSet = true
@@ -199,28 +192,8 @@ proc pullback() =
   ## p += TAH(smearing pullback of the phased force sum), as
   ## smearedOneLinkForce of staghmc_sh
   tic("pullback")
-  gg.download(fh, fF)
-  toc("download")
-  threads:
-    fh.setBC
-    threadBarrier()
-    fh.stagPhase
-    threadBarrier()
-    for mu in 0..<fh.len:
-      for i in fh[mu].odd:
-        fh[mu][i] *= -1
-  toc("phase")
-  threads:
-    for mu in 0..<fh.len: fch[mu] := fh[mu]
-  ht.force(coef, fh, fch)  # after ht.smear of the current links g
+  hg.force(coef, gg, sgo.u, fF, sg, s.ne, mom)
   toc("force")
-  threads: contractProjectTAH(fh, fh, g)
-  toc("combine")
-  gg.upload(fd, fh)
-  let p = mom
-  let f = fd
-  gpuFor(i, 4*18*s.n): p[i] += f[i]
-  toc("upload, add")
 
 proc mdvAll(t: openarray[float]) =
   if t[0] != 0: mdv t[0]
@@ -239,6 +212,57 @@ let H = newParallelEvolution(mkOmelyan2MN(steps = gsteps, V = VAll[0], T = T))
 H.add mkOmelyan2MN(steps = fsteps, V = VAll[1], T = T)
 for i in 0..<hmasses.len:
   H.add mkOmelyan2MN(steps = hfsteps[i], V = VAll[2+i], T = T)
+
+proc rel(a, b: auto): float =
+  ## |a-b|^2/|b|^2 summed over the fields
+  var d, n = 0.0
+  threads:
+    var dt, nt = 0.0
+    for mu in 0..<a.len:
+      dt += norm2(a[mu] - b[mu])
+      nt += b[mu].norm2
+    threadMaster:
+      d = dt
+      n = nt
+  d/n
+
+if intParam("check", 0) != 0 and smear:
+  # random links and chain: the smeared links and p = TAH(F U^+) for the
+  # force F of the phased chain against gauge/hypsmear2 and contractProjectTAH
+  var rc = lo.newRNGField(RngMilc6, seed + 1)
+  var gr = lo.newgauge
+  var ch = lo.newgauge
+  var cp = lo.newgauge
+  var fl = lo.newgauge
+  var f = lo.newgauge
+  var fg = lo.newgauge
+  var z = lo.newgauge
+  gr.random rc
+  ch.gaussian rc
+  threads:
+    for mu in 0..<cp.len:
+      cp[mu] := ch[mu]
+      z[mu] := 0
+    cp.setBC
+    threadBarrier()
+    cp.stagPhase
+    threadBarrier()
+    for mu in 0..<cp.len:
+      for i in cp[mu].odd:
+        cp[mu][i] *= -1
+  let htc = newHypTemps(gr)
+  htc.smear(coef, fl)
+  htc.force(coef, f, cp)
+  threads: contractProjectTAH(f, f, gr)
+  gg.upload(gg.u, gr)
+  hg.smear(coef, gg, sgo.u)
+  gg.download(fg, sgo.u)
+  echo "check smear  |GPU-CPU|^2/|CPU|^2: ", rel(fg, fl)
+  gg.upload(fF, ch)
+  gg.upload(mom, z)
+  hg.force(coef, gg, sgo.u, fF, sg, s.ne, mom)
+  gg.download(fg, mom)
+  echo "check force  |GPU-CPU|^2/|CPU|^2: ", rel(fg, f)
 
 gg.upload(gg.u, g)
 echo "plaq: ", gg.plaq
