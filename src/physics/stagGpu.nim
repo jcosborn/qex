@@ -49,7 +49,7 @@ type
     hred*: ptr UncheckedArray[float]  # [2*nRed] pinned host copy of a buffer
     vec*: array[7, ptr UncheckedArray[T]]  # work vectors, 6*n reals each
     rh*, sh*: ptr UncheckedArray[T]  # CG halo copies of r and s, as s.ex[0].rbuf
-    ord*: ptr UncheckedArray[int32]  # even sites, the nin with local neighbors only first
+    ord*: ptr UncheckedArray[int32]  # even sites, the ones with remote neighbors first, then the nin with local ones only
     nin*: int
     split*: bool  # second hop of the CG in two kernels around the exchange of t
 
@@ -129,7 +129,7 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; recon 
     for d in 0..<2*nd: rem = rem or nb[d*n + k] >= n
     if rem: bnd.add int32(k) else: ord.add int32(k)
   result.nin = ord.len
-  result.ord = (ord & bnd).toDevice
+  result.ord = (bnd & ord).toDevice  # remote neighbors first: the remote stores of a hop drain while the interior computes
   result.split = hopSplit > 0 or hopSplit < 0 and result.nin < result.ne and
                  false in result.ex[1].rpeer
   toc("neighbors")
@@ -376,11 +376,11 @@ proc applyD2eeCG[V: static int; T](s: StagGpu[V,T]; w, r, t: ptr UncheckedArray[
   s.ex[1].start
   toc("start oe")
   if s.split:
-    s.dslash(0, w, t, r, nil, T(4*m2), T(-1), rs, rz, dot = true, send = true, 0, s.nin, nowait = true)
+    s.dslash(0, w, t, r, nil, T(4*m2), T(-1), rs, rz, dot = true, send = true, s.ne - s.nin, s.nin, nowait = true)
     toc("dslash eo local")
     s.ex[1].wait
     toc("wait oe")
-    s.dslash(0, w, t, r, s.ex[1].rbuf, T(4*m2), T(-1), rs, rz, dot = true, send = true, s.nin, s.ne - s.nin)
+    s.dslash(0, w, t, r, s.ex[1].rbuf, T(4*m2), T(-1), rs, rz, dot = true, send = true, 0, s.ne - s.nin)
     gpuWaitAsync()
   else:
     s.ex[1].wait
