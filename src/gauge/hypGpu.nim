@@ -269,8 +269,9 @@ proc projU3(r: var M3; x: M3) {.alwaysInline.} =
 
 proc sylsolve3(x: var M3; a, c: M3) {.alwaysInline.} =
   ## x with a x + x a = c, as sylsolve: for d = adj a, t = tr a, s = tr d, r = det a,
-  ##   x = c0 c + c1 d c d + c2 (a c a - d c - c d) - c4 (a c + c a)
+  ##   x = c0 c - c4 (a c + c a) + c2 a c a + c1 d c d - c2 (d c + c d)
   ##   c2 = 1/(2 (s t - r)),  c0 = c2 (s + t^2),  c1 = c2 t/r,  c4 = c2 t
+  ## d is computed again for its terms, which keeps five matrices live
   var d {.noInit.}, t {.noInit.}, w {.noInit.}: M3
   adj3(d, a)
   let tr = a[0] + a[8] + a[16]
@@ -289,16 +290,17 @@ proc sylsolve3(x: var M3; a, c: M3) {.alwaysInline.} =
   let rn = 1.0/(rr*rr + ri*ri)
   let tor = (tr*rr + ti*ri)*rn
   let toi = (ti*rr - tr*ri)*rn
-  forStatic e, 0, 17: x[e] = 0.0
-  addc3(x, c2r*qr - c2i*qi, c2r*qi + c2i*qr, c)  # c0 c
   let c4r = c2r*tr - c2i*ti
   let c4i = c2r*ti + c2i*tr
+  forStatic e, 0, 17: x[e] = 0.0
+  addc3(x, c2r*qr - c2i*qi, c2r*qi + c2i*qr, c)  # c0 c
   mul3(t, a, c)
   addc3(x, -c4r, -c4i, t)
   mul3(w, t, a)
   addc3(x, c2r, c2i, w)
   mul3(t, c, a)
   addc3(x, -c4r, -c4i, t)
+  adj3(d, a)
   mul3(t, d, c)
   addc3(x, -c2r, -c2i, t)
   mul3(w, t, d)
@@ -306,22 +308,31 @@ proc sylsolve3(x: var M3; a, c: M3) {.alwaysInline.} =
   mul3(t, c, d)
   addc3(x, -c2r, -c2i, t)
 
-proc projUderiv3(r: var M3; u, x, c: M3) {.alwaysInline.} =
-  ## r = the derivative of projectU at x for the chain c, u = projectU(x), as
-  ## projectUderiv: z = (x^+ x)^-1/2, y = z^-1, s y + y s = u^+ c z,
-  ## r = c z - x (s + s^+)
-  var z {.noInit.}, y {.noInit.}, t1 {.noInit.}, t2 {.noInit.}: M3
-  rsqrt3(z, x)
-  inv3(y, z)
-  mul3(r, c, z)
-  mulAN3(t1, u, r)
-  sylsolve3(t2, y, t1)
-  forStatic i, 0, 2:
-    forStatic j, 0, 2:
-      t1[6*i+2*j] = t2[6*i+2*j] + t2[6*j+2*i]
-      t1[6*i+2*j+1] = t2[6*i+2*j+1] - t2[6*j+2*i+1]
-  mul3(t2, x, t1)
-  forStatic e, 0, 17: r[e] -= t2[e]
+template projUderiv3(r: untyped; lu, lx, lc, park, unpark: untyped) =
+  ## r = the derivative of projectU at x for the chain c, u = projectU(x),
+  ## as projectUderiv: z = (x^+ x)^-1/2, y = z^-1, s y + y s = u^+ c z,
+  ## r = c z - x (s + s^+).  lu, lx, lc load u, x, c into a matrix, and
+  ## r waits in memory through park and unpark while sylsolve3 runs, so
+  ## that the matrices stay in registers.
+  block:
+    var z {.noInit.}, y {.noInit.}, t1 {.noInit.}, t2 {.noInit.}: M3
+    lx(t1)
+    rsqrt3(z, t1)
+    inv3(y, z)
+    lc(t1)
+    mul3(r, t1, z)
+    lu(t1)
+    mulAN3(t2, t1, r)
+    park(r)
+    sylsolve3(t1, y, t2)
+    forStatic i, 0, 2:
+      forStatic j, 0, 2:
+        t2[6*i+2*j] = t1[6*i+2*j] + t1[6*j+2*i]
+        t2[6*i+2*j+1] = t1[6*i+2*j+1] - t1[6*j+2*i+1]
+    lx(y)
+    mul3(t1, y, t2)
+    unpark(r)
+    forStatic e, 0, 17: r[e] -= t1[e]
 
 template shellLinks(h, g: untyped) =
   ## the locals of thin, for the links of g at box sites
@@ -538,12 +549,16 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
     if k < n:
       let ol = 18*mu*n + lo18(V, k)
       let sc = if k < ne: sg[mu*n + k] else: -sg[mu*n + k]
-      var w {.noInit.}, x {.noInit.}, y {.noInit.}, r {.noInit.}: M3
-      mload(w, fl, ol, V)
-      mload(x, v3x, ol, V)
-      mload(y, f, ol, V)
-      forStatic e, 0, 17: y[e] *= sc
-      projUderiv3(r, w, x, y)
+      var r {.noInit.}: M3
+      template lu(m: untyped) = mload(m, fl, ol, V)
+      template lx(m: untyped) = mload(m, v3x, ol, V)
+      template lc(m: untyped) =
+        mload(m, f, ol, V)
+        forStatic e, 0, 17: m[e] *= sc
+      template park(m: untyped) =
+        forStatic e, 0, 17: cf[o + e*V] = m[e]
+      template unpark(m: untyped) = mload(m, cf, o, V)
+      projUderiv3(r, lu, lx, lc, park, unpark)
       forStatic e, 0, 17:
         cf[o + e*V] = m3*r[e]
         c3[o + e*V] = a3*r[e]
@@ -588,11 +603,14 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
     let o = bo(V, q, nb, k)
     if fnu >= 0 and fmu >= 0 and (k < n or fnu < n or fmu < n) or
        bnu >= 0 and fmubnu >= 0 and (bnu < n or fmubnu < n):
-      var s {.noInit.}, w {.noInit.}, x {.noInit.}, r {.noInit.}: M3
-      mload(s, c2, o, V)
-      mload(w, v2, o, V)
-      mload(x, v2x, o, V)
-      projUderiv3(r, w, x, s)
+      var r {.noInit.}: M3
+      template lu(m: untyped) = mload(m, v2, o, V)
+      template lx(m: untyped) = mload(m, v2x, o, V)
+      template lc(m: untyped) = mload(m, c2, o, V)
+      template park(m: untyped) =
+        forStatic e, 0, 17: c2[o + e*V] = m[e]
+      template unpark(m: untyped) = mload(m, c2, o, V)
+      projUderiv3(r, lu, lx, lc, park, unpark)
       forStatic e, 0, 17:
         c2[o + e*V] = a2*r[e]
         rt[o + e*V] = m2*r[e]
@@ -640,11 +658,14 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
           hit = hit or nbr[a*nb + k] >= 0 or nbr[(4+a)*nb + k] >= 0 and nbr[(4+a)*nb + fmu] >= 0
     if hit:
       let o = bo(V, q, nb, k)
-      var s {.noInit.}, w {.noInit.}, x {.noInit.}, r {.noInit.}: M3
-      mload(s, c1, o, V)
-      mload(w, v1, o, V)
-      mload(x, v1x, o, V)
-      projUderiv3(r, w, x, s)
+      var r {.noInit.}: M3
+      template lu(m: untyped) = mload(m, v1, o, V)
+      template lx(m: untyped) = mload(m, v1x, o, V)
+      template lc(m: untyped) = mload(m, c1, o, V)
+      template park(m: untyped) =
+        forStatic e, 0, 17: c1[o + e*V] = m[e]
+      template unpark(m: untyped) = mload(m, c1, o, V)
+      projUderiv3(r, lu, lx, lc, park, unpark)
       forStatic e, 0, 17:
         c1[o + e*V] = a1*r[e]
         rt[o + e*V] += m1*r[e]

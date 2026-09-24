@@ -93,6 +93,7 @@ var gg = newGpuGauge(lo)
 # the smeared links are U(3), projectU without a determinant condition, so
 # the solvers keep their determinant; unsmeared links are SU(3) and 12 do
 let reals = intParam("reals", if smear: 14 else: 12)
+if smear and reals < 14: qexError "the smeared links are U(3): -reals:14 or 18"
 var s = newStagGpu(gs, float64, reals)
 var ss: StagGpu[VLEN,float32]
 let ssp = if intParam("mixed", 0) != 0: (ss = newStagGpu(gs, float32, reals); addr ss) else: nil
