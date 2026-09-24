@@ -18,6 +18,8 @@
 ##   SU(3) links, 14 by default with smearing (rows 0 and 1 and the determinant), 18
 ##   -check:1 first compares the smeared links and the smearing force with
 ##   gauge/hypsmear2 on random links
+##   -batch:0 solves the fermion terms that share a force step one by one
+##   instead of together (solveM of several systems, three per hop)
 import qex, gauge, gauge/[hypsmear, hypsmear2, gaugeGpu, hypGpu], physics/[qcdTypes, stagSolve, stagGpu]
 import backend/accel, rng/rngGpu
 import mdevolve
@@ -94,9 +96,10 @@ var gg = newGpuGauge(lo)
 # the solvers keep their determinant; unsmeared links are SU(3) and 12 do
 let reals = intParam("reals", if smear: 14 else: 12)
 if smear and reals < 14: qexError "the smeared links are U(3): -reals:14 or 18"
-var s = newStagGpu(gs, float64, reals)
+let batch = nt > 1 and intParam("batch", 1) != 0
+var s = newStagGpu(gs, float64, reals, batch = batch)
 var ss: StagGpu[VLEN,float32]
-let ssp = if intParam("mixed", 0) != 0: (ss = newStagGpu(gs, float32, reals); addr ss) else: nil
+let ssp = if intParam("mixed", 0) != 0: (ss = newStagGpu(gs, float32, reals, batch = batch); addr ss) else: nil
 echo "GPU links: ", s.nl, " reals", if s.lb == nil: ", forward only" else: ""
 let sg = stagSigns(gs)
 let mom = gg.newLinks
@@ -116,6 +119,9 @@ for i in 0..<nt: phi[i] = newVec()
 let psi = newVec()
 let ftmp = newVec()
 let x = newVec()
+var xs = @[x]  # with batch, the solutions of all terms
+if batch:
+  for i in 1..<nt: xs.add newVec()
 
 proc mt(i: int): float =
   ## the lighter mass of term i
@@ -196,17 +202,32 @@ proc pullback() =
   hg.force(coef, gg, sgo.u, fF, sg, s.ne, mom)
   toc("force")
 
+proc mdvfs(ids: seq[int]; t: openarray[float]) =
+  ## mdvf of the terms ids with their solves together
+  tic()
+  setLinks()
+  toc("fforce links")
+  var sp = ids.mapIt(spf[it])
+  s.solveM(ids.mapIt(xs[it]), ids.mapIt(phi[it]), ids.mapIt(mt(it)), sp, ssp)
+  for k, i in ids: spf[i] = sp[k]
+  toc("fforce solve")
+  for i in ids:
+    if smear: s.outerM(fF, xs[i], fscale(i, t[i+1]))
+    else: s.forceM(sgg[], sg, mom, xs[i], -fscale(i, t[i+1]))
+  toc("mdvf")
+
 proc mdvAll(t: openarray[float]) =
   if t[0] != 0: mdv t[0]
-  var any = false
+  var ids: seq[int]  # the terms with a force at this time
   for i in 0..<nt:
-    if t[i+1] != 0:
-      if smear and not any:
-        let f = fF
-        gpuFor(i, 4*18*s.n): f[i] = 0.0
-      any = true
-      mdvf(i, t[i+1])
-  if smear and any: pullback()
+    if t[i+1] != 0: ids.add i
+  if smear and ids.len > 0:
+    let f = fF
+    gpuFor(i, 4*18*s.n): f[i] = 0.0
+  if batch and ids.len > 1: mdvfs(ids, t)
+  else:
+    for i in ids: mdvf(i, t[i+1])
+  if smear and ids.len > 0: pullback()
 
 let (VAll, T) = newIntegratorPair(mdvAll, mdt)
 let H = newParallelEvolution(mkOmelyan2MN(steps = gsteps, V = VAll[0], T = T))

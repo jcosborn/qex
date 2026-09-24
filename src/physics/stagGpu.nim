@@ -54,6 +54,11 @@ type
     ord*: ptr UncheckedArray[int32]  # even sites, the ones with remote neighbors first, then the nin with local ones only
     nin*: int
     split*: bool  # second hop of the CG in two kernels around the exchange of t
+    exB*: array[2, GpuHaloEx[T]]  # with batch, the exchanges of three systems, system j in components 6j..6j+5
+    redB*: ptr UncheckedArray[float]  # [2][6*nRed]: partial dot products of the three systems, two buffers
+    hredB*: ptr UncheckedArray[float]  # [6*nRed] pinned host copy of a buffer
+    vecB*: array[7, ptr UncheckedArray[T]]  # work vectors of three systems, 18*n reals each
+    rhB*, shB*: ptr UncheckedArray[T]  # CG halo copies of r and s of three systems, as s.exB[0].rbuf
 
 proc innerGeom*(lat, rg: seq[int]; v: int): seq[int] =
   ## Lanes in the dimensions not split across ranks first, then the largest
@@ -92,7 +97,8 @@ template mdet(dr, di, m: untyped) =
     dr += m[12+2*b]*xr + m[13+2*b]*xi
     di += m[13+2*b]*xr - m[12+2*b]*xi
 
-proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals = 12; fwd = -1): StagGpu[V,T] =
+proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals = 12; fwd = -1;
+                                   batch = false): StagGpu[V,T] =
   ## g are the phased links, as for newStag.  With reals = 12, if every link
   ## is s W with W in SU(3) and s = +-1, the device keeps rows 0 and 1 and
   ## the kernels rebuild row 2 = s conj(row 0 x row 1), with s in the sign of
@@ -103,6 +109,7 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
   ## device keeps U_mu(x) only and a hop reads U_mu(x-mu) at x-mu, half the
   ## memory; fwd = -1 does so when both would take over 128 MB, as they
   ## would no longer stay in the L2 cache of a PVC tile between the hops.
+  ## With batch, also the buffers of solveM of several systems.
   tic("newStagGpu")
   let lo = g[0].l
   let nd = lo.nDim
@@ -129,6 +136,7 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
   for p in 0..1:  # parity of the sites sent
     let hm = hl.makeHaloMap(c, offs, p)
     result.ex[p] = newGpuHaloEx[T](hm.gather, 6, n, V, c)
+    if batch: result.exB[p] = newGpuHaloEx[T](hm.gather, 18, n, V, c)
     let src = hl.haloSource(hm.gather)
     let q = 1 - p
     let o0 = if q == 0: 0 else: lo.nEvenOuter
@@ -245,6 +253,13 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
   let nh = max(1, 6*result.ex[0].nrecv)
   result.rh = cast[ptr UncheckedArray[T]](gpuMalloc(nh*sizeof(T)))
   result.sh = cast[ptr UncheckedArray[T]](gpuMalloc(nh*sizeof(T)))
+  if batch:
+    result.redB = newSeq[float](12*nRed).toDevice
+    result.hredB = cast[ptr UncheckedArray[float]](gpuMallocHost(6*nRed*sizeof(float)))
+    for i in 0..<result.vecB.len:
+      result.vecB[i] = cast[ptr UncheckedArray[T]](gpuMalloc(18*n*sizeof(T)))
+    result.rhB = cast[ptr UncheckedArray[T]](gpuMalloc(3*nh*sizeof(T)))
+    result.shB = cast[ptr UncheckedArray[T]](gpuMalloc(3*nh*sizeof(T)))
   toc("vectors")
 
 proc free*[V: static int; T](s: var StagGpu[V,T]) =
@@ -256,6 +271,11 @@ proc free*[V: static int; T](s: var StagGpu[V,T]) =
   gpuFreeHost(s.hred)
   for p in s.vec: gpuFree(p)
   for p in 0..1: s.ex[p].free
+  if s.redB != nil:
+    for p in [s.redB, s.rhB, s.shB]: gpuFree(p)
+    gpuFreeHost(s.hredB)
+    for p in s.vecB: gpuFree(p)
+    for p in 0..1: s.exB[p].free
 
 template load(m, u, o, st, e: untyped; nl: static int) =
   ## m[6a+2b] (re), m[6a+2b+1] (im) = U_ab from u[o + (6a+2b)*st], ...; for
@@ -478,9 +498,9 @@ proc download*[V: static int; T](s: StagGpu[V,T]; f: Field; d: ptr UncheckedArra
     {.error: "download: the field and StagGpu differ in lanes or precision".}
   gpuMemCpyToCpu(addr f[0], d, 6*s.ne*sizeof(T))
 
-proc convert[V: static int; T,U](s: StagGpu[V,T]; d: ptr UncheckedArray[T]; x: ptr UncheckedArray[U]) =
-  ## d_e = x_e in the precision of d
-  gpuFor(i, 6*s.ne): d[i] = T(x[i])
+proc convert[V: static int; T,U](s: StagGpu[V,T]; d: ptr UncheckedArray[T]; x: ptr UncheckedArray[U]; ns = 1) =
+  ## d_e = x_e in the precision of d, for ns systems one after the other
+  gpuFor(i, 6*ns*s.ne): d[i] = T(x[i])
 
 proc addTo[V: static int; T,U](s: StagGpu[V,T]; d: ptr UncheckedArray[T]; x: ptr UncheckedArray[U]) =
   ## d_e += x_e
@@ -869,3 +889,446 @@ proc forceM*[V: static int](s: StagGpu[V,float]; g: GpuGauge[V]; sg: ptr Uncheck
     mtah(g, f)
     let sc = if k < ne: t else: -t
     forStatic e, 0, 17: p[o + e*V] -= sc*g[e]
+
+# Up to three systems at once.  The vectors of the right-hand sides stay in
+# their own arrays, 6n reals each as above, but one hop kernel loads each
+# link once for the systems still iterating (bits of a mask) and one
+# exchange of 18 reals per site carries them, system j in components
+# 6j..6j+5.  solveM of several systems takes them three at a time.  Needs
+# newStagGpu(batch = true).
+
+type Sys3[T] = array[3, ptr UncheckedArray[T]]
+
+template sys3[T](a: ptr UncheckedArray[T]; n6: int): Sys3[T] =
+  ## three vectors of n6 reals in one allocation
+  [a, cast[ptr UncheckedArray[T]](addr a[n6]), cast[ptr UncheckedArray[T]](addr a[2*n6])]
+
+template hopm(acc, m, v: untyped; j, sgn: static int) =
+  ## acc_j += sgn m v, m of 18 reals, v the 6 reals of system j
+  forStatic r, 0, 2:
+    var wr = m[6*r]*v[0] - m[6*r+1]*v[1]
+    var wi = m[6*r]*v[1] + m[6*r+1]*v[0]
+    forStatic b, 1, 2:
+      wr += m[6*r+2*b]*v[2*b] - m[6*r+2*b+1]*v[2*b+1]
+      wi += m[6*r+2*b]*v[2*b+1] + m[6*r+2*b+1]*v[2*b]
+    when sgn > 0:
+      acc[6*j+2*r] += wr
+      acc[6*j+2*r+1] += wi
+    else:
+      acc[6*j+2*r] -= wr
+      acc[6*j+2*r+1] -= wi
+
+template hopAm(acc, m, v: untyped; j: static int) =
+  ## acc_j -= m^+ v
+  forStatic a, 0, 2:
+    var wr = m[2*a]*v[0] + m[2*a+1]*v[1]
+    var wi = m[2*a]*v[1] - m[2*a+1]*v[0]
+    forStatic b, 1, 2:
+      wr += m[6*b+2*a]*v[2*b] + m[6*b+2*a+1]*v[2*b+1]
+      wi += m[6*b+2*a]*v[2*b+1] - m[6*b+2*a+1]*v[2*b]
+    acc[6*j+2*a] -= wr
+    acc[6*j+2*a+1] -= wi
+
+proc dslash3[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y: Sys3[T]; rb: ptr UncheckedArray[T];
+                               a, b: array[3, T]; act: int; rs, rz: ptr UncheckedArray[float]; dot, send: static bool;
+                               j0 = 0; m = -1; nowait: static bool = false) =
+  ## dslash for the systems j with bit j of act set: d_j = a_j y_j + b_j D x_j,
+  ## the remote sites of x_j from components 6j.. of rb, laid out as the
+  ## receive buffer of s.exB[1-q]; send and dot as in dslash with s.exB[q]
+  ## and the sums y_j.y_j, d_j.y_j in slots 2j and 2j+1 of rs
+  let n = s.n
+  let i0 = if q == 0: 0 else: s.ne
+  let nk = if m >= 0: m elif q == 0: s.ne else: n - s.ne
+  let od = s.ord
+  let lf = s.lf
+  let lb = s.lb
+  let lh = s.lh[q]
+  let nr = s.ex[1-q].nrecv
+  let nb = s.nbr
+  let ro = s.exB[1-q].rofs
+  let rst = s.exB[1-q].rstr
+  let sl = s.exB[q].sslot
+  let sd = s.exB[q].sdst
+  let st = s.exB[q].sstr
+  let nsl = s.exB[q].nslot
+  let x0 = x[0]
+  let x1 = x[1]
+  let x2 = x[2]
+  let y0 = y[0]
+  let y1 = y[1]
+  let y2 = y[2]
+  let d0 = d[0]
+  let d1 = d[1]
+  let d2 = d[2]
+  let a0 = a[0]
+  let a1 = a[1]
+  let a2 = a[2]
+  let b0 = b[0]
+  let b1 = b[1]
+  let b2 = b[2]
+  template fetch(v, j: untyped; xj: untyped; c0: static int) =
+    if j < n:
+      let o = vo(V, j)
+      forStatic c, 0, 5: v[c] = xj[o + c*V]
+    else:
+      let o = int ro[j-n]
+      let sk = int rst[j-n]
+      forStatic c, 0, 5: v[c] = rb[o + (c0+c)*sk]
+  template body(i: untyped; nl: static int; fw: static bool) =
+    let k = if q == 0: int od[j0 + i] else: i0 + i
+    let ko = uo(V, k, nl)
+    var acc {.noInit.}: array[18,T]
+    forStatic c, 0, 17: acc[c] = T(0)
+    forStatic mu, 0, 3:
+      forStatic fb, 0, 1:
+        let jj = int nb[(4*fb+mu)*n + k]
+        let j = if nl == 12 and jj < 0: -1-jj else: jj
+        let e = if jj < 0: T(-1) else: T(1)
+        var mm {.noInit.}: array[18,T]
+        var v {.noInit.}: array[6,T]
+        when fb == 0: load(mm, lf, nl*mu*n + ko, V, e, nl)
+        elif fw:
+          if j < n: load(mm, lf, nl*mu*n + uo(V, j, nl), V, e, nl)
+          else: load(mm, lh, j-n, nr, e, nl)
+        else: load(mm, lb, nl*mu*n + ko, V, e, nl)
+        template sys(js: static int; xj: untyped) =
+          if (act and (1 shl js)) != 0:
+            fetch(v, j, xj, 6*js)
+            when fb == 0: hopm(acc, mm, v, js, 1)
+            elif fw:
+              if j < n: hopAm(acc, mm, v, js)
+              else: hopm(acc, mm, v, js, -1)
+            else: hopm(acc, mm, v, js, -1)
+        sys(0, x0)
+        sys(1, x1)
+        sys(2, x2)
+    let yo = vo(V, k)
+    template fin(js: static int; aj, bj, yj, dj: untyped) =
+      if (act and (1 shl js)) != 0:
+        if aj == T(0):
+          forStatic c, 0, 5: acc[6*js+c] = bj*acc[6*js+c]
+        else:
+          forStatic c, 0, 5: acc[6*js+c] = aj*yj[yo + c*V] + bj*acc[6*js+c]
+        forStatic c, 0, 5: dj[yo + c*V] = acc[6*js+c]
+        when send:
+          var w {.noInit.}: array[6,T]
+          forStatic c, 0, 5: w[c] = acc[6*js+c]
+          sendSite(sl, sd, st, nsl, n, k, 6*js, w)
+        when dot:
+          var yy = 0.0
+          var dy = 0.0
+          forStatic c, 0, 5:
+            let yc = float(yj[yo + c*V])
+            yy += yc*yc
+            dy += float(acc[6*js+c])*yc
+          let p = j0 + i
+          gpuAtomicAdd(rs, 2*js*nRed + p mod nRed, yy)
+          gpuAtomicAdd(rs, (2*js+1)*nRed + p mod nRed, dy)
+    fin(0, a0, b0, y0, d0)
+    fin(1, a1, b1, y1, d1)
+    fin(2, a2, b2, y2, d2)
+    when dot:
+      let p = j0 + i
+      if p < nRed:  # buffer of the next sum
+        forStatic c, 0, 5: rz[c*nRed + p] = 0.0
+  template kern(nl: static int; fw: static bool) =
+    when nowait:
+      gpuForAsync(i, nk, 16): body(i, nl, fw)
+    else:
+      gpuFor(i, nk, 16): body(i, nl, fw)
+  if s.nl == 12:
+    if lb == nil: kern(12, true) else: kern(12, false)
+  elif s.nl == 14:
+    if lb == nil: kern(14, true) else: kern(14, false)
+  else:
+    if lb == nil: kern(18, true) else: kern(18, false)
+
+proc pack3[T](ex: GpuHaloEx[T]; f: Sys3[T]; act: int) =
+  ## pack for three vectors of 6 reals per site into components 6j.. of an
+  ## exchange of 18 reals per site, the systems in act
+  let v = ex.v
+  let ns = ex.nsend
+  let si = ex.sidx
+  let sd = ex.sdst
+  let st = ex.sstr
+  let f0 = f[0]
+  let f1 = f[1]
+  let f2 = f[2]
+  gpuForAsync(t, 18*ns):
+    let c = t div ns
+    let k = t - c*ns
+    let js = c div 6
+    if (act and (1 shl js)) != 0:
+      let j = int si[k]
+      let fj = if js == 0: f0 elif js == 1: f1 else: f2
+      sd[k][c*int st[k]] = fj[((j div v)*6 + c - 6*js)*v + j mod v]
+
+proc applyD2ee3[V: static int; T](s: StagGpu[V,T]; r, x, t: Sys3[T]; m2: array[3, float]; act: int) =
+  ## r_j = 4 m2_j x_j - D_eo D_oe x_j on the even sites, using t_o, for the systems in act
+  s.exB[0].pack3(x, act)
+  s.exB[0].start
+  s.exB[0].wait
+  s.dslash3(1, t, x, x, s.exB[0].rbuf, [T(0), T(0), T(0)], [T(1), T(1), T(1)], act, nil, nil, dot = false, send = true)
+  s.exB[1].start
+  s.exB[1].wait
+  s.dslash3(0, r, t, x, s.exB[1].rbuf, [T(4*m2[0]), T(4*m2[1]), T(4*m2[2])], [T(-1), T(-1), T(-1)], act,
+            nil, nil, dot = false, send = false)
+
+proc applyD2eeCG3[V: static int; T](s: StagGpu[V,T]; w, r, t: Sys3[T]; m2: array[3, float]; act: int;
+                                    rs, rz: ptr UncheckedArray[float]): array[6,float] =
+  ## applyD2eeCG for the systems in act, returning r_j.r_j and w_j.r_j at 2j and 2j+1
+  let a = [T(4*m2[0]), T(4*m2[1]), T(4*m2[2])]
+  let b = [T(-1), T(-1), T(-1)]
+  s.dslash3(1, t, r, r, s.rhB, [T(0), T(0), T(0)], [T(1), T(1), T(1)], act, nil, nil, dot = false, send = true, nowait = true)
+  s.exB[1].start
+  if s.split:
+    s.dslash3(0, w, t, r, nil, a, b, act, rs, rz, dot = true, send = true, s.ne - s.nin, s.nin, nowait = true)
+    s.exB[1].wait
+    s.dslash3(0, w, t, r, s.exB[1].rbuf, a, b, act, rs, rz, dot = true, send = true, 0, s.ne - s.nin)
+    gpuWaitAsync()
+  else:
+    s.exB[1].wait(sync = false)
+    s.dslash3(0, w, t, r, s.exB[1].rbuf, a, b, act, rs, rz, dot = true, send = true, nowait = true)
+  s.exB[0].start
+  gpuWaitAsync()
+  let h = s.hredB
+  gpuMemCpyToCpu(h, rs, 6*nRed*sizeof(float))
+  for c in 0..5:
+    for k in 0..<nRed: result[c] += h[c*nRed + k]
+  getDefaultComm().allReduce(addr result[0], 6)
+
+proc update3[V: static int; T](s: StagGpu[V,T]; x, r, p, sv, w: Sys3[T]; a, b: array[3, T]; act: int) =
+  ## update for the systems in act, with a_j and b_j of system j
+  let n6 = 6*s.ne
+  let nr = s.exB[0].nrecv
+  let wh = s.exB[0].rbuf
+  let rh = s.rhB
+  let sh = s.shB
+  let ro = s.exB[0].rofs
+  let rst = s.exB[0].rstr
+  let a0 = a[0]
+  let a1 = a[1]
+  let a2 = a[2]
+  let b0 = b[0]
+  let b1 = b[1]
+  let b2 = b[2]
+  let x0 = x[0]
+  let x1 = x[1]
+  let x2 = x[2]
+  let r0 = r[0]
+  let r1 = r[1]
+  let r2 = r[2]
+  let p0 = p[0]
+  let p1 = p[1]
+  let p2 = p[2]
+  let s0 = sv[0]
+  let s1 = sv[1]
+  let s2 = sv[2]
+  let w0 = w[0]
+  let w1 = w[1]
+  let w2 = w[2]
+  gpuForAsync(t, 3*n6 + 18*nr):
+    if t < 3*n6:
+      let j = t div n6
+      if (act and (1 shl j)) != 0:
+        let o = t - j*n6
+        template upd(aj, bj, xj, rj, pj, sj, wj: untyped) =
+          let pk = rj[o] + bj*pj[o]
+          let sk = wj[o] + bj*sj[o]
+          pj[o] = pk
+          sj[o] = sk
+          xj[o] += aj*pk
+          rj[o] = rj[o] - aj*sk
+        if j == 0: upd(a0, b0, x0, r0, p0, s0, w0)
+        elif j == 1: upd(a1, b1, x1, r1, p1, s1, w1)
+        else: upd(a2, b2, x2, r2, p2, s2, w2)
+    else:
+      let u = t - 3*n6
+      let c = u div nr
+      let j = c div 6
+      if (act and (1 shl j)) != 0:
+        let k = int ro[u - c*nr] + c*int rst[u - c*nr]
+        let aj = if j == 0: a0 elif j == 1: a1 else: a2
+        let bj = if j == 0: b0 elif j == 1: b1 else: b2
+        let sk = wh[k] + bj*sh[k]
+        sh[k] = sk
+        rh[k] = rh[k] - aj*sk
+
+proc cg3[V: static int; T](s: StagGpu[V,T]; x, b: Sys3[T]; m, r2stop: array[3, float]; act0: int;
+                           maxits, verb: int): tuple[its: array[3, int], r2: array[3, float]] =
+  ## cg for the systems in act0 at once, each until its |res|^2 <= r2stop_j;
+  ## a converged system leaves the kernels.  s.vecB[0..3] hold three systems
+  ## of 6*ne reals one after the other, s.vecB[4] three of 6*n.
+  let n6 = 6*s.ne
+  let rr = sys3(s.vecB[0], n6)
+  let p = sys3(s.vecB[1], n6)
+  let sv = sys3(s.vecB[2], n6)
+  let w = sys3(s.vecB[3], n6)
+  let t = sys3(s.vecB[4], 6*s.n)
+  let x0 = x[0]
+  let x1 = x[1]
+  let x2 = x[2]
+  let ra = rr[0]
+  let pa = p[0]
+  let sa = sv[0]
+  let b0 = b[0]
+  let b1 = b[1]
+  let b2 = b[2]
+  gpuFor(i, 3*n6):  # x = 0, r = b, p = s = 0; the work vectors hold the three systems one after the other
+    let j = i div n6
+    let o = i - j*n6
+    if j == 0: x0[o] = T(0)
+    elif j == 1: x1[o] = T(0)
+    else: x2[o] = T(0)
+    ra[i] = if j == 0: b0[o] elif j == 1: b1[o] else: b2[o]
+    pa[i] = T(0)
+    sa[i] = T(0)
+  let red = s.redB
+  gpuFor(k, 12*nRed): red[k] = 0.0
+  var rs = s.redB
+  var rz = cast[ptr UncheckedArray[float]](addr s.redB[6*nRed])
+  var act = act0
+  s.exB[0].pack3(rr, act)
+  s.exB[0].start
+  s.exB[0].wait
+  let hb = s.exB[0].rbuf
+  let rh = s.rhB
+  let sh = s.shB
+  gpuFor(k, 18*s.exB[0].nrecv):
+    rh[k] = hb[k]
+    sh[k] = T(0)
+  let m2 = [m[0]*m[0], m[1]*m[1], m[2]*m[2]]
+  var gd = s.applyD2eeCG3(w, rr, t, m2, act, rs, rz)
+  swap(rs, rz)
+  var alpha, beta, r2: array[3, float]
+  for j in 0..2:
+    if (act and (1 shl j)) != 0:
+      r2[j] = gd[2*j]
+      alpha[j] = gd[2*j]/gd[2*j+1]
+      if r2[j] <= r2stop[j]: act = act and not (1 shl j)
+  var itn = 0
+  while itn < maxits and act != 0:
+    s.exB[0].wait(sync = false)
+    var a, bb: array[3, T]
+    for j in 0..2:
+      a[j] = T(alpha[j])
+      bb[j] = T(beta[j])
+    s.update3(x, rr, p, sv, w, a, bb, act)
+    gd = s.applyD2eeCG3(w, rr, t, m2, act, rs, rz)
+    swap(rs, rz)
+    inc itn
+    for j in 0..2:
+      if (act and (1 shl j)) != 0:
+        beta[j] = gd[2*j]/r2[j]
+        alpha[j] = gd[2*j]/(gd[2*j+1] - beta[j]*gd[2*j]/alpha[j])
+        r2[j] = gd[2*j]
+        result.its[j] = itn
+    for j in 0..2:
+      if (act and (1 shl j)) != 0 and r2[j] <= r2stop[j]: act = act and not (1 shl j)
+    if verb > 1:
+      echo "GPU CG3 iteration: ", itn, "  r2: ", r2
+  s.exB[0].wait
+  result.r2 = r2
+
+proc cg3[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; x, b: array[3, ptr UncheckedArray[float64]];
+                        m, r2stop: array[3, float]; act0: int; r2in: float; maxits, verb: int): array[3, int] =
+  ## the mixed precision cg for the systems in act0: single precision cg3 in
+  ## ss of the systems not converged, each until its |res|^2 drops by r2in,
+  ## restarted in double
+  let c = getDefaultComm()
+  let n6 = 6*s.ne
+  let rd = sys3(s.vecB[0], n6)
+  let ad = sys3(s.vecB[1], n6)
+  let t = sys3(s.vecB[2], 6*s.n)
+  let rs = sys3(ss.vecB[5], n6)
+  let e = sys3(ss.vecB[6], n6)
+  var r2: array[3, float]
+  for j in 0..2:
+    let xj = x[j]
+    let rj = rd[j]
+    let bj = b[j]
+    gpuFor(i, n6):
+      xj[i] = 0.0
+      rj[i] = bj[i]
+    r2[j] = s.redot(rd[j], rd[j])
+  c.allReduce(addr r2[0], 3)
+  var its = 0
+  var act = 0
+  for j in 0..2:
+    if (act0 and (1 shl j)) != 0 and r2[j] > r2stop[j]: act = act or (1 shl j)
+  while its < maxits and act != 0:
+    ss.convert(rs[0], rd[0], 3)
+    var r2s: array[3, float]
+    for j in 0..2: r2s[j] = max(r2in*r2[j], 0.5*r2stop[j])
+    let (k, _) = ss.cg3(e, rs, m, r2s, act, maxits - its, verb)
+    its += max(k[0], max(k[1], k[2]))
+    var mk = 0
+    for j in 0..2:
+      if (act and (1 shl j)) != 0:
+        result[j] += k[j]
+        s.addTo(x[j], e[j])
+    s.applyD2ee3(ad, x, t, [m[0]*m[0], m[1]*m[1], m[2]*m[2]], act)
+    for j in 0..2:
+      if (act and (1 shl j)) != 0:
+        s.resid(rd[j], b[j], ad[j])
+        r2[j] = s.redot(rd[j], rd[j])
+      else: r2[j] = 0.0
+    c.allReduce(addr r2[0], 3)
+    for j in 0..2:
+      if (act and (1 shl j)) != 0 and r2[j] <= r2stop[j]: mk = mk or (1 shl j)
+    act = act and not mk
+    if verb > 1:
+      echo "GPU mixed CG3 restart, iterations: ", result, "  r2: ", r2
+
+proc solve3[V: static int](s: StagGpu[V,float]; x, b: array[3, ptr UncheckedArray[float]]; m: array[3, float];
+                           sp: var array[3, SolverParams]; act0: int; ss: ptr StagGpu[V,float32]; r2in: float) =
+  ## solveM of the systems in act0 with b_o = 0 at once, each until its
+  ## residual drops by sp_j.r2req; a hop loads each link once for the
+  ## systems still iterating
+  let c = getDefaultComm()
+  let n6 = 6*s.ne
+  let b4 = sys3(s.vecB[5], n6)
+  var b2: array[3, float]
+  for j in 0..2:
+    let bj = b[j]
+    let b4j = b4[j]
+    let mj = 4.0*m[j]
+    gpuFor(i, n6): b4j[i] = mj*bj[i]
+    b2[j] = s.redot(b4j, b4j)
+  c.allReduce(addr b2[0], 3)
+  let r2stop = [sp[0].r2req*b2[0], sp[1].r2req*b2[1], sp[2].r2req*b2[2]]
+  let maxits = max(sp[0].maxits, max(sp[1].maxits, sp[2].maxits))
+  let xo = [x[0], x[1], x[2]]
+  if ss == nil:
+    let (its, _) = s.cg3(xo, b4, m, r2stop, act0, maxits, sp[0].verbosity)
+    for j in 0..2: sp[j].iterations += its[j]
+  else:
+    let its = cg3(s, ss[], xo, b4, m, r2stop, act0, r2in, maxits, sp[0].verbosity)
+    for j in 0..2: sp[j].iterations += its[j]
+  c.barrier
+  s.exB[0].pack3(xo, act0)
+  s.exB[0].start
+  s.exB[0].wait
+  s.dslash3(1, xo, xo, xo, s.exB[0].rbuf, [0.0, 0.0, 0.0], [-0.5/m[0], -0.5/m[1], -0.5/m[2]], act0,
+            nil, nil, dot = false, send = false)
+
+proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedArray[float]]; m: openArray[float];
+                            sp: var openArray[SolverParams]; ss: ptr StagGpu[V,float32] = nil; r2in = 1e-6) =
+  ## solveM of the systems j, x_j = M(m_j)^-1 b_j with b_j,o = 0, in groups
+  ## of three: a hop loads each link once for the systems of a group still
+  ## iterating, and each system stops at its own sp_j.r2req
+  var k = 0
+  while k < x.len:
+    let nc = min(3, x.len - k)
+    var xg, bg: array[3, ptr UncheckedArray[float]]
+    var mg: array[3, float]
+    var pg: array[3, SolverParams]
+    for j in 0..2:  # unused slots repeat the last system, outside the mask
+      let i = k + min(j, nc-1)
+      xg[j] = x[i]
+      bg[j] = b[i]
+      mg[j] = m[i]
+      pg[j] = sp[i]
+    s.solve3(xg, bg, mg, pg, (1 shl nc) - 1, ss, r2in)
+    for j in 0..<nc: sp[k+j] = pg[j]
+    k += nc
