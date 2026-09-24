@@ -383,12 +383,13 @@ proc applyD2eeCG[V: static int; T](s: StagGpu[V,T]; w, r, t: ptr UncheckedArray[
     s.dslash(0, w, t, r, s.ex[1].rbuf, T(4*m2), T(-1), rs, rz, dot = true, send = true, 0, s.ne - s.nin)
     gpuWaitAsync()
   else:
-    s.ex[1].wait
+    s.ex[1].wait(sync = false)
     toc("wait oe")
-    s.dslash(0, w, t, r, s.ex[1].rbuf, T(4*m2), T(-1), rs, rz, dot = true, send = true)
+    s.dslash(0, w, t, r, s.ex[1].rbuf, T(4*m2), T(-1), rs, rz, dot = true, send = true, nowait = true)
   toc("dslash eo")
   s.ex[0].start
   toc("start eo")
+  gpuWaitAsync()
   let h = s.hred
   gpuMemCpyToCpu(h, rs, 2*nRed*sizeof(float))
   for k in 0..<nRed:
@@ -485,7 +486,7 @@ proc cg[V: static int; T](s: StagGpu[V,T]; x, b: ptr UncheckedArray[T]; m, r2sto
   var itn = 0
   while itn < maxits and r2 > r2stop:
     tic("cg loop")
-    s.ex[0].wait
+    s.ex[0].wait(sync = false)
     toc("wait w")
     s.update(x, rr, p, sv, w, T(alpha), T(beta))
     toc("update")

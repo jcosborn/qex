@@ -350,13 +350,20 @@ proc pack*[T](ex: GpuHaloEx[T], f: ptr UncheckedArray[T]) =
   gpuForAsync(t, ne*ns): packAt(si, sd, st, ne, ns, v, t, f)
 
 proc start*[T](ex: GpuHaloEx[T]) =
-  ## Waits for pack, then starts the receives and sends; MPI reads the device
-  ## buffers directly.  Kernels storing slots must have completed.
-  gpuWaitAsync()
-  if ex.mems.len > 0: discard QMP_start(ex.msg)
+  ## Starts the receives and sends after the queued kernels storing the
+  ## slots complete; MPI reads the device buffers directly.  Without
+  ## messages nothing waits, so that the kernels of a rank without
+  ## neighbors queue up.
+  if ex.mems.len > 0:
+    gpuWaitAsync()
+    discard QMP_start(ex.msg)
 
-proc wait*[T](ex: GpuHaloEx[T]) =
+proc wait*[T](ex: GpuHaloEx[T]; sync = true) =
+  ## Waits for the messages; with sync and no messages, for the queued
+  ## kernels instead, so that a synchronous kernel may follow in the OpenMP
+  ## backend, whose synchronous kernels are not ordered after nowait ones.
   if ex.mems.len > 0: discard QMP_wait(ex.msg)
+  elif sync: gpuWaitAsync()
 
 proc free*[T](ex: GpuHaloEx[T]) =
   if ex.mems.len > 0:
