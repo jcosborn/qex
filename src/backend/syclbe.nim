@@ -42,7 +42,7 @@ template gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger) =
 #include <sycl/ext/oneapi/backend/level_zero.hpp>
 """.}
 
-const gpuThreads {.intdefine.} = 256  ## work group size of gpuFor kernels
+const gpuThreads {.intdefine.} = 128  ## work group size of gpuFor kernels
 var gpuIt {.importc, nodecl.}: Nd1  # the work item of the gpuFor kernels
 
 template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =

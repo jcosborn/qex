@@ -299,7 +299,7 @@ template onGpu*(n,b,body: untyped) =
   let finalize = onGpuNoWait(gpuSites(n), b, body)
   finalize()
 
-const gpuThreads {.intdefine.} = 256  ## thread_limit of gpuFor kernels, 0 for the runtime default; 256 was best for the staggered kernels on PVC
+const gpuThreads {.intdefine.} = 128  ## thread_limit of gpuFor kernels, 0 for the runtime default; 128 was best for the staggered kernels on PVC at 24^4 sites per tile
 const gpuForMap {.strdefine.} = "defaultmap(firstprivate:pointer)"  ## pointers by value, no lookup in the mapping table at each launch
 const gpuForClause* = gpuForMap & (if gpuThreads > 0: " thread_limit(" & $gpuThreads & ")" else: "")
 template gpuSubClause(sub: static int): string =
