@@ -69,10 +69,10 @@ threads:
   gs.stagPhase
 
 var gg = newGpuGauge(lo)
-let recon = intParam("recon", 1) != 0
-var s = newStagGpu(gs, float64, recon)
+let reals = if intParam("recon", 1) != 0: 12 else: 18
+var s = newStagGpu(gs, float64, reals)
 var ss: StagGpu[VLEN,float32]  # single precision solver with -mixed:1
-let ssp = if intParam("mixed", 0) != 0: (ss = newStagGpu(gs, float32, recon); addr ss) else: nil
+let ssp = if intParam("mixed", 0) != 0: (ss = newStagGpu(gs, float32, reals); addr ss) else: nil
 echo "GPU links: ", s.nl, " reals", if s.lb == nil: ", forward only" else: ""
 let sg = stagSigns(gs)
 let mom = gg.newLinks  # momenta

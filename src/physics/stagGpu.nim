@@ -4,8 +4,10 @@
 ## outer site and even outer sites first: real c of site k at
 ## (k div V)*6V + c*V + k mod V, so neighboring threads read neighboring
 ## reals and the even part is the first 6*ne reals.  Links are blocked the
-## same way with nl reals per link: 18, or rows 0 and 1 only, 12, for links
-## s W with W in SU(3) and s = +-1, rebuilding row 2 = s conj(row 0 x row 1).
+## same way with nl reals per link: 18; rows 0 and 1 only, 12, for links
+## s W with W in SU(3) and s = +-1, rebuilding row 2 = s conj(row 0 x row 1);
+## or rows 0 and 1 and d = det U, 14, for unitary links U, as HYP smeared
+## ones, rebuilding row 2 = d conj(row 0 x row 1).
 ## Neighbor index j < n is a local site, possibly in another lane; j >= n is
 ## remote site j-n in the receive buffer of the exchange for that parity.
 ##
@@ -40,7 +42,7 @@ type
   StagGpu*[V: static int; T] = object
     lo*: Layout[V]
     n*, ne*: int  # local sites, even sites
-    nl*: int  # reals per link, 12 with row 2 rebuilt in the kernels, else 18
+    nl*: int  # reals per link: 18, or 12 or 14 with row 2 rebuilt in the kernels
     lf*, lb*: ptr UncheckedArray[T]  # [4][n div V][nl][V]: U_mu(x), U_mu(x-mu)^+ or nil
     lh*: array[2, ptr UncheckedArray[T]]  # without lb, [nl][s.ex[1-q].nrecv]: U_mu(x-mu)^+ at the receive position of a remote x-mu, x of parity q
     nbr*: ptr UncheckedArray[int32]  # [8][n]: x+mu, then x-mu, with the link signs for nl = 12
@@ -79,11 +81,25 @@ template uo(V, k, nl: untyped): untyped =
   ## real 0 of site k in a link field, real e is e*V further
   (k div V)*(nl*V) + k mod V
 
-proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; recon = true; fwd = -1): StagGpu[V,T] =
-  ## g are the phased links, as for newStag.  With recon, if every link is
-  ## s W with W in SU(3) and s = +-1, the device keeps rows 0 and 1 and the
-  ## kernels rebuild row 2 = s conj(row 0 x row 1), with s in the sign of
-  ## the neighbor index: j for s = 1, -1-j for s = -1.  With fwd = 1 the
+template mdet(dr, di, m: untyped) =
+  ## dr + i di = det m = sum_b m_2b (row 0 x row 1)_b, m as for load
+  var dr, di = 0.0
+  forStatic b, 0, 2:
+    const b1 = (b+1) mod 3
+    const b2 = (b+2) mod 3
+    let xr = m[2*b1]*m[6+2*b2] - m[2*b1+1]*m[7+2*b2] - m[2*b2]*m[6+2*b1] + m[2*b2+1]*m[7+2*b1]
+    let xi = m[2*b2]*m[7+2*b1] + m[2*b2+1]*m[6+2*b1] - m[2*b1]*m[7+2*b2] - m[2*b1+1]*m[6+2*b2]
+    dr += m[12+2*b]*xr + m[13+2*b]*xi
+    di += m[13+2*b]*xr - m[12+2*b]*xi
+
+proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals = 12; fwd = -1): StagGpu[V,T] =
+  ## g are the phased links, as for newStag.  With reals = 12, if every link
+  ## is s W with W in SU(3) and s = +-1, the device keeps rows 0 and 1 and
+  ## the kernels rebuild row 2 = s conj(row 0 x row 1), with s in the sign of
+  ## the neighbor index: j for s = 1, -1-j for s = -1.  With reals = 14 (or
+  ## 12 when the links are not so), if every link is unitary, the device
+  ## keeps rows 0 and 1 and d = det U, and the kernels rebuild row 2 =
+  ## d conj(row 0 x row 1).  Otherwise all 18 reals.  With fwd = 1 the
   ## device keeps U_mu(x) only and a hop reads U_mu(x-mu) at x-mu, half the
   ## memory; fwd = -1 does so when both would take over 128 MB, as they
   ## would no longer stay in the L2 cache of a PVC tile between the hops.
@@ -135,10 +151,11 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; recon 
   toc("neighbors")
 
   # lk[18*((fb*nd + mu)*n + k) + 6a+2b] (re), +1 (im): U_mu(x) for fb = 0,
-  # U_mu(x-mu)^+ for fb = 1, and their signs in sg
+  # U_mu(x-mu)^+ for fb = 1, their signs in sg and determinants in dt
   var lk = newSeq[float](2*nd*18*n)
   var sg = newSeq[int8](2*nd*n)
-  var bad = 0
+  var dt = newSeq[float](2*2*nd*n)
+  var bad = [0.0, 0.0]  # links not s W, not unitary
   type U = eval(index(E, type(asSimd(0))))
   var u {.noInit.}: U
   template put(fb, mu, k: int) =
@@ -152,7 +169,8 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; recon 
         else:
           m[6*a + 2*b] = float(u[b,a].re)
           m[6*a + 2*b + 1] = -float(u[b,a].im)
-    var dp, dm, nn = 0.0
+    mdet(dr, di, m)
+    var dp, dm, du, nn = 0.0
     for b in 0..2:  # xr + i xi = conj(row 0 x row 1)_b
       let b1 = (b+1) mod 3
       let b2 = (b+2) mod 3
@@ -162,12 +180,18 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; recon 
       let pi = m[13+2*b] - xi
       let mr = m[12+2*b] + xr
       let mi = m[13+2*b] + xi
+      let ur = m[12+2*b] - (dr*xr - di*xi)
+      let ui = m[13+2*b] - (dr*xi + di*xr)
       dp += pr*pr + pi*pi
       dm += mr*mr + mi*mi
+      du += ur*ur + ui*ui
       nn += m[12+2*b]*m[12+2*b] + m[13+2*b]*m[13+2*b]
     for e in 0..17: lk[18*i + e] = m[e]
+    dt[2*i] = dr
+    dt[2*i+1] = di
     sg[i] = if dp <= dm: 1 else: -1
-    if min(dp, dm) > 1e-24*nn: inc bad  # row 2 off by more than 1e-12
+    if min(dp, dm) > 1e-24*nn: bad[0] += 1  # row 2 off by more than 1e-12
+    if du > 1e-24*nn: bad[1] += 1
   for mu in 0..<nd:
     off[mu] = -1
     let hm = hl.makeHaloMap(c, @[off])
@@ -181,10 +205,12 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; recon 
         put(0, mu, V*o+l)
         u := h[e][asSimd(l)]
         put(1, mu, V*o+l)
-  var nbad = float(bad)
-  c.allReduce(nbad)
-  let nl = if recon and nbad == 0: 12 else: 18
+  c.allReduce(addr bad[0], 2)
+  let nl = if reals == 12 and bad[0] == 0: 12 elif reals <= 14 and bad[1] == 0: 14 else: 18
   result.nl = nl
+  template lv(i, e: int): float =
+    ## real e of link i with nl reals
+    if nl == 14 and e >= 12: dt[2*i + e - 12] else: lk[18*i + e]
   let fw = fwd > 0 or fwd < 0 and 2*nd*nl*n*sizeof(T) > 128 shl 20
   var lf = newSeq[T](nd*nl*n)
   var lb = newSeq[T](if fw: 0 else: nd*nl*n)
@@ -192,8 +218,8 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; recon 
     for k in 0..<n:
       let o = nl*mu*n + uo(V, k, nl)
       for e in 0..<nl:
-        lf[o + e*V] = T(lk[18*(mu*n + k) + e])
-        if not fw: lb[o + e*V] = T(lk[18*((nd + mu)*n + k) + e])
+        lf[o + e*V] = T(lv(mu*n + k, e))
+        if not fw: lb[o + e*V] = T(lv((nd + mu)*n + k, e))
   result.lf = lf.toDevice
   result.lb = lb.toDevice
   if fw:
@@ -204,7 +230,7 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; recon 
         for mu in 0..<nd:
           let j = int nb[(nd+mu)*n + k]
           if j >= n:
-            for e in 0..<nl: lh[e*nr + j-n] = T(lk[18*((nd + mu)*n + k) + e])
+            for e in 0..<nl: lh[e*nr + j-n] = T(lv((nd + mu)*n + k, e))
       result.lh[q] = lh.toDevice
   if nl == 12:
     for i in 0..<nb.len:
@@ -233,14 +259,26 @@ proc free*[V: static int; T](s: var StagGpu[V,T]) =
 
 template load(m, u, o, st, e: untyped; nl: static int) =
   ## m[6a+2b] (re), m[6a+2b+1] (im) = U_ab from u[o + (6a+2b)*st], ...; for
-  ## nl = 12 rows 0 and 1 only, row 2 = e conj(row 0 x row 1)
-  forStatic i, 0, nl-1: m[i] = u[o + i*st]
-  when nl == 12:
+  ## nl = 12 rows 0 and 1 only, row 2 = e conj(row 0 x row 1); for nl = 14
+  ## rows 0 and 1 and d = det U at reals 12 and 13, row 2 = d conj(row 0 x row 1)
+  when nl == 18:
+    forStatic i, 0, 17: m[i] = u[o + i*st]
+  else:
+    forStatic i, 0, 11: m[i] = u[o + i*st]
+    when nl == 14:
+      let dr = u[o + 12*st]
+      let di = u[o + 13*st]
     forStatic b, 0, 2:
       const b1 = (b+1) mod 3
       const b2 = (b+2) mod 3
-      m[12+2*b] = e*(m[2*b1]*m[6+2*b2] - m[2*b1+1]*m[7+2*b2] - m[2*b2]*m[6+2*b1] + m[2*b2+1]*m[7+2*b1])
-      m[13+2*b] = e*(m[2*b2]*m[7+2*b1] + m[2*b2+1]*m[6+2*b1] - m[2*b1]*m[7+2*b2] - m[2*b1+1]*m[6+2*b2])
+      let xr = m[2*b1]*m[6+2*b2] - m[2*b1+1]*m[7+2*b2] - m[2*b2]*m[6+2*b1] + m[2*b2+1]*m[7+2*b1]
+      let xi = m[2*b2]*m[7+2*b1] + m[2*b2+1]*m[6+2*b1] - m[2*b1]*m[7+2*b2] - m[2*b1+1]*m[6+2*b2]
+      when nl == 12:
+        m[12+2*b] = e*xr
+        m[13+2*b] = e*xi
+      else:
+        m[12+2*b] = dr*xr - di*xi
+        m[13+2*b] = dr*xi + di*xr
 
 template hop(acc, u, o, v, st: untyped; sgn: static int; e: untyped; nl: static int) =
   ## acc += sgn U v, U as for load
@@ -350,6 +388,8 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
       gpuFor(i, nk): body(i, nl, fw)
   if s.nl == 12:
     if lb == nil: kern(12, true) else: kern(12, false)
+  elif s.nl == 14:
+    if lb == nil: kern(14, true) else: kern(14, false)
   else:
     if lb == nil: kern(18, true) else: kern(18, false)
 
@@ -642,12 +682,21 @@ proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr Un
   let lh1 = s.lh[1]
   let nr0 = s.ex[1].nrecv
   let nr1 = s.ex[0].nrecv
+  template put(d, o, st, m, sc: untyped) =
+    ## sc m to d[o + e*st], e < nl, for sc = +-1
+    if nl == 14:
+      forStatic e, 0, 11: d[o + e*st] = T(sc*m[e])
+      mdet(dr, di, m)
+      d[o + 12*st] = T(sc*dr)
+      d[o + 13*st] = T(sc*di)
+    else:
+      for e in 0..<nl: d[o + e*st] = T(sc*m[e])
   forLinks(g, mu, k):
     let ol = nl*mu*n + uo(V, k, nl)
     var x {.noInit.}, y {.noInit.}: array[18, float]
     mload(x, u, 18*mu*n + lo18(V, k), V)
     let sf = sg[mu*n + k]
-    for e in 0..<nl: lf[ol + e*V] = T(sf*x[e])
+    put(lf, ol, V, x, sf)
     case mu
     of 0: link(x, 0, int nb[nbB(0)*n + k])
     of 1: link(x, 1, int nb[nbB(1)*n + k])
@@ -659,15 +708,13 @@ proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr Un
         y[6*a+2*b] = sb*x[6*b+2*a]
         y[6*a+2*b+1] = -sb*x[6*b+2*a+1]
     if lb != nil:
-      for e in 0..<nl: lb[ol + e*V] = T(y[e])
+      put(lb, ol, V, y, 1.0)
     else:
       let jj = int fn[(4+mu)*n + k]
-      let j = if jj < 0: -1-jj else: jj
+      let j = if jj < 0 and nl == 12: -1-jj else: jj
       if j >= n:
-        if k < ne:
-          for e in 0..<nl: lh0[e*nr0 + j-n] = T(y[e])
-        else:
-          for e in 0..<nl: lh1[e*nr1 + j-n] = T(y[e])
+        if k < ne: put(lh0, j-n, nr0, y, 1.0)
+        else: put(lh1, j-n, nr1, y, 1.0)
 
 proc norm2*[V: static int; T](s: StagGpu[V,T]; x: ptr UncheckedArray[T]): float =
   ## global |x|^2 over all sites

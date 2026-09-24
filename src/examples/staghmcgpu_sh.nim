@@ -6,16 +6,17 @@
 ## gives the same trajectories as this program with the same lattice, seed,
 ## masses, steps and tau.  The HYP smearing of staghmc_sh is not on the GPU
 ## yet: with any alpha nonzero the smearing and its force run on the host
-## (gauge/hypsmear2) around the GPU solves, and the solvers keep 18 reals
-## per link, as the smeared links are U(3).  Checked against staghmc_sh
-## with its default coefficients from unit and random links (-hot:1 in
-## both) and with one coefficient at a time: the momenta agree at every
-## force step to 1e-13 and dH to 1e-10.
+## (gauge/hypsmear2) around the GPU solves, and the solvers keep rows 0 and
+## 1 and the determinant of each link, 14 reals, as the smeared links are
+## U(3).  Checked against staghmc_sh with its default coefficients from unit
+## and random links (-hot:1 in both) and with one coefficient at a time: the
+## momenta agree at every force step to 1e-13 and dH to 1e-10.
 ##   -rg: ranks per dimension, lanes as in bestagcg; -hot:1 random links
 ##   -mass, -hmasses: the mass and the Hasenbusch masses, heavier
 ##   -gsteps, -fsteps, -hfsteps: steps of the gauge, mass and Hasenbusch terms
 ##   -arsq, -frsq, -hfrsq: CG tolerances of the action and force solves
-##   -mixed:1 mixed precision solves; -recon:0 links of 18 reals, the default with smearing
+##   -mixed:1 mixed precision solves; -reals: reals per link of the solvers, 12 for
+##   SU(3) links, 14 by default with smearing (rows 0 and 1 and the determinant), 18
 import qex, gauge, gauge/hypsmear, gauge/hypsmear2, physics/[qcdTypes, stagSolve, stagGpu], gauge/gaugeGpu
 import backend/accel, rng/rngGpu
 import mdevolve
@@ -89,11 +90,11 @@ threads:
 
 var gg = newGpuGauge(lo)
 # the smeared links are U(3), projectU without a determinant condition, so
-# the solvers keep their 18 reals; unsmeared links are SU(3) and 12 do
-let recon = intParam("recon", int(not smear)) != 0
-var s = newStagGpu(gs, float64, recon)
+# the solvers keep their determinant; unsmeared links are SU(3) and 12 do
+let reals = intParam("reals", if smear: 14 else: 12)
+var s = newStagGpu(gs, float64, reals)
 var ss: StagGpu[VLEN,float32]
-let ssp = if intParam("mixed", 0) != 0: (ss = newStagGpu(gs, float32, recon); addr ss) else: nil
+let ssp = if intParam("mixed", 0) != 0: (ss = newStagGpu(gs, float32, reals); addr ss) else: nil
 echo "GPU links: ", s.nl, " reals", if s.lb == nil: ", forward only" else: ""
 let sg = stagSigns(gs)
 let mom = gg.newLinks

@@ -2,7 +2,7 @@
 ##   -lat:x,y,z,t -rg: ranks per dimension -ig: lanes per dimension (default innerGeom)
 ##   -mass -r2req -maxits; -ncpu, -ngpu: number of CPU and GPU solves
 ##   -mixed:1 also the mixed precision solve, -r2in its restart tolerance
-##   -recon:0 links of 18 reals; -fwd: 1 forward links only, 0 both, -1 by size
+##   -recon:0 links of 18 reals, -reals:14 rows 0, 1 and the determinant; -fwd: 1 forward links only, 0 both, -1 by size
 ##   -ipc:0 MPI for peers on the node too; -split: second hop split, 1, 0, -1 off-node
 ##   -nd:n times n applications of A on the CPU and the GPU; -prof:1 profile
 ## Prints the true residual of the GPU solution and its difference from the CPU one.
@@ -55,9 +55,9 @@ for k in 0..<ncpu:
 
 haloIpc = intParam("ipc", 1) != 0
 hopSplit = intParam("split", -1)
-let recon = intParam("recon", 1) != 0
+let reals = intParam("reals", if intParam("recon", 1) != 0: 12 else: 18)
 let fwd = intParam("fwd", -1)
-var sg = newStagGpu(g, float64, recon, fwd)
+var sg = newStagGpu(g, float64, reals, fwd)
 echo "GPU links: ", sg.nl, " reals", if sg.lb == nil: ", forward only" else: ""
 for k in 0..<ngpu:
   var spg = initSolverParams()
@@ -92,7 +92,7 @@ if nd > 0:  # A = 4m^2 - D_eo D_oe applications, flops as stagD2xx
   for q in [x, r, t]: gpuFree(q)
 
 if intParam("mixed", 0) != 0:
-  var sgs = newStagGpu(g, float32, recon, fwd)
+  var sgs = newStagGpu(g, float32, reals, fwd)
   for k in 0..<ngpu:
     var spg = initSolverParams()
     spg.r2req = r2req
