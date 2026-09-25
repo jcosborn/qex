@@ -8,6 +8,7 @@ import sequtils, strutils
 import comms/[halo,gather,qmp,commsQmp]
 const Backend {.strdefine.} = "CPU"
 when Backend == "CUDA": import comms/cudaipc
+elif Backend == "HIP": import comms/hipipc
 else: import comms/zeipc
 
 type
