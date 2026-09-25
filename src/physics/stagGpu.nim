@@ -275,7 +275,8 @@ proc free*[V: static int; T](s: var StagGpu[V,T]) =
   for p in s.vec: gpuFree(p)
   for p in 0..1: s.ex[p].free
   if s.redB != nil:
-    for p in [s.redB, s.rhB, s.shB]: gpuFree(p)
+    gpuFree(s.redB)
+    for p in [s.rhB, s.shB]: gpuFree(p)
     gpuFreeHost(s.hredB)
     for p in s.vecB: gpuFree(p)
     for p in 0..1: s.exB[p].free
