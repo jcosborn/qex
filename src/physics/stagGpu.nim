@@ -36,7 +36,7 @@ import gauge/gaugeGpu
 import base/metaUtils
 import times
 
-const nRed = sumHost  # pinned host reals per dot product of the CG sums
+const nRed = sumHost  # atomic slots, pinned host reals per dot product of the CG sums
 const nBatch* {.intdefine.} = 3  # systems per hop in solveM of several systems; 3 beat 4, 6 and 8 on PVC
 var hopSplit* = -1  ## CG second hop split around the exchange: 1 always, 0 never, -1 with off-node neighbors
 
@@ -49,15 +49,16 @@ type
     lh*: array[2, ptr UncheckedArray[T]]  # without lb, [nl][s.ex[1-q].nrecv]: U_mu(x-mu)^+ at the receive position of a remote x-mu, x of parity q
     nbr*: ptr UncheckedArray[int32]  # [8][n]: x+mu, then x-mu, with the link signs for nl = 12
     ex*: array[2, GpuHaloEx[T]]  # exchange of the sites of each parity
-    red*: ptr UncheckedArray[float]  # [2][2*ne] dot products of the sites, two buffers, then the workspace of sumFixed
+    red*: ptr UncheckedArray[float]  # [2][2*max(ne, nRed)] dot products of the sites or slots, two buffers, then the workspace of sumFixed
     hred*: ptr UncheckedArray[float]  # [2*nRed] pinned host copy of a buffer
     vec*: array[7, ptr UncheckedArray[T]]  # work vectors, 6*n reals each
     rh*, sh*: ptr UncheckedArray[T]  # CG halo copies of r and s, as s.ex[0].rbuf
     ord*: ptr UncheckedArray[int32]  # even sites, the ones with remote neighbors first, then the nin with local ones only
     nin*: int
     split*: bool  # second hop of the CG in two kernels around the exchange of t
+    fixed*: bool  # the CG sums its dot products in a fixed order (sumFixed), repeating bit for bit, else atomically
     exB*: array[2, GpuHaloEx[T]]  # with batch, the exchanges of nBatch systems, system j in components 6j..6j+5
-    redB*: ptr UncheckedArray[float]  # [2][2*nBatch][ne] dot products of the systems and sites, two buffers, then the workspace of sumFixed
+    redB*: ptr UncheckedArray[float]  # [2][2*nBatch][max(ne, nRed)] dot products of the systems and sites or slots, two buffers, then the workspace of sumFixed
     hredB*: ptr UncheckedArray[float]  # [2*nBatch*nRed] pinned host copy of a buffer
     vecB*: array[7, ptr UncheckedArray[T]]  # work vectors of nBatch systems, 6*nBatch*n reals each
     rhB*, shB*: ptr UncheckedArray[T]  # CG halo copies of r and s of nBatch systems, as s.exB[0].rbuf
@@ -248,7 +249,7 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
   result.nbr = nb.toDevice
   toc("links")
 
-  result.red = newSeq[float](4*result.ne + 2*(result.ne div 15 + 16)).toDevice
+  result.red = newSeq[float](4*max(result.ne, nRed) + 2*(result.ne div 15 + 16)).toDevice
   result.hred = cast[ptr UncheckedArray[float]](gpuMallocHost(2*nRed*sizeof(float)))
   for i in 0..<result.vec.len:
     result.vec[i] = cast[ptr UncheckedArray[T]](gpuMalloc(6*n*sizeof(T)))
@@ -256,7 +257,7 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
   result.rh = cast[ptr UncheckedArray[T]](gpuMalloc(nh*sizeof(T)))
   result.sh = cast[ptr UncheckedArray[T]](gpuMalloc(nh*sizeof(T)))
   if batch:
-    result.redB = newSeq[float](4*nBatch*result.ne + 2*nBatch*(result.ne div 15 + 16)).toDevice
+    result.redB = newSeq[float](4*nBatch*max(result.ne, nRed) + 2*nBatch*(result.ne div 15 + 16)).toDevice
     result.hredB = cast[ptr UncheckedArray[float]](gpuMallocHost(2*nBatch*nRed*sizeof(float)))
     for i in 0..<result.vecB.len:
       result.vecB[i] = cast[ptr UncheckedArray[T]](gpuMalloc(6*nBatch*n*sizeof(T)))
@@ -332,16 +333,25 @@ template hopA(acc, u, o, v, st: untyped; e: untyped; nl: static int) =
     acc[2*a] -= wr
     acc[2*a+1] -= wi
 
-template dots(i, d, y, yo, st, rs, ne: untyped) =
-  ## rs[i] = y.y and rs[ne + i] = d.y of even site i, y at y[yo + c*st]
+template dots(i, d, y, yo, st, rs, rz, ne, fx: untyped) =
+  ## y.y and d.y of even site i, y at y[yo + c*st]: with fx at rs[i] and
+  ## rs[ne + i], else added to the slots i mod nRed of rs, zeroing those of
+  ## rz, the buffer of the next sum
   var yy = 0.0
   var dy = 0.0
   forStatic c, 0, 5:
     let yc = float(y[yo + c*st])
     yy += yc*yc
     dy += float(d[c])*yc
-  rs[i] = yy
-  rs[ne + i] = dy
+  if fx:
+    rs[i] = yy
+    rs[ne + i] = dy
+  else:
+    if i < nRed:
+      rz[i] = 0.0
+      rz[nRed + i] = 0.0
+    gpuAtomicAdd(rs, i mod nRed, yy)
+    gpuAtomicAdd(rs, nRed + i mod nRed, dy)
 
 proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr UncheckedArray[T];
                               a, b: T; rs, rz: ptr UncheckedArray[float]; dot, send: static bool;
@@ -349,11 +359,12 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
   ## d = a y + b D x on the sites of parity q, the remote sites of x from rb,
   ## laid out as the receive buffer of s.ex[1-q]; for q = 0 on the sites
   ## s.ord[j0 ..< j0+m], all by default.  With send, stores d in the send
-  ## slots of s.ex[q]; with dot, stores y.y and d.y of each site in rs.
+  ## slots of s.ex[q]; with dot, y.y and d.y of each site in rs as dots.
   ## With nowait, returns before the kernel completes; gpuWaitAsync waits
   ## for it.
   let n = s.n
   let ne = s.ne
+  let fx = s.fixed
   let i0 = if q == 0: 0 else: s.ne
   let nk = if m >= 0: m elif q == 0: s.ne else: n - s.ne
   let od = s.ord
@@ -400,7 +411,7 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
     when send:
       sendSite(sl, sd, st, nsl, n, k, 0, acc)
     when dot:
-      dots(j0 + i, acc, y, yo, V, rs, ne)
+      dots(j0 + i, acc, y, yo, V, rs, rz, ne, fx)
   template kern(nl: static int; fw: static bool) =
     when nowait:
       gpuForAsync(i, nk): body(i, nl, fw)
@@ -426,7 +437,7 @@ proc applyD2ee*[V: static int; T](s: StagGpu[V,T]; r, x, t: ptr UncheckedArray[T
 proc applyD2eeCG[V: static int; T](s: StagGpu[V,T]; w, r, t: ptr UncheckedArray[T]; m2: float;
                                    rs, rz: ptr UncheckedArray[float]): array[2,float] =
   ## w_e = 4 m2 r_e - D_eo D_oe r_e with the remote sites of r from s.rh,
-  ## returning the global r_e.r_e and w_e.r_e of the sites in rs, summed in
+  ## returning the global r_e.r_e and w_e.r_e from rs, with s.fixed summed in
   ## a fixed order by sumFixed, so a solve repeats bit for bit.  Starts the
   ## exchange of the boundary of w in s.ex[0]; the caller waits for it.
   ## The first hop runs after the kernels already submitted, and the start
@@ -451,7 +462,14 @@ proc applyD2eeCG[V: static int; T](s: StagGpu[V,T]; w, r, t: ptr UncheckedArray[
   s.ex[0].start
   toc("start eo")
   gpuWaitAsync()
-  sumFixed(result, rs, cast[ptr UncheckedArray[float]](addr s.red[4*s.ne]), s.hred, 2, s.ne)
+  if s.fixed:
+    sumFixed(result, rs, cast[ptr UncheckedArray[float]](addr s.red[4*max(s.ne, nRed)]), s.hred, 2, s.ne)
+  else:
+    let h = s.hred
+    gpuMemCpyToCpu(h, rs, 2*nRed*sizeof(float))
+    for k in 0..<nRed:
+      result[0] += h[k]
+      result[1] += h[nRed+k]
   toc("dots")
   getDefaultComm().allReduce(addr result[0], 2)
   toc("sum")
@@ -522,8 +540,13 @@ proc cg[V: static int; T](s: StagGpu[V,T]; x, b: ptr UncheckedArray[T]; m, r2sto
     rr[i] = b[i]
     p[i] = T(0)
     sv[i] = T(0)
+  let bo = 2*max(s.ne, nRed)
+  let red = s.red
+  gpuFor(k, 2*nRed):  # the atomic slots of both buffers
+    red[k] = 0.0
+    red[bo + k] = 0.0
   var rs = s.red
-  var rz = cast[ptr UncheckedArray[float]](addr s.red[2*s.ne])
+  var rz = cast[ptr UncheckedArray[float]](addr s.red[bo])
   s.ex[0].pack(rr)
   s.ex[0].start
   s.ex[0].wait
@@ -983,9 +1006,11 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
   ## reads the remote sites of x_j from the components 6 so_j.. of rb, laid
   ## out as the receive buffer of s.exB[1-q], sends as dslash with s.exB[q]
   ## to its components there, and stores y_j.y_j, d_j.y_j of even site p at
-  ## rs[2 so_j ne + p] and rs[(2 so_j + 1) ne + p]
+  ## rs[2 so_j ne + p] and rs[(2 so_j + 1) ne + p] with s.fixed, else adds
+  ## them to the slots 2 so_j nRed + p mod nRed and those after nRed
   let n = s.n
   let ne = s.ne
+  let fx = s.fixed
   let i0 = if q == 0: 0 else: s.ne
   let nk = if m >= 0: m elif q == 0: s.ne else: n - s.ne
   let od = s.ord
@@ -1062,8 +1087,16 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
           yy += yc*yc
           dy += float(acc[6*js+c])*yc
         let p = j0 + i
-        rs[2*sj*ne + p] = yy
-        rs[(2*sj+1)*ne + p] = dy
+        if fx:
+          rs[2*sj*ne + p] = yy
+          rs[(2*sj+1)*ne + p] = dy
+        else:
+          gpuAtomicAdd(rs, 2*sj*nRed + p mod nRed, yy)
+          gpuAtomicAdd(rs, (2*sj+1)*nRed + p mod nRed, dy)
+    when dot:
+      let p = j0 + i
+      if not fx and p < nRed:  # buffer of the next sum
+        forStatic c, 0, 2*nBatch-1: rz[c*nRed + p] = 0.0
   template kern(nl: static int; fw: static bool) =
     when nowait:
       gpuForAsync(i, nk, 16): body(i, nl, fw)
@@ -1131,10 +1164,17 @@ proc applyD2eeCGB[V: static int; C: static int; T](s: StagGpu[V,T]; w, r, t: arr
     s.dslashB(0, w, t, r, s.exB[1].rbuf, a, mo, so, rs, rz, dot = true, send = true, nowait = true)
   s.exB[0].start
   gpuWaitAsync()
-  var r: array[2*nBatch, float]  # the site sums in a fixed order, as applyD2eeCG
-  sumFixed(r, rs, cast[ptr UncheckedArray[float]](addr s.redB[4*nBatch*s.ne]), s.hredB, 2*nBatch, s.ne)
-  for j in so:
-    for c in 2*j..2*j+1: result[c] = r[c]
+  if s.fixed:  # the site sums in a fixed order, as applyD2eeCG
+    var r: array[2*nBatch, float]
+    sumFixed(r, rs, cast[ptr UncheckedArray[float]](addr s.redB[4*nBatch*max(s.ne, nRed)]), s.hredB, 2*nBatch, s.ne)
+    for j in so:
+      for c in 2*j..2*j+1: result[c] = r[c]
+  else:
+    let h = s.hredB
+    gpuMemCpyToCpu(h, rs, 2*nBatch*nRed*sizeof(float))
+    for j in so:
+      for c in 2*j..2*j+1:
+        for k in 0..<nRed: result[c] += h[c*nRed + k]
   getDefaultComm().allReduce(addr result[0], 2*nBatch)
 
 proc updateB[V: static int; C: static int; T](s: StagGpu[V,T]; x: array[C, ptr UncheckedArray[T]]; so: array[C, int];
@@ -1199,8 +1239,13 @@ proc cgB[V: static int; T](s: StagGpu[V,T]; x, b: array[nBatch, ptr UncheckedArr
         ra[o + i] = bj[i]
         pa[o + i] = T(0)
         sa[o + i] = T(0)
+  let bo = 2*nBatch*max(s.ne, nRed)
+  let red = s.redB
+  gpuFor(k, 2*nBatch*nRed):  # the atomic slots of both buffers
+    red[k] = 0.0
+    red[bo + k] = 0.0
   var rs = s.redB
-  var rz = cast[ptr UncheckedArray[float]](addr s.redB[2*nBatch*s.ne])
+  var rz = cast[ptr UncheckedArray[float]](addr s.redB[bo])
   var act = act0
   forActive(act):
     s.exB[0].packB(sel(C, rr, so), so)

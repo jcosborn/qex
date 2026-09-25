@@ -10,8 +10,8 @@
 ## uploaded, and the links come back once per trajectory.  The operators and
 ## solves follow stag.D, stag.solve and stagForceSolve of hmcAction with their
 ## stopping rules, so trajectories agree with hmcAction to rounding.  The
-## sums run in a fixed order (gpuSum and the CG of stagGpu), so a
-## trajectory repeats bit for bit.  One boundary condition holds for all
+## sums run in a fixed order (gpuSum, and the CG of stagGpu with fixed), so
+## a trajectory repeats bit for bit, as the checkpoint test needs.  One boundary condition holds for all
 ## fermion actions.
 ##
 ## The smearing force is linear in the one link force, so the fermion
@@ -100,7 +100,10 @@ proc newHmcGpu*[U,R,S](uc: GaugeConfiguration[U]; srng: S; prng: R; tau: float; 
   gs.stagPhase
   result.sg = stagSigns(gs)
   result.s = newStagGpu(gs, float64, reals, batch = true)
-  if mixed: result.ss = newStagGpu(gs, float32, reals, batch = true)
+  result.s.fixed = true
+  if mixed:
+    result.ss = newStagGpu(gs, float32, reals, batch = true)
+    result.ss.fixed = true
   result.gg = newGpuGauge(lo)
   result.sgo = newGpuGauge(lo)
   result.hg = newHypGpu(lo)
