@@ -6,7 +6,7 @@
 ## 0 and 1 and the determinant of the smeared links in the solvers;
 ## -force_stats:2 pulls each fermion force back through the smearing on its
 ## own at every step, as the host code, for the force stats of every step
-## (1: of the first fermion force of each trajectory); -mixed:1 solves the
+## (1: of the first fermion and gauge forces of each trajectory); -mixed:1 solves the
 ## fermion forces in mixed precision; -fixed_sums:0 adds the CG dot products
 ## atomically, faster, but runs no longer repeat bit for bit.
 ##
@@ -55,7 +55,7 @@ letParam:
   rank_geom = newSeq[int](0) # <-+- if empty, guesses layout
   simd_geom = newSeq[int](0) # <-+
   reals = 18 # reals per link of the GPU solvers, 18 or 14
-  force_stats = 1 # fermion force stats: 1 of the first fermion force of a trajectory, 2 of all
+  force_stats = 1 # force stats: 1 of the first fermion and gauge forces of a trajectory, 2 of all
   timers = 0 # 1 prints the profile timers at the end
   mixed = 0 # 1 solves the fermion forces in mixed precision (forces change within f_tol)
   fixed_sums = 1 # 1 adds the CG dot products in a fixed order, so runs repeat bit for bit; 0 atomically, faster
