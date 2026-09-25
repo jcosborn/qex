@@ -14,9 +14,11 @@ import metaUtils
 
 {.passL:"-lm".}
 
+const Backend {.strdefine.} = "CPU"
+const inlineDecl = (when Backend == "CUDA": "__host__ __device__ " else: "") &
+  "inline __attribute__((always_inline)) $# $#$#"  # CUDA kernels may call them
 template getOptimPragmas* =
-  {.pragma: alwaysInline, inline,
-    codegenDecl: "inline __attribute__((always_inline)) $# $#$#".}
+  {.pragma: alwaysInline, inline, codegenDecl: inlineDecl.}
 getOptimPragmas()
 
 type
