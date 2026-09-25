@@ -5,12 +5,17 @@
 ##   -recon:0 links of 18 reals, -reals:14 rows 0, 1 and the determinant; -fwd: 1 forward links only, 0 both, -1 by size
 ##   -ipc:0 MPI for peers on the node too; -split: second hop split, 1, 0, -1 off-node
 ##   -nd:n times n applications of A on the CPU and the GPU; -prof:1 profile
+##   -nb:k also k systems of the mass at once (solveM of several systems)
 ## Prints the true residual of the GPU solution and its difference from the CPU one.
+## GB/s count per even site and iteration the links of both hops, 16 nl
+## reals shared by the systems of a hop, and 86 reals per system: the hops
+## read r twice and t once and write t and w, the update reads 5 vectors
+## and writes 4, the sums 2 reals; all in double.
 import qex
 import physics/[qcdTypes, stagSolve, stagGpu]
 import comms/halogpu
 import backend/accel
-import times
+import times, sequtils
 
 qexInit()
 let lat = intSeqParam("lat", @[8,8,8,8])
@@ -67,6 +72,36 @@ for k in 0..<ngpu:
   resetTimers()
   sg.solveEE(xg, src, mass, spg)
   echoProf()
+  echo "GPU CG GB/s: ", 1e-9*float(spg.iterations*sg.ne*8*(16*sg.nl + 86))/spg.seconds
+
+let nb = intParam("nb", 0)
+if nb > 0:  # nb systems with random sources, same iterations: ceil(nb/nBatch) hops of both links per iteration
+  var sb = newStagGpu(g, float64, reals, fwd, batch = true)
+  var xs, bs = newSeq[ptr UncheckedArray[float64]](nb)
+  for j in 0..<nb:
+    xs[j] = cast[ptr UncheckedArray[float64]](gpuMalloc(6*sb.n*sizeof(float64)))
+    bs[j] = cast[ptr UncheckedArray[float64]](gpuMalloc(6*sb.n*sizeof(float64)))
+    d.gaussian rng
+    sb.upload(bs[j], d)
+  let nh = (nb + nBatch - 1) div nBatch
+  for k in 0..<ngpu:
+    var sps = newSeq[SolverParams](nb)
+    for j in 0..<nb:
+      sps[j] = initSolverParams()
+      sps[j].r2req = r2req
+      sps[j].maxits = maxits
+    getDefaultComm().barrier
+    let t0 = epochTime()
+    sb.solveM(xs, bs, repeat(mass, nb), sps)
+    let dt = epochTime() - t0
+    var its = 0
+    for j in 0..<nb: its = max(its, sps[j].iterations)
+    echo "GPU CG of ", nb, " systems: iterations ", its, "  secs: ", dt,
+      "  GB/s: ", 1e-9*float(its*sb.ne*8*(16*sb.nl*nh + 86*nb))/dt, "  Gflops: ", 1e-9*float(1212*sb.ne*its*nb)/dt
+  for j in 0..<nb:
+    gpuFree(xs[j])
+    gpuFree(bs[j])
+  sb.free
 
 let nd = intParam("nd", 0)
 if nd > 0:  # A = 4m^2 - D_eo D_oe applications, flops as stagD2xx
