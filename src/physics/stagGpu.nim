@@ -35,7 +35,7 @@ import gauge/gaugeGpu
 import base/metaUtils
 import times
 
-const nRed = 512  # atomic slots per dot product
+const nRed = 512  # slots per dot product of the second stage of the CG sums
 var hopSplit* = -1  ## CG second hop split around the exchange: 1 always, 0 never, -1 with off-node neighbors
 
 type
@@ -47,7 +47,7 @@ type
     lh*: array[2, ptr UncheckedArray[T]]  # without lb, [nl][s.ex[1-q].nrecv]: U_mu(x-mu)^+ at the receive position of a remote x-mu, x of parity q
     nbr*: ptr UncheckedArray[int32]  # [8][n]: x+mu, then x-mu, with the link signs for nl = 12
     ex*: array[2, GpuHaloEx[T]]  # exchange of the sites of each parity
-    red*: ptr UncheckedArray[float]  # [2][2*nRed]: partial dot products, two buffers
+    red*: ptr UncheckedArray[float]  # [2][2*ne] dot products of the sites, two buffers, then [2*nRed] their slot sums
     hred*: ptr UncheckedArray[float]  # [2*nRed] pinned host copy of a buffer
     vec*: array[7, ptr UncheckedArray[T]]  # work vectors, 6*n reals each
     rh*, sh*: ptr UncheckedArray[T]  # CG halo copies of r and s, as s.ex[0].rbuf
@@ -246,7 +246,7 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
   result.nbr = nb.toDevice
   toc("links")
 
-  result.red = newSeq[float](4*nRed).toDevice
+  result.red = newSeq[float](4*result.ne + 2*nRed).toDevice
   result.hred = cast[ptr UncheckedArray[float]](gpuMallocHost(2*nRed*sizeof(float)))
   for i in 0..<result.vec.len:
     result.vec[i] = cast[ptr UncheckedArray[T]](gpuMalloc(6*n*sizeof(T)))
@@ -330,16 +330,16 @@ template hopA(acc, u, o, v, st: untyped; e: untyped; nl: static int) =
     acc[2*a] -= wr
     acc[2*a+1] -= wi
 
-template dots(i, d, y, yo, st, rs: untyped) =
-  ## rs slots get y.y and d.y, y of the site at y[yo + c*st]
+template dots(i, d, y, yo, st, rs, ne: untyped) =
+  ## rs[i] = y.y and rs[ne + i] = d.y of even site i, y at y[yo + c*st]
   var yy = 0.0
   var dy = 0.0
   forStatic c, 0, 5:
     let yc = float(y[yo + c*st])
     yy += yc*yc
     dy += float(d[c])*yc
-  gpuAtomicAdd(rs, i mod nRed, yy)
-  gpuAtomicAdd(rs, nRed + i mod nRed, dy)
+  rs[i] = yy
+  rs[ne + i] = dy
 
 proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr UncheckedArray[T];
                               a, b: T; rs, rz: ptr UncheckedArray[float]; dot, send: static bool;
@@ -347,9 +347,11 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
   ## d = a y + b D x on the sites of parity q, the remote sites of x from rb,
   ## laid out as the receive buffer of s.ex[1-q]; for q = 0 on the sites
   ## s.ord[j0 ..< j0+m], all by default.  With send, stores d in the send
-  ## slots of s.ex[q]; with dot, sums y.y and d.y in rs and zeros rz.  With
-  ## nowait, returns before the kernel completes; gpuWaitAsync waits for it.
+  ## slots of s.ex[q]; with dot, stores y.y and d.y of each site in rs.
+  ## With nowait, returns before the kernel completes; gpuWaitAsync waits
+  ## for it.
   let n = s.n
+  let ne = s.ne
   let i0 = if q == 0: 0 else: s.ne
   let nk = if m >= 0: m elif q == 0: s.ne else: n - s.ne
   let od = s.ord
@@ -396,11 +398,7 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
     when send:
       sendSite(sl, sd, st, nsl, n, k, 0, acc)
     when dot:
-      let p = j0 + i
-      if p < nRed:  # buffer of the next sum
-        rz[p] = 0.0
-        rz[nRed + p] = 0.0
-      dots(p, acc, y, yo, V, rs)
+      dots(j0 + i, acc, y, yo, V, rs, ne)
   template kern(nl: static int; fw: static bool) =
     when nowait:
       gpuForAsync(i, nk): body(i, nl, fw)
@@ -426,7 +424,9 @@ proc applyD2ee*[V: static int; T](s: StagGpu[V,T]; r, x, t: ptr UncheckedArray[T
 proc applyD2eeCG[V: static int; T](s: StagGpu[V,T]; w, r, t: ptr UncheckedArray[T]; m2: float;
                                    rs, rz: ptr UncheckedArray[float]): array[2,float] =
   ## w_e = 4 m2 r_e - D_eo D_oe r_e with the remote sites of r from s.rh,
-  ## returning the global r_e.r_e and w_e.r_e summed in rs.  Starts the
+  ## returning the global r_e.r_e and w_e.r_e of the sites in rs, summed in
+  ## a fixed order: slot k of nRed sums sites k, k+nRed, ..., the host the
+  ## slots, so a solve repeats bit for bit.  Starts the
   ## exchange of the boundary of w in s.ex[0]; the caller waits for it.
   ## The first hop runs after the kernels already submitted, and the start
   ## of the exchange of t waits for them.
@@ -450,8 +450,18 @@ proc applyD2eeCG[V: static int; T](s: StagGpu[V,T]; w, r, t: ptr UncheckedArray[
   s.ex[0].start
   toc("start eo")
   gpuWaitAsync()
+  let ne = s.ne
+  let sb = cast[ptr UncheckedArray[float]](addr s.red[4*ne])
+  gpuFor(k, 2*nRed):
+    let c = k div nRed
+    var a = 0.0
+    var j = k - c*nRed
+    while j < ne:
+      a += rs[c*ne + j]
+      j += nRed
+    sb[k] = a
   let h = s.hred
-  gpuMemCpyToCpu(h, rs, 2*nRed*sizeof(float))
+  gpuMemCpyToCpu(h, sb, 2*nRed*sizeof(float))
   for k in 0..<nRed:
     result[0] += h[k]
     result[1] += h[nRed+k]
@@ -525,10 +535,8 @@ proc cg[V: static int; T](s: StagGpu[V,T]; x, b: ptr UncheckedArray[T]; m, r2sto
     rr[i] = b[i]
     p[i] = T(0)
     sv[i] = T(0)
-  let red = s.red
-  gpuFor(k, 4*nRed): red[k] = 0.0
   var rs = s.red
-  var rz = cast[ptr UncheckedArray[float]](addr s.red[2*nRed])
+  var rz = cast[ptr UncheckedArray[float]](addr s.red[2*s.ne])
   s.ex[0].pack(rr)
   s.ex[0].start
   s.ex[0].wait
