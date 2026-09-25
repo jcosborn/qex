@@ -1,7 +1,7 @@
 ## Level Zero IPC: device memory of one process mapped into another on the
 ## same node, as on Aurora and Sunspot, so kernels can store straight into
-## the memory of a peer.  zeExport describes device memory of this process,
-## a peer maps it with zeOpen and unmaps it with zeClose.
+## the memory of a peer.  ipcExport describes device memory of this process,
+## a peer maps it with ipcOpen and unmaps it with ipcClose.
 import qex
 import backend/accel
 
@@ -12,7 +12,7 @@ type
   Dev {.importc: "ze_device_handle_t", header: "level_zero/ze_api.h".} = pointer
   ZeIpcMemHandle {.importc: "ze_ipc_mem_handle_t", header: "level_zero/ze_api.h".} = object
     data: array[64, char]
-  ZeIpc* = object
+  GpuIpc* = object
     ## the handle of the allocation holding the memory, with the file
     ## descriptor of the owner process pid in its first bytes, and the
     ## offset of the memory in the allocation
@@ -32,7 +32,7 @@ proc close(fd: cint): cint {.importc, header: "<unistd.h>".}
 var SYS_pidfd_open {.importc, header: "<sys/syscall.h>".}: clong
 var SYS_pidfd_getfd {.importc, header: "<sys/syscall.h>".}: clong
 
-proc zeExport*(p: pointer): ZeIpc =
+proc ipcExport*(p: pointer): GpuIpc =
   ## device memory at p for a peer; the handle covers the whole allocation,
   ## e.g. a block of the memory pool of the runtime
   let (ctx, _) = zeHandles()
@@ -44,8 +44,8 @@ proc zeExport*(p: pointer): ZeIpc =
   result.off = cast[int](p) - cast[int](base)
   copyMem(addr result.fd, addr result.h.data[0], sizeof(cint))
 
-proc zeOpen*(e: ZeIpc): tuple[base, p: pointer] =
-  ## maps the memory e of a peer: p is its address here, base goes to zeClose
+proc ipcOpen*(e: GpuIpc): tuple[base, p: pointer] =
+  ## maps the memory e of a peer: p is its address here, base goes to ipcClose
   let (ctx, dev) = zeHandles()
   let pfd = cint syscall(SYS_pidfd_open, e.pid, 0)
   let fd = cint syscall(SYS_pidfd_getfd, pfd, e.fd, 0)
@@ -57,6 +57,6 @@ proc zeOpen*(e: ZeIpc): tuple[base, p: pointer] =
     qexError("zeMemOpenIpcHandle failed")
   result.p = cast[pointer](cast[int](result.base) + e.off)
 
-proc zeClose*(base: pointer) =
+proc ipcClose*(base: pointer) =
   let (ctx, _) = zeHandles()
   discard zeMemCloseIpcHandle(ctx, base)

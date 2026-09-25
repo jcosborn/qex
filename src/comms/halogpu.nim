@@ -5,7 +5,10 @@ import bench/commonBench
 import parseUtils
 import std/[nativesockets, hashes]
 import sequtils, strutils
-import comms/[halo,gather,qmp,commsQmp,zeipc]
+import comms/[halo,gather,qmp,commsQmp]
+const Backend {.strdefine.} = "CPU"
+when Backend == "CUDA": import comms/cudaipc
+else: import comms/zeipc
 
 type
   GpuHaloLayout*[V:static int] = object
@@ -210,8 +213,8 @@ type
     ## buffers hold message m at ne*m.start, with
     ## component c of its k-th site at ne*m.start + c*m.count + k.  Send
     ## slot k takes component c at sdst[k][c*sstr[k]]: in sbuf, or, for peers
-    ## on the same host, directly in their rbuf through a Level Zero IPC
-    ## mapping, announced with a one byte message.  A kernel producing the
+    ## on the same host, directly in their rbuf through a Level Zero or CUDA
+    ## IPC mapping, announced with a one byte message.  A kernel producing the
     ## field stores site i in its slots sslot[s*n + i], s < nslot, with
     ## sendSite; pack does it for a whole field.  After wait, receive position
     ## p has component c at rbuf[rofs[p] + c*rstr[p]], see recvSite.  Local
@@ -270,17 +273,17 @@ proc newGpuHaloEx*[T](gm: GatherMap, ne, n, v: int, c: Comm): GpuHaloEx[T] =
   for i, m in ex.smsg: ex.speer[i] = haloIpc and host[m.rank] == host[c.rank]
   for i, m in ex.rmsg: ex.rpeer[i] = haloIpc and host[m.rank] == host[c.rank]
   toc("hosts")
-  var rout = newSeq[ZeIpc](ex.rmsg.len)
-  var sin = newSeq[ZeIpc](ex.smsg.len)
+  var rout = newSeq[GpuIpc](ex.rmsg.len)
+  var sin = newSeq[GpuIpc](ex.smsg.len)
   var ns, nr = 0
   for i, m in ex.rmsg:
     if ex.rpeer[i]:
-      rout[i] = zeExport(addr ex.rbuf[ne*m.start])
-      c.pushSend(m.rank, addr rout[i], sizeof(ZeIpc))
+      rout[i] = ipcExport(addr ex.rbuf[ne*m.start])
+      c.pushSend(m.rank, addr rout[i], sizeof(GpuIpc))
       inc ns
   for i, m in ex.smsg:
     if ex.speer[i]:
-      c.pushRecv(m.rank, addr sin[i], sizeof(ZeIpc))
+      c.pushRecv(m.rank, addr sin[i], sizeof(GpuIpc))
       inc nr
   if nr > 0: c.waitRecvs(nr)
   if ns > 0: c.waitSends(ns)
@@ -290,7 +293,7 @@ proc newGpuHaloEx*[T](gm: GatherMap, ne, n, v: int, c: Comm): GpuHaloEx[T] =
   for i, m in ex.smsg:
     var base = cast[ptr UncheckedArray[T]](addr ex.sbuf[ne*m.start])
     if ex.speer[i]:
-      let (b, p) = zeOpen(sin[i])
+      let (b, p) = ipcOpen(sin[i])
       ex.peers.add b
       base = cast[ptr UncheckedArray[T]](p)
     for k in 0..<m.count:
@@ -370,7 +373,7 @@ proc free*[T](ex: GpuHaloEx[T]) =
     QMP_free_msghandle(ex.msg)
     for m in ex.mems: QMP_free_msgmem(m)
     ex.mems.setLen(0)
-  for p in ex.peers: zeClose(p)
+  for p in ex.peers: ipcClose(p)
   ex.peers.setLen(0)
   for p in [pointer ex.sidx, ex.sslot, ex.sdst, ex.sstr, ex.rofs, ex.rstr, ex.sbuf, ex.rbuf]:
     if p != nil: gpuFree(p)
