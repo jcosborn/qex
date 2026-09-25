@@ -189,52 +189,69 @@ template gpuSites*(lo: Layout): int = lo.nSites
 #import gpumem
 #export gpumem
 
-const gpuSumSlots = 128  # partial sums per value of the second stage
-const gpuSumTerms = 16  # terms per thread, i = t, t+T, ... for T threads
-var gpuSumBuf: ptr UncheckedArray[float]  # [8][gpuSumSlots]
-var gpuSumHost: ptr UncheckedArray[float]  # pinned host copy of gpuSumBuf
-var gpuSumPart: ptr UncheckedArray[float]  # [m][T] sums of the threads
+const sumTerms = 16  # values per thread of a level of sumFixed
+const sumHost* = 512  # values per sum sumFixed leaves to the host
+
+proc sumFixed*(r: var openArray[float]; a, w, h: ptr UncheckedArray[float]; m, n: int) =
+  ## r[c] = the sum of a[c*n + i] over i < n for c < m, in an order fixed by
+  ## n: each level adds the values t, t+T, ..., T = ceil(n/16), in thread t,
+  ## until at most sumHost values remain, which the host adds.  w holds
+  ## m*(n div 15 + 16) reals, the pinned h m*sumHost.
+  var src = a
+  var cnt = n
+  var off = 0
+  while cnt > sumHost:
+    let t1 = (cnt + sumTerms - 1) div sumTerms
+    let s = src
+    let d = cast[ptr UncheckedArray[float]](addr w[off])
+    let c0 = cnt
+    gpuFor(k, m*t1):
+      let c = k div t1
+      let t = k - c*t1
+      var acc = 0.0
+      for j in 0..<sumTerms:
+        let i = t + j*t1
+        if i < c0: acc += s[c*c0 + i]
+      d[c*t1 + t] = acc
+    src = d
+    off += m*t1
+    cnt = t1
+  gpuMemCpyToCpu(h, src, m*cnt*sizeof(float))
+  for c in 0..<m:
+    r[c] = 0.0
+    for i in 0..<cnt: r[c] += h[c*cnt + i]
+
+var gpuSumHost: ptr UncheckedArray[float]  # [8 sumHost] pinned host buffer of gpuSum
+var gpuSumPart: ptr UncheckedArray[float]  # [m][T] sums of the threads, then the workspace of sumFixed
 var gpuSumPartLen = 0
 
 template gpuSum*(i: untyped; n: SomeInteger; m: static int; body: untyped): array[m, float] =
   ## The m <= 8 sums over i in 0..<n of the values body gives as an
   ## array[m, float], on this rank, in an order fixed by n: thread t sums
-  ## i = t, t+T, ..., slot s of a second kernel sums the threads t = s,
-  ## s+128, ..., and the host the slots, so equal inputs give equal sums.
+  ## i = t, t+T, ... of 16 terms, sumFixed the threads, so equal inputs give
+  ## equal sums.
   block:
-    if gpuSumBuf == nil:
-      gpuSumBuf = cast[ptr UncheckedArray[float]](gpuMalloc(8*gpuSumSlots*sizeof(float)))
-      gpuSumHost = cast[ptr UncheckedArray[float]](gpuMallocHost(8*gpuSumSlots*sizeof(float)))
+    if gpuSumHost == nil:
+      gpuSumHost = cast[ptr UncheckedArray[float]](gpuMallocHost(8*sumHost*sizeof(float)))
     let gpuN = int(n)
-    let gpuT = (gpuN + gpuSumTerms - 1) div gpuSumTerms
-    if gpuSumPartLen < m*gpuT:
+    let gpuT = (gpuN + sumTerms - 1) div sumTerms
+    let gpuL = m*gpuT + m*(gpuT div 15 + 16)
+    if gpuSumPartLen < gpuL:
       if gpuSumPart != nil: gpuFree(gpuSumPart)
-      gpuSumPartLen = max(m*gpuT, 2*gpuSumPartLen)
+      gpuSumPartLen = max(gpuL, 2*gpuSumPartLen)
       gpuSumPart = cast[ptr UncheckedArray[float]](gpuMalloc(gpuSumPartLen*sizeof(float)))
     let sp = gpuSumPart
     gpuFor(t, gpuT):
       var a {.noInit.}: array[m, float]
       for c in 0..<m: a[c] = 0.0
-      for j in 0..<gpuSumTerms:
+      for j in 0..<sumTerms:
         let i = t + j*gpuT
         if i < gpuN:
           let v: array[m, float] = body
           for c in 0..<m: a[c] += v[c]
       for c in 0..<m: sp[c*gpuT + t] = a[c]
-    let sb = gpuSumBuf
-    gpuFor(s, m*gpuSumSlots):
-      let c = s div gpuSumSlots
-      var a = 0.0
-      var t = s - c*gpuSumSlots
-      while t < gpuT:
-        a += sp[c*gpuT + t]
-        t += gpuSumSlots
-      sb[s] = a
-    let h = gpuSumHost
-    gpuMemCpyToCpu(h, sb, m*gpuSumSlots*sizeof(float))
     var r: array[m, float]
-    for c in 0..<m:
-      for k in 0..<gpuSumSlots: r[c] += h[c*gpuSumSlots + k]
+    sumFixed(r, sp, cast[ptr UncheckedArray[float]](addr sp[m*gpuT]), gpuSumHost, m, gpuT)
     r
 
 when isMainModule:
