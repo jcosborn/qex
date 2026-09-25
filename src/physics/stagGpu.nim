@@ -907,33 +907,62 @@ proc forceM*[V: static int](s: StagGpu[V,float]; g: GpuGauge[V]; sg: ptr Uncheck
     let sc = if k < ne: t else: -t
     forStatic e, 0, 17: p[o + e*V] -= sc*g[e]
 
-# Several systems at once, nBatch per hop.  The vectors of the right-hand
-# sides stay in their own arrays, 6n reals each as above, but one hop
-# kernel loads each link once for the systems still iterating (bits of a
-# mask) and one exchange of 6 nBatch reals per site carries them, system j
-# in components 6j..6j+5.  With n_1 >= n_2 >= ... the iterations of the
-# systems sorted by mass, groups of nBatch consecutive systems load the
-# links n_1 + n_(nBatch+1) + ... times.  Needs newStagGpu(batch = true).
+# Several systems at once, up to nBatch per hop.  The vectors of the
+# right-hand sides stay in their own arrays, 6n reals each as above, but
+# one hop kernel loads each link once for the C systems still iterating
+# and one exchange carries them: slot j of the nBatch slots in the
+# components 6j..6j+5 of an exchange of 6 nBatch reals per site.  The
+# kernels come in widths C = 1..nBatch, so a system that converged costs
+# nothing.  With n_1 >= n_2 >= ... the iterations of the systems sorted by
+# mass, groups of nBatch consecutive systems load the links
+# n_1 + n_(nBatch+1) + ... times.  Needs newStagGpu(batch = true).
 
 proc sysB[T](a: ptr UncheckedArray[T]; n6: int): array[nBatch, ptr UncheckedArray[T]] =
   ## nBatch vectors of n6 reals in one allocation
   for j in 0..<nBatch: result[j] = cast[ptr UncheckedArray[T]](addr a[j*n6])
 
-# The kernels capture an array of the systems as nBatch variables a0, a1,
+# The kernels capture an array of the systems as the variables a0, a1,
 # ..., which both backends pass by value, the OpenMP one only as scalars.
 
-macro unpackB(a: typed): untyped =
-  ## let a0 = a[0], a1 = a[1], ...
+macro unpackB(a: typed; n: static int): untyped =
+  ## let a0 = a[0], a1 = a[1], ..., a(n-1) = a[n-1]
   result = newStmtList()
-  for j in 0..<nBatch:
+  for j in 0..<n:
     result.add newLetStmt(ident($a & $j), newTree(nnkBracketExpr, a, newLit(j)))
 
-macro pickB(a, j: untyped): untyped =
-  ## a_j of unpackB(a)
+macro pickS(a: untyped; j: static int): untyped =
+  ## aj of unpackB(a, n) for a static j
+  ident($a & $j)
+
+macro pickB(a, j: untyped; n: static int): untyped =
+  ## aj of unpackB(a, n)
   result = nnkCaseStmt.newTree(j)
-  for k in 0..<nBatch-1:
+  for k in 0..<n-1:
     result.add nnkOfBranch.newTree(newLit(k), ident($a & $k))
-  result.add nnkElse.newTree(ident($a & $(nBatch-1)))
+  result.add nnkElse.newTree(ident($a & $(n-1)))
+
+template forActive(act: int; body: untyped) =
+  ## body for the systems in act with C, their number, and so: array[C, int]
+  ## their slots, C static
+  var cnt = 0
+  for j in 0..<nBatch:
+    if (act and (1 shl j)) != 0: inc cnt
+  forStatic cw, 1, nBatch:
+    if cnt == cw:
+      const C {.inject.} = cw
+      var so {.inject, noInit.}: array[C, int]
+      var q = 0
+      for j in 0..<nBatch:
+        if (act and (1 shl j)) != 0:
+          so[q] = j
+          inc q
+      body
+
+template sel(C: static int; a, so: untyped): untyped =
+  ## a[so[q]] for q in 0..<C
+  var r {.noInit.}: array[C, typeof(a[0])]
+  for q in 0..<C: r[q] = a[so[q]]
+  r
 
 template hopm(acc, m, v: untyped; j, sgn: static int) =
   ## acc_j += sgn m v, m of 18 reals, v the 6 reals of system j
@@ -961,13 +990,15 @@ template hopAm(acc, m, v: untyped; j: static int) =
     acc[6*j+2*a] -= wr
     acc[6*j+2*a+1] -= wi
 
-proc dslashB[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y: array[nBatch, ptr UncheckedArray[T]]; rb: ptr UncheckedArray[T];
-                               a, b: array[nBatch, T]; act: int; rs, rz: ptr UncheckedArray[float]; dot, send: static bool;
-                               j0 = 0; m = -1; nowait: static bool = false) =
-  ## dslash for the systems j with bit j of act set: d_j = a_j y_j + b_j D x_j,
-  ## the remote sites of x_j from components 6j.. of rb, laid out as the
-  ## receive buffer of s.exB[1-q]; send and dot as in dslash with s.exB[q]
-  ## and y_j.y_j, d_j.y_j of even site p at rs[2j ne + p], rs[(2j+1) ne + p]
+proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: array[C, ptr UncheckedArray[T]];
+                                              rb: ptr UncheckedArray[T]; a, b: array[C, T]; so: array[C, int];
+                                              rs, rz: ptr UncheckedArray[float]; dot, send: static bool;
+                                              j0 = 0; m = -1; nowait: static bool = false) =
+  ## dslash for C systems, d_j = a_j y_j + b_j D x_j: system j of slot so_j
+  ## reads the remote sites of x_j from the components 6 so_j.. of rb, laid
+  ## out as the receive buffer of s.exB[1-q], sends as dslash with s.exB[q]
+  ## to its components there, and stores y_j.y_j, d_j.y_j of even site p at
+  ## rs[2 so_j ne + p] and rs[(2 so_j + 1) ne + p]
   let n = s.n
   let ne = s.ne
   let i0 = if q == 0: 0 else: s.ne
@@ -984,12 +1015,13 @@ proc dslashB[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y: array[nBatch, p
   let sd = s.exB[q].sdst
   let st = s.exB[q].sstr
   let nsl = s.exB[q].nslot
-  unpackB(x)
-  unpackB(y)
-  unpackB(d)
-  unpackB(a)
-  unpackB(b)
-  template fetch(v, j: untyped; xj: untyped; c0: static int) =
+  unpackB(x, C)
+  unpackB(y, C)
+  unpackB(d, C)
+  unpackB(a, C)
+  unpackB(b, C)
+  unpackB(so, C)
+  template fetch(v, j: untyped; xj: untyped; c0: untyped) =
     if j < n:
       let o = vo(V, j)
       forStatic c, 0, 5: v[c] = xj[o + c*V]
@@ -1000,8 +1032,8 @@ proc dslashB[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y: array[nBatch, p
   template body(i: untyped; nl: static int; fw: static bool) =
     let k = if q == 0: int od[j0 + i] else: i0 + i
     let ko = uo(V, k, nl)
-    var acc {.noInit.}: array[6*nBatch,T]
-    forStatic c, 0, 6*nBatch-1: acc[c] = T(0)
+    var acc {.noInit.}: array[6*C,T]
+    forStatic c, 0, 6*C-1: acc[c] = T(0)
     forStatic mu, 0, 3:
       forStatic fb, 0, 1:
         let jj = int nb[(4*fb+mu)*n + k]
@@ -1014,40 +1046,39 @@ proc dslashB[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y: array[nBatch, p
           if j < n: load(mm, lf, nl*mu*n + uo(V, j, nl), V, e, nl)
           else: load(mm, lh, j-n, nr, e, nl)
         else: load(mm, lb, nl*mu*n + ko, V, e, nl)
-        forStatic js, 0, nBatch-1:
-          if (act and (1 shl js)) != 0:
-            fetch(v, j, pickB(x, js), 6*js)
-            when fb == 0: hopm(acc, mm, v, js, 1)
-            elif fw:
-              if j < n: hopAm(acc, mm, v, js)
-              else: hopm(acc, mm, v, js, -1)
+        forStatic js, 0, C-1:
+          fetch(v, j, pickS(x, js), 6*pickS(so, js))
+          when fb == 0: hopm(acc, mm, v, js, 1)
+          elif fw:
+            if j < n: hopAm(acc, mm, v, js)
             else: hopm(acc, mm, v, js, -1)
+          else: hopm(acc, mm, v, js, -1)
     let yo = vo(V, k)
-    forStatic js, 0, nBatch-1:
-      if (act and (1 shl js)) != 0:
-        let aj = pickB(a, js)
-        let bj = pickB(b, js)
-        let yj = pickB(y, js)
-        let dj = pickB(d, js)
-        if aj == T(0):
-          forStatic c, 0, 5: acc[6*js+c] = bj*acc[6*js+c]
-        else:
-          forStatic c, 0, 5: acc[6*js+c] = aj*yj[yo + c*V] + bj*acc[6*js+c]
-        forStatic c, 0, 5: dj[yo + c*V] = acc[6*js+c]
-        when send:
-          var w {.noInit.}: array[6,T]
-          forStatic c, 0, 5: w[c] = acc[6*js+c]
-          sendSite(sl, sd, st, nsl, n, k, 6*js, w)
-        when dot:
-          var yy = 0.0
-          var dy = 0.0
-          forStatic c, 0, 5:
-            let yc = float(yj[yo + c*V])
-            yy += yc*yc
-            dy += float(acc[6*js+c])*yc
-          let p = j0 + i
-          rs[2*js*ne + p] = yy
-          rs[(2*js+1)*ne + p] = dy
+    forStatic js, 0, C-1:
+      let aj = pickS(a, js)
+      let bj = pickS(b, js)
+      let yj = pickS(y, js)
+      let dj = pickS(d, js)
+      let sj = pickS(so, js)
+      if aj == T(0):
+        forStatic c, 0, 5: acc[6*js+c] = bj*acc[6*js+c]
+      else:
+        forStatic c, 0, 5: acc[6*js+c] = aj*yj[yo + c*V] + bj*acc[6*js+c]
+      forStatic c, 0, 5: dj[yo + c*V] = acc[6*js+c]
+      when send:
+        var w {.noInit.}: array[6,T]
+        forStatic c, 0, 5: w[c] = acc[6*js+c]
+        sendSite(sl, sd, st, nsl, n, k, 6*sj, w)
+      when dot:
+        var yy = 0.0
+        var dy = 0.0
+        forStatic c, 0, 5:
+          let yc = float(yj[yo + c*V])
+          yy += yc*yc
+          dy += float(acc[6*js+c])*yc
+        let p = j0 + i
+        rs[2*sj*ne + p] = yy
+        rs[(2*sj+1)*ne + p] = dy
   template kern(nl: static int; fw: static bool) =
     when nowait:
       gpuForAsync(i, nk, 16): body(i, nl, fw)
@@ -1060,56 +1091,59 @@ proc dslashB[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y: array[nBatch, p
   else:
     if lb == nil: kern(18, true) else: kern(18, false)
 
-proc packB[T](ex: GpuHaloEx[T]; f: array[nBatch, ptr UncheckedArray[T]]; act: int) =
-  ## pack for nBatch vectors of 6 reals per site into components 6j.. of an
-  ## exchange of 6 nBatch reals per site, the systems j in act
+proc packB[C: static int; T](ex: GpuHaloEx[T]; f: array[C, ptr UncheckedArray[T]]; so: array[C, int]) =
+  ## pack for C vectors of 6 reals per site, f_j into the components
+  ## 6 so_j.. of an exchange of 6 nBatch reals per site
   let v = ex.v
   let ns = ex.nsend
   let si = ex.sidx
   let sd = ex.sdst
   let st = ex.sstr
-  unpackB(f)
-  gpuForAsync(t, 6*nBatch*ns):
+  unpackB(f, C)
+  unpackB(so, C)
+  gpuForAsync(t, 6*C*ns):
     let c = t div ns
     let k = t - c*ns
     let js = c div 6
-    if (act and (1 shl js)) != 0:
-      let j = int si[k]
-      sd[k][c*int st[k]] = pickB(f, js)[((j div v)*6 + c - 6*js)*v + j mod v]
+    let cc = c - 6*js
+    let j = int si[k]
+    sd[k][(6*pickB(so, js, C) + cc)*int st[k]] = pickB(f, js, C)[((j div v)*6 + cc)*v + j mod v]
 
-proc applyD2eeB[V: static int; T](s: StagGpu[V,T]; r, x, t: array[nBatch, ptr UncheckedArray[T]]; m2: array[nBatch, float]; act: int) =
-  ## r_j = 4 m2_j x_j - D_eo D_oe x_j on the even sites, using t_o, for the systems in act
-  var a, z, o, mo: array[nBatch, T]
-  for j in 0..<nBatch:
+proc applyD2eeB[V: static int; C: static int; T](s: StagGpu[V,T]; r, x, t: array[C, ptr UncheckedArray[T]];
+                                                 m2: array[C, float]; so: array[C, int]) =
+  ## r_j = 4 m2_j x_j - D_eo D_oe x_j on the even sites, using t_o
+  var a, z, o, mo: array[C, T]
+  for j in 0..<C:
     a[j] = T(4*m2[j])
     o[j] = T(1)
     mo[j] = T(-1)
-  s.exB[0].packB(x, act)
+  s.exB[0].packB(x, so)
   s.exB[0].start
   s.exB[0].wait
-  s.dslashB(1, t, x, x, s.exB[0].rbuf, z, o, act, nil, nil, dot = false, send = true)
+  s.dslashB(1, t, x, x, s.exB[0].rbuf, z, o, so, nil, nil, dot = false, send = true)
   s.exB[1].start
   s.exB[1].wait
-  s.dslashB(0, r, t, x, s.exB[1].rbuf, a, mo, act, nil, nil, dot = false, send = false)
+  s.dslashB(0, r, t, x, s.exB[1].rbuf, a, mo, so, nil, nil, dot = false, send = false)
 
-proc applyD2eeCGB[V: static int; T](s: StagGpu[V,T]; w, r, t: array[nBatch, ptr UncheckedArray[T]]; m2: array[nBatch, float]; act: int;
-                                    rs, rz: ptr UncheckedArray[float]): array[2*nBatch, float] =
-  ## applyD2eeCG for the systems in act, returning r_j.r_j and w_j.r_j at 2j and 2j+1
-  var a, z, o, mo: array[nBatch, T]
-  for j in 0..<nBatch:
+proc applyD2eeCGB[V: static int; C: static int; T](s: StagGpu[V,T]; w, r, t: array[C, ptr UncheckedArray[T]];
+                                                   m2: array[C, float]; so: array[C, int];
+                                                   rs, rz: ptr UncheckedArray[float]): array[2*nBatch, float] =
+  ## applyD2eeCG for C systems, returning r_j.r_j and w_j.r_j at 2 so_j and 2 so_j + 1
+  var a, z, o, mo: array[C, T]
+  for j in 0..<C:
     a[j] = T(4*m2[j])
     o[j] = T(1)
     mo[j] = T(-1)
-  s.dslashB(1, t, r, r, s.rhB, z, o, act, nil, nil, dot = false, send = true, nowait = true)
+  s.dslashB(1, t, r, r, s.rhB, z, o, so, nil, nil, dot = false, send = true, nowait = true)
   s.exB[1].start
   if s.split:
-    s.dslashB(0, w, t, r, nil, a, mo, act, rs, rz, dot = true, send = true, s.ne - s.nin, s.nin, nowait = true)
+    s.dslashB(0, w, t, r, nil, a, mo, so, rs, rz, dot = true, send = true, s.ne - s.nin, s.nin, nowait = true)
     s.exB[1].wait
-    s.dslashB(0, w, t, r, s.exB[1].rbuf, a, mo, act, rs, rz, dot = true, send = true, 0, s.ne - s.nin)
+    s.dslashB(0, w, t, r, s.exB[1].rbuf, a, mo, so, rs, rz, dot = true, send = true, 0, s.ne - s.nin)
     gpuWaitAsync()
   else:
     s.exB[1].wait(sync = false)
-    s.dslashB(0, w, t, r, s.exB[1].rbuf, a, mo, act, rs, rz, dot = true, send = true, nowait = true)
+    s.dslashB(0, w, t, r, s.exB[1].rbuf, a, mo, so, rs, rz, dot = true, send = true, nowait = true)
   s.exB[0].start
   gpuWaitAsync()
   let ne = s.ne  # the site sums in a fixed order, as applyD2eeCG
@@ -1124,14 +1158,15 @@ proc applyD2eeCGB[V: static int; T](s: StagGpu[V,T]; w, r, t: array[nBatch, ptr 
     sb[k] = sm
   let h = s.hredB
   gpuMemCpyToCpu(h, sb, 2*nBatch*nRed*sizeof(float))
-  for c in 0..<2*nBatch:
-    if (act and (1 shl (c div 2))) != 0:
+  for j in so:
+    for c in 2*j..2*j+1:
       for k in 0..<nRed: result[c] += h[c*nRed + k]
   getDefaultComm().allReduce(addr result[0], 2*nBatch)
 
-proc updateB[V: static int; T](s: StagGpu[V,T]; x: array[nBatch, ptr UncheckedArray[T]]; r, p, sv, w: ptr UncheckedArray[T]; a, b: array[nBatch, T]; act: int) =
-  ## update for the systems j in act with a_j and b_j; r, p, sv, w hold the
-  ## systems one after the other, 6 ne reals each
+proc updateB[V: static int; C: static int; T](s: StagGpu[V,T]; x: array[C, ptr UncheckedArray[T]]; so: array[C, int];
+                                              r, p, sv, w: ptr UncheckedArray[T]; a, b: array[C, T]) =
+  ## update for C systems with a_j and b_j; r, p, sv, w hold the slots one
+  ## after the other, 6 ne reals each, system j in slot so_j
   let n6 = 6*s.ne
   let nr = s.exB[0].nrecv
   let wh = s.exB[0].rbuf
@@ -1139,36 +1174,39 @@ proc updateB[V: static int; T](s: StagGpu[V,T]; x: array[nBatch, ptr UncheckedAr
   let sh = s.shB
   let ro = s.exB[0].rofs
   let rst = s.exB[0].rstr
-  unpackB(x)
-  unpackB(a)
-  unpackB(b)
-  gpuForAsync(t, nBatch*n6 + 6*nBatch*nr):
-    if t < nBatch*n6:
-      let j = t div n6
-      if (act and (1 shl j)) != 0:
-        let aj = pickB(a, j)
-        let bj = pickB(b, j)
-        let pk = r[t] + bj*p[t]
-        let sk = w[t] + bj*sv[t]
-        p[t] = pk
-        sv[t] = sk
-        pickB(x, j)[t - j*n6] += aj*pk
-        r[t] = r[t] - aj*sk
+  unpackB(x, C)
+  unpackB(so, C)
+  unpackB(a, C)
+  unpackB(b, C)
+  gpuForAsync(t, C*n6 + 6*C*nr):
+    if t < C*n6:
+      let js = t div n6
+      let o = t - js*n6
+      let i = pickB(so, js, C)*n6 + o
+      let aj = pickB(a, js, C)
+      let bj = pickB(b, js, C)
+      let pk = r[i] + bj*p[i]
+      let sk = w[i] + bj*sv[i]
+      p[i] = pk
+      sv[i] = sk
+      pickB(x, js, C)[o] += aj*pk
+      r[i] = r[i] - aj*sk
     else:
-      let u = t - nBatch*n6
+      let u = t - C*n6
       let c = u div nr
-      let j = c div 6
-      if (act and (1 shl j)) != 0:
-        let k = int ro[u - c*nr] + c*int rst[u - c*nr]
-        let sk = wh[k] + pickB(b, j)*sh[k]
-        sh[k] = sk
-        rh[k] = rh[k] - pickB(a, j)*sk
+      let js = c div 6
+      let cc = 6*pickB(so, js, C) + c - 6*js
+      let k = int ro[u - c*nr] + cc*int rst[u - c*nr]
+      let sk = wh[k] + pickB(b, js, C)*sh[k]
+      sh[k] = sk
+      rh[k] = rh[k] - pickB(a, js, C)*sk
 
-proc cgB[V: static int; T](s: StagGpu[V,T]; x, b: array[nBatch, ptr UncheckedArray[T]]; m, r2stop: array[nBatch, float]; act0: int;
-                           maxits, verb: int): tuple[its: array[nBatch, int], r2: array[nBatch, float]] =
-  ## cg for the systems in act0 at once, each until its |res|^2 <= r2stop_j;
-  ## a converged system leaves the kernels.  s.vecB[0..3] hold the systems
-  ## one after the other, 6 ne reals each, s.vecB[4] with 6 n.
+proc cgB[V: static int; T](s: StagGpu[V,T]; x, b: array[nBatch, ptr UncheckedArray[T]]; m, r2stop: array[nBatch, float];
+                           act0: int; maxits, verb: int): tuple[its: array[nBatch, int], r2: array[nBatch, float]] =
+  ## cg for the systems in act0 at once, each until its |res|^2 <= r2stop_j,
+  ## the kernels of each iteration as wide as the systems still iterating.
+  ## s.vecB[0..3] hold the slots one after the other, 6 ne reals each,
+  ## s.vecB[4] with 6 n.
   let n6 = 6*s.ne
   let ra = s.vecB[0]
   let pa = s.vecB[1]
@@ -1177,20 +1215,21 @@ proc cgB[V: static int; T](s: StagGpu[V,T]; x, b: array[nBatch, ptr UncheckedArr
   let rr = sysB(ra, n6)
   let w = sysB(wa, n6)
   let t = sysB(s.vecB[4], 6*s.n)
-  unpackB(x)
-  unpackB(b)
-  gpuFor(i, nBatch*n6):  # x = 0, r = b, p = s = 0
-    let j = i div n6
+  for j in 0..<nBatch:  # x = 0, r = b, p = s = 0
     if (act0 and (1 shl j)) != 0:
-      let o = i - j*n6
-      pickB(x, j)[o] = T(0)
-      ra[i] = pickB(b, j)[o]
-      pa[i] = T(0)
-      sa[i] = T(0)
+      let xj = x[j]
+      let bj = b[j]
+      let o = j*n6
+      gpuFor(i, n6):
+        xj[i] = T(0)
+        ra[o + i] = bj[i]
+        pa[o + i] = T(0)
+        sa[o + i] = T(0)
   var rs = s.redB
   var rz = cast[ptr UncheckedArray[float]](addr s.redB[2*nBatch*s.ne])
   var act = act0
-  s.exB[0].packB(rr, act)
+  forActive(act):
+    s.exB[0].packB(sel(C, rr, so), so)
   s.exB[0].start
   s.exB[0].wait
   let hb = s.exB[0].rbuf
@@ -1201,7 +1240,9 @@ proc cgB[V: static int; T](s: StagGpu[V,T]; x, b: array[nBatch, ptr UncheckedArr
     sh[k] = T(0)
   var m2: array[nBatch, float]
   for j in 0..<nBatch: m2[j] = m[j]*m[j]
-  var gd = s.applyD2eeCGB(w, rr, t, m2, act, rs, rz)
+  var gd: array[2*nBatch, float]
+  forActive(act):
+    gd = s.applyD2eeCGB(sel(C, w, so), sel(C, rr, so), sel(C, t, so), sel(C, m2, so), so, rs, rz)
   swap(rs, rz)
   var alpha, beta, r2: array[nBatch, float]
   for j in 0..<nBatch:
@@ -1212,12 +1253,13 @@ proc cgB[V: static int; T](s: StagGpu[V,T]; x, b: array[nBatch, ptr UncheckedArr
   var itn = 0
   while itn < maxits and act != 0:
     s.exB[0].wait(sync = false)
-    var a, bb: array[nBatch, T]
-    for j in 0..<nBatch:
-      a[j] = T(alpha[j])
-      bb[j] = T(beta[j])
-    s.updateB(x, ra, pa, sa, wa, a, bb, act)
-    gd = s.applyD2eeCGB(w, rr, t, m2, act, rs, rz)
+    forActive(act):
+      var a, bb: array[C, T]
+      for q in 0..<C:
+        a[q] = T(alpha[so[q]])
+        bb[q] = T(beta[so[q]])
+      s.updateB(sel(C, x, so), so, ra, pa, sa, wa, a, bb)
+      gd = s.applyD2eeCGB(sel(C, w, so), sel(C, rr, so), sel(C, t, so), sel(C, m2, so), so, rs, rz)
     swap(rs, rz)
     inc itn
     for j in 0..<nBatch:
@@ -1259,6 +1301,8 @@ proc cgB[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; x, b: arr
   c.allReduce(addr r2[0], nBatch)
   for j in 0..<nBatch:
     if (act0 and (1 shl j)) != 0 and r2[j] > r2stop[j]: act = act or (1 shl j)
+  var m2: array[nBatch, float]
+  for j in 0..<nBatch: m2[j] = m[j]*m[j]
   var its = 0
   while its < maxits and act != 0:
     ss.convert(rs[0], rd[0], nBatch)
@@ -1270,9 +1314,8 @@ proc cgB[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; x, b: arr
       if (act and (1 shl j)) != 0:
         result.its[j] += k[j]
         s.addTo(x[j], e[j])
-    var m2: array[nBatch, float]
-    for j in 0..<nBatch: m2[j] = m[j]*m[j]
-    s.applyD2eeB(ad, x, t, m2, act)
+    forActive(act):
+      s.applyD2eeB(sel(C, ad, so), sel(C, x, so), sel(C, t, so), sel(C, m2, so), so)
     var d: array[nBatch, float]
     for j in 0..<nBatch:
       if (act and (1 shl j)) != 0:
@@ -1307,10 +1350,12 @@ proc solveB[V: static int](s: StagGpu[V,float]; x, b: array[nBatch, ptr Unchecke
     bm[j] = -0.5/m[j]
   if full:
     c.barrier
-    s.exB[1].packB(b, act0)
-    s.exB[1].start
-    s.exB[1].wait
-    s.dslashB(0, b4, b, b, s.exB[1].rbuf, a4, t2, act0, nil, nil, dot = false, send = false)
+    forActive(act0):
+      s.exB[1].packB(sel(C, b, so), so)
+      s.exB[1].start
+      s.exB[1].wait
+      s.dslashB(0, sel(C, b4, so), sel(C, b, so), sel(C, b, so), s.exB[1].rbuf, sel(C, a4, so), sel(C, t2, so), so,
+                nil, nil, dot = false, send = false)
   for j in 0..<nBatch:
     if (act0 and (1 shl j)) != 0:
       let bj = b[j]
@@ -1326,10 +1371,13 @@ proc solveB[V: static int](s: StagGpu[V,float]; x, b: array[nBatch, ptr Unchecke
   for j in 0..<nBatch:
     if (act0 and (1 shl j)) != 0: sp[j].addSolve(its[j], r2[j]/b2[j])
   c.barrier
-  s.exB[0].packB(x, act0)
-  s.exB[0].start
-  s.exB[0].wait
-  s.dslashB(1, x, x, if full: b else: x, s.exB[0].rbuf, am, bm, act0, nil, nil, dot = false, send = false)
+  forActive(act0):
+    let xs = sel(C, x, so)
+    s.exB[0].packB(xs, so)
+    s.exB[0].start
+    s.exB[0].wait
+    s.dslashB(1, xs, xs, if full: sel(C, b, so) else: xs, s.exB[0].rbuf, sel(C, am, so), sel(C, bm, so), so,
+              nil, nil, dot = false, send = false)
 
 proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedArray[float]]; m: openArray[float];
                             sp: var openArray[SolverParams]; ss: ptr StagGpu[V,float32] = nil; r2in = 1e-6;
@@ -1360,4 +1408,3 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedAr
       s.solveB(xg, bg, mg, pg, (1 shl nc) - 1, ss, r2in, full)
       for j in 0..<nc: sp[o[k+j][1]] = pg[j]
     k += nc
-

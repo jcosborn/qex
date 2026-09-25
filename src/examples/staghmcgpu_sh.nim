@@ -712,6 +712,7 @@ for n in inittraj+1..inittraj+trajs:
 
 toc("hmc")
 
+if showTimers: echoTimers(timerExpandRatio, timerEchoDropped)
 echoProf()
 processSaveParams()
 writeParamFile()
