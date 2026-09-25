@@ -1360,3 +1360,4 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedAr
       s.solveB(xg, bg, mg, pg, (1 shl nc) - 1, ss, r2in, full)
       for j in 0..<nc: sp[o[k+j][1]] = pg[j]
     k += nc
+

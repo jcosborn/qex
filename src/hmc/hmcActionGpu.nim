@@ -56,12 +56,14 @@ type
     gg*, sgo*: GpuGauge[VLEN]  ## thin and smeared links
     hg*: HypGpu[VLEN]
     s*: StagGpu[VLEN,float]
+    ss*: StagGpu[VLEN,float32]  ## single precision solver of the force solves, with mixed
     sg*: ptr UncheckedArray[float]  ## signs of the phases and boundary conditions, stagSigns
     p*, f*, bu*, ft*, fl*, g1*, p1*: ptr UncheckedArray[float]  ## momenta, force, saved links, force of an action, one link force, reverse check copies
     w*: ptr UncheckedArray[float]  ## work vector, 6n reals
-    red*, hred*: ptr UncheckedArray[float]  ## force stats partial sums and maxima, device and pinned host
+    red*, hred*: ptr UncheckedArray[float]  ## force stats sums and maxima, device and pinned host
     smeared*: bool  ## sgo and s hold the smeared links of gg.u
     forceStats*: int  ## 1: the per action force stats of the first fermion force of a trajectory, 2: of all
+    mixed*: bool  ## force solves in mixed precision
     sample: bool  ## pull the actions of the next fermion force back one by one
     hostNew*: bool  ## the host links are newer than gg.u
     hmcStats*: Table[string, ActionStats]
@@ -78,12 +80,15 @@ proc newVec(h: HmcGpu): ptr UncheckedArray[float] =
 
 proc newHmcGpu*[U,R,S](uc: GaugeConfiguration[U]; srng: S; prng: R; tau: float; revCheckFreq = 0;
                        bc: openArray[bool] = [true, true, true, false]; reals = 18;
-                       forceStats = 1): HmcGpu[U,R,S] =
+                       forceStats = 1; mixed = false): HmcGpu[U,R,S] =
   ## the HMC of hmcAction on the GPU, the fermion boundary conditions bc
   ## (periodic when true) for all fermion actions; reals per link of the
-  ## solvers, 18 or 14 (rows 0 and 1 and the determinant)
+  ## solvers, 18 or 14 (rows 0 and 1 and the determinant); with mixed the
+  ## force solves restart single precision CGs in double (solveM), which
+  ## changes the forces within f_tol
   new(result)
   result.forceStats = forceStats
+  result.mixed = mixed
   result.cpu = uc.newHmcAction(srng, prng, tau, revCheckFreq)
   result.tau = tau
   result.revCheckFreq = revCheckFreq
@@ -95,6 +100,7 @@ proc newHmcGpu*[U,R,S](uc: GaugeConfiguration[U]; srng: S; prng: R; tau: float; 
   gs.stagPhase
   result.sg = stagSigns(gs)
   result.s = newStagGpu(gs, float64, reals, batch = true)
+  if mixed: result.ss = newStagGpu(gs, float32, reals, batch = true)
   result.gg = newGpuGauge(lo)
   result.sgo = newGpuGauge(lo)
   result.hg = newHypGpu(lo)
@@ -103,10 +109,8 @@ proc newHmcGpu*[U,R,S](uc: GaugeConfiguration[U]; srng: S; prng: R; tau: float; 
     d[] = result.gg.newLinks
   result.w = result.newVec
   let nt = (4*result.gg.n + 15) div 16
-  result.red = cast[ptr UncheckedArray[float]](gpuMalloc((2*nSlot + nt)*sizeof(float)))
-  result.hred = cast[ptr UncheckedArray[float]](gpuMallocHost((2*nSlot + nt)*sizeof(float)))
-  let rd = result.red
-  gpuFor(i, 2*nSlot): rd[i] = 0.0
+  result.red = cast[ptr UncheckedArray[float]](gpuMalloc((3*nSlot + 3*nt)*sizeof(float)))
+  result.hred = cast[ptr UncheckedArray[float]](gpuMallocHost(3*nSlot*sizeof(float)))
   result.hmcStats = initTable[string, ActionStats]()
   result.hostNew = true
 
@@ -206,6 +210,7 @@ proc smear(h: HmcGpu): float =
   h.hg.smear(h.coef, h.gg, h.sgo.u)
   h.sgo.fresh = false
   h.s.setLinks(h.sgo, h.sg)
+  if h.mixed: h.ss.setLinks(h.sgo, h.sg)
   h.smeared = true
   result = getElapsedTime()
   toc()
@@ -233,7 +238,7 @@ type
     kind: SysKind
     sp: SolverParams
 
-proc solveAll(h: HmcGpu; sys: var seq[Sys]) =
+proc solveAll(h: HmcGpu; sys: var seq[Sys]; mixed = false) =
   ## The solves of sys as those of hmcAction, together by solveM of several
   ## systems, M(m) = m + D with D = stag.D:
   ##   skEE  stagForceSolve: x = M(m)^-1 b for b_o = 0; its psi_e = x_e/m,
@@ -265,7 +270,8 @@ proc solveAll(h: HmcGpu; sys: var seq[Sys]) =
       gpuFor(i, ne6): d[i] *= sc
       sps[j].r2req = 0.99*sps[j].r2req*(b2[0] + b2[1])/h.normEO(d)[0]
       bs[j] = d
-  h.s.solveM(xs, bs, ms, sps)
+  if mixed: h.s.solveM(xs, bs, ms, sps, addr h.ss)
+  else: h.s.solveM(xs, bs, ms, sps)
   let secs = getElapsedTime()/float(sys.len)
   for j in 0..<sys.len:
     let x = sys[j].x
@@ -285,13 +291,14 @@ proc solveAll(h: HmcGpu; sys: var seq[Sys]) =
 proc addForce(h: HmcGpu; a: GpuAction; secs: float) =
   ## f += ft and the stats of ft as addForce of hmcAction: the sums of |ft|^2
   ## and |ft|^4 over the links over 4V, and the largest |ft|^2 (summed over
-  ## the ranks as rankSum does)
+  ## the ranks as rankSum does).  Thread t takes links t, t+T, ..., slot k
+  ## of nSlot threads k, k+nSlot, ..., the host the slots.
   let n = h.gg.n
   let nl = 4*n
   let nt = (nl + 15) div 16
   let f = h.f
   let ft = h.ft
-  let rd = h.red
+  let rd = h.red  # [3 nSlot] slots, then [3][nt] thread sums
   gpuFor(t, nt):
     var s2, s4, mx = 0.0
     for j in 0..<16:
@@ -308,17 +315,27 @@ proc addForce(h: HmcGpu; a: GpuAction; secs: float) =
         s2 += q
         s4 += q*q
         mx = max(mx, q)
-    gpuAtomicAdd(rd, t mod nSlot, s2)
-    gpuAtomicAdd(rd, nSlot + t mod nSlot, s4)
-    rd[2*nSlot + t] = mx
+    rd[3*nSlot + t] = s2
+    rd[3*nSlot + nt + t] = s4
+    rd[3*nSlot + 2*nt + t] = mx
+  gpuFor(k, nSlot):
+    var s2, s4, mx = 0.0
+    var t = k
+    while t < nt:
+      s2 += rd[3*nSlot + t]
+      s4 += rd[3*nSlot + nt + t]
+      mx = max(mx, rd[3*nSlot + 2*nt + t])
+      t += nSlot
+    rd[k] = s2
+    rd[nSlot + k] = s4
+    rd[2*nSlot + k] = mx
   let hr = h.hred
-  gpuMemCpyToCpu(hr, rd, (2*nSlot + nt)*sizeof(float))
-  gpuFor(i, 2*nSlot): rd[i] = 0.0
+  gpuMemCpyToCpu(hr, rd, 3*nSlot*sizeof(float))
   var fs: array[3, float]
   for k in 0..<nSlot:
     fs[0] += hr[k]
     fs[1] += hr[nSlot + k]
-  for t in 0..<nt: fs[2] = max(fs[2], hr[2*nSlot + t])
+    fs[2] = max(fs[2], hr[2*nSlot + k])
   getDefaultComm().allReduce(addr fs[0], 3)
   let v = 1.0/float(4*h.gg.lo.physVol)
   a.stats[a.id & "F"]["n"] += 1
@@ -422,7 +439,7 @@ proc force(h: HmcGpu; level: GpuLevel; dtau: float) =
     if a.kind in {gkFermion, gkRatio}:
       sys.add Sys(x: a.x, b: a.phi, rhs: a.rhs, m: a.mass, kind: skEE, sp: a.spf)
       owner.add i
-  h.solveAll(sys)
+  h.solveAll(sys, h.mixed)
   var fsecs = newSeq[float](level.actions.len)
   for j, i in owner:
     let a = level.actions[i]
@@ -438,7 +455,7 @@ proc force(h: HmcGpu; level: GpuLevel; dtau: float) =
       h.gg.forceA(a.gc, h.ft, -dtau)
       h.addForce(a, getElapsedTime())
     of gkFermion, gkRatio, gkPV:
-      if each or not sum: h.zeroLinks h.fl
+      var t: float
       if a.kind == gkPV:  # psi_e = phi_e, psi_o = 2 D_oe phi_e
         let y = a.x
         let ph = a.phi
@@ -446,11 +463,13 @@ proc force(h: HmcGpu; level: GpuLevel; dtau: float) =
         h.s.applyMfull(y, ph, 0.0)
         gpuFor(k, 6*h.s.n):
           y[k] = if k < ne6: ph[k] else: 2.0*y[k]
-        h.s.outerM(h.fl, y, -0.25*dtau)
+        t = -0.25*dtau
       else:
         let sc = if a.kind == gkFermion: 0.25*dtau
                  else: 0.25*dtau*(a.massDen*a.massDen - a.mass*a.mass)
-        h.s.outerM(h.fl, a.x, -2.0*sc/a.mass)
+        t = -2.0*sc/a.mass
+      if each or not sum: h.zeroLinks h.fl
+      h.s.outerM(h.fl, a.x, t)
       if each:
         h.pullback
         h.addForce(a, getElapsedTime() + fsecs[i])
