@@ -267,6 +267,18 @@ proc projU3(r: var M3; x: M3) {.alwaysInline.} =
   rsqrt3(z, x)
   mul3(r, x, z)
 
+proc usdev(r: var float; x: M3) {.alwaysInline.} =
+  ## r = |x^+ x - 1|^2 + |det x - 1|^2, as checkSU of a matrix
+  var t {.noInit.}, a {.noInit.}: M3
+  var dr, di: float
+  mulAN3(t, x, x)
+  forStatic i, 0, 2: t[8*i] -= 1.0
+  r = 0.0
+  forStatic e, 0, 17: r += t[e]*t[e]
+  adj3(a, x)
+  det3(dr, di, x, a)
+  r += (dr - 1.0)*(dr - 1.0) + di*di
+
 proc sylsolve3(x: var M3; a, c: M3) {.alwaysInline.} =
   ## x with a x + x a = c, as sylsolve: for d = adj a, t = tr a, s = tr d, r = det a,
   ##   x = c0 c - c4 (a c + c a) + c2 a c a + c1 d c d - c2 (d c + c d)
@@ -724,3 +736,55 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
     mtah(w, r)
     forStatic e, 0, 17: p[ol + e*V] += w[e]
   toc("combine")
+
+proc reunit*[V: static int](g: var GpuGauge[V]): array[2, tuple[avg, max: float]] =
+  ## g.u = W exp(-i arg(det W)/3) for W = U (U^+U)^-1/2, as projectSU of the
+  ## host links, and checkSU of the links before and after: with d of
+  ## usdev per link, avg = sqrt(sum d/(20 links)), max = sqrt(max d/20)
+  const nm = 128  # links per partial maximum
+  let n = g.n
+  let u = g.u
+  let nl = 4*n
+  let np = (nl + nm - 1) div nm
+  let d = cast[ptr UncheckedArray[float]](gpuMalloc(2*nl*sizeof(float)))
+  let dp = cast[ptr UncheckedArray[float]](gpuMalloc(2*np*sizeof(float)))
+  gpuFor(i, nl):
+    let mu = i div n
+    let k = i - mu*n
+    let o = 18*mu*n + lo18(V, k)
+    var x {.noInit.}, w {.noInit.}, a {.noInit.}: M3
+    var dr, di: float
+    forStatic e, 0, 17: x[e] = u[o + e*V]
+    usdev(d[i], x)
+    projU3(w, x)
+    adj3(a, w)
+    det3(dr, di, w, a)
+    let p = -(1.0/3.0)*arctan2(di, dr)
+    let cr = cos(p)
+    let ci = sin(p)
+    forStatic e, 0, 8:
+      let re = cr*w[2*e] - ci*w[2*e+1]
+      w[2*e+1] = cr*w[2*e+1] + ci*w[2*e]
+      w[2*e] = re
+    forStatic e, 0, 17: u[o + e*V] = w[e]
+    usdev(d[nl + i], w)
+  gpuFor(t, 2*np):
+    let h = t div np
+    let c = t - h*np
+    var m = 0.0
+    for j in c*nm ..< min(nl, (c+1)*nm): m = max(m, d[h*nl + j])
+    dp[t] = m
+  var hp = newSeq[float](2*np)
+  gpuMemCpyToCpu(addr hp[0], dp, 2*np*sizeof(float))
+  var s = gpuSum(i, nl, 2, [d[i], d[nl + i]])
+  getDefaultComm().allReduce(addr s[0], 2)
+  let c = 20.0
+  let v = 4.0*float(g.lo.physVol)
+  for h in 0..1:
+    var m = 0.0
+    for t in 0..<np: m = max(m, hp[h*np + t])
+    rankMax(m)
+    result[h] = (avg: sqrt(s[h]/(c*v)), max: sqrt(m/c))
+  gpuFree(d)
+  gpuFree(dp)
+  g.fresh = false

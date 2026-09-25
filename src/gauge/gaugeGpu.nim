@@ -314,6 +314,94 @@ proc plaq*[V: static int](g: var GpuGauge[V]): float =
   let c = GaugeActionCoeffs(plaq: 1.0)
   1.0 - g.actionA(c)/(6.0*float(g.lo.physVol))
 
+proc plaqs*[V: static int](g: var GpuGauge[V]): array[2, float] =
+  ## average Re tr P/3 over the planes (mu, nu) with mu < 3 and with mu = 3,
+  ## nu < mu, as the ss and st of MEASplaq in staghmc_sh
+  g.update
+  let n = g.n
+  let u = g.u
+  let nb = g.nb
+  let ro = g.ex[0].rofs
+  let rs = g.ex[0].rstr
+  let h0 = g.ex[0].rbuf
+  let h1 = g.ex[1].rbuf
+  let h2 = g.ex[2].rbuf
+  let h3 = g.ex[3].rbuf
+  var pl = gpuSum(k, n, 2):
+    var a, b = 0.0
+    forStatic mu, 1, 3:
+      forStatic nu, 0, mu-1:
+        var x {.noInit.}, y {.noInit.}, t {.noInit.}, p {.noInit.}: array[18, float]
+        mload(x, u, 18*mu*n + lo18(V, k), V)
+        link(y, nu, int nb[nbF(mu)*n + k])
+        mmul(t, x, y)
+        link(y, mu, int nb[nbF(nu)*n + k])
+        mmulNA(p, t, y)
+        mload(y, u, 18*nu*n + lo18(V, k), V)
+        var tr = 0.0
+        forStatic e, 0, 8: tr += p[2*e]*y[2*e] + p[2*e+1]*y[2*e+1]
+        when mu < 3: a += tr
+        else: b += tr
+    [a, b]
+  getDefaultComm().allReduce(addr pl[0], 2)
+  let d = 9.0*float(g.lo.physVol)
+  [pl[0]/d, pl[1]/d]
+
+
+proc ploop*[V: static int](g: GpuGauge[V]; w: var GpuGauge[V]; t: ptr UncheckedArray[float]): array[4, tuple[re, im: float]] =
+  ## the Polyakov loop of each direction mu, tr prod_k U_mu(x + k mu)/3
+  ## averaged over x, as wline of the host links: w.u = W_mu, W_mu = U_mu(x)
+  ## W_mu(x+mu) L_mu - 1 times from W_mu = U_mu, t scratch like g.u
+  let n = g.n
+  let uu = g.u
+  let pg = g.lo.physGeom
+  let l0 = pg[0]
+  let l1 = pg[1]
+  let l2 = pg[2]
+  let l3 = pg[3]
+  g.copy(w.u, g.u)
+  for it in 1..<max(max(l0, l1), max(l2, l3)):
+    w.fresh = false
+    w.update
+    let u = w.u
+    let nb = w.nb
+    let ro = w.ex[0].rofs
+    let rs = w.ex[0].rstr
+    let h0 = w.ex[0].rbuf
+    let h1 = w.ex[1].rbuf
+    let h2 = w.ex[2].rbuf
+    let h3 = w.ex[3].rbuf
+    gpuFor(i, 4*n):
+      let mu = i div n
+      let k = i - mu*n
+      let o = 18*mu*n + lo18(V, k)
+      let lm = if mu == 0: l0 elif mu == 1: l1 elif mu == 2: l2 else: l3
+      if it < lm:
+        var x {.noInit.}, y {.noInit.}, z {.noInit.}: array[18, float]
+        mload(x, uu, o, V)
+        let j = int nb[nbF(mu)*n + k]
+        case mu
+        of 0: link(y, 0, j)
+        of 1: link(y, 1, j)
+        of 2: link(y, 2, j)
+        else: link(y, 3, j)
+        mmul(z, x, y)
+        forStatic e, 0, 17: t[o + e*V] = z[e]
+      else:
+        forStatic e, 0, 17: t[o + e*V] = u[o + e*V]
+    g.copy(w.u, t)
+  let u = w.u
+  var s = gpuSum(k, n, 8):
+    var a {.noInit.}: array[8, float]
+    forStatic mu, 0, 3:
+      let o = 18*mu*n + lo18(V, k)
+      a[2*mu] = u[o] + u[o + 8*V] + u[o + 16*V]
+      a[2*mu+1] = u[o + V] + u[o + 9*V] + u[o + 17*V]
+    a
+  getDefaultComm().allReduce(addr s[0], 8)
+  let f = 1.0/(3.0*float(g.lo.physVol))
+  for mu in 0..3: result[mu] = (re: f*s[2*mu], im: f*s[2*mu+1])
+  w.fresh = false
 proc forceA*[V: static int](g: var GpuGauge[V]; c: GaugeActionCoeffs; p: ptr UncheckedArray[float]; t: float) =
   ## p -= t F for the gauge force F of plaq + adjplaq, as forceA
   tic("gauge force")

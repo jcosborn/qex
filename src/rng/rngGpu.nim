@@ -7,6 +7,7 @@
 ## compile for the device: RngMilc6, MRG32k3a, Philox4x64, Threefry4x64.
 import qex
 import backend/accel
+import std/math
 
 type RngGpu*[V: static int; R] = object
   lo*: Layout[V]
@@ -113,4 +114,19 @@ proc gaussian*[V: static int; R](g: RngGpu[V,R]; x: ptr UncheckedArray[float]; n
     var a = rngLoad(s, V, k, R)
     let o = (k div V)*(ne*V) + k mod V
     for c in 0..<ne: x[o + c*V] = gaussian(a)
+    rngStore(s, V, k, a)
+
+proc u1*[V: static int; R](g: RngGpu[V,R]; x: ptr UncheckedArray[float]; ne: int) =
+  ## x as u1 of a field of ne reals per site, in the layout of gaussian:
+  ## complex c = exp(2 pi i u) for each pair of reals, u uniform, as the u1
+  ## of the host generators other than RngFuel
+  let n = g.lo.nSites
+  let s = g.s
+  gpuFor(k, n):
+    var a = rngLoad(s, V, k, R)
+    let o = (k div V)*(ne*V) + k mod V
+    for c in 0..<ne div 2:
+      let t = 2.0*PI*float(uniform(a))
+      x[o + 2*c*V] = cos(t)
+      x[o + (2*c+1)*V] = sin(t)
     rngStore(s, V, k, a)
