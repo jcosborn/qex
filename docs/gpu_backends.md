@@ -1,0 +1,122 @@
+# GPU backends: configuring the compilers
+
+The GPU code (backend/accel gpuFor kernels, physics/stagGpu, gauge/hypGpu,
+gauge/gaugeGpu, comms/halogpu, hmc/hmcActionGpu) builds with four backends,
+selected by `-d:Backend=...` in `nimargs`:
+
+| Backend | Compiler | Kernels | Halo stores into peers on the node |
+|---|---|---|---|
+| OpenMP | icx (oneAPI), OpenMP offload | `target teams distribute parallel for` | Level Zero IPC (comms/zeipc) |
+| SYCL | icpx (oneAPI) | `parallel_for` lambdas | Level Zero IPC (comms/zeipc) |
+| CUDA | clang -x cuda | device lambdas of the qexFor<<<>>> template | CUDA IPC (comms/cudaipc) |
+| HIP | amdclang -x hip | device lambdas of the qexFor<<<>>> template | HIP IPC (comms/hipipc) |
+
+The settings below go into `qexconfig.nims` of the build directory (the
+`configure` options of the same names set them); only the lines that
+differ from the defaults are shown.  Every build directory needs its own
+`nimcache`: builds sharing one corrupt each other.
+
+## OpenMP offload, Intel PVC (Aurora, Sunspot)
+
+Nim generates C, compiled by the MPI wrapper around icx with the offload
+flags in OMPFLAG; the device code is compiled ahead of time at link time.
+
+    ccType = "clang"
+    ccDef = "cc"
+    cc = "mpicc"
+    cflagsSpeed = "-O3 -march=native"
+    ldflags = "-g -O3 -Xs '-device pvc' -ftarget-register-alloc-mode=pvc:large -ldl"
+    cpp = "mpicxx"
+    ldppflags = "-g -O3 -Xs '-device pvc' -ftarget-register-alloc-mode=pvc:large -ldl"
+    simd = "auto"
+    vlen = 8
+    envs = @["OMPFLAG=-fiopenmp -fopenmp-targets=spir64_gen"]
+    nimargs = @["-d:Backend=OpenMP"]
+
+The link needs `-O3`: icx treats `-g` alone as `-O0` for the device code.
+
+## SYCL, Intel PVC
+
+Nim generates C++, compiled by the MPI wrapper around icpx.
+
+    ccType = "clang"
+    ccDef = "cpp"
+    cc = "mpicc"
+    cflagsSpeed = "-O3 -march=native"
+    cpp = "mpic++"
+    cppflagsAlways = "-g -fsycl -fsycl-targets=spir64_gen"
+    cppflagsSpeed = "-O3 -march=native"
+    ldppflags = "-g -O3 -fsycl -fsycl-targets=spir64_gen -Xsycl-target-backend '-device pvc' -ftarget-register-alloc-mode=pvc:large -ldl"
+    simd = "auto"
+    vlen = 8
+    envs = @["OMPFLAG=-fiopenmp"]
+    nimargs = @["-d:Backend=SYCL"]
+
+For both Intel backends `-ftarget-register-alloc-mode=pvc:auto` lets the
+compiler choose 128 or 256 registers per kernel: mixed precision
+staghmcgpu_sh runs 5-7% faster, double precision within 2%.
+
+Runs: one rank per tile (gpu_tile_compact.sh), 8 cores per rank,
+`MPIR_CVAR_CH4_IPC_GPU_P2P_THRESHOLD=0`, `MPIR_CVAR_CH4_OFI_ENABLE_HMEM=1`
+off the node, `OMP_STACKSIZE=256M` for large local volumes.
+
+## CUDA, NVIDIA H100
+
+clang compiles the Nim generated C++ as CUDA.  backend/cuda/nimbase.h,
+found first through `-iquote`, makes Nim inline procs host and device
+functions and defines the qexFor kernel template.
+
+    ccType = "clang"
+    ccDef = "cpp"
+    cc = "mpicc"
+    cflagsSpeed = "-O3 -march=native"
+    cpp = "mpicxx"
+    cppflagsAlways = "-g -x cuda --cuda-gpu-arch=sm_90"
+    cppflagsSpeed = "-O3 -march=native"
+    ldppflags = "-g -no-pie -L$CUDA/lib64 -Wl,-rpath,$CUDA/lib64 -lcudart -ldl"
+    simd = "SSE,AVX,AVX512"
+    vlen = 8
+    envs = @["OMPFLAG=-fopenmp"]
+    nimargs = @["-d:Backend=CUDA"]
+
+with the MPI wrappers pointed at clang (`OMPI_CC=clang OMPI_CXX=clang++`
+for OpenMPI) and a CUDA toolkit clang supports (JLSE: llvm 22.1.8 with
+CUDA 12.9.1).  The batched solver kernels of width 3 spill on NVPTX;
+build with `-d:nBatch=2` on H100.
+
+## HIP, AMD MI300A
+
+amdclang compiles the Nim generated C++ as HIP.  backend/hip/nimbase.h
+includes hip_runtime.h (for `__launch_bounds__`), makes Nim inline procs
+host and device functions and defines the qexFor kernel template.  All
+modules must be C++ (`ccDef = "cpp"`): in C, `__host__ __device__` does not
+compile.
+
+    ccType = "gcc"
+    ccDef = "cpp"
+    cc = "mpicc"
+    cflagsSpeed = "-O3 -march=native"
+    cpp = "mpicxx"
+    cppflagsSpeed = "-O3 -march=native -x hip --offload-arch=gfx942"
+    ldppflags = cppflagsAlways & " -ldl --hip-link --offload-arch=gfx942"
+    simd = "SSE,AVX,AVX512"
+    vlen = 8
+    envs = @["STATIC_UNROLL=1"]
+    nimargs = @["-d:Backend=HIP"]
+
+with the rocmcc and cray-mpich modules (Tuolumne: rocm/10.0).  Runs:
+`flux run -N1 -n4 -c24` with `MPICH_GPU_SUPPORT_ENABLED=1`; from an ssh
+shell on a node of the allocation, set `FLUX_URI` to the job's instance
+(`flux uri JOBID`), else `flux run` submits a new job.  The Nim phase of the
+large programs takes about 13 minutes and 30 GB there.
+
+## Programs and tests
+
+- backend/examples/bestream: STREAM copy, scale, add and triad of gpuFor
+  kernels, the bandwidth ceiling the kernels can reach.
+- backend/examples/bestagcg: the GPU CG against the CPU solver, GF/s and
+  GB/s by a byte count, `-nb:k` k systems at once.
+- examples/staghmcgpu_sh: staghmc_sh on the GPU; `tests/extra/tstaghmc_sh/run`
+  with `RUNJOB` set to the launcher.
+- prod/lsd/eightFlavorSMGgpu: eightFlavorSMG on the GPU;
+  `tests/extra/teightFlavorSMG/run` (needs python 3.8 or later).
