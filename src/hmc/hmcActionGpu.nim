@@ -80,12 +80,13 @@ proc newVec(h: HmcGpu): ptr UncheckedArray[float] =
 
 proc newHmcGpu*[U,R,S](uc: GaugeConfiguration[U]; srng: S; prng: R; tau: float; revCheckFreq = 0;
                        bc: openArray[bool] = [true, true, true, false]; reals = 18;
-                       forceStats = 1; mixed = false): HmcGpu[U,R,S] =
+                       forceStats = 1; mixed = false; fixed = true): HmcGpu[U,R,S] =
   ## the HMC of hmcAction on the GPU, the fermion boundary conditions bc
   ## (periodic when true) for all fermion actions; reals per link of the
   ## solvers, 18 or 14 (rows 0 and 1 and the determinant); with mixed the
   ## force solves restart single precision CGs in double (solveM), which
-  ## changes the forces within f_tol
+  ## changes the forces within f_tol; with fixed the CG dot products add in a
+  ## fixed order, so a trajectory repeats bit for bit
   new(result)
   result.forceStats = forceStats
   result.mixed = mixed
@@ -100,10 +101,10 @@ proc newHmcGpu*[U,R,S](uc: GaugeConfiguration[U]; srng: S; prng: R; tau: float; 
   gs.stagPhase
   result.sg = stagSigns(gs)
   result.s = newStagGpu(gs, float64, reals, batch = true)
-  result.s.fixed = true
+  result.s.fixed = fixed
   if mixed:
     result.ss = newStagGpu(gs, float32, reals, batch = true)
-    result.ss.fixed = true
+    result.ss.fixed = fixed
   result.gg = newGpuGauge(lo)
   result.sgo = newGpuGauge(lo)
   result.hg = newHypGpu(lo)
@@ -449,7 +450,25 @@ proc force(h: HmcGpu; level: GpuLevel; dtau: float) =
     fsecs[i] = sys[j].sp.seconds
     if a.kind == gkFermion: a.solveStats("FS", sys[j].sp, fsecs[i])
   let each = h.forceStats == 2 or h.sample
-  var sum = false
+  # the PV vectors psi_e = phi_e, psi_o = D_oe phi_e for the hop D of dslash (twice
+  # applyMfull(psi, phi, 0) on the odd sites), together
+  var pv: seq[int]
+  for i, a in level.actions:
+    if a.kind == gkPV: pv.add i
+  if pv.len > 0:
+    tic()
+    let ne6 = 6*h.s.ne
+    for i in pv:
+      let y = level.actions[i].x
+      let ph = level.actions[i].phi
+      gpuFor(k, ne6): y[k] = ph[k]
+    h.s.hopOE(pv.mapIt(level.actions[it].x), pv.mapIt(level.actions[it].phi), 1.0)
+    let t = getElapsedTime()/float(pv.len)
+    for i in pv: fsecs[i] += t
+    toc("PV vectors")
+  var fx: seq[ptr UncheckedArray[float]]  # the one link forces summed for one pullback
+  var ft: seq[float]
+  var fa: seq[int]
   for i, a in level.actions:
     tic()
     case a.kind
@@ -459,29 +478,30 @@ proc force(h: HmcGpu; level: GpuLevel; dtau: float) =
       h.addForce(a, getElapsedTime())
     of gkFermion, gkRatio, gkPV:
       var t: float
-      if a.kind == gkPV:  # psi_e = phi_e, psi_o = 2 D_oe phi_e
-        let y = a.x
-        let ph = a.phi
-        let ne6 = 6*h.s.ne
-        h.s.applyMfull(y, ph, 0.0)
-        gpuFor(k, 6*h.s.n):
-          y[k] = if k < ne6: ph[k] else: 2.0*y[k]
-        t = -0.25*dtau
+      if a.kind == gkPV: t = -0.25*dtau
       else:
         let sc = if a.kind == gkFermion: 0.25*dtau
                  else: 0.25*dtau*(a.massDen*a.massDen - a.mass*a.mass)
         t = -2.0*sc/a.mass
-      if each or not sum: h.zeroLinks h.fl
-      h.s.outerM(h.fl, a.x, t)
       if each:
+        h.zeroLinks h.fl
+        h.s.outerM(h.fl, a.x, t)
         h.pullback
         h.addForce(a, getElapsedTime() + fsecs[i])
-      else:  # the time of the action, its stats from the sampled forces
-        a.stats[a.id & "F"]["secs"] += getElapsedTime() + fsecs[i]
-        sum = true
+      else:
+        fx.add a.x
+        ft.add t
+        fa.add i
     toc()
-  if sum:  # f += the force of the sum of the one link forces
+  if fx.len > 0:  # f += the force of the sum of the one link forces, the outer products together
     tic()
+    h.zeroLinks h.fl
+    h.s.outerM(h.fl, fx, ft)
+    let t = getElapsedTime()/float(fx.len)
+    for i in fa:  # the time of the action, its stats from the sampled forces
+      let a = level.actions[i]
+      a.stats[a.id & "F"]["secs"] += t + fsecs[i]
+    toc("outer")
     h.hg.force(h.coef, h.gg, h.sgo.u, h.fl, h.sg, h.s.ne, h.f)
     h.hmcStats["SF"]["n"] += 1
     h.hmcStats["SF"]["secs"] += getElapsedTime()

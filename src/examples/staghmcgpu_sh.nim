@@ -371,7 +371,9 @@ proc force(p: ptr UncheckedArray[float]; ids: seq[int]; ts: openArray[float]) =
   tic()
   if smear:
     zero(fF, 4*18*s.n)
-    for j in ids: s.outerM(fF, xs[j], fscale(j, ts[j]))
+    if useBatch: s.outerM(fF, ids.mapIt(xs[it]), ids.mapIt(fscale(it, ts[it])))
+    else:
+      for j in ids: s.outerM(fF, xs[j], fscale(j, ts[j]))
     toc("outer")
     hg.force(coef, gg, sgo.u, fF, sg, s.ne, p)
     toc("pullback")

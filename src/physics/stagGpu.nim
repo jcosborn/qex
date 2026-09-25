@@ -1428,3 +1428,98 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedAr
       s.solveB(xg, bg, mg, pg, (1 shl nc) - 1, ss, r2in, full)
       for j in 0..<nc: sp[o[k+j][1]] = pg[j]
     k += nc
+
+proc outerB[V: static int; C: static int](s: StagGpu[V,float]; f: ptr UncheckedArray[float];
+                                         x: array[C, ptr UncheckedArray[float]]; t: array[C, float];
+                                         so: array[C, int]) =
+  ## f_mu(y) += sum_j t_j x_j(y) x_j(y+mu)^+ over all sites, the remote
+  ## neighbors of x_j through slot so_j of both exchanges
+  getDefaultComm().barrier
+  for q in 0..1:
+    s.exB[q].packB(x, so)
+    s.exB[q].start
+  for q in 0..1: s.exB[q].wait
+  let n = s.n
+  let ne = s.ne
+  let nl = s.nl
+  let nb = s.nbr
+  let ro0 = s.exB[0].rofs
+  let rs0 = s.exB[0].rstr
+  let rb0 = s.exB[0].rbuf
+  let ro1 = s.exB[1].rofs
+  let rs1 = s.exB[1].rstr
+  let rb1 = s.exB[1].rbuf
+  unpackB(x, C)
+  unpackB(t, C)
+  unpackB(so, C)
+  gpuFor(i, 4*n):
+    let mu = i div n
+    let k = i - mu*n
+    let jj = int nb[mu*n + k]
+    let j = if nl == 12 and jj < 0: -1-jj else: jj
+    let yo = vo(V, k)
+    var acc {.noInit.}: array[18, float]
+    forStatic e, 0, 17: acc[e] = 0.0
+    forStatic js, 0, C-1:
+      let xj = pickS(x, js)
+      let tj = pickS(t, js)
+      var v {.noInit.}: array[6, float]
+      if j < n:
+        let oj = vo(V, j)
+        forStatic c, 0, 5: v[c] = xj[oj + c*V]
+      else:
+        let p = j - n
+        let c0 = 6*pickS(so, js)
+        if k < ne:  # an odd neighbor
+          let op = int ro1[p]
+          let sk = int rs1[p]
+          forStatic c, 0, 5: v[c] = rb1[op + (c0+c)*sk]
+        else:
+          let op = int ro0[p]
+          let sk = int rs0[p]
+          forStatic c, 0, 5: v[c] = rb0[op + (c0+c)*sk]
+      forStatic a, 0, 2:
+        forStatic b, 0, 2:
+          acc[6*a+2*b] += tj*(xj[yo + 2*a*V]*v[2*b] + xj[yo + (2*a+1)*V]*v[2*b+1])
+          acc[6*a+2*b+1] += tj*(xj[yo + (2*a+1)*V]*v[2*b] - xj[yo + 2*a*V]*v[2*b+1])
+    let o = 18*mu*n + lo18(V, k)
+    forStatic e, 0, 17: f[o + e*V] += acc[e]
+
+proc outerM*[V: static int](s: StagGpu[V,float]; f: ptr UncheckedArray[float]; x: openArray[ptr UncheckedArray[float]];
+                            t: openArray[float]) =
+  ## outerM of the vectors x_j with t_j, nBatch in a kernel:
+  ## f_mu(y) += sum_j t_j x_j(y) x_j(y+mu)^+.  Needs newStagGpu(batch = true).
+  var k = 0
+  while k < x.len:
+    let nc = min(nBatch, x.len - k)
+    var xg: array[nBatch, ptr UncheckedArray[float]]
+    var tg: array[nBatch, float]
+    for j in 0..<nc:
+      xg[j] = x[k+j]
+      tg[j] = t[k+j]
+    forActive((1 shl nc) - 1):
+      s.outerB(f, sel(C, xg, so), sel(C, tg, so), so)
+    k += nc
+
+proc hopOE*[V: static int](s: StagGpu[V,float]; y, x: openArray[ptr UncheckedArray[float]]; c: float) =
+  ## y_j,o = c D_oe x_j,e for the vectors j, nBatch at a time, with the D of
+  ## dslash, twice that of applyMfull; y_j,e unchanged.  Needs
+  ## newStagGpu(batch = true).
+  var k = 0
+  while k < x.len:
+    let nc = min(nBatch, x.len - k)
+    var xg, yg: array[nBatch, ptr UncheckedArray[float]]
+    var z, cg: array[nBatch, float]
+    for j in 0..<nc:
+      xg[j] = x[k+j]
+      yg[j] = y[k+j]
+      cg[j] = c
+    getDefaultComm().barrier
+    forActive((1 shl nc) - 1):
+      let xs = sel(C, xg, so)
+      let ys = sel(C, yg, so)
+      s.exB[0].packB(xs, so)
+      s.exB[0].start
+      s.exB[0].wait
+      s.dslashB(1, ys, xs, ys, s.exB[0].rbuf, sel(C, z, so), sel(C, cg, so), so, nil, nil, dot = false, send = false)
+    k += nc

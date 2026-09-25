@@ -7,7 +7,8 @@
 ## -force_stats:2 pulls each fermion force back through the smearing on its
 ## own at every step, as the host code, for the force stats of every step
 ## (1: of the first fermion force of each trajectory); -mixed:1 solves the
-## fermion forces in mixed precision.
+## fermion forces in mixed precision; -fixed_sums:0 adds the CG dot products
+## atomically, faster, but runs no longer repeat bit for bit.
 ##
 ## Designed to be backwards-compatible with stag_pv_hmc code under staghmc-devel
 ## branch of QEX. Hence, some of the code is reflective of conventions that I
@@ -57,6 +58,7 @@ letParam:
   force_stats = 1 # fermion force stats: 1 of the first fermion force of a trajectory, 2 of all
   timers = 0 # 1 prints the profile timers at the end
   mixed = 0 # 1 solves the fermion forces in mixed precision (forces change within f_tol)
+  fixed_sums = 1 # 1 adds the CG dot products in a fixed order, so runs repeat bit for bit; 0 atomically, faster
 
 # read xml inputs - again, if you're using this as a reference, please, please, please
 # note that many of the choices made here are legacy and may not reflect best practices
@@ -167,7 +169,7 @@ spf.maxits = f_maxits
 #[ build action/integrator from inputs ]#
 
 var hmc = uc.newHmcGpu(s, r, tau, revCheckFreq = rev_check_freq, bc = periodic, reals = reals,
-                       forceStats = force_stats, mixed = mixed != 0)
+                       forceStats = force_stats, mixed = mixed != 0, fixed = fixed_sums != 0)
 
 var fermionLevel = newGpuLevel(multiplier = f_steps, integrator = ferm_int_alg)
 
