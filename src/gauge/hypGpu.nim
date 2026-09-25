@@ -346,6 +346,16 @@ template projUderiv3(r: untyped; lu, lx, lc, park, unpark: untyped) =
     unpark(r)
     forStatic e, 0, 17: r[e] -= t1[e]
 
+template planeSite(i: untyped; np: static int; q, k: untyped) =
+  ## plane q of np and site k of thread i: the planes of 16 consecutive
+  ## sites in consecutive sub-groups of 16, which then run close in time and
+  ## share the loads of their neighbors in the caches, each sub-group still
+  ## loading 16 consecutive sites
+  let b = i div (16*np)
+  let r = i - b*(16*np)
+  let q = r div 16
+  let k = b*16 + r - q*16
+
 template shellLinks(h, g: untyped) =
   ## the locals of thin, for the links of g at box sites
   let n {.inject.} = h.n
@@ -448,6 +458,7 @@ proc smear*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl: ptr Un
   shellLinks(h, g)
   let nb = h.nb
   let nt = n + h.nr
+  let ntp = 16*((nt + 15) div 16)  # nt padded to whole blocks of planeSite
   let nbr = h.nbr
   let v1x = h.v1x
   let v1 = h.v1
@@ -460,51 +471,51 @@ proc smear*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl: ptr Un
   let m1 = 1 - c.alpha1
   let m2 = 1 - c.alpha2
   let m3 = 1 - c.alpha3
-  gpuFor(i, 12*nt, 16):
-    let q = i div nt
-    let k = i - q*nt
-    let mu = q div 3  # q = ix(mu, nu)
-    let nu = q - 3*mu + int(q - 3*mu >= mu)
-    let fmu = int nbr[mu*nb + k]
-    let fnu = int nbr[nu*nb + k]
-    let bnu = int nbr[(4+nu)*nb + k]
-    let fmubnu = if fmu >= 0 and bnu >= 0: int nbr[(4+nu)*nb + fmu] else: -1
-    if fnu >= 0 and fmubnu >= 0:
-      var s {.noInit.}, r {.noInit.}: M3
-      thin(r, mu, k)
-      forStatic e, 0, 17: s[e] = m1*r[e]
-      template lx(m, j: untyped) = thin(m, nu, j)
-      template ly(m, j: untyped) = thin(m, mu, j)
-      staple(s, a1, lx, ly, k, fnu, fmu, bnu, fmubnu)
-      let o = bo(V, q, nb, k)
-      forStatic e, 0, 17: v1x[o + e*V] = s[e]
-      projU3(r, s)
-      forStatic e, 0, 17: v1[o + e*V] = r[e]
+  gpuFor(i, 12*ntp, 16):
+    planeSite(i, 12, q, k)
+    if k < nt:
+      let mu = q div 3  # q = ix(mu, nu)
+      let nu = q - 3*mu + int(q - 3*mu >= mu)
+      let fmu = int nbr[mu*nb + k]
+      let fnu = int nbr[nu*nb + k]
+      let bnu = int nbr[(4+nu)*nb + k]
+      let fmubnu = if fmu >= 0 and bnu >= 0: int nbr[(4+nu)*nb + fmu] else: -1
+      if fnu >= 0 and fmubnu >= 0:
+        var s {.noInit.}, r {.noInit.}: M3
+        thin(r, mu, k)
+        forStatic e, 0, 17: s[e] = m1*r[e]
+        template lx(m, j: untyped) = thin(m, nu, j)
+        template ly(m, j: untyped) = thin(m, mu, j)
+        staple(s, a1, lx, ly, k, fnu, fmu, bnu, fmubnu)
+        let o = bo(V, q, nb, k)
+        forStatic e, 0, 17: v1x[o + e*V] = s[e]
+        projU3(r, s)
+        forStatic e, 0, 17: v1[o + e*V] = r[e]
   toc("level 1")
-  gpuFor(i, 12*nt, 16):
-    let q = i div nt
-    let k = i - q*nt
-    let mu = q div 3  # q = ix(mu, nu)
-    let nu = q - 3*mu + int(q - 3*mu >= mu)
-    let fmu = int nbr[mu*nb + k]
-    if fmu >= 0:
-      var s {.noInit.}, r {.noInit.}: M3
-      thin(r, mu, k)
-      forStatic e, 0, 17: s[e] = m2*r[e]
-      for a in 0..3:
-        if a != mu and a != nu:
-          let b = 6 - mu - nu - a
-          let fa = int nbr[a*nb + k]
-          let ba = int nbr[(4+a)*nb + k]
-          let fmuba = if ba >= 0: int nbr[(4+a)*nb + fmu] else: -1
-          if fa >= 0 and fmuba >= 0:
-            template lx(m, j: untyped) = mload(m, v1, bo(V, ix(a, b), nb, j), V)
-            template ly(m, j: untyped) = mload(m, v1, bo(V, ix(mu, b), nb, j), V)
-            staple(s, a2, lx, ly, k, fa, fmu, ba, fmuba)
-      let o = bo(V, q, nb, k)
-      forStatic e, 0, 17: v2x[o + e*V] = s[e]
-      projU3(r, s)
-      forStatic e, 0, 17: v2[o + e*V] = r[e]
+  gpuFor(i, 12*ntp, 16):
+    planeSite(i, 12, q, k)
+    if k < nt:
+      let mu = q div 3  # q = ix(mu, nu)
+      let nu = q - 3*mu + int(q - 3*mu >= mu)
+      let fmu = int nbr[mu*nb + k]
+      if fmu >= 0:
+        var s {.noInit.}, r {.noInit.}: M3
+        thin(r, mu, k)
+        forStatic e, 0, 17: s[e] = m2*r[e]
+        for a in 0..3:
+          if a != mu and a != nu:
+            let b = 6 - mu - nu - a
+            let fa = int nbr[a*nb + k]
+            let ba = int nbr[(4+a)*nb + k]
+            let fmuba = if ba >= 0: int nbr[(4+a)*nb + fmu] else: -1
+            if fa >= 0 and fmuba >= 0:
+              template lx(m, j: untyped) = mload(m, v1, bo(V, ix(a, b), nb, j), V)
+              template ly(m, j: untyped) = mload(m, v1, bo(V, ix(mu, b), nb, j), V)
+              staple(s, a2, lx, ly, k, fa, fmu, ba, fmuba)
+        let o = bo(V, q, nb, k)
+        forStatic e, 0, 17: v2x[o + e*V] = s[e]
+        projU3(r, s)
+        forStatic e, 0, 17: v2[o + e*V] = r[e]
   toc("level 2")
   gpuFor(i, 4*n, 16):
     let mu = i div n
@@ -538,6 +549,7 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
   shellLinks(h, g)
   let nb = h.nb
   let nt = n + h.nr
+  let ntp = 16*((nt + 15) div 16)  # nt padded to whole blocks of planeSite
   let nbr = h.nbr
   let v1x = h.v1x
   let v1 = h.v1
@@ -554,157 +566,157 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
   let m1 = 1 - c.alpha1
   let m2 = 1 - c.alpha2
   let m3 = 1 - c.alpha3
-  gpuFor(i, 4*nt, 16):  # level 3
-    let mu = i div nt
-    let k = i - mu*nt
-    let o = bo(V, mu, nb, k)
-    if k < n:
-      let ol = 18*mu*n + lo18(V, k)
-      let sc = if k < ne: sg[mu*n + k] else: -sg[mu*n + k]
-      var r {.noInit.}: M3
-      template lu(m: untyped) = mload(m, fl, ol, V)
-      template lx(m: untyped) = mload(m, v3x, ol, V)
-      template lc(m: untyped) =
-        mload(m, f, ol, V)
-        forStatic e, 0, 17: m[e] *= sc
-      template park(m: untyped) =
-        forStatic e, 0, 17: cf[o + e*V] = m[e]
-      template unpark(m: untyped) = mload(m, cf, o, V)
-      projUderiv3(r, lu, lx, lc, park, unpark)
-      forStatic e, 0, 17:
-        cf[o + e*V] = m3*r[e]
-        c3[o + e*V] = a3*r[e]
-    else:
-      forStatic e, 0, 17:
-        cf[o + e*V] = 0.0
-        c3[o + e*V] = 0.0
+  gpuFor(i, 4*ntp, 16):  # level 3
+    planeSite(i, 4, mu, k)
+    if k < nt:
+      let o = bo(V, mu, nb, k)
+      if k < n:
+        let ol = 18*mu*n + lo18(V, k)
+        let sc = if k < ne: sg[mu*n + k] else: -sg[mu*n + k]
+        var r {.noInit.}: M3
+        template lu(m: untyped) = mload(m, fl, ol, V)
+        template lx(m: untyped) = mload(m, v3x, ol, V)
+        template lc(m: untyped) =
+          mload(m, f, ol, V)
+          forStatic e, 0, 17: m[e] *= sc
+        template park(m: untyped) =
+          forStatic e, 0, 17: cf[o + e*V] = m[e]
+        template unpark(m: untyped) = mload(m, cf, o, V)
+        projUderiv3(r, lu, lx, lc, park, unpark)
+        forStatic e, 0, 17:
+          cf[o + e*V] = m3*r[e]
+          c3[o + e*V] = a3*r[e]
+      else:
+        forStatic e, 0, 17:
+          cf[o + e*V] = 0.0
+          c3[o + e*V] = 0.0
   toc("level 3")
   let rt = h.rt
   # the staple sums s of a level go to its chain array, then a second kernel
   # replaces them with the chain a r and adds m r to rt for r = the
   # derivative of P, which keeps the registers of each kernel within bounds
-  gpuFor(i, 12*nt, 16):  # level 2: s
-    let q = i div nt
-    let k = i - q*nt
-    let mu = q div 3  # q = ix(mu, nu)
-    let nu = q - 3*mu + int(q - 3*mu >= mu)
-    let fmu = int nbr[mu*nb + k]
-    let fnu = int nbr[nu*nb + k]
-    let bnu = int nbr[(4+nu)*nb + k]
-    let fmubnu = if fmu >= 0: int nbr[(4+nu)*nb + fmu] else: -1
-    var s {.noInit.}: M3
-    forStatic e, 0, 17: s[e] = 0.0
-    template lx(m, j: untyped) = mload(m, v2, bo(V, ix(nu, mu), nb, j), V)
-    template ly(m, j: untyped) = mload(m, v2, bo(V, q, nb, j), V)
-    template cx(m, j: untyped) = mload(m, c3, bo(V, nu, nb, j), V)
-    template cy(m, j: untyped) = mload(m, c3, bo(V, mu, nb, j), V)
-    var hit = false
-    symderiv(hit, s, lx, ly, cx, cy, k, fnu, fmu, bnu, fmubnu, n)
-    let o = bo(V, q, nb, k)
-    forStatic e, 0, 17: c2[o + e*V] = s[e]
-  toc("level 2 sums")
-  gpuFor(i, 12*nt, 16):  # level 2: c2 = a2 r, rt = m2 r where a staple is there
-    let q = i div nt
-    let k = i - q*nt
-    let mu = q div 3
-    let nu = q - 3*mu + int(q - 3*mu >= mu)
-    let fmu = int nbr[mu*nb + k]
-    let fnu = int nbr[nu*nb + k]
-    let bnu = int nbr[(4+nu)*nb + k]
-    let fmubnu = if fmu >= 0: int nbr[(4+nu)*nb + fmu] else: -1
-    let o = bo(V, q, nb, k)
-    if fnu >= 0 and fmu >= 0 and (k < n or fnu < n or fmu < n) or
-       bnu >= 0 and fmubnu >= 0 and (bnu < n or fmubnu < n):
-      var r {.noInit.}: M3
-      template lu(m: untyped) = mload(m, v2, o, V)
-      template lx(m: untyped) = mload(m, v2x, o, V)
-      template lc(m: untyped) = mload(m, c2, o, V)
-      template park(m: untyped) =
-        forStatic e, 0, 17: c2[o + e*V] = m[e]
-      template unpark(m: untyped) = mload(m, c2, o, V)
-      projUderiv3(r, lu, lx, lc, park, unpark)
-      forStatic e, 0, 17:
-        c2[o + e*V] = a2*r[e]
-        rt[o + e*V] = m2*r[e]
-    else:
-      forStatic e, 0, 17: rt[o + e*V] = 0.0
-  toc("level 2")
-  gpuFor(i, 12*nt, 16):  # level 1: s
-    let q = i div nt
-    let k = i - q*nt
-    let mu = q div 3  # q = ix(mu, nu)
-    let nu = q - 3*mu + int(q - 3*mu >= mu)
-    let fmu = int nbr[mu*nb + k]
-    let fnu = int nbr[nu*nb + k]
-    let bnu = int nbr[(4+nu)*nb + k]
-    var s {.noInit.}: M3
-    forStatic e, 0, 17: s[e] = 0.0
-    var hit = false
-    if fmu >= 0 and fnu >= 0 and bnu >= 0 and nbr[(4+nu)*nb + fmu] >= 0:
-      for a in 0..3:
-        if a != mu and a != nu:
-          let b = 6 - mu - nu - a
-          let fa = int nbr[a*nb + k]
-          let ba = int nbr[(4+a)*nb + k]
-          let fmuba = int nbr[(4+a)*nb + fmu]
-          template lx(m, j: untyped) = mload(m, v1, bo(V, ix(a, nu), nb, j), V)
-          template ly(m, j: untyped) = mload(m, v1, bo(V, q, nb, j), V)
-          template cx(m, j: untyped) = mload(m, c2, bo(V, ix(a, b), nb, j), V)
-          template cy(m, j: untyped) = mload(m, c2, bo(V, ix(mu, b), nb, j), V)
-          symderiv(hit, s, lx, ly, cx, cy, k, fa, fmu, ba, fmuba, int.high)
-    let o = bo(V, q, nb, k)
-    forStatic e, 0, 17: c1[o + e*V] = s[e]
-  toc("level 1 sums")
-  gpuFor(i, 12*nt, 16):  # level 1: c1 = a1 r, rt += m1 r where a staple is there
-    let q = i div nt
-    let k = i - q*nt
-    let mu = q div 3
-    let nu = q - 3*mu + int(q - 3*mu >= mu)
-    let fmu = int nbr[mu*nb + k]
-    let fnu = int nbr[nu*nb + k]
-    let bnu = int nbr[(4+nu)*nb + k]
-    var hit = false
-    if fmu >= 0 and fnu >= 0 and bnu >= 0 and nbr[(4+nu)*nb + fmu] >= 0:
-      for a in 0..3:
-        if a != mu and a != nu:
-          hit = hit or nbr[a*nb + k] >= 0 or nbr[(4+a)*nb + k] >= 0 and nbr[(4+a)*nb + fmu] >= 0
-    if hit:
+  gpuFor(i, 12*ntp, 16):  # level 2: s
+    planeSite(i, 12, q, k)
+    if k < nt:
+      let mu = q div 3  # q = ix(mu, nu)
+      let nu = q - 3*mu + int(q - 3*mu >= mu)
+      let fmu = int nbr[mu*nb + k]
+      let fnu = int nbr[nu*nb + k]
+      let bnu = int nbr[(4+nu)*nb + k]
+      let fmubnu = if fmu >= 0: int nbr[(4+nu)*nb + fmu] else: -1
+      var s {.noInit.}: M3
+      forStatic e, 0, 17: s[e] = 0.0
+      template lx(m, j: untyped) = mload(m, v2, bo(V, ix(nu, mu), nb, j), V)
+      template ly(m, j: untyped) = mload(m, v2, bo(V, q, nb, j), V)
+      template cx(m, j: untyped) = mload(m, c3, bo(V, nu, nb, j), V)
+      template cy(m, j: untyped) = mload(m, c3, bo(V, mu, nb, j), V)
+      var hit = false
+      symderiv(hit, s, lx, ly, cx, cy, k, fnu, fmu, bnu, fmubnu, n)
       let o = bo(V, q, nb, k)
-      var r {.noInit.}: M3
-      template lu(m: untyped) = mload(m, v1, o, V)
-      template lx(m: untyped) = mload(m, v1x, o, V)
-      template lc(m: untyped) = mload(m, c1, o, V)
-      template park(m: untyped) =
-        forStatic e, 0, 17: c1[o + e*V] = m[e]
-      template unpark(m: untyped) = mload(m, c1, o, V)
-      projUderiv3(r, lu, lx, lc, park, unpark)
-      forStatic e, 0, 17:
-        c1[o + e*V] = a1*r[e]
-        rt[o + e*V] += m1*r[e]
+      forStatic e, 0, 17: c2[o + e*V] = s[e]
+  toc("level 2 sums")
+  gpuFor(i, 12*ntp, 16):  # level 2: c2 = a2 r, rt = m2 r where a staple is there
+    planeSite(i, 12, q, k)
+    if k < nt:
+      let mu = q div 3
+      let nu = q - 3*mu + int(q - 3*mu >= mu)
+      let fmu = int nbr[mu*nb + k]
+      let fnu = int nbr[nu*nb + k]
+      let bnu = int nbr[(4+nu)*nb + k]
+      let fmubnu = if fmu >= 0: int nbr[(4+nu)*nb + fmu] else: -1
+      let o = bo(V, q, nb, k)
+      if fnu >= 0 and fmu >= 0 and (k < n or fnu < n or fmu < n) or
+         bnu >= 0 and fmubnu >= 0 and (bnu < n or fmubnu < n):
+        var r {.noInit.}: M3
+        template lu(m: untyped) = mload(m, v2, o, V)
+        template lx(m: untyped) = mload(m, v2x, o, V)
+        template lc(m: untyped) = mload(m, c2, o, V)
+        template park(m: untyped) =
+          forStatic e, 0, 17: c2[o + e*V] = m[e]
+        template unpark(m: untyped) = mload(m, c2, o, V)
+        projUderiv3(r, lu, lx, lc, park, unpark)
+        forStatic e, 0, 17:
+          c2[o + e*V] = a2*r[e]
+          rt[o + e*V] = m2*r[e]
+      else:
+        forStatic e, 0, 17: rt[o + e*V] = 0.0
+  toc("level 2")
+  gpuFor(i, 12*ntp, 16):  # level 1: s
+    planeSite(i, 12, q, k)
+    if k < nt:
+      let mu = q div 3  # q = ix(mu, nu)
+      let nu = q - 3*mu + int(q - 3*mu >= mu)
+      let fmu = int nbr[mu*nb + k]
+      let fnu = int nbr[nu*nb + k]
+      let bnu = int nbr[(4+nu)*nb + k]
+      var s {.noInit.}: M3
+      forStatic e, 0, 17: s[e] = 0.0
+      var hit = false
+      if fmu >= 0 and fnu >= 0 and bnu >= 0 and nbr[(4+nu)*nb + fmu] >= 0:
+        for a in 0..3:
+          if a != mu and a != nu:
+            let b = 6 - mu - nu - a
+            let fa = int nbr[a*nb + k]
+            let ba = int nbr[(4+a)*nb + k]
+            let fmuba = int nbr[(4+a)*nb + fmu]
+            template lx(m, j: untyped) = mload(m, v1, bo(V, ix(a, nu), nb, j), V)
+            template ly(m, j: untyped) = mload(m, v1, bo(V, q, nb, j), V)
+            template cx(m, j: untyped) = mload(m, c2, bo(V, ix(a, b), nb, j), V)
+            template cy(m, j: untyped) = mload(m, c2, bo(V, ix(mu, b), nb, j), V)
+            symderiv(hit, s, lx, ly, cx, cy, k, fa, fmu, ba, fmuba, int.high)
+      let o = bo(V, q, nb, k)
+      forStatic e, 0, 17: c1[o + e*V] = s[e]
+  toc("level 1 sums")
+  gpuFor(i, 12*ntp, 16):  # level 1: c1 = a1 r, rt += m1 r where a staple is there
+    planeSite(i, 12, q, k)
+    if k < nt:
+      let mu = q div 3
+      let nu = q - 3*mu + int(q - 3*mu >= mu)
+      let fmu = int nbr[mu*nb + k]
+      let fnu = int nbr[nu*nb + k]
+      let bnu = int nbr[(4+nu)*nb + k]
+      var hit = false
+      if fmu >= 0 and fnu >= 0 and bnu >= 0 and nbr[(4+nu)*nb + fmu] >= 0:
+        for a in 0..3:
+          if a != mu and a != nu:
+            hit = hit or nbr[a*nb + k] >= 0 or nbr[(4+a)*nb + k] >= 0 and nbr[(4+a)*nb + fmu] >= 0
+      if hit:
+        let o = bo(V, q, nb, k)
+        var r {.noInit.}: M3
+        template lu(m: untyped) = mload(m, v1, o, V)
+        template lx(m: untyped) = mload(m, v1x, o, V)
+        template lc(m: untyped) = mload(m, c1, o, V)
+        template park(m: untyped) =
+          forStatic e, 0, 17: c1[o + e*V] = m[e]
+        template unpark(m: untyped) = mload(m, c1, o, V)
+        projUderiv3(r, lu, lx, lc, park, unpark)
+        forStatic e, 0, 17:
+          c1[o + e*V] = a1*r[e]
+          rt[o + e*V] += m1*r[e]
   toc("level 1")
-  gpuFor(i, 4*nt, 16):  # thin links
-    let mu = i div nt
-    let k = i - mu*nt
-    let fmu = int nbr[mu*nb + k]
-    var s {.noInit.}, w {.noInit.}: M3
-    let o = bo(V, mu, nb, k)
-    mload(s, cf, o, V)
-    for nu in 0..3:
-      if nu != mu:
-        mload(w, rt, bo(V, ix(mu, nu), nb, k), V)
-        forStatic e, 0, 17: s[e] += w[e]
-    for nu in 0..3:
-      if nu != mu:
-        let fnu = int nbr[nu*nb + k]
-        let bnu = int nbr[(4+nu)*nb + k]
-        let fmubnu = if fmu >= 0: int nbr[(4+nu)*nb + fmu] else: -1
-        template lx(m, j: untyped) = thin(m, nu, j)
-        template ly(m, j: untyped) = thin(m, mu, j)
-        template cx(m, j: untyped) = mload(m, c1, bo(V, ix(nu, mu), nb, j), V)
-        template cy(m, j: untyped) = mload(m, c1, bo(V, ix(mu, nu), nb, j), V)
-        var hit = false
-        symderiv(hit, s, lx, ly, cx, cy, k, fnu, fmu, bnu, fmubnu, int.high)
-    forStatic e, 0, 17: cf[o + e*V] = s[e]
+  gpuFor(i, 4*ntp, 16):  # thin links
+    planeSite(i, 4, mu, k)
+    if k < nt:
+      let fmu = int nbr[mu*nb + k]
+      var s {.noInit.}, w {.noInit.}: M3
+      let o = bo(V, mu, nb, k)
+      mload(s, cf, o, V)
+      for nu in 0..3:
+        if nu != mu:
+          mload(w, rt, bo(V, ix(mu, nu), nb, k), V)
+          forStatic e, 0, 17: s[e] += w[e]
+      for nu in 0..3:
+        if nu != mu:
+          let fnu = int nbr[nu*nb + k]
+          let bnu = int nbr[(4+nu)*nb + k]
+          let fmubnu = if fmu >= 0: int nbr[(4+nu)*nb + fmu] else: -1
+          template lx(m, j: untyped) = thin(m, nu, j)
+          template ly(m, j: untyped) = thin(m, mu, j)
+          template cx(m, j: untyped) = mload(m, c1, bo(V, ix(nu, mu), nb, j), V)
+          template cy(m, j: untyped) = mload(m, c1, bo(V, ix(mu, nu), nb, j), V)
+          var hit = false
+          symderiv(hit, s, lx, ly, cx, cy, k, fnu, fmu, bnu, fmubnu, int.high)
+      forStatic e, 0, 17: cf[o + e*V] = s[e]
   toc("thin links")
   getDefaultComm().barrier  # peers may still read the previous force
   for mu in 0..3: h.rv[mu].pack(cast[ptr UncheckedArray[float]](addr cf[18*mu*nb]))
