@@ -54,6 +54,7 @@ letParam:
   simd_geom = newSeq[int](0) # <-+
   reals = 18 # reals per link of the GPU solvers, 18 or 14
   force_stats = 1 # fermion force stats: 1 of the first fermion force of a trajectory, 2 of all
+  timers = 0 # 1 prints the profile timers at the end
 
 # read xml inputs - again, if you're using this as a reference, please, please, please
 # note that many of the choices made here are legacy and may not reflect best practices
@@ -238,4 +239,5 @@ for config in start_config..<end_config:
       serialRNGFilename = path & "/" & filename & "_" & $(config + 1) & ".serialRNG"
     )
 
+if timers != 0: echoTimers()
 qexFinalize()

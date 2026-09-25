@@ -442,7 +442,9 @@ proc force(h: HmcGpu; level: GpuLevel; dtau: float) =
       if each:
         h.pullback
         h.addForce(a, getElapsedTime() + fsecs[i])
-      else: sum = true
+      else:  # the time of the action, its stats from the sampled forces
+        a.stats[a.id & "F"]["secs"] += getElapsedTime() + fsecs[i]
+        sum = true
     toc()
   if sum:  # f += the force of the sum of the one link forces
     tic()
