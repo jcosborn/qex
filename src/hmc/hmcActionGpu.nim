@@ -72,7 +72,7 @@ type
     forceAccept*: bool
     atEnd: bool
 
-const nSlot = 128  # atomic slots per sum of the force stats
+const nSlot = 128  # slots of the second stage of the force stats sums
 const V = VLEN
 
 proc newVec(h: HmcGpu): ptr UncheckedArray[float] =
