@@ -57,7 +57,7 @@ type
     nin*: int
     split*: bool  # second hop of the CG in two kernels around the exchange of t
     exB*: array[2, GpuHaloEx[T]]  # with batch, the exchanges of nBatch systems, system j in components 6j..6j+5
-    redB*: ptr UncheckedArray[float]  # [2][2*nBatch*nRed]: partial dot products of the systems, two buffers
+    redB*: ptr UncheckedArray[float]  # [2][2*nBatch][ne] dot products of the systems and sites, two buffers, then [2*nBatch*nRed] their slot sums
     hredB*: ptr UncheckedArray[float]  # [2*nBatch*nRed] pinned host copy of a buffer
     vecB*: array[7, ptr UncheckedArray[T]]  # work vectors of nBatch systems, 6*nBatch*n reals each
     rhB*, shB*: ptr UncheckedArray[T]  # CG halo copies of r and s of nBatch systems, as s.exB[0].rbuf
@@ -256,7 +256,7 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
   result.rh = cast[ptr UncheckedArray[T]](gpuMalloc(nh*sizeof(T)))
   result.sh = cast[ptr UncheckedArray[T]](gpuMalloc(nh*sizeof(T)))
   if batch:
-    result.redB = newSeq[float](4*nBatch*nRed).toDevice
+    result.redB = newSeq[float](4*nBatch*result.ne + 2*nBatch*nRed).toDevice
     result.hredB = cast[ptr UncheckedArray[float]](gpuMallocHost(2*nBatch*nRed*sizeof(float)))
     for i in 0..<result.vecB.len:
       result.vecB[i] = cast[ptr UncheckedArray[T]](gpuMalloc(6*nBatch*n*sizeof(T)))
@@ -967,8 +967,9 @@ proc dslashB[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y: array[nBatch, p
   ## dslash for the systems j with bit j of act set: d_j = a_j y_j + b_j D x_j,
   ## the remote sites of x_j from components 6j.. of rb, laid out as the
   ## receive buffer of s.exB[1-q]; send and dot as in dslash with s.exB[q]
-  ## and the sums y_j.y_j, d_j.y_j in slots 2j and 2j+1 of rs
+  ## and y_j.y_j, d_j.y_j of even site p at rs[2j ne + p], rs[(2j+1) ne + p]
   let n = s.n
+  let ne = s.ne
   let i0 = if q == 0: 0 else: s.ne
   let nk = if m >= 0: m elif q == 0: s.ne else: n - s.ne
   let od = s.ord
@@ -1045,12 +1046,8 @@ proc dslashB[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y: array[nBatch, p
             yy += yc*yc
             dy += float(acc[6*js+c])*yc
           let p = j0 + i
-          gpuAtomicAdd(rs, 2*js*nRed + p mod nRed, yy)
-          gpuAtomicAdd(rs, (2*js+1)*nRed + p mod nRed, dy)
-    when dot:
-      let p = j0 + i
-      if p < nRed:  # buffer of the next sum
-        forStatic c, 0, 2*nBatch-1: rz[c*nRed + p] = 0.0
+          rs[2*js*ne + p] = yy
+          rs[(2*js+1)*ne + p] = dy
   template kern(nl: static int; fw: static bool) =
     when nowait:
       gpuForAsync(i, nk, 16): body(i, nl, fw)
@@ -1115,8 +1112,18 @@ proc applyD2eeCGB[V: static int; T](s: StagGpu[V,T]; w, r, t: array[nBatch, ptr 
     s.dslashB(0, w, t, r, s.exB[1].rbuf, a, mo, act, rs, rz, dot = true, send = true, nowait = true)
   s.exB[0].start
   gpuWaitAsync()
+  let ne = s.ne  # the site sums in a fixed order, as applyD2eeCG
+  let sb = cast[ptr UncheckedArray[float]](addr s.redB[4*nBatch*ne])
+  gpuFor(k, 2*nBatch*nRed):
+    let c = k div nRed
+    var sm = 0.0
+    var j = k - c*nRed
+    while j < ne:
+      sm += rs[c*ne + j]
+      j += nRed
+    sb[k] = sm
   let h = s.hredB
-  gpuMemCpyToCpu(h, rs, 2*nBatch*nRed*sizeof(float))
+  gpuMemCpyToCpu(h, sb, 2*nBatch*nRed*sizeof(float))
   for c in 0..<2*nBatch:
     if (act and (1 shl (c div 2))) != 0:
       for k in 0..<nRed: result[c] += h[c*nRed + k]
@@ -1180,10 +1187,8 @@ proc cgB[V: static int; T](s: StagGpu[V,T]; x, b: array[nBatch, ptr UncheckedArr
       ra[i] = pickB(b, j)[o]
       pa[i] = T(0)
       sa[i] = T(0)
-  let red = s.redB
-  gpuFor(k, 4*nBatch*nRed): red[k] = 0.0
   var rs = s.redB
-  var rz = cast[ptr UncheckedArray[float]](addr s.redB[2*nBatch*nRed])
+  var rz = cast[ptr UncheckedArray[float]](addr s.redB[2*nBatch*s.ne])
   var act = act0
   s.exB[0].packB(rr, act)
   s.exB[0].start

@@ -234,41 +234,53 @@ type
     sp: SolverParams
 
 proc solveAll(h: HmcGpu; sys: var seq[Sys]) =
-  ## The solves of sys as those of hmcAction, by solveM, M(m) = m + D with
-  ## D = stag.D:
+  ## The solves of sys as those of hmcAction, together by solveM of several
+  ## systems, M(m) = m + D with D = stag.D:
   ##   skEE  stagForceSolve: x = M(m)^-1 b for b_o = 0; its psi_e = x_e/m,
   ##         psi_o = -2 x_o, so the one link force of psi is -2/m that of x
   ##   skR   stag.solve for b_o = 0 (reconR): x = M(m)^-1 b
   ##   skL   stag.solve (reconL): the even sites of solveM for rhs_e =
   ##         d_e/m, d = M(m)^+ b, to the tolerance
   ##         0.99 r2req (|b_e|^2 + |b_o|^2) m^2/|d_e|^2, then x_o += b_o/m
+  if sys.len == 0: return
+  tic()
   let ne6 = 6*h.s.ne
   let no6 = 6*(h.s.n - h.s.ne)
+  var xs, bs = newSeq[ptr UncheckedArray[float]](sys.len)
+  var ms = newSeq[float](sys.len)
+  var sps = newSeq[SolverParams](sys.len)
   for j in 0..<sys.len:
-    tic()
-    let x = sys[j].x
     let b = sys[j].b
     let m = sys[j].m
-    var sp = sys[j].sp
-    sp.resetStats
-    var bb = b
+    xs[j] = sys[j].x
+    ms[j] = m
+    sps[j] = sys[j].sp
+    sps[j].resetStats
+    bs[j] = b
     if sys[j].kind == skL:
       let b2 = h.normEO(b)
-      bb = sys[j].rhs
-      let d = bb
+      let d = sys[j].rhs
       h.s.applyM(d, b, -m)  # -m b_e + D_eo b_o
       let sc = -1.0/m
       gpuFor(i, ne6): d[i] *= sc
-      sp.r2req = 0.99*sp.r2req*(b2[0] + b2[1])/h.normEO(d)[0]
-    h.s.solveM(x, bb, m, sp)
+      sps[j].r2req = 0.99*sps[j].r2req*(b2[0] + b2[1])/h.normEO(d)[0]
+      bs[j] = d
+  h.s.solveM(xs, bs, ms, sps)
+  let secs = getElapsedTime()/float(sys.len)
+  for j in 0..<sys.len:
+    let x = sys[j].x
+    let b = sys[j].b
+    let m = sys[j].m
     if sys[j].kind == skL:
       let c = 1.0/m
       gpuFor(i, no6): x[ne6 + i] += c*b[ne6 + i]
+    var sp = sps[j]
+    sp.r2req = sys[j].sp.r2req
     sp.r2.init h.resid(x, b, m)
     sp.flops = float((4*4*72 + 60)*h.s.ne*sp.iterations)
-    sp.seconds = getElapsedTime()
+    sp.seconds = secs
     sys[j].sp = sp
-    toc()
+  toc()
 
 proc addForce(h: HmcGpu; a: GpuAction; secs: float) =
   ## f += ft and the stats of ft as addForce of hmcAction: the sums of |ft|^2
