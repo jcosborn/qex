@@ -266,7 +266,7 @@ var gg = newGpuGauge(lo)
 # the solvers keep their determinant; unsmeared links are SU(3) and 12 do
 let nl = if reals != 0: reals elif smear: 14 else: 12
 if smear and nl < 14: qexError "the smeared links are U(3): -reals:14 or 18"
-let useBatch = batch and nt > 1
+let useBatch = batch and (nt > 1 or pbpreps.anyIt(it > 1))
 var s = newStagGpu(gs, float64, nl, batch = useBatch)
 var ss: StagGpu[VLEN,float32]
 let ssp = if mixed: (ss = newStagGpu(gs, float32, nl, batch = useBatch); addr ss) else: nil
@@ -295,8 +295,6 @@ for j in 0..<nt:
   eta.add newVec()
   phi.add newVec()
   xs.add newVec()
-let psi = newVec()
-let ftmp = newVec()
 
 proc zero(v: ptr UncheckedArray[float]; n: int) =
   gpuFor(i, n): v[i] = 0.0
@@ -523,16 +521,30 @@ proc ploop() =
   toc("ploop")
 
 let rgpu = newRngGpu(r)  # after the host draws of the links
+var pv, px: seq[ptr UncheckedArray[float]]  # sources and solutions of pbp
 proc pbp() =
-  ## as staghmc_sh: m |M(m)^-1 u1|^2/vol for each mass, on the current links
+  ## as staghmc_sh: m |M(m)^-1 u1|^2/vol for each mass, on the current
+  ## links; the sources of a mass drawn first, their solves together
   tic()
   setLinks()
   for k in 0..<pbpmass.len:
     let m = pbpmass[k]
-    for i in 0..<pbpreps[k]:
-      rgpu.u1(ftmp, 6)
-      s.solveM(psi, ftmp, m, pbpsp, ssp, full = true)
-      let pbp = s.norm2(psi)
+    let nr = pbpreps[k]
+    while pv.len < nr:
+      pv.add newVec()
+      px.add newVec()
+    for i in 0..<nr: rgpu.u1(pv[i], 6)
+    if useBatch and nr > 1:
+      var sp = newSeq[SolverParams](nr)
+      for i in 0..<nr:
+        sp[i] = pbpsp
+        sp[i].resetStats
+      s.solveM(px[0..<nr], pv[0..<nr], repeat(m, nr), sp, ssp, full = true)
+      for i in 0..<nr: pbpsp.addStats(sp[i])
+    else:
+      for i in 0..<nr: s.solveM(px[i], pv[i], m, pbpsp, ssp, full = true)
+    for i in 0..<nr:
+      let pbp = s.norm2(px[i])
       echo "MEASpbp mass ",m," : ",m*pbp/vol.float
   toc("pbp")
 
