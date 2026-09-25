@@ -7,8 +7,7 @@
 ## reversibility check and pbp, draws the random numbers of its generators
 ## in its order (rng/rngGpu), and prints its measurements, so that
 ## tests/extra/tstaghmc_sh runs it as staghmc_sh.  The links go to the host
-## once per trajectory: reunit after an accept, plaquette, Polyakov loop,
-## saving.  The smeared links are U(3), so with smearing the solvers keep
+## for saving only.  The smeared links are U(3), so with smearing the solvers keep
 ## the determinant of each link with rows 0 and 1, 14 reals.  Beyond the
 ## parameters of staghmc_sh:
 ##   -rg: ranks per dimension, lanes as in bestagcg
@@ -317,19 +316,24 @@ proc setLinks() =
 
 proc faction(): seq[seq[float]] =
   ## |psi|^2 per species and term, psi = M(mt)^-1 M(mh) phi, the last
-  ## M(mt)^-1 phi, as staghmc_sh
+  ## M(mt)^-1 phi, as staghmc_sh; psi in xs, M(mh) phi in eta, together
+  ## with batch
+  tic("faction")
   result = newSeq[seq[float]](mass.len)
+  var b = newSeq[ptr UncheckedArray[float]](nt)
   for j in 0..<nt:
     let (k, i) = terms[j]
-    tic("faction")
     if i != hmasses[k].len:
-      s.applyMfull(ftmp, phi[j], mh(j))
-      s.solveM(psi, ftmp, mt(j), spa[j], ssp, full = true)
-    else:
-      s.solveM(psi, phi[j], mt(j), spa[j], ssp)
-    toc("solve")
-    result[k].add s.norm2(psi)
-    toc("norm")
+      s.applyMfull(eta[j], phi[j], mh(j))
+      b[j] = eta[j]
+    else: b[j] = phi[j]
+  if useBatch:
+    s.solveM(xs, b, toSeq(0..<nt).mapIt(mt(it)), spa, ssp, full = true)
+  else:
+    for j in 0..<nt: s.solveM(xs[j], b[j], mt(j), spa[j], ssp, full = true)
+  toc("solve")
+  for j in 0..<nt: result[terms[j][0]].add s.norm2(xs[j])
+  toc("norm")
 
 proc gaction(f2: seq[seq[float]]; p2: float): auto =
   let
@@ -502,26 +506,20 @@ proc reunit(g:auto) =
     echo "new unitary deviation avg: ",dd.avg," max: ",dd.max
   toc("reunit")
 
-proc mplaq(g:auto) =
+proc mplaq() =
+  ## as mplaq of staghmc_sh, on the GPU
   tic()
-  let
-    pl = g.plaq
-    nl = pl.len div 2
-    ps = pl[0..<nl].sum * 2.0
-    pt = pl[nl..^1].sum * 2.0
-  echo "MEASplaq ss: ",ps,"  st: ",pt,"  tot: ",0.5*(ps+pt)
+  let pl = gg.plaqs
+  echo "MEASplaq ss: ",pl[0],"  st: ",pl[1],"  tot: ",0.5*(pl[0]+pl[1])
   toc("plaq")
 
-proc ploop(g:auto) =
+var gw = newGpuGauge(lo)  # scratch for the Polyakov loop
+proc ploop() =
+  ## as ploop of staghmc_sh, on the GPU
   tic()
-  let pg = g[0].l.physGeom
-  var pl = newseq[typeof(g.wline @[1])](pg.len)
-  for i in 0..<pg.len:
-    pl[i] = g.wline repeat(i+1, pg[i])
-  let
-    pls = pl[0..^2].sum / float(pl.len-1)
-    plt = pl[^1]
-  echo "MEASploop spatial: ",pls.re," ",pls.im," temporal: ",plt.re," ",plt.im
+  let pl = gg.ploop(gw, gfg)
+  let pls = (re: (pl[0].re + pl[1].re + pl[2].re)/3.0, im: (pl[0].im + pl[1].im + pl[2].im)/3.0)
+  echo "MEASploop spatial: ",pls.re," ",pls.im," temporal: ",pl[3].re," ",pl[3].im
   toc("ploop")
 
 let rgpu = newRngGpu(r)  # after the host draws of the links
@@ -605,7 +603,7 @@ rgpu.upload(r)  # the host generators after the draws of the links
 gg.upload(gg.u, g)
 gg.fresh = false
 
-g.mplaq
+mplaq()
 
 echo H
 
@@ -635,15 +633,22 @@ for n in inittraj+1..inittraj+trajs:
         j0 += hmasses[k].len + 1
       inc i
   # phi = M(-mh)^-1 M(-mt) eta on the even sites, the last M(-mt) eta, the
-  # minus signs as staghmc_sh (bsm.lua convention)
+  # minus signs as staghmc_sh (bsm.lua convention); M(-mt) eta in xs
+  var hb: seq[int]  # the terms with a solve
   for j in 0..<nt:
     let (k, i) = terms[j]
     if i != hmasses[k].len:
-      s.applyMfull(ftmp, eta[j], -mt(j))
-      s.solveM(phi[j], ftmp, -mh(j), spa[j+1], ssp, full = true)
+      s.applyMfull(xs[j], eta[j], -mt(j))
+      hb.add j
     else:
       s.applyMfull(phi[j], eta[j], -mt(j))
-    zero(cast[ptr UncheckedArray[float]](addr phi[j][6*s.ne]), n6 - 6*s.ne)
+  if useBatch and hb.len > 1:
+    var sp = hb.mapIt(spa[it+1])
+    s.solveM(hb.mapIt(phi[it]), hb.mapIt(xs[it]), hb.mapIt(-mh(it)), sp, ssp, full = true)
+    for k, j in hb: spa[j+1] = sp[k]
+  else:
+    for j in hb: s.solveM(phi[j], xs[j], -mh(j), spa[j+1], ssp, full = true)
+  for j in 0..<nt: zero(cast[ptr UncheckedArray[float]](addr phi[j][6*s.ne]), n6 - 6*s.ne)
   toc("init")
   var f2 = faction()
   toc("fa solve 1")
@@ -674,24 +679,26 @@ for n in inittraj+1..inittraj+trajs:
     accr = R.uniform
   if accr <= acc or alwaysAccept:  # accept
     echo "ACCEPT:  dH: ",dH,"  exp(-dH): ",acc,"  r: ",accr,(if alwaysAccept:" (ignored)" else:"")
-    gg.download(g, gg.u)
-    g.reunit
-    gg.upload(gg.u, g)
+    tic()
+    let du = gg.reunit
+    echo "unitary deviation avg: ",du[0].avg," max: ",du[0].max
+    echo "new unitary deviation avg: ",du[1].avg," max: ",du[1].max
+    toc("reunit")
   else:  # reject
     echo "REJECT:  dH: ",dH,"  exp(-dH): ",acc,"  r: ",accr
     gg.copy(gg.u, g0)
-    gg.download(g, gg.u)
   gg.fresh = false
   linksSet = false
   pbp()
 
-  g.mplaq
-  g.ploop
+  mplaq()
+  ploop()
   toc("measure")
 
   if savefreq > 0 and n mod savefreq == 0:
     tic("save")
     let fn = savefile & &".{n:05}.lime"
+    gg.download(g, gg.u)
     if 0 != g.saveGauge(fn):
       qexError "Failed to save gauge to file: ",fn
     qexLog "saved gauge to file: ",fn," secs: ",getElapsedTime()

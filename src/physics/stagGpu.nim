@@ -1275,22 +1275,35 @@ proc cgB[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; x, b: arr
   result.r2 = r2
 
 proc solveB[V: static int](s: StagGpu[V,float]; x, b: array[nBatch, ptr UncheckedArray[float]]; m: array[nBatch, float];
-                           sp: var array[nBatch, SolverParams]; act0: int; ss: ptr StagGpu[V,float32]; r2in: float) =
-  ## solveM of the systems in act0 with b_o = 0 at once, each until its
-  ## residual drops by sp_j.r2req; a hop loads each link once for the
-  ## systems still iterating
+                           sp: var array[nBatch, SolverParams]; act0: int; ss: ptr StagGpu[V,float32]; r2in: float;
+                           full: bool) =
+  ## solveM of the systems in act0 at once, each until its residual drops
+  ## by sp_j.r2req; a hop loads each link once for the systems still
+  ## iterating
   let c = getDefaultComm()
   let n6 = 6*s.ne
   let b4 = sysB(s.vecB[5], n6)
   var b2: array[nBatch, float]
   var r2stop: array[nBatch, float]
   var maxits = 0
+  var a4, t2, am, bm: array[nBatch, float]
+  for j in 0..<nBatch:
+    a4[j] = 4.0*m[j]
+    t2[j] = -2.0
+    am[j] = if full: 1.0/m[j] else: 0.0
+    bm[j] = -0.5/m[j]
+  if full:
+    c.barrier
+    s.exB[1].packB(b, act0)
+    s.exB[1].start
+    s.exB[1].wait
+    s.dslashB(0, b4, b, b, s.exB[1].rbuf, a4, t2, act0, nil, nil, dot = false, send = false)
   for j in 0..<nBatch:
     if (act0 and (1 shl j)) != 0:
       let bj = b[j]
       let b4j = b4[j]
-      let mj = 4.0*m[j]
-      gpuFor(i, n6): b4j[i] = mj*bj[i]
+      let mj = a4[j]
+      if not full: gpuFor(i, n6): b4j[i] = mj*bj[i]
       b2[j] = s.redot(b4j, b4j)
       maxits = max(maxits, sp[j].maxits)
   c.allReduce(addr b2[0], nBatch)
@@ -1300,28 +1313,27 @@ proc solveB[V: static int](s: StagGpu[V,float]; x, b: array[nBatch, ptr Unchecke
   for j in 0..<nBatch:
     if (act0 and (1 shl j)) != 0: sp[j].addSolve(its[j], r2[j]/b2[j])
   c.barrier
-  var z, bm: array[nBatch, float]
-  for j in 0..<nBatch: bm[j] = -0.5/m[j]
   s.exB[0].packB(x, act0)
   s.exB[0].start
   s.exB[0].wait
-  s.dslashB(1, x, x, x, s.exB[0].rbuf, z, bm, act0, nil, nil, dot = false, send = false)
+  s.dslashB(1, x, x, if full: b else: x, s.exB[0].rbuf, am, bm, act0, nil, nil, dot = false, send = false)
 
 proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedArray[float]]; m: openArray[float];
-                            sp: var openArray[SolverParams]; ss: ptr StagGpu[V,float32] = nil; r2in = 1e-6) =
-  ## solveM of the systems j, x_j = M(m_j)^-1 b_j with b_j,o = 0, lightest
-  ## first in groups of nBatch: a hop loads each link once for the systems
-  ## of a group still iterating, and each system stops at its own
+                            sp: var openArray[SolverParams]; ss: ptr StagGpu[V,float32] = nil; r2in = 1e-6;
+                            full = false) =
+  ## solveM of the systems j, x_j = M(m_j)^-1 b_j, b_j,o = 0 unless full,
+  ## lightest first in groups of nBatch: a hop loads each link once for the
+  ## systems of a group still iterating, and each system stops at its own
   ## sp_j.r2req.  A group of one takes the solveM of one system.
-  var o = newSeq[(float, int)](x.len)  # (m_j, j), lightest first
-  for j in 0..<x.len: o[j] = (m[j], j)
+  var o = newSeq[(float, int)](x.len)  # (|m_j|, j), lightest first
+  for j in 0..<x.len: o[j] = (abs(m[j]), j)
   o.sort
   var k = 0
   while k < o.len:
     let nc = min(nBatch, o.len - k)
     if nc == 1:
       let i = o[k][1]
-      s.solveM(x[i], b[i], m[i], sp[i], ss, r2in)
+      s.solveM(x[i], b[i], m[i], sp[i], ss, r2in, full)
     else:
       var xg, bg: array[nBatch, ptr UncheckedArray[float]]
       var mg: array[nBatch, float]
@@ -1332,6 +1344,6 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedAr
         bg[j] = b[i]
         mg[j] = m[i]
         pg[j] = sp[i]
-      s.solveB(xg, bg, mg, pg, (1 shl nc) - 1, ss, r2in)
+      s.solveB(xg, bg, mg, pg, (1 shl nc) - 1, ss, r2in, full)
       for j in 0..<nc: sp[o[k+j][1]] = pg[j]
     k += nc
