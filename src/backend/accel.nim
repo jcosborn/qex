@@ -189,23 +189,29 @@ template gpuSites*(lo: Layout): int = lo.nSites
 #import gpumem
 #export gpumem
 
-const gpuSumSlots = 128  # atomic slots per value of gpuSum
+const gpuSumSlots = 128  # partial sums per value of the second stage
 const gpuSumTerms = 16  # terms per thread, i = t, t+T, ... for T threads
-var gpuSumBuf: ptr UncheckedArray[float]  # [8][gpuSumSlots], zero between the sums
+var gpuSumBuf: ptr UncheckedArray[float]  # [8][gpuSumSlots]
 var gpuSumHost: ptr UncheckedArray[float]  # pinned host copy of gpuSumBuf
+var gpuSumPart: ptr UncheckedArray[float]  # [m][T] sums of the threads
+var gpuSumPartLen = 0
 
 template gpuSum*(i: untyped; n: SomeInteger; m: static int; body: untyped): array[m, float] =
   ## The m <= 8 sums over i in 0..<n of the values body gives as an
-  ## array[m, float], on this rank.
+  ## array[m, float], on this rank, in an order fixed by n: thread t sums
+  ## i = t, t+T, ..., slot s of a second kernel sums the threads t = s,
+  ## s+128, ..., and the host the slots, so equal inputs give equal sums.
   block:
     if gpuSumBuf == nil:
       gpuSumBuf = cast[ptr UncheckedArray[float]](gpuMalloc(8*gpuSumSlots*sizeof(float)))
       gpuSumHost = cast[ptr UncheckedArray[float]](gpuMallocHost(8*gpuSumSlots*sizeof(float)))
-      let z = gpuSumBuf
-      gpuFor(k, 8*gpuSumSlots): z[k] = 0.0
-    let sb = gpuSumBuf
     let gpuN = int(n)
     let gpuT = (gpuN + gpuSumTerms - 1) div gpuSumTerms
+    if gpuSumPartLen < m*gpuT:
+      if gpuSumPart != nil: gpuFree(gpuSumPart)
+      gpuSumPartLen = max(m*gpuT, 2*gpuSumPartLen)
+      gpuSumPart = cast[ptr UncheckedArray[float]](gpuMalloc(gpuSumPartLen*sizeof(float)))
+    let sp = gpuSumPart
     gpuFor(t, gpuT):
       var a {.noInit.}: array[m, float]
       for c in 0..<m: a[c] = 0.0
@@ -214,10 +220,18 @@ template gpuSum*(i: untyped; n: SomeInteger; m: static int; body: untyped): arra
         if i < gpuN:
           let v: array[m, float] = body
           for c in 0..<m: a[c] += v[c]
-      for c in 0..<m: gpuAtomicAdd(sb, c*gpuSumSlots + t mod gpuSumSlots, a[c])
+      for c in 0..<m: sp[c*gpuT + t] = a[c]
+    let sb = gpuSumBuf
+    gpuFor(s, m*gpuSumSlots):
+      let c = s div gpuSumSlots
+      var a = 0.0
+      var t = s - c*gpuSumSlots
+      while t < gpuT:
+        a += sp[c*gpuT + t]
+        t += gpuSumSlots
+      sb[s] = a
     let h = gpuSumHost
     gpuMemCpyToCpu(h, sb, m*gpuSumSlots*sizeof(float))
-    gpuFor(k, m*gpuSumSlots): sb[k] = 0.0
     var r: array[m, float]
     for c in 0..<m:
       for k in 0..<gpuSumSlots: r[c] += h[c*gpuSumSlots + k]
