@@ -81,12 +81,20 @@ functions and defines the qexFor kernel template.
 
 with the MPI wrappers pointed at clang (`OMPI_CC=clang OMPI_CXX=clang++`
 for OpenMPI) and a CUDA toolkit clang supports (JLSE: llvm 22.1.8 with
-CUDA 12.9.1).  `-disable-machine-sink` for the device code: LLVM's
-machine sinking moves the arithmetic of a hop past the loads of the later
-directions, and the batched hop of 3 systems spilled (255 registers, up to
-4 KB of stack); without it, 164 registers and no stack, as with nvcc.  To
-link on a node without the NVIDIA driver, add `-L$CUDA/lib64/stubs` (the
-stub libcuda; the driver's at run time).
+CUDA 12.9.1).  The device flag `-disable-machine-sink` and the
+`[[clang::always_inline]]` call of qexFor belong together: LLVM's machine
+sinking moves the arithmetic of a hop past the loads of the later
+directions, and LLVM leaves large lambdas uninlined, so the batched hop of
+3 systems spilled (255 registers, up to 4 KB of stack; either change alone
+does not help).  With both, 164 registers and no stack, as with nvcc, and
+the default nBatch 3 fits.  To link on a node without the NVIDIA driver,
+add `-L$CUDA/lib64/stubs` (the stub libcuda; the driver's at run time).
+
+One H100 (JLSE, 2026-09-26; 3.35 TB/s HBM, stream triad 3.09 TB/s):
+bestagcg 32^4 2.66 TB/s for one system (80% of the peak), 2.45 TB/s for 3
+systems sharing a hop, 0.49 ns per site, system and iteration against 0.84
+alone; staghmcgpu_sh 24^4, 3 terms, 0.92 s per trajectory in double, 0.72
+mixed; eightFlavorSMGgpu 16^3x32 2.91 s, 24^3x48 on 4 H100s 5.01 s.
 
 ## HIP, AMD MI300A
 
