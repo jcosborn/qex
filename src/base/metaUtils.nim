@@ -641,6 +641,7 @@ proc inlineProcsX(body: NimNode): NimNode =
   # echo body.repr
   proc recurse(it: NimNode): NimNode =
     if it.kind == nnkTypeOfExpr: return it.copyNimTree
+    if it.kind in RoutineNodes: return it.copyNimTree  # local templates: their uses are expanded
     if it.kind in CallNodes and it.callName.kind==nnkSym:
       let procImpl = it.callName.getImpl
       # echo "inspecting call"
