@@ -435,6 +435,32 @@ proc cleanIterator(n:NimNode):NimNode =
   # echo "<<<<<< cleanIterator"
   # echo result.treerepr
 
+proc guardReturns(n: NimNode): NimNode =
+  ## s..; if c: (a..; return); t..  ->  s..; if c: a.. else: t..
+  ## A return left in the body becomes a break out of the inlined block, and
+  ## Nim wraps the expressions around a break in try/finally (C++ try blocks,
+  ## which device code rejects).
+  if n.kind != nnkStmtList: return n
+  result = newStmtList()
+  for i in 0..<n.len:
+    let s = n[i]
+    if s.kind == nnkIfStmt and s.len == 1 and s[0].kind == nnkElifBranch:
+      let b = s[0][1]
+      let r = if b.kind == nnkStmtList and b.len > 0: b[^1] else: b
+      if r.kind == nnkReturnStmt:
+        var a = newStmtList()
+        if b.kind == nnkStmtList:
+          for j in 0..<b.len-1: a.add b[j]
+        if r[0].kind != nnkEmpty: a.add r[0]  # result = x
+        if a.len == 0: a.add newNimNode(nnkDiscardStmt).add newEmptyNode()
+        var e = newStmtList()
+        for j in i+1..<n.len: e.add n[j]
+        var f = newTree(nnkIfStmt, newTree(nnkElifBranch, s[0][0], a))
+        if e.len > 0: f.add newTree(nnkElse, guardReturns e)
+        result.add f
+        return
+    result.add s
+
 proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
   # echo ">>>>>> inlineProcsY"
   # echo "call:\n", call.lisprepr
@@ -573,7 +599,7 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
     else:
       result = n.copyNimNode
       for c in n: result.add breakReturn c
-  body = breakReturn body
+  body = breakReturn guardReturns body
   # echo "### body after replace return with break:"
   # echo body.repr
   var sl:NimNode
