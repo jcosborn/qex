@@ -71,7 +71,7 @@ functions and defines the qexFor kernel template.
     cc = "mpicc"
     cflagsSpeed = "-O3 -march=native"
     cpp = "mpicxx"
-    cppflagsAlways = "-g -x cuda --cuda-gpu-arch=sm_90"
+    cppflagsAlways = "-g -x cuda --cuda-gpu-arch=sm_90 -Xarch_device -mllvm=-disable-machine-sink"
     cppflagsSpeed = "-O3 -march=native"
     ldppflags = "-g -no-pie -L$CUDA/lib64 -Wl,-rpath,$CUDA/lib64 -lcudart -ldl"
     simd = "SSE,AVX,AVX512"
@@ -81,8 +81,12 @@ functions and defines the qexFor kernel template.
 
 with the MPI wrappers pointed at clang (`OMPI_CC=clang OMPI_CXX=clang++`
 for OpenMPI) and a CUDA toolkit clang supports (JLSE: llvm 22.1.8 with
-CUDA 12.9.1).  The batched solver kernels of width 3 spill on NVPTX;
-build with `-d:nBatch=2` on H100.
+CUDA 12.9.1).  `-disable-machine-sink` for the device code: LLVM's
+machine sinking moves the arithmetic of a hop past the loads of the later
+directions, and the batched hop of 3 systems spilled (255 registers, up to
+4 KB of stack); without it, 164 registers and no stack, as with nvcc.  To
+link on a node without the NVIDIA driver, add `-L$CUDA/lib64/stubs` (the
+stub libcuda; the driver's at run time).
 
 ## HIP, AMD MI300A
 
