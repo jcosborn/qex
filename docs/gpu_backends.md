@@ -97,6 +97,39 @@ alone.  Per trajectory (2026-09-27, the second and third): staghmcgpu_sh
 24^4, 3 terms, 0.86 s in double, 0.66 mixed; eightFlavorSMGgpu 16^3x32
 2.73 s, 24^3x48 on 4 H100s 4.1 s.
 
+## CUDA with nvcc (branch gpu-nvcc)
+
+build/nvcc.sh turns the compile commands Nim writes for clang into nvcc
+commands (`-x cu -arch=sm_XY --extended-lambda`, the gcc options through
+`-Xcompiler`) for the files with kernels and gives the other files to the
+host compiler.  nvcc compiles every host device function for the device and
+rejects host globals there, so only the procs that kernels call are host
+device: the gpuInline pragma of base/basicOps, QEX_HD in
+backend/cuda/nimbase.h.  A kernel may call templates and gpuInline procs
+only; nvcc stops at any other proc, which clang compiles for the device
+without a word.
+
+    ccType = "clang"
+    ccDef = "cpp"
+    cc = "mpicc"
+    cflagsSpeed = "-O3 -march=native"
+    cpp = "<qex>/build/nvcc.sh"
+    cppflagsAlways = "-g -x cuda --cuda-gpu-arch=sm_90"
+    cppflagsSpeed = "-O3 -march=native"
+    ldpp = "mpicxx"
+    ldppflags = "-g -no-pie -L$CUDA/lib64 -Wl,-rpath,$CUDA/lib64 -lcudart -ldl"
+    simd = "SSE,AVX,AVX512"
+    vlen = 8
+    envs = @["OMPFLAG=-fopenmp"]
+    nimargs = @["-d:Backend=CUDA"]
+
+with `CUDA_HOME` the toolkit (JLSE: CUDA 13.3.1), `QEX_HOSTCXX` the host
+compiler (g++ 14), `CPATH` the MPI headers (for the host compiler and
+nvcc's preprocessing) and the MPI wrappers on the host compiler
+(`OMPI_CC=gcc-14 OMPI_CXX=g++-14`).  On one H100 the nvcc build runs within
+1-6% of the clang build (JLSE, 2026-09-26): the same registers in the
+batched hop, 2.72 TB/s for one system of bestagcg 32^4, 2.41 TB/s for 3.
+
 ## HIP, AMD MI300A
 
 amdclang compiles the Nim generated C++ as HIP.  backend/hip/nimbase.h

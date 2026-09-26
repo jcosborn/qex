@@ -5,6 +5,7 @@
 #include_next "nimbase.h"
 #ifdef __HIP__
 #include <hip/hip_runtime.h>  /* __launch_bounds__ */
+#define QEX_HD __host__ __device__  /* the gpuInline procs of base/basicOps */
 #undef N_INLINE
 #define N_INLINE(rettype, name) __host__ __device__ inline rettype name
 /* HIP defines __noinline__ as a macro */
@@ -14,4 +15,6 @@ template <int T, typename F> __global__ void __launch_bounds__(T) qexFor(long n,
   long i = (long)blockIdx.x * T + threadIdx.x;
   if (i < n) f(i);
 }
+#else
+#define QEX_HD
 #endif

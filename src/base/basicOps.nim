@@ -16,7 +16,7 @@ import metaUtils
 
 const Backend {.strdefine.} = "CPU"
 const inlineDecl = "inline __attribute__((always_inline)) $# $#$#"
-const gpuInlineDecl = (when Backend == "CUDA" or Backend == "HIP": "__host__ __device__ " else: "") & inlineDecl
+const gpuInlineDecl = (when Backend == "CUDA" or Backend == "HIP": "QEX_HD " else: "") & inlineDecl  # QEX_HD: backend/*/nimbase.h
 template getOptimPragmas* =
   ## alwaysInline: forced inline on the host; gpuInline: also callable from
   ## gpuFor bodies, for the procs that kernels call (templates need nothing)
