@@ -4,6 +4,7 @@
 ##   -mixed:1 also the mixed precision solve, -r2in its restart tolerance
 ##   -recon:0 links of 18 reals, -reals:14 rows 0, 1 and the determinant; -fwd: 1 forward links only, 0 both, -1 by size
 ##   -ipc:0 MPI for peers on the node too; -split: second hop split, 1, 0, -1 off-node
+##   -fixed:1 the CG dot products summed in a fixed order (sumFixed), else atomically
 ##   -nd:n times n applications of A on the CPU and the GPU; -prof:1 profile
 ##   -nb:k also k systems of the mass at once (solveM of several systems)
 ## Prints the true residual of the GPU solution and its difference from the CPU one.
@@ -62,7 +63,9 @@ haloIpc = intParam("ipc", 1) != 0
 hopSplit = intParam("split", -1)
 let reals = intParam("reals", if intParam("recon", 1) != 0: 12 else: 18)
 let fwd = intParam("fwd", -1)
+let fixed = intParam("fixed", 0) != 0
 var sg = newStagGpu(g, float64, reals, fwd)
+sg.fixed = fixed
 echo "GPU links: ", sg.nl, " reals", if sg.lb == nil: ", forward only" else: ""
 for k in 0..<ngpu:
   var spg = initSolverParams()
@@ -77,6 +80,7 @@ for k in 0..<ngpu:
 let nb = intParam("nb", 0)
 if nb > 0:  # nb systems with random sources, same iterations: ceil(nb/nBatch) hops of both links per iteration
   var sb = newStagGpu(g, float64, reals, fwd, batch = true)
+  sb.fixed = fixed
   var xs, bs = newSeq[ptr UncheckedArray[float64]](nb)
   for j in 0..<nb:
     xs[j] = cast[ptr UncheckedArray[float64]](gpuMalloc(6*sb.n*sizeof(float64)))
@@ -128,6 +132,7 @@ if nd > 0:  # A = 4m^2 - D_eo D_oe applications, flops as stagD2xx
 
 if intParam("mixed", 0) != 0:
   var sgs = newStagGpu(g, float32, reals, fwd)
+  sgs.fixed = fixed
   for k in 0..<ngpu:
     var spg = initSolverParams()
     spg.r2req = r2req
