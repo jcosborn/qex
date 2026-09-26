@@ -2,10 +2,15 @@ import macros
 import strUtils
 
 proc isMagic(x: NimNode): bool =
+  ## magic procs and C functions: the body of an importc proc, e.g. sqrt of
+  ## std/math, holds only its docs
   # echo x.treerepr
   let pragmas = x[4]
-  if pragmas.kind==nnkPragma and pragmas[0].kind==nnkExprColonExpr and
-     $pragmas[0][0]=="magic": result = true
+  if pragmas.kind==nnkPragma:
+    for p in pragmas:
+      let n = if p.kind==nnkExprColonExpr: p[0] else: p
+      if n.kind in {nnkIdent,nnkSym} and (n.eqIdent("magic") or n.eqIdent("importc") or n.eqIdent("importcpp")):
+        return true
 
 template isNotMagic(x: NimNode): bool = not isMagic(x)
 
