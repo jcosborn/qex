@@ -21,7 +21,8 @@ import times, sequtils
 qexInit()
 let lat = intSeqParam("lat", @[8,8,8,8])
 let rg = intSeqParam("rg", @[1,1,1,1])
-let ig = intSeqParam("ig", innerGeom(lat, rg, static(VLEN)))
+var ig = intSeqParam("ig", newSeq[int]())
+if ig.len == 0: ig = innerGeom(lat, rg, static(VLEN))  # only without -ig: it rejects some layouts -ig may ask for
 let lo = newLayout(lat, VLEN, rg, ig)
 var g = newSeq[type(lo.ColorMatrix())](lat.len)
 for mu in 0..<lat.len: g[mu] = lo.ColorMatrix()
