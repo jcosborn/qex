@@ -196,7 +196,8 @@ proc sumFixed*(r: var openArray[float]; a, w, h: ptr UncheckedArray[float]; m, n
   ## r[c] = the sum of a[c*n + i] over i < n for c < m, in an order fixed by
   ## n: each level adds the values t, t+T, ..., T = ceil(n/16), in thread t,
   ## until at most sumHost values remain, which the host adds.  w holds
-  ## m*(n div 15 + 16) reals, the pinned h m*sumHost.
+  ## m*(n div 15 + 16) reals, the pinned h m*sumHost.  The levels queue
+  ## after the kernels already submitted; the copy to h waits for all.
   var src = a
   var cnt = n
   var off = 0
@@ -205,7 +206,7 @@ proc sumFixed*(r: var openArray[float]; a, w, h: ptr UncheckedArray[float]; m, n
     let s = src
     let d = cast[ptr UncheckedArray[float]](addr w[off])
     let c0 = cnt
-    gpuFor(k, m*t1):
+    gpuForAsync(k, m*t1):
       let c = k div t1
       let t = k - c*t1
       var acc = 0.0
@@ -216,6 +217,7 @@ proc sumFixed*(r: var openArray[float]; a, w, h: ptr UncheckedArray[float]; m, n
     src = d
     off += m*t1
     cnt = t1
+  gpuWaitAsync()
   gpuMemCpyToCpu(h, src, m*cnt*sizeof(float))
   for c in 0..<m:
     r[c] = 0.0
@@ -241,7 +243,7 @@ template gpuSum*(i: untyped; n: SomeInteger; m: static int; body: untyped): arra
       gpuSumPartLen = max(gpuL, 2*gpuSumPartLen)
       gpuSumPart = cast[ptr UncheckedArray[float]](gpuMalloc(gpuSumPartLen*sizeof(float)))
     let sp = gpuSumPart
-    gpuFor(t, gpuT):
+    gpuForAsync(t, gpuT):
       var a {.noInit.}: array[m, float]
       for c in 0..<m: a[c] = 0.0
       for j in 0..<sumTerms:

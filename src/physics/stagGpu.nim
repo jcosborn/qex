@@ -461,10 +461,10 @@ proc applyD2eeCG[V: static int; T](s: StagGpu[V,T]; w, r, t: ptr UncheckedArray[
   toc("dslash eo")
   s.ex[0].start
   toc("start eo")
-  gpuWaitAsync()
-  if s.fixed:
+  if s.fixed:  # sumFixed waits for the hops
     sumFixed(result, rs, cast[ptr UncheckedArray[float]](addr s.red[4*max(s.ne, nRed)]), s.hred, 2, s.ne)
   else:
+    gpuWaitAsync()
     let h = s.hred
     gpuMemCpyToCpu(h, rs, 2*nRed*sizeof(float))
     for k in 0..<nRed:
@@ -1165,13 +1165,13 @@ proc applyD2eeCGB[V: static int; C: static int; T](s: StagGpu[V,T]; w, r, t: arr
     s.exB[1].wait(sync = false)
     s.dslashB(0, w, t, r, s.exB[1].rbuf, a, mo, so, rs, rz, dot = true, send = true, nowait = true)
   s.exB[0].start
-  gpuWaitAsync()
   if s.fixed:  # the site sums in a fixed order, as applyD2eeCG
     var r: array[2*nBatch, float]
     sumFixed(r, rs, cast[ptr UncheckedArray[float]](addr s.redB[4*nBatch*max(s.ne, nRed)]), s.hredB, 2*nBatch, s.ne)
     for j in so:
       for c in 2*j..2*j+1: result[c] = r[c]
   else:
+    gpuWaitAsync()
     let h = s.hredB
     gpuMemCpyToCpu(h, rs, 2*nBatch*nRed*sizeof(float))
     for j in so:
