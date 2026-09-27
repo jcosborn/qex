@@ -17,12 +17,12 @@
 ## Box site k < n is local site k of the fields, n + p the shell site at
 ## receive position p of the exchanges.  Box fields are [f][nb div V][18][V]
 ## like GpuGauge.u, the pairs mu != nu at f = ix(mu, nu).  A thread takes one
-## pair of one site; the staple sums of the force and the derivatives of P
-## run in separate kernels, in sub-groups of 16, where they keep their
-## matrices in registers (SIMD32 for any of them is 3-12% slower).  The
-## kernels take the sub-groups by tiles of the local sites (ord), so that
-## the links a sub-group reads at its neighbors, of either parity, are still
-## in the L2 cache when the neighbors read them.
+## pair of one site, in sub-groups of 16 (SIMD32 is 3-12% slower), which the
+## kernels take by tiles of the local sites (ord), so that the links a
+## sub-group reads at its neighbors, of either parity, are still in the L2
+## cache when the neighbors read them.  The force computes the staple sums
+## of level 2 and the derivative of its P in one kernel, those of level 1,
+## with the staples of two directions, in two kernels, which is faster.
 import qex
 import gauge/[hypsmear, gaugeGpu]
 import comms/[gather, halogpu]
@@ -617,10 +617,7 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
       else:
         forStatic e, 0, 17: c3[o + e*V] = 0.0
   toc("level 3")
-  # the chain a s of a level, s its staple sums, goes to its array, then a
-  # second kernel replaces it with r, which keeps the registers of each
-  # kernel within bounds
-  gpuFor(i, 12*ntp, 16):  # level 2: c2 = a3 s
+  gpuFor(i, 12*ntp, 16):  # level 2: c2 = r of the chain a3 s, s the staple sums, where a staple is there, else 0
     planeSite(i, 12, ord, q, k)
     if k < nt:
       let mu = q div 3  # q = ix(mu, nu)
@@ -631,37 +628,30 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
       let fmubnu = if fmu >= 0: int nbr[(4+nu)*nb + fmu] else: -1
       var s {.noInit.}: M3
       forStatic e, 0, 17: s[e] = 0.0
-      template lx(m, j: untyped) = mload(m, v2, bo(V, ix(nu, mu), nb, j), V)
-      template ly(m, j: untyped) = mload(m, v2, bo(V, q, nb, j), V)
-      template cx(m, j: untyped) = mload(m, c3, bo(V, nu, nb, j), V)
-      template cy(m, j: untyped) = mload(m, c3, bo(V, mu, nb, j), V)
       var hit = false
-      symderiv(hit, s, lx, ly, cx, cy, k, fnu, fmu, bnu, fmubnu, n)
+      block:
+        template lx(m, j: untyped) = mload(m, v2, bo(V, ix(nu, mu), nb, j), V)
+        template ly(m, j: untyped) = mload(m, v2, bo(V, q, nb, j), V)
+        template cx(m, j: untyped) = mload(m, c3, bo(V, nu, nb, j), V)
+        template cy(m, j: untyped) = mload(m, c3, bo(V, mu, nb, j), V)
+        symderiv(hit, s, lx, ly, cx, cy, k, fnu, fmu, bnu, fmubnu, n)
       let o = bo(V, q, nb, k)
-      forStatic e, 0, 17: c2[o + e*V] = a3*s[e]
-  toc("level 2 sums")
-  gpuFor(i, 12*ntp, 16):  # level 2: c2 = r where a staple is there, elsewhere s = 0
-    planeSite(i, 12, ord, q, k)
-    if k < nt:
-      let mu = q div 3
-      let nu = q - 3*mu + int(q - 3*mu >= mu)
-      let fmu = int nbr[mu*nb + k]
-      let fnu = int nbr[nu*nb + k]
-      let bnu = int nbr[(4+nu)*nb + k]
-      let fmubnu = if fmu >= 0: int nbr[(4+nu)*nb + fmu] else: -1
-      let o = bo(V, q, nb, k)
-      if fnu >= 0 and fmu >= 0 and (k < n or fnu < n or fmu < n) or
-         bnu >= 0 and fmubnu >= 0 and (bnu < n or fmubnu < n):
+      if hit:
         var r {.noInit.}: M3
         template lu(m: untyped) = mload(m, v2, o, V)
         template lx(m: untyped) = mload(m, v2x, o, V)
-        template lc(m: untyped) = mload(m, c2, o, V)
+        template lc(m: untyped) =
+          forStatic e, 0, 17: m[e] = a3*s[e]
         template park(m: untyped) =
           forStatic e, 0, 17: c2[o + e*V] = m[e]
         template unpark(m: untyped) = mload(m, c2, o, V)
         projUderiv3(r, lu, lx, lc, park, unpark)
         forStatic e, 0, 17: c2[o + e*V] = r[e]
+      else:
+        forStatic e, 0, 17: c2[o + e*V] = 0.0
   toc("level 2")
+  # the chain a2 s of level 1, s its staple sums, goes to c1, then a second
+  # kernel replaces it with r
   gpuFor(i, 12*ntp, 16):  # level 1: c1 = a2 s
     planeSite(i, 12, ord, q, k)
     if k < nt:
