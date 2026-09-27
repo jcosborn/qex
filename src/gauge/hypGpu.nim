@@ -201,6 +201,18 @@ proc mulAN3(r: var M3; a, b: M3) {.alwaysInline.} =
       r[6*i+2*j] = re
       r[6*i+2*j+1] = im
 
+proc mulc3(r: var M3; cr, ci: float; a, b: M3) {.alwaysInline.} =
+  ## r += (cr + i ci) a b
+  forStatic i, 0, 2:
+    forStatic j, 0, 2:
+      var re = a[6*i]*b[2*j] - a[6*i+1]*b[2*j+1]
+      var im = a[6*i]*b[2*j+1] + a[6*i+1]*b[2*j]
+      forStatic k, 1, 2:
+        re += a[6*i+2*k]*b[6*k+2*j] - a[6*i+2*k+1]*b[6*k+2*j+1]
+        im += a[6*i+2*k]*b[6*k+2*j+1] + a[6*i+2*k+1]*b[6*k+2*j]
+      r[6*i+2*j] += cr*re - ci*im
+      r[6*i+2*j+1] += cr*im + ci*re
+
 proc addc3(r: var M3; cr, ci: float; a: M3) {.alwaysInline.} =
   ## r += (cr + i ci) a
   forStatic e, 0, 8:
@@ -308,8 +320,8 @@ proc sylsolve3(x: var M3; a, c: M3) {.alwaysInline.} =
   ## x with a x + x a = c, as sylsolve: for d = adj a, t = tr a, s = tr d, r = det a,
   ##   x = c0 c - c4 (a c + c a) + c2 a c a + c1 d c d - c2 (d c + c d)
   ##   c2 = 1/(2 (s t - r)),  c0 = c2 (s + t^2),  c1 = c2 t/r,  c4 = c2 t
-  ## d is computed again for its terms, which keeps five matrices live
-  var d {.noInit.}, t {.noInit.}, w {.noInit.}: M3
+  ## d is computed again for its terms, which keeps four matrices live
+  var d {.noInit.}, t {.noInit.}: M3
   adj3(d, a)
   let tr = a[0] + a[8] + a[16]
   let ti = a[1] + a[9] + a[17]
@@ -331,19 +343,15 @@ proc sylsolve3(x: var M3; a, c: M3) {.alwaysInline.} =
   let c4i = c2r*ti + c2i*tr
   forStatic e, 0, 17: x[e] = 0.0
   addc3(x, c2r*qr - c2i*qi, c2r*qi + c2i*qr, c)  # c0 c
+  mulc3(x, -c4r, -c4i, c, a)
   mul3(t, a, c)
   addc3(x, -c4r, -c4i, t)
-  mul3(w, t, a)
-  addc3(x, c2r, c2i, w)
-  mul3(t, c, a)
-  addc3(x, -c4r, -c4i, t)
+  mulc3(x, c2r, c2i, t, a)
   adj3(d, a)
+  mulc3(x, -c2r, -c2i, c, d)
   mul3(t, d, c)
   addc3(x, -c2r, -c2i, t)
-  mul3(w, t, d)
-  addc3(x, c2r*tor - c2i*toi, c2r*toi + c2i*tor, w)  # c1 d c d
-  mul3(t, c, d)
-  addc3(x, -c2r, -c2i, t)
+  mulc3(x, c2r*tor - c2i*toi, c2r*toi + c2i*tor, t, d)  # c1 d c d
 
 template projUderiv3(r: untyped; lu, lx, lc, park, unpark: untyped) =
   ## r = the derivative of projectU at x for the chain c, u = projectU(x),
