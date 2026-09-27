@@ -19,19 +19,23 @@
 ## like GpuGauge.u, the pairs mu != nu at f = ix(mu, nu).  A thread takes one
 ## pair of one site; the staple sums of the force and the derivatives of P
 ## run in separate kernels, in sub-groups of 16, where they keep their
-## matrices in registers (SIMD32 for any of them is 3-12% slower).
+## matrices in registers (SIMD32 for any of them is 3-12% slower).  The
+## kernels take the sub-groups by tiles of the local sites (ord), so that
+## the links a sub-group reads at its neighbors, of either parity, are still
+## in the L2 cache when the neighbors read them.
 import qex
 import gauge/[hypsmear, gaugeGpu]
 import comms/[gather, halogpu]
 import backend/accel
 import base/metaUtils
-import std/math
+import std/[algorithm, math]
 getOptimPragmas()
 
 type
   HypGpu*[V: static int] = object
     n*, nr*, nb*: int  # local sites, shell sites, box sites n + nr rounded up to V
     nbr*: ptr UncheckedArray[int32]  # [8][nb]: box index of x+mu, then of x-mu, -1 outside the box
+    ord*: ptr UncheckedArray[int32]  # the sub-groups of 16 box sites in the order of the kernels, local ones first
     ex*: array[4, GpuHaloEx[float]]  # thin links of the shell sites
     rv*: array[4, GpuHaloEx[float]]  # force on the shell sites, to their owners
     v1x*, v1*, v2x*, v2*: ptr UncheckedArray[float]  # [12][nb div V][18][V]: levels 1 and 2, before and after P
@@ -107,6 +111,28 @@ proc newHypGpu*[V: static int](lo: Layout[V]): HypGpu[V] =
           for d in countdown(nd-1, 0): l = l*be[d] + y[d]
           nbr[(fb*nd + mu)*nb + bi[b]] = bi[l]
   result.nbr = nbr.toDevice
+  # the local sub-groups by tiles of 4 outer sites in each dimension but the
+  # last, whole in it, lexicographic in a tile, then the shell ones: the
+  # kernels read the links at the neighbors of a site again while they are
+  # in the L2 cache, also those of the other parity, which qlayout keeps in
+  # the other half
+  let og = lo.outerGeom
+  var ks = newSeq[(int, int, int)]((n + nr + 15) div 16)
+  for g in 0..<ks.len:
+    var t, w = 0
+    if 16*g < n:
+      for d in countdown(nd-1, 0):
+        let e = if d == nd-1: og[d] else: min(4, og[d])
+        let x = (lo.coords[d][16*g] - lo.coordmin[d]) mod og[d]
+        t = t*((og[d] + e - 1) div e) + x div e
+        w = w*e + x mod e
+    else:
+      t = int.high
+    ks[g] = (t, w, g)
+  ks.sort
+  var ord = newSeq[int32](ks.len)
+  for b, s in ks: ord[b] = int32 s[2]
+  result.ord = ord.toDevice
   toc("neighbors")
   for mu in 0..<nd: result.ex[mu] = newGpuHaloEx[float](gm, 18, n, V, c)
   var gr = gm.reverse  # sends the shell sites, n + p at position p, back
@@ -132,6 +158,7 @@ proc newHypGpu*[V: static int](lo: Layout[V]): HypGpu[V] =
 
 proc free*[V: static int](h: var HypGpu[V]) =
   gpuFree(h.nbr)
+  gpuFree(h.ord)
   for p in [h.v1x, h.v1, h.v2x, h.v2, h.v3x, h.cf, h.c3, h.c1, h.c2, h.rt]: gpuFree(p)
   for mu in 0..3:
     h.ex[mu].free
@@ -346,15 +373,15 @@ template projUderiv3(r: untyped; lu, lx, lc, park, unpark: untyped) =
     unpark(r)
     forStatic e, 0, 17: r[e] -= t1[e]
 
-template planeSite(i: untyped; np: static int; q, k: untyped) =
-  ## plane q of np and site k of thread i: the planes of 16 consecutive
-  ## sites in consecutive sub-groups of 16, which then run close in time and
-  ## share the loads of their neighbors in the caches, each sub-group still
-  ## loading 16 consecutive sites
+template planeSite(i: untyped; np: static int; ord, q, k: untyped) =
+  ## plane q of np and site k of thread i: the planes of the 16 consecutive
+  ## sites of sub-group ord[b] in consecutive sub-groups of 16, which then
+  ## run close in time and share the loads of their neighbors in the caches,
+  ## each sub-group still loading 16 consecutive sites
   let b = i div (16*np)
   let r = i - b*(16*np)
   let q = r div 16
-  let k = b*16 + r - q*16
+  let k = 16*int(ord[b]) + r - q*16
 
 template shellLinks(h, g: untyped) =
   ## the locals of thin, for the links of g at box sites
@@ -460,6 +487,7 @@ proc smear*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl: ptr Un
   let nt = n + h.nr
   let ntp = 16*((nt + 15) div 16)  # nt padded to whole blocks of planeSite
   let nbr = h.nbr
+  let ord = h.ord
   let v1x = h.v1x
   let v1 = h.v1
   let v2x = h.v2x
@@ -472,7 +500,7 @@ proc smear*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl: ptr Un
   let m2 = 1 - c.alpha2
   let m3 = 1 - c.alpha3
   gpuFor(i, 12*ntp, 16):
-    planeSite(i, 12, q, k)
+    planeSite(i, 12, ord, q, k)
     if k < nt:
       let mu = q div 3  # q = ix(mu, nu)
       let nu = q - 3*mu + int(q - 3*mu >= mu)
@@ -493,7 +521,7 @@ proc smear*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl: ptr Un
         forStatic e, 0, 17: v1[o + e*V] = r[e]
   toc("level 1")
   gpuFor(i, 12*ntp, 16):
-    planeSite(i, 12, q, k)
+    planeSite(i, 12, ord, q, k)
     if k < nt:
       let mu = q div 3  # q = ix(mu, nu)
       let nu = q - 3*mu + int(q - 3*mu >= mu)
@@ -517,25 +545,25 @@ proc smear*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl: ptr Un
         projU3(r, s)
         forStatic e, 0, 17: v2[o + e*V] = r[e]
   toc("level 2")
-  gpuFor(i, 4*n, 16):
-    let mu = i div n
-    let k = i - mu*n
-    let fmu = int nbr[mu*nb + k]
-    var w {.noInit.}, s {.noInit.}, r {.noInit.}: M3
-    thin(w, mu, k)
-    forStatic e, 0, 17: s[e] = m3*w[e]
-    for nu in 0..3:
-      if nu != mu:
-        let fnu = int nbr[nu*nb + k]
-        let bnu = int nbr[(4+nu)*nb + k]
-        let fmubnu = int nbr[(4+nu)*nb + fmu]
-        template lx(m, j: untyped) = mload(m, v2, bo(V, ix(nu, mu), nb, j), V)
-        template ly(m, j: untyped) = mload(m, v2, bo(V, ix(mu, nu), nb, j), V)
-        staple(s, a3, lx, ly, k, fnu, fmu, bnu, fmubnu)
-    let o = 18*mu*n + lo18(V, k)
-    forStatic e, 0, 17: v3x[o + e*V] = s[e]
-    projU3(r, s)
-    forStatic e, 0, 17: fl[o + e*V] = r[e]
+  gpuFor(i, 4*16*((n + 15) div 16), 16):  # the local sub-groups come first in ord
+    planeSite(i, 4, ord, mu, k)
+    if k < n:
+      let fmu = int nbr[mu*nb + k]
+      var w {.noInit.}, s {.noInit.}, r {.noInit.}: M3
+      thin(w, mu, k)
+      forStatic e, 0, 17: s[e] = m3*w[e]
+      for nu in 0..3:
+        if nu != mu:
+          let fnu = int nbr[nu*nb + k]
+          let bnu = int nbr[(4+nu)*nb + k]
+          let fmubnu = int nbr[(4+nu)*nb + fmu]
+          template lx(m, j: untyped) = mload(m, v2, bo(V, ix(nu, mu), nb, j), V)
+          template ly(m, j: untyped) = mload(m, v2, bo(V, ix(mu, nu), nb, j), V)
+          staple(s, a3, lx, ly, k, fnu, fmu, bnu, fmubnu)
+      let o = 18*mu*n + lo18(V, k)
+      forStatic e, 0, 17: v3x[o + e*V] = s[e]
+      projU3(r, s)
+      forStatic e, 0, 17: fl[o + e*V] = r[e]
   toc("level 3")
 
 proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg: ptr UncheckedArray[float];
@@ -551,6 +579,7 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
   let nt = n + h.nr
   let ntp = 16*((nt + 15) div 16)  # nt padded to whole blocks of planeSite
   let nbr = h.nbr
+  let ord = h.ord
   let v1x = h.v1x
   let v1 = h.v1
   let v2x = h.v2x
@@ -567,7 +596,7 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
   let m2 = 1 - c.alpha2
   let m3 = 1 - c.alpha3
   gpuFor(i, 4*ntp, 16):  # level 3
-    planeSite(i, 4, mu, k)
+    planeSite(i, 4, ord, mu, k)
     if k < nt:
       let o = bo(V, mu, nb, k)
       if k < n:
@@ -596,7 +625,7 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
   # replaces them with the chain a r and adds m r to rt for r = the
   # derivative of P, which keeps the registers of each kernel within bounds
   gpuFor(i, 12*ntp, 16):  # level 2: s
-    planeSite(i, 12, q, k)
+    planeSite(i, 12, ord, q, k)
     if k < nt:
       let mu = q div 3  # q = ix(mu, nu)
       let nu = q - 3*mu + int(q - 3*mu >= mu)
@@ -616,7 +645,7 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
       forStatic e, 0, 17: c2[o + e*V] = s[e]
   toc("level 2 sums")
   gpuFor(i, 12*ntp, 16):  # level 2: c2 = a2 r, rt = m2 r where a staple is there
-    planeSite(i, 12, q, k)
+    planeSite(i, 12, ord, q, k)
     if k < nt:
       let mu = q div 3
       let nu = q - 3*mu + int(q - 3*mu >= mu)
@@ -642,7 +671,7 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
         forStatic e, 0, 17: rt[o + e*V] = 0.0
   toc("level 2")
   gpuFor(i, 12*ntp, 16):  # level 1: s
-    planeSite(i, 12, q, k)
+    planeSite(i, 12, ord, q, k)
     if k < nt:
       let mu = q div 3  # q = ix(mu, nu)
       let nu = q - 3*mu + int(q - 3*mu >= mu)
@@ -668,7 +697,7 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
       forStatic e, 0, 17: c1[o + e*V] = s[e]
   toc("level 1 sums")
   gpuFor(i, 12*ntp, 16):  # level 1: c1 = a1 r, rt += m1 r where a staple is there
-    planeSite(i, 12, q, k)
+    planeSite(i, 12, ord, q, k)
     if k < nt:
       let mu = q div 3
       let nu = q - 3*mu + int(q - 3*mu >= mu)
@@ -695,7 +724,7 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
           rt[o + e*V] += m1*r[e]
   toc("level 1")
   gpuFor(i, 4*ntp, 16):  # thin links
-    planeSite(i, 4, mu, k)
+    planeSite(i, 4, ord, mu, k)
     if k < nt:
       let fmu = int nbr[mu*nb + k]
       var s {.noInit.}, w {.noInit.}: M3
