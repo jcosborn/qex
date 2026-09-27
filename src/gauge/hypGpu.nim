@@ -40,9 +40,8 @@ type
     rv*: array[4, GpuHaloEx[float]]  # force on the shell sites, to their owners
     v1x*, v1*, v2x*, v2*: ptr UncheckedArray[float]  # [12][nb div V][18][V]: levels 1 and 2, before and after P
     v3x*: ptr UncheckedArray[float]  # [4][n div V][18][V]: level 3 before P
-    cf*, c3*: ptr UncheckedArray[float]  # [4][nb div V][18][V]: force on the thin links, chain of level 3
-    c1*, c2*: ptr UncheckedArray[float]  # [12][nb div V][18][V]: chains of levels 1 and 2
-    rt*: ptr UncheckedArray[float]  # [12][nb div V][18][V]: force on the thin links through each pair
+    cf*, c3*: ptr UncheckedArray[float]  # [4][nb div V][18][V]: force on the thin links, derivative of P at level 3
+    c1*, c2*: ptr UncheckedArray[float]  # [12][nb div V][18][V]: derivatives of P at levels 1 and 2
 
   M3 = array[18, float]  # 3x3 complex matrix, U_ab at 6a+2b (re) and 6a+2b+1 (im)
 
@@ -153,13 +152,12 @@ proc newHypGpu*[V: static int](lo: Layout[V]): HypGpu[V] =
   result.c3 = zeros(4*m)
   result.c1 = zeros(12*m)
   result.c2 = zeros(12*m)
-  result.rt = zeros(12*m)
   toc("fields")
 
 proc free*[V: static int](h: var HypGpu[V]) =
   gpuFree(h.nbr)
   gpuFree(h.ord)
-  for p in [h.v1x, h.v1, h.v2x, h.v2, h.v3x, h.cf, h.c3, h.c1, h.c2, h.rt]: gpuFree(p)
+  for p in [h.v1x, h.v1, h.v2x, h.v2, h.v3x, h.cf, h.c3, h.c1, h.c2]: gpuFree(p)
   for mu in 0..3:
     h.ex[mu].free
     h.rv[mu].free
@@ -595,7 +593,10 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
   let m1 = 1 - c.alpha1
   let m2 = 1 - c.alpha2
   let m3 = 1 - c.alpha3
-  gpuFor(i, 4*ntp, 16):  # level 3
+  # a level l stores the derivative r of its P in cl, which its readers
+  # scale: the chain of the level below is a_l r, the force on the thin
+  # links through the same pair (1-alpha_l) r
+  gpuFor(i, 4*ntp, 16):  # level 3: c3 = r
     planeSite(i, 4, ord, mu, k)
     if k < nt:
       let o = bo(V, mu, nb, k)
@@ -609,22 +610,17 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
           mload(m, f, ol, V)
           forStatic e, 0, 17: m[e] *= sc
         template park(m: untyped) =
-          forStatic e, 0, 17: cf[o + e*V] = m[e]
-        template unpark(m: untyped) = mload(m, cf, o, V)
+          forStatic e, 0, 17: c3[o + e*V] = m[e]
+        template unpark(m: untyped) = mload(m, c3, o, V)
         projUderiv3(r, lu, lx, lc, park, unpark)
-        forStatic e, 0, 17:
-          cf[o + e*V] = m3*r[e]
-          c3[o + e*V] = a3*r[e]
+        forStatic e, 0, 17: c3[o + e*V] = r[e]
       else:
-        forStatic e, 0, 17:
-          cf[o + e*V] = 0.0
-          c3[o + e*V] = 0.0
+        forStatic e, 0, 17: c3[o + e*V] = 0.0
   toc("level 3")
-  let rt = h.rt
-  # the staple sums s of a level go to its chain array, then a second kernel
-  # replaces them with the chain a r and adds m r to rt for r = the
-  # derivative of P, which keeps the registers of each kernel within bounds
-  gpuFor(i, 12*ntp, 16):  # level 2: s
+  # the chain a s of a level, s its staple sums, goes to its array, then a
+  # second kernel replaces it with r, which keeps the registers of each
+  # kernel within bounds
+  gpuFor(i, 12*ntp, 16):  # level 2: c2 = a3 s
     planeSite(i, 12, ord, q, k)
     if k < nt:
       let mu = q div 3  # q = ix(mu, nu)
@@ -642,9 +638,9 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
       var hit = false
       symderiv(hit, s, lx, ly, cx, cy, k, fnu, fmu, bnu, fmubnu, n)
       let o = bo(V, q, nb, k)
-      forStatic e, 0, 17: c2[o + e*V] = s[e]
+      forStatic e, 0, 17: c2[o + e*V] = a3*s[e]
   toc("level 2 sums")
-  gpuFor(i, 12*ntp, 16):  # level 2: c2 = a2 r, rt = m2 r where a staple is there
+  gpuFor(i, 12*ntp, 16):  # level 2: c2 = r where a staple is there, elsewhere s = 0
     planeSite(i, 12, ord, q, k)
     if k < nt:
       let mu = q div 3
@@ -664,13 +660,9 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
           forStatic e, 0, 17: c2[o + e*V] = m[e]
         template unpark(m: untyped) = mload(m, c2, o, V)
         projUderiv3(r, lu, lx, lc, park, unpark)
-        forStatic e, 0, 17:
-          c2[o + e*V] = a2*r[e]
-          rt[o + e*V] = m2*r[e]
-      else:
-        forStatic e, 0, 17: rt[o + e*V] = 0.0
+        forStatic e, 0, 17: c2[o + e*V] = r[e]
   toc("level 2")
-  gpuFor(i, 12*ntp, 16):  # level 1: s
+  gpuFor(i, 12*ntp, 16):  # level 1: c1 = a2 s
     planeSite(i, 12, ord, q, k)
     if k < nt:
       let mu = q div 3  # q = ix(mu, nu)
@@ -694,9 +686,9 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
             template cy(m, j: untyped) = mload(m, c2, bo(V, ix(mu, b), nb, j), V)
             symderiv(hit, s, lx, ly, cx, cy, k, fa, fmu, ba, fmuba, int.high)
       let o = bo(V, q, nb, k)
-      forStatic e, 0, 17: c1[o + e*V] = s[e]
+      forStatic e, 0, 17: c1[o + e*V] = a2*s[e]
   toc("level 1 sums")
-  gpuFor(i, 12*ntp, 16):  # level 1: c1 = a1 r, rt += m1 r where a staple is there
+  gpuFor(i, 12*ntp, 16):  # level 1: c1 = r where a staple is there, elsewhere s = 0
     planeSite(i, 12, ord, q, k)
     if k < nt:
       let mu = q div 3
@@ -719,21 +711,14 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
           forStatic e, 0, 17: c1[o + e*V] = m[e]
         template unpark(m: untyped) = mload(m, c1, o, V)
         projUderiv3(r, lu, lx, lc, park, unpark)
-        forStatic e, 0, 17:
-          c1[o + e*V] = a1*r[e]
-          rt[o + e*V] += m1*r[e]
+        forStatic e, 0, 17: c1[o + e*V] = r[e]
   toc("level 1")
-  gpuFor(i, 4*ntp, 16):  # thin links
+  gpuFor(i, 4*ntp, 16):  # thin links: cf = a1 s + m3 c3 + sum_nu m2 c2 + m1 c1
     planeSite(i, 4, ord, mu, k)
     if k < nt:
       let fmu = int nbr[mu*nb + k]
       var s {.noInit.}, w {.noInit.}: M3
-      let o = bo(V, mu, nb, k)
-      mload(s, cf, o, V)
-      for nu in 0..3:
-        if nu != mu:
-          mload(w, rt, bo(V, ix(mu, nu), nb, k), V)
-          forStatic e, 0, 17: s[e] += w[e]
+      forStatic e, 0, 17: s[e] = 0.0
       for nu in 0..3:
         if nu != mu:
           let fnu = int nbr[nu*nb + k]
@@ -745,6 +730,16 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
           template cy(m, j: untyped) = mload(m, c1, bo(V, ix(mu, nu), nb, j), V)
           var hit = false
           symderiv(hit, s, lx, ly, cx, cy, k, fnu, fmu, bnu, fmubnu, int.high)
+      let o = bo(V, mu, nb, k)
+      mload(w, c3, o, V)
+      forStatic e, 0, 17: s[e] = a1*s[e] + m3*w[e]
+      for nu in 0..3:
+        if nu != mu:
+          let oq = bo(V, ix(mu, nu), nb, k)
+          mload(w, c2, oq, V)
+          forStatic e, 0, 17: s[e] += m2*w[e]
+          mload(w, c1, oq, V)
+          forStatic e, 0, 17: s[e] += m1*w[e]
       forStatic e, 0, 17: cf[o + e*V] = s[e]
   toc("thin links")
   getDefaultComm().barrier  # peers may still read the previous force
