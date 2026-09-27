@@ -93,8 +93,9 @@ add `-L$CUDA/lib64/stubs` (the stub libcuda; the driver's at run time).
 One H100 (JLSE, 2026-09-26; 3.35 TB/s HBM, stream triad 3.09 TB/s):
 bestagcg 32^4 2.66 TB/s for one system (80% of the peak), 2.45 TB/s for 3
 systems sharing a hop, 0.49 ns per site, system and iteration against 0.84
-alone; staghmcgpu_sh 24^4, 3 terms, 0.92 s per trajectory in double, 0.72
-mixed; eightFlavorSMGgpu 16^3x32 2.91 s, 24^3x48 on 4 H100s 5.01 s.
+alone.  Per trajectory (2026-09-27, the second and third): staghmcgpu_sh
+24^4, 3 terms, 0.86 s in double, 0.66 mixed; eightFlavorSMGgpu 16^3x32
+2.73 s, 24^3x48 on 4 H100s 4.1 s.
 
 ## HIP, AMD MI300A
 
