@@ -11,7 +11,7 @@
 #define N_NOINLINE(rettype, name) rettype __attribute__((noinline)) name
 template <int T, typename F> __global__ void __launch_bounds__(T) qexFor(long n, F f) {
   long i = (long)blockIdx.x * T + threadIdx.x;
-#ifdef __clang__
+#if defined(__clang__) && !defined(__NVCC__)  /* clang as the CUDA compiler: nvcc defines __clang__ for a clang host compiler */
   if (i < n) [[clang::always_inline]] f(i);  // LLVM leaves large lambdas uninlined
 #else
   if (i < n) f(i);
