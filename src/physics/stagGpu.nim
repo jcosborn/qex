@@ -66,8 +66,7 @@ type
 proc innerGeom*(lat, rg: seq[int]; v: int): seq[int] =
   ## Lanes in the dimensions not split across ranks first, then the largest
   ## local extent, at most 2 per dimension as qex lays out; the extent per
-  ## lane stays even, so lanes share parity, and at least 4 in a dimension
-  ## split across ranks, as qex halos go wrong with 2.
+  ## lane stays even, so lanes share parity.
   result = newSeq[int](lat.len)
   for d in 0..<lat.len: result[d] = 1
   var k = v
@@ -75,7 +74,7 @@ proc innerGeom*(lat, rg: seq[int]; v: int): seq[int] =
     var best = -1
     for d in 0..<lat.len:
       let e = lat[d] div rg[d] div result[d]
-      if result[d] == 1 and e mod (if rg[d] > 1: 8 else: 4) == 0 and (best < 0 or (rg[d] == 1, e) > (rg[best] == 1, lat[best] div rg[best] div result[best])):
+      if result[d] == 1 and e mod 4 == 0 and (best < 0 or (rg[d] == 1, e) > (rg[best] == 1, lat[best] div rg[best] div result[best])):
         best = d
     if best < 0: qexError("no inner geometry for ", v, " lanes")
     result[best] *= 2
