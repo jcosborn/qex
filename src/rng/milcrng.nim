@@ -1,5 +1,5 @@
 import math
-import base/basicOps  # getOptimPragmas: gpuInline for the draws in kernels
+import base/basicOps  # getOptimPragmas: gpuCall for the draws in kernels
 getOptimPragmas()
 import comms/qmp
 import maths/types
@@ -137,7 +137,7 @@ proc seed*(prn: var RngMilcV; sed,index: auto) =
   QMP_broadcast(ss.addr, sizeof(ss).csize_t)
   seedIndep(prn, ss, index)
 
-func nextI(prn: var RngMilcV): uint32 {.gpuInline.} =
+func nextI(prn: var RngMilcV): uint32 {.gpuCall.} =
   ## internal routine to return next value
   let t = (((prn.r5 shr 7) or (prn.r6 shl 17)) xor
       ((prn.r4 shr 1) or (prn.r5 shl 23))) and MASK
@@ -151,7 +151,7 @@ func nextI(prn: var RngMilcV): uint32 {.gpuInline.} =
   let s = prn.ic_state * prn.multiplier + ADDEND
   prn.icState = s
   result = t xor ((s shr 8) and MASK)
-#func nextI(prn: var RngMilcV): uint32 {.gpuInline.} =
+#func nextI(prn: var RngMilcV): uint32 {.gpuCall.} =
 #  while result == 0:
 #    result = nextI0(prn)
 
@@ -167,13 +167,13 @@ proc next*(prn: var RngMilcV): uint =
   ## Return random integer from 0 to maxInt
   result = uint prn.nextI
 
-proc uniform*(prn: var RngMilcV): float32 {.gpuInline.} =
+proc uniform*(prn: var RngMilcV): float32 {.gpuCall.} =
   ## Return random number uniform on [0,1)
   ## The choice of including endpoints may vary among different RNGs
   let i = prn.nextI
   result = SCALE * float32(i)
 
-proc gaussian*(prn: var RngMilcV6): float32 {.gpuInline.} =
+proc gaussian*(prn: var RngMilcV6): float32 {.gpuCall.} =
   ## Gaussian normal deviate
   ## Probability distribution exp( -x\*x/2 ), so < x^2 > = 1
   const TINY = 9.999999999999999e-308

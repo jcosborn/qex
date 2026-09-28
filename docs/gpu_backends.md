@@ -104,10 +104,11 @@ commands (`-x cu -arch=sm_XY --extended-lambda`, the gcc options through
 `-Xcompiler`) for the files with kernels and gives the other files to the
 host compiler.  nvcc compiles every host device function for the device and
 rejects host globals there, so only the procs that kernels call are host
-device: the gpuInline pragma of base/basicOps, QEX_HD in
-backend/cuda/nimbase.h.  A kernel may call templates and gpuInline procs
-only; nvcc stops at any other proc, which clang compiles for the device
-without a word.
+device: the gpuInline pragma of base/basicOps (forced inline) and gpuCall
+(inlined as Nim's inline procs, for the RNG draws), QEX_HD in
+backend/cuda/nimbase.h.  A kernel may call templates, gpuInline and gpuCall
+procs only; nvcc stops at any other proc, which clang compiles for the
+device without a word.
 
     ccType = "clang"
     ccDef = "cpp"

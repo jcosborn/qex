@@ -15,13 +15,17 @@ import metaUtils
 {.passL:"-lm".}
 
 const Backend {.strdefine.} = "CPU"
+const hd = when Backend == "CUDA" or Backend == "HIP": "QEX_HD " else: ""  # QEX_HD: backend/*/nimbase.h
 const inlineDecl = "inline __attribute__((always_inline)) $# $#$#"
-const gpuInlineDecl = (when Backend == "CUDA" or Backend == "HIP": "QEX_HD " else: "") & inlineDecl  # QEX_HD: backend/*/nimbase.h
+const gpuInlineDecl = hd & inlineDecl
+const gpuCallDecl = hd & "static N_INLINE($#, $#)$#"  # Nim's declaration of inline procs
 template getOptimPragmas* =
   ## alwaysInline: forced inline on the host; gpuInline: also callable from
-  ## gpuFor bodies, for the procs that kernels call (templates need nothing)
+  ## gpuFor bodies, for the procs that kernels call (templates need nothing);
+  ## gpuCall: callable from gpuFor bodies, inlined as Nim's inline procs
   {.pragma: alwaysInline, inline, codegenDecl: inlineDecl.}
   {.pragma: gpuInline, inline, codegenDecl: gpuInlineDecl.}
+  {.pragma: gpuCall, inline, codegenDecl: gpuCallDecl.}
 getOptimPragmas()
 
 type

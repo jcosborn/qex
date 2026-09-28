@@ -6,7 +6,7 @@ Operations Research, 47, 1 (1999), 159-164.
 ]#
 
 import math
-import base/basicOps  # getOptimPragmas: gpuInline for the draws in kernels
+import base/basicOps  # getOptimPragmas: gpuCall for the draws in kernels
 getOptimPragmas()
 import comms/comms
 
@@ -131,7 +131,7 @@ proc seed*(prn: var MRG32k3a; sed,index: auto) =
   seedIndep(prn, ss, index)
 
 #[
-proc next0(prn: var MRG32k3a): float {.gpuInline.} =
+proc next0(prn: var MRG32k3a): float {.gpuCall.} =
   ## Return random integer uniform on [1,m1]
   var p1,p2:float
   p1 = a12 * prn.s1[1].float - a13n * prn.s1[0].float
@@ -156,7 +156,7 @@ proc next0(prn: var MRG32k3a): float {.gpuInline.} =
     result = p1 - p2
 ]#
 
-proc nextI(prn: var MRG32k3a): int {.gpuInline.} =
+proc nextI(prn: var MRG32k3a): int {.gpuCall.} =
   ## Return random integer uniform on [1,m1]
   const
     a12i = int a12
@@ -220,11 +220,11 @@ proc uniform*(prn:var MRG32k3a): float =
   else:
     result = (p1 - p2) * norm
 ]#
-proc uniform*(prn: var MRG32k3a): float {.gpuInline.} =
+proc uniform*(prn: var MRG32k3a): float {.gpuCall.} =
   ## Return random number uniform on (0,1)
   result = norm * prn.nextI.float
 
-proc gaussian*(prn: var MRG32k3a): float {.gpuInline.} =
+proc gaussian*(prn: var MRG32k3a): float {.gpuCall.} =
   ## Gaussian normal deviate
   ## Probability distribution exp( -x\*x/2 ), so < x^2 > = 1
   var v,p,r: float
