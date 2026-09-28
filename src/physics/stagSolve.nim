@@ -153,7 +153,6 @@ proc solveXXQexSloppy*(
   ## must then come from the reduced pressure on the memory bandwidth not being compensated
   ## for by the overhead of the iterative refinement.
   # looooooooooooooooooooo/ <- this was input from my cat (Gojira)... insightful - Curtis
-  let sloppyR2Floor = float(epsilon(float32))
   var r2, r2stop: float
   var r2prev = Inf
   var its = 0
@@ -163,6 +162,8 @@ proc solveXXQexSloppy*(
   var ss = toSingle(s) # single-precision stag: prevents ss from becoming stale
   var e = toSingle(type r).new(r.l) # error "e" in Eqns (3) and (4)
   var xs = toSingle(type x).new(x.l)
+  
+  let sloppyR2Floor = float(epsilon(numberType(e[0])))
   
   var rho = newOneOf(x) # double-precision representation of "rho" in Eqn (2)
   var de = newOneOf(r) # double-precision error "e" in Eqn (4)
