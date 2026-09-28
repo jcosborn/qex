@@ -11,6 +11,13 @@ selected by `-d:Backend=...` in `nimargs`:
 | CUDA | clang -x cuda | device lambdas of the qexFor<<<>>> template | CUDA IPC (comms/cudaipc) |
 | HIP | amdclang -x hip | device lambdas of the qexFor<<<>>> template | HIP IPC (comms/hipipc) |
 
+Kernels (gpuFor bodies) call templates and the procs marked gpuInline
+(forced inline, as alwaysInline) or gpuCall (inlined as Nim's inline procs)
+in base/basicOps.  CUDA and HIP make these host device through QEX_HD
+(backend/cuda/nimbase.h, backend/hip/nimbase.h) and reject a kernel call of
+any other proc.  OpenMP and SYCL compile the inline procs a kernel calls
+without annotations, as Nim writes them into each C++ file that uses them.
+
 The settings below go into `qexconfig.nims` of the build directory (the
 `configure` options of the same names set them); only the lines that
 differ from the defaults are shown.  Every build directory needs its own
@@ -63,8 +70,8 @@ off the node, `OMP_STACKSIZE=256M` for large local volumes.
 ## CUDA, NVIDIA H100
 
 clang compiles the Nim generated C++ as CUDA.  backend/cuda/nimbase.h,
-found first through `-iquote`, makes Nim inline procs host and device
-functions and defines the qexFor kernel template.
+found first through `-iquote`, defines QEX_HD and the qexFor kernel
+template.
 
     ccType = "clang"
     ccDef = "cpp"
@@ -103,12 +110,8 @@ build/nvcc.sh turns the compile commands Nim writes for clang into nvcc
 commands (`-x cu -arch=sm_XY --extended-lambda`, the gcc options through
 `-Xcompiler`) for the files with kernels and gives the other files to the
 host compiler.  nvcc compiles every host device function for the device and
-rejects host globals there, so only the procs that kernels call are host
-device: the gpuInline pragma of base/basicOps (forced inline) and gpuCall
-(inlined as Nim's inline procs, for the RNG draws), QEX_HD in
-backend/cuda/nimbase.h.  A kernel may call templates, gpuInline and gpuCall
-procs only; nvcc stops at any other proc, which clang compiles for the
-device without a word.
+rejects host globals there, which is why only the procs that kernels call
+are host device.
 
     ccType = "clang"
     ccDef = "cpp"
@@ -134,8 +137,8 @@ batched hop, 2.72 TB/s for one system of bestagcg 32^4, 2.41 TB/s for 3.
 ## HIP, AMD MI300A
 
 amdclang compiles the Nim generated C++ as HIP.  backend/hip/nimbase.h
-includes hip_runtime.h (for `__launch_bounds__`), makes Nim inline procs
-host and device functions and defines the qexFor kernel template.  All
+includes hip_runtime.h (for `__launch_bounds__`) and defines QEX_HD and the
+qexFor kernel template.  All
 modules must be C++ (`ccDef = "cpp"`): in C, `__host__ __device__` does not
 compile.
 

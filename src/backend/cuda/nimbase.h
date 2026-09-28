@@ -1,18 +1,12 @@
 /* Nim's nimbase.h for the CUDA backend (clang -x cuda or nvcc through
-   build/nvcc.sh, found first through -iquote).  With clang, Nim inline procs
-   compile for the device too, so that gpuFor kernels may call them; clang
-   emits them for the device only when a kernel does.  nvcc and nvc++
-   compile every host device function for the device and reject host
-   globals there, so for them only the gpuInline procs of base/basicOps
-   (QEX_HD) are host device.  qexFor runs the gpuFor lambdas, one index per
-   thread. */
+   build/nvcc.sh, found first through -iquote).  QEX_HD makes the procs that
+   kernels call, gpuInline and gpuCall of base/basicOps, host device.  Other
+   procs stay host only: nvcc compiles every host device function for the
+   device and rejects host globals there.  qexFor runs the gpuFor lambdas,
+   one index per thread. */
 #include_next "nimbase.h"
 #ifdef __CUDACC__
 #define QEX_HD __host__ __device__
-#if defined(__clang__) && !defined(__NVCC__)  /* nvcc defines __clang__ for a clang host compiler */
-#undef N_INLINE
-#define N_INLINE(rettype, name) __host__ __device__ inline rettype name
-#endif
 /* CUDA defines __noinline__ as a macro */
 #undef N_NOINLINE
 #define N_NOINLINE(rettype, name) rettype __attribute__((noinline)) name

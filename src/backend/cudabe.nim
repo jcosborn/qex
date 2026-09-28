@@ -70,12 +70,12 @@ template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
   if gpuN > 0:
     let gpuB = cuint((gpuN + gpuThreads - 1) div gpuThreads)
     {.emit: ["qexFor<", gpuThreads, "><<<", gpuB, ", ", gpuThreads, ">>>(", gpuN, ", [=] __device__ (long gpuI) {"].}
-    # Nim zeroes and copies arrays with nimZeroMem and nimCopyMem, host procs under nvcc
-    {.emit: "\n#ifdef __NVCC__\n#define nimZeroMem(b,len) memset((b),0,(len))\n#define nimCopyMem(a,b,len) memcpy((a),(b),(len))\n#endif".}
+    # Nim zeroes and copies arrays with its host procs nimZeroMem and nimCopyMem
+    {.emit: "\n#define nimZeroMem(b,len) memset((b),0,(len))\n#define nimCopyMem(a,b,len) memcpy((a),(b),(len))".}
     block:
       let i = int(gpuI)
       body
-    {.emit: "\n#ifdef __NVCC__\n#undef nimZeroMem\n#undef nimCopyMem\n#endif\n});".}
+    {.emit: "\n#undef nimZeroMem\n#undef nimCopyMem\n});".}
     let err = cudaGetLastError()
     if err:
       echo "gpuForAsync: ", err
