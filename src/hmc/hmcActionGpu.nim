@@ -319,7 +319,7 @@ proc addForce(h: HmcGpu; a: GpuAction; secs: float) =
           q += v*v
         s2 += q
         s4 += q*q
-        mx = max(mx, q)
+        if q > mx: mx = q
     rd[3*nSlot + t] = s2
     rd[3*nSlot + nt + t] = s4
     rd[3*nSlot + 2*nt + t] = mx
@@ -329,7 +329,7 @@ proc addForce(h: HmcGpu; a: GpuAction; secs: float) =
     while t < nt:
       s2 += rd[3*nSlot + t]
       s4 += rd[3*nSlot + nt + t]
-      mx = max(mx, rd[3*nSlot + 2*nt + t])
+      if rd[3*nSlot + 2*nt + t] > mx: mx = rd[3*nSlot + 2*nt + t]
       t += nSlot
     rd[k] = s2
     rd[nSlot + k] = s4

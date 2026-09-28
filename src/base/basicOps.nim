@@ -15,10 +15,13 @@ import metaUtils
 {.passL:"-lm".}
 
 const Backend {.strdefine.} = "CPU"
-const inlineDecl = (when Backend == "CUDA" or Backend == "HIP": "__host__ __device__ " else: "") &
-  "inline __attribute__((always_inline)) $# $#$#"  # CUDA and HIP kernels may call them
+const inlineDecl = "inline __attribute__((always_inline)) $# $#$#"
+const gpuInlineDecl = (when Backend == "CUDA" or Backend == "HIP": "__host__ __device__ " else: "") & inlineDecl
 template getOptimPragmas* =
+  ## alwaysInline: forced inline on the host; gpuInline: also callable from
+  ## gpuFor bodies, for the procs that kernels call (templates need nothing)
   {.pragma: alwaysInline, inline, codegenDecl: inlineDecl.}
+  {.pragma: gpuInline, inline, codegenDecl: gpuInlineDecl.}
 getOptimPragmas()
 
 type
@@ -111,14 +114,18 @@ template `:=`*[R,X:SomeNumber](r: R; x: ptr X) =
   r = R(x[])
 template `:=`*[R:SomeNumber](r: R; x: bool) =
   r = R(if x: 1 else: 0)
-proc `+=`*(r: var float32; x: SomeNumber) {.alwaysInline.} =
+proc `+=`*(r: var float32; x: SomeNumber) {.gpuInline.} =
   r = r + float32(x)
-proc `-=`*(r: var float32; x: SomeNumber) {.alwaysInline.} =
+proc `-=`*(r: var float32; x: SomeNumber) {.gpuInline.} =
   r = r - float32(x)
-proc `+=`*(r: var float64; x: SomeNumber) {.alwaysInline.} =
+proc `*=`*(r: var float32; x: SomeNumber) {.gpuInline.} =
+  r = r * float32(x)
+proc `+=`*(r: var float64; x: SomeNumber) {.gpuInline.} =
   r = r + float64(x)
-proc `-=`*(r: var float64; x: SomeNumber) {.alwaysInline.} =
+proc `-=`*(r: var float64; x: SomeNumber) {.gpuInline.} =
   r = r - float64(x)
+proc `*=`*(r: var float64; x: SomeNumber) {.gpuInline.} =
+  r = r * float64(x)
 #proc `+=`*(r: var float32, x: SomeNumber) {.alwaysInline.} =
 #  {.emit:[r[], " += (float)", x, ";"].}
 #proc `-=`*(r: var float32, x: SomeNumber) {.alwaysInline.} =

@@ -165,7 +165,7 @@ proc free*[V: static int](h: var HypGpu[V]) =
 # 3x3 complex matrices in kernels, loops unrolled so that the matrices stay
 # in registers; the results may not alias the arguments
 
-proc mul3(r: var M3; a, b: M3) {.alwaysInline.} =
+proc mul3(r: var M3; a, b: M3) {.gpuInline.} =
   ## r = a b
   forStatic i, 0, 2:
     forStatic j, 0, 2:
@@ -177,7 +177,7 @@ proc mul3(r: var M3; a, b: M3) {.alwaysInline.} =
       r[6*i+2*j] = re
       r[6*i+2*j+1] = im
 
-proc mulNA3(r: var M3; a, b: M3) {.alwaysInline.} =
+proc mulNA3(r: var M3; a, b: M3) {.gpuInline.} =
   ## r = a b^+
   forStatic i, 0, 2:
     forStatic j, 0, 2:
@@ -189,7 +189,7 @@ proc mulNA3(r: var M3; a, b: M3) {.alwaysInline.} =
       r[6*i+2*j] = re
       r[6*i+2*j+1] = im
 
-proc mulAN3(r: var M3; a, b: M3) {.alwaysInline.} =
+proc mulAN3(r: var M3; a, b: M3) {.gpuInline.} =
   ## r = a^+ b
   forStatic i, 0, 2:
     forStatic j, 0, 2:
@@ -201,7 +201,7 @@ proc mulAN3(r: var M3; a, b: M3) {.alwaysInline.} =
       r[6*i+2*j] = re
       r[6*i+2*j+1] = im
 
-proc mulc3(r: var M3; cr, ci: float; a, b: M3) {.alwaysInline.} =
+proc mulc3(r: var M3; cr, ci: float; a, b: M3) {.gpuInline.} =
   ## r += (cr + i ci) a b
   forStatic i, 0, 2:
     forStatic j, 0, 2:
@@ -213,7 +213,7 @@ proc mulc3(r: var M3; cr, ci: float; a, b: M3) {.alwaysInline.} =
       r[6*i+2*j] += cr*re - ci*im
       r[6*i+2*j+1] += cr*im + ci*re
 
-proc addc3(r: var M3; cr, ci: float; a: M3) {.alwaysInline.} =
+proc addc3(r: var M3; cr, ci: float; a: M3) {.gpuInline.} =
   ## r += (cr + i ci) a
   forStatic e, 0, 8:
     r[2*e] += cr*a[2*e] - ci*a[2*e+1]
@@ -224,7 +224,7 @@ template adjEl(r, x: untyped; i, j, a, b, c, d, e, f, g, h: static int) =
   r[6*i+2*j] = x[6*a+2*b]*x[6*c+2*d] - x[6*a+2*b+1]*x[6*c+2*d+1] - x[6*e+2*f]*x[6*g+2*h] + x[6*e+2*f+1]*x[6*g+2*h+1]
   r[6*i+2*j+1] = x[6*a+2*b]*x[6*c+2*d+1] + x[6*a+2*b+1]*x[6*c+2*d] - x[6*e+2*f]*x[6*g+2*h+1] - x[6*e+2*f+1]*x[6*g+2*h]
 
-proc adj3(r: var M3; x: M3) {.alwaysInline.} =
+proc adj3(r: var M3; x: M3) {.gpuInline.} =
   ## r = the adjugate of x, as adjugate
   adjEl(r, x, 0, 0, 1, 1, 2, 2, 1, 2, 2, 1)
   adjEl(r, x, 0, 1, 2, 1, 0, 2, 2, 2, 0, 1)
@@ -236,12 +236,12 @@ proc adj3(r: var M3; x: M3) {.alwaysInline.} =
   adjEl(r, x, 2, 1, 2, 0, 0, 1, 2, 1, 0, 0)
   adjEl(r, x, 2, 2, 0, 0, 1, 1, 0, 1, 1, 0)
 
-proc det3(dr, di: var float; x, a: M3) {.alwaysInline.} =
+proc det3(dr, di: var float; x, a: M3) {.gpuInline.} =
   ## dr + i di = det x = x_20 a_02 + x_21 a_12 + x_22 a_22 for a = adj x, as determinant
   dr = x[12]*a[4] - x[13]*a[5] + x[14]*a[10] - x[15]*a[11] + x[16]*a[16] - x[17]*a[17]
   di = x[12]*a[5] + x[13]*a[4] + x[14]*a[11] + x[15]*a[10] + x[16]*a[17] + x[17]*a[16]
 
-proc inv3(r: var M3; x: M3) {.alwaysInline.} =
+proc inv3(r: var M3; x: M3) {.gpuInline.} =
   ## r = x^-1 = adj x/det x, as inverse
   var dr, di: float
   adj3(r, x)
@@ -255,7 +255,9 @@ proc inv3(r: var M3; x: M3) {.alwaysInline.} =
     r[2*e] = ir*a - ii*b
     r[2*e+1] = ir*b + ii*a
 
-proc rsqrt3(z: var M3; x: M3) {.alwaysInline.} =
+proc fabs(x: float): float {.importc, header: "<math.h>".}  # |x| in kernels, as system's abs
+
+proc rsqrt3(z: var M3; x: M3) {.gpuInline.} =
   ## z = (x^+ x + 1e-20)^-1/2, as projectUrsqrt: with t = x^+ x + 1e-20, its
   ## eigenvalues l_k from tr t, tr t^2 and det t as eigs3, and
   ## z = c0 + c1 t + c2 t^2 as rsqrtPHM3f
@@ -271,12 +273,13 @@ proc rsqrt3(z: var M3; x: M3) {.alwaysInline.} =
   let tr3 = (1.0/3.0)*tr
   let p23 = (1.0/3.0)*p2
   let tr32 = tr3*tr3
-  let q = abs(0.5*(p23-tr32))
+  let q = fabs(0.5*(p23-tr32))
   let r = 0.25*tr3*(5*tr32-p2) - 0.5*det
   let sq = sqrt(q)
   let sq3 = q*sq
-  let isq3 = 1.0/max(sq3, 1.0/3e38)  # eigs3 clamps 1/sq3 to 3e38
-  let rsq3 = min(1.0, max(-1.0, r*isq3))
+  let isq3 = 1.0/(if sq3 > 1.0/3e38: sq3 else: 1.0/3e38)  # eigs3 clamps 1/sq3 to 3e38
+  let z1 = r*isq3
+  let rsq3 = if z1 > 1.0: 1.0 elif z1 < -1.0: -1.0 else: z1
   let th = (1.0/3.0)*arccos(rsq3)
   let st = sin(th)
   let ct = cos(th)
@@ -286,9 +289,9 @@ proc rsqrt3(z: var M3; x: M3) {.alwaysInline.} =
   let l0 = tr3 - 2*sqc
   let l1 = ll + sqs
   let l2 = ll - sqs
-  let sl0 = sqrt(abs(l0))
-  let sl1 = sqrt(abs(l1))
-  let sl2 = sqrt(abs(l2))
+  let sl0 = sqrt(fabs(l0))
+  let sl1 = sqrt(fabs(l1))
+  let sl2 = sqrt(fabs(l2))
   let u = sl0 + sl1 + sl2
   let w = sl0 * sl1 * sl2
   let di = 1.0/(w*(sl0+sl1)*(sl0+sl2)*(sl1+sl2))
@@ -298,13 +301,13 @@ proc rsqrt3(z: var M3; x: M3) {.alwaysInline.} =
   forStatic e, 0, 17: z[e] = c1*t[e] + c2*t2[e]
   forStatic i, 0, 2: z[8*i] += c0
 
-proc projU3(r: var M3; x: M3) {.alwaysInline.} =
+proc projU3(r: var M3; x: M3) {.gpuInline.} =
   ## r = x (x^+ x)^-1/2, as projectU
   var z {.noInit.}: M3
   rsqrt3(z, x)
   mul3(r, x, z)
 
-proc usdev(r: var float; x: M3) {.alwaysInline.} =
+proc usdev(r: var float; x: M3) {.gpuInline.} =
   ## r = |x^+ x - 1|^2 + |det x - 1|^2, as checkSU of a matrix
   var t {.noInit.}, a {.noInit.}: M3
   var dr, di: float
@@ -316,7 +319,7 @@ proc usdev(r: var float; x: M3) {.alwaysInline.} =
   det3(dr, di, x, a)
   r += (dr - 1.0)*(dr - 1.0) + di*di
 
-proc sylsolve3(x: var M3; a, c: M3) {.alwaysInline.} =
+proc sylsolve3(x: var M3; a, c: M3) {.gpuInline.} =
   ## x with a x + x a = c, as sylsolve: for d = adj a, t = tr a, s = tr d, r = det a,
   ##   x = c0 c - c4 (a c + c a) + c2 a c a + c1 d c d - c2 (d c + c d)
   ##   c2 = 1/(2 (s t - r)),  c0 = c2 (s + t^2),  c1 = c2 t/r,  c4 = c2 t
@@ -806,7 +809,8 @@ proc reunit*[V: static int](g: var GpuGauge[V]): array[2, tuple[avg, max: float]
     let h = t div np
     let c = t - h*np
     var m = 0.0
-    for j in c*nm ..< min(nl, (c+1)*nm): m = max(m, d[h*nl + j])
+    for j in c*nm ..< min(nl, (c+1)*nm):
+      if d[h*nl + j] > m: m = d[h*nl + j]
     dp[t] = m
   var hp = newSeq[float](2*np)
   gpuMemCpyToCpu(addr hp[0], dp, 2*np*sizeof(float))

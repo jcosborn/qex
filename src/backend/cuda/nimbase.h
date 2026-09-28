@@ -4,8 +4,13 @@
    does.  qexFor runs the gpuFor lambdas, one index per thread. */
 #include_next "nimbase.h"
 #ifdef __CUDACC__
+#if defined(__clang__) && !defined(__NVCC__)  /* nvcc defines __clang__ for a clang host compiler */
+/* nvcc and nvc++ compile every host device function for the device and
+   reject host globals there; gpuInline (base/basicOps) marks the procs
+   kernels call */
 #undef N_INLINE
 #define N_INLINE(rettype, name) __host__ __device__ inline rettype name
+#endif
 /* CUDA defines __noinline__ as a macro */
 #undef N_NOINLINE
 #define N_NOINLINE(rettype, name) rettype __attribute__((noinline)) name

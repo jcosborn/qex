@@ -6,6 +6,8 @@ Proceedings of SC11, 2011.
 ]#
 
 import math
+import base/basicOps  # getOptimPragmas: gpuInline for the draws in kernels
+getOptimPragmas()
 import comms/comms
 
 type
@@ -27,7 +29,7 @@ const
 
 const Backend {.strdefine.} = "CPU"  # as in backend/accelbase
 
-proc mulHi(a,b:uint64):uint64 {.inline.} =
+proc mulHi(a,b:uint64):uint64 {.gpuInline.} =
   # Compile with `-d:philox4x64Portable` to force the portable path, which
   # GPU backends take, as device code has no 128-bit integers.
   when not defined(philox4x64Portable) and Backend == "CPU" and
@@ -66,7 +68,7 @@ template mixk(x0,x1,x2,x3:var uint64; k0,k1:var uint64):auto =
   k1 += w1
   mix(x0, x1, x2, x3, k0, k1)
 
-proc encrypt(r:var Philox4x64) {.inline.} =
+proc encrypt(r:var Philox4x64) {.gpuInline.} =
   var
     b0 = r.c[0]
     b1 = r.c[1]
@@ -86,7 +88,7 @@ proc encrypt(r:var Philox4x64) {.inline.} =
   mixk(b0, b1, b2, b3, k0, k1)
   r.o = [b0, b1, b2, b3]
 
-proc incCounter(r:var Philox4x64) {.inline.} =
+proc incCounter(r:var Philox4x64) {.gpuInline.} =
   r.c[0].inc
   if r.c[0] != 0: return
   r.c[1].inc
@@ -185,7 +187,7 @@ proc seed*(prn:var Philox4x64; sed,index:auto) =
 
 # Philox returns four uint64 words per counter.  Return each word as its
 # low uint32 followed by its high uint32.
-proc nextI(prn:var Philox4x64):uint32 {.inline.} =
+proc nextI(prn:var Philox4x64):uint32 {.gpuInline.} =
   let j = prn.i shr 1
   if (prn.i and 1) == 0:
     result = uint32(prn.o[j] and 0xFFFFFFFFu64)
@@ -197,7 +199,7 @@ proc nextI(prn:var Philox4x64):uint32 {.inline.} =
     prn.incCounter
     prn.encrypt
 
-proc next64(prn:var Philox4x64):uint64 {.inline.} =
+proc next64(prn:var Philox4x64):uint64 {.gpuInline.} =
   let
     lo = prn.nextI.uint64
     hi = prn.nextI.uint64
@@ -211,12 +213,12 @@ proc next*(prn:var Philox4x64):uint =
   ## Return random integer from 0 to maxInt
   result = uint prn.nextI
 
-proc uniform*(prn:var Philox4x64):float {.inline.} =
+proc uniform*(prn:var Philox4x64):float {.gpuInline.} =
   ## Return random number uniform on (0,1]
   ## Use Random123's `u01<double>(uint64_t)` mapping.
   result = float(prn.next64) * norm + 0.5 * norm
 
-proc gaussian*(prn:var Philox4x64):float {.inline.} =
+proc gaussian*(prn:var Philox4x64):float {.gpuInline.} =
   ## Gaussian normal deviate
   ## Probability distribution exp( -x\*x/2 ), so < x^2 > = 1
   let
