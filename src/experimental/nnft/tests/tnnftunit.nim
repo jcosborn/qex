@@ -121,7 +121,7 @@ proc run[T: SomeFloat]() =
         check difference(dx,dy) == 0.0
       for n in cover: check n == 1
 
-    test "saturated coefficients use the clipped log determinant and boundary slope":
+    test "saturated coefficients use the clipped log determinant at each active site":
       let cold = lo.newGauge
       threads:
         for f in cold: f := 1
@@ -133,10 +133,21 @@ proc run[T: SomeFloat]() =
         convParams(6,12,[3,3],newSeq[T](12*6*9),newSeq[T](12)),
         convParams(12,12,[3,3],newSeq[T](12*12*9),bias)],scale:scales)
       let stage = newNnftStage(cold,sat,0)
-      let ld = evalStage(stage,sat,cold)
-      var jac: float
-      jac := stage.m{0}[0,0].re
-      check abs(ld-float(lo.physVol div 4)*ln(max(1+jac,1e-8))) < 1e-11
+      for a in [0.0,0.001]:
+        for x in 0..<lo.nSites:
+          if selected(stage.active,x) and lo.coords[0][x] mod 4 == 0:
+            cold[0]{x}[0,0].re := cos(a)
+            cold[0]{x}[0,0].im := sin(a)
+        let ld = evalStage(stage,sat,cold)
+        # Near saturation, one float32 ulp can move a site across the floor.
+        var want = 0.0
+        for x in 0..<lo.nSites:
+          if selected(stage.active,x):
+            var jac: float
+            jac := stage.m{x}[0,0].re
+            want += ln(max(1+jac,1e-8))
+        rankSum(want)
+        check abs(ld-want) < 1e-11
       for j in [-2.0,-1.0,-1.0+1e-9]:
         check learnedLogJac(j) == ln(1e-8)
       for j in [-1.0+1e-8,-0.9999,0.0,0.4]:
