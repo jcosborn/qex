@@ -20,9 +20,12 @@ const inlineDecl = "inline __attribute__((always_inline)) $# $#$#"
 const gpuInlineDecl = hd & inlineDecl
 const gpuCallDecl = hd & "static N_INLINE($#, $#)$#"  # Nim's declaration of inline procs
 template getOptimPragmas* =
-  ## alwaysInline: forced inline on the host; gpuInline: also callable from
-  ## gpuFor bodies, for the procs that kernels call (templates need nothing);
-  ## gpuCall: callable from gpuFor bodies, inlined as Nim's inline procs
+  ## Inline marks, compared in docs/gpu_backends.md (procs that kernels call):
+  ##   alwaysInline  always inlined; host only under CUDA and HIP
+  ##   gpuInline     alwaysInline that gpuFor bodies may call with every GPU
+  ##                 backend (QEX_HD under CUDA and HIP), for small procs
+  ##   gpuCall       Nim's inline that gpuFor bodies may call with every GPU
+  ##                 backend, for larger procs the compiler inlines as it sees fit
   {.pragma: alwaysInline, inline, codegenDecl: inlineDecl.}
   {.pragma: gpuInline, inline, codegenDecl: gpuInlineDecl.}
   {.pragma: gpuCall, inline, codegenDecl: gpuCallDecl.}
