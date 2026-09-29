@@ -99,14 +99,16 @@ template gpuMalloc[T](x: ptr T) =
   x = cast[typeof x](gpuMalloc(sizeof(T)))
 
 proc gpuMemset*[T](p: ptr UncheckedArray[T], val: T, count: int) =
-  {.emit:["#pragma omp target teams distribute parallel for"].}
+  var v = val  # an array parameter is a host pointer in C, unmapped on the device
+  {.emit:["#pragma omp target teams distribute parallel for map(to:",v,")"].}
   {.emit:["for (int i = 0; i < ",count,"; i++)"].}
   block:
     var i {.importc,codegendecl:"".}: cint
-    p[i] = val
+    p[i] = v
 proc gpuMemset*[T](p: ptr T, val: T) =
-  {.emit:["#pragma omp target teams"].}
-  p[] = val
+  var v = val
+  {.emit:["#pragma omp target teams map(to:",v,")"].}
+  p[] = v
 
 template toPointer*(x: typed): pointer =
   #dumpType: x
@@ -296,6 +298,60 @@ template onGpu*(n,b,body: untyped) =
   mixin gpuSites
   let finalize = onGpuNoWait(gpuSites(n), b, body)
   finalize()
+
+const gpuThreads {.intdefine.} = 128  ## thread_limit of gpuFor kernels, 0 for the runtime default; 128 was best for the staggered kernels on PVC at 24^4 sites per tile
+const gpuForMap {.strdefine.} = "defaultmap(firstprivate:pointer)"  ## pointers by value, no lookup in the mapping table at each launch
+const gpuForClause* = gpuForMap & (if gpuThreads > 0: " thread_limit(" & $gpuThreads & ")" else: "")
+template gpuSubClause(sub: static int): string =
+  when sub > 0: " ompx_sub_group_size(" & $sub & ")" else: ""
+
+template gpuFor*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
+  ## One SPMD kernel over i in 0..<n, in sub-groups of sub threads, or as
+  ## the compiler chooses for sub = 0.  Captured pointers must be device
+  ## pointers.
+  const gpuC = "target teams distribute parallel for " & gpuForClause & gpuSubClause(sub)
+  for i in `||`(0, int(n)-1, gpuC):
+    body
+template gpuFor*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, body)
+
+var gpuAsyncDep {.exportc.}: int  # orders the gpuForAsync kernels before gpuWaitAsync
+
+template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
+  ## gpuFor returning before the kernel completes; gpuWaitAsync waits for it.
+  discard addr(gpuAsyncDep)  # declares it in the C file of the caller
+  const gpuC = "target teams distribute parallel for " & gpuForClause & gpuSubClause(sub) & " nowait depend(inout:gpuAsyncDep)"
+  for i in `||`(0, int(n)-1, gpuC):
+    body
+template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) = gpuForAsync(i, n, 0, body)
+
+template gpuWaitAsync* =
+  discard addr(gpuAsyncDep)
+  {.emit: "#pragma omp taskwait depend(inout:gpuAsyncDep)".}
+
+template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
+  ## r[k] += v atomically, in kernels
+  let kk = k
+  let vv = v
+  {.emit: ["#pragma omp atomic update\n", r, "[", kk, "] += ", vv, ";"].}
+
+template gpuMallocHost*(size: SomeInteger): pointer =
+  ## pinned host memory, for fast copies from the device
+  omp_target_alloc_host(size)
+template gpuFreeHost*(p: pointer) = omp_target_free(p)
+
+{.emit: "/*INCLUDESECTION*/\n#include <omp.h>".}
+proc gpuZeContext*(): tuple[ctx, dev: pointer] =
+  ## Level Zero context and device of the default OpenMP device
+  var ctx, dev: pointer
+  {.emit: """
+  omp_interop_t obj = omp_interop_none;
+  int dn = omp_get_default_device(), err;
+  #pragma omp interop init(targetsync: obj) device(dn)
+  `ctx` = omp_get_interop_ptr(obj, omp_ipr_device_context, &err);
+  `dev` = omp_get_interop_ptr(obj, omp_ipr_device, &err);
+  #pragma omp interop destroy(obj)
+  """.}
+  (ctx, dev)
 
 template toUArray(a:untyped):untyped = cast[ptr UncheckedArray[typeof(a[0])]](a[0].unsafeaddr)
 proc cleanAst(n:NimNode):NimNode =

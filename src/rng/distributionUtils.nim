@@ -10,16 +10,68 @@ type
     r.gaussian
   RNGField* = concept r
     r[0] is RNG
+  RNGFieldV*[V: static int; R] = ref object
+    ## The generators of the sites of a SIMD layout l, stored like its
+    ## fields: 32-bit word w of the generator of site i at
+    ## (i div V)*W*V + w*V + i mod V, W words per generator, which
+    ## rng/rngGpu copies to the GPU as is.  Site i draws the numbers of the
+    ## generator of its coordinates in newRNGField.  Fields of another layout
+    ## of the lattice and rank grid draw at each site from the generator of
+    ## its coordinates, found through the coords table as for RNGField.
+    l*: Layout[V]
+    s*: seq[uint32]
+
+template rngWords*(R: typedesc): int =
+  static: doAssert sizeof(R) mod sizeof(uint32) == 0
+  sizeof(R) div sizeof(uint32)
+
+template rngLoad*(s: ptr UncheckedArray[uint32]; V: static int; i: int; R: typedesc): untyped =
+  ## the generator of site i in s, laid out as RNGFieldV.s
+  block:
+    const W = rngWords(R)
+    var a {.noInit.}: array[W, uint32]
+    let o = (i div V)*(W*V) + i mod V
+    for w in 0..<W: a[w] = s[o + w*V]
+    cast[R](a)
+
+template rngStore*(s: ptr UncheckedArray[uint32]; V: static int; i: int; x: typed) =
+  ## x to the generator of site i in s, laid out as RNGFieldV.s
+  block:
+    const W = rngWords(typeof(x))
+    let a = cast[array[W, uint32]](x)
+    let o = (i div V)*(W*V) + i mod V
+    for w in 0..<W: s[o + w*V] = a[w]
+
+proc `[]`*[V: static int; R](r: RNGFieldV[V,R]; i: int): R =
+  ## the generator of site i
+  rngLoad(cast[ptr UncheckedArray[uint32]](addr r.s[0]), V, i, R)
+
+template mapRngLanes(fn: untyped, x: untyped, r: untyped) =
+  doAssert x.l.rankGeom == r.l.rankGeom, "the RNGFieldV needs the rank grid of the field"
+  let p = cast[ptr UncheckedArray[uint32]](addr r.s[0])
+  let same = when x.l.V == r.l.V: x.l == r.l else: false
+  for i in x.l.sites:
+    let j = if same: i else: r.l.rankIndex(x.l.coords, i).index
+    var g = rngLoad(p, r.l.V, j, typeof(r[0]))
+    fn(x{i}, g)
+    rngStore(p, r.l.V, j, g)
 
 when defined(RandCoordOrder) or not defined(RandRawOrder):
   template mapRngField*(fn: untyped, x: untyped, r: untyped) =
-    for i in x.l.sites:
-      let j = r.l.rankIndex(x.l.coords, i).index
-      fn(x{i}, r{j})
+    when r is RNGFieldV:
+      mapRngLanes(fn, x, r)
+    else:
+      doAssert x.l.rankGeom == r.l.rankGeom, "the RNG field needs the rank grid of the field"
+      for i in x.l.sites:
+        let j = r.l.rankIndex(x.l.coords, i).index
+        fn(x{i}, r{j})
 else:
   template mapRngField*(fn: untyped, x: untyped, r: untyped) =
-    for i in x.l.sites:
-      fn(x{i}, r{i})
+    when r is RNGFieldV:
+      mapRngLanes(fn, x, r)
+    else:
+      for i in x.l.sites:
+        fn(x{i}, r{i})
 
 proc uniform*(x: var AsNumber, r: var RNG) =
   mixin uniform
@@ -330,3 +382,22 @@ proc newRNGField*[R: RNG](lo: Layout, rng: typedesc[R],
 proc newRNGField*[R: RNG](rng: typedesc[R], lo: Layout,
                           s: uint64 = uint64(17^7)): Field[1,R] =
   lo.newRNGField(rng, s)
+
+proc newRNGFieldV*[V: static int; R: RNG](lo: Layout[V], rng: typedesc[R],
+                                          s: uint64 = uint64(17^7)): RNGFieldV[V,R] =
+  ## generators in the layout lo, seeded as newRNGField, so each site draws
+  ## the same numbers.  The seed `s` is broadcasted from rank 0.
+  mixin seedIndep
+  var ss = s
+  QMP_broadcast(ss.addr, sizeof(ss).csize_t)
+  let r = RNGFieldV[V,R](l: lo, s: newSeq[uint32](rngWords(R)*lo.nSites))
+  let p = cast[ptr UncheckedArray[uint32]](addr r.s[0])
+  threads:
+    for i in lo.sites:
+      var l = lo.coords[lo.nDim-1][i].int
+      for d in countdown(lo.nDim-2, 0):
+        l = l * lo.physGeom[d].int + lo.coords[d][i].int
+      var g: R
+      seedIndep(g, ss, l)
+      rngStore(p, V, i, g)
+  r

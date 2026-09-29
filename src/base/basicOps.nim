@@ -14,9 +14,21 @@ import metaUtils
 
 {.passL:"-lm".}
 
+const Backend {.strdefine.} = "CPU"
+const hd = when Backend == "CUDA" or Backend == "HIP": "QEX_HD " else: ""  # QEX_HD: backend/*/nimbase.h
+const inlineDecl = "inline __attribute__((always_inline)) $# $#$#"
+const gpuInlineDecl = hd & inlineDecl
+const gpuCallDecl = hd & "static N_INLINE($#, $#)$#"  # Nim's declaration of inline procs
 template getOptimPragmas* =
-  {.pragma: alwaysInline, inline,
-    codegenDecl: "inline __attribute__((always_inline)) $# $#$#".}
+  ## Inline marks, compared in docs/gpu_backends.md (procs that kernels call):
+  ##   alwaysInline  always inlined; host only under CUDA and HIP
+  ##   gpuInline     alwaysInline that gpuFor bodies may call with every GPU
+  ##                 backend (QEX_HD under CUDA and HIP), for small procs
+  ##   gpuCall       Nim's inline that gpuFor bodies may call with every GPU
+  ##                 backend, for larger procs the compiler inlines as it sees fit
+  {.pragma: alwaysInline, inline, codegenDecl: inlineDecl.}
+  {.pragma: gpuInline, inline, codegenDecl: gpuInlineDecl.}
+  {.pragma: gpuCall, inline, codegenDecl: gpuCallDecl.}
 getOptimPragmas()
 
 type
@@ -109,14 +121,18 @@ template `:=`*[R,X:SomeNumber](r: R; x: ptr X) =
   r = R(x[])
 template `:=`*[R:SomeNumber](r: R; x: bool) =
   r = R(if x: 1 else: 0)
-proc `+=`*(r: var float32; x: SomeNumber) {.alwaysInline.} =
+proc `+=`*(r: var float32; x: SomeNumber) {.gpuInline.} =
   r = r + float32(x)
-proc `-=`*(r: var float32; x: SomeNumber) {.alwaysInline.} =
+proc `-=`*(r: var float32; x: SomeNumber) {.gpuInline.} =
   r = r - float32(x)
-proc `+=`*(r: var float64; x: SomeNumber) {.alwaysInline.} =
+proc `*=`*(r: var float32; x: SomeNumber) {.gpuInline.} =
+  r = r * float32(x)
+proc `+=`*(r: var float64; x: SomeNumber) {.gpuInline.} =
   r = r + float64(x)
-proc `-=`*(r: var float64; x: SomeNumber) {.alwaysInline.} =
+proc `-=`*(r: var float64; x: SomeNumber) {.gpuInline.} =
   r = r - float64(x)
+proc `*=`*(r: var float64; x: SomeNumber) {.gpuInline.} =
+  r = r * float64(x)
 #proc `+=`*(r: var float32, x: SomeNumber) {.alwaysInline.} =
 #  {.emit:[r[], " += (float)", x, ";"].}
 #proc `-=`*(r: var float32, x: SomeNumber) {.alwaysInline.} =
