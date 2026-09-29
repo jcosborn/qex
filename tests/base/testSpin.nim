@@ -26,6 +26,7 @@ proc test =
   threads:
     m1["odd"] := 1
     d1["odd"] := 1
+    threadBarrier()
     d2 := 2 * d1
     threadBarrier()
     echo m1.norm2/lo.nSites.float
