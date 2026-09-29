@@ -379,8 +379,8 @@ proc runJacTests*(lat0: seq[int]) =
         let first = redot(grad(redot(st.Wnew,gu),x),gv)
         # FD evaluates the fused Phi field pullback; grad uses the ordinary
         # exponential replica. Check their directional agreement near norm eight.
-        checkT("norm eight update field pullback",first,t,0.0,0.001)
-        checkT("norm eight update field pullback half step",first,t,0.0,0.0005)
+        checkT("norm eight update field pullback",first,t,0.0,0.01)
+        checkT("norm eight update field pullback half step",first,t,0.0,0.005)
 
       gcTest "update pullbacks match differences across norms and inputs":
         let dv = sl.newGauge
@@ -392,7 +392,8 @@ proc runJacTests*(lat0: seq[int]) =
           proc val(x: float): float =
             t.update x
             first.eval.sval
-          for step in [0.001,0.0005]:
+          # ordMax=4 samples down to step/8; smaller steps amplify rounding at norm eight.
+          for step in [0.01,0.005]:
             var fd, err: float
             ndiff(fd,err,val,0.0,step,ordMax=4)
             t.update 0.0

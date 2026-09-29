@@ -933,8 +933,10 @@ and first pullback; there is no enforced norm cap or accuracy bound outside
 tested fixtures.
 
 `tgjac` checks the update approximation in nine field/staple/mixed-alpha
-directional cases at norms $0.12,2,8$, each with steps $10^{-3}$ and
-$5\cdot10^{-4}$, separate from the finite-logdet derivative checks. The
+directional cases at norms $0.12,2,8$, each with steps $10^{-2}$ and
+$5\cdot10^{-3}$, separate from the finite-logdet derivative checks. Four
+extrapolation levels sample down to one eighth of each step; smaller steps
+amplify rounding at norm eight beyond the finite-difference uncertainty bound. The
 reference kinds and the spectra they cover are listed with `tscaledexp` in the
 kernel reference.
 
