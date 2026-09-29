@@ -15,7 +15,9 @@ type
     ## fields: 32-bit word w of the generator of site i at
     ## (i div V)*W*V + w*V + i mod V, W words per generator, which
     ## rng/rngGpu copies to the GPU as is.  Site i draws the numbers of the
-    ## generator of its coordinates in newRNGField.
+    ## generator of its coordinates in newRNGField.  Fields of another layout
+    ## of the lattice and rank grid draw at each site from the generator of
+    ## its coordinates, found through the coords table as for RNGField.
     l*: Layout[V]
     s*: seq[uint32]
 
@@ -45,12 +47,14 @@ proc `[]`*[V: static int; R](r: RNGFieldV[V,R]; i: int): R =
   rngLoad(cast[ptr UncheckedArray[uint32]](addr r.s[0]), V, i, R)
 
 template mapRngLanes(fn: untyped, x: untyped, r: untyped) =
-  doAssert x.l == r.l, "the RNGFieldV needs the layout of the field"
+  doAssert x.l.rankGeom == r.l.rankGeom, "the RNGFieldV needs the rank grid of the field"
   let p = cast[ptr UncheckedArray[uint32]](addr r.s[0])
+  let same = when x.l.V == r.l.V: x.l == r.l else: false
   for i in x.l.sites:
-    var g = rngLoad(p, r.l.V, i, typeof(r[0]))
+    let j = if same: i else: r.l.rankIndex(x.l.coords, i).index
+    var g = rngLoad(p, r.l.V, j, typeof(r[0]))
     fn(x{i}, g)
-    rngStore(p, r.l.V, i, g)
+    rngStore(p, r.l.V, j, g)
 
 when defined(RandCoordOrder) or not defined(RandRawOrder):
   template mapRngField*(fn: untyped, x: untyped, r: untyped) =

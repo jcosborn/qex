@@ -13,33 +13,26 @@ type RngGpu*[V: static int; R] = object
   lo*: Layout[V]
   s*: ptr UncheckedArray[uint32]  # [n div V][W][V]
 
-proc hostIndex[V: static int; R](lo: Layout[V]; r: Field[1,R]): seq[int32] =
-  ## the index in r of each site of lo
-  result = newSeq[int32](lo.nSites)
-  var c = newSeq[int32](lo.nDim)
-  for k in 0..<lo.nSites:
-    lo.coord(c, k)
-    result[k] = int32 r.l.rankIndex(c).index
-
 proc upload*[V: static int; R](g: RngGpu[V,R]; r: Field[1,R]) =
-  ## the generators of r to g
+  ## the generators of r to g, site k of g.lo from the generator of its
+  ## coordinates
+  doAssert r.l.rankGeom == g.lo.rankGeom, "the RNG field needs the rank grid of the layout"
   let n = g.lo.nSites
-  let ix = g.lo.hostIndex(r)
   var h = newSeq[uint32](rngWords(R)*n)
   let hp = cast[ptr UncheckedArray[uint32]](addr h[0])
-  for k in 0..<n: rngStore(hp, V, k, r[ix[k]])
+  for k in 0..<n: rngStore(hp, V, k, r[r.l.rankIndex(g.lo.coords, k).index])
   gpuMemCpyToGpu(g.s, hp, h.len*sizeof(uint32))
 
 proc download*[V: static int; R](g: RngGpu[V,R]; r: Field[1,R]) =
   ## the generators of g to r
+  doAssert r.l.rankGeom == g.lo.rankGeom, "the RNG field needs the rank grid of the layout"
   let n = g.lo.nSites
-  let ix = g.lo.hostIndex(r)
   var h = newSeq[uint32](rngWords(R)*n)
   let hp = cast[ptr UncheckedArray[uint32]](addr h[0])
   gpuMemCpyToCpu(hp, g.s, h.len*sizeof(uint32))
   for k in 0..<n:
     let a = rngLoad(hp, V, k, R)
-    copyMem(addr r[ix[k]], unsafeAddr a, sizeof(R))  # RNGs other than RngMilc6 lack :=
+    copyMem(addr r[r.l.rankIndex(g.lo.coords, k).index], unsafeAddr a, sizeof(R))  # RNGs other than RngMilc6 lack :=
 
 proc newRngGpu*[V: static int; R](lo: Layout[V]; r: Field[1,R]): RngGpu[V,R] =
   ## the generators of r on the device, for fields of lo

@@ -67,10 +67,8 @@ proc check(R: typedesc; name: string) =
     if rd[j] != r[j]: nd += 1
   if rvd.s != rv.s: nd += 1
   var ld = 0.0  # RNGFieldV draws differing from the RNGField ones
-  var c = newSeq[int32](lo.nDim)
   for j in rd.l.sites:
-    rd.l.coord(c, j)
-    if r[j] != rv[lo.rankIndex(c).index]: ld += 1
+    if r[j] != rv[lo.rankIndex(rd.l.coords, j).index]: ld += 1
   let d = [rel(vg, v), rel(pg, p), rel(vv, v), rel(pv, p), rel(vgv, vg), rel(pgv, pg)]
   getDefaultComm().allReduce(nd)
   getDefaultComm().allReduce(ld)
