@@ -583,18 +583,21 @@ proc runFtStoutTests*(localLat: seq[int]; beta, rho: float; nsmear = 1) =
   # --- B. log-Jacobian forward leading order at small rho --------------------
   block:
     let smallRho = 1e-4
-    # Leading order of ln det f' for the canonical projTAH(W ds†) direction:
-    # U(1) → +rho*redot(V,ds); SU(N) → +rho*(N^2-1)/N*redot(V,ds) (trace part of dF).
+    # ln det f'(rho) = a1*rho + a2*rho^2 + O(rho^3) for the canonical projTAH(W ds†)
+    # direction, a1 = redot(V,ds) for U(1) and (N^2-1)/N*redot(V,ds) for SU(N)
+    # (trace part of dF).  For random V, a1 ~ sqrt(volume) and a2 ~ volume, so
+    # compare the odd part (ln det f'(rho) - ln det f'(-rho))/2 = a1*rho + O(rho^3).
     const linCoef = when nc == 1: 1.0 else: float(nc*nc - 1) / float(nc)
+    let V0g = gauge.toGvalue(grt, V0)
+    proc lndet(r: float): float =
+      logDetJ(smearFlow(V0g, c1, scalar.toGvalue(grt, r), 1), V0g).eval.sval
     let
-      V0g = gauge.toGvalue(grt, V0)
-      u = smearFlow(V0g, c1, scalar.toGvalue(grt, smallRho), 1)
       lin = scalar.toGvalue(grt, linCoef*smallRho) * redot(V0g, gaugeActionDeriv(c1, V0g))
-      lndetVal = logDetJ(u, V0g).eval.sval
+      lndetVal = 0.5*(lndet(smallRho) - lndet(-smallRho))
       linVal = lin.eval.sval
     let rel = abs((lndetVal - linVal) / (abs(lndetVal) + abs(linVal) + 1e-30))
-    echo "B lndet: actual=", lndetVal, " linear=", linVal, " rel=", rel
-    doAssert rel < 1e-2
+    echo "B lndet odd part: actual=", lndetVal, " linear=", linVal, " rel=", rel
+    doAssert rel < 1e-4
 
   # --- C. rho = 0 identity baseline ------------------------------------------
   block:
