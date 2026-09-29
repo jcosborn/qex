@@ -211,21 +211,16 @@ proc rankIndex*(l:Layout, coords: ptr cArray[cint]):tuple[rank,index:int] =
   var li:LayoutIndexQ
   layoutIndexQ(l.lq, li, coords)
   result = (rank:li.rank.int,index:li.index.int)
-proc rankIndex*(l: Layout, coords: var openArray[cint]): tuple[rank,index:int] =
+proc rankIndex*[T: SomeInteger](l: Layout, coords: openArray[T]): tuple[rank,index:int] =
   var li: LayoutIndexQ
-  #layoutIndexQ(l.lq.addr, li.addr,
-  #             cast[ptr cArray[cint]](unsafeAddr(coords[0])))
   layoutIndexQ(l.lq, li, coords)
   result = (rank:li.rank.int, index:li.index.int)
-proc rankIndex*(l:Layout, coords:openArray[int]):tuple[rank,index:int] =
-  when compiles((const n=coords.len;n)):
-    const n=coords.len
-    var c:array[n,cint]
-  else:
-    let n=coords.len
-    var c = newSeq[cint](n)
-  for i in 0..<n: c[i] = coords[i].cint
-  result = l.rankIndex(c)
+proc rankIndex*(l: Layout, coords: seq[seq[int16]], i: int): tuple[rank,index:int] =
+  ## Rank and index in `l` of the coordinates coords[d][i], e.g. site `i` of
+  ## another layout `lo` with the same lattice given `lo.coords`.
+  var li: LayoutIndexQ
+  layoutIndexQ(l.lq, li, coords, i)
+  result = (rank:li.rank.int, index:li.index.int)
 proc rankIndex*(l:Layout, coords: ptr cint):tuple[rank,index:int] =
   #rankIndex(l, cast[ptr cArray[cint]](coords))
   var ca = cast[ptr cArray[cint]](coords)

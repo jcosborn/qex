@@ -103,39 +103,57 @@ proc lexr_i*[X,S,D:UncheckedArray[SomeInteger],N:SomeInteger](
     #inc(i)
   return l
 
-template `&`[T](x: openArray[T]): untyped = cast[ptr cArray[T]](unsafeaddr x[0])
-
 #proc layoutLocalIndexQ*[T](l: LayoutQ; coords: var openArray[T]): int32 =
 
-proc layoutIndexQ*[T](l: LayoutQ; li: var LayoutIndexQ;
-                      coords: var openArray[T]) =
-  var nd = l.nDim
-  var ri = lexr_i(&coords, l.rankGeom, l.localGeom, nd)
-  #var ri = lex_i(coords, l.rankGeom, l.localGeom, nd)
-  var ii = lex_i(&coords, l.innerGeom, l.outerGeom, nd)
-  var ib = 0
-  for i in 0..<nd:
-    var xi = coords[i] div l.outerGeom[i]
-    var xli = xi mod l.innerGeom[i]
-    inc(ib, xli * l.outerGeom[i])
-  ib = ib and 1
-  coords[l.innerCbDir] += int32(l.innerCb * ib)
-  var oi = lex_i(&coords, l.outerGeom, nil, nd)
-  coords[l.innerCbDir] -= int32(l.innerCb * ib)
-  var p = 0
-  for i in 0..<nd:
-    inc(p, coords[i])
-  var oi2 = oi div 2
-  if (p and 1) != 0: oi2 = (oi + l.nSitesOuter).int32 div 2
+template layoutIndexImpl(l: LayoutQ; li: var LayoutIndexQ; crd: untyped) =
+  # x = crd(d), the global coordinate in direction d:
+  #   rank  (x div localGeom) mod rankGeom -> ri, direction 0 slowest
+  #   lane  k = (x div outerGeom) mod innerGeom -> ii, direction 0 fastest
+  #   outer o = x mod outerGeom -> oi, direction 0 fastest
+  # ib = sum k*outerGeom; odd ib shifts o[innerCbDir] by innerCb mod outerGeom.
+  # index = ((oi + (sum x odd)*nSitesOuter) div 2)*nSitesInner + ii
+  var ri, ii, oi, ib, p, ocb, mcb = 0
+  var mi, mo = 1
+  for d in 0..<l.nDim.int:
+    let x = int(crd(d))
+    let og = int(l.outerGeom[d])
+    let o = x mod og
+    let k = (x div og) mod l.innerGeom[d]
+    ri = ri*l.rankGeom[d] + (x div l.localGeom[d]) mod l.rankGeom[d]
+    ii += k*mi
+    mi *= l.innerGeom[d]
+    if d == l.innerCbDir:
+      ocb = o
+      mcb = mo
+    oi += o*mo
+    mo *= og
+    ib += k*og
+    p += x
+  if (ib and 1) != 0:
+    oi += ((ocb + l.innerCb) mod l.outerGeom[l.innerCbDir] - ocb)*mcb
+  if (p and 1) != 0: oi += l.nSitesOuter
   li.rank = int32 ri
-  li.index = int32 oi2 * l.nSitesInner + ii
+  li.index = int32((oi div 2)*l.nSitesInner + ii)
+
+proc layoutIndexQ*[T](l: LayoutQ; li: var LayoutIndexQ; coords: openArray[T]) =
+  template crd(d: int): untyped = coords[d]
+  layoutIndexImpl(l, li, crd)
+
+proc layoutIndexQ*(l: LayoutQ; li: var LayoutIndexQ; coords: seq[seq[int16]]; i: int) =
+  ## Coordinates coords[d][i], as in the Layout.coords table.
+  template crd(d: int): untyped = coords[d][i]
+  layoutIndexImpl(l, li, crd)
 
 proc layoutCoordQ*[T](l: ptr LayoutQ; coords: var openArray[T];
                       li: ptr LayoutIndexQ) =
+  # coords[i] = localGeom[i]*rank[i] + outerGeom[i]*lane[i] + outer[i]
+  # localGeom[i] = innerGeom[i]*outerGeom[i], so the first two terms are
+  # multiples of outerGeom[i] and outer[i] = coords[i] mod outerGeom[i].
   var nd = l.nDim
-  var cr = newSeq[cint](nd)
-  lexr_x(cr, li.rank, l.rankGeom, nd)
-  #lex_x(cr, li.rank, l.rankGeom, nd)
+  var r = li.rank
+  for i in countdown(nd-1, 0):
+    coords[i] = l.localGeom[i] * (r mod l.rankGeom[i])
+    r = r div l.rankGeom[i]
   var p = 0
   var ll = li.index mod l.nSitesInner
   var ib = 0
@@ -143,10 +161,8 @@ proc layoutCoordQ*[T](l: ptr LayoutQ; coords: var openArray[T];
     var w = l.innerGeom[i]
     var wl = l.outerGeom[i]
     var k = ll mod w
-    var c = l.localGeom[i] * cr[i] + k * wl
-    cr[i] = c
-    #printf("cr[%i]: %i\n", i, c);
-    inc(p, c)
+    coords[i] += k * wl
+    inc(p, coords[i])
     ll = ll div w
     inc(ib, k * wl)
   ib = ib and 1
@@ -159,23 +175,24 @@ proc layoutCoordQ*[T](l: ptr LayoutQ; coords: var openArray[T];
     var wl = l.outerGeom[i]
     var k = ii mod wl
     if i == l.innerCbDir: k = (k + l.innerCb * ib).int32 mod wl
-    coords[i] = k
-    #printf("coords[%i]: %i\n", i, k);
+    coords[i] += k
     inc(p, k)
     ii = ii div wl
   if (p and 1) != 0:
     for i in 0..<nd:
       var wl: cint = l.outerGeom[i]
-      if i == l.innerCbDir: coords[i] = int32(coords[i] + l.innerCb * ib) mod wl
-      inc(coords[i])
-      if coords[i] >= wl:
-        coords[i] = 0
-        if i == l.innerCbDir: coords[i] = int32(coords[i] + l.innerCb * ib) mod wl
+      var k = coords[i] mod wl
+      let b = coords[i] - k
+      if i == l.innerCbDir: k = int32(k + l.innerCb * ib) mod wl
+      inc(k)
+      if k >= wl:
+        k = 0
+        if i == l.innerCbDir: k = int32(k + l.innerCb * ib) mod wl
+        coords[i] = b + k
       else:
-        if i == l.innerCbDir: coords[i] = int32(coords[i] + l.innerCb * ib) mod wl
+        if i == l.innerCbDir: k = int32(k + l.innerCb * ib) mod wl
+        coords[i] = b + k
         break
-  for i in 0..<nd:
-    coords[i] += cr[i]
   var li2: LayoutIndexQ
   layoutIndexQ(l[], li2, coords)
   if li.rank != li2.rank or li.index != li2.index:

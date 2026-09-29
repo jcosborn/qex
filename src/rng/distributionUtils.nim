@@ -13,11 +13,8 @@ type
 
 when defined(RandCoordOrder) or not defined(RandRawOrder):
   template mapRngField*(fn: untyped, x: untyped, r: untyped) =
-    let nd = x.l.nDim
-    var c = newSeq[int32](nd)
     for i in x.l.sites:
-      x.l.coord(c, i)
-      let j = r.l.rankIndex(c).index
+      let j = r.l.rankIndex(x.l.coords, i).index
       fn(x{i}, r{j})
 else:
   template mapRngField*(fn: untyped, x: untyped, r: untyped) =
