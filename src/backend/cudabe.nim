@@ -26,7 +26,7 @@ template gpuMalloc*(size: SomeInteger):pointer =
   var p:pointer
   let err = cudaMalloc(p, csize_t size)
   if err:
-    echo "gpuMalloc: ", err
+    echo "gpuMalloc: ", $err  # $ of this module: callers need not import cuda
     p = cast[pointer](0)
   p
 template gpuMalloc[T](x: var ptr UncheckedArray[T], n: int) =
@@ -37,25 +37,25 @@ template gpuMalloc[T](x: ptr T) =
 template gpuFree*(p:pointer) =
   let err = cudaFree(p)
   if err:
-    echo err
+    echo $err
     quit cast[cint](err)
 
 proc gpuMemset*(devPtr: pointer, value: SomeInteger, count: SomeInteger) =
   let err = cudaMemset(devPtr, cint value, csize_t count)
   if err:
-    echo "gpuMemset: ", err
+    echo "gpuMemset: ", $err
 #proc gpuMemCpyToGpu*(dst,src: pointer, count: SomeInteger):cint {.discardable.} =
 proc gpuMemCpyToGpu*(dst,src: pointer, count: SomeInteger) =
   let err = cudaMemcpy(dst,src,csize_t count,cudaMemcpyHostToDevice)
   if err:
     echo instantiationInfo()
-    echo "  gpuMemCpyToGpu: ", err
+    echo "  gpuMemCpyToGpu: ", $err
 #proc gpuMemCpyToCpu*(dst,src: pointer, count: SomeInteger):cint {.discardable.} =
 template gpuMemCpyToCpu*(dst,src: pointer, count: SomeInteger) =
   let err = cudaMemcpy(dst,src,csize_t count,cudaMemcpyDeviceToHost)
   if err:
     echo instantiationInfo()
-    echo "  gpuMemCpyToCpu: ", err
+    echo "  gpuMemCpyToCpu: ", $err
 
 {.passC: "-iquote " & currentSourcePath().parentDir & "/cuda".}  # cuda/nimbase.h
 
@@ -78,14 +78,14 @@ template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
     {.emit: "\n#undef nimZeroMem\n#undef nimCopyMem\n});".}
     let err = cudaGetLastError()
     if err:
-      echo "gpuForAsync: ", err
+      echo "gpuForAsync: ", $err
       quit 1
 template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) = gpuForAsync(i, n, 0, body)
 
 template gpuWaitAsync* =
   let err = cudaDeviceSynchronize()
   if err:
-    echo "gpuWaitAsync: ", err
+    echo "gpuWaitAsync: ", $err
     quit 1
 
 template gpuFor*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
@@ -104,7 +104,7 @@ proc gpuMallocHost*(size: SomeInteger): pointer =
   ## pinned host memory, for fast copies from the device
   let err = cudaMallocHost(addr result, csize_t size)
   if err:
-    echo "gpuMallocHost: ", err
+    echo "gpuMallocHost: ", $err
     quit 1
 template gpuFreeHost*(p: pointer) = discard cudaFreeHost(p)
 
