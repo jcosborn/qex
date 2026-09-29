@@ -104,7 +104,7 @@ alone.  Per trajectory (2026-09-27, the second and third): staghmcgpu_sh
 24^4, 3 terms, 0.86 s in double, 0.66 mixed; eightFlavorSMGgpu 16^3x32
 2.73 s, 24^3x48 on 4 H100s 4.1 s.
 
-## CUDA with nvcc (branch gpu-nvcc)
+## CUDA with nvcc
 
 build/nvcc.sh turns the compile commands Nim writes for clang into nvcc
 commands (`-x cu -arch=sm_XY --extended-lambda`, the gcc options through
