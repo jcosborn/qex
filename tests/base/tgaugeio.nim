@@ -26,7 +26,9 @@ suite "Test gauge IO":
     let err = gg.loadGauge(fn)
     check(err == 0)
     var pp = gg.plaq
-    check(p == pp)
+    # MPI sums may round differently between calls (MPICH switches its
+    # allreduce algorithm after a few collectives); the field check is exact.
+    check(p ~ pp)
     for i in 0..<g.len:
       gg[i] -= g[i]
       let n2 = gg[i].norm2
@@ -41,7 +43,7 @@ suite "Test gauge IO":
     let err = gg.loadGauge(fn)
     check(err == 0)
     var pp = gg.plaq
-    check(ps == pp)
+    check(ps ~ pp)
     for i in 0..<g.len:
       gg[i] -= gs[i]
       let n2 = gg[i].norm2
