@@ -61,6 +61,7 @@ when defined(RandCoordOrder) or not defined(RandRawOrder):
     when r is RNGFieldV:
       mapRngLanes(fn, x, r)
     else:
+      doAssert x.l.rankGeom == r.l.rankGeom, "the RNG field needs the rank grid of the field"
       for i in x.l.sites:
         let j = r.l.rankIndex(x.l.coords, i).index
         fn(x{i}, r{j})
