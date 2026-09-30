@@ -26,11 +26,11 @@ GPUs (PVC tiles):
 | AMD MI300A | Tuolumne | MI300A (Zen 4 cores) | ROCm 10.0 amdclang | Cray MPICH 9.1.0 |
 
 On September 30 devel, with the solver stopping rules below, passed on
-all but the B200, which ran the code before them: both CI suites,
-tests/base/taccel and tgaugegpu, backend/examples/bestagres (also with
-`-split:0` and `-split:1`, links of 12 reals and an 8^4 lattice, and with
-`-ipc:0` where MPI reads device memory, on Sunspot and Tuolumne), berng and
-staghmcgpu `-check:1`, on 1, 2 and 4 GPUs and on 12 PVC tiles.
+all of these builds: both CI suites, tests/base/taccel and tgaugegpu,
+backend/examples/bestagres (also with `-split:0` and `-split:1`, links of
+12 reals and an 8^4 lattice, and with `-ipc:0` where MPI reads device
+memory, on Sunspot and Tuolumne), berng and staghmcgpu `-check:1`, on 1, 2
+and 4 GPUs and on 12 PVC tiles.
 The stopping rules first ran with the CPU backend, on a FreeBSD 15.1 host
 (Xeon E5-2687W v2, clang 19.1.7, MPICH 5.0.1, `vlen:16`).
 
@@ -324,16 +324,15 @@ gfx942 is both MI300X and MI300A.
 
 ## Measured
 
-One GPU (one PVC tile), devel of September 30, the builds above; the B200
-ran the code before the stopping rules.
+One GPU (one PVC tile), devel of September 30, the builds above.
 
 | | H100 | B200 | MI300X | MI300A | PVC tile, OpenMP / SYCL |
 |---|---|---|---|---|---|
 | HBM peak (TB/s) | 3.35 | 8.0 | 5.3 | 5.3 | 1.64 |
-| bestream triad (TB/s) | 3.10 | 5.83 | 4.09 | 3.35 | 0.98 / 0.98 |
-| bestagcg 32^4, one system (TB/s) | 2.65 | 5.30 | 3.21 | 2.61-2.62 | 0.82 / 0.83 |
-| staghmcgpu_sh 24^4, double / mixed (s per trajectory) | 0.887-0.889 / 0.679-0.680 | 0.605 / 0.509 | 0.954-0.961 / 0.770-0.772 | 1.064-1.069 / 0.866-0.885 | 2.03-2.04 / 1.68-1.69, 1.98-2.00 / 1.61-1.62 |
-| eightFlavorSMGgpu 16^3x32 (s per trajectory) | 2.72-2.73 | 2.11 | 2.79-2.81 | 3.44-3.46 | 5.04-5.07 / 4.75-4.77 |
+| bestream triad (TB/s) | 3.10 | 5.84 | 4.09 | 3.35 | 0.98 / 0.98 |
+| bestagcg 32^4, one system (TB/s) | 2.65 | 5.28 | 3.21 | 2.61-2.62 | 0.82 / 0.83 |
+| staghmcgpu_sh 24^4, double / mixed (s per trajectory) | 0.887-0.889 / 0.679-0.680 | 0.625-0.626 / 0.528-0.529 | 0.954-0.961 / 0.770-0.772 | 1.064-1.069 / 0.866-0.885 | 2.03-2.04 / 1.68-1.69, 1.98-2.00 / 1.61-1.62 |
+| eightFlavorSMGgpu 16^3x32 (s per trajectory) | 2.72-2.73 | 2.13-2.14 | 2.79-2.81 | 3.44-3.46 | 5.04-5.07 / 4.75-4.77 |
 
 Against the code before the stopping rules, in the same jobs (runs in
 the order old, new, new, old), bestagcg 32^4 takes 0.1-0.6% longer for one
