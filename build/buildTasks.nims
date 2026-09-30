@@ -151,6 +151,8 @@ proc setNimFlags() =
 
 var run = false
 var runArgs = ""
+var jobs = 1
+var builds: seq[string]
 #var verbosity = -1
 var bindir = "bin"
 var srcPaths = @[".", "qex/src", "qex/tests"]  # use relative paths for convenience
@@ -174,12 +176,32 @@ proc findSrc(g: string): tuple[files:seq[string],dirs:seq[string]] =
   result = (files: fs.mapIt("." / it.relativePath(d)).deduplicate,
             dirs: ds.mapIt("." / it.relativePath(d)).deduplicate)
 
+proc runBuilds() =
+  if builds.len == 0: return
+  var cmd = "status=0\n"
+  for i, s in builds:
+    cmd &= "( " & s & " ) &\np" & $i & "=$!\n"
+  # Wait for every child, including when an earlier compilation fails.
+  for i, s in builds:
+    cmd &= "if wait \"$p" & $i & "\"; then :; else\n"
+    cmd &= "printf '%s\\n' " & ("failed: " & s).quoteShell & " >&2\nstatus=1\nfi\n"
+  cmd &= "exit \"$status\""
+  builds.setLen(0)
+  exec "sh -c " & cmd.quoteShell
+
 # return true if failed
 proc buildFile(f: string, outfile=""): bool =
   setNimFlags()
   var tool = ""
   #tool = "valgrind "
-  var nimcmd = tool & nim & " " & nimCmdArgs
+  var nimcmd = tool & nim.quoteShell & " " & nimCmdArgs
+  if jobs > 1 and not run:
+    var cache = nimcache
+    for arg in nimFlags:
+      let s = arg.split({':', '='}, 1)
+      if s.len == 2 and s[0].nimIdentNormalize == "--nimcache":
+        cache = parseCmdLine(s[1]).join("")
+    nimcmd &= " --nimcache:" & (cache / ("job-" & $builds.len)).quoteShell
   if run: nimcmd &= " -r "
   var (dir, name, ext) = splitFile(f)
   if outfile!="": name = outfile
@@ -189,13 +211,13 @@ proc buildFile(f: string, outfile=""): bool =
     name = bindir / name
   #let cc = if usecpp: "cpp" else: "c"
   let cc = ccDef
-  let s = nimcmd & " " & cc & " -o:" & name & " " & f & runArgs
+  let s = nimcmd & " " & cc & " -o:" & name.quoteShell & " " & f.quoteShell & runArgs
   echo "running: ", s
-  try:
+  if jobs > 1 and not run:
+    builds.add s
+    if builds.len == jobs: runBuilds()
+  else:
     exec s
-  except:
-    echo "failed: ", s
-    quit(-1)
   return false
 
 # return true if failed
@@ -245,6 +267,11 @@ configTask run, "run executable after building":
 
 configTask verb, "set build verbosity to N (verb:N), N in 0,1,2,3":
   buildVerbosity = getInt()
+
+configTask jobs, "compile in batches of N with separate caches (jobs:N, default 1)":
+  jobs = getInt()
+  if jobs < 1:
+    raise newException(ValueError, "jobs:N requires N >= 1")
 
 
 # === Build Tasks ===
@@ -360,6 +387,8 @@ buildTask clean, cleanDesc:
     #echo f
     #if f.endsWith(".o") or f.endsWith(".c") or f.endsWith(".cpp"):
     rmFile f
+  for d in nimcache.listDirs:
+    rmDir d
 
 #let extraTests = [
 #  "gauge/wflow.nim",
@@ -445,6 +474,7 @@ proc buildTests(scope = "") =
         mkDir outdir
       runscript.addTest(qexDir/"src"/f, outdir)
       extraArgs = ""
+  runBuilds()
   #echo runscript.join("\n")
   runscript.add("$CLEANUPJOBS")
   runscript.add("if [ X != \"X$failed\" ];then echo Failed tests: $failed;exit 1;fi")
@@ -470,6 +500,7 @@ proc runMake(args: seq[string]) =
     if failed:
       echo "Error: invalid source arg: ", a
       quit(1)
+  runBuilds()
 
 let makeDesc = """   Search for each [path]... as described below,
                compile, link, and put executables in `bin'"""
@@ -484,6 +515,7 @@ buildTask doc, "build inline docs":
   #nim doc --project --index:on --git.url:<url> --git.commit:<tag> --outdir:htmldocs <main_filename>.nim
   #runArgs = " --project --index:on --outdir:htmldocs "
   discard buildFile(file, "htmldocs")
+  runBuilds()
 
 buildTask nbook, "build nimibook docs":
   setNimFlags()
