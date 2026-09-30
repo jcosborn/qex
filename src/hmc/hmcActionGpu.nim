@@ -143,6 +143,8 @@ proc add*(h: HmcGpu; level: GpuLevel) =
 var gaugeCount, fermCount, ratioCount, pvCount = 0
 
 proc newGaugeAction*(h: HmcGpu; gc: GaugeActionCoeffs): GpuAction =
+  ## the gauge action of gaugeGpu: plaq and adjplaq, ValueError for rect or pgm
+  requireAdjoint(gc, "newGaugeAction")
   result = GpuAction(kind: gkGauge, gc: gc, name: "GaugeAction", id: "GA" & $gaugeCount)
   inc gaugeCount
   result.description = result.name & $gc

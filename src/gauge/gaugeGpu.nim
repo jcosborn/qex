@@ -273,7 +273,9 @@ template link*(m: untyped; nu: static int; j: untyped) =
     else: mload(m, h3, o, st)
 
 proc actionA*[V: static int](g: var GpuGauge[V]; c: GaugeActionCoeffs): float =
-  ## the gauge action plaq + adjplaq of g.u, as actionA
+  ## the gauge action plaq + adjplaq of g.u, as actionA, which also rejects
+  ## rect and pgm
+  requireAdjoint(c, "actionA")
   g.update
   let n = g.n
   let u = g.u
@@ -403,7 +405,9 @@ proc ploop*[V: static int](g: GpuGauge[V]; w: var GpuGauge[V]; t: ptr UncheckedA
   for mu in 0..3: result[mu] = (re: f*s[2*mu], im: f*s[2*mu+1])
   w.fresh = false
 proc forceA*[V: static int](g: var GpuGauge[V]; c: GaugeActionCoeffs; p: ptr UncheckedArray[float]; t: float) =
-  ## p -= t F for the gauge force F of plaq + adjplaq, as forceA
+  ## p -= t F for the gauge force F of plaq + adjplaq, as forceA, which also
+  ## rejects rect and pgm
+  requireAdjoint(c, "forceA")
   tic("gauge force")
   let n = g.n
   let u = g.u
