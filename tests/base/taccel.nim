@@ -117,8 +117,10 @@ proc sums(): int =
   ## 2 and 8 sums: exact sums of exactly representable terms, and rounded
   ## sums equal twice and near the host sum
   let hb = cast[ptr UncheckedArray[float]](gpuMallocHost(8*sumHost*sizeof(float)))
-  for n in [0, 1, 15, 16, 17, 511, 512, 513, 8193]:
-    for m in [1, 2, 8]:
+  for n0 in [0, 1, 15, 16, 17, 511, 512, 513, 8193]:
+    for m0 in [1, 2, 8]:
+      let n = n0  # the loop variables point into the host array, the kernels need values
+      let m = m0
       let a = dev(m*n)
       let w = dev(m*(n div 15 + 16))
       gpuFor(k, m*n):  # a[c n + i] = i + 1 + c/2
