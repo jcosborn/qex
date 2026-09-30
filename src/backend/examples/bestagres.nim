@@ -95,12 +95,14 @@ proc unchanged(b: Src): bool =
 proc check(label: string; x: ptr UncheckedArray[float]; b: Src; m: float; sp: SolverParams;
            r2req: float; maxits: int; zero = false) =
   ## the solve of sp, its only one: with maxits = big it meets r2req, with
-  ## fewer it misses it within maxits; its recorded residual matches the CPU one
+  ## fewer it misses it within maxits; its recorded residual matches the CPU
+  ## one to 1%: the operators round apart, and links of 12 reals, whose row 2
+  ## the GPU rebuilds, moved a residual of 3e-25 by 0.1%
   let r2 = resid(x, b, m)
   let rec = sp.r2.max
   var ok = unchanged(b) and sp.calls == 1 and sp.iterations <= maxits
   if zero: ok = ok and r2 == 0 and rec == 0 and sp.iterations == 0
-  else: ok = ok and abs(rec - r2) <= 1e-3*max(rec, r2) + 1e-6*r2req and (rec <= r2req) == (maxits == big)
+  else: ok = ok and abs(rec - r2) <= 1e-2*max(rec, r2) + 1e-6*r2req and (rec <= r2req) == (maxits == big)
   echo &"{label:<28} m {m:6} its {sp.iterations:5}  |b-Mx|^2/|b|^2 recorded {rec:9.3e} CPU {r2:9.3e}  requested {r2req:7.1e}",
        if ok: "  ok" else: "  FAILED"
   if not ok: inc fails
