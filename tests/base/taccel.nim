@@ -92,67 +92,83 @@ proc checkHalo(lo: auto; reps: int): float =
   gpuFree(f)
   c.allReduce(result)
 
+# The kernels run in procs: the GPU backends emit their code, which at the
+# top level, as in a test block, lands outside any function.
+
+proc queued(): int =
+  ## mismatches after three queued kernels, each reading the output of the
+  ## one before, and a synchronous one after the wait
+  let n = 1000
+  let a = dev(n)
+  let b = dev(n)
+  gpuForAsync(i, n): a[i] = float(i)
+  gpuForAsync(i, n): b[i] = 2.0*a[i] + 1.0
+  gpuForAsync(i, n): a[i] = b[i] - a[i]
+  gpuWaitAsync()
+  gpuFor(i, n): b[i] = a[i] - 1.0
+  let h = host(b, n)
+  for i in 0..<n:
+    if h[i] != float(i): inc result
+  gpuFree(a)
+  gpuFree(b)
+
+proc sums(): int =
+  ## mismatches of sumFixed at the sizes where its levels change, with 1,
+  ## 2 and 8 sums: exact sums of exactly representable terms, and rounded
+  ## sums equal twice and near the host sum
+  let hb = cast[ptr UncheckedArray[float]](gpuMallocHost(8*sumHost*sizeof(float)))
+  for n in [0, 1, 15, 16, 17, 511, 512, 513, 8193]:
+    for m in [1, 2, 8]:
+      let a = dev(m*n)
+      let w = dev(m*(n div 15 + 16))
+      gpuFor(k, m*n):  # a[c n + i] = i + 1 + c/2
+        let c = k div n
+        a[k] = float(k - c*n + 1) + 0.5*float(c)
+      var r = newSeq[float](m)
+      sumFixed(r, a, w, hb, m, n)
+      var bad = 0
+      for c in 0..<m:
+        if r[c] != float(n*(n+1) div 2) + 0.5*float(c*n): inc bad
+      gpuFor(k, m*n): a[k] = 1.0/float(k + 3)
+      var r1, r2 = newSeq[float](m)
+      sumFixed(r1, a, w, hb, m, n)
+      sumFixed(r2, a, w, hb, m, n)
+      for c in 0..<m:
+        var t = 0.0
+        for i in 0..<n: t += 1.0/float(c*n + i + 3)
+        if r1[c] != r2[c] or abs(r1[c] - t) > 1e-12*t: inc bad
+      if bad != 0: echo "sumFixed n ", n, " m ", m, ": ", r, " ", r1, " ", r2
+      result += bad
+      gpuFree(a)
+      gpuFree(w)
+  gpuFreeHost(hb)
+
+proc gsums(): int =
+  ## mismatches of gpuSum of 1, 2 and 8 exact sums
+  for n in [0, 1, 15, 16, 17, 511, 512, 513, 8193, 16*8193 + 5]:
+    let s1 = gpuSum(i, n, 1, [float(i + 1)])
+    let s2 = gpuSum(i, n, 2, [float(i), 1.0])
+    let s8 = gpuSum(i, n, 8):
+      var v {.noInit.}: array[8, float]
+      for c in 0..<8: v[c] = float(i + c)
+      v
+    var bad = 0
+    if s1[0] != float(n*(n+1) div 2): inc bad
+    if s2[0] != float(n*(n-1) div 2) or s2[1] != float(n): inc bad
+    for c in 0..<8:
+      if s8[c] != float(n*(n-1) div 2 + c*n): inc bad
+    if bad != 0: echo "gpuSum n ", n, ": ", s1, " ", s2, " ", s8
+    result += bad
+
 suite "backend/accel":
   test "queued kernels run in order":
-    let n = 1000
-    let a = dev(n)
-    let b = dev(n)
-    gpuForAsync(i, n): a[i] = float(i)
-    gpuForAsync(i, n): b[i] = 2.0*a[i] + 1.0
-    gpuForAsync(i, n): a[i] = b[i] - a[i]
-    gpuWaitAsync()
-    gpuFor(i, n): b[i] = a[i] - 1.0
-    let h = host(b, n)
-    var bad = 0
-    for i in 0..<n:
-      if h[i] != float(i): inc bad
-    check bad == 0
-    gpuFree(a)
-    gpuFree(b)
+    check queued() == 0
 
   test "sumFixed":
-    let hb = cast[ptr UncheckedArray[float]](gpuMallocHost(8*sumHost*sizeof(float)))
-    for n in [0, 1, 15, 16, 17, 511, 512, 513, 8193]:
-      for m in [1, 2, 8]:
-        let a = dev(m*n)
-        let w = dev(m*(n div 15 + 16))
-        gpuFor(k, m*n):  # a[c n + i] = i + 1 + c/2, sums exact in any order
-          let c = k div n
-          a[k] = float(k - c*n + 1) + 0.5*float(c)
-        var r = newSeq[float](m)
-        sumFixed(r, a, w, hb, m, n)
-        var bad = 0
-        for c in 0..<m:
-          if r[c] != float(n*(n+1) div 2) + 0.5*float(c*n): inc bad
-        gpuFor(k, m*n): a[k] = 1.0/float(k + 3)  # sums rounded, the same twice
-        var r1, r2 = newSeq[float](m)
-        sumFixed(r1, a, w, hb, m, n)
-        sumFixed(r2, a, w, hb, m, n)
-        for c in 0..<m:
-          var t = 0.0
-          for i in 0..<n: t += 1.0/float(c*n + i + 3)
-          if r1[c] != r2[c] or abs(r1[c] - t) > 1e-12*t: inc bad
-        check bad == 0
-        if bad != 0: echo "n ", n, " m ", m, ": ", r, " ", r1, " ", r2
-        gpuFree(a)
-        gpuFree(w)
-    gpuFreeHost(hb)
+    check sums() == 0
 
   test "gpuSum":
-    for n in [0, 1, 15, 16, 17, 511, 512, 513, 8193, 16*8193 + 5]:
-      let s1 = gpuSum(i, n, 1, [float(i + 1)])
-      let s2 = gpuSum(i, n, 2, [float(i), 1.0])
-      let s8 = gpuSum(i, n, 8):
-        var v {.noInit.}: array[8, float]
-        for c in 0..<8: v[c] = float(i + c)
-        v
-      var bad = 0
-      if s1[0] != float(n*(n+1) div 2): inc bad
-      if s2[0] != float(n*(n-1) div 2) or s2[1] != float(n): inc bad
-      for c in 0..<8:
-        if s8[c] != float(n*(n-1) div 2 + c*n): inc bad
-      check bad == 0
-      if bad != 0: echo "n ", n, ": ", s1, " ", s2, " ", s8
+    check gsums() == 0
 
   test "GpuHaloEx neighbors":
     for ll in [[4,4,4,8], [8,4,4,4], [4,8,8,8]]:
