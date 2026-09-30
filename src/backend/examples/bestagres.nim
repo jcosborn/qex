@@ -59,9 +59,9 @@ proc newSrc(scale: float; full: bool): Src =
   copyMem(addr result.h[0], addr f[0], n6*sizeof(float))
   for i in 0..<n6:
     result.h[i] = if full or i < ne6: scale*result.h[i] else: 1e30
-  result.full = full
   result.d = dvec()
-  gpuMemCpyToGpu(result.d, addr result.h[0], n6*sizeof(float))
+  gpuMemCpyToGpu(result.d, addr result.h[0], n6*sizeof(float))  # not last: a cint with OpenMP
+  result.full = full
 
 proc resid(x: ptr UncheckedArray[float]; b: Src; m: float): float =
   ## |b - M x|^2/|b|^2 by stag.D, b_o = 0 unless full; |M x|^2 for b = 0
