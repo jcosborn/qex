@@ -2,10 +2,12 @@
 
 The GPU code (backend/accel gpuFor kernels, physics/stagGpu, gauge/hypGpu,
 gauge/gaugeGpu, comms/halogpu, hmc/hmcActionGpu, rng/rngGpu) builds with four
-backends, selected by `-d:Backend=...` in `nimargs`:
+GPU backends, selected by `-d:Backend=...` in `nimargs`, and with the CPU
+backend, the default:
 
 | Backend | Compilers | Kernels | Halo stores into peers on the node |
 |---|---|---|---|
+| CPU | the host compiler | loops on the calling host thread | none, QMP messages |
 | OpenMP | icx (oneAPI), OpenMP offload | `target teams distribute parallel for` | Level Zero IPC (comms/zeipc) |
 | SYCL | icpx (oneAPI) | `parallel_for` lambdas | Level Zero IPC (comms/zeipc) |
 | CUDA | clang `-x cuda`; nvcc through build/nvcc.sh | device lambdas of the qexFor<<<>>> template | CUDA IPC (comms/cudaipc) |
@@ -22,6 +24,14 @@ GPUs (PVC tiles):
 | NVIDIA B200 | JLSE blackwell00 | Xeon 6960P | clang 22.1.8 with CUDA 12.9.1 | OpenMPI 4.1.1 |
 | AMD MI300X | JLSE amdgpu00 | EPYC 9654 | ROCm 10.0.0 amdclang | OpenMPI 4.1.1 |
 | AMD MI300A | Tuolumne | MI300A (Zen 4 cores) | ROCm 10.0 amdclang | Cray MPICH 9.1.0 |
+
+These builds ran the code before the CPU backend and the solver stopping
+rules below (September 29).  Those ran with the CPU backend only, on a
+FreeBSD 15.1 host (Xeon E5-2687W v2, clang 19.1.7, MPICH 5.0.1,
+`vlen:16`), on 1, 2 and 4 ranks: tests/base/taccel, tgaugegpu and
+trngfieldv, backend/examples/bestagres and berng, tests/extra/tstaghmc_sh
+with staghmcgpu_sh (also with `-mixed:1` and `-batch:0` on 2 ranks), and
+tests/extra/teightFlavorSMG with eightFlavorSMGgpu.
 
 ## Procs that kernels call
 
@@ -69,6 +79,47 @@ Which to use:
   (the cuda, hip, sycl and OpenMP kernel blocks of backend/, and
   backend/vectorized) use it; gpuFor bodies don't.
 
+## CPU backend
+
+Without `-d:Backend`, backend/cpu runs each gpuFor and gpuForAsync kernel
+as a loop over its indices on the calling host thread, complete when it
+returns; gpuWaitAsync does nothing, gpuMalloc and gpuMallocHost allocate
+host memory, and GpuHaloEx sends every message through QMP.  The GPU
+programs build and run there as the reference of the device code, on one
+core per rank.  tests/base/taccel and tests/base/tgaugegpu run in the CI
+suite this way.
+
+## Solver stopping rules
+
+physics/stagGpu solves with M = m + D/2 and A = 4m^2 - D_eo D_oe, as
+stag.solve and solveEE:
+
+- solveEE until |b_e - A x_e|^2 <= r2req |b_e|^2;
+- solveM until |b - M x|^2 <= r2req |b|^2, with b_o = 0 unless `full`
+  (then b_o is not read), through A x_e = q = 4m b_e - 2 D_eo b_o and
+  x_o = b_o/m - D_oe x_e/(2m).  (b - M x)_e = (q - A x_e)/(4m) and
+  (b - M x)_o = 0 in exact arithmetic, so the CG stops at
+  |q - A x_e|^2 <= 16m^2 (r2req |b|^2 - |b_o|^2) where
+  |b_o|^2 <= r2req |b|^2/2, as solveReconR and solveEE of the CPU, and
+  else at 0.99 16m^2 r2req |b|^2, as solveReconL, whose margin covers the
+  rounding of x_o.  HMC trajectories then follow those of hmcAction to
+  rounding.
+
+The CG iterations stop on the recursive residual.  solveEE then computes
+the true residual b - A x, and while it misses the request and drops, with
+iterations left, restarts the CG from it with the same x.  solveM computes
+b - M x instead, and while it misses the request and drops, with
+iterations left, adds to x the solution y of M y = b - M x, as stag.solve
+does; it records |b - M x|^2/|b|^2 in the SolverParams statistics, 0 for
+b = 0.  The true |q - A x_e| can't drop below about eps |A| |x_e|, which for
+small m and r2req lies above the CG target (m = 0.001 and r2req = 1e-24 on
+a 4^3x8 lattice): rounding x_e by d changes b - M x by A d/(4m) through x_o,
+while the correction y is small and so is its rounding.  The restarts in
+double of the mixed precision solver also stop once the residual no longer
+drops.  In solveM of several systems, a system whose slot stops takes these
+steps on its own before the slot takes the next system.  A solve out of
+iterations stops there and records the residual it reached.
+
 ## Configuration examples
 
 As in [INSTALL.md](../INSTALL.md#configuration-examples), `<configure>` is
@@ -76,8 +127,8 @@ the configure script, including path, in the QEX source directory; it
 writes the options into `qexconfig.nims` of the build directory.  Each build
 directory needs its own `nimcache` (the default, `nimcache` in the build
 directory): builds sharing one corrupt each other.  The Nim phase of the
-large programs (bestagcg, staghmcgpu_sh, eightFlavorSMGgpu) takes 13-26
-minutes and 30-38 GB of memory.
+large programs (bestagcg, bestagres, staghmcgpu_sh, eightFlavorSMGgpu)
+takes 13-26 minutes and 30-40 GB of memory, with any backend.
 
 `-march=native` fits a build on a node of the kind that runs the program.
 On a login node with another CPU, name the CPU of the compute nodes
@@ -248,8 +299,18 @@ not compile.  gfx942 is both MI300X and MI300A.
   kernels, the bandwidth ceiling the kernels can reach.
 - backend/examples/bestagcg: the GPU CG against the CPU solver, GF/s and
   GB/s by a byte count, `-nb:k` k systems at once.
+- backend/examples/bestagres: the stopping rules of solveM and solveEE
+  against stag.D and stagD2ee: one system and several, double and mixed
+  precision, fixed and atomic dot products, sources on all or on the even
+  sites, masses of both signs, zero sources and too few iterations; exits
+  with 1 if a check fails.
 - backend/examples/berng: the generators of RNGFieldV and rng/rngGpu against
-  the host RNG fields.
+  the host RNG fields; exits with 1 if a check fails.
+- tests/base/taccel: the order of queued kernels, sumFixed and gpuSum at
+  the sizes where their levels change, and the neighbors GpuHaloEx brings,
+  on 1, 2 and 4 ranks.
+- tests/base/tgaugegpu: gauge/gaugeGpu against actionA and forceA, and
+  ValueError for rect and pgm coefficients.
 - backend/examples/bernt: the times of the rngGpu draw kernels, with 32-,
   64- and 128-bit generator loads.
 - examples/staghmcgpu_sh: staghmc_sh on the GPU; `tests/extra/tstaghmc_sh/run`
