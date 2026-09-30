@@ -7,9 +7,10 @@ import std/[nativesockets, hashes]
 import sequtils, strutils
 import comms/[halo,gather,qmp,commsQmp]
 const Backend {.strdefine.} = "CPU"
+const ipc = Backend in ["CUDA", "HIP", "OpenMP", "SYCL"]  # peers on a host map device memory
 when Backend == "CUDA": import comms/cudaipc
 elif Backend == "HIP": import comms/hipipc
-else: import comms/zeipc
+elif ipc: import comms/zeipc
 
 type
   GpuHaloLayout*[V:static int] = object
@@ -205,7 +206,7 @@ proc haloSource*[L](hl: HaloLayout[L], gm: GatherMap): seq[int32] =
   for k in 0..<gm.ldest.len: result[gm.ldest[k]] = gm.lidx[k]
   for k in 0..<gm.rdest.len: result[gm.rdest[k]] = int32(L.V*hl.nOut + k)
 
-var haloIpc* = true  ## peers on the same host store into each other's device memory
+var haloIpc* = true  ## peers on the same host store into each other's device memory, with the GPU backends
 
 type
   GpuHaloEx*[T] = ref object
@@ -214,8 +215,9 @@ type
     ## buffers hold message m at ne*m.start, with
     ## component c of its k-th site at ne*m.start + c*m.count + k.  Send
     ## slot k takes component c at sdst[k][c*sstr[k]]: in sbuf, or, for peers
-    ## on the same host, directly in their rbuf through a Level Zero or CUDA
-    ## IPC mapping, announced with a one byte message.  A kernel producing the
+    ## on the same host with a GPU backend, directly in their rbuf through a
+    ## Level Zero, CUDA or HIP IPC mapping, announced with a one byte
+    ## message.  The CPU backend sends sbuf to every peer.  A kernel producing the
     ## field stores site i in its slots sslot[s*n + i], s < nslot, with
     ## sendSite; pack does it for a whole field.  After wait, receive position
     ## p has component c at rbuf[rofs[p] + c*rstr[p]], see recvSite.  Local
@@ -266,37 +268,39 @@ proc newGpuHaloEx*[T](gm: GatherMap, ne, n, v: int, c: Comm): GpuHaloEx[T] =
       rs[m.start+k] = int32 m.count
   ex.rofs = ro.toDevice
   ex.rstr = rs.toDevice
-  var host = newSeq[float](c.size)  # host name hash of each rank
-  host[c.rank] = float(hash(getHostname()) and 0xffffff)
-  c.allReduce(addr host[0], c.size)
   ex.speer.newSeq(ex.smsg.len)
   ex.rpeer.newSeq(ex.rmsg.len)
-  for i, m in ex.smsg: ex.speer[i] = haloIpc and host[m.rank] == host[c.rank]
-  for i, m in ex.rmsg: ex.rpeer[i] = haloIpc and host[m.rank] == host[c.rank]
-  toc("hosts")
-  var rout = newSeq[GpuIpc](ex.rmsg.len)
-  var sin = newSeq[GpuIpc](ex.smsg.len)
-  var ns, nr = 0
-  for i, m in ex.rmsg:
-    if ex.rpeer[i]:
-      rout[i] = ipcExport(addr ex.rbuf[ne*m.start])
-      c.pushSend(m.rank, addr rout[i], sizeof(GpuIpc))
-      inc ns
-  for i, m in ex.smsg:
-    if ex.speer[i]:
-      c.pushRecv(m.rank, addr sin[i], sizeof(GpuIpc))
-      inc nr
-  if nr > 0: c.waitRecvs(nr)
-  if ns > 0: c.waitSends(ns)
-  toc("handles")
+  when ipc:
+    var host = newSeq[float](c.size)  # host name hash of each rank
+    host[c.rank] = float(hash(getHostname()) and 0xffffff)
+    c.allReduce(addr host[0], c.size)
+    for i, m in ex.smsg: ex.speer[i] = haloIpc and host[m.rank] == host[c.rank]
+    for i, m in ex.rmsg: ex.rpeer[i] = haloIpc and host[m.rank] == host[c.rank]
+    toc("hosts")
+    var rout = newSeq[GpuIpc](ex.rmsg.len)
+    var sin = newSeq[GpuIpc](ex.smsg.len)
+    var ns, nr = 0
+    for i, m in ex.rmsg:
+      if ex.rpeer[i]:
+        rout[i] = ipcExport(addr ex.rbuf[ne*m.start])
+        c.pushSend(m.rank, addr rout[i], sizeof(GpuIpc))
+        inc ns
+    for i, m in ex.smsg:
+      if ex.speer[i]:
+        c.pushRecv(m.rank, addr sin[i], sizeof(GpuIpc))
+        inc nr
+    if nr > 0: c.waitRecvs(nr)
+    if ns > 0: c.waitSends(ns)
+    toc("handles")
   var sd = newSeq[ptr UncheckedArray[T]](ex.nsend)
   var ss = newSeq[int32](ex.nsend)
   for i, m in ex.smsg:
     var base = cast[ptr UncheckedArray[T]](addr ex.sbuf[ne*m.start])
-    if ex.speer[i]:
-      let (b, p) = ipcOpen(sin[i])
-      ex.peers.add b
-      base = cast[ptr UncheckedArray[T]](p)
+    when ipc:
+      if ex.speer[i]:
+        let (b, p) = ipcOpen(sin[i])
+        ex.peers.add b
+        base = cast[ptr UncheckedArray[T]](p)
     for k in 0..<m.count:
       sd[m.start+k] = cast[ptr UncheckedArray[T]](addr base[k])
       ss[m.start+k] = int32 m.count
@@ -374,8 +378,9 @@ proc free*[T](ex: GpuHaloEx[T]) =
     QMP_free_msghandle(ex.msg)
     for m in ex.mems: QMP_free_msgmem(m)
     ex.mems.setLen(0)
-  for p in ex.peers: ipcClose(p)
-  ex.peers.setLen(0)
+  when ipc:
+    for p in ex.peers: ipcClose(p)
+    ex.peers.setLen(0)
   for p in [pointer ex.sidx, ex.sslot, ex.sdst, ex.sstr, ex.rofs, ex.rstr, ex.sbuf, ex.rbuf]:
     if p != nil: gpuFree(p)
   ex.sidx = nil
