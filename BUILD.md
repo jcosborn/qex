@@ -64,6 +64,15 @@ When using the `make` build method the `make` command is default and can be skip
 |  debug | set debug build |
 |  run   | run executable after building |
 |  verb  | set build verbosity to N (verb:N), N in 0,1,2,3 |
+|  jobs  | compile in batches of N (jobs:N, default 1), using a separate cache for each compilation slot |
+
+For example, `make jobs:2 tests` or `nimble tests jobs:2` compiles two
+targets at a time. Each batch finishes before the next starts; a failed
+compilation stops the build after the other jobs in its batch finish.
+The caches are `job-0`, `job-1`, etc. inside the configured `nimcache`
+directory (or the directory passed with `--nimcache`). `make clean` removes
+these caches too. Direct `run` builds remain serial; `run tests` builds
+the suite in parallel, then runs the generated test script.
 
 
 ### Nim options
