@@ -25,13 +25,14 @@ GPUs (PVC tiles):
 | AMD MI300X | JLSE amdgpu00 | EPYC 9654 | ROCm 10.0.0 amdclang | OpenMPI 4.1.1 |
 | AMD MI300A | Tuolumne | MI300A (Zen 4 cores) | ROCm 10.0 amdclang | Cray MPICH 9.1.0 |
 
-These builds ran the code before the CPU backend and the solver stopping
-rules below (September 29).  Those ran with the CPU backend only, on a
-FreeBSD 15.1 host (Xeon E5-2687W v2, clang 19.1.7, MPICH 5.0.1,
-`vlen:16`), on 1, 2 and 4 ranks: tests/base/taccel, tgaugegpu and
-trngfieldv, backend/examples/bestagres and berng, tests/extra/tstaghmc_sh
-with staghmcgpu_sh (also with `-mixed:1` and `-batch:0` on 2 ranks), and
-tests/extra/teightFlavorSMG with eightFlavorSMGgpu.
+On September 30 devel, with the solver stopping rules below, passed on
+all but the B200, which ran the code before them: both CI suites,
+tests/base/taccel and tgaugegpu, backend/examples/bestagres (also with
+`-split:0` and `-split:1`, links of 12 reals and an 8^4 lattice, and with
+`-ipc:0` where MPI reads device memory, on Sunspot and Tuolumne), berng and
+staghmcgpu `-check:1`, on 1, 2 and 4 GPUs and on 12 PVC tiles.
+The stopping rules first ran with the CPU backend, on a FreeBSD 15.1 host
+(Xeon E5-2687W v2, clang 19.1.7, MPICH 5.0.1, `vlen:16`).
 
 ## Procs that kernels call
 
@@ -206,7 +207,9 @@ with `CUDA_HOME` a CUDA toolkit that clang supports (clang 22 with CUDA
 12.9) and OpenMPI wrappers (`OMPI_CC`, `OMPI_CXX`; MPICH takes `MPICH_CC`
 and `MPICH_CXX`).  `--cuda-gpu-arch` names the GPU: `sm_90` for H100,
 `sm_100` for B200.  backend/cuda/nimbase.h, found first through `-iquote`,
-defines `QEX_HD` and the qexFor kernel template.
+defines `QEX_HD` and the qexFor kernel template.  Only programs that import
+backend/accel find it, so CPU programs, such as tests/base/trngfieldv, don't
+build with these flags, which compile every file as CUDA.
 
 - The device flag `-disable-machine-sink` and the `[[clang::always_inline]]`
   call in qexFor belong together: LLVM's machine sinking moves the
@@ -273,9 +276,10 @@ with MPI wrappers running amdclang: on Tuolumne the modules
 rocmcc/10.0-magic, rocm/10.0 and cray-mpich/9.1.0; with OpenMPI,
 `env:"OMPI_CC=amdclang" env:"OMPI_CXX=amdclang++"` and ROCm's bin in
 `PATH`.  backend/hip/nimbase.h includes hip_runtime.h (for
-`__launch_bounds__`) and defines `QEX_HD` and the qexFor kernel template.
-All modules must be C++ (`ccdef:"cpp"`): in C, `__host__ __device__` does
-not compile.  gfx942 is both MI300X and MI300A.
+`__launch_bounds__`) and defines `QEX_HD` and the qexFor kernel template;
+as with CUDA, CPU programs don't build with these flags.  All modules must
+be C++ (`ccdef:"cpp"`): in C, `__host__ __device__` does not compile.
+gfx942 is both MI300X and MI300A.
 
 ## Runs
 
@@ -302,8 +306,8 @@ not compile.  gfx942 is both MI300X and MI300A.
 - backend/examples/bestagres: the stopping rules of solveM and solveEE
   against stag.D and stagD2ee: one system and several, double and mixed
   precision, fixed and atomic dot products, sources on all or on the even
-  sites, masses of both signs, zero sources and too few iterations; exits
-  with 1 if a check fails.
+  sites, masses of both signs, zero sources and too few iterations;
+  `-ipc` and `-split` as bestagcg; exits with 1 if a check fails.
 - backend/examples/berng: the generators of RNGFieldV and rng/rngGpu against
   the host RNG fields; exits with 1 if a check fails.
 - tests/base/taccel: the order of queued kernels, sumFixed and gpuSum at
@@ -320,12 +324,23 @@ not compile.  gfx942 is both MI300X and MI300A.
 
 ## Measured
 
-One GPU (one PVC tile), gpu-all of September 2026, the builds above.
+One GPU (one PVC tile), devel of September 30, the builds above; the B200
+ran the code before the stopping rules.
 
 | | H100 | B200 | MI300X | MI300A | PVC tile, OpenMP / SYCL |
 |---|---|---|---|---|---|
 | HBM peak (TB/s) | 3.35 | 8.0 | 5.3 | 5.3 | 1.64 |
-| bestream triad (TB/s) | 3.10 | 5.83 | 4.09-4.15 | 3.33-3.40 | 0.97-0.99 |
-| bestagcg 32^4, one system (TB/s) | 2.66 | 5.30 | 3.21-3.23 | 2.66-2.68 | 0.82-0.83 / 0.83 |
-| staghmcgpu_sh 24^4, double / mixed (s per trajectory) | 0.861 / 0.657 | 0.605 / 0.509 | 0.918-0.935 / 0.740-0.747 | 1.015 / 0.823-0.826 | 1.99-2.01 / 1.64, 1.93 / 1.57-1.58 |
-| eightFlavorSMGgpu 16^3x32 (s per trajectory) | 2.71 | 2.11 | 2.76 | 3.33-3.36 | 4.98-5.01 / 4.70-4.74 |
+| bestream triad (TB/s) | 3.10 | 5.83 | 4.09 | 3.35 | 0.98 / 0.98 |
+| bestagcg 32^4, one system (TB/s) | 2.65 | 5.30 | 3.21 | 2.61-2.62 | 0.82 / 0.83 |
+| staghmcgpu_sh 24^4, double / mixed (s per trajectory) | 0.887-0.889 / 0.679-0.680 | 0.605 / 0.509 | 0.954-0.961 / 0.770-0.772 | 1.064-1.069 / 0.866-0.885 | 2.03-2.04 / 1.68-1.69, 1.98-2.00 / 1.61-1.62 |
+| eightFlavorSMGgpu 16^3x32 (s per trajectory) | 2.72-2.73 | 2.11 | 2.79-2.81 | 3.44-3.46 | 5.04-5.07 / 4.75-4.77 |
+
+Against the code before the stopping rules, in the same jobs (runs in
+the order old, new, new, old), bestagcg 32^4 takes 0.1-0.6% longer for one
+system, whose CG checks its true residual at the end, and 0.9-1.6% for
+three systems per hop, which finish one by one (on MI300X and MI300A those
+runs spread 4%).  staghmcgpu_sh takes 2.5-3.8% longer per trajectory at
+24^4 (3.3-6.3% at 16^4): its action solves, whose sources have odd sites,
+take 13-15% more iterations to meet the request on M x = b, and every solve
+checks b - M x.  eightFlavorSMGgpu, whose solves take the same iterations as
+before, takes 0.4-2.5% longer.
