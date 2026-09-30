@@ -41,7 +41,7 @@ type
     gc*: GaugeActionCoeffs
     mass*: float  ## fermion and PV mass, the numerator mass of a ratio
     massDen*: float  ## the denominator mass of a ratio
-    phi*, x*, src*, rhs*: ptr UncheckedArray[float]  ## 6n reals: pseudofermion, solution, source, right-hand side
+    phi*, x*, src*: ptr UncheckedArray[float]  ## 6n reals: pseudofermion, solution, source
     spa*, spf*: SolverParams
     stats*: Table[string, ActionStats]
   GpuLevel* = object
@@ -151,7 +151,6 @@ proc newFermVecs(h: HmcGpu; a: GpuAction) =
   a.phi = h.newVec
   a.x = h.newVec
   a.src = h.newVec
-  a.rhs = h.newVec
 
 proc newStaggeredFermionAction*(h: HmcGpu; mass: float; spa, spf: SolverParams): GpuAction =
   ## |M(-m)^-1 phi|^2/2 for phi on the even sites, as newStaggeredFermionAction
@@ -185,14 +184,6 @@ proc zeroOdd(h: HmcGpu; v: ptr UncheckedArray[float]) =
 
 proc zeroLinks(h: HmcGpu; v: ptr UncheckedArray[float]) =
   gpuFor(i, 4*18*h.gg.n): v[i] = 0.0
-
-proc normEO(h: HmcGpu; a: ptr UncheckedArray[float]): array[2, float] =
-  ## global |a_e|^2, |a_o|^2
-  let ne6 = 6*h.s.ne
-  result = gpuSum(i, 6*h.s.n, 2):
-    let q = a[i]*a[i]
-    if i < ne6: [q, 0.0] else: [0.0, q]
-  getDefaultComm().allReduce(addr result[0], 2)
 
 proc resid(h: HmcGpu; x, b: ptr UncheckedArray[float]; m: float): float =
   ## |b - M(m) x|^2/|b|^2 over all sites
@@ -235,59 +226,39 @@ proc solveStats(a: GpuAction; key: string; sp: SolverParams; secs: float) =
   a.stats[a.id & key]["r2max"].maxeq sp.r2.max
 
 type
-  SysKind = enum skEE, skR, skL
   Sys = object
-    ## a solve of solveAll: x from b with mass m, rhs a work vector
-    x, b, rhs: ptr UncheckedArray[float]
+    ## a solve of solveAll: x from b with mass m, b_o = 0 unless full
+    x, b: ptr UncheckedArray[float]
     m: float
-    kind: SysKind
+    full: bool
     sp: SolverParams
 
 proc solveAll(h: HmcGpu; sys: var seq[Sys]; mixed = false) =
-  ## The solves of sys as those of hmcAction, together by solveM of several
-  ## systems, M(m) = m + D with D = stag.D:
-  ##   skEE  stagForceSolve: x = M(m)^-1 b for b_o = 0; its psi_e = x_e/m,
-  ##         psi_o = -2 x_o, so the one link force of psi is -2/m that of x
-  ##   skR   stag.solve for b_o = 0 (reconR): x = M(m)^-1 b
-  ##   skL   stag.solve (reconL): the even sites of solveM for rhs_e =
-  ##         d_e/m, d = M(m)^+ b, to the tolerance
-  ##         0.99 r2req (|b_e|^2 + |b_o|^2) m^2/|d_e|^2, then x_o += b_o/m
+  ## The solves of sys as those of hmcAction, x = M(m)^-1 b for M(m) = m + D
+  ## with D = stag.D, each until |b - M x|^2 <= r2req |b|^2, together by
+  ## solveM of several systems: with full as stag.solve, else for b_o = 0
+  ## as stag.solve and stagForceSolve, whose psi_e = x_e/m, psi_o = -2 x_o,
+  ## so the one link force of psi is -2/m that of x.  With a full source
+  ## all solve with full, the others have zero odd sites.  resid checks the
+  ## residuals the statistics record.
   if sys.len == 0: return
   tic()
-  let ne6 = 6*h.s.ne
-  let no6 = 6*(h.s.n - h.s.ne)
+  let full = sys.anyIt(it.full)
   var xs, bs = newSeq[ptr UncheckedArray[float]](sys.len)
   var ms = newSeq[float](sys.len)
   var sps = newSeq[SolverParams](sys.len)
   for j in 0..<sys.len:
-    let b = sys[j].b
-    let m = sys[j].m
     xs[j] = sys[j].x
-    ms[j] = m
+    bs[j] = sys[j].b
+    ms[j] = sys[j].m
     sps[j] = sys[j].sp
     sps[j].resetStats
-    bs[j] = b
-    if sys[j].kind == skL:
-      let b2 = h.normEO(b)
-      let d = sys[j].rhs
-      h.s.applyM(d, b, -m)  # -m b_e + D_eo b_o
-      let sc = -1.0/m
-      gpuFor(i, ne6): d[i] *= sc
-      sps[j].r2req = 0.99*sps[j].r2req*(b2[0] + b2[1])/h.normEO(d)[0]
-      bs[j] = d
-  if mixed: h.s.solveM(xs, bs, ms, sps, addr h.ss)
-  else: h.s.solveM(xs, bs, ms, sps)
+  if mixed: h.s.solveM(xs, bs, ms, sps, addr h.ss, full = full)
+  else: h.s.solveM(xs, bs, ms, sps, full = full)
   let secs = getElapsedTime()/float(sys.len)
   for j in 0..<sys.len:
-    let x = sys[j].x
-    let b = sys[j].b
-    let m = sys[j].m
-    if sys[j].kind == skL:
-      let c = 1.0/m
-      gpuFor(i, no6): x[ne6 + i] += c*b[ne6 + i]
     var sp = sps[j]
-    sp.r2req = sys[j].sp.r2req
-    sp.r2.init h.resid(x, b, m)
+    sp.r2.init h.resid(sys[j].x, sys[j].b, sys[j].m)
     sp.flops = float((4*4*72 + 60)*h.s.ne*sp.iterations)
     sp.seconds = secs
     sys[j].sp = sp
@@ -388,10 +359,10 @@ proc heatbath(h: HmcGpu; level: GpuLevel) =
         h.zeroOdd a.phi
       of gkRatio:  # phi = M(-m_den)^-1 M(-m_num) psi on the even sites
         h.s.applyMfull(a.x, a.src, -a.mass)
-        sys.add Sys(x: a.phi, b: a.x, rhs: a.rhs, m: -a.massDen, kind: skL, sp: a.spa)
+        sys.add Sys(x: a.phi, b: a.x, m: -a.massDen, full: true, sp: a.spa)
         owner.add a
       else:  # phi = M(m)^-1 psi on the even sites
-        sys.add Sys(x: a.phi, b: a.src, rhs: a.rhs, m: a.mass, kind: skL, sp: a.spa)
+        sys.add Sys(x: a.phi, b: a.src, m: a.mass, full: true, sp: a.spa)
         owner.add a
   h.solveAll(sys)
   for j, a in owner:
@@ -413,12 +384,12 @@ proc action(h: HmcGpu; level: GpuLevel): seq[float] =
       toc()
     of gkFermion:  # |M(-m)^-1 phi|^2/2
       discard h.smear
-      sys.add Sys(x: a.x, b: a.phi, rhs: a.rhs, m: -a.mass, kind: skR, sp: a.spa)
+      sys.add Sys(x: a.x, b: a.phi, m: -a.mass, sp: a.spa)
       owner.add i
     of gkRatio:  # |M(-m_num)^-1 M(-m_den) phi|^2/2
       discard h.smear
       h.s.applyMfull(a.src, a.phi, -a.massDen)
-      sys.add Sys(x: a.x, b: a.src, rhs: a.rhs, m: -a.mass, kind: skL, sp: a.spa)
+      sys.add Sys(x: a.x, b: a.src, m: -a.mass, full: true, sp: a.spa)
       owner.add i
     of gkPV:  # |M(m) phi|^2/2
       discard h.smear
@@ -442,7 +413,7 @@ proc force(h: HmcGpu; level: GpuLevel; dtau: float) =
     if a.kind == gkFermion: h.smear(a, "SF")
     elif a.kind in {gkRatio, gkPV}: discard h.smear
     if a.kind in {gkFermion, gkRatio}:
-      sys.add Sys(x: a.x, b: a.phi, rhs: a.rhs, m: a.mass, kind: skEE, sp: a.spf)
+      sys.add Sys(x: a.x, b: a.phi, m: a.mass, sp: a.spf)
       owner.add i
   h.solveAll(sys, h.mixed)
   var fsecs = newSeq[float](level.actions.len)
