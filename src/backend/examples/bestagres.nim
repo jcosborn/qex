@@ -10,9 +10,11 @@
 ## within maxits at a residual above the request when maxits is too small,
 ## and gives x = 0 for b = 0.  Exits with 1 if a check fails.
 ##   -lat: lattice (default 4^4 per rank), -reals: links of 18 or 12 reals,
-##   -verb: verbosity of the solves
+##   -ipc:0 MPI for peers on the node too, -split: second hop split around
+##   the exchange, 1, 0, -1 with off-node neighbors, -verb: verbosity
 import qex
 import physics/[qcdTypes, stagSolve, stagGpu]
+import comms/halogpu
 import backend/accel
 import strformat
 
@@ -30,9 +32,11 @@ threads:
   threadBarrier()
   g.stagPhase
 var s = newStag(g)
+haloIpc = intParam("ipc", 1) != 0
+hopSplit = intParam("split", -1)
 var sd = newStagGpu(g, float64, intParam("reals", 18), batch = true)
 var sf = newStagGpu(g, float32, intParam("reals", 18), batch = true)
-echo "GPU links: ", sd.nl, " reals"
+echo "GPU links: ", sd.nl, " reals", "  split hop: ", sd.split, "  peer IPC: ", haloIpc
 let n6 = 6*sd.n
 let ne6 = 6*sd.ne
 const big = 100000  # maxits of the solves that converge
