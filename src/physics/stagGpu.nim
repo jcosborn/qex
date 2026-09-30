@@ -608,7 +608,9 @@ proc cg[V: static int; T](s: StagGpu[V,T]; x, b: ptr UncheckedArray[T]; m, r2sto
 
 proc solveEE*[V: static int; T](s: StagGpu[V,T]; r, x: Field; m: float; sp: var SolverParams) =
   ## Solves A r_e = x_e by CG from r_e = 0, as solveEE, until the true
-  ## |x_e - A r_e|^2 <= sp.r2req |x_e|^2 or sp.maxits iterations.
+  ## |x_e - A r_e|^2 <= sp.r2req |x_e|^2.  It stops short of that at
+  ## sp.maxits iterations, or when a restart from the true residual no
+  ## longer reduces it, at its rounding floor.
   tic("solveEE")
   let c = getDefaultComm()
   let b = s.vec[5]
@@ -668,7 +670,8 @@ proc solveEE*[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; r, x
                              sp: var SolverParams; r2in = 1e-6) =
   ## As solveEE, with the CG iterations in single precision: each restart
   ## solves A e = res in ss until |res|^2 drops by r2in, then r += e and
-  ## res = x - A r in double, until the request.
+  ## res = x - A r in double, until the request, sp.maxits iterations, or a
+  ## restart that no longer reduces |res|^2.
   tic("solveEE mixed")
   let c = getDefaultComm()
   let b = s.vec[5]
@@ -896,9 +899,11 @@ proc correctM[V: static int](s: StagGpu[V,float]; x, b: ptr UncheckedArray[float
 proc solveM*[V: static int](s: StagGpu[V,float]; x, b: ptr UncheckedArray[float]; m: float;
                             sp: var SolverParams; ss: ptr StagGpu[V,float32] = nil; r2in = 1e-6;
                             full = false) =
-  ## Solves (m + D/2) x = b, as stag.solve, until |b - M x|^2 <= sp.r2req |b|^2
-  ## or sp.maxits iterations, in mixed precision with ss.  Without full, b_o
-  ## is taken as 0 and not read.  sp records |b - M x|^2/|b|^2, 0 for b = 0.
+  ## Solves (m + D/2) x = b, as stag.solve, until |b - M x|^2 <= sp.r2req |b|^2,
+  ## in mixed precision with ss.  It stops short of that at sp.maxits
+  ## iterations, or when a correction no longer reduces |b - M x|^2, at its
+  ## rounding floor.  Without full, b_o is taken as 0 and not read.  sp
+  ## records |b - M x|^2/|b|^2, 0 for b = 0.
   let q = s.vec[5]
   let b2 = s.norm2EO(b, full)
   let bb = b2[0] + b2[1]
@@ -1440,14 +1445,15 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedAr
                             sp: var openArray[SolverParams]; ss: ptr StagGpu[V,float32] = nil; r2in = 1e-6;
                             full = false) =
   ## solveM of the systems j, x_j = M(m_j)^-1 b_j, b_j,o = 0 unless full,
-  ## each stopping at its own sp_j.r2req and sp_j.maxits.  The slots of the
-  ## batched CG take the systems lightest first, a slot the next one when
-  ## its system stops and got x_o and correctM on its own, as by solveM of
-  ## one system.  With ss, a slot whose single precision CG stops restarts
-  ## its system in double at once, until the residual meets the target or
-  ## no longer drops; up to nBatch systems restart together once all their
-  ## single precision CGs stopped.  One system takes the solveM of one
-  ## system.
+  ## each stopping as solveM of one system with sp_j: at its request, at
+  ## sp_j.maxits, or when a correction no longer reduces its residual.  The
+  ## slots of the batched CG take the systems lightest first, a slot the
+  ## next one when its system stops and got x_o and correctM on its own, as
+  ## by solveM of one system.  With ss, a slot whose single precision CG
+  ## stops restarts its system in double at once, until the residual meets
+  ## the target or no longer drops; up to nBatch systems restart together
+  ## once all their single precision CGs stopped.  One system takes the
+  ## solveM of one system.
   let ns = x.len
   if ns == 1:
     s.solveM(x[0], b[0], m[0], sp[0], ss, r2in, full)
