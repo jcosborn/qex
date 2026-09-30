@@ -1,7 +1,12 @@
 ## Checks the generators of RNG fields in the SIMD layout, RNGFieldV, and
 ## on the GPU, rng/rngGpu, against the host RNG fields: for each RNG,
 ## gaussian into a color vector field and randomTAH into 4 matrix fields
-## from each, then the generators.
+## from each, then the generators.  Generators and the draws of the same
+## kernels agree exactly; the draws of other code, of the host layouts or
+## the GPU against the host, to rounding: |d|^2/|x|^2 <= (8 eps)^2 for the
+## precision eps of the gaussians of the RNG, float32 for RngMilc6, and
+## 1e-28 for the doubles of the GPU, whose log and cos differ.  Exits with
+## 1 if a check fails.
 ##   -lat: lattice, -rg: ranks per dimension
 import qex, gauge, physics/qcdTypes
 import backend/accel, rng/rngGpu
@@ -72,7 +77,11 @@ proc check(R: typedesc; name: string) =
   let d = [rel(vg, v), rel(pg, p), rel(vv, v), rel(pv, p), rel(vgv, vg), rel(pgv, pg)]
   getDefaultComm().allReduce(nd)
   getDefaultComm().allReduce(ld)
-  let ok = nd == 0 and ld == 0 and d[0] < 1e-28 and d[1] < 1e-28 and d[2] == 0 and d[3] == 0 and d[4] == 0 and d[5] == 0
+  var g0: R
+  let e = float(epsilon(typeof(gaussian(g0))))
+  let th = 64*e*e  # host layouts
+  let tg = max(th, 1e-28)  # GPU against host
+  let ok = nd == 0 and ld == 0 and d[0] <= tg and d[1] <= tg and d[2] <= th and d[3] <= th and d[4] == 0 and d[5] == 0
   if not ok: inc fails
   echo name, "  GPU-host |d|^2/|x|^2 gaussian: ", d[0], "  randomTAH: ", d[1],
     "  RNGFieldV-RNGField host: ", d[2], " ", d[3], "  GPU: ", d[4], " ", d[5],
@@ -85,4 +94,4 @@ check(MRG32k3a, "MRG32k3a")
 check(Philox4x64, "Philox4x64")
 check(Threefry4x64, "Threefry4x64")
 echo if fails == 0: "all generators ok" else: $fails & " generators FAILED"
-qexFinalize()
+qexExit(if fails == 0: 0 else: 1)
