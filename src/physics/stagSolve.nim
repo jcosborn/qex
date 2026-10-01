@@ -14,8 +14,12 @@ import grid/Grid
 
 #var precon = false
 
-#[
+#[ internal solve infrastructure ]#
+
 proc stagSingle(s: Staggered, init=false, free=false): auto =
+  # note: storing ss as {.global.} is safe so long as the public
+  # "solve" and "solveXX" are the callers and the public "solve" 
+  # never calls the public "solveXX" - Curtis
   mixin toSingle
   var ss {.global.}: toSingle(type s)
   if init:
@@ -23,50 +27,9 @@ proc stagSingle(s: Staggered, init=false, free=false): auto =
   if free:
     free(ss)
   return ss
-]#
 
-proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
-  var sp = sp0
-  sp.subset.layoutSubset(r.l, sp.subsetName)
-  var t = newOneOf(r)
-  var top = 0.0
-  proc op2(a,b: Field) =
-    threadBarrier()
-    if threadNum==0: top -= epochTime()
-    stagD2ee(s.se, s.so, a, s.g, b, m*m)
-    if threadNum==0: top += epochTime()
-    #threadBarrier()
-  var oa = (apply: op2)
-  let t0 = epochTime()
-  cgSolve(r, x, oa, sp)
-  let t1 = epochTime()
-  let secs = t1-t0
-  let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
-  sp0.finalIterations = sp.finalIterations
-  sp0.seconds = secs
-  if sp0.verbosity>0:
-    echo "op time: ", top
-    echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
-
-# multimass (trivial version with multiple single mass calls for now)
-proc solveEO*(s: Staggered; r: seq[Field]; x: Field; m: seq[float];
-              sp: seq[SolverParams]) =
-  let n = m.len
-  doAssert(r.len == n)
-  doAssert(sp.len == n)
-  for i in 0..<n:
-    solveEO(s, r[i], x, m[i], sp[i])
-
-proc solveEO*(s: Staggered; r: seq[Field]; x: Field; m: seq[float];
-              sp: var SolverParams) =
-  let n = m.len
-  doAssert(r.len == n)
-  doAssert(sp.len == n)
-  for i in 0..<n:
-    solveEO(s, r[i], x, m[i], sp)
-
-proc stagSolveCgls*(s: Staggered; r,x: Field; m: SomeNumber; sp: var SolverParams;
-                    parEven = true) =
+proc stagSolveCglsInternal(s: Staggered; r,x: Field; m: SomeNumber; 
+                    sp: var SolverParams; parEven = true) =
   type Even = type(r.even)
   type Odd = type(r.odd)
   proc opSolveXX(a: Odd, b: Even) =
@@ -94,7 +57,7 @@ proc stagSolveCgls*(s: Staggered; r,x: Field; m: SomeNumber; sp: var SolverParam
     var oa = (apply: opSolveXXAdj, applyAdj: opSolveXX)
     cgls.solve(oa, sp)
 
-proc solveXXQex*(s: Staggered; r,x: Field; m: SomeNumber; sp: var SolverParams;
+proc solveXXQex(s: Staggered; r,x: Field; m: SomeNumber; sp: var SolverParams;
                  parEven = true) =
   #when true:
   if not boolParam("cgls"):
@@ -121,97 +84,10 @@ proc solveXXQex*(s: Staggered; r,x: Field; m: SomeNumber; sp: var SolverParams;
     cg.solve(oa, sp)
     #toc("cg.solve")
   else:
-    stagSolveCgls(s, r, x, m, sp, parEven)
+    stagSolveCglsInternal(s, r, x, m, sp, parEven)
     #toc("cgls.solve")
 
-proc solveXXQexSloppy*(
-  s: Staggered; 
-  r, x: Field; 
-  m: SomeNumber; 
-  sp: var SolverParams;
-  parEven = true
-) = 
-  ## Brief: Mixed-precision solve w/ iterative residual refinement
-  ## Author: Curtis Taylor Peterson
-  ## 
-  ## As always, start with the linear system one wishes to solve
-  ## (1) A r = b.
-  ## CG solves are limited by memory bandwidth; as such, doing the bulk of the computation
-  ## in single precision can significantly improve performance by halving the pressure
-  ## on memory bandwidth. However, naively running the solve in single precision introduces
-  ## a new problem: single-precision rounding limits how small the true residual can get,
-  ## leading to convergence issues when the requested residual is smaller than what
-  ## single precision can attain. Let r_s be an approximate solution, with 
-  ## (2) rho = b - A r_s
-  ## its residual computed in double precision. The "exact" solution is then
-  ## (3) r = r_s + e
-  ## with the error "e" defined by
-  ## (4) A e = rho.
-  ## The key insight is that by solving for the error "e" in single precision using the
-  ## accurately computed double-precision residual "rho", one can iteratively refine the
-  ## solution in double precision to achieve the desired accuracy. Any gain in performance
-  ## must then come from the reduced pressure on the memory bandwidth not being compensated
-  ## for by the overhead of the iterative refinement.
-  # looooooooooooooooooooo/ <- this was input from my cat (Gojira)... insightful - Curtis
-  var r2, r2stop: float
-  var r2prev = Inf
-  var its = 0
-  var spi = sp
-  let par = if parEven: "even" else: "odd"
-  
-  var ss = toSingle(s) # single-precision stag: prevents ss from becoming stale
-  var e = toSingle(type r).new(r.l) # error "e" in Eqns (3) and (4)
-  var xs = toSingle(type x).new(x.l)
-  
-  let sloppyR2Floor = float(epsilon(numberType(e[0])))
-  
-  var rho = newOneOf(x) # double-precision representation of "rho" in Eqn (2)
-  var de = newOneOf(r) # double-precision error "e" in Eqn (4)
-  var b2 = 0.0
-  
-  threads:
-    xs := 0
-    rho := 0
-    threadBarrier()
-    rho[par] := x
-    threadBarrier()
-    let b2t = rho[par].norm2()
-    threadMaster: 
-      b2 = b2t
-  r2 = b2
-  r2stop = sp.r2req * r2
-  
-  # iterative residual refinement loop
-  while r2 > r2stop and its < sp.maxits and r2 < r2prev:
-    r2prev = r2
-    spi.r2req = max(r2stop/r2, sloppyR2Floor)
-    spi.maxits = sp.maxits - its
-    
-    threads:
-      e := 0
-      xs[par] := rho
-    
-    solveXXQex(ss, e, xs, m, spi, parEven) # Eqn (4)
-    
-    threads:
-      de[par] := e
-      r[par] += de
-      threadBarrier()
-      if parEven: stagD2ee(s.se, s.so, rho, s.g, r, m*m)
-      else: stagD2oo(s.se, s.so, rho, s.g, r, m*m)
-      threadBarrier()
-      rho[par] := x - rho
-      threadBarrier()
-      let r2t = rho[par].norm2()
-      threadMaster: r2 = r2t
-
-    its += spi.iterations
-    if sp.verbosity > 1: echo "solveXX sloppy: its ", its, " r2/b2: ", r2/b2
-  
-  sp.iterations = its
-  free(ss)
-
-proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
+proc solveXXInternal(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
               parEven = true) =
   tic("solveXX")
   var sp = sp0
@@ -222,8 +98,23 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
   case sp.backend
   of sbQex:
     tic("sbQex")
-    if sp0.sloppySolve == SloppyNone: solveXXQex(s, r, x, m, sp, parEven)
-    else: solveXXQexSloppy(s, r, x, m, sp, parEven)
+    if sp0.sloppySolve == SloppyNone:
+      solveXXQex(s, r, x, m, sp, parEven)
+    else:
+      #var ss = toSingle(s)
+      var ss = stagSingle(s)
+      var rs = toSingle(type r).new(r.l)
+      var xs = toSingle(type x).new(x.l)
+      let r2save = sp.r2req
+      let r2floor = float(epsilon(numberType(rs[0]))) # conservative - Curtis
+      sp.r2req = max(r2save, r2floor)
+      threads:
+        rs := 0
+        xs := x
+      solveXXQex(ss, rs, xs, m, sp, parEven)
+      threads:
+        r := rs
+      sp.r2req = r2save
     toc("solveXXQex")
     sp.calls = 1
     sp.seconds = getElapsedTime()
@@ -269,8 +160,8 @@ proc solveXX*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams;
   sp0.addStats(sp)
   toc("end solveXX")
 
-# multi-shift solver
-proc solveXX*(
+# multi-shift solver: DOES NOT SUPPORT MIXED-PRECISION - Curtis
+proc solveXXInternal(
     s: Staggered;
     xs: seq[Field];
     b: Field;
@@ -287,7 +178,7 @@ proc solveXX*(
   ##   xs      [seq[Field]]: solution (xs[0]) & shifted solutions (xs[i>0])
   ##   b       [Field]: b in "Ax = b"
   ##   ms      [seq[float]]: shifted masses
-  ##   cp0     [SolverParams]: solver parameter state
+  ##   sp0     [SolverParams]: solver parameter stats
   ##   subset  [string]: lattice subset
   ##   recycle [bool]: option to recycle solution
   tic("solveXX [multi-shift]")
@@ -337,11 +228,11 @@ proc solveXX*(
   sp0.addStats(sp)
   toc("end solveXX [multi-shift]")
 
-proc solveEE*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
-  solveXX(s, r, x, m, sp0, parEven=true)
+proc solveEEInternal(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
+  solveXXInternal(s, r, x, m, sp0, parEven=true)
 
-proc solveOO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
-  solveXX(s, r, x, m, sp0, parEven=false)
+proc solveOOInternal(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
+  solveXXInternal(s, r, x, m, sp0, parEven=false)
 
 # right-preconditioned
 proc solveReconR(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
@@ -358,7 +249,7 @@ proc solveReconR(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
       y := 0
     sp.r2req = r2stope / b2e
     toc("setup")
-    s.solveEE(y, b, m, sp)
+    s.solveEEInternal(y, b, m, sp)
     toc("solveEE")
     #echo "solveReconR solveEE y2: ", y.norm2
     #echo "solveReconR Ddag x2: ", x.norm2
@@ -377,7 +268,7 @@ proc solveReconR(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
       y := 0
     sp.r2req = r2stopo / b2o
     toc("setup")
-    s.solveOO(y, b, m, sp)
+    s.solveOOInternal(y, b, m, sp)
     toc("solveOO")
     threads:
       y.odd *= 4
@@ -408,7 +299,7 @@ proc solveReconL(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
   #echo "d2e: ", d2e, "  d2o: ", d2o
   sp.r2req = 0.99 * sp.r2req * (b2e+b2o) * m*m / d2e
   toc("setup")
-  s.solveEE(x, d, m, sp)
+  s.solveEEInternal(x, d, m, sp)
   toc("solveEE")
   #echo "solveReconL ", d2e, "  ", sp.r2req
   threads:
@@ -433,6 +324,147 @@ proc solveInner(s:Staggered; x,b:Field; m:SomeNumber; sp: var SolverParams;
     solveReconL(s, x, b, m, sp, b2e, b2o)
     #solveReconR(s, x, b, m, sp, b2e, b2o)
     #echo "solveInner solveReconL x2: ", x.norm2
+
+#[ public-facing solver interface ]#
+
+proc solveXX*(
+  s: Staggered; 
+  r, x: Field; 
+  m: SomeNumber; 
+  sp0: var SolverParams; 
+  parEven: bool = true
+) =
+  ## Brief: Single-checkerboard solve
+  ## Author: Curtis Taylor Peterson
+  ## Author: James Osborn
+  ## 
+  ## Notes on iterative refinement for single-precision CG solves:
+  ## 
+  ## As always, start with the linear system one wishes to solve
+  ## (1) A r = b.
+  ## CG solves are limited by memory bandwidth; as such, doing the bulk of the computation
+  ## in single precision can significantly improve performance by halving the pressure
+  ## on memory bandwidth. However, naively running the solve in single precision introduces
+  ## a new problem: single-precision rounding limits how small the true residual can get,
+  ## leading to convergence issues when the requested residual is smaller than what
+  ## single precision can attain. Let r_s be an approximate solution, with 
+  ## (2) rho = b - A r_s
+  ## its residual computed in double precision. The "exact" solution is then
+  ## (3) r = r_s + e
+  ## with the error "e" defined by
+  ## (4) A e = rho.
+  ## The key insight is that by solving for the error "e" in single precision using the
+  ## accurately computed double-precision residual "rho", one can iteratively refine the
+  ## solution in double precision to achieve the desired accuracy. Any gain in performance
+  ## must then come from the reduced pressure on the memory bandwidth not being compensated
+  ## for by the overhead of the iterative refinement.
+  ## 
+  ## Comments follow these notes, but the implementation is not restricted to the 
+  ## mixed-precision approach. 
+  # looooooooooooooooooooo/ <- this was input from my cat, Gojira... insightful - Curtis
+  tic("solveXX")
+  let par = if parEven: "even" else: "odd"
+  var r2Prev = Inf
+  var b2, r2, r2Stop = 0.0
+  var sp = sp0
+  var rho = newOneOf(x)
+  var y = newOneOf(r)
+
+  threads:
+    r := 0
+    rho := 0
+    threadBarrier()
+    rho[par] := x
+    threadBarrier()
+    let b2t = rho[par].norm2()
+    threadMaster: b2 = b2t
+  (r2, r2Stop) = (b2, sp0.r2req * b2)
+  
+  if sp0.verbosity > 1: echo &"solveXX b2: {b2:.6g}  r2Stop: {r2Stop:.6g}"
+
+  sp.resetStats()
+  dec sp.verbosity
+
+  if sp0.backend == sbQex and sp0.sloppySolve != SloppyNone:
+    discard s.stagSingle(init = true)
+
+  while r2 > r2Stop and r2 < r2Prev:
+    (r2Prev, sp.maxits) = (r2, sp0.maxits - sp.iterations)
+    if sp.maxits <= 0: break
+    sp.r2req = r2Stop / r2
+
+    s.solveXXInternal(y, rho, m, sp, parEven = parEven)
+
+    threads:
+      r[par] += y
+      threadBarrier()
+      if parEven: stagD2ee(s.se, s.so, rho, s.g, r, m*m)
+      else: stagD2oo(s.se, s.so, rho, s.g, r, m*m)
+      threadBarrier()
+      rho[par] := x - rho
+      threadBarrier()
+      let r2t = rho[par].norm2()
+      threadMaster: r2 = r2t
+    
+    if sp.verbosity > 0: echo "solveXX r2/b2: ", r2/b2
+  
+  if sp0.backend == sbQex and sp0.sloppySolve != SloppyNone:
+    discard s.stagSingle(free = true)
+
+  sp.r2.init r2/b2
+  sp.calls = 1
+  sp.seconds = getElapsedTime()
+  sp0.addStats(sp)
+  if sp0.verbosity > 0: 
+    echo (if parEven: "solveEE: " else: "solveOO: "), sp.getStats
+
+  toc("end solveXX")
+
+proc solveEE*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
+  s.solveXX(r, x, m, sp0, parEven=true)
+
+proc solveOO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
+  s.solveXX(r, x, m, sp0, parEven=false)
+
+proc solveEO*(s: Staggered; r,x: Field; m: SomeNumber; sp0: var SolverParams) =
+  var sp = sp0
+  sp.subset.layoutSubset(r.l, sp.subsetName)
+  var t = newOneOf(r)
+  var top = 0.0
+  proc op2(a,b: Field) =
+    threadBarrier()
+    if threadNum==0: top -= epochTime()
+    stagD2ee(s.se, s.so, a, s.g, b, m*m)
+    if threadNum==0: top += epochTime()
+    #threadBarrier()
+  var oa = (apply: op2)
+  let t0 = epochTime()
+  cgSolve(r, x, oa, sp)
+  let t1 = epochTime()
+  let secs = t1-t0
+  let flops = (s.g.len*4*72+60)*r.l.nEven*sp.finalIterations
+  sp0.finalIterations = sp.finalIterations
+  sp0.seconds = secs
+  if sp0.verbosity>0:
+    echo "op time: ", top
+    echo "solve time: ", secs, "  Gflops: ", 1e-9*flops.float/secs
+
+# multimass (trivial version with multiple single mass calls for now)
+proc solveEO*(s: Staggered; r: seq[Field]; x: Field; m: seq[float];
+              sp: seq[SolverParams]) =
+  let n = m.len
+  doAssert(r.len == n)
+  doAssert(sp.len == n)
+  for i in 0..<n:
+    solveEO(s, r[i], x, m[i], sp[i])
+
+proc stagSolveCgls*(
+  s: Staggered; 
+  r, x: Field; 
+  m: SomeNumber; 
+  sp: var SolverParams; 
+  parEven = true
+) = s.stagSolveCglsInternal(r, x, m, sp, parEven=parEven)
 
 proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
   tic()
@@ -472,8 +504,8 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
   #  ys.new(y.l)
   #  rs.new(r.l)
   #  ss = toSingle(s)
-  #if sp0.backend == sbQex and sp0.sloppySolve != SloppyNone:
-  #  discard stagSingle(s, init=true)
+  if sp0.backend == sbQex and sp0.sloppySolve != SloppyNone:
+    discard stagSingle(s, init=true)
   var sp = sp0
   sp.resetStats()
   dec sp.verbosity
@@ -509,8 +541,8 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
     if sp.verbosity>0:
       echo "stagSolve r2/b2: ", r2/b2
 
-  #if sp0.backend == sbQex and sp0.sloppySolve != SloppyNone:
-  #  discard stagSingle(s, free=true)
+  if sp0.backend == sbQex and sp0.sloppySolve != SloppyNone:
+    discard stagSingle(s, free=true)
   sp.r2.init r2/b2
   sp.calls = 1
   sp.seconds = getElapsedTime()
@@ -598,7 +630,7 @@ proc solve*(
     elif b2o > r2stopo: (sp.r2req,subset) = (r2stopo/b2o,"odd")
     
     # Solve
-    s.solveXX(ys,r,shifts,sp,subset=subset)
+    s.solveXXInternal(ys,r,shifts,sp,subset=subset)
 
     # Calculate/update r^2
     threads:
