@@ -127,6 +127,10 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
   if (NimMajor, NimMinor) >= (1, 7):
     mm ~ refc
 
+  if (NimMajor, NimMinor) >= (1, 7):
+    deepcopy ~ on
+    exceptions ~ quirky
+
   if not fo.debug:
     d ~ "release"
     d ~ "danger"
