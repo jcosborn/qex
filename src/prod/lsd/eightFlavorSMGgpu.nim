@@ -58,6 +58,7 @@ letParam:
   force_stats = 1 # force stats: 1 of the first fermion and gauge forces of a trajectory, 2 of all
   timers = 0 # 1 prints the profile timers at the end
   mixed = 0 # 1 solves the fermion forces in mixed precision (forces change within f_tol)
+  r2in = 1e-6 # inner FP32 CG squared tolerance, floored at FP32 epsilon
   fixed_sums = 1 # 1 adds the CG dot products in a fixed order, so runs repeat bit for bit; 0 atomically, faster
 
 # read xml inputs - again, if you're using this as a reference, please, please, please
@@ -169,7 +170,7 @@ spf.maxits = f_maxits
 #[ build action/integrator from inputs ]#
 
 var hmc = uc.newHmcGpu(s, r, tau, revCheckFreq = rev_check_freq, bc = periodic, reals = reals,
-                       forceStats = force_stats, mixed = mixed != 0, fixed = fixed_sums != 0)
+                       forceStats = force_stats, mixed = mixed != 0, fixed = fixed_sums != 0, r2in = r2in)
 
 var fermionLevel = newGpuLevel(multiplier = f_steps, integrator = ferm_int_alg)
 

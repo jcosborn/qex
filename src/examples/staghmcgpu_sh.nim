@@ -153,6 +153,7 @@ letParam:
   verboseTimer:bool = 0
   rg = newSeq[int](0)  # ranks per dimension, lanes as in bestagcg
   mixed:bool = 0  # mixed precision solves
+  r2in = 1e-6  # inner FP32 CG squared tolerance, floored at FP32 epsilon
   reals = 0  # reals per link of the solvers, 12, 14 or 18; 0: 14 with smearing, 12 without
   batch:bool = 1  # solve the fermion terms of a force step together
   check:bool = 0  # first compare the smearing and its force with gauge/hypsmear2
@@ -326,9 +327,9 @@ proc faction(): seq[seq[float]] =
       b[j] = eta[j]
     else: b[j] = phi[j]
   if useBatch:
-    s.solveM(xs, b, toSeq(0..<nt).mapIt(mt(it)), spa, ssp, full = true)
+    s.solveM(xs, b, toSeq(0..<nt).mapIt(mt(it)), spa, ssp, r2in = r2in, full = true)
   else:
-    for j in 0..<nt: s.solveM(xs[j], b[j], mt(j), spa[j], ssp, full = true)
+    for j in 0..<nt: s.solveM(xs[j], b[j], mt(j), spa[j], ssp, r2in = r2in, full = true)
   toc("solve")
   for j in 0..<nt: result[terms[j][0]].add s.norm2(xs[j])
   toc("norm")
@@ -359,10 +360,10 @@ proc solveTerms(ids: seq[int]) =
   tic()
   if useBatch and ids.len > 1:
     var sp = ids.mapIt(spf[it])
-    s.solveM(ids.mapIt(xs[it]), ids.mapIt(phi[it]), ids.mapIt(mt(it)), sp, ssp)
+    s.solveM(ids.mapIt(xs[it]), ids.mapIt(phi[it]), ids.mapIt(mt(it)), sp, ssp, r2in = r2in)
     for k, j in ids: spf[j] = sp[k]
   else:
-    for j in ids: s.solveM(xs[j], phi[j], mt(j), spf[j], ssp)
+    for j in ids: s.solveM(xs[j], phi[j], mt(j), spf[j], ssp, r2in = r2in)
   toc("fforce solve")
 
 proc force(p: ptr UncheckedArray[float]; ids: seq[int]; ts: openArray[float]) =
@@ -541,10 +542,10 @@ proc pbp() =
       for i in 0..<nr:
         sp[i] = pbpsp
         sp[i].resetStats
-      s.solveM(px[0..<nr], pv[0..<nr], repeat(m, nr), sp, ssp, full = true)
+      s.solveM(px[0..<nr], pv[0..<nr], repeat(m, nr), sp, ssp, r2in = r2in, full = true)
       for i in 0..<nr: pbpsp.addStats(sp[i])
     else:
-      for i in 0..<nr: s.solveM(px[i], pv[i], m, pbpsp, ssp, full = true)
+      for i in 0..<nr: s.solveM(px[i], pv[i], m, pbpsp, ssp, r2in = r2in, full = true)
     for i in 0..<nr:
       let pbp = s.norm2(px[i])
       echo "MEASpbp mass ",m," : ",m*pbp/vol.float
@@ -658,10 +659,10 @@ for n in inittraj+1..inittraj+trajs:
       s.applyMfull(phi[j], eta[j], -mt(j))
   if useBatch and hb.len > 1:
     var sp = hb.mapIt(spa[it+1])
-    s.solveM(hb.mapIt(phi[it]), hb.mapIt(xs[it]), hb.mapIt(-mh(it)), sp, ssp, full = true)
+    s.solveM(hb.mapIt(phi[it]), hb.mapIt(xs[it]), hb.mapIt(-mh(it)), sp, ssp, r2in = r2in, full = true)
     for k, j in hb: spa[j+1] = sp[k]
   else:
-    for j in hb: s.solveM(phi[j], xs[j], -mh(j), spa[j+1], ssp, full = true)
+    for j in hb: s.solveM(phi[j], xs[j], -mh(j), spa[j+1], ssp, r2in = r2in, full = true)
   for j in 0..<nt: zero(cast[ptr UncheckedArray[float]](addr phi[j][6*s.ne]), n6 - 6*s.ne)
   toc("init")
   var f2 = faction()

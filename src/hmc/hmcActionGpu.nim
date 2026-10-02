@@ -64,6 +64,7 @@ type
     smeared*: bool  ## sgo and s hold the smeared links of gg.u
     forceStats*: int  ## 1: the per action force stats of the first fermion and gauge forces of a trajectory, 2: of all
     mixed*: bool  ## force solves in mixed precision
+    r2in*: float  ## relative squared residual target of the inner FP32 CG
     sample: bool  ## pull the actions of the next fermion force back one by one
     sampleG: bool  ## the stats of the next gauge force
     hostNew*: bool  ## the host links are newer than gg.u
@@ -81,7 +82,7 @@ proc newVec(h: HmcGpu): ptr UncheckedArray[float] =
 
 proc newHmcGpu*[U,R,S](uc: GaugeConfiguration[U]; srng: S; prng: R; tau: float; revCheckFreq = 0;
                        bc: openArray[bool] = [true, true, true, false]; reals = 18;
-                       forceStats = 1; mixed = false; fixed = true): HmcGpu[U,R,S] =
+                       forceStats = 1; mixed = false; fixed = true; r2in = 1e-6): HmcGpu[U,R,S] =
   ## the HMC of hmcAction on the GPU, the fermion boundary conditions bc
   ## (periodic when true) for all fermion actions; reals per link of the
   ## solvers, 18 or 14 (rows 0 and 1 and the determinant); with mixed the
@@ -91,6 +92,7 @@ proc newHmcGpu*[U,R,S](uc: GaugeConfiguration[U]; srng: S; prng: R; tau: float; 
   new(result)
   result.forceStats = forceStats
   result.mixed = mixed
+  result.r2in = r2in
   result.cpu = uc.newHmcAction(srng, prng, tau, revCheckFreq)
   result.tau = tau
   result.revCheckFreq = revCheckFreq
@@ -255,7 +257,7 @@ proc solveAll(h: HmcGpu; sys: var seq[Sys]; mixed = false) =
     ms[j] = sys[j].m
     sps[j] = sys[j].sp
     sps[j].resetStats
-  if mixed: h.s.solveM(xs, bs, ms, sps, addr h.ss, full = full)
+  if mixed: h.s.solveM(xs, bs, ms, sps, addr h.ss, r2in = h.r2in, full = full)
   else: h.s.solveM(xs, bs, ms, sps, full = full)
   let secs = getElapsedTime()/float(sys.len)
   for j in 0..<sys.len:
