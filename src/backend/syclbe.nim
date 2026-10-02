@@ -24,7 +24,7 @@ proc gpuInit*(device: int) =
   let n = int devs.size()
   let d = device mod n
   dev = devs[d]
-  q = dev.queue
+  q = dev.inOrderQueue
 
 template gpuMalloc*(size: SomeInteger): pointer = mallocDevice(size, q)
 template gpuMalloc[T](x: var ptr UncheckedArray[T], n: int) =
@@ -34,10 +34,59 @@ template gpuMalloc[T](x: ptr T) =
 template gpuFree*(device_ptr: pointer) = freeDevice(device_ptr, q)
 template gpuMemCpyToCPU*(dst: pointer, src: pointer; length: SomeInteger) =
   memcpy(q, dst, src, length)
-  q.wait
 template gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger) =
   memcpy(q, dst, src, length)
+
+{.emit: """/*INCLUDESECTION*/
+#include <level_zero/ze_api.h>
+#include <sycl/ext/oneapi/backend/level_zero.hpp>
+""".}
+
+const gpuThreads {.intdefine.} = 128  ## work group size of gpuFor kernels
+var gpuIt {.importc, nodecl.}: Nd1  # the work item of the gpuFor kernels
+
+template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
+  ## One kernel over i in 0..<n, returning before it completes; gpuWaitAsync
+  ## waits for it.  Sub-groups of sub threads, or as the compiler chooses for
+  ## sub = 0.  Captured pointers must be device pointers.
+  const gpuA = when sub > 0: " [[sycl::reqd_sub_group_size(" & $sub & ")]]" else: ""
+  let gpuN = int(n)
+  if gpuN > 0:
+    let gpuM = csize_t((gpuN + gpuThreads - 1) div gpuThreads * gpuThreads)
+    {.emit: [q, ".parallel_for(sycl::nd_range<1>(sycl::range<1>(", gpuM, "), sycl::range<1>(", gpuThreads, ")), [=](sycl::nd_item<1> gpuIt)", gpuA, " {"].}
+    block:
+      let i = int(gpuIt[])
+      if i < gpuN:
+        body
+    {.emit: "});".}
+
+template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) = gpuForAsync(i, n, 0, body)
+
+template gpuFor*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
+  ## gpuForAsync waiting for the kernel
+  gpuForAsync(i, n, sub, body)
   q.wait
+template gpuFor*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, body)
+
+template gpuWaitAsync* = q.wait
+
+template gpuMallocHost*(size: SomeInteger): pointer =
+  ## pinned host memory, for fast copies from the device
+  mallocHost(size, q)
+template gpuFreeHost*(p: pointer) = freeHost(p, q)
+
+template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
+  ## r[k] += v atomically, in kernels
+  let kk = k
+  let vv = v
+  {.emit: ["sycl::atomic_ref<double, sycl::memory_order::relaxed, sycl::memory_scope::device, sycl::access::address_space::global_space>(", r, "[", kk, "]).fetch_add(", vv, ");"].}
+
+proc gpuZeContext*(): tuple[ctx, dev: pointer] =
+  ## Level Zero context and device of the queue
+  var ctx, dev: pointer
+  {.emit: [ctx, " = sycl::get_native<sycl::backend::ext_oneapi_level_zero>(", q, ".get_context());\n",
+           dev, " = sycl::get_native<sycl::backend::ext_oneapi_level_zero>(", q, ".get_device());"].}
+  (ctx, dev)
 
 template gpuThreadNum*: auto =
   #let item = getNdItem1()

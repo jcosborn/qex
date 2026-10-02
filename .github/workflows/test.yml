@@ -67,12 +67,12 @@ jobs:
     - name: build Nim & nimble
       working-directory: Nim
       run: |
-        #. ci/funs.sh
-        #nimBuildCsourcesIfNeeded
-        #./bin/nim c --noNimblePath --skipUserCfg --skipParentCfg --hints:off koch
-        #./koch boot -d:release -d:danger --skipUserCfg --skipParentCfg --hints:off
-        #./koch nimble -d:release -d:danger --skipUserCfg --skipParentCfg --hints:off
-        ./build_all.sh
+        # QEX needs the compiler and Nimble; build_all.sh also builds nimsuggest.
+        . ci/funs.sh
+        nimBuildCsourcesIfNeeded
+        ./bin/nim c --noNimblePath --skipUserCfg --skipParentCfg --hints:off koch
+        ./koch boot -d:release --skipUserCfg --skipParentCfg --hints:off
+        ./koch nimble --skipUserCfg --skipParentCfg --hints:off
     - name: set path to nim
       run: echo "${{ github.workspace }}/Nim/bin" >> $GITHUB_PATH
     - name: checkout

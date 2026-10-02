@@ -16,6 +16,27 @@ proc gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger) =
 template gpuNumThreads*:auto = numThreads
 template gpuThreadNum*:auto = threadNum
 
+# The kernels of the GPU backends run here as loops on the calling host
+# thread, complete on return, the reference for the device code
+
+template gpuFor*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
+  ## body for each i in 0..<n in order, n evaluated once; sub, the
+  ## sub-group size of the GPU backends, does not apply
+  let gpuN = int(n)
+  for i in 0..<gpuN:
+    body
+template gpuFor*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, body)
+template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
+  ## gpuFor, complete on return as well
+  gpuFor(i, n, sub, body)
+template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, body)
+template gpuWaitAsync* = discard
+template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
+  ## r[k] += v, in kernels, which one thread runs
+  r[k] += v
+template gpuMallocHost*(size: SomeInteger): pointer = alloc(size)
+template gpuFreeHost*(p: pointer) = dealloc(p)
+
 proc genCpuPrepare(n:seq[NimNode]):NimNode =
   mixin toGpu
   template r(x,v:untyped):untyped =

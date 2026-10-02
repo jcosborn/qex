@@ -123,6 +123,10 @@ letParam:
   pbprsq = arsq
   maxits = 1000000
   useFG2:bool = 0
+  hot:bool = 0  # random links instead of unit ones, as staghmc -hot:1
+  alpha1 = 0.4  # HYP smearing coefficients
+  alpha2 = 0.5
+  alpha3 = 0.5
   showTimers:bool = 1
   timerWasteRatio = 0.05
   timerEchoDropped:bool = 0
@@ -185,7 +189,7 @@ let
 
 var
   info: PerfInfo
-  coef = HypCoefs(alpha1:0.4, alpha2:0.5, alpha3:0.5)
+  coef = HypCoefs(alpha1:alpha1, alpha2:alpha2, alpha3:alpha3)
 echo "smear = ",coef
 
 var ftmp = lo.ColorVector()
@@ -689,8 +693,9 @@ if fileExists(gaugefile):
   toc("read")
   g.reunit
   toc("reunit")
+elif hot:
+  g.random r
 else:
-  #g.random r
   g.unit
 
 g.mplaq
