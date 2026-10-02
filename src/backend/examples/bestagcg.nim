@@ -141,7 +141,7 @@ if nd > 0:  # A = 4m^2 - D_eo D_oe applications, flops as stagD2xx
 if intParam("mixed", 0) != 0:
   var sgs = newStagGpu(g, float32, reals, fwd, recon64 = r64, reconFma = rfm)
   sgs.fixed = fixed
-  echo "FP32 recon64: ", r64, " reconFma: ", rfm
+  echo "FP32 recon64: ", r64, " reconFma: ", rfm, " CG ", sgs.ctrl
   for k in 0..<ngpu:
     var spg = initSolverParams()
     spg.r2req = r2req

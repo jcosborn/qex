@@ -51,7 +51,7 @@ var sd = newStagGpu(g, float64, intParam("reals", 18), intParam("fwd", -1), batc
 var sf = newStagGpu(g, float32, intParam("reals", 18), intParam("fwd", -1), batch = true,
                     recon64 = intParam("recon64", 0) != 0, reconFma = intParam("reconFma", 0) != 0)
 echo "GPU links: ", sd.nl, " reals", "  split hop: ", sd.split, "  peer IPC: ", haloIpc,
-  "  FP32 recon64: ", sf.recon64, " reconFma: ", sf.reconFma
+  "  FP32 recon64: ", sf.recon64, " reconFma: ", sf.reconFma, " CG ", sf.ctrl
 let n6 = 6*sd.n
 let ne6 = 6*sd.ne
 const big = 100000  # maxits of the solves that converge
@@ -164,7 +164,7 @@ proc checkInner(m, r2req: float) =
     sf.download(xg[j], sf.vec[6])
   let bd = sysB(sf.vecB[5], 6*sf.ne)
   let xd = sysB(sf.vecB[6], 6*sf.ne)
-  var st = sf.initB
+  var st = sf.initB(float32)
   for j in 0..<nBatch:
     sf.upload(bd[j], bs[j])
     sf.startB(st, j, xd[j], bd[j], ms[j], r2req*b2[j], big)

@@ -75,11 +75,20 @@ type
     fixed*: bool  # the CG sums its dot products in a fixed order (sumFixed), repeating bit for bit, else atomically
     recon64*: bool  # reconstruct compressed FP32 links in FP64, then round row 2 to FP32
     reconFma*: bool  # FP32 cross product with explicit fused multiply-add operations
+    ctrl*: CgControl
     exB*: array[2, GpuHaloEx[T]]  # with batch, the exchanges of nBatch systems, system j in components 6j..6j+5
     redB*: ptr UncheckedArray[float]  # [2][2*nBatch][max(ne, nRed)] dot products of the systems and sites or slots, two buffers, then the workspace of sumFixed
     hredB*: ptr UncheckedArray[float]  # [2*nBatch*nRed] pinned host copy of a buffer
     vecB*: array[7, ptr UncheckedArray[T]]  # work vectors of nBatch systems, 6*nBatch*n reals each
     rhB*, shB*: ptr UncheckedArray[T]  # CG halo copies of r and s of nBatch systems, as s.exB[0].rbuf
+  CgResult = object
+    its, nres: array[nBatch,int]
+    r2: array[nBatch,float]
+
+proc cgR[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32];
+                        x,b: array[nBatch,ptr UncheckedArray[float64]];
+                        m,stop: array[nBatch,float]; mits: array[nBatch,int];
+                        act,verb: int; bat: static bool): CgResult
 
 proc innerGeom*(lat, rg: seq[int]; v: int): seq[int] =
   ## Lanes in the dimensions not split across ranks first, then the largest
@@ -141,6 +150,7 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
   result.ne = V*lo.nEvenOuter
   result.recon64 = recon64
   result.reconFma = reconFma
+  result.ctrl = cgControl("gpu")
   let c = getDefaultComm()
   var w = newSeq[int](nd)
   for d in 0..<nd: w[d] = 1
@@ -300,6 +310,7 @@ proc free*[V: static int; T](s: var StagGpu[V,T]) =
     for p in 0..1: s.exB[p].free
 
 proc fmadd(a,b,c: float32): float32 {.importc: "fmaf", header: "<math.h>", noSideEffect.}
+proc fmadd(a,b,c: float64): float64 {.importc: "fma", header: "<math.h>", noSideEffect.}
 
 template load(m, u, o, st, e: untyped; nl: static int; r64: static bool = false; fm: static bool = false) =
   ## m[6a+2b] (re), m[6a+2b+1] (im) = U_ab from u[o + (6a+2b)*st], ...; for
@@ -480,31 +491,33 @@ proc applyD2ee*[V: static int; T](s: StagGpu[V,T]; r, x, t: ptr UncheckedArray[T
   s.dslash(0, r, t, x, s.ex[1].rbuf, T(4*m2), T(-1), nil, nil, dot = false, send = false)
 
 proc applyD2eeCG[V: static int; T](s: StagGpu[V,T]; w, r, t: ptr UncheckedArray[T]; m2: float;
-                                   rs, rz: ptr UncheckedArray[float]): array[2,float] =
+                                   rs, rz: ptr UncheckedArray[float]; classic: static bool = false): array[2,float] =
   ## w_e = 4 m2 r_e - D_eo D_oe r_e with the remote sites of r from s.rh,
   ## returning the global r_e.r_e and w_e.r_e from rs, with s.fixed summed in
   ## a fixed order by sumFixed, so a solve repeats bit for bit.  Starts the
   ## exchange of the boundary of w in s.ex[0]; the caller waits for it.
   ## The first hop runs after the kernels already submitted, and the start
   ## of the exchange of t waits for them.
+  ## With classic, read the completed ex[0] exchange and leave it idle.
   tic("A r")
-  s.dslash(1, t, r, r, s.rh, T(0), T(1), nil, nil, dot = false, send = true, nowait = true)
+  let rb = when classic: s.ex[0].rbuf else: s.rh
+  s.dslash(1, t, r, r, rb, T(0), T(1), nil, nil, dot = false, send = true, nowait = true)
   toc("dslash oe")
   s.ex[1].start
   toc("start oe")
   if s.split:
-    s.dslash(0, w, t, r, nil, T(4*m2), T(-1), rs, rz, dot = true, send = true, s.ne - s.nin, s.nin, nowait = true)
+    s.dslash(0, w, t, r, nil, T(4*m2), T(-1), rs, rz, dot = true, send = not classic, s.ne - s.nin, s.nin, nowait = true)
     toc("dslash eo local")
     s.ex[1].wait
     toc("wait oe")
-    s.dslash(0, w, t, r, s.ex[1].rbuf, T(4*m2), T(-1), rs, rz, dot = true, send = true, 0, s.ne - s.nin)
+    s.dslash(0, w, t, r, s.ex[1].rbuf, T(4*m2), T(-1), rs, rz, dot = true, send = not classic, 0, s.ne - s.nin)
     gpuWaitAsync()
   else:
     s.ex[1].wait(sync = false)
     toc("wait oe")
-    s.dslash(0, w, t, r, s.ex[1].rbuf, T(4*m2), T(-1), rs, rz, dot = true, send = true, nowait = true)
+    s.dslash(0, w, t, r, s.ex[1].rbuf, T(4*m2), T(-1), rs, rz, dot = true, send = not classic, nowait = true)
   toc("dslash eo")
-  s.ex[0].start
+  when not classic: s.ex[0].start
   toc("start eo")
   if s.fixed:  # sumFixed waits for the hops
     sumFixed(result, rs, cast[ptr UncheckedArray[float]](addr s.red[4*max(s.ne, nRed)]), s.hred, 2, s.ne)
@@ -524,7 +537,7 @@ proc redot[V: static int; T](s: StagGpu[V,T]; x, y: ptr UncheckedArray[T]): floa
   ## local sum of x_e.y_e
   gpuSum(i, 6*s.ne, 1, [float(x[i])*float(y[i])])[0]
 
-proc update[V: static int; T](s: StagGpu[V,T]; x, r, p, sv, w: ptr UncheckedArray[T]; a, b: T) =
+proc update[V: static int; T,U](s: StagGpu[V,T]; x: ptr UncheckedArray[U]; r, p, sv, w: ptr UncheckedArray[T]; a, b: T; ax: U) =
   ## p = r + b p, s = w + b s, x += a p, r -= a s on the even sites, and the
   ## same for the halo copies s.rh, s.sh from the w boundary received in
   ## s.ex[0]; a thread updates one real.  Returns before the kernel
@@ -539,7 +552,8 @@ proc update[V: static int; T](s: StagGpu[V,T]; x, r, p, sv, w: ptr UncheckedArra
       let sk = w[t] + b*sv[t]
       p[t] = pk
       sv[t] = sk
-      x[t] += a*pk
+      when U is T: x[t] += a*pk
+      else: x[t] += ax*U(pk)
       r[t] = r[t] - a*sk
     else:
       let k = t - n6
@@ -571,7 +585,7 @@ proc resid[V: static int; T](s: StagGpu[V,T]; r, b, a: ptr UncheckedArray[T]) =
   ## r_e = b_e - a_e
   gpuFor(i, 6*s.ne): r[i] = b[i] - a[i]
 
-proc cg[V: static int; T](s: StagGpu[V,T]; x, b: ptr UncheckedArray[T]; m, r2stop: float;
+proc cg[V: static int; T,U](s: StagGpu[V,T]; x: ptr UncheckedArray[U]; b: ptr UncheckedArray[T]; m, r2stop: float;
                           maxits, verb: int; verify: static bool = true): tuple[its: int, r2: float] =
   ## Solves A x_e = b_e from x_e = 0 until the global |res|^2 <= r2stop or
   ## maxits iterations, with s.vec[0..4] as work vectors: rr = res, p, s,
@@ -587,7 +601,7 @@ proc cg[V: static int; T](s: StagGpu[V,T]; x, b: ptr UncheckedArray[T]; m, r2sto
   let w = s.vec[3]
   let t = s.vec[4]
   gpuFor(i, 6*s.ne):
-    x[i] = T(0)
+    x[i] = U(0)
     rr[i] = b[i]
   let bo = 2*max(s.ne, nRed)
   let red = s.red
@@ -624,7 +638,7 @@ proc cg[V: static int; T](s: StagGpu[V,T]; x, b: ptr UncheckedArray[T]; m, r2sto
       rp = gd[0]
       s.ex[0].wait(sync = false)
       toc("wait w")
-      s.update(x, rr, p, sv, w, T(alpha), T(beta))
+      s.update(x, rr, p, sv, w, T(alpha), T(beta), U(alpha))
       toc("update")
       gd = s.applyD2eeCG(w, rr, t, m*m, rs, rz)
       swap(rs, rz)
@@ -644,16 +658,17 @@ proc cg[V: static int; T](s: StagGpu[V,T]; x, b: ptr UncheckedArray[T]; m, r2sto
         echo "  r.r: ", gd[0], " ", rr2, "  w.r: ", gd[1], " ", wr
     s.ex[0].wait
     when not verify: break
-    if itn == 0: break  # x = 0, rr = b
-    s.applyD2ee(w, x, t, m*m)
-    s.resid(rr, b, w)
-    r2 = s.redot(rr, rr)
-    c.allReduce(r2)
-    when defined(stagWorkCount): inc stagWork.reductions
-    if verb > 1:
-      echo "GPU CG iteration: ", itn, "  true r2: ", r2
-    if r2 <= r2stop or itn >= maxits or r2v > 0.0 and r2 >= r2v: break
-    r2v = r2
+    else:
+      if itn == 0: break  # x = 0, rr = b
+      s.applyD2ee(w, x, t, m*m)
+      s.resid(rr, b, w)
+      r2 = s.redot(rr, rr)
+      c.allReduce(r2)
+      when defined(stagWorkCount): inc stagWork.reductions
+      if verb > 1:
+        echo "GPU CG iteration: ", itn, "  true r2: ", r2
+      if r2 <= r2stop or itn >= maxits or r2v > 0.0 and r2 >= r2v: break
+      r2v = r2
   (itn, r2)
 
 proc addSolve(sp: var SolverParams; its: int; r2: float) =
@@ -701,6 +716,17 @@ proc cg[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; x, b: ptr 
   ## maxits iterations or a restart without progress, by single precision
   ## CGs in ss bounded by targetS, adding their solutions to x and
   ## restarting from the residual b - A x in double, whose |res|^2 returns.
+  if ss.ctrl.kind == 1:
+    var xx,bb: array[nBatch,ptr UncheckedArray[float64]]
+    var mm,rq: array[nBatch,float]
+    var mi: array[nBatch,int]
+    xx[0] = x
+    bb[0] = b
+    mm[0] = m
+    rq[0] = r2stop
+    mi[0] = maxits
+    let z = cgR(s,ss,xx,bb,mm,rq,mi,1,verb,false)
+    return (z.its[0],z.nres[0],z.r2[0])
   let c = getDefaultComm()
   let rd = s.vec[0]
   let ad = s.vec[1]
@@ -717,9 +743,14 @@ proc cg[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; x, b: ptr 
   while result.its < maxits and r2 > r2stop and (r2p == 0.0 or r2 < r2p):
     r2p = r2
     ss.convert(rs, rd)
-    let (k, _) = ss.cg(e, rs, m, targetS(r2, r2stop, r2in), maxits - result.its, verb, verify = false)
-    result.its += k
-    s.addTo(x, e)
+    if ss.ctrl.kind == 2 and ss.ctrl.acc64:
+      let z = ss.cg(ad,rs,m,targetS(r2,r2stop,r2in),maxits-result.its,verb,verify=false)
+      result.its += z.its
+      s.addTo(x,ad)
+    else:
+      let (k, _) = ss.cg(e, rs, m, targetS(r2, r2stop, r2in), maxits - result.its, verb, verify = false)
+      result.its += k
+      s.addTo(x, e)
     s.applyD2ee(ad, x, t, m*m)
     s.resid(rd, b, ad)
     r2 = s.redot(rd, rd)
@@ -751,6 +782,7 @@ proc solveEE*[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; r, x
   toc("cg")
   s.download(r, xd)
   sp.addSolve(itn, if b2 > 0: r2/b2 else: 0.0)
+  if ss.ctrl.kind == 1: sp.reliable += nres
   sp.seconds += secs
   let flops = float((2*8*72 + 60)*s.ne*(itn+nres))
   sp.flops += flops
@@ -919,24 +951,39 @@ proc reconO[V: static int](s: StagGpu[V,float]; x, b: ptr UncheckedArray[float];
   else: s.dslash(1, x, x, x, s.ex[0].rbuf, 0.0, -0.5/m, nil, nil, dot = false, send = false)
 
 proc solveA[V: static int](s: StagGpu[V,float]; x, q: ptr UncheckedArray[float]; m, r2stop: float; maxits: int;
-                           ss: ptr StagGpu[V,float32]; r2in: float; verb: int): int =
+                           ss: ptr StagGpu[V,float32]; r2in: float; verb: int): tuple[its,nres: int] =
   ## A x_e = q_e from x_e = 0 until |q - A x|^2 <= r2stop, recursive in
   ## the inner precision, bounded by its epsilon with ss, or maxits
   ## iterations.  correctM refines the full solution from b - M x.
-  if ss == nil: result = s.cg(x, q, m, r2stop, maxits, verb, verify = false).its
+  if ss == nil: result.its = s.cg(x, q, m, r2stop, maxits, verb, verify = false).its
   else:
     let rs = ss.vec[5]
     let e = ss.vec[6]
     var q2 = s.redot(q, q)
     getDefaultComm().allReduce(q2)
     when defined(stagWorkCount): inc stagWork.reductions
-    ss[].convert(rs, q)
-    result = ss[].cg(e, rs, m, targetS(q2, r2stop, r2in), maxits, verb, verify = false).its
-    s.convert(x, e)
+    if ss[].ctrl.kind == 1:
+      var xx,bb: array[nBatch,ptr UncheckedArray[float64]]
+      var mm,rq: array[nBatch,float]
+      var mi: array[nBatch,int]
+      xx[0] = x
+      bb[0] = q
+      mm[0] = m
+      rq[0] = max(r2stop,r2in*q2)
+      mi[0] = maxits
+      let z = cgR(s,ss[],xx,bb,mm,rq,mi,1,verb,false)
+      result = (z.its[0],z.nres[0])
+    else:
+      ss[].convert(rs, q)
+      if ss[].ctrl.kind == 2 and ss[].ctrl.acc64:
+        result.its = ss[].cg(x,rs,m,targetS(q2,r2stop,r2in),maxits,verb,verify=false).its
+      else:
+        result.its = ss[].cg(e, rs, m, targetS(q2, r2stop, r2in), maxits, verb, verify = false).its
+        s.convert(x, e)
 
 proc correctM[V: static int](s: StagGpu[V,float]; x, b: ptr UncheckedArray[float]; m: float; full: bool;
                              stop: float; its: var int; maxits: int; ss: ptr StagGpu[V,float32];
-                             r2in: float; verb: int): float =
+                             r2in: float; verb: int; nr: var int): float =
   ## The global |r|^2 of r = b - M x, b_o = 0 unless full.  While it
   ## exceeds stop and drops, with its < maxits, x += y for M y = r solved
   ## as by solveM, which also corrects the rounding of x_o.  q, y, r in
@@ -957,7 +1004,9 @@ proc correctM[V: static int](s: StagGpu[V,float]; x, b: ptr UncheckedArray[float
     if result <= stop or its >= maxits or prev > 0.0 and result >= prev: return
     prev = result
     s.rhs(q, r, m, true)
-    its += s.solveA(y, q, m, targetA(m, stop, r2[1]), maxits - its, ss, r2in, verb)
+    let z = s.solveA(y, q, m, targetA(m, stop, r2[1]), maxits - its, ss, r2in, verb)
+    its += z.its
+    nr += z.nres
     s.reconO(y, r, m, true)
     gpuFor(i, n6): x[i] += y[i]
 
@@ -974,10 +1023,13 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: ptr UncheckedArray[float]
   let bb = b2[0] + b2[1]
   let stop = sp.r2req*bb
   s.rhs(q, b, m, full)
-  var its = s.solveA(x, q, m, targetA(m, stop, b2[1]), sp.maxits, ss, r2in, sp.verbosity)
+  let z = s.solveA(x, q, m, targetA(m, stop, b2[1]), sp.maxits, ss, r2in, sp.verbosity)
+  var its = z.its
+  var nr = z.nres
   s.reconO(x, b, m, full)
-  let r2 = s.correctM(x, b, m, full, stop, its, sp.maxits, ss, r2in, sp.verbosity)
+  let r2 = s.correctM(x, b, m, full, stop, its, sp.maxits, ss, r2in, sp.verbosity,nr)
   sp.addSolve(its, if bb > 0: r2/bb else: 0.0)
+  sp.reliable += nr
 
 proc outerM*[V: static int](s: StagGpu[V,float]; f, x: ptr UncheckedArray[float]; t: float) =
   ## f_mu(y) += t x(y) x(y+mu)^+ over all sites, f like GpuGauge.u: the one
@@ -1306,24 +1358,25 @@ proc applyMfullB[V: static int; C: static int](s: StagGpu[V,float]; r, x: array[
 
 proc applyD2eeCGB[V: static int; C: static int; T](s: StagGpu[V,T]; w, r, t: array[C, ptr UncheckedArray[T]];
                                                    m2: array[C, float]; so: array[C, int];
-                                                   rs, rz: ptr UncheckedArray[float]): array[2*nBatch, float] =
+                                                   rs, rz: ptr UncheckedArray[float]; classic: static bool = false): array[2*nBatch, float] =
   ## applyD2eeCG for C systems, returning r_j.r_j and w_j.r_j at 2 so_j and 2 so_j + 1
   var a, z, o, mo: array[C, T]
   for j in 0..<C:
     a[j] = T(4*m2[j])
     o[j] = T(1)
     mo[j] = T(-1)
-  s.dslashB(1, t, r, r, s.rhB, z, o, so, nil, nil, dot = false, send = true, nowait = true)
+  let rb = when classic: s.exB[0].rbuf else: s.rhB
+  s.dslashB(1, t, r, r, rb, z, o, so, nil, nil, dot = false, send = true, nowait = true)
   s.exB[1].start
   if s.split:
-    s.dslashB(0, w, t, r, nil, a, mo, so, rs, rz, dot = true, send = true, s.ne - s.nin, s.nin, nowait = true)
+    s.dslashB(0, w, t, r, nil, a, mo, so, rs, rz, dot = true, send = not classic, s.ne - s.nin, s.nin, nowait = true)
     s.exB[1].wait
-    s.dslashB(0, w, t, r, s.exB[1].rbuf, a, mo, so, rs, rz, dot = true, send = true, 0, s.ne - s.nin)
+    s.dslashB(0, w, t, r, s.exB[1].rbuf, a, mo, so, rs, rz, dot = true, send = not classic, 0, s.ne - s.nin)
     gpuWaitAsync()
   else:
     s.exB[1].wait(sync = false)
-    s.dslashB(0, w, t, r, s.exB[1].rbuf, a, mo, so, rs, rz, dot = true, send = true, nowait = true)
-  s.exB[0].start
+    s.dslashB(0, w, t, r, s.exB[1].rbuf, a, mo, so, rs, rz, dot = true, send = not classic, nowait = true)
+  when not classic: s.exB[0].start
   if s.fixed:  # the site sums in a fixed order, as applyD2eeCG
     var r: array[2*nBatch, float]
     sumFixed(r, rs, cast[ptr UncheckedArray[float]](addr s.redB[4*nBatch*max(s.ne, nRed)]), s.hredB, 2*nBatch, s.ne)
@@ -1339,8 +1392,8 @@ proc applyD2eeCGB[V: static int; C: static int; T](s: StagGpu[V,T]; w, r, t: arr
   getDefaultComm().allReduce(addr result[0], 2*nBatch)
   when defined(stagWorkCount): inc stagWork.reductions
 
-proc updateB[V: static int; C: static int; T](s: StagGpu[V,T]; x: array[C, ptr UncheckedArray[T]]; so: array[C, int];
-                                              r, p, sv, w: ptr UncheckedArray[T]; a, b: array[C, T]) =
+proc updateB[V: static int; C: static int; T,U](s: StagGpu[V,T]; x: array[C, ptr UncheckedArray[U]]; so: array[C, int];
+                                              r, p, sv, w: ptr UncheckedArray[T]; a, b: array[C, T]; ax: array[C,U]) =
   ## update for C systems with a_j and b_j; r, p, sv, w hold the slots one
   ## after the other, 6 ne reals each, system j in slot so_j
   let n6 = 6*s.ne
@@ -1354,6 +1407,7 @@ proc updateB[V: static int; C: static int; T](s: StagGpu[V,T]; x: array[C, ptr U
   unpackB(so, C)
   unpackB(a, C)
   unpackB(b, C)
+  unpackB(ax, C)
   gpuForAsync(t, C*n6 + 6*C*nr):
     if t < C*n6:
       let js = t div n6
@@ -1365,7 +1419,8 @@ proc updateB[V: static int; C: static int; T](s: StagGpu[V,T]; x: array[C, ptr U
       let sk = w[i] + bj*sv[i]
       p[i] = pk
       sv[i] = sk
-      pickB(x, js, C)[o] += aj*pk
+      when U is T: pickB(x, js, C)[o] += aj*pk
+      else: pickB(x, js, C)[o] += pickB(ax,js,C)*U(pk)
       r[i] = r[i] - aj*sk
     else:
       let u = t - C*n6
@@ -1386,7 +1441,7 @@ type CgB[T] = object
   act, fresh: int  # the slots iterating, those of them started since the last hop
   rs, rz: ptr UncheckedArray[float]  # the dot products of the next hop and of the one after
 
-proc initB[V: static int; T](s: StagGpu[V,T]): CgB[T] =
+proc initB[V: static int; T](s: StagGpu[V,T]; U: typedesc): CgB[U] =
   ## no systems, the atomic slots of both dot product buffers zero
   let bo = 2*nBatch*max(s.ne, nRed)
   let red = s.redB
@@ -1396,7 +1451,7 @@ proc initB[V: static int; T](s: StagGpu[V,T]): CgB[T] =
   result.rs = s.redB
   result.rz = cast[ptr UncheckedArray[float]](addr s.redB[bo])
 
-proc startB[V: static int; T](s: StagGpu[V,T]; c: var CgB[T]; j: int; x, b: ptr UncheckedArray[T];
+proc startB[V: static int; T,U](s: StagGpu[V,T]; c: var CgB[U]; j: int; x: ptr UncheckedArray[U]; b: ptr UncheckedArray[T];
                               m, stop: float; mits: int) =
   ## slot j solves A x_e = b_e from x_e = 0: r = b, p = s = 0, the halo of r
   ## exchanged by the next stepB
@@ -1407,7 +1462,7 @@ proc startB[V: static int; T](s: StagGpu[V,T]; c: var CgB[T]; j: int; x, b: ptr 
   let pa = s.vecB[1]
   let sa = s.vecB[2]
   gpuFor(i, n6):
-    x[i] = T(0)
+    x[i] = U(0)
     ra[o + i] = b[i]
     pa[o + i] = T(0)
     sa[o + i] = T(0)
@@ -1419,7 +1474,7 @@ proc startB[V: static int; T](s: StagGpu[V,T]; c: var CgB[T]; j: int; x, b: ptr 
   c.act = c.act or (1 shl j)
   c.fresh = c.fresh or (1 shl j)
 
-proc stepB[V: static int; T](s: StagGpu[V,T]; c: var CgB[T]; verb: int): int =
+proc stepB[V: static int; T,U](s: StagGpu[V,T]; c: var CgB[U]; verb: int): int =
   ## Iterates the slots in c.act, the kernels as wide as the slots
   ## iterating, until some stop, and returns those; the next update of the
   ## others is queued.  s.vecB[0..3] hold r, p, s, w of the slots one after
@@ -1479,11 +1534,302 @@ proc stepB[V: static int; T](s: StagGpu[V,T]; c: var CgB[T]; verb: int): int =
     if c.act != 0:
       forActive(c.act):
         var a, bb: array[C, T]
+        var ax: array[C,U]
         for q in 0..<C:
           a[q] = T(c.alpha[so[q]])
           bb[q] = T(c.beta[so[q]])
-        s.updateB(sel(C, c.x, so), so, ra, pa, sa, wa, a, bb)
+          ax[q] = U(c.alpha[so[q]])
+        s.updateB(sel(C, c.x, so), so, ra, pa, sa, wa, a, bb,ax)
     if d != 0: return d
+
+proc cgR[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32];
+                        x,b: array[nBatch,ptr UncheckedArray[float64]];
+                        m,stop: array[nBatch,float]; mits: array[nBatch,int];
+                        act,verb: int; bat: static bool): CgResult =
+  ## Conventional CG with reliable residuals. Each slot retains its own
+  ## residual history; a reliable update pauses only the slots requesting it.
+  const nc = when bat: 2*nBatch else: 2
+  let ne = s.ne
+  let n6 = 6*ne
+  let nall = 6*s.n
+  let ctl = ss.ctrl
+  let fx = ss.fixed
+  let mb = ctl.beta
+  template slots(a,step: untyped): untyped =
+    when bat: sysB(a,step)
+    else:
+      block:
+        var z: array[nBatch,typeof(a)]
+        z[0] = a
+        z
+  let rr = slots((when bat: ss.vecB[0] else: ss.vec[0]),n6)
+  let pp = slots((when bat: ss.vecB[1] else: ss.vec[1]),n6)
+  let ap = slots((when bat: ss.vecB[3] else: ss.vec[3]),n6)
+  let tt = slots((when bat: ss.vecB[4] else: ss.vec[4]),nall)
+  let es = slots((when bat: ss.vecB[6] else: ss.vec[6]),n6)
+  let ed = slots((when bat: s.vecB[2] else: s.vec[0]),n6)
+  let rd = slots((when bat: s.vecB[3] else: s.vec[1]),n6)
+  let td = slots((when bat: s.vecB[4] else: s.vec[2]),nall)
+  let red = when bat: ss.redB else: ss.red
+  let host = when bat: ss.hredB else: ss.hred
+  let off = nc*max(ne,nRed)
+  let ws = cast[ptr UncheckedArray[float]](addr red[2*off])
+  var rs = red
+  var rz = cast[ptr UncheckedArray[float]](addr red[off])
+  gpuFor(i,2*off): red[i] = 0.0
+  var r2,r0,rmax,alpha,beta,m2: array[nBatch,float]
+  var ni,nt,last: array[nBatch,int]
+  var live = act
+  for j in 0..<nBatch:
+    if (act and (1 shl j)) != 0:
+      countStart(float32)
+      let xj = x[j]
+      let bj = b[j]
+      let rj = rr[j]
+      let pj = pp[j]
+      let ej = ed[j]
+      let sj = es[j]
+      gpuFor(i,n6):
+        xj[i] = 0.0
+        ej[i] = 0.0
+        sj[i] = 0.0
+        rj[i] = float32(bj[i])
+        pj[i] = float32(bj[i])
+      r2[j] = s.redot(bj,bj)
+      m2[j] = m[j]*m[j]
+  getDefaultComm().allReduce(addr r2[0],nBatch)
+  when defined(stagWorkCount): inc stagWork.reductions
+  for j in 0..<nBatch:
+    if (act and (1 shl j)) != 0:
+      r0[j] = sqrt(r2[j])
+      rmax[j] = r0[j]
+      result.r2[j] = r2[j]
+      if r2[j] <= stop[j] or mits[j] == 0: live = live and not (1 shl j)
+
+  template putPair(slot,k,js,a,b: untyped) =
+    if fx:
+      rs[(2*slot)*ne+k] = a
+      rs[(2*slot+1)*ne+k] = b
+    else:
+      gpuAtomicAdd(rs,(2*slot)*nRed+k mod nRed,a)
+      gpuAtomicAdd(rs,(2*slot+1)*nRed+k mod nRed,b)
+      if js==0 and k<nRed:
+        forStatic c,0,nc-1: rz[c*nRed+k] = 0.0
+
+  template sums(mask: int): untyped =
+    block:
+      var val: array[2*nBatch,float]
+      if fx:
+        var tmp: array[nc,float]
+        sumFixed(tmp,rs,ws,host,nc,ne)
+        for j in 0..<nBatch:
+          if (mask and (1 shl j)) != 0:
+            val[2*j] = tmp[2*j]
+            val[2*j+1] = tmp[2*j+1]
+      else:
+        gpuWaitAsync()
+        gpuMemCpyToCpu(host,rs,nc*nRed*sizeof(float))
+        for j in 0..<nBatch:
+          if (mask and (1 shl j)) != 0:
+            for c in 2*j..2*j+1:
+              for k in 0..<nRed: val[c] += host[c*nRed+k]
+      getDefaultComm().allReduce(addr val[0],nc)
+      when defined(stagWorkCount): inc stagWork.reductions
+      val
+
+  while live != 0:
+    var pa: array[2*nBatch,float]
+    forActive(live):
+      when bat:
+        ss.exB[0].packB(sel(C,pp,so),so)
+        ss.exB[0].start
+        ss.exB[0].wait
+        pa = ss.applyD2eeCGB(sel(C,ap,so),sel(C,pp,so),sel(C,tt,so),sel(C,m2,so),so,rs,rz,classic=true)
+      else:
+        ss.ex[0].pack(pp[0])
+        ss.ex[0].start
+        ss.ex[0].wait
+        let z = ss.applyD2eeCG(ap[0],pp[0],tt[0],m2[0],rs,rz,classic=true)
+        pa[0] = z[0]
+        pa[1] = z[1]
+    swap(rs,rz)
+    let old = r2
+    for j in 0..<nBatch:
+      if (live and (1 shl j)) != 0: alpha[j] = r2[j]/pa[2*j+1]
+    block:
+      forActive(live):
+        let rv = sel(C,rr,so)
+        let av = sel(C,ap,so)
+        let aa = sel(C,alpha,so)
+        unpackB(rv,C); unpackB(av,C)
+        unpackB(aa,C); unpackB(so,C)
+        gpuFor(t,C*ne):
+          let js = t div ne
+          let k = t-js*ne
+          let o = vo(V,k)
+          let r = pickB(rv,js,C)
+          let a = pickB(av,js,C)
+          let aj = pickB(aa,js,C)
+          var rn,dn = 0.0
+          forStatic c,0,5:
+            let i = o+c*V
+            let prev = r[i]
+            let v = fmadd(-float32(aj),a[i],prev)
+            r[i] = v
+            rn += float(v)*float(v)
+            if mb: dn += float(v)*float(v-prev)
+          putPair(pickB(so,js,C),k,js,rn,dn)
+    let norm = sums(live)
+    swap(rs,rz)
+    var ru = 0
+    for j in 0..<nBatch:
+      if (live and (1 shl j)) != 0:
+        inc result.its[j]
+        r2[j] = norm[2*j]
+        let sig = norm[2*j+1]
+        beta[j] = (if mb and sig>=0.0: sig else: r2[j])/old[j]
+        let rn = sqrt(r2[j])
+        rmax[j] = max(rmax[j],rn)
+        if r2[j]<=stop[j] or result.its[j]>=mits[j] or ctl.delta>0.0 and rn<ctl.delta*rmax[j] or
+           ctl.period>0 and result.its[j]-last[j]>=ctl.period:
+          ru = ru or (1 shl j)
+    if ru != 0:
+      template merge(wide: static bool) =
+        forActive(ru):
+          let xv = sel(C,x,so)
+          let ev = when wide: sel(C,ed,so) else: sel(C,es,so)
+          let pv = sel(C,pp,so)
+          let aa = sel(C,alpha,so)
+          unpackB(xv,C); unpackB(ev,C); unpackB(pv,C); unpackB(aa,C)
+          gpuFor(t,C*n6):
+            let js = t div n6
+            let i = t-js*n6
+            let e = pickB(ev,js,C)
+            let p = pickB(pv,js,C)
+            let a = pickB(aa,js,C)
+            when wide:
+              let cur = fmadd(a,float(p[i]),e[i])
+            else:
+              let cur = fmadd(float32(a),p[i],e[i])
+            pickB(xv,js,C)[i] += float(cur)
+            e[i] = 0
+      if ctl.acc64: merge(true) else: merge(false)
+      forActive(ru):
+        when bat:
+          var z,o,a,minus: array[C,float]
+          for j in 0..<C:
+            o[j] = 1.0
+            minus[j] = -1.0
+            a[j] = 4.0*m2[so[j]]
+          s.exB[0].packB(sel(C,x,so),so)
+          s.exB[0].start
+          s.exB[0].wait
+          s.dslashB(1,sel(C,td,so),sel(C,x,so),sel(C,x,so),s.exB[0].rbuf,z,o,so,nil,nil,dot=false,send=true)
+          s.exB[1].start
+          s.exB[1].wait
+          s.dslashB(0,sel(C,rd,so),sel(C,td,so),sel(C,x,so),s.exB[1].rbuf,a,minus,so,nil,nil,dot=false,send=false)
+        else: s.applyD2ee(rd[0],x[0],td[0],m2[0])
+        let rv = sel(C,rr,so)
+        let dv = sel(C,rd,so)
+        let bv = sel(C,b,so)
+        unpackB(rv,C); unpackB(dv,C); unpackB(bv,C); unpackB(so,C)
+        gpuFor(t,C*ne):
+          let js = t div ne
+          let k = t-js*ne
+          let o = vo(V,k)
+          let r = pickB(rv,js,C)
+          let d = pickB(dv,js,C)
+          let b = pickB(bv,js,C)
+          var rn = 0.0
+          forStatic c,0,5:
+            let i = o+c*V
+            let v = b[i]-d[i]
+            r[i] = float32(v)
+            rn += v*v
+          putPair(pickB(so,js,C),k,js,rn,0.0)
+      let truth = sums(ru)
+      swap(rs,rz)
+      for j in 0..<nBatch:
+        if (ru and (1 shl j)) != 0:
+          inc result.nres[j]
+          last[j] = result.its[j]
+          r2[j] = truth[2*j]
+          result.r2[j] = r2[j]
+          let rn = sqrt(r2[j])
+          if rn>=r0[j]:
+            inc ni[j]
+            inc nt[j]
+          else: ni[j] = 0
+          if r2[j]<=stop[j] or result.its[j]>=mits[j] or ni[j]>ctl.maxInc or nt[j]>ctl.maxTotal:
+            live = live and not (1 shl j)
+          r0[j] = rn
+          rmax[j] = rn
+      ru = ru and live
+      if ctl.keep and ru != 0:
+        forActive(ru):
+          let rv = sel(C,rr,so)
+          let pv = sel(C,pp,so)
+          unpackB(rv,C); unpackB(pv,C); unpackB(so,C)
+          gpuFor(t,C*ne):
+            let js = t div ne
+            let k = t-js*ne
+            let o = vo(V,k)
+            let r = pickB(rv,js,C)
+            let p = pickB(pv,js,C)
+            var re,im = 0.0
+            forStatic c,0,2:
+              let i = o+2*c*V
+              re += float(r[i])*float(p[i])+float(r[i+V])*float(p[i+V])
+              im += float(r[i])*float(p[i+V])-float(r[i+V])*float(p[i])
+            putPair(pickB(so,js,C),k,js,re,im)
+        let rp = sums(ru)
+        swap(rs,rz)
+        forActive(ru):
+          let rv = sel(C,rr,so)
+          let pv = sel(C,pp,so)
+          var re,im: array[C,float32]
+          for j in 0..<C:
+            re[j] = float32(rp[2*so[j]]/r2[so[j]])
+            im[j] = float32(rp[2*so[j]+1]/r2[so[j]])
+          unpackB(rv,C); unpackB(pv,C); unpackB(re,C); unpackB(im,C)
+          gpuFor(t,C*ne):
+            let js = t div ne
+            let o = vo(V,t-js*ne)
+            let r = pickB(rv,js,C)
+            let p = pickB(pv,js,C)
+            let a = pickB(re,js,C)
+            let b = pickB(im,js,C)
+            forStatic c,0,2:
+              let i = o+2*c*V
+              p[i] = fmadd(-a,r[i],fmadd(b,r[i+V],p[i]))
+              p[i+V] = fmadd(-a,r[i+V],fmadd(-b,r[i],p[i+V]))
+      for j in 0..<nBatch:
+        if (ru and (1 shl j)) != 0: beta[j] = if ctl.keep: r2[j]/old[j] else: 0.0
+      if verb>1: echo "GPU reliable CG iterations: ", result.its, " updates: ", result.nres, " r2: ", result.r2
+    template direction(wide: static bool) =
+      forActive(live):
+        let rv = sel(C,rr,so)
+        let pv = sel(C,pp,so)
+        let bb = sel(C,beta,so)
+        let aa = sel(C,alpha,so)
+        let ev = when wide: sel(C,ed,so) else: sel(C,es,so)
+        var upd: array[C,bool]
+        for j in 0..<C: upd[j] = (ru and (1 shl so[j])) == 0
+        unpackB(rv,C); unpackB(pv,C); unpackB(bb,C); unpackB(aa,C); unpackB(ev,C); unpackB(upd,C)
+        gpuFor(t,C*n6):
+          let js = t div n6
+          let i = t-js*n6
+          let r = pickB(rv,js,C)
+          let p = pickB(pv,js,C)
+          let b = pickB(bb,js,C)
+          if pickB(upd,js,C):
+            let e = pickB(ev,js,C)
+            let a = pickB(aa,js,C)
+            when wide: e[i] = fmadd(a,float(p[i]),e[i])
+            else: e[i] = fmadd(float32(a),p[i],e[i])
+          when wide: p[i] = float32(fmadd(b,float(p[i]),float(r[i])))
+          else: p[i] = fmadd(float32(b),p[i],r[i])
+    if ctl.acc64: direction(true) else: direction(false)
 
 proc rhsB[V: static int](s: StagGpu[V,float]; b: array[nBatch, ptr UncheckedArray[float]]; m: array[nBatch, float];
                          act: int; full: bool): array[nBatch, float] =
@@ -1513,9 +1859,94 @@ proc rhsB[V: static int](s: StagGpu[V,float]; b: array[nBatch, ptr UncheckedArra
   getDefaultComm().allReduce(addr result[0], nBatch)
   when defined(stagWorkCount): inc stagWork.reductions
 
-proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedArray[float]]; m: openArray[float];
-                            sp: var openArray[SolverParams]; ss: ptr StagGpu[V,float32] = nil; r2in = 1e-6;
-                            full = false) =
+proc solveMR[V: static int](s: StagGpu[V,float]; ss: StagGpu[V,float32];
+                            x,b: openArray[ptr UncheckedArray[float]]; m: openArray[float];
+                            sp: var openArray[SolverParams]; r2in: float; full: bool) =
+  ## Batched corrections of M, with reliable CG on each even system.
+  let n6 = 6*s.ne
+  let nall = 6*s.n
+  let rd = sysB(s.vecB[0],nall)
+  let yd = sysB(s.vecB[1],nall)
+  let qd = sysB(s.vecB[5],n6)
+  var order = newSeq[tuple[m:float,i:int]](x.len)
+  for i in 0..<x.len: order[i] = (abs(m[i]),i)
+  order.sort()
+  var first = 0
+  while first < x.len:
+    var xx,bb: array[nBatch,ptr UncheckedArray[float]]
+    var ms,b2,stop,prev,odd,rq: array[nBatch,float]
+    var idx,its,nr,mits: array[nBatch,int]
+    var live = 0
+    var verb = 0
+    for j in 0..<min(nBatch,x.len-first):
+      let i = order[first+j].i
+      idx[j] = i
+      xx[j] = x[i]
+      bb[j] = b[i]
+      ms[j] = m[i]
+      verb = max(verb,sp[i].verbosity)
+      let xi = x[i]
+      let bi = b[i]
+      let rj = rd[j]
+      gpuFor(k,nall):
+        xi[k] = 0.0
+        rj[k] = if full or k<n6: bi[k] else: 0.0
+      let nn = s.norm2EO(rj,true)
+      b2[j] = nn[0]+nn[1]
+      odd[j] = nn[1]
+      stop[j] = sp[i].r2req*b2[j]
+      if b2[j]<=stop[j] or sp[i].maxits==0:
+        sp[i].addSolve(0,if b2[j]>0: 1.0 else: 0.0)
+      else: live = live or (1 shl j)
+    var initial = true
+    while live != 0:
+      let q2 = s.rhsB(rd,ms,live,full or not initial)
+      initial = false
+      for j in 0..<nBatch:
+        if (live and (1 shl j)) != 0:
+          rq[j] = max(targetA(ms[j],stop[j],odd[j]),r2in*q2[j])
+          mits[j] = sp[idx[j]].maxits-its[j]
+      let z = cgR(s,ss,yd,qd,ms,rq,mits,live,verb,true)
+      for j in 0..<nBatch:
+        if (live and (1 shl j)) != 0:
+          its[j] += z.its[j]
+          nr[j] += z.nres[j]
+      forActive(live):
+        var a,h: array[C,float]
+        for j in 0..<C:
+          a[j] = 1.0/ms[so[j]]
+          h[j] = -0.5/ms[so[j]]
+        s.exB[0].packB(sel(C,yd,so),so)
+        s.exB[0].start
+        s.exB[0].wait
+        s.dslashB(1,sel(C,yd,so),sel(C,yd,so),sel(C,rd,so),s.exB[0].rbuf,a,h,so,nil,nil,dot=false,send=false)
+      for j in 0..<nBatch:
+        if (live and (1 shl j)) != 0:
+          let xi = xx[j]
+          let yj = yd[j]
+          gpuFor(k,nall): xi[k] += yj[k]
+      forActive(live): s.applyMfullB(sel(C,rd,so),sel(C,xx,so),sel(C,ms,so),so)
+      for j in 0..<nBatch:
+        if (live and (1 shl j)) != 0:
+          let rj = rd[j]
+          let bj = bb[j]
+          gpuFor(k,nall): rj[k] = (if full or k<n6: bj[k] else: 0.0)-rj[k]
+          let rr = s.norm2EO(rj,true)
+          let val = rr[0]+rr[1]
+          let i = idx[j]
+          if verb>1: echo "GPU reliable M slot ", j, " iterations ", its[j], " r2/b2 ", val/b2[j]
+          if val<=stop[j] or its[j]>=sp[i].maxits or prev[j]>0.0 and val>=prev[j]:
+            sp[i].addSolve(its[j],val/b2[j])
+            sp[i].reliable += nr[j]
+            live = live and not (1 shl j)
+          else:
+            prev[j] = val
+            odd[j] = rr[1]
+    first += nBatch
+
+proc solveMB[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedArray[float]]; m: openArray[float];
+                            sp: var openArray[SolverParams]; ss: ptr StagGpu[V,float32]; r2in: float;
+                            full: bool; U: typedesc) =
   ## solveM of the systems j, x_j = M(m_j)^-1 b_j, b_j,o = 0 unless full,
   ## each stopping as solveM of one system with sp_j: at its request, at
   ## sp_j.maxits, or when a correction no longer reduces its residual.  The
@@ -1528,6 +1959,9 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedAr
   let ns = x.len
   if ns == 1:
     s.solveM(x[0], b[0], m[0], sp[0], ss, r2in, full)
+    return
+  if ss != nil and ss[].ctrl.kind == 1:
+    s.solveMR(ss[],x,b,m,sp,r2in,full)
     return
   let n6 = 6*s.ne
   let verb = sp[0].verbosity
@@ -1568,11 +2002,13 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedAr
     let i = sl[j]
     var its = k
     s.reconO(x[i], b[i], m[i], full)
-    let r2 = s.correctM(x[i], b[i], m[i], full, sp[i].r2req*bb[j], its, sp[i].maxits, ss, r2in, verb)
+    var nr = 0
+    let r2 = s.correctM(x[i], b[i], m[i], full, sp[i].r2req*bb[j], its, sp[i].maxits, ss, r2in, verb,nr)
     sp[i].addSolve(its, if bb[j] > 0: r2/bb[j] else: 0.0)
+    sp[i].reliable += nr
     fr = fr or (1 shl j)
   if ss == nil:
-    var st = s.initB
+    var st = s.initB(float64)
     while q < ns or st.act != 0:
       let a = take
       for j in 0..<nBatch:
@@ -1592,8 +2028,8 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedAr
     let rd = sysB(s.vecB[0], nall)  # full residuals of M, also the correction sources
     let yd = sysB(s.vecB[1], nall)  # full corrections, reconstructed from the single CGs
     let rs = sysB(ss.vecB[5], n6)
-    let e = sysB(ss.vecB[6], n6)
-    var st = ss[].initB
+    let e = when U is float64: yd else: sysB(ss.vecB[6], n6)
+    var st = ss[].initB(U)
     var its: array[nBatch, int]
     var r2: array[nBatch, float]
     var d = 0  # the slots whose single precision CG stopped
@@ -1607,7 +2043,7 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedAr
             its[j] += st.its[j]
             xs[j] = x[sl[j]]
             ms[j] = m[sl[j]]
-            s.convert(yd[j], e[j])
+            when U isnot float64: s.convert(yd[j], e[j])
         forActive(d):
           var a, b: array[C, float]
           for j in 0..<C:
@@ -1670,6 +2106,14 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedAr
       d = ss[].stepB(st, verb)
       while ns <= nBatch and st.act != 0:  # started together: restart together, the hops shared
         d = d or ss[].stepB(st, verb)
+
+proc solveM*[V: static int](s: StagGpu[V,float]; x,b: openArray[ptr UncheckedArray[float]]; m: openArray[float];
+                            sp: var openArray[SolverParams]; ss: ptr StagGpu[V,float32] = nil; r2in = 1e-6;
+                            full = false) =
+  if ss != nil and ss[].ctrl.kind == 2 and ss[].ctrl.acc64:
+    s.solveMB(x,b,m,sp,ss,r2in,full,float64)
+  else:
+    s.solveMB(x,b,m,sp,ss,r2in,full,float32)
 
 proc outerB[V: static int; C: static int](s: StagGpu[V,float]; f: ptr UncheckedArray[float];
                                          x: array[C, ptr UncheckedArray[float]]; t: array[C, float];

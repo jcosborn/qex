@@ -1,6 +1,9 @@
 ## Complete M solves, scalar or batched, with independent CPU residuals.
 ## -lat -rg -mass or -masses -nb -r2req -r2in -maxits -mixed -full
 ## -ncpu -ngpu -reals -recon64 -reconFma -fwd -fixed -ipc -split -seed -verb -prof
+## -cpuCg/-gpuCg: 0 existing, 1 reliable; CPU -1 automatic, GPU 2 FP64 accumulation
+## -cpuR2in: CPU inner squared target
+## -cpuDelta/-gpuDelta -cpuAcc64/-gpuAcc64 -cpuBeta/-gpuBeta -cpuKeep/-gpuKeep
 ## -d:cpuOnly builds the production reference without GPU modules.
 ## -d:stagWorkCount counts local stencil work and solver reductions.
 import qex, physics/[qcdTypes, stagSolve]
@@ -71,6 +74,7 @@ proc residual(x,b: F; m: float): float =
     threadMaster: rr = r2/b2
   rr
 
+echo "CPU CG configuration ", params().cg, " inner r2 ", params().r2in
 for rep in 0..<ncpu:
   var sp = newSeq[SolverParams](ns)
   for j in 0..<ns: sp[j] = params()
@@ -81,13 +85,17 @@ for rep in 0..<ncpu:
   var dt = epochTime()-t0
   getDefaultComm().max(dt)
   var its = 0
+  var nres = 0
   var rmax = 0.0
   for j in 0..<ns:
     its += sp[j].iterations
+    nres += sp[j].reliable
     let r = residual(xc[j],bs[j],ms[j])
     rmax = max(rmax,r)
-    if r > 1.01*req or sp[j].iterations > maxits: inc fails
-  echo &"BENCH cpu rep {rep} seconds {dt:.9g} iterations {its} true_r2max {rmax:.9e}"
+    if not (r <= 1.01*req) or sp[j].iterations > maxits:
+      inc fails
+      echo "CPU slot ", j, " residual ", r, " iterations ", sp[j].iterations, " FAILED"
+  echo &"BENCH cpu rep {rep} seconds {dt:.9g} iterations {its} true_r2max {rmax:.9e} reliable {nres}"
   echoProf()
 
 when not defined(cpuOnly):
@@ -107,7 +115,8 @@ when not defined(cpuOnly):
     sptr = addr ss
   sd.fixed = fixed
   echo "GPU configuration reals ", sd.nl, " forward ", sd.lb == nil,
-    " fixed ", fixed, " split ", sd.split, " IPC ", haloIpc, " FP32 recon64 ", r64, " reconFma ", rfm
+    " fixed ", fixed, " split ", sd.split, " IPC ", haloIpc, " FP32 recon64 ", r64, " reconFma ", rfm,
+    " CG ", sd.ctrl
   let n6 = 6*sd.n
   var xd, bd = newSeq[ptr UncheckedArray[float]](ns)
   for j in 0..<ns:
@@ -125,14 +134,18 @@ when not defined(cpuOnly):
     var dt = epochTime()-t0
     getDefaultComm().max(dt)
     var its = 0
+    var nres = 0
     var rmax = 0.0
     for j in 0..<ns:
       gpuMemCpyToCpu(addr xg[j][0],xd[j],n6*sizeof(float))
       its += sp[j].iterations
+      nres += sp[j].reliable
       let r = residual(xg[j],bs[j],ms[j])
       rmax = max(rmax,r)
-      if r > 1.01*req or sp[j].iterations > maxits or sp[j].calls != 1: inc fails
-    echo &"BENCH gpu rep {rep} seconds {dt:.9g} iterations {its} true_r2max {rmax:.9e}"
+      if not (r <= 1.01*req) or sp[j].iterations > maxits or sp[j].calls != 1:
+        inc fails
+        echo "GPU slot ", j, " residual ", r, " iterations ", sp[j].iterations, " FAILED"
+    echo &"BENCH gpu rep {rep} seconds {dt:.9g} iterations {its} true_r2max {rmax:.9e} reliable {nres}"
     when defined(stagWorkCount) and declared(stagWork):
       echo "WORK local ", stagWork
     echoProf()
