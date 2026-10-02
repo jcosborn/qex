@@ -603,6 +603,13 @@ proc cg[V: static int; T](s: StagGpu[V,T]; x, b: ptr UncheckedArray[T]; m, r2sto
     r2v = r2
   (itn, r2)
 
+proc addSolve(sp: var SolverParams; its: int; r2: float) =
+  ## One solve, with its true relative squared residual, as the CPU solvers record.
+  inc sp.calls
+  sp.iterations += its
+  sp.iterationsMax = max(sp.iterationsMax, its)
+  sp.r2.push r2
+
 proc solveEE*[V: static int; T](s: StagGpu[V,T]; r, x: Field; m: float; sp: var SolverParams) =
   ## Solves A r_e = x_e by CG from r_e = 0, as solveEE, until the true
   ## |x_e - A r_e|^2 <= sp.r2req |x_e|^2.  It stops short of that at
@@ -621,21 +628,25 @@ proc solveEE*[V: static int; T](s: StagGpu[V,T]; r, x: Field; m: float; sp: var 
   let secs = epochTime() - t0
   toc("cg")
   s.download(r, xx)
-  sp.iterations = itn
-  sp.seconds = secs
-  sp.flops = float((2*8*72 + 60)*s.ne*itn)  # per even site: 2 hops of 8 links, 72 flops each, 60 for the vectors
+  sp.addSolve(itn, if b2 > 0: r2/b2 else: 0.0)
+  sp.seconds += secs
+  let flops = float((2*8*72 + 60)*s.ne*itn)  # per even site: 2 hops of 8 links, 72 flops each, 60 for the vectors
+  sp.flops += flops
   if sp.verbosity > 0:
-    let gf = 1e-9*sp.flops*float(c.size)/secs
+    let gf = 1e-9*flops*float(c.size)/secs
     echo "GPU CG iterations: ", itn, "  r2/b2: ", (if b2 > 0: r2/b2 else: 0.0), "  secs: ", secs, "  Gflops: ", gf
   toc("end")
+
+proc targetS(r2, stop, r2in: float): float =
+  ## The requested squared residual, bounded by the precision of the inner solve.
+  max(stop, max(r2in, float(epsilon(float32)))*r2)
 
 proc cg[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; x, b: ptr UncheckedArray[float64];
                        m, r2stop, r2in: float; maxits, verb: int): tuple[its, nres: int, r2: float] =
   ## Solves A x_e = b_e from x_e = 0 until the global |res|^2 <= r2stop,
   ## maxits iterations or a restart without progress, by single precision
-  ## CGs in ss, each until its recursive |res|^2 drops by r2in, adding their
-  ## solutions to x and restarting from the residual b - A x in double,
-  ## whose |res|^2 returns.
+  ## CGs in ss bounded by targetS, adding their solutions to x and
+  ## restarting from the residual b - A x in double, whose |res|^2 returns.
   let c = getDefaultComm()
   let rd = s.vec[0]
   let ad = s.vec[1]
@@ -651,7 +662,7 @@ proc cg[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; x, b: ptr 
   while result.its < maxits and r2 > r2stop and (r2p == 0.0 or r2 < r2p):
     r2p = r2
     ss.convert(rs, rd)
-    let (k, _) = ss.cg(e, rs, m, max(r2in*r2, 0.5*r2stop), maxits - result.its, verb, verify = false)
+    let (k, _) = ss.cg(e, rs, m, targetS(r2, r2stop, r2in), maxits - result.its, verb, verify = false)
     result.its += k
     s.addTo(x, e)
     s.applyD2ee(ad, x, t, m*m)
@@ -666,9 +677,9 @@ proc cg[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; x, b: ptr 
 proc solveEE*[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; r, x: Field; m: float;
                              sp: var SolverParams; r2in = 1e-6) =
   ## As solveEE, with the CG iterations in single precision: each restart
-  ## solves A e = res in ss until |res|^2 drops by r2in, then r += e and
-  ## res = x - A r in double, until the request, sp.maxits iterations, or a
-  ## restart that no longer reduces |res|^2.
+  ## solves A e = res in ss bounded by targetS, then r += e and res = x - A r
+  ## in double, until the request, sp.maxits iterations, or a restart that
+  ## no longer reduces |res|^2.  s and ss must hold the same current links.
   tic("solveEE mixed")
   let c = getDefaultComm()
   let b = s.vec[5]
@@ -682,11 +693,12 @@ proc solveEE*[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; r, x
   let secs = epochTime() - t0
   toc("cg")
   s.download(r, xd)
-  sp.iterations = itn
-  sp.seconds = secs
-  sp.flops = float((2*8*72 + 60)*s.ne*(itn+nres))
+  sp.addSolve(itn, if b2 > 0: r2/b2 else: 0.0)
+  sp.seconds += secs
+  let flops = float((2*8*72 + 60)*s.ne*(itn+nres))
+  sp.flops += flops
   if sp.verbosity > 0:
-    let gf = 1e-9*sp.flops*float(c.size)/secs
+    let gf = 1e-9*flops*float(c.size)/secs
     echo "GPU mixed CG iterations: ", itn, "  restarts: ", nres, "  r2/b2: ", (if b2 > 0: r2/b2 else: 0.0),
       "  secs: ", secs, "  Gflops: ", gf
   toc("end")
@@ -802,13 +814,6 @@ proc applyMfull*[V: static int; T](s: StagGpu[V,T]; d, x: ptr UncheckedArray[T];
   s.ex[0].wait
   s.dslash(1, d, x, x, s.ex[0].rbuf, T(m), T(0.5), nil, nil, dot = false, send = false)
 
-proc addSolve(sp: var SolverParams; its: int; r2: float) =
-  ## the statistics of one solve ending at |b - M x|^2/|b|^2 = r2, as the CPU solvers keep them
-  inc sp.calls
-  sp.iterations += its
-  sp.iterationsMax = max(sp.iterationsMax, its)
-  sp.r2.push r2
-
 # solveM solves M x = (m + D/2) x = b through the even system,
 #   A x_e = q = 4m b_e - 2 D_eo b_o,  x_o = b_o/m - D_oe x_e/(2m)
 #   (b - M x)_e = (q - A x_e)/(4m),  (b - M x)_o = 0 in exact arithmetic,
@@ -857,10 +862,17 @@ proc reconO[V: static int](s: StagGpu[V,float]; x, b: ptr UncheckedArray[float];
 proc solveA[V: static int](s: StagGpu[V,float]; x, q: ptr UncheckedArray[float]; m, r2stop: float; maxits: int;
                            ss: ptr StagGpu[V,float32]; r2in: float; verb: int): int =
   ## A x_e = q_e from x_e = 0 until |q - A x|^2 <= r2stop, recursive in
-  ## double and true in mixed precision with ss, or maxits iterations; the
-  ## iterations.  correctM checks the solution.
-  if ss == nil: s.cg(x, q, m, r2stop, maxits, verb, verify = false).its
-  else: cg(s, ss[], x, q, m, r2stop, r2in, maxits, verb).its
+  ## the inner precision, bounded by its epsilon with ss, or maxits
+  ## iterations.  correctM refines the full solution from b - M x.
+  if ss == nil: result = s.cg(x, q, m, r2stop, maxits, verb, verify = false).its
+  else:
+    let rs = ss.vec[5]
+    let e = ss.vec[6]
+    var q2 = s.redot(q, q)
+    getDefaultComm().allReduce(q2)
+    ss[].convert(rs, q)
+    result = ss[].cg(e, rs, m, targetS(q2, r2stop, r2in), maxits, verb, verify = false).its
+    s.convert(x, e)
 
 proc correctM[V: static int](s: StagGpu[V,float]; x, b: ptr UncheckedArray[float]; m: float; full: bool;
                              stop: float; its: var int; maxits: int; ss: ptr StagGpu[V,float32];
@@ -1212,21 +1224,17 @@ proc packB[C: static int; T](ex: GpuHaloEx[T]; f: array[C, ptr UncheckedArray[T]
     let j = int si[k]
     sd[k][(6*pickB(so, js, C) + cc)*int st[k]] = pickB(f, js, C)[((j div v)*6 + cc)*v + j mod v]
 
-proc applyD2eeB[V: static int; C: static int; T](s: StagGpu[V,T]; r, x, t: array[C, ptr UncheckedArray[T]];
-                                                 m2: array[C, float]; so: array[C, int]) =
-  ## r_j = 4 m2_j x_j - D_eo D_oe x_j on the even sites, using t_o
-  var a, z, o, mo: array[C, T]
-  for j in 0..<C:
-    a[j] = T(4*m2[j])
-    o[j] = T(1)
-    mo[j] = T(-1)
-  s.exB[0].packB(x, so)
-  s.exB[0].start
-  s.exB[0].wait
-  s.dslashB(1, t, x, x, s.exB[0].rbuf, z, o, so, nil, nil, dot = false, send = true)
-  s.exB[1].start
-  s.exB[1].wait
-  s.dslashB(0, r, t, x, s.exB[1].rbuf, a, mo, so, nil, nil, dot = false, send = false)
+proc applyMfullB[V: static int; C: static int](s: StagGpu[V,float]; r, x: array[C, ptr UncheckedArray[float]];
+                                             m: array[C, float]; so: array[C, int]) =
+  ## r_j = (m_j + D/2) x_j on all sites, with shared links and exchanges.
+  var h: array[C, float]
+  for j in 0..<C: h[j] = 0.5
+  for q in 0..1:
+    getDefaultComm().barrier
+    s.exB[1-q].packB(x, so)
+    s.exB[1-q].start
+    s.exB[1-q].wait
+    s.dslashB(q, r, x, x, s.exB[1-q].rbuf, m, h, so, nil, nil, dot = false, send = false)
 
 proc applyD2eeCGB[V: static int; C: static int; T](s: StagGpu[V,T]; w, r, t: array[C, ptr UncheckedArray[T]];
                                                    m2: array[C, float]; so: array[C, int];
@@ -1381,15 +1389,18 @@ proc stepB[V: static int; T](s: StagGpu[V,T]; c: var CgB[T]; verb: int): int =
     var d = 0
     for j in 0..<nBatch:
       if (c.act and (1 shl j)) != 0:
-        if (c.fresh and (1 shl j)) != 0:
+        let fresh = (c.fresh and (1 shl j)) != 0
+        let prev = c.r2[j]
+        if not fresh: inc c.its[j]
+        c.r2[j] = gd[2*j]
+        if c.r2[j] <= c.stop[j] or c.its[j] >= c.mits[j]:
+          d = d or (1 shl j)
+        elif fresh:
           c.beta[j] = 0.0
           c.alpha[j] = gd[2*j]/gd[2*j+1]
         else:
-          c.beta[j] = gd[2*j]/c.r2[j]
+          c.beta[j] = gd[2*j]/prev
           c.alpha[j] = gd[2*j]/(gd[2*j+1] - c.beta[j]*gd[2*j]/c.alpha[j])
-          inc c.its[j]
-        c.r2[j] = gd[2*j]
-        if c.r2[j] <= c.stop[j] or c.its[j] >= c.mits[j]: d = d or (1 shl j)
     c.fresh = 0
     c.act = c.act and not d
     if verb > 1:
@@ -1439,16 +1450,14 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedAr
   ## sp_j.maxits, or when a correction no longer reduces its residual.  The
   ## slots of the batched CG take the systems lightest first, a slot the
   ## next one when its system stops and got x_o and correctM on its own, as
-  ## by solveM of one system.  With ss, a slot whose single precision CG
-  ## stops restarts its system in double at once, until the residual meets
-  ## the target or no longer drops; up to nBatch systems restart together
-  ## once all their single precision CGs stopped.  One system takes the
-  ## solveM of one system.
+  ## by solveM of one system.  With ss, each single precision CG produces
+  ## a correction y for M y = r; x += y and r = b - M x in double decide
+  ## whether to restart.  Up to nBatch systems share those steps once all
+  ## their single precision CGs stopped.  One system takes solveM of one.
   let ns = x.len
   if ns == 1:
     s.solveM(x[0], b[0], m[0], sp[0], ss, r2in, full)
     return
-  let c = getDefaultComm()
   let n6 = 6*s.ne
   let verb = sp[0].verbosity
   let b4 = sysB(s.vecB[5], n6)
@@ -1508,66 +1517,84 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedAr
       for j in 0..<nBatch:
         if (d and (1 shl j)) != 0: finish(j, st.its[j])
   else:
-    let rd = sysB(s.vecB[0], n6)
-    let ad = sysB(s.vecB[1], n6)
-    let t = sysB(s.vecB[2], 6*s.n)
+    let nall = 6*s.n
+    let rd = sysB(s.vecB[0], nall)  # full residuals of M, also the correction sources
+    let yd = sysB(s.vecB[1], nall)  # full corrections, reconstructed from the single CGs
     let rs = sysB(ss.vecB[5], n6)
     let e = sysB(ss.vecB[6], n6)
     var st = ss[].initB
     var its: array[nBatch, int]
     var r2: array[nBatch, float]
     var d = 0  # the slots whose single precision CG stopped
-    var sd = 0  # the slots whose residual did not drop
     while true:
-      var go = 0  # the slots with a residual rd and its r2
-      if d != 0:  # x += e, rd = q - A x in double
+      var go = 0  # the slots ready for a single precision correction
+      if d != 0:
         var xs: array[nBatch, ptr UncheckedArray[float]]
-        var m2: array[nBatch, float]
+        var ms: array[nBatch, float]
         for j in 0..<nBatch:
           if (d and (1 shl j)) != 0:
             its[j] += st.its[j]
             xs[j] = x[sl[j]]
-            m2[j] = m[sl[j]]*m[sl[j]]
-            s.addTo(xs[j], e[j])
+            ms[j] = m[sl[j]]
+            s.convert(yd[j], e[j])
         forActive(d):
-          s.applyD2eeB(sel(C, ad, so), sel(C, xs, so), sel(C, t, so), sel(C, m2, so), so)
-        var dd: array[nBatch, float]
+          var a, b: array[C, float]
+          for j in 0..<C:
+            a[j] = 1.0/ms[so[j]]
+            b[j] = -0.5/ms[so[j]]
+          s.exB[0].packB(sel(C, yd, so), so)
+          s.exB[0].start
+          s.exB[0].wait
+          s.dslashB(1, sel(C, yd, so), sel(C, yd, so), sel(C, rd, so), s.exB[0].rbuf,
+                    a, b, so, nil, nil, dot = false, send = false)
         for j in 0..<nBatch:
           if (d and (1 shl j)) != 0:
-            s.resid(rd[j], b4[j], ad[j])
-            dd[j] = s.redot(rd[j], rd[j])
-        c.allReduce(addr dd[0], nBatch)
+            let xi = xs[j]
+            let yj = yd[j]
+            gpuFor(k, nall): xi[k] += yj[k]
+        forActive(d):
+          s.applyMfullB(sel(C, rd, so), sel(C, xs, so), sel(C, ms, so), so)
         for j in 0..<nBatch:
           if (d and (1 shl j)) != 0:
-            if dd[j] >= r2[j]: sd = sd or (1 shl j)
-            r2[j] = dd[j]
-        go = d
-      while true:  # the systems that stop leave their slots to the next ones
-        for j in 0..<nBatch:
-          if (go and (1 shl j)) != 0:
             let i = sl[j]
-            if r2[j] <= rq[j] or its[j] >= sp[i].maxits or (sd and (1 shl j)) != 0:
-              finish(j, its[j])
-              go = go and not (1 shl j)
-              sd = sd and not (1 shl j)
-        let a = take
-        if a == 0: break
-        for j in 0..<nBatch:
-          if (a and (1 shl j)) != 0:  # x_e = 0, rd = q
-            let xi = x[sl[j]]
             let rj = rd[j]
-            let bj = b4[j]
-            gpuFor(k, n6):
-              xi[k] = 0.0
-              rj[k] = bj[k]
-            its[j] = 0
-            r2[j] = q2[j]
-        go = go or a
-      for j in 0..<nBatch:  # A e = rd in single precision, until its |res|^2 drops by r2in
+            let bj = b[i]
+            gpuFor(k, nall): rj[k] = (if full or k < n6: bj[k] else: 0.0) - rj[k]
+            let rr = s.norm2EO(rj, true)
+            let r = rr[0] + rr[1]
+            let stop = sp[i].r2req*bb[j]
+            if verb > 1:
+              echo "GPU solveM batch slot: ", j, "  iterations: ", its[j], "  |b - M x|^2: ", r, "  requested: ", stop
+            if r <= stop or its[j] >= sp[i].maxits or r2[j] > 0.0 and r >= r2[j]:
+              sp[i].addSolve(its[j], if bb[j] > 0: r/bb[j] else: 0.0)
+              fr = fr or (1 shl j)
+            else:
+              r2[j] = r
+              rq[j] = targetA(m[i], stop, rr[1])
+              go = go or (1 shl j)
+        if go != 0:
+          var ms: array[nBatch, float]
+          for j in 0..<nBatch: ms[j] = m[sl[j]]
+          let rr = s.rhsB(rd, ms, go, true)
+          for j in 0..<nBatch:
+            if (go and (1 shl j)) != 0: q2[j] = rr[j]
+      let a = take
+      for j in 0..<nBatch:
+        if (a and (1 shl j)) != 0:  # x = 0, r = b, ignoring the odd source unless full
+          let xi = x[sl[j]]
+          let rj = rd[j]
+          let bj = b[sl[j]]
+          gpuFor(k, nall):
+            xi[k] = 0.0
+            rj[k] = if full or k < n6: bj[k] else: 0.0
+          its[j] = 0
+          r2[j] = 0.0  # compare progress after the first reconstructed solution, as correctM
+      go = go or a
+      for j in 0..<nBatch:
         if (go and (1 shl j)) != 0:
           let i = sl[j]
-          ss[].convert(rs[j], rd[j])
-          ss[].startB(st, j, e[j], rs[j], m[i], max(r2in*r2[j], 0.5*rq[j]), sp[i].maxits - its[j])
+          ss[].convert(rs[j], b4[j])
+          ss[].startB(st, j, e[j], rs[j], m[i], targetS(q2[j], rq[j], r2in), sp[i].maxits - its[j])
       if st.act == 0: break
       d = ss[].stepB(st, verb)
       while ns <= nBatch and st.act != 0:  # started together: restart together, the hops shared
