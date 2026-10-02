@@ -45,8 +45,8 @@ type
     lo*: Layout[V]
     n*, ne*: int  # local sites, even sites
     nl*: int  # reals per link: 18, or 12 or 14 with row 2 rebuilt in the kernels
-    lf*, lb*: ptr UncheckedArray[T]  # [4][n div V][nl][V]: U_mu(x), U_mu(x-mu)^+ or nil
-    lh*: array[2, ptr UncheckedArray[T]]  # without lb, [nl][s.ex[1-q].nrecv]: U_mu(x-mu)^+ at the receive position of a remote x-mu, x of parity q
+    lf*, lb*: ptr UncheckedArray[T]  # [4][n div V][nl][V]: U_mu(x), U_mu(x-mu) or nil, both in forward orientation
+    lh*: array[2, ptr UncheckedArray[T]]  # without lb, [nl][s.ex[1-q].nrecv]: forward U_mu(x-mu) at the receive position of a remote x-mu, x of parity q
     nbr*: ptr UncheckedArray[int32]  # [8][n]: x+mu, then x-mu, with the link signs for nl = 12
     ex*: array[2, GpuHaloEx[T]]  # exchange of the sites of each parity
     red*: ptr UncheckedArray[float]  # [2][2*max(ne, nRed)] dot products of the sites or slots, two buffers, then the workspace of sumFixed
@@ -160,8 +160,9 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
                  false in result.ex[1].rpeer
   toc("neighbors")
 
-  # lk[18*((fb*nd + mu)*n + k) + 6a+2b] (re), +1 (im): U_mu(x) for fb = 0,
-  # U_mu(x-mu)^+ for fb = 1, their signs in sg and determinants in dt
+  # Both caches keep forward-oriented links.  Reconstructing an independently
+  # compressed adjoint would not give the adjoint of the reconstructed link.
+  # lk[18*((fb*nd + mu)*n + k) + 6a+2b]: U_mu(x) or U_mu(x-mu).
   var lk = newSeq[float](2*nd*18*n)
   var sg = newSeq[int8](2*nd*n)
   var dt = newSeq[float](2*2*nd*n)
@@ -173,12 +174,8 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
     var m {.noInit.}: array[18, float]
     for a in 0..2:
       for b in 0..2:
-        if fb == 0:
-          m[6*a + 2*b] = float(u[a,b].re)
-          m[6*a + 2*b + 1] = float(u[a,b].im)
-        else:
-          m[6*a + 2*b] = float(u[b,a].re)
-          m[6*a + 2*b + 1] = -float(u[b,a].im)
+        m[6*a + 2*b] = float(u[a,b].re)
+        m[6*a + 2*b + 1] = float(u[a,b].im)
     mdet(dr, di, m)
     var dp, dm, du, nn = 0.0
     for b in 0..2:  # xr + i xi = conj(row 0 x row 1)_b
@@ -400,8 +397,8 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
         when fb == 0: hop(acc, lf, nl*mu*n + ko, v, V, 1, e, nl)
         elif fw:
           if j < n: hopA(acc, lf, nl*mu*n + uo(V, j, nl), v, V, e, nl)
-          else: hop(acc, lh, j-n, v, nr, -1, e, nl)
-        else: hop(acc, lb, nl*mu*n + ko, v, V, -1, e, nl)
+          else: hopA(acc, lh, j-n, v, nr, e, nl)
+        else: hopA(acc, lb, nl*mu*n + ko, v, V, e, nl)
     let yo = vo(V, k)
     if a == T(0):
       forStatic c, 0, 5: acc[c] = b*acc[c]
@@ -759,7 +756,7 @@ proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr Un
       for e in 0..<nl: d[o + e*st] = T(sc*m[e])
   forLinks(g, mu, k):
     let ol = nl*mu*n + uo(V, k, nl)
-    var x {.noInit.}, y {.noInit.}: array[18, float]
+    var x {.noInit.}: array[18, float]
     mload(x, u, 18*mu*n + lo18(V, k), V)
     let sf = sg[mu*n + k]
     put(lf, ol, V, x, sf)
@@ -769,18 +766,14 @@ proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr Un
     of 2: link(x, 2, int nb[nbB(2)*n + k])
     else: link(x, 3, int nb[nbB(3)*n + k])
     let sb = sg[(4+mu)*n + k]
-    forStatic a, 0, 2:  # y = sb U_mu(x-mu)^+
-      forStatic b, 0, 2:
-        y[6*a+2*b] = sb*x[6*b+2*a]
-        y[6*a+2*b+1] = -sb*x[6*b+2*a+1]
     if lb != nil:
-      put(lb, ol, V, y, 1.0)
+      put(lb, ol, V, x, sb)
     else:
       let jj = int fn[(4+mu)*n + k]
       let j = if jj < 0 and nl == 12: -1-jj else: jj
       if j >= n:
-        if k < ne: put(lh0, j-n, nr0, y, 1.0)
-        else: put(lh1, j-n, nr1, y, 1.0)
+        if k < ne: put(lh0, j-n, nr0, x, sb)
+        else: put(lh1, j-n, nr1, x, sb)
 
 proc norm2*[V: static int; T](s: StagGpu[V,T]; x: ptr UncheckedArray[T]): float =
   ## global |x|^2 over all sites
@@ -1154,10 +1147,7 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
         forStatic js, 0, C-1:
           fetch(v, j, pickS(x, js), 6*pickS(so, js))
           when fb == 0: hopm(acc, mm, v, js, 1)
-          elif fw:
-            if j < n: hopAm(acc, mm, v, js)
-            else: hopm(acc, mm, v, js, -1)
-          else: hopm(acc, mm, v, js, -1)
+          else: hopAm(acc, mm, v, js)
     let yo = vo(V, k)
     forStatic js, 0, C-1:
       let aj = pickS(a, js)
