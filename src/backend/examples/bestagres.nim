@@ -49,9 +49,9 @@ haloIpc = intParam("ipc", 1) != 0
 hopSplit = intParam("split", -1)
 var sd = newStagGpu(g, float64, intParam("reals", 18), intParam("fwd", -1), batch = true)
 var sf = newStagGpu(g, float32, intParam("reals", 18), intParam("fwd", -1), batch = true,
-                    recon64 = intParam("recon64", 0) != 0)
+                    recon64 = intParam("recon64", 0) != 0, reconFma = intParam("reconFma", 0) != 0)
 echo "GPU links: ", sd.nl, " reals", "  split hop: ", sd.split, "  peer IPC: ", haloIpc,
-  "  FP32 recon64: ", sf.recon64
+  "  FP32 recon64: ", sf.recon64, " reconFma: ", sf.reconFma
 let n6 = 6*sd.n
 let ne6 = 6*sd.ne
 const big = 100000  # maxits of the solves that converge
@@ -89,20 +89,21 @@ proc effective[V: static int](sg: StagGpu[V,float32]): auto =
   let lf = sg.lf
   let nb = sg.nbr
   let tmp = cast[ptr UncheckedArray[float]](gpuMalloc(4*18*n*sizeof(float)))
-  template expand(N: static int; r64: static bool) =
+  template expand(N: static int; r64, fm: static bool) =
     gpuFor(i, 4*n):
       let mu = i div n
       let k = i mod n
       let e = if nb[mu*n+k] < 0: -1'f32 else: 1'f32
       var a: array[18,float32]
-      load(a, lf, N*mu*n + uo(V,k,N), V, e, N, r64)
+      load(a, lf, N*mu*n + uo(V,k,N), V, e, N, r64, fm)
       let o = 18*mu*n + uo(V,k,18)
       forStatic c, 0, 17: tmp[o+c*V] = float(a[c])
-  template comp(r64: static bool) =
-    if sg.nl == 12: expand(12,r64) else: expand(14,r64)
-  if sg.nl == 18: expand(18,false)
-  elif sg.recon64: comp(true)
-  else: comp(false)
+  template comp(r64, fm: static bool) =
+    if sg.nl == 12: expand(12,r64,fm) else: expand(14,r64,fm)
+  if sg.nl == 18: expand(18,false,false)
+  elif sg.recon64: comp(true,false)
+  elif sg.reconFma: comp(false,true)
+  else: comp(false,false)
   for mu in 0..3:
     gpuMemCpyToCpu(addr result[mu][0], addr tmp[18*mu*n], 18*n*sizeof(float))
   gpuFree(tmp)

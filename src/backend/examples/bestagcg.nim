@@ -68,6 +68,7 @@ hopSplit = intParam("split", -1)
 let reals = intParam("reals", if intParam("recon", 1) != 0: 12 else: 18)
 let fwd = intParam("fwd", -1)
 let r64 = intParam("recon64", 0) != 0
+let rfm = intParam("reconFma", 0) != 0
 let fixed = intParam("fixed", 0) != 0
 var sg = newStagGpu(g, float64, reals, fwd)
 sg.fixed = fixed
@@ -138,9 +139,9 @@ if nd > 0:  # A = 4m^2 - D_eo D_oe applications, flops as stagD2xx
   for q in [x, r, t]: gpuFree(q)
 
 if intParam("mixed", 0) != 0:
-  var sgs = newStagGpu(g, float32, reals, fwd, recon64 = r64)
+  var sgs = newStagGpu(g, float32, reals, fwd, recon64 = r64, reconFma = rfm)
   sgs.fixed = fixed
-  echo "FP32 recon64: ", r64
+  echo "FP32 recon64: ", r64, " reconFma: ", rfm
   for k in 0..<ngpu:
     var spg = initSolverParams()
     spg.r2req = r2req

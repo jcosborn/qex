@@ -82,7 +82,8 @@ proc newVec(h: HmcGpu): ptr UncheckedArray[float] =
 
 proc newHmcGpu*[U,R,S](uc: GaugeConfiguration[U]; srng: S; prng: R; tau: float; revCheckFreq = 0;
                        bc: openArray[bool] = [true, true, true, false]; reals = 18;
-                       forceStats = 1; mixed = false; fixed = true; r2in = 1e-6): HmcGpu[U,R,S] =
+                       forceStats = 1; mixed = false; fixed = true; r2in = 1e-6;
+                       recon64 = false; reconFma = false): HmcGpu[U,R,S] =
   ## the HMC of hmcAction on the GPU, the fermion boundary conditions bc
   ## (periodic when true) for all fermion actions; reals per link of the
   ## solvers, 18 or 14 (rows 0 and 1 and the determinant); with mixed the
@@ -106,7 +107,7 @@ proc newHmcGpu*[U,R,S](uc: GaugeConfiguration[U]; srng: S; prng: R; tau: float; 
   result.s = newStagGpu(gs, float64, reals, batch = true)
   result.s.fixed = fixed
   if mixed:
-    result.ss = newStagGpu(gs, float32, reals, batch = true)
+    result.ss = newStagGpu(gs, float32, reals, batch = true, recon64 = recon64, reconFma = reconFma)
     result.ss.fixed = fixed
   result.gg = newGpuGauge(lo)
   result.sgo = newGpuGauge(lo)

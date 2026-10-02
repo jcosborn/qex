@@ -154,6 +154,8 @@ letParam:
   rg = newSeq[int](0)  # ranks per dimension, lanes as in bestagcg
   mixed:bool = 0  # mixed precision solves
   r2in = 1e-6  # inner FP32 CG squared tolerance, floored at FP32 epsilon
+  recon64:bool = 0
+  reconFma:bool = 0
   reals = 0  # reals per link of the solvers, 12, 14 or 18; 0: 14 with smearing, 12 without
   batch:bool = 1  # solve the fermion terms of a force step together
   check:bool = 0  # first compare the smearing and its force with gauge/hypsmear2
@@ -270,7 +272,7 @@ if smear and nl < 14: qexError "the smeared links are U(3): -reals:14 or 18"
 let useBatch = batch and (nt > 1 or pbpreps.anyIt(it > 1))
 var s = newStagGpu(gs, float64, nl, batch = useBatch)
 var ss: StagGpu[VLEN,float32]
-let ssp = if mixed: (ss = newStagGpu(gs, float32, nl, batch = useBatch); addr ss) else: nil
+let ssp = if mixed: (ss = newStagGpu(gs, float32, nl, batch = useBatch, recon64 = recon64, reconFma = reconFma); addr ss) else: nil
 echo "GPU links: ", s.nl, " reals", if s.lb == nil: ", forward only" else: ""
 let sg = stagSigns(gs)
 let

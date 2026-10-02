@@ -59,6 +59,8 @@ letParam:
   timers = 0 # 1 prints the profile timers at the end
   mixed = 0 # 1 solves the fermion forces in mixed precision (forces change within f_tol)
   r2in = 1e-6 # inner FP32 CG squared tolerance, floored at FP32 epsilon
+  recon64 = 0 # 1 reconstructs FP32 links with FP64 intermediates
+  reconFma = 0 # 1 uses explicit FP32 fused reconstruction
   fixed_sums = 1 # 1 adds the CG dot products in a fixed order, so runs repeat bit for bit; 0 atomically, faster
 
 # read xml inputs - again, if you're using this as a reference, please, please, please
@@ -170,7 +172,8 @@ spf.maxits = f_maxits
 #[ build action/integrator from inputs ]#
 
 var hmc = uc.newHmcGpu(s, r, tau, revCheckFreq = rev_check_freq, bc = periodic, reals = reals,
-                       forceStats = force_stats, mixed = mixed != 0, fixed = fixed_sums != 0, r2in = r2in)
+                       forceStats = force_stats, mixed = mixed != 0, fixed = fixed_sums != 0, r2in = r2in,
+                       recon64 = recon64 != 0, reconFma = reconFma != 0)
 
 var fermionLevel = newGpuLevel(multiplier = f_steps, integrator = ferm_int_alg)
 

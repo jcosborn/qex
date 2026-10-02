@@ -1,4 +1,4 @@
-## FP64 reconstruction of FP32 cached rows, checked against an 18-real
+## FP64 reconstruction (or -reconFma:1) of FP32 cached rows, checked against an 18-real
 ## reference built with host complex arithmetic. A point source isolates
 ## individual link entries so FP32 stencil rounding cannot mask a mismatch.
 import testutils
@@ -6,9 +6,11 @@ import qex, physics/qcdTypes, physics/stagGpu, backend/accel
 import std/[complex, math, strformat]
 
 qexInit()
+disableParamFiltering()
 const V = static(VLEN)
 let lo = latticeFromLocalLattice(@[4,4,4,4], nRanks).newLayout
 let n = lo.nSites
+let fma = intParam("reconFma",0) != 0
 var rng = lo.newRngField(MRG32k3a, 987654321'u)
 var g = lo.newGauge()
 
@@ -65,27 +67,31 @@ suite "staggered reconstruction precision":
       g.stagPhase
     for fw in [0,1]:
       test &"{nl} reals, forward {fw}":
-        var s = newStagGpu(g,float32,nl,fw,recon64=true)
+        var s = newStagGpu(g,float32,nl,fw,recon64=not fma,reconFma=fma)
         check s.nl==nl
         let h = expand(s)
         var r = newStagGpu(h,float32,18,fw)
         let want = r.apply()
         let wide = s.apply()
         s.recon64 = false
+        s.reconFma = false
         let narrow = s.apply()
         let err = difference(wide,want)
         let change = difference(narrow,wide)
         echo &"reconstruction {nl} fwd {fw} reference error {err:.3e} mode difference {change:.3e}"
-        check err==0
+        if fma: check err<=4.0*float(epsilon(float32))
+        else: check err==0
         if nl<18: check change>0
         else: check change==0
-        s.recon64 = true
+        s.recon64 = not fma
+        s.reconFma = fma
         check difference(s.apply(),wide)==0
         s.free()
         r.free()
         var d = newStagGpu(g,float64,nl,fw)
         let a = d.apply()
         d.recon64 = true
+        d.reconFma = true
         check difference(a,d.apply())==0
         d.free()
 qexFinalize()

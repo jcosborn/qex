@@ -1,6 +1,6 @@
 ## Complete M solves, scalar or batched, with independent CPU residuals.
 ## -lat -rg -mass or -masses -nb -r2req -r2in -maxits -mixed -full
-## -ncpu -ngpu -reals -recon64 -fwd -fixed -ipc -split -seed -verb -prof
+## -ncpu -ngpu -reals -recon64 -reconFma -fwd -fixed -ipc -split -seed -verb -prof
 ## -d:cpuOnly builds the production reference without GPU modules.
 ## -d:stagWorkCount counts local stencil work and solver reductions.
 import qex, physics/[qcdTypes, stagSolve]
@@ -95,18 +95,19 @@ when not defined(cpuOnly):
   hopSplit = intParam("split",-1)
   let nl = intParam("reals",18)
   let r64 = intParam("recon64",0) != 0
+  let rfm = intParam("reconFma",0) != 0
   let fw = intParam("fwd",-1)
   let fixed = intParam("fixed",1) != 0
   var sd = newStagGpu(g,float64,nl,fw,batch=ns>1)
   var ss: StagGpu[VLEN,float32]
   var sptr: ptr StagGpu[VLEN,float32]
   if mixed:
-    ss = newStagGpu(g,float32,nl,fw,batch=ns>1,recon64=r64)
+    ss = newStagGpu(g,float32,nl,fw,batch=ns>1,recon64=r64,reconFma=rfm)
     ss.fixed = fixed
     sptr = addr ss
   sd.fixed = fixed
   echo "GPU configuration reals ", sd.nl, " forward ", sd.lb == nil,
-    " fixed ", fixed, " split ", sd.split, " IPC ", haloIpc, " FP32 recon64 ", r64
+    " fixed ", fixed, " split ", sd.split, " IPC ", haloIpc, " FP32 recon64 ", r64, " reconFma ", rfm
   let n6 = 6*sd.n
   var xd, bd = newSeq[ptr UncheckedArray[float]](ns)
   for j in 0..<ns:

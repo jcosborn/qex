@@ -74,6 +74,7 @@ type
     split*: bool  # second hop of the CG in two kernels around the exchange of t
     fixed*: bool  # the CG sums its dot products in a fixed order (sumFixed), repeating bit for bit, else atomically
     recon64*: bool  # reconstruct compressed FP32 links in FP64, then round row 2 to FP32
+    reconFma*: bool  # FP32 cross product with explicit fused multiply-add operations
     exB*: array[2, GpuHaloEx[T]]  # with batch, the exchanges of nBatch systems, system j in components 6j..6j+5
     redB*: ptr UncheckedArray[float]  # [2][2*nBatch][max(ne, nRed)] dot products of the systems and sites or slots, two buffers, then the workspace of sumFixed
     hredB*: ptr UncheckedArray[float]  # [2*nBatch*nRed] pinned host copy of a buffer
@@ -117,7 +118,7 @@ template mdet(dr, di, m: untyped) =
     di += m[13+2*b]*xr - m[12+2*b]*xi
 
 proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals = 12; fwd = -1;
-                                   batch = false; recon64 = false): StagGpu[V,T] =
+                                   batch = false; recon64 = false; reconFma = false): StagGpu[V,T] =
   ## g are the phased links, as for newStag.  With reals = 12, if every link
   ## is s W with W in SU(3) and s = +-1, the device keeps rows 0 and 1 and
   ## the kernels rebuild row 2 = s conj(row 0 x row 1), with s in the sign of
@@ -139,6 +140,7 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
   result.n = n
   result.ne = V*lo.nEvenOuter
   result.recon64 = recon64
+  result.reconFma = reconFma
   let c = getDefaultComm()
   var w = newSeq[int](nd)
   for d in 0..<nd: w[d] = 1
@@ -297,7 +299,9 @@ proc free*[V: static int; T](s: var StagGpu[V,T]) =
     for p in s.vecB: gpuFree(p)
     for p in 0..1: s.exB[p].free
 
-template load(m, u, o, st, e: untyped; nl: static int; r64: static bool = false) =
+proc fmadd(a,b,c: float32): float32 {.importc: "fmaf", header: "<math.h>", noSideEffect.}
+
+template load(m, u, o, st, e: untyped; nl: static int; r64: static bool = false; fm: static bool = false) =
   ## m[6a+2b] (re), m[6a+2b+1] (im) = U_ab from u[o + (6a+2b)*st], ...; for
   ## nl = 12 rows 0 and 1 only, row 2 = e conj(row 0 x row 1); for nl = 14
   ## rows 0 and 1 and d = det U at reals 12 and 13, row 2 = d conj(row 0 x row 1)
@@ -316,19 +320,30 @@ template load(m, u, o, st, e: untyped; nl: static int; r64: static bool = false)
     forStatic b, 0, 2:
       const b1 = (b+1) mod 3
       const b2 = (b+2) mod 3
-      let xr = R(m[2*b1])*R(m[6+2*b2]) - R(m[2*b1+1])*R(m[7+2*b2]) - R(m[2*b2])*R(m[6+2*b1]) + R(m[2*b2+1])*R(m[7+2*b1])
-      let xi = R(m[2*b2])*R(m[7+2*b1]) + R(m[2*b2+1])*R(m[6+2*b1]) - R(m[2*b1])*R(m[7+2*b2]) - R(m[2*b1+1])*R(m[6+2*b2])
+      when fm:
+        let tr = fmadd(-m[2*b2+1],m[7+2*b1],m[2*b2]*m[6+2*b1])
+        let ti = fmadd(m[2*b2+1],m[6+2*b1],m[2*b2]*m[7+2*b1])
+        let cr = fmadd(m[2*b1],m[6+2*b2],-tr)
+        let ci = fmadd(m[2*b1],m[7+2*b2],-ti)
+        let xr = fmadd(-m[2*b1+1],m[7+2*b2],cr)
+        let xi = -fmadd(m[2*b1+1],m[6+2*b2],ci)
+      else:
+        let xr = R(m[2*b1])*R(m[6+2*b2]) - R(m[2*b1+1])*R(m[7+2*b2]) - R(m[2*b2])*R(m[6+2*b1]) + R(m[2*b2+1])*R(m[7+2*b1])
+        let xi = R(m[2*b2])*R(m[7+2*b1]) + R(m[2*b2+1])*R(m[6+2*b1]) - R(m[2*b1])*R(m[7+2*b2]) - R(m[2*b1+1])*R(m[6+2*b2])
       when nl == 12:
         m[12+2*b] = M(R(e)*xr)
         m[13+2*b] = M(R(e)*xi)
+      elif fm:
+        m[12+2*b] = fmadd(-xi,di,xr*dr)
+        m[13+2*b] = fmadd(xi,dr,xr*di)
       else:
         m[12+2*b] = M(dr*xr - di*xi)
         m[13+2*b] = M(dr*xi + di*xr)
 
-template hop(acc, u, o, v, st: untyped; sgn: static int; e: untyped; nl: static int; r64: static bool = false) =
+template hop(acc, u, o, v, st: untyped; sgn: static int; e: untyped; nl: static int; r64: static bool = false; fm: static bool = false) =
   ## acc += sgn U v, U as for load
   var m {.noInit.}: array[18, type(acc[0])]
-  load(m, u, o, st, e, nl, r64)
+  load(m, u, o, st, e, nl, r64, fm)
   forStatic r, 0, 2:
     var wr = m[6*r]*v[0] - m[6*r+1]*v[1]
     var wi = m[6*r]*v[1] + m[6*r+1]*v[0]
@@ -342,10 +357,10 @@ template hop(acc, u, o, v, st: untyped; sgn: static int; e: untyped; nl: static 
       acc[2*r] -= wr
       acc[2*r+1] -= wi
 
-template hopA(acc, u, o, v, st: untyped; e: untyped; nl: static int; r64: static bool = false) =
+template hopA(acc, u, o, v, st: untyped; e: untyped; nl: static int; r64: static bool = false; fm: static bool = false) =
   ## acc -= U^+ v, U as for load
   var m {.noInit.}: array[18, type(acc[0])]
-  load(m, u, o, st, e, nl, r64)
+  load(m, u, o, st, e, nl, r64, fm)
   forStatic a, 0, 2:
     var wr = m[2*a]*v[0] + m[2*a+1]*v[1]
     var wi = m[2*a]*v[1] - m[2*a+1]*v[0]
@@ -408,7 +423,7 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
       forStatic c, 0, 5: v[c] = x[o + c*V]
     else:
       recvSite(ro, rst, rb, j-n, v)
-  template body(i: untyped; nl: static int; fw, r64: static bool) =
+  template body(i: untyped; nl: static int; fw, r64, fm: static bool) =
     let k = if q == 0: int od[j0 + i] else: i0 + i
     let ko = uo(V, k, nl)
     var acc {.noInit.}: array[6,T]
@@ -420,11 +435,11 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
         let e = if jj < 0: T(-1) else: T(1)
         var v {.noInit.}: array[6,T]
         fetch(v, j)
-        when fb == 0: hop(acc, lf, nl*mu*n + ko, v, V, 1, e, nl, r64)
+        when fb == 0: hop(acc, lf, nl*mu*n + ko, v, V, 1, e, nl, r64, fm)
         elif fw:
-          if j < n: hopA(acc, lf, nl*mu*n + uo(V, j, nl), v, V, e, nl, r64)
-          else: hopA(acc, lh, j-n, v, nr, e, nl, r64)
-        else: hopA(acc, lb, nl*mu*n + ko, v, V, e, nl, r64)
+          if j < n: hopA(acc, lf, nl*mu*n + uo(V, j, nl), v, V, e, nl, r64, fm)
+          else: hopA(acc, lh, j-n, v, nr, e, nl, r64, fm)
+        else: hopA(acc, lb, nl*mu*n + ko, v, V, e, nl, r64, fm)
     let yo = vo(V, k)
     if a == T(0):
       forStatic c, 0, 5: acc[c] = b*acc[c]
@@ -435,22 +450,24 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
       sendSite(sl, sd, st, nsl, n, k, 0, acc)
     when dot:
       dots(j0 + i, acc, y, yo, V, rs, rz, ne, fx)
-  template kern(nl: static int; fw, r64: static bool) =
+  template kern(nl: static int; fw, r64, fm: static bool) =
     when nowait:
-      gpuForAsync(i, nk): body(i, nl, fw, r64)
+      gpuForAsync(i, nk): body(i, nl, fw, r64, fm)
     else:
-      gpuFor(i, nk): body(i, nl, fw, r64)
-  template comp(r64: static bool) =
+      gpuFor(i, nk): body(i, nl, fw, r64, fm)
+  template comp(r64, fm: static bool) =
     if s.nl == 12:
-      if lb == nil: kern(12, true, r64) else: kern(12, false, r64)
+      if lb == nil: kern(12, true, r64, fm) else: kern(12, false, r64, fm)
     else:
-      if lb == nil: kern(14, true, r64) else: kern(14, false, r64)
+      if lb == nil: kern(14, true, r64, fm) else: kern(14, false, r64, fm)
   if s.nl == 18:
-    if lb == nil: kern(18, true, false) else: kern(18, false, false)
+    if lb == nil: kern(18, true, false, false) else: kern(18, false, false, false)
   else:
     when T is float32:
-      if s.recon64: comp(true) else: comp(false)
-    else: comp(false)
+      if s.recon64: comp(true,false)
+      elif s.reconFma: comp(false,true)
+      else: comp(false,false)
+    else: comp(false,false)
 
 proc applyD2ee*[V: static int; T](s: StagGpu[V,T]; r, x, t: ptr UncheckedArray[T]; m2: float) =
   ## r_e = 4 m2 x_e - D_eo D_oe x_e, using t_o
@@ -1183,7 +1200,7 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
       let o = int ro[j-n]
       let sk = int rst[j-n]
       forStatic c, 0, 5: v[c] = rb[o + (c0+c)*sk]
-  template body(i: untyped; nl: static int; fw, r64: static bool) =
+  template body(i: untyped; nl: static int; fw, r64, fm: static bool) =
     let k = if q == 0: int od[j0 + i] else: i0 + i
     let ko = uo(V, k, nl)
     var acc {.noInit.}: array[6*C,T]
@@ -1195,11 +1212,11 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
         let e = if jj < 0: T(-1) else: T(1)
         var mm {.noInit.}: array[18,T]
         var v {.noInit.}: array[6,T]
-        when fb == 0: load(mm, lf, nl*mu*n + ko, V, e, nl, r64)
+        when fb == 0: load(mm, lf, nl*mu*n + ko, V, e, nl, r64, fm)
         elif fw:
-          if j < n: load(mm, lf, nl*mu*n + uo(V, j, nl), V, e, nl, r64)
-          else: load(mm, lh, j-n, nr, e, nl, r64)
-        else: load(mm, lb, nl*mu*n + ko, V, e, nl, r64)
+          if j < n: load(mm, lf, nl*mu*n + uo(V, j, nl), V, e, nl, r64, fm)
+          else: load(mm, lh, j-n, nr, e, nl, r64, fm)
+        else: load(mm, lb, nl*mu*n + ko, V, e, nl, r64, fm)
         forStatic js, 0, C-1:
           fetch(v, j, pickS(x, js), 6*pickS(so, js))
           when fb == 0: hopm(acc, mm, v, js, 1)
@@ -1238,22 +1255,24 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
       let p = j0 + i
       if not fx and p < nRed:  # buffer of the next sum
         forStatic c, 0, 2*nBatch-1: rz[c*nRed + p] = 0.0
-  template kern(nl: static int; fw, r64: static bool) =
+  template kern(nl: static int; fw, r64, fm: static bool) =
     when nowait:
-      gpuForAsync(i, nk, 16): body(i, nl, fw, r64)
+      gpuForAsync(i, nk, 16): body(i, nl, fw, r64, fm)
     else:
-      gpuFor(i, nk, 16): body(i, nl, fw, r64)
-  template comp(r64: static bool) =
+      gpuFor(i, nk, 16): body(i, nl, fw, r64, fm)
+  template comp(r64, fm: static bool) =
     if s.nl == 12:
-      if lb == nil: kern(12, true, r64) else: kern(12, false, r64)
+      if lb == nil: kern(12, true, r64, fm) else: kern(12, false, r64, fm)
     else:
-      if lb == nil: kern(14, true, r64) else: kern(14, false, r64)
+      if lb == nil: kern(14, true, r64, fm) else: kern(14, false, r64, fm)
   if s.nl == 18:
-    if lb == nil: kern(18, true, false) else: kern(18, false, false)
+    if lb == nil: kern(18, true, false, false) else: kern(18, false, false, false)
   else:
     when T is float32:
-      if s.recon64: comp(true) else: comp(false)
-    else: comp(false)
+      if s.recon64: comp(true,false)
+      elif s.reconFma: comp(false,true)
+      else: comp(false,false)
+    else: comp(false,false)
 
 proc packB[C: static int; T](ex: GpuHaloEx[T]; f: array[C, ptr UncheckedArray[T]]; so: array[C, int]) =
   ## pack for C vectors of 6 reals per site, f_j into the components
