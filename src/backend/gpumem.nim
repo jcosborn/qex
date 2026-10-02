@@ -144,7 +144,7 @@ proc getGpuMem*(cpuPtr: pointer): ptr GpuMem =
   #echo result[]
 
 proc getGpuMemDef(cpuPtr: pointer): ptr GpuMem =
-  result = addr gpuMemTable.mgetOrPut(cpuPtr)
+  result = addr gpuMemTable.mgetOrPut(cpuPtr, GpuMem())
   if gmValidFlags notin result.flags:
     result.flags = defaultFlags
 
