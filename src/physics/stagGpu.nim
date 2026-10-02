@@ -40,6 +40,22 @@ const nRed = sumHost  # atomic slots, pinned host reals per dot product of the C
 const nBatch* {.intdefine.} = 3  # systems per hop in solveM of several systems; 3 beat 4, 6 and 8 on PVC
 var hopSplit* = -1  ## CG second hop split around the exchange: 1 always, 0 never, -1 with off-node neighbors
 
+type StagWork* = object
+  ## Per-rank host counters, enabled by -d:stagWorkCount for benchmarks.
+  launches*, sites32*, sites64*, starts32*, starts64*, reductions*: int
+var stagWork*: StagWork
+
+template countHop(T: typedesc; sites, systems: int) =
+  when defined(stagWorkCount):
+    inc stagWork.launches
+    when T is float32: stagWork.sites32 += sites*systems
+    else: stagWork.sites64 += sites*systems
+
+template countStart(T: typedesc) =
+  when defined(stagWorkCount):
+    when T is float32: inc stagWork.starts32
+    else: inc stagWork.starts64
+
 type
   StagGpu*[V: static int; T] = object
     lo*: Layout[V]
@@ -213,6 +229,7 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
         u := h[e][asSimd(l)]
         put(1, mu, V*o+l)
   c.allReduce(addr bad[0], 2)
+  when defined(stagWorkCount): inc stagWork.reductions
   let nl = if reals == 12 and bad[0] == 0: 12 elif reals <= 14 and bad[1] == 0: 14 else: 18
   result.nl = nl
   template lv(i, e: int): float =
@@ -364,6 +381,7 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
   let fx = s.fixed
   let i0 = if q == 0: 0 else: s.ne
   let nk = if m >= 0: m elif q == 0: s.ne else: n - s.ne
+  countHop(T, nk, 1)
   let od = s.ord
   let lf = s.lf
   let lb = s.lb
@@ -469,6 +487,7 @@ proc applyD2eeCG[V: static int; T](s: StagGpu[V,T]; w, r, t: ptr UncheckedArray[
       result[1] += h[nRed+k]
   toc("dots")
   getDefaultComm().allReduce(addr result[0], 2)
+  when defined(stagWorkCount): inc stagWork.reductions
   toc("sum")
 
 proc redot[V: static int; T](s: StagGpu[V,T]; x, y: ptr UncheckedArray[T]): float =
@@ -553,6 +572,7 @@ proc cg[V: static int; T](s: StagGpu[V,T]; x, b: ptr UncheckedArray[T]; m, r2sto
   var itn = 0
   var r2, r2v = 0.0  # r2v: the true r2 of the last start
   while true:  # a start from rr: p = s = 0, the halo copies of rr and s
+    countStart(T)
     gpuFor(i, 6*s.ne):
       p[i] = T(0)
       sv[i] = T(0)
@@ -588,7 +608,9 @@ proc cg[V: static int; T](s: StagGpu[V,T]; x, b: ptr UncheckedArray[T]; m, r2sto
         var rr2 = s.redot(rr, rr)
         var wr = s.redot(w, rr)
         c.allReduce(rr2)
+        when defined(stagWorkCount): inc stagWork.reductions
         c.allReduce(wr)
+        when defined(stagWorkCount): inc stagWork.reductions
         echo "  r.r: ", gd[0], " ", rr2, "  w.r: ", gd[1], " ", wr
     s.ex[0].wait
     when not verify: break
@@ -597,6 +619,7 @@ proc cg[V: static int; T](s: StagGpu[V,T]; x, b: ptr UncheckedArray[T]; m, r2sto
     s.resid(rr, b, w)
     r2 = s.redot(rr, rr)
     c.allReduce(r2)
+    when defined(stagWorkCount): inc stagWork.reductions
     if verb > 1:
       echo "GPU CG iteration: ", itn, "  true r2: ", r2
     if r2 <= r2stop or itn >= maxits or r2v > 0.0 and r2 >= r2v: break
@@ -622,6 +645,7 @@ proc solveEE*[V: static int; T](s: StagGpu[V,T]; r, x: Field; m: float; sp: var 
   s.upload(b, x)
   var b2 = s.redot(b, b)
   c.allReduce(b2)
+  when defined(stagWorkCount): inc stagWork.reductions
   toc("setup")
   let t0 = epochTime()
   let (itn, r2) = s.cg(xx, b, m, sp.r2req*b2, sp.maxits, sp.verbosity)
@@ -658,6 +682,7 @@ proc cg[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; x, b: ptr 
     rd[i] = b[i]
   var r2 = s.redot(rd, rd)
   c.allReduce(r2)
+  when defined(stagWorkCount): inc stagWork.reductions
   var r2p = 0.0  # r2 before the last restart
   while result.its < maxits and r2 > r2stop and (r2p == 0.0 or r2 < r2p):
     r2p = r2
@@ -669,6 +694,7 @@ proc cg[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; x, b: ptr 
     s.resid(rd, b, ad)
     r2 = s.redot(rd, rd)
     c.allReduce(r2)
+    when defined(stagWorkCount): inc stagWork.reductions
     inc result.nres
     if verb > 1:
       echo "GPU mixed CG restart: ", result.nres, "  iterations: ", result.its, "  r2: ", r2
@@ -687,6 +713,7 @@ proc solveEE*[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32]; r, x
   s.upload(b, x)
   var b2 = s.redot(b, b)
   c.allReduce(b2)
+  when defined(stagWorkCount): inc stagWork.reductions
   toc("setup")
   let t0 = epochTime()
   let (itn, nres, r2) = cg(s, ss, xd, b, m, sp.r2req*b2, r2in, sp.maxits, sp.verbosity)
@@ -791,6 +818,7 @@ proc norm2*[V: static int; T](s: StagGpu[V,T]; x: ptr UncheckedArray[T]): float 
   ## global |x|^2 over all sites
   result = gpuSum(i, 6*s.n, 1, [float(x[i])*float(x[i])])[0]
   getDefaultComm().allReduce(result)
+  when defined(stagWorkCount): inc stagWork.reductions
 
 proc applyM*[V: static int; T](s: StagGpu[V,T]; d, x: ptr UncheckedArray[T]; m: float) =
   ## d_e = m x_e + D_eo x_o/2, the even sites of stag.D(d, x, m)
@@ -831,6 +859,7 @@ proc norm2EO[V: static int](s: StagGpu[V,float]; b: ptr UncheckedArray[float]; f
     let t = b[i]*b[i]
     if i < ne6: [t, 0.0] else: [0.0, t]
   getDefaultComm().allReduce(addr result[0], 2)
+  when defined(stagWorkCount): inc stagWork.reductions
 
 proc targetA(m, stop, b2o: float): float =
   ## the CG target of |q - A x_e|^2 for |b - M x|^2 <= stop, as the CPU
@@ -870,6 +899,7 @@ proc solveA[V: static int](s: StagGpu[V,float]; x, q: ptr UncheckedArray[float];
     let e = ss.vec[6]
     var q2 = s.redot(q, q)
     getDefaultComm().allReduce(q2)
+    when defined(stagWorkCount): inc stagWork.reductions
     ss[].convert(rs, q)
     result = ss[].cg(e, rs, m, targetS(q2, r2stop, r2in), maxits, verb, verify = false).its
     s.convert(x, e)
@@ -1113,6 +1143,7 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
   let fx = s.fixed
   let i0 = if q == 0: 0 else: s.ne
   let nk = if m >= 0: m elif q == 0: s.ne else: n - s.ne
+  countHop(T, nk, C)
   let od = s.ord
   let lf = s.lf
   let lb = s.lb
@@ -1269,6 +1300,7 @@ proc applyD2eeCGB[V: static int; C: static int; T](s: StagGpu[V,T]; w, r, t: arr
       for c in 2*j..2*j+1:
         for k in 0..<nRed: result[c] += h[c*nRed + k]
   getDefaultComm().allReduce(addr result[0], 2*nBatch)
+  when defined(stagWorkCount): inc stagWork.reductions
 
 proc updateB[V: static int; C: static int; T](s: StagGpu[V,T]; x: array[C, ptr UncheckedArray[T]]; so: array[C, int];
                                               r, p, sv, w: ptr UncheckedArray[T]; a, b: array[C, T]) =
@@ -1331,6 +1363,7 @@ proc startB[V: static int; T](s: StagGpu[V,T]; c: var CgB[T]; j: int; x, b: ptr 
                               m, stop: float; mits: int) =
   ## slot j solves A x_e = b_e from x_e = 0: r = b, p = s = 0, the halo of r
   ## exchanged by the next stepB
+  countStart(T)
   let n6 = 6*s.ne
   let o = j*n6
   let ra = s.vecB[0]
@@ -1441,6 +1474,7 @@ proc rhsB[V: static int](s: StagGpu[V,float]; b: array[nBatch, ptr UncheckedArra
       if not full: gpuFor(i, n6): dj[i] = mj*bj[i]
       result[j] = s.redot(dj, dj)
   getDefaultComm().allReduce(addr result[0], nBatch)
+  when defined(stagWorkCount): inc stagWork.reductions
 
 proc solveM*[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedArray[float]]; m: openArray[float];
                             sp: var openArray[SolverParams]; ss: ptr StagGpu[V,float32] = nil; r2in = 1e-6;
