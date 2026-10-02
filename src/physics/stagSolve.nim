@@ -364,7 +364,7 @@ proc solveXX*(
   # looooooooooooooooooooo/ <- this was input from my cat, Gojira... insightful - Curtis
   tic("solveXX")
   let par = if parEven: "even" else: "odd"
-  var r2Prev = Inf
+  var r2Prev = 0.0
   var b2, r2, r2Stop = 0.0
   var sp = sp0
   var rho = newOneOf(x)
@@ -388,7 +388,7 @@ proc solveXX*(
   if sp0.backend == sbQex and sp0.sloppySolve != SloppyNone:
     discard s.stagSingle(init = true)
 
-  while r2 > r2Stop and r2 < r2Prev:
+  while r2 > r2Stop and (r2Prev == 0.0 or r2 < r2Prev):
     (r2Prev, sp.maxits) = (r2, sp0.maxits - sp.iterations)
     if sp.maxits <= 0: break
     sp.r2req = r2Stop / r2
@@ -411,7 +411,7 @@ proc solveXX*(
   if sp0.backend == sbQex and sp0.sloppySolve != SloppyNone:
     discard s.stagSingle(free = true)
 
-  sp.r2.init r2/b2
+  sp.r2.init(if b2 > 0.0: r2/b2 else: 0.0)
   sp.calls = 1
   sp.seconds = getElapsedTime()
   sp0.addStats(sp)
@@ -476,7 +476,7 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
       b2 = b2t
   let r2stop = sp0.r2req * b2
   var r = newOneOf(b)
-  if sp0.usePrevSoln:
+  if sp0.usePrevSoln and b2 > 0.0:
     threads:
       s.D(r, x, m)
       threadBarrier()
@@ -494,7 +494,8 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
       r2o = r2ot
   r2 = r2e + r2o
   if sp0.verbosity>1:
-    echo &"stagSolve b2: {b2:.6g}  r2/b2: {r2/b2:.6g}  r2stop: {r2stop:.6g}"
+    let rel = if b2 > 0.0: r2/b2 else: 0.0
+    echo &"stagSolve b2: {b2:.6g}  r2/b2: {rel:.6g}  r2stop: {r2stop:.6g}"
 
   var y = newOneOf(x)
   #var ys: toSingle(type y)
@@ -543,7 +544,7 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
 
   if sp0.backend == sbQex and sp0.sloppySolve != SloppyNone:
     discard stagSingle(s, free=true)
-  sp.r2.init r2/b2
+  sp.r2.init(if b2 > 0.0: r2/b2 else: 0.0)
   sp.calls = 1
   sp.seconds = getElapsedTime()
   sp.flops += float((s.g.len*4*72+24)*x.l.nEven) # ???
@@ -609,7 +610,8 @@ proc solve*(
   sp.resetStats()
   sp.usePrevSoln = false
   if sp0.verbosity>1:
-    echo &"stagSolve b2: {b2:.6g}  r2: {r2/b2:.6g}  r2stop: {r2stop:.6g}"
+    let rel = if b2 > 0.0: r2/b2 else: 0.0
+    echo &"stagSolve b2: {b2:.6g}  r2: {rel:.6g}  r2stop: {r2stop:.6g}"
   for m in 0..<ms.len: 
     shifts[m] = case m == 0
       of true: ms[m]
@@ -652,15 +654,16 @@ proc solve*(
     if sp.verbosity > 0: echo "stagSolve r2/b2: ", r2/b2
 
   # Get full solution for all solution vectors
-  threads:
-    forMass:
-      if m != 0: s.Ddag(xt,xs[m],ms[m])
-      threadBarrier()
-      xs[m] := xt
-      threadBarrier()
+  if b2 > 0.0:
+    threads:
+      forMass:
+        if m != 0: s.Ddag(xt,xs[m],ms[m])
+        threadBarrier()
+        xs[m] := xt
+        threadBarrier()
 
   # Finish up
-  sp.r2.init r2/b2
+  sp.r2.init(if b2 > 0.0: r2/b2 else: 0.0)
   sp.calls = 1
   sp.seconds = getElapsedTime()
   sp.flops += float((s.g.len*4*72+24)*xs[0].l.nEven*xs.len) # ???
