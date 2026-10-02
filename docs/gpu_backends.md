@@ -111,15 +111,34 @@ the true residual b - A x, and while it misses the request and drops, with
 iterations left, restarts the CG from it with the same x.  solveM computes
 b - M x instead, and while it misses the request and drops, with
 iterations left, adds to x the solution y of M y = b - M x, as stag.solve
-does; it records |b - M x|^2/|b|^2 in the SolverParams statistics, 0 for
-b = 0.  The true |q - A x_e| can't drop below about eps |A| |x_e|, which for
+does.  solveEE and solveM record the true relative squared residual in
+SolverParams, 0 for b = 0, and accumulate the calls and iterations.
+The true |q - A x_e| can't drop below about eps |A| |x_e|, which for
 small m and r2req lies above the CG target (m = 0.001 and r2req = 1e-24 on
 a 4^3x8 lattice): rounding x_e by d changes b - M x by A d/(4m) through x_o,
 while the correction y is small and so is its rounding.  The restarts in
 double of the mixed precision solver also stop once the residual no longer
-drops.  In solveM of several systems, a system whose slot stops takes these
-steps on its own before the slot takes the next system.  A solve out of
-iterations stops there and records the residual it reached.
+drops.  A solve out of iterations stops there and records the residual it
+reached.
+
+The September 30 production change, ac1a9f3b, caches the single precision
+operator for a public solve, keeps the inner solve approximate, and refines
+against the residual of the requested equation.  stagGpu already keeps
+both precisions in its StagGpu objects: HMC refreshes both with setLinks
+after smearing.  Its mixed solveM now takes one single precision CG per
+correction and checks b - M x in double, including the reconstructed odd
+sites.  In several systems, those corrections, reconstructions and full
+residuals share the links and halo exchanges of up to nBatch systems.
+The slot takes another system after its full residual meets the request,
+exhausts its iterations, or stops dropping.
+
+For both mixed solveEE and solveM, an inner CG with source q stops at
+max(requested squared residual, max(r2in, epsilon(float32)) |q|^2).
+r2in defaults to 1e-6.  The GPU programs accept `-r2in`; zero selects the
+FP32 epsilon floor, about 1.19e-7.  The final tolerance still applies to the true
+residual in double.  solveM does this refinement on M directly, which
+avoids spending inner iterations refining A at its rounding floor before
+checking the full equation.
 
 ## Configuration examples
 
@@ -303,11 +322,21 @@ gfx942 is both MI300X and MI300A.
   kernels, the bandwidth ceiling the kernels can reach.
 - backend/examples/bestagcg: the GPU CG against the CPU solver, GF/s and
   GB/s by a byte count, `-nb:k` k systems at once.
+- backend/examples/bestagm: complete scalar and batched M solves against
+  the CPU operator, `-nb`, `-masses`, `-full`, `-mixed`, `-r2req` and
+  `-r2in`.  `-d:cpuOnly` builds the production reference;
+  `-d:stagWorkCount` records local stencil work, CG starts and reductions.
 - backend/examples/bestagres: the stopping rules of solveM and solveEE
-  against stag.D and stagD2ee: one system and several, double and mixed
+  against stag.D, stagD2ee and the production solves: one system and several, double and mixed
   precision, fixed and atomic dot products, sources on all or on the even
-  sites, masses of both signs, zero sources and too few iterations;
+  sites, masses of both signs, zero sources, too few iterations, reused
+  statistics and inner tolerances below and above single precision epsilon;
   `-ipc` and `-split` as bestagcg; exits with 1 if a check fails.
+  Its raw inner CG checks print CPU/GPU/batch iteration counts, recursive
+  residuals, and residuals recomputed with the CPU operator in both
+  precisions.  The double check promotes the rounded single precision
+  links and source to double.  `-inner:0` skips those checks and `-cpu:0`
+  skips the comparisons with the production double/mixed solves.
 - backend/examples/berng: the generators of RNGFieldV and rng/rngGpu against
   the host RNG fields; exits with 1 if a check fails.
 - tests/base/taccel: the order of queued kernels, sumFixed and gpuSum at
@@ -315,6 +344,11 @@ gfx942 is both MI300X and MI300A.
   on 1, 2 and 4 ranks.
 - tests/base/tgaugegpu: gauge/gaugeGpu against actionA and forceA, and
   ValueError for rect and pgm coefficients.
+- tests/base/tstaglinks: adjoint consistency of 12/14/18-real caches after
+  construction and gauge updates, in both cache modes; promotes FP32
+  cache entries before the check to expose representation errors.
+- tests/base/tstagzero: CPU zero-source solutions and finite statistics,
+  including warm starts and multiple masses.
 - backend/examples/bernt: the times of the rngGpu draw kernels, with 32-,
   64- and 128-bit generator loads.
 - examples/staghmcgpu_sh: staghmc_sh on the GPU; `tests/extra/tstaghmc_sh/run`
@@ -343,3 +377,526 @@ runs spread 4%).  staghmcgpu_sh takes 2.5-3.8% longer per trajectory at
 take 13-15% more iterations to meet the request on M x = b, and every solve
 checks b - M x.  eightFlavorSMGgpu, whose solves take the same iterations as
 before, takes 0.4-2.5% longer.
+
+## Initial CPU validation, October 1, 2026
+
+gpu merged devel ac1a9f3b in 64caa668.  The implementation above was
+tested on an Apple M4 Max with 128 GB of memory, Nim 2.3.1
+(e754af2083464d791a2584a5c0239bb4b8887ca9), clang 23.1.0, QMP SINGLE,
+`vlen:4`, no explicit SIMD intrinsics, and C flags
+`-O3 -march=native -fno-strict-aliasing`.  Assertions were enabled in
+the release builds.  The production baseline was a clean archive of
+devel ac1a9f3b, built with the same settings.
+
+With `OMP_NUM_THREADS=1`, each of these bestagres configurations reported
+470 successful checks, including production solver comparisons and
+raw inner CGs.  The audit below qualifies what those checks establish:
+
+```
+bin/bestagres
+bin/bestagres -lat:4,4,4,8 -reals:12 -split:1
+bin/bestagres -lat:4,4,4,8 -reals:18 -split:1
+bin/bestagres -lat:8,8,8,8 -reals:18 -split:0
+```
+
+taccel and tgaugegpu passed.  All three tstaghmc_sh cases passed with the
+production CPU program, and with staghmcgpu_sh in double and mixed
+precision (the GPU version's default links of 14 reals).  Both production
+eightFlavorSMG and eightFlavorSMGgpu passed the complete teightFlavorSMG
+suite, including reversibility, checkpoint/resume, rejected updates, and
+invalid checkpoint/configuration checks.  A separate mixed
+eightFlavorSMGgpu trajectory, with both action and force tolerances set to
+1e-24, matched clean devel's Hamiltonians and gauge observables at rtol
+5e-11, with atol 1e-9 for the kinetic action.  Both recorded reverse dH0
+= -2.91e-11, below the suite's 1e-8 bound.
+
+The added loose-inner-tolerance cases caught a progress check against the
+zero guess in the batched mixed solver.  A first reconstructed solution
+can increase |b - M x| even while reducing the even-system residual.
+The progress check now starts after that first reconstructed solution,
+as correctM does for one system; later corrections must reduce the full
+residual.
+
+### Inner single precision CG
+
+With the same gauge and source, r2req = epsilon(float32) = 1.1920929e-7,
+links of 18 reals and fixed sums, the CPU and GPU raw inner solves gave:
+
+| Lattice | Mass | CPU / GPU / batch iterations | True r2/b2, CPU / GPU |
+|---|---|---|---|
+| 4^4 | 0.1 | 108 / 108 / 108 | 1.190e-7 / 1.176e-7 |
+| 4^4 | 0.01 | 628 / 625 / 625 | 4.720e-7 / 4.261e-7 |
+| 4^4 | 0.001 | 643 / 642 / 642 | 1.421e-6 / 1.790e-6 |
+| 4^3 x 8 | 0.001 | 1319 / 1322 / 1322 | 3.852e-4 / 5.536e-4 |
+| 8^4 | 0.001 | 9969 / 9958 / 9958 | 2.168e-2 / 2.237e-2 |
+
+All recursive residuals met the requested inner target.  The true residuals
+in this table were recomputed in double with the rounded single precision
+links and source.  Their drift for light masses occurs in both codes;
+the final mixed solves check and correct the double precision equation.
+The GPU single and batched solutions matched bit for bit in these CPU
+backend runs, with both fixed and atomic sums.
+
+The compressed case deserves separate attention: at 4^3 x 8, m = 0.001
+and the same epsilon target, 12 reals gave 2453 GPU/batch iterations
+versus 1319 CPU iterations, with true r2/b2 of 1.360e-3 versus 3.852e-4.
+With 18 reals the GPU took 1322 iterations.  The GPU reconstructs the
+third row in single precision; the CPU stores that row rounded from
+double.  All converged cases in both configurations met their double
+precision requests, including 1e-24.
+
+A controlled repeat identified the adjoint inconsistency of separately
+compressed forward and backward links.  Reconstructing U and U^+ from
+their own rounded first two rows gives different matrices:
+R(U^+) != R(U)^+ in single precision.  In this case their largest element
+discrepancy was 1.23e-7.  The linear even operator assembled in double
+from those reconstructed single precision links had
+|A - A^+|_F / |A|_F = 3.80e-8.  Using the same forward cache for both
+directions removed the link discrepancy and reduced that operator
+defect to about 1.5e-17, while keeping the 12-real representation.
+
+| GPU links | Backward hop | Inner iterations |
+|---|---|---|
+| 18 reals | separate adjoint cache | 1322 |
+| 18 reals | adjoint of forward cache | 1322 |
+| 12 reals | separate adjoint cache | 2453 |
+| 12 reals | adjoint of forward cache | 1321 |
+
+The 12-real separate-cache recurrence first reached r2/b2 = 1.205e-7 at
+iteration 1314, just above the 1.192e-7 stopping threshold.  It then rose
+to 2.317e-5 at iteration 1449 and crossed the threshold at iteration
+2453.  The condition number was about 1.68e6 in each case.  The extra
+iterations therefore accompany the loss of adjoint consistency and the
+subsequent recurrence drift in this sensitive system.  Its final true
+residual was 1.360e-3 with separate caches versus 4.557e-4 with the
+forward cache, evaluated by the CPU operator with rounded full links.
+
+The existing `newStagGpu(g, float32, 12, fwd = 1)` path forms local
+backward hops from the same reconstructed forward links.  These
+diagnostics used one rank; remote links in lh still hold independently
+compressed adjoints, so the MPI boundary case needs the same consistency
+analysis.
+
+### CPU timings against production
+
+Times below are milliseconds per complete solveEE call, including its
+setup and transfers.  The gauge, layout and random seed matched; links
+had 18 reals, lanes were `[2,2,1,1]`, and r2req was 1e-16.  Four samples
+followed an initial warmup for each GPU path.  Production ran before and
+after it, with four samples following each warmup; the table gives their
+medians.  All large compilations and other tests had finished before the
+timed runs.  The last two columns use six OpenMP threads for production.
+
+| Lattice | Mass | CPU double | GPU CPU backend double | CPU mixed | GPU CPU backend mixed | CPU double, 6 threads | CPU mixed, 6 threads |
+|---|---|---|---|---|---|---|---|
+| 8^4 | 0.1 | 20.47 | 40.93 | 10.77 | 65.08 | 5.18 | 4.23 |
+| 8^4 | 0.01 | 202.01 | 407.52 | 102.89 | 642.11 | 45.64 | 27.20 |
+| 16^4 | 0.1 | 360.41 | 703.70 | 187.32 | 1102.47 | 67.75 | 42.90 |
+| 16^4 | 0.01 | 3631.44 | 7077.63 | 1804.70 | 11000.17 | 667.64 | 372.48 |
+
+For these cases production is about twice as fast in double and six
+times as fast in mixed precision on one thread.  The GPU CPU backend
+runs its kernels as serial host loops; production also scales across
+OpenMP threads. These initial measurements describe CPU execution. The
+subsequent PVC study below covers device compilation, MPI and GPU timing.
+
+The GPU benchmark command for each lattice and mass was:
+
+```
+OMP_NUM_THREADS=1 bin/bestagcg -lat:16,16,16,16 -rg:1,1,1,1 \
+  -ig:2,2,1,1 -mass:0.01 -r2req:1e-16 -maxits:50000 \
+  -ncpu:1 -ngpu:5 -mixed:1 -sloppySolve:0 -reals:18 -fixed:1
+```
+
+The clean devel benchmark used the same initialization and production
+solveEE call from bestagcg, with `-ncpu:5` and `-sloppySolve:0` or `1`.
+bestagcg now prints the elapsed time of each complete CPU, GPU double,
+and GPU mixed solve so that this comparison includes their setup.
+
+## Audit before implementation
+
+The final mixed solutions and HMC comparisons above provided useful CPU
+backend evidence.  The pass count alone did not establish inner FP32
+accuracy, device correctness, MPI correctness, or a performance improvement
+from the solver changes.  The initial study left the compressed-link
+defect in the code. The following findings describe that pre-repair state;
+the implementation and further validation are recorded below.
+
+### Findings
+
+1. **The adjoint defect is confirmed, and its repair must cover every
+   backward path.** A stronger control expanded the independently
+   reconstructed FP32 forward/backward matrices into 18-real storage.
+   The ordinary 18-real kernel reproduced the 2453 iterations and the
+   same solution bits.  Holding those forward matrices fixed and replacing
+   only the backward matrices with their exact adjoints gave 1321
+   iterations and the same solution bits as the 12-real forward-cache
+   run.  This removes the kernel/representation confound in the earlier
+   comparison.  It establishes the cause for this fixture, rather than a
+   universal iteration penalty.  The defect predates this session.
+   `fwd = 1` repairs local pairing only; lh, constructor packing, setLinks,
+   dslash and dslashB all participate in backward-link handling.  The
+   14-real representation also independently reconstructs adjoints and
+   needs coverage with nontrivial unitary determinants.
+
+2. **The inner accuracy assertion is too weak.** checkInner requires the
+   recursive residual to meet the target, then bounds solution differences
+   by the measured true residuals.  For a Hermitian positive reference A,
+   `A(xg-xc) = rc-rg` already implies
+   `16 m^4 |xg-xc|^2 <= 2 (|rc|^2 + |rg|^2)`.  This is a consistency
+   identity and can hold for a bad solution with a large true residual.
+   For example, a zeroed downloaded solution can satisfy this bound if
+   its stale recursive residual still reports convergence.  The tests
+   therefore cannot call a raw solve accurate solely because this check
+   passes.  They also use identical sources and masses in all raw batch
+   slots and download only slot zero; that cannot detect slot permutation
+   or establish accuracy of every returned slot.  The outer batch tests
+   do use different systems and check each final solution.
+
+3. **The residual references need explicit names.** The main inner table
+   evaluates the CPU operator built from all 18 original link reals
+   rounded to FP32, then promoted to FP64.  A compressed GPU operator
+   represents different matrices.  Its residual against that common
+   reference combines representation error with iteration error.  The
+   matrix diagnostic subsequently measures a second residual against
+   decoded GPU link matrices, but this linear model still excludes
+   rounding inside FP32 stencil arithmetic.  Future checks should report
+   recursive, effective-operator, and original FP64 problem residuals
+   separately.  The observed large gap remains real: the 2453-iteration
+   result has r2/b2 about 1.36e-3 against both matrix references.
+
+4. **The new default tolerance has not been justified by a performance
+   study.** The old GPU r2in default was 1e-6.  Changing it to FP32 epsilon
+   tightens the inner squared-residual target by 8.39, whereas the upstream
+   CPU change loosened its earlier floor.  In the sensitive compressed
+   fixture the raw solve takes 1310 iterations at 1e-6 and 2453 at epsilon.
+   That does not establish the total cost of a final mixed solve.  The
+   timing table measures solveEE against production CPU, and does not
+   compare the old/new GPU solveM or isolate the default change.  New
+   batched M refinement also changes FP64 work and collective counts;
+   norm2EO now performs a reduction for each completed slot.  CG iteration
+   counts alone cannot quantify its cost.  The chosen -O3 flags are stated
+   and comparable between the programs; production tuning with -Ofast
+   remains a separate validation configuration.
+
+5. **The CPU reference has a zero-source statistics bug.** A direct run
+   returned `calls=1`, `iterations=0`, `r2=nan` for both solveEE and solve,
+   in double and mixed precision.  Both public wrappers record r2/b2 with
+   b2=0.  The solveEE behavior is introduced by the merged wrapper; the
+   full solve already had this behavior.  bestagres skips the production
+   comparison for zero sources, so its GPU zero-source checks did not
+   expose the reference problem.
+
+6. **Coverage is narrower than a device regression study.** QMP SINGLE
+   gives no remote neighbors, even with split=1, and CPU gpuForAsync is
+   synchronous.  These runs cannot test MPI halos, IPC, overlapping
+   kernels, device capture rules or register pressure.  The mixed
+   eightFlavorSMG comparison was one short cold-start trajectory with
+   f_tol tightened from 1e-16 to 1e-24.  It is useful accuracy evidence;
+   normal production tolerances, more seeds/configurations, and direct
+   deltaH/force comparisons still need testing.  Several diagnostics and
+   their metadata currently live only in temporary build directories.
+
+### Implementation order and acceptance criteria
+
+1. **Make the failures reproducible in the repository.** Preserve an
+   immutable source/configuration baseline.  Add a focused link test that
+   fails for the current independently compressed adjoints.  Cover
+   12/14/18 reals, FP32/FP64, both cache modes, boundary phases, constructor
+   and repeated setLinks updates.  Compare decoded cached data, bilinear
+   adjoint identities, and actual stencil output against an independent
+   reference.  Store geometry, lanes, ranks, seeds, mass, tolerance,
+   compiler flags and cache orientation with results.  Keep iteration
+   counts as diagnostics rather than portable equality assertions.
+
+2. **Use one orientation for cached links.** Keep canonical forward link
+   data in lf.  Store the neighbor's same forward-oriented payload in lb
+   and lh; reconstruct it and use hopA/hopAm for every backward hop.
+   Update newStagGpu, setLinks, scalar and batched kernels, and storage
+   documentation together.  Preserve the existing cache sizes and
+   locality.  Quantization and determinant handling must yield the same
+   payload as the owning site's forward cache, including across rank
+   boundaries.  Acceptance: matching link/adjoint pairs, a Hermitian
+   decoded even operator, and correct results for fresh and updated
+   SU(3) and U(3) fields.  The old defect fixture must fail before and
+   pass after this change without weakening the tolerance.
+
+3. **Repair the numerical checks and statistics.** Give raw inner solves
+   separate termination and accuracy diagnostics.  Require independently
+   measured residual reduction and a justified accuracy allowance on
+   fixtures with known conditioning; retain the true FP64 target for
+   final mixed solves.  Use distinct sources/masses in raw batch slots,
+   verify every returned vector, and exercise partial batches and slot
+   reuse.  A deliberately zeroed or permuted output must fail the checks.
+   Check full, even-only and odd-only sources, zero sources, iteration
+   exhaustion and correction stagnation.  Fix public CPU zero-source
+   behavior/statistics in a separate patch, including warm-start handling,
+   and compare it with GPU zero-source behavior instead of skipping it.
+
+4. **Choose the stopping policy from measured final solves.** Keep the
+   precision floor as a lower bound and restore 1e-6 as the provisional GPU
+   default until the tighter default is supported by measurements.
+   Compare the original GPU implementation, the cache fix alone, the new
+   M refinement at 1e-6, and the epsilon setting at the same final accuracy.
+   Benchmark solveEE, full solveM, heterogeneous batches and HMC.  Record
+   wall time, inner iterations, refinements, FP32/FP64 stencil counts,
+   reductions, halo traffic and setup costs.  Repeat in alternating order
+   and report the sample spread.  Keep the validated algorithm/statistics
+   changes distinct from any optional default-tolerance change.
+
+5. **Validate the communication and device paths before finalizing.**
+   Run CPU checks first, then 2/4 MPI ranks with real remote neighbors,
+   forced cache/split modes, and several layouts.  Check device builds and
+   the existing supported GPU backend tests, with fixed and atomic sums
+   and IPC enabled/disabled where supported.  Run HMC at normal and tight
+   tolerances on more than one gauge state, checking force accuracy,
+   deltaH, reversibility and checkpoint/resume.  Publish exact tested
+   revisions, commands and logs with the resulting scope of validation.
+
+## Implementation and current validation
+
+lf, lb and lh now all store links in forward orientation.  Every backward
+hop takes the adjoint after reconstruction, in the scalar and batched
+kernels.  newStagGpu and setLinks use this representation for local and
+remote links.  The cache sizes and the automatic choice of whether to
+cache backward-neighbor links are preserved.
+
+tstaglinks fails before the repair on the 12- and 14-real FP32 caches,
+with normalized adjoint defects of 1.6e-10 to 6.8e-10 after promotion.
+The repaired caches pass the same 1e-13 criterion at about 1e-17, including
+repeated setLinks updates and nontrivial U(3) determinants.  The CPU
+zero-source tests pass in both precisions with one and six threads.
+Re-running the original 2453-iteration fixture with the repaired code
+gives 1321 iterations for both 12-real cache modes, versus 1322 for both
+18-real cache modes.  The 12-real modes return the same residual and
+solution, with a recursive r2/b2 of 1.149e-7 and a residual of 4.557e-4
+against the FP64 CPU operator made from rounded FP32 links.
+
+The mixed GPU default is again 1e-6, bounded below by epsilon.  bestagcg,
+bestagm, bestagres, staghmcgpu_sh and eightFlavorSMGgpu accept `-r2in`.
+Their existing final-solve tolerances remain available.  bestagres also
+accepts `-innerReq`, `-innerMax`, `-innerMatch`, `-r2req`, `-fwd` and `-seed`.
+Its raw batch checks use different sources and masses, download every
+slot, compare scalar and batched solutions, and verify that zeroed and
+permuted outputs are rejected.  On the selected hard fixtures the default
+innerMax=0.25 requires at least a factor-two reduction in the true residual
+norm; it does not claim that the true FP32 residual reaches the recursive
+target.  Well-conditioned fixtures use a tighter bound tied to the request.
+The default innerMatch=1e-4 bounds the squared batch/scalar vector difference.
+
+Recorded residuals are checked by applying the same operator afresh to
+the returned solution.  Independent CPU residuals separately check final
+accuracy.  Comparing the two residual estimates to 1% was too strict for
+some 14-real solveEE cases at r2req=1e-20: both met the request, while the
+different operator rounding changed the tiny residual by 1-5%.
+
+The first PVC two-rank run exposed the corresponding cross-reference
+stopping check: an atomic 14-real solveEE at m=0.001 gave 9.899e-21 with
+its own operator and 1.037e-20 with the original CPU operator, for a
+request of 1e-20. The test now explicitly requires its freshly recomputed
+own-operator residual and recorded residual to meet the request. The
+independent CPU comparison allows FP64 representation/evaluation roundoff:
+`min(refFactor*req, (sqrt(req)+delta)^2)`, where
+`delta = refRound*epsilon64*opNorm*||x||/||b||`. For these unitary-link
+fixtures, `opNorm=|m|+4` for M and `4m^2+64` for A. Defaults refRound=128
+and refFactor=4 give a conservative roundoff allowance capped at twice
+the requested residual norm. The allowance is independent of measured
+residuals and is printed for each check. `-refRound:0` restores a strict
+CPU-reference comparison. The solver continues to enforce its original
+stopping tolerance. bestagm retains its separate 1.01*r2req CPU accuracy
+gate for every timing sample.
+
+The final laptop regressions pass for 12 and 14 reals with six threads,
+and for 18 reals with a second seed.  Source initialization now has an
+explicit barrier before changing subsets or measuring their norms;
+without it, the multithreaded test could normalize a residual by a partly
+initialized source.  The three mixed staghmc regressions and the full
+eightFlavorSMG regression suite also pass with six threads.
+
+Cache consistency does not guarantee equal FP32 iteration counts.  With
+the new distinct sources on 4^3 x 8, the first two compressed systems at
+m=0.001 and 0.0012 take 1934 and 2209 iterations at epsilon, versus CPU
+1318 and 1319 and uncompressed GPU 1313 and 1312.  The corresponding
+effective-operator squared residuals are 7.07e-4 and 4.95e-4 despite
+recursive residuals near 1e-7.  At the retained 1e-6 default those
+compressed solves take 1312 and 1313 iterations.  All final mixed solves
+meet their independently checked targets.  The cache repair removes the
+identified adjoint inconsistency; FP32 recurrence and compressed-operator
+sensitivity still require measurements of complete refined solves.
+
+The final full-M laptop benchmark uses 16^4, three independent sources
+with masses 0.05, 0.06 and 0.07, r2req=1e-16, r2in=1e-6, 14 reals,
+fixed sums and one host thread. Each implementation runs four times,
+then the order is reversed; each process's first sample is discarded.
+All returned vectors meet the CPU residual check. Production is clean
+devel plus the same bestagm driver built with cpuOnly. Timings cover the
+complete solve call, with gauge/source setup and residual verification
+outside the timed region.
+
+| Precision | Production CPU median (range), s | GPU CPU backend median (range), s | Total iterations, CPU / GPU |
+|---|---|---|---|
+| Double | 1.832 (1.809–1.856) | 8.525 (8.389–8.649) | 1308 / 1308 |
+| Mixed | 0.964 (0.961–0.968) | 7.098 (7.075–7.127) | 1340 / 1336 |
+
+Hot-start HMC uses seed 314159265 for the parallel RNG, 271828182 for
+the serial RNG, and two trajectories of test_input.xml with its usual
+force tolerance 1e-16. On the laptop the production CPU reversal error
+reaches 2.81e-8; GPU mixed reaches 1.01e-7 at r2in=1e-6 and 1.05e-7 at
+epsilon. The largest CPU/GPU trajectory deltaH difference is 1.97e-6.
+These trajectories reject, so identical final gauge observables would
+not establish agreement of their integration. Tightening only the force
+tolerance to 1e-24 gives CPU reversal errors below 1.46e-10, GPU mixed
+below 2.92e-11, and CPU/GPU deltaH differences below 2.04e-10.
+
+The device study therefore uses an explicit 1e-6 reversal budget and
+1e-5 CPU/GPU deltaH budget for this normal-tolerance hot fixture, then
+requires 1e-8 for both at force tolerance 1e-24. Initial Hamiltonians
+must agree within 1e-8. These budgets are configurable and their values
+are saved beside each result. The cold suite retains its existing limits.
+Force RMS and variance agree at their printed precision when all forces
+are sampled. Printed force Inf is unsuitable for a CPU/GPU comparison
+across thread counts: the current CPU implementation sums thread maxima.
+
+The study runner `solver_study.py` preserves commands, statuses, logs and
+benchmark samples. Its scripts and local archives are stored outside the
+repository at `/private/tmp/qex-gpu-20261001/gpu-study`.
+The Sunspot study uses isolated source/build directories under
+`~/W/qex_solver_fix_20261001`, with the existing OpenMP/SYCL presets,
+allocation Catalyst and queue workq.  Its manifest records source hashes
+for the original implementation, the cache repair alone, the complete
+repair and clean devel CPU reference.
+
+## PVC results, October 1–2, 2026
+
+Sunspot jobs 12480027, 12480031 and 12480034 completed with exit status 0
+in workq under Catalyst. The user's existing checkout and build directories
+were preserved; the study is in `/home/xyjin/W/qex_solver_fix_20261001`.
+Builds used Nim 2.3.1 at e754af20, Intel oneAPI 2026.1.0.20260617,
+MPICH 5.0.0.aurora_test.87e2045, VLEN=8, `-O3 -march=native`, assertions,
+and the existing PVC OpenMP/SYCL presets. Runtime uses eight host threads
+per rank, the site's GPU tile mapping wrapper, and mandatory OpenMP
+offload. Python 3.12.12 runs the test scripts.
+
+Both backends passed the following, with fixed and atomic reductions
+where the solver test selects them:
+
+- One, two and four ranks on one node: link consistency, repeated link
+  updates, halo primitives, gauge forces, zero-source CPU solves, raw
+  single precision CG, full-M/EE solves, heterogeneous batches and slot
+  reuse, iteration limits, double/mixed HMC, and the complete
+  eightFlavorSMG checkpoint/configuration suite.
+- Two ranks on separate nodes: the same link, halo, gauge and solver
+  checks, including forced cache/split modes and IPC disabled.
+- Hot-start mixed HMC at normal and tight force tolerances, compared with
+  clean devel CPU on the same rank count and initial state.
+
+There are 50 completed check commands plus eight off-node commands per
+backend, containing 7,998 printed solver comparisons per backend. The
+largest logged CPU-reference M residual is at the requested target to
+the printed precision. The largest A-reference ratio is 1.037, the
+14-real OpenMP case discussed above; the solver's own residual satisfies
+the strict request. The maximum hot-start GPU reversal error is 4.51e-7
+at force tolerance 1e-16, with CPU/GPU deltaH differences at most 2.01e-6.
+At force tolerance 1e-24 those maxima are 2.92e-11 and 3.21e-10.
+
+### Complete-solve costs
+
+The main matrix uses 24^4, masses 0.05/0.06/0.07 for three systems,
+14-real links, automatic cache selection, fixed sums, full or even-only
+sources, one or three systems, one/two/four ranks, and inner tolerances
+1e-6 and epsilon. Every run requests r2req=1e-16 and independently checks
+every returned vector with the original CPU operator at 1.01*r2req.
+There are 144 benchmark commands per backend, each with four solves;
+the first is discarded. Original/cache/fixed order is reversed for the
+second cycle, giving six retained samples per comparison.
+
+The table gives full-M, three-system medians at the default inner
+tolerance, in milliseconds. Parentheses give the range of six samples
+for the original and repaired versions.
+
+| Backend | Ranks / tiles | Original | Cache repair only | Complete repair |
+|---|---:|---:|---:|---:|
+| OpenMP | 1 | 199.94 (192.74–204.77) | 198.04 | 194.60 (187.16–199.43) |
+| OpenMP | 2 | 129.31 (128.78–129.51) | 130.17 | 128.19 (127.90–128.96) |
+| OpenMP | 4 | 139.66 (139.52–140.26) | 138.69 | 136.22 (135.98–136.57) |
+| SYCL | 1 | 202.13 (187.51–204.63) | 193.87 | 190.18 (174.99–192.61) |
+| SYCL | 2 | 121.66 (121.38–122.45) | 121.51 | 120.43 (119.74–120.74) |
+| SYCL | 4 | 131.67 (131.56–131.90) | 131.74 | 129.81 (129.67–130.02) |
+
+Across all main cases the repaired/original median-time ratio ranges
+from 0.973 to 0.997 for OpenMP and 0.941 to 1.004 for SYCL. These are
+modest changes with overlapping ranges in several cases, especially at
+one tile. Four tiles do not improve this lattice over two tiles.
+
+The representative full-M batch changes from 1,371 to 1,340 total inner
+iterations. At four ranks it changes stencil calls from 1,110 to 1,074
+and reduction calls from 557 to 548, while FP64 stencil sites per rank
+increase from 1,492,992 to 1,990,656. The final CPU squared residual is
+about 4.89e-17 originally and 9.88e-17 after repair. Both meet the same
+request; some savings come from avoiding unnecessary extra accuracy.
+These counters describe stencil calls/sites and global-reduction calls,
+not all device kernels or measured halo bytes.
+
+The clean production CPU reference, one rank with eight host threads,
+takes 7.15–7.20 seconds in double and 2.79–2.80 seconds in mixed precision
+for the same full-M batch. These are complete API calls; GPU gauge/source
+setup and output validation are outside the timed region, while setup
+performed inside the production CPU solve is included.
+
+### Light-mass sensitivity remains measurable
+
+A separate 4^3 x 8 study at mass 0.001, 12 reals and forced separate
+caches uses the same accuracy gate and six retained samples. Correcting
+the link representation changes FP32 convergence and can increase cost.
+For the three-system even-source batch:
+
+| Backend | Inner r2 | Original, ms | Cache repair only, ms | Complete repair, ms |
+|---|---:|---:|---:|---:|
+| OpenMP | 1e-6 | 243.62 | 264.60 | 258.55 |
+| OpenMP | epsilon | 219.23 | 303.39 | 297.04 |
+| SYCL | 1e-6 | 179.91 | 210.73 | 216.92 |
+| SYCL | epsilon | 191.59 | 221.14 | 212.83 |
+
+The cache-only control reproduces the slowdown. In the OpenMP epsilon
+case, total iterations rise from 11,801 to 13,446 after the complete
+repair, and stencil calls from 7,909 to 11,205. The larger increase in
+calls reflects unequal progress among batch slots. Final CPU accuracy
+passes throughout. The adjoint repair is a correctness improvement; it
+does not guarantee fewer iterations for every source and tolerance.
+
+An additional study of the repaired code on that same batch compares
+inner tolerances 1e-4, 1e-5, 1e-6 and epsilon with 12 and 18 reals.
+At 1e-6, changing to 18 reals reduces OpenMP time from 254.10 to 209.58 ms
+and SYCL from 210.74 to 175.37 ms, about 17% on each backend. These
+numbers come from the same tuning job; their small difference from the
+preceding table illustrates timing variation. Looser inner targets do
+not improve this case. The measured policy is to retain the 1e-6 default
+and use the existing storage/tolerance controls to study sensitive
+workloads. The default compression mode has not been changed from this
+single case.
+
+### Evidence and limitations
+
+The source/configuration manifests, job statuses, scripts, timing samples,
+work counters and compressed logs are in
+`/private/tmp/qex-gpu-20261001/gpu-study/results/sunspot-20261001`.
+Regenerate the summary with:
+
+```
+python3 /private/tmp/qex-gpu-20261001/gpu-study/summarize_study.py \
+  /private/tmp/qex-gpu-20261001/gpu-study/results/sunspot-20261001
+```
+
+The laptop archive includes the original
+compression control and deliberately unattainable-tolerance runs:
+scalar double/mixed and a mixed four-system batch stop on stagnation
+well before 100,000 iterations, report residuals near 6e-30, and reject
+the requested 1e-40 benchmark accuracy.
+
+The record preserves superseded attempts: an inherited 208-thread
+runtime setting, Python 3.6 incompatibilities in the scripts, and the
+overly strict 14-real reference comparison. They are excluded from
+accepted timing samples. Performance evidence covers the stated M
+workloads and PVC backends; HMC results establish the tested numerical
+behavior without isolating old/new HMC performance. CUDA and HIP were
+not exercised in this study.
