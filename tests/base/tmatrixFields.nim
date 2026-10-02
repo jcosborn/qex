@@ -232,7 +232,8 @@ suite "complex scalar matrix scaling":
     check abs(di-nr)<1e-14*(1+nr)
     threads:
       let n=v.norm2
-      threadSingle: dr=n
+      #threadSingle: dr=n
+      dr = n  # workaround for gcc called through nvcc
     check abs(dr-nr)<1e-14*(1+nr)
 
 qexFinalize()

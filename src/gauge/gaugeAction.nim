@@ -10,6 +10,11 @@ import comms/halo
 import std/[tables, bitops]
 import base/alignedMem
 
+func firstSetBit*(x: SomeInteger): int {.inline.} =  # bitops doesn't handle x==0 correctly
+  result = 0
+  if x != 0:
+    result = bitops.firstSetBit(x)
+
 type
   GaugeActionCoeffs* = object
     plaq*: float
