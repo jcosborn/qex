@@ -140,6 +140,25 @@ residual in double.  solveM does this refinement on M directly, which
 avoids spending inner iterations refining A at its rounding floor before
 checking the full equation.
 
+The CG programs bestagcg, bestagm and bestagres also accept `-recon64:1`.
+For compressed FP32 links, this evaluates the cross product and the sign
+or determinant factor in FP64, rounds the reconstructed row to FP32,
+and applies the matrix to the vector in FP32. The default is zero.
+`newStagGpu(..., recon64 = true)` selects the same mode through the API.
+Storage stays at 12 or 14 FP32 reals per link. FP64 operators and 18-real
+links use their usual kernels. The host selects the kernel specialization;
+scalar and batched hops use the same reconstruction for local and halo
+links. Batched hops share each reconstructed matrix across their RHS.
+The optional work counters classify stencils by field precision, so this
+mode still contributes to the FP32 site count.
+
+For example, compare `-recon64:0` and `-recon64:1` with the same arguments:
+
+```
+bin/bestagcg -mixed:1 -reals:12 -recon64:1 -r2in:1e-6
+bin/bestagm -mixed:1 -reals:14 -recon64:1 -nb:3 -r2in:1e-6
+```
+
 ## Configuration examples
 
 As in [INSTALL.md](../INSTALL.md#configuration-examples), `<configure>` is
@@ -349,6 +368,9 @@ gfx942 is both MI300X and MI300A.
   cache entries before the check to expose representation errors.
 - tests/base/tstagzero: CPU zero-source solutions and finite statistics,
   including warm starts and multiple masses.
+- tests/base/tstagrecon: FP64 reconstruction of FP32 links against an
+  independent complex-arithmetic reference with 18-real storage; exercises
+  both cache modes, mode changes and the unchanged FP64/18-real paths.
 - backend/examples/bernt: the times of the rngGpu draw kernels, with 32-,
   64- and 128-bit generator loads.
 - examples/staghmcgpu_sh: staghmc_sh on the GPU; `tests/extra/tstaghmc_sh/run`
@@ -900,3 +922,121 @@ accepted timing samples. Performance evidence covers the stated M
 workloads and PVC backends; HMC results establish the tested numerical
 behavior without isolating old/new HMC performance. CUDA and HIP were
 not exercised in this study.
+
+## FP64 reconstruction experiment, October 2, 2026
+
+The optional reconstruction precision was checked with tstagrecon on the
+laptop using one and six host threads. The point-source outputs exactly
+match the independent host reconstruction rounded to FP32, for 12 and
+14 reals with either cache mode. The test includes a nontrivial U(3)
+phase for 14 reals. Changing the option affects the compressed FP32
+operator; the 18-real and FP64 outputs are unchanged. The bestagres
+checks also pass with FP64 reconstruction in both cache modes, including
+raw scalar/batched FP32 CG and complete mixed solves.
+
+On the original 4^3 x 8, mass 0.001 fixture, the raw inner CG on the CPU
+backend gives the following results at the FP32 epsilon stopping target.
+The last column recomputes the residual with the CPU operator containing
+all 18 reals per link rounded to FP32, applied in FP64. It is a common
+reference for the three representations.
+
+| Storage / reconstruction | Iterations | Recursive r2/b2 | CPU rounded-link r2/b2 |
+|---|---:|---:|---:|
+| 12 FP32 / FP32 | 1321 | 1.149e-7 | 4.557e-4 |
+| 12 FP32 / FP64 | 1316 | 1.053e-7 | 4.924e-4 |
+| 18 FP32 | 1322 | 1.114e-7 | 5.536e-4 |
+
+The distinct sources in bestagres show that the iteration effect can
+have either sign: at the same epsilon target, the mass 0.001 source
+changes from 1934 to 2169 iterations, while mass 0.0012 changes from
+2209 to 1313. FP64 reconstruction reduces arithmetic error in the
+reconstructed row, but cannot recover information lost when storing the
+first two rows in FP32. Fewer iterations or a smaller row error do not
+by themselves establish a more accurate or faster complete solve.
+
+On Sunspot PVC, job 12480059 in workq with allocation Catalyst built
+OpenMP and SYCL on two compute nodes. The source snapshot starts at
+a8969b7f with the reconstruction option added. Builds use the previous
+study's VLEN 8 configurations, oneAPI 2026.1.0, assertions and work
+counters. Runs use eight host threads and one MPI rank per GPU tile;
+OpenMP target offload is mandatory.
+
+The same raw probe at the epsilon target is more expensive with FP64
+reconstruction on both PVC backends. All recursive residuals meet that
+target. The CPU residual columns use the common rounded-link reference
+described above:
+
+| Backend | 12 / FP32 iterations | 12 / FP64 iterations | 18 iterations | CPU r2/b2, 12 / FP32 | CPU r2/b2, 12 / FP64 |
+|---|---:|---:|---:|---:|---:|
+| OpenMP | 1314 | 2114 | 1315 | 4.979e-4 | 1.147e-3 |
+| SYCL | 1314 | 2457 | 1319 | 5.419e-4 | 1.129e-3 |
+
+At the default inner target of 1e-6, the corresponding counts are 1310,
+1311 and 1310 on each backend. The cross product's arithmetic accuracy
+alone therefore does not predict the FP32 CG's convergence near its
+stopping threshold.
+
+Both PVC backends pass tstagrecon on one, two and four ranks on one node,
+and on two ranks across nodes. Both also pass the bestagres checks with
+12, 14 and 18 reals, both cache modes, split and unsplit hops, fixed and
+atomic reductions, peer IPC and MPI fallback. The inter-node CG case and
+bestagcg with `-mixed:1 -recon64:1` pass as well. These checks include the
+raw FP32 scalar/batched results and independent CPU checks of the final
+mixed solutions.
+
+The complete-solve comparison uses bestagm with seed 987654321, fixed
+sums, r2req = 1e-16 and one or three systems on one or two tiles. Small
+cases use 4^3 x 8, mass 0.001, 12 reals, forced separate caches and even
+or full sources; larger cases use 24^4, mass 0.05, 12 or 14 reals, automatic
+cache selection and full sources. Light cases test inner targets 1e-6 and
+epsilon; larger cases use 1e-6. Batch masses are m, 1.2m and 1.4m. Each
+configuration runs four solves, drops the first, then repeats in reverse
+variant order, retaining six samples. Gauge and
+source upload and independent CPU residual evaluation are outside the
+timed solve. Every returned solution must pass the same CPU squared
+residual limit of 1.01e-16.
+
+For one tile and three systems, with inner target 1e-6, median milliseconds
+and total inner iterations in parentheses are:
+
+| Backend | Case | FP32 reconstruction | FP64 reconstruction | 18-real control |
+|---|---|---:|---:|---:|
+| OpenMP | Light, even source, 12 reals | 255.56 (12702) | 218.89 (11787) | 210.39 (11786) |
+| OpenMP | Light, full source, 12 reals | 267.63 (14086) | 282.89 (14241) | 304.18 (14963) |
+| OpenMP | 24^4, 12 reals | 207.83 (1340) | 218.32 (1340) | 209.85 (1340) |
+| OpenMP | 24^4, 14 reals | 197.18 (1340) | 212.74 (1340) | 210.30 (1340) |
+| SYCL | Light, even source, 12 reals | 210.83 (12789) | 188.31 (11789) | 175.30 (11776) |
+| SYCL | Light, full source, 12 reals | 234.89 (14501) | 255.72 (14725) | 247.83 (14971) |
+| SYCL | 24^4, 12 reals | 198.81 (1340) | 209.18 (1340) | 198.13 (1340) |
+| SYCL | 24^4, 14 reals | 190.51 (1340) | 204.45 (1339) | 197.74 (1340) |
+
+The light even-source batch improves by 14.3% on OpenMP and 10.7% on SYCL.
+Its full-source counterpart slows by 5.7% and 8.9%. Across the eight
+larger-lattice configurations per backend, the median time increases by
+3.7-12.6% on OpenMP and 3.2-13.0% on SYCL. Their iteration counts are
+unchanged on OpenMP and differ by at most one on SYCL. The epsilon target
+can increase complete-solve time too: the one-system even-source OpenMP
+case changes from 176.68 to 211.45 ms. The option therefore stays off by
+default.
+
+The short control against the previous executable initially gives a 4.2%
+SYCL timing difference with the option disabled, while successive samples
+are still settling. Job 12480060 repeats that control with 12 solves per
+invocation, discards the first four, and retains 16 samples per executable
+in old/new/new/old order. Old/new medians are 199.96/200.51 ms for OpenMP
+and 191.90/192.28 ms for SYCL, differences of 0.27% and 0.20%, with
+overlapping ranges. Both executables take 1340 iterations and return
+identical CPU residuals on each backend. This control uses the one-tile,
+three-system 24^4 case with 14 reals and full sources.
+
+All 336 commands in the main PVC study complete successfully. Each timing
+configuration repeats its iteration count across the six retained samples.
+The largest CPU squared residual in these benchmarks is 9.9831e-17.
+Scripts, source hashes, configurations, logs and all timings are stored outside the tree
+in `/private/tmp/qex-recon64-20261002`, with the remote study in
+`/home/xyjin/W/qex_recon64_20261002`. Regenerate the main timing summary with:
+
+```
+python3 /private/tmp/qex-recon64-20261002/summarize.py \
+  /private/tmp/qex-recon64-20261002/pvc/logs
+```

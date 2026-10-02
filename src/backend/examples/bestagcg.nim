@@ -3,6 +3,7 @@
 ##   -mass -r2req -maxits; -ncpu, -ngpu: number of CPU and GPU solves
 ##   -mixed:1 also the mixed precision solve, -r2in its restart tolerance
 ##   -recon:0 links of 18 reals, -reals:14 rows 0, 1 and the determinant; -fwd: 1 forward links only, 0 both, -1 by size
+##   -recon64:1 reconstructs compressed FP32 links with FP64 intermediates
 ##   -ipc:0 MPI for peers on the node too; -split: second hop split, 1, 0, -1 off-node
 ##   -fixed:1 the CG dot products summed in a fixed order (sumFixed), else atomically
 ##   -nd:n times n applications of A on the CPU and the GPU; -prof:1 profile
@@ -66,6 +67,7 @@ haloIpc = intParam("ipc", 1) != 0
 hopSplit = intParam("split", -1)
 let reals = intParam("reals", if intParam("recon", 1) != 0: 12 else: 18)
 let fwd = intParam("fwd", -1)
+let r64 = intParam("recon64", 0) != 0
 let fixed = intParam("fixed", 0) != 0
 var sg = newStagGpu(g, float64, reals, fwd)
 sg.fixed = fixed
@@ -136,8 +138,9 @@ if nd > 0:  # A = 4m^2 - D_eo D_oe applications, flops as stagD2xx
   for q in [x, r, t]: gpuFree(q)
 
 if intParam("mixed", 0) != 0:
-  var sgs = newStagGpu(g, float32, reals, fwd)
+  var sgs = newStagGpu(g, float32, reals, fwd, recon64 = r64)
   sgs.fixed = fixed
+  echo "FP32 recon64: ", r64
   for k in 0..<ngpu:
     var spg = initSolverParams()
     spg.r2req = r2req
