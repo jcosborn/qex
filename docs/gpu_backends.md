@@ -159,6 +159,81 @@ bin/bestagcg -mixed:1 -reals:12 -recon64:1 -r2in:1e-6
 bin/bestagm -mixed:1 -reals:14 -recon64:1 -nb:3 -r2in:1e-6
 ```
 
+The CPU production solver and GPU backend also have an optional conventional
+mixed CG with reliable residual updates. The following controls can be set
+independently for each backend. CPU controls are initialized in SolverParams;
+GPU controls are stored in the FP32 StagGpu object's `ctrl` record.
+
+| CPU argument | GPU argument | Meaning |
+|---|---|---|
+| `-cpuCg` | `-gpuCg` | CPU: -1 automatic, 0 CG corrections, 1 reliable CG; GPU: 0 one-reduction CG, 1 reliable CG, 2 widened correction accumulation |
+| `-cpuDelta` | `-gpuDelta` | Reliable-update factor in the residual norm; 0 disables the norm trigger |
+| `-cpuPeriod` | `-gpuPeriod` | Maximum iterations between precise residual checks, default 1000; 0 uses only the norm trigger |
+| `-cpuAcc64` | `-gpuAcc64` | Partial-solution precision: 1 uses FP64, 0 uses FP32; reliable CG also widens fused direction arithmetic when 1 |
+| `-cpuBeta` | `-gpuBeta` | 1 uses the modified residual-difference numerator for beta; 0 uses the residual norm squared |
+| `-cpuKeep` | `-gpuKeep` | Retain and reorthogonalize the search direction at reliable updates |
+| `-cpuMaxInc` | `-gpuMaxInc` | Allowed consecutive non-improving reliable residuals |
+| `-cpuMaxTotal` | `-gpuMaxTotal` | Allowed total non-improving reliable residuals |
+| `-cpuR2in` | `-r2in` | Minimum relative squared target for an inner correction |
+
+The reliable solver applies A to the search direction and periodically
+recomputes b-Ax with the precise operator. A candidate convergence always
+triggers a precise check. The partial solution is accumulated into the
+precise total before replacing the residual; direction retention projects
+the old direction orthogonal to the new residual before continuing CG.
+The modified beta uses Re(r_new^+ (r_new-r_old))/|r_old|^2, with the usual
+norm numerator if it is negative. Dot-product reductions use FP64.
+
+The CPU default is `cpuCg=-1`, `cpuAcc64=0`, `cpuBeta=0`, `cpuDelta=0.01`,
+`cpuPeriod=1000` and `cpuKeep=1`. These choices apply when mixed precision
+is enabled (`sloppySolve=1` in production CPU programs, `mixed=1` in
+bestagm). Automatic selection follows the reconstruction
+choice: solveReconL uses reliable CG, while solveReconR and standalone
+solveEE/solveOO use CG corrections. The choice is made
+from the current source's parity norms, using the same criterion as the
+reconstruction. `cpuCg=0` selects CG corrections.
+
+The GPU numerical defaults are `gpuCg=0`, `r2in=1e-6`, `reconFma=0`
+and `recon64=0`. For the optional conventional mode, the controls default
+to `gpuDelta=0.1`, `gpuPeriod=1000`, `gpuAcc64=1`, `gpuBeta=1` and
+`gpuKeep=1`. The CPU inner floor defaults to `cpuR2in=0`; both backends
+allow one consecutive and ten total non-improving precise residuals
+before ending a reliable correction. The complete equation's residual
+and total iteration budget still decide whether the solve succeeds.
+
+GPU mode 2 uses the one-reduction recurrence, coupled halo updates and
+system queue.
+With `gpuAcc64=1`, it accumulates each correction in FP64, using the FP64
+alpha coefficient for that accumulation. The residual, direction and
+cached A-direction recurrence use their existing FP32 arithmetic. It
+uses outer corrections with one global reduction per inner iteration.
+`gpuDelta`, `gpuPeriod`, `gpuBeta`, `gpuKeep` and the residual-increase
+limits select behavior in GPU mode 1.
+
+`delta` acts on the norm: 0.1 represents a tenfold reduction during
+monotonic convergence. The `r2in` controls act on squared norms. The
+ordinary CG corrections clamp an inner target to FP32 epsilon. Conventional
+mixed CG can check a smaller target with reliable updates, so an inner
+floor of zero permits the requested target. GPU reliable solveEE solves
+directly to its final A target; its update interval is controlled by
+`gpuDelta` and `gpuPeriod`. In solveM, `r2in` selects the accuracy of each even-system
+correction, and the full b-Mx residual still decides convergence.
+The period bound ensures that a stalled recursive residual still reaches
+the precise residual's progress checks. Disable both `Delta` and `Period`
+to check the precise residual only at candidate convergence (and, on the
+GPU, the iteration limit).
+
+Conventional GPU CG shares links and halo exchanges within groups of up
+to nBatch systems. Each slot has its own reliable-update history and
+iteration budget. Groups finish before taking the next group; the
+one-reduction solver replaces individual completed systems in its queue.
+
+`-reconFma:1` uses explicit FP32 fused operations for the cross product. The phase multiplication
+of a 14-real link also uses FP32 fused operations. Both link orientations
+and halo paths use the same reconstructed matrix. `recon64` takes
+precedence when both reconstruction options are enabled. The HMC GPU
+programs expose both reconstruction options as well.
+
 ## Configuration examples
 
 As in [INSTALL.md](../INSTALL.md#configuration-examples), `<configure>` is
