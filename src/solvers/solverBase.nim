@@ -43,8 +43,8 @@ template `finalIterations=`*(sp: var SolverParams, x: int): untyped =
 
 proc cgControl*(prefix: string): CgControl =
   let cpu = prefix=="cpu"
-  result.kind = intParam(prefix & "Cg", 0)
-  result.delta = floatParam(prefix & "Delta", 0.1)
+  result.kind = intParam(prefix & "Cg", if cpu: -1 else: 0)
+  result.delta = floatParam(prefix & "Delta", if cpu: 0.01 else: 0.1)
   result.acc64 = intParam(prefix & "Acc64", if cpu: 0 else: 1) != 0
   result.beta = intParam(prefix & "Beta", if cpu: 0 else: 1) != 0
   result.keep = intParam(prefix & "Keep", 1) != 0

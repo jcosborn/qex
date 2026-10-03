@@ -54,7 +54,7 @@ suite "mixed staggered CG":
         if mode==6:
           sp.cg.acc64 = false
           sp.cg.beta = false
-          sp.cg.delta = 0.1
+          sp.cg.delta = 0.01
         let m = if par=="odd": -0.05 else: 0.05
         s.solve(x,b,m,sp)
         let rr = residual(m)
