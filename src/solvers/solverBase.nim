@@ -7,12 +7,21 @@ type
     sbQex, sbQuda, sbGrid
   SloppyType* = enum
     SloppyNone, SloppySingle, SloppyHalf
+  CgControl* = object
+    kind*: int  # -1 automatic; 0 existing, 1 conventional mixed
+    floor*: float  # factor for the outer-precision residual norm error; 0 disables
+    delta*: float  # reliable update factor in the residual norm; 0 disables the norm trigger
+    acc64*, beta*, keep*: bool
+    maxInc*, maxTotal*: int
+    period*: int  # maximum iterations between precise residual updates; 0 uses only delta
   SolverParams* = object
     # inputs
     r2req*: float
     maxits*: int
     backend*: SolverBackend
     sloppySolve*: SloppyType
+    cg*: CgControl
+    r2in*: float  # minimum relative squared target of a CPU inner correction
     usePrevSoln*: bool
     verbosity*: int
     subset*: Subset
@@ -21,6 +30,7 @@ type
     calls*: int
     iterations*: int
     iterationsMax*: int
+    reliable*: int
     seconds*: float
     flops*: float
     #r2sum*: float
@@ -32,6 +42,22 @@ template finalIterations*(sp: SolverParams): untyped = sp.iterations
 template `finalIterations=`*(sp: var SolverParams, x: int): untyped =
   sp.iterations = x
 
+proc cgControl*(): CgControl =
+  result.kind = intParam("cpuCg", -1)
+  result.delta = floatParam("cpuDelta", 0.01)
+  result.floor = floatParam("cpuFloor", 1.0)
+  result.acc64 = intParam("cpuAcc64", 0) != 0
+  result.beta = intParam("cpuBeta", 0) != 0
+  result.keep = intParam("cpuKeep", 1) != 0
+  result.maxInc = intParam("cpuMaxInc", 1)
+  result.maxTotal = intParam("cpuMaxTotal", 10)
+  result.period = intParam("cpuPeriod", 1000)
+  doAssert result.kind >= -1 and result.kind <= 1
+  doAssert result.delta >= 0.0 and result.delta < 1.0
+  doAssert result.floor >= 0.0
+  doAssert result.maxInc >= 0 and result.maxTotal >= 0
+  doAssert result.period >= 0
+
 proc init*(x: var RunningStat, y: SomeNumber) =
   x.clear()
   x.push y
@@ -40,6 +66,7 @@ proc resetStats*(sp: var SolverParams) =
   sp.calls = 0
   sp.iterations = 0
   sp.iterationsMax = 0
+  sp.reliable = 0
   sp.seconds = 0.0
   sp.flops = 0.0
   #sp.r2sum = 0.0
@@ -53,6 +80,9 @@ proc init*(sp: var SolverParams) =
   if defined(qudaDir): sp.backend = sbQuda
   if defined(gridDir): sp.backend = sbGrid
   sp.sloppySolve = intParam("sloppySolve", 0).SloppyType
+  sp.cg = cgControl()
+  sp.r2in = floatParam("cpuR2in", 0.0)
+  doAssert sp.r2in >= 0.0 and sp.r2in < 1.0
   sp.usePrevSoln = false
   sp.verbosity = 1
   sp.subsetName = "all"
@@ -66,6 +96,7 @@ proc copyStats*(sp0: var SolverParams, sp1: SolverParams) =
   sp0.calls = sp1.calls
   sp0.iterations = sp1.iterations
   sp0.iterationsMax = sp1.iterationsMax
+  sp0.reliable = sp1.reliable
   sp0.seconds = sp1.seconds
   sp0.flops = sp1.flops
   #sp0.r2sum = sp1.r2sum
@@ -76,6 +107,7 @@ proc addStats*(sp0: var SolverParams, sp1: SolverParams) =
   sp0.calls += sp1.calls
   sp0.iterations += sp1.iterations
   sp0.iterationsMax = max(sp0.iterationsMax, sp1.iterationsMax)
+  sp0.reliable += sp1.reliable
   sp0.seconds += sp1.seconds
   sp0.flops += sp1.flops
   #sp0.r2sum += sp1.r2sum
