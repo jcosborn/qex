@@ -118,13 +118,26 @@ proc solveXXMixed(s: Staggered; x,b: Field; m: SomeNumber; sp: var SolverParams;
       var r2 = b2
       var r0 = sqrt(r2)
       var rmax = r0
+      let bn = r0
+      let eps = ctl.floor * float(epsilon(numberType(y[0])))
+      var an = 0.0
+      var floor = eps*bn
       var k, nr, ni, nt, last = 0
       while k < lim and r2 > stop:
         apply(ap,p,ss)
         var pa: evalType(norm2(toDouble(p[0])))
         for i in p[par]: pa += redot(toDouble(p[i]),toDouble(ap[i]))
         var pap = simdSum(pa)
-        x.l.threadRankSum(pap)
+        if k == 0 and eps > 0.0:
+          var aa: evalType(norm2(toDouble(ap[0])))
+          for i in ap[par]: inorm2(aa,toDouble(ap[i]))
+          var sums = [pap,simdSum(aa)]
+          x.l.threadRankSum(sums)
+          pap = sums[0]
+          an = sqrt(sums[1]/b2)  # Estimate ||A|| from the initial direction.
+        else:
+          x.l.threadRankSum(pap)
+        if pap <= 0.0: break
         let alpha = r2/pap
         let old = r2
         var rr, dr: evalType(norm2(toDouble(r[0])))
@@ -139,7 +152,9 @@ proc solveXXMixed(s: Staggered; x,b: Field; m: SomeNumber; sp: var SolverParams;
         inc k
         let norm = sqrt(r2)
         rmax = max(rmax,norm)
-        let update = r2 <= stop or ctl.delta > 0.0 and norm < ctl.delta*rmax or
+        let check = r2 <= max(stop,floor*floor) or
+          ctl.delta > 0.0 and norm < ctl.delta*r0
+        let update = check or ctl.delta > 0.0 and norm < ctl.delta*rmax or
           ctl.period > 0 and k-last >= ctl.period
         var beta = (if ctl.beta and dots[1] >= 0.0: dots[1] else: r2)/old
         if update:
@@ -151,18 +166,31 @@ proc solveXXMixed(s: Staggered; x,b: Field; m: SomeNumber; sp: var SolverParams;
             y[i] += toDouble(e[i])
             e[i] := 0
           apply(ad,y,s)
-          ad[par] := b-ad
-          r2 = ad[par].norm2
+          var rr, yy: evalType(norm2(toDouble(y[0])))
+          for i in y[par]:
+            ad[i] := b[i]-ad[i]
+            inorm2(rr,toDouble(ad[i]))
+            if eps > 0.0: inorm2(yy,toDouble(y[i]))
+          var sums = [simdSum(rr),simdSum(yy)]
+          x.l.threadRankSum(sums)
+          r2 = sums[0]
+          # Residual roundoff ~ eps*(||b|| + ||A||*||y||).
+          floor = eps*(bn + an*sqrt(sums[1]))
           inc nr
           last = k
           let norm = sqrt(r2)
-          if norm >= r0:
+          # Periodic checks may see ordinary, nonmonotone CG progress.
+          # Count an increase only after the recurrence predicted a decrease.
+          if check and norm >= r0:
             inc ni
             inc nt
           else: ni = 0
           if verb > 1:
             echo "CPU reliable CG iterations: ", k, " updates: ", nr, " r2/b2: ", r2/b2
-          if r2 <= stop or ni > ctl.maxInc or nt > ctl.maxTotal: break
+          # An inner correction need not resolve below its arithmetic accuracy;
+          # the caller checks the complete equation and refines its residual.
+          if r2 <= stop or (r2 < b2 and norm <= floor) or
+              ni > ctl.maxInc or nt > ctl.maxTotal: break
           r[par] := ad
           if ctl.keep:
             var pr: evalType(dot(toDouble(r[0]),toDouble(p[0])))
@@ -479,7 +507,6 @@ proc solveXX*(
   # looooooooooooooooooooo/ <- this was input from my cat, Gojira... insightful - Curtis
   tic("solveXX")
   let par = if parEven: "even" else: "odd"
-  var r2Prev = 0.0
   var b2, r2, r2Stop = 0.0
   var sp = sp0
   var rho = newOneOf(x)
@@ -503,26 +530,40 @@ proc solveXX*(
   if sp0.backend == sbQex and sp0.sloppySolve != SloppyNone:
     discard s.stagSingle(init = true)
 
-  while r2 > r2Stop and (r2Prev == 0.0 or r2 < r2Prev):
-    (r2Prev, sp.maxits) = (r2, sp0.maxits - sp.iterations)
+  while r2 > r2Stop:
+    sp.maxits = sp0.maxits - sp.iterations
     if sp.maxits <= 0: break
     sp.r2req = r2Stop / r2
 
     s.solveXXInternal(y, rho, m, sp, parEven = parEven)
 
+    var next = 0.0
     threads:
-      r[par] += y
+      y[par] += r
       threadBarrier()
-      if parEven: stagD2ee(s.se, s.so, rho, s.g, r, m*m)
-      else: stagD2oo(s.se, s.so, rho, s.g, r, m*m)
+      if parEven: stagD2ee(s.se, s.so, rho, s.g, y, m*m)
+      else: stagD2oo(s.se, s.so, rho, s.g, y, m*m)
       threadBarrier()
       rho[par] := x - rho
       threadBarrier()
       let r2t = rho[par].norm2()
-      threadMaster: r2 = r2t
-    
+      threadMaster: next = r2t
+
+    if next >= r2 and next > r2Stop:
+      if sp.backend != sbQex or sp.sloppySolve == SloppyNone: break
+      # Keep the accepted solution and recompute its residual before retrying.
+      sp.sloppySolve = SloppyNone
+      if sp.verbosity > 0: echo "solveXX: mixed correction stalled; retrying in outer precision"
+      threads:
+        if parEven: stagD2ee(s.se, s.so, rho, s.g, r, m*m)
+        else: stagD2oo(s.se, s.so, rho, s.g, r, m*m)
+        threadBarrier()
+        rho[par] := x-rho
+    else:
+      threads: r[par] := y
+      r2 = next
     if sp.verbosity > 0: echo "solveXX r2/b2: ", r2/b2
-  
+
   if sp0.backend == sbQex and sp0.sloppySolve != SloppyNone:
     discard s.stagSingle(free = true)
 
@@ -629,31 +670,34 @@ proc solve*(s:Staggered; x,b:Field; m:SomeNumber; sp0: var SolverParams) =
   while r2 > r2stop:
     sp.maxits = sp0.maxits - sp.iterations
     if sp.maxits <= 0: break
-    sp.r2req = r2stop / r2;
-
-    #if sp0.sloppySolve != SloppyNone:
-    #  threads:
-    #    rs := r
-    #  solveInner(ss, ys, rs, m, sp, r2e, r2o)
-    #  threads:
-    #    y := ys
-    #else:
+    sp.r2req = r2stop / r2
     solveInner(s, y, r, m, sp, r2e, r2o)
 
+    var ne, no = 0.0
     threads:
-      x += y
+      y += x
       threadBarrier()
-      s.D(r, x, m)
+      s.D(r, y, m)
       threadBarrier()
       r := b - r
       threadBarrier()
-      let
-        r2et = r.even.norm2
-        r2ot = r.odd.norm2
+      let re = r.even.norm2
+      let ro = r.odd.norm2
       threadMaster:
-        r2e = r2et
-        r2o = r2ot
-    r2 = r2e + r2o
+        ne = re
+        no = ro
+    let next = ne + no
+    if next >= r2 and next > r2stop:
+      if sp.backend != sbQex or sp.sloppySolve == SloppyNone: break
+      sp.sloppySolve = SloppyNone
+      if sp.verbosity > 0: echo "stagSolve: mixed correction stalled; retrying in outer precision"
+      threads:
+        s.D(r, x, m)
+        threadBarrier()
+        r := b-r
+    else:
+      threads: x := y
+      (r2,r2e,r2o) = (next,ne,no)
     if sp.verbosity>0:
       echo "stagSolve r2/b2: ", r2/b2
 

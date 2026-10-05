@@ -99,7 +99,7 @@ suite "mixed staggered CG":
       gg.stagPhase
     var ss = newStag(gg)
     var bb,xx,rr = ll.ColorVector()
-    # Source 191 of bestagres stalled above the FP64 A-residual floor.
+    # The first reliable-CG implementation stalled above the FP64 A-residual floor.
     for i in 1..191:
       threads: bb.gaussian rg
     var sp = initSolverParams()

@@ -9,6 +9,7 @@ type
     SloppyNone, SloppySingle, SloppyHalf
   CgControl* = object
     kind*: int  # CPU -1 automatic; 0 existing, 1 conventional mixed; GPU 2 wide accumulator
+    floor*: float  # factor for the outer-precision residual norm error; 0 disables
     delta*: float  # reliable update factor in the residual norm; 0 disables the norm trigger
     acc64*, beta*, keep*: bool
     maxInc*, maxTotal*: int
@@ -41,9 +42,10 @@ template finalIterations*(sp: SolverParams): untyped = sp.iterations
 template `finalIterations=`*(sp: var SolverParams, x: int): untyped =
   sp.iterations = x
 
-proc cgControl*(prefix: string): CgControl =
+proc cgControl*(prefix = "cpu"): CgControl =
   let cpu = prefix=="cpu"
   result.kind = intParam(prefix & "Cg", if cpu: -1 else: 0)
+  result.floor = floatParam(prefix & "Floor", 1.0)
   result.delta = floatParam(prefix & "Delta", if cpu: 0.01 else: 0.1)
   result.acc64 = intParam(prefix & "Acc64", if cpu: 0 else: 1) != 0
   result.beta = intParam(prefix & "Beta", if cpu: 0 else: 1) != 0
@@ -53,6 +55,7 @@ proc cgControl*(prefix: string): CgControl =
   result.period = intParam(prefix & "Period", 1000)
   doAssert result.kind >= (if prefix=="cpu": -1 else: 0) and result.kind <= (if prefix=="cpu": 1 else: 2)
   doAssert result.delta >= 0.0 and result.delta < 1.0
+  doAssert result.floor >= 0.0
   doAssert result.maxInc >= 0 and result.maxTotal >= 0
   doAssert result.period >= 0
 
