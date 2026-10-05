@@ -31,6 +31,9 @@ threads: echo "thread ", threadNum, "/", numThreads
 
 #[ baseline setup ]#
 
+proc parseGeometry(s: string): seq[int] = 
+  if s.len == 0: @[] else: s.split('.').mapIt(parseInt(it))
+
 # read command line inputs
 letParam:
   start_config = 0 # starting configuration
@@ -43,8 +46,10 @@ letParam:
   xml = currentSourcePath.parentDir() & "/eightFlavorSMG.xml" # path to input XML
   verbosity = 0 # verbosity of information printed by HMC engine
 
-  rank_geom = newSeq[int](0) # <-+- if empty, guesses layout
-  simd_geom = newSeq[int](0) # <-+
+  rank_geom:
+    parseGeometry = "" # if empty, guesses layout
+  simd_geom:
+    parseGeometry = "" # if empty, guesses layout
 
 # read xml inputs - again, if you're using this as a reference, please, please, please
 # note that many of the choices made here are legacy and may not reflect best practices
