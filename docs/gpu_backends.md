@@ -169,6 +169,7 @@ GPU controls are stored in the FP32 StagGpu object's `ctrl` record.
 | `-cpuCg` | `-gpuCg` | CPU: -1 automatic, 0 CG corrections, 1 reliable CG; GPU: 0 one-reduction CG, 1 reliable CG, 2 widened correction accumulation |
 | `-cpuDelta` | `-gpuDelta` | Reliable-update factor in the residual norm; 0 disables the norm trigger |
 | `-cpuPeriod` | `-gpuPeriod` | Maximum iterations between precise residual checks, default 1000; 0 uses only the norm trigger |
+| `-cpuFloor` | `-gpuFloor` | Factor for the inner arithmetic error estimate; default 1, 0 disables |
 | `-cpuAcc64` | `-gpuAcc64` | Partial-solution precision: 1 uses FP64, 0 uses FP32; reliable CG also widens fused direction arithmetic when 1 |
 | `-cpuBeta` | `-gpuBeta` | 1 uses the modified residual-difference numerator for beta; 0 uses the residual norm squared |
 | `-cpuKeep` | `-gpuKeep` | Retain and reorthogonalize the search direction at reliable updates |
@@ -191,14 +192,17 @@ bestagm). Automatic selection follows the reconstruction
 choice: solveReconL uses reliable CG, while solveReconR and standalone
 solveEE/solveOO use CG corrections. The choice is made
 from the current source's parity norms, using the same criterion as the
-reconstruction. `cpuCg=0` selects CG corrections.
+reconstruction. `cpuCg=0` selects CG corrections; precise residual checks and recovery
+apply to both algorithms.
 
 The GPU numerical defaults are `gpuCg=0`, `r2in=1e-6`, `reconFma=0`
 and `recon64=0`. For the optional conventional mode, the controls default
 to `gpuDelta=0.1`, `gpuPeriod=1000`, `gpuAcc64=1`, `gpuBeta=1` and
-`gpuKeep=1`. The CPU inner floor defaults to `cpuR2in=0`; both backends
-allow one consecutive and ten total non-improving precise residuals
-before ending a reliable correction. The complete equation's residual
+`gpuKeep=1`. The defaults are `cpuFloor=1` and `gpuFloor=1`; `cpuR2in=0` leaves the
+CPU inner target unrestricted. Both allow one consecutive and ten total
+unexpected increases of the precise residual before ending a reliable
+correction. An increase counts only when the recursive residual predicted
+progress; periodic checks can observe ordinary nonmonotone CG residuals. The complete equation's residual
 and total iteration budget still decide whether the solve succeeds.
 
 GPU mode 2 uses the one-reduction recurrence, coupled halo updates and
@@ -214,10 +218,24 @@ limits select behavior in GPU mode 1.
 monotonic convergence. The `r2in` controls act on squared norms. The
 ordinary CG corrections clamp an inner target to FP32 epsilon. Conventional
 mixed CG can check a smaller target with reliable updates, so an inner
-floor of zero permits the requested target. GPU reliable solveEE solves
-directly to its final A target; its update interval is controlled by
-`gpuDelta` and `gpuPeriod`. In solveM, `r2in` selects the accuracy of each even-system
-correction, and the full b-Mx residual still decides convergence.
+floor of zero permits the requested target. In both GPU solveEE and solveM,
+`r2in` selects the accuracy of each even-system correction. `gpuFloor`
+scales the estimated outer-precision arithmetic error
+`epsilon(FP64) * (norm(source) + Anorm * norm(correction))`, with
+`Anorm = norm(A source) / norm(source)` estimated from the first sloppy
+operator application. Setting `gpuFloor=0` disables this estimate.
+Its norms share existing paired reductions. This floor ends an inner
+correction; it does not relax the requested final equation tolerance.
+
+GPU solvers evaluate trial corrections with the precise operator and accept
+only a smaller residual (or one meeting the target). Failed mixed corrections
+retry from the accepted solution in FP64 on the device. All attempts share
+the original iteration budget; exhaustion returns the best accepted solution
+and its actual residual. The batched paths recover each failing system using
+the separate scalar workspace. Full solves check both parities after odd-site
+reconstruction. Compressed links in the precise operator still define that
+operator; comparisons with uncompressed CPU links require the documented
+roundoff allowance.
 The period bound ensures that a stalled recursive residual still reaches
 the precise residual's progress checks. Disable both `Delta` and `Period`
 to check the precise residual only at candidate convergence (and, on the
