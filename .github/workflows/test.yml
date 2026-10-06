@@ -137,3 +137,210 @@ jobs:
     - name: benchLinalg
       working-directory: qex
       run: bin/benchLinalg
+
+  # GPU backends, configured as in docs/gpu_backends.md.  The runners have no
+  # GPU: these jobs build the GPU tests and small programs for H100 (sm_90),
+  # MI300 (gfx942) and Intel GPUs (SPIR-V, compiled at run time), with host code
+  # for x86-64-v4; the cpu job also runs them.  The programs that instantiate
+  # the StagGpu solvers (bestagcg, bestagm, bestagres, staghmcgpu,
+  # staghmcgpu_sh, eightFlavorSMGgpu) need more than the runners' 16 GB in Nim.
+  sycl:
+    name: gpu-SYCL-oneAPI
+    runs-on: ubuntu-26.04
+    steps:
+    - &oneapi
+      name: install oneAPI & Open MPI
+      run: |
+        curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | sudo gpg --dearmor -o /usr/share/keyrings/oneapi.gpg
+        echo "deb [signed-by=/usr/share/keyrings/oneapi.gpg] https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneapi.list
+        sudo apt-get update
+        sudo apt-get install openmpi-bin libopenmpi-dev intel-oneapi-compiler-dpcpp-cpp-2026.1
+        # the variables setvars.sh sets, for the later steps
+        env | sort > "$RUNNER_TEMP/env0"
+        . /opt/intel/oneapi/setvars.sh
+        env | sort | comm -13 "$RUNNER_TEMP/env0" - | grep -vE '^(_|SHLVL|PWD|OLDPWD)=' >> "$GITHUB_ENV"
+        icpx --version
+    - &checkout-nim
+      name: checkout Nim
+      uses: actions/checkout@v7
+      with:
+        repository: nim-lang/Nim
+        ref: version-2-2
+        path: Nim
+    - &build-nim
+      name: build Nim & nimble
+      working-directory: Nim
+      run: |
+        . ci/funs.sh
+        nimBuildCsourcesIfNeeded
+        ./bin/nim c --noNimblePath --skipUserCfg --skipParentCfg --hints:off koch
+        ./koch boot -d:release --skipUserCfg --skipParentCfg --hints:off
+        ./koch nimble --skipUserCfg --skipParentCfg --hints:off
+    - &nim-path
+      name: set path to nim
+      run: echo "${{ github.workspace }}/Nim/bin" >> $GITHUB_PATH
+    - &checkout
+      name: checkout
+      uses: actions/checkout@v7
+      with:
+        path: qex
+    - &nimble-deps
+      name: install nimble dependencies
+      working-directory: qex
+      run: nimble install -dy
+    - &qmp-qio
+      name: install qmp & qio
+      working-directory: qex
+      run: ./bootstrap-travis
+    - name: configure
+      working-directory: qex
+      run: >-
+        QMPDIR=qmp QIODIR=qio ./configure
+        cctype:clang ccdef:cpp cc:mpicc cpp:mpicxx env:OMPI_CC=icx env:OMPI_CXX=icpx
+        cflagsspeed:"-O3 -march=x86-64-v4" cppflagsspeed:"-O3 -march=x86-64-v4"
+        cppflagsalways:"-g -fsycl" ldppflags:"-g -O3 -fsycl -ldl"
+        env:OMPFLAG=-fiopenmp simd:SSE,AVX,AVX512 vlen:8 nimargs:'@["-d:Backend=SYCL"]'
+    - &build-gpu
+      name: build the GPU tests and programs
+      working-directory: qex
+      run: make jobs:2 tests/base/taccel tests/base/tgaugegpu tests/base/tstaglinks tests/base/tstagrecon bestream berng bernt
+
+  openmp:
+    name: gpu-OpenMP-oneAPI
+    runs-on: ubuntu-26.04
+    steps:
+    - *oneapi
+    - *checkout-nim
+    - *build-nim
+    - *nim-path
+    - *checkout
+    - *nimble-deps
+    - *qmp-qio
+    - name: configure
+      working-directory: qex
+      run: >-
+        QMPDIR=qmp QIODIR=qio ./configure
+        cctype:clang cc:mpicc cpp:mpicxx env:OMPI_CC=icx env:OMPI_CXX=icpx
+        cflagsspeed:"-O3 -march=x86-64-v4" cppflagsspeed:"-O3 -march=x86-64-v4"
+        ldflags:"-g -O3 -ldl" ldppflags:"-g -O3 -ldl"
+        env:"OMPFLAG=-fiopenmp -fopenmp-targets=spir64" simd:SSE,AVX,AVX512 vlen:8 nimargs:'@["-d:Backend=OpenMP"]'
+    - *build-gpu
+
+  hip:
+    name: gpu-HIP-ROCm
+    runs-on: ubuntu-26.04
+    steps:
+    - name: install ROCm & Open MPI
+      run: |
+        curl -fsSL https://stable.repo.amd.com/rocm/gpg/packages.gpg | sudo gpg --dearmor -o /usr/share/keyrings/amdrocm.gpg
+        echo "deb [arch=amd64 signed-by=/usr/share/keyrings/amdrocm.gpg] https://stable.repo.amd.com/rocm/core/packages/ubuntu2604/ stable main" | sudo tee /etc/apt/sources.list.d/amdrocm.list
+        sudo apt-get update
+        sudo apt-get install openmpi-bin libopenmpi-dev amdrocm-runtime-dev10.0
+        echo /opt/rocm/core-10.0/bin >> $GITHUB_PATH
+        /opt/rocm/core-10.0/bin/amdclang++ --version
+    - *checkout-nim
+    - *build-nim
+    - *nim-path
+    - *checkout
+    - *nimble-deps
+    - *qmp-qio
+    - name: configure
+      working-directory: qex
+      run: >-
+        QMPDIR=qmp QIODIR=qio ./configure
+        cctype:clang ccdef:cpp cc:mpicc cpp:mpicxx env:OMPI_CC=amdclang env:OMPI_CXX=amdclang++
+        cflagsspeed:"-O3 -march=x86-64-v4" cppflagsspeed:"-O3 -march=x86-64-v4"
+        cppflagsalways:"-g -x hip --offload-arch=gfx942" ldppflags:"-g -ldl --hip-link --offload-arch=gfx942"
+        env:STATIC_UNROLL=1 simd:SSE,AVX,AVX512 vlen:8 nimargs:'@["-d:Backend=HIP"]'
+    - *build-gpu
+
+  cuda-clang:
+    name: gpu-CUDA-clang
+    runs-on: ubuntu-26.04
+    steps:
+    - &cuda
+      name: install CUDA & Open MPI
+      run: |
+        curl -fsSLO https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2604/x86_64/cuda-keyring_1.1-1_all.deb
+        sudo dpkg -i cuda-keyring_1.1-1_all.deb
+        sudo apt-get update
+        sudo apt-get install openmpi-bin libopenmpi-dev cuda-nvcc-13-4
+        echo CUDA_HOME=/usr/local/cuda-13.4 >> $GITHUB_ENV
+    - name: install clang
+      run: |
+        curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
+        echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] https://apt.llvm.org/resolute/ llvm-toolchain-resolute-23 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+        sudo apt-get update
+        sudo apt-get install clang-23
+        clang++-23 --version
+    - *checkout-nim
+    - *build-nim
+    - *nim-path
+    - *checkout
+    - *nimble-deps
+    - *qmp-qio
+    - name: configure
+      working-directory: qex
+      # the stub libcuda links without the driver
+      run: >-
+        QMPDIR=qmp QIODIR=qio ./configure
+        cctype:clang ccdef:cpp cc:mpicc cpp:mpicxx env:OMPI_CC=clang-23 env:OMPI_CXX=clang++-23
+        cflagsspeed:"-O3 -march=x86-64-v4" cppflagsspeed:"-O3 -march=x86-64-v4"
+        cppflagsalways:"-g -x cuda --cuda-gpu-arch=sm_90 --cuda-path=$CUDA_HOME -Xarch_device -mllvm=-disable-machine-sink"
+        ldppflags:"-g -L$CUDA_HOME/lib64 -L$CUDA_HOME/lib64/stubs -Wl,-rpath,$CUDA_HOME/lib64 -lcudart -ldl"
+        simd:SSE,AVX,AVX512 vlen:8 nimargs:'@["-d:Backend=CUDA"]'
+    - *build-gpu
+
+  cuda-nvcc:
+    name: gpu-CUDA-nvcc
+    runs-on: ubuntu-26.04
+    steps:
+    - *cuda
+    - *checkout-nim
+    - *build-nim
+    - *nim-path
+    - *checkout
+    - *nimble-deps
+    - *qmp-qio
+    - name: configure
+      working-directory: qex
+      run: >-
+        QMPDIR=qmp QIODIR=qio ./configure
+        cctype:clang ccdef:cpp cc:mpicc cpp:"$PWD/build/nvcc.sh"
+        env:OMPI_CC=gcc env:OMPI_CXX=g++ env:QEX_HOSTCXX=g++ env:CUDA_HOME=$CUDA_HOME
+        env:CPATH=$(mpicc --showme:incdirs | tr ' ' :)
+        cflagsspeed:"-O3 -march=x86-64-v4" cppflagsspeed:"-O3 -march=x86-64-v4"
+        cppflagsalways:"-g -x cuda --cuda-gpu-arch=sm_90" ldpp:mpicxx
+        ldppflags:"-g -L$CUDA_HOME/lib64 -L$CUDA_HOME/lib64/stubs -Wl,-rpath,$CUDA_HOME/lib64 -lcudart -ldl"
+        simd:SSE,AVX,AVX512 vlen:8 nimargs:'@["-d:Backend=CUDA"]'
+    - *build-gpu
+
+  cpu:
+    name: gpu-CPU
+    runs-on: ubuntu-26.04
+    steps:
+    - name: install Open MPI
+      run: |
+        sudo apt-get update
+        sudo apt-get install openmpi-bin libopenmpi-dev
+    - *checkout-nim
+    - *build-nim
+    - *nim-path
+    - *checkout
+    - *nimble-deps
+    - *qmp-qio
+    - name: configure
+      working-directory: qex
+      run: QMPDIR=qmp QIODIR=qio ./configure
+    - *build-gpu
+    - name: run the GPU tests and programs
+      working-directory: qex
+      env:
+        OMP_NUM_THREADS: '2'
+      run: |
+        for t in taccel tgaugegpu tstaglinks tstagrecon; do
+          timeout -k 10s 20m bin/$t
+          timeout -k 10s 20m mpiexec -n 2 bin/$t
+        done
+        timeout -k 10s 20m bin/berng -lat:8,8,8,16
+        timeout -k 10s 20m mpiexec -n 2 bin/berng -lat:8,8,8,16 -rg:1,1,1,2
