@@ -64,15 +64,21 @@ When using the `make` build method the `make` command is default and can be skip
 |  debug | set debug build |
 |  run   | run executable after building |
 |  verb  | set build verbosity to N (verb:N), N in 0,1,2,3 |
-|  jobs  | compile in batches of N (jobs:N, default 1), using a separate cache for each compilation slot |
+|  jobs  | compile up to N targets at a time (jobs:N, default 1), using a separate cache for each compilation slot |
 
 For example, `make jobs:2 tests` or `nimble tests jobs:2` compiles two
-targets at a time. Each batch finishes before the next starts; a failed
-compilation stops the build after the other jobs in its batch finish.
+targets at a time. When a compilation finishes, its slot starts the next
+queued target. After a failed compilation, no new targets start; the
+build stops when the running ones finish and lists the failed commands.
 The caches are `job-0`, `job-1`, etc. inside the configured `nimcache`
 directory (or the directory passed with `--nimcache`). `make clean` removes
 these caches too. Direct `run` builds remain serial; `run tests` builds
 the suite in parallel, then runs the generated test script.
+
+Each Nim build runs as many C compilers as there are processors, so `jobs:N`
+can run up to N times that many. The Nim option `--parallelBuild:M` limits
+each build to M, e.g. `make jobs:8 :--parallelBuild:4 tests` runs at most
+32 C compilers at once.
 
 
 ### Nim options
