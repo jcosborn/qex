@@ -176,18 +176,42 @@ proc findSrc(g: string): tuple[files:seq[string],dirs:seq[string]] =
   result = (files: fs.mapIt("." / it.relativePath(d)).deduplicate,
             dirs: ds.mapIt("." / it.relativePath(d)).deduplicate)
 
+# Worker k compiles in cache job-k and claims queued builds in order with mkdir.
+# After a failure, workers finish their current build and claim no more.
+# Ctrl-C fails the running builds; the shell ignores it to wait for the workers,
+# so they stop writing to $d before runBuilds removes it.
+const poolScript = """
+trap '' INT
+k=0
+while [ "$k" -lt "$n" ]; do
+  (
+    i=0
+    for c in "$@"; do
+      [ -e "$d/failed" ] && break
+      i=$((i + 1))
+      mkdir "$d/$i" 2>/dev/null || continue
+      printf 'running: %s\n' "$c"
+      eval "$c" || printf '%s\n' "$c" >> "$d/failed"
+    done
+  ) &
+  k=$((k + 1))
+done
+wait
+[ ! -e "$d/failed" ] || { sed 's/^/failed: /' "$d/failed" >&2; exit 1; }
+"""
+
 proc runBuilds() =
   if builds.len == 0: return
-  var cmd = "status=0\n"
-  for i, s in builds:
-    cmd &= "( " & s & " ) &\np" & $i & "=$!\n"
-  # Wait for every child, including when an earlier compilation fails.
-  for i, s in builds:
-    cmd &= "if wait \"$p" & $i & "\"; then :; else\n"
-    cmd &= "printf '%s\\n' " & ("failed: " & s).quoteShell & " >&2\nstatus=1\nfi\n"
-  cmd &= "exit \"$status\""
-  builds.setLen(0)
-  exec "sh -c " & cmd.quoteShell
+  # The queue goes in a file; Linux limits one exec argument to 128 KiB.
+  let d = gorge("mktemp -d")
+  try:
+    let f = d / "builds.sh"
+    writeFile(f, "n=" & $jobs & "\nd=" & d.quoteShell & "\nset --" &
+                 builds.mapIt(" \\\n  " & it.quoteShell).join & "\n" & poolScript)
+    builds.setLen(0)
+    exec "sh " & f.quoteShell
+  finally:
+    rmDir(d)
 
 # return true if failed
 proc buildFile(f: string, outfile=""): bool =
@@ -201,7 +225,8 @@ proc buildFile(f: string, outfile=""): bool =
       let s = arg.split({':', '='}, 1)
       if s.len == 2 and s[0].nimIdentNormalize == "--nimcache":
         cache = parseCmdLine(s[1]).join("")
-    nimcmd &= " --nimcache:" & (cache / ("job-" & $builds.len)).quoteShell
+    # runBuilds sets k to the worker slot.
+    nimcmd &= " --nimcache:" & (cache / "job-").quoteShell & "$k"
   if run: nimcmd &= " -r "
   var (dir, name, ext) = splitFile(f)
   if outfile!="": name = outfile
@@ -212,11 +237,10 @@ proc buildFile(f: string, outfile=""): bool =
   #let cc = if usecpp: "cpp" else: "c"
   let cc = ccDef
   let s = nimcmd & " " & cc & " -o:" & name.quoteShell & " " & f.quoteShell & runArgs
-  echo "running: ", s
   if jobs > 1 and not run:
     builds.add s
-    if builds.len == jobs: runBuilds()
   else:
+    echo "running: ", s
     exec s
   return false
 
@@ -268,7 +292,7 @@ configTask run, "run executable after building":
 configTask verb, "set build verbosity to N (verb:N), N in 0,1,2,3":
   buildVerbosity = getInt()
 
-configTask jobs, "compile in batches of N with separate caches (jobs:N, default 1)":
+configTask jobs, "compile up to N targets at a time with separate caches (jobs:N, default 1)":
   jobs = getInt()
   if jobs < 1:
     raise newException(ValueError, "jobs:N requires N >= 1")
