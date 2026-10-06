@@ -35,6 +35,7 @@ import comms/[halo, halogpu]
 import gauge/gaugeGpu
 import base/metaUtils
 import times
+getOptimPragmas()
 
 const nRed = sumHost  # atomic slots, pinned host reals per dot product of the CG sums
 const nBatch* {.intdefine.} = 3  # systems per hop in solveM of several systems; 3 beat 4, 6 and 8 on PVC
@@ -318,14 +319,14 @@ proc free*[V: static int; T](s: var StagGpu[V,T]) =
 proc fmadd(a,b,c: float32): float32 {.importc: "fmaf", header: "<math.h>", noSideEffect.}
 proc fmadd(a,b,c: float64): float64 {.importc: "fma", header: "<math.h>", noSideEffect.}
 
-template load(m, u, o, st, e: untyped; nl: static int; r64: static bool = false; fm: static bool = false) =
+proc load[T](m: var array[18,T]; u: ptr UncheckedArray[T]; o, st: int; e: T; nl: static int; r64: static bool = false; fm: static bool = false) {.gpuInline.} =
   ## m[6a+2b] (re), m[6a+2b+1] (im) = U_ab from u[o + (6a+2b)*st], ...; for
   ## nl = 12 rows 0 and 1 only, row 2 = e conj(row 0 x row 1); for nl = 14
   ## rows 0 and 1 and d = det U at reals 12 and 13, row 2 = d conj(row 0 x row 1)
   when nl == 18:
     forStatic i, 0, 17: m[i] = u[o + i*st]
   else:
-    type M = type(m[0])
+    type M = T
     when r64:
       type R = float64
     else:
@@ -357,10 +358,8 @@ template load(m, u, o, st, e: untyped; nl: static int; r64: static bool = false;
         m[12+2*b] = M(dr*xr - di*xi)
         m[13+2*b] = M(dr*xi + di*xr)
 
-template hop(acc, u, o, v, st: untyped; sgn: static int; e: untyped; nl: static int; r64: static bool = false; fm: static bool = false) =
-  ## acc += sgn U v, U as for load
-  var m {.noInit.}: array[18, type(acc[0])]
-  load(m, u, o, st, e, nl, r64, fm)
+proc hopm[N: static int; T](acc: var array[N,T]; m: array[18,T]; v: array[6,T]; j, sgn: static int) {.gpuInline.} =
+  ## acc_j += sgn m v, m of 18 reals, v the 6 reals of system j
   forStatic r, 0, 2:
     var wr = m[6*r]*v[0] - m[6*r+1]*v[1]
     var wi = m[6*r]*v[1] + m[6*r+1]*v[0]
@@ -368,24 +367,36 @@ template hop(acc, u, o, v, st: untyped; sgn: static int; e: untyped; nl: static 
       wr += m[6*r+2*b]*v[2*b] - m[6*r+2*b+1]*v[2*b+1]
       wi += m[6*r+2*b]*v[2*b+1] + m[6*r+2*b+1]*v[2*b]
     when sgn > 0:
-      acc[2*r] += wr
-      acc[2*r+1] += wi
+      acc[6*j+2*r] += wr
+      acc[6*j+2*r+1] += wi
     else:
-      acc[2*r] -= wr
-      acc[2*r+1] -= wi
+      acc[6*j+2*r] -= wr
+      acc[6*j+2*r+1] -= wi
 
-template hopA(acc, u, o, v, st: untyped; e: untyped; nl: static int; r64: static bool = false; fm: static bool = false) =
-  ## acc -= U^+ v, U as for load
-  var m {.noInit.}: array[18, type(acc[0])]
-  load(m, u, o, st, e, nl, r64, fm)
+proc hopAm[N: static int; T](acc: var array[N,T]; m: array[18,T]; v: array[6,T]; j: static int) {.gpuInline.} =
+  ## acc_j -= m^+ v
   forStatic a, 0, 2:
     var wr = m[2*a]*v[0] + m[2*a+1]*v[1]
     var wi = m[2*a]*v[1] - m[2*a+1]*v[0]
     forStatic b, 1, 2:
       wr += m[6*b+2*a]*v[2*b] + m[6*b+2*a+1]*v[2*b+1]
       wi += m[6*b+2*a]*v[2*b+1] - m[6*b+2*a+1]*v[2*b]
-    acc[2*a] -= wr
-    acc[2*a+1] -= wi
+    acc[6*j+2*a] -= wr
+    acc[6*j+2*a+1] -= wi
+
+template hop(acc, u, o, v, st: untyped; sgn: static int; e: untyped; nl: static int; r64: static bool = false; fm: static bool = false) =
+  ## acc += sgn U v, U as for load
+  var m {.noInit.}: array[18, typeof(acc[0])]
+  load(m, u, o, st, e, nl, r64, fm)
+  hopm(acc, m, v, 0, sgn)
+
+template hopA(acc, u, o, v, st: untyped; e: untyped; nl: static int; r64: static bool = false; fm: static bool = false) =
+  ## acc -= U^+ v, U as for load.  hop and hopA stay templates: as procs, clang
+  ## merged the local and halo branches of the forward-only dslash into one
+  ## block with the loads of all hops (MI300X: 368-418 VGPRs instead of 96)
+  var m {.noInit.}: array[18, typeof(acc[0])]
+  load(m, u, o, st, e, nl, r64, fm)
+  hopAm(acc, m, v, 0)
 
 template dots(i, d, y, yo, st, rs, rz, ne, fx: untyped; normD: static bool) =
   ## y.y and d.y of even site i, y at y[yo + c*st]: with fx at rs[i] and
@@ -1187,32 +1198,6 @@ template sel(C: static int; a, so: untyped): untyped =
   var r {.noInit.}: array[C, typeof(a[0])]
   for q in 0..<C: r[q] = a[so[q]]
   r
-
-template hopm(acc, m, v: untyped; j, sgn: static int) =
-  ## acc_j += sgn m v, m of 18 reals, v the 6 reals of system j
-  forStatic r, 0, 2:
-    var wr = m[6*r]*v[0] - m[6*r+1]*v[1]
-    var wi = m[6*r]*v[1] + m[6*r+1]*v[0]
-    forStatic b, 1, 2:
-      wr += m[6*r+2*b]*v[2*b] - m[6*r+2*b+1]*v[2*b+1]
-      wi += m[6*r+2*b]*v[2*b+1] + m[6*r+2*b+1]*v[2*b]
-    when sgn > 0:
-      acc[6*j+2*r] += wr
-      acc[6*j+2*r+1] += wi
-    else:
-      acc[6*j+2*r] -= wr
-      acc[6*j+2*r+1] -= wi
-
-template hopAm(acc, m, v: untyped; j: static int) =
-  ## acc_j -= m^+ v
-  forStatic a, 0, 2:
-    var wr = m[2*a]*v[0] + m[2*a+1]*v[1]
-    var wi = m[2*a]*v[1] - m[2*a+1]*v[0]
-    forStatic b, 1, 2:
-      wr += m[6*b+2*a]*v[2*b] + m[6*b+2*a+1]*v[2*b+1]
-      wi += m[6*b+2*a]*v[2*b+1] - m[6*b+2*a+1]*v[2*b]
-    acc[6*j+2*a] -= wr
-    acc[6*j+2*a+1] -= wi
 
 proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: array[C, ptr UncheckedArray[T]];
                                               rb: ptr UncheckedArray[T]; a, b: array[C, T]; so: array[C, int];
