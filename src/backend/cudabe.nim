@@ -95,10 +95,11 @@ template gpuFor*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
 template gpuFor*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, body)
 
 template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
-  ## r[k] += v atomically, in kernels
+  ## r[k] += v atomically, in kernels and their gpuInline procs (nvcc compiles
+  ## those host device, so the host pass leaves the device-only atomicAdd out)
   let kk = k
   let vv = v
-  {.emit: ["atomicAdd(&", r, "[", kk, "], ", vv, ");"].}
+  {.emit: ["\n#ifdef __CUDA_ARCH__\natomicAdd(&", r, "[", kk, "], ", vv, ");\n#endif\n"].}
 
 proc gpuMallocHost*(size: SomeInteger): pointer =
   ## pinned host memory, for fast copies from the device

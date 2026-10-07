@@ -319,7 +319,7 @@ proc free*[V: static int; T](s: var StagGpu[V,T]) =
 proc fmadd(a,b,c: float32): float32 {.importc: "fmaf", header: "<math.h>", noSideEffect.}
 proc fmadd(a,b,c: float64): float64 {.importc: "fma", header: "<math.h>", noSideEffect.}
 
-proc load[T](m: var array[18,T]; u: ptr UncheckedArray[T]; o, st: int; e: T; nl: static int; r64: static bool = false; fm: static bool = false) {.gpuInline.} =
+proc load[T](m: var array[18,T]; u: ptr UncheckedArray[T]; o, st: int; e: T; nl: static int; r64: static bool = false; fm: static bool = false) {.gpuInline, instShell.} =
   ## m[6a+2b] (re), m[6a+2b+1] (im) = U_ab from u[o + (6a+2b)*st], ...; for
   ## nl = 12 rows 0 and 1 only, row 2 = e conj(row 0 x row 1); for nl = 14
   ## rows 0 and 1 and d = det U at reals 12 and 13, row 2 = d conj(row 0 x row 1)
@@ -358,7 +358,7 @@ proc load[T](m: var array[18,T]; u: ptr UncheckedArray[T]; o, st: int; e: T; nl:
         m[12+2*b] = M(dr*xr - di*xi)
         m[13+2*b] = M(dr*xi + di*xr)
 
-proc hopm[N: static int; T](acc: var array[N,T]; m: array[18,T]; v: array[6,T]; j, sgn: static int) {.gpuInline.} =
+proc hopm[N: static int; T](acc: var array[N,T]; m: array[18,T]; v: array[6,T]; j, sgn: static int) {.gpuInline, instShell.} =
   ## acc_j += sgn m v, m of 18 reals, v the 6 reals of system j
   forStatic r, 0, 2:
     var wr = m[6*r]*v[0] - m[6*r+1]*v[1]
@@ -373,7 +373,7 @@ proc hopm[N: static int; T](acc: var array[N,T]; m: array[18,T]; v: array[6,T]; 
       acc[6*j+2*r] -= wr
       acc[6*j+2*r+1] -= wi
 
-proc hopAm[N: static int; T](acc: var array[N,T]; m: array[18,T]; v: array[6,T]; j: static int) {.gpuInline.} =
+proc hopAm[N: static int; T](acc: var array[N,T]; m: array[18,T]; v: array[6,T]; j: static int) {.gpuInline, instShell.} =
   ## acc_j -= m^+ v
   forStatic a, 0, 2:
     var wr = m[2*a]*v[0] + m[2*a+1]*v[1]
@@ -397,6 +397,17 @@ template hopA(acc, u, o, v, st: untyped; e: untyped; nl: static int; r64: static
   var m {.noInit.}: array[18, typeof(acc[0])]
   load(m, u, o, st, e, nl, r64, fm)
   hopAm(acc, m, v, 0)
+
+proc fetch[T](v: var array[6,T]; j, n: int; x: ptr UncheckedArray[T]; ro, rst: ptr UncheckedArray[int32];
+              rb: ptr UncheckedArray[T]; c0: int; V: static int) {.gpuInline, instShell.} =
+  ## v = the 6 reals of x at site j, for j >= n reals c0.. of its receive position in rb
+  if j < n:
+    let o = vo(V, j)
+    forStatic c, 0, 5: v[c] = x[o + c*V]
+  else:
+    let o = int ro[j-n]
+    let sk = int rst[j-n]
+    forStatic c, 0, 5: v[c] = rb[o + (c0+c)*sk]
 
 template dots(i, d, y, yo, st, rs, rz, ne, fx: untyped; normD: static bool) =
   ## y.y and d.y of even site i, y at y[yo + c*st]: with fx at rs[i] and
@@ -1199,6 +1210,32 @@ template sel(C: static int; a, so: untyped): untyped =
   for q in 0..<C: r[q] = a[so[q]]
   r
 
+proc tailB[N: static int; T](acc: var array[N,T]; j: static int; a, b: T; y, d: ptr UncheckedArray[T]; yo: int;
+                             V: static int) {.gpuInline, instShell.} =
+  ## acc_j = a y + b acc_j, stored in d, y and d at yo + c V
+  if a == T(0):
+    forStatic c, 0, 5: acc[6*j+c] = b*acc[6*j+c]
+  else:
+    forStatic c, 0, 5: acc[6*j+c] = a*y[yo + c*V] + b*acc[6*j+c]
+  forStatic c, 0, 5: d[yo + c*V] = acc[6*j+c]
+
+proc dotB[N: static int; T](acc: array[N,T]; j: static int; y: ptr UncheckedArray[T]; yo: int;
+                            rs: ptr UncheckedArray[float]; sj, ne, p: int; fx: bool; V: static int; normD: static bool) {.gpuInline, instShell.} =
+  ## y.y (acc_j.acc_j with normD) and acc_j.y of even site p as the dots of slot sj, as dslashB
+  var yy = 0.0
+  var dy = 0.0
+  forStatic c, 0, 5:
+    let yc = float(y[yo + c*V])
+    when normD: yy += float(acc[6*j+c])*float(acc[6*j+c])
+    else: yy += yc*yc
+    dy += float(acc[6*j+c])*yc
+  if fx:
+    rs[2*sj*ne + p] = yy
+    rs[(2*sj+1)*ne + p] = dy
+  else:
+    gpuAtomicAdd(rs, 2*sj*nRed + p mod nRed, yy)
+    gpuAtomicAdd(rs, (2*sj+1)*nRed + p mod nRed, dy)
+
 proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: array[C, ptr UncheckedArray[T]];
                                               rb: ptr UncheckedArray[T]; a, b: array[C, T]; so: array[C, int];
                                               rs, rz: ptr UncheckedArray[float]; dot, send: static bool;
@@ -1233,14 +1270,6 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
   unpackB(a, C)
   unpackB(b, C)
   unpackB(so, C)
-  template fetch(v, j: untyped; xj: untyped; c0: untyped) =
-    if j < n:
-      let o = vo(V, j)
-      forStatic c, 0, 5: v[c] = xj[o + c*V]
-    else:
-      let o = int ro[j-n]
-      let sk = int rst[j-n]
-      forStatic c, 0, 5: v[c] = rb[o + (c0+c)*sk]
   template body(i: untyped; nl: static int; fw, r64, fm: static bool) =
     let k = if q == 0: int od[j0 + i] else: i0 + i
     let ko = uo(V, k, nl)
@@ -1259,7 +1288,7 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
           else: load(mm, lh, j-n, nr, e, nl, r64, fm)
         else: load(mm, lb, nl*mu*n + ko, V, e, nl, r64, fm)
         forStatic js, 0, C-1:
-          fetch(v, j, pickS(x, js), 6*pickS(so, js))
+          fetch(v, j, n, pickS(x, js), ro, rst, rb, 6*pickS(so, js), V)
           when fb == 0: hopm(acc, mm, v, js, 1)
           else: hopAm(acc, mm, v, js)
     let yo = vo(V, k)
@@ -1269,30 +1298,12 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
       let yj = pickS(y, js)
       let dj = pickS(d, js)
       let sj = pickS(so, js)
-      if aj == T(0):
-        forStatic c, 0, 5: acc[6*js+c] = bj*acc[6*js+c]
-      else:
-        forStatic c, 0, 5: acc[6*js+c] = aj*yj[yo + c*V] + bj*acc[6*js+c]
-      forStatic c, 0, 5: dj[yo + c*V] = acc[6*js+c]
+      tailB(acc, js, aj, bj, yj, dj, yo, V)
       when send:
         var w {.noInit.}: array[6,T]
         forStatic c, 0, 5: w[c] = acc[6*js+c]
         sendSite(sl, sd, st, nsl, n, k, 6*sj, w)
-      when dot:
-        var yy = 0.0
-        var dy = 0.0
-        forStatic c, 0, 5:
-          let yc = float(yj[yo + c*V])
-          when normD: yy += float(acc[6*js+c])*float(acc[6*js+c])
-          else: yy += yc*yc
-          dy += float(acc[6*js+c])*yc
-        let p = j0 + i
-        if fx:
-          rs[2*sj*ne + p] = yy
-          rs[(2*sj+1)*ne + p] = dy
-        else:
-          gpuAtomicAdd(rs, 2*sj*nRed + p mod nRed, yy)
-          gpuAtomicAdd(rs, (2*sj+1)*nRed + p mod nRed, dy)
+      when dot: dotB(acc, js, yj, yo, rs, sj, ne, j0 + i, fx, V, normD)
     when dot:
       let p = j0 + i
       if not fx and p < nRed:  # buffer of the next sum

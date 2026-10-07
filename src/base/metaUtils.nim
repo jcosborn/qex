@@ -755,6 +755,26 @@ macro makeIdent*(x: untyped): untyped =
 
 macro delayExpansion*(x:untyped):auto = result = x
 
+macro instShell*(p: untyped): untyped =
+  ## Pragma for a generic proc p called at many sites: p expands its body as a
+  ## template.  Nim 2.2 copies the whole AST of a generic proc at every call
+  ## before it looks up the instance (nim-lang/Nim#26091 fixed it in 2.3).  The
+  ## template parameters are typed, so Nim expands it when it compiles a new
+  ## instance of p, not in the definition of p, and the copies stay small.
+  let t = genSym(nskTemplate, $p.name.basename)
+  let fp = newNimNode(nnkFormalParams).add(ident"untyped")
+  let c = newCall(t)
+  for d in p.params[1..^1]:
+    for v in d[0..^3]:
+      fp.add newIdentDefs(v, ident"typed")
+      c.add v
+  let b = p.body
+  let s = newStmtList()
+  if b.kind == nnkStmtList and b[0].kind == nnkCommentStmt: s.add b[0]
+  s.add c
+  p.body = s
+  result = newStmtList(newNimNode(nnkTemplateDef).add(t, newEmptyNode(), newEmptyNode(), fp, newEmptyNode(), newEmptyNode(), b), p)
+
 #macro `$`*(t: type): untyped =
 #  result = newLit(t.getType[1].repr)
 

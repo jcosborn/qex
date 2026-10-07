@@ -15,6 +15,7 @@ import gauge
 import comms/[halo, halogpu]
 import backend/accel
 import base/metaUtils
+getOptimPragmas()
 
 type
   GpuGauge*[V: static int] = object
@@ -180,10 +181,10 @@ template forLinks*[V: static int](g: var GpuGauge[V]; mu, k: untyped; body: unty
 
 # 3x3 complex matrices as 18 reals, U_ab at 6a+2b (re) and 6a+2b+1 (im)
 
-template mload*(m, u, o, st: untyped) =
+proc mload*(m: var array[18, float]; u: ptr UncheckedArray[float]; o, st: int) {.gpuInline.} =
   forStatic i, 0, 17: m[i] = u[o + i*st]
 
-template mmul*(r, a, b: untyped) =
+proc mmul*(r: var array[18, float]; a, b: array[18, float]) {.gpuInline.} =
   ## r = a b
   forStatic i, 0, 2:
     forStatic j, 0, 2:
@@ -195,7 +196,7 @@ template mmul*(r, a, b: untyped) =
       r[6*i+2*j] = re
       r[6*i+2*j+1] = im
 
-template mmulNA*(r, a, b: untyped) =
+proc mmulNA*(r: var array[18, float]; a, b: array[18, float]) {.gpuInline.} =
   ## r = a b^+
   forStatic i, 0, 2:
     forStatic j, 0, 2:
@@ -207,7 +208,7 @@ template mmulNA*(r, a, b: untyped) =
       r[6*i+2*j] = re
       r[6*i+2*j+1] = im
 
-template mtah*(r, a: untyped) =
+proc mtah*(r: var array[18, float]; a: array[18, float]) {.gpuInline.} =
   ## r = (a - a^+)/2 - tr(a - a^+)/6
   let t = (a[1] + a[9] + a[17])*(1.0/3.0)
   forStatic i, 0, 2:
@@ -219,7 +220,7 @@ template mtah*(r, a: untyped) =
         r[6*i+2*j] = 0.5*(a[6*i+2*j] - a[6*j+2*i])
         r[6*i+2*j+1] = 0.5*(a[6*i+2*j+1] + a[6*j+2*i+1])
 
-template mexp*(r, a: untyped) =
+proc mexp*(r: var array[18, float]; a: array[18, float]) {.gpuInline.} =
   ## r = exp(a) for anti-Hermitian a, as expAH: exp(a/2^k) by its Taylor
   ## polynomial of degree 12 with |a/2^k|^2 <= 1/16, then squared k times
   var n2 = 0.0
