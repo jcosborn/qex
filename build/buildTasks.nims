@@ -176,7 +176,8 @@ proc findSrc(g: string): tuple[files:seq[string],dirs:seq[string]] =
   result = (files: fs.mapIt("." / it.relativePath(d)).deduplicate,
             dirs: ds.mapIt("." / it.relativePath(d)).deduplicate)
 
-# Worker k compiles in cache job-k and claims queued builds in order with mkdir.
+# Worker k compiles in cache job-k and claims queued builds in order by creating
+# $d/$i with noclobber (O_EXCL); uutils mkdir 0.8 can report success on EEXIST.
 # After a failure, workers finish their current build and claim no more.
 # Ctrl-C fails the running builds; the shell ignores it to wait for the workers,
 # so they stop writing to $d before runBuilds removes it.
@@ -189,7 +190,7 @@ while [ "$k" -lt "$n" ]; do
     for c in "$@"; do
       [ -e "$d/failed" ] && break
       i=$((i + 1))
-      mkdir "$d/$i" 2>/dev/null || continue
+      (set -C; : > "$d/$i") 2>/dev/null || continue
       printf 'running: %s\n' "$c"
       eval "$c" || printf '%s\n' "$c" >> "$d/failed"
     done
