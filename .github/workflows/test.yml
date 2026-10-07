@@ -159,7 +159,8 @@ jobs:
         curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | sudo gpg --dearmor -o /usr/share/keyrings/oneapi.gpg
         echo "deb [signed-by=/usr/share/keyrings/oneapi.gpg] https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneapi.list
         sudo apt-get update
-        sudo apt-get install openmpi-bin libopenmpi-dev intel-oneapi-compiler-dpcpp-cpp-2026.1
+        # libze-dev: the Level Zero headers and loader of the IPC halo exchange
+        sudo apt-get install openmpi-bin libopenmpi-dev intel-oneapi-compiler-dpcpp-cpp-2026.1 libze-dev
         # the variables setvars.sh sets, for the later steps
         env | sort > "$RUNNER_TEMP/env0"
         . /opt/intel/oneapi/setvars.sh
@@ -285,7 +286,8 @@ jobs:
         curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
         echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] https://apt.llvm.org/resolute/ llvm-toolchain-resolute-23 main" | sudo tee /etc/apt/sources.list.d/llvm.list
         sudo apt-get update
-        sudo apt-get install clang-23
+        # clang's CUDA wrapper header includes curand_mtgp32_kernel.h
+        sudo apt-get install clang-23 libcurand-dev-13-4
         clang++-23 --version
     - *checkout-nim
     - *build-nim
