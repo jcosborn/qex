@@ -6,8 +6,12 @@ on:
 #      - 'devel'
 #      - 'master'
 
+# A push to a branch of this repository runs the jobs once, also when the
+# branch is the head of a pull request; pull requests from forks run on
+# pull_request.
 jobs:
   build:
+    if: &once github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       matrix:
         mpi-impl: [openmpi, mpich]
@@ -145,6 +149,7 @@ jobs:
   # eightFlavorSMGgpu, which instantiate the StagGpu solvers, take 4.2 GB each
   # in Nim (the runners have 16 GB): they build one at a time after the others.
   sycl:
+    if: *once
     name: gpu-SYCL-oneAPI
     runs-on: ubuntu-26.04
     steps:
@@ -210,6 +215,7 @@ jobs:
       run: make staghmcgpu_sh eightFlavorSMGgpu
 
   openmp:
+    if: *once
     name: gpu-OpenMP-oneAPI
     runs-on: ubuntu-26.04
     steps:
@@ -232,6 +238,7 @@ jobs:
     - *build-stag
 
   hip:
+    if: *once
     name: gpu-HIP-ROCm
     runs-on: ubuntu-26.04
     steps:
@@ -261,6 +268,7 @@ jobs:
     - *build-stag
 
   cuda-clang:
+    if: *once
     name: gpu-CUDA-clang
     runs-on: ubuntu-26.04
     steps:
@@ -299,6 +307,7 @@ jobs:
     - *build-stag
 
   cuda-nvcc:
+    if: *once
     name: gpu-CUDA-nvcc
     runs-on: ubuntu-26.04
     steps:
@@ -324,6 +333,7 @@ jobs:
     - *build-stag
 
   cpu:
+    if: *once
     name: gpu-CPU
     runs-on: ubuntu-26.04
     steps:
