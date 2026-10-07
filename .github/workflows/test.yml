@@ -141,9 +141,9 @@ jobs:
   # GPU backends, configured as in docs/gpu_backends.md.  The runners have no
   # GPU: these jobs build the GPU tests and small programs for H100 (sm_90),
   # MI300 (gfx942) and Intel GPUs (SPIR-V, compiled at run time), with host code
-  # for x86-64-v4; the cpu job also runs them.  The programs that instantiate
-  # the StagGpu solvers (bestagcg, bestagm, bestagres, staghmcgpu,
-  # staghmcgpu_sh, eightFlavorSMGgpu) need more than the runners' 16 GB in Nim.
+  # for x86-64-v4; the cpu job also runs them.  staghmcgpu_sh and
+  # eightFlavorSMGgpu, which instantiate the StagGpu solvers, take 4.2 GB each
+  # in Nim (the runners have 16 GB): they build one at a time after the others.
   sycl:
     name: gpu-SYCL-oneAPI
     runs-on: ubuntu-26.04
@@ -204,6 +204,10 @@ jobs:
       name: build the GPU tests and programs
       working-directory: qex
       run: make jobs:2 tests/base/taccel tests/base/tgaugegpu tests/base/tstaglinks tests/base/tstagrecon bestream berng bernt
+    - &build-stag
+      name: build the StagGpu programs
+      working-directory: qex
+      run: make staghmcgpu_sh eightFlavorSMGgpu
 
   openmp:
     name: gpu-OpenMP-oneAPI
@@ -225,6 +229,7 @@ jobs:
         ldflags:"-g -O3 -ldl" ldppflags:"-g -O3 -ldl"
         env:"OMPFLAG=-fiopenmp -fopenmp-targets=spir64" simd:SSE,AVX,AVX512 vlen:8 nimargs:'@["-d:Backend=OpenMP"]'
     - *build-gpu
+    - *build-stag
 
   hip:
     name: gpu-HIP-ROCm
@@ -253,6 +258,7 @@ jobs:
         cppflagsalways:"-g -x hip --offload-arch=gfx942" ldppflags:"-g -ldl --hip-link --offload-arch=gfx942"
         env:STATIC_UNROLL=1 simd:SSE,AVX,AVX512 vlen:8 nimargs:'@["-d:Backend=HIP"]'
     - *build-gpu
+    - *build-stag
 
   cuda-clang:
     name: gpu-CUDA-clang
@@ -290,6 +296,7 @@ jobs:
         ldppflags:"-g -L$CUDA_HOME/lib64 -L$CUDA_HOME/lib64/stubs -Wl,-rpath,$CUDA_HOME/lib64 -lcudart -ldl"
         simd:SSE,AVX,AVX512 vlen:8 nimargs:'@["-d:Backend=CUDA"]'
     - *build-gpu
+    - *build-stag
 
   cuda-nvcc:
     name: gpu-CUDA-nvcc
@@ -314,6 +321,7 @@ jobs:
         ldppflags:"-g -L$CUDA_HOME/lib64 -L$CUDA_HOME/lib64/stubs -Wl,-rpath,$CUDA_HOME/lib64 -lcudart -ldl"
         simd:SSE,AVX,AVX512 vlen:8 nimargs:'@["-d:Backend=CUDA"]'
     - *build-gpu
+    - *build-stag
 
   cpu:
     name: gpu-CPU
@@ -333,6 +341,7 @@ jobs:
       working-directory: qex
       run: QMPDIR=qmp QIODIR=qio ./configure
     - *build-gpu
+    - *build-stag
     - name: run the GPU tests and programs
       working-directory: qex
       env:
@@ -344,3 +353,7 @@ jobs:
         done
         timeout -k 10s 20m bin/berng -lat:8,8,8,16
         timeout -k 10s 20m mpiexec -n 2 bin/berng -lat:8,8,8,16 -rg:1,1,1,2
+        for r in "" "mpiexec -n 2"; do
+          RUNJOB="timeout -k 10s 20m $r" tests/extra/tstaghmc_sh/run bin/staghmcgpu_sh
+          RUNJOB="timeout -k 10s 20m $r" tests/extra/teightFlavorSMG/run bin/eightFlavorSMGgpu
+        done
