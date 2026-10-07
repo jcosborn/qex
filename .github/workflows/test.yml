@@ -286,8 +286,9 @@ jobs:
         curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
         echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] https://apt.llvm.org/resolute/ llvm-toolchain-resolute-23 main" | sudo tee /etc/apt/sources.list.d/llvm.list
         sudo apt-get update
-        # clang's CUDA wrapper header includes curand_mtgp32_kernel.h
-        sudo apt-get install clang-23 libcurand-dev-13-4
+        # libomp-23-dev: omp.h and libomp of -fopenmp; clang's CUDA wrapper
+        # header includes curand_mtgp32_kernel.h
+        sudo apt-get install clang-23 libomp-23-dev libcurand-dev-13-4
         clang++-23 --version
     - *checkout-nim
     - *build-nim
