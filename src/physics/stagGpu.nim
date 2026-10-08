@@ -398,16 +398,13 @@ template hopA(acc, u, o, v, st: untyped; e: untyped; nl: static int; r64: static
   load(m, u, o, st, e, nl, r64, fm)
   hopAm(acc, m, v, 0)
 
-proc fetch[T](v: var array[6,T]; j, n: int; x: ptr UncheckedArray[T]; ro, rst: ptr UncheckedArray[int32];
-              rb: ptr UncheckedArray[T]; c0: int; V: static int) {.gpuInline, instShell.} =
-  ## v = the 6 reals of x at site j, for j >= n reals c0.. of its receive position in rb
-  if j < n:
-    let o = vo(V, j)
-    forStatic c, 0, 5: v[c] = x[o + c*V]
-  else:
-    let o = int ro[j-n]
-    let sk = int rst[j-n]
-    forStatic c, 0, 5: v[c] = rb[o + (c0+c)*sk]
+proc fetchL[T](v: var array[6,T]; x: ptr UncheckedArray[T]; o: int; V: static int) {.gpuInline, instShell.} =
+  ## v = the 6 reals of a local site, x at o + c V
+  forStatic c, 0, 5: v[c] = x[o + c*V]
+
+proc fetchR[T](v: var array[6,T]; rb: ptr UncheckedArray[T]; o, sk, c0: int) {.gpuInline, instShell.} =
+  ## v = reals c0.. of a receive position of rb, at o + c sk
+  forStatic c, 0, 5: v[c] = rb[o + (c0+c)*sk]
 
 template dots(i, d, y, yo, st, rs, rz, ne, fx: untyped; normD: static bool) =
   ## y.y and d.y of even site i, y at y[yo + c*st]: with fx at rs[i] and
@@ -1270,6 +1267,12 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
   unpackB(a, C)
   unpackB(b, C)
   unpackB(so, C)
+  template fetch(v, j, xj, c0: untyped) =
+    ## the branch stays at the call site: the receive offsets and buffer load in the halo
+    ## branch, where a proc would take them over all hops (B200: dslashB 128 -> 156
+    ## registers, 3-system CG 4.5% slower)
+    if j < n: fetchL(v, xj, vo(V, j), V)
+    else: fetchR(v, rb, int ro[j-n], int rst[j-n], c0)
   template body(i: untyped; nl: static int; fw, r64, fm: static bool) =
     let k = if q == 0: int od[j0 + i] else: i0 + i
     let ko = uo(V, k, nl)
@@ -1288,7 +1291,7 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
           else: load(mm, lh, j-n, nr, e, nl, r64, fm)
         else: load(mm, lb, nl*mu*n + ko, V, e, nl, r64, fm)
         forStatic js, 0, C-1:
-          fetch(v, j, n, pickS(x, js), ro, rst, rb, 6*pickS(so, js), V)
+          fetch(v, j, pickS(x, js), 6*pickS(so, js))
           when fb == 0: hopm(acc, mm, v, js, 1)
           else: hopAm(acc, mm, v, js)
     let yo = vo(V, k)
