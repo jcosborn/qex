@@ -198,7 +198,7 @@ iterator threadRangeAligned*(n: int, a: int): int =
     yield i
 
 template threadRangeV*(n: int): int =
-  threadRangeAligned(n, VLEN)
+  threadRangeAligned(n, static(VLEN))
 
 discard """
 iterator `.|`*[S, T](a: S, b: T): T {.inline.} =

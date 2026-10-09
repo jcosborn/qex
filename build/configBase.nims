@@ -78,15 +78,19 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
   path ~ "qex/src"
 
   cc ~ ccType
+  # These replace the options of ccType in Nim's config/nim.cfg, which for
+  # gcc and clang carry -fno-strict-aliasing: Nim's generated code breaks
+  # the aliasing rules.
+  let na = if ccType in ["gcc", "clang"]: " -fno-strict-aliasing" else: ""
   exe ! cc
   linkerexe ! ld
-  options.always ! cflagsAlways
+  options.always ! (cflagsAlways & na)
   options.debug ! cflagsDebug
   options.speed ! cflagsSpeed
   options.linker ! ldflags
   cpp.exe ! cpp
   cpp.linkerexe ! ldpp
-  cpp.options.always ! cppflagsAlways
+  cpp.options.always ! (cppflagsAlways & na)
   cpp.options.debug ! cppflagsDebug
   cpp.options.speed ! cppflagsSpeed
   cpp.options.linker ! ldppflags
