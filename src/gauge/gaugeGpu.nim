@@ -188,11 +188,8 @@ proc mmul*(r: var array[18, float]; a, b: array[18, float]) {.gpuInline.} =
   ## r = a b
   forStatic i, 0, 2:
     forStatic j, 0, 2:
-      var re = a[6*i]*b[2*j] - a[6*i+1]*b[2*j+1]
-      var im = a[6*i]*b[2*j+1] + a[6*i+1]*b[2*j]
-      forStatic k, 1, 2:
-        re += a[6*i+2*k]*b[6*k+2*j] - a[6*i+2*k+1]*b[6*k+2*j+1]
-        im += a[6*i+2*k]*b[6*k+2*j+1] + a[6*i+2*k+1]*b[6*k+2*j]
+      var re, im = 0.0
+      forStatic k, 0, 2: cmac(re, im, a[6*i+2*k], a[6*i+2*k+1], b[6*k+2*j], b[6*k+2*j+1])
       r[6*i+2*j] = re
       r[6*i+2*j+1] = im
 
@@ -200,11 +197,8 @@ proc mmulNA*(r: var array[18, float]; a, b: array[18, float]) {.gpuInline.} =
   ## r = a b^+
   forStatic i, 0, 2:
     forStatic j, 0, 2:
-      var re = a[6*i]*b[6*j] + a[6*i+1]*b[6*j+1]
-      var im = a[6*i+1]*b[6*j] - a[6*i]*b[6*j+1]
-      forStatic k, 1, 2:
-        re += a[6*i+2*k]*b[6*j+2*k] + a[6*i+2*k+1]*b[6*j+2*k+1]
-        im += a[6*i+2*k+1]*b[6*j+2*k] - a[6*i+2*k]*b[6*j+2*k+1]
+      var re, im = 0.0
+      forStatic k, 0, 2: cmac(re, im, a[6*i+2*k], a[6*i+2*k+1], b[6*j+2*k], -b[6*j+2*k+1])
       r[6*i+2*j] = re
       r[6*i+2*j+1] = im
 
@@ -448,9 +442,7 @@ proc forceA*[V: static int](g: var GpuGauge[V]; c: GaugeActionCoeffs; p: ptr Unc
       ## f += conj(cp + ca tr s) s
       let cr = cp + ca*(s[0] + s[8] + s[16])
       let ci = -ca*(s[1] + s[9] + s[17])
-      forStatic e, 0, 8:
-        f[2*e] += cr*s[2*e] - ci*s[2*e+1]
-        f[2*e+1] += cr*s[2*e+1] + ci*s[2*e]
+      forStatic e, 0, 8: cmac(f[2*e], f[2*e+1], cr, ci, s[2*e], s[2*e+1])
     case mu
     of 0: plaqs(0)
     of 1: plaqs(1)

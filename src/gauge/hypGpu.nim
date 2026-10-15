@@ -163,41 +163,15 @@ proc free*[V: static int](h: var HypGpu[V]) =
     h.rv[mu].free
 
 # 3x3 complex matrices in kernels, loops unrolled so that the matrices stay
-# in registers; the results may not alias the arguments
-
-proc mul3(r: var M3; a, b: M3) {.gpuInline.} =
-  ## r = a b
-  forStatic i, 0, 2:
-    forStatic j, 0, 2:
-      var re = a[6*i]*b[2*j] - a[6*i+1]*b[2*j+1]
-      var im = a[6*i]*b[2*j+1] + a[6*i+1]*b[2*j]
-      forStatic k, 1, 2:
-        re += a[6*i+2*k]*b[6*k+2*j] - a[6*i+2*k+1]*b[6*k+2*j+1]
-        im += a[6*i+2*k]*b[6*k+2*j+1] + a[6*i+2*k+1]*b[6*k+2*j]
-      r[6*i+2*j] = re
-      r[6*i+2*j+1] = im
-
-proc mulNA3(r: var M3; a, b: M3) {.gpuInline.} =
-  ## r = a b^+
-  forStatic i, 0, 2:
-    forStatic j, 0, 2:
-      var re = a[6*i]*b[6*j] + a[6*i+1]*b[6*j+1]
-      var im = a[6*i+1]*b[6*j] - a[6*i]*b[6*j+1]
-      forStatic k, 1, 2:
-        re += a[6*i+2*k]*b[6*j+2*k] + a[6*i+2*k+1]*b[6*j+2*k+1]
-        im += a[6*i+2*k+1]*b[6*j+2*k] - a[6*i+2*k]*b[6*j+2*k+1]
-      r[6*i+2*j] = re
-      r[6*i+2*j+1] = im
+# in registers; the results may not alias the arguments; products a b and
+# a b^+ are mmul and mmulNA of gaugeGpu
 
 proc mulAN3(r: var M3; a, b: M3) {.gpuInline.} =
   ## r = a^+ b
   forStatic i, 0, 2:
     forStatic j, 0, 2:
-      var re = a[2*i]*b[2*j] + a[2*i+1]*b[2*j+1]
-      var im = a[2*i]*b[2*j+1] - a[2*i+1]*b[2*j]
-      forStatic k, 1, 2:
-        re += a[6*k+2*i]*b[6*k+2*j] + a[6*k+2*i+1]*b[6*k+2*j+1]
-        im += a[6*k+2*i]*b[6*k+2*j+1] - a[6*k+2*i+1]*b[6*k+2*j]
+      var re, im = 0.0
+      forStatic k, 0, 2: cmac(re, im, a[6*k+2*i], -a[6*k+2*i+1], b[6*k+2*j], b[6*k+2*j+1])
       r[6*i+2*j] = re
       r[6*i+2*j+1] = im
 
@@ -205,19 +179,13 @@ proc mulc3(r: var M3; cr, ci: float; a, b: M3) {.gpuInline.} =
   ## r += (cr + i ci) a b
   forStatic i, 0, 2:
     forStatic j, 0, 2:
-      var re = a[6*i]*b[2*j] - a[6*i+1]*b[2*j+1]
-      var im = a[6*i]*b[2*j+1] + a[6*i+1]*b[2*j]
-      forStatic k, 1, 2:
-        re += a[6*i+2*k]*b[6*k+2*j] - a[6*i+2*k+1]*b[6*k+2*j+1]
-        im += a[6*i+2*k]*b[6*k+2*j+1] + a[6*i+2*k+1]*b[6*k+2*j]
-      r[6*i+2*j] += cr*re - ci*im
-      r[6*i+2*j+1] += cr*im + ci*re
+      var re, im = 0.0
+      forStatic k, 0, 2: cmac(re, im, a[6*i+2*k], a[6*i+2*k+1], b[6*k+2*j], b[6*k+2*j+1])
+      cmac(r[6*i+2*j], r[6*i+2*j+1], cr, ci, re, im)
 
 proc addc3(r: var M3; cr, ci: float; a: M3) {.gpuInline.} =
   ## r += (cr + i ci) a
-  forStatic e, 0, 8:
-    r[2*e] += cr*a[2*e] - ci*a[2*e+1]
-    r[2*e+1] += cr*a[2*e+1] + ci*a[2*e]
+  forStatic e, 0, 8: cmac(r[2*e], r[2*e+1], cr, ci, a[2*e], a[2*e+1])
 
 template adjEl(r, x: untyped; i, j, a, b, c, d, e, f, g, h: static int) =
   ## r_ij = x_ab x_cd - x_ef x_gh
@@ -265,7 +233,7 @@ proc rsqrt3(z: var M3; x: M3) {.gpuInline.} =
   var det, deti: float
   mulAN3(t, x, x)
   forStatic i, 0, 2: t[8*i] += 1e-20
-  mul3(t2, t, t)
+  mmul(t2, t, t)
   adj3(z, t)
   det3(det, deti, t, z)
   let tr = t[0] + t[8] + t[16]
@@ -305,7 +273,7 @@ proc projU3(r: var M3; x: M3) {.gpuInline.} =
   ## r = x (x^+ x)^-1/2, as projectU
   var z {.noInit.}: M3
   rsqrt3(z, x)
-  mul3(r, x, z)
+  mmul(r, x, z)
 
 proc usdev(r: var float; x: M3) {.gpuInline.} =
   ## r = |x^+ x - 1|^2 + |det x - 1|^2, as checkSU of a matrix
@@ -347,12 +315,12 @@ proc sylsolve3(x: var M3; a, c: M3) {.gpuInline.} =
   forStatic e, 0, 17: x[e] = 0.0
   addc3(x, c2r*qr - c2i*qi, c2r*qi + c2i*qr, c)  # c0 c
   mulc3(x, -c4r, -c4i, c, a)
-  mul3(t, a, c)
+  mmul(t, a, c)
   addc3(x, -c4r, -c4i, t)
   mulc3(x, c2r, c2i, t, a)
   adj3(d, a)
   mulc3(x, -c2r, -c2i, c, d)
-  mul3(t, d, c)
+  mmul(t, d, c)
   addc3(x, -c2r, -c2i, t)
   mulc3(x, c2r*tor - c2i*toi, c2r*toi + c2i*tor, t, d)  # c1 d c d
 
@@ -368,7 +336,7 @@ template projUderiv3(r: untyped; lu, lx, lc, park, unpark: untyped) =
     rsqrt3(z, t1)
     inv3(y, z)
     lc(t1)
-    mul3(r, t1, z)
+    mmul(r, t1, z)
     lu(t1)
     mulAN3(t2, t1, r)
     park(r)
@@ -378,7 +346,7 @@ template projUderiv3(r: untyped; lu, lx, lc, park, unpark: untyped) =
         t2[6*i+2*j] = t1[6*i+2*j] + t1[6*j+2*i]
         t2[6*i+2*j+1] = t1[6*i+2*j+1] - t1[6*j+2*i+1]
     lx(y)
-    mul3(t1, y, t2)
+    mmul(t1, y, t2)
     unpark(r)
     forStatic e, 0, 17: r[e] -= t1[e]
 
@@ -420,15 +388,15 @@ template staple(s: untyped; al: float; lx, ly: untyped; i, fnu, fmu, bnu, fmubnu
     var a {.noInit.}, b {.noInit.}, t {.noInit.}: M3
     lx(a, i)
     ly(b, fnu)
-    mul3(t, a, b)
+    mmul(t, a, b)
     lx(a, fmu)
-    mulNA3(b, t, a)
+    mmulNA(b, t, a)
     forStatic e, 0, 17: s[e] += al*b[e]
     lx(a, bnu)
     ly(b, bnu)
     mulAN3(t, a, b)
     lx(a, fmubnu)
-    mul3(b, t, a)
+    mmul(b, t, a)
     forStatic e, 0, 17: s[e] += al*b[e]
 
 template symderiv(hit, s: untyped; lx, ly, cx, cy: untyped; i, fnu, fmu, bnu, fmubnu, nl: int) =
@@ -444,23 +412,23 @@ template symderiv(hit, s: untyped; lx, ly, cx, cy: untyped; i, fnu, fmu, bnu, fm
       if i < nl:  # cx(i) Y(fnu) X(fmu)^+
         cx(a, i)
         ly(b, fnu)
-        mul3(t, a, b)
+        mmul(t, a, b)
         lx(a, fmu)
-        mulNA3(d, t, a)
+        mmulNA(d, t, a)
         forStatic e, 0, 17: s[e] += d[e]
       if fnu < nl:  # X(i) cy(fnu) X(fmu)^+
         lx(a, i)
         cy(b, fnu)
-        mul3(t, a, b)
+        mmul(t, a, b)
         lx(a, fmu)
-        mulNA3(d, t, a)
+        mmulNA(d, t, a)
         forStatic e, 0, 17: s[e] += d[e]
       if fmu < nl:  # X(i) Y(fnu) cx(fmu)^+
         lx(a, i)
         ly(b, fnu)
-        mul3(t, a, b)
+        mmul(t, a, b)
         cx(a, fmu)
-        mulNA3(d, t, a)
+        mmulNA(d, t, a)
         forStatic e, 0, 17: s[e] += d[e]
     if bnu >= 0 and fmubnu >= 0 and (bnu < nl or fmubnu < nl):
       hit = true
@@ -473,14 +441,14 @@ template symderiv(hit, s: untyped; lx, ly, cx, cy: untyped; i, fnu, fmu, bnu, fm
         mulAN3(d, a, b)
         forStatic e, 0, 17: t[e] += d[e]
         lx(a, fmubnu)
-        mul3(d, t, a)
+        mmul(d, t, a)
         forStatic e, 0, 17: s[e] += d[e]
       if fmubnu < nl:  # X(bnu)^+ Y(bnu) cx(fmubnu)
         lx(a, bnu)
         ly(b, bnu)
         mulAN3(t, a, b)
         cx(a, fmubnu)
-        mul3(d, t, a)
+        mmul(d, t, a)
         forStatic e, 0, 17: s[e] += d[e]
 
 proc smear*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl: ptr UncheckedArray[float]) =
@@ -769,7 +737,7 @@ proc force*[V: static int](h: HypGpu[V]; c: HypCoefs; g: GpuGauge[V]; fl, f, sg:
         forStatic e, 0, 17: s[e] += w[e]
     let ol = 18*mu*n + lo18(V, k)
     mload(w, u, ol, V)
-    mulNA3(r, s, w)
+    mmulNA(r, s, w)
     mtah(w, r)
     forStatic e, 0, 17: p[ol + e*V] += w[e]
   toc("combine")
