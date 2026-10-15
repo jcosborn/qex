@@ -280,7 +280,7 @@ proc unchanged(b: Src): bool =
   d == 0
 
 proc actualM(x: ptr UncheckedArray[float]; b: Src; m: float): float =
-  ## Re-evaluate the returned solution with the operator used by solveM.
+  ## Re-evaluate the returned solution with applyMfull, the operator of one system.
   let r = sd.vec[7]
   let src = b.d
   let full = b.full
@@ -327,10 +327,11 @@ proc compare(label: string; x: ptr UncheckedArray[float]; b: Src; m, r2req, gpuR
   if not ok: inc fails
 
 proc check(label: string; x: ptr UncheckedArray[float]; b: Src; m: float; sp: SolverParams;
-           r2req: float; maxits: int; zero = false; mixed = false) =
+           r2req: float; maxits: int; zero = false; mixed = false; rnd = 0.0) =
   ## the solve of sp, its only one: with maxits = big it meets r2req, with
-  ## fewer it misses it within maxits. Check the statistic against the same
-  ## operator, and final accuracy against the independent CPU operator.
+  ## fewer it misses it within maxits. Check the statistic against applyMfull,
+  ## whose |b - M x|/|b| may differ from the recording operator's by rnd, and
+  ## final accuracy against the independent CPU operator.
   let (r2, x2b2) = resid(x, b, m)
   let refLimit = referenceLimit(r2req, abs(m)+4.0, x2b2)
   let own = actualM(x,b,m)
@@ -338,8 +339,9 @@ proc check(label: string; x: ptr UncheckedArray[float]; b: Src; m: float; sp: So
   var ok = unchanged(b) and sp.calls == 1 and sp.r2.n == 1 and sp.iterations <= maxits and sp.iterationsMax == sp.iterations
   if zero: ok = ok and r2 == 0 and own == 0 and rec == 0 and sp.iterations == 0
   else:
-    ok = ok and abs(rec-own) <= 1e-6*max(rec,own) + 1e-10*r2req and (rec <= r2req) == (maxits == big)
-    if maxits == big: ok = ok and own <= r2req and r2 <= refLimit
+    let slack = rnd*(2*sqrt(max(rec, own)) + rnd)  # (sqrt(r2) + rnd)^2 - r2
+    ok = ok and abs(rec-own) <= 1e-6*max(rec,own) + 1e-10*r2req + slack and (rec <= r2req) == (maxits == big)
+    if maxits == big: ok = ok and own <= r2req + slack and r2 <= refLimit
   echo &"{label:<28} m {m:6} its {sp.iterations:5}  |b-Mx|^2/|b|^2 recorded {rec:9.3e} recomputed {own:9.3e} CPU {r2:9.3e}  requested {r2req:7.1e} CPU limit {refLimit:.3e}",
        if ok: "  ok" else: "  FAILED"
   if not ok: inc fails
@@ -379,7 +381,10 @@ proc solveMany(label: string; ns: int; full, mixed: bool; r2in = innerReq) =
     sps[j].verbosity = verb
   sd.solveM(xs, bd, ms, sps, if mixed: addr sf else: nil, r2in = r2in, full = full)
   for j in 0..<ns:
-    check(&"{label} {j}/{ns}", xs[j], bs[j], ms[j], sps[j], sps[j].r2req, sps[j].maxits, j == 5, mixed)
+    # mixed batched solves record r2 by applyMfullB, which rounds differently
+    # from applyMfull: |b - M x|/|b| 5e-17 apart seen
+    check(&"{label} {j}/{ns}", xs[j], bs[j], ms[j], sps[j], sps[j].r2req, sps[j].maxits, j == 5, mixed,
+          if mixed: 64*epsilon(float64) else: 0.0)
     gpuFree(xs[j])
     gpuFree(bs[j].d)
 
