@@ -186,6 +186,19 @@ template gpuType*[V:static int, T](t: typedesc[Field[V,T]]): typedesc =
 
 template gpuSites*(lo: Layout): int = lo.nSites
 
+proc fmadd*(a, b, c: float32): float32 {.importc: "fmaf", header: "<math.h>", noSideEffect.}
+  ## a b + c rounded once
+proc fmadd*(a, b, c: float64): float64 {.importc: "fma", header: "<math.h>", noSideEffect.}
+  ## a b + c rounded once
+
+template cmac*(re, im, ar, ai, br, bi: untyped) =
+  ## re + i im += (ar + i ai)(br + i bi), one fmadd per real product; re and
+  ## im must not alias ar, ai, br, bi (im reads them after re is updated)
+  re = fmadd(ar, br, re)
+  re = fmadd(-ai, bi, re)
+  im = fmadd(ar, bi, im)
+  im = fmadd(ai, br, im)
+
 #import gpumem
 #export gpumem
 

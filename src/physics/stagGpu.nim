@@ -316,9 +316,6 @@ proc free*[V: static int; T](s: var StagGpu[V,T]) =
     for p in s.vecB: gpuFree(p)
     for p in 0..1: s.exB[p].free
 
-proc fmadd(a,b,c: float32): float32 {.importc: "fmaf", header: "<math.h>", noSideEffect.}
-proc fmadd(a,b,c: float64): float64 {.importc: "fma", header: "<math.h>", noSideEffect.}
-
 proc load[T](m: var array[18,T]; u: ptr UncheckedArray[T]; o, st: int; e: T; nl: static int; r64: static bool = false; fm: static bool = false) {.gpuInline, instShell.} =
   ## m[6a+2b] (re), m[6a+2b+1] (im) = U_ab from u[o + (6a+2b)*st], ...; for
   ## nl = 12 rows 0 and 1 only, row 2 = e conj(row 0 x row 1); for nl = 14
