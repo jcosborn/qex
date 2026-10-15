@@ -39,6 +39,7 @@ getOptimPragmas()
 
 const nRed = sumHost  # atomic slots, pinned host reals per dot product of the CG sums
 const nBatch* {.intdefine.} = 3  # systems per hop in solveM of several systems; 3 beat 4, 6 and 8 on PVC
+const hopFma {.booldefine.} = false  # hops of one system and forceM's link product by cmac, as the batched hops (docs/gpu_backends.md)
 var hopSplit* = -1  ## CG second hop split around the exchange: 1 always, 0 never, -1 with off-node neighbors
 
 type StagWork* = object
@@ -355,37 +356,39 @@ proc load[T](m: var array[18,T]; u: ptr UncheckedArray[T]; o, st: int; e: T; nl:
         m[12+2*b] = M(dr*xr - di*xi)
         m[13+2*b] = M(dr*xi + di*xr)
 
-proc hopm[N: static int; T](acc: var array[N,T]; m: array[18,T]; v: array[6,T]; j, sgn: static int) {.gpuInline, instShell.} =
-  ## acc_j += sgn m v, m of 18 reals, v the 6 reals of system j
+proc hopm[N: static int; T](acc: var array[N,T]; m: array[18,T]; v: array[6,T]; j: static int; f: static bool) {.gpuInline, instShell.} =
+  ## acc_j += m v, m of 18 reals, v the 6 reals of system j; with f by cmac
   forStatic r, 0, 2:
-    var wr = m[6*r]*v[0] - m[6*r+1]*v[1]
-    var wi = m[6*r]*v[1] + m[6*r+1]*v[0]
-    forStatic b, 1, 2:
-      wr += m[6*r+2*b]*v[2*b] - m[6*r+2*b+1]*v[2*b+1]
-      wi += m[6*r+2*b]*v[2*b+1] + m[6*r+2*b+1]*v[2*b]
-    when sgn > 0:
+    when f:
+      forStatic b, 0, 2: cmac(acc[6*j+2*r], acc[6*j+2*r+1], m[6*r+2*b], m[6*r+2*b+1], v[2*b], v[2*b+1])
+    else:
+      var wr = m[6*r]*v[0] - m[6*r+1]*v[1]
+      var wi = m[6*r]*v[1] + m[6*r+1]*v[0]
+      forStatic b, 1, 2:
+        wr += m[6*r+2*b]*v[2*b] - m[6*r+2*b+1]*v[2*b+1]
+        wi += m[6*r+2*b]*v[2*b+1] + m[6*r+2*b+1]*v[2*b]
       acc[6*j+2*r] += wr
       acc[6*j+2*r+1] += wi
-    else:
-      acc[6*j+2*r] -= wr
-      acc[6*j+2*r+1] -= wi
 
-proc hopAm[N: static int; T](acc: var array[N,T]; m: array[18,T]; v: array[6,T]; j: static int) {.gpuInline, instShell.} =
-  ## acc_j -= m^+ v
+proc hopAm[N: static int; T](acc: var array[N,T]; m: array[18,T]; v: array[6,T]; j: static int; f: static bool) {.gpuInline, instShell.} =
+  ## acc_j -= m^+ v; with f by cmac
   forStatic a, 0, 2:
-    var wr = m[2*a]*v[0] + m[2*a+1]*v[1]
-    var wi = m[2*a]*v[1] - m[2*a+1]*v[0]
-    forStatic b, 1, 2:
-      wr += m[6*b+2*a]*v[2*b] + m[6*b+2*a+1]*v[2*b+1]
-      wi += m[6*b+2*a]*v[2*b+1] - m[6*b+2*a+1]*v[2*b]
-    acc[6*j+2*a] -= wr
-    acc[6*j+2*a+1] -= wi
+    when f:
+      forStatic b, 0, 2: cmac(acc[6*j+2*a], acc[6*j+2*a+1], -m[6*b+2*a], m[6*b+2*a+1], v[2*b], v[2*b+1])
+    else:
+      var wr = m[2*a]*v[0] + m[2*a+1]*v[1]
+      var wi = m[2*a]*v[1] - m[2*a+1]*v[0]
+      forStatic b, 1, 2:
+        wr += m[6*b+2*a]*v[2*b] + m[6*b+2*a+1]*v[2*b+1]
+        wi += m[6*b+2*a]*v[2*b+1] - m[6*b+2*a+1]*v[2*b]
+      acc[6*j+2*a] -= wr
+      acc[6*j+2*a+1] -= wi
 
-template hop(acc, u, o, v, st: untyped; sgn: static int; e: untyped; nl: static int; r64: static bool = false; fm: static bool = false) =
-  ## acc += sgn U v, U as for load
+template hop(acc, u, o, v, st: untyped; e: untyped; nl: static int; r64: static bool = false; fm: static bool = false) =
+  ## acc += U v, U as for load
   var m {.noInit.}: array[18, typeof(acc[0])]
   load(m, u, o, st, e, nl, r64, fm)
-  hopm(acc, m, v, 0, sgn)
+  hopm(acc, m, v, 0, hopFma)
 
 template hopA(acc, u, o, v, st: untyped; e: untyped; nl: static int; r64: static bool = false; fm: static bool = false) =
   ## acc -= U^+ v, U as for load.  hop and hopA stay templates: as procs, clang
@@ -393,7 +396,7 @@ template hopA(acc, u, o, v, st: untyped; e: untyped; nl: static int; r64: static
   ## block with the loads of all hops (MI300X: 368-418 VGPRs instead of 96)
   var m {.noInit.}: array[18, typeof(acc[0])]
   load(m, u, o, st, e, nl, r64, fm)
-  hopAm(acc, m, v, 0)
+  hopAm(acc, m, v, 0, hopFma)
 
 proc fetchL[T](v: var array[6,T]; x: ptr UncheckedArray[T]; o: int; V: static int) {.gpuInline, instShell.} =
   ## v = the 6 reals of a local site, x at o + c V
@@ -469,7 +472,7 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
         let e = if jj < 0: T(-1) else: T(1)
         var v {.noInit.}: array[6,T]
         fetch(v, j)
-        when fb == 0: hop(acc, lf, nl*mu*n + ko, v, V, 1, e, nl, r64, fm)
+        when fb == 0: hop(acc, lf, nl*mu*n + ko, v, V, e, nl, r64, fm)
         elif fw:
           if j < n: hopA(acc, lf, nl*mu*n + uo(V, j, nl), v, V, e, nl, r64, fm)
           else: hopA(acc, lh, j-n, v, nr, e, nl, r64, fm)
@@ -1123,16 +1126,9 @@ proc forceM*[V: static int](s: StagGpu[V,float]; g: GpuGauge[V]; sg: ptr Uncheck
     let o = 18*mu*n + lo18(V, k)
     var m {.noInit.}: array[18, float]
     mload(m, u, o, V)
-    let sf = sg[mu*n + k]
     var w {.noInit.}: array[6, float]  # U_mu(y) x(y+mu)
-    forStatic a, 0, 2:
-      var wr = 0.0
-      var wi = 0.0
-      forStatic b, 0, 2:
-        wr += m[6*a+2*b]*v[2*b] - m[6*a+2*b+1]*v[2*b+1]
-        wi += m[6*a+2*b]*v[2*b+1] + m[6*a+2*b+1]*v[2*b]
-      w[2*a] = sf*wr
-      w[2*a+1] = sf*wi
+    forStatic c, 0, 5: w[c] = 0.0
+    hopm(w, m, v, 0, hopFma)
     let yo = vo(V, k)
     var y {.noInit.}: array[6, float]
     forStatic c, 0, 5: y[c] = x[yo + c*V]
@@ -1142,7 +1138,7 @@ proc forceM*[V: static int](s: StagGpu[V,float]; g: GpuGauge[V]; sg: ptr Uncheck
         f[6*a+2*b] = y[2*a]*w[2*b] + y[2*a+1]*w[2*b+1]
         f[6*a+2*b+1] = y[2*a+1]*w[2*b] - y[2*a]*w[2*b+1]
     mtah(g, f)
-    let sc = if k < ne: t else: -t
+    let sc = sg[mu*n + k]*(if k < ne: t else: -t)  # sign of stagSigns times t e(y)
     forStatic e, 0, 17: p[o + e*V] -= sc*g[e]
 
 # Several systems at once, up to nBatch per hop.  The vectors of the
@@ -1289,8 +1285,8 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
         else: load(mm, lb, nl*mu*n + ko, V, e, nl, r64, fm)
         forStatic js, 0, C-1:
           fetch(v, j, pickS(x, js), 6*pickS(so, js))
-          when fb == 0: hopm(acc, mm, v, js, 1)
-          else: hopAm(acc, mm, v, js)
+          when fb == 0: hopm(acc, mm, v, js, true)
+          else: hopAm(acc, mm, v, js, true)
     let yo = vo(V, k)
     forStatic js, 0, C-1:
       let aj = pickS(a, js)

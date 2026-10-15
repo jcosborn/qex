@@ -217,6 +217,13 @@ workspace for recovery. `StagGpu.fixed` selects fixed-order reductions;
 atomic reductions permit variation in the order of additions. The
 programs expose this as `-fixed`.
 
+Batched hops compute each real product with one fused multiply-add
+(`fmadd`). `-d:hopFma` does the same in the hops of one system and in the
+link product of `forceM`; with links of 18 reals the hop takes 294 instead
+of 438 FP64 instructions per site. The double CG of one system then runs
+1.5x faster on GB300, where the FP64 rate limits the hop, and slower where
+bandwidth limits the hop: 6% on H100, 10% on GH200.
+
 ### Reliable updates and controls
 
 Reliable CG periodically accumulates the partial solution into the precise
