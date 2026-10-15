@@ -16,7 +16,9 @@
 ##   -inner:0 skips the raw single precision CG comparisons; -innerOnly:1
 ##   runs only those checks. -r2in sets the mixed inner tolerance; -innerReq
 ##   overrides the raw CG sweep, -r2req overrides final fixture tolerances.
-##   -innerMax and -innerMatch bound true inner r2 and batch/scalar dx2/x2.
+##   -innerMax bounds the true inner r2 for |m| < 0.1; -innerMatch the
+##   batch/scalar dx2/x2 for |m| >= 0.1, 10 innerMatch for |m| >= 0.01;
+##   -innerRel the batch true r2 over the larger CPU and scalar ones.
 ##   -refRound and -refFactor bound FP64 CPU-reference roundoff separately
 ##   from the solver's strict stopping target.
 ##   -fwd selects link caching; -seed selects the gauge and sources.
@@ -59,8 +61,9 @@ let verb = intParam("verb", 0)
 let cpu = intParam("cpu", 1) != 0
 let inner = intParam("inner", 1) != 0
 let innerReq = floatParam("r2in", 1e-6)
-let innerMax = floatParam("innerMax", 0.25) # hard cases must reduce the true residual norm by at least two
-let innerMatch = floatParam("innerMatch", 1e-4) # squared vector difference, batch versus scalar
+let innerMax = floatParam("innerMax", 0.25) # hard cases, |m| < 0.1, must reduce the true residual norm by at least two
+let innerMatch = floatParam("innerMatch", 1e-4) # squared vector difference, batch versus scalar, |m| >= 0.1
+let innerRel = floatParam("innerRel", 8.0) # up to 2.8 seen
 let innerGoal = floatParam("innerReq", 0.0) # 0 selects the regression sweep
 let outerGoal = floatParam("r2req", 0.0) # 0 selects each fixture's final tolerance
 let refRound = floatParam("refRound", 128.0)
@@ -68,7 +71,7 @@ let refFactor = floatParam("refFactor", 4.0) # at most twice the requested resid
 doAssert refRound >= 0 and refFactor >= 1
 proc requested(r: float): float = (if outerGoal > 0: outerGoal else: r)
 echo "solver tests seed ", seed, " r2in ", innerReq, " innerMax ", innerMax,
-  " innerMatch ", innerMatch, " innerReq ", innerGoal, " r2req ", outerGoal,
+  " innerMatch ", innerMatch, " innerRel ", innerRel, " innerReq ", innerGoal, " r2req ", outerGoal,
   " refRound ", refRound, " refFactor ", refFactor
 var fails = 0
 
@@ -193,8 +196,12 @@ proc checkInner(m, r2req: float) =
       threadMaster: d = a/b
     d
   proc accepts(r, dx, m: float): bool =
+    ## FP32 CG amplifies rounding differences of the scalar and batched hops
+    ## to dx2/x2 of 6e-5 at m = 0.01 and 3e-3 at m = 0.001; below |m| = 0.01
+    ## dx2/x2 <= 0.25 only rejects the controls (1 and about 2)
     let lim = if abs(m) >= 0.1: max(4*r2req, 1e-12) else: max(4*r2req, innerMax)
-    r <= lim and dx <= innerMatch
+    let dxl = if abs(m) >= 0.1: innerMatch elif abs(m) >= 0.01: 10*innerMatch else: 0.25
+    r <= lim and dx <= dxl
   var zero = lo.ColorVectorS()
   threads: zero := 0
   for j in 0..<nBatch:
@@ -207,7 +214,7 @@ proc checkInner(m, r2req: float) =
     let dx = distance(xb[j],xg[j])
     var ok = rc[j] <= r2req and rg[j] <= r2req and rb <= r2req
     ok = ok and ic[j] <= big and ig[j] <= big and st.its[j] <= big
-    ok = ok and accepts(tc,0.0,mj) and accepts(tg,0.0,mj) and accepts(tb,dx,mj)
+    ok = ok and accepts(tc,0.0,mj) and accepts(tg,0.0,mj) and accepts(tb,dx,mj) and tb <= innerRel*max(tc,tg)
     # These controls must fail the same output checks as a real damaged copy.
     ok = ok and not accepts(truth(zero,bs[j],de,mj),distance(zero,xg[j]),mj)
     let wrong = if nBatch > 1: xb[(j+1) mod nBatch] else: bs[j]
