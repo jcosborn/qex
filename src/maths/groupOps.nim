@@ -1093,7 +1093,8 @@ proc diffExpSuApply*(r: var Vec1, a: Mat1, x: Vec2, order=13, scale: static int 
       r := c[7]*x
       for k in countdown(6, 0):
         adApply(t, r)
-        r := t + c[k]*x
+        r := c[k]*x  # not r := t + c[k]*x: Nim 2.2.13 (af53f1f1) crashes on it
+        r += t
     else:
       # Even/odd reduction of the unscaled degree-13 polynomial.
       if order == 13:
@@ -1108,14 +1109,8 @@ proc diffExpSuApply*(r: var Vec1, a: Mat1, x: Vec2, order=13, scale: static int 
         r := odd[3]*x
         for k in countdown(6, 0):
           adApply(t, r)
-          case k
-          of 0: r := t + even[0]*x
-          of 1: r := t + odd[0]*x
-          of 2: r := t + even[1]*x
-          of 3: r := t + odd[1]*x
-          of 4: r := t + even[2]*x
-          of 5: r := t + odd[2]*x
-          else: r := t + even[3]*x
+          r := (if (k and 1) == 0: even[k div 2] else: odd[k div 2])*x  # as above
+          r += t
       else:
         var n = order
         var c = 1.0
