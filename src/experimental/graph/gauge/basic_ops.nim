@@ -371,8 +371,8 @@ proc `+`*[n:static[int]](x, y: Grmat[n]): Grmat[n] =
   x.requireSameFieldShape(y, "addRmat")
   let op {.global.} = Gfunc(bufferMode: bmFull, inplace: @[0, 1], forward: addf[Grmat[n]], backward: addb[Grmat[n]], name: "addRmat")
   # Flatten the left sum; addf accumulates its inputs and y in order.
-  var inputs = if x.gfunc == op: x.inputs else: @[Gvalue(x)]
-  inputs.add Gvalue(y)
+  # New seqs: Nim devel (a756e1df5) shares x.inputs with `var s = if c: x.inputs ...` under refc.
+  let inputs = if x.gfunc == op: x.inputs & Gvalue(y) else: @[Gvalue(x), Gvalue(y)]
   graphNode(x.fieldNodeLike, inputs, op, "addRmat")
 
 proc `*`*[n:static[int]](x: Gscalar, y: Grmat[n]): Grmat[n] =
