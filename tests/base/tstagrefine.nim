@@ -3,8 +3,7 @@ import qex, physics/[qcdTypes,stagSolve]
 
 qexInit()
 disableParamFiltering()
-# This fixed 4^4 fixture supports at most 16/VLEN MPI ranks.
-let lo = @[4,4,4,4].newLayout
+let lo = @[8,8,8,8].newLayout
 var rng = lo.newRngField(MRG32k3a,13579'u)
 var g = lo.newGauge()
 g.random rng
@@ -37,7 +36,7 @@ suite "mixed full equation refinement":
       sp.sloppySolve = SloppySingle
       sp.cg.acc64 = acc64
       sp.r2req = 1e-24
-      sp.maxits = 4000
+      sp.maxits = 30000
       sp.verbosity = 0
       s.solve(x,b,0.001,sp)
       let rr = residual(0.001)
@@ -50,7 +49,7 @@ suite "mixed full equation refinement":
     sp.sloppySolve = SloppySingle
     sp.cg.kind = 0
     sp.r2req = 1e-16
-    sp.maxits = 8000
+    sp.maxits = 20000
     sp.verbosity = 0
     s.solve(x,b,0.000001,sp)
     let rr = residual(0.000001)

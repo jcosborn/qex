@@ -93,7 +93,7 @@ macro rankSumN*(comm:Comm, a:varargs[typed]):auto =
     i0 = -1
     for i in 1..<a.len:
       #echo a[i].getType.repr
-      if a[i].getType.repr != t0.repr:
+      if a[i].getType.typekind != t0.typekind:  # not repr: Nim devel names float and float64 apart
         if a[i].getType is float32|float64:
           quit("can't mix float types in rankSum")
         i0 = i
