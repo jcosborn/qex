@@ -56,13 +56,21 @@ proc exchange[T](desc: var seq[RankScatterDescriptor2[T]], comm: auto,
         newdesc.add desc[i]
   send(srank, smsg.len)
   waitRecv()
+  rmsg.setLen(nmsgs)
+  # The transfers read smsg and write rmsg until waitAll, and the comm calls
+  # allocate: under refc keep both referenced (see makeGatherMap in gather).
+  when not defined(gcDestructors):
+    GC_ref(smsg)
+    GC_ref(rmsg)
   if nmsgs>0:
-    rmsg.setLen(nmsgs)
     recv(rrank, rmsg)
   waitSend()
   if smsg.len>0:
     send(srank, smsg)
   waitAll()
+  when not defined(gcDestructors):
+    GC_unref(smsg)
+    GC_unref(rmsg)
 
   if rrank > rank:
     newdesc.add rmsg
@@ -126,6 +134,8 @@ proc scatter*(mem: RankScatterMemSeq, c: Comm): tuple[buf:seq[char],mem:RankScat
   for i in 0..<b.len:
     rbytes += b[i].data
   result.buf.newSeq(rbytes)
+  # The receives write result.buf until waitRecvs; keep it referenced as well.
+  when not defined(gcDestructors): GC_ref(result.buf)
   result.mem.newSeq(b.len)
   var rpos = 0
   for i in 0..<b.len:
@@ -149,6 +159,7 @@ proc scatter*(mem: RankScatterMemSeq, c: Comm): tuple[buf:seq[char],mem:RankScat
       copyMem(result.mem[i].data, mem[j].data, mem[j].bytes)
 
   c.waitRecvs(b.len)
+  when not defined(gcDestructors): GC_unref(result.buf)
   c.waitSends(mem.len)
 
 when isMainModule:

@@ -91,7 +91,12 @@ proc makeGatherMap*(c: Comm, rl: var seq[RecvList]): GatherMap =
     inc nsites
     inc i
 
+  # After the loop sidx is dead to the compiler; only the raw pointers in mem,
+  # which the GC does not trace, remain.  Under refc a collection inside scatter
+  # can then free it and reuse the memory before it is sent.
+  when not defined(gcDestructors): GC_ref(sidx)
   let r = mem.scatter(c)
+  when not defined(gcDestructors): GC_unref(sidx)
   #echoAll r
 
   let nsend = r.buf.len div sizeof(int32)
@@ -153,7 +158,10 @@ proc makeGatherMap*(c: Comm, sl: var seq[SendList]): GatherMap =
     inc nsites
     inc i
 
+  # Keep didx alive through scatter, as sidx above.
+  when not defined(gcDestructors): GC_ref(didx)
   let r = mem.scatter(c)
+  when not defined(gcDestructors): GC_unref(didx)
   #echoAll r
 
   let nrecv = r.buf.len div sizeof(int32)
