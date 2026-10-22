@@ -47,6 +47,10 @@ proc transient(c: GaugeActionCoeffs, g, h, f: auto) {.noinline.} =
   fresh(c, g, h, f, work)
   work = nil
 
+const coeffs = [GaugeActionCoeffs(rect: 0.31),
+                GaugeActionCoeffs(pgm: -0.23),
+                GaugeActionCoeffs(plaq: 0.8, rect: -0.11, pgm: 0.17)]
+
 proc runLoops(lo: auto, nc: static int) =
   let
     g = lo.newGauge(nc)
@@ -77,9 +81,6 @@ proc runLoops(lo: auto, nc: static int) =
       gp[mu] := g[mu]+eps*h[mu]
       gm[mu] := g[mu]-eps*h[mu]
       id[mu] := 1
-  let coeffs = [GaugeActionCoeffs(rect: 0.31),
-                GaugeActionCoeffs(pgm: -0.23),
-                GaugeActionCoeffs(plaq: 0.8, rect: -0.11, pgm: 0.17)]
   suite "Fundamental loops Nc=" & $nc & " lattice=" & $lo.physGeom:
     test "identity normalization and transporter action values":
       for c in coeffs:
@@ -311,11 +312,27 @@ proc runLoops(lo: auto, nc: static int) =
         c.gaugeDeriv2Subset(g, hp, 1, 1, work=work)
         check getRawMemAllocated()-after == full
 
+proc releaseLoops(lo: auto, nc: static int) =
+  # refc scans live frames conservatively.  In runLoops, a stale word left by
+  # earlier tests pointed into a freed cell that `transient` reused for a
+  # field, which then survived GC_fullCollect: check from a small frame.
+  let
+    g = lo.newGauge(nc)
+    h = lo.newGauge(nc)
+    e = lo.newGauge(nc)
+    work = newLoopWork(g[0])
+  var r = newRNGField(RngMilc6, lo, 738142'u64)
+  threads:
+    g.random r
+    h.gaussian r
+  suite "Loop workspace release Nc=" & $nc & " lattice=" & $lo.physGeom:
     test "loop workspaces release temporary input fields":
       for c in coeffs:
         discard c.gaugeAction1(g, work=work)
         c.gaugeActionDeriv(g, e, work=work)
         c.gaugeDerivDeriv2(g, h, e, work=work)
+        c.gaugeDeriv2Subset(g, e, 0, 0, work=work)
+        c.gaugeDerivDeriv2Subset(g, h, e, 0, 0, work=work)
         GC_fullCollect()
         GC_fullCollect()
         let before = getRawMemUsed()
@@ -333,5 +350,7 @@ letParam:
   lat = latticeFromLocalLattice(@[4,4,4,4], nRanks)
 let lo = newLayout(lat)
 runLoops(lo, 3)
+releaseLoops(lo, 3)
 runLoops(lo, 1)
+releaseLoops(lo, 1)
 qexFinalize()
