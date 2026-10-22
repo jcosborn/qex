@@ -248,6 +248,7 @@ template gpuSum*(i: untyped; n: SomeInteger; m: static int; body: untyped): arra
   ## array[m, float], on this rank, in an order fixed by n: thread t sums
   ## i = t, t+T, ... of 16 terms, sumFixed the threads, so equal inputs give
   ## equal sums.
+  static: doAssert m <= 8, "gpuSumHost holds 8 sums"
   block:
     if gpuSumHost == nil:
       gpuSumHost = cast[ptr UncheckedArray[float]](gpuMallocHost(8*sumHost*sizeof(float)))
