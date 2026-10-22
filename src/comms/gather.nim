@@ -295,6 +295,8 @@ template copy(gd: GatherPointer, d: SomeInteger, s: SomeInteger) =
   copyMem(cast[pointer](addr gd.dest[gd.elemsize*d]),
           cast[pointer](addr gd.src[gd.elemsize*s]), gd.elemsize)
 proc gather*(c: Comm; gm: GatherMap; elemsize: int; d,s: pointer) =
+  checkBorrow(d, "gather")
+  checkBorrow(s, "gather")
   let dest = cast[ptr UncheckedArray[char]](d)
   let src = cast[ptr UncheckedArray[char]](s)
   var gd = GatherPointer(src: src, dest: dest, elemsize: elemsize)
@@ -326,6 +328,8 @@ proc gather*[D,S:Field](c: Comm; gm: GatherMap; d: D, s: S) =
 
 proc gatherReversed*(c: Comm; gm: GatherMap; elemsize: int;
                      dest,src: pointer) =
+  checkBorrow(dest, "gatherReversed")
+  checkBorrow(src, "gatherReversed")
   var r = GatherMap.new
   r.nsrc = gm.ndest
   r.ndest = gm.nsrc

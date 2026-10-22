@@ -109,6 +109,9 @@ proc scatter*[T](desc0: RankScatterSeq[T], comm: auto): RankScatterSeq[T] =
     result[i].rank = desc[i].srank
 
 proc scatter*(mem: RankScatterMemSeq, c: Comm): tuple[buf:seq[char],mem:RankScatterMemSeq] =
+  ## mem[i].data is borrowed until scatter returns. The GC does not trace it, so
+  ## under refc the caller keeps the owning seq referenced (GC_ref) meanwhile.
+  for m in mem: checkBorrow(m.data, "scatter")
   let rank = c.commrank
 
   # find recv ranks and sizes

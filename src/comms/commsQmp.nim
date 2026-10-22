@@ -141,6 +141,7 @@ method nsends*(c: CommQmp): int = c.smsg.len
 method nrecvs*(c: CommQmp): int = c.rmsg.len
 
 method pushSend*(c: CommQmp, rank: int, p: pointer, bytes: int) =
+  checkBorrow(p, "pushSend")
   let m = QMP_declare_msgmem(p, bytes.csize_t)
   let h = QMP_comm_declare_send_to(c.comm, m, rank.cint, 0.cint)
   let stat = QMP_start(h)
@@ -149,6 +150,7 @@ method pushSend*(c: CommQmp, rank: int, p: pointer, bytes: int) =
   c.smsg.add h
 
 method pushRecv*(c: CommQmp, rank: int, p: pointer, bytes: int) =
+  checkBorrow(p, "pushRecv")
   let m = QMP_declare_msgmem(p, bytes.csize_t)
   let h = QMP_comm_declare_receive_from(c.comm, m, rank.cint, 0.cint)
   let stat = QMP_start(h)
