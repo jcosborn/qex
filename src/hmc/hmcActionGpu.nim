@@ -262,12 +262,9 @@ proc solveAll(h: HmcGpu; sys: var seq[Sys]; mixed = false) =
     sps[j].resetStats
   if mixed: h.s.solveM(xs, bs, ms, sps, addr h.ss, r2in = h.r2in, full = full)
   else: h.s.solveM(xs, bs, ms, sps, full = full)
-  let secs = getElapsedTime()/float(sys.len)
   for j in 0..<sys.len:
     var sp = sps[j]
     sp.r2.init h.resid(sys[j].x, sys[j].b, sys[j].m)
-    sp.flops = float((4*4*72 + 60)*h.s.ne*sp.iterations)
-    sp.seconds = secs
     sys[j].sp = sp
   toc()
 

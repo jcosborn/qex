@@ -1046,6 +1046,7 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: ptr UncheckedArray[float]
                             full = false) =
   ## M x = b from x = 0, with the true full residual deciding convergence.
   ## A failed mixed correction retries in FP64 within the same budget.
+  let t0 = epochTime()
   let b2 = s.norm2EO(b,full)
   let bb = b2[0]+b2[1]
   gpuFor(i,6*s.n): x[i] = 0.0
@@ -1053,6 +1054,8 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x, b: ptr UncheckedArray[float]
   let r2 = s.correctM(x,b,m,full,sp.r2req*bb,its,sp.maxits,ss,r2in,sp.verbosity,nr)
   sp.addSolve(its,if bb>0: r2/bb else: 0.0)
   sp.reliable += nr
+  sp.seconds += epochTime() - t0
+  sp.flops += float((2*8*72 + 60)*s.ne*its)  # as solveEE
 
 proc outerM*[V: static int](s: StagGpu[V,float]; f, x: ptr UncheckedArray[float]; t: float) =
   ## f_mu(y) += t x(y) x(y+mu)^+ over all sites, f like GpuGauge.u: the one
@@ -2157,10 +2160,18 @@ proc solveMB[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedAr
 proc solveM*[V: static int](s: StagGpu[V,float]; x,b: openArray[ptr UncheckedArray[float]]; m: openArray[float];
                             sp: var openArray[SolverParams]; ss: ptr StagGpu[V,float32] = nil; r2in = 1e-6;
                             full = false) =
+  ## The systems share the time; flops count each system's iterations as solveEE.
+  let t0 = epochTime()
+  var its0 = newSeq[int](sp.len)
+  for i in 0..<sp.len: its0[i] = sp[i].iterations
   if ss != nil and ss[].ctrl.kind == 2 and ss[].ctrl.acc64:
     s.solveMB(x,b,m,sp,ss,r2in,full,float64)
   else:
     s.solveMB(x,b,m,sp,ss,r2in,full,float32)
+  let secs = (epochTime() - t0)/float(sp.len)
+  for i in 0..<sp.len:
+    sp[i].seconds += secs
+    sp[i].flops += float((2*8*72 + 60)*s.ne*(sp[i].iterations - its0[i]))
 
 proc outerB[V: static int; C: static int](s: StagGpu[V,float]; f: ptr UncheckedArray[float];
                                          x: array[C, ptr UncheckedArray[float]]; t: array[C, float];
