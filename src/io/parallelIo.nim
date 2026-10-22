@@ -398,14 +398,19 @@ proc read*(pr: var ParallelReader, wm: WriteMap,
   let rsize = elemsize * wm.gm.ndest
   #echo "elemsize: ", elemsize, "  rsize: ", rsize
   var rp: pointer
+  var rbuf: seq[char]
   # read data
   if rsize>0:
-    var rbuf = newSeq[char](rsize)
+    rbuf = newSeq[char](rsize)
     rp = &&rbuf
     pr.seekCur(elemsize*wm.offset)
     pr.read(rp, rsize)
 
+  # Only rp reaches the gather, which allocates; keep rbuf alive under refc
+  # (see makeGatherMap in comms/gather).
+  when not defined(gcDestructors): GC_ref(rbuf)
   pr.comm.gatherReversed(wm.gm, elemsize, dbuf, rp)
+  when not defined(gcDestructors): GC_unref(rbuf)
 
   pr.seekCur(elemsize*wm.endoffset)
 
@@ -414,16 +419,20 @@ proc write*(pw: var ParallelWriter, wm: WriteMap,
   let wsize = elemsize * wm.gm.ndest
   #echo "elemsize: ", elemsize, "  wsize: ", wsize
   var wp: pointer
+  var wbuf: seq[char]
   if wsize>0:
-    var wbuf = newSeq[char](wsize)
+    wbuf = newSeq[char](wsize)
     wp = &&wbuf
 
+  # The gather writes through wp and allocates; keep wbuf alive under refc.
+  when not defined(gcDestructors): GC_ref(wbuf)
   pw.comm.gather(wm.gm, elemsize, wp, sbuf)
 
   # write data
   if wsize > 0:
     pw.seekCur(elemsize*wm.offset)
     pw.write(wp, wsize)
+  when not defined(gcDestructors): GC_unref(wbuf)
   pw.seekCur(elemsize*wm.endoffset)
 
 import field
@@ -433,7 +442,9 @@ import field
 proc read*(pr: var ParallelReader, f: Field, wm: WriteMap) =
   when f.V==1:
     let elemsize = sizeof(f[0])
+    GC_ref(f)  # the gather sees only the storage pointer and allocates
     pr.read(wm, elemsize, cast[pointer](addr f[0]))
+    GC_unref(f)
     #pr.read(wm, elemsize, cast[pointer](getAddr f[0]))
   else:
     echo "parallel read V: ", f.V, " not supported yet!"
@@ -442,7 +453,9 @@ proc read*(pr: var ParallelReader, f: Field, wm: WriteMap) =
 proc write*(pw: var ParallelWriter, f: Field, wm: WriteMap) =
   when f.V==1:
     let elemsize = sizeof(f[0])
+    GC_ref(f)  # as in read
     pw.write(wm, elemsize, cast[pointer](addr f[0]))
+    GC_unref(f)
     #pw.write(wm, elemsize, cast[pointer](getAddr f[0]))
   else:
     echo "parallel write V: ", f.V, " not supported yet!"
