@@ -5,20 +5,26 @@ export hipbe
 import gpumem
 
 #{.emit:"/*INCLUDESECTION*/#include <cooperative_groups.h>".}
-proc importCG() {.header:"<cooperative_groups.h>",importcpp:"@".}
+proc importCG() {.header:"<hip/hip_cooperative_groups.h>",importcpp:"@".}
 proc warpSumSmall*[T:HipTypes](x: T): T =  # for up to 32 bytes
-  importCG()
-  result = x
-  var t {.noInit.}: T
-  {.emit:["""
-  namespace cg = cooperative_groups;
-  const int warp_size = 32;
-  cg::thread_block cta = cg::this_thread_block();
-  cg::thread_block_tile<warp_size> tile = cg::tiled_partition<warp_size>(cta);
-  for (int offset = warp_size / 2; offset >= 1; offset /= 2) {""",
-  t,""" = tile.shfl_down(""",result,""", offset);"""].}
-  result += t
-  {.emit:["}"].}
+  when T is HipVecTypes:  # ROCm's shfl_down takes scalars only
+    result.x = warpSumSmall(x.x)
+    result.y = warpSumSmall(x.y)
+    when T is float3|double3|float4|double4: result.z = warpSumSmall(x.z)
+    when T is float4|double4: result.w = warpSumSmall(x.w)
+  else:
+    importCG()
+    result = x
+    var t {.noInit.}: T
+    {.emit:["""
+    namespace cg = cooperative_groups;
+    const int warp_size = 32;
+    cg::thread_block cta = cg::this_thread_block();
+    cg::thread_block_tile<warp_size> tile = cg::tiled_partition<warp_size>(cta);
+    for (int offset = warp_size / 2; offset >= 1; offset /= 2) {""",
+    t,""" = tile.shfl_down(""",result,""", offset);"""].}
+    result += t
+    {.emit:["}"].}
 
 template atomic_type*(t: HipTypes): typedesc = t
 template atomic_type*[N:static int,T](t: typedesc[array[N,T]]): typedesc =
@@ -105,7 +111,7 @@ proc newGpuSum*[T](ns: int): GpuSum[T] =
   let n = (ns + 31) div 32  # divide by warp size
   #result.partial.gpuMalloc(n)
   pushGpuMemTag("GpuSumPartial")
-  let bytes = sizeof(result.dev.count) + n*sizeof(T)
+  let bytes = sizeof(result.dev[]) + n*sizeof(T)  # partial starts after count and its padding
   let pgmdev = getGpuMem(addr result[], bytes)
   popGpuMemTag()
   result.dev = cast[typeof result.dev](pgmdev.p)
@@ -115,7 +121,7 @@ proc newGpuSum*[T](ns: int): GpuSum[T] =
   let err = hipHostMalloc((ptr pointer)(addr result.val), csize_t sizeof(T))
 template value*(x: GpuSum | GpuSumObj): auto = x.val[]
 template toGpu*(x: GpuSum): auto =
-  let bytes = sizeof(x.dev.count) + x.npartial.int*sizeof(x.T)
+  let bytes = sizeof(x.dev[]) + x.npartial.int*sizeof(x.T)
   let pgmdev = getGpuMem(addr x[], bytes)
   x[]
 template getGpu*(x: GpuSum, g: GpuSumObj): auto = g

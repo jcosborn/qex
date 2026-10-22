@@ -128,7 +128,8 @@ proc makeHaloLayout*[L:Layout](lo: L, fwdOffset,bckOffset: openarray[SomeInteger
       x[mu] -= 1
   toc("neighbors")
 
-proc makeHaloMap*[L](hl: HaloLayout[L], c: Comm, offsets: seq[seq[int32]]): HaloMap[L] =
+proc makeHaloMap*[L](hl: HaloLayout[L], c: Comm, offsets: seq[seq[int32]], par = -1): HaloMap[L] =
+  ## par >= 0 keeps only the halo sites of that parity.
   tic("makeHaloMap")
   result.new
   result.layout = hl
@@ -147,7 +148,9 @@ proc makeHaloMap*[L](hl: HaloLayout[L], c: Comm, offsets: seq[seq[int32]]): Halo
     let ik = vlen*i0 + k
     hl.lo.coord(x, ik)
     vecOffset[k] = x - hl.offset
+  let nh0 = hl.nOut + hl.nExtPar[0] - hl.nOutPar[0]  # halo sites of parity 0 come first
   for i in hl.nOut ..< hl.nExt:  # loop over halo sites
+    if par >= 0 and int(i >= nh0) != par: continue
     let li = hl.lex[i]
     x.lexCoord(li, hl.outerExt)
     var keep = false

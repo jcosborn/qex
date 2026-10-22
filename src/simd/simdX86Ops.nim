@@ -9,8 +9,9 @@ import math
 import macros
 getOptimPragmas()
 
-# mask ops
-proc cvtu32_mask8*(a: cuint): mmask8 {.importc: "_cvtu32_mask8", header: "immintrin.h".}
+# mask ops; a cast for _cvtu32_mask8, which NVHPC 25.11 implements with a
+# builtin its compilers lack (__builtin_ia32_kmovb)
+proc cvtu32_mask8*(a: cuint): mmask8 {.importc: "(__mmask8)", nodecl.}
 template int2mask*(T: typedesc, i: SomeInteger): mmask8 = cvtu32_mask8(uint32 i)
 template int2mask*(T: typedesc[m512], i: SomeInteger): mmask16 = cvtu32_mask16(uint32 i)
 

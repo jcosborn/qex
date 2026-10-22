@@ -1,5 +1,7 @@
-const Backend {.strdefine.} = "OpenMP"
-when Backend == "CUDA":
+const Backend {.strdefine.} = "CPU"
+when Backend == "CPU":
+  const useGPU = false
+elif Backend == "CUDA":
   const useGPU = true
   import cuda
   export cuda

@@ -26,7 +26,7 @@ template requireFundamental(c: GaugeActionCoeffs, name: string) =
   if c.adjplaq != 0:
     raise newException(ValueError, name & " requires fundamental coefficients")
 
-template requireAdjoint(c: GaugeActionCoeffs, name: string) =
+template requireAdjoint*(c: GaugeActionCoeffs, name: string) =
   if c.rect != 0 or c.pgm != 0:
     raise newException(ValueError, name & " supports plaquette and adjoint-plaquette coefficients only")
 

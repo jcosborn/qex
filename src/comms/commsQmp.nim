@@ -81,7 +81,7 @@ import commsTypes
 
 type
   CommQmp* = ref object of Comm
-    comm: QMP_comm_t
+    comm*: QMP_comm_t
     smem: seq[QMP_msgmem_t]
     smsg: seq[QMP_msghandle_t]
     rmem: seq[QMP_msgmem_t]
