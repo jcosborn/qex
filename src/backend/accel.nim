@@ -73,23 +73,6 @@ proc toGpu*[T:SomeNumber](g: var GpuSeq[T], c: seq[T], pgm: ptr GpuMem) =
   #  gpuMemCpyToGpu(g.p, addr c[0], c.bytes)
   pgm.copyIn(addr c[0])
 
-proc toGpu*[G,C](g: var GpuSeq[GpuSeq[G]], c: seq[seq[C]], pgm: ptr GpuMem) =
-  if pgm.isNew:  # newly created
-    var t = newSeq[GpuSeq[G]](g.n)
-    for i in 0..<g.n:
-      t[i] = toGpu(c[i])
-    gpuMemCpyToGpu(g.p, addr t[0], t.bytes)
-  elif pgm.needsCopyIn:
-    for i in 0..<g.n:
-      #toGpu(addr g.p[i], c[i])
-      let t = getGpuMem(addr c[i][0], c[i].bytes)
-      if t.useCount == 1:
-        var x = toGpu(c[i])
-        gpuMemCpyToGpu(addr g.p[i], addr x, sizeof(x))
-      else:
-        if t.needsCopyIn:
-          gpuMemCpyToGpu(t.p, addr c[i][0], c[i].bytes)
-
 proc toGpu*[G,C](g: var GpuSeq[ptr UncheckedArray[G]], c: seq[seq[C]], pgm: ptr GpuMem) =
   if pgm.needsCopyIn:
     var t = newSeq[ptr UncheckedArray[G]](g.n)
