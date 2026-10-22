@@ -5,7 +5,7 @@ export hipbe
 import gpumem
 
 #{.emit:"/*INCLUDESECTION*/#include <cooperative_groups.h>".}
-proc importCG() {.header:"<cooperative_groups.h>",importcpp:"@".}
+proc importCG() {.header:"<hip/hip_cooperative_groups.h>",importcpp:"@".}
 proc warpSumSmall*[T:HipTypes](x: T): T =  # for up to 32 bytes
   importCG()
   result = x
