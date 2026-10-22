@@ -58,6 +58,7 @@ sp.maxits = maxits
 sp.verbosity = 1
 for k in 0..<ncpu:
   resetTimers()
+  getDefaultComm().barrier  # the ranks start together, as in the batched timing
   let t0 = epochTime()
   s.solveEE(xc, src, mass, sp)
   echo "CPU solve seconds: ", epochTime() - t0
@@ -79,6 +80,7 @@ for k in 0..<ngpu:
   spg.maxits = maxits
   spg.verbosity = intParam("verb", 1)
   resetTimers()
+  getDefaultComm().barrier
   let t0 = epochTime()
   sg.solveEE(xg, src, mass, spg)
   echo "GPU solve seconds: ", epochTime() - t0
@@ -148,6 +150,7 @@ if intParam("mixed", 0) != 0:
     spg.maxits = maxits
     spg.verbosity = intParam("verb", 1)
     resetTimers()
+    getDefaultComm().barrier
     let t0 = epochTime()
     solveEE(sg, sgs, xg, src, mass, spg, floatParam("r2in", 1e-6))
     echo "GPU mixed solve seconds: ", epochTime() - t0
