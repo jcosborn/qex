@@ -7,7 +7,10 @@ var kernelCallCount* = 0  # _twice_ kernel calls, incremented before setup and a
 const dumpKernels {.intdefine.} = 0
 
 template gpuMalloc*(size:SomeInteger):pointer = alloc(size)
-template gpuFree*(device_ptr:pointer) = dealloc(device_ptr)
+template gpuFree*(device_ptr:pointer) =
+  ## nil is a no-op, as with the device frees; dealloc(nil) crashes
+  let p = device_ptr
+  if p != nil: dealloc(p)
 proc gpuMemCpyToCPU*(dst: pointer, src: pointer; length: SomeInteger) =
   copymem(dst, src, length)
 proc gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger) =
