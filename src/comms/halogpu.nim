@@ -232,13 +232,14 @@ type
     smsg*, rmsg*: seq[MsgInfo]
     speer*, rpeer*: seq[bool]  # messages stored directly in the peer rbuf
     peers: seq[pointer]  # opened IPC mappings
+    comm: Comm
     flags: seq[char]
     mems: seq[QMP_msgmem_t]
     msg: QMP_msghandle_t  # all receives and sends, declared once
 
 proc newGpuHaloEx*[T](gm: GatherMap, ne, n, v: int, c: Comm): GpuHaloEx[T] =
   tic("newGpuHaloEx")
-  var ex = GpuHaloEx[T](ne: ne, n: n, v: v, nsend: gm.sidx.len, nrecv: gm.rdest.len)
+  var ex = GpuHaloEx[T](ne: ne, n: n, v: v, nsend: gm.sidx.len, nrecv: gm.rdest.len, comm: c)
   ex.sidx = gm.sidx.toDevice
   if ex.nsend > 0:
     ex.sbuf = cast[ptr UncheckedArray[T]](gpuMalloc(ne*ex.nsend*sizeof(T)))
@@ -387,6 +388,7 @@ proc free*[T](ex: GpuHaloEx[T]) =
   when ipc:
     for p in ex.peers: ipcClose(p)
     ex.peers.setLen(0)
+    ex.comm.barrier  # peers unmap our rbuf before it is freed
   for p in [pointer ex.sidx, ex.sslot, ex.sdst, ex.sstr, ex.rofs, ex.rstr, ex.sbuf, ex.rbuf]:
     if p != nil: gpuFree(p)
   ex.sidx = nil
