@@ -129,7 +129,11 @@ try:
   except IOError:
     failed = true
   doAssert failed
-finally:
+except Exception:
+  # In a finally, rmDir would hide the failure behind the VM assertion
+  # described in runBuilds.
   rmDir(dir)
+  raise
+rmDir(dir)
 
 echo "Build flag checks passed."

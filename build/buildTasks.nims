@@ -205,14 +205,19 @@ proc runBuilds() =
   if builds.len == 0: return
   # The queue goes in a file; Linux limits one exec argument to 128 KiB.
   let d = gorge("mktemp -d")
+  # Cleanup in except, not finally: the VM asserts `savedPC < 0` when a try
+  # ends inside a finally run by an exception, and since Nim devel 214c1eb78
+  # rmDir has an injected destructor try.
   try:
     let f = d / "builds.sh"
     writeFile(f, "n=" & $jobs & "\nd=" & d.quoteShell & "\nset --" &
                  builds.mapIt(" \\\n  " & it.quoteShell).join & "\n" & poolScript)
     builds.setLen(0)
     exec "sh " & f.quoteShell
-  finally:
+  except CatchableError:
     rmDir(d)
+    raise
+  rmDir(d)
 
 # return true if failed
 proc buildFile(f: string, outfile=""): bool =

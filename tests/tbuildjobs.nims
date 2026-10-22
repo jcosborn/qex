@@ -137,7 +137,11 @@ fi
   runTask("clean")
   doAssert listDirs(nimcache).len == 0
   doAssert listFiles(nimcache).len == 0
-finally:
+except Exception:
+  # In a finally, rmDir would hide the failure behind the VM assertion
+  # described in runBuilds.
   rmDir(dir)
+  raise
+rmDir(dir)
 
 echo "Build job checks passed."
