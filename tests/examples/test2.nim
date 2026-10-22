@@ -17,7 +17,11 @@ proc test() =
       #    tr += g[i][x][c,c]
       #echo i, ": ", vecSum(tr)
       echo i, ": ", trace(g[i])/lo.physVol
+  # plaq reads g through a raw pointer while it allocates, and this is the
+  # last use of g: keep it referenced.
+  when not defined(gcDestructors): GC_ref(g)
   var pl = plaq(g)
+  when not defined(gcDestructors): GC_unref(g)
   echo pl
   #for i in 0..2:
   #  echo g[0][0][i,i]

@@ -559,6 +559,11 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
       p.intWork = cast[ptr cint](intWork.data)
       p.realWork = realWork.data
       p.matrix = mi.addr
+      # PRIMME sees only the data pointers of vecs, intWork and realWork, and
+      # the matvec callbacks allocate: keep their storage referenced to the end.
+      GC_ref(vecs.mem)
+      GC_ref(intWork.mem)
+      GC_ref(realWork.mem)
       if myRank == 0: p.display_params
       block run:
         let t = vecs[0]  # XXX Force instantiating the type, works around Nim compiler bug.
@@ -595,6 +600,9 @@ proc prep[F](o:LBFGS[F], cutoff = 0.0, reduce = 0) =
       else: discard
       for i in 0..<p.numEvals:
         echo i," ev ",vals[i].float," rnorm ",rnorms[i].float
+      GC_unref(vecs.mem)
+      GC_unref(intWork.mem)
+      GC_unref(realWork.mem)
     o.lbfgseigen(primme_smallest)
     o.lbfgseigen(primme_largest)
     let te1 = epochTime()

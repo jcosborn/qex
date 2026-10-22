@@ -382,7 +382,14 @@ when isMainModule:
       if (i mod nranks) == rank:
         src1[i xor 1] = i
 
+    # The gather sees only the raw pointers and allocates.
+    when not defined(gcDestructors):
+      GC_ref(dst1)
+      GC_ref(src1)
     c.gather(gm, sizeof(int), &&dst1, &&src1)
+    when not defined(gcDestructors):
+      GC_unref(dst1)
+      GC_unref(src1)
 
     echo dst1
     for i in 0..<n:
