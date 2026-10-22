@@ -281,6 +281,10 @@ template `:=`*[T](x: SomeNumber; y: array[1,T]) = assign(x,y[0])
 
 template toSingleImpl*[N:static int](x: array[N,float32]): auto = x
 template toDoubleImpl*[N:static int](x: array[N,float64]): auto = x
+proc toSingleImpl*[N:static int](x: array[N,float64]): array[N,float32] {.gpuInline,noInit.} =
+  for i in 0..<N: result[i] = float32 x[i]
+proc toDoubleImpl*[N:static int](x: array[N,float32]): array[N,float64] {.gpuInline,noInit.} =
+  for i in 0..<N: result[i] = float64 x[i]
 
 template setUnopP*(op,fun,t1,t2: untyped) {.dirty.} =
   proc op*(x: t1): auto {.alwaysInline,noInit.} =
