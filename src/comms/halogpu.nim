@@ -276,6 +276,11 @@ proc newGpuHaloEx*[T](gm: GatherMap, ne, n, v: int, c: Comm): GpuHaloEx[T] =
     toc("hosts")
     var rout = newSeq[GpuIpc](ex.rmsg.len)
     var sin = newSeq[GpuIpc](ex.smsg.len)
+    # The transfers use rout and sin until the waits, and the comm calls
+    # allocate: under refc keep both referenced (see makeGatherMap in gather).
+    when not defined(gcDestructors):
+      GC_ref(rout)
+      GC_ref(sin)
     var ns, nr = 0
     for i, m in ex.rmsg:
       if ex.rpeer[i]:
@@ -288,6 +293,9 @@ proc newGpuHaloEx*[T](gm: GatherMap, ne, n, v: int, c: Comm): GpuHaloEx[T] =
         inc nr
     if nr > 0: c.waitRecvs(nr)
     if ns > 0: c.waitSends(ns)
+    when not defined(gcDestructors):
+      GC_unref(rout)
+      GC_unref(sin)
     toc("handles")
   var sd = newSeq[ptr UncheckedArray[T]](ex.nsend)
   var ss = newSeq[int32](ex.nsend)
