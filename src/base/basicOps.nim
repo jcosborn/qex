@@ -11,11 +11,15 @@ import math
 export math
 import macros
 import metaUtils
+from os import parentDir
 
 {.passL:"-lm".}
 
 const Backend {.strdefine.} = "CPU"
 const hd = when Backend == "CUDA" or Backend == "HIP": "QEX_HD " else: ""  # QEX_HD: backend/*/nimbase.h
+# here, since every module that uses these pragmas needs that nimbase.h
+when Backend == "CUDA": {.passC: "-iquote " & currentSourcePath().parentDir.parentDir & "/backend/cuda".}
+elif Backend == "HIP": {.passC: "-iquote " & currentSourcePath().parentDir.parentDir & "/backend/hip".}
 const inlineDecl = "inline __attribute__((always_inline)) $# $#$#"
 const gpuInlineDecl = hd & inlineDecl
 const gpuCallDecl = hd & "static N_INLINE($#, $#)$#"  # Nim's declaration of inline procs

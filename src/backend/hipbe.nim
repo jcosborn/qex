@@ -1,5 +1,4 @@
 import macros, strutils
-from std/os import parentDir
 import base/[metaUtils,profile]
 import expr
 import hip
@@ -56,8 +55,6 @@ template gpuMemCpyToCpu*(dst,src: pointer, count: SomeInteger) =
   if err:
     echo instantiationInfo()
     echo "  gpuMemCpyToCpu: ", $err
-
-{.passC: "-iquote " & currentSourcePath().parentDir & "/hip".}  # hip/nimbase.h
 
 const gpuThreads {.intdefine.} = 128  ## threads per block of gpuFor kernels
 var gpuI {.importc, nodecl.}: clong  # the index in the gpuFor kernels
