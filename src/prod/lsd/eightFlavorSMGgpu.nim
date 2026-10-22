@@ -6,7 +6,8 @@
 ## 0 and 1 and the determinant of the smeared links in the solvers;
 ## -force_stats:2 pulls each fermion force back through the smearing on its
 ## own at every step, as the host code, for the force stats of every step
-## (1: of the first fermion and gauge forces of each trajectory); -mixed:1 solves the
+## (1: of the first fermion force of each level and the first gauge force of
+## each trajectory); -mixed:1 solves the
 ## fermion forces in mixed precision; -fixed_sums:0 adds the CG dot products
 ## atomically, faster, but runs no longer repeat bit for bit.
 ##

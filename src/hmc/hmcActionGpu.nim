@@ -17,9 +17,9 @@
 ## The smearing force is linear in the one link force, so the fermion
 ## actions of a level add their one link forces and pull the sum back once.
 ## The force stats of each action need its own pullback: with forceStats = 1
-## they come from the first fermion force of each trajectory, whose actions
-## are pulled back one by one, and from the first gauge force, with
-## forceStats = 2 from every force, as hmcAction does.
+## they come from the first fermion force of each level in a trajectory,
+## whose actions are pulled back one by one, and from the first gauge force,
+## with forceStats = 2 from every force, as hmcAction does.
 
 import qex
 import gauge
@@ -62,10 +62,10 @@ type
     w*: ptr UncheckedArray[float]  ## work vector, 6n reals
     red*, hred*: ptr UncheckedArray[float]  ## force stats sums and maxima, device and pinned host
     smeared*: bool  ## sgo and s hold the smeared links of gg.u
-    forceStats*: int  ## 1: the per action force stats of the first fermion and gauge forces of a trajectory, 2: of all
+    forceStats*: int  ## 1: the per action force stats of the first fermion force of each level and the first gauge force of a trajectory, 2: of all
     mixed*: bool  ## force solves in mixed precision
     r2in*: float  ## relative squared residual target of the inner FP32 CG
-    sample: bool  ## pull the actions of the next fermion force back one by one
+    sample: seq[bool]  ## per level: pull the actions of its next fermion force back one by one
     sampleG: bool  ## the stats of the next gauge force
     hostNew*: bool  ## the host links are newer than gg.u
     hmcStats*: Table[string, ActionStats]
@@ -405,12 +405,13 @@ proc action(h: HmcGpu; level: GpuLevel): seq[float] =
     result[i] = 0.5*h.s.norm2(a.x)
     if a.kind == gkFermion: a.solveStats("AS", sys[j].sp, sys[j].sp.seconds)
 
-proc force(h: HmcGpu; level: GpuLevel; dtau: float) =
+proc force(h: HmcGpu; li: int; dtau: float) =
   ## f += the forces of the level with dtau, as the force procs of hmcAction:
   ##   fermion  0.25 dtau F(psi), psi_e = 4 A^-1 phi_e, psi_o = D_oe psi_e
   ##   ratio    0.25 dtau (m_den^2 - m_num^2) F(psi), psi as fermion with m_num
   ##   PV       -0.25 dtau F(psi), psi_e = phi_e, psi_o = D_oe phi_e
   ## for F the force of the one link force psi(x) psi(x+mu)^+.
+  template level: GpuLevel = h.levels[li]
   var sys: seq[Sys]
   var owner: seq[int]
   for i, a in level.actions:
@@ -425,7 +426,7 @@ proc force(h: HmcGpu; level: GpuLevel; dtau: float) =
     let a = level.actions[i]
     fsecs[i] = sys[j].sp.seconds
     if a.kind == gkFermion: a.solveStats("FS", sys[j].sp, fsecs[i])
-  let each = h.forceStats == 2 or h.sample
+  let each = h.forceStats == 2 or h.sample[li]
   # the PV vectors psi_e = phi_e, psi_o = D_oe phi_e for the hop D of dslash (twice
   # applyMfull(psi, phi, 0) on the odd sites), together
   var pv: seq[int]
@@ -487,7 +488,7 @@ proc force(h: HmcGpu; level: GpuLevel; dtau: float) =
     h.hmcStats["SF"]["n"] += 1
     h.hmcStats["SF"]["secs"] += getElapsedTime()
     toc()
-  if level.actions.anyIt(it.kind != gkGauge): h.sample = false
+  if level.actions.anyIt(it.kind != gkGauge): h.sample[li] = false
 
 #[ the molecular dynamics ]#
 
@@ -517,7 +518,7 @@ proc integrator*(h: HmcGpu): Integrator =
   proc mdv(dtau: openArray[float]) =
     h.zeroLinks h.f
     for i in 0..<nlevels:
-      if dtau[i] != 0.0: h.force(h.levels[i], dtau[i])
+      if dtau[i] != 0.0: h.force(i, dtau[i])
     let p = h.p
     let f = h.f
     gpuFor(i, 4*18*h.gg.n): p[i] -= f[i]
@@ -536,7 +537,7 @@ proc start*(h: HmcGpu) =
   h.atEnd = false
   h.hmcStats["GU"] = baseStats0.newTable
   h.hmcStats["SF"] = baseStats0.newTable
-  h.sample = h.forceStats == 1
+  h.sample = newSeqWith(h.levels.len, h.forceStats == 1)
   h.sampleG = h.forceStats == 1
   if h.hostNew:
     h.gg.upload(h.gg.u, h.cpu.uc.u)
