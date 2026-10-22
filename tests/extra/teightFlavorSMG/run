@@ -95,8 +95,10 @@ echo "OK"
 echo
 echo "== 2b. Every action reports force stats (none silently empty) =="
 nforce="$(grep -cE '^(GA0|SFA[0-9]+|SRA[0-9]+|SPVA[0-9]+)F ' "$out")"
-if [[ $nforce -ne 13 ]]; then
-  echo "FAILED: expected 13 force-stats lines (GA0F, SFA0F, SFA1F, SRA0F, SRA1F, SPVA0F..SPVA7F), got $nforce"
+# a table without samples prints nan statistics
+nempty="$(grep -E '^(GA0|SFA[0-9]+|SRA[0-9]+|SPVA[0-9]+)F ' "$out" | grep -c nan)"
+if [[ $nforce -ne 13 || $nempty -ne 0 ]]; then
+  echo "FAILED: expected 13 force-stats lines with samples (GA0F, SFA0F, SFA1F, SRA0F, SRA1F, SPVA0F..SPVA7F), got $nforce, $nempty without samples"
   grep -E '^(GA0|SFA[0-9]+|SRA[0-9]+|SPVA[0-9]+)F ' "$out"
   exit 1
 fi
