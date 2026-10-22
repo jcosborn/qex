@@ -41,6 +41,15 @@ draws. `alwaysInline` is suitable for host SIMD wrappers. The older
 kernel-block API uses `inlineProcs:` from `base/metaUtils` to copy called
 bodies into the kernel; `gpuFor` does not perform that transformation.
 
+The older API keeps the device copies of host objects in the table of
+[`backend/gpumem`](../src/backend/gpumem.nim), keyed by host address. Use
+it from the main thread, outside `threads:`; table operations elsewhere
+abort. The entries of Field storage and of a `GpuSum` leave the table
+with their owners. A seq whose flags skip copies (`gpuFlagsIncl`,
+`gpuFlagsExcl`) must stay alive and in place while they do, or its entry
+must be freed with `freeGpuMem`. A `HaloLayout` whose read only tables were
+uploaded stays alive until `freeGpuMem` of it.
+
 `gpuFor` completes its kernel before returning. `gpuForAsync` submits work;
 `gpuWaitAsync` waits for queued kernels. OpenMP synchronous launches are
 not ordered after outstanding `nowait` kernels: wait before mixing the
@@ -208,7 +217,9 @@ copies of `r` and `v` by the same formulas. The first hop of the next
 `A r` therefore reuses those halo copies; exchange of `w` overlaps the
 global reduction. `hopSplit` (`-split`) controls overlap of the second
 hop's local work with the first hop's halo exchange: `1` always splits,
-`0` does not, and `-1` splits when there are neighbors on another node.
+`0` does not, and `-1` splits when the second hop receives some neighbors
+by message instead of IPC: from another node, with `-ipc:0`, or on the CPU
+backend.
 
 `nBatch` is a compile-time integer, default 3. Batched hops share each
 loaded link across systems. Each system has its own residual history and
@@ -385,12 +396,16 @@ Use MPI wrappers for amdclang/amdclang++ and a ROCm environment:
   cflagsspeed:"-O3 -march=native" cppflagsspeed:"-O3 -march=native" \
   cppflagsalways:"-g -x hip --offload-arch=gfx942" \
   ldppflags:"-g -ldl --hip-link --offload-arch=gfx942" \
-  env:"STATIC_UNROLL=1" simd:"SSE,AVX,AVX512" vlen:8 nimargs:'@["-d:Backend=HIP"]'
+  env:"STATIC_UNROLL=1" simd:"SSE,AVX,AVX512" vlen:8 \
+  nimargs:'@["-d:Backend=HIP","--maxLoopIterationsVM:1000000000"]'
 ```
 
-`gfx942` covers both MI300X and MI300A. `backend/hip/nimbase.h` supplies
-`QEX_HD`, `qexFor` and the HIP declarations. Generate C++ for all modules
-with `ccdef:cpp` so host/device declarations have compatible linkage.
+`gfx942` covers both MI300X and MI300A. With `STATIC_UNROLL=1`, the
+`inlineProcs` expansion of the older kernel blocks (`behalo1`, `halogpu`,
+`bedslash1`) needs more than the default 10^7 VM loop iterations.
+`backend/hip/nimbase.h` supplies `QEX_HD`, `qexFor` and the HIP
+declarations. Generate C++ for all modules with `ccdef:cpp` so host/device
+declarations have compatible linkage.
 
 ## Device placement and programs
 
