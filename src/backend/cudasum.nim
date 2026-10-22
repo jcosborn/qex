@@ -96,9 +96,12 @@ type
     #maxblock: int
     val: ptr T
   GpuSum*[T] = ref GpuSumObj[T]
-# TODO: finalizer
+proc freeGpuSum[T](x: GpuSum[T]) =
+  ## finalizer: the partial sums go at the next table operation
+  gpuMemFreed(addr x[], sizeof(x[]))
+  discard cudaFreeHost(x.val)
 proc newGpuSum*[T](ns: int): GpuSum[T] =
-  result.new
+  result.new(freeGpuSum[T])
   let n = (ns + 31) div 32  # divide by warp size
   #result.partial.gpuMalloc(n)
   pushGpuMemTag("GpuSumPartial")

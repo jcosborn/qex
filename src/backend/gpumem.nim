@@ -1,5 +1,5 @@
 import tables, strformat, strutils, algorithm
-import base/profile
+import base/[profile, alignedMem]
 import backend/accelbase
 
 # kinds
@@ -122,7 +122,12 @@ proc copyOut*(x: GpuMem | ptr GpuMem, p: pointer) =
 #  result.bytes = gpuBytes
 #  result.count
 
-var gpuMemTable = newTable[pointer, GpuMem]()
+# Entries are keyed by host address and live on the heap: the handles
+# (ptr GpuMem) taken from them stay valid while other entries come and go.
+# Only the main thread uses the table, whose objects are in its heap, so
+# kernels whose data it holds launch outside threads blocks; finalizers
+# report freed memory with gpuMemFreed.
+var gpuMemTable = newTable[pointer, ref GpuMem]()
 #var gpuMemNils = newSeq[GpuMem]()
 var gpuMemTag = newSeq[string](0)
 #proc setGpuMemTag*(s: string) =
@@ -132,21 +137,50 @@ proc pushGpuMemTag*(s: string) =
 proc popGpuMemTag*() =
   gpuMemTag.setLen(gpuMemTag.len - 1)
 
-proc freeGpuMem*(cpuPtr: pointer) =
+var gpuMemDead: seq[pointer]  # keys in host memory freed since the last table operation
+let gpuMemThread = getThreadId()
+
+proc gpuMemFreed*(p: pointer; n: int) =
+  ## The host memory [p, p+n) was freed: the next table operation drops the
+  ## entries in it and their device memory, so that a new object there
+  ## starts over.  Safe in finalizers, which run inside allocations while a
+  ## table operation may be under way.  Frees on other threads, whose heaps
+  ## hold none of the table's objects, are left out.
+  if getThreadId() == gpuMemThread and gpuMemTable.len > 0:
+    for k in gpuMemTable.keys:
+      if cast[uint](k) - cast[uint](p) < uint(n): gpuMemDead.add k  # p <= k < p+n
+rawMemFreeHook = gpuMemFreed
+
+proc release(m: ref GpuMem) =
   mixin gpuFree
-  var x: GpuMem
-  if gpuMemTable.pop(cpuPtr, x):
-    gpuFree(x.p)
+  if m.p != nil: gpuFree(m.p)
+
+proc dropDead() =
+  ## starts each table operation
+  doAssert getThreadId() == gpuMemThread, "GPU memory table used off the main thread"
+  while gpuMemDead.len > 0:
+    var m: ref GpuMem
+    if gpuMemTable.pop(gpuMemDead.pop, m): release(m)
+
+proc freeGpuMem*(cpuPtr: pointer) =
+  dropDead()
+  var m: ref GpuMem
+  if gpuMemTable.pop(cpuPtr, m): release(m)
 
 proc getGpuMem*(cpuPtr: pointer): ptr GpuMem =
-  result = addr gpuMemTable[cpuPtr]
+  dropDead()
+  result = addr gpuMemTable[cpuPtr][]
   result.touch
   #echo result[]
 
 proc getGpuMemDef(cpuPtr: pointer): ptr GpuMem =
-  result = addr gpuMemTable.mgetOrPut(cpuPtr)
-  if gmValidFlags notin result.flags:
-    result.flags = defaultFlags
+  dropDead()
+  var m = gpuMemTable.getOrDefault(cpuPtr)
+  if m == nil:
+    m = new GpuMem
+    m.flags = defaultFlags
+    gpuMemTable[cpuPtr] = m
+  addr m[]
 
 proc gpuMemFlagsExcl*(cpuPtr: pointer, flags: set[gmFlags]) =
   var pgm = getGpuMemDef(cpuPtr)
@@ -156,49 +190,43 @@ proc gpuMemFlagsIncl*(cpuPtr: pointer, flags: set[gmFlags]) =
   var pgm = getGpuMemDef(cpuPtr)
   pgm.flags.incl flags
 
-var gb = 0
-proc getGpuMemImpl*(cpuPtr: pointer, gpuBytes: int): ptr GpuMem =
+proc getGpuMem*(cpuPtr: pointer, gpuBytes: int): ptr GpuMem =
+  ## The entry of cpuPtr with gpuBytes of device memory.  An entry of another
+  ## size, of a resized seq or of a freed seq at the same address, starts over.
+  mixin gpuFree
   result = getGpuMemDef(cpuPtr)
+  if gmValidBytes in result.flags and result.bytes != gpuBytes:
+    if result.p != nil: gpuFree(result.p)
+    result[] = GpuMem(flags: defaultFlags)
   #echo gpuMemTag
   if gmValidBytes notin result.flags:
     result.flags.incl gmValidBytes
     result.bytes = gpuBytes
     result.tag = gpuMemTag
-  else:
-    if result.bytes != gpuBytes:
-      gb = result.bytes
-      return nil
   if result.p == nil:
     result.p = gpuMalloc(gpuBytes)
   result.touch
   #echo result[]
-template getGpuMem*(cpuPtr: pointer, gpuBytes: int): ptr GpuMem =
-  let p = getGpuMemImpl(cpuPtr, gpuBytes)
-  if p == nil:
-    echo "getGpuMem bytes mismatch result.bytes: ", gb, "  gpuBytes: ", gpuBytes
-    echo instantiationInfo()
-    doAssert(gb == gpuBytes)
-  p
 
 proc dumpGpuMem*(): string =
-  var gms = newSeq[GpuMem](0)
+  dropDead()
+  var gms = newSeq[ref GpuMem](0)
   var mem = 0
   for v in gpuMemTable.values:
     mem += v.bytes
     gms.add v
-  gms.sort do (x, y: GpuMem) -> int:
+  gms.sort do (x, y: ref GpuMem) -> int:
     result = cmp(x.tag.join, y.tag.join)
     if result == 0:
       result = cmp(x.bytes, y.bytes)
   result = "GpuMem items: " & $gpuMemTable.len & "  bytes: " & ($mem).insertSep(',')
   result &= "\n " & statsHeader
   for v in gms:
-    result &= "\n " & v.stats
+    result &= "\n " & v[].stats
 
 proc freeAllGpuMem*() =
-  mixin gpuFree
-  for v in gpuMemTable.values:
-    gpuFree(v.p)
+  dropDead()
+  for v in gpuMemTable.values: release(v)
   gpuMemTable.clear
 
 #[

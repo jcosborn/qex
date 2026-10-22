@@ -123,6 +123,8 @@ proc hipMallocHost*(p: ptr pointer, size: csize_t): hipError_t
   {.importC,hiph.}
 proc hipHostMalloc*(p: ptr pointer, size: csize_t): hipError_t
   {.importC,hiph.}
+proc hipHostFree*(p: pointer): hipError_t
+  {.importC,hiph.}
 
 proc hipMemset*(devPtr: pointer, value: cint, count: csize_t):
   hipError_t {.importC:"hipMemset",hiph.}

@@ -3,7 +3,7 @@ import physics/qcdTypes
 import backend/[accel,cpugpu,cgfield]
 import bench/commonBench
 import parseUtils
-import sequtils, strutils
+import sequtils, strutils, sets
 import comms/halo
 
 type
@@ -41,7 +41,13 @@ proc setRO(x: seq[seq]) =
   for i in 0..<x.len:
     gpuMemFlagsExcl(addr x[i][0], {gmCpuWrite,gmGpuWrite}) # set read only
 
+var pinned: HashSet[pointer]  # halo layouts with read only device tables
+
 proc toGpu*(g: var GpuHaloLayout, c: HaloLayout) =  # TODO implement copyIn once
+  ## The tables are read only on the device, and their entries, keyed by the
+  ## addresses of c's seqs, keep c alive until freeGpuMem(c): new seqs at
+  ## those addresses would get the old tables.  On the main thread, as all
+  ## uses of the GPU memory table.
   tic("toGpuHaloLayout")
   g.nOut = c.nOut
   g.nExt = c.nExt
@@ -54,6 +60,7 @@ proc toGpu*(g: var GpuHaloLayout, c: HaloLayout) =  # TODO implement copyIn once
   g.neighborBck.toGpu(c.neighborBck)
   setRO(c.neighborBck)
   popGpuMemTag()
+  if not pinned.containsOrIncl(cast[pointer](c)): GC_ref(c)
   toc("nbrBck")
 
 proc toGpu*(c: HaloLayout): auto =
@@ -71,12 +78,15 @@ proc fromGpu*(c: HaloLayout, g: GpuHaloLayout) =
   toc("nbrBck")
 
 proc freeGpuMem*(c: HaloLayout) =
+  ## Frees the device tables of c and lets c go: on the main thread, not in
+  ## a finalizer.
   freeGpuMem addr c.neighborFwd[0]
   for i in 0..<c.neighborFwd.len:
     freeGpuMem addr c.neighborFwd[i][0]
   freeGpuMem addr c.neighborBck[0]
   for i in 0..<c.neighborBck.len:
     freeGpuMem addr c.neighborBck[i][0]
+  if not pinned.missingOrExcl(cast[pointer](c)): GC_unref(c)
 
 type
   GpuHalo*[V:static int,F,T] = object
@@ -155,35 +165,22 @@ proc fromGpu*(c: var Halo) =
   toc("Halo")
 
 proc toGpu*(g: var GpuSeq[GpuHalo], c: seq[Halo], pgm: ptr GpuMem) =
-  if pgm.needsCopyIn:
-    tic("toGpuSeqHaloCopyIn")
-    var t = newSeq[typeof g[0]](g.n)
-    for i in 0..<g.n:
-      t[i].toGpu(c[i])
-    toc("loopToGpu")
-    pgm.copyIn(addr t[0])
-    pgm.flags.excl {gmCpuWrite,gmGpuWrite}  # set seq container read only (not halo data)
-    toc("copyIn")
-  else:
-    tic("toGpuSeqHalo")
-    for i in 0..<g.n:
-      discard toGpu(c[i])
-    toc("loopToGpu")
+  ## The device seq is copied in at each kernel: a new seq of halos may take
+  ## the address of a freed one.
+  tic("toGpuSeqHalo")
+  var t = newSeq[typeof g[0]](g.n)
+  for i in 0..<g.n:
+    t[i].toGpu(c[i])
+  toc("loopToGpu")
+  pgm.copyIn(addr t[0])
+  toc("copyIn")
 
 proc fromGpu*(c: var seq[Halo], g: GpuSeq[GpuHalo], pgm: ptr GpuMem) =
-  if pgm.needsCopyOut:
-    tic("fromGpuSeqHaloCopyOut")
-    var t = newSeq[typeof g[0]](g.n)
-    pgm.copyOut(addr t[0])
-    toc("copyOut")
-    for i in 0..<g.n:
-      c[i].fromGpu(t[i])
-    toc("loopToGpu")
-  else:
-    tic("fromGpuSeqHalo")
-    for i in 0..<g.n:
-      c[i].fromGpu()
-    toc("loopFromGpu")
+  ## Kernels change the data of the halos, not the device seq.
+  tic("fromGpuSeqHalo")
+  for i in 0..<g.n:
+    c[i].fromGpu()
+  toc("loopFromGpu")
 
 proc testPlaq(g:auto) =
   tic "testPlaq"

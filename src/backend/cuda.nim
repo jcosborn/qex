@@ -120,6 +120,8 @@ proc cudaMallocManaged*(p: ptr pointer, size: csize_t): cudaError_t
   {.importC,header:"cuda_runtime.h".}
 proc cudaMallocHost*(p: ptr pointer, size: csize_t): cudaError_t
   {.importC,header:"cuda_runtime.h".}
+proc cudaFreeHost*(p: pointer): cudaError_t
+  {.importC,header:"cuda_runtime.h".}
 
 proc cudaMemset*(devPtr: pointer, value: cint, count: csize_t):
   cudaError_t {.importC:"cudaMemset",header:"cuda_runtime.h".}

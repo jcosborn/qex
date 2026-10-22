@@ -6,8 +6,11 @@ export gpumem
 import qex
 
 proc gpuFlagsIncl*(x: seq, f: set[gmFlags]) =
+  ## The flags belong to the entry of x's data address: while they skip
+  ## copies, keep x alive and in place, or free the entry (freeGpuMem) first.
   gpuMemFlagsIncl(addr x[0], f)
 proc gpuFlagsExcl*(x: seq, f: set[gmFlags]) =
+  ## as gpuFlagsIncl
   gpuMemFlagsExcl(addr x[0], f)
 
 type

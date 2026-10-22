@@ -88,19 +88,19 @@ proc `[]`*[X:SomeGpuField,Y:SomeGpuField2,I:SiteV](e: GpuFieldExpr["*",(X,Y)], i
 
 
 proc toGpu*(g: var GpuField, c: Field) =
-  g.n = c.l.nSitesOuter
+  g.d.n = c.l.nSitesOuter
   when not beSharedMem:
     tic("toGpuField")
     pushGpuMemTag("Field"&capitalizeAscii(displayName(typeof(g.T))))
     let pgm = getGpuMem(addr c[0], g.bytes)
     popGpuMemTag()
-    g.p = cast[type g.p](pgm.p)
+    g.d.p = cast[type g.p](pgm.p)
     g.pgm = pgm
     toc("getGpuMem")
     pgm.copyIn(addr c[0])
     toc("copyIn",flops=pgm.bytes)
   else:
-    g.p = cast[type g.p](addr c[0])
+    g.d.p = cast[type g.p](addr c[0])
 
 proc toGpu*(c: Field): auto =
   var g: gpuType(typeof c)
@@ -179,15 +179,6 @@ template `:=`*(r: CgFld, x: SomeNumber) =
   r.cpu := x
 template gpuSites*(x: CgFld): auto = gpuSites(x.gpu.n, x.gpu.V)
 
-proc finalize*[T:CpuGpu](x: ref T) {.nimcall.} =
-  #echo "finalize CpuGpu"
-  when not beSharedMem:
-    if x.gpu.p != nil:
-      #let pgm = getGpuMem(addr x.cpu[0], x.gpu.bytes)
-      #gpuFree(x.gpu.p)
-      freeGpuMem(addr x.cpu[0])
-      x.gpu.p = nil
-
 template displayName*[T](t: typedesc[Color[T]]): string =
   "Color" & displayName(T)
 template displayName*[N:static int,T](t: typedesc[VectorArray[N,T]]): string =
@@ -198,22 +189,24 @@ template displayName*[V:static int,T](t: typedesc[GpuField[V,T]]): string =
   "Field" & displayName(T)
 
 proc newCgField*(c: Field): auto =
+  ## The device copy of c goes with c's storage, which other CgFields and
+  ## kernels may share.
   type C = typeof c
   type CG = CgFieldObj[C]
   var r: ref CG
-  r.new(finalize[CG])
+  r.new
   r.cpu = c
-  r.gpu.n = c.l.nSitesOuter
+  r.gpu.d.n = c.l.nSitesOuter
   when not beSharedMem:
     #r.gpu.p = cast[type r.gpu.p](gpuMalloc(r.gpu.bytes))
     pushGpuMemTag("Field"&capitalizeAscii(displayName(typeof(r.gpu.T))))
     let pgm = getGpuMem(addr c[0], r.gpu.bytes)
     popGpuMemTag()
-    r.gpu.p = cast[type r.gpu.p](pgm.p)
+    r.gpu.d.p = cast[type r.gpu.p](pgm.p)
     r.gpu.pgm = pgm
     #echo "malloc: ", cast[int](r.gpu.p)
   else:
-    r.gpu.p = cast[type r.gpu.p](addr r.cpu[0])
+    r.gpu.d.p = cast[type r.gpu.p](addr r.cpu[0])
   r
 proc CgColorVector*(lo: Layout): auto = newCgField(lo.ColorVector())
 proc CgColorMatrix*(lo: Layout): auto = newCgField(lo.ColorMatrix())
