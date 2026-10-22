@@ -203,19 +203,23 @@ method testStarted*(formatter: QexOutputFormatter, testName: string) =
 
 method failureOccurred*(formatter: QexOutputFormatter,
                         checkpoints: seq[string], stackTrace: string) =
+  # every rank reports its own failures
   if stackTrace.len > 0:
     {.gcsafe.}:
-      echo stackTrace
+      echoRank stackTrace
   let prefix = if formatter.isInSuite: "    " else: ""
   for msg in items(checkpoints):
     {.gcsafe.}:
-      echo prefix, msg
+      echoRank prefix, msg
 
 method testEnded*(formatter: QexOutputFormatter, testResult: TestResult) =
   formatter.isInTest = false
   let prefix = if testResult.suiteName.len > 0: "  " else: ""
   {.gcsafe.}:
-    echo(prefix, "[", $testResult.status, "] ", testResult.testName)
+    if testResult.status == TestStatus.FAILED:
+      echoRank(prefix, "[", $testResult.status, "] ", testResult.testName)
+    else:
+      echo(prefix, "[", $testResult.status, "] ", testResult.testName)
 
 method suiteEnded*(formatter: QexOutputFormatter) =
   formatter.isInSuite = false
