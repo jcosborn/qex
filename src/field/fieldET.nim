@@ -20,7 +20,10 @@ type
     l*:Layout[V]
     elemSize*:int
   Field*[V:static[int],T] = ref FieldObj[V,T]
-  FieldArray*[V:static[int],T] = object  ## share a single alignedMem
+  FieldArray*[V:static[int],T] = object
+    ## Fields sharing one alignedMem, row major for shape [n] or [n,m].
+    ## newFieldArray2 allocates only the entries its constraint selects and leaves
+    ## the rest nil; newOneOf copies that occupancy.
     shape*:seq[int]
     arr:seq[Field[V,T]]
   Subsetted*[F,S] = object
@@ -152,6 +155,12 @@ proc newShape*[V:static[int],T](l: Layout[V], t: typedesc[T]): Field[V,T] =
   result.new()
   result[].initField(l, s)
 proc newShape*[V:static[int],T](x: Field[V,T]): Field[V,T] = newShape(x.l, T)
+proc release*(x: Field) =
+  ## Free x's storage now; refc would free it only at a later collection. x
+  ## keeps its shape without storage. x must own its storage (no FieldArray
+  ## element), and no alias of it may be read afterwards.
+  x.s.mem[].free
+  x.s.newShape(x.s.len, x.s.align)
 template l*(x: FieldUnop): untyped = x.f1.l
 proc newOneOf*(x: FieldUnop): auto =
   var r: evalType(x)
@@ -265,6 +274,17 @@ template `[]`*(x: Field; c: openarray): untyped =
 
 template `[]`*(x:FieldArray, i:int):untyped = x.arr[i]
 template `[]`*(x:FieldArray, i,j:int):untyped = x.arr[i*x.shape[1]+j]
+
+proc release*(a: FieldArray) =
+  ## Free the shared allocation once. All aliases of its storage become invalid.
+  if a.shape.len != 0:
+    var count = 1
+    for n in a.shape: count *= n
+    for i in 0..<count:
+      let f = a[i]
+      if f != nil and f.s.mem != nil:
+        f.s.mem[].free
+        break
 
 template even*(x:Field):untyped = x["even"]
 template odd*(x:Field):untyped = x["odd"]

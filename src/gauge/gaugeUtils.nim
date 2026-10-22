@@ -11,7 +11,7 @@ import strUtils, sequtils
 import maths, rng, physics/qcdTypes
 import base/flopcount
 
-import std/[hashes, tables]
+import std/[hashes, tables, sets]
 
 type
   GroupKind* = enum
@@ -1091,7 +1091,8 @@ proc lrmul(res:auto, l:auto, r:auto, la,ra:bool) =
 
 proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
   ## Evaluate plan(ptree, origin) over the links g.
-  ## Outputs alias the step products unless adjoint or shifted.
+  ## Outputs alias the step products unless adjoint or shifted. Other step
+  ## products and the shift fields are freed before returning.
   tic("gaugeProd")
   type
     F = typeof(g[0])
@@ -1116,9 +1117,11 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
     mark s.sh
     uses.inc s.l
     uses.inc s.r
+  var kept = initHashSet[seq[int]]()  # step products an output may alias
   for o in pl.outs:
     mark o.sh
     uses.inc o.key
+    if not o.adj: kept.incl o.key
   for i in 0..<nd:
     if sfi[i]:
       sf[i] = newShifter(g[0], i, 1)
@@ -1133,6 +1136,7 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
     if k.len > 1:
       uses.inc(k, -1)
       if uses[k] == 0:
+        if k notin kept: gp[k].release
         gp.del k
 
   for s in pl.steps:
@@ -1163,6 +1167,7 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
   let n = pl.outs.len
   var res = newseq[F](n)
   var resAlloc = newseq[bool](n)
+  var aliased: seq[F]  # step products returned as outputs
   for i,o in pl.outs.pairs:
     let t = node o.key
     if o.adj:
@@ -1172,6 +1177,7 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
         res[i] := t.adj
     else:
       res[i] = t
+      if o.key.len > 1 and t notin aliased: aliased.add t
     consumed(o.key)
   for i,o in pl.outs.pairs:
     let sh = o.sh
@@ -1191,6 +1197,11 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
             res[i] := r
             res[i].multishifts(sh, sf, sb)
         res[i] := t
+  for t in aliased:
+    if t notin res: t.release  # every output of t was shifted into a copy
+  for i in 0..<nd:
+    if sfi[i]: sf[i].field.release
+    if sbi[i]: sb[i].field.release
   result = res
   toc("done")
 
@@ -1215,6 +1226,8 @@ proc wilsonLines*(g:auto, lines:openarray[seq[int]]):auto =
     threads:
       r = s.trace
     ts[i] := r*fac
+  for i,s in rs.pairs:
+    if s notin g and s notin rs[0..<i]: s.release
   toc("wilsonLines trace")
   return ts
 

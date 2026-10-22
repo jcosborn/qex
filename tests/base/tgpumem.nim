@@ -2,7 +2,7 @@ import testutils
 import qex
 import backend/[accel, cpugpu, cgfield]
 import comms/[halo, halogpu]
-import sequtils
+import sequtils, strutils
 
 # backend/gpumem keeps the device copies of host objects in a table keyed by
 # their host addresses.  The entries stay where the handles taken from them
@@ -156,6 +156,12 @@ proc reals(n, k: int): (pointer, int) {.noinline.} =
   let g = toGpu(s)
   (pointer(addr s[0]), int(dev[float](g.p, n) != s))
 
+proc droppedField(lo: Layout): pointer {.noinline.} =
+  # Return only the address; the owner can finalize during another release.
+  let f = lo.ColorVector()
+  discard toGpu(f)
+  pointer(addr f[0])
+
 template reuse(name: string; body: untyped) =
   ## runs body, a call giving an address and mismatches, four times with a
   ## full collection after each, and prints how many addresses were reused
@@ -172,6 +178,51 @@ template reuse(name: string; body: untyped) =
 let lo = latticeFromLocalLattice([4,4,4,8], nRanks).newLayout
 
 suite "backend/gpumem":
+  test "explicit release preserves invalidations queued by collection":
+    # Run first: growing the empty queue can collect the dropped owner.
+    defer: freeAllGpuMem()
+    let f = lo.ColorVector()
+    discard toGpu(f)
+    let key = droppedField(lo)
+    f.release()
+    GC_fullCollect()
+    expect KeyError: discard getGpuMem(key)
+
+  when defined(gcRefc):
+    test "release preserves nested GC disables":
+      # refc's scan count observes collection without keeping another owner alive.
+      proc scans(): int =
+        const prefix = "[GC] stack scans: "
+        for line in GC_getStatistics().splitLines:
+          if line.startsWith(prefix): return parseInt(line[prefix.len..^1])
+        raise newException(ValueError, "missing refc scan count")
+      defer: freeAllGpuMem()
+      let f = lo.ColorVector()
+      discard toGpu(f)
+      var before: int
+      block:
+        GC_disable()
+        defer: GC_enable()
+        before = scans()
+        block:
+          GC_disable()
+          defer: GC_enable()
+          f.release()
+          GC_fullCollect()
+          check scans() == before
+        GC_fullCollect()
+        check scans() == before
+      GC_fullCollect()
+      check scans() > before
+
+      # The finalizer already holds a GC disable count when it calls the hook.
+      let key = droppedField(lo)
+      GC_fullCollect()
+      expect KeyError: discard getGpuMem(key)
+      before = scans()
+      GC_fullCollect()
+      check scans() > before
+
   test "handles of entries":
     var cf = newCgField(lo.ColorVector())
     check handles(cf) == 0
@@ -195,5 +246,30 @@ suite "backend/gpumem":
 
   test "freed seqs of another length":
     reuse("seq"): reals(100 - k mod 2, k)
+
+  test "explicit Field release drops its device entry":
+    let f = lo.ColorVector()
+    let key = pointer(addr f[0])
+    discard toGpu(f)
+    f.release()
+    expect KeyError: discard getGpuMem(key)
+    GC_fullCollect()
+    expect KeyError: discard getGpuMem(key)
+
+  test "explicit FieldArray release drops every entry in its allocation":
+    let a = newFieldArray(lo, typeof(lo.ColorVector()), 2)
+    let keys = [pointer(addr a[0][0]), pointer(addr a[1][0])]
+    for i in 0..1: discard toGpu(a[i])
+    let f = lo.ColorVector()
+    let kept = toGpu(f)
+    a.release()
+    a.release()  # The shared allocation is freed once.
+    for key in keys:
+      expect KeyError: discard getGpuMem(key)
+    check getGpuMem(addr f[0]) == kept.pgm
+    GC_fullCollect()
+    for key in keys:
+      expect KeyError: discard getGpuMem(key)
+    check getGpuMem(addr f[0]) == kept.pgm
 
 qexFinalize()

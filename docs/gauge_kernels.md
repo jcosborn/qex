@@ -19,6 +19,7 @@ layout's SIMD width; `toScalar`/`toMatrix` convert scalar-site representations.
 | --- | --- |
 | `newShape(l,T)`, `newShape(f)` | Layout/type/allocation descriptors only; bind or allocate before indexing |
 | Shape from `FieldArray` view | Describes one field |
+| `release(f)`, `release(array)` | Free owned storage immediately; aliases become invalid. Release a `FieldArray` as a whole. |
 | Replace descriptor | Other references retain the former field/storage |
 | `newShifter(...,dest=d)`, `newTransporter(...,dest=d)` | Matching layout; destination disjoint from operands; transporter owns communication buffers |
 | Rebind `field` | Preserve the same layout/disjointness rules |
@@ -95,7 +96,8 @@ $$
 
 `gaugeProd(...,origin=true)` shifts outputs to their starting sites. Unshifted,
 unadjointed results may alias inputs/shared products; copy before independent
-mutation. Release product entries after their last consumer. Test: `tpathplan`.
+mutation. Each product is freed after its last consumer unless an output
+aliases it, and the shift fields on return. Test: `tpathplan`.
 
 Halo layouts preserve physical indices and parity; maps encode periodic
 coordinates. Construct/cache geometry outside `threads`. The halo buffer is
