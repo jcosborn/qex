@@ -179,13 +179,16 @@ template `!~`*(x,y:typed):bool =
   not(x~y)
 
 template subtest*(t: typed): untyped {.dirty.} =
-  let prsave = programResult
-  programResult = 0
-  t
-  if programResult != 0:
-    fail()
-  else:
-    programResult = prsave
+  ## Run t, whose checks have no test scope, and fail the enclosing test when
+  ## one of them fails.
+  block:
+    let prsave = programResult
+    programResult = 0
+    t
+    if programResult != 0:
+      fail()
+    else:
+      programResult = prsave
 
 # custom test suite output formatter
 type

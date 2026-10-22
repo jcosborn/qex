@@ -139,10 +139,10 @@ proc checkFinite(scale: static int) =
 
 suite "scaled SU3 differential references":
   test "finite value and gradient at scale zero":
-    checkFinite(0)
+    subtest checkFinite(0)
 
   test "finite value and gradient at scale five":
-    checkFinite(5)
+    subtest checkFinite(5)
 
   test "log Jacobian stays finite for a large positive Hermitian part":
     var m: M
