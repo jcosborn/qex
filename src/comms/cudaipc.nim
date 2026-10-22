@@ -37,3 +37,5 @@ proc ipcOpen*(e: GpuIpc): tuple[base, p: pointer] =
 
 proc ipcClose*(base: pointer) =
   discard cudaIpcCloseMemHandle(base)
+
+template ipcPut*(e: GpuIpc) = discard  # CUDA IPC handles hold no resources

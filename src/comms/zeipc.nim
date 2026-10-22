@@ -1,7 +1,8 @@
 ## Level Zero IPC: device memory of one process mapped into another on the
 ## same node, as on Aurora and Sunspot, so kernels can store straight into
 ## the memory of a peer.  ipcExport describes device memory of this process,
-## a peer maps it with ipcOpen and unmaps it with ipcClose.
+## a peer maps it with ipcOpen and unmaps it with ipcClose; ipcPut releases
+## the exported handle once every peer has opened it.
 import qex
 import backend/accel
 
@@ -22,6 +23,7 @@ type
 proc zeMemGetIpcHandle(ctx: Ctx; p: pointer; h: var ZeIpcMemHandle): cint {.importc, header: "level_zero/ze_api.h".}
 proc zeMemOpenIpcHandle(ctx: Ctx; dev: Dev; h: ZeIpcMemHandle; flags: uint32; p: var pointer): cint {.importc, header: "level_zero/ze_api.h".}
 proc zeMemCloseIpcHandle(ctx: Ctx; p: pointer): cint {.importc, header: "level_zero/ze_api.h".}
+proc zeMemPutIpcHandle(ctx: Ctx; h: ZeIpcMemHandle): cint {.importc, header: "level_zero/ze_api.h".}
 proc zeMemGetAddressRange(ctx: Ctx; p: pointer; base: var pointer; bytes: var csize_t): cint {.importc, header: "level_zero/ze_api.h".}
 proc zeHandles(): (Ctx, Dev) =
   let (c, d) = gpuZeContext()
@@ -61,3 +63,9 @@ proc ipcOpen*(e: GpuIpc): tuple[base, p: pointer] =
 proc ipcClose*(base: pointer) =
   let (ctx, _) = zeHandles()
   discard zeMemCloseIpcHandle(ctx, base)
+
+proc ipcPut*(e: GpuIpc) =
+  ## closes the descriptor of ipcExport: peers that opened e keep their
+  ## mapping, a later ipcOpen of e fails
+  let (ctx, _) = zeHandles()
+  discard zeMemPutIpcHandle(ctx, e.h)

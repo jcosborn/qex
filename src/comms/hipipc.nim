@@ -34,3 +34,5 @@ proc ipcOpen*(e: GpuIpc): tuple[base, p: pointer] =
 
 proc ipcClose*(base: pointer) =
   discard hipIpcCloseMemHandle(base)
+
+template ipcPut*(e: GpuIpc) = discard  # HIP IPC handles hold no resources

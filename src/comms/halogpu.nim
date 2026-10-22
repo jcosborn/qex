@@ -311,6 +311,10 @@ proc newGpuHaloEx*[T](gm: GatherMap, ne, n, v: int, c: Comm): GpuHaloEx[T] =
     for k in 0..<m.count:
       sd[m.start+k] = cast[ptr UncheckedArray[T]](addr base[k])
       ss[m.start+k] = int32 m.count
+  when ipc:
+    c.barrier  # every peer has opened the handles we exported
+    for i in 0..<ex.rmsg.len:
+      if ex.rpeer[i]: ipcPut(rout[i])
   ex.sdst = sd.toDevice
   ex.sstr = ss.toDevice
   toc("peers")
