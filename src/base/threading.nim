@@ -142,7 +142,7 @@ template nothreads*(body: untyped): untyped =
     body
 
 
-template getMaxThreads*() = ompGetMaxThreads()
+template getMaxThreads*(): int = int ompGetMaxThreads()
 template threadMaster*(x:untyped) = ompMaster(x)
 template threadSingle*(x:untyped) = ompSingle(x)
 template threadCritical*(x:untyped) = ompCritical(x)

@@ -57,43 +57,37 @@ ifSuccess hwloc_topology_init(topology.addr):
               c.waitRecvs
             echo "rank ",r," binds to cpuset ",buffer.cstring," using ",ncur," of ",ntot
 
+    # Each thread records its binding and only the main thread communicates:
+    # the comms are not thread safe, and under refc they would grow their
+    # queues on a worker's heap.
+    var nth = getMaxThreads()
+    var tset = newSeq[array[buflen,char]](nth)
+    var tcur = newSeq[cint](nth)
     threads:
       var set = hwloc_bitmap_alloc()
       defer: hwloc_bitmap_free(set)
-      var buffer = newStringOfCap buflen
-      buffer.setlen buflen
       ifSuccess hwloc_get_cpubind(topology, set, HWLOC_CPUBIND_THREAD.cint):
-        ifSuccess hwloc_bitmap_snprintf(cstring buffer, buflen, set):
-          var
-            ncur = hwloc_bitmap_weight(set)
-            nth = numThreads
-            tid = threadNum
-          if myRank > 0:
-            threadMaster:
-              c.pushSend(0, nth.addr, sizeof nth)
-              c.waitSends
-            threadBarrier()
-            threadCritical:
-              c.pushSend(0, buffer.cstring, buflen)
-              c.pushSend(0, ncur.addr, sizeof ncur)
-              c.pushSend(0, tid.addr, sizeof tid)
-              c.waitSends
-          else:
-            threadCritical:
-              echoRaw "rank ",myRank," thread ",tid," binds to cpuset ",buffer.cstring," using ",ncur
-              stdout.flushFile
-            threadBarrier()
-            threadMaster:
-              for r in 1..<nRanks:
-                c.pushRecv(r, nth.addr, sizeof nth)
-                c.waitRecvs
-                for t in 0..<nth:
-                  c.pushRecv(r, buffer.cstring, buflen)
-                  c.pushRecv(r, ncur.addr, sizeof ncur)
-                  c.pushRecv(r, tid.addr, sizeof tid)
-                  c.waitRecvs
-                  echoRaw "rank ",r," thread ",tid," binds to cpuset ",buffer.cstring," using ",ncur
-                  stdout.flushFile
+        ifSuccess hwloc_bitmap_snprintf(cast[cstring](addr tset[threadNum]), buflen, set):
+          tcur[threadNum] = hwloc_bitmap_weight(set)
+    if myRank > 0:
+      c.pushSend(0, nth.addr, sizeof nth)
+      c.pushSend(0, tset[0].addr, nth*buflen)
+      c.pushSend(0, tcur[0].addr, nth*sizeof(cint))
+      c.waitSends
+    else:
+      for t in 0..<nth:
+        echo "rank ",myRank," thread ",t," binds to cpuset ",cast[cstring](addr tset[t])," using ",tcur[t]
+      for r in 1..<nRanks:
+        c.pushRecv(r, nth.addr, sizeof nth)
+        c.waitRecvs
+        tset.setLen nth
+        tcur.setLen nth
+        c.pushRecv(r, tset[0].addr, nth*buflen)
+        c.pushRecv(r, tcur[0].addr, nth*sizeof(cint))
+        c.waitRecvs
+        for t in 0..<nth:
+          echo "rank ",r," thread ",t," binds to cpuset ",cast[cstring](addr tset[t])," using ",tcur[t]
+      stdout.flushFile
 
   #let cset = hwloc_topology_get_topology_nodeset(topology)
   let cset = rootobj.nodeset

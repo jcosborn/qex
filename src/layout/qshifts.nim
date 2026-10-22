@@ -346,9 +346,8 @@ proc makeGDFromShifts*(gd: ptr GatherDescription; l: ptr LayoutQ;
                        disps: openArray[ptr cArray[cint]]; ndisps: cint) =
   var subs = newSeq[cstring](ndisps)
   var i: cint = 0
-  let s = "all"
   while i < ndisps:
-    subs[i] = cstring s
+    subs[i] = "all"  # a C literal; the cstring of a local string dangles once it is collected
     inc(i)
   makeGDFromShiftSubs(gd, l, disps, subs, ndisps)
 

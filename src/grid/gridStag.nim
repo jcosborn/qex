@@ -26,7 +26,7 @@ proc gridSolveXX*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams;
     {.emit:"using namespace Grid;".}
     {.emit:[gsoln," = Zero();"].}
     s.g.stagPhase([0,1,3,7])
-    gfl := s.g[0..3]
+    gfl := s.g
     s.g.stagPhase([0,1,3,7])
     {.emit:["using Stag = ",GridNaiveStaggeredFermionR,";"].}
     {.emit:"using FermionField = Stag::FermionField;".}
@@ -52,8 +52,10 @@ proc gridSolveXX*(s:Staggered; r,t:Field; m:SomeNumber; sp: var SolverParams;
     {.emit:"using namespace Grid;".}
     {.emit:[gsoln," = Zero();"].}
     var gll = grid.gauge()
-    gfl := @[s.g[0],s.g[2],s.g[4],s.g[6]]
-    gll := @[s.g[1],s.g[3],s.g[5],s.g[7]]
+    # Arrays on the stack: `:=` reads its argument through a raw pointer while
+    # it allocates, which a temporary seq would not survive.
+    gfl := [s.g[0],s.g[2],s.g[4],s.g[6]]
+    gll := [s.g[1],s.g[3],s.g[5],s.g[7]]
     {.emit:["using ImpStag = ",GridImprovedStaggeredFermionR,";"].}
     {.emit:"using FermionField = ImpStag::FermionField;".}
     {.emit:["ImpStag Ds(",grid,",",rbgrid,",2.*",mass,",2.,2.,1.);"].}

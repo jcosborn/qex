@@ -292,7 +292,13 @@ when isMainModule:
     let t0 = epochTime()
     #svdBidiag(&d, &e, &v, &u, n, n)
     #svdBidiag1(&d, &e, &v, &u, n, n)
+    # svdBidiag3 allocates (echo) before it writes u, and e and u are not used
+    # below: keep their storage (freed by their finalizers) referenced.
+    GC_ref(e)
+    GC_ref(u)
     svdBidiag3(&d, &e, &v, &u, n, n)
+    GC_unref(e)
+    GC_unref(u)
     let t1 = epochTime()
     #for j in 0..<nr:
     #    v[i+nr*j]

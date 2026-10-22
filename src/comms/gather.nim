@@ -91,7 +91,12 @@ proc makeGatherMap*(c: Comm, rl: var seq[RecvList]): GatherMap =
     inc nsites
     inc i
 
+  # After the loop sidx is dead to the compiler; only the raw pointers in mem,
+  # which the GC does not trace, remain.  Under refc a collection inside scatter
+  # can then free it and reuse the memory before it is sent.
+  when not defined(gcDestructors): GC_ref(sidx)
   let r = mem.scatter(c)
+  when not defined(gcDestructors): GC_unref(sidx)
   #echoAll r
 
   let nsend = r.buf.len div sizeof(int32)
@@ -153,7 +158,10 @@ proc makeGatherMap*(c: Comm, sl: var seq[SendList]): GatherMap =
     inc nsites
     inc i
 
+  # Keep didx alive through scatter, as sidx above.
+  when not defined(gcDestructors): GC_ref(didx)
   let r = mem.scatter(c)
+  when not defined(gcDestructors): GC_unref(didx)
   #echoAll r
 
   let nrecv = r.buf.len div sizeof(int32)
@@ -295,6 +303,8 @@ template copy(gd: GatherPointer, d: SomeInteger, s: SomeInteger) =
   copyMem(cast[pointer](addr gd.dest[gd.elemsize*d]),
           cast[pointer](addr gd.src[gd.elemsize*s]), gd.elemsize)
 proc gather*(c: Comm; gm: GatherMap; elemsize: int; d,s: pointer) =
+  checkBorrow(d, "gather")
+  checkBorrow(s, "gather")
   let dest = cast[ptr UncheckedArray[char]](d)
   let src = cast[ptr UncheckedArray[char]](s)
   var gd = GatherPointer(src: src, dest: dest, elemsize: elemsize)
@@ -326,6 +336,8 @@ proc gather*[D,S:Field](c: Comm; gm: GatherMap; d: D, s: S) =
 
 proc gatherReversed*(c: Comm; gm: GatherMap; elemsize: int;
                      dest,src: pointer) =
+  checkBorrow(dest, "gatherReversed")
+  checkBorrow(src, "gatherReversed")
   var r = GatherMap.new
   r.nsrc = gm.ndest
   r.ndest = gm.nsrc
@@ -370,7 +382,14 @@ when isMainModule:
       if (i mod nranks) == rank:
         src1[i xor 1] = i
 
+    # The gather sees only the raw pointers and allocates.
+    when not defined(gcDestructors):
+      GC_ref(dst1)
+      GC_ref(src1)
     c.gather(gm, sizeof(int), &&dst1, &&src1)
+    when not defined(gcDestructors):
+      GC_unref(dst1)
+      GC_unref(src1)
 
     echo dst1
     for i in 0..<n:

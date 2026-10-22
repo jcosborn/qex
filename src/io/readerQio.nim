@@ -243,11 +243,17 @@ proc read*[V:static[int],T](rd: var Reader[V]; v: openArray[Field[V,T]]) =
   let nv = v.len
   var f = newSeq[type(v[0][0].addr)](nv)
   for i in 0..<nv: f[i] = v[i][0].addr
+  # f holds only storage pointers and the read allocates before QIO writes
+  # through them; keep the Fields (owners of the storage) referenced meanwhile.
+  for x in v: GC_ref(x)
   rd.read(f)
+  for x in v: GC_unref(x)
 
 proc read*(rd: var Reader; v: Field) =
   var f = @[ v[0].addr ]
+  GC_ref(v)  # as above
   rd.read(f)
+  GC_unref(v)
 
 when isMainModule:
   qexInit()

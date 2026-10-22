@@ -466,7 +466,13 @@ proc svdBi3*(ev: auto; m: dmat; ma: dmat; a: auto; b: auto; k: int;
   for i in 0..<n:
     d[i] = a[i]
     if i<n-1: e[i] = b[i]
+  # svdBidiag3 allocates (echo) before it writes m.dat and ma.dat, which the
+  # finalizers of m and ma free: keep both referenced.
+  GC_ref(m)
+  GC_ref(ma)
   svdBidiag3(d, e, m.dat, ma.dat, n, k)
+  GC_unref(m)
+  GC_unref(ma)
   for i in 0..<k:
     ev[i] = d[i]
   dealloc(d)

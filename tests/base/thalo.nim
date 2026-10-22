@@ -131,6 +131,19 @@ suite "Halo":
   let hmC = haloMap(hl, comm, corners)
   let hmA = haloMap(hl, comm, axes)
 
+  test "map indices":
+    # gather: local sites -> halo cells; gatherRev: halo cells -> local sites
+    proc inRange(x: seq[int32], n: int): bool =
+      for v in x:
+        if v < 0 or v >= n: return false
+      true
+    let nh = (hl.nExt - hl.nOut) * lo.V
+    for hm in [hmC, hmA]:
+      check(hm.gather.sidx.inRange(lo.nSites) and hm.gather.lidx.inRange(lo.nSites))
+      check(hm.gather.rdest.inRange(nh) and hm.gather.ldest.inRange(nh))
+      check(hm.gatherRev.sidx.inRange(nh) and hm.gatherRev.lidx.inRange(nh))
+      check(hm.gatherRev.rdest.inRange(lo.nSites) and hm.gatherRev.ldest.inRange(lo.nSites))
+
   test "update corners":
     check(checkUpdate(g, hl, hmC, corners) == 0)
   test "update axes":

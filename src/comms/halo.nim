@@ -323,7 +323,11 @@ proc update*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
   gh.dest = cast[ptr UncheckedArray[T]](unsafeAddr h.halo[0])
   gh.elemsize = elemSize
   gh.vlen = L.V
+  # gh.dest is a raw pointer into h, and the gather allocates: keep h
+  # referenced, the caller may not use it after this call.
+  GC_ref(h)
   c.gather(hm.gather, gh)
+  GC_unref(h)
   toc("gather")
 
 proc updateRev*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
@@ -336,7 +340,9 @@ proc updateRev*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
   gh.elemsize = elemSize
   gh.vlen = L.V
   #let g = hm.gather.reverse
+  GC_ref(h)  # as in update
   c.gather(hm.gatherRev, gh)
+  GC_unref(h)
   toc("gather")
 
 #[

@@ -50,12 +50,16 @@ proc getRawMemMaxUsed*(): int = rms.maxUsed
 proc getRawMemGcThreshold*(): int = rmGcThreshold
 proc setRawMemGcThreshold*(t: int) = rmGcThreshold = t
 
+var rawMemFreeHook*: proc(p: pointer; size: int) {.nimcall.}
+  ## called with the storage of each RawMemRef before its finalizer frees it
+
 proc freeRawMemRef*(rm: RawMemRef) =
   #echo "freeRawmemref"
   #when defined(gcArc) or defined(gcOrc):
   #  let t = unsafeAddr(rm[])
   #  free(t[])
   #else:
+  if rawMemFreeHook != nil: rawMemFreeHook(rm.p, rm.size)
   free(rm[])
 proc newRawMemRef*(size: int): RawMemRef =
   #echo "newRawMemRef"

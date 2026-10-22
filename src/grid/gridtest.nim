@@ -196,8 +196,16 @@ when isMainModule:
     var gfl = grid[].gauge()
     var gll = grid[].gauge()
     #fl.stagPhase([0,1,3,7])
+    # `:=` reads fl and ll through raw pointers while it allocates, and these
+    # are their last uses: keep them referenced.
+    when not defined(gcDestructors):
+      GC_ref(fl)
+      GC_ref(ll)
     gfl := fl
     gll := ll
+    when not defined(gcDestructors):
+      GC_unref(fl)
+      GC_unref(ll)
     #fl.stagPhase([0,1,3,7])
     let rbgrid = newGridRedBlackCartesian(grid)
     var gsrc = rbgrid.fermion(ferm)
