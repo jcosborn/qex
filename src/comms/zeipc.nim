@@ -55,6 +55,7 @@ proc ipcOpen*(e: GpuIpc): tuple[base, p: pointer] =
   copyMem(addr h.data[0], unsafeAddr fd, sizeof(cint))
   if zeMemOpenIpcHandle(ctx, dev, h, 0, result.base) != 0:
     qexError("zeMemOpenIpcHandle failed")
+  discard close(fd)  # the mapping holds the buffer
   result.p = cast[pointer](cast[int](result.base) + e.off)
 
 proc ipcClose*(base: pointer) =
