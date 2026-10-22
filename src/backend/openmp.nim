@@ -308,9 +308,10 @@ template gpuSubClause(sub: static int): string =
 template gpuFor*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
   ## One SPMD kernel over i in 0..<n, in sub-groups of sub threads, or as
   ## the compiler chooses for sub = 0.  Captured pointers must be device
-  ## pointers.
+  ## pointers.  n is evaluated on the host, as with the other backends.
   const gpuC = "target teams distribute parallel for " & gpuForClause & gpuSubClause(sub)
-  for i in `||`(0, int(n)-1, gpuC):
+  let gpuN = int(n)
+  for i in `||`(0, gpuN-1, gpuC):
     body
 template gpuFor*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, body)
 
@@ -320,7 +321,8 @@ template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
   ## gpuFor returning before the kernel completes; gpuWaitAsync waits for it.
   discard addr(gpuAsyncDep)  # declares it in the C file of the caller
   const gpuC = "target teams distribute parallel for " & gpuForClause & gpuSubClause(sub) & " nowait depend(inout:gpuAsyncDep)"
-  for i in `||`(0, int(n)-1, gpuC):
+  let gpuN = int(n)
+  for i in `||`(0, gpuN-1, gpuC):
     body
 template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) = gpuForAsync(i, n, 0, body)
 
