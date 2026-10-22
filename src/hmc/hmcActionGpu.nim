@@ -90,6 +90,8 @@ proc newHmcGpu*[U,R,S](uc: GaugeConfiguration[U]; srng: S; prng: R; tau: float; 
   ## force solves restart single precision CGs in double (solveM), which
   ## changes the forces within f_tol; with fixed the CG dot products add in a
   ## fixed order, so a trajectory repeats bit for bit
+  # 12 reals rebuild row 2 for det U = 1; the smeared links are U(3)
+  if reals < 14: qexError "the smeared links are U(3): reals 14 or 18"
   new(result)
   result.forceStats = forceStats
   result.mixed = mixed
