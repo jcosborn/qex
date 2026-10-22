@@ -209,11 +209,11 @@ jobs:
     - &build-gpu
       name: build the GPU tests and programs
       working-directory: qex
-      run: make jobs:2 tests/base/taccel tests/base/tgaugegpu tests/base/tstaglinks tests/base/tstagrecon bestream berng bernt
+      run: make jobs:2 tests/base/taccel tests/base/tgpumem tests/base/tgaugegpu tests/base/tstaglinks tests/base/tstagrecon tests/base/tsu3 bestream berng bernt
     - &build-stag
       name: build the StagGpu programs
       working-directory: qex
-      run: make staghmcgpu_sh eightFlavorSMGgpu
+      run: make staghmcgpu_sh eightFlavorSMGgpu staghmcgpu bestagres
 
   openmp:
     if: *once
@@ -360,12 +360,16 @@ jobs:
       env:
         OMP_NUM_THREADS: '2'
       run: |
-        for t in taccel tgaugegpu tstaglinks tstagrecon; do
+        for t in taccel tgpumem tgaugegpu tstaglinks tstagrecon; do
           timeout -k 10s 20m bin/$t
           timeout -k 10s 20m mpiexec -n 2 bin/$t
         done
         timeout -k 10s 20m bin/berng -lat:8,8,8,16
         timeout -k 10s 20m mpiexec -n 2 bin/berng -lat:8,8,8,16 -rg:1,1,1,2
+        for r in "" "mpiexec -n 2"; do
+          timeout -k 10s 20m $r bin/staghmcgpu -check:1 -lat:4,4,4,8 -trajs:0 -seed:1
+          timeout -k 10s 20m $r bin/bestagres
+        done
         for r in "" "mpiexec -n 2"; do
           RUNJOB="timeout -k 10s 20m $r" tests/extra/tstaghmc_sh/run bin/staghmcgpu_sh
           RUNJOB="timeout -k 10s 20m $r" tests/extra/teightFlavorSMG/run bin/eightFlavorSMGgpu
