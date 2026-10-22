@@ -20,8 +20,13 @@ method allReduceXor*(c: Comm, x: var int) {.base.} = discard
 method nsends*(c: Comm): int {.base.} = discard
 method nrecvs*(c: Comm): int {.base.} = discard
 method pushSend*(c: Comm, rank: int, p: pointer, bytes: int) {.base.} =
+  ## Starts a send that reads p until the matching waitSends.  The GC does not
+  ## see p: under refc keep its owner referenced (GC_ref) until the wait unless
+  ## the caller uses it after the wait.
   discard
 method pushRecv*(c: Comm, rank: int, p: pointer, bytes: int) {.base.} =
+  ## Starts a receive that writes p until the matching waitRecvs; keep its
+  ## owner alive as for pushSend.
   discard
 method waitSends*(c: Comm; i0,i1: int) {.base.} = discard
 method freeRecvs*(c: Comm; i0,i1: int) {.base.} = discard
@@ -69,7 +74,8 @@ template pushSend*(c: Comm, rank: int, xx: SomeNumber) =
 template pushSend*(c: Comm, rank: int, x: object) =
   pushSend(c, rank, &&x, sizeof(x))
 template pushSend*(c: Comm, rank: int, x: seq) =
-  pushSend(c, rank, &&x[0], x.len*sizeof(x[0]))
+  let p = addr x  # evaluates x once; a temporary, which dies before the wait, has no address
+  pushSend(c, rank, p[][0].addr, p[].len*sizeof(p[][0]))
 template waitSend*(c: Comm) =
   let n = c.nsends - 1
   c.waitSends(n, n)
@@ -85,7 +91,8 @@ template pushRecv*(c: Comm, rank: int, x: SomeNumber) =
 template pushRecv*(c: Comm, rank: int, x: object) =
   pushRecv(c, rank, &&x, sizeof(x))
 template pushRecv*(c: Comm, rank: int, x: seq) =
-  pushRecv(c, rank, &&x[0], x.len*sizeof(x[0]))
+  let p = addr x  # as in pushSend
+  pushRecv(c, rank, p[][0].addr, p[].len*sizeof(p[][0]))
 template freeRecvs*(c: Comm; k: int) =
   ## frees last k receives
   let n = c.nrecvs
