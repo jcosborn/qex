@@ -43,18 +43,21 @@ proc gpuMemset*(devPtr: pointer, value: SomeInteger, count: SomeInteger) =
   let err = hipMemset(devPtr, cint value, csize_t count)
   if err:
     echo "gpuMemset: ", $err
+    quit cast[cint](err)
 #proc gpuMemCpyToGpu*(dst,src: pointer, count: SomeInteger):cint {.discardable.} =
 proc gpuMemCpyToGpu*(dst,src: pointer, count: SomeInteger) =
   let err = hipMemcpy(dst,src,csize_t count,hipMemcpyHostToDevice)
   if err:
     echo instantiationInfo()
     echo "  gpuMemCpyToGpu: ", $err
+    quit cast[cint](err)
 #proc gpuMemCpyToCpu*(dst,src: pointer, count: SomeInteger):cint {.discardable.} =
 template gpuMemCpyToCpu*(dst,src: pointer, count: SomeInteger) =
   let err = hipMemcpy(dst,src,csize_t count,hipMemcpyDeviceToHost)
   if err:
     echo instantiationInfo()
     echo "  gpuMemCpyToCpu: ", $err
+    quit cast[cint](err)
 
 const gpuThreads {.intdefine.} = 128  ## threads per block of gpuFor kernels
 var gpuI {.importc, nodecl.}: clong  # the index in the gpuFor kernels
@@ -187,7 +190,10 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
         threadSingle:
           countSave = kernelCallCount
           kernelCallCount = thisKernelCallCount
-          discard hipDeviceSynchronize()
+          let err = hipDeviceSynchronize()
+          if err:
+            echo "onGpu kernel: ", $err
+            quit cast[cint](err)
         when declared gpuWaitFlops:
           toc("wait",flops=gpuWaitFlops)
         else:
