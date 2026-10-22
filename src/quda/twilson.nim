@@ -73,16 +73,19 @@ proc getQip(sp: SolverParams, m: float): QudaInvertParam =
   result.preserve_source = QUDA_PRESERVE_SOURCE_NO
   result.tune = QUDA_TUNE_YES
 
-proc getQipMg(sp: SolverParams, m: float): QudaInvertParam =
-  result = getQip(sp, m)
-  var mg_param = newQudaMultigridParam()
+proc setQipMg(qip: var QudaInvertParam, mg_param: var QudaMultigridParam, sp: SolverParams, m: float) =
+  ## The multigrid solver keeps pointers to mg_param and, through
+  ## mg_param.invert_param, to qip until destroyMultigridQuda: the caller owns
+  ## both and keeps them in place until then.
+  qip = getQip(sp, m)
+  mg_param = newQudaMultigridParam()
   #var mg_inv_param = newQudaInvertParam()
   #var mg_eig_param: array[QUDA_MAX_MG_LEVEL, QudaEigParam]
   #var eig_param = newQudaEigParam()
 
   setQudaMgSolveTypes()
-  setMultigridInvertParam(result)
-  mg_param.invert_param = addr result
+  setMultigridInvertParam(qip)
+  mg_param.invert_param = addr qip
   for i in 0..<mg_levels:
     #if mg_eig[i]:
     #  mg_eig_param[i] = newQudaEigParam()
@@ -91,8 +94,7 @@ proc getQipMg(sp: SolverParams, m: float): QudaInvertParam =
     #else:
       mg_param.eig_param[i] = nil
   setMultigridParam(mg_param)
-  var mg_preconditioner = newMultigridQuda(addr mg_param)
-  result.preconditioner = mg_preconditioner
+  qip.preconditioner = newMultigridQuda(addr mg_param)
 
 proc qudaSolve(w: Wilson; dest,src: Field, m: float, sp: var SolverParams) =
   let lo1 = getQudaLayout()
@@ -114,7 +116,9 @@ proc qudaSolveMg(w: Wilson; dest,src: Field, m: float, sp: var SolverParams) =
   var d1 = convert(dest, lo1)
   var hin = cast[pointer](addr s1[0])
   var hOut = cast[pointer](addr d1[0])
-  var qip = getQipMg(sp, m)
+  var qip: QudaInvertParam
+  var mg_param: QudaMultigridParam
+  setQipMg(qip, mg_param, sp, m)
   invertQuda(hout, hin, addr qip)
   destroyMultigridQuda(qip.preconditioner)
   convert(dest, d1)
