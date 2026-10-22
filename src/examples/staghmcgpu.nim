@@ -10,7 +10,7 @@
 ##   and so need SU(3) links (the random ones of -hot:1 are so to 1e-10)
 ##   -check:1 first compares the gauge action, gauge force, link update and
 ##   fermion force and random numbers with the CPU ones on a random gauge
-##   field
+##   field, and exits with 1 if one differs beyond rounding
 import qex, gauge, physics/[qcdTypes, stagSolve, stagGpu], gauge/gaugeGpu
 import backend/accel, rng/rngGpu
 import mdevolve
@@ -120,6 +120,11 @@ proc rel(a, b: auto): float =
   d/n
 
 if intParam("check", 0) != 0:
+  var bad = 0  # comparisons beyond rounding: action 1e-12 relative, others 1e-20 squared
+  template ok(name: string; c: bool) =
+    if not c:
+      echo "check ", name, " FAILED"
+      inc bad
   var rc = lo.newRNGField(RngMilc6, seed + 1)
   var gr = lo.newgauge
   var f = lo.newgauge
@@ -130,12 +135,15 @@ if intParam("check", 0) != 0:
     gr.projectSU  # SU(3) to rounding, as the solvers with links of 12 reals need
     for mu in 0..<z.len: z[mu] := 0
   gg.upload(gg.u, gr)
-  echo "check actionA  CPU: ", gc.actionA(gr), "  GPU: ", gg.actionA(gc)
+  let (ac, ag) = (gc.actionA(gr), gg.actionA(gc))
+  echo "check actionA  CPU: ", ac, "  GPU: ", ag
+  ok("actionA", abs(ag - ac) <= 1e-12*abs(ac))
   gc.forceA(gr, f)
   gg.upload(mom, z)
   gg.forceA(gc, mom, -1.0)
   gg.download(fg, mom)
   echo "check forceA  |GPU-CPU|^2/|CPU|^2: ", rel(fg, f)
+  ok("forceA", rel(fg, f) < 1e-20)
   var rgc = newRngGpu(lo, rc)
   var pr = lo.newgauge
   threads: pr.randomTAH rc
@@ -144,6 +152,7 @@ if intParam("check", 0) != 0:
   gg.expUpdate(mom, 0.3)
   gg.download(fg, gg.u)
   echo "check exp  |GPU-CPU|^2/|CPU|^2: ", rel(fg, f)
+  ok("exp", rel(fg, f) < 1e-20)
   gg.upload(gg.u, gr)
   threads:
     gr.setBC
@@ -162,6 +171,7 @@ if intParam("check", 0) != 0:
     if rd[j] != rc[j]: nd += 1
   getDefaultComm().allReduce(nd)
   echo "check random  |GPU-CPU|^2/|CPU|^2: ", rel(fg, pr), " ", rel([xr], [psi]), "  generators differing: ", nd
+  ok("random", rel(fg, pr) < 1e-20 and rel([xr], [psi]) < 1e-20 and nd == 0)
   let stag = newStag(gr)
   var ph = lo.ColorVector()
   var ps = lo.ColorVector()
@@ -193,6 +203,9 @@ if intParam("check", 0) != 0:
       nx = b
   echo "check solve  |GPU-CPU|^2/|CPU|^2: ", dx/nx
   echo "check fermion force  |GPU-CPU|^2/|CPU|^2: ", rel(fg, f)
+  ok("solve", dx/nx < 1e-20)
+  ok("fermion force", rel(fg, f) < 1e-20)
+  if bad > 0: qexExit(1)
 
 gg.upload(gg.u, g)
 echo "plaq: ", gg.plaq
