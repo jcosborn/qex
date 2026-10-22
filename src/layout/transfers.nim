@@ -25,7 +25,13 @@ proc replicateFrom*(f: Field, f2: Field2) =
   let gm = c.makeGatherMap(rl)
 
   template `&&`(x: Field): untyped = cast[pointer](unsafeAddr(x[0]))
+  # The gather sees only the storage pointers and allocates; keep both Fields
+  # (which own the storage) referenced until it ends.
+  GC_ref(f)
+  GC_ref(f2)
   c.gather(gm, sizeof(f[0]), &&f, &&f2)
+  GC_unref(f)
+  GC_unref(f2)
 
 proc remapLocalFrom*(f: Field, f2: Field2) =
   let lo = f.l

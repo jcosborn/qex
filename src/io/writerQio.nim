@@ -210,11 +210,17 @@ proc write*[V:static[int],T](wr:var Writer[V]; v:openArray[Field[V,T]];
   let nv = v.len
   var f = newSeq[type(v[0][0].addr)](nv)
   for i in 0..<nv: f[i] = v[i][0].addr
+  # f holds only storage pointers and the write allocates before QIO reads
+  # them; keep the Fields (owners of the storage) referenced meanwhile.
+  for x in v: GC_ref(x)
   wr.write(f,v[0].l.physGeom,md,prec)
+  for x in v: GC_unref(x)
 
 proc write*(wr: var Writer; v: Field; md=defRecMd; prec="") =
   var f = @[ v[0].addr ]
+  GC_ref(v)  # as above
   wr.write(f, v.l.physGeom, md, prec)
+  GC_unref(v)
 
 when isMainModule:
   import gauge, rng, reader
