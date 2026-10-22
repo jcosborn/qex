@@ -711,7 +711,8 @@ proc solveEE*[V: static int; T](s: StagGpu[V,T]; r, x: Field; m: float; sp: var 
   ## Solves A r_e = x_e by CG from r_e = 0, as solveEE, until the true
   ## |x_e - A r_e|^2 <= sp.r2req |x_e|^2.  It stops short of that at
   ## sp.maxits iterations, or when a restart from the true residual no
-  ## longer reduces it, at its rounding floor.
+  ## longer reduces it, at its rounding floor; r_e is then the solution of
+  ## that last restart, whose residual sp records.
   tic("solveEE")
   let c = getDefaultComm()
   let b = s.vec[5]
