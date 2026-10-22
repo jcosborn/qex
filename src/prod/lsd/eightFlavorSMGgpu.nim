@@ -41,6 +41,10 @@ threads: echo "thread ", threadNum, "/", numThreads
 
 #[ baseline setup ]#
 
+proc parseGeometry(s: string): seq[int] =
+  ## dot separated as eightFlavorSMG takes it, or comma separated
+  if s.len == 0: @[] else: s.split({'.', ','}).mapIt(parseInt(it))
+
 # read command line inputs
 letParam:
   start_config = 0 # starting configuration
@@ -53,8 +57,10 @@ letParam:
   xml = currentSourcePath.parentDir() & "/eightFlavorSMG.xml" # path to input XML
   verbosity = 0 # verbosity of information printed by HMC engine
 
-  rank_geom = newSeq[int](0) # <-+- if empty, guesses layout
-  simd_geom = newSeq[int](0) # <-+
+  rank_geom:
+    parseGeometry = "" # if empty, guesses layout
+  simd_geom:
+    parseGeometry = "" # if empty, guesses layout
   reals = 18 # reals per link of the GPU solvers, 18 or 14
   force_stats = 1 # force stats: 1 of the first fermion and gauge forces of a trajectory, 2 of all
   timers = 0 # 1 prints the profile timers at the end
