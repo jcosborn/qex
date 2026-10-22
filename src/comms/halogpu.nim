@@ -269,7 +269,8 @@ proc newGpuHaloEx*[T](gm: GatherMap, ne, n, v: int, c: Comm): GpuHaloEx[T] =
   ex.rpeer.newSeq(ex.rmsg.len)
   when ipc:
     var host = newSeq[float](c.size)  # host name hash of each rank
-    host[c.rank] = float(hash(getHostname()) and 0xffffff)
+    # 52 bits, exact in float64: a collision would map a remote rank as a peer
+    host[c.rank] = float(hash(getHostname()) and ((1 shl 52) - 1))
     c.allReduce(addr host[0], c.size)
     for i, m in ex.smsg: ex.speer[i] = haloIpc and host[m.rank] == host[c.rank]
     for i, m in ex.rmsg: ex.rpeer[i] = haloIpc and host[m.rank] == host[c.rank]
