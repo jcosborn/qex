@@ -131,7 +131,10 @@ mutation. Each product is freed after its last consumer unless an output
 aliases it, and the shift fields on return. Test: `tpathplan`.
 
 Halo layouts preserve physical indices and parity; maps encode periodic
-coordinates. Construct/cache geometry outside `threads`. The halo buffer is
+coordinates. A halo update moves every halo site whose lanes come from one
+source site as one vector copy with an xor lane permutation (inner extents are
+1 or 2), and the local lanes of a site with remote lanes the same way before
+the remaining lanes arrive one by one. Construct/cache geometry outside `threads`. The halo buffer is
 allocated uninitialized: only gathered entries are defined, and the reverse
 exchange reads every cell its map covers before accumulating into physical
 fields, so zero or fill the halo first, as `hypsmear2` does. Test: `thalo`.

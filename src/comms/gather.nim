@@ -204,6 +204,8 @@ proc gather*(c: Comm; gm: GatherMap; data: auto; keep = false) =
   ## their owner, and explicitly when the default communicator is finalized.
   ## Calls using one communicator must be serialized. Once receives are posted,
   ## data.copy and communicator operations must complete without raising.
+  ## Receives are posted before the sends without a barrier between them: QMP
+  ## over MPI matches a message that arrives before its receive is posted.
   tic("gather")
   # start recvs
   let elemsize = data.elemsize
@@ -227,8 +229,6 @@ proc gather*(c: Comm; gm: GatherMap; data: auto; keep = false) =
   commAdd(gathers, 1)
   commAdd(gmsgs, gm.smsginfo.len)
   commAdd(gbytes, elemsize*gm.sidx.len)
-  commTime(gwait): c.barrier  # make sure recvs posted before sends start
-  toc("barrier")
 
   # fill send buffers and send
   var bytes = 0
@@ -252,25 +252,8 @@ proc gather*(c: Comm; gm: GatherMap; data: auto; keep = false) =
     #tfor i, 0..<gm.ldest.len:
     # make sure threads don't share inner sites
     let range = splitThreads(gm.ldest, data.vlen, numThreads, threadNum)
-    when true:
-      for i in range[0] ..< range[1]:
-        data.copy(gm.ldest[i], gm.lidx[i])
-    else:
-      var desti: array[16,int]
-      var idx: array[16,int]
-      var ni = 0
-      var vs0 = gm.ldest[range[0]] div data.vlen
-      for i in range[0] ..< range[1]:
-        let vs = gm.ldest[i] div data.vlen
-        let vi = gm.ldest[i] mod data.vlen
-        if vs != vs0:
-          data.copy(vs0, desti, idx, ni)
-          ni = 0
-          vs0 = vs
-        desti[ni] = vi
-        idx[ni] = gm.lidx[i]
-        inc ni
-      if ni>0: data.copy(vs0, desti, idx, ni)
+    for i in range[0] ..< range[1]:
+      data.copy(gm.ldest[i], gm.lidx[i])
   bytes = gm.ldest.len * elemsize
   toc("copy local", flops=bytes)
 

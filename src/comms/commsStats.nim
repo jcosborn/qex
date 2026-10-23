@@ -10,7 +10,7 @@ when defined(commStats):
     shifts*, msgs*, bytes*: int  # shift starts; those with remote messages; bytes sent
     wait*: float                 # waits for shift messages
     gathers*, gmsgs*, gbytes*: int
-    gwait*: float                # gather barriers and message waits
+    gwait*: float                # gather message waits
     reduces*: int
     rwait*: float                # all-reduce calls
 

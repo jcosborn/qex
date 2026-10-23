@@ -1,5 +1,6 @@
 import base, layout, field, maths, base/hyper, comms/gather, tables
 import physics/color
+from physics/qcdTypes import perm
 getOptimPragmas()
 
 type
@@ -26,13 +27,17 @@ type
   HaloMap*[L] = ref object
     layout*: HaloLayout[L]
     offsets*: seq[seq[int32]]  # offsets of outer sites needed
-    gather*: GatherMap  # gather map to fetch needed halo sites
+    gather*: GatherMap  # lanes of the needed halo sites that sites does not fill
     gatherRev*: GatherMap  # gather map to send halo sites back
+    sites*: GatherMap  # whole halo sites, lane k from lane k xor perm of one source site
+    perm: seq[int32]  # that xor of each halo site in sites, -1 elsewhere
+    nsites*, nlanes*: int  # entries of sites and gather on all ranks
   GatherHalo*[F,T;Rev:static bool] = object
     src: F
     dest: ptr UncheckedArray[T]
     elemsize: int
     vlen: int
+    perm: ptr UncheckedArray[int32]  # whole sites, see copy
 
 proc norm2*(h: Halo): auto =
   var s = h.halo[0].norm2
@@ -147,7 +152,17 @@ proc makeHaloMap*[L](hl: HaloLayout[L], c: Comm, offsets: seq[seq[int32]]): Halo
     let ik = vlen*i0 + k
     hl.lo.coord(x, ik)
     vecOffset[k] = x - hl.offset
+  # A halo site whose lane k holds lane k xor p of one source site moves as a
+  # whole site, permuted by p, and so does the local part of a site with
+  # lanes on other ranks: the site gather writes every lane before the lane
+  # gather overwrites the remote ones. Other lanes move one by one. Inner
+  # extents are 1 or 2 (layoutX), so lanes from one site differ by an xor.
+  let rank = c.commrank
+  var ql = newSeq[RecvList](0)
+  var ri = newSeq[tuple[rank,index:int]](vlen)
+  result.perm = newSeq[int32](hl.nExt - hl.nOut)
   for i in hl.nOut ..< hl.nExt:  # loop over halo sites
+    result.perm[i-hl.nOut] = -1
     let li = hl.lex[i]
     x.lexCoord(li, hl.outerExt)
     var keep = false
@@ -157,17 +172,40 @@ proc makeHaloMap*[L](hl: HaloLayout[L], c: Comm, offsets: seq[seq[int32]]): Halo
         keep = true
         break
     if keep:
-      for k in 0 ..< vlen:
+      var k0 = 0  # the first local lane, else lane 0, names the source site
+      for k in countdown(vlen-1, 0):
         var y = x + vecOffset[k]
         for l in 0..<nd:
           if y[l] < 0: y[l] += int32 hl.lo.physGeom[l]
           if y[l] >= hl.lo.physGeom[l]: y[l] -= int32 hl.lo.physGeom[l]
-        let ri = hl.lo.rankIndex(y)
+        ri[k] = hl.lo.rankIndex(y)
         let didx = vlen*(i-hl.nOut)+k
-        rl.add RecvList(didx: int32 didx, srank: int32 ri.rank, sidx: int32 ri.index)
-        sl.add SendList(sidx: int32 didx, drank: int32 ri.rank, didx: int32 ri.index)
+        sl.add SendList(sidx: int32 didx, drank: int32 ri[k].rank, didx: int32 ri[k].index)
+        if ri[k].rank == rank: k0 = k
+      let
+        r = ri[k0].rank
+        o = ri[k0].index div vlen
+        p = (ri[k0].index mod vlen) xor k0
+      template covered(k: int): bool =
+        ri[k].rank == r and ri[k].index div vlen == o and ri[k].index mod vlen == (k xor p)
+      var all, mine = true
+      for k in 0 ..< vlen:
+        if not covered(k):
+          all = false
+          if ri[k].rank == r: mine = false
+      if all or (r == rank and mine):
+        result.perm[i-hl.nOut] = int32 p
+        ql.add RecvList(didx: int32(i-hl.nOut), srank: int32 r, sidx: int32 o)
+      for k in 0 ..< vlen:
+        if result.perm[i-hl.nOut] < 0 or not covered(k):
+          rl.add RecvList(didx: int32(vlen*(i-hl.nOut)+k), srank: int32 ri[k].rank, sidx: int32 ri[k].index)
   toc("RecvList")
+  var n = [float rl.len, float ql.len]
+  c.allReduce(n[0].addr, 2)
+  result.nlanes = int n[0]
+  result.nsites = int n[1]
   result.gather = c.makeGatherMap(rl)
+  result.sites = c.makeGatherMap(ql)
   result.gatherRev = c.makeGatherMap(sl)
   toc("makeGatherMap")
 proc makeHaloMap*[L,N](hl: HaloLayout[L], c: Comm, offsets: seq[array[N,SomeInteger]]): HaloMap[L] =
@@ -257,8 +295,21 @@ template makeHalo*[L,F](hl: HaloLayout[L], f: F): auto =
   #makeHalo(hl, f, eval(F.type[0]))
   makeHalo(hl, f, eval(F.type.index(int)))
 
-template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], d, s: pointer|SomeInteger) =
-  # Keep all three gather transfers in one binding for indirect generic callers.
+proc setLanes[T](r: var T, x: T, p: int32) {.inline.} =
+  ## r = x with lane k of r taken from lane k xor p of x.
+  if p == 0: r = x
+  else:
+    var t = x
+    var b = 1'i32
+    while b <= p:
+      if (p and b) != 0:
+        var u {.noinit.}: T
+        perm(u, int b, t)
+        t = u
+      b = b shl 1
+    r = t
+
+template copyLanes[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], d, s: pointer|SomeInteger) =
   when d is pointer:
     type E = eval(index(type T, type asSimd(0)))
     let p = cast[ptr E](d)
@@ -286,46 +337,52 @@ template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], d, s: pointer|SomeI
       let o = d div gh.vlen
       let i = d mod gh.vlen
       gh.dest[o][asSimd(i)] = gh.src{s}
-template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], dv: SomeInteger, di: array,
-                                    s: array, n: SomeInteger) =
-  #echo n, " ", dv, " ", di, " ", s
-  #for i in 0..<n:
-  #  gh.dest[dv][asSimd(di[i])] = gh.src{s[i]}
-  var t = gh.dest[dv]
-  #echo $typeof(t)
-  when typeof(t) is Color[MatrixArray]:
-  #when false:
-    #echo "true"
-    for ic in 0..<t.nrows:
-      for jc in 0..<t.ncols:
-        for i in 0..<n:
-          let sv = s[i] div gh.vlen
-          let si = s[i] mod gh.vlen
-          #static: echo $typeof(t[ic,jc]), " ", $typeof(asSimd(di[i])), " ", $typeof(gh.src[sv][ic,jc][asSimd(si)])
-          t[ic,jc][asSimd(di[i])] = gh.src[sv][ic,jc][asSimd(si)]
+template copy*[F,T;Rev:static bool](gh: GatherHalo[F,T,Rev], d, s: pointer|SomeInteger) =
+  # Keep all three gather transfers in one binding for indirect generic callers.
+  # With perm (forward only), elements are whole sites and lane k of halo site d
+  # is lane k xor perm[d] of its source; message buffers are not aligned for T.
+  when not Rev:
+    if gh.perm != nil:
+      when d is pointer:
+        copyMem(d, gh.src[s].addr, sizeof(T))
+      elif s is pointer:
+        var t {.noinit.}: T
+        copyMem(t.addr, s, sizeof(T))
+        setLanes(gh.dest[d], t, gh.perm[d])
+      else:
+        setLanes(gh.dest[d], gh.src[s], gh.perm[d])
+    else:
+      copyLanes(gh, d, s)
   else:
-    for i in 0..<n:
-      t[asSimd(di[i])] = gh.src{s[i]}
-      #let sv = s[i] div gh.vlen
-      #let si = s[i] mod gh.vlen
-      #t[asSimd(di[i])] = gh.src[sv][asSimd(si)]
-  gh.dest[dv] = t
+    copyLanes(gh, d, s)
 
 proc update*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
   bind copy
   tic("Halo update")
-  let elemSize = sizeof(T) div L.V
-  var gh: GatherHalo[F,T,false]
-  gh.src = h.field
-  gh.dest = cast[ptr UncheckedArray[T]](unsafeAddr h.halo[0])
-  gh.elemsize = elemSize
-  gh.vlen = L.V
-  # gh.dest is a raw pointer into h, and the gather allocates: keep h
-  # referenced, the caller may not use it after this call.
+  # The gathers borrow the halo and permutation storage through raw pointers.
   GC_ref(h)
-  c.gather(hm.gather, gh, keep = true)
-  GC_unref(h)
-  toc("gather")
+  GC_ref(hm)
+  defer:
+    GC_unref(hm)
+    GC_unref(h)
+  if hm.nsites > 0:
+    var gs: GatherHalo[F,T,false]
+    gs.src = h.field
+    gs.dest = cast[ptr UncheckedArray[T]](unsafeAddr h.halo[0])
+    gs.perm = cast[ptr UncheckedArray[int32]](unsafeAddr hm.perm[0])
+    gs.elemsize = sizeof(T)
+    gs.vlen = 1
+    c.gather(hm.sites, gs, keep = true)
+    toc("sites")
+  if hm.nlanes > 0:
+    let elemSize = sizeof(T) div L.V
+    var gh: GatherHalo[F,T,false]
+    gh.src = h.field
+    gh.dest = cast[ptr UncheckedArray[T]](unsafeAddr h.halo[0])
+    gh.elemsize = elemSize
+    gh.vlen = L.V
+    c.gather(hm.gather, gh, keep = true)
+    toc("gather")
 
 proc updateRev*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
   bind copy
@@ -336,37 +393,11 @@ proc updateRev*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
   gh.dest = cast[ptr UncheckedArray[T]](unsafeAddr h.halo[0])
   gh.elemsize = elemSize
   gh.vlen = L.V
-  #let g = hm.gather.reverse
   GC_ref(h)  # as in update
+  defer: GC_unref(h)
   c.gather(hm.gatherRev, gh)
-  GC_unref(h)
   toc("gather")
 
-#[
-proc `[]`*(h: Halo, i: SomeInteger): auto {.inline,noInit.} =
-  let k = i - h.nOut
-  if k < 0:
-    h.field[i]
-  else:
-    h.halo[k]
-
-proc `[]`*(h: var Halo, i: SomeInteger): var auto {.inline.} =
-  var t {.noInit.}: ptr type(h.field[i])
-  let k = i - h.nOut
-  if k < 0:
-    t = addr h.field[i]
-  else:
-    t = addr h.halo[k]
-  t[]
-template `[]`*(h: Halo, i: SomeInteger): auto =
-  var t {.noInit.}: ptr type(h.field[i])
-  let k = i - h.nOut
-  if k < 0:
-    t = addr h.field[i]
-  else:
-    t = addr h.halo[k]
-  t[]
-]#
 
 proc indexPtr*[L,F,T](h: Halo[L,F,T], i: SomeInteger): ptr T {.alwaysInline.} =
   let k = i - h.nOut
@@ -379,6 +410,14 @@ proc `[]=`*(h: Halo, i: SomeInteger, x: auto) {.alwaysInline.} =
     h.field[i] = x
   else:
     h.halo[k] := x
+
+proc step*[I: SomeInteger](hl: HaloLayout, d: int, i: I, n: SomeInteger): I =
+  ## The extended index n sites from i along d; n < 0 walks backward.
+  result = i
+  if n > 0:
+    for _ in 0..<int(n): result = I(hl.neighborFwd[d][result])
+  else:
+    for _ in 0..<int(-n): result = I(hl.neighborBck[d][result])
 
 proc neighbor*(h: Halo, i: SomeInteger, mu: SomeInteger, fb: SomeInteger): int32 =
   if fb > 0:

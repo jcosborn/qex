@@ -204,6 +204,8 @@ suite "Halo":
       true
     let nh = (hl.nExt - hl.nOut) * lo.V
     for hm in [hmC, hmA]:
+      check(hm.sites.sidx.inRange(lo.nSitesOuter) and hm.sites.lidx.inRange(lo.nSitesOuter))
+      check(hm.sites.rdest.inRange(hl.nExt-hl.nOut) and hm.sites.ldest.inRange(hl.nExt-hl.nOut))
       check(hm.gather.sidx.inRange(lo.nSites) and hm.gather.lidx.inRange(lo.nSites))
       check(hm.gather.rdest.inRange(nh) and hm.gather.ldest.inRange(nh))
       check(hm.gatherRev.sidx.inRange(nh) and hm.gatherRev.lidx.inRange(nh))
@@ -258,6 +260,33 @@ suite "Halo":
     check(checkRev(g, hl, hmC, corners) == 0)
   test "updateRev axes":
     check(checkRev(g, hl, hmA, axes) == 0)
+
+  test "update at other lane counts":
+    # V = 4 leaves directions without lanes, so split ranks send whole sites.
+    template layoutCase(lat: openArray[int], v: static int) =
+      block:
+        let lo2 = newLayout(lat, v)
+        let n = lo2.nDim
+        var g2 = newSeq[type(lo2.ColorMatrix(3))](n)
+        for mu in 0..<n: g2[mu] = lo2.ColorMatrix(3)
+        var ones = newSeq[int](n)
+        for d in 0..<n: ones[d] = 1
+        let hl2 = haloLayout(lo2, ones, ones)
+        var cs, ax: seq[seq[int32]]
+        for c in 0..<(1 shl n):
+          var t = newSeq[int32](n)
+          for d in 0..<n: t[d] = if ((c shr d) and 1) == 1: -1 else: 1
+          cs.add t
+        for d in 0..<n:
+          for s in [-1'i32, 1'i32]:
+            var t = newSeq[int32](n)
+            t[d] = s
+            ax.add t
+        echo "V: ", lo2.V, " innerGeom: ", lo2.innerGeom, " rankGeom: ", lo2.rankGeom
+        check(checkUpdate(g2, hl2, haloMap(hl2, comm, cs), cs) == 0)
+        check(checkUpdate(g2, hl2, haloMap(hl2, comm, ax), ax) == 0)
+        check(checkRev(g2, hl2, haloMap(hl2, comm, cs), cs) == 0)
+    layoutCase(lo.physGeom, 4)
 
   test "plaquette":
     threads: g.random r
