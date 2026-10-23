@@ -4,6 +4,7 @@ import ./alignedMem
 var VerboseGCStats* = false
 
 template qexGC*(label:string = "") =
+  when defined(memTrace): memMark("before GC " & label)
   if unlikely VerboseGCStats:
     if label.len > 0:
       echo "# "&label
@@ -17,6 +18,7 @@ template qexGC*(label:string = "") =
     echo "[RAW] max used memory: " & $getRawMemMaxUsed()
     echo GC_getStatistics()
   GC_fullCollect()
+  when defined(memTrace): memMark("after GC " & label)
   if unlikely VerboseGCStats:
     echo "[RAW] allocated memory: " & $getRawMemAllocated()
     echo "[RAW] used memory: " & $getRawMemUsed()

@@ -7,6 +7,8 @@ export comms
 import profile
 export profile
 import version
+when defined(memTrace):
+  import alignedMem
 
 import algorithm, strutils, times, std/compilesettings
 
@@ -81,6 +83,7 @@ proc qexSetFinalizeComms*(val: bool) =
   qexFinalizeComms = val
 
 proc qexFinalize*() =
+  when defined(memTrace): rawPeakReport()
   flushFile stdout
   flushFile stderr
   GC_fullCollect()

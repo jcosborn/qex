@@ -1,6 +1,7 @@
 import strUtils
 import stdUtils
 import system/ansi_c
+import std/[posix, os]
 
 type
   RawMemStats* = object
@@ -23,6 +24,24 @@ type
 var rms: RawMemStats
 var rmGcThreshold = 1024*1024*1024   # 1 GB
 
+proc maxRssMiB*(): float =
+  ## Process peak resident memory, in MiB on both Linux and macOS.
+  var ru: Rusage
+  if getrusage(RUSAGE_SELF, addr ru) != 0: raiseOSError(osLastError())
+  when defined(macosx): ru.ru_maxrss.float / 1048576.0
+  else: ru.ru_maxrss.float / 1024.0
+
+when defined(memTrace):
+  var rawPeakHeap: int
+  proc mib(n: int): string = (n.float / 1048576.0).formatFloat(ffDecimal, 1)
+  proc memMark*(label: string) =
+    echo "[memTrace] ", label, ": maxrss ", maxRssMiB().formatFloat(ffDecimal, 1),
+      " MiB, raw ", mib(rms.used), " (max ", mib(rms.maxUsed), "), Nim heap ", mib(getTotalMem()),
+      " (occupied ", mib(getOccupiedMem()), ")"
+  proc rawPeakReport*() =
+    echo "[memTrace] raw peak ", mib(rms.maxUsed), " MiB, Nim heap then ", mib(rawPeakHeap),
+      " MiB, maxrss ", maxRssMiB().formatFloat(ffDecimal, 1), " MiB"
+
 proc newRawMem*(size: int, zero=true): RawMem =
   if size>0:
     if rms.used>rmGcThreshold:
@@ -35,6 +54,8 @@ proc newRawMem*(size: int, zero=true): RawMem =
       result.size = size
       rms.allocated += size
       rms.used += size
+      when defined(memTrace):
+        if rms.used > rms.maxUsed: rawPeakHeap = getTotalMem()
       rms.maxUsed = max(rms.maxUsed, rms.used)
 var rawMemFreeHook*: proc(p: pointer; size: int) {.nimcall.}
   ## called with the storage of each RawMem before it is freed

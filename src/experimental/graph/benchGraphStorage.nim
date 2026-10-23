@@ -4,8 +4,6 @@
 import qex
 import base/[alignedMem, omp]
 import std/[math, tables]
-when defined(macosx) or defined(linux):
-  import std/posix
 import ./[core, scalar, gauge, functional, multi, plan]
 import ./gauge/types
 import ./hmcgauge/[config, integrator, trajectory]
@@ -53,16 +51,7 @@ proc forwards(rt: GraphRuntime): int =
   for s in rt.runStatsByNode.values:
     result += s.count
 
-proc rssPeak(): int =
-  when defined(macosx) or defined(linux):
-    var ru: Rusage
-    discard getrusage(RUSAGE_SELF, addr ru)
-    when defined(macosx):
-      result = int(ru.ru_maxrss)
-    else:
-      result = 1024 * int(ru.ru_maxrss)
-  else:
-    result = -1
+proc rssPeak(): int = int(maxRssMiB()*1048576.0)
 
 proc chain() =
   letParam:
