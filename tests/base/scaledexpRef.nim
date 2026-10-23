@@ -1,6 +1,6 @@
 ## Independent dense references shared by numerical and graph SU(3) tests.
 import qex
-import std/[math, strutils]
+import std/[math, random, strutils]
 
 type
   M = MatrixArray[3,3,ComplexType[float64]]
@@ -266,25 +266,40 @@ proc caseRef(name:string,m,dm,cot:C,b:R[8],v:array[8,float64],orders:openArray[i
         dlog:tp(ik,mm(pr.dp[8],d)+mm(pr.p,dd)),pair:dotRef(b,pr.dp[8]),
         invNorm:normRef(ik),cond:normRef(k)*normRef(ik))
 
-proc buildRefs*():References =
-  var cs,v:array[8,float64]
-  var b:R[8]
+proc fixedInputs():tuple[v:array[8,float64],b:R[8],dm,cot,h:C] =
+  ## The direction dm, cotangent, adjoint inputs and Hermitian part h of every case.
   for i in 0..<8:
-    cs[i]=float(i+1)/13
-    v[i]=float((5*i) mod 9-4)/17
-    for j in 0..<8: b[i][j]=float((3*i+5*j) mod 17-8)/19
-  var unit=linear(gs,cs)
-  unit=(1/cnorm(unit))*unit
+    result.v[i]=float((5*i) mod 9-4)/17
+    for j in 0..<8: result.b[i][j]=float((3*i+5*j) mod 17-8)/19
   var dr,di,cr,ci:R[3]
   for i in 0..<3:
     for j in 0..<3:
       dr[i][j]=float(1+2*i-j)/17; di[i][j]=float(2-i+3*j)/19
       cr[i][j]=float((2*i+5*j) mod 7-3)/11; ci[i][j]=float((3*i+2*j) mod 9-4)/13
-  var dm=cm(dr,di)
-  dm=(1/cnorm(dm))*dm
-  let cot=cm(cr,ci)
-  let h=cm([[0.09,0.013,-0.008],[0.013,0.11,0.017],[-0.008,0.017,0.14]],
-           [[0.0,0.021,0.011],[-0.021,0.0,-0.014],[-0.011,0.014,0.0]])
+  result.dm=cm(dr,di)
+  result.dm=(1/cnorm(result.dm))*result.dm
+  result.cot=cm(cr,ci)
+  result.h=cm([[0.09,0.013,-0.008],[0.013,0.11,0.017],[-0.008,0.017,0.14]],
+              [[0.0,0.021,0.011],[-0.021,0.0,-0.014],[-0.011,0.014,0.0]])
+
+proc normRefs*(amp: float, n: int): seq[CaseRef] =
+  ## n cases with ||F||_F = amp: M = amp u + h for random unit traceless
+  ## anti-Hermitian u, order 13.
+  var r = initRand(20261028 + int(1000*amp))
+  let (v,b,dm,cot,h)=fixedInputs()
+  for k in 0..<n:
+    var cs:array[8,float64]
+    for i in 0..<8: cs[i]=r.gauss()
+    var u=linear(gs,cs)
+    u=(1/cnorm(u))*u
+    result.add caseRef("norm" & $amp & "-" & $k,amp*u+h,dm,cot,b,v,[13])
+
+proc buildRefs*():References =
+  var cs:array[8,float64]
+  for i in 0..<8: cs[i]=float(i+1)/13
+  var unit=linear(gs,cs)
+  unit=(1/cnorm(unit))*unit
+  let (v,b,dm,cot,h)=fixedInputs()
   var zr,rep,ext:R[3]
   rep[0][0]=1; rep[1][1]=1; rep[2][2] = -2
   ext[0][0]=1; ext[1][1] = -1

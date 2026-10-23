@@ -403,20 +403,38 @@ X^8=-s_1X^6-\frac{s_1^2}{4}X^4-s_3X^2,\qquad
 s_1=3\|F\|_F^2,\quad s_3=\frac{\|F\|_F^6}{2}-27(\Im\det F)^2.
 $$
 
-Recovery values/squares are stack-resident. For cotangent $U$, $Q=P^2$ and
-$P'=P+cXP^2$, one reverse step is
-
-$$
-\bar X\mathrel{+}=cUQ^T,\qquad B=cX^TU,\qquad
-\bar P=U+BP^T+P^TB.
-$$
-
-The logdet pullback differentiates its selected finite expression:
+The logdet value forms $P$ by these matrix recoveries. On the adjoint image
+the reduction is exact, so the same seed and recoveries carried out on the
+coefficients give $P=\sum_{k=0}^{7}c_k(s_1,s_3)X^k=E(Z)+XO(Z)$, $Z=X^2$, with
+$s_1=-\operatorname{tr}Z/2$ and $s_3=-s_1^3/12-\operatorname{tr}Z^3/6$; the
+logdet gradient uses this form and differentiates the coefficients along with
+the powers. The logdet pullback differentiates its selected finite expression:
 
 $$
 \ell=\log\det(I+PD),\quad d\ell=\operatorname{tr}(K^{-1}dK),\quad
 \bar P=K^{-T}D^T,\quad\bar D=P^TK^{-T},\quad K=I+PD.
 $$
+
+With $B=DK^{-1}$, $C=BX$ and $\Delta=c_6B+c_7C$,
+
+$$
+\operatorname{tr}(B\,dP)=\sum_k\operatorname{tr}(BX^k)\,dc_k
++\operatorname{tr}(G\,dZ)+\operatorname{tr}(OB\,dX),\qquad
+G=c_2B+c_3C+\{Z,c_4B+c_5C\}+Z^2\Delta+Z\Delta Z+\Delta Z^2,
+$$
+
+$dZ=dX\,X+X\,dX$, $ds_1=-\operatorname{tr}(X\,dX)$ and
+$ds_3=-\tfrac{s_1^2}{4}ds_1-\operatorname{tr}(X^5dX)$; only the antisymmetric
+part reaches the generators, so $G$ enters through its symmetric part. This
+takes about 13 matrix products against 41 for the reverse of the recoveries.
+The two forms agree to rounding for $\|F\|_F\le2$. The monomial sum loses
+accuracy as $\max_k|c_k|\,\|X^k\|/\|P\|$ grows, to about 5 at
+$\|F\|_F=4$ and 90 at 8: against a 60-digit evaluation of the same finite map
+(random $M$), the relative gradient error stays below $10^{-13}$ up to
+$\|F\|_F=4$ and reaches $1.6\times10^{-10}$ at 8, $6\times10^{-9}$ at 16 and
+$5\times10^{-7}$ at 32, where the reverse of the recoveries stays near
+$10^{-13}$. Stout inputs stay below $\|F\|_F\approx1.3$. `tscaledexp` bounds
+the error by $10^{-12}$ through $\|F\|_F=4$ and by $10^{-9}$ at 8.
 
 Require positive determinant and nonzero leading LU pivots. Phi/logdet kernels
 approximate the analytic Lie differential of adaptive degree-12 `expAH`;

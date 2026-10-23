@@ -138,11 +138,33 @@ proc checkFinite(scale: static int) =
     " max KinvNorm=", mi, " condF=", mc
 
 suite "scaled SU3 differential references":
+  test "SU3 log-Jacobian gradients require nonnegative scales":
+    static:
+      doAssert compiles(block:
+        var m, g: M
+        g.expProjMulLogJacGrad(m, scale = 0))
+      doAssert not compiles(block:
+        var m, g: M
+        g.expProjMulLogJacGrad(m, scale = -1))
+
   test "finite value and gradient at scale zero":
     subtest checkFinite(0)
 
   test "finite value and gradient at scale five":
     subtest checkFinite(5)
+
+  test "reduced log-Jacobian gradient through norm eight":
+    # Against the dense reference of the same finite map; the bounds of
+    # docs/gauge_kernels.md for the monomial coefficient form.
+    for (amp, bound) in [(1.0, 1e-12), (2.0, 1e-12), (4.0, 1e-12), (8.0, 1e-9)]:
+      var worst = 0.0
+      for c in normRefs(amp, 20):
+        var g: M
+        g.expProjMulLogJacGrad(c.m, order=13, scale=5)
+        for r in c.finite:
+          if r.scale == 5: worst = max(worst, rel(g, r.grad))
+      echo "||F||_F=", amp, " max gradient error ", worst
+      check worst < bound
 
   test "log Jacobian stays finite for a large positive Hermitian part":
     var m: M
@@ -198,6 +220,8 @@ suite "scaled SU3 differential references":
       let ns = poly12(e, l, f, d)
       discard poly12(ea, la, f, a)
       actual := expAH(f)
+      check rel(expAH(f, [d]), l) < 2e-13
+      check rel(expAH(f, [a]), la) < 2e-13
       pb.expProjectTAHPullback(f, actual.adj*cot, order=13, scale=5)
       let
         ve = rel(actual, c.e)
@@ -239,7 +263,7 @@ when declared(SimdD4):
   suite "scaled differential with mixed SIMD thresholds":
     test "all lanes use the branch selected by the largest primal norm":
       type S = MatrixArray[3,3,ComplexType[SimdD4]]
-      var f, dm, cot, e, pb: S
+      var f, dm, cot, e, pb, d, jet: S
       for i in 0..<3:
         for j in 0..<3:
           var fr, fi, dr, di, cr, ci: array[4,float64]
@@ -258,13 +282,18 @@ when declared(SimdD4):
           cot[i,j].re := cr
           cot[i,j].im := ci
       e := expAH(f)
+      d.projectTAH(dm)
+      jet := expAH(f, [d])
       pb.expProjectTAHPullback(f, e.adj*cot, order=13, scale=5)
       let got = redot(pb, dm)
       for k in 0..<4:
-        var ek: M
+        var ek, jk: M
         for i in 0..<3:
           for j in 0..<3:
             ek[i,j].re = e[i,j].re[k]
             ek[i,j].im = e[i,j].im[k]
+            jk[i,j].re = jet[i,j].re[k]
+            jk[i,j].im = jet[i,j].im[k]
         check rel(ek, refs.simd[k].e) < 2e-13
+        check rel(jk, refs.simd[k].de) < 2e-13
         check scalarRel(got[k], refs.simd[k].field) < 2e-10

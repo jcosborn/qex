@@ -740,15 +740,15 @@ proc squareSym(r: var Mat1, x: Mat2) =
   const n = r.nrows
   when r.ncols != n or x.nrows != n or x.ncols != n:
     static: error("squareSym requires equally sized square matrices")
-  forStatic i, 0, n-1:
-    forStatic j, i, n-1:
+  for i in 0..<n:
+    for j in i..<n:
       var t {.noinit.}: evalType(r[i, j])
       mul(t, x[i, 0], x[0, j])
       forStatic k, 1, n-1:
         imadd(t, x[i, k], x[k, j])
       r[i, j] := t
-  forStatic i, 1, n-1:
-    forStatic j, 0, i-1:
+  for i in 1..<n:
+    for j in 0..<i:
       r[i, j] := r[j, i]
 
 proc mulSymSkew(r: var Mat1, s, x: Mat2) =
@@ -757,10 +757,10 @@ proc mulSymSkew(r: var Mat1, s, x: Mat2) =
   const n = r.nrows
   when r.ncols != n or s.nrows != n or s.ncols != n or x.nrows != n or x.ncols != n:
     static: error("mulSymSkew requires equally sized square matrices")
-  forStatic i, 0, n-1:
+  for i in 0..<n:
     r[i, i] := 0
-  forStatic i, 0, n-2:
-    forStatic j, i+1, n-1:
+  for i in 0..<n-1:
+    for j in i+1..<n:
       var t {.noinit.}: evalType(r[i, j])
       mul(t, s[i, 0], x[0, j])
       forStatic k, 1, n-1:
@@ -769,20 +769,21 @@ proc mulSymSkew(r: var Mat1, s, x: Mat2) =
       r[j, i] := -t
 
 proc mulCommSym(r: var Mat1, a, b: Mat2) =
-  ## r = a*b for commuting symmetric a and b.
+  ## r = a*b when the product is symmetric, as for commuting symmetric a and b;
+  ## computes one triangle.
   mixin mul, imadd
   const n = r.nrows
   when r.ncols != n or a.nrows != n or a.ncols != n or b.nrows != n or b.ncols != n:
     static: error("mulCommSym requires equally sized square matrices")
-  forStatic i, 0, n-1:
-    forStatic j, i, n-1:
+  for i in 0..<n:
+    for j in i..<n:
       var t {.noinit.}: evalType(r[i, j])
       mul(t, a[i, 0], b[0, j])
       forStatic k, 1, n-1:
         imadd(t, a[i, k], b[k, j])
       r[i, j] := t
-  forStatic i, 1, n-1:
-    forStatic j, 0, i-1:
+  for i in 1..<n:
+    for j in 0..<i:
       r[i, j] := r[j, i]
 
 proc mulAddI(r: var Mat1, a, b: Mat2) =
@@ -791,34 +792,15 @@ proc mulAddI(r: var Mat1, a, b: Mat2) =
   const n = r.nrows
   when r.ncols != n or a.nrows != n or a.ncols != n or b.nrows != n or b.ncols != n:
     static: error("mulAddI requires equally sized square matrices")
-  forStatic i, 0, n-1:
-    forStatic j, 0, n-1:
+  for i in 0..<n:
+    for j in 0..<n:
       var t {.noinit.}: evalType(r[i, j])
       mul(t, a[i, 0], b[0, j])
       forStatic k, 1, n-1:
         imadd(t, a[i, k], b[k, j])
-      when i == j:
+      if i == j:
         t += 1.0
       r[i, j] := t
-
-# (x*a)[i,j], skipping structural zeros of the SU(3) adjoint x.
-template su3AdMulAt(x, a: untyped, i, j: static int): untyped =
-  when i == 0:
-    x[0, 1]*a[1, j] + x[0, 2]*a[2, j] + x[0, 3]*a[3, j] + x[0, 4]*a[4, j] + x[0, 5]*a[5, j] + x[0, 6]*a[6, j]
-  elif i == 1:
-    x[1, 0]*a[0, j] + x[1, 2]*a[2, j] + x[1, 3]*a[3, j] + x[1, 4]*a[4, j] + x[1, 5]*a[5, j] + x[1, 6]*a[6, j]
-  elif i == 2:
-    x[2, 0]*a[0, j] + x[2, 1]*a[1, j] + x[2, 3]*a[3, j] + x[2, 4]*a[4, j] + x[2, 5]*a[5, j] + x[2, 6]*a[6, j]
-  elif i == 3:
-    x[3, 0]*a[0, j] + x[3, 1]*a[1, j] + x[3, 2]*a[2, j] + x[3, 4]*a[4, j] + x[3, 5]*a[5, j] + x[3, 6]*a[6, j] + x[3, 7]*a[7, j]
-  elif i == 4:
-    x[4, 0]*a[0, j] + x[4, 1]*a[1, j] + x[4, 2]*a[2, j] + x[4, 3]*a[3, j] + x[4, 5]*a[5, j] + x[4, 6]*a[6, j] + x[4, 7]*a[7, j]
-  elif i == 5:
-    x[5, 0]*a[0, j] + x[5, 1]*a[1, j] + x[5, 2]*a[2, j] + x[5, 3]*a[3, j] + x[5, 4]*a[4, j] + x[5, 6]*a[6, j] + x[5, 7]*a[7, j]
-  elif i == 6:
-    x[6, 0]*a[0, j] + x[6, 1]*a[1, j] + x[6, 2]*a[2, j] + x[6, 3]*a[3, j] + x[6, 4]*a[4, j] + x[6, 5]*a[5, j] + x[6, 7]*a[7, j]
-  else:
-    x[7, 3]*a[3, j] + x[7, 4]*a[4, j] + x[7, 5]*a[5, j] + x[7, 6]*a[6, j]
 
 proc diffExp13X4(r: var Mat1, x, x2, x3, x4: Mat2) =
   ## P_13(x), blocked in x^4.
@@ -856,10 +838,14 @@ template diffExp13Su3Coeff(even, odd, s1, s3: untyped) =
   even.reduceSu3AdPoly(s1, s3)
   odd.reduceSu3AdPoly(s1, s3)
 
-proc diffExpSu3Coeff[T](c: var array[8, T], s1, s3: T, order: int, scale: static int) =
+proc diffExpSu3Coeff[T](c, a, b: var array[8, T], s1, s3: T, order: int, scale: static int, jet: static bool) =
   ## P(X/2^scale), then P <- P + 2^(j-scale-1) X P^2, modulo the adjoint identity.
+  ## With jet, also a = dc/ds1 and b = dc/ds3 (s2 = s1^2/4) along the same seed
+  ## and recovery; otherwise a and b are not touched.
   const h = 1.0 / float(1 shl scale)
   let s2 = 0.25*s1*s1
+  when jet:
+    let s2a = 0.5*s1
   var f = 1.0
   if order == 13:
     f = diffExpC[13]
@@ -868,11 +854,21 @@ proc diffExpSu3Coeff[T](c: var array[8, T], s1, s3: T, order: int, scale: static
       f /= float(k)
   for k in 0..<8:
     c[k] := 0
+    when jet:
+      a[k] := 0
+      b[k] := 0
   c[0] := f
   for k in countdown(order, 1):
     let z = h*c[7]
+    when jet:
+      let
+        za = h*a[7]
+        zb = h*b[7]
     for i in countdown(7, 1):
       c[i] := h*c[i-1]
+      when jet:
+        a[i] := h*a[i-1]
+        b[i] := h*b[i-1]
     if order == 13:
       f = diffExpC[k-1]
     else:
@@ -881,23 +877,80 @@ proc diffExpSu3Coeff[T](c: var array[8, T], s1, s3: T, order: int, scale: static
     c[6] -= s1*z
     c[4] -= s2*z
     c[2] -= s3*z
+    when jet:
+      a[0] := 0
+      b[0] := 0
+      a[6] -= z + s1*za
+      b[6] -= s1*zb
+      a[4] -= s2a*z + s2*za
+      b[4] -= s2*zb
+      a[2] -= s3*za
+      b[2] -= z + s3*zb
   var d {.noinit.}: array[16, T]
+  when jet:
+    var da, db {.noinit.}: array[16, T]
   var f2 = 0.5*h
   for j in 0..<scale:
     for k in 0..<16:
       d[k] := 0
+      when jet:
+        da[k] := 0
+        db[k] := 0
     for i in 0..<8:
       d[i] += c[i]
       d[2*i+1] += f2*c[i]*c[i]
+      when jet:
+        da[i] += a[i]
+        db[i] += b[i]
+        da[2*i+1] += (2.0*f2)*c[i]*a[i]
+        db[2*i+1] += (2.0*f2)*c[i]*b[i]
       for k in (i+1)..<8:
         d[i+k+1] += (2.0*f2)*c[i]*c[k]
+        when jet:
+          da[i+k+1] += (2.0*f2)*(a[i]*c[k] + c[i]*a[k])
+          db[i+k+1] += (2.0*f2)*(b[i]*c[k] + c[i]*b[k])
     for k in countdown(15, 8):
+      when jet:
+        da[k-2] -= d[k] + s1*da[k]
+        db[k-2] -= s1*db[k]
+        da[k-4] -= s2a*d[k] + s2*da[k]
+        db[k-4] -= s2*db[k]
+        da[k-6] -= s3*da[k]
+        db[k-6] -= d[k] + s3*db[k]
       d[k-2] -= s1*d[k]
       d[k-4] -= s2*d[k]
       d[k-6] -= s3*d[k]
     for k in 0..<8:
       c[k] := d[k]
+      when jet:
+        a[k] := da[k]
+        b[k] := db[k]
     f2 *= 2.0
+
+proc evenOddSym[T](e, o: var Mat1, ce, co: array[4, T], z, z2, z3: Mat2) =
+  ## e = sum_k ce[k] z^k and o = sum_k co[k] z^k for symmetric z, z2 = z^2, z3 = z^3.
+  const n = e.nrows
+  for i in 0..<n:
+    for j in i..<n:
+      var re, ro {.noinit.}: T
+      if i == j:
+        re := ce[0]
+        ro := co[0]
+      else:
+        re := 0
+        ro := 0
+      re += ce[1]*z[i, j]
+      re += ce[2]*z2[i, j]
+      re += ce[3]*z3[i, j]
+      ro += co[1]*z[i, j]
+      ro += co[2]*z2[i, j]
+      ro += co[3]*z3[i, j]
+      e[i, j] := re
+      o[i, j] := ro
+  for i in 1..<n:
+    for j in 0..<i:
+      e[i, j] := e[j, i]
+      o[i, j] := o[j, i]
 
 proc diffExp13Su3Ad(r: var Mat1, x, x2, x4, x6: Mat2) =
   ## P_13(x), reduced by the SU(3) adjoint identity above.
@@ -909,32 +962,8 @@ proc diffExp13Su3Ad(r: var Mat1, x, x2, x4, x6: Mat2) =
     s1 = -0.5*trace(x2)
     s3 = -(s1*s1*s1)/12.0 - trace(x6)/6.0
   diffExp13Su3Coeff(even, odd, s1, s3)
-  var
-    o {.noinit.}: evalType(x)
-    xo {.noinit.}: evalType(x)
-  forStatic i, 0, 7:
-    forStatic j, i, 7:
-      var
-        re {.noinit.}: T
-        ro {.noinit.}: T
-      when i == j:
-        re := even[0]
-        ro := odd[0]
-      else:
-        re := 0
-        ro := 0
-      re += even[1]*x2[i, j]
-      re += even[2]*x4[i, j]
-      re += even[3]*x6[i, j]
-      ro += odd[1]*x2[i, j]
-      ro += odd[2]*x4[i, j]
-      ro += odd[3]*x6[i, j]
-      r[i, j] := re
-      o[i, j] := ro
-  forStatic i, 1, 7:
-    forStatic j, 0, i-1:
-      r[i, j] := r[j, i]
-      o[i, j] := o[j, i]
+  var o, xo {.noinit.}: evalType(x)
+  evenOddSym(r, o, [even[0], even[1], even[2], even[3]], [odd[0], odd[1], odd[2], odd[3]], x2, x4, x6)
   xo.mulSymSkew(o, x)
   r += xo
 
@@ -1089,7 +1118,8 @@ proc diffExpSuApply*(r: var Vec1, a: Mat1, x: Vec2, order=13, scale: static int 
         di = determinant(a).im
         s1 = 3.0*n2
         s3 = 0.5*n2*n2*n2 - 27.0*di*di
-      c.diffExpSu3Coeff(s1, s3, order, scale)
+      var unused {.noinit.}: array[8, T]
+      diffExpSu3Coeff(c, unused, unused, s1, s3, order, scale, false)
       r := c[7]*x
       for k in countdown(6, 0):
         adApply(t, r)
@@ -1283,144 +1313,6 @@ proc traceProductSym(a, s: Mat1): auto {.noinit.} =
       r += (a[i, j] + a[j, i])*s[i, j]
   r
 
-proc traceProductSkew(a, x: Mat1): auto {.noinit.} =
-  ## tr(a*x), using one triangle of skew x.
-  const n = a.nrows
-  when a.ncols != n or x.nrows != n or x.ncols != n:
-    static: error("traceProductSkew requires equally sized square matrices")
-  var r {.noinit.}: evalType(a[0, 0])
-  r := (a[1, 0] - a[0, 1])*x[0, 1]
-  forStatic i, 0, n-2:
-    forStatic j, i+1, n-1:
-      when i != 0 or j != 1:
-        r += (a[j, i] - a[i, j])*x[i, j]
-  r
-
-proc diffDiffExp13Su3AdRevF(r: var Vec1, x, b, x2, x3, x4: Mat2, x3n2: auto) =
-  ## r[g] = tr(b * D P_13(x)[sufabc(e_g)]).
-  #[
-    z = x^2,  P_13(x) = E(z) + x O(z)
-    z^4 = -s1*z^3 - s1^2*z^2/4 - s3*z
-    s1 = -tr(x^2)/2,  s3 = -s1^3/12 - tr(x^6)/6
-    Differentiate the reduction; contract the 25 nonzero f-pairs.
-  ]#
-  type T = evalType(x[0, 0])
-  var
-    even {.noinit.}: array[7, T]
-    odd {.noinit.}: array[7, T]
-    evenA {.noinit.}: array[7, T]
-    oddA {.noinit.}: array[7, T]
-    evenD {.noinit.}: array[7, T]
-    oddD {.noinit.}: array[7, T]
-  let
-    s1 = -0.5*trace(x2)
-    s3 = (x3n2 - 0.5*s1*s1*s1)/6.0
-    s2 = 0.25*s1*s1
-  template reduce13(c, ca, cd: untyped, p: static int) =
-    # Reduce z^6..z^4 and their derivatives in s1 and s3.
-    for i in 0..<7:
-      c[i] := diffExpC[p+2*i]
-      ca[i] := 0
-      cd[i] := 0
-    for k in countdown(6, 4):
-      let
-        q = c[k]
-        qa = ca[k]
-        qd = cd[k]
-      c[k-1] -= s1*q
-      ca[k-1] -= q + s1*qa
-      cd[k-1] -= s1*qd
-      c[k-2] -= s2*q
-      ca[k-2] -= 0.5*s1*q + s2*qa
-      cd[k-2] -= s2*qd
-      c[k-3] -= s3*q
-      ca[k-3] -= s3*qa
-      cd[k-3] -= q + s3*qd
-  reduce13(even, evenA, evenD, 0)
-  reduce13(odd, oddA, oddD, 1)
-
-  var
-    hi {.noinit.}: evalType(x)
-    u4 {.noinit.}: evalType(x)
-    uhi {.noinit.}: evalType(x)
-    u2 {.noinit.}: evalType(x)
-    u3 {.noinit.}: evalType(x)
-  forStatic i, 0, 7:
-    forStatic j, 0, 7:
-      when i == j:
-        hi[i, j] := even[2]
-      else:
-        hi[i, j] := 0
-      hi[i, j] += odd[2]*x[i, j]
-      hi[i, j] += even[3]*x2[i, j]
-      hi[i, j] += odd[3]*x3[i, j]
-  mul(u4, hi, b)
-  mul(uhi, b, x4)
-  forStatic i, 0, 7:
-    forStatic j, 0, 7:
-      u2[i, j] := even[1]*b[i, j]
-      u2[i, j] += even[3]*uhi[i, j]
-      u3[i, j] := odd[1]*b[i, j]
-      u3[i, j] += odd[3]*uhi[i, j]
-
-  let
-    ge1 = traceProductSym(b, x2)
-    go1 = traceProductSkew(b, x3)
-    ge2 = trace(uhi)
-    go2 = traceProductSkew(uhi, x)
-    ge3 = traceProductSym(uhi, x2)
-    go3 = traceProductSkew(uhi, x3)
-  var ga = ge1*evenA[1] + go1*oddA[1]
-  var gd = ge1*evenD[1] + go1*oddD[1]
-  ga += ge2*evenA[2] + go2*oddA[2]
-  gd += ge2*evenD[2] + go2*oddD[2]
-  ga += ge3*evenA[3] + go3*oddA[3]
-  gd += ge3*evenD[3] + go3*oddD[3]
-  u3 -= (gd/3.0)*x3
-  ga -= 0.25*gd*s1*s1
-  forStatic i, 0, 7:
-    u2[i, i] -= 0.5*ga
-
-  imadd(u2, x2, u4)
-  imadd(u2, u4, x2)
-  # Only the symmetric part of u2 + x*u3 contributes below.
-  forStatic i, 0, 7:
-    forStatic j, i, 7:
-      var up {.noinit.}: T
-      up := u2[i, j] + su3AdMulAt(x, u3, i, j)
-      when i == j:
-        u4[i, j] := up + up
-      else:
-        var lo {.noinit.}: T
-        lo := u2[j, i] + su3AdMulAt(x, u3, j, i)
-        u4[i, j] := up + lo
-        u4[j, i] := u4[i, j]
-  template mulAsymAt(a, b: untyped, i, j: static int): untyped =
-    block:
-      var lo, up {.noinit.}: T
-      lo := a[j, 0]*b[0, i]
-      up := a[i, 0]*b[0, j]
-      forStatic l, 1, 7:
-        lo += a[j, l]*b[l, i]
-        up += a[i, l]*b[l, j]
-      lo - up
-  template k(i, j: static int): untyped =
-    odd[0]*(b[j, i] - b[i, j]) + odd[2]*(uhi[j, i] - uhi[i, j]) + mulAsymAt(u3, x2, i, j) + su3AdMulAt(x, u4, j, i) - su3AdMulAt(x, u4, i, j)
-  const
-    h = 0.5
-    r3h = 0.86602540378443864676
-  let
-    k34 = k(3, 4)
-    k56 = k(5, 6)
-  r[0] := k(1, 2) + h*(k(3, 6) - k(4, 5))
-  r[1] := -k(0, 2) + h*(k(3, 5) + k(4, 6))
-  r[2] := k(0, 1) + h*(k34 - k56)
-  r[3] := -h*(k(0, 6) + k(1, 5) + k(2, 4)) + r3h*k(4, 7)
-  r[4] := h*(k(0, 5) - k(1, 6) + k(2, 3)) - r3h*k(3, 7)
-  r[5] := h*(-k(0, 4) + k(1, 3) + k(2, 6)) + r3h*k(6, 7)
-  r[6] := h*(k(0, 3) + k(1, 4) - k(2, 5)) - r3h*k(5, 7)
-  r[7] := r3h*(k34 + k56)
-
 proc diffDiffExpX2(r: var Mat1, adX, dadX, x2: Mat2, halfOrder: int) =
   ## r = D P_(2*halfOrder-1)(adX)[dadX], given x2 = adX^2.
   if halfOrder <= 1:
@@ -1584,30 +1476,6 @@ proc projJacPullbackSu3(G: var Mat1, A, C: Mat2) =
   qf.addSu3FAsym(A, 1.0)
   G.projJacPullbackSu3(qf, C)
 
-proc diffExpRecover(p: var Mat1, x: Mat2, ps, qs: var auto, c: var float) {.inline.} =
-  # P <- P + c X P^2; save the inputs for its reverse pass.
-  var t {.noinit.}: evalType(p)
-  for j in 0..<ps.len:
-    ps[j] := p
-    qs[j] := p*p
-    t := x*qs[j]
-    p += c*t
-    c *= 2.0
-
-proc diffExpRecoverRev(dx: var Mat1, dp: var Mat2, x: Mat3, ps, qs: auto, c: var float) {.inline.} =
-  # dp uses tr(dp*dP); u uses the Frobenius pairing <u,dP>.
-  var u, b, t {.noinit.}: evalType(dp)
-  u := dp.adj
-  dx := 0
-  for j in countdown(ps.len-1, 0):
-    c *= 0.5
-    dx += c*(u*qs[j].adj)
-    b := c*(x.adj*u)
-    t := u + b*ps[j].adj
-    t += ps[j].adj*b
-    u := t
-  dp := u.adj
-
 #[
   F = projectTAH(M),  x = -suad(F)
   P = diffExp(x),  D = diffProjectTAH(M,F)
@@ -1617,42 +1485,43 @@ proc diffExpRecoverRev(dx: var Mat1, dp: var Mat2, x: Mat3, ps, qs: auto, c: var
     = tr((D*J^-1)*dP) + tr((J^-1*P)*dD)
   Pull back both terms: d ln det J = redot(G,dM).
 ]#
+#[
+  Phi = sum(k=0..7) c_k X^k = E(Z) + X O(Z), Z = X^2, X = -suad(F), with the
+  recovered coefficients c_k(s1, s3) of diffExpSu3Coeff, exact on the adjoint
+  image (s1 = -tr Z/2, s3 = -s1^3/12 - tr Z^3/6). For B = D J^-1 (tr pairing):
+    tr(B dPhi) = sum_k tr(B X^k) dc_k + tr(G dZ) + tr(O B dX),
+    G = c2 B + c3 C + {Z, c4 B + c5 C} + Z^2 Q + Z Q Z + Q Z^2,
+    C = B X,  Q = c6 B + c7 C,  dZ = dX X + X dX,
+    ds1 = -tr(X dX),  ds3 = -(s1^2/4) ds1 - tr(X^5 dX).
+  The generator contraction keeps the antisymmetric part only, where
+  tr(G dZ) = tr(2 X Gs dX) with Gs the symmetric part of G.
+  The monomial sum loses accuracy as max_k |c_k| |X^k|/|Phi| grows with |F|:
+  relative gradient error below 1e-13 up to |F|_F = 4, 1.6e-10 at 8.
+]#
 proc expProjMulLogJacGradSu3(G: var Mat1, M: Mat2, p: var Vec1, v: Vec2, apply: static bool, order: int, scale: static int) =
   when M.nrows != 3 or G.nrows != 3:
     {.error: "expProjMulLogJacGradSu3 requires 3x3 matrices".}
+  static: doAssert scale >= 0
   type T = evalType(M[0, 0].re)
-  let halfOrder = oddHalfOrder(order)
+  discard oddHalfOrder(order)  # rejects an even or nonpositive order
   var
-    J {.noinit.}: MatrixArray[8, 8, T]
-    JF {.noinit.}: MatrixArray[8, 8, T]
-    dF {.noinit.}: MatrixArray[8, 8, T]
-    x {.noinit.}: MatrixArray[8, 8, T]
-    x2 {.noinit.}: MatrixArray[8, 8, T]
-    x3 {.noinit.}: MatrixArray[8, 8, T]
-    x4 {.noinit.}: MatrixArray[8, 8, T]
-    x6 {.noinit.}: MatrixArray[8, 8, T]
+    J, JF, dF, x, z, z2, z3, e, o {.noinit.}: MatrixArray[8, 8, T]
+    c, ca, cb {.noinit.}: array[8, T]
   var F {.noinit.}: evalType(M)
   F.projectTAH(M)
   dF.diffProjectTAH(M, F)
   x.suad(F)
   x := -x
-  static: doAssert scale >= 0
-  const h = 1.0 / float(1 shl scale)
-  when scale > 0:
-    var ad, xb {.noinit.}: MatrixArray[8, 8, T]
-    var ps, qs {.noinit.}: array[scale, MatrixArray[8, 8, T]]  # P_j, P_j^2 saved for the reverse pass
-    var c = 0.5*h
-    ad := x
-    x *= h
-  x2.squareSym(x)
-  if order == 13:
-    x4.squareSym(x2)
-    x6.mulCommSym(x4, x2)
-    JF.diffExp13Su3Ad(x, x2, x4, x6)
-  else:
-    JF.diffExpX2(x, x2, order)
-  when scale > 0:
-    JF.diffExpRecover(ad, ps, qs, c)
+  z.squareSym(x)
+  z2.squareSym(z)
+  z3.mulCommSym(z2, z)
+  let
+    s1 = -0.5*trace(z)
+    s3 = -(s1*s1*s1)/12.0 - trace(z3)/6.0
+  diffExpSu3Coeff(c, ca, cb, s1, s3, order, scale, true)
+  evenOddSym(e, o, [c[0], c[2], c[4], c[6]], [c[1], c[3], c[5], c[7]], z, z2, z3)
+  JF.mulSymSkew(o, x)
+  JF += e
   when apply:
     for i in 0..<8:
       p[i] := JF[0, i] * v[0]
@@ -1660,30 +1529,45 @@ proc expProjMulLogJacGradSu3(G: var Mat1, M: Mat2, p: var Vec1, v: Vec2, apply: 
         p[i] += JF[j, i] * v[j]
   J.mulAddI(JF, dF)
   J.solveLRNoPivot(JF, dF)
-  when scale > 0:
-    xb.diffExpRecoverRev(dF, ad, ps, qs, c)
-  if order == 13:
-    var qf {.noinit.}: VectorArray[8, T]
-    x3.mulSymSkew(x2, x)
-    # x3 is skew-symmetric, so norm2(x3) = -trace(x6).
-    let x3n2 = -trace(x6)
-    qf.diffDiffExp13Su3AdRevF(x, dF, x2, x3, x4, x3n2)
-    when scale > 0:
-      # The CH seed already returns a generator cotangent; scale it once.
-      qf *= h
-      qf.addSu3FAsym(xb.adj, 1.0)
-    G.projJacPullbackSu3(qf, JF)
-  else:
-    J.diffDiffExpX2(x, dF, x2, halfOrder)
-    when scale > 0:
-      var qf {.noinit.}: VectorArray[8, T]
-      qf := 0
-      qf.addSu3FAsym(J, 1.0)
-      qf *= h
-      qf.addSu3FAsym(xb.adj, 1.0)
-      G.projJacPullbackSu3(qf, JF)
-    else:
-      G.projJacPullbackSu3(J, JF)
+  # dF = B, JF = J^-1 Phi.
+  var cm, bs, cs, w, t {.noinit.}: MatrixArray[8, 8, T]
+  cm := dF * x
+  for i in 0..7:
+    for j in i..7:
+      bs[i, j] := 0.5*(dF[i, j] + dF[j, i])
+      cs[i, j] := 0.5*(cm[i, j] + cm[j, i])
+      bs[j, i] := bs[i, j]
+      cs[j, i] := cs[i, j]
+  let
+    tau = [trace(dF), trace(cm), traceProductSym(dF, z), traceProductSym(cm, z),
+           traceProductSym(dF, z2), traceProductSym(cm, z2), traceProductSym(dF, z3), traceProductSym(cm, z3)]
+  var b1 = tau[0]*ca[0]
+  var b3 = tau[0]*cb[0]
+  for k in 1..7:
+    b1 += tau[k]*ca[k]
+    b3 += tau[k]*cb[k]
+  # Gs = c2 Bs + c3 Cs + {Z, c4 Bs + c5 Cs} + Z^2 Qs + Z Qs Z + Qs Z^2, with
+  # Qs = c6 Bs + c7 Cs in e, free after JF.
+  for i in 0..7:
+    for j in 0..7:
+      w[i, j] := c[4]*bs[i, j] + c[5]*cs[i, j]
+      e[i, j] := c[6]*bs[i, j] + c[7]*cs[i, j]
+  t := z*w
+  cm := e*z
+  J.mulCommSym(z, cm)  # Z Qs Z is symmetric
+  cm := z2*e
+  for i in 0..7:
+    for j in 0..7:
+      w[i, j] := c[2]*bs[i, j] + c[3]*cs[i, j] + t[i, j] + t[j, i] + cm[i, j] + cm[j, i] + J[i, j]
+  t := x*w
+  w := o*dF
+  e.mulSymSkew(z2, x)  # X^5
+  # t = 2 X Gs + O B + (s1^2/4 b3 - b1) X - b3 X^5.
+  let g1 = 0.25*s1*s1*b3 - b1
+  for i in 0..7:
+    for j in 0..7:
+      t[i, j] := 2.0*t[i, j] + w[i, j] + g1*x[i, j] - b3*e[i, j]
+  G.projJacPullbackSu3(t, JF)
 
 proc expProjMulLogJacGrad*(G: var Mat1, M: Mat2, order=expProjectTAHOrder, scale: static int = 0) =
   ## d ln det J = redot(G,dM). Requires det J > 0 and nonzero LU pivots.
