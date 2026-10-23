@@ -107,7 +107,13 @@ destination and Y. Subset overloads leave the complement untouched.
 `contractProjectTAH(g,f)` with two arguments overwrites `f` in its own threads
 region. `stoutsmear.stoutStepKernel` composes them for the subset stout step.
 The MD gauge updates of the HMC programs call `axexpahmuly` and the force
-projections call `contractProjectTAH`. Tests: `tmatrixFields`, `texpaccuracy`, `taxexpwide`.
+projections call `contractProjectTAH`. The experimental graph has the same two
+families: `axexp` and `axexpmuly` on the general kernels, `axexpah` and
+`axexpahmuly` on the AH kernels; its HMC drift and force-gradient shift use the
+latter.
+Tests: `tmatrixFields` (against the matrix kernels), `tggauge` (against basic
+graph ops), `tftstout`, `texpaccuracy` (both exponentials against a
+double-double reference over the norms of the call sites).
 
 Whole-field and parity loops can assign a site to different threads. Join or
 insert a barrier between dependent phases that change partitions, including
@@ -116,16 +122,18 @@ masks, aliases, complements and allocation reuse at one and six threads. A local
 E product and a stored/reloaded E product may differ by ordinary FMA roundoff;
 the product comparison uses a normalized norm bound while E is checked exactly.
 
-The `matexp.expAH(X, directions)` overload supplies derivative jets. For the primal's selected scale $k$,
-they differentiate $P_{12}(X/2^k)^{2^k}$ with $k$ fixed, including higher
+The `matexp.expAH(X, directions)` overload differentiates $P_{12}(X/2^k)^{2^k}$ with the primal's selected scale $k$ fixed, including higher
 derivatives. The kernel selects $k$ from the base matrix only, using the same
 SIMD maximum as the primal. Its order-$m$ jet uses at most $(5+k)3^m$ matrix
 products. At scale boundaries this is the selected branch derivative.
 `expAH(X, d, e)` returns the first jet and sets `e` to its coefficient of order
 zero, $P_{12}(X/2^k)^{2^k}$ squared plainly: `expAH(X)` to rounding, without a
-second polynomial evaluation.
+second polynomial evaluation. Runtime-order scratch retains its capacity when
+order decreases; presize it for the largest order before threaded use.
 `tjetexp` covers noncommuting directions, both sides of scale thresholds,
-adjoint identities, runtime orders through five, and large diagonal arguments.
+adjoint identities, runtime orders through five, capacity reuse, and large
+diagonal arguments. `taxexpwide` checks the kernels at VLEN and 2 VLEN lanes
+against expAH of each lane's scalar matrix, for complex and real entries.
 
 ### Paths, halos and HYP
 
@@ -287,8 +295,8 @@ Warm Hessians reuse QEX raw buffers. With `keepStaples`, `gaugeAction1` and
 `gaugeActionDeriv` keep their staple arrays in the workspace and pass them back
 to `makeFwdStaples` and `makeStaples`; the benches opt in, and a default
 workspace allocates the staples per call as a nil workspace does. The HMC gauge
-action and the graph action ops run the loop kernels, whose workspace keeps
-halos and product banks and no staples. A
+action uses the loop kernels, whose workspace keeps halos and product banks.
+The experimental graph action wrappers currently call the staple kernels. A
 `FieldArray` shares one aligned allocation among its fields, and
 `newFieldArray2` leaves the entries its constraint excludes as nil. The staple
 procs accept an array they returned for the same layout: shape `[nd,nd]`, every
@@ -297,7 +305,8 @@ Shape, layout and aliasing mismatches raise `ValueError`; a missing entry is a
 user error that crashes in the kernel. The rect scratch is retained and zeroed
 on every use. `newLinkShifts(lo, T, len)` builds one row of staple-path shifts
 for `startCornerShifts`, `makeStaples` and the rect scratch exchanges. Generic
-halo messages allocate their buffers per call and free them on return.
+forward halo messages retain their buffers in the communicator; generic gathers
+and reverse halo exchanges free their temporary message buffers on return.
 `bytes` counts raw-memory allocations only, so shift buffers are not
 included. Tests:
 `tgaugeloops`, `tgaugeaction`, `tstaplebatches`.
