@@ -799,7 +799,7 @@ for i in 0..<nstream:
 
 proc mdt(t:float) =
   if lbfgs.sortedlen == 0:
-    threads: axexpmuly(gs[nsnow], -t, p, gs[nsnow])
+    threads: axexpahmuly(gs[nsnow], -t, p, gs[nsnow])
   else:
     hinvp.invH(lbfgs, p)
     when CHECKDETAIL and false:
@@ -816,7 +816,7 @@ proc mdt(t:float) =
     #  echo "hinvp.p[0][0]: ",hinvp[0][0]
     #  echo "hinvp.p[1][0]: ",hinvp[1][0]
     #  if e > 1e-12: echo "ProjectTAH changed p.norm2: ",e
-    threads: axexpmuly(gs[nsnow], -t, hinvp, gs[nsnow])
+    threads: axexpahmuly(gs[nsnow], -t, hinvp, gs[nsnow])
 proc mdv(t:float) =
   f.getforce gs[nsnow]
   threads:

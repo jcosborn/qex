@@ -87,7 +87,7 @@ proc run[T: SomeFloat]() =
       let pg = gauge.toGvalue(rt,pdir)
       let pdotf = redot(pg,contractProjTAH(grad(seff(w),w),w)).eval.sval
       let t = scalar.toGvalue(rt,0.0)
-      let moved = seff(axexpmuly(t,pg,w))
+      let moved = seff(axexpahmuly(t,pg,w))
       proc st(v: float): float =
         t.update v
         moved.eval.sval

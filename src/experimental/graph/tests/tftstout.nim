@@ -140,7 +140,7 @@ proc runFtStoutTests*(localLat: seq[int]; beta, rho: float; nsmear = 1) =
       V0g = gauge.toGvalue(grt, V0)
       Rg = gauge.toGvalue(grt, R)
       gt = scalar.toGvalue(grt, 0.0)
-      Vt = axexpmuly(gt, Rg, V0g)
+      Vt = axexpahmuly(gt, Rg, V0g)
       f = build(Vt)
       dsdt = f.grad gt
     let ana = dsdt.eval.sval
@@ -156,7 +156,7 @@ proc runFtStoutTests*(localLat: seq[int]; beta, rho: float; nsmear = 1) =
 
   checkGrad("ax_xgauge", proc(Vt: Ggauge): Gscalar =
     # x = projTAH(ds Vt†) depends on Vt: isolates expDeriv (Nc=1 fix guard)
-    gaugeAction(gc, axexpmuly(rhoG, contractProjTAH(Vt, Ag), Ag)))
+    gaugeAction(gc, axexpahmuly(rhoG, contractProjTAH(Vt, Ag), Ag)))
   checkGrad("blendW", proc(Vt: Ggauge): Gscalar =
     # Vt on the complement of (even, dir0): blendSubset W-slot backward
     gaugeAction(gc, blendSubset(0, 0, Ag, Vt)))
@@ -203,7 +203,7 @@ proc runFtStoutTests*(localLat: seq[int]; beta, rho: float; nsmear = 1) =
       ds = gauge.toGvalue(grt, Aconst)
       a = scalar.toGvalue(grt, rho)
       F = contractProjTAH(W, ds, parity, dir)
-      cand = axexpmuly(a, F, W, parity, dir)
+      cand = axexpahmuly(a, F, W, parity, dir)
       separate = blendSubset(parity, dir, cand, W)
       fused = stoutUpdate(W, ds, a, parity, dir)
       sf = redot(fused, Bg) + redot(fused, Ag)

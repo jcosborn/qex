@@ -83,7 +83,7 @@ proc smear*[G](ss:var StoutSmear, gf:G, fl:G) =
         var t{.noinit.}: evalType(f[mu][e])
         t.projectTAH s
         f[mu][e] := t
-        t := exp(alpha*t)
+        t := expAH(alpha*t)
         expaf[mu][e] := t
         fl[mu][e] := t*gf[mu][e]
 
@@ -123,7 +123,7 @@ proc inverse*[G](ss:var StoutSmear, gf:G, fl:G, rdf2req=1e-24, maxIter=1000, ver
           df2 += norm2(t-f[mu][e]).simdSum
           f2 += t.norm2.simdSum
           f[mu][e] := t
-          t := exp(alpha*t)
+          t := expAH(alpha*t)
           gf[mu][e] := t*fl[mu][e]
       threadBarrier()
       threadRankSum df2

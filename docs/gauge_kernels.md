@@ -68,22 +68,16 @@ Test: `tmatrixFields`.
 
 ### Fused gauge updates
 
-`gauge/gaugeUtils.nim` kernels run inside `threads` on each thread's site
-partition, on one field or on every direction of a gauge:
+`axexp` and `axexpmuly` use the general matrix exponential. `axexpah` and
+`axexpahmuly` require anti-Hermitian inputs (traceless for SU(N)) and use
+`expAH`, with scaled degree-12 evaluation and squaring in expm1 form.
+Production HMC updates, gauge fixing, stout smearing, and gradient flow use
+the AH entry points where their inputs have that property.
 
-$$
-\operatorname{axexp}(a,X)_x=e^{aX_x},\qquad
-\operatorname{axexpmuly}(a,X,Y)_x=e^{aX_x}Y_x,\qquad
-\operatorname{contractProjectTAH}(X,Y)_x=\operatorname{projectTAH}(X_xY_x^\dagger).
-$$
-
-$X$ is anti-Hermitian (traceless for SU(N)) and the exponential is `expAH`.
-The destination may alias an operand; `axexpmuly` can also store $e^{aX}$;
-the subset overloads act on one parity subset. The two-argument
-`contractProjectTAH(g,f)` overwrites `f` in its own threads region.
-`stoutsmear.stoutStepKernel` composes them for the subset stout step. The MD
-gauge updates and force projections of the HMC programs and the graph's fused
-gauge ops call these. Tests: `tggauge` (against basic graph ops), `tftstout`.
+These field kernels run inside `threads`. Subset overloads preserve the
+complement, and a product destination may alias an operand. An optional
+exponential destination must be disjoint from the product and its right operand.
+Tests: `tmatrixFields`, `texpaccuracy`.
 
 ### Paths, halos and HYP
 

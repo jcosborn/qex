@@ -1413,7 +1413,7 @@ when isMainModule:
   testR(g)
 
   proc updateX(g,p,eps:auto) =
-    axexpmuly(g, eps, p, g)
+    axexpahmuly(g, eps, p, g)
 
   proc updateP(c:GaugeActionCoeffs, g,p,eps:auto) =
     var f = newOneOf g

@@ -26,6 +26,12 @@ suite "gauge fused":
   test "axexpmuly finite differences":
     ckgradm3(axexpmuly, x, gm, gu, y, 0.05*gq, gg, gp)
 
+  test "axexpah finite differences":
+    ckgradm2(axexpah, x, gm, y, 0.05*gq, gp)
+
+  test "axexpahmuly finite differences":
+    ckgradm3(axexpahmuly, x, gm, gu, y, 0.05*gq, gg, gp)
+
   test "blendSubset applies the same mask to values and cotangents":
     const
       parity = 1

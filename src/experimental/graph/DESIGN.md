@@ -905,8 +905,8 @@ $$
 
 | Operation | Finite numerical map |
 | --- | --- |
-| Ordinary Nc>1 exponential/tower | Degree 4, scale 20 from `newExpParam`; static kind/order check |
-| SU(3) `axexpmuly`/stout primal | Adaptive degree-12 `expAH`, scaled to $\lVert F\rVert_F^2\le1/16$ |
+| Ordinary Nc>1 exponential/tower, `axexp`/`axexpmuly` | Degree 4, scale 20 from `newExpParam`; static kind/order check |
+| SU(3) `axexpah`/`axexpahmuly`/stout primal | Adaptive degree-12 `expAH`, scaled to $\lVert F\rVert_F^2\le1/16$ |
 | SU(3) field/staple pullbacks and logdet | Degree 13 at $X/32$, five recoveries |
 | SU(3) alpha pullbacks/higher update replicas | Ordinary `expDeriv`/graph exponential |
 | U(1) exponential tower/stout differentials | Exact scalar formulas |

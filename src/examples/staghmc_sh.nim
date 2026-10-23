@@ -459,7 +459,7 @@ proc fforce(stag: auto, f: auto, sf: proc, g: auto, ix:openarray[int], ts:openar
 
 proc mdt(t: float) =
   tic()
-  threads: axexpmuly(g, t, p, g)
+  threads: axexpahmuly(g, t, p, g)
   toc("mdt")
 proc mdv(t: float) =
   tic()
@@ -484,13 +484,13 @@ proc fgv(t: float) =
   tic()
   gc.forceA(gg, f)
   qexGC "fgv forceA"
-  threads: axexpmuly(g, -t, f, g)
+  threads: axexpahmuly(g, -t, f, g)
   toc("fgv")
 proc fgvf(ix:openarray[int], sf:proc, ts:openarray[float]) =
   tic()
   stagg.fforce(f, sf, gg, ix, ts)
   qexGC "fgvf fforce"
-  threads: axexpmuly(g, 1.0, f, g)
+  threads: axexpahmuly(g, 1.0, f, g)
   toc("fgvf")
 
 # Combined update for sharing computations

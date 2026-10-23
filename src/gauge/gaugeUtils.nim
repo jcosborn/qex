@@ -1,6 +1,9 @@
 import base
 import layout
 import field
+import field/matrixFields
+export matrixFields.contractProjectTAH, matrixFields.axexp, matrixFields.axexpmuly,
+  matrixFields.axexpah, matrixFields.axexpahmuly
 import io
 #import qex
 #import stdUtils
@@ -412,25 +415,6 @@ proc echoPlaq*(g: auto) =
   for i in ns..<pl.len: pt += pl[i]
   echo "plaqS: ", 2*ps, "  plaqT: ", 2*pt, "  plaq: ", ps+pt
 
-# Fused gauge kernels. Each runs inside `threads` on the calling thread's site
-# partition, on one field or on every direction of a gauge. The destination
-# may alias an operand.
-
-proc contractProjectTAH*[F:Field](z: F; x, y: F) =
-  ## z = projectTAH(x y†) site by site.
-  for e in z:
-    let s = x[e] * y[e].adj
-    z[e].projectTAH s
-
-proc contractProjectTAH*[F:Field](z: F; x, y: F; sub: Subset) =
-  ## The same on sub's outer sites only.
-  for e in sub:
-    let s = x[e] * y[e].adj
-    z[e].projectTAH s
-
-proc contractProjectTAH*[F:Field](z: openArray[F]; x, y: openArray[F]) =
-  for mu in 0..<z.len: contractProjectTAH(z[mu], x[mu], y[mu])
-
 proc contractProjectTAH*[T](g:openArray[T], f:openArray[T]) =
   ## f = projectTAH(g f†), in its own threads region.
   let nd = g.len
@@ -439,39 +423,6 @@ proc contractProjectTAH*[T](g:openArray[T], f:openArray[T]) =
   threads:
     for mu in 0..<nd:
       contractProjectTAH(o[mu], u[mu], o[mu])
-
-proc axexp*[F:Field](z: F; a: float; x: F) =
-  ## z = exp(a x) site by site, with x anti-Hermitian (traceless for SU(N)).
-  for e in z:
-    var t {.noinit.}: evalType(x[e])
-    t[] := expAH(a * x[e][])
-    z[e] := t
-
-proc axexp*[F:Field](z: openArray[F]; a: float; x: openArray[F]) =
-  for mu in 0..<z.len: axexp(z[mu], a, x[mu])
-
-proc axexpmuly*[F:Field](z: F; a: float; x, y: F; expax: F = nil) =
-  ## z = exp(a x) y site by site, with x anti-Hermitian (traceless for SU(N));
-  ## expax, when given, receives exp(a x).
-  for e in z:
-    var t {.noinit.}: evalType(x[e])
-    t[] := expAH(a * x[e][])
-    if expax != nil: expax[e] := t
-    z[e] := t * y[e]
-
-proc axexpmuly*[F:Field](z: F; a: float; x, y: F; sub: Subset; expax: F = nil) =
-  ## The same on sub's outer sites only.
-  for e in sub:
-    var t {.noinit.}: evalType(x[e])
-    t[] := expAH(a * x[e][])
-    if expax != nil: expax[e] := t
-    z[e] := t * y[e]
-
-proc axexpmuly*[F:Field](z: openArray[F]; a: float; x, y: openArray[F]) =
-  for mu in 0..<z.len: axexpmuly(z[mu], a, x[mu], y[mu])
-
-proc axexpmuly*[F:Field](z: openArray[F]; a: float; x, y, expax: openArray[F]) =
-  for mu in 0..<z.len: axexpmuly(z[mu], a, x[mu], y[mu], expax[mu])
 
 type
   Link[F:ref] = object
@@ -1514,9 +1465,7 @@ proc randomTAH*(x: Field, r: RNGField) =
 
 proc warmSU*(x: Field, s: float, r: var RNGField) =
   x.randomTAH r
-  for i in x:
-    let t = s * x[i]
-    x[i] = exp(t)
+  axexpah(x, s, x)
 
 proc checkU*[F:Field](x: openArray[F]): tuple[avg,max:float] {.noinit.} =
   var a,b:float

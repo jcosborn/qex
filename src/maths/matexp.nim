@@ -8,17 +8,18 @@ import macros, algorithm
 ## polynomial power series exponential
 ## optimized for minimal number of matrix multiplies
 
-template C2 = 0.5
-template C3 = 1.0/6.0
-template C4 = 1.0/24.0
-template C5 = 1.0/120.0
-template C6 = 1.0/720.0
-template C7 = 1.0/5040.0
-template C8 = 1.0/40320.0
-template C9 = 1.0/362880.0
-template C10 = 1.0/3628800.0
-template C11 = 1.0/39916800.0
-template C12 = 1.0/479001600.0
+const
+  C2 = 0.5
+  C3 = 1.0/6.0
+  C4 = 1.0/24.0
+  C5 = 1.0/120.0
+  C6 = 1.0/720.0
+  C7 = 1.0/5040.0
+  C8 = 1.0/40320.0
+  C9 = 1.0/362880.0
+  C10 = 1.0/3628800.0
+  C11 = 1.0/39916800.0
+  C12 = 1.0/479001600.0
 
 macro splitVars(sl: untyped): untyped =
   #echo "====="
@@ -322,27 +323,45 @@ proc expPoly12*(m: Mat1): auto {.noInit.} =
     var r =   a*m3 + C2*m2 + m + 1
   r
 
+proc ahScale(n2: float): tuple[s: float, n: int] =
+  var n2 = n2
+  result.s = 1.0
+  while n2 > 1.0/16.0:
+    n2 *= 0.25
+    result.s *= 0.5
+    inc result.n
+
+proc ahScale(m: Mat1): tuple[s: float, n: int] =
+  mixin simdMax
+  ahScale(m.norm2.simdMax)
+
+proc expAH*(m: Mat1, n2: float): auto {.noInit.} =
+  ## expAH(m) scaled for norm2 n2 in place of the SIMD maximum of norm2(m), m
+  ## not 1x1. With n2 the maximum over the lanes of a wider vector of which m
+  ## is a slice, the slice gets those lanes of the wide result.
+  type E = evalType(m[0,0])
+  let (scale, ns) = ahScale(n2)
+  var r {.noInit.}: MatrixArray[m.nrows, m.ncols, E]
+  r := expm1Poly12(numberType(E)(scale)*m)
+  for i in 0..<ns:
+    var t = r
+    t += 2
+    r := r*t
+  r += 1
+  r
+
 proc expAH*(m: Mat1): auto {.noInit.} =
   ## Requires m†=-m: exp(m/2^k) is unitary, avoiding norm growth while squaring.
-  ## 1x1 uses scalar exp; otherwise scale to norm2 <= 1/16, evaluate P12, and square back.
+  ## 1x1 uses scalar exp; otherwise scale to norm2 <= 1/16, evaluate P12, and square back
+  ## in expm1 form, r = E - 1, r <- r (r + 2), so each squaring rounds relative to |r|
+  ## instead of |E| = 1 (texpaccuracy: 2 to 3 times smaller error at norm >= 1/4).
+  mixin simdMax
   when m.nrows == 1 and m.ncols == 1:
     var r {.noinit.}: evalType(m)
     r[0, 0] := exp(m[0, 0])
     r
   else:
-    mixin simdMax
-    var
-      n2 = m.norm2.simdMax
-      scale = 1.0
-      ns = 0
-    while n2 > 1.0/16.0:
-      n2 *= 0.25
-      scale *= 0.5
-      inc ns
-    var r = expPoly12(scale*m)
-    for i in 0..<ns:
-      r := r*r
-    r
+    expAH(m, m.norm2.simdMax)
 
 
 ## Pade approximations of exp

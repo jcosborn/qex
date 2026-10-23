@@ -279,7 +279,7 @@ proc integrator*(hmc: HmcAction): Integrator =
 
   proc mdt(dtau: float) =
     tic("mdt")
-    threads: axexpmuly(uc.u, dtau, pp[], uc.u)
+    threads: axexpahmuly(uc.u, dtau, pp[], uc.u)
     pstats[]["GU"]["n"] += 1
     pstats[]["GU"]["secs"] += getElapsedTime()
     toc("end")

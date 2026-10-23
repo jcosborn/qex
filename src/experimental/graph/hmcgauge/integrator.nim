@@ -227,7 +227,7 @@ proc kick(s: var Stepper; c: Gscalar; step: int) =
   s.event(ieKick, step, f, mc)
 
 proc drift(s: var Stepper; c: Gscalar; step: int) =
-  s.g = axexpmuly(c, s.p, s.g)
+  s.g = axexpahmuly(c, s.p, s.g)
   s.event(ieDrift, step, coefficient = c)
 
 proc gradKick(s: var Stepper; c, shift: Gscalar; step: int) =
@@ -235,7 +235,7 @@ proc gradKick(s: var Stepper; c, shift: Gscalar; step: int) =
   let fg = gradForce(s.action, s.g, s.forces, s.force)
   s.event(ieForce, step, fg)
   let ms = -shift
-  let gs = axexpmuly(ms, fg, s.g)
+  let gs = axexpahmuly(ms, fg, s.g)
   s.event(ieShift, step, fg, ms, gs)
   let f = gradForce(s.action, gs, s.forces, s.force)
   s.event(ieForce, step, f, gauge = gs)

@@ -35,9 +35,9 @@ for n in 0..<3:
   gc.gaugeForce(gaugesu2, fsu2)
   gc.gaugeForce(gaugesu3, fsu3)
   threads:
-    axexpmuly(gaugeu1, -eps, fu1, gaugeu1)
-    axexpmuly(gaugesu2, -eps, fsu2, gaugesu2)
-    axexpmuly(gaugesu3, -eps, fsu3, gaugesu3)
+    axexpahmuly(gaugeu1, -eps, fu1, gaugeu1)
+    axexpahmuly(gaugesu2, -eps, fsu2, gaugesu2)
+    axexpahmuly(gaugesu3, -eps, fsu3, gaugesu3)
 
 echo gc.gaugeAction1(gaugeu1)
 echoPlaq gaugeu1

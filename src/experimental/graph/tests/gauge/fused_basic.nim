@@ -239,6 +239,27 @@ suite "gauge fused vs basic":
     norm2(dsrfgm - dsrggm) :< 1e-26
     norm2(dtrfgm - dtrggm) :< 1e-26
 
+  test "axexpah and axexpahmuly match exp to rounding":
+    # gm is anti-Hermitian and traceless for SU(N), as the AH nodes require.
+    const
+      parity = 1
+      dir = 2
+    let
+      zero = grt.toGvalue(zeroGaugeLike(g))
+      rf = axexpah(x, gm)
+      mf: Ggauge = axexpahmuly(x, gm, gg)
+      mg = exp(x * gm) * gg
+      sf = retr(mf * gu)
+      sg = retr(mg * gu)
+      rs = axexpahmuly(x, gm, gg, parity, dir)
+      rr = blendSubset(parity, dir, mg, zero)
+    norm2(rf - exp(x * gm)) :< 1e-24
+    norm2(mf - mg) :< 1e-24
+    norm2(rs - rr) :< 1e-24
+    grad(sf, x) :~ grad(sg, x)
+    norm2(grad(sf, gm) - grad(sg, gm)) :< 1e-24
+    norm2(grad(sf, gg) - grad(sg, gg)) :< 1e-24
+
   test "axexpmuly does not read packed storage before first eval":
     let rf = axexpmuly(x, gm, gg)
     let rg = exp(x * gm) * gg

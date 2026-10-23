@@ -9,6 +9,17 @@ proc diffNorm2*(x, y: Field): float =
     threadSingle: err = d
   err
 
+proc relNorm2*(x, y: Field): float =
+  ## norm2(x - y)/(1 + norm2(y)).
+  var err, scale: float
+  threads:
+    let d = norm2(x-y)
+    let n = norm2(y)
+    threadSingle:
+      err = d
+      scale = n
+  err/(1.0+scale)
+
 proc relativeDiff*(a, b: array|seq): float =
   let d = newOneOf(a)
   var err, scale: float

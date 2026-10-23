@@ -38,7 +38,7 @@ template gaugeFlow*(g: array|seq, steps: int, eps: float, measure: untyped) =
           for e in g[mu]:
             var v {.noinit.}:type(load1(f[0][0]))
             v := (-1.0/4.0)*epsnc*f[mu][e]
-            let t = exp(v)*g[mu][e]
+            let t = expAH(v)*g[mu][e]
             p[mu][e] := v
             g[mu][e] := t
       f.gaugeForce g
@@ -47,7 +47,7 @@ template gaugeFlow*(g: array|seq, steps: int, eps: float, measure: untyped) =
           for e in g[mu]:
             var v {.noinit.}:type(load1(f[0][0]))
             v := (-8.0/9.0)*epsnc*f[mu][e] + (-17.0/9.0)*p[mu][e]
-            let t = exp(v)*g[mu][e]
+            let t = expAH(v)*g[mu][e]
             p[mu][e] := v
             g[mu][e] := t
       f.gaugeForce g
@@ -56,7 +56,7 @@ template gaugeFlow*(g: array|seq, steps: int, eps: float, measure: untyped) =
           for e in g[mu]:
             var v {.noinit.}:type(load1(f[0][0]))
             v := (-3.0/4.0)*epsnc*f[mu][e] - p[mu][e]
-            let t = exp(v)*g[mu][e]
+            let t = expAH(v)*g[mu][e]
             g[mu][e] := t
       let wflowT {.inject,used.} = t
       measure
@@ -96,7 +96,7 @@ proc mkGaugeFlowRKOp*[G](g: G): GaugeFlowRKOp[G] =
           for e in u[mu]:
             var v {.noinit.}:type(load1(u[0][0]))
             v := (-b * nc) * ff[mu][e]
-            let t = exp(v) * u[mu][e]
+            let t = expAH(v) * u[mu][e]
             f[mu][e] := v
             u[mu][e] := t
     else:
@@ -105,7 +105,7 @@ proc mkGaugeFlowRKOp*[G](g: G): GaugeFlowRKOp[G] =
           for e in u[mu]:
             var v {.noinit.}:type(load1(u[0][0]))
             v := a * f[mu][e] + (-b * nc) * ff[mu][e]
-            let t = exp(v) * u[mu][e]
+            let t = expAH(v) * u[mu][e]
             f[mu][e] := v
             u[mu][e] := t
   op.advance = adv

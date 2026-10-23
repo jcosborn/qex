@@ -4,6 +4,7 @@ setVLENmax(4)
 
 import qex
 import gauge, physics/qcdTypes
+from maths/matexp import expAH
 import mdevolve
 import os, strutils
 
@@ -118,7 +119,7 @@ var
   g0 = lo.newgauge
 
 proc mdt(t:float) =
-  threads: axexpmuly(g, t, p, g)
+  threads: axexpahmuly(g, t, p, g)
 proc mdv(t:float) =
   gc.gaugeforce2(g, f)
   if gfix: f.maxTreeFix 0.0
@@ -138,7 +139,7 @@ when useFG:
     threads:
       for i in 0..<g.len:
         for e in g[i]:
-          let etfg = exp((-t)*f[i][e])*g[i][e]
+          let etfg = expAH((-t)*f[i][e])*g[i][e]
           g[i][e] := etfg
   var gg = lo.newgauge
   proc fgsave =
