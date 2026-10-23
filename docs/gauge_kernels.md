@@ -136,6 +136,12 @@ allocated uninitialized: only gathered entries are defined, and the reverse
 exchange reads every cell its map covers before accumulating into physical
 fields, so zero or fill the halo first, as `hypsmear2` does. Test: `thalo`.
 
+Retained gather send/receive buffers belong to the communicator. Gathers through
+one communicator are serialized; each call completes its messages before the
+buffers can be reused. The buffers grow on demand and are released with their
+owner. Finalizing the default communicator releases them explicitly. These
+message buffers remain outside `LoopWork.bytes`.
+
 HYP pullbacks project intermediates only within their forward construction
 domains, respecting neighbor validity and cotangent reach. `thypsmearhalo`
 compares stored floating-point components against independent shifts with
@@ -370,6 +376,5 @@ Warm workspaces first; validate results outside timing.
 ## Future work
 
 - Measure general loop kernels on production hardware before further dispatch changes.
-- Reuse generic halo message buffers.
 - Add vector/rectangular LU right-hand sides when needed.
 - Extend and validate adjoint-plaquette Hessian kernels.

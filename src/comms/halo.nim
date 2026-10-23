@@ -323,7 +323,7 @@ proc update*[L,F,T](h: Halo[L,F,T], hm: HaloMap[L], c: Comm) =
   # gh.dest is a raw pointer into h, and the gather allocates: keep h
   # referenced, the caller may not use it after this call.
   GC_ref(h)
-  c.gather(hm.gather, gh)
+  c.gather(hm.gather, gh, keep = true)
   GC_unref(h)
   toc("gather")
 

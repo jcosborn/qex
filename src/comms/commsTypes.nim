@@ -1,5 +1,18 @@
 type
+  GatherBuffer* = tuple[p: ptr UncheckedArray[char], n: int]
+  GatherBuffers* = ref object
+    ## Retained scratch for serialized gathers through one communicator.
+    send*, recv*: GatherBuffer
   Comm* = ref object of RootObj
+    gatherBuffers*: GatherBuffers
+
+proc releaseGatherBuffers*(b: GatherBuffers) =
+  ## Idempotent cleanup, also used as the retained scratch's GC finalizer.
+  if b == nil: return
+  if b.send.p != nil: deallocShared b.send.p
+  if b.recv.p != nil: deallocShared b.recv.p
+  b.send = default(GatherBuffer)
+  b.recv = default(GatherBuffer)
 
 # globals
 

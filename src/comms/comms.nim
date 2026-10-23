@@ -172,6 +172,7 @@ proc commsInit*() =
   echo "Using Comm: ", defaultComm.name
 
 proc commsFinalize*() =
+  if defaultComm != nil: defaultComm.gatherBuffers.releaseGatherBuffers
   for f in commsFinis:
     f()
 

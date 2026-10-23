@@ -1,5 +1,70 @@
 import testutils
-import qex, base/hyper, comms/halo
+import qex, base/hyper, comms/[gather, halo]
+
+# One pending local message exercises gather buffers with any QMP backend.
+type
+  LoopbackComm = ref object of Comm
+    send, recv: pointer
+    bytes: int
+  GatherInts = object
+    src, dest: ptr UncheckedArray[int]
+    elemsize, vlen: int
+
+method nsends(c: LoopbackComm): int = ord(c.send != nil)
+method nrecvs(c: LoopbackComm): int = ord(c.recv != nil)
+method pushRecv(c: LoopbackComm, rank: int, p: pointer, bytes: int) =
+  doAssert rank == 0 and c.recv == nil
+  c.recv = p
+  c.bytes = bytes
+method pushSend(c: LoopbackComm, rank: int, p: pointer, bytes: int) =
+  doAssert rank == 0 and c.send == nil and c.recv != nil and bytes == c.bytes
+  c.send = p
+method waitRecvs(c: LoopbackComm, i0, i1: int, free = true) =
+  doAssert i0 == 0 and i1 == 0 and c.send != nil and c.recv != nil
+  copyMem(c.recv, c.send, c.bytes)
+  if free: c.recv = nil
+method freeRecvs(c: LoopbackComm, i0, i1: int) =
+  doAssert i0 == 0 and i1 == 0 and c.recv != nil
+  c.recv = nil
+method waitSends(c: LoopbackComm, i0, i1: int) =
+  doAssert i0 == 0 and i1 == 0 and c.send != nil
+  c.send = nil
+
+template copy(data: GatherInts, d, s: pointer|SomeInteger) =
+  when d is pointer: cast[ptr int](d)[] = data.src[s]
+  elif s is pointer: data.dest[d] = cast[ptr int](s)[]
+  else: data.dest[d] = data.src[s]
+
+proc exerciseGatherBuffers(): int {.noinline.} =
+  # Return before collecting: refc conservatively retains locals on live stacks.
+  let before = getOccupiedSharedMem()
+  let c = LoopbackComm()
+  var send, recv: ptr UncheckedArray[char]
+  var capacity = 0
+  for count in [4, 512, 8]:
+    var src, dest = newSeq[int](count)
+    let gm = GatherMap(nsrc: count, ndest: count,
+      sidx: newSeq[int32](count), rdest: newSeq[int32](count),
+      smsginfo: @[MsgInfo(rank: 0, count: count.int32)],
+      rmsginfo: @[MsgInfo(rank: 0, count: count.int32)])
+    for i in 0..<count:
+      src[i] = 1000*count + i
+      gm.sidx[i] = int32(count-1-i)
+      gm.rdest[i] = int32(i)
+    let data = GatherInts(src: cast[ptr UncheckedArray[int]](src[0].addr),
+      dest: cast[ptr UncheckedArray[int]](dest[0].addr), elemsize: sizeof(int), vlen: 1)
+    c.gather(gm, data, keep = true)
+    doAssert c.send == nil and c.recv == nil
+    for i in 0..<count: doAssert dest[i] == src[count-1-i]
+    capacity = max(capacity, count*sizeof(int))
+    doAssert c.gatherBuffers.send.n == capacity
+    doAssert c.gatherBuffers.recv.n == capacity
+    if count == 8:
+      doAssert c.gatherBuffers.send.p == send
+      doAssert c.gatherBuffers.recv.p == recv
+    send = c.gatherBuffers.send.p
+    recv = c.gatherBuffers.recv.p
+  getOccupiedSharedMem()-before
 
 # global lex index of lane k of outer site e, shifted by o and wrapped
 proc site(lo: auto, e, k: int, o: seq[int32]): int =
@@ -143,6 +208,47 @@ suite "Halo":
       check(hm.gather.rdest.inRange(nh) and hm.gather.ldest.inRange(nh))
       check(hm.gatherRev.sidx.inRange(nh) and hm.gatherRev.lidx.inRange(nh))
       check(hm.gatherRev.rdest.inRange(lo.nSites) and hm.gatherRev.ldest.inRange(lo.nSites))
+
+  test "retained gather buffers grow, reuse storage, and release with their owner":
+    discard exerciseGatherBuffers()  # Warm threading and profiling state.
+    GC_fullCollect()
+    GC_fullCollect()
+    let before = getOccupiedSharedMem()
+    let allocated = exerciseGatherBuffers()
+    check allocated >= 2*512*sizeof(int)
+    GC_fullCollect()
+    GC_fullCollect()
+    check getOccupiedSharedMem() == before
+
+  test "retained gather buffers belong to their communicator":
+    fill g
+    let hm = haloMap(hl, comm, axes)
+    let h = makeHalo(hl, g[0])
+    h.update(hm, comm)
+    let first = comm.gatherBuffers
+    check first != nil
+    let send = first.send.p
+    let recv = first.recv.p
+    h.update(hm, comm)
+    check first.send.p == send
+    check first.recv.p == recv
+    let other = getCommQmp()
+    h.update(hm, other)
+    check other.gatherBuffers != first
+    check other.gatherBuffers.send.p != send
+    check other.gatherBuffers.recv.p != recv
+    other.gatherBuffers.releaseGatherBuffers
+    other.gatherBuffers.releaseGatherBuffers
+    check other.gatherBuffers.send.p == nil
+    check other.gatherBuffers.recv.p == nil
+    check other.gatherBuffers.send.n == 0
+    check other.gatherBuffers.recv.n == 0
+    h.update(hm, other)
+    check other.gatherBuffers.send.p != nil
+    check other.gatherBuffers.recv.p != nil
+    other.gatherBuffers.releaseGatherBuffers
+    check first.send.p == send
+    check first.recv.p == recv
 
   test "update corners":
     check(checkUpdate(g, hl, hmC, corners) == 0)
