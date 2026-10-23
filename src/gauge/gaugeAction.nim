@@ -151,6 +151,13 @@ proc gaugeLoops(nd, mask, act: int): GaugeLoopPlan =
   cache[key]
 
 type
+  LoopKeep* = enum
+    ## What gaugeAction1 and gaugeActionDeriv leave in a LoopWork between calls.
+    keepNone = "none"  # staple blocks allocated and freed per call
+    keepStaples = "staples"  # stf, stu and ru kept: 2 or 3 arrays of nd*(nd-1) fields
+  LoopTag* = tuple[id, ver: int]
+    ## Identity and version of a link value, given by a caller that knows them
+    ## (graph node id and epoch, a driver's configuration counter). id 0 is no tag.
   LoopHalos[V:static[int],T] = object
     layout*: HaloLayout[Layout[V]]
     fields*: seq[seq[Halo[Layout[V],Field[V,T],T]]]
@@ -159,13 +166,46 @@ type
     ## Geometry initialization follows the halo API's threading requirements.
     lo*: Layout[V]
     halos*: seq[LoopHalos[V,T]]
+    keep: LoopKeep
+    stf, stu: FieldArray[V,T]  # staples of the last action/force call, passed back to makeStaples
+    haveBackward: bool  # stu is current at stag; stf is always current there
+    stag: LoopTag  # links of the kept staples
+    spair: bool  # a staple force followed an action at the same tag: actions build stu too
+    builds*, reuses*: int  # staple builds and reused builds
+    ru: FieldArray[V,T]  # rect parts of gaugeActionDeriv, zeroed on every use
     scratch: seq[Field[V,T]]
     trans: array[4,seq[Transporter[Field[V,T],Field[V,T],T]]]
     plan: LoopProducts
-    products: seq[alignedMem[T]]
+    products: seq[alignedMem[T]]  # per-thread loop products
 
-proc newLoopWork*[V:static[int],T](f: Field[V,T]): LoopWork[V,T] =
-  LoopWork[V,T](lo: f.l)
+proc newLoopWork*[V:static[int],T](f: Field[V,T], keep = keepNone): LoopWork[V,T] =
+  ## keep: see LoopKeep. Halos, scratch, Hessian transporters and loop products
+  ## are made on first use and persist in every mode.
+  LoopWork[V,T](lo: f.l, keep: keep)
+
+proc bytes*(w: LoopWork): int =
+  ## Owned raw-memory allocations; excludes borrowed inputs, shift buffers and metadata.
+  template addArray(a: untyped) =
+    if a.shape.len != 0:
+      for i in 0..<a.shape[0]*a.shape[1]:
+        let f = a[i]
+        if f != nil and f.s.mem != nil:
+          result += f.s.mem.size
+          break  # A FieldArray has one backing allocation.
+  addArray(w.stf)
+  addArray(w.stu)
+  addArray(w.ru)
+  for f in w.scratch:
+    if f != nil and f.s.mem != nil: result += f.s.mem.size
+  for row in w.trans:
+    for t in row:
+      if t.field != nil and t.field.s.mem != nil: result += t.field.s.mem.size
+  for row in w.halos:
+    for slot in row.fields:
+      for h in slot:
+        if h != nil and h.halo.mem != nil: result += h.halo.mem.size
+  for p in w.products:
+    if p.mem != nil: result += p.mem.size
 
 proc useLoopWork(g: auto, work: LoopWork): auto =
   result = if work.isNil: newLoopWork(g[0]) else: work
@@ -489,99 +529,91 @@ proc loopDeriv*[V:static[int],T](c: GaugeActionCoeffs, g:openArray[Field[V,T]], 
 # plaq traces:
 #  plaq: U[mu]^+ * sum_{nu!=mu} s[mu][nu] (6)
 #  rect: shift(s[mu][nu], nu) (12 shifts)
-proc gaugeAction1*[V:static[int],T](c: GaugeActionCoeffs, uu: openArray[Field[V,T]]; work: LoopWork[V,T] = nil): auto =
+proc gaugeAction1*[V:static[int],T](c: GaugeActionCoeffs, uu: openArray[Field[V,T]]; work: LoopWork[V,T] = nil, tag = default(LoopTag)): auto =
+  ## tag: identity and version of uu. With keepStaples, a call whose tag equals
+  ## the tag of the kept staples skips the link exchange and the staple build;
+  ## a rect term still exchanges stu. Unretained rectangle calls reuse a bounded
+  ## scratch batch across planes and release it before returning.
   requireFundamental(c, "gaugeAction1")
-  mixin mul, redot, load1
+  if work != nil: discard useLoopWork(uu, work)
+  defer:
+    if work != nil: work.clearInputs
   tic("gaugeAction1")
-  let u = cast[ptr cArray[Field[V,T]]](unsafeAddr(uu[0]))
-  let lo = u[0].l
+  let lo = uu[0].l
   let nd = lo.nDim
-  #let np = (nd*(nd-1)) div 2
-  let nc = u[0][0].ncols
-  var cs = startCornerShifts(uu)
-  toc("gaugeAction startCornerShifts")
+  let nc = float(uu[0][0].ncols)
+  let keep = work != nil and work.keep == keepStaples
+  if not keep and c.rect != 0:
+    result = stapleBatches(c.plaq, c.rect, uu, default(seq[Field[V,T]]), false)
+    if work != nil: inc work.builds
+    if c.pgm != 0: result += pgmAction(c, uu, work)
+    toc("gaugeAction end")
+    return
+  let reusing = keep and tag.id != 0 and tag == work.stag and (c.rect == 0 or work.haveBackward)
   var
-    stf, stu: FieldArray[type(u[0]).V, type(u[0]).T]
-    ss: seq[seq[ShiftB[type(uu[0][0])]]]
-  if c.rect == 0:
-    stf = makeFwdStaples(uu, cs)
-  else:
-    (stf, stu, ss) = makeStaples(uu, cs)
-  toc("gaugeAction makeStaples")
-  #var ss = startStapleShifts(st)
-  #toc("gaugeAction startStapleShifts")
-  let maxThreads = getMaxThreads()
-  var nth = 0
-  var act = newSeq[float](2*maxThreads)
-  toc("gaugeAction setup")
-  threads:
-    tic()
-    var plaq = 0.0
-    var rect = 0.0
-    for ir in u[0]:
-      for mu in 1..<nd:
-        for nu in 0..<mu:
-          # plaq
-          let p1 = redot(u[mu][ir], stf[mu,nu][ir])
-          plaq += simdSum(p1)
-          if c.rect!=0:
-            if isLocal(ss[mu][nu],ir):
-              var bmu: type(load1(u[0][0]))
-              localSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
-              # rect
-              let r = redot(bmu, stf[mu,nu][ir])
-              rect += simdSum(r)
-            if isLocal(ss[nu][mu],ir):
-              var bnu: type(load1(u[0][0]))
-              localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
-              # rect
-              let r = redot(bnu, stf[nu,mu][ir])
-              rect += simdSum(r)
-    toc("gaugeAction local")
+    stf, stu: FieldArray[V,T]
+    ss: seq[seq[ShiftB[T]]]
+  if reusing:
+    stf = work.stf
+    stu = work.stu
     if c.rect != 0:
-      for mu in 1..<nd:
-        for nu in 0..<mu:
-          var needBoundary = false
-          boundaryWaitSB(ss[mu][nu]): needBoundary = true
-          boundaryWaitSB(ss[nu][mu]): needBoundary = true
-          if c.rect != 0 and needBoundary:
-            boundarySyncSB()
-            for ir in lo:
-              if not isLocal(ss[mu][nu],ir):
-                var bmu: type(load1(u[0][0]))
-                getSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
-                # rect
-                let r = redot(bmu, stf[mu,nu][ir])
-                rect += simdSum(r)
-              if not isLocal(ss[nu][mu],ir):
-                var bnu: type(load1(u[0][0]))
-                getSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
-                # rect
-                let r = redot(bnu, stf[nu,mu][ir])
-                rect += simdSum(r)
-    act[threadNum*2]   = plaq
-    act[threadNum*2+1] = rect
-    if threadNum==0: nth = numThreads
-    # toc("gaugeAction boundary")
-  toc("gaugeAction threads")
+      ss = newLinkShifts(lo, T, -1)
+      threads:
+        for mu in 1..<nd:
+          for nu in 0..<mu:
+            ss[mu][nu].startSB(stu[mu,nu][ix])
+            ss[nu][mu].startSB(stu[nu,mu][ix])
+    inc work.reuses
+    toc("gaugeAction reuse")
+  else:
+    let cs = startCornerShifts(uu)
+    toc("gaugeAction startCornerShifts")
+    # Once a force has followed an action at the same links, tagged actions keep
+    # both staple sets so that the next such force reuses them. Only a rect
+    # term reads the backward set here; the force exchanges it itself.
+    let both = c.rect != 0 or (keep and tag.id != 0 and work.spair)
+    if not both:
+      stf = if work == nil: makeFwdStaples(uu, cs)
+        else: makeFwdStaples(uu, cs, work.stf)
+    else:
+      (stf, stu, ss) = if work == nil: makeStaples(uu, cs, post = c.rect != 0)
+        else: makeStaples(uu, cs, work.stf, work.stu, c.rect != 0)
+    if work != nil:
+      inc work.builds
+      work.haveBackward = both
+      work.stag = tag
+      if keep:
+        work.stf = stf
+        if both: work.stu = stu
+    toc("gaugeAction makeStaples")
+  var sums = newSeq[array[2,float]](getMaxThreads())
+  addStapleActions(uu, stf, stu, ss, staplePlanes(nd), c.rect != 0, sums)
   var a = [0.0, 0.0]
-  for i in 0..<nth:
-    a[0] += act[i*2]
-    a[1] += act[i*2+1]
+  for part in sums:
+    a[0] += part[0]
+    a[1] += part[1]
   rankSum(a)
-  result = (-1.0/nc.float) * (c.plaq*a[0] + c.rect*a[1])
+  result = -(c.plaq*a[0] + c.rect*a[1])/nc
   if c.pgm != 0:
     result += pgmAction(c, uu, work)
+  if not keep:
+    release(stf)
+    release(stu)
   toc("gaugeAction end")
 
 proc gaugeAction1*[T](uu: openarray[T]): auto =
   let gc = GaugeActionCoeffs(plaq:1.0)
   return gc.gaugeAction1(uu)
 
-proc gaugeActionDeriv*[V:static[int],T](c: GaugeActionCoeffs, uu: openArray[Field[V,T]], f: array|seq, accumulate=false; work: LoopWork[V,T] = nil) =
+proc gaugeActionDeriv*[V:static[int],T](c: GaugeActionCoeffs, uu: openArray[Field[V,T]], f: array|seq, accumulate=false; work: LoopWork[V,T] = nil, tag = default(LoopTag)) =
   ## if accumulate, the derivatives will add to f.
-  ## if not, f is set to 0 first.
+  ## Otherwise the derivative overwrites f.
+  ## tag: as in gaugeAction1; the kernel reads shifted links, so a reused build
+  ## still exchanges the links and stu, and stf and ru for a rect term.
   requireFundamental(c, "gaugeActionDeriv")
+  if work != nil: discard useLoopWork(uu, work)
+  defer:
+    if work != nil: work.clearInputs
   mixin load1, adj
   tic("gaugeActionDeriv")
   let u = cast[ptr cArray[Field[V,T]]](unsafeAddr(uu[0]))
@@ -591,185 +623,62 @@ proc gaugeActionDeriv*[V:static[int],T](c: GaugeActionCoeffs, uu: openArray[Fiel
   let nc = u[0][0].ncols
   let cp = c.plaq / float(nc)
   let cr = c.rect / float(nc)
-  var cs = startCornerShifts(uu)
-  var ru:FieldArray[type(u[0]).V,type(u[0]).T]  # the rect parts of 3
-  var sb:seq[seq[ShiftB[type(u[0][0])]]]  # backward ru
-  var sf:seq[seq[ShiftB[type(u[0][0])]]]  # forward stf
+  let keep = work != nil and work.keep == keepStaples
+  if not keep:
+    discard stapleBatches(c.plaq, c.rect, uu, f, true, accumulate)
+    if work != nil: inc work.builds
+    if c.pgm != 0:
+      gaugeLoopDeriv(GaugeActionCoeffs(pgm: c.pgm), uu, uu, f, false, work)
+    toc("end")
+    return
+  let reusing = keep and tag.id != 0 and tag == work.stag and work.haveBackward
+  if keep and tag.id != 0 and tag == work.stag: work.spair = true
+  var ru:FieldArray[V,T]  # the rect parts of 3
+  var sb:seq[seq[ShiftB[T]]]  # backward ru
+  var sf:seq[seq[ShiftB[T]]]  # forward stf
   if cr!=0:
-    ru = newFieldArray2(lo,type(u[0]),[nd,nd],mu!=nu)
-    sb.newseq(nd)
-    for mu in 0..<nd:
-      sb[mu].newseq(nd)
-      for nu in 0..<nd:
-        if mu==nu: continue
-        sb[mu][nu].initShiftB(ru[mu,nu], nu, -1, "all")
-    sf.newseq(nd)
-    for mu in 0..<nd:
-      sf[mu].newseq(nd)
-      for nu in 0..<nd:
-        if mu==nu: continue
-        sf[mu][nu].initShiftB(u[mu], nu, 1, "all")
+    # Temporary rectangle work returned above; this path retains its scratch.
+    if work.ru.shape.len == 0: work.ru = newFieldArray2(lo,type(u[0]),[nd,nd],mu!=nu)
+    ru = work.ru
+    sb = newLinkShifts(lo, T, -1)
+    sf = newLinkShifts(lo, T, 1)
   toc("init")
-  var (stf,stu,ss) = makeStaples(uu, cs)
-  toc("makeStaples")
+  let cs = startCornerShifts(uu)
+  var stf, stu: FieldArray[V,T]
+  var ss: seq[seq[ShiftB[T]]]
+  if reusing:
+    stf = work.stf
+    stu = work.stu
+    ss = newLinkShifts(lo, T, -1)  # started in the threads region
+    inc work.reuses
+    toc("reuse")
+  else:
+    (stf,stu,ss) = makeStaples(uu, cs, work.stf, work.stu)
+    inc work.builds
+    work.haveBackward = true
+    work.stag = tag
+    work.stf = stf
+    work.stu = stu
+    toc("makeStaples")
   threads:
-    tic("gaugeActionDerivThreads")
-    if cr!=0:
+    if reusing:
       for mu in 1..<nd:
         for nu in 0..<mu:
-          sf[mu][nu].startSB(stf[mu,nu][ix])
-          sf[nu][mu].startSB(stf[nu,mu][ix])
-    for mu in 0..<nd:
-      if not accumulate:
-        f[mu] := 0
-      if cr!=0:
-        for nu in 0..<nd:
-          if mu!=nu:
-            ru[mu,nu] := 0
-    for ir in u[0]:
-      for mu in 1..<nd:
-        for nu in 0..<mu:
-          # plaq
-          f[mu][ir] += cp * stf[mu,nu][ir]
-          f[nu][ir] += cp * stf[nu,mu][ir]
-          if isLocal(ss[mu][nu],ir):
-            var bmu: type(load1(u[0][0]))
-            localSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
-            f[mu][ir] += cp * bmu
-            if cr!=0:
-              var umu,unu,bmunu: type(load1(u[0][0]))
-              getSB(cs[nu][mu], ir, assign(unu,it), u[nu][ix])
-              getSB(cs[mu][nu], ir, assign(umu,it), u[mu][ix])
-              bmunu := bmu * unu
-              f[nu][ir] += cr * bmunu * umu.adj
-              ru[nu,mu][ir] += bmu.adj * u[nu][ir] * umu
-              ru[mu,nu][ir] += u[nu][ir].adj * bmunu
-          if isLocal(ss[nu][mu],ir):
-            var bnu: type(load1(u[0][0]))
-            localSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
-            f[nu][ir] += cp * bnu
-            if cr!=0:
-              var unu,umu,bnumu: type(load1(u[0][0]))
-              getSB(cs[mu][nu], ir, assign(umu,it), u[mu][ix])
-              getSB(cs[nu][mu], ir, assign(unu,it), u[nu][ix])
-              bnumu := bnu * umu
-              f[mu][ir] += cr * bnumu * unu.adj
-              ru[mu,nu][ir] += bnu.adj * u[mu][ir] * unu
-              ru[nu,mu][ir] += u[mu][ir].adj * bnumu
-          if cr!=0:
-            if isLocal(sf[mu][nu],ir):
-              var smu,unu,smunu: type(load1(u[0][0]))
-              localSB(sf[mu][nu], ir, assign(smu,it), stf[mu,nu][ix])
-              getSB(cs[nu][mu], ir, assign(unu,it), u[nu][ix])
-              smunu := smu * unu.adj
-              f[mu][ir] += cr * u[nu][ir] * smunu
-              f[nu][ir] += cr * u[mu][ir] * smunu.adj
-              ru[nu,mu][ir] += u[mu][ir].adj * u[nu][ir] * smu
-            if isLocal(sf[nu][mu],ir):
-              var snu,umu,snumu: type(load1(u[0][0]))
-              localSB(sf[nu][mu], ir, assign(snu,it), stf[nu,mu][ix])
-              getSB(cs[mu][nu], ir, assign(umu,it), u[mu][ix])
-              snumu := snu * umu.adj
-              f[nu][ir] += cr * u[mu][ir] * snumu
-              f[mu][ir] += cr * u[nu][ir] * snumu.adj
-              ru[mu,nu][ir] += u[nu][ir].adj * u[mu][ir] * snu
-    toc("local")
-    for mu in 1..<nd:
-      for nu in 0..<mu:
-        var needBoundary = false
-        boundaryWaitSB(ss[mu][nu]): needBoundary = true
-        boundaryWaitSB(ss[nu][mu]): needBoundary = true
-        if needBoundary:
-          boundarySyncSB()
-          for ir in lo:
-            if not isLocal(ss[mu][nu],ir):
-              var bmu: type(load1(u[0][0]))
-              getSB(ss[mu][nu], ir, assign(bmu,it), stu[mu,nu][ix])
-              f[mu][ir] += cp * bmu
-              if cr!=0:
-                var umu,unu,bmunu: type(load1(u[0][0]))
-                getSB(cs[nu][mu], ir, assign(unu,it), u[nu][ix])
-                getSB(cs[mu][nu], ir, assign(umu,it), u[mu][ix])
-                bmunu := bmu * unu
-                f[nu][ir] += cr * bmunu * umu.adj
-                ru[nu,mu][ir] += bmu.adj * u[nu][ir] * umu
-                ru[mu,nu][ir] += u[nu][ir].adj * bmunu
-            if not isLocal(ss[nu][mu],ir):
-              var bnu: type(load1(u[0][0]))
-              getSB(ss[nu][mu], ir, assign(bnu,it), stu[nu,mu][ix])
-              f[nu][ir] += cp * bnu
-              if cr!=0:
-                var unu,umu,bnumu: type(load1(u[0][0]))
-                getSB(cs[mu][nu], ir, assign(umu,it), u[mu][ix])
-                getSB(cs[nu][mu], ir, assign(unu,it), u[nu][ix])
-                bnumu := bnu * umu
-                f[mu][ir] += cr * bnumu * unu.adj
-                ru[mu,nu][ir] += bnu.adj * u[mu][ir] * unu
-                ru[nu,mu][ir] += u[mu][ir].adj * bnumu
-    if cr!=0:
-      for mu in 1..<nd:
-        for nu in 0..<mu:
-          var needBoundary = false
-          boundaryWaitSB(sf[mu][nu]): needBoundary = true
-          boundaryWaitSB(sf[nu][mu]): needBoundary = true
-          if needBoundary:
-            boundarySyncSB()
-            for ir in lo:
-              if not isLocal(sf[mu][nu],ir):
-                var smu,unu,smunu: type(load1(u[0][0]))
-                getSB(sf[mu][nu], ir, assign(smu,it), stf[mu,nu][ix])
-                getSB(cs[nu][mu], ir, assign(unu,it), u[nu][ix])
-                smunu := smu * unu.adj
-                f[mu][ir] += cr * u[nu][ir] * smunu
-                f[nu][ir] += cr * u[mu][ir] * smunu.adj
-                ru[nu,mu][ir] += u[mu][ir].adj * u[nu][ir] * smu
-              if not isLocal(sf[nu][mu],ir):
-                var snu,umu,snumu: type(load1(u[0][0]))
-                getSB(sf[nu][mu], ir, assign(snu,it), stf[nu,mu][ix])
-                getSB(cs[mu][nu], ir, assign(umu,it), u[mu][ix])
-                snumu := snu * umu.adj
-                f[nu][ir] += cr * u[mu][ir] * snumu
-                f[mu][ir] += cr * u[nu][ir] * snumu.adj
-                ru[mu,nu][ir] += u[nu][ir].adj * u[mu][ir] * snu
-          threadBarrier()
-          sb[mu][nu].startSB(ru[mu,nu][ix])
-          sb[nu][mu].startSB(ru[nu,mu][ix])
-      toc("staple boundary")
-      for ir in u[0]:
-        for mu in 1..<nd:
-          for nu in 0..<mu:
-            if isLocal(sb[mu][nu],ir):
-              var b: type(load1(u[0][0]))
-              localSB(sb[mu][nu], ir, assign(b,it), ru[mu,nu][ix])
-              f[mu][ir] += cr * b
-            if isLocal(sb[nu][mu],ir):
-              var b: type(load1(u[0][0]))
-              localSB(sb[nu][mu], ir, assign(b,it), ru[nu,mu][ix])
-              f[nu][ir] += cr * b
-      toc("back rect local")
-      for mu in 1..<nd:
-        for nu in 0..<mu:
-          var needBoundary = false
-          boundaryWaitSB(sb[mu][nu]): needBoundary = true
-          boundaryWaitSB(sb[nu][mu]): needBoundary = true
-          if needBoundary:
-            boundarySyncSB()
-            for ir in lo:
-              if not isLocal(sb[mu][nu],ir):
-                var b: type(load1(u[0][0]))
-                getSB(sb[mu][nu], ir, assign(b,it), ru[mu,nu][ix])
-                f[mu][ir] += cr * b
-              if not isLocal(sb[nu][mu],ir):
-                var b: type(load1(u[0][0]))
-                getSB(sb[nu][mu], ir, assign(b,it), ru[nu,mu][ix])
-                f[nu][ir] += cr * b
+          ss[mu][nu].startSB(stu[mu,nu][ix])
+          ss[nu][mu].startSB(stu[nu,mu][ix])
+          boundaryWaitSB(cs[mu][nu]): discard
+          boundaryWaitSB(cs[nu][mu]): discard
+      boundarySyncSB()
+    if not accumulate:
+      for mu in 0..<nd: f[mu] := 0
+  addStaplePlanes(uu, f, cp, cr, stf, stu, ru, cs, ss, sf, sb, staplePlanes(nd))
   if c.pgm != 0:
     gaugeLoopDeriv(GaugeActionCoeffs(pgm: c.pgm), uu, uu, f, false, work)
   toc("end")
 
-proc gaugeForce*[V:static[int],T](c: GaugeActionCoeffs, uu: openArray[Field[V,T]], f: array|seq; work: LoopWork[V,T] = nil) =
+proc gaugeForce*[V:static[int],T](c: GaugeActionCoeffs, uu: openArray[Field[V,T]], f: array|seq; work: LoopWork[V,T] = nil, tag = default(LoopTag)) =
   tic("gaugeForce")
-  gaugeActionDeriv(c, uu, f, work=work)
+  gaugeActionDeriv(c, uu, f, work=work, tag=tag)
   toc("gaugeActionDeriv")
   contractProjectTAH(uu, f)
   toc("gaugeForce end")
@@ -1411,15 +1320,15 @@ proc forceA*(c: GaugeActionCoeffs, g,f: auto) =
   #contractProjectTAH(f, g)
   toc("forceA end")
 
-proc action*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]]; work: LoopWork[V,T] = nil): float =
+proc action*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]]; work: LoopWork[V,T] = nil, tag = default(LoopTag)): float =
   ## Dispatch by coefficient family; mixed adjoint/improved terms are rejected.
   if c.adjplaq != 0: c.actionA(@g)  # actionA captures its links in threads
-  else: c.gaugeAction1(g, work=work)
+  else: c.gaugeAction1(g, work=work, tag=tag)
 
-proc force*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: auto; work: LoopWork[V,T] = nil) =
+proc force*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: auto; work: LoopWork[V,T] = nil, tag = default(LoopTag)) =
   ## Projected force for action(c,g). Keep f disjoint from g.
   if c.adjplaq != 0: c.forceA(@g, f)  # forceA captures its links in threads
-  else: c.gaugeForce(g, f, work=work)
+  else: c.gaugeForce(g, f, work=work, tag=tag)
 
 when isMainModule:
   import qex

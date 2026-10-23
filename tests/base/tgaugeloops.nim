@@ -1,6 +1,7 @@
 import qex
 import base/alignedMem
 import gauge/symanzik1loopAction
+import gauge/staples
 import testutils
 
 proc pair(a, b: auto): float =
@@ -43,9 +44,10 @@ proc fresh(c: GaugeActionCoeffs, g, h, f, work: auto) {.noinline.} =
     b[mu] = nil
 
 proc transient(c: GaugeActionCoeffs, g, h, f: auto) {.noinline.} =
-  var work = newLoopWork(g[0])
-  fresh(c, g, h, f, work)
-  work = nil
+  # Clear the owning heap slot even if refc sees a dead stack temporary.
+  var work = @[newLoopWork(g[0])]
+  fresh(c, g, h, f, work[0])
+  work[0] = nil
 
 const coeffs = [GaugeActionCoeffs(rect: 0.31),
                 GaugeActionCoeffs(pgm: -0.23),
@@ -246,7 +248,8 @@ proc runLoops(lo: auto, nc: static int) =
       for c in [GaugeActionCoeffs(plaq: 0.8), coeffs[0], coeffs[1], coeffs[2],
                 GaugeActionCoeffs(plaq: 0.8, adjplaq: 0.13)]:
         let a = c.action(g, work=work)
-        check c.action(g, work=nil) == a
+        # Both calls add the same rank partials; the MPI sum may associate differently.
+        check c.action(g, work=nil) ~ a
         if c.adjplaq != 0:
           check abs(a-c.actionA(g)) < 1.0e-12*(1.0+abs(a))
           c.forceA(g, d)
@@ -312,6 +315,180 @@ proc runLoops(lo: auto, nc: static int) =
         c.gaugeDeriv2Subset(g, hp, 1, 1, work=work)
         check getRawMemAllocated()-after == full
 
+    test "kept staples follow coefficient changes at the same tag":
+      let plaq = GaugeActionCoeffs(plaq: 0.8)
+      let rect = GaugeActionCoeffs(plaq: 0.8, rect: -0.3)
+      let cache = newLoopWork(g[0], keep=keepStaples)
+      let tag: LoopTag = (17, 0)
+      # A plaquette action has not built the backward staples rectangles need.
+      discard plaq.gaugeAction1(g, work=cache, tag=tag)
+      var builds = cache.builds
+      let want = rect.gaugeAction1(g)
+      check abs(rect.gaugeAction1(g, work=cache, tag=tag)-want) < 1e-12*(1+abs(want))
+      check cache.builds == builds+1
+      builds = cache.builds
+      discard plaq.gaugeAction1(g, work=cache, tag=tag)
+      rect.gaugeActionDeriv(g, d, work=cache, tag=tag)
+      rect.gaugeActionDeriv(g, e)
+      check cache.builds == builds
+      check relativeDiff(d, e) < 2e-14
+      # An untagged plaquette action refreshes only the forward staples.
+      discard plaq.gaugeAction1(g, work=cache)
+      builds = cache.builds
+      check abs(rect.gaugeAction1(g, work=cache, tag=tag)-want) < 1e-12*(1+abs(want))
+      check cache.builds == builds+1
+
+    test "tagged calls reuse kept staples at unchanged links":
+      let c = GaugeActionCoeffs(plaq: 0.8, rect: -0.3)
+      let cache = newLoopWork(g[0], keep=keepStaples)
+      let plain = newLoopWork(g[0])
+      var tag: LoopTag = (7, 1)
+      for changed in [g, gp, gm, g]:
+        inc tag.ver
+        let native = c.gaugeAction1(changed)
+        c.gaugeActionDeriv(changed, e)
+        let a = c.gaugeAction1(changed, work=cache, tag=tag)
+        # Streaming changes the order of direction-pair sums. Cache reuse
+        # must still reproduce the cached value exactly.
+        check abs(a-native) < 1e-12*(1+abs(native))
+        let builds = cache.builds
+        c.gaugeActionDeriv(changed, d, work=cache, tag=tag)  # reuses the action's build
+        check cache.builds == builds
+        check relativeDiff(d, e) < 2e-14
+        check c.gaugeAction1(changed, work=cache, tag=tag) == a
+        check cache.builds == builds
+        threads:
+          for mu in 0..<nd: tmp[mu] := 2.0*d[mu]
+        c.gaugeActionDeriv(changed, d, accumulate=true, work=cache, tag=tag)
+        check relativeDiff(d, tmp) < 2e-15
+        # A tag of other links builds; an untagged call builds and clears the tag.
+        check cache.reuses == 3
+        cache.reuses = 0
+      c.gaugeActionDeriv(g, d, work=cache)
+      check cache.reuses == 0
+      c.gaugeActionDeriv(g, e, work=cache, tag=tag)
+      check cache.reuses == 0
+      # Workspaces that keep no staples never reuse.
+      discard c.gaugeAction1(g, work=plain, tag=tag)
+      c.gaugeActionDeriv(g, d, work=plain, tag=tag)
+      check plain.reuses == 0
+      check relativeDiff(d, e) < 2e-14
+      # A plaquette action keeps stf only until a force follows it at the same
+      # tag; from then on tagged actions build both sets and such forces reuse.
+      let w = GaugeActionCoeffs(plaq: 0.8)
+      let a = w.gaugeAction1(g)
+      let fresh = newLoopWork(g[0], keep=keepStaples)
+      # Builds of both sets and unretained derivatives, which sum the boundary
+      # terms per batch, agree with the other paths within rounding.
+      inc tag.ver
+      check w.gaugeAction1(g, work=fresh, tag=tag) == a
+      var builds = fresh.builds
+      w.gaugeActionDeriv(g, d, work=fresh, tag=tag)
+      check fresh.builds == builds+1
+      w.gaugeActionDeriv(g, e)
+      check relativeDiff(d, e) < 2e-15
+      inc tag.ver
+      check abs(w.gaugeAction1(g, work=fresh, tag=tag)-a) < 1e-14*(1+abs(a))
+      builds = fresh.builds
+      w.gaugeActionDeriv(g, d, work=fresh, tag=tag)
+      check fresh.builds == builds
+      check relativeDiff(d, e) < 2e-15
+      check w.gaugeAction1(g, work=fresh) == a  # untagged: stf only, no reuse
+      builds = fresh.builds
+      w.gaugeActionDeriv(g, d, work=fresh, tag=tag)
+      check fresh.builds == builds+1
+      check relativeDiff(d, e) < 2e-15
+
+    test "Wilson calls share staple storage and match native results":
+      let c = GaugeActionCoeffs(plaq: 0.8)
+      let cache = newLoopWork(g[0], keep=keepStaples)
+      let saved = g.newOneOf
+      let seed = h.newOneOf
+      let blockBytes = nd*(nd-1)*lo.nSitesOuter*sizeof(typeof(g[0][0]))+g[0].s.align
+      threads:
+        for mu in 0..<nd:
+          saved[mu] := g[mu]
+          seed[mu] := h[mu]
+      check cache.bytes == 0
+      check c.gaugeAction1(g, work=cache) ~ c.gaugeAction1(g)
+      check cache.bytes == blockBytes
+      let before = getRawMemAllocated()
+      c.gaugeActionDeriv(g, d, work=cache)
+      check getRawMemAllocated()-before == blockBytes
+      check cache.bytes == 2*blockBytes
+      c.gaugeActionDeriv(g, e)
+      check relativeDiff(d, e) < 2e-15
+      threads:
+        for mu in 0..<nd:
+          hp[mu] := k[mu]
+          hm[mu] := k[mu]
+      c.gaugeDerivDeriv2(g, h, hp, work=cache)
+      c.gaugeDerivDeriv2(g, h, hm)
+      check relativeDiff(hp, hm) == 0
+      let owned = 2*blockBytes+4*nd*g[0].s.mem.size
+      check cache.bytes == owned
+      for changed in [g, gp, gm]:
+        let a = c.gaugeAction1(changed)
+        c.gaugeActionDeriv(changed, e)
+        threads:
+          for mu in 0..<nd:
+            hp[mu] := k[mu]
+            hm[mu] := k[mu]
+        c.gaugeDerivDeriv2(changed, k, hm)
+        let raw = getRawMemAllocated()
+        check c.gaugeAction1(changed, work=cache) ~ a
+        c.gaugeActionDeriv(changed, d, work=cache)
+        c.gaugeDerivDeriv2(changed, k, hp, work=cache)
+        check c.gaugeAction1(changed, work=cache) ~ a
+        check getRawMemAllocated() == raw
+        check cache.bytes == owned
+        check relativeDiff(d, e) < 2e-15
+        check relativeDiff(hp, hm) == 0
+        threads:
+          for mu in 0..<nd:
+            d[mu] := k[mu]
+            tmp[mu] := k[mu]+e[mu]
+        c.gaugeActionDeriv(changed, d, accumulate=true, work=cache)
+        check relativeDiff(d, tmp) < 2e-15
+      check relativeDiff(g, saved) == 0
+      check relativeDiff(h, seed) == 0
+      expect(ValueError):
+        discard GaugeActionCoeffs(adjplaq: 1.0).gaugeAction1(g, work=cache)
+      check c.gaugeAction1(g, work=cache) ~ c.gaugeAction1(g)
+      let wrong = newLoopWork(newLayout(lo.physGeom).newGauge(nc)[0])
+      expect(ValueError): discard c.gaugeAction1(g, work=wrong)
+      expect(ValueError): c.gaugeActionDeriv(g, d, work=wrong)
+      check wrong.bytes == 0
+
+    test "rectangle forces reuse the rect staple block":
+      let c = GaugeActionCoeffs(plaq: 0.8, rect: -0.3)
+      let cache = newLoopWork(g[0], keep=keepStaples)
+      let blockBytes = nd*(nd-1)*lo.nSitesOuter*sizeof(typeof(g[0][0]))+g[0].s.align
+      c.gaugeActionDeriv(g, d, work=cache)
+      check cache.bytes == 3*blockBytes
+      c.gaugeActionDeriv(g, e)
+      check relativeDiff(d, e) < 2e-14
+      for changed in [gp, gm, g]:
+        c.gaugeActionDeriv(changed, e)
+        let raw = getRawMemAllocated()
+        c.gaugeActionDeriv(changed, d, work=cache)
+        check getRawMemAllocated() == raw
+        check cache.bytes == 3*blockBytes
+        check relativeDiff(d, e) < 2e-14
+
+    test "public staple reuse rejects overlapping or mismatched storage":
+      let cs = startCornerShifts(g)
+      let st = makeFwdStaples(g, cs)
+      expect(ValueError): discard makeStaples(g, cs, st, st)
+      var links = newSeq[typeof(g[0])](nd)
+      for mu in 0..<nd: links[mu] = st[0,1]
+      expect(ValueError): discard makeFwdStaples(links, cs, st)
+      let other = newLayout(lo.physGeom).newGauge(nc)
+      expect(ValueError): discard makeFwdStaples(other, cs, st)
+      let wrong = newFieldArray(lo, typeof(g[0]), nd*(nd-1))
+      expect(ValueError): discard makeFwdStaples(g, cs, wrong)
+
+
 proc releaseLoops(lo: auto, nc: static int) =
   # refc scans live frames conservatively.  In runLoops, a stale word left by
   # earlier tests pointed into a freed cell that `transient` reused for a
@@ -327,6 +504,7 @@ proc releaseLoops(lo: auto, nc: static int) =
     h.gaussian r
   suite "Loop workspace release Nc=" & $nc & " lattice=" & $lo.physGeom:
     test "loop workspaces release temporary input fields":
+      # A collection inside a call may also free unrelated garbage.
       for c in coeffs:
         discard c.gaugeAction1(g, work=work)
         c.gaugeActionDeriv(g, e, work=work)
@@ -339,11 +517,11 @@ proc releaseLoops(lo: auto, nc: static int) =
         fresh(c, g, h, e, work)
         GC_fullCollect()
         GC_fullCollect()
-        check getRawMemUsed() == before
+        check getRawMemUsed() <= before
         transient(c, g, h, e)
         GC_fullCollect()
         GC_fullCollect()
-        check getRawMemUsed() == before
+        check getRawMemUsed() <= before
 
 qexInit()
 letParam:

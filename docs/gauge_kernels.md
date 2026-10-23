@@ -112,6 +112,11 @@ poisoned padding.
 
 ### Gauge actions and workspaces
 
+`newLoopWork(f, keep=keepStaples)` opts into tagged staple reuse. The default
+frees temporary staple storage before returning; derivatives and rectangle
+actions reuse a bounded batch of 12 fields, or 18 for a derivative with a
+rectangle term, in four dimensions.
+
 | Family | Coefficients | Numerical entry points |
 | --- | --- | --- |
 | Fundamental | `plaq`, `rect`, `pgm` | `gaugeAction1/2/3`, `gaugeActionDeriv`, `gaugeDeriv2`, `gaugeForce*`, Hessians |
