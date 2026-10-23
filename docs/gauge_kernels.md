@@ -215,28 +215,40 @@ $\langle A,B\rangle=\sum\Re\operatorname{tr}(A^\dagger B)$:
 | `gaugeForce(c,g,f)`, `force` | $f_\mu=\operatorname{projectTAH}\big(U_\mu(-\nabla S)_\mu^\dagger\big)$: `contractProjectTAH` after `gaugeActionDeriv`, or after `loopDeriv` with $-c$ |
 | `forceKick(c,g,p,q,a)` | $q=af+p$ with $f$ the `force`, in `loopDeriv`'s site pass without storing $f$; returns sum, minimum and maximum of $\lvert f\rvert^2$ |
 
-Call complete gauge operations outside `threads`. `newLoopWork(g[0])` owns work
-for one layout/type: halos, improved-subset temporary gauge and full-Hessian
-transporters. `newLoopWork(g[0], keep)` selects what `gaugeAction1` and
-`gaugeActionDeriv` leave behind between calls (`LoopKeep`): `keepNone`
-reuses one temporary block across direction pairs for every derivative and for
-rectangle actions (12 fields, or 18 for a derivative with a rectangle term, in
-four dimensions) and frees it before returning;
-`keepStaples` keeps the staple blocks and the rect scratch of
-`gaugeActionDeriv`: 2 or 3 arrays of `nd*(nd-1)` fields, 24 or 36 fields for
-`nd = 4`. Shift buffers are built per call in both modes. Both modes recompute
-the staples and exchange the boundaries on every call, except a tagged repeat:
-`gaugeAction1`,
-`gaugeActionDeriv`, `action` and `force` take `tag: LoopTag`, the identity and
-version of the links as the caller knows them (a graph node id and epoch, a
-driver's configuration counter). With `keepStaples`, a call whose tag equals
-the tag of the kept staples skips the link exchange and the staple build. A
-tagged action builds both staple sets, including for plaquettes, so a force
-at that tag can reuse the first build; without a rect term the action does not
-exchange the backward set, which the force exchanges itself. Untagged plaquette
-actions build only the forward set. A reused rect action still exchanges `stu`;
-a reused force exchanges `stu`, and for a rect term the links, `stf` and the
-rect scratch. An untagged call builds and clears the tag.
+Call complete gauge operations outside `threads`. `newLoopWork(g[0])` owns
+halos, loop products, improved-subset scratch and full-Hessian transporters for
+one layout/type. `newStapleWork(g[0])` independently owns the staple blocks and
+rectangle scratch used by `gaugeAction1`, `gaugeActionDeriv` and `gaugeForce`:
+up to three arrays of `nd*(nd-1)` fields, or 36 fields for `nd = 4`. Each owner
+allocates only the buffers needed by the requested coefficients.
+
+Omitting staple work reuses one temporary block across direction pairs for
+every derivative and for rectangle actions (12 fields, or 18 for a derivative
+with a rectangle term, in four dimensions) and frees it before returning;
+plaquette actions build the 12 forward staples. Passing staple work keeps the
+staple arrays between calls. Shift buffers
+are built per call. The optional `loop` argument to the staple APIs retains
+parallelogram halos in a separate loop owner; omitting it uses temporary loop
+work. For a mixed action:
+
+```nim
+let sw = newStapleWork(g[0])
+let lw = newLoopWork(g[0])
+let tag: LoopTag = (1, version)
+let value = c.gaugeAction1(g, work=sw, loop=lw, tag=tag)
+c.gaugeForce(g, f, work=sw, loop=lw, tag=tag)
+```
+
+`gaugeAction1`, `gaugeActionDeriv`, `action` and `force` take `tag: LoopTag`,
+the identity and version of the links as the caller knows them (a graph node id
+and epoch, a driver's configuration counter). With staple work, a matching tag
+skips the staple build. A tagged action builds both staple sets, including for
+plaquettes, so a force at that tag can reuse the first build; without a
+rectangle term the action does not exchange the backward set, which the force
+exchanges itself. Untagged plaquette actions build only the forward set. A
+reused rectangle action still exchanges `stu`; a reused force exchanges `stu`,
+and for a rectangle term the links, `stf` and the rectangle scratch. An untagged
+call builds and clears the tag.
 `loopAction` and
 `loopDeriv` take the
 same tag: a halo row and slot remember the tag and the loop plan of their last
@@ -244,13 +256,14 @@ update and a tagged call with both equal exchanges nothing; each link direction
 exchanges only the halo sites its own links reach (for the Wilson force 7 of 8
 faces and 3 of 12 edge families); tagged actions always fill the derivative's wider halo, so the derivative
 at those links exchanges nothing, including the first pair through a workspace.
-The counters `builds`,
-`reuses` and `updates` (halo field updates) record what a workspace did. Calls
-refresh/release input references; a workspace serves one evaluation at a time.
-Staples have their own optional owner inside the workspace. Each halo slot
-keeps its fields, maps, plan and tag together; each thread owns one record of
-tile scratch. Distinct workspaces own distinct storage. Communicator sequencing and geometry
-initialization requirements still apply.
+`StapleWork` records `builds` and `reuses`; `LoopWork` records halo `updates`
+and `reuses`. `bytes` reports the raw allocations owned by its argument;
+add both owners' counts when reporting a mixed operation. Each owner serves one
+evaluation at a time and requires its original layout. Loop kernels release
+borrowed input references after use. Each halo slot keeps its fields, maps, plan
+and tag together; each thread owns one record of tile scratch. The owners can
+be released independently. Communicator sequencing and geometry initialization
+requirements still apply.
 
 For a parity/direction mask $M_S$,
 
@@ -293,10 +306,9 @@ work and tag reads the kept boundaries and exchanges only its seed and products.
 Rectangle/parallelogram subsets take the full-derivative route through the
 workspace temporary gauge, ignore those buffers and leave the work untagged.
 
-Warm Hessians reuse QEX raw buffers. With `keepStaples`, `gaugeAction1` and
-`gaugeActionDeriv` keep their staple arrays in the workspace and pass them back
-to `makeFwdStaples` and `makeStaples`; the benches opt in, and a default
-workspace allocates the staples per call as a nil workspace does. The HMC gauge
+Warm Hessians reuse QEX raw buffers. With `StapleWork`, `gaugeAction1` and
+`gaugeActionDeriv` keep their staple arrays and pass them back to `makeFwdStaples`
+and `makeStaples`; the benches opt in by constructing this owner. The HMC gauge
 action uses the loop kernels, whose workspace keeps halos and product banks.
 The experimental graph action wrappers currently call the staple kernels. A
 `FieldArray.mem` owns the aligned allocation shared by its fields, and
@@ -305,7 +317,7 @@ procs accept an array they returned for the same layout: shape `[nd,nd]`, every
 `mu != nu` entry allocated, storage disjoint from the gauge and from each other.
 Shape, layout and aliasing mismatches raise `ValueError`; a missing entry is a
 user error that crashes in the kernel. The rect scratch is retained and zeroed
-on every use. `newLinkShifts(lo, T, len)` builds one row of staple-path shifts
+on every use. `newLinkShifts(lo, T, len)` builds buffers for each pair of directions
 for `startCornerShifts`, `makeStaples` and the rect scratch exchanges. Generic
 forward halo messages retain their buffers in the communicator; generic gathers
 and reverse halo exchanges free their temporary message buffers on return.
@@ -500,7 +512,14 @@ Test generation and the MPI launchers are described in the
 benchmarks, operation/scale/precision/norm. `benchPlaq` compares production/fused
 actions, forces and Hessians for Wilson and for Symanzik coefficients with `pgm=0` or
 `0.07`.
-Warm workspaces first; validate results outside timing.
+Warm workspaces first; validate results outside timing. `benchGaugeActions`
+checks action and force results before measuring each selected path. Its `pair`
+rows include both calls. It reports workspace storage separately from the
+communicator's retained gather capacity and process peak RSS.
+
+`-d:memTrace` reports aggregate raw storage and Nim heap usage around collection
+and process peak RSS at shutdown. `-d:commStats` reports communication totals at
+`qexFinalize`: shifts, gathers, bytes sent, reductions and time waiting.
 
 ## Future work
 
