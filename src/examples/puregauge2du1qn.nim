@@ -841,7 +841,7 @@ when CHECKHESSIAN:
     #     -nstream:400 -qnbegin:8 -trajs:9 -randomInit:0 -lambda:0
     # Should see ratios of errors with and without the 2nd order term about -0.0204(8)
     let dev = 0.01
-    let s0 = gs[nsnow].gaugeAction2 gc
+    let s0 = gc.gaugeAction2(gs[nsnow])
     f.getforce gs[nsnow]
     for i in 0..<g0.len:
       for j in g0[i]:
@@ -857,7 +857,7 @@ when CHECKHESSIAN:
         let t = gs[nsnow][i][j] * exp(dev * ln gs[nsnow][i][j])
         g0[i][j] := t
     if gfix: g0.maxTreeFix(1.0, gfixextra)
-    let s1 = g0.gaugeAction2 gc
+    let s1 = gc.gaugeAction2(g0)
     echo "s0: ",s0," s01: ",s01," s02: ",s02
     echo "s1a: ",s1a
     echo "s1: ",s1
@@ -935,7 +935,7 @@ when CHECKREVERSIBLE:
     md.finish
     p2 = getp2()
     let
-      ga1 = gs[nsnow].gaugeAction2 gc
+      ga1 = gc.gaugeAction2(gs[nsnow])
       t1 = 0.5*p2
       h1 = ga1 + t1
     echo "Reversed H: ",h1,"  Sg: ",ga1,"  T: ",t1
@@ -997,7 +997,7 @@ for n in 1..trajs:
         g0[i] := gs[nsnow][i]
 
     let
-      ga0 = g0.gaugeAction2 gc
+      ga0 = gc.gaugeAction2(g0)
       t0 = 0.5*p2
       h0 = ga0 + t0
     echo "Begin H ",nsnow," : ",h0,"  Sg: ",ga0,"  T: ",t0," g.norm2: ",gs[nsnow].norm2
@@ -1013,7 +1013,7 @@ for n in 1..trajs:
       p2 = getp2()
 
     let
-      ga1 = gs[nsnow].gaugeAction2 gc
+      ga1 = gc.gaugeAction2(gs[nsnow])
       t1 = 0.5*p2
       h1 = ga1 + t1
     echo "End H ",nsnow," : ",h1,"  Sg: ",ga1,"  T: ",t1," g.norm2: ",gs[nsnow].norm2

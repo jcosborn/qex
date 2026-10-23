@@ -52,7 +52,7 @@ var g = lo.newgauge
 g.unit
 
 echo 6.0*g.plaq
-echo g.gaugeAction2 gc
+echo gc.gaugeAction2(g)
 echo gc.actionA g
 
 var

@@ -148,7 +148,7 @@ suite "Gauge action subset kernels":
         for mu in 0..<g.len:
           got[mu] := base[mu]
           expected[mu] := base[mu] + delta[mu]
-      c.gaugeDerivDeriv2SubsetAdd(g, h[d], got, newSubsetWork(g[0], p, d))
+      c.gaugeDerivDeriv2Subset(g, h[d], got, newSubsetWork(g[0], p, d), accumulate=true)
       check(got ~ expected)
 
     block:
@@ -285,7 +285,7 @@ suite "Gauge action subset kernels":
     expect(ValueError):
       c.gaugeDerivDeriv2Subset(g, h[0], outg, newSubsetWork(g[0], 0, 0))
     expect(ValueError):
-      c.gaugeDerivDeriv2SubsetAdd(g, h[0], outg, newSubsetWork(g[0], 0, 0))
+      c.gaugeDerivDeriv2Subset(g, h[0], outg, newSubsetWork(g[0], 0, 0), accumulate=true)
     expect(ValueError):
       c.gaugeDerivDeriv2SubsetAddBase(g, h[0], base, outg, newSubsetWork(g[0], 0, 0))
     expect(ValueError):

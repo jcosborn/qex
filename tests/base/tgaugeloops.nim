@@ -224,8 +224,8 @@ proc runLoops(lo: auto, nc: static int) =
                 for mu in 0..<nd:
                   hp[mu] := k[mu]
                   hm[mu] := k[mu]
-              c.gaugeDerivDeriv2SubsetAdd(g, h[dir], hp, sw, t, work=work)
-              c.gaugeDerivDeriv2SubsetAdd(g, h[dir], hm, newSubsetWork(g[0], parity, dir), work=work)
+              c.gaugeDerivDeriv2Subset(g, h[dir], hp, sw, t, work=work, accumulate=true)
+              c.gaugeDerivDeriv2Subset(g, h[dir], hm, newSubsetWork(g[0], parity, dir), work=work, accumulate=true)
               check relativeDiff(hp, hm) == 0.0
               check sw.tag == (if shifted: t else: default(LoopTag))
             c.gaugeDerivDeriv2(g, tmp, hv, work=work)
@@ -235,7 +235,7 @@ proc runLoops(lo: auto, nc: static int) =
               for mu in 0..<nd:
                 hp[mu] := k[mu]
                 hm[mu] := k[mu]+hv[mu]
-            c.gaugeDerivDeriv2SubsetAdd(g, h[dir], hp, newSubsetWork(g[0], parity, dir), work=work)
+            c.gaugeDerivDeriv2Subset(g, h[dir], hp, newSubsetWork(g[0], parity, dir), work=work, accumulate=true)
             check relativeDiff(hp, hm) < 2.0e-12
             threads:
               for mu in 0..<nd:

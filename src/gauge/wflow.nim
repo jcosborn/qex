@@ -32,7 +32,7 @@ template gaugeFlow*(g: array|seq, steps: int, eps: float, measure: untyped) =
     while true:
       let t = n * eps
       let epsnc = eps * nc  # compensate force normalization
-      f.gaugeForce g
+      GaugeActionCoeffs(plaq: 1.0).gaugeForce(g, f)
       threads:
         for mu in 0..<f.len:
           for e in g[mu]:
@@ -41,7 +41,7 @@ template gaugeFlow*(g: array|seq, steps: int, eps: float, measure: untyped) =
             let t = expAH(v)*g[mu][e]
             p[mu][e] := v
             g[mu][e] := t
-      f.gaugeForce g
+      GaugeActionCoeffs(plaq: 1.0).gaugeForce(g, f)
       threads:
         for mu in 0..<f.len:
           for e in g[mu]:
@@ -50,7 +50,7 @@ template gaugeFlow*(g: array|seq, steps: int, eps: float, measure: untyped) =
             let t = expAH(v)*g[mu][e]
             p[mu][e] := v
             g[mu][e] := t
-      f.gaugeForce g
+      GaugeActionCoeffs(plaq: 1.0).gaugeForce(g, f)
       threads:
         for mu in 0..<f.len:
           for e in g[mu]:
@@ -85,7 +85,7 @@ proc mkGaugeFlowRKOp*[G](g: G): GaugeFlowRKOp[G] =
     f: g[0].l.newGauge)
   proc adv(base: var type(g), d: var type(g), a: float, b: float) =
     const nc = op.y[0][0].nrows.float
-    op.f.gaugeForce(base)
+    GaugeActionCoeffs(plaq: 1.0).gaugeForce(base, op.f)
     let u = cast[ptr cArray[type(base[0])]](unsafeAddr(base[0]))
     let f = cast[ptr cArray[type(d[0])]](unsafeAddr(d[0]))
     let ff = cast[ptr cArray[type(d[0])]](unsafeAddr(op.f[0]))

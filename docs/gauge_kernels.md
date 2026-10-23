@@ -176,6 +176,9 @@ poisoned padding.
 | Fundamental | `plaq`, `rect`, `pgm` | `gaugeAction1/2/3`, `gaugeActionDeriv`, `gaugeDeriv2`, `gaugeForce*`, Hessians |
 | Plaquette + adjoint | `plaq`, `adjplaq` | `actionA`, `gaugeADeriv`, `forceA` |
 
+Action and force calls take `GaugeActionCoeffs` first, then the links and any
+output fields. Use `GaugeActionCoeffs(plaq: 1.0)` for unit-weight Wilson calls.
+
 `action`/`force` dispatch on `adjplaq`: zero selects the fundamental family,
 nonzero the adjoint family. The fundamental `action` and `force` run the loop
 kernels `loopAction` and `loopDeriv` (one link exchange per call, every loop
@@ -271,15 +274,23 @@ $$
 g_S=M_S\nabla S,\qquad (Dg_S)^*b=\nabla^2S(M_Sb).
 $$
 
-The Hessian reaches every affected link. `gaugeDerivDeriv2Subset` overwrites;
-`gaugeDerivDeriv2SubsetAdd` accumulates; `gaugeDerivDeriv2SubsetAddBase` adds on
+Subset kernels take a `SubsetWork` that fixes the layout, parity and direction.
+The Hessian reaches every affected link. `gaugeDerivDeriv2Subset` overwrites,
+or accumulates with `accumulate=true`; `gaugeDerivDeriv2SubsetAddBase` adds on
 selected links and sets base plus Hessian elsewhere; `gaugeDerivDeriv2SubsetSum`
-combines selected-parity seeds; a seed may be the direction field alone. The
-first derivative `gaugeDeriv2SubsetWork` writes the direction field `fd` and
-shifts through a caller-built `SubsetWork` (`newSubsetWork(f, parity, dir,
-sh)`: fixed layout/parity/direction, with shift buffers made on first use); it preserves the
-other parity of `fd` for `clear=false` and zeros it for `clear=true`. The
-buffers that a call completes come from `sh` (`newSubsetShifts(f)`, new by
+combines selected-parity direction fields. Each other Hessian takes one direction
+field as its seed. The first derivative `gaugeDeriv2Subset` writes the direction
+field `fd`; it preserves the other parity for `clear=false` and zeros it by
+default. Construct the workspace once with `newSubsetWork(f, parity, dir, sh)`;
+its shift buffers are made on first use. For example:
+
+```nim
+let sw = newSubsetWork(g[0], parity, dir)
+c.gaugeDeriv2Subset(g, df[dir], sw)
+c.gaugeDerivDeriv2Subset(g, h[dir], hf, sw)
+```
+
+The buffers that a call completes come from `sh` (`newSubsetShifts(f)`, new by
 default), which the works of all $(P,\mu)$ may share; only the link shifts keep
 data between calls.
 

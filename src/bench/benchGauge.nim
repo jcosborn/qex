@@ -1,9 +1,7 @@
 import qex
 import physics/qcdTypes
 import gauge
-import parseUtils
 #import times
-import macros
 import gauge/hypsmear
 import commonBench
 import base/flopcount
@@ -16,10 +14,6 @@ proc checkMem =
   #echo("mem: (used+free)/total: (", getOccupiedMem(), "+", getFreeMem(), ")/",
   #     getTotalMem())
   #echo GC_getStatistics()
-macro exp2string(x:untyped):auto =
-  var s = repr symToIdent x
-  let n = skipWhitespace(s)
-  newlit s[n..^1]
 template bench(fps,bps:SomeNumber; eqn:untyped) =
   let vol = lo.nSites.float
   let flops = vol * fps.float
@@ -34,7 +28,7 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
     for rep in 1..nrep:
       #echo rep
       eqn
-    toc(exp2string(eqn))
+    toc(astToStr(eqn))
   var t1 = epochTime()
   let dt = t1 - t0
 ]#
@@ -49,7 +43,7 @@ template bench(fps,bps:SomeNumber; eqn:untyped) =
   let dtn = dt / nrep.float
   let mf = (nrep.float*flops)/(1e6*dt)
   let mb = (nrep.float*bytes)/(1e6*dt)
-  echo "(", exp2string(eqn), ") secs: ", dt|(5,3), "  sec/n: ", dtn|(5,3),
+  echo "(", astToStr(eqn), ") secs: ", dt|(5,3), "  sec/n: ", dtn|(5,3),
       "  mf: ", mf.int, "  mb: ", mb.int
   echoProf()
 
@@ -61,6 +55,7 @@ proc test(lat: auto) =
   let nd = lo.nDim
   let np = (nd*(nd-1)) div 2
   let dbw2 = DBW2 0.7796
+  let wc = GaugeActionCoeffs(plaq: 1.0)
   var g = newSeq[type(lo.ColorMatrix())](nd)
   var f = newSeq[type(lo.ColorMatrix())](nd)
   let nc = g[0][0].ncols
@@ -76,7 +71,7 @@ proc test(lat: auto) =
   echo pl
   echo "plaq: ", pl.sum
 
-  var ga = gaugeAction1(g)
+  var ga = gaugeAction1(wc, g)
   echo ga
   var
     ga1 = dbw2.gaugeAction1 g
@@ -106,11 +101,11 @@ proc test(lat: auto) =
       var pl3 = plaq3(g)
 
   bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
-    var ga = gaugeAction1(g)
+    var ga = gaugeAction1(wc, g)
   bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
-    var ga = gaugeAction2(g)
+    var ga = gaugeAction2(wc, g)
   bench(np*(2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
-    var ga = gaugeAction3(g)
+    var ga = gaugeAction3(wc, g)
 
   bench(np*(3*2*8*nc*nc*nc-1), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
     var ga = dbw2.gaugeAction1(g)
@@ -122,11 +117,11 @@ proc test(lat: auto) =
   let eqmtm = nc*nc*(8*nc-2)
   let s2fb = 6*eqmtm
   bench(np*(s2fb+16*nc), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
-    gaugeForce(f, g)
+    gaugeForce(wc, g, f)
   bench(np*(s2fb+16*nc), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
-    gaugeForce2(f, g)
+    gaugeForce2(wc, g, f)
   bench(np*(s2fb+16*nc), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
-    gaugeForce3(f, g)
+    gaugeForce3(wc, g, f)
 
   bench(np*(26*eqmtm+16*nc), nd*2*nc*nc*sizeof(numberType(g[0][0]))):
     dbw2.gaugeForce(g,f)

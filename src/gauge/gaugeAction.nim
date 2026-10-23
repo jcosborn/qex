@@ -552,10 +552,6 @@ proc gaugeAction1*[V:static[int],T](c: GaugeActionCoeffs, uu: openArray[Field[V,
     result += pgmAction(c, uu, loop)
   toc("gaugeAction end")
 
-proc gaugeAction1*[T](uu: openarray[T]): auto =
-  let gc = GaugeActionCoeffs(plaq:1.0)
-  return gc.gaugeAction1(uu)
-
 proc gaugeActionDeriv*[V:static[int],T](c: GaugeActionCoeffs, uu: openArray[Field[V,T]], f: array|seq, accumulate=false; work: StapleWork[V,T] = nil, tag = default(LoopTag); loop: LoopWork[V,T] = nil) =
   ## if accumulate, the derivatives will add to f.
   ## Otherwise the derivative overwrites f.
@@ -603,17 +599,6 @@ proc gaugeForce*[V:static[int],T](c: GaugeActionCoeffs, uu: openArray[Field[V,T]
   toc("gaugeActionDeriv")
   contractProjectTAH(uu, f)
   toc("gaugeForce end")
-
-proc gaugeForce*[T](uu: openArray[T]): auto =
-  let lo = uu[0].l
-  var f = newOneOf @uu
-  let gc = GaugeActionCoeffs(plaq:1.0)
-  gc.gaugeForce(uu,f)
-  return f
-
-proc gaugeForce*(f,g: array|seq) =
-  var c = GaugeActionCoeffs(plaq:1.0)
-  gaugeForce(c,g,f)
 
 proc gaugeAction2*(c: GaugeActionCoeffs, g: array|seq): auto =
   requireFundamental(c, "gaugeAction2")
@@ -668,11 +653,6 @@ proc gaugeAction2*(c: GaugeActionCoeffs, g: array|seq): auto =
   #echo "plaq: ", pl, "  rect: ", rt, "  pgm: ", pg
   #result = (pl,rt,pg)
   result = (-1.0/nc.float) * (c.plaq*pl + c.rect*rt + c.pgm*pg)
-template gaugeAction2*(g: array|seq, c: GaugeActionCoeffs): untyped =
-  gaugeAction2(c, g)
-proc gaugeAction2*(g: array|seq): auto =
-  var c = GaugeActionCoeffs(plaq:1.0)
-  gaugeAction2(c, g)
 
 proc gaugeDeriv2*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: array|seq; work: LoopWork[V,T] = nil) =
   requireFundamental(c, "gaugeDeriv2")
@@ -1073,13 +1053,11 @@ proc gaugeDerivDeriv2SubsetImpl[V:static[int],T](c: GaugeActionCoeffs, g: openAr
 # SubsetWork fixes the layout, parity and direction. At its tag, the Hessians
 # reuse link boundaries kept by the derivative.
 
-proc gaugeDerivDeriv2Subset*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], hdir: Field[V,T], f: array|seq, sw: SubsetWork[V,T]; tag = default(LoopTag); work: LoopWork[V,T] = nil) =
+proc gaugeDerivDeriv2Subset*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], hdir: Field[V,T], f: array|seq, sw: SubsetWork[V,T]; tag = default(LoopTag); work: LoopWork[V,T] = nil; accumulate: static bool = false) =
   ## f = H_g(hdir|P in direction sw.dir), including all affected links.
-  c.gaugeDerivDeriv2SubsetImpl(g, hdir, hdir, f, hmOverwrite, sw, tag, work=work)
-
-proc gaugeDerivDeriv2SubsetAdd*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], hdir: Field[V,T], f: array|seq, sw: SubsetWork[V,T]; tag = default(LoopTag); work: LoopWork[V,T] = nil) =
-  ## f += H_g(hdir|P).
-  c.gaugeDerivDeriv2SubsetImpl(g, hdir, hdir, f, hmAccumulate, sw, tag, work=work)
+  ## accumulate=true adds the Hessian to f.
+  const mode = if accumulate: hmAccumulate else: hmOverwrite
+  c.gaugeDerivDeriv2SubsetImpl(g, hdir, hdir, f, mode, sw, tag, work=work)
 
 proc gaugeDerivDeriv2SubsetAddBase*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], hdir: Field[V,T], base, f: array|seq, sw: SubsetWork[V,T]; tag = default(LoopTag); work: LoopWork[V,T] = nil) =
   ## S=(sw.parity,sw.dir): f[S] += H_g(hdir|P)[S].
@@ -1132,9 +1110,6 @@ proc gaugeForce2*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]
           shiftExpr(t2[mu].sb, f[mu][ir] += cr * t[nu].field[ir]*adj(it), t[mu].field[ix])
     for mu in 0..<nd: contractProjectTAH(f[mu], u[mu], f[mu])
   toc("end")
-proc gaugeForce2*(f,g: array|seq) =
-  var c = GaugeActionCoeffs(plaq:1.0)
-  gaugeForce2(c,g,f)
 
 proc gaugeAction3*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]]; work: LoopWork[V,T] = nil): auto =
   requireFundamental(c, "gaugeAction3")
@@ -1166,9 +1141,6 @@ proc gaugeAction3*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T
   if c.pgm != 0:
     result += pgmAction(c, g, work)
   toc("end")
-proc gaugeAction3*(g: array|seq): auto =
-  var c = GaugeActionCoeffs(plaq:1.0)
-  gaugeAction3(c, g)
 
 proc plaqRectPath_fun(c:GaugeActionCoeffs, mu,nu:int):auto =
   let
@@ -1236,9 +1208,6 @@ proc gaugeForce3*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]
   threads:
     for mu in 0..<nd: contractProjectTAH(f[mu], gs[mu], f[mu])
   toc("end")
-proc gaugeForce3*(f,g: array|seq) =
-  var c = GaugeActionCoeffs(plaq:1.0)
-  gaugeForce3(c,g,f)
 
 proc actionA*(c: GaugeActionCoeffs, g: auto): auto =
   ## Specialized gauge action for plaq + adjplaq
@@ -1503,7 +1472,7 @@ when isMainModule:
     var gc = GaugeActionCoeffs(plaq:1.0)
     #var ga = gaugeAction(g)
     toc("plaq")
-    var ga = gaugeAction.gaugeAction1(g)
+    var ga = gaugeAction.gaugeAction1(gc,g)
     toc("ga1")
     var ga2 = gaugeAction.gaugeAction2(gc,g)
     toc("ga2")

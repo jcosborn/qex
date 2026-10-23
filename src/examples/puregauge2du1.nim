@@ -111,7 +111,7 @@ if gfix and gfixunit: g.maxTreeFix 1.0
 #echo g.plaq
 #echo g.plaq2
 echo "Initial plaq: ",g.plaq3
-#echo g.gaugeAction2 gc
+#echo gc.gaugeAction2(g)
 
 var
   p = lo.newgauge
@@ -226,7 +226,7 @@ for n in 1..trajs:
       g0[i] := g[i]
     threadMaster: p2 = p2t
   let
-    ga0 = g0.gaugeAction2 gc
+    ga0 = gc.gaugeAction2(g0)
     t0 = 0.5*p2
     h0 = ga0 + t0
   #echo "Begin H: ",h0,"  Sg: ",ga0,"  T: ",t0
@@ -240,7 +240,7 @@ for n in 1..trajs:
       p2t += p[i].norm2
     threadMaster: p2 = p2t
   let
-    ga1 = g.gaugeAction2 gc
+    ga1 = gc.gaugeAction2(g)
     t1 = 0.5*p2
     h1 = ga1 + t1
   echo "End H: ",h1,"  Sg: ",ga1,"  T: ",t1
@@ -263,7 +263,7 @@ for n in 1..trajs:
           p2t += p[i].norm2
         threadMaster: p2 = p2t
       let
-        ga1 = g.gaugeAction2 gc
+        ga1 = gc.gaugeAction2(g)
         t1 = 0.5*p2
         h1 = ga1 + t1
       echo "Reversed H: ",h1,"  Sg: ",ga1,"  T: ",t1

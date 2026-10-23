@@ -556,9 +556,7 @@ when isMainModule:
             let t6 = h[mu][bmu].adj * t5
             st[nu][i] += cp*t6
     toc "st"
-    gf.gaugeForce(g)
-    #gf.gaugeForce2(g)
-    #gf.gaugeForce3(g)
+    GaugeActionCoeffs(plaq: 1.0).gaugeForce(g, gf)
     toc "gaugeForce"
     for mu in 0..<nd:
       contractProjectTAH(st[mu], g[mu], st[mu])

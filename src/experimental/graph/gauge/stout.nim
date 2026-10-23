@@ -713,7 +713,7 @@ proc stoutUpdateLogDetJImpl(W, ds: Ggauge, alpha: Gscalar, c: Gactcoeff, parity,
           let base = Ggauge(args.storedSlot(termIndex))
           coeff.cval.gaugeDerivDeriv2SubsetAddBase(W.gval, pull.hdir, base.gval, pull.gval, newSubsetWork(W.gval[0], parity, dir))
         else:
-          coeff.cval.gaugeDerivDeriv2SubsetAdd(W.gval, pull.hdir, pull.gval, newSubsetWork(W.gval[0], parity, dir))
+          coeff.cval.gaugeDerivDeriv2Subset(W.gval, pull.hdir, pull.gval, newSubsetWork(W.gval[0], parity, dir), accumulate=true)
       else:
         toc("stoutStepGrad kernel end")
 

@@ -163,7 +163,7 @@ suite "gauge action":
     expect(ValueError):
       c.gaugeDerivDeriv2SubsetSum(g, @[m[0]], w, outg, newSubsetWork(g[0], 0, 0))
     expect(ValueError):
-      c.gaugeDerivDeriv2SubsetAdd(g, m[0], outg, newSubsetWork(g[0], 0, 0))
+      c.gaugeDerivDeriv2Subset(g, m[0], outg, newSubsetWork(g[0], 0, 0), accumulate=true)
     expect(ValueError):
       c.gaugeDerivDeriv2SubsetAddBase(g, m[0], u, outg, newSubsetWork(g[0], 0, 0))
 
@@ -202,7 +202,7 @@ suite "gauge action":
         threads:
           for mu in 0..<g.len:
             reference[mu] += delta[mu]
-        c.gaugeDerivDeriv2SubsetAdd(g, m[d], got, newSubsetWork(g[0], p, d))
+        c.gaugeDerivDeriv2Subset(g, m[d], got, newSubsetWork(g[0], p, d), accumulate=true)
         norm2(grt.toGvalue(got) - grt.toGvalue(reference)) :< 1e-24
 
   test "raw subset Hessian initializes its direct base in one pass":
