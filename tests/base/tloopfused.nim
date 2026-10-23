@@ -30,7 +30,6 @@ proc run(nc:static int) =
     GaugeActionCoeffs(plaq:0.8,pgm:0.07),GaugeActionCoeffs(rect: -0.1,pgm:0.07),
     GaugeActionCoeffs(plaq:0.8,rect: -0.1,pgm:0.07)]
   privateAccess(typeof(work))
-  privateAccess(typeof(work.plan))
   suite "Fused loop kernels Nc=" & $nc:
     test "values, gradients and Hessians match independent production paths":
       for c in cases:
@@ -110,27 +109,6 @@ proc run(nc:static int) =
       c.loopDeriv(gm,[hs[2],hs[1],hs[0]],want)
       check relativeDiff(f,want) == 0
 
-    test "shared products reduce work for active families":
-      let planes=lo.nDim*(lo.nDim-1) div 2
-      let triples=lo.nDim*(lo.nDim-1)*(lo.nDim-2) div 6
-      for c in cases:
-        let np=if c.plaq!=0: planes else: 0
-        let nr=if c.rect!=0: 2*planes else: 0
-        let ng=if c.pgm!=0: 4*triples else: 0
-        if np+nr+ng == 0: continue
-        discard c.loopAction(g,work=work)
-        check work.plan.outs.len == np+nr+ng
-        check work.plan.steps.len <= 2*np+4*(nr+ng)
-        let actionProducts=work.plan.steps.len
-        c.loopDeriv(g,f,work=work)
-        check work.plan.outs.len == 4*np+6*(nr+ng)
-        check work.plan.steps.len < 2*4*np+4*6*(nr+ng)
-        let gradientProducts=work.plan.steps.len
-        c.loopDeriv(g,[hs[0]],f,work=work)
-        check work.plan.steps.len < 5*4*np+11*6*(nr+ng)
-        echo "  products per site: ",c," action=",actionProducts,
-          " gradient=",gradientProducts," Hessian=",work.plan.steps.len
-
     test "zero terms and vanishing derivative orders allocate no work":
       let w=newLoopWork(g[0])
       let raw=getRawMemAllocated()
@@ -140,22 +118,16 @@ proc run(nc:static int) =
       check f.norm2 == 0
       cases[0].loopDeriv(g,[hs[0],hs[1],hs[2],hs[3]],f,work=w)
       check f.norm2 == 0
-      check w.plan == nil and w.halos.len == 0 and w.products.len == 0
+      check w.halos.len == 0 and w.products.len == 0
       check getRawMemAllocated() == raw
 
-    test "high jets skip plaquettes and the top jet skips gauge values":
+    test "high jets skip plaquettes":
       let c=cases[^1]
       var six=c
       six.plaq=0
       c.loopDeriv(g,[hs[0],hs[1],hs[2],hs[3]],f,work=work)
-      let p=work.plan
       six.loopDeriv(g,[hs[0],hs[1],hs[2],hs[3]],want,work=work)
-      check work.plan == p
       check relativeDiff(f,want) == 0
-      c.loopDeriv(g,hs,f,work=work)
-      for load in work.plan.loads:
-        privateAccess(typeof(load))
-        check load.seed > 0
 
 run(3)
 run(1)

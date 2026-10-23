@@ -19,7 +19,7 @@ layout's SIMD width; `toScalar`/`toMatrix` convert scalar-site representations.
 | --- | --- |
 | `newShape(l,T)`, `newShape(f)` | Layout/type/allocation descriptors only; bind or allocate before indexing |
 | Shape from `FieldArray` view | Describes one field |
-| `release(f)`, `release(array)` | Free owned storage immediately; aliases become invalid. Release a `FieldArray` as a whole. |
+| `release(f)`, `release(array)` | Free owned storage immediately; populated array views retain only field shapes. Release a `FieldArray` as a whole. |
 | Replace descriptor | Other references retain the former field/storage |
 | `newShifter(...,dest=d)`, `newTransporter(...,dest=d)` | Matching layout; destination disjoint from operands; transporter owns communication buffers |
 | Rebind `field` | Preserve the same layout/disjointness rules |
@@ -262,7 +262,7 @@ selected links and sets base plus Hessian elsewhere; `gaugeDerivDeriv2SubsetSum`
 combines selected-parity seeds; a seed may be the direction field alone. The
 first derivative `gaugeDeriv2SubsetWork` writes the direction field `fd` and
 shifts through a caller-built `SubsetWork` (`newSubsetWork(f, parity, dir,
-sh)`: shift buffers, the Hessian's made on its first call); it preserves the
+sh)`: fixed layout/parity/direction, with shift buffers made on first use); it preserves the
 other parity of `fd` for `clear=false` and zeros it for `clear=true`. The
 buffers that a call completes come from `sh` (`newSubsetShifts(f)`, new by
 default), which the works of all $(P,\mu)$ may share; only the link shifts keep
@@ -297,7 +297,7 @@ to `makeFwdStaples` and `makeStaples`; the benches opt in, and a default
 workspace allocates the staples per call as a nil workspace does. The HMC gauge
 action uses the loop kernels, whose workspace keeps halos and product banks.
 The experimental graph action wrappers currently call the staple kernels. A
-`FieldArray` shares one aligned allocation among its fields, and
+`FieldArray.mem` owns the aligned allocation shared by its fields, and
 `newFieldArray2` leaves the entries its constraint excludes as nil. The staple
 procs accept an array they returned for the same layout: shape `[nd,nd]`, every
 `mu != nu` entry allocated, storage disjoint from the gauge and from each other.
@@ -345,7 +345,8 @@ $$
 (AB)_S=\sum_{T\subseteq S}A_TB_{S\setminus T}.
 $$
 
-`gaugeUtils.plan(shifts=false)` factors matrix symbols by link direction/offset,
+`gauge/loopPlan` owns integer path factorization and loop scheduling;
+`gaugeUtils` re-exports its path API. `plan(shifts=false)` factors matrix symbols by link direction/offset,
 without field shifts. Only coefficients reaching requested outputs are evaluated.
 Zero-weight families are absent from paths/halos/plans; plaquettes vanish above
 order three. `loopAction`/`loopDeriv` reuse aligned per-thread site scratch and
@@ -361,7 +362,9 @@ are reused after a product's last use; each output is summed right after its
 last product, in the order of the paths, and action terms are added in site
 order, so the sums match an evaluation of all products first, site by site.
 The Wilson gradient takes 42 products in 5 slots, the Symanzik gradient 236
-products in 37 slots (one slot per value before: 86 and 372).
+products in 37 slots (one slot per value before: 86 and 372). `tloopplan`
+checks initialization, slot lifetimes, output order and product costs without
+constructing fields or initializing communication.
 
 For plaquettes,
 

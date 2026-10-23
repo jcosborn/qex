@@ -7,13 +7,8 @@ import layout/shifts
 import gaugeUtils
 import staples
 import comms/halo
-import std/[tables, bitops]
+import loopPlan
 import base/alignedMem
-
-func firstSetBit*(x: SomeInteger): int {.inline.} =  # bitops doesn't handle x==0 correctly
-  result = 0
-  if x != 0:
-    result = bitops.firstSetBit(x)
 
 type
   GaugeActionCoeffs* = object
@@ -66,95 +61,6 @@ proc Iwasaki*(beta:float, c1:float = C1Iwasaki):auto = gaugeActRect(beta, c1)
 proc DBW2*(beta:float, c1:float = C1DBW2):auto = gaugeActRect(beta, c1)
 
 type
-  LoopKind = enum lkPlaq, lkRect, lkPgm
-  GaugeLoop = object
-    path: array[5,int]
-    len: int
-    kind: LoopKind
-  GaugeLoops = seq[seq[GaugeLoop]]
-  GaugeLoopPlan = ref object
-    paths: GaugeLoops
-    fw, bw: seq[int32]
-    offsets: seq[seq[seq[int32]]]  # base sites of the links of each direction
-    products: array[6,LoopProducts]
-    factors: seq[tuple[mu:int, offset:seq[int32]]]
-    pairs: PathPlan
-    outputs: seq[tuple[mu:int, kind:LoopKind]]
-  LoopLoad = object
-    dest, mu, seed: int
-    walk: seq[tuple[d, n: int]]  # nonzero components of the factor's offset
-  LoopMul = object
-    dest, left, right: int
-    la, ra, add: bool
-  LoopOut = object
-    source, mu: int
-    kind: LoopKind
-    adj, first: bool  # first: the first output of mu in sched
-  LoopProducts = ref object
-    loads: seq[LoopLoad]
-    steps: seq[LoopMul]
-    outs: seq[LoopOut]
-    size: int  # values: loads and products
-    sched: seq[int]  # k >= 0: steps[k]; k < 0: outs[-k-1], each after its source
-    slot: seq[int]  # scratch slot of each product, -1 for a load
-    slots: int
-
-proc gaugeLoops(nd, mask, act: int): GaugeLoopPlan =
-  # Each open path runs from x to x+mu. Differentiating a closed loop
-  # contributes every occurrence, including repeated links after wrapping.
-  proc makeLoops(): GaugeLoops =
-    result.newSeq(nd)
-    template addLoop(p: untyped, family: LoopKind) =
-      block:
-        let path = p
-        for k in 0..(if act == 1: 0 else: path.len-1):
-          var loop = GaugeLoop(len: path.len-1, kind: family)
-          if path[k] > 0:
-            for j in 0..<loop.len:
-              loop.path[j] = -path[(k+path.len-1-j) mod path.len]
-          else:
-            for j in 0..<loop.len:
-              loop.path[j] = path[(k+1+j) mod path.len]
-          result[abs(path[k])-1].add loop
-    for mu in 2..nd:
-      for nu in 1..<mu:
-        if (mask and 4) != 0:
-          addLoop([mu,nu,-mu,-nu], lkPlaq)
-        if (mask and 1) != 0:
-          addLoop([mu,nu,nu,-mu,-nu,-nu], lkRect)
-          addLoop([mu,mu,nu,-mu,-mu,-nu], lkRect)
-        if (mask and 2) != 0:
-          for sg in 1..<nu:
-            # gaugeAction2's ts1, ts2, ts3, ts7, respectively.
-            addLoop([mu,nu,sg,-mu,-nu,-sg], lkPgm)
-            addLoop([mu,sg,nu,-mu,-sg,-nu], lkPgm)
-            addLoop([nu,mu,sg,-nu,-mu,-sg], lkPgm)
-            addLoop([mu,-nu,sg,-mu,nu,-sg], lkPgm)
-  # Paths and offsets depend only on topology. Construct this metadata and its
-  # derived product plans outside threads; evaluations share the cached plans.
-  var cache {.global.}: Table[(int,int,int),GaugeLoopPlan]
-  let key = (nd, mask, act)
-  if key notin cache:
-    let plan = GaugeLoopPlan(paths: makeLoops(), fw: newSeq[int32](nd), bw: newSeq[int32](nd),
-                             offsets: newSeq[seq[seq[int32]]](nd))
-    for row in plan.paths:
-      for path in row:
-        var x = newSeq[int32](nd)
-        for k in 0..<path.len:
-          let step = path.path[k]
-          let mu = abs(step)-1
-          if step < 0: dec x[mu]
-          var off = newSeq[int32](nd)
-          for d in 0..<nd:
-            off[d] = x[d]
-            plan.fw[d] = max(plan.fw[d], x[d])
-            plan.bw[d] = max(plan.bw[d], -x[d])
-          if off notin plan.offsets[mu]: plan.offsets[mu].add off
-          if step > 0: inc x[mu]
-    cache[key] = plan
-  cache[key]
-
-type
   LoopKeep* = enum
     ## What gaugeAction1 and gaugeActionDeriv leave in a LoopWork between calls.
     keepNone = "none"  # staple blocks allocated and freed per call
@@ -183,7 +89,6 @@ type
     ru: FieldArray[V,T]  # rect parts of gaugeActionDeriv, zeroed on every use
     scratch: seq[Field[V,T]]
     trans: array[4,seq[Transporter[Field[V,T],Field[V,T],T]]]
-    plan: LoopProducts
     tile: int  # sites per evaluation step of the loop kernels
     products: seq[alignedMem[T]]  # per thread: product slots, then nd sums, tile sites each
     ptrs: seq[alignedMem[ptr T]]  # per thread: each plan value at the tile's sites
@@ -308,7 +213,7 @@ proc pgmAction[T](c: GaugeActionCoeffs, g: openArray[T], work: auto): float =
   let w = useLoopWork(g, work)
   defer: w.clearInputs
   let
-    plan = gaugeLoops(nd, 2, 1)
+    plan = gaugeLoops(nd, {lkPgm}, true)
     gh = w.gaugeLoopHalo(g, plan, 0)
   var sums = newSeq[float](getMaxThreads())
   threads:
@@ -327,12 +232,14 @@ proc gaugeLoopDeriv[T](c: GaugeActionCoeffs, g, h: openArray[T], f: array|seq, d
   # d(prod A_k) = sum_k A_0...dA_k...A_4, with no seed storage in
   # the ordinary gradient. All target links are local, so writes are disjoint.
   let nd = g[0].l.nDim
-  let mask = (if c.rect != 0: 1 else: 0) + (if c.pgm != 0 and nd >= 3: 2 else: 0)
-  if mask == 0: return
+  var kinds: set[LoopKind]
+  if c.rect != 0: kinds.incl lkRect
+  if c.pgm != 0 and nd >= 3: kinds.incl lkPgm
+  if kinds == {}: return
   let w = useLoopWork(g, work)
   defer: w.clearInputs
   let
-    plan = gaugeLoops(nd, mask, 0)
+    plan = gaugeLoops(nd, kinds)
     gh = w.gaugeLoopHalo(g, plan, 0)
     nc = float(g[0][0].nrows)
   when deriv:
@@ -350,118 +257,11 @@ proc gaugeLoopDeriv[T](c: GaugeActionCoeffs, g, h: openArray[T], f: array|seq, d
             s += a*gaugeLoopProd(gh, gh, path, i, false)
         f[mu][i] += s
 
-proc loopMask(c: GaugeActionCoeffs, nd: int): int =
-  (if c.plaq != 0 and nd > 1: 4 else: 0) or
-  (if c.rect != 0 and nd > 1: 1 else: 0) or
-  (if c.pgm != 0 and nd > 2: 2 else: 0)
-
-proc loopProducts(plan: GaugeLoopPlan, order: int): LoopProducts =
-  # A symbol identifies U_mu(x+offset); its sign denotes adjoint. All symbols
-  # already refer to the same output site, so the pair planner needs no shifts.
-  if plan.products[order] != nil: return plan.products[order]
-  let p = LoopProducts()
-  if plan.pairs.outs.len == 0:
-    var
-      symbols: Table[(int,seq[int32]),int]
-      words: seq[seq[int]]
-    for mu, row in plan.paths:
-      for path in row:
-        var x = newSeq[int32](plan.fw.len)
-        var word: seq[int]
-        for k in 0..<path.len:
-          let step = path.path[k]
-          let dir = abs(step)-1
-          if step < 0: dec x[dir]
-          var off = newSeq[int32](x.len)
-          for d in 0..<x.len: off[d] = x[d]
-          let symbol = (dir,off)
-          if symbol notin symbols:
-            plan.factors.add (dir,off)
-            symbols[symbol] = plan.factors.len
-          let id = symbols[symbol]
-          word.add(if step > 0: id else: -id)
-          if step > 0: inc x[dir]
-        words.add word
-        plan.outputs.add (mu,path.kind)
-    plan.pairs = words.optimalPairs.plan(shifts=false)
-  let pairs = plan.pairs
-  var nodes: Table[seq[int],PathStep]
-  for step in pairs.steps: nodes[step.key] = step
-  var jets: Table[(seq[int],int),int]
-  proc jet(word: seq[int], mask: int): int =
-    let key = (word,mask)
-    if key in jets: return jets[key]
-    if word.len == 1:
-      let f = plan.factors[word[0]-1]
-      result = p.size
-      inc p.size
-      p.loads.add LoopLoad(dest:result,mu:f.mu,seed:firstSetBit(mask))
-      for d, n in f.offset:
-        if n != 0: p.loads[^1].walk.add (d, int(n))
-    else:
-      # (AB)_S = sum_{T subset S} A_T B_{S\T}. Only reachable coefficients
-      # are built, including at the top degree where no primal loads remain.
-      let step = nodes[word]
-      var terms: seq[LoopMul]
-      var sub = mask
-      while true:
-        if countSetBits(sub) <= step.l.len and countSetBits(mask xor sub) <= step.r.len:
-          let left = jet(step.l,sub)
-          let right = jet(step.r,mask xor sub)
-          terms.add LoopMul(left:left,right:right,la:step.la,ra:step.ra,add:terms.len>0)
-        if sub == 0: break
-        sub = (sub-1) and mask
-      result = p.size
-      inc p.size
-      for term in terms.mitems:
-        term.dest = result
-        p.steps.add term
-    jets[key] = result
-  for i, outp in pairs.outs:
-    p.outs.add LoopOut(source:jet(outp.key,(1 shl order)-1),
-      mu:plan.outputs[i].mu,kind:plan.outputs[i].kind,adj:outp.adj)
-  # Each output follows the last step of its source and the previous output,
-  # so sums keep the order of outs. Every step allocates its new destination
-  # before releasing operands at their last use: a destination never aliases
-  # an operand, and slots hold only live products.
-  var done = newSeq[int](p.size)
-  for v in done.mitems: v = -1
-  for k, op in p.steps: done[op.dest] = k
-  var next = 0
-  # Active derivative plans cover every direction; empty/above-degree cases
-  # return before execution. Each direction starts with its first output.
-  var seen = newSeq[bool](plan.paths.len)
-  for k, op in p.outs:
-    while next <= done[op.source]:
-      p.sched.add next
-      inc next
-    p.outs[k].first = not seen[op.mu]
-    seen[op.mu] = true
-    p.sched.add -k-1
-  var last = newSeq[int](p.size)
-  for pos, k in p.sched:
-    if k >= 0:
-      last[p.steps[k].left] = pos
-      last[p.steps[k].right] = pos
-    else: last[p.outs[-k-1].source] = pos
-  p.slot = newSeq[int](p.size)
-  for v in p.slot.mitems: v = -1
-  var free: seq[int]
-  template release(v: int, pos: int) =
-    if p.slot[v] >= 0 and last[v] == pos and p.slot[v] notin free: free.add p.slot[v]
-  for pos, k in p.sched:
-    if k >= 0:
-      let op = p.steps[k]
-      if p.slot[op.dest] < 0:
-        if free.len > 0: p.slot[op.dest] = free.pop
-        else:
-          p.slot[op.dest] = p.slots
-          inc p.slots
-      release(op.left, pos)
-      release(op.right, pos)
-    else: release(p.outs[-k-1].source, pos)
-  plan.products[order] = p
-  p
+proc loopKinds(c: GaugeActionCoeffs, nd: int): set[LoopKind] =
+  if nd > 1:
+    if c.plaq != 0: result.incl lkPlaq
+    if c.rect != 0: result.incl lkRect
+  if nd > 2 and c.pgm != 0: result.incl lkPgm
 
 proc prepareProducts[V:static[int],T](w: LoopWork[V,T], plan: LoopProducts, action = false) =
   ## Per thread: a tile of 1 to 32 sites whose slots and sums take about 32 KB
@@ -470,7 +270,6 @@ proc prepareProducts[V:static[int],T](w: LoopWork[V,T], plan: LoopProducts, acti
   ## these bounds (and 32 sites of action terms), so a plan grows them only when
   ## a single site of it needs more, and a smaller plan after a larger one
   ## allocates nothing.
-  w.plan = plan
   let m = plan.slots+w.lo.nDim
   let n = plan.size
   let o = plan.outs.len
@@ -570,14 +369,14 @@ proc loopAction*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]]
   requireFundamental(c, "loopAction")
   let nd = g[0].l.nDim
   if g.len != nd: raise newException(ValueError, "loop action requires a complete gauge bundle")
-  let mask = loopMask(c,nd)
-  if mask == 0: return
+  let kinds = loopKinds(c,nd)
+  if kinds == {}: return
   let w = useLoopWork(g,work)
   defer: w.clearInputs
-  let plan = gaugeLoops(nd,mask,1)
+  let plan = gaugeLoops(nd,kinds,true)
   let products = loopProducts(plan,0)
   w.prepareProducts(products, action=true)
-  let hplan = if tag.id != 0 and w.lpair: gaugeLoops(nd,mask,0) else: plan
+  let hplan = if tag.id != 0 and w.lpair: gaugeLoops(nd,kinds) else: plan
   let h = [w.gaugeLoopHalo(g,hplan,0,tag)]
   w.ltag = tag
   var sums = newSeq[array[3,float]](getMaxThreads())
@@ -618,10 +417,10 @@ proc loopDeriv*[V:static[int],T,H; K:static int](c: GaugeActionCoeffs, g:openArr
   for d in ds:
     if d.len != nd or d[0].l != lo:
       raise newException(ValueError, "loop derivative seeds require matching gauge bundles")
-  var mask = loopMask(c,nd)
-  when K > 3: mask = mask and 3
-  let degree = if (mask and 3) != 0: 5 else: 3
-  if mask == 0 or K > degree:
+  var kinds = loopKinds(c,nd)
+  when K > 3: kinds.excl lkPlaq
+  let degree = if lkRect in kinds or lkPgm in kinds: 5 else: 3
+  if kinds == {} or K > degree:
     threads:
       for mu in 0..<nd: f[mu] := 0
     return
@@ -634,7 +433,7 @@ proc loopDeriv*[V:static[int],T,H; K:static int](c: GaugeActionCoeffs, g:openArr
   for d in ds: disjoint(d)
   let w = useLoopWork(g,work)
   defer: w.clearInputs
-  let plan = gaugeLoops(nd,mask,0)
+  let plan = gaugeLoops(nd,kinds)
   let products = loopProducts(plan,K)
   w.prepareProducts(products)
   type HaloRow = type(w.gaugeLoopHalo(g,plan,0))
@@ -1646,14 +1445,14 @@ proc forceKick*[V:static[int],T](c: GaugeActionCoeffs, g, p, q: openArray[Field[
     u = @g
     pp = @p
     qq = @q
-    mask = loopMask(c,nd)
-  if mask == 0:
+    kinds = loopKinds(c,nd)
+  if kinds == {}:
     threads:
       for mu in 0..<nd: qq[mu] := pp[mu]
     return
   let w = useLoopWork(g,work)
   defer: w.clearInputs
-  let plan = gaugeLoops(nd,mask,0)
+  let plan = gaugeLoops(nd,kinds)
   let products = loopProducts(plan,0)
   w.prepareProducts(products)
   if tag.id != 0 and tag == w.ltag: w.lpair = true
