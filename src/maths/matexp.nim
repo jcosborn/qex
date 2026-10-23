@@ -940,50 +940,136 @@ proc expm1Deriv*(p: var ExpParam, m: Mat1, w: Mat2): auto {.noInit.} =
 #                      y-bar   = expTop(y^dag; v, d_1^dag, ..., d_M^dag),
 # and expTop(x^dag; d_1) = expDeriv(x, d_1).
 
-type JetMat*[M: static int, T] = object
-  ## Coefficient per subset (bit mask over the M directions).
-  c*: array[1 shl M, T]
+type JetBuf[T] = object
+  ## Unowned view of 2^m coefficients. The kernel swaps views, so the
+  ## owning alignedMem objects (and their refs) are never written.
+  len: int
+  data: ptr cArray[T]
 
-proc jmul[M: static int, T](r: var JetMat[M,T], a, b: JetMat[M,T]) =
-  ## r = a*b with e_i^2 = 0: only disjoint subsets multiply (3^M products).
-  for u in 0 ..< (1 shl M):
+template `[]`(b: JetBuf, i: SomeInteger): untyped = b.data[i]
+
+proc jmul[T: array|JetBuf](r: var T, a, b: T) =
+  # r = a*b, e_i^2 = 0: only disjoint subsets multiply (3^M products).
+  for u in 0 ..< r.len:
+    mul(r[u], a[u], b[0])
     var s = u
-    var first = true
-    while true:
-      let t = u xor s
-      if first:
-        mul(r.c[u], a.c[s], b.c[t])
-        first = false
-      else:
-        imadd(r.c[u], a.c[s], b.c[t])
-      if s == 0: break
+    while s != 0:
       s = (s - 1) and u
+      imadd(r[u], a[s], b[u xor s])
+
+type ExpAHWork*[T] = object
+  ## Reusable site scratch for a runtime number of derivative directions.
+  ## alignedMem keeps SIMD elements aligned; refc seq payloads are 16-byte aligned only.
+  c: array[6, alignedMem[T]]
+
+proc newExpAHWork*[T](m: int): ExpAHWork[T] =
+  ## Scratch for m directions: six buffers of 2^m matrices. Allocate it outside
+  ## threaded regions; expAH then only reads and writes the matrices.
+  for c in result.c.mitems: c.newU(1 shl m)
+
+proc bytes*(w: ExpAHWork): int =
+  for c in w.c: result += c.bytes
+
+template ahJet(y, d, j, m2, m3, a, b, e: untyped): untyped =
+  block:
+    let (sc, ns) = ahScale(y)
+    for u in 0..<j.len: j[u] := 0
+    j[0] := sc*y
+    for i in 0..<d.len: j[1 shl i] := sc*d[i]
+    jmul(m2, j, j)
+    jmul(m3, m2, j)
+    for u in 0..<j.len: a[u] := C12*m3[u] + C11*m2[u] + C10*j[u]
+    a[0] += C9
+    jmul(b, a, m3)
+    for u in 0..<j.len: b[u] += C8*m2[u] + C7*j[u]
+    b[0] += C6
+    jmul(a, b, m3)
+    for u in 0..<j.len: a[u] += C5*m2[u] + C4*j[u]
+    a[0] += C3
+    jmul(e, a, m3)
+    for u in 0..<j.len: e[u] += C2*m2[u] + j[u]
+    e[0] += 1
+    for k in 0..<ns:
+      jmul(b, e, e)
+      when e is JetBuf: swap(e, b)
+      else: e = b
+
+proc expAH*[M: static int; D](y: Mat1, d: array[M,D]): auto {.noInit.} =
+  ## D^M E_k(y)[d_1,...,d_M], E_k(y) = P12(y/2^k)^(2^k).
+  ## k is selected from y exactly as in expAH(y), constant within its branch.
+  ## The top subset coefficient costs (5+k)*3^M matrix products; scratch is local.
+  type T = MatrixArray[y.nrows,y.ncols,type(y[0,0])]
+  var r {.noinit.}: T
+  when y.nrows == 1:
+    var t = exp(y[0,0])
+    for i in 0..<M: t = t*d[i][0,0]
+    r := t
+  else:
+    var j, m2, m3, a, b, e {.noinit.}: array[1 shl M,T]
+    ahJet(y, d, j, m2, m3, a, b, e)
+    r := e[e.high]
+  r
+
+proc expAH*[V](y: Mat1, d: Mat2, e: var V): auto {.noInit.} =
+  ## D E_k(y)[d] as expAH(y, [d]), and e = E_k(y), the jet's coefficient of
+  ## order zero: the same polynomial and scale as expAH(y), squared plainly
+  ## (expAH squares in expm1 form), so the two agree to rounding.
+  type T = MatrixArray[y.nrows,y.ncols,type(y[0,0])]
+  var r {.noinit.}: T
+  when y.nrows == 1:
+    let t = exp(y[0,0])
+    e := t
+    r := t*d[0,0]
+  else:
+    var j, m2, m3, a, b, c {.noinit.}: array[2,T]
+    ahJet(y, [d], j, m2, m3, a, b, c)
+    e := c[0]
+    r := c[1]
+  r
+
+proc expAH*[D,T](y: Mat1, d: openArray[D], work: var ExpAHWork[T]): auto {.noInit.} =
+  ## The same jet with runtime order. Capacity grows on demand; presize for the
+  ## largest order with newExpAHWork before use inside threads.
+  var r {.noinit.}: MatrixArray[y.nrows,y.ncols,type(y[0,0])]
+  when y.nrows == 1:
+    var t = exp(y[0,0])
+    for v in d: t = t*v[0,0]
+    r := t
+  else:
+    let n = 1 shl d.len
+    for c in work.c.mitems:
+      if c.len < n: c.newU(n)
+    var v {.noinit.}: array[6, JetBuf[T]]
+    for i in 0..<6: v[i] = JetBuf[T](len: n, data: work.c[i].data)
+    ahJet(y, d, v[0], v[1], v[2], v[3], v[4], v[5])
+    r := v[5][v[5].len-1]
+  r
 
 proc expTop*[M: static int; D](p: var ExpParam, y: Mat1, d: array[M, D]): auto {.noInit.} =
   ## Top jet coefficient of the poly scheme; only kind ekPoly, order 4.
   type T = MatrixArray[y.nrows, y.ncols, type(y[0,0])]
-  var j, m2, a, e, t, e2 {.noInit.}: JetMat[M, T]
+  var j, m2, a, e, t, e2 {.noInit.}: array[1 shl M, T]
   p.valid = p.kind == ekPoly and p.order == 4
   let s = numberType(y)(1.0/float(1 shl p.scale))
   for u in 0 ..< (1 shl M):
-    j.c[u] := 0
-  j.c[0] := s * y
+    j[u] := 0
+  j[0] := s * y
   for i in 0 ..< M:
-    j.c[1 shl i] := s * d[i]
+    j[1 shl i] := s * d[i]
   jmul(m2, j, j)
   for u in 0 ..< (1 shl M):
-    a.c[u] := C4*m2.c[u] + C3*j.c[u]
-  a.c[0] += C2
+    a[u] := C4*m2[u] + C3*j[u]
+  a[0] += C2
   jmul(e, a, m2)
   for u in 0 ..< (1 shl M):
-    e.c[u] += j.c[u]
+    e[u] += j[u]
   for k in 1 .. p.scale:
     t = e
-    t.c[0] += 2
+    t[0] += 2
     jmul(e2, e, t)
     e = e2
   var r {.noInit.}: T
-  r := e.c[(1 shl M) - 1]
+  r := e[(1 shl M) - 1]
   r
 
 proc exp*(p: var ExpParam, m: Mat1): auto {.noInit.} =

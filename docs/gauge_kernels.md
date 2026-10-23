@@ -116,6 +116,17 @@ masks, aliases, complements and allocation reuse at one and six threads. A local
 E product and a stored/reloaded E product may differ by ordinary FMA roundoff;
 the product comparison uses a normalized norm bound while E is checked exactly.
 
+The `matexp.expAH(X, directions)` overload supplies derivative jets. For the primal's selected scale $k$,
+they differentiate $P_{12}(X/2^k)^{2^k}$ with $k$ fixed, including higher
+derivatives. The kernel selects $k$ from the base matrix only, using the same
+SIMD maximum as the primal. Its order-$m$ jet uses at most $(5+k)3^m$ matrix
+products. At scale boundaries this is the selected branch derivative.
+`expAH(X, d, e)` returns the first jet and sets `e` to its coefficient of order
+zero, $P_{12}(X/2^k)^{2^k}$ squared plainly: `expAH(X)` to rounding, without a
+second polynomial evaluation.
+`tjetexp` covers noncommuting directions, both sides of scale thresholds,
+adjoint identities, runtime orders through five, and large diagonal arguments.
+
 ### Paths, halos and HYP
 
 Paths use signed directions $\pm(\mu+1)$. `gaugeUtils.plan` orders shared
