@@ -272,7 +272,7 @@ proc evalStage*[T: SomeFloat](t: NnftStage[T]; p: NnftNet[T]; g: seq[DLatticeCol
         c := t.coef[coefSlots[d][k]][x]
         v := v-c*t.openStaples[k][x][0,0]
       t.ds[d][x][0,0] := v
-  stoutStepKernel(t.output, t.input, t.ds, t.expa, t.m, 1.0, cls.parity, d, t.active)
+  stoutStepKernel(t.output, t.input, t.ds[d], t.expa, t.m, 1.0, cls.parity, d, t.active)
   var ld = 0.0
   threads:
     # SIMD locals must stay out of the closure environment with Nim 2.0 refc.

@@ -942,7 +942,7 @@ proc gaugeDeriv2*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]
     gaugeLoopDeriv(GaugeActionCoeffs(pgm: -c.pgm), g, g, f, false, work)
   toc("end")
 
-proc gaugeDerivSubset[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: array|seq, parity, dir: int, clear: static bool; work: LoopWork[V,T] = nil) =
+proc gaugeDerivSubset[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], fd: Field[V,T], parity, dir: int, clear: static bool; work: LoopWork[V,T] = nil) =
   # Full derivative into workspace scratch, then select the requested links.
   let
     w = useLoopWork(g, work)
@@ -950,62 +950,141 @@ proc gaugeDerivSubset[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[
     sub = g[0].l.getSubset(if parity == 0: "even" else: "odd")
   gaugeActionDeriv(-1.0*c, g, d, work=w)
   threads:
-    for x in f[dir]:
+    for x in fd:
       if x >= sub.lowOuter and x < sub.highOuter:
-        f[dir][x] := d[dir][x]
+        fd[x] := d[dir][x]
       else:
-        when clear: f[dir][x] := 0
+        when clear: fd[x] := 0
 
-proc gaugeDeriv2SubsetWork*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: array|seq, sd, sf, sb: auto, parity, dir: int, clear: static bool; work: LoopWork[V,T] = nil) =
-  ## f[dir]|P = D(g)|P; other directions are unchanged.
-  ## clear=false preserves f[dir]|~P; clear=true sets it to zero.
-  ## rect/pgm coefficients take the full-derivative route and ignore sd, sf, sb.
+type
+  SubsetShifts*[V:static[int],T] = ref object
+    ## Shift buffers that each masked kernel call completes, shared by the
+    ## works of all (parity, dir) and made on first use: dn[nd*p+nu] moves by
+    ## -nu onto parity p, up[nd*p+nu] by +nu, bk[nd*dir+nu] by -dir.
+    dn*, up*, bk*: seq[ShiftB[T]]
+  SubsetWork*[V:static[int],T] = ref object
+    ## Shift buffers of the masked derivative and Hessian at one (parity, dir),
+    ## entries nu != dir. Derivative: sd[nu] moves u[nu] by +dir, sf[nu] moves
+    ## u[dir] by +nu onto the parity P, sb[nu] moves the lower staples by -nu
+    ## onto P. Hessian, made on its first call: so[nu] moves the seed by +nu off
+    ## P, sq[nu] moves its products by -dir, sr[nu] by -nu off P. sd and sf keep
+    ## the boundaries of their last exchange, which came from the links of tag;
+    ## a masked Hessian at the same tag reads them back. sb, so, sq and sr
+    ## share their buffers with sh.
+    sd*, sf*, sb*, so*, sq*, sr*: seq[ShiftB[T]]
+    sh*: SubsetShifts[V,T]
+    tag*: LoopTag
+
+proc newSubsetShifts*[V:static[int],T](f: Field[V,T]): SubsetShifts[V,T] =
+  let nd = f.l.nDim
+  SubsetShifts[V,T](dn: newSeq[ShiftB[T]](2*nd), up: newSeq[ShiftB[T]](2*nd), bk: newSeq[ShiftB[T]](nd*nd))
+
+proc entry[T](s: var seq[ShiftB[T]]; i: int; f: Field; dir, len: int; sub: string): ShiftB[T] =
+  ## The ShiftB at s[i], made on first use; a copy shares its buffers.
+  if s[i].si.isNil: s[i].initShiftB(f, dir, len, sub)
+  s[i]
+
+proc newSubsetWork*[V:static[int],T](f: Field[V,T], parity, dir: int; sh: SubsetShifts[V,T] = nil): SubsetWork[V,T] =
+  ## sh: the shared buffers, new by default.
+  let ps = if parity == 0: "even" else: "odd"
+  let nd = f.l.nDim
+  result = SubsetWork[V,T](sd: newSeq[ShiftB[T]](nd), sf: newSeq[ShiftB[T]](nd), sb: newSeq[ShiftB[T]](nd),
+    sh: if sh.isNil: newSubsetShifts(f) else: sh)
+  for nu in 0..<nd:
+    if nu != dir:
+      result.sd[nu].initShiftB(f, dir, 1)
+      result.sf[nu].initShiftB(f, nu, 1, ps)
+      result.sb[nu] = result.sh.dn.entry(nd*parity+nu, f, nu, -1, ps)
+
+proc hessianShifts[V:static[int],T](sw: SubsetWork[V,T], f: Field[V,T], parity, dir: int) =
+  if sw.so.len != 0: return
+  let po = 1 - parity
+  let ps = if po == 0: "even" else: "odd"
+  let nd = f.l.nDim
+  sw.so.newSeq(nd)
+  sw.sq.newSeq(nd)
+  sw.sr.newSeq(nd)
+  for nu in 0..<nd:
+    if nu != dir:
+      sw.so[nu] = sw.sh.up.entry(nd*po+nu, f, nu, 1, ps)
+      sw.sq[nu] = sw.sh.bk.entry(nd*dir+nu, f, dir, -1, "all")
+      sw.sr[nu] = sw.sh.dn.entry(nd*po+nu, f, nu, -1, ps)
+
+proc gaugeDeriv2SubsetWork*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], fd: Field[V,T], sw: SubsetWork[V,T], parity, dir: int, clear: static bool; tag = default(LoopTag); work: LoopWork[V,T] = nil) =
+  ## fd|P = D(g)[dir]|P for the direction field fd, shifting through sw.
+  ## tag: identity and version of g, which sw keeps for a Hessian at g.
+  ## clear=false preserves fd|~P; clear=true sets it to zero.
+  ## rect/pgm coefficients take the full-derivative route and leave sw untagged.
   requireFundamental(c, "gaugeDeriv2SubsetWork")
+  sw.tag = default(LoopTag)
   if c.rect != 0 or c.pgm != 0:
-    gaugeDerivSubset(c, g, f, parity, dir, clear, work)
+    gaugeDerivSubset(c, g, fd, parity, dir, clear, work)
     return
-  mixin adj
+  mixin adj, load1
   tic("gaugeDeriv2Subset")
   let lo = g[0].l
   let nd = lo.nDim
   const nc = g[0][0].nrows
   let cp = -c.plaq / float(nc)
+  let sub = lo.getSubset(if parity == 0: "even" else: "odd")
   when clear:
     let other = lo.getSubset(if parity == 0: "odd" else: "even")
-  let firstNu = if dir == 0: 1 else: 0
-  toc("gaugeDeriv2Subset setup")
   let u = cast[ptr cArray[Field[V,T]]](unsafeAddr(g[0]))
+  type M = type(load1(u[0][0]))
+  # One pass over P after the link exchanges. With a_nu(y) = u_nu(y+dir) and
+  # the lower staple l_nu(y) = u_nu(y)^dag u_dir(y) a_nu(y),
+  #   fd(x) = cp sum_nu [u_nu(x) u_dir(x+nu) a_nu(x)^dag + l_nu(x-nu)],  x in P.
+  template lower(nu, y0: untyped): untyped =
+    block:
+      let y = y0  # bound before getSB injects its own ix
+      var a {.noinit.}: M
+      getSB(sw.sd[nu], y, assign(a, it), u[nu][ix])
+      u[nu][y].adj * (u[dir][y] * a)
   threads:
     when clear:
       for x in other:
-        f[dir][x] := 0
+        fd[x] := 0
     for nu in 0..<nd:
-      if nu == dir: continue
-
-      discard sd ^*! u[nu]
-      threadBarrier()
-      if nu == firstNu:
-        shiftExpr(sf[nu], f[dir][ir] := cp * (u[nu][ir] * it) * adj(sd.field[ir]), u[dir][ix])
-      else:
-        shiftExpr(sf[nu], f[dir][ir] += cp * (u[nu][ir] * it) * adj(sd.field[ir]), u[dir][ix])
-      # := and += may use different shift partitions.
-      threadBarrier()
-      toc("gaugeDeriv2Subset forward")
-      shiftExpr(sb[nu], f[dir][ir] += cp*it, u[nu][ix].adj * (u[dir][ix] * sd.field[ix]))
-      threadBarrier()
-      toc("gaugeDeriv2Subset backward")
+      if nu != dir:
+        startSB(sw.sd[nu], u[nu][ix])
+        startSB(sw.sf[nu], u[dir][ix])
+    for nu in 0..<nd:
+      if nu != dir:
+        waitRecvSB(sw.sd[nu])
+        waitRecvSB(sw.sf[nu])
+    boundarySyncSB()
+    # The lower staples at the send sites read the a_nu boundary.
+    for nu in 0..<nd:
+      if nu != dir:
+        startSB(sw.sb[nu], lower(nu, ix))
+    toc("gaugeDeriv2Subset exchange")
+    for x in sub:
+      var s {.noinit.}: M
+      s := 0
+      for nu in 0..<nd:
+        if nu != dir:
+          var a, b {.noinit.}: M
+          getSB(sw.sd[nu], x, assign(a, it), u[nu][ix])
+          getSB(sw.sf[nu], x, assign(b, it), u[dir][ix])
+          s += (u[nu][x] * b) * a.adj
+          localSB(sw.sb[nu], x, s += it, lower(nu, ix))
+      fd[x] := cp * s
+    toc("gaugeDeriv2Subset local")
+    # The boundary loops split P like the local loop.
+    for nu in 0..<nd:
+      if nu != dir:
+        boundarySB(sw.sb[nu], fd[ir] += cp*it)
+        doneSB(sw.sd[nu])
+        doneSB(sw.sf[nu])
+  sw.tag = tag
   toc("gaugeDeriv2Subset end")
 
 proc gaugeDeriv2Subset*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: array|seq, parity, dir: int; work: LoopWork[V,T] = nil) =
-  ## f[dir]|P = D(g)|P; other directions are unchanged.
+  ## f[dir]|P = D(g)|P, f[dir]|~P = 0; other directions are unchanged.
   if c.rect != 0 or c.pgm != 0:
-    gaugeDerivSubset(c, g, f, parity, dir, true, work)
+    gaugeDerivSubset(c, g, f[dir], parity, dir, true, work)
     return
-  let ps = if parity == 0: "even" else: "odd"
-  let sd = newShifter(g[0], dir, 1)
-  let sf = createShiftBufs(g[0], 1, ps)
-  let sb = createShiftBufs(g[0], -1, ps)
-  c.gaugeDeriv2SubsetWork(g, f, sd, sf, sb, parity, dir, true, work=work)
+  c.gaugeDeriv2SubsetWork(g, f[dir], newSubsetWork(g[0], parity, dir), parity, dir, true, work=work)
 
 proc gaugeDerivDeriv2*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], h, f: array|seq; work: LoopWork[V,T] = nil) =
   ## f += H_g(h), under the ambient real Frobenius pairing.
@@ -1047,9 +1126,13 @@ proc gaugeDerivDeriv2*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field
     gaugeLoopDeriv(GaugeActionCoeffs(rect: -c.rect, pgm: -c.pgm), g, h, f, true, work)
   toc("end")
 
-proc gaugeDerivDeriv2SubsetImpl[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], hs, hdir: auto, f: array|seq, parity, dir: int, sum, add, addBase: static bool; work: LoopWork[V,T] = nil) =
-  # S=(parity,dir); sum: hdir|P=sum(hs)|P; add: f+=H(hdir|P).
-  # addBase: f[S]+=H(hdir|P); f[~S]=base[~S]+H(hdir|P).
+type SubsetHessianMode = enum hmOverwrite, hmAccumulate, hmAddBase, hmSum
+
+proc gaugeDerivDeriv2SubsetImpl[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], hs, hdir: auto, f: array|seq, parity, dir: int; mode: static SubsetHessianMode; sw: SubsetWork[V,T]; tag: LoopTag; work: LoopWork[V,T] = nil) =
+  # S=(parity,dir). hs supplies the summands for hmSum or the base for hmAddBase.
+  # hmSum forms hdir|P=sum(hs)|P, then overwrites f with its Hessian.
+  # hmAddBase: f[S]+=H(hdir|P); f[~S]=base[~S]+H(hdir|P).
+  # The link shifts go through sw; at sw's tag they reuse its boundaries.
   requireFundamental(c, "gaugeDerivDeriv2Subset")
   if c.rect != 0 or c.pgm != 0:
     # Apply the full Hessian to a masked seed kept in workspace scratch.
@@ -1057,126 +1140,170 @@ proc gaugeDerivDeriv2SubsetImpl[V:static[int],T](c: GaugeActionCoeffs, g: openAr
       w = useLoopWork(g, work)
       hm = w.loopScratch
       sub = g[0].l.getSubset(if parity == 0: "even" else: "odd")
-    when addBase:
+    when mode == hmAddBase:
       let other = g[0].l.getSubset(if parity == 0: "odd" else: "even")
     threads:
       for mu in 0..<hm.len:
         hm[mu] := 0
       threadBarrier()
       for x in sub:
-        when sum:
+        when mode == hmSum:
           hdir[x] := hs[0][x]
           for k in 1..<hs.len:
             hdir[x] += hs[k][x]
         hm[dir][x] := hdir[x]
       threadBarrier()
-      when addBase:
+      when mode == hmAddBase:
         for mu in 0..<f.len:
           if mu != dir:
             f[mu] := hs[mu]
         for x in other:
           f[dir][x] := hs[dir][x]
-      elif not add:
+      elif mode in {hmOverwrite, hmSum}:
         for mu in 0..<f.len:
           f[mu] := 0
     c.gaugeDerivDeriv2(g, hm, f, work=w)
     return
-  mixin adj
+  mixin adj, load1
   tic("gaugeDerivDeriv2Subset")
   let lo = g[0].l
   let nd = lo.nDim
   const nc = g[0][0].nrows
   let cp = -c.plaq / float(nc)
-  let ps = if parity == 0: "even" else: "odd"
-  let po = if parity == 0: "odd" else: "even"
-  when sum:
-    let sub = lo.getSubset(ps)
-  when addBase:
-    let other = lo.getSubset(po)
-    let firstNu = if dir == 0: 1 else: 0
-  let sd = newShifter(g[0], dir, 1)
-  let sfSame = createShiftBufs(g[0], 1, ps)
-  let sfOther = createShiftBufs(g[0], 1, po)
-  let sb = createShiftBufs(g[0], -1, po)
-  let sq = g[0].newOneOf
-  let bqSame = createShiftB(g[0], dir, -1, ps)
-  let bqOther = createShiftB(g[0], dir, -1, po)
-  toc("gaugeDerivDeriv2Subset setup")
+  let sub = lo.getSubset(if parity == 0: "even" else: "odd")
+  let other = lo.getSubset(if parity == 0: "odd" else: "even")
+  let sw = if sw.isNil: newSubsetWork(g[0], parity, dir) else: sw
+  sw.hessianShifts(g[0], parity, dir)
+  let kept = tag.id != 0 and tag == sw.tag
+  sw.tag = default(LoopTag)
   let u = cast[ptr cArray[Field[V,T]]](unsafeAddr(g[0]))
+  type M = type(load1(u[0][0]))
+  # Each (dir,nu) plaquette holds one dir link on P, so with H = h on P and
+  # u_dir off P the Hessian is the (dir,nu) plaquette derivative at u_dir -> H.
+  # One pass over all sites after the seed exchange; with a_nu(y) = u_nu(y+dir),
+  #   f_nu(y) += cp [H(y) a_nu(y) H(y+nu)^dag + q_nu(y-dir)],
+  #   f_dir(y) += cp sum_nu [u_nu(y) H(y+nu) a_nu(y)^dag + r_nu(y-nu)],  y off P,
+  #   q_nu(x) = H(x)^dag u_nu(x) H(x+nu),  r_nu(x) = u_nu(x)^dag h(x) a_nu(x).
+  # Off-rank q and r come from their send sites; the rest is read in place.
+  template inP(x: untyped): bool = x >= sub.lowOuter and x < sub.highOuter
+  template anbr(nu, x0: untyped): untyped =
+    block:
+      let x = x0  # bound before getSB injects its own ix
+      var t {.noinit.}: M
+      getSB(sw.sd[nu], x, assign(t, it), u[nu][ix])
+      t
+  template hnbr(nu, x0: untyped): untyped =
+    block:
+      let x = x0
+      var t {.noinit.}: M
+      if inP(x): getSB(sw.sf[nu], x, assign(t, it), u[dir][ix])
+      else: getSB(sw.so[nu], x, assign(t, it), hdir[ix])
+      t
+  template q(nu, x0: untyped): untyped =
+    block:
+      let x = x0
+      let n = hnbr(nu, x)
+      var t {.noinit.}: M
+      if inP(x): t := hdir[x].adj * (u[nu][x] * n)
+      else: t := u[dir][x].adj * (u[nu][x] * n)
+      t
+  template r(nu, x0: untyped): untyped =
+    block:
+      let x = x0
+      u[nu][x].adj * (hdir[x] * anbr(nu, x))
+  template put(mu, y, t: untyped) =
+    when mode == hmAddBase: f[mu][y] := hs[mu][y] + cp*t
+    elif mode == hmAccumulate: f[mu][y] += cp*t
+    else: f[mu][y] := cp*t
   threads:
-    when sum:
+    when mode == hmSum:
       for x in sub:
         hdir[x] := hs[0][x]
         for k in 1..<hs.len:
           hdir[x] += hs[k][x]
       threadBarrier()
-      toc("gaugeDerivDeriv2Subset sum")
-    when addBase:
-      if nd == 1:
-        for x in other:
-          f[dir][x] := hs[dir][x]
-    elif not add:
-      f[dir] := 0
-
     for nu in 0..<nd:
-      if nu == dir: continue
-
-      discard sd ^*! u[nu]
-      threadBarrier()
-      template put(i, y: untyped) =
-        when addBase:
-          f[nu][i] := hs[nu][i] + y
-        elif add:
-          f[nu][i] += y
-        else:
-          f[nu][i] := y
-      template setOtherAdd(i, t: untyped) =
-        put(i, cp * (u[dir][i] * sd.field[i]) * adj(t))
-        sq[i] := u[nu][i] * t
-        f[dir][i] += cp * sq[i] * adj(sd.field[i])
-      when addBase:
-        template setOtherBase(i, t: untyped) =
-          put(i, cp * (u[dir][i] * sd.field[i]) * adj(t))
-          sq[i] := u[nu][i] * t
-          f[dir][i] := hs[dir][i] + cp * sq[i] * adj(sd.field[i])
-      template setSame(i, t: untyped) =
-        sd.field[i] := hdir[i] * sd.field[i]
-        put(i, cp * sd.field[i] * adj(t))
-        sq[i] := u[nu][i] * t
-      when addBase:
-        if nu == firstNu:
-          shiftExpr(sfOther[nu], setOtherBase(ir, it), hdir[ix])
-        else:
-          shiftExpr(sfOther[nu], setOtherAdd(ir, it), hdir[ix])
-      else:
-        shiftExpr(sfOther[nu], setOtherAdd(ir, it), hdir[ix])
-      shiftExpr(sfSame[nu], setSame(ir, it), u[dir][ix])
-      threadBarrier()
-      toc("gaugeDerivDeriv2Subset forward")
-
-      shiftExpr(bqSame, f[nu][ir] += cp*it, u[dir][ix].adj * sq[ix])
-      shiftExpr(bqOther, f[nu][ir] += cp*it, hdir[ix].adj * sq[ix])
-      shiftExpr(sb[nu], f[dir][ir] += cp*it, u[nu][ix].adj * sd.field[ix])
-      threadBarrier()
-      toc("gaugeDerivDeriv2Subset backward")
+      if nu != dir:
+        if not kept:
+          startSB(sw.sd[nu], u[nu][ix])
+          startSB(sw.sf[nu], u[dir][ix])
+        startSB(sw.so[nu], hdir[ix])
+    for nu in 0..<nd:
+      if nu != dir:
+        if not kept:
+          waitRecvSB(sw.sd[nu])
+          waitRecvSB(sw.sf[nu])
+        waitRecvSB(sw.so[nu])
+    boundarySyncSB()
+    for nu in 0..<nd:
+      if nu != dir:
+        startSB(sw.sq[nu], q(nu, ix))
+        startSB(sw.sr[nu], r(nu, ix))
+    toc("gaugeDerivDeriv2Subset exchange")
+    # The sites of both parities differ in work: each iteration takes one of
+    # each at the same position in its half, adjacent sites sharing neighbors.
+    for y in sub:
+      for nu in 0..<nd:
+        if nu != dir:
+          var a, n, t {.noinit.}: M
+          getSB(sw.sd[nu], y, assign(a, it), u[nu][ix])
+          getSB(sw.sf[nu], y, assign(n, it), u[dir][ix])
+          t := (hdir[y] * a) * n.adj
+          localSB(sw.sq[nu], y, t += it, q(nu, ix))
+          put(nu, y, t)
+      when mode in {hmOverwrite, hmSum}: f[dir][y] := 0
+      let z = y - sub.lowOuter + other.lowOuter
+      var e {.noinit.}: M
+      e := 0
+      for nu in 0..<nd:
+        if nu != dir:
+          var a, n, k, t {.noinit.}: M
+          getSB(sw.sd[nu], z, assign(a, it), u[nu][ix])
+          getSB(sw.so[nu], z, assign(n, it), hdir[ix])
+          k := a * n.adj
+          t := u[dir][z] * k
+          e += u[nu][z] * k.adj
+          localSB(sw.sr[nu], z, e += it, r(nu, ix))
+          localSB(sw.sq[nu], z, t += it, q(nu, ix))
+          put(nu, z, t)
+      put(dir, z, e)
+    toc("gaugeDerivDeriv2Subset local")
+    # The boundary loops of sq split all sites unlike the parity loops.
+    threadBarrier()
+    for nu in 0..<nd:
+      if nu != dir:
+        boundarySB(sw.sq[nu], f[nu][ir] += cp*it)
+        boundarySB(sw.sr[nu], f[dir][ir] += cp*it)
+        doneSB(sw.so[nu])
+        if not kept:
+          doneSB(sw.sd[nu])
+          doneSB(sw.sf[nu])
+  sw.tag = tag
   toc("gaugeDerivDeriv2Subset end")
 
-proc gaugeDerivDeriv2Subset*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], h, f: array|seq, parity, dir: int; work: LoopWork[V,T] = nil) =
+# The masked Hessians below take the derivative's shift buffers sw (a new set
+# when nil) and the tag of g: at sw's tag they reuse its link boundaries.
+
+proc gaugeDerivDeriv2Subset*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], h, f: array|seq, parity, dir: int; sw: SubsetWork[V,T] = nil; tag = default(LoopTag); work: LoopWork[V,T] = nil) =
   ## f = H_g(h[dir]|P), including all affected links.
-  c.gaugeDerivDeriv2SubsetImpl(g, h, h[dir], f, parity, dir, false, false, false, work=work)
+  c.gaugeDerivDeriv2SubsetImpl(g, h, h[dir], f, parity, dir, hmOverwrite, sw, tag, work=work)
 
-proc gaugeDerivDeriv2SubsetAdd*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], hdir: auto, f: array|seq, parity, dir: int; work: LoopWork[V,T] = nil) =
+proc gaugeDerivDeriv2Subset*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], hdir: Field[V,T], f: array|seq, parity, dir: int; sw: SubsetWork[V,T] = nil; tag = default(LoopTag); work: LoopWork[V,T] = nil) =
+  ## f = H_g(hdir|P in direction dir), including all affected links.
+  c.gaugeDerivDeriv2SubsetImpl(g, hdir, hdir, f, parity, dir, hmOverwrite, sw, tag, work=work)
+
+proc gaugeDerivDeriv2SubsetAdd*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], hdir: auto, f: array|seq, parity, dir: int; sw: SubsetWork[V,T] = nil; tag = default(LoopTag); work: LoopWork[V,T] = nil) =
   ## f += H_g(hdir|P).
-  c.gaugeDerivDeriv2SubsetImpl(g, hdir, hdir, f, parity, dir, false, true, false, work=work)
+  c.gaugeDerivDeriv2SubsetImpl(g, hdir, hdir, f, parity, dir, hmAccumulate, sw, tag, work=work)
 
-proc gaugeDerivDeriv2SubsetAddBase*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], hdir: auto, base, f: array|seq, parity, dir: int; work: LoopWork[V,T] = nil) =
+proc gaugeDerivDeriv2SubsetAddBase*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], hdir: auto, base, f: array|seq, parity, dir: int; sw: SubsetWork[V,T] = nil; tag = default(LoopTag); work: LoopWork[V,T] = nil) =
   ## S=(P,dir): f[S] += H_g(hdir|P)[S].
   ## f[~S] = base[~S] + H_g(hdir|P)[~S].
-  c.gaugeDerivDeriv2SubsetImpl(g, base, hdir, f, parity, dir, false, false, true, work=work)
+  c.gaugeDerivDeriv2SubsetImpl(g, base, hdir, f, parity, dir, hmAddBase, sw, tag, work=work)
 
-proc gaugeDerivDeriv2SubsetSum*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], h: array|seq, w: auto, f: array|seq, parity, dir: int; work: LoopWork[V,T] = nil) =
+proc gaugeDerivDeriv2SubsetSum*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], h: array|seq, w: auto, f: array|seq, parity, dir: int; sw: SubsetWork[V,T] = nil; tag = default(LoopTag); work: LoopWork[V,T] = nil) =
   ## w|P = sum(h)|P; f = H_g(w|P).
-  c.gaugeDerivDeriv2SubsetImpl(g, h, w, f, parity, dir, true, false, false, work=work)
+  c.gaugeDerivDeriv2SubsetImpl(g, h, w, f, parity, dir, hmSum, sw, tag, work=work)
 
 proc gaugeForce2*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: array|seq; work: LoopWork[V,T] = nil) =
   requireFundamental(c, "gaugeForce2")

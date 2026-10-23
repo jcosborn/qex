@@ -236,7 +236,7 @@ proc stoutUpdateImpl(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): GstoutUpd
     let ds = Ggauge(args.storedSlot(1))
     let alpha = Gscalar(args.storedSlot(2))
     let z = GstoutUpdate(v)
-    stoutStepKernel(z.gval, W.gval, ds.gval, z.expa, alpha = alpha.sval, parity = parity, dir = dir)
+    stoutStepKernel(z.gval, W.gval, ds.gval[dir], z.expa, alpha = alpha.sval, parity = parity, dir = dir)
     toc("stoutUpdate kernel end")
 
   proc gradPair(W, ds: Ggauge, alpha: Gscalar, upstream: Ggauge, update: GstoutUpdate): Gmulti =
@@ -576,7 +576,7 @@ proc stoutStepForwardImpl(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): Gsto
       ds = Ggauge(args.storedSlot(1))
       alpha = Gscalar(args.storedSlot(2))
       z = GstoutStepForward(v)
-    stoutStepKernel(z.gval, W.gval, ds.gval, z.expa, z.m, alpha.sval, parity, dir)
+    stoutStepKernel(z.gval, W.gval, ds.gval[dir], z.expa, z.m, alpha.sval, parity, dir)
     toc("stoutStepForward kernel end")
 
   proc backward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =

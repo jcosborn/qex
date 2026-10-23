@@ -468,22 +468,16 @@ proc gaugeForce*(c: Gactcoeff, g: Ggauge): Ggauge =
   graphNode(g.gaugeNodeLike, @[Gvalue(c), Gvalue(g)], gaugeForceg, "gaugeForce")
 
 type GsubsetDeriv = ref object of Ggauge
-  sd: Shifter[DLatticeColorMatrixV, DColorMatrixV]
-  sf, sb: seq[ShiftB[DColorMatrixV]]
+  work: MaskWork
   parity, dir: int
 
 method ensureStorage*(x: GsubsetDeriv) =
   procCall Ggauge(x).ensureStorage
-  if x.sd.field.isNil:
-    let ps = if x.parity == 0: "even" else: "odd"
-    x.sd = newShifter(x.gval[0], x.dir, 1)
-    x.sf = createShiftBufs(x.gval[0], 1, ps)
-    x.sb = createShiftBufs(x.gval[0], -1, ps)
+  if x.work.isNil:
+    x.work = newSubsetWork(x.gval[0], x.parity, x.dir)
 
 method releaseWork*(x: GsubsetDeriv) =
-  x.sd = default(typeof(x.sd))
-  x.sf = @[]
-  x.sb = @[]
+  x.work = nil
 
 method releaseStorage*(x: GsubsetDeriv) =
   x.releaseWork
@@ -503,7 +497,7 @@ proc gaugeActionDeriv*(c: Gactcoeff, g: Ggauge, parity, dir: int): Ggauge =
     let c = Gactcoeff(v.inputs[0])
     let g = Ggauge(v.inputs[1])
     let z = GsubsetDeriv(v)
-    evalGaugeForceSubset(c.cval, g.gval, z.gval, z.sd, z.sf, z.sb, parity, dir)
+    evalGaugeForceSubset(c.cval, g.gval, z.gval, z.work, parity, dir)
   proc bwd(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
     let c = Gactcoeff(z.inputs[0])
     let g = Ggauge(z.inputs[1])

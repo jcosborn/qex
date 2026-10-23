@@ -185,6 +185,17 @@ proc boundaryOffsetSB*(s:ShiftB) =
   s.sb.sq.lenr[threadNum] = cint(i1)
   s.sb.sq.nthreads[threadNum] = numThreads.cint
 
+template waitRecvSB*(s: ShiftB) =
+  ## Thread 0 completes the receive of the exchange started through s.
+  if threadNum == 0 and s.si.nRecvRanks > 0: waitRecvBuf(s.sb)
+
+template doneSB*(s: ShiftB) =
+  ## Thread 0 completes an exchange through s whose boundary getSB read; the
+  ## received values stay readable until the next exchange through s.
+  if threadNum == 0:
+    if s.si.nRecvRanks > 0: doneRecvBuf(s.sb)
+    if s.si.nSendRanks > 0: waitSendBuf(s.sb)
+
 template boundaryWaitSB*(s:ShiftB, e:untyped) =
   if s.si.nRecvDests > 0:
     e
@@ -300,7 +311,6 @@ template shiftExpr*(sb: ShiftB, er, es) {.dirty.} =
   for ir in sb.subset:
     localSB(sb, ir, er, es)
   boundarySB(sb, er)
-
 
 
 type Shift*[V: static[int]; T] = object

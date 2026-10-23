@@ -5,6 +5,7 @@ import ../../../../physics/qcdTypes
 import ../types
 
 type
+  MaskWork* = SubsetWork[VLEN, DColorMatrixV]
   GaugeActionFamily = enum
     gafGaugeAction1, gafActionA
 
@@ -69,11 +70,11 @@ proc evalProjectedGaugeForceValue*(gc: GaugeActionCoeffs, g, outg: types.Gauge) 
   of gafActionA:
     gc.forceA(g, outg)
 
-proc evalGaugeForceSubset*(gc: GaugeActionCoeffs, g, outg: types.Gauge, sd, sf, sb: auto, parity, dir: int) =
+proc evalGaugeForceSubset*(gc: GaugeActionCoeffs, g, outg: types.Gauge, work: MaskWork, parity, dir: int) =
   ## Masked ambient derivative for the fundamental loop family.
   if not gc.isFundamental:
     raiseUnsupportedGaugeCoeff(gc)
-  gc.gaugeDeriv2SubsetWork(g, outg, sd, sf, sb, parity, dir, clear=false)
+  gc.gaugeDeriv2SubsetWork(g, outg[dir], work, parity, dir, clear=false)
 
 proc evalGaugeForceJacobian*(b: types.Gauge,
                              gc: GaugeActionCoeffs,

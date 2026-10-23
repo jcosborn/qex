@@ -4,11 +4,13 @@ import gauge
 import physics/qcdTypes
 import maths/groupOps, maths/matrixFunctions
 
-proc stoutStepKernel*[T](dst, W, ds: seq[T]; expa: T; m: T = nil; alpha: float; parity, dir: int; mask: SLatticeRealV = nil) =
-  ## Subset update; mask refines parity. dst and W must have distinct storage.
-  ## expa receives exp(alpha projectTAH(W ds†)) and m, when given, alpha W ds†.
+proc stoutStepKernel*[T](dst, W: seq[T]; ds, expa: T; m: T = nil; alpha: float; parity, dir: int; mask: SLatticeRealV = nil) =
+  ## Subset step with ds the derivative in direction dir; mask refines parity.
+  ## dst and W must have distinct storage. expa and m, when given, receive
+  ## exp(alpha projectTAH(W[dir] ds†)) and alpha W[dir] ds† on the subset,
+  ## 1 and 0 in its masked lanes; their other parity is not written.
   let
-    lo = W[0].l
+    lo = W[dir].l
     sub = lo.getSubset(if parity == 0: "even" else: "odd")
     other = lo.getSubset(if parity == 0: "odd" else: "even")
   if mask != nil and mask.l != lo:
@@ -20,16 +22,16 @@ proc stoutStepKernel*[T](dst, W, ds: seq[T]; expa: T; m: T = nil; alpha: float; 
       dst[dir][e] := W[dir][e]
     for e in sub:
       let
-        w = W[dir][e]
-        d = ds[dir][e]
-      var q, M, F, E {.noinit.}: evalType(w)
-      q := w * d.adj
+        u = W[dir][e]
+        d = ds[e]
+      var q, M, F, E {.noinit.}: evalType(u)
+      q := u * d.adj
       M := alpha * q
       F.projectTAH M
       E[] := expAH(F[])
-      expa[e] := E
+      if expa != nil: expa[e] := E
       if m != nil: m[e] := M
-      dst[dir][e] := E * w
+      dst[dir][e] := E * u
       if mask != nil:
         for k in 0..<lo.V:
           let s = e*lo.V+k
@@ -37,7 +39,7 @@ proc stoutStepKernel*[T](dst, W, ds: seq[T]; expa: T; m: T = nil; alpha: float; 
           keep := mask{s}
           if keep == 0:
             dst[dir]{s} := W[dir]{s}
-            expa{s} := 1
+            if expa != nil: expa{s} := 1
             if m != nil: m{s} := 0
 
 proc stoutPullbackSite*(rw, rd: var auto; w, d, e, m, upstream: auto; alpha, ld: float) =

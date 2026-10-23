@@ -154,6 +154,15 @@ suite "Gauge action subset kernels":
           expected[mu] += delta[mu]
       c.gaugeDerivDeriv2SubsetAddBase(g, h[d], base, got, p, d)
       check(got ~ expected)
+      # f = base, as in the stout gradient over a donated upstream:
+      # f[S] += H[S] and f[~S] = base[~S] + H[~S] give f = base + H.
+      var inplace = lo.newGauge
+      threads:
+        for mu in 0..<g.len:
+          inplace[mu] := base[mu]
+          expected[mu] := base[mu] + delta[mu]
+      c.gaugeDerivDeriv2SubsetAddBase(g, h[d], inplace, inplace, p, d)
+      check(inplace ~ expected)
 
     block:
       let hs = @[h[d], base[d], h[d]]
@@ -173,6 +182,65 @@ suite "Gauge action subset kernels":
       c.gaugeDerivDeriv2SubsetSum(g, hs, w, got, p, d)
       c.gaugeDerivDeriv2Subset(g, hm, expected, p, d)
       check(got ~ expected)
+
+  test "subset sums preserve operand order and scratch outside the parity":
+    let d = min(1, g.len-1)
+    let w = g[d].newOneOf
+    let want = g[d].newOneOf
+    let got = lo.newGauge
+    let expected = lo.newGauge
+    let work = newLoopWork(g[0])
+    for c in [GaugeActionCoeffs(), GaugeActionCoeffs(plaq: 0.8),
+              GaugeActionCoeffs(plaq: 0.8, rect: -0.11),
+              GaugeActionCoeffs(plaq: 0.8, rect: -0.11, pgm: 0.07)]:
+      for parity in 0..1:
+        let sub = lo.getSubset(if parity == 0: "even" else: "odd")
+        let sw = newSubsetWork(g[0], parity, d)
+        for seeds in [@[h[d]], @[h[d], base[d], g[d]]]:
+          threads:
+            w := base[d]
+            want := base[d]
+            for mu in 0..<g.len: got[mu] := base[mu]
+            threadBarrier()
+            for x in sub:
+              want[x] := seeds[0][x]
+              for k in 1..<seeds.len: want[x] += seeds[k][x]
+          c.gaugeDerivDeriv2SubsetSum(g, seeds, w, got, parity, d, sw, (23,0), work=work)
+          c.gaugeDerivDeriv2Subset(g, want, expected, parity, d, sw, (23,0), work=work)
+          check norm2(w-want) == 0
+          # Two instantiations of one kernel, which compilers may round differently.
+          for mu in 0..<g.len:
+            check norm2(got[mu]-expected[mu]) <= (4*epsilon(float))^2*(1+norm2(expected[mu]))
+
+  test "subset works sharing their call buffers keep their link boundaries":
+    # Derivatives at A and B, then the Hessians at B and A under the tags of
+    # their derivatives: A's reads the link boundaries it kept while B's calls
+    # ran through the shared buffers, B's Hessian through A's derivative ones.
+    let
+      c = GaugeActionCoeffs(plaq: 5.4)
+      sh = newSubsetShifts(g[0])
+      d1 = min(1, g.len - 1)
+      ta: LoopTag = (1, 1)
+      tb: LoopTag = (2, 1)
+    for (a, b) in [((0, 0), (1, d1)), ((1, d1), (1, 0))]:
+      let
+        wa = newSubsetWork(g[0], a[0], a[1], sh)
+        wb = newSubsetWork(g[0], b[0], b[1], sh)
+      var
+        fa = g[0].newOneOf
+        fb = g[0].newOneOf
+        ga = lo.newGauge
+        gb = lo.newGauge
+        ea = lo.newGauge
+        eb = lo.newGauge
+      c.gaugeDeriv2SubsetWork(g, fa, wa, a[0], a[1], true, ta)
+      c.gaugeDeriv2SubsetWork(g, fb, wb, b[0], b[1], true, tb)
+      c.gaugeDerivDeriv2Subset(g, h, gb, b[0], b[1], wb, tb)
+      c.gaugeDerivDeriv2Subset(g, h, ga, a[0], a[1], wa, ta)
+      c.gaugeDerivDeriv2Subset(g, h, ea, a[0], a[1])
+      c.gaugeDerivDeriv2Subset(g, h, eb, b[0], b[1])
+      check(ga ~ ea)
+      check(gb ~ eb)
 
   test "subset kernels reject adjoint coefficients":
     let c = GaugeActionCoeffs(adjplaq: 1.0)

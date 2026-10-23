@@ -173,7 +173,7 @@ proc runLoops(lo: auto, nc: static int) =
         check relativeDiff(tmp, e) < 2.0e-8
 
     test "subset gradient and Hessian masks, add, base, and sum":
-      for c in coeffs:
+      for c in @[GaugeActionCoeffs(plaq: 0.8)] & @coeffs:
         (-1.0*c).gaugeActionDeriv(g, d, work=work)
         for parity in 0..1:
           let
@@ -194,16 +194,27 @@ proc runLoops(lo: auto, nc: static int) =
                 tmp[dir][x] := h[dir][x]
             c.gaugeDeriv2Subset(g, hp, parity, dir, work=work)
             check relativeDiff(hp, hm) < 2.0e-12
-            let sd = newShifter(g[0], dir, 1)
-            let sf = createShiftBufs(g[0], 1, ps)
-            let sb = createShiftBufs(g[0], -1, ps)
+            let sw = newSubsetWork(g[0], parity, dir)
             threads:
               hp[dir] := k[dir]
               hm[dir] := k[dir]
               threadBarrier()
               for x in sub: hm[dir][x] := d[dir][x]
-            c.gaugeDeriv2SubsetWork(g, hp, sd, sf, sb, parity, dir, false, work=work)
+            c.gaugeDeriv2SubsetWork(g, hp[dir], sw, parity, dir, false, tag=(1,1), work=work)
             check relativeDiff(hp, hm) < 2.0e-12
+            # A Hessian at the derivative's tag reads the kept link boundaries
+            # and equals one that exchanges them; a later one keeps the tag.
+            let shifted = c.rect == 0 and c.pgm == 0
+            check sw.tag == (if shifted: (1,1) else: default(LoopTag))
+            for t in [(1,1), (1,1), (2,1)]:
+              threads:
+                for mu in 0..<nd:
+                  hp[mu] := k[mu]
+                  hm[mu] := k[mu]
+              c.gaugeDerivDeriv2SubsetAdd(g, h[dir], hp, parity, dir, sw, t, work=work)
+              c.gaugeDerivDeriv2SubsetAdd(g, h[dir], hm, parity, dir, work=work)
+              check relativeDiff(hp, hm) == 0.0
+              check sw.tag == (if shifted: t else: default(LoopTag))
             c.gaugeDerivDeriv2(g, tmp, hv, work=work)
             c.gaugeDerivDeriv2Subset(g, h, e, parity, dir, work=work)
             check relativeDiff(hv, e) < 2.0e-12

@@ -251,12 +251,37 @@ $$
 The Hessian reaches every affected link. `gaugeDerivDeriv2Subset` overwrites;
 `gaugeDerivDeriv2SubsetAdd` accumulates; `gaugeDerivDeriv2SubsetAddBase` adds on
 selected links and sets base plus Hessian elsewhere; `gaugeDerivDeriv2SubsetSum`
-combines selected-parity seeds. The first derivative `gaugeDeriv2SubsetWork`
-takes caller-built `sd`, `sf`, `sb` (a direction shifter and parity shift
-buffers, as `gaugeDeriv2Subset` builds them), preserves the complement for
-`clear=false` and zeros it for `clear=true`. Rectangle/parallelogram subsets
-take the full-derivative route through the workspace temporary gauge and ignore
-those buffers.
+combines selected-parity seeds; a seed may be the direction field alone. The
+first derivative `gaugeDeriv2SubsetWork` writes the direction field `fd` and
+shifts through a caller-built `SubsetWork` (`newSubsetWork(f, parity, dir,
+sh)`: shift buffers, the Hessian's made on its first call); it preserves the
+other parity of `fd` for `clear=false` and zeros it for `clear=true`. The
+buffers that a call completes come from `sh` (`newSubsetShifts(f)`, new by
+default), which the works of all $(P,\mu)$ may share; only the link shifts keep
+data between calls.
+
+Every $(\mu,\nu)$ plaquette holds one $\mu$ link on each parity. With $H=h$ on
+$P$ and $H=U_\mu$ off $P$, the masked Hessian is the $(\mu,\nu)$ plaquette
+derivative at $U_\mu\to H$; for $c=-c_p/N_c$, $a_\nu(y)=U_\nu(y+\hat\mu)$ and
+$\nu\neq\mu$,
+
+$$
+\begin{aligned}
+f_\nu(y)&\mathrel{+}=c\,[H(y)a_\nu(y)H(y+\hat\nu)^\dagger+q_\nu(y-\hat\mu)],&
+q_\nu(x)&=H(x)^\dagger U_\nu(x)H(x+\hat\nu),\\
+f_\mu(y)&\mathrel{+}=c\sum_\nu[U_\nu(y)H(y+\hat\nu)a_\nu(y)^\dagger+r_\nu(y-\hat\nu)],\ y\notin P,&
+r_\nu(x)&=U_\nu(x)^\dagger h(x)a_\nu(x).
+\end{aligned}
+$$
+
+Both kernels exchange their link and seed boundaries first and then make one
+pass over the sites, reading neighbors in place or from the received boundary
+(`getSB`). Products at an offset site, the lower staples and $q$, $r$, are
+formed at that site: in place for a local neighbor, at the send sites otherwise. The work keeps the boundaries its link shifts
+received, under the caller's tag of the links; a masked Hessian given the same
+work and tag reads the kept boundaries and exchanges only its seed and products.
+Rectangle/parallelogram subsets take the full-derivative route through the
+workspace temporary gauge, ignore those buffers and leave the work untagged.
 
 Warm Hessians reuse QEX raw buffers. With `keepStaples`, `gaugeAction1` and
 `gaugeActionDeriv` keep their staple arrays in the workspace and pass them back
