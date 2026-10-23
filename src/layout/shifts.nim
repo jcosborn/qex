@@ -10,6 +10,7 @@ import macros
 #import stdUtils
 import field
 export field
+import comms/commsStats
 #import future
 #import strUtils
 #import metaUtils
@@ -76,6 +77,7 @@ proc free*(sb: ShiftB) =
 template startSB*(sb0: ShiftB; e: untyped) =
   mixin assign, `[]`, numberType
   if threadNum == 0:
+    commAdd(shifts, 1)
     if sb0.si.nRecvRanks > 0:
       #echoRank "startRecvBuf"
       startRecvBuf(sb0.sb)
@@ -336,6 +338,7 @@ proc start*[V:static[int],T](s:var Shift[V,T]; src:Field[V,T]) =
   template si:untyped = s.si
   template sb:untyped = s.sb
   if threadNum == 0:
+    commAdd(shifts, 1)
     s.src = src
     if si.nRecvRanks > 0:
       #echo myrank, ": startRecvBuf"

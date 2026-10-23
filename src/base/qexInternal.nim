@@ -3,6 +3,7 @@ export globals
 import threading
 export threading
 import comms/comms
+import comms/commsStats
 export comms
 import profile
 export profile
@@ -83,6 +84,7 @@ proc qexSetFinalizeComms*(val: bool) =
   qexFinalizeComms = val
 
 proc qexFinalize*() =
+  commReport("final")
   when defined(memTrace): rawPeakReport()
   flushFile stdout
   flushFile stderr

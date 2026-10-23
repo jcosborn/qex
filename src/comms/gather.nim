@@ -1,4 +1,4 @@
-import comms, rankScatter, base/profile, field
+import comms, rankScatter, base/profile, field, commsStats
 import algorithm
 
 template `&&`(x: char): untyped = cast[pointer](unsafeAddr(x))
@@ -209,7 +209,10 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
     c.pushRecv(gm.rmsginfo[i].rank, &&recvbuf[elemsize*gm.rmsginfo[i].start],
                elemsize*gm.rmsginfo[i].count)
   toc("start recvs")
-  c.barrier  # make sure recvs posted before sends start
+  commAdd(gathers, 1)
+  commAdd(gmsgs, gm.smsginfo.len)
+  commAdd(gbytes, elemsize*gm.sidx.len)
+  commTime(gwait): c.barrier  # make sure recvs posted before sends start
   toc("barrier")
 
   # fill send buffers and send
@@ -266,7 +269,7 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
     bytes += gm.rmsginfo[i].count * elemsize
     #tic()
     #echo "waitRecv: ", i
-    c.waitRecv(i, free=false)
+    commTime(gwait): c.waitRecv(i, free=false)
     #toc("gather: wait recv")
     #for j in 0..<gm.rmsginfo[i].count:
     #  let k = gm.rmsginfo[i].start + j
@@ -287,7 +290,7 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
   # free recvs and wait sends
   c.freeRecvs(gm.rmsginfo.len)
   toc("free recvs")
-  c.waitSends(gm.smsginfo.len)
+  commTime(gwait): c.waitSends(gm.smsginfo.len)
   toc("wait sends")
 
 type GatherPointer = object

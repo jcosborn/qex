@@ -1,6 +1,6 @@
 import qgather
 import layoutTypes, shiftX
-import comms/qmp
+import comms/[qmp, commsStats]
 import strutils #, strformat
 
 const
@@ -102,6 +102,8 @@ proc startSendBufQ*(sb: ptr ShiftBufQ) =
   when PAIR:
     if not isEmpty sb.pairmsg:
       #echo "QMP_start"
+      commAdd(msgs, 1)
+      commAdd(bytes, sb.sbufSize)
       discard QMP_start(sb.pairmsg)
   else:
     if not isEmpty sb.smsg:
@@ -120,7 +122,7 @@ proc waitSendBufQ*(sb: ptr ShiftBufQ) =
 proc waitRecvBufQ*(sb: ptr ShiftBufQ) =
   when PAIR:
     if not isEmpty sb.pairmsg:
-      discard QMP_wait(sb.pairmsg)
+      commTime(wait): discard QMP_wait(sb.pairmsg)
   else:
     if not isEmpty sb.rmsg: QMP_wait(sb.rmsg)
   #printf("recv: %g\n",*(float *)(sb->rbuf));
