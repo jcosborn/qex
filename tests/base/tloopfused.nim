@@ -30,6 +30,7 @@ proc run(nc:static int) =
     GaugeActionCoeffs(plaq:0.8,pgm:0.07),GaugeActionCoeffs(rect: -0.1,pgm:0.07),
     GaugeActionCoeffs(plaq:0.8,rect: -0.1,pgm:0.07)]
   privateAccess(typeof(work))
+  privateAccess(typeof(work.tiles[0]))
   suite "Fused loop kernels Nc=" & $nc:
     test "values, gradients and Hessians match independent production paths":
       for c in cases:
@@ -78,10 +79,12 @@ proc run(nc:static int) =
           var ds: array[order,type(g)]
           for k in 0..<order: ds[k] = hs[k]
           c.loopDeriv(g,ds,f,work=work)  # prepare this order's scratch capacity
-          for bank in work.products:
+          for scratch in work.tiles:
+            let bank = scratch.products
             for i in 0..<bank.len: bank[i] := 17.0
           c.loopDeriv(g,ds,f,work=work)
-          for bank in work.products:
+          for scratch in work.tiles:
+            let bank = scratch.products
             for i in 0..<bank.len: bank[i] := -23.0
           c.loopDeriv(g,ds,want,work=work)
           check relativeDiff(f,want) == 0
@@ -118,7 +121,7 @@ proc run(nc:static int) =
       check f.norm2 == 0
       cases[0].loopDeriv(g,[hs[0],hs[1],hs[2],hs[3]],f,work=w)
       check f.norm2 == 0
-      check w.halos.len == 0 and w.products.len == 0
+      check w.halos.len == 0 and w.tiles.len == 0
       check getRawMemAllocated() == raw
 
     test "high jets skip plaquettes":

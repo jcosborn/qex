@@ -72,7 +72,7 @@ block:
   let
     c = GaugeActionCoeffs(plaq: 5.4)
     w = newLoopWork(g[0])
-    ws = newLoopWork(g[0], keep=keepStaples)
+    ws = newStapleWork(g[0])
     a = -0.0125
     p = lo.newGauge
     q = lo.newGauge
@@ -128,12 +128,13 @@ for (rect, pgm) in [(false, 0.0), (true, 0.0), (true, 0.07)]:
   let
     label = if rect: "plaq+rect pgm=" & $pgm else: "plaq"
     neg = -1.0*c
-    wp = newLoopWork(g[0], keep=keepStaples)
+    wp = newStapleWork(g[0])
+    wl = newLoopWork(g[0])
     wf = newLoopWork(g[0])
   echo label, " coefficients: plaq=", c.plaq, " rect=", c.rect, " pgm=", c.pgm
   var ap, af: float
   bench("production " & label & " action"):
-    ap = c.gaugeAction1(g,work=wp)
+    ap = c.gaugeAction1(g,work=wp,loop=wl)
     total += ap
   bench("fused " & label & " action"):
     af = c.loopAction(g,work=wf)
@@ -142,7 +143,7 @@ for (rect, pgm) in [(false, 0.0), (true, 0.0), (true, 0.07)]:
   echo label, " action relative difference=", err
   doAssert err < 2e-12
   bench("production " & label & " force"):
-    c.gaugeForce(g,fp,work=wp)
+    c.gaugeForce(g,fp,work=wp,loop=wl)
   bench("fused " & label & " force"):
     # Match gaugeForce: project U*(-grad S)^dag, including projection in timing.
     neg.loopDeriv(g,f,work=wf)
@@ -157,7 +158,7 @@ for (rect, pgm) in [(false, 0.0), (true, 0.0), (true, 0.07)]:
         # gaugeDerivDeriv2 accumulates; each timed application starts from zero.
         threads:
           for mu in 0..<fp.len: fp[mu] := 0
-        c.gaugeDerivDeriv2(g,ds[0],fp,work=wp)
+        c.gaugeDerivDeriv2(g,ds[0],fp,work=wl)
     bench("fused " & label & " " & op):
       c.loopDeriv(g,seeds,f,work=wf)
     when order == 1: compare(label & " " & op,f,fp)

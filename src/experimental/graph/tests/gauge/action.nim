@@ -79,7 +79,7 @@ suite "gauge action":
           threadBarrier()
           for x in sub:
             reference[d][x] := full[d][x]
-        c.gaugeDeriv2Subset(g, got, p, d)
+        c.gaugeDeriv2Subset(g, got[d], newSubsetWork(g[0], p, d))
         norm2(grt.toGvalue(got) - grt.toGvalue(reference)) :< 1e-24
 
   test "subset derivative refresh overwrites graph-owned storage":
@@ -157,15 +157,15 @@ suite "gauge action":
     var outg = zeroGaugeLike(g)
     let w = g[0].newOneOf
     expect(ValueError):
-      c.gaugeDeriv2Subset(g, outg, 0, 0)
+      c.gaugeDeriv2Subset(g, outg[0], newSubsetWork(g[0], 0, 0))
     expect(ValueError):
-      c.gaugeDerivDeriv2Subset(g, m, outg, 0, 0)
+      c.gaugeDerivDeriv2Subset(g, m[0], outg, newSubsetWork(g[0], 0, 0))
     expect(ValueError):
-      c.gaugeDerivDeriv2SubsetSum(g, @[m[0]], w, outg, 0, 0)
+      c.gaugeDerivDeriv2SubsetSum(g, @[m[0]], w, outg, newSubsetWork(g[0], 0, 0))
     expect(ValueError):
-      c.gaugeDerivDeriv2SubsetAdd(g, m[0], outg, 0, 0)
+      c.gaugeDerivDeriv2SubsetAdd(g, m[0], outg, newSubsetWork(g[0], 0, 0))
     expect(ValueError):
-      c.gaugeDerivDeriv2SubsetAddBase(g, m[0], u, outg, 0, 0)
+      c.gaugeDerivDeriv2SubsetAddBase(g, m[0], u, outg, newSubsetWork(g[0], 0, 0))
 
   test "raw summed subset Hessian matches a materialized sum":
     let c = GaugeActionCoeffs(plaq: 0.7, rect: -0.03, pgm: 0.02)
@@ -182,8 +182,8 @@ suite "gauge action":
           h[d] := m[d]
           h[d] += u[d]
           h[d] += m[d]
-        c.gaugeDerivDeriv2SubsetSum(g, hs, w, got, p, d)
-        c.gaugeDerivDeriv2Subset(g, h, reference, p, d)
+        c.gaugeDerivDeriv2SubsetSum(g, hs, w, got, newSubsetWork(g[0], p, d))
+        c.gaugeDerivDeriv2Subset(g, h[d], reference, newSubsetWork(g[0], p, d))
         norm2(grt.toGvalue(got) - grt.toGvalue(reference)) :< 1e-24
 
   test "raw accumulating subset Hessian adds to an arbitrary output":
@@ -198,11 +198,11 @@ suite "gauge action":
           for mu in 0..<g.len:
             got[mu] := u[mu]
             reference[mu] := u[mu]
-        c.gaugeDerivDeriv2Subset(g, m, delta, p, d)
+        c.gaugeDerivDeriv2Subset(g, m[d], delta, newSubsetWork(g[0], p, d))
         threads:
           for mu in 0..<g.len:
             reference[mu] += delta[mu]
-        c.gaugeDerivDeriv2SubsetAdd(g, m[d], got, p, d)
+        c.gaugeDerivDeriv2SubsetAdd(g, m[d], got, newSubsetWork(g[0], p, d))
         norm2(grt.toGvalue(got) - grt.toGvalue(reference)) :< 1e-24
 
   test "raw subset Hessian initializes its direct base in one pass":
@@ -221,11 +221,11 @@ suite "gauge action":
           for x in sub:
             got[d][x] := m[d][x]
             reference[d][x] := m[d][x]
-        c.gaugeDerivDeriv2Subset(g, m, delta, p, d)
+        c.gaugeDerivDeriv2Subset(g, m[d], delta, newSubsetWork(g[0], p, d))
         threads:
           for mu in 0..<g.len:
             reference[mu] += delta[mu]
-        c.gaugeDerivDeriv2SubsetAddBase(g, m[d], u, got, p, d)
+        c.gaugeDerivDeriv2SubsetAddBase(g, m[d], u, got, newSubsetWork(g[0], p, d))
         norm2(grt.toGvalue(got) - grt.toGvalue(reference)) :< 1e-24
 
   test "single-term subset Hessian refreshes its direction":

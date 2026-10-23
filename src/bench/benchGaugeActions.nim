@@ -11,7 +11,7 @@ letParam:
   lat = latticeFromLocalLattice(loc, nRanks)
   reps = 512
   trials = 5
-  keep = "staples"  # LoopWork retention: none, staples
+  keep = "staples"  # staple storage: none, staples
   families = "Wilson,Symanzik,Iwasaki,DBW2,adjoint"
   timers = 0  # print the timer tree of each family and operation
   path = "staple"  # staple: gaugeAction1/gaugeForce; loop: loopAction/loopDeriv; plaq: plaqSum/stapleSum (Wilson)
@@ -20,6 +20,8 @@ installHelpParam()
 processHelpParam()
 if path notin ["staple", "loop", "plaq"]:
   raise newException(ValueError, "path must be staple, loop, or plaq")
+if keep notin ["none", "staples"]:
+  raise newException(ValueError, "keep must be none or staples")
 let
   lo = lat.newLayout
   cases = [
@@ -33,7 +35,7 @@ var
   g = lo.newGauge
   f = lo.newGauge
   total = 0.0
-let work = newLoopWork(g[0], parseEnum[LoopKeep](keep))
+let work = if keep == "staples": newStapleWork(g[0]) else: nil
 let nd = g.len
 let nc = g[0][0].ncols
 threads:
@@ -64,14 +66,12 @@ proc haloReport(label: string, maps: openArray[HaloMap], kept: int, elem: int) =
     " send ", send, " recv ", recv, " local copy ", local, " bytes, messages ", msgs
 
 proc loopReport(w: LoopWork, label: string) =
-  ## Halo rows of a loop workspace: kept bytes and the exchange of one update of every slot-0 field.
   for row in w.halos:
-    var kept = 0
-    for slot in row.fields:
-      for h in slot:
-        if h != nil:
-          kept += h.halo.len*sizeof(h.halo[0])
-    haloReport(label, row.maps, kept, sizeof(row.fields[0][0].halo[0]) div lo.V)
+    for i, slot in row.slots:
+      if slot.fields.len == 0: continue
+      var kept = 0
+      for h in slot.fields: kept += h.halo.len*sizeof(h.halo[0])
+      haloReport(label & " slot " & $i, slot.maps, kept, sizeof(slot.fields[0].halo[0]) div lo.V)
 
 let fieldBytes = g[0].s.mem.size
 let fwd = shiftRow(1)
@@ -155,8 +155,9 @@ for (name,c) in cases:
       toc("sample")
       let bytes = float(getRawMemAllocated()-before)/float(reps)
       echo name, ",", op, ",", trial, ",", secs, ",", bytes
-    let w = if path == "loop": wl else: work
-    var owned = w.bytes
+    var owned = if path == "loop": wl.bytes
+      elif work != nil: work.bytes
+      else: 0
     if path == "plaq":
       owned = 0
       for p in [wa, wd]:
@@ -166,8 +167,10 @@ for (name,c) in cases:
     let capacity = if buf == nil: 0 else: buf.send.n+buf.recv.n
     echo name, " ", op, " workspace bytes ", owned, " = ", owned.float/fieldBytes.float,
       " fields; gather capacity bytes ", capacity, "; peak RSS MiB ", maxRssMiB()
-    if path != "plaq":
-      echo name, " ", op, " builds ", w.builds, " reuses ", w.reuses, " halo updates ", w.updates
+    if path == "loop":
+      echo name, " ", op, " reuses ", wl.reuses, " halo updates ", wl.updates
+    elif path == "staple" and work != nil:
+      echo name, " ", op, " builds ", work.builds, " reuses ", work.reuses
     if path == "loop": loopReport(wl, name & " " & op)
     if timers != 0:
       echo "timers ", name, " ", op, " calls ", trials*reps

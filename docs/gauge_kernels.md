@@ -231,23 +231,25 @@ the staples and exchange the boundaries on every call, except a tagged repeat:
 version of the links as the caller knows them (a graph node id and epoch, a
 driver's configuration counter). With `keepStaples`, a call whose tag equals
 the tag of the kept staples skips the link exchange and the staple build. A
-plaquette action keeps `stf` only until a force follows it at the same tag
-once; from then on tagged plaquette actions build `stu` too, so a momentum
-first integrator reuses at both ends of a trajectory and a position first one
-pays nothing. A reused action still exchanges `stu`; a reused force, whose
-kernel reads shifted links, exchanges the links and `stu`, and `stf` and the
-rect scratch for a rect term. An untagged call builds and clears the tag.
+tagged action builds both staple sets, including for plaquettes, so a force
+at that tag can reuse the first build; without a rect term the action does not
+exchange the backward set, which the force exchanges itself. Untagged plaquette
+actions build only the forward set. A reused rect action still exchanges `stu`;
+a reused force exchanges `stu`, and for a rect term the links, `stf` and the
+rect scratch. An untagged call builds and clears the tag.
 `loopAction` and
 `loopDeriv` take the
 same tag: a halo row and slot remember the tag and the loop plan of their last
 update and a tagged call with both equal exchanges nothing; each link direction
 exchanges only the halo sites its own links reach (for the Wilson force 7 of 8
-faces and 3 of 12 edge families); after a `loopDeriv` has followed a
-`loopAction` at the same tag once, tagged actions fill the derivative's wider
-halo so the derivative at those links exchanges nothing. The counters `builds`,
+faces and 3 of 12 edge families); tagged actions always fill the derivative's wider halo, so the derivative
+at those links exchanges nothing, including the first pair through a workspace.
+The counters `builds`,
 `reuses` and `updates` (halo field updates) record what a workspace did. Calls
 refresh/release input references; a workspace serves one evaluation at a time.
-Distinct workspaces own distinct storage. Communicator sequencing and geometry
+Staples have their own optional owner inside the workspace. Each halo slot
+keeps its fields, maps, plan and tag together; each thread owns one record of
+tile scratch. Distinct workspaces own distinct storage. Communicator sequencing and geometry
 initialization requirements still apply.
 
 For a parity/direction mask $M_S$,
@@ -308,7 +310,8 @@ for `startCornerShifts`, `makeStaples` and the rect scratch exchanges. Generic
 forward halo messages retain their buffers in the communicator; generic gathers
 and reverse halo exchanges free their temporary message buffers on return.
 `bytes` counts raw-memory allocations only, so shift buffers are not
-included. Tests:
+included. `tforcekick` checks momentum outputs and force statistics, including
+empty thread partitions and momentum aliases. Tests:
 `tgaugeloops`, `tgaugeaction`, `tstaplebatches`.
 
 ### Fused loop kernels

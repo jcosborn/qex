@@ -74,7 +74,7 @@ proc evalGaugeForceSubset*(gc: GaugeActionCoeffs, g, outg: types.Gauge, work: Ma
   ## Masked ambient derivative for the fundamental loop family.
   if not gc.isFundamental:
     raiseUnsupportedGaugeCoeff(gc)
-  gc.gaugeDeriv2SubsetWork(g, outg[work.dir], work, clear=false)
+  gc.gaugeDeriv2Subset(g, outg[work.dir], work, clear=false)
 
 proc evalGaugeForceJacobian*(b: types.Gauge,
                              gc: GaugeActionCoeffs,
@@ -91,9 +91,9 @@ proc evalGaugeForceJacobianSubset*(b: types.Gauge, gc: GaugeActionCoeffs, g, out
   ## outg = H_g(b[dir]|parity); writes all affected links.
   if not gc.isFundamental:
     raiseUnsupportedGaugeCoeff(gc)
-  gc.gaugeDerivDeriv2Subset(g, b, outg, parity, dir)
+  gc.gaugeDerivDeriv2Subset(g, b[dir], outg, newSubsetWork(g[0], parity, dir))
 
 proc evalGaugeForceJacobianSubsetSum*(b: seq[DLatticeColorMatrixV], w: DLatticeColorMatrixV, gc: GaugeActionCoeffs, g, outg: types.Gauge, parity, dir: int) =
   if not gc.isFundamental:
     raiseUnsupportedGaugeCoeff(gc)
-  gc.gaugeDerivDeriv2SubsetSum(g, b, w, outg, parity, dir)
+  gc.gaugeDerivDeriv2SubsetSum(g, b, w, outg, newSubsetWork(g[0], parity, dir))
