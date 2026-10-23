@@ -1070,11 +1070,14 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
     mark s.sh
     uses.inc s.l
     uses.inc s.r
-  var kept = initHashSet[seq[int]]()  # step products an output may alias
+  var kept = initHashSet[seq[int]]()  # step products returned without a copy
   for o in pl.outs:
     mark o.sh
     uses.inc o.key
-    if not o.adj: kept.incl o.key
+  defer:
+    for i in 0..<nd:
+      if sf[i].field != nil: sf[i].field.release
+      if sb[i].field != nil: sb[i].field.release
   for i in 0..<nd:
     if sfi[i]:
       sf[i] = newShifter(g[0], i, 1)
@@ -1117,44 +1120,30 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
     consumed(s.l)
     consumed(s.r)
   toc("gaugeProd prod")
-  let n = pl.outs.len
-  var res = newseq[F](n)
-  var resAlloc = newseq[bool](n)
-  var aliased: seq[F]  # step products returned as outputs
+  var res = newseq[F](pl.outs.len)
   for i,o in pl.outs.pairs:
     let t = node o.key
-    if o.adj:
-      res[i] = newOneOf t
-      resAlloc[i] = true
-      threads:
-        res[i] := t.adj
-    else:
-      res[i] = t
-      if o.key.len > 1 and t notin aliased: aliased.add t
-    consumed(o.key)
-  for i,o in pl.outs.pairs:
     let sh = o.sh
     var needs = 0
-    for x in sh:
-      needs = max(needs, abs x)
-    if needs>0:
-      let r = res[i]
-      if not resAlloc[i]:
-        res[i] = newOneOf r
-        resAlloc[i] = true
-      threads:
-        let t =
-          if needs==1:
-            r.singleshift(sh, sf, sb)
-          else:
-            res[i] := r
-            res[i].multishifts(sh, sf, sb)
-        res[i] := t
-  for t in aliased:
-    if t notin res: t.release  # every output of t was shifted into a copy
-  for i in 0..<nd:
-    if sfi[i]: sf[i].field.release
-    if sbi[i]: sb[i].field.release
+    for x in sh: needs = max(needs, abs x)
+    if not o.adj and needs == 0:
+      res[i] = t
+      kept.incl o.key
+    else:
+      res[i] = newOneOf t
+      if o.adj:
+        threads: res[i] := t.adj
+      if needs > 0:
+        threads:
+          let r = if o.adj: res[i] else: t
+          let shifted =
+            if needs == 1:
+              r.singleshift(sh, sf, sb)
+            else:
+              res[i] := r
+              res[i].multishifts(sh, sf, sb)
+          res[i] := shifted
+    consumed(o.key)
   result = res
   toc("done")
 
@@ -1180,7 +1169,7 @@ proc wilsonLines*(g:auto, lines:openarray[seq[int]]):auto =
       r = s.trace
     ts[i] := r*fac
   for i,s in rs.pairs:
-    if s notin g and s notin rs[0..<i]: s.release
+    if s notin g and s notin rs.toOpenArray(0,i-1): s.release
   toc("wilsonLines trace")
   return ts
 
