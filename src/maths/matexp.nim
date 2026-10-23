@@ -332,10 +332,6 @@ proc ahScale(n2: float): tuple[s: float, n: int] =
     result.s *= 0.5
     inc result.n
 
-proc ahScale(m: Mat1): tuple[s: float, n: int] =
-  mixin simdMax
-  ahScale(m.norm2.simdMax)
-
 proc expAH(m: Mat1, n2: float): auto {.noInit.} =
   ## expAH(m) scaled for norm2 n2 in place of the SIMD maximum of norm2(m), m
   ## not 1x1. With n2 the maximum over the lanes of a wider vector of which m
@@ -972,7 +968,8 @@ proc bytes*(w: ExpAHWork): int =
 
 template ahJet(y, d, j, m2, m3, a, b, e: untyped): untyped =
   block:
-    let (sc, ns) = ahScale(y)
+    mixin simdMax
+    let (sc, ns) = ahScale(y.norm2.simdMax)
     for u in 0..<j.len: j[u] := 0
     j[0] := sc*y
     for i in 0..<d.len: j[1 shl i] := sc*d[i]
