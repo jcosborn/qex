@@ -2,6 +2,7 @@ import base
 #import stdUtils
 #import profile
 import maths
+from simd import simdMin, simdMax, simdSum
 import layout
 import layout/shifts
 import gaugeUtils
@@ -1390,6 +1391,42 @@ proc force*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: 
   else:
     (-1.0*c).loopDeriv(g, f, work=work, tag=tag)  # f = -grad S, as gaugeActionDeriv
     contractProjectTAH(g, f)
+
+
+type
+  Norm2Stats* = tuple[s2, n2min, n2max: float]
+    ## Sum, minimum and maximum of |x|^2 over sites and SIMD lanes.
+  Norm2Acc = object
+    ## Norm2Stats of one thread's sites; |x|^2 >= 0 starts the maximum at zero.
+    s2, mn, mx: float
+    n: int
+
+proc add(s: var Norm2Acc, n2: auto) {.inline.} =
+  ## Add |x|^2 of one site, a SIMD vector or a number.
+  let lo = n2.simdMin
+  let hi = n2.simdMax
+  s.s2 += n2.simdSum
+  if s.n == 0 or lo < s.mn: s.mn = lo
+  if s.mx < hi: s.mx = hi
+  inc s.n
+
+proc total(s: var Norm2Acc): Norm2Stats =
+  ## Combine over threads and ranks; every thread calls it.
+  s.s2.threadRankSum
+  s.mx.threadRankMax
+  if s.n == 0: s.mn = s.mx  # a thread without sites cannot lower the minimum
+  var m = -s.mn
+  m.threadRankMax  # min(x) = -max(-x)
+  (s.s2, -m, s.mx)
+
+proc norm2Stats*[F: Field](x: openArray[F]): Norm2Stats =
+  ## Norm2Stats over the sites, lanes and fields of x; every thread calls it
+  ## inside threads.
+  var s: Norm2Acc
+  for f in x:
+    for i in f:
+      s.add f[i].norm2
+  s.total
 
 proc forceKick*[V:static[int],T](c: GaugeActionCoeffs, g, p, q: openArray[Field[V,T]]; a: float; work: LoopWork[V,T] = nil, tag = default(LoopTag)): Norm2Stats =
   ## q = a F + p with F the projected force of `force`, in loopDeriv's site pass:

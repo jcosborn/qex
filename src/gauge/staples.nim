@@ -110,6 +110,69 @@ proc stapleFields[V:static[int],T](u: openArray[Field[V,T]], reuse: FieldArray[V
           raise newException(ValueError, "staple storage must be disjoint from inputs")
   reuse
 
+# u,v are links at x; a=u(x+nu), b=v(x+mu). Outputs are disjoint from inputs.
+template fwdPair(r, s, u, v, a, b: untyped) =
+  mixin mul, adj
+  var q {.noinit.}: evalType(a)
+  mul(q, a, b.adj)
+  mul(r, v, q)
+  mul(s, u, q.adj)
+
+template bckPair(r, s, u, v, a, b: untyped) =
+  mixin mul, adj
+  var q {.noinit.}: evalType(a)
+  mul(q, v.adj, u)
+  mul(r, q, b)
+  mul(s, q.adj, a)
+
+type StapleBatchFields[V:static[int],T] = object
+  ## Direction-indexed views of the current scratch batch. Other entries
+  ## may alias reused storage and must not be read outside their batch.
+  nd: int
+  fields: seq[Field[V,T]]
+
+template `[]`(p: StapleBatchFields; mu, nu: int): untyped =
+  p.fields[mu*p.nd+nu]
+
+proc fillStaplePlanes[V:static[int],T](uu: openArray[Field[V,T]], cs, ss: auto;
+    stf, stu: auto; planes: auto; post: bool) =
+  ## Corner exchanges are already started; fill these planes and, with post,
+  ## start their backward exchanges, which the caller completes before
+  ## rebinding the fields. Each plane finishes both products before its shifts.
+  mixin mul, load1, adj
+  let u = cast[ptr cArray[Field[V,T]]](unsafeAddr(uu[0]))
+  let lo = u[0].l
+  threads:
+    tic()
+    var umu, unu {.noinit.}: evalType(u[0][0])
+    for ir in lo:
+      for plane in planes:
+        let (mu, nu) = plane
+        if isLocal(cs[mu][nu],ir) and isLocal(cs[nu][mu],ir):
+          localSB(cs[mu][nu], ir, assign(umu,it), u[mu][ix])
+          localSB(cs[nu][mu], ir, assign(unu,it), u[nu][ix])
+          fwdPair(stf[mu,nu][ir], stf[nu,mu][ir], u[mu][ir], u[nu][ir], umu, unu)
+          bckPair(stu[mu,nu][ir], stu[nu,mu][ir], u[mu][ir], u[nu][ir], umu, unu)
+    toc("makeStaples local")
+    for plane in planes:
+      let (mu, nu) = plane
+      var boundary = false
+      boundaryWaitSB(cs[mu][nu]): boundary = true
+      boundaryWaitSB(cs[nu][mu]): boundary = true
+      if boundary:
+        boundarySyncSB()
+        for ir in lo:
+          if not isLocal(cs[mu][nu],ir) or not isLocal(cs[nu][mu],ir):
+            getSB(cs[mu][nu], ir, assign(umu,it), u[mu][ix])
+            getSB(cs[nu][mu], ir, assign(unu,it), u[nu][ix])
+            fwdPair(stf[mu,nu][ir], stf[nu,mu][ir], u[mu][ir], u[nu][ir], umu, unu)
+            bckPair(stu[mu,nu][ir], stu[nu,mu][ir], u[mu][ir], u[nu][ir], umu, unu)
+      if post:
+        threadBarrier()
+        ss[mu][nu].startSB(stu[mu,nu][ix])
+        ss[nu][mu].startSB(stu[nu,mu][ix])
+    toc("makeStaples boundary")
+
 # default(FieldArray[V,T]) arguments break Nim 2.0; use the method form.
 proc makeFwdStaples*[V:static[int],T](uu: openArray[Field[V,T]], s: auto,
     reuse: FieldArray[V,T] = FieldArray[V,T].default): auto =
@@ -128,36 +191,15 @@ proc makeFwdStaples*[V:static[int],T](uu: openArray[Field[V,T]], s: auto,
   toc("makeStaples setup")
   threads:
     tic()
-    var umu,unu,umunu: type(load1(u[0][0]))
+    var umu,unu: type(load1(u[0][0]))
     for ir in lo:
       for mu in 1..<nd:
         for nu in 0..<mu:
           if isLocal(s[mu][nu],ir) and isLocal(s[nu][mu],ir):
             localSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
             localSB(s[nu][mu], ir, assign(unu,it), u[nu][ix])
-            mul(umunu, umu, unu.adj)
-            mul(st[mu,nu][ir], u[nu][ir], umunu)
-            mul(st[nu,mu][ir], u[mu][ir], umunu.adj)
+            fwdPair(st[mu,nu][ir], st[nu,mu][ir], u[mu][ir], u[nu][ir], umu, unu)
     toc("makeStaples local")
-    #[
-    var needBoundary = false
-    for mu in 0..<nd:
-      for nu in 0..<nd:
-        if mu != nu:
-          boundaryWaitSB(s[mu][nu]): needBoundary = true
-    toc("makeStaples wait")
-    if needBoundary:
-      boundarySyncSB()
-      for ir in lo:
-        for mu in 1..<nd:
-          for nu in 0..<mu:
-            if not isLocal(s[mu][nu],ir) or not isLocal(s[nu][mu],ir):
-              getSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
-              getSB(s[nu][mu], ir, assign(unu,it), u[nu][ix])
-              mul(umunu, umu, unu.adj)
-              mul(st[mu,nu][ir], u[nu][ir], umunu)
-              mul(st[nu,mu][ir], u[mu][ir], umunu.adj)
-    ]#
     for mu in 1..<nd:
       for nu in 0..<mu:
         var needBoundary = false
@@ -170,9 +212,7 @@ proc makeFwdStaples*[V:static[int],T](uu: openArray[Field[V,T]], s: auto,
             if not isLocal(s[mu][nu],ir) or not isLocal(s[nu][mu],ir):
               getSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
               getSB(s[nu][mu], ir, assign(unu,it), u[nu][ix])
-              mul(umunu, umu, unu.adj)
-              mul(st[mu,nu][ir], u[nu][ir], umunu)
-              mul(st[nu,mu][ir], u[mu][ir], umunu.adj)
+              fwdPair(st[mu,nu][ir], st[nu,mu][ir], u[mu][ir], u[nu][ir], umu, unu)
     toc("makeStaples boundary")
   toc("makeStaples threads", flops=flops)
   return st
@@ -191,12 +231,10 @@ proc makeStaples*[V:static[int],T](uu: openArray[Field[V,T]], s: auto,
   ## fwd, bck: arrays this proc returned for uu's layout, with every mu != nu entry
   ## allocated and storage disjoint from uu and from each other. Shape, layout and
   ## aliasing raise ValueError; a missing entry crashes in the kernel.
-  mixin mul, load1, adj
   tic()
-  let u = cast[ptr cArray[type(uu[0])]](unsafeAddr(uu[0]))
-  let lo = u[0].l
+  let lo = uu[0].l
   let nd = lo.nDim
-  let nc = u[0][0].ncols
+  let nc = uu[0][0].ncols
   let flops = lo.nSites.float*float(nd*(nd-1)*6*(4*nc-1)*nc*nc)
   var
     stf = stapleFields(uu, fwd)
@@ -205,67 +243,10 @@ proc makeStaples*[V:static[int],T](uu: openArray[Field[V,T]], s: auto,
     raise newException(ValueError, "forward and backward staples must be disjoint")
   var ss = newLinkShifts(lo, T, -1)
   toc("makeStaples setup")
-  threads:
-    tic()
-    var umu,unu,umunu,unumu {.noInit.}: evalType(u[0][0])
-    for ir in lo:
-      for mu in 1..<nd:
-        for nu in 0..<mu:
-          if isLocal(s[mu][nu],ir) and isLocal(s[nu][mu],ir):
-            localSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
-            localSB(s[nu][mu], ir, assign(unu,it), u[nu][ix])
-            mul(umunu, umu, unu.adj)
-            mul(stf[mu,nu][ir], u[nu][ir], umunu)
-            mul(stf[nu,mu][ir], u[mu][ir], umunu.adj)
-            mul(unumu, u[nu][ir].adj, u[mu][ir])
-            mul(stu[mu,nu][ir], unumu, unu)
-            mul(stu[nu,mu][ir], unumu.adj, umu)
-    toc("makeStaples local")
-    var needBoundary = false
-    for mu in 1..<nd:
-      for nu in 0..<mu:
-        var needBoundaryU = false
-        boundaryWaitSB(s[mu][nu]): needBoundaryU = true
-        boundaryWaitSB(s[nu][mu]): needBoundaryU = true
-        needBoundary = needBoundary or needBoundaryU
-        if needBoundaryU:
-          boundarySyncSB()
-          for ir in lo:
-            if not isLocal(s[mu][nu],ir) or not isLocal(s[nu][mu],ir):
-              getSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
-              getSB(s[nu][mu], ir, assign(unu,it), u[nu][ix])
-              mul(unumu, u[nu][ir].adj, u[mu][ir])
-              mul(stu[mu,nu][ir], unumu, unu)
-              mul(stu[nu,mu][ir], unumu.adj, umu)
-        if post:
-          threadBarrier()
-          ss[mu][nu].startSB(stu[mu,nu][ix])
-          ss[nu][mu].startSB(stu[nu,mu][ix])
-    toc("makeStaplesU boundary")
-    if needBoundary:
-      boundarySyncSB()
-      for ir in lo:
-        for mu in 1..<nd:
-          for nu in 0..<mu:
-            if not isLocal(s[mu][nu],ir) or not isLocal(s[nu][mu],ir):
-              getSB(s[mu][nu], ir, assign(umu,it), u[mu][ix])
-              getSB(s[nu][mu], ir, assign(unu,it), u[nu][ix])
-              mul(umunu, umu, unu.adj)
-              mul(stf[mu,nu][ir], u[nu][ir], umunu)
-              mul(stf[nu,mu][ir], u[mu][ir], umunu.adj)
-    toc("makeStaplesF boundary")
+  fillStaplePlanes(uu, s, ss, stf, stu, staplePlanes(nd), post)
   toc("makeStaples threads", flops=flops)
   return (stf,stu,ss)
 
-
-type StapleBatchFields[V:static[int],T] = object
-  ## Direction-indexed views of the current scratch batch. Other entries
-  ## may alias reused storage and must not be read outside their batch.
-  nd: int
-  fields: seq[Field[V,T]]
-
-template `[]`(p: StapleBatchFields; mu, nu: int): untyped =
-  p.fields[mu*p.nd+nu]
 
 # Half of the six planes in four dimensions: reuse 12 fields for an action or
 # a plaquette force and 18 for a force with a rect term, balancing field
@@ -275,7 +256,7 @@ const temporaryStaplePairs = 3
 proc addStaplePlanes*[V:static[int],T](uu: openArray[Field[V,T]], output: auto;
     cp, cr: float; stf, stu, ru: auto;
     cs, ss, sf, sb: seq[seq[ShiftB[T]]]; planes: auto; overwrite = false) =
-  ## Shared derivative kernel for full retained staples and one temporary pair.
+  ## Derivative contributions from retained staples or a temporary plane batch.
   ## Planes follow global lexicographic order. overwrite initializes each
   ## direction on its first plane; rectangle scratch is zeroed each batch.
   mixin load1, adj
@@ -440,45 +421,6 @@ proc addStaplePlanes*[V:static[int],T](uu: openArray[Field[V,T]], output: auto;
               getSB(sb[nu][mu], ir, assign(b,it), ru[nu,mu][ix])
               f[nu][ir] += cr * b
 
-proc fillStaplePlanes[V:static[int],T](uu: openArray[Field[V,T]], cs, ss: auto;
-    stf, stu: StapleBatchFields[V,T]; planes: auto) =
-  ## Fill one batch and start its backward exchanges. The caller completes
-  ## those exchanges before rebinding or overwriting the scratch fields.
-  mixin mul, load1, adj
-  let u = cast[ptr cArray[Field[V,T]]](unsafeAddr(uu[0]))
-  let lo = u[0].l
-  threads:
-    var umu, unu, umunu, unumu {.noinit.}: evalType(u[0][0])
-    template fill(mu, nu, ir: untyped) =
-      mul(umunu, umu, unu.adj)
-      mul(stf[mu,nu][ir], u[nu][ir], umunu)
-      mul(stf[nu,mu][ir], u[mu][ir], umunu.adj)
-      mul(unumu, u[nu][ir].adj, u[mu][ir])
-      mul(stu[mu,nu][ir], unumu, unu)
-      mul(stu[nu,mu][ir], unumu.adj, umu)
-    for ir in lo:
-      for plane in planes:
-        let (mu, nu) = plane
-        if isLocal(cs[mu][nu],ir) and isLocal(cs[nu][mu],ir):
-          localSB(cs[mu][nu], ir, assign(umu,it), u[mu][ix])
-          localSB(cs[nu][mu], ir, assign(unu,it), u[nu][ix])
-          fill(mu,nu,ir)
-    for plane in planes:
-      let (mu, nu) = plane
-      var needBoundary = false
-      boundaryWaitSB(cs[mu][nu]): needBoundary = true
-      boundaryWaitSB(cs[nu][mu]): needBoundary = true
-      if needBoundary:
-        boundarySyncSB()
-        for ir in lo:
-          if not isLocal(cs[mu][nu],ir) or not isLocal(cs[nu][mu],ir):
-            getSB(cs[mu][nu], ir, assign(umu,it), u[mu][ix])
-            getSB(cs[nu][mu], ir, assign(unu,it), u[nu][ix])
-            fill(mu,nu,ir)
-      threadBarrier()
-      ss[mu][nu].startSB(stu[mu,nu][ix])
-      ss[nu][mu].startSB(stu[nu,mu][ix])
-
 proc addStapleActions*[V:static[int],T](uu: openArray[Field[V,T]]; stf, stu: auto;
     ss: seq[seq[ShiftB[T]]]; planes: auto; rect: bool; sums: var seq[array[2,float]]) =
   ## sums[thread] += (sum Re tr U_mu stf[mu,nu], sum Re tr S stf for the
@@ -566,7 +508,7 @@ proc stapleBatches*[V:static[int],T](cp, cr: float,
         if cr != 0:
           ru.fields[mu*nd+nu] = scratch[4*slots+2*slot]
           ru.fields[nu*nd+mu] = scratch[4*slots+2*slot+1]
-    fillStaplePlanes(uu, cs, ss, stf, stu, batch)
+    fillStaplePlanes(uu, cs, ss, stf, stu, batch, post=true)
     when derivative:
       addStaplePlanes(uu, output, cp/nc, cr/nc,
         stf, stu, ru, cs, ss, sf, sb, batch, overwrite=not accumulate)

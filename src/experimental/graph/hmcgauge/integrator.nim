@@ -1,5 +1,6 @@
 import ../[core, scalar, multi, gauge]
-import layout, physics/qcdTypes   # threads / simd reductions for forceRmsMinMax
+import layout, physics/qcdTypes
+from gauge/gaugeAction import Norm2Stats, norm2Stats
 from math import sqrt
 
 type
@@ -61,30 +62,11 @@ proc gradForce(action: GaugeAction; g: Ggauge; forces: var seq[Ggauge]; force: G
 
 proc forceRmsMinMaxValue(force: Ggauge; dof: float): tuple[rms, fmin, fmax: float] =
   let fs = force.gval
-  var s2 = 0.0
-  var n2 = 1e300
-  var m2 = 0.0
+  var r: Norm2Stats
   threads:
-    var ls = 0.0
-    var ln = 1e300
-    var lm = 0.0
-    for mu in 0..<fs.len:
-      for x in fs[mu]:
-        let n = fs[mu][x].norm2
-        ls += n.simdSum
-        let nn = n.simdMin
-        if nn < ln: ln = nn
-        let mm = n.simdMax
-        if lm < mm: lm = mm
-    ls.threadRankSum
-    ln = -ln
-    ln.threadRankMax  # min(x) = -max(-x)
-    lm.threadRankMax
-    threadSingle:
-      s2 = ls
-      n2 = -ln
-      m2 = lm
-  (rms: sqrt(s2/dof), fmin: sqrt(n2), fmax: sqrt(m2))
+    let t = fs.norm2Stats
+    threadSingle: r = t
+  (rms: sqrt(r.s2/dof), fmin: sqrt(r.n2min), fmax: sqrt(r.n2max))
 
 proc forceRmsMinMax*(force: Ggauge; dof: float): tuple[rms, fmin, fmax: float] =
   ## RMS, min, and max over links of the MD force magnitude |F| at the force node's
