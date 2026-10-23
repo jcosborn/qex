@@ -73,6 +73,20 @@ proc run(nc:static int) =
         c.loopDeriv(g,ds,f,work=work)
         stapleSum(g,@ds,want)
         check relativeDiff(f,want) < 2e-12
+    test "all loop families and derivative orders overwrite poisoned scratch":
+      for c in cases:
+        forStatic order, 0, 5:
+          var ds: array[order,type(g)]
+          for k in 0..<order: ds[k] = hs[k]
+          c.loopDeriv(g,ds,f,work=work)  # prepare this order's scratch capacity
+          for bank in work.products:
+            for i in 0..<bank.len: bank[i] := 17.0
+          c.loopDeriv(g,ds,f,work=work)
+          for bank in work.products:
+            for i in 0..<bank.len: bank[i] := -23.0
+          c.loopDeriv(g,ds,want,work=work)
+          check relativeDiff(f,want) == 0
+
     test "highest jets, repeated seeds and alias contracts":
       let c=cases[3]
       let ds=[hs[0],hs[1],hs[0],hs[1],hs[0]]

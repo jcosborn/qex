@@ -31,19 +31,19 @@ threads:
 
 var eps = 0.1
 for n in 0..<3:
-  gc.gaugeForce(gaugeu1, fu1)
-  gc.gaugeForce(gaugesu2, fsu2)
-  gc.gaugeForce(gaugesu3, fsu3)
+  gc.force(gaugeu1, fu1)
+  gc.force(gaugesu2, fsu2)
+  gc.force(gaugesu3, fsu3)
   threads:
     axexpahmuly(gaugeu1, -eps, fu1, gaugeu1)
     axexpahmuly(gaugesu2, -eps, fsu2, gaugesu2)
     axexpahmuly(gaugesu3, -eps, fsu3, gaugesu3)
 
-echo gc.gaugeAction1(gaugeu1)
+echo gc.action(gaugeu1)
 echoPlaq gaugeu1
-echo gc.gaugeAction1(gaugesu2)
+echo gc.action(gaugesu2)
 echoPlaq gaugesu2
-echo gc.gaugeAction1(gaugesu3)
+echo gc.action(gaugesu3)
 echoPlaq gaugesu3
 
 

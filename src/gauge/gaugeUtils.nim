@@ -1,6 +1,8 @@
 import base
 import layout
 import field
+import field/fieldUtil
+export fieldUtil.Norm2Stats, fieldUtil.Norm2Acc, fieldUtil.add, fieldUtil.total
 import field/matrixFields
 export matrixFields.contractProjectTAH, matrixFields.axexp, matrixFields.axexpmuly,
   matrixFields.axexpah, matrixFields.axexpahmuly

@@ -550,7 +550,7 @@ proc kineticAction*(self: HisqHMC): float =
 
 proc gaugeAction*(self: HisqHMC): float =
   let beta = self.beta/10.0
-  result = self.gc.gaugeAction1(self.u)
+  result = self.gc.action(self.u)
   result += 54.0*beta*self.boxSize
 
 proc fermionAction*(self: HisqHMC): float =
@@ -754,7 +754,7 @@ proc fermionForce*(self: var HisqHMC; dtau: float) =
   self.stag.forceSolve(self.hpsi,self.hphi,self.mass,self.spf)
   self.f.fermionForce(smearedForce,self.psi,self.hpsi,self.u,ffac,hfac)
 
-proc gaugeForce*(self: var HisqHMC) = self.gc.gaugeForce(self.u,self.f)
+proc gaugeForce*(self: var HisqHMC) = self.gc.force(self.u,self.f)
 
 proc updateGauge[T](u: auto; p: T; dtau: float) =
   threads: axexpahmuly(u, dtau, p, u)

@@ -5,6 +5,7 @@ letParam:
   lat = latticeFromLocalLattice(@[4,4,4,4], nRanks)
   reps = 10
   trials = 5
+  part = "all"  # hmc: only the Wilson HMC kernels
 installHelpParam()
 processHelpParam()
 let
@@ -38,15 +39,18 @@ proc report(w: PlaqWork, label: string) =
     for h in row:
       inc nh
       bytes += h.halo.len*sizeof(h.halo[0])
+  # Lane gather elements are one site lane, site gather elements all lanes.
   let elem = sizeof(w.h[^1][0].halo[0]) div w.hl.lo.V
+  let (gm, sm, se) = (w.hm.gather, w.hm.sites, sizeof(w.h[^1][0].halo[0]))
   let
-    send = nh*w.hm.gather.sidx.len*elem
-    recv = nh*w.hm.gather.rdest.len*elem
-    local = nh*w.hm.gather.ldest.len*elem
-    scratch = (w.hm.gather.sidx.len+w.hm.gather.rdest.len)*elem
-  echo label, " rank=", myRank, " halo bytes=", bytes, " gathers/call=", nh,
+    send = nh*(gm.sidx.len*elem+sm.sidx.len*se)
+    recv = nh*(gm.rdest.len*elem+sm.rdest.len*se)
+    local = nh*(gm.ldest.len*elem+sm.ldest.len*se)
+    scratch = max(1, max(gm.sidx.len*elem, sm.sidx.len*se)) + max(1, max(gm.rdest.len*elem, sm.rdest.len*se))
+    gathers = nh*(ord(w.hm.nsites > 0)+ord(w.hm.nlanes > 0))
+  echo label, " rank=", myRank, " halo bytes=", bytes, " gathers/call=", gathers,
     " send bytes/call=", send, " receive bytes/call=", recv,
-    " local copy bytes/call=", local, " peak gather buffer bytes=", scratch
+    " local copy bytes/call=", local, " required gather capacity bytes=", (if gathers > 0: scratch else: 0)
 
 proc compare(label: string, x, y: auto) =
   var err: float
@@ -60,6 +64,46 @@ proc compare(label: string, x, y: auto) =
   doAssert err < 2e-12
 
 var total = 0.0
+block:
+  # The kernels of pghmc's MD step: actWilson(5.4) loop action, force and fused
+  # kick, the staple force for reference, and the link update exp(a P) U with
+  # and without the stored exponential. A kick at the tag of its last call keeps
+  # the halo, so the halo update costs the difference of the two kick rows.
+  let
+    c = GaugeActionCoeffs(plaq: 5.4)
+    w = newLoopWork(g[0])
+    ws = newLoopWork(g[0], keep=keepStaples)
+    a = -0.0125
+    p = lo.newGauge
+    q = lo.newGauge
+    z = lo.newGauge
+    e = lo.newGauge
+  threads:
+    p.randomTAH r
+  bench("loop Wilson action"):
+    total += c.loopAction(g,work=w)
+  bench("loop Wilson force"):
+    c.force(g,f,work=w)
+  bench("staple Wilson force"):
+    c.gaugeForce(g,fp,work=ws)
+  compare("Wilson force",f,fp)
+  bench("loop Wilson kick"):
+    discard c.forceKick(g,p,q,a,work=w)
+  bench("loop Wilson kick, kept halo"):
+    discard c.forceKick(g,p,q,a,work=w,tag=(1,1))
+  threads:
+    for mu in 0..<z.len: z[mu] := a*f[mu] + p[mu]
+  compare("Wilson kick",q,z)
+  bench("link update"):
+    threads:
+      axexpahmuly(z,a,p,g)
+  bench("link update with E"):
+    threads:
+      axexpahmuly(z,a,p,g,e)
+if part == "hmc":
+  echo "checksums: ", total, " ", f.norm2
+  qexFinalize()
+  quit()
 let ca = GaugeActionCoeffs(plaq: -float(g[0][0].nrows))
 bench("production plaquette sum"):
   total += ca.gaugeAction1(g)
@@ -78,13 +122,13 @@ for order in 0..3:
   report(w, label)
   bench(label):
     w.stapleSum(g, seeds, f)
-for pgm in [0.0,0.07]:
-  var c = Symanzik(5.4)
+for (rect, pgm) in [(false, 0.0), (true, 0.0), (true, 0.07)]:
+  var c = if rect: Symanzik(5.4) else: GaugeActionCoeffs(plaq: 5.4)
   c.pgm = pgm
   let
-    label = "plaq+rect pgm=" & $pgm
+    label = if rect: "plaq+rect pgm=" & $pgm else: "plaq"
     neg = -1.0*c
-    wp = newLoopWork(g[0])
+    wp = newLoopWork(g[0], keep=keepStaples)
     wf = newLoopWork(g[0])
   echo label, " coefficients: plaq=", c.plaq, " rect=", c.rect, " pgm=", c.pgm
   var ap, af: float

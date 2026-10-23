@@ -399,6 +399,97 @@ proc runLoops(lo: auto, nc: static int) =
       check fresh.builds == builds+1
       check relativeDiff(d, e) < 2e-15
 
+    test "staple and loop tags remain independent across interleaved calls":
+      for c in [GaugeActionCoeffs(plaq: 0.8),
+                GaugeActionCoeffs(plaq: 0.8, rect: -0.11, pgm: 0.07)]:
+        let cache = newLoopWork(g[0], keep=keepStaples)
+        for pass, src in [g, gp, gm, g]:
+          let tag: LoopTag = (101, pass+1)
+          let alt: LoopTag = (102, pass+1)
+          let next = if pass mod 2 == 0: gp else: gm
+          let a = c.gaugeAction1(src)
+          # The loop call must not mark staples from the previous links as current.
+          discard c.loopAction(src, work=cache, tag=tag)
+          check abs(c.gaugeAction1(src, work=cache, tag=tag)-a) < 1e-11*(1+abs(a))
+          c.gaugeActionDeriv(src, e)
+          c.gaugeActionDeriv(src, d, work=cache, tag=tag)
+          check relativeDiff(d, e) < 2e-12
+          let builds = cache.builds
+          c.loopDeriv(next, d, work=cache, tag=alt)
+          check abs(c.gaugeAction1(src, work=cache, tag=tag)-a) < 1e-11*(1+abs(a))
+          check cache.builds == builds
+          # Force and kick use the loop cache too, while retained staples change independently.
+          c.force(next, d, work=cache, tag=alt)
+          c.gaugeActionDeriv(next, e)
+          c.gaugeActionDeriv(next, d, work=cache, tag=alt)
+          check relativeDiff(d, e) < 2e-12
+          discard c.forceKick(src, h, tmp, 0.1, work=cache, tag=tag)
+          c.gaugeActionDeriv(src, e)
+          c.gaugeActionDeriv(src, d, work=cache, tag=tag)
+          check relativeDiff(d, e) < 2e-12
+          c.gaugeActionDeriv(src, d, work=cache)
+          discard c.loopAction(src, work=cache)
+          c.gaugeActionDeriv(src, d, work=cache, tag=tag)
+          check relativeDiff(d, e) < 2e-12
+
+    test "tagged loop calls reuse the kept halo at unchanged links":
+      let c = GaugeActionCoeffs(plaq: 0.8, rect: -0.3, pgm: 0.1)
+      let cache = newLoopWork(g[0])
+      var tag: LoopTag = (9, 1)
+      # The first pair exchanges the action halo and the wider derivative halo;
+      # from then on a tagged action fills the derivative halo and the
+      # derivative at the same tag exchanges nothing.
+      for changed in [g, gp, gm, g]:
+        inc tag.ver
+        let a = c.loopAction(changed)
+        c.loopDeriv(changed, e)
+        let updates = cache.updates
+        let first = tag.ver == 2
+        check c.loopAction(changed, work=cache, tag=tag) == a
+        check cache.updates == updates+nd
+        c.loopDeriv(changed, d, work=cache, tag=tag)
+        check cache.updates == updates+(if first: 2*nd else: nd)
+        check relativeDiff(d, e) == 0
+        c.loopDeriv(changed, d, work=cache, tag=tag)  # same links and halo: no exchange
+        check cache.updates == updates+(if first: 2*nd else: nd)
+        check relativeDiff(d, e) == 0
+      # Tags belong to a halo row and slot: an untagged action exchanges its own
+      # row and the tagged derivative still reuses; an untagged derivative clears
+      # the derivative row's tag.
+      var reuses = cache.reuses
+      discard c.loopAction(g, work=cache)
+      c.loopDeriv(g, d, work=cache, tag=tag)
+      check cache.reuses == reuses+1
+      c.loopDeriv(g, e)
+      check relativeDiff(d, e) == 0
+      c.loopDeriv(g, d, work=cache)
+      reuses = cache.reuses
+      c.loopDeriv(g, d, work=cache, tag=tag)
+      check cache.reuses == reuses
+      check relativeDiff(d, e) == 0
+
+    test "halo reuse distinguishes plans and always refreshes seeds":
+      let cache = newLoopWork(g[0])
+      let tag: LoopTag = (19, 0)
+      # These plans have the same rectangle extents but different link coverage.
+      for c in [GaugeActionCoeffs(rect: -0.3),
+                GaugeActionCoeffs(plaq: 0.8, rect: -0.3),
+                GaugeActionCoeffs(rect: -0.3)]:
+        var updates = cache.updates
+        c.loopDeriv(g, d, work=cache, tag=tag)
+        check cache.updates == updates+nd
+        c.loopDeriv(g, e)
+        check relativeDiff(d, e) == 0
+        updates = cache.updates
+        c.loopDeriv(g, d, work=cache, tag=tag)
+        check cache.updates == updates
+        for seed in [h, k, h]:
+          c.loopDeriv(g, [seed], d, work=cache, tag=tag)
+          check cache.updates == updates+nd
+          updates = cache.updates
+          c.loopDeriv(g, [seed], e)
+          check relativeDiff(d, e) == 0
+
     test "Wilson calls share staple storage and match native results":
       let c = GaugeActionCoeffs(plaq: 0.8)
       let cache = newLoopWork(g[0], keep=keepStaples)
@@ -475,6 +566,28 @@ proc runLoops(lo: auto, nc: static int) =
         check getRawMemAllocated() == raw
         check cache.bytes == 3*blockBytes
         check relativeDiff(d, e) < 2e-14
+
+    test "workspace bytes follow owned halo product and scratch growth":
+      let cache = newLoopWork(g[0], keep=keepStaples)
+      let c = GaugeActionCoeffs(pgm: 0.17)
+      var raw = getRawMemAllocated()
+      c.loopDeriv(g, [h], d, work=cache)
+      check cache.bytes == getRawMemAllocated()-raw
+      var owned = cache.bytes
+      raw = getRawMemAllocated()
+      discard c.loopAction(g, work=cache)
+      check cache.bytes-owned == getRawMemAllocated()-raw
+      # The higher-order product bank is retained for subsequent smaller plans.
+      owned = cache.bytes
+      raw = getRawMemAllocated()
+      c.gaugeDeriv2Subset(g, d, 0, 0, work=cache)
+      check cache.bytes-owned == getRawMemAllocated()-raw
+      owned = cache.bytes
+      raw = getRawMemAllocated()
+      c.loopDeriv(gp, [k], d, work=cache)
+      c.gaugeDeriv2Subset(gm, d, 1, 1, work=cache)
+      check cache.bytes == owned
+      check getRawMemAllocated() == raw
 
     test "public staple reuse rejects overlapping or mismatched storage":
       let cs = startCornerShifts(g)

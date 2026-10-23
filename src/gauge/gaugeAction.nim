@@ -75,26 +75,29 @@ type
   GaugeLoopPlan = ref object
     paths: GaugeLoops
     fw, bw: seq[int32]
-    offsets: seq[seq[int32]]
+    offsets: seq[seq[seq[int32]]]  # base sites of the links of each direction
     products: array[6,LoopProducts]
     factors: seq[tuple[mu:int, offset:seq[int32]]]
     pairs: PathPlan
     outputs: seq[tuple[mu:int, kind:LoopKind]]
   LoopLoad = object
     dest, mu, seed: int
-    offset: seq[int32]
+    walk: seq[tuple[d, n: int]]  # nonzero components of the factor's offset
   LoopMul = object
     dest, left, right: int
     la, ra, add: bool
   LoopOut = object
     source, mu: int
     kind: LoopKind
-    adj: bool
+    adj, first: bool  # first: the first output of mu in sched
   LoopProducts = ref object
     loads: seq[LoopLoad]
     steps: seq[LoopMul]
     outs: seq[LoopOut]
-    size: int
+    size: int  # values: loads and products
+    sched: seq[int]  # k >= 0: steps[k]; k < 0: outs[-k-1], each after its source
+    slot: seq[int]  # scratch slot of each product, -1 for a load
+    slots: int
 
 proc gaugeLoops(nd, mask, act: int): GaugeLoopPlan =
   # Each open path runs from x to x+mu. Differentiating a closed loop
@@ -132,7 +135,8 @@ proc gaugeLoops(nd, mask, act: int): GaugeLoopPlan =
   var cache {.global.}: Table[(int,int,int),GaugeLoopPlan]
   let key = (nd, mask, act)
   if key notin cache:
-    let plan = GaugeLoopPlan(paths: makeLoops(), fw: newSeq[int32](nd), bw: newSeq[int32](nd))
+    let plan = GaugeLoopPlan(paths: makeLoops(), fw: newSeq[int32](nd), bw: newSeq[int32](nd),
+                             offsets: newSeq[seq[seq[int32]]](nd))
     for row in plan.paths:
       for path in row:
         var x = newSeq[int32](nd)
@@ -145,7 +149,7 @@ proc gaugeLoops(nd, mask, act: int): GaugeLoopPlan =
             off[d] = x[d]
             plan.fw[d] = max(plan.fw[d], x[d])
             plan.bw[d] = max(plan.bw[d], -x[d])
-          if off notin plan.offsets: plan.offsets.add off
+          if off notin plan.offsets[mu]: plan.offsets[mu].add off
           if step > 0: inc x[mu]
     cache[key] = plan
   cache[key]
@@ -160,7 +164,9 @@ type
     ## (graph node id and epoch, a driver's configuration counter). id 0 is no tag.
   LoopHalos[V:static[int],T] = object
     layout*: HaloLayout[Layout[V]]
+    maps*: seq[HaloMap[Layout[V]]]  # per direction: the sites the links of the last update reach
     fields*: seq[seq[Halo[Layout[V],Field[V,T],T]]]
+    keys: seq[tuple[tag: LoopTag, plan: GaugeLoopPlan]]  # each slot's last update
   LoopWork*[V:static[int],T] = ref object
     ## Mutable loop buffers for one layout. Serialize calls using this object.
     ## Geometry initialization follows the halo API's threading requirements.
@@ -171,12 +177,17 @@ type
     haveBackward: bool  # stu is current at stag; stf is always current there
     stag: LoopTag  # links of the kept staples
     spair: bool  # a staple force followed an action at the same tag: actions build stu too
-    builds*, reuses*: int  # staple builds and reused builds
+    ltag: LoopTag  # links of the last loop call, independent of staple contents
+    lpair: bool  # a loop derivative followed an action: actions fill the wider halo
+    builds*, reuses*, updates*: int  # staple builds, reused builds, halo updates
     ru: FieldArray[V,T]  # rect parts of gaugeActionDeriv, zeroed on every use
     scratch: seq[Field[V,T]]
     trans: array[4,seq[Transporter[Field[V,T],Field[V,T],T]]]
     plan: LoopProducts
-    products: seq[alignedMem[T]]  # per-thread loop products
+    tile: int  # sites per evaluation step of the loop kernels
+    products: seq[alignedMem[T]]  # per thread: product slots, then nd sums, tile sites each
+    ptrs: seq[alignedMem[ptr T]]  # per thread: each plan value at the tile's sites
+    vals: seq[alignedMem[float]]  # per thread: action terms of the tile's sites
 
 proc newLoopWork*[V:static[int],T](f: Field[V,T], keep = keepNone): LoopWork[V,T] =
   ## keep: see LoopKeep. Halos, scratch, Hessian transporters and loop products
@@ -205,6 +216,10 @@ proc bytes*(w: LoopWork): int =
       for h in slot:
         if h != nil and h.halo.mem != nil: result += h.halo.mem.size
   for p in w.products:
+    if p.mem != nil: result += p.mem.size
+  for p in w.ptrs:
+    if p.mem != nil: result += p.mem.size
+  for p in w.vals:
     if p.mem != nil: result += p.mem.size
 
 proc useLoopWork(g: auto, work: LoopWork): auto =
@@ -240,7 +255,7 @@ proc clearInputs(w: LoopWork) =
       for h in slot:
         if h != nil: h.field = nil
 
-proc gaugeLoopHalo[V:static[int],T](w: LoopWork[V,T], g: openArray[Field[V,T]], plan: GaugeLoopPlan, slot: int): auto =
+proc gaugeLoopHalo[V:static[int],T](w: LoopWork[V,T], g: openArray[Field[V,T]], plan: GaugeLoopPlan, slot: int, tag = default(LoopTag)): auto =
   if g[0].l != w.lo:
     raise newException(ValueError, "loop inputs require the workspace layout")
   let
@@ -248,20 +263,27 @@ proc gaugeLoopHalo[V:static[int],T](w: LoopWork[V,T], g: openArray[Field[V,T]], 
     nd = lo.nDim
     comm = getDefaultComm()
     hl = haloLayout(lo, plan.fw, plan.bw)
-    hm = haloMap(hl, comm, plan.offsets)
   var row = 0
   while row < w.halos.len and w.halos[row].layout != hl: inc row
-  if row == w.halos.len: w.halos.add LoopHalos[V,T](layout: hl)
+  if row == w.halos.len: w.halos.add LoopHalos[V,T](layout: hl, maps: newSeq[HaloMap[Layout[V]]](nd))
+  # Plans with the same extents share a row; each direction's map holds only
+  # the sites that direction's links reach.
+  for mu in 0..<nd: w.halos[row].maps[mu] = haloMap(hl, comm, plan.offsets[mu])
   if w.halos[row].fields.len <= slot:
     w.halos[row].fields.setLen(max(2,slot+1))
+    w.halos[row].keys.setLen(w.halos[row].fields.len)
   if w.halos[row].fields[slot].len == 0:
     w.halos[row].fields[slot].newSeq(nd)
     for mu in 0..<nd:
       w.halos[row].fields[slot][mu] = makeHalo(hl, g[mu])
   let gh = w.halos[row].fields[slot]
+  let same = tag.id != 0 and w.halos[row].keys[slot] == (tag, plan)
   for mu in 0..<nd:
     gh[mu].field = g[mu]
-    gh[mu].update(hm, comm)
+    if not same: gh[mu].update(w.halos[row].maps[mu], comm)
+  if same: inc w.reuses
+  else: w.updates += nd
+  w.halos[row].keys[slot] = (tag, plan)
   gh
 
 proc gaugeLoopProd(gh, hh: auto, path: GaugeLoop, i: int, deriv: static bool): auto =
@@ -338,12 +360,6 @@ proc loopMask(c: GaugeActionCoeffs, nd: int): int =
   (if c.rect != 0 and nd > 1: 1 else: 0) or
   (if c.pgm != 0 and nd > 2: 2 else: 0)
 
-proc loopCoeff(c: GaugeActionCoeffs, kind: LoopKind): float =
-  case kind
-  of lkPlaq: c.plaq
-  of lkRect: c.rect
-  of lkPgm: c.pgm
-
 proc loopProducts(plan: GaugeLoopPlan, order: int): LoopProducts =
   # A symbol identifies U_mu(x+offset); its sign denotes adjoint. All symbols
   # already refer to the same output site, so the pair planner needs no shifts.
@@ -384,7 +400,9 @@ proc loopProducts(plan: GaugeLoopPlan, order: int): LoopProducts =
       let f = plan.factors[word[0]-1]
       result = p.size
       inc p.size
-      p.loads.add LoopLoad(dest:result,mu:f.mu,seed:firstSetBit(mask),offset:f.offset)
+      p.loads.add LoopLoad(dest:result,mu:f.mu,seed:firstSetBit(mask))
+      for d, n in f.offset:
+        if n != 0: p.loads[^1].walk.add (d, int(n))
     else:
       # (AB)_S = sum_{T subset S} A_T B_{S\T}. Only reachable coefficients
       # are built, including at the top degree where no primal loads remain.
@@ -407,40 +425,153 @@ proc loopProducts(plan: GaugeLoopPlan, order: int): LoopProducts =
   for i, outp in pairs.outs:
     p.outs.add LoopOut(source:jet(outp.key,(1 shl order)-1),
       mu:plan.outputs[i].mu,kind:plan.outputs[i].kind,adj:outp.adj)
+  # Each output follows the last step of its source and the previous output,
+  # so sums keep the order of outs. Every step allocates its new destination
+  # before releasing operands at their last use: a destination never aliases
+  # an operand, and slots hold only live products.
+  var done = newSeq[int](p.size)
+  for v in done.mitems: v = -1
+  for k, op in p.steps: done[op.dest] = k
+  var next = 0
+  # Active derivative plans cover every direction; empty/above-degree cases
+  # return before execution. Each direction starts with its first output.
+  var seen = newSeq[bool](plan.paths.len)
+  for k, op in p.outs:
+    while next <= done[op.source]:
+      p.sched.add next
+      inc next
+    p.outs[k].first = not seen[op.mu]
+    seen[op.mu] = true
+    p.sched.add -k-1
+  var last = newSeq[int](p.size)
+  for pos, k in p.sched:
+    if k >= 0:
+      last[p.steps[k].left] = pos
+      last[p.steps[k].right] = pos
+    else: last[p.outs[-k-1].source] = pos
+  p.slot = newSeq[int](p.size)
+  for v in p.slot.mitems: v = -1
+  var free: seq[int]
+  template release(v: int, pos: int) =
+    if p.slot[v] >= 0 and last[v] == pos and p.slot[v] notin free: free.add p.slot[v]
+  for pos, k in p.sched:
+    if k >= 0:
+      let op = p.steps[k]
+      if p.slot[op.dest] < 0:
+        if free.len > 0: p.slot[op.dest] = free.pop
+        else:
+          p.slot[op.dest] = p.slots
+          inc p.slots
+      release(op.left, pos)
+      release(op.right, pos)
+    else: release(p.outs[-k-1].source, pos)
   plan.products[order] = p
   p
 
-proc prepareProducts(w: LoopWork, plan: LoopProducts) =
+proc prepareProducts[V:static[int],T](w: LoopWork[V,T], plan: LoopProducts, action = false) =
+  ## Per thread: a tile of 1 to 32 sites whose slots and sums take about 32 KB
+  ## and whose value pointers number at most 8192 (Wilson force: 1 SU(3) site
+  ## at 16 lanes, 6 at 4 lanes; 32 U(1) sites). The buffers are allocated for
+  ## these bounds (and 32 sites of action terms), so a plan grows them only when
+  ## a single site of it needs more, and a smaller plan after a larger one
+  ## allocates nothing.
   w.plan = plan
+  let m = plan.slots+w.lo.nDim
+  let n = plan.size
+  let o = plan.outs.len
+  w.tile = max(1, min(32, min(32768 div (m*sizeof(T)), 8192 div n)))
   let nt = getMaxThreads()
-  if w.products.len < nt: w.products.setLen(nt)
+  if w.products.len < nt:
+    w.products.setLen(nt)
+    w.ptrs.setLen(nt)
+    w.vals.setLen(nt)
   for tid in 0..<nt:
-    if w.products[tid].len < plan.size+w.lo.nDim:
-      w.products[tid].newU(plan.size+w.lo.nDim)
+    if w.products[tid].len < m*w.tile:
+      w.products[tid].newU(max(m*w.tile, 32768 div sizeof(T)))
+    if w.ptrs[tid].len < n*w.tile:
+      w.ptrs[tid].newU(max(n*w.tile, 8192))
+    if action and w.vals[tid].len < o*w.tile:
+      w.vals[tid].newU(32*o)
 
-proc evalProducts(plan: LoopProducts, h: auto, i: int, values: auto) =
-  for op in plan.loads:
-    let hl = h[op.seed][op.mu].layout
-    var j = i
-    for d, n in op.offset:
-      if n > 0:
-        for _ in 0..<int(n): j = hl.neighborFwd[d][j]
-      elif n < 0:
-        for _ in 0..<int(-n): j = hl.neighborBck[d][j]
-    values[op.dest] := h[op.seed][op.mu][j]
-  for op in plan.steps:
-    template multiply(a,b: untyped) =
-      if op.add: values[op.dest] += a*b
-      else: values[op.dest] := a*b
-    if op.la:
-      if op.ra: multiply(values[op.left].adj,values[op.right].adj)
-      else: multiply(values[op.left].adj,values[op.right])
-    else:
-      if op.ra: multiply(values[op.left],values[op.right].adj)
-      else: multiply(values[op.left],values[op.right])
+template tileSites(n, tile: int; i0, nb, body: untyped) =
+  ## The thread's share of outer sites 0..<n, as a field loop assigns them, in
+  ## tiles of nb <= tile sites from i0.
+  let ti1 = ((threadNum+1)*n) div numThreads
+  var i0 = (threadNum*n) div numThreads
+  while i0 < ti1:
+    let nb = min(tile, ti1-i0)
+    body
+    i0 += nb
 
-proc loopAction*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]]; work: LoopWork[V,T] = nil): float =
+template evalProducts(plan: LoopProducts, h, hl: auto, i0, nb, tile: int, ptrs: auto, outp, src, b, body: untyped) =
+  ## Products of plan at the outer sites i0+b, b < nb, each step for the whole
+  ## tile; body runs for each output outp and site b, in the order of
+  ## plan.outs, with src its value. Value v of site b is ptrs[v*tile+b]: loads
+  ## point into the halos (layout hl), products into the thread's slots (bindSlots).
+  mixin adj
+  block:
+    for op in plan.loads:
+      for b in 0..<nb:
+        var j = i0+b
+        for st in op.walk: j = hl.step(st.d, j, st.n)
+        ptrs[op.dest*tile+b] = h[op.seed][op.mu].indexPtr(j)
+    for k in plan.sched:
+      if k >= 0:
+        let op = plan.steps[k]
+        let r = op.dest*tile
+        let x = op.left*tile
+        let y = op.right*tile
+        template run(xa, ya, ad: static bool) =
+          for e in 0..<nb:
+            let rp = ptrs[r+e]
+            let xp = ptrs[x+e]
+            let yp = ptrs[y+e]
+            template mulStep(xv, yv: untyped) =
+              when ad:
+                var t {.noinit.}: type(rp[])
+                mul(t, xv, yv)
+                rp[] += t
+              else: mul(rp[], xv, yv)
+            when xa and ya: mulStep(xp[].adj, yp[].adj)
+            elif xa: mulStep(xp[].adj, yp[])
+            elif ya: mulStep(xp[], yp[].adj)
+            else: mulStep(xp[], yp[])
+        case 4*ord(op.la)+2*ord(op.ra)+ord(op.add)
+        of 0: run(false, false, false)
+        of 1: run(false, false, true)
+        of 2: run(false, true, false)
+        of 3: run(false, true, true)
+        of 4: run(true, false, false)
+        of 5: run(true, false, true)
+        of 6: run(true, true, false)
+        else: run(true, true, true)
+      else:
+        let outp = plan.outs[-k-1]
+        let o = outp.source*tile
+        for b in 0..<nb:
+          template src: untyped = ptrs[o+b][]
+          body
+
+template bindSlots(plan: LoopProducts, sc, ptrs: auto, tile: int) =
+  ## Point every product of plan at its scratch slots.
+  for v, s in plan.slot:
+    if s >= 0:
+      for b in 0..<tile: ptrs[v*tile+b] = addr sc[s*tile+b]
+
+template addOut(r: untyped, a: float, outp, src: untyped) =
+  ## r = a src, or r += a src after the first output of the direction.
+  if outp.first:
+    if outp.adj: r := a*src.adj
+    else: r := a*src
+  else:
+    if outp.adj: r += a*src.adj
+    else: r += a*src
+
+proc loopAction*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]]; work: LoopWork[V,T] = nil, tag = default(LoopTag)): float =
   ## Fused S = -sum(c_loop Re tr U_loop)/Nc for fundamental loop terms.
+  ## tag: identity and version of g. A tagged call at the links of the kept halo
+  ## skips the exchange; once a loopDeriv has followed an action at the same tag,
+  ## tagged actions fill the derivative's wider halo so that the derivative reuses it.
   requireFundamental(c, "loopAction")
   let nd = g[0].l.nDim
   if g.len != nd: raise newException(ValueError, "loop action requires a complete gauge bundle")
@@ -450,20 +581,29 @@ proc loopAction*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]]
   defer: w.clearInputs
   let plan = gaugeLoops(nd,mask,1)
   let products = loopProducts(plan,0)
-  w.prepareProducts(products)
-  let h = [w.gaugeLoopHalo(g,plan,0)]
+  w.prepareProducts(products, action=true)
+  let hplan = if tag.id != 0 and w.lpair: gaugeLoops(nd,mask,0) else: plan
+  let h = [w.gaugeLoopHalo(g,hplan,0,tag)]
+  w.ltag = tag
   var sums = newSeq[array[3,float]](getMaxThreads())
   let u = cast[ptr cArray[Field[V,T]]](unsafeAddr(g[0]))
+  let hl = h[0][0].layout
+  let tile = w.tile
   threads:
-    let values = w.products[threadNum]
+    let ptrs = w.ptrs[threadNum].data
+    let vals = w.vals[threadNum].data
+    products.bindSlots(w.products[threadNum].data, ptrs, tile)
     var s: array[3,float]
-    for i in u[0]:
-      products.evalProducts(h,i,values)
-      for outp in products.outs:
-        if outp.adj:
-          s[ord(outp.kind)] += simdSum(redot(u[outp.mu][i],values[outp.source].adj))
-        else:
-          s[ord(outp.kind)] += simdSum(redot(u[outp.mu][i],values[outp.source]))
+    tileSites(u[0].l.nSitesOuter, tile, i0, nb):
+      var o = 0
+      products.evalProducts(h,hl,i0,nb,tile,ptrs,outp,src,b):
+        vals[o*tile+b] =
+          if outp.adj: simdSum(redot(u[outp.mu][i0+b],src.adj))
+          else: simdSum(redot(u[outp.mu][i0+b],src))
+        if b == nb-1: inc o
+      # Sum in site order, as one site at a time.
+      for b in 0..<nb:
+        for o, outp in products.outs: s[ord(outp.kind)] += vals[o*tile+b]
     sums[threadNum] = s
   var total: array[3,float]
   for s in sums:
@@ -471,9 +611,10 @@ proc loopAction*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]]
   rankSum(total)
   -(c.plaq*total[0]+c.rect*total[1]+c.pgm*total[2])/float(g[0][0].nrows)
 
-proc loopDeriv*[V:static[int],T,H; K:static int](c: GaugeActionCoeffs, g:openArray[Field[V,T]], ds:array[K,H], f:array|seq; work:LoopWork[V,T] = nil) =
+proc loopDeriv*[V:static[int],T,H; K:static int](c: GaugeActionCoeffs, g:openArray[Field[V,T]], ds:array[K,H], f:array|seq; work:LoopWork[V,T] = nil, tag = default(LoopTag)) =
   ## f = D^K grad S(g)[ds]. The seed count is static; orders above degree vanish.
   ## Output must be disjoint from seeds and, below the polynomial degree, g.
+  ## tag: as in loopAction; seeds are always exchanged.
   requireFundamental(c, "loopDeriv")
   let lo = g[0].l
   let nd = lo.nDim
@@ -503,23 +644,28 @@ proc loopDeriv*[V:static[int],T,H; K:static int](c: GaugeActionCoeffs, g:openArr
   w.prepareProducts(products)
   type HaloRow = type(w.gaugeLoopHalo(g,plan,0))
   var h: array[K+1,HaloRow]
-  if K < degree: h[0] = w.gaugeLoopHalo(g,plan,0)
+  if tag.id != 0 and tag == w.ltag: w.lpair = true
+  if K < degree: h[0] = w.gaugeLoopHalo(g,plan,0,tag)
   for k in 0..<K: h[k+1] = w.gaugeLoopHalo(ds[k],plan,k+1)
+  w.ltag = tag
   let nc = float(g[0][0].nrows)
+  let a = [-c.plaq/nc, -c.rect/nc, -c.pgm/nc]
+  let hl = h[K][0].layout
+  let tile = w.tile
   threads:
-    let values = w.products[threadNum]
-    for i in f[0]:
-      products.evalProducts(h,i,values)
-      for mu in 0..<nd: values[products.size+mu] := 0
-      for outp in products.outs:
-        let a = -loopCoeff(c,outp.kind)/nc
-        if outp.adj: values[products.size+outp.mu] += a*values[outp.source].adj
-        else: values[products.size+outp.mu] += a*values[outp.source]
-      for mu in 0..<nd: f[mu][i] := values[products.size+mu]
+    let sc = w.products[threadNum].data
+    let ptrs = w.ptrs[threadNum].data
+    products.bindSlots(sc, ptrs, tile)
+    let d = products.slots*tile  # sum of direction mu at site b: sc[d+mu*tile+b]
+    tileSites(f[0].l.nSitesOuter, tile, i0, nb):
+      products.evalProducts(h,hl,i0,nb,tile,ptrs,outp,src,b):
+        addOut(sc[d+outp.mu*tile+b], a[ord(outp.kind)], outp, src)
+      for b in 0..<nb:
+        for mu in 0..<nd: f[mu][i0+b] := sc[d+mu*tile+b]
 
-proc loopDeriv*[V:static[int],T](c: GaugeActionCoeffs, g:openArray[Field[V,T]], f:array|seq; work:LoopWork[V,T] = nil) =
+proc loopDeriv*[V:static[int],T](c: GaugeActionCoeffs, g:openArray[Field[V,T]], f:array|seq; work:LoopWork[V,T] = nil, tag = default(LoopTag)) =
   let ds = default(array[0,seq[Field[V,T]]])
-  c.loopDeriv(g,ds,f,work)
+  c.loopDeriv(g,ds,f,work,tag)
 
 # plaq: 6 types
 # rect: 12 types
@@ -1322,13 +1468,77 @@ proc forceA*(c: GaugeActionCoeffs, g,f: auto) =
 
 proc action*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]]; work: LoopWork[V,T] = nil, tag = default(LoopTag)): float =
   ## Dispatch by coefficient family; mixed adjoint/improved terms are rejected.
+  ## Fundamental terms run the loop kernels: one link exchange per call and no
+  ## staple fields; gaugeAction1 and gaugeForce remain the staple path.
   if c.adjplaq != 0: c.actionA(@g)  # actionA captures its links in threads
-  else: c.gaugeAction1(g, work=work, tag=tag)
+  else: c.loopAction(g, work=work, tag=tag)
 
 proc force*[V:static[int],T](c: GaugeActionCoeffs, g: openArray[Field[V,T]], f: auto; work: LoopWork[V,T] = nil, tag = default(LoopTag)) =
   ## Projected force for action(c,g). Keep f disjoint from g.
   if c.adjplaq != 0: c.forceA(@g, f)  # forceA captures its links in threads
-  else: c.gaugeForce(g, f, work=work, tag=tag)
+  else:
+    (-1.0*c).loopDeriv(g, f, work=work, tag=tag)  # f = -grad S, as gaugeActionDeriv
+    contractProjectTAH(g, f)
+
+proc forceKick*[V:static[int],T](c: GaugeActionCoeffs, g, p, q: openArray[Field[V,T]]; a: float; work: LoopWork[V,T] = nil, tag = default(LoopTag)): Norm2Stats =
+  ## q = a F + p with F the projected force of `force`, in loopDeriv's site pass:
+  ##   d = -grad S at the site, F = projectTAH(U d†),
+  ## so F is never stored. Returns the Norm2Stats of F. Fundamental coefficients;
+  ## q may alias p, not g. g, p and q may be temporaries. tag: as in loopAction.
+  requireFundamental(c, "forceKick")
+  let lo = g[0].l
+  let nd = lo.nDim
+  if g.len != nd or p.len != nd or q.len != nd or p[0].l != lo or q[0].l != lo:
+    raise newException(ValueError, "force kick requires matching gauge bundles")
+  for x in q:
+    for y in g:
+      if x.s.data == y.s.data:
+        raise newException(ValueError, "force kick output must not alias the links")
+  # Copies keep the arrays referenced while the kernel allocates and through
+  # the threads regions; refc does not see raw pointers into them.
+  let
+    u = @g
+    pp = @p
+    qq = @q
+    mask = loopMask(c,nd)
+  if mask == 0:
+    threads:
+      for mu in 0..<nd: qq[mu] := pp[mu]
+    return
+  let w = useLoopWork(g,work)
+  defer: w.clearInputs
+  let plan = gaugeLoops(nd,mask,0)
+  let products = loopProducts(plan,0)
+  w.prepareProducts(products)
+  if tag.id != 0 and tag == w.ltag: w.lpair = true
+  let h = [w.gaugeLoopHalo(g,plan,0,tag)]
+  w.ltag = tag
+  let
+    nc = float(g[0][0].nrows)
+    cs = [c.plaq/nc, c.rect/nc, c.pgm/nc]  # the sums are -grad S
+  var r: Norm2Stats
+  let hl = h[0][0].layout
+  let tile = w.tile
+  threads:
+    let sc = w.products[threadNum].data
+    let ptrs = w.ptrs[threadNum].data
+    products.bindSlots(sc, ptrs, tile)
+    let d = products.slots*tile  # sum of direction mu at site b: sc[d+mu*tile+b]
+    var s: Norm2Acc
+    tileSites(qq[0].l.nSitesOuter, tile, i0, nb):
+      products.evalProducts(h,hl,i0,nb,tile,ptrs,outp,src,b):
+        addOut(sc[d+outp.mu*tile+b], cs[ord(outp.kind)], outp, src)
+      for b in 0..<nb:
+        let i = i0+b
+        for mu in 0..<nd:
+          var f {.noinit.}: evalType(u[mu][i])
+          let m = u[mu][i] * sc[d+mu*tile+b].adj
+          f.projectTAH m
+          s.add f.norm2
+          qq[mu][i] := a*f + pp[mu][i]
+    let t = s.total
+    threadSingle: r = t
+  r
 
 when isMainModule:
   import qex

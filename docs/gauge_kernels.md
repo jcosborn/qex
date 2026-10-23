@@ -152,18 +152,16 @@ poisoned padding.
 
 ### Gauge actions and workspaces
 
-`newLoopWork(f, keep=keepStaples)` opts into tagged staple reuse. The default
-frees temporary staple storage before returning; derivatives and rectangle
-actions reuse a bounded batch of 12 fields, or 18 for a derivative with a
-rectangle term, in four dimensions.
-
 | Family | Coefficients | Numerical entry points |
 | --- | --- | --- |
 | Fundamental | `plaq`, `rect`, `pgm` | `gaugeAction1/2/3`, `gaugeActionDeriv`, `gaugeDeriv2`, `gaugeForce*`, Hessians |
 | Plaquette + adjoint | `plaq`, `adjplaq` | `actionA`, `gaugeADeriv`, `forceA` |
 
 `action`/`force` dispatch on `adjplaq`: zero selects the fundamental family,
-nonzero the adjoint family. Fundamental kernels reject `adjplaq != 0` and the
+nonzero the adjoint family. The fundamental `action` and `force` run the loop
+kernels `loopAction` and `loopDeriv` (one link exchange per call, every loop
+computed locally, no staple fields); `gaugeAction1` and `gaugeForce` remain
+the staple path. Fundamental kernels reject `adjplaq != 0` and the
 adjoint kernels reject `rect`/`pgm` with `ValueError` (`requireFundamental`,
 `requireAdjoint`), so mixed coefficient sets have no entry point.
 For $\sigma<\nu<\mu$, paths are
@@ -195,13 +193,43 @@ $\langle A,B\rangle=\sum\Re\operatorname{tr}(A^\dagger B)$:
 | `gaugeActionDeriv(c,g,f)` | $f=-\nabla S$, or accumulation when requested |
 | `gaugeDeriv2(c,g,f)` | $f\mathrel{+}=\nabla S$ |
 | `gaugeDerivDeriv2(c,g,h,f)` | $f\mathrel{+}=\nabla^2S\,h$ |
-| `gaugeForce(c,g,f)`, `force` | $f_\mu=\operatorname{projectTAH}\big(U_\mu(-\nabla S)_\mu^\dagger\big)$: `contractProjectTAH` after the derivative |
+| `gaugeForce(c,g,f)`, `force` | $f_\mu=\operatorname{projectTAH}\big(U_\mu(-\nabla S)_\mu^\dagger\big)$: `contractProjectTAH` after `gaugeActionDeriv`, or after `loopDeriv` with $-c$ |
+| `forceKick(c,g,p,q,a)` | $q=af+p$ with $f$ the `force`, in `loopDeriv`'s site pass without storing $f$; returns sum, minimum and maximum of $\lvert f\rvert^2$ |
 
 Call complete gauge operations outside `threads`. `newLoopWork(g[0])` owns work
 for one layout/type: halos, improved-subset temporary gauge and full-Hessian
-transporters. Calls refresh/release input references; a workspace serves one
-evaluation at a time. Distinct workspaces own distinct storage. Communicator
-sequencing and geometry initialization requirements still apply.
+transporters. `newLoopWork(g[0], keep)` selects what `gaugeAction1` and
+`gaugeActionDeriv` leave behind between calls (`LoopKeep`): `keepNone`
+reuses one temporary block across direction pairs for every derivative and for
+rectangle actions (12 fields, or 18 for a derivative with a rectangle term, in
+four dimensions) and frees it before returning;
+`keepStaples` keeps the staple blocks and the rect scratch of
+`gaugeActionDeriv`: 2 or 3 arrays of `nd*(nd-1)` fields, 24 or 36 fields for
+`nd = 4`. Shift buffers are built per call in both modes. Both modes recompute
+the staples and exchange the boundaries on every call, except a tagged repeat:
+`gaugeAction1`,
+`gaugeActionDeriv`, `action` and `force` take `tag: LoopTag`, the identity and
+version of the links as the caller knows them (a graph node id and epoch, a
+driver's configuration counter). With `keepStaples`, a call whose tag equals
+the tag of the kept staples skips the link exchange and the staple build. A
+plaquette action keeps `stf` only until a force follows it at the same tag
+once; from then on tagged plaquette actions build `stu` too, so a momentum
+first integrator reuses at both ends of a trajectory and a position first one
+pays nothing. A reused action still exchanges `stu`; a reused force, whose
+kernel reads shifted links, exchanges the links and `stu`, and `stf` and the
+rect scratch for a rect term. An untagged call builds and clears the tag.
+`loopAction` and
+`loopDeriv` take the
+same tag: a halo row and slot remember the tag and the loop plan of their last
+update and a tagged call with both equal exchanges nothing; each link direction
+exchanges only the halo sites its own links reach (for the Wilson force 7 of 8
+faces and 3 of 12 edge families); after a `loopDeriv` has followed a
+`loopAction` at the same tag once, tagged actions fill the derivative's wider
+halo so the derivative at those links exchanges nothing. The counters `builds`,
+`reuses` and `updates` (halo field updates) record what a workspace did. Calls
+refresh/release input references; a workspace serves one evaluation at a time.
+Distinct workspaces own distinct storage. Communicator sequencing and geometry
+initialization requirements still apply.
 
 For a parity/direction mask $M_S$,
 
@@ -219,12 +247,30 @@ buffers, as `gaugeDeriv2Subset` builds them), preserves the complement for
 take the full-derivative route through the workspace temporary gauge and ignore
 those buffers.
 
-Warm Hessians reuse QEX raw buffers. Action staple scratch and generic halo
-message sequences still allocate. Tests: `tgaugeloops`, `tgaugeaction`.
+Warm Hessians reuse QEX raw buffers. With `keepStaples`, `gaugeAction1` and
+`gaugeActionDeriv` keep their staple arrays in the workspace and pass them back
+to `makeFwdStaples` and `makeStaples`; the benches opt in, and a default
+workspace allocates the staples per call as a nil workspace does. The HMC gauge
+action and the graph action ops run the loop kernels, whose workspace keeps
+halos and product banks and no staples. A
+`FieldArray` shares one aligned allocation among its fields, and
+`newFieldArray2` leaves the entries its constraint excludes as nil. The staple
+procs accept an array they returned for the same layout: shape `[nd,nd]`, every
+`mu != nu` entry allocated, storage disjoint from the gauge and from each other.
+Shape, layout and aliasing mismatches raise `ValueError`; a missing entry is a
+user error that crashes in the kernel. The rect scratch is retained and zeroed
+on every use. `newLinkShifts(lo, T, len)` builds one row of staple-path shifts
+for `startCornerShifts`, `makeStaples` and the rect scratch exchanges. Generic
+halo messages allocate their buffers per call and free them on return.
+`bytes` counts raw-memory allocations only, so shift buffers are not
+included. Tests:
+`tgaugeloops`, `tgaugeaction`, `tstaplebatches`.
 
 ### Fused loop kernels
 
-`loopAction(c,g,work=w)` evaluates the fundamental action. For a seed list $h$,
+`loopAction(c,g,work=w)` evaluates the fundamental action; `action` and
+`force` with fundamental coefficients call these kernels. The one seed Hessian takes 45 ms against 135 ms for `gaugeDerivDeriv2`
+(Wilson, 16^4, 8 threads of a Xeon E5-2687W v2). For a seed list $h$,
 
 $$
 \operatorname{loopDeriv}(c,g,h)=D^{|h|}\nabla S(g)[h_1,\ldots,h_{|h|}].
@@ -260,7 +306,17 @@ Zero-weight families are absent from paths/halos/plans; plaquettes vanish above
 order three. `loopAction`/`loopDeriv` reuse aligned per-thread site scratch and
 no intermediate lattice fields; the rectangle/parallelogram subset routes, first
 derivative and subset Hessian, use the workspace's scratch gauge, and the full
-Hessian uses its transporters.
+Hessian uses its transporters. Each step of the product plan runs over a tile
+of consecutive sites of the thread (about 32 KB of slots and sums: one SU(3)
+site at 16 lanes, six at 4 lanes, 32 U(1) sites; at most 8192 value pointers).
+The thread buffers are allocated for these bounds, so a smaller plan after a
+larger one allocates nothing (`tgaugeloops`). The products read link
+factors in place from the fields and halos and write into scratch slots that
+are reused after a product's last use; each output is summed right after its
+last product, in the order of the paths, and action terms are added in site
+order, so the sums match an evaluation of all products first, site by site.
+The Wilson gradient takes 42 products in 5 slots, the Symanzik gradient 236
+products in 37 slots (one slot per value before: 86 and 372).
 
 For plaquettes,
 
@@ -373,7 +429,8 @@ Test generation and the MPI launchers are described in the
 `benchGaugeActions`, `benchPlaq` and `benchExpProject` use `tic`/`toc` and
 `getElapsedTime`; parameters select lattice/repetitions/trials and, for site
 benchmarks, operation/scale/precision/norm. `benchPlaq` compares production/fused
-actions, forces and Hessians for Symanzik coefficients with `pgm=0` or `0.07`.
+actions, forces and Hessians for Wilson and for Symanzik coefficients with `pgm=0` or
+`0.07`.
 Warm workspaces first; validate results outside timing.
 
 ## Future work
