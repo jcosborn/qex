@@ -200,7 +200,7 @@ proc runLoops(lo: auto, nc: static int) =
               hm[dir] := k[dir]
               threadBarrier()
               for x in sub: hm[dir][x] := d[dir][x]
-            c.gaugeDeriv2SubsetWork(g, hp[dir], sw, parity, dir, false, tag=(1,1), work=work)
+            c.gaugeDeriv2SubsetWork(g, hp[dir], sw, false, tag=(1,1), work=work)
             check relativeDiff(hp, hm) < 2.0e-12
             # A Hessian at the derivative's tag reads the kept link boundaries
             # and equals one that exchanges them; a later one keeps the tag.

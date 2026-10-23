@@ -233,14 +233,33 @@ suite "Gauge action subset kernels":
         gb = lo.newGauge
         ea = lo.newGauge
         eb = lo.newGauge
-      c.gaugeDeriv2SubsetWork(g, fa, wa, a[0], a[1], true, ta)
-      c.gaugeDeriv2SubsetWork(g, fb, wb, b[0], b[1], true, tb)
+      c.gaugeDeriv2SubsetWork(g, fa, wa, true, ta)
+      c.gaugeDeriv2SubsetWork(g, fb, wb, true, tb)
       c.gaugeDerivDeriv2Subset(g, h, gb, b[0], b[1], wb, tb)
       c.gaugeDerivDeriv2Subset(g, h, ga, a[0], a[1], wa, ta)
       c.gaugeDerivDeriv2Subset(g, h, ea, a[0], a[1])
       c.gaugeDerivDeriv2Subset(g, h, eb, b[0], b[1])
       check(ga ~ ea)
       check(gb ~ eb)
+
+  test "subset work rejects mismatched geometry":
+    let
+      c = GaugeActionCoeffs(plaq: 5.4)
+      sw = newSubsetWork(g[0], 0, 0)
+      other = newLayout(lo.physGeom).newGauge
+      sh = newSubsetShifts(other[0])
+      outg = lo.newGauge
+    expect ValueError: discard newSubsetWork(g[0], 0, 0, sh)
+    for (p, d) in [(2, 0), (-1, 0), (0, g.len), (0, -1)]:
+      expect ValueError: discard newSubsetWork(g[0], p, d)
+    expect ValueError: c.gaugeDeriv2SubsetWork(other, outg[0], sw, true)
+    expect ValueError: c.gaugeDeriv2SubsetWork(g, other[0], sw, true)
+    expect ValueError: c.gaugeDerivDeriv2Subset(g, h, outg, 1, 0, sw)
+    expect ValueError: c.gaugeDerivDeriv2Subset(g, h, outg, 0, 1, sw)
+    c.gaugeDeriv2SubsetWork(g, outg[0], sw, true, (37,1))
+    check sw.tag == (37,1)
+    Symanzik(5.4).gaugeDerivDeriv2Subset(g, h, outg, 0, 0, sw, (37,1))
+    check sw.tag == default(LoopTag)
 
   test "subset kernels reject adjoint coefficients":
     let c = GaugeActionCoeffs(adjplaq: 1.0)

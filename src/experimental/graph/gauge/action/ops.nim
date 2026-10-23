@@ -497,7 +497,7 @@ proc gaugeActionDeriv*(c: Gactcoeff, g: Ggauge, parity, dir: int): Ggauge =
     let c = Gactcoeff(v.inputs[0])
     let g = Ggauge(v.inputs[1])
     let z = GsubsetDeriv(v)
-    evalGaugeForceSubset(c.cval, g.gval, z.gval, z.work, parity, dir)
+    evalGaugeForceSubset(c.cval, g.gval, z.gval, z.work)
   proc bwd(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
     let c = Gactcoeff(z.inputs[0])
     let g = Ggauge(z.inputs[1])

@@ -70,11 +70,11 @@ proc evalProjectedGaugeForceValue*(gc: GaugeActionCoeffs, g, outg: types.Gauge) 
   of gafActionA:
     gc.forceA(g, outg)
 
-proc evalGaugeForceSubset*(gc: GaugeActionCoeffs, g, outg: types.Gauge, work: MaskWork, parity, dir: int) =
+proc evalGaugeForceSubset*(gc: GaugeActionCoeffs, g, outg: types.Gauge, work: MaskWork) =
   ## Masked ambient derivative for the fundamental loop family.
   if not gc.isFundamental:
     raiseUnsupportedGaugeCoeff(gc)
-  gc.gaugeDeriv2SubsetWork(g, outg[dir], work, parity, dir, clear=false)
+  gc.gaugeDeriv2SubsetWork(g, outg[work.dir], work, clear=false)
 
 proc evalGaugeForceJacobian*(b: types.Gauge,
                              gc: GaugeActionCoeffs,
