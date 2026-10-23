@@ -3,6 +3,7 @@ import complexNumbers
 import matrixConcept
 import types
 import matinv
+import simd
 import macros, algorithm
 
 ## polynomial power series exponential
@@ -335,7 +336,7 @@ proc ahScale(m: Mat1): tuple[s: float, n: int] =
   mixin simdMax
   ahScale(m.norm2.simdMax)
 
-proc expAH*(m: Mat1, n2: float): auto {.noInit.} =
+proc expAH(m: Mat1, n2: float): auto {.noInit.} =
   ## expAH(m) scaled for norm2 n2 in place of the SIMD maximum of norm2(m), m
   ## not 1x1. With n2 the maximum over the lanes of a wider vector of which m
   ## is a slice, the slice gets those lanes of the wide result.
@@ -350,15 +351,62 @@ proc expAH*(m: Mat1, n2: float): auto {.noInit.} =
   r += 1
   r
 
+template registerLanes(x: typed): int =
+  ## Lanes of x's number type in one SIMD register of the build's intrinsics;
+  ## VLEN without intrinsics.
+  when defined(AVX512): 64 div sizeof(numberType(x))
+  elif defined(AVX): 32 div sizeof(numberType(x))
+  elif defined(SSE): 16 div sizeof(numberType(x))
+  else: VLEN
+
+template laneType(x: typed, n: static int): typedesc =
+  when numberType(x) is float32: `SimdS n`
+  else: `SimdD n`
+
 proc expAH*(m: Mat1): auto {.noInit.} =
   ## Requires m†=-m: exp(m/2^k) is unitary, avoiding norm growth while squaring.
   ## 1x1 uses scalar exp; otherwise scale to norm2 <= 1/16, evaluate P12, and square back
   ## in expm1 form, r = E - 1, r <- r (r + 2), so each squaring rounds relative to |r|
   ## instead of |E| = 1 (texpaccuracy: 2 to 3 times smaller error at norm >= 1/4).
+  ## Entries wider than one SIMD register (registerLanes) are evaluated in slices
+  ## of one register with the scale of the whole matrix, expAH(slice, n2); slices
+  ## may round differently (fast-math).
   mixin simdMax
+  type E = evalType(m[0, 0])
   when m.nrows == 1 and m.ncols == 1:
     var r {.noinit.}: evalType(m)
     r[0, 0] := exp(m[0, 0])
+    r
+  elif simdLength(E) > registerLanes(E):
+    const w = registerLanes(E)
+    static: doAssert simdLength(E) mod w == 0
+    type
+      L = laneType(E, w)
+      R = MatrixArray[m.nrows, m.ncols, E]
+    when E is ComplexProxy:
+      type S = MatrixArray[m.nrows, m.ncols, ComplexType[L]]
+      const nv = 2*m.nrows*m.ncols  # SIMD vectors in m
+    else:
+      type S = MatrixArray[m.nrows, m.ncols, L]
+      const nv = m.nrows*m.ncols
+    const k = simdLength(E) div w  # slices
+    let n2 = m.norm2.simdMax
+    var r {.noinit.}: R
+    # The raw SIMD slices require a materialized matrix.
+    when m is R:
+      let p = cast[ptr array[nv, array[k, L]]](unsafeAddr m)
+    else:
+      var a {.noinit.}: R
+      a := m
+      let p = cast[ptr array[nv, array[k, L]]](addr a)
+    let q = cast[ptr array[nv, array[k, L]]](addr r)
+    for j in 0..<k:
+      var s {.noinit.}: S
+      let sp = cast[ptr array[nv, L]](addr s)
+      for c in 0..<nv: sp[c] = p[c][j]
+      let t = expAH(s, n2)
+      let tp = cast[ptr array[nv, L]](unsafeAddr t)
+      for c in 0..<nv: q[c][j] = tp[c]
     r
   else:
     expAH(m, m.norm2.simdMax)

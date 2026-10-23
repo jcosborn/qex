@@ -68,16 +68,53 @@ Test: `tmatrixFields`.
 
 ### Fused gauge updates
 
-`axexp` and `axexpmuly` use the general matrix exponential. `axexpah` and
-`axexpahmuly` require anti-Hermitian inputs (traceless for SU(N)) and use
-`expAH`, with scaled degree-12 evaluation and squaring in expm1 form.
-Production HMC updates, gauge fixing, stout smearing, and gradient flow use
-the AH entry points where their inputs have that property.
+`field/matrixFields.nim` kernels run inside `threads` on each thread's site
+partition, on one field or on every direction of a gauge:
 
-These field kernels run inside `threads`. Subset overloads preserve the
-complement, and a product destination may alias an operand. An optional
-exponential destination must be disjoint from the product and its right operand.
-Tests: `tmatrixFields`, `texpaccuracy`.
+$$
+\operatorname{axexp}(a,X)_x=e^{aX_x},\qquad
+\operatorname{axexpmuly}(a,X,Y)_x=e^{aX_x}Y_x,\qquad
+\operatorname{contractProjectTAH}(X,Y)_x=\operatorname{projectTAH}(X_xY_x^\dagger).
+$$
+
+`axexp` and `axexpmuly` accept any $X$ and use the general `exp` of
+`maths/matrixFunctions`: the degree 4 polynomial of $e^{2^{-20}aX}-1$ and 20
+doublings. `axexpah` and `axexpahmuly` compute the same products with `expAH`,
+which requires $X$ anti-Hermitian (traceless for SU(N)): scale to
+$\lVert aX\rVert_F^2\le 1/16$, the degree 12 Taylor polynomial of
+$r=e^{aX/2^k}-1$, then $k$ squarings in expm1 form, $r\leftarrow r(r+2)$,
+$E=1+r$, so each squaring rounds relative to $\lVert r\rVert$ instead of
+$\lVert E\rVert=1$. On traceless anti-Hermitian input `expAH` is at least as
+accurate as `exp` at every norm tested (`texpaccuracy`, against a
+double-double reference: at most 0.4, 1.0 and 1.8 eps for $\lVert X\rVert_F$
+in 0.25..0.5, 0.5..1 and 1..2 against 1.3, 2.9 and 5.1 eps for `exp`, N = 3,
+float64) and takes 0.4 to 0.5 of its time. `expAH` evaluates a matrix whose
+entries are wider than one SIMD register of the build's intrinsics (8 float64
+lanes with AVX512, 4 with AVX, 2 with SSE; VLEN lanes without intrinsics) in
+slices of one register with the scale of the whole matrix,
+about twice as fast at 16 lanes on AVX; the slices may round differently from
+one evaluation of the whole matrix.
+Real entries are sliced the same way. On 1x1 complex fields the `axexpah`
+kernels evaluate $\cos t+i\sin t$ for $aX=it$; a real 1x1 anti-Hermitian
+matrix is 0 and takes `expAH` = exp(0) = 1. Lattice code whose argument is
+anti-Hermitian by construction uses it: the HMC momentum updates through
+`axexpahmuly`, the gradient flow (`wflow`), gauge fixing (`gaugefix`), stout
+smearing and its inverse (`stoutsmear`) and `warmSU`.
+The optional `expax` receives E from the same site computation; omitting it
+removes its store. E-only has no Y argument. The destination may alias an
+operand. An optional E destination must be distinct from the product
+destination and Y. Subset overloads leave the complement untouched.
+`contractProjectTAH(g,f)` with two arguments overwrites `f` in its own threads
+region. `stoutsmear.stoutStepKernel` composes them for the subset stout step.
+The MD gauge updates of the HMC programs call `axexpahmuly` and the force
+projections call `contractProjectTAH`. Tests: `tmatrixFields`, `texpaccuracy`, `taxexpwide`.
+
+Whole-field and parity loops can assign a site to different threads. Join or
+insert a barrier between dependent phases that change partitions, including
+whole-field initialization before a subset write. `tmatrixFields` checks output
+masks, aliases, complements and allocation reuse at one and six threads. A local
+E product and a stored/reloaded E product may differ by ordinary FMA roundoff;
+the product comparison uses a normalized norm bound while E is checked exactly.
 
 ### Paths, halos and HYP
 

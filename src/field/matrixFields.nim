@@ -4,6 +4,9 @@
 
 import layout, physics/qcdTypes
 import maths/groupOps
+when defined(AVX):
+  from simd/simdAvx import mm256_stream_pd
+  from simd/simdSse import mm_sfence
 
 template siteKernel(r, body: untyped) =
   for e {.inject.} in r:
@@ -176,56 +179,83 @@ proc su3ProjectDerivAdj*[V:static[int],R,T](r: Field[V,R], x: Field[V,T]) =
 # Fused field kernels. Each runs inside `threads` on the calling thread's site
 # partition, on one field or on every direction of a gauge. The destination
 # may alias an operand.
-
-proc contractProjectTAH*[F:Field](z: F; x, y: F) =
-  ## z = projectTAH(x y†) site by site.
-  for e in z:
-    let s = x[e] * y[e].adj
-    z[e].projectTAH s
+# Nim 2.4 fails to capture getSubset's locals in generic default arguments.
 
 proc contractProjectTAH*[F:Field](z: F; x, y: F; sub: Subset) =
-  ## The same on sub's outer sites only.
+  ## z = projectTAH(x y†) on sub's outer sites; the complement is untouched.
   for e in sub:
     let s = x[e] * y[e].adj
     z[e].projectTAH s
 
+proc contractProjectTAH*[F:Field](z: F; x, y: F) =
+  contractProjectTAH(z, x, y, z.l.getSubset("all"))
+
 proc contractProjectTAH*[F:Field](z: openArray[F]; x, y: openArray[F]) =
   for mu in 0..<z.len: contractProjectTAH(z[mu], x[mu], y[mu])
 
-template axexpSites(z, ex, a, x, y, sites: typed; kern: untyped; writeE, writeZ: static bool) =
-  for e in sites:
-    var t {.noinit.}: evalType(x[e])
-    t[] := kern(a * x[e][])
-    when writeE: ex[e] := t
-    when writeZ: z[e] := t * y[e]
+template streamStore[T](d: var T, v: T) =
+  ## d = v with non-temporal stores, which skip reading d's cache lines first.
+  ## T is a whole number of 32-byte vectors at a 32-byte aligned address.
+  let p = cast[ptr UncheckedArray[float64]](addr d)
+  let q = cast[ptr UncheckedArray[m256d]](unsafeAddr v)
+  for c in 0..<sizeof(T) div 32: mm256_stream_pd(addr p[4*c], q[c])
 
-template axexpKernels(axexp, axexpmuly, kern, what: untyped) =
-  proc axexp*[F:Field](z: F; a: float; x: F) =
-    ## z = `what`(a x) site by site.
-    axexpSites(z, z, a, x, x, z, kern, true, false)
+template axexpSites(z, ex, a, x, y, sites: typed; ah, writeE, writeZ: static bool) =
+  type W = evalType(x[0])
+  # Z of a float64 matrix field goes out with non-temporal stores: the link
+  # update is bound by memory traffic on an EPYC 7742 node (48^4, 32 ranks:
+  # 40 -> 28 ms) and 3 to 6% slower with them on a Xeon E5-2687W v2.
+  const stream = defined(AVX) and writeZ and numberType(W) is float64 and simdLength(W) >= 4 and x[0].nrows > 1
+  when ah and x[0].nrows == 1 and evalType(x[0][0,0]) is ComplexProxy:
+    # 1x1 a x = i t: expAH is cos t + i sin t (exp(0) = 1 exactly).
+    mixin cos, sin
+    for e in sites:
+      var t {.noinit.}: evalType(x[e])
+      let th = (a * x[e][0,0]).im
+      t[0,0].re := cos(th)
+      t[0,0].im := sin(th)
+      when writeE: ex[e] := t
+      when writeZ: z[e] := t * y[e]
+  else:
+    for e in sites:
+      var t {.noinit.}: evalType(x[e])
+      when ah: t[] := expAH(a * x[e][])
+      else: t[] := exp(a * x[e][])
+      when writeE: ex[e] := t
+      when stream:
+        var zw {.noinit.}: W
+        zw := t * y[e]
+        streamStore(z[e], zw)
+      elif writeZ: z[e] := t * y[e]
+  when stream: mm_sfence()
+
+template axexpKernels(axexp, axexpmuly: untyped; ah: static bool) =
+  # E denotes the selected exponential family in these overloads.
   proc axexp*[F:Field](z: F; a: float; x: F; sub: Subset) =
-    ## z = `what`(a x) on sub's outer sites only; the complement is untouched.
-    axexpSites(z, z, a, x, x, sub, kern, true, false)
+    ## z = E(a x) on sub's outer sites only; the complement is untouched.
+    axexpSites(z, z, a, x, x, sub, ah, true, false)
+  proc axexp*[F:Field](z: F; a: float; x: F) =
+    axexp(z, a, x, z.l.getSubset("all"))
   proc axexp*[F:Field](z: openArray[F]; a: float; x: openArray[F]) =
-    ## z[mu] = `what`(a x[mu]) site by site.
+    ## z[mu] = E(a x[mu]) site by site.
     for mu in 0..<z.len: axexp(z[mu], a, x[mu])
   proc axexpmuly*[F:Field](z: F; a: float; x, y: F; expax: F = nil) =
-    ## z = `what`(a x) y site by site; expax, when given, receives `what`(a x)
+    ## z = E(a x) y site by site; expax, when given, receives E(a x)
     ## and must be distinct from z and y.
-    if expax == nil: axexpSites(z, expax, a, x, y, z, kern, false, true)
-    else: axexpSites(z, expax, a, x, y, z, kern, true, true)
+    if expax == nil: axexpSites(z, expax, a, x, y, z, ah, false, true)
+    else: axexpSites(z, expax, a, x, y, z, ah, true, true)
   proc axexpmuly*[F:Field](z: F; a: float; x, y: F; sub: Subset; expax: F = nil) =
     ## The same on sub's outer sites only; the complement is untouched.
-    if expax == nil: axexpSites(z, expax, a, x, y, sub, kern, false, true)
-    else: axexpSites(z, expax, a, x, y, sub, kern, true, true)
+    if expax == nil: axexpSites(z, expax, a, x, y, sub, ah, false, true)
+    else: axexpSites(z, expax, a, x, y, sub, ah, true, true)
   proc axexpmuly*[F:Field](z: openArray[F]; a: float; x, y: openArray[F]) =
-    ## z[mu] = `what`(a x[mu]) y[mu] site by site.
+    ## z[mu] = E(a x[mu]) y[mu] site by site.
     for mu in 0..<z.len: axexpmuly(z[mu], a, x[mu], y[mu])
   proc axexpmuly*[F:Field](z: openArray[F]; a: float; x, y, expax: openArray[F]) =
-    ## The same with expax[mu] receiving `what`(a x[mu]).
+    ## The same with expax[mu] receiving E(a x[mu]).
     for mu in 0..<z.len: axexpmuly(z[mu], a, x[mu], y[mu], expax[mu])
 
 # axexp/axexpmuly: any x, with the general `exp` of maths/matrixFunctions.
-axexpKernels(axexp, axexpmuly, exp, "exp")
+axexpKernels(axexp, axexpmuly, false)
 # axexpah/axexpahmuly: x anti-Hermitian (traceless for SU(N)), with expAH.
-axexpKernels(axexpah, axexpahmuly, expAH, "expAH")
+axexpKernels(axexpah, axexpahmuly, true)
