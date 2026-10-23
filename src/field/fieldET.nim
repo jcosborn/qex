@@ -25,6 +25,7 @@ type
     ## newFieldArray2 allocates only the entries its constraint selects and leaves
     ## the rest nil; newOneOf copies that occupancy.
     shape*:seq[int]
+    mem*: RawMemRef
     arr:seq[Field[V,T]]
   Subsetted*[F,S] = object
     field*:F
@@ -179,11 +180,12 @@ proc newFarrElem[V:static[int],T](f:var Field[V,T]; l:Layout[V]; s:alignedMem[T]
   f[].initField(l, s)
   f.s.data = cast[typeof(s.data)](cast[int](s.data) + offset*l.nSitesOuter*s.stride)
 
-proc newFieldArray*[V:static[int],T](l:Layout[V]; t:typedesc[Field[V,T]]; n: int):FieldArray[V,T] {.noinit.} =
+proc newFieldArray*[V:static[int],T](l:Layout[V]; t:typedesc[Field[V,T]]; n: int):FieldArray[V,T] =
   result.shape = @[n]
   result.arr = newseq[t](n)
   var s:typeof(result.arr[0].s)
   s.newU(l.nSitesOuter*n)
+  result.mem = s.mem
   for i in 0..<n:
     newFarrElem(result.arr[i], l, s, i)
 
@@ -191,7 +193,7 @@ template newFieldArray2*[V:static[int],T](l:Layout[V]; ty:typedesc[Field[V,T]];
     ns: array[2,int]; constraint: untyped):untyped =
   let n = ns[0]
   let m = ns[1]
-  var r {.noinit.} :FieldArray[V,T]
+  var r: FieldArray[V,T]
   r.shape = @[n,m]
   r.arr = newseq[ty](n*m)
   var t = 0
@@ -202,6 +204,7 @@ template newFieldArray2*[V:static[int],T](l:Layout[V]; ty:typedesc[Field[V,T]];
       if constraint: inc t
   var s:typeof(r.arr[0].s)
   s.newU(l.nSitesOuter*t)
+  r.mem = s.mem
   var k = 0
   t = 0
   for i in 0..<n:
@@ -214,19 +217,19 @@ template newFieldArray2*[V:static[int],T](l:Layout[V]; ty:typedesc[Field[V,T]];
       inc k
   r
 
-proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] {.noinit.} =
+proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] =
   result.shape = fa.shape
   result.arr = newseq[Field[V,T]](fa.arr.len)
   var s:typeof(fa.arr[0].s)
-  let (l,n) = block:
-    var n = -1
-    for i in 0..<fa.arr.len:
-      if fa.arr[i] != nil:
-        n = i
-        break
-    if n < 0: return
-    (fa.arr[n].l, fa.arr[n].s.len)
-  s.newU(n)
+  var l: Layout[V]
+  var n = 0
+  for f in fa.arr:
+    if f != nil:
+      l = f.l
+      inc n
+  if n == 0: return
+  s.newU(n*l.nSitesOuter)
+  result.mem = s.mem
   var t = 0
   for i in 0..<fa.arr.len:
     if fa.arr[i] == nil: continue
@@ -276,15 +279,10 @@ template `[]`*(x:FieldArray, i:int):untyped = x.arr[i]
 template `[]`*(x:FieldArray, i,j:int):untyped = x.arr[i*x.shape[1]+j]
 
 proc release*(a: FieldArray) =
-  ## Free the shared allocation once. All aliases of its storage become invalid.
-  if a.shape.len != 0:
-    var count = 1
-    for n in a.shape: count *= n
-    for i in 0..<count:
-      let f = a[i]
-      if f != nil and f.s.mem != nil:
-        f.s.mem[].free
-        break
+  ## Free the shared allocation once; populated views keep their field shapes.
+  if a.mem != nil: a.mem[].free
+  for f in a.arr:
+    if f != nil: f.s.newShape(f.l.nSitesOuter, f.s.align)
 
 template even*(x:Field):untyped = x["even"]
 template odd*(x:Field):untyped = x["odd"]

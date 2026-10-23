@@ -197,12 +197,7 @@ proc newLoopWork*[V:static[int],T](f: Field[V,T], keep = keepNone): LoopWork[V,T
 proc bytes*(w: LoopWork): int =
   ## Owned raw-memory allocations; excludes borrowed inputs, shift buffers and metadata.
   template addArray(a: untyped) =
-    if a.shape.len != 0:
-      for i in 0..<a.shape[0]*a.shape[1]:
-        let f = a[i]
-        if f != nil and f.s.mem != nil:
-          result += f.s.mem.size
-          break  # A FieldArray has one backing allocation.
+    if a.mem != nil: result += a.mem.size
   addArray(w.stf)
   addArray(w.stu)
   addArray(w.ru)
