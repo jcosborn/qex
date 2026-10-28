@@ -9,13 +9,17 @@ outdir=tests/extra/teightFlavorSMG
 
 diffnum() { "$mydir/../../diffnum" "$@"; }
 
+# GNU coreutils timeout; MacPorts and Homebrew install it as gtimeout.
+timeoutCmd="$(command -v timeout || command -v gtimeout)" || {
+  echo "FAILED: GNU timeout (timeout or gtimeout) not found"; exit 1; }
+
 expectFailure() {
   local message="$1" logfile="$2" status dir file
   shift 2
   dir=$(mktemp -d "$logfile.ranks.XXXXXXXX") || return 1
   # Callers pass the binary and its arguments; RUNJOB launches capture on each rank.
   # MPI_Abort can discard output in the launcher; capture each rank directly.
-  timeout -k 5s 60s $RUNJOB "$mydir/capture" "$dir" "$@" > "$logfile" 2>&1
+  "$timeoutCmd" -k 5s 60s $RUNJOB "$mydir/capture" "$dir" "$@" > "$logfile" 2>&1
   status=$?
   if ((status == 0 || status == 124 || status == 137)) || ! grep -Fq -- "$message" "$dir"/rank.* 2>/dev/null; then
     cat "$logfile"
