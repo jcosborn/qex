@@ -702,10 +702,19 @@ proc releaseLoops(lo: auto, nc: static int) =
         GC_fullCollect()
         GC_fullCollect()
         check getRawMemUsed() <= before
-        transient(c, g, h, e)
-        GC_fullCollect()
-        GC_fullCollect()
-        check getRawMemUsed() <= before
+
+    test "temporary loop workspaces do not accumulate storage":
+      # refc may keep a dead workspace through conservative stack roots.
+      # Warm that call path before checking repeated allocations for growth.
+      for c in coeffs:
+        var before = 0
+        for rep in 0..<4:
+          transient(c, g, h, e)
+          GC_fullCollect()
+          GC_fullCollect()
+          let used = getRawMemUsed()
+          if rep == 0: before = used
+          else: check used <= before
 
 qexInit()
 letParam:
