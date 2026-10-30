@@ -172,10 +172,14 @@ proc haloPlaq(g: auto, hl: auto, hm: auto): seq[float] =
   for k in 0..<result.len: result[k] *= vf
 
 qexInit()
+disableParamFiltering()
+letParam:
+  loc = @[8,8,4,4]
+  lat = latticeFromLocalLattice(loc, nRanks)
 
 suite "Halo":
   echo "rank ", myRank, "/", nRanks
-  var (lo, g, r) = setupLattice([8,8,4,4])
+  var (lo, g, r) = setupLattice(lat)
   let nd = lo.nDim
   let comm = getDefaultComm()
   let hl = haloLayout(lo, [1,1,1,1], [1,1,1,1])
@@ -306,7 +310,7 @@ suite "Halo":
       for t, o in offs:
         if int(idx[i*offs.len+t]) != hlo.nbr(i, o): inc bad
     check(bad == 0)
-    expect ValueError: discard haloLayout(lo, @[@[8'i32,0,0,0]])
+    expect ValueError: discard haloLayout(lo, @[@[int32(lo.physGeom[0]),0,0,0]])
     expect ValueError: discard haloIndex(hlo, @[@[3'i32,0,0,0]])
     expect ValueError: discard haloIndex(hlo, @[@[0'i32,-2,0,0]])
 
