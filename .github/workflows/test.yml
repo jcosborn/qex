@@ -74,7 +74,9 @@ jobs:
         #./koch nimble -d:release -d:danger --skipUserCfg --skipParentCfg --hints:off
         ./build_all.sh
     - name: set path to nim
-      run: echo "${{ github.workspace }}/Nim/bin" >> $GITHUB_PATH
+      run: |
+        echo "${{ github.workspace }}/Nim/bin" >> $GITHUB_PATH
+        nim -v
     - name: checkout
       uses: actions/checkout@v7
       with:
