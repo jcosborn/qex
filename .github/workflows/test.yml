@@ -74,9 +74,7 @@ jobs:
         #./koch nimble -d:release -d:danger --skipUserCfg --skipParentCfg --hints:off
         ./build_all.sh
     - name: set path to nim
-      run: |
-        echo "${{ github.workspace }}/Nim/bin" >> $GITHUB_PATH
-        nim -v
+      run: echo "${{ github.workspace }}/Nim/bin" >> $GITHUB_PATH
     - name: checkout
       uses: actions/checkout@v7
       with:
@@ -84,6 +82,7 @@ jobs:
     - name: test build scripts
       working-directory: qex
       run: |
+        nim -v
         nim tests/tbuildflags.nims
         nim tests/tbuildjobs.nims
     - name: test numeric comparator
