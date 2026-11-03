@@ -115,9 +115,10 @@ proc field(lo: Layout; k: int): (pointer, int) {.noinline.} =
     bad += int(host(addr f[0], n) != t)
   (pointer(addr f[0]), bad)
 
-proc layout(lo: Layout; fwd, bck: openArray[int]): (pointer, int) {.noinline.} =
-  ## a new halo layout: the address of its seq of forward neighbor tables
-  ## and the mismatches of the tables on the device
+proc layout(lo: Layout; fwd, bck: openArray[int]; free: bool): (pointer, int) {.noinline.} =
+  ## a new halo layout, its tables freed from the table at the end when
+  ## free: the address of its seq of forward neighbor tables and the
+  ## mismatches of the tables on the device
   let hl = lo.makeHaloLayout(fwd, bck)
   inc kernelCallCount
   let g = toGpu(hl)
@@ -126,6 +127,7 @@ proc layout(lo: Layout; fwd, bck: openArray[int]): (pointer, int) {.noinline.} =
     let t = dev[ptr UncheckedArray[int32]](d.p, h.len)
     for mu in 0..<h.len:
       if dev[int32](t[mu], h[mu].len) != h[mu]: inc bad
+  if free: freeGpuMem(hl)
   (pointer(addr hl.neighborFwd[0]), bad)
 
 proc halos(lo: Layout; hl: HaloLayout): int =
@@ -185,10 +187,15 @@ suite "backend/gpumem":
   test "freed fields":
     reuse("Field"): field(lo, k)
 
-  test "dropped halo layouts":
+  test "pinned halo layouts":
     reuse("HaloLayout"):
-      if k mod 2 == 0: layout(lo, [1,1,1,1], [0,0,0,0])
-      else: layout(lo, [0,0,0,0], [1,1,1,1])
+      if k mod 2 == 0: layout(lo, [1,1,1,1], [0,0,0,0], false)
+      else: layout(lo, [0,0,0,0], [1,1,1,1], false)
+
+  test "freed halo layouts":
+    reuse("freed HaloLayout"):
+      if k mod 2 == 0: layout(lo, [1,1,1,1], [0,0,0,0], true)
+      else: layout(lo, [0,0,0,0], [1,1,1,1], true)
 
   test "seqs of halos":
     check halos(lo, lo.makeHaloLayout([1,1,1,1], [1,1,1,1])) == 0

@@ -2,10 +2,15 @@ import macros
 import strUtils
 
 proc isMagic(x: NimNode): bool =
+  ## magic procs and C functions: the body of an importc proc, e.g. sqrt of
+  ## std/math, holds only its docs
   # echo x.treerepr
   let pragmas = x[4]
-  if pragmas.kind==nnkPragma and pragmas[0].kind==nnkExprColonExpr and
-     $pragmas[0][0]=="magic": result = true
+  if pragmas.kind==nnkPragma:
+    for p in pragmas:
+      let n = if p.kind==nnkExprColonExpr: p[0] else: p
+      if n.kind in {nnkIdent,nnkSym} and (n.eqIdent("magic") or n.eqIdent("importc") or n.eqIdent("importcpp")):
+        return true
 
 template isNotMagic(x: NimNode): bool = not isMagic(x)
 
@@ -430,6 +435,32 @@ proc cleanIterator(n:NimNode):NimNode =
   # echo "<<<<<< cleanIterator"
   # echo result.treerepr
 
+proc guardReturns(n: NimNode): NimNode =
+  ## s..; if c: (a..; return); t..  ->  s..; if c: a.. else: t..
+  ## A return left in the body becomes a break out of the inlined block, and
+  ## Nim wraps the expressions around a break in try/finally (C++ try blocks,
+  ## which device code rejects).
+  if n.kind != nnkStmtList: return n
+  result = newStmtList()
+  for i in 0..<n.len:
+    let s = n[i]
+    if s.kind == nnkIfStmt and s.len == 1 and s[0].kind == nnkElifBranch:
+      let b = s[0][1]
+      let r = if b.kind == nnkStmtList and b.len > 0: b[^1] else: b
+      if r.kind == nnkReturnStmt:
+        var a = newStmtList()
+        if b.kind == nnkStmtList:
+          for j in 0..<b.len-1: a.add b[j]
+        if r[0].kind != nnkEmpty: a.add r[0]  # result = x
+        if a.len == 0: a.add newNimNode(nnkDiscardStmt).add newEmptyNode()
+        var e = newStmtList()
+        for j in i+1..<n.len: e.add n[j]
+        var f = newTree(nnkIfStmt, newTree(nnkElifBranch, s[0][0], a))
+        if e.len > 0: f.add newTree(nnkElse, guardReturns e)
+        result.add f
+        return
+    result.add s
+
 proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
   # echo ">>>>>> inlineProcsY"
   # echo "call:\n", call.lisprepr
@@ -568,7 +599,7 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
     else:
       result = n.copyNimNode
       for c in n: result.add breakReturn c
-  body = breakReturn body
+  body = breakReturn guardReturns body
   # echo "### body after replace return with break:"
   # echo body.repr
   var sl:NimNode
@@ -641,6 +672,7 @@ proc inlineProcsX(body: NimNode): NimNode =
   # echo body.repr
   proc recurse(it: NimNode): NimNode =
     if it.kind == nnkTypeOfExpr: return it.copyNimTree
+    if it.kind in RoutineNodes: return it.copyNimTree  # local templates: their uses are expanded
     if it.kind in CallNodes and it.callName.kind==nnkSym:
       let procImpl = it.callName.getImpl
       # echo "inspecting call"
@@ -722,6 +754,26 @@ macro makeIdent*(x: untyped): untyped =
   result = symToIdent(x)
 
 macro delayExpansion*(x:untyped):auto = result = x
+
+macro instShell*(p: untyped): untyped =
+  ## Pragma for a generic proc p called at many sites: p expands its body as a
+  ## template.  Nim 2.2 copies the whole AST of a generic proc at every call
+  ## before it looks up the instance (nim-lang/Nim#26091 fixed it in 2.3).  The
+  ## template parameters are typed, so Nim expands it when it compiles a new
+  ## instance of p, not in the definition of p, and the copies stay small.
+  let t = genSym(nskTemplate, $p.name.basename)
+  let fp = newNimNode(nnkFormalParams).add(ident"untyped")
+  let c = newCall(t)
+  for d in p.params[1..^1]:
+    for v in d[0..^3]:
+      fp.add newIdentDefs(v, ident"typed")
+      c.add v
+  let b = p.body
+  let s = newStmtList()
+  if b.kind == nnkStmtList and b[0].kind == nnkCommentStmt: s.add b[0]
+  s.add c
+  p.body = s
+  result = newStmtList(newNimNode(nnkTemplateDef).add(t, newEmptyNode(), newEmptyNode(), fp, newEmptyNode(), newEmptyNode(), b), p)
 
 #macro `$`*(t: type): untyped =
 #  result = newLit(t.getType[1].repr)

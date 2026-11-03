@@ -66,9 +66,9 @@ const
 type ActionStats* = TableRef[string, float]
 proc newActionStats*: auto = newTable[string, float]()
 
-let baseStats0 = {"n": 0.0, "secs": 0, "flops": 0}
-let forceStats0 = {"n": 0.0, "secs": 0, "flops": 0, "f2": 0, "f4": 0, "finf": 0}
-let solveStats0 = {"n": 0.0, "secs": 0, "flops": 0, "its": 0, "r2": 0, "r2max": 0}
+let baseStats0* = {"n": 0.0, "secs": 0, "flops": 0}
+let forceStats0* = {"n": 0.0, "secs": 0, "flops": 0, "f2": 0, "f4": 0, "finf": 0}
+let solveStats0* = {"n": 0.0, "secs": 0, "flops": 0, "its": 0, "r2": 0, "r2max": 0}
 
 type
   ActionField* = ref object of RootObj
@@ -396,21 +396,13 @@ proc merge(stats,b: var Table) =
       for t,u in b[id]:
         stats[id][t] = u
 
-proc run*(hmc: HmcAction; forceAccept: bool = false) =
-  tic("HmcAction:run")
-  let nup = hmc.nUpdates + 1
-
-  echo &"== Begin HMC update {nup} =========="
-  hmc.forceAccept = forceAccept
-  metropolis.update(hmc)
-
-  let dt = getElapsedTime()
-  hmc.secs += dt
+proc showStats*(parts: seq[Table[string, ActionStats]]; dt, total: float; nup, verbosity: int) =
+  ## merges the stats tables of an update of dt seconds and, for verbosity >
+  ## 0, prints them with total, the seconds of all updates
   var stats = initTable[string,ActionStats]()
-  stats.merge hmc.hmcStats
-  for level in hmc.levels:
-    for a in level.actions:
-      stats.merge a.stats
+  for b in parts:
+    var t = b
+    stats.merge t
   var secs = 0.0
   var st = [newSeq[string](0),newSeq[string](0),newSeq[string](0)]
   let ids = stats.keys.toSeq.sorted
@@ -475,13 +467,28 @@ proc run*(hmc: HmcAction; forceAccept: bool = false) =
     st[stval].add s
 
   # print stats summary
-  if hmc.verbosity > 0:
+  if verbosity > 0:
     for stx in st:
       for s in stx: echo s
     let unsecs = dt - secs
     let unp = 100.0 * unsecs / dt
     echo &"other    {unsecs:8.2f}s {unp:5.1f}% "
-    echo &"End HMC update {nup}: {dt:.2f} seconds ({hmc.secs:.2f} total)"
+    echo &"End HMC update {nup}: {dt:.2f} seconds ({total:.2f} total)"
+
+proc run*(hmc: HmcAction; forceAccept: bool = false) =
+  tic("HmcAction:run")
+  let nup = hmc.nUpdates + 1
+
+  echo &"== Begin HMC update {nup} =========="
+  hmc.forceAccept = forceAccept
+  metropolis.update(hmc)
+
+  let dt = getElapsedTime()
+  hmc.secs += dt
+  var parts = @[hmc.hmcStats]
+  for level in hmc.levels:
+    for a in level.actions: parts.add a.stats
+  showStats(parts, dt, hmc.secs, nup, hmc.verbosity)
   echo "===================================="
 
   toc("end")

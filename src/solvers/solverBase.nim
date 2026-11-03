@@ -8,7 +8,7 @@ type
   SloppyType* = enum
     SloppyNone, SloppySingle, SloppyHalf
   CgControl* = object
-    kind*: int  # -1 automatic; 0 existing, 1 conventional mixed
+    kind*: int  # CPU -1 automatic; 0 existing, 1 conventional mixed; GPU 2 wide accumulator
     floor*: float  # factor for the outer-precision residual norm error; 0 disables
     delta*: float  # reliable update factor in the residual norm; 0 disables the norm trigger
     acc64*, beta*, keep*: bool
@@ -42,17 +42,18 @@ template finalIterations*(sp: SolverParams): untyped = sp.iterations
 template `finalIterations=`*(sp: var SolverParams, x: int): untyped =
   sp.iterations = x
 
-proc cgControl*(): CgControl =
-  result.kind = intParam("cpuCg", -1)
-  result.delta = floatParam("cpuDelta", 0.01)
-  result.floor = floatParam("cpuFloor", 1.0)
-  result.acc64 = intParam("cpuAcc64", 0) != 0
-  result.beta = intParam("cpuBeta", 0) != 0
-  result.keep = intParam("cpuKeep", 1) != 0
-  result.maxInc = intParam("cpuMaxInc", 1)
-  result.maxTotal = intParam("cpuMaxTotal", 10)
-  result.period = intParam("cpuPeriod", 1000)
-  doAssert result.kind >= -1 and result.kind <= 1
+proc cgControl*(prefix = "cpu"): CgControl =
+  let cpu = prefix=="cpu"
+  result.kind = intParam(prefix & "Cg", if cpu: -1 else: 0)
+  result.floor = floatParam(prefix & "Floor", 1.0)
+  result.delta = floatParam(prefix & "Delta", if cpu: 0.01 else: 0.1)
+  result.acc64 = intParam(prefix & "Acc64", if cpu: 0 else: 1) != 0
+  result.beta = intParam(prefix & "Beta", if cpu: 0 else: 1) != 0
+  result.keep = intParam(prefix & "Keep", 1) != 0
+  result.maxInc = intParam(prefix & "MaxInc", 1)
+  result.maxTotal = intParam(prefix & "MaxTotal", 10)
+  result.period = intParam(prefix & "Period", 1000)
+  doAssert result.kind >= (if prefix=="cpu": -1 else: 0) and result.kind <= (if prefix=="cpu": 1 else: 2)
   doAssert result.delta >= 0.0 and result.delta < 1.0
   doAssert result.floor >= 0.0
   doAssert result.maxInc >= 0 and result.maxTotal >= 0
@@ -80,7 +81,7 @@ proc init*(sp: var SolverParams) =
   if defined(qudaDir): sp.backend = sbQuda
   if defined(gridDir): sp.backend = sbGrid
   sp.sloppySolve = intParam("sloppySolve", 0).SloppyType
-  sp.cg = cgControl()
+  sp.cg = cgControl("cpu")
   sp.r2in = floatParam("cpuR2in", 0.0)
   doAssert sp.r2in >= 0.0 and sp.r2in < 1.0
   sp.usePrevSoln = false

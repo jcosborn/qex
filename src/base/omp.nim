@@ -7,6 +7,7 @@ when defined(noOpenmp):
   template omp_get_max_threads*(): cint = cint 1
   template omp_get_thread_num*(): cint = cint 0
   template ompPragma(p:string) = discard
+  template ompPragmaNv(nv, other: string) = discard
   template ompBlock*(p:string; body:untyped) =
     block:
       body
@@ -33,6 +34,9 @@ else:
     {. emit:["_Pragma(\"omp ", p, "\")"] .}
     body
     {. pop .}
+  template ompPragmaNv(nv, other: string) =
+    ## the pragmas nv for NVHPC, other for the other compilers
+    {. emit:["\n#ifdef __NVCOMPILER\n", nv, "\n#else\n", other, "\n#endif\n"] .}
   template ompBlock*(p:string; body:untyped) =
     #{. emit:"#pragma omp " & p .}
     #{. emit:"{ /* Inserted by ompBlock " & p & " */".}
@@ -76,11 +80,22 @@ else:
 
 template ompBarrier* = ompPragma("barrier")
 template ompFlush* = ompPragma("flush")
-template ompFlushAcquire* = ompPragma("flush acquire")
-template ompFlushRelease* = ompPragma("flush release")
-template ompFlushSeqCst* = ompPragma("flush seq_cst")
-template ompAtomicRead*(body) = ompPragma("atomic read acquire", body)
-template ompAtomicWrite*(body) = ompPragma("atomic write release", body)
+# NVHPC (nvc, nvc++ 25.11) rejects the memory order clauses of OpenMP 5.0:
+# there a flush without clauses, a full fence, orders the atomic accesses
+template ompFlushAcquire* = ompPragmaNv("_Pragma(\"omp flush\")", "_Pragma(\"omp flush acquire\")")
+template ompFlushRelease* = ompPragmaNv("_Pragma(\"omp flush\")", "_Pragma(\"omp flush release\")")
+template ompFlushSeqCst* = ompPragmaNv("_Pragma(\"omp flush\")", "_Pragma(\"omp flush seq_cst\")")
+template ompAtomicRead*(body) =
+  {. push stackTrace:off, lineTrace:off, line_dir:off .}
+  ompPragmaNv("_Pragma(\"omp atomic read\")", "_Pragma(\"omp atomic read acquire\")")
+  body
+  ompPragmaNv("_Pragma(\"omp flush\")", "")
+  {. pop .}
+template ompAtomicWrite*(body) =
+  {. push stackTrace:off, lineTrace:off, line_dir:off .}
+  ompPragmaNv("_Pragma(\"omp flush\")\n_Pragma(\"omp atomic write\")", "_Pragma(\"omp atomic write release\")")
+  body
+  {. pop .}
 
 template ompParallel*(body:untyped) =
   ompBlock("parallel"):

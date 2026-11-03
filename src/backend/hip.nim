@@ -7,17 +7,17 @@ import expr
 # vector types
 type
   float2* {.importc,hiph,completeStruct.} = object
-    x,y: float32
+    x*,y*: float32
   double2* {.importc,hiph,completeStruct.} = object
-    x,y: float64
+    x*,y*: float64
   float3* {.importc,hiph,completeStruct.} = object
-    x,y,z: float32
+    x*,y*,z*: float32
   double3* {.importc,hiph,completeStruct.} = object
-    x,y,z: float64
+    x*,y*,z*: float64
   float4* {.importc,hiph,completeStruct.} = object
-    x,y,z,w: float32
+    x*,y*,z*,w*: float32
   double4* {.importc,hiph,completeStruct.} = object
-    x,y,z,w: float64
+    x*,y*,z*,w*: float64
   HipVecTypes* = float2 | double2 | float3 | double3 | float4 | double4
   HipTypes* = int32 | int64 | float32 | float64 | HipVecTypes
 template vecType*[N:static int,T](t: typedesc[array[N,T]]): typedesc =
