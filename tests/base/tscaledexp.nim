@@ -153,10 +153,13 @@ proc checkNative[R](scale: static int) =
     let got = expProjMulLogJac(m[b], scale=scale)
     for k in 0..<lanes:
       let c = refs.cases[(b*lanes+k) mod refs.cases.len]
-      checkpoint c.name & " scale=" & $scale & " lane=" & $k
+      checkpoint c.name & " order=" & $expProjectTAHOrder & " scale=" & $scale & " lane=" & $k
+      var n = 0
       for r in c.finite:
-        if r.order == 13 and r.scale == scale:
+        if r.order == expProjectTAHOrder and r.scale == scale:
+          inc n
           check scalarRel(got[k], r.log) < 2e-11
+      check n == 1
 
 suite "scaled SU3 differential references":
   test "SU3 log-Jacobian gradients require nonnegative scales":
