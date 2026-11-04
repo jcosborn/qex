@@ -29,6 +29,11 @@ proc handles[T](cf: var T): int =
   const n = 300
   var hs = newSeq[seq[float]](n)
   var ps = newSeq[ptr GpuMem](n)
+  # The loops allocate, and gcc -fprefetch-loop-arrays can leave only pointers
+  # past the ends of hs and ps, which the refc stack scan misses.
+  when not defined(gcDestructors):
+    GC_ref(hs)
+    GC_ref(ps)
   for i in 0..<n:
     hs[i] = newSeq[float](i+1)
     for j in 0..i: hs[i][j] = float(1000*i + j)
@@ -53,6 +58,9 @@ proc handles[T](cf: var T): int =
     cf.copyToGpu
     if getGpuMem(addr cf.cpu[0]).copyInCount != 1: inc result
   for i in countup(0, n-1, 2): freeGpuMem(addr hs[i][0])
+  when not defined(gcDestructors):
+    GC_unref(ps)
+    GC_unref(hs)
 
 proc nested(): int =
   ## A seq of 1000 seqs, more than the entries the test before leaves room
