@@ -82,16 +82,22 @@ proc runJetTests(nc: static int) =
       let fd4 = nd(proc(t: float): float = redot(e, expAH(y+t*w, [u,b,e])))
       withCT(1e-8): check fd4 ~ redot(e, expAH(y, [u,b,e,w]))
 
-    test "presized scratch matches lazily sized scratch exactly":
-      var y: M
-      y := 0.8*ah
+    test "presized and lazy scratch agree across scaling thresholds":
       var sized = newExpAHWork[M](4)
       var lazy: ExpAHWork[M]
       let capacity = sized.bytes
       check capacity <= 6*(16*sizeof(M)+64)
-      check norm2(expAH(y, @[u,b,w,e], sized) - expAH(y, @[u,b,w,e], lazy)) == 0
-      check norm2(expAH(y, @[u,b,w,e], sized) - expAH(y, [u,b,w,e])) == 0
-      check sized.bytes == capacity
+      for amp in [0.03, 0.249999, 0.250001, 0.8, 8.0]:
+        var y: M
+        y := amp*ah
+        let got = expAH(y, @[u,b,w,e], sized)
+        let expected = expAH(y, [u,b,w,e])
+        check norm2(got - expAH(y, @[u,b,w,e], lazy)) == 0
+        # Static arrays and runtime buffers may round differently under fast-math.
+        check norm2(got - expected) <= (8*epsilon(float))^2*(1+norm2(expected))
+        check sized.bytes == capacity
+        when nc == 1: check lazy.bytes == 0
+        else: check lazy.bytes == capacity
 
     test "runtime scratch reuses capacity when order changes":
       var y: M
