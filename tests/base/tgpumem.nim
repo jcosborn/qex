@@ -156,11 +156,15 @@ proc reals(n, k: int): (pointer, int) {.noinline.} =
   let g = toGpu(s)
   (pointer(addr s[0]), int(dev[float](g.p, n) != s))
 
-proc droppedField(lo: Layout): pointer {.noinline.} =
-  # Return only the address; the owner can finalize during another release.
-  let f = lo.ColorVector()
-  discard toGpu(f)
-  pointer(addr f[0])
+when defined(gcRefc):
+  proc scans(): int =
+    # Sampling allocates strings; keep it from causing the collection it measures.
+    GC_disable()
+    defer: GC_enable()
+    const prefix = "[GC] stack scans: "
+    for line in GC_getStatistics().splitLines:
+      if line.startsWith(prefix): return parseInt(line[prefix.len..^1])
+    raise newException(ValueError, "missing refc scan count")
 
 template reuse(name: string; body: untyped) =
   ## runs body, a call giving an address and mismatches, four times with a
@@ -178,24 +182,29 @@ template reuse(name: string; body: untyped) =
 let lo = latticeFromLocalLattice([4,4,4,8], nRanks).newLayout
 
 suite "backend/gpumem":
-  test "explicit release preserves invalidations queued by collection":
-    # Run first: growing the empty queue can collect the dropped owner.
+  test "explicit release defers collection while queuing invalidations":
+    # Run first so the empty invalidation queue must grow. refc may retain
+    # dead stack/register roots, so observe scans rather than finalizer timing.
     defer: freeAllGpuMem()
-    let f = lo.ColorVector()
-    discard toGpu(f)
-    let key = droppedField(lo)
-    f.release()
-    GC_fullCollect()
-    expect KeyError: discard getGpuMem(key)
+    let f = [lo.ColorVector(), lo.ColorVector()]
+    let keys = [pointer(addr f[0][0]), pointer(addr f[1][0])]
+    for x in f: discard toGpu(x)
+    let bytes = f[0].s.mem.size + f[1].s.mem.size
+    let used = getRawMemUsed()
+    when defined(gcRefc):
+      let before = scans()
+    for x in f: x.release()
+    let left = getRawMemUsed()
+    when defined(gcRefc):
+      let after = scans()
+      check after == before
+    check left == used-bytes
+    for x in f: check x.s.data == nil
+    for key in keys:
+      expect KeyError: discard getGpuMem(key)
 
   when defined(gcRefc):
     test "release preserves nested GC disables":
-      # refc's scan count observes collection without keeping another owner alive.
-      proc scans(): int =
-        const prefix = "[GC] stack scans: "
-        for line in GC_getStatistics().splitLines:
-          if line.startsWith(prefix): return parseInt(line[prefix.len..^1])
-        raise newException(ValueError, "missing refc scan count")
       defer: freeAllGpuMem()
       let f = lo.ColorVector()
       discard toGpu(f)
@@ -212,14 +221,6 @@ suite "backend/gpumem":
           check scans() == before
         GC_fullCollect()
         check scans() == before
-      GC_fullCollect()
-      check scans() > before
-
-      # The finalizer already holds a GC disable count when it calls the hook.
-      let key = droppedField(lo)
-      GC_fullCollect()
-      expect KeyError: discard getGpuMem(key)
-      before = scans()
       GC_fullCollect()
       check scans() > before
 
