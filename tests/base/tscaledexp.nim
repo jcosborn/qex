@@ -137,6 +137,27 @@ proc checkFinite(scale: static int) =
     " application=", ma, " nonsymmetric cotangent pairing=", mt,
     " max KinvNorm=", mi, " condF=", mc
 
+proc checkNative[R](scale: static int) =
+  const lanes = simdLength(R)
+  var m: array[2,MatrixArray[3,3,ComplexType[R]]]
+  for b in 0..<m.len:
+    for i in 0..<3:
+      for j in 0..<3:
+        var re, im: array[lanes,float64]
+        for k in 0..<lanes:
+          let c = refs.cases[(b*lanes+k) mod refs.cases.len]
+          re[k] = c.m[i,j].re
+          im[k] = c.m[i,j].im
+        m[b][i,j].re := re
+        m[b][i,j].im := im
+    let got = expProjMulLogJac(m[b], scale=scale)
+    for k in 0..<lanes:
+      let c = refs.cases[(b*lanes+k) mod refs.cases.len]
+      checkpoint c.name & " scale=" & $scale & " lane=" & $k
+      for r in c.finite:
+        if r.order == 13 and r.scale == scale:
+          check scalarRel(got[k], r.log) < 2e-11
+
 suite "scaled SU3 differential references":
   test "SU3 log-Jacobian gradients require nonnegative scales":
     static:
@@ -152,6 +173,11 @@ suite "scaled SU3 differential references":
 
   test "finite value and gradient at scale five":
     subtest checkFinite(5)
+
+  test "native SIMD log Jacobians match dense references":
+    type Native = evalType(default(DComplexV).re)
+    subtest checkNative[Native](0)
+    subtest checkNative[Native](expProjectTAHScale)
 
   test "reduced log-Jacobian gradient through norm eight":
     # Against the dense reference of the same finite map; the bounds of

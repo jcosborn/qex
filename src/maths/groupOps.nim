@@ -927,8 +927,10 @@ proc diffExpSu3Coeff[T](c, a, b: var array[8, T], s1, s3: T, order: int, scale: 
         b[k] := db[k]
     f2 *= 2.0
 
-proc evenOddSym[T](e, o: var Mat1, ce, co: array[4, T], z, z2, z3: Mat2) =
+proc evenOddSym(e, o: var Mat1, ce, co: auto, z, z2, z3: Mat2) =
   ## e = sum_k ce[k] z^k and o = sum_k co[k] z^k for symmetric z, z2 = z^2, z3 = z^3.
+  # Nim 2.2.15 crashes matching the SIMD aliases in array[4,T].
+  type T = type(ce[0])
   const n = e.nrows
   for i in 0..<n:
     for j in i..<n:
