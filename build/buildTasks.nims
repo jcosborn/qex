@@ -98,10 +98,14 @@ qex_simd SSE,AVX
       result.simd = s[1]
 
 proc compilerFlags(c: Compiler): seq[string] =
-  if c.name == "gcc" and c.major >= 15:
-    # Under -Ofast, GCC can turn omp master assignments into stores by every thread.
-    # Disable -fallow-store-data-races so workers cannot overwrite updates with stale values.
-    result.add "-fno-allow-store-data-races"
+  if c.name == "gcc":
+    # Loop prefetching can leave the only pointer to a seq past the end of its memory
+    # block, where the refc stack scan does not look; refc then frees it inside the loop.
+    result.add "-fno-prefetch-loop-arrays"
+    if c.major >= 15:
+      # Under -Ofast, GCC can turn omp master assignments into stores by every thread.
+      # Disable -fallow-store-data-races so workers cannot overwrite updates with stale values.
+      result.add "-fno-allow-store-data-races"
   elif c.name == "clang" and c.major == 19:
     # LLVM 19 SLP can insert poison lanes in matrix powers (LLVM #108421).
     result.add "-fno-slp-vectorize"
