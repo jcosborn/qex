@@ -140,33 +140,36 @@ proc freeShiftBufsQ*(sb: openArray[ptr ShiftBufQ]) =
     dealloc(sb[i].lenr)
     dealloc(sb[i].nthreads)
     inc(i)
+  # Release can follow QMP finalization (refc finalizers, ARC/ORC global destructors
+  # at exit); QMP then asserts on its handles.
+  let qmpOn = QMP_is_initialized() != 0
   when PAIR:
     i=0
     while i < n:
-      if sb[i].first!=0 and not isEmpty sb[i].pairmsg:
+      if qmpOn and sb[i].first!=0 and not isEmpty sb[i].pairmsg:
         QMP_free_msghandle(sb[i].pairmsg)
       sb[i].pairmsg.clear
       if not isEmpty sb[i].smsg:
         sb[i].smsg.clear
-        QMP_free_msgmem(sb[i].sqmpmem)
+        if qmpOn: QMP_free_msgmem(sb[i].sqmpmem)
         sb[i].sqmpmem = nil
       if not isEmpty sb[i].rmsg:
         sb[i].rmsg.clear
-        QMP_free_msgmem(sb[i].rqmpmem)
+        if qmpOn: QMP_free_msgmem(sb[i].rqmpmem)
         sb[i].rqmpmem = nil
       inc(i)
   else:
     var i: cint = 0
     while i < n:
       if sb[i].smsg:
-        QMP_free_msghandle(sb[i].smsg)
+        if qmpOn: QMP_free_msghandle(sb[i].smsg)
         sb[i].smsg = nil
-        QMP_free_msgmem(sb[i].sqmpmem)
+        if qmpOn: QMP_free_msgmem(sb[i].sqmpmem)
         sb[i].sqmpmem = nil
       if sb[i].rmsg:
-        QMP_free_msghandle(sb[i].rmsg)
+        if qmpOn: QMP_free_msghandle(sb[i].rmsg)
         sb[i].rmsg = nil
-        QMP_free_msgmem(sb[i].rqmpmem)
+        if qmpOn: QMP_free_msgmem(sb[i].rqmpmem)
         sb[i].rqmpmem = nil
       inc(i)
   i=0
