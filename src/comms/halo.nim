@@ -451,7 +451,7 @@ when isMainModule:
     let hl = lo.makeHaloLayout([1,1,1,1],[0,0,0,0])
     toc "makeHaloLayout"
     type HM = HaloMap[type lo]
-    let comm = getDefaultComm()
+    let comm {.cursor.} = getDefaultComm()
     var hm = newSeq[HM](nd)
     for mu in 0..<nd:
       var offsets = newSeq[seq[int32]](0)
@@ -509,7 +509,7 @@ when isMainModule:
     let hl = lo.makeHaloLayout([1,1,1,1],[1,1,1,1])
     toc "makeHaloLayout"
     type HM = HaloMap[type lo]
-    let comm = getDefaultComm()
+    let comm {.cursor.} = getDefaultComm()
     var hm = newSeq[HM](nd)
     for mu in 0..<nd:
       var offsets = newSeq[seq[int32]](0)
