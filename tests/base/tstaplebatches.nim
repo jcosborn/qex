@@ -1,5 +1,5 @@
 import qex
-import base/alignedMem
+import base/alignedMem, gauge/staples
 import testutils
 
 proc run(lo: auto; nc: static int) =
@@ -45,6 +45,13 @@ proc run(lo: auto; nc: static int) =
         wilson.gaugeActionDeriv(g, f)
         (-1.0*wilson).loopDeriv(g, expected, work=reference)
         check relativeDiff(f, expected) < 2e-12
+    test "an action without a rect term matches independent loops":
+      # This path must not start the stu exchanges: nothing waits for them, and later
+      # calls reuse the buffers their receives write into.
+      let expected = wilson.loopAction(g)
+      for repeat in 0..<6:
+        let a = stapleBatches(wilson.plaq, 0.0, g, default(seq[typeof(g[0])]), false)
+        check abs(a-expected) < 1e-11*(1+abs(expected))
     test "scratch is bounded and released across repeated calls":
       # Numerical work is warmed before measuring ownership and allocation.
       discard c.gaugeAction1(g)
