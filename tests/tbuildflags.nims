@@ -21,6 +21,11 @@ proc script(body: string): string =
   writeFile(result, "#!/bin/sh\n" & body & "\n")
   exec "chmod +x " & result.quoteShell
 
+proc mpich(def: string): string =
+  # MPICH wrappers run the compiler of -cc= (mpicc) or -cxx= (mpicxx), else their default.
+  script("c=" & def.quoteShell & "; for a; do shift; case $a in -cc=*|-cxx=*) c=${a#*=};; " &
+         "*) set -- \"$@\" \"$a\";; esac; done; exec \"$c\" \"$@\"")
+
 proc check(expected = "", args: seq[string] = @[]) =
   setUserNimFlags(args)
   nimFlags.setLen(0)
@@ -47,6 +52,9 @@ try:
     cc = clang[i]
     check(if v == 19: clangFlag else: "")
     doAssert (compiler.name, compiler.major) == ("clang", v)
+  # Offload drivers read the input in a device pass before the host pass.
+  cc = script(findExe("cc").quoteShell & " -undef \"$@\" > /dev/null; " & cmd & "-D__GNUC__=15 \"$@\"")
+  check(gccFlag)
 
   let mpi = script("exec \"$OMPI_CC\" \"$@\"")
   cflagsSpeed = "-Ofast -march=native"
@@ -88,6 +96,21 @@ try:
     check("", @["--putenv:" & ("OMPI_CC=" & unaffected).quoteShell])
     envs.setLen(0)
 
+    cc = mpich(unaffected)
+    cpp = cc
+    check()
+    cflagsAlways = "-cc=" & affected.quoteShell & " -g"
+    check(flag)
+    check("", @["--gcc.options.always:" & ("-cc=" & unaffected.quoteShell).quoteShell])
+    ccDef = "cpp"
+    check()
+    # GPU builds compile C++ as CUDA or HIP; the probe still reads host C++.
+    cppflagsAlways = "-cxx=" & affected.quoteShell & " -x cuda"
+    check(flag)
+    ccDef = "cc"
+    cflagsAlways = ""
+    cppflagsAlways = ""
+
     cc = affected
     fo.debug = true
     check(flag)
@@ -111,6 +134,18 @@ try:
   check()
   doAssert "--d:AVX" notin nimFlags, nimCmdArgs
   fo.debug = false
+  # The always options choose the compiler and can set the target.
+  cc = mpich(gcc[1])
+  check(gccFlag)
+  doAssert compiler.simd == "", nimCmdArgs
+  cflagsAlways = "-cc=" & native.quoteShell
+  check()
+  doAssert compiler.simd == "SSE,AVX,AVX512", nimCmdArgs
+  cflagsSpeed = "-O2"
+  cflagsAlways &= " -march=native"
+  check()
+  doAssert compiler.simd == "SSE,AVX,AVX512", nimCmdArgs
+  cflagsAlways = ""
   cc = script(cmd & "-D__GNUC__=14 -D__AVX__=1 \"$@\"")
   check()
   doAssert "--d:AVX" in nimFlags and "--d:AVX512" notin nimFlags, nimCmdArgs

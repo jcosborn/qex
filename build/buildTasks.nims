@@ -57,10 +57,12 @@ proc compilerInfo(flags: seq[string]): Compiler =
   let dir = cfg.getOrDefault(pre & ".path", cfg.getOrDefault("--" & typ & ".path"))
   let cmd = (if dir.len > 0: dir / exe else: exe).quoteShell
   let lang = if ccDef == "cpp": "c++" else: "c"
-  # simd = "auto" reads the target macros set by the active optimization options,
-  # e.g. through -march=native; other settings keep the probe free of user options.
+  # Every compile gets the always options, which can choose the compiler behind an
+  # MPI wrapper (MPICH -cc=, -cxx=). simd = "auto" also reads the target macros set
+  # by the active optimization options, e.g. through -march=native.
   let optKey = pre[2..^1] & ".options." & (if fo.debug: "debug" else: "speed")
-  let opts = if simd == "auto": cfg.getOrDefault("--" & optKey, get(optKey)) else: ""
+  let opts = cfg.getOrDefault(pre & ".options.always") & " " &
+             (if simd == "auto": cfg.getOrDefault("--" & optKey, get(optKey)) else: "")
   # Probe the compiler behind MPI wrappers after applying environment/flag overrides.
   # Other compilers also define __GNUC__; their own macros distinguish them from GCC.
   # The simd line reports the intrinsics the target supports; the AVX512 code needs DQ.
@@ -77,7 +79,14 @@ qex_simd SSE,AVX,AVX512
 qex_simd SSE,AVX
 #endif
 """
-  let (outp, code) = gorgeEx(cmd & " " & opts & " -E -P -x " & lang & " -", src)
+  # -x after the options overrides their -x cuda or -x hip, so the probe reads host macros.
+  # Offload options (-fopenmp --offload-arch=, -fsycl) add a device pass that reads the
+  # input first; from stdin, the host pass would get nothing, so the probe uses a file.
+  let d = gorge("mktemp -d")
+  let f = d / "probe.c"
+  writeFile(f, src)
+  let (outp, code) = gorgeEx(cmd & " " & opts & " -E -P -x " & lang & " " & f.quoteShell)
+  rmDir(d)
   if code != 0:
     raise newException(IOError, "Compiler probe failed for " & exe & ":\n" & outp)
   for line in outp.splitLines:
