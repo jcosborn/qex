@@ -11,9 +11,9 @@ proc newSeq2d[T](a,b: int): Seq2d[T] =
   result.shape = [a,b]
   result.data = newSeq[T](n)
 proc map*(s: Seq2d; i,j: int): int = i*s.shape[1] + j
-proc `[]`*[T](s: Seq2d[T]; i,j: SomeInteger): T =
-  let k = s.map(i,j)
-  s.data[k]
+proc `[]`*[T](s: Seq2d[T]; i,j: SomeInteger): lent T =
+  ## borrowed: reading an element inside a threads block copies no reference
+  s.data[s.map(i,j)]
 proc `[]=`*[T](s: var Seq2d[T]; i,j: SomeInteger, y: auto) =
   let k = s.map(i,j)
   s.data[k] = y

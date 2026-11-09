@@ -137,7 +137,7 @@ proc saveGauge*[T](g:openArray[T]; fn:string; prec=""; filemd=defFileMd;
   return 0
 
 proc setBC*(g: openArray[Field]) =
-  let gt = g[3]
+  let gt {.cursor.} = g[3]
   for i in gt.l.sites:
     #let e = i div gt.l.nSitesInner
     if gt.l.coords[3][i] == gt.l.physGeom[3]-1:
@@ -593,30 +593,31 @@ proc wline0*(g:auto, line:openarray[int]):auto =
   result = r / float(vol*nc)
   toc("wline trace")
 
-proc singleshift[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]):F =
-  # Result will be in one of the shift buffers.
-  result = f
+# res is a {.cursor.} variable: inside threads blocks the shifted field is borrowed
+# from a shift buffer and no reference count changes.
+template singleshift(res, f, sh, sf, sb: untyped) =
+  ## res: f shifted by sh, in one of the shift buffers.
+  res = f
   for mu,n in sh.pairs:
     if n>0:
-      result = sb[mu] ^* result
+      res = sb[mu] ^* res
     elif n<0:
-      result = sf[mu] ^* result
+      res = sf[mu] ^* res
 
-proc multishifts[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]):F =
-  # f will be used as temporary and overwritten.
-  # Result will be in one of the shift buffers.
-  result = f
+template multishifts(res, f, sh, sf, sb: untyped) =
+  ## res: f shifted by sh, in one of the shift buffers; f is overwritten.
+  res = f
   for mu,n in sh.pairs:
     if n>0:
-      result = sb[mu] ^* result
+      res = sb[mu] ^* res
       for i in 1..<n:
-        f := result
-        result = sb[mu] ^* f
+        f := res
+        res = sb[mu] ^* f
     elif n<0:
-      result = sf[mu] ^* result
+      res = sf[mu] ^* res
       for i in 1..<(-n):
-        f := result
-        result = sf[mu] ^* f
+        f := res
+        res = sf[mu] ^* f
 
 proc lrmul(res:auto, l:auto, r:auto, la,ra:bool) =
   tic("lrmul")
@@ -698,14 +699,12 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
       needs = max(needs, abs x)
     var res = newOneOf(r)
     threads:
-      let rr =
-        if needs==0:
-          r
-        elif needs==1:
-          r.singleshift(sh, sf, sb)
-        else:
-          res := r
-          res.multishifts(sh, sf, sb)
+      var rr {.cursor.} = r
+      if needs==1:
+        singleshift(rr, r, sh, sf, sb)
+      elif needs>1:
+        res := r
+        multishifts(rr, res, sh, sf, sb)
       res.lrmul(l,rr,la,ra)
     gp[s.key] = res
     consumed(s.l)
@@ -726,13 +725,14 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
         threads: res[i] := t.adj
       if needs > 0:
         threads:
-          let r = if o.adj: res[i] else: t
-          let shifted =
-            if needs == 1:
-              r.singleshift(sh, sf, sb)
-            else:
-              res[i] := r
-              res[i].multishifts(sh, sf, sb)
+          var r {.cursor.} = t
+          if o.adj: r = res[i]
+          var shifted {.cursor.}: F
+          if needs == 1:
+            singleshift(shifted, r, sh, sf, sb)
+          else:
+            res[i] := r
+            multishifts(shifted, res[i], sh, sf, sb)
           res[i] := shifted
     consumed(o.key)
   result = res
