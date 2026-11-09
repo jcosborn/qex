@@ -558,7 +558,7 @@ proc stagD2eeN*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
 ]#
 
 proc stagPhase*(g:openArray[Field], phases:openArray[int]) =
-  let l = g[0].l
+  let l {.cursor.} = g[0].l
   for mu in 0..<4:
     for i in l.sites:
       var s = 0
