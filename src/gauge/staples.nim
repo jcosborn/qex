@@ -445,7 +445,8 @@ proc stapleBatches*[V:static[int],T](cp, cr: float,
         if cr != 0:
           ru.fields[mu*nd+nu] = scratch[4*slots+2*slot]
           ru.fields[nu*nd+mu] = scratch[4*slots+2*slot+1]
-    fillStaplePlanes(uu, cs, ss, stf, stu, batch, post=true)
+    # Only the derivative and the rect sums wait for the stu exchanges.
+    fillStaplePlanes(uu, cs, ss, stf, stu, batch, post = derivative or cr != 0)
     when derivative:
       addStaplePlanes(uu, output, cp/nc, cr/nc,
         stf, stu, ru, cs, ss, sf, sb, batch, overwrite=not accumulate)
@@ -475,7 +476,7 @@ when isMainModule:
     tic("test")
     var cs = startCornerShifts(g)
     toc("startCornerShifts")
-    var (stf,stu,ss) = makeStaples(g, cs)
+    var (stf,stu,ss) = makeStaples(g, cs, post = false)
     toc("makeStaples")
 
   test(g)

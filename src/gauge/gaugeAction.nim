@@ -1401,7 +1401,8 @@ proc forceKick*[V:static[int],T](c: GaugeActionCoeffs, g, p, q: openArray[Field[
   ## q = a F + p with F the projected force of `force`, in loopDeriv's site pass:
   ##   d = -grad S at the site, F = projectTAH(U d†),
   ## so F is never stored. Returns the Norm2Stats of F. Fundamental coefficients;
-  ## q may alias p, not g. g, p and q may be temporaries. tag: as in loopAction.
+  ## q may alias p, not g. The caller keeps g, p and q referenced until the call
+  ## returns. tag: as in loopAction.
   requireFundamental(c, "forceKick")
   let lo = g[0].l
   let nd = lo.nDim
@@ -1411,12 +1412,10 @@ proc forceKick*[V:static[int],T](c: GaugeActionCoeffs, g, p, q: openArray[Field[
     for y in g:
       if x.s.data == y.s.data:
         raise newException(ValueError, "force kick output must not alias the links")
-  # Copies keep the arrays referenced while the kernel allocates and through
-  # the threads regions; refc does not see raw pointers into them.
   let
-    u = @g
-    pp = @p
-    qq = @q
+    u = cast[ptr cArray[Field[V,T]]](unsafeAddr(g[0]))
+    pp = cast[ptr cArray[Field[V,T]]](unsafeAddr(p[0]))
+    qq = cast[ptr cArray[Field[V,T]]](unsafeAddr(q[0]))
     kinds = loopKinds(c,nd)
   if kinds == {}:
     threads:
