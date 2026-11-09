@@ -141,18 +141,22 @@ proc freeShiftBufsQ*(sb: openArray[ptr ShiftBufQ]) =
     dealloc(sb[i].nthreads)
     inc(i)
   when PAIR:
+    # The ShiftBuf finalizer can run after QMP_finalize_msg_passing, since a stale stack
+    # word can keep a ShiftBuf through every earlier collection. QMP must not be called
+    # then; only the QEX buffers are freed.
+    let qmp = QMP_is_initialized() != 0
     i=0
     while i < n:
-      if sb[i].first!=0 and not isEmpty sb[i].pairmsg:
+      if qmp and sb[i].first!=0 and not isEmpty sb[i].pairmsg:
         QMP_free_msghandle(sb[i].pairmsg)
       sb[i].pairmsg.clear
       if not isEmpty sb[i].smsg:
         sb[i].smsg.clear
-        QMP_free_msgmem(sb[i].sqmpmem)
+        if qmp: QMP_free_msgmem(sb[i].sqmpmem)
         sb[i].sqmpmem = nil
       if not isEmpty sb[i].rmsg:
         sb[i].rmsg.clear
-        QMP_free_msgmem(sb[i].rqmpmem)
+        if qmp: QMP_free_msgmem(sb[i].rqmpmem)
         sb[i].rqmpmem = nil
       inc(i)
   else:
