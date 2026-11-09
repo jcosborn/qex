@@ -212,7 +212,8 @@ proc gather*(c: Comm; gm: GatherMap; data: auto; keep = false) =
   let rsize = elemsize*gm.rdest.len
   let ssize = elemsize*gm.sidx.len
   if keep and c.gatherBuffers == nil:
-    new(c.gatherBuffers, releaseGatherBuffers)
+    when defined(gcDestructors): new(c.gatherBuffers)
+    else: new(c.gatherBuffers, releaseGatherBuffers)
   #echo "rsize: ", rsize
   let
     recvbuf = if keep: kept(c.gatherBuffers.recv, max(rsize, 1)) else: cast[ptr UncheckedArray[char]](alloc(max(rsize, 1)))
