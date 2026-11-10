@@ -59,6 +59,10 @@ nothing.
   the graph's `Grmat[n]` (nim-lang/Nim#26680, seen in Nim 2.0, 2.2 and 2.4).
   Compute into a new name first: `let q = f(p); p = q` (`stoutLogDetJGraph` in
   `src/experimental/graph/gauge/stout.nim`).
+- Leave a buffer of size 0 `nil` when it is later freed (`lbuf` in
+  `prepareShiftBuf`, `src/layout/shiftX.nim`). Under ARC/ORC every `alloc(0)`
+  returns the same block, so each owner frees the same pointer, and Nim's
+  allocator before 2.2.8 then hands that memory to other allocations.
 - ARC/ORC destroy global variables when the program ends, after `qexFinalize()`
   has finalized comms. Destructors and finalizers that call QMP or MPI check
   that the library is still initialized (`freeShiftBufsQ`).

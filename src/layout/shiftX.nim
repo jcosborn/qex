@@ -29,12 +29,16 @@ type
 import qshifts
 
 proc freeShiftBuf*(sb:ShiftBuf) =
-  if sb.lbuf != nil:
+  # Runs twice for the buffer of shift(): boundary() frees it, then the finalizer.
+  # sq.offr is non-nil from prepareShiftBuf until the first call.
+  if sb.sq.offr != nil:
     #let a = unsafeaddr(sb.sq)
     #echo "freeShiftBuf: ", cast[int](a)
     freeShiftBufQ(sb.sq.addr)
-    dealloc(sb.lbuf)
-    sb.lbuf = nil
+    sb.sq.offr = nil
+    if sb.lbuf != nil:
+      dealloc(sb.lbuf)
+      sb.lbuf = nil
 proc prepareShiftBuf*(sb:var ShiftBuf, si:ShiftIndices, esize:int) =
   #sb.new()
   sb.new(freeShiftBuf)
@@ -43,7 +47,11 @@ proc prepareShiftBuf*(sb:var ShiftBuf, si:ShiftIndices, esize:int) =
   prepareShiftBufQ(sb.sq.addr, si.sq.addr, esize.cint)
   #sb.lbufSize = (si.sq.nSendSites*si.nSitesInner-si.sq.nSendSites1)*esize
   sb.lbufSize = si.sq.nSendSites*si.nSitesInner*esize
-  sb.lbuf = cast[type(sb.lbuf)](alloc(sb.lbufSize))
+  # lbuf stays nil when no site goes to another rank. Under ARC/ORC every alloc(0)
+  # returns the same block, and freeing it from each ShiftBuf corrupts the heap with
+  # Nim's allocator before 2.2.8.
+  if sb.lbufSize > 0:
+    sb.lbuf = cast[type(sb.lbuf)](alloc(sb.lbufSize))
   sb.activeRecv = false
   sb.activeSend = false
 template startRecvBuf*(sb: ShiftBuf) =
