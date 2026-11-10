@@ -82,8 +82,9 @@ proc multiValues*(label: string, values: varargs[Gvalue]): Gmulti
 proc len*(x: Gmulti): int = x.slots.len
 
 # Concrete slot storage stays separate from symbolic `x[k]` selection.
-proc storedSlot*(x: Gmulti, k: int): Gvalue =
-  ## Last evaluated slot; does not build a selection node.
+proc storedSlot*(x: Gmulti, k: int): lent Gvalue =
+  ## Last evaluated slot; does not build a selection node. Borrowed, so threads
+  ## regions can read it without changing its reference count.
   if x.shapeOnly:
     raiseValueError("structural multi carrier has no stored slot values")
   x.slots[k]
