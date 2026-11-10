@@ -127,9 +127,6 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
     styleCheck ~ usages
   embedsrc ~ ""
   #exceptions ~ quirky
-  #if not nimargs.any(proc (x:string):bool = x.startswith("--mm:")):
-  if (NimMajor, NimMinor) >= (1, 7):
-    mm ~ refc
 
   if not fo.debug:
     d ~ "release"

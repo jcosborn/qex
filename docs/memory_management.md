@@ -1,11 +1,11 @@
 # Memory management under ARC/ORC
 
-QEX builds with `--mm:refc` by default (`build/configBase.nims`); a later
-`--mm:` in `nimargs` selects another mode. New code must also work under Nim's
-default `--mm:orc` and the other destructor modes (`arc`, `atomicArc`, `yrc`),
-which all define `gcDestructors`. In these modes every copy of a `ref`, seq or
-string runs hooks (`=copy`, `=sink`, `=destroy`), and under `arc` and `orc` the
-reference counts are not atomic.
+QEX builds with Nim's default `--mm:orc`; `--mm:` in `nimargs` selects another
+mode. Code must work under `orc`, the other destructor modes (`arc`,
+`atomicArc`, `yrc`), which all define `gcDestructors`, and `refc`. In the
+destructor modes every copy of a `ref`, seq or string runs hooks (`=copy`,
+`=sink`, `=destroy`), and under `arc` and `orc` the reference counts are not
+atomic.
 
 ## Inside `threads` blocks
 
@@ -81,6 +81,6 @@ nothing.
   inserted.
 - `-d:useMalloc --passC:-fsanitize=address --passL:-fsanitize=address` stops at
   the first invalid heap access.
-- Build with `nimargs = @["--mm:orc"]` in `qexconfig.nims` and run the tests
-  with several threads. Races on reference counts crash in the allocator or in
-  `rememberCycle`.
+- Run the tests with several threads, in the default build and in one with
+  `nimargs = @["--mm:refc"]` in `qexconfig.nims`. Races on reference counts
+  crash in the allocator or in `rememberCycle`.
