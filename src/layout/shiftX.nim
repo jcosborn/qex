@@ -47,9 +47,8 @@ proc prepareShiftBuf*(sb:var ShiftBuf, si:ShiftIndices, esize:int) =
   prepareShiftBufQ(sb.sq.addr, si.sq.addr, esize.cint)
   #sb.lbufSize = (si.sq.nSendSites*si.nSitesInner-si.sq.nSendSites1)*esize
   sb.lbufSize = si.sq.nSendSites*si.nSitesInner*esize
-  # lbuf stays nil when no site goes to another rank. Under ARC/ORC every alloc(0)
-  # returns the same block, and freeing it from each ShiftBuf corrupts the heap with
-  # Nim's allocator before 2.2.8.
+  # lbuf stays nil when no site goes to another rank: under ARC/ORC every alloc(0)
+  # returns the same block, which each ShiftBuf would then free.
   if sb.lbufSize > 0:
     sb.lbuf = cast[type(sb.lbuf)](alloc(sb.lbufSize))
   sb.activeRecv = false

@@ -1,9 +1,8 @@
 # Memory management under ARC/ORC
 
-QEX builds with Nim's default `--mm:orc`, and with `--mm:refc` under Nim before
-2.2.4, which miscompiles moves under ARC/ORC (`build/configBase.nims`). `--mm:`
-in `nimargs` selects another mode. Code must work under `orc`, the other
-destructor modes (`arc`, `atomicArc`, `yrc`), which all define
+QEX requires Nim 2.2.12 or later and builds with its default `--mm:orc`;
+`--mm:` in `nimargs` selects another mode. Code must work under `orc`, the
+other destructor modes (`arc`, `atomicArc`, `yrc`), which all define
 `gcDestructors`, and `refc`. In the destructor modes every copy of a `ref`, seq
 or string runs hooks (`=copy`, `=sink`, `=destroy`), and under `arc` and `orc`
 the reference counts are not atomic.
@@ -61,8 +60,7 @@ nothing.
   `src/experimental/graph/gauge/stout.nim`).
 - Leave a buffer of size 0 `nil` when it is later freed (`lbuf` in
   `prepareShiftBuf`, `src/layout/shiftX.nim`). Under ARC/ORC every `alloc(0)`
-  returns the same block, so each owner frees the same pointer, and Nim's
-  allocator before 2.2.8 then hands that memory to other allocations.
+  returns the same block, so each owner would free the same pointer.
 - ARC/ORC destroy global variables when the program ends, after `qexFinalize()`
   has finalized comms. Destructors and finalizers that call QMP or MPI check
   that the library is still initialized (`freeShiftBufsQ`).

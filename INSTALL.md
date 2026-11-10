@@ -42,8 +42,7 @@ bin/testStagProp
 
 ## Nim installation
 
-QEX requires the Nim compiler version 1.4 or later
-(1.6.4 or later recommended).
+QEX requires the Nim compiler version 2.2.12 or later.
 
 The `configure` script will search for the Nim executable in the following
 places in order (using the [findNim](build/findNim) script)
@@ -72,11 +71,11 @@ These will be necessary to set when on a system with a shared home directory
 across different host (build) architectures to keep separate copies of Nim.
 
 By default `installNim` installs the latest stable version of Nim.
-You can also specify a version, e.g. `installNim 1.6.4` for version 1.6.4, or
+You can also specify a version, e.g. `installNim 2.4.0` for version 2.4.0, or
 `installNim devel` to install the current devel branch.
 
 You can also switch the symlinks between different (previously installed)
-versions of Nim with e.g. `installNim default 1.6.4` or `installNim default devel`.
+versions of Nim with e.g. `installNim default 2.4.0` or `installNim default devel`.
 You should be able to check which version of Nim is default with `nim -v`.
 
 `installNim` with no options will also give a help message.

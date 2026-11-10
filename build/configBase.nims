@@ -1,5 +1,10 @@
 import os, strUtils, seqUtils
 
+# Configure, make and the nimble tasks all include this file.
+when (NimMajor, NimMinor, NimPatch) < (2, 2, 12):
+  {.error: "QEX requires Nim 2.2.12 or later, found " & NimVersion &
+           "; build/installNim stable installs the current release".}
+
 var
   nimcache = getCurrentDir() / "nimcache"
   buildVerbosity = 1
@@ -60,14 +65,10 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
       when val.type is int:
         v = $val
     echo "setting: ", key, " <- \"", v, "\""
-    when true: # fixes Nim 1.5.1 regression  #getCommand()=="e":
-      if v=="":
-        defargs.add "--" & key
-      else:
-        defargs.add "--" & key & ":" & quoteShell v
+    if v=="":
+      defargs.add "--" & key
     else:
-      if key.len>=7 and key[0..6]!="warning":  # warnings don't seem to work here
-        switch(key, v)
+      defargs.add "--" & key & ":" & quoteShell v
   # "key ~ val" sets "key" to "val"
   template `~`(key,val: untyped) =
     set(astToStr(key), val)
@@ -123,15 +124,9 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
   verbosity ~ buildVerbosity
   nimcache ~ nimcache
   warning[SmallLshouldNotBeUsed] ~ off
-  if (NimMajor, NimMinor) >= (1, 6):
-    styleCheck ~ usages
+  styleCheck ~ usages
   embedsrc ~ ""
   #exceptions ~ quirky
-  # Nim before 2.2.4 miscompiles moves under ARC/ORC: when x is moved out (`s.add x`,
-  # `y = x`) and later assigned inside an `if` or a loop, that assignment frees the
-  # moved value. Those releases build with refc.
-  if (NimMajor, NimMinor, NimPatch) < (2, 2, 4):
-    mm ~ refc
 
   if not fo.debug:
     d ~ "release"
