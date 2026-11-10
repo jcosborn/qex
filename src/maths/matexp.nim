@@ -373,6 +373,7 @@ proc expAH*(m: Mat1): auto {.noInit.} =
     var r {.noinit.}: evalType(m)
     r[0, 0] := exp(m[0, 0])
     r
+  #[
   elif simdLength(E) > registerLanes(E):
     const w = registerLanes(E)
     static: doAssert simdLength(E) mod w == 0
@@ -404,6 +405,7 @@ proc expAH*(m: Mat1): auto {.noInit.} =
       let tp = cast[ptr array[nv, L]](unsafeAddr t)
       for c in 0..<nv: q[c][j] = tp[c]
     r
+  ]#
   else:
     expAH(m, m.norm2.simdMax)
 
