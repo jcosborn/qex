@@ -110,9 +110,8 @@ proc fillStaplePlanes[V:static[int],T](uu: openArray[Field[V,T]], cs, ss: auto;
         ss[nu][mu].startSB(stu[nu,mu][ix])
     toc("makeStaples boundary")
 
-# default(FieldArray[V,T]) arguments break Nim 2.0; use the method form.
 proc makeFwdStaples*[V:static[int],T](uu: openArray[Field[V,T]], s: auto,
-    reuse: FieldArray[V,T] = FieldArray[V,T].default): auto =
+    reuse: FieldArray[V,T] = default(FieldArray[V,T])): auto =
   ## st[mu,nu](x) = U_nu(x) U_mu(x+nu) U_nu(x+mu)†.
   ## reuse: an array this proc returned for uu's layout, with every mu != nu entry
   ## allocated and storage disjoint from uu. Shape, layout and aliasing raise
@@ -160,8 +159,8 @@ proc staplePlanes*(nd: int): seq[(int,int)] =
     for nu in 0..<mu: result.add (mu,nu)
 
 proc makeStaples*[V:static[int],T](uu: openArray[Field[V,T]], s: auto,
-    fwd: FieldArray[V,T] = FieldArray[V,T].default,
-    bck: FieldArray[V,T] = FieldArray[V,T].default; post = true): auto =
+    fwd: FieldArray[V,T] = default(FieldArray[V,T]),
+    bck: FieldArray[V,T] = default(FieldArray[V,T]); post = true): auto =
   ## sft: fwd staples
   ## stu: bck staples, offset up
   ## ss: shifts for stu, started when post; the caller completes them.
