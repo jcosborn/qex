@@ -53,6 +53,11 @@ nothing.
 - Test `defined(gcDestructors)` for code that differs between the modes. Keep
   refc APIs behind `when not defined(gcDestructors)`: `shallowCopy`,
   `GC_ref`/`GC_unref` on seqs, `-d:nimFulldebug`, `interiorAllocatedPtr`.
+- `p = f(p)` frees the old `p` before `f` reads it when `p`'s type is a ref
+  type with a `static` generic parameter, such as `Field[V,T]`, `Layout[V]` or
+  the graph's `Grmat[n]` (nim-lang/Nim#26680, seen in Nim 2.0, 2.2 and 2.4).
+  Compute into a new name first: `let q = f(p); p = q` (`stoutLogDetJGraph` in
+  `src/experimental/graph/gauge/stout.nim`).
 - ARC/ORC destroy global variables when the program ends, after `qexFinalize()`
   has finalized comms. Destructors and finalizers that call QMP or MPI check
   that the library is still initialized (`freeShiftBufsQ`).

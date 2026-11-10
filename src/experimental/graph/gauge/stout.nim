@@ -75,12 +75,17 @@ proc stoutLogDetJGraph*(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): Gscala
     const h = 1.0 / float(1 shl expProjectTAHScale)
     let y = h*x
     var p = diffExpC[expProjectTAHOrder-1] + diffExpC[expProjectTAHOrder]*y
+    # Under ARC/ORC, `p = f(p)` destroys p before f reads it when p's type has a
+    # static generic parameter (Grmat[n], nim-lang/Nim#26680); each step takes a
+    # new name first.
     for k in countdown(expProjectTAHOrder-2, 0):
-      p = diffExpC[k] + y*p
+      let q = diffExpC[k] + y*p
+      p = q
     var c = 0.5*h
     for j in 0..<expProjectTAHScale:
       let pp = p*p
-      p = p + c*(x*pp)
+      let q = p + c*(x*pp)
+      p = q
       c *= 2.0
     sumLogDet(1.0 + p*d)
   else:
