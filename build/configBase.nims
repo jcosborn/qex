@@ -127,6 +127,11 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
     styleCheck ~ usages
   embedsrc ~ ""
   #exceptions ~ quirky
+  # Nim before 2.2.4 miscompiles moves under ARC/ORC: when x is moved out (`s.add x`,
+  # `y = x`) and later assigned inside an `if` or a loop, that assignment frees the
+  # moved value. Those releases build with refc.
+  if (NimMajor, NimMinor, NimPatch) < (2, 2, 4):
+    mm ~ refc
 
   if not fo.debug:
     d ~ "release"
