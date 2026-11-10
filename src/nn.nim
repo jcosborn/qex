@@ -300,7 +300,7 @@ proc convVjp*[F,T](dx, dy: seq[F]; p: ConvParams[T]; ws: ConvWorkspace[T]; sub =
   threads:
     var i = threadNum
     while i < p.cin:
-      let h = ws.halo[i]
+      let h {.cursor.} = ws.halo[i]
       for x in 0..<h.nExt: h[x] := 0
       for o in 0..<p.cout:
         for x in sel.lowOuter..<sel.highOuter:
