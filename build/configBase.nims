@@ -128,6 +128,9 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
   embedsrc ~ ""
   #exceptions ~ quirky
 
+  if not nimargs.any(proc (x:string):bool = x.startswith("--mm:")):
+    mm ~ refc  # FIXME: keep refc default for now
+
   if not fo.debug:
     d ~ "release"
     d ~ "danger"

@@ -14,14 +14,16 @@ jobs:
         # v2.2.12 is the oldest supported release.
         nim-branch: [v2.2.12, version-2-2, version-2-4, devel]
         #fuel-compat: [0, 1]
-        fuel-compat: [0]
+        #fuel-compat: [0]
+        mm: [refc, orc]
       fail-fast: false
-    name: nim-${{ matrix.nim-branch }}-${{ matrix.mpi-impl }}-FUELCompat:${{ matrix.fuel-compat }}
+    #name: nim-${{ matrix.nim-branch }}-${{ matrix.mpi-impl }}-FUELCompat:${{ matrix.fuel-compat }}
+    name: nim-${{ matrix.nim-branch }}-${{ matrix.mpi-impl }}-mm:${{ matrix.mm }}
     runs-on: ubuntu-26.04
     steps:
     - name: environment
       run: |
-        echo "FUELCompat=${{ matrix.fuel-compat }}" >> $GITHUB_ENV
+        #echo "FUELCompat=${{ matrix.fuel-compat }}" >> $GITHUB_ENV
         sudo sh -c 'echo %e.core.%p.%t > /proc/sys/kernel/core_pattern'
     - name: install packages
       run: |
@@ -95,7 +97,7 @@ jobs:
       run: ./bootstrap-travis
     - name: configure
       working-directory: qex
-      run: QMPDIR=qmp QIODIR=qio ./configure
+      run: QMPDIR=qmp QIODIR=qio ./configure nimargs:\@\[\"--mm:${{matrix.mm}}\"\]
     - name: make tests
       working-directory: qex
       run: make jobs:2 tests
