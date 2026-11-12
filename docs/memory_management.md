@@ -1,11 +1,12 @@
 # Memory management under ARC/ORC
 
-QEX requires Nim 2.2.12 or later and builds with its default `--mm:orc`;
-`--mm:` in `nimargs` selects another mode. Code must work under `orc`, the
-other destructor modes (`arc`, `atomicArc`, `yrc`), which all define
-`gcDestructors`, and `refc`. In the destructor modes every copy of a `ref`, seq
-or string runs hooks (`=copy`, `=sink`, `=destroy`), and under `arc` and `orc`
-the reference counts are not atomic.
+QEX currently by default uses `--mm:refc` though that may change in a
+future version.  Passing `--mm:` in `nimargs` selects another
+mode. Code must work under `orc`, the other destructor modes (`arc`,
+`atomicArc`, `yrc`), which all define `gcDestructors`, and `refc`. In
+the destructor modes every copy of a `ref`, seq or string runs hooks
+(`=copy`, `=sink`, `=destroy`), and under `arc` and `orc` the
+reference counts are not atomic.
 
 ## Inside `threads` blocks
 
