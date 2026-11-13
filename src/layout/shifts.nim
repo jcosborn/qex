@@ -554,9 +554,10 @@ proc newShifters*[F](f: F, len: int, sub="all"): auto =
 
 #template transporterApply*(x: Transporter, y: auto): auto =
 #proc transporterApply*(x: Transporter, y: auto): auto {.alwaysInline.} =
-proc transporterApply*(x: Transporter, y: auto): auto =
+proc transporterApply*[U,F,T](x: Transporter[U,F,T], y: auto): lent F =
+  ## Returns x.field borrowed, so a shift inside a threads block changes no reference count.
   mixin mul, load1, adj, `[]`
-  var r = x.field
+  template r: untyped = x.field
   when compiles(x.link):
     if x.len >= 0:
       startSB(x.sb, y[ix])
@@ -588,19 +589,21 @@ proc transporterApply*(x: Transporter, y: auto): auto =
       toc("localSB")
       boundarySB(x.sb, assign(r[ir], it))
       toc("boundarySB")
-  r
-proc `^*`*(x: Transporter, y: auto): auto =
+  x.field
+proc `^*`*[U,F,T](x: Transporter[U,F,T], y: auto): lent F =
   tic("^*")
   threadBarrier()
   toc "barrier"
-  result = transporterApply(x, y)
+  discard transporterApply(x, y)
   toc "apply"
   threadBarrier()
   toc "barrier"
-proc `^*!`*(x: Transporter, y: auto): auto =
+  x.field
+proc `^*!`*[U,F,T](x: Transporter[U,F,T], y: auto): lent F =
   tic("^*!")
-  result = transporterApply(x, y)
+  discard transporterApply(x, y)
   toc("apply")
+  x.field
 #template `()`*(x: Transporter, y: untyped): untyped = x ^* y
 
 when isMainModule:

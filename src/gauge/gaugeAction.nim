@@ -364,7 +364,7 @@ template loopSites(w, products, h, a: typed; i, mu, d, body: untyped) =
   # Inputs and output stores obey the caller's alias contract.
   let tile = w.tile
   # BackwardsIndex returns a seq copy in Nim 2; workers must only read refs.
-  let hl = h[h.high][0].layout
+  let hl {.cursor.} = h[h.high][0].layout
   let sc = w.tiles[threadNum].products.data
   let ptrs = w.tiles[threadNum].ptrs.data
   products.bindSlots(sc, ptrs, tile)

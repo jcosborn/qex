@@ -27,20 +27,22 @@ type
     shape*:seq[int]
     mem*: RawMemRef
     arr:seq[Field[V,T]]
+  # Expression operands are borrowed: under ARC/ORC they hold no counted reference,
+  # so building an expression inside a threads block changes no reference count.
   Subsetted*[F,S] = object
-    field*:F
+    field* {.cursor.}:F
     subset*:S
   FieldUnop*[Op: static[FieldOps], T1] = object
-    f1*: T1
+    f1* {.cursor.}: T1
   FieldBinop*[O:static[string],T1,T2] = object
-    f1:T1
-    f2:T2
+    f1 {.cursor.}:T1
+    f2 {.cursor.}:T2
   FieldAddSub*[S:static[tuple],T:tuple] = object
-    field*:T
+    field* {.cursor.}:T
   FieldMul*[T:tuple] = object
-    field*:T
+    field* {.cursor.}:T
   Shifted*[T] = object
-    field*:T
+    field* {.cursor.}:T
     dir*:int
     ln*:int
   #Field2* = distinct Field
@@ -441,9 +443,7 @@ iterator sites*(s:Subset):int {.inline.} =
 #  let n = x.l.nSitesOuter
 #  itemsI(0, n)
 iterator items*(x:Field):int {.inline.} =
-  #let n = x.l.nSitesOuter
-  let l = x.l
-  let n = l.nSitesOuter
+  let n = x.l.nSitesOuter
   #echo "n: ", n
   itemsI(0, n)
 iterator items*(x:Subsetted):int {.inline.} =
@@ -581,8 +581,8 @@ proc applyOp2(x,y:NimNode; op:string):auto =
   let o = ident(op)
   result = quote do:
     #debugExpr:
-      let xx = `x`
-      let yy = `y`
+      let xx {.cursor.} = `x`
+      let yy {.cursor.} = `y`
       for e in xx:
         when noAlias:
           staticTraceBegin: `o Field2`

@@ -134,7 +134,7 @@ macro rankSum*(comm: Comm, a:varargs[untyped]):auto =
     for v in a: result.add v
 
 template rankSum*(a:varargs[untyped]) =
-  let comm = getDefaultComm()
+  let comm {.cursor.} = getDefaultComm()
   comm.rankSum(a)
 
 #[
@@ -271,7 +271,7 @@ template threadRankSum*(a:varargs[untyped]) =
 template threadRankSum*(c: Comm, a: typed) =
   threadRankSum1x(c, a)
 template threadRankSum*(a: typed) =
-  let comm = getDefaultComm()
+  let comm {.cursor.} = getDefaultComm()
   threadRankSum1x(comm, a)
 
 macro rankMax*(a:varargs[untyped]):auto =

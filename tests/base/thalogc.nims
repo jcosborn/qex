@@ -2,6 +2,8 @@
 # its object lookup (nimFulldebug), freed memory reads as 0xFF (nimBurnFree),
 # and buffers handed to transfers must have a counted owner (qexBorrowCheck,
 # comms/commsTypes).
-switch("define", "nimFulldebug")
-switch("define", "nimBurnFree")
-switch("define", "qexBorrowCheck")
+import "utils.nims"
+if getMm() == "refc": # refc only
+  switch("define", "nimFulldebug")
+  switch("define", "nimBurnFree")
+  switch("define", "qexBorrowCheck")

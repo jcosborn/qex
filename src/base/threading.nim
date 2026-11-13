@@ -77,6 +77,25 @@ template emitStackTrace: untyped =
   emitStackTraceX(instantiationInfo(-2))
   emitStackTraceX(instantiationInfo(-3))
 
+# With goto exceptions (ARC/ORC), the threads proc is quirky: an error check after a
+# call would branch out of the OpenMP region. A raise only sets the thread's error flag.
+template regionErrFlag =
+  ## Each thread's own flag for the code of try statements, which quirky procs leave
+  ## undeclared.
+  when compileOption("exceptions", "goto"):
+    {.emit: "NIM_BOOL* nimErr_ = nimErrorFlag();".}
+proc c_fprintf(f: File, frmt: cstring): cint {.importc: "fprintf", header: "<stdio.h>", varargs, discardable.}
+proc threadUnhandled() {.raises: [].} =
+  let e = getCurrentException()
+  c_fprintf(stderr, "Error: unhandled exception in thread %ld: %s [%s]\n", threadNum, cstring(e.msg), e.name)
+  quit 1
+template regionEnd =
+  ## A worker reports a pending exception and quits; the master's propagates after
+  ## the threads block.
+  when compileOption("exceptions", "goto"):
+    if threadNum != 0 and getCurrentException() != nil:
+      threadUnhandled()
+
 template threads*(body:untyped):untyped =
   checkInit()
   doAssert(numThreads==1)
@@ -85,10 +104,11 @@ template threads*(body:untyped):untyped =
   #let tlOld = threadLocals
   #proc tproc2{.genSym,inline.} =
   #  body
-  proc tproc{.genSym.} =
+  proc tproc{.genSym, quirky.} =
     emitStackTrace()
     #var ts:seq[ThreadShare]
     ompParallel:
+      regionErrFlag()
       threadNum = ompGetThreadNum()
       numThreads = ompGetNumThreads()
       #if threadNum==0: ts.newSeq(numThreads)
@@ -101,21 +121,23 @@ template threads*(body:untyped):untyped =
       body
       #tproc2()
       threadBarrierO()
+      regionEnd()
+    threadNum = 0
+    numThreads = 1
+    initThreadLocals()
   tproc()
   #threadNum = tidOld
   #numThreads = nidOld
   #threadLocals = tlOld
-  threadNum = 0
-  numThreads = 1
-  initThreadLocals()
 template threads*(x0:untyped;body:untyped):untyped =
   checkInit()
   #let tidOld = threadNum
   #let nidOld = numThreads
   #let tlOld = threadLocals
-  proc tproc(xx:var type(x0)) {.genSym.} =
+  proc tproc(xx:var type(x0)) {.genSym, quirky.} =
     #var ts:seq[ThreadShare]
     ompParallel:
+      regionErrFlag()
       threadNum = ompGetThreadNum()
       numThreads = ompGetNumThreads()
       #if threadNum==0: ts.newSeq(numThreads)
@@ -128,13 +150,14 @@ template threads*(x0:untyped;body:untyped):untyped =
       subst(x0,xx):
         body
       threadBarrierO()
+      regionEnd()
+    threadNum = 0
+    numThreads = 1
+    initThreadLocals()
   tproc(x0)
   #threadNum = tidOld
   #numThreads = nidOld
   #threadLocals = tlOld
-  threadNum = 0
-  numThreads = 1
-  initThreadLocals()
 
 template nothreads*(body: untyped): untyped =
   ## convenient way to turn off threading

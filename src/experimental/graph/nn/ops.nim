@@ -381,7 +381,7 @@ template realOps(T: typedesc) {.dirty.} =
       let z = Greal[T](v)
       threads:
         for i in 0..<v.inputs.len:
-          let a = Greal[T](v.inputs[i])
+          let a {.cursor.} = Greal[T](v.inputs[i])
           for c in 0..<a.fval.len: z.fval[offsets[i]+c] := a.fval[c]
     proc backward(zb,z: Gvalue, i: int, input: Gvalue): Gvalue =
       channel(Greal[T](rootedUpstream(zb,z)),offsets[i],Greal[T](z.inputs[i]).fval.len)

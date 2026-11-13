@@ -636,6 +636,15 @@ proc callName(x: NimNode): NimNode =
   if x.kind in CallNodes: result = x[0]
   else: quit "callName: unknown kind (" & treeRepr(x) & ")\n" & repr(x)
 
+proc systemProc(impl: NimNode): bool {.compileTime.} =
+  ## Under ARC/ORC typed bodies reach the system module's allocation code
+  ## (outOfMemHook, rawWrite), which does not inline.
+  when defined(gcDestructors):
+    let f = bindSym("Exception").getImpl.lineInfoObj.filename
+    impl.lineInfoObj.filename.startsWith(f[0 ..< f.rfind('/')] & "/system")
+  else:
+    false
+
 proc inlineProcsX(body: NimNode): NimNode =
   # echo ">>>>>> inlineProcsX"
   # echo body.repr
@@ -648,7 +657,8 @@ proc inlineProcsX(body: NimNode): NimNode =
       # echo procImpl.repr
       # echo isMagic(procImpl)
       if procImpl.kind == nnkTypeDef: return it.copyNimTree
-      if procImpl.isNotMagic and
+      # calls through proc variables (outOfMemHook) stay calls
+      if procImpl.kind in RoutineNodes and not procImpl.systemProc and procImpl.isNotMagic and
           procImpl.body.kind!=nnkEmpty and
           procImpl.kind != nnkIteratorDef and
           (procImpl.kind != nnkTemplateDef or $procImpl.params[0] != "typedesc"):
