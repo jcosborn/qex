@@ -57,6 +57,21 @@ try:
   # Offload drivers read the input in a device pass before the host pass.
   cc = script(findExe("cc").quoteShell & " -undef \"$@\" > /dev/null; " & cmd & "-D__GNUC__=15 \"$@\"")
   check(gccFlag)
+  # build/nvcc.sh probes its host compiler without -x cuda and --cuda-gpu-arch=,
+  # which g++ rejects.
+  let hostCxx = dir / "hostcxx"  # nvcc.sh splits QEX_HOSTCXX at blanks
+  writeFile(hostCxx, "#!/bin/sh\nfor a; do case $a in cuda|--cuda-gpu-arch=*) exit 1;; esac; done\n" &
+            cmd & "-D__GNUC__=14 \"$@\"\n")
+  exec "chmod +x " & hostCxx.quoteShell
+  putEnv("QEX_HOSTCXX", hostCxx)
+  putEnv("CUDA_HOME", dir)
+  cpp = script("exec bash " & (qexDir / "build" / "nvcc.sh").quoteShell & " \"$@\"")
+  ccDef = "cpp"
+  cppflagsAlways = "-g -x cuda --cuda-gpu-arch=sm_90"
+  check(prefetchFlag)
+  doAssert (compiler.name, compiler.major) == ("gcc", 14)
+  ccDef = "cc"
+  cppflagsAlways = ""
 
   let mpi = script("exec \"$OMPI_CC\" \"$@\"")
   cflagsSpeed = "-Ofast -march=native"
