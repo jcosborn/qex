@@ -116,7 +116,7 @@ proc hamiltonian(gc:GaugeActionCoeffs, g:auto, p:auto):auto =
   tic()
   let
     vol = float(g[0].l.physVol)
-    ga = gc.plaq*vol + g.gaugeAction2 gc
+    ga = gc.plaq*vol + gc.gaugeAction2(g)
     p2 = p.pnorm2
     t = 0.5*p2 - vol
     h = ga + t

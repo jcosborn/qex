@@ -54,7 +54,7 @@ proc initStagD3*(x:Field; sub:string):auto =
   result = initStagD3T(x.l, evalType(x[0]), sub)
 
 template toSingleImpl*[T](s: StaggeredD[T]): auto =
-  var r {.noInit.}: StaggeredD[toSingle(eval(T))]
+  var r: StaggeredD[toSingle(eval(T))]
   let n = s.sf.len
   r.sf.newSeq(n)
   r.sb.newSeq(n)
@@ -79,7 +79,7 @@ template toSingleImpl*[G,T](s: typedesc[Staggered[G,T]]): typedesc =
 #template toSingleImpl*[G,T](s: Staggered[G,T]):
 #         Staggered[toSingle(eval(type G)),toSingle(eval(T))] =
 template toSingleImpl*[G,T](s: Staggered[G,T]): auto =
-  var r {.noInit.}: Staggered[toSingle(eval(G)),toSingle(eval(T))]
+  var r: Staggered[toSingle(eval(G)),toSingle(eval(T))]
   r.se = toSingleImpl(s.se)
   r.so = toSingleImpl(s.so)
   r.g = s.g.toSingle
@@ -558,7 +558,7 @@ proc stagD2eeN*(sde,sdo:StaggeredD; r:Field; g:openArray[Field2];
 ]#
 
 proc stagPhase*(g:openArray[Field], phases:openArray[int]) =
-  let l = g[0].l
+  let l {.cursor.} = g[0].l
   for mu in 0..<4:
     for i in l.sites:
       var s = 0

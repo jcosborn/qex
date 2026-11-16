@@ -4,6 +4,7 @@ setVLENmax(4)
 
 import qex
 import gauge, physics/qcdTypes
+from maths/matexp import expAH
 import mdevolve
 import os, strutils
 
@@ -110,7 +111,7 @@ if gfix and gfixunit: g.maxTreeFix 1.0
 #echo g.plaq
 #echo g.plaq2
 echo "Initial plaq: ",g.plaq3
-#echo g.gaugeAction2 gc
+#echo gc.gaugeAction2(g)
 
 var
   p = lo.newgauge
@@ -118,7 +119,7 @@ var
   g0 = lo.newgauge
 
 proc mdt(t:float) =
-  threads: axexpmuly(g, t, p, g)
+  threads: axexpahmuly(g, t, p, g)
 proc mdv(t:float) =
   gc.gaugeforce2(g, f)
   if gfix: f.maxTreeFix 0.0
@@ -138,7 +139,7 @@ when useFG:
     threads:
       for i in 0..<g.len:
         for e in g[i]:
-          let etfg = exp((-t)*f[i][e])*g[i][e]
+          let etfg = expAH((-t)*f[i][e])*g[i][e]
           g[i][e] := etfg
   var gg = lo.newgauge
   proc fgsave =
@@ -225,7 +226,7 @@ for n in 1..trajs:
       g0[i] := g[i]
     threadMaster: p2 = p2t
   let
-    ga0 = g0.gaugeAction2 gc
+    ga0 = gc.gaugeAction2(g0)
     t0 = 0.5*p2
     h0 = ga0 + t0
   #echo "Begin H: ",h0,"  Sg: ",ga0,"  T: ",t0
@@ -239,7 +240,7 @@ for n in 1..trajs:
       p2t += p[i].norm2
     threadMaster: p2 = p2t
   let
-    ga1 = g.gaugeAction2 gc
+    ga1 = gc.gaugeAction2(g)
     t1 = 0.5*p2
     h1 = ga1 + t1
   echo "End H: ",h1,"  Sg: ",ga1,"  T: ",t1
@@ -262,7 +263,7 @@ for n in 1..trajs:
           p2t += p[i].norm2
         threadMaster: p2 = p2t
       let
-        ga1 = g.gaugeAction2 gc
+        ga1 = gc.gaugeAction2(g)
         t1 = 0.5*p2
         h1 = ga1 + t1
       echo "Reversed H: ",h1,"  Sg: ",ga1,"  T: ",t1

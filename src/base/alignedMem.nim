@@ -1,6 +1,7 @@
 import strUtils
 import stdUtils
 import system/ansi_c
+import std/[posix, os]
 
 type
   RawMemStats* = object
@@ -23,6 +24,24 @@ type
 var rms: RawMemStats
 var rmGcThreshold = 1024*1024*1024   # 1 GB
 
+proc maxRssMiB*(): float =
+  ## Process peak resident memory, in MiB on both Linux and macOS.
+  var ru: Rusage
+  if getrusage(RUSAGE_SELF, addr ru) != 0: raiseOSError(osLastError())
+  when defined(macosx): ru.ru_maxrss.float / 1048576.0
+  else: ru.ru_maxrss.float / 1024.0
+
+when defined(memTrace):
+  var rawPeakHeap: int
+  proc mib(n: int): string = (n.float / 1048576.0).formatFloat(ffDecimal, 1)
+  proc memMark*(label: string) =
+    echo "[memTrace] ", label, ": maxrss ", maxRssMiB().formatFloat(ffDecimal, 1),
+      " MiB, raw ", mib(rms.used), " (max ", mib(rms.maxUsed), "), Nim heap ", mib(getTotalMem()),
+      " (occupied ", mib(getOccupiedMem()), ")"
+  proc rawPeakReport*() =
+    echo "[memTrace] raw peak ", mib(rms.maxUsed), " MiB, Nim heap then ", mib(rawPeakHeap),
+      " MiB, maxrss ", maxRssMiB().formatFloat(ffDecimal, 1), " MiB"
+
 proc newRawMem*(size: int, zero=true): RawMem =
   if size>0:
     if rms.used>rmGcThreshold:
@@ -35,9 +54,15 @@ proc newRawMem*(size: int, zero=true): RawMem =
       result.size = size
       rms.allocated += size
       rms.used += size
+      when defined(memTrace):
+        if rms.used > rms.maxUsed: rawPeakHeap = getTotalMem()
       rms.maxUsed = max(rms.maxUsed, rms.used)
+var rawMemFreeHook*: proc(p: pointer; size: int) {.nimcall.}
+  ## called with the storage of each RawMem before it is freed
+
 proc free*(rm: var RawMem) =
   if rm.size>0:
+    if rawMemFreeHook != nil: rawMemFreeHook(rm.p, rm.size)
     c_free(rm.p)
     rms.used -= rm.size
     rm.size = 0
@@ -50,23 +75,12 @@ proc getRawMemMaxUsed*(): int = rms.maxUsed
 proc getRawMemGcThreshold*(): int = rmGcThreshold
 proc setRawMemGcThreshold*(t: int) = rmGcThreshold = t
 
-var rawMemFreeHook*: proc(p: pointer; size: int) {.nimcall.}
-  ## called with the storage of each RawMemRef before its finalizer frees it
-
 proc freeRawMemRef*(rm: RawMemRef) =
-  #echo "freeRawmemref"
-  #when defined(gcArc) or defined(gcOrc):
-  #  let t = unsafeAddr(rm[])
-  #  free(t[])
-  #else:
-  if rawMemFreeHook != nil: rawMemFreeHook(rm.p, rm.size)
   free(rm[])
 proc newRawMemRef*(size: int): RawMemRef =
-  #echo "newRawMemRef"
   result.new(freeRawMemRef)
   result[] = newRawMem(size)
 proc newRawMemRefU*(size: int): RawMemRef =
-  #echo "newRawMemRef"
   result.new(freeRawMemRef)
   result[] = newRawMem(size, zero=false)
 template data*(rm: RawMemRef): untyped = rm[].p

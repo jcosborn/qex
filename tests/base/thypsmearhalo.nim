@@ -61,7 +61,7 @@ suite "HYP halo derivative domain":
           ht.h2[mu][nu].halo := undefined
       ht.smear(coef, candidate)
       ht.force(coef, fCandidate, chain)
-      compare(candidate, reference, 1e-18)
-      compare(fCandidate, fReference, 1e-16)
+      subtest compare(candidate, reference, 1e-18)
+      subtest compare(fCandidate, fReference, 1e-16)
 
 qexFinalize()

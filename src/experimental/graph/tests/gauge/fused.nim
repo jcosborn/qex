@@ -26,6 +26,12 @@ suite "gauge fused":
   test "axexpmuly finite differences":
     ckgradm3(axexpmuly, x, gm, gu, y, 0.05*gq, gg, gp)
 
+  test "axexpah finite differences":
+    ckgradm2(axexpah, x, gm, y, 0.05*gq, gp)
+
+  test "axexpahmuly finite differences":
+    ckgradm3(axexpahmuly, x, gm, gu, y, 0.05*gq, gg, gp)
+
   test "blendSubset applies the same mask to values and cotangents":
     const
       parity = 1
@@ -99,7 +105,7 @@ suite "gauge fused":
         axexpmulySubsetResult.inputs[0].inputs[0])
 
   test "fused gauge ops reject incompatible layouts at construction":
-    let lo2 = @[4,4,4,8].newLayout
+    let lo2 = latticeFromLocalLattice(@[4,4,4,8], nRanks).newLayout
     let g2 = lo2.newgauge
     let other = grt.toGvalue(zeroGaugeLike(g2))
 

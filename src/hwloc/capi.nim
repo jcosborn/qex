@@ -48,7 +48,9 @@
 ##
 
 when hostOs == "macosx":
-  const hwloclib {.strDefine.} = "libhwloc.dylib"
+  # dlopen does not search the MacPorts and Apple silicon Homebrew prefixes;
+  # the alternatives are tried in order.
+  const hwloclib {.strDefine.} = "(|/opt/local/lib/|/opt/homebrew/lib/)libhwloc.dylib"
 else:
   const hwloclib {.strDefine.} = "libhwloc.so"
 {.pragma: hwloc, dynlib:hwloclib.}

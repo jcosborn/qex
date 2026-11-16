@@ -6,6 +6,7 @@ import testutils
 import qex
 import field/matrixFields
 import maths/groupOps
+import base/alignedMem
 
 qexInit()
 letParam:
@@ -235,5 +236,157 @@ suite "complex scalar matrix scaling":
       #threadSingle: dr=n
       dr = n  # workaround for gcc called through nvcc
     check abs(dr-nr)<1e-14*(1+nr)
+
+proc fusedExpTests(nc: static int) =
+  let x = lo.ColorMatrix(nc)
+  let y = lo.ColorMatrix(nc)
+  let e = lo.ColorMatrix(nc)
+  let z = lo.ColorMatrix(nc)
+  let re = lo.ColorMatrix(nc)
+  let rz = lo.ColorMatrix(nc)
+  let tmp = lo.ColorMatrix(nc)
+  var rng = lo.newRNGField(Philox4x64, 20260922'u64)
+  # Storing E permits alternate FMA contraction in E*y: allow 8 eps in norm.
+  let tol = (8.0*epsilon(float))^2
+
+  template kernelTests(label: string; fk, fkmuly, mexp: untyped) =
+    suite label & " Nc=" & $nc:
+      test "whole output choices agree and allocate no fields":
+        for v in [0.0, 0.125, -0.75, 3.0]:
+          let a: float = v
+          threads:
+            for i in x:
+              re[i][] := mexp(a * x[i][])
+              rz[i] := re[i] * y[i]
+          let raw = getRawMemAllocated()
+          threads:
+            fk(e, a, x)
+            fkmuly(z, a, x, y)
+          check getRawMemAllocated() == raw
+          check diffNorm2(e, re) == 0.0
+          check relNorm2(z, rz) <= tol
+          threads:
+            fkmuly(z, a, x, y, e)
+          check getRawMemAllocated() == raw
+          check diffNorm2(e, re) == 0.0
+          check relNorm2(z, rz) <= tol
+          threads:
+            fk([e], a, [x])
+            fkmuly([z], a, [x], [y])
+            fkmuly([z], a, [x], [y], [e])
+          check getRawMemAllocated() == raw
+          check diffNorm2(e, re) == 0.0
+          check relNorm2(z, rz) <= tol
+
+      test "whole destinations preserve permitted operand aliases":
+        const a = 0.375
+        threads:
+          for i in x:
+            re[i][] := mexp(a * x[i][])
+            rz[i] := re[i] * y[i]
+          tmp := x
+          fk(tmp, a, tmp)
+        check diffNorm2(tmp, re) == 0.0
+        threads:
+          tmp := x
+          fkmuly(tmp, a, tmp, y)
+        check relNorm2(tmp, rz) <= tol
+        threads:
+          tmp := y
+          fkmuly(tmp, a, x, tmp)
+        check relNorm2(tmp, rz) <= tol
+        threads:
+          tmp := x
+          z := y
+          fkmuly(z, a, tmp, z, tmp)
+        check diffNorm2(tmp, re) == 0.0
+        check relNorm2(z, rz) <= tol
+        threads:
+          for i in x: rz[i] := re[i] * x[i]
+          fkmuly(z, a, x, x, e)
+        check diffNorm2(e, re) == 0.0
+        check relNorm2(z, rz) <= tol
+
+      test "subset output choices preserve dirty complements":
+        for par in ["even", "odd"]:
+          let sub = lo.getSubset(par)
+          for v in [0.0, 0.125, -0.75, 3.0]:
+            let a: float = v
+            threads:
+              e := 1.25
+              z := -0.875
+              re := 1.25
+              rz := -0.875
+            threads:
+              for i in sub:
+                re[i][] := mexp(a * x[i][])
+                rz[i] := re[i] * y[i]
+            let raw = getRawMemAllocated()
+            threads:
+              fk(e, a, x, sub)
+              fkmuly(z, a, x, y, sub)
+            check getRawMemAllocated() == raw
+            check diffNorm2(e, re) == 0.0
+            check relNorm2(z, rz) <= tol
+            threads:
+              e := 1.25
+              z := -0.875
+            threads:
+              fkmuly(z, a, x, y, sub, e)
+            check getRawMemAllocated() == raw
+            check diffNorm2(e, re) == 0.0
+            check relNorm2(z, rz) <= tol
+
+      test "subset destinations preserve permitted operand aliases":
+        const a = 0.375
+        for par in ["even", "odd"]:
+          let sub = lo.getSubset(par)
+          threads:
+            re := x
+            rz := y
+            tmp := x
+          threads:
+            for i in sub:
+              re[i][] := mexp(a * x[i][])
+              rz[i] := re[i] * y[i]
+            fk(tmp, a, tmp, sub)
+          check diffNorm2(tmp, re) == 0.0
+          threads:
+            tmp := x
+            z := y
+          threads:
+            fkmuly(z, a, tmp, z, sub, tmp)
+          check diffNorm2(tmp, re) == 0.0
+          check relNorm2(z, rz) <= tol
+          threads:
+            tmp := y
+          threads:
+            fkmuly(tmp, a, x, tmp, sub)
+          check relNorm2(tmp, rz) <= tol
+          threads:
+            rz := x
+            tmp := x
+          threads:
+            for i in sub: rz[i] := re[i] * x[i]
+            fkmuly(tmp, a, tmp, tmp, sub)
+          check relNorm2(tmp, rz) <= tol
+          threads:
+            e := x
+            z := x
+          threads:
+            fkmuly(z, a, x, x, sub, e)
+          check diffNorm2(e, re) == 0.0
+          check relNorm2(z, rz) <= tol
+
+  threads:
+    x.randomTAH rng
+    y.gaussian rng
+  kernelTests("axexpah/axexpahmuly with expAH", axexpah, axexpahmuly, expAH)
+  threads:
+    x.gaussian rng
+  kernelTests("axexp/axexpmuly with exp", axexp, axexpmuly, exp)
+
+fusedExpTests(1)
+fusedExpTests(3)
 
 qexFinalize()

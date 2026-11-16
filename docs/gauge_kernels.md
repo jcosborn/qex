@@ -19,6 +19,7 @@ layout's SIMD width; `toScalar`/`toMatrix` convert scalar-site representations.
 | --- | --- |
 | `newShape(l,T)`, `newShape(f)` | Layout/type/allocation descriptors only; bind or allocate before indexing |
 | Shape from `FieldArray` view | Describes one field |
+| `release(f)`, `release(array)` | Free owned storage immediately; populated array views retain only field shapes. Release a `FieldArray` as a whole. |
 | Replace descriptor | Other references retain the former field/storage |
 | `newShifter(...,dest=d)`, `newTransporter(...,dest=d)` | Matching layout; destination disjoint from operands; transporter owns communication buffers |
 | Rebind `field` | Preserve the same layout/disjointness rules |
@@ -67,7 +68,7 @@ Test: `tmatrixFields`.
 
 ### Fused gauge updates
 
-`gauge/gaugeUtils.nim` kernels run inside `threads` on each thread's site
+`field/matrixFields.nim` kernels run inside `threads` on each thread's site
 partition, on one field or on every direction of a gauge:
 
 $$
@@ -76,13 +77,63 @@ $$
 \operatorname{contractProjectTAH}(X,Y)_x=\operatorname{projectTAH}(X_xY_x^\dagger).
 $$
 
-$X$ is anti-Hermitian (traceless for SU(N)) and the exponential is `expAH`.
-The destination may alias an operand; `axexpmuly` can also store $e^{aX}$;
-the subset overloads act on one parity subset. The two-argument
-`contractProjectTAH(g,f)` overwrites `f` in its own threads region.
-`stoutsmear.stoutStepKernel` composes them for the subset stout step. The MD
-gauge updates and force projections of the HMC programs and the graph's fused
-gauge ops call these. Tests: `tggauge` (against basic graph ops), `tftstout`.
+`axexp` and `axexpmuly` accept any $X$ and use the general `exp` of
+`maths/matrixFunctions`: the degree 4 polynomial of $e^{2^{-20}aX}-1$ and 20
+doublings. `axexpah` and `axexpahmuly` compute the same products with `expAH`,
+which requires $X$ anti-Hermitian (traceless for SU(N)): scale to
+$\lVert aX\rVert_F^2\le 1/16$, the degree 12 Taylor polynomial of
+$r=e^{aX/2^k}-1$, then $k$ squarings in expm1 form, $r\leftarrow r(r+2)$,
+$E=1+r$, so each squaring rounds relative to $\lVert r\rVert$ instead of
+$\lVert E\rVert=1$. On traceless anti-Hermitian input `expAH` is at least as
+accurate as `exp` at every norm tested (`texpaccuracy`, against a
+double-double reference: at most 0.4, 1.0 and 1.8 eps for $\lVert X\rVert_F$
+in 0.25..0.5, 0.5..1 and 1..2 against 1.3, 2.9 and 5.1 eps for `exp`, N = 3,
+float64) and takes 0.4 to 0.5 of its time. `expAH` evaluates a matrix whose
+entries are wider than one SIMD register of the build's intrinsics (8 float64
+lanes with AVX512, 4 with AVX, 2 with SSE; VLEN lanes without intrinsics) in
+slices of one register with the scale of the whole matrix,
+about twice as fast at 16 lanes on AVX; the slices may round differently from
+one evaluation of the whole matrix.
+Real entries are sliced the same way. On 1x1 complex fields the `axexpah`
+kernels evaluate $\cos t+i\sin t$ for $aX=it$; a real 1x1 anti-Hermitian
+matrix is 0 and takes `expAH` = exp(0) = 1. Lattice code whose argument is
+anti-Hermitian by construction uses it: the HMC momentum updates through
+`axexpahmuly`, the gradient flow (`wflow`), gauge fixing (`gaugefix`), stout
+smearing and its inverse (`stoutsmear`) and `warmSU`.
+The optional `expax` receives E from the same site computation; omitting it
+removes its store. E-only has no Y argument. The destination may alias an
+operand. An optional E destination must be distinct from the product
+destination and Y. Subset overloads leave the complement untouched.
+`contractProjectTAH(g,f)` with two arguments overwrites `f` in its own threads
+region. `stoutsmear.stoutStepKernel` composes them for the subset stout step.
+The MD gauge updates of the HMC programs call `axexpahmuly` and the force
+projections call `contractProjectTAH`. The experimental graph has the same two
+families: `axexp` and `axexpmuly` on the general kernels, `axexpah` and
+`axexpahmuly` on the AH kernels; its HMC drift and force-gradient shift use the
+latter.
+Tests: `tmatrixFields` (against the matrix kernels), `tggauge` (against basic
+graph ops), `tftstout`, `texpaccuracy` (both exponentials against a
+double-double reference over the norms of the call sites).
+
+Whole-field and parity loops can assign a site to different threads. Join or
+insert a barrier between dependent phases that change partitions, including
+whole-field initialization before a subset write. `tmatrixFields` checks output
+masks, aliases, complements and allocation reuse at one and six threads. A local
+E product and a stored/reloaded E product may differ by ordinary FMA roundoff;
+the product comparison uses a normalized norm bound while E is checked exactly.
+
+The `matexp.expAH(X, directions)` overload differentiates $P_{12}(X/2^k)^{2^k}$ with the primal's selected scale $k$ fixed, including higher
+derivatives. The kernel selects $k$ from the base matrix only, using the same
+SIMD maximum as the primal. Its order-$m$ jet uses at most $(5+k)3^m$ matrix
+products. At scale boundaries this is the selected branch derivative.
+`expAH(X, d, e)` returns the first jet and sets `e` to its coefficient of order
+zero, $P_{12}(X/2^k)^{2^k}$ squared plainly: `expAH(X)` to rounding, without a
+second polynomial evaluation. Runtime-order scratch retains its capacity when
+order decreases; presize it for the largest order before threaded use.
+`tjetexp` covers noncommuting directions, both sides of scale thresholds,
+adjoint identities, runtime orders through five, capacity reuse, and large
+diagonal arguments. `taxexpwide` checks the kernels at VLEN and 2 VLEN lanes
+against expAH of each lane's scalar matrix, for complex and real entries.
 
 ### Paths, halos and HYP
 
@@ -95,13 +146,23 @@ $$
 
 `gaugeProd(...,origin=true)` shifts outputs to their starting sites. Unshifted,
 unadjointed results may alias inputs/shared products; copy before independent
-mutation. Release product entries after their last consumer. Test: `tpathplan`.
+mutation. Each product is freed after its last consumer unless an output
+aliases it, and the shift fields on return. Test: `tpathplan`.
 
 Halo layouts preserve physical indices and parity; maps encode periodic
-coordinates. Construct/cache geometry outside `threads`. The halo buffer is
+coordinates. A halo update moves every halo site whose lanes come from one
+source site as one vector copy with an xor lane permutation (inner extents are
+1 or 2), and the local lanes of a site with remote lanes the same way before
+the remaining lanes arrive one by one. Construct/cache geometry outside `threads`. The halo buffer is
 allocated uninitialized: only gathered entries are defined, and the reverse
 exchange reads every cell its map covers before accumulating into physical
 fields, so zero or fill the halo first, as `hypsmear2` does. Test: `thalo`.
+
+Retained gather send/receive buffers belong to the communicator. Gathers through
+one communicator are serialized; each call completes its messages before the
+buffers can be reused. The buffers grow on demand and are released with their
+owner. Finalizing the default communicator releases them explicitly. These
+message buffers remain outside `LoopWork.bytes`.
 
 HYP pullbacks project intermediates only within their forward construction
 domains, respecting neighbor validity and cotangent reach. `thypsmearhalo`
@@ -115,8 +176,14 @@ poisoned padding.
 | Fundamental | `plaq`, `rect`, `pgm` | `gaugeAction1/2/3`, `gaugeActionDeriv`, `gaugeDeriv2`, `gaugeForce*`, Hessians |
 | Plaquette + adjoint | `plaq`, `adjplaq` | `actionA`, `gaugeADeriv`, `forceA` |
 
+Action and force calls take `GaugeActionCoeffs` first, then the links and any
+output fields. Use `GaugeActionCoeffs(plaq: 1.0)` for unit-weight Wilson calls.
+
 `action`/`force` dispatch on `adjplaq`: zero selects the fundamental family,
-nonzero the adjoint family. Fundamental kernels reject `adjplaq != 0` and the
+nonzero the adjoint family. The fundamental `action` and `force` run the loop
+kernels `loopAction` and `loopDeriv` (one link exchange per call, every loop
+computed locally, no staple fields); `gaugeAction1` and `gaugeForce` remain
+the staple path. Fundamental kernels reject `adjplaq != 0` and the
 adjoint kernels reject `rect`/`pgm` with `ValueError` (`requireFundamental`,
 `requireAdjoint`), so mixed coefficient sets have no entry point.
 For $\sigma<\nu<\mu$, paths are
@@ -148,13 +215,58 @@ $\langle A,B\rangle=\sum\Re\operatorname{tr}(A^\dagger B)$:
 | `gaugeActionDeriv(c,g,f)` | $f=-\nabla S$, or accumulation when requested |
 | `gaugeDeriv2(c,g,f)` | $f\mathrel{+}=\nabla S$ |
 | `gaugeDerivDeriv2(c,g,h,f)` | $f\mathrel{+}=\nabla^2S\,h$ |
-| `gaugeForce(c,g,f)`, `force` | $f_\mu=\operatorname{projectTAH}\big(U_\mu(-\nabla S)_\mu^\dagger\big)$: `contractProjectTAH` after the derivative |
+| `gaugeForce(c,g,f)`, `force` | $f_\mu=\operatorname{projectTAH}\big(U_\mu(-\nabla S)_\mu^\dagger\big)$: `contractProjectTAH` after `gaugeActionDeriv`, or after `loopDeriv` with $-c$ |
+| `forceKick(c,g,p,q,a)` | $q=af+p$ with $f$ the `force`, in `loopDeriv`'s site pass without storing $f$; returns sum, minimum and maximum of $\lvert f\rvert^2$ |
 
-Call complete gauge operations outside `threads`. `newLoopWork(g[0])` owns work
-for one layout/type: halos, improved-subset temporary gauge and full-Hessian
-transporters. Calls refresh/release input references; a workspace serves one
-evaluation at a time. Distinct workspaces own distinct storage. Communicator
-sequencing and geometry initialization requirements still apply.
+Call complete gauge operations outside `threads`. `newLoopWork(g[0])` owns
+halos, loop products, improved-subset scratch and full-Hessian transporters for
+one layout/type. `newStapleWork(g[0])` independently owns the staple blocks and
+rectangle scratch used by `gaugeAction1`, `gaugeActionDeriv` and `gaugeForce`:
+up to three arrays of `nd*(nd-1)` fields, or 36 fields for `nd = 4`. Each owner
+allocates only the buffers needed by the requested coefficients.
+
+Omitting staple work reuses one temporary block across direction pairs for
+every derivative and for rectangle actions (12 fields, or 18 for a derivative
+with a rectangle term, in four dimensions) and frees it before returning;
+plaquette actions build the 12 forward staples. Passing staple work keeps the
+staple arrays between calls. Shift buffers
+are built per call. The optional `loop` argument to the staple APIs retains
+parallelogram halos in a separate loop owner; omitting it uses temporary loop
+work. For a mixed action:
+
+```nim
+let sw = newStapleWork(g[0])
+let lw = newLoopWork(g[0])
+let tag: LoopTag = (1, version)
+let value = c.gaugeAction1(g, work=sw, loop=lw, tag=tag)
+c.gaugeForce(g, f, work=sw, loop=lw, tag=tag)
+```
+
+`gaugeAction1`, `gaugeActionDeriv`, `action` and `force` take `tag: LoopTag`,
+the identity and version of the links as the caller knows them (a graph node id
+and epoch, a driver's configuration counter). With staple work, a matching tag
+skips the staple build. A tagged action builds both staple sets, including for
+plaquettes, so a force at that tag can reuse the first build; without a
+rectangle term the action does not exchange the backward set, which the force
+exchanges itself. Untagged plaquette actions build only the forward set. A
+reused rectangle action still exchanges `stu`; a reused force exchanges `stu`,
+and for a rectangle term the links, `stf` and the rectangle scratch. An untagged
+call builds and clears the tag.
+`loopAction` and
+`loopDeriv` take the
+same tag: a halo row and slot remember the tag and the loop plan of their last
+update and a tagged call with both equal exchanges nothing; each link direction
+exchanges only the halo sites its own links reach (for the Wilson force 7 of 8
+faces and 3 of 12 edge families); tagged actions always fill the derivative's wider halo, so the derivative
+at those links exchanges nothing, including the first pair through a workspace.
+`StapleWork` records `builds` and `reuses`; `LoopWork` records halo `updates`
+and `reuses`. `bytes` reports the raw allocations owned by its argument;
+add both owners' counts when reporting a mixed operation. Each owner serves one
+evaluation at a time and requires its original layout. Loop kernels release
+borrowed input references after use. Each halo slot keeps its fields, maps, plan
+and tag together; each thread owns one record of tile scratch. The owners can
+be released independently. Communicator sequencing and geometry initialization
+requirements still apply.
 
 For a parity/direction mask $M_S$,
 
@@ -162,22 +274,74 @@ $$
 g_S=M_S\nabla S,\qquad (Dg_S)^*b=\nabla^2S(M_Sb).
 $$
 
-The Hessian reaches every affected link. `gaugeDerivDeriv2Subset` overwrites;
-`gaugeDerivDeriv2SubsetAdd` accumulates; `gaugeDerivDeriv2SubsetAddBase` adds on
+Subset kernels take a `SubsetWork` that fixes the layout, parity and direction.
+The Hessian reaches every affected link. `gaugeDerivDeriv2Subset` overwrites,
+or accumulates with `accumulate=true`; `gaugeDerivDeriv2SubsetAddBase` adds on
 selected links and sets base plus Hessian elsewhere; `gaugeDerivDeriv2SubsetSum`
-combines selected-parity seeds. The first derivative `gaugeDeriv2SubsetWork`
-takes caller-built `sd`, `sf`, `sb` (a direction shifter and parity shift
-buffers, as `gaugeDeriv2Subset` builds them), preserves the complement for
-`clear=false` and zeros it for `clear=true`. Rectangle/parallelogram subsets
-take the full-derivative route through the workspace temporary gauge and ignore
-those buffers.
+combines selected-parity direction fields. Each other Hessian takes one direction
+field as its seed. The first derivative `gaugeDeriv2Subset` writes the direction
+field `fd`; it preserves the other parity for `clear=false` and zeros it by
+default. Construct the workspace once with `newSubsetWork(f, parity, dir, sh)`;
+its shift buffers are made on first use. For example:
 
-Warm Hessians reuse QEX raw buffers. Action staple scratch and generic halo
-message sequences still allocate. Tests: `tgaugeloops`, `tgaugeaction`.
+```nim
+let sw = newSubsetWork(g[0], parity, dir)
+c.gaugeDeriv2Subset(g, df[dir], sw)
+c.gaugeDerivDeriv2Subset(g, h[dir], hf, sw)
+```
+
+The buffers that a call completes come from `sh` (`newSubsetShifts(f)`, new by
+default), which the works of all $(P,\mu)$ may share; only the link shifts keep
+data between calls.
+
+Every $(\mu,\nu)$ plaquette holds one $\mu$ link on each parity. With $H=h$ on
+$P$ and $H=U_\mu$ off $P$, the masked Hessian is the $(\mu,\nu)$ plaquette
+derivative at $U_\mu\to H$; for $c=-c_p/N_c$, $a_\nu(y)=U_\nu(y+\hat\mu)$ and
+$\nu\neq\mu$,
+
+$$
+\begin{aligned}
+f_\nu(y)&\mathrel{+}=c\,[H(y)a_\nu(y)H(y+\hat\nu)^\dagger+q_\nu(y-\hat\mu)],&
+q_\nu(x)&=H(x)^\dagger U_\nu(x)H(x+\hat\nu),\\
+f_\mu(y)&\mathrel{+}=c\sum_\nu[U_\nu(y)H(y+\hat\nu)a_\nu(y)^\dagger+r_\nu(y-\hat\nu)],\ y\notin P,&
+r_\nu(x)&=U_\nu(x)^\dagger h(x)a_\nu(x).
+\end{aligned}
+$$
+
+Both kernels exchange their link and seed boundaries first and then make one
+pass over the sites, reading neighbors in place or from the received boundary
+(`getSB`). Products at an offset site, the lower staples and $q$, $r$, are
+formed at that site: in place for a local neighbor, at the send sites otherwise. The work keeps the boundaries its link shifts
+received, under the caller's tag of the links; a masked Hessian given the same
+work and tag reads the kept boundaries and exchanges only its seed and products.
+Rectangle/parallelogram subsets take the full-derivative route through the
+workspace temporary gauge, ignore those buffers and leave the work untagged.
+
+Warm Hessians reuse QEX raw buffers. With `StapleWork`, `gaugeAction1` and
+`gaugeActionDeriv` keep their staple arrays and pass them back to `makeFwdStaples`
+and `makeStaples`; the benches opt in by constructing this owner. The HMC gauge
+action uses the loop kernels, whose workspace keeps halos and product banks.
+The experimental graph action wrappers currently call the staple kernels. A
+`FieldArray.mem` owns the aligned allocation shared by its fields, and
+`newFieldArray2` leaves the entries its constraint excludes as nil. The staple
+procs accept an array they returned for the same layout: shape `[nd,nd]`, every
+`mu != nu` entry allocated, storage disjoint from the gauge and from each other.
+Shape, layout and aliasing mismatches raise `ValueError`; a missing entry is a
+user error that crashes in the kernel. The rect scratch is retained and zeroed
+on every use. `newLinkShifts(lo, T, len)` builds buffers for each pair of directions
+for `startCornerShifts`, `makeStaples` and the rect scratch exchanges. Generic
+forward halo messages retain their buffers in the communicator; generic gathers
+and reverse halo exchanges free their temporary message buffers on return.
+`bytes` counts raw-memory allocations only, so shift buffers are not
+included. `tforcekick` checks momentum outputs and force statistics, including
+empty thread partitions and momentum aliases. Tests:
+`tgaugeloops`, `tgaugeaction`, `tstaplebatches`.
 
 ### Fused loop kernels
 
-`loopAction(c,g,work=w)` evaluates the fundamental action. For a seed list $h$,
+`loopAction(c,g,work=w)` evaluates the fundamental action; `action` and
+`force` with fundamental coefficients call these kernels. The one seed Hessian takes 45 ms against 135 ms for `gaugeDerivDeriv2`
+(Wilson, 16^4, 8 threads of a Xeon E5-2687W v2). For a seed list $h$,
 
 $$
 \operatorname{loopDeriv}(c,g,h)=D^{|h|}\nabla S(g)[h_1,\ldots,h_{|h|}].
@@ -207,13 +371,26 @@ $$
 (AB)_S=\sum_{T\subseteq S}A_TB_{S\setminus T}.
 $$
 
-`gaugeUtils.plan(shifts=false)` factors matrix symbols by link direction/offset,
+`gauge/loopPlan` owns integer path factorization and loop scheduling;
+`gaugeUtils` re-exports its path API. `plan(shifts=false)` factors matrix symbols by link direction/offset,
 without field shifts. Only coefficients reaching requested outputs are evaluated.
 Zero-weight families are absent from paths/halos/plans; plaquettes vanish above
 order three. `loopAction`/`loopDeriv` reuse aligned per-thread site scratch and
 no intermediate lattice fields; the rectangle/parallelogram subset routes, first
 derivative and subset Hessian, use the workspace's scratch gauge, and the full
-Hessian uses its transporters.
+Hessian uses its transporters. Each step of the product plan runs over a tile
+of consecutive sites of the thread (about 32 KB of slots and sums: one SU(3)
+site at 16 lanes, six at 4 lanes, 32 U(1) sites; at most 8192 value pointers).
+The thread buffers are allocated for these bounds, so a smaller plan after a
+larger one allocates nothing (`tgaugeloops`). The products read link
+factors in place from the fields and halos and write into scratch slots that
+are reused after a product's last use; each output is summed right after its
+last product, in the order of the paths, and action terms are added in site
+order, so the sums match an evaluation of all products first, site by site.
+The Wilson gradient takes 42 products in 5 slots, the Symanzik gradient 236
+products in 37 slots (one slot per value before: 86 and 372). `tloopplan`
+checks initialization, slot lifetimes, output order and product costs without
+constructing fields or initializing communication.
 
 For plaquettes,
 
@@ -289,20 +466,38 @@ X^8=-s_1X^6-\frac{s_1^2}{4}X^4-s_3X^2,\qquad
 s_1=3\|F\|_F^2,\quad s_3=\frac{\|F\|_F^6}{2}-27(\Im\det F)^2.
 $$
 
-Recovery values/squares are stack-resident. For cotangent $U$, $Q=P^2$ and
-$P'=P+cXP^2$, one reverse step is
-
-$$
-\bar X\mathrel{+}=cUQ^T,\qquad B=cX^TU,\qquad
-\bar P=U+BP^T+P^TB.
-$$
-
-The logdet pullback differentiates its selected finite expression:
+The logdet value forms $P$ by these matrix recoveries. On the adjoint image
+the reduction is exact, so the same seed and recoveries carried out on the
+coefficients give $P=\sum_{k=0}^{7}c_k(s_1,s_3)X^k=E(Z)+XO(Z)$, $Z=X^2$, with
+$s_1=-\operatorname{tr}Z/2$ and $s_3=-s_1^3/12-\operatorname{tr}Z^3/6$; the
+logdet gradient uses this form and differentiates the coefficients along with
+the powers. The logdet pullback differentiates its selected finite expression:
 
 $$
 \ell=\log\det(I+PD),\quad d\ell=\operatorname{tr}(K^{-1}dK),\quad
 \bar P=K^{-T}D^T,\quad\bar D=P^TK^{-T},\quad K=I+PD.
 $$
+
+With $B=DK^{-1}$, $C=BX$ and $\Delta=c_6B+c_7C$,
+
+$$
+\operatorname{tr}(B\,dP)=\sum_k\operatorname{tr}(BX^k)\,dc_k
++\operatorname{tr}(G\,dZ)+\operatorname{tr}(OB\,dX),\qquad
+G=c_2B+c_3C+\{Z,c_4B+c_5C\}+Z^2\Delta+Z\Delta Z+\Delta Z^2,
+$$
+
+$dZ=dX\,X+X\,dX$, $ds_1=-\operatorname{tr}(X\,dX)$ and
+$ds_3=-\tfrac{s_1^2}{4}ds_1-\operatorname{tr}(X^5dX)$; only the antisymmetric
+part reaches the generators, so $G$ enters through its symmetric part. This
+takes about 13 matrix products against 41 for the reverse of the recoveries.
+The two forms agree to rounding for $\|F\|_F\le2$. The monomial sum loses
+accuracy as $\max_k|c_k|\,\|X^k\|/\|P\|$ grows, to about 5 at
+$\|F\|_F=4$ and 90 at 8: against a 60-digit evaluation of the same finite map
+(random $M$), the relative gradient error stays below $10^{-13}$ up to
+$\|F\|_F=4$ and reaches $1.6\times10^{-10}$ at 8, $6\times10^{-9}$ at 16 and
+$5\times10^{-7}$ at 32, where the reverse of the recoveries stays near
+$10^{-13}$. Stout inputs stay below $\|F\|_F\approx1.3$. `tscaledexp` bounds
+the error by $10^{-12}$ through $\|F\|_F=4$ and by $10^{-9}$ at 8.
 
 Require positive determinant and nonzero leading LU pivots. Phi/logdet kernels
 approximate the analytic Lie differential of adaptive degree-12 `expAH`;
@@ -326,12 +521,19 @@ Test generation and the MPI launchers are described in the
 `benchGaugeActions`, `benchPlaq` and `benchExpProject` use `tic`/`toc` and
 `getElapsedTime`; parameters select lattice/repetitions/trials and, for site
 benchmarks, operation/scale/precision/norm. `benchPlaq` compares production/fused
-actions, forces and Hessians for Symanzik coefficients with `pgm=0` or `0.07`.
-Warm workspaces first; validate results outside timing.
+actions, forces and Hessians for Wilson and for Symanzik coefficients with `pgm=0` or
+`0.07`.
+Warm workspaces first; validate results outside timing. `benchGaugeActions`
+checks action and force results before measuring each selected path. Its `pair`
+rows include both calls. It reports workspace storage separately from the
+communicator's retained gather capacity and process peak RSS.
+
+`-d:memTrace` reports aggregate raw storage and Nim heap usage around collection
+and process peak RSS at shutdown. `-d:commStats` reports communication totals at
+`qexFinalize`: shifts, gathers, bytes sent, reductions and time waiting.
 
 ## Future work
 
 - Measure general loop kernels on production hardware before further dispatch changes.
-- Reuse generic halo message buffers.
 - Add vector/rectangular LU right-hand sides when needed.
 - Extend and validate adjoint-plaquette Hessian kernels.

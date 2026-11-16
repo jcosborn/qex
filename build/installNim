@@ -10,7 +10,7 @@ usage() {
   echo "options:"
   echo " -h          (this help message)"
   echo " stable      (install latest stable version)"
-  echo " <version>   (install named version, e.g. 2.2.0)"
+  echo " <version>   (install named version, e.g. 2.4.0)"
   #echo " master      (install master branch tracking version)"
   echo " devel       (install devel branch tracking version)"
   echo " default stable|<version>|master|devel"
@@ -36,7 +36,7 @@ if [ "X$1" = "Xdefault" ]; then
 fi
 
 ver="stable"
-branch="version-2-0"
+branch="version-2-4"
 if [ "X$1" != "X" ]; then
   case "$1" in
     stable) ver="stable";;

@@ -32,31 +32,31 @@ template gaugeFlow*(g: array|seq, steps: int, eps: float, measure: untyped) =
     while true:
       let t = n * eps
       let epsnc = eps * nc  # compensate force normalization
-      f.gaugeForce g
+      GaugeActionCoeffs(plaq: 1.0).gaugeForce(g, f)
       threads:
         for mu in 0..<f.len:
           for e in g[mu]:
             var v {.noinit.}:type(load1(f[0][0]))
             v := (-1.0/4.0)*epsnc*f[mu][e]
-            let t = exp(v)*g[mu][e]
+            let t = expAH(v)*g[mu][e]
             p[mu][e] := v
             g[mu][e] := t
-      f.gaugeForce g
+      GaugeActionCoeffs(plaq: 1.0).gaugeForce(g, f)
       threads:
         for mu in 0..<f.len:
           for e in g[mu]:
             var v {.noinit.}:type(load1(f[0][0]))
             v := (-8.0/9.0)*epsnc*f[mu][e] + (-17.0/9.0)*p[mu][e]
-            let t = exp(v)*g[mu][e]
+            let t = expAH(v)*g[mu][e]
             p[mu][e] := v
             g[mu][e] := t
-      f.gaugeForce g
+      GaugeActionCoeffs(plaq: 1.0).gaugeForce(g, f)
       threads:
         for mu in 0..<f.len:
           for e in g[mu]:
             var v {.noinit.}:type(load1(f[0][0]))
             v := (-3.0/4.0)*epsnc*f[mu][e] - p[mu][e]
-            let t = exp(v)*g[mu][e]
+            let t = expAH(v)*g[mu][e]
             g[mu][e] := t
       let wflowT {.inject,used.} = t
       measure
@@ -85,7 +85,7 @@ proc mkGaugeFlowRKOp*[G](g: G): GaugeFlowRKOp[G] =
     f: g[0].l.newGauge)
   proc adv(base: var type(g), d: var type(g), a: float, b: float) =
     const nc = op.y[0][0].nrows.float
-    op.f.gaugeForce(base)
+    GaugeActionCoeffs(plaq: 1.0).gaugeForce(base, op.f)
     let u = cast[ptr cArray[type(base[0])]](unsafeAddr(base[0]))
     let f = cast[ptr cArray[type(d[0])]](unsafeAddr(d[0]))
     let ff = cast[ptr cArray[type(d[0])]](unsafeAddr(op.f[0]))
@@ -96,7 +96,7 @@ proc mkGaugeFlowRKOp*[G](g: G): GaugeFlowRKOp[G] =
           for e in u[mu]:
             var v {.noinit.}:type(load1(u[0][0]))
             v := (-b * nc) * ff[mu][e]
-            let t = exp(v) * u[mu][e]
+            let t = expAH(v) * u[mu][e]
             f[mu][e] := v
             u[mu][e] := t
     else:
@@ -105,7 +105,7 @@ proc mkGaugeFlowRKOp*[G](g: G): GaugeFlowRKOp[G] =
           for e in u[mu]:
             var v {.noinit.}:type(load1(u[0][0]))
             v := a * f[mu][e] + (-b * nc) * ff[mu][e]
-            let t = exp(v) * u[mu][e]
+            let t = expAH(v) * u[mu][e]
             f[mu][e] := v
             u[mu][e] := t
   op.advance = adv

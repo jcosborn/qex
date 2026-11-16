@@ -1,6 +1,6 @@
 import hmc/agrad, base/qexInternal, field, gauge, maths/matrixFunctions
 export agrad, qexInternal, field, gauge
-import physics/stagD
+import physics/stagSolve
 
 type
   FloatV* = AgVar[float]
@@ -622,7 +622,7 @@ template agradSolve*(s: Staggered, g,r,x,m,p: auto) =
   r.ctx.agradSolve(s, g, r, x, m, addr p, addr p)
 
 when isMainModule:
-  import qex, physics/stagSolve
+  import qex
   qexInit()
   defaultSetup()
   var rs = newRNGField(RngMilc6, lo, intParam("seed", 987654321).uint64)

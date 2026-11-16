@@ -158,7 +158,7 @@ g.random r
 #echo g.plaq
 #echo g.plaq2
 echo "Initial plaq: ",g.plaq3
-#echo g.gaugeAction2 gc
+#echo gc.gaugeAction2(g)
 
 var H = lo.newHeatBath
 
@@ -167,7 +167,7 @@ for n in 1..sweeps:
 
   H.evolve(g,gc,r)
 
-  let ga = g.gaugeAction2 gc
+  let ga = gc.gaugeAction2(g)
   echo "Sg: ",ga
 
   #echo g.plaq

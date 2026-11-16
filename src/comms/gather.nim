@@ -1,13 +1,9 @@
-import comms, rankScatter, base/profile, field
+import comms, rankScatter, base/profile, field, commsStats
 import algorithm
 
 template `&&`(x: char): untyped = cast[pointer](unsafeAddr(x))
 template `&&`(x: int32): untyped = cast[pointer](unsafeAddr(x))
 template `&&`(x: seq): untyped = cast[pointer](unsafeAddr(x[0]))
-template newSeqOfCap[T](x: var seq[T], n: int) =
-  x = newSeqOfCap[T](n)
-template newSeqUninitialized[T](x: var seq[T], n: int) =
-  x = newSeqUninitialized[T](n)
 
 proc adjust[T](i: int, x: openarray[T], b: int): int =
   result = i
@@ -48,8 +44,6 @@ type
     rmsginfo*: seq[MsgInfo]  # recv ranks, position and length in recv buffer
     rdest*: seq[int32] # indices in write buffer of recv buf elements (nrecv)
     ldest*: seq[int32] # indices in write buffer of src buffer elements
-    sendbuf*: seq[char]
-    recvbuf*: seq[char]
 
 proc makeGatherMap*(c: Comm, rl: var seq[RecvList]): GatherMap =
   result.new
@@ -102,11 +96,11 @@ proc makeGatherMap*(c: Comm, rl: var seq[RecvList]): GatherMap =
   let nsend = r.buf.len div sizeof(int32)
   if nsend > 0:
     let sbuf = cast[ptr UncheckedArray[int32]](unsafeAddr r.buf[0])
-    result.sidx.newSeqUninitialized(nsend)
+    result.sidx = newSeqUninitialized[int32](nsend)
     for i in 0..<nsend:
       result.sidx[i] = sbuf[i]
 
-    result.smsginfo.newSeqOfCap(r.mem.len)
+    result.smsginfo = newSeqOfCap[MsgInfo](r.mem.len)
     var st = 0
     for i in 0..<r.mem.len:
       let ln = r.mem[i].bytes div sizeof(int32)
@@ -167,11 +161,11 @@ proc makeGatherMap*(c: Comm, sl: var seq[SendList]): GatherMap =
   let nrecv = r.buf.len div sizeof(int32)
   if nrecv>0:
     let rbuf = cast[ptr UncheckedArray[int32]](unsafeAddr r.buf[0])
-    result.rdest.newSeqUninitialized(nrecv)
+    result.rdest = newSeqUninitialized[int32](nrecv)
     for i in 0..<nrecv:
       result.rdest[i] = rbuf[i]
 
-  result.rmsginfo.newSeqOfCap(r.mem.len)
+  result.rmsginfo = newSeqOfCap[MsgInfo](r.mem.len)
   var st = 0
   for i in 0..<r.mem.len:
     let ln = r.mem[i].bytes div sizeof(int32)
@@ -193,30 +187,51 @@ proc reverse*(gm: GatherMap): GatherMap =
   result.rmsginfo = gm.smsginfo
   result.lidx = gm.ldest
   result.ldest = gm.lidx
-  result.sendbuf = gm.recvbuf
-  result.recvbuf = gm.sendbuf
 
 # TODO: startRecvs, startSends, doLocal, wait
-proc gather*(c: Comm; gm: GatherMap; data: auto) =
+proc kept(b: var GatherBuffer, size: int): ptr UncheckedArray[char] =
+  if b.n < size:
+    if b.p != nil: deallocShared b.p
+    b = default(GatherBuffer)
+    b.p = cast[ptr UncheckedArray[char]](allocShared(size))
+    b.n = size
+  b.p
+
+proc gather*(c: Comm; gm: GatherMap; data: auto; keep = false) =
+  ## The message buffers are freed before returning; refc would free garbage
+  ## buffers only at a later collection. keep: the buffers stay allocated for the next
+  ## gather on c, grown to the largest of its messages. They are released with
+  ## their owner, and explicitly when the default communicator is finalized.
+  ## Calls using one communicator must be serialized. Once receives are posted,
+  ## data.copy and communicator operations must complete without raising.
+  ## Receives are posted before the sends without a barrier between them: QMP
+  ## over MPI matches a message that arrives before its receive is posted.
   tic("gather")
   # start recvs
   let elemsize = data.elemsize
   let rsize = elemsize*gm.rdest.len
+  let ssize = elemsize*gm.sidx.len
+  if keep and c.gatherBuffers == nil:
+    when defined(gcDestructors): new(c.gatherBuffers)
+    else: new(c.gatherBuffers, releaseGatherBuffers)
   #echo "rsize: ", rsize
-  var recvbuf = newSeqUninitialized[int8](rsize)
+  let
+    recvbuf = if keep: kept(c.gatherBuffers.recv, max(rsize, 1)) else: cast[ptr UncheckedArray[char]](alloc(max(rsize, 1)))
+    sendbuf = if keep: kept(c.gatherBuffers.send, max(ssize, 1)) else: cast[ptr UncheckedArray[char]](alloc(max(ssize, 1)))
+  defer:
+    if not keep:
+      dealloc recvbuf
+      dealloc sendbuf
   for i in 0..<gm.rmsginfo.len:
     #echoAll "pushRecv: ", i, "  ", gm.rmsginfo[i].rank
     c.pushRecv(gm.rmsginfo[i].rank, &&recvbuf[elemsize*gm.rmsginfo[i].start],
                elemsize*gm.rmsginfo[i].count)
   toc("start recvs")
-  c.barrier  # make sure recvs posted before sends start
-  toc("barrier")
+  commAdd(gathers, 1)
+  commAdd(gmsgs, gm.smsginfo.len)
+  commAdd(gbytes, elemsize*gm.sidx.len)
 
   # fill send buffers and send
-  let ssize = elemsize*gm.sidx.len
-  #echo "ssize: ", ssize
-  var sendbuf = newSeqUninitialized[int8](ssize)
-  #toc("alloc sendbuf")
   var bytes = 0
   for i in 0..<gm.smsginfo.len:
     bytes += gm.smsginfo[i].count * elemsize
@@ -238,25 +253,8 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
     #tfor i, 0..<gm.ldest.len:
     # make sure threads don't share inner sites
     let range = splitThreads(gm.ldest, data.vlen, numThreads, threadNum)
-    when true:
-      for i in range[0] ..< range[1]:
-        data.copy(gm.ldest[i], gm.lidx[i])
-    else:
-      var desti: array[16,int]
-      var idx: array[16,int]
-      var ni = 0
-      var vs0 = gm.ldest[range[0]] div data.vlen
-      for i in range[0] ..< range[1]:
-        let vs = gm.ldest[i] div data.vlen
-        let vi = gm.ldest[i] mod data.vlen
-        if vs != vs0:
-          data.copy(vs0, desti, idx, ni)
-          ni = 0
-          vs0 = vs
-        desti[ni] = vi
-        idx[ni] = gm.lidx[i]
-        inc ni
-      if ni>0: data.copy(vs0, desti, idx, ni)
+    for i in range[0] ..< range[1]:
+      data.copy(gm.ldest[i], gm.lidx[i])
   bytes = gm.ldest.len * elemsize
   toc("copy local", flops=bytes)
 
@@ -266,7 +264,7 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
     bytes += gm.rmsginfo[i].count * elemsize
     #tic()
     #echo "waitRecv: ", i
-    c.waitRecv(i, free=false)
+    commTime(gwait): c.waitRecv(i, free=false)
     #toc("gather: wait recv")
     #for j in 0..<gm.rmsginfo[i].count:
     #  let k = gm.rmsginfo[i].start + j
@@ -287,7 +285,7 @@ proc gather*(c: Comm; gm: GatherMap; data: auto) =
   # free recvs and wait sends
   c.freeRecvs(gm.rmsginfo.len)
   toc("free recvs")
-  c.waitSends(gm.smsginfo.len)
+  commTime(gwait): c.waitSends(gm.smsginfo.len)
   toc("wait sends")
 
 type GatherPointer = object
@@ -338,18 +336,7 @@ proc gatherReversed*(c: Comm; gm: GatherMap; elemsize: int;
                      dest,src: pointer) =
   checkBorrow(dest, "gatherReversed")
   checkBorrow(src, "gatherReversed")
-  var r = GatherMap.new
-  r.nsrc = gm.ndest
-  r.ndest = gm.nsrc
-  r.sidx = gm.rdest
-  r.rdest = gm.sidx
-  r.smsginfo = gm.rmsginfo
-  r.rmsginfo = gm.smsginfo
-  r.lidx = gm.ldest
-  r.ldest = gm.lidx
-  r.sendbuf = gm.recvbuf
-  r.recvbuf = gm.sendbuf
-  c.gather(r, elemsize, dest, src)
+  c.gather(gm.reverse, elemsize, dest, src)
 
 when isMainModule:
   import strformat

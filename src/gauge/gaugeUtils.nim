@@ -1,6 +1,9 @@
 import base
 import layout
 import field
+import field/matrixFields
+export matrixFields.contractProjectTAH, matrixFields.axexp, matrixFields.axexpmuly,
+  matrixFields.axexpah, matrixFields.axexpahmuly
 import io
 #import qex
 #import stdUtils
@@ -11,7 +14,10 @@ import strUtils, sequtils
 import maths, rng, physics/qcdTypes
 import base/flopcount
 
-import std/[hashes, tables]
+import std/[tables, sets]
+import loopPlan
+export loopPlan.OrdPathTree, loopPlan.PathStep, loopPlan.PathOut, loopPlan.PathPlan,
+  loopPlan.optimalPairs, loopPlan.plan, loopPlan.`$`
 
 type
   GroupKind* = enum
@@ -131,7 +137,7 @@ proc saveGauge*[T](g:openArray[T]; fn:string; prec=""; filemd=defFileMd;
   return 0
 
 proc setBC*(g: openArray[Field]) =
-  let gt = g[3]
+  let gt {.cursor.} = g[3]
   for i in gt.l.sites:
     #let e = i div gt.l.nSitesInner
     if gt.l.coords[3][i] == gt.l.physGeom[3]-1:
@@ -412,25 +418,6 @@ proc echoPlaq*(g: auto) =
   for i in ns..<pl.len: pt += pl[i]
   echo "plaqS: ", 2*ps, "  plaqT: ", 2*pt, "  plaq: ", ps+pt
 
-# Fused gauge kernels. Each runs inside `threads` on the calling thread's site
-# partition, on one field or on every direction of a gauge. The destination
-# may alias an operand.
-
-proc contractProjectTAH*[F:Field](z: F; x, y: F) =
-  ## z = projectTAH(x y†) site by site.
-  for e in z:
-    let s = x[e] * y[e].adj
-    z[e].projectTAH s
-
-proc contractProjectTAH*[F:Field](z: F; x, y: F; sub: Subset) =
-  ## The same on sub's outer sites only.
-  for e in sub:
-    let s = x[e] * y[e].adj
-    z[e].projectTAH s
-
-proc contractProjectTAH*[F:Field](z: openArray[F]; x, y: openArray[F]) =
-  for mu in 0..<z.len: contractProjectTAH(z[mu], x[mu], y[mu])
-
 proc contractProjectTAH*[T](g:openArray[T], f:openArray[T]) =
   ## f = projectTAH(g f†), in its own threads region.
   let nd = g.len
@@ -439,39 +426,6 @@ proc contractProjectTAH*[T](g:openArray[T], f:openArray[T]) =
   threads:
     for mu in 0..<nd:
       contractProjectTAH(o[mu], u[mu], o[mu])
-
-proc axexp*[F:Field](z: F; a: float; x: F) =
-  ## z = exp(a x) site by site, with x anti-Hermitian (traceless for SU(N)).
-  for e in z:
-    var t {.noinit.}: evalType(x[e])
-    t[] := expAH(a * x[e][])
-    z[e] := t
-
-proc axexp*[F:Field](z: openArray[F]; a: float; x: openArray[F]) =
-  for mu in 0..<z.len: axexp(z[mu], a, x[mu])
-
-proc axexpmuly*[F:Field](z: F; a: float; x, y: F; expax: F = nil) =
-  ## z = exp(a x) y site by site, with x anti-Hermitian (traceless for SU(N));
-  ## expax, when given, receives exp(a x).
-  for e in z:
-    var t {.noinit.}: evalType(x[e])
-    t[] := expAH(a * x[e][])
-    if expax != nil: expax[e] := t
-    z[e] := t * y[e]
-
-proc axexpmuly*[F:Field](z: F; a: float; x, y: F; sub: Subset; expax: F = nil) =
-  ## The same on sub's outer sites only.
-  for e in sub:
-    var t {.noinit.}: evalType(x[e])
-    t[] := expAH(a * x[e][])
-    if expax != nil: expax[e] := t
-    z[e] := t * y[e]
-
-proc axexpmuly*[F:Field](z: openArray[F]; a: float; x, y: openArray[F]) =
-  for mu in 0..<z.len: axexpmuly(z[mu], a, x[mu], y[mu])
-
-proc axexpmuly*[F:Field](z: openArray[F]; a: float; x, y, expax: openArray[F]) =
-  for mu in 0..<z.len: axexpmuly(z[mu], a, x[mu], y[mu], expax[mu])
 
 type
   Link[F:ref] = object
@@ -639,440 +593,31 @@ proc wline0*(g:auto, line:openarray[int]):auto =
   result = r / float(vol*nc)
   toc("wline trace")
 
-type
-  Coord = object
-    x: seq[int]
-
-#[
-proc `$`(x:Coord):string =
-  return "Coord" & $x.x
-]#
-
-proc `+`(x,y:Coord):Coord =
-  let
-    nx = x.x.len
-    ny = y.x.len
-    n = max(nx,ny)
-    m = min(nx,ny)
-  result.x.newseq n
-  for i in 0..<m:
-    result.x[i] = x.x[i] + y.x[i]
-  if nx>ny:
-    for i in m..<n:
-      result.x[i] = x.x[i]
-  else:
-    for i in m..<n:
-      result.x[i] = y.x[i]
-
-proc `-`(x,y:Coord):Coord =
-  let
-    nx = x.x.len
-    ny = y.x.len
-    n = max(nx,ny)
-    m = min(nx,ny)
-  result.x.newseq n
-  for i in 0..<m:
-    result.x[i] = x.x[i] - y.x[i]
-  if nx>ny:
-    for i in m..<n:
-      result.x[i] = x.x[i]
-  else:
-    for i in m..<n:
-      result.x[i] = -y.x[i]
-
-proc `-`(x:Coord):Coord =
-  let
-    n = x.x.len
-  result.x.newseq n
-  for i in 0..<n:
-    result.x[i] = -x.x[i]
-
-proc `+=`(x:var Coord,y:Coord) =
-  let
-    nx = x.x.len
-    ny = y.x.len
-  if nx<ny:
-    x.x.setLen ny
-  for i in 0..<ny:
-    x.x[i] += y.x[i]
-
-#[
-proc `-=`(x:var Coord,y:Coord) =
-  let
-    nx = x.x.len
-    ny = y.x.len
-  if nx<ny:
-    x.x.setLen ny
-  for i in 0..<ny:
-    x.x[i] -= y.x[i]
-]#
-
-proc `[]`(x:Coord, i:SomeInteger):int =
-  if i>=x.x.len:
-    result = 0
-  else:
-    result = x.x[i]
-
-proc `[]`(x:var Coord, i:SomeInteger):var int =
-  if i>=x.x.len:
-    x.x.setLen(i+1)
-  return x.x[i]
-
-proc `[]=`(x:var Coord, i:SomeInteger, d:int) =
-  if i>=x.x.len:
-    x.x.setLen(i+1)
-  x.x[i] = d
-
-type
-  OrdPathKind = enum
-    opInt, opPair, opList, opAdj
-  OrdPath = ref object
-    case k: OrdPathKind
-    of opInt: d:int
-    of opPair: l,r:OrdPath
-    of opList: s:seq[OrdPath]
-    of opAdj: p:OrdPath
-  OrdPathTree* = ref object
-    paths: seq[OrdPath]
-    segments: seq[OrdPath]
-    counts: seq[int]
-
-proc `$`(path:OrdPath):string =
-  return
-    case path.k:
-    of opInt: $path.d
-    of opPair: "(" & $path.l & " " & $path.r & ")"
-    of opList: $path.s
-    of opAdj: "Adj" & $path.p
-
-proc newOrdPath(path:openarray[int]):OrdPath =
-  let n = path.len
-  var op = OrdPath(k:opList, s:newseq[OrdPath](n))
-  for i in 0..<n:
-    let d = path[i]
-    if d==0:
-      qexError("newOrdPath: unable to parse path: ", path)
-    op.s[i] = OrdPath(k:opInt, d:d)
-  return op
-
-proc adjoint(p:OrdPath):OrdPath =
-  case p.k:
-  of opInt:
-    return OrdPath(k:opInt, d: -p.d)
-  of opPair:
-    return OrdPath(k:opPair, l:p.r.adjoint, r:p.l.adjoint)
-  of opList:
-    var
-      l = p.s.len
-      l1 = l-1
-      n = newseq[OrdPath](l)
-    for i in 0..<l:
-      n[i] = p.s[l1-i].adjoint
-    return OrdPath(k:opList, s:n)
-  of opAdj:
-    return p.p
-
-proc adjointOp(p:OrdPath):OrdPath =
-  ## Like adjoint(), but create new OrdPath(k:opAdj) if it's not already an opInt or opAdj.
-  case p.k:
-  of opInt:
-    return p.adjoint
-  of opAdj:
-    return p.p
-  else:
-    return OrdPath(k:opAdj, p:p)
-
-proc flatten(path:OrdPath):seq[int] =
-  case path.k:
-  of opInt:
-    return @[path.d]
-  of opPair:
-    var r = path.l.flatten
-    r.add path.r.flatten
-    return r
-  of opList:
-    var r = newseq[int]()
-    for l in path.s:
-      r.add l.flatten
-    return r
-  of opAdj:
-    return path.p.adjoint.flatten
-
-proc deltaX(path:OrdPath):Coord =
-  # return the Coord difference between the end of the path to the beginning.
-  case path.k:
-  of opInt:
-    let d = abs(path.d)-1
-    if path.d>0:
-      result[d] = 1
-    else:
-      result[d] = -1
-  of opPair:
-    result = path.l.deltaX + path.r.deltaX
-  of opList:
-    for l in path.s:
-      result += l.deltaX
-  of opAdj:
-    result = -path.p.deltaX
-
-proc position(path:OrdPath):Coord =
-  # return the Coord relative to the left most starting point.
-  case path.k:
-  of opInt:
-    if path.d<0:
-      result[-1-path.d] = -1
-  of opPair:
-    result = path.l.position
-  of opList:
-    if path.s.len>0:
-      result = path.s[0].position
-  of opAdj:
-    result = path.p.position - path.p.deltaX
-
-proc `$`*(path:OrdPathTree):string =
-  result = "OrdPathTree:\n  paths:"
-  for p in path.paths:
-    result.add "\n    " & $p.flatten & " \t " & $p & " \t shift " & $p.position.x
-  result.add "\n  segments:"
-  for i in 0..<path.segments.len:
-    let
-      l = path.segments[i].l
-      r = path.segments[i].r
-    result.add "\n    " & $path.counts[i] & "  " & $l & " \t " & $r & " \t shift " & $(l.position - l.deltaX - r.position).x
-
-proc hash(path:OrdPath):Hash =
-  return
-    case path.k:
-    of opInt: !$(opInt.hash !& path.d.hash)
-    of opPair: !$(opPair.hash !& path.l.hash !& path.r.hash)
-    of opList: !$(opList.hash !& path.s.hash)
-    of opAdj: !$(opAdj.hash !& path.p.hash)
-
-proc `==`(x,y:OrdPath):bool {.noSideEffect.} =  # noSideEffect needed for Nim devel
-  # strictly follows hash(path:OrdPath)
-  return
-    if x.k != y.k:
-      false
-    else:
-      case x.k:
-      of opInt: x.d == y.d
-      of opPair: x.l == y.l and x.r == y.r
-      of opList: x.s == y.s
-      of opAdj: x.p == y.p
-
-proc lexLess(a, b: seq[int]): bool =
-  for i in 0..<min(a.len, b.len):
-    if a[i] != b[i]: return a[i] < b[i]
-  a.len < b.len
-
-proc mostSharedPair(paths:openarray[OrdPath]):(OrdPath,int) =
-  ## Receives paths and search each element of OrdPath(k:opList).
-  ## Return an OrdPath(k:opPair) occured most frequently among all the paths,
-  ## and its count.
-  ## If there are no pairs, return OrdPath(k:opList) with len 0, and 0.
-  var pc = initTable[OrdPath,int]()
-  var p,pa: OrdPath
-  var fp,fpa: seq[int]
-  var c,ca: int
-  while true:
-    c = 0
-    ca = 0
-    for ps in paths:
-      if not (ps.k==opList and ps.s.len>1):
-        continue
-      var i = 0
-      while i<ps.s.len-1:
-        i.inc
-        let t = OrdPath(k:opPair, l:ps.s[i-1], r:ps.s[i])
-        let ft = t.flatten
-        if c==0:
-          p = t
-          pa = OrdPath(k:opPair, l:t.r.adjointOp, r:t.l.adjointOp)
-          if p in pc or pa in pc:
-            continue
-          fp = p.flatten()
-          fpa.newseq(fp.len)
-          for i in 0..<fp.len:
-            fpa[i] = -fp[fp.len-i-1]
-          c = 1
-          i.inc
-        elif ft == fp:
-          c.inc
-          i.inc
-        elif ft == fpa:
-          ca.inc
-          i.inc
-    if c==0:
-      # no new pairs
-      break
-    else:
-      let ct = c+ca
-      if c>=ca:
-        pc[p] = ct
-      else:
-        pc[pa] = ct
-  c = 0
-  var fp0: seq[int]
-  for k,v in pc.pairs:
-    # Ties resolve to the smallest flattened path, so the plan is deterministic.
-    let fk = k.flatten
-    if v>c or (v==c and fk.lexLess(fp0)):
-      c = v
-      p = k
-      fp0 = fk
-  if c==0:
-    return (OrdPath(k:opList, s: @[]), 0)
-  else:
-    return (p, c)
-
-proc groupByPair(paths:openarray[OrdPath], pair:OrdPath):seq[OrdPath] =
-  ## Receives paths and group each element of OrdPath(k:opList) by the pair OrdPath(k:opPair).
-  let
-    fp = pair.flatten
-    pairAdj = OrdPath(k:opAdj, p:pair)
-  var afp = newseq[int](fp.len)
-  for i in 0..<fp.len:
-    afp[i] = -fp[fp.len-i-1]
-  var newpaths = newseq[OrdPath]()
-  for ps in paths:
-    if ps.k!=opList:
-      newpaths.add ps
-      continue
-    var
-      p = newseq[OrdPath]()
-      i = 0
-      n = ps.s.len
-    while i<n-1:
-      var t = ps.s[i].flatten
-      t.add ps.s[i+1].flatten
-      if t == fp:
-        p.add pair
-        # echo "groupByPair: add ",p[^1]
-        i.inc 2
-      elif t==afp:
-        p.add pairAdj
-        # echo "groupByPair: add ",p[^1]
-        i.inc 2
-      else:
-        p.add ps.s[i]
-        i.inc
-    if i==n-1:
-      p.add ps.s[i]
-    newpaths.add(
-      if p.len==1:
-        p[0]
-      else:
-        OrdPath(k:opList, s:p)
-    )
-  return newpaths
-
-proc optimalPairs(paths:openarray[OrdPath]):OrdPathTree =
-  ## Runtime O(N^3) with N=paths.len
-  tic()
-  var
-    pgroup = @paths
-    segments = newseq[OrdPath]()
-    counts = newseq[int]()
-    (p,c) = pgroup.mostSharedPair
-  while p.k==opPair:
-    # echo "optimalPairs: add ",p
-    segments.add p
-    counts.add c
-    pgroup = pgroup.groupByPair p
-    (p,c) = pgroup.mostSharedPair
-  toc("optimalPairs")
-  return OrdPathTree(paths:pgroup, segments:segments, counts:counts)
-
-proc optimalPairs*(paths:openarray[seq[int]]):OrdPathTree =
-  ## Runtime O(N^3) with N=paths.len
-  let n = paths.len
-  var ps = newseq[OrdPath](n)
-  for i,p in paths.pairs:
-    ps[i] = p.newOrdPath
-  ps.optimalPairs
-
-type
-  PathStep* = object
-    ## nodes[key](x) = L(x) * R(x - sh),  L = adjIf(nodes[l], la),  R = adjIf(nodes[r], ra)
-    key*, l*, r*: seq[int]
-    la*, ra*: bool
-    sh*: seq[int]
-  PathOut* = object
-    ## adjIf(nodes[key], adj)(x - sh)
-    key*: seq[int]
-    adj*: bool
-    sh*: seq[int]
-  PathPlan* = object
-    ## Evaluation plan over nodes keyed by flattened paths.
-    ## A key of length one is the raw link mu+1 (never negative, the sign is in la/ra/adj);
-    ## longer keys are step results.  Steps are in evaluation order, so every operand
-    ## is a link or an earlier step.  sh lists per-direction offsets, trailing zeros dropped.
-    steps*: seq[PathStep]
-    outs*: seq[PathOut]
-
-proc operand(s:OrdPath):(seq[int],bool) =
-  # Node key and adjoint flag of a step operand or an output path.
-  case s.k:
-  of opInt:
-    return (@[abs s.d], s.d<0)
-  of opPair:
-    return (s.flatten, false)
-  of opAdj:
-    let (k,a) = operand s.p
-    return (k, not a)
-  of opList:
-    if s.s.len==1:
-      return operand s.s[0]
-    qexError("operand: unexpected path ", $s)
-
-proc trim(c:Coord):seq[int] =
-  result = c.x
-  while result.len>0 and result[^1]==0:
-    result.setLen(result.len-1)
-
-proc plan*(t:OrdPathTree, origin=true, shifts=true):PathPlan =
-  ## Steps in the order gaugeProd evaluates them, then one output per input path.
-  ## origin=true shifts each output back to the path's starting site.
-  ## shifts=false treats integers as independent matrix symbols at one site.
-  result.steps.newseq t.segments.len
-  for i,s in t.segments.pairs:
-    let
-      (l,la) = operand s.l
-      (r,ra) = operand s.r
-    result.steps[i] = PathStep(key:s.flatten, l:l, r:r, la:la, ra:ra)
-    if shifts:
-      result.steps[i].sh = trim(s.l.position - s.l.deltaX - s.r.position)
-  result.outs.newseq t.paths.len
-  for i,p in t.paths.pairs:
-    let (k,a) = operand p
-    result.outs[i] = PathOut(key:k, adj:a)
-    if origin and shifts:
-      result.outs[i].sh = trim(-p.position)
-
-proc singleshift[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]):F =
-  # Result will be in one of the shift buffers.
-  result = f
+# res is a {.cursor.} variable: inside threads blocks the shifted field is borrowed
+# from a shift buffer and no reference count changes.
+template singleshift(res, f, sh, sf, sb: untyped) =
+  ## res: f shifted by sh, in one of the shift buffers.
+  res = f
   for mu,n in sh.pairs:
     if n>0:
-      result = sb[mu] ^* result
+      res = sb[mu] ^* res
     elif n<0:
-      result = sf[mu] ^* result
+      res = sf[mu] ^* res
 
-proc multishifts[F,S](f:F, sh:openarray[int], sf,sb:openarray[Shifter[F,S]]):F =
-  # f will be used as temporary and overwritten.
-  # Result will be in one of the shift buffers.
-  result = f
+template multishifts(res, f, sh, sf, sb: untyped) =
+  ## res: f shifted by sh, in one of the shift buffers; f is overwritten.
+  res = f
   for mu,n in sh.pairs:
     if n>0:
-      result = sb[mu] ^* result
+      res = sb[mu] ^* res
       for i in 1..<n:
-        f := result
-        result = sb[mu] ^* f
+        f := res
+        res = sb[mu] ^* f
     elif n<0:
-      result = sf[mu] ^* result
+      res = sf[mu] ^* res
       for i in 1..<(-n):
-        f := result
-        result = sf[mu] ^* f
+        f := res
+        res = sf[mu] ^* f
 
 proc lrmul(res:auto, l:auto, r:auto, la,ra:bool) =
   tic("lrmul")
@@ -1091,7 +636,8 @@ proc lrmul(res:auto, l:auto, r:auto, la,ra:bool) =
 
 proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
   ## Evaluate plan(ptree, origin) over the links g.
-  ## Outputs alias the step products unless adjoint or shifted.
+  ## Outputs alias the step products unless adjoint or shifted. Other step
+  ## products and the shift fields are freed before returning.
   tic("gaugeProd")
   type
     F = typeof(g[0])
@@ -1116,9 +662,14 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
     mark s.sh
     uses.inc s.l
     uses.inc s.r
+  var kept = initHashSet[seq[int]]()  # step products returned without a copy
   for o in pl.outs:
     mark o.sh
     uses.inc o.key
+  defer:
+    for i in 0..<nd:
+      if sf[i].field != nil: sf[i].field.release
+      if sb[i].field != nil: sb[i].field.release
   for i in 0..<nd:
     if sfi[i]:
       sf[i] = newShifter(g[0], i, 1)
@@ -1133,6 +684,7 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
     if k.len > 1:
       uses.inc(k, -1)
       if uses[k] == 0:
+        if k notin kept: gp[k].release
         gp.del k
 
   for s in pl.steps:
@@ -1147,50 +699,42 @@ proc gaugeProd*(g:auto, ptree:OrdPathTree, origin=true):auto =
       needs = max(needs, abs x)
     var res = newOneOf(r)
     threads:
-      let rr =
-        if needs==0:
-          r
-        elif needs==1:
-          r.singleshift(sh, sf, sb)
-        else:
-          res := r
-          res.multishifts(sh, sf, sb)
+      var rr {.cursor.} = r
+      if needs==1:
+        singleshift(rr, r, sh, sf, sb)
+      elif needs>1:
+        res := r
+        multishifts(rr, res, sh, sf, sb)
       res.lrmul(l,rr,la,ra)
     gp[s.key] = res
     consumed(s.l)
     consumed(s.r)
   toc("gaugeProd prod")
-  let n = pl.outs.len
-  var res = newseq[F](n)
-  var resAlloc = newseq[bool](n)
+  var res = newseq[F](pl.outs.len)
   for i,o in pl.outs.pairs:
     let t = node o.key
-    if o.adj:
-      res[i] = newOneOf t
-      resAlloc[i] = true
-      threads:
-        res[i] := t.adj
-    else:
-      res[i] = t
-    consumed(o.key)
-  for i,o in pl.outs.pairs:
     let sh = o.sh
     var needs = 0
-    for x in sh:
-      needs = max(needs, abs x)
-    if needs>0:
-      let r = res[i]
-      if not resAlloc[i]:
-        res[i] = newOneOf r
-        resAlloc[i] = true
-      threads:
-        let t =
-          if needs==1:
-            r.singleshift(sh, sf, sb)
+    for x in sh: needs = max(needs, abs x)
+    if not o.adj and needs == 0:
+      res[i] = t
+      kept.incl o.key
+    else:
+      res[i] = newOneOf t
+      if o.adj:
+        threads: res[i] := t.adj
+      if needs > 0:
+        threads:
+          var r {.cursor.} = t
+          if o.adj: r = res[i]
+          var shifted {.cursor.}: F
+          if needs == 1:
+            singleshift(shifted, r, sh, sf, sb)
           else:
             res[i] := r
-            res[i].multishifts(sh, sf, sb)
-        res[i] := t
+            multishifts(shifted, res[i], sh, sf, sb)
+          res[i] := shifted
+    consumed(o.key)
   result = res
   toc("done")
 
@@ -1215,6 +759,8 @@ proc wilsonLines*(g:auto, lines:openarray[seq[int]]):auto =
     threads:
       r = s.trace
     ts[i] := r*fac
+  for i,s in rs.pairs:
+    if s notin g and s notin rs.toOpenArray(0,i-1): s.release
   toc("wilsonLines trace")
   return ts
 
@@ -1501,9 +1047,7 @@ proc randomTAH*(x: Field, r: RNGField) =
 
 proc warmSU*(x: Field, s: float, r: var RNGField) =
   x.randomTAH r
-  for i in x:
-    let t = s * x[i]
-    x[i] = exp(t)
+  axexpah(x, s, x)
 
 proc checkU*[F:Field](x: openArray[F]): tuple[avg,max:float] {.noinit.} =
   var a,b:float

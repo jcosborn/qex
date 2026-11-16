@@ -24,7 +24,7 @@ srcDir        = "qex/src"
 
 # Dependencies
 
-requires "nim >= 2.0.0"
+requires "nim >= 2.2.12"
 requires "nimibook"
 requires "chebyshev >= 0.2.1"
 requires "mdevolve >= 1.0.0"

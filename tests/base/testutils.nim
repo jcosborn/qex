@@ -9,6 +9,17 @@ proc diffNorm2*(x, y: Field): float =
     threadSingle: err = d
   err
 
+proc relNorm2*(x, y: Field): float =
+  ## norm2(x - y)/(1 + norm2(y)).
+  var err, scale: float
+  threads:
+    let d = norm2(x-y)
+    let n = norm2(y)
+    threadSingle:
+      err = d
+      scale = n
+  err/(1.0+scale)
+
 proc relativeDiff*(a, b: array|seq): float =
   let d = newOneOf(a)
   var err, scale: float
@@ -179,13 +190,16 @@ template `!~`*(x,y:typed):bool =
   not(x~y)
 
 template subtest*(t: typed): untyped {.dirty.} =
-  let prsave = programResult
-  programResult = 0
-  t
-  if programResult != 0:
-    fail()
-  else:
-    programResult = prsave
+  ## Run t, whose checks have no test scope, and fail the enclosing test when
+  ## one of them fails.
+  block:
+    let prsave = programResult
+    programResult = 0
+    t
+    if programResult != 0:
+      fail()
+    else:
+      programResult = prsave
 
 # custom test suite output formatter
 type

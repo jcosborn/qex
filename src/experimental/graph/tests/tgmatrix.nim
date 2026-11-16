@@ -164,8 +164,9 @@ suite "graph real matrix fields":
               dm[e][i,j].im := -0.011*float(i+j+1)
       let gm = grt.toGvalue(m)
       let gdm = grt.toGvalue(dm)
-      check abs((redot(su3AdNeg(gm),gd)-redot(gm,su3AdNegAdj(gd))).eval.sval) < 1e-12
-      check abs((redot(su3ProjectDeriv(gm),gd)-redot(gm,su3ProjectDerivAdj(gd))).eval.sval) < 1e-12
+      # Compare pairing densities: both global sums grow with lattice volume.
+      check abs((redot(su3AdNeg(gm),gd)-redot(gm,su3AdNegAdj(gd))).eval.sval)/vol < 1e-12
+      check abs((redot(su3ProjectDeriv(gm),gd)-redot(gm,su3ProjectDerivAdj(gd))).eval.sval)/vol < 1e-12
       proc f(x: Gfield): Gscalar = norm2(su3AdNeg(x)*su3ProjectDeriv(x))
       ckgrad(f,gm,gm)
       ckmat(f,gm,gdm)

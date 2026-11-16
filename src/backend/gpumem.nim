@@ -147,6 +147,11 @@ proc gpuMemFreed*(p: pointer; n: int) =
   ## table operation may be under way.  Frees on other threads, whose heaps
   ## hold none of the table's objects, are left out.
   if getThreadId() == gpuMemThread and gpuMemTable.len > 0:
+    # Queue growth during an explicit free must not collect another owner
+    # and reenter the append.
+    when not defined(gcDestructors): GC_disable()
+    defer:
+      when not defined(gcDestructors): GC_enable()
     for k in gpuMemTable.keys:
       if cast[uint](k) - cast[uint](p) < uint(n): gpuMemDead.add k  # p <= k < p+n
 rawMemFreeHook = gpuMemFreed

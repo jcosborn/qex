@@ -94,10 +94,7 @@ proc gtGradient(grad: Field, gt: auto, dirs: array|seq) =
 
 proc gtUpdate(t: auto, a: auto, s: float) =
   tic()
-  threads:
-    for e in t:
-      let m = t[e]
-      t[e] := exp(-s*a[e]) * m
+  threads: axexpahmuly(t, -s, a, t)
   toc("gtUpdate done")
 
 proc gtUpdate(t: auto, a: auto, s: Field) =
@@ -105,7 +102,7 @@ proc gtUpdate(t: auto, a: auto, s: Field) =
   threads:
     for e in t:
       let m = t[e]
-      t[e] := exp(-s[e]*a[e]) * m
+      t[e] := expAH(-s[e]*a[e]) * m
   toc("gtUpdateF done")
 
 #[

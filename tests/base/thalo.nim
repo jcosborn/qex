@@ -1,5 +1,70 @@
 import testutils
-import qex, base/hyper, comms/halo
+import qex, base/hyper, comms/[gather, halo]
+
+# One pending local message exercises gather buffers with any QMP backend.
+type
+  LoopbackComm = ref object of Comm
+    send, recv: pointer
+    bytes: int
+  GatherInts = object
+    src, dest: ptr UncheckedArray[int]
+    elemsize, vlen: int
+
+method nsends(c: LoopbackComm): int = ord(c.send != nil)
+method nrecvs(c: LoopbackComm): int = ord(c.recv != nil)
+method pushRecv(c: LoopbackComm, rank: int, p: pointer, bytes: int) =
+  doAssert rank == 0 and c.recv == nil
+  c.recv = p
+  c.bytes = bytes
+method pushSend(c: LoopbackComm, rank: int, p: pointer, bytes: int) =
+  doAssert rank == 0 and c.send == nil and c.recv != nil and bytes == c.bytes
+  c.send = p
+method waitRecvs(c: LoopbackComm, i0, i1: int, free = true) =
+  doAssert i0 == 0 and i1 == 0 and c.send != nil and c.recv != nil
+  copyMem(c.recv, c.send, c.bytes)
+  if free: c.recv = nil
+method freeRecvs(c: LoopbackComm, i0, i1: int) =
+  doAssert i0 == 0 and i1 == 0 and c.recv != nil
+  c.recv = nil
+method waitSends(c: LoopbackComm, i0, i1: int) =
+  doAssert i0 == 0 and i1 == 0 and c.send != nil
+  c.send = nil
+
+template copy(data: GatherInts, d, s: pointer|SomeInteger) =
+  when d is pointer: cast[ptr int](d)[] = data.src[s]
+  elif s is pointer: data.dest[d] = cast[ptr int](s)[]
+  else: data.dest[d] = data.src[s]
+
+proc exerciseGatherBuffers(): int {.noinline.} =
+  # Return before collecting: refc conservatively retains locals on live stacks.
+  let before = getOccupiedSharedMem()
+  let c = LoopbackComm()
+  var send, recv: ptr UncheckedArray[char]
+  var capacity = 0
+  for count in [4, 512, 8]:
+    var src, dest = newSeq[int](count)
+    let gm = GatherMap(nsrc: count, ndest: count,
+      sidx: newSeq[int32](count), rdest: newSeq[int32](count),
+      smsginfo: @[MsgInfo(rank: 0, count: count.int32)],
+      rmsginfo: @[MsgInfo(rank: 0, count: count.int32)])
+    for i in 0..<count:
+      src[i] = 1000*count + i
+      gm.sidx[i] = int32(count-1-i)
+      gm.rdest[i] = int32(i)
+    let data = GatherInts(src: cast[ptr UncheckedArray[int]](src[0].addr),
+      dest: cast[ptr UncheckedArray[int]](dest[0].addr), elemsize: sizeof(int), vlen: 1)
+    c.gather(gm, data, keep = true)
+    doAssert c.send == nil and c.recv == nil
+    for i in 0..<count: doAssert dest[i] == src[count-1-i]
+    capacity = max(capacity, count*sizeof(int))
+    doAssert c.gatherBuffers.send.n == capacity
+    doAssert c.gatherBuffers.recv.n == capacity
+    if count == 8:
+      doAssert c.gatherBuffers.send.p == send
+      doAssert c.gatherBuffers.recv.p == recv
+    send = c.gatherBuffers.send.p
+    recv = c.gatherBuffers.recv.p
+  getOccupiedSharedMem()-before
 
 # global lex index of lane k of outer site e, shifted by o and wrapped
 proc site(lo: auto, e, k: int, o: seq[int32]): int =
@@ -107,10 +172,14 @@ proc haloPlaq(g: auto, hl: auto, hm: auto): seq[float] =
   for k in 0..<result.len: result[k] *= vf
 
 qexInit()
+disableParamFiltering()
+letParam:
+  loc = @[8,8,4,4]
+  lat = latticeFromLocalLattice(loc, nRanks)
 
 suite "Halo":
   echo "rank ", myRank, "/", nRanks
-  var (lo, g, r) = setupLattice([8,8,4,4])
+  var (lo, g, r) = setupLattice(lat)
   let nd = lo.nDim
   let comm = getDefaultComm()
   let hl = haloLayout(lo, [1,1,1,1], [1,1,1,1])
@@ -139,10 +208,53 @@ suite "Halo":
       true
     let nh = (hl.nExt - hl.nOut) * lo.V
     for hm in [hmC, hmA]:
+      check(hm.sites.sidx.inRange(lo.nSitesOuter) and hm.sites.lidx.inRange(lo.nSitesOuter))
+      check(hm.sites.rdest.inRange(hl.nExt-hl.nOut) and hm.sites.ldest.inRange(hl.nExt-hl.nOut))
       check(hm.gather.sidx.inRange(lo.nSites) and hm.gather.lidx.inRange(lo.nSites))
       check(hm.gather.rdest.inRange(nh) and hm.gather.ldest.inRange(nh))
       check(hm.gatherRev.sidx.inRange(nh) and hm.gatherRev.lidx.inRange(nh))
       check(hm.gatherRev.rdest.inRange(lo.nSites) and hm.gatherRev.ldest.inRange(lo.nSites))
+
+  test "retained gather buffers grow, reuse storage, and release with their owner":
+    discard exerciseGatherBuffers()  # Warm threading and profiling state.
+    GC_fullCollect()
+    GC_fullCollect()
+    let before = getOccupiedSharedMem()
+    let allocated = exerciseGatherBuffers()
+    check allocated >= 2*512*sizeof(int)
+    GC_fullCollect()
+    GC_fullCollect()
+    check getOccupiedSharedMem() == before
+
+  test "retained gather buffers belong to their communicator":
+    fill g
+    let hm = haloMap(hl, comm, axes)
+    let h = makeHalo(hl, g[0])
+    h.update(hm, comm)
+    let first = comm.gatherBuffers
+    check first != nil
+    let send = first.send.p
+    let recv = first.recv.p
+    h.update(hm, comm)
+    check first.send.p == send
+    check first.recv.p == recv
+    let other = getCommQmp()
+    h.update(hm, other)
+    check other.gatherBuffers != first
+    check other.gatherBuffers.send.p != send
+    check other.gatherBuffers.recv.p != recv
+    other.gatherBuffers.releaseGatherBuffers
+    other.gatherBuffers.releaseGatherBuffers
+    check other.gatherBuffers.send.p == nil
+    check other.gatherBuffers.recv.p == nil
+    check other.gatherBuffers.send.n == 0
+    check other.gatherBuffers.recv.n == 0
+    h.update(hm, other)
+    check other.gatherBuffers.send.p != nil
+    check other.gatherBuffers.recv.p != nil
+    other.gatherBuffers.releaseGatherBuffers
+    check first.send.p == send
+    check first.recv.p == recv
 
   test "update corners":
     check(checkUpdate(g, hl, hmC, corners) == 0)
@@ -152,6 +264,33 @@ suite "Halo":
     check(checkRev(g, hl, hmC, corners) == 0)
   test "updateRev axes":
     check(checkRev(g, hl, hmA, axes) == 0)
+
+  test "update at other lane counts":
+    # V = 4 leaves directions without lanes, so split ranks send whole sites.
+    template layoutCase(lat: openArray[int], v: static int) =
+      block:
+        let lo2 = newLayout(lat, v)
+        let n = lo2.nDim
+        var g2 = newSeq[type(lo2.ColorMatrix(3))](n)
+        for mu in 0..<n: g2[mu] = lo2.ColorMatrix(3)
+        var ones = newSeq[int](n)
+        for d in 0..<n: ones[d] = 1
+        let hl2 = haloLayout(lo2, ones, ones)
+        var cs, ax: seq[seq[int32]]
+        for c in 0..<(1 shl n):
+          var t = newSeq[int32](n)
+          for d in 0..<n: t[d] = if ((c shr d) and 1) == 1: -1 else: 1
+          cs.add t
+        for d in 0..<n:
+          for s in [-1'i32, 1'i32]:
+            var t = newSeq[int32](n)
+            t[d] = s
+            ax.add t
+        echo "V: ", lo2.V, " innerGeom: ", lo2.innerGeom, " rankGeom: ", lo2.rankGeom
+        check(checkUpdate(g2, hl2, haloMap(hl2, comm, cs), cs) == 0)
+        check(checkUpdate(g2, hl2, haloMap(hl2, comm, ax), ax) == 0)
+        check(checkRev(g2, hl2, haloMap(hl2, comm, cs), cs) == 0)
+    layoutCase(lo.physGeom, 4)
 
   test "plaquette":
     threads: g.random r
@@ -171,7 +310,7 @@ suite "Halo":
       for t, o in offs:
         if int(idx[i*offs.len+t]) != hlo.nbr(i, o): inc bad
     check(bad == 0)
-    expect ValueError: discard haloLayout(lo, @[@[8'i32,0,0,0]])
+    expect ValueError: discard haloLayout(lo, @[@[int32(lo.physGeom[0]),0,0,0]])
     expect ValueError: discard haloIndex(hlo, @[@[3'i32,0,0,0]])
     expect ValueError: discard haloIndex(hlo, @[@[0'i32,-2,0,0]])
 

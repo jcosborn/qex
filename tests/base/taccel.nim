@@ -53,7 +53,7 @@ proc checkHalo(lo: auto; reps: int): float =
   let f = dev(ne*n)
   var hf = newSeq[float](ne*n)
   for p in 0..1:  # parity of the sites sent
-    let hm = hl.makeHaloMap(c, offs, p)
+    let hm = hl.makeHaloMap(c, offs, p, sites = false)
     let ex = newGpuHaloEx[float](hm.gather, ne, n, V, c)
     let src = hl.haloSource(hm.gather)
     let ro = host(ex.rofs, ex.nrecv)

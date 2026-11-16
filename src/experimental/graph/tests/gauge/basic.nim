@@ -151,7 +151,7 @@ suite "gauge basic":
     n2 :~ 0.0
 
   test "gauge copy paths reject incompatible shapes before copying":
-    let lo2 = @[4,4,4,8].newLayout
+    let lo2 = latticeFromLocalLattice(@[4,4,4,8], nRanks).newLayout
     let g2 = lo2.newgauge
     let left = grt.toGvalue(zeroGaugeLike(g))
     let right = grt.toGvalue(zeroGaugeLike(g2))
@@ -162,7 +162,7 @@ suite "gauge basic":
       graphGaugeShared.valCopy(left, right)
 
   test "binary gauge ops reject incompatible layouts at construction":
-    let lo2 = @[4,4,4,8].newLayout
+    let lo2 = latticeFromLocalLattice(@[4,4,4,8], nRanks).newLayout
     let g2 = lo2.newgauge
     let other = grt.toGvalue(zeroGaugeLike(g2))
 
@@ -304,14 +304,14 @@ suite "gauge basic":
     norm2((zero + gg) - gg) :< 1e-26
 
   test "cond rejects incompatible gauge layouts":
-    let lo2 = @[4,4,4,8].newLayout
+    let lo2 = latticeFromLocalLattice(@[4,4,4,8], nRanks).newLayout
     let g2 = lo2.newgauge
 
     expect(GraphValueError):
       discard cond(grt.toGvalue(1), grt.toGvalue(zeroGaugeLike(g)), grt.toGvalue(zeroGaugeLike(g2)))
 
   test "multi output preserves heterogeneous gauge layouts":
-    let lo2 = @[4,4,4,8].newLayout
+    let lo2 = latticeFromLocalLattice(@[4,4,4,8], nRanks).newLayout
     let g2 = lo2.newgauge
     let left = grt.toGvalue(zeroGaugeLike(g))
     let right = grt.toGvalue(zeroGaugeLike(g2))

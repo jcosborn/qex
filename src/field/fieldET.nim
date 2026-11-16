@@ -20,23 +20,29 @@ type
     l*:Layout[V]
     elemSize*:int
   Field*[V:static[int],T] = ref FieldObj[V,T]
-  FieldArray*[V:static[int],T] = object  ## share a single alignedMem
+  FieldArray*[V:static[int],T] = object
+    ## Fields sharing one alignedMem, row major for shape [n] or [n,m].
+    ## newFieldArray2 allocates only the entries its constraint selects and leaves
+    ## the rest nil; newOneOf copies that occupancy.
     shape*:seq[int]
+    mem*: RawMemRef
     arr:seq[Field[V,T]]
+  # Expression operands are borrowed: under ARC/ORC they hold no counted reference,
+  # so building an expression inside a threads block changes no reference count.
   Subsetted*[F,S] = object
-    field*:F
+    field* {.cursor.}:F
     subset*:S
   FieldUnop*[Op: static[FieldOps], T1] = object
-    f1*: T1
+    f1* {.cursor.}: T1
   FieldBinop*[O:static[string],T1,T2] = object
-    f1:T1
-    f2:T2
+    f1 {.cursor.}:T1
+    f2 {.cursor.}:T2
   FieldAddSub*[S:static[tuple],T:tuple] = object
-    field*:T
+    field* {.cursor.}:T
   FieldMul*[T:tuple] = object
-    field*:T
+    field* {.cursor.}:T
   Shifted*[T] = object
-    field*:T
+    field* {.cursor.}:T
     dir*:int
     ln*:int
   #Field2* = distinct Field
@@ -152,6 +158,12 @@ proc newShape*[V:static[int],T](l: Layout[V], t: typedesc[T]): Field[V,T] =
   result.new()
   result[].initField(l, s)
 proc newShape*[V:static[int],T](x: Field[V,T]): Field[V,T] = newShape(x.l, T)
+proc release*(x: Field) =
+  ## Free x's storage now; refc would free it only at a later collection. x
+  ## keeps its shape without storage. x must own its storage (no FieldArray
+  ## element), and no alias of it may be read afterwards.
+  x.s.mem[].free
+  x.s.newShape(x.s.len, x.s.align)
 template l*(x: FieldUnop): untyped = x.f1.l
 proc newOneOf*(x: FieldUnop): auto =
   var r: evalType(x)
@@ -170,11 +182,12 @@ proc newFarrElem[V:static[int],T](f:var Field[V,T]; l:Layout[V]; s:alignedMem[T]
   f[].initField(l, s)
   f.s.data = cast[typeof(s.data)](cast[int](s.data) + offset*l.nSitesOuter*s.stride)
 
-proc newFieldArray*[V:static[int],T](l:Layout[V]; t:typedesc[Field[V,T]]; n: int):FieldArray[V,T] {.noinit.} =
+proc newFieldArray*[V:static[int],T](l:Layout[V]; t:typedesc[Field[V,T]]; n: int):FieldArray[V,T] =
   result.shape = @[n]
   result.arr = newseq[t](n)
   var s:typeof(result.arr[0].s)
   s.newU(l.nSitesOuter*n)
+  result.mem = s.mem
   for i in 0..<n:
     newFarrElem(result.arr[i], l, s, i)
 
@@ -182,7 +195,7 @@ template newFieldArray2*[V:static[int],T](l:Layout[V]; ty:typedesc[Field[V,T]];
     ns: array[2,int]; constraint: untyped):untyped =
   let n = ns[0]
   let m = ns[1]
-  var r {.noinit.} :FieldArray[V,T]
+  var r: FieldArray[V,T]
   r.shape = @[n,m]
   r.arr = newseq[ty](n*m)
   var t = 0
@@ -193,6 +206,7 @@ template newFieldArray2*[V:static[int],T](l:Layout[V]; ty:typedesc[Field[V,T]];
       if constraint: inc t
   var s:typeof(r.arr[0].s)
   s.newU(l.nSitesOuter*t)
+  r.mem = s.mem
   var k = 0
   t = 0
   for i in 0..<n:
@@ -205,19 +219,19 @@ template newFieldArray2*[V:static[int],T](l:Layout[V]; ty:typedesc[Field[V,T]];
       inc k
   r
 
-proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] {.noinit.} =
+proc newOneOf*[V:static[int],T](fa:FieldArray[V,T]):FieldArray[V,T] =
   result.shape = fa.shape
   result.arr = newseq[Field[V,T]](fa.arr.len)
   var s:typeof(fa.arr[0].s)
-  let (l,n) = block:
-    var n = -1
-    for i in 0..<fa.arr.len:
-      if fa.arr[i] != nil:
-        n = i
-        break
-    if n < 0: return
-    (fa.arr[n].l, fa.arr[n].s.len)
-  s.newU(n)
+  var l: Layout[V]
+  var n = 0
+  for f in fa.arr:
+    if f != nil:
+      l = f.l
+      inc n
+  if n == 0: return
+  s.newU(n*l.nSitesOuter)
+  result.mem = s.mem
   var t = 0
   for i in 0..<fa.arr.len:
     if fa.arr[i] == nil: continue
@@ -265,6 +279,12 @@ template `[]`*(x: Field; c: openarray): untyped =
 
 template `[]`*(x:FieldArray, i:int):untyped = x.arr[i]
 template `[]`*(x:FieldArray, i,j:int):untyped = x.arr[i*x.shape[1]+j]
+
+proc release*(a: FieldArray) =
+  ## Free the shared allocation once; populated views keep their field shapes.
+  if a.mem != nil: a.mem[].free
+  for f in a.arr:
+    if f != nil: f.s.newShape(f.l.nSitesOuter, f.s.align)
 
 template even*(x:Field):untyped = x["even"]
 template odd*(x:Field):untyped = x["odd"]
@@ -423,9 +443,7 @@ iterator sites*(s:Subset):int {.inline.} =
 #  let n = x.l.nSitesOuter
 #  itemsI(0, n)
 iterator items*(x:Field):int {.inline.} =
-  #let n = x.l.nSitesOuter
-  let l = x.l
-  let n = l.nSitesOuter
+  let n = x.l.nSitesOuter
   #echo "n: ", n
   itemsI(0, n)
 iterator items*(x:Subsetted):int {.inline.} =
@@ -563,8 +581,8 @@ proc applyOp2(x,y:NimNode; op:string):auto =
   let o = ident(op)
   result = quote do:
     #debugExpr:
-      let xx = `x`
-      let yy = `y`
+      let xx {.cursor.} = `x`
+      let yy {.cursor.} = `y`
       for e in xx:
         when noAlias:
           staticTraceBegin: `o Field2`

@@ -5,6 +5,7 @@ import ../../../../physics/qcdTypes
 import ../types
 
 type
+  MaskWork* = SubsetWork[VLEN, DColorMatrixV]
   GaugeActionFamily = enum
     gafGaugeAction1, gafActionA
 
@@ -69,11 +70,11 @@ proc evalProjectedGaugeForceValue*(gc: GaugeActionCoeffs, g, outg: types.Gauge) 
   of gafActionA:
     gc.forceA(g, outg)
 
-proc evalGaugeForceSubset*(gc: GaugeActionCoeffs, g, outg: types.Gauge, sd, sf, sb: auto, parity, dir: int) =
+proc evalGaugeForceSubset*(gc: GaugeActionCoeffs, g, outg: types.Gauge, work: MaskWork) =
   ## Masked ambient derivative for the fundamental loop family.
   if not gc.isFundamental:
     raiseUnsupportedGaugeCoeff(gc)
-  gc.gaugeDeriv2SubsetWork(g, outg, sd, sf, sb, parity, dir, clear=false)
+  gc.gaugeDeriv2Subset(g, outg[work.dir], work, clear=false)
 
 proc evalGaugeForceJacobian*(b: types.Gauge,
                              gc: GaugeActionCoeffs,
@@ -90,9 +91,9 @@ proc evalGaugeForceJacobianSubset*(b: types.Gauge, gc: GaugeActionCoeffs, g, out
   ## outg = H_g(b[dir]|parity); writes all affected links.
   if not gc.isFundamental:
     raiseUnsupportedGaugeCoeff(gc)
-  gc.gaugeDerivDeriv2Subset(g, b, outg, parity, dir)
+  gc.gaugeDerivDeriv2Subset(g, b[dir], outg, newSubsetWork(g[0], parity, dir))
 
 proc evalGaugeForceJacobianSubsetSum*(b: seq[DLatticeColorMatrixV], w: DLatticeColorMatrixV, gc: GaugeActionCoeffs, g, outg: types.Gauge, parity, dir: int) =
   if not gc.isFundamental:
     raiseUnsupportedGaugeCoeff(gc)
-  gc.gaugeDerivDeriv2SubsetSum(g, b, w, outg, parity, dir)
+  gc.gaugeDerivDeriv2SubsetSum(g, b, w, outg, newSubsetWork(g[0], parity, dir))

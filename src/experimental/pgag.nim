@@ -80,7 +80,7 @@ else:
   let err = g.loadGauge infn
 
 echo "plaq: ", 6.0*g.plaq
-echo "gaugeAction2: ", g.gaugeAction2 gc
+echo "gaugeAction2: ", gc.gaugeAction2(g)
 echo "actionA: ", gc.actionA g
 
 var
@@ -127,7 +127,7 @@ proc forceX(c: GaugeActionCoeffs, g: auto, f: auto) =
 var gutime = 0.0
 proc mdt(t: float) =
   tic()
-  threads: axexpmuly(g, t, p, g)
+  threads: axexpahmuly(g, t, p, g)
   gutime += getElapsedTime()
   toc("mdt")
 var gf2s = 0.0

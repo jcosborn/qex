@@ -68,54 +68,58 @@ proc load(f: Field) =
 suite "Test field IO":
 
   test "save real":
-    save fr
+    subtest save(fr)
   test "load real":
-    load fr
+    subtest load(fr)
 
   test "save complex":
-    save fc
+    subtest save(fc)
   test "load complex":
-    load fc
+    subtest load(fc)
 
   test "save color vector":
-    save fv
+    subtest save(fv)
   test "load color vector":
-    load fv
+    subtest load(fv)
 
   test "save color matrix":
-    save fm
+    subtest save(fm)
   test "load color matrix":
-    load fm
+    subtest load(fm)
 
   test "save half fermion":
-    save fh
+    subtest save(fh)
   test "load half fermion":
-    load fh
+    subtest load(fh)
 
   test "save dirac fermion":
-    save fd
+    subtest save(fd)
   test "load dirac fermion":
-    load fd
+    subtest load(fd)
 
   test "save all":
-    var w = writer()
-    w.save fr
-    w.save fc
-    w.save fv
-    w.save fm
-    w.save fh
-    w.save fd
-    w.finish
+    var w: typeof(writer())
+    subtest:
+      w = writer()
+    subtest w.save(fr)
+    subtest w.save(fc)
+    subtest w.save(fv)
+    subtest w.save(fm)
+    subtest w.save(fh)
+    subtest w.save(fd)
+    subtest w.finish
 
   test "load all":
-    var r = reader()
-    r.load fr
-    r.load fc
-    r.load fv
-    r.load fm
-    r.load fh
-    r.load fd
-    r.finish
+    var r: typeof(reader())
+    subtest:
+      r = reader()
+    subtest r.load(fr)
+    subtest r.load(fc)
+    subtest r.load(fv)
+    subtest r.load(fm)
+    subtest r.load(fh)
+    subtest r.load(fd)
+    subtest r.finish
 
   when defined(QioReader) or not defined(QioliteReader):
     # QIO may leave peers inside a broadcast after a header error.

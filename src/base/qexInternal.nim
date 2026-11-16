@@ -3,10 +3,13 @@ export globals
 import threading
 export threading
 import comms/comms
+import comms/commsStats
 export comms
 import profile
 export profile
 import version
+when defined(memTrace):
+  import alignedMem
 
 import algorithm, strutils, times, std/compilesettings
 
@@ -81,6 +84,8 @@ proc qexSetFinalizeComms*(val: bool) =
   qexFinalizeComms = val
 
 proc qexFinalize*() =
+  commReport("final")
+  when defined(memTrace): rawPeakReport()
   flushFile stdout
   flushFile stderr
   GC_fullCollect()

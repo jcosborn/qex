@@ -1,6 +1,6 @@
 import qgather
 import layoutTypes, shiftX
-import comms/qmp
+import comms/[qmp, commsStats]
 import strutils #, strformat
 
 const
@@ -102,6 +102,8 @@ proc startSendBufQ*(sb: ptr ShiftBufQ) =
   when PAIR:
     if not isEmpty sb.pairmsg:
       #echo "QMP_start"
+      commAdd(msgs, 1)
+      commAdd(bytes, sb.sbufSize)
       discard QMP_start(sb.pairmsg)
   else:
     if not isEmpty sb.smsg:
@@ -120,7 +122,7 @@ proc waitSendBufQ*(sb: ptr ShiftBufQ) =
 proc waitRecvBufQ*(sb: ptr ShiftBufQ) =
   when PAIR:
     if not isEmpty sb.pairmsg:
-      discard QMP_wait(sb.pairmsg)
+      commTime(wait): discard QMP_wait(sb.pairmsg)
   else:
     if not isEmpty sb.rmsg: QMP_wait(sb.rmsg)
   #printf("recv: %g\n",*(float *)(sb->rbuf));
@@ -139,18 +141,22 @@ proc freeShiftBufsQ*(sb: openArray[ptr ShiftBufQ]) =
     dealloc(sb[i].nthreads)
     inc(i)
   when PAIR:
+    # A ShiftBuf can be released after QMP_finalize_msg_passing: under refc a stale stack
+    # word can keep it through every earlier collection, and ARC/ORC destroy globals
+    # when the program ends. QMP must not be called then; only the QEX buffers are freed.
+    let qmp = QMP_is_initialized() != 0
     i=0
     while i < n:
-      if sb[i].first!=0 and not isEmpty sb[i].pairmsg:
+      if qmp and sb[i].first!=0 and not isEmpty sb[i].pairmsg:
         QMP_free_msghandle(sb[i].pairmsg)
       sb[i].pairmsg.clear
       if not isEmpty sb[i].smsg:
         sb[i].smsg.clear
-        QMP_free_msgmem(sb[i].sqmpmem)
+        if qmp: QMP_free_msgmem(sb[i].sqmpmem)
         sb[i].sqmpmem = nil
       if not isEmpty sb[i].rmsg:
         sb[i].rmsg.clear
-        QMP_free_msgmem(sb[i].rqmpmem)
+        if qmp: QMP_free_msgmem(sb[i].rqmpmem)
         sb[i].rqmpmem = nil
       inc(i)
   else:

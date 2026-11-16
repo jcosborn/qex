@@ -69,9 +69,9 @@ proc checkCount(order: static int) =
 qexInit()
 suite "Affine matrix product jets":
   test "noncommuting products and mixed derivatives":
-    forStatic order, 0, 1: checkProduct(1, order)
-    forStatic order, 0, 4: checkProduct(3, order)
-    forStatic order, 0, 6: checkProduct(5, order)
+    forStatic order, 0, 1: subtest checkProduct(1, order)
+    forStatic order, 0, 4: subtest checkProduct(3, order)
+    forStatic order, 0, 6: subtest checkProduct(5, order)
   test "three-factor jets keep their multiplication counts":
-    forStatic order, 0, 4: checkCount(order)
+    forStatic order, 0, 4: subtest checkCount(order)
 qexFinalize()

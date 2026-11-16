@@ -175,7 +175,7 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
     off[mu] = 0
   var nb = newSeq[int32](2*nd*n)
   for p in 0..1:  # parity of the sites sent
-    let hm = hl.makeHaloMap(c, offs, p)
+    let hm = hl.makeHaloMap(c, offs, p, sites = false)
     result.ex[p] = newGpuHaloEx[T](hm.gather, 6, n, V, c)
     if batch: result.exB[p] = newGpuHaloEx[T](hm.gather, 6*nBatch, n, V, c)
     let src = hl.haloSource(hm.gather)

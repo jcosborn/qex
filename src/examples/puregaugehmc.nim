@@ -133,7 +133,7 @@ proc gaction(g:auto, p2:float):auto =
 
 proc mdt(t: float) =
   tic()
-  threads: axexpmuly(g, t, p, g)
+  threads: axexpahmuly(g, t, p, g)
   toc("mdt")
 proc mdv(t: float) =
   tic()
@@ -148,7 +148,7 @@ proc fgv(t: float) =
   tic()
   gc.force(gg, f, work=work)
   qexGC "fgv forceA"
-  threads: axexpmuly(g, -t, f, g)
+  threads: axexpahmuly(g, -t, f, g)
   toc("fgv")
 # Combined update for sharing computations
 proc mdvAllfga(ts,gs:openarray[float]) =

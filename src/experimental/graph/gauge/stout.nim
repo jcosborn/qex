@@ -75,12 +75,17 @@ proc stoutLogDetJGraph*(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): Gscala
     const h = 1.0 / float(1 shl expProjectTAHScale)
     let y = h*x
     var p = diffExpC[expProjectTAHOrder-1] + diffExpC[expProjectTAHOrder]*y
+    # Under ARC/ORC, `p = f(p)` destroys p before f reads it when p's type has a
+    # static generic parameter (Grmat[n], nim-lang/Nim#26680); each step takes a
+    # new name first.
     for k in countdown(expProjectTAHOrder-2, 0):
-      p = diffExpC[k] + y*p
+      let q = diffExpC[k] + y*p
+      p = q
     var c = 0.5*h
     for j in 0..<expProjectTAHScale:
       let pp = p*p
-      p = p + c*(x*pp)
+      let q = p + c*(x*pp)
+      p = q
       c *= 2.0
     sumLogDet(1.0 + p*d)
   else:
@@ -236,7 +241,7 @@ proc stoutUpdateImpl(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): GstoutUpd
     let ds = Ggauge(args.storedSlot(1))
     let alpha = Gscalar(args.storedSlot(2))
     let z = GstoutUpdate(v)
-    stoutStepKernel(z.gval, W.gval, ds.gval, z.expa, alpha = alpha.sval, parity = parity, dir = dir)
+    stoutStepKernel(z.gval, W.gval, ds.gval[dir], z.expa, alpha = alpha.sval, parity = parity, dir = dir)
     toc("stoutUpdate kernel end")
 
   proc gradPair(W, ds: Ggauge, alpha: Gscalar, upstream: Ggauge, update: GstoutUpdate): Gmulti =
@@ -576,7 +581,7 @@ proc stoutStepForwardImpl(W, ds: Ggauge, alpha: Gscalar, parity, dir: int): Gsto
       ds = Ggauge(args.storedSlot(1))
       alpha = Gscalar(args.storedSlot(2))
       z = GstoutStepForward(v)
-    stoutStepKernel(z.gval, W.gval, ds.gval, z.expa, z.m, alpha.sval, parity, dir)
+    stoutStepKernel(z.gval, W.gval, ds.gval[dir], z.expa, z.m, alpha.sval, parity, dir)
     toc("stoutStepForward kernel end")
 
   proc backward(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
@@ -711,9 +716,9 @@ proc stoutUpdateLogDetJImpl(W, ds: Ggauge, alpha: Gscalar, c: Gactcoeff, parity,
         let coeff = Gactcoeff(args.storedSlot(3))
         if hasUpdate and nterms == 1:
           let base = Ggauge(args.storedSlot(termIndex))
-          coeff.cval.gaugeDerivDeriv2SubsetAddBase(W.gval, pull.hdir, base.gval, pull.gval, parity, dir)
+          coeff.cval.gaugeDerivDeriv2SubsetAddBase(W.gval, pull.hdir, base.gval, pull.gval, newSubsetWork(W.gval[0], parity, dir))
         else:
-          coeff.cval.gaugeDerivDeriv2SubsetAdd(W.gval, pull.hdir, pull.gval, parity, dir)
+          coeff.cval.gaugeDerivDeriv2Subset(W.gval, pull.hdir, pull.gval, newSubsetWork(W.gval[0], parity, dir), accumulate=true)
       else:
         toc("stoutStepGrad kernel end")
 

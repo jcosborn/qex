@@ -10,6 +10,7 @@ import macros
 #import stdUtils
 import field
 export field
+import comms/commsStats
 #import future
 #import strUtils
 #import metaUtils
@@ -76,6 +77,7 @@ proc free*(sb: ShiftB) =
 template startSB*(sb0: ShiftB; e: untyped) =
   mixin assign, `[]`, numberType
   if threadNum == 0:
+    commAdd(shifts, 1)
     if sb0.si.nRecvRanks > 0:
       #echoRank "startRecvBuf"
       startRecvBuf(sb0.sb)
@@ -182,6 +184,17 @@ proc boundaryOffsetSB*(s:ShiftB) =
   s.sb.sq.offr[threadNum] = cint(i0)
   s.sb.sq.lenr[threadNum] = cint(i1)
   s.sb.sq.nthreads[threadNum] = numThreads.cint
+
+template waitRecvSB*(s: ShiftB) =
+  ## Thread 0 completes the receive of the exchange started through s.
+  if threadNum == 0 and s.si.nRecvRanks > 0: waitRecvBuf(s.sb)
+
+template doneSB*(s: ShiftB) =
+  ## Thread 0 completes an exchange through s whose boundary getSB read; the
+  ## received values stay readable until the next exchange through s.
+  if threadNum == 0:
+    if s.si.nRecvRanks > 0: doneRecvBuf(s.sb)
+    if s.si.nSendRanks > 0: waitSendBuf(s.sb)
 
 template boundaryWaitSB*(s:ShiftB, e:untyped) =
   if s.si.nRecvDests > 0:
@@ -300,7 +313,6 @@ template shiftExpr*(sb: ShiftB, er, es) {.dirty.} =
   boundarySB(sb, er)
 
 
-
 type Shift*[V: static[int]; T] = object
   src*: Field[V,T]
   dest*: Field[V,T]
@@ -336,6 +348,7 @@ proc start*[V:static[int],T](s:var Shift[V,T]; src:Field[V,T]) =
   template si:untyped = s.si
   template sb:untyped = s.sb
   if threadNum == 0:
+    commAdd(shifts, 1)
     s.src = src
     if si.nRecvRanks > 0:
       #echo myrank, ": startRecvBuf"
@@ -541,9 +554,10 @@ proc newShifters*[F](f: F, len: int, sub="all"): auto =
 
 #template transporterApply*(x: Transporter, y: auto): auto =
 #proc transporterApply*(x: Transporter, y: auto): auto {.alwaysInline.} =
-proc transporterApply*(x: Transporter, y: auto): auto =
+proc transporterApply*[U,F,T](x: Transporter[U,F,T], y: auto): lent F =
+  ## Returns x.field borrowed, so a shift inside a threads block changes no reference count.
   mixin mul, load1, adj, `[]`
-  var r = x.field
+  template r: untyped = x.field
   when compiles(x.link):
     if x.len >= 0:
       startSB(x.sb, y[ix])
@@ -575,19 +589,21 @@ proc transporterApply*(x: Transporter, y: auto): auto =
       toc("localSB")
       boundarySB(x.sb, assign(r[ir], it))
       toc("boundarySB")
-  r
-proc `^*`*(x: Transporter, y: auto): auto =
+  x.field
+proc `^*`*[U,F,T](x: Transporter[U,F,T], y: auto): lent F =
   tic("^*")
   threadBarrier()
   toc "barrier"
-  result = transporterApply(x, y)
+  discard transporterApply(x, y)
   toc "apply"
   threadBarrier()
   toc "barrier"
-proc `^*!`*(x: Transporter, y: auto): auto =
+  x.field
+proc `^*!`*[U,F,T](x: Transporter[U,F,T], y: auto): lent F =
   tic("^*!")
-  result = transporterApply(x, y)
+  discard transporterApply(x, y)
   toc("apply")
+  x.field
 #template `()`*(x: Transporter, y: untyped): untyped = x ^* y
 
 when isMainModule:

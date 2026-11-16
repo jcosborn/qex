@@ -189,119 +189,126 @@ proc contractProjTAH*(x: Ggauge, y: Ggauge, parity = -1, dir = 0): Ggauge =
     Gfunc(bufferMode: bmZero, forward: fwd, backward: bwd, name: "contractProjTAH packed"),
     "contractProjTAH packed")
 
-proc axexpPackedInputb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-  let args = Gmulti(z.inputs[0])
-  # Args: [a, x]
-  let a = Gscalar(args[0])
-  let x = Ggauge(args[1])
-  let ax = a * x
-  let deriv = expDeriv(
-    requireUpstream(zb, "axexp packed backward", Ggauge),
-    ax)
-  multiValues(
-    "axexp packed input gradients",
-    deriv.redot x,
-    a * deriv)
+template axexpNodes(axexp, axexpmuly, kexp, kexpmuly: untyped; E: static string) =
+  ## Graph nodes E(a x) and E(a x) y on the field kernels kexp and kexpmuly.
+  ## Both families pull back through the exp tower's expDeriv.
+  proc packedb(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue {.gensym.} =
+    let args = Gmulti(z.inputs[0])
+    # Args: [a, x]
+    let a = Gscalar(args[0])
+    let x = Ggauge(args[1])
+    let ax = a * x
+    let deriv = expDeriv(
+      requireUpstream(zb, E & " packed backward", Ggauge),
+      ax)
+    multiValues(
+      E & " packed input gradients",
+      deriv.redot x,
+      a * deriv)
 
-proc axexpPackedInputf(v: Gvalue) =
-  let args = Gmulti(v.inputs[0])
-  # Args: [a, x]
-  let a = Gscalar(args.storedSlot(0))
-  let x = Ggauge(args.storedSlot(1))
-  let z = Ggauge(v)
-  threads:
-    axexp(z.gval, a.sval, x.gval)
-
-let axexpPackedInputg = Gfunc(bufferMode: bmFull,
-  forward: axexpPackedInputf,
-  backward: axexpPackedInputb,
-  name: "axexp packed")
-
-proc axexp*(a: Gscalar, x: Ggauge): Ggauge =
-  let args = multiValues("axexp args", a, x)
-  graphNode(x.gaugeNodeLike, @[Gvalue(args)], axexpPackedInputg, "axexp packed")
-
-proc axexpmulyPackedInputPackb(zb: Gvalue,
-                               z: Gvalue,
-                               i: int,
-                               input: Gvalue): Gvalue =
-  let args = Gmulti(z.inputs[0])
-  # Args: [a, x, y]
-  let a = Gscalar(args[0])
-  let x = Ggauge(args[1])
-  let y = Ggauge(args[2])
-  let zb = requireUpstream(zb, "axexpmulyPack packed backward", Gmulti)
-  # Upstream/result slots: [exp(a*x), exp(a*x)*y]
-  let upstreamExpax = Ggauge(zb[0])
-  let upstreamValue = Ggauge(zb[1])
-  let ax = a * x
-  let deriv = expDeriv(upstreamExpax + upstreamValue.muladj y, ax)
-  let resultPack = Gmulti(z)
-  let resultExpax = Ggauge(resultPack[0])
-  multiValues(
-    "axexpmulyPack packed input gradients",
-    deriv.redot x,
-    a * deriv,
-    resultExpax.adjmul upstreamValue)
-
-proc axexpmulyPackedInputPackf(v: Gvalue) =
-  let args = Gmulti(v.inputs[0])
-  # Args: [a, x, y]
-  let a = Gscalar(args.storedSlot(0))
-  let x = Ggauge(args.storedSlot(1))
-  let y = Ggauge(args.storedSlot(2))
-  let pack = Gmulti(v)
-  # Result slots: [exp(a*x), exp(a*x)*y]
-  let expax = Ggauge(pack.storedSlot(0))
-  let value = Ggauge(pack.storedSlot(1))
-  threads:
-    axexpmuly(value.gval, a.sval, x.gval, y.gval, expax.gval)
-
-let axexpmulyPackedInputPackg = Gfunc(bufferMode: bmFull,
-  forward: axexpmulyPackedInputPackf,
-  backward: axexpmulyPackedInputPackb,
-  name: "axexpmulyPack packed")
-
-proc axexpmuly*(a: Gscalar, x: Ggauge, y: Ggauge, parity = -1, dir = 0): Ggauge =
-  ## exp(a*x)*y; cache exp(a*x) in the same carrier.
-  ## For parity >= 0, compute exp and its pullback only on (parity,dir).
-  ## x is anti-Hermitian, and traceless for SU(N).
-  x.requireSameGaugeShape(y, "axexpmulyPack packed")
-  let args = multiValues("axexpmuly args", a, x, y)
-  if parity < 0:
-    let pack = newMultiOutputNode(
-      @[Gvalue(x), Gvalue(x)], @[Gvalue(args)],
-      axexpmulyPackedInputPackg, "axexpmulyPack packed")
-    return Ggauge(pack[1])
-  let sub = x.gval.paritySubset(parity)
-  proc fwd(v: Gvalue) =
+  proc packedf(v: Gvalue) {.gensym.} =
     let args = Gmulti(v.inputs[0])
+    # Args: [a, x]
+    let a = Gscalar(args.storedSlot(0))
+    let x = Ggauge(args.storedSlot(1))
+    let z = Ggauge(v)
+    threads:
+      kexp(z.gval, a.sval, x.gval)
+
+  let packedg = Gfunc(bufferMode: bmFull,
+    forward: packedf,
+    backward: packedb,
+    name: E & " packed")
+
+  proc axexp*(a: Gscalar, x: Ggauge): Ggauge =
+    let args = multiValues(E & " args", a, x)
+    graphNode(x.gaugeNodeLike, @[Gvalue(args)], packedg, E & " packed")
+
+  proc packb(zb: Gvalue,
+             z: Gvalue,
+             i: int,
+             input: Gvalue): Gvalue {.gensym.} =
+    let args = Gmulti(z.inputs[0])
+    # Args: [a, x, y]
+    let a = Gscalar(args[0])
+    let x = Ggauge(args[1])
+    let y = Ggauge(args[2])
+    let zb = requireUpstream(zb, E & "mulyPack packed backward", Gmulti)
+    # Upstream/result slots: [E(a*x), E(a*x)*y]
+    let upstreamExpax = Ggauge(zb[0])
+    let upstreamValue = Ggauge(zb[1])
+    let ax = a * x
+    let deriv = expDeriv(upstreamExpax + upstreamValue.muladj y, ax)
+    let resultPack = Gmulti(z)
+    let resultExpax = Ggauge(resultPack[0])
+    multiValues(
+      E & "mulyPack packed input gradients",
+      deriv.redot x,
+      a * deriv,
+      resultExpax.adjmul upstreamValue)
+
+  proc packf(v: Gvalue) {.gensym.} =
+    let args = Gmulti(v.inputs[0])
+    # Args: [a, x, y]
     let a = Gscalar(args.storedSlot(0))
     let x = Ggauge(args.storedSlot(1))
     let y = Ggauge(args.storedSlot(2))
     let pack = Gmulti(v)
+    # Result slots: [E(a*x), E(a*x)*y]
     let expax = Ggauge(pack.storedSlot(0))
     let value = Ggauge(pack.storedSlot(1))
     threads:
-      axexpmuly(value.gval[dir], a.sval, x.gval[dir], y.gval[dir], sub, expax.gval[dir])
-  proc bwd(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
-    let args = Gmulti(z.inputs[0])
-    let a = Gscalar(args[0])
-    let x = Ggauge(args[1])
-    let y = Ggauge(args[2])
-    let zbm = requireUpstream(zb, "axexpmulyPack packed backward", Gmulti)
-    let upstreamExpax = Ggauge(zbm[0])
-    let upstreamValue = Ggauge(zbm[1])
-    let ax = a * x
-    let deriv = expDeriv(upstreamExpax + upstreamValue.muladj y, ax, parity, dir)
-    let resultExpax = Ggauge(Gmulti(z)[0])
-    multiValues(
-      "axexpmulyPack packed input gradients",
-      deriv.redot x,
-      a * deriv,
-      resultExpax.adjmul upstreamValue)
-  let pack = newMultiOutputNode(
-    @[Gvalue(x), Gvalue(x)], @[Gvalue(args)],
-    Gfunc(bufferMode: bmZero, forward: fwd, backward: bwd, name: "axexpmulyPack packed"),
-    "axexpmulyPack packed")
-  Ggauge(pack[1])
+      kexpmuly(value.gval, a.sval, x.gval, y.gval, expax.gval)
+
+  let packg = Gfunc(bufferMode: bmFull,
+    forward: packf,
+    backward: packb,
+    name: E & "mulyPack packed")
+
+  proc axexpmuly*(a: Gscalar, x: Ggauge, y: Ggauge, parity = -1, dir = 0): Ggauge =
+    ## E(a*x)*y; cache E(a*x) in the same carrier.
+    ## For parity >= 0, compute E and its pullback only on (parity,dir).
+    x.requireSameGaugeShape(y, E & "mulyPack packed")
+    let args = multiValues(E & "muly args", a, x, y)
+    if parity < 0:
+      let pack = newMultiOutputNode(
+        @[Gvalue(x), Gvalue(x)], @[Gvalue(args)],
+        packg, E & "mulyPack packed")
+      return Ggauge(pack[1])
+    let sub = x.gval.paritySubset(parity)
+    proc fwd(v: Gvalue) =
+      let args = Gmulti(v.inputs[0])
+      let a = Gscalar(args.storedSlot(0))
+      let x = Ggauge(args.storedSlot(1))
+      let y = Ggauge(args.storedSlot(2))
+      let pack = Gmulti(v)
+      let expax = Ggauge(pack.storedSlot(0))
+      let value = Ggauge(pack.storedSlot(1))
+      threads:
+        kexpmuly(value.gval[dir], a.sval, x.gval[dir], y.gval[dir], sub, expax.gval[dir])
+    proc bwd(zb: Gvalue, z: Gvalue, i: int, input: Gvalue): Gvalue =
+      let args = Gmulti(z.inputs[0])
+      let a = Gscalar(args[0])
+      let x = Ggauge(args[1])
+      let y = Ggauge(args[2])
+      let zbm = requireUpstream(zb, E & "mulyPack packed backward", Gmulti)
+      let upstreamExpax = Ggauge(zbm[0])
+      let upstreamValue = Ggauge(zbm[1])
+      let ax = a * x
+      let deriv = expDeriv(upstreamExpax + upstreamValue.muladj y, ax, parity, dir)
+      let resultExpax = Ggauge(Gmulti(z)[0])
+      multiValues(
+        E & "mulyPack packed input gradients",
+        deriv.redot x,
+        a * deriv,
+        resultExpax.adjmul upstreamValue)
+    let pack = newMultiOutputNode(
+      @[Gvalue(x), Gvalue(x)], @[Gvalue(args)],
+      Gfunc(bufferMode: bmZero, forward: fwd, backward: bwd, name: E & "mulyPack packed"),
+      E & "mulyPack packed")
+    Ggauge(pack[1])
+
+# axexp/axexpmuly: any x, with the general field kernels (degree 4, scale 20).
+axexpNodes(axexp, axexpmuly, axexp, axexpmuly, "axexp")
+# axexpah/axexpahmuly: x anti-Hermitian, and traceless for SU(N), with expAH.
+axexpNodes(axexpah, axexpahmuly, axexpah, axexpahmuly, "axexpah")

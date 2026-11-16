@@ -58,7 +58,7 @@ echo "numdiff smear dS/dt: ",ndt," +/- ",err
 proc stout(g: Ggauge, t: Gscalar, n: int): Ggauge =
   var g = g
   for i in 1..n:
-    g = axexpmuly(t, gaugeForce(actWilson(scalar.toGvalue(g.runtime, -3.0)), g), g)
+    g = axexpahmuly(t, gaugeForce(actWilson(scalar.toGvalue(g.runtime, -3.0)), g), g)
   g
 
 let

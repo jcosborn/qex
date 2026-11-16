@@ -59,7 +59,7 @@ proc newGpuGauge*[V: static int](lo: Layout[V]): GpuGauge[V] =
         o[mu] = 1
         o[nu] = -1
         offs[nbD(mu,nu)] = o
-  let hm = hl.makeHaloMap(c, offs)
+  let hm = hl.makeHaloMap(c, offs, sites = false)
   for mu in 0..<nd:
     result.ex[mu] = newGpuHaloEx[float](hm.gather, 18, n, V, c)
   let src = hl.haloSource(hm.gather)

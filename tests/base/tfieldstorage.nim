@@ -44,6 +44,49 @@ suite "Field storage":
     check f.s.data == fa[1].s.data
     check diffNorm2(f, x) == 0.0
 
+  test "array ownership survives aliases and preserves sparse shapes on release":
+    let fa = newFieldArray2(lo, type(x), [3,3], mu != nu)
+    let alias = fa
+    let view = fa[0,1]
+    let copied = fa.newOneOf
+    check fa.mem != copied.mem
+    for mu in 0..<3:
+      for nu in 0..<3:
+        if mu == nu:
+          check fa[mu,nu] == nil and copied[mu,nu] == nil
+        else:
+          threads:
+            fa[mu,nu] := x
+            copied[mu,nu] := u
+    let raw = getRawMemUsed()
+    let bytes = fa.mem.size
+    fa.release
+    check getRawMemUsed() == raw-bytes
+    check alias.mem.size == 0 and alias.mem.p == nil
+    check view.s.data == nil and view.s.len == lo.nSitesOuter
+    alias.release
+    check getRawMemUsed() == raw-bytes
+    let fresh = fa.newOneOf
+    for mu in 0..<3:
+      for nu in 0..<3:
+        if mu != nu:
+          check diffNorm2(copied[mu,nu], u) == 0
+          threads: fresh[mu,nu] := x
+          check diffNorm2(fresh[mu,nu], x) == 0
+    copied.release
+    fresh.release
+
+  test "empty field arrays release their backing allocation":
+    let fa = newFieldArray2(lo, type(x), [2,2], false)
+    let copied = fa.newOneOf
+    check copied.shape == fa.shape and copied.mem == nil
+    copied.release
+    let raw = getRawMemUsed()
+    let bytes = fa.mem.size
+    fa.release
+    fa.release
+    check getRawMemUsed() == raw-bytes
+
   test "shifters reuse supplied outputs after input and destination changes":
     for mu in 0..<lo.nDim:
       for sgn in [-1,1]:

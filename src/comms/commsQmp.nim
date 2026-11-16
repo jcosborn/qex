@@ -1,4 +1,5 @@
 import qmp
+import commsStats
 
 var inited = false
 
@@ -122,16 +123,16 @@ method broadcast*(c: CommQMP, p: pointer, bytes: int) =
 #  QMP_comm_sum_double(c.comm, addr x)
 
 method allReduce*(c: CommQmp, x: ptr float32, n: int) =
-  QMP_comm_sum_float_array(c.comm, x, n.cint)
+  commReduce: QMP_comm_sum_float_array(c.comm, x, n.cint)
 
 method allReduce*(c: CommQmp, x: ptr float64, n: int) =
-  QMP_comm_sum_double_array(c.comm, x, n.cint)
+  commReduce: QMP_comm_sum_double_array(c.comm, x, n.cint)
 
 method allReduceMax*(c: CommQmp, x: var float64) =
-  QMP_comm_max_double(c.comm, addr x)
+  commReduce: QMP_comm_max_double(c.comm, addr x)
 
 method allReduceMin*(c: CommQmp, x: var float64) =
-  QMP_comm_min_double(c.comm, addr x)
+  commReduce: QMP_comm_min_double(c.comm, addr x)
 
 method allReduceXor*(c: CommQmp, x: var int) =
   var t = cast[ptr culong](addr x)

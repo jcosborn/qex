@@ -4,6 +4,7 @@ setVLENmax(4)
 
 import qex
 import gauge, physics/qcdTypes
+from maths/matexp import expAH
 import algorithms/integrator, maths/special, utils/resample
 import os, strutils
 
@@ -78,7 +79,7 @@ proc hamiltonian(gc:GaugeActionCoeffs, g:auto, p:auto):auto =
   tic()
   let
     vol = float(g[0].l.physVol)
-    ga = gc.plaq*vol + g.gaugeAction2 gc
+    ga = gc.plaq*vol + gc.gaugeAction2(g)
     p2 = p.pnorm2
     t = 0.5*p2 - vol
     h = ga + t
@@ -156,7 +157,7 @@ var
   lnJ = 0.0
 
 proc mdt(t:float) =
-  threads: axexpmuly(g, t, p, g)
+  threads: axexpahmuly(g, t, p, g)
   if mdalgo == nosehoover:
     xi += t * gamma * (p.pnorm2 - dof)
 proc mdv(t:float) =
@@ -185,7 +186,7 @@ proc fgv(t:float) =
   threads:
     for i in 0..<g.len:
       for e in g[i]:
-        let etfg = exp((-t)*f[i][e])*g[i][e]
+        let etfg = expAH((-t)*f[i][e])*g[i][e]
         g[i][e] := etfg
 proc fgsave =
   threads:

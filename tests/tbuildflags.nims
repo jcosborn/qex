@@ -7,7 +7,9 @@ include "../build/configBase.nims"
 include "../build/buildTasks.nims"
 
 const
-  gccFlag = "-fno-allow-store-data-races"
+  # Every gcc gets prefetchFlag; gcc 15 and later get all of gccFlag.
+  prefetchFlag = "-fno-prefetch-loop-arrays"
+  gccFlag = prefetchFlag & " -fno-allow-store-data-races"
   clangFlag = "-fno-slp-vectorize"
 let (tmp, code) = gorgeEx("mktemp -d")
 doAssert code == 0, tmp
@@ -21,13 +23,18 @@ proc script(body: string): string =
   writeFile(result, "#!/bin/sh\n" & body & "\n")
   exec "chmod +x " & result.quoteShell
 
+proc mpich(def: string): string =
+  # MPICH wrappers run the compiler of -cc= (mpicc) or -cxx= (mpicxx), else their default.
+  script("c=" & def.quoteShell & "; for a; do shift; case $a in -cc=*|-cxx=*) c=${a#*=};; " &
+         "*) set -- \"$@\" \"$a\";; esac; done; exec \"$c\" \"$@\"")
+
 proc check(expected = "", args: seq[string] = @[]) =
   setUserNimFlags(args)
   nimFlags.setLen(0)
   setNimFlags()
-  for flag in [gccFlag, clangFlag]:
-    doAssert ("--passC:" & flag in nimFlags) == (flag == expected), nimCmdArgs
-  if expected != "": doAssert nimFlags[^1] == "--passC:" & expected, nimCmdArgs
+  for flag in [prefetchFlag, gccFlag, clangFlag]:
+    doAssert ("--passC:" & flag.quoteShell in nimFlags) == (flag == expected), nimCmdArgs
+  if expected != "": doAssert nimFlags[^1] == "--passC:" & expected.quoteShell, nimCmdArgs
 
 try:
   # Use the real preprocessor with controlled compiler identity macros.
@@ -36,7 +43,7 @@ try:
   for i, v in [14, 15, 16]:
     gcc[i] = script(cmd & "-D__GNUC__=" & $v & " \"$@\"")
     cc = gcc[i]
-    check(if v >= 15: gccFlag else: "")
+    check(if v >= 15: gccFlag else: prefetchFlag)
     doAssert (compiler.name, compiler.major) == ("gcc", v)
   for mac in ["__INTEL_COMPILER", "__INTEL_LLVM_COMPILER", "__NVCOMPILER", "__PGI"]:
     cc = script(cmd & "-D__GNUC__=99 -D__clang__=1 -D__clang_major__=19 -D" & mac & "=1 \"$@\"")
@@ -47,15 +54,19 @@ try:
     cc = clang[i]
     check(if v == 19: clangFlag else: "")
     doAssert (compiler.name, compiler.major) == ("clang", v)
+  # Offload drivers read the input in a device pass before the host pass.
+  cc = script(findExe("cc").quoteShell & " -undef \"$@\" > /dev/null; " & cmd & "-D__GNUC__=15 \"$@\"")
+  check(gccFlag)
 
   let mpi = script("exec \"$OMPI_CC\" \"$@\"")
   cflagsSpeed = "-Ofast -march=native"
   cppflagsSpeed = "-O3 -march=native"
   cflagsDebug = "-Og"
-  for (affected, unaffected, flag) in [(gcc[1], gcc[0], gccFlag), (clang[1], clang[2], clangFlag)]:
+  for (affected, unaffected, flag, other) in [(gcc[1], gcc[0], gccFlag, prefetchFlag),
+                                             (clang[1], clang[2], clangFlag, "")]:
     cc = unaffected
     cpp = affected
-    check()
+    check(other)
     ccDef = "cpp"
     check(flag)
     ccDef = "cc"
@@ -65,7 +76,7 @@ try:
     for typ in ["gcc", "clang"]:
       check(flag, @["--cc:" & typ, "--" & typ & ".exe:" & affected.quoteShell])
     cc = affected
-    check("", @["--gcc.exe:" & unaffected.quoteShell])
+    check(other, @["--gcc.exe:" & unaffected.quoteShell])
     nimargs.setLen(0)
 
     let extra = " " & flag
@@ -79,14 +90,29 @@ try:
     check(flag)
     doAssert "--gcc.cpp.options.speed:" & ("-O3 -march=native" & extra).quoteShell in nimFlags
     cpp = unaffected
-    check()
+    check(other)
     ccDef = "cc"
 
     cc = mpi
     envs = @["OMPI_CC=" & affected]
     check(flag)
-    check("", @["--putenv:" & ("OMPI_CC=" & unaffected).quoteShell])
+    check(other, @["--putenv:" & ("OMPI_CC=" & unaffected).quoteShell])
     envs.setLen(0)
+
+    cc = mpich(unaffected)
+    cpp = cc
+    check(other)
+    cflagsAlways = "-cc=" & affected.quoteShell & " -g"
+    check(flag)
+    check(other, @["--gcc.options.always:" & ("-cc=" & unaffected.quoteShell).quoteShell])
+    ccDef = "cpp"
+    check(other)
+    # GPU builds compile C++ as CUDA or HIP; the probe still reads host C++.
+    cppflagsAlways = "-cxx=" & affected.quoteShell & " -x cuda"
+    check(flag)
+    ccDef = "cc"
+    cflagsAlways = ""
+    cppflagsAlways = ""
 
     cc = affected
     fo.debug = true
@@ -100,25 +126,37 @@ try:
   cflagsSpeed = "-O2 -march=native"
   cflagsDebug = "-Og"
   simd = "auto"
-  check()
+  check(prefetchFlag)
   doAssert compiler.simd == "SSE,AVX,AVX512", nimCmdArgs
   for d in ["--d:SSE", "--d:AVX", "--d:AVX512"]:
     doAssert d in nimFlags, nimCmdArgs
   # User flags follow the auto defines, so -u:AVX512 still removes a level.
-  check("", @["-u:AVX512"])
+  check(prefetchFlag, @["-u:AVX512"])
   doAssert nimFlags.find("-u:AVX512") > nimFlags.find("--d:AVX512"), nimCmdArgs
   fo.debug = true
-  check()
+  check(prefetchFlag)
   doAssert "--d:AVX" notin nimFlags, nimCmdArgs
   fo.debug = false
+  # The always options choose the compiler and can set the target.
+  cc = mpich(gcc[1])
+  check(gccFlag)
+  doAssert compiler.simd == "", nimCmdArgs
+  cflagsAlways = "-cc=" & native.quoteShell
+  check(prefetchFlag)
+  doAssert compiler.simd == "SSE,AVX,AVX512", nimCmdArgs
+  cflagsSpeed = "-O2"
+  cflagsAlways &= " -march=native"
+  check(prefetchFlag)
+  doAssert compiler.simd == "SSE,AVX,AVX512", nimCmdArgs
+  cflagsAlways = ""
   cc = script(cmd & "-D__GNUC__=14 -D__AVX__=1 \"$@\"")
-  check()
+  check(prefetchFlag)
   doAssert "--d:AVX" in nimFlags and "--d:AVX512" notin nimFlags, nimCmdArgs
   cc = script(cmd & "-D__GNUC__=14 \"$@\"")
-  check()
+  check(prefetchFlag)
   doAssert "--d:SSE" notin nimFlags, nimCmdArgs
   simd = "SSE"
-  check()
+  check(prefetchFlag)
   doAssert "--d:SSE" in nimFlags and "--d:AVX" notin nimFlags, nimCmdArgs
   simd = ""
 
