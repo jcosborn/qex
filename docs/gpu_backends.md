@@ -360,6 +360,9 @@ wrapper settings use OpenMPI; MPICH uses `MPICH_CC` and `MPICH_CXX`.
 `qexFor`: together they keep batched-hop arithmetic near its loads and
 limit register spills. To link where the NVIDIA driver is unavailable,
 add `-L$CUDA_HOME/lib64/stubs`; the driver is required at runtime.
+CUDA 13 keeps the libcu++ headers under `include/cccl`, which nvcc adds
+by itself. `GpuSum` (`behalo1`, `halogpu`) includes `cooperative_groups.h`,
+which needs them: add `-isystem $CUDA_HOME/include/cccl` to `cppflagsalways`.
 
 ### CUDA with nvcc
 
