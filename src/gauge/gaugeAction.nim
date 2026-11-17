@@ -1279,11 +1279,13 @@ proc actionA*(c: GaugeActionCoeffs, g: auto): auto =
   result = c.plaq*(a0-pl[0]) + c.adjplaq*(a0-pl[1])
   toc("plaq end", flops=lo.nSites.float*float(2*8*nc*nc*nc-1))
 
-proc gaugeADeriv*(c: GaugeActionCoeffs, g,f: auto, accumulate=false) =
+proc gaugeADeriv*(c: GaugeActionCoeffs, g,f: auto, accumulate=false; work: typeof(newStapleWork(g[0])) = nil) =
   requireAdjoint(c, "gaugeADeriv")
   ## Specialized gauge force for plaq + adjplaq
   ## if accumulate, the derivatives will add to f.
   ## if not, f is set to 0 first.
+  ## work keeps the 2 nd (nd-1) staple fields for its next call; without it
+  ## every call allocates and frees them.
   mixin load1, adj
   tic("gaugeADeriv")
   let lo = g[0].l
@@ -1291,9 +1293,16 @@ proc gaugeADeriv*(c: GaugeActionCoeffs, g,f: auto, accumulate=false) =
   let nc = g[0][0].ncols
   let cp = c.plaq / float(nc)
   let ca = 2.0 * c.adjplaq / float(nc*nc)
+  if work != nil and work.lo != lo:
+    raise newException(ValueError, "staple workspace requires its original layout")
   var cs = startCornerShifts(g)
   toc("gaugeADeriv startCornerShifts")
-  var (stf,stu,ss) = makeStaples(g, cs)
+  var (stf,stu,ss) = if work == nil: makeStaples(g, cs) else: makeStaples(g, cs, work.fwd, work.bck)
+  if work != nil:
+    inc work.builds
+    work.tag = default(LoopTag)
+    work.fwd = stf
+    work.bck = stu
   toc("gaugeADeriv makeStaples")
   if not accumulate:
     for i in 0..<nd:
@@ -1339,9 +1348,10 @@ proc gaugeADeriv*(c: GaugeActionCoeffs, g,f: auto, accumulate=false) =
     #toc("gaugeADeriv boundary")
   toc("gaugeADeriv threads")
 
-proc forceA*(c: GaugeActionCoeffs, g,f: auto) =
+proc forceA*(c: GaugeActionCoeffs, g,f: auto; work: typeof(newStapleWork(g[0])) = nil) =
+  ## work: as in gaugeADeriv.
   tic("forceA")
-  gaugeADeriv(c, g, f)
+  gaugeADeriv(c, g, f, work=work)
   toc("gaugeADeriv")
   contractProjectTAH(g, f)
   #contractProjectTAH(f, g)

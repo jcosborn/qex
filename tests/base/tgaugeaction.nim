@@ -275,6 +275,21 @@ suite "Gauge action subset kernels":
     Symanzik(5.4).gaugeDerivDeriv2Subset(g, h[0], outg, sw, (37,1))
     check sw.tag == default(LoopTag)
 
+  test "adjoint force with a staple workspace equals the force without one and keeps its storage":
+    let c = GaugeActionCoeffs(plaq: 5.4, adjplaq: 0.2)
+    let work = newStapleWork(g[0])
+    let want = lo.newGauge
+    let got = lo.newGauge
+    c.forceA(g, want)
+    c.forceA(g, got, work=work)
+    check relativeDiff(got, want) == 0
+    let b = work.bytes
+    check b > 0
+    c.forceA(g, got, work=work)
+    check relativeDiff(got, want) == 0
+    check work.bytes == b
+    check work.builds == 2
+
   test "subset kernels reject adjoint coefficients":
     let c = GaugeActionCoeffs(adjplaq: 1.0)
     var
