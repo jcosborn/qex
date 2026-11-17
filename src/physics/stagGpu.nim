@@ -568,7 +568,11 @@ proc update[V: static int; T,U](s: StagGpu[V,T]; x: ptr UncheckedArray[U]; r, p,
   ## p = r + b p, s = w + b s, x += a p, r -= a s on the even sites, and the
   ## same for the halo copies s.rh, s.sh from the w boundary received in
   ## s.ex[0]; a thread updates one real.  Returns before the kernel
-  ## completes, the first hop of applyD2eeCG runs after it.
+  ## completes, the first hop of applyD2eeCG runs after it.  The halo copies
+  ## repeat the owner's s and r bit for bit only when both round alike, hence
+  ## fmadd in both branches: a compiler that contracts one and not the other
+  ## lets the copies drift by a rounding per iteration, which breaks FP32 CGs
+  ## on several ranks.
   let n6 = 6*s.ne
   let wh = s.ex[0].rbuf
   let rh = s.rh
@@ -576,17 +580,17 @@ proc update[V: static int; T,U](s: StagGpu[V,T]; x: ptr UncheckedArray[U]; r, p,
   gpuForAsync(t, n6 + 6*s.ex[0].nrecv):
     if t < n6:
       let pk = r[t] + b*p[t]
-      let sk = w[t] + b*sv[t]
+      let sk = fmadd(b, sv[t], w[t])
       p[t] = pk
       sv[t] = sk
       when U is T: x[t] += a*pk
       else: x[t] += ax*U(pk)
-      r[t] = r[t] - a*sk
+      r[t] = fmadd(-a, sk, r[t])
     else:
       let k = t - n6
-      let sk = wh[k] + b*sh[k]
+      let sk = fmadd(b, sh[k], wh[k])
       sh[k] = sk
-      rh[k] = rh[k] - a*sk
+      rh[k] = fmadd(-a, sk, rh[k])
 
 proc upload*[V: static int; T](s: StagGpu[V,T]; d: ptr UncheckedArray[T]; f: Field) =
   ## even sites of f, on the layout of the links, to d
@@ -1417,21 +1421,21 @@ proc updateB[V: static int; C: static int; T,U](s: StagGpu[V,T]; x: array[C, ptr
       let aj = pickB(a, js, C)
       let bj = pickB(b, js, C)
       let pk = r[i] + bj*p[i]
-      let sk = w[i] + bj*sv[i]
+      let sk = fmadd(bj, sv[i], w[i])  # rounds as the halo copies below, see update
       p[i] = pk
       sv[i] = sk
       when U is T: pickB(x, js, C)[o] += aj*pk
       else: pickB(x, js, C)[o] += pickB(ax,js,C)*U(pk)
-      r[i] = r[i] - aj*sk
+      r[i] = fmadd(-aj, sk, r[i])
     else:
       let u = t - C*n6
       let c = u div nr
       let js = c div 6
       let cc = 6*pickB(so, js, C) + c - 6*js
       let k = int ro[u - c*nr] + cc*int rst[u - c*nr]
-      let sk = wh[k] + pickB(b, js, C)*sh[k]
+      let sk = fmadd(pickB(b, js, C), sh[k], wh[k])
       sh[k] = sk
-      rh[k] = rh[k] - pickB(a, js, C)*sk
+      rh[k] = fmadd(-pickB(a, js, C), sk, rh[k])
 
 type CgB[T] = object
   ## the systems in the nBatch slots of the batched CG: slot j iterates on
