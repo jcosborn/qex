@@ -106,9 +106,14 @@ proc compilerFlags(c: Compiler): seq[string] =
       # Under -Ofast, GCC can turn omp master assignments into stores by every thread.
       # Disable -fallow-store-data-races so workers cannot overwrite updates with stale values.
       result.add "-fno-allow-store-data-races"
-  elif c.name == "clang" and c.major == 19:
-    # LLVM 19 SLP can insert poison lanes in matrix powers (LLVM #108421).
-    result.add "-fno-slp-vectorize"
+  elif c.name == "clang":
+    # With rbp free for allocation clang cannot realign a frame for spills: the
+    # 32 byte AVX spill slots of the site kernels get 16 byte alignment and
+    # unaligned moves. Nim passes this option under refc only.
+    result.add "-fno-omit-frame-pointer"
+    if c.major == 19:
+      # LLVM 19 SLP can insert poison lanes in matrix powers (LLVM #108421).
+      result.add "-fno-slp-vectorize"
 
 proc addCompilerFlags(flags: var seq[string], cflags: seq[string]) =
   if cflags.len == 0: return

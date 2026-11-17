@@ -10,7 +10,9 @@ const
   # Every gcc gets prefetchFlag; gcc 15 and later get all of gccFlag.
   prefetchFlag = "-fno-prefetch-loop-arrays"
   gccFlag = prefetchFlag & " -fno-allow-store-data-races"
-  clangFlag = "-fno-slp-vectorize"
+  # Every clang gets fpFlag; clang 19 gets all of clangFlag.
+  fpFlag = "-fno-omit-frame-pointer"
+  clangFlag = fpFlag & " -fno-slp-vectorize"
 let (tmp, code) = gorgeEx("mktemp -d")
 doAssert code == 0, tmp
 let dir = tmp.strip
@@ -41,7 +43,7 @@ proc check(expected = "", args: seq[string] = @[]) =
   setUserNimFlags(args)
   nimFlags.setLen(0)
   setNimFlags()
-  for flag in [prefetchFlag, gccFlag, clangFlag]:
+  for flag in [prefetchFlag, gccFlag, fpFlag, clangFlag]:
     doAssert ("--passC:" & flag.quoteShell in nimFlags) == (flag == expected), nimCmdArgs
   if expected != "": doAssert nimFlags[^1] == "--passC:" & expected.quoteShell, nimCmdArgs
 
@@ -61,7 +63,7 @@ try:
   for i, v in [18, 19, 20, 23]:
     clang[i] = script(cmd & "-D__GNUC__=99 -D__clang__=1 -D__clang_major__=" & $v & " \"$@\"")
     cc = clang[i]
-    check(if v == 19: clangFlag else: "")
+    check(if v == 19: clangFlag else: fpFlag)
     doAssert (compiler.name, compiler.major) == ("clang", v)
   # Offload drivers read the input in a device pass before the host pass.
   cc = script(ccPath.quoteShell & " -undef \"$@\" > /dev/null; " & cmd & "-D__GNUC__=15 \"$@\"")
@@ -87,7 +89,7 @@ try:
   cppflagsSpeed = "-O3 -march=native"
   cflagsDebug = "-Og"
   for (affected, unaffected, flag, other) in [(gcc[1], gcc[0], gccFlag, prefetchFlag),
-                                             (clang[1], clang[2], clangFlag, "")]:
+                                             (clang[1], clang[2], clangFlag, fpFlag)]:
     cc = unaffected
     cpp = affected
     check(other)
