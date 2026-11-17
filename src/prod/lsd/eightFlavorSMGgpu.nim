@@ -225,6 +225,7 @@ else: qexError "invalid start type"
 hmc.init(verbosity = verbosity)
 for config in start_config..<end_config:
   for traj in 0..<config_space:
+    aggregateTimers()  # merges the timer records of the earlier trajectories
     # run HMC
     hmc.run(forceAccept = config < no_metropolis_until)
 
