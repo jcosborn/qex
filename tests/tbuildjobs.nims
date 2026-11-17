@@ -55,7 +55,7 @@ fi
 """)
   exec "chmod +x " & nim.quoteShell
   nimcache = dir / "cache with spaces"
-  cc = findExe("cc")
+  cc = gorge("command -v cc").strip  # keeps the name cc, see tbuildflags.nims
   bindir = dir / "bin"
   srcPaths = @[dir / "src"]
   mkDir(srcPaths[0])

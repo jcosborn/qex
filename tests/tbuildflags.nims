@@ -14,7 +14,10 @@ const
 let (tmp, code) = gorgeEx("mktemp -d")
 doAssert code == 0, tmp
 let dir = tmp.strip
-let cmd = "exec " & findExe("cc").quoteShell & " -undef "
+# findExe resolves links, and the Cray PE cc is a link to a driver that runs only
+# under the name cc; command -v keeps the name.
+let ccPath = gorge("command -v cc").strip
+let cmd = "exec " & ccPath.quoteShell & " -undef "
 var num = 0
 
 proc script(body: string): string =
@@ -55,7 +58,7 @@ try:
     check(if v == 19: clangFlag else: "")
     doAssert (compiler.name, compiler.major) == ("clang", v)
   # Offload drivers read the input in a device pass before the host pass.
-  cc = script(findExe("cc").quoteShell & " -undef \"$@\" > /dev/null; " & cmd & "-D__GNUC__=15 \"$@\"")
+  cc = script(ccPath.quoteShell & " -undef \"$@\" > /dev/null; " & cmd & "-D__GNUC__=15 \"$@\"")
   check(gccFlag)
   # build/nvcc.sh probes its host compiler without -x cuda and --cuda-gpu-arch=,
   # which g++ rejects.
