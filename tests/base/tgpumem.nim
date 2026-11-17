@@ -166,6 +166,13 @@ proc reals(n, k: int): (pointer, int) {.noinline.} =
   let g = toGpu(s)
   (pointer(addr s[0]), int(dev[float](g.p, n) != s))
 
+when GpuSum[float] is ref:  # CUDA, HIP
+  proc gpuSums() {.noinline.} =
+    ## GpuSums of 1000 to 8000 sites with their device blocks, dead at the return
+    for k in 1..8:
+      let s = newGpuSum[float](1000*k)
+      discard toGpu(s)
+
 when defined(gcRefc):
   proc scans(): int =
     # Sampling allocates strings; keep it from causing the collection it measures.
@@ -262,6 +269,18 @@ suite "backend/gpumem":
 
   test "freed seqs of another length":
     reuse("seq"): reals(100 - k mod 2, k)
+
+  when GpuSum[float] is ref:
+    test "freed GpuSums drop their device blocks":
+      gpuSums()
+      GC_fullCollect()
+      let n = dumpGpuMem().count("GpuSumPartial")
+      when defined(gcDestructors):
+        check n == 0
+      else:
+        # A stale stack word can keep the last GpuSum alive through refc's
+        # conservative scan; sums whose death misses the table stay all 8.
+        check n <= 1
 
   test "explicit Field release drops its device entry":
     let f = lo.ColorVector()

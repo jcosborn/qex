@@ -90,18 +90,32 @@ type
   GpuSumDev*[T] = object
     count: cuint
     partial: UncheckedArray[T]
-  GpuSumObj*[T] = object
+  GpuSumObj*[T] {.byref.} = object
+    ## Owns the partial sums, whose table key is its address, and the result.
     dev: ptr GpuSumDev[T]
     npartial: cuint
     #maxblock: int
     val: ptr T
   GpuSum*[T] = ref GpuSumObj[T]
-proc freeGpuSum[T](x: GpuSum[T]) =
-  ## finalizer: the partial sums go at the next table operation
-  gpuMemFreed(addr x[], sizeof(x[]))
-  discard cudaFreeHost(x.val)
+  GpuSumView*[T] = object
+    ## The pointers of a GpuSum for kernels, without the owner's hooks.
+    dev: ptr GpuSumDev[T]
+    npartial: cuint
+    val: ptr T
+when defined(gcDestructors):
+  proc `=destroy`[T](x: GpuSumObj[T]) =
+    ## the partial sums go at the next table operation (byref: x is the key)
+    gpuMemFreed(unsafeAddr x, sizeof(x))
+    discard cudaFreeHost(x.val)
+  proc `=copy`[T](a: var GpuSumObj[T]; b: GpuSumObj[T]) {.error.}
+else:
+  proc freeGpuSum[T](x: GpuSum[T]) =
+    ## finalizer: the partial sums go at the next table operation
+    gpuMemFreed(addr x[], sizeof(x[]))
+    discard cudaFreeHost(x.val)
 proc newGpuSum*[T](ns: int): GpuSum[T] =
-  result.new(freeGpuSum[T])
+  when defined(gcDestructors): result.new
+  else: result.new(freeGpuSum[T])
   let n = (ns + 31) div 32  # divide by warp size
   #result.partial.gpuMalloc(n)
   pushGpuMemTag("GpuSumPartial")
@@ -112,15 +126,15 @@ proc newGpuSum*[T](ns: int): GpuSum[T] =
   result.dev.gpuMemset(0, bytes)
   result.npartial = cuint n
   let err = cudaMallocHost((ptr pointer)(addr result.val), csize_t sizeof(T))
-template value*(x: GpuSum | GpuSumObj): auto = x.val[]
+template value*(x: GpuSum | GpuSumView): auto = x.val[]
 template toGpu*(x: GpuSum): auto =
   let bytes = sizeof(x.dev[]) + x.npartial.int*sizeof(x.T)
   let pgmdev = getGpuMem(addr x[], bytes)
-  x[]
-template getGpu*(x: GpuSum, g: GpuSumObj): auto = g
-template fromGpu*(x: GpuSum, g: GpuSumObj): auto = discard
+  GpuSumView[x.T](dev: x.dev, npartial: x.npartial, val: x.val)
+template getGpu*(x: GpuSum, g: GpuSumView): auto = g
+template fromGpu*(x: GpuSum, g: GpuSumView): auto = discard
 
-proc reduce*[T](gs: GpuSumObj[T], x: T) =
+proc reduce*[T](gs: GpuSumView[T], x: T) =
   var isLastBlockDone {.shared.}: bool
   var aggregate = blockSum(x)
   if threadIdx.x == 0:
@@ -136,7 +150,7 @@ proc reduce*[T](gs: GpuSumObj[T], x: T) =
   if isLastBlockDone:
     var i = threadIdx.x
     var sum = default(T)
-    let n = min(gs.npartial, gridDim.x)
+    let n = if gs.npartial < gridDim.x: gs.npartial else: gridDim.x  # ARC/ORC leave system.min a host call
     while i < n:
       sum += gs.dev.partial[i]
       i += blockDim.x;
