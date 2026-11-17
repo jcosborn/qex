@@ -14,9 +14,15 @@ const
 let (tmp, code) = gorgeEx("mktemp -d")
 doAssert code == 0, tmp
 let dir = tmp.strip
-# findExe resolves links, and the Cray PE cc is a link to a driver that runs only
-# under the name cc; command -v keeps the name.
-let ccPath = gorge("command -v cc").strip
+proc workingCc(): string =
+  ## cc if it runs, else gcc or clang: the Cray PE cc stops without a Cray
+  ## compiler module.  findExe resolves links, and the Cray PE cc is a link to
+  ## a driver that runs only under the name cc; command -v keeps the name.
+  for name in ["cc", "gcc", "clang"]:
+    result = gorge("command -v " & name).strip
+    if result != "" and gorgeEx(result.quoteShell & " -E -x c /dev/null").exitCode == 0: return
+  raise newException(IOError, "cc, gcc and clang do not run")
+let ccPath = workingCc()
 let cmd = "exec " & ccPath.quoteShell & " -undef "
 var num = 0
 

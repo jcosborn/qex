@@ -55,7 +55,10 @@ fi
 """)
   exec "chmod +x " & nim.quoteShell
   nimcache = dir / "cache with spaces"
-  cc = gorge("command -v cc").strip  # keeps the name cc, see tbuildflags.nims
+  # cc if it runs, else gcc or clang, by name: see workingCc in tbuildflags.nims
+  for name in ["cc", "gcc", "clang"]:
+    cc = gorge("command -v " & name).strip
+    if cc != "" and gorgeEx(cc.quoteShell & " -E -x c /dev/null").exitCode == 0: break
   bindir = dir / "bin"
   srcPaths = @[dir / "src"]
   mkDir(srcPaths[0])
