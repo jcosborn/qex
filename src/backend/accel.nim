@@ -195,8 +195,8 @@ proc sumFixed*(r: var openArray[float]; a, w, h: ptr UncheckedArray[float]; m, n
   ## r[c] = the sum of a[c*n + i] over i < n for c < m, in an order fixed by
   ## n: each level adds the values t, t+T, ..., T = ceil(n/16), in thread t,
   ## until at most sumHost values remain, which the host adds.  w holds
-  ## m*(n div 15 + 16) reals, the pinned h m*sumHost.  The levels queue
-  ## after the kernels already submitted; the copy to h waits for all.
+  ## m*(n div 15 + 16) reals, the pinned h m*sumHost.  The levels and the
+  ## copy to h queue after the kernels already submitted; one wait covers all.
   var src = a
   var cnt = n
   var off = 0
@@ -216,8 +216,8 @@ proc sumFixed*(r: var openArray[float]; a, w, h: ptr UncheckedArray[float]; m, n
     src = d
     off += m*t1
     cnt = t1
+  gpuMemCpyToCpuAsync(h, src, m*cnt*sizeof(float))
   gpuWaitAsync()
-  gpuMemCpyToCpu(h, src, m*cnt*sizeof(float))
   for c in 0..<m:
     r[c] = 0.0
     for i in 0..<cnt: r[c] += h[c*cnt + i]

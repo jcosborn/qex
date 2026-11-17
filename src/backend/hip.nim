@@ -130,6 +130,8 @@ proc hipMemset*(devPtr: pointer, value: cint, count: csize_t):
   hipError_t {.importC:"hipMemset",hiph.}
 #template hipMemsetX*(devPtr: pointer, value: SomeInteger, count: SomeInteger)
 
+proc hipMemcpyAsync*(dst, src: pointer; count: csize_t; kind: hipMemcpyKind; stream: pointer): hipError_t
+  {.importcpp: "hipMemcpyAsync(#, #, #, #, (hipStream_t)#)", hiph.}
 proc hipMemcpyX*(dst,src: pointer, count: csize_t, kind: hipMemcpyKind):
   hipError_t {.importC:"hipMemcpy",hiph.}
 template hipMemcpy*(dst,src: typed, count: csize_t,

@@ -59,6 +59,16 @@ template gpuMemCpyToCpu*(dst,src: pointer, count: SomeInteger) =
     echo "  gpuMemCpyToCpu: ", $err
     quit cast[cint](err)
 
+template gpuMemCpyToCpuAsync*(dst, src: pointer; count: SomeInteger) =
+  ## Queues the copy to the pinned host memory dst after the kernels already
+  ## submitted; gpuWaitAsync waits for it too.
+  let err = cudaMemcpyAsync(dst, src, csize_t count, cudaMemcpyDeviceToHost, nil)
+  if err:
+    echo "gpuMemCpyToCpuAsync: ", $err
+    quit cast[cint](err)
+
+const gpuCopyFast* = high(int)  ## bytes up to which a queued copy has its low cost
+
 const gpuThreads {.intdefine.} = 128  ## threads per block of gpuFor kernels
 var gpuI {.importc, nodecl.}: clong  # the index in the gpuFor kernels
 

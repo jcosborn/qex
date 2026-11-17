@@ -181,7 +181,7 @@ proc mallocShared*(num_bytes: int, q: Queue):
 proc mallocShared*(T: typedesc, count: int, q: Queue): ptr UncheckedArray[T] {.
   importcpp:"sycl::malloc_shared<'1>(##,#)".}
 
-proc memcpyAsync(q: Queue, dest,src: pointer, count: SomeInteger)
+proc memcpyAsync*(q: Queue, dest,src: pointer, count: SomeInteger)
   {.importcpp:"#.memcpy(@)".}
 proc memsetAsync(q: Queue, dest: pointer, val,count: SomeInteger)
   {.importcpp:"#.memset(@)".}

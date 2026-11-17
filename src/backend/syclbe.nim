@@ -36,6 +36,11 @@ template gpuMemCpyToCPU*(dst: pointer, src: pointer; length: SomeInteger) =
   memcpy(q, dst, src, length)
 template gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger) =
   memcpy(q, dst, src, length)
+template gpuMemCpyToCpuAsync*(dst, src: pointer; length: SomeInteger) =
+  ## Queues the copy to the host after the kernels already submitted (the
+  ## queue is in order); gpuWaitAsync waits for it too.
+  memcpyAsync(q, dst, src, length)
+const gpuCopyFast* = high(int)  ## bytes up to which a queued copy has its low cost
 
 {.emit: """/*INCLUDESECTION*/
 #include <level_zero/ze_api.h>

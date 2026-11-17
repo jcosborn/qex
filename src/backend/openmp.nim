@@ -335,6 +335,12 @@ template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
   let vv = v
   {.emit: ["#pragma omp atomic update\n", r, "[", kk, "] += ", vv, ";"].}
 
+template gpuMemCpyToCpuAsync*(dst, src: pointer; length: SomeInteger) =
+  ## the copy to the host after the kernels already submitted, complete here
+  gpuWaitAsync()
+  gpuMemCpyToCPU(dst, src, length)
+const gpuCopyFast* = high(int)  ## bytes up to which a queued copy has its low cost
+
 template gpuMallocHost*(size: SomeInteger): pointer =
   ## pinned host memory, for fast copies from the device
   omp_target_alloc_host(size)

@@ -127,6 +127,8 @@ proc cudaMemset*(devPtr: pointer, value: cint, count: csize_t):
   cudaError_t {.importC:"cudaMemset",header:"cuda_runtime.h".}
 #template cudaMemsetX*(devPtr: pointer, value: SomeInteger, count: SomeInteger)
 
+proc cudaMemcpyAsync*(dst, src: pointer; count: csize_t; kind: cudaMemcpyKind; stream: pointer): cudaError_t
+  {.importcpp: "cudaMemcpyAsync(#, #, #, #, (cudaStream_t)#)", header: "cuda_runtime.h".}
 proc cudaMemcpyX*(dst,src: pointer, count: csize_t, kind: cudaMemcpyKind):
   cudaError_t {.importC:"cudaMemcpy",header:"cuda_runtime.h".}
 template cudaMemcpy*(dst,src: typed, count: csize_t,

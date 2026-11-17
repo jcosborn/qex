@@ -15,6 +15,10 @@ proc gpuMemCpyToCPU*(dst: pointer, src: pointer; length: SomeInteger) =
   copymem(dst, src, length)
 proc gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger) =
   copymem(dst, src, length)
+template gpuMemCpyToCpuAsync*(dst, src: pointer; length: SomeInteger) =
+  ## the copy to the host after the kernels already submitted, complete here
+  copyMem(dst, src, length)
+const gpuCopyFast* = high(int)  ## bytes up to which a queued copy has its low cost
 
 template gpuNumThreads*:auto = numThreads
 template gpuThreadNum*:auto = threadNum

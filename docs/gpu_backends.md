@@ -55,6 +55,16 @@ uploaded stays alive until `freeGpuMem` of it.
 not ordered after outstanding `nowait` kernels: wait before mixing the
 two forms or consuming their results on the host.
 
+`gpuMemCpyToCpuAsync` queues a copy to pinned host memory
+(`gpuMallocHost`) after the kernels already submitted; `gpuWaitAsync`
+waits for it too. The reads of the device sums use it, so a sum costs one
+wait. OpenMP offload completes the copy at the call. On MI300X a
+synchronous copy after a kernel costs 10.6 us for any size up to 49 kB; a
+queued copy costs 2.9 us up to 16384 bytes (`gpuCopyFast` of the HIP
+backend) and 8.2 us from 16400 bytes on, and a copy that starts off a 64
+byte boundary of the device buffer costs 3 us more. On PVC with SYCL the
+queued copy costs 2.7 us at 8 kB and 5.1 us at 98 kB, without a step.
+
 With the CPU backend, both forms execute on the calling host thread and
 complete on return. `gpuWaitAsync` is a no-op, device allocations are host
 allocations, and every halo message uses QMP. Increasing the host thread
