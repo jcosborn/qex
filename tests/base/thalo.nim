@@ -216,15 +216,20 @@ suite "Halo":
       check(hm.gatherRev.rdest.inRange(lo.nSites) and hm.gatherRev.ldest.inRange(lo.nSites))
 
   test "retained gather buffers grow, reuse storage, and release with their owner":
-    discard exerciseGatherBuffers()  # Warm threading and profiling state.
-    GC_fullCollect()
-    GC_fullCollect()
-    let before = getOccupiedSharedMem()
-    let allocated = exerciseGatherBuffers()
-    check allocated >= 2*512*sizeof(int)
-    GC_fullCollect()
-    GC_fullCollect()
-    check getOccupiedSharedMem() == before
+    # refc scans the stack conservatively: a stale word can keep the
+    # communicator of one call until the next call, which then frees its
+    # buffers while it allocates new ones.  Buffers that outlive their owner
+    # add up with every repetition.
+    var used, grown: array[8, int]
+    freezeTimers()  # the timer records of gather are shared memory as well
+    for rep in 0..<used.len:
+      grown[rep] = exerciseGatherBuffers()
+      GC_fullCollect()
+      GC_fullCollect()
+      used[rep] = getOccupiedSharedMem()
+    thawTimers()
+    check max(grown) >= 2*512*sizeof(int)
+    check min(used[4..^1]) <= max(used[0..3])
 
   test "retained gather buffers belong to their communicator":
     fill g
