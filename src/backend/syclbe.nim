@@ -1,7 +1,7 @@
 import macros, strutils
 #import base/metaUtils
 import backend/expr
-import base/metaUtils
+import base/[metaUtils, threading, profile]
 import sycl
 
 var kernelCallCount* = 0  # count of kernel calls
@@ -117,14 +117,19 @@ proc genCpuPrepare(n:seq[NimNode]):NimNode =
   for c in n:
     result.add getast r(c[0],c[1])
 
-proc genCpuFinalize(n:seq[NimNode]):NimNode =
-  template r(x,v:untyped):untyped =
-    fromGpu(x,v)
-    #fromGpu(x)
-    #discard
-  result = newstmtlist()
-  for c in n:
-    result.add getast r(c[0],c[1])
+proc gpuFinalizer*[P](fl: static string; q: ptr Queue; flops: float; ps: P): proc() =
+  ## The finalizer of a kernel launch: waits for the queue and copies what the
+  ## kernel wrote back to the host variables of ps (genHostPairs).  The closure
+  ## has an environment of its own, so every thread of a threads block gets one
+  ## and may keep it.
+  mixin fromGpu
+  result = proc() =
+    tic(fl)
+    threadSingle:
+      q[].wait
+    toc("wait",flops=flops)
+    for p in fields(ps): hostFromGpu(p[0], p[1])
+    toc("cpuFinalize")
 
 proc gpuDefaultNumThreads*(): int =
   32 * q.device.maxComputeUnits.int * q.device.subGroupSizes.max_element.int
@@ -136,7 +141,7 @@ macro onGpuQ*(q: Queue, n,b,body: untyped): auto =
   let fl = lis[^4] & "(" & lis[^2] & ")"
   #proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,newTree(nnkAccQuoted,g,ident"xx"))
-  template target(q, fl, n, cpuPrepare, cpuFinalize, body: untyped) =
+  template target(q, fl, n, cpuPrepare, hostPairs, body: untyped) =
     mixin toGpu, getGpu, fromGpu
     {.push checks: off.}
     {.push stacktrace: off.}
@@ -156,22 +161,12 @@ macro onGpuQ*(q: Queue, n,b,body: untyped): auto =
               body
       #gpuProc()
       toc("launch")
-      proc finalize {.gensym.} =
-        tic(fl)
-        threadSingle:
-          q.wait
-        when declared gpuWaitFlops:
-          toc("wait",flops=gpuWaitFlops)
-        else:
-          toc("wait")
-        cpuFinalize
-        toc("cpuFinalize")
-      finalize
+      gpuFinalizer(fl, addr q, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hostPairs)
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
-    cpuFinalize = genCpuFinalize v
-  result = getast(target(q, fl, n, cpuPrepare, cpuFinalize, body))
+    hostPairs = genHostPairs(v, proc(c: NimNode): NimNode = c[1])
+  result = getast(target(q, fl, n, cpuPrepare, hostPairs, body))
   case dumpKernels
   of 1:
     echo li

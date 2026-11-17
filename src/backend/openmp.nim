@@ -1,5 +1,5 @@
 import macros, strutils
-import base/metaUtils
+import base/[metaUtils, threading, profile]
 import base/omp
 import backend/expr
 
@@ -164,12 +164,22 @@ proc genCpuPrepare(n:seq[NimNode]):NimNode =
   for c in n:
     result.add getast r(c[0],c[1])
 
-proc genCpuFinalize(n:seq[NimNode]):NimNode =
-  template r(x,v:untyped):untyped =
-    fromGpu(x,v)
-  result = newstmtlist()
-  for c in n:
-    result.add getast r(c[0],c[1])
+proc gpuFinalizer*[P](fl: static string; count: int; ps: P): proc() =
+  ## The finalizer of a kernel launch: copies what the kernel wrote back to the
+  ## host variables of ps (genHostPairs).  The closure has an environment of its
+  ## own, so every thread of a threads block gets one and may keep it.
+  mixin fromGpu
+  result = proc() =
+    tic(fl)
+    var countSave = 0
+    threadSingle:
+      countSave = kernelCallCount
+      kernelCallCount = count
+    for p in fields(ps): hostFromGpu(p[0], p[1])
+    #threadBarrier()
+    threadSingle:
+      kernelCallCount = countSave
+    toc("cpuFinalize")
 
 proc declarePtrTuple(n:seq[NimNode]):NimNode =
   mixin offloadPtr
@@ -216,7 +226,7 @@ macro onGpuNowait*(n,b,body: untyped): auto =
   let fl = lis[^4] & "(" & lis[^2] & ")"
   #proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
   proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,newTree(nnkAccQuoted,g,ident"xx"))
-  template target(fl,n,b,cpuPrepare, cpuFinalize, devicePtrDeclare, body: untyped) =
+  template target(fl,n,b,cpuPrepare, hostPairs, devicePtrDeclare, body: untyped) =
     mixin toGpu, getGpu, fromGpu
     inc kernelCallCount
     block:
@@ -239,25 +249,14 @@ macro onGpuNowait*(n,b,body: untyped): auto =
         toc("wait",flops=gpuWaitFlops)
       else:
         toc("wait")
-      proc finalize {.gensym.} =
-        tic(fl)
-        var countSave = 0
-        threadSingle:
-          countSave = kernelCallCount
-          kernelCallCount = thisKernelCallCount
-        cpuFinalize
-        #threadBarrier()
-        threadSingle:
-          kernelCallCount = countSave
-        toc("cpuFinalize")
       inc kernelCallCount  # increment after launch
-      finalize
+      gpuFinalizer(fl, thisKernelCallCount, hostPairs)
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
-    cpuFinalize = genCpuFinalize v
+    hostPairs = genHostPairs(v, proc(c: NimNode): NimNode = c[1])
     isDevicePtrs = declarePtrTuple v
-  result = getast(target(fl,n,b,cpuPrepare, cpuFinalize, isDevicePtrs, body))
+  result = getast(target(fl,n,b,cpuPrepare, hostPairs, isDevicePtrs, body))
   case dumpKernels
   of 1:
     echo li

@@ -1,5 +1,5 @@
 import macros, strutils
-import base/[metaUtils,profile]
+import base/[metaUtils,profile,threading]
 import expr
 import hip
 export hip.dataAddr
@@ -151,18 +151,34 @@ proc genCpuPrepare(n:seq[NimNode]):NimNode =
   for c in n:
     result.add newCall(ident"toGpu", c[0])
 
-proc genCpuFinalize(n:seq[NimNode], a: NimNode):NimNode =
-  template r(a,x,i:untyped):untyped =
-    fromGpu(x,a[i])
-  result = newstmtlist()
-  for c in n:
-    result.add getast r(a,c[0],c[2])
+proc gpuFinalizer*[P](fl: static string; count: int; flops: float; ps: P): proc() =
+  ## The finalizer of a kernel launch: waits for the device and copies what the
+  ## kernel wrote back to the host variables of ps (genHostPairs).  The closure
+  ## has an environment of its own, so every thread of a threads block gets one
+  ## and may keep it.
+  mixin fromGpu
+  result = proc() =
+    var countSave = 0
+    tic(fl)
+    threadSingle:
+      countSave = kernelCallCount
+      kernelCallCount = count
+      let err = hipDeviceSynchronize()
+      if err:
+        echo "onGpu kernel: ", $err
+        quit cast[cint](err)
+    toc("wait",flops=flops)
+    for p in fields(ps): hostFromGpu(p[0], p[1])
+    #threadBarrier()
+    threadSingle:
+      kernelCallCount = countSave
+    toc("cpuFinalize")
 
 macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
   let li = body.lineinfo
   let lis = li.split({'/','.','(',','})
   let fl = lis[^4] & "(" & lis[^2] & ")"
-  template target(fl, nn, tpb, v, arg, cpuPrepare, cpuFinalize, body: untyped): untyped =
+  template target(fl, nn, tpb, v, arg, cpuPrepare, hostPairs, body: untyped): untyped =
     mixin toGpu, getGpu, fromGpu
     inc kernelCallCount  # increment before setup
     block:
@@ -184,27 +200,8 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
       threadSingle:
         hipLaunch(kern, blocksPerGrid, threadsPerBlock, v)
       toc("launch")
-      proc finalize {.gensym.} =
-        var countSave = 0
-        tic(fl)
-        threadSingle:
-          countSave = kernelCallCount
-          kernelCallCount = thisKernelCallCount
-          let err = hipDeviceSynchronize()
-          if err:
-            echo "onGpu kernel: ", $err
-            quit cast[cint](err)
-        when declared gpuWaitFlops:
-          toc("wait",flops=gpuWaitFlops)
-        else:
-          toc("wait")
-        cpuFinalize
-        #threadBarrier()
-        threadSingle:
-          kernelCallCount = countSave
-        toc("cpuFinalize")
       inc kernelCallCount  # increment after launch
-      finalize
+      gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hostPairs)
   let
     varg = gensym(nskVar, "varg")
     arg = gensym(nskParam, "arg")
@@ -215,8 +212,8 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
   let
     v = prepareVars(body,deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v
-    cpuFinalize = genCpuFinalize(v, varg)
-  result = getast(target(fl, nn0, tpb0, varg, arg, cpuPrepare, cpuFinalize, body))
+    hostPairs = genHostPairs(v, proc(c: NimNode): NimNode = newNimNode(nnkBracketExpr).add(varg, c[2]))
+  result = getast(target(fl, nn0, tpb0, varg, arg, cpuPrepare, hostPairs, body))
   case dumpKernels
   of 1:
     echo li

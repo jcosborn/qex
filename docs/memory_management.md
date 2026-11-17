@@ -37,6 +37,13 @@ threads:
   from one thread only.
 - Do not `return` from a region or catch its exceptions outside it. A worker's
   exception prints the error and exits; the master's propagates after the block.
+- Make closures in a proc that receives what they capture. A closure over the
+  locals of a region shares the one environment of the threads proc, made
+  before the region: every thread that owns it moves it out of the proc or
+  counts it without atomics. The environment of a closure made by a proc call
+  belongs to that call, so each thread owns its own and may store it. The
+  finalizer of `onGpuNowait` is made this way (`gpuFinalizer` in the backends):
+  it takes the device handles by value and the host variables by address.
 
 `{.cursor.}` is a raw pointer without runtime checks: the owner keeps the object
 alive while the cursor is in use. Under refc, `{.cursor.}` and `lent` change

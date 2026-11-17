@@ -99,6 +99,25 @@ macro substVars*(x: untyped, a: untyped): auto =
   result = e
   #echo result.treerepr
 
+# The finalizer of a kernel launch gets its variables as arguments: for each one
+# the address of the host variable, or false for a type or a value without an
+# address, which have nothing to copy back, and the device handle.
+
+template hostPtr*(x: typedesc): bool = false
+template hostPtr*(x: typed): auto =
+  when compiles(addr x): addr x else: false
+
+template hostFromGpu*(h: bool; g: untyped) = discard
+template hostFromGpu*[T](h: ptr T; g: untyped) =
+  mixin fromGpu
+  fromGpu(h[], g)
+
+proc genHostPairs*(n: seq[NimNode]; handle: proc(c: NimNode): NimNode): NimNode =
+  ## ((hostPtr(x), handle), ...) of the variables n of prepareVars
+  result = newNimNode(nnkTupleConstr)
+  for c in n:
+    result.add newNimNode(nnkTupleConstr).add(newCall(bindSym"hostPtr", c[0]), handle(c))
+
 const Keywords = ["addr","array"]
 
 proc prepareVars*(n:NimNode, deref:proc): seq[NimNode] =
