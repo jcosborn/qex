@@ -81,8 +81,8 @@ proc getNimFlags*(fo: flagsOpts): seq[string] =
   cc ~ ccType
   # These replace the options of ccType in Nim's config/nim.cfg, which for
   # gcc and clang carry -fno-strict-aliasing: Nim's generated code breaks
-  # the aliasing rules.
-  let na = if ccType in ["gcc", "clang"]: " -fno-strict-aliasing" else: ""
+  # the aliasing rules.  Nim's nvcc passes the options to its host compiler.
+  let na = if ccType in ["gcc", "clang", "nvcc"]: " -fno-strict-aliasing" else: ""
   exe ! cc
   linkerexe ! ld
   options.always ! (cflagsAlways & na)

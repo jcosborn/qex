@@ -160,6 +160,17 @@ try:
   doAssert "--d:SSE" in nimFlags and "--d:AVX" notin nimFlags, nimCmdArgs
   simd = ""
 
+  # Nim's nvcc passes the options to its host compiler, which needs
+  # -fno-strict-aliasing for Nim's code as gcc and clang do; it is not probed.
+  ccType = "nvcc"
+  check()
+  for key in ["--nvcc.options.always:", "--nvcc.cpp.options.always:"]:
+    var found = false
+    for f in nimFlags:
+      if f.startsWith(key) and "-fno-strict-aliasing" in f: found = true
+    doAssert found, nimCmdArgs
+  ccType = "gcc"
+
   cc = script("exit 1")
   var failed = false
   try:
