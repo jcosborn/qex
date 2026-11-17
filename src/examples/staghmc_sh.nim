@@ -705,6 +705,7 @@ echo H
 toc("prep")
 
 for n in inittraj+1..inittraj+trajs:
+  aggregateTimers()  # before tic: merges the timer records of the earlier trajectories
   tic("traj")
   var p2 = 0.0
   var f2 = newseq[seq[float]](phi.len)

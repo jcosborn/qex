@@ -627,6 +627,7 @@ echo H
 toc("prep")
 
 for n in inittraj+1..inittraj+trajs:
+  aggregateTimers()  # before tic: merges the timer records of the earlier trajectories
   tic("traj")
   let tt = epochTime()
   rgpu.randomTAH mom
