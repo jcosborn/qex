@@ -62,15 +62,14 @@ proc gpuFinalizer*[P](fl: static string; count: int; ps: P): proc() =
   mixin fromGpu
   result = proc() =
     tic(fl)
-    var countSave = 0
+    var countSave = -1  # the count before, in the thread that lowers it
     threadBarrier()
     threadSingle:
       countSave = kernelCallCount
       kernelCallCount = count
     for p in fields(ps): hostFromGpu(p[0], p[1])
-    threadSingle:
-      kernelCallCount = countSave
-    #threadBarrier()
+    if countSave >= 0: kernelCallCount = countSave  # the same thread restores it
+    threadBarrier()
     toc("cpuFinalize")
 
 #macro echoTyped(body: auto): auto =

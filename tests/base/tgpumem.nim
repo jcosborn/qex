@@ -307,4 +307,31 @@ suite "backend/gpumem":
       expect KeyError: discard getGpuMem(key)
     check getGpuMem(addr f[0]) == kept.pgm
 
+  test "launches in a threads block keep the kernel count":
+    # The count orders the copies of the table: after a finalizer that
+    # lowers it, the kernels of the main thread skip their copies.
+    var s = lo.ColorVector()
+    var r = lo.ColorVector()
+    let n = lo.nSitesOuter*sizeof(s[0])
+    threads:
+      s := 1.0
+      r := 0.0
+    onGpu: r := s
+    check equalMem(addr r[0], addr s[0], n)
+    let m = 16
+    var low = 0  # finalizers that left the count below its value before
+    var last = kernelCallCount
+    threads:
+      for rep in 0..<1000:
+        onGpu:
+          for i in gpuRange(m): discard
+        threadBarrier()
+        threadSingle:
+          if kernelCallCount < last: inc low
+          last = kernelCallCount
+    check low == 0
+    threads: s := 3.0
+    onGpu: r := s
+    check equalMem(addr r[0], addr s[0], n)
+
 qexFinalize()
