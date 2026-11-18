@@ -196,6 +196,8 @@ proc localKernel(n: int): int =
   for i in 0..<n:
     if h[i] != 2.0: inc result
 
+proc pick[F](fs: openArray[F]; k: int): F = fs[k]
+
 when defined(gcRefc):
   proc scans(): int =
     # Sampling allocates strings; keep it from causing the collection it measures.
@@ -359,5 +361,16 @@ suite "backend/gpumem":
 
   test "a kernel copies back through the fromGpu declared in its proc":
     check localKernel(1000) == 0
+
+  test "a kernel variable without an address is copied back":
+    var fs = [lo.ColorVector(), lo.ColorVector()]
+    var s = lo.ColorVector()
+    let n = lo.nSitesOuter*sizeof(s[0])
+    threads:
+      s := 3.0
+      fs[1] := 0.0
+    template r: untyped = pick(fs, 1)  # a field by value
+    onGpu: r := s
+    check equalMem(addr fs[1][0], addr s[0], n)
 
 qexFinalize()

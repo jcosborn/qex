@@ -100,17 +100,24 @@ macro substVars*(x: untyped, a: untyped): auto =
   #echo result.treerepr
 
 # The finalizer of a kernel launch gets its variables as arguments: for each one
-# the address of the host variable, or false for a type or a value without an
-# address, which have nothing to copy back, and the device handle.
+# the address of the host variable, its value where it has no address (a call
+# that gives a ref, a constant), or false for a type, and the device handle.
+
+type HostVal*[T] = object
+  ## a kernel variable without an address
+  v*: T
 
 template hostPtr*(x: typedesc): bool = false
 template hostPtr*(x: typed): auto =
-  when compiles(addr x): addr x else: false
+  when compiles(addr x): addr x else: HostVal[typeof(x)](v: x)
 
 template hostFromGpu*(h: bool; g: untyped) = discard
 template hostFromGpu*[T](h: ptr T; g: untyped) =
   mixin fromGpu
   fromGpu(h[], g)
+template hostFromGpu*[T](h: HostVal[T]; g: untyped) =
+  mixin fromGpu
+  fromGpu(h.v, g)
 
 template hostBack*(hp: untyped): untyped =
   ## A proc that calls fromGpu for the pairs of hp (genHostPairs).  It
