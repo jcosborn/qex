@@ -5,7 +5,7 @@
 ##   -recon:0 links of 18 reals, -reals:14 rows 0, 1 and the determinant; -fwd: 1 forward links only, 0 both, -1 by size
 ##   -recon64:1 reconstructs compressed FP32 links with FP64 intermediates
 ##   -ipc:0 MPI for peers on the node too; -split: second hop split, 1, 0, -1 off-node
-##   -fixed:1 the CG dot products summed in a fixed order (sumFixed), else atomically
+##   -fixed:1 the CG dot products summed in a fixed order (sumFixed), else exactly (SumX)
 ##   -nd:n times n applications of A on the CPU and the GPU; -prof:1 profile
 ##   -nb:k also k systems of the mass at once (solveM of several systems)
 ## Prints the true residual of the GPU solution and its difference from the CPU one.

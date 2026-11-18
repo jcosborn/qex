@@ -235,9 +235,32 @@ backend.
 `nBatch` is a compile-time integer, default 3. Batched hops share each
 loaded link across systems. Each system has its own residual history and
 iteration budget. A failed mixed system uses the separate scalar FP64
-workspace for recovery. `StagGpu.fixed` selects fixed-order reductions;
-atomic reductions permit variation in the order of additions. The
-programs expose this as `-fixed`.
+workspace for recovery. `StagGpu.fixed` selects how the CG adds its dot
+products: site values in a fixed order (`sumFixed`), or exact sums
+(`SumX`). A run repeats bit for bit with either. The programs expose this
+as `-fixed`.
+
+`SumX` ([`backend/accel`](../src/backend/accel.nim)) adds every term to
+integer words with atomic adds. A double is `m 2^(e-1075)` with `m < 2^53`;
+its bits go as two pieces below `2^52` to rows of weight
+`2^(52 row - 1074)`, `row = (e-1) div 52`. Integer adds commute, so the
+words hold the exact sum whatever the order of the device threads, and the
+host rounds it once. Each sum has `n/64` slots within 64 to 512 (term `i`
+adds to slot `i mod s`), at most 256 where the copy of a read with more
+would exceed `gpuCopyFast` of the backend (16384 bytes with HIP), and more
+when a slot would get over 1024 terms between two reads. A read copies three rows,
+those of the terms of the last read, and takes the change of the words
+since then. The three rows hold every term from `2^-52` times the largest
+term of the last read up to the top of that term's row; a term outside
+them marks the read to copy all 41 rows. Zeros and subnormal terms add
+nothing.
+
+A kernel with one atomic add per term waits on its slots when it does
+little else: at 165888 sites on MI300X the benchmark kernel takes 21 us
+longer with 256 slots, and on PVC 74 us longer at 32768 sites with 64
+slots. The hop kernels spread their adds over a long kernel. The update
+kernels of the reliable CG (`gpuCg` 1 and 2) are short and add a pair of
+sums per site.
 
 Batched hops compute each real product with one fused multiply-add
 (`fmadd`). `-d:hopFma` does the same in the hops of one system and in the

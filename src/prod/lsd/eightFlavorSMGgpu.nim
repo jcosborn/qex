@@ -8,8 +8,9 @@
 ## own at every step, as the host code, for the force stats of every step
 ## (1: of the first fermion force of each level and the first gauge force of
 ## each trajectory); -mixed:1 solves the
-## fermion forces in mixed precision; -fixed_sums:0 adds the CG dot products
-## atomically, faster, but runs no longer repeat bit for bit.
+## fermion forces in mixed precision; -fixed_sums:0 takes the exact sums of
+## the CG dot products (SumX) in the place of the fixed order ones; runs
+## repeat bit for bit with either.
 ##
 ## Designed to be backwards-compatible with stag_pv_hmc code under staghmc-devel
 ## branch of QEX. Hence, some of the code is reflective of conventions that I
@@ -68,7 +69,7 @@ letParam:
   r2in = 1e-6 # inner FP32 CG squared tolerance, floored at FP32 epsilon
   recon64 = 0 # 1 reconstructs FP32 links with FP64 intermediates
   reconFma = 0 # 1 uses explicit FP32 fused reconstruction
-  fixed_sums = 1 # 1 adds the CG dot products in a fixed order, so runs repeat bit for bit; 0 atomically, faster
+  fixed_sums = 1 # 1 adds the CG dot products in a fixed order, 0 exactly; runs repeat bit for bit with either
 
 # read xml inputs - again, if you're using this as a reference, please, please, please
 # note that many of the choices made here are legacy and may not reflect best practices

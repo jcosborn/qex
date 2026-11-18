@@ -5,7 +5,7 @@
 ##   solveM   |b - M x|^2 <= r2req |b|^2, M = m + D/2, of one system and of
 ##            several (nBatch per hop), in double and mixed precision
 ##   solveEE  |b_e - A x_e|^2 <= r2req |b_e|^2
-## with fixed and atomic dot products.  solveM records the residual it
+## with fixed order and exact dot products.  solveM records the residual it
 ## reaches, which the CPU one matches, leaves the source unchanged, stops
 ## within maxits at a residual above the request when maxits is too small,
 ## and gives x = 0 for b = 0.  Exits with 1 if a check fails.
@@ -167,7 +167,7 @@ proc checkInner(m, r2req: float) =
     sf.download(xg[j], sf.vec[6])
   let bd = sysB(sf.vecB[5], 6*sf.ne)
   let xd = sysB(sf.vecB[6], 6*sf.ne)
-  var st = sf.initB(float32)
+  var st: CgB[float32]
   for j in 0..<nBatch:
     sf.upload(bd[j], bs[j])
     sf.startB(st, j, xd[j], bd[j], ms[j], r2req*b2[j], big)
@@ -467,7 +467,7 @@ proc solveEEcheck(label: string; m, r2req: float; mixed: bool; maxits = big; rep
 for fixed in [true, false]:
   sd.fixed = fixed
   sf.fixed = fixed
-  let f = if fixed: "fixed" else: "atomic"
+  let f = if fixed: "fixed" else: "exact"
   if inner:
     for m in [0.1, 0.01, 0.001]:
       for rq in [1e-3, 1e-6, float(epsilon(float32))]:
