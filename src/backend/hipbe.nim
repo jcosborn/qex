@@ -110,6 +110,12 @@ template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
   let vv = v
   {.emit: ["atomicAdd(&", r, "[", kk, "], ", vv, ");"].}
 
+template gpuAtomicAdd*(r: ptr UncheckedArray[uint64]; k: int; v: uint64) =
+  ## r[k] += v modulo 2^64 atomically, in kernels
+  let kk = k
+  let vv = v
+  {.emit: ["atomicAdd((unsigned long long*)&", r, "[", kk, "], (unsigned long long)", vv, ");"].}
+
 proc gpuMallocHost*(size: SomeInteger): pointer =
   ## pinned host memory, for fast copies from the device
   let err = hipHostMalloc(addr result, csize_t size)

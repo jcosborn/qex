@@ -86,6 +86,12 @@ template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
   let vv = v
   {.emit: ["sycl::atomic_ref<double, sycl::memory_order::relaxed, sycl::memory_scope::device, sycl::access::address_space::global_space>(", r, "[", kk, "]).fetch_add(", vv, ");"].}
 
+template gpuAtomicAdd*(r: ptr UncheckedArray[uint64]; k: int; v: uint64) =
+  ## r[k] += v modulo 2^64 atomically, in kernels
+  let kk = k
+  let vv = v
+  {.emit: ["sycl::atomic_ref<unsigned long long, sycl::memory_order::relaxed, sycl::memory_scope::device, sycl::access::address_space::global_space>(*(unsigned long long*)&", r, "[", kk, "]).fetch_add((unsigned long long)", vv, ");"].}
+
 proc gpuZeContext*(): tuple[ctx, dev: pointer] =
   ## Level Zero context and device of the queue
   var ctx, dev: pointer

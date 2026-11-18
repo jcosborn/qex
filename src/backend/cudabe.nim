@@ -106,10 +106,19 @@ template gpuFor*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, bo
 
 template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
   ## r[k] += v atomically, in kernels and their gpuInline procs (nvcc compiles
-  ## those host device, so the host pass leaves the device-only atomicAdd out)
+  ## those host device, so the host pass leaves the device-only atomicAdd out).
+  ## The host pass still names r: a kernel lambda must capture the same
+  ## variables in both passes, or the host launches a kernel without a stub
+  ## (invalid device function) when r appears nowhere else in the kernel.
   let kk = k
   let vv = v
-  {.emit: ["\n#ifdef __CUDA_ARCH__\natomicAdd(&", r, "[", kk, "], ", vv, ");\n#endif\n"].}
+  {.emit: ["\n#ifdef __CUDA_ARCH__\natomicAdd(&", r, "[", kk, "], ", vv, ");\n#else\n(void)", r, ";\n#endif\n"].}
+
+template gpuAtomicAdd*(r: ptr UncheckedArray[uint64]; k: int; v: uint64) =
+  ## r[k] += v modulo 2^64 atomically, as the adds of floats
+  let kk = k
+  let vv = v
+  {.emit: ["\n#ifdef __CUDA_ARCH__\natomicAdd((unsigned long long*)&", r, "[", kk, "], (unsigned long long)", vv, ");\n#else\n(void)", r, ";\n#endif\n"].}
 
 proc gpuMallocHost*(size: SomeInteger): pointer =
   ## pinned host memory, for fast copies from the device

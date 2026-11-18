@@ -41,6 +41,9 @@ template gpuWaitAsync* = discard
 template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
   ## r[k] += v, in kernels, which one thread runs
   r[k] += v
+template gpuAtomicAdd*(r: ptr UncheckedArray[uint64]; k: int; v: uint64) =
+  ## r[k] += v modulo 2^64, in kernels
+  r[k] += v
 template gpuMallocHost*(size: SomeInteger): pointer = alloc(size)
 template gpuFreeHost*(p: pointer) = dealloc(p)
 

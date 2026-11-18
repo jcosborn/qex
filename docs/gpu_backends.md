@@ -64,6 +64,7 @@ queued copy costs 2.9 us up to 16384 bytes (`gpuCopyFast` of the HIP
 backend) and 8.2 us from 16400 bytes on, and a copy that starts off a 64
 byte boundary of the device buffer costs 3 us more. On PVC with SYCL the
 queued copy costs 2.7 us at 8 kB and 5.1 us at 98 kB, without a step.
+`backend/examples/besum` measures these parts.
 
 With the CPU backend, both forms execute on the calling host thread and
 complete on return. `gpuWaitAsync` is a no-op, device allocations are host

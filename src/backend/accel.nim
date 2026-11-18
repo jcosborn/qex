@@ -1,4 +1,4 @@
-import macros, strutils
+import macros, strutils, bitops
 import accelbase
 export accelbase
 import gpumem
@@ -221,6 +221,195 @@ proc sumFixed*(r: var openArray[float]; a, w, h: ptr UncheckedArray[float]; m, n
   for c in 0..<m:
     r[c] = 0.0
     for i in 0..<cnt: r[c] += h[c*cnt + i]
+
+# Exact sums.  A kernel adds each term to an integer accumulator with atomic
+# adds: integer adds commute, so the sum does not depend on the order of the
+# device threads, and a run repeats bit for bit.
+#   t = +-m 2^(e-1075), m < 2^53:  m 2^(e-1) = lo 2^(52 row) + hi 2^(52 (row+1)),
+#   row = (e-1) div 52, lo and hi below 2^52
+# A row is one uint64 per slot of weight 2^(52 row - 1074); term i adds lo and
+# hi to rows row and row+1 of slot i mod s.  A slot takes 1024 terms between
+# two reads.  The words are never reset: a read takes their change since the
+# last read, modulo 2^64, and rounds the exact sum once.
+
+const
+  sumRows = 41  # rows that cover the doubles
+  sumWin* = 3  # rows a read copies: terms within 2^52 of each other fit
+
+template sumXAdd*(a: ptr UncheckedArray[uint64]; o, st, w: int; t: float) =
+  ## In kernels: adds t to rows row and row+1 of a SumX, at a[o + row*st],
+  ## with the window w of the SumX.  A term outside the rows w, w+1 marks
+  ## word w*st, so that the read knows to copy every row.  Zeros and
+  ## subnormal terms add nothing, as where the processor flushes them; a non
+  ## finite t adds a magnitude beyond the doubles.
+  let tt = t
+  let b = cast[uint64](tt)
+  let e = int((b shr 52) and 0x7ff'u64)
+  if e != 0:
+    let m = (b and 0xF_FFFF_FFFF_FFFF'u64) or (1'u64 shl 52)
+    let row = (e - 1) div 52
+    let sh = e - 1 - 52*row
+    var lo = (m shl sh) and 0xF_FFFF_FFFF_FFFF'u64
+    var hi = m shr (52 - sh)
+    if (b shr 63) != 0'u64 and e != 0x7ff:
+      lo = 0'u64 - lo
+      hi = 0'u64 - hi
+    if cast[uint](row - w) > uint(sumWin - 2): a[w*st] = 1'u64
+    let k = o + row*st
+    gpuAtomicAdd(a, k, lo)
+    gpuAtomicAdd(a, k + st, hi)
+
+const sumDigits = (52*sumRows + 64 + 31) div 32  # base 2^32 digits of the row sums
+
+proc sumXValue(d: openArray[int64]): float =
+  ## The double nearest to sum_k d[k] 2^(32 k - 1074), ties to even;
+  ## d.len <= sumDigits, |d[k]| < 2^62
+  var g: array[sumDigits + 2, uint64]  # base 2^32 digits of the magnitude
+  var neg = false
+  var c = 0'i64
+  for pass in 0..1:
+    c = 0
+    for k in 0..<d.len:
+      let v = (if neg: -d[k] else: d[k]) + c
+      g[k] = uint64(v and 0xFFFF_FFFF'i64)
+      c = ashr(v, 32)
+    if c >= 0: break
+    neg = true  # a negative sum: the digits of its negative
+  g[d.len] = uint64(c) and 0xFFFF_FFFF'u64
+  g[d.len + 1] = uint64(c) shr 32
+  var h = d.len + 1
+  while h >= 0 and g[h] == 0: dec h
+  if h < 0: return 0.0
+  let bl = 64 - countLeadingZeroBits(g[h])
+  var top = 32*h + bl - 1  # the leading bit, of weight 2^(top - 1074)
+  var bits: uint64
+  if top <= 52:  # below 2^53 units: exact, the bits of the double
+    bits = g[0] or (g[1] shl 32)
+  else:
+    template get(i: int): uint64 = (if i >= 0: g[i] else: 0'u64)
+    let m = (g[h] shl (64 - bl)) or (get(h-1) shl (32 - bl)) or (get(h-2) shr bl)  # the leading 64 bits
+    var sticky = (get(h-2) and ((1'u64 shl bl) - 1)) != 0
+    for i in 0..h-3:
+      if g[i] != 0: sticky = true
+    var sig = m shr 11
+    let rem = m and 0x7FF'u64
+    if rem > 0x400'u64 or (rem == 0x400'u64 and (sticky or (sig and 1) == 1)):
+      inc sig
+      if sig == 1'u64 shl 53:
+        sig = 1'u64 shl 52
+        inc top
+    let e = top - 51
+    bits = if e >= 2047: 0x7FF'u64 shl 52 else: (uint64(e) shl 52) or (sig and 0xF_FFFF_FFFF_FFFF'u64)
+  result = cast[float](bits)
+  if neg: result = -result
+
+type SumX* = ref object
+  ## m exact sums on the device: kernels add terms with sumXAdd, read gives
+  ## the sums of the terms since the last read.
+  m*, s*: int  # sums, slots per sum (a power of 2)
+  st*: int  # words per row: the mark, s slots of each sum, padding to 64 bytes
+  w*: int  # first row of the window
+  n: int  # terms per sum since the last read
+  a*: ptr UncheckedArray[uint64]  # [sumRows][st] on the device
+  h: ptr UncheckedArray[uint64]  # pinned host copy
+  p: seq[uint64]  # the words at the last read
+
+proc newSumX*(m, n: int; slots = 0): SumX =
+  ## m sums of up to n terms between two reads.  Slots: `slots`, or by
+  ## default n/64 within 64 to 512, enough that the device threads of a hop
+  ## kernel rarely wait for a word, and at most 256 where the copy of a read
+  ## with more would exceed gpuCopyFast.  Always enough for 1024 terms per
+  ## slot.  Rows start on 64 bytes: a copy from the device that starts
+  ## elsewhere takes microseconds longer.
+  ## Word of term i of sum c in row r: r*st + 1 + c*s + (i and (s-1))
+  template rowWords(s: int): int = (1 + m*s + 7) and not 7
+  result = SumX(m: m, s: 1)
+  var want = if slots > 0: slots else: clamp(n div 64, 64, 512)
+  if slots == 0:
+    while want > 256 and sumWin*rowWords(want)*sizeof(uint64) > gpuCopyFast: want = want div 2
+  while result.s < want or 1024*result.s < n: result.s *= 2
+  result.st = rowWords(result.s)
+  let nw = sumRows*result.st
+  result.a = cast[ptr UncheckedArray[uint64]](gpuMalloc(nw*sizeof(uint64)))
+  result.h = cast[ptr UncheckedArray[uint64]](gpuMallocHost(nw*sizeof(uint64)))
+  result.p = newSeq[uint64](nw)
+  let a = result.a
+  gpuFor(i, nw): a[i] = 0'u64
+
+proc free*(x: SumX) =
+  ## the device and host words; a second call does nothing
+  if x.a != nil:
+    gpuFree(x.a)
+    gpuFreeHost(x.h)
+    x.a = nil
+
+proc terms*(x: SumX; n: int) =
+  ## A kernel is about to add n terms to each sum.  Beyond 1024 terms per
+  ## slot the words could wrap unseen.
+  x.n += n
+  if x.n > 1024*x.s: qexError "SumX: ", x.n, " terms between reads, its ", x.s, " slots take ", 1024*x.s
+
+proc read*(x: SumX; r: var openArray[float]) =
+  ## r[c] = sum c of the terms added since the last read, the exact sum
+  ## rounded once.  Waits for the kernels.  Moves the window to the rows of
+  ## these terms.
+  x.n = 0
+  let st = x.st
+  let s = x.s
+  let h = x.h
+  let p = cast[ptr UncheckedArray[uint64]](addr x.p[0])
+  var r0 = x.w
+  var nr = sumWin
+  gpuMemCpyToCpuAsync(addr h[r0*st], addr x.a[r0*st], nr*st*sizeof(uint64))  # after the kernels
+  gpuWaitAsync()
+  if h[r0*st] != 0:  # terms outside the window: every row counts
+    let a = x.a
+    let k = r0*st
+    gpuFor(i, 1): a[k] = 0'u64
+    r0 = 0
+    nr = sumRows
+    gpuMemCpyToCpu(h, x.a, nr*st*sizeof(uint64))
+  var top = -1  # the highest row that changed
+  for c in 0..<x.m:
+    var d: array[sumDigits, int64]
+    for row in r0..<r0+nr:
+      let hh = cast[ptr UncheckedArray[uint64]](addr h[row*st + 1 + c*s])
+      let pp = cast[ptr UncheckedArray[uint64]](addr p[row*st + 1 + c*s])
+      # the change of the row, sum of v as int64 = hi 2^32 + lo - ng 2^64;
+      # shifts and masks only, so that the loop vectorizes
+      var lo, hi, ng, ch = 0'u64
+      for k in 0..<s:
+        let v = hh[k] - pp[k]
+        ch = ch or v
+        lo += v and 0xFFFF_FFFF'u64
+        hi += v shr 32
+        ng += v shr 63
+      if ch != 0:
+        top = max(top, row)
+        # d += (hi 2^32 + lo - ng 2^64) 2^(52 row), each piece below 2^32 2^(bit mod 32)
+        for (v, bit) in [(lo, 52*row), (hi, 52*row + 32)]:
+          let q = bit div 32
+          let u = (v and 0xFFFF_FFFF'u64) shl (bit mod 32)
+          d[q] += int64(u and 0xFFFF_FFFF'u64)
+          d[q+1] += int64(u shr 32) + int64((v shr 32) shl (bit mod 32))
+        d[(52*row + 64) div 32] -= int64(ng shl ((52*row + 64) mod 32))
+    r[c] = sumXValue(d)
+  copyMem(addr p[r0*st], addr h[r0*st], nr*st*sizeof(uint64))
+  if top >= 0: x.w = clamp(top - sumWin + 1, 0, sumRows - sumWin)
+
+template gpuSumX*(x: SumX; i: untyped; n: SomeInteger; body: untyped) =
+  ## Adds, for i in 0..<n, the values body gives as an array[x.m, float] to
+  ## the sums of x.  Returns before the kernel completes; read waits for it.
+  block:
+    let sxN = int(n)
+    x.terms(sxN)
+    let sxA = x.a
+    let sxS = x.s
+    let sxSt = x.st
+    let sxW = x.w
+    gpuForAsync(i, sxN):
+      let v = body
+      for c in 0..<v.len: sumXAdd(sxA, 1 + c*sxS + (i and (sxS-1)), sxSt, sxW, v[c])
 
 var gpuSumHost: ptr UncheckedArray[float]  # [8 sumHost] pinned host buffer of gpuSum
 var gpuSumPart: ptr UncheckedArray[float]  # [m][T] sums of the threads, then the workspace of sumFixed

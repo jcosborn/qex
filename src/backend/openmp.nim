@@ -335,6 +335,12 @@ template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
   let vv = v
   {.emit: ["#pragma omp atomic update\n", r, "[", kk, "] += ", vv, ";"].}
 
+template gpuAtomicAdd*(r: ptr UncheckedArray[uint64]; k: int; v: uint64) =
+  ## r[k] += v modulo 2^64 atomically, in kernels
+  let kk = k
+  let vv = v
+  {.emit: ["#pragma omp atomic update\n", r, "[", kk, "] += ", vv, ";"].}
+
 template gpuMemCpyToCpuAsync*(dst, src: pointer; length: SomeInteger) =
   ## the copy to the host after the kernels already submitted, complete here
   gpuWaitAsync()

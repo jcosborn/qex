@@ -162,6 +162,75 @@ proc gsums(): int =
     if bad != 0: echo "gpuSum n ", n, ": ", s1, " ", s2, " ", s8
     result += bad
 
+template pow2(q: int): float =
+  ## 2^q from its bits, q >= -1074
+  (if q >= -1022: cast[float](uint64(1023 + q) shl 52) else: cast[float](1'u64 shl (q + 1074)))
+
+template termK(i: int; seed: uint64; kb, qw: int): tuple[k: int64, q: int] =
+  ## integers |k| < 2^(kb-1) and 0 <= q < qw from a hash of i
+  var h = uint64(i)*0x9E3779B97F4A7C15'u64 + seed
+  h = (h xor (h shr 30))*0xBF58476D1CE4E5B9'u64
+  h = (h xor (h shr 27))*0x94D049BB133111EB'u64
+  h = h xor (h shr 31)
+  (k: ashr(cast[int64](h), 64 - kb), q: int((h and 0xffff'u64) mod uint64(qw)))
+
+template term(i: int; seed: uint64; kb, q0, qw: int): float =
+  ## k 2^(q0 + q), exact in a double: the host and every device get the same value
+  block:
+    let t = termK(i, seed, kb, qw)
+    float(t.k)*pow2(q0 + t.q)
+
+proc xsums(): int =
+  ## mismatches of SumX reads against the sums of terms k 2^q, which integers
+  ## give exactly: full fractions, many terms over several rows, the top and
+  ## the bottom of the normal doubles, one and two kernels per read, overflow,
+  ## subnormal terms, which count as zero, and reads without terms.
+  ## kb + qw + log2(terms) <= 62 keeps sum k 2^q in an int64; q0 >= -1022
+  ## keeps the terms and the sums normal, where a processor that flushes
+  ## subnormals multiplies like one that does not.
+  const cases = [(1, 53, 0, 1), (300, 53, 0, 1), (300, 53, -900, 2), (100000, 30, 20, 12),
+                 (200000, 20, -300, 22), (70000, 24, 500, 20), (4097, 40, 900, 8),
+                 (1000, 12, -1000, 40), (50000, 30, -1022, 10), (3000, 44, -1022, 1)]
+  var x = newSumX(2, 400000)  # two kernels of 200000 terms between reads
+  var seed = 11'u64
+  var r: array[2, float]
+  x.read(r)
+  if r != [0.0, 0.0]: inc result
+  for ci in 0..<cases.len:
+    let (n, kb, q0, qw) = cases[ci]
+    let (n1, kb1, q1, qw1) = cases[cases.len - 1 - ci]  # the second sum: another range
+    for kernels in 1..2:
+      var s: array[2, int64]
+      for k in 0..<kernels:
+        let sd = seed
+        gpuSumX(x, i, max(n, n1)):
+          [(if i < n: term(i, sd, kb, q0, qw) else: 0.0), (if i < n1: term(i, sd + 7, kb1, q1, qw1) else: 0.0)]
+        for i in 0..<n:
+          let t = termK(i, sd, kb, qw)
+          s[0] += t.k shl t.q
+        for i in 0..<n1:
+          let t = termK(i, sd + 7, kb1, qw1)
+          s[1] += t.k shl t.q
+        seed += 13
+      x.read(r)
+      let want = [float(s[0])*pow2(q0), float(s[1])*pow2(q1)]
+      if cast[array[2, uint64]](r) != cast[array[2, uint64]](want):
+        inc result
+        echo "SumX case ", ci, " kernels ", kernels, ": ", r, " ", want
+      x.read(r)
+      if r != [0.0, 0.0]: inc result
+  gpuSumX(x, i, 4): [pow2(1023), -pow2(1023)]
+  x.read(r)
+  if r != [Inf, -Inf]:
+    inc result
+    echo "SumX overflow: ", r
+  gpuSumX(x, i, 4): [pow2(-1023), (if i == 3: 3.0 else: -pow2(-1074))]
+  x.read(r)
+  if r != [0.0, 3.0]:
+    inc result
+    echo "SumX subnormal terms: ", r
+  x.free
+
 suite "backend/accel":
   test "queued kernels run in order":
     check queued() == 0
@@ -171,6 +240,9 @@ suite "backend/accel":
 
   test "gpuSum":
     check gsums() == 0
+
+  test "SumX gives the exact sums":
+    check xsums() == 0
 
   test "GpuHaloEx neighbors":
     for ll in [[4,4,4,8], [8,4,4,4], [4,8,8,8]]:
