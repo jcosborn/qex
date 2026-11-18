@@ -568,6 +568,25 @@ proc redot[V: static int; T](s: StagGpu[V,T]; x, y: ptr UncheckedArray[T]): floa
   ## local sum of x_e.y_e
   gpuSum(i, 6*s.ne, 1, [float(x[i])*float(y[i])])[0]
 
+template gpuFor2(t, n, m, body, tail: untyped) =
+  ## body for t in 0..<n and tail for t in 0..<m, queued as gpuForAsync: one
+  ## kernel on a device, two loops on the host.  One host loop branching on
+  ## t gets masked stores from a vectorizing compiler, and CCE clang 21
+  ## (-O3, znver2) let the store of one branch write in iterations of the
+  ## other, below the arrays of tail.  n is an expression without side
+  ## effects: the kernel evaluates it, which bounds t for its index arithmetic.
+  when backendIsCpu:
+    gpuForAsync(t, n): body
+    gpuForAsync(t, m): tail
+  else:
+    gpuForAsync(gf2t, n + m):
+      if gf2t < n:
+        let t = gf2t
+        body
+      else:
+        let t = gf2t - n
+        tail
+
 proc update[V: static int; T,U](s: StagGpu[V,T]; x: ptr UncheckedArray[U]; r, p, sv, w: ptr UncheckedArray[T]; a, b: T; ax: U) =
   ## p = r + b p, s = w + b s, x += a p, r -= a s on the even sites, and the
   ## same for the halo copies s.rh, s.sh from the w boundary received in
@@ -581,20 +600,18 @@ proc update[V: static int; T,U](s: StagGpu[V,T]; x: ptr UncheckedArray[U]; r, p,
   let wh = s.ex[0].rbuf
   let rh = s.rh
   let sh = s.sh
-  gpuForAsync(t, n6 + 6*s.ex[0].nrecv):
-    if t < n6:
-      let pk = r[t] + b*p[t]
-      let sk = fmadd(b, sv[t], w[t])
-      p[t] = pk
-      sv[t] = sk
-      when U is T: x[t] += a*pk
-      else: x[t] += ax*U(pk)
-      r[t] = fmadd(-a, sk, r[t])
-    else:
-      let k = t - n6
-      let sk = fmadd(b, sh[k], wh[k])
-      sh[k] = sk
-      rh[k] = fmadd(-a, sk, rh[k])
+  gpuFor2(t, n6, 6*s.ex[0].nrecv):
+    let pk = r[t] + b*p[t]
+    let sk = fmadd(b, sv[t], w[t])
+    p[t] = pk
+    sv[t] = sk
+    when U is T: x[t] += a*pk
+    else: x[t] += ax*U(pk)
+    r[t] = fmadd(-a, sk, r[t])
+  do:
+    let sk = fmadd(b, sh[t], wh[t])
+    sh[t] = sk
+    rh[t] = fmadd(-a, sk, rh[t])
 
 proc upload*[V: static int; T](s: StagGpu[V,T]; d: ptr UncheckedArray[T]; f: Field) =
   ## even sites of f, on the layout of the links, to d
@@ -1411,29 +1428,27 @@ proc updateB[V: static int; C: static int; T,U](s: StagGpu[V,T]; x: array[C, ptr
   unpackB(a, C)
   unpackB(b, C)
   unpackB(ax, C)
-  gpuForAsync(t, C*n6 + 6*C*nr):
-    if t < C*n6:
-      let js = t div n6
-      let o = t - js*n6
-      let i = pickB(so, js, C)*n6 + o
-      let aj = pickB(a, js, C)
-      let bj = pickB(b, js, C)
-      let pk = r[i] + bj*p[i]
-      let sk = fmadd(bj, sv[i], w[i])  # rounds as the halo copies below, see update
-      p[i] = pk
-      sv[i] = sk
-      when U is T: pickB(x, js, C)[o] += aj*pk
-      else: pickB(x, js, C)[o] += pickB(ax,js,C)*U(pk)
-      r[i] = fmadd(-aj, sk, r[i])
-    else:
-      let u = t - C*n6
-      let c = u div nr
-      let js = c div 6
-      let cc = 6*pickB(so, js, C) + c - 6*js
-      let k = int ro[u - c*nr] + cc*int rst[u - c*nr]
-      let sk = fmadd(pickB(b, js, C), sh[k], wh[k])
-      sh[k] = sk
-      rh[k] = fmadd(-pickB(a, js, C), sk, rh[k])
+  gpuFor2(t, C*n6, 6*C*nr):
+    let js = t div n6
+    let o = t - js*n6
+    let i = pickB(so, js, C)*n6 + o
+    let aj = pickB(a, js, C)
+    let bj = pickB(b, js, C)
+    let pk = r[i] + bj*p[i]
+    let sk = fmadd(bj, sv[i], w[i])  # rounds as the halo copies below, see update
+    p[i] = pk
+    sv[i] = sk
+    when U is T: pickB(x, js, C)[o] += aj*pk
+    else: pickB(x, js, C)[o] += pickB(ax,js,C)*U(pk)
+    r[i] = fmadd(-aj, sk, r[i])
+  do:
+    let c = t div nr
+    let js = c div 6
+    let cc = 6*pickB(so, js, C) + c - 6*js
+    let k = int ro[t - c*nr] + cc*int rst[t - c*nr]
+    let sk = fmadd(pickB(b, js, C), sh[k], wh[k])
+    sh[k] = sk
+    rh[k] = fmadd(-pickB(a, js, C), sk, rh[k])
 
 type CgB[T] = object
   ## the systems in the nBatch slots of the batched CG: slot j iterates on
