@@ -334,7 +334,7 @@ suite "backend/gpumem":
 
   test "launches in a threads block keep the kernel count":
     # The count orders the copies of the table: after a finalizer that
-    # lowers it, the kernels of the main thread skip their copies.
+    # changes it, the kernels of the main thread skip their copies.
     var s = lo.ColorVector()
     var r = lo.ColorVector()
     let n = lo.nSitesOuter*sizeof(s[0])
@@ -344,17 +344,18 @@ suite "backend/gpumem":
     onGpu: r := s
     check equalMem(addr r[0], addr s[0], n)
     let m = 16
-    var low = 0  # finalizers that left the count below its value before
-    var last = kernelCallCount
+    var changed = 0  # finalizers that did not leave the count as they found it
+    var before = 0
     threads:
       for rep in 0..<1000:
-        onGpu:
+        let fin = onGpuNowait:
           for i in gpuRange(m): discard
-        threadBarrier()
+        threadBarrier()  # every thread has launched
+        threadSingle: before = kernelCallCount
+        fin()
         threadSingle:
-          if kernelCallCount < last: inc low
-          last = kernelCallCount
-    check low == 0
+          if kernelCallCount != before: inc changed
+    check changed == 0
     threads: s := 3.0
     onGpu: r := s
     check equalMem(addr r[0], addr s[0], n)
