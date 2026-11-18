@@ -112,6 +112,15 @@ template hostFromGpu*[T](h: ptr T; g: untyped) =
   mixin fromGpu
   fromGpu(h[], g)
 
+template hostBack*(hp: untyped): untyped =
+  ## A proc that calls fromGpu for the pairs of hp (genHostPairs).  It
+  ## expands at the launch, so it finds the fromGpu declared there, also inside
+  ## a proc; nimcall keeps it from capturing the locals of the launch, which
+  ## the threads of a region share.
+  proc back(ps: typeof(hp)) {.gensym, nimcall.} =
+    for p in fields(ps): hostFromGpu(p[0], p[1])
+  back
+
 proc genHostPairs*(n: seq[NimNode]; handle: proc(c: NimNode): NimNode): NimNode =
   ## ((hostPtr(x), handle), ...) of the variables n of prepareVars
   result = newNimNode(nnkTupleConstr)

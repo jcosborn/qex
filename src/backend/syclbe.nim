@@ -128,18 +128,17 @@ proc genCpuPrepare(n:seq[NimNode]):NimNode =
   for c in n:
     result.add getast r(c[0],c[1])
 
-proc gpuFinalizer*[P](fl: static string; q: ptr Queue; flops: float; ps: P): proc() =
-  ## The finalizer of a kernel launch: waits for the queue and copies what the
-  ## kernel wrote back to the host variables of ps (genHostPairs).  The closure
-  ## has an environment of its own, so every thread of a threads block gets one
-  ## and may keep it.
-  mixin fromGpu
+proc gpuFinalizer*[P](fl: static string; q: ptr Queue; flops: float; ps: P; back: proc(ps: P) {.nimcall.}): proc() =
+  ## The finalizer of a kernel launch: waits for the queue, then back copies
+  ## what the kernel wrote to the host variables of ps (genHostPairs,
+  ## hostBack).  The closure has an environment of its own, so every thread of
+  ## a threads block gets one and may keep it.
   result = proc() =
     tic(fl)
     threadSingle:
       q[].wait
     toc("wait",flops=flops)
-    for p in fields(ps): hostFromGpu(p[0], p[1])
+    back(ps)
     toc("cpuFinalize")
 
 proc gpuDefaultNumThreads*(): int =
@@ -172,7 +171,8 @@ macro onGpuQ*(q: Queue, n,b,body: untyped): auto =
               body
       #gpuProc()
       toc("launch")
-      gpuFinalizer(fl, addr q, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hostPairs)
+      let hp = hostPairs
+      gpuFinalizer(fl, addr q, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v

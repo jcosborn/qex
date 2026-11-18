@@ -164,18 +164,18 @@ proc genCpuPrepare(n:seq[NimNode]):NimNode =
   for c in n:
     result.add getast r(c[0],c[1])
 
-proc gpuFinalizer*[P](fl: static string; count: int; ps: P): proc() =
-  ## The finalizer of a kernel launch: copies what the kernel wrote back to the
-  ## host variables of ps (genHostPairs).  The closure has an environment of its
-  ## own, so every thread of a threads block gets one and may keep it.
-  mixin fromGpu
+proc gpuFinalizer*[P](fl: static string; count: int; ps: P; back: proc(ps: P) {.nimcall.}): proc() =
+  ## The finalizer of a kernel launch: back copies what the kernel wrote to the
+  ## host variables of ps (genHostPairs, hostBack).  The closure has an
+  ## environment of its own, so every thread of a threads block gets one and
+  ## may keep it.
   result = proc() =
     tic(fl)
     var countSave = -1  # the count before, in the thread that lowers it
     threadSingle:
       countSave = kernelCallCount
       kernelCallCount = count
-    for p in fields(ps): hostFromGpu(p[0], p[1])
+    back(ps)
     if countSave >= 0: kernelCallCount = countSave  # the same thread restores it
     threadBarrier()
     toc("cpuFinalize")
@@ -249,7 +249,8 @@ macro onGpuNowait*(n,b,body: untyped): auto =
       else:
         toc("wait")
       inc kernelCallCount  # increment after launch
-      gpuFinalizer(fl, thisKernelCallCount, hostPairs)
+      let hp = hostPairs
+      gpuFinalizer(fl, thisKernelCallCount, hp, hostBack(hp))
   let
     v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
     cpuPrepare = genCpuPrepare v

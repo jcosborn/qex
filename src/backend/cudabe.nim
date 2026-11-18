@@ -171,12 +171,11 @@ proc genCpuPrepare(n:seq[NimNode]):NimNode =
   for c in n:
     result.add newCall(ident"toGpu", c[0])
 
-proc gpuFinalizer*[P](fl: static string; count: int; flops: float; ps: P): proc() =
-  ## The finalizer of a kernel launch: waits for the device and copies what the
-  ## kernel wrote back to the host variables of ps (genHostPairs).  The closure
-  ## has an environment of its own, so every thread of a threads block gets one
-  ## and may keep it.
-  mixin fromGpu
+proc gpuFinalizer*[P](fl: static string; count: int; flops: float; ps: P; back: proc(ps: P) {.nimcall.}): proc() =
+  ## The finalizer of a kernel launch: waits for the device, then back copies
+  ## what the kernel wrote to the host variables of ps (genHostPairs,
+  ## hostBack).  The closure has an environment of its own, so every thread of
+  ## a threads block gets one and may keep it.
   result = proc() =
     var countSave = -1  # the count before, in the thread that lowers it
     tic(fl)
@@ -188,7 +187,7 @@ proc gpuFinalizer*[P](fl: static string; count: int; flops: float; ps: P): proc(
         echo "onGpu kernel: ", $err
         quit cast[cint](err)
     toc("wait",flops=flops)
-    for p in fields(ps): hostFromGpu(p[0], p[1])
+    back(ps)
     if countSave >= 0: kernelCallCount = countSave  # the same thread restores it
     threadBarrier()
     toc("cpuFinalize")
@@ -220,7 +219,8 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
         cudaLaunch(kern, blocksPerGrid, threadsPerBlock, v)
       toc("launch")
       inc kernelCallCount  # increment after launch
-      gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hostPairs)
+      let hp = hostPairs
+      gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
   let
     varg = gensym(nskVar, "varg")
     arg = gensym(nskParam, "arg")

@@ -173,6 +173,29 @@ when GpuSum[float] is ref:  # CUDA, HIP
       let s = newGpuSum[float](1000*k)
       discard toGpu(s)
 
+proc localKernel(n: int): int =
+  ## A kernel on an array whose toGpu, getGpu and fromGpu are declared in this
+  ## proc: the elements that did not come back as the kernel set them.
+  type
+    Arr = object  # on the host
+      n: int
+      p: ptr UncheckedArray[float]
+    Dev = object  # its device copy
+      p: ptr UncheckedArray[float]
+  template toGpu(x: Arr): Dev =
+    Dev(p: cast[ptr UncheckedArray[float]](gpuMalloc(x.n*sizeof(float))))
+  template getGpu(x: Arr, g: Dev): auto = g
+  template fromGpu(x: Arr, g: Dev) =
+    gpuMemCpyToCpu(x.p, g.p, x.n*sizeof(float))
+    gpuFree(g.p)
+  template `[]=`(g: Dev, i: SomeInteger, y: float) = g.p[][i] = y
+  var h = newSeq[float](n)
+  let a = Arr(n: n, p: cast[ptr UncheckedArray[float]](addr h[0]))
+  onGpu(n):
+    for i in gpuRange(n): a[i] = 2.0
+  for i in 0..<n:
+    if h[i] != 2.0: inc result
+
 when defined(gcRefc):
   proc scans(): int =
     # Sampling allocates strings; keep it from causing the collection it measures.
@@ -333,5 +356,8 @@ suite "backend/gpumem":
     threads: s := 3.0
     onGpu: r := s
     check equalMem(addr r[0], addr s[0], n)
+
+  test "a kernel copies back through the fromGpu declared in its proc":
+    check localKernel(1000) == 0
 
 qexFinalize()
