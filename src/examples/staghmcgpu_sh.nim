@@ -15,6 +15,8 @@
 ##   12 for SU(3) links, 14 by default with smearing, 18
 ##   -batch:0 solves the fermion terms that share a force step one by one
 ##   instead of together (solveM of several systems, nBatch per hop)
+##   -fixed:0 the CG takes the exact sums of its dot products (SumX) in the
+##   place of the fixed order ones; runs repeat bit for bit with either
 ##   -check:1 first compares the smeared links and the smearing force with
 ##   gauge/hypsmear2 on random links
 import qex, gauge, gauge/[hypsmear, hypsmear2, gaugeGpu, hypGpu], physics/[qcdTypes, stagSolve, stagGpu]
@@ -158,6 +160,7 @@ letParam:
   reconFma:bool = 0
   reals = 0  # reals per link of the solvers, 12, 14 or 18; 0: 14 with smearing, 12 without
   batch:bool = 1  # solve the fermion terms of a force step together
+  fixed:bool = 1  # the CG adds its dot products in a fixed order (sumFixed), else exactly (SumX)
   check:bool = 0  # first compare the smearing and its force with gauge/hypsmear2
 
 installStandardParams()
@@ -273,6 +276,8 @@ let useBatch = batch and (nt > 1 or pbpreps.anyIt(it > 1))
 var s = newStagGpu(gs, float64, nl, batch = useBatch)
 var ss: StagGpu[VLEN,float32]
 let ssp = if mixed: (ss = newStagGpu(gs, float32, nl, batch = useBatch, recon64 = recon64, reconFma = reconFma); addr ss) else: nil
+s.fixed = fixed
+if mixed: ss.fixed = fixed
 echo "GPU links: ", s.nl, " reals", if s.lb == nil: ", forward only" else: ""
 let sg = stagSigns(gs)
 let
