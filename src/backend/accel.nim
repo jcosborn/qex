@@ -228,9 +228,10 @@ proc sumFixed*(r: var openArray[float]; a, w, h: ptr UncheckedArray[float]; m, n
 #   t = +-m 2^(e-1075), m < 2^53:  m 2^(e-1) = lo 2^(52 row) + hi 2^(52 (row+1)),
 #   row = (e-1) div 52, lo and hi below 2^52
 # A row is one uint64 per slot of weight 2^(52 row - 1074); term i adds lo and
-# hi to rows row and row+1 of slot i mod s.  A slot takes 1024 terms between
-# two reads.  The words are never reset: a read takes their change since the
-# last read, modulo 2^64, and rounds the exact sum once.
+# hi to rows row and row+1 of slot i mod s.  A word holds 2048 pieces between
+# two reads, and newSumX gives a slot up to 1024 terms.  The words are never
+# reset: a read takes their change since the last read, modulo 2^64, and
+# rounds the exact sum once.
 
 const
   sumRows = 41  # rows that cover the doubles
@@ -309,7 +310,7 @@ type SumX* = ref object
   m*, s*: int  # sums, slots per sum (a power of 2)
   st*: int  # words per row: the mark, s slots of each sum, padding to 64 bytes
   w*: int  # first row of the window
-  n: int  # terms per sum since the last read
+  n: int  # terms a slot got since the last read, at most
   a*: ptr UncheckedArray[uint64]  # [sumRows][st] on the device
   h: ptr UncheckedArray[uint64]  # pinned host copy
   p: seq[uint64]  # the words at the last read
@@ -344,10 +345,11 @@ proc free*(x: SumX) =
     x.a = nil
 
 proc terms*(x: SumX; n: int) =
-  ## A kernel is about to add n terms to each sum.  Beyond 1024 terms per
-  ## slot the words could wrap unseen.
-  x.n += n
-  if x.n > 1024*x.s: qexError "SumX: ", x.n, " terms between reads, its ", x.s, " slots take ", 1024*x.s
+  ## A kernel is about to add n terms to each sum, those of n indices in a
+  ## row: up to ceil(n/s) to a slot.  A word holds 2048 pieces below 2^52
+  ## between two reads; with more it could wrap unseen.
+  x.n += (n + x.s - 1) div x.s
+  if x.n > 2048: qexError "SumX: up to ", x.n, " terms per slot between reads, a word holds 2048"
 
 proc read*(x: SumX; r: var openArray[float]) =
   ## r[c] = sum c of the terms added since the last read, the exact sum

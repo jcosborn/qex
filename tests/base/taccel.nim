@@ -229,6 +229,14 @@ proc xsums(): int =
   if r != [0.0, 3.0]:
     inc result
     echo "SumX subnormal terms: ", r
+  # kernels of one term add to slot 0: a word holds 2048 of the largest pieces
+  let big = cast[float]((1075'u64 shl 52) or 0xF_FFFF_FFFF_FFFF'u64)  # 2^53 - 1
+  for k in 0..<2048:
+    gpuSumX(x, i, 1): [big, -big]
+  x.read(r)
+  if r != [2048.0*big, -2048.0*big]:
+    inc result
+    echo "SumX 2048 terms in a slot: ", r
   x.free
 
 suite "backend/accel":
