@@ -102,6 +102,7 @@ macro substVars*(x: untyped, a: untyped): auto =
 # The finalizer of a kernel launch gets its variables as arguments: for each one
 # the address of the host variable, its value where it has no address (a call
 # that gives a ref, a constant), or false for a type, and the device handle.
+# It holds the addresses, so it has to run while the host variables are alive.
 
 type HostVal*[T] = object
   ## a kernel variable without an address

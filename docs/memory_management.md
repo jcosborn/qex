@@ -43,7 +43,10 @@ threads:
   counts it without atomics. The environment of a closure made by a proc call
   belongs to that call, so each thread owns its own and may store it. The
   finalizer of `onGpuNowait` is made this way (`gpuFinalizer` in the backends):
-  it takes the device handles by value and the host variables by address.
+  it takes the device handles by value and the host variables by address, so
+  call it while those variables are alive. A kernel variable without an
+  address, such as a call that gives a ref, is copied by value: inside a
+  region name host data through variables, or every thread copies the ref.
 
 `{.cursor.}` is a raw pointer without runtime checks: the owner keeps the object
 alive while the cursor is in use. Under refc, `{.cursor.}` and `lent` change
