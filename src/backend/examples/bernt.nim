@@ -153,11 +153,11 @@ proc run[V: static int](lo: Layout[V]; R: typedesc; name: string; reps, ne: int;
     g.free
   template variant(c: static int) =
     const M = chunks(R, c)
-    var h = newSeq[uint32](M*c*n)
+    var h = newSeq[kT(c)](M*n)  # chunks: stc stores them aligned to 4c bytes
     let hp = cast[ptr UncheckedArray[uint32]](addr h[0])
     for k in 0..<n: stc(hp, V, c, k, rv[k])
-    let s = cast[ptr UncheckedArray[uint32]](gpuMalloc(h.len*sizeof(uint32)))
-    gpuMemCpyToGpu(s, hp, h.len*sizeof(uint32))
+    let s = cast[ptr UncheckedArray[uint32]](gpuMalloc(h.len*sizeof(kT(c))))
+    gpuMemCpyToGpu(s, hp, h.len*sizeof(kT(c)))
     gaussK[V, c, R](s, x, n, ne)
     gpuWaitAsync()
     gpuMemCpyToCpu(addr y[0], x, y.len*sizeof(float))
