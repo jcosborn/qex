@@ -19,8 +19,8 @@
 ## actions of a level add their one link forces and pull the sum back once.
 ## The force stats of each action need its own pullback: with forceStats = 1
 ## they come from the first fermion force of each level in a trajectory,
-## whose actions are pulled back one by one, and from the first gauge force,
-## with forceStats = 2 from every force, as hmcAction does.
+## whose actions are pulled back one by one, and from the first force of each
+## gauge action, with forceStats = 2 from every force, as hmcAction does.
 
 import qex
 import gauge
@@ -63,11 +63,10 @@ type
     w*: ptr UncheckedArray[float]  ## work vector, 6n reals
     red*, hred*: ptr UncheckedArray[float]  ## force stats sums and maxima, device and pinned host
     smeared*: bool  ## sgo and s hold the smeared links of gg.u
-    forceStats*: int  ## 1: the per action force stats of the first fermion force of each level and the first gauge force of a trajectory, 2: of all
+    forceStats*: int  ## 1: the per action force stats of the first fermion force of each level and the first force of each gauge action in a trajectory, 2: of all
     mixed*: bool  ## force solves in mixed precision
     r2in*: float  ## relative squared residual target of the inner FP32 CG
     sample: seq[bool]  ## per level: pull the actions of its next fermion force back one by one
-    sampleG: bool  ## the stats of the next gauge force
     hostNew*: bool  ## the host links are newer than gg.u
     hmcStats*: Table[string, ActionStats]
     secs*: float
@@ -451,11 +450,11 @@ proc force(h: HmcGpu; li: int; dtau: float) =
     tic()
     case a.kind
     of gkGauge:
-      if h.forceStats == 2 or h.sampleG:
+      # heatbath starts the stats of a trajectory: n = 0 until the action's first sampled force
+      if h.forceStats == 2 or (h.forceStats == 1 and a.stats[a.id & "F"]["n"] == 0):
         h.zeroLinks h.ft
         h.gg.forceA(a.gc, h.ft, -dtau)
         h.addForce(a, getElapsedTime())
-        h.sampleG = false
       else:  # f += dtau F as addForce, without the stats
         h.gg.forceA(a.gc, h.f, -dtau)
         a.stats[a.id & "F"]["secs"] += getElapsedTime()
@@ -539,7 +538,6 @@ proc start*(h: HmcGpu) =
   h.hmcStats["GU"] = baseStats0.newTable
   h.hmcStats["SF"] = baseStats0.newTable
   h.sample = newSeqWith(h.levels.len, h.forceStats == 1)
-  h.sampleG = h.forceStats == 1
   if h.hostNew:
     h.gg.upload(h.gg.u, h.cpu.uc.u)
     h.smeared = false
