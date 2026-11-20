@@ -198,6 +198,52 @@ proc localKernel(n: int): int =
 
 proc pick[F](fs: openArray[F]; k: int): F = fs[k]
 
+# The kernels launch inside procs: for code at the top level of a module Nim
+# emits the OpenMP pragmas of a device launch at file scope.
+
+proc kernelCount(lo: Layout): (bool, int, bool) {.noinline.} =
+  ## Launches in a threads block between two kernels r := s: whether the first
+  ## copied, the finalizers that did not leave the count as they found it,
+  ## whether the second copied.  The count orders the copies of the table:
+  ## after a finalizer that changes it, the kernels of the main thread skip
+  ## their copies.
+  var s = lo.ColorVector()
+  var r = lo.ColorVector()
+  let n = lo.nSitesOuter*sizeof(s[0])
+  threads:
+    s := 1.0
+    r := 0.0
+  onGpu: r := s
+  result[0] = equalMem(addr r[0], addr s[0], n)
+  let m = 16
+  var changed = 0
+  var before = 0
+  threads:
+    for rep in 0..<1000:
+      let fin = onGpuNowait:
+        for i in gpuRange(m): discard
+      threadBarrier()  # every thread has launched
+      threadSingle: before = kernelCallCount
+      fin()
+      threadSingle:
+        if kernelCallCount != before: inc changed
+  result[1] = changed
+  threads: s := 3.0
+  onGpu: r := s
+  result[2] = equalMem(addr r[0], addr s[0], n)
+
+proc pickCopy(lo: Layout): bool {.noinline.} =
+  ## Whether a kernel r := s copied back into r, a field by value.
+  var fs = [lo.ColorVector(), lo.ColorVector()]
+  var s = lo.ColorVector()
+  let n = lo.nSitesOuter*sizeof(s[0])
+  threads:
+    s := 3.0
+    fs[1] := 0.0
+  template r: untyped = pick(fs, 1)
+  onGpu: r := s
+  equalMem(addr fs[1][0], addr s[0], n)
+
 when defined(gcRefc):
   proc scans(): int =
     # Sampling allocates strings; keep it from causing the collection it measures.
@@ -333,45 +379,12 @@ suite "backend/gpumem":
     check getGpuMem(addr f[0]) == kept.pgm
 
   test "launches in a threads block keep the kernel count":
-    # The count orders the copies of the table: after a finalizer that
-    # changes it, the kernels of the main thread skip their copies.
-    var s = lo.ColorVector()
-    var r = lo.ColorVector()
-    let n = lo.nSitesOuter*sizeof(s[0])
-    threads:
-      s := 1.0
-      r := 0.0
-    onGpu: r := s
-    check equalMem(addr r[0], addr s[0], n)
-    let m = 16
-    var changed = 0  # finalizers that did not leave the count as they found it
-    var before = 0
-    threads:
-      for rep in 0..<1000:
-        let fin = onGpuNowait:
-          for i in gpuRange(m): discard
-        threadBarrier()  # every thread has launched
-        threadSingle: before = kernelCallCount
-        fin()
-        threadSingle:
-          if kernelCallCount != before: inc changed
-    check changed == 0
-    threads: s := 3.0
-    onGpu: r := s
-    check equalMem(addr r[0], addr s[0], n)
+    check kernelCount(lo) == (true, 0, true)
 
   test "a kernel copies back through the fromGpu declared in its proc":
     check localKernel(1000) == 0
 
   test "a kernel variable without an address is copied back":
-    var fs = [lo.ColorVector(), lo.ColorVector()]
-    var s = lo.ColorVector()
-    let n = lo.nSitesOuter*sizeof(s[0])
-    threads:
-      s := 3.0
-      fs[1] := 0.0
-    template r: untyped = pick(fs, 1)  # a field by value
-    onGpu: r := s
-    check equalMem(addr fs[1][0], addr s[0], n)
+    check pickCopy(lo)
 
 qexFinalize()

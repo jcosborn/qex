@@ -99,6 +99,10 @@ macro substVars*(x: untyped, a: untyped): auto =
   result = e
   #echo result.treerepr
 
+# A kernel launch (onGpu, onGpuNowait) belongs in a proc: the device backends
+# put OpenMP pragmas around it, and Nim emits those at file scope for code at
+# the top level of a module, where the device compiler stops.
+#
 # The finalizer of a kernel launch gets its variables as arguments: for each one
 # the address of the host variable, its value where it has no address (a call
 # that gives a ref, a constant), or false for a type, and the device handle.
