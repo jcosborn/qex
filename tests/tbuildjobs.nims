@@ -56,9 +56,13 @@ fi
   exec "chmod +x " & nim.quoteShell
   nimcache = dir / "cache with spaces"
   # cc if it runs, else gcc or clang, by name: see workingCc in tbuildflags.nims
+  cc = ""
   for name in ["cc", "gcc", "clang"]:
-    cc = gorge("command -v " & name).strip
-    if cc != "" and gorgeEx(cc.quoteShell & " -E -x c /dev/null").exitCode == 0: break
+    let c = gorge("command -v " & name).strip
+    if c != "" and gorgeEx(c.quoteShell & " -E -x c /dev/null").exitCode == 0:
+      cc = c
+      break
+  doAssert cc != "", "cc, gcc and clang do not run"
   bindir = dir / "bin"
   srcPaths = @[dir / "src"]
   mkDir(srcPaths[0])
