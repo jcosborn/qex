@@ -92,6 +92,7 @@ proc newHmcGpu*[U,R,S](uc: GaugeConfiguration[U]; srng: S; prng: R; tau: float; 
   ## fixed order, else exactly: a trajectory repeats bit for bit with either
   # 12 reals rebuild row 2 for det U = 1; the smeared links are U(3)
   if reals < 14: qexError "the smeared links are U(3): reals 14 or 18"
+  if forceStats notin [1, 2]: qexError "forceStats is 1 or 2"
   new(result)
   result.forceStats = forceStats
   result.mixed = mixed
