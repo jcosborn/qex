@@ -17,10 +17,11 @@
 ##   instead of together (solveM of several systems, nBatch per hop)
 ##   -fixed:0 the CG takes the exact sums of its dot products (SumX) in the
 ##   place of the fixed order ones; runs repeat bit for bit with either
+##   -ipc:0 MPI for peers on the node too
 ##   -check:1 first compares the smeared links and the smearing force with
 ##   gauge/hypsmear2 on random links
 import qex, gauge, gauge/[hypsmear, hypsmear2, gaugeGpu, hypGpu], physics/[qcdTypes, stagSolve, stagGpu]
-import backend/accel, rng/rngGpu
+import backend/accel, rng/rngGpu, comms/halogpu
 import mdevolve
 import algorithm, math, os, sequtils, strutils, times
 
@@ -161,6 +162,7 @@ letParam:
   reals = 0  # reals per link of the solvers, 12, 14 or 18; 0: 14 with smearing, 12 without
   batch:bool = 1  # solve the fermion terms of a force step together
   fixed:bool = 1  # the CG adds its dot products in a fixed order (sumFixed), else exactly (SumX)
+  ipc:bool = 1  # peers on the same node store into each other's device memory, else MPI for them too
   check:bool = 0  # first compare the smearing and its force with gauge/hypsmear2
 
 installStandardParams()
@@ -172,6 +174,7 @@ processHelpParam()
 DropWasteTimerRatio = timerWasteRatio
 VerboseGCStats = verboseGCStats
 VerboseTimer = verboseTimer
+haloIpc = ipc
 
 if mass.len > 5:
   qexError "Unimlemented for mass: ", mass

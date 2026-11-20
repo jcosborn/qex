@@ -8,11 +8,12 @@
 ##   -mixed:1 solves in mixed precision, restarting single precision CGs
 ##   -recon:0 keeps 18 reals per link in the solvers, which otherwise take 12
 ##   and so need SU(3) links (the random ones of -hot:1 are so to 1e-10)
+##   -ipc:0 MPI for peers on the node too
 ##   -check:1 first compares the gauge action, gauge force, link update and
 ##   fermion force and random numbers with the CPU ones on a random gauge
 ##   field, and exits with 1 if one differs beyond rounding
 import qex, gauge, physics/[qcdTypes, stagSolve, stagGpu], gauge/gaugeGpu
-import backend/accel, rng/rngGpu
+import backend/accel, rng/rngGpu, comms/halogpu
 import mdevolve
 import times, macros
 
@@ -68,12 +69,13 @@ threads:
   threadBarrier()
   gs.stagPhase
 
+haloIpc = intParam("ipc", 1) != 0
 var gg = newGpuGauge(lo)
 let reals = if intParam("recon", 1) != 0: 12 else: 18
 var s = newStagGpu(gs, float64, reals)
 var ss: StagGpu[VLEN,float32]  # single precision solver with -mixed:1
 let ssp = if intParam("mixed", 0) != 0: (ss = newStagGpu(gs, float32, reals); addr ss) else: nil
-echo "GPU links: ", s.nl, " reals", if s.lb == nil: ", forward only" else: ""
+echo "GPU links: ", s.nl, " reals", (if s.lb == nil: ", forward only" else: ""), "  peer IPC: ", haloIpc
 let sg = stagSigns(gs)
 let mom = gg.newLinks  # momenta
 let g0 = gg.newLinks  # links at the start of the trajectory

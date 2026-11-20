@@ -10,7 +10,7 @@
 ## each trajectory); -mixed:1 solves the
 ## fermion forces in mixed precision; -fixed_sums:0 takes the exact sums of
 ## the CG dot products (SumX) in the place of the fixed order ones; runs
-## repeat bit for bit with either.
+## repeat bit for bit with either; -ipc:0 uses MPI for peers on the node too.
 ##
 ## Designed to be backwards-compatible with stag_pv_hmc code under staghmc-devel
 ## branch of QEX. Hence, some of the code is reflective of conventions that I
@@ -34,6 +34,7 @@ setGlobal("FUELCompat", "1") # enable FUEL compatibility (RNG)
 import physics/[stagD]
 import physics/[stagSolve]
 import hmc/[hmcActionGpu]
+import comms/[halogpu]
 
 qexInit(verb = 2)
 
@@ -70,6 +71,7 @@ letParam:
   recon64 = 0 # 1 reconstructs FP32 links with FP64 intermediates
   reconFma = 0 # 1 uses explicit FP32 fused reconstruction
   fixed_sums = 1 # 1 adds the CG dot products in a fixed order, 0 exactly; runs repeat bit for bit with either
+  ipc = 1 # 1 peers on the same node store into each other's device memory, 0 MPI for them too
 
 # read xml inputs - again, if you're using this as a reference, please, please, please
 # note that many of the choices made here are legacy and may not reflect best practices
@@ -179,6 +181,7 @@ spf.maxits = f_maxits
 
 #[ build action/integrator from inputs ]#
 
+haloIpc = ipc != 0
 var hmc = uc.newHmcGpu(s, r, tau, revCheckFreq = rev_check_freq, bc = periodic, reals = reals,
                        forceStats = force_stats, mixed = mixed != 0, fixed = fixed_sums != 0, r2in = r2in,
                        recon64 = recon64 != 0, reconFma = reconFma != 0)
