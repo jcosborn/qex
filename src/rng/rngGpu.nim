@@ -13,6 +13,10 @@ type RngGpu*[V: static int; R] = object
   lo*: Layout[V]
   s*: ptr UncheckedArray[uint32]  # [n div V][W][V]
 
+# RngFuel, the RngMilc6 of FUELCompat: its gaussian keeps the second draw of a
+# pair in the generator and is no device proc, and its host u1 draws a gaussian
+const noFuel = "rng/rngGpu has no kernels for RngFuel (RngMilc6 with FUELCompat)"
+
 proc upload*[V: static int; R](g: RngGpu[V,R]; r: Field[1,R]) =
   ## the generators of r to g, site k of g.lo from the generator of its
   ## coordinates
@@ -36,6 +40,7 @@ proc download*[V: static int; R](g: RngGpu[V,R]; r: Field[1,R]) =
 
 proc newRngGpu*[V: static int; R](lo: Layout[V]; r: Field[1,R]): RngGpu[V,R] =
   ## the generators of r on the device, for fields of lo
+  when R is RngFuel: {.error: noFuel.}
   result.lo = lo
   result.s = cast[ptr UncheckedArray[uint32]](gpuMalloc(rngWords(R)*lo.nSites*sizeof(uint32)))
   result.upload r
@@ -50,6 +55,7 @@ proc download*[V: static int; R](g: RngGpu[V,R]; r: RNGFieldV[V,R]) =
 
 proc newRngGpu*[V: static int; R](r: RNGFieldV[V,R]): RngGpu[V,R] =
   ## the generators of r on the device
+  when R is RngFuel: {.error: noFuel.}
   result.lo = r.l
   result.s = cast[ptr UncheckedArray[uint32]](gpuMalloc(r.s.len*sizeof(uint32)))
   result.upload r
