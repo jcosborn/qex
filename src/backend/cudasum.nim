@@ -130,6 +130,10 @@ template value*(x: GpuSum | GpuSumView): auto = x.val[]
 template toGpu*(x: GpuSum): auto =
   let bytes = sizeof(x.dev[]) + x.npartial.int*sizeof(x.T)
   let pgmdev = getGpuMem(addr x[], bytes)
+  if pgmdev.isNew:  # the table dropped the block of newGpuSum (freeAllGpuMem): start over
+    pgmdev.tag.add "GpuSumPartial"
+    x.dev = cast[typeof x.dev](pgmdev.p)
+    x.dev.gpuMemset(0, bytes)
   GpuSumView[x.T](dev: x.dev, npartial: x.npartial, val: x.val)
 template getGpu*(x: GpuSum, g: GpuSumView): auto = g
 template fromGpu*(x: GpuSum, g: GpuSumView): auto = discard

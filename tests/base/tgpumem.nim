@@ -173,6 +173,32 @@ when GpuSum[float] is ref:  # CUDA, HIP
       let s = newGpuSum[float](1000*k)
       discard toGpu(s)
 
+proc sums(n: int): array[2, array[2, float]] {.noinline.} =
+  ## Through one GpuSum: the sums of n terms [1, 2], then, after the table
+  ## freed every device block and others took their place, of n terms [3, 4].
+  var gs = newGpuSum[array[2, float]](n)
+  template total(a, b: float): array[2, float] =
+    onGpu(n):
+      var r: array[2, float]
+      for i in gpuRange(n):
+        r[0] += a
+        r[1] += b
+      gs.reduce r
+    gs.value
+  result[0] = total(1.0, 2.0)
+  freeAllGpuMem()
+  # Blocks of the size of the partial sums of CUDA and HIP, all bits set: a
+  # sum that still wrote to its freed block would not see its last thread
+  # block and keep the first values.
+  var ff = newSeq[byte](8 + ((n + 31) div 32)*sizeof(array[2, float]))
+  for b in ff.mitems: b = 0xFF
+  var q: array[64, pointer]
+  for k in 0..<q.len:
+    q[k] = gpuMalloc(ff.len)
+    gpuMemCpyToGpu(q[k], addr ff[0], ff.len)
+  result[1] = total(3.0, 4.0)
+  for k in 0..<q.len: gpuFree(q[k])
+
 proc localKernel(n: int): int =
   ## A kernel on an array whose toGpu, getGpu and fromGpu are declared in this
   ## proc: the elements that did not come back as the kernel set them.
@@ -380,6 +406,9 @@ suite "backend/gpumem":
 
   test "launches in a threads block keep the kernel count":
     check kernelCount(lo) == (true, 0, true)
+
+  test "a GpuSum sums after the table freed its device block":
+    check sums(40000) == [[40000.0, 80000.0], [120000.0, 160000.0]]
 
   test "a kernel copies back through the fromGpu declared in its proc":
     check localKernel(1000) == 0
