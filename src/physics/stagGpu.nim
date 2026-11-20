@@ -1990,11 +1990,8 @@ proc solveMB[V: static int](s: StagGpu[V,float]; x, b: openArray[ptr UncheckedAr
   ## by solveM of one system.  With ss, each single precision CG produces
   ## a correction y for M y = r; x += y and r = b - M x in double decide
   ## whether to restart.  Up to nBatch systems share those steps once all
-  ## their single precision CGs stopped.  One system takes solveM of one.
+  ## their single precision CGs stopped.
   let ns = x.len
-  if ns == 1:
-    s.solveM(x[0], b[0], m[0], sp[0], ss, r2in, full)
-    return
   if ss != nil and ss[].ctrl.kind == 1:
     s.solveMR(ss[],x,b,m,sp,r2in,full)
     return
@@ -2168,6 +2165,10 @@ proc solveM*[V: static int](s: StagGpu[V,float]; x,b: openArray[ptr UncheckedArr
                             sp: var openArray[SolverParams]; ss: ptr StagGpu[V,float32] = nil; r2in = 1e-6;
                             full = false) =
   ## The systems share the time; flops count each system's iterations as solveEE.
+  ## One system takes solveM of one, which records its own time and flops.
+  if x.len == 1:
+    s.solveM(x[0], b[0], m[0], sp[0], ss, r2in, full)
+    return
   let t0 = epochTime()
   var its0 = newSeq[int](sp.len)
   for i in 0..<sp.len: its0[i] = sp[i].iterations
