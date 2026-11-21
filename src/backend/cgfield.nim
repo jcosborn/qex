@@ -41,13 +41,13 @@ template `[]`*[T;V,L:static int](x: GpuField[V,T], i: SiteV[L]): auto =
     let v = i[] mod V
     x.p[][s][asSimd(v)]
 
-proc `[]=`*[T;V:static int](r: GpuField[V,T], i: SiteV[1], x: auto) =
-  let s = i[] div V
-  let v = i[] mod V
-  r.p[][s][asSimd(v)] = x
-
-proc `[]=`*[T;V:static int](r: GpuField[V,T], i: SiteV[V], x: auto) =
-  r.p[][i[]] := x
+proc `[]=`*[T;V,L:static int](r: GpuField[V,T], i: SiteV[L], x: auto) =
+  when V == L:  # a whole site, also the one lane of V = 1
+    r.p[][i[]] := x
+  else:
+    let s = i[] div V
+    let v = i[] mod V
+    r.p[][s][asSimd(v)] = x
 
 proc `:=`*(r: GpuField, x: SomeGpuField) =
   for s in gpuSites(r.n, r.V):
