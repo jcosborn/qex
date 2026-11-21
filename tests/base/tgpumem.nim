@@ -168,8 +168,8 @@ proc reals(n, k: int): (pointer, int) {.noinline.} =
 
 when GpuSum[float] is ref:  # CUDA, HIP
   proc gpuSums() {.noinline.} =
-    ## GpuSums of 1000 to 8000 sites with their device blocks, dead at the return
-    for k in 1..8:
+    ## 64 GpuSums of 1000 to 64000 sites with their device blocks, dead at the return
+    for k in 1..64:
       let s = newGpuSum[float](1000*k)
       discard toGpu(s)
 
@@ -375,9 +375,10 @@ suite "backend/gpumem":
       when defined(gcDestructors):
         check n == 0
       else:
-        # A stale stack word can keep the last GpuSum alive through refc's
-        # conservative scan; sums whose death misses the table stay all 8.
-        check n <= 1
+        # Stale stack words can keep a few sums alive through refc's
+        # conservative scan (two with g++ 14 on aarch64); sums whose death
+        # misses the table stay, all 64 if none reaches it.
+        check n < 8
 
   test "explicit Field release drops its device entry":
     let f = lo.ColorVector()
