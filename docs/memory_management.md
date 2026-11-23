@@ -20,11 +20,13 @@ threads:
   let lo {.cursor.} = x.l                # or borrow it under a name
   let comm {.cursor.} = getDefaultComm()
   y := f ^* x                            # `^*` returns `lent F`
+  let v {.cursor.} = f ^* x              # a `let` of it needs the cursor
 ```
 
 - Name a shared reference with `{.cursor.}`. Cursor inference does not cover
   globals, values captured by the threads proc, or variables whose fields are
-  passed by address.
+  passed by address. Nim up to 2.4.1 inferred cursors for values borrowed
+  from captured variables, so a missing one shows only with later compilers.
 - Procs used in regions return borrowed values (`lent T`; the value must come
   from the first parameter), or are templates that set a `{.cursor.}` variable
   (the shift helpers of `gaugeProd` in `src/gauge/gaugeUtils.nim`).
