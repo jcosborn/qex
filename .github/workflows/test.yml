@@ -300,12 +300,13 @@ jobs:
     - *qmp-qio
     - name: configure
       working-directory: qex
-      # the stub libcuda links without the driver
+      # the stub libcuda links without the driver; include/cccl has the libcu++
+      # headers of cooperative_groups.h (GpuSum), which nvcc adds by itself
       run: >-
         QMPDIR=qmp QIODIR=qio ./configure
         cctype:clang ccdef:cpp cc:mpicc cpp:mpicxx env:OMPI_CC=clang-23 env:OMPI_CXX=clang++-23
         cflagsspeed:"-O3 -march=x86-64-v4" cppflagsspeed:"-O3 -march=x86-64-v4"
-        cppflagsalways:"-g -x cuda --cuda-gpu-arch=sm_90 --cuda-path=$CUDA_HOME -Xarch_device -mllvm=-disable-machine-sink"
+        cppflagsalways:"-g -x cuda --cuda-gpu-arch=sm_90 --cuda-path=$CUDA_HOME -isystem $CUDA_HOME/include/cccl -Xarch_device -mllvm=-disable-machine-sink"
         ldppflags:"-g -L$CUDA_HOME/lib64 -L$CUDA_HOME/lib64/stubs -Wl,-rpath,$CUDA_HOME/lib64 -lcudart -ldl"
         simd:SSE,AVX,AVX512 vlen:8 nimargs:'@["-d:Backend=CUDA"]'
     - *build-gpu
