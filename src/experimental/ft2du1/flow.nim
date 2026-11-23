@@ -125,8 +125,8 @@ proc portalSmearGrad(V, cU: Ggauge; mask: PortalMask; m: CircleMap): Ggauge =
         GP[x][0, 0].re := mk*e.gpm1
       threadBarrier()
       let
-        Dm0 = sbD[0] ^* D
-        Dm1 = sbD[1] ^* D
+        Dm0 {.cursor.} = sbD[0] ^* D
+        Dm1 {.cursor.} = sbD[1] ^* D
       threadBarrier()
       for z in U0:
         let
@@ -157,8 +157,8 @@ proc portalSmearGrad(V, cU: Ggauge; mask: PortalMask; m: CircleMap): Ggauge =
         R1[z][0, 0].re := cu1i*u1r-cu1r*u1i
       threadBarrier()
       let
-        R1p0 = sf[0] ^* R1
-        R0p1 = sf[1] ^* R0
+        R1p0 {.cursor.} = sf[0] ^* R1
+        R0p1 {.cursor.} = sf[1] ^* R0
       threadBarrier()
       for x in B:
         let a = 0.25*(R0[x][0, 0].re+R1p0[x][0, 0].re-
@@ -166,8 +166,8 @@ proc portalSmearGrad(V, cU: Ggauge; mask: PortalMask; m: CircleMap): Ggauge =
         B[x][0, 0].re := a*GP[x][0, 0].re
       threadBarrier()
       let
-        Bm0 = sbB[0] ^* B
-        Bm1 = sbB[1] ^* B
+        Bm0 {.cursor.} = sbB[0] ^* B
+        Bm1 {.cursor.} = sbB[1] ^* B
       threadBarrier()
       for z in cV.gval[0]:
         let
@@ -217,8 +217,8 @@ proc portalSmear*(V: Ggauge; mask: PortalMask; m: CircleMap): Ggauge =
         D[x][0, 0].re := mask[x][0, 0].re*mapDelta(m, pa[x][0, 0].re)
       threadBarrier()
       let
-        Dm0 = sb[0] ^* D
-        Dm1 = sb[1] ^* D
+        Dm0 {.cursor.} = sb[0] ^* D
+        Dm1 {.cursor.} = sb[1] ^* D
       threadBarrier()
       for z in U.gval[0]:
         let
@@ -279,8 +279,8 @@ proc portalLogDetJ(V: Ggauge; mask: PortalMask; m: CircleMap): Gscalar =
           D[x][0, 0].re := mask[x][0, 0].re*mapDlogj(m, pa[x][0, 0].re)
         threadBarrier()
         let
-          Dm0 = sb[0] ^* D
-          Dm1 = sb[1] ^* D
+          Dm0 {.cursor.} = sb[0] ^* D
+          Dm1 {.cursor.} = sb[1] ^* D
         threadBarrier()
         for z in cV.gval[0]:
           let
@@ -334,8 +334,8 @@ proc portalSmearHost*(V: gauge.Gauge; mask: PortalMask; m: CircleMap): tuple[u: 
     threadSingle: ld = s
     threadBarrier()
     let
-      Dm0 = sb[0] ^* D
-      Dm1 = sb[1] ^* D
+      Dm0 {.cursor.} = sb[0] ^* D
+      Dm1 {.cursor.} = sb[1] ^* D
     threadBarrier()
     for z in u0:
       let
@@ -382,8 +382,8 @@ proc invertPortalSmear*(U: auto; mask: PortalMask; m: CircleMap;
       D[x][0, 0].re := d
     threadBarrier()
     let
-      Dm0 = sb[0] ^* D
-      Dm1 = sb[1] ^* D
+      Dm0 {.cursor.} = sb[0] ^* D
+      Dm1 {.cursor.} = sb[1] ^* D
     threadBarrier()
     for z in U[0]:
       let
@@ -421,10 +421,10 @@ proc blockNeighborAngles(pa: DLatticeColorMatrixV): array[4, DLatticeColorMatrix
     sb = newShifters(pa, -1)
   threads:
     let
-      s0 = sb[1] ^* pa
-      s1 = sf[0] ^* pa
-      s2 = sf[1] ^* pa
-      s3 = sb[0] ^* pa
+      s0 {.cursor.} = sb[1] ^* pa
+      s1 {.cursor.} = sf[0] ^* pa
+      s2 {.cursor.} = sf[1] ^* pa
+      s3 {.cursor.} = sb[0] ^* pa
     threadBarrier()
     for x in n0:
       n0[x][0, 0].re := s0[x][0, 0].re
@@ -503,18 +503,18 @@ proc blockCorrectionOp(V: Ggauge; mask: PortalMask; beta: float; evalBlock: proc
         sb = newShifters(V.gval[0], -1)
       threads:
         let
-          q0 = sf[1] ^* k0
-          q1 = sb[0] ^* k1
-          q2 = sb[1] ^* k2
-          q3 = sf[0] ^* k3
+          q0 {.cursor.} = sf[1] ^* k0
+          q1 {.cursor.} = sb[0] ^* k1
+          q2 {.cursor.} = sb[1] ^* k2
+          q3 {.cursor.} = sf[0] ^* k3
         threadBarrier()
         for x in dK:
           dK[x][0, 0].re := kc[x][0, 0].re+q0[x][0, 0].re+
             q1[x][0, 0].re+q2[x][0, 0].re+q3[x][0, 0].re
         threadBarrier()
         let
-          dm0 = sb[0] ^* dK
-          dm1 = sb[1] ^* dK
+          dm0 {.cursor.} = sb[0] ^* dK
+          dm1 {.cursor.} = sb[1] ^* dK
         threadBarrier()
         for x in cV.gval[0]:
           let
@@ -546,8 +546,8 @@ proc pairAngles(pa: DLatticeColorMatrixV; dir: int): tuple[plus, minus: DLattice
     sb = newShifters(pa, -1)
   threads:
     let
-      p0 = sb[0] ^* pa
-      p1 = sb[1] ^* pa
+      p0 {.cursor.} = sb[0] ^* pa
+      p1 {.cursor.} = sb[1] ^* pa
     threadBarrier()
     if dir == 0:
       for x in pp:
@@ -612,17 +612,17 @@ proc pairLogDetJ(V: Ggauge; mask: PortalMask; p: PairMap; dir: int): Gscalar =
         sb = newShifters(V.gval[0], -1)
       threads:
         if dir == 0:
-          let q = sf[1] ^* km
+          let q {.cursor.} = sf[1] ^* km
           threadBarrier()
           for x in dK: dK[x][0, 0].re := kp[x][0, 0].re+q[x][0, 0].re
         else:
-          let q = sf[0] ^* kp
+          let q {.cursor.} = sf[0] ^* kp
           threadBarrier()
           for x in dK: dK[x][0, 0].re := q[x][0, 0].re+km[x][0, 0].re
         threadBarrier()
         let
-          dm0 = sb[0] ^* dK
-          dm1 = sb[1] ^* dK
+          dm0 {.cursor.} = sb[0] ^* dK
+          dm1 {.cursor.} = sb[1] ^* dK
         threadBarrier()
         for x in cV.gval[0]:
           let
@@ -724,17 +724,17 @@ proc pairSmearGrad(V, cU: Ggauge; mask: PortalMask; p: PairMap; dir: int): Ggaug
         SM[x][0, 0].re := R[x][0, 0].re*DM[x][0, 0].re
       threadBarrier()
       if dir == 0:
-        let q = sf[1] ^* SM
+        let q {.cursor.} = sf[1] ^* SM
         threadBarrier()
         for x in dP: dP[x][0, 0].re := SP[x][0, 0].re+q[x][0, 0].re
       else:
-        let q = sf[0] ^* SP
+        let q {.cursor.} = sf[0] ^* SP
         threadBarrier()
         for x in dP: dP[x][0, 0].re := q[x][0, 0].re+SM[x][0, 0].re
       threadBarrier()
       let
-        dm0 = sb[0] ^* dP
-        dm1 = sb[1] ^* dP
+        dm0 {.cursor.} = sb[0] ^* dP
+        dm1 {.cursor.} = sb[1] ^* dP
       threadBarrier()
       for x in cV.gval[0]:
         let
@@ -1119,8 +1119,8 @@ proc blockSmearHost*(V: gauge.Gauge; mask: PortalMask; m: BlockMap): tuple[u: ga
     sb = newShifters(V[0], -1)
   threads:
     let
-      a2m1 = sb[1] ^* a2
-      a1m0 = sb[0] ^* a1
+      a2m1 {.cursor.} = sb[1] ^* a2
+      a1m0 {.cursor.} = sb[0] ^* a1
     threadBarrier()
     for x in u0:
       let
@@ -1180,8 +1180,8 @@ proc invertBlockSmear*(U: auto; mask: PortalMask; m: BlockMap) =
   let sb = newShifters(U[0], -1)
   threads:
     let
-      a2m1 = sb[1] ^* a2
-      a1m0 = sb[0] ^* a1
+      a2m1 {.cursor.} = sb[1] ^* a2
+      a1m0 {.cursor.} = sb[0] ^* a1
     threadBarrier()
     for x in U[0]:
       let
