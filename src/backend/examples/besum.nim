@@ -48,9 +48,10 @@ proc main =
     let n = n0
     let y = dev(6*n)
     let d = dev(6*n)
-    gpuFor(k, 6*n):
-      y[k] = float((k*2654435761) and 1023)/512.0 - 1.0
-      d[k] = float((k*40503 + 17) and 1023)/512.0 - 1.0
+    onGpu(6*n):
+      for k in gpuRange(6*n):
+        y[k] = float((k*2654435761) and 1023)/512.0 - 1.0
+        d[k] = float((k*40503 + 17) and 1023)/512.0 - 1.0
     let hb = cast[ptr UncheckedArray[float]](gpuMallocHost(2*sumHost*sizeof(float)))
     let rs = dev(2*max(n, nSlot))
     let rz0 = dev(2*nSlot)
@@ -58,29 +59,32 @@ proc main =
     var r: array[2, float]
 
     let tStore = timeIt:
-      gpuForAsync(i, n):
-        dotsOf(i, y, d, yy, dy)
-        rs[i] = yy
-        rs[n + i] = dy
+      onGpuQueue(n):
+        for i in gpuRange(n):
+          dotsOf(i, y, d, yy, dy)
+          rs[i] = yy
+          rs[n + i] = dy
       gpuWaitAsync()
 
     # the two buffers of the atomic slots: a kernel zeroes those of the next one
     var ra = rs
     var rz = rz0
-    gpuFor(k, 2*nSlot):
-      ra[k] = 0.0
-      rz[k] = 0.0
+    onGpu(2*nSlot):
+      for k in gpuRange(2*nSlot):
+        ra[k] = 0.0
+        rz[k] = 0.0
     var sAtomic: array[2, float]
     let tAtomic = timeIt:
       let a = ra
       let z = rz
-      gpuForAsync(i, n):
-        dotsOf(i, y, d, yy, dy)
-        if i < nSlot:
-          z[i] = 0.0
-          z[nSlot + i] = 0.0
-        gpuAtomicAdd(a, i mod nSlot, yy)
-        gpuAtomicAdd(a, nSlot + i mod nSlot, dy)
+      onGpuQueue(n):
+        for i in gpuRange(n):
+          dotsOf(i, y, d, yy, dy)
+          if i < nSlot:
+            z[i] = 0.0
+            z[nSlot + i] = 0.0
+          gpuAtomicAdd(a, i mod nSlot, yy)
+          gpuAtomicAdd(a, nSlot + i mod nSlot, dy)
       gpuWaitAsync()
       gpuMemCpyToCpu(hb, a, 2*nSlot*sizeof(float))
       sAtomic = [0.0, 0.0]
@@ -91,18 +95,20 @@ proc main =
 
     var sFixed: array[2, float]
     let tFixed = timeIt:
-      gpuForAsync(i, n):
-        dotsOf(i, y, d, yy, dy)
-        rs[i] = yy
-        rs[n + i] = dy
+      onGpuQueue(n):
+        for i in gpuRange(n):
+          dotsOf(i, y, d, yy, dy)
+          rs[i] = yy
+          rs[n + i] = dy
       sumFixed(sFixed, rs, ws, hb, 2, n)
 
     let tKA = timeIt:  # the kernel of atomic alone
       let a = ra
-      gpuForAsync(i, n):
-        dotsOf(i, y, d, yy, dy)
-        gpuAtomicAdd(a, i mod nSlot, yy)
-        gpuAtomicAdd(a, nSlot + i mod nSlot, dy)
+      onGpuQueue(n):
+        for i in gpuRange(n):
+          dotsOf(i, y, d, yy, dy)
+          gpuAtomicAdd(a, i mod nSlot, yy)
+          gpuAtomicAdd(a, nSlot + i mod nSlot, dy)
       gpuWaitAsync()
     echo &"n {n:8}  store {tStore:8.2f}  atomic {tAtomic:8.2f} (+{tAtomic-tStore:6.2f})  kernel alone {tKA:8.2f} (+{tKA-tStore:6.2f})  fixed {tFixed:8.2f} (+{tFixed-tStore:6.2f})  us per cycle"
 
@@ -110,10 +116,11 @@ proc main =
     let hc = cast[ptr UncheckedArray[byte]](gpuMallocHost(3*sizes[^1]))
     let dc = cast[ptr UncheckedArray[byte]](gpuMalloc(3*sizes[^1]))
     template store =
-      gpuForAsync(i, n):
-        dotsOf(i, y, d, yy, dy)
-        rs[i] = yy
-        rs[n + i] = dy
+      onGpuQueue(n):
+        for i in gpuRange(n):
+          dotsOf(i, y, d, yy, dy)
+          rs[i] = yy
+          rs[n + i] = dy
     for bytes in sizes:
       let tC = timeIt:
         store()
@@ -148,11 +155,12 @@ proc main =
         let xst = x.st
         let xw = x.w
         let tKX = timeIt:
-          gpuForAsync(i, n):
-            dotsOf(i, y, d, yy, dy)
-            let k = 1 + (i and (xs-1))
-            sumXAdd(xa, k, xst, xw, yy)
-            sumXAdd(xa, k + xs, xst, xw, dy)
+          onGpuQueue(n):
+            for i in gpuRange(n):
+              dotsOf(i, y, d, yy, dy)
+              let k = 1 + (i and (xs-1))
+              sumXAdd(xa, k, xst, xw, yy)
+              sumXAdd(xa, k + xs, xst, xw, dy)
           gpuWaitAsync()
         var z: array[2, float]
         x.read(z)

@@ -93,14 +93,15 @@ proc effective[V: static int](sg: StagGpu[V,float32]): auto =
   let nb = sg.nbr
   let tmp = cast[ptr UncheckedArray[float]](gpuMalloc(4*18*n*sizeof(float)))
   template expand(N: static int; r64, fm: static bool) =
-    gpuFor(i, 4*n):
-      let mu = i div n
-      let k = i mod n
-      let e = if nb[mu*n+k] < 0: -1'f32 else: 1'f32
-      var a: array[18,float32]
-      load(a, lf, N*mu*n + uo(V,k,N), V, e, N, r64, fm)
-      let o = 18*mu*n + uo(V,k,18)
-      forStatic c, 0, 17: tmp[o+c*V] = float(a[c])
+    onGpu(4*n):
+      for i in gpuRange(4*n):
+        let mu = i div n
+        let k = i mod n
+        let e = if nb[mu*n+k] < 0: -1'f32 else: 1'f32
+        var a: array[18,float32]
+        load(a, lf, N*mu*n + uo(V,k,N), V, e, N, r64, fm)
+        let o = 18*mu*n + uo(V,k,18)
+        forStatic c, 0, 17: tmp[o+c*V] = float(a[c])
   template comp(r64, fm: static bool) =
     if sg.nl == 12: expand(12,r64,fm) else: expand(14,r64,fm)
   if sg.nl == 18: expand(18,false,false)
@@ -286,7 +287,8 @@ proc actualM(x: ptr UncheckedArray[float]; b: Src; m: float): float =
   let full = b.full
   let ne = 6*sd.ne
   sd.applyMfull(r,x,m)
-  gpuFor(i,n6): r[i] = (if full or i < ne: src[i] else: 0.0) - r[i]
+  onGpu(n6):
+    for i in gpuRange(n6): r[i] = (if full or i < ne: src[i] else: 0.0) - r[i]
   let rr = sd.norm2(r)
   let bb = sd.norm2EO(src,full)
   let b2 = bb[0]+bb[1]

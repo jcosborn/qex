@@ -44,7 +44,9 @@ proc promote(d: StagGpu[V,float64]; s: StagGpu[V,float32]) =
   template copy(a,b: untyped; count: int) =
     let dst = a
     let src = b
-    gpuFor(i, count): dst[i] = float(src[i])
+    let n = count
+    onGpu(n):
+      for i in gpuRange(n): dst[i] = float(src[i])
   copy(d.lf, s.lf, 4*s.nl*s.n)
   if s.lb != nil: copy(d.lb, s.lb, 4*s.nl*s.n)
   for q in 0..1:

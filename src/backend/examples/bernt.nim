@@ -62,68 +62,72 @@ template stc(s: ptr UncheckedArray[uint32]; V, c: static int; k: int; g: typed) 
 
 proc copyK[V, c: static int; R](s: ptr UncheckedArray[uint32]; x: ptr UncheckedArray[float]; n, ne: int; z: uint32) =
   ## z = 0 at run time: the generators are stored unchanged
-  gpuForAsync(k, n):
-    const W = rngWords(R)
-    let g = ldc(s, V, c, k, R)
-    var b = cast[array[W, uint32]](g)
-    var t = 0'u32
-    forStatic w, 0, W-1:
-      t = t xor b[w]
-      b[w] = b[w] xor z
-    let o = (k div V)*(ne*V) + k mod V
-    for i in 0..<ne: x[o + i*V] = float(t + uint32(i))
-    stc(s, V, c, k, cast[R](b))
+  onGpuQueue(n):
+    for k in gpuRange(n):
+      const W = rngWords(R)
+      let g = ldc(s, V, c, k, R)
+      var b = cast[array[W, uint32]](g)
+      var t = 0'u32
+      forStatic w, 0, W-1:
+        t = t xor b[w]
+        b[w] = b[w] xor z
+      let o = (k div V)*(ne*V) + k mod V
+      for i in 0..<ne: x[o + i*V] = float(t + uint32(i))
+      stc(s, V, c, k, cast[R](b))
 
 proc unifK[V, c: static int; R](s: ptr UncheckedArray[uint32]; x: ptr UncheckedArray[float]; n, ne: int) =
-  gpuForAsync(k, n):
-    var a = ldc(s, V, c, k, R)
-    let o = (k div V)*(ne*V) + k mod V
-    for i in 0..<ne:
-      let u = float(uniform(a))
-      x[o + i*V] = u + float(uniform(a))
-    stc(s, V, c, k, a)
+  onGpuQueue(n):
+    for k in gpuRange(n):
+      var a = ldc(s, V, c, k, R)
+      let o = (k div V)*(ne*V) + k mod V
+      for i in 0..<ne:
+        let u = float(uniform(a))
+        x[o + i*V] = u + float(uniform(a))
+      stc(s, V, c, k, a)
 
 proc gaussK[V, c: static int; R](s: ptr UncheckedArray[uint32]; x: ptr UncheckedArray[float]; n, ne: int) =
-  gpuForAsync(k, n):
-    var a = ldc(s, V, c, k, R)
-    let o = (k div V)*(ne*V) + k mod V
-    for i in 0..<ne: x[o + i*V] = gaussian(a)
-    stc(s, V, c, k, a)
+  onGpuQueue(n):
+    for k in gpuRange(n):
+      var a = ldc(s, V, c, k, R)
+      let o = (k div V)*(ne*V) + k mod V
+      for i in 0..<ne: x[o + i*V] = gaussian(a)
+      stc(s, V, c, k, a)
 
 proc tahK[V, c: static int; R](s: ptr UncheckedArray[uint32]; p: ptr UncheckedArray[float]; n: int) =
-  gpuForAsync(k, n):
-    const s2 = 0.70710678118654752440  # sqrt(1/2)
-    const s3 = 0.57735026918962576450  # sqrt(1/3)
-    var a = ldc(s, V, c, k, R)
-    for mu in 0..3:
-      let o = 18*mu*n + (k div V)*(18*V) + k mod V
-      let r3 = s2 * gaussian(a)
-      let r8 = s2 * s3 * gaussian(a)
-      let r01 = s2 * gaussian(a)
-      let r02 = s2 * gaussian(a)
-      let r12 = s2 * gaussian(a)
-      let i01 = s2 * gaussian(a)
-      let i02 = s2 * gaussian(a)
-      let i12 = s2 * gaussian(a)
-      p[o] = 0.0
-      p[o + V] = r8 + r3
-      p[o + 8*V] = 0.0
-      p[o + 9*V] = r8 - r3
-      p[o + 16*V] = 0.0
-      p[o + 17*V] = -2*r8
-      p[o + 2*V] = r01
-      p[o + 3*V] = i01
-      p[o + 6*V] = -r01
-      p[o + 7*V] = i01
-      p[o + 4*V] = r02
-      p[o + 5*V] = i02
-      p[o + 12*V] = -r02
-      p[o + 13*V] = i02
-      p[o + 10*V] = r12
-      p[o + 11*V] = i12
-      p[o + 14*V] = -r12
-      p[o + 15*V] = i12
-    stc(s, V, c, k, a)
+  onGpuQueue(n):
+    for k in gpuRange(n):
+      const s2 = 0.70710678118654752440  # sqrt(1/2)
+      const s3 = 0.57735026918962576450  # sqrt(1/3)
+      var a = ldc(s, V, c, k, R)
+      for mu in 0..3:
+        let o = 18*mu*n + (k div V)*(18*V) + k mod V
+        let r3 = s2 * gaussian(a)
+        let r8 = s2 * s3 * gaussian(a)
+        let r01 = s2 * gaussian(a)
+        let r02 = s2 * gaussian(a)
+        let r12 = s2 * gaussian(a)
+        let i01 = s2 * gaussian(a)
+        let i02 = s2 * gaussian(a)
+        let i12 = s2 * gaussian(a)
+        p[o] = 0.0
+        p[o + V] = r8 + r3
+        p[o + 8*V] = 0.0
+        p[o + 9*V] = r8 - r3
+        p[o + 16*V] = 0.0
+        p[o + 17*V] = -2*r8
+        p[o + 2*V] = r01
+        p[o + 3*V] = i01
+        p[o + 6*V] = -r01
+        p[o + 7*V] = i01
+        p[o + 4*V] = r02
+        p[o + 5*V] = i02
+        p[o + 12*V] = -r02
+        p[o + 13*V] = i02
+        p[o + 10*V] = r12
+        p[o + 11*V] = i12
+        p[o + 14*V] = -r12
+        p[o + 15*V] = i12
+      stc(s, V, c, k, a)
 
 proc report(name, label: string; t: float; n: int; bytes, peak: float) =
   let gbs = 1e-9*bytes*float(n)/t
