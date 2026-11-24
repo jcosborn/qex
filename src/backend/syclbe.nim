@@ -99,28 +99,33 @@ proc gpuZeContext*(): tuple[ctx, dev: pointer] =
            dev, " = sycl::get_native<sycl::backend::ext_oneapi_level_zero>(", q, ".get_device());"].}
   (ctx, dev)
 
+proc gpuFinish*[P](fl: static string; q: ptr Queue; flops: float; ps: P; back: proc(ps: P) {.nimcall.}) =
+  ## The end of a kernel launch: waits for the queue, then back copies what
+  ## the kernel wrote to the host variables of ps (hostBack).
+  tic(fl)
+  threadSingle:
+    q[].wait
+  toc("wait",flops=flops)
+  back(ps)
+  toc("cpuFinalize")
+
 proc gpuFinalizer*[P](fl: static string; q: ptr Queue; flops: float; ps: P; back: proc(ps: P) {.nimcall.}): proc() =
-  ## The finalizer of a kernel launch: waits for the queue, then back copies
-  ## what the kernel wrote to the host variables of ps (genHostPairs,
-  ## hostBack).  The closure has an environment of its own, so every thread of
-  ## a threads block gets one and may keep it.
-  result = proc() =
-    tic(fl)
-    threadSingle:
-      q[].wait
-    toc("wait",flops=flops)
-    back(ps)
-    toc("cpuFinalize")
+  ## gpuFinish as a closure, for onGpuNowait.  The closure has an
+  ## environment of its own, so every thread of a threads block gets one
+  ## and may keep it.
+  result = proc() = gpuFinish(fl, q, flops, ps, back)
 
 proc gpuDefaultNumThreads*(): int =
   32 * q.device.maxComputeUnits.int * q.device.subGroupSizes.max_element.int
   #64 * q.device.maxComputeUnits.int * q.device.subGroupSizes.max_element.int
 
-macro gpuKernel(fin: static bool; n, body: untyped): untyped =
+macro gpuKernel(fin: static int; n, body: untyped): untyped =
   ## Queues body as a kernel of n threads, n a count or what gpuSites turns
   ## into one.  The kernel is that of gpuForAsync, its captures the device
-  ## values of the variables that body names (backend/expr).  With fin the
-  ## result is the finalizer, which waits for the queue and copies back.
+  ## values of the variables that body names (backend/expr), locals of the
+  ## launch that the kernel reads in place.  fin: 0 queues the kernel, 1
+  ## gives the finalizer, which waits for the queue and copies back, 2 does
+  ## that at once.
   let li = body.lineinfo
   let lis = li.split({'/','.','(',','})
   let fl = lis[^4] & "(" & lis[^2] & ")"
@@ -132,7 +137,7 @@ macro gpuKernel(fin: static bool; n, body: untyped): untyped =
       let gpuNt {.inject.} = int(gpuSites(n))
       gpuLaunchThreads = gpuNt
       pre  # the device values
-      when fin:
+      when fin > 0:
         let hp = hostPairs  # before the kernel values take the names of the host variables
       shadow  # the kernel values: locals of the launch that the kernel captures and reads in place
       toc("cpuPrepare")
@@ -142,10 +147,9 @@ macro gpuKernel(fin: static bool; n, body: untyped): untyped =
           inlineProcs:
             body
       toc("launch")
-      when fin:
-        gpuFinalizer(fl, addr q, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
-      else:
-        queued
+      when fin == 1: gpuFinalizer(fl, addr q, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+      elif fin == 2: gpuFinish(fl, addr q, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+      else: queued
   let c = kernelCap(body, n)
   result = getast(target(fl, n, c.pre, c.shadow, c.pairs, c.queued, c.body, newLit(fin)))
   case dumpKernels
@@ -157,16 +161,12 @@ macro gpuKernel(fin: static bool; n, body: untyped): untyped =
     echo result.treerepr
   else: discard
 
-template onGpuNowait*(n, body: untyped): auto = gpuKernel(true, n, body)
-template onGpuNowait*(body: untyped): auto = gpuKernel(true, gpuDefaultNumThreads(), body)
+template onGpuNowait*(n, body: untyped): auto = gpuKernel(1, n, body)
+template onGpuNowait*(body: untyped): auto = gpuKernel(1, gpuDefaultNumThreads(), body)
 template onGpuQueue*(n, body: untyped) =
   ## onGpuNowait for a kernel whose variables stay on the device
   ## (gpuResident): nothing is copied back, and gpuWaitAsync waits for it.
-  gpuKernel(false, n, body)
+  gpuKernel(0, n, body)
 
-template onGpu*(body: untyped) =
-  let finalize = onGpuNowait(body)
-  finalize()
-template onGpu*(n,body: untyped) =
-  let finalize = onGpuNowait(n, body)
-  finalize()
+template onGpu*(body: untyped) = gpuKernel(2, gpuDefaultNumThreads(), body)
+template onGpu*(n, body: untyped) = gpuKernel(2, n, body)

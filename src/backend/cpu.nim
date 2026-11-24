@@ -64,22 +64,25 @@ template gpuAtomicAdd*(r: ptr UncheckedArray[uint64]; k: int; v: uint64) =
 template gpuMallocHost*(size: SomeInteger): pointer = gpuMalloc(size)
 template gpuFreeHost*(p: pointer) = c_free(p)
 
+proc gpuFinish*[P](fl: static string; count: int; ps: P; back: proc(ps: P) {.nimcall.}) =
+  ## The end of a kernel launch: meets the team, then back copies what
+  ## the kernel wrote to the host variables of ps (hostBack).
+  tic(fl)
+  var countSave = -1  # the count before, in the thread that lowers it
+  threadBarrier()
+  threadSingle:
+    countSave = kernelCallCount
+    kernelCallCount = count
+  back(ps)
+  if countSave >= 0: kernelCallCount = countSave  # the same thread restores it
+  threadBarrier()
+  toc("cpuFinalize")
+
 proc gpuFinalizer*[P](fl: static string; count: int; ps: P; back: proc(ps: P) {.nimcall.}): proc() =
-  ## The finalizer of a kernel launch: back copies what the kernel wrote to the
-  ## host variables of ps (genHostPairs, hostBack).  The closure has an
-  ## environment of its own, so every thread of a threads block gets one and
-  ## may keep it.
-  result = proc() =
-    tic(fl)
-    var countSave = -1  # the count before, in the thread that lowers it
-    threadBarrier()
-    threadSingle:
-      countSave = kernelCallCount
-      kernelCallCount = count
-    back(ps)
-    if countSave >= 0: kernelCallCount = countSave  # the same thread restores it
-    threadBarrier()
-    toc("cpuFinalize")
+  ## gpuFinish as a closure, for onGpuNowait.  The closure has an
+  ## environment of its own, so every thread of a threads block gets one
+  ## and may keep it.
+  result = proc() = gpuFinish(fl, count, ps, back)
 
 proc gpuDefaultNumThreads*(): int =
   var nt = 0
@@ -88,11 +91,11 @@ proc gpuDefaultNumThreads*(): int =
       nt = numThreads
   result = nt
 
-macro gpuKernel(fin: static bool; n, body: untyped): untyped =
+macro gpuKernel(fin: static int; n, body: untyped): untyped =
   ## Runs body as a kernel in the host threads: outside a threads block the
   ## kernel opens one, inside one every thread of the team calls it.  n, the
-  ## thread count of the devices, does not apply.  With fin the result is
-  ## the finalizer, which copies back.
+  ## thread count of the devices, does not apply.  fin: 0 copies nothing
+  ## back, 1 gives the finalizer, which copies back, 2 copies back at once.
   let li = body.lineinfo
   let lis = li.split({'/','.','(',','})
   let fl = lis[^4] & "(" & lis[^2] & ")"
@@ -129,11 +132,11 @@ macro gpuKernel(fin: static bool; n, body: untyped): untyped =
       else:
         toc("wait")
       inc kernelCallCount  # increment after launch
-      when fin:
+      when fin > 0:
         let hp = hostPairs
-        gpuFinalizer(fl, thisKernelCallCount, hp, hostBack(hp))
-      else:
-        queued
+      when fin == 1: gpuFinalizer(fl, thisKernelCallCount, hp, hostBack(hp))
+      elif fin == 2: gpuFinish(fl, thisKernelCallCount, hp, hostBack(hp))
+      else: queued
   let c = kernelCap(body)
   result = getast(target(fl, c.pre, c.shadow, c.pairs, c.queued, c.body, newLit(fin)))
   case dumpKernels
@@ -145,20 +148,16 @@ macro gpuKernel(fin: static bool; n, body: untyped): untyped =
     echo result.treerepr
   else: discard
 
-template onGpuNowait*(n, body: untyped): auto = gpuKernel(true, n, body)
-template onGpuNowait*(body: untyped): auto = gpuKernel(true, 0, body)
+template onGpuNowait*(n, body: untyped): auto = gpuKernel(1, n, body)
+template onGpuNowait*(body: untyped): auto = gpuKernel(1, 0, body)
 template onGpuQueue*(n, body: untyped) =
   ## onGpu for a kernel whose variables stay on the device (gpuResident):
   ## nothing is copied back.  Complete on return here; gpuWaitAsync waits
   ## for it with a GPU backend.
-  gpuKernel(false, n, body)
+  gpuKernel(0, n, body)
 
-template onGpu*(body: untyped) =
-  let finalize = onGpuNowait(body)
-  finalize()
-template onGpu*(n,body: untyped) =
-  let finalize = onGpuNowait(n, body)
-  finalize()
+template onGpu*(body: untyped) = gpuKernel(2, 0, body)
+template onGpu*(n, body: untyped) = gpuKernel(2, n, body)
 
 type GpuSum*[T] = object
     ## The sum of the values the threads of a kernel hand to reduce, each
