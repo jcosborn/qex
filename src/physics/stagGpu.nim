@@ -1013,8 +1013,8 @@ proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr Un
   let nr1 = s.ex[0].nrecv
   let nbo {.used.} = s.nbo
   let no {.used.} = n div V
-  template put(d, o, st, m, sc: untyped) =
-    ## sc m to d[o + e*st], e < nl, for sc = +-1
+  template put(d, o, st, m, sc, nl: untyped) =
+    ## sc m to d[o + e*st], e < nl, for sc = +-1; nl of the kernel
     if nl == 14:
       forStatic e, 0, 11: d[o + e*st] = T(sc*m[e])
       mdet(dr, di, m)
@@ -1027,7 +1027,7 @@ proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr Un
     var x {.noInit.}: array[18, float]
     mload(x, u, 18*mu*n + lo18(V, k), V)
     let sf = sg[mu*n + k]
-    put(lf, ol, V, x, sf)
+    put(lf, ol, V, x, sf, nl)
     case mu
     of 0: link(x, 0, int nb[nbB(0)*n + k])
     of 1: link(x, 1, int nb[nbB(1)*n + k])
@@ -1035,7 +1035,7 @@ proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr Un
     else: link(x, 3, int nb[nbB(3)*n + k])
     let sb = sg[(4+mu)*n + k]
     if lb != nil:
-      put(lb, ol, V, x, sb)
+      put(lb, ol, V, x, sb, nl)
     else:
       when backendIsCpu:  # every lane of a halo site, as newStagGpu
         let eo = int(nbo[(4+mu)*no + k div V]) div V
@@ -1044,8 +1044,8 @@ proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr Un
         let jj = int fn[(4+mu)*n + k]
         let j = if jj < 0 and nl == 12: -1-jj else: jj
       if j >= n:
-        if k < ne: put(lh0, lhAt(V, j-n, nl), lhSt(V, nr0), x, sb)
-        else: put(lh1, lhAt(V, j-n, nl), lhSt(V, nr1), x, sb)
+        if k < ne: put(lh0, lhAt(V, j-n, nl), lhSt(V, nr0), x, sb, nl)
+        else: put(lh1, lhAt(V, j-n, nl), lhSt(V, nr1), x, sb, nl)
 
 proc norm2*[V: static int; T](s: StagGpu[V,T]; x: ptr UncheckedArray[T]): float =
   ## global |x|^2 over all sites
@@ -1823,7 +1823,7 @@ proc cgR[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32];
   let xa = sx.a
   let xs = sx.s
   let xst = sx.st
-  template putPair(slot,k,a,b: untyped) =
+  template putPair(slot,k,a,b,ne: untyped) =  # ne of the kernel: its copy of the count
     if fx:
       rs[(2*slot)*ne+k] = a
       rs[(2*slot+1)*ne+k] = b
@@ -1902,7 +1902,7 @@ proc cgR[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32];
               r[i] = v
               rn += float(v)*float(v)
               if mb: dn += float(v)*float(v-prev)
-            putPair(pickB(so,js,C),k,rn,dn)
+            putPair(pickB(so,js,C),k,rn,dn,ne)
     let norm = sums(live)
     var ru = bad
     var check = 0
@@ -1979,7 +1979,7 @@ proc cgR[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32];
               r[i] = float32(v)
               rn += v*v
               if eps>0.0: yn += x[i]*x[i]
-            putPair(pickB(so,js,C),k,rn,yn)
+            putPair(pickB(so,js,C),k,rn,yn,ne)
       let truth = sums(ru)
       for j in 0..<nBatch:
         if (ru and (1 shl j)) != 0:
@@ -2019,7 +2019,7 @@ proc cgR[V: static int](s: StagGpu[V,float64]; ss: StagGpu[V,float32];
                 let i = o+2*c*V
                 re += float(r[i])*float(p[i])+float(r[i+V])*float(p[i+V])
                 im += float(r[i])*float(p[i+V])-float(r[i+V])*float(p[i])
-              putPair(pickB(so,js,C),k,re,im)
+              putPair(pickB(so,js,C),k,re,im,ne)
         let rp = sums(ru)
         forActive(ru):
           let rv = sel(C,rr,so)

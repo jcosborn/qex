@@ -306,11 +306,11 @@ proc sumFixed*(r: var openArray[float]; a, w, h: ptr UncheckedArray[float]; m, n
   sumOutside "sumFixed"
   var src = a
   var cnt = n
-  var off = 0
+  var o = 0  # a local named off would meet system.off of the push pragmas of threadBarrier
   while cnt > sumHost:
     let t1 = (cnt + sumTerms - 1) div sumTerms
     let s = src
-    let d = cast[ptr UncheckedArray[float]](addr w[off])
+    let d = cast[ptr UncheckedArray[float]](addr w[o])
     let c0 = cnt
     onGpuQueue(m*t1):
       for k in gpuRange(m*t1):
@@ -322,7 +322,7 @@ proc sumFixed*(r: var openArray[float]; a, w, h: ptr UncheckedArray[float]; m, n
           if i < c0: acc += s[c*c0 + i]
         d[c*t1 + t] = acc
     src = d
-    off += m*t1
+    o += m*t1
     cnt = t1
   gpuMemCpyToCpuAsync(h, src, m*cnt*sizeof(float))
   gpuWaitAsync()
