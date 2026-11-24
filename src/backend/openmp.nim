@@ -124,34 +124,26 @@ template dataAddr*(x: typed): pointer =
   else: pointer(unsafeAddr(x))
   #else: x
 
-const gpuThreads {.intdefine.} = 128  ## thread_limit of gpuFor kernels, 0 for the runtime default; 128 was best for the staggered kernels on PVC at 24^4 sites per tile
+const gpuThreads {.intdefine.} = 128  ## thread_limit of the kernels, 0 for the runtime default; 128 was best for the staggered kernels on PVC at 24^4 sites per tile
 const gpuForMap {.strdefine.} = "defaultmap(firstprivate:pointer)"  ## pointers by value, no lookup in the mapping table at each launch
 const gpuForClause* = gpuForMap & (if gpuThreads > 0: " thread_limit(" & $gpuThreads & ")" else: "")
 template gpuSubClause(sub: static int): string =
   when sub > 0: " ompx_sub_group_size(" & $sub & ")" else: ""
 
-template gpuFor*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
-  ## One SPMD kernel over i in 0..<n, in sub-groups of sub threads, or as
-  ## the compiler chooses for sub = 0.  Captured pointers must be device
-  ## pointers.  n is evaluated on the host, as with the other backends.
-  const gpuC = "target teams distribute parallel for " & gpuForClause & gpuSubClause(sub)
-  let gpuN = int(n)
-  for i in `||`(0, gpuN-1, gpuC):
-    body
-template gpuFor*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, body)
-
 var gpuAsyncDep {.exportc.}: int  # orders the gpuForAsync kernels before gpuWaitAsync
 var gpuQueued = false  # a kernel queued outside parallel regions may wait in the queue
 
-template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
-  ## gpuFor returning before the kernel completes; gpuWaitAsync waits for it.
+template gpuForAsync(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
+  ## The queued kernel of an onGpu launch: one SPMD kernel over i in 0..<n,
+  ## in sub-groups of sub threads, or as the compiler chooses for sub = 0,
+  ## returning before it completes; gpuWaitAsync waits for it.  Captured
+  ## pointers must be device pointers.
   discard addr(gpuAsyncDep)  # declares it in the C file of the caller
   const gpuC = "target teams distribute parallel for " & gpuForClause & gpuSubClause(sub) & " nowait depend(inout:gpuAsyncDep)"
   let gpuN = int(n)
   for i in `||`(0, gpuN-1, gpuC):
     body
   gpuQueued = true
-template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) = gpuForAsync(i, n, 0, body)
 
 template gpuWaitAsync* =
   ## a task wait for the queued kernels, skipped outside parallel regions
@@ -205,14 +197,14 @@ proc ompPlain(t: NimNode; depth = 0): bool =
   else: false
 
 template gpuForSync(i: untyped; n: SomeInteger; sub: static int; body: untyped) =
-  ## gpuFor for a kernel that completes at the launch after the queued
-  ## kernels: a wait where the queue holds work, then a target without
-  ## nowait and without depend, which costs the host less than a target
-  ## that depends on the queue (on PVC 0.5 to 1.2 us less per application
-  ## of the staggered operator at 16^4).  The kernels of onGpu, and the
-  ## queued ones that read objects.  Objects go to the kernel by value,
-  ## which icx does for a kernel that completes at the launch (a mapped
-  ## object costs ten times the launch: 270 against 25 us on PVC).
+  ## A kernel that completes at its launch, after the queued kernels: a
+  ## wait where the queue holds work, then a target without nowait and
+  ## without depend, which costs the host less than a target that depends
+  ## on the queue (on PVC 0.5 to 1.2 us less per application of the
+  ## staggered operator at 16^4).  The kernels of onGpu, and the queued ones
+  ## that read objects; objects go to the kernel by value, which icx does
+  ## for a kernel that completes at the launch (a mapped object costs ten
+  ## times the launch: 270 against 25 us on PVC).
   gpuWaitAsync()
   const gpuC = "target teams distribute parallel for " & gpuForClause & gpuSubClause(sub) & " defaultmap(firstprivate:aggregate)"
   let gpuN = int(n)

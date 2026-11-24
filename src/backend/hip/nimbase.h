@@ -1,7 +1,7 @@
 /* Nim's nimbase.h for the HIP backend (clang -x hip, found first through
    -iquote).  QEX_HD makes the procs that kernels call, gpuInline and gpuCall
-   of base/basicOps, host device.  qexFor runs the gpuFor lambdas, one index
-   per thread. */
+   of base/basicOps, host device.  qexFor runs the lambdas of the onGpu
+   kernels, one index per thread. */
 #include_next "nimbase.h"
 #ifdef __HIP__
 #include <hip/hip_runtime.h>  /* __launch_bounds__ */

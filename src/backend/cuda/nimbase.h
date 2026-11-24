@@ -2,8 +2,8 @@
    build/nvcc.sh, found first through -iquote).  QEX_HD makes the procs that
    kernels call, gpuInline and gpuCall of base/basicOps, host device.  Other
    procs stay host only: nvcc compiles every host device function for the
-   device and rejects host globals there.  qexFor runs the gpuFor lambdas,
-   one index per thread. */
+   device and rejects host globals there.  qexFor runs the lambdas of the
+   onGpu kernels, one index per thread. */
 #include_next "nimbase.h"
 #ifdef __CUDACC__
 #define QEX_HD __host__ __device__

@@ -76,12 +76,12 @@ template gpuMemCpyToCpuAsync*(dst, src: pointer; count: SomeInteger) =
 
 const gpuCopyFast* = 16384  ## bytes up to which a queued copy has its low cost: 2.9 us on MI300X, 8.2 us from 16400 bytes on
 
-const gpuThreads {.intdefine.} = 128  ## threads per block of gpuFor kernels
-var gpuI {.importc, nodecl.}: clong  # the index in the gpuFor kernels
+const gpuThreads {.intdefine.} = 128  ## threads per block of the kernels
+var gpuI {.importc, nodecl.}: clong  # the index in the kernels
 
-template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
-  ## One kernel over i in 0..<n, returning before it completes; gpuWaitAsync
-  ## waits for it.  sub, the sub-group size on Intel GPUs, does not apply.
+template gpuForAsync(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
+  ## The kernel of an onGpu launch: i in 0..<n, returning before it
+  ## completes; gpuWaitAsync waits for it.  sub, the sub-group size on Intel GPUs, does not apply.
   ## Captured pointers must be device pointers.
   let gpuN = int(n)
   if gpuN > 0:
@@ -97,19 +97,12 @@ template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
     if err:
       echo "gpuForAsync: ", $err
       quit 1
-template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) = gpuForAsync(i, n, 0, body)
 
 template gpuWaitAsync* =
   let err = hipDeviceSynchronize()
   if err:
     echo "gpuWaitAsync: ", $err
     quit 1
-
-template gpuFor*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
-  ## gpuForAsync waiting for the kernel
-  gpuForAsync(i, n, sub, body)
-  gpuWaitAsync()
-template gpuFor*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, body)
 
 template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
   ## r[k] += v atomically, in kernels

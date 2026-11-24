@@ -2,14 +2,14 @@
 
 [`backend/accel`](../src/backend/accel.nim) provides the kernel launches,
 memory operations and reductions. Select a backend with `-d:Backend=...` in
-`nimargs`; the default is CPU. [Writing GPU kernels](gpu_kernels.md) says
-how kernel code is written: the `onGpu` construct, what a kernel may name
-and call, sums, and the `gpuFor` loops that the staggered operator, gauge
-operations, HYP smearing, RNGs and HMC use.
+`nimargs`; the default is CPU. Every kernel launches through `onGpu`,
+`onGpuNowait` or `onGpuQueue`; [Writing GPU kernels](gpu_kernels.md) says
+how kernel code is written: what a kernel may name and call, sums, the
+queue, and the CPU backend.
 
 | Backend | Compiler | Kernel execution | IPC between GPUs on one host |
 |---|---|---|---|
-| CPU | Host compiler | Loop over the host threads | None (QMP messages) |
+| CPU | Host compiler | The body in the host threads | None (QMP messages) |
 | OpenMP | oneAPI icx | `target teams distribute parallel for` | Level Zero |
 | SYCL | oneAPI icpx | `parallel_for` over an `nd_range` | Level Zero |
 | CUDA | clang or nvcc | Device lambdas in `qexFor` | CUDA IPC |
@@ -17,10 +17,10 @@ operations, HYP smearing, RNGs and HMC use.
 
 ## Kernel calls and synchronization
 
-Place `gpuFor` launches inside procs. Kernel bodies can use templates,
-which expand in place, and procs that compile for the device. Captured
-pointers refer to device storage. Keep their allocations alive until all
-kernels and exchanges using them have completed.
+Place launches inside procs. Kernel bodies can use templates, which
+expand in place, and procs that compile for the device. Captured pointers
+refer to device storage. Keep their allocations alive until all kernels
+and exchanges using them have completed.
 
 CUDA and HIP require device annotations. The `gpuInline` and `gpuCall`
 pragmas in [`base/basicOps`](../src/base/basicOps.nim) supply `QEX_HD`,
@@ -39,10 +39,9 @@ not belong in its body.
 OpenMP and SYCL need callable definitions in the generated C/C++ file;
 Nim places inline procs in each file that uses them. Use `gpuInline` for
 small arithmetic helpers and `gpuCall` for larger helpers such as RNG
-draws. `alwaysInline` is suitable for host SIMD wrappers. `onGpu` kernels
-copy the bodies of unmarked procs into the kernel (`inlineProcs` of
-`base/metaUtils`) and call the marked ones; `gpuFor` kernels call marked
-procs only.
+draws. `alwaysInline` is suitable for host SIMD wrappers. A kernel copies
+the bodies of unmarked procs into itself (`inlineProcs` of
+`base/metaUtils`) and calls the marked ones.
 
 `onGpu` keeps the device copies of host objects in the table of
 [`backend/gpumem`](../src/backend/gpumem.nim), keyed by host address. Use
@@ -53,10 +52,9 @@ alive and in place while they do, or its entry must be freed with
 `freeGpuMem`. A `HaloLayout` whose read only tables were uploaded stays
 alive until `freeGpuMem` of it. A `GpuSum` owns its device block.
 
-`gpuFor` completes its kernel before returning. `gpuForAsync` submits work;
-`gpuWaitAsync` waits for queued kernels. OpenMP synchronous launches are
-not ordered after outstanding `nowait` kernels: wait before mixing the
-two forms or consuming their results on the host.
+`onGpu` completes its kernel before returning; `onGpuQueue` queues it and
+`gpuWaitAsync` waits for the queued kernels. With OpenMP offload an `onGpu`
+kernel waits for the queue first ([the queue](gpu_kernels.md#the-queue)).
 
 `gpuMemCpyToCpuAsync` queues a copy to pinned host memory
 (`gpuMallocHost`) after the kernels already submitted; `gpuWaitAsync`
@@ -69,10 +67,10 @@ byte boundary of the device buffer costs 3 us more. On PVC with SYCL the
 queued copy costs 2.7 us at 8 kB and 5.1 us at 98 kB, without a step.
 `backend/examples/besum` measures these parts.
 
-With the CPU backend, both forms complete on return. One thread calls
-them: the host threads share the loop, or the calling thread runs it where
-the call stands inside a `threads:` block. `gpuWaitAsync` is a no-op, device
-allocations are host allocations, and every halo message uses QMP.
+With the CPU backend every launch completes on return: outside a
+`threads:` block it opens one, inside one every thread of the team calls
+it. `gpuWaitAsync` is a no-op, device allocations are host allocations, and
+every halo message uses QMP.
 
 ## Halo exchange
 

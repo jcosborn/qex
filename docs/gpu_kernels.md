@@ -3,11 +3,8 @@
 A kernel is written once and compiled for the backend chosen with
 `-d:Backend=...`: CUDA, HIP, SYCL, OpenMP offload, or the CPU (default). A
 binary holds one backend. [GPU backends](gpu_backends.md) covers builds,
-devices and the staggered solver; this page covers kernel code.
-
-Kernels are being moved to the construct described here. The loops of the
-`gpuFor` family, which the staggered operator, the gauge kernels, HYP
-smearing and the RNGs still use, are described [at the end](#the-gpufor-family).
+devices and the staggered solver; this page covers kernel code. Every
+kernel of QEX launches through the construct described here.
 
 ## The construct
 
@@ -187,7 +184,7 @@ backend. The CPU backend adds over the host threads. `gs.free` releases the
 device block.
 
 `SumX` adds exactly through integer words, with equal bits at any rank
-count; `gpuSum` adds a `gpuFor` loop in the fixed order. The
+count; `gpuSum` adds the values of a kernel loop in the fixed order. The
 [staggered section](gpu_backends.md#cg-modes-and-communication) describes
 both.
 
@@ -209,14 +206,12 @@ both.
 
 ## The queue
 
-Kernels launch in order and run in order. `onGpuQueue` and `gpuForAsync`
-return before their kernel completes; `gpuWaitAsync()` waits for all
-queued work, and the reads of the device sums wait as well.
+Kernels launch in order and run in order. `onGpuQueue` returns before its
+kernel completes; `gpuWaitAsync()` waits for all queued work, and the reads
+of the device sums wait as well.
 
 With OpenMP offload:
 
-- A kernel launched with `gpuFor` is not ordered after queued kernels: wait
-  before mixing the two forms.
 - An `onGpu` kernel waits for the queue where it holds work and runs as a
   target without `nowait`, which completes at its launch. `gpuWaitAsync`
   skips its task wait outside threads blocks when nothing was queued since
@@ -238,9 +233,9 @@ With OpenMP offload:
 The CPU backend is the development platform and a target of its own.
 
 - An `onGpu` kernel runs in a `threads:` block, or in the calling team, on
-  whole SIMD sites.
-- A `gpuFor` loop is shared by the host threads when one thread calls it
-  outside a `threads:` block; inside one the calling thread runs it.
+  whole SIMD sites. A launch outside a `threads:` block opens one, which
+  costs 2 to 5 us of host time with 4 to 16 threads; inside one the team
+  meets at a barrier.
 - The staggered operator with links of 18 or 14 reals and the update of its
   CG compute on hardware vectors, for one system and for several at once. `-d:gpuSimd=false` runs every kernel lane by
   lane: the reference of the SIMD forms, equal bit for bit where the
@@ -272,8 +267,8 @@ Rules from measurements on H100, MI300X and PVC.
   from their owners.
 - Write `a*y + b*x` as `fmadd(a, y, b*x)` where results should not depend
   on the compiler. clang, nvcc and icpx chose which product to fuse by the
-  code around the kernel: moving the staggered hop from `gpuFor` to `onGpu`
-  changed the CG residuals in the last bits.
+  code around the kernel: moving the staggered hop from an older launch to
+  `onGpu` changed the CG residuals in the last bits.
 - A kernel reads its captured values in place, as locals of the launch.
   Copies at the start of a kernel made nvcc hold them in ordinary registers
   and the staggered hop 2.5 to 4% slower on H100 and GH200.
@@ -293,25 +288,3 @@ Rules from measurements on H100, MI300X and PVC.
 4. Compare with the results of before bit for bit where the order of the
    arithmetic is unchanged, and time against the bandwidth or flop limit
    of the device.
-
-## The `gpuFor` family
-
-```nim
-let p = x.p              # device pointers and numbers in lets
-let n = x.n
-gpuFor(i, n):
-  p[i] = 2.0*p[i]
-```
-
-- `gpuFor(i, n): body` runs body for each `i` in `0..<n` and waits;
-  `gpuForAsync` queues; an optional third argument is the sub-group size on
-  Intel GPUs.
-- The device compiler captures by value what the body names: device
-  pointers and numbers, prepared in `let` lines of the same proc. Host
-  objects have no meaning there. A variable that a `threads:` block or
-  another closure of the proc also names lives in the heap environment of
-  the proc, and with a GPU backend the kernel captures the pointer to that
-  environment. `onGpu` copies every variable into the launch first.
-- Procs called in the body carry `gpuInline` or `gpuCall`; no body is
-  copied.
-- `gpuSum`, `gpuSumX` and `sumFixed` add over such loops.

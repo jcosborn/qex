@@ -47,12 +47,12 @@ const gpuCopyFast* = high(int)  ## bytes up to which a queued copy has its low c
 #include <sycl/ext/oneapi/backend/level_zero.hpp>
 """.}
 
-const gpuThreads {.intdefine.} = 128  ## work group size of gpuFor kernels
-var gpuIt {.importc, nodecl.}: Nd1  # the work item of the gpuFor kernels
+const gpuThreads {.intdefine.} = 128  ## work group size of the kernels
+var gpuIt {.importc, nodecl.}: Nd1  # the work item of the kernels
 
-template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
-  ## One kernel over i in 0..<n, returning before it completes; gpuWaitAsync
-  ## waits for it.  Sub-groups of sub threads, or as the compiler chooses for
+template gpuForAsync(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
+  ## The kernel of an onGpu launch: i in 0..<n, returning before it
+  ## completes; gpuWaitAsync waits for it.  Sub-groups of sub threads, or as the compiler chooses for
   ## sub = 0.  Captured pointers must be device pointers.
   const gpuA = when sub > 0: " [[sycl::reqd_sub_group_size(" & $sub & ")]]" else: ""
   let gpuN = int(n)
@@ -64,14 +64,6 @@ template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
       if i < gpuN:
         body
     {.emit: "});".}
-
-template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) = gpuForAsync(i, n, 0, body)
-
-template gpuFor*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
-  ## gpuForAsync waiting for the kernel
-  gpuForAsync(i, n, sub, body)
-  q.wait
-template gpuFor*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, body)
 
 template gpuWaitAsync* = q.wait
 
