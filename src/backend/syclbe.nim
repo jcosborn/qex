@@ -145,7 +145,7 @@ macro gpuKernel(fin: static bool; n, body: untyped): untyped =
         gpuFinalizer(fl, addr q, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
       else:
         queued
-  let c = kernelCap(body)
+  let c = kernelCap(body, n)
   result = getast(target(fl, n, c.pre, c.shadow, c.pairs, c.queued, c.body, newLit(fin)))
   case dumpKernels
   of 1:

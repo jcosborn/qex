@@ -77,6 +77,17 @@ proc nested[V: static int; T](y: var seq[T]): int =
   for i in 0..<n:
     if y[i] != T((V*(V-1)) div 2): inc result
 
+proc wide(n: int): int =
+  ## a loop over twice the indices of the launch count: the elements of p
+  ## that are not their index
+  let p = dev(2*n)
+  onGpu(n):
+    for i in gpuRange(2*n): p[i] = float(i)
+  let h = host(p, 2*n)
+  for i in 0..<2*n:
+    if h[i] != float(i): inc result
+  gpuFree(p)
+
 template fill(f: untyped; n: int; v: float) =
   ## a kernel in a template, on the caller's variable
   onGpu(n):
@@ -204,6 +215,9 @@ suite "onGpu captures":
   test "a body template with forStatic in a template of a generic proc":
     var y = newSeq[float](100)
     check nested[5, float](y) == 0
+
+  test "a loop over more indices than threads":
+    check wide(1000) == 0
 
   test "a kernel in a template":
     check inTemplate(1000) == 0

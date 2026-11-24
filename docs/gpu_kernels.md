@@ -39,8 +39,10 @@ through two iterators:
 
 A device thread gets every `gpuNumThreads`-th index, so neighboring threads
 touch neighboring memory, and with as many threads as indices each thread
-has one. A host thread gets a contiguous share. The result of a kernel must
-not depend on the thread count.
+has one: a loop `for i in gpuRange(n)` over the launch count `n` is
+compiled for a device as its one index, without the loop. A host thread
+gets a contiguous share. The result of a kernel must not depend on the
+thread count.
 
 `gpuThreadNum` and `gpuNumThreads` exist in the text of a body. Code that
 uses them or the two iterators outside a body is a template, as `:=` of

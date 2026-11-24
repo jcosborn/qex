@@ -232,10 +232,43 @@ type KernelCap* = object
   pairs*: NimNode   ## ((hostPtr(x), device value), ...) for the finalizer (hostBack)
   queued*: NimNode  ## for a launch without finalizer: stops the compile for a variable that needs one
 
-proc kernelCap*(body: NimNode): KernelCap =
+proc names(n: NimNode; ids: HashSet[string]; syms: seq[NimNode]): bool =
+  ## whether n names something that the body declares
+  case n.kind
+  of nnkIdent: n.strVal in ids
+  of nnkSym: n in syms
+  else:
+    for c in n:
+      if names(c, ids, syms): return true
+    false
+
+iterator gpuOnce*(t: int): int =
+  ## the share of thread t of n of the indices 0..<n
+  yield t
+
+proc oneIndex(b, n: NimNode; ids: HashSet[string]; syms: seq[NimNode]): NimNode =
+  ## b with its loops `for i in gpuRange(n)` over the launch count n as loops
+  ## over gpuOnce: thread t of n has the one index t, and a device kernel
+  ## need not find that out.  The count of a loop is n when it reads as n
+  ## (templates give one of them symbols, the other identifiers) and names
+  ## nothing that the body declares.
+  if b.kind == nnkForStmt and b.len == 3 and b[1].kind in nnkCallKinds and b[1].len == 2 and
+     b[1][0].kind in {nnkIdent, nnkSym} and b[1][0].eqIdent("gpuRange") and
+     b[1][1].repr == n.repr and not names(b[1][1], ids, syms):
+    result = b.copyNimNode
+    result.add b[0]
+    result.add newCall(bindSym"gpuOnce", newCall(ident"int", ident"gpuTn"))  # gpuTn: the launch's name of the thread number
+    result.add oneIndex(b[2], n, ids, syms)
+  else:
+    result = b.copyNimNode
+    for c in b: result.add oneIndex(c, n, ids, syms)
+
+proc kernelCap*(body0: NimNode; n: NimNode = nil): KernelCap =
+  ## n: the launch count of a device kernel
   var ids: HashSet[string]
   var syms: seq[NimNode]
-  declNames(body, ids, syms)
+  declNames(body0, ids, syms)
+  let body = if n != nil: oneIndex(body0, n, ids, syms) else: body0
   var names: OrderedSet[string]  # identifiers, captured by name
   var caps: seq[NimNode]  # outer symbols (generic procs and templates bind them)
   proc walk(n: NimNode): NimNode =
