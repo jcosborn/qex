@@ -2,7 +2,6 @@ import macros, strutils
 import base/[metaUtils,profile,threading]
 import expr
 import cuda
-export cuda.dataAddr
 
 var kernelCallCount* = 0  # _twice_ kernel calls, incremented before setup and after finalize
 #var kernelSetupCount* = 0  # number of kernel calls, incremented before setup

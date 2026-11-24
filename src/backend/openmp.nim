@@ -48,16 +48,6 @@ macro alignat*(byte:static[int], n:untyped): untyped =
   result = n.alignatImpl byte
   #error result.treerepr
 
-proc addChildrenFrom*(dst,src: NimNode): NimNode =
-  for c in src: dst.add(c)
-  result = dst
-macro procInst*(p: typed): auto =
-  #echo "begin procInst:"
-  #echo p.treerepr
-  result = p[0]
-macro makeCall*(p: proc, x: tuple): NimNode =
-  result = newCall(p).addChildrenFrom(x)
-
 proc omp_target_alloc*(size: csize_t, device_num: cint): pointer {.omp.}
 proc omp_target_free*(device_ptr: pointer, device_num: cint) {.omp.}
 proc omp_target_alloc_host*(size: csize_t, device_num: cint): pointer {.omp.}
@@ -98,31 +88,12 @@ template gpuMalloc[T](x: var ptr UncheckedArray[T], n: int) =
 template gpuMalloc[T](x: ptr T) =
   x = cast[typeof x](gpuMalloc(sizeof(T)))
 
-proc gpuMemset*[T](p: ptr UncheckedArray[T], val: T, count: int) =
-  var v = val  # an array parameter is a host pointer in C, unmapped on the device
-  {.emit:["#pragma omp target teams distribute parallel for map(to:",v,")"].}
-  {.emit:["for (int i = 0; i < ",count,"; i++)"].}
-  block:
-    var i {.importc,codegendecl:"".}: cint
-    p[i] = v
-proc gpuMemset*[T](p: ptr T, val: T) =
-  var v = val
-  {.emit:["#pragma omp target teams map(to:",v,")"].}
-  p[] = v
-
 template toPointer*(x: typed): pointer =
   #dumpType: x
   when x is pointer: x
   elif x is ptr: x
   elif x is seq: toPointer(x[0])
   else: pointer(unsafeAddr(x))
-template dataAddr*(x: typed): pointer =
-  #dumpType: x
-  when x is seq: dataAddr(x[0])
-  elif x is array: dataAddr(x[0])
-  #elif x is ptr: x
-  else: pointer(unsafeAddr(x))
-  #else: x
 
 const gpuThreads {.intdefine.} = 128  ## thread_limit of the kernels, 0 for the runtime default; 128 was best for the staggered kernels on PVC at 24^4 sites per tile
 const gpuForMap {.strdefine.} = "defaultmap(firstprivate:pointer)"  ## pointers by value, no lookup in the mapping table at each launch
@@ -371,114 +342,3 @@ proc gpuZeContext*(): tuple[ctx, dev: pointer] =
   #pragma omp interop destroy(obj)
   """.}
   (ctx, dev)
-
-template toUArray(a:untyped):untyped = cast[ptr UncheckedArray[typeof(a[0])]](a[0].unsafeaddr)
-proc cleanAst(n:NimNode):NimNode =
-  if n.kind in {nnkHiddenDeref,nnkHiddenCallConv,nnkHiddenStdConv}:
-    result = n[0].cleanAst
-  else:
-    result = n.copyNimNode
-    for c in n:
-      result.add c.cleanAst
-proc identStr(n:NimNode):string =
-  result = n.repr
-  for i in 0..<result.len:
-    if result[i] in {'.','[',']',':'}: result[i] = '_'
-#proc isIndex(n,i:NimNode):bool =
-#  result = n.eqident i
-#  if n.kind == nnkHiddenStdConv:
-#    result = n[1].eqident i
-macro simdForImpl(n:typed):untyped =
-  proc getIndexedPtrs(n,i:NimNode):(NimNode,seq[NimNode]) =
-    #echo "### getIndexedPtrs: ", i.repr
-    #echo n.treerepr
-    var ptrs = newseq[NimNode]()
-    proc get(n:NimNode):NimNode =
-          var m = -1
-          for j in 0..<ptrs.len:
-            if ptrs[j][1] == n:
-              m = j
-              break
-          if m < 0:
-            let v = gensym(nskVar, n.cleanAst.identStr)
-            #ptrs.add newPar(v, n)
-            ptrs.add newNimNode(nnkTupleConstr).add(v, n)
-            return v
-          else:
-            return ptrs[m][0]
-    proc go(n:NimNode):NimNode =
-      result = n.copyNimNode
-      if n.kind in CallNodes and ($n[0] == "[]" or $n[0] == "[]="):
-        if n.len > 2: # and n[2].isIndex i:
-          result.add n[0].go
-          result.add n[1].get
-          for i in 2..<n.len: result.add n[i].go
-        else:
-          for c in n: result.add c.go
-      elif n.kind == nnkBracketExpr:
-        result.add n[0].get
-        for i in 1..<n.len: result.add n[i].go
-      else:
-        for c in n: result.add c.go
-    var nn = n.go
-    (nn, ptrs)
-  template res(setup, i, lo, hi, body: untyped): untyped =
-    block:
-      var i {.codegendecl:"/* $# $# */",noinit.}: cint
-      setup
-      {.emit:
-        ["\n#pragma omp simd aligned(","\n",
-          "for(int ",
-          i,"=",lo,";",
-          i,"<=",hi,";",
-          i,"++){\n"
-        ].}
-      body
-      {.emit:["\n}\n"].}
-
-  #echo n.treerepr
-  n.expectkind nnkForStmt
-  #echo n[1][0].getimpl.treerepr
-  let (nn,ptrs) = n[2].getIndexedPtrs(n[0])
-  if ptrs.len == 0:
-    echo "simdForImpl finds no pointers: ",n.treerepr
-    quit 1
-  let setup = newNimNode nnkVarSection
-  for p in ptrs:
-    setup.add newIdentDefs(
-      #p[0],
-      newNimNode(nnkPragmaExpr).add(
-        p[0],
-        newNimNode(nnkPragma).add(
-          newNimNode(nnkExprColonExpr).add(ident"codegenDecl", newLit"$# __restrict__ $#"))),
-      newEmptyNode(), newcall(bindsym"toUArray", p[1]))
-  result = getast res(setup, n[0], n[1][1], n[1][2], nn)
-  #echo result.treerepr
-  let e = result[1][2]
-  e.expectkind nnkPragma
-  for i in 0..<ptrs.len:
-    if i == 0: e[0][1].insert(1,newLit")")
-    else: e[0][1].insert(1,newLit",")
-    e[0][1].insert(1,ptrs[i][0])
-  let i = gensym(nskvar, $n[0])
-  result = result.replace(n[0], i).rebuild
-  #echo result.repr
-  #echo result.treerepr
-  #quit 1
-
-macro simdFor*(n:untyped):untyped =
-  proc p(n:NimNode):NimNode =
-    if n.kind == nnkForStmt:
-      n[2] = newCall(bindsym"inlineProcs", n[2])
-      #echo n.treerepr
-      return newCall(bindsym"simdForImpl", n)
-    elif n.kind == nnkStmtList:
-      for i in 0..<n.len:
-        n[i] = p n[i]
-      return n
-    else:
-      echo "simdFor cannot handle:"
-      echo n.treerepr
-      quit 1
-  p n
-
