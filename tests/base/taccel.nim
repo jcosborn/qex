@@ -109,11 +109,15 @@ proc queued(): int =
   let n = 1000
   let a = dev(n)
   let b = dev(n)
-  gpuForAsync(i, n): a[i] = float(i)
-  gpuForAsync(i, n): b[i] = 2.0*a[i] + 1.0
-  gpuForAsync(i, n): a[i] = b[i] - a[i]
+  onGpuQueue(n):
+    for i in gpuRange(n): a[i] = float(i)
+  onGpuQueue(n):
+    for i in gpuRange(n): b[i] = 2.0*a[i] + 1.0
+  onGpuQueue(n):
+    for i in gpuRange(n): a[i] = b[i] - a[i]
   gpuWaitAsync()
-  gpuFor(i, n): b[i] = a[i] - 1.0
+  onGpu(n):
+    for i in gpuRange(n): b[i] = a[i] - 1.0
   let h = host(b, n)
   for i in 0..<n:
     if h[i] != float(i): inc result
@@ -131,15 +135,17 @@ proc sums(): int =
       let m = m0
       let a = dev(m*n)
       let w = dev(m*(n div 15 + 16))
-      gpuFor(k, m*n):  # a[c n + i] = i + 1 + c/2
-        let c = k div n
-        a[k] = float(k - c*n + 1) + 0.5*float(c)
+      onGpu(m*n):  # a[c n + i] = i + 1 + c/2
+        for k in gpuRange(m*n):
+          let c = k div n
+          a[k] = float(k - c*n + 1) + 0.5*float(c)
       var r = newSeq[float](m)
       sumFixed(r, a, w, hb, m, n)
       var bad = 0
       for c in 0..<m:
         if r[c] != float(n*(n+1) div 2) + 0.5*float(c*n): inc bad
-      gpuFor(k, m*n): a[k] = 1.0/float(k + 3)
+      onGpu(m*n):
+        for k in gpuRange(m*n): a[k] = 1.0/float(k + 3)
       var r1, r2 = newSeq[float](m)
       sumFixed(r1, a, w, hb, m, n)
       sumFixed(r2, a, w, hb, m, n)

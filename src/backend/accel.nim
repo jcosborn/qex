@@ -306,14 +306,15 @@ proc sumFixed*(r: var openArray[float]; a, w, h: ptr UncheckedArray[float]; m, n
     let s = src
     let d = cast[ptr UncheckedArray[float]](addr w[off])
     let c0 = cnt
-    gpuForAsync(k, m*t1):
-      let c = k div t1
-      let t = k - c*t1
-      var acc = 0.0
-      for j in 0..<sumTerms:
-        let i = t + j*t1
-        if i < c0: acc += s[c*c0 + i]
-      d[c*t1 + t] = acc
+    onGpuQueue(m*t1):
+      for k in gpuRange(m*t1):
+        let c = k div t1
+        let t = k - c*t1
+        var acc = 0.0
+        for j in 0..<sumTerms:
+          let i = t + j*t1
+          if i < c0: acc += s[c*c0 + i]
+        d[c*t1 + t] = acc
     src = d
     off += m*t1
     cnt = t1
@@ -436,7 +437,8 @@ proc newSumX*(m, n: int; slots = 0): SumX =
   result.h = cast[ptr UncheckedArray[uint64]](gpuMallocHost(nw*sizeof(uint64)))
   result.p = newSeq[uint64](nw)
   let a = result.a
-  gpuFor(i, nw): a[i] = 0'u64
+  onGpu(nw):
+    for i in gpuRange(nw): a[i] = 0'u64
 
 proc free*(x: SumX) =
   ## the device and host words; a second call does nothing
@@ -468,7 +470,8 @@ proc read*(x: SumX; r: var openArray[float]) =
   if h[r0*st] != 0:  # terms outside the window: every row counts
     let a = x.a
     let k = r0*st
-    gpuFor(i, 1): a[k] = 0'u64
+    onGpu(1):
+      for i in gpuRange(1): a[k] = 0'u64
     r0 = 0
     nr = sumRows
     gpuMemCpyToCpu(h, x.a, nr*st*sizeof(uint64))
@@ -510,9 +513,10 @@ template gpuSumX*(x: SumX; i: untyped; n: SomeInteger; body: untyped) =
     let sxS = x.s
     let sxSt = x.st
     let sxW = x.w
-    gpuForAsync(i, sxN):
-      let v = body
-      for c in 0..<v.len: sumXAdd(sxA, 1 + c*sxS + (i and (sxS-1)), sxSt, sxW, v[c])
+    onGpuQueue(sxN):
+      for i in gpuRange(sxN):
+        let v = body
+        for c in 0..<v.len: sumXAdd(sxA, 1 + c*sxS + (i and (sxS-1)), sxSt, sxW, v[c])
 
 var gpuSumHost: ptr UncheckedArray[float]  # [8 sumHost] pinned host buffer of gpuSum
 var gpuSumPart: ptr UncheckedArray[float]  # [m][T] sums of the threads, then the workspace of sumFixed
@@ -535,15 +539,16 @@ template gpuSum*(i: untyped; n: SomeInteger; m: static int; body: untyped): arra
       gpuSumPartLen = max(gpuL, 2*gpuSumPartLen)
       gpuSumPart = cast[ptr UncheckedArray[float]](gpuMalloc(gpuSumPartLen*sizeof(float)))
     let sp = gpuSumPart
-    gpuForAsync(t, gpuT):
-      var a {.noInit.}: array[m, float]
-      for c in 0..<m: a[c] = 0.0
-      for j in 0..<sumTerms:
-        let i = t + j*gpuT
-        if i < gpuN:
-          let v: array[m, float] = body
-          for c in 0..<m: a[c] += v[c]
-      for c in 0..<m: sp[c*gpuT + t] = a[c]
+    onGpuQueue(gpuT):
+      for t in gpuRange(gpuT):
+        var a {.noInit.}: array[m, float]
+        for c in 0..<m: a[c] = 0.0
+        for j in 0..<sumTerms:
+          let i = t + j*gpuT
+          if i < gpuN:
+            let v: array[m, float] = body
+            for c in 0..<m: a[c] += v[c]
+        for c in 0..<m: sp[c*gpuT + t] = a[c]
     var r: array[m, float]
     sumFixed(r, sp, cast[ptr UncheckedArray[float]](addr sp[m*gpuT]), gpuSumHost, m, gpuT)
     r
