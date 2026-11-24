@@ -272,9 +272,6 @@ template gpuType*[V:static int, T](t: typedesc[Field[V,T]]): typedesc =
   GpuField[V,gpuType(T)]
 
 template gpuSites*(lo: Layout): int = lo.nSites
-template gpuSites*(n: SomeInteger): int =
-  ## the thread count of a launch given as a number
-  int(n)
 
 proc fmadd*(a, b, c: float32): float32 {.importc: "fmaf", header: "<math.h>", noSideEffect.}
   ## a b + c rounded once

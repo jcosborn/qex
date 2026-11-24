@@ -242,6 +242,12 @@ proc names(n: NimNode; ids: HashSet[string]; syms: seq[NimNode]): bool =
       if names(c, ids, syms): return true
     false
 
+template gpuSites*(n: SomeInteger): int =
+  ## The thread count of a launch given as a number.  Here, where the
+  ## launches of every backend find it: a kernel in a generic proc is
+  ## compiled with the names of the module that instantiates the proc.
+  int(n)
+
 iterator gpuOnce*(t: int): int =
   ## the share of thread t of n of the indices 0..<n
   yield t
