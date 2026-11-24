@@ -3,6 +3,7 @@ import accelbase
 export accelbase
 import gpumem
 export gpumem
+import expr
 import qex
 
 proc gpuFlagsIncl*(x: seq, f: set[gmFlags]) =
@@ -155,33 +156,52 @@ proc fromGpu*[C](c: var alignedMem[C]) =
 template fromGpu*(c: var alignedMem, g: GpuSeq) = fromGpu(c)
 
 
-iterator gpuRange*(n: int): int =
+# A kernel body runs once in each of its threads.  The launch declares the
+# number of the thread and their count for the text of the body, so procs
+# cannot name them: code that takes its share of a loop is a template.
+
+template gpuThreadNum*: untyped =
+  ## in a kernel: the number of this thread, below gpuNumThreads
+  gpuTn
+template gpuNumThreads*: untyped =
+  ## in a kernel: its threads, the launch count on a device, the host threads
+  ## with the CPU backend
+  gpuNt
+
+iterator gpuRangeOf*(n, t, nt: int): int =
+  ## the indices below n of thread t of nt: every nt-th on a device, which
+  ## keeps neighboring threads on neighboring memory, a contiguous share on
+  ## the host
   when backendIsGpu:
-    let s = int gpuNumThreads()
-    var i = int gpuThreadNum()
+    var i = t
     while i < n:
       yield i
-      i += s
+      i += nt
   else:
-    let s = gpuNumThreads()
-    let id = gpuThreadNum()
-    let i0 = (n*id) div s
-    let i1 = (n*(id+1)) div s
-    for i in i0 ..< i1:
+    for i in (n*t) div nt ..< (n*(t+1)) div nt:
       yield i
+
+template gpuRange*(n: int): untyped =
+  ## in a kernel: the share of this thread of 0..<n
+  gpuRangeOf(n, int(gpuThreadNum), int(gpuNumThreads))
 
 type
   SiteV*[V:static int] = distinct int
 template `[]`*(x: SiteV): int = int(x)
 
 when backendIsGpu:
-  iterator gpuSites*(n:int, V:static int): SiteV[1] =
-    for s in gpuRange(n*V):
+  iterator gpuSitesOf*(n: int, V: static int, t, nt: int): SiteV[1] =
+    for s in gpuRangeOf(n*V, t, nt):
       yield SiteV[1](s)
 else:
-  iterator gpuSites*(n:int, V:static int): SiteV[V] =
-    for s in gpuRange(n):
+  iterator gpuSitesOf*(n: int, V: static int, t, nt: int): SiteV[V] =
+    for s in gpuRangeOf(n, t, nt):
       yield SiteV[V](s)
+
+template gpuSites*(n: int, V: static int): untyped =
+  ## in a kernel: the share of this thread of n outer sites of V lanes, one
+  ## lane at a time on a device, whole sites on the host
+  gpuSitesOf(n, V, int(gpuThreadNum), int(gpuNumThreads))
 
 template gpuType*[T](t: typedesc[Simd[T]]): typedesc =
   ## the lanes as an array on a device; the host type with the CPU backend,
@@ -200,6 +220,9 @@ template gpuType*[V:static int, T](t: typedesc[Field[V,T]]): typedesc =
   GpuField[V,gpuType(T)]
 
 template gpuSites*(lo: Layout): int = lo.nSites
+template gpuSites*(n: SomeInteger): int =
+  ## the thread count of a launch given as a number
+  int(n)
 
 proc fmadd*(a, b, c: float32): float32 {.importc: "fmaf", header: "<math.h>", noSideEffect.}
   ## a b + c rounded once
@@ -475,6 +498,72 @@ template gpuSum*(i: untyped; n: SomeInteger; m: static int; body: untyped): arra
     var r: array[m, float]
     sumFixed(r, sp, cast[ptr UncheckedArray[float]](addr sp[m*gpuT]), gpuSumHost, m, gpuT)
     r
+
+when backendIsGpu:
+  type
+    GpuSum*[T] = ref object
+      ## The sum of the values the threads of a kernel hand to reduce, each
+      ## once; T is float or an array of floats.  The device keeps the value
+      ## of every thread and value adds them in an order fixed by the thread
+      ## count (sumFixed).  A kernel that names a GpuSum launches outside
+      ## threads blocks.
+      n: int  # threads it has room for
+      nt: int  # threads of the last kernel
+      p: ptr UncheckedArray[float]  # device: [m][nt] values, then the workspace of sumFixed
+      h: ptr UncheckedArray[float]  # pinned host block of sumFixed
+      val: T
+      valid: bool
+    GpuSumView*[T] = object
+      ## a GpuSum in a kernel
+      p*: ptr UncheckedArray[float]
+
+  template sumLen(T: typedesc): int =
+    when T is array: len(T) else: 1
+
+  proc newGpuSum*[T](n: int): GpuSum[T] =
+    ## for kernels of up to n threads
+    const m = sumLen(T)
+    result = GpuSum[T](n: n)
+    result.p = cast[ptr UncheckedArray[float]](gpuMalloc((m*n + m*(n div 15 + 16))*sizeof(float)))
+    result.h = cast[ptr UncheckedArray[float]](gpuMallocHost(m*sumHost*sizeof(float)))
+
+  proc free*(x: GpuSum) =
+    ## the device and host blocks; a second call does nothing
+    if x.p != nil:
+      gpuFree(x.p)
+      gpuFreeHost(x.h)
+      x.p = nil
+
+  proc toGpu*[T](x: GpuSum[T]): GpuSumView[T] =
+    if gpuLaunchThreads > x.n:
+      qexError "GpuSum: a kernel of ", gpuLaunchThreads, " threads, room for ", x.n
+    x.nt = gpuLaunchThreads
+    x.valid = false
+    GpuSumView[T](p: x.p)
+  template getGpu*(x: GpuSum, g: GpuSumView): auto = g
+  template fromGpu*(x: GpuSum, g: GpuSumView) = discard
+
+  template reduce*[T](gs: GpuSumView[T], x: T) =
+    ## in a kernel, once in every thread: the value of the thread
+    let gpuSumV = x
+    when T is array:
+      for c in 0..<gpuSumV.len:
+        gs.p[c*int(gpuNumThreads) + int(gpuThreadNum)] = float(gpuSumV[c])
+    else:
+      gs.p[int(gpuThreadNum)] = float(gpuSumV)
+
+  proc value*[T](x: GpuSum[T]): T =
+    ## the sum of the last kernel; waits for it
+    if not x.valid:
+      const m = sumLen(T)
+      var r: array[m, float]
+      sumFixed(r, x.p, cast[ptr UncheckedArray[float]](addr x.p[m*x.nt]), x.h, m, x.nt)
+      when T is array:
+        for c in 0..<m: x.val[c] = r[c]
+      else:
+        x.val = r[0]
+      x.valid = true
+    x.val
 
 when isMainModule:
   #import qex

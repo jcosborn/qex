@@ -1,4 +1,4 @@
-import macros
+import macros, sets, typetraits
 
 var ignore {.compileTime.}: seq[NimNode]
 proc addIfNewSym(s: var seq[NimNode], x: NimNode): int =
@@ -133,138 +133,168 @@ template hostBack*(hp: untyped): untyped =
     for p in fields(ps): hostFromGpu(p[0], p[1])
   back
 
-proc genHostPairs*(n: seq[NimNode]; handle: proc(c: NimNode): NimNode): NimNode =
-  ## ((hostPtr(x), handle), ...) of the variables n of prepareVars
-  result = newNimNode(nnkTupleConstr)
-  for c in n:
-    result.add newNimNode(nnkTupleConstr).add(newCall(bindSym"hostPtr", c[0]), handle(c))
+var gpuLaunchThreads* = 0
+  ## The threads of the kernel being launched, for the toGpu of objects that
+  ## hold a value per thread (GpuSum); written by the launching thread.
 
-const Keywords = ["addr","array"]
+# Capture of the variables of a kernel body.
+#
+# Every outer variable that a kernel body names becomes a value of the
+# launch: toGpu(x) where x has one, with fromGpu(x, g) owed afterwards, else
+# a copy of x, which has to be plain data.  The body keeps its text: the
+# kernel starts with `let x = getGpu(x, g)`, or the copy, under the name of
+# the host variable.  getGpu gets a stand-in of the type of x there (gpuArg).
+# Names that are types, constants, static values or routines stay as they
+# are.  A name the body declares is its own, also where the body uses a
+# host variable of that name elsewhere.  gpuObjects is declared after the
+# device values when one of them is no number and no pointer.
 
-proc prepareVars*(n:NimNode, deref:proc): seq[NimNode] =
-  # get a list of vars and new symbols to replace them, using let binding for now XXX
-  #     <- [(id, varsym, letptrsym), ...]
-  # the symbols in n are changed
-  #echo "### prepareVars: ",n.treerepr
-  var ignoreStack = newseq[NimNode]()
-  var openvars = newseq[NimNode]()
-  proc addIdent(n: NimNode, i: int) =
-    #echo "nnkIdent: ", n[i].repr, "  ", n.treerepr
-    if n[i].repr in Keywords: return
-    var ignore = false
-    for cc in ignoreStack:
-      for c in cc:
-        if c.eqIdent n[i]:
-          ignore = true
-          #echo "ignore: ", n
-          break
-      if ignore: break
-    if not ignore:
-      var newvar = true
-      for c in openvars:
-        if c[0].eqIdent n[i]:
-          n[i] = deref(c[0],c[1],c[2])
-          newvar = false
-          break
-      #echo "EXPR: ",n.lisprepr
-      #echo "ID:   ",n.repr,"  newvar: ",newvar.repr
-      #var rs = ""
-      #for c in openvars:
-      #  rs &= "  " & c.repr
-      #echo "RES:  ",rs
-      if newvar:
-        let nv = gensym(nskvar, "gpu_" & $n[i])
-        ignoreStack[0].add nv
-        let k = newLit openvars.len
-        openvars.add newNimNode(nnkTupleConstr).add(n[i], nv, k)
-        n[i] = deref(n[i],nv,k)
-        #echo "newvar: ", n[i].repr
-        #echo n.repr
-  template go(n: NimNode, i: int) =
-    mixin go
-    if n[i].kind in {nnkIdent,nnkSym}:
-      addIdent(n, i)
+macro gpuIsVar*(x: typed): untyped =
+  ## Whether x is a variable or the value of an expression, which a kernel
+  ## captures: no type, constant, static value or routine, and no variable
+  ## of the threads or of the C compiler (threadvar, importc).
+  var n = x
+  while n.kind in {nnkHiddenDeref, nnkHiddenAddr, nnkHiddenStdConv, nnkHiddenSubConv}: n = n[^1]
+  var r: bool
+  if x.getType.typeKind == ntyTypeDesc: r = false
+  else:
+    case n.kind
+    of nnkSym:
+      r = n.symKind in {nskVar, nskLet, nskParam, nskResult, nskForVar, nskTemp}
+      if r and n.symKind == nskVar:
+        let d = n.getImpl
+        if d.kind == nnkIdentDefs and d[0].kind == nnkPragmaExpr:
+          for p in d[0][1]:
+            let q = if p.kind == nnkExprColonExpr: p[0] else: p
+            if q.kind in {nnkIdent, nnkSym} and (q.eqIdent"threadvar" or q.eqIdent"importc" or q.eqIdent"importcpp"): r = false
+    of nnkCharLit..nnkNilLit: r = false
+    else: r = true
+  newLit(r)
+
+proc gpuArg*[T](t: typedesc[T]): T {.importc: "QEX_HOST_VALUE_IN_KERNEL", nodecl.}
+  ## Stands for the host variable in getGpu(x, g) inside a kernel, where the
+  ## name of x is the device value: getGpu selects on its type and must not
+  ## evaluate it (the C compiler stops on the name).
+
+template gpuSel*(h, l: untyped): untyped =
+  ## in a kernel: the device value l of the host variable h where the launch
+  ## made one
+  when declared(l): l else: h
+
+proc declName(d: NimNode; ids: var HashSet[string]; syms: var seq[NimNode]) =
+  case d.kind
+  of nnkIdent: ids.incl d.strVal
+  of nnkSym: syms.add d
+  of nnkPragmaExpr: declName(d[0], ids, syms)
+  of nnkPostfix: declName(d[1], ids, syms)
+  of nnkAccQuoted:
+    if d.len == 1: declName(d[0], ids, syms)
+  else: discard
+
+proc declNames(n: NimNode; ids: var HashSet[string]; syms: var seq[NimNode]) =
+  ## the names n declares, at any depth
+  case n.kind
+  of nnkVarSection, nnkLetSection, nnkConstSection:
+    for d in n:
+      if d.kind in {nnkVarTuple, nnkIdentDefs, nnkConstDef}:
+        for i in 0..<d.len-2: declName(d[i], ids, syms)
+  of nnkTypeSection:
+    for d in n: declName(d[0], ids, syms)
+  of nnkForStmt:
+    for i in 0..<n.len-2:
+      if n[i].kind == nnkVarTuple:
+        for c in n[i]: declName(c, ids, syms)
+      else: declName(n[i], ids, syms)
+  of RoutineNodes:
+    declName(n[0], ids, syms)
+    if n[3].kind == nnkFormalParams:
+      for i in 1..<n[3].len:
+        for j in 0..<n[3][i].len-2: declName(n[3][i][j], ids, syms)
+  else: discard
+  for c in n: declNames(c, ids, syms)
+
+type KernelCap* = object
+  body*: NimNode    ## the body, its outer variable symbols as gpuSel calls
+  pre*: NimNode     ## before the launch: the device values
+  shadow*: NimNode  ## first in the kernel: the device values under the names of the host variables
+  pairs*: NimNode   ## ((hostPtr(x), device value), ...) for the finalizer (hostBack)
+
+proc kernelCap*(body: NimNode): KernelCap =
+  var ids: HashSet[string]
+  var syms: seq[NimNode]
+  declNames(body, ids, syms)
+  var names: OrderedSet[string]  # identifiers, captured by name
+  var caps: seq[NimNode]  # outer symbols (generic procs and templates bind them)
+  proc walk(n: NimNode): NimNode =
+    case n.kind
+    of nnkIdent:
+      if n.strVal notin ids: names.incl n.strVal
+      result = n
+    of nnkSym:
+      if n.symKind in {nskVar, nskLet, nskParam, nskResult, nskForVar, nskTemp, nskTemplate} and n notin syms:
+        var k = caps.find(n)
+        if k < 0:
+          k = caps.len
+          caps.add n
+        result = newCall(bindSym"gpuSel", n, ident("gpuLoc_" & n.strVal & "_" & $k))
+      else: result = n
+    of nnkDotExpr:  # x.f: f is a field or a routine
+      result = n.copyNimNode
+      result.add walk(n[0])
+      result.add n[1]
+    of nnkExprEqExpr, nnkExprColonExpr:  # named argument, field of a constructor
+      result = n.copyNimNode
+      result.add n[0]
+      result.add walk(n[1])
+    of nnkPragma, nnkAccQuoted: result = n
+    of nnkCallKinds:
+      result = n.copyNimNode
+      if n[0].kind in {nnkIdent, nnkSym, nnkOpenSymChoice, nnkClosedSymChoice}: result.add n[0]  # a routine
+      else: result.add walk(n[0])
+      for i in 1..<n.len: result.add walk(n[i])
     else:
-      n[i].go
-  proc go(n:NimNode) =
-    # ign is a stack for ignoring lexical bindings: [(outer,...), (inner,...), ...]
-    #echo "go get: ",n.repr
-    #block:
-    #  var ignstr = ""
-    #  for c in ignoreStack: ignstr &= ("\n" & c.repr)
-    #  echo "ign has: ",ignstr
-    var newscope = false
-    if n.kind in {nnkBlockStmt, nnkBlockExpr, nnkIfExpr, nnkElifExpr, nnkElseExpr,
-        nnkIfStmt, nnkElifBranch, nnkElse, nnkCaseStmt, nnkOfBranch,
-        nnkWhileStmt, nnkForStmt} + RoutineNodes:
-      # New lexical scope
-      newscope = true
-      ignoreStack.add newNimNode(nnkTupleConstr)
-    for i in 0..<n.len:
-      #echo "### ",n[i].lisprepr
-      case n[i].kind
-      of {nnkVarSection,nnkLetSection}:
-        for cc in n[i]:
-          for c in 0..cc.len-2:
-            case cc[c].kind
-            of nnkPragmaExpr:
-              ignoreStack[^1].add cc[c][0]
-            of nnkBracketExpr:
-              for ccc in cc[c]:
-                ignoreStack[^1].add ccc
-            else:
-              ignoreStack[^1].add cc[c]
-      of nnkOpenSymChoice:
-        if n.kind in Callnodes: continue
-      of Callnodes:
-        #echo "Callnodes: ", n[i].treerepr
-        if n[i][0].kind in {nnkSym, nnkIdent, nnkOpenSymChoice}:
-          var newid = true
-          for c in ignoreStack[0]:
-            if c == n[i][0]:
-              newid = false
-              break
-          if newid:
-            ignoreStack[0].add n[i][0]
-      of nnkForStmt:
-        #echo n[i].treerepr
-        ignoreStack[^1].add n[i][0]
-      of nnkWhenStmt:
-        #echo n[i].treerepr
-        if n[i][0][0].kind in {nnkIdent,nnkSym}:
-          ignoreStack[^1].add n[i][0][0]
-      of nnkPragma:
-        continue
-      of nnkCast:
-        n[i][1].go
-        continue
-      of nnkDotExpr:
-        #echo "nnkDotExpr: ", n[i].repr, "  ", n[i][0].treerepr
-        #n[i].go 0
-        var s = newNimNode(nnkStmtList).add n[i][0]
-        s.go
-        n[i][0] = s[0]
-        continue
-      of nnkTemplateDef:
-        #echo n[i].treerepr
-        if n[i][0].kind in {nnkIdent,nnkSym}:
-          ignoreStack[^1].add n[i][0]
-        for j in 1..<n[i][3].len:  # FormalParams
-          if n[i][3][j].kind == nnkIdentDefs:
-            ignoreStack[^1].add n[i][3][j][0]
-        n[i][6].go
-        continue
-      of {nnkIdent,nnkSym}:
-        addIdent(n, i)
-        continue
-      else:
-        discard
-      n[i].go
-    if newscope: ignoreStack.setLen(ignoreStack.len-1)
-  #ignoreStack.add newPar(ident"gpuVarPtr")
-  ignoreStack.add newNimNode(nnkTupleConstr)
-  n.go
-  openvars
+      result = n.copyNimNode
+      for c in n: result.add walk(c)
+  result.body = walk(body)
+  result.pre = newStmtList()
+  result.shadow = newStmtList()
+  result.pairs = newNimNode(nnkTupleConstr)
+  # g: the device value, a: the host type where toGpu gave g, l: g in the kernel
+  template value(h, g, a: untyped) =
+    when compiles(gpuIsVar(h)):
+      when gpuIsVar(h):
+        when compiles(toGpu(h)):
+          let g {.used.} = toGpu(h)
+          type a {.used.} = typeof(h)
+        elif supportsCopyMem(typeof(h)):
+          let g {.used.} = h
+        else:
+          {.error: "kernel variable '" & astToStr(h) & "' of type " & $typeof(h) & " has no toGpu and is not plain data".}
+        when typeof(g) isnot (SomeNumber | bool | enum | ptr | pointer) and not declared(gpuObjects):
+          const gpuObjects {.inject, used.} = true  # an object among the device values
+  template pre(h, g, a: untyped) =
+    when declared(h): value(h, g, a)
+  template shadow(l, g, a: untyped) =
+    when declared(a):
+      let l {.used.} = getGpu(gpuArg(a), g)
+    elif declared(g):
+      let l {.used.} = g
+  template pair(h, g, a: untyped): untyped =
+    (when declared(a): (hostPtr(h), g) else: (false, false))
+  for name in names:
+    let h = ident(name)
+    let g = ident("gpuDev_" & name)
+    let a = ident("gpuHost_" & name)
+    result.pre.add getAst(pre(h, g, a))
+    result.shadow.add getAst(shadow(h, g, a))
+    result.pairs.add getAst(pair(h, g, a))
+  for k, h in caps:
+    let s = h.strVal & "_" & $k
+    let g = ident("gpuDev_" & s)
+    let a = ident("gpuHost_" & s)
+    result.pre.add getAst(value(h, g, a))
+    result.shadow.add getAst(shadow(ident("gpuLoc_" & s), g, a))
+    result.pairs.add getAst(pair(h, g, a))
 
 when isMainModule:
   template test(x) =

@@ -16,8 +16,6 @@ elif Backend == "CUDA":
   const beSharedMem* {.booldefine.} = false
   import cudabe
   export cudabe
-  import cudasum
-  export cudasum
   proc init = gpuInit(myRank)
   qexGlobalInitializers.add init
 elif Backend == "HIP":
@@ -25,8 +23,6 @@ elif Backend == "HIP":
   const beSharedMem* {.booldefine.} = false
   import hipbe
   export hipbe
-  import hipsum
-  export hipsum
   proc init = gpuInit(myRank)
   qexGlobalInitializers.add init
 elif Backend == "SYCL":

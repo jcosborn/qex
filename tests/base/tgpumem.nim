@@ -166,16 +166,10 @@ proc reals(n, k: int): (pointer, int) {.noinline.} =
   let g = toGpu(s)
   (pointer(addr s[0]), int(dev[float](g.p, n) != s))
 
-when GpuSum[float] is ref:  # CUDA, HIP
-  proc gpuSums() {.noinline.} =
-    ## 64 GpuSums of 1000 to 64000 sites with their device blocks, dead at the return
-    for k in 1..64:
-      let s = newGpuSum[float](1000*k)
-      discard toGpu(s)
-
 proc sums(n: int): array[2, array[2, float]] {.noinline.} =
-  ## Through one GpuSum: the sums of n terms [1, 2], then, after the table
-  ## freed every device block and others took their place, of n terms [3, 4].
+  ## Through one GpuSum, whose device block is its own: the sums of n terms
+  ## [1, 2], then, after the table freed every device block, of n terms
+  ## [3, 4].
   var gs = newGpuSum[array[2, float]](n)
   template total(a, b: float): array[2, float] =
     onGpu(n):
@@ -187,17 +181,8 @@ proc sums(n: int): array[2, array[2, float]] {.noinline.} =
     gs.value
   result[0] = total(1.0, 2.0)
   freeAllGpuMem()
-  # Blocks of the size of the partial sums of CUDA and HIP, all bits set: a
-  # sum that still wrote to its freed block would not see its last thread
-  # block and keep the first values.
-  var ff = newSeq[byte](8 + ((n + 31) div 32)*sizeof(array[2, float]))
-  for b in ff.mitems: b = 0xFF
-  var q: array[64, pointer]
-  for k in 0..<q.len:
-    q[k] = gpuMalloc(ff.len)
-    gpuMemCpyToGpu(q[k], addr ff[0], ff.len)
   result[1] = total(3.0, 4.0)
-  for k in 0..<q.len: gpuFree(q[k])
+  gs.free
 
 proc localKernel(n: int): int =
   ## A kernel on an array whose toGpu, getGpu and fromGpu are declared in this
@@ -377,19 +362,6 @@ suite "backend/gpumem":
   test "freed seqs of another length":
     reuse("seq"): reals(100 - k mod 2, k)
 
-  when GpuSum[float] is ref:
-    test "freed GpuSums drop their device blocks":
-      gpuSums()
-      GC_fullCollect()
-      let n = dumpGpuMem().count("GpuSumPartial")
-      when defined(gcDestructors):
-        check n == 0
-      else:
-        # Stale stack words can keep a few sums alive through refc's
-        # conservative scan (two with g++ 14 on aarch64); sums whose death
-        # misses the table stay, all 64 if none reaches it.
-        check n < 8
-
   test "explicit Field release drops its device entry":
     let f = lo.ColorVector()
     let key = pointer(addr f[0])
@@ -418,7 +390,7 @@ suite "backend/gpumem":
   test "launches in a threads block keep the kernel count":
     check kernelCount(lo) == (true, 0, true)
 
-  test "a GpuSum sums after the table freed its device block":
+  test "a GpuSum sums after the table freed every device block":
     check sums(40000) == [[40000.0, 80000.0], [120000.0, 160000.0]]
 
   test "a kernel copies back through the fromGpu declared in its proc":

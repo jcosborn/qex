@@ -124,180 +124,6 @@ template dataAddr*(x: typed): pointer =
   else: pointer(unsafeAddr(x))
   #else: x
 
-template gpuThreadNum*: untyped =
-  let teamNum = omp_get_team_num()
-  let numThreads = omp_get_num_threads()
-  let threadNum = omp_get_thread_num()
-  teamNum.int * numThreads.int + threadNum.int
-template gpuNumThreads*: untyped =
-  let numTeams = omp_get_num_teams()
-  let numThreads = omp_get_num_threads()
-  numTeams.int * numThreads.int
-
-template openmpDefs(n,body: untyped) =
-  # XXX check if GC matters
-  #let
-  #  numTeams = omp_get_num_teams()
-  #  teamNum = omp_get_team_num()
-  #ompBlock("parallel num_threads(512)"):
-  #ompBlock("parallel"):
-  ompBlock2("parallel num_threads(", n, ")"):
-    #let
-    #  numThreads = omp_get_num_threads()
-    #  threadNum = omp_get_thread_num()
-    #template getThreadNum: untyped {.used.} = teamNum.int * numThreads.int + threadNum.int
-    #template getNumThreads: untyped {.used.} = numTeams.int * numThreads.int
-    #{.emit:["#define nimZeroMem(b,len) memset((b),0,(len))"].}
-    {.push checks: off.}
-    {.push stacktrace: off.}
-    inlineProcs:
-      body
-    #{.emit:["#undef nimZeroMem"].}
-
-
-proc genCpuPrepare(n:seq[NimNode]):NimNode =
-  mixin toGpu
-  template r(x,v:untyped):untyped =
-    var v = toGpu(x)
-    var `v xx` = v
-  result = newstmtlist()
-  for c in n:
-    result.add getast r(c[0],c[1])
-
-proc gpuFinalizer*[P](fl: static string; count: int; ps: P; back: proc(ps: P) {.nimcall.}): proc() =
-  ## The finalizer of a kernel launch: back copies what the kernel wrote to the
-  ## host variables of ps (genHostPairs, hostBack).  The closure has an
-  ## environment of its own, so every thread of a threads block gets one and
-  ## may keep it.
-  result = proc() =
-    tic(fl)
-    var countSave = -1  # the count before, in the thread that lowers it
-    threadSingle:
-      countSave = kernelCallCount
-      kernelCallCount = count
-    back(ps)
-    if countSave >= 0: kernelCallCount = countSave  # the same thread restores it
-    threadBarrier()
-    toc("cpuFinalize")
-
-proc declarePtrTuple(n:seq[NimNode]):NimNode =
-  mixin offloadPtr
-  var ps = newNimNode(nnkTupleConstr)
-  ps.add newLit"is_device_ptr("
-  for c in n:
-    when compiles(offloadPtr(c[0])):
-      ps.add c[2]
-  if ps.len == 1:
-    result = newNimNode(nnkTupleConstr)
-  else:
-    ps.add newLit")"
-    result = ps
-  #echo result.treerepr
-
-#macro isDevicePtr(x: typed): untyped =
-#  let n = $x
-#  result = newLit(" is_device_ptr("&n&")")
-
-#macro useDevicePtr(x: auto): auto =
-  #echo x.treerepr
-  #let n = x.strVal
-  #echo "useDevicePtr: ", n
-  #let p = newLit("#pragma omp target data use_device_ptr("&n&")")
-#  result = quote do:
-#    {.emit: ["#pragma omp target data use_device_ptr(",`x`,")"].}
-
-#macro getrepr(x: untyped): auto =
-#  echo x.treerepr
-#  result = x
-
-template useDevicePtr*(x: auto) =
-  #getrepr:
-  {.emit: ["#pragma omp target data use_device_ptr(",x,")"].}
-
-#macro mapto(x: typed): untyped =
-#  let n = $x
-#  result = newLit(" map(to:"&n&")")
-#macro mapto(x: typed): untyped =
-
-macro onGpuNowait*(n,b,body: untyped): auto =
-  let li = body.lineinfo
-  let lis = li.split({'/','.','(',','})
-  let fl = lis[^4] & "(" & lis[^2] & ")"
-  #proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
-  proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,newTree(nnkAccQuoted,g,ident"xx"))
-  template target(fl,n,b,cpuPrepare, hostPairs, devicePtrDeclare, body: untyped) =
-    mixin toGpu, getGpu, fromGpu
-    inc kernelCallCount
-    block:
-      let thisKernelCallCount = kernelCallCount  # save current value for finalizer
-      tic(fl)
-      cpuPrepare  # a let section declare and save device pointers
-      toc("cpuPrepare")
-      #proc gpuProc {.gensym.} =
-      threadSingle:
-        let nthreads = n
-        let nteams = n div b
-        #ompBlock2("target teams num_teams(1024)", devicePtrDeclare):
-        #ompBlock2("target teams", devicePtrDeclare):
-        ompBlock2("target teams num_teams(", nteams, ")", devicePtrDeclare):
-          openmpDefs(nthreads):
-            const inOnGpu {.inject,used.} = true
-            body
-      #gpuProc()
-      when declared gpuWaitFlops:
-        toc("wait",flops=gpuWaitFlops)
-      else:
-        toc("wait")
-      inc kernelCallCount  # increment after launch
-      let hp = hostPairs
-      gpuFinalizer(fl, thisKernelCallCount, hp, hostBack(hp))
-  let
-    v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
-    cpuPrepare = genCpuPrepare v
-    hostPairs = genHostPairs(v, proc(c: NimNode): NimNode = c[1])
-    isDevicePtrs = declarePtrTuple v
-  result = getast(target(fl,n,b,cpuPrepare, hostPairs, isDevicePtrs, body))
-  case dumpKernels
-  of 1:
-    echo li
-    echo result.repr
-  of 2:
-    echo li
-    echo result.treerepr
-  else:
-    if dumpKernels > 2:
-      echo li
-      var sl = newNimNode(nnkStmtListExpr)
-      sl.add newCall(bindsym"echoTyped", result)
-      sl.add result
-      result = sl
-
-var gpuNumThreadsRequest* = 32*1024
-var gpuBlockSizeRequest* = 64
-template gpuSites(n: int): int = n
-template onGpuNowait*(body: untyped): auto =
-  onGpuNoWait(gpuNumThreadsRequest, gpuBlockSizeRequest, body)
-template onGpuNowait*(n0,body: untyped): auto =
-  mixin gpuSites
-  let n = gpuSites(n0)
-  var b = gpuBlockSizeRequest
-  while b > n: b = b div 2
-  onGpuNoWait(n, b, body)
-#template onGpuNowait*(n,b,body: untyped): auto =
-#  onGpuNoWait(n, b, body)
-
-template onGpu*(body: untyped) =
-  let finalize = onGpuNoWait(body)
-  finalize()
-template onGpu*(n,body: untyped) =
-  mixin gpuSites
-  let finalize = onGpuNoWait(gpuSites(n), body)
-  finalize()
-template onGpu*(n,b,body: untyped) =
-  mixin gpuSites
-  let finalize = onGpuNoWait(gpuSites(n), b, body)
-  finalize()
-
 const gpuThreads {.intdefine.} = 128  ## thread_limit of gpuFor kernels, 0 for the runtime default; 128 was best for the staggered kernels on PVC at 24^4 sites per tile
 const gpuForMap {.strdefine.} = "defaultmap(firstprivate:pointer)"  ## pointers by value, no lookup in the mapping table at each launch
 const gpuForClause* = gpuForMap & (if gpuThreads > 0: " thread_limit(" & $gpuThreads & ")" else: "")
@@ -351,6 +177,102 @@ template gpuMallocHost*(size: SomeInteger): pointer =
   ## pinned host memory, for fast copies from the device
   omp_target_alloc_host(size)
 template gpuFreeHost*(p: pointer) = omp_target_free(p)
+
+const gpuObjMap {.strdefine.} = ""  ## a map clause, such as defaultmap(firstprivate:aggregate), with which onGpu kernels that capture objects are queued as well, to measure that form
+
+template gpuKernAsync(i: untyped; n: SomeInteger; body: untyped) =
+  ## gpuForAsync for the kernels of onGpu, with gpuObjMap
+  discard addr(gpuAsyncDep)
+  const gpuC = "target teams distribute parallel for " & gpuForClause & (if gpuObjMap != "": " " & gpuObjMap else: "") & " nowait depend(inout:gpuAsyncDep)"
+  let gpuN = int(n)
+  for i in `||`(0, gpuN-1, gpuC):
+    body
+
+proc gpuFinalizer*[P](fl: static string; count: int; flops: float; ps: P; back: proc(ps: P) {.nimcall.}): proc() =
+  ## The finalizer of a kernel launch: waits for the queue, then back copies
+  ## what the kernel wrote to the host variables of ps (hostBack).  The
+  ## closure has an environment of its own, so every thread of a threads
+  ## block gets one and may keep it.
+  result = proc() =
+    tic(fl)
+    var countSave = -1  # the count before, in the thread that lowers it
+    threadSingle:
+      countSave = kernelCallCount
+      kernelCallCount = count
+      gpuWaitAsync()
+    toc("wait",flops=flops)
+    back(ps)
+    if countSave >= 0: kernelCallCount = countSave  # the same thread restores it
+    threadBarrier()
+    toc("cpuFinalize")
+
+macro onGpuNowait*(n, body: untyped): auto =
+  ## Launches body as a kernel of n threads, n a count or what gpuSites
+  ## turns into one.  Its captures are the device values of the variables
+  ## that body names (backend/expr).  The result is the finalizer, which
+  ## waits for the queue and copies back.
+  ## The kernel is that of gpuForAsync when every captured value is a number
+  ## or a pointer, which a queued kernel takes by value.  With an object
+  ## among them it is that of gpuFor, after the queued kernels, complete at
+  ## the launch: the object is a local of the launch that the kernel maps,
+  ## since in earlier tests icx did not pass arrays of pointers to a kernel
+  ## by value (defaultmap(firstprivate:aggregate)).
+  ## In a threads block the kernel also completes at the launch: a queued
+  ## kernel is a task of the thread that launched it, and only that thread
+  ## could wait for it.
+  let li = body.lineinfo
+  let lis = li.split({'/','.','(',','})
+  let fl = lis[^4] & "(" & lis[^2] & ")"
+  template target(fl, n, pre, shadow, hostPairs, body: untyped) =
+    mixin toGpu, getGpu, fromGpu, gpuSites
+    inc kernelCallCount
+    block:
+      let thisKernelCallCount = kernelCallCount  # save current value for finalizer
+      tic(fl)
+      let gpuNt {.inject.} = int(gpuSites(n))
+      gpuLaunchThreads = gpuNt
+      pre  # the device values
+      toc("cpuPrepare")
+      threadSingle:
+        when declared(gpuObjects) and gpuObjMap == "":
+          gpuWaitAsync()
+          gpuFor(gpuTn, gpuNt):
+            const inOnGpu {.inject,used.} = true
+            shadow
+            inlineProcs:
+              body
+        else:
+          gpuKernAsync(gpuTn, gpuNt):
+            const inOnGpu {.inject,used.} = true
+            shadow
+            inlineProcs:
+              body
+          if numThreads > 1: gpuWaitAsync()
+      toc("launch")
+      inc kernelCallCount  # increment after launch
+      let hp = hostPairs
+      gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+  let c = kernelCap(body)
+  result = getast(target(fl, n, c.pre, c.shadow, c.pairs, c.body))
+  case dumpKernels
+  of 1:
+    echo li
+    echo result.repr
+  of 2:
+    echo li
+    echo result.treerepr
+  else: discard
+
+var gpuNumThreadsRequest* = 32*1024  ## threads of a kernel launched without a count
+template onGpuNowait*(body: untyped): auto =
+  onGpuNowait(gpuNumThreadsRequest, body)
+
+template onGpu*(body: untyped) =
+  let finalize = onGpuNowait(body)
+  finalize()
+template onGpu*(n,body: untyped) =
+  let finalize = onGpuNowait(n, body)
+  finalize()
 
 {.emit: "/*INCLUDESECTION*/\n#include <omp.h>".}
 proc gpuZeContext*(): tuple[ctx, dev: pointer] =
@@ -476,169 +398,3 @@ macro simdFor*(n:untyped):untyped =
       quit 1
   p n
 
-proc blockSumSmall*[T](x: T): T = # only thread 0 gets result
-  const max_block_size = 1024
-  const max_items = max_block_size
-  let thread_idx = omp_get_thread_num()
-  let block_size = omp_get_num_threads()
-  var storage {.noInit,codegendecl:"static $# $#".}: array[max_items, T]
-  {.emit:["#pragma omp groupprivate(",storage,")"].}
-  storage[thread_idx] = x
-  {.emit:["#pragma omp barrier"].}
-  if thread_idx == 0:
-    result = x
-    for i in 1..<block_size:
-      result += storage[i]
-
-proc blockSum*[T](x: T): T = # only thread 0 gets result
-  const min_shared_mem = 48*1024 - sizeof(bool)  # bool used in GpuSum reduce
-  const max_items = 512 #1024
-  const max_size = min_shared_mem div max_items
-  when sizeof(T) <= max_size:
-    blockSumSmall(x)
-  else:
-    static: echo $x.type, "  ", sizeof(T)
-    {.error:"blockSum: type size too large".}  # FIXME later
-
-type GpuSum*[T] = object
-    partial: ptr UncheckedArray[T]
-    npartial: cint
-    #maxblock: int
-    val: ptr T
-    valh: T
-    valvalid: bool
-    count: ptr cint
-proc newGpuSum*[T](ns: int): GpuSum[T] =
-  let n = (ns + 15) div 16  # divide by warp size
-  result.partial.gpuMalloc(n)
-  result.partial.gpuMemset(default(T), n)
-  result.npartial = cint n
-  #result.val = cast[ptr T](omp_target_alloc_host(csize_t sizeof(T)))
-  #result.val = cast[ptr T](omp_target_alloc_shared(csize_t sizeof(T)))
-  result.val = cast[ptr T](omp_target_alloc(csize_t sizeof(T)))
-  result.count.gpuMalloc()
-  #result.count.gpuMemset(0, sizeof(result.count[]))
-  #q.memset(result.count, 0, sizeof(result.count[]))
-  result.count.gpuMemset(0)
-#template value*(x: GpuSum): auto = x.val[]
-template value*(x: GpuSum): auto =
-  if not x.valvalid:
-    x.valvalid = true
-    gpuMemCpyToCPU(addr x.valh, x.val, sizeof(x.valh))
-  x.valh
-template toGpu*(x: GpuSum): auto =
-  x.valvalid = false
-  x
-template getGpu*(x,g: GpuSum): auto = g
-template fromGpu*(x,g: GpuSum): auto = discard
-
-proc reduce*[T](gs: GpuSum[T], x: T) =
-  var aggregate = blockSum(x)
-  let threadIdx = omp_get_thread_num()
-  let blockIdx = omp_get_team_num()
-  let blockDim = omp_get_num_threads()
-  let gridDim = omp_get_num_teams()
-  block:
-    var isLastBlockDone{.noInit,codegendecl:"static $# $#".}: bool
-    {.emit:["#pragma omp groupprivate(",isLastBlockDone,")"].}
-    #isLastBlockDone = false
-    if threadIdx == 0:
-      if blockIdx < gs.npartial:
-        gs.partial[blockIdx] = aggregate;
-      #threadFence() # flush result
-      {.emit:["#pragma omp flush release"].}
-      # increment global block counter
-      #let value = atomicInc(gs.count)
-      var value: typeof gs.count[]
-      {.emit:["#pragma omp atomic capture"].}
-      block:
-        value = gs.count[]
-        gs.count[] += 1
-      # determine if last block
-      isLastBlockDone = (value == (gridDim - 1))
-    {.emit:["#pragma omp barrier"].}
-    # finish the reduction if last block
-    if isLastBlockDone:
-      var i = threadIdx
-      var sum = default(T)
-      let n = min(gs.npartial, gridDim)
-      {.emit:["#pragma omp flush release"].}
-      while i < n:
-        sum += gs.partial[i]
-        i += blockDim;
-      sum = blockSum(sum)
-      # write out the final reduced value
-      if threadIdx == 0:
-        gs.val[] = sum
-        gs.count[] = 0  # set to zero for next time
-
-when isMainModule:
-  type FltArr = object
-    a:ptr UncheckedArray[float32]
-  {.emit:"#pragma omp requires unified_shared_memory".}
-
-  proc test =
-    var n = 50000.cint
-    var
-      a = newSeq[float32](n)
-      b = newSeq[float32](n)
-      c = newSeq[float32](n)
-
-    template `[]`(x: FltArr, i: SomeInteger): untyped = x.a[][i]
-    template `[]=`(x: FltArr, i:SomeInteger, y:untyped):untyped = x.a[][i] = y
-
-    #template offloadUseVar(x:seq):bool = true
-    #template offloadUsePtr(x:seq):bool = true
-    #template rungpuPrepareOffload(x:seq):bool = true
-    #template runcpuFinalizeOffload(x:seq):bool = true
-    #template gpuVarPtr(v:FltArr,p:untyped):untyped = v
-    #template offloadPtr(x:seq):untyped =
-    #  let size = x.len * sizeof(x[0])
-    #  let xp = omp_target_alloc(size)
-    #  discard omp_target_memcpy_togpu(xp, x[0].addr, size)
-    #  cast[ptr UncheckedArray[type(x[0])]](xp)
-    #template offloadVar(x:seq,p:untyped):untyped = FltArr(a:p)
-    #template gpuPrepareOffload(v:FltArr,p:untyped):untyped = v.a=p
-    #template cpuFinalizeOffload(x:seq,v,p:untyped):untyped = omp_target_free(p)
-
-    template toGpu(x: cint): auto = x
-    template getGpu(x: cint, g: cint): auto = x
-    template fromGpu(x: cint, g: cint) = discard
-
-    template toGpu(x: seq): auto =
-      let size = x.len * sizeof(x[0])
-      #let xp = omp_target_alloc(size)
-      let xp = gpuMalloc(size)
-      #discard omp_target_memcpy_togpu(xp, x[0].addr, size)
-      gpuMemCpyToGpu(xp, x[0].addr, size)
-      FltArr(a:cast[ptr UncheckedArray[type(x[0])]](xp))
-
-    template getGpu(x: seq, g: FltArr): auto = g
-
-    template fromGpu(x:seq, g:FltArr) =
-      let size = x.len * sizeof(x[0])
-      gpuMemCpyToCpu(x[0].addr, g.a, size)
-      gpuFree(g.a)
-
-    var x = 1.0'f32
-    var y = cast[ptr UncheckedArray[float32]](omp_target_alloc(sizeof(float32)))
-    useDevicePtr(y)
-    #discard omp_target_memcpy_togpu(y, addr x, sizeof(float32))
-    gpuMemCpyToGPU(y, addr x, sizeof(float32))
-    #ompBlock("target teams"&isDevicePtr(x)):
-    #ompBlock("target teams"&mapto(x)):
-    ompBlock2("target teams", " map(to:", x, ")"):
-      {.emit:"#pragma omp parallel".}
-      {.emit:"for(int ii=0; ii<1; ii++)".}
-      block:
-        x = 1.0
-
-    #macro dump(n:auto):auto =
-    #  echo n.repr
-    #  n
-    onGpu:
-      let i = getThreadNum()
-      if i < n:
-        c[i] = a[i] + b[i]
-
-  test()

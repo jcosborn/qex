@@ -22,9 +22,6 @@ template gpuMemCpyToCpuAsync*(dst, src: pointer; length: SomeInteger) =
   copyMem(dst, src, length)
 const gpuCopyFast* = high(int)  ## bytes up to which a queued copy has its low cost
 
-template gpuNumThreads*:auto = numThreads
-template gpuThreadNum*:auto = threadNum
-
 # The kernels of the GPU backends run here as loops over the host threads,
 # complete on return
 
@@ -67,14 +64,6 @@ template gpuAtomicAdd*(r: ptr UncheckedArray[uint64]; k: int; v: uint64) =
 template gpuMallocHost*(size: SomeInteger): pointer = gpuMalloc(size)
 template gpuFreeHost*(p: pointer) = c_free(p)
 
-proc genCpuPrepare(n:seq[NimNode]):NimNode =
-  mixin toGpu
-  template r(x,v:untyped):untyped =
-    var v = toGpu(x)
-  result = newstmtlist()
-  for c in n:
-    result.add getast r(c[0],c[1])
-
 proc gpuFinalizer*[P](fl: static string; count: int; ps: P; back: proc(ps: P) {.nimcall.}): proc() =
   ## The finalizer of a kernel launch: back copies what the kernel wrote to the
   ## host variables of ps (genHostPairs, hostBack).  The closure has an
@@ -92,11 +81,6 @@ proc gpuFinalizer*[P](fl: static string; count: int; ps: P; back: proc(ps: P) {.
     threadBarrier()
     toc("cpuFinalize")
 
-#macro echoTyped(body: auto): auto =
-#  echo body.repr
-#  #echo body.treerepr
-#  result = body
-
 proc gpuDefaultNumThreads*(): int =
   var nt = 0
   threads:
@@ -104,28 +88,42 @@ proc gpuDefaultNumThreads*(): int =
       nt = numThreads
   result = nt
 
-macro onGpuNowait*(n,b,body: untyped): auto =
+macro onGpuNowait*(n, body: untyped): auto =
+  ## Runs body as a kernel in the host threads: outside a threads block the
+  ## kernel opens one, inside one every thread of the team calls it.  n, the
+  ## thread count of the devices, does not apply.  The result is the
+  ## finalizer, which copies back.
   let li = body.lineinfo
   let lis = li.split({'/','.','(',','})
   let fl = lis[^4] & "(" & lis[^2] & ")"
-  proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
-  template target(fl, cpuPrepare, hostPairs, body: untyped) =
+  template target(fl, pre, shadow, hostPairs, body: untyped) =
     mixin toGpu, getGpu, fromGpu
     inc kernelCallCount  # increment before setup
     block:
       tic(fl)
       let thisKernelCallCount = kernelCallCount  # save current value for finalizer
-      cpuPrepare  # a let section declare and save device pointers
+      pre  # the device values
       toc("cpuPrepare")
-      #proc gpuProc {.gensym.} =
       block:
         const inOnGpu {.inject,used.} = true
-        if numThreads == 1:
-          threads:
-            body
-        else:
+        when declared(qexThreadsBlock):
+          # no nested proc here: it would move the device values of every
+          # thread into one shared environment
+          let gpuTn {.inject, used.} = threadNum
+          let gpuNt {.inject, used.} = numThreads
+          shadow
           body
-      #gpuProc()
+        else:
+          proc gpuKern() {.gensym.} =
+            let gpuTn {.inject, used.} = threadNum
+            let gpuNt {.inject, used.} = numThreads
+            shadow
+            body
+          if numThreads == 1:
+            threads:
+              gpuKern()
+          else:
+            gpuKern()
       when declared gpuWaitFlops:
         toc("wait",flops=gpuWaitFlops)
       else:
@@ -133,11 +131,8 @@ macro onGpuNowait*(n,b,body: untyped): auto =
       inc kernelCallCount  # increment after launch
       let hp = hostPairs
       gpuFinalizer(fl, thisKernelCallCount, hp, hostBack(hp))
-  let
-    v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
-    cpuPrepare = genCpuPrepare v
-    hostPairs = genHostPairs(v, proc(c: NimNode): NimNode = c[1])
-  result = getast(target(fl,cpuPrepare, hostPairs, body))
+  let c = kernelCap(body)
+  result = getast(target(fl, c.pre, c.shadow, c.pairs, c.body))
   case dumpKernels
   of 1:
     echo li
@@ -145,53 +140,31 @@ macro onGpuNowait*(n,b,body: untyped): auto =
   of 2:
     echo li
     echo result.treerepr
-  else:
-    if dumpKernels > 2:
-      echo li
-      var sl = newNimNode(nnkStmtListExpr)
-      sl.add newCall(bindsym"echoTyped", result)
-      sl.add result
-      result = sl
+  else: discard
 
-var gpuNumThreadsRequest* = 0
-var gpuBlockSizeRequest* = 0
-template gpuSites(n: int): int = n
 template onGpuNowait*(body: untyped): auto =
-  onGpuNoWait(gpuNumThreadsRequest, gpuBlockSizeRequest, body)
-template onGpuNowait*(n0,body: untyped): auto =
-  mixin gpuSites
-  let n = gpuSites(n0)
-  var b = gpuBlockSizeRequest
-  while b > n: b = b div 2
-  onGpuNoWait(n, b, body)
-#template onGpuNowait*(n,b,body: untyped): auto =
-#  onGpuNoWait(n, b, body)
+  onGpuNowait(0, body)
 
 template onGpu*(body: untyped) =
-  let finalize = onGpuNoWait(body)
+  let finalize = onGpuNowait(body)
   finalize()
 template onGpu*(n,body: untyped) =
-  mixin gpuSites
-  let finalize = onGpuNoWait(gpuSites(n), body)
+  let finalize = onGpuNowait(n, body)
   finalize()
-template onGpu*(n,b,body: untyped) =
-  mixin gpuSites
-  let finalize = onGpuNoWait(gpuSites(n), b, body)
-  finalize()
-
-#template onGpu*(n,x:untyped) = onGpu(x)
-#template onGpu*(n,t,x:untyped) = onGpu(x)
 
 type GpuSum*[T] = object
+    ## The sum of the values the threads of a kernel hand to reduce, each
+    ## once: here the sum over the host threads.
     val: T
 proc newGpuSum*[T](n: int): GpuSum[T] =
   discard
+template free*(x: GpuSum) = discard
 template value*(x: GpuSum): auto = x.val
 template toGpu*(x: GpuSum): auto = addr x
-template getGpu*(x: GpuSum, g: ptr GpuSum): auto = g[]
+template getGpu*(x: GpuSum, g: ptr GpuSum): auto = g
 template fromGpu*(x: GpuSum, g: ptr GpuSum): auto = discard
 
-proc reduce*[T](gs: var GpuSum[T], x: T) =
+proc reduce*[T](gs: ptr GpuSum[T], x: T) =
   var t = x
   t.threadSum
   gs.val = t

@@ -20,7 +20,7 @@ type
   SomeGpuField2* = GpuField2 | GpuFieldExpr2
 template n*(x: GpuField): auto = x.d.n
 template p*(x: GpuField): auto = x.d.p
-template gpuSites*(x: GpuField): auto = gpuSites(x.n, x.V)
+template gpuSites*(x: GpuField): untyped = gpuSites(x.n, x.V)
 proc gpuFlagsExcl*(x: Field, f: set[gmFlags]) =
   gpuMemFlagsExcl(addr x[0], f)
 proc gpuFlagsIncl*(x: Field, f: set[gmFlags]) =
@@ -49,7 +49,8 @@ proc `[]=`*[T;V,L:static int](r: GpuField[V,T], i: SiteV[L], x: auto) =
     let v = i[] mod V
     r.p[][s][asSimd(v)] = x
 
-proc `:=`*(r: GpuField, x: SomeGpuField) =
+template `:=`*(r: GpuField, x: SomeGpuField) =
+  ## in a kernel
   for s in gpuSites(r.n, r.V):
     r[s] = x[s]
 
@@ -177,7 +178,7 @@ template numberType*[T:CgFld](x: typedesc T): typedesc = numberType(T.C)
 #template numberType*[T:CgFld](x: T): typedesc = numberType(T.C)
 template `:=`*(r: CgFld, x: SomeNumber) =
   r.cpu := x
-template gpuSites*(x: CgFld): auto = gpuSites(x.gpu.n, x.gpu.V)
+template gpuSites*(x: CgFld): untyped = gpuSites(x.gpu.n, x.gpu.V)
 
 template displayName*[T](t: typedesc[Color[T]]): string =
   "Color" & displayName(T)
