@@ -114,7 +114,8 @@ proc inThreads(n: int): int =
   gpuFree(p)
 
 proc fields(lo: Layout): float =
-  ## |b|^2 after b[s] = 2 a[s] on the sites of a field of ones
+  ## |b|^2, over all ranks, after b[s] = 2 a[s] on the sites of a field of
+  ## ones
   var a = lo.ColorVector()
   var b = lo.ColorVector()
   threads:
@@ -196,7 +197,7 @@ suite "onGpu captures":
     check inThreads(1000) == 0
 
   test "fields":
-    check fields(lo) == 4.0*3.0*float(lo.nSites)
+    check fields(lo) == 4.0*3.0*float(lo.physVol)
 
   test "a sum":
     check total(1000) == 499500.0
