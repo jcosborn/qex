@@ -113,7 +113,9 @@ proc newLinks*[V: static int](g: GpuGauge[V]): ptr UncheckedArray[float] =
 
 proc copy*[V: static int](g: GpuGauge[V]; d, s: ptr UncheckedArray[float]) =
   ## d = s for arrays like g.u
-  gpuFor(i, 4*18*g.n): d[i] = s[i]
+  let nl = 4*18*g.n
+  onGpu(nl):
+    for i in gpuRange(nl): d[i] = s[i]
 
 proc update*[V: static int](g: var GpuGauge[V]) =
   ## Exchanges the halo of g.u.  The barrier keeps a peer from rewriting the
@@ -138,10 +140,11 @@ template forLinks*[V: static int](g: var GpuGauge[V]; mu, k: untyped; body: unty
     let ns = if g.fresh: 0 else: g.ex[0].nsend  # send slots, the same in the 4 halos
     if ns == 0:
       g.update
-      gpuFor(i, 4*n, 16):
-        let mu = i div n
-        let k = i - mu*n
-        body
+      onGpu(4*n, 16):
+        for i in gpuRange(4*n):
+          let mu = i div n
+          let k = i - mu*n
+          body
     else:
       let u = g.u
       let od = g.ord
@@ -154,30 +157,32 @@ template forLinks*[V: static int](g: var GpuGauge[V]; mu, k: untyped; body: unty
       let sd3 = g.ex[3].sdst
       getDefaultComm().barrier  # as in update
       let mi = max(4*nin, 1)
-      gpuFor(i, mi, 16):
-        var q = i
-        while q < 4*18*ns:  # the send slots, spread over the threads
-          let d = q div (18*ns)
-          let r = q - d*18*ns
-          let f = cast[ptr UncheckedArray[float]](addr u[18*d*n])
-          case d
-          of 0: packAt(si, sd0, st, 18, ns, V, r, f)
-          of 1: packAt(si, sd1, st, 18, ns, V, r, f)
-          of 2: packAt(si, sd2, st, 18, ns, V, r, f)
-          else: packAt(si, sd3, st, 18, ns, V, r, f)
-          q += mi
-        if i < 4*nin:
-          let mu = i div nin
-          let k = int od[i - mu*nin]
-          body
+      onGpu(mi, 16):
+        for i in gpuRange(mi):
+          var q = i
+          while q < 4*18*ns:  # the send slots, spread over the threads
+            let d = q div (18*ns)
+            let r = q - d*18*ns
+            let f = cast[ptr UncheckedArray[float]](addr u[18*d*n])
+            case d
+            of 0: packAt(si, sd0, st, 18, ns, V, r, f)
+            of 1: packAt(si, sd1, st, 18, ns, V, r, f)
+            of 2: packAt(si, sd2, st, 18, ns, V, r, f)
+            else: packAt(si, sd3, st, 18, ns, V, r, f)
+            q += mi
+          if i < 4*nin:
+            let mu = i div nin
+            let k = int od[i - mu*nin]
+            body
       for d in 0..3: g.ex[d].start
       for d in 0..3: g.ex[d].wait
       g.fresh = true
       let m = n - nin
-      gpuFor(i, 4*m, 16):
-        let mu = i div m
-        let k = int od[nin + i - mu*m]
-        body
+      onGpu(4*m, 16):
+        for i in gpuRange(4*m):
+          let mu = i div m
+          let k = int od[nin + i - mu*m]
+          body
 
 # 3x3 complex matrices as 18 reals, U_ab at 6a+2b (re) and 6a+2b+1 (im)
 
@@ -368,24 +373,25 @@ proc ploop*[V: static int](g: GpuGauge[V]; w: var GpuGauge[V]; t: ptr UncheckedA
     let h1 = w.ex[1].rbuf
     let h2 = w.ex[2].rbuf
     let h3 = w.ex[3].rbuf
-    gpuFor(i, 4*n):
-      let mu = i div n
-      let k = i - mu*n
-      let o = 18*mu*n + lo18(V, k)
-      let lm = if mu == 0: l0 elif mu == 1: l1 elif mu == 2: l2 else: l3
-      if it < lm:
-        var x {.noInit.}, y {.noInit.}, z {.noInit.}: array[18, float]
-        mload(x, uu, o, V)
-        let j = int nb[nbF(mu)*n + k]
-        case mu
-        of 0: link(y, 0, j)
-        of 1: link(y, 1, j)
-        of 2: link(y, 2, j)
-        else: link(y, 3, j)
-        mmul(z, x, y)
-        forStatic e, 0, 17: t[o + e*V] = z[e]
-      else:
-        forStatic e, 0, 17: t[o + e*V] = u[o + e*V]
+    onGpu(4*n):
+      for i in gpuRange(4*n):
+        let mu = i div n
+        let k = i - mu*n
+        let o = 18*mu*n + lo18(V, k)
+        let lm = if mu == 0: l0 elif mu == 1: l1 elif mu == 2: l2 else: l3
+        if it < lm:
+          var x {.noInit.}, y {.noInit.}, z {.noInit.}: array[18, float]
+          mload(x, uu, o, V)
+          let j = int nb[nbF(mu)*n + k]
+          case mu
+          of 0: link(y, 0, j)
+          of 1: link(y, 1, j)
+          of 2: link(y, 2, j)
+          else: link(y, 3, j)
+          mmul(z, x, y)
+          forStatic e, 0, 17: t[o + e*V] = z[e]
+        else:
+          forStatic e, 0, 17: t[o + e*V] = u[o + e*V]
     g.copy(w.u, t)
   let u = w.u
   var s = gpuSum(k, n, 8):
@@ -458,16 +464,17 @@ proc expUpdate*[V: static int](g: var GpuGauge[V]; p: ptr UncheckedArray[float];
   tic("gauge exp")
   let n = g.n
   let u = g.u
-  gpuFor(i, 4*n):
-    let mu = i div n
-    let k = i - mu*n
-    let o = 18*mu*n + lo18(V, k)
-    var a {.noInit.}, e {.noInit.}, x {.noInit.}, y {.noInit.}: array[18, float]
-    forStatic j, 0, 17: a[j] = t*p[o + j*V]
-    mexp(e, a)
-    mload(x, u, o, V)
-    mmul(y, e, x)
-    forStatic j, 0, 17: u[o + j*V] = y[j]
+  onGpu(4*n):
+    for i in gpuRange(4*n):
+      let mu = i div n
+      let k = i - mu*n
+      let o = 18*mu*n + lo18(V, k)
+      var a {.noInit.}, e {.noInit.}, x {.noInit.}, y {.noInit.}: array[18, float]
+      forStatic j, 0, 17: a[j] = t*p[o + j*V]
+      mexp(e, a)
+      mload(x, u, o, V)
+      mmul(y, e, x)
+      forStatic j, 0, 17: u[o + j*V] = y[j]
   g.fresh = false
   toc("done")
 
