@@ -194,14 +194,37 @@ proc toDevice*[T](x: seq[T]): ptr UncheckedArray[T] =
     result = cast[ptr UncheckedArray[T]](gpuMalloc(x.len*sizeof(T)))
     gpuMemCpyToGpu(result, unsafeAddr x[0], x.len*sizeof(T))
 
-proc haloSource*[L](hl: HaloLayout[L], gm: GatherMap): seq[int32] =
+proc haloSites*(gm: GatherMap; v: int): seq[int32] =
+  ## For newGpuHaloEx with sites: the position in the halo of each halo lane
+  ## that gm fills, in the numbering of gm, or -1.  The halo keeps the halo
+  ## sites (v lanes) with a received lane, whole, in their order; a halo site
+  ## whose lanes all copy sites of this rank is left to the kernels, which
+  ## read those sites.
+  var top = -1
+  for d in gm.rdest: top = max(top, int d)
+  for d in gm.ldest: top = max(top, int d)
+  let ns = (top + v) div v
+  var keep = newSeq[bool](ns)
+  for d in gm.rdest: keep[int(d) div v] = true
+  result = newSeq[int32](ns*v)
+  var k = 0
+  for g in 0..<ns:
+    for l in 0..<v:
+      result[g*v + l] = if keep[g]: int32(k*v + l) else: -1
+    if keep[g]: inc k
+
+proc haloSource*[L](hl: HaloLayout[L], gm: GatherMap; sites = false): seq[int32] =
   ## For each halo lane V*(i-nOut)+l filled by gm: the local site copied into
   ## it, or V*nOut + its position in the receive buffer; -1 for lanes gm
-  ## leaves out.
+  ## leaves out.  sites as given to newGpuHaloEx.
   result = newSeq[int32](L.V*(hl.nExt - hl.nOut))
   for i in 0..<result.len: result[i] = -1
   for k in 0..<gm.ldest.len: result[gm.ldest[k]] = gm.lidx[k]
-  for k in 0..<gm.rdest.len: result[gm.rdest[k]] = int32(L.V*hl.nOut + k)
+  if sites and backendIsCpu:
+    let hp = haloSites(gm, L.V)
+    for d in gm.rdest: result[d] = int32(L.V*hl.nOut + hp[d])
+  else:
+    for k in 0..<gm.rdest.len: result[gm.rdest[k]] = int32(L.V*hl.nOut + k)
 
 var haloIpc* = true  ## peers on the same host store into each other's device memory, with the GPU backends
 
@@ -221,8 +244,20 @@ type
     ## halo sites are left to the caller, see haloSource.
     ## A peer rewrites rbuf in its next exchange; callers order exchanges of
     ## the same object with a global sum or barrier in between.
+    ##
+    ## With sites, on the CPU backend, rbuf holds halo sites in the layout
+    ## of a field, for kernels that compute on SIMD vectors: the halo sites
+    ## with a received lane (haloSites), nrecv their lanes.  Their lanes that
+    ## copy sites of this rank are send slots as well, so sendSite and pack
+    ## fill them, and wait copies the received lanes in from the buffer of
+    ## the messages.
     ne*, n*, v*: int  # reals per site, local sites, lanes
-    nsend*, nrecv*, nslot*: int
+    nsend*, nrecv*, nslot*: int  # send slots, receive positions, slots per site at most
+    sites*: bool
+    mbuf: ptr UncheckedArray[T]  # with sites: the receive buffer of the messages
+    mdst, mofs, mstr: ptr UncheckedArray[int32]  # with sites, per received element: its halo lane, its component 0 and stride in mbuf
+    nmsg: int  # with sites: the received elements
+    busy: bool  # with sites: messages started and not copied in
     sidx*: ptr UncheckedArray[int32]  # local site of each send slot
     sslot*: ptr UncheckedArray[int32]  # [nslot][n]: send slots of each site, -1 for none
     sdst*: ptr UncheckedArray[ptr UncheckedArray[T]]  # component 0 of each send slot
@@ -237,33 +272,67 @@ type
     mems: seq[QMP_msgmem_t]
     msg: QMP_msghandle_t  # all receives and sends, declared once
 
-proc newGpuHaloEx*[T](gm: GatherMap, ne, n, v: int, c: Comm): GpuHaloEx[T] =
+proc newGpuHaloEx*[T](gm: GatherMap, ne, n, v: int, c: Comm; sites = false): GpuHaloEx[T] =
+  ## sites: the halo as sites where kernels compute on SIMD vectors (the CPU
+  ## backend).  Use haloSource with the same sites.
   tic("newGpuHaloEx")
-  var ex = GpuHaloEx[T](ne: ne, n: n, v: v, nsend: gm.sidx.len, nrecv: gm.rdest.len, comm: c)
-  ex.sidx = gm.sidx.toDevice
-  if ex.nsend > 0:
-    ex.sbuf = cast[ptr UncheckedArray[T]](gpuMalloc(ne*ex.nsend*sizeof(T)))
+  let st = sites and backendIsCpu
+  var ex = GpuHaloEx[T](ne: ne, n: n, v: v, nsend: gm.sidx.len, nrecv: gm.rdest.len, comm: c, sites: st)
+  var sidx = gm.sidx
+  var hp: seq[int32]  # with sites: the halo position of each halo lane
+  var ld: seq[int32]  # with sites: the halo positions filled from this rank
+  if st:
+    hp = haloSites(gm, v)
+    ex.nrecv = 0
+    for q in hp: ex.nrecv = max(ex.nrecv, int(q) + 1)
+    ex.nmsg = gm.rdest.len
+    for i, d in gm.ldest:
+      if hp[d] >= 0:  # slots after those of the messages
+        sidx.add gm.lidx[i]
+        ld.add hp[d]
+    ex.nsend = sidx.len
+  ex.sidx = sidx.toDevice
+  if gm.sidx.len > 0:
+    ex.sbuf = cast[ptr UncheckedArray[T]](gpuMalloc(ne*gm.sidx.len*sizeof(T)))
   if ex.nrecv > 0:
     ex.rbuf = cast[ptr UncheckedArray[T]](gpuMalloc(ne*ex.nrecv*sizeof(T)))
+  if st and ex.nmsg > 0:
+    ex.mbuf = cast[ptr UncheckedArray[T]](gpuMalloc(ne*ex.nmsg*sizeof(T)))
   ex.smsg = gm.smsginfo
   ex.rmsg = gm.rmsginfo
   ex.flags.newSeq(1 + ex.rmsg.len)
   var cnt = newSeq[int32](n)
-  for j in gm.sidx: inc cnt[j]
+  for j in sidx: inc cnt[j]
   for j in 0..<n: ex.nslot = max(ex.nslot, int cnt[j])
   var sl = newSeq[int32](ex.nslot*n)
   for k in 0..<sl.len: sl[k] = -1
   for j in 0..<n: cnt[j] = 0
-  for k, j in gm.sidx:
+  for k, j in sidx:
     sl[cnt[j]*n + j] = int32 k
     inc cnt[j]
   ex.sslot = sl.toDevice
   var ro = newSeq[int32](ex.nrecv)
   var rs = newSeq[int32](ex.nrecv)
-  for m in ex.rmsg:
-    for k in 0..<m.count:
-      ro[m.start+k] = int32(ne*m.start + k)
-      rs[m.start+k] = int32 m.count
+  if st:
+    for p in 0..<ex.nrecv:
+      ro[p] = int32((p div v)*ne*v + p mod v)
+      rs[p] = int32 v
+    var mo = newSeq[int32](ex.nmsg)
+    var ms = newSeq[int32](ex.nmsg)
+    for m in ex.rmsg:
+      for k in 0..<m.count:
+        mo[m.start+k] = int32(ne*m.start + k)
+        ms[m.start+k] = int32 m.count
+    var md = newSeq[int32](ex.nmsg)
+    for k, d in gm.rdest: md[k] = hp[d]
+    ex.mdst = md.toDevice
+    ex.mofs = mo.toDevice
+    ex.mstr = ms.toDevice
+  else:
+    for m in ex.rmsg:
+      for k in 0..<m.count:
+        ro[m.start+k] = int32(ne*m.start + k)
+        rs[m.start+k] = int32 m.count
   ex.rofs = ro.toDevice
   ex.rstr = rs.toDevice
   ex.speer.newSeq(ex.smsg.len)
@@ -301,6 +370,9 @@ proc newGpuHaloEx*[T](gm: GatherMap, ne, n, v: int, c: Comm): GpuHaloEx[T] =
     toc("handles")
   var sd = newSeq[ptr UncheckedArray[T]](ex.nsend)
   var ss = newSeq[int32](ex.nsend)
+  for i, p in ld:
+    sd[gm.sidx.len + i] = cast[ptr UncheckedArray[T]](addr ex.rbuf[ro[p]])
+    ss[gm.sidx.len + i] = int32 v
   for i, m in ex.smsg:
     var base = cast[ptr UncheckedArray[T]](addr ex.sbuf[ne*m.start])
     when ipc:
@@ -321,8 +393,9 @@ proc newGpuHaloEx*[T](gm: GatherMap, ne, n, v: int, c: Comm): GpuHaloEx[T] =
   let qc = CommQmp(c).comm
   var hs: seq[QMP_msghandle_t]
   for i, m in ex.rmsg:
+    let rb = if st: ex.mbuf else: ex.rbuf
     let mm = if ex.rpeer[i]: QMP_declare_msgmem(addr ex.flags[1+i], 1)
-             else: QMP_declare_msgmem(addr ex.rbuf[ne*m.start], csize_t(ne*m.count*sizeof(T)))
+             else: QMP_declare_msgmem(addr rb[ne*m.start], csize_t(ne*m.count*sizeof(T)))
     ex.mems.add mm
     hs.add QMP_comm_declare_receive_from(qc, mm, cint m.rank, 0)
   for i, m in ex.smsg:
@@ -376,12 +449,30 @@ proc start*[T](ex: GpuHaloEx[T]) =
   if ex.mems.len > 0:
     gpuWaitAsync()
     discard QMP_start(ex.msg)
+    ex.busy = true
 
 proc wait*[T](ex: GpuHaloEx[T]; sync = true) =
   ## Waits for the messages; with sync and no messages, for the queued
   ## kernels instead, so that a synchronous kernel may follow in the OpenMP
   ## backend, whose synchronous kernels are not ordered after nowait ones.
-  if ex.mems.len > 0: discard QMP_wait(ex.msg)
+  ## With sites, copies the received lanes into the halo, once per start.
+  if ex.mems.len > 0:
+    discard QMP_wait(ex.msg)
+    if ex.sites and ex.busy:
+      ex.busy = false
+      let ne = ex.ne
+      let v = ex.v
+      let nm = ex.nmsg
+      let rb = ex.rbuf
+      let mb = ex.mbuf
+      let ro = ex.rofs
+      let md = ex.mdst
+      let mo = ex.mofs
+      let ms = ex.mstr
+      gpuFor(t, ne*nm):
+        let c = t div nm
+        let k = t - c*nm
+        rb[int(ro[md[k]]) + c*v] = mb[int(mo[k]) + c*int(ms[k])]
   elif sync: gpuWaitAsync()
 
 proc free*[T](ex: GpuHaloEx[T]) =
@@ -393,8 +484,13 @@ proc free*[T](ex: GpuHaloEx[T]) =
     for p in ex.peers: ipcClose(p)
     ex.peers.setLen(0)
     ex.comm.barrier  # peers unmap our rbuf before it is freed
-  for p in [pointer ex.sidx, ex.sslot, ex.sdst, ex.sstr, ex.rofs, ex.rstr, ex.sbuf, ex.rbuf]:
+  for p in [pointer ex.sidx, ex.sslot, ex.sdst, ex.sstr, ex.rofs, ex.rstr, ex.sbuf, ex.rbuf,
+            ex.mbuf, ex.mdst, ex.mofs, ex.mstr]:
     if p != nil: gpuFree(p)
+  ex.mbuf = nil
+  ex.mdst = nil
+  ex.mofs = nil
+  ex.mstr = nil
   ex.sidx = nil
   ex.sslot = nil
   ex.sdst = nil

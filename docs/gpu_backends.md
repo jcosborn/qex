@@ -91,6 +91,13 @@ path for peers on the same host as well.
 Ranks sharing an exchange must agree on the sequence of sends and receives.
 Finish pending kernels and messages before reusing or freeing their buffers.
 
+`newGpuHaloEx(..., sites = true)` keeps the halo as sites in the layout of a
+field where kernels compute on SIMD vectors (the CPU backend): the halo
+sites with a received lane, whole. Their lanes that copy sites of the same
+rank are send slots, and `wait` copies the received lanes in. A halo site
+whose lanes all copy the same rank is left out; kernels read those sites
+with their lanes swapped. `haloSites` and `haloSource` give the positions.
+
 ## Staggered operator and storage
 
 [`StagGpu`](../src/physics/stagGpu.nim) implements the four-dimensional

@@ -52,10 +52,12 @@ proc checkHalo(lo: auto; reps: int): float =
   let z = newSeq[int32](nd)
   let f = dev(ne*n)
   var hf = newSeq[float](ne*n)
-  for p in 0..1:  # parity of the sites sent
+  for ps in 0..3:  # parity of the sites sent; then the same with the halo as sites
+    let p = ps mod 2
+    let st = ps >= 2
     let hm = hl.makeHaloMap(c, offs, p, sites = false)
-    let ex = newGpuHaloEx[float](hm.gather, ne, n, V, c)
-    let src = hl.haloSource(hm.gather)
+    let ex = newGpuHaloEx[float](hm.gather, ne, n, V, c, sites = st)
+    let src = hl.haloSource(hm.gather, sites = st)
     let ro = host(ex.rofs, ex.nrecv)
     let rs = host(ex.rstr, ex.nrecv)
     let q = 1 - p
@@ -87,6 +89,12 @@ proc checkHalo(lo: auto; reps: int): float =
                   if result < 5:
                     echo "parity ", q, " site ", e, " lane ", k, " mu ", mu, " fb ", fb, ": ", got, " != ", want
                   result += 1
+      if ex.sites:  # the lanes of the halo sites that copy sites of this rank
+        let hp = haloSites(hm.gather, V)
+        for d, j in src:
+          if j >= 0 and j < n and hp[d] >= 0:
+            for a in 0..<ne:
+              if hr[int(ro[hp[d]]) + a*int(rs[hp[d]])] != hf[((j div V)*ne + a)*V + j mod V]: result += 1
       c.barrier  # the peers read their receive buffers before the next exchange
     ex.free
   gpuFree(f)
