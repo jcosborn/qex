@@ -15,11 +15,18 @@ proc gpuNumDevices*: int =
   result = deviceCount
 
 proc gpuInit*(device: int) =
-  let dev = device mod gpuNumDevices()
-  let err = hipSetDevice(cint dev)
-  if err:
-    echo "HIP error: ", cast[cint](err)
-  doAssert(not err)
+  ## Selects the device of this rank in every host thread.  HIP keeps the
+  ## current device per thread, device 0 until set, and the thread that takes
+  ## the single of a launch in a threads block launches the kernel.
+  let dev = cint(device mod gpuNumDevices())
+  var bad = cint 0
+  threads:
+    let err = hipSetDevice(dev)
+    if err:
+      threadCritical: bad = cast[cint](err)
+  if bad != 0:
+    echo "HIP error: ", bad
+  doAssert(bad == 0)
 
 template gpuMalloc*(size: SomeInteger):pointer =
   var p:pointer
