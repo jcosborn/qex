@@ -308,7 +308,8 @@ for j in 0..<nt:
   xs.add newVec()
 
 proc zero(v: ptr UncheckedArray[float]; n: int) =
-  gpuFor(i, n): v[i] = 0.0
+  onGpu(n):
+    for i in gpuRange(n): v[i] = 0.0
 
 var linksSet = false
 proc setLinks() =
@@ -483,7 +484,9 @@ proc revCheck(evo: auto; h0, ga0, t0: float; fa0: seq[seq[float]]) =
   gg.copy(grev, gg.u)
   gg.copy(prev, mom)
   let pm = mom
-  gpuFor(i, 4*18*s.n): pm[i] = -pm[i]
+  let nl = 4*18*s.n
+  onGpu(nl):
+    for i in gpuRange(nl): pm[i] = -pm[i]
   evo.evolve tau
   evo.finish
   let p2 = gg.norm2(mom)

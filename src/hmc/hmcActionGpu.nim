@@ -188,10 +188,14 @@ proc newStaggeredPauliVillarsAction*(h: HmcGpu; mass: float; spa, spf: SolverPar
 
 proc zeroOdd(h: HmcGpu; v: ptr UncheckedArray[float]) =
   let o = 6*h.s.ne
-  gpuFor(i, 6*(h.s.n - h.s.ne)): v[o + i] = 0.0
+  let no = 6*(h.s.n - h.s.ne)
+  onGpu(no):
+    for i in gpuRange(no): v[o + i] = 0.0
 
 proc zeroLinks(h: HmcGpu; v: ptr UncheckedArray[float]) =
-  gpuFor(i, 4*18*h.gg.n): v[i] = 0.0
+  let nl = 4*18*h.gg.n
+  onGpu(nl):
+    for i in gpuRange(nl): v[i] = 0.0
 
 proc resid(h: HmcGpu; x, b: ptr UncheckedArray[float]; m: float): float =
   ## |b - M(m) x|^2/|b|^2 over all sites
@@ -280,36 +284,38 @@ proc addForce(h: HmcGpu; a: GpuAction; secs: float) =
   let f = h.f
   let ft = h.ft
   let rd = h.red  # [3 nSlot] slots, then [3][nt] thread sums
-  gpuFor(t, nt):
-    var s2, s4, mx = 0.0
-    for j in 0..<16:
-      let i = t + j*nt
-      if i < nl:
-        let mu = i div n
-        let k = i - mu*n
-        let o = 18*mu*n + lo18(V, k)
-        var q = 0.0
-        forStatic e, 0, 17:
-          let v = ft[o + e*V]
-          f[o + e*V] += v
-          q += v*v
-        s2 += q
-        s4 += q*q
-        if q > mx: mx = q
-    rd[3*nSlot + t] = s2
-    rd[3*nSlot + nt + t] = s4
-    rd[3*nSlot + 2*nt + t] = mx
-  gpuFor(k, nSlot):
-    var s2, s4, mx = 0.0
-    var t = k
-    while t < nt:
-      s2 += rd[3*nSlot + t]
-      s4 += rd[3*nSlot + nt + t]
-      if rd[3*nSlot + 2*nt + t] > mx: mx = rd[3*nSlot + 2*nt + t]
-      t += nSlot
-    rd[k] = s2
-    rd[nSlot + k] = s4
-    rd[2*nSlot + k] = mx
+  onGpu(nt):
+    for t in gpuRange(nt):
+      var s2, s4, mx = 0.0
+      for j in 0..<16:
+        let i = t + j*nt
+        if i < nl:
+          let mu = i div n
+          let k = i - mu*n
+          let o = 18*mu*n + lo18(V, k)
+          var q = 0.0
+          forStatic e, 0, 17:
+            let v = ft[o + e*V]
+            f[o + e*V] += v
+            q += v*v
+          s2 += q
+          s4 += q*q
+          if q > mx: mx = q
+      rd[3*nSlot + t] = s2
+      rd[3*nSlot + nt + t] = s4
+      rd[3*nSlot + 2*nt + t] = mx
+  onGpu(nSlot):
+    for k in gpuRange(nSlot):
+      var s2, s4, mx = 0.0
+      var t = k
+      while t < nt:
+        s2 += rd[3*nSlot + t]
+        s4 += rd[3*nSlot + nt + t]
+        if rd[3*nSlot + 2*nt + t] > mx: mx = rd[3*nSlot + 2*nt + t]
+        t += nSlot
+      rd[k] = s2
+      rd[nSlot + k] = s4
+      rd[2*nSlot + k] = mx
   let hr = h.hred
   gpuMemCpyToCpu(hr, rd, 3*nSlot*sizeof(float))
   var fs: array[3, float]
@@ -439,7 +445,8 @@ proc force(h: HmcGpu; li: int; dtau: float) =
     for i in pv:
       let y = level.actions[i].x
       let ph = level.actions[i].phi
-      gpuFor(k, ne6): y[k] = ph[k]
+      onGpu(ne6):
+        for k in gpuRange(ne6): y[k] = ph[k]
     h.s.hopOE(pv.mapIt(level.actions[it].x), pv.mapIt(level.actions[it].phi), 1.0)
     let t = getElapsedTime()/float(pv.len)
     for i in pv: fsecs[i] += t
@@ -522,7 +529,9 @@ proc integrator*(h: HmcGpu): Integrator =
       if dtau[i] != 0.0: h.force(i, dtau[i])
     let p = h.p
     let f = h.f
-    gpuFor(i, 4*18*h.gg.n): p[i] -= f[i]
+    let nl = 4*18*h.gg.n
+    onGpu(nl):
+      for i in gpuRange(nl): p[i] -= f[i]
   let (V, T) = newIntegratorPair(mdv, mdt)
   result = T
   for i in 0..<nlevels:
@@ -561,7 +570,9 @@ proc generateReverse*(h: HmcGpu) =
   h.gg.copy(h.g1, h.gg.u)
   h.gg.copy(h.p1, h.p)
   let p = h.p
-  gpuFor(i, 4*18*h.gg.n): p[i] = -p[i]
+  let nl = 4*18*h.gg.n
+  onGpu(nl):
+    for i in gpuRange(nl): p[i] = -p[i]
   var integ = h.integrator
   integ.evolve h.tau
   integ.finish
