@@ -609,7 +609,7 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
           if a == T(0):
             forStatic c, 0, 5: acc[c] = b*acc[c]
           else:
-            forStatic c, 0, 5: acc[c] = a*y[yo + c*VE] + b*acc[c]
+            forStatic c, 0, 5: acc[c] = fmadd(a, y[yo + c*VE], b*acc[c])  # see tailB
           forStatic c, 0, 5: d[yo + c*VE] = acc[c]
           when send and W == 1:
             sendSite(sl, sd, st, nsl, n, k, 0, acc)
@@ -1357,11 +1357,14 @@ template sel(C: static int; a, so: untyped): untyped =
 
 proc tailB[N: static int; T; S](acc: var array[N,T]; j: static int; a, b: S; y, d: ptr UncheckedArray[T]; yo: int;
                                 V: static int) {.gpuInline, instShell.} =
-  ## acc_j = a y + b acc_j, stored in d, y and d at yo + c V; a and b numbers
+  ## acc_j = a y + b acc_j, stored in d, y and d at yo + c V; a and b numbers.
+  ## fmadd fixes which product rounds: compilers fused one or the other,
+  ## and their choice changed with the code around the kernel.  With b = -1
+  ## in the CGs, fmadd(a, y, -acc) rounds once.
   if a == S(0):
     forStatic c, 0, 5: acc[6*j+c] = b*acc[6*j+c]
   else:
-    forStatic c, 0, 5: acc[6*j+c] = a*y[yo + c*V] + b*acc[6*j+c]
+    forStatic c, 0, 5: acc[6*j+c] = fmadd(a, y[yo + c*V], b*acc[6*j+c])
   forStatic c, 0, 5: d[yo + c*V] = acc[6*j+c]
 
 proc dotB[N: static int; T; F](acc: array[N,T]; j: static int; y: ptr UncheckedArray[T]; yo: int;
