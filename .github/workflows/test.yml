@@ -211,7 +211,7 @@ jobs:
     - &build-gpu
       name: build the GPU tests and programs
       working-directory: qex
-      run: make jobs:2 tests/base/taccel tests/base/tgpumem tests/base/tgaugegpu tests/base/tstaglinks tests/base/tstagrecon tests/base/tsu3 bestream berng bernt
+      run: make jobs:2 tests/base/taccel tests/base/tgpumem tests/base/tongpu tests/base/tgaugegpu tests/base/tstaglinks tests/base/tstagrecon tests/base/tsu3 bestream berng bernt
     - &build-stag
       name: build the StagGpu programs
       working-directory: qex
@@ -301,7 +301,7 @@ jobs:
     - name: configure
       working-directory: qex
       # the stub libcuda links without the driver; include/cccl has the libcu++
-      # headers of cooperative_groups.h (GpuSum), which nvcc adds by itself
+      # headers, which nvcc adds by itself
       run: >-
         QMPDIR=qmp QIODIR=qio ./configure
         cctype:clang ccdef:cpp cc:mpicc cpp:mpicxx env:OMPI_CC=clang-23 env:OMPI_CXX=clang++-23
@@ -363,7 +363,7 @@ jobs:
       env:
         OMP_NUM_THREADS: '2'
       run: |
-        for t in taccel tgpumem tgaugegpu tstaglinks tstagrecon; do
+        for t in taccel tgpumem tongpu tgaugegpu tstaglinks tstagrecon; do
           timeout -k 10s 20m bin/$t
           timeout -k 10s 20m mpiexec -n 2 bin/$t
         done
