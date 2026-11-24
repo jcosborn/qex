@@ -178,15 +178,79 @@ template gpuMallocHost*(size: SomeInteger): pointer =
   omp_target_alloc_host(size)
 template gpuFreeHost*(p: pointer) = omp_target_free(p)
 
+proc ompPlain(t: NimNode; depth = 0): bool =
+  ## whether a value of type t is a number, bool, enum, character or
+  ## pointer, which a deferred target region gets intact
+  case t.typeKind
+  of ntyBool, ntyChar, ntyEnum, ntyRange, ntyPtr, ntyPointer, ntyCString,
+     ntyInt, ntyInt8, ntyInt16, ntyInt32, ntyInt64, ntyUInt, ntyUInt8, ntyUInt16, ntyUInt32, ntyUInt64,
+     ntyFloat, ntyFloat32, ntyFloat64, ntyFloat128: true
+  of ntyDistinct, ntyGenericInst, ntyAlias, ntyVar:
+    if depth > 8: return false
+    let i = t.getTypeImpl
+    case i.kind
+    of nnkDistinctTy, nnkVarTy: ompPlain(i[0].getType, depth+1)
+    of nnkPtrTy: true
+    of nnkSym: ompPlain(i.getType, depth+1)
+    else: false  # objects, tuples, arrays, seqs, refs
+  else: false
+
 template gpuForObj(i: untyped; n: SomeInteger; body: untyped) =
-  ## gpuFor for a kernel of onGpu that captures objects: they go to the
-  ## kernel by value, which icx does for a kernel that completes at the
-  ## launch (a mapped object costs ten times the launch: 270 against 25 us
-  ## on PVC)
+  ## gpuFor for a kernel of onGpu that reads objects: they go to the kernel
+  ## by value, which icx does for a kernel that completes at the launch (a
+  ## mapped object costs ten times the launch: 270 against 25 us on PVC)
   const gpuC = "target teams distribute parallel for " & gpuForClause & " defaultmap(firstprivate:aggregate)"
   let gpuN = int(n)
   for i in `||`(0, gpuN-1, gpuC):
     body
+
+macro ompKernel(i, n, kernel: untyped; loop: typed): untyped =
+  ## loop: the queued kernel of an onGpu launch (gpuForAsync over i of n),
+  ## kernel: its body untyped.  When the typed body reads an object, array or
+  ## tuple from outside the kernel, the result is gpuForObj over kernel after
+  ## a wait for the queue: icx reads a captured object from the stack of the
+  ## launch when a deferred kernel runs (icx 2026.1 on PVC), and the captures of a
+  ## launch in top level code are globals that the next launch rewrites.
+  ## Numbers and pointers stay queued.  The typed body decides.
+  proc firstFor(n: NimNode): NimNode =
+    ## the loop of the kernel, the one over ||
+    if n.kind == nnkParForStmt: return n
+    for c in n:
+      let f = firstFor(c)
+      if f != nil: return f
+  let fs = firstFor(loop)
+  doAssert fs != nil, "ompKernel: no loop"
+  var decl: seq[NimNode]
+  proc defs(n: NimNode) =
+    case n.kind
+    of nnkIdentDefs, nnkConstDef:
+      for c in n[0..^3]: decl.add(if c.kind == nnkPragmaExpr: c[0] else: c)
+    of nnkVarTuple:  # let (a, b) = v
+      for c in n[0..^2]: decl.add c
+    of nnkForStmt, nnkParForStmt:
+      for c in n[0..^3]:
+        if c.kind == nnkVarTuple:  # for (a, b) in ...
+          for d in c:
+            if d.kind == nnkSym: decl.add d
+        else: decl.add c
+      defs(n[^1])
+      return
+    else: discard
+    for c in n: defs(c)
+  defs(fs)
+  var obj = false
+  proc reads(n: NimNode) =
+    case n.kind
+    of RoutineNodes: discard
+    of nnkSym:
+      if n.symKind in {nskLet, nskVar, nskParam, nskForVar, nskResult, nskTemp} and n notin decl and
+         not ompPlain(n.getType):
+        obj = true
+    else:
+      for c in n: reads(c)
+  reads(fs[^1])
+  if not obj: return loop
+  result = newStmtList(newCall(bindSym"gpuWaitAsync"), newCall(bindSym"gpuForObj", i, n, kernel))
 
 proc gpuFinish*[P](fl: static string; count: int; flops: float; ps: P; back: proc(ps: P) {.nimcall.}) =
   ## The end of a kernel launch: waits for the queue, then back copies what
@@ -215,11 +279,8 @@ macro gpuKernel(fin: static int; n, body: untyped): untyped =
   ## that body names (backend/expr), locals of the launch that the kernel
   ## reads in place.  fin: 0 queues the kernel, 1 gives the finalizer, which
   ## waits for the queue and copies back, 2 does that at once.
-  ## The kernel is that of gpuForAsync when every captured value is a number
-  ## or a pointer.  With an object among them it completes at the launch,
-  ## after the queued kernels: icx reads a captured object from the stack of
-  ## the launch when the kernel runs, with every clause (icx 2026.1 on PVC), so a
-  ## queued kernel would read it after the launch has returned.
+  ## The kernel is that of gpuForAsync when it reads numbers and pointers
+  ## only, else it completes at the launch (ompKernel).
   ## The launch stands in a single without its barrier, at which a queued
   ## kernel would complete.  In a threads block the launching thread waits
   ## for the kernel, as only it can, and the team meets at a barrier.
@@ -240,18 +301,12 @@ macro gpuKernel(fin: static int; n, body: untyped): untyped =
       shadow  # the kernel values: locals of the launch that the kernel captures and reads in place
       toc("cpuPrepare")
       ompBlock("single nowait"):
-        when declared(gpuObjects):
-          gpuWaitAsync()
-          gpuForObj(gpuTn, gpuNt):
-            const inOnGpu {.inject,used.} = true
-            inlineProcs:
-              body
-        else:
+        ompKernel(gpuTn, gpuNt, (const inOnGpu {.inject,used.} = true; inlineProcs: body)):
           gpuForAsync(gpuTn, gpuNt):
             const inOnGpu {.inject,used.} = true
             inlineProcs:
               body
-          if numThreads > 1: gpuWaitAsync()
+        if numThreads > 1: gpuWaitAsync()
       if numThreads > 1: threadBarrier()
       toc("launch")
       inc kernelCallCount  # increment after launch

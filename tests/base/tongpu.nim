@@ -181,17 +181,21 @@ proc total(n: int): float =
   gs.value
 
 proc queue(n: int): int =
-  ## two queued kernels on a device array and one wait: the elements that
-  ## are not 2 i
+  ## three queued kernels on a device array and one wait, the second
+  ## reading an array (with OpenMP offload a kernel that completes at its
+  ## launch, after the queue): the elements that are not 2 i + 1
   let p = dev(n)
+  let c = [2.0, 1.0]
   onGpuQueue(n):
     for i in gpuRange(n): p[i] = float(i)
   onGpuQueue(n):
-    for i in gpuRange(n): p[i] = 2.0*p[i]
+    for i in gpuRange(n): p[i] = c[0]*p[i]
+  onGpuQueue(n):
+    for i in gpuRange(n): p[i] = p[i] + c[1]
   gpuWaitAsync()
   let h = host(p, n)
   for i in 0..<n:
-    if h[i] != 2.0*float(i): inc result
+    if h[i] != 2.0*float(i) + 1.0: inc result
   gpuFree(p)
 
 proc queueInThreads(n: int): int =

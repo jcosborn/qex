@@ -141,13 +141,13 @@ var gpuLaunchThreads* = 0
 #
 # Every outer variable that a kernel body names becomes a value of the
 # launch: toGpu(x) where x has one, with fromGpu(x, g) owed afterwards, else
-# a copy of x, which has to be plain data.  The body keeps its text: the
-# kernel starts with `let x = getGpu(x, g)`, or the copy, under the name of
-# the host variable.  getGpu gets a stand-in of the type of x there (gpuArg).
-# Names that are types, constants, static values or routines stay as they
-# are.  A name the body declares is its own, also where the body uses a
-# host variable of that name elsewhere.  gpuObjects is declared after the
-# device values when one of them is no number and no pointer.
+# a copy of x, which has to be plain data.  The body keeps its text: `let x =
+# getGpu(x, g)`, or the copy, under the name of the host variable, comes
+# first in the kernel (CPU backend) or last in the launch, read in place by
+# the kernel (device backends).  getGpu gets a stand-in of the type of x
+# there (gpuArg).  Names that are types, constants, static values or
+# routines stay as they are.  A name the body declares is its own, also
+# where the body uses a host variable of that name elsewhere.
 
 macro gpuIsVar*(x: typed): untyped =
   ## Whether x is a variable or the value of an expression, which a kernel
@@ -323,8 +323,6 @@ proc kernelCap*(body0: NimNode; n: NimNode = nil): KernelCap =
           let g {.used.} = h
         else:
           {.error: "kernel variable '" & astToStr(h) & "' of type " & $typeof(h) & " has no toGpu and is not plain data".}
-        when typeof(g) isnot (SomeNumber | bool | enum | ptr | pointer) and not declared(gpuObjects):
-          const gpuObjects {.inject, used.} = true  # an object among the device values
   template pre(h, g, a: untyped) =
     when declared(h): value(h, g, a)
   template shadow(l, g, a: untyped) =

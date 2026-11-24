@@ -210,11 +210,14 @@ With OpenMP offload:
 
 - A kernel launched with `gpuFor` is not ordered after queued kernels: wait
   before mixing the two forms.
-- An `onGpu` kernel is queued when every value it captures is a number or
-  a pointer. A kernel that captures an object (a view with several fields,
-  an array) waits for the queue and completes at its launch: icx reads a
-  captured object from the stack of the launch when the kernel runs. Name
-  pointers and numbers in the kernels that should overlap with host work.
+- An `onGpu` kernel is queued when the kernel reads numbers and pointers
+  from outside only. A kernel that reads an object (a view with several
+  fields, an array) waits for the queue and completes at its launch: icx
+  reads a captured object from the stack of the launch when the kernel
+  runs. The launch decides on the typed kernel, so a name that a macro of
+  the body only turns into other names (`pickB(so, j, C)` of stagGpu reads
+  `so0`, `so1`, ...) counts as nothing. Read pointers and numbers in the
+  kernels that should overlap with host work.
 
 ## The CPU backend
 
