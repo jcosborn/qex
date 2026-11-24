@@ -25,15 +25,29 @@ const gpuCopyFast* = high(int)  ## bytes up to which a queued copy has its low c
 template gpuNumThreads*:auto = numThreads
 template gpuThreadNum*:auto = threadNum
 
-# The kernels of the GPU backends run here as loops on the calling host
-# thread, complete on return, the reference for the device code
+# The kernels of the GPU backends run here as loops over the host threads,
+# complete on return
 
 template gpuFor*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
-  ## body for each i in 0..<n in order, n evaluated once; sub, the
-  ## sub-group size of the GPU backends, does not apply
+  ## body for each i in 0..<n, n evaluated once.  One thread calls it: the
+  ## host threads share the loop, or the calling thread runs it where the
+  ## call is inside a threads block.  sub, the sub-group size of the GPU
+  ## backends, does not apply.
   let gpuN = int(n)
-  for i in 0..<gpuN:
-    body
+  when declared(qexThreadsBlock):
+    # no nested proc here: it would move the locals of every thread that
+    # body names into one shared environment
+    for i in 0..<gpuN:
+      body
+  else:
+    proc gpuLoop(gpuLo, gpuHi: int) {.gensym.} =
+      for i in gpuLo..<gpuHi:
+        body
+    if numThreads == 1:
+      threads:
+        gpuLoop((gpuN*threadNum) div numThreads, (gpuN*(threadNum+1)) div numThreads)
+    else:
+      gpuLoop(0, gpuN)
 template gpuFor*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, body)
 template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
   ## gpuFor, complete on return as well
@@ -41,11 +55,15 @@ template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
 template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, body)
 template gpuWaitAsync* = discard
 template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
-  ## r[k] += v, in kernels, which one thread runs
-  r[k] += v
+  ## r[k] += v atomically, in kernels
+  let kk = k
+  let vv = v
+  {.emit: ["#pragma omp atomic update\n", r, "[", kk, "] += ", vv, ";"].}
 template gpuAtomicAdd*(r: ptr UncheckedArray[uint64]; k: int; v: uint64) =
-  ## r[k] += v modulo 2^64, in kernels
-  r[k] += v
+  ## r[k] += v modulo 2^64 atomically, in kernels
+  let kk = k
+  let vv = v
+  {.emit: ["#pragma omp atomic update\n", r, "[", kk, "] += ", vv, ";"].}
 template gpuMallocHost*(size: SomeInteger): pointer = gpuMalloc(size)
 template gpuFreeHost*(p: pointer) = c_free(p)
 

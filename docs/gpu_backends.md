@@ -7,7 +7,7 @@ HYP smearing, RNGs and HMC use this interface.
 
 | Backend | Compiler | Kernel execution | IPC between GPUs on one host |
 |---|---|---|---|
-| CPU | Host compiler | Loop on the calling host thread | None (QMP messages) |
+| CPU | Host compiler | Loop over the host threads | None (QMP messages) |
 | OpenMP | oneAPI icx | `target teams distribute parallel for` | Level Zero |
 | SYCL | oneAPI icpx | `parallel_for` | Level Zero |
 | CUDA | clang or nvcc | Device lambdas in `qexFor` | CUDA IPC |
@@ -66,10 +66,10 @@ byte boundary of the device buffer costs 3 us more. On PVC with SYCL the
 queued copy costs 2.7 us at 8 kB and 5.1 us at 98 kB, without a step.
 `backend/examples/besum` measures these parts.
 
-With the CPU backend, both forms execute on the calling host thread and
-complete on return. `gpuWaitAsync` is a no-op, device allocations are host
-allocations, and every halo message uses QMP. Increasing the host thread
-count does not parallelize a `gpuFor` loop called by one thread.
+With the CPU backend, both forms complete on return. One thread calls
+them: the host threads share the loop, or the calling thread runs it where
+the call stands inside a `threads:` block. `gpuWaitAsync` is a no-op, device
+allocations are host allocations, and every halo message uses QMP.
 
 ## Halo exchange
 
