@@ -101,7 +101,8 @@ Types, constants, static parameters, routines, thread variables and
 - The captured values are immutable: a kernel writes through pointers and
   the views that `toGpu` returns, never to a captured variable.
 - A name the body declares is its own. Give a local of the body another
-  name than a host variable that the same body uses.
+  name than a host variable that the same body uses. A body may declare
+  templates for its own use; they see the kernel values.
 - A helper template defined outside the body sees the host variables it
   names, behind the back of the launch. Pass kernel data to such templates
   as arguments. Nim warns when a body and an outside template name the same

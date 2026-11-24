@@ -60,6 +60,23 @@ proc generic[V: static int; T](x: seq[T]; y: var seq[T]; s: T): int =
   for i in 0..<n:
     if y[i] != s*x[i] + T((V*(V-1)) div 2): inc result
 
+proc nested[V: static int; T](y: var seq[T]): int =
+  ## A kernel in a template of a generic proc, with a template of its own
+  ## that loops with forStatic, as the hops of stagGpu: the elements of y
+  ## that are not 0 + 1 + ... + (V-1)
+  let n = y.len
+  template kern(K: static int) =
+    onGpu(n):
+      template tot(r: untyped) =
+        forStatic c, 0, K-1: r += T(c)
+      for i in gpuRange(n):
+        var t = T(0)
+        tot(t)
+        y[i] = t
+  kern(V)
+  for i in 0..<n:
+    if y[i] != T((V*(V-1)) div 2): inc result
+
 template fill(f: untyped; n: int; v: float) =
   ## a kernel in a template, on the caller's variable
   onGpu(n):
@@ -183,6 +200,10 @@ suite "onGpu captures":
     var yd = newSeq[float](100)
     for i in 0..<xd.len: xd[i] = float(i)
     check generic[2, float](xd, yd, 0.5) == 0
+
+  test "a body template with forStatic in a template of a generic proc":
+    var y = newSeq[float](100)
+    check nested[5, float](y) == 0
 
   test "a kernel in a template":
     check inTemplate(1000) == 0

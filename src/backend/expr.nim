@@ -259,7 +259,7 @@ proc kernelCap*(body: NimNode): KernelCap =
       result = n.copyNimNode
       result.add n[0]
       result.add walk(n[1])
-    of nnkPragma, nnkAccQuoted: result = n
+    of nnkPragma, nnkAccQuoted, nnkBindStmt, nnkMixinStmt: result = n  # names, no values
     of nnkCallKinds:
       result = n.copyNimNode
       if n[0].kind in {nnkIdent, nnkSym, nnkOpenSymChoice, nnkClosedSymChoice}: result.add n[0]  # a routine
