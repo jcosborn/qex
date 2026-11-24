@@ -439,7 +439,8 @@ proc pack*[T](ex: GpuHaloEx[T], f: ptr UncheckedArray[T]) =
   let si = ex.sidx
   let sd = ex.sdst
   let st = ex.sstr
-  gpuForAsync(t, ne*ns): packAt(si, sd, st, ne, ns, v, t, f)
+  onGpuQueue(ne*ns):
+    for t in gpuRange(ne*ns): packAt(si, sd, st, ne, ns, v, t, f)
 
 proc start*[T](ex: GpuHaloEx[T]) =
   ## Starts the receives and sends after the queued kernels storing the
@@ -469,10 +470,11 @@ proc wait*[T](ex: GpuHaloEx[T]; sync = true) =
       let md = ex.mdst
       let mo = ex.mofs
       let ms = ex.mstr
-      gpuFor(t, ne*nm):
-        let c = t div nm
-        let k = t - c*nm
-        rb[int(ro[md[k]]) + c*v] = mb[int(mo[k]) + c*int(ms[k])]
+      onGpu(ne*nm):
+        for t in gpuRange(ne*nm):
+          let c = t div nm
+          let k = t - c*nm
+          rb[int(ro[md[k]]) + c*v] = mb[int(mo[k]) + c*int(ms[k])]
   elif sync: gpuWaitAsync()
 
 proc free*[T](ex: GpuHaloEx[T]) =
