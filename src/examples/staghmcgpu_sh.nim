@@ -12,7 +12,7 @@
 ## parameters of staghmc_sh:
 ##   -rg: ranks per dimension, lanes as in bestagcg
 ##   -mixed:1 mixed precision solves; -reals: reals per link of the solvers,
-##   12 for SU(3) links, 14 by default with smearing, 18
+##   12 for SU(3) links, 14 by default with smearing or the CPU backend, 18
 ##   -batch:0 solves the fermion terms that share a force step one by one
 ##   instead of together (solveM of several systems, nBatch per hop)
 ##   -fixed:0 the CG takes the exact sums of its dot products (SumX) in the
@@ -159,7 +159,7 @@ letParam:
   r2in = 1e-6  # inner FP32 CG squared tolerance, floored at FP32 epsilon
   recon64:bool = 0
   reconFma:bool = 0
-  reals = 0  # reals per link of the solvers, 12, 14 or 18; 0: 14 with smearing, 12 without
+  reals = 0  # reals per link of the solvers, 12, 14 or 18; 0: 14 with smearing, stagReals without
   batch:bool = 1  # solve the fermion terms of a force step together
   fixed:bool = 1  # the CG adds its dot products in a fixed order (sumFixed), else exactly (SumX)
   ipc:bool = 1  # peers on the same node store into each other's device memory, else MPI for them too
@@ -273,7 +273,7 @@ proc checkSolvers =
 var gg = newGpuGauge(lo)
 # the smeared links are U(3), projectU without a determinant condition, so
 # the solvers keep their determinant; unsmeared links are SU(3) and 12 do
-let nl = if reals != 0: reals elif smear: 14 else: 12
+let nl = if reals != 0: reals elif smear: 14 else: stagReals
 if smear and nl < 14: qexError "the smeared links are U(3): -reals:14 or 18"
 let useBatch = batch and (nt > 1 or pbpreps.anyIt(it > 1))
 var s = newStagGpu(gs, float64, nl, batch = useBatch)

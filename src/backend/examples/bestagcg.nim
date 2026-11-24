@@ -2,7 +2,7 @@
 ##   -lat:x,y,z,t -rg: ranks per dimension -ig: lanes per dimension (default innerGeom)
 ##   -mass -r2req -maxits; -ncpu, -ngpu: number of CPU and GPU solves
 ##   -mixed:1 also the mixed precision solve, -r2in its restart tolerance
-##   -recon:0 links of 18 reals, -reals:14 rows 0, 1 and the determinant; -fwd: 1 forward links only, 0 both, -1 by size
+##   -recon:0 links of 18 reals, -reals:14 rows 0, 1 and the determinant (the default with the CPU backend, 12 on a device); -fwd: 1 forward links only, 0 both, -1 by size
 ##   -recon64:1 reconstructs compressed FP32 links with FP64 intermediates
 ##   -ipc:0 MPI for peers on the node too; -split: second hop split, 1, 0, -1 off-node
 ##   -fixed:1 the CG dot products summed in a fixed order (sumFixed), else exactly (SumX)
@@ -66,7 +66,7 @@ for k in 0..<ncpu:
 
 haloIpc = intParam("ipc", 1) != 0
 hopSplit = intParam("split", -1)
-let reals = intParam("reals", if intParam("recon", 1) != 0: 12 else: 18)
+let reals = intParam("reals", if intParam("recon", 1) != 0: stagReals else: 18)
 let fwd = intParam("fwd", -1)
 let r64 = intParam("recon64", 0) != 0
 let rfm = intParam("reconFma", 0) != 0

@@ -144,7 +144,12 @@ template mdet(dr, di, m: untyped) =
     dr += m[12+2*b]*xr + m[13+2*b]*xi
     di += m[13+2*b]*xr - m[12+2*b]*xi
 
-proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals = 12; fwd = -1;
+const stagReals* = when backendIsCpu and gpuSimd: 14 else: 12
+  ## The compressed links to ask newStagGpu for: 12 reals where the hops run
+  ## lane by lane, 14 where they run on SIMD vectors, whose lanes share a
+  ## neighbor table and so have no sign of their own.
+
+proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals = stagReals; fwd = -1;
                                    batch = false; recon64 = false; reconFma = false): StagGpu[V,T] =
   ## g are the phased links, as for newStag.  With reals = 12, if every link
   ## is s W with W in SU(3) and s = +-1, the device keeps rows 0 and 1 and

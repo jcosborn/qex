@@ -124,7 +124,7 @@ owner with `free` once pending work has completed. Construct with
 
 ### Link representation
 
-`newStagGpu(g, T, reals=12, fwd=-1, ...)` selects storage from the requested
+`newStagGpu(g, T, reals=stagReals, fwd=-1, ...)` selects storage from the requested
 format and the gauge. Its `nl` field gives the actual number of stored
 reals per link.
 
@@ -138,6 +138,14 @@ A request for 12 reals falls back to 14 when the sign representation is
 insufficient, then to 18 when determinant reconstruction is insufficient.
 A request for 14 falls back to 18. The construction checks the third row
 at relative norm tolerance 1e-12 across all ranks.
+
+`stagReals` is the compressed form to ask for: 12 on a device, 14 with the
+CPU backend. There the hops of 14 and 18 reals compute on SIMD vectors and
+the hop of 12 reals lane by lane, since the lanes of a vector share a
+neighbor table and have no sign of their own. With 16 lanes on AVX, 8
+threads, the hop of 14 reals takes 0.85 (16^4) and 0.92 (32^4) of the time
+of the native operator with its 18 reals, and 1.2 times at 8^4, where the
+links stay in cache.
 
 Both forward and backward caches store links in forward orientation.
 A backward hop takes the adjoint of the reconstructed forward matrix;
