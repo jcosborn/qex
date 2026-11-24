@@ -1,15 +1,17 @@
 # GPU backends
 
-[`backend/accel`](../src/backend/accel.nim) provides `gpuFor`, memory
-operations and reductions. Select a backend with `-d:Backend=...` in
-`nimargs`; the default is CPU. The staggered operator, gauge operations,
-HYP smearing, RNGs and HMC use this interface.
+[`backend/accel`](../src/backend/accel.nim) provides the kernel launches,
+memory operations and reductions. Select a backend with `-d:Backend=...` in
+`nimargs`; the default is CPU. [Writing GPU kernels](gpu_kernels.md) says
+how kernel code is written: the `onGpu` construct, what a kernel may name
+and call, sums, and the `gpuFor` loops that the staggered operator, gauge
+operations, HYP smearing, RNGs and HMC use.
 
 | Backend | Compiler | Kernel execution | IPC between GPUs on one host |
 |---|---|---|---|
 | CPU | Host compiler | Loop over the host threads | None (QMP messages) |
 | OpenMP | oneAPI icx | `target teams distribute parallel for` | Level Zero |
-| SYCL | oneAPI icpx | `parallel_for` | Level Zero |
+| SYCL | oneAPI icpx | `parallel_for` over an `nd_range` | Level Zero |
 | CUDA | clang or nvcc | Device lambdas in `qexFor` | CUDA IPC |
 | HIP | amdclang | Device lambdas in `qexFor` | HIP IPC |
 
@@ -37,18 +39,19 @@ not belong in its body.
 OpenMP and SYCL need callable definitions in the generated C/C++ file;
 Nim places inline procs in each file that uses them. Use `gpuInline` for
 small arithmetic helpers and `gpuCall` for larger helpers such as RNG
-draws. `alwaysInline` is suitable for host SIMD wrappers. The older
-kernel-block API uses `inlineProcs:` from `base/metaUtils` to copy called
-bodies into the kernel; `gpuFor` does not perform that transformation.
+draws. `alwaysInline` is suitable for host SIMD wrappers. `onGpu` kernels
+copy the bodies of unmarked procs into the kernel (`inlineProcs` of
+`base/metaUtils`) and call the marked ones; `gpuFor` kernels call marked
+procs only.
 
-The older API keeps the device copies of host objects in the table of
+`onGpu` keeps the device copies of host objects in the table of
 [`backend/gpumem`](../src/backend/gpumem.nim), keyed by host address. Use
 it from the main thread, outside `threads:`; table operations elsewhere
-abort. The entries of Field storage and of a `GpuSum` leave the table
-with their owners. A seq whose flags skip copies (`gpuFlagsIncl`,
-`gpuFlagsExcl`) must stay alive and in place while they do, or its entry
-must be freed with `freeGpuMem`. A `HaloLayout` whose read only tables were
-uploaded stays alive until `freeGpuMem` of it.
+abort. The entries of Field storage leave the table with their owners. A
+seq whose flags skip copies (`gpuFlagsIncl`, `gpuFlagsExcl`) must stay
+alive and in place while they do, or its entry must be freed with
+`freeGpuMem`. A `HaloLayout` whose read only tables were uploaded stays
+alive until `freeGpuMem` of it. A `GpuSum` owns its device block.
 
 `gpuFor` completes its kernel before returning. `gpuForAsync` submits work;
 `gpuWaitAsync` waits for queued kernels. OpenMP synchronous launches are
@@ -394,9 +397,6 @@ wrapper settings use OpenMPI; MPICH uses `MPICH_CC` and `MPICH_CXX`.
 `qexFor`: together they keep batched-hop arithmetic near its loads and
 limit register spills. To link where the NVIDIA driver is unavailable,
 add `-L$CUDA_HOME/lib64/stubs`; the driver is required at runtime.
-CUDA 13 keeps the libcu++ headers under `include/cccl`, which nvcc adds
-by itself. `GpuSum` (`behalo1`, `halogpu`) includes `cooperative_groups.h`,
-which needs them: add `-isystem $CUDA_HOME/include/cccl` to `cppflagsalways`.
 
 ### CUDA with nvcc
 
@@ -438,7 +438,7 @@ Use MPI wrappers for amdclang/amdclang++ and a ROCm environment:
 ```
 
 `gfx942` covers both MI300X and MI300A. With `STATIC_UNROLL=1`, the
-`inlineProcs` expansion of the older kernel blocks (`behalo1`, `halogpu`,
+`inlineProcs` expansion of the `onGpu` kernels (`behalo1`, `halogpu`,
 `bedslash1`) needs more than the default 10^7 VM loop iterations.
 `backend/hip/nimbase.h` supplies `QEX_HD`, `qexFor` and the HIP
 declarations. Generate C++ for all modules with `ccdef:cpp` so host/device
