@@ -6,11 +6,13 @@ import macros, strutils
 var kernelCallCount* = 0  # _twice_ kernel calls, incremented before setup and after finalize
 const dumpKernels {.intdefine.} = 0
 
-template gpuMalloc*(size:SomeInteger):pointer = alloc(size)
-template gpuFree*(device_ptr:pointer) =
-  ## nil is a no-op, as with the device frees; dealloc(nil) crashes
-  let p = device_ptr
-  if p != nil: dealloc(p)
+proc c_aligned_alloc(a, n: csize_t): pointer {.importc: "aligned_alloc", header: "<stdlib.h>".}
+proc c_free(p: pointer) {.importc: "free", header: "<stdlib.h>".}
+
+proc gpuMalloc*(size: SomeInteger): pointer =
+  ## host memory on 64 bytes, as kernels load whole SIMD sites
+  c_aligned_alloc(64, csize_t((int(size) + 63) and not 63))
+template gpuFree*(device_ptr: pointer) = c_free(device_ptr)  ## nil is a no-op
 proc gpuMemCpyToCPU*(dst: pointer, src: pointer; length: SomeInteger) =
   copymem(dst, src, length)
 proc gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger) =
@@ -44,8 +46,8 @@ template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
 template gpuAtomicAdd*(r: ptr UncheckedArray[uint64]; k: int; v: uint64) =
   ## r[k] += v modulo 2^64, in kernels
   r[k] += v
-template gpuMallocHost*(size: SomeInteger): pointer = alloc(size)
-template gpuFreeHost*(p: pointer) = dealloc(p)
+template gpuMallocHost*(size: SomeInteger): pointer = gpuMalloc(size)
+template gpuFreeHost*(p: pointer) = c_free(p)
 
 proc genCpuPrepare(n:seq[NimNode]):NimNode =
   mixin toGpu
