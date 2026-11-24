@@ -194,6 +194,24 @@ proc queue(n: int): int =
     if h[i] != 2.0*float(i): inc result
   gpuFree(p)
 
+proc queueInThreads(n: int): int =
+  ## every thread of a threads block queues two kernels, the second reading
+  ## what the other threads wrote in the first: the elements that are not
+  ## 2 (n - 1 - i)
+  let p = dev(n)
+  let q = dev(n)
+  threads:
+    onGpuQueue(n):
+      for i in gpuRange(n): p[i] = float(i)
+    onGpuQueue(n):
+      for i in gpuRange(n): q[i] = 2.0*p[n-1-i]
+    gpuWaitAsync()
+  let h = host(q, n)
+  for i in 0..<n:
+    if h[i] != 2.0*float(n-1-i): inc result
+  gpuFree(p)
+  gpuFree(q)
+
 proc queueSeq(): bool =
   ## whether a queued kernel on a seq, which is copied back, compiles
   var a = newSeq[float](4)
@@ -256,6 +274,11 @@ suite "onGpu captures":
 
   test "queued kernels":
     check queue(1000) == 0
+
+  test "queued kernels in a threads block":
+    var bad = 0
+    for r in 0..<100: bad += queueInThreads(1000)
+    check bad == 0
 
   test "a queued kernel on a variable that is copied back stops the compile":
     check not queueSeq()

@@ -93,9 +93,11 @@ proc gpuDefaultNumThreads*(): int =
 
 macro gpuKernel(fin: static int; n, body: untyped): untyped =
   ## Runs body as a kernel in the host threads: outside a threads block the
-  ## kernel opens one, inside one every thread of the team calls it.  n, the
-  ## thread count of the devices, does not apply.  fin: 0 copies nothing
-  ## back, 1 gives the finalizer, which copies back, 2 copies back at once.
+  ## kernel opens one, inside one every thread of the team calls it and
+  ## the team meets at a barrier after the kernel, so that each thread finds
+  ## it complete on return.  n, the thread count of the devices, does not
+  ## apply.  fin: 0 copies nothing back, 1 gives the finalizer, which copies
+  ## back, 2 copies back at once.
   let li = body.lineinfo
   let lis = li.split({'/','.','(',','})
   let fl = lis[^4] & "(" & lis[^2] & ")"
@@ -136,7 +138,9 @@ macro gpuKernel(fin: static int; n, body: untyped): untyped =
         let hp = hostPairs
       when fin == 1: gpuFinalizer(fl, thisKernelCallCount, hp, hostBack(hp))
       elif fin == 2: gpuFinish(fl, thisKernelCallCount, hp, hostBack(hp))
-      else: queued
+      else:
+        queued
+        if numThreads > 1: threadBarrier()
   let c = kernelCap(body)
   result = getast(target(fl, c.pre, c.shadow, c.pairs, c.queued, c.body, newLit(fin)))
   case dumpKernels

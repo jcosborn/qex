@@ -53,8 +53,10 @@ uses them or the two iterators outside a body is a template, as `:=` of
 - Inside a proc. At the top level of a module, and directly in a `test`
   body of `std/unittest`, Nim emits the pragmas of a device launch at file
   scope of the generated C, where a device compiler stops.
-- Inside a `threads:` block every thread of the team calls `onGpu`. A device
-  launches the kernel once; the CPU backend runs the body in the team.
+- Inside a `threads:` block every thread of the team calls `onGpu`, and so
+  every proc that launches a kernel. A device launches the kernel once; the
+  CPU backend runs the body in the team, which meets at a barrier after a
+  queued kernel.
 - Kernels that name a `Field`, a seq, a `Halo`, a `HaloLayout` or a `GpuSum`
   launch outside `threads:` blocks with a GPU backend: their device copies
   live in the table of [`backend/gpumem`](../src/backend/gpumem.nim), which
