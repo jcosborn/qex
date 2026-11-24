@@ -181,23 +181,23 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
       when fin == 1 or (fin == 2 and copies):
         let hp = hostPairs  # before the kernel values take the names of the host variables
       shadow  # the kernel values: locals of the launch that the kernel captures and reads in place
-      toc("cpuPrepare")
       threadSingle:
         gpuForAsync(gpuTn, gpuNt, sub):
           const inOnGpu {.inject,used.} = true
           inlineProcs:
             body
-      toc("launch")
       inc kernelCallCount  # increment after launch
-      when fin == 1: gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
-      elif fin == 2:
-        when copies: gpuFinish(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
-        else:
-          if numThreads > 1:
-            threadSingle: gpuWaitAsync()
-          else: gpuWaitAsync()
-          toc("wait", flops=(when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0))
-      else: queued
+      # one profile timer per launch: "launch", or "wait" where onGpu only waits
+      when fin == 2 and not copies:
+        if numThreads > 1:
+          threadSingle: gpuWaitAsync()
+        else: gpuWaitAsync()
+        toc("wait", flops=(when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0))
+      else:
+        toc("launch")
+        when fin == 1: gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+        elif fin == 2: gpuFinish(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+        else: queued
   let c = kernelCap(body, n)
   result = getast(target(fl, n, newLit(sub), c.pre, c.shadow, c.pairs, c.queued, c.copies, c.body, newLit(fin)))
   case dumpKernels

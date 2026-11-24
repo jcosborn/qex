@@ -108,7 +108,6 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
       tic(fl)
       let thisKernelCallCount = kernelCallCount  # save current value for finalizer
       pre  # the device values
-      toc("cpuPrepare")
       block:
         const inOnGpu {.inject,used.} = true
         when declared(qexThreadsBlock):

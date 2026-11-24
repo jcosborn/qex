@@ -304,7 +304,6 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
       when fin == 1 or (fin == 2 and copies):
         let hp = hostPairs  # before the kernel values take the names of the host variables
       shadow  # the kernel values: locals of the launch that the kernel captures and reads in place
-      toc("cpuPrepare")
       ompBlock("single nowait"):
         when fin == 2:
           gpuForSync(gpuTn, gpuNt, sub):
@@ -319,12 +318,15 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
                 body
           if numThreads > 1: gpuWaitAsync()
       if numThreads > 1: threadBarrier()
-      toc("launch")
       inc kernelCallCount  # increment after launch
-      when fin == 1: gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
-      elif fin == 2:
+      # one profile timer per launch: "wait" for onGpu, whose kernel completes here, else "launch"
+      when fin == 2:
+        toc("wait", flops=(when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0))
         when copies: gpuFinish(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp), false)
-      else: queued
+      else:
+        toc("launch")
+        when fin == 1: gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+        else: queued
   let c = kernelCap(body, n)
   result = getast(target(fl, n, newLit(sub), c.pre, c.shadow, c.pairs, c.queued, c.copies, c.body, newLit(fin)))
   case dumpKernels
