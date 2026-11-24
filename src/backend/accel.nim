@@ -158,7 +158,10 @@ else:
       yield SiteV[V](s)
 
 template gpuType*[T](t: typedesc[Simd[T]]): typedesc =
-  Simd[array[T.numNumbers,T.numberType]]
+  ## the lanes as an array on a device; the host type with the CPU backend,
+  ## whose kernels take whole SIMD sites
+  when backendIsCpu: Simd[T]
+  else: Simd[array[T.numNumbers,T.numberType]]
 template gpuType*[T](t: typedesc[ComplexType[T]]): typedesc =
   ComplexType[gpuType(T)]
 template gpuType*[N:static int; T](t: typedesc[VectorArray[N,T]]): typedesc =
