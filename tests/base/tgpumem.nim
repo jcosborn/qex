@@ -222,6 +222,16 @@ proc localKernel(n: int): int =
   for i in 0..<n:
     if h[i] != 2.0: inc result
 
+proc seqKernel(n: int): int =
+  ## A kernel b[i] = 2 a[i] on seqs of reals: the elements of b that differ.
+  var a = newSeq[float](n)
+  var b = newSeq[float](n)
+  for i in 0..<n: a[i] = float(i)
+  onGpu(n):
+    for i in gpuRange(n): b[i] = 2.0*a[i]
+  for i in 0..<n:
+    if b[i] != 2.0*float(i): inc result
+
 proc pick[F](fs: openArray[F]; k: int): F = fs[k]
 
 # The kernels launch inside procs: for code at the top level of a module Nim
@@ -416,5 +426,8 @@ suite "backend/gpumem":
 
   test "a kernel variable without an address is copied back":
     check pickCopy(lo)
+
+  test "a kernel reads and writes seqs of numbers":
+    check seqKernel(1000) == 0
 
 qexFinalize()
