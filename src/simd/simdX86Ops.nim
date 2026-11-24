@@ -249,6 +249,15 @@ template basicDefs(T,F,N,P,S:untyped) {.dirty.} =
   proc imsub*(r: var T; x,y:T) {.alwaysInline.} = isub(r,mul(x,y))
   proc madd*(r: var T; x,y,z:T) {.alwaysInline.} = add(r,mul(x,y),z)
   proc msub*(r: var T; x,y,z:T) {.alwaysInline.} = sub(r,mul(x,y),z)
+  proc fmadd*(x,y,z:T):T {.alwaysInline,noInit.} =
+    ## x y + z: the fused instruction, one rounding, where the C target has
+    ## it (__FMA__, AVX512F for 512 bits), else mul and add
+    const fma = "_" & astToStr(P) & "_fmadd_" & astToStr(S)
+    const add = "_" & astToStr(P) & "_add_" & astToStr(S)
+    const mul = "_" & astToStr(P) & "_mul_" & astToStr(S)
+    const has = when N*sizeof(F) == 64: "defined(__AVX512F__)" else: "defined(__FMA__)"
+    {.emit: ["\n#if ", has, "\n", result, " = ", fma, "(", x, ", ", y, ", ", z, ");\n#else\n",
+             result, " = ", add, "(", mul, "(", x, ", ", y, "), ", z, ");\n#endif\n"].}
 
   unaryMixedVar(T, iadd, iadd)
   unaryMixedVar(T, isub, isub)
