@@ -183,9 +183,17 @@ both.
 
 Kernels launch in order and run in order. `onGpuQueue` and `gpuForAsync`
 return before their kernel completes; `gpuWaitAsync()` waits for all
-queued work, and the reads of the device sums wait as well. With OpenMP
-offload a kernel launched with `gpuFor` is not ordered after queued
-kernels: wait before mixing the two forms.
+queued work, and the reads of the device sums wait as well.
+
+With OpenMP offload:
+
+- A kernel launched with `gpuFor` is not ordered after queued kernels: wait
+  before mixing the two forms.
+- An `onGpu` kernel is queued when every value it captures is a number or
+  a pointer. A kernel that captures an object (a view with several fields,
+  an array) waits for the queue and completes at its launch: icx reads a
+  captured object from the stack of the launch when the kernel runs. Name
+  pointers and numbers in the kernels that should overlap with host work.
 
 ## The CPU backend
 

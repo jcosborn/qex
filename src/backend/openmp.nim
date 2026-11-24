@@ -178,12 +178,12 @@ template gpuMallocHost*(size: SomeInteger): pointer =
   omp_target_alloc_host(size)
 template gpuFreeHost*(p: pointer) = omp_target_free(p)
 
-const gpuObjMap {.strdefine.} = ""  ## a map clause, such as defaultmap(firstprivate:aggregate), with which onGpu kernels that capture objects are queued as well, to measure that form
-
-template gpuKernAsync(i: untyped; n: SomeInteger; body: untyped) =
-  ## gpuForAsync for the kernels of onGpu, with gpuObjMap
-  discard addr(gpuAsyncDep)
-  const gpuC = "target teams distribute parallel for " & gpuForClause & (if gpuObjMap != "": " " & gpuObjMap else: "") & " nowait depend(inout:gpuAsyncDep)"
+template gpuForObj(i: untyped; n: SomeInteger; body: untyped) =
+  ## gpuFor for a kernel of onGpu that captures objects: they go to the
+  ## kernel by value, which icx does for a kernel that completes at the
+  ## launch (a mapped object costs ten times the launch: 270 against 25 us
+  ## on PVC)
+  const gpuC = "target teams distribute parallel for " & gpuForClause & " defaultmap(firstprivate:aggregate)"
   let gpuN = int(n)
   for i in `||`(0, gpuN-1, gpuC):
     body
@@ -212,14 +212,13 @@ macro gpuKernel(fin: static bool; n, body: untyped): untyped =
   ## that body names (backend/expr).  With fin the result is the finalizer,
   ## which waits for the queue and copies back.
   ## The kernel is that of gpuForAsync when every captured value is a number
-  ## or a pointer, which a queued kernel takes by value.  With an object
-  ## among them it is that of gpuFor, after the queued kernels, complete at
-  ## the launch: the object is a local of the launch that the kernel maps,
-  ## since in earlier tests icx did not pass arrays of pointers to a kernel
-  ## by value (defaultmap(firstprivate:aggregate)).
-  ## In a threads block the kernel also completes at the launch: a queued
-  ## kernel is a task of the thread that launched it, and only that thread
-  ## could wait for it.
+  ## or a pointer.  With an object among them it completes at the launch,
+  ## after the queued kernels: icx reads a captured object from the stack of
+  ## the launch when the kernel runs, with every clause (icx 2026.1 on PVC), so a
+  ## queued kernel would read it after the launch has returned.
+  ## The launch stands in a single without its barrier, at which a queued
+  ## kernel would complete.  In a threads block the launching thread waits
+  ## for the kernel, as only it can, and the team meets at a barrier.
   let li = body.lineinfo
   let lis = li.split({'/','.','(',','})
   let fl = lis[^4] & "(" & lis[^2] & ")"
@@ -233,21 +232,22 @@ macro gpuKernel(fin: static bool; n, body: untyped): untyped =
       gpuLaunchThreads = gpuNt
       pre  # the device values
       toc("cpuPrepare")
-      threadSingle:
-        when declared(gpuObjects) and gpuObjMap == "":
+      ompBlock("single nowait"):
+        when declared(gpuObjects):
           gpuWaitAsync()
-          gpuFor(gpuTn, gpuNt):
+          gpuForObj(gpuTn, gpuNt):
             const inOnGpu {.inject,used.} = true
             shadow
             inlineProcs:
               body
         else:
-          gpuKernAsync(gpuTn, gpuNt):
+          gpuForAsync(gpuTn, gpuNt):
             const inOnGpu {.inject,used.} = true
             shadow
             inlineProcs:
               body
           if numThreads > 1: gpuWaitAsync()
+      if numThreads > 1: threadBarrier()
       toc("launch")
       inc kernelCallCount  # increment after launch
       when fin:
