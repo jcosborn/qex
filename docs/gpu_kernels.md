@@ -61,6 +61,9 @@ uses them or the two iterators outside a body is a template, as `:=` of
   every proc that launches a kernel. A device launches the kernel once; the
   CPU backend runs the body in the team, which meets at a barrier after a
   queued kernel.
+- The sums of `backend/accel` (`sumFixed`, `gpuSum`, `SumX`) keep host
+  state and stop with an error inside a `threads:` block, as the hop and the
+  update of StagGpu do.
 - Kernels that name a `Field`, a seq, a `Halo`, a `HaloLayout` or a `GpuSum`
   launch outside `threads:` blocks with a GPU backend: their device copies
   live in the table of [`backend/gpumem`](../src/backend/gpumem.nim), which

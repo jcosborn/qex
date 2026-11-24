@@ -292,12 +292,18 @@ template cmac*(re, im, ar, ai, br, bi: untyped) =
 const sumTerms = 16  # values per thread of a level of sumFixed
 const sumHost* = 512  # values per sum sumFixed leaves to the host
 
+# The sums below keep host state (buffers, counts), so one thread calls them,
+# outside threads blocks.
+template sumOutside(name: string) =
+  if numThreads > 1: qexError name, ": called inside a threads block"
+
 proc sumFixed*(r: var openArray[float]; a, w, h: ptr UncheckedArray[float]; m, n: int) =
   ## r[c] = the sum of a[c*n + i] over i < n for c < m, in an order fixed by
   ## n: each level adds the values t, t+T, ..., T = ceil(n/16), in thread t,
   ## until at most sumHost values remain, which the host adds.  w holds
   ## m*(n div 15 + 16) reals, the pinned h m*sumHost.  The levels and the
   ## copy to h queue after the kernels already submitted; one wait covers all.
+  sumOutside "sumFixed"
   var src = a
   var cnt = n
   var off = 0
@@ -451,6 +457,7 @@ proc terms*(x: SumX; n: int) =
   ## A kernel is about to add n terms to each sum, those of n indices in a
   ## row: up to ceil(n/s) to a slot.  A word holds 2048 pieces below 2^52
   ## between two reads; with more it could wrap unseen.
+  sumOutside "SumX"
   x.n += (n + x.s - 1) div x.s
   if x.n > 2048: qexError "SumX: up to ", x.n, " terms per slot between reads, a word holds 2048"
 
@@ -458,6 +465,7 @@ proc read*(x: SumX; r: var openArray[float]) =
   ## r[c] = sum c of the terms added since the last read, the exact sum
   ## rounded once.  Waits for the kernels.  Moves the window to the rows of
   ## these terms.
+  sumOutside "SumX"
   x.n = 0
   let st = x.st
   let s = x.s
@@ -529,6 +537,7 @@ template gpuSum*(i: untyped; n: SomeInteger; m: static int; body: untyped): arra
   ## equal sums.
   static: doAssert m <= 8, "gpuSumHost holds 8 sums"
   block:
+    sumOutside "gpuSum"
     if gpuSumHost == nil:
       gpuSumHost = cast[ptr UncheckedArray[float]](gpuMallocHost(8*sumHost*sizeof(float)))
     let gpuN = int(n)
