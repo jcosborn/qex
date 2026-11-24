@@ -195,11 +195,14 @@ proc ompPlain(t: NimNode; depth = 0): bool =
     else: false  # objects, tuples, arrays, seqs, refs
   else: false
 
-template gpuForObj(i: untyped; n: SomeInteger; sub: static int; body: untyped) =
-  ## gpuFor for a kernel of onGpu that reads objects: they go to the kernel
+template gpuForSync(i: untyped; n: SomeInteger; sub: static int; body: untyped) =
+  ## gpuFor for a kernel that completes at the launch after the queued
+  ## kernels, by the dependence of the queue, without a task wait: a kernel
+  ## of onGpu, or a queued one that reads objects.  Objects go to the kernel
   ## by value, which icx does for a kernel that completes at the launch (a
-  ## mapped object costs ten times the launch: 270 against 25 us on PVC)
-  const gpuC = "target teams distribute parallel for " & gpuForClause & gpuSubClause(sub) & " defaultmap(firstprivate:aggregate)"
+  ## mapped object costs ten times the launch: 270 against 25 us on PVC).
+  discard addr(gpuAsyncDep)  # declares it in the C file of the caller
+  const gpuC = "target teams distribute parallel for " & gpuForClause & gpuSubClause(sub) & " defaultmap(firstprivate:aggregate) depend(inout:gpuAsyncDep)"
   let gpuN = int(n)
   for i in `||`(0, gpuN-1, gpuC):
     body
@@ -207,11 +210,11 @@ template gpuForObj(i: untyped; n: SomeInteger; sub: static int; body: untyped) =
 macro ompKernel(i, n, sub, kernel: untyped; loop: typed): untyped =
   ## loop: the queued kernel of an onGpu launch (gpuForAsync over i of n),
   ## kernel: its body untyped.  When the typed body reads an object, array or
-  ## tuple from outside the kernel, the result is gpuForObj over kernel after
-  ## a wait for the queue: icx reads a captured object from the stack of the
-  ## launch when a deferred kernel runs (icx 2026.1 on PVC), and the captures of a
-  ## launch in top level code are globals that the next launch rewrites.
-  ## Numbers and pointers stay queued.  The typed body decides.
+  ## tuple from outside the kernel, the result is gpuForSync over kernel: icx
+  ## 2026.1 reads a captured object from the stack of the launch when a
+  ## deferred kernel runs on PVC, and the captures of a launch in top level
+  ## code are globals that the next launch rewrites.  Numbers and pointers
+  ## stay queued.  The typed body decides.
   proc firstFor(n: NimNode): NimNode =
     ## the loop of the kernel, the one over ||
     if n.kind == nnkParForStmt: return n
@@ -250,17 +253,18 @@ macro ompKernel(i, n, sub, kernel: untyped; loop: typed): untyped =
       for c in n: reads(c)
   reads(fs[^1])
   if not obj: return loop
-  result = newStmtList(newCall(bindSym"gpuWaitAsync"), newCall(bindSym"gpuForObj", i, n, sub, kernel))
+  result = newCall(bindSym"gpuForSync", i, n, sub, kernel)
 
-proc gpuFinish*[P](fl: static string; count: int; flops: float; ps: P; back: proc(ps: P) {.nimcall.}) =
-  ## The end of a kernel launch: waits for the queue, then back copies what
-  ## the kernel wrote to the host variables of ps (hostBack).
+proc gpuFinish*[P](fl: static string; count: int; flops: float; ps: P; back: proc(ps: P) {.nimcall.}; wait: static bool) =
+  ## The end of a kernel launch: waits for the queue where the kernel was
+  ## queued (wait), then back copies what the kernel wrote to the host
+  ## variables of ps (hostBack).
   tic(fl)
   var countSave = -1  # the count before, in the thread that lowers it
   threadSingle:
     countSave = kernelCallCount
     kernelCallCount = count
-    gpuWaitAsync()
+    when wait: gpuWaitAsync()
   toc("wait",flops=flops)
   back(ps)
   if countSave >= 0: kernelCallCount = countSave  # the same thread restores it
@@ -271,23 +275,24 @@ proc gpuFinalizer*[P](fl: static string; count: int; flops: float; ps: P; back: 
   ## gpuFinish as a closure, for onGpuNowait.  The closure has an
   ## environment of its own, so every thread of a threads block gets one
   ## and may keep it.
-  result = proc() = gpuFinish(fl, count, flops, ps, back)
+  result = proc() = gpuFinish(fl, count, flops, ps, back, true)
 
 macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): untyped =
   ## Launches body as a kernel of n threads, n a count or what gpuSites
   ## turns into one.  Its captures are the device values of the variables
   ## that body names (backend/expr), locals of the launch that the kernel
   ## reads in place.  fin: 0 queues the kernel, 1 gives the finalizer, which
-  ## waits for the queue and copies back, 2 does that at once.
-  ## The kernel is that of gpuForAsync when it reads numbers and pointers
-  ## only, else it completes at the launch (ompKernel).
+  ## waits for the queue and copies back, 2 runs the kernel at the launch,
+  ## after the queued kernels (gpuForSync), and copies back.
+  ## A kernel of fin 0 or 1 is that of gpuForAsync when it reads numbers and
+  ## pointers only, else it completes at the launch (ompKernel).
   ## The launch stands in a single without its barrier, at which a queued
   ## kernel would complete.  In a threads block the launching thread waits
   ## for the kernel, as only it can, and the team meets at a barrier.
   let li = body.lineinfo
   let lis = li.split({'/','.','(',','})
   let fl = lis[^4] & "(" & lis[^2] & ")"
-  template target(fl, n, sub, pre, shadow, hostPairs, queued, body, fin: untyped) =
+  template target(fl, n, sub, pre, shadow, hostPairs, queued, copies, body, fin: untyped) =
     mixin toGpu, getGpu, fromGpu, gpuSites
     inc kernelCallCount
     block:
@@ -296,25 +301,32 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
       let gpuNt {.inject.} = int(gpuSites(n))
       gpuLaunchThreads = gpuNt
       pre  # the device values
-      when fin > 0:
+      when fin == 1 or (fin == 2 and copies):
         let hp = hostPairs  # before the kernel values take the names of the host variables
       shadow  # the kernel values: locals of the launch that the kernel captures and reads in place
       toc("cpuPrepare")
       ompBlock("single nowait"):
-        ompKernel(gpuTn, gpuNt, sub, (const inOnGpu {.inject,used.} = true; inlineProcs: body)):
-          gpuForAsync(gpuTn, gpuNt, sub):
+        when fin == 2:
+          gpuForSync(gpuTn, gpuNt, sub):
             const inOnGpu {.inject,used.} = true
             inlineProcs:
               body
-        if numThreads > 1: gpuWaitAsync()
+        else:
+          ompKernel(gpuTn, gpuNt, sub, (const inOnGpu {.inject,used.} = true; inlineProcs: body)):
+            gpuForAsync(gpuTn, gpuNt, sub):
+              const inOnGpu {.inject,used.} = true
+              inlineProcs:
+                body
+          if numThreads > 1: gpuWaitAsync()
       if numThreads > 1: threadBarrier()
       toc("launch")
       inc kernelCallCount  # increment after launch
       when fin == 1: gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
-      elif fin == 2: gpuFinish(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+      elif fin == 2:
+        when copies: gpuFinish(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp), false)
       else: queued
   let c = kernelCap(body, n)
-  result = getast(target(fl, n, newLit(sub), c.pre, c.shadow, c.pairs, c.queued, c.body, newLit(fin)))
+  result = getast(target(fl, n, newLit(sub), c.pre, c.shadow, c.pairs, c.queued, c.copies, c.body, newLit(fin)))
   case dumpKernels
   of 1:
     echo li
