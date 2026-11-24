@@ -213,11 +213,24 @@ proc declNames(n: NimNode; ids: var HashSet[string]; syms: var seq[NimNode]) =
   else: discard
   for c in n: declNames(c, ids, syms)
 
+template gpuResident*(T: typedesc): bool =
+  ## Whether a kernel leaves nothing to copy back to a host variable of type
+  ## T: a number, an object that owns device memory.  onGpuQueue takes such
+  ## variables only.
+  false
+template gpuResident*(T: typedesc[SomeNumber]): bool = true
+
+template gpuQueued*(T: typedesc; name: static string) =
+  mixin gpuResident
+  when not gpuResident(T):
+    {.error: "onGpuQueue: '" & name & "' of type " & $T & " is copied back after a kernel; use onGpu or onGpuNowait".}
+
 type KernelCap* = object
   body*: NimNode    ## the body, its outer variable symbols as gpuSel calls
   pre*: NimNode     ## before the launch: the device values
   shadow*: NimNode  ## first in the kernel: the device values under the names of the host variables
   pairs*: NimNode   ## ((hostPtr(x), device value), ...) for the finalizer (hostBack)
+  queued*: NimNode  ## for a launch without finalizer: stops the compile for a variable that needs one
 
 proc kernelCap*(body: NimNode): KernelCap =
   var ids: HashSet[string]
@@ -259,6 +272,7 @@ proc kernelCap*(body: NimNode): KernelCap =
   result.pre = newStmtList()
   result.shadow = newStmtList()
   result.pairs = newNimNode(nnkTupleConstr)
+  result.queued = newStmtList()
   # g: the device value, a: the host type where toGpu gave g, l: g in the kernel
   template value(h, g, a: untyped) =
     when compiles(gpuIsVar(h)):
@@ -281,6 +295,8 @@ proc kernelCap*(body: NimNode): KernelCap =
       let l {.used.} = g
   template pair(h, g, a: untyped): untyped =
     (when declared(a): (hostPtr(h), g) else: (false, false))
+  template stays(a, name: untyped) =
+    when declared(a): gpuQueued(a, name)
   for name in names:
     let h = ident(name)
     let g = ident("gpuDev_" & name)
@@ -288,6 +304,7 @@ proc kernelCap*(body: NimNode): KernelCap =
     result.pre.add getAst(pre(h, g, a))
     result.shadow.add getAst(shadow(h, g, a))
     result.pairs.add getAst(pair(h, g, a))
+    result.queued.add getAst(stays(a, newLit(name)))
   for k, h in caps:
     let s = h.strVal & "_" & $k
     let g = ident("gpuDev_" & s)
@@ -295,6 +312,7 @@ proc kernelCap*(body: NimNode): KernelCap =
     result.pre.add getAst(value(h, g, a))
     result.shadow.add getAst(shadow(ident("gpuLoc_" & s), g, a))
     result.pairs.add getAst(pair(h, g, a))
+    result.queued.add getAst(stays(a, newLit(h.strVal)))
 
 when isMainModule:
   template test(x) =

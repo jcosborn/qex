@@ -88,15 +88,15 @@ proc gpuDefaultNumThreads*(): int =
       nt = numThreads
   result = nt
 
-macro onGpuNowait*(n, body: untyped): auto =
+macro gpuKernel(fin: static bool; n, body: untyped): untyped =
   ## Runs body as a kernel in the host threads: outside a threads block the
   ## kernel opens one, inside one every thread of the team calls it.  n, the
-  ## thread count of the devices, does not apply.  The result is the
-  ## finalizer, which copies back.
+  ## thread count of the devices, does not apply.  With fin the result is
+  ## the finalizer, which copies back.
   let li = body.lineinfo
   let lis = li.split({'/','.','(',','})
   let fl = lis[^4] & "(" & lis[^2] & ")"
-  template target(fl, pre, shadow, hostPairs, body: untyped) =
+  template target(fl, pre, shadow, hostPairs, queued, body, fin: untyped) =
     mixin toGpu, getGpu, fromGpu
     inc kernelCallCount  # increment before setup
     block:
@@ -129,10 +129,13 @@ macro onGpuNowait*(n, body: untyped): auto =
       else:
         toc("wait")
       inc kernelCallCount  # increment after launch
-      let hp = hostPairs
-      gpuFinalizer(fl, thisKernelCallCount, hp, hostBack(hp))
+      when fin:
+        let hp = hostPairs
+        gpuFinalizer(fl, thisKernelCallCount, hp, hostBack(hp))
+      else:
+        queued
   let c = kernelCap(body)
-  result = getast(target(fl, c.pre, c.shadow, c.pairs, c.body))
+  result = getast(target(fl, c.pre, c.shadow, c.pairs, c.queued, c.body, newLit(fin)))
   case dumpKernels
   of 1:
     echo li
@@ -142,8 +145,13 @@ macro onGpuNowait*(n, body: untyped): auto =
     echo result.treerepr
   else: discard
 
-template onGpuNowait*(body: untyped): auto =
-  onGpuNowait(0, body)
+template onGpuNowait*(n, body: untyped): auto = gpuKernel(true, n, body)
+template onGpuNowait*(body: untyped): auto = gpuKernel(true, 0, body)
+template onGpuQueue*(n, body: untyped) =
+  ## onGpu for a kernel whose variables stay on the device (gpuResident):
+  ## nothing is copied back.  Complete on return here; gpuWaitAsync waits
+  ## for it with a GPU backend.
+  gpuKernel(false, n, body)
 
 template onGpu*(body: untyped) =
   let finalize = onGpuNowait(body)
@@ -163,6 +171,7 @@ template value*(x: GpuSum): auto = x.val
 template toGpu*(x: GpuSum): auto = addr x
 template getGpu*(x: GpuSum, g: ptr GpuSum): auto = g
 template fromGpu*(x: GpuSum, g: ptr GpuSum): auto = discard
+template gpuResident*[T](x: typedesc[GpuSum[T]]): bool = true
 
 proc reduce*[T](gs: ptr GpuSum[T], x: T) =
   var t = x

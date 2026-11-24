@@ -542,6 +542,7 @@ when backendIsGpu:
     GpuSumView[T](p: x.p)
   template getGpu*(x: GpuSum, g: GpuSumView): auto = g
   template fromGpu*(x: GpuSum, g: GpuSumView) = discard
+  template gpuResident*[T](x: typedesc[GpuSum[T]]): bool = true
 
   template reduce*[T](gs: GpuSumView[T], x: T) =
     ## in a kernel, once in every thread: the value of the thread

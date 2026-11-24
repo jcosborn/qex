@@ -145,15 +145,15 @@ proc gpuFinalizer*[P](fl: static string; count: int; flops: float; ps: P; back: 
     threadBarrier()
     toc("cpuFinalize")
 
-macro onGpuNowait*(n, body: untyped): auto =
+macro gpuKernel(fin: static bool; n, body: untyped): untyped =
   ## Queues body as a kernel of n threads, n a count or what gpuSites turns
   ## into one.  The kernel is that of gpuForAsync, its captures the device
-  ## values of the variables that body names (backend/expr).  The result is
-  ## the finalizer, which waits for the device and copies back.
+  ## values of the variables that body names (backend/expr).  With fin the
+  ## result is the finalizer, which waits for the device and copies back.
   let li = body.lineinfo
   let lis = li.split({'/','.','(',','})
   let fl = lis[^4] & "(" & lis[^2] & ")"
-  template target(fl, n, pre, shadow, hostPairs, body: untyped): untyped =
+  template target(fl, n, pre, shadow, hostPairs, queued, body, fin: untyped): untyped =
     mixin toGpu, getGpu, fromGpu, gpuSites
     inc kernelCallCount  # increment before setup
     block:
@@ -171,10 +171,13 @@ macro onGpuNowait*(n, body: untyped): auto =
             body
       toc("launch")
       inc kernelCallCount  # increment after launch
-      let hp = hostPairs
-      gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+      when fin:
+        let hp = hostPairs
+        gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+      else:
+        queued
   let c = kernelCap(body)
-  result = getast(target(fl, n, c.pre, c.shadow, c.pairs, c.body))
+  result = getast(target(fl, n, c.pre, c.shadow, c.pairs, c.queued, c.body, newLit(fin)))
   case dumpKernels
   of 1:
     echo li
@@ -185,8 +188,12 @@ macro onGpuNowait*(n, body: untyped): auto =
   else: discard
 
 var gpuNumThreadsRequest* = 32*1024  ## threads of a kernel launched without a count
-template onGpuNowait*(body: untyped): auto =
-  onGpuNowait(gpuNumThreadsRequest, body)
+template onGpuNowait*(n, body: untyped): auto = gpuKernel(true, n, body)
+template onGpuNowait*(body: untyped): auto = gpuKernel(true, gpuNumThreadsRequest, body)
+template onGpuQueue*(n, body: untyped) =
+  ## onGpuNowait for a kernel whose variables stay on the device
+  ## (gpuResident): nothing is copied back, and gpuWaitAsync waits for it.
+  gpuKernel(false, n, body)
 
 template onGpu*(body: untyped) =
   let finalize = onGpuNowait(body)

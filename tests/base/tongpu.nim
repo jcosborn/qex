@@ -140,6 +140,27 @@ proc total(n: int): float =
     gs.reduce r
   gs.value
 
+proc queue(n: int): int =
+  ## two queued kernels on a device array and one wait: the elements that
+  ## are not 2 i
+  let p = dev(n)
+  onGpuQueue(n):
+    for i in gpuRange(n): p[i] = float(i)
+  onGpuQueue(n):
+    for i in gpuRange(n): p[i] = 2.0*p[i]
+  gpuWaitAsync()
+  let h = host(p, n)
+  for i in 0..<n:
+    if h[i] != 2.0*float(i): inc result
+  gpuFree(p)
+
+proc queueSeq(): bool =
+  ## whether a queued kernel on a seq, which is copied back, compiles
+  var a = newSeq[float](4)
+  compiles((block:
+    onGpuQueue(4):
+      for i in gpuRange(4): a[i] = 1.0))
+
 proc noDevice(s: string): bool =
   ## whether a kernel on a string, which has no device form, compiles
   compiles((block:
@@ -182,5 +203,11 @@ suite "onGpu captures":
 
   test "a host variable without a device form stops the compile":
     check not noDevice("abc")
+
+  test "queued kernels":
+    check queue(1000) == 0
+
+  test "a queued kernel on a variable that is copied back stops the compile":
+    check not queueSeq()
 
 qexFinalize()
