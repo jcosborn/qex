@@ -91,7 +91,7 @@ proc gpuDefaultNumThreads*(): int =
       nt = numThreads
   result = nt
 
-macro gpuKernel(fin: static int; n, body: untyped): untyped =
+macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): untyped =
   ## Runs body as a kernel in the host threads: outside a threads block the
   ## kernel opens one, inside one every thread of the team calls it and
   ## the team meets at a barrier after the kernel, so that each thread finds
@@ -152,16 +152,21 @@ macro gpuKernel(fin: static int; n, body: untyped): untyped =
     echo result.treerepr
   else: discard
 
-template onGpuNowait*(n, body: untyped): auto = gpuKernel(1, n, body)
-template onGpuNowait*(body: untyped): auto = gpuKernel(1, 0, body)
+template onGpuNowait*(n, body: untyped): auto = gpuKernel(1, n, 0, body)
+template onGpuNowait*(n, sub, body: untyped): auto =
+  ## sub: the size of the sub-groups on Intel GPUs, as the compiler chooses for 0
+  gpuKernel(1, n, sub, body)
+template onGpuNowait*(body: untyped): auto = gpuKernel(1, 0, 0, body)
 template onGpuQueue*(n, body: untyped) =
   ## onGpu for a kernel whose variables stay on the device (gpuResident):
   ## nothing is copied back.  Complete on return here; gpuWaitAsync waits
   ## for it with a GPU backend.
-  gpuKernel(0, n, body)
+  gpuKernel(0, n, 0, body)
+template onGpuQueue*(n, sub, body: untyped) = gpuKernel(0, n, sub, body)
 
-template onGpu*(body: untyped) = gpuKernel(2, 0, body)
-template onGpu*(n, body: untyped) = gpuKernel(2, n, body)
+template onGpu*(body: untyped) = gpuKernel(2, 0, 0, body)
+template onGpu*(n, body: untyped) = gpuKernel(2, n, 0, body)
+template onGpu*(n, sub, body: untyped) = gpuKernel(2, n, sub, body)
 
 type GpuSum*[T] = object
     ## The sum of the values the threads of a kernel hand to reduce, each

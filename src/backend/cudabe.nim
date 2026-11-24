@@ -159,7 +159,7 @@ proc gpuFinalizer*[P](fl: static string; count: int; flops: float; ps: P; back: 
   ## and may keep it.
   result = proc() = gpuFinish(fl, count, flops, ps, back)
 
-macro gpuKernel(fin: static int; n, body: untyped): untyped =
+macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): untyped =
   ## Queues body as a kernel of n threads, n a count or what gpuSites turns
   ## into one.  The kernel is that of gpuForAsync, its captures the device
   ## values of the variables that body names (backend/expr), locals of the
@@ -169,7 +169,7 @@ macro gpuKernel(fin: static int; n, body: untyped): untyped =
   let li = body.lineinfo
   let lis = li.split({'/','.','(',','})
   let fl = lis[^4] & "(" & lis[^2] & ")"
-  template target(fl, n, pre, shadow, hostPairs, queued, body, fin: untyped): untyped =
+  template target(fl, n, sub, pre, shadow, hostPairs, queued, body, fin: untyped): untyped =
     mixin toGpu, getGpu, fromGpu, gpuSites
     inc kernelCallCount  # increment before setup
     block:
@@ -183,7 +183,7 @@ macro gpuKernel(fin: static int; n, body: untyped): untyped =
       shadow  # the kernel values: locals of the launch that the kernel captures and reads in place
       toc("cpuPrepare")
       threadSingle:
-        gpuForAsync(gpuTn, gpuNt):
+        gpuForAsync(gpuTn, gpuNt, sub):
           const inOnGpu {.inject,used.} = true
           inlineProcs:
             body
@@ -193,7 +193,7 @@ macro gpuKernel(fin: static int; n, body: untyped): untyped =
       elif fin == 2: gpuFinish(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
       else: queued
   let c = kernelCap(body, n)
-  result = getast(target(fl, n, c.pre, c.shadow, c.pairs, c.queued, c.body, newLit(fin)))
+  result = getast(target(fl, n, newLit(sub), c.pre, c.shadow, c.pairs, c.queued, c.body, newLit(fin)))
   case dumpKernels
   of 1:
     echo li
@@ -204,12 +204,17 @@ macro gpuKernel(fin: static int; n, body: untyped): untyped =
   else: discard
 
 var gpuNumThreadsRequest* = 32*1024  ## threads of a kernel launched without a count
-template onGpuNowait*(n, body: untyped): auto = gpuKernel(1, n, body)
-template onGpuNowait*(body: untyped): auto = gpuKernel(1, gpuNumThreadsRequest, body)
+template onGpuNowait*(n, body: untyped): auto = gpuKernel(1, n, 0, body)
+template onGpuNowait*(n, sub, body: untyped): auto =
+  ## sub: the size of the sub-groups on Intel GPUs, as the compiler chooses for 0
+  gpuKernel(1, n, sub, body)
+template onGpuNowait*(body: untyped): auto = gpuKernel(1, gpuNumThreadsRequest, 0, body)
 template onGpuQueue*(n, body: untyped) =
   ## onGpuNowait for a kernel whose variables stay on the device
   ## (gpuResident): nothing is copied back, and gpuWaitAsync waits for it.
-  gpuKernel(0, n, body)
+  gpuKernel(0, n, 0, body)
+template onGpuQueue*(n, sub, body: untyped) = gpuKernel(0, n, sub, body)
 
-template onGpu*(body: untyped) = gpuKernel(2, gpuNumThreadsRequest, body)
-template onGpu*(n, body: untyped) = gpuKernel(2, n, body)
+template onGpu*(body: untyped) = gpuKernel(2, gpuNumThreadsRequest, 0, body)
+template onGpu*(n, body: untyped) = gpuKernel(2, n, 0, body)
+template onGpu*(n, sub, body: untyped) = gpuKernel(2, n, sub, body)

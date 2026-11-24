@@ -26,6 +26,10 @@ proc scale(r, x: Field; a: float) =
 | `let fin = onGpuNowait(n): body` | launches; `fin()` waits and copies back |
 | `onGpuQueue(n): body` | launches a kernel whose variables stay on the device; `gpuWaitAsync()` waits |
 
+Each form with a count `n` also takes a sub-group size, `onGpu(n, 16):
+body`: sub-groups of 16 threads on Intel GPUs, where the compiler chooses
+otherwise; the other backends ignore it.
+
 `n` is the thread count of the launch on a device: a number, or a `Layout`
 for its number of sites. Without `n` a device runs a default count. The CPU
 backend runs the body in the host threads whatever `n` is.
