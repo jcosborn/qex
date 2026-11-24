@@ -239,6 +239,50 @@ proc xsums(): int =
     echo "SumX 2048 terms in a slot: ", r
   x.free
 
+proc fmaRef[T](x, y, z: T; wide: static bool): T {.noinline.} =
+  ## x y + z as fmadd of vectors rounds it: once where the C target has the
+  ## instruction for vectors of that size, else as a product and a sum
+  const has = when wide: "defined(__AVX512F__)" else: "defined(__FMA__)"
+  const fma = when T is float32: "fmaf" else: "fma"
+  {.emit: ["\n#if ", has, "\n", result, " = ", fma, "(", x, ", ", y, ", ", z, ");\n#else\n",
+           result, " = ", x, "*", y, " + ", z, ";\n#endif\n"].}
+
+proc fmas(T: typedesc; n: int): int =
+  ## The lanes where fmadd on the element type of a kernel, vector times
+  ## vector and number times vector, differs from x y + z of numbers
+  ## rounded as often: once on one lane (libm) and where the C target has
+  ## the instruction, else twice.
+  const W = gpuLanes(T, 16)
+  type E = gpuElem(T, W)
+  template want(x, y, z: T): T =
+    when W == 1: fmadd(x, y, z) else: fmaRef(x, y, z, W*sizeof(T) == 64)
+  var sd = 1
+  proc next(): T =
+    sd = (sd*1103515245 + 12345) and 0x7fffffff
+    T(sd mod 2001 - 1000)/T(997)
+  for i in 0..<n:
+    var x, y, z: array[W, T]
+    for l in 0..<W:
+      x[l] = next()
+      y[l] = next()
+      z[l] = next()
+    template ld(v: untyped): E =
+      when W == 1: v[0]
+      else:
+        var t {.noInit.}: E
+        assign(t[], v)  # unaligned
+        t
+    let a = ld(x)
+    let b = ld(y)
+    let c = ld(z)
+    var fv = fmadd(a, b, c)
+    var gv = fmadd(x[0], b, c)
+    let f = cast[ptr array[W, T]](addr fv)
+    let g = cast[ptr array[W, T]](addr gv)
+    for l in 0..<W:
+      if f[l] != want(x[l], y[l], z[l]): inc result
+      if g[l] != want(x[0], y[l], z[l]): inc result
+
 suite "backend/accel":
   test "queued kernels run in order":
     check queued() == 0
@@ -251,6 +295,10 @@ suite "backend/accel":
 
   test "SumX gives the exact sums":
     check xsums() == 0
+
+  test "fmadd of SIMD vectors":
+    check fmas(float, 1000) == 0
+    check fmas(float32, 1000) == 0
 
   test "GpuHaloEx neighbors":
     for ll in [[4,4,4,8], [8,4,4,4], [4,8,8,8]]:

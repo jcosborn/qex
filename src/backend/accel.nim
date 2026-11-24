@@ -203,6 +203,58 @@ template gpuSites*(n: int, V: static int): untyped =
   ## lane at a time on a device, whole sites on the host
   gpuSitesOf(n, V, int(gpuThreadNum), int(gpuNumThreads))
 
+# One kernel text for lanes and for SIMD vectors.  A kernel index stands for
+# W lanes of an outer site: one on a device, a hardware vector with the CPU
+# backend.  With E = gpuElem(T, W) the number type and VE = V div W the
+# elements per real of an outer site, element c of index k of a field with NC
+# reals per site is at (k div VE)*(NC*VE) + c*VE + k mod VE of the field
+# memory read as an array of E: the layout of the lanes, with (E, VE) for
+# (T, V).  A kernel written over E and VE is lane code and SIMD code.
+
+const gpuSimd* {.booldefine.} = true  ## false: the CPU backend runs every kernel lane by lane, the reference of the SIMD forms
+
+template gpuLanes*(T: typedesc; V: static int): int =
+  ## the lanes of T per kernel index: those of the widest hardware vector of
+  ## the SIMD list of the build with at most V lanes, else 1
+  when backendIsGpu or not gpuSimd: 1
+  elif T is float32:
+    when defined(AVX512) and V >= 16: 16 elif defined(AVX) and V >= 8: 8 elif defined(SSE) and V >= 4: 4 else: 1
+  else:
+    when defined(AVX512) and V >= 8: 8 elif defined(AVX) and V >= 4: 4 elif defined(SSE) and V >= 2: 2 else: 1
+
+template gpuElem*(T: typedesc; W: static int): typedesc =
+  ## the type of W lanes of T, T for one lane; a hardware vector for
+  ## W = gpuLanes(T, V)
+  when W == 1: T
+  elif T is float32:
+    when W == 2: SimdS2
+    elif W == 4: SimdS4
+    elif W == 8: SimdS8
+    else: SimdS16
+  else:
+    when W == 2: SimdD2
+    elif W == 4: SimdD4
+    elif W == 8: SimdD8
+    else: SimdD16
+
+template gpuTo*(F: typedesc[SomeNumber]; x: SomeNumber): untyped =
+  ## x in the element type F: a number in every lane, or the lanes of x in
+  ## the precision of F
+  F(x)
+template gpuTo*[S](F: typedesc[Simd[S]]; x: untyped): untyped =
+  when typeof(x) is F: x
+  else:
+    block:
+      var gpuToV {.noInit.}: F
+      assign(gpuToV, x)
+      gpuToV
+
+template fmadd*[A; B: Simd](a: A; b, c: B): B =
+  ## a b + c on hardware vectors, a a vector or a number.  Rounded once, as
+  ## the fmadd of numbers, where the C target has the instruction; else
+  ## rounded twice, by every code path alike.
+  asSimd(fmadd(gpuTo(B, a)[], b[], c[]))
+
 template gpuType*[T](t: typedesc[Simd[T]]): typedesc =
   ## the lanes as an array on a device; the host type with the CPU backend,
   ## whose kernels take whole SIMD sites
