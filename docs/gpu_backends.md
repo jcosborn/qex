@@ -114,7 +114,8 @@ the solution, even when the source is restricted to even sites.
 
 The pointer interface takes device memory, as `gpuMalloc` gives it: with
 the CPU backend that is host memory aligned to 64 bytes, which the kernels
-read as SIMD vectors.
+read as SIMD vectors. One thread calls the operators and solvers, outside
+`threads:` blocks.
 
 `solveM` source and destination device buffers are disjoint from each other
 and from the operator's work vectors. An instance's scratch and exchanges serve one

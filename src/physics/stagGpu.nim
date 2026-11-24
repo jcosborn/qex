@@ -515,6 +515,9 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
   ## the tables of the outer sites and a pack of d in place of the stores of
   ## send; links of 12 reals, whose sign differs between the lanes of a
   ## neighbor table, and both link caches run lane by lane.
+  ## One thread calls, outside threads blocks: in one, onGpu gives the
+  ## calling thread its share of the team's work.
+  if numThreads > 1: qexError "StagGpu: dslash called inside a threads block"
   let fx = s.fixed
   let xa = s.sx.a
   let xs = s.sx.s
@@ -552,72 +555,72 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
       let y = cast[ptr UncheckedArray[E]](y)
       let rb = cast[ptr UncheckedArray[E]](rb)
       let rs {.used.} = cast[ptr UncheckedArray[F]](rs)
-      template fetch(v, j: untyped) =
-        if j < n:
-          let o = vo(VE, j)
-          forStatic c, 0, 5: v[c] = x[o + c*VE]
-        else:
-          when backendIsCpu:  # the halo in the layout of a field
-            let o = vo(VE, j-n)
-            forStatic c, 0, 5: v[c] = rb[o + c*VE]
+      template launch(body: untyped) =
+        when nowait: onGpuQueue(nk div W, body)
+        else: onGpu(nk div W, body)
+      launch:
+        template fetch(v, j: untyped) =
+          if j < n:
+            let o = vo(VE, j)
+            forStatic c, 0, 5: v[c] = x[o + c*VE]
           else:
-            recvSite(ro, rst, rb, j-n, v)
-      template site(i: untyped) =
-        when W == 1:
-          let k = if q == 0: int od[j0 + i] else: i0 + i
-        else:
-          let k = if q == 0: int(od[(j1 + i) div VE])*VE + (j1 + i) mod VE else: i0 + i
-        let ko = uo(VE, k, nl)
-        var acc {.noInit.}: array[6,E]
-        forStatic c, 0, 5: acc[c] = gpuTo(E, 0)
-        forStatic mu, 0, 3:
-          forStatic fb, 0, 1:
-            when W == 1:
-              let jj = int nb[(4*fb+mu)*n + k]
-              const pw = 0
+            when backendIsCpu:  # the halo in the layout of a field
+              let o = vo(VE, j-n)
+              forStatic c, 0, 5: v[c] = rb[o + c*VE]
             else:
-              # outer site eo with the lanes swapped by pm: whole vectors
-              # by pm div W, the lanes of a vector by pw
-              let t = int nb[(4*fb+mu)*(n div VE) + k div VE]
-              let pm = t mod V
-              let pw = pm mod W
-              let jj = (t div V)*VE + ((k mod VE) xor (pm div W))
-            let j = if nl == 12 and jj < 0: -1-jj else: jj
-            let e = if jj < 0: gpuTo(E, -1) else: gpuTo(E, 1)
-            var v {.noInit.}: array[6,E]
-            fetch(v, j)
-            when fb == 0:
-              swapLanes(v, pw)
-              hop(acc, lf, nl*mu*n + ko, v, VE, e, nl, r64, fm)
-            elif fw:
-              if j < n:
-                when W == 1: hopA(acc, lf, nl*mu*n + uo(VE, j, nl), v, VE, e, nl, r64, fm)
-                else:
-                  # U and v are in the lanes of the neighbor: swap U^+ v,
-                  # 6 vectors in place of the 24 of U and v
-                  if pw == 0: hopA(acc, lf, nl*mu*n + uo(VE, j, nl), v, VE, e, nl, r64, fm)
+              recvSite(ro, rst, rb, j-n, v)
+        for i in gpuRange(nk div W):
+          when W == 1:
+            let k = if q == 0: int od[j0 + i] else: i0 + i
+          else:
+            let k = if q == 0: int(od[(j1 + i) div VE])*VE + (j1 + i) mod VE else: i0 + i
+          let ko = uo(VE, k, nl)
+          var acc {.noInit.}: array[6,E]
+          forStatic c, 0, 5: acc[c] = gpuTo(E, 0)
+          forStatic mu, 0, 3:
+            forStatic fb, 0, 1:
+              when W == 1:
+                let jj = int nb[(4*fb+mu)*n + k]
+                const pw = 0
+              else:
+                # outer site eo with the lanes swapped by pm: whole vectors
+                # by pm div W, the lanes of a vector by pw
+                let t = int nb[(4*fb+mu)*(n div VE) + k div VE]
+                let pm = t mod V
+                let pw = pm mod W
+                let jj = (t div V)*VE + ((k mod VE) xor (pm div W))
+              let j = if nl == 12 and jj < 0: -1-jj else: jj
+              let e = if jj < 0: gpuTo(E, -1) else: gpuTo(E, 1)
+              var v {.noInit.}: array[6,E]
+              fetch(v, j)
+              when fb == 0:
+                swapLanes(v, pw)
+                hop(acc, lf, nl*mu*n + ko, v, VE, e, nl, r64, fm)
+              elif fw:
+                if j < n:
+                  when W == 1: hopA(acc, lf, nl*mu*n + uo(VE, j, nl), v, VE, e, nl, r64, fm)
                   else:
-                    var w {.noInit.}: array[6,E]
-                    forStatic c, 0, 5: w[c] = gpuTo(E, 0)
-                    hopA(w, lf, nl*mu*n + uo(VE, j, nl), v, VE, e, nl, r64, fm)
-                    swapLanes(w, pw)
-                    forStatic c, 0, 5: acc[c] += w[c]
-              else: hopA(acc, lh, lhAt(VE, j-n, nl), v, lhSt(VE, nr), e, nl, r64, fm)
-            else: hopA(acc, lb, nl*mu*n + ko, v, VE, e, nl, r64, fm)
-        let yo = vo(VE, k)
-        if a == T(0):
-          forStatic c, 0, 5: acc[c] = b*acc[c]
-        else:
-          forStatic c, 0, 5: acc[c] = a*y[yo + c*VE] + b*acc[c]
-        forStatic c, 0, 5: d[yo + c*VE] = acc[c]
-        when send and W == 1:
-          sendSite(sl, sd, st, nsl, n, k, 0, acc)
-        when dot:
-          dots((when W == 1: j0 else: j1) + i, acc, y, yo, VE, rs, ne, fx, xa, xs, xst, xw, normD, F)
-      when nowait:
-        gpuForAsync(i, nk div W): site(i)
-      else:
-        gpuFor(i, nk div W): site(i)
+                    # U and v are in the lanes of the neighbor: swap U^+ v,
+                    # 6 vectors in place of the 24 of U and v
+                    if pw == 0: hopA(acc, lf, nl*mu*n + uo(VE, j, nl), v, VE, e, nl, r64, fm)
+                    else:
+                      var w {.noInit.}: array[6,E]
+                      forStatic c, 0, 5: w[c] = gpuTo(E, 0)
+                      hopA(w, lf, nl*mu*n + uo(VE, j, nl), v, VE, e, nl, r64, fm)
+                      swapLanes(w, pw)
+                      forStatic c, 0, 5: acc[c] += w[c]
+                else: hopA(acc, lh, lhAt(VE, j-n, nl), v, lhSt(VE, nr), e, nl, r64, fm)
+              else: hopA(acc, lb, nl*mu*n + ko, v, VE, e, nl, r64, fm)
+          let yo = vo(VE, k)
+          if a == T(0):
+            forStatic c, 0, 5: acc[c] = b*acc[c]
+          else:
+            forStatic c, 0, 5: acc[c] = a*y[yo + c*VE] + b*acc[c]
+          forStatic c, 0, 5: d[yo + c*VE] = acc[c]
+          when send and W == 1:
+            sendSite(sl, sd, st, nsl, n, k, 0, acc)
+          when dot:
+            dots((when W == 1: j0 else: j1) + i, acc, y, yo, VE, rs, ne, fx, xa, xs, xst, xw, normD, F)
       when send and W > 1:
         if j0 == 0: s.ex[q].pack(dT)  # the sites with send slots come first
   template comp(r64, fm: static bool) =
@@ -710,13 +713,14 @@ template gpuFor2(t, n, m, body, tail: untyped) =
 proc update[V: static int; T,U](s: StagGpu[V,T]; x: ptr UncheckedArray[U]; r, p, sv, w: ptr UncheckedArray[T]; a, b: T; ax: U) =
   ## p = r + b p, s = w + b s, x += a p, r -= a s on the even sites, and the
   ## same for the halo copies s.rh, s.sh from the w boundary received in
-  ## s.ex[0]; a thread updates one real, on the CPU one SIMD vector of
-  ## them.  Returns before the kernel
-  ## completes, the first hop of applyD2eeCG runs after it.  The halo copies
+  ## s.ex[0], as two loops of one kernel over reals, on the CPU over SIMD
+  ## vectors of them.  Returns before the kernel completes: the first hop of
+  ## applyD2eeCG runs after it.  The halo copies
   ## repeat the owner's s and r bit for bit only when both round alike, hence
   ## fmadd in both branches: a compiler that contracts one and not the other
   ## lets the copies drift by a rounding per iteration, which breaks FP32 CGs
   ## on several ranks.
+  if numThreads > 1: qexError "StagGpu: update called inside a threads block"  # as dslash
   const W = gpuLanes(T, V)
   type E = gpuElem(T, W)
   type EU {.used.} = gpuElem(U, W)
@@ -730,18 +734,19 @@ proc update[V: static int; T,U](s: StagGpu[V,T]; x: ptr UncheckedArray[U]; r, p,
   let wh = cast[ptr UncheckedArray[E]](s.ex[0].rbuf)
   let rh = cast[ptr UncheckedArray[E]](s.rh)
   let sh = cast[ptr UncheckedArray[E]](s.sh)
-  gpuFor2(t, n6, nh):
-    let pk = r[t] + b*p[t]
-    let sk = fmadd(b, sv[t], w[t])
-    p[t] = pk
-    sv[t] = sk
-    when U is T: x[t] += a*pk
-    else: x[t] += ax*gpuTo(EU, pk)
-    r[t] = fmadd(-a, sk, r[t])
-  do:
-    let sk = fmadd(b, sh[t], wh[t])
-    sh[t] = sk
-    rh[t] = fmadd(-a, sk, rh[t])
+  onGpuQueue(n6):
+    for t in gpuRange(n6):
+      let pk = r[t] + b*p[t]
+      let sk = fmadd(b, sv[t], w[t])
+      p[t] = pk
+      sv[t] = sk
+      when U is T: x[t] += a*pk
+      else: x[t] += ax*gpuTo(EU, pk)
+      r[t] = fmadd(-a, sk, r[t])
+    for t in gpuRange(nh):
+      let sk = fmadd(b, sh[t], wh[t])
+      sh[t] = sk
+      rh[t] = fmadd(-a, sk, rh[t])
 
 proc upload*[V: static int; T](s: StagGpu[V,T]; d: ptr UncheckedArray[T]; f: Field) =
   ## even sites of f, on the layout of the links, to d
