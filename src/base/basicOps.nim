@@ -23,16 +23,20 @@ elif Backend == "HIP": {.passC: "-iquote " & currentSourcePath().parentDir.paren
 const inlineDecl = "inline __attribute__((always_inline)) $# $#$#"
 const gpuInlineDecl = hd & inlineDecl
 const gpuCallDecl = hd & "static N_INLINE($#, $#)$#"  # Nim's declaration of inline procs
+template gpuProc*() {.pragma.}
+  ## part of gpuInline and gpuCall: kernels call the proc, where inlineProcs
+  ## copies the body of a proc without it
+
 template getOptimPragmas* =
   ## Inline marks, compared in docs/gpu_backends.md (procs that kernels call):
   ##   alwaysInline  always inlined; host only under CUDA and HIP
-  ##   gpuInline     alwaysInline that gpuFor bodies may call with every GPU
+  ##   gpuInline     alwaysInline that kernels may call with every GPU
   ##                 backend (QEX_HD under CUDA and HIP), for small procs
-  ##   gpuCall       Nim's inline that gpuFor bodies may call with every GPU
+  ##   gpuCall       Nim's inline that kernels may call with every GPU
   ##                 backend, for larger procs the compiler inlines as it sees fit
   {.pragma: alwaysInline, inline, codegenDecl: inlineDecl.}
-  {.pragma: gpuInline, inline, codegenDecl: gpuInlineDecl.}
-  {.pragma: gpuCall, inline, codegenDecl: gpuCallDecl.}
+  {.pragma: gpuInline, gpuProc, inline, codegenDecl: gpuInlineDecl.}
+  {.pragma: gpuCall, gpuProc, inline, codegenDecl: gpuCallDecl.}
 getOptimPragmas()
 
 type

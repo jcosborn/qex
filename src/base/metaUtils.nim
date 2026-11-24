@@ -1,16 +1,20 @@
 import macros
 import strUtils
 
-proc isMagic(x: NimNode): bool =
-  ## magic procs and C functions: the body of an importc proc, e.g. sqrt of
-  ## std/math, holds only its docs
-  # echo x.treerepr
+proc hasPragma(x: NimNode; names: openArray[string]): bool =
+  ## whether the routine x has one of the pragmas
   let pragmas = x[4]
   if pragmas.kind==nnkPragma:
     for p in pragmas:
       let n = if p.kind==nnkExprColonExpr: p[0] else: p
-      if n.kind in {nnkIdent,nnkSym} and (n.eqIdent("magic") or n.eqIdent("importc") or n.eqIdent("importcpp")):
-        return true
+      if n.kind in {nnkIdent,nnkSym}:
+        for s in names:
+          if n.eqIdent(s): return true
+
+proc isMagic(x: NimNode): bool =
+  ## magic procs and C functions: the body of an importc proc, e.g. sqrt of
+  ## std/math, holds only its docs
+  hasPragma(x, ["magic", "importc", "importcpp"])
 
 template isNotMagic(x: NimNode): bool = not isMagic(x)
 
@@ -676,6 +680,33 @@ proc systemProc(impl: NimNode): bool {.compileTime.} =
   else:
     false
 
+proc namesParam(n: NimNode; names: seq[string]): bool =
+  ## whether an emit in n holds C text with one of the names
+  if n.kind == nnkPragma:
+    for p in n:
+      if p.kind == nnkExprColonExpr and p[0].eqIdent"emit":
+        proc text(e: NimNode): bool =
+          if e.kind in nnkStrLit..nnkTripleStrLit:
+            for w in e.strVal.tokenize({'a'..'z', 'A'..'Z', '0'..'9', '_'}):
+              if not w.isSep and w.token in names: return true
+          for c in e:
+            if text(c): return true
+        if text(p[1]): return true
+  for c in n:
+    if namesParam(c, names): return true
+
+proc checkCopy(call, impl: NimNode) =
+  ## The two forms of a proc that a copy of its body gets wrong.
+  if impl.kind notin {nnkProcDef, nnkFuncDef}: return
+  let fix = ": inlineProcs cannot copy it; mark it gpuInline or gpuCall"
+  if impl.params[0].kind == nnkVarTy:
+    error($call.callName & " returns a var" & fix, call)
+  var names = @["result"]
+  for i in 1..<impl.params.len:
+    for j in 0..<impl.params[i].len-2: names.add $impl.params[i][j]
+  if namesParam(impl.body, names):
+    error($call.callName & " names a parameter in the text of an emit" & fix, call)
+
 proc inlineProcsX(body: NimNode): NimNode =
   # echo ">>>>>> inlineProcsX"
   # echo body.repr
@@ -690,10 +721,13 @@ proc inlineProcsX(body: NimNode): NimNode =
       # echo isMagic(procImpl)
       if procImpl.kind == nnkTypeDef: return it.copyNimTree
       # calls through proc variables (outOfMemHook) stay calls
+      # so do procs marked for kernels (gpuInline, gpuCall of base/basicOps)
       if procImpl.kind in RoutineNodes and not procImpl.systemProc and procImpl.isNotMagic and
+          not procImpl.hasPragma(["gpuProc"]) and
           procImpl.body.kind!=nnkEmpty and
           procImpl.kind != nnkIteratorDef and
           (procImpl.kind != nnkTemplateDef or $procImpl.params[0] != "typedesc"):
+        checkCopy(it, procImpl)
         #echo "inspecting call"
         #echo procImpl.repr
         #echo procImpl.kind
