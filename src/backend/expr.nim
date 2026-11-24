@@ -336,10 +336,14 @@ proc kernelCap*(body0: NimNode; n: NimNode = nil): KernelCap =
     (when declared(a): (hostPtr(h), g) else: (false, false))
   template stays(a, name: untyped) =
     when declared(a): gpuQueued(a, name)
+  var k = 0
   for name in names:
+    # the counter keeps the names of x and X apart: Nim compares the letters
+    # after the first one without case and underscores
     let h = ident(name)
-    let g = ident("gpuDev_" & name)
-    let a = ident("gpuHost_" & name)
+    let g = ident("gpuDev_" & name & "_" & $k)
+    let a = ident("gpuHost_" & name & "_" & $k)
+    inc k
     result.pre.add getAst(pre(h, g, a))
     result.shadow.add getAst(shadow(h, g, a))
     result.pairs.add getAst(pair(h, g, a))

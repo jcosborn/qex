@@ -88,6 +88,17 @@ proc wide(n: int): int =
     if h[i] != float(i): inc result
   gpuFree(p)
 
+proc cases(n: int): int =
+  ## A kernel that names a constant W and a seq w, whose names Nim tells
+  ## apart by the case of the first letter only: the elements of w that are
+  ## not 3 i
+  const W = 3
+  var w = newSeq[float](n)
+  onGpu(n):
+    for i in gpuRange(n): w[i] = float(W*i)
+  for i in 0..<n:
+    if w[i] != float(3*i): inc result
+
 template fill(f: untyped; n: int; v: float) =
   ## a kernel in a template, on the caller's variable
   onGpu(n):
@@ -218,6 +229,9 @@ suite "onGpu captures":
 
   test "a loop over more indices than threads":
     check wide(1000) == 0
+
+  test "names that differ in the case of the first letter":
+    check cases(1000) == 0
 
   test "a kernel in a template":
     check inTemplate(1000) == 0
