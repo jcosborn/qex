@@ -556,10 +556,8 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
       let rb = cast[ptr UncheckedArray[E]](rb)
       let rs {.used.} = cast[ptr UncheckedArray[F]](rs)
       template launch(body: untyped) =
-        # nothing to copy back: the queue form, and a wait for the synchronous
-        # hop, which saves the host time of a finalizer
-        onGpuQueue(nk div W, body)
-        when not nowait: gpuWaitAsync()
+        when nowait: onGpuQueue(nk div W, body)
+        else: onGpu(nk div W, body)
       launch:
         template fetch(v, j: untyped) =
           if j < n:
@@ -1478,7 +1476,10 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
       unpackB(ye, C)
       unpackB(de, C)
       let nkw = nk div W
-      onGpuQueue(nkw, 16):  # sub-groups of 16 on PVC
+      template launch(body: untyped) =  # sub-groups of 16 on PVC
+        when nowait: onGpuQueue(nkw, 16, body)
+        else: onGpu(nkw, 16, body)
+      launch:
         template fetch(v, j, xj, c0: untyped) =
           ## the branch stays at the call site: the receive offsets and buffer load in the halo
           ## branch, where a proc would take them over all hops (B200: dslashB 128 -> 156
@@ -1537,7 +1538,6 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
               forStatic c, 0, 5: w[c] = acc[6*js+c]
               sendSite(sl, sd, st, nsl, n, k, 6*sj, w)
             when dot: dotB(acc, js, yj, yo, rs, sj, ne, (when W == 1: j0 else: j1) + i, fx, xa, xs, xst, xw, VE, normD)
-      when not nowait: gpuWaitAsync()
       when send and W > 1:
         if j0 == 0: s.exB[q].packB(dT, so)  # the sites with send slots come first
   template comp(r64, fm: static bool) =
