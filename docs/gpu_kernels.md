@@ -217,9 +217,10 @@ With OpenMP offload:
 
 - A kernel launched with `gpuFor` is not ordered after queued kernels: wait
   before mixing the two forms.
-- An `onGpu` kernel is a target without `nowait` that depends on the
-  queue: it runs after the queued kernels and completes at its launch,
-  without a task and a task wait.
+- An `onGpu` kernel waits for the queue where it holds work and runs as a
+  target without `nowait`, which completes at its launch. `gpuWaitAsync`
+  skips its task wait outside threads blocks when nothing was queued since
+  the last wait.
 - An `onGpuQueue` or `onGpuNowait` kernel is queued when the kernel reads
   numbers and pointers from outside only. A kernel that reads an object (a
   view with several fields, an array) completes at its launch, as an

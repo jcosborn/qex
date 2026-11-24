@@ -141,6 +141,7 @@ template gpuFor*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
 template gpuFor*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, body)
 
 var gpuAsyncDep {.exportc.}: int  # orders the gpuForAsync kernels before gpuWaitAsync
+var gpuQueued = false  # a gpuForAsync kernel may wait in the queue: exact outside threads blocks
 
 template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
   ## gpuFor returning before the kernel completes; gpuWaitAsync waits for it.
@@ -149,11 +150,16 @@ template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
   let gpuN = int(n)
   for i in `||`(0, gpuN-1, gpuC):
     body
+  gpuQueued = true
 template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) = gpuForAsync(i, n, 0, body)
 
 template gpuWaitAsync* =
+  ## a task wait for the queued kernels, skipped outside threads blocks
+  ## where none was queued since the last wait
   discard addr(gpuAsyncDep)
-  {.emit: "#pragma omp taskwait depend(inout:gpuAsyncDep)".}
+  if numThreads > 1 or gpuQueued:
+    {.emit: "#pragma omp taskwait depend(inout:gpuAsyncDep)".}
+    gpuQueued = false
 
 template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
   ## r[k] += v atomically, in kernels
@@ -197,12 +203,15 @@ proc ompPlain(t: NimNode; depth = 0): bool =
 
 template gpuForSync(i: untyped; n: SomeInteger; sub: static int; body: untyped) =
   ## gpuFor for a kernel that completes at the launch after the queued
-  ## kernels, by the dependence of the queue, without a task wait: a kernel
-  ## of onGpu, or a queued one that reads objects.  Objects go to the kernel
-  ## by value, which icx does for a kernel that completes at the launch (a
-  ## mapped object costs ten times the launch: 270 against 25 us on PVC).
-  discard addr(gpuAsyncDep)  # declares it in the C file of the caller
-  const gpuC = "target teams distribute parallel for " & gpuForClause & gpuSubClause(sub) & " defaultmap(firstprivate:aggregate) depend(inout:gpuAsyncDep)"
+  ## kernels: a wait where the queue holds work, then a target without
+  ## nowait and without depend, which costs the host less than a target
+  ## that depends on the queue (on PVC 0.5 to 1.2 us less per application
+  ## of the staggered operator at 16^4).  The kernels of onGpu, and the
+  ## queued ones that read objects.  Objects go to the kernel by value,
+  ## which icx does for a kernel that completes at the launch (a mapped
+  ## object costs ten times the launch: 270 against 25 us on PVC).
+  gpuWaitAsync()
+  const gpuC = "target teams distribute parallel for " & gpuForClause & gpuSubClause(sub) & " defaultmap(firstprivate:aggregate)"
   let gpuN = int(n)
   for i in `||`(0, gpuN-1, gpuC):
     body
