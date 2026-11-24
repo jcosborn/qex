@@ -219,13 +219,13 @@ The CPU backend is the development platform and a target of its own.
   whole SIMD sites.
 - A `gpuFor` loop is shared by the host threads when one thread calls it
   outside a `threads:` block; inside one the calling thread runs it.
-- The staggered operator with links of 18 reals and the update of its CG
-  compute on hardware vectors. `-d:gpuSimd=false` runs every kernel lane by
+- The staggered operator with links of 18 or 14 reals and the update of its
+  CG compute on hardware vectors. `-d:gpuSimd=false` runs every kernel lane by
   lane: the reference of the SIMD forms, equal bit for bit where the
   compiler keeps the order of the arithmetic and `fmadd` rounds once.
-- `fmadd` of vectors is the fused instruction where the SIMD list of the
-  build has `FMA` (`simd = "auto"` finds it). Without the instruction the
-  vectors round twice and the numbers once.
+- `fmadd` of vectors is the fused instruction where the C target has it
+  (`-march=native` on a host with FMA). Without the instruction the vectors
+  round twice and the numbers, through libm, once.
 - Device memory is host memory, the queue is empty, and every halo message
   uses QMP.
 - A kernel that compiles here can still fail on a device: the rules of this

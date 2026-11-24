@@ -380,13 +380,13 @@ proc load[T](m: var array[18,T]; u: ptr UncheckedArray[T]; o, st: int; e: T; nl:
   else:
     type M = T
     when r64:
-      type R = float64
+      type R = (when T is SomeNumber: float64 else: gpuElem(float64, numNumbers(T)))
     else:
       type R = M
     forStatic i, 0, 11: m[i] = u[o + i*st]
     when nl == 14:
-      let dr = R(u[o + 12*st])
-      let di = R(u[o + 13*st])
+      let dr = gpuTo(R, u[o + 12*st])
+      let di = gpuTo(R, u[o + 13*st])
     forStatic b, 0, 2:
       const b1 = (b+1) mod 3
       const b2 = (b+2) mod 3
@@ -398,17 +398,18 @@ proc load[T](m: var array[18,T]; u: ptr UncheckedArray[T]; o, st: int; e: T; nl:
         let xr = fmadd(-m[2*b1+1],m[7+2*b2],cr)
         let xi = -fmadd(m[2*b1+1],m[6+2*b2],ci)
       else:
-        let xr = R(m[2*b1])*R(m[6+2*b2]) - R(m[2*b1+1])*R(m[7+2*b2]) - R(m[2*b2])*R(m[6+2*b1]) + R(m[2*b2+1])*R(m[7+2*b1])
-        let xi = R(m[2*b2])*R(m[7+2*b1]) + R(m[2*b2+1])*R(m[6+2*b1]) - R(m[2*b1])*R(m[7+2*b2]) - R(m[2*b1+1])*R(m[6+2*b2])
+        template r(k: int): R = gpuTo(R, m[k])
+        let xr = r(2*b1)*r(6+2*b2) - r(2*b1+1)*r(7+2*b2) - r(2*b2)*r(6+2*b1) + r(2*b2+1)*r(7+2*b1)
+        let xi = r(2*b2)*r(7+2*b1) + r(2*b2+1)*r(6+2*b1) - r(2*b1)*r(7+2*b2) - r(2*b1+1)*r(6+2*b2)
       when nl == 12:
-        m[12+2*b] = M(R(e)*xr)
-        m[13+2*b] = M(R(e)*xi)
+        m[12+2*b] = gpuTo(M, gpuTo(R, e)*xr)
+        m[13+2*b] = gpuTo(M, gpuTo(R, e)*xi)
       elif fm:
         m[12+2*b] = fmadd(-xi,di,xr*dr)
         m[13+2*b] = fmadd(xi,dr,xr*di)
       else:
-        m[12+2*b] = M(dr*xr - di*xi)
-        m[13+2*b] = M(dr*xi + di*xr)
+        m[12+2*b] = gpuTo(M, dr*xr - di*xi)
+        m[13+2*b] = gpuTo(M, dr*xi + di*xr)
 
 proc hopm[N: static int; T](acc: var array[N,T]; m: array[18,T]; v: array[6,T]; j: static int; f: static bool) {.gpuInline, instShell.} =
   ## acc_j += m v, m of 18 reals, v the 6 reals of system j; with f by cmac
@@ -505,9 +506,10 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
   ## With nowait, returns before the kernel completes; gpuWaitAsync waits
   ## for it.
   ## A kernel index stands for W lanes (backend/accel): one on a device.  On
-  ## the CPU the forward links of 18 reals run on SIMD vectors, with the
-  ## tables of the outer sites and a pack of d in place of the stores of
-  ## send; the other link forms run lane by lane.
+  ## the CPU the forward links of 18 and 14 reals run on SIMD vectors, with
+  ## the tables of the outer sites and a pack of d in place of the stores of
+  ## send; links of 12 reals, whose sign differs between the lanes of a
+  ## neighbor table, and both link caches run lane by lane.
   let fx = s.fixed
   let xa = s.sx.a
   let xs = s.sx.s
@@ -527,7 +529,7 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
   let dT = d
   template kern(nl: static int; fw, r64, fm: static bool) =
     block:
-      const W = when nl == 18 and fw: gpuLanes(T, V) else: 1
+      const W = when nl != 12 and fw: gpuLanes(T, V) else: 1  # 12 reals: a sign per lane
       const VE = V div W  # elements per real of an outer site
       type E = gpuElem(T, W)
       type F {.used.} = gpuElem(float, W)
