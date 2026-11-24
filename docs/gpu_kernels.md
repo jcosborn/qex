@@ -251,6 +251,13 @@ Rules from measurements on H100, MI300X and PVC.
 - Write a product that two code paths must round alike with `fmadd`. A
   compiler that contracts one path and not the other lets halo copies drift
   from their owners.
+- Write `a*y + b*x` as `fmadd(a, y, b*x)` where results should not depend
+  on the compiler. clang, nvcc and icpx chose which product to fuse by the
+  code around the kernel: moving the staggered hop from `gpuFor` to `onGpu`
+  changed the CG residuals in the last bits.
+- A kernel reads its captured values in place, as locals of the launch.
+  Copies at the start of a kernel made nvcc hold them in ordinary registers
+  and the staggered hop 2.5 to 4% slower on H100 and GH200.
 - A copy to the host that waits costs 7 to 11 us after a kernel; queue it
   behind the kernels with `gpuMemCpyToCpuAsync` and wait once.
 - One atomic add per term to few slots makes short kernels wait; give
