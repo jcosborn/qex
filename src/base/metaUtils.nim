@@ -707,47 +707,49 @@ proc checkCopy(call, impl: NimNode) =
   if namesParam(impl.body, names):
     error($call.callName & " names a parameter in the text of an emit" & fix, call)
 
+proc callImpl(it: NimNode): NimNode =
+  ## the implementation of the routine or type that the call it names, nil
+  ## for other nodes
+  if it.kind in CallNodes and it.callName.kind == nnkSym: it.callName.getImpl else: nil
+
+proc copied(impl: NimNode): bool =
+  ## whether inlineProcs copies the body of the routine impl into a kernel:
+  ## calls through proc variables (outOfMemHook) stay calls, so do procs
+  ## marked for kernels (gpuInline, gpuCall of base/basicOps)
+  impl.kind in RoutineNodes and impl.isNotMagic and not impl.systemProc and
+    not impl.hasPragma(["gpuProc"]) and
+    impl.body.kind!=nnkEmpty and
+    impl.kind != nnkIteratorDef and
+    (impl.kind != nnkTemplateDef or $impl.params[0] != "typedesc")
+
 proc inlineProcsX(body: NimNode): NimNode =
-  # echo ">>>>>> inlineProcsX"
-  # echo body.repr
   proc recurse(it: NimNode): NimNode =
     if it.kind == nnkTypeOfExpr: return it.copyNimTree
     if it.kind in RoutineNodes: return it.copyNimTree  # local templates: their uses are expanded
-    if it.kind in CallNodes and it.callName.kind==nnkSym:
-      let procImpl = it.callName.getImpl
-      # echo "inspecting call"
-      # echo it.lisprepr
-      # echo procImpl.repr
-      # echo isMagic(procImpl)
-      if procImpl.kind == nnkTypeDef: return it.copyNimTree
-      # calls through proc variables (outOfMemHook) stay calls
-      # so do procs marked for kernels (gpuInline, gpuCall of base/basicOps)
-      if procImpl.kind in RoutineNodes and not procImpl.systemProc and procImpl.isNotMagic and
-          not procImpl.hasPragma(["gpuProc"]) and
-          procImpl.body.kind!=nnkEmpty and
-          procImpl.kind != nnkIteratorDef and
-          (procImpl.kind != nnkTemplateDef or $procImpl.params[0] != "typedesc"):
-        checkCopy(it, procImpl)
-        #echo "inspecting call"
-        #echo procImpl.repr
-        #echo procImpl.kind
-        #echo procImpl.params[0].treerepr
-        return recurse inlineProcsY(it, procImpl)
+    let impl = callImpl(it)
+    if impl != nil:
+      if impl.kind == nnkTypeDef: return it.copyNimTree
+      if copied(impl):
+        checkCopy(it, impl)
+        return recurse inlineProcsY(it, impl)
     result = copyNimNode(it)
     for c in it: result.add recurse c
   result = recurse(body)
-  # echo "<<<<<< inlineProcsX"
-  # echo result.repr
+
+proc hasInlined(it: NimNode): bool =
+  ## whether inlineProcsX copies a body somewhere in it
+  if it.kind == nnkTypeOfExpr or it.kind in RoutineNodes: return false
+  let impl = callImpl(it)
+  if impl != nil:
+    if impl.kind == nnkTypeDef: return false
+    if copied(impl): return true
+  for c in it:
+    if hasInlined(c): return true
 
 macro inlineProcs*(body: typed): auto =
-  # echo ">>>>>> inlineProcs:"
-  # echo body.repr
-  # echo body.treerepr
-  #result = body
-  result = rebuild inlineProcsX body
-  # echo "<<<<<< inlineProcs:"
-  # echo result.repr
-  # echo result.treerepr
+  ## body with the calls of unmarked routines replaced by their bodies; the
+  ## typed body as it is where there is none
+  result = if hasInlined(body): rebuild inlineProcsX body else: body
 
 proc symToIdent*(x: NimNode): NimNode =
   case x.kind:
