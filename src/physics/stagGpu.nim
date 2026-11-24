@@ -556,8 +556,10 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
       let rb = cast[ptr UncheckedArray[E]](rb)
       let rs {.used.} = cast[ptr UncheckedArray[F]](rs)
       template launch(body: untyped) =
-        when nowait: onGpuQueue(nk div W, body)
-        else: onGpu(nk div W, body)
+        # nothing to copy back: the queue form, and a wait for the synchronous
+        # hop, which saves the host time of a finalizer
+        onGpuQueue(nk div W, body)
+        when not nowait: gpuWaitAsync()
       launch:
         template fetch(v, j: untyped) =
           if j < n:
