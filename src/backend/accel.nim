@@ -36,37 +36,49 @@ proc displayName*[T](x: typedesc[ptr UncheckedArray[T]]): string =
 
 
 
+template sharesMem(G, C: typedesc): bool =
+  ## Values of C in host memory serve as their device copies of type G: no
+  ## table entry, no copy.
+  beSharedMem and G is C
+
 proc toGpu*[T](x: seq[T]): auto =
   mixin gpuType, toGpu, displayName
   var g: GpuSeq[gpuType(T)]
   g.n = x.len
-  let t = displayName(typeof(g[0]))
-  pushGpuMemTag("Seq" & t)
-  let pgm = getGpuMem(addr x[0], g.bytes)
-  popGpuMemTag()
-  g.p = cast[typeof g.p](pgm.p)
-  g.toGpu(x, pgm)
+  when sharesMem(gpuType(T), T):
+    g.p = cast[typeof g.p](addr x[0])
+  else:
+    let t = displayName(typeof(g[0]))
+    pushGpuMemTag("Seq" & t)
+    let pgm = getGpuMem(addr x[0], g.bytes)
+    popGpuMemTag()
+    g.p = cast[typeof g.p](pgm.p)
+    g.toGpu(x, pgm)
   g
 
 template getGpu*(x: seq, g: GpuSeq): auto = g
 
-proc fromGpu*(x: var seq, g: GpuSeq) =
+proc fromGpu*[C,G](x: var seq[C], g: GpuSeq[G]) =
   #when backendIsGpu:
   #  for i in 0..<x.len:
   #    x[i].fromGpu(g[i])
   #x.copyFromGpu(g)
-  let pgm = getGpuMem(addr x[0], g.bytes)
-  fromGpu(x, g, pgm)
+  when not sharesMem(G, C):
+    let pgm = getGpuMem(addr x[0], g.bytes)
+    fromGpu(x, g, pgm)
 
 proc toGpu*[G,C](g: var GpuSeq[G], x: seq[C]) =
   mixin toGpu, displayName
   g.n = x.len
-  let t = displayName(typeof(g[0]))
-  pushGpuMemTag("Seq" & t)
-  let pgm = getGpuMem(addr x[0], g.bytes)
-  popGpuMemTag()
-  g.p = cast[typeof g.p](pgm.p)
-  g.toGpu(x, pgm)
+  when sharesMem(G, C):
+    g.p = cast[typeof g.p](addr x[0])
+  else:
+    let t = displayName(typeof(g[0]))
+    pushGpuMemTag("Seq" & t)
+    let pgm = getGpuMem(addr x[0], g.bytes)
+    popGpuMemTag()
+    g.p = cast[typeof g.p](pgm.p)
+    g.toGpu(x, pgm)
 
 proc toGpu*[T:SomeNumber](g: var GpuSeq[T], c: seq[T], pgm: ptr GpuMem) =
   #if pgm.needsCopyIn:
@@ -95,11 +107,14 @@ proc fromGpu*[C,G](c: var seq[seq[C]], g: GpuSeq[ptr UncheckedArray[G]], pgm: pt
 
 proc toGpu*[T:SomeNumber](g: var ptr UncheckedArray[T], x: seq[T]) =
   mixin toGpu
-  pushGpuMemTag("Ptr"&capitalizeAscii(displayName(T)))
-  let pgm = getGpuMem(addr x[0], x.bytes)
-  popGpuMemTag()
-  g = cast[typeof g](pgm.p)
-  g.toGpu(x, pgm)
+  when beSharedMem:
+    g = cast[typeof g](addr x[0])
+  else:
+    pushGpuMemTag("Ptr"&capitalizeAscii(displayName(T)))
+    let pgm = getGpuMem(addr x[0], x.bytes)
+    popGpuMemTag()
+    g = cast[typeof g](pgm.p)
+    g.toGpu(x, pgm)
 
 proc toGpu*[T:SomeNumber](g: var ptr UncheckedArray[T], c: seq[T], pgm: ptr GpuMem) =
   #if pgm.needsCopyIn:
@@ -108,23 +123,31 @@ proc toGpu*[T:SomeNumber](g: var ptr UncheckedArray[T], c: seq[T], pgm: ptr GpuM
 
 proc fromGpu*[T:SomeNumber](c: var seq[T], g: ptr UncheckedArray[T]) =
   mixin fromGpu
-  let pgm = getGpuMem(addr c[0])
-  pgm.copyOut(addr c[0])
+  when not beSharedMem:
+    let pgm = getGpuMem(addr c[0])
+    pgm.copyOut(addr c[0])
 
-proc fromGpu*(x: var seq) =
-  let pgm = getGpuMem(addr x[0])
-  pgm.copyOut(addr x[0])
+proc fromGpu*[C](x: var seq[C]) =
+  mixin gpuType
+  when not sharesMem(gpuType(C), C):
+    let pgm = getGpuMem(addr x[0])
+    pgm.copyOut(addr x[0])
 
 
-proc toGpu*(g: var GpuSeq, c: alignedMem) =
+proc toGpu*[G,C](g: var GpuSeq[G], c: alignedMem[C]) =
   g.n = c.len
-  let pgm = getGpuMem(addr c[0], g.bytes)
-  g.p = cast[typeof g.p](pgm.p)
-  pgm.copyIn(addr c[0])
+  when sharesMem(G, C):
+    g.p = cast[typeof g.p](addr c[0])
+  else:
+    let pgm = getGpuMem(addr c[0], g.bytes)
+    g.p = cast[typeof g.p](pgm.p)
+    pgm.copyIn(addr c[0])
 
-proc fromGpu*(c: var alignedMem) =
-  let pgm = getGpuMem(addr c[0])
-  pgm.copyOut(addr c[0])
+proc fromGpu*[C](c: var alignedMem[C]) =
+  mixin gpuType
+  when not sharesMem(gpuType(C), C):
+    let pgm = getGpuMem(addr c[0])
+    pgm.copyOut(addr c[0])
 
 template fromGpu*(c: var alignedMem, g: GpuSeq) = fromGpu(c)
 
