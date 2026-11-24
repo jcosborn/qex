@@ -231,6 +231,7 @@ type KernelCap* = object
   shadow*: NimNode  ## the device values under the names of the host variables: locals of the launch on a device, which the kernel captures and reads in place; the first statements of the kernel with the CPU backend
   pairs*: NimNode   ## ((hostPtr(x), device value), ...) for the finalizer (hostBack)
   queued*: NimNode  ## for a launch without finalizer: stops the compile for a variable that needs one
+  copies*: NimNode  ## whether the finalizer copies something back: a variable got its device value from toGpu
 
 proc names(n: NimNode; ids: HashSet[string]; syms: seq[NimNode]): bool =
   ## whether n names something that the body declares
@@ -312,6 +313,7 @@ proc kernelCap*(body0: NimNode; n: NimNode = nil): KernelCap =
   result.shadow = newStmtList()
   result.pairs = newNimNode(nnkTupleConstr)
   result.queued = newStmtList()
+  result.copies = newLit(false)
   # g: the device value, a: the host type where toGpu gave g, l: g in the kernel
   template value(h, g, a: untyped) =
     when compiles(gpuIsVar(h)):
@@ -346,6 +348,7 @@ proc kernelCap*(body0: NimNode; n: NimNode = nil): KernelCap =
     result.shadow.add getAst(shadow(h, g, a))
     result.pairs.add getAst(pair(h, g, a))
     result.queued.add getAst(stays(a, newLit(name)))
+    result.copies = infix(result.copies, "or", newCall(ident"declared", a))
   for k, h in caps:
     let s = h.strVal & "_" & $k
     let g = ident("gpuDev_" & s)
@@ -354,6 +357,7 @@ proc kernelCap*(body0: NimNode; n: NimNode = nil): KernelCap =
     result.shadow.add getAst(shadow(ident("gpuLoc_" & s), g, a))
     result.pairs.add getAst(pair(h, g, a))
     result.queued.add getAst(stays(a, newLit(h.strVal)))
+    result.copies = infix(result.copies, "or", newCall(ident"declared", a))
 
 when isMainModule:
   template test(x) =

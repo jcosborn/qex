@@ -165,11 +165,11 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
   ## values of the variables that body names (backend/expr), locals of the
   ## launch that the kernel reads in place.  fin: 0 queues the kernel, 1
   ## gives the finalizer, which waits for the device and copies back, 2 does
-  ## that at once.
+  ## that at once (a wait only where nothing is copied back).
   let li = body.lineinfo
   let lis = li.split({'/','.','(',','})
   let fl = lis[^4] & "(" & lis[^2] & ")"
-  template target(fl, n, sub, pre, shadow, hostPairs, queued, body, fin: untyped): untyped =
+  template target(fl, n, sub, pre, shadow, hostPairs, queued, copies, body, fin: untyped): untyped =
     mixin toGpu, getGpu, fromGpu, gpuSites
     inc kernelCallCount  # increment before setup
     block:
@@ -178,7 +178,7 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
       let gpuNt {.inject.} = int(gpuSites(n))
       gpuLaunchThreads = gpuNt
       pre  # the device values
-      when fin > 0:
+      when fin == 1 or (fin == 2 and copies):
         let hp = hostPairs  # before the kernel values take the names of the host variables
       shadow  # the kernel values: locals of the launch that the kernel captures and reads in place
       toc("cpuPrepare")
@@ -190,10 +190,16 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
       toc("launch")
       inc kernelCallCount  # increment after launch
       when fin == 1: gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
-      elif fin == 2: gpuFinish(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+      elif fin == 2:
+        when copies: gpuFinish(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+        else:
+          if numThreads > 1:
+            threadSingle: gpuWaitAsync()
+          else: gpuWaitAsync()
+          toc("wait", flops=(when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0))
       else: queued
   let c = kernelCap(body, n)
-  result = getast(target(fl, n, newLit(sub), c.pre, c.shadow, c.pairs, c.queued, c.body, newLit(fin)))
+  result = getast(target(fl, n, newLit(sub), c.pre, c.shadow, c.pairs, c.queued, c.copies, c.body, newLit(fin)))
   case dumpKernels
   of 1:
     echo li

@@ -97,11 +97,11 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
   ## the team meets at a barrier after the kernel, so that each thread finds
   ## it complete on return.  n, the thread count of the devices, does not
   ## apply.  fin: 0 copies nothing back, 1 gives the finalizer, which copies
-  ## back, 2 copies back at once.
+  ## back, 2 copies back at once where there is something to copy.
   let li = body.lineinfo
   let lis = li.split({'/','.','(',','})
   let fl = lis[^4] & "(" & lis[^2] & ")"
-  template target(fl, pre, shadow, hostPairs, queued, body, fin: untyped) =
+  template target(fl, pre, shadow, hostPairs, queued, copies, body, fin: untyped) =
     mixin toGpu, getGpu, fromGpu
     inc kernelCallCount  # increment before setup
     block:
@@ -134,15 +134,15 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
       else:
         toc("wait")
       inc kernelCallCount  # increment after launch
-      when fin > 0:
+      when fin == 1 or (fin == 2 and copies):
         let hp = hostPairs
       when fin == 1: gpuFinalizer(fl, thisKernelCallCount, hp, hostBack(hp))
-      elif fin == 2: gpuFinish(fl, thisKernelCallCount, hp, hostBack(hp))
+      elif fin == 2 and copies: gpuFinish(fl, thisKernelCallCount, hp, hostBack(hp))
       else:
-        queued
+        when fin == 0: queued
         if numThreads > 1: threadBarrier()
   let c = kernelCap(body)
-  result = getast(target(fl, c.pre, c.shadow, c.pairs, c.queued, c.body, newLit(fin)))
+  result = getast(target(fl, c.pre, c.shadow, c.pairs, c.queued, c.copies, c.body, newLit(fin)))
   case dumpKernels
   of 1:
     echo li
