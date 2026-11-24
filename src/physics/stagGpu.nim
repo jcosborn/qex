@@ -598,17 +598,11 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
                 hop(acc, lf, nl*mu*n + ko, v, VE, e, nl, r64, fm)
               elif fw:
                 if j < n:
-                  when W == 1: hopA(acc, lf, nl*mu*n + uo(VE, j, nl), v, VE, e, nl, r64, fm)
-                  else:
-                    # U and v are in the lanes of the neighbor: swap U^+ v,
-                    # 6 vectors in place of the 24 of U and v
-                    if pw == 0: hopA(acc, lf, nl*mu*n + uo(VE, j, nl), v, VE, e, nl, r64, fm)
-                    else:
-                      var w {.noInit.}: array[6,E]
-                      forStatic c, 0, 5: w[c] = gpuTo(E, 0)
-                      hopA(w, lf, nl*mu*n + uo(VE, j, nl), v, VE, e, nl, r64, fm)
-                      swapLanes(w, pw)
-                      forStatic c, 0, 5: acc[c] += w[c]
+                  # U and v are in the lanes of the neighbor: for this hop
+                  # acc is too, 6 vectors to swap in place of the 24 of U, v
+                  swapLanes(acc, pw)
+                  hopA(acc, lf, nl*mu*n + uo(VE, j, nl), v, VE, e, nl, r64, fm)
+                  swapLanes(acc, pw)
                 else: hopA(acc, lh, lhAt(VE, j-n, nl), v, lhSt(VE, nr), e, nl, r64, fm)
               else: hopA(acc, lb, nl*mu*n + ko, v, VE, e, nl, r64, fm)
           let yo = vo(VE, k)
