@@ -172,9 +172,9 @@ macro gpuIsVar*(x: typed): untyped =
   newLit(r)
 
 proc gpuArg*[T](t: typedesc[T]): T {.importc: "QEX_HOST_VALUE_IN_KERNEL", nodecl.}
-  ## Stands for the host variable in getGpu(x, g) inside a kernel, where the
-  ## name of x is the device value: getGpu selects on its type and must not
-  ## evaluate it (the C compiler stops on the name).
+  ## Stands for the host variable in getGpu(x, g) where the name of x becomes
+  ## the device value: getGpu selects on its type and must not evaluate it
+  ## (the C compiler stops on the name).
 
 template gpuSel*(h, l: untyped): untyped =
   ## in a kernel: the device value l of the host variable h where the launch
@@ -228,7 +228,7 @@ template gpuQueued*(T: typedesc; name: static string) =
 type KernelCap* = object
   body*: NimNode    ## the body, its outer variable symbols as gpuSel calls
   pre*: NimNode     ## before the launch: the device values
-  shadow*: NimNode  ## first in the kernel: the device values under the names of the host variables
+  shadow*: NimNode  ## the device values under the names of the host variables: locals of the launch on a device, which the kernel captures and reads in place; the first statements of the kernel with the CPU backend
   pairs*: NimNode   ## ((hostPtr(x), device value), ...) for the finalizer (hostBack)
   queued*: NimNode  ## for a launch without finalizer: stops the compile for a variable that needs one
 

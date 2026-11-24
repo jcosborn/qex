@@ -173,17 +173,18 @@ macro gpuKernel(fin: static bool; n, body: untyped): untyped =
       let gpuNt {.inject.} = int(gpuSites(n))
       gpuLaunchThreads = gpuNt
       pre  # the device values
+      when fin:
+        let hp = hostPairs  # before the kernel values take the names of the host variables
+      shadow  # the kernel values: locals of the launch that the kernel captures and reads in place
       toc("cpuPrepare")
       threadSingle:
         gpuForAsync(gpuTn, gpuNt):
           const inOnGpu {.inject,used.} = true
-          shadow
           inlineProcs:
             body
       toc("launch")
       inc kernelCallCount  # increment after launch
       when fin:
-        let hp = hostPairs
         gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
       else:
         queued
