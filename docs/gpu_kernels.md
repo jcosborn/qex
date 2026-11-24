@@ -223,7 +223,7 @@ The CPU backend is the development platform and a target of its own.
 - A `gpuFor` loop is shared by the host threads when one thread calls it
   outside a `threads:` block; inside one the calling thread runs it.
 - The staggered operator with links of 18 or 14 reals and the update of its
-  CG compute on hardware vectors. `-d:gpuSimd=false` runs every kernel lane by
+  CG compute on hardware vectors, for one system and for several at once. `-d:gpuSimd=false` runs every kernel lane by
   lane: the reference of the SIMD forms, equal bit for bit where the
   compiler keeps the order of the arithmetic and `fmadd` rounds once.
 - `fmadd` of vectors is the fused instruction where the C target has it
