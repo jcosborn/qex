@@ -69,6 +69,22 @@ lane and the SIMD type for a whole site. Kernel math written with the QEX
 types (`Color`, vectors, matrices) and their operations compiles for both.
 `gpuType(T)` is the device form of the element type `T`.
 
+Kernels on arrays of reals, as those of the staggered operator, take an
+element type instead. A kernel index stands for `W = gpuLanes(T, V)` lanes
+of an outer site: one on a device, a hardware vector with the CPU backend.
+With `E = gpuElem(T, W)` and `VE = V div W`, real `c` of index `k` of a
+field with `NC` reals per site is at
+
+    (k div VE)*(NC*VE) + c*VE + k mod VE
+
+of the field memory read as an array of `E`: the layout of the lanes with
+`(E, VE)` for `(T, V)`. `gpuTo(E, x)` gives a number, or a value of the
+other precision, in `E`. A kernel written over `E` and `VE` is lane code on
+a device and SIMD code on the CPU. Neighbors are the part that differs:
+a table per outer site names the outer site of the neighbors and the swap
+of its lanes (`perm`), see `dslash` of
+[`physics/stagGpu`](../src/physics/stagGpu.nim).
+
 ## What a body may name
 
 The launch captures every outer variable that the body names:
@@ -203,6 +219,13 @@ The CPU backend is the development platform and a target of its own.
   whole SIMD sites.
 - A `gpuFor` loop is shared by the host threads when one thread calls it
   outside a `threads:` block; inside one the calling thread runs it.
+- The staggered operator with links of 18 reals and the update of its CG
+  compute on hardware vectors. `-d:gpuSimd=false` runs every kernel lane by
+  lane: the reference of the SIMD forms, equal bit for bit where the
+  compiler keeps the order of the arithmetic and `fmadd` rounds once.
+- `fmadd` of vectors is the fused instruction where the SIMD list of the
+  build has `FMA` (`simd = "auto"` finds it). Without the instruction the
+  vectors round twice and the numbers once.
 - Device memory is host memory, the queue is empty, and every halo message
   uses QMP.
 - A kernel that compiles here can still fail on a device: the rules of this

@@ -112,6 +112,10 @@ A site `k` and real component `c` have vector offset
 The pointer interface to `solveM` requires storage for all `6*n` reals of
 the solution, even when the source is restricted to even sites.
 
+The pointer interface takes device memory, as `gpuMalloc` gives it: with
+the CPU backend that is host memory aligned to 64 bytes, which the kernels
+read as SIMD vectors.
+
 `solveM` source and destination device buffers are disjoint from each other
 and from the operator's work vectors. An instance's scratch and exchanges serve one
 solve at a time. Copies of a `StagGpu` share its allocations; release the
@@ -140,7 +144,8 @@ A backward hop takes the adjoint of the reconstructed forward matrix;
 independently compressing its adjoint would define a different operator.
 With `fwd=1`, only forward links are stored, and backward hops fetch the
 neighbor's link. `fwd=0` stores both caches. Automatic selection (`-1`)
-uses forward storage when both caches would exceed 128 MiB.
+uses forward storage when both caches would exceed 128 MiB, and always with
+the CPU backend, where the second cache costs a third more memory traffic.
 
 Compressed FP32 links have two optional reconstruction modes:
 

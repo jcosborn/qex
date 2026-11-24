@@ -63,7 +63,7 @@ type
     n*, ne*: int  # local sites, even sites
     nl*: int  # reals per link: 18, or 12 or 14 with row 2 rebuilt in the kernels
     lf*, lb*: ptr UncheckedArray[T]  # [4][n div V][nl][V]: U_mu(x), U_mu(x-mu) or nil, both in forward orientation
-    lh*: array[2, ptr UncheckedArray[T]]  # without lb, [nl][s.ex[1-q].nrecv]: forward U_mu(x-mu) at the receive position of a remote x-mu, x of parity q
+    lh*: array[2, ptr UncheckedArray[T]]  # without lb, [nl][s.ex[1-q].nrecv]: forward U_mu(x-mu) at the receive position of a remote x-mu, x of parity q; on the CPU backend in the layout of a link field, see lhAt
     nbr*: ptr UncheckedArray[int32]  # [8][n]: x+mu, then x-mu, with the link signs for nl = 12
     ex*: array[2, GpuHaloEx[T]]  # exchange of the sites of each parity
     red*: ptr UncheckedArray[float]  # [2][ne] dot products of the sites for sumFixed, then its workspace
@@ -72,6 +72,7 @@ type
     rh*, sh*: ptr UncheckedArray[T]  # CG halo copies of r and s, as s.ex[0].rbuf
     ord*: ptr UncheckedArray[int32]  # even sites, the ones with remote neighbors first, then the nin with local ones only
     nin*: int
+    nbo*, ordo*: ptr UncheckedArray[int32]  # CPU backend, for kernels on SIMD vectors: [8][n div V] neighbors of the outer sites as V e + p, e the outer site (halo sites from n div V on) whose lane l xor p is the neighbor of lane l; ord by outer sites
     split*: bool  # second hop of the CG in two kernels around the exchange of t
     fixed*: bool  # the CG sums its dot products in a fixed order (sumFixed), else exactly (SumX); both repeat bit for bit
     sx*, sxB*: SumX  # the exact dot products of one system and of the nBatch systems
@@ -122,6 +123,15 @@ template vo(V, k: untyped): untyped =
 template uo(V, k, nl: untyped): untyped =
   ## real 0 of site k in a link field, real e is e*V further
   (k div V)*(nl*V) + k mod V
+
+template lhAt(V, p, nl: untyped): untyped =
+  ## real 0 of the halo link at receive position p of s.lh; real e is e
+  ## times lhSt further.  On the CPU backend the exchanges of a StagGpu keep
+  ## their halo as sites, and so does s.lh.
+  when backendIsCpu: uo(V, p, nl) else: p
+
+template lhSt(V, nr: untyped): untyped =
+  when backendIsCpu: V else: nr
 
 template mdet(dr, di, m: untyped) =
   ## dr + i di = det m = sum_b m_2b (row 0 x row 1)_b, m as for load
@@ -174,11 +184,14 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
     offs.add off
     off[mu] = 0
   var nb = newSeq[int32](2*nd*n)
+  var nbo = newSeq[int32](if backendIsCpu: 2*nd*no else: 0)
   for p in 0..1:  # parity of the sites sent
     let hm = hl.makeHaloMap(c, offs, p, sites = false)
-    result.ex[p] = newGpuHaloEx[T](hm.gather, 6, n, V, c)
-    if batch: result.exB[p] = newGpuHaloEx[T](hm.gather, 6*nBatch, n, V, c)
-    let src = hl.haloSource(hm.gather)
+    result.ex[p] = newGpuHaloEx[T](hm.gather, 6, n, V, c, sites = true)
+    if batch: result.exB[p] = newGpuHaloEx[T](hm.gather, 6*nBatch, n, V, c, sites = true)
+    let src = hl.haloSource(hm.gather, sites = true)
+    when backendIsCpu:
+      let hp = haloSites(hm.gather, V)
     let q = 1 - p
     let o0 = if q == 0: 0 else: lo.nEvenOuter
     let o1 = if q == 0: lo.nEvenOuter else: no
@@ -188,12 +201,42 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
           let e = int(if fb == 0: hl.neighborFwd[mu][o] else: hl.neighborBck[mu][o])
           for l in 0..<V:
             nb[(fb*nd+mu)*n + V*o + l] = if e < no: int32(V*e + l) else: src[V*(e-no) + l]
+          when backendIsCpu:
+            # the outer site with the neighbors of all lanes: a site of the
+            # halo of the exchange, or a local one, with its lanes swapped
+            # where the halo site copies this rank
+            if e >= no and hp[V*(e-no)] >= 0:
+              nbo[(fb*nd+mu)*no + o] = int32(n + hp[V*(e-no)])
+            else:
+              let j0 = int nb[(fb*nd+mu)*n + V*o]
+              let pm = j0 mod V
+              var ok = (pm and (pm-1)) == 0  # one swap, which perm does
+              for l in 0..<V:
+                ok = ok and int(nb[(fb*nd+mu)*n + V*o + l]) == (j0 div V)*V + (pm xor l)
+              if not ok:
+                qexError("newStagGpu: the neighbors of the lanes of outer site ", o, " are no outer site with one swap of its lanes")
+              nbo[(fb*nd+mu)*no + o] = int32 j0
   var ord, bnd: seq[int32]
-  for k in 0..<result.ne:
-    var rem = false
-    for d in 0..<2*nd: rem = rem or nb[d*n + k] >= n
-    if rem: bnd.add int32(k) else: ord.add int32(k)
-  result.nin = ord.len
+  when backendIsCpu:
+    # by outer sites, for the kernels on SIMD vectors: the ones with a
+    # neighbor in the halo of an exchange first
+    var oo, bo: seq[int32]
+    for o in 0..<lo.nEvenOuter:
+      var rem = false
+      for d in 0..<2*nd: rem = rem or nbo[d*no + o] >= n
+      if rem: bo.add int32(o) else: oo.add int32(o)
+    bo.add oo
+    for o in bo:
+      for l in 0..<V: bnd.add int32(V*o + l)
+    result.nin = V*oo.len
+    result.ordo = bo.toDevice
+    result.nbo = nbo.toDevice
+  else:
+    for k in 0..<result.ne:
+      var rem = false
+      for d in 0..<2*nd: rem = rem or nb[d*n + k] >= n
+      if rem: bnd.add int32(k) else: ord.add int32(k)
+    result.nin = ord.len
   result.ord = (bnd & ord).toDevice  # remote neighbors first: the remote stores of a hop drain while the interior computes
   result.split = hopSplit > 0 or hopSplit < 0 and result.nin < result.ne and
                  false in result.ex[1].rpeer
@@ -258,7 +301,8 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
   template lv(i, e: int): float =
     ## real e of link i with nl reals
     if nl == 14 and e >= 12: dt[2*i + e - 12] else: lk[18*i + e]
-  let fw = fwd > 0 or fwd < 0 and 2*nd*nl*n*sizeof(T) > 128 shl 20
+  # the CPU backend reads half the links with the forward ones alone
+  let fw = fwd > 0 or fwd < 0 and (backendIsCpu or 2*nd*nl*n*sizeof(T) > 128 shl 20)
   var lf = newSeq[T](nd*nl*n)
   var lb = newSeq[T](if fw: 0 else: nd*nl*n)
   for mu in 0..<nd:
@@ -275,9 +319,13 @@ proc newStagGpu*[V: static int; E](g: openArray[Field[V,E]]; T: typedesc; reals 
       var lh = newSeq[T](nl*nr)
       for k in (if q == 0: 0 else: result.ne) ..< (if q == 0: result.ne else: n):
         for mu in 0..<nd:
-          let j = int nb[(nd+mu)*n + k]
+          when backendIsCpu:  # every lane of a halo site, for the kernels on SIMD vectors
+            let eo = int(nbo[(nd+mu)*no + k div V]) div V
+            let j = if eo >= no: V*eo + k mod V else: 0
+          else:
+            let j = int nb[(nd+mu)*n + k]
           if j >= n:
-            for e in 0..<nl: lh[e*nr + j-n] = T(lv((nd + mu)*n + k, e))
+            for e in 0..<nl: lh[lhAt(V, j-n, nl) + e*lhSt(V, nr)] = T(lv((nd + mu)*n + k, e))
       result.lh[q] = lh.toDevice
   if nl == 12:
     for i in 0..<nb.len:
@@ -308,6 +356,8 @@ proc free*[V: static int; T](s: var StagGpu[V,T]) =
     if p != nil: gpuFree(p)
   gpuFree(s.nbr)
   gpuFree(s.ord)
+  for p in [s.nbo, s.ordo]:
+    if p != nil: gpuFree(p)
   gpuFree(s.red)
   gpuFreeHost(s.hred)
   s.sx.free
@@ -388,6 +438,15 @@ proc hopAm[N: static int; T](acc: var array[N,T]; m: array[18,T]; v: array[6,T];
       acc[6*j+2*a] -= wr
       acc[6*j+2*a+1] -= wi
 
+template swapLanes(a: untyped; p: int) =
+  ## the elements of the array a with their lanes l and l xor p swapped, for
+  ## p a power of 2 below the lanes of an element, or 0
+  when typeof(a[0]) isnot SomeNumber:
+    if p != 0:
+      for i in 0..<a.len:
+        let t = a[i]
+        perm(a[i], p, t)
+
 template hop(acc, u, o, v, st: untyped; e: untyped; nl: static int; r64: static bool = false; fm: static bool = false) =
   ## acc += U v, U as for load
   var m {.noInit.}: array[18, typeof(acc[0])]
@@ -410,23 +469,30 @@ proc fetchR[T](v: var array[6,T]; rb: ptr UncheckedArray[T]; o, sk, c0: int) {.g
   ## v = reals c0.. of a receive position of rb, at o + c sk
   forStatic c, 0, 5: v[c] = rb[o + (c0+c)*sk]
 
-template dots(i, d, y, yo, st, rs, ne, fx, xa, xs, xst, xw: untyped; normD: static bool) =
-  ## y.y and d.y of even site i, y at y[yo + c*st]: with fx at rs[i] and
-  ## rs[ne + i], else added to sums 0 and 1 of the SumX xa of xs slots
-  var yy = 0.0
-  var dy = 0.0
+template dots(i, d, y, yo, st, rs, ne, fx, xa, xs, xst, xw: untyped; normD: static bool; F: typedesc) =
+  ## y.y and d.y of even site i, y at y[yo + c*st], in the element type F of
+  ## doubles: with fx at rs[i] and rs[ne + i], else added lane by lane to
+  ## sums 0 and 1 of the SumX xa of xs slots
+  var yy = gpuTo(F, 0)
+  var dy = gpuTo(F, 0)
   forStatic c, 0, 5:
-    let yc = float(y[yo + c*st])
-    when normD: yy += float(d[c])*float(d[c])
+    let yc = gpuTo(F, y[yo + c*st])
+    when normD: yy += gpuTo(F, d[c])*gpuTo(F, d[c])
     else: yy += yc*yc
-    dy += float(d[c])*yc
+    dy += gpuTo(F, d[c])*yc
   if fx:
     rs[i] = yy
     rs[ne + i] = dy
   else:
-    let k = 1 + (i and (xs-1))
-    sumXAdd(xa, k, xst, xw, yy)
-    sumXAdd(xa, k + xs, xst, xw, dy)
+    when F is SomeNumber:
+      let k = 1 + (i and (xs-1))
+      sumXAdd(xa, k, xst, xw, yy)
+      sumXAdd(xa, k + xs, xst, xw, dy)
+    else:
+      for l in 0..<numNumbers(F):
+        let k = 1 + ((i*numNumbers(F) + l) and (xs-1))
+        sumXAdd(xa, k, xst, xw, yy[l])
+        sumXAdd(xa, k + xs, xst, xw, dy[l])
 
 proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr UncheckedArray[T];
                               a, b: T; rs: ptr UncheckedArray[float]; dot, send: static bool;
@@ -438,75 +504,122 @@ proc dslash[V: static int; T](s: StagGpu[V,T]; q: int; d, x, y, rb: ptr Unchecke
   ## with s.fixed, else added to s.sx.
   ## With nowait, returns before the kernel completes; gpuWaitAsync waits
   ## for it.
-  let n = s.n
-  let ne = s.ne
+  ## A kernel index stands for W lanes (backend/accel): one on a device.  On
+  ## the CPU the forward links of 18 reals run on SIMD vectors, with the
+  ## tables of the outer sites and a pack of d in place of the stores of
+  ## send; the other link forms run lane by lane.
   let fx = s.fixed
   let xa = s.sx.a
   let xs = s.sx.s
   let xst = s.sx.st
   let xw = s.sx.w
-  let i0 = if q == 0: 0 else: s.ne
-  let nk = if m >= 0: m elif q == 0: s.ne else: n - s.ne
+  let nk = if m >= 0: m elif q == 0: s.ne else: s.n - s.ne
   countHop(T, nk, 1)
   when dot:
     if not fx: s.sx.terms(nk)
-  let od = s.ord
-  let lf = s.lf
-  let lb = s.lb
-  let lh = s.lh[q]
   let nr = s.ex[1-q].nrecv
-  let nb = s.nbr
   let ro = s.ex[1-q].rofs
   let rst = s.ex[1-q].rstr
   let sl = s.ex[q].sslot
   let sd = s.ex[q].sdst
   let st = s.ex[q].sstr
   let nsl = s.ex[q].nslot
-  template fetch(v, j: untyped) =
-    if j < n:
-      let o = vo(V, j)
-      forStatic c, 0, 5: v[c] = x[o + c*V]
-    else:
-      recvSite(ro, rst, rb, j-n, v)
-  template body(i: untyped; nl: static int; fw, r64, fm: static bool) =
-    let k = if q == 0: int od[j0 + i] else: i0 + i
-    let ko = uo(V, k, nl)
-    var acc {.noInit.}: array[6,T]
-    forStatic c, 0, 5: acc[c] = T(0)
-    forStatic mu, 0, 3:
-      forStatic fb, 0, 1:
-        let jj = int nb[(4*fb+mu)*n + k]
-        let j = if nl == 12 and jj < 0: -1-jj else: jj
-        let e = if jj < 0: T(-1) else: T(1)
-        var v {.noInit.}: array[6,T]
-        fetch(v, j)
-        when fb == 0: hop(acc, lf, nl*mu*n + ko, v, V, e, nl, r64, fm)
-        elif fw:
-          if j < n: hopA(acc, lf, nl*mu*n + uo(V, j, nl), v, V, e, nl, r64, fm)
-          else: hopA(acc, lh, j-n, v, nr, e, nl, r64, fm)
-        else: hopA(acc, lb, nl*mu*n + ko, v, V, e, nl, r64, fm)
-    let yo = vo(V, k)
-    if a == T(0):
-      forStatic c, 0, 5: acc[c] = b*acc[c]
-    else:
-      forStatic c, 0, 5: acc[c] = a*y[yo + c*V] + b*acc[c]
-    forStatic c, 0, 5: d[yo + c*V] = acc[c]
-    when send:
-      sendSite(sl, sd, st, nsl, n, k, 0, acc)
-    when dot:
-      dots(j0 + i, acc, y, yo, V, rs, ne, fx, xa, xs, xst, xw, normD)
+  let dT = d
   template kern(nl: static int; fw, r64, fm: static bool) =
-    when nowait:
-      gpuForAsync(i, nk): body(i, nl, fw, r64, fm)
-    else:
-      gpuFor(i, nk): body(i, nl, fw, r64, fm)
+    block:
+      const W = when nl == 18 and fw: gpuLanes(T, V) else: 1
+      const VE = V div W  # elements per real of an outer site
+      type E = gpuElem(T, W)
+      type F {.used.} = gpuElem(float, W)
+      let n = s.n div W
+      let ne {.used.} = s.ne div W
+      let i0 = if q == 0: 0 else: s.ne div W
+      let j1 {.used.} = j0 div W
+      let od = when W == 1: s.ord else: s.ordo
+      let nb = when W == 1: s.nbr else: s.nbo
+      let lf = cast[ptr UncheckedArray[E]](s.lf)
+      let lb {.used.} = cast[ptr UncheckedArray[E]](s.lb)
+      let lh {.used.} = cast[ptr UncheckedArray[E]](s.lh[q])
+      let d = cast[ptr UncheckedArray[E]](d)
+      let x = cast[ptr UncheckedArray[E]](x)
+      let y = cast[ptr UncheckedArray[E]](y)
+      let rb = cast[ptr UncheckedArray[E]](rb)
+      let rs {.used.} = cast[ptr UncheckedArray[F]](rs)
+      template fetch(v, j: untyped) =
+        if j < n:
+          let o = vo(VE, j)
+          forStatic c, 0, 5: v[c] = x[o + c*VE]
+        else:
+          when backendIsCpu:  # the halo in the layout of a field
+            let o = vo(VE, j-n)
+            forStatic c, 0, 5: v[c] = rb[o + c*VE]
+          else:
+            recvSite(ro, rst, rb, j-n, v)
+      template site(i: untyped) =
+        when W == 1:
+          let k = if q == 0: int od[j0 + i] else: i0 + i
+        else:
+          let k = if q == 0: int(od[(j1 + i) div VE])*VE + (j1 + i) mod VE else: i0 + i
+        let ko = uo(VE, k, nl)
+        var acc {.noInit.}: array[6,E]
+        forStatic c, 0, 5: acc[c] = gpuTo(E, 0)
+        forStatic mu, 0, 3:
+          forStatic fb, 0, 1:
+            when W == 1:
+              let jj = int nb[(4*fb+mu)*n + k]
+              const pw = 0
+            else:
+              # outer site eo with the lanes swapped by pm: whole vectors
+              # by pm div W, the lanes of a vector by pw
+              let t = int nb[(4*fb+mu)*(n div VE) + k div VE]
+              let pm = t mod V
+              let pw = pm mod W
+              let jj = (t div V)*VE + ((k mod VE) xor (pm div W))
+            let j = if nl == 12 and jj < 0: -1-jj else: jj
+            let e = if jj < 0: gpuTo(E, -1) else: gpuTo(E, 1)
+            var v {.noInit.}: array[6,E]
+            fetch(v, j)
+            when fb == 0:
+              swapLanes(v, pw)
+              hop(acc, lf, nl*mu*n + ko, v, VE, e, nl, r64, fm)
+            elif fw:
+              if j < n:
+                when W == 1: hopA(acc, lf, nl*mu*n + uo(VE, j, nl), v, VE, e, nl, r64, fm)
+                else:
+                  # U and v are in the lanes of the neighbor: swap U^+ v,
+                  # 6 vectors in place of the 24 of U and v
+                  if pw == 0: hopA(acc, lf, nl*mu*n + uo(VE, j, nl), v, VE, e, nl, r64, fm)
+                  else:
+                    var w {.noInit.}: array[6,E]
+                    forStatic c, 0, 5: w[c] = gpuTo(E, 0)
+                    hopA(w, lf, nl*mu*n + uo(VE, j, nl), v, VE, e, nl, r64, fm)
+                    swapLanes(w, pw)
+                    forStatic c, 0, 5: acc[c] += w[c]
+              else: hopA(acc, lh, lhAt(VE, j-n, nl), v, lhSt(VE, nr), e, nl, r64, fm)
+            else: hopA(acc, lb, nl*mu*n + ko, v, VE, e, nl, r64, fm)
+        let yo = vo(VE, k)
+        if a == T(0):
+          forStatic c, 0, 5: acc[c] = b*acc[c]
+        else:
+          forStatic c, 0, 5: acc[c] = a*y[yo + c*VE] + b*acc[c]
+        forStatic c, 0, 5: d[yo + c*VE] = acc[c]
+        when send and W == 1:
+          sendSite(sl, sd, st, nsl, n, k, 0, acc)
+        when dot:
+          dots((when W == 1: j0 else: j1) + i, acc, y, yo, VE, rs, ne, fx, xa, xs, xst, xw, normD, F)
+      when nowait:
+        gpuForAsync(i, nk div W): site(i)
+      else:
+        gpuFor(i, nk div W): site(i)
+      when send and W > 1:
+        if j0 == 0: s.ex[q].pack(dT)  # the sites with send slots come first
   template comp(r64, fm: static bool) =
     if s.nl == 12:
-      if lb == nil: kern(12, true, r64, fm) else: kern(12, false, r64, fm)
+      if s.lb == nil: kern(12, true, r64, fm) else: kern(12, false, r64, fm)
     else:
-      if lb == nil: kern(14, true, r64, fm) else: kern(14, false, r64, fm)
+      if s.lb == nil: kern(14, true, r64, fm) else: kern(14, false, r64, fm)
   if s.nl == 18:
-    if lb == nil: kern(18, true, false, false) else: kern(18, false, false, false)
+    if s.lb == nil: kern(18, true, false, false) else: kern(18, false, false, false)
   else:
     when T is float32:
       if s.recon64: comp(true,false)
@@ -590,23 +703,33 @@ template gpuFor2(t, n, m, body, tail: untyped) =
 proc update[V: static int; T,U](s: StagGpu[V,T]; x: ptr UncheckedArray[U]; r, p, sv, w: ptr UncheckedArray[T]; a, b: T; ax: U) =
   ## p = r + b p, s = w + b s, x += a p, r -= a s on the even sites, and the
   ## same for the halo copies s.rh, s.sh from the w boundary received in
-  ## s.ex[0]; a thread updates one real.  Returns before the kernel
+  ## s.ex[0]; a thread updates one real, on the CPU one SIMD vector of
+  ## them.  Returns before the kernel
   ## completes, the first hop of applyD2eeCG runs after it.  The halo copies
   ## repeat the owner's s and r bit for bit only when both round alike, hence
   ## fmadd in both branches: a compiler that contracts one and not the other
   ## lets the copies drift by a rounding per iteration, which breaks FP32 CGs
   ## on several ranks.
-  let n6 = 6*s.ne
-  let wh = s.ex[0].rbuf
-  let rh = s.rh
-  let sh = s.sh
-  gpuFor2(t, n6, 6*s.ex[0].nrecv):
+  const W = gpuLanes(T, V)
+  type E = gpuElem(T, W)
+  type EU {.used.} = gpuElem(U, W)
+  let n6 = 6*s.ne div W
+  let nh = 6*s.ex[0].nrecv div W
+  let x = cast[ptr UncheckedArray[EU]](x)
+  let r = cast[ptr UncheckedArray[E]](r)
+  let p = cast[ptr UncheckedArray[E]](p)
+  let sv = cast[ptr UncheckedArray[E]](sv)
+  let w = cast[ptr UncheckedArray[E]](w)
+  let wh = cast[ptr UncheckedArray[E]](s.ex[0].rbuf)
+  let rh = cast[ptr UncheckedArray[E]](s.rh)
+  let sh = cast[ptr UncheckedArray[E]](s.sh)
+  gpuFor2(t, n6, nh):
     let pk = r[t] + b*p[t]
     let sk = fmadd(b, sv[t], w[t])
     p[t] = pk
     sv[t] = sk
     when U is T: x[t] += a*pk
-    else: x[t] += ax*U(pk)
+    else: x[t] += ax*gpuTo(EU, pk)
     r[t] = fmadd(-a, sk, r[t])
   do:
     let sk = fmadd(b, sh[t], wh[t])
@@ -884,6 +1007,8 @@ proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr Un
   let lh1 = s.lh[1]
   let nr0 = s.ex[1].nrecv
   let nr1 = s.ex[0].nrecv
+  let nbo {.used.} = s.nbo
+  let no {.used.} = n div V
   template put(d, o, st, m, sc: untyped) =
     ## sc m to d[o + e*st], e < nl, for sc = +-1
     if nl == 14:
@@ -908,11 +1033,15 @@ proc setLinks*[V: static int; T](s: StagGpu[V,T]; g: var GpuGauge[V]; sg: ptr Un
     if lb != nil:
       put(lb, ol, V, x, sb)
     else:
-      let jj = int fn[(4+mu)*n + k]
-      let j = if jj < 0 and nl == 12: -1-jj else: jj
+      when backendIsCpu:  # every lane of a halo site, as newStagGpu
+        let eo = int(nbo[(4+mu)*no + k div V]) div V
+        let j = if eo >= no: V*eo + k mod V else: 0
+      else:
+        let jj = int fn[(4+mu)*n + k]
+        let j = if jj < 0 and nl == 12: -1-jj else: jj
       if j >= n:
-        if k < ne: put(lh0, j-n, nr0, x, sb)
-        else: put(lh1, j-n, nr1, x, sb)
+        if k < ne: put(lh0, lhAt(V, j-n, nl), lhSt(V, nr0), x, sb)
+        else: put(lh1, lhAt(V, j-n, nl), lhSt(V, nr1), x, sb)
 
 proc norm2*[V: static int; T](s: StagGpu[V,T]; x: ptr UncheckedArray[T]): float =
   ## global |x|^2 over all sites
@@ -1309,7 +1438,7 @@ proc dslashB[V: static int; C: static int; T](s: StagGpu[V,T]; q: int; d, x, y: 
         when fb == 0: load(mm, lf, nl*mu*n + ko, V, e, nl, r64, fm)
         elif fw:
           if j < n: load(mm, lf, nl*mu*n + uo(V, j, nl), V, e, nl, r64, fm)
-          else: load(mm, lh, j-n, nr, e, nl, r64, fm)
+          else: load(mm, lh, lhAt(V, j-n, nl), lhSt(V, nr), e, nl, r64, fm)
         else: load(mm, lb, nl*mu*n + ko, V, e, nl, r64, fm)
         forStatic js, 0, C-1:
           fetch(v, j, pickS(x, js), 6*pickS(so, js))
