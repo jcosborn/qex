@@ -11,7 +11,7 @@ const dumpKernels {.intdefine.} = 0
 #let q = dev.queue
 var platform: Platform  # default platform
 var dev: Device
-var q: Queue
+var gpuQ: Queue
 
 proc gpuNumDevices*: int =
   result = int platform.getDevices.size()
@@ -24,22 +24,22 @@ proc gpuInit*(device: int) =
   let n = int devs.size()
   let d = device mod n
   dev = devs[d]
-  q = dev.inOrderQueue
+  gpuQ = dev.inOrderQueue
 
-template gpuMalloc*(size: SomeInteger): pointer = mallocDevice(size, q)
+template gpuMalloc*(size: SomeInteger): pointer = mallocDevice(size, gpuQ)
 template gpuMalloc[T](x: var ptr UncheckedArray[T], n: int) =
   x = cast[typeof x](gpuMalloc(n*sizeof(T)))
 template gpuMalloc[T](x: ptr T) =
   x = cast[typeof x](gpuMalloc(sizeof(T)))
-template gpuFree*(device_ptr: pointer) = freeDevice(device_ptr, q)
+template gpuFree*(device_ptr: pointer) = freeDevice(device_ptr, gpuQ)
 template gpuMemCpyToCPU*(dst: pointer, src: pointer; length: SomeInteger) =
-  memcpy(q, dst, src, length)
+  memcpy(gpuQ, dst, src, length)
 template gpuMemCpyToGPU*(dst: pointer, src: pointer; length: SomeInteger) =
-  memcpy(q, dst, src, length)
+  memcpy(gpuQ, dst, src, length)
 template gpuMemCpyToCpuAsync*(dst, src: pointer; length: SomeInteger) =
   ## Queues the copy to the host after the kernels already submitted (the
   ## queue is in order); gpuWaitAsync waits for it too.
-  memcpyAsync(q, dst, src, length)
+  memcpyAsync(gpuQ, dst, src, length)
 const gpuCopyFast* = high(int)  ## bytes up to which a queued copy has its low cost
 
 {.emit: """/*INCLUDESECTION*/
@@ -58,19 +58,19 @@ template gpuForAsync(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
   let gpuN = int(n)
   if gpuN > 0:
     let gpuM = csize_t((gpuN + gpuThreads - 1) div gpuThreads * gpuThreads)
-    {.emit: [q, ".parallel_for(sycl::nd_range<1>(sycl::range<1>(", gpuM, "), sycl::range<1>(", gpuThreads, ")), [=](sycl::nd_item<1> gpuIt)", gpuA, " {"].}
+    {.emit: [gpuQ, ".parallel_for(sycl::nd_range<1>(sycl::range<1>(", gpuM, "), sycl::range<1>(", gpuThreads, ")), [=](sycl::nd_item<1> gpuIt)", gpuA, " {"].}
     block:
       let i = int(gpuIt[])
       if i < gpuN:
         body
     {.emit: "});".}
 
-template gpuWaitAsync* = q.wait
+template gpuWaitAsync* = gpuQ.wait
 
 template gpuMallocHost*(size: SomeInteger): pointer =
   ## pinned host memory, for fast copies from the device
-  mallocHost(size, q)
-template gpuFreeHost*(p: pointer) = freeHost(p, q)
+  mallocHost(size, gpuQ)
+template gpuFreeHost*(p: pointer) = freeHost(p, gpuQ)
 
 template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
   ## r[k] += v atomically, in kernels
@@ -87,8 +87,8 @@ template gpuAtomicAdd*(r: ptr UncheckedArray[uint64]; k: int; v: uint64) =
 proc gpuZeContext*(): tuple[ctx, dev: pointer] =
   ## Level Zero context and device of the queue
   var ctx, dev: pointer
-  {.emit: [ctx, " = sycl::get_native<sycl::backend::ext_oneapi_level_zero>(", q, ".get_context());\n",
-           dev, " = sycl::get_native<sycl::backend::ext_oneapi_level_zero>(", q, ".get_device());"].}
+  {.emit: [ctx, " = sycl::get_native<sycl::backend::ext_oneapi_level_zero>(", gpuQ, ".get_context());\n",
+           dev, " = sycl::get_native<sycl::backend::ext_oneapi_level_zero>(", gpuQ, ".get_device());"].}
   (ctx, dev)
 
 proc gpuFinish*[P](fl: static string; q: ptr Queue; flops: float; ps: P; back: proc(ps: P) {.nimcall.}) =
@@ -108,7 +108,7 @@ proc gpuFinalizer*[P](fl: static string; q: ptr Queue; flops: float; ps: P; back
   result = proc() = gpuFinish(fl, q, flops, ps, back)
 
 proc gpuDefaultNumThreads*(): int =
-  32 * q.device.maxComputeUnits.int * q.device.subGroupSizes.max_element.int
+  32 * gpuQ.device.maxComputeUnits.int * gpuQ.device.subGroupSizes.max_element.int
   #64 * q.device.maxComputeUnits.int * q.device.subGroupSizes.max_element.int
 
 macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): untyped =
@@ -145,8 +145,8 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
         toc("wait", flops=(when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0))
       else:
         toc("launch")
-        when fin == 1: gpuFinalizer(fl, addr q, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
-        elif fin == 2: gpuFinish(fl, addr q, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+        when fin == 1: gpuFinalizer(fl, addr gpuQ, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+        elif fin == 2: gpuFinish(fl, addr gpuQ, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
         else: queued
   let c = kernelCap(body, n)
   result = getast(target(fl, n, newLit(sub), c.pre, c.shadow, c.pairs, c.queued, c.copies, c.body, newLit(fin)))
