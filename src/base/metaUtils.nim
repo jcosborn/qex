@@ -517,6 +517,13 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
         echo "    received a non-literal node: ",p.lisprepr
         quit 1
       # We do nothing, assuming the compiler has finished constant unfolding.
+    elif (p.kind in {nnkFloatLit..nnkFloat64Lit} or p.kind == nnkHiddenStdConv and p[^1].kind in nnkLiterals and
+          p.getType.typeKind in {ntyFloat, ntyFloat32, ntyFloat64}):
+      # a let, which has an address: QEX's operators take the address of their
+      # arguments
+      let lit = if p.kind == nnkHiddenStdConv: p[^1] else: p
+      pre.add getAst(letX(t, newCall(p.getTypeInst, lit)))
+      body = body.replaceNonDeclSym(sym, t)
     elif p.kind in nnkLiterals:
       pre.add getAst(constX(c, p))
       body = body.replaceNonDeclSym(sym, c)
