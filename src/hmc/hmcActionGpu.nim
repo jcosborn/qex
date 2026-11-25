@@ -28,7 +28,7 @@ import physics/[qcdTypes, stagD, stagSolve, stagGpu]
 import gauge/[gaugeGpu, hypGpu, hypsmear]
 import hmc/[hmcAction, metropolis]
 import algorithms/[integrator]
-import backend/accel
+import backend/[accel, cgfield]
 import base/metaUtils
 import std/[sequtils, strformat, strutils, tables]
 
@@ -186,16 +186,19 @@ proc newStaggeredPauliVillarsAction*(h: HmcGpu; mass: float; spa, spf: SolverPar
 
 #[ device helpers ]#
 
+proc vecField(h: HmcGpu; v: ptr UncheckedArray[float]): auto =
+  ## a vector of stagGpu (all sites) as a ColorVector field
+  gpuFieldView(h.gg.lo, DColorVectorV, v)
+
 proc zeroOdd(h: HmcGpu; v: ptr UncheckedArray[float]) =
-  let o = 6*h.s.ne
-  let no = 6*(h.s.n - h.s.ne)
-  onGpu(no):
-    for i in gpuRange(no): v[o + i] = 0.0
+  let x = h.vecField(v)
+  onGpu(h.s.n - h.s.ne):
+    x.odd := 0
 
 proc zeroLinks(h: HmcGpu; v: ptr UncheckedArray[float]) =
-  let nl = 4*18*h.gg.n
-  onGpu(nl):
-    for i in gpuRange(nl): v[i] = 0.0
+  let x = h.gg.linkField(v)
+  onGpu(4*h.gg.n):
+    x := 0
 
 proc resid(h: HmcGpu; x, b: ptr UncheckedArray[float]; m: float): float =
   ## |b - M(m) x|^2/|b|^2 over all sites
@@ -441,12 +444,11 @@ proc force(h: HmcGpu; li: int; dtau: float) =
     if a.kind == gkPV: pv.add i
   if pv.len > 0:
     tic()
-    let ne6 = 6*h.s.ne
     for i in pv:
-      let y = level.actions[i].x
-      let ph = level.actions[i].phi
-      onGpu(ne6):
-        for k in gpuRange(ne6): y[k] = ph[k]
+      let y = h.vecField(level.actions[i].x)
+      let ph = h.vecField(level.actions[i].phi)
+      onGpu(h.s.ne):
+        y.even := ph
     h.s.hopOE(pv.mapIt(level.actions[it].x), pv.mapIt(level.actions[it].phi), 1.0)
     let t = getElapsedTime()/float(pv.len)
     for i in pv: fsecs[i] += t
@@ -527,11 +529,10 @@ proc integrator*(h: HmcGpu): Integrator =
     h.zeroLinks h.f
     for i in 0..<nlevels:
       if dtau[i] != 0.0: h.force(i, dtau[i])
-    let p = h.p
-    let f = h.f
-    let nl = 4*18*h.gg.n
-    onGpu(nl):
-      for i in gpuRange(nl): p[i] -= f[i]
+    let p = h.gg.linkField(h.p)
+    let f = h.gg.linkField(h.f)
+    onGpu(4*h.gg.n):
+      p -= f
   let (V, T) = newIntegratorPair(mdv, mdt)
   result = T
   for i in 0..<nlevels:

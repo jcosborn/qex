@@ -14,6 +14,8 @@ import qex
 import gauge
 import comms/[halo, halogpu]
 import backend/accel
+import backend/cgfield except n, p  # n and p are kernel locals here (link)
+import physics/qcdTypes
 import base/metaUtils
 getOptimPragmas()
 
@@ -111,11 +113,21 @@ proc newLinks*[V: static int](g: GpuGauge[V]): ptr UncheckedArray[float] =
   ## a device array like g.u, for momenta or saved links
   cast[ptr UncheckedArray[float]](gpuMalloc(4*18*g.n*sizeof(float)))
 
+proc linkField*[V: static int](g: GpuGauge[V]; d: ptr UncheckedArray[float]): auto =
+  ## the links of d, an array like g.u, as one ColorMatrix field of 4 times
+  ## the sites, for code on every link alike
+  static: doAssert V == VLEN
+  var f = gpuFieldView(g.lo, DColorMatrixV, d)
+  f.d.n = 4*f.d.n
+  f.d.ne = 0
+  f
+
 proc copy*[V: static int](g: GpuGauge[V]; d, s: ptr UncheckedArray[float]) =
   ## d = s for arrays like g.u
-  let nl = 4*18*g.n
-  onGpu(nl):
-    for i in gpuRange(nl): d[i] = s[i]
+  let df = g.linkField(d)
+  let sf = g.linkField(s)
+  onGpu(4*g.n):
+    df := sf
 
 proc update*[V: static int](g: var GpuGauge[V]) =
   ## Exchanges the halo of g.u.  The barrier keeps a peer from rewriting the
