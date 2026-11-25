@@ -221,6 +221,9 @@ With OpenMP offload:
   target without `nowait`, which completes at its launch. `gpuWaitAsync`
   skips its task wait outside threads blocks when nothing was queued since
   the last wait.
+- A wait inside a `threads:` block covers the kernels queued in that block
+  only: call `gpuWaitAsync()` before a block whose kernels read what kernels
+  queued before it write.
 - An `onGpuQueue` or `onGpuNowait` kernel is queued when the kernel reads
   numbers and pointers from outside only. A kernel that reads an object (a
   view with several fields, an array) completes at its launch, as an

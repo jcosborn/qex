@@ -141,7 +141,7 @@ template gpuFor*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
 template gpuFor*(i: untyped; n: SomeInteger; body: untyped) = gpuFor(i, n, 0, body)
 
 var gpuAsyncDep {.exportc.}: int  # orders the gpuForAsync kernels before gpuWaitAsync
-var gpuQueued = false  # a gpuForAsync kernel may wait in the queue: exact outside threads blocks
+var gpuQueued = false  # a kernel queued outside parallel regions may wait in the queue
 
 template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
   ## gpuFor returning before the kernel completes; gpuWaitAsync waits for it.
@@ -154,12 +154,15 @@ template gpuForAsync*(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
 template gpuForAsync*(i: untyped; n: SomeInteger; body: untyped) = gpuForAsync(i, n, 0, body)
 
 template gpuWaitAsync* =
-  ## a task wait for the queued kernels, skipped outside threads blocks
-  ## where none was queued since the last wait
+  ## a task wait for the queued kernels, skipped outside parallel regions
+  ## where none was queued since the last wait.  Inside a region (a threads
+  ## block, also of one thread) the wait covers the kernels queued in it, and
+  ## the flag of the kernels queued before it stays.
   discard addr(gpuAsyncDep)
-  if numThreads > 1 or gpuQueued:
+  let gpuL = omp_get_level()
+  if gpuL > 0 or gpuQueued:
     {.emit: "#pragma omp taskwait depend(inout:gpuAsyncDep)".}
-    gpuQueued = false
+    if gpuL == 0: gpuQueued = false
 
 template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
   ## r[k] += v atomically, in kernels

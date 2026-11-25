@@ -24,6 +24,7 @@ else:
   proc omp_get_num_threads*(): cint {.omp.}
   proc omp_get_max_threads*(): cint {.omp.}
   proc omp_get_thread_num*(): cint {.omp.}
+  proc omp_get_level*(): cint {.omp.}  ## parallel regions around the call, active or not
   #proc forceOmpOn() {.omp.}
   template ompPragma(p:string) =
     #forceOmpOn()

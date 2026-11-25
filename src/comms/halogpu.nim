@@ -454,8 +454,7 @@ proc start*[T](ex: GpuHaloEx[T]) =
 
 proc wait*[T](ex: GpuHaloEx[T]; sync = true) =
   ## Waits for the messages; with sync and no messages, for the queued
-  ## kernels instead, so that a synchronous kernel may follow in the OpenMP
-  ## backend, whose synchronous kernels are not ordered after nowait ones.
+  ## kernels instead, so that the host may read what they wrote.
   ## With sites, copies the received lanes into the halo, once per start.
   if ex.mems.len > 0:
     discard QMP_wait(ex.msg)
