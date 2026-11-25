@@ -138,6 +138,41 @@ proc `*`*[X:SomeNumber, Y:SomeGpuField](x: X; y: Y): GpuFieldExpr["*",(X,Y)] = r
 proc `-`*[X:SomeGpuField](x: X): GpuFieldExpr["neg",(X,)] = result.args = (x,)
 proc adj*[X:SomeGpuField](x: X): GpuFieldExpr["adj",(X,)] = result.args = (x,)
 
+template lanes(x: GpuField): int = x.n*x.V
+template lanes(x: GpuSubField): int = (x.hi - x.lo)*x.f.V
+
+var viewSum: GpuSum[float]  # of the sums of field views
+var viewSumN = 0  # the threads it has room for, the largest launch so far
+
+template siteSum(x: GpuField|GpuSubField; e, body: untyped): float =
+  ## outside kernels and threads blocks: the sum of body over the sites e of
+  ## x and the ranks, in an order fixed by the thread count of the kernel
+  ## (GpuSum)
+  block:
+    let gpuX = x
+    let gpuL = lanes(gpuX)
+    if viewSumN < gpuL:
+      if viewSumN > 0: viewSum.free
+      viewSum = newGpuSum[float](gpuL)
+      viewSumN = gpuL
+    let gpuS = viewSum
+    onGpu(gpuL):
+      var s = 0.0
+      for e in items(gpuX): s += simdSum(body)
+      gpuS.reduce s
+    var r = gpuS.value
+    getDefaultComm().allReduce(r)
+    r
+
+proc norm2*(x: GpuField|GpuSubField): float =
+  ## outside kernels and threads blocks: |x|^2 over the sites and the ranks
+  siteSum(x, e, norm2(x[e]))
+
+proc redot*(x: GpuField|GpuSubField; y: GpuField2|GpuSubField2): float =
+  ## outside kernels and threads blocks: Re (x, y) over the sites of x and
+  ## the ranks
+  siteSum(x, e, redot(x[e], y[e]))
+
 template assignOp(op: untyped) =
   template op*(r: GpuField|GpuSubField; x: SomeGpuField|SomeNumber) =
     ## in a kernel: the statement at the sites of r that this thread owns

@@ -278,6 +278,25 @@ proc siteOps(lo: Layout): array[3, float] =
     threadSingle: r = [a, b, c, d, s]
   [r[0]/r[1], r[2]/r[3], abs(sk - r[4])/abs(r[4])]  # the sums of this rank
 
+proc fieldSums(lo: Layout): array[3, float] =
+  ## |x|^2, |x.odd|^2 and Re (x, y) of field views against those of the
+  ## fields (relative differences)
+  var rng = lo.newRNGField(RngMilc6, 3456)
+  var a = lo.ColorVector()
+  var b = lo.ColorVector()
+  a.gaussian rng
+  b.gaussian rng
+  let x = toGpu(a)
+  let y = toGpu(b)
+  let n = [x.norm2, x.odd.norm2, redot(x, y)]
+  var m: array[3, float]
+  threads:
+    let u = a.norm2
+    let v = a.odd.norm2
+    let w = redot(a, b)
+    threadSingle: m = [u, v, w]
+  for i in 0..2: result[i] = abs(n[i] - m[i])/abs(m[i])
+
 proc scaleBy(x: auto; a: float) =
   ## a share of a loop in a proc that a kernel calls; inlineProcs copies it
   ## into device kernels
@@ -440,6 +459,10 @@ suite "onGpu captures":
     when backendIsGpu or not gpuSimd: check d[0] <= 1e-28 and d[1] <= 1e-28
     else: check d[0] == 0.0 and d[1] == 0.0
     check d[2] <= 1e-13
+
+  test "sums of field views":
+    let d = fieldSums(lo)
+    check d[0] <= 1e-14 and d[1] <= 1e-14 and d[2] <= 1e-13
 
   test "a field view of device memory":
     check fieldView(lo) == 0.0

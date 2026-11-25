@@ -132,6 +132,9 @@ proc update(r, a, b: Field; m: Field2; c: float) =
 - A field captured by the body has its device copy in the GPU memory table;
   `gpuFieldView(lo, T, p)` is a field of the layout `lo` with element type
   `T` over device memory `p` from `gpuMalloc`, without a table entry.
+- Outside kernels and `threads:` blocks, `x.norm2` and `redot(x, y)` of a
+  field view or subset return the sum over the sites and the ranks; each
+  launches a kernel and adds the values of its threads in a fixed order.
 
 With the CPU backend such a kernel gives the bits of the same code in a
 `threads:` block, apart from sums (their order differs) and functions whose
