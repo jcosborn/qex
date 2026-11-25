@@ -15,14 +15,14 @@ proc cadd(x, y: cint): cint =
 
 macro calls(name: static string; body: typed): untyped =
   ## the calls of name in body, with body
-  var n = 0
-  proc count(x: NimNode) =
+  # count takes the name as an argument: Nim 2.2 reads a static parameter
+  # that a nested proc captures as empty
+  proc count(x: NimNode; s: string): int =
     if x.kind == nnkTypeOfExpr: return
-    if x.kind in CallNodes and x[0].kind == nnkSym and $x[0] == name: inc n
-    for c in x: count(c)
+    if x.kind in CallNodes and x[0].kind == nnkSym and $x[0] == s: inc result
+    for c in x: result += count(c, s)
   when defined(dumpCalls): echo body.treeRepr
-  count(body)
-  result = newStmtList(body, newLit(n))
+  result = newStmtList(body, newLit(count(body, name)))
 
 proc run =
   var r = 0.0

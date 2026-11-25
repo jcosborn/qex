@@ -2,11 +2,12 @@ import macros
 import strUtils
 
 proc hasPragma(x: NimNode; names: openArray[string]): bool =
-  ## whether the routine x has one of the pragmas
+  ## whether the routine x has one of the pragmas; Nim 2.2 lists the pragma
+  ## template of a pragma alias (gpuProc of gpuInline) as a call
   let pragmas = x[4]
   if pragmas.kind==nnkPragma:
     for p in pragmas:
-      let n = if p.kind==nnkExprColonExpr: p[0] else: p
+      let n = if p.kind in {nnkExprColonExpr, nnkCall}: p[0] else: p
       if n.kind in {nnkIdent,nnkSym}:
         for s in names:
           if n.eqIdent(s): return true
