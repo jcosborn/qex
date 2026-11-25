@@ -147,7 +147,8 @@ jobs:
   # GPU backends, configured as in docs/gpu_backends.md.  The runners have no
   # GPU: these jobs build the GPU tests and small programs for H100 (sm_90),
   # MI300 (gfx942) and Intel GPUs (SPIR-V, compiled at run time), with host code
-  # for x86-64-v4; the cpu job also runs them.  staghmcgpu_sh and
+  # for x86-64-v4; the two cpu jobs also run them, with SIMD vectors and lane by
+  # lane (-d:gpuSimd=false, the path of the devices).  staghmcgpu_sh and
   # eightFlavorSMGgpu, which instantiate the StagGpu solvers, take 4.2 GB each
   # in Nim (the runners have 16 GB): they build one at a time after the others.
   sycl:
@@ -340,7 +341,15 @@ jobs:
 
   cpu:
     if: *once
-    name: gpu-CPU
+    strategy:
+      matrix:
+        include:
+        - name: gpu-CPU
+          simd: true
+        - name: gpu-CPU-lanes
+          simd: false
+      fail-fast: false
+    name: ${{ matrix.name }}
     runs-on: ubuntu-26.04
     steps:
     - name: install Open MPI
@@ -355,7 +364,7 @@ jobs:
     - *qmp-qio
     - name: configure
       working-directory: qex
-      run: QMPDIR=qmp QIODIR=qio ./configure
+      run: QMPDIR=qmp QIODIR=qio ./configure nimargs:'@["-d:gpuSimd=${{ matrix.simd }}"]'
     - *build-gpu
     - *build-stag
     - name: run the GPU tests and programs
