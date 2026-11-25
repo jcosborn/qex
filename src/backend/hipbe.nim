@@ -127,7 +127,7 @@ proc gpuFinish*[P](fl: static string; count: int; flops: float; ps: P; back: pro
   ## The end of a kernel launch: waits for the device, then back copies what
   ## the kernel wrote to the host variables of ps (hostBack).
   var countSave = -1  # the count before, in the thread that lowers it
-  tic(fl)
+  when gpuLaunchTimers: tic(fl)
   threadSingle:
     countSave = kernelCallCount
     kernelCallCount = count
@@ -135,11 +135,11 @@ proc gpuFinish*[P](fl: static string; count: int; flops: float; ps: P; back: pro
     if err:
       echo "onGpu kernel: ", $err
       quit cast[cint](err)
-  toc("wait",flops=flops)
+  when gpuLaunchTimers: toc("wait",flops=flops)
   back(ps)
   if countSave >= 0: kernelCallCount = countSave  # the same thread restores it
   threadBarrier()
-  toc("cpuFinalize")
+  when gpuLaunchTimers: toc("cpuFinalize")
 
 proc gpuFinalizer*[P](fl: static string; count: int; flops: float; ps: P; back: proc(ps: P) {.nimcall.}): proc() =
   ## gpuFinish as a closure, for onGpuNowait.  The closure has an
@@ -162,7 +162,7 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
     inc kernelCallCount  # increment before setup
     block:
       let thisKernelCallCount = kernelCallCount  # save current value for finalizer
-      tic(fl)
+      when gpuLaunchTimers: tic(fl)
       let gpuNt {.inject.} = int(gpuSites(n))
       gpuLaunchThreads = gpuNt
       pre  # the device values
@@ -180,9 +180,9 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
         if numThreads > 1:
           threadSingle: gpuWaitAsync()
         else: gpuWaitAsync()
-        toc("wait", flops=(when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0))
+        when gpuLaunchTimers: toc("wait", flops=(when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0))
       else:
-        toc("launch")
+        when gpuLaunchTimers: toc("launch")
         when fin == 1: gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
         elif fin == 2: gpuFinish(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
         else: queued

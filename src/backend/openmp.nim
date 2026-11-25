@@ -234,17 +234,17 @@ proc gpuFinish*[P](fl: static string; count: int; flops: float; ps: P; back: pro
   ## The end of a kernel launch: waits for the queue where the kernel was
   ## queued (wait), then back copies what the kernel wrote to the host
   ## variables of ps (hostBack).
-  tic(fl)
+  when gpuLaunchTimers: tic(fl)
   var countSave = -1  # the count before, in the thread that lowers it
   threadSingle:
     countSave = kernelCallCount
     kernelCallCount = count
     when wait: gpuWaitAsync()
-  toc("wait",flops=flops)
+  when gpuLaunchTimers: toc("wait",flops=flops)
   back(ps)
   if countSave >= 0: kernelCallCount = countSave  # the same thread restores it
   threadBarrier()
-  toc("cpuFinalize")
+  when gpuLaunchTimers: toc("cpuFinalize")
 
 proc gpuFinalizer*[P](fl: static string; count: int; flops: float; ps: P; back: proc(ps: P) {.nimcall.}): proc() =
   ## gpuFinish as a closure, for onGpuNowait.  The closure has an
@@ -272,7 +272,7 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
     inc kernelCallCount
     block:
       let thisKernelCallCount = kernelCallCount  # save current value for finalizer
-      tic(fl)
+      when gpuLaunchTimers: tic(fl)
       let gpuNt {.inject.} = int(gpuSites(n))
       gpuLaunchThreads = gpuNt
       pre  # the device values
@@ -296,10 +296,10 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
       inc kernelCallCount  # increment after launch
       # one profile timer per launch: "wait" for onGpu, whose kernel completes here, else "launch"
       when fin == 2:
-        toc("wait", flops=(when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0))
+        when gpuLaunchTimers: toc("wait", flops=(when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0))
         when copies: gpuFinish(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp), false)
       else:
-        toc("launch")
+        when gpuLaunchTimers: toc("launch")
         when fin == 1: gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
         else: queued
   let c = kernelCap(body, n)

@@ -94,12 +94,12 @@ proc gpuZeContext*(): tuple[ctx, dev: pointer] =
 proc gpuFinish*[P](fl: static string; q: ptr Queue; flops: float; ps: P; back: proc(ps: P) {.nimcall.}) =
   ## The end of a kernel launch: waits for the queue, then back copies what
   ## the kernel wrote to the host variables of ps (hostBack).
-  tic(fl)
+  when gpuLaunchTimers: tic(fl)
   threadSingle:
     q[].wait
-  toc("wait",flops=flops)
+  when gpuLaunchTimers: toc("wait",flops=flops)
   back(ps)
-  toc("cpuFinalize")
+  when gpuLaunchTimers: toc("cpuFinalize")
 
 proc gpuFinalizer*[P](fl: static string; q: ptr Queue; flops: float; ps: P; back: proc(ps: P) {.nimcall.}): proc() =
   ## gpuFinish as a closure, for onGpuNowait.  The closure has an
@@ -124,7 +124,7 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
   template target(fl, n, sub, pre, shadow, hostPairs, queued, copies, body, fin: untyped) =
     mixin toGpu, getGpu, fromGpu, gpuSites
     block:
-      tic(fl)
+      when gpuLaunchTimers: tic(fl)
       inc kernelCallCount
       let gpuNt {.inject.} = int(gpuSites(n))
       gpuLaunchThreads = gpuNt
@@ -142,9 +142,9 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
         if numThreads > 1:
           threadSingle: gpuWaitAsync()
         else: gpuWaitAsync()
-        toc("wait", flops=(when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0))
+        when gpuLaunchTimers: toc("wait", flops=(when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0))
       else:
-        toc("launch")
+        when gpuLaunchTimers: toc("launch")
         when fin == 1: gpuFinalizer(fl, addr gpuQ, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
         elif fin == 2: gpuFinish(fl, addr gpuQ, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
         else: queued

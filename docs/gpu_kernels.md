@@ -274,6 +274,10 @@ Rules from measurements on H100, MI300X and PVC.
   and the staggered hop 2.5 to 4% slower on H100 and GH200.
 - A copy to the host that waits costs 7 to 11 us after a kernel; queue it
   behind the kernels with `gpuMemCpyToCpuAsync` and wait once.
+- At 16^4 on one device the host time of each launch shows in the time of
+  the solver. Launches have profile timers only when built with
+  `-d:gpuLaunchTimers`; on PVC and GB300 the timers took 1 to 2% of the
+  time of the staggered operator.
 - One atomic add per term to few slots makes short kernels wait; give
   `SumX` enough slots or use the fixed order there.
 

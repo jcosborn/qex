@@ -42,7 +42,7 @@ template gpuFreeHost*(p: pointer) = c_free(p)
 proc gpuFinish*[P](fl: static string; count: int; ps: P; back: proc(ps: P) {.nimcall.}) =
   ## The end of a kernel launch: meets the team, then back copies what
   ## the kernel wrote to the host variables of ps (hostBack).
-  tic(fl)
+  when gpuLaunchTimers: tic(fl)
   var countSave = -1  # the count before, in the thread that lowers it
   threadBarrier()
   threadSingle:
@@ -51,7 +51,7 @@ proc gpuFinish*[P](fl: static string; count: int; ps: P; back: proc(ps: P) {.nim
   back(ps)
   if countSave >= 0: kernelCallCount = countSave  # the same thread restores it
   threadBarrier()
-  toc("cpuFinalize")
+  when gpuLaunchTimers: toc("cpuFinalize")
 
 proc gpuFinalizer*[P](fl: static string; count: int; ps: P; back: proc(ps: P) {.nimcall.}): proc() =
   ## gpuFinish as a closure, for onGpuNowait.  The closure has an
@@ -80,7 +80,7 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
     mixin toGpu, getGpu, fromGpu
     inc kernelCallCount  # increment before setup
     block:
-      tic(fl)
+      when gpuLaunchTimers: tic(fl)
       let thisKernelCallCount = kernelCallCount  # save current value for finalizer
       pre  # the device values
       block:
@@ -104,9 +104,9 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
           else:
             gpuKern()
       when declared gpuWaitFlops:
-        toc("wait",flops=gpuWaitFlops)
+        when gpuLaunchTimers: toc("wait",flops=gpuWaitFlops)
       else:
-        toc("wait")
+        when gpuLaunchTimers: toc("wait")
       inc kernelCallCount  # increment after launch
       when fin == 1 or (fin == 2 and copies):
         let hp = hostPairs

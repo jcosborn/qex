@@ -126,6 +126,10 @@ template gpuQueued*(T: typedesc; name: static string) =
   when not gpuResident(T):
     {.error: "onGpuQueue: '" & name & "' of type " & $T & " is copied back after a kernel; use onGpu or onGpuNowait".}
 
+const gpuLaunchTimers* {.booldefine.} = false
+  ## true: profile timers around every kernel launch; at 16^4 on one GPU
+  ## they cost 1 to 2% of the time of the staggered operator
+
 type KernelCap* = object
   body*: NimNode    ## the body, its outer variable symbols as gpuSel calls
   pre*: NimNode     ## before the launch: the device values
