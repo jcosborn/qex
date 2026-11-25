@@ -169,6 +169,117 @@ proc fields(lo: Layout): float =
     threadSingle: r = t
   r
 
+proc fieldCode(lo: Layout): float =
+  ## |r - s|^2/|s|^2 of the same field code in a kernel (r) and in a threads
+  ## block (s): statements on fields and subsets, loops over a field and over
+  ## a subset
+  var rng = lo.newRNGField(RngMilc6, 4321)
+  var a = lo.ColorVector()
+  var b = lo.ColorVector()
+  var m = lo.ColorMatrix()
+  var r = lo.ColorVector()
+  var s = lo.ColorVector()
+  a.gaussian rng
+  b.gaussian rng
+  m.gaussian rng
+  onGpu(lo):
+    r := 2.0*a + b
+    r += m*a
+    r -= m.adj*b
+    r.odd := 0.5*r
+    for e in r.even:
+      r[e] := r[e] - a[e]
+    for e in r:
+      r[e] *= 3.0
+  threads:
+    s := 2.0*a + b
+    s += m*a
+    s -= m.adj*b
+    threadBarrier()
+    s.odd := 0.5*s
+    threadBarrier()
+    for e in s.even:
+      s[e] := s[e] - a[e]
+    threadBarrier()
+    for e in s:
+      s[e] *= 3.0
+  var d, n: float
+  threads:
+    let x = norm2(r - s)
+    let y = s.norm2
+    threadSingle:
+      d = x
+      n = y
+  d/n
+
+proc fieldView(lo: Layout): float =
+  ## |r - 2 a|^2/|a|^2 for a field view of device memory: a copied in, the
+  ## view doubled, r copied out
+  var rng = lo.newRNGField(RngMilc6, 1234)
+  var a = lo.ColorVector()
+  var r = lo.ColorVector()
+  a.gaussian rng
+  let bytes = lo.nSitesOuter*sizeof(a[0])
+  let p = gpuMalloc(bytes)
+  gpuMemCpyToGpu(p, addr a[0], bytes)
+  let v = gpuFieldView(lo, typeof(a[0]), p)
+  onGpu(lo):
+    v := 2.0*v
+  gpuMemCpyToCpu(addr r[0], p, bytes)
+  gpuFree(p)
+  var d, n: float
+  threads:
+    let x = norm2(r - 2.0*a)
+    let y = a.norm2
+    threadSingle:
+      d = x
+      n = y
+  d/n
+
+proc scaleBy(x: auto; a: float) =
+  ## a share of a loop in a proc that a kernel calls; inlineProcs copies it
+  ## into device kernels
+  for e in x: x[e] *= a
+
+proc fieldParts(lo: Layout): float =
+  ## |r - s|^2/|s|^2 and the same for the fields of two seqs, kernel (r, fr)
+  ## against threads block (s, fs): zero, negation, a proc that takes a
+  ## share, loops over the fields of a seq
+  var rng = lo.newRNGField(RngMilc6, 5678)
+  var a = lo.ColorVector()
+  var b = lo.ColorVector()
+  a.gaussian rng
+  b.gaussian rng
+  var r = lo.ColorVector()
+  var s = lo.ColorVector()
+  var fr = @[lo.ColorVector(), lo.ColorVector()]
+  var fs = @[lo.ColorVector(), lo.ColorVector()]
+  onGpu(lo):
+    r := 0
+    r -= a
+    r += -b
+    scaleBy(r, 3.0)
+    for k in 0..1:
+      for e in fr[k]: fr[k][e] := float(k+1)*a[e]
+  threads:
+    s := 0
+    s -= a
+    s += -b
+    for e in s: s[e] *= 3.0
+    for k in 0..1:
+      for e in fs[k]: fs[k][e] := float(k+1)*a[e]
+  var d, n: float
+  threads:
+    var x = norm2(r - s)
+    var y = s.norm2
+    for k in 0..1:
+      x += norm2(fr[k] - fs[k])
+      y += fs[k].norm2
+    threadSingle:
+      d = x
+      n = y
+  d/n
+
 proc total(n: int): float =
   ## the sum of 0..n-1 through a GpuSum
   var a = newSeq[float](n)
@@ -269,6 +380,19 @@ suite "onGpu captures":
 
   test "fields":
     check fields(lo) == 4.0*3.0*float(lo.physVol)
+
+  test "field code as in a threads block":
+    let d = fieldCode(lo)
+    when backendIsGpu: check d <= 1e-28
+    else: check d == 0.0
+
+  test "field code in a proc and over the fields of a seq":
+    let d = fieldParts(lo)
+    when backendIsGpu: check d <= 1e-28
+    else: check d == 0.0
+
+  test "a field view of device memory":
+    check fieldView(lo) == 0.0
 
   test "a sum":
     check total(1000) == 499500.0

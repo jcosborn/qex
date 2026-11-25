@@ -3,24 +3,24 @@ import backend/[accel,cpugpu]
 import strutils
 
 type
-  #FieldProxy[T] = object
-  #  f: T
   GpuFieldData*[V:static int, T] = object
-    n*: int
+    n*: int   # outer sites
+    ne*: int  # even outer sites, which come first
     p*: ptr UncheckedArray[T]
   GpuFieldObj*[V:static int, T] = object
     d*: GpuFieldData[V,T]
     pgm*: ptr GpuMem
-  GpuFieldExpr*[OP:static string, A] = object
-    args*: A
-  GpuFieldExpr2*[OP:static string, A] = GpuFieldExpr[OP,A]
   GpuField*[V:static int, T] = GpuFieldObj[V,T]
-  GpuField2*[V:static int, T] = GpuFieldObj[V,T]
-  SomeGpuField* = GpuField | GpuFieldExpr
-  SomeGpuField2* = GpuField2 | GpuFieldExpr2
+  GpuSubField*[V:static int, T] = object
+    ## the outer sites lo..<hi of a field: x.even, x.odd, x.all
+    f*: GpuField[V,T]
+    lo*, hi*: int
+  GpuFieldExpr*[OP:static string, A] = object
+    ## an expression of fields and numbers in a kernel, evaluated at a site
+    args*: A
+  SomeGpuField* = GpuField | GpuSubField | GpuFieldExpr
 template n*(x: GpuField): auto = x.d.n
 template p*(x: GpuField): auto = x.d.p
-template gpuSites*(x: GpuField): untyped = gpuSites(x.n, x.V)
 proc gpuFlagsExcl*(x: Field, f: set[gmFlags]) =
   gpuMemFlagsExcl(addr x[0], f)
 proc gpuFlagsIncl*(x: Field, f: set[gmFlags]) =
@@ -49,47 +49,112 @@ proc `[]=`*[T;V,L:static int](r: GpuField[V,T], i: SiteV[L], x: auto) =
     let v = i[] mod V
     r.p[][s][asSimd(v)] = x
 
-template `:=`*(r: GpuField, x: SomeGpuField) =
-  ## in a kernel
-  for s in gpuSites(r.n, r.V):
-    r[s] = x[s]
+# In a kernel each thread owns a fixed share of the sites of a field, and the
+# loops over the field and over its subsets visit only those sites, so a
+# kernel may run statements one after the other that read and write the
+# same sites.  On a device the share is every nt-th lane from lane t; with
+# the CPU backend, whole SIMD sites, a contiguous block of the even outer
+# sites and one of the odd ones.
 
-proc `*`*[X:SomeNumber,Y:SomeGpuField](x: X, y: Y): GpuFieldExpr["*",(X,Y)] =
-  result.args[0] = x
-  result.args[1] = y
-template index*[X:SomeNumber,Y:SomeGpuField](E: typedesc[GpuFieldExpr["*",(X,Y)]], I: typedesc[SiteV]):
-  typedesc = X * index(Y,I)
-proc `[]`*[X:SomeNumber,Y:SomeGpuField,I:SiteV](e: GpuFieldExpr["*",(X,Y)], i: I): auto =
-  type R = index(typeof e, I)
-  var r {.noInit.}: R
-  r.mul(e.args[0], e.args[1][i])
-  r
+iterator ownedLanes(lo, hi, t, nt: int): int =
+  ## lanes t + k nt in lo..<hi
+  var i = t
+  if i < lo: i += ((lo - i + nt - 1) div nt)*nt
+  while i < hi:
+    yield i
+    i += nt
 
-proc `+`*[X:SomeGpuField,Y:SomeGpuField](x: X, y: Y): GpuFieldExpr["+",(X,Y)] =
-  result.args[0] = x
-  result.args[1] = y
-template index*[X:SomeGpuField,Y:SomeGpuField](E: typedesc[GpuFieldExpr["+",(X,Y)]], I: typedesc[SiteV]):
-  typedesc = index(X,I) + index(Y,I)
-proc `[]`*[X:SomeGpuField,Y:SomeGpuField,I:SiteV](e: GpuFieldExpr["+",(X,Y)], i: I): auto =
-  type R = index(typeof e, I)
-  var r {.noInit.}: R
-  r.add(e.args[0][i], e.args[1][i])
-  r
+iterator ownedOuter(n, ne, lo, hi, t, nt: int): int =
+  ## outer sites in lo..<hi of the block of thread t of nt in the even sites
+  ## 0..<ne and of its block in the odd sites ne..<n
+  for i in max(lo, (ne*t) div nt) ..< min(hi, (ne*(t+1)) div nt): yield i
+  let no = n - ne
+  for i in max(lo, ne + (no*t) div nt) ..< min(hi, ne + (no*(t+1)) div nt): yield i
 
-proc `*`*[X:SomeGpuField,Y:SomeGpuField2](x: X, y: Y): GpuFieldExpr["*",(X,Y)] =
-  result.args[0] = x
-  result.args[1] = y
-template index*[X:SomeGpuField,Y:SomeGpuField2](E: typedesc[GpuFieldExpr["*",(X,Y)]], I: typedesc[SiteV]):
-  typedesc = index(X,I) * index(Y,I)
-proc `[]`*[X:SomeGpuField,Y:SomeGpuField2,I:SiteV](e: GpuFieldExpr["*",(X,Y)], i: I): auto =
-  type R = index(typeof e, I)
-  var r {.noInit.}: R
-  r.mul(e.args[0][i], e.args[1][i])
-  r
+when backendIsGpu:
+  iterator items*[V:static int, T](x: GpuField[V,T]): SiteV[1] =
+    ## in a kernel: the sites of x that this thread owns, one lane per index
+    for i in ownedLanes(0, x.n*V, gpuThreadNum, gpuNumThreads): yield SiteV[1](i)
+  iterator items*[V:static int, T](x: GpuSubField[V,T]): SiteV[1] =
+    for i in ownedLanes(x.lo*V, x.hi*V, gpuThreadNum, gpuNumThreads): yield SiteV[1](i)
+elif gpuSimd:
+  iterator items*[V:static int, T](x: GpuField[V,T]): SiteV[V] =
+    ## in a kernel: the sites of x that this thread owns, whole SIMD sites
+    for i in ownedOuter(x.n, x.d.ne, 0, x.n, gpuThreadNum, gpuNumThreads): yield SiteV[V](i)
+  iterator items*[V:static int, T](x: GpuSubField[V,T]): SiteV[V] =
+    for i in ownedOuter(x.f.n, x.f.d.ne, x.lo, x.hi, gpuThreadNum, gpuNumThreads): yield SiteV[V](i)
+else:  # lane by lane, through the views of lanes as on a device
+  iterator items*[V:static int, T](x: GpuField[V,T]): SiteV[1] =
+    for i in ownedOuter(x.n, x.d.ne, 0, x.n, gpuThreadNum, gpuNumThreads):
+      for l in 0..<V: yield SiteV[1](V*i + l)
+  iterator items*[V:static int, T](x: GpuSubField[V,T]): SiteV[1] =
+    for i in ownedOuter(x.f.n, x.f.d.ne, x.lo, x.hi, gpuThreadNum, gpuNumThreads):
+      for l in 0..<V: yield SiteV[1](V*i + l)
+
+template gpuSites*(x: GpuField): untyped =
+  items((let gpuF = x; gpuF))  # a copy: see gpuRange of backend/accel
+
+# In a generic proc Nim looks up the implicit items of `for e in f` where the
+# proc is instantiated, so the generic code of a library writes items(f).
+template even*[V:static int, T](x: GpuField[V,T]): GpuSubField[V,T] =
+  GpuSubField[V,T](f: x, lo: 0, hi: x.d.ne)
+template odd*[V:static int, T](x: GpuField[V,T]): GpuSubField[V,T] =
+  GpuSubField[V,T](f: x, lo: x.d.ne, hi: x.n)
+template all*[V:static int, T](x: GpuField[V,T]): GpuSubField[V,T] =
+  GpuSubField[V,T](f: x, lo: 0, hi: x.n)
+template `[]`*(x: GpuSubField, i: SiteV): untyped = x.f[i]
+
+# Expressions of fields and numbers in a kernel: x[i] of an expression is the
+# value at site index i, computed with the operators of the site types.
+
+template atSite*(x: SomeNumber; i: SiteV): untyped = x
+template atSite*(x: GpuField|GpuSubField|GpuFieldExpr; i: SiteV): untyped = x[i]
+
+template `[]`*[OP:static string, A](e: GpuFieldExpr[OP,A]; i: SiteV): untyped =
+  when OP == "+": atSite(e.args[0], i) + atSite(e.args[1], i)
+  elif OP == "-": atSite(e.args[0], i) - atSite(e.args[1], i)
+  elif OP == "*": atSite(e.args[0], i) * atSite(e.args[1], i)
+  elif OP == "neg": -atSite(e.args[0], i)
+  else: atSite(e.args[0], i).adj
+
+# Nim binds a type class to one type per signature: the second operand of a
+# binary operator has classes of its own names, so a matrix field times a
+# vector field matches.
+type
+  GpuField2*[V:static int, T] = GpuFieldObj[V,T]
+  GpuSubField2*[V:static int, T] = GpuSubField[V,T]
+  GpuFieldExpr2*[OP:static string, A] = GpuFieldExpr[OP,A]
+  SomeGpuField2* = GpuField2 | GpuSubField2 | GpuFieldExpr2
+
+proc `+`*[X:SomeGpuField, Y:SomeGpuField2](x: X; y: Y): GpuFieldExpr["+",(X,Y)] = result.args = (x, y)
+proc `+`*[X:SomeGpuField, Y:SomeNumber](x: X; y: Y): GpuFieldExpr["+",(X,Y)] = result.args = (x, y)
+proc `+`*[X:SomeNumber, Y:SomeGpuField](x: X; y: Y): GpuFieldExpr["+",(X,Y)] = result.args = (x, y)
+proc `-`*[X:SomeGpuField, Y:SomeGpuField2](x: X; y: Y): GpuFieldExpr["-",(X,Y)] = result.args = (x, y)
+proc `-`*[X:SomeGpuField, Y:SomeNumber](x: X; y: Y): GpuFieldExpr["-",(X,Y)] = result.args = (x, y)
+proc `-`*[X:SomeNumber, Y:SomeGpuField](x: X; y: Y): GpuFieldExpr["-",(X,Y)] = result.args = (x, y)
+proc `*`*[X:SomeGpuField, Y:SomeGpuField2](x: X; y: Y): GpuFieldExpr["*",(X,Y)] = result.args = (x, y)
+proc `*`*[X:SomeGpuField, Y:SomeNumber](x: X; y: Y): GpuFieldExpr["*",(X,Y)] = result.args = (x, y)
+proc `*`*[X:SomeNumber, Y:SomeGpuField](x: X; y: Y): GpuFieldExpr["*",(X,Y)] = result.args = (x, y)
+proc `-`*[X:SomeGpuField](x: X): GpuFieldExpr["neg",(X,)] = result.args = (x,)
+proc adj*[X:SomeGpuField](x: X): GpuFieldExpr["adj",(X,)] = result.args = (x,)
+
+template assignOp(op: untyped) =
+  template op*(r: GpuField|GpuSubField; x: SomeGpuField|SomeNumber) =
+    ## in a kernel: the statement at the sites of r that this thread owns
+    block:
+      let gpuR = r  # a copy: see gpuRange of backend/accel
+      let gpuX = x
+      for gpuE in items(gpuR):
+        op(gpuR[gpuE], atSite(gpuX, gpuE))
+assignOp(`:=`)
+assignOp(`+=`)
+assignOp(`-=`)
+assignOp(`*=`)
 
 
 proc toGpu*(g: var GpuField, c: Field) =
   g.d.n = c.l.nSitesOuter
+  g.d.ne = c.l.nEvenOuter
   when not beSharedMem:
     tic("toGpuField")
     pushGpuMemTag("Field"&capitalizeAscii(displayName(typeof(g.T))))
@@ -102,6 +167,15 @@ proc toGpu*(g: var GpuField, c: Field) =
     toc("copyIn",flops=pgm.bytes)
   else:
     g.d.p = cast[type g.p](addr c[0])
+
+proc gpuFieldView*[V:static int](lo: Layout[V]; T: typedesc; p: pointer): auto =
+  ## a field view of device memory p that holds a field of lo with element
+  ## type T, as gpuMalloc gives it
+  var g: GpuField[V, gpuType(T)]
+  g.d.n = lo.nSitesOuter
+  g.d.ne = lo.nEvenOuter
+  g.d.p = cast[typeof(g.d.p)](p)
+  g
 
 proc toGpu*(c: Field): auto =
   var g: gpuType(typeof c)
@@ -178,7 +252,7 @@ template numberType*[T:CgFld](x: typedesc T): typedesc = numberType(T.C)
 #template numberType*[T:CgFld](x: T): typedesc = numberType(T.C)
 template `:=`*(r: CgFld, x: SomeNumber) =
   r.cpu := x
-template gpuSites*(x: CgFld): untyped = gpuSites(x.gpu.n, x.gpu.V)
+template gpuSites*(x: CgFld): untyped = items(x.gpu)
 
 template displayName*[T](t: typedesc[Color[T]]): string =
   "Color" & displayName(T)
@@ -198,6 +272,7 @@ proc newCgField*(c: Field): auto =
   r.new
   r.cpu = c
   r.gpu.d.n = c.l.nSitesOuter
+  r.gpu.d.ne = c.l.nEvenOuter
   when not beSharedMem:
     #r.gpu.p = cast[type r.gpu.p](gpuMalloc(r.gpu.bytes))
     pushGpuMemTag("Field"&capitalizeAscii(displayName(typeof(r.gpu.T))))

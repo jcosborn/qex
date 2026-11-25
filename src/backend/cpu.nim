@@ -87,7 +87,10 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
         const inOnGpu {.inject,used.} = true
         when declared(qexThreadsBlock):
           # no nested proc here: it would move the device values of every
-          # thread into one shared environment
+          # thread into one shared environment.  The barrier: a thread owns
+          # other sites in the loops of a kernel than in those of the code
+          # of the block before it.
+          threadBarrier()
           let gpuTn {.inject, used.} = threadNum
           let gpuNt {.inject, used.} = numThreads
           shadow

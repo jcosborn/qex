@@ -36,7 +36,8 @@ The body is the code of one thread. It runs once in each thread, with
 through iterators:
 
 - `gpuRange(m)`: the indices of `0..<m` of this thread.
-- `gpuSites(f)`: the sites of the field `f` of this thread.
+- `for e in f`, `f.even`, `f.odd`, `f.all`: the sites of the field `f` that
+  this thread owns (see [Field code](#field-code)).
 
 A device thread gets every `gpuNumThreads`-th index, so neighboring threads
 touch neighboring memory, and with as many threads as indices each thread
@@ -94,6 +95,72 @@ a device and SIMD code on the CPU. Neighbors are the part that differs:
 a table per outer site names the outer site of the neighbors and the swap
 of its lanes (`perm`), see `dslash` of
 [`physics/stagGpu`](../src/physics/stagGpu.nim).
+
+## Field code
+
+A kernel can be written as field code in a `threads:` block:
+
+```nim
+proc update(r, a, b: Field; m: Field2; c: float) =
+  onGpu(r.l):
+    r := c*a + b
+    r += m*a
+    r.odd := 0
+    for e in r.even:
+      r[e] := r[e] - m[e].adj*b[e]
+```
+
+- `for e in f` visits the sites of `f` that this thread owns: one lane per
+  index on a device, a whole SIMD site with the CPU backend. `f.even`,
+  `f.odd` and `f.all` visit the owned sites of those subsets.
+- A thread owns the same sites in every loop over a field or its subsets:
+  every `gpuNumThreads`-th lane on a device, a block of the even and a block
+  of the odd outer sites with the CPU backend. Statements that read and
+  write the same sites follow each other in one kernel without a barrier.
+  A statement that reads other sites written in the same kernel, such as
+  neighbors, needs a launch of its own: a device has no barrier across a
+  launch.
+- `:=`, `+=`, `-=` and `*=` take a field, a subset, or an expression of
+  fields and numbers with `+`, `-`, `*`, unary `-` and `adj`. The
+  expression is evaluated at each owned site with the operators of the
+  site types.
+- `f[e]` is the site value of the QEX types. On devices the products,
+  sums, adjoints, numbers, `trace`, `redot`, `norm2` and `projectTAH` of
+  QEX work in kernels, copied by `inlineProcs`; `expAH` and `exp` do not
+  survive the copy.
+- A field captured by the body has its device copy in the GPU memory table;
+  `gpuFieldView(lo, T, p)` is a field of the layout `lo` with element type
+  `T` over device memory `p` from `gpuMalloc`, without a table entry.
+
+With the CPU backend such a kernel gives the bits of the same code in a
+`threads:` block, apart from sums (their order differs) and functions whose
+SIMD form treats the lanes together (`expAH` scales by the largest norm of
+the lanes).
+
+Rules that the CPU backend does not check:
+
+- On a device `f[e]` is a view of the field: `let m = f[e]` refers to the
+  field, where the CPU copies. Copy with `var m {.noInit.}: evalType(f[e])`
+  and `m := f[e]` when the site changes before `m` is used. `adj` is a view
+  everywhere: `r := r.adj` reads what it overwrites, as in `threads:` code.
+- `gpuThreadNum`, `gpuNumThreads` and the iterators exist only in kernels
+  and in the procs that a device kernel copies; elsewhere a device build
+  stops in the C compile (`qexTid` undeclared).
+- Loops over fields and loops over `gpuRange(m)` give a thread different
+  shares; statements on the same data in one kernel use one kind.
+- The launch copies `a[i]` of a loop `for e in a[i]` in the body (Nim passes
+  it to the iterator by address, and the captures of a SYCL, CUDA or HIP
+  kernel are constant); a template that loops over a field argument binds
+  it to a `let` first.
+- A kernel over a subset launches with the sites of the subset, for
+  example `onGpu(lo.nEven): x.even := 0`; with `onGpu(lo)` half the threads
+  wait.
+- In a generic proc Nim looks up the `items` of `for e in f` where the proc
+  is instantiated: generic code of a library writes `items(f)`, or every
+  module that instantiates it imports `backend/cgfield`.
+
+A CPU build with `-d:gpuSimd=false` runs field kernels lane by lane through
+the views of lanes, as a device does.
 
 ## What a body may name
 
