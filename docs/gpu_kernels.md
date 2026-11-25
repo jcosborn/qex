@@ -125,9 +125,10 @@ proc update(r, a, b: Field; m: Field2; c: float) =
   expression is evaluated at each owned site with the operators of the
   site types.
 - `f[e]` is the site value of the QEX types. On devices the products,
-  sums, adjoints, numbers, `trace`, `redot`, `norm2` and `projectTAH` of
-  QEX work in kernels, copied by `inlineProcs`; `expAH` and `exp` do not
-  survive the copy.
+  sums, adjoints, numbers, `trace`, `redot`, `norm2`, `projectTAH` and
+  `expAH` of QEX work in kernels, copied by `inlineProcs`; `exp` exceeds the
+  iteration limit of the compiler's VM. A proc that `inlineProcs` copies
+  must not declare types in its body: the copy drops type sections.
 - A field captured by the body has its device copy in the GPU memory table;
   `gpuFieldView(lo, T, p)` is a field of the layout `lo` with element type
   `T` over device memory `p` from `gpuMalloc`, without a table entry.

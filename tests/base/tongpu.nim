@@ -236,6 +236,48 @@ proc fieldView(lo: Layout): float =
       n = y
   d/n
 
+proc siteOps(lo: Layout): array[3, float] =
+  ## differences between a kernel and a threads block with QEX's operators
+  ## of the site types: u = expAH(t p) u, f = TAH(u h^+) (|a - b|^2/|b|^2),
+  ## and the sum of Re tr(u h^+) of this rank through a GpuSum (relative)
+  var rng = lo.newRNGField(RngMilc6, 2345)
+  var h = lo.ColorMatrix()
+  var p = lo.ColorMatrix()
+  var u, f, v, g = lo.ColorMatrix()
+  h.gaussian rng
+  u.gaussian rng
+  threads:
+    for e in p: p[e].projectTAH(h[e])
+    for e in u: u[e] := expAH(p[e])
+    v := u
+  let t = 0.3
+  var gs = newGpuSum[float](lo.nSites)
+  onGpu(lo):
+    for e in u:
+      u[e] := expAH(t*p[e]) * u[e]
+    for e in f:
+      f[e].projectTAH(u[e] * h[e].adj)
+    var s = 0.0
+    for e in u: s += simdSum(redot(u[e], h[e]))
+    gs.reduce s
+  let sk = gs.value
+  gs.free
+  var r: array[5, float]
+  threads:
+    for e in v:
+      v[e] := expAH(t*p[e]) * v[e]
+    for e in g:
+      g[e].projectTAH(v[e] * h[e].adj)
+    var s = 0.0
+    for e in v: s += simdSum(redot(v[e], h[e]))
+    threadSum(s)
+    let a = norm2(u - v)
+    let b = v.norm2
+    let c = norm2(f - g)
+    let d = g.norm2
+    threadSingle: r = [a, b, c, d, s]
+  [r[0]/r[1], r[2]/r[3], abs(sk - r[4])/abs(r[4])]  # the sums of this rank
+
 proc scaleBy(x: auto; a: float) =
   ## a share of a loop in a proc that a kernel calls; inlineProcs copies it
   ## into device kernels
@@ -390,6 +432,14 @@ suite "onGpu captures":
     let d = fieldParts(lo)
     when backendIsGpu: check d <= 1e-28
     else: check d == 0.0
+
+  test "QEX operators of the site types":
+    let d = siteOps(lo)
+    # on lanes expAH scales by the norm of the lane, on SIMD vectors by the
+    # largest norm of the lanes
+    when backendIsGpu or not gpuSimd: check d[0] <= 1e-28 and d[1] <= 1e-28
+    else: check d[0] == 0.0 and d[1] == 0.0
+    check d[2] <= 1e-13
 
   test "a field view of device memory":
     check fieldView(lo) == 0.0
