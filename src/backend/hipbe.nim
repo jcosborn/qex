@@ -1,8 +1,7 @@
 import macros, strutils
-import base/[metaUtils,profile]
+import base/[metaUtils,profile,threading]
 import expr
 import hip
-export hip.dataAddr
 
 var kernelCallCount* = 0  # _twice_ kernel calls, incremented before setup and after finalize
 #var kernelSetupCount* = 0  # number of kernel calls, incremented before setup
@@ -15,17 +14,24 @@ proc gpuNumDevices*: int =
   result = deviceCount
 
 proc gpuInit*(device: int) =
-  let dev = device mod gpuNumDevices()
-  let err = hipSetDevice(cint dev)
-  if err:
-    echo "HIP error: ", cast[cint](err)
-  doAssert(not err)
+  ## Selects the device of this rank in every host thread.  HIP keeps the
+  ## current device per thread, device 0 until set, and the thread that takes
+  ## the single of a launch in a threads block launches the kernel.
+  let dev = cint(device mod gpuNumDevices())
+  var bad = cint 0
+  threads:
+    let err = hipSetDevice(dev)
+    if err:
+      threadCritical: bad = cast[cint](err)
+  if bad != 0:
+    echo "HIP error: ", bad
+  doAssert(bad == 0)
 
 template gpuMalloc*(size: SomeInteger):pointer =
   var p:pointer
   let err = hipMalloc(p, csize_t size)
   if err:
-    echo "gpuMalloc: ", err
+    echo "gpuMalloc: ", $err  # $ of this module: callers need not import hip
     p = cast[pointer](0)
   p
 template gpuMalloc[T](x: var ptr UncheckedArray[T], n: int) =
@@ -36,132 +42,153 @@ template gpuMalloc[T](x: ptr T) =
 template gpuFree*(p:pointer) =
   let err = hipFree(p)
   if err:
-    echo err
+    echo $err
     quit cast[cint](err)
 
 proc gpuMemset*(devPtr: pointer, value: SomeInteger, count: SomeInteger) =
   let err = hipMemset(devPtr, cint value, csize_t count)
   if err:
-    echo "gpuMemset: ", err
+    echo "gpuMemset: ", $err
+    quit cast[cint](err)
 #proc gpuMemCpyToGpu*(dst,src: pointer, count: SomeInteger):cint {.discardable.} =
 proc gpuMemCpyToGpu*(dst,src: pointer, count: SomeInteger) =
   let err = hipMemcpy(dst,src,csize_t count,hipMemcpyHostToDevice)
   if err:
     echo instantiationInfo()
-    echo "  gpuMemCpyToGpu: ", err
+    echo "  gpuMemCpyToGpu: ", $err
+    quit cast[cint](err)
 #proc gpuMemCpyToCpu*(dst,src: pointer, count: SomeInteger):cint {.discardable.} =
 template gpuMemCpyToCpu*(dst,src: pointer, count: SomeInteger) =
   let err = hipMemcpy(dst,src,csize_t count,hipMemcpyDeviceToHost)
   if err:
     echo instantiationInfo()
-    echo "  gpuMemCpyToCpu: ", err
+    echo "  gpuMemCpyToCpu: ", $err
+    quit cast[cint](err)
 
-template gpuThreadNum*: auto =
-  blockDim.x * blockIdx.x + threadIdx.x
-template gpuNumThreads*: auto =
-  gridDim.x * blockDim.x
+template gpuMemCpyToCpuAsync*(dst, src: pointer; count: SomeInteger) =
+  ## Queues the copy to the pinned host memory dst after the kernels already
+  ## submitted; gpuWaitAsync waits for it too.
+  let err = hipMemcpyAsync(dst, src, csize_t count, hipMemcpyDeviceToHost, nil)
+  if err:
+    echo "gpuMemCpyToCpuAsync: ", $err
+    quit cast[cint](err)
 
-template hipDefs(body: untyped): untyped {.dirty.} =
-  bind inlineProcs
-  {.emit:["#define nimZeroMem(b,len) memset((b),0,(len))"].}
-  {.emit:["#define nimCopyMem(a,b,len) memcpy((a),(b),(len))"].}
-  {.pragma: shared, noInit, codegendecl:"__shared__ $# $#".}
-  inlineProcs:
-    body
-  {.emit:["#undef nimZeroMem"].}
-  {.emit:["#undef nimCopyMem"].}
+const gpuCopyFast* = 16384  ## bytes up to which a queued copy has its low cost: 2.9 us on MI300X, 8.2 us from 16400 bytes on
 
-proc hipproc(s:string, p:NimNode):NimNode =
-  #echo "begin hip:"
-  #echo s
-  #let ss = s.strVal
-  #echo "proc:"
-  #echo p.treerepr
-  p.expectKind nnkProcDef
-  result = p
-  # if p.kind == nnkProcDef:
-  #   result = p
-  # else:
-  #   result = p[0]
-  result.addPragma parseExpr("{.codegenDecl:\""&s&" $# $#$#\".}")[0]
-  result.body = getAst(hipDefs(result.body))
-  var sl = newStmtList()
-  #sl.add( quote do:
-  #  {.push checks: off.}
-  #  {.push stacktrace: off.} )
-  sl.add result
-  result = sl
-  #echo "end hip:"
-  #echo result.treerepr
+const gpuThreads {.intdefine.} = 128  ## threads per block of the kernels
+var gpuI {.importc, nodecl.}: clong  # the index in the kernels
 
-proc genCpuPrepare(n:seq[NimNode]):NimNode =
-  result = newNimNode(nnkTupleConstr)
-  for c in n:
-    result.add newCall(ident"toGpu", c[0])
+template gpuForAsync(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
+  ## The kernel of an onGpu launch: i in 0..<n, returning before it
+  ## completes; gpuWaitAsync waits for it.  sub, the sub-group size on Intel GPUs, does not apply.
+  ## Captured pointers must be device pointers.
+  let gpuN = int(n)
+  if gpuN > 0:
+    let gpuB = cuint((gpuN + gpuThreads - 1) div gpuThreads)
+    {.emit: ["qexFor<", gpuThreads, "><<<", gpuB, ", ", gpuThreads, ">>>(", gpuN, ", [=] __device__ (long gpuI) {"].}
+    # Nim zeroes and copies arrays with its host procs nimZeroMem and nimCopyMem
+    {.emit: "\n#define nimZeroMem(b,len) memset((b),0,(len))\n#define nimCopyMem(a,b,len) memcpy((a),(b),(len))".}
+    block:
+      let i = int(gpuI)
+      body
+    {.emit: "\n#undef nimZeroMem\n#undef nimCopyMem\n});".}
+    let err = hipGetLastError()
+    if err:
+      echo "gpuForAsync: ", $err
+      quit 1
 
-proc genCpuFinalize(n:seq[NimNode], a: NimNode):NimNode =
-  template r(a,x,i:untyped):untyped =
-    fromGpu(x,a[i])
-  result = newstmtlist()
-  for c in n:
-    result.add getast r(a,c[0],c[2])
+template gpuWaitAsync* =
+  let err = hipDeviceSynchronize()
+  if err:
+    echo "gpuWaitAsync: ", $err
+    quit 1
 
-macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
+template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
+  ## r[k] += v atomically, in kernels
+  let kk = k
+  let vv = v
+  {.emit: ["atomicAdd(&", r, "[", kk, "], ", vv, ");"].}
+
+template gpuAtomicAdd*(r: ptr UncheckedArray[uint64]; k: int; v: uint64) =
+  ## r[k] += v modulo 2^64 atomically, in kernels
+  let kk = k
+  let vv = v
+  {.emit: ["atomicAdd((unsigned long long*)&", r, "[", kk, "], (unsigned long long)", vv, ");"].}
+
+proc gpuMallocHost*(size: SomeInteger): pointer =
+  ## pinned host memory, for fast copies from the device
+  let err = hipHostMalloc(addr result, csize_t size)
+  if err:
+    echo "gpuMallocHost: ", $err
+    quit 1
+template gpuFreeHost*(p: pointer) = discard hipHostFree(p)
+
+proc gpuFinish*[P](fl: static string; count: int; flops: float; ps: P; back: proc(ps: P) {.nimcall.}) =
+  ## The end of a kernel launch: waits for the device, then back copies what
+  ## the kernel wrote to the host variables of ps (hostBack).
+  var countSave = -1  # the count before, in the thread that lowers it
+  when gpuLaunchTimers: tic(fl)
+  threadSingle:
+    countSave = kernelCallCount
+    kernelCallCount = count
+    let err = hipDeviceSynchronize()
+    if err:
+      echo "onGpu kernel: ", $err
+      quit cast[cint](err)
+  when gpuLaunchTimers: toc("wait",flops=flops)
+  back(ps)
+  if countSave >= 0: kernelCallCount = countSave  # the same thread restores it
+  threadBarrier()
+  when gpuLaunchTimers: toc("cpuFinalize")
+
+proc gpuFinalizer*[P](fl: static string; count: int; flops: float; ps: P; back: proc(ps: P) {.nimcall.}): proc() =
+  ## gpuFinish as a closure, for onGpuNowait.  The closure has an
+  ## environment of its own, so every thread of a threads block gets one
+  ## and may keep it.
+  result = proc() = gpuFinish(fl, count, flops, ps, back)
+
+macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): untyped =
+  ## Queues body as a kernel of n threads, n a count or what gpuSites turns
+  ## into one.  The kernel is that of gpuForAsync, its captures the device
+  ## values of the variables that body names (backend/expr), locals of the
+  ## launch that the kernel reads in place.  fin: 0 queues the kernel, 1
+  ## gives the finalizer, which waits for the device and copies back, 2 does
+  ## that at once (a wait only where nothing is copied back).
   let li = body.lineinfo
   let lis = li.split({'/','.','(',','})
   let fl = lis[^4] & "(" & lis[^2] & ")"
-  template target(fl, nn, tpb, v, arg, cpuPrepare, cpuFinalize, body: untyped): untyped =
-    mixin toGpu, getGpu, fromGpu
+  template target(fl, n, sub, pre, shadow, hostPairs, queued, copies, body, fin: untyped): untyped =
+    mixin toGpu, getGpu, fromGpu, gpuSites
     inc kernelCallCount  # increment before setup
     block:
       let thisKernelCallCount = kernelCallCount  # save current value for finalizer
-      tic(fl)
-      var v = cpuPrepare  # kernel argument tuple
-      toc("cpuPrepare")
-      type ByCopy[T] {.bycopy.} = object
-        d: T
-      proc kern(arg: ByCopy[type(v)]) {.cdecl,hipGlobal.} =
-        const inOnGpu {.inject,used.} = true
-        {.push checks: off.}
-        {.push stacktrace: off.}
-        body
-      let ni = nn.int32
-      let threadsPerBlock = tpb.int32
-      let blocksPerGrid = (ni+threadsPerBlock-1) div threadsPerBlock
-      #echo "launching kernel"
+      when gpuLaunchTimers: tic(fl)
+      let gpuNt {.inject.} = int(gpuSites(n))
+      gpuLaunchThreads = gpuNt
+      pre  # the device values
+      when fin == 1 or (fin == 2 and copies):
+        let hp = hostPairs  # before the kernel values take the names of the host variables
+      shadow  # the kernel values: locals of the launch that the kernel captures and reads in place
       threadSingle:
-        hipLaunch(kern, blocksPerGrid, threadsPerBlock, v)
-      toc("launch")
-      proc finalize {.gensym.} =
-        var countSave = 0
-        tic(fl)
-        threadSingle:
-          countSave = kernelCallCount
-          kernelCallCount = thisKernelCallCount
-          discard hipDeviceSynchronize()
-        when declared gpuWaitFlops:
-          toc("wait",flops=gpuWaitFlops)
-        else:
-          toc("wait")
-        cpuFinalize
-        #threadBarrier()
-        threadSingle:
-          kernelCallCount = countSave
-        toc("cpuFinalize")
+        gpuForAsync(gpuTn, gpuNt, sub):
+          const inOnGpu {.inject,used.} = true
+          gpuKernelBody(gpuTn, gpuNt):
+            inlineProcs:
+              body
       inc kernelCallCount  # increment after launch
-      finalize
-  let
-    varg = gensym(nskVar, "varg")
-    arg = gensym(nskParam, "arg")
-  proc deref(x,g,i:NimNode):auto =
-    newCall("getGpu",x,
-            newNimNode(nnkBracketExpr).add(
-              newNimNode(nnkDotExpr).add(arg,ident"d"), i))
-  let
-    v = prepareVars(body,deref)  # gather gpu pointers in symbols, body is changed accordingly
-    cpuPrepare = genCpuPrepare v
-    cpuFinalize = genCpuFinalize(v, varg)
-  result = getast(target(fl, nn0, tpb0, varg, arg, cpuPrepare, cpuFinalize, body))
+      # one profile timer per launch: "launch", or "wait" where onGpu only waits
+      when fin == 2 and not copies:
+        if numThreads > 1:
+          threadSingle: gpuWaitAsync()
+        else: gpuWaitAsync()
+        when gpuLaunchTimers: toc("wait", flops=(when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0))
+      else:
+        when gpuLaunchTimers: toc("launch")
+        when fin == 1: gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+        elif fin == 2: gpuFinish(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+        else: queued
+  let c = kernelCap(body, n)
+  result = getast(target(fl, n, newLit(sub), c.pre, c.shadow, c.pairs, c.queued, c.copies, c.body, newLit(fin)))
   case dumpKernels
   of 1:
     echo li
@@ -169,90 +196,20 @@ macro onGpuNowait(nn0,tpb0: untyped, body: untyped): auto =
   of 2:
     echo li
     echo result.treerepr
-  else:
-    if dumpKernels > 2:
-      echo li
-      var sl = newNimNode(nnkStmtListExpr)
-      sl.add newCall(bindsym"echoTyped", result)
-      sl.add result
-      result = sl
+  else: discard
 
-var gpuBlockSizeRequest* = 64
-var gpuNumThreadsRequest* = 32*1024
-template gpuSites(n: int): int = n
-template onGpuNowait*(body: untyped): auto =
-  onGpuNoWait(gpuNumThreadsRequest, gpuBlockSizeRequest, body)
-template onGpuNowait*(n0,body: untyped): auto =
-  mixin gpuSites
-  let n = gpuSites(n0)
-  var b = gpuBlockSizeRequest
-  while b > n: b = b div 2
-  onGpuNoWait(n, b, body)
-#template onGpuNowait*(n,b,body: untyped): auto =
-#  onGpuNoWait(n, b, body)
+var gpuNumThreadsRequest* = 32*1024  ## threads of a kernel launched without a count
+template onGpuNowait*(n, body: untyped): auto = gpuKernel(1, n, 0, body)
+template onGpuNowait*(n, sub, body: untyped): auto =
+  ## sub: the size of the sub-groups on Intel GPUs, as the compiler chooses for 0
+  gpuKernel(1, n, sub, body)
+template onGpuNowait*(body: untyped): auto = gpuKernel(1, gpuNumThreadsRequest, 0, body)
+template onGpuQueue*(n, body: untyped) =
+  ## onGpuNowait for a kernel whose variables stay on the device
+  ## (gpuResident): nothing is copied back, and gpuWaitAsync waits for it.
+  gpuKernel(0, n, 0, body)
+template onGpuQueue*(n, sub, body: untyped) = gpuKernel(0, n, sub, body)
 
-template onGpu*(body: untyped) =
-  let finalize = onGpuNoWait(body)
-  finalize()
-template onGpu*(n,body: untyped) =
-  mixin gpuSites
-  let finalize = onGpuNoWait(gpuSites(n), body)
-  finalize()
-template onGpu*(n,b,body: untyped) =
-  mixin gpuSites
-  let finalize = onGpuNoWait(gpuSites(n), b, body)
-  finalize()
-
-when isMainModule:
-  type FltArr = UncheckedArray[float32]
-
-  #proc vectorAdd(A: FltArr; B: FltArr; C: var FltArr; n: int32) {.cdecl,hipGlobal.} =
-  #  var i = blockDim.x * blockIdx.x + threadIdx.x
-  #  if i < n:
-  #    C[i] = A[i] + B[i]
-
-  proc test =
-    var n = 50000
-    var
-      a = newSeq[float32](n)
-      b = newSeq[float32](n)
-      c = newSeq[float32](n)
-    for i in 0..<n:
-      a[i] = 1
-      b[i] = 2
-    var threadsPerBlock = 256
-    var blocksPerGrid = (n + threadsPerBlock - 1) div threadsPerBlock
-
-    #hipLaunch(vectorAdd, blocksPerGrid, threadsPerBlock, a, b, c, n)
-    #discard hipDeviceSynchronize()
-
-    template toGpu(x: SomeNumber): auto = x
-    template getGpu(x,g: SomeNumber): auto = g
-    template fromGpu(x,g: SomeNumber) = discard
-
-    proc toGpu[T](x: seq[T]): ptr UncheckedArray[T] =
-      let n = x.len
-      result = cast[typeof result](gpuMalloc(n*sizeof(T)))
-      #echo "p: ", cast[int](result)
-      gpuMemCpyToGpu(result, addr x[0], n*sizeof(T))
-    template getGpu(x: seq, g: ptr UncheckedArray): auto = g
-    template fromGpu[T](x: seq[T], g: ptr UncheckedArray[T]) =
-      let n = x.len
-      gpuMemCpyToCpu(addr x[0], g, n*sizeof(T))
-      # should free g
-
-    onGpu(n):
-      let i = int getBlockDim().x * getBlockIdx().x + getThreadIdx().x
-      if i < n:
-        c[i] = a[i] + b[i]
-
-    var errcnt = 0
-    for i in 0..<n:
-      let d = a[i] + b[i]
-      if errcnt < 10 and c[i] != d:
-        echo "error: ", i, "  ", c[i], "  ", d
-        inc errcnt
-    if errcnt == 0:
-      echo "Test passed"
-
-  test()
+template onGpu*(body: untyped) = gpuKernel(2, gpuNumThreadsRequest, 0, body)
+template onGpu*(n, body: untyped) = gpuKernel(2, n, 0, body)
+template onGpu*(n, sub, body: untyped) = gpuKernel(2, n, sub, body)

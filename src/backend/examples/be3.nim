@@ -63,7 +63,7 @@ template fromGpu*(x: var cgmatarr, g: Mat, cpy: bool) =
       gpuMemCpyToCPU(x.cpu.dat, g.dat, x.cpu.bytes)
 
 block:
-  commsInit()
+  qexInit()  # also sets up the threads that gpuRange splits over
   let N = intParam("n", 1024)
   var x = newCgmatarr(N*V)
   var y = newCgmatarr(N*V)
@@ -132,4 +132,4 @@ block:
   echo "Gflops: ", flops * b.perNs
   echo "Gbytes: ", bytes * b.perNs
   doAssert(errcnt==0)
-  commsFinalize()
+  qexFinalize()

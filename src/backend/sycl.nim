@@ -33,10 +33,6 @@ type
   LocalPtr*[T] {.importcpp:"decltype(sycl::multi_ptr<'0,sycl::access::address_space::local_space,sycl::access::decorated::legacy>().get())",syclh.} = object
   AtomicRef*[T] {.importcpp:"sycl::atomic_ref<'0,sycl::memory_order::relaxed,sycl::memory_scope::device,sycl::access::address_space::global_space>".} = object
   SyclPlus*[T] {.importcpp:"std::plus", syclh.} = object
-  #SyclReduction*[T,R] {.importcpp:"sycl::intel::reduction", syclh.} = object
-  #SyclRed*[N:static[int]] = object
-  #SyclRed* = distinct string
-  SyclRed* = distinct int
 
 type
   Buffer*[T;N:static[int]] = ref object
@@ -86,6 +82,7 @@ proc version*(x: Device): cppstring {.
 proc ename*(x: Device) =
   {.emit:["printf(\"%s\\n\",", x, ".get_info<sycl::info::device::name>().c_str());"].}
 proc queue*(x: Device): Queue {.importcpp:"sycl::queue(#)".}
+proc inOrderQueue*(x: Device): Queue {.importcpp:"sycl::queue(#, sycl::property::queue::in_order())".}
 proc maxComputeUnits*(x: Device): uint32 {.
   importcpp:"#.get_info<sycl::info::device::max_compute_units>()".}
 proc preferredVectorWidthFloat*(x: Device): uint32 {.
@@ -180,20 +177,20 @@ proc mallocShared*(num_bytes: int, q: Queue):
 proc mallocShared*(T: typedesc, count: int, q: Queue): ptr UncheckedArray[T] {.
   importcpp:"sycl::malloc_shared<'1>(##,#)".}
 
-proc memcpy*(q: Queue, dest,src: pointer, count: SomeInteger)
-  {.importcpp:"#.memcpy(@).wait()".}
-proc memset*(q: Queue, dest: pointer, val,count: SomeInteger)
-  {.importcpp:"#.memset(@).wait()".}
+proc memcpyAsync*(q: Queue, dest,src: pointer, count: SomeInteger)
+  {.importcpp:"#.memcpy(@)".}
+proc memsetAsync(q: Queue, dest: pointer, val,count: SomeInteger)
+  {.importcpp:"#.memset(@)".}
+proc memcpy*(q: Queue, dest,src: pointer, count: SomeInteger) =
+  ## waits on the queue, which covers the copy on an in-order queue
+  q.memcpyAsync(dest, src, count)
+  q.wait
+proc memset*(q: Queue, dest: pointer, val,count: SomeInteger) =
+  q.memsetAsync(dest, val, count)
+  q.wait
 
 proc syclPlus*[T](t: typedesc[T]): SyclPlus[T] {.
   importcpp:"'0()", syclh, constructor.}
-
-#proc reduction*[T,R](x: SyclAccessor[T,1,AmReadWrite,TgGlobal], r: R):
-#        SyclReduction[T,R] {.
-#          importcpp:"sycl::intel::reduction(#,#)", syclh.}
-
-#proc combine*[T,R](r: SyclReduction[T,R], x: T) {.
-#  importcpp:"#.combine(#)", syclh.}
 
 #template hostRead*[T;N:static[int]](b: Buffer[T,N]): untyped =
 #  newSyclAccessor[T,N,AmRead,TgHost](b.buf)
@@ -216,134 +213,11 @@ proc getPointer*[T;N:static[int];M](
 
 #template lambda(
 
-template submit0*(q: Queue, body: typed) =
-  proc qs(qq: Queue) {.gensym.} =
-    {.emit:[qq,".submit([&](sycl::handler &cgh){"].}
-    body
-    {.emit:"});".}
-  qs(q)
-
-template submit*(q: Queue, body: typed) =
-  block:
-    {.emit:[q,".submit([&](sycl::handler &cgh){"].}
-    body
-    {.emit:["});"].}
-
-template setupSycl* =
-  {.pragma: id1, importcpp:"it",nodecl,header:"",noinit,codegendecl:"".}
-  {.pragma: item1, importcpp:"it",nodecl,header:"",noinit,codegendecl:"".}
-#setupSycl()
-#macro id1*(x: untyped): untyped =
-  #echo "test"
-  #echo x.kind
-  #echo x.repr
-  #echo x.treerepr
-  #x
-  #newEmptyNode()
-
 proc `[]`*(x: Id1): cint {.importcpp:"#[0]".}
 proc `[]`*(x: Item1): cint {.importcpp:"#[0]".}
 proc `[]`*(x: Nd1): cint {.importcpp:"#.get_global_id(0)".}
 proc getRange*(x: Item1): cint {.importcpp:"#.get_range(0)".}
 proc getRange*(x: Nd1): cint {.importcpp:"#.get_global_range(0)".}
-
-template parallelFor*(n: int, body: typed) =
-  #{.emit:["cgh.parallel_for<class syclkern>(sycl::range<1>{",n.uint,"},[=](sycl::item<1> it)"].}
-  {.emit:["cgh.parallel_for<>(sycl::range<1>{",n.uint,"},[=](sycl::item<1> it)"].}
-  #{.emit:["cgh.parallel_for<>(sycl::nd_range<1>{",n.uint,",16},[=](sycl::nd_item<1> it)"].}
-  block:
-    body
-  {.emit:[");"].}
-
-#template sum*[T](x: SyclAccessor[T,1,AmReadWrite,TgGlobal]):
-#         SyclReduction[T,SyclPlus[T]] = reduction(x, syclPlus(type(T)))
-var rnames {.compiletime.} = newSeq[string](0)
-macro sumX*(x: typed, et: typedesc): untyped =
-  let t = $x & "_red"
-  let n = rnames.len
-  #let et = T.getTypeInst
-  #echo type(T).getImpl.repr
-  #echo T.getTypeInst.repr
-  #echo x.getTypeInst.repr
-  echo et.repr
-  rnames.add t
-  #result = newNimNode(nnkPragma)
-  #result.add
-  result = quote do:
-    {.emit:["auto ", `t`, " = sycl::ONEAPI::reduction(", `x`, ",std::plus<", `et`, ">());"].}
-    #SyclRed(`t`)
-    SyclRed(`n`)
-    #false
-  echo result.treerepr
-template sum*[T](x: SyclAccessor[T,1,AmReadWrite,TgGlobal]): untyped =
-  sumX(x, type(T))
-
-#macro val(x: typed): untyped =
-#  #echo x.repr
-#  let v = x.getImpl[2][1][1]
-#  echo v.treerepr
-#  result = v
-macro nm(x: typed): untyped =
-  let v = x.getImpl[2][1][1]
-  let i = v.intVal
-  echo v.treerepr
-  echo i
-  result = newLit(rnames[i])
-macro nm2(x: typed): untyped =
-  let v = x.getImpl[2][1][1]
-  let i = v.intVal
-  echo v.treerepr
-  echo i
-  result = newLit(rnames[i] & "x")
-template parallelFor*(n: int, r: SyclRed, body: typed) =
-  {.emit:["cgh.parallel_for(sycl::nd_range<1>{",n.uint,",1},",nm(r),",[=](sycl::nd_item<1> it,auto&",nm2(r),")"].}
-  block:
-    body
-  {.emit:[");"].}
-
-macro combine*(r: SyclRed, x: typed): untyped =
-  echo r.repr
-  echo r.getImpl.treerepr
-  echo r.getImpl[2][1][1].repr
-  let v = r.getImpl[2][1][1]
-  let i = v.intVal
-  let n = newLit(rnames[i] & "x")
-  result = quote do:
-    {.emit:[`n`, ".combine(", `x`, ");"].}
-
-#template devWrite*[T;N:static[int]](b: Buffer[T,N]): untyped =
-  #static: echo $T.type
-  #static: echo $N
-  #getAccess[T,N,amWrite,tgGlobal](b.buf)
-  #b.buf.getAccess(amWrite,tgGlobal)
-  #getAccess[amWrite,tgGlobal](b.buf)
-  #b.buf.writeGlobal()
-#  var cgh {.importcpp:"cgh",nodecl,header:"",noinit,codegendecl:"".}: Handler
-#  accWrGl(b.buf, cgh)
-
-template devRead*[T;N:static[int]](b: SyclBuffer[T,N]): untyped =
-  var cgh {.importcpp:"cgh",nodecl,header:"",noinit,codegendecl:"".}: Handler
-  accRdGl(b, cgh)
-template devWrite*[T;N:static[int]](b: SyclBuffer[T,N]): untyped =
-  var cgh {.importcpp:"cgh",nodecl,header:"",noinit,codegendecl:"".}: Handler
-  accWrGl(b, cgh)
-template devReadWrite*[T;N:static[int]](b: SyclBuffer[T,N]): untyped =
-  var cgh {.importcpp:"cgh",nodecl,header:"",noinit,codegendecl:"".}: Handler
-  accRdWrGl(b, cgh)
-
-template submitx*(q: Queue, n: uint, body: untyped) =
-  #proc job(h: Handler) = discard
-  {.push stackTrace:off, lineTrace:off, line_dir:off.}
-  proc qs(qq: Queue) {.gensym.} =
-    {.emit:[qq,".submit([&](sycl::handler &h){"].}
-    var h {.importcpp:"h",nodecl,header:"",noinit,codegendecl:"".}: Handler
-    {.emit:["h.parallel_for<class axpy>(sycl::range<1>{",n,
-            "}, [=] (sycl::id<1> it) {"].}
-    var it {.importcpp:"it",nodecl,header:"",noinit,codegendecl:"".}: Id1
-    body
-    {.emit:"});});".}
-  {.pop.}
-  qs(q)
 
 proc `[]`*[T;G](x: SyclAccessor[T,1,AmRead,G], i: int): T {.
   importcpp:"#[#]", syclh.}
@@ -373,67 +247,3 @@ proc `[]`*[T](x: SyclHostAccessor[T,1,AmWrite], i: int): T {.
   importcpp:"#[#]", syclh.}
 proc `[]=`*[T](x: SyclHostAccessor[T,1,AmWrite], i: int, y: auto) {.
   importcpp:"#[#]=#", syclh.}
-
-when isMainModule:
-  proc test =
-    #let sel = DefaultSelector()
-    let sel = HostSelector()
-    let dev = sel.selectDevice()
-    echo "Name: ", dev.name
-    echo "Version: ", dev.version
-    let q = dev.queue()
-    let n = 100
-    #let x = newBuffer[float32](n)
-    let x = newSyclBuffer[float32](n)
-    let y = newSyclBuffer[float32](n)
-    block:
-      let a = y.hostRead
-      let p = a.getPointer
-      for i in 0..<n:
-        p[i] = i.float32
-      echo p[n-1]
-
-    q.submit:
-      var xa = x.devWrite
-      var ya = y.devRead
-      parallelFor(n):
-        var i {.id1.}: Id1
-        #xa[i] = 1
-        xa[i] = ya[i] + 1
-    #{.pop.}
-    q.wait
-
-    block:
-      let a = x.hostRead
-      let p = a.getPointer
-      echo p[n-1]
-
-  test()
-
-
-
-#[
-sycl::queue q(sycl::default_selector{});
-
-        const float A(aval);
-
-        sycl::buffer<float,1> d_X { h_X.data(), sycl::range<1>(h_X.size()) };
-        sycl::buffer<float,1> d_Y { h_Y.data(), sycl::range<1>(h_Y.size()) };
-        sycl::buffer<float,1> d_Z { h_Z.data(), sycl::range<1>(h_Z.size()) };
-
-        q.submit([&](sycl::handler& h) {
-
-            auto X = d_X.get_access<sycl::access::mode::read>(h);
-            auto Y = d_Y.get_access<sycl::access::mode::read>(h);
-            auto Z = d_Z.get_access<sycl::access::mode::read_write>(h);
-
-            h.parallel_for<class axpy>( sycl::range<1>{length}, [=] (sycl::id<1> it) {
-                const int i = it[0];
-                Z[i] += A * X[i] + Y[i];
-            });
-        });
-        q.wait();
-
-]#
-
-

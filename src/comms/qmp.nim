@@ -22,9 +22,14 @@ type QMP_thread_level_t*{.qmp.} = enum
   QMP_THREAD_FUNNELED,
   QMP_THREAD_SERIALIZED,
   QMP_THREAD_MULTIPLE
+# Pointers to the structs of qmp.h: an importc alias of `pointer` is the same
+# Nim type as `pointer`, so seq[QMP_msgmem_t] shared the instance of
+# seq[pointer], and C++ rejects a pointer of the other type in its payload.
 type
-  QMP_comm_t*{.qmp.} = pointer
-  QMP_msgmem_t*{.qmp.} = pointer
+  QMP_comm_struct {.importc: "struct QMP_comm_struct", header: "qmp.h", incompleteStruct.} = object
+  QMP_msgmem_struct {.importc: "struct QMP_msgmem_struct", header: "qmp.h", incompleteStruct.} = object
+  QMP_comm_t* = ptr QMP_comm_struct
+  QMP_msgmem_t* = ptr QMP_msgmem_struct
   QMP_msghandle_t*{.qmp.} = object
 
 proc clear*(x: var QMP_msghandle_t) =

@@ -336,10 +336,10 @@ proc expAH(m: Mat1, n2: float): auto {.noInit.} =
   ## expAH(m) scaled for norm2 n2 in place of the SIMD maximum of norm2(m), m
   ## not 1x1. With n2 the maximum over the lanes of a wider vector of which m
   ## is a slice, the slice gets those lanes of the wide result.
-  type E = evalType(m[0,0])
+  # no type section: inlineProcs copies the proc into device kernels
   let (scale, ns) = ahScale(n2)
-  var r {.noInit.}: MatrixArray[m.nrows, m.ncols, E]
-  r := expm1Poly12(numberType(E)(scale)*m)
+  var r {.noInit.}: MatrixArray[m.nrows, m.ncols, evalType(m[0,0])]
+  r := expm1Poly12(numberType(evalType(m[0,0]))(scale)*m)
   for i in 0..<ns:
     var t = r
     t += 2
@@ -373,7 +373,6 @@ proc expAH*(m: Mat1): auto {.noInit.} =
     var r {.noinit.}: evalType(m)
     r[0, 0] := exp(m[0, 0])
     r
-  #[
   elif simdLength(E) > registerLanes(E):
     const w = registerLanes(E)
     static: doAssert simdLength(E) mod w == 0
@@ -405,7 +404,6 @@ proc expAH*(m: Mat1): auto {.noInit.} =
       let tp = cast[ptr array[nv, L]](unsafeAddr t)
       for c in 0..<nv: q[c][j] = tp[c]
     r
-  ]#
   else:
     expAH(m, m.norm2.simdMax)
 

@@ -105,6 +105,7 @@ template threads*(body:untyped):untyped =
   #proc tproc2{.genSym,inline.} =
   #  body
   proc tproc{.genSym, quirky.} =
+    const qexThreadsBlock {.inject, used.} = true  # declared in the text of a threads block
     emitStackTrace()
     #var ts:seq[ThreadShare]
     ompParallel:
@@ -135,6 +136,7 @@ template threads*(x0:untyped;body:untyped):untyped =
   #let nidOld = numThreads
   #let tlOld = threadLocals
   proc tproc(xx:var type(x0)) {.genSym, quirky.} =
+    const qexThreadsBlock {.inject, used.} = true
     #var ts:seq[ThreadShare]
     ompParallel:
       regionErrFlag()
@@ -221,7 +223,7 @@ iterator threadRangeAligned*(n: int, a: int): int =
     yield i
 
 template threadRangeV*(n: int): int =
-  threadRangeAligned(n, VLEN)
+  threadRangeAligned(n, static(VLEN))
 
 discard """
 iterator `.|`*[S, T](a: S, b: T): T {.inline.} =

@@ -88,21 +88,14 @@ type
   cmatarr[N:static int; T] = Mat[N,N,T]
   cgmatarrObj[N:static int; T] = CpuGpu[cmatarr[N,T], cmatarr[N,T]]
   cgmatarr[N:static int; T] = ref CpuGpu[cmatarr[N,T], cmatarr[N,T]]
-#proc destroy*(x: var cgmatarr) =
-#  when backendIsGpu:
-#    if x.gpu.dat != nil:
-#      gpuFree(x.gpu.dat)
-#  if x.cpu.dat != nil:
-#    dealloc(x.cpu.dat)
-proc finalize[T:cgmatarr](x: T) =
-  #echo "finalize cgmatarr"
+proc free[N:static int; T](x: cgmatarr[N,T]) =
+  ## The host and device storage.  A finalizer of the ref would be a hook of
+  ## CpuGpu, which ARC/ORC take in the module of that type only.
   when backendIsGpu:
-    if x.gpu.dat != nil:
-      gpuFree(x.gpu.dat)
-  if x.cpu.dat != nil:
-    dealloc(x.cpu.dat)
+    gpuFree(x.gpu.dat)
+  dealloc(x.cpu.dat)
 proc newCgmatarr*[N:static int; T](n: int): cgmatarr[N,T] =
-  result.new(finalize[typeof result])
+  result.new
   result.cpu = newMat[N,N,T](n)
   when backendIsGpu:
     let gp = cast[ptr UncheckedArray[T]](gpuMalloc(n*N*N*sizeof(T)))
@@ -209,6 +202,7 @@ block:
     let gb = bytes * b.perNs
     let gf = flops * b.perNs
     echo &"{memMB:8.3f} {gb:8.3f} {gf:8.3f}"
+    for a in [x, y, z]: a.free
     doAssert(errcnt==0)
 
   #runtest(float64)

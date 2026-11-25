@@ -1,5 +1,5 @@
 import macros, strutils
-import base/metaUtils
+import base/[metaUtils, threading, profile]
 import base/omp
 import backend/expr
 
@@ -48,16 +48,6 @@ macro alignat*(byte:static[int], n:untyped): untyped =
   result = n.alignatImpl byte
   #error result.treerepr
 
-proc addChildrenFrom*(dst,src: NimNode): NimNode =
-  for c in src: dst.add(c)
-  result = dst
-macro procInst*(p: typed): auto =
-  #echo "begin procInst:"
-  #echo p.treerepr
-  result = p[0]
-macro makeCall*(p: proc, x: tuple): NimNode =
-  result = newCall(p).addChildrenFrom(x)
-
 proc omp_target_alloc*(size: csize_t, device_num: cint): pointer {.omp.}
 proc omp_target_free*(device_ptr: pointer, device_num: cint) {.omp.}
 proc omp_target_alloc_host*(size: csize_t, device_num: cint): pointer {.omp.}
@@ -98,164 +88,226 @@ template gpuMalloc[T](x: var ptr UncheckedArray[T], n: int) =
 template gpuMalloc[T](x: ptr T) =
   x = cast[typeof x](gpuMalloc(sizeof(T)))
 
-proc gpuMemset*[T](p: ptr UncheckedArray[T], val: T, count: int) =
-  {.emit:["#pragma omp target teams distribute parallel for"].}
-  {.emit:["for (int i = 0; i < ",count,"; i++)"].}
-  block:
-    var i {.importc,codegendecl:"".}: cint
-    p[i] = val
-proc gpuMemset*[T](p: ptr T, val: T) =
-  {.emit:["#pragma omp target teams"].}
-  p[] = val
-
 template toPointer*(x: typed): pointer =
   #dumpType: x
   when x is pointer: x
   elif x is ptr: x
   elif x is seq: toPointer(x[0])
   else: pointer(unsafeAddr(x))
-template dataAddr*(x: typed): pointer =
-  #dumpType: x
-  when x is seq: dataAddr(x[0])
-  elif x is array: dataAddr(x[0])
-  #elif x is ptr: x
-  else: pointer(unsafeAddr(x))
-  #else: x
 
-template gpuThreadNum*: untyped =
-  let teamNum = omp_get_team_num()
-  let numThreads = omp_get_num_threads()
-  let threadNum = omp_get_thread_num()
-  teamNum.int * numThreads.int + threadNum.int
-template gpuNumThreads*: untyped =
-  let numTeams = omp_get_num_teams()
-  let numThreads = omp_get_num_threads()
-  numTeams.int * numThreads.int
+const gpuThreads {.intdefine.} = 128  ## thread_limit of the kernels, 0 for the runtime default; 128 was best for the staggered kernels on PVC at 24^4 sites per tile
+const gpuForMap {.strdefine.} = "defaultmap(firstprivate:pointer)"  ## pointers by value, no lookup in the mapping table at each launch
+const gpuForClause* = gpuForMap & (if gpuThreads > 0: " thread_limit(" & $gpuThreads & ")" else: "")
+template gpuSubClause(sub: static int): string =
+  when sub > 0: " ompx_sub_group_size(" & $sub & ")" else: ""
 
-template openmpDefs(n,body: untyped) =
-  # XXX check if GC matters
-  #let
-  #  numTeams = omp_get_num_teams()
-  #  teamNum = omp_get_team_num()
-  #ompBlock("parallel num_threads(512)"):
-  #ompBlock("parallel"):
-  ompBlock2("parallel num_threads(", n, ")"):
-    #let
-    #  numThreads = omp_get_num_threads()
-    #  threadNum = omp_get_thread_num()
-    #template getThreadNum: untyped {.used.} = teamNum.int * numThreads.int + threadNum.int
-    #template getNumThreads: untyped {.used.} = numTeams.int * numThreads.int
-    #{.emit:["#define nimZeroMem(b,len) memset((b),0,(len))"].}
-    {.push checks: off.}
-    {.push stacktrace: off.}
-    inlineProcs:
-      body
-    #{.emit:["#undef nimZeroMem"].}
+var gpuAsyncDep {.exportc.}: int  # orders the gpuForAsync kernels before gpuWaitAsync
+var gpuQueued = false  # a kernel queued outside parallel regions may wait in the queue
 
+template gpuForAsync(i: untyped; n: SomeInteger; sub: untyped; body: untyped) =
+  ## The queued kernel of an onGpu launch: one SPMD kernel over i in 0..<n,
+  ## in sub-groups of sub threads, or as the compiler chooses for sub = 0,
+  ## returning before it completes; gpuWaitAsync waits for it.  Captured
+  ## pointers must be device pointers.
+  discard addr(gpuAsyncDep)  # declares it in the C file of the caller
+  const gpuC = "target teams distribute parallel for " & gpuForClause & gpuSubClause(sub) & " nowait depend(inout:gpuAsyncDep)"
+  let gpuN = int(n)
+  for i in `||`(0, gpuN-1, gpuC):
+    body
+  gpuQueued = true
 
-proc genCpuPrepare(n:seq[NimNode]):NimNode =
-  mixin toGpu
-  template r(x,v:untyped):untyped =
-    var v = toGpu(x)
-    var `v xx` = v
-  result = newstmtlist()
-  for c in n:
-    result.add getast r(c[0],c[1])
+template gpuWaitAsync* =
+  ## a task wait for the queued kernels, skipped outside parallel regions
+  ## where none was queued since the last wait.  Inside a region (a threads
+  ## block, also of one thread) the wait covers the kernels queued in it, and
+  ## the flag of the kernels queued before it stays.
+  discard addr(gpuAsyncDep)
+  let gpuL = omp_get_level()
+  if gpuL > 0 or gpuQueued:
+    {.emit: "#pragma omp taskwait depend(inout:gpuAsyncDep)".}
+    if gpuL == 0: gpuQueued = false
 
-proc genCpuFinalize(n:seq[NimNode]):NimNode =
-  template r(x,v:untyped):untyped =
-    fromGpu(x,v)
-  result = newstmtlist()
-  for c in n:
-    result.add getast r(c[0],c[1])
+template gpuAtomicAdd*(r: ptr UncheckedArray[float]; k: int; v: float) =
+  ## r[k] += v atomically, in kernels
+  let kk = k
+  let vv = v
+  {.emit: ["#pragma omp atomic update\n", r, "[", kk, "] += ", vv, ";"].}
 
-proc declarePtrTuple(n:seq[NimNode]):NimNode =
-  mixin offloadPtr
-  var ps = newNimNode(nnkTupleConstr)
-  ps.add newLit"is_device_ptr("
-  for c in n:
-    when compiles(offloadPtr(c[0])):
-      ps.add c[2]
-  if ps.len == 1:
-    result = newNimNode(nnkTupleConstr)
-  else:
-    ps.add newLit")"
-    result = ps
-  #echo result.treerepr
+template gpuAtomicAdd*(r: ptr UncheckedArray[uint64]; k: int; v: uint64) =
+  ## r[k] += v modulo 2^64 atomically, in kernels
+  let kk = k
+  let vv = v
+  {.emit: ["#pragma omp atomic update\n", r, "[", kk, "] += ", vv, ";"].}
 
-#macro isDevicePtr(x: typed): untyped =
-#  let n = $x
-#  result = newLit(" is_device_ptr("&n&")")
+template gpuMemCpyToCpuAsync*(dst, src: pointer; length: SomeInteger) =
+  ## the copy to the host after the kernels already submitted, complete here
+  gpuWaitAsync()
+  gpuMemCpyToCPU(dst, src, length)
+const gpuCopyFast* = high(int)  ## bytes up to which a queued copy has its low cost
 
-#macro useDevicePtr(x: auto): auto =
-  #echo x.treerepr
-  #let n = x.strVal
-  #echo "useDevicePtr: ", n
-  #let p = newLit("#pragma omp target data use_device_ptr("&n&")")
-#  result = quote do:
-#    {.emit: ["#pragma omp target data use_device_ptr(",`x`,")"].}
+template gpuMallocHost*(size: SomeInteger): pointer =
+  ## pinned host memory, for fast copies from the device
+  omp_target_alloc_host(size)
+template gpuFreeHost*(p: pointer) = omp_target_free(p)
 
-#macro getrepr(x: untyped): auto =
-#  echo x.treerepr
-#  result = x
+proc ompPlain(t: NimNode; depth = 0): bool =
+  ## whether a value of type t is a number, bool, enum, character or
+  ## pointer, which a deferred target region gets intact
+  case t.typeKind
+  of ntyBool, ntyChar, ntyEnum, ntyRange, ntyPtr, ntyPointer, ntyCString,
+     ntyInt, ntyInt8, ntyInt16, ntyInt32, ntyInt64, ntyUInt, ntyUInt8, ntyUInt16, ntyUInt32, ntyUInt64,
+     ntyFloat, ntyFloat32, ntyFloat64, ntyFloat128: true
+  of ntyDistinct, ntyGenericInst, ntyAlias, ntyVar:
+    if depth > 8: return false
+    let i = t.getTypeImpl
+    case i.kind
+    of nnkDistinctTy, nnkVarTy: ompPlain(i[0].getType, depth+1)
+    of nnkPtrTy: true
+    of nnkSym: ompPlain(i.getType, depth+1)
+    else: false  # objects, tuples, arrays, seqs, refs
+  else: false
 
-template useDevicePtr*(x: auto) =
-  #getrepr:
-  {.emit: ["#pragma omp target data use_device_ptr(",x,")"].}
+template gpuForSync(i: untyped; n: SomeInteger; sub: static int; body: untyped) =
+  ## A kernel that completes at its launch, after the queued kernels: a
+  ## wait where the queue holds work, then a target without nowait and
+  ## without depend, which costs the host less than a target that depends
+  ## on the queue (on PVC 0.5 to 1.2 us less per application of the
+  ## staggered operator at 16^4).  The kernels of onGpu, and the queued ones
+  ## that read objects; objects go to the kernel by value, which icx does
+  ## for a kernel that completes at the launch (a mapped object costs ten
+  ## times the launch: 270 against 25 us on PVC).
+  gpuWaitAsync()
+  const gpuC = "target teams distribute parallel for " & gpuForClause & gpuSubClause(sub) & " defaultmap(firstprivate:aggregate)"
+  let gpuN = int(n)
+  for i in `||`(0, gpuN-1, gpuC):
+    body
 
-#macro mapto(x: typed): untyped =
-#  let n = $x
-#  result = newLit(" map(to:"&n&")")
-#macro mapto(x: typed): untyped =
+macro ompKernel(i, n, sub, kernel: untyped; loop: typed): untyped =
+  ## loop: the queued kernel of an onGpu launch (gpuForAsync over i of n),
+  ## kernel: its body untyped.  When the typed body reads an object, array or
+  ## tuple from outside the kernel, the result is gpuForSync over kernel: icx
+  ## 2026.1 reads a captured object from the stack of the launch when a
+  ## deferred kernel runs on PVC, and the captures of a launch in top level
+  ## code are globals that the next launch rewrites.  Numbers and pointers
+  ## stay queued.  The typed body decides.
+  proc firstFor(n: NimNode): NimNode =
+    ## the loop of the kernel, the one over ||
+    if n.kind == nnkParForStmt: return n
+    for c in n:
+      let f = firstFor(c)
+      if f != nil: return f
+  let fs = firstFor(loop)
+  doAssert fs != nil, "ompKernel: no loop"
+  var decl: seq[NimNode]
+  proc defs(n: NimNode) =
+    case n.kind
+    of nnkIdentDefs, nnkConstDef:
+      for c in n[0..^3]: decl.add(if c.kind == nnkPragmaExpr: c[0] else: c)
+    of nnkVarTuple:  # let (a, b) = v
+      for c in n[0..^2]: decl.add c
+    of nnkForStmt, nnkParForStmt:
+      for c in n[0..^3]:
+        if c.kind == nnkVarTuple:  # for (a, b) in ...
+          for d in c:
+            if d.kind == nnkSym: decl.add d
+        else: decl.add c
+      defs(n[^1])
+      return
+    else: discard
+    for c in n: defs(c)
+  defs(fs)
+  var obj = false
+  proc reads(n: NimNode) =
+    case n.kind
+    of RoutineNodes: discard
+    of nnkSym:
+      if n.symKind in {nskLet, nskVar, nskParam, nskForVar, nskResult, nskTemp} and n notin decl and
+         not ompPlain(n.getType):
+        obj = true
+    else:
+      for c in n: reads(c)
+  reads(fs[^1])
+  if not obj: return loop
+  # the statements of kernel, written (a; b) at the call
+  let k = if kernel.kind in {nnkStmtListExpr, nnkPar}: newStmtList(kernel[0..^1]) else: kernel
+  result = newCall(bindSym"gpuForSync", i, n, sub, k)
 
-macro onGpuNowait*(n,b,body: untyped): auto =
+proc gpuFinish*[P](fl: static string; count: int; flops: float; ps: P; back: proc(ps: P) {.nimcall.}; wait: static bool) =
+  ## The end of a kernel launch: waits for the queue where the kernel was
+  ## queued (wait), then back copies what the kernel wrote to the host
+  ## variables of ps (hostBack).
+  when gpuLaunchTimers: tic(fl)
+  var countSave = -1  # the count before, in the thread that lowers it
+  threadSingle:
+    countSave = kernelCallCount
+    kernelCallCount = count
+    when wait: gpuWaitAsync()
+  when gpuLaunchTimers: toc("wait",flops=flops)
+  back(ps)
+  if countSave >= 0: kernelCallCount = countSave  # the same thread restores it
+  threadBarrier()
+  when gpuLaunchTimers: toc("cpuFinalize")
+
+proc gpuFinalizer*[P](fl: static string; count: int; flops: float; ps: P; back: proc(ps: P) {.nimcall.}): proc() =
+  ## gpuFinish as a closure, for onGpuNowait.  The closure has an
+  ## environment of its own, so every thread of a threads block gets one
+  ## and may keep it.
+  result = proc() = gpuFinish(fl, count, flops, ps, back, true)
+
+macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): untyped =
+  ## Launches body as a kernel of n threads, n a count or what gpuSites
+  ## turns into one.  Its captures are the device values of the variables
+  ## that body names (backend/expr), locals of the launch that the kernel
+  ## reads in place.  fin: 0 queues the kernel, 1 gives the finalizer, which
+  ## waits for the queue and copies back, 2 runs the kernel at the launch,
+  ## after the queued kernels (gpuForSync), and copies back.
+  ## A kernel of fin 0 or 1 is that of gpuForAsync when it reads numbers and
+  ## pointers only, else it completes at the launch (ompKernel).
+  ## The launch stands in a single without its barrier, at which a queued
+  ## kernel would complete.  In a threads block the launching thread waits
+  ## for the kernel, as only it can, and the team meets at a barrier.
   let li = body.lineinfo
   let lis = li.split({'/','.','(',','})
   let fl = lis[^4] & "(" & lis[^2] & ")"
-  #proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,g)
-  proc deref(x,g,i:NimNode):auto = newCall("getGpu",x,newTree(nnkAccQuoted,g,ident"xx"))
-  template target(fl,n,b,cpuPrepare, cpuFinalize, devicePtrDeclare, body: untyped) =
-    mixin toGpu, getGpu, fromGpu
+  template target(fl, n, sub, pre, shadow, hostPairs, queued, copies, body, fin: untyped) =
+    mixin toGpu, getGpu, fromGpu, gpuSites
     inc kernelCallCount
     block:
       let thisKernelCallCount = kernelCallCount  # save current value for finalizer
-      tic(fl)
-      cpuPrepare  # a let section declare and save device pointers
-      toc("cpuPrepare")
-      #proc gpuProc {.gensym.} =
-      threadSingle:
-        let nthreads = n
-        let nteams = n div b
-        #ompBlock2("target teams num_teams(1024)", devicePtrDeclare):
-        #ompBlock2("target teams", devicePtrDeclare):
-        ompBlock2("target teams num_teams(", nteams, ")", devicePtrDeclare):
-          openmpDefs(nthreads):
+      when gpuLaunchTimers: tic(fl)
+      let gpuNt {.inject.} = int(gpuSites(n))
+      gpuLaunchThreads = gpuNt
+      pre  # the device values
+      when fin == 1 or (fin == 2 and copies):
+        let hp = hostPairs  # before the kernel values take the names of the host variables
+      shadow  # the kernel values: locals of the launch that the kernel captures and reads in place
+      ompBlock("single nowait"):
+        when fin == 2:
+          gpuForSync(gpuTn, gpuNt, sub):
             const inOnGpu {.inject,used.} = true
-            body
-      #gpuProc()
-      when declared gpuWaitFlops:
-        toc("wait",flops=gpuWaitFlops)
-      else:
-        toc("wait")
-      proc finalize {.gensym.} =
-        tic(fl)
-        var countSave = 0
-        threadSingle:
-          countSave = kernelCallCount
-          kernelCallCount = thisKernelCallCount
-        cpuFinalize
-        #threadBarrier()
-        threadSingle:
-          kernelCallCount = countSave
-        toc("cpuFinalize")
+            gpuKernelBody(gpuTn, gpuNt):
+              inlineProcs:
+                body
+        else:
+          ompKernel(gpuTn, gpuNt, sub, (const inOnGpu {.inject,used.} = true; gpuKernelBody(gpuTn, gpuNt, inlineProcs(body)))):
+            gpuForAsync(gpuTn, gpuNt, sub):
+              const inOnGpu {.inject,used.} = true
+              gpuKernelBody(gpuTn, gpuNt):
+                inlineProcs:
+                  body
+          if numThreads > 1: gpuWaitAsync()
+      if numThreads > 1: threadBarrier()
       inc kernelCallCount  # increment after launch
-      finalize
-  let
-    v = prepareVars(body, deref)  # gather gpu pointers in symbols, body is changed accordingly
-    cpuPrepare = genCpuPrepare v
-    cpuFinalize = genCpuFinalize v
-    isDevicePtrs = declarePtrTuple v
-  result = getast(target(fl,n,b,cpuPrepare, cpuFinalize, isDevicePtrs, body))
+      # one profile timer per launch: "wait" for onGpu, whose kernel completes here, else "launch"
+      when fin == 2:
+        when gpuLaunchTimers: toc("wait", flops=(when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0))
+        when copies: gpuFinish(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp), false)
+      else:
+        when gpuLaunchTimers: toc("launch")
+        when fin == 1: gpuFinalizer(fl, thisKernelCallCount, (when declared gpuWaitFlops: float(gpuWaitFlops) else: 0.0), hp, hostBack(hp))
+        else: queued
+  let c = kernelCap(body, n)
+  result = getast(target(fl, n, newLit(sub), c.pre, c.shadow, c.pairs, c.queued, c.copies, c.body, newLit(fin)))
   case dumpKernels
   of 1:
     echo li
@@ -263,313 +315,34 @@ macro onGpuNowait*(n,b,body: untyped): auto =
   of 2:
     echo li
     echo result.treerepr
-  else:
-    if dumpKernels > 2:
-      echo li
-      var sl = newNimNode(nnkStmtListExpr)
-      sl.add newCall(bindsym"echoTyped", result)
-      sl.add result
-      result = sl
+  else: discard
 
-var gpuNumThreadsRequest* = 32*1024
-var gpuBlockSizeRequest* = 64
-template gpuSites(n: int): int = n
-template onGpuNowait*(body: untyped): auto =
-  onGpuNoWait(gpuNumThreadsRequest, gpuBlockSizeRequest, body)
-template onGpuNowait*(n0,body: untyped): auto =
-  mixin gpuSites
-  let n = gpuSites(n0)
-  var b = gpuBlockSizeRequest
-  while b > n: b = b div 2
-  onGpuNoWait(n, b, body)
-#template onGpuNowait*(n,b,body: untyped): auto =
-#  onGpuNoWait(n, b, body)
+var gpuNumThreadsRequest* = 32*1024  ## threads of a kernel launched without a count
+template onGpuNowait*(n, body: untyped): auto = gpuKernel(1, n, 0, body)
+template onGpuNowait*(n, sub, body: untyped): auto =
+  ## sub: the size of the sub-groups on Intel GPUs, as the compiler chooses for 0
+  gpuKernel(1, n, sub, body)
+template onGpuNowait*(body: untyped): auto = gpuKernel(1, gpuNumThreadsRequest, 0, body)
+template onGpuQueue*(n, body: untyped) =
+  ## onGpuNowait for a kernel whose variables stay on the device
+  ## (gpuResident): nothing is copied back, and gpuWaitAsync waits for it.
+  gpuKernel(0, n, 0, body)
+template onGpuQueue*(n, sub, body: untyped) = gpuKernel(0, n, sub, body)
 
-template onGpu*(body: untyped) =
-  let finalize = onGpuNoWait(body)
-  finalize()
-template onGpu*(n,body: untyped) =
-  mixin gpuSites
-  let finalize = onGpuNoWait(gpuSites(n), body)
-  finalize()
-template onGpu*(n,b,body: untyped) =
-  mixin gpuSites
-  let finalize = onGpuNoWait(gpuSites(n), b, body)
-  finalize()
+template onGpu*(body: untyped) = gpuKernel(2, gpuNumThreadsRequest, 0, body)
+template onGpu*(n, body: untyped) = gpuKernel(2, n, 0, body)
+template onGpu*(n, sub, body: untyped) = gpuKernel(2, n, sub, body)
 
-template toUArray(a:untyped):untyped = cast[ptr UncheckedArray[typeof(a[0])]](a[0].unsafeaddr)
-proc cleanAst(n:NimNode):NimNode =
-  if n.kind in {nnkHiddenDeref,nnkHiddenCallConv,nnkHiddenStdConv}:
-    result = n[0].cleanAst
-  else:
-    result = n.copyNimNode
-    for c in n:
-      result.add c.cleanAst
-proc identStr(n:NimNode):string =
-  result = n.repr
-  for i in 0..<result.len:
-    if result[i] in {'.','[',']',':'}: result[i] = '_'
-#proc isIndex(n,i:NimNode):bool =
-#  result = n.eqident i
-#  if n.kind == nnkHiddenStdConv:
-#    result = n[1].eqident i
-macro simdForImpl(n:typed):untyped =
-  proc getIndexedPtrs(n,i:NimNode):(NimNode,seq[NimNode]) =
-    #echo "### getIndexedPtrs: ", i.repr
-    #echo n.treerepr
-    var ptrs = newseq[NimNode]()
-    proc get(n:NimNode):NimNode =
-          var m = -1
-          for j in 0..<ptrs.len:
-            if ptrs[j][1] == n:
-              m = j
-              break
-          if m < 0:
-            let v = gensym(nskVar, n.cleanAst.identStr)
-            #ptrs.add newPar(v, n)
-            ptrs.add newNimNode(nnkTupleConstr).add(v, n)
-            return v
-          else:
-            return ptrs[m][0]
-    proc go(n:NimNode):NimNode =
-      result = n.copyNimNode
-      if n.kind in CallNodes and ($n[0] == "[]" or $n[0] == "[]="):
-        if n.len > 2: # and n[2].isIndex i:
-          result.add n[0].go
-          result.add n[1].get
-          for i in 2..<n.len: result.add n[i].go
-        else:
-          for c in n: result.add c.go
-      elif n.kind == nnkBracketExpr:
-        result.add n[0].get
-        for i in 1..<n.len: result.add n[i].go
-      else:
-        for c in n: result.add c.go
-    var nn = n.go
-    (nn, ptrs)
-  template res(setup, i, lo, hi, body: untyped): untyped =
-    block:
-      var i {.codegendecl:"/* $# $# */",noinit.}: cint
-      setup
-      {.emit:
-        ["\n#pragma omp simd aligned(","\n",
-          "for(int ",
-          i,"=",lo,";",
-          i,"<=",hi,";",
-          i,"++){\n"
-        ].}
-      body
-      {.emit:["\n}\n"].}
-
-  #echo n.treerepr
-  n.expectkind nnkForStmt
-  #echo n[1][0].getimpl.treerepr
-  let (nn,ptrs) = n[2].getIndexedPtrs(n[0])
-  if ptrs.len == 0:
-    echo "simdForImpl finds no pointers: ",n.treerepr
-    quit 1
-  let setup = newNimNode nnkVarSection
-  for p in ptrs:
-    setup.add newIdentDefs(
-      #p[0],
-      newNimNode(nnkPragmaExpr).add(
-        p[0],
-        newNimNode(nnkPragma).add(
-          newNimNode(nnkExprColonExpr).add(ident"codegenDecl", newLit"$# __restrict__ $#"))),
-      newEmptyNode(), newcall(bindsym"toUArray", p[1]))
-  result = getast res(setup, n[0], n[1][1], n[1][2], nn)
-  #echo result.treerepr
-  let e = result[1][2]
-  e.expectkind nnkPragma
-  for i in 0..<ptrs.len:
-    if i == 0: e[0][1].insert(1,newLit")")
-    else: e[0][1].insert(1,newLit",")
-    e[0][1].insert(1,ptrs[i][0])
-  let i = gensym(nskvar, $n[0])
-  result = result.replace(n[0], i).rebuild
-  #echo result.repr
-  #echo result.treerepr
-  #quit 1
-
-macro simdFor*(n:untyped):untyped =
-  proc p(n:NimNode):NimNode =
-    if n.kind == nnkForStmt:
-      n[2] = newCall(bindsym"inlineProcs", n[2])
-      #echo n.treerepr
-      return newCall(bindsym"simdForImpl", n)
-    elif n.kind == nnkStmtList:
-      for i in 0..<n.len:
-        n[i] = p n[i]
-      return n
-    else:
-      echo "simdFor cannot handle:"
-      echo n.treerepr
-      quit 1
-  p n
-
-proc blockSumSmall*[T](x: T): T = # only thread 0 gets result
-  const max_block_size = 1024
-  const max_items = max_block_size
-  let thread_idx = omp_get_thread_num()
-  let block_size = omp_get_num_threads()
-  var storage {.noInit,codegendecl:"static $# $#".}: array[max_items, T]
-  {.emit:["#pragma omp groupprivate(",storage,")"].}
-  storage[thread_idx] = x
-  {.emit:["#pragma omp barrier"].}
-  if thread_idx == 0:
-    result = x
-    for i in 1..<block_size:
-      result += storage[i]
-
-proc blockSum*[T](x: T): T = # only thread 0 gets result
-  const min_shared_mem = 48*1024 - sizeof(bool)  # bool used in GpuSum reduce
-  const max_items = 512 #1024
-  const max_size = min_shared_mem div max_items
-  when sizeof(T) <= max_size:
-    blockSumSmall(x)
-  else:
-    static: echo $x.type, "  ", sizeof(T)
-    {.error:"blockSum: type size too large".}  # FIXME later
-
-type GpuSum*[T] = object
-    partial: ptr UncheckedArray[T]
-    npartial: cint
-    #maxblock: int
-    val: ptr T
-    valh: T
-    valvalid: bool
-    count: ptr cint
-proc newGpuSum*[T](ns: int): GpuSum[T] =
-  let n = (ns + 15) div 16  # divide by warp size
-  result.partial.gpuMalloc(n)
-  result.partial.gpuMemset(default(T), n)
-  result.npartial = cint n
-  #result.val = cast[ptr T](omp_target_alloc_host(csize_t sizeof(T)))
-  #result.val = cast[ptr T](omp_target_alloc_shared(csize_t sizeof(T)))
-  result.val = cast[ptr T](omp_target_alloc(csize_t sizeof(T)))
-  result.count.gpuMalloc()
-  #result.count.gpuMemset(0, sizeof(result.count[]))
-  #q.memset(result.count, 0, sizeof(result.count[]))
-  result.count.gpuMemset(0)
-#template value*(x: GpuSum): auto = x.val[]
-template value*(x: GpuSum): auto =
-  if not x.valvalid:
-    x.valvalid = true
-    gpuMemCpyToCPU(addr x.valh, x.val, sizeof(x.valh))
-  x.valh
-template toGpu*(x: GpuSum): auto =
-  x.valvalid = false
-  x
-template getGpu*(x,g: GpuSum): auto = g
-template fromGpu*(x,g: GpuSum): auto = discard
-
-proc reduce*[T](gs: GpuSum[T], x: T) =
-  var aggregate = blockSum(x)
-  let threadIdx = omp_get_thread_num()
-  let blockIdx = omp_get_team_num()
-  let blockDim = omp_get_num_threads()
-  let gridDim = omp_get_num_teams()
-  block:
-    var isLastBlockDone{.noInit,codegendecl:"static $# $#".}: bool
-    {.emit:["#pragma omp groupprivate(",isLastBlockDone,")"].}
-    #isLastBlockDone = false
-    if threadIdx == 0:
-      if blockIdx < gs.npartial:
-        gs.partial[blockIdx] = aggregate;
-      #threadFence() # flush result
-      {.emit:["#pragma omp flush release"].}
-      # increment global block counter
-      #let value = atomicInc(gs.count)
-      var value: typeof gs.count[]
-      {.emit:["#pragma omp atomic capture"].}
-      block:
-        value = gs.count[]
-        gs.count[] += 1
-      # determine if last block
-      isLastBlockDone = (value == (gridDim - 1))
-    {.emit:["#pragma omp barrier"].}
-    # finish the reduction if last block
-    if isLastBlockDone:
-      var i = threadIdx
-      var sum = default(T)
-      let n = min(gs.npartial, gridDim)
-      {.emit:["#pragma omp flush release"].}
-      while i < n:
-        sum += gs.partial[i]
-        i += blockDim;
-      sum = blockSum(sum)
-      # write out the final reduced value
-      if threadIdx == 0:
-        gs.val[] = sum
-        gs.count[] = 0  # set to zero for next time
-
-when isMainModule:
-  type FltArr = object
-    a:ptr UncheckedArray[float32]
-  {.emit:"#pragma omp requires unified_shared_memory".}
-
-  proc test =
-    var n = 50000.cint
-    var
-      a = newSeq[float32](n)
-      b = newSeq[float32](n)
-      c = newSeq[float32](n)
-
-    template `[]`(x: FltArr, i: SomeInteger): untyped = x.a[][i]
-    template `[]=`(x: FltArr, i:SomeInteger, y:untyped):untyped = x.a[][i] = y
-
-    #template offloadUseVar(x:seq):bool = true
-    #template offloadUsePtr(x:seq):bool = true
-    #template rungpuPrepareOffload(x:seq):bool = true
-    #template runcpuFinalizeOffload(x:seq):bool = true
-    #template gpuVarPtr(v:FltArr,p:untyped):untyped = v
-    #template offloadPtr(x:seq):untyped =
-    #  let size = x.len * sizeof(x[0])
-    #  let xp = omp_target_alloc(size)
-    #  discard omp_target_memcpy_togpu(xp, x[0].addr, size)
-    #  cast[ptr UncheckedArray[type(x[0])]](xp)
-    #template offloadVar(x:seq,p:untyped):untyped = FltArr(a:p)
-    #template gpuPrepareOffload(v:FltArr,p:untyped):untyped = v.a=p
-    #template cpuFinalizeOffload(x:seq,v,p:untyped):untyped = omp_target_free(p)
-
-    template toGpu(x: cint): auto = x
-    template getGpu(x: cint, g: cint): auto = x
-    template fromGpu(x: cint, g: cint) = discard
-
-    template toGpu(x: seq): auto =
-      let size = x.len * sizeof(x[0])
-      #let xp = omp_target_alloc(size)
-      let xp = gpuMalloc(size)
-      #discard omp_target_memcpy_togpu(xp, x[0].addr, size)
-      gpuMemCpyToGpu(xp, x[0].addr, size)
-      FltArr(a:cast[ptr UncheckedArray[type(x[0])]](xp))
-
-    template getGpu(x: seq, g: FltArr): auto = g
-
-    template fromGpu(x:seq, g:FltArr) =
-      let size = x.len * sizeof(x[0])
-      gpuMemCpyToCpu(x[0].addr, g.a, size)
-      gpuFree(g.a)
-
-    var x = 1.0'f32
-    var y = cast[ptr UncheckedArray[float32]](omp_target_alloc(sizeof(float32)))
-    useDevicePtr(y)
-    #discard omp_target_memcpy_togpu(y, addr x, sizeof(float32))
-    gpuMemCpyToGPU(y, addr x, sizeof(float32))
-    #ompBlock("target teams"&isDevicePtr(x)):
-    #ompBlock("target teams"&mapto(x)):
-    ompBlock2("target teams", " map(to:", x, ")"):
-      {.emit:"#pragma omp parallel".}
-      {.emit:"for(int ii=0; ii<1; ii++)".}
-      block:
-        x = 1.0
-
-    #macro dump(n:auto):auto =
-    #  echo n.repr
-    #  n
-    onGpu:
-      let i = getThreadNum()
-      if i < n:
-        c[i] = a[i] + b[i]
-
-  test()
+{.emit: "/*INCLUDESECTION*/\n#include <omp.h>".}
+proc gpuZeContext*(): tuple[ctx, dev: pointer] =
+  ## Level Zero context and device of the default OpenMP device
+  var ctx, dev: pointer
+  {.emit: """
+  omp_interop_t obj = omp_interop_none;
+  int dn = omp_get_default_device(), err;
+  #pragma omp interop init(targetsync: obj) device(dn)
+  `ctx` = omp_get_interop_ptr(obj, omp_ipr_device_context, &err);
+  `dev` = omp_get_interop_ptr(obj, omp_ipr_device, &err);
+  #pragma omp interop destroy(obj)
+  """.}
+  (ctx, dev)

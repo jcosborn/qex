@@ -703,20 +703,19 @@ proc releaseLoops(lo: auto, nc: static int) =
         GC_fullCollect()
         check getRawMemUsed() <= before
 
-    #[ # fails with nvcc
     test "temporary loop workspaces do not accumulate storage":
-      # refc may keep a dead workspace through conservative stack roots.
-      # Warm that call path before checking repeated allocations for growth.
+      # refc scans the stack conservatively: a stale word can keep a dead
+      # workspace, or one of its buffers, through some collections.
+      # Accumulated storage grows with every repetition: the later half
+      # then stays above every level of the earlier half.
       for c in coeffs:
-        var before = 0
-        for rep in 0..<4:
+        var used: array[8, int]
+        for rep in 0..<used.len:
           transient(c, g, h, e)
           GC_fullCollect()
           GC_fullCollect()
-          let used = getRawMemUsed()
-          if rep == 0: before = used
-          else: check used <= before
-    ]#
+          used[rep] = getRawMemUsed()
+        check min(used[4..^1]) <= max(used[0..3])
 
 qexInit()
 letParam:

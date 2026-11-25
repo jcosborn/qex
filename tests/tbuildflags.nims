@@ -10,11 +10,22 @@ const
   # Every gcc gets prefetchFlag; gcc 15 and later get all of gccFlag.
   prefetchFlag = "-fno-prefetch-loop-arrays"
   gccFlag = prefetchFlag & " -fno-allow-store-data-races"
-  clangFlag = "-fno-slp-vectorize"
+  # Every clang gets fpFlag; clang 19 gets all of clangFlag.
+  fpFlag = "-fno-omit-frame-pointer"
+  clangFlag = fpFlag & " -fno-slp-vectorize"
 let (tmp, code) = gorgeEx("mktemp -d")
 doAssert code == 0, tmp
 let dir = tmp.strip
-let cmd = "exec " & findExe("cc").quoteShell & " -undef "
+proc workingCc(): string =
+  ## cc if it runs, else gcc or clang: the Cray PE cc stops without a Cray
+  ## compiler module.  findExe resolves links, and the Cray PE cc is a link to
+  ## a driver that runs only under the name cc; command -v keeps the name.
+  for name in ["cc", "gcc", "clang"]:
+    result = gorge("command -v " & name).strip
+    if result != "" and gorgeEx(result.quoteShell & " -E -x c /dev/null").exitCode == 0: return
+  raise newException(IOError, "cc, gcc and clang do not run")
+let ccPath = workingCc()
+let cmd = "exec " & ccPath.quoteShell & " -undef "
 var num = 0
 
 proc script(body: string): string =
@@ -32,7 +43,7 @@ proc check(expected = "", args: seq[string] = @[]) =
   setUserNimFlags(args)
   nimFlags.setLen(0)
   setNimFlags()
-  for flag in [prefetchFlag, gccFlag, clangFlag]:
+  for flag in [prefetchFlag, gccFlag, fpFlag, clangFlag]:
     doAssert ("--passC:" & flag.quoteShell in nimFlags) == (flag == expected), nimCmdArgs
   if expected != "": doAssert nimFlags[^1] == "--passC:" & expected.quoteShell, nimCmdArgs
 
@@ -52,18 +63,33 @@ try:
   for i, v in [18, 19, 20, 23]:
     clang[i] = script(cmd & "-D__GNUC__=99 -D__clang__=1 -D__clang_major__=" & $v & " \"$@\"")
     cc = clang[i]
-    check(if v == 19: clangFlag else: "")
+    check(if v == 19: clangFlag else: fpFlag)
     doAssert (compiler.name, compiler.major) == ("clang", v)
   # Offload drivers read the input in a device pass before the host pass.
-  cc = script(findExe("cc").quoteShell & " -undef \"$@\" > /dev/null; " & cmd & "-D__GNUC__=15 \"$@\"")
+  cc = script(ccPath.quoteShell & " -undef \"$@\" > /dev/null; " & cmd & "-D__GNUC__=15 \"$@\"")
   check(gccFlag)
+  # build/nvcc.sh probes its host compiler without -x cuda and --cuda-gpu-arch=,
+  # which g++ rejects.
+  let hostCxx = dir / "hostcxx"  # nvcc.sh splits QEX_HOSTCXX at blanks
+  writeFile(hostCxx, "#!/bin/sh\nfor a; do case $a in cuda|--cuda-gpu-arch=*) exit 1;; esac; done\n" &
+            cmd & "-D__GNUC__=14 \"$@\"\n")
+  exec "chmod +x " & hostCxx.quoteShell
+  putEnv("QEX_HOSTCXX", hostCxx)
+  putEnv("CUDA_HOME", dir)
+  cpp = script("exec bash " & (qexDir / "build" / "nvcc.sh").quoteShell & " \"$@\"")
+  ccDef = "cpp"
+  cppflagsAlways = "-g -x cuda --cuda-gpu-arch=sm_90"
+  check(prefetchFlag)
+  doAssert (compiler.name, compiler.major) == ("gcc", 14)
+  ccDef = "cc"
+  cppflagsAlways = ""
 
   let mpi = script("exec \"$OMPI_CC\" \"$@\"")
   cflagsSpeed = "-Ofast -march=native"
   cppflagsSpeed = "-O3 -march=native"
   cflagsDebug = "-Og"
   for (affected, unaffected, flag, other) in [(gcc[1], gcc[0], gccFlag, prefetchFlag),
-                                             (clang[1], clang[2], clangFlag, "")]:
+                                             (clang[1], clang[2], clangFlag, fpFlag)]:
     cc = unaffected
     cpp = affected
     check(other)
@@ -159,6 +185,17 @@ try:
   check(prefetchFlag)
   doAssert "--d:SSE" in nimFlags and "--d:AVX" notin nimFlags, nimCmdArgs
   simd = ""
+
+  # Nim's nvcc passes the options to its host compiler, which needs
+  # -fno-strict-aliasing for Nim's code as gcc and clang do; it is not probed.
+  ccType = "nvcc"
+  check()
+  for key in ["--nvcc.options.always:", "--nvcc.cpp.options.always:"]:
+    var found = false
+    for f in nimFlags:
+      if f.startsWith(key) and "-fno-strict-aliasing" in f: found = true
+    doAssert found, nimCmdArgs
+  ccType = "gcc"
 
   cc = script("exit 1")
   var failed = false

@@ -1,0 +1,323 @@
+import testutils
+import qex, base/hyper
+import comms/[halo, halogpu]
+import backend/accel
+
+# The kernels of backend/accel, which the CPU backend runs on the host:
+# queued kernels run in order, sumFixed and gpuSum add in an order fixed by
+# the number of terms, and GpuHaloEx brings the neighbors x+-mu of the sites
+# of either parity, as stagGpu takes them: local, in another lane, or
+# received from another rank.
+
+qexInit()
+
+proc dev(n: int): ptr UncheckedArray[float] =
+  cast[ptr UncheckedArray[float]](gpuMalloc(max(n, 1)*sizeof(float)))
+
+proc host(d: ptr UncheckedArray[float]; n: int): seq[float] =
+  result = newSeq[float](n)
+  if n > 0: gpuMemCpyToCpu(addr result[0], d, n*sizeof(float))
+
+proc host(d: ptr UncheckedArray[int32]; n: int): seq[int32] =
+  result = newSeq[int32](n)
+  if n > 0: gpuMemCpyToCpu(addr result[0], d, n*sizeof(int32))
+
+proc site(lo: auto; e, k: int; o: seq[int32]): int =
+  ## global lex index of lane k of outer site e, shifted by o
+  let xs = lo.vcoords(e)
+  var x = newSeq[int](lo.nDim)
+  for d in 0..<lo.nDim:
+    x[d] = (int(xs[d][k]) + int(o[d]) + lo.physGeom[d]) mod lo.physGeom[d]
+  lexIndex(x, lo.physGeom)
+
+proc checkHalo(lo: auto; reps: int): float =
+  ## Mismatches of the neighbors x+-mu of the sites x of each parity, local
+  ## or through a GpuHaloEx of the other parity, over reps exchanges of
+  ## fields with ne reals per site: real c of site y is 8 lex(y) + c + rep/2.
+  const V = lo.V
+  const ne = 3
+  let nd = lo.nDim
+  let no = lo.nSitesOuter
+  let n = V*no
+  let c = getDefaultComm()
+  var w = newSeq[int](nd)
+  for d in 0..<nd: w[d] = 1
+  let hl = lo.makeHaloLayout(w, w)
+  var offs: seq[seq[int32]]
+  for mu in 0..<nd:
+    for s in [1, -1]:
+      var o = newSeq[int32](nd)
+      o[mu] = int32 s
+      offs.add o
+  let z = newSeq[int32](nd)
+  let f = dev(ne*n)
+  var hf = newSeq[float](ne*n)
+  for ps in 0..3:  # parity of the sites sent; then the same with the halo as sites
+    let p = ps mod 2
+    let st = ps >= 2
+    let hm = hl.makeHaloMap(c, offs, p, sites = false)
+    let ex = newGpuHaloEx[float](hm.gather, ne, n, V, c, sites = st)
+    let src = hl.haloSource(hm.gather, sites = st)
+    let ro = host(ex.rofs, ex.nrecv)
+    let rs = host(ex.rstr, ex.nrecv)
+    let q = 1 - p
+    let o0 = if q == 0: 0 else: lo.nEvenOuter
+    let o1 = if q == 0: lo.nEvenOuter else: no
+    for rep in 0..<reps:
+      for e in 0..<no:
+        for k in 0..<V:
+          for a in 0..<ne:
+            hf[(e*ne + a)*V + k] = float(8*lo.site(e, k, z) + a) + 0.5*float(rep)
+      gpuMemCpyToGpu(f, addr hf[0], ne*n*sizeof(float))
+      ex.pack(f)
+      ex.start
+      ex.wait
+      let hr = host(ex.rbuf, ne*ex.nrecv)
+      for e in o0..<o1:
+        for mu in 0..<nd:
+          for fb in 0..1:
+            let x = int(if fb == 0: hl.neighborFwd[mu][e] else: hl.neighborBck[mu][e])
+            for k in 0..<V:
+              let j = if x < no: V*x + k else: int src[V*(x-no) + k]
+              let y = lo.site(e, k, offs[2*mu + fb])
+              for a in 0..<ne:
+                let got = if j < 0: -1.0
+                          elif j < n: hf[((j div V)*ne + a)*V + j mod V]
+                          else: hr[int(ro[j-n]) + a*int(rs[j-n])]
+                let want = float(8*y + a) + 0.5*float(rep)
+                if got != want:
+                  if result < 5:
+                    echo "parity ", q, " site ", e, " lane ", k, " mu ", mu, " fb ", fb, ": ", got, " != ", want
+                  result += 1
+      if ex.sites:  # the lanes of the halo sites that copy sites of this rank
+        let hp = haloSites(hm.gather, V)
+        for d, j in src:
+          if j >= 0 and j < n and hp[d] >= 0:
+            for a in 0..<ne:
+              if hr[int(ro[hp[d]]) + a*int(rs[hp[d]])] != hf[((j div V)*ne + a)*V + j mod V]: result += 1
+      c.barrier  # the peers read their receive buffers before the next exchange
+    ex.free
+  gpuFree(f)
+  c.allReduce(result)
+
+# The kernels run in procs: the GPU backends emit their code, which at the
+# top level, as in a test block, lands outside any function.
+
+proc queued(): int =
+  ## mismatches after three queued kernels, each reading the output of the
+  ## one before, and a synchronous one after the wait
+  let n = 1000
+  let a = dev(n)
+  let b = dev(n)
+  onGpuQueue(n):
+    for i in gpuRange(n): a[i] = float(i)
+  onGpuQueue(n):
+    for i in gpuRange(n): b[i] = 2.0*a[i] + 1.0
+  onGpuQueue(n):
+    for i in gpuRange(n): a[i] = b[i] - a[i]
+  gpuWaitAsync()
+  onGpu(n):
+    for i in gpuRange(n): b[i] = a[i] - 1.0
+  let h = host(b, n)
+  for i in 0..<n:
+    if h[i] != float(i): inc result
+  gpuFree(a)
+  gpuFree(b)
+
+proc sums(): int =
+  ## mismatches of sumFixed at the sizes where its levels change, with 1,
+  ## 2 and 8 sums: exact sums of exactly representable terms, and rounded
+  ## sums equal twice and near the host sum
+  let hb = cast[ptr UncheckedArray[float]](gpuMallocHost(8*sumHost*sizeof(float)))
+  for n0 in [0, 1, 15, 16, 17, 511, 512, 513, 8193]:
+    for m0 in [1, 2, 8]:
+      let n = n0  # the loop variables point into the host array, the kernels need values
+      let m = m0
+      let a = dev(m*n)
+      let w = dev(m*(n div 15 + 16))
+      onGpu(m*n):  # a[c n + i] = i + 1 + c/2
+        for k in gpuRange(m*n):
+          let c = k div n
+          a[k] = float(k - c*n + 1) + 0.5*float(c)
+      var r = newSeq[float](m)
+      sumFixed(r, a, w, hb, m, n)
+      var bad = 0
+      for c in 0..<m:
+        if r[c] != float(n*(n+1) div 2) + 0.5*float(c*n): inc bad
+      onGpu(m*n):
+        for k in gpuRange(m*n): a[k] = 1.0/float(k + 3)
+      var r1, r2 = newSeq[float](m)
+      sumFixed(r1, a, w, hb, m, n)
+      sumFixed(r2, a, w, hb, m, n)
+      for c in 0..<m:
+        var t = 0.0
+        for i in 0..<n: t += 1.0/float(c*n + i + 3)
+        if r1[c] != r2[c] or abs(r1[c] - t) > 1e-12*t: inc bad
+      if bad != 0: echo "sumFixed n ", n, " m ", m, ": ", r, " ", r1, " ", r2
+      result += bad
+      gpuFree(a)
+      gpuFree(w)
+  gpuFreeHost(hb)
+
+proc gsums(): int =
+  ## mismatches of gpuSum of 1, 2 and 8 exact sums
+  for n in [0, 1, 15, 16, 17, 511, 512, 513, 8193, 16*8193 + 5]:
+    let s1 = gpuSum(i, n, 1, [float(i + 1)])
+    let s2 = gpuSum(i, n, 2, [float(i), 1.0])
+    let s8 = gpuSum(i, n, 8):
+      var v {.noInit.}: array[8, float]
+      for c in 0..<8: v[c] = float(i + c)
+      v
+    var bad = 0
+    if s1[0] != float(n*(n+1) div 2): inc bad
+    if s2[0] != float(n*(n-1) div 2) or s2[1] != float(n): inc bad
+    for c in 0..<8:
+      if s8[c] != float(n*(n-1) div 2 + c*n): inc bad
+    if bad != 0: echo "gpuSum n ", n, ": ", s1, " ", s2, " ", s8
+    result += bad
+
+template pow2(q: int): float =
+  ## 2^q from its bits, q >= -1074
+  (if q >= -1022: cast[float](uint64(1023 + q) shl 52) else: cast[float](1'u64 shl (q + 1074)))
+
+template termK(i: int; seed: uint64; kb, qw: int): tuple[k: int64, q: int] =
+  ## integers |k| < 2^(kb-1) and 0 <= q < qw from a hash of i
+  var h = uint64(i)*0x9E3779B97F4A7C15'u64 + seed
+  h = (h xor (h shr 30))*0xBF58476D1CE4E5B9'u64
+  h = (h xor (h shr 27))*0x94D049BB133111EB'u64
+  h = h xor (h shr 31)
+  (k: ashr(cast[int64](h), 64 - kb), q: int((h and 0xffff'u64) mod uint64(qw)))
+
+template term(i: int; seed: uint64; kb, q0, qw: int): float =
+  ## k 2^(q0 + q), exact in a double: the host and every device get the same value
+  block:
+    let t = termK(i, seed, kb, qw)
+    float(t.k)*pow2(q0 + t.q)
+
+proc xsums(): int =
+  ## mismatches of SumX reads against the sums of terms k 2^q, which integers
+  ## give exactly: full fractions, many terms over several rows, the top and
+  ## the bottom of the normal doubles, one and two kernels per read, overflow,
+  ## subnormal terms, which count as zero, and reads without terms.
+  ## kb + qw + log2(terms) <= 62 keeps sum k 2^q in an int64; q0 >= -1022
+  ## keeps the terms and the sums normal, where a processor that flushes
+  ## subnormals multiplies like one that does not.
+  const cases = [(1, 53, 0, 1), (300, 53, 0, 1), (300, 53, -900, 2), (100000, 30, 20, 12),
+                 (200000, 20, -300, 22), (70000, 24, 500, 20), (4097, 40, 900, 8),
+                 (1000, 12, -1000, 40), (50000, 30, -1022, 10), (3000, 44, -1022, 1)]
+  var x = newSumX(2, 400000)  # two kernels of 200000 terms between reads
+  var seed = 11'u64
+  var r: array[2, float]
+  x.read(r)
+  if r != [0.0, 0.0]: inc result
+  for ci in 0..<cases.len:
+    let (n, kb, q0, qw) = cases[ci]
+    let (n1, kb1, q1, qw1) = cases[cases.len - 1 - ci]  # the second sum: another range
+    for kernels in 1..2:
+      var s: array[2, int64]
+      for k in 0..<kernels:
+        let sd = seed
+        gpuSumX(x, i, max(n, n1)):
+          [(if i < n: term(i, sd, kb, q0, qw) else: 0.0), (if i < n1: term(i, sd + 7, kb1, q1, qw1) else: 0.0)]
+        for i in 0..<n:
+          let t = termK(i, sd, kb, qw)
+          s[0] += t.k shl t.q
+        for i in 0..<n1:
+          let t = termK(i, sd + 7, kb1, qw1)
+          s[1] += t.k shl t.q
+        seed += 13
+      x.read(r)
+      let want = [float(s[0])*pow2(q0), float(s[1])*pow2(q1)]
+      if cast[array[2, uint64]](r) != cast[array[2, uint64]](want):
+        inc result
+        echo "SumX case ", ci, " kernels ", kernels, ": ", r, " ", want
+      x.read(r)
+      if r != [0.0, 0.0]: inc result
+  gpuSumX(x, i, 4): [pow2(1023), -pow2(1023)]
+  x.read(r)
+  if r != [Inf, -Inf]:
+    inc result
+    echo "SumX overflow: ", r
+  gpuSumX(x, i, 4): [pow2(-1023), (if i == 3: 3.0 else: -pow2(-1074))]
+  x.read(r)
+  if r != [0.0, 3.0]:
+    inc result
+    echo "SumX subnormal terms: ", r
+  # kernels of one term add to slot 0: a word holds 2048 of the largest pieces
+  let big = cast[float]((1075'u64 shl 52) or 0xF_FFFF_FFFF_FFFF'u64)  # 2^53 - 1
+  for k in 0..<2048:
+    gpuSumX(x, i, 1): [big, -big]
+  x.read(r)
+  if r != [2048.0*big, -2048.0*big]:
+    inc result
+    echo "SumX 2048 terms in a slot: ", r
+  x.free
+
+proc fmaRef[T](x, y, z: T; wide: static bool): T {.noinline.} =
+  ## x y + z as fmadd of vectors rounds it: once where the C target has the
+  ## instruction for vectors of that size, else as a product and a sum
+  const has = when wide: "defined(__AVX512F__)" else: "defined(__FMA__)"
+  const fma = when T is float32: "fmaf" else: "fma"
+  {.emit: ["\n#if ", has, "\n", result, " = ", fma, "(", x, ", ", y, ", ", z, ");\n#else\n",
+           result, " = ", x, "*", y, " + ", z, ";\n#endif\n"].}
+
+proc fmas(T: typedesc; n: int): int =
+  ## The lanes where fmadd on the element type of a kernel, vector times
+  ## vector and number times vector, differs from x y + z of numbers
+  ## rounded as often: once on one lane (libm) and where the C target has
+  ## the instruction, else twice.
+  const W = gpuLanes(T, 16)
+  type E = gpuElem(T, W)
+  template want(x, y, z: T): T =
+    when W == 1: fmadd(x, y, z) else: fmaRef(x, y, z, W*sizeof(T) == 64)
+  var sd = 1
+  proc next(): T =
+    sd = (sd*1103515245 + 12345) and 0x7fffffff
+    T(sd mod 2001 - 1000)/T(997)
+  for i in 0..<n:
+    var x, y, z: array[W, T]
+    for l in 0..<W:
+      x[l] = next()
+      y[l] = next()
+      z[l] = next()
+    template ld(v: untyped): E =
+      when W == 1: v[0]
+      else:
+        var t {.noInit.}: E
+        assign(t[], v)  # unaligned
+        t
+    let a = ld(x)
+    let b = ld(y)
+    let c = ld(z)
+    var fv = fmadd(a, b, c)
+    var gv = fmadd(x[0], b, c)
+    let f = cast[ptr array[W, T]](addr fv)
+    let g = cast[ptr array[W, T]](addr gv)
+    for l in 0..<W:
+      if f[l] != want(x[l], y[l], z[l]): inc result
+      if g[l] != want(x[0], y[l], z[l]): inc result
+
+suite "backend/accel":
+  test "queued kernels run in order":
+    check queued() == 0
+
+  test "sumFixed":
+    check sums() == 0
+
+  test "gpuSum":
+    check gsums() == 0
+
+  test "SumX gives the exact sums":
+    check xsums() == 0
+
+  test "fmadd of SIMD vectors":
+    check fmas(float, 1000) == 0
+    check fmas(float32, 1000) == 0
+
+  test "GpuHaloEx neighbors":
+    for ll in [[4,4,4,8], [8,4,4,4], [4,8,8,8]]:
+      let lo = latticeFromLocalLattice(ll, nRanks).newLayout
+      echo "lattice ", lo.physGeom, "  ranks ", lo.rankGeom, "  lanes ", lo.innerGeom
+      check checkHalo(lo, 3) == 0
+
+qexFinalize()

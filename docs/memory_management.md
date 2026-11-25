@@ -36,9 +36,22 @@ threads:
 - Allocate outside the region, or in one thread between barriers (the lazy
   `{.global.}` field in `stagD2xx`).
 - Seqs and strings local to a thread are fine. Assign a shared seq or string
-  from one thread only.
+  from one thread only. Under refc each thread collects its own heap, and
+  `threads` gives the collector of a worker thread its whole stack
+  (`gcWholeStack` in `src/base/omp.nim`), so the locals of the block keep
+  what the thread allocated.
 - Do not `return` from a region or catch its exceptions outside it. A worker's
   exception prints the error and exits; the master's propagates after the block.
+- Make closures in a proc that receives what they capture. A closure over the
+  locals of a region shares the one environment of the threads proc, made
+  before the region: every thread that owns it moves it out of the proc or
+  counts it without atomics. The environment of a closure made by a proc call
+  belongs to that call, so each thread owns its own and may store it. The
+  finalizer of `onGpuNowait` is made this way (`gpuFinalizer` in the backends):
+  it takes the device handles by value and the host variables by address, so
+  call it while those variables are alive. A kernel variable without an
+  address, such as a call that gives a ref, is copied by value: inside a
+  region name host data through variables, or every thread copies the ref.
 
 `{.cursor.}` is a raw pointer without runtime checks: the owner keeps the object
 alive while the cursor is in use. Under refc, `{.cursor.}` and `lent` change

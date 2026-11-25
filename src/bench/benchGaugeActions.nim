@@ -99,7 +99,7 @@ for (name,c) in cases:
   var act: float
   template call(isForce: bool, t: LoopTag) =
     if c.adjplaq != 0:
-      if isForce: c.forceA(g, f)
+      if isForce: c.forceA(g, f, work=work)
       else: act = c.actionA(g)
     elif path == "staple":
       if isForce: c.gaugeForce(g, f, work=work, tag=t)

@@ -182,8 +182,7 @@ proc getGpuMemDef(cpuPtr: pointer): ptr GpuMem =
   dropDead()
   var m = gpuMemTable.getOrDefault(cpuPtr)
   if m == nil:
-    m = new GpuMem
-    m.flags = defaultFlags
+    m = (ref GpuMem)(flags: defaultFlags, lastCopyIn: -1)  # copied in even before the first kernel
     gpuMemTable[cpuPtr] = m
   addr m[]
 
@@ -202,7 +201,7 @@ proc getGpuMem*(cpuPtr: pointer, gpuBytes: int): ptr GpuMem =
   result = getGpuMemDef(cpuPtr)
   if gmValidBytes in result.flags and result.bytes != gpuBytes:
     if result.p != nil: gpuFree(result.p)
-    result[] = GpuMem(flags: defaultFlags)
+    result[] = GpuMem(flags: defaultFlags, lastCopyIn: -1)
   #echo gpuMemTag
   if gmValidBytes notin result.flags:
     result.flags.incl gmValidBytes
@@ -230,6 +229,8 @@ proc dumpGpuMem*(): string =
     result &= "\n " & v[].stats
 
 proc freeAllGpuMem*() =
+  ## Frees every entry with its device memory.  The handles taken before are
+  ## dead: a CgField keeps one, so make CgFields anew after this call.
   dropDead()
   for v in gpuMemTable.values: release(v)
   gpuMemTable.clear

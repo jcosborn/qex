@@ -123,9 +123,10 @@ proc field(lo: Layout; k: int): (pointer, int) {.noinline.} =
     bad += int(host(addr f[0], n) != t)
   (pointer(addr f[0]), bad)
 
-proc layout(lo: Layout; fwd, bck: openArray[int]): (pointer, int) {.noinline.} =
-  ## a new halo layout: the address of its seq of forward neighbor tables
-  ## and the mismatches of the tables on the device
+proc layout(lo: Layout; fwd, bck: openArray[int]; free: bool): (pointer, int) {.noinline.} =
+  ## a new halo layout, its tables freed from the table at the end when
+  ## free: the address of its seq of forward neighbor tables and the
+  ## mismatches of the tables on the device
   let hl = lo.makeHaloLayout(fwd, bck)
   inc kernelCallCount
   let g = toGpu(hl)
@@ -134,6 +135,7 @@ proc layout(lo: Layout; fwd, bck: openArray[int]): (pointer, int) {.noinline.} =
     let t = dev[ptr UncheckedArray[int32]](d.p, h.len)
     for mu in 0..<h.len:
       if dev[int32](t[mu], h[mu].len) != h[mu]: inc bad
+  if free: freeGpuMem(hl)
   (pointer(addr hl.neighborFwd[0]), bad)
 
 proc halos(lo: Layout; hl: HaloLayout): int =
@@ -163,6 +165,105 @@ proc reals(n, k: int): (pointer, int) {.noinline.} =
   inc kernelCallCount
   let g = toGpu(s)
   (pointer(addr s[0]), int(dev[float](g.p, n) != s))
+
+proc sums(n: int): array[2, array[2, float]] {.noinline.} =
+  ## Through one GpuSum, whose device block is its own: the sums of n terms
+  ## [1, 2], then, after the table freed every device block, of n terms
+  ## [3, 4].
+  var gs = newGpuSum[array[2, float]](n)
+  template total(a, b: float): array[2, float] =
+    onGpu(n):
+      var r: array[2, float]
+      for i in gpuRange(n):
+        r[0] += a
+        r[1] += b
+      gs.reduce r
+    gs.value
+  result[0] = total(1.0, 2.0)
+  freeAllGpuMem()
+  result[1] = total(3.0, 4.0)
+  gs.free
+
+proc localKernel(n: int): int =
+  ## A kernel on an array whose toGpu, getGpu and fromGpu are declared in this
+  ## proc: the elements that did not come back as the kernel set them.
+  type
+    Arr = object  # on the host
+      n: int
+      p: ptr UncheckedArray[float]
+    Dev = object  # its device copy
+      p: ptr UncheckedArray[float]
+  template toGpu(x: Arr): Dev =
+    Dev(p: cast[ptr UncheckedArray[float]](gpuMalloc(x.n*sizeof(float))))
+  template getGpu(x: Arr, g: Dev): auto = g
+  template fromGpu(x: Arr, g: Dev) =
+    gpuMemCpyToCpu(x.p, g.p, x.n*sizeof(float))
+    gpuFree(g.p)
+  template `[]=`(g: Dev, i: SomeInteger, y: float) = g.p[][i] = y
+  var h = newSeq[float](n)
+  let a = Arr(n: n, p: cast[ptr UncheckedArray[float]](addr h[0]))
+  onGpu(n):
+    for i in gpuRange(n): a[i] = 2.0
+  for i in 0..<n:
+    if h[i] != 2.0: inc result
+
+proc seqKernel(n: int): int =
+  ## A kernel b[i] = 2 a[i] on seqs of reals: the elements of b that differ.
+  var a = newSeq[float](n)
+  var b = newSeq[float](n)
+  for i in 0..<n: a[i] = float(i)
+  onGpu(n):
+    for i in gpuRange(n): b[i] = 2.0*a[i]
+  for i in 0..<n:
+    if b[i] != 2.0*float(i): inc result
+
+proc pick[F](fs: openArray[F]; k: int): F = fs[k]
+
+# The kernels launch inside procs: for code at the top level of a module Nim
+# emits the OpenMP pragmas of a device launch at file scope.
+
+proc kernelCount(lo: Layout): (bool, int, bool) {.noinline.} =
+  ## Launches in a threads block between two kernels r := s: whether the first
+  ## copied, the finalizers that did not leave the count as they found it,
+  ## whether the second copied.  The count orders the copies of the table:
+  ## after a finalizer that changes it, the kernels of the main thread skip
+  ## their copies.
+  var s = lo.ColorVector()
+  var r = lo.ColorVector()
+  let n = lo.nSitesOuter*sizeof(s[0])
+  threads:
+    s := 1.0
+    r := 0.0
+  onGpu: r := s
+  result[0] = equalMem(addr r[0], addr s[0], n)
+  let m = 16
+  var changed = 0
+  var before = 0
+  threads:
+    for rep in 0..<1000:
+      let fin = onGpuNowait:
+        for i in gpuRange(m): discard
+      threadBarrier()  # every thread has launched
+      threadSingle: before = kernelCallCount
+      fin()
+      threadSingle:
+        if kernelCallCount != before: inc changed
+  result[1] = changed
+  threads: s := 3.0
+  onGpu: r := s
+  result[2] = equalMem(addr r[0], addr s[0], n)
+
+proc pickCopy(lo: Layout): bool {.noinline.} =
+  ## Whether a kernel r := s copied back into r, a field by value.
+  var fs = [lo.ColorVector(), lo.ColorVector()]
+  var s = lo.ColorVector()
+  let n = lo.nSitesOuter*sizeof(s[0])
+  threads:
+    s := 3.0
+    fs[1] := 0.0
+  template r: untyped = pick(fs, 1)
+  onGpu: r := s
+  equalMem(addr fs[1][0], addr s[0], n)
 
 when defined(gcRefc):
   proc scans(): int =
@@ -245,10 +346,15 @@ suite "backend/gpumem":
   test "freed fields":
     reuse("Field"): field(lo, k)
 
-  test "dropped halo layouts":
+  test "pinned halo layouts":
     reuse("HaloLayout"):
-      if k mod 2 == 0: layout(lo, [1,1,1,1], [0,0,0,0])
-      else: layout(lo, [0,0,0,0], [1,1,1,1])
+      if k mod 2 == 0: layout(lo, [1,1,1,1], [0,0,0,0], false)
+      else: layout(lo, [0,0,0,0], [1,1,1,1], false)
+
+  test "freed halo layouts":
+    reuse("freed HaloLayout"):
+      if k mod 2 == 0: layout(lo, [1,1,1,1], [0,0,0,0], true)
+      else: layout(lo, [0,0,0,0], [1,1,1,1], true)
 
   test "seqs of halos":
     check halos(lo, lo.makeHaloLayout([1,1,1,1], [1,1,1,1])) == 0
@@ -280,5 +386,20 @@ suite "backend/gpumem":
     for key in keys:
       expect KeyError: discard getGpuMem(key)
     check getGpuMem(addr f[0]) == kept.pgm
+
+  test "launches in a threads block keep the kernel count":
+    check kernelCount(lo) == (true, 0, true)
+
+  test "a GpuSum sums after the table freed every device block":
+    check sums(40000) == [[40000.0, 80000.0], [120000.0, 160000.0]]
+
+  test "a kernel copies back through the fromGpu declared in its proc":
+    check localKernel(1000) == 0
+
+  test "a kernel variable without an address is copied back":
+    check pickCopy(lo)
+
+  test "a kernel reads and writes seqs of numbers":
+    check seqKernel(1000) == 0
 
 qexFinalize()

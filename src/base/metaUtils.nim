@@ -1,11 +1,21 @@
 import macros
 import strUtils
 
-proc isMagic(x: NimNode): bool =
-  # echo x.treerepr
+proc hasPragma(x: NimNode; names: openArray[string]): bool =
+  ## whether the routine x has one of the pragmas; Nim 2.2 lists the pragma
+  ## template of a pragma alias (gpuProc of gpuInline) as a call
   let pragmas = x[4]
-  if pragmas.kind==nnkPragma and pragmas[0].kind==nnkExprColonExpr and
-     $pragmas[0][0]=="magic": result = true
+  if pragmas.kind==nnkPragma:
+    for p in pragmas:
+      let n = if p.kind in {nnkExprColonExpr, nnkCall}: p[0] else: p
+      if n.kind in {nnkIdent,nnkSym}:
+        for s in names:
+          if n.eqIdent(s): return true
+
+proc isMagic(x: NimNode): bool =
+  ## magic procs and C functions: the body of an importc proc, e.g. sqrt of
+  ## std/math, holds only its docs
+  hasPragma(x, ["magic", "importc", "importcpp"])
 
 template isNotMagic(x: NimNode): bool = not isMagic(x)
 
@@ -430,6 +440,32 @@ proc cleanIterator(n:NimNode):NimNode =
   # echo "<<<<<< cleanIterator"
   # echo result.treerepr
 
+proc guardReturns(n: NimNode): NimNode =
+  ## s..; if c: (a..; return); t..  ->  s..; if c: a.. else: t..
+  ## A return left in the body becomes a break out of the inlined block, and
+  ## Nim wraps the expressions around a break in try/finally (C++ try blocks,
+  ## which device code rejects).
+  if n.kind != nnkStmtList: return n
+  result = newStmtList()
+  for i in 0..<n.len:
+    let s = n[i]
+    if s.kind == nnkIfStmt and s.len == 1 and s[0].kind == nnkElifBranch:
+      let b = s[0][1]
+      let r = if b.kind == nnkStmtList and b.len > 0: b[^1] else: b
+      if r.kind == nnkReturnStmt:
+        var a = newStmtList()
+        if b.kind == nnkStmtList:
+          for j in 0..<b.len-1: a.add b[j]
+        if r[0].kind != nnkEmpty: a.add r[0]  # result = x
+        if a.len == 0: a.add newNimNode(nnkDiscardStmt).add newEmptyNode()
+        var e = newStmtList()
+        for j in i+1..<n.len: e.add n[j]
+        var f = newTree(nnkIfStmt, newTree(nnkElifBranch, s[0][0], a))
+        if e.len > 0: f.add newTree(nnkElse, guardReturns e)
+        result.add f
+        return
+    result.add s
+
 proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
   # echo ">>>>>> inlineProcsY"
   # echo "call:\n", call.lisprepr
@@ -482,6 +518,13 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
         echo "    received a non-literal node: ",p.lisprepr
         quit 1
       # We do nothing, assuming the compiler has finished constant unfolding.
+    elif (p.kind in {nnkFloatLit..nnkFloat64Lit} or p.kind == nnkHiddenStdConv and p[^1].kind in nnkLiterals and
+          p.getType.typeKind in {ntyFloat, ntyFloat32, ntyFloat64}):
+      # a let, which has an address: QEX's operators take the address of their
+      # arguments
+      let lit = if p.kind == nnkHiddenStdConv: p[^1] else: p
+      pre.add getAst(letX(t, newCall(p.getTypeInst, lit)))
+      body = body.replaceNonDeclSym(sym, t)
     elif p.kind in nnkLiterals:
       pre.add getAst(constX(c, p))
       body = body.replaceNonDeclSym(sym, c)
@@ -568,7 +611,7 @@ proc inlineProcsY(call: NimNode, procImpl: NimNode): NimNode =
     else:
       result = n.copyNimNode
       for c in n: result.add breakReturn c
-  body = breakReturn body
+  body = breakReturn guardReturns body
   # echo "### body after replace return with break:"
   # echo body.repr
   var sl:NimNode
@@ -645,43 +688,76 @@ proc systemProc(impl: NimNode): bool {.compileTime.} =
   else:
     false
 
+proc namesParam(n: NimNode; names: seq[string]): bool =
+  ## whether an emit in n holds C text with one of the names
+  if n.kind == nnkPragma:
+    for p in n:
+      if p.kind == nnkExprColonExpr and p[0].eqIdent"emit":
+        proc text(e: NimNode): bool =
+          if e.kind in nnkStrLit..nnkTripleStrLit:
+            for w in e.strVal.tokenize({'a'..'z', 'A'..'Z', '0'..'9', '_'}):
+              if not w.isSep and w.token in names: return true
+          for c in e:
+            if text(c): return true
+        if text(p[1]): return true
+  for c in n:
+    if namesParam(c, names): return true
+
+proc checkCopy(call, impl: NimNode) =
+  ## The two forms of a proc that a copy of its body gets wrong.
+  if impl.kind notin {nnkProcDef, nnkFuncDef}: return
+  let fix = ": inlineProcs cannot copy it; mark it gpuInline or gpuCall"
+  if impl.params[0].kind == nnkVarTy:
+    error($call.callName & " returns a var" & fix, call)
+  var names = @["result"]
+  for i in 1..<impl.params.len:
+    for j in 0..<impl.params[i].len-2: names.add $impl.params[i][j]
+  if namesParam(impl.body, names):
+    error($call.callName & " names a parameter in the text of an emit" & fix, call)
+
+proc callImpl(it: NimNode): NimNode =
+  ## the implementation of the routine or type that the call it names, nil
+  ## for other nodes
+  if it.kind in CallNodes and it.callName.kind == nnkSym: it.callName.getImpl else: nil
+
+proc copied(impl: NimNode): bool =
+  ## whether inlineProcs copies the body of the routine impl into a kernel:
+  ## calls through proc variables (outOfMemHook) stay calls, so do procs
+  ## marked for kernels (gpuInline, gpuCall of base/basicOps)
+  impl.kind in RoutineNodes and impl.isNotMagic and not impl.systemProc and
+    not impl.hasPragma(["gpuProc"]) and
+    impl.body.kind!=nnkEmpty and
+    impl.kind != nnkIteratorDef and
+    (impl.kind != nnkTemplateDef or $impl.params[0] != "typedesc")
+
 proc inlineProcsX(body: NimNode): NimNode =
-  # echo ">>>>>> inlineProcsX"
-  # echo body.repr
   proc recurse(it: NimNode): NimNode =
     if it.kind == nnkTypeOfExpr: return it.copyNimTree
-    if it.kind in CallNodes and it.callName.kind==nnkSym:
-      let procImpl = it.callName.getImpl
-      # echo "inspecting call"
-      # echo it.lisprepr
-      # echo procImpl.repr
-      # echo isMagic(procImpl)
-      if procImpl.kind == nnkTypeDef: return it.copyNimTree
-      # calls through proc variables (outOfMemHook) stay calls
-      if procImpl.kind in RoutineNodes and not procImpl.systemProc and procImpl.isNotMagic and
-          procImpl.body.kind!=nnkEmpty and
-          procImpl.kind != nnkIteratorDef and
-          (procImpl.kind != nnkTemplateDef or $procImpl.params[0] != "typedesc"):
-        #echo "inspecting call"
-        #echo procImpl.repr
-        #echo procImpl.kind
-        #echo procImpl.params[0].treerepr
-        return recurse inlineProcsY(it, procImpl)
+    if it.kind in RoutineNodes: return it.copyNimTree  # local templates: their uses are expanded
+    let impl = callImpl(it)
+    if impl != nil:
+      if impl.kind == nnkTypeDef: return it.copyNimTree
+      if copied(impl):
+        checkCopy(it, impl)
+        return recurse inlineProcsY(it, impl)
     result = copyNimNode(it)
     for c in it: result.add recurse c
   result = recurse(body)
-  # echo "<<<<<< inlineProcsX"
-  # echo result.repr
+
+proc hasInlined(it: NimNode): bool =
+  ## whether inlineProcsX copies a body somewhere in it
+  if it.kind == nnkTypeOfExpr or it.kind in RoutineNodes: return false
+  let impl = callImpl(it)
+  if impl != nil:
+    if impl.kind == nnkTypeDef: return false
+    if copied(impl): return true
+  for c in it:
+    if hasInlined(c): return true
 
 macro inlineProcs*(body: typed): auto =
-  # echo ">>>>>> inlineProcs:"
-  # echo body.repr
-  # echo body.treerepr
-  #result = body
-  result = rebuild inlineProcsX body
-  # echo "<<<<<< inlineProcs:"
-  # echo result.repr
-  # echo result.treerepr
+  ## body with the calls of unmarked routines replaced by their bodies; the
+  ## typed body as it is where there is none
+  result = if hasInlined(body): rebuild inlineProcsX body else: body
 
 proc symToIdent*(x: NimNode): NimNode =
   case x.kind:
@@ -732,6 +808,26 @@ macro makeIdent*(x: untyped): untyped =
   result = symToIdent(x)
 
 macro delayExpansion*(x:untyped):auto = result = x
+
+macro instShell*(p: untyped): untyped =
+  ## Pragma for a generic proc p called at many sites: p expands its body as a
+  ## template.  Nim 2.2 copies the whole AST of a generic proc at every call
+  ## before it looks up the instance (nim-lang/Nim#26091 fixed it in 2.3).  The
+  ## template parameters are typed, so Nim expands it when it compiles a new
+  ## instance of p, not in the definition of p, and the copies stay small.
+  let t = genSym(nskTemplate, $p.name.basename)
+  let fp = newNimNode(nnkFormalParams).add(ident"untyped")
+  let c = newCall(t)
+  for d in p.params[1..^1]:
+    for v in d[0..^3]:
+      fp.add newIdentDefs(v, ident"typed")
+      c.add v
+  let b = p.body
+  let s = newStmtList()
+  if b.kind == nnkStmtList and b[0].kind == nnkCommentStmt: s.add b[0]
+  s.add c
+  p.body = s
+  result = newStmtList(newNimNode(nnkTemplateDef).add(t, newEmptyNode(), newEmptyNode(), fp, newEmptyNode(), newEmptyNode(), b), p)
 
 #macro `$`*(t: type): untyped =
 #  result = newLit(t.getType[1].repr)

@@ -129,8 +129,7 @@ block:
       x.gpuReadOnly; y.gpuReadOnly; z.gpuWriteOnly
       template set(a,b: SomeNumber, c = 0) =
         threads:
-          #for i in threadRangeV(n):
-          for i in threadRange(n):
+          for i in threadRangeV(n):
             x[i] += a
             y[i] += b
             z[i] += c

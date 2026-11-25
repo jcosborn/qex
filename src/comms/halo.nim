@@ -133,7 +133,9 @@ proc makeHaloLayout*[L:Layout](lo: L, fwdOffset,bckOffset: openarray[SomeInteger
       x[mu] -= 1
   toc("neighbors")
 
-proc makeHaloMap*[L](hl: HaloLayout[L], c: Comm, offsets: seq[seq[int32]]): HaloMap[L] =
+proc makeHaloMap*[L](hl: HaloLayout[L], c: Comm, offsets: seq[seq[int32]], par = -1, sites = true): HaloMap[L] =
+  ## par >= 0 keeps only the halo sites of that parity. sites = false leaves
+  ## the site gather empty: gather then moves every lane (GPU halo exchanges).
   tic("makeHaloMap")
   result.new
   result.layout = hl
@@ -161,8 +163,10 @@ proc makeHaloMap*[L](hl: HaloLayout[L], c: Comm, offsets: seq[seq[int32]]): Halo
   var ql = newSeq[RecvList](0)
   var ri = newSeq[tuple[rank,index:int]](vlen)
   result.perm = newSeq[int32](hl.nExt - hl.nOut)
+  let nh0 = hl.nOut + hl.nExtPar[0] - hl.nOutPar[0]  # halo sites of parity 0 come first
   for i in hl.nOut ..< hl.nExt:  # loop over halo sites
     result.perm[i-hl.nOut] = -1
+    if par >= 0 and int(i >= nh0) != par: continue
     let li = hl.lex[i]
     x.lexCoord(li, hl.outerExt)
     var keep = false
@@ -193,7 +197,7 @@ proc makeHaloMap*[L](hl: HaloLayout[L], c: Comm, offsets: seq[seq[int32]]): Halo
         if not covered(k):
           all = false
           if ri[k].rank == r: mine = false
-      if all or (r == rank and mine):
+      if sites and (all or (r == rank and mine)):
         result.perm[i-hl.nOut] = int32 p
         ql.add RecvList(didx: int32(i-hl.nOut), srank: int32 r, sidx: int32 o)
       for k in 0 ..< vlen:
