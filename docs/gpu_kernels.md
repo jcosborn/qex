@@ -353,6 +353,11 @@ Rules from measurements on H100, MI300X and PVC.
   time of the staggered operator.
 - One atomic add per term to few slots makes short kernels wait; give
   `SumX` enough slots or use the fixed order there.
+- QEX's `expAH` in a kernel took 12 to 14 times the time of the
+  polynomial that gaugeGpu writes out on arrays (`mexp`) with SYCL on PVC:
+  its matrix temporaries went to private memory, 92 KB per hardware thread.
+  With OpenMP offload it took 1.01 to 1.15 times (`befield2`). gaugeGpu
+  keeps `mexp` for the link update.
 
 ## Validation
 
