@@ -158,11 +158,35 @@ iterator gpuOnce*(t: int): int =
   ## the share of thread t of n of the indices 0..<n
   yield t
 
+template gpuKernelBody*(t, nt, body: untyped) =
+  ## the body of a device kernel with the C names qexTid and qexNt of its
+  ## thread number t and count nt, which gpuThreadNum and gpuNumThreads of
+  ## backend/accel read; defines, so nothing is copied
+  {.emit: ["\n#define qexTid ", t, "\n#define qexNt ", nt, "\n"].}
+  body
+  {.emit: ["\n#undef qexTid\n#undef qexNt\n"].}  # an array: a plain string fails in OpenMP's typed loop
+
 proc kernelCap*(body0: NimNode; n: NimNode = nil): KernelCap =
   ## n: the launch count of a device kernel
+  proc copyIndexed(b: NimNode): NimNode =
+    ## b with its loops `for x in a[i]` as loops over a copy of a[i], for a
+    ## device kernel: Nim gives the items of a[i] its argument by address, and
+    ## the captures of a SYCL, CUDA or HIP kernel lambda are const.  The copy
+    ## is a cursor (no counts of refs in it).
+    result = b.copyNimNode
+    if b.kind == nnkForStmt and b[^2].kind == nnkBracketExpr:
+      for i in 0..<b.len-2: result.add b[i]
+      let c = genSym(nskLet, "gpuIt")
+      let l = newTree(nnkLetSection, newTree(nnkIdentDefs,
+        newTree(nnkPragmaExpr, c, newTree(nnkPragma, ident"cursor")), newEmptyNode(), copyIndexed(b[^2])))
+      result.add newTree(nnkStmtListExpr, l, c)
+      result.add copyIndexed(b[^1])
+    else:
+      for c in b: result.add copyIndexed(c)
+  let body1 = if n != nil: copyIndexed(body0) else: body0
   var ids: HashSet[string]
   var syms: seq[NimNode]
-  declNames(body0, ids, syms)
+  declNames(body1, ids, syms)
   let nr = if n != nil: n.repr else: ""
   proc oneIndex(b: NimNode): NimNode =
     ## b with its loops `for i in gpuRange(n)` over the launch count n as
@@ -179,7 +203,7 @@ proc kernelCap*(body0: NimNode; n: NimNode = nil): KernelCap =
       result.add oneIndex(b[2])
     else:
       for c in b: result.add oneIndex(c)
-  let body = if n != nil: oneIndex(body0) else: body0
+  let body = if n != nil: oneIndex(body1) else: body1
   var names: OrderedSet[string]  # identifiers, captured by name
   var caps: seq[NimNode]  # outer symbols (generic procs and templates bind them)
   proc walk(n: NimNode): NimNode =

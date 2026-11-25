@@ -156,17 +156,27 @@ proc fromGpu*[C](c: var alignedMem[C]) =
 template fromGpu*(c: var alignedMem, g: GpuSeq) = fromGpu(c)
 
 
-# A kernel body runs once in each of its threads.  The launch declares the
-# number of the thread and their count for the text of the body, so procs
-# cannot name them: code that takes its share of a loop is a template.
+# A kernel body runs once in each of its threads.  A device kernel declares
+# the number of the thread and their count as the C names qexTid and qexNt
+# at its start (gpuKernelBody of backend/expr), so templates, iterators and
+# the procs that inlineProcs copies into the kernel can take their share of
+# a loop; a proc marked gpuInline or gpuCall is a function of its own and
+# cannot.  The CPU backend runs a kernel in the host threads.
 
-template gpuThreadNum*: untyped =
-  ## in a kernel: the number of this thread, below gpuNumThreads
-  gpuTn
-template gpuNumThreads*: untyped =
-  ## in a kernel: its threads, the launch count on a device, the host threads
-  ## with the CPU backend
-  gpuNt
+when backendIsGpu:
+  var qexTid {.importc, nodecl.}: int
+  var qexNt {.importc, nodecl.}: int
+  template gpuThreadNum*: int =
+    ## in a kernel: the number of this thread, below gpuNumThreads
+    qexTid
+  template gpuNumThreads*: int =
+    ## in a kernel: its threads, the launch count
+    qexNt
+else:
+  template gpuThreadNum*: int = threadNum
+  template gpuNumThreads*: int = numThreads
+
+const gpuSimd* {.booldefine.} = true  ## false: the CPU backend runs every kernel lane by lane, the reference of the SIMD forms
 
 iterator gpuRangeOf*(n, t, nt: int): int =
   ## the indices below n of thread t of nt: every nt-th on a device, which
@@ -181,15 +191,19 @@ iterator gpuRangeOf*(n, t, nt: int): int =
     for i in (n*t) div nt ..< (n*(t+1)) div nt:
       yield i
 
+# gpuRange and gpuSites bind the count first: Nim gives an inline iterator an
+# argument through an index (x[k], x[k].n) by address, and the captures of a
+# SYCL, CUDA or HIP kernel lambda are const.
+
 template gpuRange*(n: int): untyped =
   ## in a kernel: the share of this thread of 0..<n
-  gpuRangeOf(n, int(gpuThreadNum), int(gpuNumThreads))
+  gpuRangeOf((let gpuK = n; gpuK), gpuThreadNum, gpuNumThreads)
 
 type
   SiteV*[V:static int] = distinct int
 template `[]`*(x: SiteV): int = int(x)
 
-when backendIsGpu:
+when backendIsGpu or not gpuSimd:
   iterator gpuSitesOf*(n: int, V: static int, t, nt: int): SiteV[1] =
     for s in gpuRangeOf(n*V, t, nt):
       yield SiteV[1](s)
@@ -201,7 +215,7 @@ else:
 template gpuSites*(n: int, V: static int): untyped =
   ## in a kernel: the share of this thread of n outer sites of V lanes, one
   ## lane at a time on a device, whole sites on the host
-  gpuSitesOf(n, V, int(gpuThreadNum), int(gpuNumThreads))
+  gpuSitesOf((let gpuK = n; gpuK), V, gpuThreadNum, gpuNumThreads)
 
 # One kernel text for lanes and for SIMD vectors.  A kernel index stands for
 # W lanes of an outer site: one on a device, a hardware vector with the CPU
@@ -210,8 +224,6 @@ template gpuSites*(n: int, V: static int): untyped =
 # reals per site is at (k div VE)*(NC*VE) + c*VE + k mod VE of the field
 # memory read as an array of E: the layout of the lanes, with (E, VE) for
 # (T, V).  A kernel written over E and VE is lane code and SIMD code.
-
-const gpuSimd* {.booldefine.} = true  ## false: the CPU backend runs every kernel lane by lane, the reference of the SIMD forms
 
 template gpuLanes*(T: typedesc; V: static int): int =
   ## the lanes of T per kernel index: those of the widest hardware vector of

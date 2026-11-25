@@ -172,8 +172,9 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
       threadSingle:
         gpuForAsync(gpuTn, gpuNt, sub):
           const inOnGpu {.inject,used.} = true
-          inlineProcs:
-            body
+          gpuKernelBody(gpuTn, gpuNt):
+            inlineProcs:
+              body
       inc kernelCallCount  # increment after launch
       # one profile timer per launch: "launch", or "wait" where onGpu only waits
       when fin == 2 and not copies:

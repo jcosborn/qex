@@ -228,7 +228,9 @@ macro ompKernel(i, n, sub, kernel: untyped; loop: typed): untyped =
       for c in n: reads(c)
   reads(fs[^1])
   if not obj: return loop
-  result = newCall(bindSym"gpuForSync", i, n, sub, kernel)
+  # the statements of kernel, written (a; b) at the call
+  let k = if kernel.kind in {nnkStmtListExpr, nnkPar}: newStmtList(kernel[0..^1]) else: kernel
+  result = newCall(bindSym"gpuForSync", i, n, sub, k)
 
 proc gpuFinish*[P](fl: static string; count: int; flops: float; ps: P; back: proc(ps: P) {.nimcall.}; wait: static bool) =
   ## The end of a kernel launch: waits for the queue where the kernel was
@@ -283,14 +285,16 @@ macro gpuKernel(fin: static int; n: untyped; sub: static int; body: untyped): un
         when fin == 2:
           gpuForSync(gpuTn, gpuNt, sub):
             const inOnGpu {.inject,used.} = true
-            inlineProcs:
-              body
-        else:
-          ompKernel(gpuTn, gpuNt, sub, (const inOnGpu {.inject,used.} = true; inlineProcs: body)):
-            gpuForAsync(gpuTn, gpuNt, sub):
-              const inOnGpu {.inject,used.} = true
+            gpuKernelBody(gpuTn, gpuNt):
               inlineProcs:
                 body
+        else:
+          ompKernel(gpuTn, gpuNt, sub, (const inOnGpu {.inject,used.} = true; gpuKernelBody(gpuTn, gpuNt, inlineProcs(body)))):
+            gpuForAsync(gpuTn, gpuNt, sub):
+              const inOnGpu {.inject,used.} = true
+              gpuKernelBody(gpuTn, gpuNt):
+                inlineProcs:
+                  body
           if numThreads > 1: gpuWaitAsync()
       if numThreads > 1: threadBarrier()
       inc kernelCallCount  # increment after launch

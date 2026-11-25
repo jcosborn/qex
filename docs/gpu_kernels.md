@@ -33,7 +33,7 @@ backend runs the body in the host threads whatever `n` is.
 
 The body is the code of one thread. It runs once in each thread, with
 `gpuThreadNum` in `0..<gpuNumThreads`. Loops take their share of the work
-through two iterators:
+through iterators:
 
 - `gpuRange(m)`: the indices of `0..<m` of this thread.
 - `gpuSites(f)`: the sites of the field `f` of this thread.
@@ -45,9 +45,11 @@ compiled for a device as its one index, without the loop. A host thread
 gets a contiguous share. The result of a kernel must not depend on the
 thread count.
 
-`gpuThreadNum` and `gpuNumThreads` exist in the text of a body. Code that
-uses them or the two iterators outside a body is a template, as `:=` of
-`GpuField` is.
+A device kernel declares its thread number and count at its start, so
+templates, iterators and the procs that a device kernel copies may use
+`gpuThreadNum`, `gpuNumThreads` and the iterators; a proc marked
+`gpuInline` or `gpuCall` is a function of its own and may not. With the CPU
+backend they are `threadNum` and `numThreads` of the host thread.
 
 ## Where a launch may stand
 
